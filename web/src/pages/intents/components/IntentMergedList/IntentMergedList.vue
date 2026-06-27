@@ -43,6 +43,8 @@ const props = defineProps<{
   intentSessions: IntentSessionInfo[]
   selectedIntentSessionId: string | null
   intentSessionRunStates: Record<string, 'running'>
+  /** One-shot request from WorkCenter jump-to-source: switch the merged tab. */
+  requestedTab?: 'intents' | 'sessions' | null
 }>()
 
 const emit = defineEmits<{
@@ -60,6 +62,8 @@ const emit = defineEmits<{
   'new-intent-session': []
   'rename-intent-session': [sessionId: string, title: string]
   'delete-intent-session': [sessionId: string]
+  // External tab request consumed
+  'requested-tab-consumed': []
 }>()
 
 // ---- Segmented control ----
@@ -69,6 +73,17 @@ const mobileActionsOpen = ref(false)
 
 // 暴露 activeTab 供父组件(Intents.vue)读取,用于移动端 mobileStack pane title。
 defineExpose({ activeTab })
+
+// WorkCenter 溯源跳转:在 intent 无匹配时切到会话列表 tab。
+watch(
+  () => props.requestedTab,
+  (tab) => {
+    if (tab) {
+      activeTab.value = tab
+      emit('requested-tab-consumed')
+    }
+  },
+)
 
 // ---- Tab 切换键盘事件 ----
 function onTabKeydown(e: KeyboardEvent, tab: MergedTab): void {

@@ -41,6 +41,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  'edit-schedule': [id: string]
   'delete-schedule': [id: string]
   'toggle-enabled': [id: string, enabled: boolean]
   'run-now': [id: string]
@@ -218,6 +219,17 @@ watch(
             @click="runNow"
           >
             ▶
+          </button>
+          <!-- 删除:硬删除 + 级联执行历史,经二次确认后才上抛。 -->
+          <!-- 编辑:在 ScheduleForm 弹框中编辑当前 schedule。 -->
+          <button
+            type="button"
+            class="sp-action sp-action--edit"
+            :title="t('schedule.list.edit.tooltip')"
+            :aria-label="t('schedule.list.edit.tooltip')"
+            @click="emit('edit-schedule', schedule!.id)"
+          >
+            ✎
           </button>
           <!-- 删除:硬删除 + 级联执行历史,经二次确认后才上抛。 -->
           <button
@@ -416,6 +428,10 @@ watch(
 .sp-action--run:hover:not(:disabled) {
   color: var(--c-success);
   border-color: var(--c-success);
+}
+.sp-action--edit:hover:not(:disabled) {
+  color: var(--c-primary);
+  border-color: var(--c-primary);
 }
 .sp-action--delete:hover:not(:disabled) {
   color: var(--c-error);

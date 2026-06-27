@@ -443,6 +443,12 @@ export function createState(deps: StateDeps) {
   // One-shot request to select a specific work session on the console tab (set by
   // the post-Start-Dev jump, consumed + cleared once the target lands in the list).
   const requestedWorkSessionId = ref<string | null>(null)
+  // One-shot request to force IntentDetail to switch to a specific sub-tab (set by
+  // the WorkCenter jump-to-source, consumed + cleared by IntentDetail once applied).
+  const requestedIntentSubTab = ref<'intentSession' | 'specSession' | null>(null)
+  // One-shot request to force IntentMergedList to switch to a specific tab (set by
+  // the WorkCenter jump-to-source when no intent matches the session id).
+  const requestedMergedTab = ref<'intents' | 'sessions' | null>(null)
 
   // The mode-picker options for the viewed session.
   const modeOptions = computed(() => {
@@ -647,6 +653,8 @@ export function createState(deps: StateDeps) {
     activeLinkedIntentId,
     requestedIntentId,
     requestedWorkSessionId,
+    requestedIntentSubTab,
+    requestedMergedTab,
     toast,
     intentActionError,
     intentActionErrorSeq,

@@ -83,6 +83,10 @@ const props = defineProps<{
   queue: PendingItem[]
   availableCommands: SlashCommandInfo[]
   voiceLang: string
+  /** One-shot sub-tab request for IntentDetail (WorkCenter jump-to-source). */
+  requestedIntentSubTab?: 'intentSession' | 'specSession' | null
+  /** One-shot merged-tab request for IntentMergedList (WorkCenter jump-to-source). */
+  requestedMergedTab?: 'intents' | 'sessions' | null
 }>()
 
 const emit = defineEmits<{
@@ -113,6 +117,10 @@ const emit = defineEmits<{
   'set-session-agent': [agentId: string]
   // external select request consumed (parent clears `requestedIntentId`)
   'requested-intent-consumed': []
+  // external sub-tab request consumed (parent clears `requestedIntentSubTab`)
+  'requested-subtab-consumed': []
+  // external merged-tab request consumed (parent clears `requestedMergedTab`)
+  'requested-tab-consumed': []
   // chat events
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
@@ -268,6 +276,7 @@ defineExpose({
         :intent-sessions="intentSessions"
         :selected-intent-session-id="selectedIntentSessionId"
         :intent-session-run-states="intentSessionRunStates"
+        :requested-tab="requestedMergedTab"
         @filter="(status: IntentStatus | null) => emit('filter', status)"
         @start-automation="emit('start-automation')"
         @stop-automation="emit('stop-automation')"
@@ -281,6 +290,7 @@ defineExpose({
           (id: string, title: string) => emit('rename-intent-session', id, title)
         "
         @delete-intent-session="(id: string) => emit('delete-intent-session', id)"
+        @requested-tab-consumed="emit('requested-tab-consumed')"
       />
     </template>
 
@@ -294,6 +304,7 @@ defineExpose({
         :sdd-enabled="sddEnabled"
         :workspace-main-branch="workspaceMainBranch"
         :workspace-git-branch-mode="workspaceGitBranchMode"
+        :requested-sub-tab="requestedIntentSubTab"
         :active-session="activeSession"
         :active-title="activeTitle"
         :vendor="vendor ?? null"
@@ -335,6 +346,7 @@ defineExpose({
         @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"
         @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
         @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
+        @requested-subtab-consumed="emit('requested-subtab-consumed')"
         @refresh="emit('refresh')"
         @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
         @delete-queued="(id: number) => emit('delete-queued', id)"

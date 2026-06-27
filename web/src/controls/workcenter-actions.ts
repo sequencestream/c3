@@ -46,6 +46,8 @@ export function installWorkcenterActions(ctx: AppCtx): void {
   ctx.jumpToSource = (event: WaitUserInvolveEvent): void => {
     const workspace = event.workspaceId || currentWorkspace.value
     if (!workspace || !ctx.client) return
+    // Switch from workcenter view to workspace view so the target tab renders.
+    ctx.setViewMode('workspace')
     switch (event.sessionKind) {
       case 'intent':
         jumpToIntent(workspace, event.sessionId)
@@ -58,8 +60,7 @@ export function installWorkcenterActions(ctx: AppCtx): void {
         if (event.sessionId) ctx.openDiscussion(event.sessionId)
         break
       case 'schedule':
-        ctx.openSchedules(workspace)
-        if (event.sessionId) ctx.onSelectSchedule(event.sessionId)
+        jumpToSchedule(workspace, event.sessionId)
         break
       case 'work':
       default:
@@ -73,32 +74,86 @@ export function installWorkcenterActions(ctx: AppCtx): void {
     }
   }
 
-  // Resolve an 'intent' event's `sessionId`. The save_intents gate writes the real
-  // comm-session id; the Start-Dev cleanup todo writes the intent OBJECT id (no real
-  // session to reference). Open the Intents tab, then match against the loaded lists —
-  // intent object first, then comm session — so both write paths route sensibly. No
-  // match (lists not loaded, target deleted, or a legacy row) ⇒ stay on the Intents
-  // tab with no selection rather than silently mis-jumping.
+  // sessionKind=intent 路由：
+  //   sessionId 匹配 intent.intentSessionId → 选中意图，展示意图会话 tab
+  //   sessionId 匹配 intent.specSessionId   → 选中意图，展示 spec 会话 tab
+  //   无匹配 → 切到会话列表 tab，选中对应会话
   function jumpToIntent(workspace: string, sessionId: string | null): void {
     ctx.openIntents(workspace)
-    if (!sessionId) return
-    if ((ctx.intents.value[workspace] ?? []).some((i) => i.id === sessionId)) {
-      ctx.requestedIntentId.value = sessionId
-    } else if ((ctx.intentSessions.value[workspace] ?? []).some((s) => s.sessionId === sessionId)) {
-      ctx.selectIntentSession(sessionId)
+    if (!sessionId) {
+      ctx.requestedMergedTab.value = null
+      ctx.requestedIntentSubTab.value = null
+      return
     }
+
+    const workspaceIntents = ctx.intents.value[workspace] ?? []
+
+    // Case 1: sessionId == intent.intentSessionId → select intent + show intentSession tab
+    const intentBySessionId = workspaceIntents.find((i) => i.intentSessionId === sessionId)
+    if (intentBySessionId) {
+      ctx.requestedIntentId.value = intentBySessionId.id
+      ctx.requestedIntentSubTab.value = 'intentSession'
+      ctx.requestedMergedTab.value = null
+      ctx.selectIntentSession(sessionId)
+      return
+    }
+
+    // Case 2: sessionId == intent.specSessionId → select intent + show specSession tab
+    const intentBySpecId = workspaceIntents.find((i) => i.specSessionId === sessionId)
+    if (intentBySpecId) {
+      ctx.requestedIntentId.value = intentBySpecId.id
+      ctx.requestedIntentSubTab.value = 'specSession'
+      ctx.requestedMergedTab.value = null
+      ctx.openSpecSession(intentBySpecId.id)
+      return
+    }
+
+    // Case 3: no match → show session list tab + select the session
+    ctx.requestedIntentId.value = null
+    ctx.requestedIntentSubTab.value = null
+    ctx.requestedMergedTab.value = 'sessions'
+    ctx.selectIntentSession(sessionId)
   }
 
-  // Resolve a 'spec' event: the spec-authoring run binds to one intent, so its
-  // `sessionId` resolves to the owning intent id. Open the Intents tab, select the
-  // intent, and open its spec session. An unresolvable / missing intent degrades to
-  // the Intents tab with no selection.
+  // sessionKind=spec: spec 编写会话 → 打开所属意图的 spec 会话 tab。
+  // sessionId 可能是 specSessionId 或意图 id（旧写入路径）。
   function jumpToSpec(workspace: string, sessionId: string | null): void {
     ctx.openIntents(workspace)
     if (!sessionId) return
-    if ((ctx.intents.value[workspace] ?? []).some((i) => i.id === sessionId)) {
+
+    const workspaceIntents = ctx.intents.value[workspace] ?? []
+
+    // 优先按 specSessionId 匹配
+    const intentBySpecId = workspaceIntents.find((i) => i.specSessionId === sessionId)
+    if (intentBySpecId) {
+      ctx.requestedIntentId.value = intentBySpecId.id
+      ctx.requestedIntentSubTab.value = 'specSession'
+      ctx.openSpecSession(intentBySpecId.id)
+      return
+    }
+
+    // 兜底：sessionId 即意图 id（旧写入路径）
+    if (workspaceIntents.some((i) => i.id === sessionId)) {
       ctx.requestedIntentId.value = sessionId
+      ctx.requestedIntentSubTab.value = 'specSession'
       ctx.openSpecSession(sessionId)
     }
+  }
+
+  // sessionKind=schedule: 在所有已加载的执行日志中查找匹配 sessionId 的
+  // 执行记录，选中对应 schedule 并展示该执行记录。
+  function jumpToSchedule(workspace: string, sessionId: string | null): void {
+    ctx.openSchedules(workspace)
+    if (!sessionId) return
+    // 遍历所有已加载的 schedule 执行日志，查找匹配的 sessionId
+    for (const [schId, logs] of Object.entries(ctx.scheduleLogs.value)) {
+      const match = logs.find((l) => l.sessionId === sessionId)
+      if (match) {
+        ctx.onSelectSchedule(schId)
+        ctx.onSelectExecution(match.id)
+        return
+      }
+    }
+    // 未找到 → 降级到 schedule 列表
   }
 }

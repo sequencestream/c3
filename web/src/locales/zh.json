@@ -216,7 +216,7 @@
         "followDefault": "跟随默认智能体"
       },
       "intent": {
-        "tooltip": "执行意图沟通会话的智能体(需求拆解)"
+        "tooltip": "执行意图沟通会话的智能体(意图拆解)"
       },
       "intentPicker": {
         "label": "意图智能体",
@@ -1991,7 +1991,7 @@
     },
     "sessionKind": {
       "work": "工作",
-      "intent": "需求",
+      "intent": "意图",
       "discussion": "讨论",
       "schedule": "定时任务",
       "consensus": "共识",

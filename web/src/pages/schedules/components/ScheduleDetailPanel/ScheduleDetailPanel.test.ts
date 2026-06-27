@@ -112,10 +112,13 @@ describe('ScheduleDetailPanel.vue — 右栏容器', () => {
       expect(w.find('.sp-action--run').attributes('disabled')).toBeDefined()
     })
 
-    it('不展示编辑 schedule 按钮', () => {
+    it('编辑按钮点击后 emit edit-schedule', async () => {
       const w = mountPanel()
-      expect(w.find('.sp-action:not(.sp-action--run):not(.sp-action--delete)').exists()).toBe(false)
-      expect(w.emitted('edit-schedule')).toBeUndefined()
+      const editBtn = w.find('.sp-action--edit')
+      expect(editBtn.exists()).toBe(true)
+      expect(editBtn.attributes('title')).toBe('Edit schedule')
+      await editBtn.trigger('click')
+      expect(w.emitted('edit-schedule')?.[0]).toEqual(['s1'])
     })
 
     it('toggle emit toggle-enabled:active→false', async () => {

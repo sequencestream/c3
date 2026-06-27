@@ -93,6 +93,9 @@ const props = defineProps<{
   /** 选中意图 spec.md 内容;null=未加载/无。 */
   intentSpecContent: string | null
   intentSpecLoading: boolean
+  /** One-shot request from WorkCenter jump-to-source: force a detail sub-tab switch
+   * (intentSession / specSession). Cleared via `requested-subtab-consumed`. */
+  requestedSubTab?: 'intentSession' | 'specSession' | null
 }>()
 
 const emit = defineEmits<{
@@ -125,6 +128,8 @@ const emit = defineEmits<{
   stop: []
   continue: []
   'list-commands': []
+  // ── 外部子 tab 请求消耗 ──
+  'requested-subtab-consumed': []
 }>()
 
 function copyPrId(prId: string): void {
@@ -395,6 +400,17 @@ watch(
     // 切走意图:取消挂起的自动切 Tab,避免切到别的意图后误切。门定时器由上方
     // [intent.id, mainAction] watch 负责重排。
     clearSwitchSpecTabTimer()
+  },
+)
+
+// 外部子 tab 请求(WorkCenter 溯源跳转),在 intent 选中复位 tab 后再切换。
+watch(
+  () => props.requestedSubTab,
+  (tab) => {
+    if (tab) {
+      selectTab(tab)
+      emit('requested-subtab-consumed')
+    }
   },
 )
 

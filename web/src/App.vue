@@ -100,6 +100,8 @@ const {
   // ---- intents ----
   intentsProject,
   requestedIntentId,
+  requestedIntentSubTab,
+  requestedMergedTab,
   openLinkedIntent,
   currentIntents,
   currentIntentsSdd,
@@ -338,6 +340,8 @@ const {
           :intents="currentIntents"
           :sdd-enabled="currentIntentsSdd"
           :requested-intent-id="requestedIntentId"
+          :requested-intent-sub-tab="requestedIntentSubTab"
+          :requested-merged-tab="requestedMergedTab"
           :workspace-main-branch="
             currentWorkspaceSetting?.defaultMainBranch ??
             (intentsProject
@@ -379,6 +383,8 @@ const {
           :vendor="activeVendor"
           :agent-switch="activeAgentSwitch"
           @requested-intent-consumed="requestedIntentId = null"
+          @requested-subtab-consumed="requestedIntentSubTab = null"
+          @requested-tab-consumed="requestedMergedTab = null"
           @filter="setIntentFilter"
           @refine="refineIntent"
           @write-spec="writeSpec"

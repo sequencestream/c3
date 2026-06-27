@@ -341,7 +341,7 @@ export const openSpecSession: Handler<'open_spec_session'> = async (_ctx, conn, 
     // The stored spec path is absolute (centralized root, outside the workspace).
     if (intent.specPath) restored.specDir = dirname(resolveSpecFileAbs(proj, intent.specPath))
     const specAgent = resolveSpecAgent()
-    if (specAgent.vendor !== 'codex') setSessionAgent(chatId, specAgent.id)
+    setSessionAgent(chatId, specAgent.id)
   }
   const rt = getRuntime(chatId)
   if (!rt) {

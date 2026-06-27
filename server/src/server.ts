@@ -54,6 +54,10 @@ import {
   PR_EVENT_MCP_PATH,
   type PrEventMcpTools,
 } from './transport/pr-event-mcp/index.js'
+import {
+  createSpecQueryMcp,
+  SPEC_QUERY_MCP_PATH,
+} from './transport/spec-query-mcp/index.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
 import {
   createConsensusAutoHandler,
@@ -445,6 +449,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       ),
   }
   const prEventMcp = createPrEventMcp(`http://127.0.0.1:${opts.port}`, prEventMcpTools)
+  const specQueryMcp = createSpecQueryMcp(`http://127.0.0.1:${opts.port}`)
 
   // ── Sandbox wiring (ADR-0024) ──────────────────────────────────────────────
   // Build the system sandbox-def registry from settings and instantiate the
@@ -496,8 +501,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     }),
     // Spec-authoring profile (write-confined gate + disallowed-tools lock + spec
     // prompt). `specDir` is per-run and rides on the runtime, not this static
-    // profile. Spec sessions are claude-only (the handler rejects a codex spec
-    // agent), so there is no driver-path MCP here.
+    // profile. Claude consumes the in-process read-only MCP server; Codex consumes
+    // the HTTP equivalent over loopback because it cannot load in-process MCP.
     specProfile: (workspacePath) => ({
       appendSystemPrompt: buildSpecAgentPrompt(getUiLang()),
       disallowedTools: SPEC_DISALLOWED_TOOLS,
@@ -507,6 +512,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       // The binder ignores the run id / signal it is handed (no save gate). The
       // same path runs on reset_spec_session, so a reset session gets the tools too.
       bindInProcessMcp: () => createSpecQueryMcpServer(workspacePath),
+      bindDriverMcp: (binding) => specQueryMcp.bind(binding),
       gate: 'spec' as const,
     }),
     // Work-session base MCP profile (2026-06-20): every new and resumed work
@@ -622,6 +628,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // work-session in-process publish tool. Loopback-guarded + per-run token inside
   // the handler. Before the SPA catch-all, same as the intent/relay routes.
   app.all(PR_EVENT_MCP_PATH, (c) => prEventMcp.handler(c))
+
+  // Spec-query MCP loopback endpoint. The codex twin of the spec-authoring
+  // in-process read-only ledger tools. It never registers save_intents.
+  app.all(SPEC_QUERY_MCP_PATH, (c) => specQueryMcp.handler(c))
 
   // Static frontend (production / pkg) vs dev placeholder.
   if (opts.dev) mountDevPlaceholder(app)

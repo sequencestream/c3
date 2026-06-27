@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { ServerToClient } from '@ccc/shared/protocol'
+import type { AgentConfig, ServerToClient, SystemSettings } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
@@ -27,7 +27,11 @@ import {
 } from './store.js'
 import { approveSpecHandler, buildSeedSpec, readSpecHandler } from './spec.js'
 import { getSpecsBase } from './specs-root.js'
-import { saveWorkspaceSetting } from '../../kernel/config/index.js'
+import {
+  resetSettingsCacheForTests,
+  saveSettings,
+  saveWorkspaceSetting,
+} from '../../kernel/config/index.js'
 import { writeSpecHandler } from './spec.js'
 
 let dir: string
@@ -45,6 +49,7 @@ beforeEach(() => {
   resetDbForTests()
   resetStoreForTests()
   resetStateCacheForTests()
+  resetSettingsCacheForTests()
   addWorkspace(dir, 1)
   workspaceId = pathToId(dir)!
   proj = resolveWorkspaceRoot(workspaceId)!
@@ -53,6 +58,7 @@ beforeEach(() => {
 afterEach(() => {
   resetDbForTests()
   resetStateCacheForTests()
+  resetSettingsCacheForTests()
   delete process.env.CLAUDE_CONFIG_DIR
   delete process.env.C3_DB_PATH
   if (prevC3Dir === undefined) delete process.env.C3_DIR
@@ -74,6 +80,25 @@ function fakeConn(over: Partial<Conn> = {}): { conn: Conn; sent: ServerToClient[
     ...over,
   } as Conn
   return { conn, sent }
+}
+
+function configureCodexSpecAgent(): void {
+  const codexAgent: AgentConfig = {
+    id: 'codex-spec',
+    vendor: 'codex',
+    configMode: 'system',
+    displayName: 'Codex Spec',
+    config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
+    enabled: true,
+    order_seq: 0,
+  }
+  saveSettings({
+    agents: [codexAgent],
+    defaultAgentId: 'codex-spec',
+    toolAgentId: '',
+    intentAgentId: '',
+    specAgentId: 'codex-spec',
+  } as SystemSettings)
 }
 
 describe('buildSeedSpec', () => {
@@ -136,6 +161,28 @@ describe('writeSpecHandler dependency context', () => {
       { type: 'spec_launch_progress', intentId: target.id, stage: 'pulling-code' },
       { type: 'spec_launch_progress', intentId: target.id, stage: 'launching' },
     ])
+  })
+
+  it('allows a Codex spec agent and launches instead of returning unsupported', () => {
+    configureCodexSpecAgent()
+    const [target] = insertIntents(proj, [
+      { title: 'Codex spec', shortEnTitle: 'codex-spec', content: '', priority: 'P1' },
+    ])
+    const launchRun = vi.fn().mockResolvedValue(undefined)
+    const { conn, sent } = fakeConn()
+
+    writeSpecHandler({ launchRun, broadcastIntents: vi.fn() } as unknown as KernelContext, conn, {
+      type: 'write_spec',
+      workspaceId,
+      intentId: target.id,
+    })
+
+    expect(sent).not.toContainEqual({
+      type: 'error',
+      error: { code: 'intent.specAgentUnsupported' },
+    })
+    expect(launchRun).toHaveBeenCalledTimes(1)
+    expect(getIntent(target.id)?.specPath).toContain(getSpecsBase(proj))
   })
 })
 

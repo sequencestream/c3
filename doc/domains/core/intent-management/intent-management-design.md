@@ -259,15 +259,18 @@ add-column through the shared adapter (RM-R14).
 - **Reset spec session (`reset_spec_session`):** the spec document tab's 「我要修改」 action, mirroring
   **Write spec** but reusing the EXISTING spec directory / path (no scaffolding). The spec-session
   tab itself has no reset button. Rejected (`error`
-  `intent.specNotWritten`) when no spec was ever written; claude-only, same as authoring (the codex
-  driver cannot path-confine writes — `intent.specAgentUnsupported`). The server launches a fresh
-  write-confined `'spec'` session seeded with the user's **new input** + a pointer to the current
-  `spec_path` (only the path — the agent reads the spec file itself; the prompt no longer inlines the
-  spec body), replies `session_selected` (so the detail's 「spec session」tab switches to it), and
-  registers the pending→intent link so `run:bound` replaces the intent's `specSessionId` on first
-  bind. The server no longer pre-reads the spec file, so its readability is not a launch
-  precondition; a missing/unreadable spec becomes a normal file error the agent faces when it reads
-  the path.
+  `intent.specNotWritten`) when no spec was ever written. Claude and Codex both may run this session,
+  but they use different hard boundaries: Claude keeps cwd at the project and uses the spec
+  permission gate to restrict writes to the spec directory; Codex moves cwd to the centralized specs
+  root, forces `workspace-write` + `approval_policy=never`, and passes the specs root as
+  `--add-dir`, so the project, ledger DB, and other non-specs-root paths stay outside writable roots.
+  The server launches a fresh write-confined `'spec'` session seeded with the user's **new input** +
+  a pointer to the current `spec_path` (only the path — the agent reads the spec file itself; the
+  prompt no longer inlines the spec body), replies `session_selected` (so the detail's 「spec
+  session」tab switches to it), and registers the pending→intent link so `run:bound` replaces the
+  intent's `specSessionId` on first bind. The server no longer pre-reads the spec file, so its
+  readability is not a launch precondition; a missing/unreadable spec becomes a normal file error
+  the agent faces when it reads the path.
 
 ## Communication system prompt
 

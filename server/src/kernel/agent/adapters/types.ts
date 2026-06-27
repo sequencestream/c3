@@ -216,6 +216,11 @@ void _sessKeysMatchEnum
 export interface RemoteMcpServer {
   readonly type: 'http'
   readonly url: string
+  /**
+   * Tool names to enable for this server in drivers that require an explicit
+   * allowlist. Omit when the driver should use its route-specific default.
+   */
+  readonly enabledTools?: readonly string[]
   readonly bearerTokenEnvVar?: string
 }
 

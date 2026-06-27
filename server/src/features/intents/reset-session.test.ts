@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { ServerToClient } from '@ccc/shared/protocol'
+import type { AgentConfig, ServerToClient, SystemSettings } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
@@ -32,7 +32,11 @@ import {
   setSpecPath,
   updateIntentDeps,
 } from './store.js'
-import { saveWorkspaceSetting } from '../../kernel/config/index.js'
+import {
+  resetSettingsCacheForTests,
+  saveSettings,
+  saveWorkspaceSetting,
+} from '../../kernel/config/index.js'
 import { buildResetIntentPrompt, resetIntentSession } from './index.js'
 import { buildResetSpecPrompt, buildSpecInstructPrompt, resetSpecSessionHandler } from './spec.js'
 import { resetForTests as resetIntentLink, takePendingIntentLink } from './intent-link.js'
@@ -52,6 +56,7 @@ beforeEach(() => {
   resetDbForTests()
   resetStoreForTests()
   resetStateCacheForTests()
+  resetSettingsCacheForTests()
   resetIntentLink()
   resetSpecLink()
   addWorkspace(dir, 1)
@@ -62,6 +67,7 @@ beforeEach(() => {
 afterEach(() => {
   resetDbForTests()
   resetStateCacheForTests()
+  resetSettingsCacheForTests()
   resetIntentLink()
   resetSpecLink()
   delete process.env.CLAUDE_CONFIG_DIR
@@ -85,6 +91,25 @@ function fakeConn(over: Partial<Conn> = {}): { conn: Conn; sent: ServerToClient[
     ...over,
   } as Conn
   return { conn, sent }
+}
+
+function configureCodexSpecAgent(): void {
+  const codexAgent: AgentConfig = {
+    id: 'codex-spec',
+    vendor: 'codex',
+    configMode: 'system',
+    displayName: 'Codex Spec',
+    config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
+    enabled: true,
+    order_seq: 0,
+  }
+  saveSettings({
+    agents: [codexAgent],
+    defaultAgentId: 'codex-spec',
+    toolAgentId: '',
+    intentAgentId: '',
+    specAgentId: 'codex-spec',
+  } as SystemSettings)
 }
 
 function selectedSessionId(sent: ServerToClient[]): string {
@@ -314,6 +339,34 @@ describe('resetSpecSessionHandler', () => {
     expect(prompt).toContain('SPEC_INPUT')
     expect(prompt).toContain(fileAbs)
 
+    removeRuntime(sid)
+  })
+
+  it('allows a Codex spec agent and reuses the existing spec path', () => {
+    configureCodexSpecAgent()
+    const [r] = insertIntents(proj, [
+      { title: 'Codex reset', shortEnTitle: 'codex-reset', content: '', priority: 'P1' },
+    ])
+    const fileAbs = join(proj, '.specs/2026/06/27/spec.md')
+    setSpecPath(r.id, fileAbs)
+    const launchRun = vi.fn().mockResolvedValue(undefined)
+    const ctx = { launchRun } as unknown as KernelContext
+    const { conn, sent } = fakeConn()
+
+    resetSpecSessionHandler(ctx, conn, {
+      type: 'reset_spec_session',
+      workspaceId,
+      intentId: r.id,
+      userInput: 'revise',
+    })
+
+    expect(sent).not.toContainEqual({
+      type: 'error',
+      error: { code: 'intent.specAgentUnsupported' },
+    })
+    const sid = selectedSessionId(sent)
+    expect(getRuntime(sid)?.specDir).toBe(dirname(fileAbs))
+    expect(launchRun).toHaveBeenCalledTimes(1)
     removeRuntime(sid)
   })
 

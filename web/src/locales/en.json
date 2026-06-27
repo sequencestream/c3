@@ -2016,8 +2016,11 @@
   },
   "workcenter": {
     "title": "Workcenter",
+    "notificationTitle": "User notifications",
     "toolInput": "Tool Input",
     "filter": {
+      "label": "Status filter",
+      "all": "All",
       "todo": "Todo",
       "done": "Done",
       "canceled": "Canceled",
@@ -2084,7 +2087,7 @@
       "minutesAgo": "{n}m ago",
       "hoursAgo": "{n}h ago"
     },
-    "empty": "No pending events"
+    "empty": "No messages"
   },
   "auth": {
     "login": {

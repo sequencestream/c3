@@ -1965,8 +1965,11 @@
   },
   "workcenter": {
     "title": "工作台",
+    "notificationTitle": "用户通知消息",
     "toolInput": "工具输入",
     "filter": {
+      "label": "状态筛选",
+      "all": "所有",
       "todo": "待处理",
       "done": "已完成",
       "canceled": "已取消",
@@ -2033,7 +2036,7 @@
       "minutesAgo": "{n}分钟前",
       "hoursAgo": "{n}小时前"
     },
-    "empty": "暂无待处理事件"
+    "empty": "暂无消息"
   },
   "auth": {
     "login": {

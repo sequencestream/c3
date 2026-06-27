@@ -208,7 +208,7 @@ export interface AppMethods {
   reloadWorkcenter(status?: WaitUserInvolveStatus): void
   /** Fetch the next WorkCenter event page using the last visible row as cursor. */
   loadMoreWorkcenter(
-    status: WaitUserInvolveStatus,
+    status: WaitUserInvolveStatus | undefined,
     cursorTime: number,
     cursorExcludeId: string,
   ): void

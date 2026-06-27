@@ -1966,8 +1966,11 @@
   },
   "workcenter": {
     "title": "Workcenter",
+    "notificationTitle": "ユーザー通知メッセージ",
     "toolInput": "ツール入力",
     "filter": {
+      "label": "ステータスフィルター",
+      "all": "すべて",
       "todo": "Todo",
       "done": "Done",
       "canceled": "Canceled",
@@ -2034,7 +2037,7 @@
       "minutesAgo": "{n}m ago",
       "hoursAgo": "{n}h ago"
     },
-    "empty": "No pending events"
+    "empty": "メッセージはありません"
   },
   "auth": {
     "login": {

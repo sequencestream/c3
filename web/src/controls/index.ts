@@ -87,8 +87,8 @@ export function useAppController(): AppCtx {
           // Codes is a stateless read path; the in-memory tree/tabs survive the
           // reconnect, and any expanded dir / open file re-fetches on demand.
         } else if (ctx.viewMode.value === 'workcenter') {
-          // Re-fetch the pending event list (read path).
-          ctx.reloadWorkcenter('todo')
+          // Re-fetch the event list (read path).
+          ctx.reloadWorkcenter()
         } else if (ctx.activeWorkspace.value && ctx.activeSession.value) {
           ctx.send({
             type: 'select_session',

@@ -1966,8 +1966,11 @@
   },
   "workcenter": {
     "title": "Workcenter",
+    "notificationTitle": "사용자 알림 메시지",
     "toolInput": "도구 입력",
     "filter": {
+      "label": "상태 필터",
+      "all": "전체",
       "todo": "Todo",
       "done": "Done",
       "canceled": "Canceled",
@@ -2034,7 +2037,7 @@
       "minutesAgo": "{n}m ago",
       "hoursAgo": "{n}h ago"
     },
-    "empty": "No pending events"
+    "empty": "메시지가 없습니다"
   },
   "auth": {
     "login": {

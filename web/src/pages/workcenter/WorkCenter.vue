@@ -9,6 +9,7 @@
  * 初始无选中事件时右栏显示空状态提示。
  */
 import { ref, computed } from 'vue'
+import BaseDropdown, { type DropdownOption } from '@/components/BaseDropdown/BaseDropdown.vue'
 import EventList from './components/EventList.vue'
 import EventDetail from './components/EventDetail.vue'
 import type {
@@ -16,7 +17,7 @@ import type {
   WaitUserInvolveStatus,
   WorkspaceInfo,
 } from '@ccc/shared/protocol'
-import { useTypedI18n } from '@/i18n'
+import { useTypedI18n, type LocaleKey } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import { useIsMobile } from '@/composables/useBreakpoint'
 
@@ -43,17 +44,28 @@ const emit = defineEmits<{
 
 // ---- Status filter ----
 
-type FilterValue = WaitUserInvolveStatus
-const activeFilter = ref<FilterValue>('todo')
+type FilterValue = WaitUserInvolveStatus | undefined
+type DropdownFilterValue = WaitUserInvolveStatus | 'all'
+const activeFilter = ref<FilterValue>(undefined)
 
-const FILTERS: { key: FilterValue; labelKey: string }[] = [
+const FILTERS: { key: DropdownFilterValue; labelKey: LocaleKey }[] = [
+  { key: 'all', labelKey: 'workcenter.filter.all' },
   { key: 'todo', labelKey: 'workcenter.filter.todo' },
   { key: 'done', labelKey: 'workcenter.filter.done' },
   { key: 'canceled', labelKey: 'workcenter.filter.canceled' },
   { key: 'auto', labelKey: 'workcenter.filter.auto' },
 ]
 
+const filterOptions = computed<DropdownOption<DropdownFilterValue>[]>(() =>
+  FILTERS.map((f) => ({ value: f.key, label: t(f.labelKey) })),
+)
+const dropdownFilter = computed<DropdownFilterValue>({
+  get: () => activeFilter.value ?? 'all',
+  set: (key) => selectFilter(key),
+})
+
 const filteredEvents = computed(() => {
+  if (!activeFilter.value) return props.events
   return props.events.filter((e) => e.status === activeFilter.value)
 })
 
@@ -65,10 +77,11 @@ function toggleListExpanded(): void {
 
 // Switching filter re-fetches the full list: the proactive broadcast carries only
 // 'todo', so non-todo tabs (done / canceled / auto) need a pull to be reliable.
-function selectFilter(key: FilterValue) {
-  activeFilter.value = key
+function selectFilter(key: DropdownFilterValue): void {
+  const next = key === 'all' ? undefined : key
+  activeFilter.value = next
   selectedId.value = null
-  emit('reload', key)
+  emit('reload', next)
 }
 
 // ---- Selected event ----
@@ -82,12 +95,17 @@ const selectedEvent = computed<WaitUserInvolveEvent | null>(() => {
 
 function onSelect(event: WaitUserInvolveEvent) {
   selectedId.value = event.id
+  if (isNotificationEvent(event)) emit('mark-done', event.id)
 }
 
 function onLoadMore(): void {
   const last = filteredEvents.value[filteredEvents.value.length - 1]
   if (!last) return
   emit('load-more', activeFilter.value, last.createdAt, last.id)
+}
+
+function isNotificationEvent(event: WaitUserInvolveEvent): boolean {
+  return event.status === 'todo' && event.requestId === null && event.toolName !== 'AskUserQuestion'
 }
 </script>
 
@@ -111,16 +129,13 @@ function onLoadMore(): void {
         >
           {{ listExpanded ? '⇤' : '⇥' }}
         </button>
-        <div class="wc-filter-bar">
-          <button
-            v-for="f in FILTERS"
-            :key="f.key"
-            class="wc-filter-btn"
-            :class="{ active: activeFilter === f.key }"
-            @click="selectFilter(f.key)"
-          >
-            {{ t(f.labelKey as any) }}
-          </button>
+        <h2 class="wc-sidebar-title">{{ t('workcenter.notificationTitle' as LocaleKey) }}</h2>
+        <div class="wc-filter-select">
+          <BaseDropdown
+            v-model="dropdownFilter"
+            :options="filterOptions"
+            :aria-label="t('workcenter.filter.label' as LocaleKey)"
+          />
         </div>
       </div>
 
@@ -176,6 +191,7 @@ function onLoadMore(): void {
   align-items: center;
   gap: var(--sp-2);
   padding: 0 var(--sp-3);
+  min-height: 40px;
 }
 .wc-list-toggle {
   flex: 0 0 auto;
@@ -194,34 +210,21 @@ function onLoadMore(): void {
   color: var(--c-text);
 }
 
-/* Filter bar inside sidebar head */
-.wc-filter-bar {
-  display: flex;
-  gap: var(--sp-1);
-  padding: var(--sp-2) 0;
-  flex-shrink: 0;
+.wc-sidebar-title {
+  flex: 1;
   min-width: 0;
-}
-.wc-filter-btn {
-  background: transparent;
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  padding: 2px 10px;
-  font-size: 12px;
-  color: var(--c-text-muted);
-  cursor: pointer;
-  transition:
-    color var(--dur-fast) var(--ease-standard),
-    background-color var(--dur-fast) var(--ease-standard);
-}
-.wc-filter-btn:hover {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
   color: var(--c-text);
-  background: var(--c-card);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.wc-filter-btn.active {
-  color: var(--c-text);
-  background: var(--c-card);
-  border-color: var(--c-text);
+.wc-filter-select {
+  flex: 0 0 112px;
+  margin-left: auto;
 }
 
 /* Right column: content pattern */
@@ -260,18 +263,6 @@ function onLoadMore(): void {
 
   .wc-list-toggle {
     display: none;
-  }
-
-  .wc-filter-bar {
-    overflow-x: auto;
-    padding: var(--sp-2) var(--sp-3);
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .wc-filter-btn {
-    min-height: 44px;
-    padding: 0 var(--sp-3);
-    flex: 0 0 auto;
   }
 
   .wc-content {

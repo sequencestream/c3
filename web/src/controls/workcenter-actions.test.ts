@@ -60,6 +60,10 @@ function makeCtx(opts: { intents?: Intent[]; commSessions?: IntentSessionInfo[] 
     ...spies,
     client: {} as never,
     currentWorkspace: ref<string | null>(WS),
+    workcenterEvents: ref<WaitUserInvolveEvent[]>([]),
+    workcenterLoading: ref(false),
+    workcenterAppendNext: ref(false),
+    workcenterHasMore: ref(true),
     intents: ref<Record<string, Intent[]>>({ [WS]: opts.intents ?? [] }),
     intentSessions: ref<Record<string, IntentSessionInfo[]>>({ [WS]: opts.commSessions ?? [] }),
     scheduleLogs: ref<Record<string, never[]>>({}),
@@ -70,6 +74,48 @@ function makeCtx(opts: { intents?: Intent[]; commSessions?: IntentSessionInfo[] 
   installWorkcenterActions(ctx)
   return { ctx, ...spies, requestedIntentId, requestedIntentSubTab, requestedMergedTab }
 }
+
+describe('WorkCenter list actions', () => {
+  it('reloads all statuses when no status filter is provided', () => {
+    const { ctx, send } = makeCtx()
+    ctx.reloadWorkcenter()
+    expect(send).toHaveBeenCalledWith({
+      type: 'list_wait_user_events',
+      workspaceId: WS,
+      status: undefined,
+      limit: 20,
+    })
+  })
+
+  it('loads more with the current status filter, including All as undefined', () => {
+    const { ctx, send } = makeCtx()
+    ctx.loadMoreWorkcenter(undefined, 100, 'e1')
+    expect(send).toHaveBeenCalledWith({
+      type: 'list_wait_user_events',
+      workspaceId: WS,
+      status: undefined,
+      cursorTime: 100,
+      cursorExcludeId: 'e1',
+      limit: 20,
+    })
+  })
+
+  it('markDoneWorkcenter updates event status in place instead of removing the row', () => {
+    const { ctx, send } = makeCtx()
+    ctx.workcenterEvents.value = [
+      event({ id: 'e1', status: 'todo' }),
+      event({ id: 'e2', status: 'todo' }),
+    ]
+
+    ctx.markDoneWorkcenter('e1')
+
+    expect(send).toHaveBeenCalledWith({ type: 'update_wait_user_event', id: 'e1', status: 'done' })
+    expect(ctx.workcenterEvents.value.map((item) => [item.id, item.status])).toEqual([
+      ['e1', 'done'],
+      ['e2', 'todo'],
+    ])
+  })
+})
 
 describe('jumpToSource', () => {
   it('switches to workspace view mode before navigating (was missing — bug fix)', () => {

@@ -3,7 +3,7 @@
  * EventDetail attribute list.
  *
  * - WorkCenter.vue: the 'auto' status filter exists, filters the list, and any
- *   filter click emits `reload` (so non-todo tabs re-fetch the full list).
+ *   filter change emits `reload`; the default All filter shows all statuses.
  * - EventDetail.vue: an `status: 'auto'` event renders its consensus outcome
  *   (summary + per-voter verdicts) and offers NO allow/deny buttons (read-only);
  *   the attribute list renders workspace / session kind / session id / intent,
@@ -132,6 +132,11 @@ function installMatchMedia(matches: boolean): void {
   )
 }
 
+async function selectDropdownItem(wrapper: ReturnType<typeof mount>, index: number): Promise<void> {
+  await wrapper.find('.dd-trigger').trigger('click')
+  await wrapper.findAll('.dd-item')[index].trigger('click')
+}
+
 beforeEach(() => {
   globalThis.localStorage?.removeItem('c3.workcenterListExpanded')
 })
@@ -193,11 +198,11 @@ describe('WorkCenter.vue — desktop message list sizing', () => {
 })
 
 describe('WorkCenter.vue — status filter', () => {
-  it('renders 4 status tabs (no All) and defaults to todo-only', async () => {
+  it('renders a title and status dropdown that defaults to All', async () => {
     const events = [
       ev({ status: 'todo' }),
       ev({ status: 'auto', outcome: toolOutcome }),
-      ev({ status: 'auto', outcome: toolOutcome }),
+      ev({ status: 'done' }),
     ]
     const wrapper = mount(WorkCenter, {
       props: {
@@ -209,18 +214,23 @@ describe('WorkCenter.vue — status filter', () => {
       },
     })
 
-    const btns = wrapper.findAll('.wc-filter-btn')
-    expect(btns).toHaveLength(4) // todo / done / canceled / auto — no 'all'
+    expect(wrapper.find('.wc-sidebar-title').exists()).toBe(true)
+    expect(wrapper.find('.dd').exists()).toBe(true)
+    expect(wrapper.find('.dd-value').text()).toBe('All')
+    await wrapper.find('.dd-trigger').trigger('click')
+    expect(wrapper.findAll('.dd-item')).toHaveLength(5)
 
-    // Default filter is 'todo': only the todo row renders, the auto rows are hidden.
+    // Default filter is All: every status is visible.
+    expect(wrapper.findAll('.wc-event-row')).toHaveLength(3)
+
+    await wrapper.findAll('.dd-item')[4].trigger('click')
     expect(wrapper.findAll('.wc-event-row')).toHaveLength(1)
 
-    // Click the last tab (auto) → only the two auto records remain.
-    await btns[3].trigger('click')
-    expect(wrapper.findAll('.wc-event-row')).toHaveLength(2)
+    await selectDropdownItem(wrapper, 0)
+    expect(wrapper.findAll('.wc-event-row')).toHaveLength(3)
   })
 
-  it('emits reload on every filter switch (non-todo tabs re-fetch)', async () => {
+  it('emits reload on every filter switch, using undefined for All', async () => {
     const wrapper = mount(WorkCenter, {
       props: {
         events: [ev()],
@@ -230,15 +240,37 @@ describe('WorkCenter.vue — status filter', () => {
         workspaces: WORKSPACES,
       },
     })
-    await wrapper.findAll('.wc-filter-btn')[3].trigger('click') // auto
-    await wrapper.findAll('.wc-filter-btn')[1].trigger('click') // done
-    expect(wrapper.emitted('reload')).toEqual([['auto'], ['done']])
+    await selectDropdownItem(wrapper, 4)
+    await selectDropdownItem(wrapper, 2)
+    await selectDropdownItem(wrapper, 0)
+    expect(wrapper.emitted('reload')).toEqual([['auto'], ['done'], [undefined]])
   })
 
-  it('emits load-more with the last visible row cursor', async () => {
+  it('emits load-more with the active filter and last visible row cursor', async () => {
     const events = [
       ev({ id: 'newer', status: 'todo', createdAt: 200 }),
       ev({ id: 'older', status: 'todo', createdAt: 100 }),
+      ev({ id: 'done-hidden', status: 'done', createdAt: 50 }),
+    ]
+    const wrapper = mount(WorkCenter, {
+      props: {
+        events,
+        hasMore: true,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
+    })
+
+    await selectDropdownItem(wrapper, 1)
+    await wrapper.find('.wc-load-more').trigger('click')
+    expect(wrapper.emitted('load-more')).toEqual([['todo', 100, 'older']])
+  })
+
+  it('emits load-more with undefined status when All is selected', async () => {
+    const events = [
+      ev({ id: 'newer', status: 'todo', createdAt: 200 }),
+      ev({ id: 'older-done', status: 'done', createdAt: 100 }),
     ]
     const wrapper = mount(WorkCenter, {
       props: {
@@ -251,7 +283,55 @@ describe('WorkCenter.vue — status filter', () => {
     })
 
     await wrapper.find('.wc-load-more').trigger('click')
-    expect(wrapper.emitted('load-more')).toEqual([['todo', 100, 'older']])
+    expect(wrapper.emitted('load-more')).toEqual([[undefined, 100, 'older-done']])
+  })
+})
+
+describe('WorkCenter.vue — notification auto-complete', () => {
+  it('marks todo notification events done after selection', async () => {
+    const notice = ev({ id: 'notice-1', status: 'todo', requestId: null, toolName: 'NotifyUser' })
+    const wrapper = mount(WorkCenter, {
+      props: {
+        events: [notice],
+        hasMore: false,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
+    })
+
+    await wrapper.find('.wc-event-row').trigger('click')
+    expect(wrapper.emitted('mark-done')).toEqual([['notice-1']])
+  })
+
+  it('does not auto-complete approval or AskUserQuestion events after selection', async () => {
+    const approval = ev({
+      id: 'approval-1',
+      status: 'todo',
+      requestId: 'r1',
+      toolName: 'edit_file',
+    })
+    const ask = ev({
+      id: 'ask-1',
+      status: 'todo',
+      requestId: null,
+      toolName: 'AskUserQuestion',
+      toolInput: askToolInput,
+    })
+    const wrapper = mount(WorkCenter, {
+      props: {
+        events: [approval, ask],
+        hasMore: false,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
+    })
+
+    const rows = wrapper.findAll('.wc-event-row')
+    await rows[0].trigger('click')
+    await rows[1].trigger('click')
+    expect(wrapper.emitted('mark-done')).toBeUndefined()
   })
 })
 

@@ -68,8 +68,9 @@ Adopt options 2, 4, and 6 together.
     read-pass set is an **explicit** read-only union (read built-ins ∪ the two query tools), so
     `save_intents` falls to **deny-by-default** there even if it were ever mis-registered or
     vendor-preapproved — unlike the intent gate, which deliberately lets save through to its
-    handler-owned confirmation. Spec is **claude-only** (the path-level write lock), so these tools
-    ride only the in-process SDK MCP server; there is no driver/HTTP MCP route for a spec session.
+    handler-owned confirmation. Claude spec sessions receive these tools through the in-process SDK
+    MCP server; Codex spec sessions receive the same two-tool set through the loopback HTTP MCP
+    route, with `enabled_tools` derived from that reduced set and no `save_intents`.
 - **`AskUserQuestion` is allowed as an _interactive_, not a _write_, tool.** It only poses
   clarifying questions to the human and carries no file/exec/orchestration side effects, so letting
   the read-only agent ask the user does not violate the read-only posture — it is the same
@@ -149,10 +150,11 @@ Adopt options 2, 4, and 6 together.
   not write the ledger. Reviewers reject any path that lets them read another project, or that turns
   them into a write/confirm tool.
 - The spec-authoring session MUST be given ONLY the two read-only query tools (no `save_intents`),
-  project-bound, via the in-process SDK MCP (claude-only — no driver/HTTP MCP route). The spec
-  permission gate MUST allow only an explicit read-only set (read built-ins ∪ the two query tools)
-  so `save_intents` is denied-by-default there. Reviewers reject giving a spec session any write
-  ledger tool, a cross-project read, or a driver-path intent MCP route.
+  project-bound. Claude uses the in-process SDK MCP server; Codex uses the loopback HTTP MCP route
+  with the same reduced tool list. The spec permission gate MUST allow only an explicit read-only set
+  (read built-ins ∪ the two query tools) so `save_intents` is denied-by-default there. Reviewers
+  reject giving a spec session any write ledger tool, a cross-project read, or the full intent MCP
+  route.
 - The c3 MCP server MUST keep the save tool resident (`alwaysLoad: true`) so it is not
   deferred behind tool search. Reviewers reject dropping `alwaysLoad`, and reject any reading of it
   as a permission relaxation — it pins the schema only; the gate confirmation is unchanged.

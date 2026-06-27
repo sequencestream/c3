@@ -118,8 +118,8 @@ export interface SpecProfile {
    * `workspacePath` is captured at the composition root) and needs no run-level
    * binding (no save, no confirmation gate), so it ignores the `getRunId` / `signal`
    * the binder is handed. Absent ⇒ no in-process MCP (a spec session with no ledger
-   * query tools, the pre-2026-06-20 behaviour). Spec is claude-only, so — unlike
-   * {@link IntentProfile} — there is deliberately no `bindDriverMcp`.
+   * query tools, the pre-2026-06-20 behaviour). Codex spec sessions use the
+   * driver-path twin below.
    */
   bindInProcessMcp?: (binding: {
     getRunId: () => string
@@ -447,15 +447,21 @@ export async function runViaDriver(
   // Override cwd: sandbox container, Codex spec sessions (specs root write
   // boundary), effectiveCwd (worktree isolation), or original workspacePath.
   const specDriverCwd =
-    rt.sessionKind === 'spec' && adapter.vendor === 'codex' ? getSpecsBase(workspacePath) : undefined
+    rt.sessionKind === 'spec' && adapter.vendor === 'codex'
+      ? getSpecsBase(workspacePath)
+      : undefined
   if (specDriverCwd) {
     try {
       mkdirSync(specDriverCwd, { recursive: true })
     } catch (err) {
-      throw new Error(`[c3] Codex spec session cannot create specs root: ${errMsg(err)}`)
+      throw new Error(`[c3] Codex spec session cannot create specs root: ${errMsg(err)}`, {
+        cause: err,
+      })
     }
   }
-  const driverCwd = rt.sandboxHandle ? '/workspace' : (specDriverCwd ?? rt.effectiveCwd ?? workspacePath)
+  const driverCwd = rt.sandboxHandle
+    ? '/workspace'
+    : (specDriverCwd ?? rt.effectiveCwd ?? workspacePath)
 
   // Intent tools over localhost HTTP MCP (2026-06-12-005). Codex can't load
   // the in-process SDK MCP claude uses, so the comm-agent's find/view/save tools are

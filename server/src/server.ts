@@ -54,10 +54,7 @@ import {
   PR_EVENT_MCP_PATH,
   type PrEventMcpTools,
 } from './transport/pr-event-mcp/index.js'
-import {
-  createSpecQueryMcp,
-  SPEC_QUERY_MCP_PATH,
-} from './transport/spec-query-mcp/index.js'
+import { createSpecQueryMcp, SPEC_QUERY_MCP_PATH } from './transport/spec-query-mcp/index.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
 import {
   createConsensusAutoHandler,

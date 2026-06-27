@@ -365,6 +365,122 @@ describe('run-end upsert (F-2, single trigger for both run paths)', () => {
     expect(real?.lastModified).toBe(5_000_000)
     expect(real?.state).toBe('alive')
   })
+
+  it('touchOnRunEnd keeps an existing intent title when the run-end title is New session', () => {
+    upsertPendingRow({
+      pendingId: 'pending:codex-title',
+      workspacePath: wsA,
+      vendor: 'codex',
+      agentId: codexAgent,
+      title: '修复登录断言',
+    })
+    upsertForBind({
+      pendingId: 'pending:codex-title',
+      realId: 'codex-thread-title',
+      workspacePath: wsA,
+      vendor: 'codex',
+      agentId: codexAgent,
+    })
+
+    touchOnRunEnd({
+      realId: 'codex-thread-title',
+      vendor: 'codex',
+      agentId: codexAgent,
+      title: 'New session',
+      lastModified: 5_000_000,
+    })
+
+    const real = getByC3Id(
+      mintC3SessionId({ vendor: 'codex', vendorSessionId: 'codex-thread-title' }),
+    )
+    expect(real?.title).toBe('修复登录断言')
+    expect(real?.lastModified).toBe(5_000_000)
+    expect(real?.state).toBe('alive')
+    expect(listForWorkspace(wsA).map((r) => r.title)).toEqual(['修复登录断言'])
+  })
+
+  it('touchOnRunEnd leaves placeholder titles unchanged when both sides are placeholders', () => {
+    upsertForBind({
+      pendingId: 'pending:placeholder',
+      realId: 'real-placeholder',
+      workspacePath: wsA,
+      vendor: 'claude',
+      agentId: agent1,
+    })
+
+    touchOnRunEnd({
+      realId: 'real-placeholder',
+      vendor: 'claude',
+      agentId: agent1,
+      title: 'New session',
+      lastModified: 5_000_000,
+    })
+
+    const real = getByC3Id(
+      mintC3SessionId({ vendor: 'claude', vendorSessionId: 'real-placeholder' }),
+    )
+    expect(real?.title).toBe('New session')
+  })
+
+  it('touchOnRunEnd replaces an existing title when the run-end title is non-placeholder', () => {
+    upsertPendingRow({
+      pendingId: 'pending:native-title',
+      workspacePath: wsA,
+      vendor: 'codex',
+      agentId: codexAgent,
+      title: 'Intent title',
+    })
+    upsertForBind({
+      pendingId: 'pending:native-title',
+      realId: 'codex-thread-native-title',
+      workspacePath: wsA,
+      vendor: 'codex',
+      agentId: codexAgent,
+    })
+
+    touchOnRunEnd({
+      realId: 'codex-thread-native-title',
+      vendor: 'codex',
+      agentId: codexAgent,
+      title: 'Actual native title',
+      lastModified: 5_000_000,
+    })
+
+    const real = getByC3Id(
+      mintC3SessionId({ vendor: 'codex', vendorSessionId: 'codex-thread-native-title' }),
+    )
+    expect(real?.title).toBe('Actual native title')
+  })
+
+  it('touchOnRunEnd keeps an existing title when the run-end title is Untitled session', () => {
+    upsertPendingRow({
+      pendingId: 'pending:untitled',
+      workspacePath: wsA,
+      vendor: 'codex',
+      agentId: codexAgent,
+      title: '修复登录断言',
+    })
+    upsertForBind({
+      pendingId: 'pending:untitled',
+      realId: 'codex-thread-untitled',
+      workspacePath: wsA,
+      vendor: 'codex',
+      agentId: codexAgent,
+    })
+
+    touchOnRunEnd({
+      realId: 'codex-thread-untitled',
+      vendor: 'codex',
+      agentId: codexAgent,
+      title: 'Untitled session',
+      lastModified: 5_000_000,
+    })
+
+    const real = getByC3Id(
+      mintC3SessionId({ vendor: 'codex', vendorSessionId: 'codex-thread-untitled' }),
+    )
+    expect(real?.title).toBe('修复登录断言')
+  })
 })
 
 describe('listForWorkspace + cross-workspace isolation', () => {

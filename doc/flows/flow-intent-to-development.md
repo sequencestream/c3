@@ -128,9 +128,10 @@ flowchart TD
    configured SDD's work-session prompt rides the system-instruction channel (`RM-R23`). The intent
    moves to `in_progress` and records `lastDevSessionId` (`RM-R8`). The dev session is a normal
    session — it appears in the sidebar, stamped to sort to the top, fanned out to every connection
-   on bind/settle (`SR-R13`). For Codex-backed manual launches, the initial projection title is the
-   source intent title until the existing run-end title mechanism refreshes it; Claude launches keep
-   the existing session-title path. It runs the standard gated loop ([prompt → gated
+   on bind/settle (`SR-R13`). For Codex-backed manual launches, the projection title starts as the
+   source intent title and run-end persistence must not replace it with a default placeholder while
+   the native Codex title is not yet readable; a later non-placeholder native title can still refresh
+   it. Claude launches keep the existing session-title path. It runs the standard gated loop ([prompt → gated
    run](flow-prompt-to-gated-run.md)). The run survives disconnect (`AS-R8`).
 4. **Startup feedback (manual launch only).** Because the steps above can take several seconds
    (worktree create / branch pull, then the agent spawn — slowest with sandbox), the server emits

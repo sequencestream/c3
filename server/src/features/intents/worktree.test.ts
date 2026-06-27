@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import {
   createWorktree,
   detectDefaultBranch,
+  fetchRemoteBase,
   generateBranchName,
   getWorktreePath,
   projectDirName,
@@ -144,6 +145,44 @@ describe('worktreeExists', () => {
 
   it('returns false for a non-existent path', () => {
     expect(worktreeExists(join(dir, 'nonexistent'))).toBe(false)
+  })
+})
+
+describe('fetchRemoteBase', () => {
+  let repoDir: string
+
+  beforeEach(() => {
+    repoDir = mkdtempSync(join(tmpdir(), 'c3-fetch-base-'))
+    createGitRepo(repoDir)
+  })
+
+  afterEach(() => {
+    rmSync(repoDir, { recursive: true, force: true })
+  })
+
+  it('fetches the configured remote base and returns its remote ref when remote is ahead', () => {
+    const branch = gitOut(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+    const bare = attachBareRemote(repoDir)
+    const remoteTip = advanceRemote(bare, branch)
+
+    expect(fetchRemoteBase(repoDir, branch)).toBe(`origin/${branch}`)
+    expect(gitOut(repoDir, ['rev-parse', `origin/${branch}`])).toBe(remoteTip)
+
+    rmSync(bare, { recursive: true, force: true })
+  })
+
+  it('returns null when the repository has no remote', () => {
+    const branch = gitOut(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+
+    expect(fetchRemoteBase(repoDir, branch)).toBeNull()
+  })
+
+  it('returns null when fetching the remote base fails', () => {
+    const bare = attachBareRemote(repoDir)
+
+    expect(fetchRemoteBase(repoDir, 'missing-branch')).toBeNull()
+
+    rmSync(bare, { recursive: true, force: true })
   })
 })
 
@@ -293,6 +332,23 @@ describe('createWorktree', () => {
         stdio: 'ignore',
       }),
     ).toThrow()
+    rmSync(bare, { recursive: true, force: true })
+  })
+
+  it('roots the worktree at the remote base tip when the local base has diverged', () => {
+    const branch = gitOut(repoDir, ['rev-parse', '--abbrev-ref', 'HEAD'])
+    const bare = attachBareRemote(repoDir)
+    const remoteTip = advanceRemote(bare, branch)
+
+    writeFileSync(join(repoDir, 'LOCAL_ONLY.md'), 'local')
+    execFileSync('git', ['add', '-A'], { cwd: repoDir, stdio: 'ignore' })
+    execFileSync('git', ['commit', '-m', 'local commit'], { cwd: repoDir, stdio: 'ignore' })
+    const localTip = gitOut(repoDir, ['rev-parse', branch])
+    expect(localTip).not.toBe(remoteTip)
+
+    const result = createWorktree(repoDir, INTENT_ID, 'Test feature', branch)
+    expect(gitOut(result.worktreePath, ['rev-parse', 'HEAD'])).toBe(remoteTip)
+
     rmSync(bare, { recursive: true, force: true })
   })
 })

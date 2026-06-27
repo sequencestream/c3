@@ -117,8 +117,12 @@ flowchart TD
    synchronously **claims** the `intentId` in a single-process launch set; a concurrent duplicate
    start returns `intent.devStartInFlight` and creates nothing (`RM-R8`).
 2. **Git branch mode (`WorkspaceSetting.gitBranchMode`).** `worktree` ⇒ create/reuse an isolated
-   per-intent worktree under the c3 home directory, branched from `defaultMainBranch`;
-   `current-branch` (default) ⇒ develop in place. The dev session's effective working directory is set
+   per-intent worktree under the c3 home directory, branched from the latest fetched remote
+   `defaultMainBranch` tip when available, falling back best-effort to the local
+   `defaultMainBranch` when there is no remote, the remote branch is unavailable, or fetch fails;
+   `current-branch` (default) ⇒ develop in place. Worktree startup never auto-merges/rebases the
+   user's local main checkout, and the local main branch's stale/diverged/non-current state does
+   not select the new worktree base. The dev session's effective working directory is set
    accordingly (`RM-R8`).
 3. **intent-management → agent-session.** A **background normal session** is started with the
    shared dev prompt builder used by both manual launch and automation. The visible turn carries
@@ -134,12 +138,13 @@ flowchart TD
    it. Claude launches keep the existing session-title path. It runs the standard gated loop ([prompt → gated
    run](flow-prompt-to-gated-run.md)). The run survives disconnect (`AS-R8`).
 4. **Startup feedback (manual launch only).** Because the steps above can take several seconds
-   (worktree create / branch pull, then the agent spawn — slowest with sandbox), the server emits
+   (remote main fetch, worktree create / branch pull, then the agent spawn — slowest with sandbox), the server emits
    coarse, connection-directed `dev_launch_progress` stages after synchronous validation passes:
-   `preparing-workspace` (before the git branch phase) and `launching` (before the spawn); the
-   previously-silent async launch failure now emits `failed`. The web console arms a blocking
-   startup overlay on the click, **shows it immediately, and keeps it visible for a minimum
-   duration to prevent flashing**, stepping through an ordered list aligned to those stages. The overlay closes on the success
+   `fetching-remote-main` (before the worktree remote-base fetch), `preparing-worktree` (before the
+   git branch phase), and `launching` (before the spawn); the previously-silent async launch failure
+   now emits `failed`. The web console arms a blocking startup overlay on the click, **shows it
+   immediately, and keeps it visible for a minimum duration to prevent flashing**, stepping through
+   an ordered list aligned to those stages: 拉取远程主分支、准备 worktree、启动开发会话、进入会话。 The overlay closes on the success
    terminal (the target intent flipping to `in_progress` in the regular `intents` broadcast),
    on `failed` / an `intent.*` action error, and on a safety timeout so a lost signal never traps
    the user. Synchronous validation failures stay on the `error` channel and emit no progress.

@@ -15,7 +15,7 @@ describe('beginDevLaunch — immediate visibility', () => {
   it('creates an immediately visible model with its dwell origin at click time', () => {
     expect(beginDevLaunch('A', 1_000)).toMatchObject({
       intentId: 'A',
-      phase: 'preparing-workspace',
+      phase: 'fetching-remote-main',
       startedAt: 1_000,
       visibleAt: 1_000,
       visible: true,
@@ -24,29 +24,43 @@ describe('beginDevLaunch — immediate visibility', () => {
 })
 
 describe('stepStatusesForPhase — stage advances steps', () => {
-  it('preparing-workspace activates step 1, rest pending', () => {
-    expect(stepStatusesForPhase('preparing-workspace')).toEqual(['active', 'pending', 'pending'])
+  it('fetching-remote-main activates step 1, rest pending', () => {
+    expect(stepStatusesForPhase('fetching-remote-main')).toEqual([
+      'active',
+      'pending',
+      'pending',
+      'pending',
+    ])
   })
 
-  it('launching completes step 1 and activates step 2', () => {
-    expect(stepStatusesForPhase('launching')).toEqual(['done', 'active', 'pending'])
+  it('preparing-worktree completes step 1 and activates step 2', () => {
+    expect(stepStatusesForPhase('preparing-worktree')).toEqual([
+      'done',
+      'active',
+      'pending',
+      'pending',
+    ])
+  })
+
+  it('launching completes steps 1-2 and activates step 3', () => {
+    expect(stepStatusesForPhase('launching')).toEqual(['done', 'done', 'active', 'pending'])
   })
 
   it('ready marks every step done', () => {
-    expect(stepStatusesForPhase('ready')).toEqual(['done', 'done', 'done'])
+    expect(stepStatusesForPhase('ready')).toEqual(['done', 'done', 'done', 'done'])
   })
 
   it('reduceDevLaunch advances the phase on a matching stage', () => {
     const m = beginDevLaunch('A', 0)
     const next = reduceDevLaunch(m, { kind: 'stage', intentId: 'A', stage: 'launching', now: 1 })
     expect(next.model?.phase).toBe('launching')
-    expect(stepStatusesForPhase(next.model!.phase)).toEqual(['done', 'active', 'pending'])
+    expect(stepStatusesForPhase(next.model!.phase)).toEqual(['done', 'done', 'active', 'pending'])
   })
 
   it('ignores a stage for a different intent', () => {
     const m = beginDevLaunch('A', 0)
     const next = reduceDevLaunch(m, { kind: 'stage', intentId: 'B', stage: 'launching', now: 1 })
-    expect(next.model?.phase).toBe('preparing-workspace')
+    expect(next.model?.phase).toBe('fetching-remote-main')
     expect(next.closedReason).toBeUndefined()
   })
 })
@@ -144,7 +158,8 @@ describe('reduceDevLaunch — minimum dwell terminal convergence', () => {
   it('isTerminalPhase recognizes ready / failed only', () => {
     expect(isTerminalPhase('ready')).toBe(true)
     expect(isTerminalPhase('failed')).toBe(true)
-    expect(isTerminalPhase('preparing-workspace')).toBe(false)
+    expect(isTerminalPhase('fetching-remote-main')).toBe(false)
+    expect(isTerminalPhase('preparing-worktree')).toBe(false)
     expect(isTerminalPhase('launching')).toBe(false)
   })
 })

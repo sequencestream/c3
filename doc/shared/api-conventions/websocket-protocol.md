@@ -525,9 +525,9 @@
 
 ### `dev_launch_progress`
 
-手动 `start_development` 启动的粗粒度阶段进度，按连接定向（非广播），驱动客户端的开发启动进度遮罩（仅当启动超过客户端阈值才显示）。只承载阶段枚举与目标 `intentId`，**不含路径 / 命令 / 错误细节**（不泄露无关内部信息）。`stage` 取值 `preparing-workspace`（进入 worktree 创建 / 分支 pull 前）、`launching`（拉起开发 agent 进程前）、`failed`（返回后的异步启动失败——修复此前静默失败的缺口）。**成功终态不在此发**：客户端从常规 `intents` 广播中目标意图翻为 `in_progress` 推断就绪并关闭遮罩。
+手动 `start_development` 启动的粗粒度阶段进度，按连接定向（非广播），驱动客户端的开发启动进度遮罩。只承载阶段枚举与目标 `intentId`，**不含路径 / 命令 / 错误细节**（不泄露无关内部信息）。`stage` 取值 `fetching-remote-main`（worktree 模式下尝试拉取远程主分支基底前）、`preparing-worktree`（进入 worktree 创建 / 分支 pull 前）、`launching`（拉起开发 agent 进程前）、`failed`（返回后的异步启动失败——修复此前静默失败的缺口）。**成功终态不在此发**：客户端从常规 `intents` 广播中目标意图翻为 `in_progress` 推断就绪并关闭遮罩。
 
-**字段：** `intentId: string`, `stage: DevLaunchStage`（`'preparing-workspace' | 'launching' | 'failed'`）
+**字段：** `intentId: string`, `stage: DevLaunchStage`（`'fetching-remote-main' | 'preparing-worktree' | 'launching' | 'failed'`）
 
 ### `intent_sessions`
 

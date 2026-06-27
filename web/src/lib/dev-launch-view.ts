@@ -29,7 +29,12 @@ export const DEV_LAUNCH_SAFETY_TIMEOUT_MS = 60_000
 export type DevLaunchPhase = DevLaunchStage | 'ready'
 
 /** The ordered, user-facing steps the overlay renders (labels live in i18n). */
-export const DEV_LAUNCH_STEPS = ['prepare-workspace', 'launch-session', 'enter-session'] as const
+export const DEV_LAUNCH_STEPS = [
+  'fetch-remote-main',
+  'prepare-worktree',
+  'launch-session',
+  'enter-session',
+] as const
 export type DevLaunchStep = (typeof DEV_LAUNCH_STEPS)[number]
 
 export type StepStatus = 'pending' | 'active' | 'done'
@@ -72,7 +77,7 @@ export type DevLaunchEvent =
 
 /** Build the initial in-flight (visible) model for a just-clicked launch. */
 export function beginDevLaunch(intentId: string, now: number): DevLaunchModel {
-  return { intentId, phase: 'preparing-workspace', startedAt: now, visibleAt: now, visible: true }
+  return { intentId, phase: 'fetching-remote-main', startedAt: now, visibleAt: now, visible: true }
 }
 
 /** Terminal phases stop progress (the overlay closes around these). */
@@ -109,15 +114,17 @@ function settleDevLaunch(
 }
 
 /**
- * Index of the active step for a phase: 0/1 for the two progress stages, the
+ * Index of the active step for a phase: 0/1/2 for the progress stages, the
  * step count (all done) for the resolved `ready`, -1 for `failed` (no active).
  */
 function activeStepIndex(phase: DevLaunchPhase): number {
   switch (phase) {
-    case 'preparing-workspace':
+    case 'fetching-remote-main':
       return 0
-    case 'launching':
+    case 'preparing-worktree':
       return 1
+    case 'launching':
+      return 2
     case 'ready':
       return DEV_LAUNCH_STEPS.length
     case 'failed':

@@ -605,7 +605,8 @@
     "devLaunch": {
       "title": "正在启动开发…",
       "step": {
-        "prepareWorkspace": "准备代码工作区",
+        "fetchRemoteMain": "拉取远程主分支代码",
+        "prepareWorktree": "准备 worktree",
         "launchSession": "启动开发会话",
         "enterSession": "进入会话"
       },

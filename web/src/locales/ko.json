@@ -606,7 +606,8 @@
     "devLaunch": {
       "title": "개발을 시작하는 중…",
       "step": {
-        "prepareWorkspace": "코드 작업 공간 준비",
+        "fetchRemoteMain": "원격 메인 브랜치 가져오기",
+        "prepareWorktree": "worktree 준비",
         "launchSession": "개발 세션 시작",
         "enterSession": "세션 진입"
       },

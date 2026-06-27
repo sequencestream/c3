@@ -54,6 +54,10 @@ vi.mock('../../kernel/agent-config/index.js', () => ({
   setSessionAgent: vi.fn(),
 }))
 
+vi.mock('../works/work-session-store.js', () => ({
+  upsertPendingRow: vi.fn(),
+}))
+
 vi.mock('../../kernel/agent/process/launcher.js', () => ({
   probeAll: vi.fn(),
 }))
@@ -104,6 +108,7 @@ import {
   getForgeOverride,
   getSddEnabled,
 } from '../../kernel/config/index.js'
+import { getDefaultAgentId, resolveSessionVendor } from '../../kernel/agent-config/index.js'
 import { createWorktree, getWorktreePath, readBranch } from './worktree.js'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
 import { judgeCompletion } from './judge.js'
@@ -111,6 +116,7 @@ import { ensureRuntime, getRuntime } from '../../runs.js'
 import { hasWorkspace } from '../../state.js'
 import { releaseDevLaunch, resetForTests as resetDevLinksForTests } from './dev-link.js'
 import { buildDevSpecNote, SDD_WORK_SESSION_INSTRUCT } from './dev-prompt.js'
+import { upsertPendingRow } from '../works/work-session-store.js'
 
 // ---- Test-only types (mirrors the Handler shape without importing transport) ----
 
@@ -304,6 +310,8 @@ describe('startDevelopment — manual start dep merge validation', () => {
     vi.clearAllMocks()
     resetDevLinksForTests()
     vi.mocked(getSddEnabled).mockReturnValue(false)
+    vi.mocked(getDefaultAgentId).mockReturnValue('default-agent')
+    vi.mocked(resolveSessionVendor).mockReturnValue('claude')
   })
 
   function makeConn() {
@@ -388,6 +396,57 @@ describe('startDevelopment — manual start dep merge validation', () => {
     // current-branch mode: no merge check → should proceed (no error sent)
     const errors = sent.filter((m: Record<string, unknown>) => m.type === 'error')
     expect(errors).toHaveLength(0)
+  })
+
+  it('codex: writes a pending projection row with the intent title', async () => {
+    const req = makeIntent({ id: 'B', title: 'Set Codex work session title' })
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    vi.mocked(getIntent).mockReturnValue(req)
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(resolveSessionVendor).mockReturnValue('codex')
+
+    const { conn } = makeConn()
+    const ctx = makeCtx()
+
+    await startDevelopment(
+      ctx as unknown as Parameters<typeof startDevelopment>[0],
+      conn as unknown as Parameters<typeof startDevelopment>[1],
+      { type: 'start_development', workspaceId: 'test-proj', intentId: 'B' },
+    )
+
+    const pendingId = vi.mocked(ensureRuntime).mock.calls[0]?.[0]
+    expect(pendingId).toMatch(/^pending:/)
+    expect(resolveSessionVendor).toHaveBeenCalledWith(pendingId)
+    expect(upsertPendingRow).toHaveBeenCalledWith({
+      pendingId,
+      workspacePath: '/test/proj',
+      vendor: 'codex',
+      agentId: 'default-agent',
+      title: 'Set Codex work session title',
+    })
+  })
+
+  it('claude: leaves startDevelopment on the existing no-pending-row path', async () => {
+    const req = makeIntent({ id: 'B', title: 'Claude keeps existing behavior' })
+    vi.mocked(hasWorkspace).mockReturnValue(true)
+    vi.mocked(getIntent).mockReturnValue(req)
+    vi.mocked(listIntents).mockReturnValue([req])
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(resolveSessionVendor).mockReturnValue('claude')
+
+    const { conn } = makeConn()
+    const ctx = makeCtx()
+
+    await startDevelopment(
+      ctx as unknown as Parameters<typeof startDevelopment>[0],
+      conn as unknown as Parameters<typeof startDevelopment>[1],
+      { type: 'start_development', workspaceId: 'test-proj', intentId: 'B' },
+    )
+
+    expect(upsertPendingRow).not.toHaveBeenCalled()
   })
 
   it('worktree: allows manual start when dep is done and merged', async () => {

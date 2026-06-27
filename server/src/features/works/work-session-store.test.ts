@@ -131,6 +131,19 @@ describe('createSession pending row (F-11 replacement for setPendingIntent)', ()
     expect(row?.vendorSessionId).toBeNull()
     expect(row?.lastModified).toBeNull()
     expect(row?.state).toBe('born')
+    expect(row?.title).toBe('New session')
+  })
+
+  it('writes a pending row with an explicit initial title', () => {
+    upsertPendingRow({
+      pendingId: 'pending:titled',
+      workspacePath: wsA,
+      vendor: 'codex',
+      agentId: codexAgent,
+      title: 'Ship the dashboard',
+    })
+
+    expect(getByC3Id('pending:titled')?.title).toBe('Ship the dashboard')
   })
 
   it('updatePendingRowAgentId rewrites the agent (F-6 pending re-target)', () => {
@@ -213,6 +226,65 @@ describe('upsertForBind (F-5)', () => {
     expect(row?.lastModified).toBe(nowMs)
     expect(row?.state).toBe('born')
     expect(listForWorkspace(wsA).map((r) => r.vendorSessionId)).toEqual(['codex-thread-1'])
+  })
+
+  it('uses a non-placeholder pending title for the bound real row', () => {
+    upsertPendingRow({
+      pendingId: 'pending:codex-title',
+      workspacePath: wsA,
+      vendor: 'codex',
+      agentId: codexAgent,
+      title: 'Set Codex title from intent',
+    })
+
+    upsertForBind({
+      pendingId: 'pending:codex-title',
+      realId: 'codex-thread-title',
+      workspacePath: wsA,
+      vendor: 'codex',
+      agentId: codexAgent,
+    })
+
+    const row = getByC3Id(
+      mintC3SessionId({ vendor: 'codex', vendorSessionId: 'codex-thread-title' }),
+    )
+    expect(row?.title).toBe('Set Codex title from intent')
+  })
+
+  it('uses the default title when binding without a pending row', () => {
+    upsertForBind({
+      pendingId: 'pending:missing',
+      realId: 'real-no-pending',
+      workspacePath: wsA,
+      vendor: 'claude',
+      agentId: agent1,
+    })
+
+    const row = getByC3Id(mintC3SessionId({ vendor: 'claude', vendorSessionId: 'real-no-pending' }))
+    expect(row?.title).toBe('New session')
+  })
+
+  it('keeps the default title when the pending row carries the placeholder', () => {
+    upsertPendingRow({
+      pendingId: 'pending:placeholder',
+      workspacePath: wsA,
+      vendor: 'claude',
+      agentId: agent1,
+      title: 'New session',
+    })
+
+    upsertForBind({
+      pendingId: 'pending:placeholder',
+      realId: 'real-placeholder',
+      workspacePath: wsA,
+      vendor: 'claude',
+      agentId: agent1,
+    })
+
+    const row = getByC3Id(
+      mintC3SessionId({ vendor: 'claude', vendorSessionId: 'real-placeholder' }),
+    )
+    expect(row?.title).toBe('New session')
   })
 })
 

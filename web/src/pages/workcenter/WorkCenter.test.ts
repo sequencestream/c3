@@ -10,7 +10,7 @@
  *   hiding the intent row when there is no owning intent; the jump button emits.
  * Assertions key off structure / emitted events, never visible copy (i18n-spec §4).
  */
-import { describe, it, expect } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import WorkCenter from './WorkCenter.vue'
 import EventDetail from './components/EventDetail.vue'
@@ -49,6 +49,65 @@ const toolOutcome: AnyConsensusOutcome = {
   unanimous: true,
   decision: 'allow',
 }
+
+function installMatchMedia(matches: boolean): void {
+  vi.stubGlobal(
+    'matchMedia',
+    (query: string): MediaQueryList =>
+      ({
+        matches,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }) as unknown as MediaQueryList,
+  )
+}
+
+beforeEach(() => {
+  globalThis.localStorage?.removeItem('c3.workcenterListExpanded')
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  globalThis.localStorage?.removeItem('c3.workcenterListExpanded')
+})
+
+describe('WorkCenter.vue — desktop message list sizing', () => {
+  it('renders the desktop list toggle collapsed by default', () => {
+    const wrapper = mount(WorkCenter, {
+      props: { events: [ev()], currentWorkspace: '/ws', workspaces: WORKSPACES },
+    })
+
+    expect(wrapper.find('.wc-list-toggle').exists()).toBe(true)
+    expect(wrapper.find('.wc-sidebar').classes()).not.toContain('expanded')
+  })
+
+  it('toggles the sidebar expanded class on click', async () => {
+    const wrapper = mount(WorkCenter, {
+      props: { events: [ev()], currentWorkspace: '/ws', workspaces: WORKSPACES },
+    })
+
+    await wrapper.find('.wc-list-toggle').trigger('click')
+    expect(wrapper.find('.wc-sidebar').classes()).toContain('expanded')
+
+    await wrapper.find('.wc-list-toggle').trigger('click')
+    expect(wrapper.find('.wc-sidebar').classes()).not.toContain('expanded')
+  })
+
+  it('does not render the list toggle on mobile', () => {
+    installMatchMedia(true)
+
+    const wrapper = mount(WorkCenter, {
+      props: { events: [ev()], currentWorkspace: '/ws', workspaces: WORKSPACES },
+    })
+
+    expect(wrapper.find('.wc-list-toggle').exists()).toBe(false)
+  })
+})
 
 describe('WorkCenter.vue — status filter', () => {
   it('renders 4 status tabs (no All) and defaults to todo-only', async () => {

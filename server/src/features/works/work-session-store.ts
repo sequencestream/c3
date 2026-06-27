@@ -413,7 +413,9 @@ export function updateRealRowTitle(realId: string, vendor: VendorId, title: stri
  * paths (claude `run-lifecycle.ts` AND codex/opencode `run-via-driver.ts`
  * both call `finalizeRun` in their teardown). Updates `title`,
  * `last_modified`, and `agent_id` (the latter is a defensive re-stamp in
- * case the agent just swapped mid-run).
+ * case the agent just swapped mid-run). A default placeholder title must not
+ * overwrite an existing real title: Codex intent sessions can bind with the
+ * intent title before the native JSONL title is readable at first run-end.
  */
 export function touchOnRunEnd(input: {
   realId: string
@@ -427,8 +429,15 @@ export function touchOnRunEnd(input: {
   const c3Id = mintC3SessionId({ vendor: input.vendor, vendorSessionId: input.realId })
   d.run(
     `UPDATE work_session_metadata
-       SET title=?, last_modified=?, agent_id=?, state='alive', state_updated_at=?
+       SET title=CASE
+             WHEN ? IN ('New session', 'Untitled session')
+              AND title NOT IN ('New session', 'Untitled session')
+             THEN title
+             ELSE ?
+           END,
+           last_modified=?, agent_id=?, state='alive', state_updated_at=?
      WHERE c3_id=? AND kind='real'`,
+    input.title,
     input.title,
     input.lastModified,
     input.agentId,

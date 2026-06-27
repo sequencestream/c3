@@ -1085,6 +1085,10 @@
         "vulnAnalysis": {
           "title": "每周漏洞分析",
           "description": "每周一 09:00 分析最近 7 天代码变化中的安全漏洞,把确认的发现落为草稿意图待人工评审修复。"
+        },
+        "worktreeCleanup": {
+          "title": "清除过期worktree",
+          "description": "每周日 03:00 清理超过 7 天未变化的 c3 托管 worktree,仅在无未提交改动、意图状态和分支安全检查通过时删除。"
         }
       },
       "empty": "还没有定时任务。",

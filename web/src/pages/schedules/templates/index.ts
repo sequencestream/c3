@@ -11,10 +11,12 @@ export interface ScheduleTemplate {
     | 'schedule.list.templates.prPoller.title'
     | 'schedule.list.templates.archReview.title'
     | 'schedule.list.templates.vulnAnalysis.title'
+    | 'schedule.list.templates.worktreeCleanup.title'
   descriptionKey:
     | 'schedule.list.templates.prPoller.description'
     | 'schedule.list.templates.archReview.description'
     | 'schedule.list.templates.vulnAnalysis.description'
+    | 'schedule.list.templates.worktreeCleanup.description'
   build(args: ScheduleTemplateBuildArgs): CreateScheduleInput
 }
 
@@ -162,11 +164,84 @@ const WEEKLY_VULN_ANALYSIS: ScheduleTemplate = {
   }),
 }
 
+export const WEEKLY_WORKTREE_CLEANUP_PROMPT = `You are the weekly expired c3 worktree cleanup runner for this workspace.
+
+GOAL
+- Delete only c3-managed worktrees under <c3-home>/worktrees/<projectDirName>/intent-*/ when they are stale and safe.
+- A worktree is stale only when its last change is more than 7 days old.
+- Always report every deleted and skipped worktree with the path, parsed intent ID when available, branch name when available, and the exact reason or cleanup outcome.
+
+DISCOVERY
+1. Determine the workspace project root and c3 home used by this c3 installation.
+2. Inspect only directories matching <c3-home>/worktrees/<projectDirName>/intent-*/.
+3. Ignore every path outside that managed prefix. Never inspect or delete user-created worktrees elsewhere.
+
+PER-WORKTREE DECISION TREE
+For each candidate directory:
+1. Verify it is a valid git worktree by checking for a .git marker. If missing, skip with reason "broken worktree entry".
+2. Compute lastChange as the newest of:
+   - git log -1 --format=%ct HEAD
+   - mtimes for dirty, staged, or untracked files reported by git status --porcelain
+   If no commit or file-change signal exists, skip with reason "no reliable age signal".
+3. If now - lastChange is less than or equal to 7 days, skip with reason "recent changes".
+4. Run git status --porcelain. If output is non-empty, skip with reason "uncommitted changes".
+5. Extract the UUID from the intent-<uuid> directory name.
+6. Call mcp__c3__view_intent for that UUID when it is present:
+   - If the intent exists and its status is done or cancelled, continue.
+   - If the intent exists with any other status, skip with reason "intent active".
+   - If the intent is missing or the lookup cannot find a row, continue and record that the worktree is an orphan managed worktree.
+   - If the lookup fails for another reason, skip with reason "intent lookup failed".
+7. Read the current branch with git rev-parse --abbrev-ref HEAD. Continue only when the branch starts with intent/. Skip protected, ambiguous, detached, or non-c3 branch names with reason "branch not c3-managed".
+8. Delete the worktree with git worktree remove <path>. If it fails, skip remaining cleanup for that worktree and log the failure.
+9. Delete the local branch from the project root with git branch -d <branch>. If it fails, log the branch deletion failure and do not attempt remote deletion for that branch.
+10. If local branch deletion succeeded, check whether origin has exactly the same remote branch using git ls-remote origin <branch>. If it exists, run git push origin --delete <branch>. If it does not exist or the push fails, log that outcome and continue.
+
+SAFETY RULES
+- Never delete a worktree with uncommitted, staged, or untracked changes.
+- Never delete active-intent worktrees.
+- Never delete branches unless the name starts with intent/ and the local branch was associated with the removed worktree.
+- Never use force flags for worktree or branch deletion.
+- Never use wildcards or glob branch deletion.
+- Continue processing remaining worktrees after a skip or cleanup failure.
+
+FINAL LOG
+Finish with a concise summary:
+- deleted count
+- skipped count
+- local branches deleted
+- remote branches deleted
+- remote branch deletions skipped or failed`
+
+const WEEKLY_WORKTREE_CLEANUP: ScheduleTemplate = {
+  id: 'weekly-worktree-cleanup',
+  titleKey: 'schedule.list.templates.worktreeCleanup.title',
+  descriptionKey: 'schedule.list.templates.worktreeCleanup.description',
+  build: ({ workspaceId, agentId }) => ({
+    type: 'llm',
+    config: { prompt: WEEKLY_WORKTREE_CLEANUP_PROMPT },
+    workspaceId,
+    agentId,
+    vendor: 'claude',
+    triggerType: 'cron',
+    cronExpression: '0 3 * * 0',
+    mode: 'bypassPermissions',
+    toolAllowlist: [
+      'Read',
+      'Grep',
+      'Glob',
+      'Bash',
+      'mcp__c3__find_intents',
+      'mcp__c3__view_intent',
+    ],
+  }),
+}
+
 /** Register new schedule templates here; the list UI is intentionally generic. */
 export const SCHEDULE_TEMPLATES: readonly ScheduleTemplate[] = [
   PR_STATUS_POLLER,
   WEEKLY_ARCH_REVIEW,
   WEEKLY_VULN_ANALYSIS,
+  WEEKLY_WORKTREE_CLEANUP,
 ]
 
 export function getScheduleTemplate(id: string): ScheduleTemplate | undefined {

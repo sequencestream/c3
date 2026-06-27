@@ -32,6 +32,7 @@ import {
   getSddEnabled,
 } from '../../kernel/config/index.js'
 import {
+  getDefaultAgentId,
   resolveIntentAgent,
   resolveSessionAgentSwitch,
   resolveSessionVendor,
@@ -87,6 +88,7 @@ import { getDiscussion } from '../discussions/store.js'
 import { commitAndPush, createGhPr } from '../../git.js'
 import { createWorktree, getWorktreePath, pullCurrentBranch, readBranch } from './worktree.js'
 import { resolveSpecFileAbs } from './specs-root.js'
+import { upsertPendingRow } from '../works/work-session-store.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 // ---- Local helpers (agent binding for intent comm sessions) ----
@@ -801,6 +803,16 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // itself in current-branch mode).
   const devRt = ensureRuntime(devId, proj, getDefaultMode(proj), [], 'work')
   devRt.effectiveCwd = effectiveCwd
+  const resolvedVendor = resolveSessionVendor(devId)
+  if (resolvedVendor === 'codex') {
+    upsertPendingRow({
+      pendingId: devId,
+      workspacePath: proj,
+      vendor: resolvedVendor,
+      agentId: getDefaultAgentId(),
+      title: req.title,
+    })
+  }
   // Split the first turn into its delivery channels: the SDD work contract rides the
   // system channel, a slash-command dev skill leads the (non-echoed) model user turn,
   // and only the visible business context is echoed (hide-session-system-instructions).

@@ -59,6 +59,7 @@ const COLUMNS = [
 
 /** Default title for a freshly-bound row (no native title source at bind time). */
 const DEFAULT_TITLE = 'New session'
+const PLACEHOLDER_TITLES = new Set([DEFAULT_TITLE, 'Untitled session'])
 
 /** Schema v1: create the table + two indexes. Migrations key off `table_info`. */
 const SCHEMA = `
@@ -264,6 +265,7 @@ export function upsertPendingRow(input: {
   workspacePath: string
   vendor: VendorId
   agentId: string
+  title?: string
 }): void {
   const d = db()
   if (!d) return
@@ -278,7 +280,7 @@ export function upsertPendingRow(input: {
     input.vendor,
     null,
     input.agentId,
-    DEFAULT_TITLE,
+    input.title ?? DEFAULT_TITLE,
     null,
     'born',
     t,
@@ -314,8 +316,9 @@ export function updatePendingRowAgentId(input: {
  * `freezeSessionAgent`). Atomically drops the pending row + inserts the
  * real row in one transaction (F-5 idempotence — a retry-bind of an
  * already-bound realId is a no-op via `INSERT OR IGNORE` on the real
- * row's `c3_id` PK). The real row's `title` is the placeholder (no
- * native source at bind); `last_modified` is stamped to the BIND TIME
+ * row's `c3_id` PK). The real row's `title` starts from the pending row
+ * when it carries a non-placeholder title; otherwise it uses the placeholder
+ * (no native source at bind). `last_modified` is stamped to the BIND TIME
  * (`now()`) so a freshly-bound session sorts to the TOP of the list
  * immediately — a just-created/just-active session is, by definition, the
  * most recent. A null here would sink the row to the very bottom of the
@@ -338,6 +341,13 @@ export function upsertForBind(input: {
   const c3Id = mintC3SessionId({ vendor: input.vendor, vendorSessionId: input.realId })
   const t = now()
   tx(d, () => {
+    const pending = d.get<{ title: string }>(
+      'SELECT title FROM work_session_metadata WHERE c3_id=? AND kind=?',
+      input.pendingId,
+      'pending',
+    )
+    const title =
+      pending?.title && !PLACEHOLDER_TITLES.has(pending.title) ? pending.title : DEFAULT_TITLE
     d.run('DELETE FROM work_session_metadata WHERE c3_id=? AND kind=?', input.pendingId, 'pending')
     d.run(
       `INSERT OR IGNORE INTO work_session_metadata
@@ -349,7 +359,7 @@ export function upsertForBind(input: {
       input.vendor,
       input.realId,
       input.agentId,
-      DEFAULT_TITLE,
+      title,
       t,
       'born',
       t,

@@ -86,7 +86,13 @@ import {
 } from './automation.js'
 import { getDiscussion } from '../discussions/store.js'
 import { commitAndPush, createGhPr } from '../../git.js'
-import { createWorktree, getWorktreePath, pullCurrentBranch, readBranch } from './worktree.js'
+import {
+  createWorktree,
+  fetchRemoteBase,
+  getWorktreePath,
+  pullCurrentBranch,
+  readBranch,
+} from './worktree.js'
 import { resolveSpecFileAbs } from './specs-root.js'
 import { upsertPendingRow } from '../works/work-session-store.js'
 import type { Handler } from '../../transport/handler-registry.js'
@@ -753,7 +759,7 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   // directed progress so the client can show a startup overlay if it outlasts
   // the client-side threshold. Sync-validation failures above stay on the
   // `error` channel only; they never emit progress.
-  conn.send({ type: 'dev_launch_progress', intentId: req.id, stage: 'preparing-workspace' })
+  conn.send({ type: 'dev_launch_progress', intentId: req.id, stage: 'fetching-remote-main' })
   // ── Git branch strategy (2026-06-10) ───────────────────────────────────
   // The workspace's `gitBranchMode` decides where the dev agent runs:
   //  - `worktree`: create (or reuse) an isolated git worktree at
@@ -764,7 +770,10 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   let effectiveCwd: string
   if (getGitBranchMode(proj) === 'worktree') {
     try {
-      const wt = createWorktree(proj, req.id, req.title, getDefaultMainBranch(proj))
+      const baseBranch = getDefaultMainBranch(proj)
+      if (baseBranch?.trim()) fetchRemoteBase(proj, baseBranch)
+      conn.send({ type: 'dev_launch_progress', intentId: req.id, stage: 'preparing-worktree' })
+      const wt = createWorktree(proj, req.id, req.title, baseBranch)
       effectiveCwd = wt.worktreePath
       setBranchName(req.id, wt.branchName)
     } catch (err) {
@@ -779,6 +788,7 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
       return
     }
   } else {
+    conn.send({ type: 'dev_launch_progress', intentId: req.id, stage: 'preparing-worktree' })
     // current-branch: develop directly in the project checkout. Pull latest
     // first so dev builds on up-to-date code; a diverged branch is a hard stop
     // (the user must reconcile before we touch it).

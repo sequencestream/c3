@@ -1681,11 +1681,17 @@ export type IntentStatus =
  * phases, never paths / commands / error detail (so no internal information
  * leaks). The success terminal is NOT a stage: it is derived from the intent
  * flipping to `in_progress` in the regular `intents` broadcast.
- * - `preparing-workspace` — before worktree create / branch pull.
+ * - `fetching-remote-main` — before the worktree base fetch.
+ * - `preparing-worktree` — before worktree create / branch pull.
  * - `launching` — before the dev agent process is spawned.
  * - `failed` — asynchronous launch failure (after the handler returned).
  */
-export const DEV_LAUNCH_STAGES = ['preparing-workspace', 'launching', 'failed'] as const
+export const DEV_LAUNCH_STAGES = [
+  'fetching-remote-main',
+  'preparing-worktree',
+  'launching',
+  'failed',
+] as const
 export type DevLaunchStage = (typeof DEV_LAUNCH_STAGES)[number]
 
 /** Coarse startup phases for a manual spec-authoring session. */

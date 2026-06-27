@@ -606,7 +606,8 @@
     "devLaunch": {
       "title": "Запуск разработки…",
       "step": {
-        "prepareWorkspace": "Подготовка рабочей области кода",
+        "fetchRemoteMain": "Получение удалённой основной ветки",
+        "prepareWorktree": "Подготовка worktree",
         "launchSession": "Запуск сессии разработки",
         "enterSession": "Вход в сессию"
       },

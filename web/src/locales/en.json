@@ -605,7 +605,8 @@
     "devLaunch": {
       "title": "Starting development…",
       "step": {
-        "prepareWorkspace": "Prepare code workspace",
+        "fetchRemoteMain": "Fetch remote main branch",
+        "prepareWorktree": "Prepare worktree",
         "launchSession": "Launch development session",
         "enterSession": "Enter session"
       },

@@ -606,7 +606,8 @@
     "devLaunch": {
       "title": "開発を起動しています…",
       "step": {
-        "prepareWorkspace": "コードワークスペースを準備",
+        "fetchRemoteMain": "リモートメインブランチを取得",
+        "prepareWorktree": "worktree を準備",
         "launchSession": "開発セッションを起動",
         "enterSession": "セッションに入る"
       },

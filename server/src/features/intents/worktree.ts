@@ -158,7 +158,7 @@ export function detectDefaultBranch(workspacePath: string): string | undefined {
 //
 // Rule: a work session must build on up-to-date code, INCLUDING worktrees.
 //  - worktree mode: fetch the base branch and root the new worktree at the
-//    just-fetched remote tip (see createWorktree → fetchBaseForWorktree).
+//    just-fetched remote tip (see createWorktree → fetchRemoteBase).
 //  - current-branch mode: fast-forward the project checkout's current branch
 //    (see pullCurrentBranch).
 //
@@ -227,7 +227,7 @@ export function pullCurrentBranch(workspacePath: string): PullResult {
  * to the LOCAL `baseBranch`. Fetch never merges, so it cannot diverge: there is
  * nothing to hard-stop on here.
  */
-function fetchBaseForWorktree(workspacePath: string, baseBranch: string): string | null {
+export function fetchRemoteBase(workspacePath: string, baseBranch: string): string | null {
   const remote = resolveRemoteSync(workspacePath)
   if (!remote) return null
   const res = execGit(workspacePath, ['fetch', remote, baseBranch])
@@ -299,7 +299,7 @@ export function createWorktree(
   const addArgs = ['worktree', 'add', '-b', branchName]
   const base = baseBranch?.trim()
   if (base) {
-    const remoteRef = fetchBaseForWorktree(workspacePath, base)
+    const remoteRef = fetchRemoteBase(workspacePath, base)
     if (remoteRef) {
       // Root at the just-fetched remote tip. `--no-track`: the intent branch
       // must NOT inherit `<remote>/<base>` as upstream, or a later `git push`

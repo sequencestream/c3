@@ -32,6 +32,7 @@ vi.mock('../../kernel/config/index.js', () => ({
 
 vi.mock('./worktree.js', () => ({
   createWorktree: vi.fn(() => ({ worktreePath: '/tmp/wt', branchName: 'wt-branch' })),
+  fetchRemoteBase: vi.fn(),
   getWorktreePath: vi.fn(),
   worktreeExists: vi.fn(),
   readBranch: vi.fn(() => 'main'),
@@ -109,7 +110,7 @@ import {
   getSddEnabled,
 } from '../../kernel/config/index.js'
 import { getDefaultAgentId, resolveSessionVendor } from '../../kernel/agent-config/index.js'
-import { createWorktree, getWorktreePath, readBranch } from './worktree.js'
+import { createWorktree, fetchRemoteBase, getWorktreePath, readBranch } from './worktree.js'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
 import { judgeCompletion } from './judge.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
@@ -608,7 +609,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
       failed.conn as unknown as Parameters<typeof startDevelopment>[1],
       msg,
     )
-    // The worktree-create error follows the `preparing-workspace` progress event
+    // The worktree-create error follows the worktree preparation progress event
     // (progress is emitted just before the worktree phase), so find it by code.
     const failedErr = failed.sent.find((m: Record<string, unknown>) => m.type === 'error')
     expect(failedErr?.error).toMatchObject({ code: 'intent.worktreeCreateFailed' })
@@ -661,22 +662,28 @@ describe('startDevelopment — startup progress events', () => {
       ),
     )
 
-  it('worktree: emits preparing-workspace then launching', async () => {
+  it('worktree: emits fetch, prepare, then launch stages', async () => {
     const req = makeIntent({ id: 'B', title: 'Child B' })
     vi.mocked(hasWorkspace).mockReturnValue(true)
     vi.mocked(getIntent).mockReturnValue(req)
     vi.mocked(listIntents).mockReturnValue([req])
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(getDefaultMainBranch).mockReturnValue('main')
     vi.mocked(createWorktree).mockReturnValue({ worktreePath: '/tmp/wt-B', branchName: 'intent/B' })
 
     const { sent, conn } = makeConn()
     const ctx = { launchRun: vi.fn(() => Promise.resolve()) }
     await run(ctx, conn)
 
-    expect(progressStages(sent)).toEqual(['preparing-workspace', 'launching'])
+    expect(progressStages(sent)).toEqual([
+      'fetching-remote-main',
+      'preparing-worktree',
+      'launching',
+    ])
+    expect(fetchRemoteBase).toHaveBeenCalledWith('/test/proj', 'main')
   })
 
-  it('current-branch: emits preparing-workspace then launching', async () => {
+  it('current-branch: emits fetch, prepare, then launch stages without worktree fetch', async () => {
     const req = makeIntent({ id: 'B', title: 'Child B' })
     vi.mocked(hasWorkspace).mockReturnValue(true)
     vi.mocked(getIntent).mockReturnValue(req)
@@ -688,7 +695,12 @@ describe('startDevelopment — startup progress events', () => {
     const ctx = { launchRun: vi.fn(() => Promise.resolve()) }
     await run(ctx, conn)
 
-    expect(progressStages(sent)).toEqual(['preparing-workspace', 'launching'])
+    expect(progressStages(sent)).toEqual([
+      'fetching-remote-main',
+      'preparing-worktree',
+      'launching',
+    ])
+    expect(fetchRemoteBase).not.toHaveBeenCalled()
   })
 
   it('emits failed when the async launch rejects (previously silent)', async () => {
@@ -704,7 +716,12 @@ describe('startDevelopment — startup progress events', () => {
     await run(ctx, conn)
     await flush()
 
-    expect(progressStages(sent)).toEqual(['preparing-workspace', 'launching', 'failed'])
+    expect(progressStages(sent)).toEqual([
+      'fetching-remote-main',
+      'preparing-worktree',
+      'launching',
+      'failed',
+    ])
   })
 
   it('synchronous validation failure emits only error, no progress', async () => {

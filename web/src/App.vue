@@ -207,10 +207,14 @@ const {
   showToast,
   // ---- workcenter ----
   workcenterEvents,
+  workcenterHasMore,
+  workcenterLoading,
   respondWorkcenter,
   submitAskWorkcenter,
   jumpToSource,
   reloadWorkcenter,
+  loadMoreWorkcenter,
+  markDoneWorkcenter,
   // ---- modals ----
   newSessionOpen,
   confirmNewSession,
@@ -509,12 +513,16 @@ const {
       <WorkCenter
         v-else
         :events="workcenterEvents"
+        :has-more="workcenterHasMore"
+        :loading="workcenterLoading"
         :current-workspace="currentWorkspace"
         :workspaces="workspaces"
         @respond="respondWorkcenter"
         @submit-ask="submitAskWorkcenter"
         @jump-to-source="jumpToSource"
         @reload="reloadWorkcenter"
+        @load-more="loadMoreWorkcenter"
+        @mark-done="markDoneWorkcenter"
       />
     </div>
 

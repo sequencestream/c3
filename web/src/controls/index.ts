@@ -88,8 +88,7 @@ export function useAppController(): AppCtx {
           // reconnect, and any expanded dir / open file re-fetches on demand.
         } else if (ctx.viewMode.value === 'workcenter') {
           // Re-fetch the pending event list (read path).
-          if (ctx.currentWorkspace.value)
-            ctx.send({ type: 'list_wait_user_events', workspaceId: ctx.currentWorkspace.value })
+          ctx.reloadWorkcenter('todo')
         } else if (ctx.activeWorkspace.value && ctx.activeSession.value) {
           ctx.send({
             type: 'select_session',

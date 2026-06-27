@@ -772,7 +772,23 @@ export function installMessageHandler(ctx: AppCtx): void {
         add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
         break
       case 'wait_user_events':
-        workcenterEvents.value = msg.items
+        if (msg.hasMore === undefined) {
+          const nonTodo = workcenterEvents.value.filter((event) => event.status !== 'todo')
+          workcenterEvents.value = [...msg.items, ...nonTodo]
+        } else if (ctx.workcenterAppendNext.value) {
+          const seen = new Set(workcenterEvents.value.map((event) => event.id))
+          workcenterEvents.value = [
+            ...workcenterEvents.value,
+            ...msg.items.filter((event) => !seen.has(event.id)),
+          ]
+          ctx.workcenterHasMore.value = msg.hasMore
+          ctx.workcenterAppendNext.value = false
+          ctx.workcenterLoading.value = false
+        } else {
+          workcenterEvents.value = msg.items
+          ctx.workcenterHasMore.value = msg.hasMore
+          ctx.workcenterLoading.value = false
+        }
         break
       case 'dir_listed': {
         // Adopt the listing only for the workspace currently being browsed.

@@ -121,8 +121,7 @@ export function installSettingsActions(ctx: AppCtx): void {
       viewMode.value = 'workcenter'
       if (flags.viewModeFirstWorkcenter) {
         flags.viewModeFirstWorkcenter = false
-        if (currentWorkspace.value)
-          send({ type: 'list_wait_user_events', workspaceId: currentWorkspace.value })
+        ctx.reloadWorkcenter('todo')
       }
     } else {
       viewMode.value = 'workspace'

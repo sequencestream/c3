@@ -1,10 +1,9 @@
 /**
  * `wait_user_involve` feature handlers.
  *
- * Currently a single handler for listing events; the event-creation and lifecycle
- * hooks will be added in the next intent.
+ * Listing + lifecycle handlers for WorkCenter wait-user-involve events.
  */
-import { isStoreAvailable, listEvents } from './store.js'
+import { getEvent, isStoreAvailable, listEventsPage, updateStatus } from './store.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
@@ -19,9 +18,30 @@ export const listWaitUserEvents: Handler<'list_wait_user_events'> = (_ctx, conn,
   // re-fetch bug). An unregistered id degrades to an explicit empty snapshot.
   const workspacePath = resolveWorkspaceRoot(msg.workspaceId)
   if (!workspacePath) {
-    conn.send({ type: 'wait_user_events', items: [] })
+    conn.send({ type: 'wait_user_events', items: [], hasMore: false })
     return
   }
-  const items = listEvents(workspacePath, msg.status)
-  conn.send({ type: 'wait_user_events', items })
+  const page = listEventsPage(
+    workspacePath,
+    msg.status,
+    msg.cursorTime,
+    msg.cursorExcludeId,
+    msg.limit,
+  )
+  conn.send({ type: 'wait_user_events', items: page.items, hasMore: page.hasMore })
+}
+
+export const updateWaitUserEvent: Handler<'update_wait_user_event'> = (ctx, conn, msg) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'waitUserInvolve.dbUnavailable' } })
+    return
+  }
+  const event = getEvent(msg.id)
+  if (!event || event.status !== 'todo' || msg.status === 'todo') {
+    conn.send({ type: 'error', error: { code: 'waitUserInvolve.invalidStatusTransition' } })
+    return
+  }
+  updateStatus(msg.id, msg.status)
+  const workspacePath = resolveWorkspaceRoot(event.workspaceId)
+  if (workspacePath) ctx.broadcastWaitUserEvents(workspacePath)
 }

@@ -1560,7 +1560,8 @@
       "agentVendorMismatch": "The selected agent does not match the schedule vendor."
     },
     "waitUserInvolve": {
-      "dbUnavailable": "Wait-User-Involve store unavailable (c3.db)."
+      "dbUnavailable": "Wait-User-Involve store unavailable (c3.db).",
+      "invalidStatusTransition": "This WorkCenter message can no longer be marked done."
     },
     "workspaceSetting": {
       "invalidDefaultMode": "Invalid default mode \"{mode}\" for vendor \"{vendor}\"."
@@ -2063,7 +2064,10 @@
     "action": {
       "jump": "Go to source",
       "expandList": "Expand message list",
-      "collapseList": "Collapse message list"
+      "collapseList": "Collapse message list",
+      "markDone": "Mark done",
+      "loadMore": "Load more",
+      "loading": "Loading..."
     },
     "ask": {
       "submit": "Submit",

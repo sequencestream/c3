@@ -1,4 +1,4 @@
-import type { WaitUserInvolveEvent } from '@ccc/shared/protocol'
+import type { WaitUserInvolveEvent, WaitUserInvolveStatus } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
 
 // Install WorkCenter event actions (resolve permission + jump-to-source) onto the ctx.
@@ -28,15 +28,38 @@ export function installWorkcenterActions(ctx: AppCtx): void {
     event.status = 'done'
   }
 
-  // Re-fetch the full event list (no status filter ⇒ all statuses, incl. 'auto'
-  // audit records and 'done'/'canceled' history). The live broadcast only pushes
-  // 'todo'; the WorkCenter filter bar calls this so non-todo tabs are reliable.
-  // `currentWorkspace` holds the opaque workspace id — the same id the server
-  // resolves back to a path in `list_wait_user_events`.
-  ctx.reloadWorkcenter = (): void => {
+  ctx.reloadWorkcenter = (status: WaitUserInvolveStatus = 'todo'): void => {
     const workspace = currentWorkspace.value
     if (!workspace || !ctx.client) return
-    send({ type: 'list_wait_user_events', workspaceId: workspace })
+    ctx.workcenterLoading.value = true
+    ctx.workcenterAppendNext.value = false
+    send({ type: 'list_wait_user_events', workspaceId: workspace, status, limit: 20 })
+  }
+
+  ctx.loadMoreWorkcenter = (
+    status: WaitUserInvolveStatus,
+    cursorTime: number,
+    cursorExcludeId: string,
+  ): void => {
+    const workspace = currentWorkspace.value
+    if (!workspace || !ctx.client || ctx.workcenterLoading.value || !ctx.workcenterHasMore.value)
+      return
+    ctx.workcenterLoading.value = true
+    ctx.workcenterAppendNext.value = true
+    send({
+      type: 'list_wait_user_events',
+      workspaceId: workspace,
+      status,
+      cursorTime,
+      cursorExcludeId,
+      limit: 20,
+    })
+  }
+
+  ctx.markDoneWorkcenter = (eventId: string): void => {
+    if (!ctx.client) return
+    send({ type: 'update_wait_user_event', id: eventId, status: 'done' })
+    ctx.workcenterEvents.value = ctx.workcenterEvents.value.filter((event) => event.id !== eventId)
   }
 
   // Jump from a WorkCenter event to its source tab + item, routed off the producing

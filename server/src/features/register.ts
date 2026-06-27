@@ -86,7 +86,8 @@ import {
   updateScheduleHandler,
 } from './schedules/index.js'
 import { login, logout, setAdminPassword, removeAccount, setAdminAccount } from './auth/index.js'
-import { listWaitUserEvents } from './user-involve/index.js'
+import { listWaitUserEvents, updateWaitUserEvent } from './user-involve/index.js'
+import { startRetentionCleanup } from './user-involve/store.js'
 import { getTimeRangeStatsHandler } from './workcenter/index.js'
 import { resolveSkillApproval as resolveSkillApprovalImpl } from '../kernel/skill-loader/approval.js'
 import { getSkillLinkStatus, installSkillHandler } from './skills/index.js'
@@ -178,6 +179,7 @@ export const handlerMap: HandlerMap = {
   set_admin_account: setAdminAccount,
   // wait user involve
   list_wait_user_events: listWaitUserEvents,
+  update_wait_user_event: updateWaitUserEvent,
   // workcenter
   get_timerange_stats: getTimeRangeStatsHandler,
   // skill-load gates (mount layer 2/3)
@@ -195,5 +197,6 @@ export const handlerMap: HandlerMap = {
 
 /** Assemble the startup handler registry from the exhaustive map. */
 export function registerHandlers(): HandlerRegistry {
+  startRetentionCleanup()
   return createHandlerRegistry(handlerMap)
 }

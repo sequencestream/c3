@@ -25,6 +25,8 @@ const isMobile = useIsMobile()
 
 const props = defineProps<{
   events: WaitUserInvolveEvent[]
+  hasMore: boolean
+  loading: boolean
   currentWorkspace: string | null
   /** Known workspaces, forwarded to EventDetail to resolve an event's workspace name. */
   workspaces: WorkspaceInfo[]
@@ -34,7 +36,9 @@ const emit = defineEmits<{
   respond: [event: WaitUserInvolveEvent, decision: 'allow' | 'deny']
   'submit-ask': [event: WaitUserInvolveEvent, answers: Record<string, string>]
   'jump-to-source': [event: WaitUserInvolveEvent]
-  reload: []
+  reload: [status: FilterValue]
+  'load-more': [status: FilterValue, cursorTime: number, cursorExcludeId: string]
+  'mark-done': [eventId: string]
 }>()
 
 // ---- Status filter ----
@@ -63,7 +67,8 @@ function toggleListExpanded(): void {
 // 'todo', so non-todo tabs (done / canceled / auto) need a pull to be reliable.
 function selectFilter(key: FilterValue) {
   activeFilter.value = key
-  emit('reload')
+  selectedId.value = null
+  emit('reload', key)
 }
 
 // ---- Selected event ----
@@ -77,6 +82,12 @@ const selectedEvent = computed<WaitUserInvolveEvent | null>(() => {
 
 function onSelect(event: WaitUserInvolveEvent) {
   selectedId.value = event.id
+}
+
+function onLoadMore(): void {
+  const last = filteredEvents.value[filteredEvents.value.length - 1]
+  if (!last) return
+  emit('load-more', activeFilter.value, last.createdAt, last.id)
 }
 </script>
 
@@ -113,7 +124,15 @@ function onSelect(event: WaitUserInvolveEvent) {
         </div>
       </div>
 
-      <EventList :events="filteredEvents" :selected-id="selectedId" @select="onSelect" />
+      <EventList
+        :events="filteredEvents"
+        :selected-id="selectedId"
+        :has-more="hasMore"
+        :loading="loading"
+        @select="onSelect"
+        @mark-done="(id) => emit('mark-done', id)"
+        @load-more="onLoadMore"
+      />
     </div>
 
     <!-- Right column: event detail -->

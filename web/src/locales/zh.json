@@ -1560,7 +1560,8 @@
       "agentVendorMismatch": "The selected agent does not match the schedule vendor."
     },
     "waitUserInvolve": {
-      "dbUnavailable": "等待用户介入存储不可用 (c3.db)。"
+      "dbUnavailable": "等待用户介入存储不可用 (c3.db)。",
+      "invalidStatusTransition": "这条工作台消息已不能标记完成。"
     },
     "workspaceSetting": {
       "invalidDefaultMode": "vendor \"{vendor}\" 的默认模式 \"{mode}\" 无效。"
@@ -2012,7 +2013,10 @@
     "action": {
       "jump": "跳转到源",
       "expandList": "展开消息列表",
-      "collapseList": "收起消息列表"
+      "collapseList": "收起消息列表",
+      "markDone": "标记完成",
+      "loadMore": "加载更多",
+      "loading": "加载中..."
     },
     "ask": {
       "submit": "提交",

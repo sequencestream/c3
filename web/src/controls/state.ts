@@ -131,6 +131,9 @@ export function createState(deps: StateDeps) {
 
   // WorkCenter: pending user-involve events for event list.
   const workcenterEvents = ref<WaitUserInvolveEvent[]>([])
+  const workcenterHasMore = ref(false)
+  const workcenterLoading = ref(false)
+  const workcenterAppendNext = ref(false)
   const workcenterPendingCount = computed(
     () => workcenterEvents.value.filter((event) => event.status === 'todo').length,
   )
@@ -572,6 +575,9 @@ export function createState(deps: StateDeps) {
     activeSession,
     activeTitle,
     workcenterEvents,
+    workcenterHasMore,
+    workcenterLoading,
+    workcenterAppendNext,
     consoleSession,
     teamSessions,
     pendingQueues,

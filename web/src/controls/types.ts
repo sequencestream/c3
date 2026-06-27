@@ -16,6 +16,7 @@ import type {
   UiLang,
   UpdateScheduleInput,
   WaitUserInvolveEvent,
+  WaitUserInvolveStatus,
   WorkspaceInfo,
   WorkspaceSetting as WorkspaceSettingType,
 } from '@ccc/shared/protocol'
@@ -203,9 +204,16 @@ export interface AppMethods {
   respondWorkcenter(event: WaitUserInvolveEvent, decision: 'allow' | 'deny'): void
   submitAskWorkcenter(event: WaitUserInvolveEvent, answers: Record<string, string>): void
   jumpToSource(event: WaitUserInvolveEvent): void
-  /** Re-fetch the full event list (all statuses) so non-todo tabs — done / canceled
-   * / auto — load reliably (the proactive broadcast carries only 'todo'). */
-  reloadWorkcenter(): void
+  /** Re-fetch the first WorkCenter event page for a status. */
+  reloadWorkcenter(status?: WaitUserInvolveStatus): void
+  /** Fetch the next WorkCenter event page using the last visible row as cursor. */
+  loadMoreWorkcenter(
+    status: WaitUserInvolveStatus,
+    cursorTime: number,
+    cursorExcludeId: string,
+  ): void
+  /** Mark a todo event done from the WorkCenter list. */
+  markDoneWorkcenter(eventId: string): void
 }
 
 // The shared controller context: reactive state + runtime plumbing + all the

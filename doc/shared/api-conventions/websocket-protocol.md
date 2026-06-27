@@ -395,9 +395,15 @@
 
 ### `list_wait_user_events`
 
-请求工作区的待用户处理事件列表。可选的 `status` 过滤到特定生命周期状态（默认：全部）。服务器回复 `wait_user_events`。`workspaceId` 是不透明工作区 id（与 `currentWorkspace` 一致）；服务端经 `resolveWorkspaceRoot` 解析为绝对路径后查库，未注册 id 降级为空快照——绝不把 id 当路径直接查询。
+请求工作区的待用户处理事件列表。可选的 `status` 过滤到特定生命周期状态（默认：全部）。列表走服务端时间游标分页：默认 `limit=20`，`cursorTime` 取上一页最后一条的 `createdAt`，`cursorExcludeId` 取上一页最后一条的 `id`；服务端按 `(created_at DESC, id DESC)` 查询严格早于该游标的下一页，因此同毫秒创建的事件不会重复或跳过。服务器回复 `wait_user_events`。`workspaceId` 是不透明工作区 id（与 `currentWorkspace` 一致）；服务端经 `resolveWorkspaceRoot` 解析为绝对路径后查库，未注册 id 降级为空快照——绝不把 id 当路径直接查询。
 
-**字段：** `workspaceId: string`, `status?: WaitUserInvolveStatus`
+**字段：** `workspaceId: string`, `status?: WaitUserInvolveStatus`, `cursorTime?: number`, `cursorExcludeId?: string`, `limit?: number`
+
+### `update_wait_user_event`
+
+更新一条待用户处理事件的生命周期状态。当前仅允许从 `todo` 单向改到非 `todo` 状态（WorkCenter 行内“标记完成”发送 `status: 'done'`）；目标不存在、目标不是 `todo`、或请求改回 `todo` 时返回 `waitUserInvolve.invalidStatusTransition`。成功后服务端广播刷新后的 `todo` 列表用于待处理徽章。
+
+**字段：** `id: string`, `status: WaitUserInvolveStatus`
 
 ### `ping`
 
@@ -739,9 +745,9 @@ schedule 的执行日志。
 
 ### `wait_user_events`
 
-项目的待用户处理事件列表（回复 `list_wait_user_events`）。作为完整快照推送——客户端替换而非合并其本地状态。
+项目的待用户处理事件列表（回复 `list_wait_user_events`）。分页回复携带 `hasMore`，客户端据此显示“加载更多”；实时广播路径不携带 `hasMore`，语义为刷新 `todo` 待处理集合，客户端不应把它当作历史分页页替换已加载窗口。
 
-**字段：** `items: WaitUserInvolveEvent[]`
+**字段：** `items: WaitUserInvolveEvent[]`, `hasMore?: boolean`
 
 每条 `WaitUserInvolveEvent` 的溯源跳转契约（WorkCenter 据此跳回来源）：
 
@@ -865,7 +871,7 @@ schedule 的执行日志。
 ## 等待用户处理事件
 
 - **`WaitUserInvolveStatus`** — `'todo' | 'done' | 'canceled' | 'auto'`。`'auto'` = 多 Agent 共识自动决议、无人类参与的非阻塞审计记录（永不计入"待处理"徽章），其 `outcome` 携带做出该决议的共识结果，使自动决策可追溯。
-- **`WaitUserInvolveEvent`** — `{ id, workspaceId, sessionKind, sessionId, intentId?, intentTitle?, title, requestId, toolName, toolInput, status, outcome?, createdAt, updatedAt }`。需要人类关注的事件——网控在人类决策（`permission_response`）前门控的工具调用的服务器端记录。在门控时创建，人类决策时解决。`sessionKind`（`string`，产生运行的完整 `SessionKind`）/ `sessionId`（真实会话 id）是溯源跳转键；`intentId` / `intentTitle` 为读时按 `sessionId` 反查所属意图派生（不落库，无归属为 null）。Web 侧边栏的"待处理"徽章按项目统计 `todo` 条目。`outcome?: AnyConsensusOutcome | null` 仅在 `status: 'auto'` 记录上出现（网控的 `consensus_auto` 结果——投票、裁决、摘要），人类决策的事件上缺省/为 null。
+- **`WaitUserInvolveEvent`** — `{ id, workspaceId, sessionKind, sessionId, intentId?, intentTitle?, title, requestId, toolName, toolInput, status, outcome?, createdAt, updatedAt }`。需要人类关注的事件——网控在人类决策（`permission_response`）前门控的工具调用的服务器端记录。在门控时创建，人类决策时解决。`sessionKind`（`string`，产生运行的完整 `SessionKind`）/ `sessionId`（真实会话 id）是溯源跳转键；`intentId` / `intentTitle` 为读时按 `sessionId` 反查所属意图派生（不落库，无归属为 null）。Web 侧边栏的"待处理"徽章按项目统计 `todo` 条目。`outcome?: AnyConsensusOutcome | null` 仅在 `status: 'auto'` 记录上出现（网控的 `consensus_auto` 结果——投票、裁决、摘要），人类决策的事件上缺省/为 null。`done` / `canceled` / `auto` 事件按 `createdAt` 保留 7 天；服务端启动时清理一次，之后每 6 小时硬删除一次，`todo` 不参与保留期清理。
 
 ## UI 错误码（`UiError`）
 

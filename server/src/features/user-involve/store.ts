@@ -25,7 +25,11 @@ import { findIntentIdByAnySessionId, getIntent } from '../intents/store.js'
  * Schema version — informational only, see discussion store comment.
  * Migrations key off `PRAGMA table_info`, never off the version number.
  */
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 6
+const DEFAULT_PAGE_LIMIT = 20
+const RETENTION_MS = 7 * 86_400_000
+const RETENTION_INTERVAL_MS = 6 * 60 * 60 * 1000
+const RETENTION_STATUSES: WaitUserInvolveStatus[] = ['done', 'canceled', 'auto']
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS wait_user_involve_events (
@@ -47,6 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_wui_session_status ON wait_user_involve_events(se
 `
 
 let schemaReady = false
+let retentionTimer: ReturnType<typeof setInterval> | null = null
 
 /**
  * Idempotently add a column to an existing table when it's missing.
@@ -154,6 +159,8 @@ export function isStoreAvailable(): boolean {
 /** Test-only: forget the "schema ensured" flag (pair with `resetDbForTests`). */
 export function resetStoreForTests(): void {
   schemaReady = false
+  if (retentionTimer) clearInterval(retentionTimer)
+  retentionTimer = null
 }
 
 function _tx<T>(d: Db, fn: () => T): T {
@@ -330,6 +337,58 @@ export function listEvents(
   return rows.map(toEvent).filter((e): e is WaitUserInvolveEvent => e !== null)
 }
 
+export interface EventPage {
+  items: WaitUserInvolveEvent[]
+  hasMore: boolean
+}
+
+function normalizeLimit(limit?: number): number {
+  if (limit == null || !Number.isFinite(limit) || limit <= 0) return DEFAULT_PAGE_LIMIT
+  return Math.floor(limit)
+}
+
+/**
+ * List one keyset page ordered by `(created_at DESC, id DESC)`. The optional cursor
+ * points at the previous page's last visible row and returns rows strictly older
+ * than it, including equal-timestamp rows with smaller ids.
+ */
+export function listEventsPage(
+  workspacePath: string,
+  status?: WaitUserInvolveStatus,
+  cursorTime?: number,
+  cursorExcludeId?: string,
+  limit?: number,
+): EventPage {
+  const d = db()
+  if (!d) return { items: [], hasMore: false }
+  const pageLimit = normalizeLimit(limit)
+  const queryLimit = pageLimit + 1
+  const workspace = resolve(workspacePath)
+  const params: Array<string | number> = [workspace]
+  const where = ['workspace_path=?']
+  if (status) {
+    where.push('status=?')
+    params.push(status)
+  }
+  if (cursorTime != null && Number.isFinite(cursorTime)) {
+    where.push('(created_at < ? OR (created_at = ? AND id < ?))')
+    params.push(cursorTime, cursorTime, cursorExcludeId ?? '')
+  }
+  params.push(queryLimit)
+  const rows = d.all<EventRow>(
+    `SELECT * FROM wait_user_involve_events
+       WHERE ${where.join(' AND ')}
+       ORDER BY created_at DESC, id DESC
+       LIMIT ?`,
+    ...params,
+  )
+  const visibleRows = rows.slice(0, pageLimit)
+  return {
+    items: visibleRows.map(toEvent).filter((e): e is WaitUserInvolveEvent => e !== null),
+    hasMore: rows.length > pageLimit,
+  }
+}
+
 /**
  * Look up one event by `request_id`. Useful for the permission-response handler
  * when only the `requestId` is known. Returns null when no event matches.
@@ -353,6 +412,31 @@ export function updateStatus(id: string, status: WaitUserInvolveStatus): void {
     Date.now(),
     id,
   )
+}
+
+/** Hard-delete resolved/audit events older than `before`. */
+export function retentionDelete(before: number, statuses: WaitUserInvolveStatus[]): number {
+  const d = db()
+  if (!d || statuses.length === 0) return 0
+  const placeholders = statuses.map(() => '?').join(',')
+  d.run(
+    `DELETE FROM wait_user_involve_events WHERE status IN (${placeholders}) AND created_at < ?`,
+    ...statuses,
+    before,
+  )
+  return d.get<{ n: number }>('SELECT changes() AS n')?.n ?? 0
+}
+
+function runRetentionSweep(): void {
+  retentionDelete(Date.now() - RETENTION_MS, RETENTION_STATUSES)
+}
+
+/** Start the startup + 6-hour retention cleanup for resolved/audit events. */
+export function startRetentionCleanup(): void {
+  if (retentionTimer) return
+  runRetentionSweep()
+  retentionTimer = setInterval(runRetentionSweep, RETENTION_INTERVAL_MS)
+  retentionTimer.unref?.()
 }
 
 /**

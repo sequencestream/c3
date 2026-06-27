@@ -2510,6 +2510,12 @@ export interface ListWaitUserEventsInput {
   workspaceId: string
   /** Optional status filter; absent = all. */
   status?: WaitUserInvolveStatus
+  /** Page cursor: request events strictly older than this createdAt timestamp. */
+  cursorTime?: number
+  /** Tie-breaker for rows with the same createdAt as cursorTime. */
+  cursorExcludeId?: string
+  /** Page size; server defaults to 20. */
+  limit?: number
 }
 
 /** Workspace-level MCP server connections and denylist configuration. */
@@ -3016,7 +3022,16 @@ export type ClientToServer =
    * {@link wait_user_events}. An optional `status` filter narrows to one
    * lifecycle state (default: all).
    */
-  | { type: 'list_wait_user_events'; workspaceId: string; status?: WaitUserInvolveStatus }
+  | {
+      type: 'list_wait_user_events'
+      workspaceId: string
+      status?: WaitUserInvolveStatus
+      cursorTime?: number
+      cursorExcludeId?: string
+      limit?: number
+    }
+  /** Update a wait-user-involve event lifecycle status. */
+  | { type: 'update_wait_user_event'; id: string; status: WaitUserInvolveStatus }
   /**
    * WorkCenter cross-project rollup: aggregate per-project counts (work sessions /
    * intents / discussions / schedules) across **all** registered workspaces in one
@@ -3569,10 +3584,10 @@ export type ServerToClient =
   | { type: 'schedule_tool_manifest'; vendor: VendorId; tools: ToolManifestEntry[] }
   /**
    * A project's wait-user-involve event list (reply to `list_wait_user_events`).
-   * Pushed as a full snapshot every time — the client replaces its local state
-   * rather than merging.
+   * Paged replies carry `hasMore`; live todo broadcasts omit it and refresh the
+   * pending set without representing a historical page.
    */
-  | { type: 'wait_user_events'; items: WaitUserInvolveEvent[] }
+  | { type: 'wait_user_events'; items: WaitUserInvolveEvent[]; hasMore?: boolean }
   /**
    * A pre-launch skill-load gate awaiting a human decision (mount layer 2/3; the
    * modal is rendered by 3/3). The backend emits one before the first external-skill

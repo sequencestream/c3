@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import WorkCenter from './WorkCenter.vue'
 import EventDetail from './components/EventDetail.vue'
+import EventList from './components/EventList.vue'
 import type { AnyConsensusOutcome, WaitUserInvolveEvent, WorkspaceInfo } from '@ccc/shared/protocol'
 
 const WORKSPACES: WorkspaceInfo[] = [{ id: '/ws', name: 'my-workspace', lastAccessed: 0 }]
@@ -79,7 +80,13 @@ afterEach(() => {
 describe('WorkCenter.vue — desktop message list sizing', () => {
   it('renders the desktop list toggle collapsed by default', () => {
     const wrapper = mount(WorkCenter, {
-      props: { events: [ev()], currentWorkspace: '/ws', workspaces: WORKSPACES },
+      props: {
+        events: [ev()],
+        hasMore: false,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
     })
 
     expect(wrapper.find('.wc-list-toggle').exists()).toBe(true)
@@ -88,7 +95,13 @@ describe('WorkCenter.vue — desktop message list sizing', () => {
 
   it('toggles the sidebar expanded class on click', async () => {
     const wrapper = mount(WorkCenter, {
-      props: { events: [ev()], currentWorkspace: '/ws', workspaces: WORKSPACES },
+      props: {
+        events: [ev()],
+        hasMore: false,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
     })
 
     await wrapper.find('.wc-list-toggle').trigger('click')
@@ -102,7 +115,13 @@ describe('WorkCenter.vue — desktop message list sizing', () => {
     installMatchMedia(true)
 
     const wrapper = mount(WorkCenter, {
-      props: { events: [ev()], currentWorkspace: '/ws', workspaces: WORKSPACES },
+      props: {
+        events: [ev()],
+        hasMore: false,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
     })
 
     expect(wrapper.find('.wc-list-toggle').exists()).toBe(false)
@@ -117,7 +136,13 @@ describe('WorkCenter.vue — status filter', () => {
       ev({ status: 'auto', outcome: toolOutcome }),
     ]
     const wrapper = mount(WorkCenter, {
-      props: { events, currentWorkspace: '/ws', workspaces: WORKSPACES },
+      props: {
+        events,
+        hasMore: false,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
     })
 
     const btns = wrapper.findAll('.wc-filter-btn')
@@ -133,11 +158,57 @@ describe('WorkCenter.vue — status filter', () => {
 
   it('emits reload on every filter switch (non-todo tabs re-fetch)', async () => {
     const wrapper = mount(WorkCenter, {
-      props: { events: [ev()], currentWorkspace: '/ws', workspaces: WORKSPACES },
+      props: {
+        events: [ev()],
+        hasMore: false,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
     })
     await wrapper.findAll('.wc-filter-btn')[3].trigger('click') // auto
     await wrapper.findAll('.wc-filter-btn')[1].trigger('click') // done
-    expect(wrapper.emitted('reload')).toHaveLength(2)
+    expect(wrapper.emitted('reload')).toEqual([['auto'], ['done']])
+  })
+
+  it('emits load-more with the last visible row cursor', async () => {
+    const events = [
+      ev({ id: 'newer', status: 'todo', createdAt: 200 }),
+      ev({ id: 'older', status: 'todo', createdAt: 100 }),
+    ]
+    const wrapper = mount(WorkCenter, {
+      props: {
+        events,
+        hasMore: true,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
+    })
+
+    await wrapper.find('.wc-load-more').trigger('click')
+    expect(wrapper.emitted('load-more')).toEqual([['todo', 100, 'older']])
+  })
+})
+
+describe('EventList.vue — row actions', () => {
+  it('renders status at row end, shows Mark done only for todo, and emits actions', async () => {
+    const todo = ev({ id: 'todo-1', status: 'todo' })
+    const done = ev({ id: 'done-1', status: 'done' })
+    const wrapper = mount(EventList, {
+      props: { events: [todo, done], selectedId: null, hasMore: true, loading: false },
+    })
+
+    const rows = wrapper.findAll('.wc-event-row')
+    expect(rows[0].find('.wc-row-actions .wc-status-badge').exists()).toBe(true)
+    expect(rows[0].find('.wc-mark-done').exists()).toBe(true)
+    expect(rows[1].find('.wc-mark-done').exists()).toBe(false)
+
+    await rows[0].find('.wc-mark-done').trigger('click')
+    expect(wrapper.emitted('mark-done')).toEqual([['todo-1']])
+
+    await wrapper.find('.wc-load-more').trigger('click')
+    expect(wrapper.emitted('load-more')).toEqual([[]])
   })
 })
 

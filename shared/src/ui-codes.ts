@@ -125,6 +125,9 @@ export const UI_ERROR_CODES = {
   'schedule.agentVendorMismatch': { key: 'error.schedule.agentVendorMismatch' },
   // wait user involve
   'waitUserInvolve.dbUnavailable': { key: 'error.waitUserInvolve.dbUnavailable' },
+  'waitUserInvolve.invalidStatusTransition': {
+    key: 'error.waitUserInvolve.invalidStatusTransition',
+  },
   // permission mode
   'session.invalidMode': {
     key: 'error.session.invalidMode',

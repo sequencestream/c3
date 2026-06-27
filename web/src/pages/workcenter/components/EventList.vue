@@ -18,10 +18,14 @@ defineProps<{
   events: WaitUserInvolveEvent[]
   /** Currently selected event id, or null. */
   selectedId: string | null
+  hasMore: boolean
+  loading: boolean
 }>()
 
 const emit = defineEmits<{
   select: [event: WaitUserInvolveEvent]
+  'mark-done': [eventId: string]
+  'load-more': []
 }>()
 
 // ---- Session-kind icon mapping ----
@@ -86,11 +90,6 @@ function statusClass(status: string): string {
       :class="{ selected: event.id === selectedId }"
       @click="emit('select', event)"
     >
-      <!-- Status badge -->
-      <span class="wc-status-badge" :class="statusClass(event.status)">
-        {{ t(`workcenter.status.${event.status}` as LocaleKey) }}
-      </span>
-
       <!-- Session-kind icon -->
       <span
         class="wc-source-icon"
@@ -106,6 +105,26 @@ function statusClass(status: string): string {
 
       <!-- Timestamp -->
       <span class="wc-event-time">{{ formatTime(event.createdAt) }}</span>
+
+      <span class="wc-row-actions" @click.stop>
+        <button
+          v-if="event.status === 'todo'"
+          type="button"
+          class="wc-mark-done"
+          @click="emit('mark-done', event.id)"
+        >
+          {{ t('workcenter.action.markDone') }}
+        </button>
+        <span class="wc-status-badge" :class="statusClass(event.status)">
+          {{ t(`workcenter.status.${event.status}` as LocaleKey) }}
+        </span>
+      </span>
+    </div>
+
+    <div v-if="hasMore" class="wc-load-more-wrap">
+      <button type="button" class="wc-load-more" :disabled="loading" @click="emit('load-more')">
+        {{ loading ? t('workcenter.action.loading') : t('workcenter.action.loadMore') }}
+      </button>
     </div>
   </div>
 </template>
@@ -146,6 +165,41 @@ function statusClass(status: string): string {
   line-height: 1.5;
   white-space: nowrap;
   flex-shrink: 0;
+}
+.wc-row-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-shrink: 0;
+}
+.wc-mark-done,
+.wc-load-more {
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-input);
+  color: var(--c-text);
+  cursor: pointer;
+  font-size: 11px;
+}
+.wc-mark-done {
+  padding: 1px 7px;
+  line-height: 1.5;
+}
+.wc-mark-done:hover,
+.wc-load-more:hover:not(:disabled) {
+  background: var(--c-hover);
+}
+.wc-load-more-wrap {
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+}
+.wc-load-more {
+  width: 100%;
+  padding: var(--sp-2);
+}
+.wc-load-more:disabled {
+  cursor: default;
+  opacity: 0.65;
 }
 .wc-status-todo {
   background: #fef3c7;

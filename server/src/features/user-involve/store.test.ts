@@ -38,7 +38,9 @@ import {
   getEventByRequestId,
   isStoreAvailable,
   listEvents,
+  listEventsPage,
   resetStoreForTests,
+  retentionDelete,
   updateStatus,
 } from './store.js'
 
@@ -170,6 +172,71 @@ describe('events CRUD', () => {
 
     const done = listEvents(proj, 'done')
     expect(done.map((x) => x.id)).toEqual([a.id])
+  })
+
+  it('pages events by created_at and id without duplicating equal timestamps', () => {
+    const raw = getDb()!
+    const ids = ['a', 'b', 'c', 'd', 'e']
+    for (const id of ids) createEvent({ workspacePath: proj, sessionKind: 'work', title: id })
+    for (const id of ids) {
+      raw.run('UPDATE wait_user_involve_events SET id=?, created_at=? WHERE title=?', id, 100, id)
+    }
+
+    const first = listEventsPage(proj, undefined, undefined, undefined, 2)
+    expect(first.items.map((event) => event.id)).toEqual(['e', 'd'])
+    expect(first.hasMore).toBe(true)
+
+    const last = first.items.at(-1)!
+    const second = listEventsPage(proj, undefined, last.createdAt, last.id, 2)
+    expect(second.items.map((event) => event.id)).toEqual(['c', 'b'])
+    expect(second.hasMore).toBe(true)
+
+    const thirdLast = second.items.at(-1)!
+    const third = listEventsPage(proj, undefined, thirdLast.createdAt, thirdLast.id, 2)
+    expect(third.items.map((event) => event.id)).toEqual(['a'])
+    expect(third.hasMore).toBe(false)
+  })
+
+  it('retentionDelete removes only old resolved and audit events', () => {
+    const raw = getDb()!
+    const old = 10
+    const recent = 1_000
+    const oldTodo = createEvent({ workspacePath: proj, sessionKind: 'work', title: 'old-todo' })
+    const oldDone = createEvent({
+      workspacePath: proj,
+      sessionKind: 'work',
+      title: 'old-done',
+      status: 'done',
+    })
+    const oldCanceled = createEvent({
+      workspacePath: proj,
+      sessionKind: 'work',
+      title: 'old-canceled',
+      status: 'canceled',
+    })
+    const oldAuto = createEvent({
+      workspacePath: proj,
+      sessionKind: 'work',
+      title: 'old-auto',
+      status: 'auto',
+    })
+    const recentDone = createEvent({
+      workspacePath: proj,
+      sessionKind: 'work',
+      title: 'recent-done',
+      status: 'done',
+    })
+    for (const event of [oldTodo, oldDone, oldCanceled, oldAuto]) {
+      raw.run('UPDATE wait_user_involve_events SET created_at=? WHERE id=?', old, event.id)
+    }
+    raw.run('UPDATE wait_user_involve_events SET created_at=? WHERE id=?', recent, recentDone.id)
+
+    expect(retentionDelete(100, ['done', 'canceled', 'auto'])).toBe(3)
+    expect(getEvent(oldTodo.id)?.status).toBe('todo')
+    expect(getEvent(oldDone.id)).toBeNull()
+    expect(getEvent(oldCanceled.id)).toBeNull()
+    expect(getEvent(oldAuto.id)).toBeNull()
+    expect(getEvent(recentDone.id)?.status).toBe('done')
   })
 
   it('scopes by project and normalizes the path (resolve)', () => {

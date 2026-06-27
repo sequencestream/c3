@@ -1085,6 +1085,10 @@
         "vulnAnalysis": {
           "title": "Weekly vulnerability analysis",
           "description": "Every Monday at 09:00, analyze the last 7 days of code changes for security vulnerabilities and file confirmed findings as draft intents."
+        },
+        "worktreeCleanup": {
+          "title": "清除过期worktree",
+          "description": "Every Sunday at 03:00, remove stale c3-managed worktrees older than 7 days only when dirty, intent and branch safety gates pass."
         }
       },
       "empty": "No schedules yet.",

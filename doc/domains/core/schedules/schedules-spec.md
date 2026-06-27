@@ -565,6 +565,28 @@ Its toolAllowlist matches the architecture review: `Read` / `Grep` / `Glob` / `B
 review, it uses `save_intent_directly` (not the confirmation-gated `save_intents`) because an unattended
 schedule has no confirmation popup — the human confirmation门 is the `draft` review in the intent list.
 
+**清除过期worktree** (`weekly-worktree-cleanup`) 每周日 03:00 运行 Claude
+(cron `0 3 * * 0`, `mode: bypassPermissions`), 用于清理 c3 托管的过期 worktree。模板只扫描
+`<c3-home>/worktrees/<projectDirName>/intent-*/` 下的托管目录,不会触碰用户自己创建或位于其他路径的
+worktree。
+
+该模板的 prompt 内置完整安全门:
+
+- **过期判断** — 以最近一次提交时间和 `git status --porcelain` 报告的脏文件/未跟踪文件 mtime 的最大值作为
+  lastChange;无法得到可靠时间信号时跳过。只有 `now - lastChange > 7 days` 的 worktree 才进入删除流程。
+- **脏目录保护** — 任何未提交、已暂存或未跟踪改动都会跳过,并在执行日志中写明原因。
+- **意图状态门** — 从 `intent-<uuid>` 目录名解析意图 ID 并调用 `mcp__c3__view_intent`;存在的意图必须是
+  `done` 或 `cancelled` 才允许删除。若意图记录已不存在,该目录仍可作为 orphan c3 托管 worktree 在其他安全门通过后删除。
+  其他查询失败按安全失败跳过。
+- **分支清理门** — 删除 worktree 后,只删除以 `intent/` 开头且与该 worktree 明确关联的本地分支;`main`、`master`、
+  `develop`、detached HEAD、用户分支和任何非 `intent/` 前缀分支都跳过。本地分支删除使用 `git branch -d`。
+- **远端分支清理** — 只有本地分支已删除且 `origin` 上存在完全同名远端 ref 时,才执行
+  `git push origin --delete <branch>`。找不到远端 ref、权限/网络失败或分支不明确时只记录结果并继续。
+
+执行日志必须明确列出每个删除和跳过的 worktree,包含路径、意图 ID(可解析时)、分支名(可读取时)、跳过原因和本地/远端分支清理结果。
+模板的 toolAllowlist 为 `Read` / `Grep` / `Glob` / `Bash` 加
+`mcp__c3__find_intents` / `mcp__c3__view_intent`;它不授予创建或保存意图的工具。
+
 - **Workspace-scoped uniqueness:** A schedule is uniquely identified by `(workspaceId, id)`.
   Deleting the workspace archives the schedules, never orphans them.
 - **Single active status:** A schedule is in exactly one of `active`, `paused`, or `archived`.

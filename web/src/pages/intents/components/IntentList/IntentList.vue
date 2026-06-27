@@ -6,9 +6,10 @@
  * 行点击 = 选中(上抛 `select-intent`,由父组件驱动右栏 IntentDetail);不再行内展开,
  * 详情/操作均迁至右栏 IntentDetail 组件。
  */
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { AutomationStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
+import { useIsMobile } from '@/composables/useBreakpoint'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import {
   automationIconState,
@@ -24,6 +25,7 @@ import {
 } from '../../../../lib/intent-list-view'
 
 const { t, locale } = useTypedI18n()
+const isMobile = useIsMobile()
 
 const props = defineProps<{
   project: string
@@ -93,6 +95,30 @@ function toggleAutomation() {
   else emit('start-automation')
 }
 
+const mobileActionsOpen = ref(false)
+
+function closeMobileActionsMenu(): void {
+  mobileActionsOpen.value = false
+}
+
+function toggleMobileActionsMenu(): void {
+  mobileActionsOpen.value = !mobileActionsOpen.value
+}
+
+function onDocumentClick(): void {
+  closeMobileActionsMenu()
+}
+
+onMounted(() => document.addEventListener('click', onDocumentClick))
+onUnmounted(() => document.removeEventListener('click', onDocumentClick))
+
+watch(isMobile, closeMobileActionsMenu)
+
+function toggleAutomationFromMenu(): void {
+  toggleAutomation()
+  closeMobileActionsMenu()
+}
+
 // Status filter. `null` = All. Local UI state; changing it asks App to refetch.
 const FILTERS = computed<{ value: IntentStatus | null; label: string }[]>(() => [
   { value: null, label: t('intent.filter.all.label') },
@@ -128,6 +154,15 @@ function setFilter(value: IntentStatus | null) {
   filter.value = value
   visibleTerminated.value = TERMINAL_PAGE_SIZE
   emit('filter', value)
+}
+
+function setFilterFromString(value: string): void {
+  setFilter((value as IntentStatus) || null)
+}
+
+function setFilterFromMenu(value: string): void {
+  setFilterFromString(value)
+  closeMobileActionsMenu()
 }
 
 function loadMoreTerminated() {
@@ -224,6 +259,7 @@ function automateToneClass(r: Intent): string {
       </div>
       <div class="req-head-right">
         <button
+          v-if="!isMobile"
           class="req-btn auto-btn"
           :class="{ running: autoRunning, error: !!autoError }"
           :title="
@@ -234,12 +270,50 @@ function automateToneClass(r: Intent): string {
           {{ autoRunning ? t('intent.automation.stop.label') : t('intent.automation.start.label') }}
         </button>
         <select
+          v-if="!isMobile"
           class="req-filter"
           :value="filter ?? ''"
-          @change="setFilter((($event.target as HTMLSelectElement).value as IntentStatus) || null)"
+          @change="setFilterFromString(($event.target as HTMLSelectElement).value)"
         >
           <option v-for="f in FILTERS" :key="f.label" :value="f.value ?? ''">{{ f.label }}</option>
         </select>
+        <div v-else class="req-row-menu" data-testid="intent-list-mobile-actions" @click.stop>
+          <button
+            type="button"
+            class="req-kebab"
+            aria-label="Actions"
+            :aria-expanded="mobileActionsOpen"
+            @click="toggleMobileActionsMenu"
+          >
+            ⋮
+          </button>
+          <div v-if="mobileActionsOpen" class="req-menu">
+            <button
+              type="button"
+              class="req-btn auto-btn req-menu-item"
+              :class="{ running: autoRunning, error: !!autoError }"
+              :title="
+                autoRunning
+                  ? t('intent.automation.stop.tooltip')
+                  : t('intent.automation.start.tooltip')
+              "
+              @click="toggleAutomationFromMenu"
+            >
+              {{
+                autoRunning ? t('intent.automation.stop.label') : t('intent.automation.start.label')
+              }}
+            </button>
+            <select
+              class="req-filter"
+              :value="filter ?? ''"
+              @change="setFilterFromMenu(($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="f in FILTERS" :key="f.label" :value="f.value ?? ''">
+                {{ f.label }}
+              </option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
     <div v-if="autoError" class="auto-status error" :title="autoError">⚠ {{ autoError }}</div>

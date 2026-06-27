@@ -11,7 +11,7 @@
  * - 分段控件(Intents / Sessions)
  * - 右域:Intents tab → 自动化按钮 + 状态过滤;Sessions tab → 「+」新建按钮
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type {
   AutomationStatus,
   Intent,
@@ -19,12 +19,14 @@ import type {
   IntentStatus,
 } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
+import { useIsMobile } from '@/composables/useBreakpoint'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import { panelToggleLabel } from '../../../../lib/intent-list-view'
 import IntentList from '../IntentList/IntentList.vue'
 import IntentSessionList from '../IntentSessionList/IntentSessionList.vue'
 
 const { t } = useTypedI18n()
+const isMobile = useIsMobile()
 
 const props = defineProps<{
   // IntentList props
@@ -63,6 +65,7 @@ const emit = defineEmits<{
 // ---- Segmented control ----
 type MergedTab = 'intents' | 'sessions'
 const activeTab = ref<MergedTab>('intents')
+const mobileActionsOpen = ref(false)
 
 // 暴露 activeTab 供父组件(Intents.vue)读取,用于移动端 mobileStack pane title。
 defineExpose({ activeTab })
@@ -93,6 +96,23 @@ function togglePanel(): void {
   collapsed.value = !collapsed.value
 }
 
+function closeMobileActionsMenu(): void {
+  mobileActionsOpen.value = false
+}
+
+function toggleMobileActionsMenu(): void {
+  mobileActionsOpen.value = !mobileActionsOpen.value
+}
+
+function onDocumentClick(): void {
+  closeMobileActionsMenu()
+}
+
+onMounted(() => document.addEventListener('click', onDocumentClick))
+onUnmounted(() => document.removeEventListener('click', onDocumentClick))
+
+watch([activeTab, isMobile], closeMobileActionsMenu)
+
 // ---- 自动化按钮(仅 intents tab 时显示) ----
 const AUTO_RUNNING_STATES = new Set(['running', 'developing', 'fixing', 'awaiting_gate'])
 const autoRunning = computed(
@@ -107,6 +127,11 @@ const autoError = computed(() =>
 function toggleAutomation(): void {
   if (autoRunning.value) emit('stop-automation')
   else emit('start-automation')
+}
+
+function toggleAutomationFromMenu(): void {
+  toggleAutomation()
+  closeMobileActionsMenu()
 }
 
 // ---- 状态过滤(仅 intents tab 时显示) ----
@@ -126,6 +151,11 @@ function setFilter(value: string): void {
   const status = (value || null) as IntentStatus | null
   filter.value = status
   emit('filter', status)
+}
+
+function setFilterFromMenu(value: string): void {
+  setFilter(value)
+  closeMobileActionsMenu()
 }
 
 // ---- 「意图列表」标题栏的新建会话入口 ----
@@ -178,7 +208,7 @@ function newSessionFromIntents(): void {
       <div class="merged-list-head-right">
         <!-- 两套按钮常驻 DOM,仅切换 display 避免 template v-if 引起 happy-dom fragment 错误 -->
         <button
-          v-show="activeTab === 'intents'"
+          v-show="activeTab === 'intents' && !isMobile"
           class="req-btn auto-btn"
           :class="{ running: autoRunning, error: !!autoError }"
           :title="
@@ -189,7 +219,7 @@ function newSessionFromIntents(): void {
           {{ autoRunning ? t('intent.automation.stop.label') : t('intent.automation.start.label') }}
         </button>
         <select
-          v-show="activeTab === 'intents'"
+          v-show="activeTab === 'intents' && !isMobile"
           class="req-filter"
           :value="filter ?? ''"
           @change="setFilter(($event.target as HTMLSelectElement).value)"
@@ -198,6 +228,48 @@ function newSessionFromIntents(): void {
             {{ f.label }}
           </option>
         </select>
+        <div
+          v-show="activeTab === 'intents' && isMobile"
+          class="req-row-menu"
+          data-testid="intent-list-mobile-actions"
+          @click.stop
+        >
+          <button
+            type="button"
+            class="req-kebab"
+            aria-label="Actions"
+            :aria-expanded="mobileActionsOpen"
+            @click="toggleMobileActionsMenu"
+          >
+            ⋮
+          </button>
+          <div v-if="mobileActionsOpen" class="req-menu">
+            <button
+              type="button"
+              class="req-btn auto-btn req-menu-item"
+              :class="{ running: autoRunning, error: !!autoError }"
+              :title="
+                autoRunning
+                  ? t('intent.automation.stop.tooltip')
+                  : t('intent.automation.start.tooltip')
+              "
+              @click="toggleAutomationFromMenu"
+            >
+              {{
+                autoRunning ? t('intent.automation.stop.label') : t('intent.automation.start.label')
+              }}
+            </button>
+            <select
+              class="req-filter"
+              :value="filter ?? ''"
+              @change="setFilterFromMenu(($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="f in FILTERS" :key="f.label" :value="f.value ?? ''">
+                {{ f.label }}
+              </option>
+            </select>
+          </div>
+        </div>
         <button
           v-show="activeTab === 'intents'"
           type="button"

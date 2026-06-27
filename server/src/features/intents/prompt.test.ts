@@ -33,4 +33,15 @@ describe('buildIntentAgentPrompt', () => {
     expect(prompt).toContain('intentSessionId')
     expect(prompt).toContain('exactly ONE')
   })
+
+  it('keeps one business goal together across technical layers', () => {
+    const prompt = buildIntentAgentPrompt('en', SID)
+    expect(prompt).toContain(
+      'When a single business goal requires changes across database, backend, frontend, tests, and docs',
+    )
+    expect(prompt).toContain(
+      'unless the parts are independently valuable, independently verifiable, or could be developed/released separately',
+    )
+    expect(prompt).toContain('DB→backend→frontend dependency chain for tightly coupled work')
+  })
 })

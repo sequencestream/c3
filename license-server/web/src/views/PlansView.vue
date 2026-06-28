@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { getJSON, formatPrice, type Plan, type PlanTier, type TierCapability } from '../lib/api'
+import { useTypedI18n } from '../i18n'
+
+const { t } = useTypedI18n()
 
 const loading = ref(true)
 const error = ref('')
@@ -14,7 +17,7 @@ onMounted(async () => {
     getJSON<{ plans: Plan[] }>('/v1/plans'),
   ])
   if (!tierRes.ok || !planRes.ok) {
-    error.value = tierRes.error || planRes.error || '加载失败。'
+    error.value = tierRes.error || planRes.error || t('common.errorLoadFailed')
   } else {
     tiers.value = tierRes.data?.tiers ?? []
     capabilities.value = tierRes.data?.capabilities ?? []
@@ -26,15 +29,15 @@ onMounted(async () => {
 
 <template>
   <main class="ls-card wide">
-    <h1>套餐对比 / Plans</h1>
-    <p class="note"><a href="/checkout">购买 / Checkout →</a> · <a href="/account">账户中心 / Account →</a></p>
-    <p v-if="loading" class="note">加载中…</p>
+    <h1>{{ t('plans.title') }}</h1>
+    <p class="note"><a href="/checkout">{{ t('plans.linkCheckout') }}</a> · <a href="/account">{{ t('plans.linkAccount') }}</a></p>
+    <p v-if="loading" class="note">{{ t('common.loading') }}</p>
     <p v-else-if="error" class="error">{{ error }}</p>
     <template v-else>
       <table>
         <thead>
           <tr>
-            <th>能力 / Capability</th>
+            <th>{{ t('plans.capability') }}</th>
             <th v-for="tier in tiers" :key="tier.tier">{{ tier.name }}</th>
           </tr>
         </thead>
@@ -48,21 +51,21 @@ onMounted(async () => {
         </tbody>
       </table>
 
-      <h2>可购买套餐 / Purchasable plans</h2>
+      <h2>{{ t('plans.purchasable') }}</h2>
       <table v-if="plans.length">
         <thead>
           <tr>
-            <th>套餐 / Plan</th>
-            <th>层级 / Tier</th>
-            <th>期限 / Term</th>
-            <th>价格 / Price</th>
+            <th>{{ t('plans.plan') }}</th>
+            <th>{{ t('plans.tier') }}</th>
+            <th>{{ t('plans.term') }}</th>
+            <th>{{ t('plans.price') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="p in plans" :key="p.planKey">
             <td>{{ p.name }}</td>
             <td>{{ p.tier }}</td>
-            <td>{{ p.durationMonths }} months</td>
+            <td>{{ t('plans.months', { count: p.durationMonths }) }}</td>
             <td>{{ formatPrice(p.priceCents, p.currency) }}</td>
           </tr>
         </tbody>

@@ -12,6 +12,9 @@ import {
   type PlanTier,
   type TierCapability,
 } from '../lib/api'
+import { useTypedI18n } from '../i18n'
+
+const { t } = useTypedI18n()
 
 // Renewal checkout (§4): the agreement is shown HERE (not at sign-in). On submit
 // the server derives the amount from the plan and returns a WeChat Native QR.
@@ -126,7 +129,7 @@ watch(paidDisabled, (disabled) => {
 async function submit(): Promise<void> {
   error.value = ''
   if (!accept.value) {
-    error.value = '请先同意服务协议。'
+    error.value = t('checkout.errorMustAccept')
     return
   }
   submitting.value = true
@@ -137,7 +140,7 @@ async function submit(): Promise<void> {
   })
   submitting.value = false
   if (!res.ok || !res.data) {
-    error.value = res.error || '下单失败。'
+    error.value = res.error || t('checkout.errorOrderFailed')
     return
   }
   orderNo.value = res.data.orderNo
@@ -157,33 +160,33 @@ async function submit(): Promise<void> {
 
 <template>
   <main class="ls-card wide checkout-wide">
-    <h1>续费 / Renew</h1>
-    <p class="note"><a href="/plans">查看套餐对比 / Compare plans →</a></p>
-    <p v-if="loading" class="note">加载中…</p>
+    <h1>{{ t('checkout.title') }}</h1>
+    <p class="note"><a href="/plans">{{ t('checkout.linkCompare') }}</a></p>
+    <p v-if="loading" class="note">{{ t('common.loading') }}</p>
     <p v-else-if="error" class="error">{{ error }}</p>
 
     <template v-if="!loading && qrDataUri">
       <template v-if="payStatus === 'paid'">
-        <p class="ok">支付成功!正在跳转到账户页…</p>
+        <p class="ok">{{ t('checkout.paySuccess') }}</p>
       </template>
       <template v-else-if="payStatus === 'expired' || payStatus === 'failed'">
-        <p class="error">支付未完成({{ payStatus === 'expired' ? '订单已超时' : '支付失败' }})。请返回重新下单。</p>
-        <p class="note"><a href="/checkout">重新下单 / Place a new order →</a></p>
+        <p class="error">{{ t('checkout.payIncomplete', { reason: payStatus === 'expired' ? t('checkout.payExpired') : t('checkout.payFailed') }) }}</p>
+        <p class="note"><a href="/checkout">{{ t('checkout.linkNewOrder') }}</a></p>
       </template>
       <template v-else>
-        <p class="ok">订单已创建(订单号 {{ orderNo }})。请用微信扫码支付:</p>
-        <img class="qr" :src="qrDataUri" alt="WeChat Pay QR" width="256" height="256" />
-        <p class="note">支付确认后将延长所选 license 的有效期。二维码 15 分钟内有效。</p>
-        <p class="note">正在等待支付确认,完成后将自动跳转…</p>
+        <p class="ok">{{ t('checkout.orderCreated', { orderNo }) }}</p>
+        <img class="qr" :src="qrDataUri" :alt="t('checkout.qrAlt')" width="256" height="256" />
+        <p class="note">{{ t('checkout.qrHint') }}</p>
+        <p class="note">{{ t('checkout.waitingPayment') }}</p>
       </template>
     </template>
 
     <template v-else-if="!loading">
-      <h2>权益对比 / Compare plans</h2>
+      <h2>{{ t('checkout.compareTitle') }}</h2>
       <table v-if="capabilities.length" class="tier-compare" data-testid="tier-compare">
         <thead>
           <tr>
-            <th>权益 / Capability</th>
+            <th>{{ t('checkout.capability') }}</th>
             <th>{{ tierName('free') }}</th>
             <th>{{ tierName('paid') }}</th>
             <th>{{ tierName('enterprise') }}</th>
@@ -199,23 +202,23 @@ async function submit(): Promise<void> {
         </tbody>
       </table>
 
-      <h2>选择套餐 / Choose a plan</h2>
+      <h2>{{ t('checkout.choosePlan') }}</h2>
       <div class="plan-cols">
         <section class="plan-col" data-testid="free-col">
           <h3>{{ tierName('free') }}</h3>
-          <p class="note">免费版无需购买,不提供可选套餐。</p>
+          <p class="note">{{ t('checkout.freeNoPurchase') }}</p>
         </section>
 
         <section class="plan-col" :class="{ 'is-disabled': paidDisabled }" data-testid="paid-col">
           <h3>{{ tierName('paid') }}</h3>
           <p v-if="paidDisabled" class="note disabled-hint" data-testid="paid-disabled-hint">
-            所选 license 为活跃企业版,付费套餐不可用于续期,请选择企业套餐。
+            {{ t('checkout.paidDisabledHint') }}
           </p>
           <label v-for="p in paidPlans" :key="p.planKey" class="opt" :class="{ 'opt-disabled': paidDisabled }">
             <input type="radio" name="plan" :value="p.planKey" v-model="planKey" :disabled="paidDisabled" />
             <span>{{ p.name }}</span><span class="price">{{ formatPrice(p.priceCents, p.currency) }}</span>
           </label>
-          <p v-if="!paidPlans.length" class="note">暂无付费套餐。</p>
+          <p v-if="!paidPlans.length" class="note">{{ t('checkout.noPaidPlans') }}</p>
         </section>
 
         <section class="plan-col" data-testid="enterprise-col">
@@ -224,25 +227,29 @@ async function submit(): Promise<void> {
             <input type="radio" name="plan" :value="p.planKey" v-model="planKey" />
             <span>{{ p.name }}</span><span class="price">{{ formatPrice(p.priceCents, p.currency) }}</span>
           </label>
-          <p v-if="!enterprisePlans.length" class="note">暂无企业套餐。</p>
+          <p v-if="!enterprisePlans.length" class="note">{{ t('checkout.noEnterprisePlans') }}</p>
         </section>
       </div>
 
-      <h2>续期目标 license</h2>
+      <h2>{{ t('checkout.renewTarget') }}</h2>
       <label v-for="l in licenses" :key="l.licenseId" class="opt">
         <input type="radio" name="lic" :value="l.licenseId" v-model="licenseId" />
         <code class="key">{{ l.licenseKey }}</code>
         <span class="badge" data-testid="lic-tier">{{ tierLabel(l.tier) }}</span>
         <span class="price">{{ formatDate(l.termEnd) }}</span>
       </label>
-      <p v-if="!licenses.length" class="note">此账号暂无可续期 license。</p>
+      <p v-if="!licenses.length" class="note">{{ t('checkout.noRenewableLicenses') }}</p>
 
       <label class="agree">
         <input type="checkbox" v-model="accept" />
-        <span>我已阅读并同意《<a href="/agreement" target="_blank" rel="noopener">{{ agreement?.title }}</a>》。</span>
+        <span>
+          <i18n-t keypath="checkout.agreePrompt" tag="span">
+            <template #agreement><a href="/agreement" target="_blank" rel="noopener">{{ agreement?.title }}</a></template>
+          </i18n-t>
+        </span>
       </label>
       <button :disabled="submitting || !accept || !planKey || licenseId === null" @click="submit">
-        {{ submitting ? '提交中…' : '下单 / Place order' }}
+        {{ submitting ? t('checkout.submitting') : t('checkout.placeOrder') }}
       </button>
     </template>
   </main>

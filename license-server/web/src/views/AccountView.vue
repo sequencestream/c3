@@ -10,6 +10,9 @@ import {
   type License,
   type Order,
 } from '../lib/api'
+import { useTypedI18n } from '../i18n'
+
+const { t } = useTypedI18n()
 
 // User self-service (§10): the signed-in user's licenses (with binding info)
 // and paid orders. Never shows the alive token or entitlement token (PL-R2).
@@ -29,7 +32,7 @@ onMounted(async () => {
     getJSON<{ orders: Order[] }>('/v1/orders'),
   ])
   if (!l.ok || !o.ok) {
-    error.value = l.error || o.error || '加载失败。'
+    error.value = l.error || o.error || t('common.errorLoadFailed')
   } else {
     licenses.value = l.data?.licenses ?? []
     orders.value = o.data?.orders ?? []
@@ -40,21 +43,21 @@ onMounted(async () => {
 
 <template>
   <main class="ls-card wide">
-    <h1>账户中心 / Account</h1>
-    <p class="note"><a href="/checkout">续费 / Renew a license →</a> · <a href="/plans">套餐对比 / Compare plans →</a></p>
-    <p v-if="loading" class="note">加载中…</p>
+    <h1>{{ t('account.title') }}</h1>
+    <p class="note"><a href="/checkout">{{ t('account.linkRenew') }}</a> · <a href="/plans">{{ t('account.linkCompare') }}</a></p>
+    <p v-if="loading" class="note">{{ t('common.loading') }}</p>
     <p v-else-if="error" class="error">{{ error }}</p>
 
     <template v-else>
-      <h2>我的 License</h2>
+      <h2>{{ t('account.myLicenses') }}</h2>
       <table v-if="licenses.length">
         <thead>
           <tr>
-            <th>License Key</th>
-            <th>状态</th>
-            <th>层级</th>
-            <th>有效至</th>
-            <th>当前绑定</th>
+            <th>{{ t('account.licenseKey') }}</th>
+            <th>{{ t('common.status') }}</th>
+            <th>{{ t('common.tier') }}</th>
+            <th>{{ t('account.validUntil') }}</th>
+            <th>{{ t('account.currentBinding') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -65,21 +68,21 @@ onMounted(async () => {
             <td><span :class="statusBadgeClass(l.status)">{{ l.status }}</span></td>
             <td>{{ tierLabel(l.tier) }}</td>
             <td>{{ formatDate(l.termEnd) }}</td>
-            <td>{{ l.aliveInstallId || '未绑定' }}</td>
+            <td>{{ l.aliveInstallId || t('account.notBound') }}</td>
           </tr>
         </tbody>
       </table>
-      <p v-else class="note">暂无 license。</p>
+      <p v-else class="note">{{ t('account.noLicenses') }}</p>
 
-      <h2>已支付订单</h2>
+      <h2>{{ t('account.paidOrders') }}</h2>
       <table v-if="orders.length">
         <thead>
           <tr>
-            <th>订单号</th>
-            <th>套餐</th>
-            <th>金额</th>
-            <th>状态</th>
-            <th>时间</th>
+            <th>{{ t('account.orderNo') }}</th>
+            <th>{{ t('account.plan') }}</th>
+            <th>{{ t('account.amount') }}</th>
+            <th>{{ t('common.status') }}</th>
+            <th>{{ t('account.time') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -94,7 +97,7 @@ onMounted(async () => {
           </tr>
         </tbody>
       </table>
-      <p v-else class="note">暂无订单。</p>
+      <p v-else class="note">{{ t('account.noOrders') }}</p>
     </template>
   </main>
 </template>

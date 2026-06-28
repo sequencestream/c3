@@ -1,6 +1,8 @@
 // api.ts — tiny fetch helpers for the license-server SPA. All endpoints are the
 // same-origin /v1 JSON API (see specs §10); the sign-in cookie rides along.
 
+import { t } from '../i18n'
+
 export interface Plan {
   planKey: string
   name: string
@@ -116,17 +118,18 @@ export function statusBadgeClass(status: string): string {
   }
 }
 
-// tierLabel renders a license/plan tier id as its Chinese display label. Kept
+// tierLabel renders a license/plan tier id as its localized display label. Kept
 // here (not derived from /v1/plan-tiers) so views that don't fetch the tier
-// catalog — e.g. the account page — can still label a license's tier.
+// catalog — e.g. the account page — can still label a license's tier. Resolves
+// via the global i18n so it tracks the active UI language.
 export function tierLabel(tier: string): string {
   switch (tier) {
     case 'free':
-      return '免费版'
+      return t('tier.free')
     case 'paid':
-      return '付费版'
+      return t('tier.paid')
     case 'enterprise':
-      return '企业版'
+      return t('tier.enterprise')
     default:
       return tier
   }

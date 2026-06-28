@@ -9,6 +9,9 @@ import {
   statusBadgeClass,
   type License,
 } from '../lib/api'
+import { useTypedI18n } from '../i18n'
+
+const { t } = useTypedI18n()
 
 // The browser-mediated binding landing (§4): c3 server opened this page with
 // installId + requestId. We list the signed-in user's licenses; selecting one
@@ -24,7 +27,7 @@ const binding = ref('')
 
 onMounted(async () => {
   if (!installId || !requestId) {
-    error.value = '请从 c3 客户端发起激活(缺少 installId/requestId)。'
+    error.value = t('activate.errorMissingParams')
     loading.value = false
     return
   }
@@ -36,7 +39,7 @@ onMounted(async () => {
     return
   }
   if (!res.ok || !res.data) {
-    error.value = res.error || '加载 license 失败。'
+    error.value = res.error || t('activate.errorLoadFailed')
   } else {
     licenses.value = res.data.licenses
     // A sole long-lived license is bound server-side (§4); skip the picker and go
@@ -57,7 +60,7 @@ async function bind(licenseKey: string): Promise<void> {
   })
   binding.value = ''
   if (!res.ok) {
-    error.value = res.error || '绑定失败。'
+    error.value = res.error || t('activate.errorBindFailed')
     return
   }
   bound.value = true
@@ -66,34 +69,35 @@ async function bind(licenseKey: string): Promise<void> {
 
 <template>
   <main class="ls-card">
-    <h1>激活 / Activate</h1>
-    <p v-if="loading" class="note">加载中…</p>
+    <h1>{{ t('activate.title') }}</h1>
+    <p v-if="loading" class="note">{{ t('common.loading') }}</p>
     <p v-else-if="error" class="error">{{ error }}</p>
 
     <template v-else-if="bound">
-      <p class="ok">✓ 绑定成功。可返回 c3 继续使用,本页可关闭。</p>
+      <p class="ok">{{ t('activate.boundSuccess') }}</p>
     </template>
 
     <template v-else>
       <p class="note">
-        选择一条 license 绑定到本安装(installId <code>{{ installId }}</code
-        >)。
+        <i18n-t keypath="activate.pickPrompt" tag="span">
+          <template #installId><code>{{ installId }}</code></template>
+        </i18n-t>
       </p>
       <ul class="ls-list">
         <li v-for="l in licenses" :key="l.licenseKey" class="row">
           <div>
             <code class="key">{{ l.licenseKey }}</code>
             <div class="meta">
-              <span :class="statusBadgeClass(l.status)">{{ l.status }}</span> · 有效至
+              <span :class="statusBadgeClass(l.status)">{{ l.status }}</span> · {{ t('activate.validUntil') }}
               {{ formatDate(l.termEnd) }}
             </div>
           </div>
           <button :disabled="binding !== ''" @click="bind(l.licenseKey)">
-            {{ binding === l.licenseKey ? '绑定中…' : '绑定' }}
+            {{ binding === l.licenseKey ? t('activate.binding') : t('activate.bind') }}
           </button>
         </li>
       </ul>
-      <p v-if="!licenses.length" class="note">此账号暂无 license。</p>
+      <p v-if="!licenses.length" class="note">{{ t('activate.noLicenses') }}</p>
     </template>
   </main>
 </template>

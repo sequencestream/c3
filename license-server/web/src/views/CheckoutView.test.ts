@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import type { License, Plan, PlanTier, TierCapability } from '../lib/api'
+import { i18n, setLocale } from '../i18n'
+
+// Tier labels and front-end cells are localized; pin the UI language to zh so the
+// Chinese-text assertions below (and tierLabel via the shared i18n singleton) are
+// deterministic regardless of the test environment's navigator.language.
+beforeEach(() => {
+  setLocale('zh')
+})
 
 // The view talks to the /v1 JSON API via lib/api; mock those helpers so each test
 // drives the component purely from canned plans/licenses/tiers payloads.
@@ -65,7 +73,7 @@ async function mountView(fx: Fixture = {}): Promise<VueWrapper> {
     if (url === '/v1/plan-tiers') return Promise.resolve(ok({ tiers, capabilities }))
     return Promise.resolve(ok({}))
   })
-  const wrapper = mount(CheckoutView)
+  const wrapper = mount(CheckoutView, { global: { plugins: [i18n] } })
   await flushPromises()
   return wrapper
 }
@@ -103,9 +111,10 @@ describe('CheckoutView capability comparison', () => {
     expect(text).toContain('不可 / No') // free cell
     expect(text).toContain('可 / Yes') // paid + enterprise cells
     expect(text).toContain('高级') // enterprise-only capability value
-    // All three tier headings are present in the comparison.
+    // The first heading is the localized "capability" label (zh); the three tier
+    // headings come from the server fixture's PlanTier.name and stay as-is.
     const heads = table.findAll('th').map((th) => th.text())
-    expect(heads).toEqual(['权益 / Capability', '免费版 / Free', '付费版 / Paid', '企业版 / Enterprise'])
+    expect(heads).toEqual(['权益', '免费版 / Free', '付费版 / Paid', '企业版 / Enterprise'])
   })
 
   it('shows a free column in the picker with no selectable plans', async () => {

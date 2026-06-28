@@ -46,7 +46,57 @@
     "tier": "层级",
     "term": "期限",
     "price": "价格",
-    "months": "{count} 个月"
+    "months": "{count} 个月",
+    "capabilities": {
+      "workspaces": {
+        "label": "注册 workspace 数",
+        "free": "5",
+        "paid": "不限",
+        "enterprise": "不限"
+      },
+      "activeWorktrees": {
+        "label": "并发活跃 worktree",
+        "free": "1",
+        "paid": "不限",
+        "enterprise": "不限"
+      },
+      "discussionParticipants": {
+        "label": "单次讨论参与者(不含主持人)",
+        "free": "2",
+        "paid": "不限",
+        "enterprise": "不限"
+      },
+      "enabledSchedules": {
+        "label": "启用中的 schedule",
+        "free": "2",
+        "paid": "不限",
+        "enterprise": "不限"
+      },
+      "sandbox": {
+        "label": "启用 sandbox",
+        "free": "不可",
+        "paid": "可",
+        "enterprise": "可"
+      },
+      "permissionControls": {
+        "label": "权限控制",
+        "free": "基础",
+        "paid": "基础",
+        "enterprise": "更高级的权限控制(预告)"
+      },
+      "priceTerm": {
+        "label": "价格 / 期限",
+        "free": "免费、长期",
+        "paid": "见购买页",
+        "enterprise": "见购买页"
+      }
+    },
+    "name": {
+      "1m": "1 个月",
+      "6m": "6 个月",
+      "1y": "1 年",
+      "enterprise_1y": "企业版 1 年"
+    }
   },
   "account": {
     "title": "账户中心",

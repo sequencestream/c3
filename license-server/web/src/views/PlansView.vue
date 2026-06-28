@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { getJSON, formatPrice, type Plan, type PlanTier, type TierCapability } from '../lib/api'
+import { getJSON, formatPrice, tierLabel, capabilityText, planLabel, type Plan, type PlanTier, type TierCapability } from '../lib/api'
 import { useTypedI18n } from '../i18n'
 
 const { t } = useTypedI18n()
@@ -38,15 +38,15 @@ onMounted(async () => {
         <thead>
           <tr>
             <th>{{ t('plans.capability') }}</th>
-            <th v-for="tier in tiers" :key="tier.tier">{{ tier.name }}</th>
+            <th v-for="tier in tiers" :key="tier.tier">{{ tierLabel(tier.tier) }}</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in capabilities" :key="row.label">
-            <td>{{ row.label }}</td>
-            <td>{{ row.free }}</td>
-            <td>{{ row.paid }}</td>
-            <td>{{ row.enterprise }}</td>
+          <tr v-for="row, i in capabilities" :key="row.label">
+            <td>{{ capabilityText(i, 'label', row.label) }}</td>
+            <td>{{ capabilityText(i, 'free', row.free) }}</td>
+            <td>{{ capabilityText(i, 'paid', row.paid) }}</td>
+            <td>{{ capabilityText(i, 'enterprise', row.enterprise) }}</td>
           </tr>
         </tbody>
       </table>
@@ -63,8 +63,8 @@ onMounted(async () => {
         </thead>
         <tbody>
           <tr v-for="p in plans" :key="p.planKey">
-            <td>{{ p.name }}</td>
-            <td>{{ p.tier }}</td>
+            <td>{{ planLabel(p) }}</td>
+            <td>{{ tierLabel(p.tier) }}</td>
             <td>{{ t('plans.months', { count: p.durationMonths }) }}</td>
             <td>{{ formatPrice(p.priceCents, p.currency) }}</td>
           </tr>

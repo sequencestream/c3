@@ -7,9 +7,9 @@ import {
   formatDate,
   loginHref,
   tierLabel,
+  capabilityText,
   type Plan,
   type License,
-  type PlanTier,
   type TierCapability,
 } from '../lib/api'
 import { useTypedI18n } from '../i18n'
@@ -28,7 +28,6 @@ const loading = ref(true)
 const error = ref('')
 const plans = ref<Plan[]>([])
 const licenses = ref<License[]>([])
-const tiers = ref<PlanTier[]>([])
 const capabilities = ref<TierCapability[]>([])
 const agreement = ref<Agreement | null>(null)
 const planKey = ref('')
@@ -43,10 +42,10 @@ const orderNo = ref('')
 const paidPlans = computed(() => plans.value.filter((p) => p.tier === 'paid'))
 const enterprisePlans = computed(() => plans.value.filter((p) => p.tier === 'enterprise'))
 
-// tierName resolves a tier id to its display label from /v1/plan-tiers, falling
-// back to the raw id so a missing tiers fetch never blanks the column heading.
+// tierName resolves a tier id to its localized display label, falling back to the
+// raw id so an unknown tier never blanks the column heading.
 function tierName(tier: string): string {
-  return tiers.value.find((t) => t.tier === tier)?.name ?? tier
+  return tierLabel(tier)
 }
 
 // selectedLicense is the renewal target the disable rule keys off of.
@@ -100,12 +99,11 @@ onMounted(async () => {
     getJSON<{ plans: Plan[] }>('/v1/plans'),
     getJSON<{ licenses: License[] }>('/v1/licenses'),
     getJSON<Agreement>('/v1/agreement'),
-    getJSON<{ tiers: PlanTier[]; capabilities: TierCapability[] }>('/v1/plan-tiers'),
+    getJSON<{ capabilities: TierCapability[] }>('/v1/plan-tiers'),
   ])
   plans.value = p.data?.plans ?? []
   licenses.value = l.data?.licenses ?? []
   agreement.value = a.data
-  tiers.value = t.data?.tiers ?? []
   capabilities.value = t.data?.capabilities ?? []
   if (licenses.value.length) licenseId.value = licenses.value[0].licenseId
   // Default the selection to the first selectable plan: skip the paid column when
@@ -193,11 +191,11 @@ async function submit(): Promise<void> {
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in capabilities" :key="row.label">
-            <td>{{ row.label }}</td>
-            <td>{{ row.free }}</td>
-            <td>{{ row.paid }}</td>
-            <td>{{ row.enterprise }}</td>
+          <tr v-for="row, i in capabilities" :key="row.label">
+            <td>{{ capabilityText(i, 'label', row.label) }}</td>
+            <td>{{ capabilityText(i, 'free', row.free) }}</td>
+            <td>{{ capabilityText(i, 'paid', row.paid) }}</td>
+            <td>{{ capabilityText(i, 'enterprise', row.enterprise) }}</td>
           </tr>
         </tbody>
       </table>

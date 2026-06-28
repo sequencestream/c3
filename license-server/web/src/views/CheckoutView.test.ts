@@ -34,8 +34,13 @@ const TIERS: PlanTier[] = [
   { tier: 'enterprise', name: '企业版 / Enterprise' },
 ]
 const CAPABILITIES: TierCapability[] = [
+  { label: '注册 workspace 数 / Workspaces', free: '5', paid: '不限 / Unlimited', enterprise: '不限 / Unlimited' },
+  { label: '并发活跃 worktree / Active worktrees', free: '1', paid: '不限 / Unlimited', enterprise: '不限 / Unlimited' },
+  { label: '单次讨论参与者(不含主持人) / Discussion participants', free: '2', paid: '不限 / Unlimited', enterprise: '不限 / Unlimited' },
+  { label: '启用中的 schedule / Enabled schedules', free: '2', paid: '不限 / Unlimited', enterprise: '不限 / Unlimited' },
   { label: '启用 sandbox / Sandbox', free: '不可 / No', paid: '可 / Yes', enterprise: '可 / Yes' },
-  { label: '权限控制 / Permission controls', free: '基础', paid: '基础', enterprise: '高级' },
+  { label: '权限控制 / Permission controls', free: '基础 / Basic', paid: '基础 / Basic', enterprise: '更高级的权限控制(预告) / Advanced controls (preview)' },
+  { label: '价格 / 期限 / Price / Term', free: '免费、长期 / Free, long-lived', paid: '见购买页 / See checkout', enterprise: '见购买页 / See checkout' },
 ]
 
 // Far-future / long-past Unix-seconds term ends, so active-enterprise detection
@@ -103,18 +108,35 @@ describe('CheckoutView plan classification', () => {
 })
 
 describe('CheckoutView capability comparison', () => {
-  it('renders the free / paid / enterprise capability differences', async () => {
+  it('renders the free / paid / enterprise capability differences in Chinese', async () => {
     const wrapper = await mountView()
     const table = wrapper.get('[data-testid="tier-compare"]')
     const text = table.text()
-    expect(text).toContain('启用 sandbox / Sandbox')
-    expect(text).toContain('不可 / No') // free cell
-    expect(text).toContain('可 / Yes') // paid + enterprise cells
-    expect(text).toContain('高级') // enterprise-only capability value
-    // The first heading is the localized "capability" label (zh); the three tier
-    // headings come from the server fixture's PlanTier.name and stay as-is.
+    expect(text).toContain('注册 workspace 数')
+    expect(text).toContain('启用 sandbox')
+    expect(text).toContain('不可') // free cell
+    expect(text).toContain('可') // paid + enterprise cells
+    expect(text).toContain('更高级的权限控制(预告)') // enterprise-only capability value
+    expect(text).not.toContain('Unlimited')
+    expect(text).not.toContain('Permission controls')
     const heads = table.findAll('th').map((th) => th.text())
-    expect(heads).toEqual(['权益', '免费版 / Free', '付费版 / Paid', '企业版 / Enterprise'])
+    expect(heads).toEqual(['权益', '免费版', '付费版', '企业版'])
+  })
+
+  it('refreshes comparison copy when switching to English', async () => {
+    const wrapper = await mountView()
+    setLocale('en')
+    await flushPromises()
+    const table = wrapper.get('[data-testid="tier-compare"]')
+    const text = table.text()
+    expect(table.findAll('th').map((th) => th.text())).toEqual(['Capability', 'Free', 'Paid', 'Enterprise'])
+    expect(text).toContain('Registered workspaces')
+    expect(text).toContain('Sandbox')
+    expect(text).toContain('No')
+    expect(text).toContain('Yes')
+    expect(text).toContain('Advanced controls (preview)')
+    expect(text).not.toContain('注册')
+    expect(text).not.toContain('不可')
   })
 
   it('shows a free column in the picker with no selectable plans', async () => {

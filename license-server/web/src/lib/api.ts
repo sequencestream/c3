@@ -1,7 +1,7 @@
 // api.ts — tiny fetch helpers for the license-server SPA. All endpoints are the
 // same-origin /v1 JSON API (see specs §10); the sign-in cookie rides along.
 
-import { t } from '../i18n'
+import { t, type LocaleKey } from '../i18n'
 
 export interface Plan {
   planKey: string
@@ -23,6 +23,18 @@ export interface TierCapability {
   paid: string
   enterprise: string
 }
+
+type CapabilityField = keyof TierCapability
+
+const capabilityKeys = [
+  'workspaces',
+  'activeWorktrees',
+  'discussionParticipants',
+  'enabledSchedules',
+  'sandbox',
+  'permissionControls',
+  'priceTerm',
+] as const
 
 export interface License {
   licenseId: number
@@ -132,6 +144,30 @@ export function tierLabel(tier: string): string {
       return t('tier.enterprise')
     default:
       return tier
+  }
+}
+
+// capabilityText maps the plan-tier API's row order to localized copy. The API
+// row remains the iteration source; unknown future rows keep their raw fallback.
+export function capabilityText(index: number, field: CapabilityField, fallback: string): string {
+  const key = capabilityKeys[index]
+  return key === undefined ? fallback : t(`plans.capabilities.${key}.${field}` as LocaleKey)
+}
+
+// planLabel renders known catalog plan keys as localized names while preserving
+// the server-provided name for unknown catalog extensions.
+export function planLabel(plan: Plan): string {
+  switch (plan.planKey) {
+    case '1m':
+      return t('plans.name.1m')
+    case '6m':
+      return t('plans.name.6m')
+    case '1y':
+      return t('plans.name.1y')
+    case 'enterprise-1y':
+      return t('plans.name.enterprise_1y')
+    default:
+      return plan.name
   }
 }
 

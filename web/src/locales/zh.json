@@ -692,6 +692,12 @@
       "refine": {
         "label": "优化"
       },
+      "markTodo": {
+        "label": "待办"
+      },
+      "backToDraft": {
+        "label": "退回草稿"
+      },
       "startDev": {
         "label": "开始开发"
       },

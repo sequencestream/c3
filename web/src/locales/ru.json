@@ -693,6 +693,12 @@
       "refine": {
         "label": "Уточнить"
       },
+      "markTodo": {
+        "label": "В задачи"
+      },
+      "backToDraft": {
+        "label": "Вернуть в черновик"
+      },
       "startDev": {
         "label": "Начать разработку"
       },

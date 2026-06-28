@@ -170,7 +170,8 @@ See [intent-management-models.md](intent-management-models.md).
 ```mermaid
 stateDiagram-v2
     [*] --> draft: (optional seed)
-    draft --> todo: save_intents (confirmed)
+    draft --> todo: save_intents (confirmed) / Todo button
+    todo --> draft: back to draft (manual revert)
     [*] --> todo: save_intents (confirmed)
     todo --> in_progress: launch development / automation pick
     in_progress --> in_progress: relaunch (dangling dev session)
@@ -184,6 +185,12 @@ stateDiagram-v2
 - **Save → `todo`.** Confirmed `save_intents` produces `todo` items (RM-R6); an upsert update keeps a
   `draft`/`todo` item's status, **reactivates** a `cancelled` item to `todo`, and is rejected for an
   `in_progress`/`done` (immutable) item (RM-R20).
+- **`draft ⇄ todo` manual toggle.** The intent detail title-bar exposes two status-transition buttons
+  driven solely by the current status: a `draft` intent shows **Todo** (promote `draft → todo`) and a
+  `todo` intent shows **back to draft** (manual revert `todo → draft`); no other status renders these.
+  `todo → draft` is the only backward edge into an earlier non-terminal state and goes through the same
+  `canTransition` guard + `update_intent_status` path as every other status change. The buttons are
+  status-only — no dependency, spec, or dev-session gate — and the scope is strictly `draft ↔ todo`.
 - **Launch → `in_progress`.** Sets `lastDevSessionId`; also re-allowed for an `in_progress`
   item whose development session was deleted (RM-R8). The automation orchestrator likewise sets
   `in_progress` when it picks a intent up (RM-A3).

@@ -572,6 +572,26 @@ defineExpose({
           <div class="intent-detail-title-meta">
             <div class="intent-detail-actions" data-testid="intent-detail-actions">
               <button
+                v-if="intent.status === 'draft'"
+                type="button"
+                class="req-btn"
+                data-action="markTodo"
+                data-testid="intent-detail-mark-todo"
+                @click="emit('set-status', intent.id, 'todo')"
+              >
+                {{ t('intent.action.markTodo.label') }}
+              </button>
+              <button
+                v-else-if="intent.status === 'todo'"
+                type="button"
+                class="req-btn"
+                data-action="backToDraft"
+                data-testid="intent-detail-back-to-draft"
+                @click="emit('set-status', intent.id, 'draft')"
+              >
+                {{ t('intent.action.backToDraft.label') }}
+              </button>
+              <button
                 v-if="canResetIntentSession"
                 type="button"
                 class="req-btn"

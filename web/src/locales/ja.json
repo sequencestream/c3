@@ -693,6 +693,12 @@
       "refine": {
         "label": "推敲"
       },
+      "markTodo": {
+        "label": "ToDo にする"
+      },
+      "backToDraft": {
+        "label": "下書きに戻す"
+      },
       "startDev": {
         "label": "開発開始"
       },

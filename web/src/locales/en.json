@@ -692,6 +692,12 @@
       "refine": {
         "label": "Refine"
       },
+      "markTodo": {
+        "label": "Todo"
+      },
+      "backToDraft": {
+        "label": "back to draft"
+      },
       "startDev": {
         "label": "Start dev"
       },

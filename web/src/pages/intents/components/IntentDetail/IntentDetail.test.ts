@@ -458,6 +458,40 @@ describe('IntentDetail.vue — actions', () => {
   })
 })
 
+describe('IntentDetail.vue — draft ↔ todo status transition buttons', () => {
+  it('draft: shows the Todo button (not back-to-draft); click emits set-status todo', async () => {
+    const item = intent({ id: 'i1', status: 'draft' })
+    const w = mountDetail(item)
+
+    const todoBtn = w.find('[data-testid="intent-detail-mark-todo"]')
+    expect(todoBtn.exists()).toBe(true)
+    expect(w.find('[data-testid="intent-detail-back-to-draft"]').exists()).toBe(false)
+
+    await todoBtn.trigger('click')
+    expect(w.emitted('set-status')).toEqual([['i1', 'todo']])
+  })
+
+  it('todo: shows the back-to-draft button (not Todo); click emits set-status draft', async () => {
+    const item = intent({ id: 'i1', status: 'todo' })
+    const w = mountDetail(item)
+
+    const backBtn = w.find('[data-testid="intent-detail-back-to-draft"]')
+    expect(backBtn.exists()).toBe(true)
+    expect(w.find('[data-testid="intent-detail-mark-todo"]').exists()).toBe(false)
+
+    await backBtn.trigger('click')
+    expect(w.emitted('set-status')).toEqual([['i1', 'draft']])
+  })
+
+  it('renders neither button for in_progress / done / cancelled', () => {
+    for (const status of ['in_progress', 'done', 'cancelled'] as const) {
+      const w = mountDetail(intent({ id: 'i1', status }))
+      expect(w.find('[data-testid="intent-detail-mark-todo"]').exists()).toBe(false)
+      expect(w.find('[data-testid="intent-detail-back-to-draft"]').exists()).toBe(false)
+    }
+  })
+})
+
 describe('IntentDetail.vue — dependency metadata', () => {
   it('renders each dependency with title, text status, type, and an edit button', () => {
     const current = intent({

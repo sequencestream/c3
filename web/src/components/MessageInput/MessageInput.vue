@@ -386,74 +386,96 @@ function onKey(e: KeyboardEvent) {
         <span class="slash-desc">{{ c.description }}</span>
       </div>
     </div>
-    <textarea
-      ref="inputEl"
-      v-model="input"
-      :placeholder="
-        !hasActiveSession
-          ? t('session.input.placeholder.noSession')
-          : teamActive
-            ? t('session.input.placeholder.team')
-            : ordinaryRunning
-              ? t('session.input.placeholder.running')
-              : voiceState === 'listening'
-                ? t('session.input.placeholder.listening')
-                : t('session.input.placeholder.ready')
-      "
-      :disabled="inputDisabled"
-      @keydown="onKey"
-      @paste="onPaste"
-    />
-    <button
-      class="attach-btn"
-      :disabled="!hasActiveSession"
-      :title="t('session.input.attach.tooltip')"
-      :aria-label="t('session.input.attach.ariaLabel')"
-      @click="openFilePicker"
-    >
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
-        <path
-          d="M16.5 6.5v9a4.5 4.5 0 0 1-9 0V6a3 3 0 0 1 6 0v9a1.5 1.5 0 0 1-3 0V7h-1.5v8a3 3 0 0 0 6 0V6a4.5 4.5 0 0 0-9 0v9.5a6 6 0 0 0 12 0v-9z"
-        />
-      </svg>
-    </button>
-    <button
-      v-if="voiceSupported"
-      class="mic-btn"
-      :class="{ listening: voiceState === 'listening', error: voiceState === 'error' }"
-      :disabled="!hasActiveSession"
-      :title="voiceState === 'error' ? voiceError : t('session.input.voice.tooltip')"
-      :aria-label="
-        voiceState === 'listening'
-          ? t('session.input.voice.stop.ariaLabel')
-          : t('session.input.voice.start.ariaLabel')
-      "
-      :aria-pressed="voiceState === 'listening'"
-      @click="toggleMic"
-    >
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
-        <rect x="2" y="8" width="2.4" height="8" rx="1.2" />
-        <rect x="6.4" y="5" width="2.4" height="14" rx="1.2" />
-        <rect x="10.8" y="2" width="2.4" height="20" rx="1.2" />
-        <rect x="15.2" y="5" width="2.4" height="14" rx="1.2" />
-        <rect x="19.6" y="8" width="2.4" height="8" rx="1.2" />
-      </svg>
-    </button>
-    <!-- Send is fixed copy; while a turn is in flight it enqueues (composerAction). Stop/End
-         team live in the status bar now, not here. -->
-    <div class="send-wrap" @mouseenter="onSendHover" @mouseleave="onSendLeave">
-      <div v-if="showSendHint" class="send-hint" role="tooltip">
-        {{
-          ordinaryRunning ? t('session.input.sendHint.running') : t('session.input.sendHint.ready')
-        }}
+    <!-- The action buttons are embedded inside this field as a bottom bar: attach+mic
+         at the inner bottom-left, send at the inner bottom-right. Laying them out in a
+         flex column (textarea above, bar below) keeps text and buttons in normal flow so
+         they never overlap in any state; the border/focus ring lives on the container. -->
+    <div class="composer-field">
+      <textarea
+        ref="inputEl"
+        v-model="input"
+        :placeholder="
+          !hasActiveSession
+            ? t('session.input.placeholder.noSession')
+            : teamActive
+              ? t('session.input.placeholder.team')
+              : ordinaryRunning
+                ? t('session.input.placeholder.running')
+                : voiceState === 'listening'
+                  ? t('session.input.placeholder.listening')
+                  : t('session.input.placeholder.ready')
+        "
+        :disabled="inputDisabled"
+        @keydown="onKey"
+        @paste="onPaste"
+      />
+      <div class="composer-bar">
+        <div class="composer-actions">
+          <button
+            class="attach-btn"
+            :disabled="!hasActiveSession"
+            :title="t('session.input.attach.tooltip')"
+            :aria-label="t('session.input.attach.ariaLabel')"
+            @click="openFilePicker"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+              <path
+                d="M16.5 6.5v9a4.5 4.5 0 0 1-9 0V6a3 3 0 0 1 6 0v9a1.5 1.5 0 0 1-3 0V7h-1.5v8a3 3 0 0 0 6 0V6a4.5 4.5 0 0 0-9 0v9.5a6 6 0 0 0 12 0v-9z"
+              />
+            </svg>
+          </button>
+          <button
+            v-if="voiceSupported"
+            class="mic-btn"
+            :class="{ listening: voiceState === 'listening', error: voiceState === 'error' }"
+            :disabled="!hasActiveSession"
+            :title="voiceState === 'error' ? voiceError : t('session.input.voice.tooltip')"
+            :aria-label="
+              voiceState === 'listening'
+                ? t('session.input.voice.stop.ariaLabel')
+                : t('session.input.voice.start.ariaLabel')
+            "
+            :aria-pressed="voiceState === 'listening'"
+            @click="toggleMic"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+              <rect x="2" y="8" width="2.4" height="8" rx="1.2" />
+              <rect x="6.4" y="5" width="2.4" height="14" rx="1.2" />
+              <rect x="10.8" y="2" width="2.4" height="20" rx="1.2" />
+              <rect x="15.2" y="5" width="2.4" height="14" rx="1.2" />
+              <rect x="19.6" y="8" width="2.4" height="8" rx="1.2" />
+            </svg>
+          </button>
+        </div>
+        <!-- Send is an icon button now; while a turn is in flight it enqueues (composerAction).
+             Stop/End team live in the status bar, not here. -->
+        <div class="send-wrap" @mouseenter="onSendHover" @mouseleave="onSendLeave">
+          <div v-if="showSendHint" class="send-hint" role="tooltip">
+            {{
+              ordinaryRunning
+                ? t('session.input.sendHint.running')
+                : t('session.input.sendHint.ready')
+            }}
+          </div>
+          <button
+            class="send-btn"
+            :disabled="(!input.trim() && images.length === 0) || !hasActiveSession"
+            :title="t('session.input.send.label')"
+            :aria-label="t('session.input.send.label')"
+            @click="submit"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+              <path
+                d="M12 5v14M12 19l-6-6M12 19l6-6"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
-      <button
-        class="send-btn"
-        :disabled="(!input.trim() && images.length === 0) || !hasActiveSession"
-        @click="submit"
-      >
-        {{ t('session.input.send.label') }}
-      </button>
     </div>
   </footer>
 </template>

@@ -1778,6 +1778,39 @@ footer {
   display: none;
 }
 
+/* 输入字段容器：弹性列——textarea 在上、动作按钮栏在下，文本与按钮始终在
+   正常流中互不重叠。边框与聚焦环挂在容器上，让高亮包住整个输入字段。 */
+.composer-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+.composer-field:focus-within {
+  border-color: var(--c-primary);
+  box-shadow: 0 0 0 2px var(--c-primary-glow);
+}
+
+/* 内嵌底部动作栏：左下角附件+语音分组，右下角发送（space-between） */
+.composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+}
+/* 内部左下角：附件 + 语音按钮分组 */
+.composer-actions {
+  display: flex;
+  gap: var(--sp-1);
+}
+
 /* 已选图片缩略图行（输入框上方，可逐张删除） */
 .image-previews {
   flex: 0 0 100%;
@@ -1824,18 +1857,19 @@ footer {
   color: var(--c-error);
 }
 
-/* 附件（选图）按钮：方形图标按钮，与 56px 高输入区对齐 */
+/* 附件（选图）按钮：内嵌于输入框左下角的小号图标按钮 */
 button.attach-btn {
-  height: 56px;
-  width: 56px;
-  min-width: 56px;
+  height: 36px;
+  width: 36px;
+  min-width: 36px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   color: var(--c-text-muted);
-  border: 1px solid var(--c-border);
+  border: none;
+  border-radius: var(--radius-sm);
 }
 button.attach-btn:hover:not(:disabled) {
   background: var(--c-hover-strong);
@@ -1843,14 +1877,21 @@ button.attach-btn:hover:not(:disabled) {
   filter: none;
 }
 
-/* 发送按钮 + 悬停提示气泡 */
+/* 发送按钮 + 悬停提示气泡：内嵌于输入框右下角 */
 .send-wrap {
   position: relative;
   display: flex;
 }
-/* 发送按钮：页脚大按钮，与 56px 输入框等高 */
+/* 发送按钮：内嵌圆角图标按钮（向下箭头） */
 .send-btn {
-  height: 56px;
+  height: 36px;
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
 }
 .send-hint {
   position: absolute;
@@ -1868,18 +1909,19 @@ button.attach-btn:hover:not(:disabled) {
   pointer-events: none;
 }
 
-/* 语音输入声波按钮：方形图标按钮，与 56px 高的输入区对齐 */
+/* 语音输入声波按钮：内嵌于输入框左下角的小号图标按钮 */
 button.mic-btn {
-  height: 56px;
-  width: 56px;
-  min-width: 56px;
+  height: 36px;
+  width: 36px;
+  min-width: 36px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   color: var(--c-text-muted);
-  border: 1px solid var(--c-border);
+  border: none;
+  border-radius: var(--radius-sm);
 }
 button.mic-btn:hover:not(:disabled) {
   background: var(--c-hover-strong);
@@ -1981,6 +2023,25 @@ textarea:disabled {
   cursor: not-allowed;
 }
 
+/* Composer textarea：透明无边框(边框/焦点环已迁到 .composer-field 容器)。
+   动作按钮在下方独立 bar 内，textarea 无需为其预留内边距，文本/placeholder
+   永远不会进入按钮区域。 */
+.composer-field textarea {
+  width: 100%;
+  /* 取消全局 textarea 的 flex:1——在弹性列里它会压过 auto-grow 写入的 inline
+     height，导致内容被裁剪/滚动；改用自身高度。 */
+  flex: none;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  min-height: 44px;
+  padding: var(--sp-3) var(--sp-3) var(--sp-1);
+}
+.composer-field textarea:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
 @media (max-width: 767px) {
   .content {
     min-height: 0;
@@ -2005,10 +2066,10 @@ textarea:disabled {
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.24);
   }
 
-  footer.message-input textarea {
-    min-height: 48px;
+  footer.message-input .composer-field textarea {
+    min-height: 40px;
     max-height: min(34vh, 180px);
-    padding: var(--sp-2) var(--sp-3);
+    padding: var(--sp-2) var(--sp-3) var(--sp-1);
   }
 
   footer.message-input .send-btn,

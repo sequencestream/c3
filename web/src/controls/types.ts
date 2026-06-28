@@ -63,6 +63,7 @@ export interface AppMethods {
 
   // session / workspace / tab navigation
   refreshSessions(path: string | null): void
+  selectSessionKind(kind: import('./state').SessionPageKind): void
   ensureSessions(path: string | null): void
   loadMoreSessions(path: string | null): void
   selectWorkspace(path: string): void

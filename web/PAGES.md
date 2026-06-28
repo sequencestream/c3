@@ -14,19 +14,19 @@ web/src/
 │   ├── transcript.ts                               # transcriptToChat():TranscriptItem→ChatBody 纯映射(会话历史回放)
 │   ├── persistence.ts                              # 视图恢复持久化:readStoredWorkspace/persistCurrentWorkspace/persistViewMode + ready 后 maybeRestore 需求/讨论/定时任务
 │   ├── message-handler.ts                          # installMessageHandler():唯一入站 WS switch(handleMessage)折叠所有 ServerToClient 事件 + applyStatuses/notifyAwaitingPermission
-│   ├── session-actions.ts                          # 工作区/会话/顶栏 tab 导航:游标分页刷新(窗口/首页)/加载更多/选择会话、乐观删除改名、新建会话弹窗、控制台 tab 进入与重绑、清空视图会话
+│   ├── session-actions.ts                          # 工作区/会话/顶栏 tab 导航:按 session_kind 缓存的游标分页刷新(窗口/首页)/加载更多/选择会话、六类会话计数、新建工作会话弹窗、乐观删除改名、会话 tab 进入与重绑、清空视图会话
 │   ├── intent-actions.ts                           # 需求页动作:筛选/精炼/写spec/批准spec/开发/PR/状态/自动化 + 沟通 session 列表(新建/选择/重命名/删除)
 │   ├── discussion-actions.ts                       # 讨论页动作(只读路径 + 组织者引擎):打开/创建/开始/暂停/恢复/转需求/发言/移动返回
 │   ├── schedule-actions.ts                         # 定时任务页动作:打开/选择/执行记录/会话回放 + 创建编辑表单(含 toolManifest 缓存 watch);选中且运行中的 llm 执行按周期自动刷新 detail+transcript(可见性闸/页内才刷),结束补拉一次后停止
 │   ├── chat-actions.ts                             # 聊天/输入动作 + 客户端待发队列(enqueue/edit/delete/flush watch)、提交/继续/停止/刷新/模式/agent 切换/权限响应
 │   ├── settings-actions.ts                         # 系统/工作区设置、技能安装、运行时语言切换(回滚)、workspace↔workcenter 视图模式、技能加载审批
 │   ├── license-actions.ts                          # 产品许可(ADR-0026):打开 LS 登录页取 license_key(start_license_activation)、用 key 绑定本安装(bind_license),状态由 license_state/license_activation_started/license_bind_result 回流
-│   └── workcenter-actions.ts                       # 工作台事件动作:权限响应/作答 + reloadWorkcenter/loadMoreWorkcenter(20 条服务端分页,支持全部状态) + markDoneWorkcenter(本地改为 done) + 跳转到来源 tab(会话/需求/讨论/定时任务)
+│   └── workcenter-actions.ts                       # 工作台事件动作:权限响应/作答 + reloadWorkcenter/loadMoreWorkcenter(20 条服务端分页,支持全部状态) + markDoneWorkcenter(本地改为 done) + 用标准 session 跳回规则跳转到来源页(会话/需求/讨论/定时任务)
 │
 ├── components/                                      # 跨页面通用组件
-│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(整行最左为 viewMode 工作区/工作台两图标切换器(显示器+三横条 / 显示器+会话气泡,生效蓝 --c-primary、失效灰,工作台未处理事件徽标挂工作台图标),其后工作区切换器、tab 导航、项目配置/系统设置/登出/连接状态 + 许可状态下拉(ADR-0026,PL-R7,受控 details:已激活→✓ 图标按 state 着色,下拉显示有效期(termEnd 未知时回退状态文案)+ 有效期旁手动刷新按钮(触发即时 heartbeat 同步 termEnd,在途禁用旋转+最小冷却防连点,失败 inline 提示);未激活/过期/停用→红色带下划线文字,下拉内「激活许可」按钮触发激活流程)),移动端顶部精简栏左侧同款两图标切换器(许可项并入「⋯」操作菜单)+ 底部 5 视图 tab(工作/需求/讨论/定时任务/代码;工作台入口已上移到顶部切换器,不在底部 tab)
+│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(整行最左为 viewMode 工作区/工作台两图标切换器(显示器+三横条 / 显示器+会话气泡,生效蓝 --c-primary、失效灰,工作台未处理事件徽标挂工作台图标),其后工作区切换器、tab 导航、项目配置/系统设置/登出/连接状态 + 许可状态下拉(ADR-0026,PL-R7,受控 details:已激活→✓ 图标按 state 着色,下拉显示有效期(termEnd 未知时回退状态文案)+ 有效期旁手动刷新按钮(触发即时 heartbeat 同步 termEnd,在途禁用旋转+最小冷却防连点,失败 inline 提示);未激活/过期/停用→红色带下划线文字,下拉内「激活许可」按钮触发激活流程)),移动端顶部精简栏左侧同款两图标切换器(许可项并入「⋯」操作菜单)+ 底部 5 视图 tab(会话/需求/讨论/定时任务/代码;工作台入口已上移到顶部切换器,不在底部 tab)
 │   ├── BaseDropdown/BaseDropdown.vue                # 标准下拉框:替代原生 select,支持键盘导航、多选高亮、点击外部关闭
-│   ├── ChatColumn/ChatColumn.vue                   # 复用聊天列:标题栏+消息+任务面板+状态栏+待发队列+输入框 一体封装,供会话页/意图会话 tab/意图详情两会话 tab 三处复用;不持有会话状态(绑定哪个会话由控制层单一活动会话决定);show-mode 控模式下拉、always-title 控无会话时是否仍渲染标题栏;linkedIntentId 透传给标题栏「Intent」跳转按钮(仅会话页传,意图侧复用不传)、open-intent 上抛;prefill 经 defineExpose 透传
+│   ├── ChatColumn/ChatColumn.vue                   # 复用聊天列:五区块(标题栏/消息/输入框/状态栏/task 面板)按 showTitleBar/showMessages/showInput/showStatusBar/showTaskPanel props 可显隐,供会话页/意图会话 tab/意图详情两会话 tab 三处复用;不持有会话状态(绑定哪个会话由控制层单一活动会话决定);show-mode 控模式下拉、always-title 控无会话时是否仍渲染标题栏;linkedIntentId 透传给标题栏「Intent」跳转按钮(仅会话页传,意图侧复用不传)、open-intent 上抛;prefill 经 defineExpose 透传
 │   ├── ChatMessages/ChatMessages.vue               # 会话消息渲染区:扁平消息分组为文本/工具批次/独立块(用户交互工具)、仅用户停在底部时自动跟随新输出、渲染权限提示与共识结果,代码/工具输出局部横滚防窄屏撑破
 │   ├── ConfirmDialog/ConfirmDialog.vue             # 通用二次确认模态框(项目内删除/危险操作统一走此组件,不用 window.confirm):受控 open,标题/正文/按钮文案注入,danger 确认色,点遮罩/Esc/取消均 emit cancel,移动端全屏 sheet
 │   ├── ErrorDialog/ErrorDialog.vue                 # 持久错误告知弹框:受控 open,单一关闭按钮,点遮罩/Esc/关闭均 emit close,移动端全屏 sheet
@@ -53,10 +53,10 @@ web/src/
 │   │   └── components/
 │   │       ├── EventList.vue                        # 事件列表:右侧状态徽标(含 auto)和 todo 标记完成、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、会话类型图标、时间、选中态与加载更多
 │   │       └── EventDetail.vue                      # 事件详情:标题(经 event-title 本地化)+属性列表(工作区名/会话类型/会话 id/意图名,后两者为空隐藏)、Allow/Deny、AskUserQuestion 全题一览作答面板(自定义回复/共识提示/只读态)、共识决策留痕(auto 记录的投票/裁决,只读)、按 sessionKind+sessionId 溯源跳转
-│   ├── works/                                    # 工作页
-│   │   ├── Works.vue                             # 工作容器页:桌面左侧会话列表 + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);linkedIntentId 透传给聊天列标题栏「Intent」按钮、open-intent 上抛(App 据此跳转关联意图);移动端列表↔聊天 drill-down(返回到列表)
+│   ├── works/                                    # 会话页(历史目录名 works)
+│   │   ├── Works.vue                             # 会话容器页:桌面左侧聚合会话列表(工作/意图/spec/讨论/schedule/工具六 tab + 运行中浮标;一期工作/意图接真实数据,其余占位置灰) + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);linkedIntentId/owner 元数据经标准跳回规则跳转对应逻辑页;移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/
-│   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区会话、新增、删除/改名、服务端游标分页(加载更多/已加载完,SR-R14)、offline 警告
+│   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区按 session_kind 分 tab 的聚合会话、新增工作会话、删除/改名、服务端游标分页(加载更多/已加载完,SR-R14)、运行中计数浮标、未接入类型占位、offline 警告
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── intents/                                     # 需求页
@@ -134,6 +134,7 @@ web/src/
 │   ├── permission.ts                                # 权限决策动作性判定:找出用户当前唯一能作用的权限请求
 │   ├── prompt-image.ts                              # 输入框附图客户端处理:File→PromptImage(校验图片类型/超阈 canvas 等比压缩/base64 预览);纯函数(base64Bytes/splitDataUrl/shouldCompress/scaledSize/toWire/fromWire)可 Node 单测,readImageFiles 走 DOM
 │   ├── session-page.ts                              # 会话列表游标分页(SR-R14)纯归并:按 page.kind(first 替换/older 追加去重/window 刷新已展示范围/live upsert)折叠分页响应进每工作区窗口 + SESSION_PAGE_SIZE
+│   ├── session-jump.ts                              # 会话跳回规则纯函数:(sessionKind, ownerKind, ownerId)→意图/讨论/定时任务逻辑页目标;owner 为空返回 null,供会话页与 WorkCenter 共用
 │   ├── session-title-sync.ts                        # 会话列表刷新到右侧活动标题的同步规则:仅同 workspace 且同 session 时采用列表标题
 │   ├── status-indicator.ts                          # 运行/讨论状态指示器单一数据源:状态→icon+tone+i18n key 映射,支持 agent 前缀
 │   ├── tab-view.ts                                  # 标签页/工作区切换效果纯推断:ConsoleTab 进入目标、工作区切换副作用

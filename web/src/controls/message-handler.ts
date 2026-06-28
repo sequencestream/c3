@@ -18,6 +18,7 @@ import { applyLocale, setStoredLocale, i18n, type LocaleKey } from '@/i18n'
 import { translateUiError } from '@/i18n/errors'
 import { transcriptToChat } from './transcript'
 import type { AppCtx } from './types'
+import { sessionCacheKey, type SessionPageKind } from './state'
 
 // License-gate (PL-R6) reason → localized-phrase key. Maps the wire entitlement
 // state to a human reason; an unknown state falls back to the unactivated copy.
@@ -45,6 +46,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     currentWorkspace,
     sessionsByWorkspace,
     sessionPagingByWorkspace,
+    sessionCounts,
     activeWorkspace,
     activeSession,
     activeTitle,
@@ -215,10 +217,12 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       case 'sessions': {
         const path = msg.workspaceId
+        const sessionKind = (msg.sessionKind ?? 'work') as SessionPageKind
+        const cacheKey = sessionCacheKey(path, sessionKind)
         const kind = msg.page?.kind ?? 'first'
         const hasMore = msg.page?.hasMore ?? false
-        const prevPaging = sessionPagingByWorkspace.value[path]
-        const prevList = sessionsByWorkspace.value[path]
+        const prevPaging = sessionPagingByWorkspace.value[cacheKey]
+        const prevList = sessionsByWorkspace.value[cacheKey]
         const prevWindow: SessionWindow | undefined = prevList
           ? {
               sessions: prevList,
@@ -233,10 +237,10 @@ export function installMessageHandler(ctx: AppCtx): void {
         // `merged` is undefined only for a `live` push into a not-yet-loaded
         // workspace — ignore it (the list loads on demand).
         if (merged) {
-          sessionsByWorkspace.value = { ...sessionsByWorkspace.value, [path]: merged.sessions }
+          sessionsByWorkspace.value = { ...sessionsByWorkspace.value, [cacheKey]: merged.sessions }
           sessionPagingByWorkspace.value = {
             ...sessionPagingByWorkspace.value,
-            [path]: {
+            [cacheKey]: {
               hasMore: merged.hasMore,
               exhausted: merged.exhausted,
               loadingMore: false,
@@ -262,6 +266,9 @@ export function installMessageHandler(ctx: AppCtx): void {
         ctx.consumePendingWorkSessionSelect()
         break
       }
+      case 'session_counts':
+        sessionCounts.value = { ...sessionCounts.value, ...msg.counts }
+        break
       case 'session_selected':
         if (specLaunch.value) {
           ctx.dispatchSpecLaunch({

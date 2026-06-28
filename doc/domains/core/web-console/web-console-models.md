@@ -30,11 +30,15 @@ Relationships:
 Mirror the server's workspace / session info (shared protocol); the console renders them and
 tracks which workspaces are expanded, which session is viewed, and each session's live status.
 
-| View model     | Attributes                                                               | Source event                           |
-| -------------- | ------------------------------------------------------------------------ | -------------------------------------- |
-| Workspace row  | path, name, last-accessed                                                | `ready` / `workspaces`                 |
-| Session row    | session id, title, last-modified, mode; status badge from session status | `sessions` / `session_status`          |
-| Viewed session | active workspace, active session, active title, mode                     | `session_selected` / `session_started` |
+| View model     | Attributes                                                                                                                       | Source event                                     |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Workspace row  | path, name, last-accessed                                                                                                        | `ready` / `workspaces`                           |
+| Session row    | session id, title, last-modified, mode, `sessionKind`, optional `ownerKind`/`ownerId`, `bound`; status badge from session status | `sessions` / `session_status` / `session_counts` |
+| Viewed session | active workspace, active session, active title, mode                                                                             | `session_selected` / `session_started`           |
+
+The Sessions page keeps a separate paginated cache per `(workspace, sessionKind)` and a
+six-kind running-count map. Owner fields are presentation inputs only: the client resolves
+jump-back targets with a pure rule and does not persist or mutate ownership.
 
 ## Task list (server-derived, wire path)
 

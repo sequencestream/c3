@@ -34,19 +34,20 @@ The vendor session API backs four registry operations:
 | Remove a session            | Deletes the transcript + drops the session's tool-session tag |
 | Rename a session            | —                                                             |
 
-**Cross-vendor listing swap (ADR-0013, projection table amendment).** The wire
-`list_sessions` path reads the session-metadata projection cache in c3.db
-instead of enumerating the vendor stores directly on every read. The
-projection is a rebuildable cache — the per-vendor enumeration accessors are the
-rebuild / lazy-validation source, not the daily read source. The read path
-queries per workspace for real (non-tool) sessions, maps each row to a
-session entry (additive `state` field), applies the hidden-set and recorded-tool-session
-filters, and sorts newest-first. The enumeration accessors are
-used for (a) rebuilding an empty projection across enumerable vendors
-(including Codex's local transcript scan) and (b) fire-and-forget lazy
-validation (F-8). An env flag rolls the read
-path back to the legacy claude-only enumeration (the old path is
-retired only after the transition).
+**Unified projection listing (ADR-0013, 2026-06-28 amendment).** The wire
+`list_sessions` path reads the `session_metadata` projection cache in c3.db
+instead of enumerating the vendor stores directly on every read. The projection
+is a rebuildable cache — the per-vendor enumeration accessors are the rebuild /
+lazy-validation source for work sessions, not the daily read source. The read
+path queries per workspace and `session_kind`, filters to `bound = 1`, maps each
+row to a session entry (additive `state`, `sessionKind`, `ownerKind`, `ownerId`,
+and `bound` fields), applies the hidden-set and recorded-tool-session filters
+for work listings, and sorts newest-first. The session page uses the same
+projection for its six tabs (work / intent / spec / discussion / schedule /
+tool) and running-count badges; this phase wires real rows for work and intent,
+with the other kinds reserved as gray placeholders until their domain writers
+are connected. Work-only pre-bind rows are represented by `bound = 0`; the
+legacy `kind` column is retained but no longer drives read behavior.
 
 The listing filters two classes out before mapping: the project's
 **hidden set** (intent comm sessions, owned by intent-management) and **tool-created

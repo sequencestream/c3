@@ -33,7 +33,7 @@
     },
     "tab": {
       "console": {
-        "label": "ワークス"
+        "label": "セッション"
       },
       "intents": {
         "label": "意図"
@@ -1069,6 +1069,16 @@
       },
       "create": "作成",
       "cancel": "キャンセル"
+    },
+    "kind": {
+      "work": "作業",
+      "intent": "意図",
+      "spec": "Spec",
+      "discussion": "ディスカッション",
+      "schedule": "スケジュール",
+      "tool": "ツール",
+      "tabsLabel": "セッション分類",
+      "placeholder": "この種類のセッションは第2期で接続されます。"
     }
   },
   "schedule": {

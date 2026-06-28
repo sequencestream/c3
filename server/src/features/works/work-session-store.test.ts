@@ -1,5 +1,5 @@
 /**
- * Tests for the `work_session_metadata` projection store (F-2..F-12, the column
+ * Tests for the `session_metadata` projection store (F-2..F-12, the column
  * whitelist, fail-soft, and the lifecycle state machine). Mirrors the
  * pattern of `features/discussions/store.test.ts`: temp-dir c3.db per test
  * via `C3_DB_PATH`, `resetDbForTests` + `resetStoreForTests` in setup/teardown.
@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { resetDbForTests } from '../../kernel/infra/db.js'
+import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import {
   JANITOR_INTERVAL_MS,
@@ -77,7 +77,7 @@ describe('schema (F-12 column whitelist)', () => {
     expect(cols.sort()).toEqual([...columnWhitelist()].sort())
   })
 
-  it('columnWhitelist is the canonical 10-column set', () => {
+  it('columnWhitelist is the canonical session_metadata column set', () => {
     expect([...columnWhitelist()].sort()).toEqual(
       [
         'c3_id',
@@ -90,6 +90,10 @@ describe('schema (F-12 column whitelist)', () => {
         'state',
         'state_updated_at',
         'kind',
+        'session_kind',
+        'owner_kind',
+        'owner_id',
+        'bound',
       ].sort(),
     )
   })
@@ -110,6 +114,75 @@ describe('schema (F-12 column whitelist)', () => {
     ]) {
       expect(cols).not.toContain(banned)
     }
+  })
+
+  it('renames the legacy table and backfills session_kind + bound idempotently', () => {
+    const d = getDb()
+    if (!d) throw new Error('db unavailable in test')
+    d.exec(`
+      CREATE TABLE work_session_metadata (
+        c3_id TEXT PRIMARY KEY,
+        workspace_path TEXT NOT NULL,
+        vendor TEXT NOT NULL,
+        vendor_session_id TEXT,
+        agent_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        last_modified INTEGER,
+        state TEXT NOT NULL,
+        state_updated_at INTEGER NOT NULL,
+        kind TEXT NOT NULL
+      );
+    `)
+    d.run(
+      `INSERT INTO work_session_metadata
+         (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
+          last_modified, state, state_updated_at, kind)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      'legacy-real',
+      wsA,
+      'claude',
+      'real-1',
+      agent1,
+      'Legacy real',
+      123,
+      'alive',
+      123,
+      'real',
+    )
+    d.run(
+      `INSERT INTO work_session_metadata
+         (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
+          last_modified, state, state_updated_at, kind)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      'legacy-pending',
+      wsA,
+      'claude',
+      null,
+      agent1,
+      'Legacy pending',
+      null,
+      'born',
+      124,
+      'pending',
+    )
+
+    const rows = listAll()
+    expect(
+      d.get("SELECT name FROM sqlite_master WHERE type='table' AND name='work_session_metadata'"),
+    ).toBeUndefined()
+    expect(
+      d.get("SELECT name FROM sqlite_master WHERE type='table' AND name='session_metadata'"),
+    ).toBeTruthy()
+    expect(rows.find((r) => r.c3Id === 'legacy-real')?.sessionKind).toBe('work')
+    expect(rows.find((r) => r.c3Id === 'legacy-real')?.bound).toBe(true)
+    expect(rows.find((r) => r.c3Id === 'legacy-pending')?.bound).toBe(false)
+
+    resetStoreForTests()
+    expect(
+      listAll()
+        .map((r) => r.c3Id)
+        .sort(),
+    ).toEqual(['legacy-pending', 'legacy-real'])
   })
 })
 
@@ -132,6 +205,10 @@ describe('createSession pending row (F-11 replacement for setPendingIntent)', ()
     expect(row?.lastModified).toBeNull()
     expect(row?.state).toBe('born')
     expect(row?.title).toBe('New session')
+    expect(row?.sessionKind).toBe('work')
+    expect(row?.ownerKind).toBeNull()
+    expect(row?.ownerId).toBeNull()
+    expect(row?.bound).toBe(false)
   })
 
   it('writes a pending row with an explicit initial title', () => {
@@ -183,6 +260,10 @@ describe('upsertForBind (F-5)', () => {
     expect(real?.vendorSessionId).toBe('real-1')
     expect(real?.agentId).toBe(agent1)
     expect(real?.title).toBe('New session')
+    expect(real?.sessionKind).toBe('work')
+    expect(real?.ownerKind).toBeNull()
+    expect(real?.ownerId).toBeNull()
+    expect(real?.bound).toBe(true)
     // Bind stamps last_modified = bind time (now), so a freshly-bound session
     // sorts to the TOP of the list instead of sinking to the bottom (null).
     expect(real?.lastModified).toBe(nowMs)

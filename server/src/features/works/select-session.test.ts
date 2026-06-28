@@ -97,7 +97,7 @@ describe('select_session', () => {
   it('codex select → uses the projection title (same-source as the list), not the claude-only legacy path', async () => {
     // Regression: codex never resolves through `sessionTitle` (claude-only), so
     // the title bar showed "Untitled session". Projection-first fixes it — the
-    // run-end-derived title in `work_session_metadata` is the same source the
+    // run-end-derived title in `session_metadata` is the same source the
     // session list reads.
     vi.mocked(resolveSessionVendor).mockReturnValue('codex')
     vi.mocked(getByC3Id).mockReturnValue({ title: 'Refactor the parser' } as never)

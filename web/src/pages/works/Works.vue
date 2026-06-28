@@ -25,11 +25,14 @@ import type {
   SlashCommandInfo,
   VendorId,
 } from '@ccc/shared/protocol'
+import type { SessionPageKind } from '../../controls/state'
 
 const props = defineProps<{
   // left: session list
   currentWorkspace: string | null
   sessions: SessionInfo[]
+  activeSessionKind: SessionPageKind
+  sessionCounts: Record<SessionPageKind, number>
   /** Older sessions remain beyond the loaded window (SR-R14). */
   sessionsHasMore?: boolean
   /** A "load more" came back empty (SR-R14). */
@@ -75,6 +78,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'create-session': [path: string]
   'refresh-sessions': []
+  'select-session-kind': [kind: SessionPageKind]
   'load-more-sessions': []
   'select-session': [path: string, sessionId: string]
   'delete-session': [path: string, sessionId: string]
@@ -151,6 +155,8 @@ defineExpose({
       <WorkSessionList
         :current-workspace="currentWorkspace"
         :sessions="sessions"
+        :active-session-kind="activeSessionKind"
+        :session-counts="sessionCounts"
         :has-more="sessionsHasMore"
         :exhausted="sessionsExhausted"
         :session-status="sessionStatus"
@@ -160,6 +166,7 @@ defineExpose({
         :vendor-session-caps="vendorSessionCaps"
         @create-session="(path: string) => emit('create-session', path)"
         @refresh-sessions="emit('refresh-sessions')"
+        @select-session-kind="(kind: SessionPageKind) => emit('select-session-kind', kind)"
         @load-more-sessions="emit('load-more-sessions')"
         @select-session="selectSession"
         @delete-session="

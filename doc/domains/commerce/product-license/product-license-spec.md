@@ -143,7 +143,7 @@ out the automated/intent-internal ones (their gating is a separate decision, not
 **Refusal contract (`create_session`).** When `currentLicenseStatus().entitled` is false
 (`Unactivated`/`Expired`/`Disabled`), the handler sends a structured `license.notEntitled` error whose
 `reason` carries the entitlement **state** (so the web localizes the cause and points to the renewal
-entry — the license badge), and returns **before any side effect**: no `work_session_metadata` pending
+entry — the license badge), and returns **before any side effect**: no `session_metadata` pending
 row, no `ensureRuntime`, no `removeViewer`/view switch. While entitled (`Active`/`Grace`) creation
 proceeds unchanged. Correctness depends on the state-derivation priority above: a terminal heartbeat
 verdict is never re-verified back to entitled, so a force-expired/displaced license cannot out-wait the

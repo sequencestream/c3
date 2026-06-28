@@ -1,14 +1,14 @@
 /**
  * `session_metadata` projection store over the shared {@link Db} (c3.db).
  *
- * Owns the core-metadata projection table that becomes the daily read path for
- * `list_sessions`. Five columns of core metadata only — no transcript / prompt /
+ * Owns the metadata projection table that becomes the daily read path for
+ * `list_sessions` and running counts. Metadata only — no transcript / prompt /
  * tool_use / tool_result content (ADR-0013 native-is-SoT; this store is a
- * rebuildable cache, not a second copy of session content). The table holds
- * two row variants (`kind`): a `pending` row written at `createSession` time
- * (the new home for the ADR-0015 "intent") and a `real` row written at
- * `bindPending` / `finalizeRun` / `rename` / delete time. The read path filters
- * by `workspace_path` at the SQL level; cold sessions stay visible.
+ * rebuildable cache, not a second copy of session content). The table is
+ * generalized by `session_kind` and optional owner fields. `bound=0` is the
+ * work-only pending placeholder written at create time; `bound=1` rows are real
+ * bound sessions. The legacy `kind` column is retained for compatibility but is
+ * not the read-path discriminator.
  *
  * Pattern (mirrors `features/intents/store.ts` and
  * `features/discussions/store.ts`): lazy schema via a private `schemaReady`
@@ -84,12 +84,6 @@ CREATE TABLE IF NOT EXISTS session_metadata (
   owner_id           TEXT,
   bound              INTEGER NOT NULL DEFAULT 1
 );
-CREATE INDEX IF NOT EXISTS idx_sm_workspace_kind_updated
-  ON session_metadata(workspace_path, session_kind, bound, last_modified DESC, state_updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_sm_workspace_vendor
-  ON session_metadata(workspace_path, vendor, vendor_session_id);
-CREATE INDEX IF NOT EXISTS idx_sm_state_age
-  ON session_metadata(state, state_updated_at);
 `
 
 /** How long a row may sit without being re-validated before it goes `stale`. */
@@ -103,7 +97,13 @@ export const STALE_MS = 24 * 60 * 60 * 1000
  */
 export const JANITOR_INTERVAL_MS = STALE_MS / 2
 
-const VALID_STATES: readonly SessionMetadataState[] = ['born', 'alive', 'stale', 'orphaned', 'ghost']
+const VALID_STATES: readonly SessionMetadataState[] = [
+  'born',
+  'alive',
+  'stale',
+  'orphaned',
+  'ghost',
+]
 
 let schemaReady = false
 let nowFn: () => number = () => Date.now()
@@ -127,8 +127,10 @@ function ensureColumn(d: Db, table: string, col: string, decl: string): void {
 
 function tableExists(d: Db, table: string): boolean {
   return (
-    d.get<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table) !=
-    null
+    d.get<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+      table,
+    ) != null
   )
 }
 
@@ -149,9 +151,13 @@ function ensureSchema(d: Db): void {
   ensureColumn(d, 'session_metadata', 'owner_kind', 'TEXT')
   ensureColumn(d, 'session_metadata', 'owner_id', 'TEXT')
   ensureColumn(d, 'session_metadata', 'bound', 'INTEGER NOT NULL DEFAULT 1')
-  d.run("UPDATE session_metadata SET session_kind='work' WHERE session_kind IS NULL OR session_kind=''")
+  d.run(
+    "UPDATE session_metadata SET session_kind='work' WHERE session_kind IS NULL OR session_kind=''",
+  )
   d.run("UPDATE session_metadata SET bound=0 WHERE kind='pending' AND bound IS NOT 0")
-  d.run("UPDATE session_metadata SET bound=1 WHERE (kind IS NULL OR kind!='pending') AND bound IS NOT 1")
+  d.run(
+    "UPDATE session_metadata SET bound=1 WHERE (kind IS NULL OR kind!='pending') AND bound IS NOT 1",
+  )
   d.exec(`
 CREATE INDEX IF NOT EXISTS idx_sm_workspace_kind_updated
   ON session_metadata(workspace_path, session_kind, bound, last_modified DESC, state_updated_at DESC);
@@ -168,7 +174,7 @@ CREATE INDEX IF NOT EXISTS idx_sm_state_age
  *  process. A test that swaps the underlying db (via `resetDbForTests`)
  *  must call {@link resetStoreForTests} to re-run the schema.
  *
- *  Migration: if the old `session_metadata` table exists but the new
+ *  Migration: if the old `work_session_metadata` table exists but the new
  *  `session_metadata` does not, it is renamed in place (idempotent,
  *  zero DROP TABLE, roll-back-by-forward-fix). */
 function db(): Db | null {
@@ -634,7 +640,7 @@ export function getPendingIntent(pendingId: string): { agentId: string } | null 
   const d = db()
   if (!d) return null
   const row = d.get<{ agent_id: string }>(
-    "SELECT agent_id FROM session_metadata WHERE c3_id=? AND bound=0",
+    'SELECT agent_id FROM session_metadata WHERE c3_id=? AND bound=0',
     pendingId,
   )
   return row ? { agentId: row.agent_id } : null
@@ -648,9 +654,7 @@ export function getPendingIntent(pendingId: string): { agentId: string } | null 
 export function listAll(): SessionMetadataRow[] {
   const d = db()
   if (!d) return []
-  return d
-    .all<RawRow>('SELECT * FROM session_metadata ORDER BY state_updated_at DESC')
-    .map(toRow)
+  return d.all<RawRow>('SELECT * FROM session_metadata ORDER BY state_updated_at DESC').map(toRow)
 }
 
 /**
@@ -893,7 +897,7 @@ export async function janitor(input: {
       continue
     }
     // Stale / orphaned / ghost: re-check.
-    const key = `${r.workspace_path} ${r.vendor}`
+    const key = `${r.workspace_path}${r.vendor}`
     const b = buckets.get(key) ?? {
       workspacePath: r.workspace_path,
       vendor: r.vendor as VendorId,

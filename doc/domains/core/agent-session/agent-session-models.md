@@ -7,20 +7,23 @@ Entity definitions. Business-semantic types; behavioral wiring in [agent-session
 Process-wide owner of one session's execution, keyed by session id and shared across
 connections (ADR 0006). Lives for the process lifetime once created (no eviction yet).
 
-| Attribute      | Type                        | Description                                                                    |
-| -------------- | --------------------------- | ------------------------------------------------------------------------------ |
-| Session id     | text (UUID \| pending form) | Map key; re-keyed pending→real on first bind (AS-R10)                          |
-| Workspace path | text (path)                 | The run's working directory (runtime-owned)                                    |
-| Mode           | permission mode             | The session's mode; the run's starting policy (AS-R3, SR-R5)                   |
-| Baseline       | list of transcript items    | On-disk transcript snapshot at runtime creation; replayed before the buffer    |
-| Buffer         | list of wire events         | Every event emitted since creation (all turns); replayed on view join (AS-R11) |
-| Run            | reference \| none           | The in-flight Agent Run's abort + handle, or none between turns                |
-| Status         | enum                        | idle \| running \| awaiting_permission \| team (AS-R12)                        |
-| Viewers        | set of delivery callbacks   | Connections currently watching this session; live events fan out to them       |
+| Attribute      | Type                        | Description                                                                                            |
+| -------------- | --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Session id     | text (UUID \| pending form) | Map key; re-keyed pending→real on first bind (AS-R10)                                                  |
+| Workspace path | text (path)                 | The run's working directory (runtime-owned)                                                            |
+| Mode           | permission mode             | The session's mode; the run's starting policy (AS-R3, SR-R5)                                           |
+| Baseline       | list of transcript items    | On-disk transcript snapshot at runtime creation; replayed before the buffer                            |
+| Buffer         | list of wire events         | Every event emitted since creation (all turns); replayed on view join (AS-R11)                         |
+| Run            | reference \| none           | The in-flight Agent Run's abort + handle, or none between turns                                        |
+| Status         | enum                        | idle \| running \| awaiting_permission \| team (AS-R12)                                                |
+| Session kind   | enum                        | work \| intent \| spec \| discussion \| schedule \| tool; tags the runtime for projection/list routing |
+| Viewers        | set of delivery callbacks   | Connections currently watching this session; live events fan out to them                               |
 
 Relationships: at most one in-flight Agent Run per runtime (serial, AS-R2); many runtimes run
 concurrently. Survives connection close (AS-R8); torn down on `delete_session` /
-`remove_workspace`.
+`remove_workspace`. On bind, the runtime's kind and any launching-domain owner are mirrored into
+the rebuildable `session_metadata` projection for list/count reads; the runtime remains the live
+execution source of truth.
 
 ## Connection View
 

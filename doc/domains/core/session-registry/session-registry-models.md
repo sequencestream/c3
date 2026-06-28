@@ -15,21 +15,28 @@ A registered project directory.
 | `name`         | text        | Display name — the directory's basename                                                                 |
 | `lastAccessed` | timestamp   | Last time a session here was selected/created; sort key desc (SR-R2)                                    |
 
-Relationships: a workspace has zero or more Sessions (enumerated from the agent runtime, not stored).
+Relationships: a workspace has zero or more Sessions. The read-side list comes from
+`session_metadata`; content and transcripts still live in native vendor stores.
 
 ## Session
 
-A Claude conversation inside a workspace.
+A vendor-backed conversation inside a workspace, projected into `session_metadata`
+for list/count reads.
 
-| Attribute      | Type            | Description                                                          |
-| -------------- | --------------- | -------------------------------------------------------------------- |
-| `sessionId`    | text (UUID)     | Vendor-native session id; the handle used to resume the conversation |
-| `title`        | text            | Vendor custom title / summary / first prompt                         |
-| `lastModified` | timestamp       | Vendor last-modified; sort key within a workspace (SR-R4)            |
-| `mode`         | permission mode | c3-tracked per-session permission mode; default `default` (SR-R5)    |
+| Attribute      | Type            | Description                                                             |
+| -------------- | --------------- | ----------------------------------------------------------------------- |
+| `sessionId`    | text            | Opaque c3 session id on the wire; maps internally to vendor + native id |
+| `title`        | text            | Vendor custom title / summary / first prompt                            |
+| `lastModified` | timestamp       | Vendor last-modified; sort key within a workspace (SR-R4)               |
+| `mode`         | permission mode | c3-tracked per-session permission mode; default `default` (SR-R5)       |
+| `sessionKind`  | enum            | work / intent / spec / discussion / schedule / tool                     |
+| `ownerKind`    | enum \| null    | Logical owner kind used for jump-back; null for ownerless sessions      |
+| `ownerId`      | text \| null    | Logical owner id; null means the session cannot jump back to an owner   |
+| `bound`        | boolean         | true for real rows; false only for work pending placeholders            |
 
 Relationships: belongs to one Workspace; its transcript & title are owned by the agent vendor, its
-`mode` by the registry.
+`mode` by the registry. Owner fields point back to domain entities such as an intent,
+discussion, or schedule; they do not make the projection the source of truth for those domains.
 
 ## Pending Session
 

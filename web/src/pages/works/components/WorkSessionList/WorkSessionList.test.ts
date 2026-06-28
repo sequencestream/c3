@@ -29,6 +29,8 @@ function mountList(
     props: {
       currentWorkspace: opts.currentWorkspace === undefined ? WS : opts.currentWorkspace,
       sessions: opts.sessions ?? [],
+      activeSessionKind: 'work',
+      sessionCounts: { work: 0, intent: 0, spec: 0, discussion: 0, schedule: 0, tool: 0 },
       hasMore: opts.hasMore ?? false,
       exhausted: opts.exhausted ?? false,
       sessionStatus: opts.status ?? {},

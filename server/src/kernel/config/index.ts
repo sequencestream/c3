@@ -937,8 +937,8 @@ function persistState(): void {
  * resolves to its fact's agent. {@link resolveSessionLaunch} relies on this dual
  * read so a pending session launches with its desired agent before it is bound.
  *
- * Post-`work_session_metadata` projection: the pending intent now lives in the
- * `work_session_metadata` table as a pending row, NOT in `state.json`. The
+ * Post-`session_metadata` projection: the pending intent now lives in the
+ * `session_metadata` table as a pending row, NOT in `state.json`. The
  * kernel doesn't import the projection store (kernel ↛ features, ADR-0009),
  * so the lookup is a registered callback (composition root wires it to
  * `getPendingIntent` in `features/works/work-session-store.ts`). The state.json
@@ -961,7 +961,7 @@ export function getSessionAgentId(sessionId: string): string | null {
 //
 // `getSessionAgentId` (above) is called by `resolveSessionLaunch` and the
 // agent-switcher; it needs to read the pending intent from the projection
-// (post-ADR-0015 + the `work_session_metadata` amendment). The kernel doesn't
+// (post-ADR-0015 + the `session_metadata` amendment). The kernel doesn't
 // import the store directly, so the composition root wires this callback.
 
 let onPendingIntentLookup: ((pendingId: string) => string | null) | null = null

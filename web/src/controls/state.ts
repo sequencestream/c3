@@ -36,6 +36,7 @@ import type {
   SessionBindingStats,
   SessionCapabilities,
   SessionInfo,
+  SessionKind,
   SessionStatus,
   SkillLinkStatus,
   SkillSupportState,
@@ -74,6 +75,20 @@ export const CURRENT_WS_KEY = 'c3.currentWorkspace'
 export const WORK_SESSION_QUERY_START_TIME_KEY = 'work_session_query_start_time'
 
 export type TabKey = 'console' | 'intents' | 'discussion' | 'schedules' | 'codes'
+export type SessionPageKind = Exclude<SessionKind, 'consensus'>
+
+export const SESSION_PAGE_KINDS: readonly SessionPageKind[] = [
+  'work',
+  'intent',
+  'spec',
+  'discussion',
+  'schedule',
+  'tool',
+]
+
+export function sessionCacheKey(workspaceId: string, sessionKind: SessionPageKind): string {
+  return `${workspaceId}::${sessionKind}`
+}
 
 /**
  * Create the full reactive state surface of the app controller: every ref,
@@ -111,6 +126,15 @@ export function createState(deps: StateDeps) {
   // Sidebar / session state
   const workspaces = ref<WorkspaceInfo[]>([])
   const sessionsByWorkspace = ref<Record<string, SessionInfo[]>>({})
+  const activeSessionKind = ref<SessionPageKind>('work')
+  const sessionCounts = ref<Record<SessionPageKind, number>>({
+    work: 0,
+    intent: 0,
+    spec: 0,
+    discussion: 0,
+    schedule: 0,
+    tool: 0,
+  })
   // Per-workspace cursor-pagination state (SR-R14), parallel to the session
   // arrays above. `hasMore` drives the "load more" button; `exhausted` flips it
   // to a "Fully loaded" hint; `loadingMore` guards a double click;
@@ -145,12 +169,21 @@ export function createState(deps: StateDeps) {
   const hasActiveSession = computed(() => activeSession.value !== null)
   // Sessions of the current workspace (the only ones the sidebar lists).
   const currentSessions = computed<SessionInfo[]>(
-    () => (currentWorkspace.value && sessionsByWorkspace.value[currentWorkspace.value]) || [],
+    () =>
+      (currentWorkspace.value &&
+        sessionsByWorkspace.value[
+          sessionCacheKey(currentWorkspace.value, activeSessionKind.value)
+        ]) ||
+      [],
   )
   // Pagination flags of the current workspace's session window (SR-R14): drive
   // the sidebar's "load more" button / "Fully loaded" hint.
   const currentSessionPaging = computed<{ hasMore: boolean; exhausted: boolean }>(() => {
-    const p = currentWorkspace.value && sessionPagingByWorkspace.value[currentWorkspace.value]
+    const p =
+      currentWorkspace.value &&
+      sessionPagingByWorkspace.value[
+        sessionCacheKey(currentWorkspace.value, activeSessionKind.value)
+      ]
     return { hasMore: p ? p.hasMore : false, exhausted: p ? p.exhausted : false }
   })
 
@@ -671,6 +704,8 @@ export function createState(deps: StateDeps) {
     workcenterPendingCount,
     hasActiveSession,
     currentSessions,
+    activeSessionKind,
+    sessionCounts,
     currentSessionPaging,
     running,
     reconnecting,

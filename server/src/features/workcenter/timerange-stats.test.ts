@@ -131,8 +131,11 @@ function seedExecLog(scheduleId: string, status: string): void {
 
 function seedSession(proj: string, lastModified: number | null): void {
   d().run(
-    `INSERT INTO work_session_metadata (c3_id, workspace_path, vendor, agent_id, title, last_modified, state, state_updated_at, kind)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO session_metadata (
+       c3_id, workspace_path, vendor, agent_id, title, last_modified, state, state_updated_at,
+       kind, session_kind, owner_kind, owner_id, bound
+     )
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     randomUUID(),
     proj,
     'claude',
@@ -142,6 +145,10 @@ function seedSession(proj: string, lastModified: number | null): void {
     'alive',
     lastModified ?? 0,
     'real',
+    'work',
+    null,
+    null,
+    1,
   )
 }
 

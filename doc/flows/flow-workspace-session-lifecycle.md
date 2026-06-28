@@ -29,9 +29,12 @@ flowchart TD
    `error`, changing nothing (`SR-R1`).
 2. The workspace is registered, the sidebar re-sorts by `lastAccessed` descending (`SR-R2`, this
    one is now most-recent), and its session list is returned (`workspaces`, `sessions`).
-3. Sessions are listed from the `work_session_metadata` projection, newest-first, one unified
-   cross-vendor timeline deduped by `c3_id` (`SR-R4`, `SR-R12`). Each row carries its owning
-   `vendor` tag and `state`. The list is **cursor-paginated** by `last_modified` (`SR-R14`): the
+3. Sessions are listed from the `session_metadata` projection, newest-first, one unified
+   cross-vendor timeline deduped by `c3_id` (`SR-R4`, `SR-R12`). The session page requests a
+   `sessionKind` slice (work / intent / spec / discussion / schedule / tool) and reads running
+   counts from the same projection; work and intent are live in this phase, the other four kinds
+   are placeholder tabs. Each row carries its owning `vendor` tag, `state`, `sessionKind`, and
+   optional `ownerKind`/`ownerId` for client-side jump-back. The list is **cursor-paginated** by `last_modified` (`SR-R14`): the
    first reply is the newest page; "load more" pulls the next older page via a `{lastModified,
 sessionId}` keyset cursor; the periodic refresh re-fetches only the displayed range
    (`last_modified >= since`). The reply's `page.kind` tells the client how to merge it
@@ -49,8 +52,10 @@ sessionId}` keyset cursor; the periodic refresh re-fetches only the displayed ra
    the real SDK `sessionId` (`SR-R7`, `AS-R10`): the registry persists the mode under the real id,
    the runtime re-keys, and the pending **intent becomes a fact** whose **vendor is frozen**
    (`AC-R16`). `session_started` is emitted; the projection is stamped with the bind time so the
-   row sorts to the **top** (`SR-R13`). A pending session that never runs leaves only a mutable
-   intent, reaped after 7 days (`AC-R17`).
+   row sorts to the **top** (`SR-R13`). The projection writes `session_kind='work'` and `bound=1`
+   after bind; manual sessions keep owner null, while intent-started development sessions are
+   back-linked with `owner_kind='intent'` and the intent id. A pending session that never runs
+   remains a work-only `bound=0` placeholder, reaped after 7 days (`AC-R17`).
 
 ## Select / view a session
 

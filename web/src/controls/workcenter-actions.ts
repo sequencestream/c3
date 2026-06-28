@@ -1,5 +1,10 @@
 import type { WaitUserInvolveEvent, WaitUserInvolveStatus } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
+import {
+  resolveSessionJumpTarget,
+  type SessionJumpTarget,
+  type SessionOwnerKind,
+} from '@/lib/session-jump'
 
 // Install WorkCenter event actions (resolve permission + jump-to-source) onto the ctx.
 export function installWorkcenterActions(ctx: AppCtx): void {
@@ -72,89 +77,104 @@ export function installWorkcenterActions(ctx: AppCtx): void {
     if (!workspace || !ctx.client) return
     // Switch from workcenter view to workspace view so the target tab renders.
     ctx.setViewMode('workspace')
-    switch (event.sessionKind) {
-      case 'intent':
-        jumpToIntent(workspace, event.sessionId)
-        break
-      case 'spec':
-        jumpToSpec(workspace, event.sessionId)
-        break
-      case 'discussion':
-        ctx.openDiscussions(workspace)
-        if (event.sessionId) ctx.openDiscussion(event.sessionId)
-        break
-      case 'schedule':
-        jumpToSchedule(workspace, event.sessionId)
-        break
-      case 'work':
-      default:
-        // 'work', plus the never-prompting consensus/tool kinds and any legacy /
-        // unknown value, route to the console: select the session when a sessionId is
-        // present, else just enter the console (explicit degradation).
-        ctx.enterConsole()
-        if (event.sessionId)
-          send({ type: 'select_session', workspaceId: workspace, sessionId: event.sessionId })
-        break
+    const target = resolveSessionJumpTarget({
+      sessionKind: event.sessionKind,
+      ownerKind: ownerKindForEvent(event),
+      ownerId: ownerIdForEvent(event),
+    })
+    if (target) {
+      executeJumpTarget(workspace, target, event.sessionId)
+      return
     }
+    if (executeLegacyOwnerlessJump(workspace, event)) return
+    ctx.enterConsole()
+    if (event.sessionId)
+      send({ type: 'select_session', workspaceId: workspace, sessionId: event.sessionId })
   }
 
-  // sessionKind=intent 路由：始终进入意图页面的「意图会话」列表视图。
-  //   有 sessionId → 切到会话列表 tab，右栏展示该会话；命中首页列表则左侧高亮。
-  //   无 sessionId → 仅停在意图页，不做选择。
-  function jumpToIntent(workspace: string, sessionId: string | null): void {
-    ctx.openIntents(workspace)
-    if (!sessionId) {
-      ctx.requestedMergedTab.value = null
-      ctx.requestedIntentId.value = null
+  function ownerKindForEvent(event: WaitUserInvolveEvent): SessionOwnerKind | null {
+    if (event.intentId) return 'intent'
+    if (event.sessionKind === 'discussion' && event.sessionId) return 'discussion'
+    if (event.sessionKind === 'schedule' && event.sessionId) return 'schedule'
+    return null
+  }
+
+  function ownerIdForEvent(event: WaitUserInvolveEvent): string | null {
+    if (event.intentId) return event.intentId
+    if ((event.sessionKind === 'discussion' || event.sessionKind === 'schedule') && event.sessionId)
+      return event.sessionId
+    return null
+  }
+
+  function executeJumpTarget(
+    workspace: string,
+    target: SessionJumpTarget,
+    sourceSessionId: string | null,
+  ): void {
+    if (target.kind === 'intentDetail') {
+      ctx.openIntents(workspace)
+      ctx.requestedIntentId.value = target.intentId
+      ctx.requestedIntentSubTab.value = target.tab ?? null
+      if (target.tab === 'specSession') ctx.openSpecSession(target.intentId)
+      return
+    }
+    if (target.kind === 'intentSessions') {
+      ctx.openIntents(workspace)
+      ctx.requestedIntentId.value = target.intentId
       ctx.requestedIntentSubTab.value = null
+      ctx.requestedMergedTab.value = 'sessions'
+      if (sourceSessionId) ctx.selectIntentSession(sourceSessionId)
       return
     }
-
-    ctx.requestedIntentId.value = null
-    ctx.requestedIntentSubTab.value = null
-    ctx.requestedMergedTab.value = 'sessions'
-    ctx.selectIntentSession(sessionId)
-  }
-
-  // sessionKind=spec: spec 编写会话 → 打开所属意图的 spec 会话 tab。
-  // sessionId 可能是 specSessionId 或意图 id（旧写入路径）。
-  function jumpToSpec(workspace: string, sessionId: string | null): void {
-    ctx.openIntents(workspace)
-    if (!sessionId) return
-
-    const workspaceIntents = ctx.intents.value[workspace] ?? []
-
-    // 优先按 specSessionId 匹配
-    const intentBySpecId = workspaceIntents.find((i) => i.specSessionId === sessionId)
-    if (intentBySpecId) {
-      ctx.requestedIntentId.value = intentBySpecId.id
-      ctx.requestedIntentSubTab.value = 'specSession'
-      ctx.openSpecSession(intentBySpecId.id)
+    if (target.kind === 'discussion') {
+      ctx.openDiscussions(workspace)
+      ctx.openDiscussion(target.discussionId)
       return
     }
-
-    // 兜底：sessionId 即意图 id（旧写入路径）
-    if (workspaceIntents.some((i) => i.id === sessionId)) {
-      ctx.requestedIntentId.value = sessionId
-      ctx.requestedIntentSubTab.value = 'specSession'
-      ctx.openSpecSession(sessionId)
-    }
-  }
-
-  // sessionKind=schedule: 在所有已加载的执行日志中查找匹配 sessionId 的
-  // 执行记录，选中对应 schedule 并展示该执行记录。
-  function jumpToSchedule(workspace: string, sessionId: string | null): void {
     ctx.openSchedules(workspace)
-    if (!sessionId) return
-    // 遍历所有已加载的 schedule 执行日志，查找匹配的 sessionId
     for (const [schId, logs] of Object.entries(ctx.scheduleLogs.value)) {
-      const match = logs.find((l) => l.sessionId === sessionId)
-      if (match) {
+      const match = logs.find((log) => log.sessionId === sourceSessionId)
+      if (match || schId === target.scheduleId) {
         ctx.onSelectSchedule(schId)
-        ctx.onSelectExecution(match.id)
-        return
+        if (match) ctx.onSelectExecution(match.id)
+        break
       }
     }
-    // 未找到 → 降级到 schedule 列表
+  }
+
+  function executeLegacyOwnerlessJump(workspace: string, event: WaitUserInvolveEvent): boolean {
+    if (event.sessionKind === 'intent') {
+      ctx.openIntents(workspace)
+      ctx.requestedIntentId.value = null
+      ctx.requestedIntentSubTab.value = null
+      ctx.requestedMergedTab.value = event.sessionId ? 'sessions' : null
+      if (event.sessionId) ctx.selectIntentSession(event.sessionId)
+      return true
+    }
+    if (event.sessionKind === 'spec') {
+      ctx.openIntents(workspace)
+      if (!event.sessionId) return true
+      const workspaceIntents = ctx.intents.value[workspace] ?? []
+      const bySpec = workspaceIntents.find((intent) => intent.specSessionId === event.sessionId)
+      const intentId =
+        bySpec?.id ??
+        (workspaceIntents.some((i) => i.id === event.sessionId) ? event.sessionId : null)
+      if (intentId) {
+        ctx.requestedIntentId.value = intentId
+        ctx.requestedIntentSubTab.value = 'specSession'
+        ctx.openSpecSession(intentId)
+      }
+      return true
+    }
+    if (event.sessionKind === 'discussion') {
+      ctx.openDiscussions(workspace)
+      if (event.sessionId) ctx.openDiscussion(event.sessionId)
+      return true
+    }
+    if (event.sessionKind === 'schedule') {
+      ctx.openSchedules(workspace)
+      return true
+    }
+    return false
   }
 }

@@ -33,7 +33,7 @@
     },
     "tab": {
       "console": {
-        "label": "작업"
+        "label": "세션"
       },
       "intents": {
         "label": "의도"
@@ -1069,6 +1069,16 @@
       },
       "create": "생성",
       "cancel": "취소"
+    },
+    "kind": {
+      "work": "작업",
+      "intent": "의도",
+      "spec": "Spec",
+      "discussion": "토론",
+      "schedule": "일정",
+      "tool": "도구",
+      "tabsLabel": "세션 분류",
+      "placeholder": "이 세션 유형은 2단계에서 연결됩니다."
     }
   },
   "schedule": {

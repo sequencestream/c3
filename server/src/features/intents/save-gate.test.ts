@@ -98,7 +98,7 @@ describe('gatedSave', () => {
       input: { intents: oneIntent.intents },
       sessionId: 'run-7',
       workspacePath: proj,
-      source: 'intent',
+      sessionKind: 'intent',
     })
     // The hook fires BEFORE the wire frame (claude-parity ordering).
     expect(order).toEqual(['hook', 'emit'])

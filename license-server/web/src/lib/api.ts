@@ -7,12 +7,26 @@ export interface Plan {
   durationMonths: number
   priceCents: number
   currency: string
+  tier: string
+}
+
+export interface PlanTier {
+  tier: string
+  name: string
+}
+
+export interface TierCapability {
+  label: string
+  free: string
+  paid: string
+  enterprise: string
 }
 
 export interface License {
   licenseId: number
   licenseKey: string
   status: string
+  tier: string
   termEnd: number
   aliveInstallId: string | null
   aliveTime: number | null

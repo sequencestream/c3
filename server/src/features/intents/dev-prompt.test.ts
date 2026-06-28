@@ -104,6 +104,7 @@ describe('start_development SDD forced gate', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'c3-dev-gate-'))
     process.env.CLAUDE_CONFIG_DIR = dir
+    process.env.C3_DIR = dir
     process.env.C3_DB_PATH = join(dir, 'c3.db')
     resetDbForTests()
     resetStoreForTests()
@@ -118,6 +119,7 @@ describe('start_development SDD forced gate', () => {
     resetDbForTests()
     resetStateCacheForTests()
     delete process.env.CLAUDE_CONFIG_DIR
+    delete process.env.C3_DIR
     delete process.env.C3_DB_PATH
     rmSync(dir, { recursive: true, force: true })
   })

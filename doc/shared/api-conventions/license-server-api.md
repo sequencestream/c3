@@ -24,7 +24,7 @@ c3 是**浏览器外**的本地进程。绑定经浏览器中介完成:
 
 1. c3 server 生成 `installId`(安装级稳定,唯一、≤128 字符)与本轮 `requestId`(32 字符唯一)。
 2. c3 server 拉起系统浏览器打开 LS 的 Vue SPA(`/`,带 `installId`/`requestId`)。
-3. 用户在浏览器内用 GitHub 登录(仅账号登录,**不展示协议**),浏览器调用 `GET /v1/license/activate` 拿到本人 license 列表,选定一条后 `POST /v1/license/bind` 完成绑定。**自动绑定:** 当账户**只有一条** license 且其剩余有效期**超过 1 个月**(`termEnd > now + 1 月`、状态 `active`)时,`activate` 直接在服务端完成绑定并把密钥暂存进待绑映射(等价于一次 `bind`),响应带 `autoBound:true` 与 `termEnd`;SPA 据此直接进成功态、**不再调用 `bind`**(再次绑定会轮换 alive token、使刚激活的 c3 心跳失效)。默认一个月试用 license(剩余期恰在阈值上)不触发自动绑定。
+3. 用户在浏览器内用 GitHub 登录(仅账号登录,**不展示协议**),浏览器调用 `GET /v1/license/activate` 拿到本人 license 列表,选定一条后 `POST /v1/license/bind` 完成绑定。**自动绑定:** 当账户**只有一条** license 且其剩余有效期**超过 1 个月**(`termEnd > now + 1 月`、状态 `active`)时,`activate` 直接在服务端完成绑定并把密钥暂存进待绑映射(等价于一次 `bind`),响应带 `autoBound:true` 与 `termEnd`;SPA 据此直接进成功态、**不再调用 `bind`**(再次绑定会轮换 alive token、使刚激活的 c3 心跳失效)。新账号默认获得长期免费版 license,因此通常满足自动绑定条件。
 4. c3 server 带同一对 `(installId, requestId)` 轮询 `GET /v1/license/checkbind`,绑定完成后**经 S2S 通道**取回 `aliveToken` 与签名实体令牌(**绝不经浏览器**,PL-R2)。
 5. c3 server 周期 `POST /v1/license/heartbeat` 确认绑定并刷新实体令牌。
 
@@ -63,7 +63,8 @@ c3 是**浏览器外**的本地进程。绑定经浏览器中介完成:
 
 ## 公开端点(无需凭证)
 
-- **`GET /v1/plans`** — 公开套餐目录。返回 `{plans: Plan[]}`,每个 `Plan` 含 `planKey`(稳定键)、`name`、`durationMonths`、`priceCents`、`currency`(ISO-4217)。MVP:`1m`/`6m`/`1y`,CNY。
+- **`GET /v1/plans`** — 公开可购买套餐目录。返回 `{plans: Plan[]}`,每个 `Plan` 含 `planKey`(稳定键)、`name`、`durationMonths`、`priceCents`、`currency`(ISO-4217)、`tier`(`paid`/`enterprise`)。免费版不是可购买计划。
+- **`GET /v1/plan-tiers`** — 公开套餐层级对比。返回 `{tiers, capabilities}`,固定列出 `free`/`paid`/`enterprise` 三层与限制矩阵(含企业权限控制预告行),无需登录。
 - **`GET /healthz`** — 存活 + **脱敏**配置视图(机密只显示 `set`/`unset`,绝不显示值,PL-R12)。
 - **`GET /v1/artifact/latest`** — 公开发布发现。返回最高稳定 `vX.Y.Z` 及最新有效时间批次：`{version,batch}`；没有可用版本为 `404`。
 - **`GET /v1/artifact/{version}/targets`** — version 使用上传目录格式 `vX.Y.Z`。返回 `{version,batch,targets}`，每项 target 为 `{target,file,sha256,bytes}`；version 不合法 `400`，不存在 `404`。
@@ -85,7 +86,7 @@ c3 不调用这些,记于此以保边界完整。
 
 ### license 绑定(浏览器/会话)
 
-- **`GET /v1/license/activate?installId&requestId`** — 确保账户有默认 license、登记本轮 `(installId, requestId)` 待绑请求,返回本人 license 列表(每项 `licenseId`/`licenseKey`/`status`/`termEnd`/`aliveInstallId`/`aliveTime`;license 不含套餐字段——套餐记录在订单上)。当且仅当满足自动绑定条件(唯一 license、`active`、剩余期 > 1 月)时,额外返回 `autoBound:true` 与 `termEnd`(已在服务端完成绑定并暂存待 `checkbind` 取回)。未登录 `401`。
+- **`GET /v1/license/activate?installId&requestId`** — 确保账户有默认 license、登记本轮 `(installId, requestId)` 待绑请求,返回本人 license 列表(每项 `licenseId`/`licenseKey`/`status`/`tier`/`termEnd`/`aliveInstallId`/`aliveTime`)。当且仅当满足自动绑定条件(唯一 license、`active`、剩余期 > 1 月)时,额外返回 `autoBound:true` 与 `termEnd`(已在服务端完成绑定并暂存待 `checkbind` 取回)。未登录 `401`。
 - **`POST /v1/license/bind`** — 请求体 `{installId, requestId, licenseKey}`(license 须属本人):独占绑定、轮换 alive token、签实体令牌,并把 `(installId, requestId) → {aliveToken, entitlementToken}` 暂存内存供 `checkbind` 取回。**响应只回 `{status:"active", termEnd}`**(不含 alive token/令牌,PL-R2)。错误:`400`、`404 invalid_key`、`410 expired`、`401`、`503`。
 
 ### 续费购买流程
@@ -93,8 +94,8 @@ c3 不调用这些,记于此以保边界完整。
 用户可持**多条 license**;延长 license 的期限/状态需一笔已支付订单(PL-R9):
 
 1. **登录**(GitHub)。checkout 端点需会话;未登录 `401`。
-2. **选套餐 + 接受协议**(PL-R9):结算页提供协议正文的独立查看页；用户阅读后勾选同意。`GET /v1/plans`(可购买,排除试用)、`GET /v1/licenses`(续期目标)、`GET /v1/agreement`(协议正文)。
-3. **下单** `POST /v1/checkout` — 请求体 `{planKey, licenseId, accept}`。金额由服务端按 `planKey` 推导(客户端金额一律忽略)。创建唯一 `orderNo`(`C3+YYYYMMDDHHmmssSSS+random4`,作 WeChat `out_trade_no`)的 `pending` 订单;若目标 license 的 `termEnd` 已超过当前 +1 年则拒绝(`400`,续期上限)。配了微信支付则下 Native 统一下单(`time_expire`=创建+15min)并返回 `{orderId, orderNo, status, codeUrl, qrDataUri}`(扫码二维码)。
+2. **选套餐 + 接受协议**(PL-R9):结算页提供协议正文的独立查看页；用户阅读后勾选同意。`GET /v1/plans`(可购买 paid/enterprise)、`GET /v1/licenses`(续期目标)、`GET /v1/agreement`(协议正文)。
+3. **下单** `POST /v1/checkout` — 请求体 `{planKey, licenseId, accept}`。金额由服务端按 `planKey` 与目标 license tier 推导(客户端金额一律忽略)。paid→enterprise 按剩余 paid 有效期折算抵扣;有效 enterprise 目标不可购买 paid。创建唯一 `orderNo`(`C3+YYYYMMDDHHmmssSSS+random4`,作 WeChat `out_trade_no`)的 `pending` 订单;普通续费若目标 license 的 `termEnd` 已超过当前 +1 年则拒绝(`400`,续期上限)。配了微信支付则下 Native 统一下单(`time_expire`=创建+15min)并返回 `{orderId, orderNo, status, codeUrl, qrDataUri}`(扫码二维码)。
 4. **支付** WeChat Pay **Native**(扫码)。微信异步回调结算,详见下。
 5. **查看** `GET /v1/orders`(仅**已支付**订单)、`GET /v1/licenses`(license 与绑定状态)。
 

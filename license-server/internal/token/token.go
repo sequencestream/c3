@@ -35,6 +35,7 @@ type Payload struct {
 	InstallationID string `json:"installationId"`
 	LicenseID      string `json:"licenseId"`
 	Status         string `json:"status"`
+	Plan           string `json:"plan,omitempty"`
 	TermStart      int64  `json:"termStart"`
 	TermEnd        int64  `json:"termEnd"`
 	IssuedAt       int64  `json:"issuedAt"`

@@ -2595,9 +2595,12 @@ export interface CodeSearchHit {
  * license rebound to another installation ("one license, one installation").
  */
 export type LicenseState = 'unactivated' | 'active' | 'grace' | 'expired' | 'disabled'
+export type LicensePlan = 'free' | 'paid' | 'enterprise'
 
 export interface LicenseStatus {
   state: LicenseState
+  /** Effective plan tier after local fallback/downgrade policy. */
+  plan: LicensePlan
   /** Whether new sessions are permitted (`active`/`grace`). */
   entitled: boolean
   /** License term end, unix seconds (0 when unactivated). */

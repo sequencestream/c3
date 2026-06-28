@@ -41,9 +41,9 @@ func TestSeedAndListPlans(t *testing.T) {
 	r, ctx := liveRepo(t)
 
 	seed := []Record{
-		{PlanKey: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 100, Currency: "CNY", SortOrder: 0},
-		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
-		{PlanKey: "1y", Name: "1 Year", DurationMonths: 12, PriceCents: 1090, Currency: "CNY", SortOrder: 2},
+		{PlanKey: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 100, Currency: "CNY", SortOrder: 0, Tier: "paid"},
+		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1, Tier: "paid"},
+		{PlanKey: "1y", Name: "1 Year", DurationMonths: 12, PriceCents: 1090, Currency: "CNY", SortOrder: 2, Tier: "paid"},
 	}
 	if err := r.Seed(ctx, seed); err != nil {
 		t.Fatalf("seed plans: %v", err)
@@ -69,7 +69,7 @@ func TestSeedAndListPlans(t *testing.T) {
 
 	// Re-seeding with a changed price is a no-op (ON CONFLICT DO NOTHING): the
 	// database is the live store after the first seed; operator edits survive.
-	bumped := []Record{{PlanKey: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 999, Currency: "CNY", SortOrder: 0}}
+	bumped := []Record{{PlanKey: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 999, Currency: "CNY", SortOrder: 0, Tier: "paid"}}
 	if err := r.Seed(ctx, bumped); err != nil {
 		t.Fatalf("re-seed: %v", err)
 	}

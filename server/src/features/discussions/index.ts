@@ -18,6 +18,24 @@ import { isDiscussionType } from '@ccc/shared/discussion-types'
 import { discussionRunSnapshot, getDiscussionRun, hasDiscussionRun } from './run-controls.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { pathToId, resolveWorkspaceRoot } from '../../state.js'
+import { loadSettings } from '../../kernel/config/index.js'
+import { getDefaultAgentId } from '../../kernel/agent-config/index.js'
+import { currentLicenseStatus } from '../license/store.js'
+import { currentPlanLimits, limitError } from '../license/plan-limits.js'
+
+function effectiveNonOrganizerParticipantCount(
+  participantAgentIds: readonly string[] | undefined,
+  organizerAgentId: string | null | undefined,
+): number {
+  const organizer = organizerAgentId || getDefaultAgentId()
+  const selected = participantAgentIds ?? []
+  const ids = selected.length
+    ? selected
+    : loadSettings()
+        .agents.filter((agent) => agent.enabled !== false)
+        .map((agent) => agent.id)
+  return new Set(ids.filter((id) => id !== organizer)).size
+}
 
 export const listDiscussionsHandler: Handler<'list_discussions'> = (ctx, conn, msg) => {
   if (!isDiscussionStoreAvailable()) {
@@ -63,6 +81,18 @@ export const createDiscussionHandler: Handler<'create_discussion'> = (ctx, conn,
     return
   }
   const proj = abs
+  const limits = currentPlanLimits(currentLicenseStatus())
+  const participants = effectiveNonOrganizerParticipantCount(
+    msg.participantAgentIds,
+    msg.organizerAgentId ?? null,
+  )
+  if (limits.discussionParticipants !== null && participants > limits.discussionParticipants) {
+    conn.send({
+      type: 'error',
+      error: limitError('license.discussionParticipantLimit', limits.discussionParticipants),
+    })
+    return
+  }
   // Title is derived from the goal (the form has no title field): first
   // non-empty line, trimmed and capped.
   const firstLine =

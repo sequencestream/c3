@@ -56,7 +56,9 @@ import {
   getGitBranchMode,
   getSddEnabled,
 } from '../../kernel/config/index.js'
-import { ensureRuntime, getRuntime } from '../../runs.js'
+import { activeWorktreeRuntimeCount, ensureRuntime, getRuntime } from '../../runs.js'
+import { currentLicenseStatus } from '../license/store.js'
+import { currentPlanLimits } from '../license/plan-limits.js'
 import {
   createWorktree,
   getWorktreePath,
@@ -460,6 +462,13 @@ class AutomationController {
     const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
     let effectiveCwd: string
     if (getGitBranchMode(this.workspacePath) === 'worktree') {
+      const limits = currentPlanLimits(currentLicenseStatus())
+      if (
+        limits.activeWorktrees !== null &&
+        activeWorktreeRuntimeCount() >= limits.activeWorktrees
+      ) {
+        throw new Error(`free plan allows only ${limits.activeWorktrees} active worktree`)
+      }
       const wt = createWorktree(
         this.workspacePath,
         req.id,

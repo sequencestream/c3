@@ -35,6 +35,8 @@ import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js
 import { getSkillSupport } from '../../state.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { requireAdmin } from '../auth/authz.js'
+import { currentLicenseStatus } from '../license/store.js'
+import { currentPlanLimits, limitError } from '../license/plan-limits.js'
 
 /** Map the ProcessLauncher probe into the wire shape (carrying the resolved path). */
 function hostStatus(): VendorHostStatus[] {
@@ -237,6 +239,11 @@ export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_
   // The spec root is fixed/centralized and never user-configurable: any spec
   // directory value the client may have sent in `msg.config` is dropped by
   // `normalizeWorkspaceSetting` (no such field), so the save cannot change it.
+  const limits = currentPlanLimits(currentLicenseStatus())
+  if (limits.sandboxEnabled === false && msg.config.sandbox?.enabled === true) {
+    conn.send({ type: 'error', error: limitError('license.sandboxDisabled') })
+    return
+  }
   const config = saveWorkspaceSetting(proj, msg.config)
   conn.send({
     type: 'workspace_setting',

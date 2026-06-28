@@ -136,6 +136,16 @@ function licenseBadgeKey(state: string): LocaleKey {
   return 'license.badge.unactivated' as LocaleKey
 }
 
+function licensePlanKey(plan: string | undefined): LocaleKey {
+  if (plan === 'free') return 'license.plan.free' as LocaleKey
+  if (plan === 'enterprise') return 'license.plan.enterprise' as LocaleKey
+  return 'license.plan.paid' as LocaleKey
+}
+
+const licensePlanText = computed<string>(() =>
+  props.license ? t(licensePlanKey(props.license.plan)) : '',
+)
+
 // 已激活态(entitled):active/grace。决定许可状态控件渲染哪一支——
 // 已激活 → 图标 + 信息下拉;未激活/过期/停用 → 红色带下划线文字 + 激活下拉。
 const licenseEntitled = computed<boolean>(() => {
@@ -377,9 +387,11 @@ function selectTab(tab: HeaderTab): void {
               aria-hidden="true"
               >!</span
             >
+            <span class="license-plan">{{ licensePlanText }}</span>
           </summary>
           <div class="license-dropdown">
             <template v-if="licenseEntitled">
+              <div class="license-info-row">{{ licensePlanText }}</div>
               <!-- 已激活:展示有效期(.license-term)+ 右侧密钥按钮(跳转 c3 控制台查看/续期);
                    term 未知(termEnd=0)时回退为状态文案。 -->
               <div v-if="licenseTermText" class="license-info-row license-term">
@@ -529,7 +541,7 @@ function selectTab(tab: HeaderTab): void {
               {{ t(licenseBadgeKey(license.state)) }} · {{ t('license.activate.button') }}
             </button>
             <span v-else class="mobile-action-item license-info-static">
-              ✓ {{ licenseTermText || t(licenseBadgeKey(license.state)) }}
+              ✓ {{ licensePlanText }} · {{ licenseTermText || t(licenseBadgeKey(license.state)) }}
             </span>
           </template>
           <span class="status mobile-status" :class="status === 'open' ? 'ok' : 'err'">
@@ -630,6 +642,7 @@ function selectTab(tab: HeaderTab): void {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   user-select: none;
 }
 .license-trigger::-webkit-details-marker {
@@ -660,6 +673,12 @@ function selectTab(tab: HeaderTab): void {
 }
 .license-icon.grace {
   color: var(--c-yellow);
+}
+.license-plan {
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  color: var(--c-text);
+  white-space: nowrap;
 }
 /* 未激活/过期/停用:圆圈内红色感叹号 */
 .license-icon.license-warn {

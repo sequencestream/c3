@@ -73,8 +73,7 @@ func TestAccountLiveDataIsolation(t *testing.T) {
 	env := liveServer(t, githubOK())
 
 	if err := env.seed.SeedPlans(env.ctx, []plans.Record{
-		{PlanKey: "trial-1m", Name: "Trial", DurationMonths: 1, PriceCents: 0, Currency: "CNY", SortOrder: 0, IsTrial: true},
-		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
+		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1, Tier: "paid"},
 	}); err != nil {
 		t.Fatalf("seed plans: %v", err)
 	}
@@ -135,7 +134,7 @@ func TestAccountLiveDataIsolation(t *testing.T) {
 func TestAccountDoesNotLeakAliveToken(t *testing.T) {
 	env := liveServer(t, githubOK())
 	if err := env.seed.SeedPlans(env.ctx, []plans.Record{
-		{PlanKey: "trial-1m", Name: "Trial", DurationMonths: 1, PriceCents: 0, Currency: "CNY", SortOrder: 0, IsTrial: true},
+		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1, Tier: "paid"},
 	}); err != nil {
 		t.Fatalf("seed plans: %v", err)
 	}

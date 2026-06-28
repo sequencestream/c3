@@ -476,6 +476,15 @@ export function runningCountForWorkspace(workspacePath: string): number {
   return n
 }
 
+/** Count active worktree-backed dev runtimes across the installation. */
+export function activeWorktreeRuntimeCount(): number {
+  let n = 0
+  for (const rt of runtimes.values()) {
+    if (rt.status !== 'idle' && rt.effectiveCwd && rt.effectiveCwd !== rt.workspacePath) n++
+  }
+  return n
+}
+
 /**
  * Session-layer liveness reconciliation: identify stale/hung runs and converge
  * them to `idle`. Called periodically by the server's status heartbeat.

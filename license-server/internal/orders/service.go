@@ -51,8 +51,28 @@ func (s *Service) CreateRenewal(ctx context.Context, in RenewalInput, now time.T
 	if !ok {
 		return Order{}, ErrLicenseNotChosen
 	}
-	if target.TermEnd.After(now.AddDate(0, config.MaxLicenseTermAheadMonths, 0)) {
+	plan, ok, err := s.repo.PlanByKey(ctx, in.PlanKey)
+	if err != nil {
+		return Order{}, err
+	}
+	if !ok {
+		return Order{}, ErrPlanUnavailable
+	}
+	targetEntitled := target.Status == "active" && target.TermEnd.After(now)
+	if targetEntitled && target.Tier == "enterprise" && plan.Tier != "enterprise" {
+		return Order{}, ErrTierDowngradeBlocked
+	}
+	isUpgrade := targetEntitled && target.Tier == "paid" && plan.Tier == "enterprise"
+	if !isUpgrade && target.Tier != "free" && target.TermEnd.After(now.AddDate(0, config.MaxLicenseTermAheadMonths, 0)) {
 		return Order{}, ErrTermCapExceeded
+	}
+	var amountOverride *int
+	if isUpgrade {
+		amount, err := s.repo.UpgradeAmountCents(ctx, plan.PriceCents, target.TermEnd, now)
+		if err != nil {
+			return Order{}, err
+		}
+		amountOverride = &amount
 	}
 
 	order, err := s.repo.Create(ctx, CreateOrderInput{
@@ -61,6 +81,7 @@ func (s *Service) CreateRenewal(ctx context.Context, in RenewalInput, now time.T
 		PlanKey:             in.PlanKey,
 		AgreementVersion:    in.AgreementVersion,
 		AgreementAcceptedAt: now,
+		AmountCentsOverride: amountOverride,
 	}, func() string { return NewOrderNo(time.Now()) })
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {

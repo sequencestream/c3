@@ -20,9 +20,8 @@ type Signer = ed25519.PrivateKey
 
 // autoBindThresholdMonths is the remaining-term floor for auto-binding: a user's
 // sole license is bound to the requesting installation automatically only when it
-// stays valid beyond now + this many months. The default one-month trial term
-// (exactly at the floor) is therefore not auto-bound — a returning user with a
-// renewed/long license is.
+// stays valid beyond now + this many months. The long-lived default free term is
+// eligible, so a new free user can activate without a manual picker.
 const autoBindThresholdMonths = 1
 
 // Service is the license binding/heartbeat business layer. It composes the license
@@ -224,6 +223,7 @@ func (s *Service) signEntitlement(installID string, lic License, now time.Time) 
 		InstallationID: installID,
 		LicenseID:      strconv.FormatInt(lic.ID, 10),
 		Status:         "active",
+		Plan:           lic.Tier,
 		TermStart:      lic.TermStart.Unix(),
 		TermEnd:        lic.TermEnd.Unix(),
 		IssuedAt:       now.Unix(),

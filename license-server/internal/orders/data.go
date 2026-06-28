@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -103,6 +104,10 @@ func (r *Repo) Create(ctx context.Context, in CreateOrderInput, newOrderNo func(
 	if !ok {
 		return Order{}, ErrNotFound
 	}
+	amountCents := plan.PriceCents
+	if in.AmountCentsOverride != nil {
+		amountCents = *in.AmountCentsOverride
+	}
 	// order_no is the business/payment-association number (the WeChat out_trade_no);
 	// it carries a millisecond timestamp + random suffix and is unique. A unique
 	// collision is retried with a freshly generated number (mirrors license_key).
@@ -114,7 +119,7 @@ func (r *Repo) Create(ctx context.Context, in CreateOrderInput, newOrderNo func(
 				(order_no, user_id, license_id, plan_key, amount_cents, currency, agreement_version, agreement_accepted_at, status)
 			VALUES ($1, $2, NULLIF($3, 0), $4, $5, $6, $7, $8, 'pending')
 			RETURNING `+orderSelectCols,
-			newOrderNo(), in.UserID, in.LicenseID, in.PlanKey, plan.PriceCents, plan.Currency,
+			newOrderNo(), in.UserID, in.LicenseID, in.PlanKey, amountCents, plan.Currency,
 			in.AgreementVersion, in.AgreementAcceptedAt).Scan(&row)
 		if res.Error == nil && res.RowsAffected > 0 {
 			return row.toOrder(), nil
@@ -197,19 +202,30 @@ func (r *Repo) MarkPaid(ctx context.Context, orderNo, paymentRef string, now tim
 			return fmt.Errorf("orders: mark paid: %w", res.Error)
 		}
 		out = updated.toOrder()
-		// Extend the renewal target, if linked: push term_end out by the plan's
-		// whole-month duration. This and the order transition commit atomically in
-		// one transaction (§5), reading the plan and writing the license through
-		// their owning repositories so each table's SQL stays in its module.
+		// Extend or replace the renewal target in the same transaction as the order
+		// transition. Long-lived free licenses and paid→enterprise upgrades replace
+		// the term from now; same-tier paid/enterprise renewals extend it.
 		if out.LicenseID != 0 {
-			months, ok, err := r.plans.DurationMonthsTx(tx, out.PlanKey)
+			plan, ok, err := r.plans.ByKeyTx(tx, out.PlanKey)
 			if err != nil {
 				return err
 			}
 			if !ok {
 				return ErrNotFound
 			}
-			if err := r.licenses.ExtendTermTx(tx, out.LicenseID, months, now); err != nil {
+			current, ok, err := r.licenses.ByIDTx(tx, out.LicenseID)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return ErrNotFound
+			}
+			replaceTerm := current.Tier == "free" || (current.Tier == "paid" && plan.Tier == "enterprise")
+			if replaceTerm {
+				if err := r.licenses.ReplaceTermWithTierTx(tx, out.LicenseID, plan.DurationMonths, plan.Tier, now); err != nil {
+					return err
+				}
+			} else if err := r.licenses.ExtendTermWithTierTx(tx, out.LicenseID, plan.DurationMonths, plan.Tier, now); err != nil {
 				return err
 			}
 		}
@@ -220,6 +236,33 @@ func (r *Repo) MarkPaid(ctx context.Context, orderNo, paymentRef string, now tim
 		return Order{}, false, err
 	}
 	return out, advanced, nil
+}
+
+// PlanByKey exposes the server-owned plan row to the service layer for checkout
+// policy decisions. It is still backed by the plan repo, not client input.
+func (r *Repo) PlanByKey(ctx context.Context, planKey string) (plans.Record, bool, error) {
+	return r.plans.ByKey(ctx, planKey)
+}
+
+// UpgradeAmountCents computes the paid→enterprise upgrade amount from the target
+// license's remaining paid term.
+func (r *Repo) UpgradeAmountCents(ctx context.Context, enterprisePriceCents int, targetTermEnd time.Time, now time.Time) (int, error) {
+	annual, ok, err := r.plans.AnnualPaidPriceCents(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if !ok {
+		return enterprisePriceCents, nil
+	}
+	remaining := targetTermEnd.Sub(now)
+	if remaining <= 0 {
+		return enterprisePriceCents, nil
+	}
+	credit := int(math.Round(remaining.Hours() / 24 / 365 * float64(annual)))
+	if credit >= enterprisePriceCents {
+		return 0, nil
+	}
+	return enterprisePriceCents - credit, nil
 }
 
 // MarkFailed records a pending order as failed with the external payment

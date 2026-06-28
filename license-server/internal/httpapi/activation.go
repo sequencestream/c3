@@ -341,6 +341,7 @@ func licenseViews(ls []licenses.LicenseBinding) []map[string]any {
 			"licenseId":      l.ID,
 			"licenseKey":     l.LicenseKey,
 			"status":         l.Status,
+			"tier":           l.Tier,
 			"termEnd":        l.TermEnd.Unix(),
 			"aliveInstallId": installID,
 			"aliveTime":      aliveTime,

@@ -133,6 +133,7 @@ func seedPlans(ctx context.Context, repo *plans.Repo) {
 			PriceCents:     p.PriceCents,
 			Currency:       p.Currency,
 			SortOrder:      i,
+			Tier:           p.Tier,
 		}
 	}
 	if err := repo.Seed(ctx, rows); err != nil {

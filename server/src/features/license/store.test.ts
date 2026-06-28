@@ -12,6 +12,7 @@ import {
   recordHeartbeatFailure,
   recordHeartbeatLapse,
   recordHeartbeatSuccess,
+  resetHeartbeatFailureCountForTests,
   saveActivation,
   writeLicenseCache,
 } from './store.js'
@@ -28,6 +29,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-license-'))
   savedC3Dir = process.env.C3_DIR
   process.env.C3_DIR = dir
+  resetHeartbeatFailureCountForTests()
 })
 
 afterEach(() => {
@@ -174,14 +176,15 @@ describe('heartbeat cache transitions (PL-R3/PL-R4/PL-R8)', () => {
     expect(readLicenseCache()?.state).toBe('disabled')
   })
 
-  it('recordHeartbeatFailure stays in grace within the window, then expires', () => {
+  it('recordHeartbeatFailure stays entitled after connectivity failures and downgrades plan after the threshold', () => {
     seedActive()
-    const now = 1_000_000_000_000
-    // last success is "now" → within grace.
+    const now = WITHIN * 1000
     recordHeartbeatSuccess()
     writeLicenseCache({ ...readLicenseCache()!, lastSuccessfulHeartbeat: now })
     expect(recordHeartbeatFailure(now + GRACE_WINDOW_MS - 1)?.state).toBe('grace')
-    expect(recordHeartbeatFailure(now + GRACE_WINDOW_MS + 1)?.state).toBe('expired')
+    expect(recordHeartbeatFailure(now + GRACE_WINDOW_MS + 1)?.state).toBe('active')
+    for (let i = 0; i < 9; i++) recordHeartbeatFailure(now + GRACE_WINDOW_MS + 2 + i)
+    expect(currentLicenseStatus(WITHIN).plan).toBe('free')
   })
 
   it('recordHeartbeatFailure does not resurrect a disabled license', () => {
@@ -211,13 +214,12 @@ describe('derivation priority: cached verdict over token re-verification', () =>
     expect(currentLicenseStatus(WITHIN)).toMatchObject({ state: 'expired', entitled: false })
   })
 
-  it('keeps `expired` after grace is exhausted, not flipped back by the valid token', () => {
+  it('does not expire a valid token after connectivity grace is exhausted', () => {
     seedActive()
-    const now = 1_000_000_000_000
+    const now = WITHIN * 1000
     writeLicenseCache({ ...readLicenseCache()!, lastSuccessfulHeartbeat: now })
-    // Grace window blown → recordHeartbeatFailure writes `expired`.
-    expect(recordHeartbeatFailure(now + GRACE_WINDOW_MS + 1)?.state).toBe('expired')
-    expect(currentLicenseStatus(WITHIN)).toMatchObject({ state: 'expired', entitled: false })
+    expect(recordHeartbeatFailure(now + GRACE_WINDOW_MS + 1)?.state).toBe('active')
+    expect(currentLicenseStatus(WITHIN)).toMatchObject({ state: 'active', entitled: true })
   })
 
   it('reports `grace` (entitled) while the offline window still holds', () => {
@@ -231,7 +233,7 @@ describe('derivation priority: cached verdict over token re-verification', () =>
     expect(currentLicenseStatus(WITHIN)).toMatchObject({ state: 'grace', entitled: true })
   })
 
-  it('downgrades a stale `grace` to `expired` once its window has elapsed', () => {
+  it('keeps a stale `grace` entitled while the token window is valid', () => {
     seedActive()
     writeLicenseCache({
       ...readLicenseCache()!,
@@ -239,7 +241,7 @@ describe('derivation priority: cached verdict over token re-verification', () =>
       lastSuccessfulHeartbeat: WITHIN * 1000,
     })
     const afterWindow = WITHIN + GRACE_WINDOW_MS / 1000 + 1
-    expect(deriveEntitlement(readLicenseCache(), afterWindow).state).toBe('expired')
+    expect(deriveEntitlement(readLicenseCache(), afterWindow).state).toBe('grace')
   })
 
   it('recovers to `active` after a successful heartbeat clears the verdict', () => {

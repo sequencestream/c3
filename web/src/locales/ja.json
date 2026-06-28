@@ -1574,6 +1574,11 @@
     },
     "license": {
       "notEntitled": "新しいセッションを開始できません — {reason}。上部のバッジからライセンスを有効化または更新してください。",
+      "workspaceLimit": "Free plan allows up to {limit} workspaces.",
+      "worktreeLimit": "Free plan allows only {limit} active worktree.",
+      "discussionParticipantLimit": "Free plan allows up to {limit} discussion participants, not counting the organizer.",
+      "scheduleLimit": "Free plan allows up to {limit} enabled schedules.",
+      "sandboxDisabled": "Free plan can save sandbox settings, but cannot enable sandbox.",
       "reason": {
         "expired": "ライセンスの有効期限が切れています",
         "disabled": "ライセンスは別のインストールにバインドされています",
@@ -2134,6 +2139,11 @@
       "disabled": "無効",
       "validUntil": "{date} まで有効",
       "manageKey": "キーを表示・更新"
+    },
+    "plan": {
+      "free": "Free",
+      "paid": "Paid",
+      "enterprise": "Enterprise"
     },
     "activate": {
       "button": "ライセンスを有効化",

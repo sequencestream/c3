@@ -40,7 +40,7 @@ onMounted(async () => {
 <template>
   <main class="ls-card wide">
     <h1>账户中心 / Account</h1>
-    <p class="note"><a href="/checkout">续费 / Renew a license →</a></p>
+    <p class="note"><a href="/checkout">续费 / Renew a license →</a> · <a href="/plans">套餐对比 / Compare plans →</a></p>
     <p v-if="loading" class="note">加载中…</p>
     <p v-else-if="error" class="error">{{ error }}</p>
 
@@ -51,6 +51,7 @@ onMounted(async () => {
           <tr>
             <th>License Key</th>
             <th>状态</th>
+            <th>层级</th>
             <th>有效至</th>
             <th>当前绑定</th>
           </tr>
@@ -61,6 +62,7 @@ onMounted(async () => {
               <code class="key">{{ l.licenseKey }}</code>
             </td>
             <td><span :class="statusBadgeClass(l.status)">{{ l.status }}</span></td>
+            <td>{{ l.tier }}</td>
             <td>{{ formatDate(l.termEnd) }}</td>
             <td>{{ l.aliveInstallId || '未绑定' }}</td>
           </tr>

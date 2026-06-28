@@ -108,12 +108,12 @@ func liveServer(t *testing.T, github http.Handler) liveEnv {
 
 	st := store.New(db)
 	sd := newSeeder(st)
-	// Seed a trial plan for the checkout/renewal flows; the default license issued
-	// at sign-in no longer references a plan (plan lives on the order).
+	// Seed a paid plan for checkout/renewal flows; the default license issued at
+	// sign-in is the free tier and does not reference a plan.
 	if err := sd.SeedPlans(ctx, []plans.Record{
-		{PlanKey: "trial-1m", Name: "Trial", DurationMonths: 1, PriceCents: 0, Currency: "CNY", SortOrder: 0, IsTrial: true},
+		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1, Tier: "paid"},
 	}); err != nil {
-		t.Fatalf("seed trial plan: %v", err)
+		t.Fatalf("seed paid plan: %v", err)
 	}
 	h := NewServer(Deps{
 		Config: cfg,

@@ -181,13 +181,11 @@ new-session creation. What changed:
   heartbeat bearer credential, returned in plaintext once at bind and rotated on each re-bind), and
   the last-success time. Re-binding to a new installation **displaces** the old one, which is reported
   `disabled` on its next heartbeat (it cannot be recovered offline).
-- **GitHub OAuth is sign-in only.** GitHub now authenticates **account login/registration** and is
-  no longer the activation vehicle. On first sign-in (after the user accepts the service agreement (incl. no-refund terms))
-  LS issues a **default trial license** and shows its license key to copy.
+- **GitHub OAuth is sign-in only.** GitHub authenticates **account login/registration**. On first
+  sign-in LS issues a **default long-lived free license** that can be browser-bound to c3.
 - **Renewal is order-driven.** A user may hold multiple licenses; extending a license's term and
   status requires a paid **order** linked to that license (WeChat Pay payment capture remains a later
-  milestone). The no-refund acceptance is recorded on the order for renewal, and at the sign-in gate
-  for the trial.
+  milestone). The no-refund acceptance is recorded on the order for renewal/upgrade.
 - **Schema simplified.** Tables renamed to `c3_ls_user` / `c3_ls_order` / `c3_ls_license`; the
   one-time-code and heartbeat-history helper tables are removed. The `PL-R*` rule numbers are
   retained; their wording is updated to this model.

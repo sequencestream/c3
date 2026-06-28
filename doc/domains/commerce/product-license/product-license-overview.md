@@ -22,7 +22,7 @@ install); product-license controls _whether the product is paid for_ (server-aut
 entitlement, independent of which auth provider is active). The two are deliberately separate
 bounded contexts (ADR-0026).
 
-**Scope:** account sign-in + trial issuance (LS side), license-key binding, the heartbeat +
+**Scope:** account sign-in + default free license issuance (LS side), license-key binding, the heartbeat +
 offline-grace lifecycle, offline signature verification of the entitlement token, new-session
 gating, the license badge/menu surfacing, the renewal payment + no-refund-agreement flow (LS side),
 and admin license operations (LS side).
@@ -53,7 +53,7 @@ and admin license operations (LS side).
 2. **LS MVP (authority core).** _In place_ — the standalone Go service boots from environment config,
    applies the idempotent PostgreSQL schema, serves a redacted health signal and the public plan
    catalog (`1m`/`6m`/`1y`), embeds its web as a single binary; **GitHub sign-in/registration** with
-   **trial-license issuance** (random license key shown to the user); **license-key binding**
+   **free-license issuance** (random license key shown to the user); **license-key binding**
    (Ed25519-signed entitlement token + alive token, exclusive per installation); and **heartbeat**
    (active / disabled / expired). _Pending_ — admin issue/force-expire/inspect over the
    GitHub-OAuth back-office.

@@ -80,15 +80,17 @@ func TestPlansEndpoint(t *testing.T) {
 			PlanKey    string `json:"planKey"`
 			PriceCents int    `json:"priceCents"`
 			Currency   string `json:"currency"`
+			Tier       string `json:"tier"`
 		} `json:"plans"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(got.Plans) != 3 {
-		t.Fatalf("got %d plans, want 3", len(got.Plans))
+	if len(got.Plans) != 4 {
+		t.Fatalf("got %d plans, want 4", len(got.Plans))
 	}
-	wantPrice := map[string]int{"1m": 100, "6m": 590, "1y": 1090}
+	wantPrice := map[string]int{"1m": 100, "6m": 590, "1y": 1090, "enterprise-1y": 10000}
+	wantTier := map[string]string{"1m": "paid", "6m": "paid", "1y": "paid", "enterprise-1y": "enterprise"}
 	for _, p := range got.Plans {
 		if wantPrice[p.PlanKey] != p.PriceCents {
 			t.Errorf("plan %q price = %d, want %d", p.PlanKey, p.PriceCents, wantPrice[p.PlanKey])
@@ -96,6 +98,32 @@ func TestPlansEndpoint(t *testing.T) {
 		if p.Currency != "CNY" {
 			t.Errorf("plan %q currency = %q", p.PlanKey, p.Currency)
 		}
+		if p.Tier != wantTier[p.PlanKey] {
+			t.Errorf("plan %q tier = %q, want %q", p.PlanKey, p.Tier, wantTier[p.PlanKey])
+		}
+	}
+}
+
+func TestPlanTiersEndpoint(t *testing.T) {
+	res := do(t, testServer(t), "GET", "/v1/plan-tiers")
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", res.StatusCode)
+	}
+	var got struct {
+		Tiers        []map[string]string `json:"tiers"`
+		Capabilities []map[string]string `json:"capabilities"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(got.Tiers) != 3 {
+		t.Fatalf("tiers len = %d, want 3", len(got.Tiers))
+	}
+	if len(got.Capabilities) < 7 {
+		t.Fatalf("capabilities len = %d, want at least 7", len(got.Capabilities))
+	}
+	if got.Tiers[0]["tier"] != "free" || got.Tiers[2]["tier"] != "enterprise" {
+		t.Fatalf("tiers order = %+v", got.Tiers)
 	}
 }
 

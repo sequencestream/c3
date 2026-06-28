@@ -29,6 +29,7 @@ type licenseRow struct {
 	UserID     int64
 	LicenseKey string
 	Status     string
+	Tier       string
 	TermStart  time.Time
 	TermEnd    time.Time
 }
@@ -39,6 +40,7 @@ func (r licenseRow) toLicense() License {
 		UserID:     r.UserID,
 		LicenseKey: r.LicenseKey,
 		Status:     r.Status,
+		Tier:       normalizeTier(r.Tier),
 		TermStart:  r.TermStart,
 		TermEnd:    r.TermEnd,
 	}
@@ -57,7 +59,7 @@ func (r *Repo) EnsureForUser(ctx context.Context, userID int64, termDays int, no
 
 	var existing licenseRow
 	res := db.WithContext(ctx).Raw(`
-		SELECT id, user_id, license_key, status, term_start, term_end
+		SELECT id, user_id, license_key, status, tier, term_start, term_end
 		FROM c3_ls_license
 		WHERE user_id = $1 AND status = 'active' AND term_end > $2
 		ORDER BY term_end DESC
@@ -75,9 +77,9 @@ func (r *Repo) EnsureForUser(ctx context.Context, userID int64, termDays int, no
 	var lastErr error
 	for range 5 {
 		res := db.WithContext(ctx).Raw(`
-			INSERT INTO c3_ls_license (user_id, license_key, status, term_start, term_end)
-			VALUES ($1, $2, 'active', $3, $4)
-			RETURNING id, user_id, license_key, status, term_start, term_end`,
+			INSERT INTO c3_ls_license (user_id, license_key, status, tier, term_start, term_end)
+			VALUES ($1, $2, 'active', 'free', $3, $4)
+			RETURNING id, user_id, license_key, status, tier, term_start, term_end`,
 			userID, newKey(), termStart, termEnd).Scan(&inserted)
 		if res.Error == nil && res.RowsAffected > 0 {
 			return inserted.toLicense(), true, nil
@@ -97,7 +99,7 @@ func (r *Repo) EnsureDefault(ctx context.Context, userID int64, termDays int, no
 	}
 	var existing licenseRow
 	res := r.st.DB().WithContext(ctx).Raw(`
-		SELECT id, user_id, license_key, status, term_start, term_end
+		SELECT id, user_id, license_key, status, tier, term_start, term_end
 		FROM c3_ls_license
 		WHERE user_id = $1
 		ORDER BY created_at DESC
@@ -125,11 +127,12 @@ func (r *Repo) BindingsByUser(ctx context.Context, userID int64) ([]LicenseBindi
 		Status         string
 		TermStart      time.Time
 		TermEnd        time.Time
+		Tier           string
 		AliveInstallID *string
 		AliveTime      *time.Time
 	}
 	res := r.st.DB().WithContext(ctx).Raw(`
-		SELECT id, user_id, license_key, status, term_start, term_end,
+		SELECT id, user_id, license_key, status, term_start, term_end, tier,
 		       alive_install_id, alive_time
 		FROM c3_ls_license
 		WHERE user_id = $1
@@ -144,6 +147,7 @@ func (r *Repo) BindingsByUser(ctx context.Context, userID int64) ([]LicenseBindi
 			UserID:         row.UserID,
 			LicenseKey:     row.LicenseKey,
 			Status:         row.Status,
+			Tier:           normalizeTier(row.Tier),
 			TermStart:      row.TermStart,
 			TermEnd:        row.TermEnd,
 			AliveInstallID: row.AliveInstallID,
@@ -161,7 +165,7 @@ func (r *Repo) ListByUser(ctx context.Context, userID int64) ([]License, error) 
 	}
 	var rows []licenseRow
 	res := r.st.DB().WithContext(ctx).Raw(`
-		SELECT id, user_id, license_key, status, term_start, term_end
+		SELECT id, user_id, license_key, status, tier, term_start, term_end
 		FROM c3_ls_license
 		WHERE user_id = $1
 		ORDER BY created_at DESC`, userID).Scan(&rows)
@@ -195,9 +199,10 @@ func (r *Repo) BindInstallation(ctx context.Context, licenseKey, installID strin
 			UserID  int64
 			Status  string
 			TermEnd time.Time
+			Tier    string
 		}
 		res := tx.Raw(`
-			SELECT id, user_id, status, term_end
+			SELECT id, user_id, status, term_end, tier
 			FROM c3_ls_license
 			WHERE license_key = $1
 			FOR UPDATE`, licenseKey).Scan(&locked)
@@ -235,6 +240,7 @@ func (r *Repo) BindInstallation(ctx context.Context, licenseKey, installID strin
 				UserID:     locked.UserID,
 				LicenseKey: licenseKey,
 				Status:     "active",
+				Tier:       normalizeTier(locked.Tier),
 				TermStart:  now,
 				TermEnd:    locked.TermEnd,
 			},
@@ -273,9 +279,10 @@ func (r *Repo) HeartbeatByInstall(ctx context.Context, installID, aliveTokenPlai
 			AliveInstallID *string
 			TermStart      time.Time
 			TermEnd        time.Time
+			Tier           string
 		}
 		res := tx.Raw(`
-			SELECT id, user_id, license_key, status, alive_install_id, term_start, term_end
+			SELECT id, user_id, license_key, status, alive_install_id, term_start, term_end, tier
 			FROM c3_ls_license
 			WHERE alive_token = $1
 			FOR UPDATE`, HashCode(aliveTokenPlain)).Scan(&locked)
@@ -309,6 +316,7 @@ func (r *Repo) HeartbeatByInstall(ctx context.Context, installID, aliveTokenPlai
 				UserID:     locked.UserID,
 				LicenseKey: locked.LicenseKey,
 				Status:     "active",
+				Tier:       normalizeTier(locked.Tier),
 				TermStart:  locked.TermStart,
 				TermEnd:    locked.TermEnd,
 			},
@@ -319,6 +327,31 @@ func (r *Repo) HeartbeatByInstall(ctx context.Context, installID, aliveTokenPlai
 		return HeartbeatResult{}, err
 	}
 	return out, nil
+}
+
+func normalizeTier(tier string) string {
+	switch tier {
+	case "free", "paid", "enterprise":
+		return tier
+	default:
+		return "paid"
+	}
+}
+
+// ByIDTx returns a license row inside an existing transaction.
+func (r *Repo) ByIDTx(tx *gorm.DB, licenseID int64) (License, bool, error) {
+	var row licenseRow
+	res := tx.Raw(`
+		SELECT id, user_id, license_key, status, tier, term_start, term_end
+		FROM c3_ls_license
+		WHERE id = $1`, licenseID).Scan(&row)
+	if res.Error != nil {
+		return License{}, false, fmt.Errorf("licenses: by id tx: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return License{}, false, nil
+	}
+	return row.toLicense(), true, nil
 }
 
 // ExtendTermTx pushes a license's term_end out by months whole months from
@@ -333,6 +366,35 @@ func (r *Repo) ExtendTermTx(tx *gorm.DB, licenseID int64, months int, now time.T
 		    updated_at = $2
 		WHERE id = $1`, licenseID, now, months).Error; err != nil {
 		return fmt.Errorf("licenses: extend term: %w", err)
+	}
+	return nil
+}
+
+// ExtendTermWithTierTx renews a license and stamps the tier bought by the order.
+func (r *Repo) ExtendTermWithTierTx(tx *gorm.DB, licenseID int64, months int, tier string, now time.Time) error {
+	if err := tx.Exec(`
+		UPDATE c3_ls_license
+		SET term_end = GREATEST(term_end, $2) + make_interval(months => $3),
+		    status = 'active',
+		    tier = $4,
+		    updated_at = $2
+		WHERE id = $1`, licenseID, now, months, normalizeTier(tier)).Error; err != nil {
+		return fmt.Errorf("licenses: extend term with tier: %w", err)
+	}
+	return nil
+}
+
+// ReplaceTermWithTierTx replaces a license term from now and stamps the new tier.
+func (r *Repo) ReplaceTermWithTierTx(tx *gorm.DB, licenseID int64, months int, tier string, now time.Time) error {
+	if err := tx.Exec(`
+		UPDATE c3_ls_license
+		SET term_start = $2,
+		    term_end = $2 + make_interval(months => $3),
+		    status = 'active',
+		    tier = $4,
+		    updated_at = $2
+		WHERE id = $1`, licenseID, now, months, normalizeTier(tier)).Error; err != nil {
+		return fmt.Errorf("licenses: replace term with tier: %w", err)
 	}
 	return nil
 }

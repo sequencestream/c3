@@ -106,6 +106,7 @@ async function submit(): Promise<void> {
 <template>
   <main class="ls-card">
     <h1>续费 / Renew</h1>
+    <p class="note"><a href="/plans">查看套餐对比 / Compare plans →</a></p>
     <p v-if="loading" class="note">加载中…</p>
     <p v-else-if="error" class="error">{{ error }}</p>
 
@@ -129,7 +130,7 @@ async function submit(): Promise<void> {
       <h2>选择套餐</h2>
       <label v-for="p in plans" :key="p.planKey" class="opt">
         <input type="radio" name="plan" :value="p.planKey" v-model="planKey" />
-        <span>{{ p.name }}</span><span class="price">{{ formatPrice(p.priceCents, p.currency) }}</span>
+        <span>{{ p.name }} · {{ p.tier }}</span><span class="price">{{ formatPrice(p.priceCents, p.currency) }}</span>
       </label>
       <p v-if="!plans.length" class="note">暂无可购买套餐。</p>
 

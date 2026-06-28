@@ -160,6 +160,8 @@ export interface LaunchRunDeps {
    */
   sandboxDriver?: import('../sandbox/SandboxDriver.js').SandboxDriver
   sandboxRegistry?: import('../sandbox/SandboxRegistry.js').SandboxRegistry
+  /** Runtime policy hook from the composition root; false suppresses sandbox launch. */
+  sandboxAllowed?: () => boolean
 }
 
 /**
@@ -268,7 +270,10 @@ export async function launchRun(
   if (deps.sandboxDriver && deps.sandboxRegistry && rt.effectiveCwd) {
     const sbCfg = getProjectSandbox(workspacePath)
     const sandboxEnabled =
-      !!sbCfg?.enabled && !!sbCfg.sandbox && deps.sandboxRegistry.has(sbCfg.sandbox)
+      (deps.sandboxAllowed?.() ?? true) &&
+      !!sbCfg?.enabled &&
+      !!sbCfg.sandbox &&
+      deps.sandboxRegistry.has(sbCfg.sandbox)
     if (sandboxEnabled) {
       // Hard-isolation failure: settle the run as an error and stop. Mirrors the
       // vendor-unavailable early return below so the started→settled invariant holds.

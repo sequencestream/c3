@@ -30,6 +30,17 @@ vi.mock('../../kernel/config/index.js', () => ({
   getSddEnabled: vi.fn(() => false),
 }))
 
+vi.mock('../license/store.js', () => ({
+  currentLicenseStatus: vi.fn(() => ({
+    state: 'active',
+    plan: 'paid',
+    entitled: true,
+    termEnd: 0,
+    installationId: 'test-installation',
+    licenseKey: 'test-license',
+  })),
+}))
+
 vi.mock('./worktree.js', () => ({
   createWorktree: vi.fn(() => ({ worktreePath: '/tmp/wt', branchName: 'wt-branch' })),
   fetchRemoteBase: vi.fn(),

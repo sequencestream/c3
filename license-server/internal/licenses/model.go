@@ -43,14 +43,13 @@ func HashCode(plaintext string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// License is the entitlement row (the subset the bind/heartbeat flow needs). The
-// purchased plan is not carried here — it lives on the order (c3_ls_order.plan_key)
-// that funded the term, not on the license.
+// License is the entitlement row (the subset the bind/heartbeat flow needs).
 type License struct {
 	ID         int64
 	UserID     int64
 	LicenseKey string
 	Status     string
+	Tier       string
 	TermStart  time.Time
 	TermEnd    time.Time
 }
@@ -64,6 +63,7 @@ type LicenseBinding struct {
 	UserID         int64
 	LicenseKey     string
 	Status         string
+	Tier           string
 	TermStart      time.Time
 	TermEnd        time.Time
 	AliveInstallID *string    // nil when no installation is bound

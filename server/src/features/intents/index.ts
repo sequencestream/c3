@@ -17,6 +17,7 @@ import {
 } from '@ccc/shared/protocol'
 import {
   addViewer,
+  activeWorktreeRuntimeCount,
   ensureRuntime,
   getRuntime,
   isRunning,
@@ -85,6 +86,8 @@ import {
   stopAutomation,
 } from './automation.js'
 import { getDiscussion } from '../discussions/store.js'
+import { currentLicenseStatus } from '../license/store.js'
+import { currentPlanLimits, limitError } from '../license/plan-limits.js'
 import { commitAndPush, createGhPr } from '../../git.js'
 import {
   createWorktree,
@@ -769,6 +772,15 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   //    checkout's current branch.
   let effectiveCwd: string
   if (getGitBranchMode(proj) === 'worktree') {
+    const limits = currentPlanLimits(currentLicenseStatus())
+    if (limits.activeWorktrees !== null && activeWorktreeRuntimeCount() >= limits.activeWorktrees) {
+      conn.send({
+        type: 'error',
+        error: limitError('license.worktreeLimit', limits.activeWorktrees),
+      })
+      releaseClaim()
+      return
+    }
     try {
       const baseBranch = getDefaultMainBranch(proj)
       if (baseBranch?.trim()) fetchRemoteBase(proj, baseBranch)

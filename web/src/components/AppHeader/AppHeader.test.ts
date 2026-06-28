@@ -258,6 +258,41 @@ describe('AppHeader.vue — license badge 有效期(PL-R7)', () => {
       expect(w.find('.license-term').exists()).toBe(false)
     }
   })
+
+  it('按 plan 层级在右上角 badge 展示 free / paid / enterprise', () => {
+    for (const [plan, label] of [
+      ['free', 'Free'],
+      ['paid', 'Paid'],
+      ['enterprise', 'Enterprise'],
+    ] as const) {
+      const w = mount(AppHeader, {
+        props: licenseProps({
+          state: 'active',
+          plan,
+          entitled: true,
+          termEnd: TERM_END,
+          installationId: 'i',
+          licenseKey: 'lk',
+        }),
+      } as never)
+      expect(w.find('.license-plan').text()).toBe(label)
+      expect(w.find('.license-info-row').text()).toBe(label)
+    }
+  })
+
+  it('移动端操作菜单展示当前付费层级', () => {
+    const w = mount(AppHeader, {
+      props: licenseProps({
+        state: 'active',
+        plan: 'enterprise',
+        entitled: true,
+        termEnd: TERM_END,
+        installationId: 'i',
+        licenseKey: 'lk',
+      }),
+    } as never)
+    expect(w.find('.license-info-static').text()).toContain('Enterprise')
+  })
 })
 
 describe('AppHeader.vue — license 有效期手动刷新(PL-R7)', () => {

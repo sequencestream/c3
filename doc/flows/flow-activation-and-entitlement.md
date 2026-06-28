@@ -7,7 +7,7 @@ creation** (never running work) when entitlement lapses.
 
 **Domains.** product-license · web-console · session-registry · license-server (external).
 
-> **Status: binding flow live (2026-06-17).** GitHub sign-in + trial issuance, license-key binding,
+> **Status: binding flow live (2026-06-17).** GitHub sign-in + default free license issuance, license binding,
 > and heartbeat are implemented on LS and c3. Steps reference `PL-R*` rules in
 > [product-license spec](../domains/commerce/product-license/product-license-spec.md) and the
 > [license-server API contract](../shared/api-conventions/license-server-api.md).
@@ -16,9 +16,9 @@ creation** (never running work) when entitlement lapses.
 
 ```mermaid
 flowchart TD
-    SIGNIN[user on LS web: accept service agreement (incl. no-refund terms) → GitHub sign-in] --> ISSUE[LS creates account + issues trial license, shows license key]
-    ISSUE --> PASTE[c3: paste license key]
-    PASTE --> BIND[c3 → LS: bind license key + installation id]
+    SIGNIN[user on LS web: GitHub sign-in] --> ISSUE[LS creates account + issues long-lived free license]
+    ISSUE --> PICK[user selects license in browser]
+    PICK --> BIND[LS binds chosen license + installation id]
     BIND -- active --> VERIFY[verify Ed25519 signature offline]
     VERIFY -- valid --> ACTIVE[Entitlement = Active<br/>cache token + license key + alive token]
     VERIFY -- invalid --> GATE[not entitled — gate new sessions]
@@ -45,17 +45,16 @@ not carry the activation action.
 
 1. **user → license-server.** On the LS account page (`GET /activate`) the user reads the no-refund
    service agreement and **explicitly accepts** it (`POST /activate/accept`, version + timestamp
-   recorded) **before** sign-in (`PL-R9`). Acceptance is required before GitHub OAuth begins.
-2. **user → GitHub → LS.** LS initiates GitHub OAuth; on the callback (`GET /auth/github/callback`)
+1. **user → GitHub → LS.** LS initiates GitHub OAuth; on the callback (`GET /auth/github/callback`)
    LS exchanges the code, fetches the GitHub identity, and **creates or updates the account**. For a
-   new account it issues a **default trial license** with a fresh **license key**.
-3. **license-server → user.** The page **displays the license key** for the user to copy. No signed
-   token or bearer credential appears in the browser — only the shareable license key (`PL-R2`).
+   new account it issues a **default long-lived free license** with a fresh **license key**.
+1. **license-server → user.** The page lists the user's licenses and can auto-bind the sole long-lived
+   license. No signed token or bearer credential appears in the browser (`PL-R2`).
 
 ## Binding (c3)
 
-1. **web-console → product-license.** The user pastes the license key into c3's license menu; c3
-   calls `POST /v1/license/bind` with `licenseKey` + the installation identifier (`PL-R1`).
+1. **web-console → product-license.** c3 opens LS with `installId` + `requestId`; the signed-in user
+   selects a license in the browser or the sole long-lived license auto-binds (`PL-R1`).
 2. **product-license → LS.** LS checks the license exists and is `active` (status `active` and the
    term not lapsed), then records the binding **exclusively**: it sets the bound installation, **rotates** the alive token
    (storing its hash, displacing any prior binding), and stamps the last-success time. It returns a
@@ -123,7 +122,7 @@ A user may hold multiple licenses; extending one's term and status requires a pa
   a heartbeat credential; only the per-binding alive token authenticates a heartbeat (`PL-R2`).
 - **Secrets stay in LS.** No signing key, OAuth secret, or payment credential ever ships in the c3
   binary or rests in its config/cache — only the public verification key (`PL-R12`).
-- **No proceeding without agreement.** A user must **never** proceed to sign-in (trial) or payment
-  (renewal) without recording acceptance of the service agreement (incl. no-refund terms) (`PL-R9`).
+- **No paid order without agreement.** A user must **never** proceed to payment without recording
+  acceptance of the service agreement (incl. no-refund terms) (`PL-R9`).
 - **Fail-soft.** A failed bind/heartbeat must **never** crash c3 or interrupt running work; it
   affects only whether new sessions may be created once the grace window is exhausted (`PL-R13`).

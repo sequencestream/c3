@@ -25,7 +25,7 @@
  * `validateLazy` re-checks rows older than `LAZY_VALIDATE_MS` against
  * the native stores; the wire reply is not blocked (F-8).
  */
-import type { SessionInfo, VendorId } from '@ccc/shared/protocol'
+import type { SessionInfo, SessionKind, VendorId } from '@ccc/shared/protocol'
 import type { SessionAccessor } from './accessor.js'
 // ADR-0009 R1 exception: the daily `list_sessions` read path needs the
 // projection store (features/works) and the hidden-set filter
@@ -50,8 +50,8 @@ import {
   updateRealRowTitle,
   validateLazy,
   type NativeListFn,
-  type WorkSessionRow,
-} from '../../../features/works/work-session-store.js'
+  type SessionMetadataRow,
+} from '../../../features/sessions/session-metadata-store.js'
 
 /** Rollback escape hatch — default ON. Set `C3_LIST_FROM_PROJECTION=0` to roll back. */
 const USE_PROJECTION = process.env.C3_LIST_FROM_PROJECTION !== '0'
@@ -85,12 +85,12 @@ function lastModifiedOf(extra: Record<string, unknown>): number {
 }
 
 /**
- * Map a `WorkSessionRow` to a wire `SessionInfo`. Looks up `mode` from
+ * Map a `SessionMetadataRow` to a wire `SessionInfo`. Looks up `mode` from
  * `state.ts` (per-session persisted mode), applies the additive `state`
  * field, defaults `lastModified` to 0 for Codex rows whose bind-time
  * `last_modified` is null (the next lazy validation will populate it).
  */
-function rowToSessionInfo(row: WorkSessionRow): SessionInfo {
+function rowToSessionInfo(row: SessionMetadataRow): SessionInfo {
   const sessionId = row.vendorSessionId ?? row.c3Id
   return {
     sessionId,
@@ -100,6 +100,10 @@ function rowToSessionInfo(row: WorkSessionRow): SessionInfo {
     isToolSession: isToolSessionRecorded(sessionId),
     vendor: row.vendor,
     state: row.state,
+    sessionKind: row.sessionKind,
+    ownerKind: row.ownerKind,
+    ownerId: row.ownerId,
+    bound: row.bound,
   }
 }
 
@@ -147,14 +151,15 @@ function accessorNativeList(accessor: SessionAccessor): NativeListFn {
 export async function listSessionsVia(
   accessor: SessionAccessor,
   workspacePath: string,
+  sessionKind: SessionKind = 'work',
 ): Promise<SessionInfo[]> {
   if (!USE_PROJECTION) {
-    return listWorkspaceSessions(workspacePath)
+    return sessionKind === 'work' ? listWorkspaceSessions(workspacePath) : []
   }
   // Read the projection for this workspace. Pending rows are excluded
   // (the SQL filter is on `kind='real'`).
-  let rows = listForWorkspace(workspacePath)
-  if (rows.length === 0) {
+  let rows = listForWorkspace(workspacePath, sessionKind)
+  if (rows.length === 0 && sessionKind === 'work') {
     // Rebuild path (F-10): the projection is empty for this workspace.
     // Rebuild from the accessor + the `sessionAgents` fact map. Codex is
     // enumerable via its local JSONL session store, so it participates in
@@ -176,7 +181,7 @@ export async function listSessionsVia(
         nativeList,
       })
     }
-    rows = listForWorkspace(workspacePath)
+    rows = listForWorkspace(workspacePath, sessionKind)
   }
 
   // Apply the filter parity (hidden set + tool-session filter) and stamp

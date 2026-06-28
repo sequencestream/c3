@@ -26,7 +26,9 @@ import { permissionResponse } from './permissions/index.js'
 import { addWorkspaceHandler, removeWorkspaceHandler } from './workspaces/index.js'
 import {
   createSession,
+  createWorkSession,
   deleteSession,
+  getSessionCounts,
   listCommandsHandler,
   listSessions,
   renameSession,
@@ -115,11 +117,13 @@ export const handlerMap: HandlerMap = {
   remove_workspace: removeWorkspaceHandler,
   // sessions
   list_sessions: listSessions,
+  get_session_counts: getSessionCounts,
   list_dir: listDirHandler,
   read_file: readFileHandler,
   search_codes: searchCodesHandler,
   list_commands: listCommandsHandler,
   create_session: createSession,
+  create_work_session: createWorkSession,
   select_session: selectSession,
   delete_session: deleteSession,
   rename_session: renameSession,

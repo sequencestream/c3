@@ -97,7 +97,7 @@ import {
   readBranch,
 } from './worktree.js'
 import { resolveSpecFileAbs } from './specs-root.js'
-import { upsertPendingRow } from '../works/work-session-store.js'
+import { upsertPendingRow } from '../sessions/session-metadata-store.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 // ---- Local helpers (agent binding for intent comm sessions) ----
@@ -833,6 +833,8 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
       vendor: resolvedVendor,
       agentId: getDefaultAgentId(),
       title: req.title,
+      ownerKind: 'intent',
+      ownerId: req.id,
     })
   }
   // Split the first turn into its delivery channels: the SDD work contract rides the

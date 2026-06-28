@@ -101,6 +101,14 @@ export interface SessionInfo {
    * client that does not know this field simply ignores it.
    */
   state?: 'born' | 'alive' | 'stale' | 'orphaned' | 'ghost'
+  /** Business classification carried by the unified `session_metadata` projection. */
+  sessionKind?: SessionKind
+  /** Owning entity kind used by the frontend jump-back resolver. */
+  ownerKind?: 'intent' | 'discussion' | 'schedule' | null
+  /** Owning entity id used by the frontend jump-back resolver. */
+  ownerId?: string | null
+  /** `false` only for work pending-bind placeholders; listed rows are normally true. */
+  bound?: boolean
 }
 
 /**
@@ -2665,10 +2673,12 @@ export type ClientToServer =
   | {
       type: 'list_sessions'
       workspaceId: string
+      sessionKind?: SessionKind
       before?: SessionListCursor
       since?: number
       limit?: number
     }
+  | { type: 'get_session_counts'; workspaceId: string }
   /**
    * Create a new (pending) session in a workspace and make it active. The
    * optional `agentId` is the agent the new session should run on (ADR-0015): it
@@ -2678,6 +2688,7 @@ export type ClientToServer =
    * configured `defaultAgentId`.
    */
   | { type: 'create_session'; workspaceId: string; agentId?: string }
+  | { type: 'create_work_session'; workspaceId: string; agentId?: string }
   /** Delete a session from disk. */
   | { type: 'delete_session'; workspaceId: string; sessionId: string }
   /** Make a session active; server replies with `session_selected` (history + mode). */
@@ -3115,6 +3126,11 @@ export type ServerToClient =
    * for backward compatibility.
    */
   | { type: 'sessions'; workspaceId: string; sessions: SessionInfo[]; page?: SessionPageMeta }
+  | {
+      type: 'session_counts'
+      workspaceId: string
+      counts: Record<'work' | 'intent' | 'spec' | 'discussion' | 'schedule' | 'tool', number>
+    }
   /** Directory listing for one workspace-relative path. */
   | { type: 'dir_listed'; workspaceId: string; rel: string; entries: CodeDirEntry[] }
   /** File metadata and optional text content for one workspace-relative path. */

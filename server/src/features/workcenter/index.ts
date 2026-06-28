@@ -23,7 +23,7 @@ import { runningCountForWorkspace } from '../../runs.js'
 import { countByStatusInRange as countIntentsByStatus } from '../intents/store.js'
 import { countByStatusInRange as countDiscussionsByStatus } from '../discussions/store.js'
 import { countSchedulesInRange, countRunningSchedules } from '../schedules/store.js'
-import { countRealInRange } from '../works/work-session-store.js'
+import { countRealInRange } from '../sessions/session-metadata-store.js'
 
 /** Build one project's rollup from the store/runtime counts. */
 function projectStats(

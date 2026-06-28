@@ -122,6 +122,9 @@ func handleCheckoutCreate(d Deps) http.HandlerFunc {
 			case errors.Is(err, orders.ErrTermCapExceeded):
 				writeError(w, http.StatusBadRequest, "term_cap_exceeded",
 					"this license already extends beyond one year; renew it later")
+			case errors.Is(err, orders.ErrTierDowngradeBlocked):
+				writeError(w, http.StatusBadRequest, "tier_downgrade_blocked",
+					"your enterprise license is still active; paid plans become available after it expires")
 			case errors.Is(err, orders.ErrAgreementRequired):
 				writeError(w, http.StatusBadRequest, "agreement_required", agreement.Summary)
 			case errors.Is(err, orders.ErrPlanUnavailable):

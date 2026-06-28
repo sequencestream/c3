@@ -21,14 +21,17 @@ type Plan struct {
 	PriceCents int `json:"priceCents"`
 	// Currency is the ISO-4217 currency code (see [Currency]).
 	Currency string `json:"currency"`
+	// Tier is the purchasable plan tier: paid or enterprise.
+	Tier string `json:"tier"`
 }
 
 // catalog is the authoritative MVP plan set. Order is stable (shortest term
 // first) so the served list is deterministic.
 var catalog = []Plan{
-	{ID: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 100, Currency: Currency},
-	{ID: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: Currency},
-	{ID: "1y", Name: "1 Year", DurationMonths: 12, PriceCents: 1090, Currency: Currency},
+	{ID: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 100, Currency: Currency, Tier: "paid"},
+	{ID: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: Currency, Tier: "paid"},
+	{ID: "1y", Name: "1 Year", DurationMonths: 12, PriceCents: 1090, Currency: Currency, Tier: "paid"},
+	{ID: "enterprise-1y", Name: "Enterprise 1 Year", DurationMonths: 12, PriceCents: 10000, Currency: Currency, Tier: "enterprise"},
 }
 
 // All returns a copy of the catalog so callers cannot mutate the source of

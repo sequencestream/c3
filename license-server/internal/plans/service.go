@@ -29,6 +29,7 @@ func (s *Service) Catalog(ctx context.Context) []Plan {
 					DurationMonths: p.DurationMonths,
 					PriceCents:     p.PriceCents,
 					Currency:       p.Currency,
+					Tier:           p.Tier,
 				}
 			}
 			return out

@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS c3_ls_license (
     user_id          BIGINT      NOT NULL,         -- User that owns the license (references c3_ls_user.id).
     license_key      TEXT        NOT NULL UNIQUE,  -- Random unique handle passed on the c3<->LS bind/heartbeat API.
     status           VARCHAR(32) NOT NULL DEFAULT 'active', -- License status: active or expired.
+    tier             VARCHAR(32) NOT NULL DEFAULT 'paid', -- Current plan tier: free, paid, or enterprise.
     alive_install_id TEXT,                         -- The single c3 installation currently bound (exclusive).
     alive_token      TEXT,                         -- sha256 hash of the current binding's validity token (plaintext returned once at bind).
     alive_time       TIMESTAMPTZ,                  -- Last successful heartbeat time for the current binding.
@@ -29,6 +30,8 @@ CREATE TABLE IF NOT EXISTS c3_ls_license (
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()  -- Last update time (bumped on every bind/heartbeat write).
 );
 
+ALTER TABLE c3_ls_license ADD COLUMN IF NOT EXISTS tier VARCHAR(32) NOT NULL DEFAULT 'paid';
+
 CREATE INDEX IF NOT EXISTS idx_c3_ls_license_user ON c3_ls_license(user_id);
 CREATE INDEX IF NOT EXISTS idx_c3_ls_license_alive_install ON c3_ls_license(alive_install_id);
 
@@ -37,6 +40,7 @@ COMMENT ON COLUMN c3_ls_license.id IS 'Internal license identity.';
 COMMENT ON COLUMN c3_ls_license.user_id IS 'User that owns the license (references c3_ls_user.id).';
 COMMENT ON COLUMN c3_ls_license.license_key IS 'Random unique handle passed on the c3<->LS bind/heartbeat API.';
 COMMENT ON COLUMN c3_ls_license.status IS 'License status: active or expired.';
+COMMENT ON COLUMN c3_ls_license.tier IS 'Current effective plan tier for token signing: free, paid, or enterprise.';
 COMMENT ON COLUMN c3_ls_license.alive_install_id IS 'The single c3 installation currently bound (exclusive); rebinding displaces the previous one.';
 COMMENT ON COLUMN c3_ls_license.alive_token IS 'sha256 hash of the current binding validity token; plaintext is returned to c3 once at bind and presented on each heartbeat.';
 COMMENT ON COLUMN c3_ls_license.alive_time IS 'Last successful heartbeat time for the current binding.';

@@ -34,6 +34,10 @@ var ErrLicenseNotChosen = errors.New("orders: renewal license not chosen")
 // beyond the one-year cap (§11).
 var ErrTermCapExceeded = errors.New("orders: license term cap exceeded")
 
+// ErrTierDowngradeBlocked is returned when an active enterprise license attempts
+// to buy a lower paid-tier plan before its enterprise term ends.
+var ErrTierDowngradeBlocked = errors.New("orders: tier downgrade blocked")
+
 // Order is a persisted purchase record: a renewal that, once paid, extends the
 // linked license's term and status (PL-R9). LicenseID is the renewal target (0
 // when none is linked yet). AmountCents/Currency are server-derived from the plan,
@@ -65,6 +69,7 @@ type CreateOrderInput struct {
 	PlanKey             string
 	AgreementVersion    string
 	AgreementAcceptedAt time.Time
+	AmountCentsOverride *int
 }
 
 // PendingOrder is the minimal projection the reconcile job needs: enough to call

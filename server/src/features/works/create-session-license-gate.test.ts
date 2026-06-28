@@ -71,6 +71,7 @@ afterEach(() => {
 function status(over: Partial<LicenseStatus>): LicenseStatus {
   return {
     state: 'active',
+    plan: 'paid',
     entitled: true,
     termEnd: 0,
     installationId: '',

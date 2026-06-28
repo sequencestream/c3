@@ -11,8 +11,8 @@ import (
 
 // Record is one persisted catalog row (c3_ls_plan). It is the database shape of a
 // plan and carries the fields the wire-facing [Plan] omits: the auto-increment
-// ID, the SortOrder used for stable display, and the IsTrial flag that marks the
-// free trial plan. PlanKey is the stable public identifier (the wire `planKey`).
+// ID and the SortOrder used for stable display. PlanKey is the stable public
+// identifier (the wire `planKey`).
 type Record struct {
 	ID             int64
 	PlanKey        string
@@ -21,7 +21,7 @@ type Record struct {
 	PriceCents     int
 	Currency       string
 	SortOrder      int
-	IsTrial        bool
+	Tier           string
 }
 
 // Repo is the c3_ls_plan data access. It owns every read/write of the persisted
@@ -45,7 +45,7 @@ type planRow struct {
 	PriceCents     int
 	Currency       string
 	SortOrder      int
-	IsTrial        bool
+	Tier           string
 }
 
 func (r planRow) toRecord() Record {
@@ -57,7 +57,16 @@ func (r planRow) toRecord() Record {
 		PriceCents:     r.PriceCents,
 		Currency:       r.Currency,
 		SortOrder:      r.SortOrder,
-		IsTrial:        r.IsTrial,
+		Tier:           normalizeTier(r.Tier),
+	}
+}
+
+func normalizeTier(tier string) string {
+	switch tier {
+	case "paid", "enterprise":
+		return tier
+	default:
+		return "paid"
 	}
 }
 
@@ -75,10 +84,10 @@ func (r *Repo) Seed(ctx context.Context, ps []Record) error {
 	return r.st.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, p := range ps {
 			if err := tx.Exec(`
-				INSERT INTO c3_ls_plan (plan_key, name, duration_months, price_cents, currency, sort_order, is_trial)
+				INSERT INTO c3_ls_plan (plan_key, name, duration_months, price_cents, currency, sort_order, tier)
 				VALUES ($1, $2, $3, $4, $5, $6, $7)
 				ON CONFLICT (plan_key) DO NOTHING`,
-				p.PlanKey, p.Name, p.DurationMonths, p.PriceCents, p.Currency, p.SortOrder, p.IsTrial).Error; err != nil {
+				p.PlanKey, p.Name, p.DurationMonths, p.PriceCents, p.Currency, p.SortOrder, normalizeTier(p.Tier)).Error; err != nil {
 				return fmt.Errorf("plans: seed plan %q: %w", p.PlanKey, err)
 			}
 		}
@@ -94,7 +103,7 @@ func (r *Repo) List(ctx context.Context) ([]Record, error) {
 	}
 	var rows []planRow
 	res := r.st.DB().WithContext(ctx).Raw(`
-		SELECT id, plan_key, name, duration_months, price_cents, currency, sort_order, is_trial
+		SELECT id, plan_key, name, duration_months, price_cents, currency, sort_order, tier
 		FROM c3_ls_plan
 		ORDER BY sort_order, plan_key`).Scan(&rows)
 	if res.Error != nil {
@@ -117,34 +126,11 @@ func (r *Repo) ByKey(ctx context.Context, planKey string) (Record, bool, error) 
 	}
 	var row planRow
 	res := r.st.DB().WithContext(ctx).Raw(`
-		SELECT id, plan_key, name, duration_months, price_cents, currency, sort_order, is_trial
+		SELECT id, plan_key, name, duration_months, price_cents, currency, sort_order, tier
 		FROM c3_ls_plan
 		WHERE plan_key = $1`, planKey).Scan(&row)
 	if res.Error != nil {
 		return Record{}, false, fmt.Errorf("plans: by key: %w", res.Error)
-	}
-	if res.RowsAffected == 0 {
-		return Record{}, false, nil
-	}
-	return row.toRecord(), true, nil
-}
-
-// FirstTrial returns the first trial plan (is_trial = true), ordered by sort_order
-// then id, and whether one exists. With no trial plan configured the caller issues
-// no trial license and the user must purchase one.
-func (r *Repo) FirstTrial(ctx context.Context) (Record, bool, error) {
-	if !r.st.Available() {
-		return Record{}, false, errors.New("plans: database not configured")
-	}
-	var row planRow
-	res := r.st.DB().WithContext(ctx).Raw(`
-		SELECT id, plan_key, name, duration_months, price_cents, currency, sort_order, is_trial
-		FROM c3_ls_plan
-		WHERE is_trial = true
-		ORDER BY sort_order, id
-		LIMIT 1`).Scan(&row)
-	if res.Error != nil {
-		return Record{}, false, fmt.Errorf("plans: first trial: %w", res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return Record{}, false, nil
@@ -166,4 +152,29 @@ func (r *Repo) DurationMonthsTx(tx *gorm.DB, planKey string) (int, bool, error) 
 		return 0, false, nil
 	}
 	return months, true, nil
+}
+
+// ByKeyTx reads a plan row within an existing transaction.
+func (r *Repo) ByKeyTx(tx *gorm.DB, planKey string) (Record, bool, error) {
+	var row planRow
+	res := tx.Raw(`
+		SELECT id, plan_key, name, duration_months, price_cents, currency, sort_order, tier
+		FROM c3_ls_plan
+		WHERE plan_key = $1`, planKey).Scan(&row)
+	if res.Error != nil {
+		return Record{}, false, fmt.Errorf("plans: by key tx: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return Record{}, false, nil
+	}
+	return row.toRecord(), true, nil
+}
+
+// AnnualPaidPriceCents returns the paid one-year catalog price used for upgrade credit.
+func (r *Repo) AnnualPaidPriceCents(ctx context.Context) (int, bool, error) {
+	plan, ok, err := r.ByKey(ctx, "1y")
+	if err != nil || !ok || plan.Tier != "paid" {
+		return 0, ok, err
+	}
+	return plan.PriceCents, true, nil
 }

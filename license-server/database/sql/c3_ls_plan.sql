@@ -18,12 +18,14 @@ CREATE TABLE IF NOT EXISTS c3_ls_plan (
     price_cents     INTEGER      NOT NULL,             -- Price in the currency's minor unit (cents).
     currency        VARCHAR(32)  NOT NULL DEFAULT 'CNY', -- ISO-4217 currency code the price is denominated in.
     sort_order      INTEGER     NOT NULL DEFAULT 0,   -- Display order for the served catalog (shortest term first).
-    is_trial        BOOLEAN     NOT NULL DEFAULT false, -- Whether this plan is the free trial granted at sign-in.
+    tier            VARCHAR(32) NOT NULL DEFAULT 'paid', -- Plan tier: paid or enterprise. Free is not purchasable.
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(), -- Record creation time.
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now() -- Last update time.
 );
 
-CREATE INDEX IF NOT EXISTS idx_c3_ls_plan_trial ON c3_ls_plan (is_trial) WHERE is_trial;
+ALTER TABLE c3_ls_plan ADD COLUMN IF NOT EXISTS tier VARCHAR(32) NOT NULL DEFAULT 'paid';
+DROP INDEX IF EXISTS idx_c3_ls_plan_trial;
+ALTER TABLE c3_ls_plan DROP COLUMN IF EXISTS is_trial;
 
 COMMENT ON TABLE c3_ls_plan IS 'Persisted public plan catalog (purchasable license terms), bootstrapped from the code catalog and served from GET /v1/plans.';
 COMMENT ON COLUMN c3_ls_plan.id IS 'Internal auto-increment plan identity.';
@@ -33,6 +35,6 @@ COMMENT ON COLUMN c3_ls_plan.duration_months IS 'License term length in whole mo
 COMMENT ON COLUMN c3_ls_plan.price_cents IS 'Price in the currency minor unit (cents).';
 COMMENT ON COLUMN c3_ls_plan.currency IS 'ISO-4217 currency code the price is denominated in.';
 COMMENT ON COLUMN c3_ls_plan.sort_order IS 'Display order for the served catalog (shortest term first).';
-COMMENT ON COLUMN c3_ls_plan.is_trial IS 'Whether this plan is the free trial granted at sign-in; the first such plan (if any) is issued, otherwise the user must purchase.';
+COMMENT ON COLUMN c3_ls_plan.tier IS 'Purchasable plan tier: paid or enterprise. Free is issued directly as a license tier and is not in this catalog.';
 COMMENT ON COLUMN c3_ls_plan.created_at IS 'Record creation time.';
 COMMENT ON COLUMN c3_ls_plan.updated_at IS 'Last update time.';

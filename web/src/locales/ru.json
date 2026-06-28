@@ -1574,6 +1574,11 @@
     },
     "license": {
       "notEntitled": "Не удаётся создать новую сессию — {reason}. Активируйте или продлите лицензию через значок вверху.",
+      "workspaceLimit": "Free plan allows up to {limit} workspaces.",
+      "worktreeLimit": "Free plan allows only {limit} active worktree.",
+      "discussionParticipantLimit": "Free plan allows up to {limit} discussion participants, not counting the organizer.",
+      "scheduleLimit": "Free plan allows up to {limit} enabled schedules.",
+      "sandboxDisabled": "Free plan can save sandbox settings, but cannot enable sandbox.",
       "reason": {
         "expired": "срок действия вашей лицензии истёк",
         "disabled": "ваша лицензия теперь привязана к другой установке",
@@ -2134,6 +2139,11 @@
       "disabled": "Отключена",
       "validUntil": "Действует до {date}",
       "manageKey": "Ключ и продление"
+    },
+    "plan": {
+      "free": "Free",
+      "paid": "Paid",
+      "enterprise": "Enterprise"
     },
     "activate": {
       "button": "Активировать лицензию",

@@ -11,7 +11,7 @@
 import { chmodSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
-import type { LicenseStatus } from '@ccc/shared/protocol'
+import type { LicensePlan, LicenseStatus } from '@ccc/shared/protocol'
 import { c3HomeDir } from '../../kernel/config/index.js'
 import { readJsonFile } from '../../kernel/config/store.js'
 import { verifyEntitlementToken } from './token.js'
@@ -39,12 +39,25 @@ export interface LicenseCache {
   /** Per-binding bearer credential presented on each heartbeat (PL-R2). */
   aliveToken: string
   state: EntitlementState
+  /** Trusted plan tier from the verified entitlement token. Missing legacy caches default to paid. */
+  plan?: LicensePlan
   /** License term end (unix seconds), surfaced for the badge/menu. */
   termEnd: number
   /** Last successful heartbeat (unix ms); null until the heartbeat task lands. */
   lastSuccessfulHeartbeat: number | null
   /** Last write time (unix ms). */
   updatedAt: number
+}
+
+export const HEARTBEAT_DEGRADE_THRESHOLD = 10
+let consecutiveHeartbeatFailures = 0
+
+function normalizePlan(plan: unknown): LicensePlan {
+  return plan === 'free' || plan === 'enterprise' || plan === 'paid' ? plan : 'paid'
+}
+
+export function resetHeartbeatFailureCountForTests(): void {
+  consecutiveHeartbeatFailures = 0
 }
 
 function licenseFile(): string {
@@ -97,6 +110,7 @@ export function getOrCreateInstallationId(): string {
     entitlementToken: '',
     aliveToken: '',
     state: 'unactivated',
+    plan: 'paid',
     termEnd: 0,
     lastSuccessfulHeartbeat: null,
     updatedAt: Date.now(),
@@ -116,12 +130,14 @@ export function saveActivation(args: {
   aliveToken: string
   termEnd: number
 }): LicenseCache {
+  const verified = verifyEntitlementToken(args.entitlementToken)
   const cache: LicenseCache = {
     installationId: args.installationId,
     licenseKey: args.licenseKey,
     entitlementToken: args.entitlementToken,
     aliveToken: args.aliveToken,
     state: 'active',
+    plan: verified.ok ? normalizePlan(verified.payload.plan) : 'paid',
     termEnd: args.termEnd,
     lastSuccessfulHeartbeat: Date.now(),
     updatedAt: Date.now(),
@@ -141,11 +157,10 @@ export function saveActivation(args: {
  *      its term by going offline (the cached token's window simply hasn't lapsed
  *      yet). Recovery from these states is a re-bind or a recovering heartbeat,
  *      both of which rewrite `cache.state` (saveActivation/recordHeartbeatSuccess).
- *   2. **Heartbeat-driven `grace` stays entitled while its 30-min window holds.**
- *      The grace→expired transition is the scheduler's job (recordHeartbeatFailure),
- *      but we re-check the window here so a `grace` that outlived it between beats
- *      (e.g. across a restart, before the first beat lands) is not honored as
- *      entitled.
+ *   2. **Heartbeat-driven `grace` stays entitled while the token window holds.**
+ *      Connectivity loss no longer turns an otherwise valid entitlement into
+ *      `expired`; repeated failures only downgrade the effective plan. The
+ *      signed token's term window still gates real expiry.
  *   3. **Offline baseline (no heartbeat verdict): trust the signature + window**
  *      (PL-R5). For an `active`/`unactivated` cache, verify the token offline:
  *      absent/unverifiable ⇒ `unactivated`; verified-but-past-window ⇒ `expired`.
@@ -167,8 +182,15 @@ export function deriveEntitlement(
 
   // Priority 2 — grace is entitled only while the offline window still holds.
   if (cache.state === 'grace') {
-    const withinGrace = nowSeconds * 1000 - (cache.lastSuccessfulHeartbeat ?? 0) <= GRACE_WINDOW_MS
-    return { state: withinGrace ? 'grace' : 'expired', installationId }
+    const res = verifyEntitlementToken(cache.entitlementToken, nowSeconds)
+    return {
+      state: res.ok
+        ? 'grace'
+        : res.reason === 'outside validity window'
+          ? 'expired'
+          : 'unactivated',
+      installationId,
+    }
   }
 
   // Priority 3 — offline baseline: verify the cached token's signature + window.
@@ -192,9 +214,12 @@ export function currentLicenseStatus(
 ): LicenseStatus {
   const cache = readLicenseCache()
   const { state } = deriveEntitlement(cache, nowSeconds)
+  const entitled = state === 'active' || state === 'grace'
+  const degraded = entitled && consecutiveHeartbeatFailures > HEARTBEAT_DEGRADE_THRESHOLD
   return {
     state,
-    entitled: state === 'active' || state === 'grace',
+    plan: degraded ? 'free' : normalizePlan(cache?.plan),
+    entitled,
     termEnd: cache?.termEnd ?? 0,
     installationId: cache?.installationId ?? '',
     licenseKey: cache?.licenseKey ?? '',
@@ -217,10 +242,15 @@ export interface HeartbeatRefresh {
 export function recordHeartbeatSuccess(refresh: HeartbeatRefresh = {}): LicenseCache | undefined {
   const cache = readLicenseCache()
   if (!cache) return undefined
+  consecutiveHeartbeatFailures = 0
+  const verified = refresh.entitlementToken
+    ? verifyEntitlementToken(refresh.entitlementToken)
+    : undefined
   const next: LicenseCache = {
     ...cache,
     entitlementToken: refresh.entitlementToken ?? cache.entitlementToken,
     termEnd: refresh.termEnd ?? cache.termEnd,
+    plan: verified?.ok ? normalizePlan(verified.payload.plan) : normalizePlan(cache.plan),
     state: 'active',
     lastSuccessfulHeartbeat: Date.now(),
     updatedAt: Date.now(),
@@ -239,6 +269,7 @@ export function recordHeartbeatLapse(
 ): LicenseCache | undefined {
   const cache = readLicenseCache()
   if (!cache) return undefined
+  consecutiveHeartbeatFailures = 0
   if (cache.state === state) return cache
   const next: LicenseCache = { ...cache, state, updatedAt: Date.now() }
   writeLicenseCache(next)
@@ -246,16 +277,25 @@ export function recordHeartbeatLapse(
 }
 
 /**
- * Apply the offline grace after a failed heartbeat (network down/LS unreachable
- * or a transient server error). Within 30 minutes of the last success c3 stays in
- * `grace` (new sessions allowed); past it the entitlement lapses to `expired`
- * (PL-R4). An unactivated cache is left untouched.
+ * Record a failed non-definitive heartbeat. Connectivity failures no longer
+ * lapse an otherwise valid entitlement after the grace window; instead repeated
+ * failures degrade the effective plan to free while token validity still gates
+ * true expiry. An unactivated cache is left untouched.
  */
 export function recordHeartbeatFailure(nowMs: number = Date.now()): LicenseCache | undefined {
   const cache = readLicenseCache()
   if (!cache || !cache.entitlementToken || cache.state === 'disabled') return cache
+  consecutiveHeartbeatFailures += 1
+  const nowSeconds = Math.floor(nowMs / 1000)
+  if (cache.state === 'expired') return cache
+  const verified = verifyEntitlementToken(cache.entitlementToken, nowSeconds)
+  if (!verified.ok && verified.reason === 'outside validity window') {
+    const next: LicenseCache = { ...cache, state: 'expired', updatedAt: Date.now() }
+    writeLicenseCache(next)
+    return next
+  }
   const within = nowMs - (cache.lastSuccessfulHeartbeat ?? 0) <= GRACE_WINDOW_MS
-  const state: EntitlementState = within ? 'grace' : 'expired'
+  const state: EntitlementState = within ? 'grace' : 'active'
   if (cache.state === state) return cache
   const next: LicenseCache = { ...cache, state, updatedAt: Date.now() }
   writeLicenseCache(next)

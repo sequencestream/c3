@@ -26,11 +26,11 @@ const (
 )
 
 // Activation/entitlement domain defaults (not env-driven; the same for every
-// installation). The license term is the default one-month trial entitlement a
+// installation). The license term is the long-lived default free entitlement a
 // user receives on GitHub registration; the heartbeat interval is what LS
 // dictates to c3 (returned on bind and each heartbeat).
 const (
-	DefaultLicenseTermDays          = 30
+	DefaultLicenseTermDays          = 36500
 	DefaultHeartbeatIntervalSeconds = 3600
 	// DefaultOrderPaymentWindowMinutes bounds how long a pending order stays
 	// payable before it is treated as expired (§11): the WeChat Native order's

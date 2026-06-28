@@ -106,10 +106,10 @@ badge is informational; it never blocks the UI on its own — enforcement is the
 - **Identity:** GitHub OAuth used **only** for account sign-in/registration — user login
   (purchase/inspection) and the admin back-office (issue/force-expire/inspect). It no longer carries the
   activation action.
-- **Default license:** on first sign-in (no agreement shown — the agreement is at renewal) LS creates
-  the account and **auto-provisions a default license** (PL-R14) on a default plan — the trial plan
-  when configured (the catalog plan flagged `is_trial`), else the first catalog plan — so the account
-  always has a license. The user then **selects** it in the browser to bind; there is no key to paste.
+- **Default license:** on first sign-in (no agreement shown — the agreement is at renewal/upgrade) LS
+  creates the account and **auto-provisions a long-lived free license** (`tier='free'`, PL-R14), so
+  the account always has a license. The user then **selects** it in the browser to bind; there is no
+  key to paste.
 - **Payment (renewal):** WeChat Pay; the **no-refund service-agreement acceptance** is recorded on
   the **order before** the charge, and a paid order **extends the linked license's term and status**: `term_end = GREATEST(term_end, now) + duration_months`, `status = 'active'`.
   Payment capture is a later milestone — the order → license-extension relationship is defined now.

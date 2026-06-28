@@ -1573,6 +1573,11 @@
     },
     "license": {
       "notEntitled": "Can't start a new session — {reason}. Activate or renew your license from the badge at the top.",
+      "workspaceLimit": "Free plan allows up to {limit} workspaces.",
+      "worktreeLimit": "Free plan allows only {limit} active worktree.",
+      "discussionParticipantLimit": "Free plan allows up to {limit} discussion participants, not counting the organizer.",
+      "scheduleLimit": "Free plan allows up to {limit} enabled schedules.",
+      "sandboxDisabled": "Free plan can save sandbox settings, but cannot enable sandbox.",
       "reason": {
         "expired": "your license has expired",
         "disabled": "your license is now bound to another installation",
@@ -2133,6 +2138,11 @@
       "disabled": "Disabled",
       "validUntil": "Valid until {date}",
       "manageKey": "View key & renew"
+    },
+    "plan": {
+      "free": "Free",
+      "paid": "Paid",
+      "enterprise": "Enterprise"
     },
     "activate": {
       "button": "Activate license",

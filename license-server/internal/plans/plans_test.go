@@ -2,12 +2,13 @@ package plans
 
 import "testing"
 
-func TestCatalogIsTheThreeMVPPlans(t *testing.T) {
+func TestCatalogIncludesPaidAndEnterprisePlans(t *testing.T) {
 	got := All()
 	want := []Plan{
-		{ID: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 100, Currency: "CNY"},
-		{ID: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY"},
-		{ID: "1y", Name: "1 Year", DurationMonths: 12, PriceCents: 1090, Currency: "CNY"},
+		{ID: "1m", Name: "1 Month", DurationMonths: 1, PriceCents: 100, Currency: "CNY", Tier: "paid"},
+		{ID: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", Tier: "paid"},
+		{ID: "1y", Name: "1 Year", DurationMonths: 12, PriceCents: 1090, Currency: "CNY", Tier: "paid"},
+		{ID: "enterprise-1y", Name: "Enterprise 1 Year", DurationMonths: 12, PriceCents: 10000, Currency: "CNY", Tier: "enterprise"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("All() len = %d, want %d", len(got), len(want))
@@ -20,7 +21,7 @@ func TestCatalogIsTheThreeMVPPlans(t *testing.T) {
 }
 
 func TestPricesAreStable(t *testing.T) {
-	cases := map[string]int{"1m": 100, "6m": 590, "1y": 1090}
+	cases := map[string]int{"1m": 100, "6m": 590, "1y": 1090, "enterprise-1y": 10000}
 	for id, price := range cases {
 		p, ok := ByID(id)
 		if !ok {

@@ -478,6 +478,14 @@ export function listSchedules(workspacePath: string): Schedule[] {
     .map(toSchedule)
 }
 
+/** Count enabled schedules across the installation. */
+export function countEnabledSchedules(): number {
+  const d = db()
+  if (!d) return 0
+  const row = d.get<{ n: number }>("SELECT COUNT(*) AS n FROM schedules WHERE status='active'")
+  return row?.n ?? 0
+}
+
 export function getSchedule(id: string): Schedule | null {
   const d = db()
   if (!d) return null

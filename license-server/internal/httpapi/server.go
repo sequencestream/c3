@@ -82,6 +82,7 @@ func NewServer(d Deps) http.Handler {
 	// 404 instead of a clean 405.
 	mux.HandleFunc("/healthz", allowGET(handleHealth(d)))
 	mux.HandleFunc("/v1/plans", allowGET(handlePlans(d)))
+	mux.HandleFunc("/v1/plan-tiers", allowGET(handlePlanTiers()))
 	mountAuth(mux, d)
 	mountLicense(mux, d)
 	mountCheckout(mux, d)

@@ -2,11 +2,13 @@
  * `workspaces` feature handlers — slice 1/3 (ADR-0009).
  */
 import { resolve } from 'node:path'
-import { addWorkspace, removeWorkspace } from '../../state.js'
+import { addWorkspace, listWorkspaces, pathToId, removeWorkspace } from '../../state.js'
 import { getRuntime, removeRuntimesForWorkspace } from '../../runs.js'
 import { isStoreAvailable as isScheduleStoreAvailable } from '../schedules/store.js'
 import { onWorkspaceRemoved } from '../schedules/archiver.js'
 import { requireAdmin } from '../auth/authz.js'
+import { currentLicenseStatus } from '../license/store.js'
+import { currentPlanLimits, limitError } from '../license/plan-limits.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 export const addWorkspaceHandler: Handler<'add_workspace'> = async (_ctx, conn, msg) => {
@@ -21,6 +23,16 @@ export const addWorkspaceHandler: Handler<'add_workspace'> = async (_ctx, conn, 
   // Creating a trust root is an admin-only action (WS-R*; ADR-0023 authz). Inert
   // when no admin gate applies (auth disabled / unconfigured) — loopback trust.
   if (!requireAdmin(conn)) return
+  const absPath = resolve(msg.path)
+  const limits = currentPlanLimits(currentLicenseStatus())
+  if (
+    !pathToId(absPath) &&
+    limits.workspaces !== null &&
+    listWorkspaces().length >= limits.workspaces
+  ) {
+    conn.send({ type: 'error', error: limitError('license.workspaceLimit', limits.workspaces) })
+    return
+  }
   const abs = addWorkspace(msg.path, Date.now())
   if (!abs) {
     conn.send({

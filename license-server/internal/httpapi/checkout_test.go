@@ -99,9 +99,9 @@ func loginCookie(t *testing.T, env liveEnv) *http.Cookie {
 
 func TestCheckoutCreatesPendingOrderWithDerivedAmount(t *testing.T) {
 	env := liveServer(t, githubOK())
-	// A purchasable (non-trial) plan to renew into.
+	// A purchasable paid plan to renew into.
 	if err := env.seed.SeedPlans(env.ctx, []plans.Record{
-		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1},
+		{PlanKey: "6m", Name: "6 Months", DurationMonths: 6, PriceCents: 590, Currency: "CNY", SortOrder: 1, Tier: "paid"},
 	}); err != nil {
 		t.Fatalf("seed plan: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestCheckoutCreatesPendingOrderWithDerivedAmount(t *testing.T) {
 	}
 	licenses, err := env.seed.ListLicensesByUser(env.ctx, userID)
 	if err != nil || len(licenses) == 0 {
-		t.Fatalf("user should own a trial license: err=%v licenses=%+v", err, licenses)
+		t.Fatalf("user should own a default free license: err=%v licenses=%+v", err, licenses)
 	}
 	licenseID := licenses[0].ID
 

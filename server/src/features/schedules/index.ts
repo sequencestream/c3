@@ -8,6 +8,7 @@
 import { resolveWorkspaceRoot, pathToId } from '../../state.js'
 import {
   createSchedule,
+  countEnabledSchedules,
   deleteSchedule as deleteScheduleStore,
   getSchedule,
   getScheduleDetail,
@@ -27,6 +28,8 @@ import { isValidScheduleMaxWallClockMs, type ToolManifestEntry } from '@ccc/shar
 import { C3_MCP_TOOLS } from './mcp-freeze.js'
 import { loadSettings } from '../../kernel/config/index.js'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
+import { currentLicenseStatus } from '../license/store.js'
+import { currentPlanLimits, limitError } from '../license/plan-limits.js'
 // Static tool listing (no I/O needed) — the only adapter path that can create
 // lightweight instances without a supervisor or registry probe.
 import { createClaudeAdapter } from '../../kernel/agent/adapters/claude/index.js'
@@ -83,6 +86,14 @@ export const createScheduleHandler: Handler<'create_schedule'> = async (ctx, con
     conn.send({ type: 'error', error: { code: agentError } })
     return
   }
+  const limits = currentPlanLimits(currentLicenseStatus())
+  if (limits.enabledSchedules !== null && countEnabledSchedules() >= limits.enabledSchedules) {
+    conn.send({
+      type: 'error',
+      error: limitError('license.scheduleLimit', limits.enabledSchedules),
+    })
+    return
+  }
   // Name is auto-generated server-side from the task content; any
   // client-supplied name in config is ignored (stripped by the store).
   const generatedName = await generateScheduleName(msg.input)
@@ -130,6 +141,20 @@ export const updateScheduleHandler: Handler<'update_schedule'> = async (ctx, con
     !isValidScheduleMaxWallClockMs(msg.input.maxWallClockMs)
   ) {
     conn.send({ type: 'error', error: { code: 'schedule.invalidMaxWallClockMs' } })
+    return
+  }
+  const nextStatus = msg.input.status ?? existing.status
+  const limits = currentPlanLimits(currentLicenseStatus())
+  if (
+    existing.status !== 'active' &&
+    nextStatus === 'active' &&
+    limits.enabledSchedules !== null &&
+    countEnabledSchedules() >= limits.enabledSchedules
+  ) {
+    conn.send({
+      type: 'error',
+      error: limitError('license.scheduleLimit', limits.enabledSchedules),
+    })
     return
   }
   // Unlike create, update accepts a client-supplied `config.name`: a non-empty

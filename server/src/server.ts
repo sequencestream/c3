@@ -61,6 +61,7 @@ import {
   createPermissionRequestHandler,
 } from './features/user-involve/hooks.js'
 import { startHeartbeatScheduler, stopHeartbeatScheduler } from './features/license/heartbeat.js'
+import { currentLicenseStatus } from './features/license/store.js'
 import { setActivationResultSink, stopCheckbindPolling } from './features/license/activation.js'
 import { EventBus } from './kernel/events/event-bus.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
@@ -465,6 +466,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const launchDeps: LaunchRunDeps = {
     sandboxDriver,
     sandboxRegistry,
+    sandboxAllowed: () => currentLicenseStatus().plan !== 'free',
     eventBus,
     broadcastStatuses: broadcasts.broadcastStatuses,
     broadcastIntents: broadcasts.broadcastIntents,

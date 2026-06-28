@@ -1574,6 +1574,11 @@
     },
     "license": {
       "notEntitled": "새 세션을 시작할 수 없습니다 — {reason}. 상단 배지에서 라이선스를 활성화하거나 갱신하세요.",
+      "workspaceLimit": "Free plan allows up to {limit} workspaces.",
+      "worktreeLimit": "Free plan allows only {limit} active worktree.",
+      "discussionParticipantLimit": "Free plan allows up to {limit} discussion participants, not counting the organizer.",
+      "scheduleLimit": "Free plan allows up to {limit} enabled schedules.",
+      "sandboxDisabled": "Free plan can save sandbox settings, but cannot enable sandbox.",
       "reason": {
         "expired": "라이선스가 만료되었습니다",
         "disabled": "라이선스가 다른 설치에 바인딩되어 있습니다",
@@ -2134,6 +2139,11 @@
       "disabled": "비활성화됨",
       "validUntil": "{date}까지 유효",
       "manageKey": "키 보기 및 갱신"
+    },
+    "plan": {
+      "free": "Free",
+      "paid": "Paid",
+      "enterprise": "Enterprise"
     },
     "activate": {
       "button": "라이선스 활성화",

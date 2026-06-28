@@ -16,9 +16,10 @@
 -- Run it with psql connected to the service database:
 --   psql "$C3_LS_DATABASE_URL" -f c3_ls_plan-init.sql
 
-INSERT INTO c3_ls_plan (plan_key, name, duration_months, price_cents, currency, sort_order, is_trial)
+INSERT INTO c3_ls_plan (plan_key, name, duration_months, price_cents, currency, sort_order, tier)
 VALUES
-    ('1m', '1 Month',  1,  100,  'CNY', 0, false),
-    ('6m', '6 Months', 6,  590,  'CNY', 1, false),
-    ('1y', '1 Year',   12, 1090, 'CNY', 2, false)
+    ('1m', '1 Month',  1,  100,  'CNY', 0, 'paid'),
+    ('6m', '6 Months', 6,  590,  'CNY', 1, 'paid'),
+    ('1y', '1 Year',   12, 1090, 'CNY', 2, 'paid'),
+    ('enterprise-1y', 'Enterprise 1 Year', 12, 10000, 'CNY', 3, 'enterprise')
 ON CONFLICT (plan_key) DO NOTHING;

@@ -148,6 +148,14 @@ export const UI_ERROR_CODES = {
   // web special-cases this code to render a localized reason phrase + a renewal
   // pointer to the license badge.
   'license.notEntitled': { key: 'error.license.notEntitled', params: ['reason'] },
+  'license.workspaceLimit': { key: 'error.license.workspaceLimit', params: ['limit'] },
+  'license.worktreeLimit': { key: 'error.license.worktreeLimit', params: ['limit'] },
+  'license.discussionParticipantLimit': {
+    key: 'error.license.discussionParticipantLimit',
+    params: ['limit'],
+  },
+  'license.scheduleLimit': { key: 'error.license.scheduleLimit', params: ['limit'] },
+  'license.sandboxDisabled': { key: 'error.license.sandboxDisabled' },
 } as const satisfies Record<string, UiErrorDef>
 
 /** Every registered UI error code. */

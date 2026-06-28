@@ -1573,6 +1573,11 @@
     },
     "license": {
       "notEntitled": "无法新建会话——{reason}。请从顶部徽标激活或续期许可证。",
+      "workspaceLimit": "免费版最多可注册 {limit} 个 workspace。",
+      "worktreeLimit": "免费版最多只能有 {limit} 个启用中的 worktree。",
+      "discussionParticipantLimit": "免费版每次讨论最多 {limit} 个参与者，不含主持人。",
+      "scheduleLimit": "免费版最多可启用 {limit} 个 schedule。",
+      "sandboxDisabled": "免费版可以保存 sandbox 配置，但不能启用 sandbox。",
       "reason": {
         "expired": "许可证已到期",
         "disabled": "许可证已绑定到另一台安装实例",
@@ -2133,6 +2138,11 @@
       "disabled": "已停用",
       "validUntil": "有效期至 {date}",
       "manageKey": "查看密钥与续期"
+    },
+    "plan": {
+      "free": "免费版",
+      "paid": "付费版",
+      "enterprise": "企业版"
     },
     "activate": {
       "button": "激活许可",

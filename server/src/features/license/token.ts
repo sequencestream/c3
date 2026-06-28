@@ -26,6 +26,7 @@ export interface EntitlementPayload {
   installationId: string
   licenseId: string
   status: string
+  plan?: string
   termStart: number
   termEnd: number
   issuedAt: number
@@ -51,6 +52,7 @@ function isPayload(v: unknown): v is EntitlementPayload {
   return (
     typeof p.installationId === 'string' &&
     typeof p.status === 'string' &&
+    (p.plan === undefined || typeof p.plan === 'string') &&
     typeof p.termStart === 'number' &&
     typeof p.termEnd === 'number' &&
     typeof p.kid === 'string'

@@ -88,6 +88,7 @@ import {
 } from '../features/intents/lifecycle-events.js'
 import { getWorktreePath } from '../features/intents/worktree.js'
 import { getDefaultMainBranch, getForgeOverride, getGitBranchMode } from '../kernel/config/index.js'
+import { updateRowOwner } from '../features/sessions/session-metadata-store.js'
 import {
   cancelBySessionId,
   createEvent,
@@ -230,6 +231,12 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
         // Record the dev session start in intent_sessions (fire-and-forget
         // on the DB write — the insert is synchronous but cheap).
         insertIntentSession(intentId, realId, resolveSessionVendor(realId))
+        updateRowOwner({
+          sessionId: realId,
+          vendor: resolveSessionVendor(realId),
+          ownerKind: 'intent',
+          ownerId: intentId,
+        })
         // Intent row may not yet reflect db updates (only in the store).
         // Calling getIntent to check is safe but ultimately `updateStatus`
         // is the idempotent operation: setting to the same value just

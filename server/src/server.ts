@@ -76,7 +76,7 @@ import {
   updatePendingRowAgentId,
   updateRealRowAgentId,
   upsertForBind,
-} from './features/works/work-session-store.js'
+} from './features/sessions/session-metadata-store.js'
 import { cleanupStalePendingIntents, PENDING_INTENT_TTL_MS } from './kernel/config/index.js'
 import { logHostBinaryHealth } from './kernel/agent/adapters/registry.js'
 import { resolve as resolveHostBinary } from './kernel/agent/process/launcher.js'

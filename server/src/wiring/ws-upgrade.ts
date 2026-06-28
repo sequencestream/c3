@@ -101,8 +101,10 @@ export function createWsHandler(deps: {
           // The env flag rolls back to the legacy claude-only path (the native id
           // stays on the wire either way — see list-sessions.ts).
           const all = USE_SESSION_ACCESSOR
-            ? await listSessionsVia(sessionAccessor, workspacePath)
-            : await listWorkspaceSessions(workspacePath)
+            ? await listSessionsVia(sessionAccessor, workspacePath, query?.sessionKind)
+            : query?.sessionKind && query.sessionKind !== 'work'
+              ? []
+              : await listWorkspaceSessions(workspacePath)
           // Cursor-paginate the full list (SR-R14): the `page` descriptor tells
           // the client how to merge this batch into its window.
           const { sessions, kind, hasMore } = paginateSessions(all, query)

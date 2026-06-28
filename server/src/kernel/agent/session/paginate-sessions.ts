@@ -7,7 +7,12 @@
  * rows that share a `lastModified` from being skipped or duplicated across a
  * page boundary.
  */
-import type { SessionInfo, SessionListCursor, SessionPageKind } from '@ccc/shared/protocol'
+import type {
+  SessionInfo,
+  SessionKind,
+  SessionListCursor,
+  SessionPageKind,
+} from '@ccc/shared/protocol'
 
 export interface SessionListQuery {
   /** Load-more: return the page strictly older than this keyset cursor. */
@@ -16,6 +21,8 @@ export interface SessionListQuery {
   since?: number
   /** Page size for the `first` / `older` cases (defaulted when omitted). */
   limit?: number
+  /** Business tab filter for the unified sessions page. */
+  sessionKind?: SessionKind
 }
 
 export interface PaginatedSessions {

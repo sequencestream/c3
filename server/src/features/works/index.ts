@@ -11,6 +11,7 @@ import type {
   CodexPolicy,
   ModeToken,
   PermissionMode,
+  SessionKind,
   TranscriptItem,
 } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX, isImageMediaType } from '@ccc/shared/protocol'
@@ -19,6 +20,7 @@ import {
   emit,
   ensureRuntime,
   getRuntime,
+  isRunning,
   removeRuntime,
   removeViewer,
   setStatus,
@@ -50,7 +52,7 @@ import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
 import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
-import { getByC3Id, upsertPendingRow } from './work-session-store.js'
+import { getByC3Id, listForWorkspace, upsertPendingRow } from '../sessions/session-metadata-store.js'
 import { findIntentIdBySessionId } from '../intents/store.js'
 import { currentLicenseStatus } from '../license/store.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
@@ -150,7 +152,46 @@ export const listSessions: Handler<'list_sessions'> = async (_ctx, conn, msg) =>
   }
   // Pass the cursor (before/since/limit) through so the reply is one page,
   // not the whole list (SR-R14).
-  await conn.sendSessions(abs, { before: msg.before, since: msg.since, limit: msg.limit })
+  await conn.sendSessions(abs, {
+    before: msg.before,
+    since: msg.since,
+    limit: msg.limit,
+    sessionKind: msg.sessionKind,
+  })
+}
+
+const SESSION_PAGE_KINDS: readonly Exclude<SessionKind, 'consensus'>[] = [
+  'work',
+  'intent',
+  'spec',
+  'discussion',
+  'schedule',
+  'tool',
+]
+
+export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg) => {
+  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  if (!abs) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  const counts = {
+    work: 0,
+    intent: 0,
+    spec: 0,
+    discussion: 0,
+    schedule: 0,
+    tool: 0,
+  }
+  for (const kind of SESSION_PAGE_KINDS) {
+    counts[kind] = listForWorkspace(abs, kind).filter((row) =>
+      isRunning(row.vendorSessionId ?? row.c3Id),
+    ).length
+  }
+  conn.send({ type: 'session_counts', workspaceId: pathToId(abs)!, counts })
 }
 
 export const listCommandsHandler: Handler<'list_commands'> = async (_ctx, conn) => {
@@ -236,6 +277,8 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   })
   conn.sendWorkspaces()
 }
+
+export const createWorkSession: Handler<'create_work_session'> = createSession
 
 export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) => {
   const abs = resolveWorkspaceRoot(msg.workspaceId)

@@ -26,7 +26,7 @@ import {
   deleteByPendingId,
   deleteByVendorId,
   updateRealRowTitle,
-} from './features/works/work-session-store.js'
+} from './features/sessions/session-metadata-store.js'
 import { getSessionVendor, getShowToolSessions } from './kernel/config/index.js'
 
 /**

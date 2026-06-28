@@ -1,0 +1,16 @@
+# SDK 升级记录索引
+
+c3 驱动多个 agent vendor，各自依赖一个 SDK（见
+[`../agent-sdk.md`](../agent-sdk.md) 的「SDK 升级纪律」：至少每两周检查、读 changelog、串行升级、
+commit 写明、适配器同步）。每次升级的逐项 changelog 评估（接入/不接入 + 依据 + 留痕去向）
+独立成一份按日期命名的记录，存放于本目录：
+
+```
+doc/architecture/sdk-upgrade/yyyy-mm-dd-<sdk>-upgrade-to-v<version>.md
+```
+
+## 记录
+
+| 日期       | SDK                              | 版本                  | 记录                                                                                                     |
+| ---------- | -------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------- |
+| 2026-06-28 | `@anthropic-ai/claude-agent-sdk` | `^0.3.183 → ^0.3.195` | [2026-06-28-claude-agent-sdk-upgrade-to-v0.3.195.md](2026-06-28-claude-agent-sdk-upgrade-to-v0.3.195.md) |

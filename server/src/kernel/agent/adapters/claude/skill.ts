@@ -3,7 +3,9 @@
  * project-level `<projectDir>/.claude/skills`; spike A proved the SDK discovers the
  * flat `skills/_c3_<id>/SKILL.md` layout, so Claude is a build-link-capable vendor
  * (`support: 'full'`). The cache key is the installed `@anthropic-ai/claude-agent-sdk`
- * version, so an SDK upgrade re-probes (active invalidation).
+ * version, so an SDK upgrade re-probes (active invalidation) — the 0.3.195 upgrade
+ * (which fixes `commands_changed` not firing for synced skills) re-probes here and
+ * still resolves `full`; skill discovery for the flat mount is unchanged.
  */
 import type { SkillLoader } from '../types.js'
 import {

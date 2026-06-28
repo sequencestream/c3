@@ -148,6 +148,14 @@ export interface GatewaySpec {
 export function createCanUseTool(spec: GatewaySpec): CanUseTool {
   const { gate, send, signal, currentAgentId, cwd, recentContext } = spec
 
+  // The SDK's third `options` arg now (0.3.186) carries `agentID` — the id of the
+  // sub-agent that raised the prompt when a background/team agent is the requester.
+  // The same change makes background agents FORWARD their permission prompts here
+  // instead of auto-denying (and keeps stdin open while they run); c3 inherits that
+  // behaviour for its team sessions at no cost. We deliberately ignore the arg: c3
+  // routes every approval to the single main-session UI keyed by `sessionId`, and
+  // there is no product surface that distinguishes the originating sub-agent. Thread
+  // `agentID` into PermissionRequestCtx only when such a surface exists.
   return async (toolName, input): Promise<PermissionDecision> => {
     const requestId = randomUUID()
 

@@ -3,7 +3,7 @@
 > 面向开发者与 AI：解释 c3 所依赖的 `@anthropic-ai/claude-agent-sdk`（TypeScript）
 > 是什么、如何与 Claude Code 协作、数据存在哪里、如何读取 Skill，以及最佳实践。
 >
-> - **适用版本**：`@anthropic-ai/claude-agent-sdk@^0.3.183`（在 c3 依赖清单中锁定）。
+> - **适用版本**：`@anthropic-ai/claude-agent-sdk@^0.3.195`（在 c3 依赖清单中锁定）。
 > - **历史名称**：该 SDK 前身为 “Claude Code SDK”，2025 年下半年更名为 “Claude Agent SDK”。
 > - **官方文档**：<https://code.claude.com/docs/en/agent-sdk/>
 > - **源码仓库**：<https://github.com/anthropics/claude-agent-sdk-typescript>
@@ -310,6 +310,14 @@ flowchart LR
 
 - 系统提示、工具定义、CLAUDE.md 等重复内容自动走 prompt caching。
 - `model` 可填具体 ID 或别名（`opus`/`sonnet`/`haiku`）；不填用 Claude Code 默认（取决于鉴权方式）。
+
+## 8. 版本升级评估留痕
+
+每次升级 `@anthropic-ai/claude-agent-sdk` 的逐项 changelog 评估账本（接入/不接入 + 依据 +
+留痕去向）独立成档，索引见
+[`sdk-upgrade/sdk-upgrade-records.md`](sdk-upgrade/sdk-upgrade-records.md)：
+
+- `0.3.183 → 0.3.195`（2026-06-28）：[`sdk-upgrade/2026-06-28-claude-agent-sdk-upgrade-to-v0.3.195.md`](sdk-upgrade/2026-06-28-claude-agent-sdk-upgrade-to-v0.3.195.md)
 
 ## 附录：来源与可信度
 

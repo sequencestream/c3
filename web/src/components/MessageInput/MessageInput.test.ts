@@ -188,6 +188,47 @@ describe('MessageInput.vue — 停止控件已上移到状态栏', () => {
   })
 })
 
+describe('MessageInput.vue — 按钮内嵌布局(左下附件/语音, 右下发送)', () => {
+  // 语音(mic)按钮受 v-if="voiceSupported" 控制，happy-dom 无 SpeechRecognition
+  // 故不渲染；这里只断言其归属的左下分组结构与 attach/send 的内嵌位置。
+  it('动作按钮都内嵌在 .composer-field 字段容器内', () => {
+    const w = mountInput()
+    const field = w.find('.composer-field')
+    expect(field.exists()).toBe(true)
+    expect(field.find('textarea').exists()).toBe(true)
+    expect(field.find('.attach-btn').exists()).toBe(true)
+    expect(field.find('.send-btn').exists()).toBe(true)
+  })
+
+  it('附件按钮处于左下角分组(.composer-actions), 发送不在其中', () => {
+    const w = mountInput()
+    const left = w.find('.composer-actions')
+    expect(left.exists()).toBe(true)
+    expect(left.find('.attach-btn').exists()).toBe(true)
+    // 发送按钮不在左下分组内（它在右下角的 .send-wrap）。
+    expect(left.find('.send-btn').exists()).toBe(false)
+  })
+
+  it('发送按钮处于右下角(.send-wrap)且为纯图标(svg, 无文案)', () => {
+    const w = mountInput()
+    const sendWrap = w.find('.send-wrap')
+    expect(sendWrap.exists()).toBe(true)
+    const send = sendWrap.find('.send-btn')
+    expect(send.exists()).toBe(true)
+    // 改为向下箭头图标后按钮无文本，仅含 svg。
+    expect(send.find('svg').exists()).toBe(true)
+    expect(send.text()).toBe('')
+    // 保留可访问名(title/aria-label)。
+    expect(send.attributes('aria-label')).toBeTruthy()
+    expect(send.attributes('title')).toBeTruthy()
+  })
+
+  it('无文本无图片:内嵌发送按钮仍禁用', () => {
+    const w = mountInput()
+    expect((w.find('.send-btn').element as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
 describe('MessageInput.vue — 输入框选图(点击/粘贴/拖拽)', () => {
   beforeEach(() => {
     readImageFiles.mockReset()

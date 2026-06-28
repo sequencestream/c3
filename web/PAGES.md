@@ -36,7 +36,7 @@ web/src/
 │   ├── SpecStartupOverlay/SpecStartupOverlay.vue    # Spec 会话启动遮罩(App 根级):撰写/重置 Spec 点击即阻断,按有序步骤(检查依赖/拉取代码/启动会话)展示粗粒度进度及逐步骤 ✓/spinner/灰点标记;就绪、动作失败或安全超时后收敛关闭
 │   ├── ExitPlanModeDisplay/ExitPlanModeDisplay.vue # ExitPlanMode 计划独立渲染块:解析输入负载中的 plan markdown + 结构化元数据(标题/步骤索引),支持 tool-use/tool-result 双态
 │   ├── MarkdownText/MarkdownText.vue               # 单条文本消息渲染器:assistant 走 Markdown+DOMPurify 双防线、user/system 纯文本转义、Shiki 代码高亮,宽表格包局部横滚容器
-│   ├── MessageInput/MessageInput.vue               # 底部输入区:斜杠命令补全、textarea 自增长、语音输入、图片附件(点击/粘贴/拖拽选图+缩略图预览+逐张删除+超阈压缩,随 submit/enqueue 以 PromptImage 上线)、发送/停止控制、待发队列管理,移动端软键盘/安全区避让
+│   ├── MessageInput/MessageInput.vue               # 底部输入区:斜杠命令补全、textarea 自增长、语音输入、图片附件(点击/粘贴/拖拽选图+缩略图预览+逐张删除+超阈压缩,随 submit/enqueue 以 PromptImage 上线)、动作按钮内嵌输入框(附件+语音居内部左下、发送为内部右下向下箭头图标按钮)、待发队列管理,移动端软键盘/安全区避让
 │   ├── MobileStack/MobileStack.vue                 # 移动端 drill-down 布局壳:桌面透传多栏,移动端按 pane key 栈式切换、顶部返回、滑入动画
 │   ├── PendingQueue/PendingQueue.vue               # 待发送队列显示区:展示运行中缓存的待发消息,支持修改和删除
 │   ├── PermissionPrompt/PermissionPrompt.vue       # 单条权限提示块:AskUserQuestion 逐题作答面板或其他工具 allow/deny 提示,展示 agent 共识意见

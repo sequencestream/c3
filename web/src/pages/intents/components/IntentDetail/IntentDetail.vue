@@ -391,6 +391,11 @@ const TABS: { key: DetailTab; label: string }[] = [
   { key: 'specSession', label: t('intent.tab.specSession.label') },
 ]
 
+// spec tab「我要修改」提交后,待新 spec 会话真正创建(specSessionId 回填为新非空值)
+// 再自动切到 spec session tab 的一次性状态。记录待切意图 id 与提交时刻的旧 specSessionId,
+// 用于判定"是否换了新会话"。提交失败/未创建时 specSessionId 不变,该状态不触发切换。
+const pendingSpecSwitch = ref<{ intentId: string; oldSpecSessionId: string | null } | null>(null)
+
 // 选中意图切换:复位到 intent tab 与 in-flight 守卫(不自动打开其他意图的会话)。
 watch(
   () => props.intent?.id,
@@ -400,6 +405,8 @@ watch(
     // 切走意图:取消挂起的自动切 Tab,避免切到别的意图后误切。门定时器由上方
     // [intent.id, mainAction] watch 负责重排。
     clearSwitchSpecTabTimer()
+    // 切走意图:清除「我要修改」待切状态,避免新会话回填后误切回上一个意图的 spec session。
+    pendingSpecSwitch.value = null
   },
 )
 
@@ -458,6 +465,23 @@ watch(
   { flush: 'sync' },
 )
 
+// spec tab「我要修改」提交后,以新 spec 会话实际创建为触发条件自动切到 spec session tab:
+// 待切状态存在、意图匹配、且 specSessionId 变为非空且不同于提交时记录的旧值时切换并清除。
+// 切到该 tab 后,上方 openActiveSessionIfNeeded 会自动补发 open-spec-session 绑定聊天列。
+watch(
+  () => props.intent?.specSessionId,
+  (specSessionId) => {
+    const pending = pendingSpecSwitch.value
+    if (!pending) return
+    const r = props.intent
+    if (!r || r.id !== pending.intentId) return
+    if (specSessionId && specSessionId !== pending.oldSpecSessionId) {
+      pendingSpecSwitch.value = null
+      selectTab('specSession')
+    }
+  },
+)
+
 // 当前会话 tab 期望的会话 id,以及活动会话是否已对齐(对齐才渲染聊天列)。
 const expectedSessionId = computed<string | null>(() => {
   const r = props.intent
@@ -513,6 +537,8 @@ function onResetConfirm(text: string): void {
   resetDialogOpen.value = false
   if (!r) return
   if (resetDialogTarget.value === 'specSession') {
+    // 记录待切状态:新 spec 会话创建成功后由 specSessionId watcher 自动切到 spec session tab。
+    pendingSpecSwitch.value = { intentId: r.id, oldSpecSessionId: r.specSessionId }
     emit('reset-spec-session', r.id, text)
   } else {
     emit('reset-intent-session', r.id, text)

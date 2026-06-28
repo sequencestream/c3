@@ -726,6 +726,68 @@ describe('IntentDetail.vue — session reset', () => {
   })
 })
 
+describe('IntentDetail.vue — auto-switch to spec session tab after change request', () => {
+  async function submitSpecChange(w: ReturnType<typeof mountDetail>): Promise<void> {
+    await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    await w.find('[data-testid="intent-detail-spec-modify"]').trigger('click')
+    await w.find('[data-testid="reset-input"]').setValue('tighten acceptance')
+    await w.find('[data-testid="reset-accept"]').trigger('click')
+  }
+
+  it('switches to spec session tab once specSessionId is backfilled to a new value', async () => {
+    const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specSessionId: null })
+    const w = mountDetail(item)
+    await submitSpecChange(w)
+    expect(w.emitted('reset-spec-session')).toEqual([['i1', 'tighten acceptance']])
+
+    // 提交后仍在 spec tab,新会话尚未回填。
+    expect(w.find('[data-testid="tab-spec"]').exists()).toBe(true)
+    expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).not.toContain('active')
+
+    // 新 spec 会话创建成功 → specSessionId 回填为新值 → 自动切到 spec session tab 并打开会话。
+    await w.setProps({ intent: { ...item, specSessionId: 'sess-new' } })
+    expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).toContain('active')
+    expect(w.emitted('open-spec-session')).toEqual([['i1']])
+  })
+
+  it('switches when an existing spec session is replaced by a different one', async () => {
+    const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specSessionId: 'sess-old' })
+    const w = mountDetail(item)
+    await submitSpecChange(w)
+
+    await w.setProps({ intent: { ...item, specSessionId: 'sess-new' } })
+    expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).toContain('active')
+  })
+
+  it('does not switch when specSessionId stays unchanged (submit failed / session not created)', async () => {
+    const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specSessionId: null })
+    const w = mountDetail(item)
+    await submitSpecChange(w)
+
+    // 失败/未创建:specSessionId 仍为 null(仅其它字段更新)→ 不切换,留在 spec tab。
+    await w.setProps({ intent: { ...item, specSessionId: null, title: 'Updated title' } })
+    expect(w.find('[data-testid="tab-spec"]').exists()).toBe(true)
+    expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).not.toContain('active')
+    expect(w.emitted('open-spec-session')).toBeUndefined()
+  })
+
+  it('does not switch back after the user moves to another intent before backfill', async () => {
+    const a = intent({ id: 'a', specPath: '.specs/a/spec.md', specSessionId: null })
+    const b = intent({ id: 'b', specPath: '.specs/b/spec.md', specSessionId: null })
+    const w = mountDetail(a, { intents: [a, b] })
+    await submitSpecChange(w)
+
+    // 回填前切到另一意图(复位到 intent tab,清除待切状态)。
+    await w.setProps({ intent: b })
+    expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
+
+    // 即便回到原意图并回填新会话,也不再自动切(待切状态已清)。
+    await w.setProps({ intent: { ...a, specSessionId: 'sess-new' } })
+    expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
+    expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).not.toContain('active')
+  })
+})
+
 describe('IntentDetail.vue — spec tab approval actions', () => {
   it('spec tab approve emits approve-spec from the dedicated action', async () => {
     const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specApproved: false })

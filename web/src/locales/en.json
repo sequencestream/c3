@@ -1417,7 +1417,8 @@
         "hint": "hour : minute (UTC)"
       },
       "days": {
-        "label": "Days"
+        "label": "Days",
+        "required": "Pick at least one day"
       },
       "cron": {
         "invalid": "Invalid cron expression"

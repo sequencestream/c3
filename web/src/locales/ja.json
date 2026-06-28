@@ -1322,7 +1322,8 @@
         "hint": "時 : 分(UTC)"
       },
       "days": {
-        "label": "曜日"
+        "label": "曜日",
+        "required": "少なくとも1つの曜日を選択してください"
       },
       "cron": {
         "invalid": "無効な cron 式です"

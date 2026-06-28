@@ -1322,7 +1322,8 @@
         "hint": "시 : 분 (UTC)"
       },
       "days": {
-        "label": "요일"
+        "label": "요일",
+        "required": "요일을 하나 이상 선택하세요"
       },
       "cron": {
         "invalid": "잘못된 cron 표현식"

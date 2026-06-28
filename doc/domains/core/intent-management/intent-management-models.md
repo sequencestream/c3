@@ -88,6 +88,14 @@ recent remaining session). The session is also mirrored into `session_metadata` 
 intent's id so the unified Sessions page and WorkCenter can jump back without adding a
 wire-level `jumpTarget`.
 
+Spec-authoring sessions are linked by `intents.spec_session_id`, not by a separate spec table.
+After a `write_spec` or `reset_spec_session` pending runtime binds to a real vendor session id,
+the same session is projected into `session_metadata` with `session_kind='spec'`,
+`owner_kind='intent'`, and `owner_id=<intent.id>`. Replacing the current spec session clears the
+old projected owner so one intent exposes only the current spec entry as its jump-back target.
+The intent ledger remains the SoT for the current spec session and approval state; the projection
+is a rebuildable Sessions-page cache.
+
 ## Automation Status
 
 The live state of a project's automation orchestrator (RM-A1–RM-A9). In-memory only (one per

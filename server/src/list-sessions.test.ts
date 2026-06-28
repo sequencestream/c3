@@ -23,8 +23,11 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (orig) => {
 })
 
 import { resetDbForTests } from './kernel/infra/db.js'
-import { resetStoreForTests } from './features/intents/store.js'
-import { resetStoreForTests as resetSessionsStoreForTests } from './features/works/work-session-store.js'
+import { insertIntents, resetStoreForTests, setSpecSessionId } from './features/intents/store.js'
+import {
+  resetStoreForTests as resetSessionsStoreForTests,
+  upsertBoundRow,
+} from './features/works/work-session-store.js'
 import { listWorkspaceSessions } from './sessions.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
 import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
@@ -73,9 +76,17 @@ describe('listSessionsVia — zero-regression vs listWorkspaceSessions (claude o
     // The wire shape is otherwise identical: same sessionId, title, mode
     // (from state.ts), isToolSession (from the tool-session table), and
     // newest-first ordering.
-    expect(swapped.map((s) => ({ ...s, state: undefined }))).toEqual(
-      legacy.map((s) => ({ ...s, state: undefined })),
-    )
+    const legacyComparable = legacy.map((s) => ({ ...s, state: undefined }))
+    const swappedComparable = swapped.map((s) => ({
+      sessionId: s.sessionId,
+      title: s.title,
+      lastModified: s.lastModified,
+      mode: s.mode,
+      isToolSession: s.isToolSession,
+      vendor: s.vendor,
+      state: undefined,
+    }))
+    expect(swappedComparable).toEqual(legacyComparable)
     expect(swapped.every((s) => s.vendor === 'claude')).toBe(true)
     expect(swapped.every((s) => s.state === 'alive')).toBe(true)
     // Sanity: newest-first, native ids preserved on the wire.
@@ -144,6 +155,35 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
       lastModified: 300,
       title: 'Codex one',
       state: 'alive',
+    })
+  })
+
+  it('returns projected spec sessions on the spec tab even when the intent hides that spec id from work', async () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Spec row', shortEnTitle: 'spec-row', content: '', priority: 'P1' },
+    ])
+    setSpecSessionId(intent.id, 'spec-real-1')
+    upsertBoundRow({
+      sessionId: 'spec-real-1',
+      workspacePath: proj,
+      vendor: 'claude',
+      agentId: 'spec-agent',
+      title: 'Spec row',
+      lastModified: 500,
+      sessionKind: 'spec',
+      ownerKind: 'intent',
+      ownerId: intent.id,
+    })
+    const accessor = new SessionAccessor([])
+
+    const out = await listSessionsVia(accessor, proj, 'spec')
+
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      sessionId: 'spec-real-1',
+      sessionKind: 'spec',
+      ownerKind: 'intent',
+      ownerId: intent.id,
     })
   })
 

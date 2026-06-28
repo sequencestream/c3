@@ -1,6 +1,7 @@
 import { consoleEntryTarget, consoleTabEntryEffects, workspaceSwitchEffects } from '@/lib/tab-view'
 import { emptyTaskModel } from '@/lib/task-list'
 import { SESSION_PAGE_SIZE } from '@/lib/session-page'
+import { resolveSessionJumpTarget } from '@/lib/session-jump'
 import type { AppCtx } from './types'
 import { sessionCacheKey, type SessionPageKind } from './state'
 
@@ -183,6 +184,36 @@ export function installSessionActions(ctx: AppCtx): void {
   }
 
   ctx.selectSession = (path: string, sessionId: string): void => {
+    const row = sessionsByWorkspace.value[activeKey(path)]?.find((s) => s.sessionId === sessionId)
+    if (row?.sessionKind === 'spec') {
+      const target = resolveSessionJumpTarget({
+        sessionKind: row.sessionKind,
+        ownerKind: row.ownerKind,
+        ownerId: row.ownerId,
+      })
+      if (target?.kind === 'intentDetail' && target.tab === 'specSession') {
+        ctx.openIntents(path)
+        const hasLoadedIntents = Object.prototype.hasOwnProperty.call(ctx.intents.value, path)
+        const ownerExists = ctx.intents.value[path]?.some((intent) => intent.id === target.intentId)
+        if (!hasLoadedIntents || ownerExists) {
+          ctx.requestedIntentId.value = target.intentId
+          ctx.requestedIntentSubTab.value = 'specSession'
+          ctx.openSpecSession(target.intentId)
+        }
+        return
+      }
+      const intents = ctx.intents.value[path] ?? []
+      const legacyIntent = intents.find((intent) => intent.specSessionId === sessionId)
+      if (legacyIntent) {
+        ctx.openIntents(path)
+        ctx.requestedIntentId.value = legacyIntent.id
+        ctx.requestedIntentSubTab.value = 'specSession'
+        ctx.openSpecSession(legacyIntent.id)
+        return
+      }
+      ctx.openIntents(path)
+      return
+    }
     ctx.enterConsole()
     // Pin the console tab's pointer up front.
     consoleSession.value = { workspacePath: path, sessionId }

@@ -41,6 +41,10 @@ import { buildResetIntentPrompt, resetIntentSession } from './index.js'
 import { buildResetSpecPrompt, buildSpecInstructPrompt, resetSpecSessionHandler } from './spec.js'
 import { resetForTests as resetIntentLink, takePendingIntentLink } from './intent-link.js'
 import { resetForTests as resetSpecLink, takePendingSpecLink } from './spec-link.js'
+import {
+  getByC3Id,
+  resetStoreForTests as resetSessionMetadataStoreForTests,
+} from '../sessions/session-metadata-store.js'
 
 let dir: string
 let prevC3Dir: string | undefined
@@ -55,6 +59,7 @@ beforeEach(() => {
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   resetDbForTests()
   resetStoreForTests()
+  resetSessionMetadataStoreForTests()
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   resetIntentLink()
@@ -66,6 +71,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetDbForTests()
+  resetSessionMetadataStoreForTests()
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   resetIntentLink()
@@ -306,6 +312,12 @@ describe('resetSpecSessionHandler', () => {
     expect(prompt).not.toContain('SPEC_TOKEN')
 
     expect(takePendingSpecLink(sid)).toBe(r.id)
+    expect(getByC3Id(sid)).toMatchObject({
+      kind: 'pending',
+      ownerKind: 'intent',
+      ownerId: r.id,
+      title: r.title,
+    })
 
     removeRuntime(sid)
   })

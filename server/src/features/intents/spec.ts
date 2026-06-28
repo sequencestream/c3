@@ -31,6 +31,7 @@ import {
   resolveSpecAgent,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
+import { upsertPendingRow } from '../sessions/session-metadata-store.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { getIntent, isStoreAvailable, listIntents, setSpecApproved, setSpecPath } from './store.js'
 import { computeSpecLayout } from './spec-path.js'
@@ -41,6 +42,29 @@ import { pullCurrentBranch } from './worktree.js'
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+function syncSpecPendingProjection(input: {
+  pendingId: string
+  workspacePath: string
+  vendor: ReturnType<typeof resolveSpecAgent>['vendor']
+  agentId: string
+  title: string
+  intentId: string
+}): void {
+  try {
+    upsertPendingRow({
+      pendingId: input.pendingId,
+      workspacePath: input.workspacePath,
+      vendor: input.vendor,
+      agentId: input.agentId,
+      title: input.title,
+      ownerKind: 'intent',
+      ownerId: input.intentId,
+    })
+  } catch (err) {
+    console.warn(`[c3:intents] spec session projection write failed: ${errMsg(err)}`)
+  }
 }
 
 function prepareSpecDependencyContext(
@@ -218,6 +242,14 @@ export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
   const rt = ensureRuntime(specId, proj, getDefaultMode(proj), [], 'spec')
   rt.specDir = layout.dirAbs
   setSessionAgent(specId, specAgent.id)
+  syncSpecPendingProjection({
+    pendingId: specId,
+    workspacePath: proj,
+    vendor: specAgent.vendor,
+    agentId: specAgent.id,
+    title: intent.title,
+    intentId: intent.id,
+  })
   registerPendingSpecLink(specId, intent.id)
   try {
     void ctx
@@ -320,6 +352,14 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   const rt = ensureRuntime(specId, proj, getDefaultMode(proj), [], 'spec')
   rt.specDir = dirname(fileAbs)
   setSessionAgent(specId, specAgent.id)
+  syncSpecPendingProjection({
+    pendingId: specId,
+    workspacePath: proj,
+    vendor: specAgent.vendor,
+    agentId: specAgent.id,
+    title: intent.title,
+    intentId: intent.id,
+  })
   registerPendingSpecLink(specId, intent.id)
   conn.viewing = specId
   touchWorkspace(proj, Date.now())

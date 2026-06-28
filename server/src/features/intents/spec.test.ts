@@ -33,6 +33,10 @@ import {
   saveWorkspaceSetting,
 } from '../../kernel/config/index.js'
 import { writeSpecHandler } from './spec.js'
+import {
+  getByC3Id,
+  resetStoreForTests as resetSessionMetadataStoreForTests,
+} from '../sessions/session-metadata-store.js'
 
 let dir: string
 let prevC3Dir: string | undefined
@@ -48,6 +52,7 @@ beforeEach(() => {
   process.env.C3_DIR = join(dir, 'c3home')
   resetDbForTests()
   resetStoreForTests()
+  resetSessionMetadataStoreForTests()
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   addWorkspace(dir, 1)
@@ -57,6 +62,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetDbForTests()
+  resetSessionMetadataStoreForTests()
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   delete process.env.CLAUDE_CONFIG_DIR
@@ -161,6 +167,30 @@ describe('writeSpecHandler dependency context', () => {
       { type: 'spec_launch_progress', intentId: target.id, stage: 'pulling-code' },
       { type: 'spec_launch_progress', intentId: target.id, stage: 'launching' },
     ])
+  })
+
+  it('writes a spec-owned pending projection row before first bind', () => {
+    const [target] = insertIntents(proj, [
+      { title: 'Projected spec', shortEnTitle: 'projected-spec', content: '', priority: 'P1' },
+    ])
+    const launchRun = vi.fn().mockResolvedValue(undefined)
+    const { conn } = fakeConn()
+
+    writeSpecHandler({ launchRun, broadcastIntents: vi.fn() } as unknown as KernelContext, conn, {
+      type: 'write_spec',
+      workspaceId,
+      intentId: target.id,
+    })
+
+    const rt = launchRun.mock.calls[0][0] as { sessionId: string }
+    const row = getByC3Id(rt.sessionId)
+    expect(row).toMatchObject({
+      kind: 'pending',
+      sessionKind: 'work',
+      ownerKind: 'intent',
+      ownerId: target.id,
+      title: target.title,
+    })
   })
 
   it('allows a Codex spec agent and launches instead of returning unsupported', () => {

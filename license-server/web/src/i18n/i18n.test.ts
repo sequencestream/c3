@@ -118,4 +118,13 @@ describe('resource integrity', () => {
     const enKeys = flatten(en as Record<string, unknown>).sort()
     expect(zhKeys).toEqual(enKeys)
   })
+
+  it('keeps plan comparison capability and name keys aligned across locales', () => {
+    expect(Object.keys(zh.plans.capabilities).sort()).toEqual(Object.keys(en.plans.capabilities).sort())
+    expect(Object.keys(zh.plans.name).sort()).toEqual(Object.keys(en.plans.name).sort())
+
+    for (const key of Object.keys(zh.plans.capabilities) as Array<keyof typeof zh.plans.capabilities>) {
+      expect(Object.keys(zh.plans.capabilities[key]).sort()).toEqual(Object.keys(en.plans.capabilities[key]).sort())
+    }
+  })
 })

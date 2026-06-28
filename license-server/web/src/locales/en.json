@@ -46,7 +46,57 @@
     "tier": "Tier",
     "term": "Term",
     "price": "Price",
-    "months": "{count} months"
+    "months": "{count} months",
+    "capabilities": {
+      "workspaces": {
+        "label": "Registered workspaces",
+        "free": "5",
+        "paid": "Unlimited",
+        "enterprise": "Unlimited"
+      },
+      "activeWorktrees": {
+        "label": "Concurrent active worktrees",
+        "free": "1",
+        "paid": "Unlimited",
+        "enterprise": "Unlimited"
+      },
+      "discussionParticipants": {
+        "label": "Discussion participants (excluding host)",
+        "free": "2",
+        "paid": "Unlimited",
+        "enterprise": "Unlimited"
+      },
+      "enabledSchedules": {
+        "label": "Enabled schedules",
+        "free": "2",
+        "paid": "Unlimited",
+        "enterprise": "Unlimited"
+      },
+      "sandbox": {
+        "label": "Sandbox",
+        "free": "No",
+        "paid": "Yes",
+        "enterprise": "Yes"
+      },
+      "permissionControls": {
+        "label": "Permission controls",
+        "free": "Basic",
+        "paid": "Basic",
+        "enterprise": "Advanced controls (preview)"
+      },
+      "priceTerm": {
+        "label": "Price / Term",
+        "free": "Free, long-lived",
+        "paid": "See checkout",
+        "enterprise": "See checkout"
+      }
+    },
+    "name": {
+      "1m": "1 Month",
+      "6m": "6 Months",
+      "1y": "1 Year",
+      "enterprise_1y": "Enterprise 1 Year"
+    }
   },
   "account": {
     "title": "Account",

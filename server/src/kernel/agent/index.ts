@@ -759,6 +759,12 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         }
       } else if (m.type === 'result') {
         // The run's turn finished — the session stays alive for the next prompt.
+        // The result message also carries `usage` / `total_cost_usd` / rate-limit
+        // info (the SDK 0.3.191 weekly per-model `model_scoped` + the 0.3.195
+        // `seven_day_overage_included` rate-limit type are additive). c3 has no
+        // product surface for cost/usage today, so we deliberately do not read
+        // them here; consumed via `unknown` narrowing, missing or new fields stay
+        // safe. Wire them into turn_end only when a UI needs them.
         sawResult = true
         // A turn that thought but said nothing (end_turn with no text/tool) would
         // otherwise render as an empty gap — indistinguishable from a hang. Surface
@@ -783,6 +789,15 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       // enter the degradation chain). Signal the caller with the side-effect gate
       // verdict (AS-R19) and skip the terminal `turn_end` so it can decide whether
       // to auto-`resume` the same session (AS-R18).
+      //
+      // The SDK's `Query.reinitialize()` (0.3.195) re-sends the initialize control
+      // request and redelivers pending permission/dialog prompts after a transport
+      // gap — but it needs a SURVIVING query handle + a persistent transport (it is
+      // for reattaching to a daemon whose ring buffer evicted frames). By the time
+      // this branch fires the `for await` has already thrown, so `q` is abandoned;
+      // c3 recovers by spawning a fresh `resume:<sessionId>` process instead. The
+      // existing resume path already satisfies the auto-resume contract, so
+      // reinitialize is not adopted (it would require keeping the handle alive).
       if (onSocketDisconnect && isSocketDisconnect(errorMsg)) {
         sawResult = true
         onSocketDisconnect({ error: errorMsg, sideEffectPending: openSideEffects.size > 0 })

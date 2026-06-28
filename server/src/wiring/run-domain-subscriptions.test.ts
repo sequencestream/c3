@@ -405,7 +405,9 @@ describe('resident domain subscriptions — discussion + schedule', () => {
   it('run:bound on a spec runtime links the real spec session id onto the intent', async () => {
     const { getRuntime } = await import('../runs.js')
     const { takePendingSpecLink } = await import('../features/intents/spec-link.js')
-    const { setSpecSessionId } = await import('../features/intents/store.js')
+    const { getIntent, setSpecSessionId } = await import('../features/intents/store.js')
+    const { deleteByVendorId, updateRowOwner, upsertBoundRow } =
+      await import('../features/sessions/session-metadata-store.js')
 
     vi.mocked(getRuntime).mockReturnValueOnce({
       workspacePath: '/proj',
@@ -416,12 +418,34 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       viewers: new Set(),
     } as unknown as SessionRuntime)
     vi.mocked(takePendingSpecLink).mockReturnValueOnce('intent-9')
+    vi.mocked(getIntent).mockReturnValueOnce({
+      id: 'intent-9',
+      title: 'Spec target',
+      specSessionId: 'old-spec',
+    } as Intent)
 
     install()
     eb.publish('run:bound', { prevId: 'pending-9', realId: 'real-9', workspacePath: '/proj' })
 
     expect(takePendingSpecLink).toHaveBeenCalledWith('pending-9')
+    expect(updateRowOwner).toHaveBeenCalledWith({
+      sessionId: 'old-spec',
+      vendor: 'codex',
+      ownerKind: null,
+      ownerId: null,
+    })
     expect(setSpecSessionId).toHaveBeenCalledWith('intent-9', 'real-9')
+    expect(deleteByVendorId).toHaveBeenCalledWith('codex', 'pending-9')
+    expect(upsertBoundRow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'real-9',
+        workspacePath: '/proj',
+        sessionKind: 'spec',
+        ownerKind: 'intent',
+        ownerId: 'intent-9',
+        title: 'Spec target',
+      }),
+    )
     expect(mockBroadcastIntents).toHaveBeenCalledWith('/proj')
   })
 

@@ -5,9 +5,10 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { ref } from 'vue'
-import type { ClientToServer, SessionInfo } from '@ccc/shared/protocol'
+import type { ClientToServer, Intent, SessionInfo } from '@ccc/shared/protocol'
 import { installSessionActions } from './session-actions'
 import type { AppCtx } from './types'
+import { sessionCacheKey, type SessionPageKind } from './state'
 
 function s(id: string, lastModified: number): SessionInfo {
   return {
@@ -20,23 +21,48 @@ function s(id: string, lastModified: number): SessionInfo {
   }
 }
 
+function intent(id: string, extra: Partial<Intent> = {}): Intent {
+  return { id, ...extra } as Intent
+}
+
 const WS = '/ws'
 
 function makeCtx(opts: {
   sessions?: Record<string, SessionInfo[]>
   paging?: Record<string, { hasMore: boolean; exhausted: boolean; loadingMore: boolean }>
+  intents?: Record<string, Intent[]>
+  activeKind?: SessionPageKind
 }) {
   const send = vi.fn<(msg: ClientToServer) => void>()
   const sessionsByWorkspace = ref(opts.sessions ?? {})
   const sessionPagingByWorkspace = ref(opts.paging ?? {})
+  const requestedIntentId = ref<string | null>(null)
+  const requestedIntentSubTab = ref<'intentSession' | 'specSession' | null>(null)
+  const openIntents = vi.fn()
+  const openSpecSession = vi.fn()
   const ctx = {
     send,
     sessionsByWorkspace,
     sessionPagingByWorkspace,
+    activeSessionKind: ref(opts.activeKind ?? 'work'),
+    intents: ref(opts.intents ?? {}),
+    requestedIntentId,
+    requestedIntentSubTab,
+    openIntents,
+    openSpecSession,
+    enterConsole: vi.fn(),
     consoleSession: ref(null),
   } as unknown as AppCtx
   installSessionActions(ctx)
-  return { ctx, send, sessionsByWorkspace }
+  return {
+    ctx,
+    send,
+    sessionsByWorkspace,
+    openIntents,
+    openSpecSession,
+    requestedIntentId,
+    requestedIntentSubTab,
+  }
 }
 
 describe('refreshSessions', () => {
@@ -53,7 +79,9 @@ describe('refreshSessions', () => {
   })
 
   it('window refresh (since = oldest loaded) when a window is loaded', () => {
-    const { ctx, send } = makeCtx({ sessions: { [WS]: [s('a', 300), s('b', 200)] } })
+    const { ctx, send } = makeCtx({
+      sessions: { [sessionCacheKey(WS, 'work')]: [s('a', 300), s('b', 200)] },
+    })
     ctx.refreshSessions(WS)
     const msg = send.mock.calls[0][0] as Extract<ClientToServer, { type: 'list_sessions' }>
     expect(msg.since).toBe(200)
@@ -64,8 +92,10 @@ describe('refreshSessions', () => {
 describe('loadMoreSessions', () => {
   it('sends a keyset `before` cursor of the oldest loaded session', () => {
     const { ctx, send } = makeCtx({
-      sessions: { [WS]: [s('a', 300), s('b', 200)] },
-      paging: { [WS]: { hasMore: true, exhausted: false, loadingMore: false } },
+      sessions: { [sessionCacheKey(WS, 'work')]: [s('a', 300), s('b', 200)] },
+      paging: {
+        [sessionCacheKey(WS, 'work')]: { hasMore: true, exhausted: false, loadingMore: false },
+      },
     })
     ctx.loadMoreSessions(WS)
     const msg = send.mock.calls[0][0] as Extract<ClientToServer, { type: 'list_sessions' }>
@@ -74,15 +104,19 @@ describe('loadMoreSessions', () => {
 
   it('no-ops when there is nothing more, or a load-more is already in flight', () => {
     const noMore = makeCtx({
-      sessions: { [WS]: [s('a', 300)] },
-      paging: { [WS]: { hasMore: false, exhausted: false, loadingMore: false } },
+      sessions: { [sessionCacheKey(WS, 'work')]: [s('a', 300)] },
+      paging: {
+        [sessionCacheKey(WS, 'work')]: { hasMore: false, exhausted: false, loadingMore: false },
+      },
     })
     noMore.ctx.loadMoreSessions(WS)
     expect(noMore.send).not.toHaveBeenCalled()
 
     const inFlight = makeCtx({
-      sessions: { [WS]: [s('a', 300)] },
-      paging: { [WS]: { hasMore: true, exhausted: false, loadingMore: true } },
+      sessions: { [sessionCacheKey(WS, 'work')]: [s('a', 300)] },
+      paging: {
+        [sessionCacheKey(WS, 'work')]: { hasMore: true, exhausted: false, loadingMore: true },
+      },
     })
     inFlight.ctx.loadMoreSessions(WS)
     expect(inFlight.send).not.toHaveBeenCalled()
@@ -92,24 +126,91 @@ describe('loadMoreSessions', () => {
 describe('optimistic delete / rename', () => {
   it('delete drops the row locally and sends delete_session', () => {
     const { ctx, send, sessionsByWorkspace } = makeCtx({
-      sessions: { [WS]: [s('a', 300), s('b', 200)] },
+      sessions: { [sessionCacheKey(WS, 'work')]: [s('a', 300), s('b', 200)] },
     })
     ctx.deleteSession(WS, 'a')
-    expect(sessionsByWorkspace.value[WS].map((x) => x.sessionId)).toEqual(['b'])
+    expect(sessionsByWorkspace.value[sessionCacheKey(WS, 'work')].map((x) => x.sessionId)).toEqual([
+      'b',
+    ])
     expect(send).toHaveBeenCalledWith({ type: 'delete_session', workspaceId: WS, sessionId: 'a' })
   })
 
   it('rename updates the title locally and sends rename_session', () => {
     const { ctx, send, sessionsByWorkspace } = makeCtx({
-      sessions: { [WS]: [s('a', 300)] },
+      sessions: { [sessionCacheKey(WS, 'work')]: [s('a', 300)] },
     })
     ctx.renameSession(WS, 'a', 'New Title')
-    expect(sessionsByWorkspace.value[WS][0].title).toBe('New Title')
+    expect(sessionsByWorkspace.value[sessionCacheKey(WS, 'work')][0].title).toBe('New Title')
     expect(send).toHaveBeenCalledWith({
       type: 'rename_session',
       workspaceId: WS,
       sessionId: 'a',
       title: 'New Title',
     })
+  })
+})
+
+describe('spec session jump-back', () => {
+  it('routes a spec projection row with an intent owner to the intent spec session tab', () => {
+    const spec = {
+      ...s('spec-1', 300),
+      sessionKind: 'spec',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+    } satisfies SessionInfo
+    const { ctx, send, openIntents, openSpecSession, requestedIntentId, requestedIntentSubTab } =
+      makeCtx({
+        sessions: { [sessionCacheKey(WS, 'spec')]: [spec] },
+        intents: { [WS]: [intent('intent-1')] },
+        activeKind: 'spec',
+      })
+
+    ctx.selectSession(WS, 'spec-1')
+
+    expect(openIntents).toHaveBeenCalledWith(WS)
+    expect(requestedIntentId.value).toBe('intent-1')
+    expect(requestedIntentSubTab.value).toBe('specSession')
+    expect(openSpecSession).toHaveBeenCalledWith('intent-1')
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'select_session', sessionId: 'spec-1' }),
+    )
+  })
+
+  it('does not open a wrong spec session when the projected owner is missing from a loaded intent list', () => {
+    const spec = {
+      ...s('spec-1', 300),
+      sessionKind: 'spec',
+      ownerKind: 'intent',
+      ownerId: 'missing-intent',
+    } satisfies SessionInfo
+    const { ctx, openIntents, openSpecSession, requestedIntentId, requestedIntentSubTab } = makeCtx(
+      {
+        sessions: { [sessionCacheKey(WS, 'spec')]: [spec] },
+        intents: { [WS]: [intent('intent-1')] },
+        activeKind: 'spec',
+      },
+    )
+
+    ctx.selectSession(WS, 'spec-1')
+
+    expect(openIntents).toHaveBeenCalledWith(WS)
+    expect(openSpecSession).not.toHaveBeenCalled()
+    expect(requestedIntentId.value).toBeNull()
+    expect(requestedIntentSubTab.value).toBeNull()
+  })
+
+  it('falls back to legacy specSessionId lookup when owner metadata is absent', () => {
+    const spec = { ...s('spec-1', 300), sessionKind: 'spec' } satisfies SessionInfo
+    const { ctx, openSpecSession, requestedIntentId, requestedIntentSubTab } = makeCtx({
+      sessions: { [sessionCacheKey(WS, 'spec')]: [spec] },
+      intents: { [WS]: [intent('intent-1', { specSessionId: 'spec-1' })] },
+      activeKind: 'spec',
+    })
+
+    ctx.selectSession(WS, 'spec-1')
+
+    expect(requestedIntentId.value).toBe('intent-1')
+    expect(requestedIntentSubTab.value).toBe('specSession')
+    expect(openSpecSession).toHaveBeenCalledWith('intent-1')
   })
 })

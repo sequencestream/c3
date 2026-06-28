@@ -54,7 +54,7 @@ Schema 版本: 5。v1→v2 把工作区主键列 `project_path` 就地改名为 
 
 ### sessions
 
-统一会话列表投影域。`session_metadata` 由旧 `work_session_metadata` 就地 RENAME 而来，是 work / intent / spec / discussion / schedule / tool 六类会话的列表读路径缓存。事实源仍在各业务表和 vendor native store；本表不存 transcript / prompt / tool_use / tool_result。新增 `session_kind` 区分业务分类，`owner_kind` / `owner_id` 支撑前端跳回，`bound` 替代旧 `kind` 的读语义 (`real`→1、`pending`→0)。旧 `kind` 列保留用于兼容和审计，新代码不再依赖它判断 pending/real。
+统一会话列表投影域。`session_metadata` 由旧 `work_session_metadata` 就地 RENAME 而来，是 work / intent / spec / discussion / schedule / tool 六类会话的列表读路径缓存。事实源仍在各业务表和 vendor native store；本表不存 transcript / prompt / tool_use / tool_result。新增 `session_kind` 区分业务分类，`owner_kind` / `owner_id` 支撑前端跳回，`bound` 替代旧 `kind` 的读语义 (`real`→1、`pending`→0)。spec 撰写/重置会话在绑定真实 session id 后写入 `session_kind='spec'`、`owner_kind='intent'`、`owner_id=<intent.id>`；`intents.spec_session_id` 仍是当前 spec 会话归属的 SoT，本表只是可重建读缓存。旧 `kind` 列保留用于兼容和审计，新代码不再依赖它判断 pending/real。
 
 无独立 schema 版本号 (不写 `PRAGMA user_version`，避免与其他 store 冲突)。
 

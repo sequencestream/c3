@@ -268,7 +268,11 @@ add-column through the shared adapter (RM-R14).
   a pointer to the current `spec_path` (only the path — the agent reads the spec file itself; the
   prompt no longer inlines the spec body), replies `session_selected` (so the detail's 「spec
   session」tab switches to it), and registers the pending→intent link so `run:bound` replaces the
-  intent's `specSessionId` on first bind. The server no longer pre-reads the spec file, so its
+  intent's `specSessionId` on first bind. The bind path also upserts the unified
+  `session_metadata` projection as `session_kind='spec'` with `owner_kind='intent'` and this
+  intent id, and clears the previous spec session's owner when the intent is reset to a new spec
+  session. Projection write failure only hides the row from the Sessions page and does not block
+  the spec launch. The server no longer pre-reads the spec file, so its
   readability is not a launch precondition; a missing/unreadable spec becomes a normal file error
   the agent faces when it reads the path.
 
@@ -608,6 +612,9 @@ A fourth, read-only opener serves the intent detail's 「spec session」tab:
   `session_selected` and registers the viewer. The intent's own comm/refine session
   (`intentSessionId`) is opened by the existing `open_intent_chat` instead — the two sessions are
   different runtime kinds. Rejected (`error`) when the intent has no `specSessionId`.
+  The unified Sessions page never opens a spec row by raw session id; it uses the projected
+  `owner_kind='intent'` / `owner_id` pair to navigate to the owning intent's 「spec session」tab,
+  then calls this opener with the intent id.
 
 ## Broadcast
 

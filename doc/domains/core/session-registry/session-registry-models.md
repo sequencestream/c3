@@ -35,8 +35,10 @@ for list/count reads.
 | `bound`        | boolean         | true for real rows; false only for work pending placeholders            |
 
 Relationships: belongs to one Workspace; its transcript & title are owned by the agent vendor, its
-`mode` by the registry. Owner fields point back to domain entities such as an intent,
-discussion, or schedule; they do not make the projection the source of truth for those domains.
+`mode` by the registry. Owner fields point back to domain entities such as an intent, discussion,
+or schedule; they do not make the projection the source of truth for those domains. A spec session
+row uses `sessionKind=spec`, `ownerKind=intent`, and the intent id as `ownerId`; the intent domain
+still owns the current spec-session link through `intents.spec_session_id`.
 
 ## Pending Session
 

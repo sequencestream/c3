@@ -186,12 +186,12 @@ export async function listSessionsVia(
 
   // Apply the filter parity (hidden set + tool-session filter) and stamp
   // the `mode` / `state` fields. Sort newest-first; nulls (Codex
-  // bind-time) sort last. Spec sessions join the comm-session hidden set —
-  // they are not user work sessions and must stay out of the list.
-  const hidden = new Set([
-    ...listHiddenSessions(workspacePath),
-    ...listSpecSessionIds(workspacePath),
-  ])
+  // bind-time) sort last. Intent/spec comm sessions are hidden only from
+  // the work tab; their own unified tabs must read the projection rows.
+  const hidden =
+    sessionKind === 'work'
+      ? new Set([...listHiddenSessions(workspacePath), ...listSpecSessionIds(workspacePath)])
+      : new Set<string>()
   const showTool = getShowToolSessions()
   const out = rows
     .map((r) => rowToSessionInfo(r))

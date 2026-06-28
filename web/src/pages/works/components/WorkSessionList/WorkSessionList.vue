@@ -59,7 +59,7 @@ const VENDOR_ORDER: readonly VendorId[] = ['claude', 'codex']
 const SESSION_KIND_TABS: readonly { key: SessionPageKind; labelKey: string; enabled: boolean }[] = [
   { key: 'work', labelKey: 'session.kind.work', enabled: true },
   { key: 'intent', labelKey: 'session.kind.intent', enabled: true },
-  { key: 'spec', labelKey: 'session.kind.spec', enabled: false },
+  { key: 'spec', labelKey: 'session.kind.spec', enabled: true },
   { key: 'discussion', labelKey: 'session.kind.discussion', enabled: false },
   { key: 'schedule', labelKey: 'session.kind.schedule', enabled: false },
   { key: 'tool', labelKey: 'session.kind.tool', enabled: false },

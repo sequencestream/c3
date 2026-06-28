@@ -44,14 +44,18 @@ row to a session entry (additive `state`, `sessionKind`, `ownerKind`, `ownerId`,
 and `bound` fields), applies the hidden-set and recorded-tool-session filters
 for work listings, and sorts newest-first. The session page uses the same
 projection for its six tabs (work / intent / spec / discussion / schedule /
-tool) and running-count badges; this phase wires real rows for work and intent,
-with the other kinds reserved as gray placeholders until their domain writers
-are connected. Work-only pre-bind rows are represented by `bound = 0`; the
-legacy `kind` column is retained but no longer drives read behavior.
+tool) and running-count badges; this phase wires real rows for work, intent,
+and spec, with the other kinds reserved as gray placeholders until their domain writers
+are connected. Spec rows are written by the intent-management spec lifecycle at bind time with
+`session_kind='spec'` and an intent owner, so selecting them jumps back to the owning intent's
+spec-session tab instead of opening them as ordinary work sessions. Work-only pre-bind rows are
+represented by `bound = 0`; the legacy `kind` column is retained but no longer drives read
+behavior.
 
-The listing filters two classes out before mapping: the project's
-**hidden set** (intent comm sessions, owned by intent-management) and **tool-created
-sessions** (completion judge / consensus advisor) unless the show-tool-sessions setting is on.
+For work listings, the read path filters two classes out before mapping: the project's
+**hidden set** (intent/spec comm sessions, owned by intent-management) and **tool-created
+sessions** (completion judge / consensus advisor) unless the show-tool-sessions setting is on. The
+intent and spec tabs do not apply that hidden-set filter to themselves.
 Tool sessions are tagged when a tool query reports its session id, which writes through to the
 persisted tool-session table so the tag — and thus the default-off filter — survives restarts;
 an in-memory-only set would be empty after a restart and leak historic tool sessions into the

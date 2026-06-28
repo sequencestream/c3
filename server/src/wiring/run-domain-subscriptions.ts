@@ -237,7 +237,29 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
       // consumes the pending→intent entry registered by the write_spec handler.
       const intentId = takePendingSpecLink(prevId)
       if (intentId) {
+        const intent = getIntent(intentId)
+        const oldSpecSessionId = intent?.specSessionId ?? null
+        if (oldSpecSessionId && oldSpecSessionId !== realId) {
+          updateRowOwner({
+            sessionId: oldSpecSessionId,
+            vendor: resolveSessionVendor(oldSpecSessionId),
+            ownerKind: null,
+            ownerId: null,
+          })
+        }
         setSpecSessionId(intentId, realId)
+        const vendor = resolveSessionVendor(realId)
+        deleteByVendorId(resolveSessionVendor(prevId), prevId)
+        upsertBoundRow({
+          sessionId: realId,
+          workspacePath: rt.workspacePath,
+          vendor,
+          agentId: getSessionAgentId(realId) ?? '',
+          title: intent?.title ?? 'New session',
+          sessionKind: 'spec',
+          ownerKind: 'intent',
+          ownerId: intentId,
+        })
         broadcastIntents(rt.workspacePath)
       }
     } else {

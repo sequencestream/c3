@@ -387,7 +387,7 @@ function selectTab(tab: HeaderTab): void {
               aria-hidden="true"
               >!</span
             >
-            <span class="license-plan">{{ licensePlanText }}</span>
+            <span v-if="license.plan === 'free'" class="license-plan">{{ licensePlanText }}</span>
           </summary>
           <div class="license-dropdown">
             <template v-if="licenseEntitled">

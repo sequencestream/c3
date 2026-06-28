@@ -1,7 +1,7 @@
 /**
  * `create_session` records the chosen agent as the pending session's *intent*
- * (ADR-0015, work_session_metadata projection amendment). The intent now lives in
- * the `work_session_metadata` projection table as a `pending` row, not in
+ * (ADR-0015, session_metadata projection amendment). The intent now lives in
+ * the `session_metadata` projection table as a `pending` row, not in
  * `state.json`. An absent/empty `agentId` resolves to Auto (no intent — the
  * projection row still gets written with the default agent's vendor + id).
  *
@@ -98,7 +98,7 @@ describe('create_session agent intent (projection-backed)', () => {
     const pendingId = pendingIdOf(conn)
     expect(pendingId).toMatch(/^pending:/)
     // The intent is in the projection table (the new home after ADR-0015 +
-    // work_session_metadata amendment). The handler writes a pending row via
+    // session_metadata amendment). The handler writes a pending row via
     // `upsertPendingRow`; the intent's agent id is in the row.
     const intent = getPendingIntent(pendingId)
     expect(intent?.agentId).toBe('claude-b')

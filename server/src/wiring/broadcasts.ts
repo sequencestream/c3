@@ -46,7 +46,7 @@ import { currentLicenseStatus } from '../features/license/store.js'
 /** The single fan-out reference; threaded in by the composition root. */
 export interface BroadcastsDeps {
   broadcaster: Broadcaster
-  /** Read the `work_session_metadata` projection for `broadcastSessions` (same source
+  /** Read the `session_metadata` projection for `broadcastSessions` (same source
    * as the per-connection `sendSessions` in `ws-upgrade.ts`). */
   sessionAccessor: SessionAccessor
 }
@@ -69,7 +69,7 @@ export interface Broadcasts {
   broadcastIntentSessions: (workspacePath: string) => void
   /**
    * Push a workspace's refreshed session list to EVERY connection (the
-   * `work_session_metadata` projection read). The per-connection `conn.sendSessions`
+   * `session_metadata` projection read). The per-connection `conn.sendSessions`
    * only reaches the originating socket; a background, connection-less producer
    * (the automation orchestrator's dev turns) has no socket, so it fans the list
    * out to all clients instead. Fire-and-forget: the async projection read is not
@@ -180,6 +180,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
         broadcaster.toAll({
           type: 'sessions',
           workspaceId: pathToId(proj)!,
+          sessionKind: 'work',
           sessions,
           page: { kind: 'live', hasMore: false },
         })

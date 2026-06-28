@@ -43,15 +43,20 @@ withDefaults(
     modeOptions?: { value: ModeToken; label: string }[]
     /** Render the title bar even with no active session (intent side keeps it). */
     alwaysTitle?: boolean
+    showTitleBar?: boolean
     /** Linked intent id for the title-bar jump button (works side only); null ⇒ no button. */
     linkedIntentId?: string | null
     // chat body
     hasActiveSession: boolean
     messages: ChatMsg[]
+    showMessages?: boolean
     actionablePermissionId: string | null
     taskModel: TaskListModel
     /** Whether the active vendor exposes `taskStore`; gates the TaskPanel. Default open. */
     hasTaskStore?: boolean
+    showTaskPanel?: boolean
+    showStatusBar?: boolean
+    showInput?: boolean
     running: boolean
     teamActive: boolean
     connection: 'connecting' | 'open' | 'closed'
@@ -69,6 +74,7 @@ withDefaults(
   {
     showMode: false,
     alwaysTitle: false,
+    showTitleBar: true,
     vendor: null,
     agentSwitch: null,
     mode: undefined,
@@ -76,6 +82,10 @@ withDefaults(
     modeOptions: () => [],
     linkedIntentId: null,
     hasTaskStore: true,
+    showMessages: true,
+    showTaskPanel: true,
+    showStatusBar: true,
+    showInput: true,
     currentAgentName: undefined,
     reconnecting: false,
     sideEffectPending: false,
@@ -109,7 +119,7 @@ defineExpose({
 <template>
   <div class="content">
     <SessionTitleBar
-      v-if="alwaysTitle || hasActiveSession"
+      v-if="showTitleBar && (alwaysTitle || hasActiveSession)"
       :active-title="activeTitle"
       :vendor="vendor"
       :agent-switch="agentSwitch"
@@ -124,14 +134,16 @@ defineExpose({
       @open-intent="(id: string) => emit('open-intent', id)"
     />
     <ChatMessages
+      v-if="showMessages"
       :messages="messages"
       :has-active-session="hasActiveSession"
       :actionable-permission-id="actionablePermissionId"
       @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
       @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
     />
-    <TaskPanel :model="taskModel" :has-task-store="hasTaskStore" />
+    <TaskPanel v-if="showTaskPanel" :model="taskModel" :has-task-store="hasTaskStore" />
     <SessionStatusBar
+      v-if="showStatusBar"
       :has-active-session="hasActiveSession"
       :running="running"
       :team-active="teamActive"
@@ -150,6 +162,7 @@ defineExpose({
       @delete="(id: number) => emit('delete-queued', id)"
     />
     <MessageInput
+      v-if="showInput"
       ref="composer"
       :running="running"
       :team-active="teamActive"

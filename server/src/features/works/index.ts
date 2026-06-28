@@ -52,7 +52,11 @@ import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
 import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
-import { getByC3Id, listForWorkspace, upsertPendingRow } from '../sessions/session-metadata-store.js'
+import {
+  getByC3Id,
+  listForWorkspace,
+  upsertPendingRow,
+} from '../sessions/session-metadata-store.js'
 import { findIntentIdBySessionId } from '../intents/store.js'
 import { currentLicenseStatus } from '../license/store.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
@@ -79,7 +83,7 @@ const PLACEHOLDER_TITLES = new Set(['New session', 'Untitled session'])
 /**
  * The title-bar title for a just-selected real session, read projection-first so
  * the right (title bar) is same-source as the left (session list) — ADR-0013.
- * The `work_session_metadata` projection carries the run-end-derived title for
+ * The `session_metadata` projection carries the run-end-derived title for
  * EVERY vendor, including codex, which the legacy `sessionTitle` path can't
  * resolve (it wraps the claude-only SDK listing). Returns null when the
  * projection has no real title yet (empty db, or still a placeholder), so the
@@ -238,7 +242,7 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   // Switching views never stops a run — just stop watching the old one.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  // The pending intent (ADR-0015) now lives in the `work_session_metadata`
+  // The pending intent (ADR-0015) now lives in the `session_metadata`
   // projection table as a `pending` row (F-11). The first run launches
   // with this agent and freezes its vendor on bind. The row is written
   // BEFORE `session_selected` is sent so a `list_sessions` immediately
@@ -278,7 +282,12 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   conn.sendWorkspaces()
 }
 
-export const createWorkSession: Handler<'create_work_session'> = createSession
+export const createWorkSession: Handler<'create_work_session'> = (ctx, conn, msg) =>
+  createSession(ctx, conn, {
+    type: 'create_session',
+    workspaceId: msg.workspaceId,
+    agentId: msg.agentId,
+  })
 
 export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) => {
   const abs = resolveWorkspaceRoot(msg.workspaceId)

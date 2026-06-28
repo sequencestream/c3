@@ -61,11 +61,9 @@ export interface SessionRunStatus {
 /** A session inside a workspace, as surfaced to the sidebar. */
 export interface SessionInfo {
   /**
-   * The session's wire id. Still the **vendor-native** id (Claude SDK UUID,
-   * Codex thread id) — NOT the opaque c3 id. The c3 namespace on the wire is
-   * an ADR-0013 deferred phase; `select_session`/`delete_session`/`rename_session`
-   * round-trip this id back to the server, which resolves it against the owning
-   * vendor's native store.
+   * The session's wire id. Work/session list entries are sourced from the
+   * `session_metadata` projection; the server resolves this handle back to the
+   * owning vendor/native store when reading, resuming, renaming, or deleting.
    */
   sessionId: string
   /** Display title: SDK custom title, summary, or first prompt. */
@@ -92,7 +90,7 @@ export interface SessionInfo {
   vendor: VendorId
   /**
    * Lifecycle state of the projection row that backs this wire entry
-   * (ADR-0013 amendment — `work_session_metadata` projection). Drives the
+   * (ADR-0013 amendment — `session_metadata` projection). Drives the
    * sidebar's freshness UX: `born`/`alive` are normal list items;
    * `stale` shows a "Unvalidated" tag; `orphaned` grays the row out
    * (the native store has cleared the session); `ghost` shows a
@@ -112,7 +110,7 @@ export interface SessionInfo {
 }
 
 /**
- * Keyset cursor for the work-session list (SR-R14). The `sessionId` is the
+ * Keyset cursor for a session list slice (SR-R14). The `sessionId` is the
  * stable tiebreaker within one `lastModified` so that sessions sharing a
  * timestamp are never skipped or duplicated across a page boundary — the
  * server locates this exact row in its sorted list and pages from there.
@@ -3125,7 +3123,13 @@ export type ServerToClient =
    * its window (replace / append / refresh-range / live-upsert); absent only
    * for backward compatibility.
    */
-  | { type: 'sessions'; workspaceId: string; sessions: SessionInfo[]; page?: SessionPageMeta }
+  | {
+      type: 'sessions'
+      workspaceId: string
+      sessionKind?: SessionKind
+      sessions: SessionInfo[]
+      page?: SessionPageMeta
+    }
   | {
       type: 'session_counts'
       workspaceId: string

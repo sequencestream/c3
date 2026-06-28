@@ -19,12 +19,15 @@ import type {
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
+import type { SessionPageKind } from '@/controls/state'
 
 const { t, d } = useTypedI18n()
 
 const props = defineProps<{
   currentWorkspace: string | null
   sessions: SessionInfo[]
+  activeSessionKind: SessionPageKind
+  sessionCounts: Record<SessionPageKind, number>
   /** Older sessions remain beyond the loaded window (SR-R14) — show "load more". */
   hasMore?: boolean
   /** A "load more" returned nothing — show "Fully loaded" instead of the button. */
@@ -43,6 +46,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'create-session': [path: string]
+  'select-session-kind': [kind: SessionPageKind]
   'refresh-sessions': []
   'load-more-sessions': []
   'select-session': [path: string, sessionId: string]
@@ -52,6 +56,14 @@ const emit = defineEmits<{
 
 // Stable vendor order for both the dots and the filter chips.
 const VENDOR_ORDER: readonly VendorId[] = ['claude', 'codex']
+const SESSION_KIND_TABS: readonly { key: SessionPageKind; labelKey: string; enabled: boolean }[] = [
+  { key: 'work', labelKey: 'session.kind.work', enabled: true },
+  { key: 'intent', labelKey: 'session.kind.intent', enabled: true },
+  { key: 'spec', labelKey: 'session.kind.spec', enabled: false },
+  { key: 'discussion', labelKey: 'session.kind.discussion', enabled: false },
+  { key: 'schedule', labelKey: 'session.kind.schedule', enabled: false },
+  { key: 'tool', labelKey: 'session.kind.tool', enabled: false },
+]
 
 // 面板展开态:持久化 UI 状态(同 IntentList 的折叠范式)。展开态把侧栏宽度翻倍,
 // 便于阅读较长的会话标题;收缩态回到默认窄宽。跨页面切换后保持原状。
@@ -139,6 +151,11 @@ function refreshSessions() {
   if (props.currentWorkspace) emit('refresh-sessions')
 }
 
+function selectSessionKind(kind: SessionPageKind, enabled: boolean): void {
+  if (!enabled || kind === props.activeSessionKind) return
+  emit('select-session-kind', kind)
+}
+
 function deleteSession(sessionId: string) {
   if (!props.currentWorkspace) return
   if (window.confirm(t('session.list.deleteConfirm')))
@@ -217,6 +234,22 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
         </button>
       </span>
     </div>
+    <div class="session-kind-tabs" role="tablist" :aria-label="t('session.kind.tabsLabel')">
+      <button
+        v-for="tab in SESSION_KIND_TABS"
+        :key="tab.key"
+        type="button"
+        class="session-kind-tab"
+        :class="{ active: tab.key === activeSessionKind, disabled: !tab.enabled }"
+        :aria-selected="tab.key === activeSessionKind"
+        :disabled="!tab.enabled"
+        role="tab"
+        @click="selectSessionKind(tab.key, tab.enabled)"
+      >
+        <span>{{ t(tab.labelKey as never) }}</span>
+        <span class="session-kind-count">{{ sessionCounts[tab.key] }}</span>
+      </button>
+    </div>
     <div class="ws-list">
       <p v-if="!currentWorkspace" class="empty-hint" data-testid="session-list-empty">
         {{ t('session.list.noWorkspace') }}
@@ -246,7 +279,13 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
           ></span>
           <span class="session-title">{{ activeTitle }}</span>
         </div>
-        <p v-if="filteredSessions().length === 0" class="empty-hint sub">
+        <p
+          v-if="!SESSION_KIND_TABS.find((tab) => tab.key === activeSessionKind)?.enabled"
+          class="empty-hint sub"
+        >
+          {{ t('session.kind.placeholder') }}
+        </p>
+        <p v-else-if="filteredSessions().length === 0" class="empty-hint sub">
           {{ t('session.list.empty') }}
         </p>
         <div

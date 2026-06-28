@@ -111,6 +111,7 @@ export function createWsHandler(deps: {
           send(sock, {
             type: 'sessions',
             workspaceId: pathToId(workspacePath)!,
+            sessionKind: query?.sessionKind ?? 'work',
             sessions,
             page: { kind, hasMore },
           })

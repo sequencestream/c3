@@ -128,7 +128,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // home dir is already resolved by this point (cli.ts called setSettingsPath).
   initLogging()
 
-  // ---- Wire the `work_session_metadata` projection hooks (kernel ↛ features) ----
+  // ---- Wire the `session_metadata` projection hooks (kernel ↛ features) ----
   // The kernel layer doesn't import the projection store directly (ADR-0009);
   // these composition-time callbacks mirror the kernel's bind / agent-swap /
   // run-end writes into the projection. The store is fail-soft, so a missing
@@ -207,7 +207,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     return intent?.agentId ?? null
   })
 
-  // ---- work_session_metadata projection janitor (F-9) ----
+  // ---- session_metadata projection janitor (F-9) ----
   // Runs every JANITOR_INTERVAL_MS (= STALE_MS/2 = 12h). The sweep is
   // `void`+async so a slow native `list` never blocks the heartbeat
   // timer or the event loop. The store is fail-soft (a missing db
@@ -243,7 +243,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         workspaces,
       })
     } catch (err) {
-      console.error('[c3] work_session_metadata janitor failed:', err)
+      console.error('[c3] session_metadata janitor failed:', err)
     }
   }, JANITOR_INTERVAL_MS)
 

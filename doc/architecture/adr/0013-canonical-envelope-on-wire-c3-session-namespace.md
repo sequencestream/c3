@@ -116,18 +116,21 @@ session id in memory only, so there is no migration debt).
 
 ---
 
-## Amendment: `work_session_metadata` projection table (2026-06-07; renamed from `session_metadata` 2026-06-08)
+## Amendment: unified `session_metadata` projection table (2026-06-07; generalized 2026-06-28)
 
 The cross-vendor `list_sessions` path was rewired from a per-request fan-out
-to the accessor union (above) to a direct read of a work-session-metadata
-projection table in the c3 runtime database. This amendment records the contract.
+to the accessor union (above) to a direct read of a session-metadata projection
+table in the c3 runtime database. On 2026-06-28 the former
+`work_session_metadata` table was renamed in place to `session_metadata` and
+generalized to carry six business session classes: work, intent, spec,
+discussion, schedule, and tool. This amendment records the contract.
 
 ### Projection table contract
 
-The work-session-metadata projection is a **rebuildable cache**, not a second copy of
-session content. The only source of truth for session _content_ (transcript,
-prompt, tool calls, tool results, blocks) is the vendor's native store; this
-projection holds only addressing/lifecycle metadata:
+The session-metadata projection is a **rebuildable cache**, not a second copy of
+session content. The native/vendor stores and each domain's business tables stay
+the sources of truth for session _content_ and ownership facts. This projection
+holds only addressing/lifecycle metadata for read-side aggregation:
 
 | Field             | Purpose                                                                                                                                                                    |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -139,7 +142,11 @@ projection holds only addressing/lifecycle metadata:
 | last modified     | UTC ms; stamped to the bind time on a real row (all vendors, incl. Codex — SR-R13), refined to the native transcript mtime by lazy validation; null only for pending rows. |
 | state             | Lifecycle state (born / alive / stale / orphaned / ghost).                                                                                                                 |
 | state updated at  | UTC ms; drives the STALE window and warmup policy.                                                                                                                         |
-| kind              | Real for post-bind rows, pending for pre-bind rows.                                                                                                                        |
+| kind              | Legacy binding marker retained for compatibility; read paths ignore it.                                                                                                    |
+| session kind      | Business class: work / intent / spec / discussion / schedule / tool.                                                                                                       |
+| owner kind        | Nullable logical owner kind (currently intent / discussion / schedule) used by client-side jump-back rules.                                                                |
+| owner id          | Nullable logical owner id.                                                                                                                                                 |
+| bound             | Integer boolean replacement for `kind`: real rows are `1`; work-only pending placeholders are `0`.                                                                         |
 
 **No transcript, prompt, tool-call, tool-result, or block content is ever
 written to this projection.** Pinned by a field-whitelist positive assertion
@@ -157,11 +164,12 @@ test.
 
 ### Read path
 
-The daily `list_sessions` reads the projection in a single query per
-workspace. The hidden-session / tool-session filters are applied
-downstream, not denormalized into the row. Pending rows are
-excluded from the wire list — the per-connection "viewed session" badge is the
-pending entry, not a list item.
+The daily `list_sessions` reads the projection in a single query per workspace
+and `session_kind`. The session page can therefore render per-kind tabs and
+running-count badges from one contract. Pending rows (`bound = 0`) are excluded
+from the wire list — the per-connection "viewed session" badge is the pending
+entry, not a list item. In this phase, work and intent are wired to real data;
+spec/discussion/schedule/tool rows remain valid schema targets for later phases.
 
 An environment flag (default ON) rolls the read path back to the legacy
 claude-only listing path.
@@ -170,8 +178,9 @@ claude-only listing path.
 
 | Trigger                     | Effect                                                                                                                                                                                                                                                                                                    |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Create session (UI)         | Insert a pending row (the new home for the ADR-0015 intent).                                                                                                                                                                                                                                              |
-| Freeze session agent (bind) | Drop pending row, insert real row (single entry point for both run paths).                                                                                                                                                                                                                                |
+| Create work session (UI)    | Insert a work-kind pending row (the new home for the ADR-0015 intent).                                                                                                                                                                                                                                    |
+| Freeze session agent (bind) | Drop pending row, insert real row (single entry point for both run paths); intent-started dev sessions carry `owner_kind='intent'` and `owner_id=<intent id>`, manual work sessions keep owner null.                                                                                                      |
+| Intent chat lifecycle       | Upsert intent-kind bound rows for intent communication sessions; rename/delete mirror the intent session list.                                                                                                                                                                                            |
 | Same-vendor agent swap      | Update the real row's agent.                                                                                                                                                                                                                                                                              |
 | Rename session              | Update the real row's title.                                                                                                                                                                                                                                                                              |
 | Finalize run (run end)      | Update the real row's title (resolved from the native store — the SAME source as the title bar / janitor, not the baseline which is empty on the first run; first user prompt is the fallback), last-modified, and agent, then re-broadcast the list (the async native read lands after the run settles). |
@@ -187,7 +196,7 @@ and, after a warmup (2 passes), stale → orphaned.
 ### Schema-version rule
 
 The projection store does NOT write a global schema-version pragma — the three
-domain stores (intents, discussions, work-session-metadata) would clobber each
+domain stores (intents, discussions, session-metadata) would clobber each
 other. All domain stores should follow this posture going forward; migrations
 key off per-table column introspection plus an additive ensure-column step,
 never off a global schema-version pragma.

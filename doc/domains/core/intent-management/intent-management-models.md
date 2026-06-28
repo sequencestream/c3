@@ -83,7 +83,10 @@ Relationships: every row for a project forms that project's **hidden set** (excl
 intent view without a specific `sessionId`. On its first run the `pending:` id is rebound
 to the real vendor-native id while keeping `isCurrent` and hidden-set membership. Sessions may be
 renamed or physically deleted (row + runtime removal, with `isCurrent` fallback to the most
-recent remaining session).
+recent remaining session). The session is also mirrored into `session_metadata` with
+`session_kind='intent'`; refine/back-linked sessions carry `owner_kind='intent'` and this
+intent's id so the unified Sessions page and WorkCenter can jump back without adding a
+wire-level `jumpTarget`.
 
 ## Automation Status
 
@@ -121,3 +124,7 @@ migration record). Tables: `intents`, `intent_deps`, `intent_chats`
 judge, consensus advisor) so the session-registry's "show tool sessions" filter survives restarts.
 A session's row is dropped when the session is deleted. See [intent-management-design.md](intent-management-design.md) for the
 cross-runtime driver adapter and migration handling.
+
+The cross-domain `session_metadata` projection lives outside the intent ledger's source-of-truth
+tables. Intent writes upsert/delete projection rows for list/count reads, but intent content,
+current-session selection, and hidden-set membership remain owned by `intent_chats`.

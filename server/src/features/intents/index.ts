@@ -51,6 +51,7 @@ import {
   listIntents,
   renameChatSession,
   deleteChatSession,
+  findIntentIdByAnySessionId,
   setAutomate,
   setBranchName,
   setChatSession,
@@ -97,7 +98,12 @@ import {
   readBranch,
 } from './worktree.js'
 import { resolveSpecFileAbs } from './specs-root.js'
-import { upsertPendingRow } from '../sessions/session-metadata-store.js'
+import {
+  deleteByVendorId,
+  updateRealRowTitle,
+  upsertBoundRow,
+  upsertPendingRow,
+} from '../sessions/session-metadata-store.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 // ---- Local helpers (agent binding for intent comm sessions) ----
@@ -126,6 +132,26 @@ function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
  */
 function bindIntentAgent(sessionId: string): void {
   setSessionAgent(sessionId, resolveIntentAgent().id)
+}
+
+function syncIntentSessionProjection(input: {
+  workspacePath: string
+  sessionId: string
+  title: string
+  ownerId?: string | null
+}): void {
+  const ownerId = input.ownerId ?? findIntentIdByAnySessionId(input.sessionId)
+  const agent = resolveIntentAgent()
+  upsertBoundRow({
+    sessionId: input.sessionId,
+    workspacePath: input.workspacePath,
+    vendor: resolveSessionVendor(input.sessionId),
+    agentId: agent.id,
+    title: input.title,
+    sessionKind: 'intent',
+    ownerKind: ownerId ? 'intent' : null,
+    ownerId,
+  })
 }
 
 // ---- Handlers ----
@@ -225,6 +251,7 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
   const dbSessions = listChatSessions(proj)
   const dbSession = dbSessions.find((s) => s.sessionId === chatId)
   const realTitle = dbSession?.title ?? 'New Intent'
+  syncIntentSessionProjection({ workspacePath: proj, sessionId: chatId, title: realTitle })
   conn.send({
     type: 'session_selected',
     workspaceId: pathToId(proj)!,
@@ -389,6 +416,7 @@ export const newIntentChat: Handler<'new_intent_chat'> = (ctx, conn, msg) => {
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
   bindIntentAgent(chatId)
   setChatSession(proj, chatId)
+  syncIntentSessionProjection({ workspacePath: proj, sessionId: chatId, title: 'New Intent' })
   conn.viewing = chatId
   touchWorkspace(proj, Date.now())
   addViewer(chatId, conn.deliver)
@@ -436,6 +464,12 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
   bindIntentAgent(chatId)
   setChatSession(proj, chatId, req.title)
+  syncIntentSessionProjection({
+    workspacePath: proj,
+    sessionId: chatId,
+    title: req.title,
+    ownerId: req.id,
+  })
   conn.viewing = chatId
   addViewer(chatId, conn.deliver)
   conn.send({
@@ -512,6 +546,12 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
   bindIntentAgent(chatId)
   setChatSession(proj, chatId, req.title)
+  syncIntentSessionProjection({
+    workspacePath: proj,
+    sessionId: chatId,
+    title: req.title,
+    ownerId: req.id,
+  })
   conn.viewing = chatId
   touchWorkspace(proj, Date.now())
   addViewer(chatId, conn.deliver)
@@ -572,6 +612,7 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
   bindIntentAgent(chatId)
   setChatSession(proj, chatId, discussion.title)
+  syncIntentSessionProjection({ workspacePath: proj, sessionId: chatId, title: discussion.title })
   conn.viewing = chatId
   addViewer(chatId, conn.deliver)
   conn.send({
@@ -642,6 +683,7 @@ export const renameIntentSession: Handler<'rename_intent_session'> = (ctx, conn,
   }
   try {
     renameChatSession(msg.sessionId, msg.title)
+    updateRealRowTitle(msg.sessionId, resolveSessionVendor(msg.sessionId), msg.title)
     ctx.broadcastIntentSessions(proj)
   } catch (err) {
     conn.send({
@@ -668,6 +710,7 @@ export const deleteIntentSession: Handler<'delete_intent_session'> = (ctx, conn,
     // Remove runtime (abort + drop) BEFORE the db row so no stale runtime lingers.
     removeRuntime(msg.sessionId)
     deleteChatSession(proj, msg.sessionId)
+    deleteByVendorId(resolveSessionVendor(msg.sessionId), msg.sessionId)
     if (conn.viewing === msg.sessionId) conn.viewing = null
     ctx.broadcastIntentSessions(proj)
     ctx.broadcastStatuses()

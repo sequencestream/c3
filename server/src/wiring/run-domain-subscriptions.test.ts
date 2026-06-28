@@ -39,6 +39,11 @@ vi.mock('../features/intents/store.js', () => ({
   updateStatus: vi.fn(),
   listIntents: vi.fn(() => []),
 }))
+vi.mock('../features/sessions/session-metadata-store.js', () => ({
+  deleteByVendorId: vi.fn(),
+  updateRowOwner: vi.fn(),
+  upsertBoundRow: vi.fn(),
+}))
 vi.mock('../features/intents/dev-link.js', () => ({
   clearPendingDevLink: vi.fn(() => undefined),
   releaseDevLaunch: vi.fn(),
@@ -66,6 +71,7 @@ vi.mock('../kernel/config/index.js', () => ({
   getGitBranchMode: vi.fn(() => 'current-branch'),
   getDefaultMainBranch: vi.fn(() => 'main'),
   getForgeOverride: vi.fn(() => undefined),
+  getSessionAgentId: vi.fn(() => 'agent-1'),
 }))
 vi.mock('../features/user-involve/store.js', () => ({
   cancelBySessionId: vi.fn(),
@@ -361,6 +367,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     const { takePendingDevLink } = await import('../features/intents/dev-link.js')
     const { insertIntentSession } = await import('../features/intents/store.js')
     const { resolveSessionVendor } = await import('../kernel/agent-config/index.js')
+    const { updateRowOwner } = await import('../features/sessions/session-metadata-store.js')
 
     vi.mocked(getRuntime).mockReturnValueOnce({
       workspacePath: '/proj',
@@ -378,6 +385,12 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     eb.publish('run:bound', { prevId: 'prev-1', realId: 'real-1', workspacePath: '/proj' })
 
     expect(insertIntentSession).toHaveBeenCalledWith('intent-1', 'real-1', 'codex')
+    expect(updateRowOwner).toHaveBeenCalledWith({
+      sessionId: 'real-1',
+      vendor: 'codex',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+    })
   })
 
   it('run:bound with NO pending dev link does NOT insert intent_sessions', async () => {
@@ -431,6 +444,10 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     const { getRuntime } = await import('../runs.js')
     const { takePendingIntentLink } = await import('../features/intents/intent-link.js')
     const { setIntentSessionId } = await import('../features/intents/store.js')
+    const { resolveSessionVendor } = await import('../kernel/agent-config/index.js')
+    const { deleteByVendorId, upsertBoundRow } =
+      await import('../features/sessions/session-metadata-store.js')
+    vi.mocked(resolveSessionVendor).mockReturnValue('claude')
 
     vi.mocked(getRuntime).mockReturnValue({
       workspacePath: '/proj',
@@ -447,6 +464,17 @@ describe('resident domain subscriptions — discussion + schedule', () => {
 
     expect(takePendingIntentLink).toHaveBeenCalledWith('pending-7')
     expect(setIntentSessionId).toHaveBeenCalledWith('intent-7', 'real-7')
+    expect(deleteByVendorId).toHaveBeenCalledWith('claude', 'pending-7')
+    expect(upsertBoundRow).toHaveBeenCalledWith({
+      sessionId: 'real-7',
+      workspacePath: '/proj',
+      vendor: 'claude',
+      agentId: 'agent-1',
+      title: 'New Intent',
+      sessionKind: 'intent',
+      ownerKind: 'intent',
+      ownerId: 'intent-7',
+    })
     expect(mockBroadcastIntents).toHaveBeenCalledWith('/proj')
 
     vi.mocked(getRuntime).mockReturnValue(undefined as unknown as SessionRuntime)
@@ -455,6 +483,9 @@ describe('resident domain subscriptions — discussion + schedule', () => {
   it('run:bound on a non-refine intent runtime does NOT backfill intent_session_id', async () => {
     const { getRuntime } = await import('../runs.js')
     const { setIntentSessionId } = await import('../features/intents/store.js')
+    const { resolveSessionVendor } = await import('../kernel/agent-config/index.js')
+    const { upsertBoundRow } = await import('../features/sessions/session-metadata-store.js')
+    vi.mocked(resolveSessionVendor).mockReturnValue('claude')
 
     vi.mocked(getRuntime).mockReturnValue({
       workspacePath: '/proj',
@@ -470,6 +501,16 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     eb.publish('run:bound', { prevId: 'pending-n', realId: 'real-n', workspacePath: '/proj' })
 
     expect(setIntentSessionId).not.toHaveBeenCalled()
+    expect(upsertBoundRow).toHaveBeenCalledWith({
+      sessionId: 'real-n',
+      workspacePath: '/proj',
+      vendor: 'claude',
+      agentId: 'agent-1',
+      title: 'New Intent',
+      sessionKind: 'intent',
+      ownerKind: null,
+      ownerId: null,
+    })
 
     vi.mocked(getRuntime).mockReturnValue(undefined as unknown as SessionRuntime)
   })

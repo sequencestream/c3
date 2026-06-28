@@ -32,7 +32,7 @@
     },
     "tab": {
       "console": {
-        "label": "Works"
+        "label": "Sessions"
       },
       "intents": {
         "label": "Intents"
@@ -896,7 +896,7 @@
     },
     "list": {
       "title": {
-        "label": "Work Sessions"
+        "label": "Sessions"
       },
       "refresh": {
         "tooltip": "Refresh sessions"
@@ -1068,6 +1068,16 @@
       },
       "create": "Create",
       "cancel": "Cancel"
+    },
+    "kind": {
+      "work": "Work",
+      "intent": "Intent",
+      "spec": "Spec",
+      "discussion": "Discussion",
+      "schedule": "Schedule",
+      "tool": "Tool",
+      "tabsLabel": "Session categories",
+      "placeholder": "This session type will be connected in phase two."
     }
   },
   "schedule": {

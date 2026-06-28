@@ -677,6 +677,50 @@ header h1 {
   letter-spacing: 0.5px;
   color: var(--c-text-muted);
 }
+.session-kind-tabs {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: var(--sp-2);
+  border-bottom: 1px solid var(--c-border);
+}
+.session-kind-tab {
+  min-width: 0;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-panel);
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+.session-kind-tab.active {
+  background: var(--c-primary-soft);
+  color: var(--c-text);
+  border-color: var(--c-primary-border);
+}
+.session-kind-tab.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.session-kind-count {
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--c-bg-inset);
+  color: var(--c-text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
 .ws-list {
   flex: 1;
   overflow-y: auto;

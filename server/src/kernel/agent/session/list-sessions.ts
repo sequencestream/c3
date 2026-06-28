@@ -1,6 +1,6 @@
 /**
  * The cross-vendor `list_sessions` path (ADR-0013). Replaces the claude-only
- * `listWorkspaceSessions` on the wire by reading the `work_session_metadata`
+ * `listWorkspaceSessions` on the wire by reading the `session_metadata`
  * projection table in c3.db (F-1, F-10). The accessor union stays the
  * rebuild / lazy-validation source; the daily read path is one SQL query.
  *
@@ -142,7 +142,7 @@ function accessorNativeList(accessor: SessionAccessor): NativeListFn {
 }
 
 /**
- * The session list for a workspace. Reads the `work_session_metadata` projection
+ * The session list for a workspace. Reads the `session_metadata` projection
  * (default), falling back to the legacy claude-only `listWorkspaceSessions`
  * when `C3_LIST_FROM_PROJECTION=0`. Triggers a one-shot rebuild when the
  * projection is empty (F-10) and a fire-and-forget lazy validation at

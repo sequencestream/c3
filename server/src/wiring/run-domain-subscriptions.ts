@@ -87,8 +87,17 @@ import {
   publishIntentStatusTransition,
 } from '../features/intents/lifecycle-events.js'
 import { getWorktreePath } from '../features/intents/worktree.js'
-import { getDefaultMainBranch, getForgeOverride, getGitBranchMode } from '../kernel/config/index.js'
-import { updateRowOwner } from '../features/sessions/session-metadata-store.js'
+import {
+  getDefaultMainBranch,
+  getForgeOverride,
+  getGitBranchMode,
+  getSessionAgentId,
+} from '../kernel/config/index.js'
+import {
+  deleteByVendorId,
+  updateRowOwner,
+  upsertBoundRow,
+} from '../features/sessions/session-metadata-store.js'
 import {
   cancelBySessionId,
   createEvent,
@@ -208,6 +217,18 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
         setIntentSessionId(refiningIntentId, realId)
         broadcastIntents(rt.workspacePath)
       }
+      const vendor = resolveSessionVendor(realId)
+      deleteByVendorId(resolveSessionVendor(prevId), prevId)
+      upsertBoundRow({
+        sessionId: realId,
+        workspacePath: rt.workspacePath,
+        vendor,
+        agentId: getSessionAgentId(realId) ?? '',
+        title: 'New Intent',
+        sessionKind: 'intent',
+        ownerKind: refiningIntentId ? 'intent' : null,
+        ownerId: refiningIntentId ?? null,
+      })
       broadcastIntentSessions(rt.workspacePath)
     } else if (rt.sessionKind === 'spec') {
       // ── Spec-authoring session ──

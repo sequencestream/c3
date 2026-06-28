@@ -51,7 +51,9 @@ c3 is a single local process with two halves connected by one WebSocket:
   and live status. Shared across connections so runs survive switching, refresh, and disconnect
   (ADR 0006).
 - **session-registry** — manages the workspace registry and sessions, owns
-  per-session mode and recent-access order, and persists that metadata to disk.
+  per-session mode and recent-access order, and reads list/count surfaces through the
+  rebuildable `session_metadata` projection. Native vendor stores remain the source of truth
+  for transcripts.
 - **agent-session** — drives the vendor-neutral adapter layer through its lifecycle, maps
   canonical messages onto the wire protocol, and exposes mid-run controls (mode switch, interrupt).
   Each vendor's SDK/CLI details are sealed behind its adapter — the run loop never touches SDK
@@ -112,6 +114,13 @@ c3 is a single local process with two halves connected by one WebSocket:
   intent features degrade but c3 still boots and serves normal sessions. The
   intent-communication agent reuses the runtime registry and permission gateway as a
   read-only `intent`-kind run.
+- **Session metadata projection is a unified read cache.** `session_metadata` in c3.db is the
+  renamed/generalized successor of `work_session_metadata`. It carries addressing and lifecycle
+  metadata for six session kinds (work / intent / spec / discussion / schedule / tool), including
+  optional logical owner fields for jump-back. It is rebuildable and intentionally content-free:
+  no transcript, prompt, tool call, or tool result belongs there. The current writer coverage is
+  work + intent; other kinds use the same contract as placeholders until their domain writers are
+  connected.
 - **DB migrations are idempotent, never drop tables, and roll back forward (hard rule).** Every
   c3.db schema change runs through a domain store's once-only schema-ensure and obeys this
   project-wide migration discipline:
@@ -181,8 +190,9 @@ c3 is a single local process with two halves connected by one WebSocket:
     dispatches to page containers by active tab. Page containers are **pure** (props in / emit up) —
     no domain state of their own (the queue-edit prefill is forwarded back to the composer). Pure
     logic, unit-tested view helpers, and composables sit alongside and are imported by both tiers.
-  - The works and intents pages share the chat column by each assembling it from the same shared
-    chat components, not via a wrapper component.
+  - The sessions (historical `works/` directory) and intents pages share `ChatColumn`, whose five
+    sections can be shown or hidden by props. Session jump-back is a pure frontend rule over
+    `(sessionKind, ownerKind, ownerId)` and is shared by the sessions page and WorkCenter.
   - Page containers are route-level views and may carry single-word names; their private components
     keep the multi-word naming rule.
   - Component-mounting tests run in a browser-like DOM; other tests run in node.

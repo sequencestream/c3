@@ -20,15 +20,49 @@ const emit = defineEmits<{
 
 type Frequency = 'minutely' | 'hourly' | 'daily' | 'weekly'
 
+// 0=周日 … 6=周六,顺序与文案 key 对应。
+const WEEKDAYS = computed<{ num: number; label: string }[]>(() => [
+  { num: 0, label: t('schedule.form.weekday.sun') },
+  { num: 1, label: t('schedule.form.weekday.mon') },
+  { num: 2, label: t('schedule.form.weekday.tue') },
+  { num: 3, label: t('schedule.form.weekday.wed') },
+  { num: 4, label: t('schedule.form.weekday.thu') },
+  { num: 5, label: t('schedule.form.weekday.fri') },
+  { num: 6, label: t('schedule.form.weekday.sat') },
+])
+
 const frequency = ref<Frequency>('hourly')
 const interval = ref(1)
 const hour = ref(0)
 const minute = ref(0)
-const dayOfWeek = ref('*')
+// weekly 选中的星期几数字集合(单一事实源)。
+const days = ref<number[]>([])
 
 function parseNumber(value: string, fallback: number, max: number): number {
   const parsed = Number(value)
   return Number.isInteger(parsed) && parsed >= 0 && parsed <= max ? parsed : fallback
+}
+
+// 解析 cron 的 day-of-week 字段为数字数组(支持逗号列表 `2,6` 与区间 `1-5`),
+// 与 ScheduleForm.renderDow 互逆。
+function parseDow(raw: string): number[] {
+  const list: number[] = []
+  for (const part of raw.split(',')) {
+    const m = part.match(/^(\d+)(?:-(\d+))?$/)
+    if (!m) continue
+    const lo = parseInt(m[1], 10)
+    const hi = m[2] !== undefined ? parseInt(m[2], 10) : lo
+    for (let v = lo; v <= hi; v++) if (v >= 0 && v <= 6 && !list.includes(v)) list.push(v)
+  }
+  return list.sort((a, b) => a - b)
+}
+
+// 与 ScheduleForm.renderDow 同规则:`1-5` 压缩,其余升序逗号拼接。
+function renderDow(selected: number[]): string {
+  const sorted = [...selected].sort((a, b) => a - b)
+  if (sorted.length === 0) return '*'
+  if (sorted.length === 5 && sorted.join(',') === '1,2,3,4,5') return '1-5'
+  return sorted.join(',')
 }
 
 function seedCron(expression: string): void {
@@ -45,8 +79,19 @@ function seedCron(expression: string): void {
     return
   }
   hour.value = parseNumber(hourField, 0, 23)
-  dayOfWeek.value = dowField || '*'
   frequency.value = dowField === '*' ? 'daily' : 'weekly'
+  // weekly 时回填选中的星期几;历史上被存成 `*` 的旧数据解析为空,
+  // 给一个合理默认(工作日 1-5,与新建表单一致),避免一打开即不可保存。
+  if (frequency.value === 'weekly') {
+    const parsed = parseDow(dowField)
+    days.value = parsed.length ? parsed : [1, 2, 3, 4, 5]
+  }
+}
+
+function toggleDay(num: number): void {
+  const i = days.value.indexOf(num)
+  if (i >= 0) days.value.splice(i, 1)
+  else days.value.push(num)
 }
 
 watch(
@@ -59,6 +104,7 @@ watch(
   ([open, , cronExpression]) => {
     if (open && cronExpression) seedCron(cronExpression)
   },
+  { immediate: true },
 )
 
 const resolvedCronExpression = computed(() => {
@@ -71,13 +117,18 @@ const resolvedCronExpression = computed(() => {
     case 'daily':
       return `${minute.value} ${hour.value} * * *`
     case 'weekly':
-      return `${minute.value} ${hour.value} * * ${dayOfWeek.value}`
+      return `${minute.value} ${hour.value} * * ${renderDow(days.value)}`
     default:
       return '0 * * * *'
   }
 })
 
+// weekly 必须至少选 1 个星期几才能保存;其它频率不受此约束。
+const daysInvalid = computed(() => frequency.value === 'weekly' && days.value.length === 0)
+const canSave = computed(() => !daysInvalid.value)
+
 function save(): void {
+  if (!canSave.value) return
   emit('save', resolvedCronExpression.value)
 }
 </script>
@@ -133,6 +184,22 @@ function save(): void {
             max="59"
           />
         </label>
+        <div v-if="frequency === 'weekly'" class="sce-field sce-field--stacked">
+          <span>{{ t('schedule.form.days.label') }}</span>
+          <div class="sce-days">
+            <button
+              v-for="d in WEEKDAYS"
+              :key="d.num"
+              type="button"
+              class="sce-day"
+              :class="{ active: days.includes(d.num) }"
+              @click="toggleDay(d.num)"
+            >
+              {{ d.label }}
+            </button>
+          </div>
+          <span v-if="daysInvalid" class="sce-warn">{{ t('schedule.form.days.required') }}</span>
+        </div>
         <div class="sce-preview">
           <code>{{ resolvedCronExpression }}</code
           ><span>{{ describeCron(resolvedCronExpression) }}</span>
@@ -142,7 +209,12 @@ function save(): void {
         <button type="button" class="sce-button" @click="emit('close')">
           {{ t('common.action.cancel.label') }}
         </button>
-        <button type="button" class="sce-button sce-button--primary" @click="save">
+        <button
+          type="button"
+          class="sce-button sce-button--primary"
+          :disabled="!canSave"
+          @click="save"
+        >
           {{ t('common.action.save.label') }}
         </button>
       </footer>
@@ -202,9 +274,36 @@ function save(): void {
   align-items: center;
   gap: var(--sp-2);
 }
+.sce-field--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+}
 .sce-field > span:first-child {
   min-width: 52px;
   color: var(--c-text-muted);
+}
+.sce-days {
+  display: flex;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+}
+.sce-day {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.sce-day.active {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: var(--c-accent-text, #fff);
+}
+.sce-warn {
+  font-size: var(--fs-caption);
+  color: var(--c-warning);
 }
 .sce-input {
   min-width: 0;
@@ -236,5 +335,9 @@ function save(): void {
   border-color: var(--c-accent);
   background: var(--c-accent);
   color: var(--c-accent-text, #fff);
+}
+.sce-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

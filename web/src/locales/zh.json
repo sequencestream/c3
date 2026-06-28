@@ -1321,7 +1321,8 @@
         "hint": "时 : 分(UTC)"
       },
       "days": {
-        "label": "日期"
+        "label": "日期",
+        "required": "请至少选择一个星期几"
       },
       "cron": {
         "invalid": "无效的 cron 表达式"

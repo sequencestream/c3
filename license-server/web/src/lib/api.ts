@@ -116,6 +116,22 @@ export function statusBadgeClass(status: string): string {
   }
 }
 
+// tierLabel renders a license/plan tier id as its Chinese display label. Kept
+// here (not derived from /v1/plan-tiers) so views that don't fetch the tier
+// catalog — e.g. the account page — can still label a license's tier.
+export function tierLabel(tier: string): string {
+  switch (tier) {
+    case 'free':
+      return '免费版'
+    case 'paid':
+      return '付费版'
+    case 'enterprise':
+      return '企业版'
+    default:
+      return tier
+  }
+}
+
 // loginHref builds the sign-in URL, preserving the binding round if present so
 // the user returns to the activation view after GitHub.
 export function loginHref(): string {

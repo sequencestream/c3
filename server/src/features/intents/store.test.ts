@@ -1237,6 +1237,12 @@ describe('canTransition (status guard, 7-state graph)', () => {
     expect(canTransition('todo', 'blocked')).toBe(true)
   })
 
+  // ── manual revert: the lone backward edge into an earlier non-terminal state ──
+  it('todo → draft (manual revert) is allowed; draft → todo still allowed', () => {
+    expect(canTransition('todo', 'draft')).toBe(true)
+    expect(canTransition('draft', 'todo')).toBe(true)
+  })
+
   it('in_progress → done, cancelled, blocked, failed', () => {
     expect(canTransition('in_progress', 'done')).toBe(true)
     expect(canTransition('in_progress', 'cancelled')).toBe(true)

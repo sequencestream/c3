@@ -719,17 +719,20 @@ export function upsertIntents(workspacePath: string, items: ProposedIntent[]): I
  *
  * Transition graph (7-state):
  * ```
- * draft ──→ todo ──→ in_progress ──→ failed ──→ todo
- *   │         │            │            │
- *   │         │            └──→ blocked ──→ todo
- *   │         │                 │
- *   │         └──→ cancelled    └──→ cancelled
+ * draft ⇄ todo ──→ in_progress ──→ failed ──→ todo
+ *   │        │            │            │
+ *   │        │            └──→ blocked ──→ todo
+ *   │        │                 │
+ *   │        └──→ cancelled    └──→ cancelled
  *   │
  *   └──→ blocked
  *   └──→ cancelled
  *
  *              in_progress ──→ done
  * ```
+ * `draft ⇄ todo` is bidirectional: `draft → todo` is the normal promotion, and
+ * `todo → draft` is a manual revert (the only backward edge into a non-terminal
+ * earlier state, exposed by the intent detail title-bar buttons).
  * Terminal states (`done`, `cancelled`) have no outgoing edges.
  * Same-state transitions are always allowed (no-op).
  */
@@ -737,7 +740,7 @@ export function canTransition(from: IntentStatus, to: IntentStatus): boolean {
   if (from === to) return true
   const ALLOWED: Record<IntentStatus, readonly IntentStatus[]> = {
     draft: ['todo', 'cancelled', 'blocked'],
-    todo: ['in_progress', 'cancelled', 'blocked'],
+    todo: ['draft', 'in_progress', 'cancelled', 'blocked'],
     in_progress: ['done', 'cancelled', 'blocked', 'failed'],
     done: [],
     cancelled: [],

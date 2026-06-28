@@ -693,6 +693,12 @@
       "refine": {
         "label": "다듬기"
       },
+      "markTodo": {
+        "label": "할 일로"
+      },
+      "backToDraft": {
+        "label": "초안으로 되돌리기"
+      },
       "startDev": {
         "label": "개발 시작"
       },

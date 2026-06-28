@@ -259,7 +259,7 @@ describe('AppHeader.vue — license badge 有效期(PL-R7)', () => {
     }
   })
 
-  it('按 plan 层级在右上角 badge 展示 free / paid / enterprise', () => {
+  it('右上角触发器仅 free 显示版本文字,paid/enterprise 不显示;下拉首行三种套餐均显示', () => {
     for (const [plan, label] of [
       ['free', 'Free'],
       ['paid', 'Paid'],
@@ -275,7 +275,12 @@ describe('AppHeader.vue — license badge 有效期(PL-R7)', () => {
           licenseKey: 'lk',
         }),
       } as never)
-      expect(w.find('.license-plan').text()).toBe(label)
+      if (plan === 'free') {
+        expect(w.find('.license-plan').text()).toBe(label)
+      } else {
+        expect(w.find('.license-plan').exists()).toBe(false)
+      }
+      // 下拉首行对三种套餐都展示对应版本文字,证明下拉信息未受影响
       expect(w.find('.license-info-row').text()).toBe(label)
     }
   })

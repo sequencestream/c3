@@ -98,41 +98,18 @@ export function installWorkcenterActions(ctx: AppCtx): void {
     }
   }
 
-  // sessionKind=intent 路由：
-  //   sessionId 匹配 intent.intentSessionId → 选中意图，展示意图会话 tab
-  //   sessionId 匹配 intent.specSessionId   → 选中意图，展示 spec 会话 tab
-  //   无匹配 → 切到会话列表 tab，选中对应会话
+  // sessionKind=intent 路由：始终进入意图页面的「意图会话」列表视图。
+  //   有 sessionId → 切到会话列表 tab，右栏展示该会话；命中首页列表则左侧高亮。
+  //   无 sessionId → 仅停在意图页，不做选择。
   function jumpToIntent(workspace: string, sessionId: string | null): void {
     ctx.openIntents(workspace)
     if (!sessionId) {
       ctx.requestedMergedTab.value = null
+      ctx.requestedIntentId.value = null
       ctx.requestedIntentSubTab.value = null
       return
     }
 
-    const workspaceIntents = ctx.intents.value[workspace] ?? []
-
-    // Case 1: sessionId == intent.intentSessionId → select intent + show intentSession tab
-    const intentBySessionId = workspaceIntents.find((i) => i.intentSessionId === sessionId)
-    if (intentBySessionId) {
-      ctx.requestedIntentId.value = intentBySessionId.id
-      ctx.requestedIntentSubTab.value = 'intentSession'
-      ctx.requestedMergedTab.value = null
-      ctx.selectIntentSession(sessionId)
-      return
-    }
-
-    // Case 2: sessionId == intent.specSessionId → select intent + show specSession tab
-    const intentBySpecId = workspaceIntents.find((i) => i.specSessionId === sessionId)
-    if (intentBySpecId) {
-      ctx.requestedIntentId.value = intentBySpecId.id
-      ctx.requestedIntentSubTab.value = 'specSession'
-      ctx.requestedMergedTab.value = null
-      ctx.openSpecSession(intentBySpecId.id)
-      return
-    }
-
-    // Case 3: no match → show session list tab + select the session
     ctx.requestedIntentId.value = null
     ctx.requestedIntentSubTab.value = null
     ctx.requestedMergedTab.value = 'sessions'

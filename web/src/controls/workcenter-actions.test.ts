@@ -2,10 +2,10 @@
  * WorkCenter `jumpToSource` — the per-sessionKind workspace + sessionId routing contract.
  *
  * Pins that each `sessionKind` lands on the right tab + object using the event's
- * opaque `workspaceId`, that an `intent` sessionId resolves against the loaded lists
- * (intentSessionId → specSessionId → comm session → degrade), that `spec` opens the
- * owning intent's spec session, and that a never-prompting / unknown kind degrades to
- * the console.
+ * opaque `workspaceId`, that an `intent` sessionId always routes to the unified
+ * "意图会话" session-list view (sessions tab + select session, no sub-tab), that
+ * `spec` opens the owning intent's spec session, and that a never-prompting /
+ * unknown kind degrades to the console.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
@@ -155,25 +155,38 @@ describe('jumpToSource', () => {
 
   // ── intent ─────────────────────────────────────────────────────────────────
 
-  it('intent + sessionId matching intentSessionId → select intent, show intentSession tab', () => {
-    const { ctx, openIntents, selectIntentSession, requestedIntentId, requestedIntentSubTab } =
-      makeCtx({ intents: [intent('i1', { intentSessionId: 'sess-1' })] })
+  it('intent + sessionId matching intentSessionId → sessions tab + select session (unified)', () => {
+    const {
+      ctx,
+      openIntents,
+      selectIntentSession,
+      requestedIntentId,
+      requestedIntentSubTab,
+      requestedMergedTab,
+    } = makeCtx({ intents: [intent('i1', { intentSessionId: 'sess-1' })] })
     ctx.jumpToSource(event({ sessionKind: 'intent', sessionId: 'sess-1' }))
     expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(requestedIntentId.value).toBe('i1')
-    expect(requestedIntentSubTab.value).toBe('intentSession')
+    expect(requestedMergedTab.value).toBe('sessions')
     expect(selectIntentSession).toHaveBeenCalledWith('sess-1')
+    expect(requestedIntentId.value).toBeNull()
+    expect(requestedIntentSubTab.value).toBeNull()
   })
 
-  it('intent + sessionId matching specSessionId → select intent, show specSession tab', () => {
-    const { ctx, openIntents, openSpecSession, requestedIntentId, requestedIntentSubTab } = makeCtx(
-      { intents: [intent('i1', { specSessionId: 'spec-1' })] },
-    )
+  it('intent + sessionId matching specSessionId → sessions tab + select session (unified)', () => {
+    const {
+      ctx,
+      openIntents,
+      selectIntentSession,
+      requestedIntentId,
+      requestedIntentSubTab,
+      requestedMergedTab,
+    } = makeCtx({ intents: [intent('i1', { specSessionId: 'spec-1' })] })
     ctx.jumpToSource(event({ sessionKind: 'intent', sessionId: 'spec-1' }))
     expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(requestedIntentId.value).toBe('i1')
-    expect(requestedIntentSubTab.value).toBe('specSession')
-    expect(openSpecSession).toHaveBeenCalledWith('i1')
+    expect(requestedMergedTab.value).toBe('sessions')
+    expect(selectIntentSession).toHaveBeenCalledWith('spec-1')
+    expect(requestedIntentId.value).toBeNull()
+    expect(requestedIntentSubTab.value).toBeNull()
   })
 
   it('intent + sessionId matching comm session → sessions tab + select session', () => {

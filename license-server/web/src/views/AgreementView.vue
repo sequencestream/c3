@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { getJSON } from '../lib/api'
+import { useTypedI18n } from '../i18n'
+
+const { t } = useTypedI18n()
 
 interface Agreement {
   title: string
@@ -29,7 +32,7 @@ const blocks = computed<AgreementBlock[]>(() => {
 onMounted(async () => {
   const res = await getJSON<Agreement>('/v1/agreement')
   if (!res.ok || !res.data) {
-    error.value = res.error || '协议加载失败。'
+    error.value = res.error || t('agreement.errorLoadFailed')
     return
   }
   agreement.value = res.data
@@ -40,10 +43,10 @@ onMounted(async () => {
 <template>
   <main class="ls-card agreement-page">
     <p v-if="error" class="error">{{ error }}</p>
-    <p v-else-if="!agreement" class="note">加载中…</p>
+    <p v-else-if="!agreement" class="note">{{ t('common.loading') }}</p>
     <template v-else>
       <h1>{{ agreement.title }}</h1>
-      <p class="note">版本 {{ agreement.version }}</p>
+      <p class="note">{{ t('agreement.version', { version: agreement.version }) }}</p>
       <article class="agreement-body">
         <template v-for="(block, index) in blocks" :key="index">
           <h2 v-if="block.kind === 'heading'">{{ block.text }}</h2>

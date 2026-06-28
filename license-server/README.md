@@ -49,6 +49,30 @@ license-server/
 接口清单与每个接口的请求/返回参数见
 [架构规范 §10 接口参数明细](../doc/architecture/license-server-architecture.md)。
 
+## 前端国际化(i18n)
+
+`web/` 用 [`vue-i18n`](https://vue-i18n.intlify.dev/) 做中英双语,右上角有全局语言切换;
+所选语言写入 `localStorage`(键 `c3ls.uiLang`),刷新后保持。首屏语言:`localStorage` →
+`navigator.language`(`zh*` → 中文,其余 → 英文)→ 默认中文。
+
+- **资源文件**:`web/src/locales/zh.json` 与 `web/src/locales/en.json`。`zh.json` 是基准,
+  其结构推导出编译期 key 类型 —— 拼错的 key 会在 `npm run build`(`vue-tsc --noEmit`)阶段报错。
+- **装配**:`web/src/i18n/index.ts`(`createI18n` + `setLocale` 切换/持久化 helper);
+  `main.ts` 经 `app.use(i18n)` 注册。
+- **用法**:组件里 `const { t } = useTypedI18n()`,模板用 `t('account.title')`;含变量的句子用
+  `t('agreement.version', { version })` 或模板里的 `<i18n-t keypath="…">`(变量走具名插槽)。
+  组件外(如 `lib/`)用 `import { t } from '../i18n'` 的全局 `t`。
+
+**新增/维护文案约定:**
+
+1. 按英文语义命名 key,沿用主 `web` 的 `doc/style/i18n-spec.md` 风格(`view.purpose` 点分层级)。
+2. **`zh.json` 与 `en.json` 必须同时补齐同一 key**(键集合一致),否则会触发 fallback 警告;
+   `web/src/i18n/i18n.test.ts` 有一条「键集合一致」测试守这条线。
+3. 只本地化**前端渲染**的固定文案(标题、按钮、表单标签、前端生成的提示/错误兜底文案等)。
+   **不翻译后端返回的展示数据**:套餐名 `PlanTier.name` / `Plan.name`、权益表 `TierCapability.*`、
+   协议 `title`/`markdown`、接口 `error.message` —— 这些按服务端返回原样渲染。
+4. 改完跑 `cd web && npm run build`(重建内嵌 `dist/`)与 `npx vitest run`。
+
 ## 配置
 
 全部配置由环境变量驱动,无配置文件。机密绝不写入日志或 `/healthz`(脱敏为 `set`/`unset`)。

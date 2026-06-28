@@ -1,6 +1,17 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
-import { getJSON, postJSON, formatPrice, formatDate, loginHref, type Plan, type License } from '../lib/api'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import {
+  getJSON,
+  postJSON,
+  formatPrice,
+  formatDate,
+  loginHref,
+  tierLabel,
+  type Plan,
+  type License,
+  type PlanTier,
+  type TierCapability,
+} from '../lib/api'
 
 // Renewal checkout (§4): the agreement is shown HERE (not at sign-in). On submit
 // the server derives the amount from the plan and returns a WeChat Native QR.
@@ -14,6 +25,8 @@ const loading = ref(true)
 const error = ref('')
 const plans = ref<Plan[]>([])
 const licenses = ref<License[]>([])
+const tiers = ref<PlanTier[]>([])
+const capabilities = ref<TierCapability[]>([])
 const agreement = ref<Agreement | null>(null)
 const planKey = ref('')
 const licenseId = ref<number | null>(null)
@@ -21,6 +34,28 @@ const accept = ref(false)
 const submitting = ref(false)
 const qrDataUri = ref('')
 const orderNo = ref('')
+
+// Plans split into two columns by tier. Each column keeps the server's
+// sort_order (the catalog returns shortest-term-first), so we only filter here.
+const paidPlans = computed(() => plans.value.filter((p) => p.tier === 'paid'))
+const enterprisePlans = computed(() => plans.value.filter((p) => p.tier === 'enterprise'))
+
+// tierName resolves a tier id to its display label from /v1/plan-tiers, falling
+// back to the raw id so a missing tiers fetch never blanks the column heading.
+function tierName(tier: string): string {
+  return tiers.value.find((t) => t.tier === tier)?.name ?? tier
+}
+
+// selectedLicense is the renewal target the disable rule keys off of.
+const selectedLicense = computed(() => licenses.value.find((l) => l.licenseId === licenseId.value) ?? null)
+
+// paidDisabled mirrors the server's per-license ErrTierDowngradeBlocked gate:
+// when the renewal target is an active enterprise license, only enterprise plans
+// may renew it. termEnd is Unix seconds (same unit as formatDate). This is a UX
+// guard, not a security boundary — the server stays the authoritative gate.
+const paidDisabled = computed(
+  () => selectedLicense.value?.tier === 'enterprise' && selectedLicense.value.termEnd * 1000 > Date.now(),
+)
 // payStatus tracks the order once the QR is shown: '' before checkout, then
 // pending → paid/expired/failed as the status poll observes the settlement done
 // by the WeChat callback or the every-15s server reconcile job.
@@ -58,17 +93,34 @@ onMounted(async () => {
     window.location.href = loginHref()
     return
   }
-  const [p, l, a] = await Promise.all([
+  const [p, l, a, t] = await Promise.all([
     getJSON<{ plans: Plan[] }>('/v1/plans'),
     getJSON<{ licenses: License[] }>('/v1/licenses'),
     getJSON<Agreement>('/v1/agreement'),
+    getJSON<{ tiers: PlanTier[]; capabilities: TierCapability[] }>('/v1/plan-tiers'),
   ])
   plans.value = p.data?.plans ?? []
   licenses.value = l.data?.licenses ?? []
   agreement.value = a.data
-  if (plans.value.length) planKey.value = plans.value[0].planKey
+  tiers.value = t.data?.tiers ?? []
+  capabilities.value = t.data?.capabilities ?? []
   if (licenses.value.length) licenseId.value = licenses.value[0].licenseId
+  // Default the selection to the first selectable plan: skip the paid column when
+  // the (default) target is an active enterprise license.
+  if (plans.value.length) {
+    const first = paidDisabled.value ? (enterprisePlans.value[0] ?? null) : plans.value[0]
+    planKey.value = first?.planKey ?? ''
+  }
   loading.value = false
+})
+
+// When the target license flips to active-enterprise (on mount or on switching
+// licenses), a paid plan can no longer renew it — clear the selection so the
+// order button never submits a plan the server would reject with a 400.
+watch(paidDisabled, (disabled) => {
+  if (disabled && paidPlans.value.some((p) => p.planKey === planKey.value)) {
+    planKey.value = ''
+  }
 })
 
 async function submit(): Promise<void> {
@@ -104,7 +156,7 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <main class="ls-card">
+  <main class="ls-card wide checkout-wide">
     <h1>续费 / Renew</h1>
     <p class="note"><a href="/plans">查看套餐对比 / Compare plans →</a></p>
     <p v-if="loading" class="note">加载中…</p>
@@ -127,17 +179,61 @@ async function submit(): Promise<void> {
     </template>
 
     <template v-else-if="!loading">
-      <h2>选择套餐</h2>
-      <label v-for="p in plans" :key="p.planKey" class="opt">
-        <input type="radio" name="plan" :value="p.planKey" v-model="planKey" />
-        <span>{{ p.name }} · {{ p.tier }}</span><span class="price">{{ formatPrice(p.priceCents, p.currency) }}</span>
-      </label>
-      <p v-if="!plans.length" class="note">暂无可购买套餐。</p>
+      <h2>权益对比 / Compare plans</h2>
+      <table v-if="capabilities.length" class="tier-compare" data-testid="tier-compare">
+        <thead>
+          <tr>
+            <th>权益 / Capability</th>
+            <th>{{ tierName('free') }}</th>
+            <th>{{ tierName('paid') }}</th>
+            <th>{{ tierName('enterprise') }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="row in capabilities" :key="row.label">
+            <td>{{ row.label }}</td>
+            <td>{{ row.free }}</td>
+            <td>{{ row.paid }}</td>
+            <td>{{ row.enterprise }}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>选择套餐 / Choose a plan</h2>
+      <div class="plan-cols">
+        <section class="plan-col" data-testid="free-col">
+          <h3>{{ tierName('free') }}</h3>
+          <p class="note">免费版无需购买,不提供可选套餐。</p>
+        </section>
+
+        <section class="plan-col" :class="{ 'is-disabled': paidDisabled }" data-testid="paid-col">
+          <h3>{{ tierName('paid') }}</h3>
+          <p v-if="paidDisabled" class="note disabled-hint" data-testid="paid-disabled-hint">
+            所选 license 为活跃企业版,付费套餐不可用于续期,请选择企业套餐。
+          </p>
+          <label v-for="p in paidPlans" :key="p.planKey" class="opt" :class="{ 'opt-disabled': paidDisabled }">
+            <input type="radio" name="plan" :value="p.planKey" v-model="planKey" :disabled="paidDisabled" />
+            <span>{{ p.name }}</span><span class="price">{{ formatPrice(p.priceCents, p.currency) }}</span>
+          </label>
+          <p v-if="!paidPlans.length" class="note">暂无付费套餐。</p>
+        </section>
+
+        <section class="plan-col" data-testid="enterprise-col">
+          <h3>{{ tierName('enterprise') }}</h3>
+          <label v-for="p in enterprisePlans" :key="p.planKey" class="opt">
+            <input type="radio" name="plan" :value="p.planKey" v-model="planKey" />
+            <span>{{ p.name }}</span><span class="price">{{ formatPrice(p.priceCents, p.currency) }}</span>
+          </label>
+          <p v-if="!enterprisePlans.length" class="note">暂无企业套餐。</p>
+        </section>
+      </div>
 
       <h2>续期目标 license</h2>
       <label v-for="l in licenses" :key="l.licenseId" class="opt">
         <input type="radio" name="lic" :value="l.licenseId" v-model="licenseId" />
-        <code class="key">{{ l.licenseKey }}</code><span class="price">{{ formatDate(l.termEnd) }}</span>
+        <code class="key">{{ l.licenseKey }}</code>
+        <span class="badge" data-testid="lic-tier">{{ tierLabel(l.tier) }}</span>
+        <span class="price">{{ formatDate(l.termEnd) }}</span>
       </label>
       <p v-if="!licenses.length" class="note">此账号暂无可续期 license。</p>
 
@@ -151,3 +247,47 @@ async function submit(): Promise<void> {
     </template>
   </main>
 </template>
+
+<style scoped>
+/* Checkout needs room for the three-column comparison + picker, so it overrides
+ * the shared .ls-card.wide cap (52rem) at ~150% of that width. */
+.checkout-wide {
+  max-width: 78rem;
+}
+/* Three-column plan picker: free / paid / enterprise, left to right. Collapses to
+ * a single column on narrow viewports so the cards never get cramped. */
+.plan-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--sp-4);
+  align-items: start;
+}
+@media (max-width: 48rem) {
+  .plan-cols {
+    grid-template-columns: 1fr;
+  }
+}
+.plan-col h3 {
+  font-size: var(--fs-title-sm);
+  font-weight: 600;
+  margin: 0 0 var(--sp-2);
+  color: var(--c-text);
+}
+.plan-col.is-disabled h3 {
+  color: var(--c-text-muted);
+}
+.disabled-hint {
+  color: var(--c-warning);
+}
+/* Disabled paid options read as inert: dimmed, no pointer affordance, no hover. */
+.opt.opt-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.opt.opt-disabled:hover {
+  background: var(--c-card);
+}
+.tier-compare {
+  margin-top: var(--sp-4);
+}
+</style>

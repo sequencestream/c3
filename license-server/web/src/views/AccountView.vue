@@ -6,6 +6,7 @@ import {
   formatDate,
   loginHref,
   statusBadgeClass,
+  tierLabel,
   type License,
   type Order,
 } from '../lib/api'
@@ -62,7 +63,7 @@ onMounted(async () => {
               <code class="key">{{ l.licenseKey }}</code>
             </td>
             <td><span :class="statusBadgeClass(l.status)">{{ l.status }}</span></td>
-            <td>{{ l.tier }}</td>
+            <td>{{ tierLabel(l.tier) }}</td>
             <td>{{ formatDate(l.termEnd) }}</td>
             <td>{{ l.aliveInstallId || '未绑定' }}</td>
           </tr>

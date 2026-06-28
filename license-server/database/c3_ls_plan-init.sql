@@ -21,5 +21,6 @@ VALUES
     ('1m', '1 Month',  1,  100,  'CNY', 0, 'paid'),
     ('6m', '6 Months', 6,  590,  'CNY', 1, 'paid'),
     ('1y', '1 Year',   12, 1090, 'CNY', 2, 'paid'),
-    ('enterprise-1y', 'Enterprise 1 Year', 12, 10000, 'CNY', 3, 'enterprise')
+    ('enterprise-6m', 'Enterprise 6 Months', 6, 5900, 'CNY', 3, 'enterprise'),
+    ('enterprise-1y', 'Enterprise 1 Year', 12, 9900, 'CNY', 4, 'enterprise')
 ON CONFLICT (plan_key) DO NOTHING;

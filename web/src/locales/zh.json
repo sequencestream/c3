@@ -625,9 +625,6 @@
       "timeout": "未能确认 Spec 会话启动,请重试。"
     },
     "chat": {
-      "title": {
-        "label": "意图对话"
-      },
       "loading": "加载会话中…"
     },
     "list": {
@@ -740,45 +737,6 @@
       },
       "locked": {
         "toast": "仅待办状态的意图可切换自动/手动模式"
-      }
-    },
-    "sessionList": {
-      "title": {
-        "label": "意图会话"
-      },
-      "new": {
-        "tooltip": "新建会话"
-      },
-      "empty": "暂无意图会话",
-      "placeholder": {
-        "label": "新建会话"
-      },
-      "rename": {
-        "tooltip": "重命名",
-        "placeholder": "会话标题"
-      },
-      "delete": {
-        "tooltip": "删除"
-      },
-      "deleteConfirm": "确定删除此意图会话?",
-      "select": {
-        "label": "打开会话: {title}"
-      },
-      "active": {
-        "label": "进行中"
-      },
-      "completed": {
-        "label": "已完成"
-      },
-      "loadMore": {
-        "label": "加载更多 ↓",
-        "tooltip": "显示更多已完成的会话"
-      },
-      "collapse": {
-        "tooltip": "收起会话列表"
-      },
-      "expand": {
-        "tooltip": "展开会话列表"
       }
     },
     "meta": {

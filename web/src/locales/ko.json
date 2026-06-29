@@ -626,9 +626,6 @@
       "timeout": "Spec 세션 시작을 확인할 수 없습니다."
     },
     "chat": {
-      "title": {
-        "label": "의도 채팅"
-      },
       "loading": "세션 불러오는 중…"
     },
     "list": {
@@ -741,45 +738,6 @@
       },
       "locked": {
         "toast": "할 일 상태의 인텐트만 자동/수동 모드를 전환할 수 있습니다"
-      }
-    },
-    "sessionList": {
-      "title": {
-        "label": "Intent Sessions"
-      },
-      "new": {
-        "tooltip": "New session"
-      },
-      "empty": "No intent sessions yet",
-      "placeholder": {
-        "label": "New Session"
-      },
-      "rename": {
-        "tooltip": "Rename",
-        "placeholder": "Session title"
-      },
-      "delete": {
-        "tooltip": "Delete"
-      },
-      "deleteConfirm": "Delete this intent session?",
-      "select": {
-        "label": "Open session: {title}"
-      },
-      "active": {
-        "label": "Active"
-      },
-      "completed": {
-        "label": "Completed"
-      },
-      "loadMore": {
-        "label": "Load more ↓",
-        "tooltip": "Show more completed sessions"
-      },
-      "collapse": {
-        "tooltip": "Collapse session list"
-      },
-      "expand": {
-        "tooltip": "Expand session list"
       }
     },
     "meta": {

@@ -473,6 +473,7 @@ export function createState(deps: StateDeps) {
   // and carried on `session_selected`); null ⇒ plain session ⇒ no jump button.
   // Refreshed/cleared on every (re)select, same lifecycle as `activeVendor`.
   const activeLinkedIntentId = ref<string | null>(null)
+  const activeLinkedScheduleId = ref<string | null>(null)
   // One-shot request to select a specific intent on the intents page (set by the
   // title-bar jump button, consumed + cleared by Intents.vue once applied).
   const requestedIntentId = ref<string | null>(null)
@@ -690,6 +691,7 @@ export function createState(deps: StateDeps) {
     activeVendor,
     activeAgentSwitch,
     activeLinkedIntentId,
+    activeLinkedScheduleId,
     requestedIntentId,
     requestedWorkSessionId,
     requestedIntentSubTab,

@@ -542,6 +542,25 @@ export function countRunningSchedules(workspacePath: string): number {
   return row?.count ?? 0
 }
 
+export function countRunningScheduleSessions(workspacePath: string): number {
+  const d = db()
+  if (!d) return 0
+  const row = d.get<{ count: number }>(
+    `SELECT COUNT(DISTINCT sm.vendor_session_id) AS count
+       FROM session_metadata sm
+       JOIN schedules s ON sm.owner_kind='schedule' AND sm.owner_id=s.id
+       JOIN schedule_execution_logs l
+         ON l.schedule_id=s.id AND l.session_id=sm.vendor_session_id
+      WHERE sm.workspace_path=?
+        AND sm.session_kind='schedule'
+        AND sm.bound=1
+        AND l.status='running'
+        AND sm.vendor_session_id IS NOT NULL`,
+    resolve(workspacePath),
+  )
+  return row?.count ?? 0
+}
+
 /**
  * Insert a schedule with status `active` and return the hydrated row.
  *

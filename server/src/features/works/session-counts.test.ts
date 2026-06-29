@@ -10,6 +10,11 @@ import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { getSessionCounts } from './index.js'
 import { resetStoreForTests, upsertBoundRow } from './work-session-store.js'
+import {
+  appendExecutionLog,
+  createSchedule,
+  resetStoreForTests as resetScheduleStoreForTests,
+} from '../schedules/store.js'
 
 let dir: string
 let proj: string
@@ -23,6 +28,7 @@ beforeEach(() => {
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   resetDbForTests()
   resetStoreForTests()
+  resetScheduleStoreForTests()
   resetStateCacheForTests()
   proj = join(dir, 'proj')
   mkdirSync(proj)
@@ -37,6 +43,7 @@ afterEach(() => {
   removeRuntime('discussion-running')
   resetDbForTests()
   resetStoreForTests()
+  resetScheduleStoreForTests()
   resetStateCacheForTests()
   if (prevClaudeConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR
   else process.env.CLAUDE_CONFIG_DIR = prevClaudeConfigDir
@@ -101,6 +108,36 @@ describe('getSessionCounts', () => {
       ownerKind: 'intent',
       ownerId: 'intent-3',
     })
+    const schedule = createSchedule({
+      type: 'llm',
+      config: { prompt: 'run' },
+      workspaceId,
+      vendor: 'claude',
+      agentId: 'agent-schedule',
+      triggerType: 'cron',
+      cronExpression: '0 1 * * *',
+      mode: 'default',
+    })
+    upsertBoundRow({
+      sessionId: 'schedule-running',
+      workspacePath: proj,
+      vendor: 'claude',
+      agentId: 'agent-schedule',
+      title: 'Schedule run',
+      sessionKind: 'schedule',
+      ownerKind: 'schedule',
+      ownerId: schedule.id,
+    })
+    appendExecutionLog({
+      scheduleId: schedule.id,
+      startedAt: Date.now(),
+      finishedAt: null,
+      exitCode: null,
+      output: '',
+      error: null,
+      status: 'running',
+      sessionId: 'schedule-running',
+    })
     upsertBoundRow({
       sessionId: 'discussion-running',
       workspacePath: proj,
@@ -151,7 +188,7 @@ describe('getSessionCounts', () => {
           intent: 1,
           spec: 1,
           discussion: 1,
-          schedule: 0,
+          schedule: 1,
           tool: 0,
         },
       },

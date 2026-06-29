@@ -954,6 +954,10 @@
         "label": "意図",
         "ariaLabel": "このセッションを作成した意図を開く"
       },
+      "schedule": {
+        "label": "スケジュール",
+        "ariaLabel": "このセッションを作成したスケジュールを開く"
+      },
       "mode": {
         "ariaLabel": "権限モード"
       },

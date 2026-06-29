@@ -37,7 +37,7 @@ vi.mock('../../state.js', () => ({
   setSessionMode: vi.fn(),
   touchWorkspace: vi.fn(),
 }))
-vi.mock('./work-session-store.js', () => ({
+vi.mock('../sessions/session-metadata-store.js', () => ({
   upsertPendingRow: vi.fn(),
   getByC3Id: vi.fn(() => null),
 }))
@@ -62,7 +62,7 @@ vi.mock('../intents/store.js', () => ({ findIntentIdBySessionId: vi.fn(() => nul
 import { selectSession } from './index.js'
 import { loadHistory, sessionTitle } from '../../sessions.js'
 import { resolveSessionVendor } from '../../kernel/agent-config/index.js'
-import { getByC3Id } from './work-session-store.js'
+import { getByC3Id } from '../sessions/session-metadata-store.js'
 import { findIntentIdBySessionId } from '../intents/store.js'
 import { CodexSessionStore } from '../../kernel/agent/adapters/codex/index.js'
 
@@ -200,5 +200,25 @@ describe('select_session', () => {
     })
     const sel = conn.sent.find((m) => m.type === 'session_selected')
     expect(sel?.linkedIntentId).toBeUndefined()
+  })
+
+  it('projection-owned schedule session → session_selected carries owner metadata', async () => {
+    vi.mocked(getByC3Id).mockReturnValue({
+      title: 'Schedule: Nightly review',
+      sessionKind: 'schedule',
+      ownerKind: 'schedule',
+      ownerId: 'schedule-1',
+    } as never)
+    const conn = fakeConn()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspaceId: '/abs/proj',
+      sessionId: 'schedule-session-1',
+    })
+    const sel = conn.sent.find((m) => m.type === 'session_selected')
+    expect(sel?.sessionKind).toBe('schedule')
+    expect(sel?.ownerKind).toBe('schedule')
+    expect(sel?.ownerId).toBe('schedule-1')
   })
 })

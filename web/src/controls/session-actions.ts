@@ -27,6 +27,7 @@ export function installSessionActions(ctx: AppCtx): void {
     activeTitle,
     activeVendor,
     activeAgentSwitch,
+    activeLinkedScheduleId,
     messages,
     counters,
     availableCommands,
@@ -300,6 +301,7 @@ export function installSessionActions(ctx: AppCtx): void {
     activeTitle.value = ''
     activeVendor.value = null
     activeAgentSwitch.value = null
+    activeLinkedScheduleId.value = null
     messages.value = []
     counters.nextId = 1
     availableCommands.value = []

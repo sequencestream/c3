@@ -953,6 +953,10 @@
         "label": "Intent",
         "ariaLabel": "Open the intent that created this session"
       },
+      "schedule": {
+        "label": "Schedule",
+        "ariaLabel": "Open the schedule that created this session"
+      },
       "mode": {
         "ariaLabel": "Permission mode"
       },

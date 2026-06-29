@@ -26,6 +26,7 @@ flowchart TD
     ID --> LLM[llm_prompt → agent session]
     CMD --> LOG[(execution log)]
     LLM --> LOG
+    LLM --> SM[(session_metadata projection)]
 ```
 
 ## Write path — propose → confirm
@@ -49,7 +50,7 @@ A schedule's trigger is one of two (`SCH-R17`):
   (`SystemSettings.timezone`, DST-aware, `SCH-R3a`), then recomputes `nextRunAt`. Only `active`
   schedules are evaluated (`SCH-R5`).
 - **`event`.** A `run:started` / `run:settled`, `pr:operation`, or `intent:lifecycle` kernel-bus event (published by the relevant domain on
-  every run, ADR-0018) fires the schedule when **all** hold: the event's run `kind` is `session`
+  every run, ADR-0018) fires the schedule when **all** hold: the event's `sessionKind` is `work`
   (internal intent/discussion runs never fire user schedules), the workspace matches, and — for
   `run:settled` — the terminal `reason` passes the optional `eventReasonFilter` (`SCH-R18`). Event
   schedules carry no `cronExpression`/`nextRunAt` and are never tick-evaluated (`SCH-R17`).
@@ -74,8 +75,10 @@ not modify an intent and cannot publish another intent lifecycle event.
 4. **`llm_prompt` ⇒ agent session.** A fresh agent session starts via agent-session with the
    workspace context; the prompt is the first user turn. The agent `sessionId` is captured from the
    first SDK event and persisted on the log immediately (so the transcript stays reachable even if
-   the run later fails). The run streams into the log; terminal `complete`/`error` maps to
-   `success`/`failed` (`SCH-R13`). Vendor routing resolves the first enabled agent of
+   the run later fails). At the same point c3 fail-soft upserts `session_metadata` with
+   `session_kind='schedule'`, `owner_kind='schedule'`, `owner_id=<schedule.id>`, so the sessions
+   page schedule tab can show the still-running execution. The run streams into the log; terminal
+   `complete`/`error` maps to `success`/`failed` (`SCH-R13`). Vendor routing resolves the first enabled agent of
 5. **Execution identity governs permissions (`SCH-R9`).** `read-only` ⇒ `plan`-equivalent, any write
    tool denied; `sandboxed` ⇒ a curated allowlist, off-list tools denied silently; `full-access` ⇒
    the workspace session's mode, all tools auto-allowed. **No `permission_request` ever reaches the
@@ -90,6 +93,10 @@ success | failed | cancelled` (`SCH-R10`). A `schedules` broadcast on completion
   log rows, and a tabbed detail. The **Session** tab (llm only) replays the execution's transcript
   read-only through the shared chat-message renderer via `get_execution_transcript` (`SCH-R16`);
   a sessionless/command execution shows no Session tab and returns an empty replay, never an error.
+- The sessions page `schedule` tab reads those LLM execution sessions from `session_metadata`,
+  not by assembling rows from `schedule_execution_logs`. Running schedule-session counts use
+  running execution logs with non-null `session_id`; command executions and LLM failures before a
+  real agent session id do not create session-page rows.
 
 ## Branches & exceptions (anti-scenarios)
 

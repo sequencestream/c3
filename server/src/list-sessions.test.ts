@@ -302,7 +302,6 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
     })
     expect(work.map((s) => s.sessionId)).toEqual(['work-1'])
   })
-  })
 
   it('skips a vendor whose store fails to list (loud-but-non-fatal), keeping the rest', async () => {
     const claudeSrc: VendorSessionSource = {

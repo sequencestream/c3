@@ -1,4 +1,9 @@
-import type { ServerToClient, SessionRunStatus, SessionStatus } from '@ccc/shared/protocol'
+import type {
+  ServerToClient,
+  SessionInfo,
+  SessionRunStatus,
+  SessionStatus,
+} from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import { resolveCurrentWorkspace } from '@/lib/current-workspace'
 import {
@@ -118,6 +123,19 @@ export function installMessageHandler(ctx: AppCtx): void {
     devLaunch,
     specLaunch,
   } = ctx
+
+  // Find a loaded session-list row by id across all workspace/kind buckets. The
+  // list rows carry reliable `sessionKind/ownerKind/ownerId` (unlike the
+  // `session_selected` projection lookup), so the title-bar source button reads
+  // owner metadata from here. `sessionId` is globally unique, so the first match
+  // across buckets is correct.
+  const findSessionRow = (sessionId: string): SessionInfo | undefined => {
+    for (const list of Object.values(sessionsByWorkspace.value)) {
+      const row = list.find((s) => s.sessionId === sessionId)
+      if (row) return row
+    }
+    return undefined
+  }
 
   ctx.handleMessage = (msg: ServerToClient): void => {
     switch (msg.type) {
@@ -286,15 +304,21 @@ export function installMessageHandler(ctx: AppCtx): void {
         // The same-vendor agent switcher data (absent ⇒ no switcher).
         activeAgentSwitch.value = msg.agentSwitch ?? null
         // The title-bar source action for this session (jump target + label).
-        // Refreshed/cleared on every (re)select so a plain session never inherits
-        // the previous session's source. Absent owner + legacy linkedIntentId ⇒
-        // null ⇒ no button.
-        activeSessionSource.value = resolveSessionSourceAction({
-          sessionKind: msg.sessionKind,
-          ownerKind: msg.ownerKind,
-          ownerId: msg.ownerId,
-          linkedIntentId: msg.linkedIntentId,
-        })
+        // `session_selected`'s projection lookup is unreliable for spec/intent
+        // sessions (its c3-id probe can miss, dropping sessionKind/ownerKind/
+        // ownerId), whereas the list row the user clicked always carries them — so
+        // prefer the row's owner metadata, falling back to the message, plus the
+        // work-session `linkedIntentId` compat field. Refreshed/cleared on every
+        // (re)select so a plain session never inherits the previous source.
+        {
+          const row = findSessionRow(msg.sessionId)
+          activeSessionSource.value = resolveSessionSourceAction({
+            sessionKind: row?.sessionKind ?? msg.sessionKind,
+            ownerKind: row?.ownerKind ?? msg.ownerKind,
+            ownerId: row?.ownerId ?? msg.ownerId,
+            linkedIntentId: msg.linkedIntentId,
+          })
+        }
         mode.value = msg.mode
         codexPolicy.value = msg.codexPolicy ?? null
         // Remember this as the console tab's own session ONLY when the selection

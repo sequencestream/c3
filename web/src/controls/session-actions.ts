@@ -210,10 +210,17 @@ export function installSessionActions(ctx: AppCtx): void {
     }
     if (target.kind === 'intentSessions') {
       ctx.openIntents(path)
-      ctx.requestedIntentId.value = target.intentId
       ctx.requestedIntentSubTab.value = null
-      ctx.requestedMergedTab.value = 'sessions'
-      ctx.selectIntentSession(sessionId)
+      if (target.intentId) {
+        // Owned intent (chat) session: select its owning intent (shows its detail).
+        ctx.requestedIntentId.value = target.intentId
+        ctx.requestedMergedTab.value = 'sessions'
+        ctx.selectIntentSession(sessionId)
+      } else {
+        // Standalone chat with no owning intent: open it in the right-column chat.
+        ctx.requestedIntentSessionId.value = sessionId
+        ctx.selectIntentSession(sessionId)
+      }
       return
     }
     if (target.kind === 'discussion') {

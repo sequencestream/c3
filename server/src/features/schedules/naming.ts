@@ -19,6 +19,7 @@ import type { CreateScheduleInput, ScheduleType, SessionKind } from '@ccc/shared
 import { findClaudeExecutable } from '../../kernel/infra/child-env.js'
 import { getUiLangName } from '../../kernel/config/index.js'
 import { resolveToolSessionLaunch } from '../../kernel/agent-config/index.js'
+import { addToolSession } from '../../sessions.js'
 
 /**
  * This module's SessionKind: title/name derivation is an internal, socket-less
@@ -81,14 +82,14 @@ export function fallbackName(type: ScheduleType, config: unknown): string {
 }
 
 /** Injectable LLM invocation; returns the model's raw text (may be empty). */
-export type InvokeLlm = (prompt: string) => Promise<string>
+export type InvokeLlm = (prompt: string, context?: { workspacePath: string }) => Promise<string>
 
 export interface GenerateNameDeps {
   invokeLlm?: InvokeLlm
 }
 
 /** Default LLM invocation: a minimal, tool-free query() with a hard timeout. */
-const defaultInvokeLlm: InvokeLlm = async (prompt) => {
+const defaultInvokeLlm: InvokeLlm = async (prompt, context) => {
   const abort = new AbortController()
   const timer = setTimeout(() => abort.abort(), NAMING_TIMEOUT_MS)
   timer.unref()
@@ -100,6 +101,7 @@ const defaultInvokeLlm: InvokeLlm = async (prompt) => {
     const q = query({
       prompt,
       options: {
+        ...(context?.workspacePath ? { cwd: context.workspacePath } : {}),
         disallowedTools: ['Bash', 'Edit', 'Write', 'Read', 'Task', 'WebFetch', 'WebSearch'],
         permissionMode: 'default',
         ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
@@ -108,8 +110,26 @@ const defaultInvokeLlm: InvokeLlm = async (prompt) => {
       },
     })
     let text = ''
+    let sessionId = ''
     for await (const m of q) {
       if (abort.signal.aborted) break
+      if (!sessionId) {
+        const sid = (m as { session_id?: unknown }).session_id
+        if (typeof sid === 'string' && sid) {
+          sessionId = sid
+          if (context?.workspacePath) {
+            addToolSession(sid, {
+              workspacePath: context.workspacePath,
+              agentId: launch.agentId,
+              title: 'Schedule name derivation',
+              ownerKind: null,
+              ownerId: null,
+            })
+          } else {
+            addToolSession(sid)
+          }
+        }
+      }
       if (m.type === 'assistant') {
         const content = (m as { message?: { content?: unknown[] } }).message?.content
         if (Array.isArray(content)) {
@@ -150,12 +170,15 @@ function buildNamingPrompt(type: ScheduleType, config: unknown): string {
  * non-empty string; on any LLM failure it falls back to {@link fallbackName}.
  */
 export async function generateScheduleName(
-  input: Pick<CreateScheduleInput, 'type' | 'config'>,
+  input: Pick<CreateScheduleInput, 'type' | 'config'> & { workspaceId?: string },
   deps: GenerateNameDeps = {},
 ): Promise<string> {
   const invoke = deps.invokeLlm ?? defaultInvokeLlm
   try {
-    const raw = await invoke(buildNamingPrompt(input.type, input.config))
+    const raw = await invoke(
+      buildNamingPrompt(input.type, input.config),
+      input.workspaceId ? { workspacePath: input.workspaceId } : undefined,
+    )
     const name = tidy(raw)
     if (name) return name
   } catch (err) {

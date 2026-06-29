@@ -124,8 +124,11 @@ export async function judgeCompletion(input: {
     prompt: buildPrompt(input.req, input.lastMessages, input.evidence),
     cwd: input.cwd,
     signal: input.signal,
+    agentId: launch.agentId,
     model: launch.model,
     envOverrides: launch.envOverrides,
+    ownerKind: 'intent',
+    ownerId: input.req.id,
   })
   const verdict = parseVerdict(text)
   console.log(

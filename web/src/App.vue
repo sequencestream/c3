@@ -84,6 +84,7 @@ const {
   selectSessionKind,
   loadMoreSessions,
   selectSession,
+  jumpSessionSource,
   deleteSession,
   renameSession,
   setMode,
@@ -291,6 +292,7 @@ const {
           :sessions="currentSessions"
           :active-session-kind="activeSessionKind"
           :session-counts="sessionCounts"
+          :show-tool-sessions="serverSettings?.showToolSessions === true"
           :sessions-has-more="currentSessionPaging.hasMore"
           :sessions-exhausted="currentSessionPaging.exhausted"
           :session-status="sessionStatus"
@@ -324,6 +326,7 @@ const {
           @select-session-kind="selectSessionKind"
           @load-more-sessions="() => loadMoreSessions(currentWorkspace)"
           @select-session="selectSession"
+          @jump-session-source="jumpSessionSource"
           @delete-session="deleteSession"
           @rename-session="renameSession"
           @set-mode="setMode"

@@ -130,7 +130,8 @@ migration record). Tables: `intents`, `intent_deps`, `intent_chats`
 (session collection + hidden set in one table), and `tool_sessions`
 (`session_id` PRIMARY KEY + `created_at`) — the persisted set of tool-created sessions (completion
 judge, consensus advisor) so the session-registry's "show tool sessions" filter survives restarts.
-A session's row is dropped when the session is deleted. See [intent-management-design.md](intent-management-design.md) for the
+`tool_sessions` is only a marker table; tool session source links live in `session_metadata.owner_kind`
+/ `owner_id` on rows with `session_kind='tool'`, and ownerless tool rows are display-only. A session's row is dropped when the session is deleted. See [intent-management-design.md](intent-management-design.md) for the
 cross-runtime driver adapter and migration handling.
 
 The cross-domain `session_metadata` projection lives outside the intent ledger's source-of-truth

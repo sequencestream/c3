@@ -12,6 +12,7 @@ import type {
   Schedule,
   ServerToClient,
   SessionRunStatus,
+  SessionInfo,
   SystemSettings,
   UiLang,
   UpdateScheduleInput,
@@ -73,6 +74,7 @@ export interface AppMethods {
   confirmNewSession(agentId: string | null): void
   openSettingsFromPicker(): void
   selectSession(path: string, sessionId: string): void
+  jumpSessionSource(path: string, session: SessionInfo): void
   onSelectTab(key: string): void
   enterConsole(): void
   switchToConsoleTab(): void

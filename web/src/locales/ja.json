@@ -905,6 +905,9 @@
       "new": {
         "tooltip": "新しいセッション"
       },
+      "jump": {
+        "tooltip": "ソースへ移動"
+      },
       "toggle": {
         "expand": {
           "tooltip": "セッション一覧を展開(幅を2倍に)"

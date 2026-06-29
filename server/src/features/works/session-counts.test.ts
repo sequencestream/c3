@@ -10,19 +10,24 @@ import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { getSessionCounts } from './index.js'
 import { resetStoreForTests, upsertBoundRow } from './work-session-store.js'
+import { resetSettingsCacheForTests, saveSettings } from '../../kernel/config/index.js'
 
 let dir: string
 let proj: string
 let workspaceId: string
 let prevClaudeConfigDir: string | undefined
+let prevHome: string | undefined
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-session-counts-'))
   prevClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR
+  prevHome = process.env.HOME
+  process.env.HOME = dir
   process.env.CLAUDE_CONFIG_DIR = dir
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   resetDbForTests()
   resetStoreForTests()
+  resetSettingsCacheForTests()
   resetStateCacheForTests()
   proj = join(dir, 'proj')
   mkdirSync(proj)
@@ -34,11 +39,15 @@ afterEach(() => {
   removeRuntime('work-running')
   removeRuntime('spec-running')
   removeRuntime('intent-running')
+  removeRuntime('tool-running')
   resetDbForTests()
   resetStoreForTests()
   resetStateCacheForTests()
+  resetSettingsCacheForTests()
   if (prevClaudeConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR
   else process.env.CLAUDE_CONFIG_DIR = prevClaudeConfigDir
+  if (prevHome === undefined) delete process.env.HOME
+  else process.env.HOME = prevHome
   delete process.env.C3_DB_PATH
   rmSync(dir, { recursive: true, force: true })
 })
@@ -100,6 +109,16 @@ describe('getSessionCounts', () => {
       ownerKind: 'intent',
       ownerId: 'intent-3',
     })
+    upsertBoundRow({
+      sessionId: 'tool-running',
+      workspacePath: proj,
+      vendor: 'claude',
+      agentId: 'tool-agent',
+      title: 'Tool',
+      sessionKind: 'tool',
+      ownerKind: 'intent',
+      ownerId: 'intent-4',
+    })
 
     ensureRuntime('work-running', proj, 'default', [], 'work').run = {
       abort: new AbortController(),
@@ -110,6 +129,10 @@ describe('getSessionCounts', () => {
       handle: null,
     }
     ensureRuntime('intent-running', proj, 'default', [], 'intent').run = {
+      abort: new AbortController(),
+      handle: null,
+    }
+    ensureRuntime('tool-running', proj, 'default', [], 'tool').run = {
       abort: new AbortController(),
       handle: null,
     }
@@ -131,5 +154,20 @@ describe('getSessionCounts', () => {
         },
       },
     ])
+
+    saveSettings({
+      agents: [],
+      defaultAgentId: 'system',
+      toolAgentId: '',
+      intentAgentId: '',
+      specAgentId: '',
+      showToolSessions: true,
+    })
+    const again = fakeConn()
+    getSessionCounts({} as KernelContext, again.conn, { type: 'get_session_counts', workspaceId })
+    expect(again.sent[0]).toMatchObject({
+      type: 'session_counts',
+      counts: { tool: 1 },
+    })
   })
 })

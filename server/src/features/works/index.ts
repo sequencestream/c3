@@ -38,7 +38,11 @@ import {
   setSessionCodexPolicy,
   touchWorkspace,
 } from '../../state.js'
-import { getCodexDefaultPolicy, getDefaultMode } from '../../kernel/config/index.js'
+import {
+  getCodexDefaultPolicy,
+  getDefaultMode,
+  getShowToolSessions,
+} from '../../kernel/config/index.js'
 import {
   resolveAgent,
   resolveSessionAgentSwitch,
@@ -191,6 +195,7 @@ export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg)
     tool: 0,
   }
   for (const kind of SESSION_PAGE_KINDS) {
+    if (kind === 'tool' && !getShowToolSessions()) continue
     counts[kind] = listForWorkspace(abs, kind).filter((row) =>
       isRunning(row.vendorSessionId ?? row.c3Id),
     ).length

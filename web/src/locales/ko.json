@@ -905,6 +905,9 @@
       "new": {
         "tooltip": "새 세션"
       },
+      "jump": {
+        "tooltip": "소스로 이동"
+      },
       "toggle": {
         "expand": {
           "tooltip": "세션 목록 펼치기(너비 2배)"

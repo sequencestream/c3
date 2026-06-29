@@ -35,6 +35,7 @@ import type { SessionAccessor } from './accessor.js'
 // eslint-disable-next-line no-restricted-imports
 import {
   isToolSessionRecorded,
+  listToolSessionIds,
   listHiddenSessions,
   listSpecSessionIds,
 } from '../../../features/intents/store.js'
@@ -48,6 +49,7 @@ import {
   listForWorkspace,
   rebuildOne,
   updateRealRowTitle,
+  upsertBoundRow,
   validateLazy,
   type NativeListFn,
   type SessionMetadataRow,
@@ -183,6 +185,10 @@ export async function listSessionsVia(
     }
     rows = listForWorkspace(workspacePath, sessionKind)
   }
+  if (rows.length === 0 && sessionKind === 'tool' && getShowToolSessions()) {
+    await rebuildToolProjectionFromNative(accessor, workspacePath)
+    rows = listForWorkspace(workspacePath, sessionKind)
+  }
 
   // Apply the filter parity (hidden set + tool-session filter) and stamp
   // the `mode` / `state` fields. Sort newest-first; nulls (Codex
@@ -193,10 +199,11 @@ export async function listSessionsVia(
       ? new Set([...listHiddenSessions(workspacePath), ...listSpecSessionIds(workspacePath)])
       : new Set<string>()
   const showTool = getShowToolSessions()
+  if (sessionKind === 'tool' && !showTool) return []
   const out = rows
     .map((r) => rowToSessionInfo(r))
     .filter((s) => !hidden.has(s.sessionId))
-    .filter((s) => showTool || !s.isToolSession)
+    .filter((s) => sessionKind === 'tool' || showTool || !s.isToolSession)
     .sort((a, b) => {
       if (a.lastModified === 0 && b.lastModified === 0) return 0
       if (a.lastModified === 0) return 1
@@ -212,6 +219,36 @@ export async function listSessionsVia(
   // to the projection table. The wire reply is not blocked (F-8).
   void syncRunningTitles(workspacePath, accessor, out)
   return out
+}
+
+async function rebuildToolProjectionFromNative(
+  accessor: SessionAccessor,
+  workspacePath: string,
+): Promise<void> {
+  const toolIds = new Set(listToolSessionIds())
+  if (toolIds.size === 0) return
+  const nativeList = accessorNativeList(accessor)
+  const defaultAgentId = getDefaultAgentId()
+  const factAgentId = (vendorSessionId: string): string =>
+    getSessionAgentId(vendorSessionId) ?? defaultAgentId
+  for (const vendor of KNOWN_VENDORS) {
+    const native = await nativeList(vendor, workspacePath)
+    if (!native) continue
+    for (const s of native.sessions) {
+      if (!toolIds.has(s.vendorSessionId)) continue
+      upsertBoundRow({
+        sessionId: s.vendorSessionId,
+        workspacePath,
+        vendor,
+        agentId: factAgentId(s.vendorSessionId),
+        title: s.title,
+        lastModified: s.lastModified,
+        sessionKind: 'tool',
+        ownerKind: null,
+        ownerId: null,
+      })
+    }
+  }
 }
 
 async function runLazyValidation(workspacePath: string, accessor: SessionAccessor): Promise<void> {

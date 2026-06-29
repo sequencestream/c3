@@ -33,6 +33,7 @@ const props = defineProps<{
   sessions: SessionInfo[]
   activeSessionKind: SessionPageKind
   sessionCounts: Record<SessionPageKind, number>
+  showToolSessions: boolean
   /** Older sessions remain beyond the loaded window (SR-R14). */
   sessionsHasMore?: boolean
   /** A "load more" came back empty (SR-R14). */
@@ -81,6 +82,7 @@ const emit = defineEmits<{
   'select-session-kind': [kind: SessionPageKind]
   'load-more-sessions': []
   'select-session': [path: string, sessionId: string]
+  'jump-session-source': [path: string, session: SessionInfo]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
   'set-mode': [mode: ModeToken]
@@ -157,6 +159,7 @@ defineExpose({
         :sessions="sessions"
         :active-session-kind="activeSessionKind"
         :session-counts="sessionCounts"
+        :show-tool-sessions="showToolSessions"
         :has-more="sessionsHasMore"
         :exhausted="sessionsExhausted"
         :session-status="sessionStatus"
@@ -169,6 +172,9 @@ defineExpose({
         @select-session-kind="(kind: SessionPageKind) => emit('select-session-kind', kind)"
         @load-more-sessions="emit('load-more-sessions')"
         @select-session="selectSession"
+        @jump-session-source="
+          (path: string, session: SessionInfo) => emit('jump-session-source', path, session)
+        "
         @delete-session="
           (path: string, sessionId: string) => emit('delete-session', path, sessionId)
         "

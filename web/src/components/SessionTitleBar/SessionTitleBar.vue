@@ -17,6 +17,7 @@ import type {
   SessionAgentSwitch,
   VendorId,
 } from '@ccc/shared/protocol'
+import type { SessionSourceLabel } from '@/lib/session-jump'
 import { useTypedI18n } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 
@@ -41,12 +42,12 @@ const props = withDefaults(
      */
     agentSwitch?: SessionAgentSwitch | null
     /**
-     * The intent this work session was created for (works title bar only). When set,
-     * a "Intent" button is shown that emits `open-intent`; absent/null ⇒ no button
-     * (plain sessions, and the intent-side reuse never passes it).
+     * The active session's source-button label family (works title bar only):
+     * `intent`/`discussion`/`schedule` for owned sessions of that kind, `trace`
+     * for work/tool sessions whose owner resolves generically. When set, a button
+     * is shown that emits `open-source`; null ⇒ no button (no resolvable source).
      */
-    linkedIntentId?: string | null
-    linkedScheduleId?: string | null
+    sourceLabel?: SessionSourceLabel | null
   }>(),
   {
     mode: 'default',
@@ -55,10 +56,26 @@ const props = withDefaults(
     vendor: null,
     codexPolicy: null,
     agentSwitch: null,
-    linkedIntentId: null,
-    linkedScheduleId: null,
+    sourceLabel: null,
   },
 )
+
+// The source button's localized text + aria-label, keyed by label family. Literal
+// keys (not a dynamic string) so the i18n gate can verify each one statically.
+const SOURCE_TEXT: Record<SessionSourceLabel, () => string> = {
+  intent: () => t('session.titleBar.intent.label'),
+  discussion: () => t('session.titleBar.discussion.label'),
+  schedule: () => t('session.titleBar.schedule.label'),
+  trace: () => t('session.titleBar.trace.label'),
+}
+const SOURCE_ARIA: Record<SessionSourceLabel, () => string> = {
+  intent: () => t('session.titleBar.intent.ariaLabel'),
+  discussion: () => t('session.titleBar.discussion.ariaLabel'),
+  schedule: () => t('session.titleBar.schedule.ariaLabel'),
+  trace: () => t('session.titleBar.trace.ariaLabel'),
+}
+const sourceText = computed(() => (props.sourceLabel ? SOURCE_TEXT[props.sourceLabel]() : ''))
+const sourceAria = computed(() => (props.sourceLabel ? SOURCE_ARIA[props.sourceLabel]() : ''))
 
 // The vendor dot's colour + brand label (for its tooltip), or null when no vendor.
 const vendorColor = (): string | null => (props.vendor ? VENDOR_COLOR[props.vendor] : null)
@@ -92,8 +109,7 @@ const emit = defineEmits<{
   'set-mode': [mode: ModeToken]
   'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
-  'open-intent': [intentId: string]
-  'open-schedule': [scheduleId: string]
+  'open-source': []
 }>()
 
 function onPickAgent(agentId: string): void {
@@ -112,26 +128,15 @@ function onPickAgent(agentId: string): void {
     ></span>
     <span class="session-title-text" :title="activeTitle">{{ activeTitle }}</span>
     <button
-      v-if="linkedIntentId"
+      v-if="sourceLabel"
       type="button"
       class="intent-jump"
-      data-testid="session-intent-jump"
-      :title="t('session.titleBar.intent.ariaLabel')"
-      :aria-label="t('session.titleBar.intent.ariaLabel')"
-      @click="emit('open-intent', linkedIntentId)"
+      data-testid="session-source-jump"
+      :title="sourceAria"
+      :aria-label="sourceAria"
+      @click="emit('open-source')"
     >
-      {{ t('session.titleBar.intent.label') }}
-    </button>
-    <button
-      v-if="linkedScheduleId"
-      type="button"
-      class="intent-jump"
-      data-testid="session-schedule-jump"
-      :title="t('session.titleBar.schedule.ariaLabel')"
-      :aria-label="t('session.titleBar.schedule.ariaLabel')"
-      @click="emit('open-schedule', linkedScheduleId)"
-    >
-      {{ t('session.titleBar.schedule.label') }}
+      {{ sourceText }}
     </button>
     <slot name="action" />
     <div v-if="vendor || agentSwitch || showMode" class="right-controls">

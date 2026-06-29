@@ -925,6 +925,14 @@
         "label": "Schedule",
         "ariaLabel": "Open the schedule that created this session"
       },
+      "discussion": {
+        "label": "Discussion",
+        "ariaLabel": "Open the discussion that created this session"
+      },
+      "trace": {
+        "label": "Trace",
+        "ariaLabel": "Open the source that created this session"
+      },
       "mode": {
         "ariaLabel": "Permission mode"
       },

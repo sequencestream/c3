@@ -925,6 +925,14 @@
         "label": "定时任务",
         "ariaLabel": "打开创建此会话的定时任务"
       },
+      "discussion": {
+        "label": "讨论",
+        "ariaLabel": "打开创建此会话的讨论"
+      },
+      "trace": {
+        "label": "溯源",
+        "ariaLabel": "打开创建此会话的来源"
+      },
       "mode": {
         "ariaLabel": "权限模式"
       },

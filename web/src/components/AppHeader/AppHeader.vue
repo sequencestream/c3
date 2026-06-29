@@ -998,21 +998,21 @@ function selectTab(tab: HeaderTab): void {
   }
   .mobile-bottom-tab .tab-badge {
     position: absolute;
-    top: -6px;
+    top: -5px;
     left: 100%;
     transform: translateX(-50%);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 16px;
-    height: 16px;
-    padding: 0 4px;
-    font-size: 10px;
+    min-width: 13px;
+    height: 13px;
+    padding: 0 3px;
+    font-size: 8px;
     font-weight: 600;
     line-height: 1;
     color: #fff;
     background: var(--c-danger, #e53e3e);
-    border-radius: 8px;
+    border-radius: 50%;
   }
 
   /* 移动操作菜单内的许可项(PL-R7) */

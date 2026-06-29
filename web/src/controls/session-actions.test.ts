@@ -310,32 +310,39 @@ describe('jumpActiveSessionSource — title-bar source button', () => {
     expect(openSpecSession).toHaveBeenCalledWith('intent-1')
   })
 
-  it('routes an intent comm session to the intent sessions tab', () => {
-    const { ctx, openIntents, requestedMergedTab, selectIntentSession } = setup(
-      'intent',
-      'intent',
-      'intent-1',
-      'intent-session-1',
-    )
+  it('routes an owned intent comm session to its intent detail session tab', () => {
+    const {
+      ctx,
+      openIntents,
+      requestedIntentId,
+      requestedIntentSubTab,
+      requestedMergedTab,
+      selectIntentSession,
+    } = setup('intent', 'intent', 'intent-1', 'intent-session-1')
 
     ctx.jumpActiveSessionSource()
 
     expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(requestedMergedTab.value).toBe('sessions')
-    expect(selectIntentSession).toHaveBeenCalledWith('intent-session-1')
+    expect(requestedIntentId.value).toBe('intent-1')
+    expect(requestedIntentSubTab.value).toBe('intentSession')
+    expect(requestedMergedTab.value).toBeNull()
+    expect(selectIntentSession).not.toHaveBeenCalled()
   })
 
-  it('opens a standalone intent (chat) session with no owning intent on the intents page', () => {
-    const { ctx, openIntents, selectIntentSession, requestedIntentId, requestedIntentSessionId } =
-      setup('intent', null, '', 'standalone-chat-1')
+  it('shows no source button for a standalone intent (chat) session with no owning intent', () => {
+    const { ctx, openIntents, selectIntentSession, activeSessionSource } = setup(
+      'intent',
+      null,
+      '',
+      'standalone-chat-1',
+    )
 
+    // No owning intent ⇒ no resolved source ⇒ button hidden and jump is a no-op.
+    expect(activeSessionSource.value).toBeNull()
     ctx.jumpActiveSessionSource()
 
-    expect(openIntents).toHaveBeenCalledWith(WS)
-    // No owning intent to select; instead the chat itself is opened on the page.
-    expect(requestedIntentId.value).toBeNull()
-    expect(requestedIntentSessionId.value).toBe('standalone-chat-1')
-    expect(selectIntentSession).toHaveBeenCalledWith('standalone-chat-1')
+    expect(openIntents).not.toHaveBeenCalled()
+    expect(selectIntentSession).not.toHaveBeenCalled()
   })
 
   it('routes a discussion session to the discussion page', () => {

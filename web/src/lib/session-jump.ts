@@ -3,7 +3,7 @@ import type { SessionKind } from '@ccc/shared/protocol'
 export type SessionOwnerKind = 'intent' | 'discussion' | 'schedule'
 
 export type SessionJumpTarget =
-  | { kind: 'intentDetail'; intentId: string; tab?: 'specSession' }
+  | { kind: 'intentDetail'; intentId: string; tab?: 'intentSession' | 'specSession' }
   // `intentId` is null for a standalone intent (chat) session that has no owning
   // intent: the jump still opens the intents page, just without selecting an intent.
   | { kind: 'intentSessions'; intentId: string | null }
@@ -19,7 +19,8 @@ export function resolveSessionJumpTarget(input: {
   if (input.ownerKind === 'intent') {
     if (input.sessionKind === 'spec')
       return { kind: 'intentDetail', intentId: input.ownerId, tab: 'specSession' }
-    if (input.sessionKind === 'intent') return { kind: 'intentSessions', intentId: input.ownerId }
+    if (input.sessionKind === 'intent')
+      return { kind: 'intentDetail', intentId: input.ownerId, tab: 'intentSession' }
     if (input.sessionKind === 'work') return { kind: 'intentDetail', intentId: input.ownerId }
     if (input.sessionKind === 'tool') return { kind: 'intentDetail', intentId: input.ownerId }
   }
@@ -68,13 +69,12 @@ export function resolveSessionSourceAction(input: {
 }): SessionSourceAction | null {
   const target =
     resolveSessionJumpTarget(input) ??
+    // Legacy compat: surface the linked intent when owner metadata is absent. A
+    // standalone intent (chat) session with no owning intent has no source — return
+    // null so the title bar shows no button.
     (input.linkedIntentId
       ? ({ kind: 'intentDetail', intentId: input.linkedIntentId } as const)
-      : // A standalone intent (chat) session has no owning intent, but its source is
-        // still the intents page — surface a button that opens it there.
-        input.sessionKind === 'intent'
-        ? ({ kind: 'intentSessions', intentId: null } as const)
-        : null)
+      : null)
   if (!target) return null
   return { target, label: sourceLabelForKind(input.sessionKind) }
 }

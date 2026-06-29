@@ -14,10 +14,10 @@ describe('resolveSessionJumpTarget', () => {
     ).toEqual({ kind: 'intentDetail', intentId: 'intent-1' })
   })
 
-  it('routes intent comm sessions to intent sessions view', () => {
+  it('routes intent comm sessions to the intent detail session tab', () => {
     expect(
       resolveSessionJumpTarget({ sessionKind: 'intent', ownerKind: 'intent', ownerId: 'intent-1' }),
-    ).toEqual({ kind: 'intentSessions', intentId: 'intent-1' })
+    ).toEqual({ kind: 'intentDetail', intentId: 'intent-1', tab: 'intentSession' })
   })
 
   it('routes spec sessions to the intent spec session tab', () => {
@@ -77,7 +77,10 @@ describe('resolveSessionSourceAction', () => {
     })
     expect(
       resolveSessionSourceAction({ sessionKind: 'intent', ownerKind: 'intent', ownerId: 'i1' }),
-    ).toEqual({ target: { kind: 'intentSessions', intentId: 'i1' }, label: 'intent' })
+    ).toEqual({
+      target: { kind: 'intentDetail', intentId: 'i1', tab: 'intentSession' },
+      label: 'intent',
+    })
   })
 
   it('labels discussion and schedule sessions by their own kind', () => {
@@ -102,10 +105,10 @@ describe('resolveSessionSourceAction', () => {
     ).toEqual({ target: { kind: 'schedule', scheduleId: 's1' }, label: 'trace' })
   })
 
-  it('gives a standalone intent (chat) session an owner-less intentSessions target', () => {
+  it('returns null for a standalone intent (chat) session with no owning intent', () => {
     expect(
       resolveSessionSourceAction({ sessionKind: 'intent', ownerKind: null, ownerId: null }),
-    ).toEqual({ target: { kind: 'intentSessions', intentId: null }, label: 'intent' })
+    ).toBeNull()
   })
 
   it('falls back to the legacy linkedIntentId when owner metadata is absent', () => {

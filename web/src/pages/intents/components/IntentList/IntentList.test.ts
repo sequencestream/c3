@@ -202,6 +202,19 @@ describe('IntentList.vue — selection model', () => {
     // 左侧实际渲染:活跃项 todo-p1 置顶,done-p0 沉底。首条应为活跃项。
     expect((ordered!.at(-1)![0] as string[])[0]).toBe('todo-p1')
   })
+
+  it('renders an externally-selected done intent that falls beyond the terminated page', () => {
+    // 12 个 done 项 > 一页(10),最后完成时间最小者沉到分页之外。
+    const done = Array.from({ length: 12 }, (_, i) =>
+      intent({ id: `done-${i}`, status: 'done', completedAt: 100 - i }),
+    )
+    // 完成时间倒序后 done-11(completedAt 89)排在末位,落在前 10 之外。
+    const w = mountList(done, 'done-11')
+
+    const ordered = w.emitted('ordered-change')
+    expect((ordered!.at(-1)![0] as string[]).includes('done-11')).toBe(true)
+    expect(w.find('[data-intent-id="done-11"]').exists()).toBe(true)
+  })
 })
 
 describe('IntentList.vue — responsive header actions', () => {

@@ -212,10 +212,8 @@ export function installSessionActions(ctx: AppCtx): void {
       ctx.openIntents(path)
       ctx.requestedIntentSubTab.value = null
       if (target.intentId) {
-        // Owned intent (chat) session: select its owning intent (shows its detail).
+        // Legacy owned intent session target: select its owning intent detail.
         ctx.requestedIntentId.value = target.intentId
-        ctx.requestedMergedTab.value = 'sessions'
-        ctx.selectIntentSession(sessionId)
       } else {
         // Standalone chat with no owning intent: open it in the right-column chat.
         ctx.requestedIntentSessionId.value = sessionId

@@ -186,7 +186,15 @@ const displayIntents = computed<Intent[]>(() => {
   if (filter.value !== null) return props.intents
   const pending = props.intents.filter((r) => r.status !== 'done' && r.status !== 'cancelled')
   const { visible } = sliceTerminated(terminatedIntents.value, visibleTerminated.value)
-  return [...pending, ...visible]
+  const shown = [...pending, ...visible]
+  // 外部选中(如标题栏溯源跳转到某个 done 意图)可能落在终止态分页之外,
+  // 此时把该项补进渲染列表,保证它可见、可高亮,且不会被「默认选首条」逻辑顶掉。
+  const selId = props.selectedId
+  if (selId && !shown.some((r) => r.id === selId)) {
+    const sel = terminatedIntents.value.find((r) => r.id === selId)
+    if (sel) shown.push(sel)
+  }
+  return shown
 })
 
 // 将重排后的实际渲染顺序上抛父组件,使右栏默认选中与左侧列表首条对齐(而非服务端原序首条)。

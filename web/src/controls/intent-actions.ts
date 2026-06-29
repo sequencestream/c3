@@ -122,33 +122,12 @@ export function installIntentActions(ctx: AppCtx): void {
     ctx.requestedIntentId.value = intentId
   }
 
-  // "+" in the intent title bar: start a brand-new comm session.
-  ctx.newIntentChat = (): void => {
-    if (!intentsProject.value) return
-    send({ type: 'new_intent_chat', workspaceId: intentsProject.value })
-  }
-
-  // Select an existing intent communication session by id.
+  // Select an existing intent communication session by id. Still used by the
+  // IntentDetail `open-intent-session` path and by session/workcenter jump-to-source.
   ctx.selectIntentSession = (sessionId: string): void => {
     if (!intentsProject.value) return
     selectedIntentSessionId.value = sessionId
     send({ type: 'open_intent_chat', workspaceId: intentsProject.value, sessionId })
-  }
-
-  ctx.renameIntentSession = (sessionId: string, title: string): void => {
-    if (!intentsProject.value) return
-    send({
-      type: 'rename_intent_session',
-      workspaceId: intentsProject.value,
-      sessionId,
-      title,
-    })
-  }
-
-  // Delete an intent communication session.
-  ctx.deleteIntentSession = (sessionId: string): void => {
-    if (!intentsProject.value) return
-    send({ type: 'delete_intent_session', workspaceId: intentsProject.value, sessionId })
   }
 
   ctx.setIntentFilter = (status: IntentStatus | null): void => {

@@ -106,7 +106,6 @@ const {
   intentsProject,
   requestedIntentId,
   requestedIntentSubTab,
-  requestedMergedTab,
   openLinkedIntent,
   currentIntents,
   currentIntentsSdd,
@@ -114,9 +113,6 @@ const {
   intentActionErrorSeq,
   intentActionError,
   closeIntentActionError,
-  currentIntentSessions,
-  selectedIntentSessionId,
-  intentSessionRunStates,
   intentSpecContent,
   intentSpecLoading,
   setIntentFilter,
@@ -135,10 +131,7 @@ const {
   createPr,
   startAutomation,
   stopAutomation,
-  newIntentChat,
   selectIntentSession,
-  renameIntentSession,
-  deleteIntentSession,
   // ---- discussions ----
   discussionsProject,
   currentDiscussions,
@@ -365,7 +358,6 @@ const {
           :sdd-enabled="currentIntentsSdd"
           :requested-intent-id="requestedIntentId"
           :requested-intent-sub-tab="requestedIntentSubTab"
-          :requested-merged-tab="requestedMergedTab"
           :workspace-main-branch="
             currentWorkspaceSetting?.defaultMainBranch ??
             (intentsProject
@@ -382,9 +374,6 @@ const {
           "
           :automation="currentAutomation"
           :intent-action-error-seq="intentActionErrorSeq"
-          :intent-sessions="currentIntentSessions"
-          :selected-intent-session-id="selectedIntentSessionId"
-          :intent-session-run-states="intentSessionRunStates"
           :intent-spec-content="intentSpecContent"
           :intent-spec-loading="intentSpecLoading"
           :active-session="activeSession"
@@ -408,7 +397,6 @@ const {
           :agent-switch="activeAgentSwitch"
           @requested-intent-consumed="requestedIntentId = null"
           @requested-subtab-consumed="requestedIntentSubTab = null"
-          @requested-tab-consumed="requestedMergedTab = null"
           @filter="setIntentFilter"
           @refine="refineIntent"
           @write-spec="writeSpec"
@@ -426,11 +414,6 @@ const {
           @create-pr="createPr"
           @start-automation="startAutomation"
           @stop-automation="stopAutomation"
-          @new-intent="newIntentChat"
-          @select-intent-session="selectIntentSession"
-          @new-intent-session="newIntentChat"
-          @rename-intent-session="renameIntentSession"
-          @delete-intent-session="deleteIntentSession"
           @set-session-agent="onSetSessionAgent"
           @respond="respond"
           @submit-ask="submitAsk"

@@ -2,27 +2,23 @@
 /*
  * Intents.vue — 需求页容器。
  *
- * 桌面两栏布局:左侧合并列(分段控件切换需求列表/意图会话列表) + 右侧上下文详情列。
- * 右栏按合并列的 activeTab 切换:
- *   - intents tab → IntentDetail(selectedIntentId 对应意图的完整详情)
- *   - sessions tab → 聊天列(与会话页相同,标题栏为需求变体,无权限模式下拉)
- * 首次进入(intents tab)默认选中列表首条意图,右栏直接展示其详情。
- * 移动端退化为二级 drill-down 栈:列表 → 右栏(详情或聊天)逐级滑入/返回。
- * 状态/连接由 App.vue 持有,经 props 注入,动作经 emit 上抛。composer ref 经 defineExpose 转发。
+ * 桌面两栏布局:左侧意图列表 + 右侧意图详情列。选中意图后右栏展示其完整详情
+ * (IntentDetail,含按意图绑定的 intent session 沟通 tab)。
+ * 首次进入默认选中列表首条意图,右栏直接展示其详情。
+ * 移动端退化为二级 drill-down 栈:列表 → 详情逐级滑入/返回。
+ * 状态/连接由 App.vue 持有,经 props 注入,动作经 emit 上抛。prefill 经 defineExpose 转发到详情列。
  */
 import { computed, ref, watch } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import IntentMergedList from './components/IntentMergedList/IntentMergedList.vue'
 import IntentDetail from './components/IntentDetail/IntentDetail.vue'
-import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
 import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 import type {
   AutomationStatus,
   Intent,
-  IntentSessionInfo,
   IntentStatus,
   PromptImage,
   SessionAgentSwitch,
@@ -49,10 +45,6 @@ const props = defineProps<{
   /** 当前 workspace 配置的主分支;用于隐藏主分支上的 Create PR 动作。 */
   workspaceMainBranch?: string | null
   workspaceGitBranchMode?: 'worktree' | 'current-branch'
-  // middle: intent session list
-  intentSessions: IntentSessionInfo[]
-  selectedIntentSessionId: string | null
-  intentSessionRunStates: Record<string, 'running'>
   /** Selected intent's spec.md content (intent detail `spec` tab); null=未加载/无。 */
   intentSpecContent: string | null
   intentSpecLoading: boolean
@@ -85,8 +77,6 @@ const props = defineProps<{
   voiceLang: string
   /** One-shot sub-tab request for IntentDetail (WorkCenter jump-to-source). */
   requestedIntentSubTab?: 'intentSession' | 'specSession' | null
-  /** One-shot merged-tab request for IntentMergedList (WorkCenter jump-to-source). */
-  requestedMergedTab?: 'intents' | 'sessions' | null
 }>()
 
 const emit = defineEmits<{
@@ -109,18 +99,11 @@ const emit = defineEmits<{
   'new-intent': []
   'create-pr': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
-  // intent session events
-  'select-intent-session': [sessionId: string]
-  'new-intent-session': []
-  'rename-intent-session': [sessionId: string, title: string]
-  'delete-intent-session': [sessionId: string]
   'set-session-agent': [agentId: string]
   // external select request consumed (parent clears `requestedIntentId`)
   'requested-intent-consumed': []
   // external sub-tab request consumed (parent clears `requestedIntentSubTab`)
   'requested-subtab-consumed': []
-  // external merged-tab request consumed (parent clears `requestedMergedTab`)
-  'requested-tab-consumed': []
   // chat events
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
@@ -179,40 +162,20 @@ watch(
   { immediate: true },
 )
 
-// ---- 合并列当前 tab(驱动右栏上下文切换) ----
-const mergedListRef = ref<InstanceType<typeof IntentMergedList> | null>(null)
-const mergedActiveTab = computed(() => mergedListRef.value?.activeTab ?? 'intents')
-
 // ---- Mobile drill-down state ----
-// 桌面两栏(合并列 + 右栏),移动端两级 drill-down:列表 → 右栏(详情或聊天)。
+// 桌面两栏(意图列表 + 详情列),移动端两级 drill-down:列表 → 详情。
 const mobilePanes = computed(
   () =>
     [
-      {
-        key: 'list',
-        title:
-          mergedActiveTab.value === 'sessions'
-            ? t('intent.sessionList.title.label')
-            : t('intent.list.title.label'),
-      },
-      {
-        key: 'right',
-        title:
-          mergedActiveTab.value === 'sessions'
-            ? t('intent.chat.title.label')
-            : (selectedIntent.value?.title ?? t('intent.list.title.label')),
-      },
+      { key: 'list', title: t('intent.list.title.label') },
+      { key: 'right', title: selectedIntent.value?.title ?? t('intent.list.title.label') },
     ] as const,
 )
 
 type MobilePaneKey = (typeof mobilePanes.value)[number]['key']
 
 const mobileActiveKey = ref<MobilePaneKey>('list')
-const mobileActiveToken = computed(() =>
-  mergedActiveTab.value === 'sessions'
-    ? (props.selectedIntentSessionId ?? props.project ?? 'list')
-    : (selectedIntentId.value ?? props.project ?? 'list'),
-)
+const mobileActiveToken = computed(() => selectedIntentId.value ?? props.project ?? 'list')
 
 function handleSelectIntent(intentId: string): void {
   userSelectedIntent.value = true
@@ -225,32 +188,17 @@ function handleSelectDependency(intentId: string): void {
   handleSelectIntent(intentId)
 }
 
-function handleSelectIntentSession(sessionId: string): void {
-  mobileActiveKey.value = 'right'
-  emit('select-intent-session', sessionId)
-}
-
-function handleNewIntentSession(): void {
-  // 移动端:新建会话后服务端回 session_selected,需先切到右栏(聊天),
-  // 否则停留在合并列(意图列表/会话列表)而看不到新会话。
-  mobileActiveKey.value = 'right'
-  emit('new-intent-session')
-}
-
 function handleMobileBack(targetKey: string): void {
   mobileActiveKey.value = targetKey as MobilePaneKey
   emit('mobile-back', targetKey)
 }
 
 // ---- Composer ref for prefill forwarding ----
-// Two composers can be mounted: the sessions-tab chat column (`composer`) and the
-// intent detail's chat tabs (`detailRef`). Route prefill to whichever is active.
-const composer = ref<InstanceType<typeof ChatColumn> | null>(null)
+// Prefill routes to the intent detail's chat tabs (`detailRef`).
 const detailRef = ref<InstanceType<typeof IntentDetail> | null>(null)
 defineExpose({
   prefill: (text: string, images?: PromptImage[]) => {
-    if (mergedActiveTab.value === 'intents') detailRef.value?.prefill(text, images)
-    else composer.value?.prefill(text, images)
+    detailRef.value?.prefill(text, images)
   },
 })
 </script>
@@ -265,7 +213,6 @@ defineExpose({
   >
     <template #list>
       <IntentMergedList
-        ref="mergedListRef"
         :project="project"
         :intents="intents"
         :automation="automation"
@@ -273,10 +220,6 @@ defineExpose({
         :workspace-main-branch="workspaceMainBranch"
         :workspace-git-branch-mode="workspaceGitBranchMode"
         :selected-intent-id="selectedIntentId"
-        :intent-sessions="intentSessions"
-        :selected-intent-session-id="selectedIntentSessionId"
-        :intent-session-run-states="intentSessionRunStates"
-        :requested-tab="requestedMergedTab"
         @filter="(status: IntentStatus | null) => emit('filter', status)"
         @start-automation="emit('start-automation')"
         @stop-automation="emit('stop-automation')"
@@ -284,19 +227,11 @@ defineExpose({
         @ordered-change="handleOrderedChange"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @refine="(id: string) => emit('refine', id)"
-        @select-intent-session="handleSelectIntentSession"
-        @new-intent-session="handleNewIntentSession"
-        @rename-intent-session="
-          (id: string, title: string) => emit('rename-intent-session', id, title)
-        "
-        @delete-intent-session="(id: string) => emit('delete-intent-session', id)"
-        @requested-tab-consumed="emit('requested-tab-consumed')"
       />
     </template>
 
     <template #right>
       <IntentDetail
-        v-if="mergedActiveTab === 'intents'"
         ref="detailRef"
         :intent="selectedIntent"
         :intents="intents"
@@ -347,41 +282,6 @@ defineExpose({
         @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
         @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
         @requested-subtab-consumed="emit('requested-subtab-consumed')"
-        @refresh="emit('refresh')"
-        @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
-        @delete-queued="(id: number) => emit('delete-queued', id)"
-        @submit="(text: string, imgs: PromptImage[]) => emit('submit', text, imgs)"
-        @enqueue="(text: string, imgs: PromptImage[]) => emit('enqueue', text, imgs)"
-        @stop="emit('stop')"
-        @continue="emit('continue')"
-        @list-commands="emit('list-commands')"
-      />
-      <ChatColumn
-        v-else
-        ref="composer"
-        :active-title="activeTitle || t('intent.chat.title.label')"
-        :vendor="vendor ?? null"
-        :agent-switch="agentSwitch ?? null"
-        :show-mode="false"
-        :always-title="true"
-        :has-active-session="hasActiveSession"
-        :messages="messages"
-        :actionable-permission-id="actionablePermissionId"
-        :task-model="taskModel"
-        :has-task-store="hasTaskStore"
-        :running="running"
-        :team-active="teamActive"
-        :connection="connection"
-        :activity="activity"
-        :current-agent-name="currentAgentName"
-        :reconnecting="reconnecting"
-        :side-effect-pending="sideEffectPending"
-        :queue="queue"
-        :available-commands="availableCommands"
-        :voice-lang="voiceLang"
-        @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"
-        @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
-        @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
         @refresh="emit('refresh')"
         @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
         @delete-queued="(id: number) => emit('delete-queued', id)"

@@ -1,5 +1,5 @@
 /**
- * Intent run-state reconciler — the "open_intent_chat" entry point
+ * Intent run-state reconciler — the "open_intent_session" entry point
  * passes every `in_progress` intent through this to reconcile the derived
  * {@link IntentRunStatus} against the live process table.
  *

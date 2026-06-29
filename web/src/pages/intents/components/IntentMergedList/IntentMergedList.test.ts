@@ -51,10 +51,12 @@ describe('IntentMergedList.vue — header', () => {
     expect(w.find('[data-testid="tab-sessions"]').exists()).toBe(false)
   })
 
-  it('does not render any new-session entry', () => {
+  it('renders the new-session entry and emits new-intent-session on click', async () => {
     const w = mountMerged()
-    expect(w.find('[data-testid="intent-list-new-session"]').exists()).toBe(false)
-    expect(w.find('[data-testid="intent-session-new"]').exists()).toBe(false)
+    const btn = w.find('[data-testid="intent-list-new-session"]')
+    expect(btn.exists()).toBe(true)
+    await btn.trigger('click')
+    expect(w.emitted('new-intent-session')).toHaveLength(1)
   })
 
   it('shows the automation button and status filter on desktop', () => {

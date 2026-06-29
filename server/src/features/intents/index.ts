@@ -177,7 +177,7 @@ export const listIntentsHandler: Handler<'list_intents'> = (_ctx, conn, msg) => 
   })
 }
 
-export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg) => {
+export const openIntentSession: Handler<'open_intent_session'> = async (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
   if (!proj) {
     conn.send({
@@ -329,7 +329,7 @@ export const openIntentChat: Handler<'open_intent_chat'> = async (ctx, conn, msg
 
 /**
  * Open an intent's spec-authoring session (`spec_session_id`) for read-only
- * viewing in the detail's `spec session` tab. Mirrors {@link openIntentChat}'s
+ * viewing in the detail's `spec session` tab. Mirrors {@link openIntentSession}'s
  * runtime-restore path but for the `'spec'` kind: if the runtime was dropped
  * (process restart / GC), reload its transcript, re-confine writes to the spec
  * directory, and re-pin the spec agent. No intents list / reconcile side-effects.
@@ -395,7 +395,7 @@ export const openSpecSession: Handler<'open_spec_session'> = async (_ctx, conn, 
   addViewer(chatId, conn.deliver)
 }
 
-export const newIntentChat: Handler<'new_intent_chat'> = (ctx, conn, msg) => {
+export const newIntentSession: Handler<'new_intent_session'> = (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
   if (!proj) {
     conn.send({
@@ -410,7 +410,7 @@ export const newIntentChat: Handler<'new_intent_chat'> = (ctx, conn, msg) => {
   }
   // Open a brand-new comm session: setChatSession resets the prior is_current
   // row to 0 and marks this one current, so a refresh / reconnect via
-  // open_intent_chat resumes THIS session.
+  // open_intent_session resumes THIS session.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')

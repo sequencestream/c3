@@ -87,7 +87,7 @@ export async function gatedSave(
  * prompt-build time, before the SDK binds) for the model to echo back into
  * `intentSessionId`. By save time the run is bound, so `runId` is the real
  * comm-session id — the same id the chat row was re-keyed to and that
- * `open_intent_chat` resolves against. We therefore overwrite the model-supplied
+ * `open_intent_session` resolves against. We therefore overwrite the model-supplied
  * value with `runId` so the persisted back-link is always resolvable (the value
  * is server-authoritative; the model only decides WHETHER to set it, and only on
  * a single-intent batch). A multi-item batch is left untouched — the store

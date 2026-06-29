@@ -13,7 +13,7 @@ import { isRunning } from '../../runs.js'
 
 /**
  * Per-intent runStatus cache, populated by reconcileInProgress on
- * open_intent_chat and consumed by `enrichRunStatus` during intent
+ * open_intent_session and consumed by `enrichRunStatus` during intent
  * broadcasts. This is a DERIVED-field cache (runStatus is not stored in the DB);
  * the key is intent id, and entries are overwritten on each fresh reconcile.
  * Cleared when a intent leaves in_progress.
@@ -24,7 +24,7 @@ const runStatusCache = new Map<string, IntentRunStatus>()
  * Dead-session de-dup for reconcile (perf). Maps intent id → the
  * `lastDevSessionId` we last ran the completion judge against while its process
  * was dead. Judging a dead session is an LLM call that yields the same verdict
- * every time, yet open_intent_chat fires on every entry, refresh, and WS
+ * every time, yet open_intent_session fires on every entry, refresh, and WS
  * reconnect — so we skip a intent whose CURRENT dead session is already
  * recorded here. A live process (re-derived cheaply) or a brand-new session id
  * (differs from the record) still gets (re)judged. Cleared when a intent

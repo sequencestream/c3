@@ -823,7 +823,13 @@
       "loading": "spec を読み込み中…"
     },
     "intentSession": {
-      "empty": "この意図にはまだ調整セッションがありません。"
+      "empty": "この意図にはまだ調整セッションがありません。",
+      "title": {
+        "label": "意図セッション"
+      },
+      "new": {
+        "tooltip": "新しい意図セッション"
+      }
     },
     "specSession": {
       "empty": "この意図にはまだ spec セッションがありません。"
@@ -1503,13 +1509,13 @@
     "intent": {
       "notFound": "意図が見つかりません。",
       "dbUnavailable": "意図機能は利用できません(c3.db)。",
-      "chatOpenFailed": "意図チャットを開けませんでした。",
+      "chatOpenFailed": "意図セッションを開けませんでした。",
       "cannotStartDev": "ステータス \"{status}\" からは開発を開始できません。",
       "devStartInFlight": "この意図の開発はすでに開始中です。",
       "illegalStatusTransition": "ステータスを \"{from}\" から \"{to}\" に変更できません。",
-      "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
-      "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
-      "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
+      "chatSessionNotFound": "Intent session not found: {sessionId}.",
+      "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
+      "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "prCreateFailed": "PRの作成に失敗しました: {detail}。",
       "gitCleanupNoChanges": "開発セッションが終了しましたが、コミットする変更がありません。手動でコミット・プッシュし、PRを作成してください。",
       "gitCleanupCommitPushFailed": "開発セッション後の自動コミット/プッシュに失敗しました: {detail}。手動で対応してください。",

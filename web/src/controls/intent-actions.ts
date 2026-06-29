@@ -108,7 +108,7 @@ export function installIntentActions(ctx: AppCtx): void {
     intentsProject.value = path
     ctx.persistViewMode()
     // The response carries both the comm `session_selected` and the list.
-    send({ type: 'open_intent_chat', workspaceId: path })
+    send({ type: 'open_intent_session', workspaceId: path })
     // Populate the middle-column intent session list.
     send({ type: 'list_intent_sessions', workspaceId: path })
   }
@@ -127,7 +127,15 @@ export function installIntentActions(ctx: AppCtx): void {
   ctx.selectIntentSession = (sessionId: string): void => {
     if (!intentsProject.value) return
     selectedIntentSessionId.value = sessionId
-    send({ type: 'open_intent_chat', workspaceId: intentsProject.value, sessionId })
+    send({ type: 'open_intent_session', workspaceId: intentsProject.value, sessionId })
+  }
+
+  // "+" in the intent list title bar: start a brand-new comm session. The server
+  // replies with a `session_selected`, which Intents.vue shows in the right
+  // column (its standalone chat view, toggled on by `new-intent-session`).
+  ctx.newIntentSession = (): void => {
+    if (!intentsProject.value) return
+    send({ type: 'new_intent_session', workspaceId: intentsProject.value })
   }
 
   ctx.setIntentFilter = (status: IntentStatus | null): void => {

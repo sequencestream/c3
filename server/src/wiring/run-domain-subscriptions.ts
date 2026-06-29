@@ -211,7 +211,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
       // Refine linkage: back-fill the originating intent's `intent_session_id`
       // with the real comm session id so the detail's `intent session` tab can
       // reopen it. takePendingIntentLink consumes the pending→intent entry
-      // registered by the refine_intent handler (absent for new_intent_chat).
+      // registered by the refine_intent handler (absent for new_intent_session).
       const refiningIntentId = takePendingIntentLink(prevId)
       if (refiningIntentId) {
         setIntentSessionId(refiningIntentId, realId)

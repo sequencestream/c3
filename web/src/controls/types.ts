@@ -124,6 +124,7 @@ export interface AppMethods {
   startAutomation(): void
   stopAutomation(): void
   selectIntentSession(sessionId: string): void
+  newIntentSession(): void
 
   // discussions
   openDiscussions(path: string): void

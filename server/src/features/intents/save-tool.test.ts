@@ -606,10 +606,10 @@ describe('intentSessionId field exposure / isolation', () => {
 })
 
 describe('save_intents single-intent session back-link (gate normalization)', () => {
-  it('normalizes a single intent intentSessionId to the bound run id (open_intent_chat-resolvable)', async () => {
+  it('normalizes a single intent intentSessionId to the bound run id (open_intent_session-resolvable)', async () => {
     // The model echoes the injected (pending) session id; the gate overwrites it with
     // binding.getRunId() (here 'run-1') so the persisted value matches the bound comm
-    // session that open_intent_chat resolves against.
+    // session that open_intent_session resolves against.
     const handler = getSaveHandler(mkServer(proj))
     const res = await handler(
       {

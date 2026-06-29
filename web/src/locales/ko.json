@@ -823,7 +823,13 @@
       "loading": "spec 불러오는 중…"
     },
     "intentSession": {
-      "empty": "이 의도에는 아직 조율 세션이 없습니다."
+      "empty": "이 의도에는 아직 조율 세션이 없습니다.",
+      "title": {
+        "label": "의도 세션"
+      },
+      "new": {
+        "tooltip": "새 의도 세션"
+      }
     },
     "specSession": {
       "empty": "이 의도에는 아직 spec 세션이 없습니다."
@@ -1503,13 +1509,13 @@
     "intent": {
       "notFound": "의도를 찾을 수 없습니다.",
       "dbUnavailable": "의도 기능을 사용할 수 없습니다 (c3.db).",
-      "chatOpenFailed": "의도 채팅을 열지 못했습니다.",
+      "chatOpenFailed": "의도 세션을 열지 못했습니다.",
       "cannotStartDev": "\"{status}\" 상태에서는 개발을 시작할 수 없습니다.",
       "devStartInFlight": "이 의도의 개발 시작이 이미 진행 중입니다.",
       "illegalStatusTransition": "상태를 \"{from}\"에서 \"{to}\"(으)로 변경할 수 없습니다.",
-      "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
-      "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
-      "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
+      "chatSessionNotFound": "Intent session not found: {sessionId}.",
+      "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
+      "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "prCreateFailed": "PR 생성에 실패했습니다: {detail}。",
       "gitCleanupNoChanges": "개발 세션이 종료되었지만 커밋할 변경 사항이 없습니다. 수동으로 커밋·푸시하고 PR을 생성하세요.",
       "gitCleanupCommitPushFailed": "개발 세션 후 자동 커밋/푸시에 실패했습니다: {detail}. 수동으로 처리하세요.",

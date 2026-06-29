@@ -1975,7 +1975,7 @@ export interface ProposedIntent {
    * intent is saved in a batch the field is ignored — there is no single source
    * session to attribute the batch to. The model fills it with the current
    * session id injected into its prompt; the save handler normalizes that to the
-   * bound comm-session id so it resolves against `open_intent_chat`. The
+   * bound comm-session id so it resolves against `open_intent_session`. The
    * `save_intent_directly` (schedule) path never carries it.
    */
   intentSessionId?: string
@@ -2456,7 +2456,7 @@ export interface WaitUserInvolveEvent {
    * Owning workspace's **opaque id** (not a path). The store persists the absolute
    * `workspace_path` but maps it through `pathToId` on read, so this matches the id
    * the web's `currentWorkspace` holds and every jump entry (`select_session` /
-   * `open_intent_chat` / `open_spec_session` / discussion / schedule) expects. A row
+   * `open_intent_session` / `open_spec_session` / discussion / schedule) expects. A row
    * whose workspace is no longer registered is dropped on read rather than emitting
    * a broken id the web could not route.
    */
@@ -2770,7 +2770,7 @@ export type ClientToServer =
    * the project's current (`is_current`) session (same as before). Replies with
    * a `session_selected` for the comm session plus an `intents` list.
    */
-  | { type: 'open_intent_chat'; workspaceId: string; sessionId?: string }
+  | { type: 'open_intent_session'; workspaceId: string; sessionId?: string }
   /**
    * List a project's intent communication sessions (reply: `intent_sessions`).
    * Each session carries id, title (nullable), and updatedAt. The response also
@@ -2793,9 +2793,9 @@ export type ClientToServer =
    * Start a brand-new communication session for a project: resets the previous
    * `is_current` comm session to 0, creates a fresh one marked current, and
    * replies with a `session_selected` (empty history) plus the `intents`
-   * list. The "+" button in the intent view title bar triggers this.
+   * list. The "+" button in the intent list title bar triggers this.
    */
-  | { type: 'new_intent_chat'; workspaceId: string }
+  | { type: 'new_intent_session'; workspaceId: string }
   /**
    * Restart the comm session as a fresh one seeded with a intent to refine;
    * the server injects the first prompt with the intent's id and content.
@@ -2832,7 +2832,7 @@ export type ClientToServer =
    * the intent detail's `spec session` tab. The server resolves the stored spec
    * session id, restores its write-confined `'spec'` runtime if dropped, and
    * replies with a `session_selected` (history + status). Distinct from
-   * `open_intent_chat` (the comm/refine session, a different `'intent'` runtime).
+   * `open_intent_session` (the comm/refine session, a different `'intent'` runtime).
    */
   | { type: 'open_spec_session'; workspaceId: string; intentId: string }
   /**
@@ -3313,7 +3313,7 @@ export type ServerToClient =
    */
   | { type: 'unauthenticated'; reason: 'missing' | 'expired' | 'invalid' }
   /**
-   * A project's intent list (reply to `list_intents`/`open_intent_chat`, or a push
+   * A project's intent list (reply to `list_intents`/`open_intent_session`, or a push
    * after a change). `sddEnabled` is the workspace's SDD master switch, rebroadcast
    * with every list so the intent action button can render its SDD-aware state
    * (Write Spec / Approve Spec / Start Dev) without a separate settings fetch.

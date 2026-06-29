@@ -52,6 +52,11 @@ const IntentDetailStub = defineComponent({
   template: '<div data-testid="intent-detail">{{ intent?.id ?? "" }}</div>',
 })
 
+const ChatColumnStub = defineComponent({
+  name: 'ChatColumn',
+  template: '<div data-testid="standalone-chat" />',
+})
+
 function mountIntents(intents: Intent[]) {
   return mount(Intents, {
     props: {
@@ -78,6 +83,7 @@ function mountIntents(intents: Intent[]) {
       stubs: {
         MobileStack: MobileStackStub,
         IntentDetail: IntentDetailStub,
+        ChatColumn: ChatColumnStub,
       },
     },
   })
@@ -193,13 +199,36 @@ describe('Intents.vue — dependency selection', () => {
 })
 
 describe('Intents.vue — right column', () => {
-  it('always shows the intent detail for the selected intent, never a standalone chat column', async () => {
+  it('shows the intent detail for the selected intent by default', async () => {
     const wrapper = mountIntents([intent({ id: 'todo-1', status: 'todo', priority: 'P1' })])
     await nextTick()
 
     expect(wrapper.find('[data-testid="intent-detail"]').exists()).toBe(true)
-    // The segmented control / new-session entry no longer exists on the intents page.
-    expect(wrapper.find('[data-testid="intent-list-new-session"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="standalone-chat"]').exists()).toBe(false)
+    // The old segmented control stays gone — the left column is the intent list only.
     expect(wrapper.find('[data-testid="tab-sessions"]').exists()).toBe(false)
+  })
+
+  it('clicking "+" toggles the right column to a standalone intent-session chat and emits new-intent-session', async () => {
+    const wrapper = mountIntents([intent({ id: 'todo-1', status: 'todo', priority: 'P1' })])
+    await nextTick()
+
+    await wrapper.find('[data-testid="intent-list-new-session"]').trigger('click')
+
+    expect(wrapper.emitted('new-intent-session')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="standalone-chat"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="intent-detail"]').exists()).toBe(false)
+  })
+
+  it('selecting an intent row toggles back from the standalone chat to the detail', async () => {
+    const wrapper = mountIntents([intent({ id: 'todo-1', status: 'todo', priority: 'P1' })])
+    await nextTick()
+    await wrapper.find('[data-testid="intent-list-new-session"]').trigger('click')
+    expect(wrapper.find('[data-testid="standalone-chat"]').exists()).toBe(true)
+
+    await wrapper.find('[data-intent-id="todo-1"] .req-item-main').trigger('click')
+
+    expect(wrapper.find('[data-testid="intent-detail"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="standalone-chat"]').exists()).toBe(false)
   })
 })

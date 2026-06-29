@@ -8,7 +8,7 @@
  * 头部包含:
  * - 折叠按钮(控制整列宽窄)
  * - 列表标题
- * - 右域:自动化按钮 + 状态过滤(移动端折叠进 overflow 菜单)
+ * - 右域:自动化按钮 + 状态过滤(移动端折叠进 overflow 菜单)+「+」新建意图会话
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { AutomationStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
@@ -42,6 +42,7 @@ const emit = defineEmits<{
   'ordered-change': [ids: string[]]
   'set-automate': [intentId: string, automate: boolean]
   refine: [intentId: string]
+  'new-intent-session': []
 }>()
 
 const mobileActionsOpen = ref(false)
@@ -196,6 +197,16 @@ function setFilterFromMenu(value: string): void {
             </select>
           </div>
         </div>
+        <button
+          type="button"
+          class="req-new-btn"
+          :aria-label="t('intent.intentSession.new.tooltip')"
+          :title="t('intent.intentSession.new.tooltip')"
+          data-testid="intent-list-new-session"
+          @click="emit('new-intent-session')"
+        >
+          +
+        </button>
       </div>
     </div>
 

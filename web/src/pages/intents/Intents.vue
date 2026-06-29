@@ -13,6 +13,7 @@ import { useTypedI18n } from '@/i18n'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import IntentMergedList from './components/IntentMergedList/IntentMergedList.vue'
 import IntentDetail from './components/IntentDetail/IntentDetail.vue'
+import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
 import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
@@ -97,6 +98,7 @@ const emit = defineEmits<{
   'start-automation': []
   'stop-automation': []
   'new-intent': []
+  'new-intent-session': []
   'create-pr': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   'set-session-agent': [agentId: string]
@@ -126,6 +128,10 @@ const { t } = useTypedI18n()
 // 而非服务端原序(priority ASC)首条;故由 IntentList 上抛 ordered-change(有序 id 列表),据此选首条。
 const selectedIntentId = ref<string | null>(null)
 const userSelectedIntent = ref(false)
+
+// 右栏双态:false=展示选中意图的 IntentDetail;true=展示「+」新建的独立意图会话
+// 聊天列(不绑定具体意图)。点「+」置 true,点任一意图行置 false 切回详情。
+const viewingNewIntentSession = ref(false)
 function handleOrderedChange(ids: string[]): void {
   if (ids.length === 0) {
     selectedIntentId.value = null
@@ -180,8 +186,18 @@ const mobileActiveToken = computed(() => selectedIntentId.value ?? props.project
 function handleSelectIntent(intentId: string): void {
   userSelectedIntent.value = true
   selectedIntentId.value = intentId
+  // 选中意图即切回详情视图(若此前在看新建意图会话聊天列)。
+  viewingNewIntentSession.value = false
   // 移动端:点击意图行 drill 进右栏详情(桌面下右栏常驻,仅更新选中)。
   mobileActiveKey.value = 'right'
+}
+
+// 列表标题栏「+」:新建意图会话。右栏切到独立聊天列;新会话经服务端
+// session_selected 成为活动会话后由 ChatColumn 渲染。移动端 drill 进右栏。
+function handleNewIntentSession(): void {
+  viewingNewIntentSession.value = true
+  mobileActiveKey.value = 'right'
+  emit('new-intent-session')
 }
 
 function handleSelectDependency(intentId: string): void {
@@ -193,12 +209,15 @@ function handleMobileBack(targetKey: string): void {
   emit('mobile-back', targetKey)
 }
 
-// ---- Composer ref for prefill forwarding ----
-// Prefill routes to the intent detail's chat tabs (`detailRef`).
+// ---- Composer refs for prefill forwarding ----
+// Prefill routes to whichever right-column view is active: the standalone
+// intent-session chat (`composer`) or the intent detail's chat tabs (`detailRef`).
 const detailRef = ref<InstanceType<typeof IntentDetail> | null>(null)
+const composer = ref<InstanceType<typeof ChatColumn> | null>(null)
 defineExpose({
   prefill: (text: string, images?: PromptImage[]) => {
-    detailRef.value?.prefill(text, images)
+    if (viewingNewIntentSession.value) composer.value?.prefill(text, images)
+    else detailRef.value?.prefill(text, images)
   },
 })
 </script>
@@ -227,11 +246,13 @@ defineExpose({
         @ordered-change="handleOrderedChange"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @refine="(id: string) => emit('refine', id)"
+        @new-intent-session="handleNewIntentSession"
       />
     </template>
 
     <template #right>
       <IntentDetail
+        v-if="!viewingNewIntentSession"
         ref="detailRef"
         :intent="selectedIntent"
         :intents="intents"
@@ -282,6 +303,41 @@ defineExpose({
         @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
         @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
         @requested-subtab-consumed="emit('requested-subtab-consumed')"
+        @refresh="emit('refresh')"
+        @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
+        @delete-queued="(id: number) => emit('delete-queued', id)"
+        @submit="(text: string, imgs: PromptImage[]) => emit('submit', text, imgs)"
+        @enqueue="(text: string, imgs: PromptImage[]) => emit('enqueue', text, imgs)"
+        @stop="emit('stop')"
+        @continue="emit('continue')"
+        @list-commands="emit('list-commands')"
+      />
+      <ChatColumn
+        v-else
+        ref="composer"
+        :active-title="activeTitle || t('intent.intentSession.title.label')"
+        :vendor="vendor ?? null"
+        :agent-switch="agentSwitch ?? null"
+        :show-mode="false"
+        :always-title="true"
+        :has-active-session="hasActiveSession"
+        :messages="messages"
+        :actionable-permission-id="actionablePermissionId"
+        :task-model="taskModel"
+        :has-task-store="hasTaskStore"
+        :running="running"
+        :team-active="teamActive"
+        :connection="connection"
+        :activity="activity"
+        :current-agent-name="currentAgentName"
+        :reconnecting="reconnecting"
+        :side-effect-pending="sideEffectPending"
+        :queue="queue"
+        :available-commands="availableCommands"
+        :voice-lang="voiceLang"
+        @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"
+        @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
+        @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
         @refresh="emit('refresh')"
         @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
         @delete-queued="(id: number) => emit('delete-queued', id)"

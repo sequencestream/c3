@@ -216,7 +216,7 @@ describe('intent session agent binding (pending→agent + freezeVendor)', () => 
   })
 
   it('four entry points style: each ensureRuntime followed by setSessionAgent creates a resolvable pending', () => {
-    // Simulate the pattern used by newIntentChat / openIntentChat / refineIntent / discussionToIntent.
+    // Simulate the pattern used by newIntentSession / openIntentSession / refineIntent / discussionToIntent.
     const ids = ['pending:new', 'pending:open', 'pending:refine', 'pending:discuss']
     for (const id of ids) {
       setSessionAgent(id, getDefaultAgentId())

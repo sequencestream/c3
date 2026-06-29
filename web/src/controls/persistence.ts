@@ -95,7 +95,7 @@ export function installPersistence(ctx: AppCtx): void {
     if (saved.mode === 'intents' && saved.proj && list.some((w) => w.id === saved.proj)) {
       activeTab.value = 'intents'
       intentsProject.value = saved.proj
-      send({ type: 'open_intent_chat', workspaceId: saved.proj })
+      send({ type: 'open_intent_session', workspaceId: saved.proj })
       send({ type: 'list_intent_sessions', workspaceId: saved.proj })
     }
   }

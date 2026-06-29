@@ -13,7 +13,6 @@ import type {
   CreateScheduleInput,
   Schedule,
   ScheduleExecutionLog,
-  UpdateScheduleInput,
 } from '@ccc/shared/protocol'
 import { installScheduleActions } from './schedule-actions'
 import type { AppCtx } from './types'

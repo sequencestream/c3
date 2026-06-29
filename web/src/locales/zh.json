@@ -822,7 +822,13 @@
       "loading": "加载 Spec 中…"
     },
     "intentSession": {
-      "empty": "该意图还没有沟通会话。"
+      "empty": "该意图还没有沟通会话。",
+      "title": {
+        "label": "意图会话"
+      },
+      "new": {
+        "tooltip": "新建意图会话"
+      }
     },
     "specSession": {
       "empty": "该意图还没有写 spec 会话。"
@@ -1502,10 +1508,10 @@
     "intent": {
       "notFound": "意图不存在。",
       "dbUnavailable": "意图功能不可用 (c3.db)。",
-      "chatOpenFailed": "打开意图对话失败。",
-      "chatSessionNotFound": "意图对话会话不存在: {sessionId}。",
-      "renameChatSessionFailed": "重命名意图对话会话失败: {detail}。",
-      "deleteChatSessionFailed": "删除意图对话会话失败: {detail}。",
+      "chatOpenFailed": "打开意图会话失败。",
+      "chatSessionNotFound": "意图会话不存在: {sessionId}。",
+      "renameChatSessionFailed": "重命名意图会话失败: {detail}。",
+      "deleteChatSessionFailed": "删除意图会话失败: {detail}。",
       "cannotStartDev": "当前状态({status})不可启动开发。",
       "devStartInFlight": "该意图正在启动开发,请稍候。",
       "illegalStatusTransition": "不能从 \"{from}\" 转为 \"{to}\"。",

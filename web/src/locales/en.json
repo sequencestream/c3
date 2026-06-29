@@ -822,7 +822,13 @@
       "loading": "Loading spec…"
     },
     "intentSession": {
-      "empty": "This intent has no refine session yet."
+      "empty": "This intent has no refine session yet.",
+      "title": {
+        "label": "Intent session"
+      },
+      "new": {
+        "tooltip": "New intent session"
+      }
     },
     "specSession": {
       "empty": "This intent has no spec session yet."
@@ -1502,10 +1508,10 @@
     "intent": {
       "notFound": "Intent not found.",
       "dbUnavailable": "Intents feature unavailable (c3.db).",
-      "chatOpenFailed": "Failed to open intent chat.",
-      "chatSessionNotFound": "Intent chat session not found: {sessionId}.",
-      "renameChatSessionFailed": "Failed to rename intent chat session: {detail}.",
-      "deleteChatSessionFailed": "Failed to delete intent chat session: {detail}.",
+      "chatOpenFailed": "Failed to open intent session.",
+      "chatSessionNotFound": "Intent session not found: {sessionId}.",
+      "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
+      "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "cannotStartDev": "Cannot start development from status \"{status}\".",
       "devStartInFlight": "Development is already starting for this intent.",
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",

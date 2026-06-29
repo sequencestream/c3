@@ -132,6 +132,7 @@ const {
   startAutomation,
   stopAutomation,
   selectIntentSession,
+  newIntentSession,
   // ---- discussions ----
   discussionsProject,
   currentDiscussions,
@@ -414,6 +415,7 @@ const {
           @create-pr="createPr"
           @start-automation="startAutomation"
           @stop-automation="stopAutomation"
+          @new-intent-session="newIntentSession"
           @set-session-agent="onSetSessionAgent"
           @respond="respond"
           @submit-ask="submitAsk"

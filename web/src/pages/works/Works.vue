@@ -140,6 +140,10 @@ function handleMobileBack(targetKey: string): void {
   emit('mobile-back', targetKey)
 }
 
+// 定时任务执行类会话是只读的执行日志(从定时任务跳入查看),不接受用户输入,
+// 故隐藏输入框;其余会话类型(work/intent/spec/discussion/tool)仍可对话。
+const showInput = computed(() => props.activeSessionKind !== 'schedule')
+
 // Forward the composer's prefill so App.vue's queue-edit can fold text+images back in.
 const composer = ref<InstanceType<typeof ChatColumn> | null>(null)
 defineExpose({
@@ -200,6 +204,7 @@ defineExpose({
         :linked-intent-id="linkedIntentId"
         :linked-schedule-id="linkedScheduleId"
         :has-active-session="hasActiveSession"
+        :show-input="showInput"
         :messages="messages"
         :actionable-permission-id="actionablePermissionId"
         :task-model="taskModel"

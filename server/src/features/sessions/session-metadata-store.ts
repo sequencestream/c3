@@ -135,15 +135,43 @@ function tableExists(d: Db, table: string): boolean {
   )
 }
 
+/** Date stamp `yyyymmdd` from the (injectable) clock, used for backup table names. */
+function dateStamp(): string {
+  const dt = new Date(now())
+  const y = dt.getFullYear()
+  const m = String(dt.getMonth() + 1).padStart(2, '0')
+  const day = String(dt.getDate()).padStart(2, '0')
+  return `${y}${m}${day}`
+}
+
+/** Find a free `session_metadata_<stamp>` name, appending `_N` on same-day collisions. */
+function freeBackupName(d: Db): string {
+  const base = `session_metadata_${dateStamp()}`
+  if (!tableExists(d, base)) return base
+  for (let i = 2; ; i++) {
+    const candidate = `${base}_${i}`
+    if (!tableExists(d, candidate)) return candidate
+  }
+}
+
 function ensureSchema(d: Db): void {
   const hasOld = tableExists(d, 'work_session_metadata')
   const hasNew = tableExists(d, 'session_metadata')
   if (hasOld && hasNew) {
-    throw new Error(
-      'both work_session_metadata and session_metadata exist; refusing unsafe automatic merge',
+    // Both tables present: the legacy `work_session_metadata` holds the real
+    // data, while `session_metadata` is a stray/partial table from a prior
+    // run. Back up the stray to a dated name (no data loss), then promote the
+    // legacy table into place. Wrapped in a transaction so a failure rolls
+    // back rather than leaving a half-renamed schema.
+    const backup = freeBackupName(d)
+    tx(d, () => {
+      d.exec(`ALTER TABLE session_metadata RENAME TO ${backup}`)
+      d.exec('ALTER TABLE work_session_metadata RENAME TO session_metadata')
+    })
+    console.warn(
+      `[c3] session_metadata migration: backed up existing session_metadata to ${backup} and promoted work_session_metadata`,
     )
-  }
-  if (hasOld) {
+  } else if (hasOld) {
     d.exec('ALTER TABLE work_session_metadata RENAME TO session_metadata')
   }
   d.exec(SCHEMA)

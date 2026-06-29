@@ -679,20 +679,21 @@ header h1 {
 }
 .session-kind-tabs {
   flex-shrink: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 2px;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
   padding: var(--sp-2);
   border-bottom: 1px solid var(--c-border);
 }
 .session-kind-tab {
+  position: relative;
+  flex: 1;
   min-width: 0;
-  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 0 6px;
+  padding: 4px 8px;
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
   background: var(--c-panel);
@@ -701,24 +702,32 @@ header h1 {
   cursor: pointer;
 }
 .session-kind-tab.active {
-  background: var(--c-primary-soft);
-  color: var(--c-text);
-  border-color: var(--c-primary-border);
+  background: var(--c-primary);
+  color: #fff;
+  border-color: var(--c-primary);
+  font-weight: 600;
 }
 .session-kind-tab.disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 .session-kind-count {
-  min-width: 16px;
-  height: 16px;
+  position: absolute;
+  top: -6px;
+  right: -6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 8px;
-  background: var(--c-bg-inset);
-  color: var(--c-text-muted);
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border: 1px solid var(--c-success, #22c55e);
+  border-radius: 7.5px;
+  background: rgba(34, 197, 94, 0.35);
+  color: var(--c-success, #22c55e);
   font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 .ws-list {

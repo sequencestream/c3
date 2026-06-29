@@ -185,6 +185,88 @@ describe('schema (F-12 column whitelist)', () => {
         .sort(),
     ).toEqual(['legacy-pending', 'legacy-real'])
   })
+
+  it('backs up a stray session_metadata then promotes work_session_metadata when both exist', () => {
+    const d = getDb()
+    if (!d) throw new Error('db unavailable in test')
+    // A stray new-name table from a prior run (the one to back up).
+    d.exec(`
+      CREATE TABLE session_metadata (
+        c3_id TEXT PRIMARY KEY,
+        workspace_path TEXT NOT NULL,
+        vendor TEXT NOT NULL,
+        vendor_session_id TEXT,
+        agent_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        last_modified INTEGER,
+        state TEXT NOT NULL,
+        state_updated_at INTEGER NOT NULL,
+        kind TEXT NOT NULL
+      );
+    `)
+    d.run(
+      `INSERT INTO session_metadata
+         (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
+          last_modified, state, state_updated_at, kind)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      'stray-row',
+      wsA,
+      'claude',
+      'stray-1',
+      agent1,
+      'Stray',
+      1,
+      'alive',
+      1,
+      'real',
+    )
+    // The legacy table holding the real data (the one to promote).
+    d.exec(`
+      CREATE TABLE work_session_metadata (
+        c3_id TEXT PRIMARY KEY,
+        workspace_path TEXT NOT NULL,
+        vendor TEXT NOT NULL,
+        vendor_session_id TEXT,
+        agent_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        last_modified INTEGER,
+        state TEXT NOT NULL,
+        state_updated_at INTEGER NOT NULL,
+        kind TEXT NOT NULL
+      );
+    `)
+    d.run(
+      `INSERT INTO work_session_metadata
+         (c3_id, workspace_path, vendor, vendor_session_id, agent_id, title,
+          last_modified, state, state_updated_at, kind)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      'promoted-row',
+      wsA,
+      'claude',
+      'promoted-1',
+      agent1,
+      'Promoted',
+      2,
+      'alive',
+      2,
+      'real',
+    )
+
+    // Triggers ensureSchema: back up stray session_metadata, promote legacy.
+    const rows = listAll()
+
+    expect(rows.map((r) => r.c3Id)).toEqual(['promoted-row'])
+    expect(
+      d.get("SELECT name FROM sqlite_master WHERE type='table' AND name='work_session_metadata'"),
+    ).toBeUndefined()
+    // The stray rows survive in a dated backup table (no data loss).
+    const backup = d.get<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'session_metadata\\_%' ESCAPE '\\'",
+    )
+    expect(backup?.name).toMatch(/^session_metadata_\d{8}/)
+    const backupRows = d.all<{ c3_id: string }>(`SELECT c3_id FROM ${backup!.name}`)
+    expect(backupRows.map((r) => r.c3_id)).toEqual(['stray-row'])
+  })
 })
 
 describe('createSession pending row (F-11 replacement for setPendingIntent)', () => {

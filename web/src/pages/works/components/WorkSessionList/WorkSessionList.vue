@@ -270,7 +270,9 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
         @click="selectSessionKind(tab.key, tabEnabled(tab))"
       >
         <span>{{ t(tab.labelKey as never) }}</span>
-        <span class="session-kind-count">{{ sessionCounts[tab.key] }}</span>
+        <span v-if="sessionCounts[tab.key] > 0" class="session-kind-count">{{
+          sessionCounts[tab.key]
+        }}</span>
       </button>
     </div>
     <div class="ws-list">

@@ -32,7 +32,8 @@
     },
     "tab": {
       "console": {
-        "label": "Sessions"
+        "label": "Sessions",
+        "ariaLabel": "Sessions ({count} running)"
       },
       "intents": {
         "label": "Intents"

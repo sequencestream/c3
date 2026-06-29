@@ -33,7 +33,8 @@
     },
     "tab": {
       "console": {
-        "label": "세션"
+        "label": "세션",
+        "ariaLabel": "세션({count}개 실행 중)"
       },
       "intents": {
         "label": "의도"

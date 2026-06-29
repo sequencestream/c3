@@ -90,6 +90,14 @@ export function sessionCacheKey(workspaceId: string, sessionKind: SessionPageKin
   return `${workspaceId}::${sessionKind}`
 }
 
+// 顶部「会话」tab 角标数值:当前工作区六类会话(work/intent/spec/discussion/
+// schedule/tool)进行中计数之和。与左侧列表六个 kind tab 角标同一数据源
+// (sessionCounts),不引入新口径。tool 类在 showToolSessions 关闭时服务端本就
+// 不推送(值为 0),自然不计入。和为 0 时上层 `v-if="tab.badgeCount"` 不渲染角标。
+export function sumSessionCounts(counts: Record<SessionPageKind, number>): number {
+  return SESSION_PAGE_KINDS.reduce((sum, kind) => sum + (counts[kind] ?? 0), 0)
+}
+
 /**
  * Create the full reactive state surface of the app controller: every ref,
  * computed, and pure (state-only) helper used by App.vue and the action
@@ -285,7 +293,11 @@ export function createState(deps: StateDeps) {
 
   // ---- Top-bar tabs ----
   const HEADER_TABS = computed<{ key: TabKey; label: string; badgeCount?: number }[]>(() => [
-    { key: 'console', label: t('nav.tab.console.label') },
+    {
+      key: 'console',
+      label: t('nav.tab.console.label'),
+      badgeCount: sumSessionCounts(sessionCounts.value),
+    },
     { key: 'intents', label: t('nav.tab.intents.label') },
     { key: 'discussion', label: t('nav.tab.discussion.label') },
     { key: 'schedules', label: t('nav.tab.schedules.label') },

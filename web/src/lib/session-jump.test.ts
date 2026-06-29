@@ -102,6 +102,12 @@ describe('resolveSessionSourceAction', () => {
     ).toEqual({ target: { kind: 'schedule', scheduleId: 's1' }, label: 'trace' })
   })
 
+  it('gives a standalone intent (chat) session an owner-less intentSessions target', () => {
+    expect(
+      resolveSessionSourceAction({ sessionKind: 'intent', ownerKind: null, ownerId: null }),
+    ).toEqual({ target: { kind: 'intentSessions', intentId: null }, label: 'intent' })
+  })
+
   it('falls back to the legacy linkedIntentId when owner metadata is absent', () => {
     expect(
       resolveSessionSourceAction({

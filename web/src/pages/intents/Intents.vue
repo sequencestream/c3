@@ -78,6 +78,13 @@ const props = defineProps<{
   voiceLang: string
   /** One-shot sub-tab request for IntentDetail (WorkCenter jump-to-source). */
   requestedIntentSubTab?: 'intentSession' | 'specSession' | null
+  /**
+   * One-shot request to open a standalone intent (chat) session here (from the
+   * session page's title-bar source button, for a chat with no owning intent).
+   * When set, the right column flips to the standalone chat bound to `activeSession`;
+   * `requested-intent-session-consumed` is emitted so the parent clears it.
+   */
+  requestedIntentSessionId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -104,6 +111,8 @@ const emit = defineEmits<{
   'set-session-agent': [agentId: string]
   // external select request consumed (parent clears `requestedIntentId`)
   'requested-intent-consumed': []
+  // external standalone-session request consumed (parent clears `requestedIntentSessionId`)
+  'requested-intent-session-consumed': []
   // external sub-tab request consumed (parent clears `requestedIntentSubTab`)
   'requested-subtab-consumed': []
   // chat events
@@ -164,6 +173,20 @@ watch(
     selectedIntentId.value = requestedId
     userSelectedIntent.value = true
     emit('requested-intent-consumed')
+  },
+  { immediate: true },
+)
+
+// External one-shot request to open a standalone intent (chat) session here (a chat
+// with no owning intent, traced from the session page's title-bar source button):
+// flip the right column to the standalone chat — it binds to the active session the
+// control layer is selecting — and signal the parent to clear the request.
+watch(
+  () => props.requestedIntentSessionId,
+  (sessionId) => {
+    if (!sessionId) return
+    viewingNewIntentSession.value = true
+    emit('requested-intent-session-consumed')
   },
   { immediate: true },
 )

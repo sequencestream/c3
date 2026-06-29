@@ -106,6 +106,7 @@ const {
   intentsProject,
   requestedIntentId,
   requestedIntentSubTab,
+  requestedIntentSessionId,
   currentIntents,
   currentIntentsSdd,
   currentAutomation,
@@ -348,6 +349,7 @@ const {
           :sdd-enabled="currentIntentsSdd"
           :requested-intent-id="requestedIntentId"
           :requested-intent-sub-tab="requestedIntentSubTab"
+          :requested-intent-session-id="requestedIntentSessionId"
           :workspace-main-branch="
             currentWorkspaceSetting?.defaultMainBranch ??
             (intentsProject
@@ -387,6 +389,7 @@ const {
           :agent-switch="activeAgentSwitch"
           @requested-intent-consumed="requestedIntentId = null"
           @requested-subtab-consumed="requestedIntentSubTab = null"
+          @requested-intent-session-consumed="requestedIntentSessionId = null"
           @filter="setIntentFilter"
           @refine="refineIntent"
           @write-spec="writeSpec"

@@ -499,6 +499,11 @@ export function createState(deps: StateDeps) {
   // One-shot request to force IntentMergedList to switch to a specific tab (set by
   // the WorkCenter jump-to-source when no intent matches the session id).
   const requestedMergedTab = ref<'intents' | 'sessions' | null>(null)
+  // One-shot request to open a specific standalone intent (chat) session on the
+  // intents page (set by the title-bar source button when an intent session has no
+  // owning intent to select). Consumed + cleared by Intents.vue once applied: it
+  // flips the right column to the standalone chat bound to the active session.
+  const requestedIntentSessionId = ref<string | null>(null)
 
   // The mode-picker options for the viewed session.
   const modeOptions = computed(() => {
@@ -708,6 +713,7 @@ export function createState(deps: StateDeps) {
     requestedWorkSessionId,
     requestedIntentSubTab,
     requestedMergedTab,
+    requestedIntentSessionId,
     toast,
     intentActionError,
     intentActionErrorSeq,

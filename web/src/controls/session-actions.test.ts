@@ -46,6 +46,7 @@ function makeCtx(
   const requestedIntentId = ref<string | null>(null)
   const requestedIntentSubTab = ref<'intentSession' | 'specSession' | null>(null)
   const requestedMergedTab = ref<'list' | 'sessions' | null>(null)
+  const requestedIntentSessionId = ref<string | null>(null)
   const activeTab = ref('intents')
   const activeSession = ref<string | null>(null)
   const activeWorkspace = ref<string | null>(null)
@@ -69,6 +70,7 @@ function makeCtx(
     requestedIntentId,
     requestedIntentSubTab,
     requestedMergedTab,
+    requestedIntentSessionId,
     activeTab,
     activeSession,
     activeWorkspace,
@@ -98,6 +100,7 @@ function makeCtx(
     requestedIntentId,
     requestedIntentSubTab,
     requestedMergedTab,
+    requestedIntentSessionId,
     openDiscussions,
     openDiscussion,
     openSchedules,
@@ -320,6 +323,19 @@ describe('jumpActiveSessionSource — title-bar source button', () => {
     expect(openIntents).toHaveBeenCalledWith(WS)
     expect(requestedMergedTab.value).toBe('sessions')
     expect(selectIntentSession).toHaveBeenCalledWith('intent-session-1')
+  })
+
+  it('opens a standalone intent (chat) session with no owning intent on the intents page', () => {
+    const { ctx, openIntents, selectIntentSession, requestedIntentId, requestedIntentSessionId } =
+      setup('intent', null, '', 'standalone-chat-1')
+
+    ctx.jumpActiveSessionSource()
+
+    expect(openIntents).toHaveBeenCalledWith(WS)
+    // No owning intent to select; instead the chat itself is opened on the page.
+    expect(requestedIntentId.value).toBeNull()
+    expect(requestedIntentSessionId.value).toBe('standalone-chat-1')
+    expect(selectIntentSession).toHaveBeenCalledWith('standalone-chat-1')
   })
 
   it('routes a discussion session to the discussion page', () => {

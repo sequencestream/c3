@@ -170,6 +170,20 @@ describe('Intents.vue — external select request (jump from work session)', () 
     expect(wrapper.emitted('requested-intent-consumed')).toHaveLength(1)
   })
 
+  it('opens the standalone chat (not a detail) when a standalone intent-session is requested', async () => {
+    const wrapper = mountIntents([intent({ id: 'todo-a', status: 'todo', priority: 'P1' })])
+    await nextTick()
+    expect(wrapper.find('[data-testid="intent-detail"]').exists()).toBe(true)
+
+    await wrapper.setProps({ requestedIntentSessionId: 'chat-99' })
+    await nextTick()
+
+    // Right column flips to the standalone chat bound to the active session.
+    expect(wrapper.find('[data-testid="standalone-chat"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="intent-detail"]').exists()).toBe(false)
+    expect(wrapper.emitted('requested-intent-session-consumed')).toHaveLength(1)
+  })
+
   it('ignores a request whose target never appears, leaving the default selection', async () => {
     const wrapper = mountIntents([intent({ id: 'todo-a', status: 'todo', priority: 'P1' })])
     await nextTick()

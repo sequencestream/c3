@@ -4,7 +4,9 @@ export type SessionOwnerKind = 'intent' | 'discussion' | 'schedule'
 
 export type SessionJumpTarget =
   | { kind: 'intentDetail'; intentId: string; tab?: 'specSession' }
-  | { kind: 'intentSessions'; intentId: string }
+  // `intentId` is null for a standalone intent (chat) session that has no owning
+  // intent: the jump still opens the intents page, just without selecting an intent.
+  | { kind: 'intentSessions'; intentId: string | null }
   | { kind: 'discussion'; discussionId: string }
   | { kind: 'schedule'; scheduleId: string }
 
@@ -66,7 +68,13 @@ export function resolveSessionSourceAction(input: {
 }): SessionSourceAction | null {
   const target =
     resolveSessionJumpTarget(input) ??
-    (input.linkedIntentId ? { kind: 'intentDetail', intentId: input.linkedIntentId } : null)
+    (input.linkedIntentId
+      ? ({ kind: 'intentDetail', intentId: input.linkedIntentId } as const)
+      : // A standalone intent (chat) session has no owning intent, but its source is
+        // still the intents page — surface a button that opens it there.
+        input.sessionKind === 'intent'
+        ? ({ kind: 'intentSessions', intentId: null } as const)
+        : null)
   if (!target) return null
   return { target, label: sourceLabelForKind(input.sessionKind) }
 }

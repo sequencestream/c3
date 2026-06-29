@@ -309,13 +309,15 @@ function selectTab(tab: HeaderTab): void {
           :disabled="tabsEnabled === false"
           @click="emit('select-tab', tab.key)"
         >
-          {{ tab.label }}
-          <span
-            v-if="tab.badgeCount"
-            class="tab-badge"
-            :aria-label="t('nav.tab.console.ariaLabel', { count: tab.badgeCount })"
-            >{{ tab.badgeCount }}</span
-          >
+          <span class="tab-label">
+            {{ tab.label }}
+            <span
+              v-if="tab.badgeCount"
+              class="tab-badge"
+              :aria-label="t('nav.tab.console.ariaLabel', { count: tab.badgeCount })"
+              >{{ tab.badgeCount }}</span
+            >
+          </span>
         </button>
       </nav>
 
@@ -567,13 +569,15 @@ function selectTab(tab: HeaderTab): void {
         :aria-selected="isTabActive(tab)"
         @click="selectTab(tab)"
       >
-        <span class="mobile-tab-label">{{ tab.label }}</span>
-        <span
-          v-if="tab.badgeCount"
-          class="tab-badge"
-          :aria-label="t('nav.tab.console.ariaLabel', { count: tab.badgeCount })"
-          >{{ tab.badgeCount }}</span
-        >
+        <span class="mobile-tab-content">
+          <span class="mobile-tab-label">{{ tab.label }}</span>
+          <span
+            v-if="tab.badgeCount"
+            class="tab-badge"
+            :aria-label="t('nav.tab.console.ariaLabel', { count: tab.badgeCount })"
+            >{{ tab.badgeCount }}</span
+          >
+        </span>
       </button>
     </nav>
   </header>
@@ -983,19 +987,26 @@ function selectTab(tab: HeaderTab): void {
     white-space: nowrap;
   }
 
-  /* 移动端底部 tab 角标:右上角红底白字,与桌面 .header-tab .tab-badge / 工作台
-     .vm-badge 视觉一致。.mobile-bottom-tab 已是 position: relative,故此处定位生效。 */
+  /* 移动端底部 tab 角标:锚定在标签文字右上角(与桌面一致),红底白字与 .vm-badge
+     视觉统一。.mobile-tab-label 自身 overflow:hidden 会裁掉上抬的角标,故角标放在
+     不裁剪的 .mobile-tab-content 包裹层内、与 label 同级。 */
+  .mobile-tab-content {
+    position: relative;
+    display: inline-flex;
+    max-width: 100%;
+    min-width: 0;
+  }
   .mobile-bottom-tab .tab-badge {
     position: absolute;
-    top: 7px;
-    right: max(8px, calc(50% - 28px));
+    top: -6px;
+    left: 100%;
+    transform: translateX(-50%);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     min-width: 16px;
     height: 16px;
     padding: 0 4px;
-    margin-left: 0;
     font-size: 10px;
     font-weight: 600;
     line-height: 1;

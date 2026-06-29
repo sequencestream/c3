@@ -111,8 +111,9 @@ header h1 {
   opacity: 0.5;
   cursor: default;
 }
-/* Tab badge — running-session count, anchored to the TOP-RIGHT CORNER OF THE
-   LABEL TEXT (not the whole button), so it floats just above-right of 「会话」.
+/* Tab badge — running-session count. Left edge sits just outside the LABEL
+   TEXT's right edge (not centred on it), so it floats fully to the right of
+   「会话」without covering the last char; top anchors it to the text's top.
    `.tab-label` is the relatively-positioned text wrapper; matches `.vm-badge` /
    mobile `.tab-badge` so all nav badges look the same. */
 .header-tab .tab-label {
@@ -122,8 +123,7 @@ header h1 {
 .header-tab .tab-badge {
   position: absolute;
   top: -5px;
-  left: 100%;
-  transform: translateX(-50%);
+  left: calc(100% + 2px);
   display: inline-flex;
   align-items: center;
   justify-content: center;

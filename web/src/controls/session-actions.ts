@@ -214,6 +214,20 @@ export function installSessionActions(ctx: AppCtx): void {
       ctx.openIntents(path)
       return
     }
+    if (row?.sessionKind === 'discussion') {
+      const target = resolveSessionJumpTarget({
+        sessionKind: row.sessionKind,
+        ownerKind: row.ownerKind,
+        ownerId: row.ownerId,
+      })
+      ctx.openDiscussions(path)
+      const discussions = ctx.discussions.value[path]
+      if (target?.kind === 'discussion') {
+        if (!discussions || discussions.some((discussion) => discussion.id === target.discussionId))
+          ctx.openDiscussion(target.discussionId)
+      }
+      return
+    }
     ctx.enterConsole()
     // Pin the console tab's pointer up front.
     consoleSession.value = { workspacePath: path, sessionId }

@@ -146,6 +146,30 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
     expect(none.find('[data-testid="session-list-refresh"]').exists()).toBe(false)
   })
 
+  it('讨论 tab 可点击并上抛 select-session-kind', async () => {
+    const w = mountList()
+    const tabs = w.findAll('.session-kind-tab')
+    const discussionTab = tabs.find((tab) => tab.text().includes('Discussion'))!
+    expect((discussionTab.element as HTMLButtonElement).disabled).toBe(false)
+    await discussionTab.trigger('click')
+    expect(w.emitted('select-session-kind')).toEqual([['discussion']])
+  })
+
+  it('讨论会话行不渲染重命名/删除动作', () => {
+    const w = mountList({
+      sessions: [
+        session('discussion-agent-session', 'Discussion agent', {
+          vendor: 'claude',
+          sessionKind: 'discussion',
+          ownerKind: 'discussion',
+          ownerId: 'discussion-1',
+        }),
+      ],
+    })
+    expect(w.find('[data-testid="session-row-rename"]').exists()).toBe(false)
+    expect(w.find('[data-testid="session-row-delete"]').exists()).toBe(false)
+  })
+
   it('重命名:prompt 有值 → emit rename-session(path, id, title)', async () => {
     vi.spyOn(window, 'prompt').mockReturnValue('  New Name  ')
     const w = mountList({ sessions: [session('s1', 'Alpha')] })

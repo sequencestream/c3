@@ -60,7 +60,7 @@ const SESSION_KIND_TABS: readonly { key: SessionPageKind; labelKey: string; enab
   { key: 'work', labelKey: 'session.kind.work', enabled: true },
   { key: 'intent', labelKey: 'session.kind.intent', enabled: true },
   { key: 'spec', labelKey: 'session.kind.spec', enabled: true },
-  { key: 'discussion', labelKey: 'session.kind.discussion', enabled: false },
+  { key: 'discussion', labelKey: 'session.kind.discussion', enabled: true },
   { key: 'schedule', labelKey: 'session.kind.schedule', enabled: false },
   { key: 'tool', labelKey: 'session.kind.tool', enabled: false },
 ]
@@ -187,6 +187,8 @@ interface RowAction {
 //   undefined (pre-settings)→ optimistic enable (back-compat / first paint)
 function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'delete'>): RowAction {
   const label = op === 'rename' ? t('session.row.rename.tooltip') : t('session.row.delete.tooltip')
+  if (s.sessionKind && s.sessionKind !== 'work')
+    return { visible: false, disabled: true, tooltip: label }
   const state = props.vendorSessionCaps?.[s.vendor]?.[op]
   if (state === 'none') return { visible: false, disabled: true, tooltip: label }
   if (state === 'temporarily-unavailable')

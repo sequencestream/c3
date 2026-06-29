@@ -15,13 +15,33 @@ import {
   updateDiscussionStatus,
 } from './store.js'
 import { isDiscussionType } from '@ccc/shared/discussion-types'
-import { discussionRunSnapshot, getDiscussionRun, hasDiscussionRun } from './run-controls.js'
+import {
+  discussionRunSnapshot,
+  getDiscussionRun,
+  getResearchTranscript,
+  hasDiscussionRun,
+} from './run-controls.js'
+import type { ResearchMessage } from '@ccc/shared/protocol'
 import type { Handler } from '../../transport/handler-registry.js'
 import { pathToId, resolveWorkspaceRoot } from '../../state.js'
 import { loadSettings } from '../../kernel/config/index.js'
 import { getDefaultAgentId } from '../../kernel/agent-config/index.js'
 import { currentLicenseStatus } from '../license/store.js'
 import { currentPlanLimits, limitError } from '../license/plan-limits.js'
+
+/**
+ * Build the `discussion_detail` research transcript snapshot from the runtime
+ * buffer (empty when no research is in flight). Stamps each item with the
+ * discussion id; `createdAt` is `0` — the UI does not read it for research items,
+ * and the buffer holds no original stamp.
+ */
+function researchSnapshot(discussionId: string): ResearchMessage[] {
+  return getResearchTranscript(discussionId).map((item) => ({
+    ...item,
+    discussionId,
+    createdAt: 0,
+  }))
+}
 
 function effectiveNonOrganizerParticipantCount(
   participantAgentIds: readonly string[] | undefined,
@@ -119,7 +139,7 @@ export const createDiscussionHandler: Handler<'create_discussion'> = (ctx, conn,
   // to complete its context; when it succeeds we auto-start the orchestration
   // (equivalent to an auto `start_discussion`). Fire-and-forget: research never
   // blocks creation.
-  conn.send({ type: 'discussion_detail', discussion: created, messages: [] })
+  conn.send({ type: 'discussion_detail', discussion: created, messages: [], researchMessages: [] })
   ctx.broadcastDiscussions(proj)
   // Run the read-only research agent as an observable run: it streams its turns
   // to the right pane and broadcasts its liveness, then auto-starts the
@@ -144,6 +164,7 @@ export const openDiscussion: Handler<'open_discussion'> = (_ctx, conn, msg) => {
     type: 'discussion_detail',
     discussion,
     messages: listDiscussionMessages(msg.discussionId),
+    researchMessages: researchSnapshot(msg.discussionId),
   })
 }
 

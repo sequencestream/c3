@@ -187,10 +187,15 @@ failed/stalled, where the discussion remains a `draft`).
 **Research as an observable run.** The research run mirrors a discussion run: a per-id registry
 (presence = liveness) registers the run, `research_run_status` broadcasts `running` then `ended` (on
 finish/failure/dead process — the run is awaited, so a dead process settles the promise to `ended`),
-and the research routine's message callback streams each observable turn as `research_message` (a text
-kind per assistant turn, a tool kind per tool call, a monotonic sequence per run). Research messages
-and liveness are **runtime-only** — never persisted, mirroring `discussion_dispatch_status`; only
-liveness is snapshotted (the research-states snapshot on every `discussions` send). On settle the
+and the research routine's message callback streams each observable item as `research_message`,
+mirroring the agent stream so the right pane renders the same standard transcript: a `text` kind per
+assistant turn, a `tool_use` kind (with `toolUseId`/`toolName`/`input`) per tool call, a `tool_result`
+kind (with `toolUseId`/`content`/`isError`) per tool return, each occupying a monotonic sequence per
+run. Research messages are **runtime-only** — never persisted to the DB, mirroring
+`discussion_dispatch_status` — but unlike dispatch status the server keeps a bounded runtime transcript
+of the run's visible items and replays it on the `discussion_detail` snapshot, so a reconnect
+mid-research restores the already-shown items and de-dupes later live ones by `seq`; the run's
+liveness is also snapshotted (the research-states snapshot on every `discussions` send). On settle the
 server broadcasts `ended` **before** auto-starting the orchestration, so the right pane switches
 research → discussion stream in one batch; a failed research broadcasts `ended` without auto-start,
 surfacing the manual Start fallback. Frontend phase and Start visibility (status is `draft` and neither

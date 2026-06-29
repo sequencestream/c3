@@ -1,10 +1,19 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { Discussion } from '@ccc/shared/protocol'
 import { getDiscussionType } from '@ccc/shared/discussion-types'
+import type { ResearchStreamItem } from './research.js'
 
 // Mock the SDK runner so `researchDiscussionContext` can be unit-tested without a
 // real agent. Each test installs a `runClaudeImpl` that drives `send`/throws.
-type SendMsg = { type: string; text?: string; toolName?: string }
+type SendMsg = {
+  type: string
+  text?: string
+  toolUseId?: string
+  toolName?: string
+  input?: unknown
+  content?: string
+  isError?: boolean
+}
 let runClaudeImpl: (opts: { send: (m: SendMsg) => void }) => Promise<void>
 vi.mock('../../kernel/agent/index.js', () => ({
   runClaude: (opts: { send: (m: SendMsg) => void }) => runClaudeImpl(opts),
@@ -155,22 +164,23 @@ describe('researchDiscussionContext', () => {
     expect(res).toEqual({ ok: false, researchResult: '' })
   })
 
-  it('streams each assistant turn and tool call via onMessage with monotonic seq', async () => {
+  it('streams text, tool_use (with input) and tool_result (with output) via onMessage with monotonic seq', async () => {
     runClaudeImpl = async ({ send }) => {
       send({ type: 'assistant_text', text: 'thinking…' })
-      send({ type: 'tool_use', toolName: 'Read' })
-      send({ type: 'tool_result' }) // ignored — not an observable research turn
+      send({ type: 'tool_use', toolUseId: 'u1', toolName: 'Read', input: { path: 'a.ts' } })
+      send({ type: 'tool_result', toolUseId: 'u1', content: 'file body', isError: false })
       send({ type: 'assistant_text', text: 'FINAL FACTS' })
     }
-    const items: { seq: number; kind: string; content: string }[] = []
+    const items: ResearchStreamItem[] = []
     const res = await researchDiscussionContext(disc, { onMessage: (m) => items.push(m) })
     // The last assistant turn is still the captured result.
     expect(res).toEqual({ ok: true, researchResult: 'FINAL FACTS' })
-    // text + tool turns stream in order; tool_result is not streamed.
+    // text + tool_use (input) + tool_result (output) all stream in order, each with its own seq.
     expect(items).toEqual([
-      { seq: 1, kind: 'text', content: 'thinking…' },
-      { seq: 2, kind: 'tool', content: 'Read' },
-      { seq: 3, kind: 'text', content: 'FINAL FACTS' },
+      { seq: 1, kind: 'text', text: 'thinking…' },
+      { seq: 2, kind: 'tool_use', toolUseId: 'u1', toolName: 'Read', input: { path: 'a.ts' } },
+      { seq: 3, kind: 'tool_result', toolUseId: 'u1', content: 'file body', isError: false },
+      { seq: 4, kind: 'text', text: 'FINAL FACTS' },
     ])
   })
 

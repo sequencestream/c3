@@ -612,9 +612,16 @@ describe('applyDispatchStatus / clearDispatchAgent (transient dispatch status)',
 
 describe('discussion-view — research phase', () => {
   function rmsg(over: Partial<ResearchMessage> = {}): ResearchMessage {
-    return { discussionId: 'd1', seq: 1, kind: 'text', content: '现状要点', createdAt: 0, ...over }
+    return {
+      discussionId: 'd1',
+      seq: 1,
+      createdAt: 0,
+      kind: 'text',
+      text: '现状要点',
+      ...over,
+    } as ResearchMessage
   }
-  const labels = { researcher: '研究员', tool: (n: string) => `🔍 ${n}` }
+  const labels = { researcher: '研究员' }
 
   it('discussionPhase: research live → research,否则 discussion', () => {
     expect(discussionPhase(true)).toBe('research')
@@ -634,14 +641,48 @@ describe('discussion-view — research phase', () => {
   })
 
   it('researchMessageToChat: text → 研究员 assistant 气泡', () => {
-    const body = researchMessageToChat(rmsg({ kind: 'text', content: '现状要点' }), labels)
+    const body = researchMessageToChat(rmsg({ kind: 'text', text: '现状要点' }), labels)
     expect(body).toMatchObject({ kind: 'assistant', text: '现状要点' })
     expect(body.kind === 'assistant' && body.speaker?.name).toBe('研究员')
   })
 
-  it('researchMessageToChat: tool → system 行(经 labels.tool 格式化)', () => {
-    const body = researchMessageToChat(rmsg({ kind: 'tool', content: 'Grep' }), labels)
-    expect(body).toMatchObject({ kind: 'system', text: '🔍 Grep' })
+  it('researchMessageToChat: tool_use → 标准 tool-use 块,保留 id/name/input', () => {
+    const body = researchMessageToChat(
+      rmsg({ kind: 'tool_use', toolUseId: 'u1', toolName: 'Grep', input: { pattern: 'foo' } }),
+      labels,
+    )
+    expect(body).toEqual({
+      kind: 'tool-use',
+      toolUseId: 'u1',
+      toolName: 'Grep',
+      input: { pattern: 'foo' },
+    })
+  })
+
+  it('researchMessageToChat: tool_result → 标准 tool-result 块,保留 id/content/isError', () => {
+    const body = researchMessageToChat(
+      rmsg({ kind: 'tool_result', toolUseId: 'u1', content: '匹配结果', isError: false }),
+      labels,
+    )
+    expect(body).toEqual({
+      kind: 'tool-result',
+      toolUseId: 'u1',
+      content: '匹配结果',
+      isError: false,
+    })
+  })
+
+  it('researchMessageToChat: tool 路径不再产出单行 system 文案', () => {
+    const u = researchMessageToChat(
+      rmsg({ kind: 'tool_use', toolUseId: 'u1', toolName: 'Read', input: {} }),
+      labels,
+    )
+    const r = researchMessageToChat(
+      rmsg({ kind: 'tool_result', toolUseId: 'u1', content: 'x', isError: false }),
+      labels,
+    )
+    expect(u.kind).not.toBe('system')
+    expect(r.kind).not.toBe('system')
   })
 
   it('reconcileResearchState: 快照置 running / 缺失则删 / 不动其他项目', () => {

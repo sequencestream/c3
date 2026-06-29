@@ -570,9 +570,9 @@
 
 ### `discussion_detail`
 
-一个 discussion 加上其完整、有序的消息历史，回复 `open_discussion`。驱动 discussion 视图的只读右侧面板。
+一个 discussion 加上其完整、有序的消息历史，回复 `open_discussion`。驱动 discussion 视图的只读右侧面板。`researchMessages` 是运行时研究转录快照：研究 run 活跃时为目前已广播的可见研究项集合，无研究在途时为空数组——使重连/刷新 mid-research 能恢复已展示的研究流（研究项本身永不持久化；后续 live `research_message` 按 `seq` 追加去重）。
 
-**字段：** `discussion: Discussion`, `messages: DiscussionMessage[]`
+**字段：** `discussion: Discussion`, `messages: DiscussionMessage[]`, `researchMessages: ResearchMessage[]`
 
 ### `discussion_message`
 
@@ -600,7 +600,7 @@ organizer 刚在一轮中派发的 agent 的瞬时进行中状态，显示在聊
 
 ### `research_message`
 
-discussion 的只读研究 run 的流式项，在研究 agent 工作时实时广播。`text` = 助手回合文本；`tool` = 工具调用（`content` 是工具名称）；`seq` 在单个 run 内单调递增（从 1 开始）。右侧面板在查看该 discussion 时追加到**研究流**中。**仅运行时**——研究消息永不持久化，重连时不重放；只有活跃性从 `discussions` 上的 `researchStates` 快照中对账。
+discussion 的只读研究 run 的流式项，在研究 agent 工作时实时广播。变体镜像 agent 流，使右侧面板渲染与 work/intent 会话一致的标准转录：`text` = 研究员助手回合文本；`tool_use` = 工具调用（携带 `toolUseId`/`toolName`/`input`）；`tool_result` = 同一调用的返回（携带 `toolUseId`/`content`/`isError`，按 `toolUseId` 与工具块关联）。`seq` 在单个 run 内单调递增（从 1 开始），每个可见项各占一个 seq。右侧面板在查看该 discussion 时追加到**研究流**中（工具项渲染为标准可折叠工具块，不再是单行"正在用 X 检索"）。**仅运行时**——研究消息永不持久化到 DB，但服务器保留一份有界的运行时副本并在 `discussion_detail` 快照中重放，使重连 mid-research 恢复已展示项并按 `seq` 去重后续 live 项；活跃性仍从 `discussions` 上的 `researchStates` 快照中对账。
 
 **字段：** `discussionId: string`, `message: ResearchMessage`
 
@@ -868,7 +868,7 @@ schedule 的执行日志。
 - **`DiscussionSpeakerKind`** — `'organizer' | 'agent' | 'human'`。消息作者类别。
 - **`Discussion`** — `{ id, workspacePath, title, type, goal, context, researchResult, status, agenda, agendaIndex, conclusion, createdAt, updatedAt, completedAt }`。项目范围 discussion。`context` 是用户的原始输入，永不覆写。`researchResult` 是只读研究 agent 的完成输出，独立于 `context`。`agenda` 是 organizer 的有序子主题（`[]` 表示未设置）；`agendaIndex` 是当前子主题的 0 基索引。
 - **`DiscussionMessage`** — `{ id, discussionId, seq, speakerKind, speakerAgentId, speakerName, content, createdAt }`。一条消息，按每个 discussion 单调递增的 `seq`（从 1 开始）排序。
-- **`ResearchMessage`** — `{ discussionId, seq, kind, content, createdAt }`。研究 run 的流式项。仅运行时——不持久化。
+- **`ResearchMessage`** — `{ discussionId, seq, createdAt } & ({ kind: 'text', text } | { kind: 'tool_use', toolUseId, toolName, input } | { kind: 'tool_result', toolUseId, content, isError })`。研究 run 的流式项,变体镜像 agent 流以渲染标准转录(文本气泡 + 可折叠工具块)。仅运行时——不持久化到 DB,但服务器保留有界运行时副本经 `discussion_detail` 重放。
 
 `open_discussion` 一次性返回完整有序历史（`discussion_detail`）；`create_discussion` 向创建连接发送相同回复，因此新 discussion 无需点击即可打开。右侧面板为**两阶段**：当 discussion 的研究 run 活跃时面板显示**研究流**；研究结束且编排自动启动后切换到**discussion 流**。Organizer 引擎将每条新消息作为 `discussion_message` 流式传输。当一轮被派发时，聊天尾部通过瞬时 `discussion_dispatch_status` 显示谁在回复。对话由 agent 驱动但人类可操控：标题栏提供暂停/恢复，编辑器允许人类在运行中插话（`discussion_speak`）或在完成后发起新轮次（`continue_discussion`）。
 

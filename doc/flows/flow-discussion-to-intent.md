@@ -37,9 +37,11 @@ flowchart TD
    **status-only** — facts / current state / constraints / open questions; it is hard-forbidden from
    emitting options, recommendations, or conclusions, so the brainstorm is not pre-anchored. The
    user's original `context` is never overwritten; both coexist.
-3. **Observable & runtime-only.** The research run streams each turn as `research_message` and
-   broadcasts liveness as `research_run_status`; neither is persisted. Every `discussions` send
-   carries a `researchStates` snapshot so a refresh/reconnect mid-research rebuilds the phase.
+3. **Observable & runtime-only.** The research run streams each item as `research_message` (text +
+   `tool_use`/`tool_result`, rendered as a standard transcript with collapsible tool blocks) and
+   broadcasts liveness as `research_run_status`; neither is persisted to the DB. Every `discussions`
+   send carries a `researchStates` snapshot so a refresh/reconnect mid-research rebuilds the phase, and
+   the bounded runtime transcript is replayed on the `discussion_detail` snapshot to restore shown items.
 
 ## Organize → conclude
 

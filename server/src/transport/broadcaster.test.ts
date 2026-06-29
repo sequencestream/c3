@@ -79,7 +79,7 @@ const REPRESENTATIVE_FRAMES: ServerToClient[] = [
   {
     type: 'research_message',
     discussionId: 'd1',
-    message: { discussionId: 'd1', seq: 1, kind: 'text', content: 'r', createdAt: 0 },
+    message: { discussionId: 'd1', seq: 1, kind: 'text', text: 'r', createdAt: 0 },
   },
   { type: 'research_run_status', discussionId: 'd1', state: 'ended' },
   {

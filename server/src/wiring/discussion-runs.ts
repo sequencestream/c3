@@ -33,6 +33,8 @@ import {
 import { defaultDiscussionDeps, runDiscussion } from '../features/discussions/orchestrator.js'
 import { AgentSessionManager } from '../features/discussions/agent-session-manager.js'
 import {
+  appendResearchTranscript,
+  clearResearchTranscript,
   deleteDiscussionRun,
   deleteResearchRun,
   hasDiscussionRun,
@@ -224,6 +226,9 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
   // broadcasts `ended` without auto-start, surfacing the manual Start fallback.
   const startResearchRun = (discussion: Discussion): void => {
     const abort = new AbortController()
+    // Fresh runtime transcript for this run (clears any stale buffer from a prior
+    // aborted run on the same discussion id).
+    clearResearchTranscript(discussion.id)
     setResearchRun(discussion.id, abort)
     broadcastResearchRunStatus(discussion.id, 'running')
 
@@ -241,7 +246,12 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     })
 
     void researchDiscussionContext(discussion, {
-      onMessage: (item) => broadcastResearchMessage(discussion.id, item),
+      onMessage: (item) => {
+        // Keep a runtime copy for mid-research reconnect (replayed on the
+        // `discussion_detail` snapshot) before fanning the live item out.
+        appendResearchTranscript(discussion.id, item)
+        broadcastResearchMessage(discussion.id, item)
+      },
     })
       .then(({ ok, researchResult }) => {
         // Publish settled before state cleanup — the subscription fires
@@ -261,6 +271,9 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
           setDiscussionResearchResult(discussion.id, researchResult)
         }
         deleteResearchRun(discussion.id)
+        // Research ended → the right pane leaves the research phase, so the runtime
+        // transcript is no longer needed (and `researchStates` no longer lists it).
+        clearResearchTranscript(discussion.id)
         broadcastResearchRunStatus(discussion.id, 'ended')
         // Research failed → leave it a draft for a manual Start. On success,
         // re-validate on the freshest record (it may have been manually Started
@@ -282,6 +295,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
           runKind: 'internal',
         })
         deleteResearchRun(discussion.id)
+        clearResearchTranscript(discussion.id)
         broadcastResearchRunStatus(discussion.id, 'ended')
         console.warn(`[c3] discussion research wiring error: ${errMsg(err)}`)
       })

@@ -48,6 +48,11 @@ import {
   getDiscussion,
   setDiscussionResearchResult,
 } from '../features/discussions/store.js'
+import {
+  deleteByOwner,
+  deleteByVendorId,
+  upsertBoundRow,
+} from '../features/works/work-session-store.js'
 import type { Broadcasts } from './broadcasts.js'
 
 /** Deps the discussion-runs factory reads (the broadcast bag it threads in). */
@@ -73,6 +78,10 @@ export interface DiscussionRunsDeps {
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+function discussionSessionTitle(discussionTitle: string, agentName: string): string {
+  return `${discussionTitle} · ${agentName}`
 }
 
 /**
@@ -149,6 +158,27 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         setAgentSession: storeSetAgentSession,
         deleteAgentSession: storeDeleteAgentSession,
         deleteAllByDiscussion: storeDeleteAllByDiscussion,
+      },
+      projection: {
+        upsert: ({ discussionId, workspacePath, agent, sessionId, vendor }) => {
+          const latest = getDiscussion(discussionId)
+          upsertBoundRow({
+            sessionId,
+            workspacePath,
+            vendor,
+            agentId: agent.id,
+            title: discussionSessionTitle(latest?.title ?? discussion.title, agent.displayName),
+            sessionKind: 'discussion',
+            ownerKind: 'discussion',
+            ownerId: discussionId,
+          })
+        },
+        delete: ({ sessionId, vendor }) => {
+          if (vendor === 'claude' || vendor === 'codex') deleteByVendorId(vendor, sessionId)
+        },
+        deleteAll: (discussionId) => {
+          deleteByOwner('discussion', discussionId)
+        },
       },
     })
     let settledReason: RunEndReason = 'complete'

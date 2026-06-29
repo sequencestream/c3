@@ -3,6 +3,7 @@ export {
   columnWhitelist,
   countRealInRange,
   deleteByPendingId,
+  deleteByOwner,
   deleteByVendorId,
   getByC3Id,
   getPendingIntent,

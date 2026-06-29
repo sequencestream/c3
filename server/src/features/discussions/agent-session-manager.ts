@@ -29,6 +29,7 @@
 import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
 import type { AgentDriver, AgentRun, VendorAdapter } from '../../kernel/agent/adapters/types.js'
 import { launchForAgent } from '../../kernel/agent-config/index.js'
+import { ensureRuntime, removeRuntime, setStatus } from '../../runs.js'
 import type { AgentSessionRow } from './store.js'
 
 // ---------------------------------------------------------------------------
@@ -55,6 +56,20 @@ export interface AgentSessionManagerDeps {
   getAdapter: (vendor: VendorId) => VendorAdapter
   /** Discussion agent session store. */
   store: AgentSessionStore
+  /** Best-effort unified session projection for discussion-owned vendor sessions. */
+  projection?: DiscussionSessionProjection
+}
+
+export interface DiscussionSessionProjection {
+  upsert(input: {
+    discussionId: string
+    workspacePath: string
+    agent: AgentConfig
+    sessionId: string
+    vendor: VendorId
+  }): void
+  delete(input: { discussionId: string; agentId: string; sessionId: string; vendor: string }): void
+  deleteAll(discussionId: string): void
 }
 
 // ---------------------------------------------------------------------------
@@ -106,10 +121,16 @@ export class AgentSessionManager {
 
     if (stored) {
       try {
-        return await this.resumeSession(stored, agent, prompt, cwd, signal)
+        return await this.withRunningRuntime(
+          stored.sessionId,
+          cwd,
+          signal,
+          async () => await this.resumeSession(stored, agent, prompt, cwd, signal),
+        )
       } catch {
         // Resume failed — clean up the stale DB entry and fall through to
         // the create-new path (full prompt, fresh session).
+        this.deleteProjection(stored)
         this.deps.store.deleteAgentSession(discussionId, agent.id)
       }
     }
@@ -129,12 +150,15 @@ export class AgentSessionManager {
 
   /** Remove the session mapping for a single agent in a discussion. */
   closeSession(discussionId: string, agentId: string): void {
+    const stored = this.deps.store.getAgentSession(discussionId, agentId)
     this.deps.store.deleteAgentSession(discussionId, agentId)
+    if (stored) this.deleteProjection(stored)
   }
 
   /** Remove all agent session mappings for a discussion (discussion end). */
   closeAll(discussionId: string): void {
     this.deps.store.deleteAllByDiscussion(discussionId)
+    this.deleteAllProjection(discussionId)
   }
 
   // ---- Internal ----
@@ -172,10 +196,23 @@ export class AgentSessionManager {
 
     // Collect assistant text FIRST, then resolve sessionId (the id is always
     // available by the time the stream completes).
-    const text = await collectAssistantText(run)
+    const textPromise = collectAssistantText(run)
     const sessionId = await run.sessionId()
+    const text = await this.withRunningRuntime(
+      sessionId,
+      cwd,
+      signal,
+      async () => await textPromise,
+    )
 
     this.deps.store.setAgentSession(discussionId, agent.id, sessionId, agent.vendor)
+    this.upsertProjection({
+      discussionId,
+      workspacePath: cwd,
+      agent,
+      sessionId,
+      vendor: agent.vendor,
+    })
     return text
   }
 
@@ -235,6 +272,64 @@ export class AgentSessionManager {
       throw new Error(`agent-session-manager: no adapter registered for vendor "${vendor}"`)
     }
     return adapter.driver
+  }
+
+  private async withRunningRuntime<T>(
+    sessionId: string,
+    workspacePath: string,
+    signal: AbortSignal,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const abort = new AbortController()
+    const onAbort = (): void => abort.abort()
+    signal.addEventListener('abort', onAbort, { once: true })
+    const rt = ensureRuntime(
+      sessionId,
+      workspacePath,
+      'default',
+      [],
+      'discussion',
+      undefined,
+      'internal',
+    )
+    rt.run = { abort, handle: null }
+    setStatus(sessionId, 'running')
+    try {
+      return await run()
+    } finally {
+      signal.removeEventListener('abort', onAbort)
+      rt.run = null
+      removeRuntime(sessionId)
+    }
+  }
+
+  private upsertProjection(input: Parameters<DiscussionSessionProjection['upsert']>[0]): void {
+    try {
+      this.deps.projection?.upsert(input)
+    } catch (err) {
+      console.warn('[c3] discussion session projection upsert failed:', err)
+    }
+  }
+
+  private deleteProjection(row: AgentSessionRow): void {
+    try {
+      this.deps.projection?.delete({
+        discussionId: row.discussionId,
+        agentId: row.agentId,
+        sessionId: row.sessionId,
+        vendor: row.vendor,
+      })
+    } catch (err) {
+      console.warn('[c3] discussion session projection delete failed:', err)
+    }
+  }
+
+  private deleteAllProjection(discussionId: string): void {
+    try {
+      this.deps.projection?.deleteAll(discussionId)
+    } catch (err) {
+      console.warn('[c3] discussion session projection delete-all failed:', err)
+    }
   }
 }
 

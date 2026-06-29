@@ -187,6 +187,42 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
     })
   })
 
+  it('returns projected discussion sessions only on the discussion tab', async () => {
+    upsertBoundRow({
+      sessionId: 'work-1',
+      workspacePath: proj,
+      vendor: 'claude',
+      agentId: 'agent-work',
+      title: 'Work row',
+      lastModified: 400,
+      sessionKind: 'work',
+    })
+    upsertBoundRow({
+      sessionId: 'discussion-agent-1',
+      workspacePath: proj,
+      vendor: 'codex',
+      agentId: 'agent-discussion',
+      title: 'Design review · Agent A',
+      lastModified: 500,
+      sessionKind: 'discussion',
+      ownerKind: 'discussion',
+      ownerId: 'discussion-1',
+    })
+    const accessor = new SessionAccessor([])
+
+    const discussion = await listSessionsVia(accessor, proj, 'discussion')
+    const work = await listSessionsVia(accessor, proj, 'work')
+
+    expect(discussion.map((s) => s.sessionId)).toEqual(['discussion-agent-1'])
+    expect(discussion[0]).toMatchObject({
+      sessionKind: 'discussion',
+      ownerKind: 'discussion',
+      ownerId: 'discussion-1',
+      vendor: 'codex',
+    })
+    expect(work.map((s) => s.sessionId)).toEqual(['work-1'])
+  })
+
   it('skips a vendor whose store fails to list (loud-but-non-fatal), keeping the rest', async () => {
     const claudeSrc: VendorSessionSource = {
       vendor: 'claude',

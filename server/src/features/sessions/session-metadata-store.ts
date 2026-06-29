@@ -615,6 +615,12 @@ export function deleteByVendorId(vendor: VendorId, vendorSessionId: string): voi
   d.run('DELETE FROM session_metadata WHERE c3_id=? OR c3_id=?', c3Id, vendorSessionId)
 }
 
+export function deleteByOwner(ownerKind: SessionOwnerKind, ownerId: string): void {
+  const d = db()
+  if (!d) return
+  d.run('DELETE FROM session_metadata WHERE owner_kind=? AND owner_id=?', ownerKind, ownerId)
+}
+
 /** Delete by the raw pending id (used by `deleteSession` for a pending never run). */
 export function deleteByPendingId(pendingId: string): void {
   const d = db()

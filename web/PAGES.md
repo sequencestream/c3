@@ -14,7 +14,7 @@ web/src/
 │   ├── transcript.ts                               # transcriptToChat():TranscriptItem→ChatBody 纯映射(会话历史回放)
 │   ├── persistence.ts                              # 视图恢复持久化:readStoredWorkspace/persistCurrentWorkspace/persistViewMode + ready 后 maybeRestore 需求/讨论/定时任务
 │   ├── message-handler.ts                          # installMessageHandler():唯一入站 WS switch(handleMessage)折叠所有 ServerToClient 事件 + applyStatuses/notifyAwaitingPermission
-│   ├── session-actions.ts                          # 工作区/会话/顶栏 tab 导航:按 session_kind 缓存的游标分页刷新(窗口/首页)/加载更多/选择会话、spec 行按 owner 跳回意图 spec session tab(含旧 specSessionId 兜底)、六类会话计数、新建工作会话弹窗、乐观删除改名、会话 tab 进入与重绑、清空视图会话
+│   ├── session-actions.ts                          # 工作区/会话/顶栏 tab 导航:按 session_kind 缓存的游标分页刷新(窗口/首页)/加载更多/选择会话、spec 行按 owner 跳回意图 spec session tab(含旧 specSessionId 兜底)、discussion 行按 owner 跳回讨论页、六类会话计数、新建工作会话弹窗、乐观删除改名、会话 tab 进入与重绑、清空视图会话
 │   ├── intent-actions.ts                           # 需求页动作:筛选/精炼/写spec/批准spec/开发/PR/状态/自动化 + 沟通 session 列表(新建/选择/重命名/删除)
 │   ├── discussion-actions.ts                       # 讨论页动作(只读路径 + 组织者引擎):打开/创建/开始/暂停/恢复/转需求/发言/移动返回
 │   ├── schedule-actions.ts                         # 定时任务页动作:打开/选择/执行记录/会话回放 + 创建编辑表单(含 toolManifest 缓存 watch);选中且运行中的 llm 执行按周期自动刷新 detail+transcript(可见性闸/页内才刷),结束补拉一次后停止
@@ -54,9 +54,9 @@ web/src/
 │   │       ├── EventList.vue                        # 事件列表:右侧状态徽标(含 auto)和 todo 标记完成、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、会话类型图标、时间、选中态与加载更多
 │   │       └── EventDetail.vue                      # 事件详情:标题(经 event-title 本地化)+属性列表(工作区名/会话类型/会话 id/意图名,后两者为空隐藏)、Allow/Deny、AskUserQuestion 全题一览作答面板(自定义回复/共识提示/只读态)、共识决策留痕(auto 记录的投票/裁决,只读)、按 sessionKind+sessionId 溯源跳转
 │   ├── works/                                    # 会话页(历史目录名 works)
-│   │   ├── Works.vue                             # 会话容器页:桌面左侧聚合会话列表(工作/意图/spec/讨论/schedule/工具六 tab + 运行中浮标;工作/意图/spec 接真实 session_metadata 数据,讨论/schedule/工具占位置灰) + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);linkedIntentId/owner 元数据经标准跳回规则跳转对应逻辑页;移动端列表↔聊天 drill-down(返回到列表)
+│   │   ├── Works.vue                             # 会话容器页:桌面左侧聚合会话列表(工作/意图/spec/讨论/schedule/工具六 tab + 运行中浮标;工作/意图/spec/讨论接真实 session_metadata 数据,schedule/工具占位置灰) + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);linkedIntentId/owner 元数据经标准跳回规则跳转对应逻辑页;移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/
-│   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区按 session_kind 分 tab 的聚合会话(work/intent/spec 可选)、新增工作会话、删除/改名、服务端游标分页(加载更多/已加载完,SR-R14)、运行中计数浮标、未接入类型占位、offline 警告
+│   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区按 session_kind 分 tab 的聚合会话(work/intent/spec/discussion 可选;discussion 行只跳回讨论不提供改名/删除)、新增工作会话、删除/改名、服务端游标分页(加载更多/已加载完,SR-R14)、运行中计数浮标、未接入类型占位、offline 警告
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── intents/                                     # 需求页

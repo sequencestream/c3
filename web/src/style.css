@@ -1661,30 +1661,50 @@ main {
 .md-body > :last-child {
   margin-bottom: 0;
 }
-/* 标题字号 / 间距收敛，防止破版 */
+/* 标题分级：固定 rem + 字号/字重/色阶三维区分，紧凑行高、一致间距 */
 .md-body h1,
 .md-body h2,
 .md-body h3,
 .md-body h4,
 .md-body h5,
 .md-body h6 {
-  margin: var(--sp-3) 0 var(--sp-2);
+  margin: 1.2em 0 0.5em;
   line-height: var(--lh-tight, 1.3);
-  font-weight: 600;
 }
+/* h1/h2 保留底部分隔线；h4-h6 靠字重 + 色阶拉开，避免会话气泡内字号过大突兀 */
 .md-body h1 {
-  font-size: 1.4em;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--c-text);
+  border-bottom: 1px solid var(--c-border);
+  padding-bottom: 0.2em;
 }
 .md-body h2 {
-  font-size: 1.25em;
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: var(--c-text);
+  border-bottom: 1px solid var(--c-border);
+  padding-bottom: 0.2em;
 }
 .md-body h3 {
-  font-size: 1.1em;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--c-text);
 }
-.md-body h4,
-.md-body h5,
+.md-body h4 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--c-text-muted);
+}
+.md-body h5 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--c-text-muted);
+}
 .md-body h6 {
-  font-size: 1em;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--c-text-disabled);
 }
 .md-body p {
   margin: var(--sp-2) 0;
@@ -1712,6 +1732,34 @@ main {
   background: var(--c-code);
   padding: 1px 5px;
   border-radius: var(--radius-sm);
+}
+/* 行内强调：暗/亮双主题均可辨，暗色下不吃光、不溢出 */
+.md-body strong {
+  font-weight: 700;
+  color: var(--c-text);
+}
+.md-body em {
+  font-style: italic;
+  color: var(--c-primary);
+}
+.md-body mark {
+  background: var(--c-warning-soft, color-mix(in srgb, var(--c-warning) 22%, transparent));
+  color: var(--c-text);
+  padding: 0 3px;
+  border-radius: 3px;
+}
+.md-body del {
+  text-decoration: line-through;
+  color: var(--c-text-disabled);
+}
+/* kbd：复用行内 code 基调 + 边框 + 较小圆角形成键帽感 */
+.md-body kbd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-code);
+  background: var(--c-code);
+  padding: 1px 5px;
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
 }
 /* 代码块：暗背景 + 横向滚动，去掉行内 code 的内边距叠加 */
 .md-body pre {
@@ -1799,12 +1847,12 @@ main {
   color: var(--c-primary);
   text-decoration: underline;
 }
-/* 引用：左边线 */
+/* 引用：左竖线加粗提主色，正文回到主文本色不再整体弱化 */
 .md-body blockquote {
   margin: var(--sp-2) 0;
   padding: var(--sp-1) var(--sp-3);
-  border-left: 3px solid var(--c-border);
-  color: var(--c-text-muted);
+  border-left: 4px solid var(--c-primary);
+  color: var(--c-text);
 }
 .md-body hr {
   border: none;

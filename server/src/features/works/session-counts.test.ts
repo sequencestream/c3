@@ -191,6 +191,9 @@ describe('getSessionCounts', () => {
       handle: null,
     }
     ensureRuntime('discussion-running', proj, 'default', [], 'discussion').run = {
+      abort: new AbortController(),
+      handle: null,
+    }
     ensureRuntime('tool-running', proj, 'default', [], 'tool').run = {
       abort: new AbortController(),
       handle: null,

@@ -32,7 +32,8 @@
     },
     "tab": {
       "console": {
-        "label": "会话"
+        "label": "会话",
+        "ariaLabel": "会话({count} 个进行中)"
       },
       "intents": {
         "label": "意图"

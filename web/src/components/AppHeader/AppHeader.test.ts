@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AppHeader from './AppHeader.vue'
 import { useAuth } from '@/composables/useAuth'
+import { i18n } from '@/i18n'
 
 const TABS = [
   { key: 'console', label: 'Works' },
@@ -101,6 +102,57 @@ describe('AppHeader.vue — top-bar tabs', () => {
     await w.findAll('.mobile-bottom-tab')[1].trigger('click')
     expect(w.emitted('update:viewMode')).toEqual([['workspace']])
     expect(w.emitted('select-tab')).toEqual([['intents']])
+  })
+})
+
+describe('AppHeader.vue — 「会话」tab 进行中会话数角标', () => {
+  // console tab 带 badgeCount(顶部六类求和由 state.HEADER_TABS 注入);其余 tab 无。
+  const tabsWithBadge = [{ key: 'console', label: 'Sessions', badgeCount: 3 }, ...TABS.slice(1)]
+
+  it('console tab badgeCount>0 → 桌面 .header-tab 角标渲染且文本正确', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, tabs: tabsWithBadge } })
+    const badge = w.find('.header-tab .tab-badge')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toBe('3')
+  })
+
+  it('console tab badgeCount>0 → 移动端底部 tab 角标渲染且文本正确', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, tabs: tabsWithBadge } })
+    const badge = w.find('.mobile-bottom-tab .tab-badge')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toBe('3')
+  })
+
+  it('角标带 i18n aria-label,含进行中计数', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, tabs: tabsWithBadge } })
+    const aria = w.find('.header-tab .tab-badge').attributes('aria-label')
+    expect(aria).toBeDefined()
+    expect(aria).toContain('3')
+  })
+
+  it('badgeCount 为 0 时桌面/移动端均不渲染角标', () => {
+    const tabs = [{ key: 'console', label: 'Sessions', badgeCount: 0 }, ...TABS.slice(1)]
+    const w = mount(AppHeader, { props: { ...baseProps, tabs } })
+    expect(w.find('.header-tab .tab-badge').exists()).toBe(false)
+    expect(w.find('.mobile-bottom-tab .tab-badge').exists()).toBe(false)
+  })
+
+  it('has-badge class 在 badgeCount>0 的 console tab 上可观察到', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, tabs: tabsWithBadge } })
+    expect(w.findAll('.header-tab')[0].classes()).toContain('has-badge')
+    expect(w.findAll('.mobile-bottom-tab')[0].classes()).toContain('has-badge')
+  })
+})
+
+describe('i18n — nav.tab.console.ariaLabel 插值', () => {
+  it('en 下正确插值 count', () => {
+    expect(i18n.global.t('nav.tab.console.ariaLabel', { count: 3 })).toBe('Sessions (3 running)')
+  })
+
+  it('zh 下正确插值 count', () => {
+    expect(i18n.global.t('nav.tab.console.ariaLabel', { count: 3 }, { locale: 'zh' })).toBe(
+      '会话(3 个进行中)',
+    )
   })
 })
 

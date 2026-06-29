@@ -310,7 +310,12 @@ function selectTab(tab: HeaderTab): void {
           @click="emit('select-tab', tab.key)"
         >
           {{ tab.label }}
-          <span v-if="tab.badgeCount" class="tab-badge">{{ tab.badgeCount }}</span>
+          <span
+            v-if="tab.badgeCount"
+            class="tab-badge"
+            :aria-label="t('nav.tab.console.ariaLabel', { count: tab.badgeCount })"
+            >{{ tab.badgeCount }}</span
+          >
         </button>
       </nav>
 
@@ -563,7 +568,12 @@ function selectTab(tab: HeaderTab): void {
         @click="selectTab(tab)"
       >
         <span class="mobile-tab-label">{{ tab.label }}</span>
-        <span v-if="tab.badgeCount" class="tab-badge">{{ tab.badgeCount }}</span>
+        <span
+          v-if="tab.badgeCount"
+          class="tab-badge"
+          :aria-label="t('nav.tab.console.ariaLabel', { count: tab.badgeCount })"
+          >{{ tab.badgeCount }}</span
+        >
       </button>
     </nav>
   </header>
@@ -973,11 +983,25 @@ function selectTab(tab: HeaderTab): void {
     white-space: nowrap;
   }
 
+  /* 移动端底部 tab 角标:右上角红底白字,与桌面 .header-tab .tab-badge / 工作台
+     .vm-badge 视觉一致。.mobile-bottom-tab 已是 position: relative,故此处定位生效。 */
   .mobile-bottom-tab .tab-badge {
     position: absolute;
     top: 7px;
     right: max(8px, calc(50% - 28px));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
     margin-left: 0;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    color: #fff;
+    background: var(--c-danger, #e53e3e);
+    border-radius: 8px;
   }
 
   /* 移动操作菜单内的许可项(PL-R7) */

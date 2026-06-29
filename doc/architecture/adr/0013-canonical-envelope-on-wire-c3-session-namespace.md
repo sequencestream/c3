@@ -168,8 +168,8 @@ The daily `list_sessions` reads the projection in a single query per workspace
 and `session_kind`. The session page can therefore render per-kind tabs and
 running-count badges from one contract. Pending rows (`bound = 0`) are excluded
 from the wire list — the per-connection "viewed session" badge is the pending
-entry, not a list item. In this phase, work and intent are wired to real data;
-spec/discussion/schedule/tool rows remain valid schema targets for later phases.
+entry, not a list item. In this phase, work, intent, spec, and schedule are wired
+to real data; discussion/tool rows remain valid schema targets for later phases.
 
 An environment flag (default ON) rolls the read path back to the legacy
 claude-only listing path.

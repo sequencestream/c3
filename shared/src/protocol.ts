@@ -3180,6 +3180,10 @@ export type ServerToClient =
        * beside the title.
        */
       vendor?: VendorId
+      /** Projection source metadata for generic title-bar jump-back. */
+      sessionKind?: SessionKind
+      ownerKind?: 'intent' | 'discussion' | 'schedule' | null
+      ownerId?: string | null
       /**
        * Data for the title-bar same-vendor agent switcher (ADR-0015 / AS-R22): the
        * other **same-vendor, host-binary-present, enabled** agents this session may

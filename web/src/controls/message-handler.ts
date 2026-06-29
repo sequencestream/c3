@@ -19,6 +19,7 @@ import { translateUiError } from '@/i18n/errors'
 import { transcriptToChat } from './transcript'
 import type { AppCtx } from './types'
 import { sessionCacheKey, type SessionPageKind } from './state'
+import { resolveSessionJumpTarget } from '@/lib/session-jump'
 
 // License-gate (PL-R6) reason → localized-phrase key. Maps the wire entitlement
 // state to a human reason; an unknown state falls back to the unactivated copy.
@@ -53,6 +54,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     activeVendor,
     activeAgentSwitch,
     activeLinkedIntentId,
+    activeLinkedScheduleId,
     mode,
     codexPolicy,
     sessionStatus,
@@ -288,6 +290,14 @@ export function installMessageHandler(ctx: AppCtx): void {
         // jump button). Refreshed/cleared on every (re)select so a plain session
         // never inherits the previous session's linked intent.
         activeLinkedIntentId.value = msg.linkedIntentId ?? null
+        activeLinkedScheduleId.value = (() => {
+          const sourceTarget = resolveSessionJumpTarget({
+            sessionKind: msg.sessionKind,
+            ownerKind: msg.ownerKind,
+            ownerId: msg.ownerId,
+          })
+          return sourceTarget?.kind === 'schedule' ? sourceTarget.scheduleId : null
+        })()
         mode.value = msg.mode
         codexPolicy.value = msg.codexPolicy ?? null
         // Remember this as the console tab's own session ONLY when the selection

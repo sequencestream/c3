@@ -23,13 +23,14 @@ function mountList(
     vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
     hasMore?: boolean
     exhausted?: boolean
+    activeSessionKind?: 'work' | 'intent' | 'spec' | 'discussion' | 'schedule' | 'tool'
   } = {},
 ) {
   return mount(WorkSessionList, {
     props: {
       currentWorkspace: opts.currentWorkspace === undefined ? WS : opts.currentWorkspace,
       sessions: opts.sessions ?? [],
-      activeSessionKind: 'work',
+      activeSessionKind: opts.activeSessionKind ?? 'work',
       sessionCounts: { work: 0, intent: 0, spec: 0, discussion: 0, schedule: 0, tool: 0 },
       hasMore: opts.hasMore ?? false,
       exhausted: opts.exhausted ?? false,
@@ -108,6 +109,16 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
     expect(more.exists()).toBe(true)
     await more.trigger('click')
     expect(w.emitted('load-more-sessions')).toEqual([[]])
+  })
+
+  it('schedule tab is enabled and emits select-session-kind', async () => {
+    const w = mountList()
+    const scheduleTab = w
+      .findAll('.session-kind-tab')
+      .find((button) => button.text().includes('Schedule'))
+    expect(scheduleTab?.attributes('disabled')).toBeUndefined()
+    await scheduleTab!.trigger('click')
+    expect(w.emitted('select-session-kind')).toEqual([['schedule']])
   })
 
   it('exhausted=true(且有会话)→ 显示「已加载完」,不显示加载更多', () => {

@@ -46,6 +46,7 @@ const props = withDefaults(
      * (plain sessions, and the intent-side reuse never passes it).
      */
     linkedIntentId?: string | null
+    linkedScheduleId?: string | null
   }>(),
   {
     mode: 'default',
@@ -55,6 +56,7 @@ const props = withDefaults(
     codexPolicy: null,
     agentSwitch: null,
     linkedIntentId: null,
+    linkedScheduleId: null,
   },
 )
 
@@ -91,6 +93,7 @@ const emit = defineEmits<{
   'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
   'open-intent': [intentId: string]
+  'open-schedule': [scheduleId: string]
 }>()
 
 function onPickAgent(agentId: string): void {
@@ -118,6 +121,17 @@ function onPickAgent(agentId: string): void {
       @click="emit('open-intent', linkedIntentId)"
     >
       {{ t('session.titleBar.intent.label') }}
+    </button>
+    <button
+      v-if="linkedScheduleId"
+      type="button"
+      class="intent-jump"
+      data-testid="session-schedule-jump"
+      :title="t('session.titleBar.schedule.ariaLabel')"
+      :aria-label="t('session.titleBar.schedule.ariaLabel')"
+      @click="emit('open-schedule', linkedScheduleId)"
+    >
+      {{ t('session.titleBar.schedule.label') }}
     </button>
     <slot name="action" />
     <div v-if="vendor || agentSwitch || showMode" class="right-controls">

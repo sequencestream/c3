@@ -52,6 +52,7 @@ function makeCtx(opts: {
     openSpecSession,
     enterConsole: vi.fn(),
     consoleSession: ref(null),
+    activeLinkedScheduleId: ref(null),
   } as unknown as AppCtx
   installSessionActions(ctx)
   return {

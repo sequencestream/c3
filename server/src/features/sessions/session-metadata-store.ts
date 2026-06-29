@@ -24,6 +24,7 @@
  * projection is down (SR-R11 / AVAIL).
  */
 import type { SessionKind, VendorId } from '@ccc/shared/protocol'
+import type { Schedule } from '@ccc/shared/protocol'
 import { mintC3SessionId, type C3SessionId } from '../../kernel/agent/session/accessor.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
@@ -561,6 +562,33 @@ export function upsertBoundRow(input: {
     input.ownerId ?? null,
     1,
   )
+}
+
+function scheduleProjectionTitle(schedule: Schedule): string {
+  const config = schedule.config
+  if (config && typeof config === 'object') {
+    const name = (config as { name?: unknown }).name
+    if (typeof name === 'string' && name.trim()) return `Schedule: ${name.trim()}`
+  }
+  return `Schedule execution ${schedule.id}`
+}
+
+export function upsertScheduleExecutionRow(input: {
+  schedule: Schedule
+  sessionId: string
+  workspacePath: string
+}): void {
+  if (!input.sessionId) return
+  upsertBoundRow({
+    sessionId: input.sessionId,
+    workspacePath: input.workspacePath,
+    vendor: input.schedule.vendor,
+    agentId: input.schedule.agentId ?? '',
+    title: scheduleProjectionTitle(input.schedule),
+    sessionKind: 'schedule',
+    ownerKind: 'schedule',
+    ownerId: input.schedule.id,
+  })
 }
 
 /**

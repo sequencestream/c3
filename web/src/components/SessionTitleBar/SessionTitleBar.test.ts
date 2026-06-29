@@ -86,6 +86,14 @@ describe('SessionTitleBar.vue — 跳转关联意图按钮', () => {
     await w.find('[data-testid="session-intent-jump"]').trigger('click')
     expect(w.emitted('open-intent')).toEqual([['intent-42']])
   })
+
+  it('有 linkedScheduleId 时渲染并触发 schedule 跳转按钮', async () => {
+    const w = mountBar({ linkedScheduleId: 'schedule-1' })
+    const button = w.find('[data-testid="session-schedule-jump"]')
+    expect(button.exists()).toBe(true)
+    await button.trigger('click')
+    expect(w.emitted('open-schedule')).toEqual([['schedule-1']])
+  })
 })
 
 const SWITCH = {

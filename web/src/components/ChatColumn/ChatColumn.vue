@@ -46,6 +46,7 @@ withDefaults(
     showTitleBar?: boolean
     /** Linked intent id for the title-bar jump button (works side only); null ⇒ no button. */
     linkedIntentId?: string | null
+    linkedScheduleId?: string | null
     // chat body
     hasActiveSession: boolean
     messages: ChatMsg[]
@@ -81,6 +82,7 @@ withDefaults(
     codexPolicy: null,
     modeOptions: () => [],
     linkedIntentId: null,
+    linkedScheduleId: null,
     hasTaskStore: true,
     showMessages: true,
     showTaskPanel: true,
@@ -97,6 +99,7 @@ const emit = defineEmits<{
   'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
   'open-intent': [intentId: string]
+  'open-schedule': [scheduleId: string]
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
   refresh: []
@@ -128,10 +131,12 @@ defineExpose({
       :codex-policy="codexPolicy"
       :mode-options="modeOptions"
       :linked-intent-id="linkedIntentId"
+      :linked-schedule-id="linkedScheduleId"
       @set-mode="(m: ModeToken) => emit('set-mode', m)"
       @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
       @set-session-agent="(id: string) => emit('set-session-agent', id)"
       @open-intent="(id: string) => emit('open-intent', id)"
+      @open-schedule="(id: string) => emit('open-schedule', id)"
     />
     <ChatMessages
       v-if="showMessages"

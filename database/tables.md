@@ -44,7 +44,7 @@ Schema 版本: 5。v2→v3 新增 `discussions.participant_agent_ids` (创建时
 
 ### schedules
 
-定时任务调度域。`schedules` 支持 cron 和 event 两种触发类型 (event 含 run-lifecycle 与模型发布的 `pr:operation`)；`schedule_execution_logs` 记录每次执行的结果和 agent session id；`workspace_mcp_configs` 存储 per-workspace 的 MCP 服务器配置。写操作权限通过 toolAllowlist/toolDenylist 预配置，不再使用运行时 human-in-the-loop 审批。
+定时任务调度域。`schedules` 支持 cron 和 event 两种触发类型 (event 含 run-lifecycle 与模型发布的 `pr:operation`)；`schedule_execution_logs` 记录每次执行的结果和真实 agent session id；`workspace_mcp_configs` 存储 per-workspace 的 MCP 服务器配置。写操作权限通过 toolAllowlist/toolDenylist 预配置，不再使用运行时 human-in-the-loop 审批。
 
 Schema 版本: 9。迁移历史: status 列、write_approvals/workspace_mcp_configs 表、session_id 列、trigger 列 (v5)、vendor 列 (v6)、mcp_mode→mode 改名 (v7)、max_wall_clock_ms + agent_id 列 (LLM 任务显式绑定执行 agent)、event_pr_filter 列 (v8，2026-06-20，承载 `pr:operation` 触发的操作/结果过滤 JSON；`event_topic` 取值同步扩展容纳 `'pr:operation'`，无需改列类型；历史行/cron/run-lifecycle 行保持 NULL=任意；详见迁移记录 `migrate/2026/06/20/018)。v9 新增 `event_intent_filter`，用于意图生命周期阶段过滤；历史行和非意图事件行保持 NULL，表示任意阶段。
 
@@ -54,7 +54,7 @@ Schema 版本: 5。v1→v2 把工作区主键列 `project_path` 就地改名为 
 
 ### sessions
 
-统一会话列表投影域。`session_metadata` 由旧 `work_session_metadata` 就地 RENAME 而来，是 work / intent / spec / discussion / schedule / tool 六类会话的列表读路径缓存。事实源仍在各业务表和 vendor native store；本表不存 transcript / prompt / tool_use / tool_result。新增 `session_kind` 区分业务分类，`owner_kind` / `owner_id` 支撑前端跳回，`bound` 替代旧 `kind` 的读语义 (`real`→1、`pending`→0)。spec 撰写/重置会话在绑定真实 session id 后写入 `session_kind='spec'`、`owner_kind='intent'`、`owner_id=<intent.id>`；`intents.spec_session_id` 仍是当前 spec 会话归属的 SoT，本表只是可重建读缓存。旧 `kind` 列保留用于兼容和审计，新代码不再依赖它判断 pending/real。
+统一会话列表投影域。`session_metadata` 由旧 `work_session_metadata` 就地 RENAME 而来，是 work / intent / spec / discussion / schedule / tool 六类会话的列表读路径缓存。事实源仍在各业务表和 vendor native store；本表不存 transcript / prompt / tool_use / tool_result。新增 `session_kind` 区分业务分类，`owner_kind` / `owner_id` 支撑前端跳回，`bound` 替代旧 `kind` 的读语义 (`real`→1、`pending`→0)。spec 撰写/重置会话在绑定真实 session id 后写入 `session_kind='spec'`、`owner_kind='intent'`、`owner_id=<intent.id>`；LLM 定时任务拿到真实 agent session id 后写入 `session_kind='schedule'`、`owner_kind='schedule'`、`owner_id=<schedule.id>`，`schedule_execution_logs.session_id` 仍是执行历史的 SoT。本表只是可重建读缓存。旧 `kind` 列保留用于兼容和审计，新代码不再依赖它判断 pending/real。
 
 无独立 schema 版本号 (不写 `PRAGMA user_version`，避免与其他 store 冲突)。
 

@@ -60,6 +60,7 @@ const {
   activeVendor,
   activeAgentSwitch,
   activeLinkedIntentId,
+  activeLinkedScheduleId,
   sessionCapabilities,
   hasActiveSession,
   mode,
@@ -175,6 +176,7 @@ const {
   scheduleToolManifestLoading,
   scheduleToolManifestError,
   hostStatus,
+  openSchedules,
   onSelectSchedule,
   openScheduleForm,
   onToggleScheduleEnabled,
@@ -300,6 +302,7 @@ const {
           :vendor="activeVendor"
           :agent-switch="activeAgentSwitch"
           :linked-intent-id="activeLinkedIntentId"
+          :linked-schedule-id="activeLinkedScheduleId"
           :vendor-session-caps="sessionCapabilities ?? undefined"
           :has-active-session="hasActiveSession"
           :mode="mode"
@@ -330,6 +333,14 @@ const {
           @set-codex-policy="setCodexPolicy"
           @set-session-agent="onSetSessionAgent"
           @open-intent="(id: string) => currentWorkspace && openLinkedIntent(currentWorkspace, id)"
+          @open-schedule="
+            (id: string) => {
+              if (currentWorkspace) {
+                openSchedules(currentWorkspace)
+                onSelectSchedule(id)
+              }
+            }
+          "
           @respond="respond"
           @submit-ask="submitAsk"
           @refresh="refreshStatus"

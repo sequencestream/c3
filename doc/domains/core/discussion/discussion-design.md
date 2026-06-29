@@ -43,6 +43,11 @@ and indexes):
 - discussion messages — `id` (PK), `discussion_id`, `seq`, `speaker_kind`, `speaker_agent_id`
   (nullable), `speaker_name` (nullable), `content`, `created_at`. Indexed by `(discussion_id, seq)` —
   the natural read path for listing messages.
+- discussion agent sessions — `discussion_id`, `agent_id`, `session_id`, `vendor`, `last_seq`,
+  `created_at`, unique on `(discussion_id, agent_id)`. This is the SoT for the current vendor
+  transcript backing each discussion agent's resumable turns. The unified Sessions page does not read
+  this table directly; lifecycle hooks mirror current rows into `session_metadata` as
+  `session_kind='discussion'` / `owner_kind='discussion'` / `owner_id=<discussion.id>`.
 
 **Schema version (current: v4),** written via the database version counter. v2→v3
 added `participant_agent_ids`; **v3→v4 renamed the workspace-key column `project_path` →
@@ -91,6 +96,11 @@ store's degradation contract.
   message, and bumps the discussion's `updated_at`. The transaction makes the sequence race-free under
   the single synchronous connection; the sequence is independent per discussion.
 - **List messages** for a discussion, ordered by sequence ascending.
+- **Agent session mapping** — get/set/delete a discussion agent's current vendor session and delete
+  all mappings for a discussion. First creation writes the mapping and a best-effort
+  `session_metadata` projection row; resume failure deletes the stale mapping/projection before
+  creating a fresh session; single-agent and whole-discussion close delete the matching projection
+  rows. Projection failures are logged and do not block discussion cleanup.
 - Availability check / test-reset helpers mirror the intent store.
 
 ## Organizer engine

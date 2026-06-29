@@ -40,6 +40,7 @@ afterEach(() => {
   removeRuntime('work-running')
   removeRuntime('spec-running')
   removeRuntime('intent-running')
+  removeRuntime('discussion-running')
   resetDbForTests()
   resetStoreForTests()
   resetScheduleStoreForTests()
@@ -137,6 +138,26 @@ describe('getSessionCounts', () => {
       status: 'running',
       sessionId: 'schedule-running',
     })
+    upsertBoundRow({
+      sessionId: 'discussion-running',
+      workspacePath: proj,
+      vendor: 'claude',
+      agentId: 'agent-discussion',
+      title: 'Discussion',
+      sessionKind: 'discussion',
+      ownerKind: 'discussion',
+      ownerId: 'discussion-1',
+    })
+    upsertBoundRow({
+      sessionId: 'discussion-idle',
+      workspacePath: proj,
+      vendor: 'codex',
+      agentId: 'agent-discussion',
+      title: 'Discussion idle',
+      sessionKind: 'discussion',
+      ownerKind: 'discussion',
+      ownerId: 'discussion-1',
+    })
 
     ensureRuntime('work-running', proj, 'default', [], 'work').run = {
       abort: new AbortController(),
@@ -147,6 +168,10 @@ describe('getSessionCounts', () => {
       handle: null,
     }
     ensureRuntime('intent-running', proj, 'default', [], 'intent').run = {
+      abort: new AbortController(),
+      handle: null,
+    }
+    ensureRuntime('discussion-running', proj, 'default', [], 'discussion').run = {
       abort: new AbortController(),
       handle: null,
     }
@@ -162,7 +187,7 @@ describe('getSessionCounts', () => {
           work: 1,
           intent: 1,
           spec: 1,
-          discussion: 0,
+          discussion: 1,
           schedule: 1,
           tool: 0,
         },

@@ -13,7 +13,11 @@ import type {
   VendorAdapter,
 } from '../../kernel/agent/adapters/types.js'
 import type { AgentSessionRow } from './store.js'
-import { AgentSessionManager, type AgentSessionStore } from './agent-session-manager.js'
+import {
+  AgentSessionManager,
+  type AgentSessionStore,
+  type DiscussionSessionProjection,
+} from './agent-session-manager.js'
 
 // ---------------------------------------------------------------------------
 // Fakes
@@ -173,6 +177,27 @@ function createFakeStore(): {
   }
 }
 
+function createFakeProjection(): {
+  projection: DiscussionSessionProjection
+  upserts: Array<Parameters<DiscussionSessionProjection['upsert']>[0]>
+  deletes: Array<Parameters<DiscussionSessionProjection['delete']>[0]>
+  deleteAlls: string[]
+} {
+  const upserts: Array<Parameters<DiscussionSessionProjection['upsert']>[0]> = []
+  const deletes: Array<Parameters<DiscussionSessionProjection['delete']>[0]> = []
+  const deleteAlls: string[] = []
+  return {
+    upserts,
+    deletes,
+    deleteAlls,
+    projection: {
+      upsert: (input) => upserts.push(input),
+      delete: (input) => deletes.push(input),
+      deleteAll: (discussionId) => deleteAlls.push(discussionId),
+    },
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Factory helpers
 // ---------------------------------------------------------------------------
@@ -200,6 +225,7 @@ describe('AgentSessionManager', () => {
   describe('first call (no prior session)', () => {
     it('creates a new vendor session and persists the mapping', async () => {
       const { store, rows } = createFakeStore()
+      const { projection, upserts } = createFakeProjection()
       const driver = new FakeDriver('claude', () => ({
         run: new FakeRun('session-new', [msg({ blocks: [textBlock('Hello from agent')] })]),
         sessionId: 'session-new',
@@ -217,6 +243,7 @@ describe('AgentSessionManager', () => {
       const mgr = new AgentSessionManager({
         getAdapter: (v) => (v === 'claude' ? adapter : (undefined as unknown as VendorAdapter)),
         store,
+        projection,
       })
 
       const result = await mgr.ask(
@@ -239,6 +266,15 @@ describe('AgentSessionManager', () => {
       expect(row.sessionId).toBe('session-new')
       expect(row.vendor).toBe('claude')
       expect(row.lastSeq).toBe(0)
+      expect(upserts).toEqual([
+        {
+          discussionId: 'disc-1',
+          workspacePath: '/cwd',
+          agent: claudeAgent,
+          sessionId: 'session-new',
+          vendor: 'claude',
+        },
+      ])
     })
   })
 
@@ -246,6 +282,7 @@ describe('AgentSessionManager', () => {
   describe('second call (resume existing session)', () => {
     it('resumes the stored session and updates lastSeq', async () => {
       const { store, rows } = createFakeStore()
+      const { projection, deletes, upserts } = createFakeProjection()
 
       // Pre-populate a stored session
       rows.set('disc-1::agent-a', {
@@ -278,6 +315,7 @@ describe('AgentSessionManager', () => {
       const mgr = new AgentSessionManager({
         getAdapter: (v) => (v === 'claude' ? adapter : (undefined as unknown as VendorAdapter)),
         store,
+        projection,
       })
 
       const result = await mgr.ask(
@@ -297,6 +335,8 @@ describe('AgentSessionManager', () => {
       const row = rows.get('disc-1::agent-a')!
       expect(row.lastSeq).toBe(4)
       expect(row.sessionId).toBe('session-existing')
+      expect(deletes).toEqual([])
+      expect(upserts).toEqual([])
     })
   })
 
@@ -304,6 +344,7 @@ describe('AgentSessionManager', () => {
   describe('resume failure degradation', () => {
     it('falls back to a new session when resume throws', async () => {
       const { store, rows } = createFakeStore()
+      const { projection, deletes, upserts } = createFakeProjection()
 
       // Pre-populate a stale session
       rows.set('disc-1::agent-a', {
@@ -341,6 +382,7 @@ describe('AgentSessionManager', () => {
       const mgr = new AgentSessionManager({
         getAdapter: (v) => (v === 'claude' ? adapter : (undefined as unknown as VendorAdapter)),
         store,
+        projection,
       })
 
       const result = await mgr.ask(
@@ -361,6 +403,15 @@ describe('AgentSessionManager', () => {
       const row = rows.get('disc-1::agent-a')!
       expect(row.sessionId).toBe('session-fresh')
       expect(row.lastSeq).toBe(0)
+      expect(deletes).toEqual([
+        {
+          discussionId: 'disc-1',
+          agentId: 'agent-a',
+          sessionId: 'session-stale',
+          vendor: 'claude',
+        },
+      ])
+      expect(upserts.map((u) => u.sessionId)).toEqual(['session-fresh'])
     })
   })
 
@@ -368,6 +419,7 @@ describe('AgentSessionManager', () => {
   describe('closeSession / closeAll', () => {
     it('closeSession deletes one agent mapping', () => {
       const { store, rows } = createFakeStore()
+      const { projection, deletes } = createFakeProjection()
       rows.set('disc-1::agent-a', {
         discussionId: 'disc-1',
         agentId: 'agent-a',
@@ -388,16 +440,21 @@ describe('AgentSessionManager', () => {
       const mgr = new AgentSessionManager({
         getAdapter: () => undefined as unknown as VendorAdapter,
         store,
+        projection,
       })
 
       mgr.closeSession('disc-1', 'agent-a')
       expect(rows.has('disc-1::agent-a')).toBe(false)
       // Other agent's mapping untouched
       expect(rows.has('disc-1::agent-b')).toBe(true)
+      expect(deletes).toEqual([
+        { discussionId: 'disc-1', agentId: 'agent-a', sessionId: 's1', vendor: 'claude' },
+      ])
     })
 
     it('closeAll deletes all agent mappings for a discussion', () => {
       const { store, rows } = createFakeStore()
+      const { projection, deleteAlls } = createFakeProjection()
       rows.set('disc-1::agent-a', {
         discussionId: 'disc-1',
         agentId: 'agent-a',
@@ -427,11 +484,13 @@ describe('AgentSessionManager', () => {
       const mgr = new AgentSessionManager({
         getAdapter: () => undefined as unknown as VendorAdapter,
         store,
+        projection,
       })
 
       mgr.closeAll('disc-1')
       expect(rows.size).toBe(1)
       expect(rows.has('disc-2::agent-a')).toBe(true)
+      expect(deleteAlls).toEqual(['disc-1'])
     })
   })
 

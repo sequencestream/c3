@@ -24,6 +24,7 @@
  * projection is down (SR-R11 / AVAIL).
  */
 import type { SessionKind, VendorId } from '@ccc/shared/protocol'
+import type { Schedule } from '@ccc/shared/protocol'
 import { mintC3SessionId, type C3SessionId } from '../../kernel/agent/session/accessor.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
@@ -563,6 +564,33 @@ export function upsertBoundRow(input: {
   )
 }
 
+function scheduleProjectionTitle(schedule: Schedule): string {
+  const config = schedule.config
+  if (config && typeof config === 'object') {
+    const name = (config as { name?: unknown }).name
+    if (typeof name === 'string' && name.trim()) return `Schedule: ${name.trim()}`
+  }
+  return `Schedule execution ${schedule.id}`
+}
+
+export function upsertScheduleExecutionRow(input: {
+  schedule: Schedule
+  sessionId: string
+  workspacePath: string
+}): void {
+  if (!input.sessionId) return
+  upsertBoundRow({
+    sessionId: input.sessionId,
+    workspacePath: input.workspacePath,
+    vendor: input.schedule.vendor,
+    agentId: input.schedule.agentId ?? '',
+    title: scheduleProjectionTitle(input.schedule),
+    sessionKind: 'schedule',
+    ownerKind: 'schedule',
+    ownerId: input.schedule.id,
+  })
+}
+
 /**
  * Run-end upsert (finalizeRun path — F-2). Single trigger for both run
  * paths (claude `run-lifecycle.ts` AND codex/opencode `run-via-driver.ts`
@@ -613,6 +641,12 @@ export function deleteByVendorId(vendor: VendorId, vendorSessionId: string): voi
   if (!d) return
   const c3Id = mintC3SessionId({ vendor, vendorSessionId })
   d.run('DELETE FROM session_metadata WHERE c3_id=? OR c3_id=?', c3Id, vendorSessionId)
+}
+
+export function deleteByOwner(ownerKind: SessionOwnerKind, ownerId: string): void {
+  const d = db()
+  if (!d) return
+  d.run('DELETE FROM session_metadata WHERE owner_kind=? AND owner_id=?', ownerKind, ownerId)
 }
 
 /** Delete by the raw pending id (used by `deleteSession` for a pending never run). */

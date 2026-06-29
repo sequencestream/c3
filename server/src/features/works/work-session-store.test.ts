@@ -38,6 +38,7 @@ import {
   updateRealRowTitle,
   upsertForBind,
   upsertPendingRow,
+  upsertScheduleExecutionRow,
   validateLazy,
   type NativeListFn,
 } from './work-session-store.js'
@@ -234,6 +235,44 @@ describe('createSession pending row (F-11 replacement for setPendingIntent)', ()
     })
     updatePendingRowAgentId({ pendingId: 'pending:abc', vendor: 'claude', agentId: agent2 })
     expect(getByC3Id('pending:abc')?.agentId).toBe(agent2)
+  })
+})
+
+describe('schedule execution projection rows', () => {
+  it('upserts a real schedule session row with schedule ownership metadata', () => {
+    upsertScheduleExecutionRow({
+      schedule: {
+        id: 'schedule-1',
+        type: 'llm',
+        config: { name: 'Nightly review' },
+        maxWallClockMs: null,
+        workspaceId: wsA,
+        vendor: 'claude',
+        agentId: agent1,
+        triggerType: 'cron',
+        cronExpression: '0 1 * * *',
+        nextRunAt: null,
+        eventTopic: null,
+        eventReasonFilter: null,
+        eventPrFilter: null,
+        eventIntentFilter: null,
+        status: 'active',
+        mode: 'default',
+        toolAllowlist: [],
+        toolDenylist: [],
+        createdAt: nowMs,
+        updatedAt: nowMs,
+      },
+      sessionId: 'schedule-session-1',
+      workspacePath: wsA,
+    })
+
+    const row = listForWorkspace(wsA, 'schedule')[0]
+    expect(row.vendorSessionId).toBe('schedule-session-1')
+    expect(row.sessionKind).toBe('schedule')
+    expect(row.ownerKind).toBe('schedule')
+    expect(row.ownerId).toBe('schedule-1')
+    expect(row.title).toBe('Schedule: Nightly review')
   })
 })
 

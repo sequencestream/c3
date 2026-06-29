@@ -63,6 +63,7 @@ import {
 } from '../sessions/session-metadata-store.js'
 import { findIntentIdBySessionId } from '../intents/store.js'
 import { currentLicenseStatus } from '../license/store.js'
+import { countRunningScheduleSessions } from '../schedules/store.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
@@ -96,15 +97,16 @@ const PLACEHOLDER_TITLES = new Set(['New session', 'Untitled session'])
  * shapes are probed against the projection.
  */
 function projectionSelectionTitle(vendor: VendorId, sessionId: string): string | null {
-  const rows = [
-    getByC3Id(mintC3SessionId({ vendor, vendorSessionId: sessionId })),
-    getByC3Id(sessionId),
-  ]
+  const rows = [projectionRowForSelection(vendor, sessionId)]
   for (const row of rows) {
     const t = row?.title?.trim()
     if (t && !PLACEHOLDER_TITLES.has(t)) return t
   }
   return null
+}
+
+function projectionRowForSelection(vendor: VendorId, sessionId: string) {
+  return getByC3Id(mintC3SessionId({ vendor, vendorSessionId: sessionId })) ?? getByC3Id(sessionId)
 }
 
 const codexHistoryStore = new CodexSessionStore()
@@ -196,10 +198,11 @@ export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg)
   }
   for (const kind of SESSION_PAGE_KINDS) {
     if (kind === 'tool' && !getShowToolSessions()) continue
-    counts[kind] = listForWorkspace(abs, kind).filter((row) =>
-      isRunning(row.vendorSessionId ?? row.c3Id),
-    ).length
-  }
+    counts[kind] =
+      kind === 'schedule'
+        ? countRunningScheduleSessions(abs)
+        : listForWorkspace(abs, kind).filter((row) => isRunning(row.vendorSessionId ?? row.c3Id))
+            .length
   conn.send({ type: 'session_counts', workspaceId: pathToId(abs)!, counts })
 }
 
@@ -307,6 +310,7 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
   try {
     const existing = getRuntime(msg.sessionId)
     const effectiveVendor = resolveSessionVendor(msg.sessionId)
+    const projectionRow = projectionRowForSelection(effectiveVendor, msg.sessionId)
     // Projection-first (ADR-0013 left/right same-source): prefer the title the
     // session list shows; fall back to the claude-only legacy path only when the
     // projection has no real title yet (codex never resolves through the latter).
@@ -342,6 +346,9 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
       status: rt.status,
       vendor: resolveSessionVendor(msg.sessionId),
       agentSwitch: agentSwitchFor(msg.sessionId),
+      sessionKind: projectionRow?.sessionKind,
+      ownerKind: projectionRow?.ownerKind,
+      ownerId: projectionRow?.ownerId,
       // Reverse-look-up the intent that created this work session (only
       // `start_development`-bound sessions have a row) so the title bar can offer
       // a jump-to-intent button; absent ⇒ plain session ⇒ no button.

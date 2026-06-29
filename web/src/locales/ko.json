@@ -957,6 +957,10 @@
         "label": "의도",
         "ariaLabel": "이 세션을 만든 의도 열기"
       },
+      "schedule": {
+        "label": "일정",
+        "ariaLabel": "이 세션을 만든 일정 열기"
+      },
       "mode": {
         "ariaLabel": "권한 모드"
       },

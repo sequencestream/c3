@@ -97,6 +97,13 @@ follow-up question (see [design §organizer-engine](discussion-design.md#organiz
   approval provenance (preApproved vs c3-gated) is a web-console concern (WC-R20 / PG-R12), not
   discussion's. **Out of Phase 1: no consensus, no agent-teams** on the discussion path — only the
   heterogeneous roundtable plus the base approval gateway.
+- **Unified session-page projection (2026-06-29)**: each discussion participant/organizer vendor
+  session remains owned by `discussion_agent_sessions` (`discussion_id` + `agent_id` → native session
+  id/vendor), but the lifecycle also writes a rebuildable `session_metadata` row with
+  `session_kind='discussion'`, `owner_kind='discussion'`, and `owner_id=<discussion.id>`. The Sessions
+  page's Discussion tab and running badge read that projection; selecting the row jumps back to the
+  owning discussion instead of making the vendor transcript an editable work session. Discussion
+  messages and orchestration state remain in the discussion domain.
 - **Organizer engine**: a background loop reusing the consensus one-shot-turn paradigm. The
   organizer's round decision and participants' speech parsing are pure, dependency-injected,
   unit-tested functions; the loop walks `draft → in_progress → completed`, appends every turn and

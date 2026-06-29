@@ -23,13 +23,14 @@ function mountList(
     vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
     hasMore?: boolean
     exhausted?: boolean
+    activeSessionKind?: 'work' | 'intent' | 'spec' | 'discussion' | 'schedule' | 'tool'
   } = {},
 ) {
   return mount(WorkSessionList, {
     props: {
       currentWorkspace: opts.currentWorkspace === undefined ? WS : opts.currentWorkspace,
       sessions: opts.sessions ?? [],
-      activeSessionKind: 'work',
+      activeSessionKind: opts.activeSessionKind ?? 'work',
       sessionCounts: { work: 0, intent: 0, spec: 0, discussion: 0, schedule: 0, tool: 0 },
       showToolSessions: false,
       hasMore: opts.hasMore ?? false,
@@ -111,6 +112,16 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
     expect(w.emitted('load-more-sessions')).toEqual([[]])
   })
 
+  it('schedule tab is enabled and emits select-session-kind', async () => {
+    const w = mountList()
+    const scheduleTab = w
+      .findAll('.session-kind-tab')
+      .find((button) => button.text().includes('Schedule'))
+    expect(scheduleTab?.attributes('disabled')).toBeUndefined()
+    await scheduleTab!.trigger('click')
+    expect(w.emitted('select-session-kind')).toEqual([['schedule']])
+  })
+
   it('exhausted=true(且有会话)→ 显示「已加载完」,不显示加载更多', () => {
     const w = mountList({
       sessions: [session('s1', 'Alpha')],
@@ -162,6 +173,30 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
 
     const none = mountList({ currentWorkspace: null })
     expect(none.find('[data-testid="session-list-refresh"]').exists()).toBe(false)
+  })
+
+  it('讨论 tab 可点击并上抛 select-session-kind', async () => {
+    const w = mountList()
+    const tabs = w.findAll('.session-kind-tab')
+    const discussionTab = tabs.find((tab) => tab.text().includes('Discussion'))!
+    expect((discussionTab.element as HTMLButtonElement).disabled).toBe(false)
+    await discussionTab.trigger('click')
+    expect(w.emitted('select-session-kind')).toEqual([['discussion']])
+  })
+
+  it('讨论会话行不渲染重命名/删除动作', () => {
+    const w = mountList({
+      sessions: [
+        session('discussion-agent-session', 'Discussion agent', {
+          vendor: 'claude',
+          sessionKind: 'discussion',
+          ownerKind: 'discussion',
+          ownerId: 'discussion-1',
+        }),
+      ],
+    })
+    expect(w.find('[data-testid="session-row-rename"]').exists()).toBe(false)
+    expect(w.find('[data-testid="session-row-delete"]').exists()).toBe(false)
   })
 
   it('重命名:prompt 有值 → emit rename-session(path, id, title)', async () => {

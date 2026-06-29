@@ -44,11 +44,15 @@ row to a session entry (additive `state`, `sessionKind`, `ownerKind`, `ownerId`,
 and `bound` fields), applies the hidden-set and recorded-tool-session filters
 for work listings, and sorts newest-first. The session page uses the same
 projection for its six tabs (work / intent / spec / discussion / schedule /
-tool) and running-count badges. Work, intent, spec, and tool rows are live
-read-model rows; discussion and schedule remain placeholders until their domain
-writers connect. Spec rows are written by the intent-management spec lifecycle at bind time with
+tool) and running-count badges. Work, intent, spec, discussion, and schedule
+are live read-model rows; tool remains the last placeholder until its domain writer connects. Spec rows are written by the intent-management spec lifecycle at bind time with
+
 `session_kind='spec'` and an intent owner, so selecting them jumps back to the owning intent's
-spec-session tab instead of opening them as ordinary work sessions. Work-only pre-bind rows are
+spec-session tab instead of opening them as ordinary work sessions. Discussion rows are written by
+the discussion agent-session lifecycle when a participant/organizer vendor session is created, with
+`session_kind='discussion'`, `owner_kind='discussion'`, and the discussion id as owner; selecting
+them jumps back to the owning discussion, and the session list hides rename/delete actions for them.
+Work-only pre-bind rows are
 represented by `bound = 0`; the legacy `kind` column is retained but no longer drives read
 behavior.
 

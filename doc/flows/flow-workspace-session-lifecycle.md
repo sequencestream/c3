@@ -32,10 +32,12 @@ flowchart TD
 3. Sessions are listed from the `session_metadata` projection, newest-first, one unified
    cross-vendor timeline deduped by `c3_id` (`SR-R4`, `SR-R12`). The session page requests a
    `sessionKind` slice (work / intent / spec / discussion / schedule / tool) and reads running
-   counts from the same projection; work, intent, and spec are live in this phase, while
-   discussion / schedule / tool remain placeholder tabs. Spec rows carry
+   counts from the same projection plus domain liveness where needed; work, intent, spec, discussion,
+   and schedule are live in this phase, while tool remains a placeholder tab. Spec rows carry
    `ownerKind='intent'` / `ownerId=<intent.id>` and jump back to the intent detail's spec-session
-   tab. Each row carries its owning `vendor` tag, `state`, `sessionKind`, and
+   tab. Discussion rows carry `ownerKind='discussion'` / `ownerId=<discussion.id>` and jump back to
+   the discussion page instead of opening as editable work sessions. Schedule rows carry
+   `ownerKind='schedule'` / `ownerId=<schedule.id>` and jump back to the schedules page. Each row carries its owning `vendor` tag, `state`, `sessionKind`, and
    optional `ownerKind`/`ownerId` for client-side jump-back. The list is **cursor-paginated** by `last_modified` (`SR-R14`): the
    first reply is the newest page; "load more" pulls the next older page via a `{lastModified,
 sessionId}` keyset cursor; the periodic refresh re-fetches only the displayed range

@@ -37,6 +37,7 @@ import { getWorkspaceMcpConfig, isAgentQuotaRecoveryConfig } from './store.js'
 import { freezeTools, hasSelectedC3McpTool, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
 import type { FrozenToolSet } from './mcp-freeze.js'
 import { createScheduleMcpServer } from './c3-mcp.js'
+import { upsertScheduleExecutionRow } from '../sessions/session-metadata-store.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -432,6 +433,18 @@ function validateOutput(
   return { valid: true }
 }
 
+function upsertScheduleSessionProjection(schedule: Schedule, sessionId: string): void {
+  try {
+    upsertScheduleExecutionRow({
+      schedule,
+      sessionId,
+      workspacePath: resolveWorkspaceRoot(schedule.workspaceId)!,
+    })
+  } catch (err) {
+    console.error('[c3:schedules] failed to upsert schedule session projection:', err)
+  }
+}
+
 async function executeLlmPrompt(
   schedule: Schedule,
   logId: string,
@@ -553,6 +566,7 @@ async function executeLlmPrompt(
         if (typeof sid === 'string' && sid) {
           sessionId = sid
           updateLog(logId, { sessionId })
+          upsertScheduleSessionProjection(schedule, sessionId)
         }
       }
       if (m.type === 'assistant') {
@@ -647,7 +661,10 @@ async function executeCodexLlmPrompt(
       ...(wireApi ? { wireApi } : {}),
     })
     const sessionId = await run.sessionId()
-    if (sessionId) updateLog(logId, { sessionId })
+    if (sessionId) {
+      updateLog(logId, { sessionId })
+      upsertScheduleSessionProjection(schedule, sessionId)
+    }
     let output = ''
     for await (const message of run.messages()) {
       for (const block of message.blocks) {

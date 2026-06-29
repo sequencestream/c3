@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { ref } from 'vue'
-import type { ClientToServer, Intent, SessionInfo } from '@ccc/shared/protocol'
+import type { ClientToServer, Discussion, Intent, SessionInfo } from '@ccc/shared/protocol'
 import { installSessionActions } from './session-actions'
 import type { AppCtx } from './types'
 import { sessionCacheKey, type SessionPageKind } from './state'
@@ -25,6 +25,10 @@ function intent(id: string, extra: Partial<Intent> = {}): Intent {
   return { id, ...extra } as Intent
 }
 
+function discussion(id: string, extra: Partial<Discussion> = {}): Discussion {
+  return { id, ...extra } as Discussion
+}
+
 const WS = '/ws'
 
 function makeCtx(
@@ -42,23 +46,26 @@ function makeCtx(
   const requestedIntentSubTab = ref<'intentSession' | 'specSession' | null>(null)
   const openIntents = vi.fn()
   const openSpecSession = vi.fn()
+  const openDiscussions = vi.fn()
+  const openDiscussion = vi.fn()
   const ctx = {
     send,
     sessionsByWorkspace,
     sessionPagingByWorkspace,
     activeSessionKind: ref(opts.activeKind ?? 'work'),
     intents: ref(opts.intents ?? {}),
+    discussions: ref({ [WS]: [discussion('discussion-1')] }),
     requestedIntentId,
     requestedIntentSubTab,
     openIntents,
     openSpecSession,
-    openDiscussions: vi.fn(),
-    openDiscussion: vi.fn(),
-    openSchedules: vi.fn(),
-    onSelectSchedule: vi.fn(),
-    selectIntentSession: vi.fn(),
-    enterConsole: vi.fn(),
+        openDiscussions,
+        openDiscussion,
+        openSchedules: vi.fn(),
+        onSelectSchedule: vi.fn(),
+        selectIntentSession: vi.fn(),
     consoleSession: ref(null),
+    activeLinkedScheduleId: ref(null),
   } as unknown as AppCtx
   installSessionActions(ctx)
   return {
@@ -69,6 +76,8 @@ function makeCtx(
     openSpecSession,
     requestedIntentId,
     requestedIntentSubTab,
+    openDiscussions,
+    openDiscussion,
   }
 }
 
@@ -241,5 +250,46 @@ describe('spec session jump-back', () => {
     expect(requestedIntentId.value).toBe('intent-1')
     expect(requestedIntentSubTab.value).toBe('specSession')
     expect(openSpecSession).toHaveBeenCalledWith('intent-1')
+  })
+})
+
+describe('discussion session jump-back', () => {
+  it('routes a discussion projection row with a discussion owner to the discussion page', () => {
+    const row = {
+      ...s('discussion-agent-session', 300),
+      sessionKind: 'discussion',
+      ownerKind: 'discussion',
+      ownerId: 'discussion-1',
+    } satisfies SessionInfo
+    const { ctx, send, openDiscussions, openDiscussion } = makeCtx({
+      sessions: { [sessionCacheKey(WS, 'discussion')]: [row] },
+      activeKind: 'discussion',
+    })
+
+    ctx.selectSession(WS, 'discussion-agent-session')
+
+    expect(openDiscussions).toHaveBeenCalledWith(WS)
+    expect(openDiscussion).toHaveBeenCalledWith('discussion-1')
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'select_session', sessionId: 'discussion-agent-session' }),
+    )
+  })
+
+  it('does not open a wrong discussion when the projected owner is missing from a loaded list', () => {
+    const row = {
+      ...s('discussion-agent-session', 300),
+      sessionKind: 'discussion',
+      ownerKind: 'discussion',
+      ownerId: 'missing-discussion',
+    } satisfies SessionInfo
+    const { ctx, openDiscussions, openDiscussion } = makeCtx({
+      sessions: { [sessionCacheKey(WS, 'discussion')]: [row] },
+      activeKind: 'discussion',
+    })
+
+    ctx.selectSession(WS, 'discussion-agent-session')
+
+    expect(openDiscussions).toHaveBeenCalledWith(WS)
+    expect(openDiscussion).not.toHaveBeenCalled()
   })
 })

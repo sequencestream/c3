@@ -10,6 +10,11 @@ import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { getSessionCounts } from './index.js'
 import { resetStoreForTests, upsertBoundRow } from './work-session-store.js'
+import {
+  appendExecutionLog,
+  createSchedule,
+  resetStoreForTests as resetScheduleStoreForTests,
+} from '../schedules/store.js'
 import { resetSettingsCacheForTests, saveSettings } from '../../kernel/config/index.js'
 
 let dir: string
@@ -27,6 +32,7 @@ beforeEach(() => {
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   resetDbForTests()
   resetStoreForTests()
+  resetScheduleStoreForTests()
   resetSettingsCacheForTests()
   resetStateCacheForTests()
   proj = join(dir, 'proj')
@@ -39,9 +45,11 @@ afterEach(() => {
   removeRuntime('work-running')
   removeRuntime('spec-running')
   removeRuntime('intent-running')
+  removeRuntime('discussion-running')
   removeRuntime('tool-running')
   resetDbForTests()
   resetStoreForTests()
+  resetScheduleStoreForTests()
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   if (prevClaudeConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR
@@ -109,6 +117,56 @@ describe('getSessionCounts', () => {
       ownerKind: 'intent',
       ownerId: 'intent-3',
     })
+    const schedule = createSchedule({
+      type: 'llm',
+      config: { prompt: 'run' },
+      workspaceId,
+      vendor: 'claude',
+      agentId: 'agent-schedule',
+      triggerType: 'cron',
+      cronExpression: '0 1 * * *',
+      mode: 'default',
+    })
+    upsertBoundRow({
+      sessionId: 'schedule-running',
+      workspacePath: proj,
+      vendor: 'claude',
+      agentId: 'agent-schedule',
+      title: 'Schedule run',
+      sessionKind: 'schedule',
+      ownerKind: 'schedule',
+      ownerId: schedule.id,
+    })
+    appendExecutionLog({
+      scheduleId: schedule.id,
+      startedAt: Date.now(),
+      finishedAt: null,
+      exitCode: null,
+      output: '',
+      error: null,
+      status: 'running',
+      sessionId: 'schedule-running',
+    })
+    upsertBoundRow({
+      sessionId: 'discussion-running',
+      workspacePath: proj,
+      vendor: 'claude',
+      agentId: 'agent-discussion',
+      title: 'Discussion',
+      sessionKind: 'discussion',
+      ownerKind: 'discussion',
+      ownerId: 'discussion-1',
+    })
+    upsertBoundRow({
+      sessionId: 'discussion-idle',
+      workspacePath: proj,
+      vendor: 'codex',
+      agentId: 'agent-discussion',
+      title: 'Discussion idle',
+      sessionKind: 'discussion',
+      ownerKind: 'discussion',
+      ownerId: 'discussion-1',
+    })
     upsertBoundRow({
       sessionId: 'tool-running',
       workspacePath: proj,
@@ -132,6 +190,7 @@ describe('getSessionCounts', () => {
       abort: new AbortController(),
       handle: null,
     }
+    ensureRuntime('discussion-running', proj, 'default', [], 'discussion').run = {
     ensureRuntime('tool-running', proj, 'default', [], 'tool').run = {
       abort: new AbortController(),
       handle: null,
@@ -148,8 +207,8 @@ describe('getSessionCounts', () => {
           work: 1,
           intent: 1,
           spec: 1,
-          discussion: 0,
-          schedule: 0,
+          discussion: 1,
+          schedule: 1,
           tool: 0,
         },
       },

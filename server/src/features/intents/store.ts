@@ -1164,6 +1164,15 @@ export function recordToolSession(sessionId: string): void {
   )
 }
 
+/** Tool-session marker ids, used only to rebuild ownerless tool projections. */
+export function listToolSessionIds(): string[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<{ session_id: string }>('SELECT session_id FROM tool_sessions')
+    .map((r) => r.session_id)
+}
+
 /** Whether a session id was recorded as tool-created. */
 export function isToolSessionRecorded(sessionId: string): boolean {
   if (!isDbAvailable()) return false

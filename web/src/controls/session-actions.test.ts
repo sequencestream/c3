@@ -31,12 +31,14 @@ function discussion(id: string, extra: Partial<Discussion> = {}): Discussion {
 
 const WS = '/ws'
 
-function makeCtx(opts: {
-  sessions?: Record<string, SessionInfo[]>
-  paging?: Record<string, { hasMore: boolean; exhausted: boolean; loadingMore: boolean }>
-  intents?: Record<string, Intent[]>
-  activeKind?: SessionPageKind
-}) {
+function makeCtx(
+  opts: {
+    sessions?: Record<string, SessionInfo[]>
+    paging?: Record<string, { hasMore: boolean; exhausted: boolean; loadingMore: boolean }>
+    intents?: Record<string, Intent[]>
+    activeKind?: SessionPageKind
+  } = {},
+) {
   const send = vi.fn<(msg: ClientToServer) => void>()
   const sessionsByWorkspace = ref(opts.sessions ?? {})
   const sessionPagingByWorkspace = ref(opts.paging ?? {})
@@ -57,9 +59,11 @@ function makeCtx(opts: {
     requestedIntentSubTab,
     openIntents,
     openSpecSession,
-    openDiscussions,
-    openDiscussion,
-    enterConsole: vi.fn(),
+        openDiscussions,
+        openDiscussion,
+        openSchedules: vi.fn(),
+        onSelectSchedule: vi.fn(),
+        selectIntentSession: vi.fn(),
     consoleSession: ref(null),
     activeLinkedScheduleId: ref(null),
   } as unknown as AppCtx
@@ -98,6 +102,28 @@ describe('refreshSessions', () => {
     const msg = send.mock.calls[0][0] as Extract<ClientToServer, { type: 'list_sessions' }>
     expect(msg.since).toBe(200)
     expect(msg.before).toBeUndefined()
+  })
+})
+
+describe('tool session source jump', () => {
+  it('routes tool rows with an intent owner without selecting the tool session', () => {
+    const tool = {
+      ...s('tool-1', 300),
+      sessionKind: 'tool',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+      isToolSession: true,
+    } satisfies SessionInfo
+    const { ctx, send, openIntents, requestedIntentId, requestedIntentSubTab } = makeCtx()
+
+    ctx.jumpSessionSource(WS, tool)
+
+    expect(openIntents).toHaveBeenCalledWith(WS)
+    expect(requestedIntentId.value).toBe('intent-1')
+    expect(requestedIntentSubTab.value).toBeNull()
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'select_session', sessionId: 'tool-1' }),
+    )
   })
 })
 

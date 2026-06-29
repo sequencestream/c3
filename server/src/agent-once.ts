@@ -17,12 +17,14 @@ import type { AgentConfig } from '@ccc/shared/protocol'
 import { launchForAgent } from './kernel/agent-config/index.js'
 import { findClaudeExecutable } from './kernel/infra/child-env.js'
 import { addToolSession } from './sessions.js'
+import type { SessionOwnerKind } from './features/sessions/session-metadata-store.js'
 
 export async function askAgentOnce(
   agent: AgentConfig,
   prompt: string,
   cwd: string,
   signal: AbortSignal,
+  origin?: { ownerKind: SessionOwnerKind; ownerId: string } | null,
 ): Promise<string> {
   const launch = launchForAgent(agent)
   const claudePath = findClaudeExecutable()
@@ -59,7 +61,12 @@ export async function askAgentOnce(
         const sid = (m as { session_id?: unknown }).session_id
         if (typeof sid === 'string' && sid) {
           sessionId = sid
-          addToolSession(sid)
+          addToolSession(sid, {
+            workspacePath: cwd,
+            agentId: agent.id,
+            ownerKind: origin?.ownerKind ?? null,
+            ownerId: origin?.ownerId ?? null,
+          })
         }
       }
       if (m.type === 'assistant') {

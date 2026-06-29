@@ -2,6 +2,7 @@ import { consoleEntryTarget, consoleTabEntryEffects, workspaceSwitchEffects } fr
 import { emptyTaskModel } from '@/lib/task-list'
 import { SESSION_PAGE_SIZE } from '@/lib/session-page'
 import { resolveSessionJumpTarget } from '@/lib/session-jump'
+import type { SessionInfo } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
 import { sessionCacheKey, type SessionPageKind } from './state'
 
@@ -234,6 +235,37 @@ export function installSessionActions(ctx: AppCtx): void {
     consoleSession.value = { workspacePath: path, sessionId }
     if (sessionId === activeSession.value) return
     send({ type: 'select_session', workspaceId: path, sessionId })
+  }
+
+  ctx.jumpSessionSource = (path: string, row: SessionInfo): void => {
+    const target = resolveSessionJumpTarget({
+      sessionKind: row.sessionKind,
+      ownerKind: row.ownerKind,
+      ownerId: row.ownerId,
+    })
+    if (!target) return
+    if (target.kind === 'intentDetail') {
+      ctx.openIntents(path)
+      ctx.requestedIntentId.value = target.intentId
+      ctx.requestedIntentSubTab.value = target.tab ?? null
+      if (target.tab === 'specSession') ctx.openSpecSession(target.intentId)
+      return
+    }
+    if (target.kind === 'intentSessions') {
+      ctx.openIntents(path)
+      ctx.requestedIntentId.value = target.intentId
+      ctx.requestedIntentSubTab.value = null
+      ctx.requestedMergedTab.value = 'sessions'
+      ctx.selectIntentSession(row.sessionId)
+      return
+    }
+    if (target.kind === 'discussion') {
+      ctx.openDiscussions(path)
+      ctx.openDiscussion(target.discussionId)
+      return
+    }
+    ctx.openSchedules(path)
+    ctx.onSelectSchedule(target.scheduleId)
   }
 
   // Top-bar tab click.

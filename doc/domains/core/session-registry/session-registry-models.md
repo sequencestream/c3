@@ -38,7 +38,9 @@ Relationships: belongs to one Workspace; its transcript & title are owned by the
 `mode` by the registry. Owner fields point back to domain entities such as an intent, discussion,
 or schedule; they do not make the projection the source of truth for those domains. A spec session
 row uses `sessionKind=spec`, `ownerKind=intent`, and the intent id as `ownerId`; the intent domain
-still owns the current spec-session link through `intents.spec_session_id`.
+still owns the current spec-session link through `intents.spec_session_id`. A tool session row uses
+`sessionKind=tool`; when a triggering business origin is known it reuses `ownerKind` / `ownerId` for
+jump-back, and when the origin is unknown or historical it leaves both null so the row is display-only.
 
 ## Pending Session
 

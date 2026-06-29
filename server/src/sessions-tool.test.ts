@@ -32,6 +32,11 @@ import {
   recordToolSession,
   isToolSessionRecorded,
 } from './features/intents/store.js'
+import {
+  getByC3Id,
+  resetStoreForTests as resetSessionMetadataStoreForTests,
+} from './features/sessions/session-metadata-store.js'
+import { mintC3SessionId } from './kernel/agent/session/accessor.js'
 import { addToolSession, isToolSession, listWorkspaceSessions, removeSession } from './sessions.js'
 
 const proj = '/abs/tool-proj'
@@ -42,6 +47,7 @@ beforeEach(() => {
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   resetDbForTests()
   resetStoreForTests()
+  resetSessionMetadataStoreForTests()
   listSessionsMock.mockReset()
   deleteSessionMock.mockReset()
   deleteSessionMock.mockResolvedValue(undefined)
@@ -49,6 +55,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetDbForTests()
+  resetSessionMetadataStoreForTests()
   delete process.env.C3_DB_PATH
   rmSync(dir, { recursive: true, force: true })
 })
@@ -77,6 +84,36 @@ describe('listWorkspaceSessions tool-session filter', () => {
     // A "restart": drop the in-memory cache; the db must still know the tag.
     resetStoreForTests()
     expect(isToolSession('tool-abc')).toBe(true)
+  })
+
+  it('addToolSession upserts a tool projection row with nullable owner metadata', () => {
+    addToolSession('tool-abc', {
+      workspacePath: proj,
+      agentId: 'tool-agent',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+      title: 'Completion judge',
+      lastModified: 123,
+    })
+    addToolSession('tool-abc', {
+      workspacePath: proj,
+      agentId: 'tool-agent',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+      title: 'Completion judge',
+      lastModified: 123,
+    })
+
+    const row = getByC3Id(mintC3SessionId({ vendor: 'claude', vendorSessionId: 'tool-abc' }))
+    expect(row).toMatchObject({
+      workspacePath: proj,
+      vendorSessionId: 'tool-abc',
+      agentId: 'tool-agent',
+      sessionKind: 'tool',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+      bound: true,
+    })
   })
 
   it('removeSession deletes the transcript and the persisted tag', async () => {

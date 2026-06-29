@@ -904,6 +904,9 @@
       "new": {
         "tooltip": "新建会话"
       },
+      "jump": {
+        "tooltip": "跳转到来源"
+      },
       "toggle": {
         "expand": {
           "tooltip": "展开会话列表(宽度翻倍)"

@@ -32,6 +32,7 @@ function mountList(
       sessions: opts.sessions ?? [],
       activeSessionKind: opts.activeSessionKind ?? 'work',
       sessionCounts: { work: 0, intent: 0, spec: 0, discussion: 0, schedule: 0, tool: 0 },
+      showToolSessions: false,
       hasMore: opts.hasMore ?? false,
       exhausted: opts.exhausted ?? false,
       sessionStatus: opts.status ?? {},
@@ -146,6 +147,23 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
     expect(btns.length).toBe(2)
     await w.find('[data-testid="session-list-new"]').trigger('click')
     expect(w.emitted('create-session')).toEqual([[WS]])
+  })
+
+  it('工具 tab 只在 showToolSessions 开启时可选', async () => {
+    const hidden = mountList()
+    const hiddenTool = hidden.findAll('.session-kind-tab').at(5)!
+    expect((hiddenTool.element as HTMLButtonElement).disabled).toBe(true)
+
+    const shown = mount(WorkSessionList, {
+      props: {
+        ...hidden.props(),
+        showToolSessions: true,
+      },
+    })
+    const shownTool = shown.findAll('.session-kind-tab').at(5)!
+    expect((shownTool.element as HTMLButtonElement).disabled).toBe(false)
+    await shownTool.trigger('click')
+    expect(shown.emitted('select-session-kind')).toEqual([['tool']])
   })
 
   it('刷新按钮 → emit refresh-sessions;无工作区时不渲染', async () => {
@@ -313,6 +331,37 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
       expect(rows.length).toBe(1)
       // 余下的是 claude 行(codex 被过滤)。
       expect(rows[0].find('.session-title').text()).toContain('Alpha')
+    })
+  })
+
+  describe('来源跳回入口', () => {
+    it('有来源的工具会话显示跳回按钮并 emit,无来源不显示', async () => {
+      const w = mountList({
+        sessions: [
+          session('tool-owned', 'Tool owned', {
+            sessionKind: 'tool',
+            ownerKind: 'intent',
+            ownerId: 'intent-1',
+            isToolSession: true,
+            vendor: 'claude',
+          }),
+          session('tool-ownerless', 'Tool ownerless', {
+            sessionKind: 'tool',
+            ownerKind: null,
+            ownerId: null,
+            isToolSession: true,
+            vendor: 'claude',
+          }),
+        ],
+      })
+
+      const jumps = w.findAll('[data-testid="session-row-jump"]')
+      expect(jumps).toHaveLength(1)
+      await jumps[0].trigger('click')
+      expect(w.emitted('jump-session-source')?.[0]).toEqual([
+        WS,
+        expect.objectContaining({ sessionId: 'tool-owned' }),
+      ])
     })
   })
 })

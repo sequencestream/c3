@@ -18,6 +18,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
+import { resolveSessionJumpTarget } from '@/lib/session-jump'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 import type { SessionPageKind } from '@/controls/state'
 
@@ -28,6 +29,7 @@ const props = defineProps<{
   sessions: SessionInfo[]
   activeSessionKind: SessionPageKind
   sessionCounts: Record<SessionPageKind, number>
+  showToolSessions: boolean
   /** Older sessions remain beyond the loaded window (SR-R14) — show "load more". */
   hasMore?: boolean
   /** A "load more" returned nothing — show "Fully loaded" instead of the button. */
@@ -50,19 +52,24 @@ const emit = defineEmits<{
   'refresh-sessions': []
   'load-more-sessions': []
   'select-session': [path: string, sessionId: string]
+  'jump-session-source': [path: string, session: SessionInfo]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
 }>()
 
 // Stable vendor order for both the dots and the filter chips.
 const VENDOR_ORDER: readonly VendorId[] = ['claude', 'codex']
-const SESSION_KIND_TABS: readonly { key: SessionPageKind; labelKey: string; enabled: boolean }[] = [
+const SESSION_KIND_TABS: readonly {
+  key: SessionPageKind
+  labelKey: string
+  enabled: boolean | 'showToolSessions'
+}[] = [
   { key: 'work', labelKey: 'session.kind.work', enabled: true },
   { key: 'intent', labelKey: 'session.kind.intent', enabled: true },
   { key: 'spec', labelKey: 'session.kind.spec', enabled: true },
   { key: 'discussion', labelKey: 'session.kind.discussion', enabled: true },
   { key: 'schedule', labelKey: 'session.kind.schedule', enabled: true },
-  { key: 'tool', labelKey: 'session.kind.tool', enabled: false },
+  { key: 'tool', labelKey: 'session.kind.tool', enabled: 'showToolSessions' },
 ]
 
 // 面板展开态:持久化 UI 状态(同 IntentList 的折叠范式)。展开态把侧栏宽度翻倍,
@@ -156,6 +163,20 @@ function selectSessionKind(kind: SessionPageKind, enabled: boolean): void {
   emit('select-session-kind', kind)
 }
 
+function tabEnabled(tab: (typeof SESSION_KIND_TABS)[number]): boolean {
+  return tab.enabled === 'showToolSessions' ? props.showToolSessions : tab.enabled
+}
+
+function jumpable(s: SessionInfo): boolean {
+  return (
+    resolveSessionJumpTarget({
+      sessionKind: s.sessionKind,
+      ownerKind: s.ownerKind,
+      ownerId: s.ownerId,
+    }) !== null
+  )
+}
+
 function deleteSession(sessionId: string) {
   if (!props.currentWorkspace) return
   if (window.confirm(t('session.list.deleteConfirm')))
@@ -242,11 +263,11 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
         :key="tab.key"
         type="button"
         class="session-kind-tab"
-        :class="{ active: tab.key === activeSessionKind, disabled: !tab.enabled }"
+        :class="{ active: tab.key === activeSessionKind, disabled: !tabEnabled(tab) }"
         :aria-selected="tab.key === activeSessionKind"
-        :disabled="!tab.enabled"
+        :disabled="!tabEnabled(tab)"
         role="tab"
-        @click="selectSessionKind(tab.key, tab.enabled)"
+        @click="selectSessionKind(tab.key, tabEnabled(tab))"
       >
         <span>{{ t(tab.labelKey as never) }}</span>
         <span class="session-kind-count">{{ sessionCounts[tab.key] }}</span>
@@ -282,7 +303,7 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
           <span class="session-title">{{ activeTitle }}</span>
         </div>
         <p
-          v-if="!SESSION_KIND_TABS.find((tab) => tab.key === activeSessionKind)?.enabled"
+          v-if="!tabEnabled(SESSION_KIND_TABS.find((tab) => tab.key === activeSessionKind)!)"
           class="empty-hint sub"
         >
           {{ t('session.kind.placeholder') }}
@@ -341,6 +362,15 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
             </button>
           </span>
           <span v-if="s.state !== 'ghost'" class="session-actions">
+            <button
+              v-if="jumpable(s)"
+              class="icon-btn"
+              :title="t('session.list.jump.tooltip')"
+              data-testid="session-row-jump"
+              @click.stop="emit('jump-session-source', currentWorkspace as string, s)"
+            >
+              ↗
+            </button>
             <button
               v-if="rowAction(s, 'rename').visible"
               class="icon-btn"

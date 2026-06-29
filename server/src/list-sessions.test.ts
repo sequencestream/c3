@@ -24,10 +24,12 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (orig) => {
 
 import { resetDbForTests } from './kernel/infra/db.js'
 import { insertIntents, resetStoreForTests, setSpecSessionId } from './features/intents/store.js'
+import { recordToolSession } from './features/intents/store.js'
 import {
   resetStoreForTests as resetSessionsStoreForTests,
   upsertBoundRow,
 } from './features/works/work-session-store.js'
+import { resetSettingsCacheForTests, saveSettings } from './kernel/config/index.js'
 import { listWorkspaceSessions } from './sessions.js'
 import { ClaudeSessionStore } from './kernel/agent/adapters/claude/session-store.js'
 import { SessionAccessor, type VendorSessionSource } from './kernel/agent/session/accessor.js'
@@ -36,18 +38,25 @@ import type { SessionStore, SessionSummary } from './kernel/agent/adapters/types
 
 const proj = '/abs/list-proj'
 let dir: string
+let prevHome: string | undefined
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-list-'))
+  prevHome = process.env.HOME
+  process.env.HOME = dir
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   resetDbForTests()
   resetStoreForTests()
   resetSessionsStoreForTests()
+  resetSettingsCacheForTests()
   listSessionsMock.mockReset()
 })
 
 afterEach(() => {
   resetDbForTests()
+  resetSettingsCacheForTests()
+  if (prevHome === undefined) delete process.env.HOME
+  else process.env.HOME = prevHome
   delete process.env.C3_DB_PATH
   rmSync(dir, { recursive: true, force: true })
 })
@@ -187,6 +196,77 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
     })
   })
 
+  it('gates the tool tab by showToolSessions and returns projected owner metadata when enabled', async () => {
+    upsertBoundRow({
+      sessionId: 'tool-owned',
+      workspacePath: proj,
+      vendor: 'claude',
+      agentId: 'tool-agent',
+      title: 'Tool owned',
+      lastModified: 600,
+      sessionKind: 'tool',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+    })
+    recordToolSession('tool-owned')
+    const accessor = new SessionAccessor([])
+
+    expect(await listSessionsVia(accessor, proj, 'tool')).toEqual([])
+
+    saveSettings({
+      agents: [],
+      defaultAgentId: 'system',
+      toolAgentId: '',
+      intentAgentId: '',
+      specAgentId: '',
+      showToolSessions: true,
+    })
+
+    const out = await listSessionsVia(accessor, proj, 'tool')
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      sessionId: 'tool-owned',
+      sessionKind: 'tool',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+      isToolSession: true,
+    })
+  })
+
+  it('rebuilds historical tool markers as ownerless tool projections from native list', async () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: 'system',
+      toolAgentId: '',
+      intentAgentId: '',
+      specAgentId: '',
+      showToolSessions: true,
+    })
+    recordToolSession('tool-historic')
+    const claudeSrc: VendorSessionSource = {
+      vendor: 'claude',
+      sessions: fakeStore([
+        {
+          sessionId: 'tool-historic',
+          title: 'Historic tool',
+          vendorExtra: { vendorSessionId: 'tool-historic', lastModified: 700 },
+        },
+      ]),
+    }
+    const accessor = new SessionAccessor([claudeSrc])
+
+    const out = await listSessionsVia(accessor, proj, 'tool')
+
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      sessionId: 'tool-historic',
+      sessionKind: 'tool',
+      ownerKind: null,
+      ownerId: null,
+      isToolSession: true,
+    })
+  })
+
   it('returns projected discussion sessions only on the discussion tab', async () => {
     upsertBoundRow({
       sessionId: 'work-1',
@@ -221,6 +301,7 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
       vendor: 'codex',
     })
     expect(work.map((s) => s.sessionId)).toEqual(['work-1'])
+  })
   })
 
   it('skips a vendor whose store fails to list (loud-but-non-fatal), keeping the rest', async () => {

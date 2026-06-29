@@ -904,6 +904,9 @@
       "new": {
         "tooltip": "New session"
       },
+      "jump": {
+        "tooltip": "Go to source"
+      },
       "toggle": {
         "expand": {
           "tooltip": "Expand the session list (double its width)"

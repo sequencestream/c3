@@ -19,11 +19,18 @@ export function resolveSessionJumpTarget(input: {
       return { kind: 'intentDetail', intentId: input.ownerId, tab: 'specSession' }
     if (input.sessionKind === 'intent') return { kind: 'intentSessions', intentId: input.ownerId }
     if (input.sessionKind === 'work') return { kind: 'intentDetail', intentId: input.ownerId }
+    if (input.sessionKind === 'tool') return { kind: 'intentDetail', intentId: input.ownerId }
   }
-  if (input.sessionKind === 'discussion' && input.ownerKind === 'discussion') {
+  if (
+    (input.sessionKind === 'discussion' || input.sessionKind === 'tool') &&
+    input.ownerKind === 'discussion'
+  ) {
     return { kind: 'discussion', discussionId: input.ownerId }
   }
-  if (input.sessionKind === 'schedule' && input.ownerKind === 'schedule') {
+  if (
+    (input.sessionKind === 'schedule' || input.sessionKind === 'tool') &&
+    input.ownerKind === 'schedule'
+  ) {
     return { kind: 'schedule', scheduleId: input.ownerId }
   }
   return null

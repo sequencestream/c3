@@ -26,7 +26,9 @@ import {
   deleteByPendingId,
   deleteByVendorId,
   updateRealRowTitle,
+  upsertBoundRow,
 } from './features/sessions/session-metadata-store.js'
+import type { SessionOwnerKind } from './features/sessions/session-metadata-store.js'
 import { getSessionVendor, getShowToolSessions } from './kernel/config/index.js'
 
 /**
@@ -43,10 +45,36 @@ import { getSessionVendor, getShowToolSessions } from './kernel/config/index.js'
  */
 const toolSessionIds: Set<string> = new Set()
 
+export interface ToolSessionProjectionInput {
+  workspacePath: string
+  agentId: string
+  vendor?: VendorId
+  title?: string
+  lastModified?: number | null
+  ownerKind?: SessionOwnerKind | null
+  ownerId?: string | null
+}
+
 /** Record a session id that was created by a tool (not by the user). */
-export function addToolSession(id: string): void {
+export function addToolSession(id: string, projection?: ToolSessionProjectionInput): void {
   toolSessionIds.add(id)
   recordToolSession(id)
+  if (!projection) return
+  try {
+    upsertBoundRow({
+      sessionId: id,
+      workspacePath: resolve(projection.workspacePath),
+      vendor: projection.vendor ?? 'claude',
+      agentId: projection.agentId,
+      title: projection.title ?? 'Tool session',
+      lastModified: projection.lastModified ?? Date.now(),
+      sessionKind: 'tool',
+      ownerKind: projection.ownerKind ?? null,
+      ownerId: projection.ownerId ?? null,
+    })
+  } catch (err) {
+    console.warn('[c3] tool session projection upsert failed:', err)
+  }
 }
 
 /** Whether a session was created by a tool. */

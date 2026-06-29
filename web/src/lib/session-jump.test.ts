@@ -42,4 +42,27 @@ describe('resolveSessionJumpTarget', () => {
       }),
     ).toEqual({ kind: 'schedule', scheduleId: 'schedule-1' })
   })
+
+  it('routes tool sessions through their owner and rejects unknown owners', () => {
+    expect(
+      resolveSessionJumpTarget({ sessionKind: 'tool', ownerKind: 'intent', ownerId: 'intent-1' }),
+    ).toEqual({ kind: 'intentDetail', intentId: 'intent-1' })
+    expect(
+      resolveSessionJumpTarget({
+        sessionKind: 'tool',
+        ownerKind: 'discussion',
+        ownerId: 'discussion-1',
+      }),
+    ).toEqual({ kind: 'discussion', discussionId: 'discussion-1' })
+    expect(
+      resolveSessionJumpTarget({
+        sessionKind: 'tool',
+        ownerKind: 'schedule',
+        ownerId: 'schedule-1',
+      }),
+    ).toEqual({ kind: 'schedule', scheduleId: 'schedule-1' })
+    expect(
+      resolveSessionJumpTarget({ sessionKind: 'tool', ownerKind: 'unknown', ownerId: 'x' }),
+    ).toBeNull()
+  })
 })

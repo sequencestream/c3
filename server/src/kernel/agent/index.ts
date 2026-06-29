@@ -300,8 +300,11 @@ export async function askOneShot(opts: {
   prompt: string
   cwd: string
   signal: AbortSignal
+  agentId: string
   model?: string
   envOverrides?: Record<string, string>
+  ownerKind?: 'intent' | 'discussion' | 'schedule' | null
+  ownerId?: string | null
 }): Promise<string> {
   const claudePath = findClaudeExecutable()
   const q = query({
@@ -328,7 +331,12 @@ export async function askOneShot(opts: {
         const sid = (m as { session_id?: unknown }).session_id
         if (typeof sid === 'string' && sid) {
           sessionId = sid
-          addToolSession(sid)
+          addToolSession(sid, {
+            workspacePath: opts.cwd,
+            agentId: opts.agentId,
+            ownerKind: opts.ownerKind ?? null,
+            ownerId: opts.ownerId ?? null,
+          })
         }
       }
       if (m.type === 'assistant') {

@@ -36,11 +36,15 @@ follow-up question (see [design §organizer-engine](discussion-design.md#organiz
   draft insert and again on research completion. The organizer engine reads the research result when
   present, else the user's original context, as its prompt background. The research run is
   **observable** (mirroring a discussion run): it **streams each turn** as `research_message`
-  (assistant text + tool calls) and broadcasts its **liveness** as `research_run_status`
+  (assistant text, plus `tool_use` with input and `tool_result` with output, mirroring the agent
+  stream so the right pane renders the same standard transcript with collapsible tool blocks) and
+  broadcasts its **liveness** as `research_run_status`
   (`running` while the agent works, `ended` on finish/failure/dead process — the run is awaited, so a
-  dead process settles to `ended`). Research messages and liveness are **runtime-only** (never
-  persisted), and every `discussions` send carries a research-states snapshot (active research only)
-  so a refresh/reconnect mid-research authoritatively rebuilds the research phase. **On research
+  dead process settles to `ended`). Research messages are **runtime-only** (never persisted to the DB),
+  but the server keeps a bounded runtime transcript and replays it on the `discussion_detail` snapshot;
+  every `discussions` send also carries a research-states snapshot (active research only)
+  so a refresh/reconnect mid-research authoritatively rebuilds the research phase and restores the
+  already-shown items. **On research
   success the server auto-starts the orchestration** (equivalent to an automatic `start_discussion`),
   re-validating on the freshest record via a pure auto-start guard (status is still `draft` and no live
   run — skipping if the human Started/cancelled it mid-research). The research routine returns whether
@@ -50,30 +54,31 @@ follow-up question (see [design §organizer-engine](discussion-design.md#organiz
 - Frontend: the discussion-view "+" opens an inline create form (type dropdown / goal / context);
   on submit the right pane **auto-opens the new discussion** (server `discussion_detail` reply). The
   right pane is **two-phase**: while the research run is live (research-states / `research_run_status`
-  → `running`) it shows the **research stream** (streamed `research_message` turns; researcher bubbles
-  - tool-activity lines, no agenda/dispatch/composer); when research ends and the orchestration
-    auto-starts it switches to the **discussion stream** (agenda + transcript + dispatch + composer). The
-    **Start** button is a manual fallback shown **only when research has ended/died and the orchestration
-    has not started** (status is `draft` and neither research nor a discussion run is live) — never while
-    research is still running — replacing the old "any draft" rule. Both phase and button rebuild on
-    refresh/reconnect from the research-states / run-states snapshots. The create form's Goal / Context
-    textareas **auto-grow** with their content up to a pixel cap, scrolling internally only past the cap
-    and resetting when the form closes. The **left list** carries:
-    a header **collapse/expand** toggle that narrows the panel and hides secondary row info (type /
-    timestamps), a single **unified status indicator** per row (`<icon> <agent>.<status>` — see the
-    run-state note below), and an **accordion** (at most one open) that expands a **tab bar + single
-    content area** beneath the row: one tab per non-empty field (Goal / Context / **Research** /
-    Conclusion, empty fields dropped) whose body is **Markdown-rendered** (the shared sanitized
-    markdown pipeline), plus an always-present **Details** tab carrying the structured meta (type /
-    status / created / completed). The **Research** tab surfaces the persisted research result written
-    by the read-only researcher (runs once per draft, between create and auto-start); it appears in the
-    order `Goal → Context → Research → Conclusion → Details` so the read-order follows the right-pane's
-    two-phase timeline (research stream → discussion stream). The active tab resets to the first
-    content-bearing tab on (re)expand or when switching rows, and falls back if a live update empties
-    the selected field. **Row click is a single combined action**: it emits an open event to load the
-    transcript + orchestration view in the right pane _and_ toggles that row's inline detail accordion
-    in one gesture (re-clicking the same row collapses the detail; open stays idempotent). There is no
-    chevron and no per-row "Open chat" button. All list copy is English.
+  → `running`) it shows the **research stream** rendered by the same standard transcript component as a
+  work/intent session (researcher assistant bubbles + collapsible tool blocks for `tool_use`/`tool_result`,
+  no agenda/dispatch/composer); when research ends and the orchestration
+  auto-starts it switches to the **discussion stream** (agenda + transcript + dispatch + composer). The
+  **Start** button is a manual fallback shown **only when research has ended/died and the orchestration
+  has not started** (status is `draft` and neither research nor a discussion run is live) — never while
+  research is still running — replacing the old "any draft" rule. Both phase and button rebuild on
+  refresh/reconnect from the research-states / run-states snapshots. The create form's Goal / Context
+  textareas **auto-grow** with their content up to a pixel cap, scrolling internally only past the cap
+  and resetting when the form closes. The **left list** carries:
+  a header **collapse/expand** toggle that narrows the panel and hides secondary row info (type /
+  timestamps), a single **unified status indicator** per row (`<icon> <agent>.<status>` — see the
+  run-state note below), and an **accordion** (at most one open) that expands a **tab bar + single
+  content area** beneath the row: one tab per non-empty field (Goal / Context / **Research** /
+  Conclusion, empty fields dropped) whose body is **Markdown-rendered** (the shared sanitized
+  markdown pipeline), plus an always-present **Details** tab carrying the structured meta (type /
+  status / created / completed). The **Research** tab surfaces the persisted research result written
+  by the read-only researcher (runs once per draft, between create and auto-start); it appears in the
+  order `Goal → Context → Research → Conclusion → Details` so the read-order follows the right-pane's
+  two-phase timeline (research stream → discussion stream). The active tab resets to the first
+  content-bearing tab on (re)expand or when switching rows, and falls back if a live update empties
+  the selected field. **Row click is a single combined action**: it emits an open event to load the
+  transcript + orchestration view in the right pane _and_ toggles that row's inline detail accordion
+  in one gesture (re-clicking the same row collapses the detail; open stays idempotent). There is no
+  chevron and no per-row "Open chat" button. All list copy is English.
 - **Targeted participants (2026-06-12, updated 2026-06-16)**: a discussion's roster is **chosen at
   creation** — the create modal lists the enabled agents (default all selected; each agent has a
   radio button to designate the organizer). Each discussion persists its own organizer (overriding the

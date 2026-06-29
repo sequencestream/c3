@@ -9,6 +9,7 @@
  * raw `Map`s leak across the boundary). Behavior is unchanged from the closure.
  */
 import type { Discussion } from '@ccc/shared/protocol'
+import type { ResearchStreamItem } from './research.js'
 
 /**
  * Per-run control for a live discussion orchestration. `abort` tears it down
@@ -63,6 +64,40 @@ export function setResearchRun(id: string, abort: AbortController): void {
 /** Drop a discussion's research run on settle/teardown. */
 export function deleteResearchRun(id: string): void {
   researchRuns.delete(id)
+}
+
+/**
+ * Bounded runtime transcript of a live research run's visible items, keyed by
+ * discussion id. Holds the items broadcast so far so a reconnect/refresh
+ * mid-research can replay them on the `discussion_detail` snapshot — the items
+ * are never persisted, and the buffer is dropped when the run settles. Bounded so
+ * a chatty run can't grow it without limit (oldest items drop first; the tail —
+ * the most recent activity — is what the reconnecting view needs most).
+ */
+const researchTranscripts = new Map<string, ResearchStreamItem[]>()
+
+/** Max retained research items per discussion (oldest drop past this). */
+const RESEARCH_TRANSCRIPT_CAP = 500
+
+/** Append one broadcast research item to the discussion's runtime transcript (bounded). */
+export function appendResearchTranscript(id: string, item: ResearchStreamItem): void {
+  const buf = researchTranscripts.get(id)
+  if (buf) {
+    buf.push(item)
+    if (buf.length > RESEARCH_TRANSCRIPT_CAP) buf.splice(0, buf.length - RESEARCH_TRANSCRIPT_CAP)
+  } else {
+    researchTranscripts.set(id, [item])
+  }
+}
+
+/** Snapshot of a discussion's runtime research transcript (empty when none/ended). */
+export function getResearchTranscript(id: string): ResearchStreamItem[] {
+  return researchTranscripts.get(id) ?? []
+}
+
+/** Drop a discussion's runtime research transcript on settle/teardown. */
+export function clearResearchTranscript(id: string): void {
+  researchTranscripts.delete(id)
 }
 
 /**

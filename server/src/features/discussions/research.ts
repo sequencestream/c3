@@ -6,7 +6,7 @@
  * agent's final text and writes it back to the discussion's `researchResult` field
  * (the user's original `context` is left untouched).
  */
-import type { Discussion, ResearchMessage, SessionKind } from '@ccc/shared/protocol'
+import type { Discussion, ResearchMessageBody, SessionKind } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { getDiscussionType, type DiscussionTypeDef } from '@ccc/shared/discussion-types'
 import { runClaude } from '../../kernel/agent/index.js'
@@ -69,15 +69,23 @@ export interface DiscussionResearchResult {
   researchResult: string
 }
 
-/** One streamed research item before the server stamps `discussionId`/`createdAt`. */
-export type ResearchStreamItem = Pick<ResearchMessage, 'seq' | 'kind' | 'content'>
+/**
+ * One streamed research item before the server stamps `discussionId`/`createdAt`.
+ * `seq` + the shared {@link ResearchMessageBody} variant — built from the union
+ * directly so the discriminated payload (text/tool_use/tool_result) is preserved
+ * (an `Omit<ResearchMessage, …>` would collapse it to the common keys).
+ */
+export type ResearchStreamItem = { seq: number } & ResearchMessageBody
 
 /** Options for {@link researchDiscussionContext}. `onMessage` streams the run's turns. */
 export interface ResearchRunOptions {
   /**
    * Called for each observable research turn so the caller can broadcast it live:
-   * an `assistant_text` turn (`kind: 'text'`) or a tool call (`kind: 'tool'`,
-   * `content` is the tool name). `seq` is monotonic (1-based) within this run.
+   * a `text` turn (the researcher's assistant text), a `tool_use` (the call's
+   * id/name/input), or a `tool_result` (the same call's returned content + error
+   * flag, correlated by `toolUseId`). `seq` is monotonic (1-based) within this run
+   * and is assigned to every observable item so live append and snapshot de-dupe
+   * share one ordering.
    */
   onMessage?: (item: ResearchStreamItem) => void
 }
@@ -135,13 +143,28 @@ export async function researchDiscussionContext(
       gate: 'discussion-research',
       send: (m) => {
         // The agent's last assistant turn is the completed context; every assistant
-        // turn and tool call is also streamed out so the right pane shows the run
-        // flowing live (best-effort — a streaming throw must not fail research).
+        // turn, tool call, and tool result is also streamed out so the right pane
+        // renders the run as a standard transcript with collapsible tool blocks
+        // (best-effort — a streaming throw must not fail research).
         if (m.type === 'assistant_text') {
           captured = m.text
-          opts.onMessage?.({ seq: ++seq, kind: 'text', content: m.text })
+          opts.onMessage?.({ seq: ++seq, kind: 'text', text: m.text })
         } else if (m.type === 'tool_use') {
-          opts.onMessage?.({ seq: ++seq, kind: 'tool', content: m.toolName })
+          opts.onMessage?.({
+            seq: ++seq,
+            kind: 'tool_use',
+            toolUseId: m.toolUseId,
+            toolName: m.toolName,
+            input: m.input,
+          })
+        } else if (m.type === 'tool_result') {
+          opts.onMessage?.({
+            seq: ++seq,
+            kind: 'tool_result',
+            toolUseId: m.toolUseId,
+            content: m.content,
+            isError: m.isError,
+          })
         }
       },
     })

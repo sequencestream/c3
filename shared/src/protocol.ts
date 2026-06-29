@@ -2070,20 +2070,38 @@ export interface DiscussionMessage {
 }
 
 /**
- * One streamed item from a discussion's read-only research run. Runtime-only —
- * NOT persisted (unlike `DiscussionMessage`), mirroring `discussion_dispatch_status`:
- * a reconnect mid-research reconciles the run's liveness from the `researchStates`
- * snapshot but does not replay the transcript; later live items still append.
- * `seq` is monotonic (1-based) within a single research run.
+ * Fields common to every {@link ResearchMessage} variant. `seq` is monotonic
+ * (1-based) within a single research run; `createdAt` is a server stamp (the UI
+ * does not read it — research items carry no timestamp surface).
  */
-export interface ResearchMessage {
+export interface ResearchMessageMeta {
   discussionId: string
   seq: number
-  /** `text` = an assistant turn's text; `tool` = a tool-activity marker (`content` is the tool name). */
-  kind: 'text' | 'tool'
-  content: string
   createdAt: number
 }
+
+/**
+ * The variant payload of a research item, mirroring the agent stream so the right
+ * pane renders the same standard transcript as a work/intent session: a `text`
+ * turn is the researcher's assistant text; a `tool_use` carries the call's
+ * id/name/input; a `tool_result` carries the same call's returned content + error
+ * flag, correlated by `toolUseId`. Factored out so the server's pre-stamp stream
+ * item and the wire `ResearchMessage` share one discriminated union (and so
+ * `Omit`-style derivations don't collapse the union to its common keys).
+ */
+export type ResearchMessageBody =
+  | { kind: 'text'; text: string }
+  | { kind: 'tool_use'; toolUseId: string; toolName: string; input: unknown }
+  | { kind: 'tool_result'; toolUseId: string; content: string; isError: boolean }
+
+/**
+ * One streamed item from a discussion's read-only research run. Runtime-only —
+ * NOT persisted (unlike `DiscussionMessage`). Unlike `discussion_dispatch_status`,
+ * the server keeps a bounded runtime transcript of the run's visible items and
+ * replays it on the `discussion_detail` snapshot, so a reconnect mid-research
+ * restores what was already shown; later live items append by `seq`.
+ */
+export type ResearchMessage = ResearchMessageMeta & ResearchMessageBody
 
 // ---- Schedules ----
 
@@ -3376,8 +3394,20 @@ export type ServerToClient =
        */
       researchStates?: Record<string, 'running'>
     }
-  /** One discussion plus its full message history (reply to `open_discussion`). */
-  | { type: 'discussion_detail'; discussion: Discussion; messages: DiscussionMessage[] }
+  /**
+   * One discussion plus its full message history (reply to `open_discussion`).
+   * `researchMessages` is the runtime research transcript snapshot: the bounded
+   * set of visible research items broadcast so far when the run is live, or empty
+   * when no research is in flight. It lets a reconnect/refresh mid-research
+   * restore the already-shown research stream (the items themselves are never
+   * persisted; later live `research_message` events append by `seq`).
+   */
+  | {
+      type: 'discussion_detail'
+      discussion: Discussion
+      messages: DiscussionMessage[]
+      researchMessages: ResearchMessage[]
+    }
   /**
    * A newly-appended discussion message, pushed live to every connection while
    * the organizer engine runs (the client appends it when viewing that
@@ -3421,8 +3451,10 @@ export type ServerToClient =
    * A streamed item from a discussion's read-only research run, pushed live while the
    * research agent works (the client appends it to the right pane's research stream when
    * viewing that discussion). Runtime-only, mirrors `discussion_message` but for the
-   * research phase; the research transcript is never persisted, so it is not replayed on
-   * reconnect (only the `researchStates` liveness snapshot is).
+   * research phase; the research transcript is never persisted to the DB, but the server
+   * keeps a bounded runtime copy and replays it on the `discussion_detail` snapshot, so a
+   * reconnect mid-research restores the already-shown items and de-dupes later live ones
+   * by `seq` (the `researchStates` liveness snapshot still drives the research phase).
    */
   | { type: 'research_message'; discussionId: string; message: ResearchMessage }
   /**

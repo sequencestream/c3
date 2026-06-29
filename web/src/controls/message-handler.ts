@@ -575,9 +575,17 @@ export function installMessageHandler(ctx: AppCtx): void {
           id: i + 1,
         }))
         discussionMaxSeq.value = msg.messages.length ? msg.messages[msg.messages.length - 1].seq : 0
-        // Research messages are runtime-only; reset the stream on every open/switch.
-        researchMessages.value = []
-        researchMaxSeq.value = 0
+        // Research messages are runtime-only, but the snapshot replays the live
+        // run's transcript (empty when none in flight) so a reconnect/refresh
+        // mid-research restores what was already shown; later live `research_message`
+        // events de-dupe against `researchMaxSeq`.
+        researchMessages.value = msg.researchMessages.map((rm, i) => ({
+          ...researchMessageToChat(rm, { researcher: t('discussion.speaker.researcher') }),
+          id: i + 1,
+        }))
+        researchMaxSeq.value = msg.researchMessages.length
+          ? msg.researchMessages[msg.researchMessages.length - 1].seq
+          : 0
         ctx.persistViewMode()
         break
       }
@@ -639,7 +647,6 @@ export function installMessageHandler(ctx: AppCtx): void {
           researchMessages.value.push({
             ...researchMessageToChat(msg.message, {
               researcher: t('discussion.speaker.researcher'),
-              tool: (toolName) => t('discussion.research.toolActivity', { tool: toolName }),
             }),
             id: researchMessages.value.length + 1,
           })

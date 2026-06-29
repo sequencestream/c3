@@ -173,7 +173,9 @@ export function reconcileRunState(
  * and the manual Start fallback. Research liveness is runtime-only: streamed
  * `research_message` items + a `running`/`ended` `research_run_status`, snapshotted on
  * the `discussions` list as `researchStates` (id → `running`) so a reconnect mid-research
- * stays on the research phase. Pure helpers, unit-tested DOM-free.
+ * stays on the research phase. The already-shown items are replayed on the
+ * `discussion_detail` snapshot (`researchMessages`), and live items de-dupe by `seq`.
+ * Pure helpers, unit-tested DOM-free.
  */
 
 const RESEARCHER_ICON = '🔍'
@@ -201,18 +203,32 @@ export function showDiscussionStart(
 }
 
 /**
- * Map one streamed `ResearchMessage` to a `ChatBody` for the research stream. A `text`
- * turn renders as an assistant bubble under the 「researcher」 speaker; a `tool` turn
- * renders as a system line (`labels.tool` formats the tool name). Pure & DOM-free.
+ * Map one streamed `ResearchMessage` to a `ChatBody` so the research stream renders
+ * the same standard transcript as a work/intent session. A thin shape conversion:
+ * `text` → an assistant bubble under the 「researcher」 speaker; `tool_use` → a
+ * standard `tool-use` block (id/name/input preserved); `tool_result` → a standard
+ * `tool-result` block (id/content/isError preserved), which `ChatMessages` folds
+ * under its matching tool-use by `toolUseId`. No more single-line tool copy. Pure
+ * & DOM-free.
  */
 export function researchMessageToChat(
   m: ResearchMessage,
-  labels: { researcher: string; tool: (toolName: string) => string },
+  labels: { researcher: string },
 ): ChatBody {
-  if (m.kind === 'tool') return { kind: 'system', text: labels.tool(m.content) }
+  if (m.kind === 'tool_use') {
+    return { kind: 'tool-use', toolUseId: m.toolUseId, toolName: m.toolName, input: m.input }
+  }
+  if (m.kind === 'tool_result') {
+    return {
+      kind: 'tool-result',
+      toolUseId: m.toolUseId,
+      content: m.content,
+      isError: m.isError,
+    }
+  }
   return {
     kind: 'assistant',
-    text: m.content,
+    text: m.text,
     speaker: { icon: RESEARCHER_ICON, name: labels.researcher },
   }
 }

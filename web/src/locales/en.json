@@ -626,9 +626,6 @@
       "timeout": "Couldn't confirm spec-session startup. Please try again."
     },
     "chat": {
-      "title": {
-        "label": "Intent chat"
-      },
       "loading": "Loading session…"
     },
     "list": {
@@ -741,45 +738,6 @@
       },
       "locked": {
         "toast": "Only todo intents can switch auto/manual mode"
-      }
-    },
-    "sessionList": {
-      "title": {
-        "label": "Intent Sessions"
-      },
-      "new": {
-        "tooltip": "New session"
-      },
-      "empty": "No intent sessions yet",
-      "placeholder": {
-        "label": "New Session"
-      },
-      "rename": {
-        "tooltip": "Rename",
-        "placeholder": "Session title"
-      },
-      "delete": {
-        "tooltip": "Delete"
-      },
-      "deleteConfirm": "Delete this intent session?",
-      "select": {
-        "label": "Open session: {title}"
-      },
-      "active": {
-        "label": "Active"
-      },
-      "completed": {
-        "label": "Completed"
-      },
-      "loadMore": {
-        "label": "Load more ↓",
-        "tooltip": "Show more completed sessions"
-      },
-      "collapse": {
-        "tooltip": "Collapse session list"
-      },
-      "expand": {
-        "tooltip": "Expand session list"
       }
     },
     "meta": {

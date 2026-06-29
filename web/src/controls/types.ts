@@ -123,10 +123,7 @@ export interface AppMethods {
   createPr(intentId: string): void
   startAutomation(): void
   stopAutomation(): void
-  newIntentChat(): void
   selectIntentSession(sessionId: string): void
-  renameIntentSession(sessionId: string, title: string): void
-  deleteIntentSession(sessionId: string): void
 
   // discussions
   openDiscussions(path: string): void

@@ -203,6 +203,7 @@ export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg)
         ? countRunningScheduleSessions(abs)
         : listForWorkspace(abs, kind).filter((row) => isRunning(row.vendorSessionId ?? row.c3Id))
             .length
+  }
   conn.send({ type: 'session_counts', workspaceId: pathToId(abs)!, counts })
 }
 

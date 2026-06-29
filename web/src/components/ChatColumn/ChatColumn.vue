@@ -29,6 +29,7 @@ import type {
   SlashCommandInfo,
   VendorId,
 } from '@ccc/shared/protocol'
+import type { SessionSourceLabel } from '../../lib/session-jump'
 
 withDefaults(
   defineProps<{
@@ -44,9 +45,8 @@ withDefaults(
     /** Render the title bar even with no active session (intent side keeps it). */
     alwaysTitle?: boolean
     showTitleBar?: boolean
-    /** Linked intent id for the title-bar jump button (works side only); null ⇒ no button. */
-    linkedIntentId?: string | null
-    linkedScheduleId?: string | null
+    /** Source-button label family for the title bar (works side only); null ⇒ no button. */
+    sourceLabel?: SessionSourceLabel | null
     // chat body
     hasActiveSession: boolean
     messages: ChatMsg[]
@@ -81,8 +81,7 @@ withDefaults(
     mode: undefined,
     codexPolicy: null,
     modeOptions: () => [],
-    linkedIntentId: null,
-    linkedScheduleId: null,
+    sourceLabel: null,
     hasTaskStore: true,
     showMessages: true,
     showTaskPanel: true,
@@ -98,8 +97,7 @@ const emit = defineEmits<{
   'set-mode': [mode: ModeToken]
   'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
-  'open-intent': [intentId: string]
-  'open-schedule': [scheduleId: string]
+  'open-source': []
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
   refresh: []
@@ -130,13 +128,11 @@ defineExpose({
       :mode="mode"
       :codex-policy="codexPolicy"
       :mode-options="modeOptions"
-      :linked-intent-id="linkedIntentId"
-      :linked-schedule-id="linkedScheduleId"
+      :source-label="sourceLabel"
       @set-mode="(m: ModeToken) => emit('set-mode', m)"
       @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
       @set-session-agent="(id: string) => emit('set-session-agent', id)"
-      @open-intent="(id: string) => emit('open-intent', id)"
-      @open-schedule="(id: string) => emit('open-schedule', id)"
+      @open-source="emit('open-source')"
     />
     <ChatMessages
       v-if="showMessages"

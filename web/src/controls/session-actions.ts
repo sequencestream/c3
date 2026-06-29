@@ -1,7 +1,7 @@
 import { consoleEntryTarget, consoleTabEntryEffects, workspaceSwitchEffects } from '@/lib/tab-view'
 import { emptyTaskModel } from '@/lib/task-list'
 import { SESSION_PAGE_SIZE } from '@/lib/session-page'
-import { resolveSessionJumpTarget } from '@/lib/session-jump'
+import { resolveSessionJumpTarget, type SessionJumpTarget } from '@/lib/session-jump'
 import type { SessionInfo } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
 import { sessionCacheKey, type SessionPageKind } from './state'
@@ -28,7 +28,7 @@ export function installSessionActions(ctx: AppCtx): void {
     activeTitle,
     activeVendor,
     activeAgentSwitch,
-    activeLinkedScheduleId,
+    activeSessionSource,
     messages,
     counters,
     availableCommands,
@@ -185,51 +185,10 @@ export function installSessionActions(ctx: AppCtx): void {
     ctx.openSettings()
   }
 
+  // A list row click means "view this session" — no business-page jump branches.
+  // Every non-orphaned row enters the console tab and binds the chat column; the
+  // source jump now lives on the title-bar button (see `jumpActiveSessionSource`).
   ctx.selectSession = (path: string, sessionId: string): void => {
-    const row = sessionsByWorkspace.value[activeKey(path)]?.find((s) => s.sessionId === sessionId)
-    if (row?.sessionKind === 'spec') {
-      const target = resolveSessionJumpTarget({
-        sessionKind: row.sessionKind,
-        ownerKind: row.ownerKind,
-        ownerId: row.ownerId,
-      })
-      if (target?.kind === 'intentDetail' && target.tab === 'specSession') {
-        ctx.openIntents(path)
-        const hasLoadedIntents = Object.prototype.hasOwnProperty.call(ctx.intents.value, path)
-        const ownerExists = ctx.intents.value[path]?.some((intent) => intent.id === target.intentId)
-        if (!hasLoadedIntents || ownerExists) {
-          ctx.requestedIntentId.value = target.intentId
-          ctx.requestedIntentSubTab.value = 'specSession'
-          ctx.openSpecSession(target.intentId)
-        }
-        return
-      }
-      const intents = ctx.intents.value[path] ?? []
-      const legacyIntent = intents.find((intent) => intent.specSessionId === sessionId)
-      if (legacyIntent) {
-        ctx.openIntents(path)
-        ctx.requestedIntentId.value = legacyIntent.id
-        ctx.requestedIntentSubTab.value = 'specSession'
-        ctx.openSpecSession(legacyIntent.id)
-        return
-      }
-      ctx.openIntents(path)
-      return
-    }
-    if (row?.sessionKind === 'discussion') {
-      const target = resolveSessionJumpTarget({
-        sessionKind: row.sessionKind,
-        ownerKind: row.ownerKind,
-        ownerId: row.ownerId,
-      })
-      ctx.openDiscussions(path)
-      const discussions = ctx.discussions.value[path]
-      if (target?.kind === 'discussion') {
-        if (!discussions || discussions.some((discussion) => discussion.id === target.discussionId))
-          ctx.openDiscussion(target.discussionId)
-      }
-      return
-    }
     ctx.enterConsole()
     // Pin the console tab's pointer up front.
     consoleSession.value = { workspacePath: path, sessionId }
@@ -237,13 +196,11 @@ export function installSessionActions(ctx: AppCtx): void {
     send({ type: 'select_session', workspaceId: path, sessionId })
   }
 
-  ctx.jumpSessionSource = (path: string, row: SessionInfo): void => {
-    const target = resolveSessionJumpTarget({
-      sessionKind: row.sessionKind,
-      ownerKind: row.ownerKind,
-      ownerId: row.ownerId,
-    })
-    if (!target) return
+  // Open the page the given jump target points at (intent detail / intent
+  // sessions / discussion / schedule). The one place title-bar and (legacy) row
+  // source jumps both route through; jump semantics come only from
+  // `resolveSessionJumpTarget` upstream.
+  function openSourceTarget(path: string, target: SessionJumpTarget, sessionId: string): void {
     if (target.kind === 'intentDetail') {
       ctx.openIntents(path)
       ctx.requestedIntentId.value = target.intentId
@@ -256,7 +213,7 @@ export function installSessionActions(ctx: AppCtx): void {
       ctx.requestedIntentId.value = target.intentId
       ctx.requestedIntentSubTab.value = null
       ctx.requestedMergedTab.value = 'sessions'
-      ctx.selectIntentSession(row.sessionId)
+      ctx.selectIntentSession(sessionId)
       return
     }
     if (target.kind === 'discussion') {
@@ -266,6 +223,26 @@ export function installSessionActions(ctx: AppCtx): void {
     }
     ctx.openSchedules(path)
     ctx.onSelectSchedule(target.scheduleId)
+  }
+
+  ctx.jumpSessionSource = (path: string, row: SessionInfo): void => {
+    const target = resolveSessionJumpTarget({
+      sessionKind: row.sessionKind,
+      ownerKind: row.ownerKind,
+      ownerId: row.ownerId,
+    })
+    if (!target) return
+    openSourceTarget(path, target, row.sessionId)
+  }
+
+  // Title-bar source button: jump to the active session's resolved source,
+  // reusing `openSourceTarget`. No-op when there's no source or no active session.
+  ctx.jumpActiveSessionSource = (): void => {
+    const target = activeSessionSource.value?.target
+    const path = activeWorkspace.value
+    const sessionId = activeSession.value
+    if (!target || !path || !sessionId) return
+    openSourceTarget(path, target, sessionId)
   }
 
   // Top-bar tab click.
@@ -333,7 +310,7 @@ export function installSessionActions(ctx: AppCtx): void {
     activeTitle.value = ''
     activeVendor.value = null
     activeAgentSwitch.value = null
-    activeLinkedScheduleId.value = null
+    activeSessionSource.value = null
     messages.value = []
     counters.nextId = 1
     availableCommands.value = []

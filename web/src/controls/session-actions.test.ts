@@ -7,6 +7,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { ref } from 'vue'
 import type { ClientToServer, Discussion, Intent, SessionInfo } from '@ccc/shared/protocol'
 import { installSessionActions } from './session-actions'
+import { resolveSessionSourceAction } from '@/lib/session-jump'
 import type { AppCtx } from './types'
 import { sessionCacheKey, type SessionPageKind } from './state'
 
@@ -44,10 +45,20 @@ function makeCtx(
   const sessionPagingByWorkspace = ref(opts.paging ?? {})
   const requestedIntentId = ref<string | null>(null)
   const requestedIntentSubTab = ref<'intentSession' | 'specSession' | null>(null)
+  const requestedMergedTab = ref<'list' | 'sessions' | null>(null)
+  const activeTab = ref('intents')
+  const activeSession = ref<string | null>(null)
+  const activeWorkspace = ref<string | null>(null)
+  const consoleSession = ref<{ workspacePath: string; sessionId: string } | null>(null)
+  const activeSessionSource = ref<ReturnType<typeof resolveSessionSourceAction>>(null)
   const openIntents = vi.fn()
   const openSpecSession = vi.fn()
   const openDiscussions = vi.fn()
   const openDiscussion = vi.fn()
+  const openSchedules = vi.fn()
+  const onSelectSchedule = vi.fn()
+  const selectIntentSession = vi.fn()
+  const persistViewMode = vi.fn()
   const ctx = {
     send,
     sessionsByWorkspace,
@@ -57,27 +68,41 @@ function makeCtx(
     discussions: ref({ [WS]: [discussion('discussion-1')] }),
     requestedIntentId,
     requestedIntentSubTab,
+    requestedMergedTab,
+    activeTab,
+    activeSession,
+    activeWorkspace,
+    consoleSession,
+    activeSessionSource,
     openIntents,
     openSpecSession,
     openDiscussions,
     openDiscussion,
-    openSchedules: vi.fn(),
-    onSelectSchedule: vi.fn(),
-    selectIntentSession: vi.fn(),
-    consoleSession: ref(null),
-    activeLinkedScheduleId: ref(null),
+    openSchedules,
+    onSelectSchedule,
+    selectIntentSession,
+    persistViewMode,
   } as unknown as AppCtx
   installSessionActions(ctx)
   return {
     ctx,
     send,
     sessionsByWorkspace,
+    activeTab,
+    activeSession,
+    activeWorkspace,
+    consoleSession,
+    activeSessionSource,
     openIntents,
     openSpecSession,
     requestedIntentId,
     requestedIntentSubTab,
+    requestedMergedTab,
     openDiscussions,
     openDiscussion,
+    openSchedules,
+    onSelectSchedule,
+    selectIntentSession,
   }
 }
 
@@ -188,108 +213,159 @@ describe('optimistic delete / rename', () => {
   })
 })
 
-describe('spec session jump-back', () => {
-  it('routes a spec projection row with an intent owner to the intent spec session tab', () => {
-    const spec = {
-      ...s('spec-1', 300),
-      sessionKind: 'spec',
-      ownerKind: 'intent',
-      ownerId: 'intent-1',
-    } satisfies SessionInfo
-    const { ctx, send, openIntents, openSpecSession, requestedIntentId, requestedIntentSubTab } =
-      makeCtx({
-        sessions: { [sessionCacheKey(WS, 'spec')]: [spec] },
-        intents: { [WS]: [intent('intent-1')] },
-        activeKind: 'spec',
+// A row click is now always "view this session in the right column" — no
+// business-page jump branch for any session kind. The source jump moved to the
+// title-bar button (see `jumpActiveSessionSource` below).
+describe('selectSession shows the session in the chat column', () => {
+  it.each([
+    ['spec', 'spec', 'intent', 'intent-1'],
+    ['discussion', 'discussion', 'discussion', 'discussion-1'],
+    ['schedule', 'schedule', 'schedule', 'schedule-1'],
+    ['intent', 'intent', 'intent', 'intent-1'],
+  ] as const)(
+    'enters the console and selects a %s owner row instead of opening its business page',
+    (kind, sessionKind, ownerKind, ownerId) => {
+      const row = {
+        ...s(`${kind}-1`, 300),
+        sessionKind,
+        ownerKind,
+        ownerId,
+      } satisfies SessionInfo
+      const { ctx, send, activeTab, consoleSession, openIntents, openDiscussions, openSchedules } =
+        makeCtx({
+          sessions: { [sessionCacheKey(WS, kind)]: [row] },
+          intents: { [WS]: [intent('intent-1')] },
+          activeKind: kind,
+        })
+
+      ctx.selectSession(WS, `${kind}-1`)
+
+      expect(activeTab.value).toBe('console')
+      expect(consoleSession.value).toEqual({ workspacePath: WS, sessionId: `${kind}-1` })
+      expect(send).toHaveBeenCalledWith({
+        type: 'select_session',
+        workspaceId: WS,
+        sessionId: `${kind}-1`,
       })
+      expect(openIntents).not.toHaveBeenCalled()
+      expect(openDiscussions).not.toHaveBeenCalled()
+      expect(openSchedules).not.toHaveBeenCalled()
+    },
+  )
+
+  it('does not re-send select_session when the row is already the active session', () => {
+    const row = { ...s('spec-1', 300), sessionKind: 'spec' } satisfies SessionInfo
+    const { ctx, send, activeSession, consoleSession } = makeCtx({
+      sessions: { [sessionCacheKey(WS, 'spec')]: [row] },
+      activeKind: 'spec',
+    })
+    activeSession.value = 'spec-1'
 
     ctx.selectSession(WS, 'spec-1')
 
-    expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(requestedIntentId.value).toBe('intent-1')
-    expect(requestedIntentSubTab.value).toBe('specSession')
-    expect(openSpecSession).toHaveBeenCalledWith('intent-1')
+    // Console pointer still pinned, but no redundant select_session round-trip.
+    expect(consoleSession.value).toEqual({ workspacePath: WS, sessionId: 'spec-1' })
     expect(send).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'select_session', sessionId: 'spec-1' }),
     )
   })
+})
 
-  it('does not open a wrong spec session when the projected owner is missing from a loaded intent list', () => {
-    const spec = {
-      ...s('spec-1', 300),
-      sessionKind: 'spec',
-      ownerKind: 'intent',
-      ownerId: 'missing-intent',
-    } satisfies SessionInfo
-    const { ctx, openIntents, openSpecSession, requestedIntentId, requestedIntentSubTab } = makeCtx(
-      {
-        sessions: { [sessionCacheKey(WS, 'spec')]: [spec] },
-        intents: { [WS]: [intent('intent-1')] },
-        activeKind: 'spec',
-      },
+// The title-bar source button reuses the same resolver-driven open logic that the
+// (legacy) row jump used, but reads the active session's derived source target.
+describe('jumpActiveSessionSource — title-bar source button', () => {
+  function setup(
+    sessionKind: SessionInfo['sessionKind'],
+    ownerKind: SessionInfo['ownerKind'],
+    ownerId: string,
+    sessionId: string,
+  ) {
+    const ctxBag = makeCtx({ intents: { [WS]: [intent(ownerId)] } })
+    ctxBag.activeWorkspace.value = WS
+    ctxBag.activeSession.value = sessionId
+    ctxBag.activeSessionSource.value = resolveSessionSourceAction({
+      sessionKind,
+      ownerKind,
+      ownerId,
+    })
+    return ctxBag
+  }
+
+  it('routes a spec session to the intent spec session tab', () => {
+    const { ctx, openIntents, openSpecSession, requestedIntentId, requestedIntentSubTab } = setup(
+      'spec',
+      'intent',
+      'intent-1',
+      'spec-1',
     )
 
-    ctx.selectSession(WS, 'spec-1')
+    ctx.jumpActiveSessionSource()
 
     expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(openSpecSession).not.toHaveBeenCalled()
-    expect(requestedIntentId.value).toBeNull()
-    expect(requestedIntentSubTab.value).toBeNull()
-  })
-
-  it('falls back to legacy specSessionId lookup when owner metadata is absent', () => {
-    const spec = { ...s('spec-1', 300), sessionKind: 'spec' } satisfies SessionInfo
-    const { ctx, openSpecSession, requestedIntentId, requestedIntentSubTab } = makeCtx({
-      sessions: { [sessionCacheKey(WS, 'spec')]: [spec] },
-      intents: { [WS]: [intent('intent-1', { specSessionId: 'spec-1' })] },
-      activeKind: 'spec',
-    })
-
-    ctx.selectSession(WS, 'spec-1')
-
     expect(requestedIntentId.value).toBe('intent-1')
     expect(requestedIntentSubTab.value).toBe('specSession')
     expect(openSpecSession).toHaveBeenCalledWith('intent-1')
   })
-})
 
-describe('discussion session jump-back', () => {
-  it('routes a discussion projection row with a discussion owner to the discussion page', () => {
-    const row = {
-      ...s('discussion-agent-session', 300),
-      sessionKind: 'discussion',
-      ownerKind: 'discussion',
-      ownerId: 'discussion-1',
-    } satisfies SessionInfo
-    const { ctx, send, openDiscussions, openDiscussion } = makeCtx({
-      sessions: { [sessionCacheKey(WS, 'discussion')]: [row] },
-      activeKind: 'discussion',
-    })
+  it('routes an intent comm session to the intent sessions tab', () => {
+    const { ctx, openIntents, requestedMergedTab, selectIntentSession } = setup(
+      'intent',
+      'intent',
+      'intent-1',
+      'intent-session-1',
+    )
 
-    ctx.selectSession(WS, 'discussion-agent-session')
+    ctx.jumpActiveSessionSource()
+
+    expect(openIntents).toHaveBeenCalledWith(WS)
+    expect(requestedMergedTab.value).toBe('sessions')
+    expect(selectIntentSession).toHaveBeenCalledWith('intent-session-1')
+  })
+
+  it('routes a discussion session to the discussion page', () => {
+    const { ctx, openDiscussions, openDiscussion } = setup(
+      'discussion',
+      'discussion',
+      'discussion-1',
+      'discussion-session-1',
+    )
+
+    ctx.jumpActiveSessionSource()
 
     expect(openDiscussions).toHaveBeenCalledWith(WS)
     expect(openDiscussion).toHaveBeenCalledWith('discussion-1')
-    expect(send).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'select_session', sessionId: 'discussion-agent-session' }),
-    )
   })
 
-  it('does not open a wrong discussion when the projected owner is missing from a loaded list', () => {
-    const row = {
-      ...s('discussion-agent-session', 300),
-      sessionKind: 'discussion',
-      ownerKind: 'discussion',
-      ownerId: 'missing-discussion',
-    } satisfies SessionInfo
-    const { ctx, openDiscussions, openDiscussion } = makeCtx({
-      sessions: { [sessionCacheKey(WS, 'discussion')]: [row] },
-      activeKind: 'discussion',
-    })
+  it('routes a schedule session to the schedules page', () => {
+    const { ctx, openSchedules, onSelectSchedule } = setup(
+      'schedule',
+      'schedule',
+      'schedule-1',
+      'schedule-session-1',
+    )
 
-    ctx.selectSession(WS, 'discussion-agent-session')
+    ctx.jumpActiveSessionSource()
 
-    expect(openDiscussions).toHaveBeenCalledWith(WS)
-    expect(openDiscussion).not.toHaveBeenCalled()
+    expect(openSchedules).toHaveBeenCalledWith(WS)
+    expect(onSelectSchedule).toHaveBeenCalledWith('schedule-1')
+  })
+
+  it('routes a work/tool owner via the resolver target (generic trace)', () => {
+    const { ctx, openIntents, requestedIntentId } = setup('work', 'intent', 'intent-1', 'work-1')
+
+    ctx.jumpActiveSessionSource()
+
+    expect(openIntents).toHaveBeenCalledWith(WS)
+    expect(requestedIntentId.value).toBe('intent-1')
+  })
+
+  it('no-ops when the active session has no resolvable source', () => {
+    const { ctx, openIntents, openDiscussions, openSchedules } = setup('work', null, '', 'plain-1')
+
+    ctx.jumpActiveSessionSource()
+
+    expect(openIntents).not.toHaveBeenCalled()
+    expect(openDiscussions).not.toHaveBeenCalled()
+    expect(openSchedules).not.toHaveBeenCalled()
   })
 })

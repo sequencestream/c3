@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveSessionJumpTarget } from './session-jump'
+import { resolveSessionJumpTarget, resolveSessionSourceAction } from './session-jump'
 
 describe('resolveSessionJumpTarget', () => {
   it('returns null when owner is missing', () => {
@@ -63,6 +63,59 @@ describe('resolveSessionJumpTarget', () => {
     ).toEqual({ kind: 'schedule', scheduleId: 'schedule-1' })
     expect(
       resolveSessionJumpTarget({ sessionKind: 'tool', ownerKind: 'unknown', ownerId: 'x' }),
+    ).toBeNull()
+  })
+})
+
+describe('resolveSessionSourceAction', () => {
+  it('labels intent and spec sessions as "intent"', () => {
+    expect(
+      resolveSessionSourceAction({ sessionKind: 'spec', ownerKind: 'intent', ownerId: 'i1' }),
+    ).toEqual({
+      target: { kind: 'intentDetail', intentId: 'i1', tab: 'specSession' },
+      label: 'intent',
+    })
+    expect(
+      resolveSessionSourceAction({ sessionKind: 'intent', ownerKind: 'intent', ownerId: 'i1' }),
+    ).toEqual({ target: { kind: 'intentSessions', intentId: 'i1' }, label: 'intent' })
+  })
+
+  it('labels discussion and schedule sessions by their own kind', () => {
+    expect(
+      resolveSessionSourceAction({
+        sessionKind: 'discussion',
+        ownerKind: 'discussion',
+        ownerId: 'd1',
+      }),
+    ).toEqual({ target: { kind: 'discussion', discussionId: 'd1' }, label: 'discussion' })
+    expect(
+      resolveSessionSourceAction({ sessionKind: 'schedule', ownerKind: 'schedule', ownerId: 's1' }),
+    ).toEqual({ target: { kind: 'schedule', scheduleId: 's1' }, label: 'schedule' })
+  })
+
+  it('labels work/tool sessions generically as "trace"', () => {
+    expect(
+      resolveSessionSourceAction({ sessionKind: 'work', ownerKind: 'intent', ownerId: 'i1' }),
+    ).toEqual({ target: { kind: 'intentDetail', intentId: 'i1' }, label: 'trace' })
+    expect(
+      resolveSessionSourceAction({ sessionKind: 'tool', ownerKind: 'schedule', ownerId: 's1' }),
+    ).toEqual({ target: { kind: 'schedule', scheduleId: 's1' }, label: 'trace' })
+  })
+
+  it('falls back to the legacy linkedIntentId when owner metadata is absent', () => {
+    expect(
+      resolveSessionSourceAction({
+        sessionKind: 'work',
+        ownerKind: null,
+        ownerId: null,
+        linkedIntentId: 'i9',
+      }),
+    ).toEqual({ target: { kind: 'intentDetail', intentId: 'i9' }, label: 'trace' })
+  })
+
+  it('returns null when nothing resolves', () => {
+    expect(
+      resolveSessionSourceAction({ sessionKind: 'work', ownerKind: null, ownerId: null }),
     ).toBeNull()
   })
 })

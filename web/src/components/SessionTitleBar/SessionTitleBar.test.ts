@@ -2,7 +2,12 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import SessionTitleBar from './SessionTitleBar.vue'
 import BaseDropdown from '../BaseDropdown/BaseDropdown.vue'
+import { i18n } from '@/i18n'
 import type { ModeToken } from '@ccc/shared/protocol'
+
+// Resolve a source label's expected copy in the test's active locale (the global
+// i18n instance, default 'en') so assertions never hard-code visible text.
+const sourceText = (key: string): string => i18n.global.t(`session.titleBar.${key}.label`)
 
 const MODE_OPTIONS: { value: ModeToken; label: string }[] = [
   { value: 'default', label: '默认' },
@@ -70,29 +75,26 @@ describe('SessionTitleBar.vue — 会话标题行', () => {
   })
 })
 
-describe('SessionTitleBar.vue — 跳转关联意图按钮', () => {
-  it('有 linkedIntentId 时渲染 Intent 按钮', () => {
-    const w = mountBar({ linkedIntentId: 'intent-1' })
-    expect(w.find('[data-testid="session-intent-jump"]').exists()).toBe(true)
+describe('SessionTitleBar.vue — 标题栏溯源按钮', () => {
+  it('无 sourceLabel 时不渲染按钮', () => {
+    const w = mountBar({ sourceLabel: null })
+    expect(w.find('[data-testid="session-source-jump"]').exists()).toBe(false)
   })
 
-  it('无 linkedIntentId 时不渲染按钮', () => {
-    const w = mountBar({ linkedIntentId: null })
-    expect(w.find('[data-testid="session-intent-jump"]').exists()).toBe(false)
-  })
+  it.each(['intent', 'discussion', 'schedule', 'trace'] as const)(
+    'sourceLabel=%s 渲染对应 i18n 文案',
+    (label) => {
+      const w = mountBar({ sourceLabel: label })
+      const button = w.find('[data-testid="session-source-jump"]')
+      expect(button.exists()).toBe(true)
+      expect(button.text()).toBe(sourceText(label))
+    },
+  )
 
-  it('点击按钮 → emit open-intent(intentId)', async () => {
-    const w = mountBar({ linkedIntentId: 'intent-42' })
-    await w.find('[data-testid="session-intent-jump"]').trigger('click')
-    expect(w.emitted('open-intent')).toEqual([['intent-42']])
-  })
-
-  it('有 linkedScheduleId 时渲染并触发 schedule 跳转按钮', async () => {
-    const w = mountBar({ linkedScheduleId: 'schedule-1' })
-    const button = w.find('[data-testid="session-schedule-jump"]')
-    expect(button.exists()).toBe(true)
-    await button.trigger('click')
-    expect(w.emitted('open-schedule')).toEqual([['schedule-1']])
+  it('点击按钮 → emit open-source(无参)', async () => {
+    const w = mountBar({ sourceLabel: 'intent' })
+    await w.find('[data-testid="session-source-jump"]').trigger('click')
+    expect(w.emitted('open-source')).toEqual([[]])
   })
 })
 

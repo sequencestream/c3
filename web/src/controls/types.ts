@@ -75,6 +75,7 @@ export interface AppMethods {
   openSettingsFromPicker(): void
   selectSession(path: string, sessionId: string): void
   jumpSessionSource(path: string, session: SessionInfo): void
+  jumpActiveSessionSource(): void
   onSelectTab(key: string): void
   enterConsole(): void
   switchToConsoleTab(): void

@@ -926,6 +926,14 @@
         "label": "일정",
         "ariaLabel": "이 세션을 만든 일정 열기"
       },
+      "discussion": {
+        "label": "토론",
+        "ariaLabel": "이 세션을 만든 토론 열기"
+      },
+      "trace": {
+        "label": "출처",
+        "ariaLabel": "이 세션을 만든 출처 열기"
+      },
       "mode": {
         "ariaLabel": "권한 모드"
       },

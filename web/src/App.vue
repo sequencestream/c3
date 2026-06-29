@@ -59,8 +59,7 @@ const {
   activeTitle,
   activeVendor,
   activeAgentSwitch,
-  activeLinkedIntentId,
-  activeLinkedScheduleId,
+  activeSessionSource,
   sessionCapabilities,
   hasActiveSession,
   mode,
@@ -86,6 +85,7 @@ const {
   loadMoreSessions,
   selectSession,
   jumpSessionSource,
+  jumpActiveSessionSource,
   deleteSession,
   renameSession,
   setMode,
@@ -106,7 +106,6 @@ const {
   intentsProject,
   requestedIntentId,
   requestedIntentSubTab,
-  openLinkedIntent,
   currentIntents,
   currentIntentsSdd,
   currentAutomation,
@@ -171,7 +170,6 @@ const {
   scheduleToolManifestLoading,
   scheduleToolManifestError,
   hostStatus,
-  openSchedules,
   onSelectSchedule,
   openScheduleForm,
   onToggleScheduleEnabled,
@@ -297,8 +295,7 @@ const {
           :active-title="activeTitle"
           :vendor="activeVendor"
           :agent-switch="activeAgentSwitch"
-          :linked-intent-id="activeLinkedIntentId"
-          :linked-schedule-id="activeLinkedScheduleId"
+          :source-label="activeSessionSource?.label ?? null"
           :vendor-session-caps="sessionCapabilities ?? undefined"
           :has-active-session="hasActiveSession"
           :mode="mode"
@@ -329,15 +326,7 @@ const {
           @set-mode="setMode"
           @set-codex-policy="setCodexPolicy"
           @set-session-agent="onSetSessionAgent"
-          @open-intent="(id: string) => currentWorkspace && openLinkedIntent(currentWorkspace, id)"
-          @open-schedule="
-            (id: string) => {
-              if (currentWorkspace) {
-                openSchedules(currentWorkspace)
-                onSelectSchedule(id)
-              }
-            }
-          "
+          @open-source="jumpActiveSessionSource"
           @respond="respond"
           @submit-ask="submitAsk"
           @refresh="refreshStatus"

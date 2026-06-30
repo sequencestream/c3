@@ -751,6 +751,91 @@ describe('runDiscussion', () => {
     }
   })
 
+  it('round 2+ feeds each agent only post-last-turn messages and advances lastSeq monotonically', async () => {
+    // Organizer = System (organizer-only); participants = Alpha + Beta.
+    const seed = { ...seedDiscussion(), participantAgentIds: ['alpha', 'beta'] }
+    const { store, get } = makeStore(seed)
+    const participants = [agent('system', 'System'), agent('alpha', 'Alpha'), agent('beta', 'Beta')]
+    const organizerQueue = [
+      '{"action":"broadcast","speakers":["alpha","beta"],"note":"R1 question"}',
+      '{"action":"broadcast","speakers":["alpha","beta"],"note":"R2 question"}',
+      '{"action":"advance","note":""}',
+      '{"action":"advance","note":""}',
+      '{"action":"advance","note":""}',
+      '{"action":"conclude","conclusion":"done"}',
+    ]
+
+    // Live resume state shared by getLastSeq (read) and setLastSeq (write) — the
+    // production AgentSessionManager pairing, modelled in-memory.
+    const seqMap = new Map<string, number>()
+    const setCalls: Array<{ agentId: string; seq: number }> = []
+    const replyCount = new Map<string, number>()
+    const prompts: Array<{ agentId: string; prompt: string }> = []
+
+    const h = harness({
+      store,
+      participants,
+      organizer: agent('system', 'System'),
+      organizerScript: [],
+      maxRoundsPerStage: 5,
+    })
+    h.deps.getLastSeq = (_id, agentId) => (seqMap.has(agentId) ? seqMap.get(agentId)! : null)
+    h.deps.setLastSeq = (_id, agentId, seq) => {
+      setCalls.push({ agentId, seq })
+      const prev = seqMap.get(agentId) ?? -1
+      if (seq > prev) seqMap.set(agentId, seq)
+    }
+    h.deps.ask = async (_id, a, prompt) => {
+      prompts.push({ agentId: a.id, prompt })
+      if (isOrganizerPrompt(prompt))
+        return organizerQueue.shift() ?? '{"action":"conclude","conclusion":"x"}'
+      const n = (replyCount.get(a.id) ?? 0) + 1
+      replyCount.set(a.id, n)
+      return `${a.id}-speech-${n}`
+    }
+
+    await runDiscussion('d1', new AbortController().signal, h.deps)
+    expect(get().status).toBe('completed')
+
+    const isPartDelta = (p: string): boolean => p.includes('New messages since your last turn:')
+    const isOrgDelta = (p: string): boolean => p.includes('New messages since your last decision')
+    const alphaTurns = prompts.filter((p) => p.agentId === 'alpha')
+    const betaTurns = prompts.filter((p) => p.agentId === 'beta')
+    // One participant turn per broadcast round (advances/conclude ask nobody).
+    expect(alphaTurns.length).toBe(2)
+    expect(betaTurns.length).toBe(2)
+
+    // Round 1 = full prompt (no session yet); round 2 = delta (resume available).
+    expect(isPartDelta(alphaTurns[0].prompt)).toBe(false)
+    expect(isPartDelta(alphaTurns[1].prompt)).toBe(true)
+
+    // Alpha's round-2 delta carries Beta's round-1 answer — a LATER batch append
+    // (higher seq than Alpha's own) that must not be pre-skipped — but NOT Alpha's
+    // own prior speech, which already lives in its session.
+    expect(alphaTurns[1].prompt).toContain('beta-speech-1')
+    expect(alphaTurns[1].prompt).not.toContain('alpha-speech-1')
+    // Beta's round-2 delta never re-feeds its own prior speech.
+    expect(betaTurns[1].prompt).not.toContain('beta-speech-1')
+
+    // The organizer's round-2 decision (delta) sees both batch answers from round 1.
+    const orgTurns = prompts.filter((p) => p.agentId === 'system')
+    expect(isOrgDelta(orgTurns[1].prompt)).toBe(true)
+    expect(orgTurns[1].prompt).toContain('alpha-speech-1')
+    expect(orgTurns[1].prompt).toContain('beta-speech-1')
+
+    // Per-agent seq advances are monotonic non-decreasing.
+    for (const aid of ['system', 'alpha', 'beta']) {
+      const seqs = setCalls.filter((c) => c.agentId === aid).map((c) => c.seq)
+      expect(seqs.length).toBeGreaterThan(0)
+      for (let i = 1; i < seqs.length; i++) expect(seqs[i]).toBeGreaterThanOrEqual(seqs[i - 1])
+    }
+    // Independent advance within the round-1 batch: Alpha appended before Beta, so
+    // Alpha's first watermark is strictly lower (no shared/global max).
+    const alphaFirst = setCalls.find((c) => c.agentId === 'alpha')!.seq
+    const betaFirst = setCalls.find((c) => c.agentId === 'beta')!.seq
+    expect(alphaFirst).toBeLessThan(betaFirst)
+  })
+
   it('exposes one failed agent in a broadcast while the rest proceed', async () => {
     const { store, messages, get } = makeStore(seedDiscussion())
     const participants = [agent('system', 'System'), agent('gpt', 'GPT')]

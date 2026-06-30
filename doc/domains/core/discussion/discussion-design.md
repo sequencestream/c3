@@ -100,7 +100,12 @@ store's degradation contract.
   all mappings for a discussion. First creation writes the mapping and a best-effort
   `session_metadata` projection row; resume failure deletes the stale mapping/projection before
   creating a fresh session; single-agent and whole-discussion close delete the matching projection
-  rows. Projection failures are logged and do not block discussion cleanup.
+  rows. Projection failures are logged and do not block discussion cleanup. `last_seq` is the **max
+  discussion-message seq already fed into that agent's vendor session** — _not_ a turn/round counter.
+  Resuming a session never touches it; the orchestrator advances it after each successful turn
+  (`setLastSeq`), reading the current row and writing back the larger seq with the existing
+  `session_id`/`vendor` preserved (monotonic, never regresses, no-op when no row exists). `getLastSeq`
+  returns `null` only when no session row exists yet (first turn / resume unavailable).
 - Availability check / test-reset helpers mirror the intent store.
 
 ## Organizer engine
@@ -161,6 +166,29 @@ and the agenda (items + index, default empty) into a concrete step:
   appended as an `organizer` message. Leaving `discuss` with an agenda set snaps the agenda index to
   the agenda length (records "agenda complete").
 - `conclude` — append the final conclusion (organizer message), set the conclusion, mark `completed`.
+
+**Resume-aware delta prompts.** Each organizer and participant owns an independent, persistent vendor
+session (`(discussion_id, agent_id)` → native session). The **first** turn for an agent has no session
+row, so `getLastSeq` returns `null` and the engine builds the **full** prompt (whole transcript); the
+turn creates the session. **Subsequent** turns resume that session, and the engine builds a **delta**
+prompt carrying only messages with `seq > last_seq` — the session already holds the earlier history in
+its context window, so re-sending it would balloon tokens with the round count. After a turn succeeds,
+the orchestrator advances that agent's `last_seq`:
+
+- **Organizer** — to the max seq after its own freshly-appended messages (note / agenda announce /
+  conclusion) but **before** this round's participant speeches: it consumed the transcript up to its
+  own output, and never saw the speeches it triggered, so those reach it as new messages next round. No
+  append ⇒ advance to the prompt's input boundary, so the same batch of others' messages is not re-fed.
+- **Single `speak`** — to the speaker's own appended speech seq (empty speech ⇒ the input boundary).
+- **`broadcast`** — every participant builds its prompt from the **same batch snapshot** (taken after
+  the sub-question, before any answer). Each successful participant advances **independently** to its
+  own appended speech seq (empty ⇒ the snapshot max); a failed participant does not advance. A
+  batch-mate's answer appended **after** an agent's own (higher seq) therefore stays a new message in
+  that agent's next delta — the per-agent watermark is never bumped to a shared/global max.
+
+A failed or aborted turn never advances (and a resume failure deletes the row, so the next turn falls
+back to a full prompt). When `getLastSeq`/`setLastSeq` are unwired (stateless `askAgentOnce` deps), the
+engine always builds full prompts — the pre-resume behaviour, unchanged.
 
 **Explicit agenda.** The agenda is an ordered list of subtopics plus a 0-based index (empty agenda ⇒
 none yet; index equal to the agenda length ⇒ all done). It is **persisted** and **only meaningful in

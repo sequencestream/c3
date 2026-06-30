@@ -280,7 +280,7 @@ describe('AgentSessionManager', () => {
 
   // ── Second call: resume ─────────────────────────────────────────────────
   describe('second call (resume existing session)', () => {
-    it('resumes the stored session and updates lastSeq', async () => {
+    it('resumes the stored session WITHOUT touching lastSeq (orchestrator owns it)', async () => {
       const { store, rows } = createFakeStore()
       const { projection, deletes, upserts } = createFakeProjection()
 
@@ -331,9 +331,10 @@ describe('AgentSessionManager', () => {
       expect(driver.startCalls[0].resume).toBe('session-existing')
       expect(driver.startCalls[0].prompt).toBe('Second turn')
 
-      // lastSeq incremented
+      // lastSeq is NOT a turn counter — resume leaves it untouched (the
+      // orchestrator advances it via setLastSeq to the consumed message seq).
       const row = rows.get('disc-1::agent-a')!
-      expect(row.lastSeq).toBe(4)
+      expect(row.lastSeq).toBe(3)
       expect(row.sessionId).toBe('session-existing')
       expect(deletes).toEqual([])
       expect(upserts).toEqual([])
@@ -609,9 +610,65 @@ describe('AgentSessionManager', () => {
       )
       expect(result).toBe('Codex reply')
 
-      // lastSeq incremented
+      // lastSeq unchanged by resume (orchestrator owns advancement).
       const row = rows.get('disc-1::agent-b')!
-      expect(row.lastSeq).toBe(3)
+      expect(row.lastSeq).toBe(2)
+    })
+  })
+
+  // ── setLastSeq: orchestrator-driven seq advancement ─────────────────────
+  describe('setLastSeq', () => {
+    const mgrWith = (store: AgentSessionStore): AgentSessionManager =>
+      new AgentSessionManager({
+        getAdapter: () => undefined as unknown as VendorAdapter,
+        store,
+      })
+
+    it('writes the real consumed seq, preserving sessionId/vendor', () => {
+      const { store, rows } = createFakeStore()
+      rows.set('disc-1::agent-a', {
+        discussionId: 'disc-1',
+        agentId: 'agent-a',
+        sessionId: 'session-x',
+        vendor: 'claude',
+        lastSeq: 2,
+        createdAt: 111,
+      })
+
+      mgrWith(store).setLastSeq('disc-1', 'agent-a', 7)
+
+      const row = rows.get('disc-1::agent-a')!
+      expect(row.lastSeq).toBe(7)
+      // sessionId / vendor / createdAt untouched
+      expect(row.sessionId).toBe('session-x')
+      expect(row.vendor).toBe('claude')
+      expect(row.createdAt).toBe(111)
+    })
+
+    it('is monotonic — never regresses below the stored seq', () => {
+      const { store, rows } = createFakeStore()
+      rows.set('disc-1::agent-a', {
+        discussionId: 'disc-1',
+        agentId: 'agent-a',
+        sessionId: 'session-x',
+        vendor: 'claude',
+        lastSeq: 5,
+        createdAt: 111,
+      })
+      const mgr = mgrWith(store)
+
+      mgr.setLastSeq('disc-1', 'agent-a', 3) // lower → ignored
+      expect(rows.get('disc-1::agent-a')!.lastSeq).toBe(5)
+      mgr.setLastSeq('disc-1', 'agent-a', 5) // equal → no-op
+      expect(rows.get('disc-1::agent-a')!.lastSeq).toBe(5)
+      mgr.setLastSeq('disc-1', 'agent-a', 9) // higher → advances
+      expect(rows.get('disc-1::agent-a')!.lastSeq).toBe(9)
+    })
+
+    it('is a no-op when no session row exists yet', () => {
+      const { store, rows } = createFakeStore()
+      mgrWith(store).setLastSeq('disc-1', 'agent-missing', 4)
+      expect(rows.size).toBe(0)
     })
   })
 })

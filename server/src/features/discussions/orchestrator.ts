@@ -206,6 +206,14 @@ export interface DiscussionDeps {
    */
   getLastSeq?: (discussionId: string, agentId: string) => number | null
   /**
+   * Advance an agent's recorded `lastSeq` after it finishes a turn — to the max
+   * discussion message seq now present in that agent's vendor session. The next
+   * round's delta prompt then only carries messages with `seq >` this value, so
+   * the agent never re-reads what it already has. Monotonic on the callee side.
+   * Absent = lastSeq is never advanced (the delta path degrades to full prompts).
+   */
+  setLastSeq?: (discussionId: string, agentId: string, seq: number) => void
+  /**
    * Called when the discussion concludes to clean up all agent session mappings.
    * Delegates to {@link AgentSessionManager.closeAll}. Absent = no cleanup
    * (backward compat / test deps that don't use sessions).
@@ -291,6 +299,20 @@ export async function runDiscussion(
     deps.closeSessions?.(id)
   }
 
+  // ---- lastSeq advancement (resume-aware delta prompts) ----
+  // The max seq present among a set of messages (0 when empty).
+  const maxSeqOf = (msgs: readonly DiscussionMessage[]): number =>
+    msgs.reduce((mx, m) => (m.seq > mx ? m.seq : mx), 0)
+  // Advance an agent's lastSeq to `seq` after it finished a turn — so the next
+  // round's delta prompt skips what it has already consumed. No-op without a
+  // session (getLastSeq returned null) or wiring; the callee enforces monotonicity.
+  const advanceSeq = (agentId: string, seq: number): void => deps.setLastSeq?.(id, agentId, seq)
+  // The organizer just consumed the transcript up to its own freshly-appended
+  // messages (note / agenda / conclusion) — but NOT this round's later participant
+  // speeches, which it never saw. Advance to the current max, called right after
+  // the organizer's own appends and before any participant speaks.
+  const advanceOrganizer = (): void => advanceSeq(organizerCfg.id, maxSeqOf(store.listMessages(id)))
+
   let stage: DiscussionStageKind = nextDiscussionStage(initial.type)?.id ?? 'discuss'
   let roundsInStage = 0
   let total = 0
@@ -370,6 +392,7 @@ export async function runDiscussion(
         step.organizerNote.trim() ||
         `${uiL10n('agendaSet')}${agenda.map((t, i) => `${i + 1}. ${t}`).join(' ')}`
       appendOrganizer(announce)
+      advanceOrganizer()
       roundsInStage = 0
       total++
       continue
@@ -385,6 +408,7 @@ export async function runDiscussion(
         step.organizerNote.trim() ||
         (agenda[agendaIndex] ? `${uiL10n('enteringSubtopic')}${agenda[agendaIndex]}` : '')
       if (announce) appendOrganizer(announce)
+      advanceOrganizer()
       roundsInStage = 0
       total++
       continue
@@ -406,6 +430,7 @@ export async function runDiscussion(
         concludeWith(lastSummary)
         return
       }
+      advanceOrganizer()
       stage = next.id
       roundsInStage = 0
       continue
@@ -421,6 +446,11 @@ export async function runDiscussion(
       // in the batch sees the same context — the question, but none of the batch's answers.
       if (step.organizerNote.trim()) appendOrganizer(step.organizerNote)
       const snapshot = store.listMessages(id)
+      // The organizer consumed the transcript through its own just-appended note;
+      // advance it now, before the batch's parallel answers land at higher seqs
+      // (those reach the organizer as new messages next round).
+      advanceOrganizer()
+      const snapshotMaxSeq = maxSeqOf(snapshot)
       const discussionNow = store.getDiscussion(id) ?? initial
       const batch = step.speakerIds
         .map((sid) => ({ cfg: byId.get(sid), speaker: participants.find((p) => p.id === sid) }))
@@ -481,15 +511,20 @@ export async function runDiscussion(
         settled.push(b.speaker)
         const speech = parseParticipantSpeech(r.value, b.speaker.name)
         if (speech) {
-          deps.onMessage(
-            store.appendMessage({
-              discussionId: id,
-              speakerKind: 'agent',
-              speakerAgentId: b.speaker.id,
-              speakerName: b.speaker.name,
-              content: speech,
-            }),
-          )
+          const m = store.appendMessage({
+            discussionId: id,
+            speakerKind: 'agent',
+            speakerAgentId: b.speaker.id,
+            speakerName: b.speaker.name,
+            content: speech,
+          })
+          deps.onMessage(m)
+          // Advance to THIS agent's own speech seq — not the batch's current max,
+          // so a batch-mate's later answer stays a new message for it next round.
+          advanceSeq(b.speaker.id, m.seq)
+        } else {
+          // Empty speech appends nothing; it consumed only the batch snapshot.
+          advanceSeq(b.speaker.id, snapshotMaxSeq)
         }
       }
       // Clear the non-failed agents (covers empty/skipped speeches that append no
@@ -502,6 +537,10 @@ export async function runDiscussion(
 
     // step.kind === 'speak'
     if (step.organizerNote.trim()) appendOrganizer(step.organizerNote)
+    // Organizer consumed the transcript through its own note (or the input
+    // boundary when it added none); the speaker's reply lands at a higher seq and
+    // reaches the organizer next round.
+    advanceOrganizer()
     const speakerCfg = byId.get(step.speakerId)
     const speaker = participants.find((p) => p.id === step.speakerId)
     if (speakerCfg && speaker) {
@@ -557,6 +596,10 @@ export async function runDiscussion(
             }),
           )
         }
+        // Advance the speaker to the current max: its own just-appended speech, or
+        // (empty speech) the input boundary it read — this turn is sequential, so
+        // the current max is exactly that. Failed/aborted turns skip this.
+        advanceSeq(speaker.id, maxSeqOf(store.listMessages(id)))
         // Clear pending (covers an empty/skipped speech that appends no message).
         deps.onDispatchStatus?.({ phase: 'cleared', agents: [dispatched] })
       }
@@ -624,6 +667,7 @@ export function defaultDiscussionDeps(hooks: {
     ...(session
       ? {
           getLastSeq: (id, agentId) => session.getLastSeq(id, agentId),
+          setLastSeq: (id, agentId, seq) => session.setLastSeq(id, agentId, seq),
           closeSessions: (id) => session.closeAll(id),
         }
       : {}),

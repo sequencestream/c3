@@ -160,15 +160,18 @@ describe('refreshSessions', () => {
 })
 
 describe('selectSessionKind', () => {
-  it('clears view, sets kind, flags pending bind, and refreshes list for the new kind', () => {
+  it('clears view + consoleSession, sets kind, flags pending bind, and refreshes list for the new kind', () => {
     const { ctx, send } = makeCtx({ activeKind: 'work' })
     ctx.currentWorkspace.value = WS
     // Prime sessions for the old kind to confirm the list_sessions is for the new kind.
     ctx.sessionsByWorkspace.value[sessionCacheKey(WS, 'work')] = [s('work-1', 400)]
+    // Simulate a previously-viewed session that must be dropped.
+    ctx.consoleSession.value = { workspacePath: WS, sessionId: 'work-1' }
 
     ctx.selectSessionKind('spec')
 
     expect(ctx.activeSessionKind.value).toBe('spec')
+    expect(ctx.consoleSession.value).toBeNull()
     expect(ctx.activeSession.value).toBeNull()
     expect(ctx.activeWorkspace.value).toBeNull()
     expect(ctx.flags.pendingConsoleBind).toBe(true)
@@ -180,11 +183,13 @@ describe('selectSessionKind', () => {
 
   it('does not crash when currentWorkspace is null (no list to refresh)', () => {
     const { ctx } = makeCtx({ activeKind: 'work' })
+    ctx.consoleSession.value = { workspacePath: WS, sessionId: 'work-1' }
 
     // currentWorkspace is null, so refreshSessions returns early — should not throw.
     ctx.selectSessionKind('tool')
 
     expect(ctx.activeSessionKind.value).toBe('tool')
+    expect(ctx.consoleSession.value).toBeNull()
     expect(ctx.activeSession.value).toBeNull()
   })
 })

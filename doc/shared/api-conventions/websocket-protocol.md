@@ -210,7 +210,7 @@
 
 ### `start_development`
 
-为 `todo` 状态的 intent 启动后台开发会话，使用可配置的开发 skill（系统设置中的 `devSkill`；默认为空 ⇒ 不加 skill 前缀）。将其设为 `in_progress` 并记录 `lastDevSessionId`（RM-R8）。对未满足的依赖关系仅警告（不阻止）。
+为 `todo` 状态的 intent 启动后台开发会话，使用可配置的开发 skill（系统设置中的 `devSkill`；默认为空 ⇒ 不加 skill 前缀）。将其设为 `in_progress` 并记录 `lastDevSessionId`（RM-R8）。worktree 模式下会先检查依赖是否已在主线可用；若依赖 intent 已 `done` 但关联 PR/MR 尚未确认合并，启动被拒绝并返回 `intent.dependencyNotMerged`，同时后台对这些依赖 PR/MR 做一次 best-effort 状态同步，完成后重新广播 intents。
 
 **字段：** `workspacePath: string`, `intentId: string`
 
@@ -243,6 +243,12 @@
 手动设置 intent 状态（如 `done` / `cancelled`）；服务器回复 `intents`（RM-R9）。
 
 **字段：** `intentId: string`, `status: IntentStatus`
+
+### `sync_intent_pr_status`
+
+对已完成且 PR/MR 状态仍为 `reviewing` 的 intent 做一次手动状态同步。服务器按 workspace 的 forge 规则查询实时 PR/MR 状态：GitHub 使用 `gh pr view <id> --json state,mergedAt,url`，GitLab 使用 `glab mr view <id> --output json`。仅当 forge 明确返回 merged/closed 时更新 `prStatus`（merged 会解除 worktree 依赖闸门，closed 不会被当作 merged）；无 PR、非 `done`、非 `reviewing`、CLI 缺失/未登录、查询失败均不写入 merged。回复 `sync_intent_pr_status_response`，前端据此展示同步中、成功、不可同步或失败反馈。
+
+**字段：** `workspaceId: string`, `intentId: string`
 
 ### `set_intent_automate`
 

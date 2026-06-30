@@ -780,6 +780,12 @@
         "label": "Closed"
       }
     },
+    "prSync": {
+      "label": "Sync PR status",
+      "syncing": "Syncing...",
+      "success": "PR status synced.",
+      "failed": "Failed to sync PR status."
+    },
     "deps": {
       "status": {
         "done": "Completed",

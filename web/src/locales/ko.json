@@ -781,6 +781,12 @@
         "label": "닫힘"
       }
     },
+    "prSync": {
+      "label": "PR 상태 동기화",
+      "syncing": "동기화 중...",
+      "success": "PR 상태를 동기화했습니다.",
+      "failed": "PR 상태 동기화에 실패했습니다."
+    },
     "deps": {
       "status": {
         "done": "완료됨",

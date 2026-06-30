@@ -71,6 +71,7 @@ import { reconcileInProgress } from './reconcile.js'
 import { publishIntentStatusTransition } from './lifecycle-events.js'
 import { buildDevPrompt } from './dev-prompt.js'
 import { findDependencyBlockingMainline } from './dependency-gate.js'
+import { syncIntentPrStatus, syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
 import { judgeCompletion } from './judge.js'
 import {
   cacheRunStatus,
@@ -789,6 +790,11 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
       getDefaultMainBranch(proj),
     )
     if (unmerged) {
+      syncUnconfirmedDependencyPrsInBackground({
+        ctx,
+        workspacePath: proj,
+        dependsOn: req.dependsOn,
+      })
       conn.send({
         type: 'error',
         error: {
@@ -1115,4 +1121,38 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
       },
     })
   }
+}
+
+export const syncIntentPrStatusHandler: Handler<'sync_intent_pr_status'> = async (
+  ctx,
+  conn,
+  msg,
+) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const result = await syncIntentPrStatus({
+    workspacePath: proj,
+    intentId: msg.intentId,
+    broadcastIntents: ctx.broadcastIntents,
+  })
+  conn.send({
+    type: 'sync_intent_pr_status_response',
+    workspaceId: msg.workspaceId,
+    intentId: msg.intentId,
+    ok: result.ok,
+    prStatus: result.prStatus,
+    changed: result.changed,
+    message: result.message,
+    error: result.error,
+  })
 }

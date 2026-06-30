@@ -112,6 +112,7 @@ const {
   currentAutomation,
   intentActionErrorSeq,
   intentActionError,
+  intentPrSync,
   closeIntentActionError,
   intentSpecContent,
   intentSpecLoading,
@@ -129,6 +130,7 @@ const {
   setIntentAutomate,
   updateIntentDeps,
   createPr,
+  syncIntentPrStatus,
   startAutomation,
   stopAutomation,
   selectIntentSession,
@@ -366,6 +368,7 @@ const {
           "
           :automation="currentAutomation"
           :intent-action-error-seq="intentActionErrorSeq"
+          :intent-pr-sync="intentPrSync"
           :intent-spec-content="intentSpecContent"
           :intent-spec-loading="intentSpecLoading"
           :active-session="activeSession"
@@ -405,6 +408,7 @@ const {
           @set-automate="setIntentAutomate"
           @update-deps="updateIntentDeps"
           @create-pr="createPr"
+          @sync-pr-status="syncIntentPrStatus"
           @start-automation="startAutomation"
           @stop-automation="stopAutomation"
           @new-intent-session="newIntentSession"

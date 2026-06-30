@@ -3571,6 +3571,28 @@ button.deny:hover:not(:disabled) {
   background: var(--c-success-soft, #e6f7e6);
   color: var(--c-success, #22c55e);
 }
+.req-pr-status--closed {
+  background: var(--c-muted-soft, #edf2f7);
+  color: var(--c-muted-text, #718096);
+}
+.req-pr-sync-btn {
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+.req-pr-sync-feedback {
+  margin-left: 6px;
+  font-size: 11px;
+}
+.req-pr-sync-feedback--success {
+  color: var(--c-success, #22c55e);
+}
+.req-pr-sync-feedback--error {
+  color: var(--c-danger-text, #c53030);
+}
+.req-pr-sync-feedback--syncing {
+  color: var(--c-muted-text, #718096);
+}
 .req-dep-edit-btn {
   font-size: 11px;
   padding: 0 6px;
@@ -3876,6 +3898,10 @@ button.deny:hover:not(:disabled) {
 }
 .req-btn:hover {
   background: var(--c-hover);
+}
+.req-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 .req-menu .req-menu-item {
   width: 100%;

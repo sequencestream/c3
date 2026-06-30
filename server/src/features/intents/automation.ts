@@ -66,6 +66,10 @@ import {
   readBranch,
   worktreeExists,
 } from './worktree.js'
+import {
+  depsWithUnconfirmedPr,
+  syncUnconfirmedDependencyPrsInBackground,
+} from './pr-status-sync.js'
 
 // ---------------------------------------------------------------------------
 // Public types (unchanged)
@@ -185,6 +189,23 @@ export function pickNext(workspacePath: string): Intent | null {
   const rank = { P0: 0, P1: 1, P2: 2, P3: 3 } as const
   eligible.sort((a, b) => rank[a.priority] - rank[b.priority] || a.createdAt - b.createdAt)
   return eligible[0] ?? null
+}
+
+function blockedAutomationDependencyIds(workspacePath: string): string[] {
+  if (getGitBranchMode(workspacePath) !== 'worktree') return []
+  const all = listIntents(workspacePath)
+  const byId = new Map(all.map((r) => [r.id, r]))
+  const sddEnabled = getSddEnabled(workspacePath)
+  const ids = new Set<string>()
+  for (const intent of all) {
+    if (!intent.automate) continue
+    if (intent.status !== 'todo' && intent.status !== 'in_progress') continue
+    if (sddEnabled && !intent.specApproved) continue
+    const deps = intent.dependsOn.map((id) => byId.get(id))
+    if (deps.some((dep) => dep && dep.status !== 'done')) continue
+    for (const dep of depsWithUnconfirmedPr(intent.dependsOn, all)) ids.add(dep.id)
+  }
+  return [...ids]
 }
 
 class AutomationController {
@@ -361,6 +382,26 @@ class AutomationController {
 
     const req = pickNext(this.workspacePath)
     if (!req) {
+      const blockedDepIds = blockedAutomationDependencyIds(this.workspacePath)
+      if (blockedDepIds.length > 0) {
+        syncUnconfirmedDependencyPrsInBackground({
+          ctx: {
+            broadcastIntents: this.hooks.broadcastIntents,
+          },
+          workspacePath: this.workspacePath,
+          dependsOn: blockedDepIds,
+          onComplete: () => {
+            if (!this.abort.signal.aborted && this.status.state !== 'idle') this._startNext()
+          },
+        })
+        this.status.state = 'running'
+        this.status.currentIntentId = null
+        this.status.currentSessionId = null
+        this.status.checkpointConsensus = null
+        this._processing = false
+        this.emit()
+        return
+      }
       this.status.state = 'done'
       this.status.currentIntentId = null
       this.status.currentSessionId = null

@@ -780,6 +780,12 @@
         "label": "已关闭"
       }
     },
+    "prSync": {
+      "label": "同步 PR 状态",
+      "syncing": "同步中...",
+      "success": "PR 状态已同步。",
+      "failed": "同步 PR 状态失败。"
+    },
     "deps": {
       "status": {
         "done": "已完成",

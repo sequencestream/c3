@@ -9,6 +9,7 @@ import {
   createForgePr,
   createGlabMr,
   detectForge,
+  getForgePrStatus,
   gitDiffStat,
   gitRecentLog,
 } from './git.js'
@@ -308,6 +309,29 @@ describe('forge detection and change-request creation', () => {
     await expect(createForgePr(work, 'Title', 'Body')).resolves.toMatchObject({
       ok: true,
       prId: '9',
+    })
+  })
+
+  it('reads GitHub merged PR status', async () => {
+    installFakeCli(
+      'gh',
+      '{"state":"MERGED","mergedAt":"2026-06-30T00:00:00Z","url":"https://github.com/o/r/pull/8"}',
+    )
+
+    await expect(getForgePrStatus(work, '8', 'github')).resolves.toMatchObject({
+      ok: true,
+      status: 'merged',
+      prUrl: 'https://github.com/o/r/pull/8',
+    })
+  })
+
+  it('reads GitLab closed MR status without treating it as merged', async () => {
+    installFakeCli('glab', '{"state":"closed","web_url":"https://gitlab/o/r/-/merge_requests/9"}')
+
+    await expect(getForgePrStatus(work, '9', 'gitlab')).resolves.toMatchObject({
+      ok: true,
+      status: 'closed',
+      prUrl: 'https://gitlab/o/r/-/merge_requests/9',
     })
   })
 })

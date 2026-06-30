@@ -402,6 +402,20 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       }
+      case 'sync_intent_pr_status_response': {
+        ctx.intentPrSync.value = {
+          ...ctx.intentPrSync.value,
+          [msg.intentId]: {
+            state: msg.ok ? 'success' : 'error',
+            message:
+              msg.message ??
+              msg.error ??
+              (msg.ok ? t('intent.prSync.success') : t('intent.prSync.failed')),
+          },
+        }
+        if (msg.ok && msg.changed) ctx.showToast(msg.message ?? t('intent.prSync.success'))
+        break
+      }
       case 'mode_changed':
         mode.value = msg.mode
         codexPolicy.value = msg.codexPolicy ?? null

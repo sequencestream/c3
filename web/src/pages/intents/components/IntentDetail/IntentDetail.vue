@@ -63,6 +63,8 @@ const props = defineProps<{
   intents: Intent[]
   /** 服务端动作错误序号自增时复位 start-dev in-flight 守卫。 */
   intentActionErrorSeq?: number
+  /** Per-intent one-shot PR/MR sync feedback from the control layer. */
+  intentPrSync?: Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
   /** 当前 workspace 的 SDD 总开关,驱动主操作按钮四态(关→Start Dev)。 */
   sddEnabled?: boolean
   /** 当前 workspace 配置的主分支;intent 分支与其相同时不显示 Create PR。 */
@@ -107,6 +109,7 @@ const emit = defineEmits<{
   'set-status': [intentId: string, status: IntentStatus]
   'set-automate': [intentId: string, automate: boolean]
   'create-pr': [intentId: string]
+  'sync-pr-status': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   'select-dependency': [intentId: string]
   // ── 会话/spec 打开 ──
@@ -355,6 +358,24 @@ const showCreatePr = computed<boolean>(() => {
     !isIntentOnWorkspaceMainBranch(r.branchName, props.workspaceMainBranch)
   )
 })
+
+const canSyncPrStatus = computed<boolean>(() => {
+  const r = props.intent
+  return !!r && r.status === 'done' && !!r.prId && r.prStatus === 'reviewing'
+})
+
+const currentPrSync = computed(() => {
+  const id = props.intent?.id
+  return id ? props.intentPrSync?.[id] : undefined
+})
+
+const prSyncInFlight = computed<boolean>(() => currentPrSync.value?.state === 'syncing')
+
+function syncPrStatus(): void {
+  const r = props.intent
+  if (!r || !canSyncPrStatus.value || prSyncInFlight.value) return
+  emit('sync-pr-status', r.id)
+}
 
 function onMainAction(): void {
   const r = props.intent
@@ -664,6 +685,16 @@ defineExpose({
                 {{ t('intent.action.pr.label', { id: intent.prId }) }}
               </button>
               <button
+                v-if="canSyncPrStatus"
+                type="button"
+                class="req-btn"
+                data-action="syncPrStatus"
+                :disabled="prSyncInFlight"
+                @click="syncPrStatus"
+              >
+                {{ prSyncInFlight ? t('intent.prSync.syncing') : t('intent.prSync.label') }}
+              </button>
+              <button
                 type="button"
                 class="req-automate"
                 :class="{ active: intent.automate }"
@@ -773,6 +804,21 @@ defineExpose({
               class="req-pr-status"
               :class="'req-pr-status--' + intent.prStatus"
               >{{ prStatusLabel(intent.prStatus) }}</span
+            >
+            <button
+              v-if="canSyncPrStatus"
+              type="button"
+              class="req-btn req-pr-sync-btn"
+              :disabled="prSyncInFlight"
+              @click="syncPrStatus"
+            >
+              {{ prSyncInFlight ? t('intent.prSync.syncing') : t('intent.prSync.label') }}
+            </button>
+            <span
+              v-if="currentPrSync"
+              class="req-pr-sync-feedback"
+              :class="'req-pr-sync-feedback--' + currentPrSync.state"
+              >{{ currentPrSync.message }}</span
             >
           </span>
         </div>

@@ -56,6 +56,7 @@ import {
   startDevelopment,
   stopAutomationHandler,
   createPrHandler,
+  syncIntentPrStatusHandler,
   updateIntentDepsHandler,
   updateIntentStatus,
 } from './intents/index.js'
@@ -155,6 +156,7 @@ export const handlerMap: HandlerMap = {
   start_automation: startAutomationHandler,
   stop_automation: stopAutomationHandler,
   create_pr: createPrHandler,
+  sync_intent_pr_status: syncIntentPrStatusHandler,
   // discussions
   list_discussions: listDiscussionsHandler,
   create_discussion: createDiscussionHandler,

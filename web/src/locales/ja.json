@@ -781,6 +781,12 @@
         "label": "クローズ済"
       }
     },
+    "prSync": {
+      "label": "PR 状態を同期",
+      "syncing": "同期中...",
+      "success": "PR 状態を同期しました。",
+      "failed": "PR 状態の同期に失敗しました。"
+    },
     "deps": {
       "status": {
         "done": "完了",

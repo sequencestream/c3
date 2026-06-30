@@ -43,6 +43,7 @@ const props = defineProps<{
   requestedIntentId?: string | null
   /** 当前 workspace SDD 总开关,透传给 IntentDetail 的四态主按钮。 */
   sddEnabled?: boolean
+  intentPrSync?: Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
   /** 当前 workspace 配置的主分支;用于隐藏主分支上的 Create PR 动作。 */
   workspaceMainBranch?: string | null
   workspaceGitBranchMode?: 'worktree' | 'current-branch'
@@ -107,6 +108,7 @@ const emit = defineEmits<{
   'new-intent': []
   'new-intent-session': []
   'create-pr': [intentId: string]
+  'sync-pr-status': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   'set-session-agent': [agentId: string]
   // external select request consumed (parent clears `requestedIntentId`)
@@ -280,6 +282,7 @@ defineExpose({
         :intent="selectedIntent"
         :intents="intents"
         :intent-action-error-seq="intentActionErrorSeq"
+        :intent-pr-sync="intentPrSync"
         :sdd-enabled="sddEnabled"
         :workspace-main-branch="workspaceMainBranch"
         :workspace-git-branch-mode="workspaceGitBranchMode"
@@ -320,6 +323,7 @@ defineExpose({
         @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @create-pr="(id: string) => emit('create-pr', id)"
+        @sync-pr-status="(id: string) => emit('sync-pr-status', id)"
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
         @select-dependency="handleSelectDependency"
         @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"

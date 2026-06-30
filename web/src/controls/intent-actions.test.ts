@@ -57,6 +57,7 @@ function makeCtx(opts: { intents?: Intent[]; sessions?: SessionInfo[] }) {
     currentSessions,
     requestedWorkSessionId,
     devLaunch,
+    intentPrSync: ref({}),
     devLaunchTimers,
     clearDevLaunchTimers,
     showToast,
@@ -160,5 +161,23 @@ describe('setIntentAutomate — todo-only mode switching', () => {
     h.ctx.setIntentAutomate('i-1', false)
     expect(h.ctx.send).not.toHaveBeenCalled()
     expect(h.showToast).toHaveBeenCalledWith('intent.automate.locked.toast')
+  })
+})
+
+describe('syncIntentPrStatus', () => {
+  it('marks the intent syncing and sends the sync request', () => {
+    const h = makeCtx({ intents: [] })
+
+    h.ctx.syncIntentPrStatus('i-1')
+
+    expect(h.ctx.intentPrSync.value['i-1']).toEqual({
+      state: 'syncing',
+      message: 'intent.prSync.syncing',
+    })
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'sync_intent_pr_status',
+      workspaceId: WS,
+      intentId: 'i-1',
+    })
   })
 })

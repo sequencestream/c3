@@ -22,7 +22,7 @@ const runStatusCache = new Map<string, IntentRunStatus>()
 
 /**
  * Dead-session de-dup for reconcile (perf). Maps intent id → the
- * `lastDevSessionId` we last ran the completion judge against while its process
+ * `lastWorkSessionId` we last ran the completion judge against while its process
  * was dead. Judging a dead session is an LLM call that yields the same verdict
  * every time, yet open_intent_session fires on every entry, refresh, and WS
  * reconnect — so we skip a intent whose CURRENT dead session is already
@@ -70,7 +70,7 @@ export function clearJudgedSession(id: string): void {
 export function enrichRunStatus(items: Intent[]): Intent[] {
   return items.map((r) => {
     if (r.status !== 'in_progress') return r
-    if (r.lastDevSessionId && isRunning(r.lastDevSessionId))
+    if (r.lastWorkSessionId && isRunning(r.lastWorkSessionId))
       return { ...r, runStatus: 'running' as const }
     const cached = runStatusCache.get(r.id)
     if (cached) return { ...r, runStatus: cached }

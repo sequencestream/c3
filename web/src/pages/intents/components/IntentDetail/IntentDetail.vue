@@ -20,7 +20,7 @@ export function __resetWriteSpecGuards(): void {
  * IntentDetail.vue — 需求页右栏:选中意图的详情面板(常驻头部 + 四 tab)。
  *
  * 顶部常驻头部为单行标题栏:左为意图标题 + 模块 + 优先级 + 状态,右为全部操作
- * (四态主按钮 + refine / open dev session / mark done / cancel / create PR / copy PR /
+ * (四态主按钮 + refine / open work session / mark done / cancel / create PR / copy PR /
  * automate 切换)——无论在哪个 tab 都可见。其下为 tab 条 + tab 内容,四 tab:
  *   - intent       意图正文 markdown + Git/PR 元信息 + 依赖编辑器
  *   - intent session 该意图的 refine/沟通会话(intentSessionId),复用 ChatColumn
@@ -65,7 +65,7 @@ const props = defineProps<{
   intentActionErrorSeq?: number
   /** Per-intent one-shot PR/MR sync feedback from the control layer. */
   intentPrSync?: Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
-  /** 当前 workspace 的 SDD 总开关,驱动主操作按钮四态(关→Start Dev)。 */
+  /** 当前 workspace 的 SDD 总开关,驱动主操作按钮四态(关→Start Work)。 */
   sddEnabled?: boolean
   /** 当前 workspace 配置的主分支;intent 分支与其相同时不显示 Create PR。 */
   workspaceMainBranch?: string | null
@@ -353,7 +353,7 @@ const showCreatePr = computed<boolean>(() => {
   return (
     !!r &&
     branchName !== null &&
-    !!r.lastDevSessionId &&
+    !!r.lastWorkSessionId &&
     !r.prId &&
     !isIntentOnWorkspaceMainBranch(r.branchName, props.workspaceMainBranch)
   )
@@ -520,10 +520,10 @@ const resetDialogOpen = ref(false)
 const resetDialogTarget = ref<'intentSession' | 'specSession'>('intentSession')
 
 const canResetIntentSession = computed<boolean>(
-  () => !!props.intent && !props.intent.lastDevSessionId,
+  () => !!props.intent && !props.intent.lastWorkSessionId,
 )
 const canResetSpecSession = computed<boolean>(
-  () => !!props.intent && !props.intent.lastDevSessionId && !!props.intent.specPath,
+  () => !!props.intent && !props.intent.lastWorkSessionId && !!props.intent.specPath,
 )
 const showSpecApproveAction = computed<boolean>(
   () => !!props.intent && props.intent.status === 'todo' && mainAction.value === 'approveSpec',
@@ -633,15 +633,15 @@ defineExpose({
                 {{ mainActionLabel }}
               </button>
               <button
-                v-if="intent.lastDevSessionId"
+                v-if="intent.lastWorkSessionId"
                 class="req-btn"
-                @click="emit('open-dev', intent.lastDevSessionId as string)"
+                @click="emit('open-dev', intent.lastWorkSessionId as string)"
               >
                 {{ t('intent.action.session.label') }}
               </button>
               <button
                 v-if="
-                  intent.lastDevSessionId &&
+                  intent.lastWorkSessionId &&
                   intent.status !== 'done' &&
                   intent.status !== 'cancelled'
                 "

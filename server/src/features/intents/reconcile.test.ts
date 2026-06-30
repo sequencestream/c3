@@ -24,7 +24,7 @@ function makeReq(overrides: Partial<Intent> = {}): Intent {
     module: '',
     status: 'in_progress',
     dependsOn: [],
-    lastDevSessionId: 'sess-abc',
+    lastWorkSessionId: 'sess-abc',
     automate: false,
     branchName: null,
     latestCommitHash: null,
@@ -68,8 +68,8 @@ afterEach(() => {
 
 describe('reconcileInProgress', () => {
   describe('branch 1 — process still running', () => {
-    it('returns running for a intent whose dev session is in-flight', async () => {
-      const req = makeReq({ lastDevSessionId: 'sess-live' })
+    it('returns running for a intent whose work session is in-flight', async () => {
+      const req = makeReq({ lastWorkSessionId: 'sess-live' })
       const deps = mockDeps({ isRunning: (id) => id === 'sess-live' })
 
       const results = await reconcileInProgress([req], PROJECT, deps, SIGNAL)
@@ -82,8 +82,8 @@ describe('reconcileInProgress', () => {
       })
     })
 
-    it('returns running when lastDevSessionId is set and isRunning returns true, ignoring transcript/judge', async () => {
-      const req = makeReq({ lastDevSessionId: 'sess-live' })
+    it('returns running when lastWorkSessionId is set and isRunning returns true, ignoring transcript/judge', async () => {
+      const req = makeReq({ lastWorkSessionId: 'sess-live' })
       const judgeSpy = vi.fn()
       const loadSpy = vi.fn()
       const deps = mockDeps({
@@ -103,7 +103,7 @@ describe('reconcileInProgress', () => {
 
   describe('branch 2 — process dead, judge says done (auto-complete)', () => {
     it('commits, pushes, and marks done when judge returns done', async () => {
-      const req = makeReq({ lastDevSessionId: 'sess-dead', title: '自动完成测试' })
+      const req = makeReq({ lastWorkSessionId: 'sess-dead', title: '自动完成测试' })
       const commitSpy = vi.fn().mockResolvedValue({ ok: true, committed: true })
       const updateSpy = vi.fn()
 
@@ -132,7 +132,7 @@ describe('reconcileInProgress', () => {
     })
 
     it('uses the intent worktree for transcript, judge, and commit when the process is dead', async () => {
-      const req = makeReq({ id: 'worktree-intent', lastDevSessionId: 'sess-dead' })
+      const req = makeReq({ id: 'worktree-intent', lastWorkSessionId: 'sess-dead' })
       const worktreePath = '/abs/worktrees/intent-worktree-intent'
       const loadSpy = vi.fn().mockResolvedValue(['已完成所有任务'])
       const judgeSpy = vi.fn().mockResolvedValue({ verdict: 'done', reason: '实现完整' })
@@ -167,7 +167,7 @@ describe('reconcileInProgress', () => {
     })
 
     it('keeps the workspace root for transcript, judge, and commit in current-branch mode', async () => {
-      const req = makeReq({ id: 'current-branch-intent', lastDevSessionId: 'sess-dead' })
+      const req = makeReq({ id: 'current-branch-intent', lastWorkSessionId: 'sess-dead' })
       const loadSpy = vi.fn().mockResolvedValue(['已完成所有任务'])
       const judgeSpy = vi.fn().mockResolvedValue({ verdict: 'done', reason: '实现完整' })
       const commitSpy = vi.fn().mockResolvedValue({ ok: true, committed: true })
@@ -195,7 +195,7 @@ describe('reconcileInProgress', () => {
     })
 
     it('does NOT auto-complete when commit/push fails (keeps dangling)', async () => {
-      const req = makeReq({ lastDevSessionId: 'sess-dead' })
+      const req = makeReq({ lastWorkSessionId: 'sess-dead' })
       const commitSpy = vi
         .fn()
         .mockResolvedValue({ ok: false, committed: false, error: 'git push 失败' })
@@ -220,7 +220,7 @@ describe('reconcileInProgress', () => {
 
   describe('branch 3 — process dead, judge says in_progress (dangling)', () => {
     it('marks dangling when judge returns in_progress', async () => {
-      const req = makeReq({ lastDevSessionId: 'sess-dead' })
+      const req = makeReq({ lastWorkSessionId: 'sess-dead' })
       const commitSpy = vi.fn()
       const updateSpy = vi.fn()
 
@@ -247,7 +247,7 @@ describe('reconcileInProgress', () => {
 
   describe('branch 4 — process dead, judge says stuck (dangling)', () => {
     it('marks dangling when judge returns stuck', async () => {
-      const req = makeReq({ lastDevSessionId: 'sess-dead' })
+      const req = makeReq({ lastWorkSessionId: 'sess-dead' })
       const commitSpy = vi.fn()
       const updateSpy = vi.fn()
 
@@ -278,8 +278,8 @@ describe('reconcileInProgress', () => {
       expect(results).toEqual([])
     })
 
-    it('marks dangling when lastDevSessionId is null (no dev session ever)', async () => {
-      const req = makeReq({ lastDevSessionId: null })
+    it('marks dangling when lastWorkSessionId is null (no work session ever)', async () => {
+      const req = makeReq({ lastWorkSessionId: null })
       const deps = mockDeps({
         isRunning: () => false,
         loadTranscriptMessages: async () => {
@@ -298,7 +298,7 @@ describe('reconcileInProgress', () => {
     })
 
     it('marks dangling when transcript loading throws', async () => {
-      const req = makeReq({ lastDevSessionId: 'sess-gone' })
+      const req = makeReq({ lastWorkSessionId: 'sess-gone' })
       const judgeSpy = vi.fn()
 
       const deps = mockDeps({
@@ -318,9 +318,9 @@ describe('reconcileInProgress', () => {
 
     it('processes multiple intents independently', async () => {
       // Three intents: one running, one done, one dangling
-      const r1 = makeReq({ id: 'r1', lastDevSessionId: 'sess-running', title: '运行中' })
-      const r2 = makeReq({ id: 'r2', lastDevSessionId: 'sess-done', title: '完成' })
-      const r3 = makeReq({ id: 'r3', lastDevSessionId: 'sess-stuck', title: '卡住' })
+      const r1 = makeReq({ id: 'r1', lastWorkSessionId: 'sess-running', title: '运行中' })
+      const r2 = makeReq({ id: 'r2', lastWorkSessionId: 'sess-done', title: '完成' })
+      const r3 = makeReq({ id: 'r3', lastWorkSessionId: 'sess-stuck', title: '卡住' })
 
       const commitSpy = vi.fn().mockResolvedValue({ ok: true, committed: true })
       const updateSpy = vi.fn()

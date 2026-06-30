@@ -314,7 +314,7 @@ export function createState(deps: StateDeps) {
   )
 
   // Per-workspace SDD master switch, rebroadcast with every intent list. Drives
-  // the SDD-aware intent action button (Write Spec / Approve Spec / Start Dev)
+  // the SDD-aware intent action button (Write Spec / Approve Spec / Start Work)
   // without a separate workspace-setting fetch.
   const intentsSdd = ref<Record<string, boolean>>({})
   const currentIntentsSdd = computed<boolean>(() =>
@@ -492,7 +492,7 @@ export function createState(deps: StateDeps) {
   // title-bar jump button, consumed + cleared by Intents.vue once applied).
   const requestedIntentId = ref<string | null>(null)
   // One-shot request to select a specific work session on the console tab. It can
-  // wait first for the intent's last dev session id, then for that work row.
+  // wait first for the intent's last work session id, then for that work row.
   const requestedWorkSessionId = ref<PendingWorkSessionSelectRequest | null>(null)
   // One-shot request to force IntentDetail to switch to a specific sub-tab (set by
   // the WorkCenter jump-to-source, consumed + cleared by IntentDetail once applied).

@@ -33,7 +33,7 @@ export function statusLabel(s: IntentStatus): string {
 /**
  * 派生运行态中文标签。仅 `in_progress` 状态的需求有非 `idle` 的运行态,
  * `idle` 不显示独立标签(由 `.req-status` 的「开发中」标签覆盖)。
- * - `running` → 绿色脉冲,表示 dev session 进程存活。
+ * - `running` → 绿色脉冲,表示 work session 进程存活。
  * - `dangling` → 橙色警告,表示进程已死但需求尚未完成。
  * - `idle` → 空字符串,不渲染(默认态,包括已完成/未开始的需求)。
  */
@@ -148,7 +148,7 @@ export function hasDependencyBlockingSpecSession(
 /** 裁决行内操作可见性所需的最小字段集(便于测试轻量构造)。 */
 export type IntentActionInput = Pick<
   Intent,
-  'status' | 'lastDevSessionId' | 'prId' | 'branchName'
+  'status' | 'lastWorkSessionId' | 'prId' | 'branchName'
 > & {
   workspaceMainBranch?: string | null
 }
@@ -156,9 +156,9 @@ export type IntentActionInput = Pick<
 /**
  * 单个意图行在当前状态下应显示哪些行内操作,按渲染顺序返回。
  * 条件沿用 IntentList 模板既有的 per-status 渲染规则:
- * - `refine`/`startDev` ← `todo`;`openSession` ← 有 `lastDevSessionId`;
+ * - `refine`/`startDev` ← `todo`;`openSession` ← 有 `lastWorkSessionId`;
  * - `markDone`/`cancel` ← 非终止态(非 done/cancelled);
- * - `createPr` ← 有 `lastDevSessionId`、无 `prId` 且 intent 分支存在并不是 workspace 主分支;
+ * - `createPr` ← 有 `lastWorkSessionId`、无 `prId` 且 intent 分支存在并不是 workspace 主分支;
  * - `prLink` ← 有 `prId`;`automate` ← 恒显示。
  */
 export function visibleIntentActions(r: IntentActionInput): IntentRowAction[] {
@@ -167,9 +167,9 @@ export function visibleIntentActions(r: IntentActionInput): IntentRowAction[] {
   const onMainBranch = isIntentOnWorkspaceMainBranch(r.branchName, r.workspaceMainBranch)
   const out: IntentRowAction[] = []
   if (r.status === 'todo') out.push('refine', 'startDev')
-  if (r.lastDevSessionId) out.push('openSession')
+  if (r.lastWorkSessionId) out.push('openSession')
   if (!terminal) out.push('markDone', 'cancel')
-  if (r.lastDevSessionId && !r.prId && branchName !== null && !onMainBranch) out.push('createPr')
+  if (r.lastWorkSessionId && !r.prId && branchName !== null && !onMainBranch) out.push('createPr')
   if (r.prId) out.push('prLink')
   out.push('automate')
   return out

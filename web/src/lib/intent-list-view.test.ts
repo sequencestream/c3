@@ -30,7 +30,7 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     status: 'todo',
     dependsOn: [],
     dependsOnTypes: {},
-    lastDevSessionId: null,
+    lastWorkSessionId: null,
     automate: true,
     createdAt: 1,
     updatedAt: 1,
@@ -148,13 +148,13 @@ describe('rowVisibility', () => {
 describe('visibleIntentActions', () => {
   const make = (o: Partial<IntentActionInput>): IntentActionInput => ({
     status: 'todo',
-    lastDevSessionId: null,
+    lastWorkSessionId: null,
     prId: null,
     branchName: null,
     ...o,
   })
 
-  it('todo:Refine/Start dev/Mark done/Cancel/automate(无 session/无 PR)', () => {
+  it('todo:Refine/Start work/Mark done/Cancel/automate(无 session/无 PR)', () => {
     expect(visibleIntentActions(make({ status: 'todo' }))).toEqual([
       'refine',
       'startDev',
@@ -164,8 +164,8 @@ describe('visibleIntentActions', () => {
     ])
   })
 
-  it('有 lastDevSessionId 时插入 openSession(顺序在 cancel 之前)', () => {
-    expect(visibleIntentActions(make({ status: 'todo', lastDevSessionId: 's-1' }))).toEqual([
+  it('有 lastWorkSessionId 时插入 openSession(顺序在 cancel 之前)', () => {
+    expect(visibleIntentActions(make({ status: 'todo', lastWorkSessionId: 's-1' }))).toEqual([
       'refine',
       'startDev',
       'openSession',
@@ -175,7 +175,7 @@ describe('visibleIntentActions', () => {
     ])
   })
 
-  it('in_progress:无 Refine/Start dev,有 Mark done/Cancel/automate', () => {
+  it('in_progress:无 Refine/Start work,有 Mark done/Cancel/automate', () => {
     expect(visibleIntentActions(make({ status: 'in_progress' }))).toEqual([
       'markDone',
       'cancel',
@@ -187,12 +187,12 @@ describe('visibleIntentActions', () => {
     expect(visibleIntentActions(make({ status: 'done' }))).toEqual(['automate'])
   })
 
-  it('有 dev session、无 prId 且 intent 分支不等于 workspace 主分支:显示 Create PR', () => {
+  it('有 work session、无 prId 且 intent 分支不等于 workspace 主分支:显示 Create PR', () => {
     expect(
       visibleIntentActions(
         make({
           status: 'in_progress',
-          lastDevSessionId: 'dev-1',
+          lastWorkSessionId: 'dev-1',
           branchName: 'feature/x',
           workspaceMainBranch: 'main',
         }),
@@ -200,7 +200,7 @@ describe('visibleIntentActions', () => {
     ).toEqual(['openSession', 'markDone', 'cancel', 'createPr', 'automate'])
   })
 
-  it('无 dev session 时不显示 Create PR', () => {
+  it('无 work session 时不显示 Create PR', () => {
     expect(
       visibleIntentActions(
         make({ status: 'in_progress', branchName: 'feature/x', workspaceMainBranch: 'main' }),
@@ -519,7 +519,7 @@ describe('formatDependsOn', () => {
       module: '',
       status: 'todo',
       dependsOn: [],
-      lastDevSessionId: null,
+      lastWorkSessionId: null,
       automate: false,
       branchName: null,
       latestCommitHash: null,

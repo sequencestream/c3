@@ -602,18 +602,18 @@
   },
   "intent": {
     "startDev": {
-      "confirmUnfinishedDeps": "この意図には未完了の依存があります。それでも開発を開始しますか?"
+      "confirmUnfinishedDeps": "この意図には未完了の依存があります。それでも作業を開始しますか?"
     },
     "devLaunch": {
-      "title": "開発を起動しています…",
+      "title": "作業を開始しています…",
       "step": {
         "fetchRemoteMain": "リモートメインブランチを取得",
         "prepareWorktree": "worktree を準備",
-        "launchSession": "開発セッションを起動",
+        "launchSession": "作業セッションを起動",
         "enterSession": "セッションに入る"
       },
-      "failed": "開発の起動に失敗しました。",
-      "timeout": "開発の起動を確認できませんでした。もう一度お試しください。"
+      "failed": "作業の開始に失敗しました。",
+      "timeout": "作業の開始を確認できませんでした。もう一度お試しください。"
     },
     "specLaunch": {
       "title": "Spec セッションを開始中…",
@@ -698,7 +698,7 @@
         "label": "下書きに戻す"
       },
       "startDev": {
-        "label": "開発開始"
+        "label": "作業開始"
       },
       "writeSpec": {
         "label": "spec を作成"
@@ -1462,7 +1462,7 @@
             "label": "作成済み"
           },
           "devStarted": {
-            "label": "開発開始"
+            "label": "作業開始"
           },
           "done": {
             "label": "完了"
@@ -1524,24 +1524,24 @@
       "notFound": "意図が見つかりません。",
       "dbUnavailable": "意図機能は利用できません(c3.db)。",
       "chatOpenFailed": "意図セッションを開けませんでした。",
-      "cannotStartDev": "ステータス \"{status}\" からは開発を開始できません。",
+      "cannotStartDev": "ステータス \"{status}\" からは作業を開始できません。",
       "devStartInFlight": "この意図の開発はすでに開始中です。",
       "illegalStatusTransition": "ステータスを \"{from}\" から \"{to}\" に変更できません。",
       "chatSessionNotFound": "Intent session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "prCreateFailed": "PRの作成に失敗しました: {detail}。",
-      "gitCleanupNoChanges": "開発セッションが終了しましたが、コミットする変更がありません。手動でコミット・プッシュし、PRを作成してください。",
-      "gitCleanupCommitPushFailed": "開発セッション後の自動コミット/プッシュに失敗しました: {detail}。手動で対応してください。",
+      "gitCleanupNoChanges": "作業セッションが終了しましたが、コミットする変更がありません。手動でコミット・プッシュし、PRを作成してください。",
+      "gitCleanupCommitPushFailed": "作業セッション後の自動コミット/プッシュに失敗しました: {detail}。手動で対応してください。",
       "gitCleanupGhUnavailable": "PRを作成できません。gh CLIが利用できないかログインしていません: {detail}。gh をインストール/認証してから手動でPRを作成してください。",
       "gitCleanupPrFailed": "PRの自動作成に失敗しました: {detail}。手動でPRを作成してください。",
       "worktreeCreateFailed": "ワークツリーの作成に失敗しました: {message}。",
-      "pullFailed": "現在のブランチがリモートと分岐しており、ファストフォワードできません。開発を開始する前に手動で同期してください: {message}",
+      "pullFailed": "現在のブランチがリモートと分岐しており、ファストフォワードできません。作業を開始する前に手動で同期してください: {message}",
       "dependencyNotMerged": "依存関係\"{title}\"({id})がまだメインブランチにマージされていません。",
       "specAgentUnsupported": "spec の作成には Claude エージェントが必要です。設定された spec エージェントは書き込みを spec ディレクトリ内に制限できません。",
       "specWriteFailed": "spec ドキュメントの作成に失敗しました: {message}。",
       "specNotWritten": "spec がまだ作成されていません。承認する前に作成してください。",
-      "specNotApproved": "spec がまだ承認されていません。開発を開始する前に承認してください。"
+      "specNotApproved": "spec がまだ承認されていません。作業を開始する前に承認してください。"
     },
     "discussion": {
       "dbUnavailable": "ディスカッション機能は利用できません(c3.db)。",
@@ -1818,7 +1818,7 @@
       "title": {
         "label": "Git ブランチモード"
       },
-      "hint": "このワークスペースで「開発を開始」がブランチをどう扱うか:現在のブランチでその場で開発するか、開発エージェントを git worktree に分離します。",
+      "hint": "このワークスペースで「作業を開始」がブランチをどう扱うか:現在のブランチでその場で開発するか、開発エージェントを git worktree に分離します。",
       "option": {
         "currentBranch": {
           "label": "現在のブランチ(その場で開発)"

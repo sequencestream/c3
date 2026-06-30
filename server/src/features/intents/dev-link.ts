@@ -1,9 +1,9 @@
 /**
- * Intent↔dev-session early-bind linkage — feature-private (ADR-0009).
+ * Intent↔work-session early-bind linkage — feature-private (ADR-0009).
  *
  * A minimal pending→intentId registration table used by manual
  * `start_development` so the resident `run:bound` subscription can flip the
- * dependent intent to `in_progress` and link the real dev session id as soon as
+ * dependent intent to `in_progress` and link the real work session id as soon as
  * the SDK reports the first bind, without the launch handler subscribing to the
  * event bus itself.
  *
@@ -39,7 +39,7 @@ export function releaseDevLaunch(intentId: string): void {
 }
 
 /**
- * Register an intent-to-be-started's pending dev session id, so the resident
+ * Register an intent-to-be-started's pending work session id, so the resident
  * `run:bound` subscription can link it on first bind. Called by the
  * `start_development` handler just before `ctx.launchRun`.
  */

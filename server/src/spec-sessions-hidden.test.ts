@@ -3,7 +3,7 @@
  * an intent's spec session (`spec_session_id`) is NOT a user work session and
  * must NOT appear in the Work Sessions list, alongside the existing
  * comm-session hidden set. A normal session and an intent dev session
- * (`last_dev_session_id`) must keep showing — the filter key is strictly the
+ * (`last_work_session_id`) must keep showing — the filter key is strictly the
  * spec session id.
  *
  * The SDK `listSessions` is mocked (as in `list-sessions.test.ts`) so the
@@ -70,7 +70,7 @@ describe('listSessionsVia — spec-session hidden filter', () => {
     const ids = out.map((s) => s.sessionId)
     expect(ids).not.toContain('spec-1')
     expect(ids).toContain('normal-1')
-    // The dev session (`last_dev_session_id`, not `spec_session_id`) is a real
+    // The dev session (`last_work_session_id`, not `spec_session_id`) is a real
     // work session and must survive the filter.
     expect(ids).toContain('dev-1')
   })

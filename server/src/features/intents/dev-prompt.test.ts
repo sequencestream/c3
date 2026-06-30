@@ -1,7 +1,7 @@
 /**
  * Dev-launch prompt construction + the SDD forced gate.
  *
- * `buildDevPrompt` splits a dev session's first turn into three delivery channels
+ * `buildDevPrompt` splits a work session's first turn into three delivery channels
  * (hide-session-system-instructions): `systemInstruction` (the SDD work contract),
  * `userTurnPrefix` (a slash-command dev skill), and `visible` (the client echo). An
  * internal instruction must NEVER leak into `visible`; the visible body stays

@@ -25,6 +25,6 @@
 - [intent-management-spec.md](intent-management-spec.md) — entities, state machine, user stories US-1..US-9, business rules
   (incl. the automation orchestrator RM-A1–A9)
 - [intent-management-design.md](intent-management-design.md) — SQLite driver adapter, communication-runtime variant, save tool,
-  launch-development wiring, automation orchestrator (state machine + completion judge + git helper)
+  start-work wiring, automation orchestrator (state machine + completion judge + git helper)
 - [intent-management-models.md](intent-management-models.md) — Intent / Intent Dependency / Communication Session /
   Automation Status entities

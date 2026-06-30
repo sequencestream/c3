@@ -20,7 +20,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     status: 'todo',
     dependsOn: [],
     dependsOnTypes: {},
-    lastDevSessionId: null,
+    lastWorkSessionId: null,
     automate: false,
     createdAt: 1,
     updatedAt: 1,
@@ -173,7 +173,7 @@ describe('IntentDetail.vue — start dev in-flight guard', () => {
 })
 
 describe('IntentDetail.vue — SDD four-state main action', () => {
-  it('SDD off → Start Dev (regardless of spec fields)', () => {
+  it('SDD off → Start Work (regardless of spec fields)', () => {
     const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specApproved: false })
     const w = mountDetail(item, { sddEnabled: false })
     expect(w.find('.req-btn.primary').attributes('data-action')).toBe('startDev')
@@ -199,7 +199,7 @@ describe('IntentDetail.vue — SDD four-state main action', () => {
     expect(w.emitted('approve-spec')).toBeUndefined()
   })
 
-  it('SDD on + spec approved → Start Dev, emits start-dev', async () => {
+  it('SDD on + spec approved → Start Work, emits start-dev', async () => {
     const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specApproved: true })
     const w = mountDetail(item, { sddEnabled: true })
     const btn = w.find('.req-btn.primary')
@@ -346,7 +346,7 @@ describe('IntentDetail.vue — spec action guidance (auto-switch + approve gate 
 
 describe('IntentDetail.vue — actions', () => {
   it('emits set-status done from the mark-done button', async () => {
-    const item = intent({ id: 'intent-1', status: 'in_progress', lastDevSessionId: 'dev-1' })
+    const item = intent({ id: 'intent-1', status: 'in_progress', lastWorkSessionId: 'dev-1' })
     const w = mountDetail(item)
 
     await w.find('[data-action="markDone"]').trigger('click')
@@ -354,8 +354,8 @@ describe('IntentDetail.vue — actions', () => {
     expect(w.emitted('set-status')).toEqual([['intent-1', 'done']])
   })
 
-  it('hides mark-done until a dev session exists', () => {
-    const item = intent({ id: 'intent-1', status: 'in_progress', lastDevSessionId: null })
+  it('hides mark-done until a work session exists', () => {
+    const item = intent({ id: 'intent-1', status: 'in_progress', lastWorkSessionId: null })
     const w = mountDetail(item)
 
     expect(w.find('[data-action="markDone"]').exists()).toBe(false)
@@ -375,7 +375,7 @@ describe('IntentDetail.vue — actions', () => {
       id: 'intent-1',
       status: 'in_progress',
       branchName: 'feature/work',
-      lastDevSessionId: 'dev-1',
+      lastWorkSessionId: 'dev-1',
     })
     const w = mountDetail(item)
 
@@ -391,12 +391,12 @@ describe('IntentDetail.vue — actions', () => {
     expect(w.find('[data-action="createPr"]').exists()).toBe(false)
   })
 
-  it('hides create-pr when no dev session exists', () => {
+  it('hides create-pr when no work session exists', () => {
     const item = intent({
       id: 'intent-1',
       status: 'in_progress',
       branchName: 'feature/work',
-      lastDevSessionId: null,
+      lastWorkSessionId: null,
     })
     const w = mountDetail(item)
 
@@ -760,7 +760,7 @@ describe('IntentDetail.vue — session reset', () => {
       specPath: '.specs/x/spec.md',
       dependsOn: ['dep'],
       dependsOnTypes: { dep: 'blocks' },
-      lastDevSessionId: 'dev-1',
+      lastWorkSessionId: 'dev-1',
     })
     const w = mountDetail(current, {
       intents: [dep, current],
@@ -775,13 +775,13 @@ describe('IntentDetail.vue — session reset', () => {
     expect(modify.attributes('title')).toBeTruthy()
   })
 
-  it('hides modify buttons once a dev session exists', async () => {
+  it('hides modify buttons once a work session exists', async () => {
     const item = intent({
       id: 'i1',
       intentSessionId: 'sess-refine',
       specPath: '.specs/x/spec.md',
       specSessionId: 'sess-spec',
-      lastDevSessionId: 'dev-1',
+      lastWorkSessionId: 'dev-1',
     })
     const w = mountDetail(item)
 

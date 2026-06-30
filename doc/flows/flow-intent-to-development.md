@@ -2,7 +2,7 @@
 
 **Scenario.** The user has an idea against a project. A read-only communication agent refines it
 into discrete, verifiable intents; the user confirms them into the ledger; then launches one into a
-background development session and follows its progress via a back-link.
+background work session and follows its progress via a back-link.
 
 **Domains.** intent-management · agent-session · permission-gateway · session-registry · agent-config.
 
@@ -24,7 +24,7 @@ flowchart TD
     LEDGER -. SDD on .-> APPROVE[approve_spec — human checkpoint]
     APPROVE --> LEDGER
     LEDGER --> LAUNCH[start_development]
-    LAUNCH --> DEV[background dev session<br/>standard gated loop]
+    LAUNCH --> DEV[background work session<br/>standard gated loop]
     DEV --> LINK[back-link · select_session]
     DEV -. dead process on entry .-> REC[reconcile auto-done]
 ```
@@ -102,21 +102,21 @@ flowchart TD
 
 1. **Four-state action button.** When the workspace's SDD switch (`sddEnabled`) is on, the intent's
    primary action button is SDD-aware: no spec ⇒ `Write Spec`; spec written but unapproved ⇒
-   `Approve Spec`; spec approved ⇒ `Start Dev` (SDD off ⇒ always `Start Dev`). `sddEnabled` rides
+   `Approve Spec`; spec approved ⇒ `Start Work` (SDD off ⇒ always `Start Work`). `sddEnabled` rides
    every intent-list broadcast so the button needs no separate settings fetch (`RM-R22`, `WC-R25`).
 2. **web-console → intent-management.** `Approve Spec` sends `approve_spec`. The server sets
    `spec_approved=true` and records the approving user (the current login subject) in
    `spec_approve_user`, then re-broadcasts the list — single-person confirmation, no multi-sign or
    un-approve in this phase; approving before a spec exists is rejected (`RM-R22`). Approval is the
    **human checkpoint that gates development**: it clears the gate so the button advances to
-   `Start Dev` but does **not** itself launch development. The automation orchestrator uses the
+   `Start Work` but does **not** itself launch development. The automation orchestrator uses the
    same checkpoint as an eligibility gate: with SDD on, queued `automate` intents are skipped until
    `spec_approved=true`; with SDD off, automation does not require a spec.
 
-## Launch development
+## Start work
 
 1. **web-console → intent-management.** A `todo` item's Launch button sends `start_development`,
-   allowed when `todo` or `in_progress` with a dangling dev session (`RM-R8`). The server
+   allowed when `todo` or `in_progress` with a dangling work session (`RM-R8`). The server
    synchronously **claims** the `intentId` in a single-process launch set; a concurrent duplicate
    start returns `intent.devStartInFlight` and creates nothing (`RM-R8`).
 2. **Git branch mode (`WorkspaceSetting.gitBranchMode`).** `worktree` ⇒ create/reuse an isolated
@@ -125,7 +125,7 @@ flowchart TD
    `defaultMainBranch` when there is no remote, the remote branch is unavailable, or fetch fails;
    `current-branch` (default) ⇒ develop in place. Worktree startup never auto-merges/rebases the
    user's local main checkout, and the local main branch's stale/diverged/non-current state does
-   not select the new worktree base. The dev session's effective working directory is set
+   not select the new worktree base. The work session's effective working directory is set
    accordingly (`RM-R8`).
 3. **intent-management → agent-session.** A **background normal session** is started with the
    shared dev prompt builder used by both manual launch and automation. The visible turn carries
@@ -133,7 +133,7 @@ flowchart TD
    path exists, it also carries the approved spec-path note. Internal launch channels stay out of
    the visible echo: `devSkill` rides the model user-turn prefix, and when no `devSkill` is
    configured SDD's work-session prompt rides the system-instruction channel (`RM-R23`). The intent
-   moves to `in_progress` and records `lastDevSessionId` (`RM-R8`). The dev session is a normal
+   moves to `in_progress` and records `lastWorkSessionId` (`RM-R8`). The work session is a normal
    session — it appears in the sidebar, stamped to sort to the top, fanned out to every connection
    on bind/settle (`SR-R13`). For Codex-backed manual launches, the projection title starts as the
    source intent title and run-end persistence must not replace it with a default placeholder while
@@ -147,7 +147,7 @@ flowchart TD
    git branch phase), and `launching` (before the spawn); the previously-silent async launch failure
    now emits `failed`. The web console arms a blocking startup overlay on the click, **shows it
    immediately, and keeps it visible for a minimum duration to prevent flashing**, stepping through
-   an ordered list aligned to those stages: 拉取远程主分支、准备 worktree、启动开发会话、进入会话。 The overlay closes on the success
+   an ordered list aligned to those stages: 拉取远程主分支、准备 worktree、开始工作会话、进入会话。 The overlay closes on the success
    terminal (the target intent flipping to `in_progress` in the regular `intents` broadcast),
    on `failed` / an `intent.*` action error, and on a safety timeout so a lost signal never traps
    the user. Synchronous validation failures stay on the `error` channel and emit no progress.
@@ -155,15 +155,15 @@ flowchart TD
 
 ## Back-link & status
 
-- **Development back-link.** A launched item's Development-details entry opens `lastDevSessionId`
+- **Work-session back-link.** A launched item's Development-details entry opens `lastWorkSessionId`
   via `select_session` (history + live stream, `RM-R13`). A deleted session yields a friendly
   restart/cancel prompt, not a crash (`RM-R13`).
 - **Reconcile on entry (`RM-R18`).** On `open_intent_chat`, each `in_progress` intent's
-  `lastDevSessionId` is checked against the process table: a **dead** process whose last 3 assistant
+  `lastWorkSessionId` is checked against the process table: a **dead** process whose last 3 assistant
   messages the completion judge confirms `done` is **auto-completed** (commit + push +
   status set to `done`) — for manual **and** automation runs alike; a live process derives
   `runStatus = 'running'`; otherwise `dangling`. This is one of the two auto-`done` paths.
-- **Session-end Git/PR cleanup (manual, `RM-R26`).** When a **manually-started** dev session settles
+- **Session-end Git/PR cleanup (manual, `RM-R26`).** When a **manually-started** work session settles
   (complete / error / terminated), the server closes the Git/PR loop **without** changing status. In
   `worktree` mode (or `current-branch` off the `defaultMainBranch`) with changes present it commits,
   pushes, and creates a PR/MR through the workspace's forge-aware dispatcher: an explicit

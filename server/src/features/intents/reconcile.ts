@@ -4,7 +4,7 @@
  * {@link IntentRunStatus} against the live process table.
  *
  * For each in_progress intent:
- * 1. If `lastDevSessionId` points to a STILL-RUNNING process → `running`.
+ * 1. If `lastWorkSessionId` points to a STILL-RUNNING process → `running`.
  * 2. Otherwise (process dead — server restart, crash, or normal exit) →
  *    load the session transcript's **last 3 assistant messages**, run the
  *    completion judge (`done`/`in_progress`/`stuck`):
@@ -84,19 +84,19 @@ export async function reconcileInProgress(
         : workspacePath
 
     // Branch 1: process still running → tracking.
-    if (req.lastDevSessionId && deps.isRunning(req.lastDevSessionId)) {
+    if (req.lastWorkSessionId && deps.isRunning(req.lastWorkSessionId)) {
       results.push({ intentId: req.id, runStatus: 'running', autoCompleted: false })
       continue
     }
 
-    // Branch 2: process is dead (or never had a dev session).
+    // Branch 2: process is dead (or never had a work session).
     // Try to load the last 3 assistant messages from the session transcript.
     let runStatus: IntentRunStatus = 'dangling'
     let autoCompleted = false
 
-    if (req.lastDevSessionId) {
+    if (req.lastWorkSessionId) {
       try {
-        const messages = await deps.loadTranscriptMessages(cwd, req.lastDevSessionId, 3)
+        const messages = await deps.loadTranscriptMessages(cwd, req.lastWorkSessionId, 3)
         // Judge with only the assistant messages (no git evidence — the process
         // is already dead and the working tree may be in any state; the judge
         // will decide from the messages alone).

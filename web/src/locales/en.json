@@ -601,18 +601,18 @@
   },
   "intent": {
     "startDev": {
-      "confirmUnfinishedDeps": "This intent has unfinished dependencies. Start development anyway?"
+      "confirmUnfinishedDeps": "This intent has unfinished dependencies. Start work anyway?"
     },
     "devLaunch": {
-      "title": "Starting development…",
+      "title": "Starting work…",
       "step": {
         "fetchRemoteMain": "Fetch remote main branch",
         "prepareWorktree": "Prepare worktree",
-        "launchSession": "Launch development session",
+        "launchSession": "Launch work session",
         "enterSession": "Enter session"
       },
-      "failed": "Failed to start development.",
-      "timeout": "Couldn't confirm development startup. Please try again."
+      "failed": "Failed to start work.",
+      "timeout": "Couldn't confirm work startup. Please try again."
     },
     "specLaunch": {
       "title": "Starting spec session…",
@@ -697,7 +697,7 @@
         "label": "back to draft"
       },
       "startDev": {
-        "label": "Start dev"
+        "label": "Start work"
       },
       "writeSpec": {
         "label": "Write spec"
@@ -1370,7 +1370,7 @@
             "label": "Created"
           },
           "devStarted": {
-            "label": "Development started"
+            "label": "Work started"
           },
           "done": {
             "label": "Done"
@@ -1526,21 +1526,21 @@
       "chatSessionNotFound": "Intent session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
-      "cannotStartDev": "Cannot start development from status \"{status}\".",
-      "devStartInFlight": "Development is already starting for this intent.",
+      "cannotStartDev": "Cannot start work from status \"{status}\".",
+      "devStartInFlight": "Work is already starting for this intent.",
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
       "prCreateFailed": "PR creation failed: {detail}.",
-      "gitCleanupNoChanges": "The development session ended with no changes to commit. Commit, push, and open a PR manually.",
-      "gitCleanupCommitPushFailed": "Auto commit/push after the development session failed: {detail}. Resolve it manually.",
+      "gitCleanupNoChanges": "The work session ended with no changes to commit. Commit, push, and open a PR manually.",
+      "gitCleanupCommitPushFailed": "Auto commit/push after the work session failed: {detail}. Resolve it manually.",
       "gitCleanupGhUnavailable": "Cannot create the PR — the gh CLI is unavailable or not logged in: {detail}. Install/authenticate gh, then create the PR manually.",
       "gitCleanupPrFailed": "Automatic PR creation failed: {detail}. Create the PR manually.",
       "worktreeCreateFailed": "Worktree creation failed: {message}.",
-      "pullFailed": "The current branch has diverged from the remote and cannot fast-forward. Reconcile it manually before starting development: {message}",
+      "pullFailed": "The current branch has diverged from the remote and cannot fast-forward. Reconcile it manually before starting work: {message}",
       "dependencyNotMerged": "Dependency \"{title}\" ({id}) has not been merged to the main branch yet.",
       "specAgentUnsupported": "Spec authoring requires a Claude agent; the configured spec agent cannot confine writes to the spec directory.",
       "specWriteFailed": "Failed to create the spec document: {message}.",
       "specNotWritten": "The spec has not been written yet; author it before approving.",
-      "specNotApproved": "The spec has not been approved yet; approve it before starting development."
+      "specNotApproved": "The spec has not been approved yet; approve it before starting work."
     },
     "discussion": {
       "dbUnavailable": "Discussions feature unavailable (c3.db).",
@@ -1817,7 +1817,7 @@
       "title": {
         "label": "Git branch mode"
       },
-      "hint": "How Start development handles branches for this workspace: develop in place on the current branch, or isolate the dev agent in a git worktree.",
+      "hint": "How Start workelopment handles branches for this workspace: develop in place on the current branch, or isolate the dev agent in a git worktree.",
       "option": {
         "currentBranch": {
           "label": "Current branch (develop in place)"

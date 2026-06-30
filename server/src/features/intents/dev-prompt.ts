@@ -2,7 +2,7 @@
  * Dev-launch prompt construction — pure, feature-private (ADR-0009).
  *
  * `start_development` turns one intent into the first turn of a background
- * development session, split into the three delivery channels of
+ * work session, split into the three delivery channels of
  * {@link DevPromptParts} so internal instructions never render as a visible user
  * message (hide-session-system-instructions):
  *
@@ -10,7 +10,7 @@
  *      the model user turn to expand; SDD's work-session instruct is NOT stacked on
  *      top — devSkill wins). It is delivered to the model but never echoed.
  *   2. no `devSkill`, SDD on → the SDD work-session instruct rides
- *      `systemInstruction` (the vendor system channel), so a plain dev session works
+ *      `systemInstruction` (the vendor system channel), so a plain work session works
  *      the spec-driven, checkpoint-governed way without showing the contract.
  *   3. SDD off, no `devSkill` → no internal instruction; `visible` is the historic
  *      `title + content + deps`.
@@ -23,7 +23,7 @@
  */
 
 /**
- * The SDD work-session instruct — prefixed to a plain dev session's first prompt
+ * The SDD work-session instruct — prefixed to a plain work session's first prompt
  * when SDD is on and no `devSkill` is configured. It installs, in natural
  * language, the spec-driven, checkpoint-governed working contract (the same hard
  * constraints the c3 SDD flow expects). The English skeleton is fixed, kept out
@@ -69,7 +69,7 @@ export interface DevPromptArgs {
 }
 
 /**
- * A dev session's first turn split into its three delivery channels. The caller
+ * A work session's first turn split into its three delivery channels. The caller
  * routes each one: `systemInstruction` → the vendor system channel,
  * `userTurnPrefix` → the model user turn (not echoed), `visible` → the client echo
  * and the user-turn body.
@@ -84,7 +84,7 @@ export interface DevPromptParts {
 }
 
 /**
- * Build the first turn for a development session from one intent, split into the
+ * Build the first turn for a work session from one intent, split into the
  * three delivery channels (see the module header). The visible body is
  * byte-for-byte the historic `${title}\n\n${content}${depNote}${specNote}`; only the
  * internal prefix is peeled off into `systemInstruction` / `userTurnPrefix`.

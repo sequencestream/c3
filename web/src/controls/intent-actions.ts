@@ -68,7 +68,7 @@ export function installIntentActions(ctx: AppCtx): void {
 
   // Arm the post-`ready` jump: after the deliberate ~1s "已就绪" buffer, flip to
   // the console tab, force the work-session kind, and select this launch's work
-  // session once both the intent's `lastDevSessionId` and the row are available.
+  // session once both the intent's `lastWorkSessionId` and the row are available.
   // The timer lives in `devLaunchTimers` so a new launch / overlay close cancels it.
   ctx.armWorkSessionJump = (intentId: string): void => {
     const workspace = ctx.currentWorkspace.value

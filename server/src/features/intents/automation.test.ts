@@ -16,7 +16,7 @@ vi.mock('./store.js', () => ({
   isStoreAvailable: vi.fn(() => true),
   listIntents: vi.fn(),
   setBranchName: vi.fn(),
-  setLastDevSession: vi.fn(),
+  setLastWorkSession: vi.fn(),
   setPrInfo: vi.fn(),
   updateStatus: vi.fn(),
 }))
@@ -66,7 +66,10 @@ vi.mock('../../kernel/agent-config/index.js', () => ({
   setSessionAgent: vi.fn(),
 }))
 
-vi.mock('../works/work-session-store.js', () => ({
+vi.mock('../sessions/session-metadata-store.js', () => ({
+  deleteByVendorId: vi.fn(),
+  updateRealRowTitle: vi.fn(),
+  upsertBoundRow: vi.fn(),
   upsertPendingRow: vi.fn(),
 }))
 
@@ -128,7 +131,7 @@ import { ensureRuntime, getRuntime } from '../../runs.js'
 import { hasWorkspace } from '../../state.js'
 import { releaseDevLaunch, resetForTests as resetDevLinksForTests } from './dev-link.js'
 import { buildDevSpecNote, SDD_WORK_SESSION_INSTRUCT } from './dev-prompt.js'
-import { upsertPendingRow } from '../works/work-session-store.js'
+import { upsertPendingRow } from '../sessions/session-metadata-store.js'
 
 // ---- Test-only types (mirrors the Handler shape without importing transport) ----
 
@@ -165,7 +168,7 @@ const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
   specApproveUser: null,
   specSessionId: null,
   intentSessionId: null,
-  lastDevSessionId: null,
+  lastWorkSessionId: null,
   ...overrides,
 })
 
@@ -437,6 +440,8 @@ describe('startDevelopment — manual start dep merge validation', () => {
       vendor: 'codex',
       agentId: 'default-agent',
       title: 'Set Codex work session title',
+      ownerKind: 'intent',
+      ownerId: 'B',
     })
   })
 

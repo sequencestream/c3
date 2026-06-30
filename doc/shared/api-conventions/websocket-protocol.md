@@ -210,7 +210,9 @@
 
 ### `start_development`
 
-为 `todo` 状态的 intent 启动后台开发会话，使用可配置的开发 skill（系统设置中的 `devSkill`；默认为空 ⇒ 不加 skill 前缀）。将其设为 `in_progress` 并记录 `lastDevSessionId`（RM-R8）。worktree 模式下会先检查依赖是否已在主线可用；若依赖 intent 已 `done` 但关联 PR/MR 尚未确认合并，启动被拒绝并返回 `intent.dependencyNotMerged`，同时后台对这些依赖 PR/MR 做一次 best-effort 状态同步，完成后重新广播 intents。
+> 历史 wire type 名称保持 `start_development`；用户可见能力是“开始工作”。
+
+为 `todo` 状态的 intent 启动后台工作会话，使用可配置的开发 skill（系统设置中的 `devSkill`；默认为空 ⇒ 不加 skill 前缀）。将其设为 `in_progress` 并记录 `lastWorkSessionId`（RM-R8）。worktree 模式下会先检查依赖是否已在主线可用；若依赖 intent 已 `done` 但关联 PR/MR 尚未确认合并，启动被拒绝并返回 `intent.dependencyNotMerged`，同时后台对这些依赖 PR/MR 做一次 best-effort 状态同步，完成后重新广播 intents。
 
 **字段：** `workspacePath: string`, `intentId: string`
 
@@ -228,7 +230,7 @@
 
 ### `approve_spec`
 
-人工审批检查点:批准 intent 的 spec，置 `spec_approved=true` 并将批准者(当前登录 subject)记入 `spec_approve_user`，随后重新广播 `intents`。单人确认，无多签/撤销;`specPath` 为空(尚未撰写 spec)时拒绝(`error`)。批准本身不启动开发，只让四态按钮推进到 `Start Dev`（intent-management RM-R22）。
+人工审批检查点:批准 intent 的 spec，置 `spec_approved=true` 并将批准者(当前登录 subject)记入 `spec_approve_user`，随后重新广播 `intents`。单人确认，无多签/撤销;`specPath` 为空(尚未撰写 spec)时拒绝(`error`)。批准本身不开始工作，只让四态按钮推进到 `Start Work`（intent-management RM-R22）。
 
 **字段：** `workspaceId: string`, `intentId: string`
 
@@ -552,7 +554,7 @@
 
 ### `dev_launch_progress`
 
-手动 `start_development` 启动的粗粒度阶段进度，按连接定向（非广播），驱动客户端的开发启动进度遮罩。只承载阶段枚举与目标 `intentId`，**不含路径 / 命令 / 错误细节**（不泄露无关内部信息）。`stage` 取值 `fetching-remote-main`（worktree 模式下尝试拉取远程主分支基底前）、`preparing-worktree`（进入 worktree 创建 / 分支 pull 前）、`launching`（拉起开发 agent 进程前）、`failed`（返回后的异步启动失败——修复此前静默失败的缺口）。**成功终态不在此发**：客户端从常规 `intents` 广播中目标意图翻为 `in_progress` 推断就绪并关闭遮罩。
+手动 `start_development` 启动的粗粒度阶段进度，按连接定向（非广播），驱动客户端的工作启动进度遮罩。只承载阶段枚举与目标 `intentId`，**不含路径 / 命令 / 错误细节**（不泄露无关内部信息）。`stage` 取值 `fetching-remote-main`（worktree 模式下尝试拉取远程主分支基底前）、`preparing-worktree`（进入 worktree 创建 / 分支 pull 前）、`launching`（拉起工作 agent 进程前）、`failed`（返回后的异步启动失败——修复此前静默失败的缺口）。**成功终态不在此发**：客户端从常规 `intents` 广播中目标意图翻为 `in_progress` 推断就绪并关闭遮罩。
 
 **字段：** `intentId: string`, `stage: DevLaunchStage`（`'fetching-remote-main' | 'preparing-worktree' | 'launching' | 'failed'`）
 
@@ -651,7 +653,7 @@ discussion 的只读研究 run 的活跃状态：研究 agent 工作时为 `runn
 
 ### `task_list`
 
-开发会话任务列表的完整快照（2026-06-07-009）——**独立的任务线路路径**，使客户端从类型化消息填充其任务面板，而非重新解析 `tool_result.content` 文本。服务器在事件扇出点派生（Claude：从任务工具 `tool_use`/`tool_result` 流）和在冷历史重放时（从基线转录记录，紧随 `session_selected` 之后发送）。主要形式（幂等、重放友好）。`TaskItem` 携带 `order` 供客户端直接消费。
+工作会话任务列表的完整快照（2026-06-07-009）——**独立的任务线路路径**，使客户端从类型化消息填充其任务面板，而非重新解析 `tool_result.content` 文本。服务器在事件扇出点派生（Claude：从任务工具 `tool_use`/`tool_result` 流）和在冷历史重放时（从基线转录记录，紧随 `session_selected` 之后发送）。主要形式（幂等、重放友好）。`TaskItem` 携带 `order` 供客户端直接消费。
 
 **字段：** `tasks: TaskItem[]`
 
@@ -781,7 +783,7 @@ schedule 的执行日志。
 - `workspaceId`：不透明工作区 id（不是路径）。store 持久化绝对 `workspace_path`，读出时经 `pathToId` 映射为 id，因此与 `currentWorkspace` 及各跳转入口（`select_session` / `open_intent_chat` / `open_spec_session` / 讨论 / 计划）期望的 id 一致。工作区已注销的行在读出时被丢弃，绝不下发破损 id。
 - `sessionKind`：产生事件的运行的完整 `SessionKind`（`work | intent | discussion | schedule | consensus | tool | spec`），由调用方原样写入（不再折叠为可跳转子集）；driver 路径取运行的 `sessionKind`、agent 网控路径取 gate 派生。协议层类型为 `string`，前端 `jumpToSource` 据此 switch 路由，未识别取值兜底进控制台。
 - `sessionId`：产生事件的真实会话 id（work/intent/spec 会话 id、discussion id、schedule id），溯源跳转直接据 `sessionKind + sessionId` 路由。为 `null` 时降级到对应列表页且不选中。历史行可能携带意图对象 id（非会话 id），这类行反查不到意图、跳转降级，不回填。
-- `intentId` / `intentTitle`：**读时派生、不落库**。服务端按 `sessionId` 反查所属意图（`intent_sessions` 绑定 + `intents.intent_session_id` comm 会话 + `intents.last_dev_session_id`)，命中则填意图 id 与当前标题（意图改名即时反映），无归属或反查不到为 `null`。`createEvent` 不接受这两个字段。
+- `intentId` / `intentTitle`：**读时派生、不落库**。服务端按 `sessionId` 反查所属意图（`intent_sessions` 绑定 + `intents.intent_session_id` comm 会话 + `intents.last_work_session_id`)，命中则填意图 id 与当前标题（意图改名即时反映），无归属或反查不到为 `null`。`createEvent` 不接受这两个字段。
 
 ### `skill_load_approval_request`
 
@@ -827,7 +829,7 @@ schedule 的执行日志。
 ## 系统配置类型
 
 - **`SystemSettings`** — `{ agents, defaultAgentId, voiceLang?, uiLang?, timezone?, showToolSessions?, degradationChain?, socketAutoResume?, sandboxes?, projectConfigs? }`。持久化为系统级配置。曾有的顶级 `defaultMode`、`consensus`、`devSkill`、`maxRoundsPerStage`、`maxSpeechChars`、`skillRepos` 字段已**废弃**（2026-06-07），移至 `WorkspaceSetting`。
-- **`WorkspaceSetting`** — `{ defaultMode?, consensus?, devSkill?, maxRoundsPerStage?, maxSpeechChars?, skillRepos?, gitBranchMode?, defaultMainBranch?, sandbox? }`。工作区级设置，键控于 `SystemSettings.projectConfigs`（on-disk 键名仍为 `projectConfigs`，兼容旧数据）。`defaultMode` 是 `Record<VendorId, ModeToken | CodexPolicy>`（每个供应商独立的默认权限模式）。`gitBranchMode: 'current-branch' | 'worktree'`（缺省 `current-branch`，标准化时对缺省/未知值回退 `current-branch`，并兼容回读旧磁盘键 `gitCommitMode`）决定启动开发时的 git 分支策略；`defaultMainBranch?` 为 `worktree` 模式下新 worktree 的基准分支（缺省则从当前 HEAD 切）。
+- **`WorkspaceSetting`** — `{ defaultMode?, consensus?, devSkill?, maxRoundsPerStage?, maxSpeechChars?, skillRepos?, gitBranchMode?, defaultMainBranch?, sandbox? }`。工作区级设置，键控于 `SystemSettings.projectConfigs`（on-disk 键名仍为 `projectConfigs`，兼容旧数据）。`defaultMode` 是 `Record<VendorId, ModeToken | CodexPolicy>`（每个供应商独立的默认权限模式）。`gitBranchMode: 'current-branch' | 'worktree'`（缺省 `current-branch`，标准化时对缺省/未知值回退 `current-branch`，并兼容回读旧磁盘键 `gitCommitMode`）决定开始工作时的 git 分支策略；`defaultMainBranch?` 为 `worktree` 模式下新 worktree 的基准分支（缺省则从当前 HEAD 切）。
 - **`ConsensusConfig`** — `{ enabled, majority?, mode?, agentIds? }`。多方代理共识投票配置。`majority` 可选；`false`/缺失 ⇒ 仅一致同意才自动解决；`true` ⇒ 多数裁决。`mode: 'all' | 'custom'`（缺省视作 `all`）选择投票者集合：`all` ⇒ 全部「同 vendor 已启用非自身」agent；`custom` ⇒ 该集合与 `agentIds` 白名单的交集（vendor 同质性规则不变，custom 只在同 vendor 集合内收窄）。`agentIds?: string[]` 仅 `custom` 模式有意义；normalize 清洗掉不存在/已禁用的 id，运行时再次过滤已禁用项（双重静默过滤），空集 ⇒ 无投票者 ⇒ 退回人工。
 - **`ConsensusOutcome`** — `{ kind: 'tool', votes, summary, unanimous, decision, vendorScope?, crossVendorExcluded? }`。`kind` 区分 `'tool'`（allow/deny 投票）和 `'ask'`（`AskUserQuestion` 回答）。`vendorScope` 是投票限定于的供应商（共识是供应商同质的）。`crossVendorExcluded` 是因跨供应商范围而被排除的 voter 数量。
 - **`AskConsensusOutcome`** — `{ kind: 'ask', perQuestion, fullyUnanimous, agreedAnswers, summary, vendorScope?, crossVendorExcluded? }`。`AskUserQuestion` 上共识的逐问题汇总。`agreedAnswers` 是问题文本 → 同意答案的预构建映射。
@@ -859,7 +861,7 @@ schedule 的执行日志。
 
 - **`IntentPriority`** — `'P0' | 'P1' | 'P2' | 'P3'`（P0 最高）。
 - **`IntentStatus`** — `'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'`。
-- **`Intent`** — `{ id, workspacePath, title, content, priority, module, status, dependsOn, lastDevSessionId, automate, createdAt, updatedAt, completedAt, runStatus }`。项目范围账本条。`module`（模块名称）是 agent 推断的所属模块，未识别时为 `''`。`runStatus: IntentRunStatus`（`'running' | 'dangling' | 'idle'`）是在列表时派生的运行状态。
+- **`Intent`** — `{ id, workspacePath, title, content, priority, module, status, dependsOn, lastWorkSessionId, automate, createdAt, updatedAt, completedAt, runStatus, intentSessionId, specSessionId }`。项目范围账本条。`module`（模块名称）是 agent 推断的所属模块，未识别时为 `''`。`runStatus: IntentRunStatus`（`'running' | 'dangling' | 'idle'`）是在列表时派生的运行状态。`intentSessionId` 是 refine/沟通会话，`specSessionId` 是撰写/精炼 spec 会话，`lastWorkSessionId` 是最近一次由 intent 启动的工作会话回链，三者语义不同。
 - **`ProposedIntent`** — `{ id?, title, shortEnTitle, content, priority, module?, dependsOn?, dependsOnIndexes?, intentSessionId? }`。`save_intents` 调用中的一个项。`shortEnTitle` 是必填的简短英文 ASCII 标题，用作后续分支/worktree 命名的稳定来源。有 `id` 时 upsert（更新同项目已存在的 intent）；无 `id` 时插入新 `Intent`（状态 `todo`）。`intentSessionId` 是把本条意图回链到产出它的沟通会话的可选字段，**仅当本批只保存 1 条意图时才生效**（批量 >1 条时落库核心一律忽略，不写入任何行）；模型填入提示中注入的当前会话 id，保存处理器再将其归一化为 bind 后的真实会话 id（`open_intent_chat` 可解析）。`save_intent_directly`（schedule 路径）的 schema 不含该字段。
 - **`AutomationState`** — `'idle' | 'running' | 'awaiting_gate' | 'developing' | 'fixing' | 'done' | 'error'`。
 - **`AutomationStatus`** — `{ workspacePath, state, currentIntentId, currentSessionId, awaitingPermission, error, completedIds, startedAt }`。每个项目的自动化编排器状态；仅内存，不持久化。

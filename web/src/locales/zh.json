@@ -1701,8 +1701,23 @@
       }
     },
     "tabs": {
+      "goal": {
+        "label": "目标"
+      },
+      "context": {
+        "label": "上下文"
+      },
       "research": {
         "label": "研究"
+      },
+      "conclusion": {
+        "label": "结论"
+      },
+      "process": {
+        "label": "过程"
+      },
+      "details": {
+        "label": "详情"
       }
     },
     "consensus": {

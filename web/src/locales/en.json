@@ -1701,8 +1701,23 @@
       }
     },
     "tabs": {
+      "goal": {
+        "label": "Goal"
+      },
+      "context": {
+        "label": "Context"
+      },
       "research": {
         "label": "Research"
+      },
+      "conclusion": {
+        "label": "Conclusion"
+      },
+      "process": {
+        "label": "Process"
+      },
+      "details": {
+        "label": "Details"
       }
     },
     "consensus": {

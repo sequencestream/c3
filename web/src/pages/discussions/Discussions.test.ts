@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { Discussion } from '@ccc/shared/protocol'
 import Discussions from './Discussions.vue'
+import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import type { DispatchView, DiscussionPhase } from '../../lib/discussion-view'
 import type { ChatMsg } from '../../lib/chat-types'
 
@@ -158,5 +159,100 @@ describe('Discussions.vue — Start button visibility', () => {
     })
     await w.find('.disc-start-btn').trigger('click')
     expect(w.emitted('start')).toBeTruthy()
+  })
+})
+
+describe('Discussions.vue — right-pane title bar + tabs', () => {
+  const empty: DispatchView = { pending: [], errors: [] }
+
+  // Click a right-pane tab by its stable kind so assertions survive i18n label changes.
+  async function clickTab(w: ReturnType<typeof mountDiscussions>, kind: string): Promise<void> {
+    const tab = w.find(`[data-testid="discussion-pane-tab-${kind}"]`)
+    if (!tab.exists()) throw new Error(`pane tab not found: ${kind}`)
+    await tab.trigger('click')
+  }
+
+  it('default tab follows conclusion → process: a completed discussion opens on conclusion', () => {
+    const w = mountDiscussions(empty, disc({ status: 'completed', conclusion: 'Use 60s TTL' }))
+    // conclusion is a markdown tab → process stream is hidden, markdown body shows.
+    expect(w.find('[data-testid="discussion-pane-md"]').exists()).toBe(true)
+    expect(w.find('[data-testid="discussion-pane-md"]').text()).toContain('Use 60s TTL')
+    expect(w.find('[data-testid="discussion-stream"]').exists()).toBe(false)
+  })
+
+  it('default tab falls to process for an in-progress discussion without a conclusion', () => {
+    const w = mountDiscussions(empty, disc({ status: 'in_progress' }), { phase: 'discussion' })
+    expect(w.find('[data-testid="discussion-stream"]').exists()).toBe(true)
+    expect(w.find('[data-testid="discussion-pane-md"]').exists()).toBe(false)
+  })
+
+  it('only non-empty markdown fields get a tab; process + details are always present', () => {
+    const w = mountDiscussions(empty, disc({ status: 'in_progress', goal: 'G', conclusion: '' }))
+    const kinds = w
+      .findAll('[data-testid^="discussion-pane-tab-"]')
+      .map((b) => b.attributes('data-tab'))
+    expect(kinds).toEqual(['goal', 'process', 'details'])
+  })
+
+  it('the title bar and its actions stay constant across tab switches', async () => {
+    const w = mountDiscussions(empty, disc({ status: 'completed', goal: 'G', conclusion: 'C' }))
+    // Completed → Convert action + title bar present on the default (conclusion) tab.
+    expect(w.find('.session-title-bar').exists()).toBe(true)
+    expect(w.find('.disc-start-btn').exists()).toBe(true)
+    // Switch to the process tab — title bar + action remain.
+    await clickTab(w, 'process')
+    expect(w.find('.session-title-bar').exists()).toBe(true)
+    expect(w.find('.disc-start-btn').exists()).toBe(true)
+    // Switch to goal (markdown) tab — still there.
+    await clickTab(w, 'goal')
+    expect(w.find('.session-title-bar').exists()).toBe(true)
+    expect(w.find('.disc-start-btn').exists()).toBe(true)
+  })
+
+  it('details tab renders structured meta and hides process content', async () => {
+    const w = mountDiscussions(empty, disc({ status: 'in_progress' }), { phase: 'discussion' })
+    await clickTab(w, 'details')
+    expect(w.find('[data-testid="disc-meta-type"]').exists()).toBe(true)
+    expect(w.find('[data-testid="disc-meta-status"]').exists()).toBe(true)
+    expect(w.find('[data-testid="disc-meta-created"]').exists()).toBe(true)
+    // Process content (stream / composer) is not in the details tab.
+    expect(w.find('[data-testid="discussion-stream"]').exists()).toBe(false)
+    expect(w.find('.disc-composer').exists()).toBe(false)
+  })
+
+  it('dispatch strip and composer render only in the process tab', async () => {
+    const w = mountDiscussions(
+      { pending: [{ id: 'a', name: 'Alice' }], errors: [] },
+      disc({ status: 'in_progress', conclusion: 'C' }),
+      { phase: 'discussion' },
+    )
+    // Default tab is conclusion (has a conclusion) → no dispatch / composer.
+    expect(w.find('.disc-dispatch').exists()).toBe(false)
+    expect(w.find('.disc-composer').exists()).toBe(false)
+    // Switch to process → both appear.
+    await clickTab(w, 'process')
+    expect(w.find('.disc-dispatch').exists()).toBe(true)
+    expect(w.find('.disc-composer').exists()).toBe(true)
+  })
+
+  it('research and discussion phases stay mutually exclusive inside the process tab', () => {
+    const research = mountDiscussions(empty, disc({ status: 'draft' }), { phase: 'research' })
+    expect(research.find('[data-testid="research-stream"]').exists()).toBe(true)
+    expect(research.find('[data-testid="discussion-stream"]').exists()).toBe(false)
+    const discussion = mountDiscussions(empty, disc({ status: 'in_progress' }), {
+      phase: 'discussion',
+    })
+    expect(discussion.find('[data-testid="discussion-stream"]').exists()).toBe(true)
+    expect(discussion.find('[data-testid="research-stream"]').exists()).toBe(false)
+  })
+
+  it('mobile drill-down: the right-pane detail is the second pane, back forwards mobile-back', () => {
+    const w = mountDiscussions(empty, disc({ status: 'in_progress' }))
+    const stack = w.findComponent(MobileStack)
+    // The open discussion (activeId) drills into the `history` (right-pane detail) pane.
+    expect(stack.props('activeKey')).toBe('history')
+    // MobileStack's back is forwarded up as `mobile-back` so the parent returns to the list.
+    stack.vm.$emit('back', 'discussions')
+    expect(w.emitted('mobile-back')).toEqual([['discussions']])
   })
 })

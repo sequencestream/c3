@@ -1702,8 +1702,23 @@
       }
     },
     "tabs": {
+      "goal": {
+        "label": "Цель"
+      },
+      "context": {
+        "label": "Контекст"
+      },
       "research": {
         "label": "Исследование"
+      },
+      "conclusion": {
+        "label": "Заключение"
+      },
+      "process": {
+        "label": "Процесс"
+      },
+      "details": {
+        "label": "Детали"
       }
     },
     "consensus": {

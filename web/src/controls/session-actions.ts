@@ -189,6 +189,7 @@ export function installSessionActions(ctx: AppCtx): void {
   // Every non-orphaned row enters the console tab and binds the chat column; the
   // source jump now lives on the title-bar button (see `jumpActiveSessionSource`).
   ctx.selectSession = (path: string, sessionId: string): void => {
+    ctx.requestedWorkSessionId.value = null
     ctx.enterConsole()
     // Pin the console tab's pointer up front.
     consoleSession.value = { workspacePath: path, sessionId }

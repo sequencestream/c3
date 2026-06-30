@@ -461,6 +461,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         if (dl && msg.items.some((it) => it.id === dl.intentId && it.status === 'in_progress')) {
           ctx.dispatchDevLaunch({ kind: 'ready', intentId: dl.intentId, now: Date.now() })
         }
+        ctx.consumePendingWorkSessionSelect(true)
         const sl = specLaunch.value
         if (sl && msg.items.some((it) => it.id === sl.intentId && !!it.specSessionId)) {
           ctx.dispatchSpecLaunch({ kind: 'ready', intentId: sl.intentId, now: Date.now() })

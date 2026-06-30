@@ -60,7 +60,10 @@ flowchart TD
    worktree mode requires every known dependency to be available on the mainline. A dependency that
    is not `done`, or is `done` but remains on a non-main branch without a merged PR, rejects the
    request without creating a document or replacing the selected session. Current-branch mode skips
-   this check. Once it passes, the current workspace branch is pulled best-effort before the session
+   this check. When the blocked dependency has a PR/MR whose stored state is not confirmed merged,
+   the server starts a one-shot background PR/MR status sync and rebroadcasts intents after it
+   completes; the current request still fails until a later check sees `prStatus = merged`. Once the
+   dependency check passes, the current workspace branch is pulled best-effort before the session
    starts; a missing remote, failed pull, or divergence is warned but does not prevent spec writing.
    Both authoring and reset controls remain disabled with a dependency-not-merged explanation until
    the rule is satisfied.
@@ -173,6 +176,11 @@ flowchart TD
   commit and push, the orchestrator creates the same forge-aware PR/MR: an explicit workspace `forge`
   override selects GitHub/`gh` or GitLab/`glab`; `auto` or an absent setting uses repository-origin
   detection.
+- **PR/MR status sync (`RM-R28`).** A `done` intent with `prStatus = reviewing` and an associated
+  PR/MR can be refreshed once from the detail header or Git/PR metadata. The sync queries the forge
+  CLI and only writes `prStatus = merged` when the forge confirms the PR/MR merged. A closed PR/MR
+  may be recorded as `closed`, and failures or unavailable CLI/auth leave the existing state intact;
+  only confirmed `merged` unblocks worktree dependency gates.
 
 ## Discussion bridge
 

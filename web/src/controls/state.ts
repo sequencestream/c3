@@ -525,6 +525,9 @@ export function createState(deps: StateDeps) {
   // Intent action failures need an explicit acknowledgement, unlike transient toast feedback.
   const intentActionError = ref<string | null>(null)
   const intentActionErrorSeq = ref(0)
+  const intentPrSync = ref<
+    Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
+  >({})
   let toastTimer: ReturnType<typeof setTimeout> | null = null
   function showToast(text: string): void {
     toast.value = text
@@ -717,6 +720,7 @@ export function createState(deps: StateDeps) {
     toast,
     intentActionError,
     intentActionErrorSeq,
+    intentPrSync,
     devLaunch,
     specLaunch,
     // computeds

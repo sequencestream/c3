@@ -10,6 +10,7 @@
 import { execFile } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import type { IntentPrStatus } from '@ccc/shared/protocol'
 
 /**
  * Why a commit/push attempt failed, so the automation orchestrator can decide
@@ -414,6 +415,15 @@ export interface CreatePrResult {
   unavailable?: boolean
 }
 
+export interface ForgePrStatusResult {
+  ok: boolean
+  status?: IntentPrStatus
+  prUrl?: string
+  rawState?: string
+  error?: string
+  unavailable?: boolean
+}
+
 // `gh` prints these when no usable auth token is configured.
 const GH_NOT_LOGGED_IN_MARKERS = [
   'gh auth login',
@@ -557,4 +567,94 @@ export async function createForgePr(
   return provider === 'github'
     ? createGhPr(cwd, title, body, headBranch, baseBranch)
     : createGlabMr(cwd, title, body, headBranch, baseBranch)
+}
+
+function parseJsonObject(stdout: string): Record<string, unknown> | null {
+  try {
+    const value = JSON.parse(stdout) as unknown
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null
+  } catch {
+    return null
+  }
+}
+
+function normalizeGithubPrStatus(row: Record<string, unknown>): ForgePrStatusResult {
+  const state = typeof row.state === 'string' ? row.state.toUpperCase() : ''
+  const mergedAt = typeof row.mergedAt === 'string' ? row.mergedAt : ''
+  const url = typeof row.url === 'string' ? row.url : undefined
+  if (mergedAt || state === 'MERGED')
+    return { ok: true, status: 'merged', prUrl: url, rawState: state }
+  if (state === 'CLOSED') return { ok: true, status: 'closed', prUrl: url, rawState: state }
+  return { ok: true, status: 'reviewing', prUrl: url, rawState: state || undefined }
+}
+
+function normalizeGitlabMrStatus(row: Record<string, unknown>): ForgePrStatusResult {
+  const state = typeof row.state === 'string' ? row.state.toLowerCase() : ''
+  const mergedAt =
+    typeof row.merged_at === 'string'
+      ? row.merged_at
+      : typeof row.mergedAt === 'string'
+        ? row.mergedAt
+        : ''
+  const url =
+    typeof row.web_url === 'string'
+      ? row.web_url
+      : typeof row.webUrl === 'string'
+        ? row.webUrl
+        : undefined
+  if (mergedAt || state === 'merged')
+    return { ok: true, status: 'merged', prUrl: url, rawState: state }
+  if (state === 'closed') return { ok: true, status: 'closed', prUrl: url, rawState: state }
+  return { ok: true, status: 'reviewing', prUrl: url, rawState: state || undefined }
+}
+
+export async function getGhPrStatus(cwd: string, prId: string): Promise<ForgePrStatusResult> {
+  const { code, stdout, stderr } = await run('gh', cwd, [
+    'pr',
+    'view',
+    prId,
+    '--json',
+    'state,mergedAt,url',
+  ])
+  if (code === -1) return { ok: false, unavailable: true, error: 'gh CLI 未安装' }
+  if (code !== 0) {
+    const out = oneLine(stderr || stdout)
+    const notLoggedIn = GH_NOT_LOGGED_IN_MARKERS.some((m) => out.toLowerCase().includes(m))
+    return {
+      ok: false,
+      ...(notLoggedIn ? { unavailable: true } : {}),
+      error: out || 'gh pr view 失败',
+    }
+  }
+  const row = parseJsonObject(stdout)
+  if (!row) return { ok: false, error: 'gh pr view 输出不是有效 JSON' }
+  return normalizeGithubPrStatus(row)
+}
+
+export async function getGlabMrStatus(cwd: string, prId: string): Promise<ForgePrStatusResult> {
+  const { code, stdout, stderr } = await run('glab', cwd, ['mr', 'view', prId, '--output', 'json'])
+  if (code === -1) return { ok: false, unavailable: true, error: 'glab CLI 未安装' }
+  if (code !== 0) {
+    const out = oneLine(stderr || stdout)
+    const notLoggedIn = GLAB_NOT_LOGGED_IN_MARKERS.some((m) => out.toLowerCase().includes(m))
+    return {
+      ok: false,
+      ...(notLoggedIn ? { unavailable: true } : {}),
+      error: out || 'glab mr view 失败',
+    }
+  }
+  const row = parseJsonObject(stdout)
+  if (!row) return { ok: false, error: 'glab mr view 输出不是有效 JSON' }
+  return normalizeGitlabMrStatus(row)
+}
+
+export async function getForgePrStatus(
+  cwd: string,
+  prId: string,
+  providerOverride?: ForgeProvider,
+): Promise<ForgePrStatusResult> {
+  const provider = providerOverride ?? (await detectForge(cwd))
+  return provider === 'github' ? getGhPrStatus(cwd, prId) : getGlabMrStatus(cwd, prId)
 }

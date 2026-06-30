@@ -231,6 +231,19 @@ export function installIntentActions(ctx: AppCtx): void {
     })
   }
 
+  ctx.syncIntentPrStatus = (intentId: string): void => {
+    if (!intentsProject.value) return
+    ctx.intentPrSync.value = {
+      ...ctx.intentPrSync.value,
+      [intentId]: { state: 'syncing', message: t('intent.prSync.syncing') },
+    }
+    send({
+      type: 'sync_intent_pr_status',
+      workspaceId: intentsProject.value,
+      intentId,
+    })
+  }
+
   ctx.startDevelopment = (intentId: string, hasUnfinishedDeps: boolean): void => {
     if (!intentsProject.value) return
     void hasUnfinishedDeps

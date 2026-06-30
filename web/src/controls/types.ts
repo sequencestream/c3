@@ -122,6 +122,7 @@ export interface AppMethods {
   setIntentAutomate(intentId: string, automateOn: boolean): void
   updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void
   createPr(intentId: string): void
+  syncIntentPrStatus(intentId: string): void
   startAutomation(): void
   stopAutomation(): void
   selectIntentSession(sessionId: string): void

@@ -2918,6 +2918,12 @@ export type ClientToServer =
    * or `gh` CLI is unavailable.
    */
   | { type: 'create_pr'; workspaceId: string; intentId: string }
+  /**
+   * One-shot sync for a done intent whose PR/MR is still marked reviewing. The
+   * server queries the workspace forge and only advances stored PR status when
+   * the forge confirms a safe terminal state.
+   */
+  | { type: 'sync_intent_pr_status'; workspaceId: string; intentId: string }
   /** List a project's discussions (reply: `discussions`), optionally filtered by status. */
   | { type: 'list_discussions'; workspaceId: string; status?: DiscussionStatus }
   /**
@@ -3373,6 +3379,21 @@ export type ServerToClient =
    * On failure the server sends a generic `error` with code `intent.prCreateFailed`.
    */
   | { type: 'create_pr_response'; prId: string; prUrl?: string }
+  /**
+   * Reply to a `sync_intent_pr_status` request. `ok=false` means the request was
+   * handled but could not sync, while transport/action failures may still use the
+   * generic `error` frame.
+   */
+  | {
+      type: 'sync_intent_pr_status_response'
+      workspaceId: string
+      intentId: string
+      ok: boolean
+      prStatus?: IntentPrStatus
+      changed?: boolean
+      message?: string
+      error?: string
+    }
   /**
    * A project's discussion list (reply to `list_discussions`/`open_discussion` entry, or a push
    * after a change). `runStates` is a live snapshot of which listed discussions have an active

@@ -41,11 +41,14 @@ flowchart TD
    internal viewer and waits for that turn to settle before re-checking — preventing concurrent dev
    sessions that would conflict on file writes (`RM-A12`). A **dangling** session does not block.
 3. **Pick.** Eligible = `automate` AND `status ∈ {todo, in_progress}` AND every known `dependsOn` is
-   `done`; when the workspace enables SDD (`sddEnabled`), the intent must also have passed the
-   spec approval checkpoint (`spec_approved=true`). SDD off keeps the historic behavior and does
-   not require a spec. Eligible intents are ordered **priority (P0→P3) then oldest-first**
-   (`RM-A3`). `dependsOnIndexes`' submission-order stamp (`RM-R17`) breaks same-priority ties
-   deterministically.
+   `done`; in worktree mode, a `done` dependency whose PR/MR is not confirmed `merged` still blocks
+   because its code is not known to be on mainline. When the workspace enables SDD (`sddEnabled`),
+   the intent must also have passed the spec approval checkpoint (`spec_approved=true`). SDD off
+   keeps the historic behavior and does not require a spec. If no intent is eligible only because a
+   dependency PR/MR has stale unconfirmed state, the server starts a one-shot background PR/MR status
+   sync and re-checks after completion; it does not poll or bypass the gate. Eligible intents are
+   ordered **priority (P0→P3) then oldest-first** (`RM-A3`). `dependsOnIndexes`' submission-order
+   stamp (`RM-R17`) breaks same-priority ties deterministically.
 
 ## Develop one intent
 

@@ -50,6 +50,7 @@ function mountDetail(
     sddEnabled?: boolean
     workspaceMainBranch?: string | null
     workspaceGitBranchMode?: 'worktree' | 'current-branch'
+    intentPrSync?: Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
     activeSession?: string | null
     intentSpecContent?: string | null
     intentSpecLoading?: boolean
@@ -63,6 +64,7 @@ function mountDetail(
       sddEnabled: opts.sddEnabled ?? false,
       workspaceMainBranch: opts.workspaceMainBranch ?? null,
       workspaceGitBranchMode: opts.workspaceGitBranchMode,
+      intentPrSync: opts.intentPrSync,
       activeSession: opts.activeSession ?? null,
       activeTitle: 'Title',
       vendor: null,
@@ -443,6 +445,56 @@ describe('IntentDetail.vue — actions', () => {
     expect(link.text()).toBe('#38')
     expect(link.attributes('href')).toBe('https://github.com/o/r/pull/38')
     expect(link.attributes('target')).toBe('_blank')
+  })
+
+  it('shows sync PR status actions only for done reviewing intents with a PR', async () => {
+    const item = intent({
+      id: 'intent-1',
+      status: 'done',
+      prId: '38',
+      prUrl: 'https://github.com/o/r/pull/38',
+      prStatus: 'reviewing',
+    })
+    const w = mountDetail(item)
+
+    expect(w.find('[data-action="syncPrStatus"]').exists()).toBe(true)
+    expect(w.find('.req-pr-sync-btn').exists()).toBe(true)
+
+    await w.find('[data-action="syncPrStatus"]').trigger('click')
+    expect(w.emitted('sync-pr-status')).toEqual([['intent-1']])
+  })
+
+  it('hides sync PR status when status is not done, PR is missing, or PR is already merged', () => {
+    expect(
+      mountDetail(intent({ id: 'a', status: 'in_progress', prId: '1', prStatus: 'reviewing' }))
+        .find('[data-action="syncPrStatus"]')
+        .exists(),
+    ).toBe(false)
+    expect(
+      mountDetail(intent({ id: 'b', status: 'done', prId: null, prStatus: 'reviewing' }))
+        .find('[data-action="syncPrStatus"]')
+        .exists(),
+    ).toBe(false)
+    expect(
+      mountDetail(intent({ id: 'c', status: 'done', prId: '1', prStatus: 'merged' }))
+        .find('[data-action="syncPrStatus"]')
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('disables sync PR status and renders inline feedback while syncing', () => {
+    const item = intent({
+      id: 'intent-1',
+      status: 'done',
+      prId: '38',
+      prStatus: 'reviewing',
+    })
+    const w = mountDetail(item, {
+      intentPrSync: { 'intent-1': { state: 'syncing', message: 'Syncing...' } },
+    })
+
+    expect(w.find('[data-action="syncPrStatus"]').attributes('disabled')).toBeDefined()
+    expect(w.find('.req-pr-sync-feedback').text()).toBe('Syncing...')
   })
 
   it('hides create-pr when the intent branch matches the workspace main branch', () => {

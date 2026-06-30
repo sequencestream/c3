@@ -33,11 +33,13 @@ import {
 } from '../../kernel/agent-config/index.js'
 import { upsertPendingRow } from '../sessions/session-metadata-store.js'
 import type { Handler } from '../../transport/handler-registry.js'
+import type { KernelContext } from '../../kernel/types.js'
 import { getIntent, isStoreAvailable, listIntents, setSpecApproved, setSpecPath } from './store.js'
 import { computeSpecLayout } from './spec-path.js'
 import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 import { findDependencyBlockingMainline } from './dependency-gate.js'
+import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
 import { pullCurrentBranch } from './worktree.js'
 
 function errMsg(err: unknown): string {
@@ -70,6 +72,7 @@ function syncSpecPendingProjection(input: {
 function prepareSpecDependencyContext(
   proj: string,
   intent: Intent,
+  ctx: Pick<KernelContext, 'broadcastIntents'>,
   conn: Parameters<Handler<'write_spec'>>[1],
 ): boolean {
   if (getGitBranchMode(proj) === 'worktree') {
@@ -79,6 +82,11 @@ function prepareSpecDependencyContext(
       getDefaultMainBranch(proj),
     )
     if (blocking) {
+      syncUnconfirmedDependencyPrsInBackground({
+        ctx,
+        workspacePath: proj,
+        dependsOn: intent.dependsOn,
+      })
       conn.send({
         type: 'error',
         error: {
@@ -200,7 +208,7 @@ export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
   }
 
   const specAgent = resolveSpecAgent()
-  if (!prepareSpecDependencyContext(proj, intent, conn)) return
+  if (!prepareSpecDependencyContext(proj, intent, ctx, conn)) return
 
   // Compute the dated layout under the FIXED centralized spec root and scaffold
   // the directory + seed spec.md. The directory must exist before the agent runs
@@ -338,7 +346,7 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
     return
   }
   const specAgent = resolveSpecAgent()
-  if (!prepareSpecDependencyContext(proj, intent, conn)) return
+  if (!prepareSpecDependencyContext(proj, intent, ctx, conn)) return
 
   // The reset prompt only references the spec PATH; the agent reads the file
   // itself, so the server no longer pre-reads it. We still resolve the absolute

@@ -107,6 +107,9 @@ export function installSessionActions(ctx: AppCtx): void {
   ctx.selectSessionKind = (kind: SessionPageKind): void => {
     activeSessionKind.value = kind
     ctx.clearViewedSession()
+    // Flag a pending bind so that when the new kind's list reply lands, the first
+    // visible session is automatically selected (keeps the right column in sync).
+    ctx.flags.pendingConsoleBind = true
     ctx.refreshSessions(currentWorkspace.value)
   }
 

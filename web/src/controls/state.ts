@@ -125,8 +125,9 @@ export function createState(deps: StateDeps) {
   // Mutable counters (non-reactive) for chat message ids + queue item ids.
   const counters = { nextId: 1, nextQueueId: 1 }
   // Non-reactive flags shared across installers.
-  // `pendingConsoleBind`: a workspace switch cleared the chat column and is
-  // waiting for the new workspace's `list_sessions` reply to bind its first session.
+  // `pendingConsoleBind`: a workspace switch or session-kind switch cleared the
+  // chat column and is waiting for the current workspace+kind's `list_sessions`
+  // reply to bind its first session.
   const flags = { viewModeFirstWorkcenter: true, pendingConsoleBind: false }
 
   // "Current task list" of the viewed session (server-derived, pushed over the

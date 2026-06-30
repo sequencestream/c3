@@ -1,9 +1,22 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import type { Discussion, ResearchMessage, ServerToClient } from '@ccc/shared/protocol'
+import type { SessionInfo } from '@ccc/shared/protocol'
 import { installMessageHandler } from './message-handler'
 import type { ChatMsg } from '@/lib/chat-types'
 import type { AppCtx } from './types'
+import type { SessionPageKind } from './state'
+
+function s(id: string, lastModified: number): SessionInfo {
+  return {
+    sessionId: id,
+    title: id,
+    lastModified,
+    mode: 'default',
+    isToolSession: false,
+    vendor: 'claude',
+  }
+}
 
 function error(code: string): ServerToClient {
   return { type: 'error', error: { code, params: {} } } as unknown as ServerToClient
@@ -138,6 +151,177 @@ describe('schedule save overlay message handler', () => {
     result.ctx.handleMessage(error('workspace.unknown'))
 
     expect(result.scheduleSaving.value).toBe(false)
+  })
+})
+
+describe('sessions handler — kind-switch pendingConsoleBind', () => {
+  const WS = '/ws'
+
+  function makeSessionsCtx() {
+    const bindConsoleSession = vi.fn()
+    const clearViewedSession = vi.fn()
+    const consumePendingWorkSessionSelect = vi.fn()
+    const activeSession = ref<string | null>(null)
+    const activeWorkspace = ref<string | null>(null)
+    const activeTitle = ref('')
+    const activity = ref({ phase: 'idle' } as { phase: string })
+    const currentWorkspace = ref<string | null>(null)
+    const activeSessionKind = ref<SessionPageKind>('work')
+    const sessionsByWorkspace = ref<Record<string, SessionInfo[]>>({})
+    const sessionPagingByWorkspace = ref<
+      Record<
+        string,
+        { hasMore: boolean; exhausted: boolean; loadingMore: boolean; pendingSince?: number }
+      >
+    >({})
+    const sessionCounts = ref<Record<string, number>>({})
+    const activeTab = ref<string>('console')
+    const flags = { viewModeFirstWorkcenter: true, pendingConsoleBind: false }
+    const send = vi.fn()
+    const ctx = {
+      toast: ref<string | null>(null),
+      intentActionError: ref<string | null>(null),
+      intentActionErrorSeq: ref(0),
+      devLaunch: ref({}),
+      specLaunch: ref({}),
+      closeDevLaunch: vi.fn(),
+      dispatchSpecLaunch: vi.fn(),
+      showToast: vi.fn(),
+      showIntentActionError: vi.fn(),
+      scheduleSaving: ref(false),
+      schedules: ref({}),
+      schedulesProject: ref<string | null>(null),
+      activeTab,
+      selectedScheduleId: ref<string | null>(null),
+      serverSettings: ref(null),
+      activeDiscussion: ref(null),
+      activeDiscussionId: ref<string | null>(null),
+      discussionMessages: ref<ChatMsg[]>([]),
+      discussionMaxSeq: ref(0),
+      researchMessages: ref<ChatMsg[]>([]),
+      researchMaxSeq: ref(0),
+      persistViewMode: vi.fn(),
+      t: (key: string) => key,
+      add: vi.fn(),
+      // Session state
+      currentWorkspace,
+      sessionsByWorkspace,
+      sessionPagingByWorkspace,
+      sessionCounts,
+      activeSessionKind,
+      activeWorkspace,
+      activeSession,
+      activeTitle,
+      activity,
+      flags,
+      send,
+      bindConsoleSession,
+      clearViewedSession,
+      consumePendingWorkSessionSelect,
+    } as unknown as AppCtx
+    installMessageHandler(ctx)
+    return {
+      ctx,
+      bindConsoleSession,
+      clearViewedSession,
+      consumePendingWorkSessionSelect,
+      activeSession,
+      currentWorkspace,
+      activeSessionKind,
+      sessionsByWorkspace,
+      flags,
+    }
+  }
+
+  it('selects the first session after a kind switch when the list is non-empty', () => {
+    const r = makeSessionsCtx()
+    r.currentWorkspace.value = WS
+    r.activeSessionKind.value = 'spec'
+    r.flags.pendingConsoleBind = true
+
+    r.ctx.handleMessage({
+      type: 'sessions',
+      workspaceId: WS,
+      sessionKind: 'spec',
+      sessions: [s('spec-1', 400)],
+      page: { kind: 'first', hasMore: false },
+    } as unknown as ServerToClient)
+
+    expect(r.bindConsoleSession).toHaveBeenCalledOnce()
+    expect(r.flags.pendingConsoleBind).toBe(false)
+  })
+
+  it('keeps right column empty when the new kind list is empty', () => {
+    const r = makeSessionsCtx()
+    r.currentWorkspace.value = WS
+    r.activeSessionKind.value = 'intent'
+    r.flags.pendingConsoleBind = true
+
+    r.ctx.handleMessage({
+      type: 'sessions',
+      workspaceId: WS,
+      sessionKind: 'intent',
+      sessions: [],
+      page: { kind: 'first', hasMore: false },
+    } as unknown as ServerToClient)
+
+    expect(r.bindConsoleSession).toHaveBeenCalledOnce()
+    expect(r.flags.pendingConsoleBind).toBe(false)
+  })
+
+  it('does not consume the flag when sessionKind does not match activeSessionKind', () => {
+    const r = makeSessionsCtx()
+    r.currentWorkspace.value = WS
+    r.activeSessionKind.value = 'spec'
+    r.flags.pendingConsoleBind = true
+
+    // List response for 'work' kind arrives while activeSessionKind is 'spec'.
+    r.ctx.handleMessage({
+      type: 'sessions',
+      workspaceId: WS,
+      sessionKind: 'work',
+      sessions: [s('work-1', 400)],
+      page: { kind: 'first', hasMore: false },
+    } as unknown as ServerToClient)
+
+    expect(r.bindConsoleSession).not.toHaveBeenCalled()
+    expect(r.flags.pendingConsoleBind).toBe(true)
+  })
+
+  it('does not consume the flag on a live fan-out push', () => {
+    const r = makeSessionsCtx()
+    r.currentWorkspace.value = WS
+    r.activeSessionKind.value = 'work'
+    r.flags.pendingConsoleBind = true
+
+    r.ctx.handleMessage({
+      type: 'sessions',
+      workspaceId: WS,
+      sessionKind: 'work',
+      sessions: [s('live-1', 500)],
+      page: { kind: 'live', hasMore: false },
+    } as unknown as ServerToClient)
+
+    expect(r.bindConsoleSession).not.toHaveBeenCalled()
+    expect(r.flags.pendingConsoleBind).toBe(true)
+  })
+
+  it('workspace switch still consumes the flag with the sessionKind guard', () => {
+    const r = makeSessionsCtx()
+    r.currentWorkspace.value = WS
+    r.activeSessionKind.value = 'work'
+    r.flags.pendingConsoleBind = true
+
+    r.ctx.handleMessage({
+      type: 'sessions',
+      workspaceId: WS,
+      sessionKind: 'work',
+      sessions: [s('work-1', 400)],
+      page: { kind: 'first', hasMore: false },
+    } as unknown as ServerToClient)
+
+    expect(r.bindConsoleSession).toHaveBeenCalledOnce()
+    expect(r.flags.pendingConsoleBind).toBe(false)
   })
 })
 

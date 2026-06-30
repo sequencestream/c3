@@ -48,6 +48,7 @@ function makeCtx(
   const requestedIntentSubTab = ref<'intentSession' | 'specSession' | null>(null)
   const requestedMergedTab = ref<'list' | 'sessions' | null>(null)
   const requestedIntentSessionId = ref<string | null>(null)
+  const selectedIntentSessionId = ref<string | null>(null)
   const requestedWorkSessionId = ref<PendingWorkSessionSelectRequest | null>(null)
   const activeTab = ref('intents')
   const activeSession = ref<string | null>(null)
@@ -62,6 +63,16 @@ function makeCtx(
   const onSelectSchedule = vi.fn()
   const selectIntentSession = vi.fn()
   const persistViewMode = vi.fn()
+  const currentWorkspace = ref<string | null>(null)
+  const flags = { viewModeFirstWorkcenter: true, pendingConsoleBind: false }
+  const activeTitle = ref('')
+  const activeVendor = ref<string | null>(null)
+  const activeAgentSwitch = ref<{ current: string; candidates: string[] } | null>(null)
+  const messages = ref<unknown[]>([])
+  const counters = { nextId: 1, nextQueueId: 1 }
+  const availableCommands = ref<unknown[]>([])
+  const activity = ref<{ phase: string }>({ phase: 'idle' })
+  const taskModel = ref<unknown>(null)
   const ctx = {
     send,
     sessionsByWorkspace,
@@ -79,6 +90,15 @@ function makeCtx(
     activeWorkspace,
     consoleSession,
     activeSessionSource,
+    activeTitle,
+    activeVendor,
+    activeAgentSwitch,
+    messages,
+    counters,
+    availableCommands,
+    activity,
+    taskModel,
+    selectedIntentSessionId,
     openIntents,
     openSpecSession,
     openDiscussions,
@@ -87,6 +107,9 @@ function makeCtx(
     onSelectSchedule,
     selectIntentSession,
     persistViewMode,
+    currentWorkspace,
+    flags,
+    currentSessions: ref([]),
   } as unknown as AppCtx
   installSessionActions(ctx)
   return {
@@ -133,6 +156,36 @@ describe('refreshSessions', () => {
     const msg = send.mock.calls[0][0] as Extract<ClientToServer, { type: 'list_sessions' }>
     expect(msg.since).toBe(200)
     expect(msg.before).toBeUndefined()
+  })
+})
+
+describe('selectSessionKind', () => {
+  it('clears view, sets kind, flags pending bind, and refreshes list for the new kind', () => {
+    const { ctx, send } = makeCtx({ activeKind: 'work' })
+    ctx.currentWorkspace.value = WS
+    // Prime sessions for the old kind to confirm the list_sessions is for the new kind.
+    ctx.sessionsByWorkspace.value[sessionCacheKey(WS, 'work')] = [s('work-1', 400)]
+
+    ctx.selectSessionKind('spec')
+
+    expect(ctx.activeSessionKind.value).toBe('spec')
+    expect(ctx.activeSession.value).toBeNull()
+    expect(ctx.activeWorkspace.value).toBeNull()
+    expect(ctx.flags.pendingConsoleBind).toBe(true)
+    // Should send list_sessions for the NEW kind, not the old work sessions.
+    const msg = send.mock.calls[0][0] as Extract<ClientToServer, { type: 'list_sessions' }>
+    expect(msg.sessionKind).toBe('spec')
+    expect(msg.workspaceId).toBe(WS)
+  })
+
+  it('does not crash when currentWorkspace is null (no list to refresh)', () => {
+    const { ctx } = makeCtx({ activeKind: 'work' })
+
+    // currentWorkspace is null, so refreshSessions returns early — should not throw.
+    ctx.selectSessionKind('tool')
+
+    expect(ctx.activeSessionKind.value).toBe('tool')
+    expect(ctx.activeSession.value).toBeNull()
   })
 })
 

@@ -274,10 +274,16 @@ export function installMessageHandler(ctx: AppCtx): void {
               sessions: merged.sessions,
             }) ?? activeTitle.value
         }
-        // A workspace switch cleared the chat column and flagged a pending re-bind.
-        // Bind the first session once the new workspace's list has landed — but
-        // not on a `live` fan-out push (it may precede the full first page).
-        if (kind !== 'live' && ctx.flags.pendingConsoleBind && path === currentWorkspace.value) {
+        // A workspace switch or session-kind switch cleared the chat column and
+        // flagged a pending re-bind. Bind the first session once the matching
+        // workspace + kind list response lands — but not on a `live` fan-out push
+        // (it may precede the full first page).
+        if (
+          kind !== 'live' &&
+          ctx.flags.pendingConsoleBind &&
+          path === currentWorkspace.value &&
+          sessionKind === ctx.activeSessionKind.value
+        ) {
           ctx.flags.pendingConsoleBind = false
           if (activeTab.value === 'console') ctx.bindConsoleSession()
         }

@@ -37,7 +37,7 @@ flowchart TD
    project; a second start is a no-op returning the live status (`RM-A2`). The orchestrator is
    in-memory and does not survive a server restart (`RM-A2`).
 2. **Global concurrency gate.** Before picking the next intent, if **any** `in_progress` intent in the project
-   (including manually-launched) has a **truly running** dev session, the orchestrator attaches an
+   (including manually-launched) has a **truly running** work session, the orchestrator attaches an
    internal viewer and waits for that turn to settle before re-checking — preventing concurrent dev
    sessions that would conflict on file writes (`RM-A12`). A **dangling** session does not block.
 3. **Pick.** Eligible = `automate` AND `status ∈ {todo, in_progress}` AND every known `dependsOn` is
@@ -54,11 +54,11 @@ flowchart TD
 
 The starting action follows a strict precedence (`RM-A3`, `RM-A10`):
 
-1. **Attach** — if the picked intent's `lastDevSessionId` is **already running a turn**, attach and
+1. **Attach** — if the picked intent's `lastWorkSessionId` is **already running a turn**, attach and
    track it (never launch a second turn — a run outlives its turn, `RM-A10`).
-2. **Resume** — else an `in_progress` intent whose `lastDevSessionId` **still exists on disk** is
+2. **Resume** — else an `in_progress` intent whose `lastWorkSessionId` **still exists on disk** is
    resumed (`resume` id, `AS-R1`/`AS-R10`), continuing its half-built dev-skill context.
-3. **Fresh** — else a `todo` or **dangling** intent starts a fresh dev session (configurable skill),
+3. **Fresh** — else a `todo` or **dangling** intent starts a fresh work session (configurable skill),
    the same dangling rule as manual launch (`RM-R8`).
 
 The dev turn runs the standard gated loop. **Permission parity** (`RM-A9`): a prompt during the turn
@@ -69,7 +69,7 @@ an "awaiting authorization" hint meanwhile.
 ## Judge → commit → advance
 
 1. **Completion judge (`RM-A4`).** After the turn ends, a **tool-less** one-shot judge reads the
-   intent + the dev session's last assistant message + code-change evidence (multi-repo
+   intent + the work session's last assistant message + code-change evidence (multi-repo
    `git diff`/`git log` as _supporting_ corroboration, **not** a `done` precondition) and returns
    `done` / `in_progress` / `stuck`, deciding **stuck → done → in_progress**. The turn ending alone
    is never "done"; empty evidence is never alone a `stuck` signal.

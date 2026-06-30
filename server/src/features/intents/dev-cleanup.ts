@@ -1,7 +1,7 @@
 /**
- * Manual Start-Dev session-end Git/PR cleanup (MSC-R1…R6).
+ * Manual Start-Work session-end Git/PR cleanup (MSC-R1…R6).
  *
- * When a MANUAL `start_development` dev session settles (complete / error /
+ * When a MANUAL `start_development` work session settles (complete / error /
  * aborted), the resident `run:settled` subscription routes here (automation-owned
  * sessions are filtered out upstream — see `isIntentDrivenByAutomation`). This
  * module commits, pushes, and opens a PR for the intent's work, writing back the
@@ -116,7 +116,7 @@ const FAILURE_CODE: Record<CleanupFailureCode, UiErrorCode> = {
 }
 
 /**
- * Run the session-end Git/PR cleanup for a manual dev session's intent.
+ * Run the session-end Git/PR cleanup for a manual work session's intent.
  * Returns the outcome; also performs all writes / broadcasts / failure-todo pushes
  * as side effects via the injected deps. Never throws — callers fire-and-forget.
  */

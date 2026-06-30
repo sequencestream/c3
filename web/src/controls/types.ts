@@ -111,7 +111,7 @@ export interface AppMethods {
   dispatchDevLaunch(ev: DevLaunchEvent): void
   /**
    * After a Start-Dev `ready` close, arm the ~1s delayed jump: flip to the console
-   * tab and select the intent's newly-launched work session (`lastDevSessionId`)
+   * tab and select the intent's newly-launched work session (`lastWorkSessionId`)
    * once the intent projection and work-session row are both available.
    */
   armWorkSessionJump(intentId: string): void

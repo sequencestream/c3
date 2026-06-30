@@ -9,22 +9,22 @@ domain docs reference them rather than redefining message shapes.
 
 A ledger item scoped to one project.
 
-| Attribute          | Type                        | Description                                                                                                                                           |
-| ------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`               | text (UUID)                 | Stable identifier; referenced by dependencies and the dev back-link                                                                                   |
-| `workspacePath`    | text (path)                 | Resolved absolute workspace path; the project key (RM-R1, RM-R10)                                                                                     |
-| `title`            | text                        | Short intent title                                                                                                                                    |
-| `shortEnTitle`     | text \| null                | 简短英文 ASCII 短标题 — 派生 Git 分支名 / worktree 目录名的稳定来源；落库前截断到 128 字符；历史行为 `null`，仅在 refine 时补齐                       |
-| `content`          | text                        | Full intent description                                                                                                                               |
-| `priority`         | enum `P0`\|`P1`\|`P2`\|`P3` | 需求级别; P0 highest                                                                                                                                  |
-| `module`           | text                        | 模块名称 — the intent's owning module, inferred by the communication agent from title/content; `''` when unidentified or for historical rows (RM-R14) |
-| `status`           | enum                        | `draft`\|`todo`\|`in_progress`\|`done`\|`cancelled` (RM-R6, RM-R8, RM-R9)                                                                             |
-| `dependsOn`        | `id[]`                      | Intra-project intent ids this item depends on (aggregated; RM-R1)                                                                                     |
-| `lastDevSessionId` | text \| null                | The session id the last development run produced; back-link target (RM-R8/13)                                                                         |
-| `automate`         | boolean                     | Whether the automation orchestrator may pick this item up; user-toggled, `false` by default (RM-A1)                                                   |
-| `createdAt`        | timestamp                   | Creation time                                                                                                                                         |
-| `updatedAt`        | timestamp                   | Last mutation time                                                                                                                                    |
-| `completedAt`      | timestamp \| null           | When the intent entered `done`; stamped on transition to `done`, cleared (null) whenever status leaves `done` (RM-R6/RM-R9)                           |
+| Attribute           | Type                        | Description                                                                                                                                           |
+| ------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                | text (UUID)                 | Stable identifier; referenced by dependencies and the dev back-link                                                                                   |
+| `workspacePath`     | text (path)                 | Resolved absolute workspace path; the project key (RM-R1, RM-R10)                                                                                     |
+| `title`             | text                        | Short intent title                                                                                                                                    |
+| `shortEnTitle`      | text \| null                | 简短英文 ASCII 短标题 — 派生 Git 分支名 / worktree 目录名的稳定来源；落库前截断到 128 字符；历史行为 `null`，仅在 refine 时补齐                       |
+| `content`           | text                        | Full intent description                                                                                                                               |
+| `priority`          | enum `P0`\|`P1`\|`P2`\|`P3` | 需求级别; P0 highest                                                                                                                                  |
+| `module`            | text                        | 模块名称 — the intent's owning module, inferred by the communication agent from title/content; `''` when unidentified or for historical rows (RM-R14) |
+| `status`            | enum                        | `draft`\|`todo`\|`in_progress`\|`done`\|`cancelled` (RM-R6, RM-R8, RM-R9)                                                                             |
+| `dependsOn`         | `id[]`                      | Intra-project intent ids this item depends on (aggregated; RM-R1)                                                                                     |
+| `lastWorkSessionId` | text \| null                | The session id the last intent-launched work run produced; back-link target (RM-R8/13)                                                                |
+| `automate`          | boolean                     | Whether the automation orchestrator may pick this item up; user-toggled, `false` by default (RM-A1)                                                   |
+| `createdAt`         | timestamp                   | Creation time                                                                                                                                         |
+| `updatedAt`         | timestamp                   | Last mutation time                                                                                                                                    |
+| `completedAt`       | timestamp \| null           | When the intent entered `done`; stamped on transition to `done`, cleared (null) whenever status leaves `done` (RM-R6/RM-R9)                           |
 
 Relationships: belongs to one project (by `workspacePath`); has zero or more Intent
 Dependencies; may reference one development Session (a normal session, owned by session-registry).
@@ -107,7 +107,7 @@ project; not persisted — a server restart resets it to `idle`). Pushed to ever
 | `workspacePath`      | text (path)       | Resolved absolute workspace path (RM-R10)                                                                                       |
 | `state`              | enum              | `idle`\|`running`\|`done`\|`error` (RM-A2/A6/A7)                                                                                |
 | `currentIntentId`    | id \| null        | The intent being developed now (null when not running)                                                                          |
-| `currentSessionId`   | text \| null      | The current intent's dev session, for a back-link                                                                               |
+| `currentSessionId`   | text \| null      | The current intent's work session, for a back-link                                                                              |
 | `awaitingPermission` | boolean           | True while the current dev turn is paused on a permission prompt awaiting a human answer (RM-A9); cleared when the turn settles |
 | `error`              | text \| null      | Why it stopped abnormally; null unless `state = error` (RM-A6/A7)                                                               |
 | `completedIds`       | `id[]`            | Intent ids completed (committed + pushed) in this run                                                                           |

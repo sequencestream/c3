@@ -27,7 +27,7 @@ import type {
 import { pathToId } from '../../state.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 14
+const SCHEMA_VERSION = 15
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS intents (
   priority        TEXT NOT NULL,
   status          TEXT NOT NULL,
   module          TEXT NOT NULL DEFAULT '',
-  last_dev_session_id TEXT,
+  last_work_session_id TEXT,
   automate        INTEGER NOT NULL DEFAULT 0,
   branch_name     TEXT,
   latest_commit_hash TEXT,
@@ -201,6 +201,34 @@ function migrateProjectPathToWorkspacePath(d: Db): void {
   }
 }
 
+/**
+ * v14 → v15: rename the latest intent-launched execution session pointer from
+ * `last_dev_session_id` to `last_work_session_id`.
+ *
+ * Fresh databases create only the new column. Existing databases converge before
+ * SCHEMA runs: a pure old column is renamed in place; a partial migration with both
+ * columns keeps the new value when present and backfills it from the old value only
+ * when new is null. The old column may remain on such partial databases, but runtime
+ * code reads and writes only `last_work_session_id`.
+ */
+function migrateLastDevSessionToLastWorkSession(d: Db): void {
+  if (!tableExists(d, 'intents')) return
+  const hasOld = columnExists(d, 'intents', 'last_dev_session_id')
+  const hasNew = columnExists(d, 'intents', 'last_work_session_id')
+  if (hasOld && !hasNew) {
+    d.exec('ALTER TABLE intents RENAME COLUMN last_dev_session_id TO last_work_session_id')
+    return
+  }
+  if (hasOld && hasNew) {
+    d.run(
+      `UPDATE intents
+          SET last_work_session_id = last_dev_session_id
+        WHERE last_work_session_id IS NULL
+          AND last_dev_session_id IS NOT NULL`,
+    )
+  }
+}
+
 /** Return the db with the schema ensured once, or null if unavailable. */
 function db(): Db | null {
   const d = getDb()
@@ -210,6 +238,9 @@ function db(): Db | null {
     migrateLegacyTablesToIntents(d)
     // v10 → v11 project_path → workspace_path; MUST also precede SCHEMA (see docstring).
     migrateProjectPathToWorkspacePath(d)
+    // v14 → v15 latest work-session pointer → work-session pointer; precedes SCHEMA so
+    // fresh creation and legacy upgrades converge on the same runtime column.
+    migrateLastDevSessionToLastWorkSession(d)
     d.exec(SCHEMA)
     // v1 → v2: add `module` to pre-existing intents tables (historic rows default to '').
     ensureColumn(d, 'intents', 'module', "TEXT NOT NULL DEFAULT ''")
@@ -241,6 +272,8 @@ function db(): Db | null {
     // v13 → v14: add pr_url (clickable PR link; nullable — historic rows stay null).
     // Distinct from latest_commit_hash; carries the PR's web URL alongside pr_id.
     ensureColumn(d, 'intents', 'pr_url', 'TEXT')
+    // v14 → v15: latest intent-launched work-session pointer.
+    ensureColumn(d, 'intents', 'last_work_session_id', 'TEXT')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -288,7 +321,7 @@ interface Row {
   priority: string
   status: string
   module: string
-  last_dev_session_id: string | null
+  last_work_session_id: string | null
   automate: number
   branch_name: string | null
   latest_commit_hash: string | null
@@ -335,7 +368,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     status: r.status as IntentStatus,
     dependsOn: byId.get(r.id) ?? [],
     dependsOnTypes: typesById.get(r.id) ?? {},
-    lastDevSessionId: r.last_dev_session_id,
+    lastWorkSessionId: r.last_work_session_id,
     automate: r.automate === 1,
     branchName: r.branch_name,
     latestCommitHash: r.latest_commit_hash,
@@ -543,7 +576,7 @@ export function insertIntents(
       const createdAt = now + i
       d.run(
         `INSERT INTO intents
-           (id, workspace_path, title, short_en_title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
+           (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         ids[i],
         proj,
@@ -674,7 +707,7 @@ export function upsertIntents(workspacePath: string, items: ProposedIntent[]): I
         const createdAt = now + i
         d.run(
           `INSERT INTO intents
-             (id, workspace_path, title, short_en_title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status, intent_session_id)
+             (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status, intent_session_id)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           ids[i],
           proj,
@@ -776,17 +809,17 @@ export function setAutomate(id: string, automate: boolean): void {
   d.run('UPDATE intents SET automate=?, updated_at=? WHERE id=?', automate ? 1 : 0, Date.now(), id)
 }
 
-export function setLastDevSession(id: string, sessionId: string): void {
+export function setLastWorkSession(id: string, sessionId: string): void {
   const d = requireDb()
   d.run(
-    'UPDATE intents SET last_dev_session_id=?, updated_at=? WHERE id=?',
+    'UPDATE intents SET last_work_session_id=?, updated_at=? WHERE id=?',
     sessionId,
     Date.now(),
     id,
   )
 }
 
-/** Set the git branch name for an intent (called after dev session launch). */
+/** Set the git branch name for an intent (called after work session launch). */
 export function setBranchName(id: string, branchName: string): void {
   const d = requireDb()
   d.run('UPDATE intents SET branch_name=?, updated_at=? WHERE id=?', branchName, Date.now(), id)
@@ -1188,7 +1221,7 @@ export function deleteToolSessionRecord(sessionId: string): void {
   d.run('DELETE FROM tool_sessions WHERE session_id=?', sessionId)
 }
 
-// ---- Intent dev session execution records (审计追踪) ----
+// ---- Intent work session execution records (审计追踪) ----
 
 interface IntentSessionRow {
   id: number
@@ -1219,7 +1252,7 @@ function toIntentDevSession(r: IntentSessionRow): IntentDevSession {
 }
 
 /**
- * Insert a new intent dev session record.
+ * Insert a new intent work session record.
  * Returns the auto-generated id.
  */
 export function insertIntentSession(
@@ -1244,7 +1277,7 @@ export function insertIntentSession(
 }
 
 /**
- * Update an intent dev session record post-hoc (end timestamp, exit code, summary).
+ * Update an intent work session record post-hoc (end timestamp, exit code, summary).
  * Only updates non-`undefined` fields; no-op when no fields are supplied.
  * Skips when the db is unavailable (degradation — caller may log but must not throw).
  */
@@ -1321,15 +1354,15 @@ export function findIntentIdBySessionId(sessionId: string): string | null {
 
 /**
  * Broad reverse-lookup of the intent that owns ANY kind of session id — wider than
- * {@link findIntentIdBySessionId} (which only matches Start-Dev dev sessions, on
+ * {@link findIntentIdBySessionId} (which only matches Start-work work sessions, on
  * purpose, for the title-bar jump button). Probes three bindings, most-specific first:
- *  1. `intent_sessions.session_id` — an intent dev-session record (Start-Dev runs).
+ *  1. `intent_sessions.session_id` — an intent work-session record (Start-work runs).
  *  2. `intents.intent_session_id`  — the comm session the save-gate links back (codex
  *     `save_intents`).
- *  3. `intents.last_dev_session_id` — the latest dev session bound to the intent.
+ *  3. `intents.last_work_session_id` — the latest work session bound to the intent.
  *
  * Used by the wait-user-involve store's `toEvent` to derive `intentId`/`intentTitle`
- * from an event's `session_id`, so both a comm-session gate and a dev-session prompt
+ * from an event's `session_id`, so both a comm-session gate and a work-session prompt
  * resolve to their intent. Returns null when nothing matches or the db is unavailable.
  */
 export function findIntentIdByAnySessionId(sessionId: string): string | null {
@@ -1346,14 +1379,14 @@ export function findIntentIdByAnySessionId(sessionId: string): string | null {
   )
   if (fromComm) return fromComm.id
   const fromLastDev = d.get<{ id: string }>(
-    'SELECT id FROM intents WHERE last_dev_session_id=? LIMIT 1',
+    'SELECT id FROM intents WHERE last_work_session_id=? LIMIT 1',
     sessionId,
   )
   return fromLastDev ? fromLastDev.id : null
 }
 
 /**
- * List dev session records for an intent, newest first.
+ * List work session records for an intent, newest first.
  * Returns `[]` when the db is unavailable.
  */
 export function listIntentSessions(intentId: string): IntentDevSession[] {
@@ -1368,7 +1401,7 @@ export function listIntentSessions(intentId: string): IntentDevSession[] {
 }
 
 /**
- * Get a single intent dev session record by its primary key.
+ * Get a single intent work session record by its primary key.
  * Returns `null` when the db is unavailable or the record is not found.
  */
 export function getIntentSession(id: number): IntentDevSession | null {

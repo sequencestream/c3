@@ -19,14 +19,14 @@
  * ── Session/dev domain (`run:bound`, sessionKind≠intent) ───────────────────
  *  Persist the session's action mode under the real SDK id. If the pending id
  *  was registered as a manual start_development (`pendingDevLink`), flip the
- *  owning intent to `in_progress` and link the real dev session id.
+ *  owning intent to `in_progress` and link the real work session id.
  *
  *  Both domains fan out a `session_started` broadcast so every WS connection
  *  updates its active-session pointer (the client checks its own `clientId`).
  *
  * ── Intents-automation domain (`run:settled`, sessionKind=『work』) ──────
  *  Broadcast the refreshed session list (title/order). For any settled session
- *  that matches an intent's `lastDevSessionId`, refresh the intent list and,
+ *  that matches an intent's `lastWorkSessionId`, refresh the intent list and,
  *  if the project's automation controller is active, forward the event so the
  *  state machine drives the next action (judge → commit → next intent).
  *
@@ -65,7 +65,7 @@ import {
   rebindChatSession,
   setBranchName,
   setIntentSessionId,
-  setLastDevSession,
+  setLastWorkSession,
   setLatestCommitHash,
   setPrInfo,
   setSpecSessionId,
@@ -152,7 +152,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastWaitUserEvents,
   } = deps
 
-  // Manual Start-Dev session-end Git/PR cleanup deps (MSC-R1…R6). Stateless
+  // Manual Start-Work session-end Git/PR cleanup deps (MSC-R1…R6). Stateless
   // wiring of git helpers + store writers + the workbench failure-todo channel.
   const cleanupDeps: DevCleanupDeps = {
     getGitBranchMode,
@@ -175,9 +175,9 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     },
     pushFailureEvent: ({ workspacePath, intentId, code, params }) => {
       if (!isWaitUserEventsStoreAvailable()) return
-      // A manual Start-Dev cleanup failure has no real session to reference; the intent
+      // A manual Start-work cleanup failure has no real session to reference; the intent
       // OBJECT id goes into `session_id` as the best available identifier. The reverse
-      // lookup of `intentId`/`intentTitle` may resolve it (via last_dev_session_id) or
+      // lookup of `intentId`/`intentTitle` may resolve it (via last_work_session_id) or
       // yield null — either way the event renders; only the derived intent name varies.
       createEvent({
         workspacePath,
@@ -194,7 +194,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
 
   // ── run:bound ────────────────────────────────────────────────────────
   // Matched via `getRuntime`. Two branches: intent comm-sessions (pending
-  // →real re-key + hidden-set update) vs normal/dev sessions (mode persist
+  // →real re-key + hidden-set update) vs normal/work sessions (mode persist
   // + optional manual-start_development linkage).
   eventBus.subscribe('run:bound', ({ prevId, realId }) => {
     // `realId` is current for the pending→real path; `prevId` as fallback
@@ -263,15 +263,15 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
         broadcastIntents(rt.workspacePath)
       }
     } else {
-      // ── Normal dev session ──
+      // ── Normal work session ──
       setSessionMode(realId, rt.mode)
 
       // Manual start_development linkage: flip owning intent to in_progress.
       const intentId = takePendingDevLink(prevId)
       if (intentId) {
-        setLastDevSession(intentId, realId)
+        setLastWorkSession(intentId, realId)
         releaseDevLaunch(intentId)
-        // Record the dev session start in intent_sessions (fire-and-forget
+        // Record the work session start in intent_sessions (fire-and-forget
         // on the DB write — the insert is synchronous but cheap).
         insertIntentSession(intentId, realId, resolveSessionVendor(realId))
         updateRowOwner({
@@ -306,7 +306,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
 
   // ── run:settled ──────────────────────────────────────────────────────
   // Broadcast session list refresh always. For `work` sessionKind runs, also
-  // match against intent `lastDevSessionId` to refresh intent status and
+  // match against intent `lastWorkSessionId` to refresh intent status and
   // forward to the project's automation controller.
   eventBus.subscribe('run:settled', ({ sessionId, workspacePath, reason, sessionKind }) => {
     // Always refresh the session list (title / order / status).
@@ -317,12 +317,12 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     const unboundIntentId = clearPendingDevLink(sessionId)
     if (unboundIntentId) releaseDevLaunch(unboundIntentId)
 
-    // Match settled session to an intent's lastDevSessionId.
+    // Match settled session to an intent's lastWorkSessionId.
     // Scan the workspace's intents — O(n) per settle; n is small (active
     // intents are typically < 50 per workspace). A reverse-map is not
     // justified until this shows up in a profile.
     const intents = listIntents(workspacePath)
-    const matched = intents.find((r) => r.lastDevSessionId === sessionId)
+    const matched = intents.find((r) => r.lastWorkSessionId === sessionId)
     if (!matched) {
       // Not an intent-linked session — nothing more to do.
       return
@@ -338,7 +338,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
 
     // Manual vs automation split (MSC-R1): automation drives its own commit/PR
     // in `notifyTurnSettled`; a session NOT owned by the active orchestrator is a
-    // manual Start-Dev session, so run the session-end Git/PR cleanup for it.
+    // manual Start-Work session, so run the session-end Git/PR cleanup for it.
     // Fire-and-forget — must not block the run:settled handler.
     if (!isIntentDrivenByAutomation(workspacePath, matched.id)) {
       void runManualDevCleanup(matched.id, workspacePath, cleanupDeps)
@@ -419,7 +419,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
 // ---------------------------------------------------------------------------
 // Fire-and-forget: write the session conclusion to intent_sessions.
 // Called from the run:settled subscription when a session is matched to an
-// intent's lastDevSessionId. Must never throw; errors are caught internally
+// intent's lastWorkSessionId. Must never throw; errors are caught internally
 // and logged. Does NOT block run:settled (caller passes `void` on return).
 // ---------------------------------------------------------------------------
 

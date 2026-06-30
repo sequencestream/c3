@@ -1,7 +1,7 @@
 # intent-management — Design
 
 Implements the [spec](intent-management-spec.md). The capability is built from a SQLite ledger layer, a store over
-it, the read-only communication run variant plus the save tool, launch-development wiring, and the
+it, the read-only communication run variant plus the save tool, start-work wiring, and the
 automation orchestrator (state machine + completion judge + git helper), with hooks into the agent
 run loop (a run variant), the runtime registry (a run `kind` + shared launcher), the WS dispatch
 layer (new message branches), and session listing (hidden-set filtering). The frontend adds an
@@ -56,7 +56,7 @@ completion judge + git helper) layered on the same runtime/launcher/viewer machi
 ## Schema (`PRAGMA user_version` migrations)
 
 - `intents` — the ledger (`id`, `workspace_path`, `title`, `content`, `priority`, `status`,
-  `module`, `last_dev_session_id`, `automate`, `created_at`, `updated_at`, `completed_at`), indexed
+  `module`, `last_work_session_id`, `automate`, `created_at`, `updated_at`, `completed_at`), indexed
   by `(workspace_path, status)`. `module` is `TEXT NOT NULL DEFAULT ''`; `automate` is
   `INTEGER NOT NULL DEFAULT 0`.
 - `intent_deps` — `(intent_id, depends_on_id)` edges.
@@ -402,7 +402,7 @@ route**, mounted on c3's own server (before the SPA catch-all, like the codex re
   the same gate deps) and ignores the token URL — a later intent must design its isolation, not relax
   the per-project guard.
 
-## Launch development (`start_development`)
+## Start work (`start_development`)
 
 1. Resolve the project and synchronously claim the intent id in the feature-private in-memory
    launch set before worktree creation or launch. If already claimed, reply
@@ -410,7 +410,7 @@ route**, mounted on c3's own server (before the SPA catch-all, like the codex re
    is consumed on bind, and on every pre-launch / startup failure path (including worktree creation failure
    and launch rejection).
 2. Validate the intent exists and is `todo`, or `in_progress` with a dangling (deleted)
-   `lastDevSessionId` (allowing relaunch; other states → `error`) (RM-R8).
+   `lastWorkSessionId` (allowing relaunch; other states → `error`) (RM-R8).
 3. Unmet-dependency check: any `dependsOn` not `done` → still allowed, but the frontend
    second-confirms before sending in the manual path (RM-R11).
 4. **Pull latest before launch** (2026-06-20) so the work session builds on up-to-date code:
@@ -430,8 +430,8 @@ route**, mounted on c3's own server (before the SPA catch-all, like the codex re
    automation use the same prompt construction and do not change the branch/worktree/session flow.
    On session bind, set last-dev-session + status `in_progress` + broadcast `intents` + broadcast
    statuses.
-6. The run is backgrounded and survives disconnect; the development session is a **normal**
-   session that appears in the sidebar; `lastDevSessionId` powers the back-link.
+6. The run is backgrounded and survives disconnect; the work session is a **normal**
+   session that appears in the sidebar; `lastWorkSessionId` powers the back-link.
 
 ## Automation orchestrator
 
@@ -470,18 +470,18 @@ is the single source of truth, broadcast on every change.
     this replay path it also computes the pending-question flag from the buffer so a settled turn
     that ended on an unanswered `AskUserQuestion` is flagged for the human-decision guard
     (RM-A11) — otherwise it would read as a plain `complete` and risk a blind continue.
-- **Main loop.** At the top of each loop iteration, **before** picking the next intent, the global concurrency gate (RM-A12) scans **all** `in_progress` intents (regardless of the `automate` flag) for a dev session that is **truly running** (`lastDevSessionId` non-null AND the run is live). When found, it attaches an internal viewer to that in-flight turn (in attach mode) and waits for it to settle — logging the outcome but **never** judging or interfering with the intent's lifecycle (manual intents are outside the orchestrator's scope). After the turn settles, the loop re-checks the gate; when clear, it falls through to pick the next intent. A dangling session (on disk but not running) passes the gate immediately. This is independent of the per-intent attach logic (RM-A10), which handles a **selected** intent's own running session after the pick; the gate covers **any** running session from intents the pick would not select (notably non-`automate` manual runs), preventing concurrent dev sessions that would conflict on file modifications in the same working tree.
+- **Main loop.** At the top of each loop iteration, **before** picking the next intent, the global concurrency gate (RM-A12) scans **all** `in_progress` intents (regardless of the `automate` flag) for a work session that is **truly running** (`lastWorkSessionId` non-null AND the run is live). When found, it attaches an internal viewer to that in-flight turn (in attach mode) and waits for it to settle — logging the outcome but **never** judging or interfering with the intent's lifecycle (manual intents are outside the orchestrator's scope). After the turn settles, the loop re-checks the gate; when clear, it falls through to pick the next intent. A dangling session (on disk but not running) passes the gate immediately. This is independent of the per-intent attach logic (RM-A10), which handles a **selected** intent's own running session after the pick; the gate covers **any** running session from intents the pick would not select (notably non-`automate` manual runs), preventing concurrent work sessions that would conflict on file modifications in the same working tree.
 - **Pick next** selects the best eligible intent
   (RM-A3: `automate` ∧ status∈{todo,in_progress} ∧ deps done; sorted P0→P3 then `createdAt`). For
-  each, the develop step first picks its **starting** action by precedence: (1) if `lastDevSessionId` is
+  each, the develop step first picks its **starting** action by precedence: (1) if `lastWorkSessionId` is
   **already running** it **attaches** (RM-A10) — attach mode, starting id =
-  `lastDevSessionId`, and the in-progress mark is applied **before** the dev turn (no launch ⇒ no early
+  `lastWorkSessionId`, and the in-progress mark is applied **before** the dev turn (no launch ⇒ no early
   bind, so the status must point at the tracked session up front); else (2) an `in_progress`
-  intent whose `lastDevSessionId` passes the session-exists check is **resumed** (real id ⇒ the dev turn
+  intent whose `lastWorkSessionId` passes the session-exists check is **resumed** (real id ⇒ the dev turn
   continues that context, first prompt continue); else (3) a `todo` or dangling one starts a fresh
   launch — the same dangling rule as manual launch. The attach flag applies to the
   **first** turn only; it is cleared after the first turn so any continue continuation uses the
-  ordinary resume path (the attached turn settled the run). Then the develop step loops: run a dev turn → **as soon as the dev session binds**
+  ordinary resume path (the attached turn settled the run). Then the develop step loops: run a dev turn → **as soon as the work session binds**
   (early — mirroring manual launch) the in-progress mark does set-last-dev-session +
   status `in_progress` + broadcast + emit, so the UI flips to `in_progress` immediately, not
   at turn end (a fallback re-marks if the early bind never fired); → on `complete`, gather diff-stat +
@@ -506,7 +506,7 @@ is the single source of truth, broadcast on every change.
     upstream, no repo …) is returned verbatim → hard stop (RM-A6), **never** retried. A
     commit-hook failure (a pre-commit lint hook) is healed by a **single dev-agent attempt** —
     lint toolchains differ per project, so there is no portable fix _command_: it resumes the **same**
-    dev session (same id, no attach) with a targeted prompt embedding the
+    work session (same id, no attach) with a targeted prompt embedding the
     lint error summary, lets the agent fix it, then retries the commit **once** (re-staging
     everything). A retry that succeeds ends the heal; a retry that fails non-commit-hook surfaces
     verbatim; a retry that is still a lint failure returns `lint 自动修复失败(修复 agent 介入后仍未通过)…`
@@ -561,7 +561,7 @@ list once reconcile settles — judging a dead session is an LLM call and must
 never block the first paint). It processes every `in_progress` intent for a
 project:
 
-1. **Liveness check:** if `lastDevSessionId` is non-null and the run is live,
+1. **Liveness check:** if `lastWorkSessionId` is non-null and the run is live,
    the dev process is still alive — yields `runStatus: 'running'`.
 2. **Dead process path:** otherwise, load the session's last 3 assistant
    messages from disk and run the completion
@@ -580,7 +580,7 @@ on later broadcasts) and pushes an intents refresh so every
 connection sees the refreshed run-states and any auto-completes.
 
 **Dead-session de-dup (perf).** The handler keeps a judged-sessions map
-(intent id → the `lastDevSessionId` last judged while dead) and filters the
+(intent id → the `lastWorkSessionId` last judged while dead) and filters the
 reconcile input: an intent whose **current dead session** is already recorded
 is skipped — re-judging on every entry / refresh / WS reconnect yields the same
 verdict at the cost of another LLM call. A live process (re-derived cheaply) and
@@ -625,7 +625,7 @@ every connection. It is wired into the shared kernel context so intent session h
 and any background mutation can push the refreshed list.
 
 - `list_intents` / `update_intent_status` read/write the store and reply `intents`.
-- Dev back-link: the frontend sends `select_session` with `lastDevSessionId`; if the session no
+- Dev back-link: the frontend sends `select_session` with `lastWorkSessionId`; if the session no
   longer exists, the existing `error` path returns and the frontend offers a friendly
   restart/cancel exit (RM-R13).
 

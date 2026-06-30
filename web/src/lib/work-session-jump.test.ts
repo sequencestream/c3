@@ -8,8 +8,8 @@ import {
   WORK_SESSION_JUMP_DELAY_MS,
 } from './work-session-jump'
 
-function intent(id: string, lastDevSessionId: string | null): Intent {
-  return { id, lastDevSessionId } as Intent
+function intent(id: string, lastWorkSessionId: string | null): Intent {
+  return { id, lastWorkSessionId } as Intent
 }
 
 function session(id: string): SessionInfo {
@@ -36,12 +36,12 @@ describe('shouldJumpAfterDevLaunch — only the success terminal jumps', () => {
   })
 })
 
-describe('resolveJumpTargetSessionId — reverse-lookup via lastDevSessionId', () => {
+describe('resolveJumpTargetSessionId — reverse-lookup via lastWorkSessionId', () => {
   const list = [intent('a', 'dev-a'), intent('b', null)]
-  it('returns the intent`s lastDevSessionId when present', () => {
+  it('returns the intent`s lastWorkSessionId when present', () => {
     expect(resolveJumpTargetSessionId('a', list)).toBe('dev-a')
   })
-  it('returns null when the intent has no dev session yet', () => {
+  it('returns null when the intent has no work session yet', () => {
     expect(resolveJumpTargetSessionId('b', list)).toBeNull()
   })
   it('returns null when the intent is absent from the list', () => {
@@ -54,7 +54,7 @@ describe('resolvePendingWorkSessionSelect — one-shot select once the target la
   const sessions = [session('s1'), session('s2')]
   const baseRequest = beginPendingWorkSessionSelect('/ws', 'intent-1')
 
-  it('keeps waiting when lastDevSessionId is not available yet', () => {
+  it('keeps waiting when lastWorkSessionId is not available yet', () => {
     expect(
       resolvePendingWorkSessionSelect(baseRequest, {
         workspacePath: '/ws',

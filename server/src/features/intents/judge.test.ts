@@ -48,7 +48,7 @@ const req: Intent = {
   module: '',
   status: 'in_progress',
   dependsOn: [],
-  lastDevSessionId: null,
+  lastWorkSessionId: null,
   automate: true,
   branchName: null,
   latestCommitHash: null,

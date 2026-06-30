@@ -47,12 +47,12 @@ export function shouldJumpAfterDevLaunch(closedReason: DevLaunchCloseReason | un
 
 /**
  * Resolve the jump target work-session id for an intent from the latest intent
- * list: this launch's `lastDevSessionId`, the only client-side reverse lookup
+ * list: this launch's `lastWorkSessionId`, the only client-side reverse lookup
  * (list rows carry no `linkedIntentId`). Returns null when the intent is absent
- * or has no dev session yet — the caller then does not jump.
+ * or has no work session yet — the caller then does not jump.
  */
 export function resolveJumpTargetSessionId(intentId: string, intents: Intent[]): string | null {
-  return intents.find((it) => it.id === intentId)?.lastDevSessionId ?? null
+  return intents.find((it) => it.id === intentId)?.lastWorkSessionId ?? null
 }
 
 export function beginPendingWorkSessionSelect(
@@ -75,7 +75,8 @@ export function resolvePendingWorkSessionSelect(
   if (context.workspacePath !== request.workspacePath || context.sessionKind !== 'work') {
     return { request, selectSessionId: null }
   }
-  const sessionId = request.sessionId ?? resolveJumpTargetSessionId(request.intentId, context.intents)
+  const sessionId =
+    request.sessionId ?? resolveJumpTargetSessionId(request.intentId, context.intents)
   if (!sessionId) return { request, selectSessionId: null }
   if (context.sessions.some((s) => s.sessionId === sessionId)) {
     return { request: null, selectSessionId: sessionId }

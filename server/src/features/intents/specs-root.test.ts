@@ -68,7 +68,7 @@ describe('getSpecsBase (REQ-2: same spec set across worktrees of one project)', 
     const owner = '/Users/foo/project'
     const worktree = '/home/u/.c3/worktrees/Users-foo-project/intent-abc'
     // The handler always passes `owner`, so the spec root is the same whether the
-    // dev session physically runs in `owner` or in `worktree`.
+    // work session physically runs in `owner` or in `worktree`.
     expect(getSpecsBase(owner)).toBe(getSpecsBase(owner))
     // And it is NOT keyed on the worktree path (which would split the spec set).
     expect(getSpecsBase(owner)).not.toBe(getSpecsBase(worktree))

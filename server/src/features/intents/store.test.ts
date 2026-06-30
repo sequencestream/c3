@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import {
   canTransition,
+  findIntentIdByAnySessionId,
   findIntentIdBySessionId,
   findIntents,
   getChatSession,
@@ -28,7 +29,7 @@ import {
   resolveBatchDependencies,
   setBranchName,
   setChatSession,
-  setLastDevSession,
+  setLastWorkSession,
   setLatestCommitHash,
   setPrInfo,
   setSpecApproved,
@@ -70,7 +71,7 @@ describe('intents CRUD', () => {
     expect(saved[0].status).toBe('todo')
     expect(saved[0].dependsOn).toEqual([])
     expect(saved[1].dependsOn.sort()).toEqual(['x', 'y'])
-    expect(saved[1].lastDevSessionId).toBeNull()
+    expect(saved[1].lastWorkSessionId).toBeNull()
     // listed sorted by priority asc then recency — B (P0) before A (P1)
     const list = listIntents(proj)
     expect(list.map((r) => r.title)).toEqual(['B', 'A'])
@@ -103,15 +104,156 @@ describe('intents CRUD', () => {
     expect(listIntents('/abs/project-a').map((r) => r.title)).toEqual(['A'])
   })
 
-  it('records last dev session and updates status', () => {
+  it('records last work session and updates status', () => {
     const [r] = insertIntents(proj, [
       { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
-    setLastDevSession(r.id, 'sess-123')
+    setLastWorkSession(r.id, 'sess-123')
     updateStatus(r.id, 'in_progress')
     const got = getIntent(r.id)
-    expect(got?.lastDevSessionId).toBe('sess-123')
+    expect(got?.lastWorkSessionId).toBe('sess-123')
     expect(got?.status).toBe('in_progress')
+  })
+
+  it('migrates legacy last_dev_session_id to last_work_session_id and keeps the backlink readable', () => {
+    const raw = getDb()!
+    raw.exec(`
+      CREATE TABLE intents (
+        id              TEXT PRIMARY KEY,
+        workspace_path  TEXT NOT NULL,
+        title           TEXT NOT NULL,
+        short_en_title  TEXT,
+        content         TEXT NOT NULL,
+        priority        TEXT NOT NULL,
+        status          TEXT NOT NULL,
+        module          TEXT NOT NULL DEFAULT '',
+        last_dev_session_id TEXT,
+        automate        INTEGER NOT NULL DEFAULT 0,
+        branch_name     TEXT,
+        latest_commit_hash TEXT,
+        pr_id           TEXT,
+        pr_status       TEXT,
+        pr_url          TEXT,
+        spec_path       TEXT,
+        spec_approved   INTEGER NOT NULL DEFAULT 0,
+        spec_approve_user TEXT,
+        spec_session_id TEXT,
+        intent_session_id TEXT,
+        created_at      INTEGER NOT NULL,
+        updated_at      INTEGER NOT NULL,
+        completed_at    INTEGER
+      );
+      PRAGMA user_version=14;
+    `)
+    raw.run(
+      `INSERT INTO intents
+         (id, workspace_path, title, short_en_title, content, priority, status, module, last_dev_session_id, automate, created_at, updated_at, completed_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      'legacy-work-link',
+      proj,
+      'Legacy work link',
+      null,
+      'body',
+      'P0',
+      'in_progress',
+      '',
+      'sess-legacy',
+      0,
+      1,
+      1,
+      null,
+    )
+
+    resetStoreForTests()
+    expect(getIntent('legacy-work-link')?.lastWorkSessionId).toBe('sess-legacy')
+    expect(findIntentIdByAnySessionId('sess-legacy')).toBe('legacy-work-link')
+
+    const cols = raw.all<{ name: string }>('PRAGMA table_info(intents)')
+    expect(cols.some((c) => c.name === 'last_work_session_id')).toBe(true)
+    expect(cols.some((c) => c.name === 'last_dev_session_id')).toBe(false)
+    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(15)
+
+    resetStoreForTests()
+    expect(() => listIntents(proj)).not.toThrow()
+    expect(getIntent('legacy-work-link')?.lastWorkSessionId).toBe('sess-legacy')
+  })
+
+  it('converges a partial work-session migration with both old and new columns', () => {
+    const raw = getDb()!
+    raw.exec(`
+      CREATE TABLE intents (
+        id              TEXT PRIMARY KEY,
+        workspace_path  TEXT NOT NULL,
+        title           TEXT NOT NULL,
+        short_en_title  TEXT,
+        content         TEXT NOT NULL,
+        priority        TEXT NOT NULL,
+        status          TEXT NOT NULL,
+        module          TEXT NOT NULL DEFAULT '',
+        last_dev_session_id TEXT,
+        last_work_session_id TEXT,
+        automate        INTEGER NOT NULL DEFAULT 0,
+        branch_name     TEXT,
+        latest_commit_hash TEXT,
+        pr_id           TEXT,
+        pr_status       TEXT,
+        pr_url          TEXT,
+        spec_path       TEXT,
+        spec_approved   INTEGER NOT NULL DEFAULT 0,
+        spec_approve_user TEXT,
+        spec_session_id TEXT,
+        intent_session_id TEXT,
+        created_at      INTEGER NOT NULL,
+        updated_at      INTEGER NOT NULL,
+        completed_at    INTEGER
+      );
+      PRAGMA user_version=14;
+    `)
+    raw.run(
+      `INSERT INTO intents
+         (id, workspace_path, title, short_en_title, content, priority, status, module, last_dev_session_id, last_work_session_id, automate, created_at, updated_at, completed_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      'partial-null-new',
+      proj,
+      'Partial fill',
+      null,
+      'body',
+      'P0',
+      'in_progress',
+      '',
+      'sess-old',
+      null,
+      0,
+      1,
+      1,
+      null,
+    )
+    raw.run(
+      `INSERT INTO intents
+         (id, workspace_path, title, short_en_title, content, priority, status, module, last_dev_session_id, last_work_session_id, automate, created_at, updated_at, completed_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      'partial-new-wins',
+      proj,
+      'Partial new wins',
+      null,
+      'body',
+      'P0',
+      'in_progress',
+      '',
+      'sess-old-loser',
+      'sess-new-winner',
+      0,
+      2,
+      2,
+      null,
+    )
+
+    resetStoreForTests()
+    expect(getIntent('partial-null-new')?.lastWorkSessionId).toBe('sess-old')
+    expect(getIntent('partial-new-wins')?.lastWorkSessionId).toBe('sess-new-winner')
+
+    resetStoreForTests()
+    expect(() => listIntents(proj)).not.toThrow()
   })
 
   it('patches fields and replaces dependencies', () => {
@@ -219,7 +361,7 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(14)
+    expect(version?.user_version).toBe(15)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()
@@ -289,7 +431,7 @@ describe('intents CRUD', () => {
     expect(depsCols.some((c) => c.name === 'dep_type')).toBe(true)
     expect(depsCols.some((c) => c.name === 'created_at')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(14)
+    expect(version?.user_version).toBe(15)
 
     // Idempotent: re-run must not throw.
     resetStoreForTests()
@@ -448,7 +590,7 @@ describe('intents spec + session fields (v12→v13)', () => {
     expect(got?.specSessionId).toBe('sess-spec')
     expect(got?.intentSessionId).toBe('sess-refine')
     // Coexists with last_dev_session_id (different semantics): still null here.
-    expect(got?.lastDevSessionId).toBeNull()
+    expect(got?.lastWorkSessionId).toBeNull()
   })
 
   it('reads a historic row (no v13 columns written) as defaults, and migrates idempotently', () => {
@@ -485,7 +627,7 @@ describe('intents spec + session fields (v12→v13)', () => {
     expect(cols.some((c) => c.name === 'spec_session_id')).toBe(true)
     expect(cols.some((c) => c.name === 'intent_session_id')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(14)
+    expect(version?.user_version).toBe(15)
 
     // Idempotent: re-running the schema-ensure path must not throw or lose data.
     resetStoreForTests()
@@ -1315,7 +1457,7 @@ describe('canTransition (status guard, 7-state graph)', () => {
   })
 })
 
-describe('intent_sessions CRUD (dev session execution records)', () => {
+describe('intent_sessions CRUD (work session execution records)', () => {
   it('inserts a record and returns auto-increment id', () => {
     const id1 = insertIntentSession('intent-1', 'sess-001', 'claude', 'agent-a')
     expect(id1).toBeGreaterThan(0)

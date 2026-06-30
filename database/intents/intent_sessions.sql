@@ -1,5 +1,5 @@
--- intent_sessions — intent 的 dev session 执行记录（审计追踪）
--- 每次 intent 启动 dev session 写新行，重跑不覆盖
+-- intent_sessions — intent 的工作会话执行记录（审计追踪）
+-- 每次 intent 启动工作会话写新行，重跑不覆盖
 -- 所属模块: intents
 -- 对应 Store: server/src/features/intents/store.ts
 
@@ -7,7 +7,7 @@
 CREATE TABLE IF NOT EXISTS intent_sessions (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,  -- 自增主键
   intent_id     TEXT    NOT NULL,                   -- 意图 ID (外键 → intents.id)
-  session_id    TEXT    NOT NULL,                   -- dev session ID (c3SessionId)
+  session_id    TEXT    NOT NULL,                   -- 工作会话 ID (c3SessionId)
   vendor        TEXT    NOT NULL,                   -- 执行 vendor
   summary       TEXT,                               -- JSON frontmatter + Markdown 摘要
   start_at      INTEGER,                            -- 开始时间 (epoch ms)

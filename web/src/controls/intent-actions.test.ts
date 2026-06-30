@@ -15,8 +15,8 @@ import type { AppCtx } from './types'
 
 const WS = '/ws'
 
-function intent(id: string, lastDevSessionId: string | null): Intent {
-  return { id, lastDevSessionId } as Intent
+function intent(id: string, lastWorkSessionId: string | null): Intent {
+  return { id, lastWorkSessionId } as Intent
 }
 
 function session(id: string): SessionInfo {
@@ -136,7 +136,7 @@ describe('post-Start-Dev jump wiring', () => {
     expect(h.showToast).toHaveBeenCalledWith('intent.devLaunch.failed')
   })
 
-  it('keeps the pending jump armed when the intent has no dev session id yet', () => {
+  it('keeps the pending jump armed when the intent has no work session id yet', () => {
     const h = makeCtx({ intents: [intent('i-1', null)], sessions: [] })
     h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
     vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
@@ -148,7 +148,7 @@ describe('post-Start-Dev jump wiring', () => {
     })
   })
 
-  it('resolves a pending jump when lastDevSessionId arrives after the ready jump', () => {
+  it('resolves a pending jump when lastWorkSessionId arrives after the ready jump', () => {
     const h = makeCtx({ intents: [intent('i-1', null)], sessions: [] })
     h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
     vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)

@@ -1,0 +1,7 @@
+-- intents.last_dev_session_id → intents.last_work_session_id
+--
+-- 运行时迁移由 server/src/features/intents/store.ts 的 schema ensure 幂等执行:
+-- 1. 旧库只有 last_dev_session_id 时,就地 RENAME COLUMN 为 last_work_session_id。
+-- 2. 部分迁移库若两列同时存在,仅当 last_work_session_id 为 NULL 时用旧列非空值补齐。
+-- 3. 两列都有不同非空值时保留 last_work_session_id 为准;运行代码只读写新列。
+-- 4. 新建库直接创建 last_work_session_id,历史工作会话回链的 session id 不丢失。

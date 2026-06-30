@@ -31,7 +31,7 @@ vi.mock('../features/intents/store.js', () => ({
   rebindChatSession: vi.fn(),
   setBranchName: vi.fn(),
   setIntentSessionId: vi.fn(),
-  setLastDevSession: vi.fn(),
+  setLastWorkSession: vi.fn(),
   setLatestCommitHash: vi.fn(),
   setPrInfo: vi.fn(),
   setSpecSessionId: vi.fn(),
@@ -561,7 +561,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     vi.mocked(listIntents).mockReturnValueOnce([
       {
         id: 'intent-1',
-        lastDevSessionId: 'sess-m1',
+        lastWorkSessionId: 'sess-m1',
         title: 'Test',
         workspaceId: '/proj',
       } as Intent,
@@ -604,7 +604,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     const { runManualDevCleanup } = await import('../features/intents/dev-cleanup.js')
 
     vi.mocked(listIntents).mockReturnValueOnce([
-      { id: 'intent-man', lastDevSessionId: 'sess-man', title: 'M' } as Intent,
+      { id: 'intent-man', lastWorkSessionId: 'sess-man', title: 'M' } as Intent,
     ])
     vi.mocked(isIntentDrivenByAutomation).mockReturnValueOnce(false)
 
@@ -628,7 +628,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     const { runManualDevCleanup } = await import('../features/intents/dev-cleanup.js')
 
     vi.mocked(listIntents).mockReturnValueOnce([
-      { id: 'intent-auto', lastDevSessionId: 'sess-auto', title: 'A' } as Intent,
+      { id: 'intent-auto', lastWorkSessionId: 'sess-auto', title: 'A' } as Intent,
     ])
     vi.mocked(isIntentDrivenByAutomation).mockReturnValueOnce(true)
 
@@ -651,7 +651,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       await import('../features/intents/store.js')
 
     vi.mocked(listIntents).mockReturnValueOnce([
-      { id: 'intent-2', lastDevSessionId: 'sess-e1', title: 'Error Intent' } as Intent,
+      { id: 'intent-2', lastWorkSessionId: 'sess-e1', title: 'Error Intent' } as Intent,
     ])
     vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce({
       id: 99,
@@ -681,7 +681,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       await import('../features/intents/store.js')
 
     vi.mocked(listIntents).mockReturnValueOnce([
-      { id: 'intent-3', lastDevSessionId: 'sess-a1', title: 'Aborted Intent' } as Intent,
+      { id: 'intent-3', lastWorkSessionId: 'sess-a1', title: 'Aborted Intent' } as Intent,
     ])
     vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce({
       id: 77,
@@ -711,7 +711,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       await import('../features/intents/store.js')
 
     vi.mocked(listIntents).mockReturnValueOnce([
-      { id: 'intent-4', lastDevSessionId: 'sess-n1', title: 'No Record Intent' } as Intent,
+      { id: 'intent-4', lastWorkSessionId: 'sess-n1', title: 'No Record Intent' } as Intent,
     ])
     // getIntentSessionBySessionId returns null (default mock)
     vi.mocked(getIntentSessionBySessionId).mockReturnValueOnce(null)
@@ -732,9 +732,9 @@ describe('resident domain subscriptions — discussion + schedule', () => {
 
   it('run:settled sessionKind=work NOT matched to intent — no intent session write', async () => {
     const { listIntents, updateIntentSession } = await import('../features/intents/store.js')
-    // listIntents returns an array with no matching lastDevSessionId
+    // listIntents returns an array with no matching lastWorkSessionId
     vi.mocked(listIntents).mockReturnValueOnce([
-      { id: 'intent-other', lastDevSessionId: 'other-sess' } as Intent,
+      { id: 'intent-other', lastWorkSessionId: 'other-sess' } as Intent,
     ])
 
     install()

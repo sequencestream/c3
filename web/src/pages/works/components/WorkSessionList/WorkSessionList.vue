@@ -236,7 +236,29 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
         >
           {{ expanded ? '⇤' : '⇥' }}
         </button>
-        <span class="sidebar-title">{{ t('session.list.title.label') }}</span>
+        <div
+          class="session-kind-tabs"
+          role="tablist"
+          :aria-label="t('session.kind.tabsLabel')"
+          data-testid="session-kind-tabs"
+        >
+          <button
+            v-for="tab in SESSION_KIND_TABS"
+            :key="tab.key"
+            type="button"
+            class="session-kind-tab"
+            :class="{ active: tab.key === activeSessionKind, disabled: !tabEnabled(tab) }"
+            :aria-selected="tab.key === activeSessionKind"
+            :disabled="!tabEnabled(tab)"
+            role="tab"
+            @click="selectSessionKind(tab.key, tabEnabled(tab))"
+          >
+            <span>{{ t(tab.labelKey as never) }}</span>
+            <span v-if="sessionCounts[tab.key] > 0" class="session-kind-count">{{
+              sessionCounts[tab.key]
+            }}</span>
+          </button>
+        </div>
       </div>
       <span v-if="currentWorkspace" class="sidebar-actions">
         <button
@@ -248,6 +270,7 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
           ⟳
         </button>
         <button
+          v-if="activeSessionKind === 'work'"
           class="icon-btn"
           :title="t('session.list.new.tooltip')"
           data-testid="session-list-new"
@@ -256,24 +279,6 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
           ＋
         </button>
       </span>
-    </div>
-    <div class="session-kind-tabs" role="tablist" :aria-label="t('session.kind.tabsLabel')">
-      <button
-        v-for="tab in SESSION_KIND_TABS"
-        :key="tab.key"
-        type="button"
-        class="session-kind-tab"
-        :class="{ active: tab.key === activeSessionKind, disabled: !tabEnabled(tab) }"
-        :aria-selected="tab.key === activeSessionKind"
-        :disabled="!tabEnabled(tab)"
-        role="tab"
-        @click="selectSessionKind(tab.key, tabEnabled(tab))"
-      >
-        <span>{{ t(tab.labelKey as never) }}</span>
-        <span v-if="sessionCounts[tab.key] > 0" class="session-kind-count">{{
-          sessionCounts[tab.key]
-        }}</span>
-      </button>
     </div>
     <div class="ws-list">
       <p v-if="!currentWorkspace" class="empty-hint" data-testid="session-list-empty">

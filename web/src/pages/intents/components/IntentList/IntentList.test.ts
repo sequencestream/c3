@@ -39,7 +39,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     status: 'todo',
     dependsOn: [],
     dependsOnTypes: {},
-    lastDevSessionId: null,
+    lastWorkSessionId: null,
     automate: false,
     createdAt: 1,
     updatedAt: 1,

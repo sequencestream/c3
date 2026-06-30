@@ -73,7 +73,7 @@ function d(): Db {
 
 function seedIntent(proj: string, status: string, updatedAt: number): void {
   d().run(
-    `INSERT INTO intents (id, workspace_path, title, content, priority, status, module, last_dev_session_id, created_at, updated_at, completed_at)
+    `INSERT INTO intents (id, workspace_path, title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
     randomUUID(),
     proj,

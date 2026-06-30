@@ -269,7 +269,7 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
 
   // (A) Send the intent list IMMEDIATELY so the panel renders without
   // waiting on reconciliation. runStatus comes from the live registry / cache
-  // (enrichRunStatus); the expensive part — judging dead dev sessions — runs in
+  // (enrichRunStatus); the expensive part — judging dead work sessions — runs in
   // the background below and re-broadcasts the refreshed list once it settles.
   conn.send({
     type: 'intents',
@@ -287,13 +287,13 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
   // verdict, saved LLM call). Live processes and brand-new session ids fall
   // through and still get (re)judged.
   const toReconcile = inProgReqs.filter((r) => {
-    const dead = !(r.lastDevSessionId && isRunning(r.lastDevSessionId))
+    const dead = !(r.lastWorkSessionId && isRunning(r.lastWorkSessionId))
     if (!dead) return true
-    return !r.lastDevSessionId || getJudgedSession(r.id) !== r.lastDevSessionId
+    return !r.lastWorkSessionId || getJudgedSession(r.id) !== r.lastWorkSessionId
   })
   if (toReconcile.length > 0) {
     const signal = new AbortController()
-    const sessionById = new Map(inProgReqs.map((r) => [r.id, r.lastDevSessionId]))
+    const sessionById = new Map(inProgReqs.map((r) => [r.id, r.lastWorkSessionId]))
     void reconcileInProgress(
       toReconcile,
       proj,
@@ -747,11 +747,11 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
     releaseClaim()
     return
   }
-  // Allow `todo`, or `in_progress` whose dev session has gone missing (a
+  // Allow `todo`, or `in_progress` whose work session has gone missing (a
   // dangling launch — let the user restart rather than stay stuck).
   const dangling =
     req.status === 'in_progress' &&
-    (!req.lastDevSessionId || !(await sessionExists(proj, req.lastDevSessionId)))
+    (!req.lastWorkSessionId || !(await sessionExists(proj, req.lastWorkSessionId)))
   if (req.status !== 'todo' && !dangling) {
     conn.send({
       type: 'error',
@@ -898,7 +898,7 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
     specPath: req.specPath,
   })
   // Register the pending→intent link so the resident `run:bound` subscription
-  // flips the intent to `in_progress` and links the real dev session id
+  // flips the intent to `in_progress` and links the real work session id
   // (ADR-0018 resident subs model).
   registerPendingDevLink(devId, req.id)
   // Last coarse phase before the (fire-and-forget) agent spawn. The success

@@ -1,5 +1,5 @@
 /**
- * Manual Start-Dev session-end Git/PR cleanup tests (MSC-R2…R6).
+ * Manual Start-Work session-end Git/PR cleanup tests (MSC-R2…R6).
  *
  * The cleanup is fully dependency-injected, so every branch-mode / success /
  * skip / failure path is exercised with mocks — no real git tree, db, or wire.
@@ -22,7 +22,7 @@ function makeIntent(over: Partial<Intent> = {}): Intent {
     status: 'in_progress',
     dependsOn: [],
     dependsOnTypes: {},
-    lastDevSessionId: 'sess-1',
+    lastWorkSessionId: 'sess-1',
     automate: false,
     createdAt: 1,
     updatedAt: 1,

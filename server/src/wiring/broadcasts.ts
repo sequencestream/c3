@@ -163,7 +163,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
   // Push a workspace's refreshed session list to every connection. Mirrors the
   // per-connection `conn.sendSessions` (ws-upgrade.ts), but fans out — the
   // automation orchestrator runs detached with no originating socket, so its
-  // freshly-bound dev session would otherwise never live-appear in any sidebar.
+  // freshly-bound work session would otherwise never live-appear in any sidebar.
   // Fire-and-forget: the projection read is async; we don't block the caller and
   // log (never throw) on failure.
   const broadcastSessions = (workspacePath: string): void => {

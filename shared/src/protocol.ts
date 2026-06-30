@@ -1664,7 +1664,7 @@ export type IntentPriority = 'P0' | 'P1' | 'P2' | 'P3'
  * Intent lifecycle status.
  * - `draft` — captured but not yet finalized (optional).
  * - `todo` — finalized, not started (the state save-to-db produces).
- * - `in_progress` — development launched (dev session running).
+ * - `in_progress` — work launched (work session running).
  * - `done` / `cancelled` — terminal, set by the user (never auto-set).
  * - `blocked` — interrupted by a dependency rollback, rebase conflict, etc.
  *   May re-enter `todo` once unblocked.
@@ -1711,8 +1711,8 @@ export type SpecLaunchStage = (typeof SPEC_LAUNCH_STAGES)[number]
 
 /**
  * Derived run-state of an in_progress intent, computed by reconciling the
- * intent's lastDevSessionId liveness against the process table.
- * - `running` — the dev session's process is still alive (tracking in-flight).
+ * intent's lastWorkSessionId liveness against the process table.
+ * - `running` — the work session's process is still alive (tracking in-flight).
  * - `dangling` — the dev process is dead but the intent is still in_progress
  *   (service restart / crash); a completion judge found the intent not done.
  * - `idle` — not in_progress, or the dev process ended and the judge confirmed done
@@ -1774,8 +1774,8 @@ export interface Intent {
   dependsOn: string[]
   /** Dep types keyed by depended-on intent id. Absent entries default to 'blocks'. */
   dependsOnTypes?: Record<string, DepType>
-  /** The last dev session launched for this intent, for the detail back-link. */
-  lastDevSessionId: string | null
+  /** The last work session launched for this intent, for the detail back-link. */
+  lastWorkSessionId: string | null
   /**
    * Whether the automation orchestrator may pick this intent up. User-toggled
    * (a checkbox per intent); `false` by default. Only `automate` intents
@@ -1792,7 +1792,7 @@ export interface Intent {
    * to render a "tracking" badge or a "dangling" warning next to an in_progress item.
    */
   runStatus: IntentRunStatus
-  /** Git branch name the dev session operates on; `null` when unknown. */
+  /** Git branch name the work session operates on; `null` when unknown. */
   branchName: string | null
   /** Latest known commit hash on the dev branch; `null` when unknown. */
   latestCommitHash: string | null
@@ -1818,12 +1818,12 @@ export interface Intent {
   specApproveUser: string | null
   /**
    * The c3SessionId of the session that authored / refined the spec; `null` when
-   * none. Distinct from `lastDevSessionId` (the development session).
+   * none. Distinct from `lastWorkSessionId` (the work session).
    */
   specSessionId: string | null
   /**
    * The c3SessionId of the intent's refine / communication session; `null` when
-   * none. Distinct from `lastDevSessionId` (development) — this is the
+   * none. Distinct from `lastWorkSessionId` (the work session) — this is the
    * conversation that shapes the intent itself.
    */
   intentSessionId: string | null
@@ -1844,16 +1844,16 @@ export interface IntentSessionInfo {
 }
 
 /**
- * Exit code for an intent dev session execution.
- * - `success` — the dev session completed normally.
- * - `failure` — the dev session errored / CI failed.
- * - `cancelled` — the dev session was aborted by the user.
+ * Exit code for an intent work session execution.
+ * - `success` — the work session completed normally.
+ * - `failure` — the work session errored / CI failed.
+ * - `cancelled` — the work session was aborted by the user.
  */
 export type IntentDevSessionExitCode = 'success' | 'failure' | 'cancelled'
 
 /**
- * One intent dev session execution record (审计追踪).
- * Each time an intent launches a dev session, a new row is appended (never overwritten).
+ * One intent work session execution record (审计追踪).
+ * Each time an intent launches a work session, a new row is appended (never overwritten).
  * The primary key is an auto-increment integer; use `listIntentSessions(intentId)`
  * (ordered by recency) for the per-intent history, and `getIntentSession(id)` for
  * a single record detail.
@@ -1863,7 +1863,7 @@ export interface IntentDevSession {
   id: number
   /** Owning intent id (UUID). */
   intentId: string
-  /** The dev session's c3SessionId. */
+  /** The work session's c3SessionId. */
   sessionId: string
   /** Which vendor executed the session. */
   vendor: VendorId
@@ -1906,7 +1906,7 @@ export interface AutomationStatus {
   state: AutomationState
   /** The intent currently being developed (null when not running). */
   currentIntentId: string | null
-  /** The dev session of the current intent, for a back-link (null when none). */
+  /** The work session of the current intent, for a back-link (null when none). */
   currentSessionId: string | null
   /**
    * True while the current dev turn is paused on a permission prompt awaiting a
@@ -2245,7 +2245,7 @@ export interface IntentLifecycleFilter {
  * route by source. This is the source-of-truth dimension for "where did this come
  * from" — orthogonal to {@link RunKind}, which says "how was it executed".
  *
- * - `work`        — a general development session: the user console, an
+ * - `work`        — a general work session: the user console, an
  *   intent→development hand-off, and the automation dev-turn. (Was `'session'`,
  *   itself once the pre-2026-06-08 `'normal'`.)
  * - `intent`      — a read-only intent-communication session (the intent gate +
@@ -2442,7 +2442,7 @@ export interface ToolManifestEntry {
 // ---- Wait User Involve Events ----
 
 /**
- * Sentinel `toolName` for the workbench todo a failed manual Start-Dev Git/PR
+ * Sentinel `toolName` for the workbench todo a failed manual Start-work Git/PR
  * cleanup pushes. Not a real gated tool call (no `requestId`): the event's
  * `toolInput` carries a {@link UiError} `{code, params}` so the web localizes the
  * failure reason instead of showing a tool name. Shared so server (create) and
@@ -2493,7 +2493,7 @@ export interface WaitUserInvolveEvent {
    * session id (work/intent/spec session id, discussion id, schedule id). The web's
    * `jumpToSource` routes off `sessionKind + sessionId` directly; the server derives
    * {@link intentId} / {@link intentTitle} from it on read. `null` when the producer
-   * had no session to reference (e.g. a Start-Dev cleanup todo) — the web degrades to
+   * had no session to reference (e.g. a Start-work cleanup todo) — the web degrades to
    * the tab's list without selecting anything.
    *
    * Legacy note: rows written before 2026-06-26 may carry an intent OBJECT id here
@@ -2830,7 +2830,7 @@ export type ClientToServer =
    * then splits it into intents via the unchanged `save_intents` flow.
    */
   | { type: 'discussion_to_intent'; discussionId: string }
-  /** Launch a background dev session for a `todo` intent via the configurable development skill. */
+  /** Launch a background work session for a `todo` intent via the configurable development skill. */
   | { type: 'start_development'; workspaceId: string; intentId: string }
   /**
    * Author a spec document for an intent: scaffold the dated spec directory,
@@ -3340,7 +3340,7 @@ export type ServerToClient =
    * A project's intent list (reply to `list_intents`/`open_intent_session`, or a push
    * after a change). `sddEnabled` is the workspace's SDD master switch, rebroadcast
    * with every list so the intent action button can render its SDD-aware state
-   * (Write Spec / Approve Spec / Start Dev) without a separate settings fetch.
+   * (Write Spec / Approve Spec / Start Work) without a separate settings fetch.
    */
   | { type: 'intents'; workspaceId: string; items: Intent[]; sddEnabled: boolean }
   /**

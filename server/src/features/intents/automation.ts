@@ -8,7 +8,7 @@
  * domain subscription (`wiring/run-domain-subscriptions.ts`) drive state
  * transitions instead of an internal await loop (`run()` was removed in the
  * event-driven refactor, 2026-06-08). The resident subscription matches the
- * settled session to an intent's `lastDevSessionId`, then calls
+ * settled session to an intent's `lastWorkSessionId`, then calls
  * `notifyTurnSettled()` — this module's single entry point from the bus.
  *
  * Internal state:
@@ -22,7 +22,7 @@
  *  - `idle`     — not started or stopped by the user.
  *
  * Concurrency: the global gate (RM-A12) is checked BEFORE launching each new
- * intent. If any non-automate intent's dev session is truly running (isRunning
+ * intent. If any non-automate intent's work session is truly running (isRunning
  * returns true), the controller defers via `_pendingIntentId` and waits for
  * the blocking session's settle to re-trigger `notifyTurnSettled`. This is the
  * event-driven analogue of the old `awaitProjectRunning` loop.
@@ -37,7 +37,7 @@ import {
   getIntent,
   listIntents,
   setBranchName,
-  setLastDevSession,
+  setLastWorkSession,
   setPrInfo,
   updateStatus,
 } from './store.js'
@@ -239,7 +239,7 @@ class AutomationController {
 
   /**
    * Called by the resident `run:settled` subscription (via `notifyTurnSettled`)
-   * when a session matching an intent's `lastDevSessionId` just settled.
+   * when a session matching an intent's `lastWorkSessionId` just settled.
    *
    * Two cases:
    *  1. `intentId === this.status.currentIntentId` → the current developing
@@ -314,12 +314,12 @@ class AutomationController {
   }
 
   /**
-   * Link the dev session + flip the intent to in_progress, then broadcast.
+   * Link the work session + flip the intent to in_progress, then broadcast.
    * Called from `_launchDevelopment` for the attach/resume cases where the
    * `run:bound`-driven pendingDevLink does not apply (session already real).
    */
   private markInProgress(reqId: string, sessionId: string): void {
-    setLastDevSession(reqId, sessionId)
+    setLastWorkSession(reqId, sessionId)
     const req = getIntent(reqId)
     if (req?.status !== 'in_progress') {
       updateStatus(reqId, 'in_progress')
@@ -343,7 +343,7 @@ class AutomationController {
   }
 
   /**
-   * Find a non-automate intent whose dev session is truly running (RM-A12).
+   * Find a non-automate intent whose work session is truly running (RM-A12).
    * Returns the blocking intent, or undefined if the gate is clear.
    */
   private _findBlockingIntent(): Intent | undefined {
@@ -351,8 +351,8 @@ class AutomationController {
     return all.find(
       (r) =>
         r.status === 'in_progress' &&
-        !!r.lastDevSessionId &&
-        this.hooks.isRunning(r.lastDevSessionId),
+        !!r.lastWorkSessionId &&
+        this.hooks.isRunning(r.lastWorkSessionId),
     )
   }
 
@@ -418,10 +418,10 @@ class AutomationController {
       this._pendingIntentId = req.id
       this.status.state = 'awaiting_gate'
       this.status.currentIntentId = blocking.id // show what's blocking
-      this.status.currentSessionId = blocking.lastDevSessionId!
+      this.status.currentSessionId = blocking.lastWorkSessionId!
       this.emit()
       console.log(
-        `[c3:automation] 全局并发闸门:「${blocking.title}」的 dev session 仍在运行,等待 turn settle`,
+        `[c3:automation] 全局并发闸门:「${blocking.title}」的 work session 仍在运行,等待 turn settle`,
       )
       return
     }
@@ -449,17 +449,17 @@ class AutomationController {
     this._continuationCount = 0
     this.status.checkpointConsensus = null
 
-    const attach = !!req.lastDevSessionId && this.hooks.isRunning(req.lastDevSessionId!)
-    if (attach && req.lastDevSessionId) {
+    const attach = !!req.lastWorkSessionId && this.hooks.isRunning(req.lastWorkSessionId!)
+    if (attach && req.lastWorkSessionId) {
       // Already running: attach viewer, no new launch.
       this.status.currentIntentId = req.id
-      this.status.currentSessionId = req.lastDevSessionId
+      this.status.currentSessionId = req.lastWorkSessionId
       this.status.state = 'developing'
       this.emit()
 
       void this.hooks.runDevTurn({
         workspacePath: this.workspacePath,
-        sessionId: req.lastDevSessionId,
+        sessionId: req.lastWorkSessionId,
         prompt: '',
         intentId: req.id,
         signal: this.abort.signal,
@@ -470,19 +470,19 @@ class AutomationController {
     }
 
     // Resumable: session exists on disk (continued context).
-    if (req.status === 'in_progress' && req.lastDevSessionId) {
+    if (req.status === 'in_progress' && req.lastWorkSessionId) {
       // Ensure the runtime exists with the right effectiveCwd (worktree, or the
       // project checkout in current-branch mode) across process restarts.
       this._ensureResumeRuntime(req)
 
       this.status.currentIntentId = req.id
-      this.status.currentSessionId = req.lastDevSessionId
+      this.status.currentSessionId = req.lastWorkSessionId
       this.status.state = 'developing'
       this.emit()
 
       void this.hooks.runDevTurn({
         workspacePath: this.workspacePath,
-        sessionId: req.lastDevSessionId,
+        sessionId: req.lastWorkSessionId,
         prompt: 'continue',
         intentId: req.id,
         signal: this.abort.signal,
@@ -593,7 +593,7 @@ class AutomationController {
     // If the runtime already exists (same sessionId), ensureRuntime is a no-op
     // and preserves existing fields; only set effectiveCwd if missing.
     const rt = ensureRuntime(
-      req.lastDevSessionId!,
+      req.lastWorkSessionId!,
       this.workspacePath,
       getDefaultMode(this.workspacePath),
       [],
@@ -1023,7 +1023,7 @@ export function startAutomation(
 }
 
 /**
- * Whether an intent's dev session is currently driven by this workspace's
+ * Whether an intent's work session is currently driven by this workspace's
  * automation orchestrator. True iff a controller exists AND `intentId` is its
  * `currentIntentId` — exactly the condition under which `onTurnSettled` claims a
  * settled turn as its own (Case 1). The session-end manual Git/PR cleanup uses

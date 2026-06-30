@@ -20,7 +20,7 @@ import {
   listIntents,
   resetStoreForTests,
   setChatSession,
-  setLastDevSession,
+  setLastWorkSession,
   updateStatus,
   upsertIntents,
 } from './store.js'
@@ -88,29 +88,29 @@ describe('terminal status transitions (US-4 §6)', () => {
 })
 
 describe('start_development eligibility data (US-6 §4.6)', () => {
-  it('a fresh intent is todo with no dev session (eligible)', () => {
-    // §4.6 step 1: `todo` is the eligible state; lastDevSessionId starts null.
+  it('a fresh intent is todo with no work session (eligible)', () => {
+    // §4.6 step 1: `todo` is the eligible state; lastWorkSessionId starts null.
     const [r] = insertIntents(proj, [
       { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
     const got = getIntent(r.id)!
     expect(got.status).toBe('todo')
-    expect(got.lastDevSessionId).toBeNull()
+    expect(got.lastWorkSessionId).toBeNull()
   })
 
-  it('records lastDevSessionId + in_progress on launch; later a dangling dev id stays readable', () => {
+  it('records lastWorkSessionId + in_progress on launch; later a dangling dev id stays readable', () => {
     // §4.6 / §4.7: launching dev records the session id and flips to in_progress;
-    // the back-link reads lastDevSessionId even if that session was later deleted
+    // the back-link reads lastWorkSessionId even if that session was later deleted
     // (the dangling-restart rule then re-checks existence via sessionExists, which
     // is e2e territory). Here we assert the store side the rule reads.
     const [r] = insertIntents(proj, [
       { title: 'A', shortEnTitle: 'auto', content: '', priority: 'P0' },
     ])
-    setLastDevSession(r.id, 'dev-sess-1')
+    setLastWorkSession(r.id, 'dev-sess-1')
     updateStatus(r.id, 'in_progress')
     const got = getIntent(r.id)!
     expect(got.status).toBe('in_progress')
-    expect(got.lastDevSessionId).toBe('dev-sess-1')
+    expect(got.lastWorkSessionId).toBe('dev-sess-1')
   })
 })
 

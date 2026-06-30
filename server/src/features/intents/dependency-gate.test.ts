@@ -14,7 +14,7 @@ function dep(overrides: Partial<Intent> = {}): Intent {
     status: 'done',
     dependsOn: [],
     dependsOnTypes: {},
-    lastDevSessionId: null,
+    lastWorkSessionId: null,
     automate: false,
     createdAt: 0,
     updatedAt: 0,

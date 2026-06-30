@@ -319,7 +319,7 @@
       "title": {
         "label": "开发技能"
       },
-      "hint": "开始开发任务时,这个斜杠命令会被前置到意图文本前。留空则不添加技能前缀。",
+      "hint": "开始工作任务时,这个斜杠命令会被前置到意图文本前。留空则不添加技能前缀。",
       "placeholder": "/your-skill (leave empty for no prefix)"
     },
     "rounds": {
@@ -601,18 +601,18 @@
   },
   "intent": {
     "startDev": {
-      "confirmUnfinishedDeps": "该意图存在未完成的依赖。仍要开始开发吗?"
+      "confirmUnfinishedDeps": "该意图存在未完成的依赖。仍要开始工作吗?"
     },
     "devLaunch": {
-      "title": "正在启动开发…",
+      "title": "正在启动工作…",
       "step": {
         "fetchRemoteMain": "拉取远程主分支代码",
         "prepareWorktree": "准备 worktree",
-        "launchSession": "启动开发会话",
+        "launchSession": "启动工作会话",
         "enterSession": "进入会话"
       },
-      "failed": "开发启动失败。",
-      "timeout": "未能确认开发启动,请重试。"
+      "failed": "工作启动失败。",
+      "timeout": "未能确认工作启动,请重试。"
     },
     "specLaunch": {
       "title": "正在启动 Spec 会话…",
@@ -697,7 +697,7 @@
         "label": "退回草稿"
       },
       "startDev": {
-        "label": "开始开发"
+        "label": "开始工作"
       },
       "writeSpec": {
         "label": "编写 spec"
@@ -1461,7 +1461,7 @@
             "label": "已创建"
           },
           "devStarted": {
-            "label": "开发开始"
+            "label": "工作开始"
           },
           "done": {
             "label": "已完成"
@@ -1526,21 +1526,21 @@
       "chatSessionNotFound": "意图会话不存在: {sessionId}。",
       "renameChatSessionFailed": "重命名意图会话失败: {detail}。",
       "deleteChatSessionFailed": "删除意图会话失败: {detail}。",
-      "cannotStartDev": "当前状态({status})不可启动开发。",
-      "devStartInFlight": "该意图正在启动开发,请稍候。",
+      "cannotStartDev": "当前状态({status})不可开始工作。",
+      "devStartInFlight": "该意图正在启动工作,请稍候。",
       "illegalStatusTransition": "不能从 \"{from}\" 转为 \"{to}\"。",
       "prCreateFailed": "PR 创建失败: {detail}。",
-      "gitCleanupNoChanges": "开发会话结束但没有可提交的改动。请手动提交、推送并创建 PR。",
-      "gitCleanupCommitPushFailed": "开发会话结束后自动提交/推送失败: {detail}。请手动处理。",
+      "gitCleanupNoChanges": "工作会话结束但没有可提交的改动。请手动提交、推送并创建 PR。",
+      "gitCleanupCommitPushFailed": "工作会话结束后自动提交/推送失败: {detail}。请手动处理。",
       "gitCleanupGhUnavailable": "无法创建 PR: gh CLI 不可用或未登录: {detail}。请先安装/登录 gh 再手动创建 PR。",
       "gitCleanupPrFailed": "自动创建 PR 失败: {detail}。请手动创建 PR。",
       "worktreeCreateFailed": "工作目录创建失败: {message}。",
-      "pullFailed": "当前分支已与远端分叉，无法快进合并。请先手动同步后再开始开发: {message}",
+      "pullFailed": "当前分支已与远端分叉，无法快进合并。请先手动同步后再开始工作: {message}",
       "dependencyNotMerged": "依赖\"{title}\"({id})尚未合并到主分支。",
       "specAgentUnsupported": "撰写 spec 需要 Claude agent;当前配置的 spec agent 无法将写入限制在 spec 目录内。",
       "specWriteFailed": "创建 spec 文档失败: {message}。",
       "specNotWritten": "spec 尚未编写,请先编写再批准。",
-      "specNotApproved": "spec 尚未批准,请先批准再启动开发。"
+      "specNotApproved": "spec 尚未批准,请先批准再开始工作。"
     },
     "discussion": {
       "dbUnavailable": "讨论功能不可用 (c3.db)。",
@@ -1798,7 +1798,7 @@
       "title": {
         "label": "开发技能"
       },
-      "hint": "在本项目启动开发任务时,该斜杠命令会被前置到意图文本中。留空则不添加技能前缀。",
+      "hint": "在本项目启动工作任务时,该斜杠命令会被前置到意图文本中。留空则不添加技能前缀。",
       "placeholder": "/your-skill（留空则不添加前缀）"
     },
     "rounds": {
@@ -1817,7 +1817,7 @@
       "title": {
         "label": "Git 分支模式"
       },
-      "hint": "本工作区「开始开发」如何处理分支:在当前分支原地开发,或将开发 agent 隔离到 git worktree。",
+      "hint": "本工作区「开始工作」如何处理分支:在当前分支原地开发,或将开发 agent 隔离到 git worktree。",
       "option": {
         "currentBranch": {
           "label": "当前分支(原地开发)"
@@ -1838,7 +1838,7 @@
       "title": {
         "label": "规格驱动开发"
       },
-      "hint": "启用后,本工作区的开发任务在开始编码前会经过规格质量闸,并设有人工审批检查点。",
+      "hint": "启用后,本工作区的工作任务在开始编码前会经过规格质量闸,并设有人工审批检查点。",
       "toggle": {
         "label": "启用规格驱动开发"
       },

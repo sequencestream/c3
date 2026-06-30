@@ -343,33 +343,45 @@ export function clearDispatchAgent(
 }
 
 /*
- * Detail accordion tabs — the expanded row shows one field at a time behind a tab
- * bar instead of stacking goal / context / conclusion vertically. Goal / context /
- * conclusion tabs render their text as Markdown (via MarkdownText :markdown); a
- * trailing always-present `details` tab carries the structured meta (type / status /
- * timestamps), which the component renders itself rather than as Markdown.
+ * Right-pane detail tabs — the open discussion's right pane stacks one content
+ * region at a time behind a tab bar that sits under the constant title bar (the
+ * accordion that used to live inline in the left list has been removed).
  *
- * Empty markdown fields are dropped so no blank tab shows; `details` always exists,
- * so the list is never empty and the first tab is a safe default. Pure, so it is
- * unit-tested DOM-free; the component just reads the order and resets the active
- * tab to `tabs[0]` when the expanded row changes.
+ * The markdown tabs — goal / context / research / conclusion — render their text
+ * via MarkdownText (:markdown) and appear only when the matching field is non-empty
+ * after trim. Two tabs are always present: `process` (the live research / discussion
+ * stream, agenda, dispatch and composer) and `details` (structured meta the component
+ * renders itself, not as Markdown). The stable order is goal, context, research,
+ * conclusion, process, details.
+ *
+ * Because `process` and `details` always exist the list is never empty, so a default
+ * tab is always resolvable. All tab copy flows through the typed `t` so no English
+ * label stays hard-coded. Pure, so it is unit-tested DOM-free; the component reads the
+ * order, picks the default and corrects the active tab when it goes out of view.
  */
-export type DiscussionTabKind = 'goal' | 'context' | 'research' | 'conclusion' | 'details'
+export type DiscussionTabKind =
+  | 'goal'
+  | 'context'
+  | 'research'
+  | 'conclusion'
+  | 'process'
+  | 'details'
 
 export interface DiscussionTab {
   kind: DiscussionTabKind
   label: string
-  /** Markdown body for goal/context/research/conclusion; `null` for the structured `details` tab. */
+  /** Markdown body for goal/context/research/conclusion; `null` for `process` / `details`. */
   body: string | null
 }
 
-/**
- * Labels for tabs whose copy is i18n-typed. The four always-present tabs (goal /
- * context / conclusion / details) keep their hard-coded English labels as part
- * of the existing i18n extraction follow-up — only `research` flows through the
- * typed `t` so the new tab stays consistent with the i18n M1+ extraction policy.
- */
-export type DiscussionDetailTabI18nKey = 'discussion.tabs.research.label'
+/** All tab labels are i18n-typed so no English copy stays hard-coded. */
+export type DiscussionDetailTabI18nKey =
+  | 'discussion.tabs.goal.label'
+  | 'discussion.tabs.context.label'
+  | 'discussion.tabs.research.label'
+  | 'discussion.tabs.conclusion.label'
+  | 'discussion.tabs.process.label'
+  | 'discussion.tabs.details.label'
 
 export function discussionDetailTabs(
   d: Discussion,
@@ -380,8 +392,10 @@ export function discussionDetailTabs(
   const context = d.context?.trim()
   const researchResult = d.researchResult?.trim()
   const conclusion = d.conclusion?.trim()
-  if (goal) tabs.push({ kind: 'goal', label: 'Goal', body: d.goal })
-  if (context) tabs.push({ kind: 'context', label: 'Context', body: d.context })
+  if (goal) tabs.push({ kind: 'goal', label: t('discussion.tabs.goal.label'), body: d.goal })
+  if (context) {
+    tabs.push({ kind: 'context', label: t('discussion.tabs.context.label'), body: d.context })
+  }
   if (researchResult) {
     tabs.push({
       kind: 'research',
@@ -389,9 +403,50 @@ export function discussionDetailTabs(
       body: d.researchResult,
     })
   }
-  if (conclusion) tabs.push({ kind: 'conclusion', label: 'Conclusion', body: d.conclusion })
-  tabs.push({ kind: 'details', label: 'Details', body: null })
+  if (conclusion) {
+    tabs.push({
+      kind: 'conclusion',
+      label: t('discussion.tabs.conclusion.label'),
+      body: d.conclusion,
+    })
+  }
+  tabs.push({ kind: 'process', label: t('discussion.tabs.process.label'), body: null })
+  tabs.push({ kind: 'details', label: t('discussion.tabs.details.label'), body: null })
   return tabs
+}
+
+/**
+ * Default-tab priority chain. `process` is always present, so in practice the default
+ * lands on `conclusion` when a discussion has one (≈ a finished discussion opens on the
+ * conclusion) and otherwise on `process` (≈ an in-progress discussion opens on the live
+ * stream); `research` / `goal` are kept in the chain as defensive fallbacks.
+ */
+const DEFAULT_TAB_PRIORITY: readonly DiscussionTabKind[] = [
+  'conclusion',
+  'process',
+  'research',
+  'goal',
+]
+
+/** First visible tab along the priority chain; falls back to the first tab, then `process`. */
+export function defaultDiscussionTab(tabs: DiscussionTab[]): DiscussionTabKind {
+  const present = new Set(tabs.map((tb) => tb.kind))
+  for (const kind of DEFAULT_TAB_PRIORITY) {
+    if (present.has(kind)) return kind
+  }
+  return tabs[0]?.kind ?? 'process'
+}
+
+/**
+ * Keep the current tab if it is still visible; otherwise fall back to the default chain.
+ * Used when a discussion's live fields change (a markdown tab can appear/disappear) so a
+ * now-invisible selection never leaves the pane stranded on a non-existent tab.
+ */
+export function correctActiveTab(
+  tabs: DiscussionTab[],
+  current: DiscussionTabKind,
+): DiscussionTabKind {
+  return tabs.some((tb) => tb.kind === current) ? current : defaultDiscussionTab(tabs)
 }
 
 /** Header toggle button copy + title, reflecting the state it switches *to* on click. */

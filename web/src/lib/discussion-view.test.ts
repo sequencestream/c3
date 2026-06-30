@@ -9,6 +9,8 @@ import {
   agendaProgressView,
   applyDispatchStatus,
   clearDispatchAgent,
+  correctActiveTab,
+  defaultDiscussionTab,
   discussionDetailTabs,
   discussionMessageToChat,
   discussionMessagesToChat,
@@ -22,6 +24,7 @@ import {
   rowVisibility,
   showDiscussionStart,
   statusLabel,
+  type DiscussionDetailTabI18nKey,
   type DispatchView,
 } from './discussion-view'
 
@@ -84,12 +87,18 @@ const T = (
   return 'Agent'
 }
 
-// Stub for the discussionDetailTabs i18n key — keeps the typed t contract local
-// to this test file (the real typed `t` from useTypedI18n is wider; this narrow
-// shape is assignable to the (key: 'discussion.tabs.research.label') => string
-// parameter the function expects).
-const TABS_T = (k: 'discussion.tabs.research.label') =>
-  k === 'discussion.tabs.research.label' ? 'Research' : k
+// Stub for the discussionDetailTabs i18n keys — maps each tab key to a fixed English
+// label so the tab tests don't drag in the full i18n setup. The narrow union it accepts
+// matches the function's typed `t` parameter (the real typed `t` is wider but assignable).
+const TAB_LABELS: Record<DiscussionDetailTabI18nKey, string> = {
+  'discussion.tabs.goal.label': 'Goal',
+  'discussion.tabs.context.label': 'Context',
+  'discussion.tabs.research.label': 'Research',
+  'discussion.tabs.conclusion.label': 'Conclusion',
+  'discussion.tabs.process.label': 'Process',
+  'discussion.tabs.details.label': 'Details',
+}
+const TABS_T = (k: DiscussionDetailTabI18nKey): string => TAB_LABELS[k]
 
 const AGENTS: AgentConfig[] = [
   agent({ id: 'default', displayName: 'Default Agent', icon: '🧠' }),
@@ -395,8 +404,8 @@ describe('discussion-view — 列表面板视图纯函数', () => {
   })
 })
 
-describe('discussion-view — discussionDetailTabs(展开详情 Tab)', () => {
-  it('全字段非空:goal/context/research/conclusion + details 顺序,Research label 走 i18n', () => {
+describe('discussion-view — discussionDetailTabs(右栏详情 Tab)', () => {
+  it('全字段非空:goal/context/research/conclusion + process + details 顺序,label 全走 i18n', () => {
     const tabs = discussionDetailTabs(
       disc({ goal: 'G', context: 'C', researchResult: 'R', conclusion: 'X' }),
       TABS_T,
@@ -406,6 +415,7 @@ describe('discussion-view — discussionDetailTabs(展开详情 Tab)', () => {
       'context',
       'research',
       'conclusion',
+      'process',
       'details',
     ])
     expect(tabs.map((t) => t.label)).toEqual([
@@ -413,33 +423,36 @@ describe('discussion-view — discussionDetailTabs(展开详情 Tab)', () => {
       'Context',
       'Research',
       'Conclusion',
+      'Process',
       'Details',
     ])
     expect(tabs[0].body).toBe('G')
     expect(tabs[2].body).toBe('R')
+    // process / details 是非 markdown 区(body 为 null)
+    expect(tabs[4].body).toBeNull()
     expect(tabs.at(-1)?.body).toBeNull()
   })
 
-  it('空 / 纯空白字段被剔除:仅保留非空字段 + details(research 空串 / 纯空白同样剔除)', () => {
+  it('空 / 纯空白 markdown 字段被剔除:仅保留非空字段 + process + details(恒存在)', () => {
     const empty = discussionDetailTabs(
       disc({ goal: 'G', context: '   ', researchResult: '', conclusion: null }),
       TABS_T,
     )
-    expect(empty.map((t) => t.kind)).toEqual(['goal', 'details'])
+    expect(empty.map((t) => t.kind)).toEqual(['goal', 'process', 'details'])
     const blank = discussionDetailTabs(
       disc({ goal: 'G', context: 'C', researchResult: '   \n  ', conclusion: null }),
       TABS_T,
     )
-    expect(blank.map((t) => t.kind)).toEqual(['goal', 'context', 'details'])
+    expect(blank.map((t) => t.kind)).toEqual(['goal', 'context', 'process', 'details'])
   })
 
-  it('全空:仅剩 details 兜底 Tab(列表永不为空)', () => {
+  it('全空:仅剩 process + details 兜底 Tab(列表永不为空)', () => {
     const tabs = discussionDetailTabs(
       disc({ goal: '', context: '', researchResult: '', conclusion: null }),
       TABS_T,
     )
-    expect(tabs.map((t) => t.kind)).toEqual(['details'])
-    expect(tabs[0].body).toBeNull()
+    expect(tabs.map((t) => t.kind)).toEqual(['process', 'details'])
+    expect(tabs.every((t) => t.body === null)).toBe(true)
   })
 
   it('body 透传原文(不 trim,trim 仅用于空判定)', () => {
@@ -457,14 +470,60 @@ describe('discussion-view — discussionDetailTabs(展开详情 Tab)', () => {
     expect(tabs[1].body).toBe('  # 研究\n要点  ')
   })
 
-  it('仅 researchResult 非空:出现 research + details 兜底', () => {
+  it('仅 researchResult 非空:出现 research + process + details 兜底', () => {
     const tabs = discussionDetailTabs(
       disc({ goal: '', context: '', researchResult: 'R', conclusion: null }),
       TABS_T,
     )
-    expect(tabs.map((t) => t.kind)).toEqual(['research', 'details'])
+    expect(tabs.map((t) => t.kind)).toEqual(['research', 'process', 'details'])
     expect(tabs[0].label).toBe('Research')
     expect(tabs[0].body).toBe('R')
+  })
+})
+
+describe('discussion-view — defaultDiscussionTab(默认 tab 链 conclusion>process>research>goal)', () => {
+  it('有结论:默认停在 conclusion(≈ 已完成讨论)', () => {
+    const tabs = discussionDetailTabs(disc({ goal: 'G', conclusion: 'X' }), TABS_T)
+    expect(defaultDiscussionTab(tabs)).toBe('conclusion')
+  })
+
+  it('无结论:默认停在 process(≈ 进行中讨论,process 恒存在)', () => {
+    const tabs = discussionDetailTabs(disc({ goal: 'G', researchResult: 'R' }), TABS_T)
+    expect(defaultDiscussionTab(tabs)).toBe('process')
+  })
+
+  it('全空:仍回落到 process(列表永不为空)', () => {
+    const tabs = discussionDetailTabs(disc({}), TABS_T)
+    expect(defaultDiscussionTab(tabs)).toBe('process')
+  })
+
+  it('按链优先级择首个可见项(合成 tab 列表覆盖 research / goal 兜底分支)', () => {
+    const tab = (kind: 'research' | 'goal' | 'details') => ({ kind, label: kind, body: null })
+    // process 缺席时链顺延到 research
+    expect(defaultDiscussionTab([tab('goal'), tab('research'), tab('details')])).toBe('research')
+    // research 也缺席 → goal
+    expect(defaultDiscussionTab([tab('goal'), tab('details')])).toBe('goal')
+    // 链上全无 → 回落到首个 tab
+    expect(defaultDiscussionTab([tab('details')])).toBe('details')
+    // 空列表 → 兜底 process
+    expect(defaultDiscussionTab([])).toBe('process')
+  })
+})
+
+describe('discussion-view — correctActiveTab(当前 tab 不可见时回落)', () => {
+  it('当前 tab 仍可见:原样保留', () => {
+    const tabs = discussionDetailTabs(disc({ goal: 'G', conclusion: 'X' }), TABS_T)
+    expect(correctActiveTab(tabs, 'goal')).toBe('goal')
+    expect(correctActiveTab(tabs, 'process')).toBe('process')
+  })
+
+  it('当前 tab 已消失(字段变空):回落到默认链', () => {
+    // 选中 conclusion 后讨论结论被清空 → 仅剩 goal/process/details,回落到 process
+    const tabs = discussionDetailTabs(disc({ goal: 'G' }), TABS_T)
+    expect(correctActiveTab(tabs, 'conclusion')).toBe('process')
+    // 选中 goal 后 goal 也消失 → 回落到 process
+    const onlyProcess = discussionDetailTabs(disc({}), TABS_T)
+    expect(correctActiveTab(onlyProcess, 'goal')).toBe('process')
   })
 })
 

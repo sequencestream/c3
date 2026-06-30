@@ -53,15 +53,7 @@ function mountList(
   })
 }
 
-// Click the detail tab by its stable kind (goal/context/conclusion/details) — never by
-// the visible label, so the assertion survives i18n extraction of the tab copy.
-async function clickTab(w: ReturnType<typeof mountList>, kind: string): Promise<void> {
-  const tab = w.find(`[data-testid="disc-tab-${kind}"]`)
-  if (!tab.exists()) throw new Error(`tab not found: ${kind}`)
-  await tab.trigger('click')
-}
-
-describe('DiscussionList.vue — 讨论列表(读路径)', () => {
+describe('DiscussionList.vue — 讨论列表(纯选中,无行内抽屉)', () => {
   it('渲染讨论列表,点击行主体 → emit open(id),且不再有 Open chat 按钮', async () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta')] })
     const items = w.findAll('.disc-item')
@@ -69,7 +61,7 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     expect(items.map((i) => i.find('.disc-title').text())).toEqual(['Alpha', 'Beta'])
     // Open chat 按钮已删除
     expect(w.find('.disc-open-btn').exists()).toBe(false)
-    // 点击行主体即在右侧打开 chat
+    // 点击行主体即在右侧选中并打开
     await items[1].find('.disc-item-main').trigger('click')
     expect(w.emitted('open')).toEqual([['d2']])
   })
@@ -81,101 +73,39 @@ describe('DiscussionList.vue — 讨论列表(读路径)', () => {
     expect(w.emitted('open')).toEqual([['d1'], ['d1']])
   })
 
-  it('点击行主体:同时 emit open 并展开内联详情(无 chevron)', async () => {
-    const w = mountList({ discussions: [disc('d1', 'Alpha')] })
-    // 行首箭头已移除
-    expect(w.find('.disc-chevron').exists()).toBe(false)
-    // 点击行主体:既打开 chat,又展开内联详情
-    await w.find('.disc-item-main').trigger('click')
-    expect(w.emitted('open')).toEqual([['d1']])
-    // 无 goal/context/conclusion → 仅 Details Tab,展开即显示结构化元信息列表。
-    expect(w.find('.disc-detail').exists()).toBe(true)
-    expect(w.find('.disc-meta-list').exists()).toBe(true)
-  })
-
-  it('手风琴互斥:至多一项展开,再次点击同行收起(每次点击仍 emit open)', async () => {
-    const w = mountList({ discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta')] })
-    const mains = w.findAll('.disc-item-main')
-    await mains[0].trigger('click')
-    expect(w.findAll('.disc-detail').length).toBe(1)
-    // 展开第二项 → 第一项自动收起(互斥)
-    await mains[1].trigger('click')
-    expect(w.findAll('.disc-detail').length).toBe(1)
-    // 再次点击第二项 → 详情收起,但 chat 仍被打开(open 幂等)
-    await mains[1].trigger('click')
-    expect(w.findAll('.disc-detail').length).toBe(0)
-    expect(w.emitted('open')).toEqual([['d1'], ['d2'], ['d2']])
-  })
-
-  it('展开详情:Tab 切换显示 goal/context/conclusion 与元信息', async () => {
+  it('点击行主体只 emit open(id),不渲染行内抽屉(详情已移到右栏)', async () => {
     const w = mountList({
       discussions: [
         disc('d1', 'Alpha', {
           goal: 'Decide TTL',
           context: 'Redis',
+          researchResult: '# R',
           conclusion: 'Use 60s',
-          status: 'completed',
-          completedAt: 1_700_000_100_000,
         }),
       ],
     })
+    // 行首箭头已移除,行主体无 aria-expanded(不再承担展开能力)
+    expect(w.find('.disc-chevron').exists()).toBe(false)
+    expect(w.find('.disc-item-main').attributes('aria-expanded')).toBeUndefined()
     await w.find('.disc-item-main').trigger('click')
-    // 首个有内容的 Tab(Goal)默认激活,内容区一次只渲染一个字段。
-    expect(w.find('.disc-tab-body').text()).toContain('Decide TTL')
-    await clickTab(w, 'context')
-    expect(w.find('.disc-tab-body').text()).toContain('Redis')
-    await clickTab(w, 'conclusion')
-    expect(w.find('.disc-tab-body').text()).toContain('Use 60s')
-    // Details Tab:结构化元信息行按 testid 断言存在,不依赖标签译文。
-    await clickTab(w, 'details')
-    expect(w.find('[data-testid="disc-meta-created"]').exists()).toBe(true)
-    expect(w.find('[data-testid="disc-meta-completed"]').exists()).toBe(true)
+    expect(w.emitted('open')).toEqual([['d1']])
+    // 不再出现行内抽屉 / Tab 栏 / markdown / 元信息详情
+    expect(w.find('.disc-detail').exists()).toBe(false)
+    expect(w.find('.disc-tab').exists()).toBe(false)
+    expect(w.find('.disc-tab-body').exists()).toBe(false)
+    expect(w.find('.disc-meta-list').exists()).toBe(false)
+    expect(w.find('.md-body').exists()).toBe(false)
   })
 
-  it('Research tab:researchResult 非空时出现并渲染 Markdown;为空时不出现', async () => {
-    // 非空:tab 出现在 context 与 conclusion 之间,body 经 MarkdownText 渲染
-    const withResearch = mountList({
-      discussions: [
-        disc('d1', 'Alpha', {
-          goal: 'G',
-          context: 'C',
-          researchResult: '# 研究员产出\n- a\n- b',
-          conclusion: 'X',
-        }),
-      ],
-    })
-    await withResearch.find('.disc-item-main').trigger('click')
-    // 5 个 tab(goal/context/research/conclusion/details)按顺序
-    const tabs = withResearch.findAll('.disc-tab')
-    expect(tabs.map((t) => t.attributes('data-testid'))).toEqual([
-      'disc-tab-goal',
-      'disc-tab-context',
-      'disc-tab-research',
-      'disc-tab-conclusion',
-      'disc-tab-details',
-    ])
-    // 切换到 research:MarkdownText 渲染出 h1 + 列表
-    await clickTab(withResearch, 'research')
-    const body = withResearch.find('.disc-tab-body .md-body')
-    expect(body.exists()).toBe(true)
-    expect(body.find('h1').text()).toBe('研究员产出')
-    expect(body.findAll('li').length).toBe(2)
-    // tab label 经 i18n("Research")
-    expect(tabs[2].text()).toBe('Research')
-
-    // 空:不出现 research tab,context 之后直接 conclusion
-    const noResearch = mountList({
-      discussions: [disc('d2', 'Beta', { goal: 'G', context: 'C', conclusion: 'X' })],
-    })
-    await noResearch.find('.disc-item-main').trigger('click')
-    const tabs2 = noResearch.findAll('.disc-tab')
-    expect(tabs2.map((t) => t.attributes('data-testid'))).toEqual([
-      'disc-tab-goal',
-      'disc-tab-context',
-      'disc-tab-conclusion',
-      'disc-tab-details',
-    ])
-    expect(noResearch.find('[data-testid="disc-tab-research"]').exists()).toBe(false)
+  it('重复点击同一行:每次只 emit open(id),无「收起详情」副作用', async () => {
+    const w = mountList({ discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta')] })
+    const mains = w.findAll('.disc-item-main')
+    await mains[0].trigger('click')
+    await mains[1].trigger('click')
+    await mains[1].trigger('click')
+    // 三次点击三次 emit,无任何行内抽屉
+    expect(w.emitted('open')).toEqual([['d1'], ['d2'], ['d2']])
+    expect(w.findAll('.disc-detail').length).toBe(0)
   })
 
   it('activeId 对应项标记 active', () => {

@@ -1702,8 +1702,23 @@
       }
     },
     "tabs": {
+      "goal": {
+        "label": "목표"
+      },
+      "context": {
+        "label": "컨텍스트"
+      },
       "research": {
         "label": "리서치"
+      },
+      "conclusion": {
+        "label": "결론"
+      },
+      "process": {
+        "label": "진행"
+      },
+      "details": {
+        "label": "세부 정보"
       }
     },
     "consensus": {

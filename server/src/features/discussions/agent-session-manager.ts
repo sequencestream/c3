@@ -18,7 +18,8 @@
  * 1. **First call**: `getAgentSession` → null → `adapter.driver.start({ prompt })`
  *    → capture `sessionId` → `setAgentSession` into DB.
  * 2. **Subsequent calls**: `getAgentSession` → row found → `start({ resume,
- *    prompt })` → collect text → update `lastSeq` in DB.
+ *    prompt })` → collect text. `last_seq` (the max consumed message seq) is
+ *    advanced separately by the orchestrator via `setLastSeq`, not here.
  * 3. **Resume failure**: catch → `deleteAgentSession` (clean stale) → fall through
  *    to the create-new path (full prompt, fresh session).
  * 4. **Cleanup**: `closeSession` / `closeAll` → DB delete.
@@ -148,6 +149,23 @@ export class AgentSessionManager {
     return row ? row.lastSeq : null
   }
 
+  /**
+   * Advance the recorded `last_seq` for an agent's session to `seq` — the max
+   * discussion message seq this agent has now consumed into its vendor session.
+   *
+   * Monotonic: never regresses below the stored value (concurrent or stale
+   * advances keep the larger seq). No-op when no session row exists yet (the
+   * first turn hasn't created one) or when `seq` would not advance. Preserves the
+   * existing `sessionId`/`vendor` — only `last_seq` changes.
+   */
+  setLastSeq(discussionId: string, agentId: string, seq: number): void {
+    const row = this.deps.store.getAgentSession(discussionId, agentId)
+    if (!row) return
+    const next = seq > row.lastSeq ? seq : row.lastSeq
+    if (next === row.lastSeq) return
+    this.deps.store.setAgentSession(discussionId, agentId, row.sessionId, row.vendor, next)
+  }
+
   /** Remove the session mapping for a single agent in a discussion. */
   closeSession(discussionId: string, agentId: string): void {
     const stored = this.deps.store.getAgentSession(discussionId, agentId)
@@ -250,15 +268,10 @@ export class AgentSessionManager {
 
     const text = await collectAssistantText(run)
 
-    // Increment lastSeq to record one more turn was processed.
-    this.deps.store.setAgentSession(
-      stored.discussionId,
-      stored.agentId,
-      stored.sessionId,
-      stored.vendor,
-      stored.lastSeq + 1,
-    )
-
+    // `last_seq` is NOT touched here: it is the max discussion message seq the
+    // agent has consumed, advanced by the orchestrator via {@link setLastSeq}
+    // after the turn — not a per-resume turn counter. Resuming reuses the same
+    // vendor session unchanged.
     return text
   }
 

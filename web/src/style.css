@@ -663,7 +663,9 @@ header h1 {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 /* 展开/收缩切换按钮:标题前,图标反映点击后将切换到的目标态 */
 .sidebar-collapse-btn {
@@ -681,29 +683,28 @@ header h1 {
   background: var(--c-hover);
   color: var(--c-text);
 }
-.sidebar-title {
-  font-size: var(--fs-badge);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--c-text-muted);
-}
 .session-kind-tabs {
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-wrap: nowrap;
   gap: 4px;
-  padding: var(--sp-2);
-  border-bottom: 1px solid var(--c-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 2px;
+  scrollbar-width: none;
+}
+.session-kind-tabs::-webkit-scrollbar {
+  display: none;
 }
 .session-kind-tab {
   position: relative;
-  flex: 1;
-  min-width: 0;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 4px 8px;
+  padding: 3px 7px;
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
   background: var(--c-panel);

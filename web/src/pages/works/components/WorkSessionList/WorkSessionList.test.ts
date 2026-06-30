@@ -24,6 +24,7 @@ function mountList(
     hasMore?: boolean
     exhausted?: boolean
     activeSessionKind?: 'work' | 'intent' | 'spec' | 'discussion' | 'schedule' | 'tool'
+    showToolSessions?: boolean
   } = {},
 ) {
   return mount(WorkSessionList, {
@@ -32,7 +33,7 @@ function mountList(
       sessions: opts.sessions ?? [],
       activeSessionKind: opts.activeSessionKind ?? 'work',
       sessionCounts: { work: 0, intent: 0, spec: 0, discussion: 0, schedule: 0, tool: 0 },
-      showToolSessions: false,
+      showToolSessions: opts.showToolSessions ?? false,
       hasMore: opts.hasMore ?? false,
       exhausted: opts.exhausted ?? false,
       sessionStatus: opts.status ?? {},
@@ -122,6 +123,21 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
     expect(w.emitted('select-session-kind')).toEqual([['schedule']])
   })
 
+  it('标题栏左侧渲染 kind 入口,不再渲染固定会话标题', () => {
+    const w = mountList({ showToolSessions: true })
+    const headerTabs = w.find('.sidebar-head-left [data-testid="session-kind-tabs"]')
+    expect(headerTabs.exists()).toBe(true)
+    expect(w.find('.sidebar-title').exists()).toBe(false)
+    expect(w.findAll('.sidebar-head-left .session-kind-tab').map((tab) => tab.text())).toEqual([
+      'Work',
+      'Intent',
+      'Spec',
+      'Discussion',
+      'Schedule',
+      'Tool',
+    ])
+  })
+
   it('exhausted=true(且有会话)→ 显示「已加载完」,不显示加载更多', () => {
     const w = mountList({
       sessions: [session('s1', 'Alpha')],
@@ -143,16 +159,27 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
   it('新建 ＋ → emit create-session(path)', async () => {
     const w = mountList()
     const btns = w.findAll('.sidebar-head .icon-btn')
-    // 需求入口已迁至顶栏 tab nav(AppHeader);会话头部为「刷新 + 新建」两枚按钮。
+    // work kind 下会话头部为「刷新 + 新建」两枚按钮。
     expect(btns.length).toBe(2)
     await w.find('[data-testid="session-list-new"]').trigger('click')
     expect(w.emitted('create-session')).toEqual([[WS]])
   })
 
+  it.each(['intent', 'spec', 'discussion', 'schedule', 'tool'] as const)(
+    '%s kind 下不渲染新建按钮',
+    (activeSessionKind) => {
+      const w = mountList({ activeSessionKind, showToolSessions: true })
+      expect(w.find('[data-testid="session-list-refresh"]').exists()).toBe(true)
+      expect(w.find('[data-testid="session-list-new"]').exists()).toBe(false)
+    },
+  )
+
   it('工具 tab 只在 showToolSessions 开启时可选', async () => {
     const hidden = mountList()
     const hiddenTool = hidden.findAll('.session-kind-tab').at(5)!
     expect((hiddenTool.element as HTMLButtonElement).disabled).toBe(true)
+    await hiddenTool.trigger('click')
+    expect(hidden.emitted('select-session-kind')).toBeUndefined()
 
     const shown = mount(WorkSessionList, {
       props: {

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
 import type { Intent, SessionInfo } from '@ccc/shared/protocol'
 import { beginDevLaunch } from '@/lib/dev-launch-view'
+import type { PendingWorkSessionSelectRequest } from '@/lib/work-session-jump'
 import { WORK_SESSION_JUMP_DELAY_MS } from '@/lib/work-session-jump'
 import { installIntentActions } from './intent-actions'
 import type { AppCtx } from './types'
@@ -29,16 +30,26 @@ function session(id: string): SessionInfo {
   }
 }
 
-function makeCtx(opts: { intents?: Intent[]; sessions?: SessionInfo[] }) {
+function makeCtx(opts: {
+  intents?: Intent[]
+  sessions?: SessionInfo[]
+  workSessions?: SessionInfo[]
+  activeKind?: 'work' | 'spec'
+}) {
   const enterConsole = vi.fn()
   const selectSession = vi.fn()
+  const activeSessionKind = ref<'work' | 'spec'>(opts.activeKind ?? 'work')
+  const currentSessions = ref<SessionInfo[]>(opts.sessions ?? [])
+  const selectSessionKind = vi.fn((kind: 'work' | 'spec') => {
+    activeSessionKind.value = kind
+    if (kind === 'work') currentSessions.value = opts.workSessions ?? opts.sessions ?? []
+  })
   const refreshSessions = vi.fn()
   const showToast = vi.fn()
   const clearDevLaunchTimers = vi.fn()
   const currentWorkspace = ref<string | null>(WS)
   const intents = ref<Record<string, Intent[]>>({ [WS]: opts.intents ?? [] })
-  const currentSessions = ref<SessionInfo[]>(opts.sessions ?? [])
-  const requestedWorkSessionId = ref<string | null>(null)
+  const requestedWorkSessionId = ref<PendingWorkSessionSelectRequest | null>(null)
   const devLaunch = ref(beginDevLaunch('i-1', 0))
   const devLaunchTimers: {
     dwell: ReturnType<typeof setTimeout> | null
@@ -56,12 +67,14 @@ function makeCtx(opts: { intents?: Intent[]; sessions?: SessionInfo[] }) {
     currentIntents: computed(() => intents.value[WS] ?? []),
     currentSessions,
     requestedWorkSessionId,
+    activeSessionKind,
     devLaunch,
     intentPrSync: ref({}),
     devLaunchTimers,
     clearDevLaunchTimers,
     showToast,
     enterConsole,
+    selectSessionKind,
     selectSession,
     refreshSessions,
   } as unknown as AppCtx
@@ -73,7 +86,10 @@ function makeCtx(opts: { intents?: Intent[]; sessions?: SessionInfo[] }) {
     refreshSessions,
     showToast,
     requestedWorkSessionId,
+    activeSessionKind,
+    selectSessionKind,
     devLaunchTimers,
+    intents,
     currentSessions,
   }
 }
@@ -98,7 +114,11 @@ describe('post-Start-Dev jump wiring', () => {
     h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
     vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
     expect(h.selectSession).not.toHaveBeenCalled()
-    expect(h.requestedWorkSessionId.value).toBe('dev-1')
+    expect(h.requestedWorkSessionId.value).toEqual({
+      workspacePath: WS,
+      intentId: 'i-1',
+      sessionId: 'dev-1',
+    })
     expect(h.refreshSessions).toHaveBeenCalledWith(WS)
     // The session lands; consumption selects it and clears the one-shot request.
     h.currentSessions.value = [session('dev-1')]
@@ -116,20 +136,63 @@ describe('post-Start-Dev jump wiring', () => {
     expect(h.showToast).toHaveBeenCalledWith('intent.devLaunch.failed')
   })
 
-  it('does not arm a jump when the intent has no dev session id', () => {
+  it('keeps the pending jump armed when the intent has no dev session id yet', () => {
     const h = makeCtx({ intents: [intent('i-1', null)], sessions: [] })
     h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
     vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
     expect(h.selectSession).not.toHaveBeenCalled()
+    expect(h.requestedWorkSessionId.value).toEqual({
+      workspacePath: WS,
+      intentId: 'i-1',
+      sessionId: null,
+    })
+  })
+
+  it('resolves a pending jump when lastDevSessionId arrives after the ready jump', () => {
+    const h = makeCtx({ intents: [intent('i-1', null)], sessions: [] })
+    h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
+    vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
+    expect(h.requestedWorkSessionId.value).toEqual({
+      workspacePath: WS,
+      intentId: 'i-1',
+      sessionId: null,
+    })
+
+    h.intents.value = { [WS]: [intent('i-1', 'dev-1')] }
+    h.currentSessions.value = [session('dev-1')]
+    h.ctx.consumePendingWorkSessionSelect(true)
+
+    expect(h.selectSession).toHaveBeenCalledWith(WS, 'dev-1')
     expect(h.requestedWorkSessionId.value).toBeNull()
+  })
+
+  it('forces the work tab before selecting so a previous spec session cannot win', () => {
+    const h = makeCtx({
+      intents: [intent('i-1', 'dev-1')],
+      sessions: [session('spec-old')],
+      workSessions: [session('dev-1')],
+      activeKind: 'spec',
+    })
+    h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
+    vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
+
+    expect(h.selectSessionKind).toHaveBeenCalledWith('work')
+    expect(h.activeSessionKind.value).toBe('work')
+    expect(h.enterConsole).toHaveBeenCalled()
+    expect(h.selectSession).toHaveBeenCalledWith(WS, 'dev-1')
+    expect(h.selectSession).not.toHaveBeenCalledWith(WS, 'spec-old')
   })
 
   it('consumePendingWorkSessionSelect keeps waiting while the target is absent', () => {
     const h = makeCtx({ sessions: [session('other')] })
-    h.requestedWorkSessionId.value = 'dev-1'
+    h.requestedWorkSessionId.value = { workspacePath: WS, intentId: 'i-1', sessionId: 'dev-1' }
     h.ctx.consumePendingWorkSessionSelect()
     expect(h.selectSession).not.toHaveBeenCalled()
-    expect(h.requestedWorkSessionId.value).toBe('dev-1')
+    expect(h.requestedWorkSessionId.value).toEqual({
+      workspacePath: WS,
+      intentId: 'i-1',
+      sessionId: 'dev-1',
+    })
   })
 })
 

@@ -12,6 +12,7 @@ import { type DevLaunchModel } from '@/lib/dev-launch-view'
 import { type SpecLaunchModel } from '@/lib/spec-launch-view'
 import { type SessionRef } from '@/lib/tab-view'
 import { type SessionSourceAction } from '@/lib/session-jump'
+import { type PendingWorkSessionSelectRequest } from '@/lib/work-session-jump'
 import type { CodeTab, CodesSearchResultView } from '@/lib/codes-view'
 import type { ChatBody, ChatMsg, RunActivity } from '@/lib/chat-types'
 import { agentNameAt } from '@/lib/agent-prefix'
@@ -490,9 +491,9 @@ export function createState(deps: StateDeps) {
   // One-shot request to select a specific intent on the intents page (set by the
   // title-bar jump button, consumed + cleared by Intents.vue once applied).
   const requestedIntentId = ref<string | null>(null)
-  // One-shot request to select a specific work session on the console tab (set by
-  // the post-Start-Dev jump, consumed + cleared once the target lands in the list).
-  const requestedWorkSessionId = ref<string | null>(null)
+  // One-shot request to select a specific work session on the console tab. It can
+  // wait first for the intent's last dev session id, then for that work row.
+  const requestedWorkSessionId = ref<PendingWorkSessionSelectRequest | null>(null)
   // One-shot request to force IntentDetail to switch to a specific sub-tab (set by
   // the WorkCenter jump-to-source, consumed + cleared by IntentDetail once applied).
   const requestedIntentSubTab = ref<'intentSession' | 'specSession' | null>(null)

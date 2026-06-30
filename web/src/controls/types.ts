@@ -111,12 +111,12 @@ export interface AppMethods {
   dispatchDevLaunch(ev: DevLaunchEvent): void
   /**
    * After a Start-Dev `ready` close, arm the ~1s delayed jump: flip to the console
-   * tab and select the intent's newly-launched work session (`lastDevSessionId`).
-   * No-op when the intent has no dev session id yet.
+   * tab and select the intent's newly-launched work session (`lastDevSessionId`)
+   * once the intent projection and work-session row are both available.
    */
   armWorkSessionJump(intentId: string): void
   /** Consume the one-shot pending work-session select once the target lands in the list. */
-  consumePendingWorkSessionSelect(): void
+  consumePendingWorkSessionSelect(refreshOnResolvedTarget?: boolean): void
   dispatchSpecLaunch(ev: SpecLaunchEvent): void
   setIntentStatus(intentId: string, status: IntentStatus): void
   setIntentAutomate(intentId: string, automateOn: boolean): void

@@ -8,6 +8,7 @@ import { ref } from 'vue'
 import type { ClientToServer, Discussion, Intent, SessionInfo } from '@ccc/shared/protocol'
 import { installSessionActions } from './session-actions'
 import { resolveSessionSourceAction } from '@/lib/session-jump'
+import type { PendingWorkSessionSelectRequest } from '@/lib/work-session-jump'
 import type { AppCtx } from './types'
 import { sessionCacheKey, type SessionPageKind } from './state'
 
@@ -47,6 +48,7 @@ function makeCtx(
   const requestedIntentSubTab = ref<'intentSession' | 'specSession' | null>(null)
   const requestedMergedTab = ref<'list' | 'sessions' | null>(null)
   const requestedIntentSessionId = ref<string | null>(null)
+  const requestedWorkSessionId = ref<PendingWorkSessionSelectRequest | null>(null)
   const activeTab = ref('intents')
   const activeSession = ref<string | null>(null)
   const activeWorkspace = ref<string | null>(null)
@@ -71,6 +73,7 @@ function makeCtx(
     requestedIntentSubTab,
     requestedMergedTab,
     requestedIntentSessionId,
+    requestedWorkSessionId,
     activeTab,
     activeSession,
     activeWorkspace,

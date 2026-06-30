@@ -14,8 +14,8 @@ import {
   type SpecLaunchEvent,
 } from '@/lib/spec-launch-view'
 import {
+  beginPendingWorkSessionSelect,
   shouldJumpAfterDevLaunch,
-  resolveJumpTargetSessionId,
   resolvePendingWorkSessionSelect,
   WORK_SESSION_JUMP_DELAY_MS,
 } from '@/lib/work-session-jump'
@@ -67,40 +67,41 @@ export function installIntentActions(ctx: AppCtx): void {
   }
 
   // Arm the post-`ready` jump: after the deliberate ~1s "已就绪" buffer, flip to
-  // the console tab and select this intent's newly-launched work session
-  // (`lastDevSessionId`). If the target is already loaded, select it now;
-  // otherwise stage a one-shot pending request and refresh the list so it's
-  // applied once the session lands (see `consumePendingWorkSessionSelect`). The
-  // timer lives in `devLaunchTimers` so a new launch / overlay close cancels it.
+  // the console tab, force the work-session kind, and select this launch's work
+  // session once both the intent's `lastDevSessionId` and the row are available.
+  // The timer lives in `devLaunchTimers` so a new launch / overlay close cancels it.
   ctx.armWorkSessionJump = (intentId: string): void => {
     const workspace = ctx.currentWorkspace.value
     if (!workspace) return
-    const targetSessionId = resolveJumpTargetSessionId(intentId, ctx.intents.value[workspace] ?? [])
-    if (!targetSessionId) return
+    ctx.requestedWorkSessionId.value = beginPendingWorkSessionSelect(workspace, intentId)
     ctx.devLaunchTimers.jump = setTimeout(() => {
       ctx.devLaunchTimers.jump = null
+      if (ctx.activeSessionKind.value !== 'work') ctx.selectSessionKind('work')
       ctx.enterConsole()
-      const ready = resolvePendingWorkSessionSelect(targetSessionId, ctx.currentSessions.value)
-      if (ready) {
-        ctx.selectSession(workspace, ready)
-      } else {
-        ctx.requestedWorkSessionId.value = targetSessionId
-        ctx.refreshSessions(workspace)
-      }
+      ctx.consumePendingWorkSessionSelect(true)
     }, WORK_SESSION_JUMP_DELAY_MS)
   }
 
   // Consume the one-shot pending work-session select once its target lands in the
-  // current workspace's session list: select it and clear the request. A target
-  // that never appears is silently dropped (the works page keeps its own default).
-  ctx.consumePendingWorkSessionSelect = (): void => {
+  // current workspace's work-session list: select it and clear the request.
+  ctx.consumePendingWorkSessionSelect = (refreshOnResolvedTarget = false): void => {
     const req = ctx.requestedWorkSessionId.value
     const workspace = ctx.currentWorkspace.value
     if (!req || !workspace) return
-    const hit = resolvePendingWorkSessionSelect(req, ctx.currentSessions.value)
-    if (!hit) return
-    ctx.requestedWorkSessionId.value = null
-    ctx.selectSession(workspace, hit)
+    const result = resolvePendingWorkSessionSelect(req, {
+      workspacePath: workspace,
+      sessionKind: ctx.activeSessionKind.value,
+      intents: ctx.intents.value[workspace] ?? [],
+      sessions: ctx.currentSessions.value,
+    })
+    ctx.requestedWorkSessionId.value = result.request
+    if (result.selectSessionId) {
+      ctx.selectSession(workspace, result.selectSessionId)
+      return
+    }
+    if (refreshOnResolvedTarget && !req.sessionId && result.request?.sessionId) {
+      ctx.refreshSessions(workspace)
+    }
   }
 
   ctx.openIntents = (path: string): void => {
@@ -252,6 +253,7 @@ export function installIntentActions(ctx: AppCtx): void {
       workspaceId: intentsProject.value,
       intentId,
     })
+    ctx.requestedWorkSessionId.value = null
     // Arm the immediately-visible startup overlay. A terminal signal arriving
     // during its minimum dwell is closed by the dwell timer; the safety timeout
     // still guarantees closure if no terminal signal ever arrives.

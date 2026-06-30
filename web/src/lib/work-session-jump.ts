@@ -18,6 +18,24 @@ import type { DevLaunchCloseReason } from './dev-launch-view'
  */
 export const WORK_SESSION_JUMP_DELAY_MS = 1000
 
+export interface PendingWorkSessionSelectRequest {
+  workspacePath: string
+  intentId: string
+  sessionId: string | null
+}
+
+export interface PendingWorkSessionSelectContext {
+  workspacePath: string | null
+  sessionKind: string
+  intents: Intent[]
+  sessions: SessionInfo[]
+}
+
+export interface PendingWorkSessionSelectResult {
+  request: PendingWorkSessionSelectRequest | null
+  selectSessionId: string | null
+}
+
 /**
  * Whether a dev-launch terminal should trigger the jump. Only the success
  * terminal (`ready`) jumps; `failed` / `timeout` stay on the intents page with
@@ -37,16 +55,30 @@ export function resolveJumpTargetSessionId(intentId: string, intents: Intent[]):
   return intents.find((it) => it.id === intentId)?.lastDevSessionId ?? null
 }
 
+export function beginPendingWorkSessionSelect(
+  workspacePath: string,
+  intentId: string,
+): PendingWorkSessionSelectRequest {
+  return { workspacePath, intentId, sessionId: null }
+}
+
 /**
- * Resolve a one-shot pending select request against the current session list:
- * returns the session id to select once the target lands, or null to keep
- * waiting (target not yet in the list, or no request staged). Pure — clearing
- * the request and calling `selectSession` is the caller's job.
+ * Resolve a one-shot pending select request against the latest intent and
+ * session lists. Pure — storing the returned request and calling `selectSession`
+ * is the caller's job.
  */
 export function resolvePendingWorkSessionSelect(
-  requestedSessionId: string | null,
-  sessions: SessionInfo[],
-): string | null {
-  if (!requestedSessionId) return null
-  return sessions.some((s) => s.sessionId === requestedSessionId) ? requestedSessionId : null
+  request: PendingWorkSessionSelectRequest | null,
+  context: PendingWorkSessionSelectContext,
+): PendingWorkSessionSelectResult {
+  if (!request) return { request: null, selectSessionId: null }
+  if (context.workspacePath !== request.workspacePath || context.sessionKind !== 'work') {
+    return { request, selectSessionId: null }
+  }
+  const sessionId = request.sessionId ?? resolveJumpTargetSessionId(request.intentId, context.intents)
+  if (!sessionId) return { request, selectSessionId: null }
+  if (context.sessions.some((s) => s.sessionId === sessionId)) {
+    return { request: null, selectSessionId: sessionId }
+  }
+  return { request: { ...request, sessionId }, selectSessionId: null }
 }

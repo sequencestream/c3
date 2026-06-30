@@ -106,6 +106,9 @@ export function installSessionActions(ctx: AppCtx): void {
 
   ctx.selectSessionKind = (kind: SessionPageKind): void => {
     activeSessionKind.value = kind
+    // Drop the remembered session — it belonged to the previous kind. The new
+    // kind's first session is bound once its `list_sessions` reply lands.
+    consoleSession.value = null
     ctx.clearViewedSession()
     // Flag a pending bind so that when the new kind's list reply lands, the first
     // visible session is automatically selected (keeps the right column in sync).

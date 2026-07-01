@@ -45,6 +45,12 @@ function hostStatus(): VendorHostStatus[] {
     present: p.path !== null,
     binary: p.binary,
     path: p.path,
+    source: p.source,
+    ...(p.version ? { version: p.version } : {}),
+    ...(p.expectedVersion ? { expectedVersion: p.expectedVersion } : {}),
+    compatibleRange: p.compatibleRange,
+    ...(p.error ? { error: p.error } : {}),
+    ...(p.managedError ? { managedError: p.managedError } : {}),
     installHint: p.installHint,
   }))
 }

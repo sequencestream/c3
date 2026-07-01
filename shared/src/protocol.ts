@@ -1088,6 +1088,12 @@ export interface SystemSettings {
    */
   socketAutoResume?: boolean
   /**
+   * Optional c3-managed vendor CLI version pins. Empty/missing means automatic:
+   * c3 selects the newest npm package version inside its compatible range and
+   * installs it under `~/.c3/vendor/<vendor>/<version>/bin/<binary>`.
+   */
+  vendorCliVersions?: Partial<Record<VendorId, string>>
+  /**
    * System-level sandbox definitions. Each definition is a "template" that
    * project-level configs reference by name. Admin-only CRUD via the System
    * Settings panel. Absent or empty ⇒ no sandbox definitions exist; the
@@ -1452,12 +1458,19 @@ export interface VendorModeCatalog {
  */
 export interface VendorHostStatus {
   vendor: VendorId
-  /** Whether the vendor's host CLI was resolved on PATH (or via its `*_PATH` override). */
+  /** Whether c3 resolved a runnable vendor CLI from any allowed source. */
   present: boolean
   /** The probed executable name (e.g. `claude`). */
   binary: string
   /** The resolved absolute path of the binary, or `null` when it is not installed. */
   path: string | null
+  /** Resolution source: env override, c3 managed vendor dir, degraded PATH fallback, or failure. */
+  source?: string
+  version?: string
+  expectedVersion?: string
+  compatibleRange?: string
+  error?: string
+  managedError?: string
   /** Operator-facing install guidance shown when the binary is missing. */
   installHint: string
 }

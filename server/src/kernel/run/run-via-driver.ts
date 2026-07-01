@@ -45,7 +45,7 @@ import {
 import { waitForDecision } from '../permission/index.js'
 import { createSandboxWrapper, sandboxEnvFilePath } from '../sandbox/SandboxLauncher.js'
 import { agentErrorEvent } from './agent-events.js'
-import { driverModelPrompt, type RunInject } from './prompt-delivery.js'
+import { modelUserTurn, type RunInject } from './prompt-delivery.js'
 import { buildChildEnv } from '../infra/child-env.js'
 import {
   bindPending,
@@ -311,8 +311,9 @@ export function makeDriverApprovalHandler(deps: {
  * `codex` (2026-06-06-007); any future driver-routed vendor reuses it.
  *
  * When `intentProfile` is present (intent comm session), its `appendSystemPrompt`
- * is prepended to the prompt, and `actionMode`/`toolGate` are overridden to reflect
- * the read-only gate (safe for non-Claude vendors that don't natively support the
+ * rides the driver's `systemInstruction` channel (codex delivers it as a leading
+ * input text item), and `actionMode`/`toolGate` are overridden to reflect the
+ * read-only gate (safe for non-Claude vendors that don't natively support the
  * full intent gate).
  *
  * `onPermissionRequest` (when wired at the composition root) registers a
@@ -332,9 +333,10 @@ export async function runViaDriver(
   /**
    * Non-visible delivery channels for this turn (hide-session-system-instructions):
    * `systemInstruction` (a work run's SDD contract) and `userTurnPrefix` (a
-   * slash-command dev skill). Codex has no separate system role, so both are folded
-   * ahead of the user turn in the model prompt — yet the client echo below still
-   * carries `prompt` (visible) alone (HS-R6).
+   * slash-command dev skill). The system instruction rides the driver's dedicated
+   * `systemInstruction` channel (codex delivers it as a leading input text item);
+   * only the slash-command prefix leads the user turn. Either way the client echo
+   * below still carries `prompt` (visible) alone (HS-R6).
    */
   inject?: RunInject,
   /**
@@ -353,14 +355,17 @@ export async function runViaDriver(
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
 
-  // Fold the model-only text (the intent comm-agent role for an intent run, or a
-  // work run's SDD instruct + slash-command dev skill) ahead of the visible turn so
-  // the model receives it, while the client echo stays the visible body alone.
-  const effectivePrompt = driverModelPrompt(
-    prompt,
-    intentProfile?.appendSystemPrompt ?? specProfile?.appendSystemPrompt,
-    inject,
-  )
+  // Split the turn into the vendor system channel and the model user turn so the
+  // stable role/contract can be cached across turns. The system text is the intent
+  // comm-agent role, the spec-authoring contract, or a work run's SDD instruct
+  // (`inject.systemInstruction`); the driver delivers it on codex's leading input
+  // text item (byte-stable prefix). The user turn carries the slash-command dev
+  // skill prefix + the visible body. The client echo stays the visible body alone.
+  const systemInstruction =
+    intentProfile?.appendSystemPrompt ??
+    specProfile?.appendSystemPrompt ??
+    inject?.systemInstruction
+  const userTurn = modelUserTurn(prompt, inject)
 
   emit(runId, { type: 'user_text', text: prompt })
 
@@ -503,7 +508,8 @@ export async function runViaDriver(
 
   try {
     const run = await adapter.driver.start({
-      prompt: effectivePrompt,
+      prompt: userTurn,
+      ...(systemInstruction ? { systemInstruction } : {}),
       ...(images && images.length > 0 ? { images } : {}),
       cwd: driverCwd,
       signal: cycleAbort.signal,

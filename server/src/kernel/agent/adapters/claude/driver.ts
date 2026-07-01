@@ -107,6 +107,10 @@ export class ClaudeDriver implements AgentDriver {
 
     void runClaude({
       prompt: opts.prompt,
+      // The neutral system channel maps to Claude's preset system append — the
+      // same shape `runClaude` uses for a work run's SDD contract, so it rides
+      // the system prefix and never the user turn.
+      ...(opts.systemInstruction ? { appendSystemPrompt: opts.systemInstruction } : {}),
       ...(opts.images ? { images: opts.images } : {}),
       cwd: opts.cwd,
       signal: controller.signal,

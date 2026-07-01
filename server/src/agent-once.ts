@@ -25,6 +25,15 @@ export async function askAgentOnce(
   cwd: string,
   signal: AbortSignal,
   origin?: { ownerKind: SessionOwnerKind; ownerId: string } | null,
+  /**
+   * The stable advisor role/contract, delivered on the system channel so the
+   * per-turn `prompt` stays the variable user context — a byte-stable system
+   * prefix the API prompt cache hits across voters and across successive votes.
+   * Delivered as a RAW custom system prompt (a plain string), NOT the claude_code
+   * preset, to keep this call light (no CLAUDE.md / hooks / cwd context — the
+   * advisor reasons purely from the prompt). Omit ⇒ the SDK default system.
+   */
+  systemInstruction?: string,
 ): Promise<string> {
   const launch = launchForAgent(agent)
   const claudePath = findClaudeExecutable()
@@ -32,6 +41,7 @@ export async function askAgentOnce(
     prompt,
     options: {
       cwd,
+      ...(systemInstruction ? { systemPrompt: systemInstruction } : {}),
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
       ...(launch.envOverrides ? { env: { ...process.env, ...launch.envOverrides } } : {}),
       ...(launch.model ? { model: launch.model } : {}),

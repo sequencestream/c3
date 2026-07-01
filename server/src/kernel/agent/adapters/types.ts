@@ -228,6 +228,16 @@ export interface RemoteMcpServer {
 export interface DriverStartOptions {
   prompt: string
   /**
+   * Stable, per-turn-identical system instruction delivered on the vendor's
+   * system channel — the cacheable prefix half of the prompt split
+   * (hide-session-system-instructions). Claude maps it to its preset system
+   * `append`; Codex has no separate system role, so its driver places it as a
+   * leading text item at position 0 of the input array (byte-identical across
+   * turns, which is what the API prompt cache keys off). Never echoed to the
+   * client. Omit ⇒ no system instruction (the user turn stands alone).
+   */
+  systemInstruction?: string
+  /**
    * Images attached to this turn's prompt (2026-06-16). Vendor-neutral — each
    * driver encodes them its own way: Claude inlines a base64 `image` content
    * block on the user message; Codex writes each to a temp file and passes the

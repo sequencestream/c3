@@ -702,8 +702,18 @@ export class CodexDriver implements AgentDriver {
     // temp path is unreachable — pointing codex at it would fail the whole turn.
     // Until images cross the container boundary (a follow-up), drop them for
     // sandboxed runs rather than break the turn.
+    // Codex has no separate system role, so the neutral `systemInstruction` rides
+    // as a leading text item at position 0 of the input array — byte-identical
+    // across turns, which is the stable prefix the API prompt cache keys off. An
+    // empty/absent instruction leaves the input as the bare user turn.
+    const sysText = opts.systemInstruction?.trim() ? opts.systemInstruction : undefined
     let imageFiles: ImageTempFiles | null = null
-    let codexInput: CodexInput = opts.prompt
+    let codexInput: CodexInput = sysText
+      ? [
+          { type: 'text', text: sysText },
+          { type: 'text', text: opts.prompt },
+        ]
+      : opts.prompt
     if (opts.images && opts.images.length > 0) {
       if (opts.sandboxWrapperPath) {
         console.warn(
@@ -714,6 +724,7 @@ export class CodexDriver implements AgentDriver {
         imageFiles = writeImageTempFiles(opts.images)
         if (imageFiles) {
           codexInput = [
+            ...(sysText ? [{ type: 'text' as const, text: sysText }] : []),
             { type: 'text', text: opts.prompt },
             ...imageFiles.paths.map((path) => ({ type: 'local_image' as const, path })),
           ]

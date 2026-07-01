@@ -16,13 +16,18 @@ const askMock =
   vi.fn<
     (args: {
       prompt: string
+      systemInstruction?: string
       model?: string
       envOverrides?: Record<string, string>
     }) => Promise<string>
   >()
 vi.mock('../../kernel/agent/index.js', () => ({
-  askOneShot: (a: { prompt: string; model?: string; envOverrides?: Record<string, string> }) =>
-    askMock(a),
+  askOneShot: (a: {
+    prompt: string
+    systemInstruction?: string
+    model?: string
+    envOverrides?: Record<string, string>
+  }) => askMock(a),
 }))
 // The completion judge is a background tool session ⇒ it resolves its launch via
 // `resolveToolSessionLaunch` (the tool agent), NOT `resolveSessionLaunch`. The mock
@@ -83,7 +88,7 @@ describe('judge prompt — tightened resume-judgement rules', () => {
   it('orders the verdicts stuck → done → in_progress (stuck decided first)', async () => {
     askMock.mockResolvedValue('{"verdict":"done","reason":"ok"}')
     await judge('done')
-    const prompt = askMock.mock.calls[0][0].prompt
+    const prompt = askMock.mock.calls[0][0].systemInstruction ?? ''
     expect(prompt).toMatch(/stuck\s*→\s*done\s*→\s*in_progress/)
     // stuck is introduced before done, which is introduced before in_progress.
     const iStuck = prompt.indexOf('- **stuck')
@@ -97,7 +102,7 @@ describe('judge prompt — tightened resume-judgement rules', () => {
   it('routes AskUserQuestion / human-decision points to stuck, not in_progress', async () => {
     askMock.mockResolvedValue('{"verdict":"stuck","reason":"asked"}')
     await judge('用方案A还是B?')
-    const prompt = askMock.mock.calls[0][0].prompt
+    const prompt = askMock.mock.calls[0][0].systemInstruction ?? ''
     expect(prompt).toContain('AskUserQuestion')
     // The stuck rule, not the in_progress rule, owns the human-decision wording.
     const stuckBlock = prompt.slice(prompt.indexOf('- **stuck'), prompt.indexOf('- **done'))
@@ -109,7 +114,7 @@ describe('judge prompt — tightened resume-judgement rules', () => {
   it('no longer biases toward done/continue', async () => {
     askMock.mockResolvedValue('{"verdict":"in_progress","reason":"x"}')
     await judge('still going')
-    const prompt = askMock.mock.calls[0][0].prompt
+    const prompt = askMock.mock.calls[0][0].systemInstruction ?? ''
     // The old "Bias: … return done" instruction is gone.
     expect(prompt).not.toMatch(/Bias:/)
     // in_progress is framed as a fallback, not a default-to-continue.
@@ -119,7 +124,7 @@ describe('judge prompt — tightened resume-judgement rules', () => {
   it('frames change evidence as SUPPORTING, judged primarily from the agent report', async () => {
     askMock.mockResolvedValue('{"verdict":"done","reason":"ok"}')
     await judge('实现完成')
-    const prompt = askMock.mock.calls[0][0].prompt
+    const prompt = askMock.mock.calls[0][0].systemInstruction ?? ''
     // The intro and rules both demote evidence to corroboration, not a precondition.
     expect(prompt).toMatch(
       /PRIMARILY from what the agent reports|JUDGED PRIMARILY FROM THE AGENT REPORT/,
@@ -130,7 +135,7 @@ describe('judge prompt — tightened resume-judgement rules', () => {
   it('does NOT treat empty evidence as a stuck signal (the误卡 fix)', async () => {
     askMock.mockResolvedValue('{"verdict":"done","reason":"ok"}')
     await judge('实现完成')
-    const prompt = askMock.mock.calls[0][0].prompt
+    const prompt = askMock.mock.calls[0][0].systemInstruction ?? ''
     // The old "claims completion but there is no consistent code-change evidence ⇒ stuck" is gone.
     expect(prompt).not.toMatch(/no consistent code-change evidence at all/)
     // Empty evidence is explicitly NOT a stuck signal; a concrete report with no diff is done.
@@ -145,7 +150,7 @@ describe('judge prompt — tightened resume-judgement rules', () => {
   it('still routes a claimed-done-but-spinning/untrustworthy report (no evidence) to stuck', async () => {
     askMock.mockResolvedValue('{"verdict":"stuck","reason":"spinning"}')
     await judge('搞定了(无具体说明)')
-    const prompt = askMock.mock.calls[0][0].prompt
+    const prompt = askMock.mock.calls[0][0].systemInstruction ?? ''
     const stuckBlock = prompt.slice(prompt.indexOf('- **stuck'), prompt.indexOf('- **done'))
     // The narrow残留 stuck case: untrustworthy/self-contradictory/spinning report AND no evidence.
     expect(stuckBlock).toMatch(/untrustworthy|self-contradictory|spinning/)

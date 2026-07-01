@@ -11,8 +11,9 @@
  *    AND the body of the model's user turn. Its visibility and order are unchanged.
  *  - **systemInstruction** — internal natural-language instruction (the SDD work
  *    contract, the spec-authoring contract, the intent analyst role). It rides the
- *    vendor's system channel (claude's preset system append; codex folds it ahead of
- *    the user turn since it has no separate system role). Never echoed.
+ *    vendor's system channel (claude's preset system append; codex, having no
+ *    separate system role, places it as a leading input text item at position 0 —
+ *    a byte-stable prefix the API prompt cache keys off). Never echoed.
  *  - **userTurnPrefix** — a slash-command dev skill (e.g. `/dev`). A slash command
  *    only expands when it leads the user turn, so it cannot live in the system
  *    payload; it is prepended to the MODEL user turn only and never echoed. The
@@ -34,26 +35,13 @@ export interface RunInject {
 }
 
 /**
- * The claude-path model user turn: the slash-command prefix + the visible body. The
- * `systemInstruction` does NOT belong here — it rides claude's preset system append.
+ * The model user turn, vendor-neutral: the slash-command prefix (when present) +
+ * the visible body. The `systemInstruction` does NOT belong here — it rides the
+ * vendor's system channel (claude's preset system append, codex's leading input
+ * text item). Both the claude launcher and the codex driver-path deliver the
+ * internal instruction OUTSIDE this string, so the user turn never carries it and
+ * the client echo still shows `visible` alone.
  */
-export function claudeUserTurn(visible: string, inject?: RunInject): string {
+export function modelUserTurn(visible: string, inject?: RunInject): string {
   return `${inject?.userTurnPrefix ?? ''}${visible}`
-}
-
-/**
- * The driver-path (codex) model prompt. Codex has no separate system role, so the
- * internal instruction is folded ahead of the user turn — it still never reaches the
- * client echo, which carries `visible` only (HS-R6). `system` is the resolved system
- * text (an intent/spec profile's append, when present); otherwise the caller's
- * `inject.systemInstruction` is used.
- */
-export function driverModelPrompt(
-  visible: string,
-  system: string | undefined,
-  inject?: RunInject,
-): string {
-  const userTurn = `${inject?.userTurnPrefix ?? ''}${visible}`
-  const sys = system ?? inject?.systemInstruction ?? ''
-  return sys ? `${sys}\n\n${userTurn}` : userTurn
 }

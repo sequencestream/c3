@@ -87,13 +87,16 @@ async function summarize(
   if (signal.aborted) return fallback
   try {
     const decider = resolveAgent(currentAgentId)
-    const prompt = [
-      `Several advisor agents voted on whether to allow the tool "${toolName}". Their votes:`,
-      ...votes.map((v) => `- ${v.agentName}: ${v.decision} — ${v.reason || '(no reason)'}`),
-      '',
+    // system: the stable summariser role + output instruction; user: the votes cast.
+    const system = [
+      'You summarize how several advisor agents voted on whether to allow a tool an AI agent wants to run.',
       `Write ONE short sentence in ${getUiLangName()} summarizing their collective opinion for a human who must make the final call. Output only that sentence, no preamble.`,
     ].join('\n')
-    const text = await askAgentOnce(decider, prompt, cwd, signal)
+    const user = [
+      `Votes on the tool "${toolName}":`,
+      ...votes.map((v) => `- ${v.agentName}: ${v.decision} — ${v.reason || '(no reason)'}`),
+    ].join('\n')
+    const text = await askAgentOnce(decider, user, cwd, signal, null, system)
     return oneLine(text) || fallback
   } catch {
     return fallback
@@ -116,11 +119,11 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
     `[c3:consensus] (${SESSION_KIND}) vote on "${p.toolName}" → ${voters.length} voter(s)`,
   )
 
-  const prompt = voterPrompt(p.toolName, p.input, p.context)
+  const { system, user } = voterPrompt(p.toolName, p.input, p.context)
   const votes: ConsensusVote[] = await Promise.all(
     voters.map(async (agent): Promise<ConsensusVote> => {
       try {
-        const text = await askAgentOnce(agent, prompt, p.cwd, p.signal)
+        const text = await askAgentOnce(agent, user, p.cwd, p.signal, null, system)
         const parsed = parseVote(text)
         if (!parsed) {
           return {
@@ -182,8 +185,12 @@ async function decideAndSummarizeAsk(
     // Shuffle the option list shown to the decider (de-bias the fixed order);
     // parse against the ORIGINAL questions — matchOption resolves by label, so
     // tally/injection stay on canonical labels.
-    const prompt = deciderAskPrompt(perQuestion, shuffleOptions(questions), getUiLangName())
-    const text = await askAgentOnce(decider, prompt, cwd, signal)
+    const { system, user } = deciderAskPrompt(
+      perQuestion,
+      shuffleOptions(questions),
+      getUiLangName(),
+    )
+    const text = await askAgentOnce(decider, user, cwd, signal, null, system)
     const { summary, overrides } = parseDeciderAsk(text, questions)
     return { summary: summary || fallback, overrides }
   } catch {
@@ -216,9 +223,9 @@ export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusO
       // Independent per-voter option ordering dilutes the LLM's positional bias;
       // parse against the ORIGINAL questions so tally/injection key off the
       // canonical labels (matchOption resolves by label content, not by index).
-      const prompt = askVoterPrompt(shuffleOptions(questions), p.context)
+      const { system, user } = askVoterPrompt(shuffleOptions(questions), p.context)
       try {
-        const text = await askAgentOnce(agent, prompt, p.cwd, p.signal)
+        const text = await askAgentOnce(agent, user, p.cwd, p.signal, null, system)
         return parseAskVote(text, questions, agent.id, agent.displayName)
       } catch {
         return questions.map(() => ({

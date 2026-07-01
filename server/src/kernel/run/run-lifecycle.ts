@@ -25,7 +25,7 @@ import {
   type SessionMcpProfile,
   type SpecProfile,
 } from './run-via-driver.js'
-import { claudeUserTurn, type RunInject } from './prompt-delivery.js'
+import { modelUserTurn, type RunInject } from './prompt-delivery.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
 import { buildAgentsToTry } from './build-chain.js'
 import { agentErrorEvent, agentFallbackEvent, agentAllFailedEvent } from './agent-events.js'
@@ -202,7 +202,7 @@ export async function launchRun(
   // visible body. The system instruction is delivered separately (claude's preset
   // system append for work runs), so it never appears in the user turn. The client
   // echo below always carries `prompt` (visible) alone.
-  const modelPrompt = claudeUserTurn(prompt, inject)
+  const modelPrompt = modelUserTurn(prompt, inject)
   // A intent runtime MUST carry the injected read-only profile (its security
   // lock). A missing wiring is a composition-root bug — fail loud, never silently
   // launch a intent agent without its gate / disallowed-tools lock (C-SEC).

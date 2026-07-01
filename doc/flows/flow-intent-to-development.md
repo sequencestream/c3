@@ -158,6 +158,14 @@ flowchart TD
 - **Work-session back-link.** A launched item's Development-details entry opens `lastWorkSessionId`
   via `select_session` (history + live stream, `RM-R13`). A deleted session yields a friendly
   restart/cancel prompt, not a crash (`RM-R13`).
+- **Post-launch right-column jump.** After `start_development` completes and the startup overlay
+  closes (`ready` terminal), the frontend auto-bridges to the console: it switches the active session
+  kind to `work`, enters the console tab, and selects the newly-created work session
+  (`lastWorkSessionId`). During this pending-jump window, the normal kind-switch auto-bind (which
+  would select the first historical work session in the list) is suppressed — the right column stays
+  empty until the target session's row arrives in the sidebar. Once the row lands,
+  `consumePendingWorkSessionSelect` selects only that session, never a historical one. If the target
+  row never arrives (e.g., broadcast loss), the right column remains empty.
 - **Reconcile on entry (`RM-R18`).** On `open_intent_chat`, each `in_progress` intent's
   `lastWorkSessionId` is checked against the process table: a **dead** process whose last 3 assistant
   messages the completion judge confirms `done` is **auto-completed** (commit + push +

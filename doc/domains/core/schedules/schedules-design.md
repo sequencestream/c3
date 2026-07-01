@@ -175,7 +175,7 @@ When the server restarts, some schedules' next-run instant may be in the past:
 ### Event-triggered dispatch (2026-06-08, extended 2026-06-20)
 
 The event-dispatch path is wired to the kernel event bus in the composition root, subscribing to
-`run:started` / `run:settled` (run-lifecycle) and `pr:operation` (model-published). On each event:
+`run:started` / `run:settled` (run-lifecycle) and `pr:operation` (model-published or server-side). On each event:
 
 1. **Run-lifecycle topics only:** if the event's run kind is not a user `session` run → return
    (internal comm runs never fire user schedules, SCH-R18). `pr:operation` carries no run kind and
@@ -190,11 +190,12 @@ The event-dispatch path is wired to the kernel event bus in the composition root
    three-tier MCP security + write-approval queue apply unchanged). The post-run re-arm skips the
    next-run recompute for `event` schedules (they have no cron).
 
-The run-lifecycle publish points live in the run path. The `pr:operation` publish point is the
-`publish_pr_event` MCP tool — c3 provides it to every work session (both vendor paths) so the model,
-after performing a PR operation with its own tools, can publish one vendor-neutral event; c3 itself
-never performs a PR operation. See schedules-spec.md § Triggers → PR operation events (SCH-R22 /
-SCH-R23).
+The run-lifecycle publish points live in the run path. The `pr:operation` publish point has two
+sources: the `publish_pr_event` MCP tool (c3 provides it to every work session so the model can
+publish a vendor-neutral event after performing a PR operation with its own tools), and the
+server-side PR creation paths (dev-cleanup / automation / manual create_pr) which publish a
+`create`/`success` event after successfully creating a PR on the model's behalf. See
+schedules-spec.md § Triggers → PR operation events (SCH-R22 / SCH-R23).
 
 ## Execution dispatcher
 

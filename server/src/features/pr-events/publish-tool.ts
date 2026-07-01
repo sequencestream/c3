@@ -2,8 +2,9 @@
  * The in-process MCP tool the `c3` server exposes to ordinary work sessions:
  *  - `publish_pr_event` (write): the model — AFTER performing a PR operation
  *    with its OWN tools (gh CLI / a GitHub MCP / …) — calls this to publish ONE
- *    vendor-neutral PR operation event onto the kernel event bus. c3 NEVER
- *    executes the PR operation itself.
+ *    vendor-neutral PR operation event onto the kernel event bus. The server-side
+ *    PR creation paths (dev-cleanup / automation / manual create_pr) also publish
+ *    a `create` event after successfully creating a PR.
  *
  * Unlike `save_intents`, this tool has NO confirmation gate: publishing an event
  * has no destructive side effect, so the server auto-allows it (no

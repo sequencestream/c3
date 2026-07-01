@@ -12,9 +12,11 @@
  * per-run binding closure that supplies workspacePath + sessionId — lives in each
  * surface.
  *
- * c3 NEVER executes a PR operation. The model uses its OWN tools to create /
- * review / merge / close / comment on a PR and then calls this tool to publish
- * ONE event; a schedule may subscribe and trigger its follow-up action.
+ * The model uses its OWN tools to create / review / merge / close / comment on
+ * a PR and then calls this tool to publish ONE event; a schedule may subscribe
+ * and trigger its follow-up action. The server-side PR creation paths
+ * (dev-cleanup / automation / manual create_pr) also publish a `create` event
+ * after successfully creating a PR on the model's behalf.
  */
 import { z } from 'zod'
 import { PR_OPERATIONS, PR_OPERATION_RESULTS, type PrOperationEvent } from '@ccc/shared/protocol'
@@ -204,6 +206,54 @@ export function normalizePrEvent(args: PublishPrEventArgs): PrOperationEvent {
   if (errorSummary) event.errorSummary = errorSummary
 
   return event
+}
+
+// ---- Server-side PR create event builder (shared by dev-cleanup / automation / create_pr) ----
+
+/** Inputs for building a server-side `pr:operation create` event. */
+export interface ServerSidePrCreateInput {
+  prId: string
+  prUrl: string | null
+  headBranch: string | undefined
+  baseBranch: string | undefined
+  intentId: string
+}
+
+/** The envelope + normalized event, ready to be published on the bus. */
+export interface ServerSidePrCreateEvent {
+  workspacePath: string
+  sessionId: string
+  event: PrOperationEvent
+}
+
+/**
+ * Build a normalized `pr:operation create/success` event for the server-side
+ * PR creation paths (dev-cleanup, automation, manual create_pr). The three
+ * call-sites share this single constructor to avoid parallel mapping logic
+ * drifting out of sync.
+ *
+ * The returned object carries the bus envelope (`workspacePath`, `sessionId`)
+ * alongside the normalized event so callers can publish in one call.
+ */
+export function buildServerSidePrCreateEvent(
+  input: ServerSidePrCreateInput,
+  envelope: { workspacePath: string; sessionId: string },
+): ServerSidePrCreateEvent {
+  const args: PublishPrEventArgs = {
+    operation: 'create',
+    result: 'success',
+    pr: { url: input.prUrl ?? undefined },
+    ref: {
+      head: input.headBranch,
+      base: input.baseBranch,
+    },
+    association: { intentId: input.intentId },
+  }
+  return {
+    workspacePath: envelope.workspacePath,
+    sessionId: envelope.sessionId,
+    event: normalizePrEvent(args),
+  }
 }
 
 /**

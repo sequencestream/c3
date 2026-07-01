@@ -29,9 +29,10 @@
  * Dependency-injected (mirrors `save-gate.ts`) so the whole flow is unit-testable
  * without a live git tree, the wire, or the db.
  */
-import type { GitBranchMode, Intent, IntentPrStatus } from '@ccc/shared/protocol'
+import type { GitBranchMode, Intent, IntentPrStatus, PrOperationEvent } from '@ccc/shared/protocol'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
 import type { CommitResult, CreatePrResult, ForgeProvider } from '../../git.js'
+import { buildServerSidePrCreateEvent } from '../pr-events/tool-defs.js'
 
 /** Why a cleanup failed — each maps to a workbench todo UiError code. */
 export type CleanupFailureCode = 'noChanges' | 'commitPushFailed' | 'ghUnavailable' | 'prFailed'
@@ -77,6 +78,8 @@ export interface DevCleanupDeps {
   }) => void
   broadcastIntents: (workspacePath: string) => void
   broadcastWaitUserEvents: (workspacePath: string) => void
+  /** Publish a normalized PR operation event onto the kernel event bus. */
+  publishPrEvent: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
 }
 
 /** Normalize a branch ref so `origin/main` / `refs/heads/main` / `main` compare equal. */
@@ -124,6 +127,7 @@ export async function runManualDevCleanup(
   intentId: string,
   workspacePath: string,
   deps: DevCleanupDeps,
+  sessionId?: string,
 ): Promise<CleanupOutcome> {
   const req = deps.getIntent(intentId)
   if (!req) return { kind: 'skipped' }
@@ -196,5 +200,20 @@ export async function runManualDevCleanup(
 
   deps.setPrInfo(intentId, pr.prId, 'reviewing', pr.prUrl ?? null)
   deps.broadcastIntents(workspacePath)
+
+  // Publish a pr:operation create event so event-triggered schedules can react.
+  const effectiveSessionId = sessionId ?? intentId
+  const prEvent = buildServerSidePrCreateEvent(
+    {
+      prId: pr.prId,
+      prUrl: pr.prUrl ?? null,
+      headBranch,
+      baseBranch: undefined,
+      intentId,
+    },
+    { workspacePath, sessionId: effectiveSessionId },
+  )
+  deps.publishPrEvent({ workspacePath, sessionId: effectiveSessionId, ...prEvent.event })
+
   return { kind: 'success', createdPr: true }
 }

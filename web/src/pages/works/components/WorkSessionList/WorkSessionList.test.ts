@@ -174,12 +174,18 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
     },
   )
 
-  it('工具 tab 只在 showToolSessions 开启时可选', async () => {
+  it('工具 tab 仅在 showToolSessions 开启时渲染', async () => {
     const hidden = mountList()
-    const hiddenTool = hidden.findAll('.session-kind-tab').at(5)!
-    expect((hiddenTool.element as HTMLButtonElement).disabled).toBe(true)
-    await hiddenTool.trigger('click')
-    expect(hidden.emitted('select-session-kind')).toBeUndefined()
+    const hiddenTabs = hidden.findAll('.session-kind-tab')
+    // 关闭时 tool tab 整条隐去,只剩前五类。
+    expect(hiddenTabs.map((tab) => tab.text())).toEqual([
+      'Work',
+      'Intent',
+      'Spec',
+      'Discussion',
+      'Schedule',
+    ])
+    expect(hiddenTabs.some((tab) => tab.text() === 'Tool')).toBe(false)
 
     const shown = mount(WorkSessionList, {
       props: {
@@ -187,7 +193,7 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
         showToolSessions: true,
       },
     })
-    const shownTool = shown.findAll('.session-kind-tab').at(5)!
+    const shownTool = shown.findAll('.session-kind-tab').find((tab) => tab.text() === 'Tool')!
     expect((shownTool.element as HTMLButtonElement).disabled).toBe(false)
     await shownTool.trigger('click')
     expect(shown.emitted('select-session-kind')).toEqual([['tool']])

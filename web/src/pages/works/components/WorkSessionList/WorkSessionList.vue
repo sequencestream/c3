@@ -7,7 +7,7 @@
  * (每次可见条数)是组件自身的 UI 状态;增删改经事件上抛(含 prompt/confirm 交互),
  * 由 App 统一发往服务端。
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type {
   SessionCapabilities,
@@ -167,6 +167,10 @@ function tabEnabled(tab: (typeof SESSION_KIND_TABS)[number]): boolean {
   return tab.enabled === 'showToolSessions' ? props.showToolSessions : tab.enabled
 }
 
+// 禁用的 kind tab(当前只有 tool 在 showToolSessions 关闭时)不再以置灰形式渲染,
+// 而是整条从入口中隐去。活动 tab 恒为可见 tab,故占位提示逻辑自然不再触发。
+const visibleTabs = computed(() => SESSION_KIND_TABS.filter((tab) => tabEnabled(tab)))
+
 function jumpable(s: SessionInfo): boolean {
   return (
     resolveSessionJumpTarget({
@@ -243,15 +247,14 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
           data-testid="session-kind-tabs"
         >
           <button
-            v-for="tab in SESSION_KIND_TABS"
+            v-for="tab in visibleTabs"
             :key="tab.key"
             type="button"
             class="session-kind-tab"
-            :class="{ active: tab.key === activeSessionKind, disabled: !tabEnabled(tab) }"
+            :class="{ active: tab.key === activeSessionKind }"
             :aria-selected="tab.key === activeSessionKind"
-            :disabled="!tabEnabled(tab)"
             role="tab"
-            @click="selectSessionKind(tab.key, tabEnabled(tab))"
+            @click="selectSessionKind(tab.key, true)"
           >
             <span>{{ t(tab.labelKey as never) }}</span>
             <span v-if="sessionCounts[tab.key] > 0" class="session-kind-count">{{

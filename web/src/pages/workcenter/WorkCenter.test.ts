@@ -570,4 +570,39 @@ describe('EventDetail.vue — attribute list', () => {
     await wrapper.find('.wc-btn-jump').trigger('click')
     expect(wrapper.emitted('jump-to-source')?.[0]).toEqual([event])
   })
+
+  it('shows "Intent ID" label when intentLevel is true', () => {
+    const wrapper = mount(EventDetail, {
+      props: {
+        event: ev({
+          sessionKind: 'intent',
+          sessionId: 'intent-self',
+          intentId: 'intent-self',
+          intentLevel: true,
+        }),
+        workspaces: WORKSPACES,
+      },
+    })
+    const rows = wrapper.findAll('.wc-attr-row')
+    // The session-id row label should be "Intent ID" (sessionId attribute rendered as intentId i18n key).
+    expect(rows[2].find('.wc-attr-key').text()).toBe('Intent ID')
+    expect(rows[2].find('.wc-attr-val').text()).toBe('intent-self')
+  })
+
+  it('shows "Session ID" label when intentLevel is false/absent', () => {
+    const wrapper = mount(EventDetail, {
+      props: {
+        event: ev({
+          sessionKind: 'intent',
+          sessionId: 'sess-1',
+          intentId: 'intent-42',
+          intentLevel: false,
+        }),
+        workspaces: WORKSPACES,
+      },
+    })
+    const rows = wrapper.findAll('.wc-attr-row')
+    expect(rows[2].find('.wc-attr-key').text()).toBe('Session ID')
+    expect(rows[2].find('.wc-attr-val').text()).toBe('sess-1')
+  })
 })

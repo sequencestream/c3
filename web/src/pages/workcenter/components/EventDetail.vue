@@ -258,7 +258,15 @@ watch(
             <dd class="wc-attr-val">{{ sessionKindLabel(event.sessionKind) }}</dd>
           </div>
           <div v-if="event.sessionId" class="wc-attr-row">
-            <dt class="wc-attr-key">{{ t('workcenter.attribute.sessionId') }}</dt>
+            <dt class="wc-attr-key">
+              {{
+                t(
+                  event.intentLevel
+                    ? 'workcenter.attribute.intentId'
+                    : 'workcenter.attribute.sessionId',
+                )
+              }}
+            </dt>
             <dd class="wc-attr-val wc-attr-mono">{{ event.sessionId }}</dd>
           </div>
           <div v-if="event.intentTitle" class="wc-attr-row">

@@ -178,6 +178,14 @@ describe('intents CRUD', () => {
     expect(getIntent('legacy-work-link')?.lastWorkSessionId).toBe('sess-legacy')
   })
 
+  it('findIntentIdByAnySessionId resolves an intent id when sessionId is the intent itself (pushFailureEvent path)', () => {
+    const [saved] = insertIntents(proj, [
+      { title: 'Self-ref', shortEnTitle: '', content: '', priority: 'P0' },
+    ])
+    // The 4th search path should find the intent by its own id.
+    expect(findIntentIdByAnySessionId(saved.id)).toBe(saved.id)
+  })
+
   it('converges a partial work-session migration with both old and new columns', () => {
     const raw = getDb()!
     raw.exec(`

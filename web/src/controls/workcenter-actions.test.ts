@@ -35,18 +35,21 @@ function makeCtx() {
     send: vi.fn(),
     setViewMode: vi.fn(),
     openWorkcenterSession: vi.fn(),
+    openIntents: vi.fn(),
   }
+  const requestedIntentId = ref<string | null>(null)
   const ctx = {
     ...spies,
     client: {} as never,
     currentWorkspace: ref<string | null>(WS),
+    requestedIntentId,
     workcenterEvents: ref<WaitUserInvolveEvent[]>([]),
     workcenterLoading: ref(false),
     workcenterAppendNext: ref(false),
     workcenterHasMore: ref(true),
   } as unknown as AppCtx
   installWorkcenterActions(ctx)
-  return { ctx, ...spies }
+  return { ctx, ...spies, requestedIntentId }
 }
 
 describe('WorkCenter list actions', () => {
@@ -140,5 +143,28 @@ describe('jumpToSource', () => {
       title: null,
       updatedAt: 1,
     })
+  })
+
+  it('intentLevel + intentId → routes to intent detail page (not openWorkcenterSession)', () => {
+    const { ctx, openIntents, requestedIntentId, openWorkcenterSession } = makeCtx()
+    ctx.jumpToSource(
+      event({
+        sessionKind: 'intent',
+        sessionId: 'intent-self-id',
+        intentId: 'intent-self-id',
+        intentLevel: true,
+      }),
+    )
+    expect(openIntents).toHaveBeenCalledWith(WS)
+    expect(requestedIntentId!.value).toBe('intent-self-id')
+    expect(openWorkcenterSession).not.toHaveBeenCalled()
+  })
+
+  it('intentLevel without intentId → falls through to openWorkcenterSession', () => {
+    const { ctx, openWorkcenterSession } = makeCtx()
+    ctx.jumpToSource(
+      event({ sessionKind: 'intent', sessionId: null, intentLevel: true, intentId: null }),
+    )
+    expect(openWorkcenterSession).toHaveBeenCalled()
   })
 })

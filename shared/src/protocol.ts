@@ -2545,6 +2545,14 @@ export interface WaitUserInvolveEvent {
    * persisted on the event). `null` whenever {@link intentId} is null.
    */
   intentTitle?: string | null
+  /**
+   * When true, this event lives at the intent level with no real session behind
+   * {@link sessionId} — the session id is actually the owning intent's object id.
+   * Jumping to this event should open the intent detail page, not a session page.
+   * Derived on read in `toEvent` (never persisted); absent/false for events that
+   * originated from a real producing session.
+   */
+  intentLevel?: boolean
   /** Human-friendly label summarising the gated action. */
   title: string | null
   /** The `permission_request.requestId` this event tracks. */

@@ -2050,6 +2050,7 @@
       "workspaceUnknown": "未知工作区",
       "sessionKind": "会话类型",
       "sessionId": "会话 ID",
+      "intentId": "意图 ID",
       "intent": "意图"
     },
     "action": {

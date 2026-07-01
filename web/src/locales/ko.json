@@ -2051,6 +2051,7 @@
       "workspaceUnknown": "Unknown workspace",
       "sessionKind": "Session kind",
       "sessionId": "Session ID",
+      "intentId": "Intent ID",
       "intent": "Intent"
     },
     "action": {

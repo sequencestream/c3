@@ -64,14 +64,21 @@ export function installWorkcenterActions(ctx: AppCtx): void {
   }
 
   // Jump from a WorkCenter event to its source tab + item, routed off the producing
-  // run's `sessionKind` + real `sessionId`. WorkCenter always lands in the
-  // unified session page; `sessionKind` only chooses the left-list kind.
+  // run's `sessionKind` + real `sessionId`. Intent-level events (no real session)
+  // route to the intent detail page; all other events land in the unified session
+  // page where `sessionKind` only chooses the left-list kind.
   // `event.workspaceId` is an opaque id (the store maps the path through
   // `pathToId`), so it is interchangeable with `currentWorkspace`.
   ctx.jumpToSource = (event: WaitUserInvolveEvent): void => {
     const workspace = event.workspaceId || currentWorkspace.value
     if (!workspace || !ctx.client) return
     ctx.setViewMode('workspace')
+    // Intent-level events: no real session exists, jump to the intent detail page.
+    if (event.intentLevel && event.intentId) {
+      ctx.openIntents(workspace)
+      ctx.requestedIntentId.value = event.intentId
+      return
+    }
     ctx.openWorkcenterSession({
       workspaceId: workspace,
       sessionKind: event.sessionKind,

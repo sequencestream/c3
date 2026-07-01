@@ -1360,6 +1360,8 @@ export function findIntentIdBySessionId(sessionId: string): string | null {
  *  2. `intents.intent_session_id`  — the comm session the save-gate links back (codex
  *     `save_intents`).
  *  3. `intents.last_work_session_id` — the latest work session bound to the intent.
+ *  4. `intents.id` — the intent's own id, for events written by `pushFailureEvent`
+ *     where no real session exists and `session_id` is the intent object id itself.
  *
  * Used by the wait-user-involve store's `toEvent` to derive `intentId`/`intentTitle`
  * from an event's `session_id`, so both a comm-session gate and a work-session prompt
@@ -1382,7 +1384,9 @@ export function findIntentIdByAnySessionId(sessionId: string): string | null {
     'SELECT id FROM intents WHERE last_work_session_id=? LIMIT 1',
     sessionId,
   )
-  return fromLastDev ? fromLastDev.id : null
+  if (fromLastDev) return fromLastDev.id
+  const fromOwnId = d.get<{ id: string }>('SELECT id FROM intents WHERE id=? LIMIT 1', sessionId)
+  return fromOwnId ? fromOwnId.id : null
 }
 
 /**

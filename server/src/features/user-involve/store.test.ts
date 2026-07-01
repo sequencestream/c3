@@ -351,6 +351,35 @@ describe('intent reverse-lookup derivation', () => {
     expect(ev.intentId).toBeNull()
     expect(findIntentIdByAnySessionId).not.toHaveBeenCalled()
   })
+
+  it('derives intentLevel=true when sessionKind=intent and sessionId equals the intent id (pushFailureEvent path)', () => {
+    findIntentIdByAnySessionId.mockImplementation((id) =>
+      id === 'intent-obj-id' ? 'intent-obj-id' : null,
+    )
+    const ev = createEvent({
+      workspacePath: proj,
+      sessionKind: 'intent',
+      sessionId: 'intent-obj-id',
+    })
+    expect(ev.intentLevel).toBe(true)
+  })
+
+  it('derives intentLevel=false when sessionKind=intent but sessionId differs from intent id (real session)', () => {
+    findIntentIdByAnySessionId.mockImplementation((id) =>
+      id === 'real-session-id' ? 'intent-42' : null,
+    )
+    const ev = createEvent({
+      workspacePath: proj,
+      sessionKind: 'intent',
+      sessionId: 'real-session-id',
+    })
+    expect(ev.intentLevel).toBe(false)
+  })
+
+  it('derives intentLevel=false/absent for non-intent sessionKinds', () => {
+    const ev = createEvent({ workspacePath: proj, sessionKind: 'work', sessionId: 'ws-1' })
+    expect(ev.intentLevel).toBeFalsy()
+  })
 })
 
 describe('migration', () => {

@@ -241,6 +241,13 @@ function toEvent(r: EventRow): WaitUserInvolveEvent | null {
       intentTitle = null
     }
   }
+  // intentLevel: true when sessionKind='intent' and sessionId is the intent's own id
+  // (no real session), as written by pushFailureEvent for intent-level cleanup failures.
+  const intentLevel =
+    r.session_kind === 'intent' &&
+    intentId != null &&
+    r.session_id != null &&
+    intentId === r.session_id
   return {
     id: r.id,
     workspaceId,
@@ -248,6 +255,7 @@ function toEvent(r: EventRow): WaitUserInvolveEvent | null {
     sessionId: r.session_id,
     intentId,
     intentTitle,
+    intentLevel,
     title: r.title,
     requestId: r.request_id,
     toolName: r.tool_name,

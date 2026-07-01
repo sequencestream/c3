@@ -8,6 +8,17 @@
 
 import type { AgentAnswer, ConsensusVote, QuestionConsensus } from '@ccc/shared/protocol'
 
+/**
+ * A tool-session prompt split into two delivery channels: the stable `system`
+ * role/contract (the cacheable prefix, byte-identical across turns/voters) and the
+ * per-turn `user` context (the tool, the questions, the votes). Advisor callers
+ * hand `system` to the vendor's system channel and `user` as the model user turn.
+ */
+export interface SplitPrompt {
+  system: string
+  user: string
+}
+
 /** The shape of one `AskUserQuestion` question (subset of the SDK input we use). */
 export interface AskQuestion {
   question: string
@@ -126,10 +137,18 @@ export function tally(
   return { unanimous, decision: allow > deny ? 'allow' : deny > allow ? 'deny' : null }
 }
 
-export function voterPrompt(toolName: string, input: unknown, context: string): string {
-  return [
+export function voterPrompt(toolName: string, input: unknown, context: string): SplitPrompt {
+  // system: the stable advisor role + decision instruction + output shape (no tool,
+  // no context) so the prefix is byte-identical across voters and permission requests.
+  const system = [
     'You are an advisor judging whether another AI agent should be permitted to run a tool.',
     '',
+    'Decide whether the requested action should be ALLOWED or DENIED.',
+    'Reply with ONLY a single-line JSON object, no other text:',
+    '{"decision":"allow"|"deny","reason":"<one short sentence>"}',
+  ].join('\n')
+  // user: the per-vote context — the recent conversation + the tool and its input.
+  const user = [
     'Recent conversation context:',
     context || '(none)',
     '',
@@ -137,20 +156,25 @@ export function voterPrompt(toolName: string, input: unknown, context: string): 
     '```json',
     JSON.stringify(input, null, 2),
     '```',
-    '',
-    'Decide whether this action should be ALLOWED or DENIED.',
-    'Reply with ONLY a single-line JSON object, no other text:',
-    '{"decision":"allow"|"deny","reason":"<one short sentence>"}',
   ].join('\n')
+  return { system, user }
 }
 
 // ---- AskUserQuestion: per-question answering instead of allow/deny ----
 
 /** Build the advisor prompt that asks one agent to answer every question. */
-export function askVoterPrompt(questions: AskQuestion[], context: string): string {
-  const lines: string[] = [
+export function askVoterPrompt(questions: AskQuestion[], context: string): SplitPrompt {
+  // system: the stable advisor role + answering instruction + output shape.
+  const system = [
     "You are an advisor answering, on the user's behalf, the questions another AI agent is asking.",
     '',
+    'For each question, pick the option label(s) that best answer it. If no option fits, set',
+    '"choice" to "custom" and put your answer in "custom". Match labels EXACTLY.',
+    'Reply with ONLY a single-line JSON object, no other text:',
+    '{"answers":[{"index":0,"choice":"<exact label>"|["<label>","<label>"]|"custom","custom":"<text or null>","reason":"<one short sentence>"}]}',
+  ].join('\n')
+  // user: the per-vote context — the recent conversation + the questions to answer.
+  const lines: string[] = [
     'Recent conversation context:',
     context || '(none)',
     '',
@@ -164,14 +188,7 @@ export function askVoterPrompt(questions: AskQuestion[], context: string): strin
       ),
     )
   })
-  lines.push(
-    '',
-    'For each question, pick the option label(s) that best answer it. If no option fits, set',
-    '"choice" to "custom" and put your answer in "custom". Match labels EXACTLY.',
-    'Reply with ONLY a single-line JSON object, no other text:',
-    '{"answers":[{"index":0,"choice":"<exact label>"|["<label>","<label>"]|"custom","custom":"<text or null>","reason":"<one short sentence>"}]}',
-  )
-  return lines.join('\n')
+  return { system, user: lines.join('\n') }
 }
 
 /**
@@ -365,13 +382,30 @@ export function deciderAskPrompt(
   perQuestion: QuestionConsensus[],
   questions: AskQuestion[],
   langName = 'English',
-): string {
+): SplitPrompt {
   const split = perQuestion.filter((q) => !q.unanimous)
-  const lines: string[] = [
+  // system: the stable deciding-agent role + judging rules + summary instruction +
+  // output shape. Only `langName` varies (stable per deployment), so the prefix
+  // stays cacheable across decider calls.
+  const system = [
     "You are the deciding agent. Several advisor agents answered, on the user's behalf,",
-    "the questions an AI agent asked. Here is every advisor's actual answer and reasoning:",
+    'the questions an AI agent asked. The user message lists every advisor’s actual answer',
+    'and reasoning, and marks each question 一致 (agreed) or 意见分歧 (split).',
     '',
-  ]
+    'For EACH question marked 意见分歧, judge whether the advisors actually reach an effective',
+    'consensus — e.g. they picked the same option but a reply was mis-parsed, or',
+    'differently-worded answers mean the same option. If they effectively agree, set',
+    '"consensus":true and give the agreed answer using the EXACT option label(s) listed for',
+    'that question; if they genuinely differ, set "consensus":false. Judge ONLY the 意见分歧',
+    'questions.',
+    '',
+    `Also write ONE short ${langName} sentence summarizing the collective answers for a human who must confirm.`,
+    'Reply with ONLY a single-line JSON object, no other text:',
+    '{"summary":"<summary sentence>","questions":[{"index":0,"consensus":true,"choice":"<exact label>"|["<label>"]|"custom","custom":"<text or null>"}]}',
+  ].join('\n')
+  // user: the per-question casts (every advisor's answer + the 一致/意见分歧 marker) plus
+  // the option-label lists for the split questions the decider must adjudicate.
+  const lines: string[] = []
   perQuestion.forEach((q) => {
     lines.push(`[${q.index}|${q.header || q.index}] ${q.question}`)
     q.answers.forEach((a) =>
@@ -386,29 +420,16 @@ export function deciderAskPrompt(
       : q.agreed
     lines.push(`    => ${q.unanimous ? `一致：${agreedClean}` : '意见分歧'}`)
   })
-  lines.push('')
   if (split.length > 0) {
-    lines.push(
-      'Some questions above are marked 意见分歧. For EACH such question, judge whether the',
-      'advisors actually reach an effective consensus — e.g. they picked the same option but a',
-      'reply was mis-parsed, or differently-worded answers mean the same option. If they',
-      'effectively agree, set "consensus":true and give the agreed answer using the EXACT option',
-      'label(s) listed below; if they genuinely differ, set "consensus":false. Judge ONLY these:',
-    )
+    lines.push('', 'Option labels for the 意见分歧 questions:')
     split.forEach((q) => {
       const opts = questions[q.index]?.options ?? []
       lines.push(
         `  [${q.index}] options: ${opts.map((o) => stripRecommendation(o.label)).join(' | ')}`,
       )
     })
-    lines.push('')
   }
-  lines.push(
-    `Also write ONE short ${langName} sentence summarizing the collective answers for a human who must confirm.`,
-    'Reply with ONLY a single-line JSON object, no other text:',
-    '{"summary":"<summary sentence>","questions":[{"index":0,"consensus":true,"choice":"<exact label>"|["<label>"]|"custom","custom":"<text or null>"}]}',
-  )
-  return lines.join('\n')
+  return { system, user: lines.join('\n') }
 }
 
 /**

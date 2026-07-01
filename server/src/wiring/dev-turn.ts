@@ -169,8 +169,12 @@ export function makeRunDevTurn(
       if (rt.team && rt.run?.handle) {
         emit(rt.sessionId, { type: 'user_text', text: input.prompt })
         setStatus(rt.sessionId, 'running')
-        const instructionPrefix = input.systemInstruction ? `${input.systemInstruction}\n\n` : ''
-        rt.run.handle.pushInput(`${instructionPrefix}${input.userTurnPrefix ?? ''}${input.prompt}`)
+        // The team lead's process was launched with the system instruction already
+        // set once (runClaude's appendSystemPrompt, at launch time), so a push must
+        // NOT re-prepend it — that would inflate the user-turn prefix and break the
+        // stable cache. The slash command already expanded on the first turn too, so
+        // the push carries the visible user turn alone.
+        rt.run.handle.pushInput(input.prompt)
       } else {
         void launchRun(
           rt,

@@ -305,6 +305,13 @@ export async function askOneShot(opts: {
   envOverrides?: Record<string, string>
   ownerKind?: 'intent' | 'discussion' | 'schedule' | null
   ownerId?: string | null
+  /**
+   * The stable role/rules half of the judge prompt, delivered on the preset
+   * system `append` so the per-turn `prompt` (the intent + evidence) stays the
+   * variable user context — a cacheable system prefix across successive judge
+   * calls. Omit ⇒ a bare claude_code preset (the prior behaviour).
+   */
+  systemInstruction?: string
 }): Promise<string> {
   const claudePath = findClaudeExecutable()
   const q = query({
@@ -312,7 +319,11 @@ export async function askOneShot(opts: {
     options: {
       cwd: opts.cwd,
       settingSources: ['user', 'project'],
-      systemPrompt: { type: 'preset', preset: 'claude_code' },
+      systemPrompt: {
+        type: 'preset',
+        preset: 'claude_code',
+        ...(opts.systemInstruction ? { append: opts.systemInstruction } : {}),
+      },
       disallowedTools: ONESHOT_DISALLOWED_TOOLS,
       permissionMode: 'default',
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),

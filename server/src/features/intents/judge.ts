@@ -59,17 +59,34 @@ export interface JudgeEvidence {
   recentLog: string
 }
 
-function buildPrompt(req: Intent, lastMessages: string[], ev: JudgeEvidence): string {
+function buildPrompt(
+  req: Intent,
+  lastMessages: string[],
+  ev: JudgeEvidence,
+): { system: string; user: string } {
   // Render each message with a numbered divider; at least one message is always present.
   const messages = lastMessages.length
     ? lastMessages
         .map((m, i) => `# 消息 ${i + 1}（时间倒序:最旧在上）\n${m || '(无文本输出)'}`)
         .join('\n\n')
     : '(无文本输出)'
-  return [
-    'You are a development-completion reviewer. Below are a intent, the last message the agent developing it produced this turn, and code-change evidence (the uncommitted git diff stat + recent commit log).',
+  // system: the stable reviewer role + verdict rules + output shape — byte-identical
+  // across judge calls, so it rides the preset system append as a cacheable prefix.
+  const system = [
+    'You are a development-completion reviewer. The user message carries an intent, the last message the agent developing it produced this turn, and code-change evidence (the uncommitted git diff stat + recent commit log).',
     'Judge whether the intent is TRULY complete, PRIMARILY from what the agent reports it accomplished. Code-change evidence is SUPPORTING corroboration, NOT a precondition.',
     '',
+    '# Verdict rules (decide in THIS order: stuck → done → in_progress)',
+    "- Intent achievement is JUDGED PRIMARILY FROM THE AGENT REPORT. Code-change evidence (uncommitted diff OR recent commits) is SUPPORTING corroboration only and is OFTEN LEGITIMATELY EMPTY — the agent may have committed its own work, the workspace may be multi-repo, or c3 will commit later (committing is c3's job AFTER this verdict). **NEVER judge incomplete merely because the evidence is empty.** When evidence IS present and consistent with the intent, let it strengthen a `done`.",
+    '- **stuck — check FIRST. The turn ended needing a HUMAN, so this intent must STOP, not auto-continue.** Return stuck if ANY of these hold: the agent is asking the user a question / presenting options / seeking a preference, direction, scope, or trade-off decision (this includes any use of the **AskUserQuestion** tool — a real decision point a blind continue would wrongly answer); it is waiting on a permission / tool authorization no one can grant; it is blocked for lack of context or information only a human can supply; it errored, gave up, or repeatedly failed; OR it claims completion while the report ITSELF is untrustworthy — self-contradictory, vague hand-waving, or plainly spinning (no concrete work described) — AND no change evidence backs it. A genuine human-decision point is stuck, NOT in_progress. **Empty evidence alone is NOT a stuck signal — a credible, concrete completion report with no diff is `done`, not stuck.**',
+    "- **done — only if not stuck.** The agent credibly reports the intent is implemented (ideally self-verified) and what it describes is consistent with the intent. This is the PRIMARY signal: a concrete, self-consistent completion report is enough for `done` even when the change evidence is empty (the work may be committed, in a sub-repo, or awaiting c3's commit). Present evidence corroborates but is not required; only an untrustworthy/spinning report with no evidence falls through to stuck.",
+    '- **in_progress — FALLBACK only, when it is neither stuck nor done.** The agent paused at a pure dev-skill checkpoint that a plain continue can advance (no human choice needed), or it explicitly says there are remaining steps it will carry out itself. This is NOT a default-to-continue: if there is any human-intervention signal above, it is stuck, not in_progress.',
+    '',
+    'Output a single JSON object only — no explanation, not wrapped in a code block — strictly in the form:',
+    '{"verdict":"done|in_progress|stuck","reason":"one-line explanation"}',
+  ].join('\n')
+  // user: the per-judge context — the intent + the agent's last message(s) + evidence.
+  const user = [
     `# Intent title\n${req.title}`,
     `# Intent content\n${req.content}`,
     '',
@@ -81,16 +98,8 @@ function buildPrompt(req: Intent, lastMessages: string[], ev: JudgeEvidence): st
     '',
     '# Recent commits — git log --oneline',
     ev.recentLog || '(no commits)',
-    '',
-    '# Verdict rules (decide in THIS order: stuck → done → in_progress)',
-    "- Intent achievement is JUDGED PRIMARILY FROM THE AGENT REPORT. Code-change evidence (uncommitted diff OR recent commits) is SUPPORTING corroboration only and is OFTEN LEGITIMATELY EMPTY — the agent may have committed its own work, the workspace may be multi-repo, or c3 will commit later (committing is c3's job AFTER this verdict). **NEVER judge incomplete merely because the evidence is empty.** When evidence IS present and consistent with the intent, let it strengthen a `done`.",
-    '- **stuck — check FIRST. The turn ended needing a HUMAN, so this intent must STOP, not auto-continue.** Return stuck if ANY of these hold: the agent is asking the user a question / presenting options / seeking a preference, direction, scope, or trade-off decision (this includes any use of the **AskUserQuestion** tool — a real decision point a blind continue would wrongly answer); it is waiting on a permission / tool authorization no one can grant; it is blocked for lack of context or information only a human can supply; it errored, gave up, or repeatedly failed; OR it claims completion while the report ITSELF is untrustworthy — self-contradictory, vague hand-waving, or plainly spinning (no concrete work described) — AND no change evidence backs it. A genuine human-decision point is stuck, NOT in_progress. **Empty evidence alone is NOT a stuck signal — a credible, concrete completion report with no diff is `done`, not stuck.**',
-    "- **done — only if not stuck.** The agent credibly reports the intent is implemented (ideally self-verified) and what it describes is consistent with the intent. This is the PRIMARY signal: a concrete, self-consistent completion report is enough for `done` even when the change evidence is empty (the work may be committed, in a sub-repo, or awaiting c3's commit). Present evidence corroborates but is not required; only an untrustworthy/spinning report with no evidence falls through to stuck.",
-    '- **in_progress — FALLBACK only, when it is neither stuck nor done.** The agent paused at a pure dev-skill checkpoint that a plain continue can advance (no human choice needed), or it explicitly says there are remaining steps it will carry out itself. This is NOT a default-to-continue: if there is any human-intervention signal above, it is stuck, not in_progress.',
-    '',
-    'Output a single JSON object only — no explanation, not wrapped in a code block — strictly in the form:',
-    '{"verdict":"done|in_progress|stuck","reason":"one-line explanation"}',
   ].join('\n')
+  return { system, user }
 }
 
 /** Extract the first JSON object from text and coerce it to a verdict. */
@@ -120,8 +129,10 @@ export async function judgeCompletion(input: {
   // Completion judging is a background tool session ⇒ run on the configured tool
   // agent (falls back to the default agent when toolAgentId is unset).
   const launch = resolveToolSessionLaunch()
+  const { system, user } = buildPrompt(input.req, input.lastMessages, input.evidence)
   const text = await askOneShot({
-    prompt: buildPrompt(input.req, input.lastMessages, input.evidence),
+    prompt: user,
+    systemInstruction: system,
     cwd: input.cwd,
     signal: input.signal,
     agentId: launch.agentId,

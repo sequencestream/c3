@@ -27,20 +27,22 @@ It does not replace `pnpm build` (the bundled web-plus-server output) or `pnpm b
 
 ## Distribution contract — the single binary is NOT self-contained (ADR-0012)
 
-The `c3` single binary ships **c3 itself and nothing else**. None of the agent vendor CLIs
-no `node_modules` for a bundled CLI to live in — so each agent type runs as a **host-CLI
-subprocess** resolved from the host PATH. "Self-contained single binary" is therefore an illusion
-the release docs must dispel explicitly:
+The `c3` single binary ships c3 itself plus the installer/resolver logic for vendor CLIs. Default
+agent execution uses c3-managed vendor installs under `~/.c3/vendor/<vendor>/<version>/bin/<binary>`.
+The release docs must make this contract explicit:
 
-- **Install the host CLI per agent type you want to use.** The binary alone enables no agent type;
-  each requires its vendor CLI installed (and, for Claude, logged in via `claude /login`). Override
-- **A missing host CLI is a product convention, not a bug.** At launch c3 probes for each
-  vendor's host binary; an absent one keeps that vendor's agent type unavailable and surfaces
-  install guidance. c3 still boots — startup reports each host binary present/missing loudly,
-  like the SQLite driver probe.
-- Today only `claude` has a runtime adapter, so the hard dependency is the `claude` CLI; `codex` /
+- **Resolution priority is fixed.** `CLAUDE_PATH` / `CODEX_PATH` wins, then c3 managed CLI, then
+  degraded host PATH fallback.
+- **Managed installs are verified and stateful.** c3 reads npm packuments, downloads tarballs,
+  verifies `dist.integrity`, stages/self-checks the binary, and records source/version/error state in
+  `~/.c3/vendor/manifest.json`.
+- **Fallback is not success.** If managed install or sync fails but host PATH contains a usable CLI,
+  the agent can run in `host-path-fallback` state; logs must retain the managed failure reason.
+- **Credentials are outside c3.** c3 never writes or migrates `~/.claude`, `~/.codex`, tokens, shell
+  profiles, package-manager installs, or PATH.
 
-This is the distribution-facing face of ADR-0012 (host-binary probing is the first capability gate).
+This is the distribution-facing face of ADR-0012 (vendor executable resolution is the first
+capability gate).
 
 ## Phase order (quality gate order)
 
@@ -235,8 +237,9 @@ SoT for the P0/P1/experimental classification is a single target-classification 
 
 The **Windows platform code paths** are merged ahead of any smoke (they're part of the P1 wave):
 
-- **`claude` discovery** — host-CLI lookup branches on platform: `where claude` on `win32`
-  (no `sh` there), portable `sh -c command -v claude` on POSIX.
+- **vendor CLI discovery** — default managed paths are under `%USERPROFILE%\.c3\vendor` on Windows
+  and `~/.c3/vendor` on POSIX; host PATH lookup remains platform-specific fallback (`where` on
+  Windows, `command -v` via `sh` on POSIX).
 - **Home dir** — `~/.c3` resolves through the OS home-directory convention (→ `%USERPROFILE%\.c3`
   on Windows), never a raw `~`. Already true everywhere c3 reads its home; 4/7 only adds coverage.
 - **`bun:sqlite` startup probe** — at server boot c3 opens an in-memory db + `SELECT 1`

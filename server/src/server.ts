@@ -78,8 +78,11 @@ import {
   upsertForBind,
 } from './features/sessions/session-metadata-store.js'
 import { cleanupStalePendingIntents, PENDING_INTENT_TTL_MS } from './kernel/config/index.js'
-import { logHostBinaryHealth } from './kernel/agent/adapters/registry.js'
-import { resolve as resolveHostBinary } from './kernel/agent/process/launcher.js'
+import { logVendorCliHealth } from './kernel/agent/adapters/registry.js'
+import {
+  refreshManagedVendorClisInBackground,
+  resolve as resolveVendorCli,
+} from './kernel/agent/process/launcher.js'
 import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
 import { createClaudeAdapter } from './kernel/agent/adapters/claude/index.js'
 import { createCodexRelay, CODEX_RELAY_PATH } from './transport/codex-relay/index.js'
@@ -254,14 +257,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // the operator is told exactly what broke.
   checkDbDriver()
 
-  // Probe host CLIs up front (ADR-0012). Each agent vendor runs as a host-CLI
-  // subprocess that can't be packed into c3's single binary; a missing one means
-  // that agent type is simply unavailable (a product convention, not a bug). Logs
-  // present/missing + install guidance loudly, like checkDbDriver — c3 still starts.
-  logHostBinaryHealth()
+  // Probe vendor CLIs up front. The default source is c3's managed vendor dir;
+  // env overrides remain explicit, and host PATH is only a degraded fallback.
+  logVendorCliHealth()
+  refreshManagedVendorClisInBackground()
 
   // Codex lifecycle (2026-06-06-007): Codex spawns its CLI per run
-  // via the SDK (no supervisor), so the adapter is built directly — host-binary
+  // via the SDK (no supervisor), so the adapter is built directly — vendor CLI
   // gated like the others. Built here so the kernel launcher only sees the neutral
   // VendorAdapter (injected via launchDeps.getCodexAdapter). Missing CLI ⇒ null, and
   // the codex agent type is simply unavailable (a session falls back / errors loud).
@@ -271,7 +273,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // below; the driver only engages it for a custom provider URL.
   const codexRelay = createCodexRelay(`http://127.0.0.1:${opts.port}`)
   let codexAdapter: VendorAdapter | null = null
-  if (resolveHostBinary('codex')) {
+  if (resolveVendorCli('codex')) {
     try {
       codexAdapter = createCodexAdapter(undefined, undefined, codexRelay)
       console.log('[c3] codex ready (per-run CLI)')

@@ -17,13 +17,13 @@ the terminal.
                                    `claude` CLI binary
 ```
 
-> **Hard runtime dependency — install the host CLI per agent type**: each agent
-> vendor runs as a host-CLI subprocess that **cannot** be packed into c3's single
-> binary. The binary in `dist/` ships `c3` itself and nothing else — "self-contained"
-> is an illusion. For the Claude agent type the `claude` CLI must be installed and
-> logged in (`claude /login`) on the host; override its path with `$CLAUDE_PATH`.
-> A missing host CLI is a product convention, not a bug: that agent type is simply
-> unavailable (c3 logs present/missing CLIs at startup with install guidance). See
+> **Managed vendor CLIs by default**: c3 resolves each vendor executable in this
+> order: explicit `CLAUDE_PATH` / `CODEX_PATH`, then c3's managed install under
+> `~/.c3/vendor/<vendor>/<version>/bin/<binary>`, then a degraded host `PATH`
+> fallback. c3 installs and updates the managed Claude Code / Codex CLIs from npm
+> package metadata, verifies package integrity, and records source/version state in
+> `~/.c3/vendor/manifest.json`. c3 does not modify your shell profile, package
+> manager installs, PATH, or vendor login credentials. See
 > [ADR-0012](doc/architecture/adr/0012-host-binary-probe-first-capability-gate.md).
 
 ## Quick start (development)
@@ -73,9 +73,11 @@ BUN_TARGET=bun-linux-x64 BUN_OUTFILE=dist/c3-linux-x64 \
   node server/scripts/pkg.mjs
 ```
 
-The binary spawns the system `claude` CLI (or `$CLAUDE_PATH`) for the SDK's
-agent process, since the SDK's bundled `cli-<platform>` lookup misses inside a
-single-file Bun binary.
+The binary spawns the resolved vendor CLI for agent processes. The default path is
+c3-managed (`~/.c3/vendor/claude/.../bin/claude` or
+`~/.c3/vendor/codex/.../bin/codex`); explicit `CLAUDE_PATH` / `CODEX_PATH` still
+win for development, debugging, and enterprise pinning. Host `PATH` is only a
+compatibility fallback when managed install or health checks fail.
 
 ## Download & verify
 
@@ -311,10 +313,10 @@ baked into the unit. Platforms differ by design:
 | macOS    | launchd **LaunchAgent**   | `~/Library/LaunchAgents/center.c3.server.plist` + `launchctl load -w` | Within your login session, at each login.                                                              |
 | Windows  | Task Scheduler logon task | `schtasks /Create … /SC ONLOGON` (task name `c3`)                     | At logon (a logon-triggered task, **not** a pre-login service).                                        |
 
-The service process depends on the host `claude` / `codex` CLI being on the service
-account's PATH — that PATH can differ from your login shell, which is the usual cause of
-"agent unavailable" under a service. The startup log (`~/.c3/log/c3.log`) reports which
-host CLIs were found.
+The service process defaults to c3-managed vendor CLIs under `~/.c3/vendor`, so it
+does not depend on your login shell PATH. The startup log (`~/.c3/log/c3.log`)
+reports whether each vendor came from an env override, managed install, degraded
+host PATH fallback, missing install, or failed managed sync.
 
 `c3 uninstall` removes the current platform's registration: Linux runs `systemctl --user
 disable --now c3.service` then removes its unit file; macOS unloads and removes the LaunchAgent

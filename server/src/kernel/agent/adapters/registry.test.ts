@@ -7,10 +7,24 @@
  */
 import { describe, expect, it } from 'vitest'
 import { resolveAvailableAdapters } from './registry.js'
+import type { VendorId } from './types.js'
+import type { VendorProbe } from '../process/launcher.js'
+
+function probe(vendor: VendorId, path: string | null): VendorProbe {
+  return {
+    vendor,
+    binary: vendor,
+    path,
+    source: path ? 'managed' : 'missing',
+    present: path !== null,
+    compatibleRange: '>=0.0.0 <999.0.0',
+    installHint: `install ${vendor}`,
+  }
+}
 
 describe('resolveAvailableAdapters', () => {
   it('drops a vendor from `available` and lists it in `missing` when its host CLI is absent', () => {
-    const { available, missing } = resolveAvailableAdapters(() => null)
+    const { available, missing } = resolveAvailableAdapters((v) => probe(v, null))
 
     expect(available.map((a) => a.vendor)).not.toContain('claude')
     const claudeMissing = missing.find((m) => m.vendor === 'claude')
@@ -20,7 +34,7 @@ describe('resolveAvailableAdapters', () => {
   })
 
   it('registers the vendor adapter when its host CLI resolves', () => {
-    const { available, missing } = resolveAvailableAdapters(() => '/usr/local/bin/claude')
+    const { available, missing } = resolveAvailableAdapters((v) => probe(v, `/usr/local/bin/${v}`))
 
     const claude = available.find((a) => a.vendor === 'claude')
     expect(claude).toBeDefined()
@@ -33,14 +47,14 @@ describe('resolveAvailableAdapters', () => {
   it('does not construct the adapter when probing fails (probe is the front gate)', () => {
     // If the factory ran despite a null probe, `createClaudeAdapter` would appear
     // in `available`. It must not.
-    const { available } = resolveAvailableAdapters(() => null)
+    const { available } = resolveAvailableAdapters((v) => probe(v, null))
     expect(available).toHaveLength(0)
   })
 
   // ── Codex no-arg factory (2026-06-06-005) ───────────────────────────────────
   it('registers the codex adapter (read-only advisor, all-false ledger) when its CLI resolves', () => {
     const { available, missing } = resolveAvailableAdapters((v) =>
-      v === 'codex' ? '/usr/local/bin/codex' : null,
+      probe(v, v === 'codex' ? '/usr/local/bin/codex' : null),
     )
     const codex = available.find((a) => a.vendor === 'codex')
     expect(codex).toBeDefined()
@@ -51,7 +65,7 @@ describe('resolveAvailableAdapters', () => {
   })
 
   it('lists codex in `missing` when its host CLI is absent', () => {
-    const { missing } = resolveAvailableAdapters(() => null)
+    const { missing } = resolveAvailableAdapters((v) => probe(v, null))
     const codexMissing = missing.find((m) => m.vendor === 'codex')
     expect(codexMissing).toBeDefined()
     expect(codexMissing?.binary).toBe('codex')

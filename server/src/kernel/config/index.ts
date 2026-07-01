@@ -351,6 +351,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const timezone = isValidTimeZone(raw?.timezone) ? raw!.timezone! : getServerTimezone()
   const showToolSessions = raw?.showToolSessions === true
   const degradationChain = normalizeDegradationChain(raw?.degradationChain, agents)
+  const vendorCliVersions = normalizeVendorCliVersions(raw?.vendorCliVersions)
   // Socket-disconnect auto-resume: enabled unless explicitly disabled (default true).
   const socketAutoResume = raw?.socketAutoResume !== false
   // Skill repos are no longer written here (deprecated — moved to per-project
@@ -384,7 +385,21 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     ...(sandboxes !== undefined ? { sandboxes } : {}),
     ...(auth !== undefined ? { auth } : {}),
     ...(projectConfigs ? { projectConfigs } : {}),
+    ...(vendorCliVersions ? { vendorCliVersions } : {}),
   }
+}
+
+function normalizeVendorCliVersions(raw: unknown): Partial<Record<VendorId, string>> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const rec = raw as Record<string, unknown>
+  const out: Partial<Record<VendorId, string>> = {}
+  for (const vendor of ['claude', 'codex'] as const) {
+    const value = rec[vendor]
+    if (typeof value !== 'string') continue
+    const trimmed = value.trim()
+    if (trimmed) out[vendor] = trimmed
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 /**
@@ -757,6 +772,7 @@ function readSettingsFromDisk(): Partial<SystemSettings> | undefined {
  *    present ⇒ shallow-merged per key so another process's newly-added project
  *    survives while `next`'s explicit entries win.
  *  - `degradationChain` / `socketAutoResume` — `undefined` ⇒ keep disk; present ⇒ use `next`.
+ *  - `vendorCliVersions` — `undefined` ⇒ keep disk; present ⇒ use `next`.
  */
 function mergeSettingsOverDisk(
   disk: Partial<SystemSettings> | undefined,
@@ -771,11 +787,14 @@ function mergeSettingsOverDisk(
     next.degradationChain !== undefined ? next.degradationChain : d.degradationChain
   const socketAutoResume =
     next.socketAutoResume !== undefined ? next.socketAutoResume : d.socketAutoResume
+  const vendorCliVersions =
+    next.vendorCliVersions !== undefined ? next.vendorCliVersions : d.vendorCliVersions
   return {
     ...next,
     ...(projectConfigs !== undefined ? { projectConfigs } : {}),
     ...(degradationChain !== undefined ? { degradationChain } : {}),
     ...(socketAutoResume !== undefined ? { socketAutoResume } : {}),
+    ...(vendorCliVersions !== undefined ? { vendorCliVersions } : {}),
   }
 }
 
@@ -800,6 +819,10 @@ export function saveSettings(next: SystemSettings): SystemSettings {
     }
     return settingsCache ?? normalized
   })
+}
+
+export function getVendorCliVersions(): Partial<Record<VendorId, string>> {
+  return loadSettings().vendorCliVersions ?? {}
 }
 
 /**

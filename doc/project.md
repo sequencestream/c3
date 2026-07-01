@@ -29,8 +29,8 @@ hard to expose to a non-terminal workflow, and hard to centralize. c3 decouples 
 
 - Not a hosted/multi-tenant service. c3 binds to localhost and serves a single local user.
 - Not an authentication or authorization system — it assumes the local OS user is trusted.
-- Not a replacement for the `claude` CLI. The CLI is a **hard runtime dependency**: it
-  must be installed and logged in (`claude /login`) on the host.
+- Not a replacement for Claude Code / Codex authentication. c3 manages default CLI
+  binaries under `~/.c3/vendor`, but vendor login state still belongs to the vendor CLI.
 - Not a multi-project workspace. One server process serves one `--workspace` directory.
 - Not a persistent store. There is no database, no history persistence across restarts.
 
@@ -50,7 +50,8 @@ hard to expose to a non-terminal workflow, and hard to centralize. c3 decouples 
   completion with every sensitive tool gated through the browser.
 - No tool that the SDK classifies as sensitive ever executes without an explicit browser
   decision (or an explicit mode that authorizes auto-execution).
-- The single binary runs on a host that has only `bun` and `claude` installed.
+- The single binary can run with c3-managed Claude Code / Codex CLIs under `~/.c3/vendor`;
+  env overrides and host PATH fallback remain available for operations and migration.
 
 ## Current state
 

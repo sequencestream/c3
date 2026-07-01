@@ -631,15 +631,15 @@
       "timeout": "作業の開始を確認できませんでした。もう一度お試しください。"
     },
     "specLaunch": {
-      "title": "Spec セッションを開始中…",
+      "title": "仕様セッションを開始中…",
       "step": {
         "checkDependencies": "依存関係を確認",
         "pullCode": "最新コードを取得",
-        "launchSession": "Spec セッションを開始"
+        "launchSession": "仕様セッションを開始"
       },
       "dependencyNotMerged": "依存関係が未マージです",
-      "failed": "Spec セッションの開始に失敗しました。",
-      "timeout": "Spec セッションの開始を確認できませんでした。"
+      "failed": "仕様セッションの開始に失敗しました。",
+      "timeout": "仕様セッションの開始を確認できませんでした。"
     },
     "chat": {
       "loading": "セッションを読み込み中…"
@@ -716,10 +716,10 @@
         "label": "作業開始"
       },
       "writeSpec": {
-        "label": "spec を作成"
+        "label": "仕様を作成"
       },
       "approveSpec": {
-        "label": "spec を承認",
+        "label": "仕様を承認",
         "confirmLabel": "承認"
       },
       "modifySession": {
@@ -836,15 +836,15 @@
         "label": "意図セッション"
       },
       "spec": {
-        "label": "Spec"
+        "label": "仕様"
       },
       "specSession": {
-        "label": "Spec 作成セッション"
+        "label": "仕様作成セッション"
       }
     },
     "spec": {
-      "empty": "この意図にはまだ spec が作成されていません。",
-      "loading": "spec を読み込み中…"
+      "empty": "この意図にはまだ仕様が作成されていません。",
+      "loading": "仕様を読み込み中…"
     },
     "intentSession": {
       "empty": "この意図にはまだ調整セッションがありません。",
@@ -856,7 +856,7 @@
       }
     },
     "specSession": {
-      "empty": "この意図にはまだ spec セッションがありません。"
+      "empty": "この意図にはまだ仕様セッションがありません。"
     },
     "resetSession": {
       "intentSession": {
@@ -864,8 +864,8 @@
         "message": "新しい入力とこの意図の現在の内容を組み合わせて、新しいリファインセッションを開始します。以前のセッションは Works に残りますが、この意図には紐づかなくなります。"
       },
       "specSession": {
-        "title": "Spec セッションをリセット",
-        "message": "新しい入力と現在の spec 内容を組み合わせて、新しい spec セッションを開始します。以前のセッションは Works に残りますが、この意図には紐づかなくなります。"
+        "title": "仕様セッションをリセット",
+        "message": "新しい入力と現在の仕様内容を組み合わせて、新しい仕様セッションを開始します。以前のセッションは Works に残りますが、この意図には紐づかなくなります。"
       },
       "placeholder": "何を変更しますか?入力は現在の内容と組み合わされ、新しいセッションの起点になります。"
     }
@@ -1077,7 +1077,7 @@
     "kind": {
       "work": "作業",
       "intent": "意図",
-      "spec": "Spec",
+      "spec": "仕様",
       "discussion": "ディスカッション",
       "schedule": "スケジュール",
       "tool": "ツール",
@@ -2047,7 +2047,7 @@
       "schedule": "Schedule",
       "consensus": "Consensus",
       "tool": "Tool",
-      "spec": "Spec"
+      "spec": "仕様"
     },
     "attribute": {
       "workspace": "Workspace",

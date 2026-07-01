@@ -224,10 +224,10 @@
         "followDefault": "跟随默认智能体"
       },
       "spec": {
-        "tooltip": "执行规格编写会话的智能体(撰写项目规格)"
+        "tooltip": "执行规范编写会话的智能体(撰写项目规范)"
       },
       "specPicker": {
-        "label": "规格智能体",
+        "label": "规范智能体",
         "followDefault": "跟随默认智能体"
       },
       "remove": {
@@ -630,15 +630,15 @@
       "timeout": "未能确认工作启动,请重试。"
     },
     "specLaunch": {
-      "title": "正在启动 Spec 会话…",
+      "title": "正在启动规范会话…",
       "step": {
         "checkDependencies": "检查依赖",
         "pullCode": "拉取代码",
         "launchSession": "启动会话"
       },
       "dependencyNotMerged": "依赖未合并",
-      "failed": "Spec 会话启动失败。",
-      "timeout": "未能确认 Spec 会话启动,请重试。"
+      "failed": "规范会话启动失败。",
+      "timeout": "未能确认规范会话启动,请重试。"
     },
     "chat": {
       "loading": "加载会话中…"
@@ -715,10 +715,10 @@
         "label": "开始工作"
       },
       "writeSpec": {
-        "label": "编写 spec"
+        "label": "编写规范"
       },
       "approveSpec": {
-        "label": "批准 spec",
+        "label": "批准规范",
         "confirmLabel": "批准"
       },
       "modifySession": {
@@ -835,15 +835,15 @@
         "label": "意图会话"
       },
       "spec": {
-        "label": "Spec"
+        "label": "规范"
       },
       "specSession": {
-        "label": "写 Spec 会话"
+        "label": "编写规范会话"
       }
     },
     "spec": {
-      "empty": "该意图尚未编写 spec。",
-      "loading": "加载 Spec 中…"
+      "empty": "该意图尚未编写规范。",
+      "loading": "加载规范中…"
     },
     "intentSession": {
       "empty": "该意图还没有沟通会话。",
@@ -855,7 +855,7 @@
       }
     },
     "specSession": {
-      "empty": "该意图还没有写 spec 会话。"
+      "empty": "该意图还没有编写规范会话。"
     },
     "resetSession": {
       "intentSession": {
@@ -863,8 +863,8 @@
         "message": "以你的新输入与该意图的当前内容拼接,新起一个完善会话。旧会话仍可在 Works 中查看,但不再关联到此意图。"
       },
       "specSession": {
-        "title": "重置 Spec 会话",
-        "message": "以你的新输入与当前 spec 内容拼接,新起一个 spec 会话。旧会话仍可在 Works 中查看,但不再关联到此意图。"
+        "title": "重置规范会话",
+        "message": "以你的新输入与当前规范内容拼接,新起一个规范会话。旧会话仍可在 Works 中查看,但不再关联到此意图。"
       },
       "placeholder": "想调整什么?你的输入会与当前内容拼接,作为新会话的起点。"
     }
@@ -1076,7 +1076,7 @@
     "kind": {
       "work": "工作",
       "intent": "意图",
-      "spec": "Spec",
+      "spec": "规范",
       "discussion": "讨论",
       "schedule": "定时任务",
       "tool": "工具",
@@ -2046,7 +2046,7 @@
       "schedule": "定时任务",
       "consensus": "共识",
       "tool": "工具",
-      "spec": "规格"
+      "spec": "规范"
     },
     "attribute": {
       "workspace": "工作区",

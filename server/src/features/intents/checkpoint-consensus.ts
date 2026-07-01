@@ -94,10 +94,27 @@ function voterPrompt(
   trigger: 'pending_question' | 'judge_stuck',
   triggerReason: string,
   diffStat: string | undefined,
-): string {
-  return [
+): { system: string; user: string } {
+  // system: the stable advisor role + decision instruction + considerations + output
+  // shape — byte-identical across voters, so it rides the system channel as a
+  // cacheable prefix.
+  const system = [
     'You are an advisor judging whether an automated software development process should continue past a checkpoint that would normally require human approval.',
     '',
+    'Decide whether the automation should **CONTINUE** past this checkpoint (treating it as a routine step the agent can resolve on its own) or **WAIT** for a human to intervene.',
+    '',
+    'Consider:',
+    "- Does the agent's message show genuine progress toward the intent?",
+    '- Is the checkpoint a routine dev-skill step (e.g. "approve design?", "proceed to implementation?") that the agent can handle on its own?',
+    "- Is there concrete code change evidence backing the agent's report?",
+    '- Does the situation truly need human judgment (unclear requirements, error state, missing context)?',
+    '',
+    'Reply with ONLY a single-line JSON object, no other text:',
+    '{"decision":"continue"|"wait","reason":"<one short sentence>"}',
+  ].join('\n')
+  // user: the per-vote context — the intent, the agent's last message, the checkpoint
+  // signal, and the code-change evidence.
+  const user = [
     `# Intent title\n${intent.title}`,
     `# Intent content\n${intent.content}`,
     '',
@@ -111,18 +128,8 @@ function voterPrompt(
     '',
     '# Code-change evidence (git diff --stat)',
     diffStat || '(no uncommitted changes)',
-    '',
-    'Decide whether the automation should **CONTINUE** past this checkpoint (treating it as a routine step the agent can resolve on its own) or **WAIT** for a human to intervene.',
-    '',
-    'Consider:',
-    "- Does the agent's message show genuine progress toward the intent?",
-    '- Is the checkpoint a routine dev-skill step (e.g. "approve design?", "proceed to implementation?") that the agent can handle on its own?',
-    "- Is there concrete code change evidence backing the agent's report?",
-    '- Does the situation truly need human judgment (unclear requirements, error state, missing context)?',
-    '',
-    'Reply with ONLY a single-line JSON object, no other text:',
-    '{"decision":"continue"|"wait","reason":"<one short sentence>"}',
   ].join('\n')
+  return { system, user }
 }
 
 // ---------------------------------------------------------------------------
@@ -231,13 +238,16 @@ async function summarize(
     const voters = vendorScopedVoters(null, getConsensusConfig(cwd)).voters
     if (voters.length === 0) return fallback
     const decider = voters[0]
-    const prompt = [
-      'Several advisor agents voted on whether an automated development process should continue past a checkpoint that needs human approval. Their votes:',
-      ...votes.map((v) => `- ${v.agentName}: ${v.decision} — ${v.reason || '(no reason)'}`),
-      '',
+    // system: the stable summariser role + output instruction; user: the votes cast.
+    const system = [
+      'Several advisor agents voted on whether an automated development process should continue past a checkpoint that needs human approval.',
       `Write ONE short sentence in ${getUiLangName()} summarizing their collective opinion for the automation orchestrator. Output only that sentence, no preamble.`,
     ].join('\n')
-    const text = await askAgentOnce(decider, prompt, cwd, signal)
+    const user = [
+      'Their votes:',
+      ...votes.map((v) => `- ${v.agentName}: ${v.decision} — ${v.reason || '(no reason)'}`),
+    ].join('\n')
+    const text = await askAgentOnce(decider, user, cwd, signal, null, system)
     const clean = text.replace(/\s+/g, ' ').trim()
     return clean || fallback
   } catch {
@@ -282,11 +292,11 @@ export async function runCheckpointConsensus(
     `[c3:checkpoint-consensus] (auto) vote on "${intent.title}" checkpoint (${trigger}) → ${voters.length} voter(s)`,
   )
 
-  const prompt = voterPrompt(intent, lastMessage, trigger, triggerReason, diffStat)
+  const { system, user } = voterPrompt(intent, lastMessage, trigger, triggerReason, diffStat)
   const votes: CheckpointConsensusVote[] = await Promise.all(
     voters.map(async (agent): Promise<CheckpointConsensusVote> => {
       try {
-        const text = await askAgentOnce(agent, prompt, workspacePath, signal)
+        const text = await askAgentOnce(agent, user, workspacePath, signal, null, system)
         const parsed = parseCheckpointVote(text)
         if (!parsed) {
           return {

@@ -362,7 +362,9 @@ export async function runViaDriver(
   // text item (byte-stable prefix). The user turn carries the slash-command dev
   // skill prefix + the visible body. The client echo stays the visible body alone.
   const systemInstruction =
-    intentProfile?.appendSystemPrompt ?? specProfile?.appendSystemPrompt ?? inject?.systemInstruction
+    intentProfile?.appendSystemPrompt ??
+    specProfile?.appendSystemPrompt ??
+    inject?.systemInstruction
   const userTurn = modelUserTurn(prompt, inject)
 
   emit(runId, { type: 'user_text', text: prompt })

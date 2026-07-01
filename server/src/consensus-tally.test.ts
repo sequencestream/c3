@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ConsensusVote } from '@ccc/shared/protocol'
-import { parseVote, tally, fallbackSummary } from './consensus-tally.js'
+import { parseVote, tally, fallbackSummary, voterPrompt } from './consensus-tally.js'
 
 function vote(decision: ConsensusVote['decision']): ConsensusVote {
   return { agentId: decision, agentName: decision, decision, reason: '' }
@@ -268,10 +268,10 @@ describe('de-bias: prompts hide the asker recommendation, matchOption restores i
   ]
 
   it('askVoterPrompt strips the recommendation marker from presented labels', () => {
-    const prompt = askVoterPrompt(QR, 'ctx')
-    expect(prompt).toContain('方案A')
-    expect(prompt).not.toContain('推荐')
-    expect(prompt).not.toMatch(/recommend/i)
+    const { user } = askVoterPrompt(QR, 'ctx')
+    expect(user).toContain('方案A')
+    expect(user).not.toContain('推荐')
+    expect(user).not.toMatch(/recommend/i)
   })
 
   it('deciderAskPrompt strips the recommendation marker for split questions', () => {
@@ -279,9 +279,9 @@ describe('de-bias: prompts hide the asker recommendation, matchOption restores i
       { agentId: 'x', agentName: 'x', optionLabels: ['方案A (推荐)'], reason: '' },
       { agentId: 'y', agentName: 'y', optionLabels: [], reason: '', abstain: true },
     ])
-    const prompt = deciderAskPrompt([split], QR)
-    expect(prompt).toContain('[0] options:')
-    expect(prompt).not.toContain('推荐')
+    const { user } = deciderAskPrompt([split], QR)
+    expect(user).toContain('[0] options:')
+    expect(user).not.toContain('推荐')
   })
 
   it('matchOption maps a stripped choice back to the original exact label', () => {
@@ -388,8 +388,8 @@ describe('shuffleOptions (de-bias option order)', () => {
       { agentId: 'x', agentName: 'x', optionLabels: ['商户端核销'], reason: '' },
       { agentId: 'y', agentName: 'y', optionLabels: ['两端都支持'], reason: '' },
     ])
-    const prompt = deciderAskPrompt([split], shuffled)
-    expect(prompt).toContain('[0] options:')
+    const { user } = deciderAskPrompt([split], shuffled)
+    expect(user).toContain('[0] options:')
     // Decider rules an effective consensus on a label; parse against original Q.
     const { overrides } = parseDeciderAsk(
       '{"summary":"s","questions":[{"index":0,"consensus":true,"choice":"两端都支持"}]}',
@@ -591,25 +591,59 @@ describe('deciderAskPrompt', () => {
     const agreed = tallyQuestion(Q[1], 1, [
       { agentId: 'x', agentName: 'x', optionLabels: ['复用现有订单支付流程'], reason: '' },
     ])
-    const prompt = deciderAskPrompt([split, agreed], Q)
-    expect(prompt).toContain('[0] options:')
-    expect(prompt).not.toContain('[1] options:')
+    const { user } = deciderAskPrompt([split, agreed], Q)
+    expect(user).toContain('[0] options:')
+    expect(user).not.toContain('[1] options:')
   })
 
-  it('defaults the summary language to English', () => {
+  it('defaults the summary language to English (in the system role)', () => {
     const agreed = tallyQuestion(Q[0], 0, [
       { agentId: 'x', agentName: 'x', optionLabels: ['商户端核销'], reason: '' },
     ])
-    const prompt = deciderAskPrompt([agreed], Q)
-    expect(prompt).toContain('ONE short English sentence')
+    const { system } = deciderAskPrompt([agreed], Q)
+    expect(system).toContain('ONE short English sentence')
   })
 
   it('injects the given Display-language name into the summary instruction', () => {
     const agreed = tallyQuestion(Q[0], 0, [
       { agentId: 'x', agentName: 'x', optionLabels: ['商户端核销'], reason: '' },
     ])
-    const prompt = deciderAskPrompt([agreed], Q, 'Chinese (简体中文)')
-    expect(prompt).toContain('ONE short Chinese (简体中文) sentence')
+    const { system } = deciderAskPrompt([agreed], Q, 'Chinese (简体中文)')
+    expect(system).toContain('ONE short Chinese (简体中文) sentence')
+  })
+})
+
+describe('prompt split — stable system role vs per-turn user context', () => {
+  it('voterPrompt: the tool name lives in the user turn, never in the system role', () => {
+    const { system, user } = voterPrompt('Bash', { command: 'rm -rf /tmp/x' }, 'recent ctx')
+    expect(system).toContain('advisor')
+    expect(system).not.toContain('Bash')
+    expect(system).not.toContain('rm -rf')
+    expect(user).toContain('Bash')
+    expect(user).toContain('rm -rf')
+    expect(user).toContain('recent ctx')
+  })
+
+  it('askVoterPrompt: the option-picking rules are the system role, the questions the user turn', () => {
+    const { system, user } = askVoterPrompt(Q, 'recent ctx')
+    expect(system).toContain('advisor')
+    expect(system).toContain('Match labels EXACTLY')
+    expect(system).not.toContain('商户端核销')
+    expect(user).toContain('商户端核销')
+    expect(user).toContain('recent ctx')
+  })
+
+  it('deciderAskPrompt: the JSON shape is the system role, the per-question casts the user turn', () => {
+    const split = tallyQuestion(Q[0], 0, [
+      { agentId: 'x', agentName: 'Alice', optionLabels: ['商户端核销'], reason: '' },
+      { agentId: 'y', agentName: 'Bob', optionLabels: ['两端都支持'], reason: '' },
+    ])
+    const { system, user } = deciderAskPrompt([split], Q)
+    expect(system).toContain('"summary"')
+    expect(system).not.toContain('Alice')
+    expect(user).toContain('Alice')
+    expect(user).toContain('Bob')
+    expect(user).toContain('[0] options:')
   })
 })
 

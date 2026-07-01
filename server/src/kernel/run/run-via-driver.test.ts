@@ -188,14 +188,18 @@ describe('makeDriverApprovalHandler — WorkCenter event registration', () => {
 describe('runViaDriver — codex delivery split (hide-session-system-instructions)', () => {
   // A fake codex adapter that captures the driver prompt and yields no messages, so
   // we can assert what reaches the MODEL vs what the client sees echoed.
-  function fakeCodexAdapter(): { adapter: VendorAdapter; started: { prompt?: string } } {
-    const started: { prompt?: string } = {}
+  function fakeCodexAdapter(): {
+    adapter: VendorAdapter
+    started: { prompt?: string; systemInstruction?: string }
+  } {
+    const started: { prompt?: string; systemInstruction?: string } = {}
     const adapter = {
       vendor: 'codex',
       approval: { onRequest: () => () => {} },
       driver: {
-        start: (opts: { prompt: string }) => {
+        start: (opts: { prompt: string; systemInstruction?: string }) => {
           started.prompt = opts.prompt
+          started.systemInstruction = opts.systemInstruction
           return Promise.resolve({
             sessionId: () => Promise.resolve(sid),
             // eslint-disable-next-line require-yield
@@ -214,7 +218,7 @@ describe('runViaDriver — codex delivery split (hide-session-system-instruction
   const sid = 'codex-native-1'
   const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
 
-  it('folds the SDD instruct + slash-command dev skill into the model prompt; echoes the visible body alone', async () => {
+  it('delivers the SDD instruct on the system channel + the slash-command dev skill on the user turn; echoes the visible body alone', async () => {
     const rt = ensureRuntime(sid, '/proj', 'default', [], 'work')
     const frames: ServerToClient[] = []
     const viewer: Viewer = (e) => frames.push(e)
@@ -229,9 +233,11 @@ describe('runViaDriver — codex delivery split (hide-session-system-instruction
       userTurnPrefix: '/dev ',
     })
 
-    // The model prompt carries the internal instruction + the slash command ahead of
-    // the visible body (codex has no separate system role).
-    expect(started.prompt).toBe(`${SDD}\n\n/dev ${VISIBLE}`)
+    // The system instruction rides the driver's dedicated systemInstruction channel;
+    // the model user turn carries only the slash command + the visible body.
+    expect(started.systemInstruction).toBe(SDD)
+    expect(started.prompt).toBe(`/dev ${VISIBLE}`)
+    expect(started.prompt).not.toContain('Hard constraints')
 
     // The client echo (user_text) is the visible body ALONE — no instruction, no prefix.
     const echoed = frames.filter((e) => e.type === 'user_text')
@@ -348,6 +354,7 @@ describe('runViaDriver — Codex specs writable root', () => {
         additionalDirectories?: string[]
         mcpServers?: Record<string, unknown>
         prompt?: string
+        systemInstruction?: string
       } = {}
       const adapter = {
         vendor: 'codex',
@@ -360,6 +367,7 @@ describe('runViaDriver — Codex specs writable root', () => {
             additionalDirectories?: string[]
             mcpServers?: Record<string, unknown>
             prompt?: string
+            systemInstruction?: string
           }) => {
             Object.assign(started, opts)
             return Promise.resolve({
@@ -404,7 +412,10 @@ describe('runViaDriver — Codex specs writable root', () => {
       expect(started.actionMode).toBe('build')
       expect(started.toolGate).toBe('never-ask')
       expect(started.mcpServers).toEqual(servers)
-      expect(started.prompt).toBe('SPEC SYSTEM\n\nwrite spec')
+      // The spec-authoring contract rides the system channel; the user turn is the
+      // visible body alone.
+      expect(started.systemInstruction).toBe('SPEC SYSTEM')
+      expect(started.prompt).toBe('write spec')
       expect(dispose).toHaveBeenCalledTimes(1)
     } finally {
       removeRuntime(sid)

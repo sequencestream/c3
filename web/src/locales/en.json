@@ -393,6 +393,21 @@
         "label": "Show tool sessions"
       }
     },
+    "proxy": {
+      "title": {
+        "label": "Proxy"
+      },
+      "toggle": {
+        "label": "Enable proxy for session processes"
+      },
+      "hint": "When enabled, the proxy URLs below are injected as HTTP_PROXY/HTTPS_PROXY env vars into every new session subprocess. Running sessions are not affected. The server process itself does not use these settings.",
+      "httpProxy": {
+        "label": "HTTP proxy URL"
+      },
+      "httpsProxy": {
+        "label": "HTTPS proxy URL"
+      }
+    },
     "diagnostics": {
       "title": {
         "label": "Agent host CLIs"

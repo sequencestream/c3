@@ -20,6 +20,7 @@ import {
   getDevSkill,
   getGitBranchMode,
   getMaxRoundsPerStage,
+  getProxyConfig,
   getMaxSpeechChars,
   getServerTimezone,
   getSkillRepos,
@@ -1587,5 +1588,179 @@ describe('agent order_seq — user-controlled global order (normalize + enabledA
       'x',
     )
     expect(enabledAgents().map((a) => a.id)).toEqual(['z', 'x'])
+  })
+})
+
+// ---- Session process proxy (2026-07-01-003) ----
+
+describe('session process proxy config — normalizeProxyConfig + getProxyConfig + launchForAgent injection', () => {
+  /** A non-system claude agent with an explicit id for launch tests. */
+  const TEST_AGENT = (): import('@ccc/shared/protocol').AgentConfig => ({
+    id: 'proxy-test-agent',
+    vendor: 'claude',
+    configMode: 'custom',
+    displayName: 'Proxy Test',
+    config: { baseUrl: '', apiKey: '', model: '' },
+  })
+
+  // ---- normalize / getProxyConfig ----
+
+  it('defaults properly when proxy is absent', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+    } as unknown as SystemSettings)
+    const cfg = getProxyConfig()
+    expect(cfg.enabled).toBe(false)
+    expect(cfg.httpProxy).toBe('')
+    expect(cfg.httpsProxy).toBe('')
+  })
+
+  it('trims whitespace from proxy URLs', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: { enabled: true, httpProxy: '  http://h:3128  ', httpsProxy: '  http://s:3128  ' },
+    } as unknown as SystemSettings)
+    const cfg = getProxyConfig()
+    expect(cfg.httpProxy).toBe('http://h:3128')
+    expect(cfg.httpsProxy).toBe('http://s:3128')
+  })
+
+  it('treats proxy.enabled as strict bool (only === true is enabled)', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: { enabled: 1, httpProxy: 'http://h:3128' },
+    } as unknown as SystemSettings)
+    expect(getProxyConfig().enabled).toBe(false)
+  })
+
+  it('save + reset cache + re-read restores proxy config (restart persistence)', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: { enabled: true, httpProxy: 'http://h:3128', httpsProxy: 'http://s:3128' },
+    } as unknown as SystemSettings)
+    expect(getProxyConfig()).toEqual({
+      enabled: true,
+      httpProxy: 'http://h:3128',
+      httpsProxy: 'http://s:3128',
+    })
+    // Simulate restart
+    resetSettingsCacheForTests()
+    expect(getProxyConfig()).toEqual({
+      enabled: true,
+      httpProxy: 'http://h:3128',
+      httpsProxy: 'http://s:3128',
+    })
+  })
+
+  it('saveSettings WITHOUT proxy preserves the proxy block on disk (mergeSettingsOverDisk)', () => {
+    // First save with proxy
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: { enabled: true, httpProxy: 'http://h:3128', httpsProxy: 'http://s:3128' },
+    } as unknown as SystemSettings)
+    // Second save without proxy (simulates a partial save that doesn't carry proxy)
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+    } as unknown as SystemSettings)
+    // The proxy values should still be accessible
+    const cfg = getProxyConfig()
+    expect(cfg.enabled).toBe(true)
+    expect(cfg.httpProxy).toBe('http://h:3128')
+    expect(cfg.httpsProxy).toBe('http://s:3128')
+  })
+
+  it('saveSettings WITH explicit proxy overwrites the disk value', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: { enabled: true, httpProxy: 'http://old:3128' },
+    } as unknown as SystemSettings)
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: { enabled: false, httpProxy: 'http://new:3128' },
+    } as unknown as SystemSettings)
+    const cfg = getProxyConfig()
+    expect(cfg.enabled).toBe(false)
+    // URL is still saved (closing the switch doesn't clear it)
+    expect(cfg.httpProxy).toBe('http://new:3128')
+  })
+
+  // ---- launchForAgent proxy env injection ----
+
+  it('launchForAgent does NOT inject *_PROXY when proxy is disabled (even with URLs saved)', () => {
+    saveSettings({
+      agents: [TEST_AGENT()],
+      defaultAgentId: 'proxy-test-agent',
+      proxy: { enabled: false, httpProxy: 'http://h:3128', httpsProxy: 'http://s:3128' },
+    } as unknown as SystemSettings)
+    const result = launchForAgent(TEST_AGENT())
+    // The custom claude agent itself may add CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING,
+    // but no proxy-related env vars should appear.
+    const env = result.envOverrides ?? {}
+    expect(env['HTTP_PROXY']).toBeUndefined()
+    expect(env['http_proxy']).toBeUndefined()
+    expect(env['HTTPS_PROXY']).toBeUndefined()
+    expect(env['https_proxy']).toBeUndefined()
+  })
+
+  it('launchForAgent injects HTTP_PROXY/http_proxy + HTTPS_PROXY/https_proxy when enabled', () => {
+    saveSettings({
+      agents: [TEST_AGENT()],
+      defaultAgentId: 'proxy-test-agent',
+      proxy: { enabled: true, httpProxy: 'http://h:3128', httpsProxy: 'http://s:3128' },
+    } as unknown as SystemSettings)
+    const result = launchForAgent(TEST_AGENT())
+    expect(result.envOverrides).toBeDefined()
+    const env = result.envOverrides!
+    expect(env['HTTP_PROXY']).toBe('http://h:3128')
+    expect(env['http_proxy']).toBe('http://h:3128')
+    expect(env['HTTPS_PROXY']).toBe('http://s:3128')
+    expect(env['https_proxy']).toBe('http://s:3128')
+  })
+
+  it('launchForAgent injects only HTTP_PROXY/http_proxy when only httpProxy is set', () => {
+    saveSettings({
+      agents: [TEST_AGENT()],
+      defaultAgentId: 'proxy-test-agent',
+      proxy: { enabled: true, httpProxy: 'http://h:3128', httpsProxy: '' },
+    } as unknown as SystemSettings)
+    const env = launchForAgent(TEST_AGENT()).envOverrides ?? {}
+    expect(env['HTTP_PROXY']).toBe('http://h:3128')
+    expect(env['http_proxy']).toBe('http://h:3128')
+    expect(env['HTTPS_PROXY']).toBeUndefined()
+    expect(env['https_proxy']).toBeUndefined()
+  })
+
+  it('launchForAgent injects only HTTPS_PROXY/https_proxy when only httpsProxy is set', () => {
+    saveSettings({
+      agents: [TEST_AGENT()],
+      defaultAgentId: 'proxy-test-agent',
+      proxy: { enabled: true, httpProxy: '', httpsProxy: 'http://s:3128' },
+    } as unknown as SystemSettings)
+    const env = launchForAgent(TEST_AGENT()).envOverrides ?? {}
+    expect(env['HTTP_PROXY']).toBeUndefined()
+    expect(env['http_proxy']).toBeUndefined()
+    expect(env['HTTPS_PROXY']).toBe('http://s:3128')
+    expect(env['https_proxy']).toBe('http://s:3128')
+  })
+
+  it('launchForAgent does not inject empty *_PROXY when enabled with empty URLs', () => {
+    saveSettings({
+      agents: [TEST_AGENT()],
+      defaultAgentId: 'proxy-test-agent',
+      proxy: { enabled: true, httpProxy: '', httpsProxy: '' },
+    } as unknown as SystemSettings)
+    const env = launchForAgent(TEST_AGENT()).envOverrides ?? {}
+    expect(env['HTTP_PROXY']).toBeUndefined()
+    expect(env['http_proxy']).toBeUndefined()
+    expect(env['HTTPS_PROXY']).toBeUndefined()
+    expect(env['https_proxy']).toBeUndefined()
   })
 })

@@ -5,6 +5,13 @@ engineering with AI software-engineering practice. Instead of throwing a raw pro
 model and hoping for the best, c3 turns vague, half-formed requirements into structured
 intents — each with a clear scope, explicit dependencies, and a verifiable definition of done.
 
+<table>
+<tr>
+<td><img src="images/c3-agents.png" alt="c3 agents" width="100%"></td>
+<td><img src="images/c3-sessions.png" alt="c3 sessions" width="100%"></td>
+</tr>
+</table>
+
 ## Features
 
 - **Structured intents** — vague requirements become scoped, dependency-aware tasks with a verifiable definition of done.

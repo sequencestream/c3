@@ -100,10 +100,34 @@ export function getServerTimezone(): string {
   }
 }
 
+/** Allowed proxy URL schemes. Only these are permitted by `sanitizeProxyUrl`. */
+const ALLOWED_PROXY_PROTOCOLS: readonly string[] = ['http:', 'https:', 'socks5:']
+
+/**
+ * Validate and sanitize a raw proxy URL string.
+ * - Trims whitespace; empty ⇒ `''`.
+ * - Parses via `new URL()`; unparseable ⇒ `''`.
+ * - Protocol must be in {@link ALLOWED_PROXY_PROTOCOLS}; otherwise ⇒ `''`.
+ */
+function sanitizeProxyUrl(raw: unknown): string {
+  if (typeof raw !== 'string') return ''
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
+  let url: URL
+  try {
+    url = new URL(trimmed)
+  } catch {
+    return ''
+  }
+  if (!ALLOWED_PROXY_PROTOCOLS.includes(url.protocol)) return ''
+  return trimmed
+}
+
 /**
  * Normalize a raw proxy config block into its canonical shape.
  * - `enabled` defaults to `false` (strict bool: only `=== true` is on).
- * - `httpProxy`/`httpsProxy` are trimmed; empty/non-string ⇒ `''`.
+ * - `httpProxy`/`httpsProxy` are trimmed and validated (URL parse + protocol
+ *   whitelist); invalid values fall back to `''` (fail-soft).
  * - An absent block (undefined) yields the same defaults as a present empty block.
  */
 function normalizeProxyConfig(raw: unknown): {
@@ -113,8 +137,8 @@ function normalizeProxyConfig(raw: unknown): {
 } {
   const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const enabled = obj.enabled === true
-  const httpProxy = typeof obj.httpProxy === 'string' ? obj.httpProxy.trim() : ''
-  const httpsProxy = typeof obj.httpsProxy === 'string' ? obj.httpsProxy.trim() : ''
+  const httpProxy = sanitizeProxyUrl(obj.httpProxy)
+  const httpsProxy = sanitizeProxyUrl(obj.httpsProxy)
   return { enabled, httpProxy, httpsProxy }
 }
 

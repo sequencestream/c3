@@ -1305,7 +1305,7 @@ function selectAdmin(username: string) {
           <input
             v-model="proxyCfg.httpProxy"
             class="agent-field"
-            type="text"
+            type="url"
             :disabled="!proxyCfg.enabled"
             :placeholder="proxyCfg.enabled ? 'http://proxy.local:3128' : ''"
             data-testid="settings-proxy-http"
@@ -1316,7 +1316,7 @@ function selectAdmin(username: string) {
           <input
             v-model="proxyCfg.httpsProxy"
             class="agent-field"
-            type="text"
+            type="url"
             :disabled="!proxyCfg.enabled"
             :placeholder="proxyCfg.enabled ? 'http://proxy.local:3128' : ''"
             data-testid="settings-proxy-https"

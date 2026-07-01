@@ -781,6 +781,7 @@ defineExpose({
           <span class="req-meta-item"
             >{{ t('intent.meta.updated.label') }} {{ formatDate(intent.updatedAt, locale) }}</span
           >
+          <span class="req-meta-item">{{ t('intent.meta.id.label') }} {{ intent.id }}</span>
           <span v-if="intent.branchName" class="req-meta-item">
             {{ t('intent.meta.branch.label') }} {{ intent.branchName
             }}<span v-if="intent.latestCommitHash">

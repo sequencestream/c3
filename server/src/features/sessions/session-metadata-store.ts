@@ -677,6 +677,28 @@ export function deleteByOwner(ownerKind: SessionOwnerKind, ownerId: string): voi
   d.run('DELETE FROM session_metadata WHERE owner_kind=? AND owner_id=?', ownerKind, ownerId)
 }
 
+/**
+ * Touch all projection rows owned by a given entity, marking them as alive
+ * instead of deleting them. Used by the discussion end path — keeps
+ * discussion agent sessions visible in the sidebar after the discussion
+ * finishes so the user can still find and jump back to them. Updates
+ * `last_modified` and `state_updated_at` so the rows sort to the top of the
+ * session list, matching the behaviour of `touchOnRunEnd` for work sessions.
+ */
+export function touchByOwner(ownerKind: SessionOwnerKind, ownerId: string): void {
+  const d = db()
+  if (!d) return
+  d.run(
+    `UPDATE session_metadata
+       SET state='alive', last_modified=?, state_updated_at=?
+     WHERE owner_kind=? AND owner_id=? AND bound=1`,
+    Date.now(),
+    now(),
+    ownerKind,
+    ownerId,
+  )
+}
+
 /** Delete by the raw pending id (used by `deleteSession` for a pending never run). */
 export function deleteByPendingId(pendingId: string): void {
   const d = db()

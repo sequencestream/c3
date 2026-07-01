@@ -765,6 +765,9 @@
       "updated": {
         "label": "Updated:"
       },
+      "id": {
+        "label": "ID:"
+      },
       "branch": {
         "label": "Branch:"
       },

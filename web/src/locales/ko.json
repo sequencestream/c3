@@ -766,6 +766,9 @@
       "updated": {
         "label": "업데이트:"
       },
+      "id": {
+        "label": "ID:"
+      },
       "branch": {
         "label": "브랜치:"
       },

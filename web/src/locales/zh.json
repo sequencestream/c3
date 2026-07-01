@@ -765,6 +765,9 @@
       "updated": {
         "label": "已更新:"
       },
+      "id": {
+        "label": "ID:"
+      },
       "branch": {
         "label": "分支:"
       },

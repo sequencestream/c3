@@ -17,6 +17,7 @@ export {
   resetStoreForTests,
   setNow,
   STALE_MS,
+  touchByOwner,
   touchOnRunEnd,
   updateRowOwner,
   updatePendingRowAgentId,

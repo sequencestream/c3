@@ -766,6 +766,9 @@
       "updated": {
         "label": "更新日:"
       },
+      "id": {
+        "label": "ID:"
+      },
       "branch": {
         "label": "ブランチ:"
       },

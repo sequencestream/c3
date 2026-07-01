@@ -51,8 +51,8 @@ import {
   setDiscussionResearchResult,
 } from '../features/discussions/store.js'
 import {
-  deleteByOwner,
   deleteByVendorId,
+  touchByOwner,
   upsertBoundRow,
 } from '../features/works/work-session-store.js'
 import type { Broadcasts } from './broadcasts.js'
@@ -179,7 +179,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
           if (vendor === 'claude' || vendor === 'codex') deleteByVendorId(vendor, sessionId)
         },
         deleteAll: (discussionId) => {
-          deleteByOwner('discussion', discussionId)
+          touchByOwner('discussion', discussionId)
         },
       },
     })

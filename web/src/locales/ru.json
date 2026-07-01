@@ -766,6 +766,9 @@
       "updated": {
         "label": "Обновлено:"
       },
+      "id": {
+        "label": "ID:"
+      },
       "branch": {
         "label": "Ветка:"
       },

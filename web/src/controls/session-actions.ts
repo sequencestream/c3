@@ -2,7 +2,7 @@ import { consoleEntryTarget, consoleTabEntryEffects, workspaceSwitchEffects } fr
 import { emptyTaskModel } from '@/lib/task-list'
 import { SESSION_PAGE_SIZE } from '@/lib/session-page'
 import { resolveSessionJumpTarget, type SessionJumpTarget } from '@/lib/session-jump'
-import type { SessionInfo } from '@ccc/shared/protocol'
+import type { SessionInfo, SessionKind } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
 import { sessionCacheKey, type SessionPageKind } from './state'
 
@@ -61,6 +61,73 @@ export function installSessionActions(ctx: AppCtx): void {
 
   function activeKey(path: string): string {
     return sessionCacheKey(path, activeSessionKind.value)
+  }
+
+  function keyFor(path: string, kind: SessionPageKind): string {
+    return sessionCacheKey(path, kind)
+  }
+
+  function sessionPageKindFromSource(kind: string | null | undefined): SessionPageKind {
+    if (
+      kind === 'work' ||
+      kind === 'intent' ||
+      kind === 'spec' ||
+      kind === 'discussion' ||
+      kind === 'schedule' ||
+      kind === 'tool'
+    ) {
+      return kind
+    }
+    if (kind === 'consensus') return 'tool'
+    return 'work'
+  }
+
+  function ownerKindForSessionKind(
+    kind: SessionPageKind,
+  ): NonNullable<SessionInfo['ownerKind']> | null {
+    if (kind === 'intent' || kind === 'spec') return 'intent'
+    if (kind === 'discussion') return 'discussion'
+    if (kind === 'schedule') return 'schedule'
+    return null
+  }
+
+  function appendWorkcenterSessionIfMissing(input: {
+    workspaceId: string
+    sessionKind: SessionPageKind
+    sourceKind: string | null | undefined
+    sessionId: string
+    title?: string | null
+    updatedAt?: number | null
+  }): void {
+    const key = keyFor(input.workspaceId, input.sessionKind)
+    const list = sessionsByWorkspace.value[key] ?? []
+    if (list.some((s) => s.sessionId === input.sessionId)) return
+    const placeholder: SessionInfo = {
+      sessionId: input.sessionId,
+      title: input.title?.trim() || input.sessionId,
+      lastModified: input.updatedAt ?? 0,
+      mode: 'default',
+      isToolSession: input.sessionKind === 'tool',
+      vendor: 'claude',
+      state: 'stale',
+      sessionKind:
+        input.sourceKind === 'consensus'
+          ? ('tool' satisfies SessionKind)
+          : (input.sessionKind satisfies SessionKind),
+      ownerKind: ownerKindForSessionKind(input.sessionKind),
+      ownerId: null,
+    }
+    sessionsByWorkspace.value = { ...sessionsByWorkspace.value, [key]: [...list, placeholder] }
+  }
+
+  function requestFirstSessionPage(path: string, kind: SessionPageKind): void {
+    send({
+      type: 'list_sessions',
+      workspaceId: path,
+      sessionKind: kind,
+      limit: SESSION_PAGE_SIZE,
+    })
+    send({ type: 'get_session_counts', workspaceId: path })
   }
 
   // Refresh a workspace's session list (SR-R14): when a window is already
@@ -201,6 +268,33 @@ export function installSessionActions(ctx: AppCtx): void {
     consoleSession.value = { workspacePath: path, sessionId }
     if (sessionId === activeSession.value) return
     send({ type: 'select_session', workspaceId: path, sessionId })
+  }
+
+  ctx.openWorkcenterSession = (input): void => {
+    const path = input.workspaceId
+    const kind = sessionPageKindFromSource(input.sessionKind)
+    currentWorkspace.value = path
+    ctx.persistCurrentWorkspace()
+    activeSessionKind.value = kind
+    ctx.flags.pendingConsoleBind = false
+    ctx.enterConsole()
+    requestFirstSessionPage(path, kind)
+    if (!input.sessionId) {
+      consoleSession.value = null
+      ctx.clearViewedSession()
+      return
+    }
+    appendWorkcenterSessionIfMissing({
+      workspaceId: path,
+      sessionKind: kind,
+      sourceKind: input.sessionKind,
+      sessionId: input.sessionId,
+      title: input.title,
+      updatedAt: input.updatedAt,
+    })
+    consoleSession.value = { workspacePath: path, sessionId: input.sessionId }
+    if (input.sessionId === activeSession.value && path === activeWorkspace.value) return
+    send({ type: 'select_session', workspaceId: path, sessionId: input.sessionId })
   }
 
   // Open the page the given jump target points at (intent detail / intent

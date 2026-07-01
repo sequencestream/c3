@@ -74,6 +74,13 @@ export interface AppMethods {
   confirmNewSession(agentId: string | null): void
   openSettingsFromPicker(): void
   selectSession(path: string, sessionId: string): void
+  openWorkcenterSession(input: {
+    workspaceId: string
+    sessionKind: string | null | undefined
+    sessionId: string | null
+    title?: string | null
+    updatedAt?: number | null
+  }): void
   jumpSessionSource(path: string, session: SessionInfo): void
   jumpActiveSessionSource(): void
   onSelectTab(key: string): void

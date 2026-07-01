@@ -1,10 +1,5 @@
 import type { WaitUserInvolveEvent, WaitUserInvolveStatus } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
-import {
-  resolveSessionJumpTarget,
-  type SessionJumpTarget,
-  type SessionOwnerKind,
-} from '@/lib/session-jump'
 
 // Install WorkCenter event actions (resolve permission + jump-to-source) onto the ctx.
 export function installWorkcenterActions(ctx: AppCtx): void {
@@ -69,112 +64,20 @@ export function installWorkcenterActions(ctx: AppCtx): void {
   }
 
   // Jump from a WorkCenter event to its source tab + item, routed off the producing
-  // run's `sessionKind` + real `sessionId`. `event.workspaceId` is an opaque id (the
-  // store maps the path through `pathToId`), so it is interchangeable with
-  // `currentWorkspace` and is what every jump entry expects.
+  // run's `sessionKind` + real `sessionId`. WorkCenter always lands in the
+  // unified session page; `sessionKind` only chooses the left-list kind.
+  // `event.workspaceId` is an opaque id (the store maps the path through
+  // `pathToId`), so it is interchangeable with `currentWorkspace`.
   ctx.jumpToSource = (event: WaitUserInvolveEvent): void => {
     const workspace = event.workspaceId || currentWorkspace.value
     if (!workspace || !ctx.client) return
-    // Switch from workcenter view to workspace view so the target tab renders.
     ctx.setViewMode('workspace')
-    const target = resolveSessionJumpTarget({
+    ctx.openWorkcenterSession({
+      workspaceId: workspace,
       sessionKind: event.sessionKind,
-      ownerKind: ownerKindForEvent(event),
-      ownerId: ownerIdForEvent(event),
+      sessionId: event.sessionId,
+      title: event.intentTitle || event.title,
+      updatedAt: event.updatedAt,
     })
-    if (target) {
-      executeJumpTarget(workspace, target, event.sessionId)
-      return
-    }
-    if (executeLegacyOwnerlessJump(workspace, event)) return
-    ctx.enterConsole()
-    if (event.sessionId)
-      send({ type: 'select_session', workspaceId: workspace, sessionId: event.sessionId })
-  }
-
-  function ownerKindForEvent(event: WaitUserInvolveEvent): SessionOwnerKind | null {
-    if (event.intentId) return 'intent'
-    if (event.sessionKind === 'discussion' && event.sessionId) return 'discussion'
-    if (event.sessionKind === 'schedule' && event.sessionId) return 'schedule'
-    return null
-  }
-
-  function ownerIdForEvent(event: WaitUserInvolveEvent): string | null {
-    if (event.intentId) return event.intentId
-    if ((event.sessionKind === 'discussion' || event.sessionKind === 'schedule') && event.sessionId)
-      return event.sessionId
-    return null
-  }
-
-  function executeJumpTarget(
-    workspace: string,
-    target: SessionJumpTarget,
-    sourceSessionId: string | null,
-  ): void {
-    if (target.kind === 'intentDetail') {
-      ctx.openIntents(workspace)
-      ctx.requestedIntentId.value = target.intentId
-      ctx.requestedIntentSubTab.value = target.tab ?? null
-      if (target.tab === 'specSession') ctx.openSpecSession(target.intentId)
-      return
-    }
-    if (target.kind === 'intentSessions') {
-      ctx.openIntents(workspace)
-      ctx.requestedIntentId.value = target.intentId
-      ctx.requestedIntentSubTab.value = null
-      ctx.requestedMergedTab.value = 'sessions'
-      if (sourceSessionId) ctx.selectIntentSession(sourceSessionId)
-      return
-    }
-    if (target.kind === 'discussion') {
-      ctx.openDiscussions(workspace)
-      ctx.openDiscussion(target.discussionId)
-      return
-    }
-    ctx.openSchedules(workspace)
-    for (const [schId, logs] of Object.entries(ctx.scheduleLogs.value)) {
-      const match = logs.find((log) => log.sessionId === sourceSessionId)
-      if (match || schId === target.scheduleId) {
-        ctx.onSelectSchedule(schId)
-        if (match) ctx.onSelectExecution(match.id)
-        break
-      }
-    }
-  }
-
-  function executeLegacyOwnerlessJump(workspace: string, event: WaitUserInvolveEvent): boolean {
-    if (event.sessionKind === 'intent') {
-      ctx.openIntents(workspace)
-      ctx.requestedIntentId.value = null
-      ctx.requestedIntentSubTab.value = null
-      ctx.requestedMergedTab.value = event.sessionId ? 'sessions' : null
-      if (event.sessionId) ctx.selectIntentSession(event.sessionId)
-      return true
-    }
-    if (event.sessionKind === 'spec') {
-      ctx.openIntents(workspace)
-      if (!event.sessionId) return true
-      const workspaceIntents = ctx.intents.value[workspace] ?? []
-      const bySpec = workspaceIntents.find((intent) => intent.specSessionId === event.sessionId)
-      const intentId =
-        bySpec?.id ??
-        (workspaceIntents.some((i) => i.id === event.sessionId) ? event.sessionId : null)
-      if (intentId) {
-        ctx.requestedIntentId.value = intentId
-        ctx.requestedIntentSubTab.value = 'specSession'
-        ctx.openSpecSession(intentId)
-      }
-      return true
-    }
-    if (event.sessionKind === 'discussion') {
-      ctx.openDiscussions(workspace)
-      if (event.sessionId) ctx.openDiscussion(event.sessionId)
-      return true
-    }
-    if (event.sessionKind === 'schedule') {
-      ctx.openSchedules(workspace)
-      return true
-    }
-    return false
   }
 }

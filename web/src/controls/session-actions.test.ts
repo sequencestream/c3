@@ -63,6 +63,7 @@ function makeCtx(
   const onSelectSchedule = vi.fn()
   const selectIntentSession = vi.fn()
   const persistViewMode = vi.fn()
+  const persistCurrentWorkspace = vi.fn()
   const currentWorkspace = ref<string | null>(null)
   const flags = { viewModeFirstWorkcenter: true, pendingConsoleBind: false }
   const activeTitle = ref('')
@@ -107,6 +108,7 @@ function makeCtx(
     onSelectSchedule,
     selectIntentSession,
     persistViewMode,
+    persistCurrentWorkspace,
     currentWorkspace,
     flags,
     currentSessions: ref([]),
@@ -132,6 +134,7 @@ function makeCtx(
     openSchedules,
     onSelectSchedule,
     selectIntentSession,
+    persistCurrentWorkspace,
   }
 }
 
@@ -332,6 +335,112 @@ describe('selectSession shows the session in the chat column', () => {
     expect(send).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: 'select_session', sessionId: 'spec-1' }),
     )
+  })
+})
+
+describe('openWorkcenterSession', () => {
+  it('switches to the source session kind, appends a missing target row, and selects it', () => {
+    const { ctx, send, sessionsByWorkspace, consoleSession, persistCurrentWorkspace } = makeCtx({
+      sessions: { [sessionCacheKey(WS, 'spec')]: [s('visible-1', 300)] },
+      activeKind: 'work',
+    })
+
+    ctx.openWorkcenterSession({
+      workspaceId: WS,
+      sessionKind: 'spec',
+      sessionId: 'deep-spec',
+      title: 'Spec gate',
+      updatedAt: 123,
+    })
+
+    expect(ctx.currentWorkspace.value).toBe(WS)
+    expect(persistCurrentWorkspace).toHaveBeenCalled()
+    expect(ctx.activeSessionKind.value).toBe('spec')
+    expect(ctx.flags.pendingConsoleBind).toBe(false)
+    expect(ctx.activeTab.value).toBe('console')
+    expect(consoleSession.value).toEqual({ workspacePath: WS, sessionId: 'deep-spec' })
+    expect(sessionsByWorkspace.value[sessionCacheKey(WS, 'spec')].map((x) => x.sessionId)).toEqual([
+      'visible-1',
+      'deep-spec',
+    ])
+    expect(sessionsByWorkspace.value[sessionCacheKey(WS, 'spec')][1]).toMatchObject({
+      sessionId: 'deep-spec',
+      title: 'Spec gate',
+      lastModified: 123,
+      sessionKind: 'spec',
+      ownerKind: 'intent',
+      state: 'stale',
+    })
+    expect(send).toHaveBeenCalledWith({
+      type: 'list_sessions',
+      workspaceId: WS,
+      sessionKind: 'spec',
+      limit: expect.any(Number),
+    })
+    expect(send).toHaveBeenCalledWith({
+      type: 'select_session',
+      workspaceId: WS,
+      sessionId: 'deep-spec',
+    })
+  })
+
+  it('does not duplicate a target already present in the left list', () => {
+    const { ctx, sessionsByWorkspace } = makeCtx({
+      sessions: { [sessionCacheKey(WS, 'intent')]: [s('intent-1', 300)] },
+      activeKind: 'work',
+    })
+
+    ctx.openWorkcenterSession({
+      workspaceId: WS,
+      sessionKind: 'intent',
+      sessionId: 'intent-1',
+      title: 'Ignored',
+      updatedAt: 123,
+    })
+
+    expect(sessionsByWorkspace.value[sessionCacheKey(WS, 'intent')]).toHaveLength(1)
+  })
+
+  it('maps consensus events to the tool session list', () => {
+    const { ctx, send, sessionsByWorkspace } = makeCtx({ activeKind: 'work' })
+
+    ctx.openWorkcenterSession({
+      workspaceId: WS,
+      sessionKind: 'consensus',
+      sessionId: 'consensus-1',
+      title: 'Consensus',
+      updatedAt: 10,
+    })
+
+    expect(ctx.activeSessionKind.value).toBe('tool')
+    expect(sessionsByWorkspace.value[sessionCacheKey(WS, 'tool')][0]).toMatchObject({
+      sessionId: 'consensus-1',
+      sessionKind: 'tool',
+      isToolSession: true,
+    })
+    expect(send).toHaveBeenCalledWith({
+      type: 'list_sessions',
+      workspaceId: WS,
+      sessionKind: 'tool',
+      limit: expect.any(Number),
+    })
+  })
+
+  it('clears the chat column when the WorkCenter event has no session id', () => {
+    const { ctx, send, consoleSession } = makeCtx({ activeKind: 'work' })
+    ctx.activeSession.value = 'old'
+    ctx.activeWorkspace.value = WS
+
+    ctx.openWorkcenterSession({
+      workspaceId: WS,
+      sessionKind: 'discussion',
+      sessionId: null,
+    })
+
+    expect(ctx.activeSessionKind.value).toBe('discussion')
+    expect(consoleSession.value).toBeNull()
+    expect(ctx.activeSession.value).toBeNull()
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select_session' }))
   })
 })
 

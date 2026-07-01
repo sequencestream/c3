@@ -1,26 +1,17 @@
 /**
  * WorkCenter `jumpToSource` — the per-sessionKind workspace + sessionId routing contract.
  *
- * Pins that each `sessionKind` lands on the right tab + object using the event's
- * opaque `workspaceId`, that an `intent` sessionId always routes to the unified
- * "意图会话" session-list view (sessions tab + select session, no sub-tab), that
- * `spec` opens the owning intent's spec session, and that a never-prompting /
- * unknown kind degrades to the console.
+ * Pins that each `sessionKind` lands on the unified session page using the
+ * event's opaque `workspaceId`. WorkCenter never opens the business pages
+ * directly; `sessionKind` only chooses the session-page left-list kind.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
-import type { Intent, IntentSessionInfo, WaitUserInvolveEvent } from '@ccc/shared/protocol'
+import type { WaitUserInvolveEvent } from '@ccc/shared/protocol'
 import { installWorkcenterActions } from './workcenter-actions'
 import type { AppCtx } from './types'
 
 const WS = 'ws-1'
-
-function intent(id: string, extra?: Partial<Intent>): Intent {
-  return { id, ...extra } as Intent
-}
-function commSession(sessionId: string): IntentSessionInfo {
-  return { sessionId, title: null, updatedAt: 1 }
-}
 
 function event(over: Partial<WaitUserInvolveEvent>): WaitUserInvolveEvent {
   return {
@@ -39,23 +30,12 @@ function event(over: Partial<WaitUserInvolveEvent>): WaitUserInvolveEvent {
   } as WaitUserInvolveEvent
 }
 
-function makeCtx(opts: { intents?: Intent[]; commSessions?: IntentSessionInfo[] } = {}) {
+function makeCtx() {
   const spies = {
     send: vi.fn(),
     setViewMode: vi.fn(),
-    enterConsole: vi.fn(),
-    openIntents: vi.fn(),
-    selectIntentSession: vi.fn(),
-    openSpecSession: vi.fn(),
-    openDiscussions: vi.fn(),
-    openDiscussion: vi.fn(),
-    openSchedules: vi.fn(),
-    onSelectSchedule: vi.fn(),
-    onSelectExecution: vi.fn(),
+    openWorkcenterSession: vi.fn(),
   }
-  const requestedIntentId = ref<string | null>(null)
-  const requestedIntentSubTab = ref<'intentSession' | 'specSession' | null>(null)
-  const requestedMergedTab = ref<'intents' | 'sessions' | null>(null)
   const ctx = {
     ...spies,
     client: {} as never,
@@ -64,15 +44,9 @@ function makeCtx(opts: { intents?: Intent[]; commSessions?: IntentSessionInfo[] 
     workcenterLoading: ref(false),
     workcenterAppendNext: ref(false),
     workcenterHasMore: ref(true),
-    intents: ref<Record<string, Intent[]>>({ [WS]: opts.intents ?? [] }),
-    intentSessions: ref<Record<string, IntentSessionInfo[]>>({ [WS]: opts.commSessions ?? [] }),
-    scheduleLogs: ref<Record<string, never[]>>({}),
-    requestedIntentId,
-    requestedIntentSubTab,
-    requestedMergedTab,
   } as unknown as AppCtx
   installWorkcenterActions(ctx)
-  return { ctx, ...spies, requestedIntentId, requestedIntentSubTab, requestedMergedTab }
+  return { ctx, ...spies }
 }
 
 describe('WorkCenter list actions', () => {
@@ -124,178 +98,47 @@ describe('jumpToSource', () => {
     expect(setViewMode).toHaveBeenCalledWith('workspace')
   })
 
-  it("work + sessionId → console + select_session by the event's workspaceId", () => {
-    const { ctx, enterConsole, send } = makeCtx()
-    ctx.jumpToSource(event({ sessionKind: 'work', sessionId: 's1' }))
-    expect(enterConsole).toHaveBeenCalled()
-    expect(send).toHaveBeenCalledWith({
-      type: 'select_session',
+  it.each([
+    ['work', 's1'],
+    ['intent', 'sess-1'],
+    ['spec', 'spec-1'],
+    ['discussion', 'disc-1'],
+    ['schedule', 'exec-sess-1'],
+    ['tool', 'tool-1'],
+    ['consensus', 'consensus-1'],
+  ])('%s + sessionId → unified session page jump', (sessionKind, sessionId) => {
+    const { ctx, openWorkcenterSession } = makeCtx()
+    ctx.jumpToSource(event({ sessionKind, sessionId, title: 'Need review', updatedAt: 10 }))
+    expect(openWorkcenterSession).toHaveBeenCalledWith({
       workspaceId: WS,
-      sessionId: 's1',
+      sessionKind,
+      sessionId,
+      title: 'Need review',
+      updatedAt: 10,
     })
   })
 
-  it('work without sessionId → console only (no select_session)', () => {
-    const { ctx, enterConsole, send } = makeCtx()
-    ctx.jumpToSource(event({ sessionKind: 'work', sessionId: null }))
-    expect(enterConsole).toHaveBeenCalled()
-    expect(send).not.toHaveBeenCalled()
-  })
-
-  it('never-prompting / unknown sessionKind (consensus) degrades to the console', () => {
-    const { ctx, enterConsole, send } = makeCtx()
-    ctx.jumpToSource(event({ sessionKind: 'consensus', sessionId: 's9' }))
-    expect(enterConsole).toHaveBeenCalled()
-    expect(send).toHaveBeenCalledWith({
-      type: 'select_session',
-      workspaceId: WS,
-      sessionId: 's9',
-    })
-  })
-
-  // ── intent ─────────────────────────────────────────────────────────────────
-
-  it('intent + sessionId matching intentSessionId → sessions tab + select session (unified)', () => {
-    const {
-      ctx,
-      openIntents,
-      selectIntentSession,
-      requestedIntentId,
-      requestedIntentSubTab,
-      requestedMergedTab,
-    } = makeCtx({ intents: [intent('i1', { intentSessionId: 'sess-1' })] })
-    ctx.jumpToSource(event({ sessionKind: 'intent', sessionId: 'sess-1' }))
-    expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(requestedMergedTab.value).toBe('sessions')
-    expect(selectIntentSession).toHaveBeenCalledWith('sess-1')
-    expect(requestedIntentId.value).toBeNull()
-    expect(requestedIntentSubTab.value).toBeNull()
-  })
-
-  it('intent + sessionId matching specSessionId → sessions tab + select session (unified)', () => {
-    const {
-      ctx,
-      openIntents,
-      selectIntentSession,
-      requestedIntentId,
-      requestedIntentSubTab,
-      requestedMergedTab,
-    } = makeCtx({ intents: [intent('i1', { specSessionId: 'spec-1' })] })
-    ctx.jumpToSource(event({ sessionKind: 'intent', sessionId: 'spec-1' }))
-    expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(requestedMergedTab.value).toBe('sessions')
-    expect(selectIntentSession).toHaveBeenCalledWith('spec-1')
-    expect(requestedIntentId.value).toBeNull()
-    expect(requestedIntentSubTab.value).toBeNull()
-  })
-
-  it('intent + sessionId matching comm session → sessions tab + select session', () => {
-    const { ctx, openIntents, selectIntentSession, requestedIntentId, requestedMergedTab } =
-      makeCtx({ commSessions: [commSession('sess-1')] })
-    ctx.jumpToSource(event({ sessionKind: 'intent', sessionId: 'sess-1' }))
-    expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(selectIntentSession).toHaveBeenCalledWith('sess-1')
-    expect(requestedIntentId.value).toBeNull()
-    expect(requestedMergedTab.value).toBe('sessions')
-  })
-
-  it('intent + unresolvable sessionId → sessions tab + select session (fallback)', () => {
-    const { ctx, openIntents, selectIntentSession, requestedIntentId, requestedMergedTab } =
-      makeCtx({
-        intents: [intent('i1')],
-        commSessions: [commSession('sess-1')],
-      })
-    ctx.jumpToSource(event({ sessionKind: 'intent', sessionId: 'ghost' }))
-    expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(selectIntentSession).toHaveBeenCalledWith('ghost')
-    expect(requestedIntentId.value).toBeNull()
-    expect(requestedMergedTab.value).toBe('sessions')
-  })
-
-  it('intent without sessionId → Intents tab, no selection', () => {
-    const { ctx, openIntents, selectIntentSession, requestedIntentId } = makeCtx()
+  it('without sessionId → switches to that session kind without selecting a session', () => {
+    const { ctx, openWorkcenterSession } = makeCtx()
     ctx.jumpToSource(event({ sessionKind: 'intent', sessionId: null }))
-    expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(selectIntentSession).not.toHaveBeenCalled()
-    expect(requestedIntentId.value).toBeNull()
-  })
-
-  // ── spec ───────────────────────────────────────────────────────────────────
-
-  it('spec + sessionId matching specSessionId → open its spec session', () => {
-    const { ctx, openIntents, openSpecSession, requestedIntentId, requestedIntentSubTab } = makeCtx(
-      { intents: [intent('i1', { specSessionId: 'spec-1' })] },
-    )
-    ctx.jumpToSource(event({ sessionKind: 'spec', sessionId: 'spec-1' }))
-    expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(requestedIntentId.value).toBe('i1')
-    expect(requestedIntentSubTab.value).toBe('specSession')
-    // openSpecSession receives the intent id
-    expect(openSpecSession).toHaveBeenCalledWith('i1')
-  })
-
-  it('spec + sessionId matching intent id (legacy) → open its spec session', () => {
-    const { ctx, openIntents, openSpecSession, requestedIntentId, requestedIntentSubTab } = makeCtx(
-      { intents: [intent('i1')] },
-    )
-    ctx.jumpToSource(event({ sessionKind: 'spec', sessionId: 'i1' }))
-    expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(requestedIntentId.value).toBe('i1')
-    expect(requestedIntentSubTab.value).toBe('specSession')
-    expect(openSpecSession).toHaveBeenCalledWith('i1')
-  })
-
-  it('spec + unresolvable sessionId → Intents tab, no spec session (degrade)', () => {
-    const { ctx, openIntents, openSpecSession } = makeCtx({ intents: [intent('i1')] })
-    ctx.jumpToSource(event({ sessionKind: 'spec', sessionId: 'ghost' }))
-    expect(openIntents).toHaveBeenCalledWith(WS)
-    expect(openSpecSession).not.toHaveBeenCalled()
-  })
-
-  // ── discussion / schedule / fallback ───────────────────────────────────────
-
-  it('discussion + sessionId → open the discussion list and select it', () => {
-    const { ctx, openDiscussions, openDiscussion } = makeCtx()
-    ctx.jumpToSource(event({ sessionKind: 'discussion', sessionId: 'disc-1' }))
-    expect(openDiscussions).toHaveBeenCalledWith(WS)
-    expect(openDiscussion).toHaveBeenCalledWith('disc-1')
-  })
-
-  it('discussion without sessionId → list only (degrade)', () => {
-    const { ctx, openDiscussions, openDiscussion } = makeCtx()
-    ctx.jumpToSource(event({ sessionKind: 'discussion', sessionId: null }))
-    expect(openDiscussions).toHaveBeenCalledWith(WS)
-    expect(openDiscussion).not.toHaveBeenCalled()
-  })
-
-  it('schedule + sessionId → open schedule list, no detail if logs not loaded', () => {
-    const { ctx, openSchedules, onSelectSchedule, onSelectExecution } = makeCtx()
-    ctx.jumpToSource(event({ sessionKind: 'schedule', sessionId: 'exec-sess-1' }))
-    expect(openSchedules).toHaveBeenCalledWith(WS)
-    // When scheduleLogs is empty, degrades to list only
-    expect(onSelectSchedule).not.toHaveBeenCalled()
-    expect(onSelectExecution).not.toHaveBeenCalled()
-  })
-
-  it('schedule + sessionId matching loaded execution log → select schedule + execution', () => {
-    const { ctx, openSchedules, onSelectSchedule, onSelectExecution } = makeCtx()
-    // Simulate loaded schedule logs
-    ctx.scheduleLogs.value = {
-      'sch-1': [{ id: 'exec-1', scheduleId: 'sch-1', sessionId: 'exec-sess-1' } as never],
-    }
-    ctx.jumpToSource(event({ sessionKind: 'schedule', sessionId: 'exec-sess-1' }))
-    expect(openSchedules).toHaveBeenCalledWith(WS)
-    expect(onSelectSchedule).toHaveBeenCalledWith('sch-1')
-    expect(onSelectExecution).toHaveBeenCalledWith('exec-1')
+    expect(openWorkcenterSession).toHaveBeenCalledWith({
+      workspaceId: WS,
+      sessionKind: 'intent',
+      sessionId: null,
+      title: null,
+      updatedAt: 1,
+    })
   })
 
   it('falls back to currentWorkspace when the event carries no workspaceId', () => {
-    const { ctx, send } = makeCtx()
+    const { ctx, openWorkcenterSession } = makeCtx()
     ctx.jumpToSource(event({ sessionKind: 'work', sessionId: 's1', workspaceId: '' }))
-    expect(send).toHaveBeenCalledWith({
-      type: 'select_session',
+    expect(openWorkcenterSession).toHaveBeenCalledWith({
       workspaceId: WS,
+      sessionKind: 'work',
       sessionId: 's1',
+      title: null,
+      updatedAt: 1,
     })
   })
 })

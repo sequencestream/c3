@@ -137,6 +137,53 @@ export function installMessageHandler(ctx: AppCtx): void {
     return undefined
   }
 
+  function ownerKindForSessionKind(
+    kind: SessionPageKind,
+  ): NonNullable<SessionInfo['ownerKind']> | null {
+    if (kind === 'intent' || kind === 'spec') return 'intent'
+    if (kind === 'discussion') return 'discussion'
+    if (kind === 'schedule') return 'schedule'
+    return null
+  }
+
+  function appendPinnedConsoleSessionIfMissing(input: {
+    workspaceId: string
+    sessionKind: SessionPageKind
+    sessions: SessionInfo[]
+  }): SessionInfo[] {
+    if (
+      activeTab.value !== 'console' ||
+      input.workspaceId !== currentWorkspace.value ||
+      input.sessionKind !== ctx.activeSessionKind.value
+    ) {
+      return input.sessions
+    }
+    const pinned = ctx.consoleSession.value
+    if (!pinned || pinned.workspacePath !== input.workspaceId) return input.sessions
+    if (input.sessions.some((s) => s.sessionId === pinned.sessionId)) return input.sessions
+    const existing = findSessionRow(pinned.sessionId)
+    if (existing) return [...input.sessions, existing]
+    return [
+      ...input.sessions,
+      {
+        sessionId: pinned.sessionId,
+        title:
+          activeSession.value === pinned.sessionId && activeTitle.value
+            ? activeTitle.value
+            : pinned.sessionId,
+        lastModified: 0,
+        mode: 'default',
+        isToolSession: input.sessionKind === 'tool',
+        vendor:
+          activeSession.value === pinned.sessionId ? (activeVendor.value ?? 'claude') : 'claude',
+        state: 'stale',
+        sessionKind: input.sessionKind,
+        ownerKind: ownerKindForSessionKind(input.sessionKind),
+        ownerId: null,
+      },
+    ]
+  }
+
   ctx.handleMessage = (msg: ServerToClient): void => {
     switch (msg.type) {
       case 'login_result':
@@ -256,7 +303,12 @@ export function installMessageHandler(ctx: AppCtx): void {
         // `merged` is undefined only for a `live` push into a not-yet-loaded
         // workspace — ignore it (the list loads on demand).
         if (merged) {
-          sessionsByWorkspace.value = { ...sessionsByWorkspace.value, [cacheKey]: merged.sessions }
+          const sessions = appendPinnedConsoleSessionIfMissing({
+            workspaceId: path,
+            sessionKind,
+            sessions: merged.sessions,
+          })
+          sessionsByWorkspace.value = { ...sessionsByWorkspace.value, [cacheKey]: sessions }
           sessionPagingByWorkspace.value = {
             ...sessionPagingByWorkspace.value,
             [cacheKey]: {

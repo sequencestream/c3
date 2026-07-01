@@ -5,8 +5,7 @@ import type { SessionInfo } from '@ccc/shared/protocol'
 import { installMessageHandler } from './message-handler'
 import type { ChatMsg } from '@/lib/chat-types'
 import type { AppCtx } from './types'
-import type { PendingWorkSessionSelectRequest } from '@/lib/work-session-jump'
-import type { SessionPageKind } from './state'
+import { sessionCacheKey, type SessionPageKind } from './state'
 
 function s(id: string, lastModified: number): SessionInfo {
   return {
@@ -165,8 +164,10 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
     const activeSession = ref<string | null>(null)
     const activeWorkspace = ref<string | null>(null)
     const activeTitle = ref('')
+    const activeVendor = ref<'claude' | 'codex' | null>(null)
     const activity = ref({ phase: 'idle' } as { phase: string })
     const currentWorkspace = ref<string | null>(null)
+    const consoleSession = ref<{ workspacePath: string; sessionId: string } | null>(null)
     const activeSessionKind = ref<SessionPageKind>('work')
     const sessionsByWorkspace = ref<Record<string, SessionInfo[]>>({})
     const sessionPagingByWorkspace = ref<
@@ -178,7 +179,6 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
     const sessionCounts = ref<Record<string, number>>({})
     const activeTab = ref<string>('console')
     const flags = { viewModeFirstWorkcenter: true, pendingConsoleBind: false }
-    const requestedWorkSessionId = ref<PendingWorkSessionSelectRequest | null>(null)
     const send = vi.fn()
     const ctx = {
       toast: ref<string | null>(null),
@@ -214,13 +214,14 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
       activeWorkspace,
       activeSession,
       activeTitle,
+      activeVendor,
+      consoleSession,
       activity,
       flags,
       send,
       bindConsoleSession,
       clearViewedSession,
       consumePendingWorkSessionSelect,
-      requestedWorkSessionId,
     } as unknown as AppCtx
     installMessageHandler(ctx)
     return {
@@ -229,11 +230,13 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
       clearViewedSession,
       consumePendingWorkSessionSelect,
       activeSession,
+      activeTitle,
+      activeVendor,
       currentWorkspace,
+      consoleSession,
       activeSessionKind,
       sessionsByWorkspace,
       flags,
-      requestedWorkSessionId,
     }
   }
 
@@ -248,48 +251,6 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
       workspaceId: WS,
       sessionKind: 'spec',
       sessions: [s('spec-1', 400)],
-      page: { kind: 'first', hasMore: false },
-    } as unknown as ServerToClient)
-
-    expect(r.bindConsoleSession).toHaveBeenCalledOnce()
-    expect(r.flags.pendingConsoleBind).toBe(false)
-  })
-
-  it('suppresses auto-bind when a pending work-session jump is staged', () => {
-    const r = makeSessionsCtx()
-    r.currentWorkspace.value = WS
-    r.activeSessionKind.value = 'work'
-    r.flags.pendingConsoleBind = true
-    r.requestedWorkSessionId.value = {
-      workspacePath: WS,
-      intentId: 'i-1',
-      sessionId: 'dev-1',
-    }
-
-    r.ctx.handleMessage({
-      type: 'sessions',
-      workspaceId: WS,
-      sessionKind: 'work',
-      sessions: [s('work-1', 400)],
-      page: { kind: 'first', hasMore: false },
-    } as unknown as ServerToClient)
-
-    expect(r.bindConsoleSession).not.toHaveBeenCalled()
-    expect(r.flags.pendingConsoleBind).toBe(false)
-  })
-
-  it('auto-binds normally when requestedWorkSessionId is null (regression guard)', () => {
-    const r = makeSessionsCtx()
-    r.currentWorkspace.value = WS
-    r.activeSessionKind.value = 'work'
-    r.flags.pendingConsoleBind = true
-    r.requestedWorkSessionId.value = null
-
-    r.ctx.handleMessage({
-      type: 'sessions',
-      workspaceId: WS,
-      sessionKind: 'work',
-      sessions: [s('work-1', 400)],
       page: { kind: 'first', hasMore: false },
     } as unknown as ServerToClient)
 
@@ -368,6 +329,55 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
 
     expect(r.bindConsoleSession).toHaveBeenCalledOnce()
     expect(r.flags.pendingConsoleBind).toBe(false)
+  })
+
+  it('keeps the pinned console session appended when it is outside the first page', () => {
+    const r = makeSessionsCtx()
+    r.currentWorkspace.value = WS
+    r.activeSessionKind.value = 'spec'
+    r.consoleSession.value = { workspacePath: WS, sessionId: 'deep-spec' }
+    r.activeSession.value = 'deep-spec'
+    r.activeTitle.value = 'Deep Spec'
+    r.activeVendor.value = 'codex'
+
+    r.ctx.handleMessage({
+      type: 'sessions',
+      workspaceId: WS,
+      sessionKind: 'spec',
+      sessions: [s('homepage-spec', 400)],
+      page: { kind: 'first', hasMore: true },
+    } as unknown as ServerToClient)
+
+    expect(
+      r.sessionsByWorkspace.value[sessionCacheKey(WS, 'spec')].map((x) => x.sessionId),
+    ).toEqual(['homepage-spec', 'deep-spec'])
+    expect(r.sessionsByWorkspace.value[sessionCacheKey(WS, 'spec')][1]).toMatchObject({
+      sessionId: 'deep-spec',
+      title: 'Deep Spec',
+      vendor: 'codex',
+      sessionKind: 'spec',
+      ownerKind: 'intent',
+      state: 'stale',
+    })
+  })
+
+  it('does not append the pinned console session to a non-active session kind response', () => {
+    const r = makeSessionsCtx()
+    r.currentWorkspace.value = WS
+    r.activeSessionKind.value = 'spec'
+    r.consoleSession.value = { workspacePath: WS, sessionId: 'deep-spec' }
+
+    r.ctx.handleMessage({
+      type: 'sessions',
+      workspaceId: WS,
+      sessionKind: 'work',
+      sessions: [s('work-1', 400)],
+      page: { kind: 'first', hasMore: false },
+    } as unknown as ServerToClient)
+
+    expect(
+      r.sessionsByWorkspace.value[sessionCacheKey(WS, 'work')].map((x) => x.sessionId),
+    ).toEqual(['work-1'])
   })
 })
 

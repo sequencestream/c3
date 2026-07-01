@@ -48,8 +48,8 @@ The script always fetches the latest release for your platform, verifies its che
 Grab the latest build for your platform from the [releases page](https://github.com/sequencestream/c3/releases/) and extract it:
 
 ```bash
-# e.g. c3-v0.4.3-macos-arm64.tar.gz
-tar -xzvf c3-v0.4.3-macos-arm64.tar.gz
+# e.g. c3-v0.8.0-macos-arm64.tar.gz
+tar -xzvf c3-v0.8.0-macos-arm64.tar.gz
 ```
 
 > **macOS note:** the first launch may trigger a security warning. Allow c3 to run in *System Settings → Privacy & Security*.

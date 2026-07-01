@@ -80,8 +80,8 @@ import {
 import { cleanupStalePendingIntents, PENDING_INTENT_TTL_MS } from './kernel/config/index.js'
 import { logVendorCliHealth } from './kernel/agent/adapters/registry.js'
 import {
-  refreshManagedVendorClisInBackground,
   resolve as resolveVendorCli,
+  syncManagedVendorClis,
 } from './kernel/agent/process/launcher.js'
 import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
 import { createClaudeAdapter } from './kernel/agent/adapters/claude/index.js'
@@ -259,8 +259,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
   // Probe vendor CLIs up front. The default source is c3's managed vendor dir;
   // env overrides remain explicit, and host PATH is only a degraded fallback.
+  // First install/download managed CLIs, THEN probe health — on first start this
+  // ensures c3 uses its own managed CLI rather than falling back to the host PATH.
+  // Subsequent starts skip the npm fetch (24h remote-check cooldown) and probe the
+  // already-installed binary directly.
+  await syncManagedVendorClis()
   logVendorCliHealth()
-  refreshManagedVendorClisInBackground()
 
   // Codex lifecycle (2026-06-06-007): Codex spawns its CLI per run
   // via the SDK (no supervisor), so the adapter is built directly — vendor CLI

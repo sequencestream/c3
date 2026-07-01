@@ -42,7 +42,7 @@ export const HOST_BINARIES: Record<VendorId, VendorBinarySpec> = {
     binary: 'claude',
     pathEnv: 'CLAUDE_PATH',
     packageName: '@anthropic-ai/claude-code',
-    preferredDistTag: 'stable',
+    preferredDistTag: 'latest',
     compatibleRange: '>=0.0.0 <999.0.0',
     installHint:
       'c3 installs Claude Code under ~/.c3/vendor/claude by default. Override with $CLAUDE_PATH, or keep a host `claude` on PATH as a degraded fallback.',
@@ -192,8 +192,11 @@ function defaultRunVersion(path: string): string {
 export function parseVendorVersion(vendor: VendorId, output: string): string | null {
   const text = output.trim()
   const patterns: Record<VendorId, RegExp[]> = {
-    claude: [/claude(?:\s+code)?\s+(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i],
-    codex: [/codex\s+(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i],
+    claude: [
+      /claude(?:\s+code)?\s+(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i,
+      /(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\s+\(?claude(?:\s+code)?\)?/i,
+    ],
+    codex: [/codex(?:-cli)?\s+(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i],
   }
   for (const pattern of patterns[vendor]) {
     const m = pattern.exec(text)
@@ -468,8 +471,14 @@ function versionRecord(packument: NpmPackument, version: string): NpmVersion | n
 
 function compatibleVersions(packument: NpmPackument, range: string): string[] {
   return Object.keys(packument.versions ?? {})
-    .filter((v) => satisfiesRange(v, range))
+    .filter((v) => satisfiesRange(v, range) && !isPreRelease(v))
     .sort(compareVersions)
+}
+
+/** npm semver pre-release check — a hyphen after patch (e.g. `2.2.0-alpha.1`). */
+function isPreRelease(v: string): boolean {
+  const m = /^\d+\.\d+\.\d+-(.+)$/.exec(v)
+  return m !== null
 }
 
 export function selectNpmVersion(
@@ -498,6 +507,7 @@ export function selectNpmVersion(
     const version = tags[tag]
     if (
       version &&
+      !isPreRelease(version) &&
       versionRecord(packument, version) &&
       satisfiesRange(version, spec.compatibleRange)
     ) {
@@ -576,6 +586,7 @@ export async function syncManagedVendorCli(
   } catch (err) {
     const fallback = resolveExecutable(vendor, deps)
     const msg = `npm packument fetch failed for ${vendor}: ${(err as Error).message}`
+    console.log(`[c3] vendor packument-failed: ${vendor} (${(err as Error).message})`)
     recordState(vendor, { source: fallback.source, manualVersion, lastError: msg }, deps)
     return fallback.path ? { ...fallback, managedError: msg } : missingProbe(vendor, undefined, msg)
   }
@@ -606,9 +617,19 @@ export async function syncManagedVendorCli(
       deps,
     )
     resetProbeCache()
+    const priorVersion = prior?.selectedVersion
+    if (priorVersion && priorVersion !== selected.version) {
+      console.log(
+        `[c3] vendor upgrade: ${vendor} v${priorVersion} → v${selected.version} (already downloaded)`,
+      )
+    } else {
+      console.log(`[c3] vendor ok: ${vendor} v${selected.version} (current)`)
+    }
     return probe
   }
 
+  // Download and install a new/cached version
+  console.log(`[c3] vendor download: ${vendor} v${selected.version} ...`)
   try {
     const dist = distFor(packument, selected.version)
     const tarRes = await fetchFn(dist.tarball, {
@@ -637,6 +658,44 @@ export async function syncManagedVendorCli(
     const relBin = binRelative(pkg, spec.binary)
     const packageBin = join(publishTmp, 'package', relBin)
     chmodSync(packageBin, 0o755)
+
+    // Install optional dependencies (platform-native binaries) and run postinstall
+    // scripts. Both @anthropic-ai/claude-code and @openai/codex ship the native
+    // binary through platform-scoped optionalDependencies (e.g. codex-darwin-arm64)
+    // or a postinstall hook — the bare tarball doesn't include it, so we need a
+    // full `npm install --omit=dev` to materialise the binary before probing.
+    console.log(`[c3] vendor npm-install: ${vendor} v${selected.version} ...`)
+    {
+      const pkgDir = join(publishTmp, 'package')
+      const npmR = spawnSync(
+        'npm',
+        [
+          'install',
+          '--no-save',
+          '--no-audit',
+          '--no-fund',
+          '--omit=dev',
+          '--omit=peer',
+          '--no-package-lock',
+          '--loglevel=error',
+        ],
+        {
+          cwd: pkgDir,
+          encoding: 'utf-8',
+          timeout: 120_000,
+          // @anthropic-ai/claude-code postinstall guards against direct-publish
+          // with a CHECK: `node -e "if (!process.env.AUTHORIZED) process.exit(1)"`.
+          // We set AUTHORIZED=true so the guard passes and the real install.cjs
+          // (which downloads the native binary) actually runs.
+          env: { ...process.env, AUTHORIZED: 'true' },
+        },
+      )
+      if (npmR.error || npmR.status !== 0) {
+        throw new Error(
+          `npm install failed: ${(npmR.stderr || npmR.stdout || npmR.error?.message || 'unknown').trim()}`,
+        )
+      }
+    }
     writeFileSync(
       destBin,
       `#!/bin/sh\nDIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$DIR/../package/${relBin}" "$@"\n`,
@@ -676,9 +735,18 @@ export async function syncManagedVendorCli(
       deps,
     )
     resetProbeCache()
+    const priorVersion = prior?.selectedVersion
+    if (priorVersion && priorVersion !== selected.version) {
+      console.log(`[c3] vendor upgrade: ${vendor} v${priorVersion} → v${selected.version}`)
+    } else {
+      console.log(`[c3] vendor installed: ${vendor} v${selected.version}`)
+    }
     return probeManaged(vendor, selected.version, deps)
   } catch (err) {
     const msg = `managed ${vendor} ${selected.version} install failed: ${(err as Error).message}`
+    console.log(
+      `[c3] vendor install-failed: ${vendor} v${selected.version} (${(err as Error).message})`,
+    )
     const old = resolveExecutable(vendor, deps)
     const prior = readState(home).vendors[vendor]
     recordState(
@@ -704,6 +772,11 @@ export async function syncManagedVendorCli(
 export async function syncManagedVendorClis(deps?: VendorInstallerDeps): Promise<VendorProbe[]> {
   const out: VendorProbe[] = []
   for (const vendor of Object.keys(HOST_BINARIES) as VendorId[]) {
+    if (!shouldCheckRemote(vendor, deps?.now?.().getTime())) {
+      console.log(`[c3] vendor check-skip: ${vendor} (checked recently)`)
+      continue
+    }
+    console.log(`[c3] vendor check: ${vendor} ...`)
     out.push(await syncManagedVendorCli(vendor, deps))
   }
   return out

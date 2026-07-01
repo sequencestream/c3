@@ -146,8 +146,8 @@ describe('npm package selection', () => {
     },
   }
 
-  it('selects Claude stable before latest when compatible', () => {
-    expect(selectNpmVersion('claude', packument)).toEqual({ version: '1.2.0', sourceTag: 'stable' })
+  it('selects Claude latest before stable when compatible', () => {
+    expect(selectNpmVersion('claude', packument)).toEqual({ version: '1.3.0', sourceTag: 'latest' })
   })
 
   it('selects Codex platform dist-tag before latest', () => {
@@ -165,7 +165,11 @@ describe('npm package selection', () => {
 describe('version parsing and range checks', () => {
   it('parses vendor-specific version output', () => {
     expect(parseVendorVersion('claude', 'Claude Code 1.2.3')).toBe('1.2.3')
+    expect(parseVendorVersion('claude', '2.1.195 (Claude Code)')).toBe('2.1.195')
+    expect(parseVendorVersion('claude', '0.4.7 (claude code)')).toBe('0.4.7')
+    expect(parseVendorVersion('claude', 'claude 3.0.0')).toBe('3.0.0')
     expect(parseVendorVersion('codex', 'codex 0.142.3')).toBe('0.142.3')
+    expect(parseVendorVersion('codex', 'codex-cli 0.142.4')).toBe('0.142.4')
     expect(parseVendorVersion('codex', 'random 0.142.3')).toBeNull()
   })
 

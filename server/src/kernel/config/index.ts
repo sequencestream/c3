@@ -400,6 +400,9 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // System time zone: a valid IANA name is kept; anything else falls back to the
   // server's own zone (so a fresh install schedules in local time out of the box).
   const timezone = isValidTimeZone(raw?.timezone) ? raw!.timezone! : getServerTimezone()
+  // Public-facing base URL: trim + strip trailing slashes. Empty/absent/non-string
+  // ⇒ omitted (optional semantics — "not configured" ≡ no value).
+  const baseUrlRaw = typeof raw?.baseUrl === 'string' ? raw.baseUrl.trim().replace(/\/+$/, '') : ''
   const showToolSessions = raw?.showToolSessions === true
   const degradationChain = normalizeDegradationChain(raw?.degradationChain, agents)
   const vendorCliVersions = normalizeVendorCliVersions(raw?.vendorCliVersions)
@@ -429,6 +432,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     voiceLang,
     uiLang,
     timezone,
+    ...(baseUrlRaw ? { baseUrl: baseUrlRaw } : {}),
     showToolSessions,
     degradationChain,
     socketAutoResume,

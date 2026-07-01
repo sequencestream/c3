@@ -9,9 +9,9 @@
 // Auth: a fixed bearer token (Authorization: Bearer <token>). Integrity: the
 // per-file sha256 is sent as X-Artifact-Sha256 and re-checked server-side.
 //
-// Env (CLI flags override): C3_ARTIFACT_SERVER_URL, C3_ARTIFACT_UPLOAD_TOKEN.
-// When the server URL or token is absent the script no-ops (exit 0) so local /
-// unconfigured runs stay harmless.
+// Server: --server > C3_ARTIFACT_SERVER_URL > https://c3.sequencestream.com/ (default).
+// Token:  --token  > C3_ARTIFACT_UPLOAD_TOKEN > dist/.upload_license_server_auth_token.key.
+// With no token resolvable the script no-ops (exit 0) so local / unconfigured runs stay harmless.
 //
 //   node scripts/publish/upload-to-server.mjs [--dist=dist] [--version=vX.Y.Z] \
 //     [--batch=20260618-1430Z] [--server=https://…] [--token=…] [--dry-run]
@@ -22,6 +22,25 @@ import { sha256File } from '../release/manifest.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
+
+// Default self-hosted store URL when neither --server nor C3_ARTIFACT_SERVER_URL is set.
+const DEFAULT_SERVER = 'https://c3.sequencestream.com/'
+// Default upload-token file when neither --token nor C3_ARTIFACT_UPLOAD_TOKEN is set. gitignored.
+const DEFAULT_TOKEN_FILE = resolve(repoRoot, 'dist', '.upload_license_server_auth_token.key')
+
+/** Resolve the store URL: explicit arg > C3_ARTIFACT_SERVER_URL > the default production URL. */
+export function resolveServer(explicit) {
+  return explicit || process.env.C3_ARTIFACT_SERVER_URL || DEFAULT_SERVER
+}
+
+/** Resolve the bearer token: explicit arg > C3_ARTIFACT_UPLOAD_TOKEN > the default key file.
+ *  Returns undefined when none is found (callers no-op rather than upload unauthenticated). */
+export function resolveToken(explicit) {
+  if (explicit) return explicit
+  if (process.env.C3_ARTIFACT_UPLOAD_TOKEN) return process.env.C3_ARTIFACT_UPLOAD_TOKEN
+  if (existsSync(DEFAULT_TOKEN_FILE)) return readFileSync(DEFAULT_TOKEN_FILE, 'utf-8').trim()
+  return undefined
+}
 
 function parseArgs(argv) {
   const o = {}
@@ -47,7 +66,7 @@ function uploadList(manifest) {
   for (const a of manifest.artifacts) {
     files.push(basename(a.file), `${basename(a.file)}.sha256`, `${basename(a.file)}.minisig`)
   }
-  files.push('SHA256SUMS', 'SHA256SUMS.minisig', 'manifest.json')
+  files.push('SHA256SUMS', 'SHA256SUMS.minisig', 'minisign.pub', 'manifest.json')
   return files
 }
 
@@ -92,12 +111,17 @@ export async function uploadToServer({
   dist = 'dist',
   version,
   batch,
-  server = process.env.C3_ARTIFACT_SERVER_URL,
-  token = process.env.C3_ARTIFACT_UPLOAD_TOKEN,
+  server,
+  token,
   dryRun = false,
 } = {}) {
-  if (!server || !token) {
-    console.log('[upload-to-server] C3_ARTIFACT_SERVER_URL/TOKEN unset — skipping (no-op).')
+  const srv = resolveServer(server)
+  const tok = resolveToken(token)
+  if (!tok) {
+    console.log(
+      '[upload-to-server] no upload token (C3_ARTIFACT_UPLOAD_TOKEN or ' +
+        `${DEFAULT_TOKEN_FILE}) — skipping (no-op).`,
+    )
     return { skipped: true }
   }
 
@@ -115,10 +139,10 @@ export async function uploadToServer({
 
   const files = uploadList(manifest).filter((f) => existsSync(resolve(distDir, f)))
   console.log(
-    `[upload-to-server] ${files.length} file(s) → ${server} as ${ver}/${b}/${dryRun ? '  (dry-run)' : ''}`,
+    `[upload-to-server] ${files.length} file(s) → ${srv} as ${ver}/${b}/${dryRun ? '  (dry-run)' : ''}`,
   )
   for (const name of files) {
-    await uploadFile({ server, token, version: ver, batch: b, distDir, name, dryRun })
+    await uploadFile({ server: srv, token: tok, version: ver, batch: b, distDir, name, dryRun })
   }
   console.log(`[upload-to-server] done — ${ver}/${b}/`)
   return { skipped: false, version: ver, batch: b, count: files.length }

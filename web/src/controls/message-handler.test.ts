@@ -218,6 +218,7 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
       consoleSession,
       activity,
       flags,
+      requestedWorkSessionId: ref(null),
       send,
       bindConsoleSession,
       clearViewedSession,

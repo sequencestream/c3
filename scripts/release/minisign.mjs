@@ -76,6 +76,19 @@ export function formatPublicKey({ keyId, publicKeyRaw, comment = 'c3 minisign pu
   return `untrusted comment: ${comment}\n${body.toString('base64')}\n`
 }
 
+/** Derive the standard minisign PUBLIC key (`.pub` text) from a secret blob (keyId||seed), so a
+ *  signer can emit a shippable `minisign.pub` that provably matches the key it just signed with. */
+export function publicKeyTextFromSecret(
+  secretKeyB64,
+  comment = 'c3 release signing key (minisign)',
+) {
+  const { keyId, seed } = parseSecretBlob(secretKeyB64)
+  const publicKeyRaw = createPublicKey(privateKeyObject(seed))
+    .export({ type: 'spki', format: 'der' })
+    .subarray(SPKI_PREFIX.length)
+  return { keyId, publicKeyRaw, text: formatPublicKey({ keyId, publicKeyRaw, comment }) }
+}
+
 export function parsePublicKey(text) {
   const lines = String(text)
     .split('\n')

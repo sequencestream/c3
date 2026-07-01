@@ -19,9 +19,9 @@
 //
 /* global Bun */
 // ^ This module runs under `bun` (Bun.build JS API); `Bun` is a runtime global.
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { resolve, dirname } from 'node:path'
+import { resolve, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { computeVersionInfo, versionDefines } from '../../../scripts/release/version-info.mjs'
 import { obfuscateStage, isObfuscationEnabled, decideFallback } from './obfuscate.mjs'
@@ -258,6 +258,17 @@ export async function buildTarget({
   }
   if (!existsSync(out)) {
     throw new Error(`[build-target] outfile missing after build: ${out}`)
+  }
+  // Cross-compiling a Windows target on a POSIX host, Bun writes the correct
+  // `--outfile` AND leaks a stray standalone exe named after the ORIGINAL bundle
+  // entry (server/src/cli.ts → `cli.exe`) into the project root — not cwd, so it
+  // can't be redirected, only cleaned. Remove it (and any stray `.exe` in the
+  // gitignored stage dir) so `pnpm release` never litters the repo with a ~100 MB
+  // untracked binary. Guard on the real out so we never touch the artifact itself.
+  const strayExe = resolve(repoRoot, `${basename(entry).replace(/\.[^.]+$/, '')}.exe`)
+  for (const stray of [strayExe, ...readdirSync(stageDir).map((n) => resolve(stageDir, n))]) {
+    if (stray !== out && stray.toLowerCase().endsWith('.exe') && existsSync(stray))
+      rmSync(stray, { force: true })
   }
   chmodSync(out, 0o755)
   adHocCodesign(out, friendly) // before any hashing/signing — codesign mutates the binary

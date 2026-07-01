@@ -141,6 +141,20 @@ const TIMEZONES = computed<string[]>(() => {
   return zones
 })
 
+/**
+ * The draft always carries `proxy` (initialized in the watch reseed + the
+ * initial ref), but TypeScript cannot prove it through the optional
+ * `SystemSettings.proxy?` type. This ref mirrors `draft.value.proxy` for
+ * template bindings; it is seeded on every watch run and saved back through
+ * the `save()` function which emits the full `draft.value`. Declared before the
+ * immediate watch below, which seeds it during setup.
+ */
+const proxyCfg = ref<{ enabled: boolean; httpProxy: string; httpsProxy: string }>({
+  enabled: false,
+  httpProxy: '',
+  httpsProxy: '',
+})
+
 // Re-seed the draft whenever the panel opens or fresh server settings arrive.
 // Deep-copy so edits to the draft don't mutate the rendered server state.
 watch(
@@ -433,19 +447,6 @@ function removeSandbox(index: number) {
   const list = draft.value.sandboxes
   if (list) draft.value.sandboxes = list.filter((_, i) => i !== index)
 }
-
-/**
- * The draft always carries `proxy` (initialized in the watch reseed + the
- * initial ref), but TypeScript cannot prove it through the optional
- * `SystemSettings.proxy?` type. This ref mirrors `draft.value.proxy` for
- * template bindings; it is seeded on every watch run and saved back through
- * the `save()` function which emits the full `draft.value`.
- */
-const proxyCfg = ref<{ enabled: boolean; httpProxy: string; httpsProxy: string }>({
-  enabled: false,
-  httpProxy: '',
-  httpsProxy: '',
-})
 
 // ---- Authentication (ADR-0023) ------------------------------------------
 // The provider dropdown is the single auth on/off control (the old standalone

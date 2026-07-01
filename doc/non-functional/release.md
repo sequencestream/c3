@@ -67,7 +67,9 @@ Quality-gate ordering beyond build is specified in **Quality gates** below.
 
 Three non-overlapping gate layers, ordered by cost so a cheap red never burns an
 expensive stage. This ordering **is the spec for the CI release workflow** (a later
-wave) — the local `pnpm release` orchestrator implements the same sequence.
+wave) — the `pnpm release:github` orchestrator implements the same sequence. Local
+`pnpm release` runs gate 0 (pregate) + gate 1 (artifact smoke) but not gate 2 (publish
+gate is tag/`gh`-only); its output is the license-server store, not a GitHub Release.
 
 | #   | Gate                | Layer        | Runs                                                                                               | On red                       |
 | --- | ------------------- | ------------ | -------------------------------------------------------------------------------------------------- | ---------------------------- |
@@ -469,10 +471,30 @@ runs inside the compile primitive so hashing sees the signed Mach-O).
   present; best-effort with a warn-and-continue otherwise. Ad-hoc only (no Developer ID /
   notarization); users clear Gatekeeper quarantine with `xattr -dr com.apple.quarantine`.
 
-`pnpm release` chains build → notes → publish. `--dry-run` rehearses every stage with no
-external/irreversible effect (no signing, no tag, no `gh`); `--no-publish` signs locally but
-stops before the tag + GitHub Release. The package stays unpublished to npm (binaries ship via
-GitHub Releases, never npm).
+`pnpm release` is the **interactive local build+store** flow: it prompts for a version (or takes
+`--version=X.Y.Z`), cross-compiles the three shipping targets on this host — `linux-x64`,
+`macos-arm64`, `windows-x64`, all built from one macOS/Linux machine via Bun's `--target` (no
+Docker, no Windows runner; `bun --compile --target=bun-windows-x64` writes `c3.exe` directly) —
+signs them, collects the package set + sidecars + `manifest.json` under
+`dist/release-artifacts/v<ver>/`, then offers to upload them to the self-hosted license-server
+store. Signing is **on by default**: the minisign secret resolves from `C3_MINISIGN_SECRET_KEY[_FILE]`
+
+> `--key-file` > `dist/c3-minisign-secret.key`, and the run emits per-package `<pkg>.minisig`,
+> `SHA256SUMS.minisig`, and a shippable `minisign.pub` (derived from that same secret, so `c3 verify`
+> and `minisign -V` both validate the downloads); with no key found the run warns and ships hashes
+> only. `--skip-gate` bypasses the source pregate, `--skip-upload` stops after collecting, and
+> `--targets`/`--harden` override the defaults (three targets, and the obfuscated `standard` tier —
+> a bare `pnpm release` ships hardened; opt down with `--harden=basic|none`). `--dry-run` rehearses gate
+
+- plan and touches nothing. License-server upload targets `https://c3.sequencestream.com/` by
+  default (override with `C3_ARTIFACT_SERVER_URL` or `--server`); the bearer token resolves from
+  `C3_ARTIFACT_UPLOAD_TOKEN` > `--token` > `dist/.upload_license_server_auth_token.key`. With no
+  token found the run skips upload and just leaves the packages on disk.
+
+The former GitHub-publish orchestrator lives on unchanged as **`pnpm release:github`** (chains
+gate → build → notes → publish; `--dry-run` rehearses with no signing/tag/`gh`; `--no-publish`
+signs locally but stops before the tag + GitHub Release). The package stays unpublished to npm
+(binaries ship via GitHub Releases / the license-server store, never npm).
 
 ## Public-mirror publish (private source → public binaries)
 
@@ -517,13 +539,21 @@ pnpm release:smoke -- --file=<inner-binary>        # headless smoke the inner BI
 pnpm release:smoke -- --manifest=<manifest>        # or: pick the inner binary from the package via the manifest
 pnpm release:verify-dist                              # publish final check: manifest↔SHA256SUMS↔disk + P0
 pnpm release:publish --dry-run                        # rehearse publish: plan only, no tag/gh/sign
-pnpm release --no-publish                             # gate + build + sign + notes, no GitHub Release
-pnpm release --skip-gate                              # skip the source pregate (debug)
-RELEASE_HARDEN=standard pnpm release                  # additionally forces `pnpm e2e --obfuscated` (release 7/7)
+pnpm release                                          # interactive: prompt version → build linux-x64+macos-arm64+windows-x64 (harden=standard/obfuscated by default) → sign → collect → offer LS upload
+pnpm release --harden=basic                            # opt down to minify-only (no obfuscation)
+pnpm release --version=0.8.0                           # non-interactive version (needed when there is no TTY)
+pnpm release --skip-upload                             # stop after collecting into dist/release-artifacts/v<ver>/
+pnpm release --skip-gate --targets=windows-x64         # skip the source pregate / override the target set (debug)
+pnpm release --dry-run                                 # rehearse gate + plan, touch nothing
+pnpm release:github                                    # GitHub-publish orchestrator: gate → build(+smoke) → notes → publish (full)
+pnpm release:github --no-publish                       # gate + build + sign + notes, no GitHub Release
+RELEASE_HARDEN=standard pnpm release:github            # additionally forces `pnpm e2e --obfuscated` (release 7/7)
 pnpm e2e --obfuscated                                 # e2e against the obfuscated server bundle (requires standard build first)
-pnpm release                                          # gate → build(+smoke) → notes → publish (full)
 pnpm release:keygen                                   # mint a minisign keypair
 pnpm binary                                          # native single binary (self-use quickcut, bytecode off)
+# License-server store upload (self-hosted):
+pnpm publish:server --dist=dist/release-artifacts/v0.8.0 --version=v0.8.0   # upload an already-built dir. Server defaults to https://c3.sequencestream.com/ (C3_ARTIFACT_SERVER_URL / --server to override); token = C3_ARTIFACT_UPLOAD_TOKEN > --token > dist/.upload_license_server_auth_token.key; no-ops without a token. `pnpm release` also offers this at the end.
+pnpm publish:server --dist=… --dry-run                # rehearse: print the PUT set, upload nothing
 # Public mirror (private source → public binaries):
 # (first download a CI run's per-target artifacts to the local machine)
 pnpm publish:binaries --dry-run                        # rehearse public-mirror publish: plan only, no merge/sign/commit/gh
@@ -540,8 +570,12 @@ where they live:
 
 - **Build orchestrator** — fans the per-target build out across the P0 matrix (`--targets`,
   `--harden`, `--dry-run`, `--skip-smoke`), and carries the Phase3 artifact smoke.
-- **Top-level orchestrator** — chains gate → build → notes → publish (`--dry-run`,
-  `--no-publish`, `--skip-gate`), and forces the obfuscated e2e on the standard tier.
+- **Local orchestrator** (`pnpm release`) — the interactive build+store flow: prompt version →
+  cross-compile the three shipping targets on this host → sign → collect into
+  `dist/release-artifacts/v<ver>/` → offer license-server upload (`--version`, `--targets`,
+  `--harden`, `--skip-gate`, `--skip-upload`, `--server`/`--token`, `--dry-run`).
+- **GitHub orchestrator** (`pnpm release:github`) — chains gate → build → notes → publish
+  (`--dry-run`, `--no-publish`, `--skip-gate`), and forces the obfuscated e2e on the standard tier.
 - **Target classification** — the single source of truth for the P0 / P1 / experimental /
   known / default target sets, host-target detection, and host-runnable detection.
 - **Platform branches** — the `claude`-discovery and SQLite-driver-probe branches per OS, and

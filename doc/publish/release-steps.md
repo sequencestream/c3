@@ -7,30 +7,31 @@
 
 c3 发布的是**带签名的单二进制**(macOS / Linux / Windows)。可信度链条:
 
-- **构建**:每个目标在其原生 OS 上 `bun build --compile` 出二进制 → 打包 tar.gz/zip + `manifest.json`。
-- **签名**:用离线持有的 **minisign 私钥**对每个产物生成 `.sha256` 与 `.minisig`,并出 `SHA256SUMS`。
+- **构建**:`bun build --compile` 出二进制 → 打包 tar.gz/zip + `manifest.json`。本地 `pnpm release` 用 Bun **交叉编译**在一台 macOS/Linux 机器上一次产出三目标(`linux-x64` / `macos-arm64` / `windows-x64`,无需 Docker、无需 Windows 机器);CI 则各目标跑在其原生 OS runner 上。
+- **签名**:用 **minisign 私钥**对每个产物生成 `.sha256` 与 `.minisig`,并出 `SHA256SUMS` / `SHA256SUMS.minisig` 与可分发公钥 `minisign.pub`。
 - **校验**:用户用 `c3 verify`(二进制内嵌公钥,离线)或官方 `minisign -V` 校验下载。
 - **分发**:签名产物 POST 到**自建 license-server**(`/v1/artifact/upload`),按 `<version>/<batch>/<filename>` 落盘。**不再**走 GitHub Release / SLSA provenance(见近期提交 `a7c9db2`)。
 
-两条发布路径:**CI(推荐,默认)** 与 **本地手动**。两者调用同一批 `scripts/release/*` 脚本,逻辑同源。
+两条发布路径:**本地手动**(`pnpm release`,在一台机器上交叉编译三目标 → 签名 → 上传)与 **CI**(各目标原生 OS)。两者调用同一批 `scripts/release/*` 脚本,逻辑同源。
 
 ---
 
 ## 前置条件(Secrets / 密钥)
 
-| 名称                       | 用途                             | 配置位置                                                                 |
-| -------------------------- | -------------------------------- | ------------------------------------------------------------------------ |
-| `C3_MINISIGN_SECRET_KEY`   | 签名私钥(base64 `keyId\|\|seed`) | GitHub Secret(CI)/ 环境变量或 `dist/c3-minisign-secret.key`(本地)        |
-| `C3_ARTIFACT_SERVER_URL`   | license-server 上传地址          | GitHub Secret(`default` 环境)                                            |
-| `C3_ARTIFACT_UPLOAD_TOKEN` | 上传鉴权 bearer token            | GitHub Secret(`default` 环境)+ 服务端 `C3_LS_ARTIFACT_UPLOAD_TOKEN` 对齐 |
+| 名称       | 用途                               | 本地解析优先级 / 配置位置                                                                                                           |
+| ---------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 签名私钥   | 对产物签名(base64 `keyId\|\|seed`) | `C3_MINISIGN_SECRET_KEY[_FILE]` > `--key-file` > `dist/c3-minisign-secret.key`;CI 用 GitHub Secret                                  |
+| 上传地址   | license-server 上传 URL            | `--server` > `C3_ARTIFACT_SERVER_URL` > 默认 **`https://c3.sequencestream.com/`**                                                   |
+| 上传 token | 上传鉴权 bearer token              | `--token` > `C3_ARTIFACT_UPLOAD_TOKEN` > `dist/.upload_license_server_auth_token.key`;须与服务端 `C3_LS_ARTIFACT_UPLOAD_TOKEN` 对齐 |
 
+> `dist/` 全目录 gitignored,私钥文件与 token 文件放这里不会进 git。缺私钥 → 仍出 `.sha256` 但跳过 `.minisig`;缺 token → 跳过上传(no-op)。
 > CI 的 build/preflight job 都声明 `environment: default`,才能读到环境级 secrets(见提交 `dc80c6a`)。
 
 ---
 
-## 路径 A:CI 发布(推荐)
+## 路径 A:CI 发布
 
-CI workflow:`.github/workflows/release.yml`。
+CI workflow:`.github/workflows/release.yml`。各目标在其原生 OS runner 上构建(不交叉编译)。
 
 ### 触发方式
 
@@ -58,30 +59,66 @@ minisign -Vm c3-vX.Y.Z-macos-arm64 -P RWQzBKv0lANWnVsOQNO6o7YjLi0MbFGbI0K0fUTIaX
 
 ---
 
-## 路径 B:本地手动发布
+## 路径 B:本地手动发布(`pnpm release`)
 
-需本机持有签名私钥。私钥来源(优先级):环境变量 `C3_MINISIGN_SECRET_KEY[_FILE]` > `--key-file` > 默认 `dist/c3-minisign-secret.key`。
+一台 macOS/Linux 机器即可完成「交叉编译三目标 → 签名 → 汇集 → 上传」。需装 Bun,并本机持有签名私钥(见前置条件)。
+
+### `pnpm release` —— 交互式一键发布
 
 ```bash
-# 1. 构建全部目标(或 --targets=… 子集);默认 harden=basic
-pnpm release:build
-
-# 2a. 一键编排:build → notes → 签名 → 发布(等价串联)
-pnpm release                      # 完整流程
-pnpm release --no-publish         # 只 build + sign + notes,不发布
-pnpm release --dry-run            # 排练,不执行任何不可逆操作
-
-# 2b. 或分步执行
-pnpm release:sign                 # 对 dist/ 已构建产物签名(读私钥)
-pnpm release:verify-dist          # 校验 manifest ↔ SHA256SUMS ↔ 磁盘一致
-
-# 3. 推送签名产物到自建 license-server
-C3_ARTIFACT_SERVER_URL=https://… C3_ARTIFACT_UPLOAD_TOKEN=… \
-  node scripts/publish/upload-to-server.mjs --dist=dist
+pnpm release
 ```
 
-> `upload-to-server.mjs` 在 URL 或 token 缺失时 no-op(exit 0),本地未配置也无害。
-> `scripts/publish/publish-binaries.mjs`(`pnpm publish:binaries`)是另一条「下载 CI artifacts → 本地签名 → 切 GitHub Release」的旧路径;当前分发已转向 license-server,新流程优先用上面的 upload-to-server。
+依次执行:
+
+1. **提示版本号**(默认给出推导值,回车采用;或 `--version=0.8.0` 非交互指定)。
+2. **源码闸门 pregate**(`typecheck → lint → test → …`,红了不进编译;`--skip-gate` 跳过)。
+3. **交叉编译三目标** `linux-x64` / `macos-arm64` / `windows-x64`(Bun `--target`,一台机器全出;Windows 直接产出 `c3.exe`)。默认 `--harden=standard`(**混淆**:字符串数组 + 标识符重命名),可 `--harden=basic`(仅 minify)/ `--harden=none`(调试)。
+4. **签名**:出每包的 `.sha256` / `.minisig`、`SHA256SUMS` / `SHA256SUMS.minisig`,并派生可分发公钥 `minisign.pub`(与二进制内嵌公钥同源,`c3 verify` 与 `minisign -V` 均可校验)。找不到私钥则只出 sha256 并告警。
+5. **汇集**到 `dist/release-artifacts/v<版本>/`(即 `publish:server` / `publish:binaries` 读取的扁平布局)。
+6. **询问是否上传** license-server(交互 y/N,默认 N);token 存在且确认后才上传。
+
+常用参数:
+
+```bash
+pnpm release --version=0.8.0            # 非交互指定版本(无 TTY 时必需)
+pnpm release --harden=basic            # 只 minify,不混淆
+pnpm release --skip-upload             # 只构建+签名+汇集,不上传
+pnpm release --targets=windows-x64     # 只构建某目标(覆盖默认三目标)
+pnpm release --skip-gate               # 跳过源码闸门(调试)
+pnpm release --dry-run                 # 排练:跑闸门 + 打印计划,不构建不上传
+pnpm release --server=… --token=…      # 覆盖上传地址 / token
+```
+
+> 上传地址默认 `https://c3.sequencestream.com/`;token 默认取 `dist/.upload_license_server_auth_token.key`(见前置条件)。设好这两项后 `pnpm release` 末尾即可一路上传到生产 license-server。
+
+### `pnpm publish:server` —— 单独上传已构建产物
+
+已经 `pnpm release`(或 `--skip-upload`)产出了 `dist/release-artifacts/v<版本>/`,想稍后单独推送时用:
+
+```bash
+pnpm publish:server --dist=dist/release-artifacts/v0.8.0 --version=v0.8.0
+pnpm publish:server --dist=dist/release-artifacts/v0.8.0 --version=v0.8.0 --dry-run   # 只打印 PUT 清单,不上传
+```
+
+- **上传地址**:`--server` > `C3_ARTIFACT_SERVER_URL` > 默认 `https://c3.sequencestream.com/`。
+- **token**:`--token` > `C3_ARTIFACT_UPLOAD_TOKEN` > `dist/.upload_license_server_auth_token.key`;都没有则 no-op(exit 0),本地未配置也无害。
+- **批次** `--batch=20260701-1354Z`(默认取当前 UTC 时间戳);同一次发布的所有文件共用一个批次,落到 `<版本>/<批次>/` 同一子目录。
+- 上传集 = 每个包 + `.sha256` / `.minisig` + `SHA256SUMS`(`.minisig`)+ `minisign.pub` + `manifest.json`,逐个 POST 到 `/v1/artifact/upload`,带 `X-Artifact-Sha256` 头供服务端校验。
+
+### `pnpm publish:binaries` —— 发布到公开 GitHub Release(旧路径)
+
+**与 `publish:server` 的区别:分发目标不同。** `publish:server` 推到**自建 license-server**;`publish:binaries` 是把签名产物切成一个**公开的 GitHub Release**(默认仓库 `sequencestream/c3`)。设计动机:源码仓库私有,但签名二进制要公开下载,于是在持有私钥的可信机器上本地签名后发到公开镜像仓库。
+
+```bash
+pnpm publish:binaries [<版本>]                     # 默认自动选 dist/release-artifacts/ 下最高版本
+pnpm publish:binaries --dry-run                    # 排练:打印完整计划(版本/key id/目标/create-vs-clobber),不 merge/sign/commit/gh
+pnpm publish:binaries --repo=owner/name --clobber  # 覆盖目标仓库 / 对已存在 tag 重传资产
+```
+
+它读取 `dist/release-artifacts/<版本>/`(扁平或按目标分子目录两种布局都认),然后:**签名**每个包(私钥同 `release:sign`)+ 写 `minisign.pub` + 自校验一条签名 → **verify-dist** 一致性校验 → 若公开仓库空则先 bootstrap 一次 README commit → **`gh release create`**(带全部产物 + sidecar + `SHA256SUMS`(`.minisig`)+ `minisign.pub`)。需要已登录且有推送权限的 `gh` CLI。其它开关:`--allow-unsigned`(不推荐,不带 `.minisig`)、`--yes`(跳过 bootstrap 确认)、`--key-file=<path>`。
+
+> `pnpm release:github` 是**旧的 GitHub 发布编排器**(gate → build → notes → publish,一键切源码仓库的 GitHub Release)。当前分发以 **license-server 为准**,`publish:binaries` / `release:github` 两条 GitHub 路径都属保留备用。
 
 ---
 
@@ -113,13 +150,14 @@ node scripts/release/keygen.mjs          # 或 pnpm release:keygen
 
 ## 相关脚本速查
 
-| 命令                                   | 作用                                                                            |
-| -------------------------------------- | ------------------------------------------------------------------------------- |
-| `pnpm release`                         | 顶层编排:build → notes → publish                                                |
-| `pnpm release:build`                   | 构建 + 打包 + manifest(`--targets` / `--harden` / `--skip-web` / `--skip-pack`) |
-| `pnpm release:sign`                    | 对 dist/ 产物签名(出 `.sha256` / `.minisig` / `SHA256SUMS`)                     |
-| `pnpm release:smoke`                   | 冒烟:`--version` + headless 启动                                                |
-| `pnpm release:verify-dist`             | postgate:manifest ↔ SHA256SUMS ↔ 磁盘一致性                                     |
-| `pnpm release:keygen`                  | 生成 minisign 密钥对                                                            |
-| `pnpm publish:binaries`                | (旧路径)本地签名下载的 CI artifacts 并切 GitHub Release                         |
-| `scripts/publish/upload-to-server.mjs` | 推送签名产物到自建 license-server                                               |
+| 命令                       | 作用                                                                                                       |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `pnpm release`             | **交互式本地发布**:提示版本 → 交叉编译三目标 → 签名 → 汇集 `dist/release-artifacts/v<版本>/` → 询问上传    |
+| `pnpm publish:server`      | 把已构建的 `--dist=<目录>` 推送到自建 license-server(默认地址 c3.sequencestream.com,token 取自 dist/ 文件) |
+| `pnpm release:build`       | 仅构建 + 打包 + manifest(`--targets` / `--harden` / `--skip-web` / `--skip-pack`)                          |
+| `pnpm release:sign`        | 对 dist/ 产物签名(出 `.sha256` / `.minisig` / `SHA256SUMS`)                                                |
+| `pnpm release:smoke`       | 冒烟:`--version` + headless 启动                                                                           |
+| `pnpm release:verify-dist` | postgate:manifest ↔ SHA256SUMS ↔ 磁盘一致性                                                                |
+| `pnpm release:keygen`      | 生成 minisign 密钥对                                                                                       |
+| `pnpm release:github`      | (旧路径)GitHub 发布编排:gate → build → notes → 切 GitHub Release                                           |
+| `pnpm publish:binaries`    | (旧路径)本地签名下载的 CI artifacts 并切 GitHub Release                                                    |

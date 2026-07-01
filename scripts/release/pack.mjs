@@ -13,14 +13,16 @@
 // in-package name `c3`, so `c3 verify c3` works after untar with no further
 // plumbing.
 //
-// Cross-platform: the archive tool is the shell `tar` / `zip` (always present
-// on the native OS runner that built the artifact — see `.github/workflows/
-// release.yml`'s native matrix). We intentionally don't pull a tar/zip
+// Cross-platform: the archive tool is the shell `tar` (POSIX targets) or `zip`.
+// The Windows `.zip` is host-branched so it works BOTH on a native Windows runner
+// (PowerShell `Compress-Archive`) and when cross-building on macOS/Linux (the POSIX
+// `zip` CLI) — since Bun cross-compiles `c3.exe` from one host, `pnpm release` packs
+// all three targets on a single machine. We intentionally don't pull a tar/zip
 // dependency for the few KB this saves.
 //
 // Pure Node. CLI: node scripts/release/pack.mjs --target=macos-arm64 --version=0.2.0 [--dist=dist]
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -67,22 +69,38 @@ function tarGz(srcDir, outFile) {
     throw new Error(`[pack] tar -czf failed (${res.status}): ${(res.stderr || '').trim()}`)
 }
 
-/** Windows `Compress-Archive` over a single file — PowerShell 5+ has it builtin. */
-function zipWindows(srcDir, outFile) {
-  // Compress-Archive takes a source path + destination. We pass the directory
-  // so its CONTENTS land at the zip root (no enclosing folder).
-  const res = spawnSync(
-    'powershell',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `Compress-Archive -Path '${srcDir}\\*' -DestinationPath '${outFile}' -Force`,
-    ],
-    { encoding: 'utf-8', shell: true },
-  )
+/** Zip the directory CONTENTS at the archive root (no enclosing folder), so
+ *  `unzip … && ./c3.exe --version` works out of the box. Host-branched so a
+ *  Windows `.zip` can be produced BOTH on a native Windows runner (PowerShell
+ *  `Compress-Archive`) and when cross-building on macOS/Linux (the POSIX `zip`
+ *  CLI, which Bun makes possible by cross-compiling `c3.exe` from one host). */
+function zipDir(srcDir, outFile) {
+  if (process.platform === 'win32') {
+    // Compress-Archive takes a source path + destination; `\*` packs the contents.
+    const res = spawnSync(
+      'powershell',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Compress-Archive -Path '${srcDir}\\*' -DestinationPath '${outFile}' -Force`,
+      ],
+      { encoding: 'utf-8', shell: true },
+    )
+    if (res.status !== 0)
+      throw new Error(
+        `[pack] Compress-Archive failed (${res.status}): ${(res.stderr || '').trim()}`,
+      )
+    return
+  }
+  // POSIX `zip`: append-mode by default, so drop any stale archive first, then
+  // `-r .` from inside srcDir to keep files at the zip root (no enclosing dir).
+  if (existsSync(outFile)) rmSync(outFile)
+  const res = spawnSync('zip', ['-r', '-X', '-q', outFile, '.'], { cwd: srcDir, encoding: 'utf-8' })
   if (res.status !== 0)
-    throw new Error(`[pack] Compress-Archive failed (${res.status}): ${(res.stderr || '').trim()}`)
+    throw new Error(
+      `[pack] zip failed (${res.status}): ${(res.stderr || '').trim() || 'is the `zip` CLI installed?'}`,
+    )
 }
 
 /**
@@ -127,7 +145,7 @@ export function packOne({
   const srcDir = join(distDir, target)
 
   if (target.startsWith('windows')) {
-    zipWindows(srcDir, pkgPath)
+    zipDir(srcDir, pkgPath)
   } else {
     tarGz(srcDir, pkgPath)
   }

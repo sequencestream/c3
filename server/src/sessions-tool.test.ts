@@ -27,6 +27,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', async (orig) => {
 })
 
 import { resetDbForTests } from './kernel/infra/db.js'
+import { resetSettingsCacheForTests } from './kernel/config/index.js'
 import {
   resetStoreForTests,
   recordToolSession,
@@ -45,9 +46,13 @@ let dir: string
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'c3-tool-'))
   process.env.C3_DB_PATH = join(dir, 'c3.db')
+  // Isolate config to the temp dir so the tool-session filter sees the default
+  // `showToolSessions=false`, not whatever the developer's real ~/.c3 carries.
+  process.env.C3_DIR = dir
   resetDbForTests()
   resetStoreForTests()
   resetSessionMetadataStoreForTests()
+  resetSettingsCacheForTests()
   listSessionsMock.mockReset()
   deleteSessionMock.mockReset()
   deleteSessionMock.mockResolvedValue(undefined)
@@ -56,7 +61,9 @@ beforeEach(() => {
 afterEach(() => {
   resetDbForTests()
   resetSessionMetadataStoreForTests()
+  resetSettingsCacheForTests()
   delete process.env.C3_DB_PATH
+  delete process.env.C3_DIR
   rmSync(dir, { recursive: true, force: true })
 })
 

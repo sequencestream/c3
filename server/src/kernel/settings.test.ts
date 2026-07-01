@@ -1692,6 +1692,121 @@ describe('session process proxy config — normalizeProxyConfig + getProxyConfig
     expect(cfg.httpProxy).toBe('http://new:3128')
   })
 
+  // ---- URL validation (sanitizeProxyUrl) ----
+
+  it('keeps valid http:// proxy URL', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: { enabled: true, httpProxy: 'http://proxy.local:3128', httpsProxy: '' },
+    } as unknown as SystemSettings)
+    expect(getProxyConfig().httpProxy).toBe('http://proxy.local:3128')
+  })
+
+  it('keeps valid https:// proxy URL', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: { enabled: true, httpProxy: '', httpsProxy: 'https://proxy.local:3128' },
+    } as unknown as SystemSettings)
+    expect(getProxyConfig().httpsProxy).toBe('https://proxy.local:3128')
+  })
+
+  it('keeps valid socks5:// proxy URL', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: { enabled: true, httpProxy: 'socks5://proxy.local:1080', httpsProxy: '' },
+    } as unknown as SystemSettings)
+    expect(getProxyConfig().httpProxy).toBe('socks5://proxy.local:1080')
+  })
+
+  it('rejects plain text (not a URL) as empty string', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: { enabled: true, httpProxy: 'not-a-url', httpsProxy: 'also-not-a-url' },
+    } as unknown as SystemSettings)
+    const cfg = getProxyConfig()
+    expect(cfg.httpProxy).toBe('')
+    expect(cfg.httpsProxy).toBe('')
+  })
+
+  it('rejects URL missing scheme (e.g. proxy.local:3128) as empty string', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: { enabled: true, httpProxy: 'proxy.local:3128', httpsProxy: '' },
+    } as unknown as SystemSettings)
+    // new URL('proxy.local:3128') parses with protocol 'proxy.local:' — not in whitelist
+    expect(getProxyConfig().httpProxy).toBe('')
+  })
+
+  it('rejects non-whitelisted protocols (ftp, file, javascript, data)', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: {
+        enabled: true,
+        httpProxy: 'ftp://proxy.local:3128',
+        httpsProxy: 'file:///etc/passwd',
+      },
+    } as unknown as SystemSettings)
+    const cfg = getProxyConfig()
+    expect(cfg.httpProxy).toBe('')
+    expect(cfg.httpsProxy).toBe('')
+  })
+
+  it('rejects javascript: and data: protocol URLs', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: {
+        enabled: true,
+        httpProxy: 'javascript:alert(1)',
+        httpsProxy: 'data:text/html,<script>alert(1)</script>',
+      },
+    } as unknown as SystemSettings)
+    const cfg = getProxyConfig()
+    expect(cfg.httpProxy).toBe('')
+    expect(cfg.httpsProxy).toBe('')
+  })
+
+  it('rejects empty protocol string', () => {
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      proxy: { enabled: true, httpProxy: '', httpsProxy: '' },
+    } as unknown as SystemSettings)
+    const cfg = getProxyConfig()
+    expect(cfg.httpProxy).toBe('')
+    expect(cfg.httpsProxy).toBe('')
+  })
+
+  it('end-to-end fail-soft: invalid httpProxy is not injected even when enabled', () => {
+    saveSettings({
+      agents: [TEST_AGENT()],
+      defaultAgentId: 'proxy-test-agent',
+      proxy: { enabled: true, httpProxy: 'not-a-url', httpsProxy: '' },
+    } as unknown as SystemSettings)
+    const env = launchForAgent(TEST_AGENT()).envOverrides ?? {}
+    expect(env['HTTP_PROXY']).toBeUndefined()
+    expect(env['http_proxy']).toBeUndefined()
+  })
+
+  it('mixed: valid httpProxy + invalid httpsProxy — only valid one is injected', () => {
+    saveSettings({
+      agents: [TEST_AGENT()],
+      defaultAgentId: 'proxy-test-agent',
+      proxy: { enabled: true, httpProxy: 'http://h:3128', httpsProxy: 'ftp://bad' },
+    } as unknown as SystemSettings)
+    const env = launchForAgent(TEST_AGENT()).envOverrides ?? {}
+    expect(env['HTTP_PROXY']).toBe('http://h:3128')
+    expect(env['http_proxy']).toBe('http://h:3128')
+    expect(env['HTTPS_PROXY']).toBeUndefined()
+    expect(env['https_proxy']).toBeUndefined()
+  })
+
   // ---- launchForAgent proxy env injection ----
 
   it('launchForAgent does NOT inject *_PROXY when proxy is disabled (even with URLs saved)', () => {

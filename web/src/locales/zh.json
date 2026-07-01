@@ -393,6 +393,21 @@
         "label": "显示工具会话"
       }
     },
+    "proxy": {
+      "title": {
+        "label": "代理"
+      },
+      "toggle": {
+        "label": "为会话进程启用代理"
+      },
+      "hint": "启用后，以下代理 URL 会以 HTTP_PROXY/HTTPS_PROXY 环境变量的形式注入到每个新会话子进程中。已在运行中的会话不受影响。服务端主进程自身不使用这些设置。",
+      "httpProxy": {
+        "label": "HTTP 代理 URL"
+      },
+      "httpsProxy": {
+        "label": "HTTPS 代理 URL"
+      }
+    },
     "diagnostics": {
       "title": {
         "label": "Agent 宿主 CLI"

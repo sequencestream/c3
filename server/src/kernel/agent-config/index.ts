@@ -46,6 +46,7 @@ export interface LaunchOverrides {
 import {
   bindSessionAgent,
   changeSessionAgentFact,
+  getProxyConfig,
   getSessionAgentId,
   loadSettings,
   saveSettings,
@@ -253,6 +254,21 @@ export function launchForAgent(agent: AgentConfig): LaunchOverrides {
       // substitute (008), but it is NOT stored on the agent: the codex driver
       // derives it from the session `defaultMode` via the neutral grid (2026-06-06-008).
       break
+    }
+  }
+
+  // Session subprocess proxy env vars: only inject when enabled AND the URL is
+  // non-empty. Both uppercase and lowercase variants are set per convention so
+  // tools that prefer one case over the other work correctly.
+  const proxyCfg = getProxyConfig()
+  if (proxyCfg.enabled) {
+    if (proxyCfg.httpProxy) {
+      env['HTTP_PROXY'] = proxyCfg.httpProxy
+      env['http_proxy'] = proxyCfg.httpProxy
+    }
+    if (proxyCfg.httpsProxy) {
+      env['HTTPS_PROXY'] = proxyCfg.httpsProxy
+      env['https_proxy'] = proxyCfg.httpsProxy
     }
   }
 

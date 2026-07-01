@@ -59,9 +59,10 @@ const META_KEY_RE = /^__[A-Za-z][A-Za-z0-9_]*__$/
 /** Strip top-level `__*__` metadata keys so vue-i18n only sees translations.
  *  Returns the same MessageSchema type the input had — the meta key is structurally
  *  optional and never read by vue-i18n, so casting to MessageSchema is sound. */
-function stripLocaleMeta(obj: MessageSchema): MessageSchema {
+function stripLocaleMeta(obj: unknown): MessageSchema {
   const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(obj)) {
+  if (!obj || typeof obj !== 'object') return out as MessageSchema
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
     if (META_KEY_RE.test(k)) continue
     out[k] = v
   }

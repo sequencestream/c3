@@ -50,6 +50,7 @@ const mockSettings: SystemSettings = {
 vi.mock('../config/index.js', () => ({
   loadSettings: vi.fn(() => mockSettings),
   getSessionAgentId: vi.fn(() => null),
+  getProxyConfig: vi.fn(() => ({ enabled: false, httpProxy: '', httpsProxy: '' })),
   bindSessionAgent: vi.fn(),
   changeSessionAgentFact: vi.fn(() => true),
   setPendingIntent: vi.fn(),

@@ -100,6 +100,33 @@ export function getServerTimezone(): string {
   }
 }
 
+/**
+ * Normalize a raw proxy config block into its canonical shape.
+ * - `enabled` defaults to `false` (strict bool: only `=== true` is on).
+ * - `httpProxy`/`httpsProxy` are trimmed; empty/non-string ⇒ `''`.
+ * - An absent block (undefined) yields the same defaults as a present empty block.
+ */
+function normalizeProxyConfig(raw: unknown): {
+  enabled: boolean
+  httpProxy: string
+  httpsProxy: string
+} {
+  const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const enabled = obj.enabled === true
+  const httpProxy = typeof obj.httpProxy === 'string' ? obj.httpProxy.trim() : ''
+  const httpsProxy = typeof obj.httpsProxy === 'string' ? obj.httpsProxy.trim() : ''
+  return { enabled, httpProxy, httpsProxy }
+}
+
+/**
+ * The session subprocess proxy configuration — the single source of truth for
+ * proxy env‑var injection. Callers (e.g. `launchForAgent`) must read from here
+ * rather than parsing settings directly.
+ */
+export function getProxyConfig(): { enabled: boolean; httpProxy: string; httpsProxy: string } {
+  return normalizeProxyConfig(loadSettings().proxy)
+}
+
 /** True when `tz` is an IANA time-zone name the runtime's `Intl` accepts. */
 export function isValidTimeZone(tz: unknown): tz is string {
   if (typeof tz !== 'string' || !tz.trim()) return false
@@ -380,6 +407,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     showToolSessions,
     degradationChain,
     socketAutoResume,
+    proxy: normalizeProxyConfig(raw?.proxy),
     // skillRepos intentionally omitted — deprecated, migrated to WorkspaceSetting
     ...(sandboxes !== undefined ? { sandboxes } : {}),
     ...(auth !== undefined ? { auth } : {}),
@@ -756,7 +784,7 @@ function readSettingsFromDisk(): Partial<SystemSettings> | undefined {
  *  - `projectConfigs` — per-project map; `undefined` in `next` ⇒ keep disk wholesale;
  *    present ⇒ shallow-merged per key so another process's newly-added project
  *    survives while `next`'s explicit entries win.
- *  - `degradationChain` / `socketAutoResume` — `undefined` ⇒ keep disk; present ⇒ use `next`.
+ *  - `degradationChain` / `socketAutoResume` / `proxy` — `undefined` ⇒ keep disk; present ⇒ use `next`.
  */
 function mergeSettingsOverDisk(
   disk: Partial<SystemSettings> | undefined,
@@ -771,11 +799,13 @@ function mergeSettingsOverDisk(
     next.degradationChain !== undefined ? next.degradationChain : d.degradationChain
   const socketAutoResume =
     next.socketAutoResume !== undefined ? next.socketAutoResume : d.socketAutoResume
+  const proxy = next.proxy !== undefined ? next.proxy : d.proxy
   return {
     ...next,
     ...(projectConfigs !== undefined ? { projectConfigs } : {}),
     ...(degradationChain !== undefined ? { degradationChain } : {}),
     ...(socketAutoResume !== undefined ? { socketAutoResume } : {}),
+    ...(proxy !== undefined ? { proxy } : {}),
   }
 }
 

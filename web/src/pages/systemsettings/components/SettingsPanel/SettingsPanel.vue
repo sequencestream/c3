@@ -121,6 +121,7 @@ const draft = ref<SystemSettings>({
   uiLang: 'en',
   timezone: BROWSER_TZ,
   showToolSessions: false,
+  proxy: { enabled: false, httpProxy: '', httpsProxy: '' },
 })
 
 // 系统时区可选项：全量 IANA 列表（Intl.supportedValuesOf 受支持时），否则退化为
@@ -174,7 +175,17 @@ watch(
       uiLang: settings.uiLang ?? 'en',
       timezone: settings.timezone ?? BROWSER_TZ,
       showToolSessions: settings.showToolSessions ?? false,
+      proxy: settings.proxy ?? { enabled: false, httpProxy: '', httpsProxy: '' },
     }
+    // Mirror the proxy block into the template-bound ref.
+    const p = full.proxy
+    proxyCfg.value = p
+      ? {
+          enabled: p.enabled ?? false,
+          httpProxy: p.httpProxy ?? '',
+          httpsProxy: p.httpsProxy ?? '',
+        }
+      : { enabled: false, httpProxy: '', httpsProxy: '' }
   },
   { immediate: true },
 )
@@ -380,6 +391,8 @@ function save(): void {
   draft.value.agents.forEach((a, i) => {
     a.order_seq = i
   })
+  // Sync the proxy UI ref back into the draft before save.
+  draft.value.proxy = { ...proxyCfg.value }
   // Derive the auth master switch from the chosen provider: `none`/`oauth` ⇒ off,
   // `basic` ⇒ on only once an admin is configured. The dropdown is the single
   // source of intent; this is where it commits to `enabled` (the server's
@@ -420,6 +433,19 @@ function removeSandbox(index: number) {
   const list = draft.value.sandboxes
   if (list) draft.value.sandboxes = list.filter((_, i) => i !== index)
 }
+
+/**
+ * The draft always carries `proxy` (initialized in the watch reseed + the
+ * initial ref), but TypeScript cannot prove it through the optional
+ * `SystemSettings.proxy?` type. This ref mirrors `draft.value.proxy` for
+ * template bindings; it is seeded on every watch run and saved back through
+ * the `save()` function which emits the full `draft.value`.
+ */
+const proxyCfg = ref<{ enabled: boolean; httpProxy: string; httpsProxy: string }>({
+  enabled: false,
+  httpProxy: '',
+  httpsProxy: '',
+})
 
 // ---- Authentication (ADR-0023) ------------------------------------------
 // The provider dropdown is the single auth on/off control (the old standalone
@@ -1257,6 +1283,43 @@ function selectAdmin(username: string) {
         <label class="consensus-toggle">
           <input v-model="draft.showToolSessions" type="checkbox" />
           {{ t('settings.display.showToolSessions.label') }}
+        </label>
+      </section>
+
+      <!-- Session subprocess proxy (2026-07-01-003) -->
+      <section class="settings-section" data-testid="settings-proxy">
+        <p class="settings-section-title">{{ t('settings.proxy.title.label') }}</p>
+        <label class="consensus-toggle">
+          <input
+            v-model="proxyCfg.enabled"
+            type="checkbox"
+            role="switch"
+            data-testid="settings-proxy-enabled"
+          />
+          {{ t('settings.proxy.toggle.label') }}
+        </label>
+        <p class="settings-hint">{{ t('settings.proxy.hint') }}</p>
+        <label class="auth-field">
+          <span class="auth-label">{{ t('settings.proxy.httpProxy.label') }}</span>
+          <input
+            v-model="proxyCfg.httpProxy"
+            class="agent-field"
+            type="text"
+            :disabled="!proxyCfg.enabled"
+            :placeholder="proxyCfg.enabled ? 'http://proxy.local:3128' : ''"
+            data-testid="settings-proxy-http"
+          />
+        </label>
+        <label class="auth-field">
+          <span class="auth-label">{{ t('settings.proxy.httpsProxy.label') }}</span>
+          <input
+            v-model="proxyCfg.httpsProxy"
+            class="agent-field"
+            type="text"
+            :disabled="!proxyCfg.enabled"
+            :placeholder="proxyCfg.enabled ? 'http://proxy.local:3128' : ''"
+            data-testid="settings-proxy-https"
+          />
         </label>
       </section>
     </div>

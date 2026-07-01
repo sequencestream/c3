@@ -1088,6 +1088,24 @@ export interface SystemSettings {
    */
   socketAutoResume?: boolean
   /**
+   * Session subprocess proxy configuration. When `enabled` is true, the proxy
+   * URLs (when non-empty) are injected as `HTTP_PROXY`/`http_proxy` and
+   * `HTTPS_PROXY`/`https_proxy` into every new session subprocess's
+   * environment. When `enabled` is false (the default), no proxy env vars are
+   * injected regardless of the saved URL values — the URLs are retained so the
+   * user can toggle the switch without re-entering them. Only affects newly
+   * launched session processes; running sessions are not retroactively updated
+   * (callers must consult {@link getProxyConfig}). `httpProxy` is the HTTP
+   * proxy URL (e.g. `http://proxy.local:3128`); `httpsProxy` is the HTTPS proxy
+   * URL. Does NOT affect the server process's own outbound requests. All three
+   * fields are optional for forward compatibility (absent ≡ disabled).
+   */
+  proxy?: {
+    enabled?: boolean
+    httpProxy?: string
+    httpsProxy?: string
+  }
+  /**
    * System-level sandbox definitions. Each definition is a "template" that
    * project-level configs reference by name. Admin-only CRUD via the System
    * Settings panel. Absent or empty ⇒ no sandbox definitions exist; the

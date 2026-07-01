@@ -285,7 +285,13 @@ export function installMessageHandler(ctx: AppCtx): void {
           sessionKind === ctx.activeSessionKind.value
         ) {
           ctx.flags.pendingConsoleBind = false
-          if (activeTab.value === 'console') ctx.bindConsoleSession()
+          // Suppress auto-bind when a post-Start-Dev pending jump is staged:
+          // the jump's consumePendingWorkSessionSelect will select the right
+          // session once its row lands. Without this gate, the kind-switch
+          // would grab the first historical work session instead of waiting.
+          if (activeTab.value === 'console' && ctx.requestedWorkSessionId.value === null) {
+            ctx.bindConsoleSession()
+          }
         }
         // The post-Start-Dev jump may be waiting for its target session to land.
         ctx.consumePendingWorkSessionSelect()

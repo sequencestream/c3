@@ -183,6 +183,41 @@ describe('post-Start-Dev jump wiring', () => {
     expect(h.selectSession).not.toHaveBeenCalledWith(WS, 'spec-old')
   })
 
+  it('from spec kind, waits for lastWorkSessionId + row before selecting the target', () => {
+    const h = makeCtx({
+      intents: [intent('i-1', null)],
+      sessions: [session('spec-old')],
+      workSessions: [],
+      activeKind: 'spec',
+    })
+    h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
+    vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
+
+    // Kind switched to work, but no target yet — should not select anything.
+    expect(h.selectSessionKind).toHaveBeenCalledWith('work')
+    expect(h.activeSessionKind.value).toBe('work')
+    expect(h.enterConsole).toHaveBeenCalled()
+    expect(h.selectSession).not.toHaveBeenCalled()
+
+    // lastWorkSessionId arrives via intent broadcast.
+    h.intents.value = { [WS]: [intent('i-1', 'dev-1')] }
+    h.ctx.consumePendingWorkSessionSelect(true)
+    // Row still absent — still no select.
+    expect(h.selectSession).not.toHaveBeenCalled()
+    expect(h.requestedWorkSessionId.value).toEqual({
+      workspacePath: WS,
+      intentId: 'i-1',
+      sessionId: 'dev-1',
+    })
+
+    // Session row lands — now selects the target.
+    h.currentSessions.value = [session('dev-1')]
+    h.ctx.consumePendingWorkSessionSelect()
+    expect(h.selectSession).toHaveBeenCalledWith(WS, 'dev-1')
+    expect(h.selectSession).not.toHaveBeenCalledWith(WS, 'spec-old')
+    expect(h.requestedWorkSessionId.value).toBeNull()
+  })
+
   it('consumePendingWorkSessionSelect keeps waiting while the target is absent', () => {
     const h = makeCtx({ sessions: [session('other')] })
     h.requestedWorkSessionId.value = { workspacePath: WS, intentId: 'i-1', sessionId: 'dev-1' }

@@ -137,6 +137,21 @@ describe('resolvePendingWorkSessionSelect — one-shot select once the target la
       }),
     ).toEqual({ request, selectSessionId: null })
   })
+  it('selects the staged target session even when historical sessions exist', () => {
+    const historical = [session('old-1'), session('old-2')]
+    const target = session('dev-1')
+    expect(
+      resolvePendingWorkSessionSelect(
+        { workspacePath: '/ws', intentId: 'intent-1', sessionId: 'dev-1' },
+        {
+          workspacePath: '/ws',
+          sessionKind: 'work',
+          intents: [intent('intent-1', 'dev-1')],
+          sessions: [...historical, target],
+        },
+      ),
+    ).toEqual({ request: null, selectSessionId: 'dev-1' })
+  })
 })
 
 describe('WORK_SESSION_JUMP_DELAY_MS — deliberate ready buffer', () => {

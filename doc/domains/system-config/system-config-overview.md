@@ -28,6 +28,10 @@ proxy settings).
   file lock, with write-time disk re-read and merge-not-overwrite so `save_settings` never wipes
   per-project config. See [persistence](../../shared/data-conventions/persistence.md) (唯一写入路径 + 双层锁，2026-06-08-003).
 - Separate from the session-registry's `state.json` (`${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`).
+- `vendorCliVersions.claude` / `vendorCliVersions.codex` are optional system-level pins for
+  c3-managed vendor CLIs. Empty or absent means automatic latest-compatible selection under
+  `~/.c3/vendor/<vendor>/<version>/bin/<binary>`. Explicit env overrides still win; host PATH is
+  only a degraded fallback after managed resolution or sync fails.
 - **Migration (2026-06-07-017):** `defaultMode` is now a per-vendor map (vendor id → mode token)
   instead of a single mode token. The old single-string format is detected during workspace-setting
   normalization and automatically distributed to each vendor key (the value is used as-is for every

@@ -1,20 +1,13 @@
 /**
- * Vendor adapter registry (ADR-0012) — turns the ProcessLauncher's host-binary
- * probe into the **available agent types**. This is the first capability gate:
- * for each *implemented* vendor we ask the launcher `resolve(vendor)`; only when
- * the host CLI is present do we construct the {@link VendorAdapter} at all. A
- * missing host binary ⇒ the vendor lands in `missing` (with install guidance) and
- * its adapter is never built, so its {@link AdapterCapabilities} never come into
- * play. "Probe before construct" keeps the gate strictly ahead of capabilities.
- *
- * `claude` registers via a no-arg factory (ADR-0011 reference); `codex` likewise
- * (read-only advisor seat, Phase 0 008 NO-GO, 2026-06-06-005) — like Claude it
- * spawns its CLI per run via the SDK, so it needs no supervisor.
+ * Vendor adapter registry — turns the ProcessLauncher's vendor executable
+ * resolution into the available agent types. The launcher may resolve an env
+ * override, a c3-managed CLI, or a degraded host PATH fallback; only a runnable
+ * executable constructs an adapter.
  */
 import type { VendorId, VendorAdapter } from './types.js'
 import { createClaudeAdapter } from './claude/index.js'
 import { createCodexAdapter } from './codex/index.js'
-import { HOST_BINARIES, resolve as resolveHostBinary } from '../process/launcher.js'
+import { HOST_BINARIES, resolveExecutable, type VendorProbe } from '../process/launcher.js'
 
 /** Builds a fresh {@link VendorAdapter}. */
 type VendorFactory = () => VendorAdapter
@@ -30,6 +23,9 @@ export interface MissingVendor {
   readonly vendor: VendorId
   readonly binary: string
   readonly installHint: string
+  readonly source: VendorProbe['source']
+  readonly error?: string
+  readonly managedError?: string
 }
 
 /** The split of registrable vendors into available (probed) vs missing (host CLI absent). */
@@ -46,7 +42,7 @@ export interface AdapterRegistry {
  * an unresolved binary short-circuits before the factory runs.
  */
 export function resolveAvailableAdapters(
-  resolve: (vendor: VendorId) => string | null = resolveHostBinary,
+  resolve: (vendor: VendorId) => VendorProbe = resolveExecutable,
 ): AdapterRegistry {
   const available: VendorAdapter[] = []
   const missing: MissingVendor[] = []
@@ -54,12 +50,19 @@ export function resolveAvailableAdapters(
   for (const vendor of Object.keys(VENDOR_FACTORIES) as VendorId[]) {
     const factory = VENDOR_FACTORIES[vendor]
     if (!factory) continue
-    const path = resolve(vendor)
-    if (path) {
+    const result = resolve(vendor)
+    if (result.path) {
       available.push(factory())
     } else {
       const spec = HOST_BINARIES[vendor]
-      missing.push({ vendor, binary: spec.binary, installHint: spec.installHint })
+      missing.push({
+        vendor,
+        binary: spec.binary,
+        installHint: spec.installHint,
+        source: result.source,
+        ...(result.error ? { error: result.error } : {}),
+        ...(result.managedError ? { managedError: result.managedError } : {}),
+      })
     }
   }
 
@@ -73,14 +76,19 @@ export function resolveAvailableAdapters(
  * convention, not an error**, so it prints actionable install guidance rather than
  * failing. c3 still starts; only the affected vendor's agent type is unavailable.
  */
-export function logHostBinaryHealth(): void {
+export function logVendorCliHealth(): void {
   const { available, missing } = resolveAvailableAdapters()
   for (const adapter of available) {
-    console.log(`[c3] host CLI ok: ${adapter.vendor}`)
+    const p = resolveExecutable(adapter.vendor)
+    const detail = p.version ? ` ${p.version}` : ''
+    console.log(`[c3] vendor CLI ok: ${adapter.vendor} source=${p.source}${detail} path=${p.path}`)
   }
   for (const m of missing) {
+    const reason = [m.error, m.managedError].filter(Boolean).join('; ')
     console.warn(
-      `[c3] host CLI MISSING: ${m.vendor} (agent type unavailable until installed). ${m.installHint}`,
+      `[c3] vendor CLI ${m.source}: ${m.vendor} (agent type unavailable). ${reason ? `${reason}. ` : ''}${m.installHint}`,
     )
   }
 }
+
+export const logHostBinaryHealth = logVendorCliHealth

@@ -2196,7 +2196,15 @@
     },
     "chat": {
       "empty": {
-        "title": "嵌入会话"
+        "title": "修改会话"
+      },
+      "toggle": {
+        "show": {
+          "tooltip": "显示修改会话"
+        },
+        "hide": {
+          "tooltip": "隐藏修改会话"
+        }
       },
       "create": {
         "label": "新建会话",

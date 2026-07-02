@@ -2197,7 +2197,15 @@
     },
     "chat": {
       "empty": {
-        "title": "임베디드 채팅"
+        "title": "편집 세션"
+      },
+      "toggle": {
+        "show": {
+          "tooltip": "편집 세션 표시"
+        },
+        "hide": {
+          "tooltip": "편집 세션 숨기기"
+        }
       },
       "create": {
         "label": "새 세션",

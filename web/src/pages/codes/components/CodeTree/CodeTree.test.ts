@@ -30,6 +30,8 @@ function installLocalStorage(): void {
 const t = i18n.global.t
 const expandTip = t('codes.tree.toggle.expand.tooltip')
 const collapseTip = t('codes.tree.toggle.collapse.tooltip')
+const chatShowTip = t('codes.chat.toggle.show.tooltip')
+const chatHideTip = t('codes.chat.toggle.hide.tooltip')
 const copyNameLabel = t('codes.tree.contextMenu.copyName')
 const copyRelPathLabel = t('codes.tree.contextMenu.copyRelPath')
 
@@ -54,6 +56,7 @@ function mountTree(overrides: Record<string, unknown> = {}) {
       searchPattern: '*',
       searchResult: null,
       searchLoading: false,
+      showChat: false,
       ...overrides,
     },
   })
@@ -125,6 +128,33 @@ describe('CodeTree.vue — Files 侧栏头 + 展开/收缩切换', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe('true')
     await btn.trigger('click')
     expect(localStorage.getItem(STORAGE_KEY)).toBe('false')
+  })
+})
+
+describe('CodeTree.vue — 修改会话切换按钮', () => {
+  it('默认渲染:aria-pressed=false、空心图标(chat-off)、show tooltip', () => {
+    const w = mountTree()
+    const btn = w.find('[data-testid="codes-chat-toggle"]')
+    expect(btn.exists()).toBe(true)
+    expect(btn.attributes('aria-pressed')).toBe('false')
+    expect(btn.find('svg').attributes('data-icon')).toBe('chat-off')
+    expect(btn.attributes('title')).toBe(chatShowTip)
+    expect(btn.attributes('aria-label')).toBe(chatShowTip)
+  })
+
+  it('showChat=true 渲染:aria-pressed=true、实心图标(chat-on)、hide tooltip', () => {
+    const w = mountTree({ showChat: true })
+    const btn = w.find('[data-testid="codes-chat-toggle"]')
+    expect(btn.attributes('aria-pressed')).toBe('true')
+    expect(btn.find('svg').attributes('data-icon')).toBe('chat-on')
+    expect(btn.attributes('title')).toBe(chatHideTip)
+    expect(btn.attributes('aria-label')).toBe(chatHideTip)
+  })
+
+  it('点击一次 emit toggle-chat', async () => {
+    const w = mountTree()
+    await w.find('[data-testid="codes-chat-toggle"]').trigger('click')
+    expect(w.emitted('toggle-chat')).toHaveLength(1)
   })
 })
 

@@ -2197,7 +2197,15 @@
     },
     "chat": {
       "empty": {
-        "title": "埋め込みチャット"
+        "title": "編集セッション"
+      },
+      "toggle": {
+        "show": {
+          "tooltip": "編集セッションを表示"
+        },
+        "hide": {
+          "tooltip": "編集セッションを非表示"
+        }
       },
       "create": {
         "label": "新しいセッション",

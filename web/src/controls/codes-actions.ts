@@ -1,5 +1,6 @@
+import { watch } from 'vue'
 import { closeTab } from '@/lib/codes-view'
-import type { CodeSearchHit } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX, type CodeSearchHit } from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
 
 // Install Codes-tab actions (read-only file browser) onto the ctx.
@@ -21,6 +22,9 @@ export function installCodesActions(ctx: AppCtx): void {
     codesSearchPattern,
     codesSearchResult,
     codesSearchLoading,
+    codesBoundSessionId,
+    activeSession,
+    activeTab,
   } = ctx
 
   // Wipe every per-workspace artefact (tree cache, tabs, search) — used when the
@@ -38,8 +42,8 @@ export function installCodesActions(ctx: AppCtx): void {
     codesSearchLoading.value = false
   }
 
-  // Enter the Codes view for a workspace: reset on workspace change, then
-  // lazy-load the root listing once.
+  // Enter the Codes view for a workspace: reset on workspace change, lazy-load the
+  // root listing once, then restore this workspace's embedded chat session.
   ctx.openCodes = (workspaceId: string): void => {
     ctx.activeTab.value = 'codes'
     if (codesProject.value !== workspaceId) {
@@ -48,7 +52,48 @@ export function installCodesActions(ctx: AppCtx): void {
     }
     ctx.persistViewMode()
     if (!codesDirs.value['']) ctx.loadCodesDir('')
+    // Restore the embedded ChatColumn's last session for this workspace. Reuse the
+    // control layer's single active session: `select_session` fills the global
+    // state the same as Works. When no id is persisted, leave the active session
+    // untouched — the panel shows its empty state via the codes binding pointer
+    // (the desktop three-column layout gates create-vs-reset on codesBoundSessionId).
+    const savedId = ctx.readCodesSessionId(workspaceId)
+    if (savedId) {
+      codesBoundSessionId.value = { ...codesBoundSessionId.value, [workspaceId]: savedId }
+      if (activeSession.value !== savedId) {
+        send({ type: 'select_session', workspaceId, sessionId: savedId })
+      }
+    }
   }
+
+  // 空态「+ 新建」/ 标题栏「↻ 重置」都创建一个普通 work session(沿用 workspace 默认
+  // agent,不弹 NewSessionModal,与 Works「+」简化行为一致)。服务端回 session_selected
+  // 时,下面的 watch 把新 id 写入 codesBoundSessionId + localStorage;失败经控制层
+  // showToast 兜底(入站 error 分发)。
+  ctx.createCodesChatSession = (workspaceId: string): void => {
+    send({ type: 'create_session', workspaceId })
+  }
+  ctx.resetCodesChatSession = (workspaceId: string): void => {
+    send({ type: 'create_session', workspaceId })
+  }
+
+  // 持久化 Codes 内嵌会话指针:仅当停留在 codes tab 且活动会话已落到真实 id 时,把
+  // 它记为当前 codesProject 的绑定会话(内存 ref + localStorage)。切到 Works 后
+  // activeTab≠'codes',此 watch 不会用 Works 的会话覆盖 codes 指针(两指针独立)。
+  // pending id(create 回执的临时 id)跳过,等 session_started 迁移到真实 id 再写。
+  watch(
+    activeSession,
+    (id) => {
+      if (activeTab.value !== 'codes') return
+      const ws = codesProject.value
+      if (!ws || !id || id.startsWith(PENDING_SESSION_PREFIX)) return
+      if (codesBoundSessionId.value[ws] !== id) {
+        codesBoundSessionId.value = { ...codesBoundSessionId.value, [ws]: id }
+      }
+      ctx.persistCodesSessionId(ws, id)
+    },
+    { flush: 'sync' },
+  )
 
   // Request one directory's immediate children (idempotent while in-flight).
   ctx.loadCodesDir = (rel: string): void => {

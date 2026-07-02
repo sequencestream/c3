@@ -27,7 +27,7 @@ web/src/
 ├── components/                                      # 跨页面通用组件
 │   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(整行最左为 viewMode 工作区/工作台两图标切换器(显示器+三横条 / 显示器+会话气泡,生效蓝 --c-primary、失效灰,工作台未处理事件徽标挂工作台图标),其后工作区切换器、tab 导航(「会话」tab 右上角角标=当前工作区六类进行中会话数之和,为 0 不渲染,带 i18n aria-label)、项目配置/系统设置/登出/连接状态 + 许可状态下拉(ADR-0026,PL-R7,受控 details:已激活→✓ 图标按 state 着色,下拉显示有效期(termEnd 未知时回退状态文案)+ 有效期旁手动刷新按钮(触发即时 heartbeat 同步 termEnd,在途禁用旋转+最小冷却防连点,失败 inline 提示);未激活/过期/停用→红色带下划线文字,下拉内「激活许可」按钮触发激活流程)),移动端顶部精简栏左侧同款两图标切换器(许可项并入「⋯」操作菜单)+ 底部 5 视图 tab(会话/需求/讨论/定时任务/代码;工作台入口已上移到顶部切换器,不在底部 tab)
 │   ├── BaseDropdown/BaseDropdown.vue                # 标准下拉框:替代原生 select,支持键盘导航、多选高亮、点击外部关闭
-│   ├── ChatColumn/ChatColumn.vue                   # 复用聊天列:五区块(标题栏/消息/输入框/状态栏/task 面板)按 showTitleBar/showMessages/showInput/showStatusBar/showTaskPanel props 可显隐,供会话页/意图会话 tab/意图详情两会话 tab 三处复用;不持有会话状态(绑定哪个会话由控制层单一活动会话决定);show-mode 控模式下拉、always-title 控无会话时是否仍渲染标题栏;sourceLabel 透传给标题栏溯源按钮(仅会话页传,意图侧复用不传)、open-source 上抛;showShare 透传给标题栏分享按钮(仅会话页 Works 传 true)、share 上抛;prefill 经 defineExpose 透传
+│   ├── ChatColumn/ChatColumn.vue                   # 复用聊天列:五区块(标题栏/消息/输入框/状态栏/task 面板)按 showTitleBar/showMessages/showInput/showStatusBar/showTaskPanel props 可显隐,供会话页/意图会话 tab/意图详情两会话 tab 三处复用;不持有会话状态(绑定哪个会话由控制层单一活动会话决定);show-mode 控模式下拉、always-title 控无会话时是否仍渲染标题栏;sourceLabel 透传给标题栏溯源按钮(仅会话页传,意图侧复用不传)、open-source 上抛;showShare 透传给标题栏分享按钮(仅会话页 Works 传 true)、share 上抛;title-action 具名槽转发到 SessionTitleBar 的 action 槽(Codes 内嵌会话用它渲染「+ 新建」/「↻ 重置」按钮);prefill 经 defineExpose 透传
 │   ├── ChatMessages/ChatMessages.vue               # 会话消息渲染区:扁平消息分组为文本/工具批次/独立块(用户交互工具)、仅用户停在底部时自动跟随新输出、渲染权限提示与共识结果,代码/工具输出局部横滚防窄屏撑破
 │   ├── ConfirmDialog/ConfirmDialog.vue             # 通用二次确认模态框(项目内删除/危险操作统一走此组件,不用 window.confirm):受控 open,标题/正文/按钮文案注入,danger 确认色,点遮罩/Esc/取消均 emit cancel,移动端全屏 sheet
 │   ├── ErrorDialog/ErrorDialog.vue                 # 持久错误告知弹框:受控 open,单一关闭按钮,点遮罩/Esc/关闭均 emit close,移动端全屏 sheet
@@ -85,7 +85,7 @@ web/src/
 │   │       └── ScheduleForm/ScheduleForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发(run:started/run:settled/pr:operation)、高级 cron 构造器、实时 next-run 预览;run:settled 显示 reason 过滤,pr:operation 显示 MCP 集成说明+操作/结果过滤面板(写入 eventPrFilter);编辑态可改标题(清空回退自动命名),创建态自动命名;vendor 下拉(host 缺失灰显)+工具勾选面板(读写分区,读默认勾,全选/全清按钮);移动端全屏 sheet 且紧凑表单单列堆叠
 │   │
 │   ├── codes/                                       # 代码浏览页
-│   │   ├── Codes.vue                                # 代码浏览容器页:桌面双栏(左 CodeTree + 右 CodeTabs);移动端经 MobileStack 退化为 树→文件 两级 drill-down;仅持有/透传 workspace 相对路径,越界判断全在服务端 guard
+│   │   ├── Codes.vue                                # 代码浏览容器页:桌面三栏(左 CodeTree + 中 CodeTabs + 右 内嵌 ChatColumn 常驻);中右之间一根可拖拽垂直分隔条 .codes-col-splitter(role=separator,鼠标拖拽/←→±16/Home最小/End默认,宽度像素按 workspace 持久化到 localStorage);右栏复用 ChatColumn(show-mode/show-share=false、always-title、title-action 槽渲染「+ 新建」/「↻ 重置」互斥按钮,由 codesBoundSessionId 是否为空切换)展示当前 workspace 的普通 work session,与 Works 共用控制层单一活动会话(codesBoundSessionId 为 Codes 独立指针,按 c3.codes.<ws>.sessionId 持久化);移动端经 MobileStack 退化为 树→文件 两级 drill-down(不渲染 ChatColumn);仅持有/透传 workspace 相对路径,越界判断全在服务端 guard
 │   │   └── components/
 │   │       ├── CodeTree/CodeTree.vue                # 左栏:顶部 Files 标题 + 左侧 ⇤/⇥ 切换(展开后宽度 560px,localStorage 持久化)+ 搜索框(filename/content 切换 + 文件模式 glob 过滤框 *.ts,默认 * 全部,Enter/防抖触发 search_codes)+ 懒加载文件树/搜索结果(点结果打开文件,content 命中带行号定位)
 │   │       ├── CodeTree/CodeTreeNode.vue            # 文件树单节点(递归):目录点击展开/折叠(懒加载 list_dir),文件点击打开 tab,激活态高亮;文件/目录右键菜单可复制名称或 workspace 相对路径并通过全局 toast 反馈

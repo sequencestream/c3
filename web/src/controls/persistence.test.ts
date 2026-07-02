@@ -54,3 +54,52 @@ describe('work-session query cache', () => {
     expect(storage.getItem(WORK_SESSION_QUERY_START_TIME_KEY)).toBe('1718800000000')
   })
 })
+
+describe('codes embedded chat persistence', () => {
+  const WS = '/ws'
+
+  beforeEach(() => {
+    stored.clear()
+    originalStorage = globalWithStorage.localStorage
+    globalWithStorage.localStorage = storage
+  })
+
+  afterEach(() => {
+    globalWithStorage.localStorage = originalStorage
+  })
+
+  it('readCodesChatWidth falls back to the default when absent or unparseable', () => {
+    const ctx = makeCtx('codes')
+    installPersistence(ctx)
+    expect(ctx.readCodesChatWidth(WS)).toBe(360)
+    storage.setItem(`c3.codes.${WS}.chatWidth`, 'not-a-number')
+    expect(ctx.readCodesChatWidth(WS)).toBe(360)
+  })
+
+  it('persistCodesChatWidth writes a clamped, rounded pixel value read back verbatim', () => {
+    const ctx = makeCtx('codes')
+    installPersistence(ctx)
+    ctx.persistCodesChatWidth(WS, 520.6)
+    expect(storage.getItem(`c3.codes.${WS}.chatWidth`)).toBe('521')
+    expect(ctx.readCodesChatWidth(WS)).toBe(521)
+  })
+
+  it('readCodesChatWidth clamps out-of-range persisted values to [240, 720]', () => {
+    const ctx = makeCtx('codes')
+    installPersistence(ctx)
+    storage.setItem(`c3.codes.${WS}.chatWidth`, '9000')
+    expect(ctx.readCodesChatWidth(WS)).toBe(720)
+    storage.setItem(`c3.codes.${WS}.chatWidth`, '10')
+    expect(ctx.readCodesChatWidth(WS)).toBe(240)
+  })
+
+  it('readCodesSessionId returns null when absent and the id when set; persist clears on null', () => {
+    const ctx = makeCtx('codes')
+    installPersistence(ctx)
+    expect(ctx.readCodesSessionId(WS)).toBeNull()
+    ctx.persistCodesSessionId(WS, 'sess-1')
+    expect(ctx.readCodesSessionId(WS)).toBe('sess-1')
+    ctx.persistCodesSessionId(WS, null)
+    expect(ctx.readCodesSessionId(WS)).toBeNull()
+  })
+})

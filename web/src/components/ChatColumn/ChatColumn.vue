@@ -139,7 +139,10 @@ defineExpose({
       @set-session-agent="(id: string) => emit('set-session-agent', id)"
       @open-source="emit('open-source')"
       @share="emit('share')"
-    />
+    >
+      <!-- 标题栏动作插槽:Codes 内嵌会话用它渲染「+ 新建」/「↻ 重置」按钮。 -->
+      <template #action><slot name="title-action" /></template>
+    </SessionTitleBar>
     <ChatMessages
       v-if="showMessages"
       :messages="messages"

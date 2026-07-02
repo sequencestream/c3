@@ -20,8 +20,10 @@ import DevStartupOverlay from './components/DevStartupOverlay/DevStartupOverlay.
 import SpecStartupOverlay from './components/SpecStartupOverlay/SpecStartupOverlay.vue'
 import ScheduleSaveOverlay from './components/ScheduleSaveOverlay/ScheduleSaveOverlay.vue'
 import ErrorDialog from './components/ErrorDialog/ErrorDialog.vue'
+import { ref, watch } from 'vue'
 import { useTypedI18n } from './i18n'
 import { useAppController } from './controls'
+import { CODES_CHAT_WIDTH_DEFAULT } from './controls/state'
 
 const { t } = useTypedI18n()
 
@@ -209,6 +211,11 @@ const {
   setCodesSearchMode,
   runCodeSearch,
   showToast,
+  codesBoundSessionId,
+  readCodesChatWidth,
+  persistCodesChatWidth,
+  createCodesChatSession,
+  resetCodesChatSession,
   // ---- workcenter ----
   workcenterEvents,
   workcenterHasMore,
@@ -300,6 +307,23 @@ function onRequestedIntentConsumed(): void {
     clearPendingDeepLink()
   }
   requestedIntentId.value = null
+}
+
+/** Codes 内嵌 ChatColumn 的分隔条宽度(像素,per-workspace,仅 localStorage)。切换
+ *  workspace 时从持久化读回;拖拽/键盘调节后写回。仅本地,不进服务端配置。 */
+const codesChatWidth = ref(CODES_CHAT_WIDTH_DEFAULT)
+watch(
+  codesProject,
+  (ws) => {
+    if (ws) codesChatWidth.value = readCodesChatWidth(ws)
+  },
+  { immediate: true },
+)
+function onCodesChatWidth(px: number): void {
+  const ws = codesProject.value
+  if (!ws) return
+  codesChatWidth.value = px
+  persistCodesChatWidth(ws, px)
 }
 </script>
 
@@ -544,6 +568,7 @@ function onRequestedIntentConsumed(): void {
 
         <Codes
           v-else-if="activeTab === 'codes' && codesProject"
+          ref="composer"
           :dirs="codesDirs"
           :expanded="codesExpanded"
           :loading-dirs="codesLoadingDirs"
@@ -555,6 +580,28 @@ function onRequestedIntentConsumed(): void {
           :search-pattern="codesSearchPattern"
           :search-result="codesSearchResult"
           :search-loading="codesSearchLoading"
+          :codes-bound-session-id="
+            codesProject ? (codesBoundSessionId[codesProject] ?? null) : null
+          "
+          :codes-chat-width="codesChatWidth"
+          :active-session="activeSession"
+          :active-title="activeTitle"
+          :vendor="activeVendor"
+          :agent-switch="activeAgentSwitch"
+          :messages="messages"
+          :actionable-permission-id="actionablePermId"
+          :task-model="taskModel"
+          :has-task-store="taskStoreAvailable"
+          :running="running"
+          :team-active="activeIsTeam"
+          :connection="status"
+          :activity="activity"
+          :current-agent-name="currentAgentName"
+          :reconnecting="reconnecting"
+          :side-effect-pending="sideEffectPending"
+          :queue="currentQueue"
+          :available-commands="availableCommands"
+          :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
           @toggle-dir="toggleCodesDir"
           @open-file="openCodeFile"
           @open-hit="openCodeSearchHit"
@@ -565,6 +612,20 @@ function onRequestedIntentConsumed(): void {
           @update:search-pattern="codesSearchPattern = $event"
           @run-search="runCodeSearch"
           @toast="showToast"
+          @create-codes-chat="codesProject && createCodesChatSession(codesProject)"
+          @reset-codes-chat="codesProject && resetCodesChatSession(codesProject)"
+          @codes-chat-width="onCodesChatWidth"
+          @set-session-agent="onSetSessionAgent"
+          @respond="respond"
+          @submit-ask="submitAsk"
+          @refresh="refreshStatus"
+          @edit-queued="onEditQueued"
+          @delete-queued="onDeleteQueued"
+          @submit="onSubmit"
+          @enqueue="onEnqueue"
+          @stop="stopRun"
+          @continue="onContinue"
+          @list-commands="listCommands"
         />
       </template>
 

@@ -307,8 +307,10 @@ function onToggleEnabled(a: AgentConfig, checked: boolean): void {
   }
 }
 
-// Provider fields (baseUrl/apiKey/model) are only meaningful in `custom` mode;
-// `system` mode defers to the vendor CLI's own config (2026-06-06-007).
+// Provider connection fields (baseUrl/apiKey) are only meaningful in `custom`
+// mode; `system` mode defers to the vendor CLI's own config. `model` is now a
+// standalone override visible in BOTH modes (2026-07-02-001) — it does NOT go
+// through this gate.
 function showProviderFields(a: AgentConfig): boolean {
   return a.configMode === 'custom'
 }
@@ -801,7 +803,6 @@ function selectAdmin(username: string) {
               :placeholder="t('settings.agents.apiKey.placeholder')"
             />
             <input
-              v-if="showProviderFields(a)"
               v-model="a.config.model"
               class="agent-field agent-model"
               :title="t('settings.agents.col.model.label')"

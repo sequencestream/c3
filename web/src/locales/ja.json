@@ -247,7 +247,7 @@
         "placeholder": "API キー"
       },
       "model": {
-        "placeholder": "例: claude-opus-4-8"
+        "placeholder": "例: claude-sonnet-5（空欄=デフォルトモデル）"
       },
       "icon": {
         "placeholder": "🤖",

@@ -29,6 +29,80 @@ const baseSettings: SystemSettings = {
   maxSpeechChars: 400,
 }
 
+describe('SettingsPanel.vue — model input visibility by configMode (2026-07-02-001)', () => {
+  const systemClaude: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      {
+        id: SYSTEM_AGENT_ID,
+        vendor: 'claude',
+        configMode: 'system',
+        displayName: 'System',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'custom-claude',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Custom Claude',
+        enabled: true,
+        config: { baseUrl: 'https://cust', apiKey: 'k', model: 'm' },
+      },
+      {
+        id: 'system-codex',
+        vendor: 'codex',
+        configMode: 'system',
+        displayName: 'Sys Codex',
+        enabled: true,
+        config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
+      },
+    ],
+  }
+
+  it('system-mode claude — model input visible, baseUrl/apiKey hidden', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: systemClaude } })
+    const agentRows = w.findAll('[data-testid="agent-card"]')
+    // First row is system claude
+    const sysRow = agentRows[0]
+    expect(sysRow.find('.agent-model').exists()).toBe(true)
+    expect(sysRow.find('.agent-url').exists()).toBe(false)
+    expect(sysRow.find('.agent-key').exists()).toBe(false)
+    // wireApi also hidden for claude
+    expect(sysRow.find('.agent-wireapi').exists()).toBe(false)
+  })
+
+  it('system-mode codex — model input visible, baseUrl/apiKey/wireApi hidden', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: systemClaude } })
+    const agentRows = w.findAll('[data-testid="agent-card"]')
+    // Third row is system codex
+    const sysRow = agentRows[2]
+    expect(sysRow.find('.agent-model').exists()).toBe(true)
+    expect(sysRow.find('.agent-url').exists()).toBe(false)
+    expect(sysRow.find('.agent-key').exists()).toBe(false)
+    expect(sysRow.find('.agent-wireapi').exists()).toBe(false)
+  })
+
+  it('custom-mode claude — model, baseUrl, apiKey all visible', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: systemClaude } })
+    const agentRows = w.findAll('[data-testid="agent-card"]')
+    // Second row is custom claude
+    const custRow = agentRows[1]
+    expect(custRow.find('.agent-model').exists()).toBe(true)
+    expect(custRow.find('.agent-url').exists()).toBe(true)
+    expect(custRow.find('.agent-key').exists()).toBe(true)
+  })
+
+  it('model input is editable in system mode', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: systemClaude } })
+    const modelInput = w.findAll('.agent-model')[0] // first row = system
+    await modelInput.setValue('claude-sonnet-5')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    const savedAgent = emitted[0][0].agents.find((a) => a.id === SYSTEM_AGENT_ID)
+    expect(savedAgent?.config.model).toBe('claude-sonnet-5')
+  })
+})
+
 describe('SettingsPanel.vue — agent enable/disable', () => {
   const twoAgents: SystemSettings = {
     ...baseSettings,

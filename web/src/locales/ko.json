@@ -247,7 +247,7 @@
         "placeholder": "API key"
       },
       "model": {
-        "placeholder": "예: claude-opus-4-8"
+        "placeholder": "예: claude-sonnet-5 (비우면 기본 모델 사용)"
       },
       "icon": {
         "placeholder": "🤖",

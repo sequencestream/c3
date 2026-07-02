@@ -56,7 +56,7 @@
       },
       "activeWorktrees": {
         "label": "Concurrent active worktrees",
-        "free": "1",
+        "free": "2",
         "paid": "Unlimited",
         "enterprise": "Unlimited"
       },
@@ -68,7 +68,7 @@
       },
       "enabledSchedules": {
         "label": "Enabled schedules",
-        "free": "2",
+        "free": "5",
         "paid": "Unlimited",
         "enterprise": "Unlimited"
       },

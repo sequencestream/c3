@@ -3,9 +3,9 @@ import type { UiError } from '@ccc/shared/ui-codes'
 
 export const FREE_PLAN_LIMITS = {
   workspaces: 5,
-  activeWorktrees: 1,
+  activeWorktrees: 2,
   discussionParticipants: 2,
-  enabledSchedules: 2,
+  enabledSchedules: 5,
   sandboxEnabled: false,
 } as const
 

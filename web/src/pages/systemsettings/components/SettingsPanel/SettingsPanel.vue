@@ -120,6 +120,7 @@ const draft = ref<SystemSettings>({
   voiceLang: 'zh-CN',
   uiLang: 'en',
   timezone: BROWSER_TZ,
+  baseUrl: '',
   showToolSessions: false,
   proxy: { enabled: false, httpProxy: '', httpsProxy: '' },
 })
@@ -188,6 +189,7 @@ watch(
       voiceLang: settings.voiceLang ?? 'zh-CN',
       uiLang: settings.uiLang ?? 'en',
       timezone: settings.timezone ?? BROWSER_TZ,
+      baseUrl: settings.baseUrl ?? '',
       showToolSessions: settings.showToolSessions ?? false,
       proxy: settings.proxy ?? { enabled: false, httpProxy: '', httpsProxy: '' },
     }
@@ -1277,6 +1279,18 @@ function selectAdmin(username: string) {
         <select v-model="draft.timezone" class="mode-select" data-testid="settings-timezone">
           <option v-for="tz in TIMEZONES" :key="tz" :value="tz">{{ tz }}</option>
         </select>
+      </section>
+
+      <section class="settings-section">
+        <p class="settings-section-title">{{ t('settings.baseUrl.title.label') }}</p>
+        <p class="settings-hint">{{ t('settings.baseUrl.hint') }}</p>
+        <input
+          v-model="draft.baseUrl"
+          class="agent-field"
+          :disabled="!isAdmin"
+          :placeholder="t('settings.baseUrl.placeholder')"
+          data-testid="settings-base-url"
+        />
       </section>
 
       <section class="settings-section">

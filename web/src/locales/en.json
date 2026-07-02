@@ -612,6 +612,13 @@
       "admin": {
         "badge": "Admin"
       }
+    },
+    "baseUrl": {
+      "title": {
+        "label": "Base URL"
+      },
+      "hint": "The public-facing base URL for this c3 deployment, used to construct shareable links. For example, http://192.168.10.10:9000. Stored in plaintext (not sensitive).",
+      "placeholder": "http://192.168.10.10:9000"
     }
   },
   "intent": {

@@ -69,6 +69,16 @@ Key design points:
   env vars land in `envOverrides`, so they take precedence over the user's shell but can still
   be overridden by an explicit `HTTP_PROXY`/`HTTPS_PROXY` in the shell environment.
 
+## Public-facing base URL
+
+`SystemSettings.baseUrl`（见 `shared/src/protocol.ts`）是此 c3 部署的对外基地址，用于拼接可分享的链接（如分享按钮生成的 URL）。典型值如 `http://192.168.10.10:9000`。
+
+- **可选字段**：`baseUrl?: string`。空值或缺失均视为「未配置」，消费者应回退到默认行为。
+- **规范化**：保存时自动 trim 首尾空白，并去除尾部斜杠（`http://host:3000/` → `http://host:3000`，`http://host:3000///` → `http://host:3000`）。纯空白输入视为空值，不落库。
+- **存储**：明文存储于 `~/.c3/settings.json` 顶层（非敏感信息，不走 `c3secretv1:` 加密路径）。
+- **作用域**：系统级（非按工作区），不与 `WorkspaceSetting` / `projectConfigs` 交互。
+- **不做格式校验**：不解析 URL、不校验协议/主机合法性、不探测可达性。允许用户填入任意字符串，由后续消费方决定容错。
+
 ## Workspace-setting fields (SDD)
 
 - **`sddEnabled`** — master switch for spec-driven development (SDD) in the workspace.

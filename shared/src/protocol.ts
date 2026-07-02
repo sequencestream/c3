@@ -1025,6 +1025,14 @@ export interface SystemSettings {
    * Changing it shifts the actual trigger moment of existing schedules.
    */
   timezone?: string
+  /**
+   * Public-facing base URL for this c3 deployment (e.g. `http://192.168.10.10:9000`).
+   * Used to construct shareable links and any future external-facing URLs. Stored
+   * in plaintext (not sensitive). Normalized on save: trimmed and trailing slashes
+   * stripped. Empty or absent ⇒ "not configured" (consumers fall back to defaults).
+   * System-wide (not per-workspace).
+   */
+  baseUrl?: string
   /** When true, tool-created sessions (completion judge, consensus advisor) appear
    * in the sidebar session list. Default is false (hidden). */
   showToolSessions?: boolean

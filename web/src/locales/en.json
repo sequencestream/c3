@@ -2073,7 +2073,15 @@
     },
     "chat": {
       "empty": {
-        "title": "Embedded chat"
+        "title": "Edit session"
+      },
+      "toggle": {
+        "show": {
+          "tooltip": "Show the edit session panel"
+        },
+        "hide": {
+          "tooltip": "Hide the edit session panel"
+        }
       },
       "create": {
         "label": "New session",

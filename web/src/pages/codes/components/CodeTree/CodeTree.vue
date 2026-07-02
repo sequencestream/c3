@@ -23,6 +23,8 @@ const props = defineProps<{
   searchPattern: string
   searchResult: CodesSearchResultView | null
   searchLoading: boolean
+  // 右侧修改会话是否可见,驱动标题栏切换按钮的图标/tooltip/aria 状态。
+  showChat: boolean
 }>()
 
 const emit = defineEmits<{
@@ -33,6 +35,7 @@ const emit = defineEmits<{
   'update:searchQuery': [value: string]
   'update:searchPattern': [value: string]
   'run-search': []
+  'toggle-chat': []
   toast: [message: string]
 }>()
 
@@ -96,7 +99,50 @@ function runNow(): void {
         </button>
         <span class="tree-title">{{ t('codes.tree.title.label') }}</span>
       </div>
-      <span class="tree-actions"></span>
+      <span class="tree-actions">
+        <!-- 修改会话总开关:镜像左侧折叠按钮布局。图标反映当前态(空心=未显示 / 实心=已显示),
+             点击 emit toggle-chat,由 Codes.vue 翻转持久化开关。 -->
+        <button
+          type="button"
+          class="tree-collapse-btn tree-chat-toggle"
+          :title="
+            showChat ? t('codes.chat.toggle.hide.tooltip') : t('codes.chat.toggle.show.tooltip')
+          "
+          :aria-label="
+            showChat ? t('codes.chat.toggle.hide.tooltip') : t('codes.chat.toggle.show.tooltip')
+          "
+          :aria-pressed="showChat"
+          data-testid="codes-chat-toggle"
+          @click="emit('toggle-chat')"
+        >
+          <svg
+            v-if="showChat"
+            data-icon="chat-on"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+          >
+            <path d="M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2z" />
+          </svg>
+          <svg
+            v-else
+            data-icon="chat-off"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H8l-4 4V6a1 1 0 0 1 1-1z" />
+          </svg>
+        </button>
+      </span>
     </div>
     <div class="search-box">
       <div class="search-modes">
@@ -238,6 +284,13 @@ function runNow(): void {
 .tree-collapse-btn:hover {
   background: var(--c-hover);
   color: var(--c-text);
+}
+/* 会话开关:内嵌 SVG 图标,收紧 padding 并居中(复用 .tree-collapse-btn 基础视觉) */
+.tree-chat-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
 }
 .tree-title {
   font-size: var(--fs-badge);

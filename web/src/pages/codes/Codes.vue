@@ -3,8 +3,9 @@
  * Codes.vue — 代码浏览页容器。
  *
  * 桌面三栏:左 CodeTree(搜索框 + 懒加载树)/ 中 CodeTabs(多 tab 文件查看)/ 右
- * 内嵌 ChatColumn(常驻的 work session,与 Works 共用控制层单一活动会话)。中右之间
- * 一根可拖拽垂直分隔条 `.codes-col-splitter` 调节会话栏宽度(像素,按 workspace 持久化)。
+ * 内嵌 ChatColumn(按需显示的修改会话,与 Works 共用控制层单一活动会话)。右侧会话栏
+ * 由 CodeTree 标题栏的开关按钮控制显隐,状态经 `usePersistentToggle` 跨刷新保持,默认关闭。
+ * 中右之间一根可拖拽垂直分隔条 `.codes-col-splitter` 调节会话栏宽度(像素,按 workspace 持久化)。
  * 移动端经 MobileStack 退化为 树 → 文件 两级 drill-down,不渲染 ChatColumn(屏幕宽度不足)。
  *
  * 所有状态由 App.vue 持有、经 props 注入,动作经 emit 上抛(controls/codes-actions 落地
@@ -17,6 +18,7 @@ import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
 import CodeTree from './components/CodeTree/CodeTree.vue'
 import CodeTabs from './components/CodeTabs/CodeTabs.vue'
 import { useIsMobile } from '../../composables/useBreakpoint'
+import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import { useTypedI18n } from '@/i18n'
 import {
   CODES_CHAT_WIDTH_MIN,
@@ -132,6 +134,11 @@ function handleMobileBack(targetKey: string): void {
 // ---- Embedded ChatColumn (desktop only) ----
 const isMobile = useIsMobile()
 
+// 右侧修改会话是否显示。默认关闭:纯浏览代码时不占用横向空间。跨刷新持久化到
+// localStorage(localStorage 不可用时 composable 内置降级为内存 ref)。关闭仅隐藏容器,
+// 不清空会话绑定(codesBoundSessionId 等由控制层持有),再次打开直接复用既有会话。
+const codesChatVisible = usePersistentToggle('c3.codesChatVisible')
+
 // Whether this workspace has an embedded chat bound (drives create-vs-reset button).
 const hasCodesSession = computed(() => props.codesBoundSessionId != null)
 // Whether the bound session is actually the live active session — false during the
@@ -226,6 +233,7 @@ defineExpose({
         :search-pattern="searchPattern"
         :search-result="searchResult"
         :search-loading="searchLoading"
+        :show-chat="codesChatVisible"
         @toggle-dir="(rel: string) => emit('toggle-dir', rel)"
         @open-file="openFile"
         @open-hit="openHit"
@@ -233,6 +241,7 @@ defineExpose({
         @update:search-query="(v: string) => emit('update:searchQuery', v)"
         @update:search-pattern="(v: string) => emit('update:searchPattern', v)"
         @run-search="emit('run-search')"
+        @toggle-chat="codesChatVisible = !codesChatVisible"
         @toast="(message: string) => emit('toast', message)"
       />
     </template>
@@ -248,8 +257,9 @@ defineExpose({
     </template>
   </MobileStack>
 
-  <!-- 桌面独占:CodeTabs 与内嵌 ChatColumn 之间的可拖拽分隔条 + 会话栏。移动端不渲染。 -->
-  <template v-if="!isMobile">
+  <!-- 桌面独占且开关开启:CodeTabs 与内嵌修改会话之间的可拖拽分隔条 + 会话栏。
+       移动端不渲染;开关关闭时也不渲染(仅隐藏容器,不清空会话绑定)。 -->
+  <template v-if="!isMobile && codesChatVisible">
     <div
       class="codes-col-splitter"
       role="separator"

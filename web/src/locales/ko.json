@@ -2177,6 +2177,9 @@
       "empty": "이 파일은 비어 있습니다."
     }
   },
+  "deepLink": {
+    "notFound": "요청한 콘텐츠를 찾을 수 없습니다."
+  },
   "license": {
     "badge": {
       "active": "라이선스 활성",

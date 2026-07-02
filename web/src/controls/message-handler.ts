@@ -34,6 +34,9 @@ function licenseGateReasonKey(state: string): LocaleKey {
   return 'error.license.reason.unactivated'
 }
 
+/** 深链兑现超时:10 秒,足够服务端回包,但不至于在慢网下过多等待。 */
+const DEEP_LINK_TIMEOUT_MS = 10_000
+
 // Install the WebSocket message router (`handleMessage`) plus its status helpers
 // onto the shared ctx. The router is the app's single inbound switch: it folds
 // every `ServerToClient` event into reactive state. It reads cross-domain
@@ -122,6 +125,9 @@ export function installMessageHandler(ctx: AppCtx): void {
     clearSideEffectPending,
     devLaunch,
     specLaunch,
+    pendingDeepLink,
+    deepLinkFulfilled,
+    deepLinkTimers,
   } = ctx
 
   // Find a loaded session-list row by id across all workspace/kind buckets. The
@@ -251,21 +257,79 @@ export function installMessageHandler(ctx: AppCtx): void {
         detectedMainBranch.value = null
         resolvedSpecRoot.value = null
         ctx.applyStatuses(msg.statuses)
-        // Restore the persisted current workspace (or fall back to most-recent),
-        // then load its sessions for the sidebar.
-        currentWorkspace.value = resolveCurrentWorkspace(ctx.readStoredWorkspace(), msg.workspaces)
-        ctx.persistCurrentWorkspace()
-        ctx.ensureSessions(currentWorkspace.value)
+
+        // ---- Deep-link consumption (takes priority over localStorage restore) ----
+        // Consumed = workspace validated + dispatched by kind; fulfillment is
+        // monitored asynchronously via server replies + a bounded timeout.
+        // When consumed, the maybeRestore* block below is skipped.
+        var deepLinkConsumed = false // eslint-disable-line no-var
+        {
+          const dl = pendingDeepLink.value
+          if (dl) {
+            const wsExists = msg.workspaces.some((w) => w.id === dl.workspaceId)
+            if (wsExists) {
+              deepLinkConsumed = true
+              // Align the global workspace to the deep link's workspace.
+              currentWorkspace.value = dl.workspaceId
+              ctx.persistCurrentWorkspace()
+              ctx.ensureSessions(currentWorkspace.value)
+
+              // Dispatch by kind — each path marks fulfillment on the matching reply.
+              if (dl.kind === 'session') {
+                ctx.selectSession(dl.workspaceId, dl.id)
+              } else if (dl.kind === 'intent') {
+                ctx.openIntents(dl.workspaceId)
+                ctx.requestedIntentId.value = dl.id
+              } else if (dl.kind === 'discussion') {
+                ctx.openDiscussions(dl.workspaceId)
+                ctx.openDiscussion(dl.id)
+              }
+
+              // Start the fulfillment timeout. Cleared when the matching server
+              // reply (session_selected / discussion_detail / requested-intent-consumed)
+              // arrives or when the link is cleared by another path.
+              deepLinkTimers.timeout = setTimeout(() => {
+                if (
+                  pendingDeepLink.value &&
+                  !deepLinkFulfilled.value.has(pendingDeepLink.value.id)
+                ) {
+                  ctx.clearPendingDeepLink()
+                  activeTab.value = 'console'
+                  ctx.showToast(t('deepLink.notFound'))
+                }
+              }, DEEP_LINK_TIMEOUT_MS)
+            } else {
+              // Workspace not in this instance → unreachable.
+              ctx.clearPendingDeepLink()
+              ctx.showToast(t('deepLink.notFound'))
+            }
+          }
+        }
+
+        if (!deepLinkConsumed) {
+          // Normal: restore the persisted current workspace (or fall back to most-recent),
+          // then load its sessions for the sidebar.
+          currentWorkspace.value = resolveCurrentWorkspace(
+            ctx.readStoredWorkspace(),
+            msg.workspaces,
+          )
+          ctx.persistCurrentWorkspace()
+          ctx.ensureSessions(currentWorkspace.value)
+        }
+
         // Pull settings up front so the new-session agent picker has the agent list +
         // per-vendor host-CLI status ready before the user clicks "+".
         send({ type: 'get_settings' })
         // Fetch the current product-license state for the badge/menu (PL-R7).
         send({ type: 'get_license' })
-        // Restore the intent / discussion / schedules view if a hard refresh left us in it.
-        ctx.maybeRestoreIntents(msg.workspaces)
-        ctx.maybeRestoreDiscussions(msg.workspaces)
-        ctx.maybeRestoreSchedules(msg.workspaces)
-        ctx.maybeRestoreCodes(msg.workspaces)
+
+        if (!deepLinkConsumed) {
+          // Restore the intent / discussion / schedules view if a hard refresh left us in it.
+          ctx.maybeRestoreIntents(msg.workspaces)
+          ctx.maybeRestoreDiscussions(msg.workspaces)
+          ctx.maybeRestoreSchedules(msg.workspaces)
+          ctx.maybeRestoreCodes(msg.workspaces)
+        }
         break
       case 'workspaces': {
         workspaces.value = msg.workspaces
@@ -418,6 +482,14 @@ export function installMessageHandler(ctx: AppCtx): void {
         // When on the intents tab, keep the middle-column selection in sync.
         if (activeTab.value === 'intents') {
           selectedIntentSessionId.value = msg.sessionId
+        }
+        // Check for deep-link fulfillment: the target session landed.
+        if (
+          pendingDeepLink.value?.kind === 'session' &&
+          msg.sessionId === pendingDeepLink.value.id
+        ) {
+          deepLinkFulfilled.value = new Set(deepLinkFulfilled.value).add(msg.sessionId)
+          ctx.clearPendingDeepLink()
         }
         break
       case 'session_started':
@@ -666,6 +738,14 @@ export function installMessageHandler(ctx: AppCtx): void {
           ? msg.researchMessages[msg.researchMessages.length - 1].seq
           : 0
         ctx.persistViewMode()
+        // Check for deep-link fulfillment: the target discussion landed.
+        if (
+          pendingDeepLink.value?.kind === 'discussion' &&
+          msg.discussion.id === pendingDeepLink.value.id
+        ) {
+          deepLinkFulfilled.value = new Set(deepLinkFulfilled.value).add(msg.discussion.id)
+          ctx.clearPendingDeepLink()
+        }
         break
       }
       case 'discussion_message': {

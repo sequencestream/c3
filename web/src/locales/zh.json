@@ -2176,6 +2176,9 @@
       "empty": "此文件为空。"
     }
   },
+  "deepLink": {
+    "notFound": "请求的内容未找到。"
+  },
   "license": {
     "badge": {
       "active": "已授权",

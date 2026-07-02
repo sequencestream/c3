@@ -102,6 +102,9 @@ const {
   onContinue,
   listCommands,
   clearViewedSession,
+  // ---- deep link (URL hash routing) ----
+  pendingDeepLink,
+  clearPendingDeepLink,
   // ---- intents ----
   intentsProject,
   requestedIntentId,
@@ -247,6 +250,15 @@ const {
   devLaunch,
   specLaunch,
 } = useAppController()
+
+/** Fulfill an intent deep link: called when Intents.vue consumes requestedIntentId.
+ *  Marks the link as fulfilled so the ready-handler timeout won't fire. */
+function onRequestedIntentConsumed(): void {
+  if (pendingDeepLink?.value?.kind === 'intent') {
+    clearPendingDeepLink()
+  }
+  requestedIntentId.value = null
+}
 </script>
 
 <template>
@@ -390,7 +402,7 @@ const {
           :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
           :vendor="activeVendor"
           :agent-switch="activeAgentSwitch"
-          @requested-intent-consumed="requestedIntentId = null"
+          @requested-intent-consumed="onRequestedIntentConsumed()"
           @requested-subtab-consumed="requestedIntentSubTab = null"
           @requested-intent-session-consumed="requestedIntentSessionId = null"
           @filter="setIntentFilter"

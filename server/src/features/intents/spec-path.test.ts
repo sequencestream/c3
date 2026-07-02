@@ -48,7 +48,7 @@ describe('nextSeq', () => {
 describe('computeSpecLayout', () => {
   const now = new Date(2026, 5, 18) // 2026-06-18 (month is 0-based)
 
-  it('assembles the dated dir + spec.md under the centralized spec root', () => {
+  it('assembles the dated spec file directly under the day root', () => {
     const layout = computeSpecLayout({
       specRoot: '/home/u/.c3/specs/proj',
       shortEnTitle: 'Add Login',
@@ -57,10 +57,8 @@ describe('computeSpecLayout', () => {
       listDay: () => [],
     })
     expect(layout.dirName).toBe('2026-06-18-001-add-login')
-    expect(layout.fileAbs).toBe(
-      '/home/u/.c3/specs/proj/2026/06/18/2026-06-18-001-add-login/spec.md',
-    )
-    expect(layout.dirAbs).toBe('/home/u/.c3/specs/proj/2026/06/18/2026-06-18-001-add-login')
+    expect(layout.fileAbs).toBe('/home/u/.c3/specs/proj/2026/06/18/2026-06-18-001-add-login.md')
+    expect(layout.dirAbs).toBe('/home/u/.c3/specs/proj/2026/06/18')
   })
 
   it('increments NNN against existing same-day dirs', () => {

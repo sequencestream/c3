@@ -517,7 +517,7 @@ class AutomationController {
         limits.activeWorktrees !== null &&
         activeWorktreeRuntimeCount() >= limits.activeWorktrees
       ) {
-        throw new Error(`free plan allows only ${limits.activeWorktrees} active worktree`)
+        throw new Error(`free plan allows at most ${limits.activeWorktrees} active worktrees`)
       }
       const wt = createWorktree(
         this.workspacePath,

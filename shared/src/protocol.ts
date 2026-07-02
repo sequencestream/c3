@@ -2193,7 +2193,7 @@ export const PR_OPERATIONS = ['create', 'review', 'merge', 'close', 'comment'] a
 export type PrOperation = (typeof PR_OPERATIONS)[number]
 
 /** Outcome of a PR operation the model performed with its own tools. */
-export const PR_OPERATION_RESULTS = ['success', 'failure'] as const
+export const PR_OPERATION_RESULTS = ['success', 'failure', 'error'] as const
 export type PrOperationResult = (typeof PR_OPERATION_RESULTS)[number]
 
 /** PR identity — every field optional and vendor-neutral. */
@@ -2222,14 +2222,17 @@ export interface PrBranchRef {
 /** Association linking the event back to a c3 work item so a listener can correlate it. */
 export interface PrEventAssociation {
   intentId?: string
+  /** Human-readable intent name for self-describing events; normalized server-side (redacted + truncated to 256). */
+  intentTitle?: string
 }
 
 /**
  * A vendor-neutral PR operation event, published by the model via the
  * `publish_pr_event` MCP tool after it performs a PR operation with its own
  * tools. Doubles as the MCP input shape and the event-bus payload core.
- * `errorSummary` is meaningful only when `result === 'failure'` and is safely
- * normalized server-side (never carries tokens or raw CLI output).
+ * `errorSummary` is meaningful only when `result === 'failure'` or
+ * `result === 'error'` and is safely normalized server-side (never carries
+ * tokens or raw CLI output).
  */
 export interface PrOperationEvent {
   operation: PrOperation

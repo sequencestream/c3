@@ -600,6 +600,18 @@ describe('scheduler — dispatchEventSchedules (pr:operation)', () => {
     expect(appendLog).toHaveBeenCalledTimes(1)
   })
 
+  it('matches an error result when error is in the filter', () => {
+    install([prSched({ id: 'm4e', eventPrFilter: { results: ['error'] } })])
+    dispatchEventSchedules('pr:operation', prEvent({ result: 'error' }))
+    expect(appendLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips an error result when error is NOT in the filter', () => {
+    install([prSched({ id: 'm4x', eventPrFilter: { results: ['failure'] } })])
+    dispatchEventSchedules('pr:operation', prEvent({ result: 'error' }))
+    expect(appendLog).not.toHaveBeenCalled()
+  })
+
   it('requires BOTH operation and result to match when both are filtered', () => {
     install([prSched({ id: 'm5', eventPrFilter: { operations: ['merge'], results: ['success'] } })])
     dispatchEventSchedules('pr:operation', prEvent({ operation: 'merge', result: 'failure' }))

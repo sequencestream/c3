@@ -31,12 +31,13 @@ describe('runPublishPrEvent — validation', () => {
   })
 
   it.each(['create', 'review', 'merge', 'close', 'comment'] as const)(
-    'accepts the %s operation with success and failure',
+    'accepts the %s operation with success, failure and error',
     (operation) => {
       const published: PrOperationEvent[] = []
       runPublishPrEvent({ operation, result: 'success' }, (e) => published.push(e))
       runPublishPrEvent({ operation, result: 'failure' }, (e) => published.push(e))
-      expect(published.map((e) => e.result)).toEqual(['success', 'failure'])
+      runPublishPrEvent({ operation, result: 'error' }, (e) => published.push(e))
+      expect(published.map((e) => e.result)).toEqual(['success', 'failure', 'error'])
       expect(published.every((e) => e.operation === operation)).toBe(true)
     },
   )
@@ -122,5 +123,66 @@ describe('normalizePrEvent — full event normalization', () => {
       ref: { head: 'feat/cache', base: 'main' },
       association: { intentId: 'intent-1' },
     })
+  })
+
+  it('publishes an error result event and carries it through', () => {
+    const event = normalizePrEvent({
+      operation: 'review',
+      result: 'error',
+      pr: { number: 99, id: 'pr-xyz' },
+      errorSummary: 'CI pipeline failed with timeout',
+    })
+    expect(event).toMatchObject({
+      operation: 'review',
+      result: 'error',
+      pr: { number: 99, id: 'pr-xyz' },
+    })
+    expect(event.errorSummary).toBe('CI pipeline failed with timeout')
+  })
+
+  it('carries intentTitle alongside intentId in association', () => {
+    const event = normalizePrEvent({
+      operation: 'review',
+      result: 'failure',
+      association: { intentId: 'intent-42', intentTitle: 'Add user auth' },
+    })
+    expect(event.association).toEqual({ intentId: 'intent-42', intentTitle: 'Add user auth' })
+  })
+
+  it('writes association when only intentTitle is present (no intentId)', () => {
+    const event = normalizePrEvent({
+      operation: 'review',
+      result: 'error',
+      association: { intentTitle: 'Fix login bug' },
+    })
+    expect(event.association).toEqual({ intentTitle: 'Fix login bug' })
+  })
+
+  it('redacts secrets from intentTitle', () => {
+    const event = normalizePrEvent({
+      operation: 'review',
+      result: 'failure',
+      association: { intentTitle: 'Fix token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345' },
+    })
+    expect(event.association?.intentTitle).not.toContain('ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345')
+    expect(event.association?.intentTitle).toContain('[redacted]')
+  })
+
+  it('truncates long intentTitle to 256 chars', () => {
+    const event = normalizePrEvent({
+      operation: 'review',
+      result: 'error',
+      association: { intentTitle: 'x'.repeat(500) },
+    })
+    expect(event.association?.intentTitle?.length).toBe(256)
+  })
+
+  it('drops association when both intentId and intentTitle are empty after normalization', () => {
+    const event = normalizePrEvent({
+      operation: 'review',
+      result: 'failure',
+      association: { intentId: '', intentTitle: '' },
+    })
+    expect(event.association).toBeUndefined()
   })
 })

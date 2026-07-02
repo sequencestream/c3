@@ -53,8 +53,10 @@ describe('pr-event MCP HTTP route', () => {
   let port: number
   let prEventMcp: ServedPrEventMcp
 
+  let tokCounter = 0
+
   beforeAll(async () => {
-    prEventMcp = createPrEventMcp('http://127.0.0.1', tools, () => 'tok-1')
+    prEventMcp = createPrEventMcp('http://127.0.0.1', tools, () => `tok-${++tokCounter}`)
     const app = new Hono()
     app.all(PR_EVENT_MCP_PATH, (c) => prEventMcp.handler(c))
     await new Promise<void>((resolve) => {
@@ -109,6 +111,45 @@ describe('pr-event MCP HTTP route', () => {
           sessionId: 'run-9',
           operation: 'comment',
           result: 'success',
+        }),
+      )
+    } finally {
+      await transport.close()
+      bound.dispose()
+    }
+  })
+
+  it('calls publish_pr_event with error result and intentTitle', async () => {
+    const bound = prEventMcp.bind({
+      workspacePath: '/proj',
+      getRunId: () => 'run-10',
+      signal: new AbortController().signal,
+    })
+
+    const client = new Client({ name: 'test', version: '1.0.0' })
+    const transport = new StreamableHTTPClientTransport(routeUrl('tok-2'))
+    await client.connect(transport)
+    try {
+      const res = (await client.callTool({
+        name: 'publish_pr_event',
+        arguments: {
+          operation: 'review',
+          result: 'error',
+          pr: { id: 'pr-xyz' },
+          association: { intentId: 'intent-1', intentTitle: 'Fix login' },
+          errorSummary: 'CI pipeline timed out',
+        },
+      })) as { isError?: boolean }
+      expect(res.isError).toBeFalsy()
+      expect(published).toContainEqual(
+        expect.objectContaining({
+          workspacePath: '/proj',
+          sessionId: 'run-10',
+          operation: 'review',
+          result: 'error',
+          pr: { id: 'pr-xyz' },
+          association: { intentId: 'intent-1', intentTitle: 'Fix login' },
+          errorSummary: 'CI pipeline timed out',
         }),
       )
     } finally {

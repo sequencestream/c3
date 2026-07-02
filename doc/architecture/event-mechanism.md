@@ -77,7 +77,7 @@ c3 内部所有「跨特性的事情发生了」都走**同一条进程内总线
 - `RunKind = interactive | background | headless | internal`
   ——run 的**执行形态**分类（执行机制判断走它），与 `SessionKind` 正交。同一 `sessionKind` 的两个 run 执行形态可不同——例如 `work` 用户控制台是 `interactive`，而 `work` 的 automation dev-turn 是 `background`。目前仅作记录/审计字段，暂无消费分支。
 - `RunEndReason = complete | error | aborted`
-- `PR_OPERATIONS = create | review | merge | close | comment`，`PR_OPERATION_RESULTS = success | failure`
+- `PR_OPERATIONS = create | review | merge | close | comment`，`PR_OPERATION_RESULTS = success | failure | error`
 - `INTENT_LIFECYCLE_PHASES = created | dev_started | done | failed | cancelled`
 
 > 目前 `consensus`、`tool` 两种 SessionKind 仍以「类型化标注 + 日志 tag」存在，**尚未经过总线**（执行形态均为 `runKind: internal`）。
@@ -119,7 +119,7 @@ PR 操作事件有两个发布者：模型经 `publish_pr_event` 工具发布，
 
 ### 6.2 入参 Schema（Zod，单一来源 `tool-defs.ts`）
 
-`operation`（枚举）、`result`（枚举）必填；`pr` / `repo` / `ref` / `association` / `errorSummary` 可选。形状与 `PrOperationEvent` 一一对应。
+`operation`（枚举）、`result`（枚举，`success`/`failure`/`error` 三态）必填；`pr` / `repo` / `ref` / `association` / `errorSummary` 可选。形状与 `PrOperationEvent` 一一对应。`association` 新增 `intentTitle`（意图名称，经安全归一后发布），让事件在通知阶段即自解释。
 
 ### 6.3 字段级安全归一化（核心安全资产）
 
@@ -128,7 +128,7 @@ PR 操作事件有两个发布者：模型经 `publish_pr_event` 工具发布，
 1. **secret 脱敏**：`ghp_*` / `github_pat_*` / `glpat-*` / `sk-*` / `key=value` / `bearer <token>` / JWT / 40+ 位 hex blob → `[redacted]`；
 2. **绝对路径剥离**：`/Users/`、`/home/`、`/root/`、`/var/folders/`、`C:\...` → `[redacted]`；
 3. **结构字段** `normalizeField`：脱敏 + `trim` + 截断到 256；
-4. **`errorSummary`** `normalizeErrorSummary`：脱敏 + 剥路径 + **折叠空白**（化解直接粘贴的原始 stdout）+ 截断到 500；
+4. **`errorSummary`** `normalizeErrorSummary`：脱敏 + 剥路径 + **折叠空白**（化解直接粘贴的原始 stdout）+ 截断到 500；`errorSummary` 在 `result=failure` 或 `result=error` 时有意义，`success` 也可携带但通常无用；
 5. 空对象在归一化后被丢弃，保持 payload 紧凑。
 
 ### 6.4 per-run 绑定闭包（信封不可伪造）

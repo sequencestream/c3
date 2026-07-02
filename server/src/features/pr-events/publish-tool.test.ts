@@ -56,6 +56,32 @@ describe('createPrEventMcpServer — publish_pr_event (claude in-process)', () =
     })
   })
 
+  it('publishes an error result event for review/error', async () => {
+    const published: Array<{ workspacePath: string; sessionId: string } & PrOperationEvent> = []
+    const servers = createPrEventMcpServer(
+      { workspacePath: '/proj', getRunId: () => 'run-2', signal: new AbortController().signal },
+      { publish: (p) => published.push(p) },
+    )
+    const handler = getHandler(servers, 'publish_pr_event')
+    const r = await handler(
+      {
+        operation: 'review',
+        result: 'error',
+        pr: { id: 'pr-abc' },
+        association: { intentId: 'intent-1', intentTitle: 'Test intent' },
+      },
+      {},
+    )
+    expect(r.isError).toBeUndefined()
+    expect(published).toHaveLength(1)
+    expect(published[0]).toMatchObject({
+      operation: 'review',
+      result: 'error',
+      pr: { id: 'pr-abc' },
+      association: { intentId: 'intent-1', intentTitle: 'Test intent' },
+    })
+  })
+
   it('returns an isError result and publishes nothing for an illegal operation', async () => {
     const publish = vi.fn()
     const servers = createPrEventMcpServer(

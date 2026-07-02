@@ -118,6 +118,7 @@ const PR_OPERATION_OPTIONS = computed<{ value: PrOperation; label: string }[]>((
 const PR_RESULT_OPTIONS = computed<{ value: PrOperationResult; label: string }[]>(() => [
   { value: 'success', label: t('schedule.form.event.pr.result.success.label') },
   { value: 'failure', label: t('schedule.form.event.pr.result.failure.label') },
+  { value: 'error', label: t('schedule.form.event.pr.result.error.label') },
 ])
 
 // ---- Vendor ----------------------------------------------------------------

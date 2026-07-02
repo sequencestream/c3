@@ -35,7 +35,9 @@ export const publishPrEventSchema = {
   operation: z
     .enum(PR_OPERATIONS)
     .describe('PR 操作类型:create(创建)/review(评审)/merge(合并)/close(关闭)/comment(评论)。'),
-  result: z.enum(PR_OPERATION_RESULTS).describe('操作结果:success(成功)/failure(失败)。'),
+  result: z
+    .enum(PR_OPERATION_RESULTS)
+    .describe('操作结果:success(成功)/failure(失败)/error(异常,如 CI 挂了/工具异常)。'),
   pr: z
     .object({
       number: z.number().int().optional().describe('PR 编号(若平台提供)'),
@@ -65,14 +67,18 @@ export const publishPrEventSchema = {
   association: z
     .object({
       intentId: z.string().optional().describe('关联的 c3 意图 id,供监听器把事件关联回工作项'),
+      intentTitle: z
+        .string()
+        .optional()
+        .describe('意图名称(自解释),经安全归一后再发布,勿放敏感信息'),
     })
     .optional()
-    .describe('关联信息'),
+    .describe('关联信息。review 场景请填写 intentId + intentTitle，让事件在通知阶段即可自解释'),
   errorSummary: z
     .string()
     .optional()
     .describe(
-      '仅 result=failure 时有意义:简短的失败原因摘要(自然语言)。' +
+      '仅 result=failure 或 result=error 时有意义:简短的失败原因摘要(自然语言)。' +
         '切勿包含令牌、密钥、命令行原始输出或绝对路径——服务端会做安全归一化。',
     ),
 }
@@ -94,6 +100,8 @@ export const publishPrEventDesc =
   'PR 的创建/评审/合并/关闭/评论,操作完成或失败后调用本工具发布对应事件;' +
   'c3 本身不执行任何 PR 操作。事件包含 operation、result、pr、repo、ref、association,' +
   '供订阅了 pr:operation 的 Schedule 匹配并触发后续动作。' +
+  'result 是三态:success(成功)/failure(评审判定未通过)/error(执行异常,如 CI 挂了)。' +
+  'review 场景请务必填写 pr.id + association.intentTitle(意图名称),让事件自解释。' +
   '失败时可在 errorSummary 给出简短原因,勿放令牌/密钥/命令行原始输出/绝对路径(服务端会归一化)。'
 
 // ---- Safety normalization (strip tokens / raw CLI output / absolute paths) ----
@@ -199,7 +207,12 @@ export function normalizePrEvent(args: PublishPrEventArgs): PrOperationEvent {
 
   if (args.association) {
     const intentId = normalizeField(args.association.intentId)
-    if (intentId) event.association = { intentId }
+    const intentTitle = normalizeField(args.association.intentTitle)
+    if (intentId || intentTitle) {
+      event.association = {}
+      if (intentId) event.association.intentId = intentId
+      if (intentTitle) event.association.intentTitle = intentTitle
+    }
   }
 
   const errorSummary = normalizeErrorSummary(args.errorSummary)

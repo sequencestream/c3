@@ -16,6 +16,7 @@ import { type PendingWorkSessionSelectRequest } from '@/lib/work-session-jump'
 import type { CodeTab, CodesSearchResultView } from '@/lib/codes-view'
 import type { ChatBody, ChatMsg, RunActivity } from '@/lib/chat-types'
 import { agentNameAt } from '@/lib/agent-prefix'
+import type { DeepLinkTarget } from '@/lib/deep-link'
 import type {
   AutomationStatus,
   CodeDirEntry,
@@ -507,6 +508,22 @@ export function createState(deps: StateDeps) {
   // flips the right column to the standalone chat bound to the active session.
   const requestedIntentSessionId = ref<string | null>(null)
 
+  // ---- Deep link (URL hash routing) ----
+  // One-shot pending deep link parsed from `location.hash` at startup, consumed
+  // by the `ready` handler once workspaces are available. Not persisted to
+  // localStorage — survives only the first `ready` after app mount.
+  const pendingDeepLink = ref<DeepLinkTarget | null>(null)
+  // A deep link whose target id was fulfilled by the corresponding server reply.
+  // Kept as a set so the same link is never re-triggered (unlikely but defensive).
+  const deepLinkFulfilled = ref<Set<string>>(new Set())
+  // Timer handle for the deep link fulfillment timeout (cleanup on unload).
+  const deepLinkTimers: { timeout: ReturnType<typeof setTimeout> | null } = { timeout: null }
+  function clearPendingDeepLink(): void {
+    pendingDeepLink.value = null
+    if (deepLinkTimers.timeout) clearTimeout(deepLinkTimers.timeout)
+    deepLinkTimers.timeout = null
+  }
+
   // The mode-picker options for the viewed session.
   const modeOptions = computed(() => {
     const vendor = activeVendor.value
@@ -617,6 +634,7 @@ export function createState(deps: StateDeps) {
     specLaunchTimers,
     clearSpecLaunchTimers,
     closeSpecLaunch,
+    clearPendingDeepLink,
     // refs
     messages,
     status,
@@ -719,6 +737,9 @@ export function createState(deps: StateDeps) {
     requestedIntentSubTab,
     requestedMergedTab,
     requestedIntentSessionId,
+    pendingDeepLink,
+    deepLinkFulfilled,
+    deepLinkTimers,
     toast,
     intentActionError,
     intentActionErrorSeq,

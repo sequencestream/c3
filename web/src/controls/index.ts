@@ -1,5 +1,6 @@
 import { onMounted, onUnmounted } from 'vue'
 import { createWsClient } from '@/lib/ws'
+import { parseDeepLink } from '@/lib/deep-link'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 import { useAuth } from '@/composables/useAuth'
@@ -62,6 +63,17 @@ export function useAppController(): AppCtx {
   installLicenseActions(ctx)
 
   onMounted(() => {
+    // Read the startup hash for deep-link routing (before creating the WS client).
+    // Parsed and stored as a one-shot pending target consumed by the `ready` handler.
+    // Cleared immediately so it doesn't replay on reconnect.
+    const rawHash = location.hash?.slice(1) ?? ''
+    const parsed = parseDeepLink(rawHash)
+    if (parsed) {
+      ctx.pendingDeepLink.value = parsed
+      // Clear the hash so it won't be re-read on next page load.
+      history.replaceState(null, '', document.location.pathname + document.location.search)
+    }
+
     const client = createWsClient({
       onMessage: ctx.handleMessage,
       onStatus: (s) => (ctx.status.value = s),

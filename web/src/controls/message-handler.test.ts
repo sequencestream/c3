@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import type { Discussion, ResearchMessage, ServerToClient } from '@ccc/shared/protocol'
 import type { SessionInfo } from '@ccc/shared/protocol'
 import { installMessageHandler } from './message-handler'
@@ -46,6 +46,11 @@ function makeCtx() {
   const researchMessages = ref<ChatMsg[]>([])
   const researchMaxSeq = ref(0)
   const persistViewMode = vi.fn()
+  // Deep-link refs (destructured by installMessageHandler's ready/session_selected/discussion_detail
+  // branches; in tests where they aren't asserted, just prevent TypeError from undefined access).
+  const pendingDeepLink = ref<import('@/lib/deep-link').DeepLinkTarget | null>(null)
+  const deepLinkFulfilled = ref<Set<string>>(new Set())
+  const deepLinkTimers = { timeout: null as ReturnType<typeof setTimeout> | null }
   const ctx = {
     toast,
     intentActionError,
@@ -69,6 +74,9 @@ function makeCtx() {
     researchMessages,
     researchMaxSeq,
     persistViewMode,
+    pendingDeepLink,
+    deepLinkFulfilled,
+    deepLinkTimers,
     // The handler reads `ctx.t` at install time; a passthrough is enough here.
     t: (key: string) => key,
     add: vi.fn(),
@@ -219,6 +227,9 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
       activity,
       flags,
       requestedWorkSessionId: ref(null),
+      pendingDeepLink: ref<import('@/lib/deep-link').DeepLinkTarget | null>(null),
+      deepLinkFulfilled: ref<Set<string>>(new Set()),
+      deepLinkTimers: { timeout: null as ReturnType<typeof setTimeout> | null },
       send,
       bindConsoleSession,
       clearViewedSession,
@@ -440,5 +451,427 @@ describe('mid-research reconnect (discussion_detail snapshot + live research_mes
     } as ServerToClient)
     expect(r.researchMessages.value.length).toBe(2)
     expect(r.researchMaxSeq.value).toBe(2)
+  })
+})
+
+describe('deep link (URL hash routing) — ready branch consumption', () => {
+  /** Build a mock ctx with all refs `installMessageHandler` touches in the
+   *  ready/session_selected/discussion_detail branches, plus deep-link refs. */
+  function makeDeepLinkCtx() {
+    const showToast = vi.fn()
+    const ensureSessions = vi.fn()
+    const selectSession = vi.fn()
+    const openIntents = vi.fn()
+    const openDiscussions = vi.fn()
+    const openDiscussion = vi.fn()
+    const maybeRestoreIntents = vi.fn()
+    const maybeRestoreDiscussions = vi.fn()
+    const maybeRestoreSchedules = vi.fn()
+    const maybeRestoreCodes = vi.fn()
+    const persistCurrentWorkspace = vi.fn()
+    const pendingDeepLink = ref<import('@/lib/deep-link').DeepLinkTarget | null>(null)
+    const deepLinkFulfilled = ref<Set<string>>(new Set())
+    const deepLinkTimers = { timeout: null as ReturnType<typeof setTimeout> | null }
+    const currentWorkspace = ref<string | null>(null)
+    const activeTab = ref<string>('console')
+    const sessionStatus = ref<Record<string, import('@ccc/shared/protocol').SessionStatus>>({})
+    const specLaunch = ref<import('@/lib/spec-launch-view').SpecLaunchModel | null>(null)
+    const workspaces = ref<import('@ccc/shared/protocol').WorkspaceInfo[]>([])
+
+    // Refs needed by session_selected handler
+    const activeWorkspace = ref<string | null>(null)
+    const activeSession = ref<string | null>(null)
+    const activeTitle = ref('')
+    const activeVendor = ref<'claude' | 'codex' | null>(null)
+    const activeAgentSwitch = ref<import('@ccc/shared/protocol').SessionAgentSwitch | null>(null)
+    const activeSessionSource = ref<import('@/lib/session-jump').SessionSourceAction | null>(null)
+    const mode = ref<import('@ccc/shared/protocol').ModeToken>('default')
+    const codexPolicy = ref<import('@ccc/shared/protocol').CodexPolicy | null>(null)
+    const consoleSession = ref<import('@/lib/tab-view').SessionRef | null>(null)
+    const messages = ref<import('@/lib/chat-types').ChatMsg[]>([])
+    const counters = { nextId: 1, nextQueueId: 1 }
+    const availableCommands = ref<import('@ccc/shared/protocol').SlashCommandInfo[]>([])
+    const activity = ref<import('@/lib/chat-types').RunActivity>({ phase: 'idle' })
+    const taskModel = ref<import('@/lib/task-list').TaskListModel>({
+      tasks: [],
+    })
+    const selectedIntentSessionId = ref<string | null>(null)
+    const teamSessions = ref<Set<string>>(new Set())
+    const serverSettings = ref<import('@ccc/shared/protocol').SystemSettings | null>(null)
+    const currentAgentIndexBySession = ref<Record<string, number>>({})
+    const sideEffectPendingBySession = ref<Record<string, boolean>>({})
+    const clearSideEffectPending = vi.fn()
+    const intentsProject = ref<string | null>(null)
+    const requestedIntentId = ref<string | null>(null)
+    const requestedWorkSessionId = ref<
+      import('@/lib/work-session-jump').PendingWorkSessionSelectRequest | null
+    >(null)
+
+    // Refs needed by discussion_detail handler
+    const discussions = ref<Record<string, import('@ccc/shared/protocol').Discussion[]>>({})
+    const activeDiscussion = ref<import('@ccc/shared/protocol').Discussion | null>(null)
+    const activeDiscussionId = ref<string | null>(null)
+    const discussionMessages = ref<import('@/lib/chat-types').ChatMsg[]>([])
+    const discussionMaxSeq = ref(0)
+    const researchMessages = ref<import('@/lib/chat-types').ChatMsg[]>([])
+    const researchMaxSeq = ref(0)
+    const discussionDispatch = ref<Record<string, import('@/lib/discussion-view').DispatchView>>({})
+    const discussionRunState = ref<Record<string, 'running' | 'paused'>>({})
+    const researchState = ref<Record<string, 'running'>>({})
+    const schedulesProject = ref<string | null>(null)
+    const schedules = ref<Record<string, import('@ccc/shared/protocol').Schedule[]>>({})
+    const selectedScheduleId = ref<string | null>(null)
+    const scheduleSaving = ref(false)
+    const scheduleLogs = ref<Record<string, import('@ccc/shared/protocol').ScheduleExecutionLog[]>>(
+      {},
+    )
+    const executionTranscripts = ref<
+      Record<string, import('@ccc/shared/protocol').TranscriptItem[]>
+    >({})
+    const scheduleToolManifest = ref<
+      Record<string, import('@ccc/shared/protocol').ToolManifestEntry[] | null>
+    >({})
+    const scheduleToolManifestLoading = ref(false)
+    const scheduleToolManifestError = ref<string | null>(null)
+    const codesProject = ref<string | null>(null)
+    const codesDirs = ref<Record<string, import('@ccc/shared/protocol').CodeDirEntry[]>>({})
+    const codesLoadingDirs = ref<Set<string>>(new Set())
+    const codesTabs = ref<import('@/lib/codes-view').CodeTab[]>([])
+    const codesSearchResult = ref<import('@/lib/codes-view').CodesSearchResultView | null>(null)
+    const codesSearchLoading = ref(false)
+    const codesSearchMode = ref<import('@ccc/shared/protocol').CodeSearchMode>('filename')
+    const codesActivePath = ref<string | null>(null)
+    const codesExpanded = ref<Set<string>>(new Set())
+    const codesSearchQuery = ref('')
+    const codesSearchPattern = ref('*')
+    const intentActionErrorSeq = ref(0)
+    const workcenterEvents = ref<import('@ccc/shared/protocol').WaitUserInvolveEvent[]>([])
+    const notificationPermission = ref('default')
+
+    // Refs needed by applyStatuses
+    const sessionCounts = ref<Record<string, number>>({})
+    const sessionsByWorkspace = ref<Record<string, import('@ccc/shared/protocol').SessionInfo[]>>(
+      {},
+    )
+    const sessionPagingByWorkspace = ref<
+      Record<
+        string,
+        { hasMore: boolean; exhausted: boolean; loadingMore: boolean; pendingSince?: number }
+      >
+    >({})
+    const activeSessionKind = ref<import('./state').SessionPageKind>('work')
+    const flags = { viewModeFirstWorkcenter: true, pendingConsoleBind: false }
+
+    const ctx = {
+      t: (key: string) => key,
+      add: vi.fn(),
+      showToast,
+      ensureSessions,
+      selectSession,
+      openIntents,
+      openDiscussions,
+      openDiscussion,
+      maybeRestoreIntents,
+      maybeRestoreDiscussions,
+      maybeRestoreSchedules,
+      maybeRestoreCodes,
+      persistCurrentWorkspace,
+      pendingDeepLink,
+      deepLinkFulfilled,
+      deepLinkTimers,
+      currentWorkspace,
+      activeTab,
+      sessionStatus,
+      specLaunch,
+      activeWorkspace,
+      activeSession,
+      activeTitle,
+      activeVendor,
+      activeAgentSwitch,
+      activeSessionSource,
+      mode,
+      codexPolicy,
+      consoleSession,
+      messages,
+      counters,
+      availableCommands,
+      activity,
+      taskModel,
+      selectedIntentSessionId,
+      teamSessions,
+      serverSettings,
+      currentAgentIndexBySession,
+      sideEffectPendingBySession,
+      clearSideEffectPending,
+      intentsProject,
+      requestedIntentId,
+      requestedWorkSessionId,
+      discussions,
+      activeDiscussion,
+      activeDiscussionId,
+      discussionMessages,
+      discussionMaxSeq,
+      researchMessages,
+      researchMaxSeq,
+      discussionDispatch,
+      discussionRunState,
+      researchState,
+      schedulesProject,
+      schedules,
+      selectedScheduleId,
+      scheduleSaving,
+      scheduleLogs,
+      executionTranscripts,
+      scheduleToolManifest,
+      scheduleToolManifestLoading,
+      scheduleToolManifestError,
+      codesProject,
+      codesDirs,
+      codesLoadingDirs,
+      codesTabs,
+      codesSearchResult,
+      codesSearchLoading,
+      codesSearchMode,
+      codesActivePath,
+      codesExpanded,
+      codesSearchQuery,
+      codesSearchPattern,
+      intentActionErrorSeq,
+      workcenterEvents,
+      notificationPermission,
+      sessionCounts,
+      sessionsByWorkspace,
+      sessionPagingByWorkspace,
+      activeSessionKind,
+      flags,
+      workspaces,
+      clearPendingDeepLink: (): void => {
+        pendingDeepLink.value = null
+        if (deepLinkTimers.timeout) clearTimeout(deepLinkTimers.timeout)
+        deepLinkTimers.timeout = null
+      },
+      authStatus: ref('unknown'),
+      auth: {
+        setIsAdmin: vi.fn(),
+        setSubject: vi.fn(),
+        handleLoginResult: vi.fn(),
+        handleUnauthenticated: vi.fn(),
+        currentToken: undefined,
+        bindSender: vi.fn(),
+        status: ref('unknown'),
+      },
+      workspaceSettingOpen: ref(false),
+      currentWorkspaceSetting: ref(null),
+      detectedMainBranch: ref(null),
+      resolvedSpecRoot: ref(null),
+      readStoredWorkspace: vi.fn(() => null),
+      flushIfReady: vi.fn(),
+      notifyAwaitingPermission: vi.fn(),
+      send: vi.fn(),
+      dispatchSpecLaunch: vi.fn(),
+      closeDevLaunch: vi.fn(),
+      persistViewMode: vi.fn(),
+      devLaunch: ref(null),
+      hostStatus: ref<import('@ccc/shared/protocol').VendorHostStatus[]>([]),
+      bindingStats: ref<import('@ccc/shared/protocol').SessionBindingStats | null>(null),
+      sessionCapabilities: ref<Record<
+        string,
+        import('@ccc/shared/protocol').SessionCapabilities
+      > | null>(null),
+      vendorCapabilities: ref<Record<string, Record<string, boolean>> | null>(null),
+      vendorModes: ref<Record<string, import('@ccc/shared/protocol').VendorModeCatalog> | null>(
+        null,
+      ),
+      skillSupport: ref<Record<string, import('@ccc/shared/protocol').SkillSupportState> | null>(
+        null,
+      ),
+      skillLinkStatuses: ref<import('@ccc/shared/protocol').SkillLinkStatus[]>([]),
+      installingSkillIds: ref<string[]>([]),
+      skillApprovalRequest: ref<
+        import('@/components/SkillApprovalModal/SkillApprovalModal.vue').ApprovalRequest | null
+      >(null),
+      license: ref<import('@ccc/shared/protocol').LicenseStatus | null>(null),
+      licenseActivationUrl: ref<string | null>(null),
+      licenseRefreshing: ref(false),
+      licenseRefreshError: ref<string | null>(null),
+      workcenterHasMore: ref(false),
+      workcenterLoading: ref(false),
+      workcenterAppendNext: ref(false),
+      intentPrSync: ref<
+        Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
+      >({}),
+      automation: ref<Record<string, import('@ccc/shared/protocol').AutomationStatus>>({}),
+      intentSessions: ref<Record<string, import('@ccc/shared/protocol').IntentSessionInfo[]>>({}),
+      intentSessionRunStates: ref<Record<string, 'running'>>({}),
+      intentSpecContent: ref<string | null>(null),
+      intentSpecLoading: ref(false),
+      pendingSpecRel: ref<string | null>(null),
+      scheduleTimezone: ref('UTC'),
+      newSessionOpen: ref(false),
+      newSessionWorkspace: ref<string | null>(null),
+      currentSessions: computed(() => []),
+      requestedIntentSubTab: ref(null),
+      requestedMergedTab: ref(null),
+      requestedIntentSessionId: ref(null),
+      toast: ref<string | null>(null),
+      intentActionError: ref<string | null>(null),
+    } as unknown as AppCtx
+    installMessageHandler(ctx)
+    return {
+      ctx,
+      showToast,
+      ensureSessions,
+      selectSession,
+      openIntents,
+      openDiscussions,
+      openDiscussion,
+      maybeRestoreIntents,
+      maybeRestoreDiscussions,
+      maybeRestoreSchedules,
+      maybeRestoreCodes,
+      persistCurrentWorkspace,
+      pendingDeepLink,
+      currentWorkspace,
+      activeTab,
+      deepLinkFulfilled,
+      activeWorkspace,
+      activeSession,
+    }
+  }
+
+  it('consumes a session deep link with valid workspace → dispatches selectSession + skips maybeRestore*', () => {
+    const r = makeDeepLinkCtx()
+    r.pendingDeepLink.value = { kind: 'session', workspaceId: 'ws1', id: 'sess-abc' }
+
+    r.ctx.handleMessage({
+      type: 'ready',
+      workspaces: [{ id: 'ws1' }] as import('@ccc/shared/protocol').WorkspaceInfo[],
+      isAdmin: true,
+      subject: null,
+      statuses: [],
+    } as unknown as ServerToClient)
+
+    expect(r.currentWorkspace.value).toBe('ws1')
+    expect(r.selectSession).toHaveBeenCalledWith('ws1', 'sess-abc')
+    // pending deep link is NOT cleared yet — it stays for fulfillment tracking
+    expect(r.pendingDeepLink.value).toEqual({ kind: 'session', workspaceId: 'ws1', id: 'sess-abc' })
+    // maybeRestore* should NOT be called when deep link is consumed
+    expect(r.maybeRestoreIntents).not.toHaveBeenCalled()
+    expect(r.maybeRestoreDiscussions).not.toHaveBeenCalled()
+    expect(r.maybeRestoreSchedules).not.toHaveBeenCalled()
+    expect(r.maybeRestoreCodes).not.toHaveBeenCalled()
+    expect(r.showToast).not.toHaveBeenCalled()
+  })
+
+  it('consumes an intent deep link with valid workspace → dispatches openIntents + skipped maybeRestore*', () => {
+    const r = makeDeepLinkCtx()
+    r.pendingDeepLink.value = { kind: 'intent', workspaceId: 'ws1', id: 'int-xyz' }
+
+    r.ctx.handleMessage({
+      type: 'ready',
+      workspaces: [{ id: 'ws1' }] as import('@ccc/shared/protocol').WorkspaceInfo[],
+      isAdmin: true,
+      subject: null,
+      statuses: [],
+    } as unknown as ServerToClient)
+
+    expect(r.currentWorkspace.value).toBe('ws1')
+    expect(r.openIntents).toHaveBeenCalledWith('ws1')
+    expect(r.maybeRestoreIntents).not.toHaveBeenCalled()
+    expect(r.showToast).not.toHaveBeenCalled()
+  })
+
+  it('consumes a discussion deep link with valid workspace → dispatches openDiscussions + openDiscussion + skipped maybeRestore*', () => {
+    const r = makeDeepLinkCtx()
+    r.pendingDeepLink.value = { kind: 'discussion', workspaceId: 'ws1', id: 'disc-456' }
+
+    r.ctx.handleMessage({
+      type: 'ready',
+      workspaces: [{ id: 'ws1' }] as import('@ccc/shared/protocol').WorkspaceInfo[],
+      isAdmin: true,
+      subject: null,
+      statuses: [],
+    } as unknown as ServerToClient)
+
+    expect(r.currentWorkspace.value).toBe('ws1')
+    expect(r.openDiscussions).toHaveBeenCalledWith('ws1')
+    expect(r.openDiscussion).toHaveBeenCalledWith('disc-456')
+    expect(r.maybeRestoreDiscussions).not.toHaveBeenCalled()
+    expect(r.showToast).not.toHaveBeenCalled()
+  })
+
+  it('workspace not found → shows toast, clears pending, falls through to maybeRestore*', () => {
+    const r = makeDeepLinkCtx()
+    r.pendingDeepLink.value = { kind: 'session', workspaceId: 'ws-unknown', id: 'sess-abc' }
+
+    r.ctx.handleMessage({
+      type: 'ready',
+      workspaces: [{ id: 'ws1' }] as import('@ccc/shared/protocol').WorkspaceInfo[],
+      isAdmin: true,
+      subject: null,
+      statuses: [],
+    } as unknown as ServerToClient)
+
+    expect(r.showToast).toHaveBeenCalledWith('deepLink.notFound')
+    expect(r.pendingDeepLink.value).toBeNull()
+    // Falls through to normal restore
+    expect(r.maybeRestoreIntents).toHaveBeenCalled()
+    expect(r.maybeRestoreDiscussions).toHaveBeenCalled()
+    expect(r.selectSession).not.toHaveBeenCalled()
+  })
+
+  it('session_selected fulfills a session deep link', () => {
+    const r = makeDeepLinkCtx()
+    r.pendingDeepLink.value = { kind: 'session', workspaceId: 'ws1', id: 'sess-target' }
+    r.activeWorkspace.value = 'ws1'
+    r.activeSession.value = 'sess-target'
+
+    r.ctx.handleMessage({
+      type: 'session_selected',
+      workspaceId: 'ws1',
+      sessionId: 'sess-target',
+      title: 'Target Session',
+      mode: 'default',
+      history: [],
+      status: 'idle',
+      vendor: 'claude',
+    } as unknown as ServerToClient)
+
+    expect(r.pendingDeepLink.value).toBeNull()
+    expect(r.deepLinkFulfilled.value.has('sess-target')).toBe(true)
+  })
+
+  it('discussion_detail fulfills a discussion deep link', () => {
+    const r = makeDeepLinkCtx()
+    r.pendingDeepLink.value = { kind: 'discussion', workspaceId: 'ws1', id: 'disc-target' }
+
+    r.ctx.handleMessage({
+      type: 'discussion_detail',
+      discussion: { id: 'disc-target' } as import('@ccc/shared/protocol').Discussion,
+      messages: [],
+      researchMessages: [],
+    } as unknown as ServerToClient)
+
+    expect(r.pendingDeepLink.value).toBeNull()
+    expect(r.deepLinkFulfilled.value.has('disc-target')).toBe(true)
+  })
+
+  it('no pending deep link → normal restore path', () => {
+    const r = makeDeepLinkCtx()
+
+    r.ctx.handleMessage({
+      type: 'ready',
+      workspaces: [{ id: 'ws1' }] as import('@ccc/shared/protocol').WorkspaceInfo[],
+      isAdmin: true,
+      subject: null,
+      statuses: [],
+    } as unknown as ServerToClient)
+
+    expect(r.maybeRestoreIntents).toHaveBeenCalled()
+    expect(r.maybeRestoreDiscussions).toHaveBeenCalled()
+    expect(r.maybeRestoreSchedules).toHaveBeenCalled()
+    expect(r.maybeRestoreCodes).toHaveBeenCalled()
+    expect(r.selectSession).not.toHaveBeenCalled()
+    expect(r.showToast).not.toHaveBeenCalled()
   })
 })

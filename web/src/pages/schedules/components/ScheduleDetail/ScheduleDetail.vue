@@ -13,7 +13,12 @@
  */
 import { computed } from 'vue'
 import { describeCron } from '@ccc/shared/cron'
-import type { AgentConfig, Schedule, ToolManifestEntry } from '@ccc/shared/protocol'
+import type {
+  AgentConfig,
+  PrOperationResult,
+  Schedule,
+  ToolManifestEntry,
+} from '@ccc/shared/protocol'
 import { VENDOR_LABEL, VENDOR_COLOR } from '@/lib/vendor'
 import { useTypedI18n } from '@/i18n'
 
@@ -97,10 +102,15 @@ function prOperationLabel(operation: 'create' | 'review' | 'merge' | 'close' | '
   }
 }
 
-function prResultLabel(result: 'success' | 'failure'): string {
-  return result === 'success'
-    ? t('schedule.form.event.pr.result.success.label')
-    : t('schedule.form.event.pr.result.failure.label')
+function prResultLabel(result: PrOperationResult): string {
+  switch (result) {
+    case 'success':
+      return t('schedule.form.event.pr.result.success.label')
+    case 'failure':
+      return t('schedule.form.event.pr.result.failure.label')
+    case 'error':
+      return t('schedule.form.event.pr.result.error.label')
+  }
 }
 
 const eventTopic = computed(() => eventTopicLabel(props.schedule?.eventTopic ?? null))

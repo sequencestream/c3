@@ -276,11 +276,11 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
     await w.find('textarea').setValue('echo done')
     await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
     await w.findAll('.sf-segmented')[2].findAll('.sf-seg')[2].trigger('click') // pr:operation
-    // pr:operation 隐藏 reason 过滤;.sf-day 现为 5 个操作 + 2 个结果。
+    // pr:operation 隐藏 reason 过滤;.sf-day 现为 5 个操作 + 3 个结果。
     const days = w.findAll('.sf-day')
-    expect(days).toHaveLength(7)
+    expect(days).toHaveLength(8)
     await days[2].trigger('click') // operations: create,review,merge,close,comment → [2]=merge
-    await days[5].trigger('click') // results: success[5], failure[6] → success
+    await days[5].trigger('click') // results: success[5], failure[6], error[7] → success
     await w.find('.sf-btn.primary').trigger('click')
 
     const input = w.emitted('create')![0][0] as Record<string, unknown>
@@ -297,7 +297,7 @@ describe('ScheduleForm.vue — 创建/编辑表单', () => {
       }),
     })
     const days = w.findAll('.sf-day')
-    // operations: close[3] active; results: failure[6] active.
+    // operations: close[3] active; results: failure[6] active (index unchanged after adding error[7]).
     expect(days[3].classes()).toContain('active')
     expect(days[6].classes()).toContain('active')
     expect(days[2].classes()).not.toContain('active') // merge not selected

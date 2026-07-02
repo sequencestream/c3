@@ -846,11 +846,29 @@
       },
       "specSession": {
         "label": "编写规范会话"
+      },
+      "changelog": {
+        "label": "变更日志"
       }
     },
     "spec": {
       "empty": "该意图尚未编写规范。",
       "loading": "加载规范中…"
+    },
+    "changelog": {
+      "empty": "该意图暂无变更日志。",
+      "loading": "加载变更日志中…",
+      "operationType": {
+        "created": "创建",
+        "updated": "更新",
+        "statusChanged": "状态变更",
+        "specCreated": "编写规范",
+        "specApproved": "批准规范",
+        "specUnapproved": "取消批准",
+        "prCreated": "创建 PR",
+        "prMerged": "PR 已合并",
+        "prClosed": "PR 已关闭"
+      }
     },
     "intentSession": {
       "empty": "该意图还没有沟通会话。",

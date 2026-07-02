@@ -31,7 +31,14 @@ export function __resetWriteSpecGuards(): void {
  * 列表为空(无选中意图)时渲染空态。
  */
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import type { DepType, Intent, IntentPrStatus, IntentStatus } from '@ccc/shared/protocol'
+import type {
+  DepType,
+  Intent,
+  IntentLog,
+  IntentLogOperation,
+  IntentPrStatus,
+  IntentStatus,
+} from '@ccc/shared/protocol'
 import type {
   PromptImage,
   SessionAgentSwitch,
@@ -95,6 +102,10 @@ const props = defineProps<{
   /** 选中意图 spec.md 内容;null=未加载/无。 */
   intentSpecContent: string | null
   intentSpecLoading: boolean
+  // ── 变更日志(changelog tab)──
+  /** 选中意图的生命周期变更日志(倒序);切到 changelog tab 时懒加载。 */
+  intentLogs: IntentLog[]
+  intentLogsLoading: boolean
   /** One-shot request from WorkCenter jump-to-source: force a detail sub-tab switch
    * (intentSession / specSession). Cleared via `requested-subtab-consumed`. */
   requestedSubTab?: 'intentSession' | 'specSession' | null
@@ -118,6 +129,7 @@ const emit = defineEmits<{
   'open-intent-session': [sessionId: string]
   'open-spec-session': [intentId: string]
   'read-spec': [intentId: string, specPath: string]
+  'list-intent-logs': [intentId: string]
   // ── 会话重置(带新输入,拼接意图/spec 内容新起会话) ──
   'reset-intent-session': [intentId: string, userInput: string]
   'reset-spec-session': [intentId: string, userInput: string]
@@ -404,7 +416,7 @@ function onMainAction(): void {
 }
 
 // ── Tab 状态 ────────────────────────────────────────────────────────────────
-type DetailTab = 'intent' | 'intentSession' | 'spec' | 'specSession'
+type DetailTab = 'intent' | 'intentSession' | 'spec' | 'specSession' | 'changelog'
 const activeTab = ref<DetailTab>('intent')
 
 const TABS: { key: DetailTab; label: string }[] = [
@@ -412,7 +424,26 @@ const TABS: { key: DetailTab; label: string }[] = [
   { key: 'intentSession', label: t('intent.tab.intentSession.label') },
   { key: 'spec', label: t('intent.tab.spec.label') },
   { key: 'specSession', label: t('intent.tab.specSession.label') },
+  { key: 'changelog', label: t('intent.tab.changelog.label') },
 ]
+
+// ── 变更日志(changelog tab)──────────────────────────────────────────────
+// 操作类型 → 本地化标签。key 全为字面量,拼错走 vue-tsc 失败(typed t)。
+const OP_LABELS: Record<IntentLogOperation, string> = {
+  intent_created: t('intent.changelog.operationType.created'),
+  intent_updated: t('intent.changelog.operationType.updated'),
+  status_changed: t('intent.changelog.operationType.statusChanged'),
+  spec_created: t('intent.changelog.operationType.specCreated'),
+  spec_approved: t('intent.changelog.operationType.specApproved'),
+  spec_unapproved: t('intent.changelog.operationType.specUnapproved'),
+  pr_created: t('intent.changelog.operationType.prCreated'),
+  pr_merged: t('intent.changelog.operationType.prMerged'),
+  pr_closed: t('intent.changelog.operationType.prClosed'),
+}
+
+function opLabel(op: IntentLogOperation): string {
+  return OP_LABELS[op] ?? op
+}
 
 // spec tab「我要修改」提交后,待新 spec 会话真正创建(specSessionId 回填为新非空值)
 // 再自动切到 spec session tab 的一次性状态。记录待切意图 id 与提交时刻的旧 specSessionId,
@@ -452,6 +483,10 @@ function selectTab(tab: DetailTab): void {
   if (!r) return
   if (tab === 'spec' && r.specPath) {
     emit('read-spec', r.id, r.specPath)
+  }
+  // changelog 懒加载:该意图的日志尚未拉过(空)才发起,已有缓存直接渲染。
+  if (tab === 'changelog' && props.intentLogs.length === 0) {
+    emit('list-intent-logs', r.id)
   }
 }
 
@@ -891,6 +926,34 @@ defineExpose({
         </div>
       </div>
 
+      <!-- changelog tab:生命周期变更日志(倒序) -->
+      <div
+        v-else-if="activeTab === 'changelog'"
+        class="intent-detail-body"
+        data-testid="tab-changelog"
+      >
+        <p v-if="intentLogsLoading && intentLogs.length === 0" class="intent-detail-empty">
+          {{ t('intent.changelog.loading') }}
+        </p>
+        <p
+          v-else-if="intentLogs.length === 0"
+          class="intent-detail-empty"
+          data-testid="intent-detail-changelog-empty"
+        >
+          {{ t('intent.changelog.empty') }}
+        </p>
+        <ul v-else class="req-changelog" data-testid="intent-detail-changelog-list">
+          <li v-for="log in intentLogs" :key="log.id" class="req-changelog-row">
+            <span class="req-changelog-op" :class="'req-changelog-op--' + log.operationType">{{
+              opLabel(log.operationType)
+            }}</span>
+            <span class="req-changelog-summary">{{ log.summary }}</span>
+            <span class="req-changelog-actor">{{ log.actor }}</span>
+            <span class="req-changelog-time">{{ formatDate(log.createdAt, locale) }}</span>
+          </li>
+        </ul>
+      </div>
+
       <!-- intent session / spec session tab:复用聊天列 -->
       <template v-else>
         <p
@@ -1145,5 +1208,48 @@ defineExpose({
   background: var(--c-success);
   border-color: var(--c-success);
   color: #fff;
+}
+
+/* 变更日志:一行一条(操作类型标签 + 摘要 + 操作人 + 时间),倒序由数据保证。 */
+.req-changelog {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.req-changelog-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  font-size: var(--fs-caption);
+}
+.req-changelog-op {
+  flex: 0 0 auto;
+  padding: 0 var(--sp-1);
+  border-radius: 4px;
+  background: var(--c-bg-muted, rgba(127, 127, 127, 0.12));
+  color: var(--c-text);
+  white-space: nowrap;
+}
+.req-changelog-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--c-text);
+  word-break: break-word;
+}
+.req-changelog-actor {
+  flex: 0 0 auto;
+  color: var(--c-text-muted);
+}
+.req-changelog-time {
+  flex: 0 0 auto;
+  color: var(--c-text-muted);
+  white-space: nowrap;
 }
 </style>

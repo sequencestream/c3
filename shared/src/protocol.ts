@@ -1924,6 +1924,47 @@ export interface IntentDevSession {
 }
 
 /**
+ * Intent lifecycle-log operation kinds — the auditable moments of an intent's
+ * life. `spec_unapproved` is reserved for a future un-approve entry point (no
+ * writer in this phase).
+ */
+export const INTENT_LOG_OPERATIONS = [
+  'intent_created',
+  'intent_updated',
+  'status_changed',
+  'spec_created',
+  'spec_approved',
+  'spec_unapproved',
+  'pr_created',
+  'pr_merged',
+  'pr_closed',
+] as const
+
+export type IntentLogOperation = (typeof INTENT_LOG_OPERATIONS)[number]
+
+/**
+ * One intent lifecycle-log entry (who did what, when). Append-only audit trail:
+ * every lifecycle operation (create / update / status transition / spec authored
+ * or approved / PR created or merged or closed) appends a row; rows are never
+ * edited or deleted. Work-session start/stop is NOT logged here — that audit
+ * trail lives in `intent_sessions` ({@link IntentDevSession}).
+ */
+export interface IntentLog {
+  /** Row id (uuid). */
+  id: string
+  /** Owning intent id (UUID). */
+  intentId: string
+  /** What happened. */
+  operationType: IntentLogOperation
+  /** Human-readable one-line summary (e.g. `状态变更: todo → in_progress`). */
+  summary: string
+  /** Who did it: a login subject, `'system'` (no user context), or `'automation'`. */
+  actor: string
+  /** When it happened (epoch ms). */
+  createdAt: number
+}
+
+/**
  * Lifecycle of the per-project automation orchestrator (a single background loop
  * that develops `automate` intents one by one, by priority + dependencies).
  * - `idle` — not running (never started, or stopped by the user).
@@ -2849,6 +2890,12 @@ export type ClientToServer =
    */
   | { type: 'list_intent_sessions'; workspaceId: string }
   /**
+   * List one intent's lifecycle-log entries (reply: `intent_logs_list`,
+   * newest-first, full set — no pagination in this phase). Sent lazily when the
+   * detail's changelog tab is opened.
+   */
+  | { type: 'list_intent_logs'; intentId: string }
+  /**
    * Rename an intent communication session (must exist; error otherwise).
    * The server broadcasts the refreshed `intent_sessions` list on success.
    */
@@ -3421,6 +3468,12 @@ export type ServerToClient =
       items: IntentSessionInfo[]
       runStates?: Record<string, 'running'>
     }
+  /**
+   * One intent's lifecycle-log entries (reply to `list_intent_logs`), newest
+   * first. Single-intent single-shot full fetch — no incremental pushes; the
+   * client re-requests when it needs a refresh.
+   */
+  | { type: 'intent_logs_list'; intentId: string; items: IntentLog[] }
   /**
    * The project's automation-orchestrator status. Pushed on entering the
    * intent view and on every state change (start/stop/progress/error), so

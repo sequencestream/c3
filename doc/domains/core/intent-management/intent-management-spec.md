@@ -380,3 +380,22 @@ work-session back-link is `select_session`. See the
   outside the workspace, shared by all the project's worktrees), whether a human has approved
   it, and the approving user's login subject (RM-R22). Together with the workspace `sddEnabled`
   switch they drive the four-state intent action button.
+
+## Intent lifecycle log (变更日志)
+
+单个意图的"谁、什么时间、做了什么"操作审计轨迹，只增不改。SoT 是 `intent_logs` 表
+(`database/intents/intent_logs.sql`，schema v15→v16)，每行: `id`(uuid)、`intent_id`、
+`operation_type`、`summary`、`actor`、`created_at`。
+
+- **操作类型** (`IntentLogOperation`，协议侧字符串联合): `intent_created` / `intent_updated` /
+  `status_changed` / `spec_created` / `spec_approved` / `spec_unapproved`(保留值，本期无写入方) /
+  `pr_created` / `pr_merged` / `pr_closed`。
+- **写入点**: `upsertIntents` (创建/更新分支)、`updateStatus` (状态真实变化才写，同状态不写；
+  reconcile / 自动化编排 / PR 回填工具等无 conn 上下文的调用统一落 `'automation'`)、
+  `write_spec` / `approve_spec` / `create_pr` handler (actor 取登录 subject，缺省 `'system'`)、
+  `syncIntentPrStatus` 检测到 merged / closed (actor 固定 `'automation'`)。所有写入经
+  `safeInsertIntentLog` 隔离——日志失败仅 warn，不影响业务主路径。
+- **API**: 客户端 `list_intent_logs`(intentId) → 服务端 `intent_logs_list`(倒序全量)；
+  前端 IntentDetail 的「变更日志」tab 切入时懒加载，按 intent id 缓存。
+- **非目标**: 不记录内容 diff (只记简单摘要)、不覆盖依赖关系变更 (`intent_deps` 自身即记录)、
+  不覆盖工作会话启动/结束 (由 `intent_sessions` 审计)、无分页/编辑/删除 (一期全量展示)。

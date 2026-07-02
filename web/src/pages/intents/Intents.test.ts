@@ -65,6 +65,8 @@ function mountIntents(intents: Intent[]) {
       automation: null,
       intentSpecContent: null,
       intentSpecLoading: false,
+      intentLogsById: {},
+      intentLogsLoading: false,
       activeSession: null,
       activeTitle: '',
       hasActiveSession: false,

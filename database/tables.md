@@ -2,7 +2,7 @@
 
 所有表存储在单文件 SQLite 数据库 `~/.c3/c3.db` 中，通过 `node:sqlite` / `bun:sqlite` 内置驱动访问。Schema 在各 Store 模块中惰性创建 (`CREATE TABLE IF NOT EXISTS`)，迁移通过 `PRAGMA table_info` 列存在性检查做幂等演进。
 
-> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 13 张表，6 个模块。
+> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 14 张表，6 个模块。
 
 ## 基础设施
 
@@ -27,14 +27,15 @@
 | 11  | user-involve | `wait_user_involve_events`  | [user-involve/wait_user_involve_events.sql](user-involve/wait_user_involve_events.sql) | `server/src/features/user-involve/store.ts`              | 等待用户介入事件                                         |
 | 12  | sessions     | `session_metadata`          | [sessions/session_metadata.sql](sessions/session_metadata.sql)                         | `server/src/features/sessions/session-metadata-store.ts` | 统一会话列表元数据投影 (由 `work_session_metadata` 改名) |
 | 13  | intents      | `intent_sessions`           | [intents/intent_sessions.sql](intents/intent_sessions.sql)                             | `server/src/features/intents/store.ts`                   | intent work session 执行记录 (审计追踪)                  |
+| 14  | intents      | `intent_logs`               | [intents/intent_logs.sql](intents/intent_logs.sql)                                     | `server/src/features/intents/store.ts`                   | 意图生命周期变更日志 (操作审计轨迹)                      |
 
 ## 模块说明
 
 ### intents
 
-意图管理的核心域。`intents` 是主表，记录每个需求/任务的生命周期；`intent_deps` 表达意图间的先后依赖；`intent_chats` 同时充当 per-workspace 沟通会话映射和隐藏会话过滤器；`tool_sessions` 持久化工具自动创建的会话 ID 集合，仅回答“这个 vendor session 是否由工具创建”，不保存来源反链；`intent_sessions` 记录每次 intent work session 的执行审计历史。
+意图管理的核心域。`intents` 是主表，记录每个需求/任务的生命周期；`intent_deps` 表达意图间的先后依赖；`intent_chats` 同时充当 per-workspace 沟通会话映射和隐藏会话过滤器；`tool_sessions` 持久化工具自动创建的会话 ID 集合，仅回答“这个 vendor session 是否由工具创建”，不保存来源反链；`intent_sessions` 记录每次 intent work session 的执行审计历史；`intent_logs` 记录意图生命周期的操作审计轨迹 (谁、什么时间、做了什么)，只增不改，工作会话启动/结束不写本表 (由 `intent_sessions` 覆盖)。
 
-Schema 版本: 14。v5→v6 完成了 `requirements*` → `intents*` 的就地表重命名迁移。v7→v8 新增 git 追踪字段: `branch_name`, `latest_commit_hash`, `pr_id`, `pr_status`。v8→v9 扩展 `intent_deps` 新增 `dep_type` (blocks/informs/soft_after) + `created_at`。v9→v10 新增 `intent_sessions` 表 (work session 审计追踪)。v10→v11 把工作区主键列 `project_path` 就地改名为 `workspace_path` (`intents` + `intent_chats`)，复合索引 `idx_intent_project_status` → `idx_intent_workspace_status`；单列索引 `idx_chat_project` 保留索引名、列引用随改 (详见迁移记录 `migrate/2026/06/14/012`)。v11→v12 新增 `intents.short_en_title` (nullable TEXT，派生分支/worktree 名的稳定 ASCII 来源；历史行保持 NULL，写入侧截断到 128；详见迁移记录 `migrate/2026/06/18/013`)。v12→v13 新增 spec 质量闸 + 会话字段: `spec_path` (nullable TEXT，已撰写 spec 文档路径)、`spec_approved` (INTEGER 0/1，DEFAULT 0，人工审批闸状态)、`spec_approve_user` (nullable TEXT，审批人)、`spec_session_id` (nullable TEXT，撰写/精炼 spec 的会话)、`intent_session_id` (nullable TEXT，refine/沟通会话；与 `last_work_session_id` 工作会话并存且语义不同)；历史行 `spec_approved=0`、其余 NULL；详见迁移记录 `migrate/2026/06/18/014`)。v13→v14 新增 `intents.pr_url` (nullable TEXT，PR 可跳转链接如 GitHub PR URL；与 `latest_commit_hash` 语义不重复，不引入重复的 `commit_hash` 字段；历史行保持 NULL；手动 Start Work 结束自动收尾 Git/PR 时写入；详见迁移记录 `migrate/2026/06/20/016`)。
+Schema 版本: 16。v5→v6 完成了 `requirements*` → `intents*` 的就地表重命名迁移。v7→v8 新增 git 追踪字段: `branch_name`, `latest_commit_hash`, `pr_id`, `pr_status`。v8→v9 扩展 `intent_deps` 新增 `dep_type` (blocks/informs/soft_after) + `created_at`。v9→v10 新增 `intent_sessions` 表 (work session 审计追踪)。v10→v11 把工作区主键列 `project_path` 就地改名为 `workspace_path` (`intents` + `intent_chats`)，复合索引 `idx_intent_project_status` → `idx_intent_workspace_status`；单列索引 `idx_chat_project` 保留索引名、列引用随改 (详见迁移记录 `migrate/2026/06/14/012`)。v11→v12 新增 `intents.short_en_title` (nullable TEXT，派生分支/worktree 名的稳定 ASCII 来源；历史行保持 NULL，写入侧截断到 128；详见迁移记录 `migrate/2026/06/18/013`)。v12→v13 新增 spec 质量闸 + 会话字段: `spec_path` (nullable TEXT，已撰写 spec 文档路径)、`spec_approved` (INTEGER 0/1，DEFAULT 0，人工审批闸状态)、`spec_approve_user` (nullable TEXT，审批人)、`spec_session_id` (nullable TEXT，撰写/精炼 spec 的会话)、`intent_session_id` (nullable TEXT，refine/沟通会话；与 `last_work_session_id` 工作会话并存且语义不同)；历史行 `spec_approved=0`、其余 NULL；详见迁移记录 `migrate/2026/06/18/014`)。v13→v14 新增 `intents.pr_url` (nullable TEXT，PR 可跳转链接如 GitHub PR URL；与 `latest_commit_hash` 语义不重复，不引入重复的 `commit_hash` 字段；历史行保持 NULL；手动 Start Work 结束自动收尾 Git/PR 时写入；详见迁移记录 `migrate/2026/06/20/016`)。v14→v15 把最近一次意图工作会话指针列 `last_dev_session_id` 就地改名为 `last_work_session_id` (详见迁移记录 `migrate/2026/06/30/020`)。v15→v16 新增 `intent_logs` 表 (生命周期变更日志: `id` uuid 主键、`intent_id`、`operation_type`、`summary`、`actor`、`created_at`，索引 `idx_intent_log_intent_created(intent_id, created_at DESC)`；无历史数据迁移，从上线时刻开始记录；详见迁移记录 `migrate/2026/07/02/021`)。
 
 ### discussions
 

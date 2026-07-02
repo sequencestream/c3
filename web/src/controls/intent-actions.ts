@@ -223,6 +223,14 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'read_spec', workspaceId: intentsProject.value, intentId })
   }
 
+  // Fetch the selected intent's lifecycle-log entries for the detail's
+  // changelog tab. Keyed by intent id only (the server resolves the intent);
+  // the `intent_logs_list` reply lands in `intentLogsById`.
+  ctx.listIntentLogs = (intentId: string): void => {
+    ctx.intentLogsLoading.value = true
+    send({ type: 'list_intent_logs', intentId })
+  }
+
   ctx.createPr = (intentId: string): void => {
     if (!intentsProject.value) return
     send({

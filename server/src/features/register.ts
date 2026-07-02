@@ -42,6 +42,7 @@ import {
 import {
   deleteIntentSession,
   discussionToIntent,
+  listIntentLogsHandler,
   listIntentSessions,
   listIntentsHandler,
   newIntentSession,
@@ -140,6 +141,7 @@ export const handlerMap: HandlerMap = {
   refine_intent: refineIntent,
   discussion_to_intent: discussionToIntent,
   list_intent_sessions: listIntentSessions,
+  list_intent_logs: listIntentLogsHandler,
   rename_intent_session: renameIntentSession,
   delete_intent_session: deleteIntentSession,
   start_development: startDevelopment,

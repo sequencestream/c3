@@ -34,7 +34,14 @@ import {
 import { upsertPendingRow } from '../sessions/session-metadata-store.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
-import { getIntent, isStoreAvailable, listIntents, setSpecApproved, setSpecPath } from './store.js'
+import {
+  getIntent,
+  isStoreAvailable,
+  listIntents,
+  safeInsertIntentLog,
+  setSpecApproved,
+  setSpecPath,
+} from './store.js'
 import { computeSpecLayout } from './spec-path.js'
 import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
@@ -242,6 +249,7 @@ export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
   // even if the session below fails to launch. The stored path is ABSOLUTE (the
   // spec lives outside the workspace under the centralized root).
   setSpecPath(intent.id, layout.fileAbs)
+  safeInsertIntentLog(intent.id, 'spec_created', '编写 spec', conn.subject)
   ctx.broadcastIntents(proj)
 
   // Launch the write-confined spec session: pin the spec agent, confine writes to
@@ -307,6 +315,7 @@ export const approveSpecHandler: Handler<'approve_spec'> = (ctx, conn, msg) => {
   }
 
   setSpecApproved(intent.id, true, conn.subject)
+  safeInsertIntentLog(intent.id, 'spec_approved', '批准 spec', conn.subject)
   ctx.broadcastIntents(proj)
 }
 

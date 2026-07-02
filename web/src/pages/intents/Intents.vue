@@ -20,6 +20,7 @@ import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 import type {
   AutomationStatus,
   Intent,
+  IntentLog,
   IntentStatus,
   PromptImage,
   SessionAgentSwitch,
@@ -50,6 +51,9 @@ const props = defineProps<{
   /** Selected intent's spec.md content (intent detail `spec` tab); null=未加载/无。 */
   intentSpecContent: string | null
   intentSpecLoading: boolean
+  /** Per-intent lifecycle-log cache (intent detail `changelog` tab),按 intent id 取。 */
+  intentLogsById: Record<string, IntentLog[]>
+  intentLogsLoading: boolean
   // right: chat column (shared with sessions page)
   /** The global active session id; passed to IntentDetail to gate its chat tabs. */
   activeSession: string | null
@@ -97,6 +101,7 @@ const emit = defineEmits<{
   'open-spec-session': [intentId: string]
   'open-intent-session': [sessionId: string]
   'read-spec': [intentId: string, specPath: string]
+  'list-intent-logs': [intentId: string]
   'reset-intent-session': [intentId: string, userInput: string]
   'reset-spec-session': [intentId: string, userInput: string]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
@@ -161,6 +166,11 @@ function handleOrderedChange(ids: string[]): void {
 }
 const selectedIntent = computed<Intent | null>(
   () => props.intents.find((r) => r.id === selectedIntentId.value) ?? null,
+)
+
+// 选中意图的变更日志(changelog tab),未拉取时为空数组。
+const selectedIntentLogs = computed<IntentLog[]>(() =>
+  selectedIntentId.value ? (props.intentLogsById[selectedIntentId.value] ?? []) : [],
 )
 
 // External one-shot select request (work session title-bar jump button): when the
@@ -309,7 +319,10 @@ defineExpose({
         :voice-lang="voiceLang"
         :intent-spec-content="intentSpecContent"
         :intent-spec-loading="intentSpecLoading"
+        :intent-logs="selectedIntentLogs"
+        :intent-logs-loading="intentLogsLoading"
         @refine="(id: string) => emit('refine', id)"
+        @list-intent-logs="(id: string) => emit('list-intent-logs', id)"
         @write-spec="(id: string) => emit('write-spec', id)"
         @approve-spec="(id: string) => emit('approve-spec', id)"
         @open-spec-session="(id: string) => emit('open-spec-session', id)"

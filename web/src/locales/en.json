@@ -846,11 +846,29 @@
       },
       "specSession": {
         "label": "Spec session"
+      },
+      "changelog": {
+        "label": "Changelog"
       }
     },
     "spec": {
       "empty": "No spec has been written for this intent yet.",
       "loading": "Loading spec…"
+    },
+    "changelog": {
+      "empty": "No lifecycle changes have been recorded for this intent yet.",
+      "loading": "Loading changelog…",
+      "operationType": {
+        "created": "Created",
+        "updated": "Updated",
+        "statusChanged": "Status changed",
+        "specCreated": "Spec written",
+        "specApproved": "Spec approved",
+        "specUnapproved": "Spec unapproved",
+        "prCreated": "PR created",
+        "prMerged": "PR merged",
+        "prClosed": "PR closed"
+      }
     },
     "intentSession": {
       "empty": "This intent has no refine session yet.",

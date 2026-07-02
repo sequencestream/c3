@@ -110,6 +110,8 @@ export interface AppMethods {
    * intent id); `specPath` is the awaited absolute reply path.
    */
   readIntentSpec(intentId: string, specPath: string): void
+  /** Fetch the intent's lifecycle-log entries for the detail's changelog tab. */
+  listIntentLogs(intentId: string): void
   /** Reset the intent's refine session: new input + intent content → fresh session. */
   resetIntentSession(intentId: string, userInput: string): void
   /** Reset the intent's spec session: new input + current spec content → fresh session. */

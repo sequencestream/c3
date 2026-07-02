@@ -625,6 +625,11 @@ every connection. It is wired into the shared kernel context so intent session h
 and any background mutation can push the refreshed list.
 
 - `list_intents` / `update_intent_status` read/write the store and reply `intents`.
+  `update_intent_status` is `async`: cancelling an intent that owns a `prId` first closes the remote
+  PR/MR via `closeForgePr` (`gh pr close` / `glab mr close`). A close failure sends
+  `intent.prCloseFailed` and returns **before** any status change; on success it flips the status,
+  writes `prStatus='closed'` (keeping `prUrl`) via `setPrInfo`, and appends a `pr_closed` lifecycle
+  log. Intents with no PR keep the original synchronous path.
 - Dev back-link: the frontend sends `select_session` with `lastWorkSessionId`; if the session no
   longer exists, the existing `error` path returns and the frontend offers a friendly
   restart/cancel exit (RM-R13).

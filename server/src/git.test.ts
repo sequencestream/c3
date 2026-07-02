@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   classifyCommitFailure,
+  closeForgePr,
+  closeGhPr,
   commitAndPush,
   createForgePr,
   createGlabMr,
@@ -333,6 +335,62 @@ describe('forge detection and change-request creation', () => {
       status: 'closed',
       prUrl: 'https://gitlab/o/r/-/merge_requests/9',
     })
+  })
+})
+
+describe('closeGhPr / closeForgePr — cancel-intent PR close gate', () => {
+  /** Fake CLI that records the exact argv it was called with to `<dir>/argv`. */
+  function installArgvRecordingCli(name: 'gh' | 'glab'): string {
+    const bin = join(dir, 'bin')
+    mkdirSync(bin, { recursive: true })
+    const argvFile = join(dir, `${name}-argv`)
+    const script = join(bin, name)
+    writeFileSync(script, `#!/bin/sh\nprintf '%s\\n' "$@" > '${argvFile}'\nexit 0\n`)
+    chmodSync(script, 0o755)
+    process.env.PATH = `${bin}:${originalPath ?? ''}`
+    return argvFile
+  }
+
+  it('closes a GitHub PR with exactly `pr close <id>` and no extra flags', async () => {
+    const argvFile = installArgvRecordingCli('gh')
+
+    await expect(closeGhPr(work, '123')).resolves.toEqual({ ok: true })
+    expect(readFileSync(argvFile, 'utf8').trim().split('\n')).toEqual(['pr', 'close', '123'])
+  })
+
+  it('treats an already-closed PR as a failure (blocks the cancellation)', async () => {
+    installFakeCli('gh', '', 'GraphQL: Could not resolve to a PullRequest', 1)
+
+    await expect(closeGhPr(work, '123')).resolves.toEqual({
+      ok: false,
+      error: 'GraphQL: Could not resolve to a PullRequest',
+    })
+  })
+
+  it('marks a missing gh CLI unavailable', async () => {
+    process.env.PATH = join(dir, 'empty-bin')
+
+    await expect(closeGhPr(work, '123')).resolves.toMatchObject({
+      ok: false,
+      unavailable: true,
+      error: 'gh CLI 未安装',
+    })
+  })
+
+  it('marks an unauthenticated gh unavailable', async () => {
+    installFakeCli('gh', '', 'To get started with GitHub CLI, please run: gh auth login', 1)
+
+    await expect(closeGhPr(work, '123')).resolves.toMatchObject({
+      ok: false,
+      unavailable: true,
+    })
+  })
+
+  it('routes to glab via an explicit provider override', async () => {
+    const argvFile = installArgvRecordingCli('glab')
+
+    await expect(closeForgePr(work, '42', 'gitlab')).resolves.toEqual({ ok: true })
+    expect(readFileSync(argvFile, 'utf8').trim().split('\n')).toEqual(['mr', 'close', '42'])
   })
 })
 

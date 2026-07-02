@@ -204,6 +204,16 @@ stateDiagram-v2
   Refine does not change status (RM-R7); it may add/update items via `save_intents`.
 - **`completedAt` tracks `done`.** Transitioning to `done` stamps `completedAt` with the current
   time; any transition out of `done` clears it back to null (RM-R9).
+- **Cancel closes the associated PR/MR.** When an intent with a nonempty `prId` is cancelled
+  (`update_intent_status` target `cancelled`), the server first closes the remote change request
+  through the forge-aware capability (GitHub `gh pr close <id>`, GitLab `glab mr close <id>`, no extra
+  flags). **The close gates the status flip:** on success the intent flips to `cancelled`, `prStatus`
+  becomes `closed` (the existing `prUrl` is kept), and a `pr_closed` lifecycle log is appended; on any
+  failure — CLI missing/unauthenticated, or a PR already closed externally — the cancellation is
+  **blocked entirely** (status and PR fields unchanged) and a `intent.prCloseFailed` UI error surfaces
+  so the user closes it manually and retries. An intent **without** a PR cancels along the original
+  path untouched. Cancel never deletes the branch or worktree (branch cleanup stays with the existing
+  worktree/branch logic).
 
 ## User scenarios
 

@@ -92,7 +92,7 @@ import {
 import { getDiscussion } from '../discussions/store.js'
 import { currentLicenseStatus } from '../license/store.js'
 import { currentPlanLimits, limitError } from '../license/plan-limits.js'
-import { commitAndPush, createGhPr } from '../../git.js'
+import { closeForgePr, commitAndPush, createGhPr } from '../../git.js'
 import { buildServerSidePrCreateEvent } from '../pr-events/tool-defs.js'
 import {
   createWorktree,
@@ -935,7 +935,7 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
   }
 }
 
-export const updateIntentStatus: Handler<'update_intent_status'> = (ctx, conn, msg) => {
+export const updateIntentStatus: Handler<'update_intent_status'> = async (ctx, conn, msg) => {
   if (!isStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
@@ -956,9 +956,36 @@ export const updateIntentStatus: Handler<'update_intent_status'> = (ctx, conn, m
     })
     return
   }
+  // Cancelling an intent that owns a PR closes the remote PR first. This runs
+  // synchronously ahead of the status flip: a close failure (CLI missing, auth,
+  // or a PR already closed externally) blocks the cancellation entirely — the
+  // intent keeps its status and the user handles it on the forge before retrying.
+  if (msg.status === 'cancelled' && req.prId) {
+    const proj = resolveWorkspaceRoot(req.workspaceId)!
+    const close = await closeForgePr(proj, req.prId)
+    if (!close.ok) {
+      conn.send({
+        type: 'error',
+        error: { code: 'intent.prCloseFailed', params: { detail: close.error ?? '未知错误' } },
+      })
+      return
+    }
+  }
   const prevStatus = req.status
   // UI-initiated transition: the lifecycle log's actor is the login subject.
   updateStatus(msg.intentId, msg.status, conn.subject ?? 'system')
+  // PR closed alongside the cancellation: flip its lifecycle status to `closed`
+  // (keeping the existing pr_url) and record the audit log. `updateStatus` already
+  // wrote the `status_changed` entry, so this only adds the `pr_closed` entry.
+  if (msg.status === 'cancelled' && req.prId) {
+    setPrInfo(msg.intentId, req.prId, 'closed', req.prUrl ?? null)
+    safeInsertIntentLog(
+      msg.intentId,
+      'pr_closed',
+      `PR #${req.prId} 已随意图取消`,
+      conn.subject ?? 'system',
+    )
+  }
   // If the intent leaves in_progress, clear its cache entry so a future
   // restart doesn't show a stale dangling/running label.
   if (req.status === 'in_progress' && msg.status !== 'in_progress') {

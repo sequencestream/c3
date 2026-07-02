@@ -1576,6 +1576,7 @@
       "devStartInFlight": "Work is already starting for this intent.",
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
       "prCreateFailed": "PR creation failed: {detail}.",
+      "prCloseFailed": "Automatic PR close failed: {detail}. Close it manually, then retry the cancellation.",
       "gitCleanupNoChanges": "The work session ended with no changes to commit. Commit, push, and open a PR manually.",
       "gitCleanupCommitPushFailed": "Auto commit/push after the work session failed: {detail}. Resolve it manually.",
       "gitCleanupGhUnavailable": "Cannot create the PR — the gh CLI is unavailable or not logged in: {detail}. Install/authenticate gh, then create the PR manually.",

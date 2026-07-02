@@ -2180,6 +2180,27 @@
   "deepLink": {
     "notFound": "リクエストされたコンテンツが見つかりませんでした。"
   },
+  "share": {
+    "ariaLabel": "共有",
+    "tooltip": "共有リンクをコピー",
+    "copied": {
+      "toast": "共有リンクをコピーしました"
+    },
+    "baseUrlMissing": {
+      "toast": "先にシステム設定でベースURLを設定してください"
+    },
+    "kind": {
+      "session": {
+        "label": "セッション"
+      },
+      "intent": {
+        "label": "意図"
+      },
+      "discussion": {
+        "label": "ディスカッション"
+      }
+    }
+  },
   "license": {
     "badge": {
       "active": "ライセンス認証済み",

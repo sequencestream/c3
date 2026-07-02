@@ -244,12 +244,54 @@ const {
   approveSkillLoad,
   cancelSkillLoad,
   dismissSkillApproval,
+  // ---- share (three title-bar「分享」buttons) ----
+  shareLink,
   // ---- global toast ----
   toast,
   // ---- dev-launch startup overlay ----
   devLaunch,
   specLaunch,
 } = useAppController()
+
+/** 分享按钮处理:各页标题栏发 `share` 后,在此组装 `ShareTarget`(kind + 当前
+ *  workspace + id + title + 已本地化的类型标签)交给 `shareLink` 拼深链复制。
+ *  必要数据缺失(无活动会话/意图/讨论或 workspace)时静默忽略。 */
+function shareSession(): void {
+  const ws = currentWorkspace.value
+  const id = activeSession.value
+  if (!ws || !id) return
+  shareLink({
+    kind: 'session',
+    workspaceId: ws,
+    id,
+    title: activeTitle.value,
+    typeLabel: t('share.kind.session.label'),
+  })
+}
+function shareIntent(intentId: string): void {
+  const ws = intentsProject.value
+  const it = currentIntents.value.find((i) => i.id === intentId)
+  if (!ws || !it) return
+  shareLink({
+    kind: 'intent',
+    workspaceId: ws,
+    id: it.id,
+    title: it.title,
+    typeLabel: t('share.kind.intent.label'),
+  })
+}
+function shareDiscussion(): void {
+  const ws = discussionsProject.value
+  const d = activeDiscussion.value
+  if (!ws || !d) return
+  shareLink({
+    kind: 'discussion',
+    workspaceId: ws,
+    id: d.id,
+    title: d.title,
+    typeLabel: t('share.kind.discussion.label'),
+  })
+}
 
 /** Fulfill an intent deep link: called when Intents.vue consumes requestedIntentId.
  *  Marks the link as fulfilled so the ready-handler timeout won't fire. */
@@ -342,6 +384,7 @@ function onRequestedIntentConsumed(): void {
           @set-codex-policy="setCodexPolicy"
           @set-session-agent="onSetSessionAgent"
           @open-source="jumpActiveSessionSource"
+          @share="shareSession"
           @respond="respond"
           @submit-ask="submitAsk"
           @refresh="refreshStatus"
@@ -421,6 +464,7 @@ function onRequestedIntentConsumed(): void {
           @update-deps="updateIntentDeps"
           @create-pr="createPr"
           @sync-pr-status="syncIntentPrStatus"
+          @share="shareIntent"
           @start-automation="startAutomation"
           @stop-automation="stopAutomation"
           @new-intent-session="newIntentSession"
@@ -459,6 +503,7 @@ function onRequestedIntentConsumed(): void {
           @pause="pauseDiscussion"
           @resume="resumeDiscussion"
           @convert="convertDiscussionToIntent"
+          @share="shareDiscussion"
           @update:input="discussionInput = $event"
           @submit-input="submitDiscussionInput"
           @mobile-back="onDiscussionMobileBack"

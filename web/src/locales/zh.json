@@ -2179,6 +2179,27 @@
   "deepLink": {
     "notFound": "请求的内容未找到。"
   },
+  "share": {
+    "ariaLabel": "分享",
+    "tooltip": "复制分享链接",
+    "copied": {
+      "toast": "已复制分享链接"
+    },
+    "baseUrlMissing": {
+      "toast": "请先在系统设置中填写基地址"
+    },
+    "kind": {
+      "session": {
+        "label": "会话"
+      },
+      "intent": {
+        "label": "意图"
+      },
+      "discussion": {
+        "label": "讨论"
+      }
+    }
+  },
   "license": {
     "badge": {
       "active": "已授权",

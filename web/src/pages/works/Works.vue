@@ -90,6 +90,7 @@ const emit = defineEmits<{
   'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
   'open-source': []
+  share: []
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
   refresh: []
@@ -201,6 +202,7 @@ defineExpose({
         :codex-policy="codexPolicy"
         :mode-options="modeOptions"
         :source-label="sourceLabel"
+        :show-share="true"
         :has-active-session="hasActiveSession"
         :show-input="showInput"
         :messages="messages"
@@ -221,6 +223,7 @@ defineExpose({
         @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
         @set-session-agent="(id: string) => emit('set-session-agent', id)"
         @open-source="emit('open-source')"
+        @share="emit('share')"
         @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
         @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
         @refresh="emit('refresh')"

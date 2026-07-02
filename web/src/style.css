@@ -337,6 +337,28 @@ header h1 {
   background: var(--c-hover, rgba(127, 127, 127, 0.12));
 }
 
+/* 分享图标按钮(会话标题栏内建 + 讨论标题栏 action 槽复用):纯图标、不带文字标签,
+   点击 emit share 交由 App 拼深链复制。tooltip / aria-label 由 i18n 提供。 */
+.session-title-bar .share-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-body);
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.15s ease;
+}
+.session-title-bar .share-btn:hover {
+  opacity: 1;
+  background: var(--c-hover, rgba(127, 127, 127, 0.12));
+}
+
 /* Vendor identity dot beside the session title (ADR-0015 / ADR-0011). */
 .vendor-dot {
   flex-shrink: 0;
@@ -3371,6 +3393,24 @@ button.deny:hover:not(:disabled) {
 /* 锁定态(非 todo):模式只读,点击不切换而是提示不可修改;光标示意不可编辑 */
 .req-automate.locked {
   cursor: not-allowed;
+}
+/* 意图详情动作区的分享图标按钮:与 .req-automate 同款轻量 icon 按钮,仅图标无文字 */
+.req-share {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  font-size: var(--fs-badge);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+.req-share:hover {
+  opacity: 1;
 }
 /* 行内 todo 编辑入口:与 .req-automate 同款轻量 icon 按钮,仅 todo 行渲染 */
 .req-refine {

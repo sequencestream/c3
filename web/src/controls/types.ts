@@ -24,6 +24,7 @@ import type {
 import type { AppState, AuthApi, DepType, TypedT } from './state'
 import type { DevLaunchEvent } from '@/lib/dev-launch-view'
 import type { SpecLaunchEvent } from '@/lib/spec-launch-view'
+import type { ShareTarget } from '@/lib/share-link'
 
 export type WsClient = ReturnType<typeof createWsClient>
 
@@ -209,6 +210,9 @@ export interface AppMethods {
   approveSkillLoad(requestId: string): void
   cancelSkillLoad(requestId: string): void
   dismissSkillApproval(): void
+
+  // share (三处标题栏的「分享」按钮:拼深链 + 写剪贴板 + toast)
+  shareLink(target: ShareTarget): void
 
   // workcenter
   respondWorkcenter(event: WaitUserInvolveEvent, decision: 'allow' | 'deny'): void

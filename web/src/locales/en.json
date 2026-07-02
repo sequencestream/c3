@@ -2179,6 +2179,27 @@
   "deepLink": {
     "notFound": "The requested content could not be found."
   },
+  "share": {
+    "ariaLabel": "Share",
+    "tooltip": "Copy share link",
+    "copied": {
+      "toast": "Share link copied"
+    },
+    "baseUrlMissing": {
+      "toast": "Set the base URL in system settings first"
+    },
+    "kind": {
+      "session": {
+        "label": "Session"
+      },
+      "intent": {
+        "label": "Intent"
+      },
+      "discussion": {
+        "label": "Discussion"
+      }
+    }
+  },
   "license": {
     "badge": {
       "active": "Licensed",

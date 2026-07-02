@@ -83,6 +83,8 @@ const emit = defineEmits<{
   pause: []
   resume: []
   convert: []
+  // 分享:由 App 组装深链复制(workspace/id/title/typeLabel 在上层)。
+  share: []
   'update:input': [value: string]
   'submit-input': []
   // mobile drill-down: back to a previous pane
@@ -205,6 +207,16 @@ function typeLabel(d: Discussion): string {
               <span class="disc-status" :class="activeDiscussion.status">
                 {{ statusLabel(activeDiscussion.status) }}
               </span>
+              <button
+                type="button"
+                class="share-btn"
+                data-testid="share-button"
+                :title="t('share.tooltip')"
+                :aria-label="t('share.ariaLabel')"
+                @click="emit('share')"
+              >
+                🔗
+              </button>
             </template>
           </SessionTitleBar>
 

@@ -110,6 +110,7 @@ const emit = defineEmits<{
   'create-pr': [intentId: string]
   'sync-pr-status': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
+  share: [intentId: string]
   'set-session-agent': [agentId: string]
   // external select request consumed (parent clears `requestedIntentId`)
   'requested-intent-consumed': []
@@ -324,6 +325,7 @@ defineExpose({
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @create-pr="(id: string) => emit('create-pr', id)"
         @sync-pr-status="(id: string) => emit('sync-pr-status', id)"
+        @share="(id: string) => emit('share', id)"
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
         @select-dependency="handleSelectDependency"
         @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"

@@ -2180,6 +2180,27 @@
   "deepLink": {
     "notFound": "요청한 콘텐츠를 찾을 수 없습니다."
   },
+  "share": {
+    "ariaLabel": "공유",
+    "tooltip": "공유 링크 복사",
+    "copied": {
+      "toast": "공유 링크를 복사했습니다"
+    },
+    "baseUrlMissing": {
+      "toast": "먼저 시스템 설정에서 기본 URL을 입력하세요"
+    },
+    "kind": {
+      "session": {
+        "label": "세션"
+      },
+      "intent": {
+        "label": "의도"
+      },
+      "discussion": {
+        "label": "토론"
+      }
+    }
+  },
   "license": {
     "badge": {
       "active": "라이선스 활성",

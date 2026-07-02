@@ -112,6 +112,8 @@ const emit = defineEmits<{
   'sync-pr-status': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   'select-dependency': [intentId: string]
+  // 分享:上抛意图 id,由 App 组装深链复制(workspace/typeLabel 在上层)。
+  share: [intentId: string]
   // ── 会话/spec 打开 ──
   'open-intent-session': [sessionId: string]
   'open-spec-session': [intentId: string]
@@ -696,6 +698,16 @@ defineExpose({
               </button>
               <button
                 type="button"
+                class="req-share"
+                data-testid="share-button"
+                :title="t('share.tooltip')"
+                :aria-label="t('share.ariaLabel')"
+                @click="emit('share', intent.id)"
+              >
+                🔗
+              </button>
+              <button
+                type="button"
                 class="req-automate"
                 :class="{ active: intent.automate }"
                 :title="
@@ -1056,7 +1068,8 @@ defineExpose({
   padding-bottom: 1px;
 }
 .intent-detail-actions .req-btn,
-.intent-detail-actions .req-automate {
+.intent-detail-actions .req-automate,
+.intent-detail-actions .req-share {
   flex: 0 0 auto;
   white-space: nowrap;
 }

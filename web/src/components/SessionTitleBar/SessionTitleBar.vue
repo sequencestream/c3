@@ -48,6 +48,12 @@ const props = withDefaults(
      * is shown that emits `open-source`; null ⇒ no button (no resolvable source).
      */
     sourceLabel?: SessionSourceLabel | null
+    /**
+     * Show the「分享」icon button (works console title bar only). Emits `share`;
+     * the parent owns the actual copy (kind/workspace/title live above). Default
+     * off so intent-side chat columns and the discussion title bar don't render it.
+     */
+    showShare?: boolean
   }>(),
   {
     mode: 'default',
@@ -57,6 +63,7 @@ const props = withDefaults(
     codexPolicy: null,
     agentSwitch: null,
     sourceLabel: null,
+    showShare: false,
   },
 )
 
@@ -110,6 +117,7 @@ const emit = defineEmits<{
   'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
   'open-source': []
+  share: []
 }>()
 
 function onPickAgent(agentId: string): void {
@@ -137,6 +145,17 @@ function onPickAgent(agentId: string): void {
       @click="emit('open-source')"
     >
       {{ sourceText }}
+    </button>
+    <button
+      v-if="showShare"
+      type="button"
+      class="share-btn"
+      data-testid="share-button"
+      :title="t('share.tooltip')"
+      :aria-label="t('share.ariaLabel')"
+      @click="emit('share')"
+    >
+      🔗
     </button>
     <slot name="action" />
     <div v-if="vendor || agentSwitch || showMode" class="right-controls">

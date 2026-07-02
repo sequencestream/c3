@@ -16,6 +16,7 @@ import { installChatActions } from './chat-actions'
 import { installSettingsActions } from './settings-actions'
 import { installWorkcenterActions } from './workcenter-actions'
 import { installLicenseActions } from './license-actions'
+import { installShareActions } from './share-actions'
 import type { AppCtx } from './types'
 
 export type { AppCtx } from './types'
@@ -61,6 +62,7 @@ export function useAppController(): AppCtx {
   installSettingsActions(ctx)
   installWorkcenterActions(ctx)
   installLicenseActions(ctx)
+  installShareActions(ctx)
 
   onMounted(() => {
     // Read the startup hash for deep-link routing (before creating the WS client).

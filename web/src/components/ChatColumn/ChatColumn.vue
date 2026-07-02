@@ -47,6 +47,8 @@ withDefaults(
     showTitleBar?: boolean
     /** Source-button label family for the title bar (works side only); null ⇒ no button. */
     sourceLabel?: SessionSourceLabel | null
+    /** Show the「分享」icon button in the title bar (works console only). */
+    showShare?: boolean
     // chat body
     hasActiveSession: boolean
     messages: ChatMsg[]
@@ -82,6 +84,7 @@ withDefaults(
     codexPolicy: null,
     modeOptions: () => [],
     sourceLabel: null,
+    showShare: false,
     hasTaskStore: true,
     showMessages: true,
     showTaskPanel: true,
@@ -98,6 +101,7 @@ const emit = defineEmits<{
   'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
   'open-source': []
+  share: []
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
   refresh: []
@@ -129,10 +133,12 @@ defineExpose({
       :codex-policy="codexPolicy"
       :mode-options="modeOptions"
       :source-label="sourceLabel"
+      :show-share="showShare"
       @set-mode="(m: ModeToken) => emit('set-mode', m)"
       @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
       @set-session-agent="(id: string) => emit('set-session-agent', id)"
       @open-source="emit('open-source')"
+      @share="emit('share')"
     />
     <ChatMessages
       v-if="showMessages"

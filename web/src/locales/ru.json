@@ -2180,6 +2180,27 @@
   "deepLink": {
     "notFound": "Запрашиваемый контент не найден."
   },
+  "share": {
+    "ariaLabel": "Поделиться",
+    "tooltip": "Скопировать ссылку",
+    "copied": {
+      "toast": "Ссылка скопирована"
+    },
+    "baseUrlMissing": {
+      "toast": "Сначала укажите базовый URL в системных настройках"
+    },
+    "kind": {
+      "session": {
+        "label": "Сессия"
+      },
+      "intent": {
+        "label": "Намерение"
+      },
+      "discussion": {
+        "label": "Обсуждение"
+      }
+    }
+  },
   "license": {
     "badge": {
       "active": "Лицензия активна",

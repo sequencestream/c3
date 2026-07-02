@@ -52,6 +52,11 @@ export interface AppMethods {
   maybeRestoreDiscussions(list: WorkspaceInfo[]): void
   maybeRestoreSchedules(list: WorkspaceInfo[]): void
   maybeRestoreCodes(list: WorkspaceInfo[]): void
+  // Codes 内嵌 ChatColumn 的 per-workspace localStorage 持久化(best-effort)。
+  readCodesChatWidth(workspaceId: string): number
+  persistCodesChatWidth(workspaceId: string, px: number): void
+  readCodesSessionId(workspaceId: string): string | null
+  persistCodesSessionId(workspaceId: string, id: string | null): void
 
   // product license (ADR-0026): open LS sign-in to get a key
   activateLicense(): void
@@ -180,6 +185,10 @@ export interface AppMethods {
   setCodesSearchMode(mode: 'filename' | 'content'): void
   runCodeSearch(): void
   openCodeSearchHit(hit: CodeSearchHit): void
+  // Codes 内嵌 ChatColumn:空态「+ 新建」/ 标题栏「↻ 重置」都创建一个普通 work
+  // session(不弹 agent 选择弹窗,沿用 workspace 默认 agent)。
+  createCodesChatSession(workspaceId: string): void
+  resetCodesChatSession(workspaceId: string): void
 
   // chat / queue
   onSubmit(text: string, images?: PromptImage[]): void

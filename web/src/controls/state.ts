@@ -77,6 +77,17 @@ export const SCHED_PROJECT_KEY = 'c3.schedulesProject'
 export const CODES_PROJECT_KEY = 'c3.codesProject'
 export const CURRENT_WS_KEY = 'c3.currentWorkspace'
 export const WORK_SESSION_QUERY_START_TIME_KEY = 'work_session_query_start_time'
+// Codes 内嵌 ChatColumn 的 per-workspace 持久化键前缀。实际键为
+// `c3.codes.<workspaceId>.chatWidth` / `c3.codes.<workspaceId>.sessionId`
+// (由 persistence.ts 的 codesKey 拼装),记住每个工作区最后一次的分隔条宽度与
+// 内嵌会话 id。
+export const CODES_CHAT_WIDTH_KEY = 'chatWidth'
+export const CODES_CHAT_SESSION_KEY = 'sessionId'
+// 内嵌 ChatColumn 分隔条宽度(像素):默认 / 最小 / 最大。像素而非比例,窗口缩放时
+// 用户感知宽度更稳定。
+export const CODES_CHAT_WIDTH_DEFAULT = 360
+export const CODES_CHAT_WIDTH_MIN = 240
+export const CODES_CHAT_WIDTH_MAX = 720
 
 export type TabKey = 'console' | 'intents' | 'discussion' | 'schedules' | 'codes'
 export type SessionPageKind = Exclude<SessionKind, 'consensus'>
@@ -458,6 +469,11 @@ export function createState(deps: StateDeps) {
   const codesActiveTab = computed<CodeTab | null>(
     () => codesTabs.value.find((tab) => tab.path === codesActivePath.value) ?? null,
   )
+  // Codes 内嵌 ChatColumn 的「每工作区最后一次会话」指针(workspaceId → sessionId),
+  // 作为持久化到内存的运行时镜像:openCodes 恢复时优先读 localStorage,该 ref 供
+  // create/reset 后即时判定 create-vs-reset 按钮态,避免反复读 localStorage。与 Works
+  // 的 consoleSession 是两个独立指针,互不覆盖。
+  const codesBoundSessionId = ref<Record<string, string>>({})
 
   // ---- System settings (agent config) ----
   const settingsOpen = ref(false)
@@ -721,6 +737,7 @@ export function createState(deps: StateDeps) {
     codesSearchPattern,
     codesSearchResult,
     codesSearchLoading,
+    codesBoundSessionId,
     settingsOpen,
     serverSettings,
     hostStatus,

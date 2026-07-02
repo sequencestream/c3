@@ -2192,6 +2192,21 @@
       "binary": "二进制文件——无法预览。",
       "tooLarge": "文件过大,无法预览({size})。",
       "empty": "此文件为空。"
+    },
+    "chat": {
+      "empty": {
+        "title": "嵌入会话"
+      },
+      "create": {
+        "label": "新建会话",
+        "tooltip": "在当前工作区新建工作会话"
+      },
+      "reset": {
+        "tooltip": "重置:创建新的工作会话"
+      },
+      "splitter": {
+        "aria": "调整会话栏宽度"
+      }
     }
   },
   "deepLink": {

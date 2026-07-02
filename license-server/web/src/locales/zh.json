@@ -56,7 +56,7 @@
       },
       "activeWorktrees": {
         "label": "并发活跃 worktree",
-        "free": "1",
+        "free": "2",
         "paid": "不限",
         "enterprise": "不限"
       },
@@ -68,7 +68,7 @@
       },
       "enabledSchedules": {
         "label": "启用中的 schedule",
-        "free": "2",
+        "free": "5",
         "paid": "不限",
         "enterprise": "不限"
       },

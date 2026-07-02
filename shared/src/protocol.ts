@@ -237,11 +237,14 @@ export interface AgentConfigBase {
    * Where this agent's *provider* connection comes from — orthogonal to
    * {@link vendor} (2026-06-06-007):
    *  - `'system'` — use the vendor CLI's own system config / login; the
-   *    `config` provider fields (`baseUrl`/`apiKey`/`model`) are **ignored** (no
-   *    overrides), exactly like the old built-in system agent. For `claude` this
-   *    means first-party (no `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING` workaround).
-   *  - `'custom'` — apply the `config` provider fields as launch overrides.
-   * This governs ONLY the provider triple, uniformly across vendors.
+   *    `config` connection fields (`baseUrl`/`apiKey`) are **ignored**, but
+   *    `model` IS a standalone override read in both modes (2026-07-02-001).
+   *    For `claude` this means first-party (no `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING`
+   *    workaround).
+   *  - `'custom'` — apply the full `config` provider triple (baseUrl, apiKey,
+   *    model) as launch overrides.
+   * This governs ONLY the provider connection uniformly across vendors — model
+   * is an independent override in both modes.
    * Back-compat: a legacy config without this field defaults to `'custom'` on
    * load (so previously-configured agents surface with editable provider fields);
    * `'system'` is only ever set explicitly in the console.

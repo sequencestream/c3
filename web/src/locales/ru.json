@@ -247,7 +247,7 @@
         "placeholder": "API-ключ"
       },
       "model": {
-        "placeholder": "напр. claude-opus-4-8"
+        "placeholder": "напр. claude-sonnet-5 (пусто = модель по умолчанию)"
       },
       "icon": {
         "placeholder": "🤖",

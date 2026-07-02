@@ -246,7 +246,7 @@
         "placeholder": "API key"
       },
       "model": {
-        "placeholder": "例如 claude-opus-4-8"
+        "placeholder": "例如 claude-sonnet-5（留空=使用默认模型）"
       },
       "icon": {
         "placeholder": "🤖",

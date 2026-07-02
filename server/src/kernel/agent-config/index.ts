@@ -195,10 +195,12 @@ export function resolveSpecAgent(): AgentConfig {
 /**
  * Map one agent's config to {@link LaunchOverrides}, routed by its `vendor` tag
  * and gated by its `configMode` (2026-06-06-007). `configMode: 'system'` ⇒ use
- * the vendor CLI's own config: NO provider override (`baseUrl`/`apiKey`/`model`
- * are ignored) — the old system-agent behaviour, now available on any vendor.
- * `configMode: 'custom'` ⇒ apply the provider triple. Codex's launch-time policy
- * gate (`sandboxMode`/`approvalPolicy`) is NOT a provider override and is NOT
+ * the vendor CLI's own config: NO provider connection override (`baseUrl`/`apiKey`
+ * are ignored) — the old system-agent behaviour, now available on any vendor —
+ * but `model` IS a standalone override read in both `system` and `custom` mode
+ * (2026-07-02-001). `configMode: 'custom'` ⇒ apply the full provider triple
+ * (baseUrl, apiKey, model). Codex's launch-time policy gate
+ * (`sandboxMode`/`approvalPolicy`) is NOT a provider override and is NOT
  * carried here — the driver derives it from the session `defaultMode`
  * (2026-06-06-008). Shared by session launches and consensus advisor calls.
  */
@@ -209,13 +211,19 @@ export function launchForAgent(agent: AgentConfig): LaunchOverrides {
   let apiKey: string | undefined
   let wireApi: 'responses' | 'chat' | undefined
 
-  // `custom` applies the provider triple; `system` leaves it to the vendor CLI.
+  // `custom` applies the full provider triple (baseUrl/apiKey/model + env);
+  // `system` injects ONLY the standalone `model` override (when non-empty),
+  // leaving the connection to the vendor CLI's own config (2026-07-02-001).
   const custom = agent.configMode === 'custom'
 
   switch (agent.vendor) {
     case 'claude': {
+      // model override is standalone — read in BOTH system and custom mode
+      // (2026-07-02-001). Non-empty ⇒ overrides the vendor default model.
+      const { model: m } = agent.config
+      if (m) model = m
       if (custom) {
-        const { baseUrl: u, apiKey: k, model: m } = agent.config
+        const { baseUrl: u, apiKey: k } = agent.config
         if (u) env.ANTHROPIC_BASE_URL = u
         if (k) {
           // Cover both auth schemes: ANTHROPIC_API_KEY for first-party,
@@ -223,7 +231,6 @@ export function launchForAgent(agent: AgentConfig): LaunchOverrides {
           env.ANTHROPIC_API_KEY = k
           env.ANTHROPIC_AUTH_TOKEN = k
         }
-        if (m) model = m
         // WORKAROUND (remove later): recent Claude Code introduced an "adaptive
         // thinking" mechanism that changes the request message format. Third-party
         // Anthropic-compatible gateways (e.g. DeepSeek) don't yet accept that format —
@@ -239,15 +246,18 @@ export function launchForAgent(agent: AgentConfig): LaunchOverrides {
       break
     }
     case 'codex': {
+      // model override is standalone — read in BOTH system and custom mode
+      // (2026-07-02-001). Non-empty ⇒ overrides the vendor default model.
+      const { model: m } = agent.config
+      if (m) model = m
       // Provider connection (custom only): raw baseUrl/apiKey for the Codex SDK
       // constructor (NOT env — CodexOptions.env replaces process.env), model neutral.
       // `wireApi` rides along so the driver routes DIRECT (responses) vs RELAY
       // (chat) deterministically rather than guessing from baseUrl (2026-06-12-006).
       if (custom) {
-        const { baseUrl: u, apiKey: k, model: m, wireApi: w } = agent.config
+        const { baseUrl: u, apiKey: k, wireApi: w } = agent.config
         if (u) baseUrl = u
         if (k) apiKey = k
-        if (m) model = m
         wireApi = w
       }
       // The launch-time policy gate (sandbox/approval) is the per-tool-approval

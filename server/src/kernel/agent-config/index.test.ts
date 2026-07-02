@@ -65,6 +65,90 @@ import {
   resolveToolAgent,
 } from './index.js'
 
+describe('launchForAgent — system mode model override (2026-07-02-001)', () => {
+  it('claude + system + model non-empty → model passed, envOverrides/baseUrl/apiKey absent', () => {
+    const launch = launchForAgent({
+      id: 'cl-sys-m',
+      vendor: 'claude',
+      configMode: 'system',
+      displayName: 'Claude Sys',
+      config: { baseUrl: '', apiKey: '', model: 'claude-sonnet-5' },
+      enabled: true,
+    })
+    expect(launch.model).toBe('claude-sonnet-5')
+    expect(launch.baseUrl).toBeUndefined()
+    expect(launch.apiKey).toBeUndefined()
+    // envOverrides must be absent or contain nothing provider-related
+    // (proxy config is mocked off, so no env at all)
+    expect(launch.envOverrides).toBeUndefined()
+  })
+
+  it('claude + system + model empty → model absent from LaunchOverrides (regression)', () => {
+    const launch = launchForAgent({
+      id: 'cl-sys-e',
+      vendor: 'claude',
+      configMode: 'system',
+      displayName: 'Claude Sys',
+      config: { baseUrl: '', apiKey: '', model: '' },
+      enabled: true,
+    })
+    expect(launch.model).toBeUndefined()
+    expect(launch.baseUrl).toBeUndefined()
+    expect(launch.apiKey).toBeUndefined()
+    expect(launch.envOverrides).toBeUndefined()
+  })
+
+  it('codex + system + model non-empty → model passed, baseUrl/apiKey/wireApi absent', () => {
+    const launch = launchForAgent({
+      id: 'cx-sys-m',
+      vendor: 'codex',
+      configMode: 'system',
+      displayName: 'Codex Sys',
+      config: { baseUrl: '', apiKey: '', model: 'deepseek-chat', wireApi: 'chat' },
+      enabled: true,
+    })
+    expect(launch.model).toBe('deepseek-chat')
+    expect(launch.baseUrl).toBeUndefined()
+    expect(launch.apiKey).toBeUndefined()
+    expect(launch.wireApi).toBeUndefined()
+  })
+
+  it('codex + system + model empty → model absent (regression)', () => {
+    const launch = launchForAgent({
+      id: 'cx-sys-e',
+      vendor: 'codex',
+      configMode: 'system',
+      displayName: 'Codex Sys',
+      config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
+      enabled: true,
+    })
+    expect(launch.model).toBeUndefined()
+    expect(launch.baseUrl).toBeUndefined()
+    expect(launch.apiKey).toBeUndefined()
+    expect(launch.wireApi).toBeUndefined()
+  })
+
+  it('custom mode: model + connection fields still together (regression)', () => {
+    const launch = launchForAgent({
+      id: 'cx-cust',
+      vendor: 'codex',
+      configMode: 'custom',
+      displayName: 'Codex Cust',
+      config: {
+        baseUrl: 'https://api.example.com',
+        apiKey: 'sk-test',
+        model: 'test-model',
+        wireApi: 'responses',
+      },
+      enabled: true,
+    })
+    expect(launch.model).toBe('test-model')
+    expect(launch.baseUrl).toBe('https://api.example.com')
+    expect(launch.apiKey).toBe('sk-test')
+    expect(launch.wireApi).toBe('responses')
+  })
+})
+
 describe('resolveFirstAgentOfVendor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -209,7 +293,7 @@ describe('launchForAgent — codex wireApi (2026-06-12-006)', () => {
     expect(launch.wireApi).toBe('responses')
   })
 
-  it('a system-mode codex agent applies no provider override and omits wireApi', () => {
+  it('a system-mode codex agent — model override IS passed, provider fields still omitted (2026-07-02-001)', () => {
     const launch = launchForAgent({
       id: 'cx-sys',
       vendor: 'codex',
@@ -218,6 +302,9 @@ describe('launchForAgent — codex wireApi (2026-06-12-006)', () => {
       config: { baseUrl: 'https://ignored', apiKey: 'ignored', model: 'm', wireApi: 'chat' },
       enabled: true,
     })
+    // model is standalone — system mode still passes it
+    expect(launch.model).toBe('m')
+    // provider connection fields stay custom-only
     expect(launch.baseUrl).toBeUndefined()
     expect(launch.apiKey).toBeUndefined()
     expect(launch.wireApi).toBeUndefined()

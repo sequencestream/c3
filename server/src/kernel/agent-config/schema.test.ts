@@ -124,3 +124,29 @@ describe('claudeConfigSchema', () => {
     expect(claudeConfigSchema.safeParse({ baseUrl: '', apiKey: '' }).success).toBe(false)
   })
 })
+
+describe('schema — system mode + model round-trip (2026-07-02-001)', () => {
+  it('parseAgentConfig preserves config.model in system mode', () => {
+    const parsed = parseAgentConfig({
+      id: 'sys-with-model',
+      vendor: 'claude',
+      configMode: 'system',
+      displayName: 'Sys With Model',
+      config: { baseUrl: '', apiKey: '', model: 'claude-sonnet-5' },
+    })
+    expect(parsed?.config.model).toBe('claude-sonnet-5')
+    expect(parsed?.configMode).toBe('system')
+  })
+
+  it('parseAgentConfig preserves config.model in system mode for codex', () => {
+    const parsed = parseAgentConfig({
+      id: 'sys-codex-model',
+      vendor: 'codex',
+      configMode: 'system',
+      displayName: 'Sys Codex Model',
+      config: { baseUrl: '', apiKey: '', model: 'deepseek-chat', wireApi: 'chat' },
+    })
+    expect(parsed?.vendor === 'codex' && parsed.config.model).toBe('deepseek-chat')
+    expect(parsed?.configMode).toBe('system')
+  })
+})

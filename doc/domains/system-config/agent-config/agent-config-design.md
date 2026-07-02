@@ -159,10 +159,13 @@ provider through c3's in-process Responses→Chat relay (it registers the real b
 token and points codex at the loopback relay; AC-R15 / ADR-0014). The relay translator + HTTP handler
 are transport, not kernel (ADR-0009 R2).
 
-Empty fields contribute nothing, so the system agent yields no overrides and the run gets no
-`env`/`model` override — the SDK's own resolution applies (AC-R4/R5). When environment overrides are
-present they are merged over the full process environment so the spawned process keeps its complete
-environment; when absent the launch omits `env` entirely.
+With `baseUrl`/`apiKey` empty the system-mode agent yields no connection overrides, so the run
+preserves the vendor CLI's own config. `model`, however, is a **standalone override** read in both
+`system` and `custom` modes (2026-07-02-001): when non-empty it IS passed, even for a system-mode
+agent. Empty model fields contribute nothing, so the system-mode agent with an empty model yields no
+`model` override either — the SDK's own default resolution applies (AC-R4/R5). When environment
+overrides are present they are merged over the full process environment so the spawned process keeps
+its complete environment; when absent the launch omits `env` entirely.
 
 ### Adaptive-thinking workaround (temporary)
 

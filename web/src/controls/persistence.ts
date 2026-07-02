@@ -8,9 +8,19 @@ import {
   DISC_ID_KEY,
   SCHED_PROJECT_KEY,
   CODES_PROJECT_KEY,
+  CODES_CHAT_WIDTH_KEY,
+  CODES_CHAT_SESSION_KEY,
+  CODES_CHAT_WIDTH_DEFAULT,
+  CODES_CHAT_WIDTH_MIN,
+  CODES_CHAT_WIDTH_MAX,
   CURRENT_WS_KEY,
   WORK_SESSION_QUERY_START_TIME_KEY,
 } from './state'
+
+// Per-workspace Codes localStorage key: `c3.codes.<workspaceId>.<suffix>`.
+function codesKey(workspaceId: string, suffix: string): string {
+  return `c3.codes.${workspaceId}.${suffix}`
+}
 
 // Install localStorage view-restore persistence + the post-`ready` restore
 // helpers onto the shared ctx. All reads/writes are best-effort (a disabled
@@ -141,6 +151,46 @@ export function installPersistence(ctx: AppCtx): void {
       schedulesProject.value = saved.proj
       selectedScheduleId.value = null
       send({ type: 'list_schedules', workspaceId: saved.proj })
+    }
+  }
+
+  // ---- Codes 内嵌 ChatColumn 持久化(per-workspace,只 localStorage,best-effort)----
+  // 分隔条宽度(像素):缺失 / 解析失败 / 越界时回退默认 360,并夹到 [min, max]。
+  ctx.readCodesChatWidth = (workspaceId: string): number => {
+    try {
+      const raw = localStorage.getItem(codesKey(workspaceId, CODES_CHAT_WIDTH_KEY))
+      const px = raw == null ? NaN : Number.parseInt(raw, 10)
+      if (!Number.isFinite(px)) return CODES_CHAT_WIDTH_DEFAULT
+      return Math.min(CODES_CHAT_WIDTH_MAX, Math.max(CODES_CHAT_WIDTH_MIN, px))
+    } catch {
+      return CODES_CHAT_WIDTH_DEFAULT
+    }
+  }
+
+  ctx.persistCodesChatWidth = (workspaceId: string, px: number): void => {
+    try {
+      localStorage.setItem(codesKey(workspaceId, CODES_CHAT_WIDTH_KEY), String(Math.round(px)))
+    } catch {
+      /* localStorage unavailable — degrade to no-memory */
+    }
+  }
+
+  // 内嵌会话 id:缺失 / 空串回退 null。
+  ctx.readCodesSessionId = (workspaceId: string): string | null => {
+    try {
+      const raw = localStorage.getItem(codesKey(workspaceId, CODES_CHAT_SESSION_KEY))
+      return raw && raw.length ? raw : null
+    } catch {
+      return null
+    }
+  }
+
+  ctx.persistCodesSessionId = (workspaceId: string, id: string | null): void => {
+    try {
+      if (id) localStorage.setItem(codesKey(workspaceId, CODES_CHAT_SESSION_KEY), id)
+      else localStorage.removeItem(codesKey(workspaceId, CODES_CHAT_SESSION_KEY))
+    } catch {
+      /* localStorage unavailable — degrade to no-memory */
     }
   }
 

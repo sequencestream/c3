@@ -2051,6 +2051,21 @@
       "binary": "Binary file — preview not available.",
       "tooLarge": "File too large to preview ({size}).",
       "empty": "This file is empty."
+    },
+    "chat": {
+      "empty": {
+        "title": "Embedded chat"
+      },
+      "create": {
+        "label": "New session",
+        "tooltip": "Start a new work session in this workspace"
+      },
+      "reset": {
+        "tooltip": "Reset: start a fresh work session"
+      },
+      "splitter": {
+        "aria": "Resize the chat panel"
+      }
     }
   },
   "codex": {

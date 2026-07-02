@@ -98,8 +98,16 @@ export function useAppController(): AppCtx {
           ctx.send({ type: 'list_schedules', workspaceId: ctx.schedulesProject.value })
           ctx.send({ type: 'get_settings' })
         } else if (ctx.activeTab.value === 'codes') {
-          // Codes is a stateless read path; the in-memory tree/tabs survive the
-          // reconnect, and any expanded dir / open file re-fetches on demand.
+          // The file tree/tabs are a stateless read path that survives the reconnect
+          // (expanded dirs / open files re-fetch on demand). The embedded ChatColumn
+          // is a real work session, so re-select it to replay its history + stream.
+          if (ctx.activeWorkspace.value && ctx.activeSession.value) {
+            ctx.send({
+              type: 'select_session',
+              workspaceId: ctx.activeWorkspace.value,
+              sessionId: ctx.activeSession.value,
+            })
+          }
         } else if (ctx.viewMode.value === 'workcenter') {
           // Re-fetch the event list (read path).
           ctx.reloadWorkcenter()

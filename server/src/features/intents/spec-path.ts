@@ -3,7 +3,7 @@
  *
  * Computes where a spec document lands for an intent, under the centralized
  * spec root (`<c3-home>/specs/<project-path-segment>`, see `specs-root.ts`):
- *   <specRoot>/yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>/spec.md
+ *   <specRoot>/yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>.md
  *
  * `<slug>` is the intent's short English title slugged (falling back to the
  * intent id prefix when empty / non-ASCII), and `<NNN>` is a 3-digit
@@ -72,11 +72,11 @@ export function nextSeq(existingNames: readonly string[], datePrefix: string): s
 
 /** Resolved spec document layout for one intent. */
 export interface SpecLayout {
-  /** Absolute directory `<specRoot>/yyyy/mm/dd/yyyy-mm-dd-NNN-slug`. */
+  /** Absolute day-root directory `<specRoot>/yyyy/mm/dd` (shared per day). */
   dirAbs: string
-  /** Absolute `spec.md` path (stored as `spec_path`). */
+  /** Absolute spec file path `<dirAbs>/yyyy-mm-dd-NNN-slug.md` (stored as `spec_path`). */
   fileAbs: string
-  /** The leaf directory name `yyyy-mm-dd-NNN-slug`. */
+  /** The spec file's base name (no `.md`) `yyyy-mm-dd-NNN-slug`. */
   dirName: string
 }
 
@@ -102,8 +102,8 @@ export function computeSpecLayout(args: {
   const slug = specSlug(args.shortEnTitle, args.intentId)
   const dirName = `${datePrefix}-${seq}-${slug}`
   return {
-    dirAbs: path.join(dayRootAbs, dirName),
-    fileAbs: path.join(dayRootAbs, dirName, 'spec.md'),
+    dirAbs: dayRootAbs,
+    fileAbs: path.join(dayRootAbs, `${dirName}.md`),
     dirName,
   }
 }

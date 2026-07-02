@@ -121,6 +121,9 @@ const {
   closeIntentActionError,
   intentSpecContent,
   intentSpecLoading,
+  intentLogsById,
+  intentLogsLoading,
+  listIntentLogs,
   setIntentFilter,
   refineIntent,
   writeSpec,
@@ -450,6 +453,8 @@ function onCodesChatWidth(px: number): void {
           :intent-pr-sync="intentPrSync"
           :intent-spec-content="intentSpecContent"
           :intent-spec-loading="intentSpecLoading"
+          :intent-logs-by-id="intentLogsById"
+          :intent-logs-loading="intentLogsLoading"
           :active-session="activeSession"
           :active-title="activeTitle"
           :has-active-session="hasActiveSession"
@@ -479,6 +484,7 @@ function onCodesChatWidth(px: number): void {
           @open-spec-session="openSpecSession"
           @open-intent-session="selectIntentSession"
           @read-spec="readIntentSpec"
+          @list-intent-logs="listIntentLogs"
           @reset-intent-session="resetIntentSession"
           @reset-spec-session="resetSpecSession"
           @start-dev="startDevelopment"

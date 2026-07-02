@@ -48,10 +48,12 @@ import {
   getIntent,
   isStoreAvailable,
   listChatSessions,
+  listIntentLogs,
   listIntents,
   renameChatSession,
   deleteChatSession,
   findIntentIdByAnySessionId,
+  safeInsertIntentLog,
   setAutomate,
   setBranchName,
   setChatSession,
@@ -955,7 +957,8 @@ export const updateIntentStatus: Handler<'update_intent_status'> = (ctx, conn, m
     return
   }
   const prevStatus = req.status
-  updateStatus(msg.intentId, msg.status)
+  // UI-initiated transition: the lifecycle log's actor is the login subject.
+  updateStatus(msg.intentId, msg.status, conn.subject ?? 'system')
   // If the intent leaves in_progress, clear its cache entry so a future
   // restart doesn't show a stale dangling/running label.
   if (req.status === 'in_progress' && msg.status !== 'in_progress') {
@@ -1105,6 +1108,7 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
     const pr = await createGhPr(proj, title, body, headBranch)
     if (pr.ok && pr.prId) {
       setPrInfo(msg.intentId, pr.prId, 'reviewing', pr.prUrl ?? null)
+      safeInsertIntentLog(msg.intentId, 'pr_created', `创建 PR #${pr.prId}`, conn.subject)
       ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
       conn.send({ type: 'create_pr_response', prId: pr.prId, prUrl: pr.prUrl ?? pr.prId })
 
@@ -1139,6 +1143,28 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
       },
     })
   }
+}
+
+/**
+ * `list_intent_logs` handler — one intent's lifecycle-log entries for the
+ * detail's changelog tab. Newest-first full fetch (no pagination); the intent
+ * must exist (mirrors `update_intent_status`'s intent-scoped validation).
+ */
+export const listIntentLogsHandler: Handler<'list_intent_logs'> = (_ctx, conn, msg) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const req = getIntent(msg.intentId)
+  if (!req) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  conn.send({
+    type: 'intent_logs_list',
+    intentId: msg.intentId,
+    items: listIntentLogs(msg.intentId),
+  })
 }
 
 export const syncIntentPrStatusHandler: Handler<'sync_intent_pr_status'> = async (

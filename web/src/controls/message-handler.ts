@@ -91,6 +91,8 @@ export function installMessageHandler(ctx: AppCtx): void {
     intentSpecContent,
     intentSpecLoading,
     pendingSpecRel,
+    intentLogsById,
+    intentLogsLoading,
     intentsProject,
     automation,
     discussions,
@@ -635,6 +637,11 @@ export function installMessageHandler(ctx: AppCtx): void {
           stage: msg.stage,
           now: Date.now(),
         })
+        break
+      case 'intent_logs_list':
+        // Cache per intent id; the changelog tab renders straight from this map.
+        intentLogsById.value = { ...intentLogsById.value, [msg.intentId]: msg.items }
+        intentLogsLoading.value = false
         break
       case 'intent_sessions':
         intentSessions.value = { ...intentSessions.value, [msg.workspaceId]: msg.items }

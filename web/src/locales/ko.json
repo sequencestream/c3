@@ -847,11 +847,29 @@
       },
       "specSession": {
         "label": "사양 작성 세션"
+      },
+      "changelog": {
+        "label": "변경 이력"
       }
     },
     "spec": {
       "empty": "이 의도에는 아직 사양이 작성되지 않았습니다.",
       "loading": "사양 불러오는 중…"
+    },
+    "changelog": {
+      "empty": "이 인텐트에는 아직 변경 이력이 없습니다.",
+      "loading": "변경 이력 불러오는 중…",
+      "operationType": {
+        "created": "생성",
+        "updated": "수정",
+        "statusChanged": "상태 변경",
+        "specCreated": "스펙 작성",
+        "specApproved": "스펙 승인",
+        "specUnapproved": "승인 취소",
+        "prCreated": "PR 생성",
+        "prMerged": "PR 병합됨",
+        "prClosed": "PR 종료됨"
+      }
     },
     "intentSession": {
       "empty": "이 의도에는 아직 조율 세션이 없습니다.",

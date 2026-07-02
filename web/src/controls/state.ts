@@ -27,6 +27,7 @@ import type {
   ModeToken,
   VendorModeCatalog,
   Intent,
+  IntentLog,
   IntentSessionInfo,
   LicenseStatus,
   PromptImage,
@@ -356,6 +357,12 @@ export function createState(deps: StateDeps) {
   const intentSpecContent = ref<string | null>(null)
   const intentSpecLoading = ref(false)
   const pendingSpecRel = ref<string | null>(null)
+
+  // ---- Intent lifecycle logs (the detail's changelog tab content) ----
+  // Cached per intent id; filled by the `intent_logs_list` reply of a lazy
+  // `list_intent_logs` request sent when the changelog tab is first opened.
+  const intentLogsById = ref<Record<string, IntentLog[]>>({})
+  const intentLogsLoading = ref(false)
 
   // ---- Discussion view (read path) ----
   const discussionsProject = ref<string | null>(null)
@@ -693,6 +700,8 @@ export function createState(deps: StateDeps) {
     intentSpecContent,
     intentSpecLoading,
     pendingSpecRel,
+    intentLogsById,
+    intentLogsLoading,
     discussionsProject,
     discussions,
     activeDiscussionId,

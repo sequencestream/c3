@@ -17,6 +17,8 @@ import type {
   DepType,
   IntentDevSession,
   IntentDevSessionExitCode,
+  IntentLog,
+  IntentLogOperation,
   IntentSessionInfo,
   ProposedIntent,
   Intent,
@@ -27,7 +29,7 @@ import type {
 import { pathToId } from '../../state.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 15
+const SCHEMA_VERSION = 16
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -98,6 +100,16 @@ CREATE TABLE IF NOT EXISTS intent_sessions (
   created_at    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_intent_session_intent ON intent_sessions(intent_id);
+
+CREATE TABLE IF NOT EXISTS intent_logs (
+  id              TEXT PRIMARY KEY,
+  intent_id       TEXT NOT NULL,
+  operation_type  TEXT NOT NULL,
+  summary         TEXT NOT NULL,
+  actor           TEXT NOT NULL,
+  created_at      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_intent_log_intent_created ON intent_logs(intent_id, created_at DESC);
 `
 
 let schemaReady = false
@@ -632,8 +644,15 @@ export function insertIntents(
  * omitted, and deps are only rewritten when `dependsOn`/`dependsOnIndexes` is supplied.
  * `dependsOnIndexes` resolves against the FULL batch, so a new item can depend (by index)
  * on an updated sibling and vice-versa.
+ *
+ * `actor` feeds the lifecycle log (`intent_created` / `intent_updated` per item);
+ * callers with no user context omit it and the entries land as `'system'`.
  */
-export function upsertIntents(workspacePath: string, items: ProposedIntent[]): Intent[] {
+export function upsertIntents(
+  workspacePath: string,
+  items: ProposedIntent[],
+  actor?: string | null,
+): Intent[] {
   const d = requireDb()
   const proj = resolve(workspacePath)
   const now = Date.now()
@@ -739,6 +758,18 @@ export function upsertIntents(workspacePath: string, items: ProposedIntent[]): I
       }
     })
   })
+  // Lifecycle log: one entry per item, INSERT vs UPDATE decided by the pre-read
+  // `priors`. Outside the tx on purpose — a log failure must never roll back the
+  // business write.
+  items.forEach((it, i) => {
+    const created = priors[i] === null
+    safeInsertIntentLog(
+      ids[i],
+      created ? 'intent_created' : 'intent_updated',
+      created ? `创建意图: ${it.title}` : `更新意图: ${it.title}`,
+      actor ?? 'system',
+    )
+  })
   // Re-read so callers get fully-hydrated rows (incl. dependsOn), in batch order.
   const placeholders = ids.map(() => '?').join(',')
   const rows = d.all<Row>(`SELECT * FROM intents WHERE id IN (${placeholders})`, ...ids)
@@ -783,8 +814,15 @@ export function canTransition(from: IntentStatus, to: IntentStatus): boolean {
   return (ALLOWED[from] as readonly IntentStatus[]).includes(to)
 }
 
-export function updateStatus(id: string, status: IntentStatus): void {
+/**
+ * Update an intent's work status. `actor` feeds the lifecycle log's
+ * `status_changed` entry: handlers pass the login subject; callers with no user
+ * context (reconcile, orchestrator, PR reconciliation tools) omit it and the
+ * entry lands as `'automation'`. A same-status write logs nothing.
+ */
+export function updateStatus(id: string, status: IntentStatus, actor?: string | null): void {
   const d = requireDb()
+  const prior = d.get<{ status: string }>('SELECT status FROM intents WHERE id=?', id)
   const now = Date.now()
   // `done` stamps the completion time; any other status clears it (covers reverting from done).
   const completedAt = status === 'done' ? now : null
@@ -795,6 +833,14 @@ export function updateStatus(id: string, status: IntentStatus): void {
     completedAt,
     id,
   )
+  if (prior && prior.status !== status) {
+    safeInsertIntentLog(
+      id,
+      'status_changed',
+      `状态变更: ${prior.status} → ${status}`,
+      actor ?? 'automation',
+    )
+  }
 }
 
 /** Update an intent's PR lifecycle status without changing its work status. */
@@ -1413,4 +1459,91 @@ export function getIntentSession(id: number): IntentDevSession | null {
   if (!d) return null
   const row = d.get<IntentSessionRow>('SELECT * FROM intent_sessions WHERE id=?', id)
   return row ? toIntentDevSession(row) : null
+}
+
+// ---- Intent lifecycle logs (变更日志) ----
+// Append-only "who did what, when" trail across an intent's lifecycle. Work
+// session start/stop is NOT recorded here (intent_sessions owns that audit).
+
+interface IntentLogRow {
+  id: string
+  intent_id: string
+  operation_type: string
+  summary: string
+  actor: string
+  created_at: number
+}
+
+function toIntentLog(r: IntentLogRow): IntentLog {
+  return {
+    id: r.id,
+    intentId: r.intent_id,
+    operationType: r.operation_type as IntentLogOperation,
+    summary: r.summary,
+    actor: r.actor,
+    createdAt: r.created_at,
+  }
+}
+
+/**
+ * Append one lifecycle-log entry. `actor` missing or null lands as `'system'`
+ * (the same "system behaviour" convention the rest of the intent domain uses).
+ * Throws when the db is unavailable (same `requireDb` contract as other writes);
+ * lifecycle instrumentation goes through {@link safeInsertIntentLog} so a log
+ * failure never breaks the business path.
+ */
+export function insertIntentLog(
+  intentId: string,
+  operationType: IntentLogOperation,
+  summary: string,
+  actor?: string | null,
+): void {
+  const d = requireDb()
+  d.run(
+    'INSERT INTO intent_logs (id, intent_id, operation_type, summary, actor, created_at) VALUES (?,?,?,?,?,?)',
+    randomUUID(),
+    intentId,
+    operationType,
+    summary,
+    actor ?? 'system',
+    Date.now(),
+  )
+}
+
+/**
+ * Best-effort {@link insertIntentLog}: the shared wrapper for every lifecycle
+ * instrumentation point. A failed log write (db unavailable, table damaged)
+ * only warns — the business operation it decorates must still succeed.
+ */
+export function safeInsertIntentLog(
+  intentId: string,
+  operationType: IntentLogOperation,
+  summary: string,
+  actor?: string | null,
+): void {
+  try {
+    insertIntentLog(intentId, operationType, summary, actor)
+  } catch (err) {
+    console.warn(
+      `[c3:intents] lifecycle log write failed (${operationType}): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    )
+  }
+}
+
+/**
+ * One intent's lifecycle-log entries, newest first (created_at DESC, id DESC —
+ * the composite index makes this a straight scan). Full set, no pagination
+ * (single-intent volumes stay small). Returns `[]` when the db is unavailable.
+ */
+export function listIntentLogs(intentId: string): IntentLog[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<IntentLogRow>(
+      'SELECT * FROM intent_logs WHERE intent_id=? ORDER BY created_at DESC, id DESC',
+      intentId,
+    )
+    .map(toIntentLog)
 }

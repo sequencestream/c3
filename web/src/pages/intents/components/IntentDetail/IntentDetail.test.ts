@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import type { Intent } from '@ccc/shared/protocol'
+import type { Intent, IntentLog } from '@ccc/shared/protocol'
 import IntentDetail, { __resetWriteSpecGuards } from './IntentDetail.vue'
 
 // 模块级防误审门状态在用例间共享 → 每个用例前清空,避免相互污染。
@@ -54,6 +54,7 @@ function mountDetail(
     activeSession?: string | null
     intentSpecContent?: string | null
     intentSpecLoading?: boolean
+    intentLogs?: IntentLog[]
   } = {},
 ) {
   return mount(IntentDetail, {
@@ -83,6 +84,8 @@ function mountDetail(
       voiceLang: 'en-US',
       intentSpecContent: opts.intentSpecContent ?? null,
       intentSpecLoading: opts.intentSpecLoading ?? false,
+      intentLogs: opts.intentLogs ?? [],
+      intentLogsLoading: false,
     },
     global: {
       // Keep the chat column inert: we test IntentDetail's tab/gate logic, not it.
@@ -620,9 +623,9 @@ describe('IntentDetail.vue — dependency metadata', () => {
 })
 
 describe('IntentDetail.vue — tabs', () => {
-  it('renders four tabs and defaults to the intent tab', () => {
+  it('renders five tabs and defaults to the intent tab', () => {
     const w = mountDetail(intent({ id: 'i1' }))
-    expect(w.findAll('.intent-detail-tab')).toHaveLength(4)
+    expect(w.findAll('.intent-detail-tab')).toHaveLength(5)
     expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
   })
 

@@ -3,7 +3,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import { getForgeOverride } from '../../kernel/config/index.js'
 import { getForgePrStatus } from '../../git.js'
 import { pathToId } from '../../state.js'
-import { getIntent, listIntents, setPrStatus } from './store.js'
+import { getIntent, listIntents, safeInsertIntentLog, setPrStatus } from './store.js'
 
 export interface IntentPrSyncResult {
   ok: boolean
@@ -77,6 +77,13 @@ export async function syncIntentPrStatus(input: {
 
   if (status.status === 'merged' || status.status === 'closed') {
     setPrStatus(intent.id, status.status)
+    // Forge-side terminal state observed by the sync, not a user action.
+    safeInsertIntentLog(
+      intent.id,
+      status.status === 'merged' ? 'pr_merged' : 'pr_closed',
+      status.status === 'merged' ? `PR #${intent.prId} 已合并` : `PR #${intent.prId} 已关闭`,
+      'automation',
+    )
     input.broadcastIntents?.(input.workspacePath)
     return {
       ok: true,

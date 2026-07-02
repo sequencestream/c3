@@ -658,3 +658,77 @@ export async function getForgePrStatus(
   const provider = providerOverride ?? (await detectForge(cwd))
   return provider === 'github' ? getGhPrStatus(cwd, prId) : getGlabMrStatus(cwd, prId)
 }
+
+// ---------------------------------------------------------------------------
+// Forge change-request closing
+// ---------------------------------------------------------------------------
+
+export interface ClosePrResult {
+  ok: boolean
+  error?: string
+  /**
+   * True when the forge CLI is missing or not authenticated, mirroring
+   * {@link CreatePrResult.unavailable} so callers can distinguish install / log-in
+   * from a genuine close failure.
+   */
+  unavailable?: boolean
+}
+
+/**
+ * Close a GitHub Pull Request via the `gh` CLI: `gh pr close <prId>`, no extra
+ * flags (the PR number is enough). A non-zero exit is a failure — including a PR
+ * already closed externally (`gh` returns "not open" / "Could not resolve to a
+ * PullRequest"); the caller then leaves the intent untouched. `unavailable` is
+ * set only for a missing CLI (ENOENT) or an auth failure, matching {@link createGhPr}.
+ */
+export async function closeGhPr(cwd: string, prId: string): Promise<ClosePrResult> {
+  const { code, stdout, stderr } = await run('gh', cwd, ['pr', 'close', prId])
+  if (code === -1) {
+    return { ok: false, unavailable: true, error: 'gh CLI 未安装' }
+  }
+  if (code !== 0) {
+    const out = oneLine(stderr || stdout)
+    const notLoggedIn = GH_NOT_LOGGED_IN_MARKERS.some((m) => out.toLowerCase().includes(m))
+    return {
+      ok: false,
+      ...(notLoggedIn ? { unavailable: true } : {}),
+      error: out || 'gh pr close 失败',
+    }
+  }
+  return { ok: true }
+}
+
+/**
+ * Close a GitLab Merge Request via the `glab` CLI: `glab mr close <prId>`. Shares
+ * the {@link closeGhPr} contract, including the unavailable CLI/auth distinction.
+ */
+export async function closeGlabMr(cwd: string, prId: string): Promise<ClosePrResult> {
+  const { code, stdout, stderr } = await run('glab', cwd, ['mr', 'close', prId])
+  if (code === -1) {
+    return { ok: false, unavailable: true, error: 'glab CLI 未安装' }
+  }
+  if (code !== 0) {
+    const out = oneLine(stderr || stdout)
+    const notLoggedIn = GLAB_NOT_LOGGED_IN_MARKERS.some((m) => out.toLowerCase().includes(m))
+    return {
+      ok: false,
+      ...(notLoggedIn ? { unavailable: true } : {}),
+      error: out || 'glab mr close 失败',
+    }
+  }
+  return { ok: true }
+}
+
+/**
+ * Close a pull or merge request through the selected forge. An explicit provider
+ * takes precedence; otherwise the repository's origin determines it. Mirrors
+ * {@link createForgePr}'s routing so GitLab intent cancellations close their MR too.
+ */
+export async function closeForgePr(
+  cwd: string,
+  prId: string,
+  providerOverride?: ForgeProvider,
+): Promise<ClosePrResult> {
+  const provider = providerOverride ?? (await detectForge(cwd))
+  return provider === 'github' ? closeGhPr(cwd, prId) : closeGlabMr(cwd, prId)
+}

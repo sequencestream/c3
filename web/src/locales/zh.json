@@ -1576,6 +1576,7 @@
       "devStartInFlight": "该意图正在启动工作,请稍候。",
       "illegalStatusTransition": "不能从 \"{from}\" 转为 \"{to}\"。",
       "prCreateFailed": "PR 创建失败: {detail}。",
+      "prCloseFailed": "PR 自动关闭失败: {detail}。请手动关闭后重试取消。",
       "gitCleanupNoChanges": "工作会话结束但没有可提交的改动。请手动提交、推送并创建 PR。",
       "gitCleanupCommitPushFailed": "工作会话结束后自动提交/推送失败: {detail}。请手动处理。",
       "gitCleanupGhUnavailable": "无法创建 PR: gh CLI 不可用或未登录: {detail}。请先安装/登录 gh 再手动创建 PR。",

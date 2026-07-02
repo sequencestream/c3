@@ -74,6 +74,10 @@ export const UI_ERROR_CODES = {
     key: 'error.intent.prCreateFailed',
     params: ['detail'],
   },
+  'intent.prCloseFailed': {
+    key: 'error.intent.prCloseFailed',
+    params: ['detail'],
+  },
   'intent.worktreeCreateFailed': {
     key: 'error.intent.worktreeCreateFailed',
     params: ['message'],

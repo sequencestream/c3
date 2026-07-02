@@ -1577,6 +1577,7 @@
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "prCreateFailed": "PR 생성에 실패했습니다: {detail}。",
+      "prCloseFailed": "PR 자동 닫기에 실패했습니다: {detail}. 수동으로 닫은 후 취소를 다시 시도하세요.",
       "gitCleanupNoChanges": "작업 세션이 종료되었지만 커밋할 변경 사항이 없습니다. 수동으로 커밋·푸시하고 PR을 생성하세요.",
       "gitCleanupCommitPushFailed": "작업 세션 후 자동 커밋/푸시에 실패했습니다: {detail}. 수동으로 처리하세요.",
       "gitCleanupGhUnavailable": "PR을 생성할 수 없습니다. gh CLI를 사용할 수 없거나 로그인되지 않았습니다: {detail}. gh를 설치/인증한 후 수동으로 PR을 생성하세요.",

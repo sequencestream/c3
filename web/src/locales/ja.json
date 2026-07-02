@@ -1577,6 +1577,7 @@
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "prCreateFailed": "PRの作成に失敗しました: {detail}。",
+      "prCloseFailed": "PRの自動クローズに失敗しました: {detail}。手動でクローズしてから取り消しを再試行してください。",
       "gitCleanupNoChanges": "作業セッションが終了しましたが、コミットする変更がありません。手動でコミット・プッシュし、PRを作成してください。",
       "gitCleanupCommitPushFailed": "作業セッション後の自動コミット/プッシュに失敗しました: {detail}。手動で対応してください。",
       "gitCleanupGhUnavailable": "PRを作成できません。gh CLIが利用できないかログインしていません: {detail}。gh をインストール/認証してから手動でPRを作成してください。",

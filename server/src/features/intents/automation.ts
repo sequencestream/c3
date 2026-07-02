@@ -31,7 +31,13 @@
  * churn; it does NOT survive a server restart (in-memory).
  */
 import { randomUUID } from 'node:crypto'
-import type { AutomationStatus, Intent, RunEndReason, ServerToClient } from '@ccc/shared/protocol'
+import type {
+  AutomationStatus,
+  Intent,
+  PrOperationEvent,
+  RunEndReason,
+  ServerToClient,
+} from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import {
   getIntent,
@@ -47,6 +53,7 @@ import { publishIntentLifecycle, publishIntentStatusTransition } from './lifecyc
 import { judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
+import { buildServerSidePrCreateEvent } from '../pr-events/tool-defs.js'
 import { pathToId } from '../../state.js'
 import {
   getDevSkill,
@@ -112,6 +119,8 @@ export interface AutomationHooks {
   emitStatus(status: AutomationStatus): void
   sessionExists(workspacePath: string, sessionId: string): Promise<boolean>
   isRunning(sessionId: string): boolean
+  /** Publish a normalized PR operation event onto the kernel event bus. */
+  publishPrEvent: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -896,6 +905,25 @@ class AutomationController {
     if (prResult?.ok) {
       setPrInfo(req.id, prResult.prId, 'reviewing')
       console.log(`[c3:automation]「${req.title}」PR #${prResult.prId} 已创建`)
+
+      // Publish a pr:operation create event so event-triggered schedules can react.
+      const headBranch = req.branchName ?? undefined
+      const effectiveSessionId = req.lastWorkSessionId ?? req.id
+      const prEvent = buildServerSidePrCreateEvent(
+        {
+          prId: prResult.prId,
+          prUrl: prResult.prUrl,
+          headBranch,
+          baseBranch: undefined,
+          intentId: req.id,
+        },
+        { workspacePath: this.workspacePath, sessionId: effectiveSessionId },
+      )
+      this.hooks.publishPrEvent({
+        workspacePath: this.workspacePath,
+        sessionId: effectiveSessionId,
+        ...prEvent.event,
+      })
     } else if (prResult) {
       console.warn(`[c3:automation]「${req.title}」PR 创建失败: ${prResult.error}`)
     }

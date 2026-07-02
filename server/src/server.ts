@@ -560,6 +560,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     emitStatus: broadcasts.broadcastAutomation,
     sessionExists,
     isRunning,
+    publishPrEvent,
   })
   // Build the adapter lookup for AgentSessionManager (used by discussion runs).
   // claude is always present; codex joins only when its host CLI
@@ -611,6 +612,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastDiscussions: broadcasts.broadcastDiscussions,
     broadcastSchedules: broadcasts.broadcastSchedules,
     broadcastWaitUserEvents: broadcasts.broadcastWaitUserEvents,
+    publishPrEvent,
   })
 
   // 40+ case switch collapsed to a single registry dispatch (ADR-0009).

@@ -58,6 +58,7 @@ interface Harness {
     pushFailureEvent: ReturnType<typeof vi.fn>
     broadcastIntents: ReturnType<typeof vi.fn>
     broadcastWaitUserEvents: ReturnType<typeof vi.fn>
+    publishPrEvent: ReturnType<typeof vi.fn>
   }
 }
 
@@ -84,6 +85,7 @@ function harness(
     pushFailureEvent: vi.fn(),
     broadcastIntents: vi.fn(),
     broadcastWaitUserEvents: vi.fn(),
+    publishPrEvent: vi.fn(),
   }
   const deps: DevCleanupDeps = {
     getGitBranchMode: () => opts.mode ?? 'worktree',
@@ -103,6 +105,7 @@ function harness(
     pushFailureEvent: mocks.pushFailureEvent,
     broadcastIntents: mocks.broadcastIntents,
     broadcastWaitUserEvents: mocks.broadcastWaitUserEvents,
+    publishPrEvent: mocks.publishPrEvent,
   }
   return { deps, intent, mocks }
 }
@@ -255,5 +258,47 @@ describe('runManualDevCleanup', () => {
     const h = harness({ mode: 'worktree' })
     await runManualDevCleanup('I1', WS, h.deps)
     expect(h.mocks.cancelEventsForIntent).toHaveBeenCalledWith('I1')
+  })
+
+  // ── publishPrEvent: success path publishes create event ──
+  it('publishes pr:operation create event after successful PR creation', async () => {
+    const h = harness({ mode: 'worktree' })
+    const out = await runManualDevCleanup('I1', WS, h.deps, 'sess-1')
+
+    expect(out).toEqual({ kind: 'success', createdPr: true })
+    expect(h.mocks.publishPrEvent).toHaveBeenCalledTimes(1)
+    expect(h.mocks.publishPrEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspacePath: WS,
+        sessionId: 'sess-1',
+        operation: 'create',
+        result: 'success',
+        pr: expect.objectContaining({ url: 'https://h/pull/42' }),
+        ref: expect.objectContaining({ head: 'intent/i1-add-feature' }),
+        association: expect.objectContaining({ intentId: 'I1' }),
+      }),
+    )
+  })
+
+  // ── publishPrEvent: idempotent re-cleanup does NOT publish ──
+  it('does NOT publish pr:operation create event on idempotent re-cleanup (PR already exists)', async () => {
+    const h = harness({
+      mode: 'worktree',
+      intent: makeIntent({ prId: '7', prUrl: 'https://h/pull/7', prStatus: 'reviewing' }),
+    })
+    const out = await runManualDevCleanup('I1', WS, h.deps)
+
+    expect(out).toEqual({ kind: 'success', createdPr: false })
+    expect(h.mocks.publishPrEvent).not.toHaveBeenCalled()
+  })
+
+  // ── publishPrEvent: PR creation failure does NOT publish ──
+  it('does NOT publish pr:operation create event when PR creation fails', async () => {
+    const h = harness({ mode: 'worktree' })
+    h.mocks.createForgePr.mockResolvedValue({ ok: false, error: 'base branch not found' })
+    const out = await runManualDevCleanup('I1', WS, h.deps)
+
+    expect(out).toEqual({ kind: 'failed', code: 'prFailed', detail: 'base branch not found' })
+    expect(h.mocks.publishPrEvent).not.toHaveBeenCalled()
   })
 })

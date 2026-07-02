@@ -55,7 +55,7 @@
  */
 import type { Broadcaster } from '../transport/broadcaster.js'
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
-import type { IntentDevSessionExitCode } from '@ccc/shared/protocol'
+import type { IntentDevSessionExitCode, PrOperationEvent } from '@ccc/shared/protocol'
 import { getRuntime } from '../runs.js'
 import { setSessionMode } from '../state.js'
 import {
@@ -131,6 +131,8 @@ export interface DomainSubDeps {
   broadcastSchedules: (workspacePath: string) => void
   /** Fan the wait-user-involve event (todo) list for a project to every connection. */
   broadcastWaitUserEvents: (workspacePath: string) => void
+  /** Publish a normalized PR operation event onto the kernel event bus. */
+  publishPrEvent: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
 }
 
 /**
@@ -150,6 +152,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastDiscussions,
     broadcastSchedules,
     broadcastWaitUserEvents,
+    publishPrEvent,
   } = deps
 
   // Manual Start-Work session-end Git/PR cleanup deps (MSC-R1…R6). Stateless
@@ -190,6 +193,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     },
     broadcastIntents,
     broadcastWaitUserEvents,
+    publishPrEvent,
   }
 
   // ── run:bound ────────────────────────────────────────────────────────
@@ -341,7 +345,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     // manual Start-Work session, so run the session-end Git/PR cleanup for it.
     // Fire-and-forget — must not block the run:settled handler.
     if (!isIntentDrivenByAutomation(workspacePath, matched.id)) {
-      void runManualDevCleanup(matched.id, workspacePath, cleanupDeps)
+      void runManualDevCleanup(matched.id, workspacePath, cleanupDeps, sessionId)
         .then((outcome) => {
           if (outcome.kind === 'failed') {
             const intent = getIntent(matched.id)

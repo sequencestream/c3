@@ -102,6 +102,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
   const mockBroadcastIntents = vi.fn()
   const mockBroadcastIntentSessions = vi.fn()
   const mockBroadcastWaitUserEvents = vi.fn()
+  const mockPublishPrEvent = vi.fn()
 
   function install(): void {
     const deps: DomainSubDeps = {
@@ -115,6 +116,7 @@ describe('resident domain subscriptions — discussion + schedule', () => {
       broadcastDiscussions: mockBroadcastDiscussions,
       broadcastSchedules: mockBroadcastSchedules,
       broadcastWaitUserEvents: mockBroadcastWaitUserEvents,
+      publishPrEvent: mockPublishPrEvent,
     }
     registerRunDomainSubscriptions(deps)
   }
@@ -618,7 +620,12 @@ describe('resident domain subscriptions — discussion + schedule', () => {
     })
 
     await vi.waitFor(() => {
-      expect(runManualDevCleanup).toHaveBeenCalledWith('intent-man', '/proj', expect.anything())
+      expect(runManualDevCleanup).toHaveBeenCalledWith(
+        'intent-man',
+        '/proj',
+        expect.anything(),
+        'sess-man',
+      )
     })
   })
 

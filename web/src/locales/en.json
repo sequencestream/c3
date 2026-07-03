@@ -2072,7 +2072,12 @@
       "loading": "Loading file…",
       "binary": "Binary file — preview not available.",
       "tooLarge": "File too large to preview ({size}).",
-      "empty": "This file is empty."
+      "empty": "This file is empty.",
+      "view": {
+        "aria": "View mode",
+        "source": "Source",
+        "preview": "Preview"
+      }
     },
     "chat": {
       "empty": {

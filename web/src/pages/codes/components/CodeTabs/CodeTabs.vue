@@ -5,11 +5,12 @@
  * 顶部 tab 条(每个可手动关闭),下方渲染当前激活 tab 的文件内容。无打开 tab 时空态。
  * tab 的打开/聚焦/关闭逻辑在 controls/codes-actions;本组件只展示 + 上抛点击。
  */
-import { basename, type CodeTab } from '@/lib/codes-view'
+import { reactive, watch } from 'vue'
+import { basename, type CodeTab, type CodeViewMode } from '@/lib/codes-view'
 import { useTypedI18n } from '@/i18n'
 import CodeFileView from '../CodeFileView/CodeFileView.vue'
 
-defineProps<{
+const props = defineProps<{
   tabs: CodeTab[]
   activePath: string | null
   activeTab: CodeTab | null
@@ -21,6 +22,35 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useTypedI18n()
+
+// 每个已打开 tab 的视图模式(原文/预览),按 path 记忆。纯前端内存态,不落库、不进协议。
+// CodeFileView 用 :key="path" 逐 tab 重挂载,状态必须由本容器持有才能跨 tab 切换保留。
+const viewModes = reactive(new Map<string, CodeViewMode>())
+
+function viewModeFor(path: string): CodeViewMode {
+  return viewModes.get(path) ?? 'source'
+}
+
+function setViewMode(path: string, mode: CodeViewMode): void {
+  viewModes.set(path, mode)
+}
+
+function onClose(path: string): void {
+  // 关闭即遗忘:重新打开同一路径视为新 tab,回到默认 'source'。
+  viewModes.delete(path)
+  emit('close', path)
+}
+
+// 兜底:若 tab 被外部途径移除(非本组件关闭按钮),清理其残留模式记录。
+watch(
+  () => props.tabs.map((tab) => tab.path),
+  (paths) => {
+    const open = new Set(paths)
+    for (const path of viewModes.keys()) {
+      if (!open.has(path)) viewModes.delete(path)
+    }
+  },
+)
 </script>
 
 <template>
@@ -41,14 +71,20 @@ const { t } = useTypedI18n()
           class="tab-close"
           :title="t('codes.tab.close')"
           :aria-label="t('codes.tab.close')"
-          @click.stop="emit('close', tab.path)"
+          @click.stop="onClose(tab.path)"
         >
           ×
         </button>
       </div>
     </div>
 
-    <CodeFileView v-if="activeTab" :key="activeTab.path" :tab="activeTab" />
+    <CodeFileView
+      v-if="activeTab"
+      :key="activeTab.path"
+      :tab="activeTab"
+      :view-mode="viewModeFor(activeTab.path)"
+      @update:view-mode="(mode: CodeViewMode) => setViewMode(activeTab!.path, mode)"
+    />
     <div v-else class="tabs-empty">{{ t('codes.tabs.empty') }}</div>
   </div>
 </template>

@@ -111,7 +111,7 @@ describe('IntentDetail.vue — persistent header', () => {
       status: 'todo',
       runStatus: 'running',
     })
-    const w = mountDetail(item)
+    const w = mountDetail(item, { sddEnabled: true })
     expect(w.find('.intent-detail-title').text()).toBe('My intent')
     expect(w.find('.intent-detail-title-main .req-module').text()).toBe('billing')
     expect(w.find('.intent-detail-title-main .req-priority').text()).toBe('P0')
@@ -623,8 +623,8 @@ describe('IntentDetail.vue — dependency metadata', () => {
 })
 
 describe('IntentDetail.vue — tabs', () => {
-  it('renders five tabs and defaults to the intent tab', () => {
-    const w = mountDetail(intent({ id: 'i1' }))
+  it('renders five tabs and defaults to the intent tab when SDD is on', () => {
+    const w = mountDetail(intent({ id: 'i1' }), { sddEnabled: true })
     expect(w.findAll('.intent-detail-tab')).toHaveLength(5)
     expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
   })
@@ -665,7 +665,7 @@ describe('IntentDetail.vue — tabs', () => {
   })
 
   it('spec tab: empty state when no spec path, emits read-spec when present', async () => {
-    const noSpec = mountDetail(intent({ id: 'i1', specPath: null }))
+    const noSpec = mountDetail(intent({ id: 'i1', specPath: null }), { sddEnabled: true })
     await noSpec.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
     expect(noSpec.find('[data-testid="intent-detail-spec-empty"]').exists()).toBe(true)
     expect(noSpec.emitted('read-spec')).toBeUndefined()
@@ -687,7 +687,7 @@ describe('IntentDetail.vue — tabs', () => {
 
   it('spec session tab: opens automatically when its session id is backfilled after switching', async () => {
     const item = intent({ id: 'i1', specSessionId: null })
-    const w = mountDetail(item)
+    const w = mountDetail(item, { sddEnabled: true })
     await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
     expect(w.emitted('open-spec-session')).toBeUndefined()
 
@@ -751,7 +751,7 @@ describe('IntentDetail.vue — session reset', () => {
   })
 
   it('spec tab: no modify button when no spec has been written', async () => {
-    const w = mountDetail(intent({ id: 'i1', specPath: null }))
+    const w = mountDetail(intent({ id: 'i1', specPath: null }), { sddEnabled: true })
     await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
     expect(w.find('[data-testid="intent-detail-spec-modify"]').exists()).toBe(false)
   })
@@ -874,6 +874,67 @@ describe('IntentDetail.vue — auto-switch to spec session tab after change requ
     await w.setProps({ intent: { ...a, specSessionId: 'sess-new' } })
     expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
     expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).not.toContain('active')
+  })
+})
+
+describe('IntentDetail.vue — spec/spec-session tab visibility by SDD', () => {
+  function tabKeys(w: ReturnType<typeof mountDetail>): string[] {
+    return w.findAll('.intent-detail-tab').map((b) => b.attributes('data-tab') ?? '')
+  }
+
+  it('SDD off + no history spec data → only intent/intentSession/changelog', () => {
+    const w = mountDetail(intent({ id: 'i1', specPath: null, specSessionId: null }), {
+      sddEnabled: false,
+    })
+    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'changelog'])
+  })
+
+  it('SDD off but a spec path exists → all five tabs render', () => {
+    const w = mountDetail(intent({ id: 'i1', specPath: '.specs/x/spec.md', specSessionId: null }), {
+      sddEnabled: false,
+    })
+    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'spec', 'specSession', 'changelog'])
+  })
+
+  it('SDD off but a spec session id exists → all five tabs render', () => {
+    const w = mountDetail(intent({ id: 'i1', specPath: null, specSessionId: 'sess-spec' }), {
+      sddEnabled: false,
+    })
+    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'spec', 'specSession', 'changelog'])
+  })
+
+  it('SDD on → all five tabs render regardless of spec data', () => {
+    const w = mountDetail(intent({ id: 'i1', specPath: null, specSessionId: null }), {
+      sddEnabled: true,
+    })
+    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'spec', 'specSession', 'changelog'])
+  })
+
+  it('falls back to the intent tab when the active tab becomes hidden', async () => {
+    const item = intent({ id: 'i1', specPath: null, specSessionId: 'sess-spec' })
+    const w = mountDetail(item, { sddEnabled: false })
+    // spec session 可见 → 切过去。
+    await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
+    expect(w.find('.intent-detail-tab[data-tab="specSession"]').classes()).toContain('active')
+
+    // 历史 spec 数据消失且 SDD 仍关闭 → specSession 隐藏 → 回退到 intent tab。
+    await w.setProps({ intent: { ...item, specSessionId: null } })
+    expect(w.find('.intent-detail-tab[data-tab="specSession"]').exists()).toBe(false)
+    expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
+  })
+
+  it('requestedSubTab=specSession while hidden: stays on intent, no open, still consumes', async () => {
+    const w = mountDetail(intent({ id: 'i1', specPath: null, specSessionId: null }), {
+      sddEnabled: false,
+    })
+
+    await w.setProps({ requestedSubTab: 'specSession' })
+
+    // 目标 tab 不可见 → 不切换(停在 intent)、不发出 open-spec-session,但仍消费一次性请求。
+    expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
+    expect(w.find('.intent-detail-tab[data-tab="specSession"]').exists()).toBe(false)
+    expect(w.emitted('open-spec-session')).toBeUndefined()
+    expect(w.emitted('requested-subtab-consumed')).toEqual([[]])
   })
 })
 

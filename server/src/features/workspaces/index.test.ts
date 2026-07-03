@@ -24,6 +24,7 @@ vi.mock('../../state.js', () => ({
   }),
   listWorkspaces: vi.fn(() => []),
   pathToId: vi.fn(() => null),
+  resolveWorkspaceRoot: vi.fn(() => '/abs/proj'),
   removeWorkspace: vi.fn(() => {
     h.removed++
   }),
@@ -93,7 +94,7 @@ describe('workspace registry auth gate', () => {
     h.removed = 0
     h.auth = undefined
     const { conn, sent } = capture(false)
-    removeWorkspaceHandler(KCTX, conn, { type: 'remove_workspace', path: '/abs/proj' })
+    removeWorkspaceHandler(KCTX, conn, { type: 'remove_workspace', workspaceId: 'ws-1' })
     expect(sent[0]).toEqual({ type: 'unauthenticated', reason: 'missing' })
     expect(h.removed).toBe(0)
   })
@@ -122,7 +123,7 @@ describe('workspace registry admin gate (WS-R*)', () => {
     h.removed = 0
     h.auth = basicAuth('admin')
     const { conn, sent } = capture(true, 'admin')
-    removeWorkspaceHandler(KCTX, conn, { type: 'remove_workspace', path: '/abs/proj' })
+    removeWorkspaceHandler(KCTX, conn, { type: 'remove_workspace', workspaceId: 'ws-1' })
     expect(sent.some((m) => m.type === 'error')).toBe(false)
     expect(h.removed).toBe(1)
   })
@@ -140,7 +141,7 @@ describe('workspace registry admin gate (WS-R*)', () => {
     h.removed = 0
     h.auth = basicAuth('admin')
     const { conn, sent } = capture(true, 'alice')
-    removeWorkspaceHandler(KCTX, conn, { type: 'remove_workspace', path: '/abs/proj' })
+    removeWorkspaceHandler(KCTX, conn, { type: 'remove_workspace', workspaceId: 'ws-1' })
     expect(sent[0]).toEqual({ type: 'error', error: { code: 'auth.adminOnly' } })
     expect(h.removed).toBe(0)
   })

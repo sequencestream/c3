@@ -33,7 +33,7 @@ describe('protocol wire format', () => {
     { type: 'permission_response', requestId: 'r2', decision: 'deny' },
     { type: 'set_mode', mode: 'plan' },
     { type: 'add_workspace', path: '/abs/proj' },
-    { type: 'remove_workspace', path: '/abs/proj' },
+    { type: 'remove_workspace', workspaceId: 'ws-1' },
     { type: 'list_sessions', workspaceId: 'ws-1' },
     { type: 'list_dir', workspaceId: 'ws-1', rel: 'src' },
     { type: 'read_file', workspaceId: 'ws-1', rel: 'src/index.ts' },

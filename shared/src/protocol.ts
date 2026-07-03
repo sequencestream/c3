@@ -2770,8 +2770,11 @@ export type ClientToServer =
   | { type: 'set_session_agent'; sessionId: string; agentId: string }
   /** Register a project directory as a workspace. */
   | { type: 'add_workspace'; path: string }
-  /** Remove a workspace from the sidebar (does not delete its sessions on disk). */
-  | { type: 'remove_workspace'; path: string }
+  /**
+   * Remove a workspace from the sidebar (does not delete its sessions on disk).
+   * Carries the opaque workspace id — the client never holds an absolute path.
+   */
+  | { type: 'remove_workspace'; workspaceId: string }
   /**
    * List sessions for a workspace (server replies with `sessions`). Cursor
    * paginated by `lastModified` (SR-R14): the three cases are mutually

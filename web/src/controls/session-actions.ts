@@ -228,8 +228,8 @@ export function installSessionActions(ctx: AppCtx): void {
     send({ type: 'add_workspace', path })
   }
 
-  ctx.removeWorkspace = (path: string): void => {
-    send({ type: 'remove_workspace', path })
+  ctx.removeWorkspace = (workspaceId: string): void => {
+    send({ type: 'remove_workspace', workspaceId })
   }
 
   // The "+" opens the agent picker instead of creating immediately.

@@ -2,7 +2,13 @@
  * `workspaces` feature handlers — slice 1/3 (ADR-0009).
  */
 import { resolve } from 'node:path'
-import { addWorkspace, listWorkspaces, pathToId, removeWorkspace } from '../../state.js'
+import {
+  addWorkspace,
+  listWorkspaces,
+  pathToId,
+  removeWorkspace,
+  resolveWorkspaceRoot,
+} from '../../state.js'
 import { getRuntime, removeRuntimesForWorkspace } from '../../runs.js'
 import { isStoreAvailable as isScheduleStoreAvailable } from '../schedules/store.js'
 import { onWorkspaceRemoved } from '../schedules/archiver.js'
@@ -53,7 +59,10 @@ export const removeWorkspaceHandler: Handler<'remove_workspace'> = (ctx, conn, m
   }
   // Tearing down a trust root is admin-only too (WS-R*; ADR-0023 authz).
   if (!requireAdmin(conn)) return
-  const abs = resolve(msg.path)
+  // The client holds only the opaque workspace id — resolve it to the on-disk
+  // root. An unknown/forged id resolves to null: nothing to remove, bail out.
+  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  if (!abs) return
   // Tear down any background runs under this workspace.
   removeRuntimesForWorkspace(abs)
   // Pause all schedules under this workspace (SCH-R1).

@@ -75,7 +75,7 @@ export interface AppMethods {
   loadMoreSessions(path: string | null): void
   selectWorkspace(path: string): void
   addWorkspace(path: string): void
-  removeWorkspace(path: string): void
+  removeWorkspace(workspaceId: string): void
   openNewSession(path: string): void
   confirmNewSession(agentId: string | null): void
   openSettingsFromPicker(): void

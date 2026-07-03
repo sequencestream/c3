@@ -93,6 +93,7 @@ const emit = defineEmits<{
   'update:searchQuery': [value: string]
   'update:searchPattern': [value: string]
   'run-search': []
+  'refresh-tree': []
   toast: [message: string]
   // embedded chat lifecycle
   'create-codes-chat': []
@@ -249,6 +250,7 @@ defineExpose({
         @update:search-query="(v: string) => emit('update:searchQuery', v)"
         @update:search-pattern="(v: string) => emit('update:searchPattern', v)"
         @run-search="emit('run-search')"
+        @refresh-tree="emit('refresh-tree')"
         @toggle-chat="codesChatVisible = !codesChatVisible"
         @toast="(message: string) => emit('toast', message)"
       />

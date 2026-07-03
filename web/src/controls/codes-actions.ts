@@ -107,6 +107,16 @@ export function installCodesActions(ctx: AppCtx): void {
     send({ type: 'list_dir', workspaceId: ws, rel })
   }
 
+  // Re-fetch the file tree from disk: reload the root plus every currently
+  // expanded directory so newly added / removed files show up without collapsing
+  // the tree. `list_dir` overwrites each cached listing on reply; in-flight dirs
+  // are skipped by loadCodesDir's guard.
+  ctx.refreshCodesTree = (): void => {
+    if (!codesProject.value) return
+    ctx.loadCodesDir('')
+    for (const rel of codesExpanded.value) ctx.loadCodesDir(rel)
+  }
+
   // Expand/collapse a tree directory; expanding triggers a one-time lazy load.
   ctx.toggleCodesDir = (rel: string): void => {
     const next = new Set(codesExpanded.value)

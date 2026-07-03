@@ -2055,6 +2055,9 @@
           "tooltip": "Collapse the file tree back to normal width"
         }
       },
+      "refresh": {
+        "tooltip": "Refresh the file tree"
+      },
       "contextMenu": {
         "copyName": "Copy name",
         "copyRelPath": "Copy relative path",

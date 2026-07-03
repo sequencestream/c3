@@ -207,6 +207,7 @@ const {
   codesSearchResult,
   codesSearchLoading,
   toggleCodesDir,
+  refreshCodesTree,
   openCodeFile,
   openCodeSearchHit,
   closeCodeTab,
@@ -620,6 +621,7 @@ function onCodesChatWidth(px: number): void {
           @update:search-query="codesSearchQuery = $event"
           @update:search-pattern="codesSearchPattern = $event"
           @run-search="runCodeSearch"
+          @refresh-tree="refreshCodesTree"
           @toast="showToast"
           @create-codes-chat="codesProject && createCodesChatSession(codesProject)"
           @reset-codes-chat="codesProject && resetCodesChatSession(codesProject)"

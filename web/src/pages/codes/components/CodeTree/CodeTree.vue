@@ -35,6 +35,7 @@ const emit = defineEmits<{
   'update:searchQuery': [value: string]
   'update:searchPattern': [value: string]
   'run-search': []
+  'refresh-tree': []
   'toggle-chat': []
   toast: [message: string]
 }>()
@@ -100,6 +101,31 @@ function runNow(): void {
         <span class="tree-title">{{ t('codes.tree.title.label') }}</span>
       </div>
       <span class="tree-actions">
+        <!-- 刷新文件树:重新拉取根目录 + 所有已展开目录,反映磁盘上新增/删除的文件。 -->
+        <button
+          type="button"
+          class="tree-collapse-btn tree-refresh-btn"
+          :title="t('codes.tree.refresh.tooltip')"
+          :aria-label="t('codes.tree.refresh.tooltip')"
+          data-testid="codes-tree-refresh"
+          @click="emit('refresh-tree')"
+        >
+          <svg
+            data-icon="refresh"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <path d="M21 3v6h-6" />
+          </svg>
+        </button>
         <!-- 修改会话总开关:镜像左侧折叠按钮布局。图标反映当前态(空心=未显示 / 实心=已显示),
              点击 emit toggle-chat,由 Codes.vue 翻转持久化开关。 -->
         <button
@@ -285,7 +311,8 @@ function runNow(): void {
   background: var(--c-hover);
   color: var(--c-text);
 }
-/* 会话开关:内嵌 SVG 图标,收紧 padding 并居中(复用 .tree-collapse-btn 基础视觉) */
+/* 刷新按钮 / 会话开关:内嵌 SVG 图标,收紧 padding 并居中(复用 .tree-collapse-btn 基础视觉) */
+.tree-refresh-btn,
 .tree-chat-toggle {
   display: inline-flex;
   align-items: center;
@@ -300,6 +327,8 @@ function runNow(): void {
 }
 .tree-actions {
   display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
   flex-shrink: 0;
 }
 

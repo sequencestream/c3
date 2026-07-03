@@ -2179,6 +2179,9 @@
           "tooltip": "ファイルツリーを通常の幅に戻す"
         }
       },
+      "refresh": {
+        "tooltip": "ファイルツリーを更新"
+      },
       "contextMenu": {
         "copyName": "名前をコピー",
         "copyRelPath": "相対パスをコピー",

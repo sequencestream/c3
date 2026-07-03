@@ -2178,6 +2178,9 @@
           "tooltip": "收起文件树,恢复默认宽度"
         }
       },
+      "refresh": {
+        "tooltip": "刷新文件树"
+      },
       "contextMenu": {
         "copyName": "复制名称",
         "copyRelPath": "复制相对路径",

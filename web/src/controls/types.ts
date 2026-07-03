@@ -178,6 +178,7 @@ export interface AppMethods {
   // codes (read-only file browser)
   openCodes(workspaceId: string): void
   loadCodesDir(rel: string): void
+  refreshCodesTree(): void
   toggleCodesDir(rel: string): void
   openCodeFile(path: string, line?: number): void
   closeCodeTab(path: string): void

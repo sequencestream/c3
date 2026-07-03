@@ -118,6 +118,15 @@ export function basename(path: string): string {
   return path.split('/').pop() ?? path
 }
 
+/** Markdown 文件内容视图的两态:原文(Shiki/纯文本)或渲染预览。仅前端内存态。 */
+export const CODE_VIEW_MODES = ['source', 'preview'] as const
+export type CodeViewMode = (typeof CODE_VIEW_MODES)[number]
+
+/** 是否对该路径提供 Markdown 预览开关:严格以 `.md` 结尾(不含 .markdown / 无扩展名 / MIME 猜测)。 */
+export function isMarkdownPath(path: string): boolean {
+  return path.toLocaleLowerCase().endsWith('.md')
+}
+
 /** 字节数人类可读化(B / KB / MB),用于「文件过大」提示。 */
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`

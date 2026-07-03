@@ -71,3 +71,85 @@ describe('CodeFileView 移动端宽度收口', () => {
     expect(ruleBody(globalCss, '.body')).toMatch(/min-width:\s*0/)
   })
 })
+
+// ————————————————————————————————————————————————————————————————
+// Markdown 预览/原文两态开关
+// ————————————————————————————————————————————————————————————————
+
+function makeMdTab(path = 'README.md'): CodeTab {
+  const content = '# Title\n\nsome **bold** text\n'
+  return {
+    path,
+    loading: false,
+    file: { path, size: content.length, binary: false, truncated: false, content },
+  }
+}
+
+describe('CodeFileView Markdown 视图开关', () => {
+  it('非 .md 文件不渲染开关,且保持原文视图结构', () => {
+    const wrapper = mount(CodeFileView, { props: { tab: makeTab() } })
+    expect(wrapper.find('.code-view-toggle').exists()).toBe(false)
+    expect(wrapper.find('.code-scroll').exists()).toBe(true)
+    expect(wrapper.find('.code-gutter').exists()).toBe(true)
+    expect(wrapper.find('.code-preview').exists()).toBe(false)
+  })
+
+  it('.md 文件显示两态开关,默认原文(source 激活、走 .code-scroll)', () => {
+    const wrapper = mount(CodeFileView, { props: { tab: makeMdTab() } })
+    const toggle = wrapper.find('.code-view-toggle')
+    expect(toggle.exists()).toBe(true)
+    const btns = toggle.findAll('.code-view-btn')
+    expect(btns).toHaveLength(2)
+    // 默认 viewMode='source':第一个按钮为激活态。
+    expect(btns[0].classes()).toContain('active')
+    expect(btns[1].classes()).not.toContain('active')
+    // 默认仍是原文视图。
+    expect(wrapper.find('.code-scroll').exists()).toBe(true)
+    expect(wrapper.find('.code-gutter').exists()).toBe(true)
+    expect(wrapper.find('.code-preview').exists()).toBe(false)
+  })
+
+  it('点击预览按钮上抛 update:viewMode=preview(受控,自身不切换)', async () => {
+    const wrapper = mount(CodeFileView, { props: { tab: makeMdTab() } })
+    const previewBtn = wrapper.findAll('.code-view-btn')[1]
+    await previewBtn.trigger('click')
+    expect(wrapper.emitted('update:viewMode')).toEqual([['preview']])
+    // 受控组件:prop 未变前视图保持原文。
+    expect(wrapper.find('.code-scroll').exists()).toBe(true)
+    expect(wrapper.find('.code-preview').exists()).toBe(false)
+  })
+
+  it('viewMode=preview 渲染 MarkdownText(.md-body),无行号 gutter', () => {
+    const wrapper = mount(CodeFileView, {
+      props: { tab: makeMdTab(), viewMode: 'preview' },
+    })
+    expect(wrapper.find('.code-preview').exists()).toBe(true)
+    expect(wrapper.find('.md-body').exists()).toBe(true)
+    expect(wrapper.find('.code-gutter').exists()).toBe(false)
+    expect(wrapper.find('.code-scroll').exists()).toBe(false)
+  })
+
+  it('从 preview 切回 source 恢复 .code-scroll/.code-gutter 与原始内容', async () => {
+    const tab = makeMdTab()
+    const wrapper = mount(CodeFileView, { props: { tab, viewMode: 'preview' } })
+    expect(wrapper.find('.code-preview').exists()).toBe(true)
+    await wrapper.setProps({ viewMode: 'source' })
+    expect(wrapper.find('.code-preview').exists()).toBe(false)
+    expect(wrapper.find('.code-scroll').exists()).toBe(true)
+    expect(wrapper.find('.code-gutter').exists()).toBe(true)
+    expect(wrapper.find('.code-main').text()).toContain('# Title')
+  })
+
+  it('空 .md 文件即使选 preview 也走空态文案,不进预览内容分支', () => {
+    const empty: CodeTab = {
+      path: 'empty.md',
+      loading: false,
+      file: { path: 'empty.md', size: 0, binary: false, truncated: false, content: '' },
+    }
+    const wrapper = mount(CodeFileView, { props: { tab: empty, viewMode: 'preview' } })
+    // 开关仍显示(是 .md),但内容区是空态,不是预览。
+    expect(wrapper.find('.code-view-toggle').exists()).toBe(true)
+    expect(wrapper.find('.code-preview').exists()).toBe(false)
+    expect(wrapper.find('.code-file-status').exists()).toBe(true)
+  })
+})

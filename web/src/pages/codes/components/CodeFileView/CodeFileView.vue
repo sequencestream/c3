@@ -9,9 +9,23 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import { highlight } from '@/lib/highlight'
-import { basename, formatFileSize, langFromPath, type CodeTab } from '@/lib/codes-view'
+import MarkdownText from '@/components/MarkdownText/MarkdownText.vue'
+import {
+  basename,
+  formatFileSize,
+  isMarkdownPath,
+  langFromPath,
+  CODE_VIEW_MODES,
+  type CodeTab,
+  type CodeViewMode,
+} from '@/lib/codes-view'
 
-const props = defineProps<{ tab: CodeTab }>()
+// viewMode 是受控 prop:状态由多 tab 容器(CodeTabs)按 path 记忆,因为本组件被
+// :key="tab.path" 逐 tab 重挂载,内部 ref 无法跨 tab 保留。默认 'source'。
+const props = withDefaults(defineProps<{ tab: CodeTab; viewMode?: CodeViewMode }>(), {
+  viewMode: 'source',
+})
+const emit = defineEmits<{ 'update:viewMode': [mode: CodeViewMode] }>()
 const { t } = useTypedI18n()
 
 const file = computed(() => props.tab.file)
@@ -21,6 +35,18 @@ const lineCount = computed(() => (content.value ? content.value.split('\n').leng
 const renderable = computed(
   () => !!file.value && !file.value.binary && !file.value.truncated && content.value.length > 0,
 )
+// 仅 .md 文件提供预览开关;判定严格以扩展名为准,不看 MIME。
+const isMarkdownFile = computed(() => isMarkdownPath(props.tab.path))
+// 进入预览内容分支的充要条件:是 .md、当前选预览、且有可渲染文本。
+const showPreview = computed(
+  () => isMarkdownFile.value && props.viewMode === 'preview' && renderable.value,
+)
+
+// computed 以随 locale 切换重新求值(t 是响应式的,直接用字面量对象会锁死首帧语言)。
+const viewModeLabels = computed<Record<CodeViewMode, string>>(() => ({
+  source: t('codes.file.view.source'),
+  preview: t('codes.file.view.preview'),
+}))
 
 const scrollEl = ref<HTMLElement | null>(null)
 const gutterEl = ref<HTMLElement | null>(null)
@@ -74,6 +100,13 @@ watch(
   () => props.tab.focusLine,
   () => void nextTick(focusLine),
 )
+// 从预览切回原文:源码 DOM 重新挂载,按当前 focusLine 重定位(高亮结果仍缓存,无需重跑)。
+watch(
+  () => props.viewMode,
+  (mode) => {
+    if (mode === 'source') void nextTick(focusLine)
+  },
+)
 </script>
 
 <template>
@@ -81,6 +114,24 @@ watch(
     <div class="code-file-meta">
       <span class="code-file-name">{{ basename(tab.path) }}</span>
       <span class="code-file-path">{{ tab.path }}</span>
+      <div
+        v-if="isMarkdownFile"
+        class="code-view-toggle"
+        role="group"
+        :aria-label="t('codes.file.view.aria')"
+      >
+        <button
+          v-for="mode in CODE_VIEW_MODES"
+          :key="mode"
+          type="button"
+          class="code-view-btn"
+          :class="{ active: viewMode === mode }"
+          :aria-pressed="viewMode === mode"
+          @click="emit('update:viewMode', mode)"
+        >
+          {{ viewModeLabels[mode] }}
+        </button>
+      </div>
     </div>
 
     <div v-if="!file || tab.loading" class="code-file-status">{{ t('codes.file.loading') }}</div>
@@ -89,6 +140,11 @@ watch(
       {{ t('codes.file.tooLarge', { size: formatFileSize(file.size) }) }}
     </div>
     <div v-else-if="content.length === 0" class="code-file-status">{{ t('codes.file.empty') }}</div>
+
+    <!-- 预览模式:只读渲染,复用 MarkdownText 的安全管线;无行号/聚焦 marker。 -->
+    <div v-else-if="showPreview" class="code-preview">
+      <MarkdownText :text="content" markdown />
+    </div>
 
     <div v-else ref="scrollEl" class="code-scroll">
       <div class="code-body">
@@ -148,6 +204,46 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* meta 栏右侧的两态视图开关(仅 .md 文件渲染)。 */
+.code-view-toggle {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: inline-flex;
+  align-self: center;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.code-view-btn {
+  padding: 2px var(--sp-2);
+  border: 0;
+  background: transparent;
+  color: var(--c-text-muted);
+  font-size: var(--fs-micro, 11px);
+  line-height: 1.5;
+  cursor: pointer;
+}
+.code-view-btn + .code-view-btn {
+  border-left: 1px solid var(--c-border);
+}
+.code-view-btn:hover {
+  background: var(--c-card);
+  color: var(--c-text);
+}
+.code-view-btn.active {
+  background: var(--c-primary);
+  color: #fff;
+}
+
+/* 预览模式内容区:只读滚动容器,内边距对齐现有 Markdown 渲染观感。 */
+.code-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-3);
+  background: var(--c-bg);
 }
 
 .code-file-status {

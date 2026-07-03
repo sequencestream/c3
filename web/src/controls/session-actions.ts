@@ -73,7 +73,7 @@ export function installSessionActions(ctx: AppCtx): void {
       kind === 'intent' ||
       kind === 'spec' ||
       kind === 'discussion' ||
-      kind === 'schedule' ||
+      kind === 'automation' ||
       kind === 'tool'
     ) {
       return kind
@@ -87,7 +87,7 @@ export function installSessionActions(ctx: AppCtx): void {
   ): NonNullable<SessionInfo['ownerKind']> | null {
     if (kind === 'intent' || kind === 'spec') return 'intent'
     if (kind === 'discussion') return 'discussion'
-    if (kind === 'schedule') return 'schedule'
+    if (kind === 'automation') return 'automation'
     return null
   }
 
@@ -298,7 +298,7 @@ export function installSessionActions(ctx: AppCtx): void {
   }
 
   // Open the page the given jump target points at (intent detail / intent
-  // sessions / discussion / schedule). The one place title-bar and (legacy) row
+  // sessions / discussion / automation). The one place title-bar and (legacy) row
   // source jumps both route through; jump semantics come only from
   // `resolveSessionJumpTarget` upstream.
   function openSourceTarget(path: string, target: SessionJumpTarget, sessionId: string): void {
@@ -327,8 +327,8 @@ export function installSessionActions(ctx: AppCtx): void {
       ctx.openDiscussion(target.discussionId)
       return
     }
-    ctx.openSchedules(path)
-    ctx.onSelectSchedule(target.scheduleId)
+    ctx.openAutomations(path)
+    ctx.onSelectAutomation(target.automationId)
   }
 
   ctx.jumpSessionSource = (path: string, row: SessionInfo): void => {
@@ -361,8 +361,8 @@ export function installSessionActions(ctx: AppCtx): void {
       if (currentWorkspace.value) ctx.openDiscussions(currentWorkspace.value)
       return
     }
-    if (key === 'schedules') {
-      if (currentWorkspace.value) ctx.openSchedules(currentWorkspace.value)
+    if (key === 'automations') {
+      if (currentWorkspace.value) ctx.openAutomations(currentWorkspace.value)
       return
     }
     if (key === 'codes') {

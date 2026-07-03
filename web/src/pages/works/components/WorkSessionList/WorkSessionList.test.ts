@@ -23,7 +23,7 @@ function mountList(
     vendorSessionCaps?: Partial<Record<VendorId, SessionCapabilities>>
     hasMore?: boolean
     exhausted?: boolean
-    activeSessionKind?: 'work' | 'intent' | 'spec' | 'discussion' | 'schedule' | 'tool'
+    activeSessionKind?: 'work' | 'intent' | 'spec' | 'discussion' | 'automation' | 'tool'
     showToolSessions?: boolean
   } = {},
 ) {
@@ -32,7 +32,7 @@ function mountList(
       currentWorkspace: opts.currentWorkspace === undefined ? WS : opts.currentWorkspace,
       sessions: opts.sessions ?? [],
       activeSessionKind: opts.activeSessionKind ?? 'work',
-      sessionCounts: { work: 0, intent: 0, spec: 0, discussion: 0, schedule: 0, tool: 0 },
+      sessionCounts: { work: 0, intent: 0, spec: 0, discussion: 0, automation: 0, tool: 0 },
       showToolSessions: opts.showToolSessions ?? false,
       hasMore: opts.hasMore ?? false,
       exhausted: opts.exhausted ?? false,
@@ -113,14 +113,14 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
     expect(w.emitted('load-more-sessions')).toEqual([[]])
   })
 
-  it('schedule tab is enabled and emits select-session-kind', async () => {
+  it('automation tab is enabled and emits select-session-kind', async () => {
     const w = mountList()
-    const scheduleTab = w
+    const automationTab = w
       .findAll('.session-kind-tab')
-      .find((button) => button.text().includes('Schedule'))
-    expect(scheduleTab?.attributes('disabled')).toBeUndefined()
-    await scheduleTab!.trigger('click')
-    expect(w.emitted('select-session-kind')).toEqual([['schedule']])
+      .find((button) => button.text().includes('Automation'))
+    expect(automationTab?.attributes('disabled')).toBeUndefined()
+    await automationTab!.trigger('click')
+    expect(w.emitted('select-session-kind')).toEqual([['automation']])
   })
 
   it('标题栏左侧渲染 kind 入口,不再渲染固定会话标题', () => {
@@ -133,7 +133,7 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
       'Intent',
       'Spec',
       'Discussion',
-      'Schedule',
+      'Automation',
       'Tool',
     ])
   })
@@ -165,7 +165,7 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
     expect(w.emitted('create-session')).toEqual([[WS]])
   })
 
-  it.each(['intent', 'spec', 'discussion', 'schedule', 'tool'] as const)(
+  it.each(['intent', 'spec', 'discussion', 'automation', 'tool'] as const)(
     '%s kind 下不渲染新建按钮',
     (activeSessionKind) => {
       const w = mountList({ activeSessionKind, showToolSessions: true })
@@ -183,7 +183,7 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
       'Intent',
       'Spec',
       'Discussion',
-      'Schedule',
+      'Automation',
     ])
     expect(hiddenTabs.some((tab) => tab.text() === 'Tool')).toBe(false)
 

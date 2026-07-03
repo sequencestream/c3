@@ -4,7 +4,7 @@
 
 The sandbox domain provides **container-based isolation** for agent execution. Rather than running vendor CLI processes directly on the host, the sandbox layer creates lightweight containers with configurable resource limits, filesystem isolation, network controls, and seccomp security profiles.
 
-This is a **kernel infrastructure** domain (inner domain, ADR-0009) — it provides the plumbing that higher-level features (runs, schedules, permissions) consume through a single sandbox-driver capability contract. It knows nothing about agents, sessions, or business logic.
+This is a **kernel infrastructure** domain (inner domain, ADR-0009) — it provides the plumbing that higher-level features (runs, automations, permissions) consume through a single sandbox-driver capability contract. It knows nothing about agents, sessions, or business logic.
 
 **Scope:** the sandbox configuration model, the driver capability contract, the configuration schema and merge rules, the named-definition registry, the Docker-backed runtime, and seccomp profile loading/merging.
 **Boundary:** it does not manage containers directly (the driver does), does not decide which sandbox to use (the caller does), and does not implement container orchestration (Kubernetes, Swarm).
@@ -21,7 +21,7 @@ The domain is composed of five capabilities:
 
 ### Layer Architecture
 
-Higher-level features (schedules, runs) call the sandbox driver only through its capability contract. The kernel sandbox layer holds the driver contract (implemented by the Docker-backed runtime), the registry (which registers system definitions and resolves them against workspace overrides), and the configuration parser/validator. The Docker runtime talks to the local Docker daemon; the seccomp loader reads its profiles from packaged JSON.
+Higher-level features (automations, runs) call the sandbox driver only through its capability contract. The kernel sandbox layer holds the driver contract (implemented by the Docker-backed runtime), the registry (which registers system definitions and resolves them against workspace overrides), and the configuration parser/validator. The Docker runtime talks to the local Docker daemon; the seccomp loader reads its profiles from packaged JSON.
 
 ### Capability responsibilities
 

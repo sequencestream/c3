@@ -94,7 +94,7 @@ describe('agent-events — example subscriber over a real EventBus', () => {
     const onFallback = vi.fn()
     const onAllFailed = vi.fn()
 
-    // Example: a feature wanting "异常→切换之外的动作" (audit / trigger a schedule)
+    // Example: a feature wanting "异常→切换之外的动作" (audit / trigger a automation)
     // subscribes at registration time — no change to the launcher needed.
     bus.subscribe('agent:error', onError)
     bus.subscribe('agent:fallback', onFallback)

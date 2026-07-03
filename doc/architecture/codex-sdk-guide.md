@@ -211,7 +211,7 @@ session 一联网即被拒。c3 通过两个中性驱动选项字段控制，由
 | ------------- | ----------------------------- | ------------------------- | -------------------------------------------------- |
 | work / intent | 交互式运行启动路径            | 固定 `true` / `true`      | 交互式、用户驱动的运行，恒开网络                   |
 | discussion    | 讨论 agent 会话管理           | 固定 `true` / `true`      | 讨论 agent 边研究边推演                            |
-| schedule      | 调度分派（不经 codex driver） | 不传                      | 仍由 `toolAllowlist`（WebSearch/WebFetch）配置驱动 |
+| automation    | 调度分派（不经 codex driver） | 不传                      | 仍由 `toolAllowlist`（WebSearch/WebFetch）配置驱动 |
 
 ### 零运行时审批（c3 的关键差异）
 

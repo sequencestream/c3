@@ -9,7 +9,7 @@
  * Unlike `save_intents`, this tool has NO confirmation gate: publishing an event
  * has no destructive side effect, so the server auto-allows it (no
  * `permission_request`, no blocking). The follow-up that DOES have side effects
- * is the schedule the event may trigger — that is governed by the schedule's own
+ * is the automation the event may trigger — that is governed by the automation's own
  * execution identity and the three-tier MCP security model, not here.
  *
  * The tool is named on the `c3` server, so the fully-qualified name is

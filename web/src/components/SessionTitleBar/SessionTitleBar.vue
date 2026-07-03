@@ -43,7 +43,7 @@ const props = withDefaults(
     agentSwitch?: SessionAgentSwitch | null
     /**
      * The active session's source-button label family (works title bar only):
-     * `intent`/`discussion`/`schedule` for owned sessions of that kind, `trace`
+     * `intent`/`discussion`/`automation` for owned sessions of that kind, `trace`
      * for work/tool sessions whose owner resolves generically. When set, a button
      * is shown that emits `open-source`; null ⇒ no button (no resolvable source).
      */
@@ -72,13 +72,13 @@ const props = withDefaults(
 const SOURCE_TEXT: Record<SessionSourceLabel, () => string> = {
   intent: () => t('session.titleBar.intent.label'),
   discussion: () => t('session.titleBar.discussion.label'),
-  schedule: () => t('session.titleBar.schedule.label'),
+  automation: () => t('session.titleBar.automation.label'),
   trace: () => t('session.titleBar.trace.label'),
 }
 const SOURCE_ARIA: Record<SessionSourceLabel, () => string> = {
   intent: () => t('session.titleBar.intent.ariaLabel'),
   discussion: () => t('session.titleBar.discussion.ariaLabel'),
-  schedule: () => t('session.titleBar.schedule.ariaLabel'),
+  automation: () => t('session.titleBar.automation.ariaLabel'),
   trace: () => t('session.titleBar.trace.ariaLabel'),
 }
 const sourceText = computed(() => (props.sourceLabel ? SOURCE_TEXT[props.sourceLabel]() : ''))

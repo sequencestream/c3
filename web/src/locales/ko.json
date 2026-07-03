@@ -42,8 +42,8 @@
       "discussion": {
         "label": "토론"
       },
-      "schedules": {
-        "label": "예약 작업"
+      "automations": {
+        "label": "자동화"
       },
       "workcenter": {
         "label": "워크센터"
@@ -363,7 +363,7 @@
       "title": {
         "label": "시간대"
       },
-      "hint": "각 일정의 cron 식을 해석하여 다음 실행 시각을 계산할 때 사용하는 IANA 시간대입니다. 예를 들어 0 11 * * * 는 이 시간대의 11:00 을 의미합니다. 기본값은 서버의 로컬 시간대이며, 변경하면 기존 일정의 실제 실행 시각이 달라집니다."
+      "hint": "각 자동화의 cron 식을 해석하여 다음 실행 시각을 계산할 때 사용하는 IANA 시간대입니다. 예를 들어 0 11 * * * 는 이 시간대의 11:00 을 의미합니다. 기본값은 서버의 로컬 시간대이며, 변경하면 기존 자동화의 실제 실행 시각이 달라집니다."
     },
     "consensus": {
       "title": {
@@ -971,9 +971,9 @@
         "label": "의도",
         "ariaLabel": "이 세션을 만든 의도 열기"
       },
-      "schedule": {
-        "label": "일정",
-        "ariaLabel": "이 세션을 만든 일정 열기"
+      "automation": {
+        "label": "자동화",
+        "ariaLabel": "이 세션을 만든 자동화 열기"
       },
       "discussion": {
         "label": "토론",
@@ -1104,19 +1104,19 @@
       "intent": "의도",
       "spec": "사양",
       "discussion": "토론",
-      "schedule": "일정",
+      "automation": "자동화",
       "tool": "도구",
       "tabsLabel": "세션 분류",
       "placeholder": "이 세션 유형은 2단계에서 연결됩니다."
     }
   },
-  "schedule": {
+  "automation": {
     "list": {
       "title": {
-        "label": "예약 작업"
+        "label": "자동화"
       },
       "new": {
-        "label": "새 예약 작업"
+        "label": "새 자동화"
       },
       "templates": {
         "button": "템플릿",
@@ -1138,7 +1138,7 @@
           "description": "매주 일요일 03:00에 7일 넘게 변경이 없는 c3 관리 worktree를 미커밋 변경, 의도 상태, 브랜치 안전 조건을 통과할 때만 삭제합니다."
         }
       },
-      "empty": "아직 예약 작업이 없습니다.",
+      "empty": "아직 자동화가 없습니다.",
       "expand": {
         "tooltip": "패널 펼치기"
       },
@@ -1252,7 +1252,7 @@
         "resultError": "결과 (오류)"
       },
       "noHistory": "아직 실행 기록이 없습니다.",
-      "empty": "세부 정보를 보려면 예약 작업을 선택하세요."
+      "empty": "세부 정보를 보려면 자동화를 선택하세요."
     },
     "tab": {
       "detail": "Details",
@@ -1263,7 +1263,7 @@
     },
     "history": {
       "title": "Execution History",
-      "empty": "Select a schedule to view its history.",
+      "empty": "Select a automation to view its history.",
       "browse": {
         "label": "Browse executions"
       },
@@ -1297,8 +1297,8 @@
       }
     },
     "form": {
-      "newTitle": "새 예약 작업",
-      "editTitle": "예약 작업 편집",
+      "newTitle": "새 자동화",
+      "editTitle": "자동화 편집",
       "title": {
         "label": "제목",
         "placeholder": "작업에서 자동 생성됨",
@@ -1330,7 +1330,7 @@
         "hint": "비워 두면 작업 기본값을 사용합니다(명령: 30초, LLM: 60초).",
         "invalid": "1,000에서 86,400,000 사이의 정수를 입력하세요."
       },
-      "schedule": {
+      "automation": {
         "label": "일정"
       },
       "frequency": {
@@ -1394,7 +1394,7 @@
         "label": "변경 사항 저장"
       },
       "create": {
-        "label": "예약 작업 만들기"
+        "label": "자동화 만들기"
       },
       "vendor": {
         "label": "벤더"
@@ -1469,7 +1469,7 @@
           "hint": "비워 두면 모든 결과에서 실행됩니다."
         },
         "pr": {
-          "note": "모델이 자체 도구로 PR 작업(생성, 리뷰, 병합, 닫기, 댓글)을 수행하고 완료 후 이벤트를 게시합니다. c3 자체는 PR 작업을 실행하지 않습니다. 이 작업 공간에서 일치하는 PR 이벤트가 게시되면 이 일정이 실행됩니다.",
+          "note": "모델이 자체 도구로 PR 작업(생성, 리뷰, 병합, 닫기, 댓글)을 수행하고 완료 후 이벤트를 게시합니다. c3 자체는 PR 작업을 실행하지 않습니다. 이 작업 공간에서 일치하는 PR 이벤트가 게시되면 이 자동화가 실행됩니다.",
           "op": {
             "label": "다음 작업에만",
             "create": {
@@ -1599,17 +1599,17 @@
       "alreadyStarted": "토론이 이미 시작되었거나 종료되었습니다. 다시 시작할 수 없습니다.",
       "notEndedForContinue": "종료된 토론만 새 라운드를 시작할 수 있습니다."
     },
-    "schedule": {
-      "dbUnavailable": "예약 작업 기능을 사용할 수 없습니다 (c3.db).",
-      "notFound": "예약 작업을 찾을 수 없습니다.",
+    "automation": {
+      "dbUnavailable": "자동화 기능을 사용할 수 없습니다 (c3.db).",
+      "notFound": "자동화를 찾을 수 없습니다.",
       "executionNotFound": "실행 기록을 찾을 수 없습니다.",
       "approvalNotFound": "승인 항목을 찾을 수 없거나 이미 처리되었습니다.",
-      "invalidEventTrigger": "이벤트 트리거 일정에는 구독할 실행 이벤트가 필요합니다.",
+      "invalidEventTrigger": "이벤트 트리거 자동화에는 구독할 실행 이벤트가 필요합니다.",
       "invalidMaxWallClockMs": "실행 시간 제한은 1,000에서 86,400,000밀리초 사이의 정수여야 합니다.",
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the schedule vendor."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve 저장소를 사용할 수 없습니다 (c3.db).",
@@ -1627,7 +1627,7 @@
       "workspaceLimit": "Free plan allows up to {limit} workspaces.",
       "worktreeLimit": "Free plan allows only {limit} active worktree.",
       "discussionParticipantLimit": "Free plan allows up to {limit} discussion participants, not counting the organizer.",
-      "scheduleLimit": "Free plan allows up to {limit} enabled schedules.",
+      "automationLimit": "Free plan allows up to {limit} enabled automations.",
       "sandboxDisabled": "Free plan can save sandbox settings, but cannot enable sandbox.",
       "reason": {
         "expired": "라이선스가 만료되었습니다",
@@ -2073,7 +2073,7 @@
       "work": "Work",
       "intent": "Intent",
       "discussion": "Discussion",
-      "schedule": "Schedule",
+      "automation": "Automation",
       "consensus": "Consensus",
       "tool": "Tool",
       "spec": "사양"

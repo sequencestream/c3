@@ -15,7 +15,7 @@
  * Per-run isolation: each `bind()` mints a token → a private {@link McpServer}
  * whose tool handler closes over the run's binding (workspace + live run id). The
  * token rides the URL query; the workspace lives in the closure, so the model can
- * neither publish to nor be matched against another workspace's schedules.
+ * neither publish to nor be matched against another workspace's automations.
  * `dispose()` evicts the binding at run end.
  */
 import type { Context } from 'hono'

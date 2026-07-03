@@ -87,7 +87,7 @@ c3 is a single local process with two halves connected by one WebSocket:
 | Wire protocol            | The client→server / server→client message unions plus workspace/session types                                                                                                                                             |
 | WS client                | Browser WebSocket wrapper                                                                                                                                                                                                 |
 | UI shell                 | Owns the WS client, the inbound-message handler, and all shared state; dispatches by tab to page containers                                                                                                               |
-| Pages                    | Per-page containers (works / intents / discussions / schedules / systemsettings) plus private components                                                                                                                  |
+| Pages                    | Per-page containers (works / intents / discussions / automations / systemsettings) plus private components                                                                                                                |
 | Shared components        | Cross-page components, each with a colocated unit test                                                                                                                                                                    |
 
 ## Cross-cutting conventions
@@ -116,7 +116,7 @@ c3 is a single local process with two halves connected by one WebSocket:
   read-only `intent`-kind run.
 - **Session metadata projection is a unified read cache.** `session_metadata` in c3.db is the
   renamed/generalized successor of `work_session_metadata`. It carries addressing and lifecycle
-  metadata for six session kinds (work / intent / spec / discussion / schedule / tool), including
+  metadata for six session kinds (work / intent / spec / discussion / automation / tool), including
   optional logical owner fields for jump-back. It is rebuildable and intentionally content-free:
   no transcript, prompt, tool call, or tool result belongs there. The current writer coverage is
   work + intent; other kinds use the same contract as placeholders until their domain writers are
@@ -185,7 +185,7 @@ c3 is a single local process with two halves connected by one WebSocket:
     pane slot in order, while mobile shows a single pane stack with an explicit back event; page
     containers keep owning their selection/data state.
   - Page-private components, each with a colocated test.
-  - Page containers — one per page (works / intents / discussions / schedules / systemsettings).
+  - Page containers — one per page (works / intents / discussions / automations / systemsettings).
   - The shell owns the WS client, the inbound-message handler, and all shared/tab state, and
     dispatches to page containers by active tab. Page containers are **pure** (props in / emit up) —
     no domain state of their own (the queue-edit prefill is forwarded back to the composer). Pure

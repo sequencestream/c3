@@ -132,11 +132,11 @@ When parsing succeeds, the agent's enabled flag is persisted as `false` through 
 This means default/tool/intent fall-through is not special-cased: if the disabled agent was the
 default, a non-empty tool agent, or a non-empty intent agent, normalization rewrites those ids to the
 next enabled agent by order sequence. The recovery subscriber then creates an internal one-shot
-schedule through the schedules store; when it fires, the schedule dispatcher re-enables the agent, and
+automation through the automations store; when it fires, the automation dispatcher re-enables the agent, and
 the scheduler deletes that one-shot row (cascading its execution logs) so no paused zombie is left
 behind.
 
-If parsing fails, or the schedule store is unavailable, the existing agent error/degradation flow is
+If parsing fails, or the automation store is unavailable, the existing agent error/degradation flow is
 left intact. A store outage can still leave the agent disabled without a timed recovery; the warning
 is logged and the user can re-enable the agent manually.
 
@@ -192,7 +192,7 @@ working-directory context all still work.
 Two settings let specific session classes run on a different agent than "default for new sessions",
 both decoupled from the default agent id and from each other:
 
-- **Tool agent** (AC-R21) — background tool sessions (completion judge, schedule/session-name
+- **Tool agent** (AC-R21) — background tool sessions (completion judge, automation/session-name
   derivation), resolved through the tool-agent resolution path.
 - **Intent agent** (AC-R23) — intent-communication sessions (the intent analyst's
   requirement-breakdown conversation), resolved through the intent-agent resolution path and bound

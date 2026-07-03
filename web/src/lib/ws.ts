@@ -64,7 +64,7 @@ export function createWsClient(opts: WsClientOptions) {
       if (ws?.readyState !== WebSocket.OPEN) return
       ws.send(JSON.stringify({ type: 'ping' } satisfies ClientToServer))
       // Expect a pong promptly; otherwise the link is half-open — force a close
-      // so `onclose` schedules a reconnect.
+      // so `onclose` automations a reconnect.
       if (pongTimer) clearTimeout(pongTimer)
       pongTimer = setTimeout(() => {
         pongTimer = null
@@ -73,7 +73,7 @@ export function createWsClient(opts: WsClientOptions) {
     }, HEARTBEAT_MS)
   }
 
-  function scheduleReconnect() {
+  function automationReconnect() {
     if (stopped || reconnectTimer) return
     const jitter = backoff * 0.25 * (0.5 - deterministicJitter())
     const delay = Math.min(backoff, RECONNECT_MAX_MS) + jitter
@@ -126,7 +126,7 @@ export function createWsClient(opts: WsClientOptions) {
       ws = null
       if (stopped) return
       onStatus('closed')
-      scheduleReconnect()
+      automationReconnect()
     }
 
     // `onerror` is followed by `onclose`; let close drive the reconnect to avoid
@@ -165,7 +165,7 @@ export function createWsClient(opts: WsClientOptions) {
     }
     clearTimers()
     if (ws) {
-      // Drop the old socket's onclose so it doesn't also schedule a reconnect.
+      // Drop the old socket's onclose so it doesn't also automation a reconnect.
       ws.onclose = null
       ws.close()
       ws = null

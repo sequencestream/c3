@@ -42,8 +42,8 @@
       "discussion": {
         "label": "ディスカッション"
       },
-      "schedules": {
-        "label": "スケジュール"
+      "automations": {
+        "label": "自動化"
       },
       "workcenter": {
         "label": "ワークセンター"
@@ -363,7 +363,7 @@
       "title": {
         "label": "タイムゾーン"
       },
-      "hint": "各スケジュールの cron 式を解釈し、次回実行時刻を計算するために使う IANA タイムゾーン。例えば 0 11 * * * はこのタイムゾーンの 11:00 を意味します。既定はサーバーのローカルタイムゾーンで、変更すると既存スケジュールの実際の実行時刻がずれます。"
+      "hint": "各自動化の cron 式を解釈し、次回実行時刻を計算するために使う IANA タイムゾーン。例えば 0 11 * * * はこのタイムゾーンの 11:00 を意味します。既定はサーバーのローカルタイムゾーンで、変更すると既存自動化の実際の実行時刻がずれます。"
     },
     "consensus": {
       "title": {
@@ -971,9 +971,9 @@
         "label": "意図",
         "ariaLabel": "このセッションを作成した意図を開く"
       },
-      "schedule": {
-        "label": "スケジュール",
-        "ariaLabel": "このセッションを作成したスケジュールを開く"
+      "automation": {
+        "label": "自動化",
+        "ariaLabel": "このセッションを作成した自動化を開く"
       },
       "discussion": {
         "label": "ディスカッション",
@@ -1104,19 +1104,19 @@
       "intent": "意図",
       "spec": "仕様",
       "discussion": "ディスカッション",
-      "schedule": "スケジュール",
+      "automation": "自動化",
       "tool": "ツール",
       "tabsLabel": "セッション分類",
       "placeholder": "この種類のセッションは第2期で接続されます。"
     }
   },
-  "schedule": {
+  "automation": {
     "list": {
       "title": {
-        "label": "スケジュール"
+        "label": "自動化"
       },
       "new": {
-        "label": "新しいスケジュール"
+        "label": "新しい自動化"
       },
       "templates": {
         "button": "テンプレート",
@@ -1138,7 +1138,7 @@
           "description": "毎週日曜 03:00 に、7 日を超えて変更のない c3 管理 worktree を、未コミット変更・意図状態・ブランチ安全ゲート通過時のみ削除します。"
         }
       },
-      "empty": "まだスケジュールがありません。",
+      "empty": "まだ自動化がありません。",
       "expand": {
         "tooltip": "パネルを展開"
       },
@@ -1160,16 +1160,16 @@
         "lessThanMinute": "< 1分"
       },
       "edit": {
-        "tooltip": "スケジュールを編集"
+        "tooltip": "自動化を編集"
       },
       "delete": {
-        "tooltip": "スケジュールを削除",
-        "title": "スケジュールを削除しますか?",
+        "tooltip": "自動化を削除",
+        "title": "自動化を削除しますか?",
         "confirm": "「{name}」を削除しますか? 実行履歴も完全に削除され、この操作は取り消せません。"
       },
       "runNow": {
         "tooltip": "今すぐ実行",
-        "disabledTooltip": "今すぐ実行するにはスケジュールを有効にしてください"
+        "disabledTooltip": "今すぐ実行するには自動化を有効にしてください"
       },
       "toggle": {
         "enabled": {
@@ -1219,7 +1219,7 @@
       }
     },
     "saveOverlay": {
-      "title": "スケジュールを保存中…",
+      "title": "自動化を保存中…",
       "label": "保存中…"
     },
     "detail": {
@@ -1252,7 +1252,7 @@
         "resultError": "結果(エラー)"
       },
       "noHistory": "まだ実行履歴がありません。",
-      "empty": "詳細を表示するにはスケジュールを選択してください。"
+      "empty": "詳細を表示するには自動化を選択してください。"
     },
     "tab": {
       "detail": "Details",
@@ -1263,7 +1263,7 @@
     },
     "history": {
       "title": "Execution History",
-      "empty": "Select a schedule to view its history.",
+      "empty": "Select a automation to view its history.",
       "browse": {
         "label": "Browse executions"
       },
@@ -1297,8 +1297,8 @@
       }
     },
     "form": {
-      "newTitle": "新しいスケジュール",
-      "editTitle": "スケジュールを編集",
+      "newTitle": "新しい自動化",
+      "editTitle": "自動化を編集",
       "title": {
         "label": "タイトル",
         "placeholder": "タスクから自動生成",
@@ -1330,7 +1330,7 @@
         "hint": "空欄の場合はタスクの既定値を使用します（コマンド: 30 秒、LLM: 60 秒）。",
         "invalid": "1,000 から 86,400,000 までの整数を入力してください。"
       },
-      "schedule": {
+      "automation": {
         "label": "スケジュール"
       },
       "frequency": {
@@ -1394,7 +1394,7 @@
         "label": "変更を保存"
       },
       "create": {
-        "label": "スケジュールを作成"
+        "label": "自動化を作成"
       },
       "vendor": {
         "label": "ベンダー"
@@ -1469,7 +1469,7 @@
           "hint": "空欄の場合はすべての結果で実行されます。"
         },
         "pr": {
-          "note": "モデルが独自のツールで PR 操作（作成・レビュー・マージ・クローズ・コメント）を行い、完了後にイベントを発行します。c3 自体は PR 操作を一切実行しません。このワークスペースで一致する PR イベントが発行されると、このスケジュールが実行されます。",
+          "note": "モデルが独自のツールで PR 操作（作成・レビュー・マージ・クローズ・コメント）を行い、完了後にイベントを発行します。c3 自体は PR 操作を一切実行しません。このワークスペースで一致する PR イベントが発行されると、この自動化が実行されます。",
           "op": {
             "label": "次の操作のみ",
             "create": {
@@ -1599,17 +1599,17 @@
       "alreadyStarted": "ディスカッションはすでに開始または終了しています。再開はできません。",
       "notEndedForContinue": "終了したディスカッションのみ新しいラウンドを開始できます。"
     },
-    "schedule": {
-      "dbUnavailable": "スケジュール機能は利用できません(c3.db)。",
-      "notFound": "スケジュールが見つかりません。",
+    "automation": {
+      "dbUnavailable": "自動化機能は利用できません(c3.db)。",
+      "notFound": "自動化が見つかりません。",
       "executionNotFound": "実行記録が見つかりません。",
       "approvalNotFound": "承認エントリが見つからないか、すでに処理済みです。",
-      "invalidEventTrigger": "イベントトリガー型のスケジュールには購読する実行イベントが必要です。",
+      "invalidEventTrigger": "イベントトリガー型の自動化には購読する実行イベントが必要です。",
       "invalidMaxWallClockMs": "実行タイムアウトは 1,000 から 86,400,000 ミリ秒までの整数である必要があります。",
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the schedule vendor."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve ストアは利用できません (c3.db)。",
@@ -1627,7 +1627,7 @@
       "workspaceLimit": "Free plan allows up to {limit} workspaces.",
       "worktreeLimit": "Free plan allows only {limit} active worktree.",
       "discussionParticipantLimit": "Free plan allows up to {limit} discussion participants, not counting the organizer.",
-      "scheduleLimit": "Free plan allows up to {limit} enabled schedules.",
+      "automationLimit": "Free plan allows up to {limit} enabled automations.",
       "sandboxDisabled": "Free plan can save sandbox settings, but cannot enable sandbox.",
       "reason": {
         "expired": "ライセンスの有効期限が切れています",
@@ -2073,7 +2073,7 @@
       "work": "Work",
       "intent": "Intent",
       "discussion": "Discussion",
-      "schedule": "Schedule",
+      "automation": "Automation",
       "consensus": "Consensus",
       "tool": "Tool",
       "spec": "仕様"

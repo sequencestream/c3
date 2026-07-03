@@ -287,6 +287,6 @@ c3 exposes **no** license-admin surface.
   users on the same machine.
 - **free tier** — the default long-lived license tier issued at sign-in. It is not a purchasable
   catalog plan and is limited at runtime: 5 workspaces, 1 active worktree, 2 non-organizer discussion
-  participants, 2 enabled schedules, and sandbox cannot be enabled.
+  participants, 2 enabled automations, and sandbox cannot be enabled.
 - See [glossary](../../../glossary.md) for license-server, Entitlement, Entitlement token, License
   key, Alive token, License badge, Session gating, and Service agreement (incl. no-refund terms).

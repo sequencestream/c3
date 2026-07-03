@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import type { AutomationStatus, Intent } from '@ccc/shared/protocol'
+import type { WorkflowStatus, Intent } from '@ccc/shared/protocol'
 import IntentMergedList from './IntentMergedList.vue'
 
 function installMatchMedia(width: number): void {
@@ -31,7 +31,7 @@ afterEach(() => {
 function mountMerged(
   opts: {
     intents?: Intent[]
-    automation?: AutomationStatus | null
+    automation?: WorkflowStatus | null
   } = {},
 ) {
   return mount(IntentMergedList, {

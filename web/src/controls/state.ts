@@ -18,7 +18,7 @@ import type { ChatBody, ChatMsg, RunActivity } from '@/lib/chat-types'
 import { agentNameAt } from '@/lib/agent-prefix'
 import type { DeepLinkTarget } from '@/lib/deep-link'
 import type {
-  AutomationStatus,
+  WorkflowStatus,
   CodeDirEntry,
   CodeSearchMode,
   CodexPolicy,
@@ -32,8 +32,8 @@ import type {
   LicenseStatus,
   PromptImage,
   WorkspaceSetting as WorkspaceSettingType,
-  Schedule,
-  ScheduleExecutionLog,
+  Automation,
+  AutomationExecutionLog,
   ToolManifestEntry,
   AdapterCapability,
   SessionAgentSwitch,
@@ -73,7 +73,7 @@ export const VIEW_MODE_KEY = 'c3.viewMode'
 export const REQ_PROJECT_KEY = 'c3.intentsProject'
 export const DISC_PROJECT_KEY = 'c3.discussionsProject'
 export const DISC_ID_KEY = 'c3.discussionId'
-export const SCHED_PROJECT_KEY = 'c3.schedulesProject'
+export const SCHED_PROJECT_KEY = 'c3.automationsProject'
 export const CODES_PROJECT_KEY = 'c3.codesProject'
 export const CURRENT_WS_KEY = 'c3.currentWorkspace'
 export const WORK_SESSION_QUERY_START_TIME_KEY = 'work_session_query_start_time'
@@ -89,7 +89,7 @@ export const CODES_CHAT_WIDTH_DEFAULT = 360
 export const CODES_CHAT_WIDTH_MIN = 240
 export const CODES_CHAT_WIDTH_MAX = 720
 
-export type TabKey = 'console' | 'intents' | 'discussion' | 'schedules' | 'codes'
+export type TabKey = 'console' | 'intents' | 'discussion' | 'automations' | 'codes'
 export type SessionPageKind = Exclude<SessionKind, 'consensus'>
 
 export const SESSION_PAGE_KINDS: readonly SessionPageKind[] = [
@@ -97,7 +97,7 @@ export const SESSION_PAGE_KINDS: readonly SessionPageKind[] = [
   'intent',
   'spec',
   'discussion',
-  'schedule',
+  'automation',
   'tool',
 ]
 
@@ -106,7 +106,7 @@ export function sessionCacheKey(workspaceId: string, sessionKind: SessionPageKin
 }
 
 // 顶部「会话」tab 角标数值:当前工作区六类会话(work/intent/spec/discussion/
-// schedule/tool)进行中计数之和。与左侧列表六个 kind tab 角标同一数据源
+// automation/tool)进行中计数之和。与左侧列表六个 kind tab 角标同一数据源
 // (sessionCounts),不引入新口径。tool 类在 showToolSessions 关闭时服务端本就
 // 不推送(值为 0),自然不计入。和为 0 时上层 `v-if="tab.badgeCount"` 不渲染角标。
 export function sumSessionCounts(counts: Record<SessionPageKind, number>): number {
@@ -156,7 +156,7 @@ export function createState(deps: StateDeps) {
     intent: 0,
     spec: 0,
     discussion: 0,
-    schedule: 0,
+    automation: 0,
     tool: 0,
   })
   // Per-workspace cursor-pagination state (SR-R14), parallel to the session
@@ -316,7 +316,7 @@ export function createState(deps: StateDeps) {
     },
     { key: 'intents', label: t('nav.tab.intents.label') },
     { key: 'discussion', label: t('nav.tab.discussion.label') },
-    { key: 'schedules', label: t('nav.tab.schedules.label') },
+    { key: 'automations', label: t('nav.tab.automations.label') },
     { key: 'codes', label: t('nav.tab.codes.label') },
   ])
   const activeTab = ref<TabKey>('console')
@@ -335,9 +335,9 @@ export function createState(deps: StateDeps) {
     intentsProject.value ? (intentsSdd.value[intentsProject.value] ?? false) : false,
   )
 
-  // Per-project automation-orchestrator status (server pushes `automation_status`).
-  const automation = ref<Record<string, AutomationStatus>>({})
-  const currentAutomation = computed<AutomationStatus | null>(() =>
+  // Per-project automation-orchestrator status (server pushes `workflow_status`).
+  const automation = ref<Record<string, WorkflowStatus>>({})
+  const currentWorkflow = computed<WorkflowStatus | null>(() =>
     intentsProject.value ? (automation.value[intentsProject.value] ?? null) : null,
   )
 
@@ -410,40 +410,40 @@ export function createState(deps: StateDeps) {
     return showDiscussionStart(d.status, activeResearchLive.value, discussionLive)
   })
 
-  // ---- Schedules view (read path) ----
-  const schedulesProject = ref<string | null>(null)
-  const schedules = ref<Record<string, Schedule[]>>({})
-  const currentSchedules = computed<Schedule[]>(() =>
-    schedulesProject.value ? (schedules.value[schedulesProject.value] ?? []) : [],
+  // ---- Automations view (read path) ----
+  const automationsProject = ref<string | null>(null)
+  const automations = ref<Record<string, Automation[]>>({})
+  const currentAutomations = computed<Automation[]>(() =>
+    automationsProject.value ? (automations.value[automationsProject.value] ?? []) : [],
   )
-  const selectedScheduleId = ref<string | null>(null)
-  const selectedSchedule = computed<Schedule | null>(() => {
-    if (!selectedScheduleId.value || !schedulesProject.value) return null
-    return currentSchedules.value.find((s) => s.id === selectedScheduleId.value) ?? null
+  const selectedAutomationId = ref<string | null>(null)
+  const selectedAutomation = computed<Automation | null>(() => {
+    if (!selectedAutomationId.value || !automationsProject.value) return null
+    return currentAutomations.value.find((s) => s.id === selectedAutomationId.value) ?? null
   })
-  const scheduleLogs = ref<Record<string, ScheduleExecutionLog[]>>({})
-  const selectedScheduleLogs = computed<ScheduleExecutionLog[]>(() =>
-    selectedScheduleId.value ? (scheduleLogs.value[selectedScheduleId.value] ?? []) : [],
+  const automationLogs = ref<Record<string, AutomationExecutionLog[]>>({})
+  const selectedAutomationLogs = computed<AutomationExecutionLog[]>(() =>
+    selectedAutomationId.value ? (automationLogs.value[selectedAutomationId.value] ?? []) : [],
   )
   const executionTranscripts = ref<Record<string, TranscriptItem[]>>({})
   const selectedExecutionId = ref<string | null>(null)
-  const selectedExecution = computed<ScheduleExecutionLog | null>(() => {
+  const selectedExecution = computed<AutomationExecutionLog | null>(() => {
     if (!selectedExecutionId.value) return null
-    return selectedScheduleLogs.value.find((l) => l.id === selectedExecutionId.value) ?? null
+    return selectedAutomationLogs.value.find((l) => l.id === selectedExecutionId.value) ?? null
   })
 
-  // Schedule-form tool manifest: cached per vendor, cleared on form close.
-  const scheduleToolManifest = ref<Record<string, ToolManifestEntry[] | null>>({})
-  const scheduleToolManifestLoading = ref(false)
-  const scheduleToolManifestError = ref<string | null>(null)
+  // Automation-form tool manifest: cached per vendor, cleared on form close.
+  const automationToolManifest = ref<Record<string, ToolManifestEntry[] | null>>({})
+  const automationToolManifestLoading = ref(false)
+  const automationToolManifestError = ref<string | null>(null)
 
-  // Schedule save-in-progress flag: drives the "Saving…" overlay that blocks
+  // Automation save-in-progress flag: drives the "Saving…" overlay that blocks
   // interaction while the server processes a create/update (2-4s typical latency).
-  const scheduleSaving = ref(false)
+  const automationSaving = ref(false)
 
-  // The modal serves both create (target = null) and edit (target = a schedule).
-  const scheduleFormOpen = ref(false)
-  const scheduleFormTarget = ref<Schedule | null>(null)
+  // The modal serves both create (target = null) and edit (target = a automation).
+  const automationFormOpen = ref(false)
+  const automationFormTarget = ref<Automation | null>(null)
 
   // ---- Codes view (read-only file browser) ----
   // The workspace id whose tree/tabs are loaded. Reset when it changes.
@@ -557,8 +557,8 @@ export function createState(deps: StateDeps) {
     return list.map((m) => ({ value: m.token, label: modeLabel(m.labelCode) }))
   })
 
-  // The time zone schedule cron fields are interpreted in for the live preview.
-  const scheduleTimezone = computed(
+  // The time zone automation cron fields are interpreted in for the live preview.
+  const automationTimezone = computed(
     () => serverSettings.value?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
   )
 
@@ -714,18 +714,18 @@ export function createState(deps: StateDeps) {
     researchMaxSeq,
     discussionDispatch,
     discussionInput,
-    schedulesProject,
-    schedules,
-    selectedScheduleId,
-    scheduleLogs,
+    automationsProject,
+    automations,
+    selectedAutomationId,
+    automationLogs,
     executionTranscripts,
     selectedExecutionId,
-    scheduleToolManifest,
-    scheduleToolManifestLoading,
-    scheduleToolManifestError,
-    scheduleSaving,
-    scheduleFormOpen,
-    scheduleFormTarget,
+    automationToolManifest,
+    automationToolManifestLoading,
+    automationToolManifestError,
+    automationSaving,
+    automationFormOpen,
+    automationFormTarget,
     codesProject,
     codesDirs,
     codesExpanded,
@@ -791,7 +791,7 @@ export function createState(deps: StateDeps) {
     currentIntents,
     intentsSdd,
     currentIntentsSdd,
-    currentAutomation,
+    currentWorkflow,
     currentIntentSessions,
     currentDiscussions,
     activeDiscussionRunState,
@@ -799,14 +799,14 @@ export function createState(deps: StateDeps) {
     activeResearchLive,
     activeDiscussionPhase,
     showStart,
-    currentSchedules,
-    selectedSchedule,
-    selectedScheduleLogs,
+    currentAutomations,
+    selectedAutomation,
+    selectedAutomationLogs,
     selectedExecution,
     codesActiveTab,
     taskStoreAvailable,
     modeOptions,
-    scheduleTimezone,
+    automationTimezone,
   }
 }
 

@@ -6,7 +6,7 @@
  * `agent:error` (a single agent failed), `agent:fallback` (switched to the next
  * agent), `agent:all_failed` (the chain is exhausted). These are an event-化
  *旁路 over the *unchanged* synchronous control flow: they let actions beyond
- * "switch to the next agent" (trigger a schedule, notify the discussion engine,
+ * "switch to the next agent" (trigger a automation, notify the discussion engine,
  * audit) hang off agent failure via subscription, without touching the existing
  * degradation behavior or the wire `agent_failed` / `all_agents_failed` frames.
  *

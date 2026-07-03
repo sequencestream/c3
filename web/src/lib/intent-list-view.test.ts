@@ -3,7 +3,7 @@ import type { Intent } from '@ccc/shared/protocol'
 import type { CompletionOrderInput } from './intent-list-view'
 import type { IntentActionInput } from './intent-list-view'
 import {
-  automationIconState,
+  workflowIconState,
   compareByCompletion,
   formatDate,
   formatDependsOn,
@@ -258,12 +258,12 @@ describe('visibleIntentActions', () => {
   })
 })
 
-describe('automationIconState', () => {
+describe('workflowIconState', () => {
   it('done takes precedence over running and eligibility', () => {
     const item = makeIntent({ id: 'done', status: 'done', specApproved: true })
 
     expect(
-      automationIconState(item, {
+      workflowIconState(item, {
         sddEnabled: true,
         automation: {
           workspaceId: 'proj',
@@ -285,7 +285,7 @@ describe('automationIconState', () => {
     const item = makeIntent({ id: 'run', specApproved: true })
 
     expect(
-      automationIconState(item, {
+      workflowIconState(item, {
         sddEnabled: true,
         automation: {
           workspaceId: 'proj',
@@ -306,19 +306,19 @@ describe('automationIconState', () => {
   it('SDD on with an unapproved spec is idle', () => {
     const item = makeIntent({ id: 'unapproved', specPath: '/spec.md', specApproved: false })
 
-    expect(automationIconState(item, { sddEnabled: true, intents: [item] })).toBe('idle')
+    expect(workflowIconState(item, { sddEnabled: true, intents: [item] })).toBe('idle')
   })
 
   it('SDD on with an approved queued intent is eligible', () => {
     const item = makeIntent({ id: 'approved', specPath: '/spec.md', specApproved: true })
 
-    expect(automationIconState(item, { sddEnabled: true, intents: [item] })).toBe('eligible')
+    expect(workflowIconState(item, { sddEnabled: true, intents: [item] })).toBe('eligible')
   })
 
   it('SDD off does not require a spec for queued intents', () => {
     const item = makeIntent({ id: 'legacy', specPath: null, specApproved: false })
 
-    expect(automationIconState(item, { sddEnabled: false, intents: [item] })).toBe('eligible')
+    expect(workflowIconState(item, { sddEnabled: false, intents: [item] })).toBe('eligible')
   })
 
   it('an approved but manual intent is idle', () => {
@@ -329,7 +329,7 @@ describe('automationIconState', () => {
       specApproved: true,
     })
 
-    expect(automationIconState(item, { sddEnabled: true, intents: [item] })).toBe('idle')
+    expect(workflowIconState(item, { sddEnabled: true, intents: [item] })).toBe('idle')
   })
 
   it('dependency-blocked queued intents are idle in worktree mode', () => {
@@ -347,7 +347,7 @@ describe('automationIconState', () => {
     })
 
     expect(
-      automationIconState(item, {
+      workflowIconState(item, {
         sddEnabled: true,
         gitBranchMode: 'worktree',
         mainBranch: 'main',

@@ -118,7 +118,7 @@ add-column through the shared adapter (RM-R14).
     `COALESCE(?, intent_session_id)` so an absent value preserves any prior link). A batch of more than
     one item forces the column to null regardless of what was supplied — there is no single source
     session for a batch. This is a **double guard**: the schema description tells the agent "single
-    only", and the store enforces it independently. `insertIntents` (the schedule-only
+    only", and the store enforces it independently. `insertIntents` (the automation-only
     `save_intent_directly` path) never reads the field — drafts have no communication-session semantics.
     This explicit-field write covers the gap the refine `run:bound` backfill (below) cannot reach:
     a comm session that **creates a brand-new** intent has no pending→intent link to backfill, so the

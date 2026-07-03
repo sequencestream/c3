@@ -123,7 +123,7 @@ to the accessor union (above) to a direct read of a session-metadata projection
 table in the c3 runtime database. On 2026-06-28 the former
 `work_session_metadata` table was renamed in place to `session_metadata` and
 generalized to carry six business session classes: work, intent, spec,
-discussion, schedule, and tool. This amendment records the contract.
+discussion, automation, and tool. This amendment records the contract.
 
 ### Projection table contract
 
@@ -143,8 +143,8 @@ holds only addressing/lifecycle metadata for read-side aggregation:
 | state             | Lifecycle state (born / alive / stale / orphaned / ghost).                                                                                                                 |
 | state updated at  | UTC ms; drives the STALE window and warmup policy.                                                                                                                         |
 | kind              | Legacy binding marker retained for compatibility; read paths ignore it.                                                                                                    |
-| session kind      | Business class: work / intent / spec / discussion / schedule / tool.                                                                                                       |
-| owner kind        | Nullable logical owner kind (currently intent / discussion / schedule) used by client-side jump-back rules.                                                                |
+| session kind      | Business class: work / intent / spec / discussion / automation / tool.                                                                                                     |
+| owner kind        | Nullable logical owner kind (currently intent / discussion / automation) used by client-side jump-back rules.                                                              |
 | owner id          | Nullable logical owner id.                                                                                                                                                 |
 | bound             | Integer boolean replacement for `kind`: real rows are `1`; work-only pending placeholders are `0`.                                                                         |
 
@@ -168,7 +168,7 @@ The daily `list_sessions` reads the projection in a single query per workspace
 and `session_kind`. The session page can therefore render per-kind tabs and
 running-count badges from one contract. Pending rows (`bound = 0`) are excluded
 from the wire list — the per-connection "viewed session" badge is the pending
-entry, not a list item. In this phase, work, intent, spec, and schedule are wired
+entry, not a list item. In this phase, work, intent, spec, and automation are wired
 to real data; discussion/tool rows remain valid schema targets for later phases.
 
 An environment flag (default ON) rolls the read path back to the legacy

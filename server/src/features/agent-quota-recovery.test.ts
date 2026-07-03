@@ -15,18 +15,19 @@ import { resetDbForTests } from '../kernel/infra/db.js'
 import { loadSettings, resetSettingsCacheForTests, saveSettings } from '../kernel/config/index.js'
 import {
   appendExecutionLog,
-  deleteSchedule,
-  getDueSchedules,
-  getEventSchedules,
-  getSchedule,
-  listSchedules,
+  deleteAutomation,
+  getDueAutomations,
+  getEventAutomations,
+  getAutomation,
+  listAutomations,
   resetStoreForTests,
   updateExecutionLog,
   updateNextRunAt,
-  updateSchedule,
-} from './schedules/store.js'
+  updateAutomation,
+} from './automations/store.js'
 import { handleAgentQuotaError } from './agent-quota-recovery.js'
-import { setExecutionStore, stopScheduler, triggerRunNow } from './schedules/scheduler.js'
+import { setExecutionStore, triggerRunNow } from './automations/engine.js'
+import { stopScheduler } from './schedules/index.js'
 
 let dir: string
 let prevHome: string | undefined
@@ -83,21 +84,21 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-function wireRealScheduleStore(): void {
+function wireRealAutomationStore(): void {
   setExecutionStore({
-    getDueSchedules,
-    getEventSchedules,
-    getSchedule,
+    getDueAutomations,
+    getEventAutomations,
+    getAutomation,
     updateNextRunAt,
-    updateSchedule: (id, patch) => {
-      updateSchedule(id, {
-        status: patch.status as import('@ccc/shared/protocol').ScheduleStatus | undefined,
+    updateAutomation: (id, patch) => {
+      updateAutomation(id, {
+        status: patch.status as import('@ccc/shared/protocol').AutomationStatus | undefined,
       })
     },
-    deleteSchedule,
+    deleteAutomation,
     appendExecutionLog: (input) =>
       appendExecutionLog({
-        scheduleId: input.scheduleId,
+        automationId: input.automationId,
         startedAt: input.startedAt,
         finishedAt: input.finishedAt,
         exitCode: input.exitCode,
@@ -109,17 +110,17 @@ function wireRealScheduleStore(): void {
   })
 }
 
-// One-shot recovery schedules delete themselves once they fire, so "idle" means
+// One-shot recovery automations delete themselves once they fire, so "idle" means
 // the row is gone from the store.
-async function waitForScheduleGone(scheduleId: string): Promise<void> {
+async function waitForAutomationGone(automationId: string): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt++) {
-    if (getSchedule(scheduleId) === null) return
+    if (getAutomation(automationId) === null) return
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
 }
 
 describe('agent quota recovery', () => {
-  it('disables the agent and creates a one-shot recovery schedule', () => {
+  it('disables the agent and creates a one-shot recovery automation', () => {
     const now = Date.UTC(2026, 5, 15, 13, 0)
     const result = handleAgentQuotaError({
       agentId: quotaAgent.id,
@@ -131,16 +132,16 @@ describe('agent quota recovery', () => {
     expect(result.handled).toBe(true)
     expect(result.disabled).toBe(true)
     expect(result.resetAt).toBe(Date.UTC(2026, 5, 15, 14, 40))
-    expect(result.scheduleId).toEqual(expect.any(String))
+    expect(result.automationId).toEqual(expect.any(String))
 
     const settings = loadSettings()
     expect(settings.agents.find((agent) => agent.id === quotaAgent.id)?.enabled).toBe(false)
     expect(settings.defaultAgentId).toBe(SYSTEM_AGENT_ID)
     expect(settings.toolAgentId).toBe(SYSTEM_AGENT_ID)
 
-    const schedules = listSchedules(workspacePath)
-    expect(schedules).toHaveLength(1)
-    expect(schedules[0].nextRunAt).toBe(result.resetAt)
+    const automations = listAutomations(workspacePath)
+    expect(automations).toHaveLength(1)
+    expect(automations[0].nextRunAt).toBe(result.resetAt)
   })
 
   it('does nothing when reset time cannot be parsed', () => {
@@ -150,12 +151,12 @@ describe('agent quota recovery', () => {
       error: "You've hit your session limit",
     })
 
-    expect(result).toEqual({ handled: false, resetAt: null, disabled: false, scheduleId: null })
+    expect(result).toEqual({ handled: false, resetAt: null, disabled: false, automationId: null })
     expect(loadSettings().agents.find((agent) => agent.id === quotaAgent.id)?.enabled).toBe(true)
-    expect(listSchedules(workspacePath)).toHaveLength(0)
+    expect(listAutomations(workspacePath)).toHaveLength(0)
   })
 
-  it('re-enables the agent when the recovery schedule fires and then deletes itself', async () => {
+  it('re-enables the agent when the recovery automation fires and then deletes itself', async () => {
     const now = Date.UTC(2026, 5, 15, 13, 0)
     const result = handleAgentQuotaError({
       agentId: quotaAgent.id,
@@ -163,18 +164,18 @@ describe('agent quota recovery', () => {
       error: "You've hit your session limit · resets 10:40pm (Asia/Shanghai)",
       now,
     })
-    expect(result.scheduleId).toEqual(expect.any(String))
-    const scheduleId = result.scheduleId!
-    updateNextRunAt(scheduleId, Date.now() - 10)
+    expect(result.automationId).toEqual(expect.any(String))
+    const automationId = result.automationId!
+    updateNextRunAt(automationId, Date.now() - 10)
 
-    wireRealScheduleStore()
-    await triggerRunNow(scheduleId)
-    await waitForScheduleGone(scheduleId)
+    wireRealAutomationStore()
+    await triggerRunNow(automationId)
+    await waitForAutomationGone(automationId)
 
     const settings = loadSettings()
     expect(settings.agents.find((agent) => agent.id === quotaAgent.id)?.enabled).toBe(true)
-    // The one-shot recovery schedule deletes itself after firing.
-    expect(getSchedule(scheduleId)).toBeNull()
-    expect(listSchedules(workspacePath)).toHaveLength(0)
+    // The one-shot recovery automation deletes itself after firing.
+    expect(getAutomation(automationId)).toBeNull()
+    expect(listAutomations(workspacePath)).toHaveLength(0)
   })
 })

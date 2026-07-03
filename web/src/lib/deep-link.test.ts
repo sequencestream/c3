@@ -29,7 +29,7 @@ describe('parseDeepLink', () => {
 
   it('未知 kind → 返回 null', () => {
     expect(parseDeepLink('/unknown/ws1/id1')).toBeNull()
-    expect(parseDeepLink('/schedule/ws1/id1')).toBeNull()
+    expect(parseDeepLink('/automation/ws1/id1')).toBeNull()
   })
 
   it('段数不足(2 段) → 返回 null', () => {

@@ -4,7 +4,7 @@
  * resolved and linked with no trust check), so the only remaining gate is the
  * one-time `.gitignore` append. Two halves:
  *
- *  1. Transport (mirrors `features/schedules/queue.ts` but is its own in-memory
+ *  1. Transport (mirrors `features/automations/queue.ts` but is its own in-memory
  *     map, NOT SQLite-backed): the backend emits a `skill_load_approval_request`
  *     and blocks on a Promise the WS handler resolves via
  *     `resolveSkillApproval(requestId, decision)`. The modal UI itself is 3/3.

@@ -398,7 +398,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     ? (raw!.uiLang as UiLang)
     : DEFAULT_UI_LANG
   // System time zone: a valid IANA name is kept; anything else falls back to the
-  // server's own zone (so a fresh install schedules in local time out of the box).
+  // server's own zone (so a fresh install automations in local time out of the box).
   const timezone = isValidTimeZone(raw?.timezone) ? raw!.timezone! : getServerTimezone()
   // Public-facing base URL: trim + strip trailing slashes. Empty/absent/non-string
   // ⇒ omitted (optional semantics — "not configured" ≡ no value).
@@ -1221,7 +1221,7 @@ export function getUiLangName(): string {
 }
 
 /**
- * The system IANA time zone schedules are computed in (normalized; a valid zone,
+ * The system IANA time zone automations are computed in (normalized; a valid zone,
  * defaulting to the server's own zone). Passed to `computeNextRunAt` so cron
  * fields are interpreted in this zone.
  */

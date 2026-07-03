@@ -43,8 +43,8 @@ path queries per workspace and `session_kind`, filters to `bound = 1`, maps each
 row to a session entry (additive `state`, `sessionKind`, `ownerKind`, `ownerId`,
 and `bound` fields), applies the hidden-set and recorded-tool-session filters
 for work listings, and sorts newest-first. The session page uses the same
-projection for its six tabs (work / intent / spec / discussion / schedule /
-tool) and running-count badges. Work, intent, spec, discussion, and schedule
+projection for its six tabs (work / intent / spec / discussion / automation /
+tool) and running-count badges. Work, intent, spec, discussion, and automation
 are live read-model rows; tool remains the last placeholder until its domain writer connects. Spec rows are written by the intent-management spec lifecycle at bind time with
 
 `session_kind='spec'` and an intent owner, so selecting them jumps back to the owning intent's

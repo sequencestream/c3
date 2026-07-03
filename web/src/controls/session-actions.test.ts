@@ -59,8 +59,8 @@ function makeCtx(
   const openSpecSession = vi.fn()
   const openDiscussions = vi.fn()
   const openDiscussion = vi.fn()
-  const openSchedules = vi.fn()
-  const onSelectSchedule = vi.fn()
+  const openAutomations = vi.fn()
+  const onSelectAutomation = vi.fn()
   const selectIntentSession = vi.fn()
   const persistViewMode = vi.fn()
   const persistCurrentWorkspace = vi.fn()
@@ -104,8 +104,8 @@ function makeCtx(
     openSpecSession,
     openDiscussions,
     openDiscussion,
-    openSchedules,
-    onSelectSchedule,
+    openAutomations,
+    onSelectAutomation,
     selectIntentSession,
     persistViewMode,
     persistCurrentWorkspace,
@@ -131,8 +131,8 @@ function makeCtx(
     requestedIntentSessionId,
     openDiscussions,
     openDiscussion,
-    openSchedules,
-    onSelectSchedule,
+    openAutomations,
+    onSelectAutomation,
     selectIntentSession,
     persistCurrentWorkspace,
   }
@@ -287,7 +287,7 @@ describe('selectSession shows the session in the chat column', () => {
   it.each([
     ['spec', 'spec', 'intent', 'intent-1'],
     ['discussion', 'discussion', 'discussion', 'discussion-1'],
-    ['schedule', 'schedule', 'schedule', 'schedule-1'],
+    ['automation', 'automation', 'automation', 'automation-1'],
     ['intent', 'intent', 'intent', 'intent-1'],
   ] as const)(
     'enters the console and selects a %s owner row instead of opening its business page',
@@ -298,12 +298,19 @@ describe('selectSession shows the session in the chat column', () => {
         ownerKind,
         ownerId,
       } satisfies SessionInfo
-      const { ctx, send, activeTab, consoleSession, openIntents, openDiscussions, openSchedules } =
-        makeCtx({
-          sessions: { [sessionCacheKey(WS, kind)]: [row] },
-          intents: { [WS]: [intent('intent-1')] },
-          activeKind: kind,
-        })
+      const {
+        ctx,
+        send,
+        activeTab,
+        consoleSession,
+        openIntents,
+        openDiscussions,
+        openAutomations,
+      } = makeCtx({
+        sessions: { [sessionCacheKey(WS, kind)]: [row] },
+        intents: { [WS]: [intent('intent-1')] },
+        activeKind: kind,
+      })
 
       ctx.selectSession(WS, `${kind}-1`)
 
@@ -316,7 +323,7 @@ describe('selectSession shows the session in the chat column', () => {
       })
       expect(openIntents).not.toHaveBeenCalled()
       expect(openDiscussions).not.toHaveBeenCalled()
-      expect(openSchedules).not.toHaveBeenCalled()
+      expect(openAutomations).not.toHaveBeenCalled()
     },
   )
 
@@ -529,18 +536,18 @@ describe('jumpActiveSessionSource — title-bar source button', () => {
     expect(openDiscussion).toHaveBeenCalledWith('discussion-1')
   })
 
-  it('routes a schedule session to the schedules page', () => {
-    const { ctx, openSchedules, onSelectSchedule } = setup(
-      'schedule',
-      'schedule',
-      'schedule-1',
-      'schedule-session-1',
+  it('routes a automation session to the automations page', () => {
+    const { ctx, openAutomations, onSelectAutomation } = setup(
+      'automation',
+      'automation',
+      'automation-1',
+      'automation-session-1',
     )
 
     ctx.jumpActiveSessionSource()
 
-    expect(openSchedules).toHaveBeenCalledWith(WS)
-    expect(onSelectSchedule).toHaveBeenCalledWith('schedule-1')
+    expect(openAutomations).toHaveBeenCalledWith(WS)
+    expect(onSelectAutomation).toHaveBeenCalledWith('automation-1')
   })
 
   it('routes a work/tool owner via the resolver target (generic trace)', () => {
@@ -553,12 +560,17 @@ describe('jumpActiveSessionSource — title-bar source button', () => {
   })
 
   it('no-ops when the active session has no resolvable source', () => {
-    const { ctx, openIntents, openDiscussions, openSchedules } = setup('work', null, '', 'plain-1')
+    const { ctx, openIntents, openDiscussions, openAutomations } = setup(
+      'work',
+      null,
+      '',
+      'plain-1',
+    )
 
     ctx.jumpActiveSessionSource()
 
     expect(openIntents).not.toHaveBeenCalled()
     expect(openDiscussions).not.toHaveBeenCalled()
-    expect(openSchedules).not.toHaveBeenCalled()
+    expect(openAutomations).not.toHaveBeenCalled()
   })
 })

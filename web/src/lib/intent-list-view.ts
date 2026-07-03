@@ -7,7 +7,7 @@
  */
 
 import type {
-  AutomationStatus,
+  WorkflowStatus,
   DepType,
   Intent,
   IntentRunStatus,
@@ -177,20 +177,20 @@ export function visibleIntentActions(r: IntentActionInput): IntentRowAction[] {
 
 export const AUTO_RUNNING_STATES = ['running', 'developing', 'fixing'] as const
 
-export type AutomationIconState = 'idle' | 'eligible' | 'running' | 'done'
+export type WorkflowIconState = 'idle' | 'eligible' | 'running' | 'done'
 
-export interface AutomationIconStateOptions {
+export interface WorkflowIconStateOptions {
   sddEnabled?: boolean
-  automation?: AutomationStatus | null
+  automation?: WorkflowStatus | null
   gitBranchMode?: 'worktree' | 'current-branch'
   mainBranch?: string | null
   intents: Intent[]
 }
 
-export function automationIconState(
+export function workflowIconState(
   intent: Intent,
-  opts: AutomationIconStateOptions,
-): AutomationIconState {
+  opts: WorkflowIconStateOptions,
+): WorkflowIconState {
   if (intent.status === 'done') return 'done'
   if (
     opts.automation?.currentIntentId === intent.id &&

@@ -66,8 +66,8 @@
         "paid": "Unlimited",
         "enterprise": "Unlimited"
       },
-      "enabledSchedules": {
-        "label": "Enabled schedules",
+      "enabledAutomations": {
+        "label": "Enabled automations",
         "free": "5",
         "paid": "Unlimited",
         "enterprise": "Unlimited"

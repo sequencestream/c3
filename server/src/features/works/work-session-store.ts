@@ -22,7 +22,7 @@ export {
   updateRowOwner,
   updatePendingRowAgentId,
   upsertBoundRow,
-  upsertScheduleExecutionRow,
+  upsertAutomationExecutionRow,
   updateRealRowAgentId,
   updateRealRowTitle,
   upsertForBind,

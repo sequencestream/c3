@@ -216,7 +216,7 @@ export function computeNextRunAt(
       }
     }
   }
-  // Fallback: schedule far in the future to avoid tight loop on invalid cron
+  // Fallback: automation far in the future to avoid tight loop on invalid cron
   return after + FAR_FUTURE_MS
 }
 

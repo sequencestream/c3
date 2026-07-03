@@ -63,7 +63,7 @@ Key design points:
   is no dedicated auth UI form. The URL is stored in plaintext (it does not use the `c3secretv1:`
   encryption path — an intentional trade-off).
 - The injection happens in `launchForAgent()` via `envOverrides`, affecting all entry points:
-  main runs, tool sessions, intent comm, spec authoring, discussion, schedule execution, and
+  main runs, tool sessions, intent comm, spec authoring, discussion, automation execution, and
   advisor sessions.
 - The `buildChildEnv` merge order (keepalive < process.env < envOverrides) is unchanged: proxy
   env vars land in `envOverrides`, so they take precedence over the user's shell but can still

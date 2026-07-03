@@ -50,7 +50,7 @@ export interface EventBusEvents {
    * A run started — `launchRun` began a turn (published once per launchRun,
    * before the vendor fork, so it covers both the claude and driver paths).
    * `sessionKind` is the run's {@link SessionKind} business origin (listeners
-   * route by source — event-triggered schedules only fire on `'work'`); `runKind`
+   * route by source — event-triggered automations only fire on `'work'`); `runKind`
    * is its {@link RunKind} execution form (recorded for audit/extensibility).
    */
   'run:started': {
@@ -62,7 +62,7 @@ export interface EventBusEvents {
   /**
    * The run is fully over (terminal state backstop reached). Carries the bound
    * session id, the terminal `reason`, the run's {@link SessionKind} business
-   * origin (so event-triggered schedules can filter by workspace + reason and skip
+   * origin (so event-triggered automations can filter by workspace + reason and skip
    * non-`work` runs) and its {@link RunKind} execution form (audit/extensibility).
    */
   'run:settled': {
@@ -77,7 +77,7 @@ export interface EventBusEvents {
    * `onDegradableError` collection point, 2026-06-08). An **event-化 bypass** of
    * the existing degradation control flow: it does NOT replace the wire
    * `agent_failed` frame (which still fires only on a fresh fallback advance) —
-   * it lets actions beyond "switch to the next agent" (trigger a schedule, notify
+   * it lets actions beyond "switch to the next agent" (trigger a automation, notify
    * the discussion engine, audit) hang off agent failure via subscription.
    * `degradable` is currently always `true` (only the degradable-error path is
    * eventized; a non-degradable infra throw keeps the existing catch path and is
@@ -140,7 +140,7 @@ export interface EventBusEvents {
    * operation with its own tools — c3 never executes the operation itself. The
    * `workspacePath` + `sessionId` come from the per-run binding closure (the
    * model cannot forge another workspace), and the rest is the validated,
-   * safely-normalized {@link PrOperationEvent}. Event-triggered schedules
+   * safely-normalized {@link PrOperationEvent}. Event-triggered automations
    * subscribed to `'pr:operation'` match it by operation + result.
    */
   'pr:operation': { workspacePath: string; sessionId: string } & PrOperationEvent

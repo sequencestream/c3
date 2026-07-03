@@ -15,7 +15,7 @@
  * - No transport field (`sock`/`viewer`/`connections`) crosses this boundary —
  *   the broadcaster is the only egress, and it is captured by reference.
  */
-import type { AutomationStatus, DiscussionMessage, ResearchMessage } from '@ccc/shared/protocol'
+import type { WorkflowStatus, DiscussionMessage, ResearchMessage } from '@ccc/shared/protocol'
 import { resolve } from 'node:path'
 import { pathToId } from '../state.js'
 import { getSddEnabled } from '../kernel/config/index.js'
@@ -34,9 +34,9 @@ import { discussionRunSnapshot, researchRunSnapshot } from '../features/discussi
 import type { ResearchStreamItem } from '../features/discussions/research.js'
 import type { DispatchStatus } from '../features/discussions/orchestrator.js'
 import {
-  isStoreAvailable as isScheduleStoreAvailable,
-  listSchedules,
-} from '../features/schedules/store.js'
+  isStoreAvailable as isAutomationStoreAvailable,
+  listAutomations,
+} from '../features/automations/store.js'
 import {
   isStoreAvailable as isWaitUserEventsStoreAvailable,
   listEvents as listWaitUserEvents,
@@ -79,10 +79,10 @@ export interface Broadcasts {
   broadcastSessions: (workspacePath: string) => void
   /** Push a project's refreshed discussion list (with run/research snapshots). */
   broadcastDiscussions: (workspacePath: string) => void
-  /** Push a workspace's refreshed schedule list. */
-  broadcastSchedules: (workspacePath: string) => void
+  /** Push a workspace's refreshed automation list. */
+  broadcastAutomations: (workspacePath: string) => void
   /** Push an automation-orchestrator status to every connection. */
-  broadcastAutomation: (status: AutomationStatus) => void
+  broadcastWorkflow: (status: WorkflowStatus) => void
   /** Stream one freshly-appended discussion message. */
   broadcastDiscussionMessage: (discussionId: string, message: DiscussionMessage) => void
   /** Broadcast the transient in-flight/failed status of dispatched participants. */
@@ -206,13 +206,13 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     })
   }
 
-  // Push a workspace's schedule list. Used after create/update/delete. No-op
+  // Push a workspace's automation list. Used after create/update/delete. No-op
   // when the store is unavailable.
-  const broadcastSchedules = (workspacePath: string): void => {
-    if (!isScheduleStoreAvailable()) return
+  const broadcastAutomations = (workspacePath: string): void => {
+    if (!isAutomationStoreAvailable()) return
     const proj = resolve(workspacePath)
-    const items = listSchedules(proj)
-    broadcaster.toAll({ type: 'schedules', workspaceId: pathToId(proj)!, items })
+    const items = listAutomations(proj)
+    broadcaster.toAll({ type: 'automations', workspaceId: pathToId(proj)!, items })
   }
 
   // Stream one freshly-appended discussion message to every connection (the
@@ -268,8 +268,8 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
 
   // Push an automation-orchestrator status to every connection (the frontend
   // keeps a per-project map and renders the one it's viewing).
-  const broadcastAutomation = (status: AutomationStatus): void => {
-    broadcaster.toAll({ type: 'automation_status', status })
+  const broadcastWorkflow = (status: WorkflowStatus): void => {
+    broadcaster.toAll({ type: 'workflow_status', status })
   }
 
   // Push a project's refreshed wait-user-involve event list. Only 'todo'
@@ -295,8 +295,8 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcastIntentSessions,
     broadcastSessions,
     broadcastDiscussions,
-    broadcastSchedules,
-    broadcastAutomation,
+    broadcastAutomations,
+    broadcastWorkflow,
     broadcastDiscussionMessage,
     broadcastDiscussionDispatchStatus,
     broadcastDiscussionRunStatus,

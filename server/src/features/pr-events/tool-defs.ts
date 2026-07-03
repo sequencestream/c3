@@ -13,7 +13,7 @@
  * surface.
  *
  * The model uses its OWN tools to create / review / merge / close / comment on
- * a PR and then calls this tool to publish ONE event; a schedule may subscribe
+ * a PR and then calls this tool to publish ONE event; a automation may subscribe
  * and trigger its follow-up action. The server-side PR creation paths
  * (dev-cleanup / automation / manual create_pr) also publish a `create` event
  * after successfully creating a PR on the model's behalf.
@@ -99,7 +99,7 @@ export const publishPrEventDesc =
   '发布一条供应商中立的「PR 操作事件」。你应先用自己的工具(gh CLI / GitHub MCP 等)完成 ' +
   'PR 的创建/评审/合并/关闭/评论,操作完成或失败后调用本工具发布对应事件;' +
   'c3 本身不执行任何 PR 操作。事件包含 operation、result、pr、repo、ref、association,' +
-  '供订阅了 pr:operation 的 Schedule 匹配并触发后续动作。' +
+  '供订阅了 pr:operation 的 Automation 匹配并触发后续动作。' +
   'result 是三态:success(成功)/failure(评审判定未通过)/error(执行异常,如 CI 挂了)。' +
   'review 场景请务必填写 pr.id + association.intentTitle(意图名称),让事件自解释。' +
   '失败时可在 errorSummary 给出简短原因,勿放令牌/密钥/命令行原始输出/绝对路径(服务端会归一化)。'

@@ -20,7 +20,7 @@ export const VIEW_INTENT_TOOL = 'mcp__c3__view_intent'
  * The c3 `publish_pr_event` MCP tool's fully-qualified name (server name `c3`).
  * Bound to every work session (2026-06-20). The standard gate auto-allows it with
  * NO human prompt: publishing a vendor-neutral PR operation event is
- * non-destructive (the gated, side-effecting step is the schedule it may trigger).
+ * non-destructive (the gated, side-effecting step is the automation it may trigger).
  */
 export const PUBLISH_PR_EVENT_TOOL = 'mcp__c3__publish_pr_event'
 

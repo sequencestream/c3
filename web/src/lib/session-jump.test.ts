@@ -26,7 +26,7 @@ describe('resolveSessionJumpTarget', () => {
     ).toEqual({ kind: 'intentDetail', intentId: 'intent-1', tab: 'specSession' })
   })
 
-  it('routes discussion and schedule owners', () => {
+  it('routes discussion and automation owners', () => {
     expect(
       resolveSessionJumpTarget({
         sessionKind: 'discussion',
@@ -36,11 +36,11 @@ describe('resolveSessionJumpTarget', () => {
     ).toEqual({ kind: 'discussion', discussionId: 'discussion-1' })
     expect(
       resolveSessionJumpTarget({
-        sessionKind: 'schedule',
-        ownerKind: 'schedule',
-        ownerId: 'schedule-1',
+        sessionKind: 'automation',
+        ownerKind: 'automation',
+        ownerId: 'automation-1',
       }),
-    ).toEqual({ kind: 'schedule', scheduleId: 'schedule-1' })
+    ).toEqual({ kind: 'automation', automationId: 'automation-1' })
   })
 
   it('routes tool sessions through their owner and rejects unknown owners', () => {
@@ -57,10 +57,10 @@ describe('resolveSessionJumpTarget', () => {
     expect(
       resolveSessionJumpTarget({
         sessionKind: 'tool',
-        ownerKind: 'schedule',
-        ownerId: 'schedule-1',
+        ownerKind: 'automation',
+        ownerId: 'automation-1',
       }),
-    ).toEqual({ kind: 'schedule', scheduleId: 'schedule-1' })
+    ).toEqual({ kind: 'automation', automationId: 'automation-1' })
     expect(
       resolveSessionJumpTarget({ sessionKind: 'tool', ownerKind: 'unknown', ownerId: 'x' }),
     ).toBeNull()
@@ -83,7 +83,7 @@ describe('resolveSessionSourceAction', () => {
     })
   })
 
-  it('labels discussion and schedule sessions by their own kind', () => {
+  it('labels discussion and automation sessions by their own kind', () => {
     expect(
       resolveSessionSourceAction({
         sessionKind: 'discussion',
@@ -92,8 +92,12 @@ describe('resolveSessionSourceAction', () => {
       }),
     ).toEqual({ target: { kind: 'discussion', discussionId: 'd1' }, label: 'discussion' })
     expect(
-      resolveSessionSourceAction({ sessionKind: 'schedule', ownerKind: 'schedule', ownerId: 's1' }),
-    ).toEqual({ target: { kind: 'schedule', scheduleId: 's1' }, label: 'schedule' })
+      resolveSessionSourceAction({
+        sessionKind: 'automation',
+        ownerKind: 'automation',
+        ownerId: 's1',
+      }),
+    ).toEqual({ target: { kind: 'automation', automationId: 's1' }, label: 'automation' })
   })
 
   it('labels work/tool sessions generically as "trace"', () => {
@@ -101,8 +105,8 @@ describe('resolveSessionSourceAction', () => {
       resolveSessionSourceAction({ sessionKind: 'work', ownerKind: 'intent', ownerId: 'i1' }),
     ).toEqual({ target: { kind: 'intentDetail', intentId: 'i1' }, label: 'trace' })
     expect(
-      resolveSessionSourceAction({ sessionKind: 'tool', ownerKind: 'schedule', ownerId: 's1' }),
-    ).toEqual({ target: { kind: 'schedule', scheduleId: 's1' }, label: 'trace' })
+      resolveSessionSourceAction({ sessionKind: 'tool', ownerKind: 'automation', ownerId: 's1' }),
+    ).toEqual({ target: { kind: 'automation', automationId: 's1' }, label: 'trace' })
   })
 
   it('returns null for a standalone intent (chat) session with no owning intent', () => {

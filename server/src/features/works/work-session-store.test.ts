@@ -38,7 +38,7 @@ import {
   updateRealRowTitle,
   upsertForBind,
   upsertPendingRow,
-  upsertScheduleExecutionRow,
+  upsertAutomationExecutionRow,
   validateLazy,
   type NativeListFn,
 } from './work-session-store.js'
@@ -320,11 +320,11 @@ describe('createSession pending row (F-11 replacement for setPendingIntent)', ()
   })
 })
 
-describe('schedule execution projection rows', () => {
-  it('upserts a real schedule session row with schedule ownership metadata', () => {
-    upsertScheduleExecutionRow({
-      schedule: {
-        id: 'schedule-1',
+describe('automation execution projection rows', () => {
+  it('upserts a real automation session row with automation ownership metadata', () => {
+    upsertAutomationExecutionRow({
+      automation: {
+        id: 'automation-1',
         type: 'llm',
         config: { name: 'Nightly review' },
         maxWallClockMs: null,
@@ -345,16 +345,16 @@ describe('schedule execution projection rows', () => {
         createdAt: nowMs,
         updatedAt: nowMs,
       },
-      sessionId: 'schedule-session-1',
+      sessionId: 'automation-session-1',
       workspacePath: wsA,
     })
 
-    const row = listForWorkspace(wsA, 'schedule')[0]
-    expect(row.vendorSessionId).toBe('schedule-session-1')
-    expect(row.sessionKind).toBe('schedule')
-    expect(row.ownerKind).toBe('schedule')
-    expect(row.ownerId).toBe('schedule-1')
-    expect(row.title).toBe('Schedule: Nightly review')
+    const row = listForWorkspace(wsA, 'automation')[0]
+    expect(row.vendorSessionId).toBe('automation-session-1')
+    expect(row.sessionKind).toBe('automation')
+    expect(row.ownerKind).toBe('automation')
+    expect(row.ownerId).toBe('automation-1')
+    expect(row.title).toBe('Automation: Nightly review')
   })
 })
 

@@ -21,7 +21,7 @@
  * 4. The votes are tallied: a strict majority of cast votes decides.
  *    A tie or no cast votes ⇒ `decision: null` ⇒ the orchestrator stops
  *    (the fail-safe default).
- * 5. The outcome is broadcast via `AutomationStatus.checkpointConsensus`
+ * 5. The outcome is broadcast via `WorkflowStatus.checkpointConsensus`
  *    so the UI/events can render the process.
  * 6. The orchestrator: `decision === 'continue'` ⇒ treat as `in_progress`
  *    and auto-continue; otherwise stop (existing behaviour).
@@ -268,7 +268,7 @@ async function summarize(
  *
  * When a decision is produced, it carries the per-voter votes, the aggregate
  * decision, and a human-readable summary — all of which are broadcast via
- * `AutomationStatus.checkpointConsensus` so the UI can render them.
+ * `WorkflowStatus.checkpointConsensus` so the UI can render them.
  */
 export async function runCheckpointConsensus(
   params: CheckpointConsensusParams,

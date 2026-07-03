@@ -37,7 +37,7 @@ const CAPABILITIES: TierCapability[] = [
   { label: '注册 workspace 数 / Workspaces', free: '5', paid: '不限 / Unlimited', enterprise: '不限 / Unlimited' },
   { label: '并发活跃 worktree / Active worktrees', free: '2', paid: '不限 / Unlimited', enterprise: '不限 / Unlimited' },
   { label: '单次讨论参与者(不含主持人) / Discussion participants', free: '2', paid: '不限 / Unlimited', enterprise: '不限 / Unlimited' },
-  { label: '启用中的 schedule / Enabled schedules', free: '5', paid: '不限 / Unlimited', enterprise: '不限 / Unlimited' },
+  { label: '启用中的 automation / Enabled automations', free: '5', paid: '不限 / Unlimited', enterprise: '不限 / Unlimited' },
   { label: '启用 sandbox / Sandbox', free: '不可 / No', paid: '可 / Yes', enterprise: '可 / Yes' },
   { label: '权限控制 / Permission controls', free: '基础 / Basic', paid: '基础 / Basic', enterprise: '更高级的权限控制(预告) / Advanced controls (preview)' },
   { label: '价格 / 期限 / Price / Term', free: '免费、长期 / Free, long-lived', paid: '见购买页 / See checkout', enterprise: '见购买页 / See checkout' },
@@ -118,8 +118,8 @@ describe('CheckoutView capability comparison', () => {
     expect(text).toContain('可') // paid + enterprise cells
     expect(text).toContain('更高级的权限控制(预告)') // enterprise-only capability value
     expect(text).toContain('并发活跃 worktree')
-    expect(text).toContain('启用中的 schedule')
-    expect(text).toContain('5') // free plan: enabledSchedules raised to 5
+    expect(text).toContain('启用中的 automation')
+    expect(text).toContain('5') // free plan: enabledAutomations raised to 5
     expect(text).not.toContain('Unlimited')
     expect(text).not.toContain('Permission controls')
     const heads = table.findAll('th').map((th) => th.text())
@@ -139,8 +139,8 @@ describe('CheckoutView capability comparison', () => {
     expect(text).toContain('Yes')
     expect(text).toContain('Advanced controls (preview)')
     expect(text).toContain('Concurrent active worktrees')
-    expect(text).toContain('Enabled schedules')
-    expect(text).toContain('5') // free plan: enabledSchedules raised to 5
+    expect(text).toContain('Enabled automations')
+    expect(text).toContain('5') // free plan: enabledAutomations raised to 5
     expect(text).not.toContain('注册')
     expect(text).not.toContain('不可')
   })

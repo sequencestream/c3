@@ -29,17 +29,17 @@ key 段结构:
 
 ### 2.1 namespace(第一段,冻结九个)
 
-| namespace    | 用途                                 | 示例                             |
-| ------------ | ------------------------------------ | -------------------------------- |
-| `common`     | 跨页复用的通用词(按钮 / 状态 / 动作) | `common.action.save.label`       |
-| `nav`        | 导航 / 顶栏 / Tab                    | `nav.refresh.tooltip`            |
-| `permission` | 工具调用权限提示                     | `permission.tool.allow.label`    |
-| `settings`   | 系统设置                             | `settings.theme.label`           |
-| `session`    | 会话                                 | `session.list.refresh.tooltip`   |
-| `schedule`   | 定时任务                             | `schedule.form.name.placeholder` |
-| `discussion` | 讨论                                 | `discussion.input.placeholder`   |
-| `intent`     | 需求                                 | `intent.detail.empty`            |
-| `error`      | 错误 / 异常文案                      | `error.network.timeout`          |
+| namespace    | 用途                                 | 示例                               |
+| ------------ | ------------------------------------ | ---------------------------------- |
+| `common`     | 跨页复用的通用词(按钮 / 状态 / 动作) | `common.action.save.label`         |
+| `nav`        | 导航 / 顶栏 / Tab                    | `nav.refresh.tooltip`              |
+| `permission` | 工具调用权限提示                     | `permission.tool.allow.label`      |
+| `settings`   | 系统设置                             | `settings.theme.label`             |
+| `session`    | 会话                                 | `session.list.refresh.tooltip`     |
+| `automation` | 自动化                               | `automation.form.name.placeholder` |
+| `discussion` | 讨论                                 | `discussion.input.placeholder`     |
+| `intent`     | 需求                                 | `intent.detail.empty`              |
+| `error`      | 错误 / 异常文案                      | `error.network.timeout`            |
 
 - 通用词进 `common`,业务词归各自域;错误文案统一进 `error`。
 - 需要新 namespace 时,**先在本表登记再加 key**。

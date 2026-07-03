@@ -6,14 +6,14 @@ import type { SessionPageKind } from './state'
 function counts(
   partial: Partial<Record<SessionPageKind, number>>,
 ): Record<SessionPageKind, number> {
-  return { work: 0, intent: 0, spec: 0, discussion: 0, schedule: 0, tool: 0, ...partial }
+  return { work: 0, intent: 0, spec: 0, discussion: 0, automation: 0, tool: 0, ...partial }
 }
 
 describe('sumSessionCounts — 顶部「会话」tab 角标数值(六类求和)', () => {
   it('多类混合求和:六类各自计数相加', () => {
     expect(
       sumSessionCounts(
-        counts({ work: 2, intent: 1, spec: 3, discussion: 1, schedule: 4, tool: 2 }),
+        counts({ work: 2, intent: 1, spec: 3, discussion: 1, automation: 4, tool: 2 }),
       ),
     ).toBe(13)
   })
@@ -52,7 +52,7 @@ describe('createState — HEADER_TABS console 角标', () => {
 
     expect(consoleTab()?.badgeCount).toBe(0)
 
-    s.sessionCounts.value = counts({ work: 2, intent: 1, schedule: 1 })
+    s.sessionCounts.value = counts({ work: 2, intent: 1, automation: 1 })
     expect(consoleTab()?.badgeCount).toBe(4)
 
     // 模拟 session_counts 增量推送后的合并结果。

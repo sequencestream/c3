@@ -18,7 +18,7 @@ project-scoped discussion store (persistence foundation).
 | [intent-management](intent-management/intent-management-overview.md)    | Project-scoped intent ledger (SQLite); read-only intent-communication agent; `save_intents` confirmation; launch the configurable development skill                          | WebSocket `/ws` (see shared protocol) | active        |
 | [codes](codes/codes-overview.md)                                        | Read-only workspace code browsing and bounded search, rooted only in registered workspace ids                                                                                | WebSocket `/ws` (see shared protocol) | active        |
 | [discussion](discussion/discussion-overview.md)                         | Project-scoped discussion store (SQLite): discussions + ordered messages, with status lifecycle and conclusion. Persistence foundation; agent/orchestration/UI not yet built | Internal (no public API yet)          | partial       |
-| [schedules](schedules/schedules-overview.md)                            | Time-based execution of commands and LLM prompts across workspaces; execution log recording and review                                                                       | WebSocket `/ws` (see shared protocol) | planned       |
+| [automations](automations/automations-overview.md)                      | Time-based execution of commands and LLM prompts across workspaces; execution log recording and review                                                                       | WebSocket `/ws` (see shared protocol) | planned       |
 | [auth](auth/auth-overview.md)                                           | Authentication abstraction: extensible provider union (`basic` first), session-token model, login/logout/401 messages — the precondition for network exposure (C-SEC-5)      | WebSocket `/ws` (see shared protocol) | contract-only |
 
 ## Shared context
@@ -36,10 +36,10 @@ project-scoped discussion store (persistence foundation).
 web-console ──(/ws)──► session-registry ──supplies cwd/mode/resume──► agent-session ──uses──► permission-gateway ──blocks──► SDK query()
           └─(/ws)──► codes ──validates workspace id──► session-registry
                                                                           ▲
-                                                                          │ schedules ──uses──► agent-session (execute llm_prompt / command)
+                                                                          │ automations ──uses──► agent-session (execute llm_prompt / command)
 ```
 
 `web-console` depends on the server's wire contract; `session-registry` feeds each run's
 context to `agent-session`; `agent-session` depends on `permission-gateway` to gate tools;
-`schedules` depends on `session-registry` (workspace validation) and `agent-session` (execution).
+`automations` depends on `session-registry` (workspace validation) and `agent-session` (execution).
 No cycles.

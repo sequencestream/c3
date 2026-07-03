@@ -564,7 +564,7 @@ function detectBatchCycle(edges: number[][]): void {
 
 /**
  * Insert a batch of proposed intents in one transaction. New rows land as
- * `initialStatus` (default `todo`); the schedule-only `save_intent_directly`
+ * `initialStatus` (default `todo`); the automation-only `save_intent_directly`
  * tool passes `draft` so unattended proposals wait for human review.
  */
 export function insertIntents(

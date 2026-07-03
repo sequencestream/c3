@@ -5,7 +5,7 @@ export const FREE_PLAN_LIMITS = {
   workspaces: 5,
   activeWorktrees: 2,
   discussionParticipants: 2,
-  enabledSchedules: 5,
+  enabledAutomations: 5,
   sandboxEnabled: false,
 } as const
 
@@ -13,7 +13,7 @@ export interface PlanLimits {
   workspaces: number | null
   activeWorktrees: number | null
   discussionParticipants: number | null
-  enabledSchedules: number | null
+  enabledAutomations: number | null
   sandboxEnabled: boolean
 }
 
@@ -27,14 +27,14 @@ export function limitsForPlan(plan: LicensePlan | string | undefined): PlanLimit
         workspaces: FREE_PLAN_LIMITS.workspaces,
         activeWorktrees: FREE_PLAN_LIMITS.activeWorktrees,
         discussionParticipants: FREE_PLAN_LIMITS.discussionParticipants,
-        enabledSchedules: FREE_PLAN_LIMITS.enabledSchedules,
+        enabledAutomations: FREE_PLAN_LIMITS.enabledAutomations,
         sandboxEnabled: false,
       }
     : {
         workspaces: null,
         activeWorktrees: null,
         discussionParticipants: null,
-        enabledSchedules: null,
+        enabledAutomations: null,
         sandboxEnabled: true,
       }
 }

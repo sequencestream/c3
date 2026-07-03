@@ -105,14 +105,14 @@ export function installMessageHandler(ctx: AppCtx): void {
     researchMessages,
     researchMaxSeq,
     discussionDispatch,
-    schedules,
-    schedulesProject,
-    selectedScheduleId,
-    scheduleSaving,
-    scheduleLogs,
-    scheduleToolManifest,
-    scheduleToolManifestLoading,
-    scheduleToolManifestError,
+    automations,
+    automationsProject,
+    selectedAutomationId,
+    automationSaving,
+    automationLogs,
+    automationToolManifest,
+    automationToolManifestLoading,
+    automationToolManifestError,
     executionTranscripts,
     codesProject,
     codesDirs,
@@ -150,7 +150,7 @@ export function installMessageHandler(ctx: AppCtx): void {
   ): NonNullable<SessionInfo['ownerKind']> | null {
     if (kind === 'intent' || kind === 'spec') return 'intent'
     if (kind === 'discussion') return 'discussion'
-    if (kind === 'schedule') return 'schedule'
+    if (kind === 'automation') return 'automation'
     return null
   }
 
@@ -326,10 +326,10 @@ export function installMessageHandler(ctx: AppCtx): void {
         send({ type: 'get_license' })
 
         if (!deepLinkConsumed) {
-          // Restore the intent / discussion / schedules view if a hard refresh left us in it.
+          // Restore the intent / discussion / automations view if a hard refresh left us in it.
           ctx.maybeRestoreIntents(msg.workspaces)
           ctx.maybeRestoreDiscussions(msg.workspaces)
-          ctx.maybeRestoreSchedules(msg.workspaces)
+          ctx.maybeRestoreAutomations(msg.workspaces)
           ctx.maybeRestoreCodes(msg.workspaces)
         }
         break
@@ -665,7 +665,7 @@ export function installMessageHandler(ctx: AppCtx): void {
           }
         }
         break
-      case 'automation_status':
+      case 'workflow_status':
         automation.value = { ...automation.value, [msg.status.workspaceId]: msg.status }
         break
       case 'discussions': {
@@ -689,27 +689,27 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       }
-      case 'schedules':
-        schedules.value = { ...schedules.value, [msg.workspaceId]: msg.items }
-        // A schedule create/update round-trip completed — release the saving overlay.
-        if (scheduleSaving.value) scheduleSaving.value = false
+      case 'automations':
+        automations.value = { ...automations.value, [msg.workspaceId]: msg.items }
+        // A automation create/update round-trip completed — release the saving overlay.
+        if (automationSaving.value) automationSaving.value = false
         // After a run completes the server re-broadcasts the list; refresh the open
-        // schedule's execution logs so history stays current.
+        // automation's execution logs so history stays current.
         if (
-          activeTab.value === 'schedules' &&
-          schedulesProject.value === msg.workspaceId &&
-          selectedScheduleId.value
+          activeTab.value === 'automations' &&
+          automationsProject.value === msg.workspaceId &&
+          selectedAutomationId.value
         ) {
-          send({ type: 'get_schedule_detail', scheduleId: selectedScheduleId.value })
+          send({ type: 'get_automation_detail', automationId: selectedAutomationId.value })
         }
         break
-      case 'schedule_detail':
-        scheduleLogs.value = { ...scheduleLogs.value, [msg.schedule.id]: msg.logs }
+      case 'automation_detail':
+        automationLogs.value = { ...automationLogs.value, [msg.automation.id]: msg.logs }
         break
-      case 'schedule_tool_manifest':
-        scheduleToolManifest.value = { ...scheduleToolManifest.value, [msg.vendor]: msg.tools }
-        scheduleToolManifestLoading.value = false
-        scheduleToolManifestError.value = null
+      case 'automation_tool_manifest':
+        automationToolManifest.value = { ...automationToolManifest.value, [msg.vendor]: msg.tools }
+        automationToolManifestLoading.value = false
+        automationToolManifestError.value = null
         break
       case 'execution_transcript':
         executionTranscripts.value = {
@@ -978,8 +978,8 @@ export function installMessageHandler(ctx: AppCtx): void {
           add({ kind: 'system', text: `— ${t('error.license.notEntitled', { reason })} —` })
           break
         }
-        // Schedule save/update failed — release the saving overlay.
-        if (scheduleSaving.value) scheduleSaving.value = false
+        // Automation save/update failed — release the saving overlay.
+        if (automationSaving.value) automationSaving.value = false
         add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
         break
       case 'wait_user_events':

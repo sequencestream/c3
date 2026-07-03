@@ -7,12 +7,12 @@
  * 详情/操作均迁至右栏 IntentDetail 组件。
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { AutomationStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
+import type { WorkflowStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useIsMobile } from '@/composables/useBreakpoint'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import {
-  automationIconState,
+  workflowIconState,
   compareByCompletion,
   formatDate,
   panelToggleLabel,
@@ -30,7 +30,7 @@ const isMobile = useIsMobile()
 const props = defineProps<{
   project: string
   intents: Intent[]
-  automation: AutomationStatus | null
+  automation: WorkflowStatus | null
   /** 当前选中的意图 id,用于行高亮。 */
   selectedId?: string | null
   /** hideHeader: 嵌入合并列时抑制头部渲染(无 section 外框/无 collapse-btn/无 title/无 auto-btn+filter)。 */
@@ -90,7 +90,7 @@ const autoNote = computed<string>(() => {
   return ''
 })
 
-function toggleAutomation() {
+function toggleWorkflow() {
   if (autoRunning.value) emit('stop-automation')
   else emit('start-automation')
 }
@@ -114,8 +114,8 @@ onUnmounted(() => document.removeEventListener('click', onDocumentClick))
 
 watch(isMobile, closeMobileActionsMenu)
 
-function toggleAutomationFromMenu(): void {
-  toggleAutomation()
+function toggleWorkflowFromMenu(): void {
+  toggleWorkflow()
   closeMobileActionsMenu()
 }
 
@@ -237,7 +237,7 @@ function datePrefix(r: Intent): string {
 }
 
 function automateToneClass(r: Intent): string {
-  return `auto-tone-${automationIconState(r, {
+  return `auto-tone-${workflowIconState(r, {
     sddEnabled: props.sddEnabled,
     automation: props.automation,
     gitBranchMode: props.workspaceGitBranchMode,
@@ -273,7 +273,7 @@ function automateToneClass(r: Intent): string {
           :title="
             autoRunning ? t('intent.automation.stop.tooltip') : t('intent.automation.start.tooltip')
           "
-          @click="toggleAutomation"
+          @click="toggleWorkflow"
         >
           {{ autoRunning ? t('intent.automation.stop.label') : t('intent.automation.start.label') }}
         </button>
@@ -305,7 +305,7 @@ function automateToneClass(r: Intent): string {
                   ? t('intent.automation.stop.tooltip')
                   : t('intent.automation.start.tooltip')
               "
-              @click="toggleAutomationFromMenu"
+              @click="toggleWorkflowFromMenu"
             >
               {{
                 autoRunning ? t('intent.automation.stop.label') : t('intent.automation.start.label')

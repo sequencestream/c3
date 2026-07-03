@@ -12,9 +12,9 @@ import { getSessionCounts } from './index.js'
 import { resetStoreForTests, upsertBoundRow } from './work-session-store.js'
 import {
   appendExecutionLog,
-  createSchedule,
-  resetStoreForTests as resetScheduleStoreForTests,
-} from '../schedules/store.js'
+  createAutomation,
+  resetStoreForTests as resetAutomationStoreForTests,
+} from '../automations/store.js'
 import { resetSettingsCacheForTests, saveSettings } from '../../kernel/config/index.js'
 
 let dir: string
@@ -32,7 +32,7 @@ beforeEach(() => {
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   resetDbForTests()
   resetStoreForTests()
-  resetScheduleStoreForTests()
+  resetAutomationStoreForTests()
   resetSettingsCacheForTests()
   resetStateCacheForTests()
   proj = join(dir, 'proj')
@@ -49,7 +49,7 @@ afterEach(() => {
   removeRuntime('tool-running')
   resetDbForTests()
   resetStoreForTests()
-  resetScheduleStoreForTests()
+  resetAutomationStoreForTests()
   resetStateCacheForTests()
   resetSettingsCacheForTests()
   if (prevClaudeConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR
@@ -117,35 +117,35 @@ describe('getSessionCounts', () => {
       ownerKind: 'intent',
       ownerId: 'intent-3',
     })
-    const schedule = createSchedule({
+    const automation = createAutomation({
       type: 'llm',
       config: { prompt: 'run' },
       workspaceId,
       vendor: 'claude',
-      agentId: 'agent-schedule',
+      agentId: 'agent-automation',
       triggerType: 'cron',
       cronExpression: '0 1 * * *',
       mode: 'default',
     })
     upsertBoundRow({
-      sessionId: 'schedule-running',
+      sessionId: 'automation-running',
       workspacePath: proj,
       vendor: 'claude',
-      agentId: 'agent-schedule',
-      title: 'Schedule run',
-      sessionKind: 'schedule',
-      ownerKind: 'schedule',
-      ownerId: schedule.id,
+      agentId: 'agent-automation',
+      title: 'Automation run',
+      sessionKind: 'automation',
+      ownerKind: 'automation',
+      ownerId: automation.id,
     })
     appendExecutionLog({
-      scheduleId: schedule.id,
+      automationId: automation.id,
       startedAt: Date.now(),
       finishedAt: null,
       exitCode: null,
       output: '',
       error: null,
       status: 'running',
-      sessionId: 'schedule-running',
+      sessionId: 'automation-running',
     })
     upsertBoundRow({
       sessionId: 'discussion-running',
@@ -211,7 +211,7 @@ describe('getSessionCounts', () => {
           intent: 1,
           spec: 1,
           discussion: 1,
-          schedule: 1,
+          automation: 1,
           tool: 0,
         },
       },

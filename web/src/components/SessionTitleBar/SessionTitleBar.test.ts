@@ -81,7 +81,7 @@ describe('SessionTitleBar.vue — 标题栏溯源按钮', () => {
     expect(w.find('[data-testid="session-source-jump"]').exists()).toBe(false)
   })
 
-  it.each(['intent', 'discussion', 'schedule', 'trace'] as const)(
+  it.each(['intent', 'discussion', 'automation', 'trace'] as const)(
     'sourceLabel=%s 渲染对应 i18n 文案',
     (label) => {
       const w = mountBar({ sourceLabel: label })

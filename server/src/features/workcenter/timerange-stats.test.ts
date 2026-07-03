@@ -2,7 +2,7 @@
  * WorkCenter TimeRange rollup — store count helpers + the aggregation handler.
  *
  * Two layers under test:
- *  1. The per-store count functions (intents/discussions/schedules/work-session)
+ *  1. The per-store count functions (intents/discussions/automations/work-session)
  *     against a real temp db — empty, partial, time-filtered, and db-unavailable.
  *  2. `getTimeRangeStatsHandler` stitching those counts (plus the live runtime
  *     registry) into one `timerange_stats` per workspace, with `state.js`
@@ -20,7 +20,7 @@ import { randomUUID } from 'node:crypto'
 import { getDb, resetDbForTests, type Db } from '../../kernel/infra/db.js'
 import * as intentsStore from '../intents/store.js'
 import * as discussionsStore from '../discussions/store.js'
-import * as schedulesStore from '../schedules/store.js'
+import * as automationsStore from '../automations/store.js'
 import * as wsStore from '../works/work-session-store.js'
 import {
   ensureRuntime,
@@ -53,7 +53,7 @@ const T = 1_700_000_000_000
 function resetAllStores(): void {
   intentsStore.resetStoreForTests()
   discussionsStore.resetStoreForTests()
-  schedulesStore.resetStoreForTests()
+  automationsStore.resetStoreForTests()
   wsStore.resetStoreForTests()
 }
 
@@ -61,7 +61,7 @@ function resetAllStores(): void {
 function warmSchema(): void {
   intentsStore.countByStatusInRange('/warm')
   discussionsStore.countByStatusInRange('/warm')
-  schedulesStore.countSchedulesInRange('/warm')
+  automationsStore.countAutomationsInRange('/warm')
   wsStore.countRealInRange('/warm')
 }
 
@@ -103,10 +103,10 @@ function seedDiscussion(proj: string, status: string, updatedAt: number): void {
   )
 }
 
-function seedSchedule(proj: string, status: string, updatedAt: number): string {
+function seedAutomation(proj: string, status: string, updatedAt: number): string {
   const id = randomUUID()
   d().run(
-    `INSERT INTO schedules (id, type, workspace_path, cron_expression, status, created_at, updated_at)
+    `INSERT INTO automations (id, type, workspace_path, cron_expression, status, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?)`,
     id,
     'command',
@@ -119,11 +119,11 @@ function seedSchedule(proj: string, status: string, updatedAt: number): string {
   return id
 }
 
-function seedExecLog(scheduleId: string, status: string): void {
+function seedExecLog(automationId: string, status: string): void {
   d().run(
-    `INSERT INTO schedule_execution_logs (id, schedule_id, started_at, status) VALUES (?,?,?,?)`,
+    `INSERT INTO automation_execution_logs (id, automation_id, started_at, status) VALUES (?,?,?,?)`,
     randomUUID(),
-    scheduleId,
+    automationId,
     T,
     status,
   )
@@ -230,37 +230,40 @@ describe('discussions countByStatusInRange', () => {
   })
 })
 
-describe('schedules counts', () => {
+describe('automations counts', () => {
   it('counts total + active rows and honours the range', () => {
     warmSchema()
-    seedSchedule(A, 'active', T)
-    seedSchedule(A, 'active', T)
-    seedSchedule(A, 'paused', T)
-    seedSchedule(A, 'active', T + 10_000) // outside the window below
-    seedSchedule(B, 'active', T) // other project
-    expect(schedulesStore.countSchedulesInRange(A)).toEqual({ total: 4, active: 3 })
-    expect(schedulesStore.countSchedulesInRange(A, T - 1, T + 1)).toEqual({ total: 3, active: 2 })
+    seedAutomation(A, 'active', T)
+    seedAutomation(A, 'active', T)
+    seedAutomation(A, 'paused', T)
+    seedAutomation(A, 'active', T + 10_000) // outside the window below
+    seedAutomation(B, 'active', T) // other project
+    expect(automationsStore.countAutomationsInRange(A)).toEqual({ total: 4, active: 3 })
+    expect(automationsStore.countAutomationsInRange(A, T - 1, T + 1)).toEqual({
+      total: 3,
+      active: 2,
+    })
   })
 
-  it('counts schedules with a running execution log (distinct, range-independent)', () => {
+  it('counts automations with a running execution log (distinct, range-independent)', () => {
     warmSchema()
-    const s1 = seedSchedule(A, 'active', T)
-    const s2 = seedSchedule(A, 'active', T)
-    seedSchedule(A, 'active', T) // no logs
+    const s1 = seedAutomation(A, 'active', T)
+    const s2 = seedAutomation(A, 'active', T)
+    seedAutomation(A, 'active', T) // no logs
     seedExecLog(s1, 'running')
-    seedExecLog(s1, 'running') // two running logs on one schedule → still counts once
+    seedExecLog(s1, 'running') // two running logs on one automation → still counts once
     seedExecLog(s2, 'success') // not running
-    expect(schedulesStore.countRunningSchedules(A)).toBe(1)
+    expect(automationsStore.countRunningAutomations(A)).toBe(1)
     seedExecLog(s2, 'running')
-    expect(schedulesStore.countRunningSchedules(A)).toBe(2)
+    expect(automationsStore.countRunningAutomations(A)).toBe(2)
   })
 
   it('degrades to zeros when the db is unavailable', () => {
     resetDbForTests()
     resetAllStores()
     process.env.C3_DB_PATH = '/dev/null/broken/c3.db'
-    expect(schedulesStore.countSchedulesInRange(A)).toEqual({ total: 0, active: 0 })
-    expect(schedulesStore.countRunningSchedules(A)).toBe(0)
+    expect(automationsStore.countAutomationsInRange(A)).toEqual({ total: 0, active: 0 })
+    expect(automationsStore.countRunningAutomations(A)).toBe(0)
   })
 })
 
@@ -322,8 +325,8 @@ describe('getTimeRangeStatsHandler', () => {
     seedIntent(A, 'cancelled', T) // not surfaced in the three buckets
     seedDiscussion(A, 'in_progress', T)
     seedDiscussion(A, 'completed', T)
-    const sa = seedSchedule(A, 'active', T)
-    seedSchedule(A, 'paused', T)
+    const sa = seedAutomation(A, 'active', T)
+    seedAutomation(A, 'paused', T)
     seedExecLog(sa, 'running')
     seedSession(A, T)
     seedSession(A, T)
@@ -348,7 +351,7 @@ describe('getTimeRangeStatsHandler', () => {
       workSessions: { total: 2, running: 1 },
       intents: { in_progress: 1, todo: 1, done: 1 },
       discussions: { in_progress: 1, completed: 1 },
-      schedules: { total: 2, active: 1, running: 1 },
+      automations: { total: 2, active: 1, running: 1 },
     })
     const b = stats.find((s) => s.workspaceId === B)!
     expect(b).toMatchObject({
@@ -356,7 +359,7 @@ describe('getTimeRangeStatsHandler', () => {
       workSessions: { total: 0, running: 0 },
       intents: { in_progress: 0, todo: 0, done: 0 },
       discussions: { in_progress: 0, completed: 0 },
-      schedules: { total: 0, active: 0, running: 0 },
+      automations: { total: 0, active: 0, running: 0 },
     })
   })
 
@@ -365,7 +368,7 @@ describe('getTimeRangeStatsHandler', () => {
     seedIntent(A, 'todo', T - 10_000) // out of window
     seedIntent(A, 'todo', T) // in window
     seedDiscussion(A, 'completed', T)
-    seedSchedule(A, 'active', T)
+    seedAutomation(A, 'active', T)
     seedSession(A, T)
     seedSession(A, T - 10_000) // out of window
     hoisted.workspaces = [{ id: A, name: 'proj-a', lastAccessed: 1 }]
@@ -380,7 +383,7 @@ describe('getTimeRangeStatsHandler', () => {
     expect(a.intents.todo).toBe(1)
     expect(a.workSessions.total).toBe(1)
     expect(a.discussions.completed).toBe(1)
-    expect(a.schedules.total).toBe(1)
+    expect(a.automations.total).toBe(1)
   })
 
   it('still returns one entry per workspace with zeroed counts when the db is unavailable', () => {
@@ -399,7 +402,7 @@ describe('getTimeRangeStatsHandler', () => {
       workSessions: { total: 0, running: 1 },
       intents: { in_progress: 0, todo: 0, done: 0 },
       discussions: { in_progress: 0, completed: 0 },
-      schedules: { total: 0, active: 0, running: 0 },
+      automations: { total: 0, active: 0, running: 0 },
     })
   })
 })

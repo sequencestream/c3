@@ -8,7 +8,7 @@ import AppHeader from './components/AppHeader/AppHeader.vue'
 import Works from './pages/works/Works.vue'
 import Intents from './pages/intents/Intents.vue'
 import Discussions from './pages/discussions/Discussions.vue'
-import Schedules from './pages/schedules/Schedules.vue'
+import Automations from './pages/automations/Automations.vue'
 import Codes from './pages/codes/Codes.vue'
 import WorkCenter from './pages/workcenter/WorkCenter.vue'
 import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
@@ -18,7 +18,7 @@ import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalMod
 import NewSessionModal from './pages/works/components/NewSessionModal/NewSessionModal.vue'
 import DevStartupOverlay from './components/DevStartupOverlay/DevStartupOverlay.vue'
 import SpecStartupOverlay from './components/SpecStartupOverlay/SpecStartupOverlay.vue'
-import ScheduleSaveOverlay from './components/ScheduleSaveOverlay/ScheduleSaveOverlay.vue'
+import AutomationSaveOverlay from './components/AutomationSaveOverlay/AutomationSaveOverlay.vue'
 import ErrorDialog from './components/ErrorDialog/ErrorDialog.vue'
 import { ref, watch } from 'vue'
 import { useTypedI18n } from './i18n'
@@ -114,7 +114,7 @@ const {
   requestedIntentSessionId,
   currentIntents,
   currentIntentsSdd,
-  currentAutomation,
+  currentWorkflow,
   intentActionErrorSeq,
   intentActionError,
   intentPrSync,
@@ -139,8 +139,8 @@ const {
   updateIntentDeps,
   createPr,
   syncIntentPrStatus,
-  startAutomation,
-  stopAutomation,
+  startWorkflow,
+  stopWorkflow,
   selectIntentSession,
   newIntentSession,
   // ---- discussions ----
@@ -164,35 +164,35 @@ const {
   convertDiscussionToIntent,
   submitDiscussionInput,
   onDiscussionMobileBack,
-  // ---- schedules ----
-  currentSchedules,
-  selectedScheduleId,
-  selectedSchedule,
-  selectedScheduleLogs,
+  // ---- automations ----
+  currentAutomations,
+  selectedAutomationId,
+  selectedAutomation,
+  selectedAutomationLogs,
   executionTranscripts,
-  scheduleFormOpen,
-  scheduleFormTarget,
-  schedulesProject,
-  scheduleTimezone,
+  automationFormOpen,
+  automationFormTarget,
+  automationsProject,
+  automationTimezone,
   selectedExecutionId,
-  scheduleSaving,
+  automationSaving,
   selectedExecution,
-  scheduleToolManifest,
-  scheduleToolManifestLoading,
-  scheduleToolManifestError,
+  automationToolManifest,
+  automationToolManifestLoading,
+  automationToolManifestError,
   hostStatus,
-  onSelectSchedule,
-  openScheduleForm,
-  onToggleScheduleEnabled,
-  runNowSchedule,
+  onSelectAutomation,
+  openAutomationForm,
+  onToggleAutomationEnabled,
+  runNowAutomation,
   onLoadExecutionSession,
   onSelectExecution,
-  onScheduleMobileBack,
-  createSchedule,
-  createScheduleFromTemplate,
-  updateSchedule,
-  deleteSchedule,
-  onLoadScheduleToolManifest,
+  onAutomationMobileBack,
+  createAutomation,
+  createAutomationFromTemplate,
+  updateAutomation,
+  deleteAutomation,
+  onLoadAutomationToolManifest,
   // ---- codes ----
   codesProject,
   codesDirs,
@@ -449,7 +449,7 @@ function onCodesChatWidth(px: number): void {
               : undefined) ??
             'current-branch'
           "
-          :automation="currentAutomation"
+          :automation="currentWorkflow"
           :intent-action-error-seq="intentActionErrorSeq"
           :intent-pr-sync="intentPrSync"
           :intent-spec-content="intentSpecContent"
@@ -496,8 +496,8 @@ function onCodesChatWidth(px: number): void {
           @create-pr="createPr"
           @sync-pr-status="syncIntentPrStatus"
           @share="shareIntent"
-          @start-automation="startAutomation"
-          @stop-automation="stopAutomation"
+          @start-automation="startWorkflow"
+          @stop-automation="stopWorkflow"
           @new-intent-session="newIntentSession"
           @set-session-agent="onSetSessionAgent"
           @respond="respond"
@@ -540,37 +540,37 @@ function onCodesChatWidth(px: number): void {
           @mobile-back="onDiscussionMobileBack"
         />
 
-        <Schedules
-          v-else-if="activeTab === 'schedules' && schedulesProject"
-          :schedules="currentSchedules"
-          :active-id="selectedScheduleId"
-          :schedule="selectedSchedule"
-          :logs="selectedScheduleLogs"
+        <Automations
+          v-else-if="activeTab === 'automations' && automationsProject"
+          :automations="currentAutomations"
+          :active-id="selectedAutomationId"
+          :automation="selectedAutomation"
+          :logs="selectedAutomationLogs"
           :transcripts="executionTranscripts"
-          :form-open="scheduleFormOpen"
-          :form-target="scheduleFormTarget"
-          :workspace-path="schedulesProject ?? ''"
-          :timezone="scheduleTimezone"
+          :form-open="automationFormOpen"
+          :form-target="automationFormTarget"
+          :workspace-path="automationsProject ?? ''"
+          :timezone="automationTimezone"
           :execution-id="selectedExecutionId"
           :execution="selectedExecution"
-          :tool-manifest="scheduleToolManifest"
-          :tool-manifest-loading="scheduleToolManifestLoading"
-          :tool-manifest-error="scheduleToolManifestError"
+          :tool-manifest="automationToolManifest"
+          :tool-manifest-loading="automationToolManifestLoading"
+          :tool-manifest-error="automationToolManifestError"
           :host-status="hostStatus"
           :agents="serverSettings?.agents ?? []"
-          @select="onSelectSchedule"
-          @open-form="openScheduleForm"
-          @delete-schedule="deleteSchedule"
-          @toggle-enabled="onToggleScheduleEnabled"
-          @run-now="runNowSchedule"
+          @select="onSelectAutomation"
+          @open-form="openAutomationForm"
+          @delete-automation="deleteAutomation"
+          @toggle-enabled="onToggleAutomationEnabled"
+          @run-now="runNowAutomation"
           @load-session="onLoadExecutionSession"
           @select-execution="onSelectExecution"
-          @mobile-back="onScheduleMobileBack"
-          @close-form="scheduleFormOpen = false"
-          @create="createSchedule"
-          @new-from-template="createScheduleFromTemplate"
-          @update="updateSchedule"
-          @load-tool-manifest="onLoadScheduleToolManifest"
+          @mobile-back="onAutomationMobileBack"
+          @close-form="automationFormOpen = false"
+          @create="createAutomation"
+          @new-from-template="createAutomationFromTemplate"
+          @update="updateAutomation"
+          @load-tool-manifest="onLoadAutomationToolManifest"
         />
 
         <Codes
@@ -722,9 +722,9 @@ function onCodesChatWidth(px: number): void {
   <DevStartupOverlay :model="devLaunch" />
   <SpecStartupOverlay :model="specLaunch" />
 
-  <!-- Schedule save overlay: blocks interaction while a schedule create/update is
+  <!-- Automation save overlay: blocks interaction while a automation create/update is
        in flight (2-4s typical round-trip). -->
-  <ScheduleSaveOverlay :saving="scheduleSaving" />
+  <AutomationSaveOverlay :saving="automationSaving" />
 </template>
 
 <style scoped>

@@ -25,7 +25,7 @@ export const DATE_FORMATS: Record<DateStyleName, Intl.DateTimeFormatOptions> = {
     minute: '2-digit',
     hour12: false,
   },
-  // 含秒 —— schedule 执行日志 / 下次运行(替代旧 `toLocaleString()`)。
+  // 含秒 —— automation 执行日志 / 下次运行(替代旧 `toLocaleString()`)。
   datetime: {
     year: 'numeric',
     month: '2-digit',

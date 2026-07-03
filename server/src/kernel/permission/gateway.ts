@@ -162,8 +162,8 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
     // The work-session PR-event publish tool is ALWAYS auto-allowed with no human
     // prompt, in every gate (2026-06-20). Publishing a vendor-neutral PR operation
     // event is non-destructive — it only feeds the event bus; the gated,
-    // side-effecting step is the schedule the event may trigger (governed by that
-    // schedule's own execution identity + the three-tier MCP security model). It is
+    // side-effecting step is the automation the event may trigger (governed by that
+    // automation's own execution identity + the three-tier MCP security model). It is
     // only ever bound to standard work sessions, so this never widens the intent /
     // spec / discussion gates' read-only surface in practice.
     if (toolName === PUBLISH_PR_EVENT_TOOL) {

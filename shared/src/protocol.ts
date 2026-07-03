@@ -102,7 +102,7 @@ export interface SessionInfo {
   /** Business classification carried by the unified `session_metadata` projection. */
   sessionKind?: SessionKind
   /** Owning entity kind used by the frontend jump-back resolver. */
-  ownerKind?: 'intent' | 'discussion' | 'schedule' | null
+  ownerKind?: 'intent' | 'discussion' | 'automation' | null
   /** Owning entity id used by the frontend jump-back resolver. */
   ownerId?: string | null
   /** `false` only for work pending-bind placeholders; listed rows are normally true. */
@@ -1020,12 +1020,12 @@ export interface SystemSettings {
   uiLang?: UiLang
   /**
    * System-wide IANA time zone (e.g. `Asia/Shanghai`, `America/New_York`) used
-   * to interpret every schedule's cron fields when computing `next_run_at`. The
+   * to interpret every automation's cron fields when computing `next_run_at`. The
    * cron expression `0 11 * * *` means 11:00 in this zone, not 11:00 UTC. The
    * stored `next_run_at` is still an absolute Unix-ms instant; the zone only
    * decides which instant a wall-clock cron maps to (DST-aware). Unset/invalid
    * ⇒ the server's local time zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`).
-   * Changing it shifts the actual trigger moment of existing schedules.
+   * Changing it shifts the actual trigger moment of existing automations.
    */
   timezone?: string
   /**
@@ -1307,7 +1307,7 @@ export interface CheckpointConsensusVote {
  * it spawns a vote among peer agents to decide whether to skip the checkpoint
  * and continue the automation loop.
  *
- * The outcome is broadcast via `AutomationStatus.checkpointConsensus` so the
+ * The outcome is broadcast via `WorkflowStatus.checkpointConsensus` so the
  * UI/events can render who voted what and the final decision.
  */
 export interface CheckpointConsensusOutcome {
@@ -1821,7 +1821,7 @@ export interface Intent {
   /**
    * Whether the automation orchestrator may pick this intent up. User-toggled
    * (a checkbox per intent); `false` by default. Only `automate` intents
-   * are developed by `start_automation`.
+   * are developed by `start_workflow`.
    */
   automate: boolean
   createdAt: number
@@ -1973,7 +1973,7 @@ export interface IntentLog {
  * - `error` — stopped abnormally (a dev run errored, blocked on a permission, a
  *   completion check failed, or commit/push failed). `error` text says why.
  */
-export type AutomationState =
+export type WorkflowState =
   | 'idle'
   | 'running'
   | 'awaiting_gate'
@@ -1982,11 +1982,11 @@ export type AutomationState =
   | 'done'
   | 'error'
 
-/** A project's automation orchestrator status, broadcast to every connection. */
-export interface AutomationStatus {
+/** A project's workflow orchestrator status, broadcast to every connection. */
+export interface WorkflowStatus {
   /** Owning project — the workspace absolute path (resolved). */
   workspaceId: string
-  state: AutomationState
+  state: WorkflowState
   /** The intent currently being developed (null when not running). */
   currentIntentId: string | null
   /** The work session of the current intent, for a back-link (null when none). */
@@ -2059,7 +2059,7 @@ export interface ProposedIntent {
    * session to attribute the batch to. The model fills it with the current
    * session id injected into its prompt; the save handler normalizes that to the
    * bound comm-session id so it resolves against `open_intent_session`. The
-   * `save_intent_directly` (schedule) path never carries it.
+   * `save_intent_directly` (automation) path never carries it.
    */
   intentSessionId?: string
 }
@@ -2186,35 +2186,35 @@ export type ResearchMessageBody =
  */
 export type ResearchMessage = ResearchMessageMeta & ResearchMessageBody
 
-// ---- Schedules ----
+// ---- Automations ----
 
-export type ScheduleType = 'command' | 'llm'
+export type AutomationType = 'command' | 'llm'
 
-/** Smallest accepted schedule execution wall-clock limit (one second). */
-export const MIN_SCHEDULE_MAX_WALL_CLOCK_MS = 1_000
+/** Smallest accepted automation execution wall-clock limit (one second). */
+export const MIN_AUTOMATION_MAX_WALL_CLOCK_MS = 1_000
 
-/** Largest accepted schedule execution wall-clock limit (twenty-four hours). */
-export const MAX_SCHEDULE_MAX_WALL_CLOCK_MS = 24 * 60 * 60 * 1_000
+/** Largest accepted automation execution wall-clock limit (twenty-four hours). */
+export const MAX_AUTOMATION_MAX_WALL_CLOCK_MS = 24 * 60 * 60 * 1_000
 
-/** Whether a wire value is a valid explicit schedule execution time limit. */
-export function isValidScheduleMaxWallClockMs(value: unknown): value is number | null {
+/** Whether a wire value is a valid explicit automation execution time limit. */
+export function isValidAutomationMaxWallClockMs(value: unknown): value is number | null {
   return (
     value === null ||
     (typeof value === 'number' &&
       Number.isSafeInteger(value) &&
-      value >= MIN_SCHEDULE_MAX_WALL_CLOCK_MS &&
-      value <= MAX_SCHEDULE_MAX_WALL_CLOCK_MS)
+      value >= MIN_AUTOMATION_MAX_WALL_CLOCK_MS &&
+      value <= MAX_AUTOMATION_MAX_WALL_CLOCK_MS)
   )
 }
 
 export type McpMode = 'read-only' | 'sandboxed' | 'full-access'
 
-export type ScheduleStatus = 'active' | 'paused' | 'error' | 'archived'
+export type AutomationStatus = 'active' | 'paused' | 'error' | 'archived'
 
-/** How a schedule fires: time-based cron, or a run lifecycle event (2026-06-08). */
+/** How a automation fires: time-based cron, or a run lifecycle event (2026-06-08). */
 export type ScheduleTriggerType = 'cron' | 'event'
 
-/** Run lifecycle topics an event-triggered schedule may subscribe to (2026-06-08). */
+/** Run lifecycle topics an event-triggered automation may subscribe to (2026-06-08). */
 export type RunLifecycleTopic = 'run:started' | 'run:settled'
 
 /** Terminal reason a run settled with: clean finish, error, or user abort. */
@@ -2225,7 +2225,7 @@ export type RunEndReason = 'complete' | 'error' | 'aborted'
 // c3 never executes a PR operation. The model uses its OWN tools (gh CLI, a
 // GitHub MCP, …) to create / review / merge / close / comment on a PR, and AFTER
 // the operation completes (or fails) it calls the `publish_pr_event` MCP tool to
-// publish ONE vendor-neutral PR operation event. A schedule can subscribe to
+// publish ONE vendor-neutral PR operation event. A automation can subscribe to
 // these events and trigger its existing follow-up action. The contract is NOT
 // bound to GitHub — `repo.provider` keeps room for GitLab and others.
 
@@ -2285,7 +2285,7 @@ export interface PrOperationEvent {
   errorSummary?: string
 }
 
-/** Intent lifecycle boundaries a schedule may subscribe to. */
+/** Intent lifecycle boundaries a automation may subscribe to. */
 export const INTENT_LIFECYCLE_PHASES = [
   'created',
   'dev_started',
@@ -2305,13 +2305,13 @@ export interface IntentLifecycleEvent {
 }
 
 /**
- * Topics an event-triggered schedule may subscribe to: the run lifecycle topics
+ * Topics an event-triggered automation may subscribe to: the run lifecycle topics
  * plus the model-published `pr:operation` event (2026-06-20).
  */
 export type ScheduleEventTopic = RunLifecycleTopic | 'pr:operation' | 'intent:lifecycle'
 
 /**
- * Filter for `pr:operation` event triggers: a schedule fires only when the
+ * Filter for `pr:operation` event triggers: a automation fires only when the
  * event's operation is in `operations` AND its result is in `results`. An empty
  * (or absent) list for either dimension matches any value of that dimension.
  */
@@ -2337,10 +2337,10 @@ export interface IntentLifecycleFilter {
  * - `intent`      — a read-only intent-communication session (the intent gate +
  *   disallowed-tools lock).
  * - `discussion`  — the discussion orchestrator and its research pass.
- * - `schedule`    — the scheduler's own **socket-less run** (e.g. an `llm`
- *   scheduled task). NOTE: `schedule` identifies the *trigger source*, NOT a
- *   scenario a work session morphs into — a schedule-*triggered* target session run
- *   is still `work`. `schedule` only tags the scheduler's own run.
+ * - `automation`    — the scheduler's own **socket-less run** (e.g. an `llm`
+ *   scheduled task). NOTE: `automation` identifies the *trigger source*, NOT a
+ *   scenario a work session morphs into — a automation-*triggered* target session run
+ *   is still `work`. `automation` only tags the scheduler's own run.
  * - `consensus`   — a consensus vote (each voter is a tool-free one-shot).
  * - `tool`        — an internal tool call: completion judging (judge) and title
  *   derivation.
@@ -2349,13 +2349,13 @@ export interface IntentLifecycleFilter {
  *
  * Migration (2026-06-26): split out of the old `RunKind`, whose 7 business values
  * moved here verbatim with `'session' → 'work'`. Business-source judgements (which
- * scenario may trigger a schedule, which security gate applies) read `sessionKind`.
+ * scenario may trigger a automation, which security gate applies) read `sessionKind`.
  */
 export type SessionKind =
   | 'work'
   | 'intent'
   | 'discussion'
-  | 'schedule'
+  | 'automation'
   | 'consensus'
   | 'tool'
   | 'spec'
@@ -2381,9 +2381,9 @@ export type SessionKind =
  */
 export type RunKind = 'interactive' | 'background' | 'headless' | 'internal'
 
-export interface Schedule {
+export interface Automation {
   id: string
-  type: ScheduleType
+  type: AutomationType
   /**
    * Arbitrary JSON configuration, interpreted by the cron runner per `type`.
    * Holds `config.name` — a display name auto-generated by the server on create.
@@ -2400,12 +2400,12 @@ export interface Schedule {
   maxWallClockMs: number | null
   /** Owning workspace absolute path (resolved). */
   workspaceId: string
-  /** Vendor this schedule belongs to; determines which agent runs it. */
+  /** Vendor this automation belongs to; determines which agent runs it. */
   vendor: VendorId
-  /** Explicit agent profile for an LLM schedule; null for commands and legacy rows. */
+  /** Explicit agent profile for an LLM automation; null for commands and legacy rows. */
   agentId?: string | null
   /**
-   * How this schedule fires: `'cron'` (time-based) or `'event'` (run lifecycle).
+   * How this automation fires: `'cron'` (time-based) or `'event'` (run lifecycle).
    * Defaults to `'cron'` for legacy rows migrated before this field existed.
    */
   triggerType: ScheduleTriggerType
@@ -2428,7 +2428,7 @@ export interface Schedule {
   eventPrFilter: PrOperationFilter | null
   /** For `intent:lifecycle` event triggers: null means every lifecycle phase. */
   eventIntentFilter?: IntentLifecycleFilter | null
-  status: ScheduleStatus
+  status: AutomationStatus
   mode: ModeToken | CodexPolicy
   toolAllowlist: string[]
   toolDenylist: string[]
@@ -2437,22 +2437,22 @@ export interface Schedule {
 }
 
 /**
- * Fields the client supplies when creating a schedule.
+ * Fields the client supplies when creating a automation.
  *
  * `config` carries the task body (`command` or `prompt`) but NOT a name or
  * description: on create the server auto-generates `config.name` from the task
  * content and strips any client-supplied `name`/`description`. (A manual title
- * is set later via {@link UpdateScheduleInput}, not at create time.)
+ * is set later via {@link UpdateAutomationInput}, not at create time.)
  */
-export interface CreateScheduleInput {
-  type: ScheduleType
+export interface CreateAutomationInput {
+  type: AutomationType
   config: unknown
   /** Optional execution wall-clock limit; null selects the task-type default. */
   maxWallClockMs?: number | null
   workspaceId: string
-  /** Vendor this schedule belongs to; determines which agent runs it. */
+  /** Vendor this automation belongs to; determines which agent runs it. */
   vendor: VendorId
-  /** Explicit LLM execution agent. Required by the server for new LLM schedules. */
+  /** Explicit LLM execution agent. Required by the server for new LLM automations. */
   agentId?: string | null
   /** Defaults to `'cron'` when omitted (backward-compatible with legacy clients). */
   triggerType?: ScheduleTriggerType
@@ -2471,9 +2471,9 @@ export interface CreateScheduleInput {
   toolDenylist?: string[]
 }
 
-/** Fields the client may supply when updating a schedule. All optional. */
-export interface UpdateScheduleInput {
-  type?: ScheduleType
+/** Fields the client may supply when updating a automation. All optional. */
+export interface UpdateAutomationInput {
+  type?: AutomationType
   /**
    * Task body, plus an OPTIONAL `config.name` to set the display title:
    * a non-empty `name` is stored as a sticky user-set title; an empty `name`
@@ -2495,12 +2495,12 @@ export interface UpdateScheduleInput {
   mode?: ModeToken | CodexPolicy
   toolAllowlist?: string[]
   toolDenylist?: string[]
-  status?: ScheduleStatus
+  status?: AutomationStatus
 }
 
-export interface ScheduleExecutionLog {
+export interface AutomationExecutionLog {
   id: string
-  scheduleId: string
+  automationId: string
   startedAt: number
   finishedAt: number | null
   exitCode: number | null
@@ -2515,7 +2515,7 @@ export interface ScheduleExecutionLog {
   sessionId: string | null
 }
 
-// ---- Schedule MCP Security ----
+// ---- Automation MCP Security ----
 
 /** One entry in a vendor's tool manifest: tool name + read/write classification. */
 export interface ToolManifestEntry {
@@ -2560,14 +2560,14 @@ export interface WaitUserInvolveEvent {
    * Owning workspace's **opaque id** (not a path). The store persists the absolute
    * `workspace_path` but maps it through `pathToId` on read, so this matches the id
    * the web's `currentWorkspace` holds and every jump entry (`select_session` /
-   * `open_intent_session` / `open_spec_session` / discussion / schedule) expects. A row
+   * `open_intent_session` / `open_spec_session` / discussion / automation) expects. A row
    * whose workspace is no longer registered is dropped on read rather than emitting
    * a broken id the web could not route.
    */
   workspaceId: string
   /**
    * The full {@link SessionKind} of the run that produced this event (work / intent /
-   * discussion / schedule / consensus / tool / spec). Stored verbatim — no longer
+   * discussion / automation / consensus / tool / spec). Stored verbatim — no longer
    * folded to a traceable-jump subset — so WorkCenter's "溯源跳转" can route off the
    * real session identity. Typed as `string` (not the `SessionKind` union) so the
    * protocol stays decoupled from the kind enum; the web's jump switch accepts a
@@ -2576,7 +2576,7 @@ export interface WaitUserInvolveEvent {
   sessionKind: string
   /**
    * The id of the actual session that produced this event — a real, resolvable
-   * session id (work/intent/spec session id, discussion id, schedule id). The web's
+   * session id (work/intent/spec session id, discussion id, automation id). The web's
    * `jumpToSource` routes off `sessionKind + sessionId` directly; the server derives
    * {@link intentId} / {@link intentTitle} from it on read. `null` when the producer
    * had no session to reference (e.g. a Start-work cleanup todo) — the web degrades to
@@ -2674,8 +2674,8 @@ export interface TimeRangeProjectStats {
   intents: { in_progress: number; todo: number; done: number }
   /** Discussion counts by status, in range. */
   discussions: { in_progress: number; completed: number }
-  /** Schedules: `total`/`active` rows in range; `running` schedules with a live execution log. */
-  schedules: { running: number; active: number; total: number }
+  /** Automations: `total`/`active` rows in range; `running` automations with a live execution log. */
+  automations: { running: number; active: number; total: number }
 }
 
 export type CodeEntryType = 'file' | 'directory'
@@ -3010,9 +3010,9 @@ export type ClientToServer =
       prStatus?: IntentPrStatus
     }
   /** Start the project's automation orchestrator (develops `automate` intents). */
-  | { type: 'start_automation'; workspaceId: string }
+  | { type: 'start_workflow'; workspaceId: string }
   /** Stop the project's automation orchestrator (aborts the current dev run). */
-  | { type: 'stop_automation'; workspaceId: string }
+  | { type: 'stop_workflow'; workspaceId: string }
   /**
    * Create a GitHub Pull Request for a `done` intent that has no PR yet.
    * The server runs `gh pr create`, sets `prId` and `prStatus='reviewing'`
@@ -3109,23 +3109,23 @@ export type ClientToServer =
   | { type: 'continue_discussion'; discussionId: string; text: string }
   /** Pull the authoritative session-status snapshot (session-layer heartbeat). */
   | { type: 'request_session_status' }
-  /** Create a schedule in a workspace; server broadcasts `schedules`. */
-  | { type: 'create_schedule'; workspaceId: string; input: CreateScheduleInput }
-  /** List schedules in a workspace; server replies with `schedules`. */
-  | { type: 'list_schedules'; workspaceId: string }
-  /** Partial update of a schedule; server broadcasts `schedules`. */
-  | { type: 'update_schedule'; scheduleId: string; input: UpdateScheduleInput }
-  /** Delete a schedule; server broadcasts `schedules`. */
-  | { type: 'delete_schedule'; scheduleId: string }
-  /** Get full schedule detail with execution logs; server replies with `schedule_detail`. */
-  | { type: 'get_schedule_detail'; scheduleId: string }
+  /** Create a automation in a workspace; server broadcasts `automations`. */
+  | { type: 'create_automation'; workspaceId: string; input: CreateAutomationInput }
+  /** List automations in a workspace; server replies with `automations`. */
+  | { type: 'list_automations'; workspaceId: string }
+  /** Partial update of a automation; server broadcasts `automations`. */
+  | { type: 'update_automation'; automationId: string; input: UpdateAutomationInput }
+  /** Delete a automation; server broadcasts `automations`. */
+  | { type: 'delete_automation'; automationId: string }
+  /** Get full automation detail with execution logs; server replies with `automation_detail`. */
+  | { type: 'get_automation_detail'; automationId: string }
   /**
    * Read one `llm`-type execution's agent session transcript (read-only replay);
    * server replies with `execution_transcript`.
    */
-  | { type: 'get_execution_transcript'; scheduleId: string; executionId: string }
-  /** Manual trigger: execute a schedule immediately (outside normal tick). */
-  | { type: 'schedule_run_now'; scheduleId: string }
+  | { type: 'get_execution_transcript'; automationId: string; executionId: string }
+  /** Manual trigger: execute a automation immediately (outside normal tick). */
+  | { type: 'automation_run_now'; automationId: string }
   /** Get workspace-level MCP server configuration. */
   | { type: 'get_workspace_mcp_config'; workspaceId: string }
   /** Save workspace-level MCP server configuration. */
@@ -3135,10 +3135,10 @@ export type ClientToServer =
       config: WorkspaceMcpConfig
     }
   /**
-   * Request a vendor's tool manifest for schedule form tool selection.
-   * Server replies with `schedule_tool_manifest`.
+   * Request a vendor's tool manifest for automation form tool selection.
+   * Server replies with `automation_tool_manifest`.
    */
-  | { type: 'get_schedule_tool_manifest'; vendor: VendorId; workspaceId: string }
+  | { type: 'get_automation_tool_manifest'; vendor: VendorId; workspaceId: string }
   /**
    * Resolve a pending pre-launch skill-load gate (mount layer 2/3). `approve`
    * lets the mount proceed and persists the `.gitignore` ack; `cancel` skips
@@ -3179,10 +3179,10 @@ export type ClientToServer =
   | { type: 'update_wait_user_event'; id: string; status: WaitUserInvolveStatus }
   /**
    * WorkCenter cross-project rollup: aggregate per-project counts (work sessions /
-   * intents / discussions / schedules) across **all** registered workspaces in one
+   * intents / discussions / automations) across **all** registered workspaces in one
    * round-trip. Replies with {@link timerange_stats}. `startTime`/`endTime`
    * (ms since epoch) are optional; absent ⇒ no time filter (count everything).
-   * The range filters intents/discussions/schedules by `updated_at` and sessions
+   * The range filters intents/discussions/automations by `updated_at` and sessions
    * by `last_modified`; the `running` counts are a live "now" notion and ignore it.
    */
   | { type: 'get_timerange_stats'; startTime?: number; endTime?: number }
@@ -3260,7 +3260,7 @@ export type ServerToClient =
   | {
       type: 'session_counts'
       workspaceId: string
-      counts: Record<'work' | 'intent' | 'spec' | 'discussion' | 'schedule' | 'tool', number>
+      counts: Record<'work' | 'intent' | 'spec' | 'discussion' | 'automation' | 'tool', number>
     }
   /** Directory listing for one workspace-relative path. */
   | { type: 'dir_listed'; workspaceId: string; rel: string; entries: CodeDirEntry[] }
@@ -3309,7 +3309,7 @@ export type ServerToClient =
       vendor?: VendorId
       /** Projection source metadata for generic title-bar jump-back. */
       sessionKind?: SessionKind
-      ownerKind?: 'intent' | 'discussion' | 'schedule' | null
+      ownerKind?: 'intent' | 'discussion' | 'automation' | null
       ownerId?: string | null
       /**
        * Data for the title-bar same-vendor agent switcher (ADR-0015 / AS-R22): the
@@ -3482,7 +3482,7 @@ export type ServerToClient =
    * intent view and on every state change (start/stop/progress/error), so
    * the intent list's automation button reflects the live run.
    */
-  | { type: 'automation_status'; status: AutomationStatus }
+  | { type: 'workflow_status'; status: WorkflowStatus }
   /**
    * Reply to a `create_pr` request. Carries the PR id and URL on success.
    * On failure the server sends a generic `error` with code `intent.prCreateFailed`.
@@ -3756,10 +3756,10 @@ export type ServerToClient =
    * the web renders it through its i18n catalog. The server holds no UI copy.
    */
   | { type: 'error'; error: UiError }
-  /** A workspace's schedule list (reply to `list_schedules` or broadcast after create/update/delete). */
-  | { type: 'schedules'; workspaceId: string; items: Schedule[] }
-  /** Full schedule detail with execution logs (reply to `get_schedule_detail`). */
-  | { type: 'schedule_detail'; schedule: Schedule; logs: ScheduleExecutionLog[] }
+  /** A workspace's automation list (reply to `list_automations` or broadcast after create/update/delete). */
+  | { type: 'automations'; workspaceId: string; items: Automation[] }
+  /** Full automation detail with execution logs (reply to `get_automation_detail`). */
+  | { type: 'automation_detail'; automation: Automation; logs: AutomationExecutionLog[] }
   /**
    * One execution's agent session transcript (reply to `get_execution_transcript`).
    * `items` is empty for `command`-type or sessionless executions; `sessionId` is
@@ -3771,12 +3771,12 @@ export type ServerToClient =
       sessionId: string | null
       items: TranscriptItem[]
     }
-  /** Execution logs for a schedule. */
-  | { type: 'schedule_execution_logs'; scheduleId: string; items: ScheduleExecutionLog[] }
+  /** Execution logs for a automation. */
+  | { type: 'automation_execution_logs'; automationId: string; items: AutomationExecutionLog[] }
   /** Workspace-level MCP server configuration (reply to `get_workspace_mcp_config`). */
   | { type: 'workspace_mcp_config'; workspaceId: string; config: WorkspaceMcpConfig }
-  /** A vendor's tool manifest (reply to `get_schedule_tool_manifest`). */
-  | { type: 'schedule_tool_manifest'; vendor: VendorId; tools: ToolManifestEntry[] }
+  /** A vendor's tool manifest (reply to `get_automation_tool_manifest`). */
+  | { type: 'automation_tool_manifest'; vendor: VendorId; tools: ToolManifestEntry[] }
   /**
    * A project's wait-user-involve event list (reply to `list_wait_user_events`).
    * Paged replies carry `hasMore`; live todo broadcasts omit it and refresh the

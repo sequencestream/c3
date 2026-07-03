@@ -47,7 +47,7 @@ function makeCtx(activeSessionId: string | null = null) {
     intentsProject: ref<string | null>(null),
     discussionsProject: ref<string | null>(null),
     activeDiscussionId: ref<string | null>(null),
-    schedulesProject: ref<string | null>(null),
+    automationsProject: ref<string | null>(null),
   } as unknown as AppCtx
   installPersistence(ctx)
   installCodesActions(ctx)

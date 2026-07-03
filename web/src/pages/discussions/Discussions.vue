@@ -367,7 +367,7 @@ function typeLabel(d: Discussion): string {
 </template>
 
 <style scoped>
-/* Tab bar under the title bar — mirrors the schedules right-pane tab strip. */
+/* Tab bar under the title bar — mirrors the automations right-pane tab strip. */
 .disc-pane-tabs {
   height: 36px;
   flex-shrink: 0;

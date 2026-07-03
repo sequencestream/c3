@@ -34,7 +34,7 @@ const SESSION_KIND_ICONS: Record<string, string> = {
   work: '💬',
   intent: '🎯',
   discussion: '📢',
-  schedule: '⏰',
+  automation: '⏰',
   spec: '📝',
   consensus: '⚙️',
   tool: '🔧',

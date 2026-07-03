@@ -1,6 +1,6 @@
 import type { SessionKind } from '@ccc/shared/protocol'
 
-export type SessionOwnerKind = 'intent' | 'discussion' | 'schedule'
+export type SessionOwnerKind = 'intent' | 'discussion' | 'automation'
 
 export type SessionJumpTarget =
   | { kind: 'intentDetail'; intentId: string; tab?: 'intentSession' | 'specSession' }
@@ -8,7 +8,7 @@ export type SessionJumpTarget =
   // intent: the jump still opens the intents page, just without selecting an intent.
   | { kind: 'intentSessions'; intentId: string | null }
   | { kind: 'discussion'; discussionId: string }
-  | { kind: 'schedule'; scheduleId: string }
+  | { kind: 'automation'; automationId: string }
 
 export function resolveSessionJumpTarget(input: {
   sessionKind: SessionKind | string | null | undefined
@@ -31,10 +31,10 @@ export function resolveSessionJumpTarget(input: {
     return { kind: 'discussion', discussionId: input.ownerId }
   }
   if (
-    (input.sessionKind === 'schedule' || input.sessionKind === 'tool') &&
-    input.ownerKind === 'schedule'
+    (input.sessionKind === 'automation' || input.sessionKind === 'tool') &&
+    input.ownerKind === 'automation'
   ) {
-    return { kind: 'schedule', scheduleId: input.ownerId }
+    return { kind: 'automation', automationId: input.ownerId }
   }
   return null
 }
@@ -42,8 +42,8 @@ export function resolveSessionJumpTarget(input: {
 // The title-bar source button's i18n label family, chosen by the session's own
 // kind (a presentational decision; jump semantics still come only from
 // `resolveSessionJumpTarget`). intent/spec → "意图", discussion → "讨论",
-// schedule → "定时任务", work/tool (or unknown) → generic "溯源".
-export type SessionSourceLabel = 'intent' | 'discussion' | 'schedule' | 'trace'
+// automation → "自动化", work/tool (or unknown) → generic "溯源".
+export type SessionSourceLabel = 'intent' | 'discussion' | 'automation' | 'trace'
 
 export interface SessionSourceAction {
   target: SessionJumpTarget
@@ -53,7 +53,7 @@ export interface SessionSourceAction {
 function sourceLabelForKind(kind: SessionKind | string | null | undefined): SessionSourceLabel {
   if (kind === 'spec' || kind === 'intent') return 'intent'
   if (kind === 'discussion') return 'discussion'
-  if (kind === 'schedule') return 'schedule'
+  if (kind === 'automation') return 'automation'
   return 'trace'
 }
 

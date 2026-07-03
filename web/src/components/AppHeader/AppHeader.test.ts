@@ -8,7 +8,7 @@ const TABS = [
   { key: 'console', label: 'Works' },
   { key: 'intents', label: 'Intents' },
   { key: 'discussion', label: 'Discussions' },
-  { key: 'schedules', label: 'Schedules' },
+  { key: 'automations', label: 'Automations' },
 ]
 
 const baseProps = {
@@ -33,7 +33,7 @@ describe('AppHeader.vue — top-bar tabs', () => {
   it('按 tabs 数据渲染全部 tab,标记当前 tab', () => {
     const w = mount(AppHeader, { props: baseProps })
     const tabs = w.findAll('.header-tab')
-    expect(tabs.map((t) => t.text())).toEqual(['Works', 'Intents', 'Discussions', 'Schedules'])
+    expect(tabs.map((t) => t.text())).toEqual(['Works', 'Intents', 'Discussions', 'Automations'])
     expect(tabs[0].classes()).toContain('active')
     expect(tabs[1].classes()).not.toContain('active')
     expect(tabs[2].classes()).not.toContain('active')
@@ -72,7 +72,7 @@ describe('AppHeader.vue — top-bar tabs', () => {
   it('移动端底部导航仅渲染工作区子 tab,不含工作台', () => {
     const w = mount(AppHeader, { props: baseProps })
     const tabs = w.findAll('.mobile-bottom-tab')
-    expect(tabs.map((t) => t.text())).toEqual(['Works', 'Intents', 'Discussions', 'Schedules'])
+    expect(tabs.map((t) => t.text())).toEqual(['Works', 'Intents', 'Discussions', 'Automations'])
   })
 
   it('管理员显示系统设置入口(桌面 ⚙ + 移动端菜单项)', () => {

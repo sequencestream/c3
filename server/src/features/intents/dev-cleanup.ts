@@ -3,7 +3,7 @@
  *
  * When a MANUAL `start_development` work session settles (complete / error /
  * aborted), the resident `run:settled` subscription routes here (automation-owned
- * sessions are filtered out upstream — see `isIntentDrivenByAutomation`). This
+ * sessions are filtered out upstream — see `isIntentDrivenByWorkflow`). This
  * module commits, pushes, and opens a PR for the intent's work, writing back the
  * Git/PR tracking fields. It deliberately does NOT touch the intent status machine
  * (no auto `done`) — only the Git/PR fields.
@@ -201,7 +201,7 @@ export async function runManualDevCleanup(
   deps.setPrInfo(intentId, pr.prId, 'reviewing', pr.prUrl ?? null)
   deps.broadcastIntents(workspacePath)
 
-  // Publish a pr:operation create event so event-triggered schedules can react.
+  // Publish a pr:operation create event so event-triggered automations can react.
   const effectiveSessionId = sessionId ?? intentId
   const prEvent = buildServerSidePrCreateEvent(
     {

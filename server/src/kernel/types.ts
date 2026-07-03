@@ -18,7 +18,7 @@
  *   genuinely cross-feature services remain on the context (the hard rule:
  *   transport-shared / cross-feature → context; feature-private → feature store).
  */
-import type { AutomationStatus, Discussion, DiscussionMessage } from '@ccc/shared/protocol'
+import type { WorkflowStatus, Discussion, DiscussionMessage } from '@ccc/shared/protocol'
 import type { SessionRuntime } from '../runs.js'
 import { EventBus, type EventBusEvents } from './events/event-bus.js'
 
@@ -92,8 +92,8 @@ export interface KernelContext {
   readonly broadcastIntents: (workspacePath: string) => void
   readonly broadcastIntentSessions: (workspacePath: string) => void
   readonly broadcastDiscussions: (workspacePath: string) => void
-  readonly broadcastSchedules: (workspacePath: string) => void
-  readonly broadcastAutomation: (status: AutomationStatus) => void
+  readonly broadcastAutomations: (workspacePath: string) => void
+  readonly broadcastWorkflow: (status: WorkflowStatus) => void
   readonly broadcastDiscussionMessage: (discussionId: string, message: DiscussionMessage) => void
   readonly broadcastDiscussionRunStatus: (
     discussionId: string,
@@ -107,7 +107,7 @@ export interface KernelContext {
   readonly startResearchRun: (discussion: Discussion) => void
 
   // The automation hooks bag is feature-private to `intents` (wired via
-  // `setAutomationHooks`, read via `getAutomationHooks`), NOT on the kernel
+  // `setWorkflowHooks`, read via `getWorkflowHooks`), NOT on the kernel
   // context — keeping the kernel free of any `features/` import (ADR-0009 R1).
 }
 

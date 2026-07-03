@@ -9,17 +9,17 @@ The server's single entry file had grown into one oversized module that owned th
 upgrade, the per-connection viewing state, ~40 message cases in one giant dispatch switch, and the
 many module-level closures that bridged them: the run launcher, the development-turn driver, the
 discussion and research run starters, and the family of broadcasters and snapshot helpers for
-statuses, intents, discussions, schedules, discussion/research messages and run status, and
+statuses, intents, discussions, automations, discussion/research messages and run status, and
 automation — plus the shared mutable state (the connection set, the run-status cache, the
 judged-session set, the live discussion/research run maps) and the launch / automation hooks. That
 file was the only place that knew how the SDK message stream, the persistence stores, the
-session-runtime registry, the discussion / schedule subsystems, and the WebSocket protocol fit
+session-runtime registry, the discussion / automation subsystems, and the WebSocket protocol fit
 together. A change to any one drifts all the others.
 
 We are about to split this file along three planes:
 
 - **kernel layer** — pure domain: the session-runtime registry, settings lookup, the intents /
-  discussions / schedules stores, the run launcher, automation hooks. No WebSocket / HTTP / JSON
+  discussions / automations stores, the run launcher, automation hooks. No WebSocket / HTTP / JSON
   knowledge, no module-level singleton for transport-owned state.
 - **transport layer** — WebSocket / HTTP plumbing. The handler registry keyed by client message
   type, the one-line dispatcher, the connection-side broadcaster. Consumes kernel events to

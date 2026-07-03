@@ -4,7 +4,7 @@
  * Owns the `wait_user_involve_events` table (created lazily, migrated via
  * `PRAGMA table_info` idempotency) and all CRUD operations for events that
  * gate tool calls behind human decisions. Sibling to the discussion / intent /
- * schedule stores: all ride the one `~/.c3/c3.db` connection, each owning its
+ * automation stores: all ride the one `~/.c3/c3.db` connection, each owning its
  * own tables and a private `schemaReady` flag.
  *
  * Degradation: when the db is unavailable, reads return empty/null and writes
@@ -139,6 +139,11 @@ function db(): Db | null {
     ensureColumn(d, 'wait_user_involve_events', 'tool_input', "TEXT NOT NULL DEFAULT ''")
     // v2 → v3: consensus outcome JSON for `status: 'auto'` audit records (nullable).
     ensureColumn(d, 'wait_user_involve_events', 'outcome', 'TEXT')
+    // schedule → automation 改名: 历史事件行的 session_kind 仍是旧值 'schedule',
+    // 就地改成 'automation' 以对齐新的 SessionKind 字面量。幂等。
+    d.run(
+      "UPDATE wait_user_involve_events SET session_kind='automation' WHERE session_kind='schedule'",
+    )
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -272,7 +277,7 @@ export interface CreateEventInput {
   workspacePath: string
   /** The full {@link SessionKind} of the producing run (stored verbatim). */
   sessionKind: string
-  /** The real producing session id (work/intent/spec session, discussion, schedule). */
+  /** The real producing session id (work/intent/spec session, discussion, automation). */
   sessionId?: string | null
   title?: string | null
   requestId?: string | null

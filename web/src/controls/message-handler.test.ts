@@ -32,11 +32,11 @@ function makeCtx() {
   const dispatchSpecLaunch = vi.fn()
   const showToast = vi.fn((text: string) => (toast.value = text))
   const showIntentActionError = vi.fn((text: string) => (intentActionError.value = text))
-  const scheduleSaving = ref(false)
-  const schedules = ref({})
-  const schedulesProject = ref<string | null>(null)
+  const automationSaving = ref(false)
+  const automations = ref({})
+  const automationsProject = ref<string | null>(null)
   const activeTab = ref<string>('console')
-  const selectedScheduleId = ref<string | null>(null)
+  const selectedAutomationId = ref<string | null>(null)
   // Discussion / research refs touched by discussion_detail + research_message.
   const serverSettings = ref(null)
   const activeDiscussion = ref<Discussion | null>(null)
@@ -61,11 +61,11 @@ function makeCtx() {
     dispatchSpecLaunch,
     showToast,
     showIntentActionError,
-    scheduleSaving,
-    schedules,
-    schedulesProject,
+    automationSaving,
+    automations,
+    automationsProject,
     activeTab,
-    selectedScheduleId,
+    selectedAutomationId,
     serverSettings,
     activeDiscussion,
     activeDiscussionId,
@@ -91,9 +91,9 @@ function makeCtx() {
     dispatchSpecLaunch,
     showToast,
     showIntentActionError,
-    scheduleSaving,
-    schedules,
-    schedulesProject,
+    automationSaving,
+    automations,
+    automationsProject,
     researchMessages,
     researchMaxSeq,
   }
@@ -129,36 +129,36 @@ describe('intent action errors', () => {
   })
 })
 
-describe('schedule save overlay message handler', () => {
-  it('clears scheduleSaving on schedules broadcast', () => {
+describe('automation save overlay message handler', () => {
+  it('clears automationSaving on automations broadcast', () => {
     const result = makeCtx()
-    result.scheduleSaving.value = true
+    result.automationSaving.value = true
 
     result.ctx.handleMessage({
-      type: 'schedules',
+      type: 'automations',
       workspaceId: 'ws1',
       items: [],
     } as unknown as ServerToClient)
 
-    expect(result.scheduleSaving.value).toBe(false)
+    expect(result.automationSaving.value).toBe(false)
   })
 
-  it('clears scheduleSaving on schedule error', () => {
+  it('clears automationSaving on automation error', () => {
     const result = makeCtx()
-    result.scheduleSaving.value = true
+    result.automationSaving.value = true
 
-    result.ctx.handleMessage(error('schedule.agentRequired'))
+    result.ctx.handleMessage(error('automation.agentRequired'))
 
-    expect(result.scheduleSaving.value).toBe(false)
+    expect(result.automationSaving.value).toBe(false)
   })
 
-  it('clears scheduleSaving on generic error', () => {
+  it('clears automationSaving on generic error', () => {
     const result = makeCtx()
-    result.scheduleSaving.value = true
+    result.automationSaving.value = true
 
     result.ctx.handleMessage(error('workspace.unknown'))
 
-    expect(result.scheduleSaving.value).toBe(false)
+    expect(result.automationSaving.value).toBe(false)
   })
 })
 
@@ -198,11 +198,11 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
       dispatchSpecLaunch: vi.fn(),
       showToast: vi.fn(),
       showIntentActionError: vi.fn(),
-      scheduleSaving: ref(false),
-      schedules: ref({}),
-      schedulesProject: ref<string | null>(null),
+      automationSaving: ref(false),
+      automations: ref({}),
+      automationsProject: ref<string | null>(null),
       activeTab,
-      selectedScheduleId: ref<string | null>(null),
+      selectedAutomationId: ref<string | null>(null),
       serverSettings: ref(null),
       activeDiscussion: ref(null),
       activeDiscussionId: ref<string | null>(null),
@@ -466,7 +466,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     const openDiscussion = vi.fn()
     const maybeRestoreIntents = vi.fn()
     const maybeRestoreDiscussions = vi.fn()
-    const maybeRestoreSchedules = vi.fn()
+    const maybeRestoreAutomations = vi.fn()
     const maybeRestoreCodes = vi.fn()
     const persistCurrentWorkspace = vi.fn()
     const pendingDeepLink = ref<import('@/lib/deep-link').DeepLinkTarget | null>(null)
@@ -518,21 +518,21 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     const discussionDispatch = ref<Record<string, import('@/lib/discussion-view').DispatchView>>({})
     const discussionRunState = ref<Record<string, 'running' | 'paused'>>({})
     const researchState = ref<Record<string, 'running'>>({})
-    const schedulesProject = ref<string | null>(null)
-    const schedules = ref<Record<string, import('@ccc/shared/protocol').Schedule[]>>({})
-    const selectedScheduleId = ref<string | null>(null)
-    const scheduleSaving = ref(false)
-    const scheduleLogs = ref<Record<string, import('@ccc/shared/protocol').ScheduleExecutionLog[]>>(
-      {},
-    )
+    const automationsProject = ref<string | null>(null)
+    const automations = ref<Record<string, import('@ccc/shared/protocol').Automation[]>>({})
+    const selectedAutomationId = ref<string | null>(null)
+    const automationSaving = ref(false)
+    const automationLogs = ref<
+      Record<string, import('@ccc/shared/protocol').AutomationExecutionLog[]>
+    >({})
     const executionTranscripts = ref<
       Record<string, import('@ccc/shared/protocol').TranscriptItem[]>
     >({})
-    const scheduleToolManifest = ref<
+    const automationToolManifest = ref<
       Record<string, import('@ccc/shared/protocol').ToolManifestEntry[] | null>
     >({})
-    const scheduleToolManifestLoading = ref(false)
-    const scheduleToolManifestError = ref<string | null>(null)
+    const automationToolManifestLoading = ref(false)
+    const automationToolManifestError = ref<string | null>(null)
     const codesProject = ref<string | null>(null)
     const codesDirs = ref<Record<string, import('@ccc/shared/protocol').CodeDirEntry[]>>({})
     const codesLoadingDirs = ref<Set<string>>(new Set())
@@ -573,7 +573,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       openDiscussion,
       maybeRestoreIntents,
       maybeRestoreDiscussions,
-      maybeRestoreSchedules,
+      maybeRestoreAutomations,
       maybeRestoreCodes,
       persistCurrentWorkspace,
       pendingDeepLink,
@@ -616,15 +616,15 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       discussionDispatch,
       discussionRunState,
       researchState,
-      schedulesProject,
-      schedules,
-      selectedScheduleId,
-      scheduleSaving,
-      scheduleLogs,
+      automationsProject,
+      automations,
+      selectedAutomationId,
+      automationSaving,
+      automationLogs,
       executionTranscripts,
-      scheduleToolManifest,
-      scheduleToolManifestLoading,
-      scheduleToolManifestError,
+      automationToolManifest,
+      automationToolManifestLoading,
+      automationToolManifestError,
       codesProject,
       codesDirs,
       codesLoadingDirs,
@@ -700,13 +700,13 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       intentPrSync: ref<
         Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
       >({}),
-      automation: ref<Record<string, import('@ccc/shared/protocol').AutomationStatus>>({}),
+      automation: ref<Record<string, import('@ccc/shared/protocol').WorkflowStatus>>({}),
       intentSessions: ref<Record<string, import('@ccc/shared/protocol').IntentSessionInfo[]>>({}),
       intentSessionRunStates: ref<Record<string, 'running'>>({}),
       intentSpecContent: ref<string | null>(null),
       intentSpecLoading: ref(false),
       pendingSpecRel: ref<string | null>(null),
-      scheduleTimezone: ref('UTC'),
+      automationTimezone: ref('UTC'),
       newSessionOpen: ref(false),
       newSessionWorkspace: ref<string | null>(null),
       currentSessions: computed(() => []),
@@ -727,7 +727,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       openDiscussion,
       maybeRestoreIntents,
       maybeRestoreDiscussions,
-      maybeRestoreSchedules,
+      maybeRestoreAutomations,
       maybeRestoreCodes,
       persistCurrentWorkspace,
       pendingDeepLink,
@@ -758,7 +758,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     // maybeRestore* should NOT be called when deep link is consumed
     expect(r.maybeRestoreIntents).not.toHaveBeenCalled()
     expect(r.maybeRestoreDiscussions).not.toHaveBeenCalled()
-    expect(r.maybeRestoreSchedules).not.toHaveBeenCalled()
+    expect(r.maybeRestoreAutomations).not.toHaveBeenCalled()
     expect(r.maybeRestoreCodes).not.toHaveBeenCalled()
     expect(r.showToast).not.toHaveBeenCalled()
   })
@@ -869,7 +869,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
 
     expect(r.maybeRestoreIntents).toHaveBeenCalled()
     expect(r.maybeRestoreDiscussions).toHaveBeenCalled()
-    expect(r.maybeRestoreSchedules).toHaveBeenCalled()
+    expect(r.maybeRestoreAutomations).toHaveBeenCalled()
     expect(r.maybeRestoreCodes).toHaveBeenCalled()
     expect(r.selectSession).not.toHaveBeenCalled()
     expect(r.showToast).not.toHaveBeenCalled()

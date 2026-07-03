@@ -32,8 +32,8 @@ export function installPersistence(ctx: AppCtx): void {
     intentsProject,
     discussionsProject,
     activeDiscussionId,
-    schedulesProject,
-    selectedScheduleId,
+    automationsProject,
+    selectedAutomationId,
     codesProject,
   } = ctx
   const send = ctx.send
@@ -82,7 +82,8 @@ export function installPersistence(ctx: AppCtx): void {
       if (discussionsProject.value) localStorage.setItem(DISC_PROJECT_KEY, discussionsProject.value)
       if (activeDiscussionId.value) localStorage.setItem(DISC_ID_KEY, activeDiscussionId.value)
       else localStorage.removeItem(DISC_ID_KEY)
-      if (schedulesProject.value) localStorage.setItem(SCHED_PROJECT_KEY, schedulesProject.value)
+      if (automationsProject.value)
+        localStorage.setItem(SCHED_PROJECT_KEY, automationsProject.value)
       else localStorage.removeItem(SCHED_PROJECT_KEY)
       if (codesProject.value) localStorage.setItem(CODES_PROJECT_KEY, codesProject.value)
       else localStorage.removeItem(CODES_PROJECT_KEY)
@@ -134,9 +135,9 @@ export function installPersistence(ctx: AppCtx): void {
     }
   }
 
-  // After `ready`, re-enter the schedules view if a hard refresh left us there,
+  // After `ready`, re-enter the automations view if a hard refresh left us there,
   // re-fetching the list so the left panel is populated.
-  ctx.maybeRestoreSchedules = (list: WorkspaceInfo[]): void => {
+  ctx.maybeRestoreAutomations = (list: WorkspaceInfo[]): void => {
     let saved: { mode: string | null; proj: string | null }
     try {
       saved = {
@@ -146,11 +147,11 @@ export function installPersistence(ctx: AppCtx): void {
     } catch {
       return
     }
-    if (saved.mode === 'schedules' && saved.proj && list.some((w) => w.id === saved.proj)) {
-      activeTab.value = 'schedules'
-      schedulesProject.value = saved.proj
-      selectedScheduleId.value = null
-      send({ type: 'list_schedules', workspaceId: saved.proj })
+    if (saved.mode === 'automations' && saved.proj && list.some((w) => w.id === saved.proj)) {
+      activeTab.value = 'automations'
+      automationsProject.value = saved.proj
+      selectedAutomationId.value = null
+      send({ type: 'list_automations', workspaceId: saved.proj })
     }
   }
 

@@ -11,7 +11,7 @@
  * - 右域:自动化按钮 + 状态过滤(移动端折叠进 overflow 菜单)+「+」新建意图会话
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { AutomationStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
+import type { WorkflowStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useIsMobile } from '@/composables/useBreakpoint'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
@@ -25,7 +25,7 @@ const props = defineProps<{
   // IntentList props
   project: string
   intents: Intent[]
-  automation: AutomationStatus | null
+  automation: WorkflowStatus | null
   /** 当前选中的意图 id,透传给 IntentList 做行高亮。 */
   selectedIntentId?: string | null
   sddEnabled?: boolean
@@ -83,13 +83,13 @@ const autoError = computed(() =>
     : null,
 )
 
-function toggleAutomation(): void {
+function toggleWorkflow(): void {
   if (autoRunning.value) emit('stop-automation')
   else emit('start-automation')
 }
 
-function toggleAutomationFromMenu(): void {
-  toggleAutomation()
+function toggleWorkflowFromMenu(): void {
+  toggleWorkflow()
   closeMobileActionsMenu()
 }
 
@@ -141,7 +141,7 @@ function setFilterFromMenu(value: string): void {
           :title="
             autoRunning ? t('intent.automation.stop.tooltip') : t('intent.automation.start.tooltip')
           "
-          @click="toggleAutomation"
+          @click="toggleWorkflow"
         >
           {{ autoRunning ? t('intent.automation.stop.label') : t('intent.automation.start.label') }}
         </button>
@@ -180,7 +180,7 @@ function setFilterFromMenu(value: string): void {
                   ? t('intent.automation.stop.tooltip')
                   : t('intent.automation.start.tooltip')
               "
-              @click="toggleAutomationFromMenu"
+              @click="toggleWorkflowFromMenu"
             >
               {{
                 autoRunning ? t('intent.automation.stop.label') : t('intent.automation.start.label')

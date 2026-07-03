@@ -33,8 +33,8 @@ vi.mock('../../runs.js', () => ({
   getRuntime: vi.fn(() => undefined),
   removeRuntimesForWorkspace: vi.fn(),
 }))
-vi.mock('../schedules/store.js', () => ({ isStoreAvailable: () => false }))
-vi.mock('../schedules/archiver.js', () => ({ onWorkspaceRemoved: vi.fn() }))
+vi.mock('../automations/store.js', () => ({ isStoreAvailable: () => false }))
+vi.mock('../automations/archiver.js', () => ({ onWorkspaceRemoved: vi.fn() }))
 // `requireAdmin` → `isAdminConn` reads the active auth block off disk.
 vi.mock('../../kernel/config/index.js', () => ({
   c3HomeDir: () => '/tmp/c3-workspace-test',

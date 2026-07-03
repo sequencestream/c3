@@ -66,8 +66,8 @@
         "paid": "不限",
         "enterprise": "不限"
       },
-      "enabledSchedules": {
-        "label": "启用中的 schedule",
+      "enabledAutomations": {
+        "label": "启用中的 automation",
         "free": "5",
         "paid": "不限",
         "enterprise": "不限"

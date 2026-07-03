@@ -53,9 +53,9 @@ import {
   renameIntentSession,
   setIntentAutomate,
   setIntentGitInfo,
-  startAutomationHandler,
+  startWorkflowHandler,
   startDevelopment,
-  stopAutomationHandler,
+  stopWorkflowHandler,
   createPrHandler,
   syncIntentPrStatusHandler,
   updateIntentDepsHandler,
@@ -78,17 +78,17 @@ import {
   startDiscussion,
 } from './discussions/index.js'
 import {
-  createScheduleHandler,
-  deleteScheduleHandler,
+  createAutomationHandler,
+  deleteAutomationHandler,
   getExecutionTranscript,
-  getScheduleDetailHandler,
-  getScheduleToolManifest,
+  getAutomationDetailHandler,
+  getAutomationToolManifest,
   getWorkspaceMcpConfig,
-  listSchedulesHandler,
+  listAutomationsHandler,
   saveWorkspaceMcpConfig,
-  scheduleRunNow,
-  updateScheduleHandler,
-} from './schedules/index.js'
+  automationRunNow,
+  updateAutomationHandler,
+} from './automations/index.js'
 import { login, logout, setAdminPassword, removeAccount, setAdminAccount } from './auth/index.js'
 import { listWaitUserEvents, updateWaitUserEvent } from './user-involve/index.js'
 import { startRetentionCleanup } from './user-involve/store.js'
@@ -155,8 +155,8 @@ export const handlerMap: HandlerMap = {
   set_intent_automate: setIntentAutomate,
   set_intent_git_info: setIntentGitInfo,
   update_intent_deps: updateIntentDepsHandler,
-  start_automation: startAutomationHandler,
-  stop_automation: stopAutomationHandler,
+  start_workflow: startWorkflowHandler,
+  stop_workflow: stopWorkflowHandler,
   create_pr: createPrHandler,
   sync_intent_pr_status: syncIntentPrStatusHandler,
   // discussions
@@ -168,17 +168,17 @@ export const handlerMap: HandlerMap = {
   resume_discussion: resumeDiscussion,
   discussion_speak: discussionSpeak,
   continue_discussion: continueDiscussion,
-  // schedules
-  create_schedule: createScheduleHandler,
-  list_schedules: listSchedulesHandler,
-  update_schedule: updateScheduleHandler,
-  delete_schedule: deleteScheduleHandler,
-  get_schedule_detail: getScheduleDetailHandler,
+  // automations
+  create_automation: createAutomationHandler,
+  list_automations: listAutomationsHandler,
+  update_automation: updateAutomationHandler,
+  delete_automation: deleteAutomationHandler,
+  get_automation_detail: getAutomationDetailHandler,
   get_execution_transcript: getExecutionTranscript,
-  schedule_run_now: scheduleRunNow,
+  automation_run_now: automationRunNow,
   get_workspace_mcp_config: getWorkspaceMcpConfig,
   save_workspace_mcp_config: saveWorkspaceMcpConfig,
-  get_schedule_tool_manifest: getScheduleToolManifest,
+  get_automation_tool_manifest: getAutomationToolManifest,
   // auth (ADR-0023 runtime slice: basic login + multi-account / unique admin)
   login,
   logout,

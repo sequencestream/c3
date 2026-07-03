@@ -10,7 +10,7 @@ import { installMessageHandler } from './message-handler'
 import { installSessionActions } from './session-actions'
 import { installIntentActions } from './intent-actions'
 import { installDiscussionActions } from './discussion-actions'
-import { installScheduleActions } from './schedule-actions'
+import { installAutomationActions } from './automation-actions'
 import { installCodesActions } from './codes-actions'
 import { installChatActions } from './chat-actions'
 import { installSettingsActions } from './settings-actions'
@@ -56,7 +56,7 @@ export function useAppController(): AppCtx {
   installSessionActions(ctx)
   installIntentActions(ctx)
   installDiscussionActions(ctx)
-  installScheduleActions(ctx)
+  installAutomationActions(ctx)
   installCodesActions(ctx)
   installChatActions(ctx)
   installSettingsActions(ctx)
@@ -93,9 +93,9 @@ export function useAppController(): AppCtx {
           ctx.send({ type: 'list_discussions', workspaceId: ctx.discussionsProject.value })
           if (ctx.activeDiscussionId.value)
             ctx.send({ type: 'open_discussion', discussionId: ctx.activeDiscussionId.value })
-        } else if (ctx.activeTab.value === 'schedules' && ctx.schedulesProject.value) {
-          // Re-fetch the schedule list (read path) + settings (timezone preview).
-          ctx.send({ type: 'list_schedules', workspaceId: ctx.schedulesProject.value })
+        } else if (ctx.activeTab.value === 'automations' && ctx.automationsProject.value) {
+          // Re-fetch the automation list (read path) + settings (timezone preview).
+          ctx.send({ type: 'list_automations', workspaceId: ctx.automationsProject.value })
           ctx.send({ type: 'get_settings' })
         } else if (ctx.activeTab.value === 'codes') {
           // The file tree/tabs are a stateless read path that survives the reconnect

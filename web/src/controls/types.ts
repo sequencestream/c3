@@ -5,17 +5,17 @@ import type {
   ClientToServer,
   CodeSearchHit,
   CodexPolicy,
-  CreateScheduleInput,
+  CreateAutomationInput,
   IntentStatus,
   ModeToken,
   PromptImage,
-  Schedule,
+  Automation,
   ServerToClient,
   SessionRunStatus,
   SessionInfo,
   SystemSettings,
   UiLang,
-  UpdateScheduleInput,
+  UpdateAutomationInput,
   WaitUserInvolveEvent,
   WaitUserInvolveStatus,
   WorkspaceInfo,
@@ -50,7 +50,7 @@ export interface AppMethods {
   persistViewMode(): void
   maybeRestoreIntents(list: WorkspaceInfo[]): void
   maybeRestoreDiscussions(list: WorkspaceInfo[]): void
-  maybeRestoreSchedules(list: WorkspaceInfo[]): void
+  maybeRestoreAutomations(list: WorkspaceInfo[]): void
   maybeRestoreCodes(list: WorkspaceInfo[]): void
   // Codes 内嵌 ChatColumn 的 per-workspace localStorage 持久化(best-effort)。
   readCodesChatWidth(workspaceId: string): number
@@ -138,8 +138,8 @@ export interface AppMethods {
   updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void
   createPr(intentId: string): void
   syncIntentPrStatus(intentId: string): void
-  startAutomation(): void
-  stopAutomation(): void
+  startWorkflow(): void
+  stopWorkflow(): void
   selectIntentSession(sessionId: string): void
   newIntentSession(): void
 
@@ -160,20 +160,20 @@ export interface AppMethods {
   convertDiscussionToIntent(): void
   submitDiscussionInput(): void
 
-  // schedules
-  openSchedules(path: string): void
-  onSelectSchedule(id: string): void
+  // automations
+  openAutomations(path: string): void
+  onSelectAutomation(id: string): void
   onLoadExecutionSession(executionId: string): void
   onSelectExecution(id: string): void
-  onScheduleMobileBack(targetKey: string): void
-  onToggleScheduleEnabled(id: string, enabled: boolean): void
-  runNowSchedule(id: string): void
-  openScheduleForm(target: Schedule | null): void
-  createSchedule(input: CreateScheduleInput): void
-  createScheduleFromTemplate(templateId: string): void
-  updateSchedule(id: string, input: UpdateScheduleInput): void
-  deleteSchedule(id: string): void
-  onLoadScheduleToolManifest(vendor: string): void
+  onAutomationMobileBack(targetKey: string): void
+  onToggleAutomationEnabled(id: string, enabled: boolean): void
+  runNowAutomation(id: string): void
+  openAutomationForm(target: Automation | null): void
+  createAutomation(input: CreateAutomationInput): void
+  createAutomationFromTemplate(templateId: string): void
+  updateAutomation(id: string, input: UpdateAutomationInput): void
+  deleteAutomation(id: string): void
+  onLoadAutomationToolManifest(vendor: string): void
 
   // codes (read-only file browser)
   openCodes(workspaceId: string): void

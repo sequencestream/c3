@@ -63,7 +63,7 @@ import {
 } from '../sessions/session-metadata-store.js'
 import { findIntentIdBySessionId } from '../intents/store.js'
 import { currentLicenseStatus } from '../license/store.js'
-import { countRunningScheduleSessions } from '../schedules/store.js'
+import { countRunningAutomationSessions } from '../automations/store.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
@@ -175,7 +175,7 @@ const SESSION_PAGE_KINDS: readonly Exclude<SessionKind, 'consensus'>[] = [
   'intent',
   'spec',
   'discussion',
-  'schedule',
+  'automation',
   'tool',
 ]
 
@@ -193,14 +193,14 @@ export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg)
     intent: 0,
     spec: 0,
     discussion: 0,
-    schedule: 0,
+    automation: 0,
     tool: 0,
   }
   for (const kind of SESSION_PAGE_KINDS) {
     if (kind === 'tool' && !getShowToolSessions()) continue
     counts[kind] =
-      kind === 'schedule'
-        ? countRunningScheduleSessions(abs)
+      kind === 'automation'
+        ? countRunningAutomationSessions(abs)
         : listForWorkspace(abs, kind).filter((row) => isRunning(row.vendorSessionId ?? row.c3Id))
             .length
   }

@@ -587,7 +587,7 @@ describe('intentSessionId field exposure / isolation', () => {
 
   it('save_intent_directly schema STRIPS intentSessionId (no comm-session semantics)', () => {
     // z.object strips unknown keys by default, so a supplied intentSessionId must not
-    // survive parsing — the schedule path can never carry a back-link.
+    // survive parsing — the automation path can never carry a back-link.
     const schema = z.object(saveIntentDirectlySchema)
     const parsed = schema.safeParse({
       intents: [

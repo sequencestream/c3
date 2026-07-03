@@ -83,12 +83,7 @@ import {
   getJudgedSession,
   setJudgedSession,
 } from './run-status.js'
-import {
-  getAutomationHooks,
-  getAutomationStatus,
-  startAutomation,
-  stopAutomation,
-} from './automation.js'
+import { getWorkflowHooks, getWorkflowStatus, startWorkflow, stopWorkflow } from './workflow.js'
 import { getDiscussion } from '../discussions/store.js'
 import { currentLicenseStatus } from '../license/store.js'
 import { currentPlanLimits, limitError } from '../license/plan-limits.js'
@@ -280,7 +275,7 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
     items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
   })
-  conn.send({ type: 'automation_status', status: getAutomationStatus(proj) })
+  conn.send({ type: 'workflow_status', status: getWorkflowStatus(proj) })
 
   // Reconcile in_progress intents in the background: for each, check
   // liveness and auto-complete if the process is dead but the judge confirms
@@ -441,7 +436,7 @@ export const newIntentSession: Handler<'new_intent_session'> = (ctx, conn, msg) 
     items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
   })
-  conn.send({ type: 'automation_status', status: getAutomationStatus(proj) })
+  conn.send({ type: 'workflow_status', status: getWorkflowStatus(proj) })
 }
 
 export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => {
@@ -1049,7 +1044,7 @@ export const updateIntentDepsHandler: Handler<'update_intent_deps'> = (ctx, conn
   ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
 }
 
-export const startAutomationHandler: Handler<'start_automation'> = (ctx, conn, msg) => {
+export const startWorkflowHandler: Handler<'start_workflow'> = (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
   if (!proj) {
     conn.send({
@@ -1062,10 +1057,10 @@ export const startAutomationHandler: Handler<'start_automation'> = (ctx, conn, m
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
   }
-  ctx.broadcastAutomation(startAutomation(proj, getAutomationHooks(), Date.now()))
+  ctx.broadcastWorkflow(startWorkflow(proj, getWorkflowHooks(), Date.now()))
 }
 
-export const stopAutomationHandler: Handler<'stop_automation'> = (ctx, conn, msg) => {
+export const stopWorkflowHandler: Handler<'stop_workflow'> = (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
   if (!proj) {
     conn.send({
@@ -1074,7 +1069,7 @@ export const stopAutomationHandler: Handler<'stop_automation'> = (ctx, conn, msg
     })
     return
   }
-  ctx.broadcastAutomation(stopAutomation(proj))
+  ctx.broadcastWorkflow(stopWorkflow(proj))
 }
 
 export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
@@ -1139,7 +1134,7 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
       ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
       conn.send({ type: 'create_pr_response', prId: pr.prId, prUrl: pr.prUrl ?? pr.prId })
 
-      // Publish a pr:operation create event so event-triggered schedules can react.
+      // Publish a pr:operation create event so event-triggered automations can react.
       const prEvent = buildServerSidePrCreateEvent(
         {
           prId: pr.prId,

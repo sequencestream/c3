@@ -294,13 +294,13 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'update_intent_deps', intentId, deps })
   }
 
-  ctx.startAutomation = (): void => {
+  ctx.startWorkflow = (): void => {
     if (!intentsProject.value) return
-    send({ type: 'start_automation', workspaceId: intentsProject.value })
+    send({ type: 'start_workflow', workspaceId: intentsProject.value })
   }
 
-  ctx.stopAutomation = (): void => {
+  ctx.stopWorkflow = (): void => {
     if (!intentsProject.value) return
-    send({ type: 'stop_automation', workspaceId: intentsProject.value })
+    send({ type: 'stop_workflow', workspaceId: intentsProject.value })
   }
 }

@@ -68,7 +68,7 @@ const SESSION_KIND_TABS: readonly {
   { key: 'intent', labelKey: 'session.kind.intent', enabled: true },
   { key: 'spec', labelKey: 'session.kind.spec', enabled: true },
   { key: 'discussion', labelKey: 'session.kind.discussion', enabled: true },
-  { key: 'schedule', labelKey: 'session.kind.schedule', enabled: true },
+  { key: 'automation', labelKey: 'session.kind.automation', enabled: true },
   { key: 'tool', labelKey: 'session.kind.tool', enabled: 'showToolSessions' },
 ]
 

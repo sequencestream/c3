@@ -581,13 +581,13 @@ export interface VendorAdapter {
    * MCP server namespace prefixes (`mcp__<server>__`). For Codex it
    * returns only the built-in SDK tool set. The result is a **static** pre-judged
    * list (not a runtime MCP server probe) — the same classification convention
-   * used by the schedule executor's `freezeTools()`.
+   * used by the automation executor's `freezeTools()`.
    *
    * @param workspacePath - The workspace directory (used to resolve MCP config
    *   for adapters that support it — Claude uses this to derive MCP namespace
    *   prefixes).
    * @param mcpServers - Pre-resolved MCP server definitions keyed by server name.
-   *   The caller (schedules feature handler) loads this from the workspace config
+   *   The caller (automations feature handler) loads this from the workspace config
    *   store and passes it here so the adapter does not need to import from
    *   `features/`. Ignored by adapters that don't support MCP (Codex).
    */

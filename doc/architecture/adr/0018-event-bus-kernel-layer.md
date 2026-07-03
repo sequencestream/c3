@@ -115,7 +115,7 @@ normal/intent session kind, `'normal' → 'session'`):
 | `work`       | general dev session (user console, intent→dev hand-off, automation dev-turn). Was `'session'`. |
 | `intent`     | read-only intent-communication session.                                                        |
 | `discussion` | discussion orchestrator + its research pass.                                                   |
-| `schedule`   | a run launched by the scheduler **with no socket** (e.g. an `llm` task).                       |
+| `automation` | a run launched by the scheduler **with no socket** (e.g. an `llm` task).                       |
 | `consensus`  | a consensus vote.                                                                              |
 | `tool`       | an internal tool call: completion judging (judge) + title derivation.                          |
 | `spec`       | a spec-authoring session (writes confined to the intent's spec directory).                     |
@@ -133,22 +133,22 @@ audit/extensibility, no consumer branch yet):
 Two runs of the same `sessionKind` can differ in `runKind` — e.g. a `work` console is `interactive`
 while a `work` automation dev-turn is `background`.
 
-**`schedule` is a trigger source, not a run type a session morphs into.** An
-event-triggered schedule fires off a run-started/run-settled whose `sessionKind` is
-`work` (a user/dev run) — the scheduler reacts to that. `schedule` only tags
-the scheduler's _own_ socket-less run. Event-triggered schedules therefore filter
+**`automation` is a trigger source, not a run type a session morphs into.** An
+event-triggered automation fires off a run-started/run-settled whose `sessionKind` is
+`work` (a user/dev run) — the scheduler reacts to that. `automation` only tags
+the scheduler's _own_ socket-less run. Event-triggered automations therefore filter
 on `sessionKind === 'work'` (migrated verbatim from the old `session`-kind guard;
 semantics unchanged).
 
-Today `work`, `intent`, `discussion`, and `schedule` sessionKinds flow through the run bus.
+Today `work`, `intent`, `discussion`, and `automation` sessionKinds flow through the run bus.
 
 - `work`/`intent` via a session runtime (the run-launcher path; `intent` was the
   first non-`work` kind, 2026-06-08).
 - `discussion` via the discussion run starters, which publish run-started/run-bound/
   run-settled with the `discussion` sessionKind around the research and orchestrator calls
   without creating a session runtime (2026-06-08-010).
-- `schedule` via the scheduler's dispatch-and-track step, which publishes
-  run-started/run-bound/run-settled with the `schedule` sessionKind around each scheduled
+- `automation` via the scheduler's dispatch-and-track step, which publishes
+  run-started/run-bound/run-settled with the `automation` sessionKind around each scheduled
   execution (2026-06-08-010).
 
 The remaining two (`consensus`, `tool`) still tag socket-less internal invocations
@@ -195,19 +195,19 @@ and broadcast closures are constructed.
 
 **Design principles:**
 
-| Aspect               | Decision                                                                                           |
-| -------------------- | -------------------------------------------------------------------------------------------------- |
-| **Registration**     | Once at composition root; never disposed.                                                          |
-| **Matching**         | Each subscription uses the event's session id / previous id to look up domain state (runtime kind, |
-|                      | the intent's last dev-session id, the pending dev-link) — NOT a subscription id.                   |
-| **Idempotency**      | No-ops on events that do not match the owning domain's state (e.g. a run-bound for an unknown      |
-|                      | session, or a run-settled whose session id does not match any intent's last dev-session id).       |
-| **Per-connection**   | The viewed-session repointing is driven by the client (echoes the view-rebind message on receiving |
-|                      | the broadcast session-started when its active session matches the client id). No per-launch sub.   |
-| **Schedule trigger** | The existing schedule-dispatch subscription was always resident (the model template). Its run-kind |
-|                      | filter changed from "not session" to an explicit whitelist of the `session` kind for testability.  |
+| Aspect                 | Decision                                                                                             |
+| ---------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Registration**       | Once at composition root; never disposed.                                                            |
+| **Matching**           | Each subscription uses the event's session id / previous id to look up domain state (runtime kind,   |
+|                        | the intent's last dev-session id, the pending dev-link) — NOT a subscription id.                     |
+| **Idempotency**        | No-ops on events that do not match the owning domain's state (e.g. a run-bound for an unknown        |
+|                        | session, or a run-settled whose session id does not match any intent's last dev-session id).         |
+| **Per-connection**     | The viewed-session repointing is driven by the client (echoes the view-rebind message on receiving   |
+|                        | the broadcast session-started when its active session matches the client id). No per-launch sub.     |
+| **Automation trigger** | The existing automation-dispatch subscription was always resident (the model template). Its run-kind |
+|                        | filter changed from "not session" to an explicit whitelist of the `session` kind for testability.    |
 
-**Four resident subscriptions (2026-06-08-010 adds discussion + schedule):**
+**Four resident subscriptions (2026-06-08-010 adds discussion + automation):**
 
 1. **Run-bound (intent-session + session/dev domain):**
    - Obtains the session runtime via the real id, falling back to the previous id.
@@ -228,10 +228,10 @@ and broadcast closures are constructed.
    - Discussion starters publish run-started/run-bound/run-settled with the `discussion` kind; this
      subscription replaces their old per-run finalize broadcast.
 
-4. **Run-settled (schedule domain)** — added 2026-06-08-010:
-   - Filter: the `schedule` kind.
-   - Broadcasts the schedule list refresh.
-   - The scheduler engine publishes run-started/run-bound/run-settled with the `schedule` kind; this
+4. **Run-settled (automation domain)** — added 2026-06-08-010:
+   - Filter: the `automation` kind.
+   - Broadcasts the automation list refresh.
+   - The scheduler engine publishes run-started/run-bound/run-settled with the `automation` kind; this
      subscription replaces the old store-level broadcast.
 
 **Automation orchestrator (event-driven FSM):**
@@ -285,10 +285,10 @@ The event bus instance is constructed once at startup (the composition root) and
 Both reference the **same** bus instance, so subscribers registered from the kernel context receive
 events published from the launchers.
 
-**2026-06-08-010 extension:** discussion and schedule runs also publish to this bus.
+**2026-06-08-010 extension:** discussion and automation runs also publish to this bus.
 The discussion starters publish around each research/orchestrator run; the scheduler publishes
 around each scheduled execution. Both reference the same bus instance (injected via their respective
-dependencies at the composition root), so all subscribers receive discussion + schedule lifecycle
+dependencies at the composition root), so all subscribers receive discussion + automation lifecycle
 events too.
 
 ## Consequences
@@ -312,8 +312,8 @@ events too.
 - **Testability:** the bus is a plain class with no I/O — publish/subscribe/dispose are all
   unit-testable without mocks. The dedicated event-bus tests cover error isolation, ordering,
   type safety (compile-time), and lifecycle. New resident-subscription tests (2026-06-08) cover
-  concurrent run scenarios, dev-link matching, and schedule run-kind whitelist filtering.
-  **2026-06-08-010:** new tests cover discussion + schedule subscription dispatch, cross-kind
+  concurrent run scenarios, dev-link matching, and automation run-kind whitelist filtering.
+  **2026-06-08-010:** new tests cover discussion + automation subscription dispatch, cross-kind
   isolation, and the run-started guard.
 
 ## Compliance

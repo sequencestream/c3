@@ -6,7 +6,7 @@ function mountDialog(props: Partial<InstanceType<typeof ConfirmDialog>['$props']
   return mount(ConfirmDialog, {
     props: {
       open: true,
-      title: 'Delete schedule?',
+      title: 'Delete automation?',
       message: 'Delete "Nightly Build"? This cannot be undone.',
       confirmLabel: 'Delete',
       cancelLabel: 'Cancel',
@@ -23,7 +23,7 @@ describe('ConfirmDialog.vue', () => {
 
   it('open=true 渲染标题/正文/按钮文案', () => {
     const w = mountDialog()
-    expect(w.find('.cd-title').text()).toBe('Delete schedule?')
+    expect(w.find('.cd-title').text()).toBe('Delete automation?')
     expect(w.find('.cd-message').text()).toContain('Nightly Build')
     expect(w.find('[data-testid="confirm-accept"]').text()).toBe('Delete')
     expect(w.find('[data-testid="confirm-cancel"]').text()).toBe('Cancel')

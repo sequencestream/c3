@@ -125,7 +125,7 @@ export function setAgentEnabled(agentId: string, enabled: boolean): boolean {
 /**
  * Find the first enabled agent whose vendor matches `vendor`. Falls back to the
  * default agent when no enabled agent of that vendor exists, or when `vendor` is
- * unknown. Used by the schedule dispatcher to route LLM prompt execution to the
+ * unknown. Used by the automation dispatcher to route LLM prompt execution to the
  * right vendor's adapter.
  */
 export function resolveFirstAgentOfVendor(vendor: VendorId): AgentConfig {

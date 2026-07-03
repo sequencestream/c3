@@ -33,7 +33,7 @@ import {
 } from './runs.js'
 import { observeTaskWire } from './kernel/agent/task-tracker.js'
 import { getSessionAgentId, getUiLang, setOnPendingIntentLookup } from './kernel/config/index.js'
-import { setAutomationHooks } from './features/intents/automation.js'
+import { setWorkflowHooks } from './features/intents/workflow.js'
 import { setIntentLifecycleEventBus } from './features/intents/lifecycle-events.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { buildSpecAgentPrompt } from './features/intents/spec-prompt.js'
@@ -43,7 +43,7 @@ import { runFind, runView } from './features/intents/tool-defs.js'
 import { gatedSave } from './features/intents/save-gate.js'
 import { createPrEventMcpServer } from './features/pr-events/publish-tool.js'
 import { runPublishPrEvent } from './features/pr-events/tool-defs.js'
-import { configureScheduleMcp } from './features/schedules/c3-mcp.js'
+import { configureAutomationMcp } from './features/automations/c3-mcp.js'
 import {
   createIntentMcp,
   INTENT_MCP_PATH,
@@ -428,7 +428,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
   // Vendor-neutral PR operation events (2026-06-20). The model performs PR
   // operations with its OWN tools, then calls `publish_pr_event` to publish ONE
-  // event onto the bus; event-triggered schedules subscribed to `pr:operation`
+  // event onto the bus; event-triggered automations subscribed to `pr:operation`
   // react to it. ONE publish sink is shared by both MCP surfaces (Claude
   // in-process below + the codex localhost HTTP route here) so they converge on
   // the same event. The route is mounted before the SPA catch-all (like intent).
@@ -438,7 +438,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       sessionId: string
     } & import('@ccc/shared/protocol').PrOperationEvent,
   ): void => eventBus.publish('pr:operation', payload)
-  configureScheduleMcp({
+  configureAutomationMcp({
     broadcastIntents: broadcasts.broadcastIntents,
     publishPrEvent,
   })
@@ -554,10 +554,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   }
   const runDevTurn = makeRunDevTurn({ launchDeps })
   // Feature-private: NOT on the kernel context (ADR-0009 R1).
-  setAutomationHooks({
+  setWorkflowHooks({
     runDevTurn,
     broadcastIntents: broadcasts.broadcastIntents,
-    emitStatus: broadcasts.broadcastAutomation,
+    emitStatus: broadcasts.broadcastWorkflow,
     sessionExists,
     isRunning,
     publishPrEvent,
@@ -587,8 +587,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastIntents: broadcasts.broadcastIntents,
     broadcastIntentSessions: broadcasts.broadcastIntentSessions,
     broadcastDiscussions: broadcasts.broadcastDiscussions,
-    broadcastSchedules: broadcasts.broadcastSchedules,
-    broadcastAutomation: broadcasts.broadcastAutomation,
+    broadcastAutomations: broadcasts.broadcastAutomations,
+    broadcastWorkflow: broadcasts.broadcastWorkflow,
     broadcastDiscussionMessage: broadcasts.broadcastDiscussionMessage,
     broadcastDiscussionRunStatus: broadcasts.broadcastDiscussionRunStatus,
     broadcastWaitUserEvents: broadcasts.broadcastWaitUserEvents,
@@ -610,7 +610,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastIntents: broadcasts.broadcastIntents,
     broadcastIntentSessions: broadcasts.broadcastIntentSessions,
     broadcastDiscussions: broadcasts.broadcastDiscussions,
-    broadcastSchedules: broadcasts.broadcastSchedules,
+    broadcastAutomations: broadcasts.broadcastAutomations,
     broadcastWaitUserEvents: broadcasts.broadcastWaitUserEvents,
     publishPrEvent,
   })
@@ -652,7 +652,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   })
   injectWebSocket(server)
 
-  // Start the schedule scheduler after the server is ready.
+  // Start the automation scheduler after the server is ready.
   startSchedulerWiring({ broadcasts, eventBus })
 
   // Start the product-license heartbeat loop (ADR-0026, PL-R3). Fail-soft; pushes

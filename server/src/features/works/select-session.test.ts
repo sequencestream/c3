@@ -202,23 +202,23 @@ describe('select_session', () => {
     expect(sel?.linkedIntentId).toBeUndefined()
   })
 
-  it('projection-owned schedule session → session_selected carries owner metadata', async () => {
+  it('projection-owned automation session → session_selected carries owner metadata', async () => {
     vi.mocked(getByC3Id).mockReturnValue({
-      title: 'Schedule: Nightly review',
-      sessionKind: 'schedule',
-      ownerKind: 'schedule',
-      ownerId: 'schedule-1',
+      title: 'Automation: Nightly review',
+      sessionKind: 'automation',
+      ownerKind: 'automation',
+      ownerId: 'automation-1',
     } as never)
     const conn = fakeConn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await selectSession({} as any, conn as any, {
       type: 'select_session',
       workspaceId: '/abs/proj',
-      sessionId: 'schedule-session-1',
+      sessionId: 'automation-session-1',
     })
     const sel = conn.sent.find((m) => m.type === 'session_selected')
-    expect(sel?.sessionKind).toBe('schedule')
-    expect(sel?.ownerKind).toBe('schedule')
-    expect(sel?.ownerId).toBe('schedule-1')
+    expect(sel?.sessionKind).toBe('automation')
+    expect(sel?.ownerKind).toBe('automation')
+    expect(sel?.ownerId).toBe('automation-1')
   })
 })

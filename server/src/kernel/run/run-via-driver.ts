@@ -375,7 +375,7 @@ export async function runViaDriver(
 
   // Terminal reason for the run:settled lifecycle event (ADR-0018). Starts at
   // 'complete'; the catch flips it to 'error'; a user stop (aborted) wins in the
-  // finally block. Drives event-triggered schedules' reason filter (2026-06-08).
+  // finally block. Drives event-triggered automations' reason filter (2026-06-08).
   let settledReason: RunEndReason = 'complete'
 
   // Wire the driver's approval bridge to c3's browser approval registry: a tool
@@ -388,7 +388,7 @@ export async function runViaDriver(
       getRunId: () => runId,
       workspacePath,
       // The WorkCenter event carries the run's real business kind (intent / spec /
-      // discussion / schedule / work) verbatim — WorkCenter routes off it.
+      // discussion / automation / work) verbatim — WorkCenter routes off it.
       sessionKind: rt.sessionKind,
       signal: cycleAbort.signal,
       emit,

@@ -41,8 +41,8 @@
       "discussion": {
         "label": "讨论"
       },
-      "schedules": {
-        "label": "定时任务"
+      "automations": {
+        "label": "自动化"
       },
       "workcenter": {
         "label": "工作台"
@@ -362,7 +362,7 @@
       "title": {
         "label": "时区"
       },
-      "hint": "用于解释所有定时任务 cron 表达式、计算下次运行时刻的 IANA 时区。例如 0 11 * * * 表示该时区的 11:00。默认取服务器本地时区;修改它会改变既有定时任务的实际触发时刻。"
+      "hint": "用于解释所有自动化 cron 表达式、计算下次运行时刻的 IANA 时区。例如 0 11 * * * 表示该时区的 11:00。默认取服务器本地时区;修改它会改变既有自动化的实际触发时刻。"
     },
     "consensus": {
       "title": {
@@ -970,9 +970,9 @@
         "label": "意图",
         "ariaLabel": "打开创建此会话的意图"
       },
-      "schedule": {
-        "label": "定时任务",
-        "ariaLabel": "打开创建此会话的定时任务"
+      "automation": {
+        "label": "自动化",
+        "ariaLabel": "打开创建此会话的自动化"
       },
       "discussion": {
         "label": "讨论",
@@ -1103,19 +1103,19 @@
       "intent": "意图",
       "spec": "规范",
       "discussion": "讨论",
-      "schedule": "定时任务",
+      "automation": "自动化",
       "tool": "工具",
       "tabsLabel": "会话分类",
       "placeholder": "该类型会话将在二期接入。"
     }
   },
-  "schedule": {
+  "automation": {
     "list": {
       "title": {
-        "label": "定时任务"
+        "label": "自动化"
       },
       "new": {
-        "label": "新建定时任务"
+        "label": "新建自动化"
       },
       "templates": {
         "button": "模板",
@@ -1137,7 +1137,7 @@
           "description": "每周日 03:00 清理超过 7 天未变化的 c3 托管 worktree,仅在无未提交改动、意图状态和分支安全检查通过时删除。"
         }
       },
-      "empty": "还没有定时任务。",
+      "empty": "还没有自动化。",
       "expand": {
         "tooltip": "展开面板"
       },
@@ -1159,11 +1159,11 @@
         "lessThanMinute": "< 1 分钟"
       },
       "edit": {
-        "tooltip": "编辑定时任务"
+        "tooltip": "编辑自动化"
       },
       "delete": {
-        "tooltip": "删除定时任务",
-        "title": "删除定时任务?",
+        "tooltip": "删除自动化",
+        "title": "删除自动化?",
         "confirm": "确定删除「{name}」?其执行历史将一并永久清除,此操作无法撤销。"
       },
       "runNow": {
@@ -1218,7 +1218,7 @@
       }
     },
     "saveOverlay": {
-      "title": "正在保存定时任务…",
+      "title": "正在保存自动化…",
       "label": "正在保存…"
     },
     "detail": {
@@ -1251,7 +1251,7 @@
         "resultError": "结果(错误)"
       },
       "noHistory": "还没有执行历史。",
-      "empty": "选择一个定时任务以查看详情。"
+      "empty": "选择一个自动化以查看详情。"
     },
     "tab": {
       "detail": "详情",
@@ -1262,7 +1262,7 @@
     },
     "history": {
       "title": "执行历史",
-      "empty": "选择一个定时任务以查看其历史。",
+      "empty": "选择一个自动化以查看其历史。",
       "browse": {
         "label": "浏览执行记录"
       },
@@ -1296,8 +1296,8 @@
       }
     },
     "form": {
-      "newTitle": "新建定时任务",
-      "editTitle": "编辑定时任务",
+      "newTitle": "新建自动化",
+      "editTitle": "编辑自动化",
       "title": {
         "label": "标题",
         "placeholder": "根据任务自动生成",
@@ -1329,7 +1329,7 @@
         "hint": "留空使用任务默认值（命令：30 秒；LLM：60 秒）。",
         "invalid": "请输入 1,000 到 86,400,000 之间的整数。"
       },
-      "schedule": {
+      "automation": {
         "label": "排期"
       },
       "frequency": {
@@ -1393,7 +1393,7 @@
         "label": "保存更改"
       },
       "create": {
-        "label": "新建定时任务"
+        "label": "新建自动化"
       },
       "vendor": {
         "label": "品牌"
@@ -1468,7 +1468,7 @@
           "hint": "留空则任意结果都触发。"
         },
         "pr": {
-          "note": "由模型用自己的工具完成 PR 操作（创建、评审、合并、关闭、评论）并在完成后发布事件——c3 自身从不执行任何 PR 操作。当本工作区发布匹配的 PR 事件时,本定时任务触发。",
+          "note": "由模型用自己的工具完成 PR 操作（创建、评审、合并、关闭、评论）并在完成后发布事件——c3 自身从不执行任何 PR 操作。当本工作区发布匹配的 PR 事件时,本自动化触发。",
           "op": {
             "label": "仅在以下操作时",
             "create": {
@@ -1598,17 +1598,17 @@
       "alreadyStarted": "讨论已开始或已结束,无法重复启动。",
       "notEndedForContinue": "只有已结束的讨论可以追加新一轮。"
     },
-    "schedule": {
-      "dbUnavailable": "定时任务功能不可用 (c3.db)。",
-      "notFound": "定时任务不存在。",
+    "automation": {
+      "dbUnavailable": "自动化功能不可用 (c3.db)。",
+      "notFound": "自动化不存在。",
       "executionNotFound": "执行记录不存在。",
       "approvalNotFound": "审批条目不存在或已被处理。",
-      "invalidEventTrigger": "事件触发型定时任务需要订阅一个运行事件。",
+      "invalidEventTrigger": "事件触发型自动化需要订阅一个运行事件。",
       "invalidMaxWallClockMs": "执行超时必须是 1,000 到 86,400,000 毫秒之间的整数。",
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the schedule vendor."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "等待用户介入存储不可用 (c3.db)。",
@@ -1626,7 +1626,7 @@
       "workspaceLimit": "免费版最多可注册 {limit} 个 workspace。",
       "worktreeLimit": "免费版最多只能有 {limit} 个启用中的 worktree。",
       "discussionParticipantLimit": "免费版每次讨论最多 {limit} 个参与者，不含主持人。",
-      "scheduleLimit": "免费版最多可启用 {limit} 个 schedule。",
+      "automationLimit": "免费版最多可启用 {limit} 个 automation。",
       "sandboxDisabled": "免费版可以保存 sandbox 配置，但不能启用 sandbox。",
       "reason": {
         "expired": "许可证已到期",
@@ -2072,7 +2072,7 @@
       "work": "工作",
       "intent": "意图",
       "discussion": "讨论",
-      "schedule": "定时任务",
+      "automation": "自动化",
       "consensus": "共识",
       "tool": "工具",
       "spec": "规范"

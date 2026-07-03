@@ -164,7 +164,7 @@ export function checkDbDriver(): boolean {
   } catch (err) {
     console.error(
       `[c3] FATAL: SQLite driver "${driver}" unavailable on ${process.platform}/${process.arch} ` +
-        `(${isBun() ? 'Bun' : 'Node'} runtime). Persistence (intents, discussions, schedules) ` +
+        `(${isBun() ? 'Bun' : 'Node'} runtime). Persistence (intents, discussions, automations) ` +
         `will not work. Cause: ${err instanceof Error ? err.message : String(err)}`,
     )
     return false

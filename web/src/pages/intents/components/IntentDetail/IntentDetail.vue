@@ -333,7 +333,7 @@ function clearSwitchSpecTabTimer(): void {
 }
 
 // 为当前意图的防误审门排程一个「剩余时间」定时器,到点放行(自增 gateTick 触发重算)。
-function scheduleApproveGate(): void {
+function automationApproveGate(): void {
   clearApproveGateTimer()
   const r = props.intent
   if (!r) return
@@ -351,7 +351,7 @@ function scheduleApproveGate(): void {
 watch(
   () => [props.intent?.id, mainAction.value] as const,
   () => {
-    scheduleApproveGate()
+    automationApproveGate()
   },
   { immediate: true },
 )
@@ -398,7 +398,7 @@ function onMainAction(): void {
     emit('write-spec', r.id)
     // 武装防误审门(以触发时刻锚定),并约 1 秒后自动切到 spec session Tab。
     writeSpecTriggeredAt.set(r.id, Date.now())
-    scheduleApproveGate()
+    automationApproveGate()
     clearSwitchSpecTabTimer()
     const triggeredId = r.id
     switchSpecTabTimer = setTimeout(() => {

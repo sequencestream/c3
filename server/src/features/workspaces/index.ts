@@ -10,8 +10,8 @@ import {
   resolveWorkspaceRoot,
 } from '../../state.js'
 import { getRuntime, removeRuntimesForWorkspace } from '../../runs.js'
-import { isStoreAvailable as isScheduleStoreAvailable } from '../schedules/store.js'
-import { onWorkspaceRemoved } from '../schedules/archiver.js'
+import { isStoreAvailable as isAutomationStoreAvailable } from '../automations/store.js'
+import { onWorkspaceRemoved } from '../automations/archiver.js'
 import { requireAdmin } from '../auth/authz.js'
 import { currentLicenseStatus } from '../license/store.js'
 import { currentPlanLimits, limitError } from '../license/plan-limits.js'
@@ -65,8 +65,8 @@ export const removeWorkspaceHandler: Handler<'remove_workspace'> = (ctx, conn, m
   if (!abs) return
   // Tear down any background runs under this workspace.
   removeRuntimesForWorkspace(abs)
-  // Pause all schedules under this workspace (SCH-R1).
-  if (isScheduleStoreAvailable()) {
+  // Pause all automations under this workspace (SCH-R1).
+  if (isAutomationStoreAvailable()) {
     onWorkspaceRemoved(abs)
   }
   removeWorkspace(abs)

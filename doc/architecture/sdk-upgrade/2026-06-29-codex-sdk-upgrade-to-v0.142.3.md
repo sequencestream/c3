@@ -132,7 +132,7 @@
 - **锁文件 diff 纯净**：`git diff pnpm-lock.yaml` 仅含 `@openai/codex-sdk` 与 `@openai/codex`
   （含六平台二进制）的版本行，无 Claude SDK 或其它依赖夹带。
 - **`pnpm typecheck`**：通过（绿）。这是 SDK 类型无变化的第二直接证据。
-- **`pnpm lint`**：0 error（1 个与本次无关的预存 warning：`web/src/controls/schedule-actions.test.ts`
+- **`pnpm lint`**：0 error（1 个与本次无关的预存 warning：`web/src/controls/automation-actions.test.ts`
   未使用变量）。
 - **`pnpm vitest run`**：3160 passed、1 failed、3 skipped。
   - 全部 codex 相关用例通过：`adapters/codex/*`、`transport/codex-relay/*`、`transport/intent-mcp/*`

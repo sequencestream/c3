@@ -44,7 +44,7 @@ const REPRESENTATIVE_FRAMES: ServerToClient[] = [
   { type: 'session_status', statuses: [{ sessionId: 's1', status: 'running' }] },
   { type: 'intents', workspaceId: '/p', items: [], sddEnabled: false },
   { type: 'discussions', workspaceId: '/p', items: [], runStates: {}, researchStates: {} },
-  { type: 'schedules', workspaceId: '/p', items: [] },
+  { type: 'automations', workspaceId: '/p', items: [] },
   {
     type: 'discussion_message',
     discussionId: 'd1',
@@ -83,7 +83,7 @@ const REPRESENTATIVE_FRAMES: ServerToClient[] = [
   },
   { type: 'research_run_status', discussionId: 'd1', state: 'ended' },
   {
-    type: 'automation_status',
+    type: 'workflow_status',
     status: {
       workspaceId: '/p',
       state: 'idle',

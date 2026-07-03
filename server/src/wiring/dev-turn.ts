@@ -41,7 +41,7 @@ import {
   hasPendingQuestion,
   type DevTurnResult,
   type RunDevTurnInput,
-} from '../features/intents/automation.js'
+} from '../features/intents/workflow.js'
 
 /** Deps the dev-turn factory reads. `launchDeps` matches what `launchRun` needs. */
 export interface DevTurnDeps {

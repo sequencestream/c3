@@ -30,7 +30,7 @@ const capabilityKeys = [
   'workspaces',
   'activeWorktrees',
   'discussionParticipants',
-  'enabledSchedules',
+  'enabledAutomations',
   'sandbox',
   'permissionControls',
   'priceTerm',

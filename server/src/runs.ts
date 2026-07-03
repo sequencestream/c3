@@ -62,7 +62,7 @@ export interface SessionRuntime {
    * `'intent'`/`'spec'` (read-only intent-comm / write-confined spec session,
    * hidden from the normal list); the other SessionKind values tag socket-less
    * internal invocations that do NOT create a runtime. Business-source judgements
-   * (schedule trigger, security gate) read this. (Was `kind: RunKind` with
+   * (automation trigger, security gate) read this. (Was `kind: RunKind` with
    * `'session'`; renamed and `'session' → 'work'` on 2026-06-26.)
    */
   sessionKind: SessionKind

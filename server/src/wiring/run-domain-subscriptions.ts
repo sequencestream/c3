@@ -36,14 +36,14 @@
  *  `run:settled` with sessionKind='discussion'; this subscription handles the
  *  domain broadcast so each starter's `.finally()` does not need to.
  *
- * ── Schedule domain (`run:settled`, sessionKind=『schedule』) ──────────────
- *  Broadcast the refreshed schedule list on settle. The schedule engine
+ * ── Automation domain (`run:settled`, sessionKind=『automation』) ──────────────
+ *  Broadcast the refreshed automation list on settle. The automation engine
  *  (`scheduler.ts`) publishes `run:started`/`run:bound`/`run:settled` with
- *  sessionKind='schedule'; this subscription replaces the old `store.broadcast`
- *  call for the schedule list refresh.
+ *  sessionKind='automation'; this subscription replaces the old `store.broadcast`
+ *  call for the automation list refresh.
  *
- * ── Schedule trigger (unchanged) ─────────────────────────────────────
- *  The existing `dispatchEventSchedules` subscription in
+ * ── Automation trigger (unchanged) ─────────────────────────────────────
+ *  The existing `dispatchEventTriggers` subscription in
  *  `scheduler-startup.ts` is already resident; only its SessionKind filter in
  *  `scheduler.ts` is changed to an explicit whitelist.
  *
@@ -80,7 +80,7 @@ import {
 } from '../features/intents/dev-link.js'
 import { clearPendingSpecLink, takePendingSpecLink } from '../features/intents/spec-link.js'
 import { clearPendingIntentLink, takePendingIntentLink } from '../features/intents/intent-link.js'
-import { isIntentDrivenByAutomation, notifyTurnSettled } from '../features/intents/automation.js'
+import { isIntentDrivenByWorkflow, notifyTurnSettled } from '../features/intents/workflow.js'
 import { runManualDevCleanup, type DevCleanupDeps } from '../features/intents/dev-cleanup.js'
 import {
   publishIntentLifecycle,
@@ -127,8 +127,8 @@ export interface DomainSubDeps {
   broadcastIntentSessions: (workspacePath: string) => void
   /** Fan the discussion list for a project to every connection (2026-06-08-010). */
   broadcastDiscussions: (workspacePath: string) => void
-  /** Fan the schedule list for a workspace to every connection (2026-06-08-010). */
-  broadcastSchedules: (workspacePath: string) => void
+  /** Fan the automation list for a workspace to every connection (2026-06-08-010). */
+  broadcastAutomations: (workspacePath: string) => void
   /** Fan the wait-user-involve event (todo) list for a project to every connection. */
   broadcastWaitUserEvents: (workspacePath: string) => void
   /** Publish a normalized PR operation event onto the kernel event bus. */
@@ -150,7 +150,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastIntents,
     broadcastIntentSessions,
     broadcastDiscussions,
-    broadcastSchedules,
+    broadcastAutomations,
     broadcastWaitUserEvents,
     publishPrEvent,
   } = deps
@@ -344,7 +344,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     // in `notifyTurnSettled`; a session NOT owned by the active orchestrator is a
     // manual Start-Work session, so run the session-end Git/PR cleanup for it.
     // Fire-and-forget — must not block the run:settled handler.
-    if (!isIntentDrivenByAutomation(workspacePath, matched.id)) {
+    if (!isIntentDrivenByWorkflow(workspacePath, matched.id)) {
       void runManualDevCleanup(matched.id, workspacePath, cleanupDeps, sessionId)
         .then((outcome) => {
           if (outcome.kind === 'failed') {
@@ -372,15 +372,15 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastDiscussions(workspacePath)
   })
 
-  // ── run:settled (sessionKind=schedule) — schedule domain ──────────────────
-  // Broadcast the refreshed schedule list when a scheduled execution
-  // settles. The schedule engine in `scheduler.ts` publishes
-  // `run:started`/`run:bound`/`run:settled` with sessionKind='schedule' around
+  // ── run:settled (sessionKind=automation) — automation domain ──────────────────
+  // Broadcast the refreshed automation list when a scheduled execution
+  // settles. The automation engine in `scheduler.ts` publishes
+  // `run:started`/`run:bound`/`run:settled` with sessionKind='automation' around
   // each `execute()` call; this subscription replaces the old
   // `store.broadcast` call in `dispatchAndTrack`'s `.finally()`.
   eventBus.subscribe('run:settled', ({ workspacePath, sessionKind }) => {
-    if (sessionKind !== 'schedule') return
-    broadcastSchedules(workspacePath)
+    if (sessionKind !== 'automation') return
+    broadcastAutomations(workspacePath)
   })
 
   // ── run:settled (sessionKind=spec) — spec-link safety-net sweep ───────────────

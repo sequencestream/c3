@@ -106,7 +106,7 @@ describe('jumpToSource', () => {
     ['intent', 'sess-1'],
     ['spec', 'spec-1'],
     ['discussion', 'disc-1'],
-    ['schedule', 'exec-sess-1'],
+    ['automation', 'exec-sess-1'],
     ['tool', 'tool-1'],
     ['consensus', 'consensus-1'],
   ])('%s + sessionId → unified session page jump', (sessionKind, sessionId) => {

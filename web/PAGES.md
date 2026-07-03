@@ -12,20 +12,20 @@ web/src/
 │   ├── state.ts                                     # createState():全部 ref/computed + 纯状态辅助(statusOf/add/setQueue/showToast/sessionTitleById/clearSideEffectPending/sumSessionCounts)、计数器、localStorage 键常量;HEADER_TABS 的「会话」tab badgeCount=六类 sessionCounts 之和;导出 AppState 类型
 │   ├── types.ts                                     # ctx 类型契约:AppRuntime(client/send/reconnect/t/auth)+ AppMethods(全部域方法签名),AppCtx = AppState & AppRuntime & AppMethods
 │   ├── transcript.ts                               # transcriptToChat():TranscriptItem→ChatBody 纯映射(会话历史回放)
-│   ├── persistence.ts                              # 视图恢复持久化:readStoredWorkspace/persistCurrentWorkspace/persistViewMode + ready 后 maybeRestore 需求/讨论/定时任务
+│   ├── persistence.ts                              # 视图恢复持久化:readStoredWorkspace/persistCurrentWorkspace/persistViewMode + ready 后 maybeRestore 需求/讨论/自动化
 │   ├── message-handler.ts                          # installMessageHandler():唯一入站 WS switch(handleMessage)折叠所有 ServerToClient 事件 + applyStatuses/notifyAwaitingPermission;session_selected 的 owner 元数据派生会话标题栏跳回目标
-│   ├── session-actions.ts                          # 工作区/会话/顶栏 tab 导航:按 session_kind 缓存的游标分页刷新(窗口/首页)/加载更多;selectSession 任意行统一 enterConsole+select_session 在右侧展示详情(无跳走分支),已是活动会话时不重复发送;selectSessionKind 清空视图+设置 pending bind,新类型列表回包后自动选首条(空列表保持空态);openSourceTarget 单一路径按 resolveSessionJumpTarget 目标打开意图详情/intent session 子 tab/spec session 子 tab(无 owner 的独立 chat 经 requestedIntentSessionId 在意图页右栏打开该会话)/讨论/定时任务页,供 jumpSessionSource(行 ↗,传 row)与 jumpActiveSessionSource(标题栏溯源按钮,读 activeSessionSource+活动会话)复用;六类会话计数、新建工作会话弹窗、乐观删除改名、会话 tab 进入与重绑、清空视图会话
+│   ├── session-actions.ts                          # 工作区/会话/顶栏 tab 导航:按 session_kind 缓存的游标分页刷新(窗口/首页)/加载更多;selectSession 任意行统一 enterConsole+select_session 在右侧展示详情(无跳走分支),已是活动会话时不重复发送;selectSessionKind 清空视图+设置 pending bind,新类型列表回包后自动选首条(空列表保持空态);openSourceTarget 单一路径按 resolveSessionJumpTarget 目标打开意图详情/intent session 子 tab/spec session 子 tab(无 owner 的独立 chat 经 requestedIntentSessionId 在意图页右栏打开该会话)/讨论/自动化页,供 jumpSessionSource(行 ↗,传 row)与 jumpActiveSessionSource(标题栏溯源按钮,读 activeSessionSource+活动会话)复用;六类会话计数、新建工作会话弹窗、乐观删除改名、会话 tab 进入与重绑、清空视图会话
 │   ├── intent-actions.ts                           # 需求页动作:筛选/精炼/写spec/批准spec/开发/PR/状态/自动化 + 沟通 session 列表(新建/选择/重命名/删除)
 │   ├── discussion-actions.ts                       # 讨论页动作(只读路径 + 组织者引擎):打开/创建/开始/暂停/恢复/转需求/发言/移动返回
-│   ├── schedule-actions.ts                         # 定时任务页动作:打开/选择/执行记录/会话回放 + 创建编辑表单(含 toolManifest 缓存 watch);选中且运行中的 llm 执行按周期自动刷新 detail+transcript(可见性闸/页内才刷),结束补拉一次后停止
+│   ├── automation-actions.ts                         # 自动化页动作:打开/选择/执行记录/会话回放 + 创建编辑表单(含 toolManifest 缓存 watch);选中且运行中的 llm 执行按周期自动刷新 detail+transcript(可见性闸/页内才刷),结束补拉一次后停止
 │   ├── chat-actions.ts                             # 聊天/输入动作 + 客户端待发队列(enqueue/edit/delete/flush watch)、提交/继续/停止/刷新/模式/agent 切换/权限响应
 │   ├── settings-actions.ts                         # 系统/工作区设置、技能安装、运行时语言切换(回滚)、workspace↔workcenter 视图模式、技能加载审批
 │   ├── license-actions.ts                          # 产品许可(ADR-0026):打开 LS 登录页取 license_key(start_license_activation)、用 key 绑定本安装(bind_license),状态由 license_state/license_activation_started/license_bind_result 回流
-│   ├── workcenter-actions.ts                       # 工作台事件动作:权限响应/作答 + reloadWorkcenter/loadMoreWorkcenter(20 条服务端分页,支持全部状态) + markDoneWorkcenter(本地改为 done) + 用标准 session 跳回规则跳转到来源页(会话/需求/讨论/定时任务)
+│   ├── workcenter-actions.ts                       # 工作台事件动作:权限响应/作答 + reloadWorkcenter/loadMoreWorkcenter(20 条服务端分页,支持全部状态) + markDoneWorkcenter(本地改为 done) + 用标准 session 跳回规则跳转到来源页(会话/需求/讨论/自动化)
 │   └── share-actions.ts                            # installShareActions():三处标题栏「分享」按钮的统一动作(shareLink({kind,workspaceId,id,title,typeLabel}))——读 serverSettings.baseUrl、经 lib/share-link.buildShareText 拼「[类型] 标题\n<baseUrl>/#/<kind>/<workspaceId>/<id>」、写剪贴板、成功 toast;baseUrl 未配置改弹「去系统设置填写」提示且不写剪贴板
 │
 ├── components/                                      # 跨页面通用组件
-│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(整行最左为 viewMode 工作区/工作台两图标切换器(显示器+三横条 / 显示器+会话气泡,生效蓝 --c-primary、失效灰,工作台未处理事件徽标挂工作台图标),其后工作区切换器、tab 导航(「会话」tab 右上角角标=当前工作区六类进行中会话数之和,为 0 不渲染,带 i18n aria-label)、项目配置/系统设置/登出/连接状态 + 许可状态下拉(ADR-0026,PL-R7,受控 details:已激活→✓ 图标按 state 着色,下拉显示有效期(termEnd 未知时回退状态文案)+ 有效期旁手动刷新按钮(触发即时 heartbeat 同步 termEnd,在途禁用旋转+最小冷却防连点,失败 inline 提示);未激活/过期/停用→红色带下划线文字,下拉内「激活许可」按钮触发激活流程)),移动端顶部精简栏左侧同款两图标切换器(许可项并入「⋯」操作菜单)+ 底部 5 视图 tab(会话/需求/讨论/定时任务/代码;工作台入口已上移到顶部切换器,不在底部 tab)
+│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏(整行最左为 viewMode 工作区/工作台两图标切换器(显示器+三横条 / 显示器+会话气泡,生效蓝 --c-primary、失效灰,工作台未处理事件徽标挂工作台图标),其后工作区切换器、tab 导航(「会话」tab 右上角角标=当前工作区六类进行中会话数之和,为 0 不渲染,带 i18n aria-label)、项目配置/系统设置/登出/连接状态 + 许可状态下拉(ADR-0026,PL-R7,受控 details:已激活→✓ 图标按 state 着色,下拉显示有效期(termEnd 未知时回退状态文案)+ 有效期旁手动刷新按钮(触发即时 heartbeat 同步 termEnd,在途禁用旋转+最小冷却防连点,失败 inline 提示);未激活/过期/停用→红色带下划线文字,下拉内「激活许可」按钮触发激活流程)),移动端顶部精简栏左侧同款两图标切换器(许可项并入「⋯」操作菜单)+ 底部 5 视图 tab(会话/需求/讨论/自动化/代码;工作台入口已上移到顶部切换器,不在底部 tab)
 │   ├── BaseDropdown/BaseDropdown.vue                # 标准下拉框:替代原生 select,支持键盘导航、多选高亮、点击外部关闭
 │   ├── ChatColumn/ChatColumn.vue                   # 复用聊天列:五区块(标题栏/消息/输入框/状态栏/task 面板)按 showTitleBar/showMessages/showInput/showStatusBar/showTaskPanel props 可显隐,供会话页/意图会话 tab/意图详情两会话 tab 三处复用;不持有会话状态(绑定哪个会话由控制层单一活动会话决定);show-mode 控模式下拉、always-title 控无会话时是否仍渲染标题栏;sourceLabel 透传给标题栏溯源按钮(仅会话页传,意图侧复用不传)、open-source 上抛;showShare 透传给标题栏分享按钮(仅会话页 Works 传 true)、share 上抛;title-action 具名槽转发到 SessionTitleBar 的 action 槽(Codes 内嵌会话用它渲染「+ 新建」/「↻ 重置」按钮);prefill 经 defineExpose 透传
 │   ├── ChatMessages/ChatMessages.vue               # 会话消息渲染区:扁平消息分组为文本/工具批次/独立块(用户交互工具)、仅用户停在底部时自动跟随新输出、渲染权限提示与共识结果,代码/工具输出局部横滚防窄屏撑破
@@ -43,7 +43,7 @@ web/src/
 │   ├── PermissionPrompt/PermissionPrompt.vue       # 单条权限提示块:AskUserQuestion 逐题作答面板或其他工具 allow/deny 提示,展示 agent 共识意见
 │   ├── ResetSessionDialog/ResetSessionDialog.vue   # 「重置会话」输入弹框(ConfirmDialog 风格 + 文本输入):用于 intent/spec session 重置,受控 open、标题/正文/占位/按钮文案注入、输入为空时确认禁用、遮罩/Esc/取消均 emit cancel、确认 emit confirm(文本)、移动端全屏 sheet
 │   ├── SessionStatusBar/SessionStatusBar.vue       # 输入框上方状态条:展示会话运行态(思考/工具执行/等待授权/出错/就绪),支持刷新、停止、继续
-│   ├── SessionTitleBar/SessionTitleBar.vue         # 聊天列顶部标题行:会话标题、权限模式下拉、vendor 标签与 agent 切换器;sourceLabel(intent/discussion/schedule/trace)非空时在标题后渲染单一溯源按钮(文案/aria 走 i18n:意图/讨论/定时任务/溯源),点击上抛 open-source(无参,目标由控制层 activeSessionSource 决定);null 不渲染;showShare=true 时在溯源按钮后、right-controls 前渲染纯图标「分享」按钮(🔗,data-testid=share-button,aria/tooltip 走 i18n),点击 emit share(默认 false,仅会话页经 ChatColumn 传 true;讨论页改在 action 槽自渲染分享按钮)
+│   ├── SessionTitleBar/SessionTitleBar.vue         # 聊天列顶部标题行:会话标题、权限模式下拉、vendor 标签与 agent 切换器;sourceLabel(intent/discussion/automation/trace)非空时在标题后渲染单一溯源按钮(文案/aria 走 i18n:意图/讨论/自动化/溯源),点击上抛 open-source(无参,目标由控制层 activeSessionSource 决定);null 不渲染;showShare=true 时在溯源按钮后、right-controls 前渲染纯图标「分享」按钮(🔗,data-testid=share-button,aria/tooltip 走 i18n),点击 emit share(默认 false,仅会话页经 ChatColumn 传 true;讨论页改在 action 槽自渲染分享按钮)
 │   ├── SkillApprovalModal/SkillApprovalModal.vue   # 外部 skill 加载审批模态:确认向 .gitignore 追加 _c3_* 的一次性确认;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   ├── TaskPanel/TaskPanel.vue                      # 实时任务面板:只读展示当前 session 任务列表,in_progress 置顶/pending 居中/completed 垫底
 │   └── WorkspaceSwitcher/WorkspaceSwitcher.vue     # 顶部栏最左工作区切换器:显示当前工作区(仅名称;身份是服务端不透明 workspaceId,前端不持有/不展示绝对路径),支持新增(InputDialog 输入路径)/选择/移除(ConfirmDialog danger 二次确认),内含 popover;增删入口受 isAdmin 门控;「新增」是唯一让绝对路径进入系统的入口
@@ -55,9 +55,9 @@ web/src/
 │   │       ├── EventList.vue                        # 事件列表:右侧状态徽标(含 auto)和 todo 标记完成、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、会话类型图标、时间、选中态与加载更多
 │   │       └── EventDetail.vue                      # 事件详情:标题(经 event-title 本地化)+属性列表(工作区名/会话类型/会话 id/意图名,后两者为空隐藏)、Allow/Deny、AskUserQuestion 全题一览作答面板(自定义回复/共识提示/只读态)、共识决策留痕(auto 记录的投票/裁决,只读)、按 sessionKind+sessionId 溯源跳转
 │   ├── works/                                    # 会话页(历史目录名 works)
-│   │   ├── Works.vue                             # 会话容器页:桌面左侧聚合会话列表(工作/意图/spec/讨论/schedule/工具六 tab + 运行中浮标;工作/意图/spec/讨论/schedule 接真实 session_metadata 数据,工具受 showToolSessions 门控) + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);任意行点击只在右侧展示该会话详情(不跳走),溯源经标题栏 sourceLabel 按钮(open-source)上抛;移动端列表↔聊天 drill-down(返回到列表)
+│   │   ├── Works.vue                             # 会话容器页:桌面左侧聚合会话列表(工作/意图/spec/讨论/automation/工具六 tab + 运行中浮标;工作/意图/spec/讨论/automation 接真实 session_metadata 数据,工具受 showToolSessions 门控) + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);任意行点击只在右侧展示该会话详情(不跳走),溯源经标题栏 sourceLabel 按钮(open-source)上抛;移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/
-│   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区按 session_kind 分 tab 的聚合会话(work/intent/spec/discussion/schedule/tool 可选,tool 受系统开关门控)、行点击=查看此会话(统一上抛 select-session 在右侧展示详情,不再跳走)、非 work 行不提供改名/删除、有 owner 的行仍保留 ↗ 来源跳回按钮(jump-session-source,次要入口)、无 owner 的工具行仅展示、新增工作会话、删除/改名、服务端游标分页(加载更多/已加载完,SR-R14)、运行中计数浮标、未接入类型占位、offline 警告
+│   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区按 session_kind 分 tab 的聚合会话(work/intent/spec/discussion/automation/tool 可选,tool 受系统开关门控)、行点击=查看此会话(统一上抛 select-session 在右侧展示详情,不再跳走)、非 work 行不提供改名/删除、有 owner 的行仍保留 ↗ 来源跳回按钮(jump-session-source,次要入口)、无 owner 的工具行仅展示、新增工作会话、删除/改名、服务端游标分页(加载更多/已加载完,SR-R14)、运行中计数浮标、未接入类型占位、offline 警告
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── intents/                                     # 需求页
@@ -73,16 +73,16 @@ web/src/
 │   │       ├── DiscussionList/DiscussionList.vue    # 左栏纯讨论列表:列表、可折叠宽度、行状态指示、创建弹窗(类型/目标/上下文 + 参与 agent 多选 + radio 选组织者,默认全选)、提交校验(必须选组织者+至少一个其他 agent);行点击/Enter/Space 只 emit open(id) 作纯选中(详情已移右栏,无行内抽屉);移动端列表填满 pane、弹窗全屏 sheet
 │   │       └── AgendaProgress/AgendaProgress.vue    # 讨论议程进度:展示议程、当前进展、完成度百分比;窄屏收紧横向 padding
 │   │
-│   ├── schedules/                                   # 定时任务页
-│   │   ├── Schedules.vue                            # 定时任务容器页:桌面两栏(左栏纯选择列表 + 右栏 ScheduleDetailPanel)+ 创建/编辑表单弹窗;移动端经 MobileStack 退化为两级 drill-down(任务列表→详情逐级滑入/返回)
+│   ├── automations/                                   # 自动化页
+│   │   ├── Automations.vue                            # 自动化容器页:桌面两栏(左栏纯选择列表 + 右栏 AutomationDetailPanel)+ 创建/编辑表单弹窗;移动端经 MobileStack 退化为两级 drill-down(任务列表→详情逐级滑入/返回)
 │   │   └── components/
-│   │       ├── ScheduleList/ScheduleList.vue        # 左栏任务选择列表:行点击 = 选中(emit select,activeId 高亮)、创建(+)、模板菜单(选择后直接创建)、下次执行倒计时(30s 刷新)、状态 badge;run/edit/delete/toggle 操作已迁出至右栏标题栏
-│   │       ├── ScheduleDetailPanel/ScheduleDetailPanel.vue  # 右栏容器:常驻标题栏(选中 schedule 名称 + run-now/delete(ConfirmDialog 二次确认)/enable-disable 开关,不提供编辑入口)+「详情/历史」Tab;详情 Tab 渲染 ScheduleDetail,历史 Tab 经 ExecutionHistoryDialog 选执行后渲染 ExecutionDetail;切换选中 schedule 复位到详情 Tab
-│   │       ├── ScheduleDetail/ScheduleDetail.vue    # 详情 Tab 内容:vendor 品牌名+色点、绑定 agent、类型、命令/提示词、超时、模式、触发方式及事件筛选、只读 cron 排期(表达式+可读频率)、可自动换行的工具列表
-│   │       ├── ScheduleDetail/ScheduleCronEditor.vue  # 「修改时间」cron 编辑弹框(由 ScheduleForm 编辑态 ✎ 打开):频率(每分/每时/每日/每周)+时间;每周时展示周一到周日多选切换(至少选 1 个否则禁用保存+提示),day-of-week 1-5 压缩/逗号拼接;实时表达式预览;仅 emit save(标准 5 字段 cron)
-│   │       ├── ExecutionHistoryDialog/ExecutionHistoryDialog.vue  # 历史选择弹框:在选中 schedule 完整日志上做纯前端分页(默认最近 5 笔/页,上一页/下一页),点选一笔上抛 select-execution 并关闭;移动端全屏 sheet;状态 badge/时间/耗时/退出码行渲染
+│   │       ├── AutomationList/AutomationList.vue        # 左栏任务选择列表:行点击 = 选中(emit select,activeId 高亮)、创建(+)、模板菜单(选择后直接创建)、下次执行倒计时(30s 刷新)、状态 badge;run/edit/delete/toggle 操作已迁出至右栏标题栏
+│   │       ├── AutomationDetailPanel/AutomationDetailPanel.vue  # 右栏容器:常驻标题栏(选中 automation 名称 + run-now/delete(ConfirmDialog 二次确认)/enable-disable 开关,不提供编辑入口)+「详情/历史」Tab;详情 Tab 渲染 AutomationDetail,历史 Tab 经 ExecutionHistoryDialog 选执行后渲染 ExecutionDetail;切换选中 automation 复位到详情 Tab
+│   │       ├── AutomationDetail/AutomationDetail.vue    # 详情 Tab 内容:vendor 品牌名+色点、绑定 agent、类型、命令/提示词、超时、模式、触发方式及事件筛选、只读 cron 排期(表达式+可读频率)、可自动换行的工具列表
+│   │       ├── AutomationDetail/AutomationCronEditor.vue  # 「修改时间」cron 编辑弹框(由 AutomationForm 编辑态 ✎ 打开):频率(每分/每时/每日/每周)+时间;每周时展示周一到周日多选切换(至少选 1 个否则禁用保存+提示),day-of-week 1-5 压缩/逗号拼接;实时表达式预览;仅 emit save(标准 5 字段 cron)
+│   │       ├── ExecutionHistoryDialog/ExecutionHistoryDialog.vue  # 历史选择弹框:在选中 automation 完整日志上做纯前端分页(默认最近 5 笔/页,上一页/下一页),点选一笔上抛 select-execution 并关闭;移动端全屏 sheet;状态 badge/时间/耗时/退出码行渲染
 │   │       ├── ExecutionDetail/ExecutionDetail.vue  # 历史 Tab 内执行详情:「执行信息」Tab + 「Session 会话记录」Tab(llm 类型) + 「Command 日志」Tab(command 类型);Tab 栏窄屏可横向滑动;运行中执行的 transcript 随控制层轮询覆盖更新(不闪 loading)
-│   │       └── ScheduleForm/ScheduleForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发(run:started/run:settled/pr:operation)、高级 cron 构造器、实时 next-run 预览;run:settled 显示 reason 过滤,pr:operation 显示 MCP 集成说明+操作/结果过滤面板(写入 eventPrFilter);编辑态可改标题(清空回退自动命名),创建态自动命名;vendor 下拉(host 缺失灰显)+工具勾选面板(读写分区,读默认勾,全选/全清按钮);移动端全屏 sheet 且紧凑表单单列堆叠
+│   │       └── AutomationForm/AutomationForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发(run:started/run:settled/pr:operation)、高级 cron 构造器、实时 next-run 预览;run:settled 显示 reason 过滤,pr:operation 显示 MCP 集成说明+操作/结果过滤面板(写入 eventPrFilter);编辑态可改标题(清空回退自动命名),创建态自动命名;vendor 下拉(host 缺失灰显)+工具勾选面板(读写分区,读默认勾,全选/全清按钮);移动端全屏 sheet 且紧凑表单单列堆叠
 │   │
 │   ├── codes/                                       # 代码浏览页
 │   │   ├── Codes.vue                                # 代码浏览容器页:桌面三栏(左 CodeTree + 中 CodeTabs + 右 内嵌 ChatColumn 按需显示);右栏默认关闭,由 CodeTree 标题栏「修改会话」开关按钮控制显隐,状态经 usePersistentToggle('c3.codesChatVisible') 跨刷新持久化,关闭仅隐藏容器(会话绑定 codesBoundSessionId 等不清空,再开直接复用);中右之间一根可拖拽垂直分隔条 .codes-col-splitter(role=separator,鼠标拖拽/←→±16/Home最小/End默认,宽度像素按 workspace 持久化到 localStorage);右栏复用 ChatColumn(show-share=false、always-title、show-mode=chatActive 即绑定会话真正激活时才在标题栏显示权限模式下拉(claude 单模式 / codex 双策略),经 set-mode/set-codex-policy 上抛、title-action 槽渲染「+ 新建」/「↻ 重置」互斥按钮,由 codesBoundSessionId 是否为空切换)展示当前 workspace 的普通 work session,与 Works 共用控制层单一活动会话(codesBoundSessionId 为 Codes 独立指针;activeSession 变化时即时绑定内存指针——含新建回执的 pending id,否则 chatActive 不成立、输入框禁用致新建会话死锁——但只对真实 id 按 c3.codes.<ws>.sessionId 持久化);移动端经 MobileStack 退化为 树→文件 两级 drill-down(不渲染 ChatColumn);仅持有/透传 workspace 相对路径,越界判断全在服务端 guard
@@ -124,7 +124,7 @@ web/src/
 │   ├── work-session-jump.ts                         # Start Work 成功后自动跳转纯决策:shouldJumpAfterDevLaunch(仅 ready 跳)+ resolveJumpTargetSessionId(intent.lastWorkSessionId 反查)+ resolvePendingWorkSessionSelect(一次性待选会话落入列表即命中)+ ~1s 延迟常量;控制层据此切 console tab 并选中新 work session
 │   ├── discussion-view.ts                           # 讨论只读历史纯映射器:DiscussionMessage 正规化为 ChatBody,处理多说话人 icon/name/vendor
 │   ├── execution-view.ts                            # 执行 transcript 纯映射器:TranscriptItem 正规化为 ChatBody/ChatMsg,供 Session Tab 的 ChatMessages 渲染
-│   ├── schedule-refresh.ts                           # 运行中执行实时刷新的纯决策:isExecutionRunning 推断 + decideScheduleRefresh(running/tab/可见/上次running → shouldPoll/finalFetch) + 轮询间隔常量
+│   ├── automation-refresh.ts                           # 运行中执行实时刷新的纯决策:isExecutionRunning 推断 + decideAutomationRefresh(running/tab/可见/上次running → shouldPoll/finalFetch) + 轮询间隔常量
 │   ├── format.ts                                    # 简单值格式化:JSON 美化打印、多行折叠为单行
 │   ├── highlight.ts                                 # Shiki 按需代码高亮:白名单语言、语言别名、哨兵色转 CSS class、DOMPurify 过滤
 │   ├── intent-list-view.ts                          # 需求列表纯展示逻辑:状态/运行态标签、面板展开规则、行内字段可见性、日期格式化
@@ -133,7 +133,7 @@ web/src/
 │   ├── permission.ts                                # 权限决策动作性判定:找出用户当前唯一能作用的权限请求
 │   ├── prompt-image.ts                              # 输入框附图客户端处理:File→PromptImage(校验图片类型/超阈 canvas 等比压缩/base64 预览);纯函数(base64Bytes/splitDataUrl/shouldCompress/scaledSize/toWire/fromWire)可 Node 单测,readImageFiles 走 DOM
 │   ├── session-page.ts                              # 会话列表游标分页(SR-R14)纯归并:按 page.kind(first 替换/older 追加去重/window 刷新已展示范围/live upsert)折叠分页响应进每工作区窗口 + SESSION_PAGE_SIZE
-│   ├── session-jump.ts                              # 会话跳回规则纯函数:(sessionKind, ownerKind, ownerId)→意图/讨论/定时任务逻辑页目标;spec+intent owner 跳到意图 spec session tab,tool+owner 跳到来源业务,owner 为空返回 null,供会话页与 WorkCenter 共用
+│   ├── session-jump.ts                              # 会话跳回规则纯函数:(sessionKind, ownerKind, ownerId)→意图/讨论/自动化逻辑页目标;spec+intent owner 跳到意图 spec session tab,tool+owner 跳到来源业务,owner 为空返回 null,供会话页与 WorkCenter 共用
 │   ├── session-title-sync.ts                        # 会话列表刷新到右侧活动标题的同步规则:仅同 workspace 且同 session 时采用列表标题
 │   ├── share-link.ts                                # 分享文本生成纯函数 buildShareText({kind,workspaceId,id,title,typeLabel,baseUrl}):baseUrl trim+去尾斜杠后空则返回 null(走未配置分支),否则拼「[typeLabel] title\n<baseUrl>/#/<kind>/<workspaceId>/<id>」,URL 与 deep-link.ts 的 parseDeepLink 单向对齐(只生成不解析)
 │   ├── status-indicator.ts                          # 运行/讨论状态指示器单一数据源:状态→icon+tone+i18n key 映射,支持 agent 前缀

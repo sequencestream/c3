@@ -223,7 +223,7 @@ export async function launchRun(
   // Publish the run-started lifecycle event once per launchRun, before the vendor
   // fork so it covers both the claude path below and the driver path (ADR-0018).
   // sessionId is the current runId (possibly a pending id); event-triggered
-  // schedules filter `sessionKind === 'work'` so intent comm runs never fire them.
+  // automations filter `sessionKind === 'work'` so intent comm runs never fire them.
   deps.eventBus.publish('run:started', {
     sessionId: runId,
     workspacePath,
@@ -739,7 +739,7 @@ export async function launchRun(
       })
       // Event-化 bypass (ADR-0018): publish chain exhaustion on the bus, mirroring
       // the wire `all_agents_failed` frame just emitted (which is untouched). Lets
-      // subscribers react to a fully-failed run (e.g. trigger a schedule, audit).
+      // subscribers react to a fully-failed run (e.g. trigger a automation, audit).
       deps.eventBus.publish(
         'agent:all_failed',
         agentAllFailedEvent({
@@ -758,7 +758,7 @@ export async function launchRun(
     // Authoritative terminal-state backstop. The run is fully over; guarantee a
     // terminal `turn_end` is broadcast and the session settles to `idle`.
     finalizeRun(runId)
-    // Classify the terminal reason for event-triggered schedules: user stop wins,
+    // Classify the terminal reason for event-triggered automations: user stop wins,
     // then a clean success, else an error (a throw, chain exhaustion, or single-
     // attempt failure all land here as 'error').
     const reason: import('@ccc/shared/protocol').RunEndReason = cycleAbort.signal.aborted

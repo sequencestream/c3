@@ -116,17 +116,17 @@ export const UI_ERROR_CODES = {
   'discussion.notConcludable': { key: 'error.discussion.notConcludable' },
   'discussion.alreadyStarted': { key: 'error.discussion.alreadyStarted' },
   'discussion.notEndedForContinue': { key: 'error.discussion.notEndedForContinue' },
-  // schedule
-  'schedule.dbUnavailable': { key: 'error.schedule.dbUnavailable' },
-  'schedule.notFound': { key: 'error.schedule.notFound' },
-  'schedule.executionNotFound': { key: 'error.schedule.executionNotFound' },
-  'schedule.approvalNotFound': { key: 'error.schedule.approvalNotFound' },
-  'schedule.invalidEventTrigger': { key: 'error.schedule.invalidEventTrigger' },
-  'schedule.invalidMaxWallClockMs': { key: 'error.schedule.invalidMaxWallClockMs' },
-  'schedule.agentRequired': { key: 'error.schedule.agentRequired' },
-  'schedule.agentNotFound': { key: 'error.schedule.agentNotFound' },
-  'schedule.agentDisabled': { key: 'error.schedule.agentDisabled' },
-  'schedule.agentVendorMismatch': { key: 'error.schedule.agentVendorMismatch' },
+  // automation
+  'automation.dbUnavailable': { key: 'error.automation.dbUnavailable' },
+  'automation.notFound': { key: 'error.automation.notFound' },
+  'automation.executionNotFound': { key: 'error.automation.executionNotFound' },
+  'automation.approvalNotFound': { key: 'error.automation.approvalNotFound' },
+  'automation.invalidEventTrigger': { key: 'error.automation.invalidEventTrigger' },
+  'automation.invalidMaxWallClockMs': { key: 'error.automation.invalidMaxWallClockMs' },
+  'automation.agentRequired': { key: 'error.automation.agentRequired' },
+  'automation.agentNotFound': { key: 'error.automation.agentNotFound' },
+  'automation.agentDisabled': { key: 'error.automation.agentDisabled' },
+  'automation.agentVendorMismatch': { key: 'error.automation.agentVendorMismatch' },
   // wait user involve
   'waitUserInvolve.dbUnavailable': { key: 'error.waitUserInvolve.dbUnavailable' },
   'waitUserInvolve.invalidStatusTransition': {
@@ -158,7 +158,7 @@ export const UI_ERROR_CODES = {
     key: 'error.license.discussionParticipantLimit',
     params: ['limit'],
   },
-  'license.scheduleLimit': { key: 'error.license.scheduleLimit', params: ['limit'] },
+  'license.automationLimit': { key: 'error.license.automationLimit', params: ['limit'] },
   'license.sandboxDisabled': { key: 'error.license.sandboxDisabled' },
 } as const satisfies Record<string, UiErrorDef>
 

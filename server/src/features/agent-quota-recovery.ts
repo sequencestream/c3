@@ -2,15 +2,15 @@ import { parseQuotaResetAt, setAgentEnabled, resolveAgent } from '../kernel/agen
 import { getTimezone } from '../kernel/config/index.js'
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import {
-  createAgentQuotaRecoverySchedule,
-  isStoreAvailable as isScheduleStoreAvailable,
-} from './schedules/store.js'
+  createAgentQuotaRecoveryAutomation,
+  isStoreAvailable as isAutomationStoreAvailable,
+} from './automations/store.js'
 
 export interface AgentQuotaRecoveryResult {
   handled: boolean
   resetAt: number | null
   disabled: boolean
-  scheduleId: string | null
+  automationId: string | null
 }
 
 export function handleAgentQuotaError(input: {
@@ -21,40 +21,43 @@ export function handleAgentQuotaError(input: {
 }): AgentQuotaRecoveryResult {
   const resetAt = parseQuotaResetAt(input.error, getTimezone(), input.now)
   if (resetAt === null) {
-    return { handled: false, resetAt, disabled: false, scheduleId: null }
+    return { handled: false, resetAt, disabled: false, automationId: null }
   }
 
   const disabled = setAgentEnabled(input.agentId, false)
   if (!disabled) {
-    console.warn('[agent-quota-recovery] agent %s not found; skip recovery schedule', input.agentId)
-    return { handled: true, resetAt, disabled: false, scheduleId: null }
+    console.warn(
+      '[agent-quota-recovery] agent %s not found; skip recovery automation',
+      input.agentId,
+    )
+    return { handled: true, resetAt, disabled: false, automationId: null }
   }
 
-  if (!isScheduleStoreAvailable()) {
+  if (!isAutomationStoreAvailable()) {
     console.warn(
-      '[agent-quota-recovery] schedule store unavailable; agent disabled without recovery',
+      '[agent-quota-recovery] automation store unavailable; agent disabled without recovery',
     )
-    return { handled: true, resetAt, disabled: true, scheduleId: null }
+    return { handled: true, resetAt, disabled: true, automationId: null }
   }
 
   try {
-    const schedule = createAgentQuotaRecoverySchedule({
+    const automation = createAgentQuotaRecoveryAutomation({
       workspacePath: input.workspacePath,
       agentId: input.agentId,
       resetAt,
     })
     const agent = resolveAgent(input.agentId)
     console.warn(
-      '[agent-quota-recovery] disabled agent %s (%s) until %s via schedule %s',
+      '[agent-quota-recovery] disabled agent %s (%s) until %s via automation %s',
       agent.id,
       agent.displayName,
       new Date(resetAt).toISOString(),
-      schedule.id,
+      automation.id,
     )
-    return { handled: true, resetAt, disabled: true, scheduleId: schedule.id }
+    return { handled: true, resetAt, disabled: true, automationId: automation.id }
   } catch (err) {
-    console.warn('[agent-quota-recovery] failed to create recovery schedule:', err)
-    return { handled: true, resetAt, disabled: true, scheduleId: null }
+    console.warn('[agent-quota-recovery] failed to create recovery automation:', err)
+    return { handled: true, resetAt, disabled: true, automationId: null }
   }
 }
 

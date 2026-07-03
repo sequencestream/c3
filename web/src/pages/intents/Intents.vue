@@ -18,7 +18,7 @@ import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 import type {
-  AutomationStatus,
+  WorkflowStatus,
   Intent,
   IntentLog,
   IntentStatus,
@@ -33,7 +33,7 @@ const props = defineProps<{
   // left: intent list
   project: string
   intents: Intent[]
-  automation: AutomationStatus | null
+  automation: WorkflowStatus | null
   intentActionErrorSeq?: number
   /**
    * One-shot external select request (from a work session's title-bar jump button).

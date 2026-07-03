@@ -24,7 +24,7 @@
  * projection is down (SR-R11 / AVAIL).
  */
 import type { SessionKind, VendorId } from '@ccc/shared/protocol'
-import type { Schedule } from '@ccc/shared/protocol'
+import type { Automation } from '@ccc/shared/protocol'
 import { mintC3SessionId, type C3SessionId } from '../../kernel/agent/session/accessor.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
@@ -39,7 +39,7 @@ export type SessionMetadataState = 'born' | 'alive' | 'stale' | 'orphaned' | 'gh
 
 /** A row variant. `'real'` = post-bind; `'pending'` = pre-bind (intent). */
 export type SessionMetadataBindingKind = 'real' | 'pending'
-export type SessionOwnerKind = 'intent' | 'discussion' | 'schedule'
+export type SessionOwnerKind = 'intent' | 'discussion' | 'automation'
 
 /**
  * The column whitelist (spec § Schema). Mirrored by
@@ -183,6 +183,10 @@ function ensureSchema(d: Db): void {
   d.run(
     "UPDATE session_metadata SET session_kind='work' WHERE session_kind IS NULL OR session_kind=''",
   )
+  // schedule → automation 改名: 历史行的 session_kind/owner_kind 仍是旧值 'schedule',
+  // 就地改成 'automation' 以对齐新的 SessionKind/ownerKind 字面量。幂等。
+  d.run("UPDATE session_metadata SET session_kind='automation' WHERE session_kind='schedule'")
+  d.run("UPDATE session_metadata SET owner_kind='automation' WHERE owner_kind='schedule'")
   d.run("UPDATE session_metadata SET bound=0 WHERE kind='pending' AND bound IS NOT 0")
   d.run(
     "UPDATE session_metadata SET bound=1 WHERE (kind IS NULL OR kind!='pending') AND bound IS NOT 1",
@@ -301,7 +305,7 @@ function narrowSessionKind(k: string): SessionKind {
   switch (k) {
     case 'intent':
     case 'discussion':
-    case 'schedule':
+    case 'automation':
     case 'consensus':
     case 'tool':
     case 'spec':
@@ -312,7 +316,7 @@ function narrowSessionKind(k: string): SessionKind {
 }
 
 function narrowOwnerKind(k: string | null): SessionOwnerKind | null {
-  return k === 'intent' || k === 'discussion' || k === 'schedule' ? k : null
+  return k === 'intent' || k === 'discussion' || k === 'automation' ? k : null
 }
 
 function toRow(r: RawRow): SessionMetadataRow {
@@ -592,17 +596,17 @@ export function upsertBoundRow(input: {
   )
 }
 
-function scheduleProjectionTitle(schedule: Schedule): string {
-  const config = schedule.config
+function automationProjectionTitle(automation: Automation): string {
+  const config = automation.config
   if (config && typeof config === 'object') {
     const name = (config as { name?: unknown }).name
-    if (typeof name === 'string' && name.trim()) return `Schedule: ${name.trim()}`
+    if (typeof name === 'string' && name.trim()) return `Automation: ${name.trim()}`
   }
-  return `Schedule execution ${schedule.id}`
+  return `Automation execution ${automation.id}`
 }
 
-export function upsertScheduleExecutionRow(input: {
-  schedule: Schedule
+export function upsertAutomationExecutionRow(input: {
+  automation: Automation
   sessionId: string
   workspacePath: string
 }): void {
@@ -610,12 +614,12 @@ export function upsertScheduleExecutionRow(input: {
   upsertBoundRow({
     sessionId: input.sessionId,
     workspacePath: input.workspacePath,
-    vendor: input.schedule.vendor,
-    agentId: input.schedule.agentId ?? '',
-    title: scheduleProjectionTitle(input.schedule),
-    sessionKind: 'schedule',
-    ownerKind: 'schedule',
-    ownerId: input.schedule.id,
+    vendor: input.automation.vendor,
+    agentId: input.automation.agentId ?? '',
+    title: automationProjectionTitle(input.automation),
+    sessionKind: 'automation',
+    ownerKind: 'automation',
+    ownerId: input.automation.id,
   })
 }
 

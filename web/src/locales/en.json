@@ -41,8 +41,8 @@
       "discussion": {
         "label": "Discussions"
       },
-      "schedules": {
-        "label": "Schedules"
+      "automations": {
+        "label": "Automations"
       },
       "codes": {
         "label": "Codes"
@@ -362,7 +362,7 @@
       "title": {
         "label": "Time zone"
       },
-      "hint": "The IANA time zone used to interpret every schedule's cron expression when computing its next run. For example, 0 11 * * * means 11:00 in this zone. Defaults to the server's local time zone; changing it shifts when existing schedules actually fire."
+      "hint": "The IANA time zone used to interpret every automation's cron expression when computing its next run. For example, 0 11 * * * means 11:00 in this zone. Defaults to the server's local time zone; changing it shifts when existing automations actually fire."
     },
     "consensus": {
       "title": {
@@ -970,9 +970,9 @@
         "label": "Intent",
         "ariaLabel": "Open the intent that created this session"
       },
-      "schedule": {
-        "label": "Schedule",
-        "ariaLabel": "Open the schedule that created this session"
+      "automation": {
+        "label": "Automation",
+        "ariaLabel": "Open the automation that created this session"
       },
       "discussion": {
         "label": "Discussion",
@@ -1103,19 +1103,19 @@
       "intent": "Intent",
       "spec": "Spec",
       "discussion": "Discussion",
-      "schedule": "Schedule",
+      "automation": "Automation",
       "tool": "Tool",
       "tabsLabel": "Session categories",
       "placeholder": "This session type will be connected in phase two."
     }
   },
-  "schedule": {
+  "automation": {
     "list": {
       "title": {
-        "label": "Schedules"
+        "label": "Automations"
       },
       "new": {
-        "label": "New schedule"
+        "label": "New automation"
       },
       "templates": {
         "button": "Templates",
@@ -1137,7 +1137,7 @@
           "description": "Every Sunday at 03:00, remove stale c3-managed worktrees older than 7 days only when dirty, intent and branch safety gates pass."
         }
       },
-      "empty": "No schedules yet.",
+      "empty": "No automations yet.",
       "expand": {
         "tooltip": "Expand panel"
       },
@@ -1159,16 +1159,16 @@
         "lessThanMinute": "< 1m"
       },
       "edit": {
-        "tooltip": "Edit schedule"
+        "tooltip": "Edit automation"
       },
       "delete": {
-        "tooltip": "Delete schedule",
-        "title": "Delete schedule?",
+        "tooltip": "Delete automation",
+        "title": "Delete automation?",
         "confirm": "Delete \"{name}\"? Its execution history is removed permanently — this can't be undone."
       },
       "runNow": {
         "tooltip": "Run now",
-        "disabledTooltip": "Archived schedules cannot be run"
+        "disabledTooltip": "Archived automations cannot be run"
       },
       "toggle": {
         "enabled": {
@@ -1224,7 +1224,7 @@
       }
     },
     "saveOverlay": {
-      "title": "Saving schedule…",
+      "title": "Saving automation…",
       "label": "Saving…"
     },
     "detail": {
@@ -1257,7 +1257,7 @@
         "resultError": "Result (error)"
       },
       "noHistory": "No execution history yet.",
-      "empty": "Select a schedule to view details."
+      "empty": "Select an automation to view details."
     },
     "tab": {
       "detail": "Details",
@@ -1268,7 +1268,7 @@
     },
     "history": {
       "title": "Execution History",
-      "empty": "Select a schedule to view its history.",
+      "empty": "Select an automation to view its history.",
       "browse": {
         "label": "Browse executions"
       },
@@ -1302,8 +1302,8 @@
       }
     },
     "form": {
-      "newTitle": "New Schedule",
-      "editTitle": "Edit Schedule",
+      "newTitle": "New Automation",
+      "editTitle": "Edit Automation",
       "title": {
         "label": "Title",
         "placeholder": "Auto-generated from the task",
@@ -1335,7 +1335,7 @@
         "hint": "Leave empty for the task default (command: 30 seconds; LLM: 60 seconds).",
         "invalid": "Enter a whole number between 1,000 and 86,400,000."
       },
-      "schedule": {
+      "automation": {
         "label": "Schedule"
       },
       "trigger": {
@@ -1377,7 +1377,7 @@
           "hint": "Leave empty to fire on any outcome."
         },
         "pr": {
-          "note": "The model performs PR operations (create, review, merge, close, comment) with its own tools and publishes an event when done — c3 never executes PR operations itself. This schedule fires when a matching PR event is published in this workspace.",
+          "note": "The model performs PR operations (create, review, merge, close, comment) with its own tools and publishes an event when done — c3 never executes PR operations itself. This automation fires when a matching PR event is published in this workspace.",
           "op": {
             "label": "Only on operation",
             "create": {
@@ -1492,7 +1492,7 @@
         "label": "Save changes"
       },
       "create": {
-        "label": "Create schedule"
+        "label": "Create automation"
       },
       "vendor": {
         "label": "Vendor"
@@ -1598,17 +1598,17 @@
       "alreadyStarted": "Discussion already started or ended; cannot start again.",
       "notEndedForContinue": "Only an ended discussion can start a new round."
     },
-    "schedule": {
-      "dbUnavailable": "Schedules feature unavailable (c3.db).",
-      "notFound": "Schedule not found.",
+    "automation": {
+      "dbUnavailable": "Automations feature unavailable (c3.db).",
+      "notFound": "Automation not found.",
       "executionNotFound": "Execution record not found.",
       "approvalNotFound": "Approval entry not found or already handled.",
-      "invalidEventTrigger": "An event-triggered schedule needs a run event to subscribe to.",
+      "invalidEventTrigger": "An event-triggered automation needs a run event to subscribe to.",
       "invalidMaxWallClockMs": "The execution timeout must be a whole number between 1,000 and 86,400,000 milliseconds.",
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the schedule vendor."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve store unavailable (c3.db).",
@@ -1626,7 +1626,7 @@
       "workspaceLimit": "Free plan allows up to {limit} workspaces.",
       "worktreeLimit": "Free plan allows only {limit} active worktree.",
       "discussionParticipantLimit": "Free plan allows up to {limit} discussion participants, not counting the organizer.",
-      "scheduleLimit": "Free plan allows up to {limit} enabled schedules.",
+      "automationLimit": "Free plan allows up to {limit} enabled automations.",
       "sandboxDisabled": "Free plan can save sandbox settings, but cannot enable sandbox.",
       "reason": {
         "expired": "your license has expired",
@@ -2149,7 +2149,7 @@
       "work": "Work",
       "intent": "Intent",
       "discussion": "Discussion",
-      "schedule": "Schedule",
+      "automation": "Automation",
       "consensus": "Consensus",
       "tool": "Tool",
       "spec": "Spec"

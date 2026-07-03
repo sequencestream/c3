@@ -236,10 +236,10 @@ E2E 测试在 `codex` CLI 未安装时自动跳过（按宿主二进制可用性
 
 ### 4.1 周期性检测任务
 
-配置一个**定时任务**（通过 c3 的 `schedules` 能力或外部 CI cron），每 **14 天** 执行一次以下检测：
+配置一个**自动化**（通过 c3 的 `automations` 能力或外部 CI cron），每 **14 天** 执行一次以下检测：
 
 ```yaml
-schedule: '0 9 */14 * *' # 每 14 天早上 9 点
+automation: '0 9 */14 * *' # 每 14 天早上 9 点
 action: monitor-openai-api-changes
 target: codex-responses-chat-relay
 checks:
@@ -265,7 +265,7 @@ checks:
     method: check-npm-version # 对比 c3 依赖清单中记录的版本
 ```
 
-**实现建议（第一阶段）：** 利用 c3 已有的 `schedules` 域能力，注册一个周期性 schedule，其 handler 执行 API 变更监控。该 handler 产出分析结果后自动创建一个 Intent（P2 或 P1，视变更严重程度），标题形如 `[API Monitor] Codex relay: <变更摘要>`。
+**实现建议（第一阶段）：** 利用 c3 已有的 `automations` 域能力，注册一个周期性 automation，其 handler 执行 API 变更监控。该 handler 产出分析结果后自动创建一个 Intent（P2 或 P1，视变更严重程度），标题形如 `[API Monitor] Codex relay: <变更摘要>`。
 
 **实现建议（第二阶段可选）：** 在 CI（GitHub Actions / GitLab CI）中增设一个每周 workflow，执行上游检查脚本，如果有 new release 则自动创建 GitHub Issue 或 PR。但第一优先级是在 c3 内部闭环。
 

@@ -7,7 +7,7 @@ and tool activity stream back live.
 **Domains.** web-console · session-registry · agent-config · agent-session · permission-gateway.
 
 This is c3's central loop — the reason the product exists ([project.md](../project.md)). Every
-other flow either feeds it (intent, schedule, discussion) or hardens it (run resilience).
+other flow either feeds it (intent, automation, discussion) or hardens it (run resilience).
 
 ## Flow graph
 

@@ -42,8 +42,8 @@
       "discussion": {
         "label": "Обсуждения"
       },
-      "schedules": {
-        "label": "Расписания"
+      "automations": {
+        "label": "Автоматизации"
       },
       "workcenter": {
         "label": "Верстак"
@@ -363,7 +363,7 @@
       "title": {
         "label": "Часовой пояс"
       },
-      "hint": "Часовой пояс IANA, используемый для интерпретации cron-выражения каждого расписания при вычислении следующего запуска. Например, 0 11 * * * означает 11:00 в этом поясе. По умолчанию — локальный часовой пояс сервера; его изменение сдвигает фактическое время срабатывания существующих расписаний."
+      "hint": "Часовой пояс IANA, используемый для интерпретации cron-выражения каждой автоматизации при вычислении следующего запуска. Например, 0 11 * * * означает 11:00 в этом поясе. По умолчанию — локальный часовой пояс сервера; его изменение сдвигает фактическое время срабатывания существующих автоматизаций."
     },
     "consensus": {
       "title": {
@@ -971,9 +971,9 @@
         "label": "Намерение",
         "ariaLabel": "Открыть намерение, создавшее эту сессию"
       },
-      "schedule": {
-        "label": "Расписание",
-        "ariaLabel": "Открыть расписание, создавшее эту сессию"
+      "automation": {
+        "label": "Автоматизация",
+        "ariaLabel": "Открыть автоматизацию, создавшую эту сессию"
       },
       "discussion": {
         "label": "Обсуждение",
@@ -1104,19 +1104,19 @@
       "intent": "Интент",
       "spec": "Спецификация",
       "discussion": "Обсуждения",
-      "schedule": "Расписания",
+      "automation": "Автоматизация",
       "tool": "Инструменты",
       "tabsLabel": "Категории сеансов",
       "placeholder": "Этот тип сеансов будет подключен во втором этапе."
     }
   },
-  "schedule": {
+  "automation": {
     "list": {
       "title": {
-        "label": "Расписания"
+        "label": "Автоматизации"
       },
       "new": {
-        "label": "Новое расписание"
+        "label": "Новая автоматизация"
       },
       "templates": {
         "button": "Шаблоны",
@@ -1138,7 +1138,7 @@
           "description": "Каждое воскресенье в 03:00 удаляет c3-managed worktree без изменений старше 7 дней только после проверок грязного состояния, статуса намерения и ветки."
         }
       },
-      "empty": "Пока нет расписаний.",
+      "empty": "Пока нет автоматизаций.",
       "expand": {
         "tooltip": "Развернуть панель"
       },
@@ -1219,7 +1219,7 @@
       }
     },
     "saveOverlay": {
-      "title": "Сохранение расписания…",
+      "title": "Сохранение автоматизации…",
       "label": "Сохранение…"
     },
     "detail": {
@@ -1252,7 +1252,7 @@
         "resultError": "Результат (ошибка)"
       },
       "noHistory": "Пока нет истории выполнения.",
-      "empty": "Выберите расписание, чтобы просмотреть подробности."
+      "empty": "Выберите автоматизацию, чтобы просмотреть подробности."
     },
     "tab": {
       "detail": "Details",
@@ -1263,7 +1263,7 @@
     },
     "history": {
       "title": "Execution History",
-      "empty": "Select a schedule to view its history.",
+      "empty": "Select a automation to view its history.",
       "browse": {
         "label": "Browse executions"
       },
@@ -1297,8 +1297,8 @@
       }
     },
     "form": {
-      "newTitle": "Новое расписание",
-      "editTitle": "Изменить расписание",
+      "newTitle": "Новая автоматизация",
+      "editTitle": "Изменить автоматизацию",
       "title": {
         "label": "Название",
         "placeholder": "Создаётся автоматически из задачи",
@@ -1330,7 +1330,7 @@
         "hint": "Оставьте пустым для значения по умолчанию (команда: 30 секунд; LLM: 60 секунд).",
         "invalid": "Введите целое число от 1 000 до 86 400 000."
       },
-      "schedule": {
+      "automation": {
         "label": "Расписание"
       },
       "frequency": {
@@ -1394,7 +1394,7 @@
         "label": "Сохранить изменения"
       },
       "create": {
-        "label": "Создать расписание"
+        "label": "Создать автоматизацию"
       },
       "vendor": {
         "label": "Вендор"
@@ -1469,7 +1469,7 @@
           "hint": "Оставьте пустым, чтобы срабатывать при любом исходе."
         },
         "pr": {
-          "note": "Модель выполняет операции с PR (создание, ревью, слияние, закрытие, комментарий) своими инструментами и публикует событие по завершении — c3 сам никогда не выполняет операции с PR. Это расписание срабатывает, когда в этом рабочем пространстве публикуется подходящее событие PR.",
+          "note": "Модель выполняет операции с PR (создание, ревью, слияние, закрытие, комментарий) своими инструментами и публикует событие по завершении — c3 сам никогда не выполняет операции с PR. Эта автоматизация срабатывает, когда в этом рабочем пространстве публикуется подходящее событие PR.",
           "op": {
             "label": "Только для операции",
             "create": {
@@ -1599,17 +1599,17 @@
       "alreadyStarted": "Обсуждение уже начато или завершено; начать заново нельзя.",
       "notEndedForContinue": "Только завершённое обсуждение может начать новый раунд."
     },
-    "schedule": {
-      "dbUnavailable": "Функция расписаний недоступна (c3.db).",
-      "notFound": "Расписание не найдено.",
+    "automation": {
+      "dbUnavailable": "Функция автоматизаций недоступна (c3.db).",
+      "notFound": "Автоматизация не найдена.",
       "executionNotFound": "Запись о выполнении не найдена.",
       "approvalNotFound": "Запись на одобрение не найдена или уже обработана.",
-      "invalidEventTrigger": "Для расписания по событию нужно выбрать событие запуска.",
+      "invalidEventTrigger": "Для автоматизации по событию нужно выбрать событие запуска.",
       "invalidMaxWallClockMs": "Тайм-аут выполнения должен быть целым числом от 1 000 до 86 400 000 миллисекунд.",
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the schedule vendor."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Хранилище Wait-User-Involve недоступно (c3.db).",
@@ -1627,7 +1627,7 @@
       "workspaceLimit": "Free plan allows up to {limit} workspaces.",
       "worktreeLimit": "Free plan allows only {limit} active worktree.",
       "discussionParticipantLimit": "Free plan allows up to {limit} discussion participants, not counting the organizer.",
-      "scheduleLimit": "Free plan allows up to {limit} enabled schedules.",
+      "automationLimit": "Free plan allows up to {limit} enabled automations.",
       "sandboxDisabled": "Free plan can save sandbox settings, but cannot enable sandbox.",
       "reason": {
         "expired": "срок действия вашей лицензии истёк",
@@ -2073,7 +2073,7 @@
       "work": "Work",
       "intent": "Intent",
       "discussion": "Discussion",
-      "schedule": "Schedule",
+      "automation": "Automation",
       "consensus": "Consensus",
       "tool": "Tool",
       "spec": "Спецификация"

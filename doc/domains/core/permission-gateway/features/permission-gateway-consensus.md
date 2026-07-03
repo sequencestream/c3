@@ -332,7 +332,7 @@ original input plus the chosen `answers`. This is the documented PG-R6 exception
 ### 来源契约与溯源跳转（WorkCenter）
 
 每条 `WaitUserInvolveEvent` 携带产生运行的完整 `SessionKind`（`sessionKind`，
-`work | intent | discussion | schedule | consensus | tool | spec`），由调用方原样写入：
+`work | intent | discussion | automation | consensus | tool | spec`），由调用方原样写入：
 driver 路径取运行的 `sessionKind`，claude 网控路径取 gate 派生（`intent`→intent、
 `spec`→spec、`discussion-research`→discussion、`standard`→work）。`consensus` / `tool`
 不产生人工门控事件，前端 switch 兜底进控制台。不再折叠为可跳转子集，旧 `WaitUserInvolveSource`

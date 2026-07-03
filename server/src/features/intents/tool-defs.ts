@@ -46,7 +46,7 @@ const text = (s: string): IntentToolResult['content'] => [{ type: 'text' as cons
 // ---- Zod input shapes (raw shapes; both `tool()` and `registerTool` accept them) ----
 
 // Shared field shapes for one proposed intent. `save_intents`(upsert,带可选 id)与
-// schedule 专用的 `save_intent_directly`(create-only,无 id)都复用这一组字段,
+// automation 专用的 `save_intent_directly`(create-only,无 id)都复用这一组字段,
 // 避免两处 schema 漂移。
 const proposedIntentShape = {
   title: z.string(),
@@ -148,7 +148,7 @@ export const findDesc =
   '返回精简列表(id、title、module、priority、status、dependsOn)。'
 
 export const saveIntentDirectlyDesc =
-  '直接落库一批“新建”意图为草稿(draft):仅供无人值守的定时任务使用,不弹用户确认框、直接写库。' +
+  '直接落库一批“新建”意图为草稿(draft):仅供无人值守的自动化使用,不弹用户确认框、直接写库。' +
   '人工确认门改由意图列表对 draft 的评审/激活承担,而非保存弹框。' +
   '仅新建、不更新已有意图(create-only,不接受 id);落库前务必先用 find_intents 去重,' +
   '已被现有意图覆盖的不要重复创建。本批意图之间的先后关系用每条的 dependsOnIndexes(同批数组下标)声明。'
@@ -227,7 +227,7 @@ export function runSaveConfirmed(
 
 /**
  * Persist a batch of NEW intents as `draft`, bypassing the save confirmation gate.
- * Used only by the unattended schedule MCP profile: a schedule has no browser
+ * Used only by the unattended automation MCP profile: a automation has no browser
  * decision queue, so instead of gating the save it lands every item as a `draft`
  * and the human confirms later by reviewing/activating the draft in the intent
  * list. Create-only — never updates an existing intent (de-dup is the caller's

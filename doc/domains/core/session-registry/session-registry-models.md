@@ -29,14 +29,14 @@ for list/count reads.
 | `title`        | text            | Vendor custom title / summary / first prompt                            |
 | `lastModified` | timestamp       | Vendor last-modified; sort key within a workspace (SR-R4)               |
 | `mode`         | permission mode | c3-tracked per-session permission mode; default `default` (SR-R5)       |
-| `sessionKind`  | enum            | work / intent / spec / discussion / schedule / tool                     |
+| `sessionKind`  | enum            | work / intent / spec / discussion / automation / tool                   |
 | `ownerKind`    | enum \| null    | Logical owner kind used for jump-back; null for ownerless sessions      |
 | `ownerId`      | text \| null    | Logical owner id; null means the session cannot jump back to an owner   |
 | `bound`        | boolean         | true for real rows; false only for work pending placeholders            |
 
 Relationships: belongs to one Workspace; its transcript & title are owned by the agent vendor, its
 `mode` by the registry. Owner fields point back to domain entities such as an intent, discussion,
-or schedule; they do not make the projection the source of truth for those domains. A spec session
+or automation; they do not make the projection the source of truth for those domains. A spec session
 row uses `sessionKind=spec`, `ownerKind=intent`, and the intent id as `ownerId`; the intent domain
 still owns the current spec-session link through `intents.spec_session_id`. A tool session row uses
 `sessionKind=tool`; when a triggering business origin is known it reuses `ownerKind` / `ownerId` for

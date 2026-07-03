@@ -303,7 +303,7 @@ export async function askOneShot(opts: {
   agentId: string
   model?: string
   envOverrides?: Record<string, string>
-  ownerKind?: 'intent' | 'discussion' | 'schedule' | null
+  ownerKind?: 'intent' | 'discussion' | 'automation' | null
   ownerId?: string | null
   /**
    * The stable role/rules half of the judge prompt, delivered on the preset

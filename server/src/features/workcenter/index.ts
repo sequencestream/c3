@@ -2,13 +2,13 @@
  * WorkCenter cross-project rollup (feature handler, ADR-0009).
  *
  * `get_timerange_stats` walks every registered workspace and aggregates the four
- * work surfaces (work sessions / intents / discussions / schedules) into one
+ * work surfaces (work sessions / intents / discussions / automations) into one
  * {@link TimeRangeProjectStats} per project, returned in a single
  * `timerange_stats` reply — replacing the 4×N independent requests the client
  * would otherwise fan out.
  *
  * Time filtering: `startTime`/`endTime` (ms epoch, both optional) restrict the
- * counts by `updated_at` (intents/discussions/schedules) or `last_modified`
+ * counts by `updated_at` (intents/discussions/automations) or `last_modified`
  * (sessions). The two `running` counts are a live "now" notion (runtime registry
  * / execution logs) and deliberately ignore the range.
  *
@@ -22,7 +22,7 @@ import { listWorkspaces, pathToId, resolveWorkspaceRoot } from '../../state.js'
 import { runningCountForWorkspace } from '../../runs.js'
 import { countByStatusInRange as countIntentsByStatus } from '../intents/store.js'
 import { countByStatusInRange as countDiscussionsByStatus } from '../discussions/store.js'
-import { countSchedulesInRange, countRunningSchedules } from '../schedules/store.js'
+import { countAutomationsInRange, countRunningAutomations } from '../automations/store.js'
 import { countRealInRange } from '../sessions/session-metadata-store.js'
 
 /** Build one project's rollup from the store/runtime counts. */
@@ -34,7 +34,7 @@ function projectStats(
 ): TimeRangeProjectStats {
   const intents = countIntentsByStatus(workspacePath, startTime, endTime)
   const discussions = countDiscussionsByStatus(workspacePath, startTime, endTime)
-  const schedules = countSchedulesInRange(workspacePath, startTime, endTime)
+  const automations = countAutomationsInRange(workspacePath, startTime, endTime)
   return {
     workspaceId: pathToId(workspacePath)!,
     projectName,
@@ -51,10 +51,10 @@ function projectStats(
       in_progress: discussions.in_progress ?? 0,
       completed: discussions.completed ?? 0,
     },
-    schedules: {
-      total: schedules.total,
-      active: schedules.active,
-      running: countRunningSchedules(workspacePath),
+    automations: {
+      total: automations.total,
+      active: automations.active,
+      running: countRunningAutomations(workspacePath),
     },
   }
 }

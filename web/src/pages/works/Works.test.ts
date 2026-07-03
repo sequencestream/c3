@@ -111,7 +111,7 @@ function mountWorks(options: { activeSession?: string | null } = {}) {
       currentWorkspace: WS,
       sessions: SESSIONS,
       activeSessionKind: 'work',
-      sessionCounts: { work: 0, intent: 0, spec: 0, discussion: 0, schedule: 0, tool: 0 },
+      sessionCounts: { work: 0, intent: 0, spec: 0, discussion: 0, automation: 0, tool: 0 },
       showToolSessions: false,
       sessionStatus: {},
       activeWorkspace: WS,

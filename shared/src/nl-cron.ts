@@ -1,5 +1,5 @@
 /**
- * Best-effort natural-language → cron heuristic parser for the schedule form's
+ * Best-effort natural-language → cron heuristic parser for the automation form's
  * "Natural language" input mode. It recognises a bounded set of common English
  * phrasings; anything it does not understand returns `null`, and the UI then asks
  * the user to pick a preset or use the Advanced segmented builder instead.
@@ -85,7 +85,7 @@ function renderDow(days: number[]): string {
 }
 
 /**
- * Attempt to convert a natural-language schedule description into a 5-field cron
+ * Attempt to convert a natural-language automation description into a 5-field cron
  * expression. Returns the cron string, or `null` when the phrasing is not
  * recognised.
  */
@@ -109,7 +109,7 @@ export function nlToCron(input: string): string | null {
   }
   if (/\bhourly\b/.test(text) || /\bevery\s+hour\b/.test(text)) return '0 * * * *'
 
-  // Time-of-day based schedules (daily / weekday / specific days).
+  // Time-of-day based automations (daily / weekday / specific days).
   const time = parseTime(text)
   const days = parseDays(text)
 

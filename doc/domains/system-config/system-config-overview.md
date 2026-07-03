@@ -10,7 +10,7 @@ proxy settings).
 | Domain                                                | Responsibility                                                                                                                                                                   | API                                   | Status |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------ |
 | [agent-config](agent-config/agent-config-overview.md) | Manage agent profiles (url/key/model + name), the default agent, and per-session agent binding                                                                                   | WebSocket `/ws` (see shared protocol) | active |
-| project-config                                        | Per-workspace config knobs (defaultMode, consensus, devSkill, maxRoundsPerStage, maxSpeechChars, gitBranchMode, sandbox, sddEnabled). SDD 规格目录是固定/只读的集中位置,非配置项 | WebSocket `/ws` (see shared protocol) | active |
+| project-config                                        | Per-workspace config knobs (defaultMode, consensus, devSkill, maxRoundsPerStage, maxSpeechChars, gitBranchMode, sandbox, sddEnabled). SDD 规范目录是固定/只读的集中位置,非配置项 | WebSocket `/ws` (see shared protocol) | active |
 | proxy                                                 | Session subprocess proxy: toggle + HTTP/HTTPS proxy URLs. Injected as `HTTP_PROXY`/`http_proxy`/`HTTPS_PROXY`/`https_proxy` into new session subprocesses                        | `SystemSettings.proxy` (see protocol) | active |
 
 ## Shared context
@@ -85,17 +85,17 @@ Key design points:
   Off by default. When on, the SDD spec quality gate and human approval checkpoints
   apply to development tasks before coding starts. Only an explicit boolean `true`
   enables it; absent / non-boolean values normalize to `false`.
-- **Spec 目录（只读、集中、固定）** — SDD 规格文档的根目录**不再是可配置项**。它被
+- **Spec 目录（只读、集中、固定）** — SDD 规范文档的根目录**不再是可配置项**。它被
   **固定**为按项目隔离的集中位置 `<c3 home>/doc/<项目路径段>`(命名范式与 worktree
   集中目录同源），由服务端从**归属工作区路径**确定性解析,因此同一项目的所有 worktree
-  共享同一份规格集合。工作区配置**仅只读展示**该解析后的目录(随工作区设置回复一并下发),
-  界面与协议都**无法修改**它:任何客户端提交的规格目录入参都会被忽略,不写入、不改变解析
-  结果(沿「服务端为准」治理)。规格文档**不提交到 Git**,依赖本机 `<c3 home>`。
-  > 边界:不迁移、不读取、不识别历史的工作区内 `.doc` 规格文档(集中目录仅承载启用后的
-  > 新规格)。
+  共享同一份规范集合。工作区配置**仅只读展示**该解析后的目录(随工作区设置回复一并下发),
+  界面与协议都**无法修改**它:任何客户端提交的规范目录入参都会被忽略,不写入、不改变解析
+  结果(沿「服务端为准」治理)。规范文档**不提交到 Git**,依赖本机 `<c3 home>`。
+  > 边界:不迁移、不读取、不识别历史的工作区内 `.doc` 规范文档(集中目录仅承载启用后的
+  > 新规范)。
 
 `sddEnabled` 存储在每工作区的 `projectConfigs` 映射中,由 `normalizeWorkspaceSetting`
-回填默认值;不存在持久化的规格目录字段。
+回填默认值;不存在持久化的规范目录字段。
 
 ## Dependency direction
 

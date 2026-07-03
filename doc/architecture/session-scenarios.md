@@ -12,7 +12,7 @@
 
 一次 prompt 的组装可分为两部分：
 
-- **system instruction**：角色、SDD 规格、devSkill、评审规则等**稳定、可缓存**的指令；
+- **system instruction**：角色、SDD 规范、devSkill、评审规则等**稳定、可缓存**的指令；
 - **user prompt / user turn**：本轮用户实际输入，**每轮变化**。
 
 两者**分离**后 system 段可命中缓存。各厂商的 system 通道：
@@ -44,7 +44,7 @@
 
 ### Spec author create/reset — spec
 
-`buildSpecAgentPrompt()` 生成规格作者 agent 的系统提示（`SpecProfile.appendSystemPrompt`）。
+`buildSpecAgentPrompt()` 生成规范作者 agent 的系统提示（`SpecProfile.appendSystemPrompt`）。
 
 - **Claude** ✅：经 `appendSystemPrompt` 挂到 `runClaude`，user prompt 独立。
 - **Codex** ✅：`specProfile.appendSystemPrompt` 经 driver 的 `systemInstruction` 通道交付，user turn 独立。

@@ -27,6 +27,8 @@ import {
 } from '../../controls/state'
 import type { CodeDirEntry, CodeSearchHit, CodeSearchMode } from '@ccc/shared/protocol'
 import type {
+  CodexPolicy,
+  ModeToken,
   PromptImage,
   SessionAgentSwitch,
   SlashCommandInfo,
@@ -60,6 +62,10 @@ const props = defineProps<{
   activeTitle: string
   vendor: VendorId | null
   agentSwitch: SessionAgentSwitch | null
+  /** Permission-mode dropdown state for the bound session's title bar. */
+  mode: ModeToken
+  modeOptions: { value: ModeToken; label: string }[]
+  codexPolicy: CodexPolicy | null
   messages: ChatMsg[]
   actionablePermissionId: string | null
   taskModel: TaskListModel
@@ -93,6 +99,8 @@ const emit = defineEmits<{
   'reset-codes-chat': []
   'codes-chat-width': [px: number]
   // embedded chat passthrough (mirrors Works.vue → ChatColumn wiring)
+  'set-mode': [mode: ModeToken]
+  'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
@@ -284,7 +292,10 @@ defineExpose({
         :active-title="chatActive ? activeTitle : t('codes.chat.empty.title')"
         :vendor="vendor"
         :agent-switch="agentSwitch"
-        :show-mode="false"
+        :show-mode="chatActive"
+        :mode="mode"
+        :mode-options="modeOptions"
+        :codex-policy="codexPolicy"
         :show-share="false"
         :source-label="null"
         :always-title="true"
@@ -303,6 +314,8 @@ defineExpose({
         :queue="queue"
         :available-commands="availableCommands"
         :voice-lang="voiceLang"
+        @set-mode="(m: ModeToken) => emit('set-mode', m)"
+        @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
         @set-session-agent="(id: string) => emit('set-session-agent', id)"
         @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
         @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"

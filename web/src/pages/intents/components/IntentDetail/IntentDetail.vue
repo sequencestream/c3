@@ -427,6 +427,29 @@ const TABS: { key: DetailTab; label: string }[] = [
   { key: 'changelog', label: t('intent.tab.changelog.label') },
 ]
 
+// spec / spec session 两 tab 的可见条件:workspace 开启 SDD,或当前意图已有历史 spec 数据
+// (specPath 或 specSessionId 非空)。SDD 关闭且无历史数据时隐藏,避免暴露两个空态 tab 入口。
+// 纯 UI 隐藏,不影响已有 spec 内容/会话的读取。
+const specTabsVisible = computed<boolean>(() => {
+  if (props.sddEnabled) return true
+  const r = props.intent
+  return !!(r?.specPath || r?.specSessionId)
+})
+const visibleTabs = computed<{ key: DetailTab; label: string }[]>(() =>
+  TABS.filter((tab) =>
+    tab.key === 'spec' || tab.key === 'specSession' ? specTabsVisible.value : true,
+  ),
+)
+function isTabVisible(tab: DetailTab): boolean {
+  return visibleTabs.value.some((t) => t.key === tab)
+}
+
+// props 变化(SDD 开关切换 / 意图 spec 字段变化)导致当前激活 tab 不再可见时回退到 intent。
+// 意图切换时的复位由下方 intent.id watch 负责,intent tab 恒可见故与本 watch 不冲突。
+watch(visibleTabs, () => {
+  if (!isTabVisible(activeTab.value)) activeTab.value = 'intent'
+})
+
 // ── 变更日志(changelog tab)──────────────────────────────────────────────
 // 操作类型 → 本地化标签。key 全为字面量,拼错走 vue-tsc 失败(typed t)。
 const OP_LABELS: Record<IntentLogOperation, string> = {
@@ -478,6 +501,9 @@ watch(
 // 切到会话/spec tab 时按需读取 spec；会话打开由下方 watch 统一处理，避免
 // 「切 tab 时已有 id」与「id 在激活 tab 下回填」两条路径重复发出 open。
 function selectTab(tab: DetailTab): void {
+  // 可见性门:不可见 tab(SDD 关闭且无历史 spec 数据时的 spec/specSession)不切换、不触发副作用。
+  // 外部一次性请求(requestedSubTab)命中不可见 tab 时由此静默忽略,消费仍在 watcher 内照常进行。
+  if (!isTabVisible(tab)) return
   activeTab.value = tab
   const r = props.intent
   if (!r) return
@@ -762,7 +788,7 @@ defineExpose({
 
       <!-- Tab 条 -->
       <nav class="intent-detail-tabs" data-testid="intent-detail-tabs">
-        <div v-for="tab in TABS" :key="tab.key" class="intent-detail-tab-item">
+        <div v-for="tab in visibleTabs" :key="tab.key" class="intent-detail-tab-item">
           <button
             type="button"
             class="intent-detail-tab"

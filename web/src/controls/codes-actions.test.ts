@@ -105,16 +105,21 @@ describe('codes-actions embedded chat', () => {
     expect(storage.getItem(`c3.codes.${WS}.sessionId`)).toBe('sess-new')
   })
 
-  it('a pending session id is not persisted (waits for the real id)', () => {
+  it('a pending session id binds in-memory but is not persisted (waits for the real id)', () => {
     const { ctx } = makeCtx(null)
     ctx.openCodes(WS)
 
-    ctx.activeSession.value = `${PENDING_SESSION_PREFIX}tmp`
-    expect(ctx.codesBoundSessionId.value[WS]).toBeUndefined()
+    const pending = `${PENDING_SESSION_PREFIX}tmp`
+    ctx.activeSession.value = pending
+    // In-memory binding is immediate so chatActive (activeSession===bound) holds and
+    // the freshly-created session's input is usable; otherwise it would deadlock.
+    expect(ctx.codesBoundSessionId.value[WS]).toBe(pending)
+    // But the pending id is never persisted — it won't survive a reconnect.
     expect(storage.getItem(`c3.codes.${WS}.sessionId`)).toBeNull()
 
     ctx.activeSession.value = 'sess-real'
     expect(ctx.codesBoundSessionId.value[WS]).toBe('sess-real')
+    expect(storage.getItem(`c3.codes.${WS}.sessionId`)).toBe('sess-real')
   })
 
   it('resetCodesChatSession replaces the binding with a freshly created session', () => {

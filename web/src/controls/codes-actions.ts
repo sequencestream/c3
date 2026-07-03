@@ -77,20 +77,24 @@ export function installCodesActions(ctx: AppCtx): void {
     send({ type: 'create_session', workspaceId })
   }
 
-  // 持久化 Codes 内嵌会话指针:仅当停留在 codes tab 且活动会话已落到真实 id 时,把
-  // 它记为当前 codesProject 的绑定会话(内存 ref + localStorage)。切到 Works 后
-  // activeTab≠'codes',此 watch 不会用 Works 的会话覆盖 codes 指针(两指针独立)。
-  // pending id(create 回执的临时 id)跳过,等 session_started 迁移到真实 id 再写。
+  // 绑定/持久化 Codes 内嵌会话指针:仅当停留在 codes tab 时,把活动会话记为当前
+  // codesProject 的绑定会话。切到 Works 后 activeTab≠'codes',此 watch 不会用 Works
+  // 的会话覆盖 codes 指针(两指针独立)。
+  // 内存绑定即时生效(含 pending id):否则「+ 新建」建出的 pending 会话无法让
+  // chatActive(activeSession===codesBoundSessionId)成立,输入框始终禁用 → 死锁
+  // (pending 只在首次 run 后经 session_started 转正,而 run 又要先能提交)。
+  // 持久化只写真实 id:pending id(create 回执临时 id)重连不存活,等 session_started
+  // 迁移到真实 id 再落 localStorage。
   watch(
     activeSession,
     (id) => {
       if (activeTab.value !== 'codes') return
       const ws = codesProject.value
-      if (!ws || !id || id.startsWith(PENDING_SESSION_PREFIX)) return
+      if (!ws || !id) return
       if (codesBoundSessionId.value[ws] !== id) {
         codesBoundSessionId.value = { ...codesBoundSessionId.value, [ws]: id }
       }
-      ctx.persistCodesSessionId(ws, id)
+      if (!id.startsWith(PENDING_SESSION_PREFIX)) ctx.persistCodesSessionId(ws, id)
     },
     { flush: 'sync' },
   )

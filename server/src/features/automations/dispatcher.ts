@@ -38,6 +38,7 @@ import { freezeTools, hasSelectedC3McpTool, matchesFrozenTool, isWriteTool } fro
 import type { FrozenToolSet } from './mcp-freeze.js'
 import { createAutomationMcpServer } from './c3-mcp.js'
 import { upsertAutomationExecutionRow } from '../sessions/session-metadata-store.js'
+import { setAutomationRunning, clearAutomationRunning } from '../../runs.js'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -443,6 +444,10 @@ function upsertAutomationSessionProjection(automation: Automation, sessionId: st
   } catch (err) {
     console.error('[c3:automations] failed to upsert automation session projection:', err)
   }
+  // Register the real agent session as running in the same phase we bind it to the
+  // projection, so the 「自动化」tab row shows the running dot for the duration. The
+  // matching clear lives in each executor's terminal cleanup (idempotent).
+  setAutomationRunning(sessionId)
 }
 
 async function executeLlmPrompt(
@@ -535,6 +540,11 @@ async function executeLlmPrompt(
     : workspaceMcpConfig.mcpServers
   const hasMcpServers = Object.keys(mcpServers).length > 0
 
+  // The real agent session registered as running (via the projection helper) once
+  // the first SDK message carries a `session_id`; cleared in `finally` on every
+  // terminal path — success, schema-fail, timeout, or thrown error.
+  let runningSessionId: string | null = null
+
   try {
     const q = query({
       prompt,
@@ -567,6 +577,7 @@ async function executeLlmPrompt(
           sessionId = sid
           updateLog(logId, { sessionId })
           upsertAutomationSessionProjection(automation, sessionId)
+          runningSessionId = sessionId
         }
       }
       if (m.type === 'assistant') {
@@ -628,6 +639,8 @@ async function executeLlmPrompt(
       status: 'failed',
       error: message,
     })
+  } finally {
+    if (runningSessionId) clearAutomationRunning(runningSessionId)
   }
 }
 
@@ -648,6 +661,8 @@ async function executeCodexLlmPrompt(
         }
   const { actionMode, toolGate } = codexPolicyToGrid(policy)
   const { model, baseUrl, apiKey, wireApi } = launchForAgent(agent)
+  // Cleared in `finally` on every terminal path (success, timeout, thrown error).
+  let runningSessionId: string | null = null
   try {
     const run = await createCodexAdapter().driver.start({
       prompt,
@@ -664,6 +679,7 @@ async function executeCodexLlmPrompt(
     if (sessionId) {
       updateLog(logId, { sessionId })
       upsertAutomationSessionProjection(automation, sessionId)
+      runningSessionId = sessionId
     }
     let output = ''
     for await (const message of run.messages()) {
@@ -683,5 +699,7 @@ async function executeCodexLlmPrompt(
       status: 'failed',
       error: err instanceof Error ? err.message : String(err),
     })
+  } finally {
+    if (runningSessionId) clearAutomationRunning(runningSessionId)
   }
 }

@@ -18,6 +18,8 @@ import {
   finalizeRun,
   reconcileLiveness,
   stopRun,
+  setAutomationRunning,
+  clearAutomationRunning,
 } from './runs.js'
 
 // The registry is a module-level singleton; clean up the global status hook and
@@ -556,6 +558,55 @@ describe('session-runtime registry', () => {
       // finalizeRun → setStatus(idle) triggers onStatusChange.
       expect(onChange).toHaveBeenCalled()
       removeRuntime('s-cb')
+    })
+  })
+
+  describe('automation running registry', () => {
+    // Clean up the process-local set so cases stay independent (its ids are unique
+    // per case, but clear defensively regardless).
+    afterEach(() => {
+      clearAutomationRunning('s-auto-1')
+      clearAutomationRunning('s-auto-2')
+      clearAutomationRunning('s-auto-shared')
+    })
+
+    it('surfaces a registered automation session as running, then drops it on clear', () => {
+      setAutomationRunning('s-auto-1')
+      let map = new Map(listStatuses().map((s) => [s.sessionId, s.status]))
+      expect(map.get('s-auto-1')).toBe('running')
+
+      clearAutomationRunning('s-auto-1')
+      map = new Map(listStatuses().map((s) => [s.sessionId, s.status]))
+      expect(map.has('s-auto-1')).toBe(false)
+    })
+
+    it('broadcasts on first registration and on clear, and is idempotent', () => {
+      const onChange = vi.fn()
+      setOnStatusChange(onChange)
+
+      setAutomationRunning('s-auto-2')
+      expect(onChange).toHaveBeenCalledTimes(1)
+      // Re-registering the same id does not re-broadcast.
+      setAutomationRunning('s-auto-2')
+      expect(onChange).toHaveBeenCalledTimes(1)
+
+      clearAutomationRunning('s-auto-2')
+      expect(onChange).toHaveBeenCalledTimes(2)
+      // Clearing an already-cleared id is a no-op (no throw, no broadcast).
+      clearAutomationRunning('s-auto-2')
+      expect(onChange).toHaveBeenCalledTimes(2)
+    })
+
+    it('lets a kernel runtime win over the automation flag on a shared sessionId', () => {
+      const rt = ensureRuntime('s-auto-shared', '/ws', 'default', [])
+      rt.status = 'awaiting_permission'
+      setAutomationRunning('s-auto-shared')
+
+      const statuses = listStatuses().filter((s) => s.sessionId === 's-auto-shared')
+      // The kernel runtime status wins; the automation flag adds no duplicate entry.
+      expect(statuses).toEqual([{ sessionId: 's-auto-shared', status: 'awaiting_permission' }])
+
+      removeRuntime('s-auto-shared')
     })
   })
 })

@@ -197,6 +197,149 @@ describe('WorkCenter.vue — desktop message list sizing', () => {
   })
 })
 
+describe('WorkCenter.vue — mobile drill-down', () => {
+  it('starts on the list pane and renders no back button', () => {
+    installMatchMedia(true)
+    const wrapper = mount(WorkCenter, {
+      props: {
+        events: [ev({ status: 'todo', requestId: 'r1', toolName: 'edit_file' })],
+        hasMore: false,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
+    })
+
+    // The stack renders in mobile mode with the list pane on top.
+    expect(wrapper.find('[data-testid="mobile-stack-mobile"]').exists()).toBe(true)
+    const pane = wrapper.find('[data-testid="mobile-stack-pane"]')
+    expect(pane.attributes('data-pane-key')).toBe('list')
+    // List pane shows rows; no detail action controls are on screen yet.
+    expect(wrapper.find('.wc-event-row').exists()).toBe(true)
+    expect(wrapper.find('.wc-btn-allow').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="mobile-stack-back"]').exists()).toBe(false)
+  })
+
+  it('drills into the detail pane on row click with allow/deny operable', async () => {
+    installMatchMedia(true)
+    const wrapper = mount(WorkCenter, {
+      props: {
+        events: [ev({ id: 'appr-1', status: 'todo', requestId: 'r1', toolName: 'edit_file' })],
+        hasMore: false,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
+    })
+
+    await wrapper.find('.wc-event-row').trigger('click')
+
+    const pane = wrapper.find('[data-testid="mobile-stack-pane"]')
+    expect(pane.attributes('data-pane-key')).toBe('detail')
+    // The list is no longer on the stack top; the detail action buttons are reachable.
+    expect(wrapper.find('.wc-event-row').exists()).toBe(false)
+    expect(wrapper.find('.wc-btn-allow').exists()).toBe(true)
+
+    await wrapper.find('.wc-btn-allow').trigger('click')
+    expect(wrapper.emitted('respond')?.[0]?.[1]).toBe('allow')
+  })
+
+  it('drills into an AskUserQuestion detail with the answer panel operable', async () => {
+    installMatchMedia(true)
+    const wrapper = mount(WorkCenter, {
+      props: {
+        events: [
+          ev({
+            id: 'ask-1',
+            status: 'todo',
+            requestId: null,
+            toolName: 'AskUserQuestion',
+            toolInput: askToolInput,
+          }),
+        ],
+        hasMore: false,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
+    })
+
+    await wrapper.find('.wc-event-row').trigger('click')
+    expect(wrapper.find('[data-testid="mobile-stack-pane"]').attributes('data-pane-key')).toBe(
+      'detail',
+    )
+    expect(wrapper.find('.wc-ask-panel').exists()).toBe(true)
+    expect(wrapper.findAll('input[type="radio"]').length).toBeGreaterThan(0)
+  })
+
+  it('returns to the list pane on back, keeping the filter value and selection highlight', async () => {
+    installMatchMedia(true)
+    const wrapper = mount(WorkCenter, {
+      props: {
+        events: [
+          ev({ id: 'todo-1', status: 'todo', requestId: 'r1', toolName: 'edit_file' }),
+          ev({ id: 'todo-2', status: 'todo', requestId: 'r1', toolName: 'edit_file' }),
+        ],
+        hasMore: false,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
+    })
+
+    await wrapper.find('.wc-event-row').trigger('click')
+    expect(wrapper.find('[data-testid="mobile-stack-pane"]').attributes('data-pane-key')).toBe(
+      'detail',
+    )
+
+    await wrapper.find('[data-testid="mobile-stack-back"]').trigger('click')
+    // Back returns to the list pane; the previously selected row stays highlighted.
+    expect(wrapper.find('[data-testid="mobile-stack-pane"]').attributes('data-pane-key')).toBe(
+      'list',
+    )
+    expect(wrapper.find('.wc-event-row.selected').exists()).toBe(true)
+    // The filter dropdown value is untouched by the drill-down round-trip.
+    expect(wrapper.find('.dd-value').text()).toBe('All')
+
+    // Re-tapping the same row drills back into its detail (explicit pane state, not a
+    // pure derivation that a same-id selection could not re-trigger).
+    await wrapper.find('.wc-event-row.selected').trigger('click')
+    expect(wrapper.find('[data-testid="mobile-stack-pane"]').attributes('data-pane-key')).toBe(
+      'detail',
+    )
+  })
+
+  it('clears selection and stays on the list pane when the filter changes', async () => {
+    installMatchMedia(true)
+    const wrapper = mount(WorkCenter, {
+      props: {
+        events: [
+          ev({ id: 'todo-1', status: 'todo', requestId: 'r1', toolName: 'edit_file' }),
+          ev({ id: 'done-1', status: 'done' }),
+        ],
+        hasMore: false,
+        loading: false,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+      },
+    })
+
+    // Drill in, then back to the list pane (where the filter dropdown lives on mobile).
+    await wrapper.find('.wc-event-row').trigger('click')
+    await wrapper.find('[data-testid="mobile-stack-back"]').trigger('click')
+    expect(wrapper.find('.wc-event-row.selected').exists()).toBe(true)
+
+    // Switch the filter to Done: selection clears, mobile stays on list, reload emitted
+    // with the new status.
+    await selectDropdownItem(wrapper, 2)
+    expect(wrapper.find('[data-testid="mobile-stack-pane"]').attributes('data-pane-key')).toBe(
+      'list',
+    )
+    expect(wrapper.find('.wc-event-row.selected').exists()).toBe(false)
+    expect(wrapper.emitted('reload')).toEqual([['done']])
+  })
+})
+
 describe('WorkCenter.vue — status filter', () => {
   it('renders a title and status dropdown that defaults to All', async () => {
     const events = [

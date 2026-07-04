@@ -437,6 +437,15 @@ export function createState(deps: StateDeps) {
   const automationToolManifestLoading = ref(false)
   const automationToolManifestError = ref<string | null>(null)
 
+  // Result of the latest event-trigger simulation (diagnostic panel), or null when
+  // none has run / the selected automation changed. Scoped by automationId so a
+  // stale reply for a deselected automation is ignored on render.
+  const automationSimulationResult = ref<{
+    automationId: string
+    matched: boolean
+    breakdown: { name: string; passed: boolean }[]
+  } | null>(null)
+
   // Automation save-in-progress flag: drives the "Saving…" overlay that blocks
   // interaction while the server processes a create/update (2-4s typical latency).
   const automationSaving = ref(false)
@@ -723,6 +732,7 @@ export function createState(deps: StateDeps) {
     automationToolManifest,
     automationToolManifestLoading,
     automationToolManifestError,
+    automationSimulationResult,
     automationSaving,
     automationFormOpen,
     automationFormTarget,

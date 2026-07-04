@@ -1252,7 +1252,10 @@
         "resultError": "Результат (ошибка)"
       },
       "noHistory": "Пока нет истории выполнения.",
-      "empty": "Выберите автоматизацию, чтобы просмотреть подробности."
+      "empty": "Выберите автоматизацию, чтобы просмотреть подробности.",
+      "metadata": {
+        "empty": "Нет метаданных"
+      }
     },
     "tab": {
       "detail": "Details",
@@ -1521,13 +1524,79 @@
           },
           "hint": "Оставьте пустым, чтобы сопоставить все фазы жизненного цикла намерения."
         },
-        "hint": "Срабатывает, когда запуск в этом рабочем пространстве достигает выбранного события."
+        "hint": "Срабатывает, когда запуск в этом рабочем пространстве достигает выбранного события.",
+        "sessionKind": {
+          "label": "Срабатывает для видов сессий",
+          "hint": "Выберите, какие источники запуска могут запускать эту автоматизацию.",
+          "required": "Выберите хотя бы один вид сессии.",
+          "work": {
+            "label": "Работа"
+          },
+          "intent": {
+            "label": "Намерение"
+          },
+          "discussion": {
+            "label": "Обсуждение"
+          },
+          "automation": {
+            "label": "Автоматизация"
+          },
+          "consensus": {
+            "label": "Консенсус"
+          },
+          "tool": {
+            "label": "Инструмент"
+          },
+          "spec": {
+            "label": "Спецификация"
+          }
+        },
+        "metadataFilter": {
+          "label": "Условия метаданных",
+          "and": "Все",
+          "or": "Любое",
+          "keyPlaceholder": "ключ",
+          "valuePlaceholder": "значение",
+          "add": "Добавить условие",
+          "hint": "Срабатывает только когда метаданные события соответствуют этим условиям.",
+          "none": "Нет условий метаданных"
+        }
+      },
+      "metadata": {
+        "label": "Метаданные",
+        "keyPlaceholder": "ключ",
+        "valuePlaceholder": "значение",
+        "add": "Добавить метаданные",
+        "remove": "Удалить",
+        "hint": "Произвольные аннотации. Передаются в события запуска самой этой автоматизации, чтобы другие автоматизации могли выстраивать цепочки."
       }
     },
     "trigger": {
       "event": {
         "started": "При запуске",
         "settled": "При завершении"
+      }
+    },
+    "simulate": {
+      "title": "Смоделировать триггер",
+      "hint": "Проверьте, будет ли синтетическое событие соответствовать фильтрам этой автоматизации. Это диагностика — задача не запускается и история не пишется.",
+      "topic": {
+        "label": "Событие"
+      },
+      "metadata": {
+        "label": "Метаданные события"
+      },
+      "run": "Проверить",
+      "matched": "Сработает",
+      "unmatched": "Не сработает",
+      "dim": {
+        "topic": "Тема события",
+        "workspace": "Рабочая область",
+        "sessionKind": "Вид сессии",
+        "reason": "Результат",
+        "pr": "Фильтр PR",
+        "intentPhase": "Этап намерения",
+        "metadata": "Метаданные"
       }
     }
   },
@@ -1609,7 +1678,8 @@
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the automation vendor."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor.",
+      "missingSessionKindFilter": "Триггер события запуска должен срабатывать хотя бы для одного вида сессии."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Хранилище Wait-User-Involve недоступно (c3.db).",

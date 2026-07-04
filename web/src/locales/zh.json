@@ -1251,7 +1251,32 @@
         "resultError": "结果(错误)"
       },
       "noHistory": "还没有执行历史。",
-      "empty": "选择一个自动化以查看详情。"
+      "empty": "选择一个自动化以查看详情。",
+      "metadata": {
+        "empty": "无元数据"
+      }
+    },
+    "simulate": {
+      "title": "模拟触发",
+      "hint": "测试一个合成事件是否会命中本自动化的过滤条件。这是诊断工具——不会真正执行任务或写入历史。",
+      "topic": {
+        "label": "事件"
+      },
+      "metadata": {
+        "label": "事件元数据"
+      },
+      "run": "测试",
+      "matched": "会触发",
+      "unmatched": "不会触发",
+      "dim": {
+        "topic": "事件主题",
+        "workspace": "工作区",
+        "sessionKind": "会话类型",
+        "reason": "结果",
+        "pr": "PR 过滤",
+        "intentPhase": "意图阶段",
+        "metadata": "元数据"
+      }
     },
     "tab": {
       "detail": "详情",
@@ -1520,7 +1545,37 @@
           },
           "hint": "留空可匹配所有意图生命周期阶段。"
         },
+        "sessionKind": {
+          "label": "在以下会话类型时触发",
+          "hint": "选择哪些运行来源可以触发本自动化。",
+          "required": "至少选择一个会话类型。",
+          "work": { "label": "工作" },
+          "intent": { "label": "意图" },
+          "discussion": { "label": "讨论" },
+          "automation": { "label": "自动化" },
+          "consensus": { "label": "共识" },
+          "tool": { "label": "工具" },
+          "spec": { "label": "规范" }
+        },
+        "metadataFilter": {
+          "label": "元数据条件",
+          "and": "全部满足",
+          "or": "任一满足",
+          "keyPlaceholder": "键",
+          "valuePlaceholder": "值",
+          "add": "添加条件",
+          "hint": "仅当事件元数据满足这些条件时才触发。",
+          "none": "无元数据条件"
+        },
         "hint": "当本工作区中的运行到达所选事件时触发。"
+      },
+      "metadata": {
+        "label": "元数据",
+        "keyPlaceholder": "键",
+        "valuePlaceholder": "值",
+        "add": "添加元数据",
+        "remove": "删除",
+        "hint": "自由标注。会写入本自动化自身的运行事件,供其他自动化据此链式触发。"
       }
     },
     "trigger": {
@@ -1604,6 +1659,7 @@
       "executionNotFound": "执行记录不存在。",
       "approvalNotFound": "审批条目不存在或已被处理。",
       "invalidEventTrigger": "事件触发型自动化需要订阅一个运行事件。",
+      "missingSessionKindFilter": "运行事件触发器必须至少选择一个会话类型。",
       "invalidMaxWallClockMs": "执行超时必须是 1,000 到 86,400,000 毫秒之间的整数。",
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",

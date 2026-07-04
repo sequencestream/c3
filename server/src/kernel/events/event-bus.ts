@@ -50,20 +50,29 @@ export interface EventBusEvents {
    * A run started — `launchRun` began a turn (published once per launchRun,
    * before the vendor fork, so it covers both the claude and driver paths).
    * `sessionKind` is the run's {@link SessionKind} business origin (listeners
-   * route by source — event-triggered automations only fire on `'work'`); `runKind`
-   * is its {@link RunKind} execution form (recorded for audit/extensibility).
+   * route by source — each event-triggered automation declares its own
+   * `eventSessionKindFilter`); `runKind` is its {@link RunKind} execution form
+   * (recorded for audit/extensibility).
    */
   'run:started': {
     sessionId: string
     workspacePath: string
     sessionKind: SessionKind
     runKind: RunKind
+    /**
+     * Generic event annotations (2026-07-04). Only the scheduler's own automation
+     * run publishes a non-empty map (the automation's configured metadata); every
+     * other publish point leaves it `undefined`. Consumed by event-triggered
+     * automations for metadata-condition filtering.
+     */
+    metadata?: Record<string, string> | null
   }
   /**
    * The run is fully over (terminal state backstop reached). Carries the bound
    * session id, the terminal `reason`, the run's {@link SessionKind} business
-   * origin (so event-triggered automations can filter by workspace + reason and skip
-   * non-`work` runs) and its {@link RunKind} execution form (audit/extensibility).
+   * origin (so event-triggered automations can filter by workspace + reason +
+   * their own `eventSessionKindFilter`) and its {@link RunKind} execution form
+   * (audit/extensibility).
    */
   'run:settled': {
     sessionId: string
@@ -71,6 +80,13 @@ export interface EventBusEvents {
     reason: RunEndReason
     sessionKind: SessionKind
     runKind: RunKind
+    /**
+     * Generic event annotations (2026-07-04). Only the scheduler's own automation
+     * run publishes a non-empty map (the automation's configured metadata); every
+     * other publish point leaves it `undefined`. Consumed by event-triggered
+     * automations for metadata-condition filtering.
+     */
+    metadata?: Record<string, string> | null
   }
   /**
    * A single agent attempt in the degradation chain failed (the bus twin of the

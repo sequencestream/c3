@@ -7,6 +7,11 @@
  * every active event-trigger automation that matches is executed via the SAME
  * path as a cron run (the shared execution engine's `dispatchAndTrack`), reusing
  * the three-tier MCP security model and the write-approval queue.
+ *
+ * The per-automation match decision lives in the pure {@link evaluateAutomationTriggerMatch}
+ * evaluator so the real dispatch path and the `simulate_automation_trigger`
+ * diagnostic share one semantics — a simulation can never report a match the
+ * live path would not fire (2026-07-04).
  */
 
 import { resolve } from 'node:path'
@@ -23,18 +28,9 @@ import type {
   ScheduleEventTopic,
   SessionKind,
 } from '@ccc/shared/protocol'
+import { metadataFilterMatches } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { dispatchAndTrack, getStore, inFlight } from '../automations/engine.js'
-
-/**
- * Explicit SessionKind whitelist for event-triggered automations — a business-source
- * judgement. Only `work` runs (user/dev sessions, incl. the automation dev-turn)
- * trigger automations; every other SessionKind (intent comm, discussion, consensus,
- * internal tool, the engine's own runs) is internal and never triggers an
- * automation. Defined as a const array so it is both testable and impossible to
- * accidentally widen via a loose comparison.
- */
-const AUTOMATION_TRIGGER_KINDS: readonly SessionKind[] = ['work']
 
 /** Run-lifecycle dispatch payload (`run:started` / `run:settled`). */
 type RunDispatchPayload = {
@@ -42,6 +38,7 @@ type RunDispatchPayload = {
   workspacePath: string
   reason?: RunEndReason
   sessionKind: SessionKind
+  metadata?: Record<string, string> | null
 }
 
 /** PR-event dispatch payload (`pr:operation`) — the validated, normalized event. */
@@ -74,17 +71,117 @@ export function intentFilterMatches(
   return !filter?.phases?.length || filter.phases.includes(phase)
 }
 
+/** One dimension's pass/fail in a trigger-match breakdown. */
+export interface TriggerMatchBreakdownItem {
+  name: string
+  passed: boolean
+}
+
+/** The full result of a trigger match: overall verdict + per-dimension breakdown. */
+export interface TriggerMatchResult {
+  matched: boolean
+  breakdown: TriggerMatchBreakdownItem[]
+}
+
+/** Normalized synthetic/real event fields the evaluator reads, per topic. */
+export interface TriggerEventInput {
+  workspacePath: string
+  sessionKind?: SessionKind
+  reason?: RunEndReason
+  metadata?: Record<string, string>
+  operation?: PrOperation
+  result?: PrOperationResult
+  phase?: IntentLifecycleEvent['phase']
+}
+
+/**
+ * Pure evaluator: does `event` (on `topic`) match `automation`'s trigger filters?
+ * Returns the overall verdict plus a stable per-dimension breakdown covering only
+ * the dimensions that participate for this topic (topic + workspace always; then
+ * sessionKind/reason/metadata for run-lifecycle, pr for `pr:operation`, intentPhase
+ * for `intent:lifecycle`). Shared by the live dispatch and the simulate handler.
+ */
+export function evaluateAutomationTriggerMatch(
+  automation: Automation,
+  topic: ScheduleEventTopic,
+  event: TriggerEventInput,
+): TriggerMatchResult {
+  const breakdown: TriggerMatchBreakdownItem[] = []
+  const add = (name: string, passed: boolean): void => {
+    breakdown.push({ name, passed })
+  }
+
+  add('topic', automation.eventTopic === topic)
+  add('workspace', resolveWorkspaceRoot(automation.workspaceId)! === resolve(event.workspacePath))
+
+  if (topic === 'run:started' || topic === 'run:settled') {
+    // sessionKind filter is mandatory for run-lifecycle triggers: an absent/empty
+    // filter fails closed (a stored run-lifecycle automation always has one, via
+    // migration + save validation).
+    const filter = automation.eventSessionKindFilter
+    add(
+      'sessionKind',
+      !!filter && filter.length > 0 && !!event.sessionKind && filter.includes(event.sessionKind),
+    )
+    if (topic === 'run:settled') {
+      const reasonFilter = automation.eventReasonFilter
+      add(
+        'reason',
+        !reasonFilter ||
+          reasonFilter.length === 0 ||
+          (!!event.reason && reasonFilter.includes(event.reason)),
+      )
+    }
+    if (automation.eventMetadataFilter) {
+      add('metadata', metadataFilterMatches(automation.eventMetadataFilter, event.metadata ?? {}))
+    }
+  } else if (topic === 'pr:operation') {
+    add(
+      'pr',
+      !!event.operation &&
+        !!event.result &&
+        prFilterMatches(automation.eventPrFilter, event.operation, event.result),
+    )
+  } else if (topic === 'intent:lifecycle') {
+    add(
+      'intentPhase',
+      !!event.phase && intentFilterMatches(automation.eventIntentFilter ?? null, event.phase),
+    )
+  }
+
+  return { matched: breakdown.every((b) => b.passed), breakdown }
+}
+
+/** Project a real dispatch payload onto the evaluator's normalized event input. */
+function toTriggerEventInput(
+  topic: ScheduleEventTopic,
+  payload: RunDispatchPayload | PrDispatchPayload | IntentDispatchPayload,
+): TriggerEventInput {
+  if (topic === 'pr:operation') {
+    const e = payload as PrDispatchPayload
+    return { workspacePath: e.workspacePath, operation: e.operation, result: e.result }
+  }
+  if (topic === 'intent:lifecycle') {
+    const e = payload as IntentDispatchPayload
+    return { workspacePath: e.workspacePath, phase: e.phase }
+  }
+  const e = payload as RunDispatchPayload
+  return {
+    workspacePath: e.workspacePath,
+    sessionKind: e.sessionKind,
+    reason: e.reason,
+    metadata: e.metadata ?? undefined,
+  }
+}
+
 /**
  * Dispatch event-triggered automations for an incoming event.
  *
- * Filters, in order:
- *  - `sessionKind` (run topics only): only `work` runs fire user automations; every
- *    other SessionKind is internal. PR events carry no SessionKind — they are
- *    published by the model inside a work session and are never SessionKind-filtered.
- *  - workspace: the event's workspace must equal the automation's workspace.
- *  - reason (run:settled) / PR filter (pr:operation): topic-specific match.
- *  - in-flight: SCH-R7 serial execution doubles as event-storm throttling — an
- *    automation already running skips the new event rather than stacking.
+ * Each active automation subscribed to the topic is matched via the shared
+ * {@link evaluateAutomationTriggerMatch} evaluator (workspace, per-automation
+ * `eventSessionKindFilter`, reason, PR filter, intent phase, metadata filter). A
+ * matched automation with no in-flight execution is dispatched; SCH-R7 serial
+ * execution doubles as event-storm throttling.
  */
 export function dispatchEventTriggers(topic: RunLifecycleTopic, payload: RunDispatchPayload): void
 export function dispatchEventTriggers(topic: 'pr:operation', payload: PrDispatchPayload): void
@@ -98,13 +195,6 @@ export function dispatchEventTriggers(
 ): void {
   const store = getStore()
   if (!store) return
-  // Explicit SessionKind whitelist: only `work` runs (user/dev) fire user
-  // automations; every other SessionKind is internal. PR events carry no SessionKind
-  // (the whitelist is run-lifecycle-specific), so they bypass this gate by design.
-  if (topic !== 'pr:operation' && topic !== 'intent:lifecycle') {
-    const sessionKind = (payload as RunDispatchPayload).sessionKind
-    if (!AUTOMATION_TRIGGER_KINDS.includes(sessionKind)) return
-  }
 
   let candidates: Automation[]
   try {
@@ -114,29 +204,10 @@ export function dispatchEventTriggers(
     return
   }
 
-  const eventWorkspace = resolve(payload.workspacePath)
+  const event = toTriggerEventInput(topic, payload)
   for (const automation of candidates) {
     if (automation.status !== 'active') continue
-    // Workspace filter: both sides are resolved to compare canonical paths.
-    if (resolveWorkspaceRoot(automation.workspaceId)! !== eventWorkspace) continue
-    // Topic-specific filter.
-    if (topic === 'pr:operation') {
-      const e = payload as PrDispatchPayload
-      if (!prFilterMatches(automation.eventPrFilter, e.operation, e.result)) continue
-    } else if (topic === 'intent:lifecycle') {
-      if (
-        !intentFilterMatches(
-          automation.eventIntentFilter ?? null,
-          (payload as IntentDispatchPayload).phase,
-        )
-      )
-        continue
-    } else {
-      // Reason filter (run:settled only — run:started carries no reason).
-      const reason = (payload as RunDispatchPayload).reason
-      const filter = automation.eventReasonFilter
-      if (filter && filter.length && reason && !filter.includes(reason)) continue
-    }
+    if (!evaluateAutomationTriggerMatch(automation, topic, event).matched) continue
     // SCH-R7 / event-storm throttle: one in-flight execution per automation.
     if (inFlight.has(automation.id)) {
       console.warn(

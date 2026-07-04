@@ -192,3 +192,100 @@ describe('automation store v5 (event-trigger) migration', () => {
     expect(getEventAutomations('pr:operation').map((s) => s.id)).toContain(pr.id)
   })
 })
+
+/**
+ * v11 (2026-07-04): metadata + sessionKind / metadata event-trigger filters. An
+ * old table (v10 era: has trigger_type + event_topic but no session-kind / metadata
+ * columns) with a run-lifecycle event automation must backfill its
+ * event_session_kind_filter to an explicit ['work'] — the persisted equivalent of
+ * the removed hardcoded whitelist — so its behaviour is not widened.
+ */
+function seedV10AutomationsTable(d: Db): void {
+  d.exec(`
+    CREATE TABLE automations (
+      id                  TEXT PRIMARY KEY,
+      type                TEXT NOT NULL,
+      config              TEXT NOT NULL DEFAULT '{}',
+      max_wall_clock_ms   INTEGER,
+      workspace_path      TEXT NOT NULL,
+      trigger_type        TEXT NOT NULL DEFAULT 'cron',
+      cron_expression     TEXT NOT NULL,
+      next_run_at         INTEGER,
+      event_topic         TEXT,
+      event_reason_filter TEXT,
+      event_pr_filter     TEXT,
+      event_intent_filter TEXT,
+      status              TEXT NOT NULL,
+      mode                TEXT NOT NULL DEFAULT '',
+      tool_allowlist      TEXT NOT NULL DEFAULT '[]',
+      tool_denylist       TEXT NOT NULL DEFAULT '[]',
+      vendor              TEXT NOT NULL DEFAULT 'claude',
+      agent_id            TEXT,
+      created_at          INTEGER NOT NULL,
+      updated_at          INTEGER NOT NULL
+    );
+  `)
+  // A legacy run-lifecycle event automation (pre-v11: no sessionKind filter column).
+  d.run(
+    `INSERT INTO automations
+       (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, status, mode, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    'legacy-evt',
+    'command',
+    JSON.stringify({ command: 'echo hi', name: 'Legacy evt' }),
+    '/abs/ws',
+    'event',
+    '',
+    null,
+    'run:settled',
+    'active',
+    'sandboxed',
+    1,
+    1,
+  )
+  // A legacy cron row must NOT be backfilled with a sessionKind filter.
+  d.run(
+    `INSERT INTO automations
+       (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, status, mode, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    'legacy-cron2',
+    'command',
+    JSON.stringify({ command: 'echo hi', name: 'Legacy cron' }),
+    '/abs/ws',
+    'cron',
+    '0 8 * * *',
+    null,
+    null,
+    'active',
+    'sandboxed',
+    1,
+    1,
+  )
+  d.exec('PRAGMA user_version=10;')
+}
+
+describe('automation store v11 (metadata + sessionKind/metadata filter) migration', () => {
+  it('backfills run-lifecycle event automations to explicit ["work"] and leaves cron rows null', () => {
+    const raw = getDb()
+    expect(raw).not.toBeNull()
+    seedV10AutomationsTable(raw!)
+    resetStoreForTests()
+
+    const evt = getAutomation('legacy-evt')
+    expect(evt).not.toBeNull()
+    // Behaviour-preserving backfill: exactly the removed hardcoded whitelist.
+    expect(evt!.eventSessionKindFilter).toEqual(['work'])
+    // No metadata / metadata filter for a legacy row.
+    expect(evt!.metadata).toEqual({})
+    expect(evt!.eventMetadataFilter).toBeNull()
+
+    const cron = getAutomation('legacy-cron2')
+    expect(cron!.eventSessionKindFilter).toBeNull()
+
+    const cols = raw!.all<{ name: string }>('PRAGMA table_info(automations)')
+    const names = cols.map((c) => c.name)
+    expect(names).toContain('metadata')
+    expect(names).toContain('event_session_kind_filter')
+    expect(names).toContain('event_metadata_filter')
+  })
+})

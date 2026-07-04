@@ -87,6 +87,7 @@ import {
   listAutomationsHandler,
   saveWorkspaceMcpConfig,
   automationRunNow,
+  simulateAutomationTrigger,
   updateAutomationHandler,
 } from './automations/index.js'
 import { login, logout, setAdminPassword, removeAccount, setAdminAccount } from './auth/index.js'
@@ -176,6 +177,7 @@ export const handlerMap: HandlerMap = {
   get_automation_detail: getAutomationDetailHandler,
   get_execution_transcript: getExecutionTranscript,
   automation_run_now: automationRunNow,
+  simulate_automation_trigger: simulateAutomationTrigger,
   get_workspace_mcp_config: getWorkspaceMcpConfig,
   save_workspace_mcp_config: saveWorkspaceMcpConfig,
   get_automation_tool_manifest: getAutomationToolManifest,

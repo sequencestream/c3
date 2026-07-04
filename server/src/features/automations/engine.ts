@@ -141,12 +141,16 @@ export function dispatchAndTrack(automation: Automation): void {
     }
   }
 
-  // Publish automation run lifecycle events (2026-06-08-010).
+  // Publish automation run lifecycle events (2026-06-08-010). Only the scheduler's
+  // own automation run stamps `metadata` onto the payload (the automation's configured
+  // annotations), so downstream event-triggered automations can chain by metadata.
+  const eventMetadata = automation.metadata ?? null
   eventBus?.publish('run:started', {
     sessionId: logId,
     workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
     sessionKind: 'automation',
     runKind: 'headless',
+    metadata: eventMetadata,
   })
   eventBus?.publish('run:bound', {
     prevId: logId,
@@ -205,6 +209,7 @@ export function dispatchAndTrack(automation: Automation): void {
         reason,
         sessionKind: 'automation',
         runKind: 'headless',
+        metadata: eventMetadata,
       })
     })
     .catch((err) => {

@@ -37,7 +37,11 @@ vi.mock('./engine.js', () => ({
   cancelInFlight: vi.fn(),
 }))
 
-import { deleteAutomationHandler, updateAutomationHandler } from './index.js'
+import {
+  createAutomationHandler,
+  deleteAutomationHandler,
+  updateAutomationHandler,
+} from './index.js'
 import { cancelInFlight } from './engine.js'
 
 const proj = '/abs/ws-handler'
@@ -126,6 +130,56 @@ describe('updateAutomationHandler — manual title', () => {
       error: { code: 'automation.invalidMaxWallClockMs' },
     })
     expect(getAutomation(sch.id)!.maxWallClockMs).toBeNull()
+  })
+})
+
+describe('run-lifecycle event trigger — sessionKind filter is mandatory', () => {
+  it('rejects a create with a run-lifecycle topic and no sessionKind filter', async () => {
+    const conn = fakeConn()
+    await createAutomationHandler(fakeCtx(), conn, {
+      type: 'create_automation',
+      workspaceId: proj,
+      input: {
+        type: 'command',
+        config: { command: 'echo hi' },
+        workspaceId: proj,
+        vendor: 'claude',
+        triggerType: 'event',
+        cronExpression: '',
+        eventTopic: 'run:settled',
+        mode: 'sandboxed',
+      },
+    } as never)
+    expect((conn as unknown as { send: ReturnType<typeof vi.fn> }).send).toHaveBeenCalledWith({
+      type: 'error',
+      error: { code: 'automation.missingSessionKindFilter' },
+    })
+  })
+
+  it('rejects an update that clears the sessionKind filter on a run-lifecycle automation', async () => {
+    const sch = createAutomation({
+      type: 'command',
+      config: { command: 'echo hi' },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventTopic: 'run:settled',
+      eventSessionKindFilter: ['work'],
+      mode: 'sandboxed',
+      vendor: 'claude',
+    })
+    const conn = fakeConn()
+    await updateAutomationHandler(fakeCtx(), conn, {
+      type: 'update_automation',
+      automationId: sch.id,
+      input: { eventSessionKindFilter: [] },
+    } as never)
+    expect((conn as unknown as { send: ReturnType<typeof vi.fn> }).send).toHaveBeenCalledWith({
+      type: 'error',
+      error: { code: 'automation.missingSessionKindFilter' },
+    })
+    // Unchanged: the filter is still ['work'].
+    expect(getAutomation(sch.id)!.eventSessionKindFilter).toEqual(['work'])
   })
 })
 

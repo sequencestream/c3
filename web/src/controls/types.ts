@@ -28,6 +28,12 @@ import type { ShareTarget } from '@/lib/share-link'
 
 export type WsClient = ReturnType<typeof createWsClient>
 
+/** The `simulate_automation_trigger` client message (for the diagnostic panel action). */
+export type SimulateAutomationTriggerMsg = Extract<
+  ClientToServer,
+  { type: 'simulate_automation_trigger' }
+>
+
 // Runtime plumbing attached to the shared ctx by `useAppController`.
 export interface AppRuntime {
   // The live WS client, (re)assigned on (re)connect; null before the first connect.
@@ -174,6 +180,7 @@ export interface AppMethods {
   updateAutomation(id: string, input: UpdateAutomationInput): void
   deleteAutomation(id: string): void
   onLoadAutomationToolManifest(vendor: string): void
+  simulateAutomationTrigger(input: Omit<SimulateAutomationTriggerMsg, 'type'>): void
 
   // codes (read-only file browser)
   openCodes(workspaceId: string): void

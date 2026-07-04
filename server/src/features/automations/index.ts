@@ -19,6 +19,8 @@ import {
   updateAutomation as updateAutomationStore,
 } from './store.js'
 import { triggerRunNow, cancelInFlight } from './engine.js'
+import { evaluateAutomationTriggerMatch, type TriggerEventInput } from '../triggers/index.js'
+import { normalizeAutomationMetadata } from '@ccc/shared/protocol'
 import { readExecutionTranscript } from './transcript.js'
 import { clampName, generateAutomationName } from './naming.js'
 import type { AutomationNameOverride } from './store.js'
@@ -72,6 +74,17 @@ export const createAutomationHandler: Handler<'create_automation'> = async (ctx,
   // a lifecycle event), so reject it up front rather than persisting a no-op.
   if ((msg.input.triggerType ?? 'cron') === 'event' && !msg.input.eventTopic) {
     conn.send({ type: 'error', error: { code: 'automation.invalidEventTrigger' } })
+    return
+  }
+  // A run-lifecycle event trigger MUST declare at least one sessionKind (the form
+  // pre-selects none); reject an empty/absent filter server-side rather than
+  // relying on the front-end disabled button.
+  if (
+    (msg.input.triggerType ?? 'cron') === 'event' &&
+    (msg.input.eventTopic === 'run:started' || msg.input.eventTopic === 'run:settled') &&
+    !msg.input.eventSessionKindFilter?.length
+  ) {
+    conn.send({ type: 'error', error: { code: 'automation.missingSessionKindFilter' } })
     return
   }
   if (
@@ -137,6 +150,21 @@ export const updateAutomationHandler: Handler<'update_automation'> = async (ctx,
   const nextTopic = msg.input.eventTopic !== undefined ? msg.input.eventTopic : existing.eventTopic
   if (nextTrigger === 'event' && !nextTopic) {
     conn.send({ type: 'error', error: { code: 'automation.invalidEventTrigger' } })
+    return
+  }
+  // A run-lifecycle event trigger must keep a non-empty sessionKind filter — whether
+  // switching into one or editing an existing one (use the patch value if present,
+  // else the stored one).
+  const nextSessionKindFilter =
+    msg.input.eventSessionKindFilter !== undefined
+      ? msg.input.eventSessionKindFilter
+      : existing.eventSessionKindFilter
+  if (
+    nextTrigger === 'event' &&
+    (nextTopic === 'run:started' || nextTopic === 'run:settled') &&
+    !nextSessionKindFilter?.length
+  ) {
+    conn.send({ type: 'error', error: { code: 'automation.missingSessionKindFilter' } })
     return
   }
   if (
@@ -252,6 +280,46 @@ export const automationRunNow: Handler<'automation_run_now'> = (ctx, conn, msg) 
   void triggerRunNow(msg.automationId).then(() => {
     const s = getAutomation(msg.automationId)
     if (s) ctx.broadcastAutomations(resolveWorkspaceRoot(s.workspaceId)!)
+  })
+}
+
+/**
+ * Diagnostic: test a synthetic event against an automation's trigger filters using
+ * the SAME pure evaluator the live dispatch path uses (2026-07-04). Read-only — it
+ * appends no ExecutionLog, dispatches nothing, and never touches in-flight state.
+ * The event's workspace is the automation's own workspace (workspace isn't a test
+ * field), so the workspace dimension always passes and only the configured filters
+ * decide the outcome.
+ */
+export const simulateAutomationTrigger: Handler<'simulate_automation_trigger'> = (
+  _ctx,
+  conn,
+  msg,
+) => {
+  if (!isAutomationStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'automation.dbUnavailable' } })
+    return
+  }
+  const automation = getAutomation(msg.automationId)
+  if (!automation) {
+    conn.send({ type: 'error', error: { code: 'automation.notFound' } })
+    return
+  }
+  const event: TriggerEventInput = {
+    workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
+    sessionKind: msg.sessionKind,
+    reason: msg.reason,
+    metadata: msg.metadata ? normalizeAutomationMetadata(msg.metadata) : undefined,
+    operation: msg.operation,
+    result: msg.result,
+    phase: msg.phase,
+  }
+  const { matched, breakdown } = evaluateAutomationTriggerMatch(automation, msg.topic, event)
+  conn.send({
+    type: 'automation_trigger_simulation_result',
+    automationId: msg.automationId,
+    matched,
+    breakdown,
   })
 }
 

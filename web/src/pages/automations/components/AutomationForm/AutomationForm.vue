@@ -29,6 +29,7 @@ import type {
   CodexSandboxMode,
   AgentConfig,
   CreateAutomationInput,
+  EventMetadataFilter,
   IntentLifecyclePhase,
   ModeToken,
   PrOperation,
@@ -38,11 +39,13 @@ import type {
   ScheduleEventTopic,
   ScheduleTriggerType,
   AutomationType,
+  SessionKind,
   ToolManifestEntry,
   UpdateAutomationInput,
   VendorHostStatus,
   VendorId,
 } from '@ccc/shared/protocol'
+import { SESSION_KINDS } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
 import { VENDOR_LABEL } from '@/lib/vendor'
 import { useTypedI18n } from '@/i18n'
@@ -161,6 +164,25 @@ const eventReasonFilter = ref<RunEndReason[]>([])
 const prOperations = ref<PrOperation[]>([])
 const prResults = ref<PrOperationResult[]>([])
 const intentPhases = ref<IntentLifecyclePhase[]>([])
+// Run-lifecycle sessionKind filter (required, no default selection) + free-form
+// metadata annotations + metadata condition builder.
+const eventSessionKinds = ref<SessionKind[]>([])
+const metadataRows = ref<{ key: string; value: string }[]>([])
+const metadataConditions = ref<{ key: string; value: string }[]>([])
+const metadataCombinator = ref<'AND' | 'OR'>('AND')
+// Literal i18n keys per SessionKind (the typed `t` rejects dynamic template keys).
+const SESSION_KIND_LABEL = computed<Record<SessionKind, string>>(() => ({
+  work: t('automation.form.event.sessionKind.work.label'),
+  intent: t('automation.form.event.sessionKind.intent.label'),
+  discussion: t('automation.form.event.sessionKind.discussion.label'),
+  automation: t('automation.form.event.sessionKind.automation.label'),
+  consensus: t('automation.form.event.sessionKind.consensus.label'),
+  tool: t('automation.form.event.sessionKind.tool.label'),
+  spec: t('automation.form.event.sessionKind.spec.label'),
+}))
+const SESSION_KIND_OPTIONS = computed<{ value: SessionKind; label: string }[]>(() =>
+  SESSION_KINDS.map((value) => ({ value, label: SESSION_KIND_LABEL.value[value] })),
+)
 const INTENT_PHASE_OPTIONS = computed<{ value: IntentLifecyclePhase; label: string }[]>(() => [
   { value: 'created', label: t('automation.form.event.intent.created.label') },
   { value: 'dev_started', label: t('automation.form.event.intent.devStarted.label') },
@@ -185,6 +207,12 @@ const showPrFilter = computed(
 )
 const showIntentFilter = computed(
   () => triggerType.value === 'event' && eventTopic.value === 'intent:lifecycle',
+)
+// sessionKind + metadata filters apply only to run-lifecycle event triggers.
+const showRunLifecycleFilters = computed(
+  () =>
+    triggerType.value === 'event' &&
+    (eventTopic.value === 'run:started' || eventTopic.value === 'run:settled'),
 )
 
 // Advanced segmented builder.
@@ -248,6 +276,17 @@ watch(
       intentPhases.value = sched.eventIntentFilter?.phases
         ? [...sched.eventIntentFilter.phases]
         : []
+      eventSessionKinds.value = sched.eventSessionKindFilter
+        ? [...sched.eventSessionKindFilter]
+        : []
+      metadataRows.value = Object.entries(sched.metadata ?? {}).map(([key, value]) => ({
+        key,
+        value,
+      }))
+      metadataConditions.value = sched.eventMetadataFilter?.conditions
+        ? sched.eventMetadataFilter.conditions.map((c) => ({ key: c.key, value: c.value }))
+        : []
+      metadataCombinator.value = sched.eventMetadataFilter?.combinator ?? 'AND'
       // Vendor: restore from automation, then trigger manifest load.
       vendor.value = sched.vendor
       agentId.value = sched.agentId ?? ''
@@ -269,6 +308,13 @@ watch(
       eventReasonFilter.value = []
       prOperations.value = []
       prResults.value = []
+      intentPhases.value = []
+      // No default sessionKind selection: a run-lifecycle event trigger must be
+      // explicitly scoped before it can be saved.
+      eventSessionKinds.value = []
+      metadataRows.value = []
+      metadataConditions.value = []
+      metadataCombinator.value = 'AND'
       vendor.value = 'claude'
       agentId.value = ''
       vendorInitialised.value = true
@@ -362,6 +408,7 @@ const canSave = computed(
   () =>
     taskFilled.value &&
     triggerValid.value &&
+    sessionKindValid.value &&
     maxWallClockMsValid.value &&
     (type.value === 'command' || agentId.value.length > 0),
 )
@@ -394,6 +441,50 @@ function toggleIntentPhase(phase: IntentLifecyclePhase): void {
   if (i >= 0) intentPhases.value.splice(i, 1)
   else intentPhases.value.push(phase)
 }
+
+function toggleSessionKind(kind: SessionKind): void {
+  const i = eventSessionKinds.value.indexOf(kind)
+  if (i >= 0) eventSessionKinds.value.splice(i, 1)
+  else eventSessionKinds.value.push(kind)
+}
+
+function addMetadataRow(): void {
+  metadataRows.value.push({ key: '', value: '' })
+}
+function removeMetadataRow(index: number): void {
+  metadataRows.value.splice(index, 1)
+}
+
+function addMetadataCondition(): void {
+  metadataConditions.value.push({ key: '', value: '' })
+}
+function removeMetadataCondition(index: number): void {
+  metadataConditions.value.splice(index, 1)
+}
+
+/** Collapse the metadata rows into a clean object (trimmed, non-empty, last-wins). */
+function buildMetadata(): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const row of metadataRows.value) {
+    const key = row.key.trim()
+    const value = row.value.trim()
+    if (key && value) out[key] = value
+  }
+  return out
+}
+
+/** Collapse the metadata condition rows into an {@link EventMetadataFilter} or null. */
+function buildMetadataFilter(): EventMetadataFilter | null {
+  const conditions = metadataConditions.value
+    .map((c) => ({ key: c.key.trim(), value: c.value.trim() }))
+    .filter((c) => c.key && c.value)
+  return conditions.length ? { conditions, combinator: metadataCombinator.value } : null
+}
+
+// A run-lifecycle event trigger must pick at least one sessionKind before saving.
+const sessionKindValid = computed(
+  () => !showRunLifecycleFilters.value || eventSessionKinds.value.length > 0,
+)
 
 // ---- Tool manifest helpers -------------------------------------------------
 const currentTools = computed<ToolManifestEntry[]>(() => props.toolManifest[vendor.value] ?? [])
@@ -477,6 +568,14 @@ function save(): void {
     isEvent && eventTopic.value === 'intent:lifecycle' && intentPhases.value.length
       ? { phases: [...intentPhases.value] }
       : null
+  // sessionKind + metadata filters only carry for run-lifecycle event triggers.
+  const isRunLifecycle =
+    isEvent && (eventTopic.value === 'run:started' || eventTopic.value === 'run:settled')
+  const sessionKindFilter: SessionKind[] | null = isRunLifecycle
+    ? [...eventSessionKinds.value]
+    : null
+  const metadataFilter = isRunLifecycle ? buildMetadataFilter() : null
+  const metadata = buildMetadata()
   if (isEdit.value && props.automation) {
     // Carry the manual title: a non-empty value is stored sticky server-side; an
     // empty value reverts to auto-naming. Create never sends a name (auto only).
@@ -489,6 +588,7 @@ function save(): void {
       vendor: vendor.value,
       agentId: type.value === 'llm' ? agentId.value : null,
       toolAllowlist: [...toolAllowlist.value],
+      metadata,
     }
     // The store clears the other trigger's fields on a triggerType switch, so we
     // only send the fields matching the chosen type (avoids a double column set).
@@ -497,6 +597,8 @@ function save(): void {
       input.eventReasonFilter = reasonFilter
       input.eventPrFilter = prFilter
       input.eventIntentFilter = intentFilter
+      input.eventSessionKindFilter = sessionKindFilter
+      input.eventMetadataFilter = metadataFilter
     } else {
       input.cronExpression = cronExpression.value
     }
@@ -516,6 +618,9 @@ function save(): void {
       eventReasonFilter: reasonFilter,
       eventPrFilter: prFilter,
       eventIntentFilter: intentFilter,
+      eventSessionKindFilter: sessionKindFilter,
+      eventMetadataFilter: metadataFilter,
+      metadata,
       toolAllowlist: [...toolAllowlist.value],
     })
   }
@@ -834,6 +939,129 @@ function save(): void {
             </div>
             <span class="sf-hint">{{ t('automation.form.event.intent.hint') }}</span>
           </template>
+
+          <!-- Run-lifecycle: mandatory sessionKind multi-select (no default) + an
+               optional metadata condition builder. -->
+          <template v-if="showRunLifecycleFilters">
+            <span class="sf-label sf-event-reason-label">{{
+              t('automation.form.event.sessionKind.label')
+            }}</span>
+            <div class="sf-days">
+              <button
+                v-for="sk in SESSION_KIND_OPTIONS"
+                :key="sk.value"
+                type="button"
+                class="sf-day"
+                :class="{ active: eventSessionKinds.includes(sk.value) }"
+                @click="toggleSessionKind(sk.value)"
+              >
+                {{ sk.label }}
+              </button>
+            </div>
+            <span v-if="!sessionKindValid" class="sf-warn">{{
+              t('automation.form.event.sessionKind.required')
+            }}</span>
+            <span v-else class="sf-hint">{{ t('automation.form.event.sessionKind.hint') }}</span>
+
+            <span class="sf-label sf-event-reason-label">{{
+              t('automation.form.event.metadataFilter.label')
+            }}</span>
+            <div class="sf-combinator">
+              <button
+                type="button"
+                class="sf-seg"
+                :class="{ active: metadataCombinator === 'AND' }"
+                @click="metadataCombinator = 'AND'"
+              >
+                {{ t('automation.form.event.metadataFilter.and') }}
+              </button>
+              <button
+                type="button"
+                class="sf-seg"
+                :class="{ active: metadataCombinator === 'OR' }"
+                @click="metadataCombinator = 'OR'"
+              >
+                {{ t('automation.form.event.metadataFilter.or') }}
+              </button>
+            </div>
+            <div
+              v-for="(cond, i) in metadataConditions"
+              :key="`cond-${i}`"
+              class="sf-kv-row"
+              data-testid="metadata-condition-row"
+            >
+              <input
+                v-model="cond.key"
+                class="sf-input sf-kv-input"
+                :placeholder="t('automation.form.event.metadataFilter.keyPlaceholder')"
+              />
+              <span class="sf-kv-eq">=</span>
+              <input
+                v-model="cond.value"
+                class="sf-input sf-kv-input"
+                :placeholder="t('automation.form.event.metadataFilter.valuePlaceholder')"
+              />
+              <button
+                type="button"
+                class="sf-kv-del"
+                :aria-label="t('automation.form.metadata.remove')"
+                @click="removeMetadataCondition(i)"
+              >
+                ✕
+              </button>
+            </div>
+            <button
+              type="button"
+              class="sf-kv-add"
+              data-testid="metadata-condition-add"
+              @click="addMetadataCondition"
+            >
+              + {{ t('automation.form.event.metadataFilter.add') }}
+            </button>
+            <span class="sf-hint">{{ t('automation.form.event.metadataFilter.hint') }}</span>
+          </template>
+        </div>
+
+        <!-- Metadata annotations (free-form key/value). Only the scheduler's own run
+             for this automation carries these into its run events, so other
+             automations can chain by them. -->
+        <div class="sf-field sf-field--stacked">
+          <span class="sf-label">{{ t('automation.form.metadata.label') }}</span>
+          <div
+            v-for="(row, i) in metadataRows"
+            :key="`meta-${i}`"
+            class="sf-kv-row"
+            data-testid="metadata-row"
+          >
+            <input
+              v-model="row.key"
+              class="sf-input sf-kv-input"
+              :placeholder="t('automation.form.metadata.keyPlaceholder')"
+            />
+            <span class="sf-kv-eq">=</span>
+            <input
+              v-model="row.value"
+              class="sf-input sf-kv-input"
+              :placeholder="t('automation.form.metadata.valuePlaceholder')"
+            />
+            <button
+              type="button"
+              class="sf-kv-del"
+              :aria-label="t('automation.form.metadata.remove')"
+              @click="removeMetadataRow(i)"
+            >
+              ✕
+            </button>
+          </div>
+          <button
+            type="button"
+            class="sf-kv-add"
+            data-testid="metadata-add"
+            @click="addMetadataRow"
+          >
+            + {{ t('automation.form.metadata.add') }}
+          </button>
+          <span class="sf-hint">{{ t('automation.form.metadata.hint') }}</span>
         </div>
 
         <!-- Vendor selector -->
@@ -1278,6 +1506,57 @@ function save(): void {
   border-radius: var(--radius-sm);
   padding: var(--sp-2);
   margin: 0;
+}
+
+/* Key/value row builder (metadata annotations + metadata condition filter). */
+.sf-kv-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.sf-kv-input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.sf-kv-eq {
+  color: var(--c-text-muted);
+  flex-shrink: 0;
+}
+.sf-kv-del {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  color: var(--c-text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.sf-kv-del:hover {
+  color: var(--c-error);
+  border-color: var(--c-error);
+}
+.sf-kv-add {
+  align-self: flex-start;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.sf-kv-add:hover {
+  color: var(--c-text);
+  background: var(--c-hover);
+}
+.sf-combinator {
+  display: flex;
+  gap: var(--sp-1);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  max-width: 200px;
 }
 
 /* Tool checklist */

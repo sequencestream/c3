@@ -50,7 +50,7 @@ web/src/
 │
 ├── pages/                                           # 各功能页面(容器页 + 页内子组件)
 │   ├── workcenter/                                  # 工作台页
-│   │   ├── WorkCenter.vue                           # 工作台容器页:左栏“用户通知消息”标题 + 状态下拉(all/todo/done/canceled/auto,默认 all)/列表 + 详情两栏,切换筛选重置 20 条分页并按最后一行时间游标加载更多,查看纯通知 todo 自动完成,移动端单列流式
+│   │   ├── WorkCenter.vue                           # 工作台容器页:左栏“用户通知消息”标题 + 状态下拉(all/todo/done/canceled/auto,默认 all)/列表 + 详情两栏,切换筛选重置 20 条分页并按最后一行时间游标加载更多,查看纯通知 todo 自动完成;移动端经 MobileStack 退化为 列表→详情 两级 drill-down(点事件行整屏切详情、顶部工具栏返回回列表,返回保留选中高亮/筛选值;mobileActiveKey 显式态,select 置 detail、back/筛选变更置 list,active-token 用事件 id)
 │   │   └── components/
 │   │       ├── EventList.vue                        # 事件列表:右侧状态徽标(含 auto)和 todo 标记完成、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、会话类型图标、时间、选中态与加载更多
 │   │       └── EventDetail.vue                      # 事件详情:标题(经 event-title 本地化)+属性列表(工作区名/会话类型/会话 id/意图名,后两者为空隐藏)、Allow/Deny、AskUserQuestion 全题一览作答面板(自定义回复/共识提示/只读态)、共识决策留痕(auto 记录的投票/裁决,只读)、按 sessionKind+sessionId 溯源跳转
@@ -89,8 +89,8 @@ web/src/
 │   │   └── components/
 │   │       ├── CodeTree/CodeTree.vue                # 左栏:顶部 Files 标题 + 左侧 ⇤/⇥ 展开切换(展开后宽度 560px,localStorage 持久化)+ 右侧刷新按钮(↻ SVG,emit refresh-tree→重拉根目录+所有已展开目录)+「修改会话」开关按钮(showChat prop 驱动空心/实心消息气泡 SVG 图标,点击 emit toggle-chat 由 Codes.vue 翻转右栏显隐)+ 搜索框(filename/content 切换 + 文件模式 glob 过滤框 *.ts,默认 * 全部,Enter/防抖触发 search_codes)+ 懒加载文件树/搜索结果(点结果打开文件,content 命中带行号定位)
 │   │       ├── CodeTree/CodeTreeNode.vue            # 文件树单节点(递归):目录点击展开/折叠(懒加载 list_dir),文件点击打开 tab,激活态高亮;文件/目录右键菜单可复制名称或 workspace 相对路径并通过全局 toast 反馈
-│   │       ├── CodeTabs/CodeTabs.vue                # 右栏多 tab 容器:tab 条(可手动关闭,关闭后聚焦相邻)+ 渲染激活 tab 内容,空态
-│   │       └── CodeFileView/CodeFileView.vue        # 单文件内容渲染:复用 Shiki 高亮管线(后缀推断语言,白名单外/二进制/超限降级)+ 行号 gutter 逐行对齐 + 搜索命中滚动并高亮目标行
+│   │       ├── CodeTabs/CodeTabs.vue                # 右栏多 tab 容器:tab 条(可手动关闭,关闭后聚焦相邻)+ 渲染激活 tab 内容,空态;持有各 tab 的 Markdown 视图模式(原文/预览)内存 Map,按 path 记忆并透传给 CodeFileView,关闭/移除时清理该 path
+│   │       └── CodeFileView/CodeFileView.vue        # 单文件内容渲染:复用 Shiki 高亮管线(后缀推断语言,白名单外/二进制/超限降级)+ 行号 gutter 逐行对齐 + 搜索命中滚动并高亮目标行;.md 文件在 meta 栏右侧显示「原文/预览」两态开关(受控 viewMode prop),预览态复用 MarkdownText 只读渲染 file.content
 │   │
 │   ├── login/                                       # 登录页
 │   │   └── Login.vue                                # 全屏登录门(ADR-0023):账号+密码表单,提交走 WS login 消息,pending/错误码经 useAuth 回流
@@ -116,7 +116,7 @@ web/src/
 │   ├── authToken.ts                                 # 会话 token 持久化(localStorage,guard 无 DOM 环境):get/set/clear,供 ws.ts 握手 ?token= 复用
 │   ├── ask.ts                                       # AskUserQuestion 辅助:提取问题列表、共识意见、选项/自定义答案聚合
 │   ├── chat-types.ts                                # 聊天消息数据模型:ChatBody/ChatMsg/PermissionMsg/RunActivity/Block 类型(含 standalone 块)、多说话人 SpeakerView
-│   ├── codes-view.ts                                # Codes 页纯逻辑/类型:CodeTab/搜索结果视图、关闭 tab 后聚焦相邻(closeTab)、后缀→Shiki 语言推断(langFromPath)、basename、字节人类可读化
+│   ├── codes-view.ts                                # Codes 页纯逻辑/类型:CodeTab/搜索结果视图、关闭 tab 后聚焦相邻(closeTab)、后缀→Shiki 语言推断(langFromPath)、basename、字节人类可读化、CodeViewMode(原文/预览)+ isMarkdownPath(.md 判定)
 │   ├── chat-scroll.ts                               # 聊天滚动纯逻辑:底部贴近阈值判定 + 消息变化签名,供 ChatMessages 决定是否跟随新输出
 │   ├── current-workspace.ts                         # 「当前工作区」解析:优先持久化选择,否则回落到最近访问工作区
 │   ├── datetime-formats.ts                          # 日期/数字格式化预设:为 vue-i18n 与纯展示 lib 提供单一数据源

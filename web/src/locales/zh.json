@@ -2251,7 +2251,12 @@
       "loading": "加载文件中…",
       "binary": "二进制文件——无法预览。",
       "tooLarge": "文件过大,无法预览({size})。",
-      "empty": "此文件为空。"
+      "empty": "此文件为空。",
+      "view": {
+        "aria": "视图模式",
+        "source": "原文",
+        "preview": "预览"
+      }
     },
     "chat": {
       "empty": {

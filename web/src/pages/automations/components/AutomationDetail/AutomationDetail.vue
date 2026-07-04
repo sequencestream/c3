@@ -11,23 +11,48 @@
  *  - automation: 选中的自动化对象(null 时隐藏)
  *  - toolManifest: per-vendor 工具清单缓存,用于判断工具读写属性
  */
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { describeCron } from '@ccc/shared/cron'
 import type {
   AgentConfig,
+  ClientToServer,
+  IntentLifecyclePhase,
+  PrOperation,
   PrOperationResult,
+  RunEndReason,
   Automation,
+  ScheduleEventTopic,
+  SessionKind,
   ToolManifestEntry,
+} from '@ccc/shared/protocol'
+import {
+  INTENT_LIFECYCLE_PHASES,
+  PR_OPERATIONS,
+  PR_OPERATION_RESULTS,
+  SESSION_KINDS,
 } from '@ccc/shared/protocol'
 import { VENDOR_LABEL, VENDOR_COLOR } from '@/lib/vendor'
 import { useTypedI18n } from '@/i18n'
 
 const { t } = useTypedI18n()
 
+/** The simulate-trigger payload (client message minus its `type` tag). */
+type SimulateInput = Omit<Extract<ClientToServer, { type: 'simulate_automation_trigger' }>, 'type'>
+
 const props = defineProps<{
   automation: Automation | null
   toolManifest: Record<string, ToolManifestEntry[] | null>
   agents: AgentConfig[]
+  /** Latest simulation result for the selected automation (null = none run yet). */
+  simulationResult: {
+    automationId: string
+    matched: boolean
+    breakdown: { name: string; passed: boolean }[]
+  } | null
+}>()
+
+const emit = defineEmits<{
+  simulate: [input: SimulateInput]
 }>()
 
 const cronDescription = computed(() =>
@@ -113,8 +138,45 @@ function prResultLabel(result: PrOperationResult): string {
   }
 }
 
+function sessionKindLabel(kind: SessionKind): string {
+  switch (kind) {
+    case 'work':
+      return t('automation.form.event.sessionKind.work.label')
+    case 'intent':
+      return t('automation.form.event.sessionKind.intent.label')
+    case 'discussion':
+      return t('automation.form.event.sessionKind.discussion.label')
+    case 'automation':
+      return t('automation.form.event.sessionKind.automation.label')
+    case 'consensus':
+      return t('automation.form.event.sessionKind.consensus.label')
+    case 'tool':
+      return t('automation.form.event.sessionKind.tool.label')
+    case 'spec':
+      return t('automation.form.event.sessionKind.spec.label')
+  }
+}
+
 const eventTopic = computed(() => eventTopicLabel(props.automation?.eventTopic ?? null))
 const reasonFilter = computed(() => props.automation?.eventReasonFilter?.map(reasonLabel) ?? [])
+const metadataEntries = computed(() => Object.entries(props.automation?.metadata ?? {}))
+const sessionKindFilterLabels = computed(
+  () => props.automation?.eventSessionKindFilter?.map(sessionKindLabel) ?? [],
+)
+const isRunLifecycleTopic = computed(
+  () =>
+    props.automation?.eventTopic === 'run:started' ||
+    props.automation?.eventTopic === 'run:settled',
+)
+const metadataConditionText = computed(() => {
+  const filter = props.automation?.eventMetadataFilter
+  if (!filter?.conditions.length) return ''
+  const joiner =
+    filter.combinator === 'OR'
+      ? ` ${t('automation.form.event.metadataFilter.or')} `
+      : ` ${t('automation.form.event.metadataFilter.and')} `
+  return filter.conditions.map((c) => `${c.key}=${c.value}`).join(joiner)
+})
 const prOperationFilter = computed(
   () => props.automation?.eventPrFilter?.operations?.map(prOperationLabel) ?? [],
 )
@@ -139,6 +201,125 @@ function vendorDotBg(vendor: string): string {
 }
 function vendorLabel(vendor: string): string {
   return VENDOR_LABEL[vendor as keyof typeof VENDOR_LABEL] || vendor
+}
+
+// ---- Simulate trigger (diagnostic) ----------------------------------------
+const isEventAutomation = computed(() => props.automation?.triggerType === 'event')
+
+const SIM_TOPICS: ScheduleEventTopic[] = [
+  'run:started',
+  'run:settled',
+  'pr:operation',
+  'intent:lifecycle',
+]
+const simTopic = ref<ScheduleEventTopic>('run:settled')
+const simSessionKind = ref<SessionKind>('work')
+const simReason = ref<RunEndReason>('complete')
+const simOperation = ref<PrOperation>('merge')
+const simResult = ref<PrOperationResult>('success')
+const simPhase = ref<IntentLifecyclePhase>('done')
+const simMetadataRows = ref<{ key: string; value: string }[]>([])
+
+// Reset the simulate form to the selected automation's configured topic on change.
+watch(
+  () => props.automation?.id,
+  () => {
+    simTopic.value = props.automation?.eventTopic ?? 'run:settled'
+    simMetadataRows.value = []
+  },
+  { immediate: true },
+)
+
+const simIsRunLifecycle = computed(
+  () => simTopic.value === 'run:started' || simTopic.value === 'run:settled',
+)
+
+const SIM_SESSION_KIND_OPTIONS = computed(() =>
+  SESSION_KINDS.map((value) => ({ value, label: sessionKindLabel(value) })),
+)
+const SIM_REASON_OPTIONS = computed(() =>
+  (['complete', 'error', 'aborted'] as RunEndReason[]).map((value) => ({
+    value,
+    label: reasonLabel(value),
+  })),
+)
+const SIM_OPERATION_OPTIONS = computed(() =>
+  PR_OPERATIONS.map((value) => ({ value, label: prOperationLabel(value) })),
+)
+const SIM_RESULT_OPTIONS = computed(() =>
+  PR_OPERATION_RESULTS.map((value) => ({ value, label: prResultLabel(value) })),
+)
+const SIM_PHASE_OPTIONS = computed(() =>
+  INTENT_LIFECYCLE_PHASES.map((value) => ({ value, label: value })),
+)
+
+function topicLabelFull(topic: ScheduleEventTopic): string {
+  switch (topic) {
+    case 'run:started':
+      return t('automation.form.event.topic.started.label')
+    case 'run:settled':
+      return t('automation.form.event.topic.settled.label')
+    case 'pr:operation':
+      return t('automation.form.event.topic.prOperation.label')
+    case 'intent:lifecycle':
+      return t('automation.form.event.topic.intentLifecycle.label')
+  }
+}
+
+function addSimMetadataRow(): void {
+  simMetadataRows.value.push({ key: '', value: '' })
+}
+function removeSimMetadataRow(index: number): void {
+  simMetadataRows.value.splice(index, 1)
+}
+
+function runSimulate(): void {
+  const automation = props.automation
+  if (!automation) return
+  const metadata: Record<string, string> = {}
+  for (const row of simMetadataRows.value) {
+    const key = row.key.trim()
+    const value = row.value.trim()
+    if (key && value) metadata[key] = value
+  }
+  emit('simulate', {
+    automationId: automation.id,
+    topic: simTopic.value,
+    sessionKind: simIsRunLifecycle.value ? simSessionKind.value : undefined,
+    reason: simTopic.value === 'run:settled' ? simReason.value : undefined,
+    metadata: simIsRunLifecycle.value && Object.keys(metadata).length ? metadata : undefined,
+    operation: simTopic.value === 'pr:operation' ? simOperation.value : undefined,
+    result: simTopic.value === 'pr:operation' ? simResult.value : undefined,
+    phase: simTopic.value === 'intent:lifecycle' ? simPhase.value : undefined,
+  })
+}
+
+// The result belongs to this automation (guard against a stale result for another).
+const currentResult = computed(() =>
+  props.simulationResult && props.simulationResult.automationId === props.automation?.id
+    ? props.simulationResult
+    : null,
+)
+
+function breakdownLabel(name: string): string {
+  switch (name) {
+    case 'topic':
+      return t('automation.simulate.dim.topic')
+    case 'workspace':
+      return t('automation.simulate.dim.workspace')
+    case 'sessionKind':
+      return t('automation.simulate.dim.sessionKind')
+    case 'reason':
+      return t('automation.simulate.dim.reason')
+    case 'pr':
+      return t('automation.simulate.dim.pr')
+    case 'intentPhase':
+      return t('automation.simulate.dim.intentPhase')
+    case 'metadata':
+      return t('automation.simulate.dim.metadata')
+    default:
+      return name
+  }
 }
 </script>
 
@@ -214,6 +395,24 @@ function vendorLabel(vendor: string): string {
             t('automation.form.event.reason.hint')
           }}</span>
         </div>
+        <template v-if="isRunLifecycleTopic">
+          <div class="sd-row sd-row--content">
+            <span class="sd-label">{{ t('automation.form.event.sessionKind.label') }}</span>
+            <span v-if="sessionKindFilterLabels.length" class="sd-value">{{
+              sessionKindFilterLabels.join(' · ')
+            }}</span>
+            <span v-else class="sd-value sd-value--hint">—</span>
+          </div>
+          <div class="sd-row sd-row--content">
+            <span class="sd-label">{{ t('automation.form.event.metadataFilter.label') }}</span>
+            <span v-if="metadataConditionText" class="sd-value mono">{{
+              metadataConditionText
+            }}</span>
+            <span v-else class="sd-value sd-value--hint">{{
+              t('automation.form.event.metadataFilter.none')
+            }}</span>
+          </div>
+        </template>
         <template v-if="automation.eventTopic === 'pr:operation'">
           <div class="sd-row sd-row--content">
             <span class="sd-label">{{ t('automation.form.event.pr.op.label') }}</span>
@@ -261,6 +460,154 @@ function vendorLabel(vendor: string): string {
             {{ name }}
           </li>
         </ul>
+      </div>
+
+      <!-- Metadata annotations -->
+      <div class="sd-section">
+        <h4 class="sd-section-title">{{ t('automation.form.metadata.label') }}</h4>
+        <p v-if="!metadataEntries.length" class="sd-tools-empty">
+          {{ t('automation.detail.metadata.empty') }}
+        </p>
+        <ul v-else class="sd-tool-list">
+          <li
+            v-for="[key, value] in metadataEntries"
+            :key="key"
+            data-testid="sd-metadata-item"
+            class="sd-tool-item"
+          >
+            {{ key }}={{ value }}
+          </li>
+        </ul>
+      </div>
+
+      <!-- Simulate trigger (diagnostic; event automations only) -->
+      <div v-if="isEventAutomation" class="sd-section" data-testid="automation-simulate">
+        <h4 class="sd-section-title">{{ t('automation.simulate.title') }}</h4>
+        <p class="sd-tools-empty">{{ t('automation.simulate.hint') }}</p>
+
+        <div class="sd-sim-row">
+          <span class="sd-label">{{ t('automation.simulate.topic.label') }}</span>
+          <select v-model="simTopic" class="sd-sim-select">
+            <option v-for="topic in SIM_TOPICS" :key="topic" :value="topic">
+              {{ topicLabelFull(topic) }}
+            </option>
+          </select>
+        </div>
+
+        <template v-if="simIsRunLifecycle">
+          <div class="sd-sim-row">
+            <span class="sd-label">{{ t('automation.form.event.sessionKind.label') }}</span>
+            <select v-model="simSessionKind" class="sd-sim-select">
+              <option v-for="opt in SIM_SESSION_KIND_OPTIONS" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </div>
+          <div v-if="simTopic === 'run:settled'" class="sd-sim-row">
+            <span class="sd-label">{{ t('automation.form.event.reason.label') }}</span>
+            <select v-model="simReason" class="sd-sim-select">
+              <option v-for="opt in SIM_REASON_OPTIONS" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </div>
+          <div class="sd-sim-metadata">
+            <span class="sd-label">{{ t('automation.simulate.metadata.label') }}</span>
+            <div
+              v-for="(row, i) in simMetadataRows"
+              :key="`sim-meta-${i}`"
+              class="sd-sim-kv"
+              data-testid="sim-metadata-row"
+            >
+              <input
+                v-model="row.key"
+                class="sd-sim-input"
+                :placeholder="t('automation.form.metadata.keyPlaceholder')"
+              />
+              <span class="sd-kv-eq">=</span>
+              <input
+                v-model="row.value"
+                class="sd-sim-input"
+                :placeholder="t('automation.form.metadata.valuePlaceholder')"
+              />
+              <button
+                type="button"
+                class="sd-kv-del"
+                :aria-label="t('automation.form.metadata.remove')"
+                @click="removeSimMetadataRow(i)"
+              >
+                ✕
+              </button>
+            </div>
+            <button type="button" class="sd-kv-add" @click="addSimMetadataRow">
+              + {{ t('automation.form.metadata.add') }}
+            </button>
+          </div>
+        </template>
+
+        <template v-else-if="simTopic === 'pr:operation'">
+          <div class="sd-sim-row">
+            <span class="sd-label">{{ t('automation.form.event.pr.op.label') }}</span>
+            <select v-model="simOperation" class="sd-sim-select">
+              <option v-for="opt in SIM_OPERATION_OPTIONS" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </div>
+          <div class="sd-sim-row">
+            <span class="sd-label">{{ t('automation.form.event.pr.result.label') }}</span>
+            <select v-model="simResult" class="sd-sim-select">
+              <option v-for="opt in SIM_RESULT_OPTIONS" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </div>
+        </template>
+
+        <template v-else-if="simTopic === 'intent:lifecycle'">
+          <div class="sd-sim-row">
+            <span class="sd-label">{{ t('automation.form.event.intent.label') }}</span>
+            <select v-model="simPhase" class="sd-sim-select">
+              <option v-for="opt in SIM_PHASE_OPTIONS" :key="opt.value" :value="opt.value">
+                {{ opt.label }}
+              </option>
+            </select>
+          </div>
+        </template>
+
+        <button
+          type="button"
+          class="sd-sim-run"
+          data-testid="automation-simulate-run"
+          @click="runSimulate"
+        >
+          {{ t('automation.simulate.run') }}
+        </button>
+
+        <div v-if="currentResult" class="sd-sim-result" data-testid="automation-simulate-result">
+          <span
+            class="sd-sim-verdict"
+            :class="currentResult.matched ? 'matched' : 'unmatched'"
+            data-testid="automation-simulate-verdict"
+          >
+            {{
+              currentResult.matched
+                ? t('automation.simulate.matched')
+                : t('automation.simulate.unmatched')
+            }}
+          </span>
+          <ul class="sd-sim-breakdown">
+            <li
+              v-for="item in currentResult.breakdown"
+              :key="item.name"
+              class="sd-sim-dim"
+              :class="{ pass: item.passed }"
+            >
+              <span class="sd-sim-dim-mark" aria-hidden="true">{{ item.passed ? '✓' : '✕' }}</span>
+              {{ breakdownLabel(item.name) }}
+            </li>
+          </ul>
+        </div>
       </div>
     </div>
   </div>
@@ -393,5 +740,127 @@ function vendorLabel(vendor: string): string {
   font-size: var(--fs-caption);
   margin: 0;
   font-style: italic;
+}
+
+.sd-value.mono {
+  font-family: var(--ff-mono, monospace);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Simulate panel ---- */
+.sd-sim-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-caption);
+}
+.sd-sim-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 260px;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  color: var(--c-text);
+  font-size: var(--fs-caption);
+  padding: 4px 6px;
+}
+.sd-sim-metadata {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.sd-sim-kv {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.sd-sim-input {
+  flex: 1 1 0;
+  min-width: 0;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  color: var(--c-text);
+  font-size: var(--fs-caption);
+  padding: 4px 6px;
+}
+.sd-kv-eq {
+  color: var(--c-text-muted);
+}
+.sd-kv-del,
+.sd-kv-add {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.sd-kv-add {
+  align-self: flex-start;
+}
+.sd-kv-del:hover {
+  color: var(--c-error);
+  border-color: var(--c-error);
+}
+.sd-kv-add:hover {
+  color: var(--c-text);
+  background: var(--c-hover);
+}
+.sd-sim-run {
+  align-self: flex-start;
+  background: var(--c-primary);
+  border: 1px solid var(--c-primary);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: var(--fs-caption);
+  padding: 5px 14px;
+  cursor: pointer;
+}
+.sd-sim-run:hover {
+  opacity: 0.9;
+}
+.sd-sim-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-card);
+}
+.sd-sim-verdict {
+  font-weight: 600;
+  font-size: var(--fs-caption);
+}
+.sd-sim-verdict.matched {
+  color: var(--c-success);
+}
+.sd-sim-verdict.unmatched {
+  color: var(--c-error);
+}
+.sd-sim-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sd-sim-dim {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-caption);
+  color: var(--c-error);
+}
+.sd-sim-dim.pass {
+  color: var(--c-success);
+}
+.sd-sim-dim-mark {
+  width: 14px;
+  flex-shrink: 0;
 }
 </style>

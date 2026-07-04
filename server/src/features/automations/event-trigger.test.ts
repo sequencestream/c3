@@ -79,6 +79,70 @@ describe('store — event-trigger automation CRUD', () => {
     expect(s.eventReasonFilter).toEqual(['error', 'aborted'])
   })
 
+  it('round-trips metadata + sessionKind + metadata filter for a run-lifecycle automation', () => {
+    const s = createAutomation({
+      type: 'command',
+      config: { command: 'echo hi' },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventTopic: 'run:settled',
+      eventSessionKindFilter: ['work', 'automation'],
+      eventMetadataFilter: {
+        conditions: [{ key: 'stage', value: 'a' }],
+        combinator: 'AND',
+      },
+      metadata: { stage: 'a', team: 'core' },
+      mode: 'sandboxed',
+      vendor: 'claude',
+    })
+    expect(s.eventSessionKindFilter).toEqual(['work', 'automation'])
+    expect(s.eventMetadataFilter).toEqual({
+      conditions: [{ key: 'stage', value: 'a' }],
+      combinator: 'AND',
+    })
+    expect(s.metadata).toEqual({ stage: 'a', team: 'core' })
+    const reloaded = getAutomation(s.id)!
+    expect(reloaded.eventSessionKindFilter).toEqual(['work', 'automation'])
+    expect(reloaded.metadata).toEqual({ stage: 'a', team: 'core' })
+  })
+
+  it('does not persist sessionKind / metadata filters for a pr:operation automation', () => {
+    const s = createAutomation({
+      type: 'command',
+      config: { command: 'echo hi' },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventTopic: 'pr:operation',
+      eventSessionKindFilter: ['work'],
+      eventMetadataFilter: { conditions: [{ key: 'x', value: 'y' }], combinator: 'AND' },
+      mode: 'sandboxed',
+      vendor: 'claude',
+    })
+    expect(s.eventSessionKindFilter).toBeNull()
+    expect(s.eventMetadataFilter).toBeNull()
+  })
+
+  it('switching a run-lifecycle event → cron clears the sessionKind / metadata filters', () => {
+    const s = createAutomation({
+      type: 'command',
+      config: { command: 'a' },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventTopic: 'run:settled',
+      eventSessionKindFilter: ['work'],
+      eventMetadataFilter: { conditions: [{ key: 'x', value: 'y' }], combinator: 'AND' },
+      mode: 'sandboxed',
+      vendor: 'claude',
+    })
+    updateAutomation(s.id, { triggerType: 'cron', cronExpression: '0 9 * * *' })
+    const after = getAutomation(s.id)!
+    expect(after.eventSessionKindFilter).toBeNull()
+    expect(after.eventMetadataFilter).toBeNull()
+  })
+
   it('getEventAutomations returns only matching active event automations', () => {
     const settled = createAutomation({
       type: 'command',
@@ -248,6 +312,9 @@ describe('scheduler — dispatchEventTriggers', () => {
       eventTopic: 'run:settled',
       eventReasonFilter: null,
       eventPrFilter: null,
+      eventSessionKindFilter: ['work'],
+      eventMetadataFilter: null,
+      metadata: {},
       status: 'active',
       mode: 'sandboxed',
       toolAllowlist: [],
@@ -312,6 +379,100 @@ describe('scheduler — dispatchEventTriggers', () => {
       workspacePath: '/abs/ws-a',
       reason: 'complete',
       sessionKind: 'intent',
+    })
+    expect(appendLog).not.toHaveBeenCalled()
+  })
+
+  it('fires for an automation-source run when the filter includes automation', () => {
+    install([evSched({ id: 'sk1', eventSessionKindFilter: ['work', 'automation'] })])
+    dispatchEventTriggers('run:settled', {
+      sessionId: 's',
+      workspacePath: '/abs/ws-a',
+      reason: 'complete',
+      sessionKind: 'automation',
+    })
+    expect(appendLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fire for an automation-source run when the filter is only work', () => {
+    install([evSched({ id: 'sk2', eventSessionKindFilter: ['work'] })])
+    dispatchEventTriggers('run:settled', {
+      sessionId: 's',
+      workspacePath: '/abs/ws-a',
+      reason: 'complete',
+      sessionKind: 'automation',
+    })
+    expect(appendLog).not.toHaveBeenCalled()
+  })
+
+  it('metadata AND filter fires only when every condition matches', () => {
+    install([
+      evSched({
+        id: 'md-and',
+        eventMetadataFilter: {
+          conditions: [
+            { key: 'stage', value: 'a' },
+            { key: 'team', value: 'core' },
+          ],
+          combinator: 'AND',
+        },
+      }),
+    ])
+    // Only one condition matches → no fire.
+    dispatchEventTriggers('run:settled', {
+      sessionId: 's',
+      workspacePath: '/abs/ws-a',
+      reason: 'complete',
+      sessionKind: 'work',
+      metadata: { stage: 'a', team: 'other' },
+    })
+    expect(appendLog).not.toHaveBeenCalled()
+    // Both match → fires.
+    dispatchEventTriggers('run:settled', {
+      sessionId: 's',
+      workspacePath: '/abs/ws-a',
+      reason: 'complete',
+      sessionKind: 'work',
+      metadata: { stage: 'a', team: 'core' },
+    })
+    expect(appendLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('metadata OR filter fires when any condition matches', () => {
+    install([
+      evSched({
+        id: 'md-or',
+        eventMetadataFilter: {
+          conditions: [
+            { key: 'stage', value: 'a' },
+            { key: 'stage', value: 'b' },
+          ],
+          combinator: 'OR',
+        },
+      }),
+    ])
+    dispatchEventTriggers('run:settled', {
+      sessionId: 's',
+      workspacePath: '/abs/ws-a',
+      reason: 'complete',
+      sessionKind: 'work',
+      metadata: { stage: 'b' },
+    })
+    expect(appendLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('metadata filter does not match when the event carries no metadata', () => {
+    install([
+      evSched({
+        id: 'md-none',
+        eventMetadataFilter: { conditions: [{ key: 'stage', value: 'a' }], combinator: 'AND' },
+      }),
+    ])
+    dispatchEventTriggers('run:settled', {
+      sessionId: 's',
+      workspacePath: '/abs/ws-a',
+      reason: 'complete',
+      sessionKind: 'work',
     })
     expect(appendLog).not.toHaveBeenCalled()
   })

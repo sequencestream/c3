@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS automations (
   event_topic         TEXT,                                -- 事件主题 (v5 新增, trigger_type='event' 时使用: 'run:started'|'run:settled'|'pr:operation')
   event_reason_filter TEXT,                                -- JSON 数组, run:settled 原因过滤 (v5 新增, 如 ['complete','error','aborted'])
   event_pr_filter     TEXT,                                -- JSON {operations?,results?}, pr:operation 过滤 (v8 新增, NULL=任意)
+  event_intent_filter TEXT,                                -- JSON {phases?}, intent:lifecycle 阶段过滤 (v9 新增, NULL=任意阶段)
+  event_session_kind_filter TEXT,                          -- JSON 数组, run-lifecycle 事件的 sessionKind 多选 (v11 新增, 非空必填; cron/pr/intent 为 NULL)
+  event_metadata_filter     TEXT,                          -- JSON {conditions,combinator}, run-lifecycle 事件的 metadata 条件过滤 (v11 新增, NULL=不过滤)
+  metadata            TEXT NOT NULL DEFAULT '{}',           -- JSON 对象, 自由 key/value 标注 (v11 新增, 仅随该 automation 自身运行事件下发)
   status              TEXT NOT NULL,                        -- 状态: 'active' | 'paused' | 'error' | 'archived'
   mode                TEXT NOT NULL DEFAULT '',             -- 执行模式: ModeToken 字符串或 CodexPolicy JSON (v7 改名自 mcp_mode)
   tool_allowlist      TEXT NOT NULL DEFAULT '[]',           -- JSON 数组, 允许使用的工具名列表

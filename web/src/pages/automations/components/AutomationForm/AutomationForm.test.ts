@@ -228,6 +228,8 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     // 第 2 个 segmented 是 trigger 类型(第 1 个是任务类型);[1] = event。
     const segmenteds = w.findAll('.sf-segmented')
     await segmenteds[1].findAll('.sf-seg')[1].trigger('click')
+    // run:settled 需先勾选至少一个 sessionKind 才能保存(.sf-day: reason[0..2] + sessionKind[3..9])。
+    await w.findAll('.sf-day')[3].trigger('click') // work
     await w.find('.sf-btn.primary').trigger('click')
 
     const input = w.emitted('create')![0][0] as Record<string, unknown>
@@ -235,21 +237,59 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(input.cronExpression).toBe('')
     expect(input.eventTopic).toBe('run:settled') // 默认订阅运行结束
     expect(input.eventReasonFilter).toBeNull() // 未选 reason → 任意结果
+    expect(input.eventSessionKindFilter).toEqual(['work'])
   })
 
-  it('create(event/settled):勾选 reason → payload 含 eventReasonFilter', async () => {
+  it('未勾选 sessionKind 时 run:settled 事件触发不可保存', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('echo done')
+    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
+    // 一个 sessionKind 都没选 → 保存按钮禁用,点击不触发 create。
+    expect(w.find('.sf-btn.primary').attributes('disabled')).toBeDefined()
+    await w.find('.sf-btn.primary').trigger('click')
+    expect(w.emitted('create')).toBeUndefined()
+  })
+
+  it('create(event/settled):勾选 reason + sessionKind → payload 含 eventReasonFilter', async () => {
     const w = mountForm()
     await w.find('textarea').setValue('echo done')
     const segmenteds = w.findAll('.sf-segmented')
     await segmenteds[1].findAll('.sf-seg')[1].trigger('click') // event
-    // run:settled 时显示 reason 过滤;cron builder 已隐藏,.sf-day 仅 reason 按钮。
-    const reasons = w.findAll('.sf-day')
-    expect(reasons).toHaveLength(3)
-    await reasons[1].trigger('click') // 'error'
+    // run:settled 时显示 reason(3) + sessionKind(7) 共 10 个 .sf-day。
+    const days = w.findAll('.sf-day')
+    expect(days).toHaveLength(10)
+    await days[1].trigger('click') // reason 'error'
+    await days[3].trigger('click') // sessionKind 'work'
     await w.find('.sf-btn.primary').trigger('click')
 
     const input = w.emitted('create')![0][0] as Record<string, unknown>
     expect(input.eventReasonFilter).toEqual(['error'])
+    expect(input.eventSessionKindFilter).toEqual(['work'])
+  })
+
+  it('create(event/settled):metadata 编辑 + metadata 条件构建 → payload 携带', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('echo done')
+    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
+    await w.findAll('.sf-day')[3].trigger('click') // sessionKind 'work'
+    // metadata 注解:增行并填 key/value。
+    await w.find('[data-testid="metadata-add"]').trigger('click')
+    const metaInputs = w.find('[data-testid="metadata-row"]').findAll('input')
+    await metaInputs[0].setValue('stage')
+    await metaInputs[1].setValue('a')
+    // metadata 条件:增行并填 key/value。
+    await w.find('[data-testid="metadata-condition-add"]').trigger('click')
+    const condInputs = w.find('[data-testid="metadata-condition-row"]').findAll('input')
+    await condInputs[0].setValue('team')
+    await condInputs[1].setValue('core')
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.metadata).toEqual({ stage: 'a' })
+    expect(input.eventMetadataFilter).toEqual({
+      conditions: [{ key: 'team', value: 'core' }],
+      combinator: 'AND',
+    })
   })
 
   it('create(event/pr:operation):切到 PR 事件 → 展示 MCP 集成说明,payload eventTopic=pr:operation', async () => {

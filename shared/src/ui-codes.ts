@@ -122,6 +122,7 @@ export const UI_ERROR_CODES = {
   'automation.executionNotFound': { key: 'error.automation.executionNotFound' },
   'automation.approvalNotFound': { key: 'error.automation.approvalNotFound' },
   'automation.invalidEventTrigger': { key: 'error.automation.invalidEventTrigger' },
+  'automation.missingSessionKindFilter': { key: 'error.automation.missingSessionKindFilter' },
   'automation.invalidMaxWallClockMs': { key: 'error.automation.invalidMaxWallClockMs' },
   'automation.agentRequired': { key: 'error.automation.agentRequired' },
   'automation.agentNotFound': { key: 'error.automation.agentNotFound' },

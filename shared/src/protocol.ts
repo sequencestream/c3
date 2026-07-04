@@ -2325,6 +2325,89 @@ export interface IntentLifecycleFilter {
   phases?: IntentLifecyclePhase[]
 }
 
+/** One metadata condition: an event's `metadata[key]` must equal `value` (exact string match). */
+export interface EventMetadataFilterCondition {
+  key: string
+  value: string
+}
+
+/**
+ * Metadata condition filter for run-lifecycle event triggers (2026-07-04). An
+ * automation carrying this filter fires only when the event payload's metadata
+ * satisfies the conditions: `AND` requires every condition, `OR` at least one.
+ * `null` or an empty `conditions` list means "no metadata filter" (matches any).
+ * Matching is exact string equality — no case folding, regex, or substring.
+ */
+export interface EventMetadataFilter {
+  conditions: EventMetadataFilterCondition[]
+  combinator: 'AND' | 'OR'
+}
+
+/** Upper bounds for automation metadata / metadata-filter hygiene (server + client agree). */
+export const MAX_AUTOMATION_METADATA_ENTRIES = 32
+export const MAX_AUTOMATION_METADATA_KEY_LEN = 64
+export const MAX_AUTOMATION_METADATA_VALUE_LEN = 256
+
+/**
+ * Sanitize free-form automation metadata to a clean `Record<string,string>`:
+ * trims keys/values, drops empty-key / empty-value / non-string / over-long
+ * entries, caps the total entry count. A non-object input yields `{}`. Used at
+ * the protocol/server save boundary so no unexpected structure is persisted.
+ */
+export function normalizeAutomationMetadata(input: unknown): Record<string, string> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {}
+  const out: Record<string, string> = {}
+  for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
+    if (Object.keys(out).length >= MAX_AUTOMATION_METADATA_ENTRIES) break
+    const key = typeof rawKey === 'string' ? rawKey.trim() : ''
+    if (!key || key.length > MAX_AUTOMATION_METADATA_KEY_LEN) continue
+    if (typeof rawValue !== 'string') continue
+    const value = rawValue.trim()
+    if (!value || value.length > MAX_AUTOMATION_METADATA_VALUE_LEN) continue
+    out[key] = value
+  }
+  return out
+}
+
+/**
+ * Normalize an untrusted metadata-filter payload to a clean {@link EventMetadataFilter}
+ * or `null` (= no filter). Drops malformed / empty / over-long conditions and caps
+ * their count; an unknown combinator defaults to `AND`. Returns `null` when no
+ * valid condition survives so an empty filter never gates matching.
+ */
+export function normalizeEventMetadataFilter(input: unknown): EventMetadataFilter | null {
+  if (!input || typeof input !== 'object') return null
+  const obj = input as { conditions?: unknown; combinator?: unknown }
+  const combinator: 'AND' | 'OR' = obj.combinator === 'OR' ? 'OR' : 'AND'
+  const rawConditions = Array.isArray(obj.conditions) ? obj.conditions : []
+  const conditions: EventMetadataFilterCondition[] = []
+  for (const raw of rawConditions) {
+    if (conditions.length >= MAX_AUTOMATION_METADATA_ENTRIES) break
+    if (!raw || typeof raw !== 'object') continue
+    const rec = raw as { key?: unknown; value?: unknown }
+    const key = typeof rec.key === 'string' ? rec.key.trim() : ''
+    const value = typeof rec.value === 'string' ? rec.value.trim() : ''
+    if (!key || key.length > MAX_AUTOMATION_METADATA_KEY_LEN) continue
+    if (!value || value.length > MAX_AUTOMATION_METADATA_VALUE_LEN) continue
+    conditions.push({ key, value })
+  }
+  return conditions.length ? { conditions, combinator } : null
+}
+
+/**
+ * Whether an event's metadata satisfies a metadata filter. A `null`/empty filter
+ * matches any metadata. `AND` requires every condition to match exactly; `OR`
+ * requires at least one. Comparison is exact string equality.
+ */
+export function metadataFilterMatches(
+  filter: EventMetadataFilter | null | undefined,
+  metadata: Record<string, string>,
+): boolean {
+  if (!filter || !filter.conditions.length) return true
+  const hit = (c: EventMetadataFilterCondition): boolean => metadata[c.key] === c.value
+  return filter.combinator === 'OR' ? filter.conditions.some(hit) : filter.conditions.every(hit)
+}
+
 /**
  * **Business-scenario** taxonomy: WHICH agent-invocation scenario produced an
  * event or drives a runtime. One value per distinct business origin so listeners
@@ -2359,6 +2442,21 @@ export type SessionKind =
   | 'consensus'
   | 'tool'
   | 'spec'
+
+/**
+ * All {@link SessionKind} values, for runtime validation and UI iteration (kept in
+ * sync with the `SessionKind` union above). A `satisfies` guard makes a drift a
+ * compile error.
+ */
+export const SESSION_KINDS = [
+  'work',
+  'intent',
+  'discussion',
+  'automation',
+  'consensus',
+  'tool',
+  'spec',
+] as const satisfies readonly SessionKind[]
 
 /**
  * **Execution-form** taxonomy: HOW a run executes, independent of its business
@@ -2428,6 +2526,23 @@ export interface Automation {
   eventPrFilter: PrOperationFilter | null
   /** For `intent:lifecycle` event triggers: null means every lifecycle phase. */
   eventIntentFilter?: IntentLifecycleFilter | null
+  /**
+   * Free-form user annotations on this automation (2026-07-04). Only the scheduler's
+   * own `run:started` / `run:settled` for this automation carry this map into the
+   * event payload, so other automations can filter chains by it. Absent/missing
+   * means `{}`.
+   */
+  metadata?: Record<string, string>
+  /**
+   * For run-lifecycle event triggers (`run:started` / `run:settled`): the explicit
+   * set of {@link SessionKind} origins that may fire this automation (2026-07-04).
+   * MUST be a non-empty list for run-lifecycle triggers (enforced at save); `null`
+   * for cron and non-run-lifecycle event triggers. Replaces the former hardcoded
+   * `['work']` whitelist — legacy run-lifecycle rows migrate to explicit `['work']`.
+   */
+  eventSessionKindFilter?: SessionKind[] | null
+  /** For run-lifecycle event triggers: metadata condition filter; null = no filter. */
+  eventMetadataFilter?: EventMetadataFilter | null
   status: AutomationStatus
   mode: ModeToken | CodexPolicy
   toolAllowlist: string[]
@@ -2466,6 +2581,16 @@ export interface CreateAutomationInput {
   eventPrFilter?: PrOperationFilter | null
   /** Optional filter for `intent:lifecycle` event triggers; null/empty = any phase. */
   eventIntentFilter?: IntentLifecycleFilter | null
+  /** Free-form annotations for the automation; sanitized server-side. Absent = `{}`. */
+  metadata?: Record<string, string>
+  /**
+   * Required for run-lifecycle event triggers: the non-empty set of SessionKind
+   * origins that may fire it. Rejected by the server when missing/empty for a
+   * `run:started` / `run:settled` trigger. Ignored for cron / pr / intent triggers.
+   */
+  eventSessionKindFilter?: SessionKind[] | null
+  /** Optional metadata condition filter for run-lifecycle event triggers; null = any. */
+  eventMetadataFilter?: EventMetadataFilter | null
   mode: ModeToken | CodexPolicy
   toolAllowlist?: string[]
   toolDenylist?: string[]
@@ -2492,6 +2617,12 @@ export interface UpdateAutomationInput {
   eventReasonFilter?: RunEndReason[] | null
   eventPrFilter?: PrOperationFilter | null
   eventIntentFilter?: IntentLifecycleFilter | null
+  /** Replace the free-form annotations; sanitized server-side. */
+  metadata?: Record<string, string>
+  /** Replace the run-lifecycle SessionKind filter; non-empty required for run-lifecycle triggers. */
+  eventSessionKindFilter?: SessionKind[] | null
+  /** Replace the run-lifecycle metadata condition filter; null = no filter. */
+  eventMetadataFilter?: EventMetadataFilter | null
   mode?: ModeToken | CodexPolicy
   toolAllowlist?: string[]
   toolDenylist?: string[]
@@ -3126,6 +3257,26 @@ export type ClientToServer =
   | { type: 'get_execution_transcript'; automationId: string; executionId: string }
   /** Manual trigger: execute a automation immediately (outside normal tick). */
   | { type: 'automation_run_now'; automationId: string }
+  /**
+   * Diagnostic: test whether a synthetic event would match an event-triggered
+   * automation's filters (2026-07-04). Pure condition check — the server reuses the
+   * real trigger evaluator and replies with {@link automation_trigger_simulation_result};
+   * it never writes an ExecutionLog, dispatches, or touches in-flight state. The
+   * test fields are read per `topic`: run-lifecycle uses `sessionKind` + optional
+   * `reason` + optional `metadata`; `pr:operation` uses `operation` + `result`;
+   * `intent:lifecycle` uses `phase`.
+   */
+  | {
+      type: 'simulate_automation_trigger'
+      automationId: string
+      topic: ScheduleEventTopic
+      sessionKind?: SessionKind
+      reason?: RunEndReason
+      metadata?: Record<string, string>
+      operation?: PrOperation
+      result?: PrOperationResult
+      phase?: IntentLifecyclePhase
+    }
   /** Get workspace-level MCP server configuration. */
   | { type: 'get_workspace_mcp_config'; workspaceId: string }
   /** Save workspace-level MCP server configuration. */
@@ -3777,6 +3928,17 @@ export type ServerToClient =
   | { type: 'workspace_mcp_config'; workspaceId: string; config: WorkspaceMcpConfig }
   /** A vendor's tool manifest (reply to `get_automation_tool_manifest`). */
   | { type: 'automation_tool_manifest'; vendor: VendorId; tools: ToolManifestEntry[] }
+  /**
+   * Result of a `simulate_automation_trigger` (2026-07-04): whether the synthetic
+   * event matched, plus a per-dimension breakdown (topic / workspace / sessionKind /
+   * reason / pr / intentPhase / metadata — only the dimensions that participated).
+   */
+  | {
+      type: 'automation_trigger_simulation_result'
+      automationId: string
+      matched: boolean
+      breakdown: { name: string; passed: boolean }[]
+    }
   /**
    * A project's wait-user-involve event list (reply to `list_wait_user_events`).
    * Paged replies carry `hasMore`; live todo broadcasts omit it and refresh the

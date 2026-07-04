@@ -1257,7 +1257,32 @@
         "resultError": "Result (error)"
       },
       "noHistory": "No execution history yet.",
-      "empty": "Select an automation to view details."
+      "empty": "Select an automation to view details.",
+      "metadata": {
+        "empty": "No metadata"
+      }
+    },
+    "simulate": {
+      "title": "Simulate trigger",
+      "hint": "Test whether a synthetic event would match this automation's filters. This is a diagnostic — it never runs the task or writes history.",
+      "topic": {
+        "label": "Event"
+      },
+      "metadata": {
+        "label": "Event metadata"
+      },
+      "run": "Test",
+      "matched": "Would trigger",
+      "unmatched": "Would not trigger",
+      "dim": {
+        "topic": "Event topic",
+        "workspace": "Workspace",
+        "sessionKind": "Session kind",
+        "reason": "Outcome",
+        "pr": "PR filter",
+        "intentPhase": "Intent phase",
+        "metadata": "Metadata"
+      }
     },
     "tab": {
       "detail": "Details",
@@ -1429,7 +1454,37 @@
           },
           "hint": "Leave empty to match every intent lifecycle phase."
         },
+        "sessionKind": {
+          "label": "Fires on session kinds",
+          "hint": "Pick which run origins may trigger this automation.",
+          "required": "Pick at least one session kind.",
+          "work": { "label": "Work" },
+          "intent": { "label": "Intent" },
+          "discussion": { "label": "Discussion" },
+          "automation": { "label": "Automation" },
+          "consensus": { "label": "Consensus" },
+          "tool": { "label": "Tool" },
+          "spec": { "label": "Spec" }
+        },
+        "metadataFilter": {
+          "label": "Metadata conditions",
+          "and": "All",
+          "or": "Any",
+          "keyPlaceholder": "key",
+          "valuePlaceholder": "value",
+          "add": "Add condition",
+          "hint": "Fires only when the event metadata matches these conditions.",
+          "none": "No metadata conditions"
+        },
         "hint": "Fires when a run in this workspace reaches the selected event."
+      },
+      "metadata": {
+        "label": "Metadata",
+        "keyPlaceholder": "key",
+        "valuePlaceholder": "value",
+        "add": "Add metadata",
+        "remove": "Remove",
+        "hint": "Free-form annotations. Carried into this automation's own run events so other automations can chain on them."
       },
       "frequency": {
         "label": "Frequency"
@@ -1604,6 +1659,7 @@
       "executionNotFound": "Execution record not found.",
       "approvalNotFound": "Approval entry not found or already handled.",
       "invalidEventTrigger": "An event-triggered automation needs a run event to subscribe to.",
+      "missingSessionKindFilter": "A run-event trigger must fire on at least one session kind.",
       "invalidMaxWallClockMs": "The execution timeout must be a whole number between 1,000 and 86,400,000 milliseconds.",
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",

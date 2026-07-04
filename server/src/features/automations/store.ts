@@ -18,6 +18,7 @@ import { isValidAutomationMaxWallClockMs } from '@ccc/shared/protocol'
 import type {
   CodexPolicy,
   CreateAutomationInput,
+  EventMetadataFilter,
   IntentLifecycleFilter,
   IntentLifecyclePhase,
   ModeToken,
@@ -31,11 +32,19 @@ import type {
   AutomationStatus,
   ScheduleTriggerType,
   AutomationType,
+  SessionKind,
   UpdateAutomationInput,
   VendorId,
   WorkspaceMcpConfig,
 } from '@ccc/shared/protocol'
-import { INTENT_LIFECYCLE_PHASES, PR_OPERATIONS, PR_OPERATION_RESULTS } from '@ccc/shared/protocol'
+import {
+  INTENT_LIFECYCLE_PHASES,
+  PR_OPERATIONS,
+  PR_OPERATION_RESULTS,
+  SESSION_KINDS,
+  normalizeAutomationMetadata,
+  normalizeEventMetadataFilter,
+} from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 import { getTimezone } from '../../kernel/config/index.js'
@@ -65,7 +74,7 @@ export interface AutomationNameOverride {
 }
 
 const AGENT_RECOVERY_ACTION = 'agent_quota_recovery'
-const SCHEMA_VERSION = 10
+const SCHEMA_VERSION = 11
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS automations (
@@ -81,6 +90,9 @@ CREATE TABLE IF NOT EXISTS automations (
   event_reason_filter TEXT,
   event_pr_filter     TEXT,
   event_intent_filter TEXT,
+  event_session_kind_filter TEXT,
+  event_metadata_filter     TEXT,
+  metadata            TEXT NOT NULL DEFAULT '{}',
   status              TEXT NOT NULL,
   mode                TEXT NOT NULL DEFAULT '',
   tool_allowlist      TEXT NOT NULL DEFAULT '[]',
@@ -234,6 +246,27 @@ function runMigrations(d: Db): void {
   if (!columnExists(d, 'automations', 'event_intent_filter')) {
     d.exec(`ALTER TABLE automations ADD COLUMN event_intent_filter TEXT`)
   }
+  // v11 (2026-07-04): automation metadata + run-lifecycle sessionKind / metadata
+  // event-trigger filters. `metadata` defaults to an empty object for existing
+  // rows. `event_session_kind_filter` / `event_metadata_filter` stay NULL for cron
+  // and non-run-lifecycle rows. Existing run-lifecycle event automations are
+  // backfilled to an explicit ['work'] filter — the persisted equivalent of the
+  // removed hardcoded AUTOMATION_TRIGGER_KINDS whitelist — so their behaviour is
+  // unchanged (they are NOT widened to automation / discussion / intent sources).
+  if (!columnExists(d, 'automations', 'metadata')) {
+    d.exec(`ALTER TABLE automations ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'`)
+  }
+  if (!columnExists(d, 'automations', 'event_session_kind_filter')) {
+    d.exec(`ALTER TABLE automations ADD COLUMN event_session_kind_filter TEXT`)
+    d.run(
+      `UPDATE automations SET event_session_kind_filter=?
+         WHERE trigger_type='event' AND event_topic IN ('run:started','run:settled')`,
+      JSON.stringify(['work']),
+    )
+  }
+  if (!columnExists(d, 'automations', 'event_metadata_filter')) {
+    d.exec(`ALTER TABLE automations ADD COLUMN event_metadata_filter TEXT`)
+  }
 }
 
 let schemaReady = false
@@ -299,6 +332,9 @@ interface AutomationRow {
   event_reason_filter: string | null
   event_pr_filter: string | null
   event_intent_filter: string | null
+  event_session_kind_filter: string | null
+  event_metadata_filter: string | null
+  metadata: string | null
   status: string
   mode: string
   tool_allowlist: string
@@ -423,6 +459,47 @@ function serializeIntentFilter(filter: IntentLifecycleFilter | null | undefined)
   return filter?.phases?.length ? JSON.stringify({ phases: filter.phases }) : null
 }
 
+/** Parse the metadata column (JSON object) to a clean string map; null/corrupt → `{}`. */
+function parseMetadata(raw: string | null): Record<string, string> {
+  if (!raw) return {}
+  try {
+    return normalizeAutomationMetadata(JSON.parse(raw))
+  } catch {
+    return {}
+  }
+}
+
+/** Parse the event_session_kind_filter column to a SessionKind list; null/blank/[] → null. */
+function parseSessionKindFilter(raw: string | null): SessionKind[] | null {
+  const list = parseStringList(raw).filter((x): x is SessionKind =>
+    SESSION_KINDS.includes(x as SessionKind),
+  )
+  return list.length ? list : null
+}
+
+/** Parse the event_metadata_filter column to a {@link EventMetadataFilter}; null/corrupt → null. */
+function parseEventMetadataFilter(raw: string | null): EventMetadataFilter | null {
+  if (!raw) return null
+  try {
+    return normalizeEventMetadataFilter(JSON.parse(raw))
+  } catch {
+    return null
+  }
+}
+
+/** Serialize a SessionKind filter to a JSON array for storage; empty/absent → NULL. */
+function serializeSessionKindFilter(filter: SessionKind[] | null | undefined): string | null {
+  return filter && filter.length ? JSON.stringify(filter) : null
+}
+
+/** Serialize a metadata filter to JSON for storage; empty/absent → NULL. */
+function serializeEventMetadataFilter(
+  filter: EventMetadataFilter | null | undefined,
+): string | null {
+  const normalized = normalizeEventMetadataFilter(filter)
+  return normalized ? JSON.stringify(normalized) : null
+}
+
 function toAutomation(r: AutomationRow): Automation {
   let config: unknown = {}
   try {
@@ -445,6 +522,9 @@ function toAutomation(r: AutomationRow): Automation {
     eventReasonFilter: parseReasonFilter(r.event_reason_filter),
     eventPrFilter: parsePrFilter(r.event_pr_filter),
     eventIntentFilter: parseIntentFilter(r.event_intent_filter),
+    eventSessionKindFilter: parseSessionKindFilter(r.event_session_kind_filter),
+    eventMetadataFilter: parseEventMetadataFilter(r.event_metadata_filter),
+    metadata: parseMetadata(r.metadata),
     status: r.status as AutomationStatus,
     mode: parseMode(r.mode),
     toolAllowlist: parseStringList(r.tool_allowlist),
@@ -633,10 +713,20 @@ export function createAutomation(input: CreateAutomationInput, generatedName?: s
     isEvent && eventTopic === 'intent:lifecycle'
       ? serializeIntentFilter(input.eventIntentFilter)
       : null
+  // sessionKind + metadata filters apply only to run-lifecycle event triggers; cron
+  // and pr/intent rows store NULL.
+  const isRunLifecycle = isEvent && (eventTopic === 'run:started' || eventTopic === 'run:settled')
+  const eventSessionKindFilter = isRunLifecycle
+    ? serializeSessionKindFilter(input.eventSessionKindFilter)
+    : null
+  const eventMetadataFilter = isRunLifecycle
+    ? serializeEventMetadataFilter(input.eventMetadataFilter)
+    : null
+  const metadata = JSON.stringify(normalizeAutomationMetadata(input.metadata))
   d.run(
     `INSERT INTO automations
-       (id, type, config, max_wall_clock_ms, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, event_pr_filter, event_intent_filter, status, mode, tool_allowlist, tool_denylist, vendor, agent_id, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (id, type, config, max_wall_clock_ms, workspace_path, trigger_type, cron_expression, next_run_at, event_topic, event_reason_filter, event_pr_filter, event_intent_filter, event_session_kind_filter, event_metadata_filter, metadata, status, mode, tool_allowlist, tool_denylist, vendor, agent_id, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     input.type,
     JSON.stringify(config),
@@ -649,6 +739,9 @@ export function createAutomation(input: CreateAutomationInput, generatedName?: s
     eventReasonFilter,
     eventPrFilter,
     eventIntentFilter,
+    eventSessionKindFilter,
+    eventMetadataFilter,
+    metadata,
     'active',
     serializeMode(input.mode),
     JSON.stringify(allowlist),
@@ -766,6 +859,10 @@ export function updateAutomation(
       params.push(null)
       sets.push('event_intent_filter=?')
       params.push(null)
+      sets.push('event_session_kind_filter=?')
+      params.push(null)
+      sets.push('event_metadata_filter=?')
+      params.push(null)
     }
   }
   if (patch.cronExpression !== undefined) {
@@ -799,6 +896,35 @@ export function updateAutomation(
   if (patch.eventIntentFilter !== undefined) {
     sets.push('event_intent_filter=?')
     params.push(serializeIntentFilter(patch.eventIntentFilter))
+  }
+  if (patch.metadata !== undefined) {
+    sets.push('metadata=?')
+    params.push(JSON.stringify(normalizeAutomationMetadata(patch.metadata)))
+  }
+  if (patch.eventSessionKindFilter !== undefined) {
+    sets.push('event_session_kind_filter=?')
+    params.push(serializeSessionKindFilter(patch.eventSessionKindFilter))
+  }
+  if (patch.eventMetadataFilter !== undefined) {
+    sets.push('event_metadata_filter=?')
+    params.push(serializeEventMetadataFilter(patch.eventMetadataFilter))
+  }
+  // Topic switch within event mode: a move to a non-run-lifecycle topic clears the
+  // sessionKind / metadata filters (they only apply to run:started / run:settled).
+  // Guarded on the filter fields being absent from this patch so a column set once.
+  if (
+    patch.eventTopic !== undefined &&
+    patch.eventTopic !== 'run:started' &&
+    patch.eventTopic !== 'run:settled'
+  ) {
+    if (patch.eventSessionKindFilter === undefined) {
+      sets.push('event_session_kind_filter=?')
+      params.push(null)
+    }
+    if (patch.eventMetadataFilter === undefined) {
+      sets.push('event_metadata_filter=?')
+      params.push(null)
+    }
   }
   if (patch.mode !== undefined) {
     sets.push('mode=?')

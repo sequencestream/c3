@@ -180,6 +180,7 @@ const {
   automationToolManifest,
   automationToolManifestLoading,
   automationToolManifestError,
+  automationSimulationResult,
   hostStatus,
   onSelectAutomation,
   openAutomationForm,
@@ -193,6 +194,7 @@ const {
   updateAutomation,
   deleteAutomation,
   onLoadAutomationToolManifest,
+  simulateAutomationTrigger,
   // ---- codes ----
   codesProject,
   codesDirs,
@@ -558,7 +560,9 @@ function onCodesChatWidth(px: number): void {
           :tool-manifest-error="automationToolManifestError"
           :host-status="hostStatus"
           :agents="serverSettings?.agents ?? []"
+          :simulation-result="automationSimulationResult"
           @select="onSelectAutomation"
+          @simulate="simulateAutomationTrigger"
           @open-form="openAutomationForm"
           @delete-automation="deleteAutomation"
           @toggle-enabled="onToggleAutomationEnabled"

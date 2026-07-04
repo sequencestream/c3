@@ -253,12 +253,9 @@ function statusClass(status: string): string {
 }
 
 @media (max-width: 767px) {
-  .wc-event-list-scroll {
-    flex: 0 0 auto;
-    overflow: visible;
-    padding: 0;
-  }
-
+  /* Inside the MobileStack list pane the list scrolls internally (the pane, not the
+     page, is the scroll container), so the base flex:1 + overflow-y:auto is kept; only
+     touch target sizing is bumped below. */
   .wc-event-row {
     min-height: 48px;
     padding: var(--sp-2) var(--sp-3);

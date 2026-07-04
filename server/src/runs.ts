@@ -149,6 +149,42 @@ export interface SessionRuntime {
 
 const runtimes = new Map<string, SessionRuntime>()
 
+/**
+ * Lightweight automation-run status registry — a deliberately minimal companion
+ * to `runtimes` that ONLY tracks which automation-execution agent sessions are
+ * currently mid-run, so their real agent `sessionId` surfaces as `running` in the
+ * `session_status` snapshot (and thus the 「自动化」tab's status dot).
+ *
+ * The automation dispatcher runs UNATTENDED with its own three-tier MCP security
+ * model and drives `query()`/the codex driver directly — it intentionally does NOT
+ * register a `SessionRuntime` (no abort handle, no viewers, no permission-wait, no
+ * liveness reconcile, no team semantics apply). This set carries none of that; it
+ * is purely a broadcast-visibility flag. Entries are short-lived and process-local:
+ * a restart drops them, and the client reconverges to idle from the next snapshot.
+ */
+const automationRunning = new Set<string>()
+
+/**
+ * Mark an automation-execution agent session as running (idempotent). Broadcasts a
+ * fresh status snapshot on the first registration so clients see the `running` dot.
+ */
+export function setAutomationRunning(sessionId: string): void {
+  if (automationRunning.has(sessionId)) return
+  automationRunning.add(sessionId)
+  onStatusChange?.()
+}
+
+/**
+ * Clear an automation-execution session's running flag (idempotent — clearing an
+ * unregistered id is a no-op and never throws, so terminal/exception cleanup paths
+ * can call it unconditionally). Broadcasts so the client's next snapshot drops the
+ * id and the row falls back to idle.
+ */
+export function clearAutomationRunning(sessionId: string): void {
+  if (!automationRunning.delete(sessionId)) return
+  onStatusChange?.()
+}
+
 let onStatusChange: (() => void) | null = null
 /** Register the global status-change listener (the server broadcasts statuses). */
 export function setOnStatusChange(cb: (() => void) | null): void {
@@ -457,9 +493,22 @@ export function isRunning(id: string): boolean {
   return runtimes.get(id)?.run != null
 }
 
-/** All known sessions' live statuses, for the handshake and broadcasts. */
+/**
+ * All known sessions' live statuses, for the handshake and broadcasts. Merges the
+ * kernel `runtimes` registry with the lightweight `automationRunning` set: kernel
+ * runtimes win on a shared `sessionId` (an interactive run's real status must never
+ * be overwritten by the automation flag), and automation sessions not backed by a
+ * runtime surface as `running`.
+ */
 export function listStatuses(): SessionRunStatus[] {
-  return [...runtimes.values()].map((rt) => ({ sessionId: rt.sessionId, status: rt.status }))
+  const out: SessionRunStatus[] = [...runtimes.values()].map((rt) => ({
+    sessionId: rt.sessionId,
+    status: rt.status,
+  }))
+  for (const sessionId of automationRunning) {
+    if (!runtimes.has(sessionId)) out.push({ sessionId, status: 'running' })
+  }
+  return out
 }
 
 /**

@@ -99,6 +99,23 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
     expect(rows[1].find('.session-status').exists()).toBe(false)
   })
 
+  it('自动化 tab:执行中的会话行渲染 .session-status running,缺席/idle 时不渲染', () => {
+    const sessions = [
+      session('a1', 'Nightly Audit', { sessionKind: 'automation' }),
+      session('a2', 'Idle Automation', { sessionKind: 'automation' }),
+    ]
+    const w = mountList({
+      sessions,
+      activeSessionKind: 'automation',
+      status: { a1: 'running' }, // a2 absent ⇒ idle ⇒ no dot
+    })
+    const rows = w.findAll('.session')
+    const badge = rows[0].find('.session-status')
+    expect(badge.exists()).toBe(true)
+    expect(badge.classes()).toContain('running')
+    expect(rows[1].find('.session-status').exists()).toBe(false)
+  })
+
   it('分页(服务端驱动):渲染全部已加载会话,不再客户端截断', () => {
     const many = Array.from({ length: 12 }, (_, i) => session(`s${i}`, `S${i}`))
     const w = mountList({ sessions: many, hasMore: false })

@@ -156,6 +156,24 @@ describe('ChatMessages.vue — 审批双色标(预放行 vs c3 手动)(2026-06-0
   })
 })
 
+describe('ChatMessages.vue — 首次挂载滚到底部', () => {
+  it('挂载已有历史消息:nextTick 后 scrollTop 被设为 scrollHeight', async () => {
+    // immediate watcher 在 setup 期即评估(此时 mainEl 尚为 null → 视为应贴底),
+    // 并排入一个 nextTick。mount() 同步返回后该回调尚未 flush,先桩入滚动度量,
+    // 再 await nextTick() 让挂载轮次写入 scrollTop。
+    const w = mountChat([speakerMsg('old-1'), speakerMsg('old-2'), speakerMsg('old-3')])
+    const box = installScrollBox(w.get('main').element, {
+      scrollTop: 0,
+      scrollHeight: 1000,
+      clientHeight: 200,
+    })
+
+    await nextTick()
+
+    expect(box.scrollTop).toBe(1000)
+  })
+})
+
 describe('ChatMessages.vue — 新输出滚动跟随', () => {
   it('用户停在底部时,新消息自动滚到底', async () => {
     const messages = [speakerMsg('old')]
@@ -165,6 +183,9 @@ describe('ChatMessages.vue — 新输出滚动跟随', () => {
       scrollHeight: 1000,
       clientHeight: 200,
     })
+    // 先让挂载轮次落定,再摆出"用户停在底部"的位置,单独校验新消息跟随。
+    await nextTick()
+    w.get('main').element.scrollTop = 800
 
     await w.setProps({ messages: [...messages, speakerMsg('new')] })
     await nextTick()
@@ -180,6 +201,9 @@ describe('ChatMessages.vue — 新输出滚动跟随', () => {
       scrollHeight: 1000,
       clientHeight: 200,
     })
+    // 先让挂载轮次落定(挂载会滚到底),再模拟用户上滑到 500,单独校验新消息不打断阅读。
+    await nextTick()
+    w.get('main').element.scrollTop = 500
 
     await w.setProps({ messages: [...messages, speakerMsg('new')] })
     await nextTick()

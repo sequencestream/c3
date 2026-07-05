@@ -692,12 +692,12 @@
     },
     "automation": {
       "start": {
-        "label": "▶ Automation",
-        "tooltip": "Start automation: complete the intents marked for automation one by one, by priority and dependencies"
+        "label": "▶ Automation Queue",
+        "tooltip": "Start the automation queue: complete the intents marked for automation one by one, by priority and dependencies"
       },
       "stop": {
-        "label": "■ Stop automation",
-        "tooltip": "Stop the automation process"
+        "label": "■ Stop automation queue",
+        "tooltip": "Stop the automation queue"
       },
       "error": {
         "fallback": "Error"

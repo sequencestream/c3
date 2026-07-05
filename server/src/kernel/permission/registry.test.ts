@@ -25,6 +25,18 @@ describe('permission registry', () => {
     await expect(p).resolves.toEqual({ decision: 'allow', answers: { 'Q?': 'A' } })
   })
 
+  it('carries the approving actor through to waitForDecision', async () => {
+    const p = waitForDecision('req-actor')
+    resolveDecision('req-actor', 'allow', undefined, 'alice')
+    await expect(p).resolves.toEqual({ decision: 'allow', answers: undefined, actor: 'alice' })
+  })
+
+  it('passes a null actor through unchanged (unauthenticated / auth disabled)', async () => {
+    const p = waitForDecision('req-null-actor')
+    resolveDecision('req-null-actor', 'allow', undefined, null)
+    await expect(p).resolves.toEqual({ decision: 'allow', answers: undefined, actor: null })
+  })
+
   it('blocks indefinitely until a decision arrives (no auto-deny)', async () => {
     const settled = vi.fn()
     const p = waitForDecision('req-block').then(settled)

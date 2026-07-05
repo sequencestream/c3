@@ -35,12 +35,14 @@ import {
   getIntent,
   insertIntents,
   listIntentLogs,
+  listIntents,
   resetStoreForTests,
   setPrInfo,
   setSpecPath,
   updateStatus,
   upsertIntents,
 } from './store.js'
+import { runSaveConfirmed } from './tool-defs.js'
 import { createPrHandler, updateIntentStatus } from './index.js'
 import { approveSpecHandler, writeSpecHandler } from './spec.js'
 import { syncIntentPrStatus } from './pr-status-sync.js'
@@ -135,6 +137,30 @@ describe('upsertIntents instrumentation', () => {
       { title: 'B', shortEnTitle: 'b', content: 'c', priority: 'P2' },
     ])
     expect(logsOf(created.id, 'intent_created')[0].actor).toBe('system')
+  })
+})
+
+describe('runSaveConfirmed actor pass-through', () => {
+  it('forwards the actor to upsertIntents so the log attributes the approver', () => {
+    const res = runSaveConfirmed(
+      proj,
+      { intents: [{ title: 'Gated', shortEnTitle: 'gated', content: 'c', priority: 'P1' }] },
+      vi.fn(),
+      'alice',
+    )
+    expect(res.isError).toBeFalsy()
+    const [saved] = listIntents(proj)
+    expect(logsOf(saved.id, 'intent_created')[0].actor).toBe('alice')
+  })
+
+  it("falls back to 'system' when no actor is passed", () => {
+    runSaveConfirmed(
+      proj,
+      { intents: [{ title: 'Ungated', shortEnTitle: 'ungated', content: 'c', priority: 'P1' }] },
+      vi.fn(),
+    )
+    const [saved] = listIntents(proj)
+    expect(logsOf(saved.id, 'intent_created')[0].actor).toBe('system')
   })
 })
 

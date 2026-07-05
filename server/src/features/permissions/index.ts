@@ -11,11 +11,16 @@ import { registerPermissionResolver } from '../../kernel/permission/index.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { getEventByRequestId, updateStatus } from '../user-involve/store.js'
 
-export const permissionResponse: Handler<'permission_response'> = (ctx, _conn, msg) => {
+export const permissionResponse: Handler<'permission_response'> = (ctx, conn, msg) => {
   // Clear the pending-prompt guard first so the run's eventual `turn_end` can
   // settle to idle (the prompt is now decided).
   resolvePending(msg.requestId)
-  registerPermissionResolver.resolve(msg.requestId, msg.decision, msg.answers)
+  // Carry the responding connection's authenticated subject into the decision so
+  // the `save_intents` gate can attribute `intent_logs.actor` to the human who
+  // approved. Server-authoritative: taken from `conn.subject`, never the client
+  // message body (which has no such field). `null` when unauthenticated / auth
+  // disabled ⇒ downstream falls back to `'system'`, unchanged.
+  registerPermissionResolver.resolve(msg.requestId, msg.decision, msg.answers, conn.subject)
 
   // Resolve the matching wait-user-involve event (graceful: no event → no-op).
   const event = getEventByRequestId(msg.requestId)

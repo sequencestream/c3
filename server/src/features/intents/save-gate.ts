@@ -23,7 +23,7 @@ export interface SaveGateDeps {
   waitForDecision: (
     requestId: string,
     signal?: AbortSignal,
-  ) => Promise<{ decision: 'allow' | 'deny' }>
+  ) => Promise<{ decision: 'allow' | 'deny'; actor?: string | null }>
   broadcastIntents: (workspacePath: string) => void
   /**
    * WorkCenter event hook — invoked BEFORE the `permission_request` frame so the
@@ -69,14 +69,17 @@ export async function gatedSave(
     toolName: SAVE_INTENTS_TOOL,
     input,
   })
-  const { decision } = await deps.waitForDecision(requestId, binding.signal)
+  const { decision, actor } = await deps.waitForDecision(requestId, binding.signal)
   if (decision !== 'allow') {
     return { content: [{ type: 'text', text: '用户在 c3 UI 拒绝了保存,未落库。' }] }
   }
+  // `actor` is the subject that approved the confirmation prompt; it attributes the
+  // persisted `intent_logs.actor`. Absent / null falls back to `'system'` in the store.
   return runSaveConfirmed(
     binding.workspacePath,
     normalizeSessionBackLink(args, runId),
     deps.broadcastIntents,
+    actor,
   )
 }
 

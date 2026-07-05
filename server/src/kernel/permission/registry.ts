@@ -22,6 +22,13 @@ export type Decision = 'allow' | 'deny'
 export interface DecisionResult {
   decision: Decision
   answers?: Record<string, string>
+  /**
+   * The authenticated subject that approved this decision (the responding
+   * connection's `conn.subject`), server-authoritative and never sourced from the
+   * client message body. Consumed only by the `save_intents` gate to attribute the
+   * `intent_logs.actor`; `null` / absent falls back to `'system'` downstream.
+   */
+  actor?: string | null
 }
 
 // Map<requestId, resolver>. Resolved by the WS handler, or cleared on abort.
@@ -64,10 +71,11 @@ export function resolveDecision(
   requestId: string,
   decision: Decision,
   answers?: Record<string, string>,
+  actor?: string | null,
 ): boolean {
   const resolver = pendingApprovals.get(requestId)
   if (!resolver) return false
-  resolver({ decision, answers })
+  resolver({ decision, answers, actor })
   return true
 }
 
@@ -83,7 +91,12 @@ export function pendingCount(): number {
  * `resolveDecision` directly.
  */
 export const registerPermissionResolver = {
-  resolve(requestId: string, decision: Decision, answers?: Record<string, string>) {
-    resolveDecision(requestId, decision, answers)
+  resolve(
+    requestId: string,
+    decision: Decision,
+    answers?: Record<string, string>,
+    actor?: string | null,
+  ) {
+    resolveDecision(requestId, decision, answers, actor)
   },
 }

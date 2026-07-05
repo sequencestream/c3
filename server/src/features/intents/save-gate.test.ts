@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
-import { listIntents, resetStoreForTests } from './store.js'
+import { listIntents, listIntentLogs, resetStoreForTests } from './store.js'
 import { gatedSave, type SaveGateBinding } from './save-gate.js'
 
 const proj = '/abs/save-gate-proj'
@@ -76,6 +76,40 @@ describe('gatedSave', () => {
     expect(res.isError).toBeFalsy()
     expect(broadcastIntents).toHaveBeenCalledWith(proj)
     expect(listIntents(proj).map((i) => i.title)).toContain('加缓存')
+  })
+
+  it('allow with an actor ⇒ the intent_created log records that actor', async () => {
+    const res = await gatedSave(
+      {
+        emit: () => {},
+        waitForDecision: async () => ({ decision: 'allow' as const, actor: 'alice' }),
+        broadcastIntents: () => {},
+        makeRequestId: () => 'req-actor',
+      },
+      binding(),
+      oneIntent,
+    )
+    expect(res.isError).toBeFalsy()
+    const [saved] = listIntents(proj)
+    const logs = listIntentLogs(saved.id)
+    const created = logs.find((l) => l.operationType === 'intent_created')
+    expect(created?.actor).toBe('alice')
+  })
+
+  it('allow without an actor ⇒ the log falls back to system', async () => {
+    await gatedSave(
+      {
+        emit: () => {},
+        waitForDecision: async () => ({ decision: 'allow' as const }),
+        broadcastIntents: () => {},
+        makeRequestId: () => 'req-no-actor',
+      },
+      binding(),
+      oneIntent,
+    )
+    const [saved] = listIntents(proj)
+    const created = listIntentLogs(saved.id).find((l) => l.operationType === 'intent_created')
+    expect(created?.actor).toBe('system')
   })
 
   it('registers a WorkCenter event (onPermissionRequest) with source=intent before the frame', async () => {

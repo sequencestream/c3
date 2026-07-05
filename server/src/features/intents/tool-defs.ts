@@ -198,17 +198,20 @@ export function runView(workspacePath: string, args: ViewArgs): IntentToolResult
 /**
  * Persist a CONFIRMED batch (the caller already passed the save gate). Bound to
  * `workspacePath`; `onSaved` lets the caller broadcast the refreshed list.
+ * `actor` (the subject that approved the confirmation prompt) attributes the
+ * `intent_logs.actor`; absent / null lets `upsertIntents` fall back to `'system'`.
  */
 export function runSaveConfirmed(
   workspacePath: string,
   args: SaveArgs,
   onSaved: (workspacePath: string) => void,
+  actor?: string | null,
 ): IntentToolResult {
   if (!isStoreAvailable()) return { content: text('意图库不可用,未保存。'), isError: true }
   try {
     const updated = args.intents.filter((it) => it.id !== undefined).length
     const created = args.intents.length - updated
-    const saved = upsertIntents(workspacePath, args.intents)
+    const saved = upsertIntents(workspacePath, args.intents, actor)
     for (const [index, input] of args.intents.entries()) {
       if (input.id === undefined && saved[index]) {
         publishIntentLifecycle(workspacePath, saved[index], 'created')

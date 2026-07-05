@@ -46,6 +46,10 @@ const expandedBatches = ref<Set<number>>(new Set())
 const expandedStandalone = ref<Set<number>>(new Set())
 
 // Keep following new output only while the user is already reading the bottom.
+// `immediate` also runs this once on mount: at setup time `mainEl` is still null,
+// so the first pass counts as "should be at the bottom" and, after `nextTick`
+// mounts the container, snaps a session with existing history to its latest
+// message instead of leaving it stranded at scrollTop=0.
 watch(
   () => chatScrollKey(props.messages),
   () => {
@@ -54,6 +58,7 @@ watch(
       if (shouldFollow && mainEl.value) mainEl.value.scrollTop = mainEl.value.scrollHeight
     })
   },
+  { immediate: true },
 )
 
 const TOOL_KINDS = new Set(['tool-use', 'tool-result', 'permission', 'consensus'])

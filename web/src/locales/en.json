@@ -2369,6 +2369,10 @@
       "label": "Refresh validity",
       "failed": "Couldn't refresh the validity date. Check your connection and try again."
     },
+    "manual": {
+      "label": "User manual",
+      "tooltip": "Open the product documentation in a new tab"
+    },
     "bind": {
       "placeholder": "Paste license key",
       "button": "Bind",

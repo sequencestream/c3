@@ -22,6 +22,7 @@ import {
   resetLoggingForTests,
   shutdownLogging,
   startupArchive,
+  timestampPrefix,
 } from './logger.js'
 
 let dir: string
@@ -181,6 +182,85 @@ describe('initLogging — installed tee', () => {
     const logged = readFileSync(join(dir, 'log', 'c3.log'), 'utf8')
     expect(logged).toContain('[c3] marker-line-12345')
     expect(captured.join('')).toContain('[c3] marker-line-12345') // terminal passthrough intact
+  })
+})
+
+describe('timestamp line prefix', () => {
+  const PREFIX = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} /
+  const PREFIX_G = /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} /g
+
+  it('formats a host-local second-precision prefix', () => {
+    // 2026-06-21 09:07:05 local → note zero-padded time and trailing space.
+    expect(timestampPrefix(new Date(2026, 5, 21, 9, 7, 5))).toBe('2026-06-21 09:07:05 ')
+  })
+
+  /**
+   * Run `writes` through the installed tee (via direct `process.stdout.write`, the
+   * surface the tee wraps) and return the captured terminal text and the on-disk
+   * `c3.log` text.
+   */
+  function teeWrites(writes: (w: (s: string) => void) => void): {
+    captured: string
+    logged: string
+  } {
+    process.env.C3_DIR = dir
+    const captured: string[] = []
+    const realWrite = process.stdout.write.bind(process.stdout)
+    process.stdout.write = ((chunk: string | Uint8Array): boolean => {
+      captured.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+      return true
+    }) as typeof process.stdout.write
+    try {
+      initLogging()
+      writes((s) => process.stdout.write(s))
+    } finally {
+      shutdownLogging()
+      process.stdout.write = realWrite
+    }
+    return { captured: captured.join(''), logged: readFileSync(join(dir, 'log', 'c3.log'), 'utf8') }
+  }
+
+  it('prefixes a single-line write in both terminal and file', () => {
+    const { captured, logged } = teeWrites((w) => w('hello-single\n'))
+    expect(logged).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} hello-single\n$/)
+    expect(captured).toBe(logged) // terminal and file byte-identical
+  })
+
+  it('prefixes every line of a single multi-line write', () => {
+    const { logged } = teeWrites((w) => w('line-A\nline-B\nline-C\n'))
+    const lines = logged.split('\n').filter(Boolean)
+    expect(lines).toHaveLength(3)
+    for (const l of lines) {
+      expect(l).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} line-[ABC]$/)
+    }
+  })
+
+  it('prefixes a line split across writes exactly once, resuming after the newline', () => {
+    const { logged } = teeWrites((w) => {
+      w('half-') // no newline — stays mid-line
+      w('line-joined\n') // completes the same line, then ends it
+      w('next-line\n') // a fresh line → a fresh prefix
+    })
+    expect(logged.match(PREFIX_G) ?? []).toHaveLength(2)
+    expect(logged).toMatch(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} half-line-joined\n\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} next-line\n$/,
+    )
+  })
+
+  it('keeps terminal and file identical across a mixed write sequence', () => {
+    const { captured, logged } = teeWrites((w) => {
+      w('a\nb') // trailing half-line
+      w('c\n') // completes it
+      w('') // empty write — no extra line, no extra prefix
+      w('d\n')
+    })
+    expect(captured).toBe(logged)
+    // Lines emitted: "a", "bc" (the half-line completed), "d" → three prefixes;
+    // the empty write adds none.
+    const lines = logged.split('\n').filter(Boolean)
+    expect(lines).toHaveLength(3)
+    expect(logged.match(PREFIX_G) ?? []).toHaveLength(3)
+    expect(lines.every((l) => PREFIX.test(l))).toBe(true)
   })
 })
 

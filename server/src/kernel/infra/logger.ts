@@ -57,6 +57,47 @@ export function archiveFilename(dateKey: string): string {
 }
 
 /**
+ * Host-local second-precision line prefix `YYYY-MM-DD HH:mm:ss ` (trailing space).
+ * Reuses {@link localDateKey}'s local-calendar reading of the date — no timezone
+ * library, no scheduler config — so a timestamped line locates an event to the
+ * second in both the terminal and `c3.log`.
+ */
+export function timestampPrefix(now: Date): string {
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mm = String(now.getMinutes()).padStart(2, '0')
+  const ss = String(now.getSeconds()).padStart(2, '0')
+  return `${localDateKey(now)} ${hh}:${mm}:${ss} `
+}
+
+/**
+ * A stateful per-stream transformer that prepends {@link timestampPrefix} to the
+ * start of every real log LINE. It tracks whether the stream is currently at a
+ * line start so a line split across multiple `write` calls is prefixed exactly
+ * once: the tail of a chunk that does not end in `\n` stays "mid-line", and the
+ * next chunk continues it without a new prefix. Each `\n` (even an empty line)
+ * counts as emitting a line, so the following content gets its own prefix.
+ */
+export function makeLinePrefixer(): { transform: (text: string) => string } {
+  let atLineStart = true
+  return {
+    transform(text: string): string {
+      if (text === '') return ''
+      let out = ''
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i]
+        if (atLineStart) {
+          out += timestampPrefix(new Date())
+          atLineStart = false
+        }
+        out += c
+        if (c === '\n') atLineStart = true
+      }
+      return out
+    },
+  }
+}
+
+/**
  * Parse a `c3-YYYY-MM-DD.log` archive name to its local date (midnight), or
  * `null` if the name does not match or encodes an impossible calendar date.
  */
@@ -104,7 +145,10 @@ let boundaryTimer: ReturnType<typeof setInterval> | null = null
  * to file is exactly what may have failed, and re-teeing would risk recursion.
  */
 function warnInternal(message: string): void {
-  const line = `[c3][logger] ${message}\n`
+  // Reuse the same prefix format so internal warnings carry timing info too, but
+  // write straight to the real stderr (never back through the tee) to avoid the
+  // recursion / disk-failure loop the tee could otherwise trigger.
+  const line = `${timestampPrefix(new Date())}[c3][logger] ${message}\n`
   try {
     const write = origStderrWrite ?? process.stderr.write.bind(process.stderr)
     write(line)
@@ -193,14 +237,45 @@ function appendToLive(text: string): void {
   }
 }
 
-/** Wrap a stream's `write` so output is teed to the live log after passthrough. */
+/**
+ * Wrap a stream's `write` so each line is timestamp-prefixed first, then the same
+ * formatted text is sent to BOTH the terminal and the live log — keeping the two
+ * byte-for-byte identical. Non-text chunks and any transform fault fall back to a
+ * best-effort raw passthrough so the tee never disturbs the real write.
+ */
 function makeTee(original: WriteFn, stream: NodeJS.WriteStream): WriteFn {
+  const prefixer = makeLinePrefixer()
   return function (this: unknown, ...args: unknown[]): boolean {
-    const ret = original.apply(stream, args as Parameters<WriteFn>)
+    const chunk = args[0]
+    let text: string | null = null
+    if (typeof chunk === 'string') text = chunk
+    else if (chunk instanceof Uint8Array) {
+      try {
+        text = Buffer.from(chunk).toString('utf8')
+      } catch {
+        text = null
+      }
+    }
+
+    // Non-text chunk (or a decode failure): pass through untouched, no file tee.
+    if (text === null) return original.apply(stream, args as Parameters<WriteFn>)
+
+    let formatted: string
     try {
-      const chunk = args[0]
-      if (typeof chunk === 'string') appendToLive(chunk)
-      else if (chunk instanceof Uint8Array) appendToLive(Buffer.from(chunk).toString('utf8'))
+      formatted = prefixer.transform(text)
+    } catch {
+      formatted = text // best-effort: emit the original line rather than dropping it
+    }
+
+    // Re-emit the formatted text through the original stream, preserving any
+    // trailing encoding/callback args in their original positions. Re-encode a
+    // buffer input back to a Buffer so the terminal sees the same type it would
+    // have; the file gets the identical text via appendToLive.
+    const outArgs = args.slice()
+    outArgs[0] = chunk instanceof Uint8Array ? Buffer.from(formatted, 'utf8') : formatted
+    const ret = original.apply(stream, outArgs as Parameters<WriteFn>)
+    try {
+      appendToLive(formatted)
     } catch {
       // Tee must never disturb the real write — swallow.
     }

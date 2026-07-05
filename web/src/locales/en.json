@@ -1332,6 +1332,13 @@
     "form": {
       "newTitle": "New Automation",
       "editTitle": "Edit Automation",
+      "section": {
+        "basic": "Basic info",
+        "trigger": "Trigger",
+        "metadata": "Metadata",
+        "execution": "Execution & permissions",
+        "tools": "Tool permissions"
+      },
       "title": {
         "label": "Title",
         "placeholder": "Auto-generated from the task",
@@ -1389,6 +1396,21 @@
           },
           "intentLifecycle": {
             "label": "Intent lifecycle"
+          }
+        },
+        "category": {
+          "label": "Event type",
+          "runLifecycle": {
+            "label": "Run event"
+          }
+        },
+        "stage": {
+          "label": "Run stage",
+          "started": {
+            "label": "Started"
+          },
+          "settled": {
+            "label": "Finished"
           }
         },
         "reason": {
@@ -1461,13 +1483,27 @@
           "label": "Fires on session kinds",
           "hint": "Pick which run origins may trigger this automation.",
           "required": "Pick at least one session kind.",
-          "work": { "label": "Work" },
-          "intent": { "label": "Intent" },
-          "discussion": { "label": "Discussion" },
-          "automation": { "label": "Automation" },
-          "consensus": { "label": "Consensus" },
-          "tool": { "label": "Tool" },
-          "spec": { "label": "Spec" }
+          "work": {
+            "label": "Work"
+          },
+          "intent": {
+            "label": "Intent"
+          },
+          "discussion": {
+            "label": "Discussion"
+          },
+          "automation": {
+            "label": "Automation"
+          },
+          "consensus": {
+            "label": "Consensus"
+          },
+          "tool": {
+            "label": "Tool"
+          },
+          "spec": {
+            "label": "Spec"
+          }
         },
         "metadataFilter": {
           "label": "Metadata conditions",

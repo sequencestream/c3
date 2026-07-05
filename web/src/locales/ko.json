@@ -1305,6 +1305,13 @@
     "form": {
       "newTitle": "새 자동화",
       "editTitle": "자동화 편집",
+      "section": {
+        "basic": "기본 정보",
+        "trigger": "트리거",
+        "metadata": "메타데이터",
+        "execution": "실행 및 권한",
+        "tools": "도구 권한"
+      },
       "title": {
         "label": "제목",
         "placeholder": "작업에서 자동 생성됨",
@@ -1459,6 +1466,21 @@
           },
           "intentLifecycle": {
             "label": "의도 수명 주기"
+          }
+        },
+        "category": {
+          "label": "이벤트 유형",
+          "runLifecycle": {
+            "label": "실행 이벤트"
+          }
+        },
+        "stage": {
+          "label": "실행 단계",
+          "started": {
+            "label": "시작"
+          },
+          "settled": {
+            "label": "종료"
           }
         },
         "reason": {

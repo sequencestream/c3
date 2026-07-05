@@ -297,8 +297,8 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     await w.find('textarea').setValue('echo done')
     const segmenteds = w.findAll('.sf-segmented')
     await segmenteds[1].findAll('.sf-seg')[1].trigger('click') // event
-    // event topic segmented 是第 3 个 segmented([2]);其第 3 个 seg = pr:operation。
-    await w.findAll('.sf-segmented')[2].findAll('.sf-seg')[2].trigger('click')
+    // 一级分类三选一:选 PR 操作。
+    await w.find('[data-testid="event-category-pr-operation"]').trigger('click')
     // 展示「模型自行执行 PR 操作、MCP 仅发布事件」边界说明。
     expect(w.find('.sf-pr-note').exists()).toBe(true)
     await w.find('.sf-btn.primary').trigger('click')
@@ -315,7 +315,7 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     const w = mountForm()
     await w.find('textarea').setValue('echo done')
     await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
-    await w.findAll('.sf-segmented')[2].findAll('.sf-seg')[2].trigger('click') // pr:operation
+    await w.find('[data-testid="event-category-pr-operation"]').trigger('click') // pr:operation
     // pr:operation 隐藏 reason 过滤;.sf-day 现为 5 个操作 + 3 个结果。
     const days = w.findAll('.sf-day')
     expect(days).toHaveLength(8)
@@ -341,6 +341,110 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(days[3].classes()).toContain('active')
     expect(days[6].classes()).toContain('active')
     expect(days[2].classes()).not.toContain('active') // merge not selected
+  })
+
+  // ---- Sectioned layout ----------------------------------------------------
+
+  it('表单渲染为 5 个带标题的卡片区块', () => {
+    const w = mountForm()
+    const sections = w.findAll('.sf-section')
+    expect(sections).toHaveLength(5)
+    const testids = [
+      'section-basic',
+      'section-trigger',
+      'section-metadata',
+      'section-execution',
+      'section-tools',
+    ]
+    for (const id of testids) {
+      expect(w.find(`[data-testid="${id}"]`).exists()).toBe(true)
+    }
+    const titles = w.findAll('.sf-section-title').map((s) => s.text())
+    expect(titles).toEqual([
+      'Basic info',
+      'Trigger',
+      'Metadata',
+      'Execution & permissions',
+      'Tool permissions',
+    ])
+  })
+
+  it('区块归属:任务类型落基本信息、触发落触发条件、工具落工具权限', () => {
+    const w = mountForm({ toolManifest: { claude: ALL_TOOLS } })
+    const basic = w.find('[data-testid="section-basic"]')
+    expect(basic.text()).toContain('Task type')
+    const trigger = w.find('[data-testid="section-trigger"]')
+    expect(trigger.text()).toContain('Trigger')
+    const tools = w.find('[data-testid="section-tools"]')
+    expect(tools.find('.sf-tool-item').exists()).toBe(true)
+  })
+
+  // ---- Event two-tier category / stage -------------------------------------
+
+  it('event 一级默认运行事件 + 二级默认结束,映射 run:settled', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('echo done')
+    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
+    // 一级运行事件高亮,二级阶段选择器可见。
+    expect(w.find('[data-testid="event-category-run-lifecycle"]').classes()).toContain('active')
+    expect(w.find('[data-testid="event-stage"]').exists()).toBe(true)
+    expect(w.find('[data-testid="event-stage-settled"]').classes()).toContain('active')
+    // 保存前需选 sessionKind。
+    await w.findAll('.sf-day')[3].trigger('click') // work
+    await w.find('.sf-btn.primary').trigger('click')
+    expect((w.emitted('create')![0][0] as Record<string, unknown>).eventTopic).toBe('run:settled')
+  })
+
+  it('event 二级选开始 → 映射 run:started,且不显示 reason 过滤', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('echo done')
+    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
+    await w.find('[data-testid="event-stage-started"]').trigger('click')
+    // run:started 无结果,reason 过滤不显示;.sf-day 仅 7 个 sessionKind。
+    expect(w.findAll('.sf-day')).toHaveLength(7)
+    await w.findAll('.sf-day')[0].trigger('click') // work
+    await w.find('.sf-btn.primary').trigger('click')
+    expect((w.emitted('create')![0][0] as Record<string, unknown>).eventTopic).toBe('run:started')
+  })
+
+  it('event 一级选意图生命周期 → payload eventTopic=intent:lifecycle,无二级阶段', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('echo done')
+    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
+    await w.find('[data-testid="event-category-intent-lifecycle"]').trigger('click')
+    expect(w.find('[data-testid="event-stage"]').exists()).toBe(false)
+    await w.find('.sf-btn.primary').trigger('click')
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.eventTopic).toBe('intent:lifecycle')
+    expect(input.eventSessionKindFilter).toBeNull() // 非运行事件不带 sessionKind
+  })
+
+  it('edit 回显:run:started → 一级运行事件 + 二级开始', () => {
+    const w = mountForm({
+      automation: sched({ triggerType: 'event', cronExpression: '', eventTopic: 'run:started' }),
+    })
+    expect(w.find('[data-testid="event-category-run-lifecycle"]').classes()).toContain('active')
+    expect(w.find('[data-testid="event-stage-started"]').classes()).toContain('active')
+    expect(w.find('[data-testid="event-stage-settled"]').classes()).not.toContain('active')
+  })
+
+  it('edit 回显:run:settled → 一级运行事件 + 二级结束,并显示 reason 过滤', () => {
+    const w = mountForm({
+      automation: sched({ triggerType: 'event', cronExpression: '', eventTopic: 'run:settled' }),
+    })
+    expect(w.find('[data-testid="event-category-run-lifecycle"]').classes()).toContain('active')
+    expect(w.find('[data-testid="event-stage-settled"]').classes()).toContain('active')
+    // reason 仅在运行结束显示 → sf-day 含 reason(3)+sessionKind(7)=10。
+    expect(w.findAll('.sf-day')).toHaveLength(10)
+  })
+
+  it('edit 回显:pr:operation → 一级 PR 操作,无二级阶段', () => {
+    const w = mountForm({
+      automation: sched({ triggerType: 'event', cronExpression: '', eventTopic: 'pr:operation' }),
+    })
+    expect(w.find('[data-testid="event-category-pr-operation"]').classes()).toContain('active')
+    expect(w.find('[data-testid="event-stage"]').exists()).toBe(false)
+    expect(w.find('.sf-pr-note').exists()).toBe(true)
   })
 
   it('edit:cron 显示为紧凑摘要，修改弹框确认后回填并随表单提交', async () => {

@@ -253,6 +253,9 @@ export function installMessageHandler(ctx: AppCtx): void {
         auth.setIsAdmin(msg.isAdmin)
         // The signed-in subject for the top-bar account menu (null = no one signed in).
         auth.setSubject(msg.subject)
+        // Seed the header upgrade hint from the handshake snapshot (refreshed later
+        // by `update_status`).
+        ctx.updateStatus.value = msg.updateStatus
         workspaces.value = msg.workspaces
         // Close workspace setting on reconnect — workspace may have changed.
         workspaceSettingOpen.value = false
@@ -1061,6 +1064,11 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'license_state':
         // Current entitlement, derived from the offline-verified token (PL-R7).
         ctx.license.value = msg.license
+        break
+      case 'update_status':
+        // Refreshed "is a newer c3 release available?" snapshot. Drives the header
+        // upgrade hint; fail-soft on the server means this only moves toward known.
+        ctx.updateStatus.value = msg.updateStatus
         break
       case 'license_refresh_result':
         // Ack for a manual term refresh (PL-R7). A `license_state` push with the

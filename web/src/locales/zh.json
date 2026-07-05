@@ -30,6 +30,9 @@
       "workspace": "工作区",
       "workcenter": "工作台"
     },
+    "update": {
+      "available": "有新版本 v{version}"
+    },
     "tab": {
       "console": {
         "label": "会话",

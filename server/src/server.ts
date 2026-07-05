@@ -61,6 +61,10 @@ import {
   createPermissionRequestHandler,
 } from './features/user-involve/hooks.js'
 import { startHeartbeatScheduler, stopHeartbeatScheduler } from './features/license/heartbeat.js'
+import {
+  startUpdateCheckScheduler,
+  stopUpdateCheckScheduler,
+} from './features/updates/update-checker.js'
 import { currentLicenseStatus } from './features/license/store.js'
 import { setActivationResultSink, stopCheckbindPolling } from './features/license/activation.js'
 import { EventBus } from './kernel/events/event-bus.js'
@@ -659,6 +663,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // the refreshed license state after each beat so the badge tracks displacement/expiry.
   startHeartbeatScheduler({ onChange: broadcasts.broadcastLicense })
 
+  // Start the update-availability checker: poll license-server for the latest
+  // release and broadcast the refreshed snapshot after each check. Fail-soft;
+  // drives the header's "new version available" hint.
+  startUpdateCheckScheduler({ onChange: broadcasts.broadcastUpdateStatus })
+
   // When a browser-mediated binding round resolves (collected via checkbind),
   // push the result + refreshed license state to every client (ADR-0026, PL-R7).
   setActivationResultSink((result) => {
@@ -674,6 +683,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const shutdown = async (): Promise<void> => {
     console.log('[c3] shutting down...')
     stopHeartbeatScheduler()
+    stopUpdateCheckScheduler()
     stopCheckbindPolling()
     await stopSchedulerWiring(30_000)
     server.close()

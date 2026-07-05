@@ -11,7 +11,7 @@
  * 移动端底部 tab 仅含 5 个工作区子视图(工作台入口已上移到顶部切换器,不再在底部 tab)。
  */
 import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
-import type { LicenseStatus, WorkspaceInfo } from '@ccc/shared/protocol'
+import type { LicenseStatus, UpdateStatus, WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n, type LocaleKey } from '@/i18n'
 import { useAuth } from '@/composables/useAuth'
 import { computed, onBeforeUnmount, ref } from 'vue'
@@ -20,6 +20,8 @@ const { t, d } = useTypedI18n()
 
 // c3 控制台:查看密钥信息 / 续期。密钥按钮在许可下拉内跳转此地址(新标签页)。
 const LICENSE_CONSOLE_URL = 'https://c3.sequencestream.com/'
+// 新版本提示外链:点击新标签页跳到升级文档(实际升级仍由用户手动 `c3 upgrade`)。
+const UPGRADE_DOCS_URL = 'https://github.com/sequencestream/c3#upgrade'
 // 仅管理员显示系统设置入口(ADR-0023 authz)。无认证 / 握手前 isAdmin 默认 true,
 // 故无认证场景行为不变;服务端 save_settings 仍是真正的鉴权门(AUTH-R10)。
 // 登录身份(basic 用户名 / oauth 邮箱),响应式来自每个 `ready`。供桌面账户菜单与
@@ -112,6 +114,8 @@ const props = defineProps<{
   licenseRefreshing?: boolean
   /** Inline error shown beside the refresh control when the last manual sync failed (PL-R7). */
   licenseRefreshError?: string | null
+  /** Server-detected update-availability snapshot; drives the header upgrade hint. */
+  updateStatus?: UpdateStatus | null
 }>()
 
 const emit = defineEmits<{
@@ -184,6 +188,17 @@ function onRefreshLicense(): void {
 onBeforeUnmount(() => {
   if (refreshCooldownTimer) clearTimeout(refreshCooldownTimer)
 })
+
+// 新版本提示:仅当服务端判定"有更新"且已知最新版本号时渲染;无更新 / 未知 / 检查失败
+// 都表现为不渲染(available=false 或 latestVersion 为空)。文案走 i18n,点击外链到升级文档。
+const showUpdate = computed<boolean>(
+  () => props.updateStatus?.available === true && !!props.updateStatus.latestVersion,
+)
+const updateText = computed<string>(() =>
+  showUpdate.value
+    ? t('nav.update.available', { version: props.updateStatus!.latestVersion! })
+    : '',
+)
 
 // 工作区/工作台两模式切换器(顶栏最左,桌面 + 移动端共用同一份图标标记)。
 // 当前生效模式图标蓝(--c-primary),另一个灰(--c-text-muted),点击 emit update:viewMode。
@@ -321,8 +336,19 @@ function selectTab(tab: HeaderTab): void {
         </button>
       </nav>
 
-      <!-- Right area: settings + account + status + license -->
+      <!-- Right area: update hint + settings + account + status + license -->
       <div class="header-right">
+        <!-- 新版本提示(独立控件,不复用 license 状态语义):仅"有更新"时渲染,
+             点击新标签页跳转升级文档。 -->
+        <a
+          v-if="showUpdate"
+          class="update-hint"
+          :href="UPGRADE_DOCS_URL"
+          target="_blank"
+          rel="noopener noreferrer"
+          :title="updateText"
+          >{{ updateText }}</a
+        >
         <button
           v-if="isAdmin"
           class="icon-btn settings-btn"
@@ -520,6 +546,16 @@ function selectTab(tab: HeaderTab): void {
       <details ref="actionsEl" class="mobile-actions" @toggle="syncOutsideListener">
         <summary class="icon-btn mobile-actions-trigger" aria-label="Actions">⋯</summary>
         <div class="mobile-actions-menu">
+          <!-- 新版本提示(移动端):仅"有更新"时出现,点击新标签页跳转升级文档并收起菜单。 -->
+          <a
+            v-if="showUpdate"
+            class="mobile-action-item update-hint-mobile"
+            :href="UPGRADE_DOCS_URL"
+            target="_blank"
+            rel="noopener noreferrer"
+            @click="closeActions"
+            >{{ updateText }}</a
+          >
           <button
             class="mobile-action-item"
             :disabled="!currentWorkspace"
@@ -645,6 +681,26 @@ function selectTab(tab: HeaderTab): void {
   color: #fff;
   background: var(--c-danger, #e53e3e);
   border-radius: 8px;
+}
+
+/* 新版本提示(独立控件):蓝底胶囊外链,与 license 徽标视觉区分 */
+.update-hint {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--sp-2);
+  border-radius: var(--radius-sm);
+  background: var(--c-primary);
+  color: #fff;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+.update-hint:hover {
+  opacity: 0.85;
 }
 
 /* Product-license 状态控件(PL-R7):受控 <details> 下拉 */
@@ -1013,6 +1069,14 @@ function selectTab(tab: HeaderTab): void {
     color: #fff;
     background: var(--c-danger, #e53e3e);
     border-radius: 50%;
+  }
+
+  /* 移动操作菜单内的新版本提示项:蓝色强调,与其它项区分 */
+  .mobile-action-item.update-hint-mobile {
+    display: block;
+    color: var(--c-primary);
+    font-weight: 600;
+    text-decoration: none;
   }
 
   /* 移动操作菜单内的许可项(PL-R7) */

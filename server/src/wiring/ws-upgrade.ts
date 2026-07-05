@@ -30,6 +30,7 @@ import { listStatuses, removeViewer } from '../runs.js'
 import { loadSettings } from '../kernel/config/index.js'
 import { verifySession } from '../features/auth/session-store.js'
 import { isAdminConn } from '../features/auth/authz.js'
+import { currentUpdateStatus } from '../features/updates/update-checker.js'
 
 /**
  * Rollback escape hatch for the cross-vendor `list_sessions` swap (ADR-0013).
@@ -167,6 +168,10 @@ export function createWsHandler(deps: {
           // The signed-in subject for the top-bar account menu (null when no one is
           // signed in: auth disabled / none / pre-login). Display hint only.
           subject: conn.subject ?? null,
+          // Current update-availability snapshot so the header upgrade hint appears
+          // on connect, without waiting for the next `update_status` push. Visible
+          // to every signed-in connection — a plain UX state, not admin-gated.
+          updateStatus: currentUpdateStatus(),
         })
       },
       // The 40+ case switch collapsed to a single registry dispatch (ADR-0009):

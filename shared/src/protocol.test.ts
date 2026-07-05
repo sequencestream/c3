@@ -60,6 +60,7 @@ describe('protocol wire format', () => {
       statuses: [],
       isAdmin: true,
       subject: null,
+      updateStatus: { available: false, latestVersion: null, checkedAt: null },
     },
     {
       type: 'session_status',

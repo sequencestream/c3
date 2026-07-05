@@ -31,6 +31,9 @@
       "workspace": "작업 공간",
       "workcenter": "워크센터"
     },
+    "update": {
+      "available": "새 버전 v{version}"
+    },
     "tab": {
       "console": {
         "label": "세션",

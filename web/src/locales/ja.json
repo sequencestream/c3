@@ -31,6 +31,9 @@
       "workspace": "ワークスペース",
       "workcenter": "ワークセンター"
     },
+    "update": {
+      "available": "新しいバージョン v{version}"
+    },
     "tab": {
       "console": {
         "label": "セッション",

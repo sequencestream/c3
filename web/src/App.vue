@@ -34,6 +34,7 @@ const {
   license,
   licenseRefreshing,
   licenseRefreshError,
+  updateStatus,
   activateLicense,
   refreshLicense,
   status,
@@ -352,6 +353,7 @@ function onCodesChatWidth(px: number): void {
       :license="license"
       :license-refreshing="licenseRefreshing"
       :license-refresh-error="licenseRefreshError"
+      :update-status="updateStatus"
       @activate-license="activateLicense"
       @refresh-license="refreshLicense"
       @select-tab="onSelectTab"

@@ -30,6 +30,7 @@ import type {
   IntentLog,
   IntentSessionInfo,
   LicenseStatus,
+  UpdateStatus,
   PromptImage,
   WorkspaceSetting as WorkspaceSettingType,
   Automation,
@@ -301,6 +302,16 @@ export function createState(deps: StateDeps) {
   // refresh control when the heartbeat sync fails (cleared on the next attempt).
   const licenseRefreshing = ref(false)
   const licenseRefreshError = ref<string | null>(null)
+
+  // ---- Update availability ----
+  // Server-detected "is a newer c3 release available?" snapshot (seeded on `ready`,
+  // refreshed by `update_status`). The header shows an upgrade hint only when
+  // `available === true && latestVersion`; otherwise it renders nothing.
+  const updateStatus = ref<UpdateStatus>({
+    available: false,
+    latestVersion: null,
+    checkedAt: null,
+  })
 
   // ---- View mode (workspace / workcenter) ----
   const viewMode = ref<'workspace' | 'workcenter'>('workspace')
@@ -697,6 +708,7 @@ export function createState(deps: StateDeps) {
     licenseActivationUrl,
     licenseRefreshing,
     licenseRefreshError,
+    updateStatus,
     viewMode,
     savedTab,
     activeTab,

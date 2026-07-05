@@ -248,6 +248,66 @@ describe('AppHeader.vue — 账户菜单(ADR-0023)', () => {
   })
 })
 
+describe('AppHeader.vue — 新版本提示(header upgrade hint)', () => {
+  const UPGRADE_URL = 'https://github.com/sequencestream/c3#upgrade'
+
+  it('有更新时桌面渲染提示外链,文案含版本号,新标签页跳转升级文档', () => {
+    const w = mount(AppHeader, {
+      props: {
+        ...baseProps,
+        updateStatus: { available: true, latestVersion: '1.2.3', checkedAt: 1 },
+      },
+    } as never)
+    const link = w.find('.desktop-header-row .update-hint')
+    expect(link.exists()).toBe(true)
+    expect(link.text()).toContain('1.2.3')
+    expect(link.attributes('href')).toBe(UPGRADE_URL)
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toBe('noopener noreferrer')
+  })
+
+  it('有更新时移动端操作菜单同样渲染提示外链', () => {
+    const w = mount(AppHeader, {
+      props: {
+        ...baseProps,
+        updateStatus: { available: true, latestVersion: '1.2.3', checkedAt: 1 },
+      },
+    } as never)
+    const link = w.find('.mobile-actions-menu .update-hint-mobile')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe(UPGRADE_URL)
+    expect(link.attributes('target')).toBe('_blank')
+  })
+
+  it('无更新(available=false)→ 桌面与移动端均不渲染', () => {
+    const w = mount(AppHeader, {
+      props: {
+        ...baseProps,
+        updateStatus: { available: false, latestVersion: '1.2.3', checkedAt: 1 },
+      },
+    } as never)
+    expect(w.find('.update-hint').exists()).toBe(false)
+    expect(w.find('.update-hint-mobile').exists()).toBe(false)
+  })
+
+  it('available=true 但无 latestVersion → 不渲染', () => {
+    const w = mount(AppHeader, {
+      props: {
+        ...baseProps,
+        updateStatus: { available: true, latestVersion: null, checkedAt: 1 },
+      },
+    } as never)
+    expect(w.find('.update-hint').exists()).toBe(false)
+    expect(w.find('.update-hint-mobile').exists()).toBe(false)
+  })
+
+  it('updateStatus 缺省(未知)→ 不渲染', () => {
+    const w = mount(AppHeader, { props: baseProps })
+    expect(w.find('.update-hint').exists()).toBe(false)
+    expect(w.find('.update-hint-mobile').exists()).toBe(false)
+  })
+})
+
 describe('AppHeader.vue — license badge 有效期(PL-R7)', () => {
   // 2024-06-15T00:00:00Z(unix 秒);断言只 key 在年份等数据派生值上,不耦合本地化排布。
   const TERM_END = 1_718_409_600

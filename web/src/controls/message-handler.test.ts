@@ -51,6 +51,11 @@ function makeCtx() {
   const pendingDeepLink = ref<import('@/lib/deep-link').DeepLinkTarget | null>(null)
   const deepLinkFulfilled = ref<Set<string>>(new Set())
   const deepLinkTimers = { timeout: null as ReturnType<typeof setTimeout> | null }
+  const updateStatus = ref<import('@ccc/shared/protocol').UpdateStatus>({
+    available: false,
+    latestVersion: null,
+    checkedAt: null,
+  })
   const ctx = {
     toast,
     intentActionError,
@@ -77,6 +82,7 @@ function makeCtx() {
     pendingDeepLink,
     deepLinkFulfilled,
     deepLinkTimers,
+    updateStatus,
     // The handler reads `ctx.t` at install time; a passthrough is enough here.
     t: (key: string) => key,
     add: vi.fn(),
@@ -85,6 +91,7 @@ function makeCtx() {
   return {
     ctx,
     toast,
+    updateStatus,
     intentActionError,
     intentActionErrorSeq,
     closeDevLaunch,
@@ -159,6 +166,34 @@ describe('automation save overlay message handler', () => {
     result.ctx.handleMessage(error('workspace.unknown'))
 
     expect(result.automationSaving.value).toBe(false)
+  })
+})
+
+describe('update_status handler (header upgrade hint)', () => {
+  it('update_status writes the snapshot into ctx.updateStatus', () => {
+    const result = makeCtx()
+    result.ctx.handleMessage({
+      type: 'update_status',
+      updateStatus: { available: true, latestVersion: '2.0.0', checkedAt: 123 },
+    } as ServerToClient)
+    expect(result.updateStatus.value).toEqual({
+      available: true,
+      latestVersion: '2.0.0',
+      checkedAt: 123,
+    })
+  })
+
+  it('a later "no update" snapshot overwrites an earlier available one', () => {
+    const result = makeCtx()
+    result.ctx.handleMessage({
+      type: 'update_status',
+      updateStatus: { available: true, latestVersion: '2.0.0', checkedAt: 1 },
+    } as ServerToClient)
+    result.ctx.handleMessage({
+      type: 'update_status',
+      updateStatus: { available: false, latestVersion: '1.0.0', checkedAt: 2 },
+    } as ServerToClient)
+    expect(result.updateStatus.value.available).toBe(false)
   })
 })
 
@@ -694,6 +729,11 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       licenseActivationUrl: ref<string | null>(null),
       licenseRefreshing: ref(false),
       licenseRefreshError: ref<string | null>(null),
+      updateStatus: ref<import('@ccc/shared/protocol').UpdateStatus>({
+        available: false,
+        latestVersion: null,
+        checkedAt: null,
+      }),
       workcenterHasMore: ref(false),
       workcenterLoading: ref(false),
       workcenterAppendNext: ref(false),
@@ -739,6 +779,23 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     }
   }
 
+  it('ready seeds updateStatus from the handshake snapshot', () => {
+    const r = makeDeepLinkCtx()
+    r.ctx.handleMessage({
+      type: 'ready',
+      workspaces: [] as import('@ccc/shared/protocol').WorkspaceInfo[],
+      isAdmin: true,
+      subject: null,
+      statuses: [],
+      updateStatus: { available: true, latestVersion: '3.1.4', checkedAt: 99 },
+    } as unknown as ServerToClient)
+    expect(r.ctx.updateStatus.value).toEqual({
+      available: true,
+      latestVersion: '3.1.4',
+      checkedAt: 99,
+    })
+  })
+
   it('consumes a session deep link with valid workspace → dispatches selectSession + skips maybeRestore*', () => {
     const r = makeDeepLinkCtx()
     r.pendingDeepLink.value = { kind: 'session', workspaceId: 'ws1', id: 'sess-abc' }
@@ -749,6 +806,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       isAdmin: true,
       subject: null,
       statuses: [],
+      updateStatus: { available: false, latestVersion: null, checkedAt: null },
     } as unknown as ServerToClient)
 
     expect(r.currentWorkspace.value).toBe('ws1')

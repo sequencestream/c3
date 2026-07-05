@@ -693,12 +693,12 @@
     },
     "automation": {
       "start": {
-        "label": "▶ 自動化",
-        "tooltip": "自動化を開始: 自動化対象としてマークされた意図を、優先度と依存に従って 1 つずつ完了させます"
+        "label": "▶ 自動化キュー",
+        "tooltip": "自動化キューを開始: 自動化対象としてマークされた意図を、優先度と依存に従って 1 つずつ完了させます"
       },
       "stop": {
-        "label": "■ 自動化を停止",
-        "tooltip": "自動化プロセスを停止します"
+        "label": "■ 自動化キューを停止",
+        "tooltip": "自動化キューを停止します"
       },
       "error": {
         "fallback": "エラー"
@@ -1305,6 +1305,13 @@
     "form": {
       "newTitle": "新しい自動化",
       "editTitle": "自動化を編集",
+      "section": {
+        "basic": "基本情報",
+        "trigger": "トリガー",
+        "metadata": "メタデータ",
+        "execution": "実行と権限",
+        "tools": "ツール権限"
+      },
       "title": {
         "label": "タイトル",
         "placeholder": "タスクから自動生成",
@@ -1459,6 +1466,21 @@
           },
           "intentLifecycle": {
             "label": "意図ライフサイクル"
+          }
+        },
+        "category": {
+          "label": "イベント種別",
+          "runLifecycle": {
+            "label": "実行イベント"
+          }
+        },
+        "stage": {
+          "label": "実行フェーズ",
+          "started": {
+            "label": "開始"
+          },
+          "settled": {
+            "label": "終了"
           }
         },
         "reason": {

@@ -96,11 +96,17 @@ const TRIGGER_TYPES = computed<{ value: ScheduleTriggerType; label: string }[]>(
   { value: 'event', label: t('automation.form.trigger.event.label') },
 ])
 
-const EVENT_TOPICS = computed<{ value: ScheduleEventTopic; label: string }[]>(() => [
-  { value: 'run:started', label: t('automation.form.event.topic.started.label') },
-  { value: 'run:settled', label: t('automation.form.event.topic.settled.label') },
-  { value: 'pr:operation', label: t('automation.form.event.topic.prOperation.label') },
-  { value: 'intent:lifecycle', label: t('automation.form.event.topic.intentLifecycle.label') },
+// Event trigger is chosen in two tiers: a level-1 category (run lifecycle / PR /
+// intent) and, only for run lifecycle, a level-2 stage (started / finished).
+// Both are views over the single `eventTopic` protocol field — the category is a
+// display grouping that never enters the payload.
+type EventCategory = 'run-lifecycle' | 'pr-operation' | 'intent-lifecycle'
+type RunStage = 'started' | 'settled'
+
+const EVENT_CATEGORIES = computed<{ value: EventCategory; label: string }[]>(() => [
+  { value: 'run-lifecycle', label: t('automation.form.event.category.runLifecycle.label') },
+  { value: 'pr-operation', label: t('automation.form.event.topic.prOperation.label') },
+  { value: 'intent-lifecycle', label: t('automation.form.event.topic.intentLifecycle.label') },
 ])
 
 const EVENT_REASONS = computed<{ value: RunEndReason; label: string }[]>(() => [
@@ -214,6 +220,35 @@ const showRunLifecycleFilters = computed(
     triggerType.value === 'event' &&
     (eventTopic.value === 'run:started' || eventTopic.value === 'run:settled'),
 )
+
+// Level-1 event category derived from the underlying topic. Purely a view model.
+const eventCategory = computed<EventCategory>(() => {
+  if (eventTopic.value === 'pr:operation') return 'pr-operation'
+  if (eventTopic.value === 'intent:lifecycle') return 'intent-lifecycle'
+  return 'run-lifecycle'
+})
+// Level-2 run stage; only meaningful while the category is run-lifecycle.
+const runStage = computed<RunStage>(() =>
+  eventTopic.value === 'run:started' ? 'started' : 'settled',
+)
+
+// Selecting a category writes back to `eventTopic` so all existing show/hide and
+// save logic keeps keying off the single protocol field. Switching to run
+// lifecycle keeps the current run stage, else defaults to run:settled (matching
+// the create default).
+function selectEventCategory(cat: EventCategory): void {
+  if (cat === 'pr-operation') {
+    eventTopic.value = 'pr:operation'
+  } else if (cat === 'intent-lifecycle') {
+    eventTopic.value = 'intent:lifecycle'
+  } else if (eventTopic.value !== 'run:started' && eventTopic.value !== 'run:settled') {
+    eventTopic.value = 'run:settled'
+  }
+}
+
+function selectRunStage(stage: RunStage): void {
+  eventTopic.value = stage === 'started' ? 'run:started' : 'run:settled'
+}
 
 // Advanced segmented builder.
 type Frequency = 'minutely' | 'hourly' | 'daily' | 'weekly'
@@ -643,581 +678,645 @@ function save(): void {
       </div>
 
       <div class="sf-body">
-        <!-- Title (edit only): auto-named on create, manually editable here. -->
-        <label v-if="isEdit" class="sf-field">
-          <span class="sf-label">{{ t('automation.form.title.label') }}</span>
-          <input
-            v-model="title"
-            class="sf-input"
-            :placeholder="t('automation.form.title.placeholder')"
-          />
-          <span class="sf-hint">{{ t('automation.form.title.hint') }}</span>
-        </label>
-
-        <div class="sf-field">
-          <span class="sf-label">{{ t('automation.form.taskType.label') }}</span>
-          <div class="sf-segmented">
-            <button
-              type="button"
-              class="sf-seg"
-              :class="{ active: type === 'command' }"
-              :disabled="isEdit"
-              @click="type = 'command'"
-            >
-              {{ t('automation.form.type.command.label') }}
-            </button>
-            <button
-              type="button"
-              class="sf-seg"
-              :class="{ active: type === 'llm' }"
-              :disabled="isEdit"
-              @click="type = 'llm'"
-            >
-              {{ t('automation.form.type.llm.label') }}
-            </button>
-          </div>
-          <span v-if="isEdit" class="sf-hint">{{ t('automation.form.taskType.locked') }}</span>
-        </div>
-
-        <!-- Command body -->
-        <label v-if="type === 'command'" class="sf-field sf-field--stacked">
-          <span class="sf-label">{{ t('automation.form.command.label') }}</span>
-          <textarea
-            v-model="command"
-            class="sf-textarea sf-mono"
-            rows="2"
-            :placeholder="t('automation.form.command.placeholder')"
-          />
-        </label>
-
-        <!-- LLM prompt -->
-        <label v-else class="sf-field sf-field--stacked">
-          <span class="sf-label">{{ t('automation.form.prompt.label') }}</span>
-          <textarea
-            v-model="prompt"
-            class="sf-textarea"
-            rows="6"
-            :placeholder="t('automation.form.prompt.placeholder')"
-          />
-        </label>
-
-        <label class="sf-field sf-field--stacked">
-          <span class="sf-label">{{ t('automation.form.maxWallClockMs.label') }}</span>
-          <input
-            class="sf-input sf-timeout-input"
-            type="number"
-            :min="MIN_AUTOMATION_MAX_WALL_CLOCK_MS"
-            :max="MAX_AUTOMATION_MAX_WALL_CLOCK_MS"
-            :step="1000"
-            :value="maxWallClockMs ?? ''"
-            :placeholder="t('automation.form.maxWallClockMs.placeholder')"
-            @input="setMaxWallClockMs"
-          />
-          <span class="sf-hint">{{ t('automation.form.maxWallClockMs.hint') }}</span>
-          <span v-if="!maxWallClockMsValid" class="sf-warn">{{
-            t('automation.form.maxWallClockMs.invalid')
-          }}</span>
-        </label>
-
-        <!-- Trigger type: a cron automation vs a run lifecycle event -->
-        <div class="sf-field">
-          <span class="sf-label">{{ t('automation.form.trigger.label') }}</span>
-          <div class="sf-segmented">
-            <button
-              v-for="tt in TRIGGER_TYPES"
-              :key="tt.value"
-              type="button"
-              class="sf-seg"
-              :class="{ active: triggerType === tt.value }"
-              @click="triggerType = tt.value"
-            >
-              {{ tt.label }}
-            </button>
-          </div>
-        </div>
-
-        <!-- Automation (cron) builder -->
-        <div v-if="triggerType === 'cron'" class="sf-field sf-field--stacked">
-          <span class="sf-label">{{ t('automation.form.automation.label') }}</span>
-
-          <!-- 编辑态收起为当前 cron 摘要；频率和时间在专用弹框中修改。 -->
-          <div v-if="isEdit" class="sf-cron-inline">
-            <span>{{ t('automation.form.automation.label') }}:</span>
-            <code class="sf-cron">{{ cronExpression }}</code>
-            <span v-if="cronValid" class="sf-cron-desc">{{ cronSummary }}</span>
-            <button
-              type="button"
-              class="sf-cron-edit"
-              :title="t('automation.list.edit.tooltip')"
-              :aria-label="t('automation.list.edit.tooltip')"
-              @click="cronEditorOpen = true"
-            >
-              ✎
-            </button>
-          </div>
-
-          <!-- 新建态保留高级构造器。 -->
-          <div v-else class="sf-tabpane sf-advanced">
-            <label class="sf-adv-row">
-              <span class="sf-adv-label">{{ t('automation.form.frequency.label') }}</span>
-              <select v-model="advFreq" class="sf-input sf-adv-control">
-                <option value="minutely">{{ t('automation.form.freq.minutely.label') }}</option>
-                <option value="hourly">{{ t('automation.form.freq.hourly.label') }}</option>
-                <option value="daily">{{ t('automation.form.freq.daily.label') }}</option>
-                <option value="weekly">{{ t('automation.form.freq.weekly.label') }}</option>
-              </select>
+        <!-- Section: basic info -->
+        <div class="sf-section" data-testid="section-basic">
+          <span class="sf-section-title">{{ t('automation.form.section.basic') }}</span>
+          <div class="sf-section-body">
+            <!-- Title (edit only): auto-named on create, manually editable here. -->
+            <label v-if="isEdit" class="sf-field">
+              <span class="sf-label">{{ t('automation.form.title.label') }}</span>
+              <input
+                v-model="title"
+                class="sf-input"
+                :placeholder="t('automation.form.title.placeholder')"
+              />
+              <span class="sf-hint">{{ t('automation.form.title.hint') }}</span>
             </label>
 
-            <label v-if="advFreq === 'minutely' || advFreq === 'hourly'" class="sf-adv-row">
-              <span class="sf-adv-label">{{ t('automation.form.interval.label') }}</span>
-              <input
-                v-model.number="advInterval"
-                type="number"
-                min="1"
-                :max="advFreq === 'minutely' ? 59 : 23"
-                class="sf-input sf-adv-control"
-              />
-              <span class="sf-hint">{{
-                advFreq === 'minutely'
-                  ? t('automation.form.interval.minutes')
-                  : t('automation.form.interval.hours')
-              }}</span>
-            </label>
-
-            <div
-              v-if="advFreq === 'hourly' || advFreq === 'daily' || advFreq === 'weekly'"
-              class="sf-adv-row"
-            >
-              <span class="sf-adv-label">{{ t('automation.form.time.label') }}</span>
-              <template v-if="advFreq !== 'hourly'">
-                <input
-                  v-model.number="advHour"
-                  type="number"
-                  min="0"
-                  max="23"
-                  class="sf-input sf-adv-time"
-                />
-                <span class="sf-colon">:</span>
-              </template>
-              <input
-                v-model.number="advMinute"
-                type="number"
-                min="0"
-                max="59"
-                class="sf-input sf-adv-time"
-              />
-              <span class="sf-hint">{{
-                advFreq === 'hourly'
-                  ? t('automation.form.time.hourlyHint')
-                  : t('automation.form.time.hint')
-              }}</span>
+            <div class="sf-field">
+              <span class="sf-label">{{ t('automation.form.taskType.label') }}</span>
+              <div class="sf-segmented">
+                <button
+                  type="button"
+                  class="sf-seg"
+                  :class="{ active: type === 'command' }"
+                  :disabled="isEdit"
+                  @click="type = 'command'"
+                >
+                  {{ t('automation.form.type.command.label') }}
+                </button>
+                <button
+                  type="button"
+                  class="sf-seg"
+                  :class="{ active: type === 'llm' }"
+                  :disabled="isEdit"
+                  @click="type = 'llm'"
+                >
+                  {{ t('automation.form.type.llm.label') }}
+                </button>
+              </div>
+              <span v-if="isEdit" class="sf-hint">{{ t('automation.form.taskType.locked') }}</span>
             </div>
 
-            <div v-if="advFreq === 'weekly'" class="sf-adv-row">
-              <span class="sf-adv-label">{{ t('automation.form.days.label') }}</span>
-              <div class="sf-days">
+            <!-- Command body -->
+            <label v-if="type === 'command'" class="sf-field sf-field--stacked">
+              <span class="sf-label">{{ t('automation.form.command.label') }}</span>
+              <textarea
+                v-model="command"
+                class="sf-textarea sf-mono"
+                rows="2"
+                :placeholder="t('automation.form.command.placeholder')"
+              />
+            </label>
+
+            <!-- LLM prompt -->
+            <label v-else class="sf-field sf-field--stacked">
+              <span class="sf-label">{{ t('automation.form.prompt.label') }}</span>
+              <textarea
+                v-model="prompt"
+                class="sf-textarea"
+                rows="6"
+                :placeholder="t('automation.form.prompt.placeholder')"
+              />
+            </label>
+
+            <label class="sf-field sf-field--stacked">
+              <span class="sf-label">{{ t('automation.form.maxWallClockMs.label') }}</span>
+              <input
+                class="sf-input sf-timeout-input"
+                type="number"
+                :min="MIN_AUTOMATION_MAX_WALL_CLOCK_MS"
+                :max="MAX_AUTOMATION_MAX_WALL_CLOCK_MS"
+                :step="1000"
+                :value="maxWallClockMs ?? ''"
+                :placeholder="t('automation.form.maxWallClockMs.placeholder')"
+                @input="setMaxWallClockMs"
+              />
+              <span class="sf-hint">{{ t('automation.form.maxWallClockMs.hint') }}</span>
+              <span v-if="!maxWallClockMsValid" class="sf-warn">{{
+                t('automation.form.maxWallClockMs.invalid')
+              }}</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Section: trigger -->
+        <div class="sf-section" data-testid="section-trigger">
+          <span class="sf-section-title">{{ t('automation.form.section.trigger') }}</span>
+          <div class="sf-section-body">
+            <!-- Trigger type: a cron automation vs a run lifecycle event -->
+            <div class="sf-field">
+              <span class="sf-label">{{ t('automation.form.trigger.label') }}</span>
+              <div class="sf-segmented">
                 <button
-                  v-for="d in WEEKDAYS"
-                  :key="d.num"
+                  v-for="tt in TRIGGER_TYPES"
+                  :key="tt.value"
                   type="button"
-                  class="sf-day"
-                  :class="{ active: advDays.includes(d.num) }"
-                  @click="toggleDay(d.num)"
+                  class="sf-seg"
+                  :class="{ active: triggerType === tt.value }"
+                  @click="triggerType = tt.value"
                 >
-                  {{ d.label }}
+                  {{ tt.label }}
                 </button>
               </div>
             </div>
-          </div>
 
-          <!-- Resolved cron + live preview are shown while creating. -->
-          <template v-if="!isEdit">
-            <div class="sf-preview-bar">
-              <code class="sf-cron" :class="{ invalid: !cronValid }">{{ cronExpression }}</code>
-              <span v-if="cronValid" class="sf-cron-desc">{{ cronSummary }}</span>
-              <span v-else class="sf-warn">{{ t('automation.form.cron.invalid') }}</span>
+            <!-- Automation (cron) builder -->
+            <div v-if="triggerType === 'cron'" class="sf-field sf-field--stacked">
+              <span class="sf-label">{{ t('automation.form.automation.label') }}</span>
+
+              <!-- 编辑态收起为当前 cron 摘要；频率和时间在专用弹框中修改。 -->
+              <div v-if="isEdit" class="sf-cron-inline">
+                <span>{{ t('automation.form.automation.label') }}:</span>
+                <code class="sf-cron">{{ cronExpression }}</code>
+                <span v-if="cronValid" class="sf-cron-desc">{{ cronSummary }}</span>
+                <button
+                  type="button"
+                  class="sf-cron-edit"
+                  :title="t('automation.list.edit.tooltip')"
+                  :aria-label="t('automation.list.edit.tooltip')"
+                  @click="cronEditorOpen = true"
+                >
+                  ✎
+                </button>
+              </div>
+
+              <!-- 新建态保留高级构造器。 -->
+              <div v-else class="sf-tabpane sf-advanced">
+                <label class="sf-adv-row">
+                  <span class="sf-adv-label">{{ t('automation.form.frequency.label') }}</span>
+                  <select v-model="advFreq" class="sf-input sf-adv-control">
+                    <option value="minutely">{{ t('automation.form.freq.minutely.label') }}</option>
+                    <option value="hourly">{{ t('automation.form.freq.hourly.label') }}</option>
+                    <option value="daily">{{ t('automation.form.freq.daily.label') }}</option>
+                    <option value="weekly">{{ t('automation.form.freq.weekly.label') }}</option>
+                  </select>
+                </label>
+
+                <label v-if="advFreq === 'minutely' || advFreq === 'hourly'" class="sf-adv-row">
+                  <span class="sf-adv-label">{{ t('automation.form.interval.label') }}</span>
+                  <input
+                    v-model.number="advInterval"
+                    type="number"
+                    min="1"
+                    :max="advFreq === 'minutely' ? 59 : 23"
+                    class="sf-input sf-adv-control"
+                  />
+                  <span class="sf-hint">{{
+                    advFreq === 'minutely'
+                      ? t('automation.form.interval.minutes')
+                      : t('automation.form.interval.hours')
+                  }}</span>
+                </label>
+
+                <div
+                  v-if="advFreq === 'hourly' || advFreq === 'daily' || advFreq === 'weekly'"
+                  class="sf-adv-row"
+                >
+                  <span class="sf-adv-label">{{ t('automation.form.time.label') }}</span>
+                  <template v-if="advFreq !== 'hourly'">
+                    <input
+                      v-model.number="advHour"
+                      type="number"
+                      min="0"
+                      max="23"
+                      class="sf-input sf-adv-time"
+                    />
+                    <span class="sf-colon">:</span>
+                  </template>
+                  <input
+                    v-model.number="advMinute"
+                    type="number"
+                    min="0"
+                    max="59"
+                    class="sf-input sf-adv-time"
+                  />
+                  <span class="sf-hint">{{
+                    advFreq === 'hourly'
+                      ? t('automation.form.time.hourlyHint')
+                      : t('automation.form.time.hint')
+                  }}</span>
+                </div>
+
+                <div v-if="advFreq === 'weekly'" class="sf-adv-row">
+                  <span class="sf-adv-label">{{ t('automation.form.days.label') }}</span>
+                  <div class="sf-days">
+                    <button
+                      v-for="d in WEEKDAYS"
+                      :key="d.num"
+                      type="button"
+                      class="sf-day"
+                      :class="{ active: advDays.includes(d.num) }"
+                      @click="toggleDay(d.num)"
+                    >
+                      {{ d.label }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Resolved cron + live preview are shown while creating. -->
+              <template v-if="!isEdit">
+                <div class="sf-preview-bar">
+                  <code class="sf-cron" :class="{ invalid: !cronValid }">{{ cronExpression }}</code>
+                  <span v-if="cronValid" class="sf-cron-desc">{{ cronSummary }}</span>
+                  <span v-else class="sf-warn">{{ t('automation.form.cron.invalid') }}</span>
+                </div>
+                <p v-if="nextRunPreview" class="sf-nextrun">
+                  {{ t('automation.form.nextRun.label') }} <strong>{{ nextRunPreview }}</strong>
+                  <span class="sf-hint"> {{ t('automation.form.nextRun.utcHint') }}</span>
+                </p>
+              </template>
             </div>
-            <p v-if="nextRunPreview" class="sf-nextrun">
-              {{ t('automation.form.nextRun.label') }} <strong>{{ nextRunPreview }}</strong>
-              <span class="sf-hint"> {{ t('automation.form.nextRun.utcHint') }}</span>
-            </p>
-          </template>
-        </div>
 
-        <!-- Event trigger config -->
-        <div v-if="triggerType === 'event'" class="sf-field sf-field--stacked">
-          <span class="sf-label">{{ t('automation.form.event.topic.label') }}</span>
-          <div class="sf-segmented">
-            <button
-              v-for="ev in EVENT_TOPICS"
-              :key="ev.value"
-              type="button"
-              class="sf-seg"
-              :class="{ active: eventTopic === ev.value }"
-              @click="eventTopic = ev.value"
-            >
-              {{ ev.label }}
-            </button>
-          </div>
-          <span class="sf-hint">{{ t('automation.form.event.hint') }}</span>
+            <!-- Event trigger config: level-1 category, then level-2 run stage. -->
+            <div v-if="triggerType === 'event'" class="sf-field sf-field--stacked">
+              <span class="sf-label">{{ t('automation.form.event.category.label') }}</span>
+              <div class="sf-segmented" data-testid="event-category">
+                <button
+                  v-for="cat in EVENT_CATEGORIES"
+                  :key="cat.value"
+                  type="button"
+                  class="sf-seg"
+                  :class="{ active: eventCategory === cat.value }"
+                  :data-testid="`event-category-${cat.value}`"
+                  @click="selectEventCategory(cat.value)"
+                >
+                  {{ cat.label }}
+                </button>
+              </div>
 
-          <template v-if="showReasonFilter">
-            <span class="sf-label sf-event-reason-label">{{
-              t('automation.form.event.reason.label')
-            }}</span>
-            <div class="sf-days">
-              <button
-                v-for="r in EVENT_REASONS"
-                :key="r.value"
-                type="button"
-                class="sf-day"
-                :class="{ active: eventReasonFilter.includes(r.value) }"
-                @click="toggleReason(r.value)"
-              >
-                {{ r.label }}
-              </button>
-            </div>
-            <span class="sf-hint">{{ t('automation.form.event.reason.hint') }}</span>
-          </template>
+              <!-- Level-2 run stage: only under the run-lifecycle category. -->
+              <template v-if="eventCategory === 'run-lifecycle'">
+                <span class="sf-label sf-event-reason-label">{{
+                  t('automation.form.event.stage.label')
+                }}</span>
+                <div class="sf-segmented" data-testid="event-stage">
+                  <button
+                    type="button"
+                    class="sf-seg"
+                    :class="{ active: runStage === 'started' }"
+                    data-testid="event-stage-started"
+                    @click="selectRunStage('started')"
+                  >
+                    {{ t('automation.form.event.stage.started.label') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="sf-seg"
+                    :class="{ active: runStage === 'settled' }"
+                    data-testid="event-stage-settled"
+                    @click="selectRunStage('settled')"
+                  >
+                    {{ t('automation.form.event.stage.settled.label') }}
+                  </button>
+                </div>
+              </template>
 
-          <!-- PR operation event (pr:operation): the MCP integration. Selecting
+              <span class="sf-hint">{{ t('automation.form.event.hint') }}</span>
+
+              <template v-if="showReasonFilter">
+                <span class="sf-label sf-event-reason-label">{{
+                  t('automation.form.event.reason.label')
+                }}</span>
+                <div class="sf-days">
+                  <button
+                    v-for="r in EVENT_REASONS"
+                    :key="r.value"
+                    type="button"
+                    class="sf-day"
+                    :class="{ active: eventReasonFilter.includes(r.value) }"
+                    @click="toggleReason(r.value)"
+                  >
+                    {{ r.label }}
+                  </button>
+                </div>
+                <span class="sf-hint">{{ t('automation.form.event.reason.hint') }}</span>
+              </template>
+
+              <!-- PR operation event (pr:operation): the MCP integration. Selecting
                this topic IS the explicit opt-in; the model performs PR operations
                with its own tools and only publishes the event — c3 never executes
                PR operations. -->
-          <template v-if="showPrFilter">
-            <p class="sf-pr-note">{{ t('automation.form.event.pr.note') }}</p>
+              <template v-if="showPrFilter">
+                <p class="sf-pr-note">{{ t('automation.form.event.pr.note') }}</p>
 
-            <span class="sf-label sf-event-reason-label">{{
-              t('automation.form.event.pr.op.label')
-            }}</span>
-            <div class="sf-days">
-              <button
-                v-for="op in PR_OPERATION_OPTIONS"
-                :key="op.value"
-                type="button"
-                class="sf-day"
-                :class="{ active: prOperations.includes(op.value) }"
-                @click="togglePrOperation(op.value)"
-              >
-                {{ op.label }}
-              </button>
-            </div>
+                <span class="sf-label sf-event-reason-label">{{
+                  t('automation.form.event.pr.op.label')
+                }}</span>
+                <div class="sf-days">
+                  <button
+                    v-for="op in PR_OPERATION_OPTIONS"
+                    :key="op.value"
+                    type="button"
+                    class="sf-day"
+                    :class="{ active: prOperations.includes(op.value) }"
+                    @click="togglePrOperation(op.value)"
+                  >
+                    {{ op.label }}
+                  </button>
+                </div>
 
-            <span class="sf-label sf-event-reason-label">{{
-              t('automation.form.event.pr.result.label')
-            }}</span>
-            <div class="sf-days">
-              <button
-                v-for="r in PR_RESULT_OPTIONS"
-                :key="r.value"
-                type="button"
-                class="sf-day"
-                :class="{ active: prResults.includes(r.value) }"
-                @click="togglePrResult(r.value)"
-              >
-                {{ r.label }}
-              </button>
-            </div>
-            <span class="sf-hint">{{ t('automation.form.event.pr.hint') }}</span>
-          </template>
+                <span class="sf-label sf-event-reason-label">{{
+                  t('automation.form.event.pr.result.label')
+                }}</span>
+                <div class="sf-days">
+                  <button
+                    v-for="r in PR_RESULT_OPTIONS"
+                    :key="r.value"
+                    type="button"
+                    class="sf-day"
+                    :class="{ active: prResults.includes(r.value) }"
+                    @click="togglePrResult(r.value)"
+                  >
+                    {{ r.label }}
+                  </button>
+                </div>
+                <span class="sf-hint">{{ t('automation.form.event.pr.hint') }}</span>
+              </template>
 
-          <template v-if="showIntentFilter">
-            <span class="sf-label sf-event-reason-label">{{
-              t('automation.form.event.intent.label')
-            }}</span>
-            <div class="sf-days">
-              <button
-                v-for="phase in INTENT_PHASE_OPTIONS"
-                :key="phase.value"
-                type="button"
-                class="sf-day"
-                :class="{ active: intentPhases.includes(phase.value) }"
-                @click="toggleIntentPhase(phase.value)"
-              >
-                {{ phase.label }}
-              </button>
-            </div>
-            <span class="sf-hint">{{ t('automation.form.event.intent.hint') }}</span>
-          </template>
+              <template v-if="showIntentFilter">
+                <span class="sf-label sf-event-reason-label">{{
+                  t('automation.form.event.intent.label')
+                }}</span>
+                <div class="sf-days">
+                  <button
+                    v-for="phase in INTENT_PHASE_OPTIONS"
+                    :key="phase.value"
+                    type="button"
+                    class="sf-day"
+                    :class="{ active: intentPhases.includes(phase.value) }"
+                    @click="toggleIntentPhase(phase.value)"
+                  >
+                    {{ phase.label }}
+                  </button>
+                </div>
+                <span class="sf-hint">{{ t('automation.form.event.intent.hint') }}</span>
+              </template>
 
-          <!-- Run-lifecycle: mandatory sessionKind multi-select (no default) + an
+              <!-- Run-lifecycle: mandatory sessionKind multi-select (no default) + an
                optional metadata condition builder. -->
-          <template v-if="showRunLifecycleFilters">
-            <span class="sf-label sf-event-reason-label">{{
-              t('automation.form.event.sessionKind.label')
-            }}</span>
-            <div class="sf-days">
-              <button
-                v-for="sk in SESSION_KIND_OPTIONS"
-                :key="sk.value"
-                type="button"
-                class="sf-day"
-                :class="{ active: eventSessionKinds.includes(sk.value) }"
-                @click="toggleSessionKind(sk.value)"
-              >
-                {{ sk.label }}
-              </button>
-            </div>
-            <span v-if="!sessionKindValid" class="sf-warn">{{
-              t('automation.form.event.sessionKind.required')
-            }}</span>
-            <span v-else class="sf-hint">{{ t('automation.form.event.sessionKind.hint') }}</span>
+              <template v-if="showRunLifecycleFilters">
+                <span class="sf-label sf-event-reason-label">{{
+                  t('automation.form.event.sessionKind.label')
+                }}</span>
+                <div class="sf-days">
+                  <button
+                    v-for="sk in SESSION_KIND_OPTIONS"
+                    :key="sk.value"
+                    type="button"
+                    class="sf-day"
+                    :class="{ active: eventSessionKinds.includes(sk.value) }"
+                    @click="toggleSessionKind(sk.value)"
+                  >
+                    {{ sk.label }}
+                  </button>
+                </div>
+                <span v-if="!sessionKindValid" class="sf-warn">{{
+                  t('automation.form.event.sessionKind.required')
+                }}</span>
+                <span v-else class="sf-hint">{{
+                  t('automation.form.event.sessionKind.hint')
+                }}</span>
 
-            <span class="sf-label sf-event-reason-label">{{
-              t('automation.form.event.metadataFilter.label')
-            }}</span>
-            <div class="sf-combinator">
-              <button
-                type="button"
-                class="sf-seg"
-                :class="{ active: metadataCombinator === 'AND' }"
-                @click="metadataCombinator = 'AND'"
-              >
-                {{ t('automation.form.event.metadataFilter.and') }}
-              </button>
-              <button
-                type="button"
-                class="sf-seg"
-                :class="{ active: metadataCombinator === 'OR' }"
-                @click="metadataCombinator = 'OR'"
-              >
-                {{ t('automation.form.event.metadataFilter.or') }}
-              </button>
-            </div>
-            <div
-              v-for="(cond, i) in metadataConditions"
-              :key="`cond-${i}`"
-              class="sf-kv-row"
-              data-testid="metadata-condition-row"
-            >
-              <input
-                v-model="cond.key"
-                class="sf-input sf-kv-input"
-                :placeholder="t('automation.form.event.metadataFilter.keyPlaceholder')"
-              />
-              <span class="sf-kv-eq">=</span>
-              <input
-                v-model="cond.value"
-                class="sf-input sf-kv-input"
-                :placeholder="t('automation.form.event.metadataFilter.valuePlaceholder')"
-              />
-              <button
-                type="button"
-                class="sf-kv-del"
-                :aria-label="t('automation.form.metadata.remove')"
-                @click="removeMetadataCondition(i)"
-              >
-                ✕
-              </button>
-            </div>
-            <button
-              type="button"
-              class="sf-kv-add"
-              data-testid="metadata-condition-add"
-              @click="addMetadataCondition"
-            >
-              + {{ t('automation.form.event.metadataFilter.add') }}
-            </button>
-            <span class="sf-hint">{{ t('automation.form.event.metadataFilter.hint') }}</span>
-          </template>
-        </div>
-
-        <!-- Metadata annotations (free-form key/value). Only the scheduler's own run
-             for this automation carries these into its run events, so other
-             automations can chain by them. -->
-        <div class="sf-field sf-field--stacked">
-          <span class="sf-label">{{ t('automation.form.metadata.label') }}</span>
-          <div
-            v-for="(row, i) in metadataRows"
-            :key="`meta-${i}`"
-            class="sf-kv-row"
-            data-testid="metadata-row"
-          >
-            <input
-              v-model="row.key"
-              class="sf-input sf-kv-input"
-              :placeholder="t('automation.form.metadata.keyPlaceholder')"
-            />
-            <span class="sf-kv-eq">=</span>
-            <input
-              v-model="row.value"
-              class="sf-input sf-kv-input"
-              :placeholder="t('automation.form.metadata.valuePlaceholder')"
-            />
-            <button
-              type="button"
-              class="sf-kv-del"
-              :aria-label="t('automation.form.metadata.remove')"
-              @click="removeMetadataRow(i)"
-            >
-              ✕
-            </button>
-          </div>
-          <button
-            type="button"
-            class="sf-kv-add"
-            data-testid="metadata-add"
-            @click="addMetadataRow"
-          >
-            + {{ t('automation.form.metadata.add') }}
-          </button>
-          <span class="sf-hint">{{ t('automation.form.metadata.hint') }}</span>
-        </div>
-
-        <!-- Vendor selector -->
-        <div class="sf-field sf-vendor-agent">
-          <span class="sf-label">{{ t('automation.form.vendor.label') }}</span>
-          <select v-model="vendor" class="sf-input sf-select">
-            <option v-for="v in VENDOR_ORDER" :key="v" :value="v" :disabled="!vendorPresent(v)">
-              {{ VENDOR_LABEL[v] }}
-            </option>
-          </select>
-          <template v-if="type === 'llm'">
-            <span class="sf-label sf-agent-label">{{ t('automation.form.agent.label') }}</span>
-            <select v-model="agentId" class="sf-input sf-select sf-agent-select">
-              <option disabled value="">{{ t('automation.form.agent.placeholder') }}</option>
-              <option v-for="agent in vendorAgents" :key="agent.id" :value="agent.id">
-                {{ agent.displayName }}
-              </option>
-            </select>
-          </template>
-        </div>
-
-        <!-- Permission mode: controls differ by vendor -->
-        <div class="sf-field" :class="{ 'sf-field--stacked': vendor === 'codex' }">
-          <span class="sf-label">{{ t('automation.form.permissionMode.label') }}</span>
-
-          <!-- Claude: dropdown -->
-          <select v-if="vendor === 'claude'" v-model="claudeMode" class="sf-input sf-select">
-            <option value="default">
-              {{ t('automation.form.permissionMode.claude.default') }}
-            </option>
-            <option value="auto">{{ t('automation.form.permissionMode.claude.auto') }}</option>
-            <option value="plan">{{ t('automation.form.permissionMode.claude.plan') }}</option>
-            <option value="acceptEdits">
-              {{ t('automation.form.permissionMode.claude.acceptEdits') }}
-            </option>
-            <option value="bypassPermissions">
-              {{ t('automation.form.permissionMode.claude.bypassPermissions') }}
-            </option>
-          </select>
-
-          <!-- Codex: two segmented controls -->
-          <template v-else-if="vendor === 'codex'">
-            <span class="sf-label sf-permission-sub">{{
-              t('automation.form.permissionMode.codex.sandboxModeLabel')
-            }}</span>
-            <div class="sf-segmented">
-              <button
-                type="button"
-                class="sf-seg"
-                :class="{ active: codexSandboxMode === 'workspace-write' }"
-                @click="codexSandboxMode = 'workspace-write'"
-              >
-                {{ t('automation.form.permissionMode.codex.sandboxReadWrite') }}
-              </button>
-              <button
-                type="button"
-                class="sf-seg"
-                :class="{ active: codexSandboxMode === 'read-only' }"
-                @click="codexSandboxMode = 'read-only'"
-              >
-                {{ t('automation.form.permissionMode.codex.sandboxReadOnly') }}
-              </button>
-            </div>
-            <span class="sf-label sf-permission-sub">{{
-              t('automation.form.permissionMode.codex.approvalLabel')
-            }}</span>
-            <div class="sf-segmented">
-              <button
-                type="button"
-                class="sf-seg"
-                :class="{ active: codexApprovalPolicy === 'on-request' }"
-                @click="codexApprovalPolicy = 'on-request'"
-              >
-                {{ t('automation.form.permissionMode.codex.approvalOnRequest') }}
-              </button>
-              <button
-                type="button"
-                class="sf-seg"
-                :class="{ active: codexApprovalPolicy === 'on-failure' }"
-                @click="codexApprovalPolicy = 'on-failure'"
-              >
-                {{ t('automation.form.permissionMode.codex.approvalOnFailure') }}
-              </button>
-              <button
-                type="button"
-                class="sf-seg"
-                :class="{ active: codexApprovalPolicy === 'never' }"
-                @click="codexApprovalPolicy = 'never'"
-              >
-                {{ t('automation.form.permissionMode.codex.approvalNever') }}
-              </button>
-            </div>
-          </template>
-        </div>
-
-        <!-- Tool checklist -->
-        <div class="sf-field sf-field--stacked">
-          <div class="sf-tools-labelrow">
-            <span class="sf-label">{{ t('automation.form.tools.label') }}</span>
-            <!-- Select/clear stay on the label row for quick access. -->
-            <div v-if="currentTools.length" class="sf-tools-actions">
-              <button type="button" class="sf-tools-btn" @click="selectAll">
-                {{ t('automation.form.tools.selectAll.label') }}
-              </button>
-              <button type="button" class="sf-tools-btn" @click="clearAll">
-                {{ t('automation.form.tools.clearAll.label') }}
-              </button>
+                <span class="sf-label sf-event-reason-label">{{
+                  t('automation.form.event.metadataFilter.label')
+                }}</span>
+                <div class="sf-combinator">
+                  <button
+                    type="button"
+                    class="sf-seg"
+                    :class="{ active: metadataCombinator === 'AND' }"
+                    @click="metadataCombinator = 'AND'"
+                  >
+                    {{ t('automation.form.event.metadataFilter.and') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="sf-seg"
+                    :class="{ active: metadataCombinator === 'OR' }"
+                    @click="metadataCombinator = 'OR'"
+                  >
+                    {{ t('automation.form.event.metadataFilter.or') }}
+                  </button>
+                </div>
+                <div
+                  v-for="(cond, i) in metadataConditions"
+                  :key="`cond-${i}`"
+                  class="sf-kv-row"
+                  data-testid="metadata-condition-row"
+                >
+                  <input
+                    v-model="cond.key"
+                    class="sf-input sf-kv-input"
+                    :placeholder="t('automation.form.event.metadataFilter.keyPlaceholder')"
+                  />
+                  <span class="sf-kv-eq">=</span>
+                  <input
+                    v-model="cond.value"
+                    class="sf-input sf-kv-input"
+                    :placeholder="t('automation.form.event.metadataFilter.valuePlaceholder')"
+                  />
+                  <button
+                    type="button"
+                    class="sf-kv-del"
+                    :aria-label="t('automation.form.metadata.remove')"
+                    @click="removeMetadataCondition(i)"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  class="sf-kv-add"
+                  data-testid="metadata-condition-add"
+                  @click="addMetadataCondition"
+                >
+                  + {{ t('automation.form.event.metadataFilter.add') }}
+                </button>
+                <span class="sf-hint">{{ t('automation.form.event.metadataFilter.hint') }}</span>
+              </template>
             </div>
           </div>
+        </div>
 
-          <!-- Loading -->
-          <span v-if="props.toolManifestLoading" class="sf-hint">{{
-            t('automation.form.tools.loading')
-          }}</span>
+        <!-- Section: metadata annotations (free-form key/value). Only the
+             scheduler's own run for this automation carries these into its run
+             events, so other automations can chain by them. -->
+        <div class="sf-section" data-testid="section-metadata">
+          <span class="sf-section-title">{{ t('automation.form.section.metadata') }}</span>
+          <div class="sf-section-body">
+            <div class="sf-field sf-field--stacked">
+              <span class="sf-label">{{ t('automation.form.metadata.label') }}</span>
+              <div
+                v-for="(row, i) in metadataRows"
+                :key="`meta-${i}`"
+                class="sf-kv-row"
+                data-testid="metadata-row"
+              >
+                <input
+                  v-model="row.key"
+                  class="sf-input sf-kv-input"
+                  :placeholder="t('automation.form.metadata.keyPlaceholder')"
+                />
+                <span class="sf-kv-eq">=</span>
+                <input
+                  v-model="row.value"
+                  class="sf-input sf-kv-input"
+                  :placeholder="t('automation.form.metadata.valuePlaceholder')"
+                />
+                <button
+                  type="button"
+                  class="sf-kv-del"
+                  :aria-label="t('automation.form.metadata.remove')"
+                  @click="removeMetadataRow(i)"
+                >
+                  ✕
+                </button>
+              </div>
+              <button
+                type="button"
+                class="sf-kv-add"
+                data-testid="metadata-add"
+                @click="addMetadataRow"
+              >
+                + {{ t('automation.form.metadata.add') }}
+              </button>
+              <span class="sf-hint">{{ t('automation.form.metadata.hint') }}</span>
+            </div>
+          </div>
+        </div>
 
-          <!-- Error -->
-          <span v-else-if="props.toolManifestError" class="sf-warn">{{
-            props.toolManifestError
-          }}</span>
+        <!-- Section: execution identity & permissions -->
+        <div class="sf-section" data-testid="section-execution">
+          <span class="sf-section-title">{{ t('automation.form.section.execution') }}</span>
+          <div class="sf-section-body">
+            <!-- Vendor selector -->
+            <div class="sf-field sf-vendor-agent">
+              <span class="sf-label">{{ t('automation.form.vendor.label') }}</span>
+              <select v-model="vendor" class="sf-input sf-select">
+                <option v-for="v in VENDOR_ORDER" :key="v" :value="v" :disabled="!vendorPresent(v)">
+                  {{ VENDOR_LABEL[v] }}
+                </option>
+              </select>
+              <template v-if="type === 'llm'">
+                <span class="sf-label sf-agent-label">{{ t('automation.form.agent.label') }}</span>
+                <select v-model="agentId" class="sf-input sf-select sf-agent-select">
+                  <option disabled value="">{{ t('automation.form.agent.placeholder') }}</option>
+                  <option v-for="agent in vendorAgents" :key="agent.id" :value="agent.id">
+                    {{ agent.displayName }}
+                  </option>
+                </select>
+              </template>
+            </div>
 
-          <!-- The list grows with its content; the form body owns the only vertical
+            <!-- Permission mode: controls differ by vendor -->
+            <div class="sf-field" :class="{ 'sf-field--stacked': vendor === 'codex' }">
+              <span class="sf-label">{{ t('automation.form.permissionMode.label') }}</span>
+
+              <!-- Claude: dropdown -->
+              <select v-if="vendor === 'claude'" v-model="claudeMode" class="sf-input sf-select">
+                <option value="default">
+                  {{ t('automation.form.permissionMode.claude.default') }}
+                </option>
+                <option value="auto">{{ t('automation.form.permissionMode.claude.auto') }}</option>
+                <option value="plan">{{ t('automation.form.permissionMode.claude.plan') }}</option>
+                <option value="acceptEdits">
+                  {{ t('automation.form.permissionMode.claude.acceptEdits') }}
+                </option>
+                <option value="bypassPermissions">
+                  {{ t('automation.form.permissionMode.claude.bypassPermissions') }}
+                </option>
+              </select>
+
+              <!-- Codex: two segmented controls -->
+              <template v-else-if="vendor === 'codex'">
+                <span class="sf-label sf-permission-sub">{{
+                  t('automation.form.permissionMode.codex.sandboxModeLabel')
+                }}</span>
+                <div class="sf-segmented">
+                  <button
+                    type="button"
+                    class="sf-seg"
+                    :class="{ active: codexSandboxMode === 'workspace-write' }"
+                    @click="codexSandboxMode = 'workspace-write'"
+                  >
+                    {{ t('automation.form.permissionMode.codex.sandboxReadWrite') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="sf-seg"
+                    :class="{ active: codexSandboxMode === 'read-only' }"
+                    @click="codexSandboxMode = 'read-only'"
+                  >
+                    {{ t('automation.form.permissionMode.codex.sandboxReadOnly') }}
+                  </button>
+                </div>
+                <span class="sf-label sf-permission-sub">{{
+                  t('automation.form.permissionMode.codex.approvalLabel')
+                }}</span>
+                <div class="sf-segmented">
+                  <button
+                    type="button"
+                    class="sf-seg"
+                    :class="{ active: codexApprovalPolicy === 'on-request' }"
+                    @click="codexApprovalPolicy = 'on-request'"
+                  >
+                    {{ t('automation.form.permissionMode.codex.approvalOnRequest') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="sf-seg"
+                    :class="{ active: codexApprovalPolicy === 'on-failure' }"
+                    @click="codexApprovalPolicy = 'on-failure'"
+                  >
+                    {{ t('automation.form.permissionMode.codex.approvalOnFailure') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="sf-seg"
+                    :class="{ active: codexApprovalPolicy === 'never' }"
+                    @click="codexApprovalPolicy = 'never'"
+                  >
+                    {{ t('automation.form.permissionMode.codex.approvalNever') }}
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: tool permissions -->
+        <div class="sf-section" data-testid="section-tools">
+          <span class="sf-section-title">{{ t('automation.form.section.tools') }}</span>
+          <div class="sf-section-body">
+            <!-- Tool checklist -->
+            <div class="sf-field sf-field--stacked">
+              <div class="sf-tools-labelrow">
+                <span class="sf-label">{{ t('automation.form.tools.label') }}</span>
+                <!-- Select/clear stay on the label row for quick access. -->
+                <div v-if="currentTools.length" class="sf-tools-actions">
+                  <button type="button" class="sf-tools-btn" @click="selectAll">
+                    {{ t('automation.form.tools.selectAll.label') }}
+                  </button>
+                  <button type="button" class="sf-tools-btn" @click="clearAll">
+                    {{ t('automation.form.tools.clearAll.label') }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Loading -->
+              <span v-if="props.toolManifestLoading" class="sf-hint">{{
+                t('automation.form.tools.loading')
+              }}</span>
+
+              <!-- Error -->
+              <span v-else-if="props.toolManifestError" class="sf-warn">{{
+                props.toolManifestError
+              }}</span>
+
+              <!-- The list grows with its content; the form body owns the only vertical
                scroll area in this dialog. -->
-          <div v-else-if="currentTools.length" class="sf-tools-scroll">
-            <!-- Read-only tools -->
-            <div class="sf-tools-group">
-              <span class="sf-tools-subtitle">{{ t('automation.form.tools.readOnly.label') }}</span>
-              <div class="sf-tools-grid">
-                <label v-for="_t in readTools" :key="_t.name" class="sf-tool-item">
-                  <input
-                    type="checkbox"
-                    :checked="toolChecked(_t.name)"
-                    @change="toggleTool(_t.name)"
-                  />
-                  <span class="sf-tool-name">{{ _t.name }}</span>
-                </label>
-              </div>
-            </div>
+              <div v-else-if="currentTools.length" class="sf-tools-scroll">
+                <!-- Read-only tools -->
+                <div class="sf-tools-group">
+                  <span class="sf-tools-subtitle">{{
+                    t('automation.form.tools.readOnly.label')
+                  }}</span>
+                  <div class="sf-tools-grid">
+                    <label v-for="_t in readTools" :key="_t.name" class="sf-tool-item">
+                      <input
+                        type="checkbox"
+                        :checked="toolChecked(_t.name)"
+                        @change="toggleTool(_t.name)"
+                      />
+                      <span class="sf-tool-name">{{ _t.name }}</span>
+                    </label>
+                  </div>
+                </div>
 
-            <!-- Write tools -->
-            <div class="sf-tools-group">
-              <span class="sf-tools-subtitle">{{ t('automation.form.tools.write.label') }}</span>
-              <div class="sf-tools-grid">
-                <label v-for="_t in writeTools" :key="_t.name" class="sf-tool-item">
-                  <input
-                    type="checkbox"
-                    :checked="toolChecked(_t.name)"
-                    @change="toggleTool(_t.name)"
-                  />
-                  <span class="sf-tool-name">{{ _t.name }}</span>
-                </label>
+                <!-- Write tools -->
+                <div class="sf-tools-group">
+                  <span class="sf-tools-subtitle">{{
+                    t('automation.form.tools.write.label')
+                  }}</span>
+                  <div class="sf-tools-grid">
+                    <label v-for="_t in writeTools" :key="_t.name" class="sf-tool-item">
+                      <input
+                        type="checkbox"
+                        :checked="toolChecked(_t.name)"
+                        @change="toggleTool(_t.name)"
+                      />
+                      <span class="sf-tool-name">{{ _t.name }}</span>
+                    </label>
+                  </div>
+                </div>
               </div>
+
+              <!-- Empty (no tools returned) -->
+              <span v-else class="sf-hint">{{ t('automation.form.tools.empty') }}</span>
             </div>
           </div>
-
-          <!-- Empty (no tools returned) -->
-          <span v-else class="sf-hint">{{ t('automation.form.tools.empty') }}</span>
         </div>
       </div>
 
@@ -1292,6 +1391,29 @@ function save(): void {
   padding: var(--sp-4);
   overflow-y: auto;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+/* Visual grouping only — sections never own a scroll area (the body does) and
+   never collapse; they just card-wrap related fields. */
+.sf-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3);
+}
+.sf-section-title {
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  color: var(--c-text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sf-section-body {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);

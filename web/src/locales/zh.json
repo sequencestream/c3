@@ -1326,6 +1326,13 @@
     "form": {
       "newTitle": "新建自动化",
       "editTitle": "编辑自动化",
+      "section": {
+        "basic": "基本信息",
+        "trigger": "触发条件",
+        "metadata": "标注",
+        "execution": "执行身份与权限",
+        "tools": "工具权限"
+      },
       "title": {
         "label": "标题",
         "placeholder": "根据任务自动生成",
@@ -1482,6 +1489,21 @@
             "label": "意图生命周期"
           }
         },
+        "category": {
+          "label": "事件类型",
+          "runLifecycle": {
+            "label": "运行事件"
+          }
+        },
+        "stage": {
+          "label": "运行阶段",
+          "started": {
+            "label": "开始"
+          },
+          "settled": {
+            "label": "结束"
+          }
+        },
         "reason": {
           "label": "仅在以下结果时",
           "complete": {
@@ -1552,13 +1574,27 @@
           "label": "在以下会话类型时触发",
           "hint": "选择哪些运行来源可以触发本自动化。",
           "required": "至少选择一个会话类型。",
-          "work": { "label": "工作" },
-          "intent": { "label": "意图" },
-          "discussion": { "label": "讨论" },
-          "automation": { "label": "自动化" },
-          "consensus": { "label": "共识" },
-          "tool": { "label": "工具" },
-          "spec": { "label": "规范" }
+          "work": {
+            "label": "工作"
+          },
+          "intent": {
+            "label": "意图"
+          },
+          "discussion": {
+            "label": "讨论"
+          },
+          "automation": {
+            "label": "自动化"
+          },
+          "consensus": {
+            "label": "共识"
+          },
+          "tool": {
+            "label": "工具"
+          },
+          "spec": {
+            "label": "规范"
+          }
         },
         "metadataFilter": {
           "label": "元数据条件",

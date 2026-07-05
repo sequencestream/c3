@@ -4,12 +4,15 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  buildDownloadUrls,
   compareVersions,
   decideAction,
+  DEFAULT_REPO,
   hostTarget,
   isSelfUpdatable,
   normalizeVersion,
   packageNameFor,
+  parseTagFromLocation,
   replacePosix,
   replaceWindows,
   restartGuidance,
@@ -116,6 +119,48 @@ describe('selectAssets', () => {
       'c3-v1.0.0-macos-arm64.tar.gz',
     )
     expect(sel.minisigUrl).toBeUndefined()
+  })
+})
+
+// ── Pure: redirect tag parse + deterministic download URLs ──────────────────
+
+describe('parseTagFromLocation', () => {
+  it('parses the tag from an absolute redirect Location', () => {
+    expect(parseTagFromLocation('https://github.com/sequencestream/c3/releases/tag/v1.2.3')).toBe(
+      'v1.2.3',
+    )
+  })
+  it('parses the tag from a relative redirect Location', () => {
+    expect(parseTagFromLocation('/sequencestream/c3/releases/tag/v2.0.0')).toBe('v2.0.0')
+  })
+  it('ignores query and fragment after the tag', () => {
+    expect(parseTagFromLocation('https://github.com/o/r/releases/tag/v1.0.0?x=1#y')).toBe('v1.0.0')
+  })
+  it('returns null for a missing or non-tag Location', () => {
+    expect(parseTagFromLocation(null)).toBeNull()
+    expect(parseTagFromLocation(undefined)).toBeNull()
+    expect(parseTagFromLocation('')).toBeNull()
+    expect(parseTagFromLocation('https://github.com/o/r/releases/latest')).toBeNull()
+  })
+})
+
+describe('buildDownloadUrls', () => {
+  it('derives the package URL from the tag + packageNameFor and the sidecars from it', () => {
+    const tag = 'v2.0.0'
+    const target = hostTarget('darwin', 'arm64')
+    const pkgName = packageNameFor('2.0.0', target)
+    const sel = buildDownloadUrls(DEFAULT_REPO, tag, pkgName)
+    const base = `https://github.com/${DEFAULT_REPO}/releases/download/${tag}/${pkgName}`
+    expect(sel.pkgName).toBe(pkgName)
+    expect(sel.pkgUrl).toBe(base)
+    expect(sel.minisigUrl).toBe(`${base}.minisig`)
+    expect(sel.sha256Url).toBe(`${base}.sha256`)
+  })
+  it('uses the raw published tag (not the normalized version) in the download path', () => {
+    const sel = buildDownloadUrls('o/r', 'v1.0.0', 'c3-v1.0.0-linux-x64.tar.gz')
+    expect(sel.pkgUrl).toBe(
+      'https://github.com/o/r/releases/download/v1.0.0/c3-v1.0.0-linux-x64.tar.gz',
+    )
   })
 })
 
@@ -314,11 +359,21 @@ interface FakeResponse {
   arrayBuffer(): Promise<ArrayBuffer>
 }
 
-function jsonResponse(body: unknown, status = 200): FakeResponse {
+/** Case-insensitive header lookup over a plain record (mirrors undici Headers.get). */
+function headerGetter(headers: Record<string, string> = {}): (k: string) => string | null {
+  const lower = new Map(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]))
+  return (k: string) => lower.get(k.toLowerCase()) ?? null
+}
+
+function jsonResponse(
+  body: unknown,
+  status = 200,
+  headers: Record<string, string> = {},
+): FakeResponse {
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: () => null },
+    headers: { get: headerGetter(headers) },
     json: async () => body,
     arrayBuffer: async () => new ArrayBuffer(0),
   }
@@ -332,6 +387,22 @@ function bytesResponse(buf: Buffer, status = 200): FakeResponse {
     json: async () => ({}),
     arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
   }
+}
+
+/** A manual-redirect response from `github.com/{repo}/releases/latest` → tag page. */
+function redirectResponse(location: string, status = 302): FakeResponse {
+  return {
+    ok: false,
+    status,
+    headers: { get: headerGetter({ location }) },
+    json: async () => ({}),
+    arrayBuffer: async () => new ArrayBuffer(0),
+  }
+}
+
+/** The primary-path redirect target GitHub serves for `releases/latest`. */
+function tagRedirect(repo: string, version: string): FakeResponse {
+  return redirectResponse(`https://github.com/${repo}/releases/tag/v${version}`)
 }
 
 /** A signed release fixture: a fake package signed by a fresh test keypair. */
@@ -361,11 +432,11 @@ function releaseJson(version: string, pkgName: string) {
 }
 
 describe('runUpgrade --check', () => {
-  it('returns updateAvailable (10) when a newer release exists and does not download', async () => {
+  it('returns updateAvailable (10) via the redirect tag, without downloading or hitting the API', async () => {
     const fetchFn = vi.fn(async (url: string) => {
-      if (url.includes('releases/latest'))
-        return jsonResponse(releaseJson('2.0.0', 'c3-v2.0.0-macos-arm64.tar.gz'))
-      throw new Error(`unexpected download in --check: ${url}`)
+      if (url === `https://github.com/${DEFAULT_REPO}/releases/latest`)
+        return tagRedirect(DEFAULT_REPO, '2.0.0')
+      throw new Error(`unexpected fetch in --check: ${url}`)
     })
     const log = vi.fn()
     const code = await runUpgrade(
@@ -380,13 +451,13 @@ describe('runUpgrade --check', () => {
       },
     )
     expect(code).toBe(UPGRADE_EXIT.updateAvailable)
-    expect(fetchFn).toHaveBeenCalledTimes(1) // queried only, no asset downloads
+    // Only the redirect request: no asset downloads and no api.github.com call.
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(fetchFn.mock.calls.every(([u]) => !String(u).includes('api.github.com'))).toBe(true)
   })
 
   it('returns ok (0) when already up to date', async () => {
-    const fetchFn = vi.fn(async () =>
-      jsonResponse(releaseJson('1.0.0', 'c3-v1.0.0-macos-arm64.tar.gz')),
-    )
+    const fetchFn = vi.fn(async () => tagRedirect(DEFAULT_REPO, '1.0.0'))
     const code = await runUpgrade(
       { check: true },
       {
@@ -462,9 +533,10 @@ describe('runUpgrade (verification gate)', () => {
     // Tamper: serve a DIFFERENT public key than the one that signed it.
     const wrongKey = generateKeypair({ comment: 'attacker' }).publicKeyText
     const fetchFn = vi.fn(async (url: string) => {
-      if (url.includes('releases/latest')) return jsonResponse(releaseJson('2.0.0', fx.pkgName))
-      if (url.endsWith('/sig')) return bytesResponse(Buffer.from(fx.sigText))
-      if (url.endsWith('/sha')) return bytesResponse(Buffer.from(fx.sha256Line))
+      if (url === `https://github.com/${DEFAULT_REPO}/releases/latest`)
+        return tagRedirect(DEFAULT_REPO, '2.0.0')
+      if (url.endsWith('.minisig')) return bytesResponse(Buffer.from(fx.sigText))
+      if (url.endsWith('.sha256')) return bytesResponse(Buffer.from(fx.sha256Line))
       return bytesResponse(fx.pkgBytes)
     })
     const replaceSpy = vi.fn()
@@ -523,11 +595,14 @@ describe('runUpgrade (verification gate)', () => {
 })
 
 describe('runUpgrade (unpack + success)', () => {
+  // Primary path: redirect resolves the tag, then downloads use the deterministic
+  // `releases/download/<tag>/<pkg>{,.minisig,.sha256}` URLs — no asset list, no API.
   function fetchFor(fx: ReturnType<typeof signedRelease>) {
     return vi.fn(async (url: string) => {
-      if (url.includes('releases/latest')) return jsonResponse(releaseJson(fx.version, fx.pkgName))
-      if (url.endsWith('/sig')) return bytesResponse(Buffer.from(fx.sigText))
-      if (url.endsWith('/sha')) return bytesResponse(Buffer.from(fx.sha256Line))
+      if (url === `https://github.com/${DEFAULT_REPO}/releases/latest`)
+        return tagRedirect(DEFAULT_REPO, fx.version)
+      if (url.endsWith('.minisig')) return bytesResponse(Buffer.from(fx.sigText))
+      if (url.endsWith('.sha256')) return bytesResponse(Buffer.from(fx.sha256Line))
       return bytesResponse(fx.pkgBytes)
     })
   }
@@ -637,9 +712,7 @@ describe('runUpgrade (unpack + success)', () => {
   })
 
   it('without --force, the same version is a no-op (no download)', async () => {
-    const fetchFn = vi.fn(async () =>
-      jsonResponse(releaseJson('1.0.0', 'c3-v1.0.0-macos-arm64.tar.gz')),
-    )
+    const fetchFn = vi.fn(async () => tagRedirect(DEFAULT_REPO, '1.0.0'))
     const code = await runUpgrade(
       {},
       {
@@ -653,7 +726,7 @@ describe('runUpgrade (unpack + success)', () => {
       },
     )
     expect(code).toBe(UPGRADE_EXIT.ok)
-    expect(fetchFn).toHaveBeenCalledTimes(1) // only the version query
+    expect(fetchFn).toHaveBeenCalledTimes(1) // only the redirect version query
   })
 
   it('fails noArtifact when this platform has no published package', async () => {
@@ -673,5 +746,92 @@ describe('runUpgrade (unpack + success)', () => {
       },
     )
     expect(code).toBe(UPGRADE_EXIT.noArtifact)
+  })
+})
+
+// ── Latest-version resolution: redirect primary + JSON-API fallback ──────────
+
+describe('runUpgrade (latest-version resolution)', () => {
+  it('resolves via the releases redirect and downloads deterministic URLs, never hitting the API', async () => {
+    const fx = signedRelease('2.0.0', 'macos-arm64')
+    const installDir = mkdtempSync(join(tmpdir(), 'c3-install-'))
+    const execPath = join(installDir, 'c3')
+    writeFileSync(execPath, Buffer.from('OLD-v1'))
+    const seen: string[] = []
+    const base = `https://github.com/${DEFAULT_REPO}/releases/download/v2.0.0/${fx.pkgName}`
+    const fetchFn = vi.fn(async (url: string) => {
+      seen.push(url)
+      if (url === `https://github.com/${DEFAULT_REPO}/releases/latest`)
+        return tagRedirect(DEFAULT_REPO, '2.0.0')
+      if (url === `${base}.minisig`) return bytesResponse(Buffer.from(fx.sigText))
+      if (url === `${base}.sha256`) return bytesResponse(Buffer.from(fx.sha256Line))
+      if (url === base) return bytesResponse(fx.pkgBytes)
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+    const io = realIo({
+      mkdtemp: () => mkdtempSync(join(tmpdir(), 'c3-up-')),
+      rename: (from, to) => {
+        writeFileSync(to, readFileSync(from))
+        rmSync(from, { force: true })
+      },
+      unpack: (_a, destDir) => writeFileSync(join(destDir, 'c3'), Buffer.from('NEW-v2-binary')),
+      selfCheckVersion: () => 'c3 2.0.0',
+    })
+    const code = await runUpgrade(
+      {},
+      {
+        version: '1.0.0',
+        platform: 'darwin',
+        arch: 'arm64',
+        execPath,
+        home: installDir,
+        publicKeyText: fx.kp.publicKeyText,
+        fetch: fetchFn as never,
+        io,
+        log: vi.fn(),
+        errlog: vi.fn(),
+      },
+    )
+    expect(code).toBe(UPGRADE_EXIT.ok)
+    expect(readFileSync(execPath, 'utf-8')).toBe('NEW-v2-binary')
+    // The deterministic package + both sidecars were fetched; the API was never called.
+    expect(seen).toContain(base)
+    expect(seen).toContain(`${base}.minisig`)
+    expect(seen).toContain(`${base}.sha256`)
+    expect(seen.every((u) => !u.includes('api.github.com'))).toBe(true)
+    rmSync(installDir, { recursive: true, force: true })
+  })
+
+  it('falls back to the JSON API (token-aware, rate-limit hint) when the redirect is unusable', async () => {
+    // Redirect resolves nothing usable (200, no Location) → fallback path runs, and
+    // the API responds 403 with x-ratelimit-remaining:0 → the classic rate-limit hint.
+    let apiHeaders: Record<string, string> | undefined
+    const fetchFn = vi.fn(async (url: string, init?: { headers?: Record<string, string> }) => {
+      if (url === `https://github.com/${DEFAULT_REPO}/releases/latest`) return jsonResponse({}, 200) // no Location header → parseTagFromLocation → null
+      if (url === `https://api.github.com/repos/${DEFAULT_REPO}/releases/latest`) {
+        apiHeaders = init?.headers
+        return jsonResponse({}, 403, { 'x-ratelimit-remaining': '0' })
+      }
+      throw new Error(`unexpected fetch: ${url}`)
+    })
+    const errlog = vi.fn()
+    const code = await runUpgrade(
+      { check: true },
+      {
+        version: '1.0.0',
+        platform: 'darwin',
+        arch: 'arm64',
+        env: { GITHUB_TOKEN: 'secret-token' } as NodeJS.ProcessEnv,
+        fetch: fetchFn as never,
+        log: vi.fn(),
+        errlog,
+      },
+    )
+    expect(code).toBe(UPGRADE_EXIT.network)
+    // Fallback carried the token-aware Authorization header...
+    expect(apiHeaders?.Authorization).toBe('Bearer secret-token')
+    // ...and preserved the rate-limit guidance.
+    expect(errlog.mock.calls.flat().join('\n')).toContain('rate limit')
+    expect(errlog.mock.calls.flat().join('\n')).toContain('GITHUB_TOKEN')
   })
 })

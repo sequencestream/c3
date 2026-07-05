@@ -83,6 +83,10 @@ const REPRESENTATIVE_FRAMES: ServerToClient[] = [
   },
   { type: 'research_run_status', discussionId: 'd1', state: 'ended' },
   {
+    type: 'update_status',
+    updateStatus: { available: true, latestVersion: '1.2.3', checkedAt: 0 },
+  },
+  {
     type: 'workflow_status',
     status: {
       workspaceId: '/p',

@@ -31,6 +31,9 @@
       "workspace": "Рабочее пространство",
       "workcenter": "Верстак"
     },
+    "update": {
+      "available": "Новая версия v{version}"
+    },
     "tab": {
       "console": {
         "label": "Сеансы",

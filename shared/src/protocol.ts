@@ -2860,6 +2860,26 @@ export interface LicenseStatus {
   licenseKey: string
 }
 
+/**
+ * A minimal, pure-data snapshot of "is a newer c3 release available?", produced by
+ * the server-side update checker (polls license-server's `GET /v1/artifact/latest`
+ * and compares the remote version with the running `VERSION`). Carried on the
+ * `ready` handshake and re-pushed via {@link update_status} after each check.
+ *
+ * The console renders an upgrade hint ONLY when `available === true && latestVersion`;
+ * "no update", "not yet checked", and "check failed" all present as `available:false`
+ * (or `latestVersion:null`) and render nothing. Intentionally carries no error, URL,
+ * or license data — it is a UX-visible-to-all state, never an admin-gated one.
+ */
+export interface UpdateStatus {
+  /** True only when the remote version is strictly newer than the local `VERSION`. */
+  available: boolean
+  /** The latest remote version (normalized, no leading `v`); null until a check succeeds. */
+  latestVersion: string | null
+  /** When the last successful check completed (unix ms); null before the first success. */
+  checkedAt: number | null
+}
+
 // Client → Server
 export type ClientToServer =
   /**
@@ -3390,9 +3410,22 @@ export type ServerToClient =
        * a `login`. Purely a display hint; never an authority for any gate.
        */
       subject: string | null
+      /**
+       * The server's current {@link UpdateStatus} snapshot (is a newer c3 release
+       * available?). Seeds the header's upgrade hint on connect so it appears
+       * without waiting for the next {@link update_status} push. Visible to every
+       * signed-in connection — a plain UX state, not admin-gated.
+       */
+      updateStatus: UpdateStatus
     }
   /** Live run statuses for all sessions with a runtime; drives sidebar badges. */
   | { type: 'session_status'; statuses: SessionRunStatus[] }
+  /**
+   * Push the refreshed {@link UpdateStatus} snapshot to every connection after each
+   * server-side update check. Fail-soft: a failed check keeps the last successful
+   * snapshot, so this only ever moves toward "known" (never blanks a prior hit).
+   */
+  | { type: 'update_status'; updateStatus: UpdateStatus }
   /** Full workspace list, sorted by recent access (desc). */
   | { type: 'workspaces'; workspaces: WorkspaceInfo[] }
   /**

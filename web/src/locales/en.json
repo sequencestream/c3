@@ -30,6 +30,9 @@
       "workspace": "Workspace",
       "workcenter": "Workcenter"
     },
+    "update": {
+      "available": "New version v{version}"
+    },
     "tab": {
       "console": {
         "label": "Sessions",

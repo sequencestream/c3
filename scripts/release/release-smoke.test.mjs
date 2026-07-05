@@ -126,8 +126,14 @@ describe('freePort', () => {
 // Conditional real smoke: only when a host-runnable artifact was already built.
 describe('smokeArtifact (conditional)', () => {
   const product = defaultOutfile(hostTarget())
-  it.runIf(existsSync(product))('boots the binary and answers HTTP, claude-free', async () => {
-    const version = await smokeArtifact(product, { timeoutMs: 20000 })
-    expect(version).toMatch(/^v?\d+\.\d+\.\d+/)
-  })
+  it.runIf(existsSync(product))(
+    'boots the binary and answers HTTP, claude-free',
+    async () => {
+      const version = await smokeArtifact(product, { timeoutMs: 20000 })
+      expect(version).toMatch(/^v?\d+\.\d+\.\d+/)
+    },
+    // vitest test timeout must exceed smokeArtifact's internal 20s probe window,
+    // else the test shell is killed at the 5s default before the boot probe finishes.
+    30000,
+  )
 })

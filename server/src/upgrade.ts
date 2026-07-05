@@ -1,7 +1,8 @@
 /**
  * `c3 upgrade` — self-update the installed single binary from GitHub Releases.
  *
- * Flow: resolve runtime form → query the latest release → pick this platform's
+ * Flow: resolve runtime form → resolve the latest release tag (GitHub Releases
+ * redirect first, JSON API only as fallback) → pick this platform's
  * package → download package + `.minisig` + `.sha256` → verify the PACKAGE bytes
  * with the EMBEDDED minisign public key (the mandatory trust gate, reused from
  * verify.ts — no new trust anchor) → unpack the inner `c3`/`c3.exe` → replace the
@@ -212,6 +213,17 @@ export interface LatestRelease {
   assets: ReleaseAsset[]
 }
 
+/**
+ * What the orchestrator needs to proceed after latest-version resolution: the
+ * release `tag`. `assets` is populated ONLY when resolution fell back to the JSON
+ * API; on the primary redirect path it is absent and download URLs are derived
+ * deterministically from the tag (no asset enumeration).
+ */
+export interface ResolvedRelease {
+  tag: string
+  assets?: ReleaseAsset[]
+}
+
 export interface SelectedAssets {
   pkgName: string
   pkgUrl: string
@@ -239,6 +251,39 @@ export function selectAssets(assets: ReleaseAsset[], pkgName: string): SelectedA
     pkgUrl,
     minisigUrl: byName.get(`${pkgName}.minisig`),
     sha256Url: byName.get(`${pkgName}.sha256`),
+  }
+}
+
+/**
+ * Extract a release tag from a GitHub Releases redirect `Location` header. GitHub
+ * redirects `.../releases/latest` to `.../releases/tag/<tag>`; the target may be
+ * absolute or relative, so match the `/releases/tag/<tag>` path segment anywhere
+ * in the value. Returns the (URL-decoded) tag, or null when the header is missing
+ * or does not name a tag — the caller treats null as "fall back to the JSON API".
+ */
+export function parseTagFromLocation(location: string | null | undefined): string | null {
+  if (!location) return null
+  const m = /\/releases\/tag\/([^/?#]+)/.exec(location)
+  if (!m) return null
+  const tag = decodeURIComponent(m[1])
+  return tag.length > 0 ? tag : null
+}
+
+/**
+ * Deterministic download URLs for a package + its sidecars, given a known release
+ * tag. Anchored to `packageNameFor` (same naming the release scripts publish), so
+ * the primary path needs no asset-list lookup: the package lives at
+ * `.../releases/download/<tag>/<pkgName>` and the two sidecars are that URL plus
+ * `.minisig` / `.sha256`. The raw published `tag` (e.g. `v2.0.0`) is used in the
+ * path, not the normalized version.
+ */
+export function buildDownloadUrls(repo: string, tag: string, pkgName: string): SelectedAssets {
+  const pkgUrl = `https://github.com/${repo}/releases/download/${tag}/${pkgName}`
+  return {
+    pkgName,
+    pkgUrl,
+    minisigUrl: `${pkgUrl}.minisig`,
+    sha256Url: `${pkgUrl}.sha256`,
   }
 }
 
@@ -440,6 +485,41 @@ async function fetchLatestRelease(
   return { tag: obj.tag_name, assets }
 }
 
+/**
+ * Primary latest-version resolver: ask `github.com/{repo}/releases/latest` with
+ * `redirect: 'manual'` and read the release tag out of the `Location` header. This
+ * avoids the unauthenticated `api.github.com` rate limit (60/h/IP) that shared-exit
+ * users hit. Returns null on any unusable outcome (fetch error, no `Location`, or a
+ * `Location` that does not name a tag) so the caller can fall back to the JSON API.
+ */
+async function resolveTagViaRedirect(repo: string, fetchFn: typeof fetch): Promise<string | null> {
+  const url = `https://github.com/${repo}/releases/latest`
+  let res: Response
+  try {
+    res = await fetchFn(url, { redirect: 'manual', headers: { 'User-Agent': 'c3-upgrade' } })
+  } catch {
+    return null
+  }
+  return parseTagFromLocation(res.headers.get('location'))
+}
+
+/**
+ * Resolve the latest release. The primary path parses the tag from the GitHub
+ * Releases redirect (no asset list, no token, no API rate limit); download URLs are
+ * then derived deterministically by {@link buildDownloadUrls}. Only when the redirect
+ * yields no usable tag do we fall back to {@link fetchLatestRelease} (JSON API), which
+ * keeps the token-aware headers, asset-list selection, and the 403 rate-limit hint.
+ */
+async function resolveLatestRelease(
+  repo: string,
+  fetchFn: typeof fetch,
+  env: NodeJS.ProcessEnv,
+): Promise<ResolvedRelease> {
+  const tag = await resolveTagViaRedirect(repo, fetchFn)
+  if (tag) return { tag }
+  return fetchLatestRelease(repo, fetchFn, env)
+}
+
 async function downloadBuffer(
   url: string,
   fetchFn: typeof fetch,
@@ -540,8 +620,8 @@ export async function runUpgrade(
       }
     }
 
-    const release = await fetchLatestRelease(repo, fetchFn, env)
-    const latest = normalizeVersion(release.tag)
+    const resolved = await resolveLatestRelease(repo, fetchFn, env)
+    const latest = normalizeVersion(resolved.tag)
     const action = decideAction({ current: version, latest, force: options.force })
 
     if (options.check) {
@@ -559,10 +639,14 @@ export async function runUpgrade(
       return UPGRADE_EXIT.ok
     }
 
-    // Select the target + assets for the latest version.
+    // Select the target + assets for the latest version. On the primary redirect
+    // path there is no asset list, so download URLs are derived deterministically
+    // from the tag; the fallback JSON path still selects from the enumerated assets.
     const target = options.target ?? hostTarget(platform, arch)
     const pkgName = packageNameFor(latest, target)
-    const selected = selectAssets(release.assets, pkgName)
+    const selected = resolved.assets
+      ? selectAssets(resolved.assets, pkgName)
+      : buildDownloadUrls(repo, resolved.tag, pkgName)
     log(
       action === 'reinstall'
         ? `[c3 upgrade] reinstalling ${latest} (${pkgName})`

@@ -467,6 +467,18 @@ runs inside the compile primitive so hashing sees the signed Mach-O).
   new version. The platform→target mapping and package naming are a small in-binary copy of
   `scripts/release/{targets,artifact-name}.mjs` (that dir is not bundled), cross-asserted by a
   test so the two cannot drift.
+  - **Latest-version resolution** favors the GitHub Releases **redirect** over the JSON API to
+    dodge the unauthenticated `api.github.com` rate limit (60/h/IP), which shared-exit users
+    (corporate proxy / NAT) routinely trip into a 403. The primary path requests
+    `github.com/<repo>/releases/latest` with `redirect: 'manual'` and reads the release tag out
+    of the `Location` header; the download URLs are then **derived deterministically** from that
+    tag (`releases/download/<tag>/<pkg>{,.minisig,.sha256}`, package basename from
+    `packageNameFor`) — no asset-list enumeration, no token. Only when the redirect yields no
+    usable tag does it **fall back** to `api.github.com/repos/<repo>/releases/latest` (JSON), which
+    keeps the token-aware `GITHUB_TOKEN`/`GH_TOKEN` headers, asset-list selection, and the 403
+    rate-limit hint. This changes only _how the latest version + download URLs are located_; the
+    minisign trust gate and every download-and-verify step above are unchanged, and GitHub Releases
+    remains the sole distribution source (no new mirror or trust anchor).
 - **macOS ad-hoc** `codesign --force -s -` — gated on macOS target + darwin host + `codesign`
   present; best-effort with a warn-and-continue otherwise. Ad-hoc only (no Developer ID /
   notarization); users clear Gatekeeper quarantine with `xattr -dr com.apple.quarantine`.

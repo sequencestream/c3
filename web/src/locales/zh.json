@@ -2333,6 +2333,10 @@
       "label": "刷新有效期",
       "failed": "刷新有效期失败,请检查网络后重试。"
     },
+    "manual": {
+      "label": "使用手册",
+      "tooltip": "在新标签页打开产品文档"
+    },
     "bind": {
       "placeholder": "粘贴许可密钥",
       "button": "绑定",

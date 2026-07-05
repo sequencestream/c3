@@ -22,6 +22,8 @@ const { t, d } = useTypedI18n()
 const LICENSE_CONSOLE_URL = 'https://c3.sequencestream.com/'
 // 新版本提示外链:点击新标签页跳到升级文档(实际升级仍由用户手动 `c3 upgrade`)。
 const UPGRADE_DOCS_URL = 'https://github.com/sequencestream/c3#upgrade'
+// 使用手册外链:许可下拉 / 移动操作菜单内跳转产品文档(新标签页)。
+const USER_MANUAL_URL = 'https://github.com/sequencestream/c3/tree/main/doc'
 // 仅管理员显示系统设置入口(ADR-0023 authz)。无认证 / 握手前 isAdmin 默认 true,
 // 故无认证场景行为不变;服务端 save_settings 仍是真正的鉴权门(AUTH-R10)。
 // 登录身份(basic 用户名 / oauth 邮箱),响应式来自每个 `ready`。供桌面账户菜单与
@@ -398,7 +400,8 @@ function selectTab(tab: HeaderTab): void {
         <!-- Product-license 状态控件(PL-R7),受控 <details> 下拉。位于连接状态右侧、
              顶栏最右:
              · 已激活(active/grace)→ ✓ 图标(按 state 着色),下拉显示许可密钥 + 有效期
-             · 未激活/过期/停用 → 圆圈内红色感叹号图标,下拉内「激活许可」按钮触发激活流程 -->
+             · 未激活/过期/停用 → 圆圈内红色感叹号图标,下拉内「激活许可」按钮触发激活流程
+             · 下拉底部恒有「使用手册」外链(仅依赖 license 已知,不受 entitled 控制) -->
         <details v-if="license" ref="licenseEl" class="license-menu" @toggle="syncOutsideListener">
           <summary
             class="license-trigger"
@@ -467,6 +470,19 @@ function selectTab(tab: HeaderTab): void {
             <button v-else class="license-activate-btn" @click="chooseActivate">
               {{ t('license.activate.button') }}
             </button>
+            <!-- 使用手册外链:紧跟有效期/状态或激活按钮之后,只依赖 license 已知,
+                 未激活态也可查手册。点击新标签页打开产品文档并收起下拉。 -->
+            <a
+              class="license-manual"
+              :href="USER_MANUAL_URL"
+              target="_blank"
+              rel="noopener noreferrer"
+              :title="t('license.manual.tooltip' as LocaleKey)"
+              @click="closeLicense"
+            >
+              <span class="license-manual-icon" aria-hidden="true">📖</span>
+              <span class="license-manual-text">{{ t('license.manual.label' as LocaleKey) }}</span>
+            </a>
           </div>
         </details>
       </div>
@@ -586,6 +602,16 @@ function selectTab(tab: HeaderTab): void {
             <span v-else class="mobile-action-item license-info-static">
               ✓ {{ licensePlanText }} · {{ licenseTermText || t(licenseBadgeKey(license.state)) }}
             </span>
+            <!-- 使用手册外链(移动端,与桌面对等):license 已知即渲染,点击跳转并收起菜单。 -->
+            <a
+              class="mobile-action-item license-manual-mobile"
+              :href="USER_MANUAL_URL"
+              target="_blank"
+              rel="noopener noreferrer"
+              @click="closeActions"
+            >
+              📖 {{ t('license.manual.label' as LocaleKey) }}
+            </a>
           </template>
           <span class="status mobile-status" :class="status === 'open' ? 'ok' : 'err'">
             {{ status }}
@@ -860,6 +886,30 @@ function selectTab(tab: HeaderTab): void {
   background: var(--c-card);
 }
 
+/* 使用手册外链(桌面下拉):图标 + 文字一行,弱化为链接样式,与密钥/激活按钮区分 */
+.license-manual {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--sp-1) var(--sp-1);
+  font-size: var(--fs-caption);
+  color: var(--c-text);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.license-manual:hover {
+  background: var(--c-card);
+}
+.license-manual-icon {
+  flex: 0 0 auto;
+  line-height: 1;
+}
+.license-manual-text {
+  min-width: 0;
+}
+
 /* 账户菜单(ADR-0023):受控 <details> 下拉,人形图标触发 */
 .account-menu {
   position: relative;
@@ -1090,6 +1140,12 @@ function selectTab(tab: HeaderTab): void {
     white-space: normal;
     word-break: break-all;
     cursor: default;
+  }
+  /* 移动操作菜单内的使用手册外链:与桌面对等,普通链接样式 */
+  .mobile-action-item.license-manual-mobile {
+    display: block;
+    color: var(--c-text);
+    text-decoration: none;
   }
   /* 移动操作菜单内的登录名(ADR-0023):静态只读,与登出项区分 */
   .mobile-action-item.account-name-static {

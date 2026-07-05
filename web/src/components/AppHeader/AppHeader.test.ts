@@ -474,3 +474,99 @@ describe('AppHeader.vue — license 有效期手动刷新(PL-R7)', () => {
     expect(w.find('.license-refresh-error').exists()).toBe(false)
   })
 })
+
+describe('AppHeader.vue — license 使用手册外链', () => {
+  const MANUAL_URL = 'https://github.com/sequencestream/c3/tree/main/doc'
+  const TERM_END = 1_718_409_600
+  function licenseProps(license: object | null) {
+    return { ...baseProps, license }
+  }
+
+  it('active 且有有效期 → 桌面下拉在 .license-term 之后渲染手册链接(属性齐全)', () => {
+    const w = mount(AppHeader, {
+      props: licenseProps({
+        state: 'active',
+        entitled: true,
+        termEnd: TERM_END,
+        installationId: 'i',
+        licenseKey: 'lk',
+      }),
+    } as never)
+    const link = w.find('.license-dropdown .license-manual')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe(MANUAL_URL)
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toBe('noopener noreferrer')
+    expect(link.text()).toContain('User manual')
+    // .license-term 在手册链接之前出现
+    const html = w.find('.license-dropdown').html()
+    expect(html.indexOf('license-term')).toBeLessThan(html.indexOf('license-manual'))
+  })
+
+  it('未激活/过期/停用态 → 桌面端仍渲染手册链接(不受 entitled 限制)', () => {
+    for (const state of ['expired', 'unactivated', 'disabled'] as const) {
+      const w = mount(AppHeader, {
+        props: licenseProps({
+          state,
+          entitled: false,
+          termEnd: 0,
+          installationId: 'i',
+          licenseKey: 'lk',
+        }),
+      } as never)
+      expect(w.find('.license-dropdown .license-manual').exists()).toBe(true)
+    }
+  })
+
+  it('点击桌面手册链接 → 收起 license <details>', async () => {
+    const w = mount(AppHeader, {
+      props: licenseProps({
+        state: 'unactivated',
+        entitled: false,
+        termEnd: 0,
+        installationId: 'i',
+        licenseKey: 'lk',
+      }),
+    } as never)
+    const details = w.find('.license-menu').element as HTMLDetailsElement
+    details.open = true
+    await w.find('.license-dropdown .license-manual').trigger('click')
+    expect(details.open).toBe(false)
+  })
+
+  it('移动端操作菜单渲染同一 URL 的手册入口,点击后收起 actions', async () => {
+    const w = mount(AppHeader, {
+      props: licenseProps({
+        state: 'active',
+        entitled: true,
+        termEnd: TERM_END,
+        installationId: 'i',
+        licenseKey: 'lk',
+      }),
+    } as never)
+    const link = w.find('.license-manual-mobile')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe(MANUAL_URL)
+    expect(link.text()).toContain('User manual')
+
+    const actions = w.find('.mobile-actions').element as HTMLDetailsElement
+    actions.open = true
+    await link.trigger('click')
+    expect(actions.open).toBe(false)
+  })
+
+  it('license 为 null → 桌面与移动端均不渲染手册入口', () => {
+    const w = mount(AppHeader, { props: licenseProps(null) } as never)
+    expect(w.find('.license-manual').exists()).toBe(false)
+    expect(w.find('.license-manual-mobile').exists()).toBe(false)
+  })
+
+  it('en/zh 的 license.manual.label / tooltip 均可解析', () => {
+    for (const locale of ['en', 'zh'] as const) {
+      const messages = i18n.global.messages.value[locale] as Record<string, unknown>
+      const license = messages.license as { manual?: { label?: string; tooltip?: string } }
+      expect(license.manual?.label).toBeTruthy()
+      expect(license.manual?.tooltip).toBeTruthy()
+    }
+  })
+})

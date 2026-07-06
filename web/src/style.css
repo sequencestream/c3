@@ -3096,7 +3096,10 @@ button.deny:hover:not(:disabled) {
   min-width: 22px;
 }
 
-.sandbox-row .agent-field {
+/* The "type" column uses a bare `.mode-select` (no `.agent-field`), so give it
+ * the same flex column rule to keep its input aligned under the header label. */
+.sandbox-row .agent-field,
+.sandbox-row .mode-select {
   min-width: 80px;
   flex: 1 0 120px;
 }
@@ -3186,6 +3189,7 @@ button.deny:hover:not(:disabled) {
   .agent-key,
   .agent-model,
   .sandbox-row .agent-field,
+  .sandbox-row .mode-select,
   .sandbox-row .sandbox-small,
   .skill-repo-row .agent-field,
   .skill-repo-row .skill-repo-name,

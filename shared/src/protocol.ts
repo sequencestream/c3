@@ -1013,6 +1013,24 @@ export interface SystemSettings {
    * is left empty (never auto-filled), so "follow the default" survives a save.
    */
   specAgentId: string
+  /**
+   * Id of the agent used to **pre-fill the "new automation" form** (the vendor +
+   * agent selected the instant the create form opens). Storage-normalization
+   * semantics are **identical to {@link specAgentId}**: an **empty string is
+   * "follow the default agent"** (the form resolves it `automationAgentId →
+   * defaultAgentId → system`), a *non-empty* value that points at a removed/now-disabled
+   * agent is **rewritten** on store to the next enabled agent in `order_seq` order —
+   * the same `resolveDefaultAgentId` fall-through the default uses (AC-R2/AC-R10/AC-R20);
+   * when every agent is disabled it resolves to {@link SYSTEM_AGENT_ID}. An empty string
+   * is left empty (never auto-filled), so "follow the default" survives a save.
+   *
+   * UNLIKE {@link toolAgentId}/{@link intentAgentId}/{@link specAgentId}, this value is
+   * **not** consumed by the runtime `resolveAgent` router: an automation record stores a
+   * concrete `vendor`/`agentId` snapshot at creation time and runs on that. This field
+   * only decides the create-form's one-time default selection (AC-R25); editing an
+   * existing automation and its saved snapshot are unaffected.
+   */
+  automationAgentId: string
   /** BCP-47 language tag for browser voice input (e.g. `zh-CN`). `zh-CN` when unset. */
   voiceLang?: string
   /** UI display language for the web console. `en` when unset. Decoupled from

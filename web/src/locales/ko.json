@@ -234,6 +234,13 @@
         "label": "사양 에이전트",
         "followDefault": "기본 에이전트 따르기"
       },
+      "automation": {
+        "tooltip": "새 자동화 폼에 미리 선택되는 에이전트(각 자동화에서 변경 가능)"
+      },
+      "automationPicker": {
+        "label": "자동화 에이전트",
+        "followDefault": "기본 에이전트 따르기"
+      },
       "remove": {
         "tooltip": "에이전트 제거"
       },

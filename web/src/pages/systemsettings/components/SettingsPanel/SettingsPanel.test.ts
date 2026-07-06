@@ -21,6 +21,7 @@ const baseSettings: SystemSettings = {
   toolAgentId: '',
   intentAgentId: '',
   specAgentId: '',
+  automationAgentId: '',
   defaultMode: 'default',
   consensus: { enabled: false },
   voiceLang: 'zh-CN',
@@ -332,6 +333,59 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     await w.find('[data-testid="settings-save"]').trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].specAgentId).toBe('a3')
+  })
+
+  it('offers a leading "follow default" option plus enabled agents by order for the automation picker', () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: { ...threeAgents, agents: [mk('a1'), mk('a2', false), mk('a3')] },
+      },
+    })
+    const opts = w
+      .findAll('[data-testid="automation-agent-select"] option')
+      .map((o) => (o.element as HTMLOptionElement).value)
+    // '' (follow default) + a1 + a3; a2 (disabled) excluded.
+    expect(opts).toEqual(['', 'a1', 'a3'])
+  })
+
+  it('seeds the automation dropdown from settings.automationAgentId and carries it through on save', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...threeAgents, automationAgentId: 'a2' } },
+    })
+    const sel = w.find('[data-testid="automation-agent-select"]')
+    expect((sel.element as HTMLSelectElement).value).toBe('a2')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].automationAgentId).toBe('a2')
+  })
+
+  it('keeps an empty automationAgentId empty (follow default) when an agent is disabled', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...threeAgents, automationAgentId: '' } },
+    })
+    // Disable a2 — an empty ("follow default") automation agent must stay empty.
+    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
+    await checks[1].setValue(false)
+    const sel = w.find('[data-testid="automation-agent-select"]')
+    expect((sel.element as HTMLSelectElement).value).toBe('')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].automationAgentId).toBe('')
+  })
+
+  it('rewrites a non-empty automationAgentId to the next enabled agent when disabled', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...threeAgents, automationAgentId: 'a2' } },
+    })
+    // Disable a2 (the current automation agent) → fall through to a3.
+    const checks = w.findAll('[data-testid="agent-enabled-switch"]')
+    await checks[1].setValue(false)
+    const sel = w.find('[data-testid="automation-agent-select"]')
+    expect((sel.element as HTMLSelectElement).value).toBe('a3')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].automationAgentId).toBe('a3')
   })
 })
 

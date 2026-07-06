@@ -223,6 +223,7 @@ describe('getSessionCounts', () => {
       toolAgentId: '',
       intentAgentId: '',
       specAgentId: '',
+      automationAgentId: '',
       showToolSessions: true,
     })
     const again = fakeConn()

@@ -117,6 +117,8 @@ const draft = ref<SystemSettings>({
   intentAgentId: '',
   // '' ⇒ spec-authoring sessions follow the default agent.
   specAgentId: '',
+  // '' ⇒ the new-automation form pre-fills with the default agent.
+  automationAgentId: '',
   voiceLang: 'zh-CN',
   uiLang: 'en',
   timezone: BROWSER_TZ,
@@ -186,6 +188,8 @@ watch(
       intentAgentId: settings.intentAgentId ?? '',
       // '' ⇒ spec-authoring sessions follow the default agent (AC-R24).
       specAgentId: settings.specAgentId ?? '',
+      // '' ⇒ the new-automation form pre-fills with the default agent (AC-R25).
+      automationAgentId: settings.automationAgentId ?? '',
       voiceLang: settings.voiceLang ?? 'zh-CN',
       uiLang: settings.uiLang ?? 'en',
       timezone: settings.timezone ?? BROWSER_TZ,
@@ -291,8 +295,8 @@ const defaultPickerAgents = computed<AgentConfig[]>(() => draft.value.agents.fil
 // rewrite (mirrors the server `normalize`, AC-R2/AC-R10). Recompute against the
 // live array order so the choice tracks order_seq. The tool agent follows the
 // same fall-through, but ONLY when it's explicitly set: an empty toolAgentId
-// ("follow the default") stays empty. The intent agent (AC-R23) and spec agent
-// (AC-R24) follow the same rule as the tool agent.
+// ("follow the default") stays empty. The intent agent (AC-R23), spec agent
+// (AC-R24) and automation agent (AC-R25) follow the same rule as the tool agent.
 function onToggleEnabled(a: AgentConfig, checked: boolean): void {
   a.enabled = checked
   draft.value.defaultAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.defaultAgentId)
@@ -304,6 +308,12 @@ function onToggleEnabled(a: AgentConfig, checked: boolean): void {
   }
   if (draft.value.specAgentId) {
     draft.value.specAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.specAgentId)
+  }
+  if (draft.value.automationAgentId) {
+    draft.value.automationAgentId = resolveDefaultAgentId(
+      draft.value.agents,
+      draft.value.automationAgentId,
+    )
   }
 }
 
@@ -907,6 +917,23 @@ function selectAdmin(username: string) {
             :title="t('settings.agents.spec.tooltip')"
           >
             <option value="">{{ t('settings.agents.specPicker.followDefault') }}</option>
+            <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
+              {{ a.displayName || a.id }}
+            </option>
+          </select>
+        </div>
+        <div class="agent-default-picker">
+          <label class="agent-default-label" for="automation-agent-select">
+            {{ t('settings.agents.automationPicker.label') }}
+          </label>
+          <select
+            id="automation-agent-select"
+            v-model="draft.automationAgentId"
+            class="agent-field"
+            data-testid="automation-agent-select"
+            :title="t('settings.agents.automation.tooltip')"
+          >
+            <option value="">{{ t('settings.agents.automationPicker.followDefault') }}</option>
             <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
               {{ a.displayName || a.id }}
             </option>

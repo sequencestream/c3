@@ -111,6 +111,7 @@ export function defaultSettings(): SystemSettings {
     toolAgentId: '',
     intentAgentId: '',
     specAgentId: '',
+    automationAgentId: '',
   }
 }
 

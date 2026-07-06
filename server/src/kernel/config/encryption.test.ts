@@ -110,6 +110,7 @@ describe('encryptAgentApiKeys / decryptAgentApiKeys', () => {
       toolAgentId: '',
       intentAgentId: '',
       specAgentId: '',
+      automationAgentId: '',
     } as SystemSettings
   }
 

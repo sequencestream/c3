@@ -234,6 +234,13 @@
         "label": "仕様エージェント",
         "followDefault": "デフォルトエージェントに従う"
       },
+      "automation": {
+        "tooltip": "新規オートメーションフォームに事前選択されるエージェント(各オートメーションで変更可能)"
+      },
+      "automationPicker": {
+        "label": "オートメーションエージェント",
+        "followDefault": "デフォルトエージェントに従う"
+      },
       "remove": {
         "tooltip": "エージェントを削除"
       },

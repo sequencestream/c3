@@ -233,6 +233,13 @@
         "label": "规范智能体",
         "followDefault": "跟随默认智能体"
       },
+      "automation": {
+        "tooltip": "新建自动化表单默认预选的智能体(仍可在每个自动化中改选)"
+      },
+      "automationPicker": {
+        "label": "自动化智能体",
+        "followDefault": "跟随默认智能体"
+      },
       "remove": {
         "tooltip": "移除智能体"
       },

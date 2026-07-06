@@ -50,6 +50,7 @@ import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
 import { VENDOR_LABEL } from '@/lib/vendor'
 import { useTypedI18n } from '@/i18n'
 import AutomationCronEditor from '../AutomationDetail/AutomationCronEditor.vue'
+import { resolveAutomationDefaultAgent } from './resolveAutomationDefaultAgent'
 
 // `d` 别名为 `fmtDateTime`:模板里 `v-for="d in WEEKDAYS"` 已占用 `d`,避免 shadow。
 const { t, d: fmtDateTime } = useTypedI18n()
@@ -70,6 +71,14 @@ const props = defineProps<{
   hostStatus: VendorHostStatus[]
   /** Enabled execution profiles; filtered by the selected vendor. */
   agents?: AgentConfig[]
+  /**
+   * System-configured default agent for the new-automation form (AC-R25). Empty
+   * ⇒ follow `defaultAgentId`. Only seeds the create form's initial vendor+agent;
+   * editing an existing automation is unaffected.
+   */
+  automationAgentId?: string
+  /** System default agent, the follow-chain fallback for `automationAgentId`. */
+  defaultAgentId?: string
 }>()
 
 const emit = defineEmits<{
@@ -350,8 +359,18 @@ watch(
       metadataRows.value = []
       metadataConditions.value = []
       metadataCombinator.value = 'AND'
-      vendor.value = 'claude'
-      agentId.value = ''
+      // Seed the create form's default vendor+agent from the system-configured
+      // `automationAgentId` (AC-R25): resolve the concrete agent via the follow
+      // chain `automationAgentId → defaultAgentId → first enabled agent`. No enabled
+      // agent ⇒ system fallback (vendor `claude`, empty agent). The user can still
+      // change vendor/agent afterwards.
+      const seed = resolveAutomationDefaultAgent(
+        props.agents ?? [],
+        props.automationAgentId ?? '',
+        props.defaultAgentId ?? '',
+      )
+      vendor.value = seed?.vendor ?? 'claude'
+      agentId.value = seed?.id ?? ''
       vendorInitialised.value = true
       toolAllowlist.value = []
     }

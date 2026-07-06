@@ -21,7 +21,7 @@
     "@hono/node-server": "^1.13.7",
     "@hono/node-ws": "^1.0.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@openai/codex-sdk": "0.142.3",
+    "@openai/codex-sdk": "0.142.5",
     "commander": "^12.1.0",
     "dockerode": "^5.0.0",
     "hono": "^4.6.14",

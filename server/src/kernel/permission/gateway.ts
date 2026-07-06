@@ -156,6 +156,20 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
   // routes every approval to the single main-session UI keyed by `sessionId`, and
   // there is no product surface that distinguishes the originating sub-agent. Thread
   // `agentID` into PermissionRequestCtx only when such a surface exists.
+  //
+  // That arg also carries `requestId` (0.3.199) — the SDK's own control_request
+  // envelope id, meaningful ONLY when the consumer returns `null` and echoes it in
+  // an out-of-band control_response (e.g. a signed HTTP POST). c3 does the opposite:
+  // it returns a branded allow/deny inline and lets the SDK's transport carry the
+  // response, so the SDK matches its envelope internally and c3 never needs that id.
+  // The `requestId` minted below is a c3-domain id on a DIFFERENT plane — it
+  // correlates the BROWSER round-trip (permission_request wire frame ↔ waitForDecision
+  // pending map ↔ permission_response ↔ WorkCenter event) and must also span branches
+  // the SDK id can't reach (consensus auto-resolve, AskUserQuestion answer-injection,
+  // the save_intents gate that lives in the MCP handler). A single c3 id already
+  // covers all of them; adopting the SDK id would add a second id with no verifiable
+  // gain and risk permanent tool blocking via an accidental `null`. See the
+  // 0.3.201 upgrade record for the full ledger.
   return async (toolName, input): Promise<PermissionDecision> => {
     const requestId = randomUUID()
 

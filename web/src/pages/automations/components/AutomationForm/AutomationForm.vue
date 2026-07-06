@@ -1270,7 +1270,7 @@ function save(): void {
           <span class="sf-section-title">{{ t('automation.form.section.tools') }}</span>
           <div class="sf-section-body">
             <!-- Tool checklist -->
-            <div class="sf-field sf-field--stacked">
+            <div class="sf-field sf-field--stacked sf-field--tools">
               <div class="sf-tools-labelrow">
                 <span class="sf-label">{{ t('automation.form.tools.label') }}</span>
                 <!-- Select/clear stay on the label row for quick access. -->
@@ -1447,6 +1447,15 @@ function save(): void {
 .sf-field--stacked {
   flex-direction: column;
   align-items: stretch;
+}
+/* 工具字段用普通块流而非 flex 列:嵌套的 auto-fit grid 在 flex 列做固有高度
+   测量时会坍缩成单列、把 flex 子项撑到超高(内容之下留大片空白),块流按真实
+   可用宽度测量,区块高度贴合内容。间距由块流 margin 补(flex gap 不生效)。 */
+.sf-field--tools {
+  display: block;
+}
+.sf-field--tools > * + * {
+  margin-top: var(--sp-2);
 }
 .sf-label {
   font-size: var(--fs-caption);

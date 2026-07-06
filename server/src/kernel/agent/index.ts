@@ -2,6 +2,12 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { McpServerConfig, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { PermissionMode, PromptImage, ServerToClient } from '@ccc/shared/protocol'
 import { EMPTY_TURN_NOTICE } from '@ccc/shared/protocol'
+import { installClaudeSdkWarningFilter } from './adapters/claude/sdk-warning-filter.js'
+
+// Drop the SDK's benign `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` warning (0.3.198+) that
+// fires on every never-ask (`bypassPermissions`) query() and otherwise floods the
+// log. Installed once here — this module owns every Claude `query()` call site.
+installClaudeSdkWarningFilter()
 import { stringifyToolResult } from '../../format.js'
 import { addToolSession } from '../../sessions.js'
 import { buildChildEnv, findClaudeExecutable } from '../infra/child-env.js'

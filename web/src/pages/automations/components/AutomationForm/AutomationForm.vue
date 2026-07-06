@@ -1355,7 +1355,7 @@ function save(): void {
   background: var(--c-panel);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-md);
-  width: min(720px, 100%);
+  width: min(1080px, 100%);
   max-height: 90vh;
   display: flex;
   flex-direction: column;
@@ -1724,9 +1724,11 @@ function save(): void {
   font-size: var(--fs-caption);
   color: var(--c-text-muted);
 }
+/* auto-fit（非 auto-fill）折叠空轨道：工具少时铺满整行不留右侧空白，工具多时
+   自然多列换行，高度只随实际行数增长。 */
 .sf-tools-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--sp-1);
 }
 .sf-tool-item {

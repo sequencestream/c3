@@ -48,6 +48,10 @@ const props = defineProps<{
   /** Per-vendor host-CLI presence (for greying absent vendors). */
   hostStatus: VendorHostStatus[]
   agents: AgentConfig[]
+  /** System-configured default agent for the new-automation form (AC-R25). */
+  automationAgentId: string
+  /** System default agent, the follow-chain fallback for `automationAgentId`. */
+  defaultAgentId: string
   /** 最近一次模拟触发的结果(null=尚未运行)。 */
   simulationResult: {
     automationId: string
@@ -131,6 +135,8 @@ const mobileActiveToken = computed(() => props.activeId ?? 'automations')
     :tool-manifest-error="toolManifestError"
     :host-status="hostStatus"
     :agents="agents"
+    :automation-agent-id="automationAgentId"
+    :default-agent-id="defaultAgentId"
     @close="emit('close-form')"
     @create="(input: CreateAutomationInput) => emit('create', input)"
     @update="(id: string, input: UpdateAutomationInput) => emit('update', id, input)"

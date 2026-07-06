@@ -57,6 +57,9 @@ function mountForm(
     toolManifestLoading: boolean
     toolManifestError: string | null
     hostStatus: VendorHostStatus[]
+    agents: AgentConfig[]
+    automationAgentId: string
+    defaultAgentId: string
   }> = {},
 ) {
   return mount(AutomationForm, {
@@ -70,6 +73,8 @@ function mountForm(
       toolManifestError: null,
       hostStatus: HOST_PRESENT,
       agents: AGENTS,
+      automationAgentId: '',
+      defaultAgentId: '',
       ...props,
     },
   })
@@ -496,6 +501,56 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
     const input = w.emitted('create')![0][0] as Record<string, unknown>
     expect(input.vendor).toBe('claude')
+  })
+
+  // ---- default agent seeding (AC-R25) --------------------------------------
+
+  const MULTI_AGENTS: AgentConfig[] = [
+    {
+      id: 'claude-default',
+      vendor: 'claude',
+      configMode: 'system',
+      displayName: 'Claude default',
+      config: { baseUrl: '', apiKey: '', model: '' },
+    },
+    {
+      id: 'codex-custom',
+      vendor: 'codex',
+      configMode: 'custom',
+      displayName: 'Codex custom',
+      config: { wireApi: 'chat', baseUrl: '', apiKey: '', model: '' },
+    },
+  ]
+
+  it('create:automationAgentId 指向 codex agent 时,表单预选 codex + 该 agent', async () => {
+    const w = mountForm({ agents: MULTI_AGENTS, automationAgentId: 'codex-custom' })
+    // vendor 下拉预选 codex。
+    expect((w.find('select.sf-select').element as HTMLSelectElement).value).toBe('codex')
+    // 切到 LLM 类型后 agent 下拉预选该 codex agent。
+    await w.findAll('.sf-seg')[1].trigger('click')
+    expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('codex-custom')
+  })
+
+  it('create:automationAgentId 为空时跟随 defaultAgentId 解析出的 agent', async () => {
+    const w = mountForm({
+      agents: MULTI_AGENTS,
+      automationAgentId: '',
+      defaultAgentId: 'codex-custom',
+    })
+    expect((w.find('select.sf-select').element as HTMLSelectElement).value).toBe('codex')
+    await w.findAll('.sf-seg')[1].trigger('click')
+    expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('codex-custom')
+  })
+
+  it('edit:已有 automation 使用自身 vendor/agentId,不被系统配置覆盖', () => {
+    const w = mountForm({
+      agents: MULTI_AGENTS,
+      automationAgentId: 'codex-custom',
+      automation: sched({ vendor: 'claude', agentId: 'claude-default', type: 'llm' }),
+    })
+    // 编辑态保留 automation 记录自身的 claude，忽略指向 codex 的系统配置。
+    expect((w.find('select.sf-select').element as HTMLSelectElement).value).toBe('claude')
+    expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('claude-default')
   })
 
   // ---- load-tool-manifest event --------------------------------------------

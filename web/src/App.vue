@@ -562,6 +562,8 @@ function onCodesChatWidth(px: number): void {
           :tool-manifest-error="automationToolManifestError"
           :host-status="hostStatus"
           :agents="serverSettings?.agents ?? []"
+          :automation-agent-id="serverSettings?.automationAgentId ?? ''"
+          :default-agent-id="serverSettings?.defaultAgentId ?? ''"
           :simulation-result="automationSimulationResult"
           @select="onSelectAutomation"
           @simulate="simulateAutomationTrigger"

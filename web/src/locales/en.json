@@ -233,6 +233,13 @@
         "label": "Spec agent",
         "followDefault": "Follow default agent"
       },
+      "automation": {
+        "tooltip": "Agent pre-filled into the new-automation form (you can still change it per automation)"
+      },
+      "automationPicker": {
+        "label": "Automation agent",
+        "followDefault": "Follow default agent"
+      },
       "remove": {
         "tooltip": "Remove agent"
       },

@@ -219,6 +219,7 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
       toolAgentId: '',
       intentAgentId: '',
       specAgentId: '',
+      automationAgentId: '',
       showToolSessions: true,
     })
 
@@ -240,6 +241,7 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
       toolAgentId: '',
       intentAgentId: '',
       specAgentId: '',
+      automationAgentId: '',
       showToolSessions: true,
     })
     recordToolSession('tool-historic')

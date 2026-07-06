@@ -385,6 +385,15 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // by the same order_seq fall-through (rewrite-on-store, AC-R2/AC-R10/AC-R24).
   const wantedSpec = typeof raw?.specAgentId === 'string' ? raw.specAgentId : ''
   const specAgentId = wantedSpec === '' ? '' : resolveDefaultAgentId(agents, wantedSpec)
+  // automationAgentId: default vendor+agent pre-filled into the "new automation" form.
+  // Storage-normalization is identical to specAgentId — empty string ⇒ "follow the
+  // default agent" (kept empty, never auto-filled), and a *set* value pointing at a
+  // removed/disabled agent is rewritten by the same order_seq fall-through
+  // (rewrite-on-store, AC-R2/AC-R10/AC-R25). Unlike the three above it is NOT consumed
+  // by the runtime resolveAgent router — it only seeds the create form's default.
+  const wantedAutomation = typeof raw?.automationAgentId === 'string' ? raw.automationAgentId : ''
+  const automationAgentId =
+    wantedAutomation === '' ? '' : resolveDefaultAgentId(agents, wantedAutomation)
   // ---- Legacy migration (one-shot): capture old global top-level fields ----
   // The 5 workspace-level knobs used to live at the SystemSettings top level.
   // Capture them once for the project-level migration; they no longer survive in
@@ -429,6 +438,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     toolAgentId,
     intentAgentId,
     specAgentId,
+    automationAgentId,
     voiceLang,
     uiLang,
     timezone,

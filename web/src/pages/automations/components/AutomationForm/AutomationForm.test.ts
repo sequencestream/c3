@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
 import type {
   AgentConfig,
@@ -668,5 +670,73 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     const codexSegs = w.findAll('.sf-segmented')
     // task type + trigger + codex sandbox + codex approval = 4
     expect(codexSegs).toHaveLength(4)
+  })
+})
+
+// ---- Modal width / tool-list height style contract -----------------------
+
+// happy-dom 不计算布局,样式契约直接对组件源码里的 CSS 规则做断言。
+const componentSrc = readFileSync(
+  resolve(process.cwd(), 'web/src/pages/automations/components/AutomationForm/AutomationForm.vue'),
+  'utf8',
+)
+
+function ruleBody(css: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+}
+
+// 抽取移动端全屏断点内部,再在其中定位选择器(桌面/移动同名规则需分区匹配)。
+function mobileBlock(css: string): string {
+  return /@media \(max-width: 767px\) \{([\s\S]*)\}\s*<\/style>/.exec(css)?.[1] ?? ''
+}
+
+describe('AutomationForm.vue — 弹窗宽度 / 工具区高度样式契约', () => {
+  it('桌面 .sf-modal 宽度为 min(1080px, 100%)(720px 的 1.5 倍)', () => {
+    expect(ruleBody(componentSrc, '.sf-modal')).toMatch(/width:\s*min\(1080px,\s*100%\)/)
+  })
+
+  it('移动端全屏断点仍把 .sf-modal 覆盖为 100vw/100dvh', () => {
+    const mobile = mobileBlock(componentSrc)
+    expect(mobile).not.toBe('')
+    const modal = ruleBody(mobile, '.sf-modal')
+    expect(modal).toMatch(/width:\s*100vw/)
+    expect(modal).toMatch(/height:\s*100dvh/)
+  })
+
+  it('工具区无固定高度/强制拉伸:.sf-tools-scroll / .sf-tools-group / .sf-tools-grid 高度随内容', () => {
+    for (const sel of ['.sf-tools-scroll', '.sf-tools-group', '.sf-tools-grid']) {
+      const block = ruleBody(componentSrc, sel)
+      expect(block).not.toMatch(/(?:^|[;{])\s*height:/)
+      expect(block).not.toMatch(/min-height:/)
+      expect(block).not.toMatch(/max-height:/)
+      expect(block).not.toMatch(/flex(?:-grow)?:\s*[1-9]/)
+    }
+  })
+
+  it('工具网格用 auto-fit 折叠空轨道,避免少量工具时的右侧空白', () => {
+    expect(ruleBody(componentSrc, '.sf-tools-grid')).toMatch(
+      /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(200px,\s*1fr\)\)/,
+    )
+  })
+
+  it('少量工具与多行工具两种 manifest 都完整渲染读写两组与全部工具项', () => {
+    const few = mountForm({ toolManifest: { claude: ALL_TOOLS } })
+    expect(few.findAll('.sf-tools-subtitle')).toHaveLength(2)
+    expect(few.find('.sf-tools-scroll').exists()).toBe(true)
+    expect(few.findAll('.sf-tools-grid')).toHaveLength(2)
+    expect(few.findAll('.sf-tool-item')).toHaveLength(ALL_TOOLS.length)
+
+    const manyRead: ToolManifestEntry[] = Array.from({ length: 9 }, (_, i) => ({
+      name: `Read${i}`,
+      isWrite: false,
+    }))
+    const manyWrite: ToolManifestEntry[] = Array.from({ length: 8 }, (_, i) => ({
+      name: `Write${i}`,
+      isWrite: true,
+    }))
+    const many = mountForm({ toolManifest: { claude: [...manyRead, ...manyWrite] } })
+    expect(many.findAll('.sf-tools-subtitle')).toHaveLength(2)
+    expect(many.findAll('.sf-tool-item')).toHaveLength(manyRead.length + manyWrite.length)
   })
 })

@@ -459,4 +459,13 @@ export function installSessionActions(ctx: AppCtx): void {
     consoleSession.value = { workspacePath: intentsProject.value, sessionId }
     send({ type: 'select_session', workspaceId: intentsProject.value, sessionId })
   }
+
+  // Inline work-session select for IntentDetail's work-session tab: fill the global
+  // active session so the embedded ChatColumn binds, but stay on the intents page —
+  // no `enterConsole`, no console-session pin. `openDevSession` above keeps the old
+  // jump-to-works behaviour for external entry points.
+  ctx.selectWorkSession = (sessionId: string): void => {
+    if (!intentsProject.value) return
+    send({ type: 'select_session', workspaceId: intentsProject.value, sessionId })
+  }
 }

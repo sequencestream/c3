@@ -747,9 +747,6 @@
       "modifySession": {
         "label": "I want changes"
       },
-      "session": {
-        "label": "Session"
-      },
       "markDone": {
         "label": "Mark done"
       },
@@ -863,6 +860,9 @@
       "specSession": {
         "label": "Spec session"
       },
+      "workSession": {
+        "label": "Work session"
+      },
       "changelog": {
         "label": "Changelog"
       }
@@ -899,6 +899,9 @@
     },
     "specSession": {
       "empty": "This intent has no spec session yet."
+    },
+    "workSession": {
+      "empty": "This intent has no work session yet."
     },
     "resetSession": {
       "intentSession": {

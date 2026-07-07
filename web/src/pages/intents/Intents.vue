@@ -110,7 +110,7 @@ const emit = defineEmits<{
   'reset-intent-session': [intentId: string, userInput: string]
   'reset-spec-session': [intentId: string, userInput: string]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
-  'open-dev': [sessionId: string]
+  'open-work-session': [sessionId: string]
   'set-status': [intentId: string, status: IntentStatus]
   'set-automate': [intentId: string, automate: boolean]
   'start-automation': []
@@ -187,6 +187,14 @@ const selectedSpecSessionRunning = computed<boolean>(() => {
   if (!id) return false
   const st = props.sessionStatus?.[id]
   return st !== undefined && ACTIVE_SESSION_STATUSES.includes(st)
+})
+
+// 选中意图最新工作会话(lastWorkSessionId)的运行状态,派生给 IntentDetail 的工作会话 tab
+// 标签状态点。无 lastWorkSessionId 或状态未知时为 null(不显示状态点)。
+const selectedWorkSessionStatus = computed<SessionStatus | null>(() => {
+  const id = selectedIntent.value?.lastWorkSessionId
+  if (!id) return null
+  return props.sessionStatus?.[id] ?? null
 })
 
 // External one-shot select request (work session title-bar jump button): when the
@@ -336,6 +344,7 @@ defineExpose({
         :intent-spec-content="intentSpecContent"
         :intent-spec-loading="intentSpecLoading"
         :spec-session-running="selectedSpecSessionRunning"
+        :work-session-status="selectedWorkSessionStatus"
         :intent-logs="selectedIntentLogs"
         :intent-logs-loading="intentLogsLoading"
         @refine="(id: string) => emit('refine', id)"
@@ -354,7 +363,7 @@ defineExpose({
         "
         @reset-spec-session="(id: string, input: string) => emit('reset-spec-session', id, input)"
         @start-dev="(id: string, hasDeps: boolean) => emit('start-dev', id, hasDeps)"
-        @open-dev="(sessionId: string) => emit('open-dev', sessionId)"
+        @open-work-session="(sessionId: string) => emit('open-work-session', sessionId)"
         @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @create-pr="(id: string) => emit('create-pr', id)"

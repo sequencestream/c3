@@ -747,9 +747,6 @@
       "modifySession": {
         "label": "我要修改"
       },
-      "session": {
-        "label": "会话"
-      },
       "markDone": {
         "label": "标记完成"
       },
@@ -863,6 +860,9 @@
       "specSession": {
         "label": "编写规范会话"
       },
+      "workSession": {
+        "label": "工作会话"
+      },
       "changelog": {
         "label": "变更日志"
       }
@@ -899,6 +899,9 @@
     },
     "specSession": {
       "empty": "该意图还没有编写规范会话。"
+    },
+    "workSession": {
+      "empty": "该意图还没有工作会话。"
     },
     "resetSession": {
       "intentSession": {

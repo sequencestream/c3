@@ -3157,6 +3157,15 @@ export type ClientToServer =
    * is that absolute spec path.
    */
   | { type: 'read_spec'; workspaceId: string; intentId: string }
+  /**
+   * Directly edit an intent's markdown body (the human inline-edit entry, distinct
+   * from refine / `save_intents`). Only `draft` / `todo` intents may be edited; the
+   * server rejects any other status even if the client button was bypassed. On
+   * success it updates `content` + `updated_at`, appends one `intent_updated` log,
+   * and refills via the existing `intents` broadcast (no dedicated ack). No title /
+   * priority / dependency / status / spec change.
+   */
+  | { type: 'update_intent_content'; intentId: string; content: string }
   /** Manually set a intent's status (e.g. mark done/cancelled). */
   | { type: 'update_intent_status'; intentId: string; status: IntentStatus }
   /** Toggle a intent's automation flag (whether the orchestrator may pick it). */

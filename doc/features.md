@@ -51,6 +51,7 @@ c3
 │   ├── intent-management 意图管理                # 把想法变成可验证、可追踪的意图账本并驱动其生命周期
 │   │   ├── 意图账本                              # 按工作区持久化意图,追踪 status/生命周期
 │   │   ├── 意图精炼                              # 只读 agent 把想法拆成可验证条目
+│   │   ├── 正文直接编辑                          # draft/todo 意图正文行内编辑(纯文本 markdown),服务端状态门禁+写 intent_updated 日志
 │   │   ├── 规格撰写与批准                        # 开发前生成 spec 并经人批准(spec 集中存 ~/.c3/specs)
 │   │   ├── 意图开发                              # 启动可配置 dev skill,追踪 branch/commit/PR
 │   │   ├── 意图交付                              # 追踪交付态(分支、提交、PR 状态)

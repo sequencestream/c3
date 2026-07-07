@@ -723,6 +723,9 @@
       "refine": {
         "label": "推敲"
       },
+      "editContent": {
+        "label": "編集"
+      },
       "markTodo": {
         "label": "ToDo にする"
       },
@@ -1676,6 +1679,7 @@
       "dbUnavailable": "意図機能は利用できません(c3.db)。",
       "chatOpenFailed": "意図セッションを開けませんでした。",
       "cannotStartDev": "ステータス \"{status}\" からは作業を開始できません。",
+      "contentEditForbidden": "ステータス \"{status}\" の意図の本文は編集できません。",
       "devStartInFlight": "この意図の開発はすでに開始中です。",
       "illegalStatusTransition": "ステータスを \"{from}\" から \"{to}\" に変更できません。",
       "chatSessionNotFound": "Intent session not found: {sessionId}.",

@@ -950,3 +950,95 @@ describe('IntentDetail.vue — spec tab approval actions', () => {
     expect(w.emitted('approve-spec')).toEqual([['i1']])
   })
 })
+
+describe('IntentDetail.vue — inline content edit', () => {
+  const EDIT = '[data-testid="intent-detail-edit-content"]'
+  const EDITOR = '[data-testid="intent-detail-content-editor"]'
+  const TEXTAREA = '[data-testid="intent-detail-content-textarea"]'
+  const SAVE = '[data-testid="intent-detail-content-save"]'
+  const CANCEL = '[data-testid="intent-detail-content-cancel"]'
+
+  it('shows the Edit button for draft and todo, not for in_progress/done/cancelled', () => {
+    for (const status of ['draft', 'todo'] as const) {
+      expect(
+        mountDetail(intent({ id: 'i1', status }))
+          .find(EDIT)
+          .exists(),
+      ).toBe(true)
+    }
+    for (const status of ['in_progress', 'done', 'cancelled'] as const) {
+      expect(
+        mountDetail(intent({ id: 'i1', status }))
+          .find(EDIT)
+          .exists(),
+      ).toBe(false)
+    }
+  })
+
+  it('clicking Edit swaps the rendered body for a textarea prefilled with current content', async () => {
+    const w = mountDetail(intent({ id: 'i1', status: 'todo', content: 'original body' }))
+    expect(w.find(EDITOR).exists()).toBe(false)
+    expect(w.find('.req-detail').exists()).toBe(true)
+
+    await w.find(EDIT).trigger('click')
+
+    expect(w.find(EDITOR).exists()).toBe(true)
+    expect(w.find('.req-detail').exists()).toBe(false)
+    expect((w.find(TEXTAREA).element as HTMLTextAreaElement).value).toBe('original body')
+    // Edit button hidden while editing (its action area is replaced by the editor).
+    expect(w.find(EDIT).exists()).toBe(false)
+  })
+
+  it('Save emits save-intent-content with the intent id and the edited draft', async () => {
+    const w = mountDetail(intent({ id: 'i1', status: 'todo', content: 'original body' }))
+    await w.find(EDIT).trigger('click')
+    await w.find(TEXTAREA).setValue('edited body')
+    await w.find(SAVE).trigger('click')
+
+    expect(w.emitted('save-intent-content')).toEqual([['i1', 'edited body']])
+    // Stays in edit mode (disabled) until the server refills the intent.
+    expect((w.find(SAVE).element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('Cancel discards the draft, restores the rendered body, and emits nothing', async () => {
+    const w = mountDetail(intent({ id: 'i1', status: 'todo', content: 'original body' }))
+    await w.find(EDIT).trigger('click')
+    await w.find(TEXTAREA).setValue('scrapped edit')
+    await w.find(CANCEL).trigger('click')
+
+    expect(w.find(EDITOR).exists()).toBe(false)
+    expect(w.find('.req-detail').exists()).toBe(true)
+    expect(w.emitted('save-intent-content')).toBeUndefined()
+    // Re-opening the editor shows the original content, not the scrapped draft.
+    await w.find(EDIT).trigger('click')
+    expect((w.find(TEXTAREA).element as HTMLTextAreaElement).value).toBe('original body')
+  })
+
+  it('leaves edit mode once the server refills the intent (updatedAt bump)', async () => {
+    const item = intent({ id: 'i1', status: 'todo', content: 'original body', updatedAt: 1 })
+    const w = mountDetail(item)
+    await w.find(EDIT).trigger('click')
+    await w.find(TEXTAREA).setValue('new body')
+    await w.find(SAVE).trigger('click')
+    expect(w.find(EDITOR).exists()).toBe(true)
+
+    // Server broadcast: fresh intent with the new content + bumped updatedAt.
+    await w.setProps({ intent: { ...item, content: 'new body', updatedAt: 2 } })
+
+    expect(w.find(EDITOR).exists()).toBe(false)
+    expect(w.find('.req-detail').exists()).toBe(true)
+  })
+
+  it('discards an in-progress edit when the selected intent changes', async () => {
+    const a = intent({ id: 'a', status: 'todo', content: 'A body' })
+    const b = intent({ id: 'b', status: 'todo', content: 'B body' })
+    const w = mountDetail(a, { intents: [a, b] })
+    await w.find(EDIT).trigger('click')
+    await w.find(TEXTAREA).setValue('dirty draft')
+
+    await w.setProps({ intent: b })
+
+    expect(w.find(EDITOR).exists()).toBe(false)
+    expect(w.find('.req-detail').exists()).toBe(true)
+  })
+})

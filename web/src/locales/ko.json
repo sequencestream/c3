@@ -723,6 +723,9 @@
       "refine": {
         "label": "다듬기"
       },
+      "editContent": {
+        "label": "편집"
+      },
       "markTodo": {
         "label": "할 일로"
       },
@@ -1676,6 +1679,7 @@
       "dbUnavailable": "의도 기능을 사용할 수 없습니다 (c3.db).",
       "chatOpenFailed": "의도 세션을 열지 못했습니다.",
       "cannotStartDev": "\"{status}\" 상태에서는 작업을 시작할 수 없습니다.",
+      "contentEditForbidden": "\"{status}\" 상태의 의도 본문은 편집할 수 없습니다.",
       "devStartInFlight": "이 의도의 작업 시작이 이미 진행 중입니다.",
       "illegalStatusTransition": "상태를 \"{from}\"에서 \"{to}\"(으)로 변경할 수 없습니다.",
       "chatSessionNotFound": "Intent session not found: {sessionId}.",

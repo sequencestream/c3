@@ -113,6 +113,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   refine: [intentId: string]
+  // 直接编辑意图正文:上抛 id + 新正文,由控制层透传为 update_intent_content。
+  'save-intent-content': [intentId: string, content: string]
   'write-spec': [intentId: string]
   'approve-spec': [intentId: string]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
@@ -261,6 +263,52 @@ function startDev(): void {
   startDevInFlight.value = true
   emit('start-dev', r.id, hasUnfinishedDeps)
 }
+
+// ── 正文直接编辑(仅 draft / todo,服务端为最终门禁) ───────────────────────
+// 编辑态与草稿只活在组件内,不写入全局 intent;保存只 emit,退出编辑态由服务端
+// 回填(intent.updatedAt 变化)驱动,契合「后写覆盖、无锁」语义。
+const editingContent = ref(false)
+const contentDraft = ref('')
+const savingContent = ref(false)
+
+// 仅 draft / todo 显示「编辑」入口;其它状态既不显示按钮,服务端也拒绝其编辑请求。
+const canEditContent = computed<boolean>(() => {
+  const s = props.intent?.status
+  return s === 'draft' || s === 'todo'
+})
+
+function startEditContent(): void {
+  const r = props.intent
+  if (!r || !canEditContent.value) return
+  contentDraft.value = r.content
+  savingContent.value = false
+  editingContent.value = true
+}
+
+function cancelEditContent(): void {
+  // 丢弃本地草稿,恢复渲染态。
+  editingContent.value = false
+  savingContent.value = false
+}
+
+function saveEditContent(): void {
+  const r = props.intent
+  if (!r || savingContent.value) return
+  savingContent.value = true
+  emit('save-intent-content', r.id, contentDraft.value)
+}
+
+// 服务端成功回填最新意图后(updated_at 必然刷新)退出编辑态,展示服务端内容。
+// 仅在提交在途(savingContent)时响应,避免其它广播误关编辑框。
+watch(
+  () => props.intent?.updatedAt,
+  () => {
+    if (savingContent.value) {
+      savingContent.value = false
+      editingContent.value = false
+    }
+  },
+)
 
 // ── 主操作按钮四态机(只对 todo 意图渲染) ──────────────────────────────────
 type MainAction = 'startDev' | 'writeSpec' | 'approveSpec'
@@ -480,6 +528,9 @@ watch(
   () => {
     activeTab.value = 'intent'
     startDevInFlight.value = false
+    // 切走意图:丢弃未保存的正文草稿并退出编辑态,避免草稿串到别的意图。
+    editingContent.value = false
+    savingContent.value = false
     // 切走意图:取消挂起的自动切 Tab,避免切到别的意图后误切。门定时器由上方
     // [intent.id, mainAction] watch 负责重排。
     clearSwitchSpecTabTimer()
@@ -805,12 +856,58 @@ defineExpose({
 
       <!-- intent tab:正文 + 元信息 -->
       <div v-if="activeTab === 'intent'" class="intent-detail-body" data-testid="tab-intent">
-        <div v-if="intent.status === 'todo'" class="intent-detail-section-actions">
-          <button class="req-btn" @click="emit('refine', intent.id)">
+        <div
+          v-if="!editingContent && (intent.status === 'todo' || canEditContent)"
+          class="intent-detail-section-actions"
+        >
+          <button
+            v-if="intent.status === 'todo'"
+            class="req-btn"
+            @click="emit('refine', intent.id)"
+          >
             {{ t('intent.action.refine.label') }}
           </button>
+          <button
+            v-if="canEditContent"
+            type="button"
+            class="req-btn"
+            data-testid="intent-detail-edit-content"
+            @click="startEditContent"
+          >
+            {{ t('intent.action.editContent.label') }}
+          </button>
         </div>
-        <div class="req-detail">
+        <div
+          v-if="editingContent"
+          class="req-content-edit"
+          data-testid="intent-detail-content-editor"
+        >
+          <textarea
+            v-model="contentDraft"
+            class="req-content-textarea"
+            data-testid="intent-detail-content-textarea"
+          ></textarea>
+          <div class="req-content-edit-actions">
+            <button
+              type="button"
+              class="req-btn primary"
+              data-testid="intent-detail-content-save"
+              :disabled="savingContent"
+              @click="saveEditContent"
+            >
+              {{ t('common.action.save.label') }}
+            </button>
+            <button
+              type="button"
+              class="req-btn"
+              data-testid="intent-detail-content-cancel"
+              @click="cancelEditContent"
+            >
+              {{ t('common.action.cancel.label') }}
+            </button>
+          </div>
+        </div>
+        <div v-else class="req-detail">
           <MarkdownText :text="intent.content" markdown />
         </div>
         <div class="req-meta">
@@ -1227,6 +1324,32 @@ defineExpose({
   justify-content: flex-end;
   gap: var(--sp-2);
   margin-bottom: var(--sp-3);
+}
+
+/* 正文直接编辑:纯文本 markdown 源码框 + 框下方左侧的保存/取消动作区。 */
+.req-content-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.req-content-textarea {
+  width: 100%;
+  min-height: 240px;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: var(--sp-2);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-normal, 1.5);
+}
+.req-content-edit-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: var(--sp-2);
 }
 
 /* 主按钮两态语义色:writeSpec 维持主色蓝(生成动作),approveSpec 改用成功色

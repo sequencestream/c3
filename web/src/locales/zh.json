@@ -725,6 +725,9 @@
       "editContent": {
         "label": "编辑"
       },
+      "editSpec": {
+        "label": "编辑"
+      },
       "markTodo": {
         "label": "待办"
       },
@@ -876,6 +879,7 @@
         "updated": "更新",
         "statusChanged": "状态变更",
         "specCreated": "编写规范",
+        "specUpdated": "编辑规范",
         "specApproved": "批准规范",
         "specUnapproved": "取消批准",
         "prCreated": "创建 PR",
@@ -1682,6 +1686,8 @@
       "deleteChatSessionFailed": "删除意图会话失败: {detail}。",
       "cannotStartDev": "当前状态({status})不可开始工作。",
       "contentEditForbidden": "当前状态({status})不可编辑意图正文。",
+      "specEditForbidden": "开发已启动(状态 {status}),不可直接编辑 spec。",
+      "specSessionRunning": "spec 会话运行中,暂不可直接编辑 spec。",
       "devStartInFlight": "该意图正在启动工作,请稍候。",
       "illegalStatusTransition": "不能从 \"{from}\" 转为 \"{to}\"。",
       "prCreateFailed": "PR 创建失败: {detail}。",

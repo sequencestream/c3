@@ -109,6 +109,8 @@ export const UI_ERROR_CODES = {
   'intent.specWriteFailed': { key: 'error.intent.specWriteFailed', params: ['message'] },
   'intent.specNotWritten': { key: 'error.intent.specNotWritten' },
   'intent.specNotApproved': { key: 'error.intent.specNotApproved' },
+  'intent.specEditForbidden': { key: 'error.intent.specEditForbidden', params: ['status'] },
+  'intent.specSessionRunning': { key: 'error.intent.specSessionRunning' },
   // discussion
   'discussion.dbUnavailable': { key: 'error.discussion.dbUnavailable' },
   'discussion.notFound': { key: 'error.discussion.notFound' },

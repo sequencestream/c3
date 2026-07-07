@@ -24,6 +24,7 @@ import type {
   IntentStatus,
   PromptImage,
   SessionAgentSwitch,
+  SessionStatus,
   SlashCommandInfo,
   VendorId,
 } from '@ccc/shared/protocol'
@@ -51,6 +52,8 @@ const props = defineProps<{
   /** Selected intent's spec.md content (intent detail `spec` tab); null=未加载/无。 */
   intentSpecContent: string | null
   intentSpecLoading: boolean
+  /** Per-session run status map;用于判定选中意图 spec 会话是否运行中(直接编辑 spec 门禁③)。 */
+  sessionStatus?: Record<string, SessionStatus>
   /** Per-intent lifecycle-log cache (intent detail `changelog` tab),按 intent id 取。 */
   intentLogsById: Record<string, IntentLog[]>
   intentLogsLoading: boolean
@@ -97,6 +100,7 @@ const emit = defineEmits<{
   filter: [status: IntentStatus | null]
   refine: [intentId: string]
   'save-intent-content': [intentId: string, content: string]
+  'save-spec-content': [intentId: string, content: string]
   'write-spec': [intentId: string]
   'approve-spec': [intentId: string]
   'open-spec-session': [intentId: string]
@@ -173,6 +177,17 @@ const selectedIntent = computed<Intent | null>(
 const selectedIntentLogs = computed<IntentLog[]>(() =>
   selectedIntentId.value ? (props.intentLogsById[selectedIntentId.value] ?? []) : [],
 )
+
+// 选中意图的 spec 会话是否运行中:specSessionId 对应会话状态为活跃态(running /
+// awaiting_permission / team)即视为运行中。直接编辑 spec 的门禁③(前端侧;服务端
+// 以进程表 isRunning 二次校验)。无 specSessionId 或状态未知则视为不运行。
+const ACTIVE_SESSION_STATUSES: SessionStatus[] = ['running', 'awaiting_permission', 'team']
+const selectedSpecSessionRunning = computed<boolean>(() => {
+  const id = selectedIntent.value?.specSessionId
+  if (!id) return false
+  const st = props.sessionStatus?.[id]
+  return st !== undefined && ACTIVE_SESSION_STATUSES.includes(st)
+})
 
 // External one-shot select request (work session title-bar jump button): when the
 // requested intent is present in the loaded list, select it (winning over the
@@ -320,12 +335,14 @@ defineExpose({
         :voice-lang="voiceLang"
         :intent-spec-content="intentSpecContent"
         :intent-spec-loading="intentSpecLoading"
+        :spec-session-running="selectedSpecSessionRunning"
         :intent-logs="selectedIntentLogs"
         :intent-logs-loading="intentLogsLoading"
         @refine="(id: string) => emit('refine', id)"
         @save-intent-content="
           (id: string, content: string) => emit('save-intent-content', id, content)
         "
+        @save-spec-content="(id: string, content: string) => emit('save-spec-content', id, content)"
         @list-intent-logs="(id: string) => emit('list-intent-logs', id)"
         @write-spec="(id: string) => emit('write-spec', id)"
         @approve-spec="(id: string) => emit('approve-spec', id)"

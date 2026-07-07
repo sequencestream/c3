@@ -283,6 +283,18 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'update_intent_content', intentId, content })
   }
 
+  // Directly overwrite the intent's centralized spec Markdown source. The server
+  // gates on spec-exists / not-started / no-live-spec-session, overwrites the file,
+  // resets approval when needed, logs, and re-broadcasts intents (whose `updatedAt`
+  // bump lets IntentDetail leave edit mode). The fresh spec is re-fetched by
+  // IntentDetail via `read_spec` once the success broadcast lands, so this only
+  // fires the write message (mirrors `updateIntentContent`). A rejected save leaves
+  // the file untouched and bumps the intent-action error seq to release the guard.
+  ctx.saveSpecContent = (intentId: string, content: string): void => {
+    if (!intentsProject.value) return
+    send({ type: 'update_spec_content', workspaceId: intentsProject.value, intentId, content })
+  }
+
   ctx.setIntentAutomate = (intentId: string, automateOn: boolean): void => {
     // 仅 todo 意图可切换自动/手动模式;锁定态(in_progress/done/cancelled 等)点击给出
     // 不可修改提示,不下发协议消息。两个入口(列表行内 icon、IntentDetail)共用此门。

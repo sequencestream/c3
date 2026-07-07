@@ -726,6 +726,9 @@
       "editContent": {
         "label": "編集"
       },
+      "editSpec": {
+        "label": "編集"
+      },
       "markTodo": {
         "label": "ToDo にする"
       },
@@ -877,6 +880,7 @@
         "updated": "更新",
         "statusChanged": "ステータス変更",
         "specCreated": "スペック作成",
+        "specUpdated": "スペック編集",
         "specApproved": "スペック承認",
         "specUnapproved": "承認取消",
         "prCreated": "PR 作成",
@@ -1680,6 +1684,8 @@
       "chatOpenFailed": "意図セッションを開けませんでした。",
       "cannotStartDev": "ステータス \"{status}\" からは作業を開始できません。",
       "contentEditForbidden": "ステータス \"{status}\" の意図の本文は編集できません。",
+      "specEditForbidden": "開発が開始された後(ステータス \"{status}\")は spec を直接編集できません。",
+      "specSessionRunning": "spec セッションの実行中は spec を編集できません。",
       "devStartInFlight": "この意図の開発はすでに開始中です。",
       "illegalStatusTransition": "ステータスを \"{from}\" から \"{to}\" に変更できません。",
       "chatSessionNotFound": "Intent session not found: {sessionId}.",

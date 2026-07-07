@@ -66,6 +66,7 @@ import {
   approveSpecHandler,
   readSpecHandler,
   resetSpecSessionHandler,
+  updateSpecContentHandler,
   writeSpecHandler,
 } from './intents/spec.js'
 import {
@@ -153,6 +154,7 @@ export const handlerMap: HandlerMap = {
   reset_intent_session: resetIntentSession,
   reset_spec_session: resetSpecSessionHandler,
   read_spec: readSpecHandler,
+  update_spec_content: updateSpecContentHandler,
   update_intent_content: updateIntentContent,
   update_intent_status: updateIntentStatus,
   set_intent_automate: setIntentAutomate,

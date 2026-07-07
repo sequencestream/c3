@@ -7,7 +7,7 @@
 CREATE TABLE IF NOT EXISTS intent_logs (
   id              TEXT PRIMARY KEY,                 -- uuid
   intent_id       TEXT    NOT NULL,                 -- 意图 ID (外键 → intents.id)
-  operation_type  TEXT    NOT NULL,                 -- 操作类型: intent_created/intent_updated/status_changed/spec_created/spec_approved/spec_unapproved/pr_created/pr_merged/pr_closed/pr_updated
+  operation_type  TEXT    NOT NULL,                 -- 操作类型: intent_created/intent_updated/status_changed/spec_created/spec_updated/spec_approved/spec_unapproved/pr_created/pr_merged/pr_closed/pr_updated
   summary         TEXT    NOT NULL,                 -- 操作摘要(如「状态变更: todo → in_progress」)
   actor           TEXT    NOT NULL,                 -- 操作人: 登录用户名 / 'system' / 'automation'
   created_at      INTEGER NOT NULL                  -- 操作时间 (epoch ms)

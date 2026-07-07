@@ -1943,14 +1943,15 @@ export interface IntentDevSession {
 
 /**
  * Intent lifecycle-log operation kinds — the auditable moments of an intent's
- * life. `spec_unapproved` is reserved for a future un-approve entry point (no
- * writer in this phase).
+ * life. `spec_unapproved` is written when a direct spec edit revokes a prior
+ * approval; `spec_updated` records a direct spec-source overwrite (no diff).
  */
 export const INTENT_LOG_OPERATIONS = [
   'intent_created',
   'intent_updated',
   'status_changed',
   'spec_created',
+  'spec_updated',
   'spec_approved',
   'spec_unapproved',
   'pr_created',
@@ -3157,6 +3158,18 @@ export type ClientToServer =
    * is that absolute spec path.
    */
   | { type: 'read_spec'; workspaceId: string; intentId: string }
+  /**
+   * Directly overwrite an intent's centralized spec Markdown source (the human
+   * inline spec-edit entry, distinct from the `write_spec` / `reset_spec_session`
+   * agent sessions). Allowed ONLY when a spec exists, development has not started
+   * (`status === 'todo' && lastWorkSessionId === null`) and no spec session is
+   * running; the server re-checks all three and rejects a bypassed client. On
+   * success it overwrites the file inside the centralized specs root (fail-closed),
+   * resets approval to `false` if it was approved (with a `spec_unapproved` log),
+   * always appends a `spec_updated` log (no diff), bumps `updated_at` and refills
+   * via the `intents` broadcast; the client re-reads via `read_spec`.
+   */
+  | { type: 'update_spec_content'; workspaceId: string; intentId: string; content: string }
   /**
    * Directly edit an intent's markdown body (the human inline-edit entry, distinct
    * from refine / `save_intents`). Only `draft` / `todo` intents may be edited; the

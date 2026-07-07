@@ -726,6 +726,9 @@
       "editContent": {
         "label": "편집"
       },
+      "editSpec": {
+        "label": "편집"
+      },
       "markTodo": {
         "label": "할 일로"
       },
@@ -877,6 +880,7 @@
         "updated": "수정",
         "statusChanged": "상태 변경",
         "specCreated": "스펙 작성",
+        "specUpdated": "스펙 편집",
         "specApproved": "스펙 승인",
         "specUnapproved": "승인 취소",
         "prCreated": "PR 생성",
@@ -1680,6 +1684,8 @@
       "chatOpenFailed": "의도 세션을 열지 못했습니다.",
       "cannotStartDev": "\"{status}\" 상태에서는 작업을 시작할 수 없습니다.",
       "contentEditForbidden": "\"{status}\" 상태의 의도 본문은 편집할 수 없습니다.",
+      "specEditForbidden": "개발이 시작된 후에는(\"{status}\" 상태) spec을 직접 편집할 수 없습니다.",
+      "specSessionRunning": "spec 세션이 실행 중일 때는 spec을 편집할 수 없습니다.",
       "devStartInFlight": "이 의도의 작업 시작이 이미 진행 중입니다.",
       "illegalStatusTransition": "상태를 \"{from}\"에서 \"{to}\"(으)로 변경할 수 없습니다.",
       "chatSessionNotFound": "Intent session not found: {sessionId}.",

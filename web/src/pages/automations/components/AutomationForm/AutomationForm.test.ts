@@ -323,15 +323,29 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     await w.find('textarea').setValue('echo done')
     await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
     await w.find('[data-testid="event-category-pr-operation"]').trigger('click') // pr:operation
-    // pr:operation 隐藏 reason 过滤;.sf-day 现为 5 个操作 + 3 个结果。
+    // pr:operation 隐藏 reason 过滤;.sf-day 现为 6 个操作 + 3 个结果。
     const days = w.findAll('.sf-day')
-    expect(days).toHaveLength(8)
-    await days[2].trigger('click') // operations: create,review,merge,close,comment → [2]=merge
-    await days[5].trigger('click') // results: success[5], failure[6], error[7] → success
+    expect(days).toHaveLength(9)
+    await days[2].trigger('click') // operations: create,review,merge,close,comment,update → [2]=merge
+    await days[6].trigger('click') // results: success[6], failure[7], error[8] → success
     await w.find('.sf-btn.primary').trigger('click')
 
     const input = w.emitted('create')![0][0] as Record<string, unknown>
     expect(input.eventPrFilter).toEqual({ operations: ['merge'], results: ['success'] })
+  })
+
+  it('create(event/pr:operation):可勾选 update 操作并序列化到 eventPrFilter', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('echo done')
+    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
+    await w.find('[data-testid="event-category-pr-operation"]').trigger('click') // pr:operation
+    const days = w.findAll('.sf-day')
+    // operations: create[0],review[1],merge[2],close[3],comment[4],update[5]
+    await days[5].trigger('click') // update
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.eventPrFilter).toEqual({ operations: ['update'] })
   })
 
   it('edit(event/pr:operation):从 automation.eventPrFilter 回读勾选', () => {
@@ -344,9 +358,9 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
       }),
     })
     const days = w.findAll('.sf-day')
-    // operations: close[3] active; results: failure[6] active (index unchanged after adding error[7]).
+    // operations: close[3] active; results: failure[7] active (success[6],failure[7],error[8]).
     expect(days[3].classes()).toContain('active')
-    expect(days[6].classes()).toContain('active')
+    expect(days[7].classes()).toContain('active')
     expect(days[2].classes()).not.toContain('active') // merge not selected
   })
 

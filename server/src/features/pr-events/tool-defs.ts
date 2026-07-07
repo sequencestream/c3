@@ -13,8 +13,10 @@
  * surface.
  *
  * The model uses its OWN tools to create / review / merge / close / comment on
- * a PR and then calls this tool to publish ONE event; a automation may subscribe
- * and trigger its follow-up action. The server-side PR creation paths
+ * a PR — or update it (modify + re-submit / re-open) — and then calls this tool
+ * to publish ONE event; a automation may subscribe and trigger its follow-up
+ * action. An `update/success` event additionally lets the intent domain reset a
+ * rejected/failed/closed PR back to `reviewing`. The server-side PR creation paths
  * (dev-cleanup / automation / manual create_pr) also publish a `create` event
  * after successfully creating a PR on the model's behalf.
  */
@@ -34,7 +36,10 @@ const text = (s: string): PrEventToolResult['content'] => [{ type: 'text' as con
 export const publishPrEventSchema = {
   operation: z
     .enum(PR_OPERATIONS)
-    .describe('PR 操作类型:create(创建)/review(评审)/merge(合并)/close(关闭)/comment(评论)。'),
+    .describe(
+      'PR 操作类型:create(创建)/review(评审)/merge(合并)/close(关闭)/comment(评论)/' +
+        'update(已有 PR 被修改后重新提交/重新打开,非创建新 PR)。',
+    ),
   result: z
     .enum(PR_OPERATION_RESULTS)
     .describe('操作结果:success(成功)/failure(失败)/error(异常,如 CI 挂了/工具异常)。'),
@@ -97,7 +102,7 @@ export type PublishPrEventArgs = {
 
 export const publishPrEventDesc =
   '发布一条供应商中立的「PR 操作事件」。你应先用自己的工具(gh CLI / GitHub MCP 等)完成 ' +
-  'PR 的创建/评审/合并/关闭/评论,操作完成或失败后调用本工具发布对应事件;' +
+  'PR 的创建/评审/合并/关闭/评论/修改重提(update),操作完成或失败后调用本工具发布对应事件;' +
   'c3 本身不执行任何 PR 操作。事件包含 operation、result、pr、repo、ref、association,' +
   '供订阅了 pr:operation 的 Automation 匹配并触发后续动作。' +
   'result 是三态:success(成功)/failure(评审判定未通过)/error(执行异常,如 CI 挂了)。' +

@@ -1956,6 +1956,7 @@ export const INTENT_LOG_OPERATIONS = [
   'pr_created',
   'pr_merged',
   'pr_closed',
+  'pr_updated',
 ] as const
 
 export type IntentLogOperation = (typeof INTENT_LOG_OPERATIONS)[number]
@@ -1963,7 +1964,7 @@ export type IntentLogOperation = (typeof INTENT_LOG_OPERATIONS)[number]
 /**
  * One intent lifecycle-log entry (who did what, when). Append-only audit trail:
  * every lifecycle operation (create / update / status transition / spec authored
- * or approved / PR created or merged or closed) appends a row; rows are never
+ * or approved / PR created or merged or closed / PR updated) appends a row; rows are never
  * edited or deleted. Work-session start/stop is NOT logged here — that audit
  * trail lives in `intent_sessions` ({@link IntentDevSession}).
  */
@@ -2247,8 +2248,12 @@ export type RunEndReason = 'complete' | 'error' | 'aborted'
 // these events and trigger its existing follow-up action. The contract is NOT
 // bound to GitHub — `repo.provider` keeps room for GitLab and others.
 
-/** PR operation kinds a model may report (vendor-neutral). */
-export const PR_OPERATIONS = ['create', 'review', 'merge', 'close', 'comment'] as const
+/**
+ * PR operation kinds a model may report (vendor-neutral). `update` means an
+ * EXISTING PR was modified by the model and re-submitted / re-opened (e.g. after
+ * a rejected review the model pushes a fix), NOT the creation of a new PR.
+ */
+export const PR_OPERATIONS = ['create', 'review', 'merge', 'close', 'comment', 'update'] as const
 export type PrOperation = (typeof PR_OPERATIONS)[number]
 
 /** Outcome of a PR operation the model performed with its own tools. */

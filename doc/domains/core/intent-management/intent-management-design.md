@@ -587,6 +587,29 @@ verdict at the cost of another LLM call. A live process (re-derived cheaply) and
 a brand-new session id (differs from the record) still get
 (re)judged. The entry is cleared when the intent leaves `in_progress`.
 
+## PR-status reset on model `update` event (RM-R29)
+
+`features/intents/pr-update-consumer.ts` owns a pure `handlePrUpdateEvent(payload, deps)` — the
+intent-domain reaction to a model-published `pr:operation` `update`/`success` event. It is registered
+as a **resident subscription** in `wiring/run-domain-subscriptions.ts`, alongside the run-lifecycle
+subscriptions and **independent** of the Automation event bridge in `scheduler-startup.ts`. It is
+deliberately kept out of `dispatchEventTriggers`: `prStatus` is part of the ledger state machine, so the
+reset must fire even when no automation is configured, the Automation store is unavailable, or an
+in-flight gate skips the automation. The Automation dispatch and this consumer are two independent
+side-effects of the **same** bus event; neither blocks the other (the `EventBus` isolates handler
+errors, and the consumer additionally try/catches its own store access).
+
+The handler short-circuits unless `operation === 'update' && result === 'success'` and
+`association.intentId` is present. It then `getIntent(intentId)`, verifies
+`intent.workspaceId === pathToId(payload.workspacePath)` (blocks a cross-workspace `intentId`), and —
+only if `prStatus ∈ {rejected, failed, closed}` — calls `setPrStatus(id, 'reviewing')`,
+`safeInsertIntentLog(id, 'pr_updated', …, 'automation')`, and `broadcastIntents(workspacePath)`. `merged`
+is terminal and skipped; `reviewing`/`null`/other statuses, a missing/unknown/cross-workspace intent, or
+a non-`update`/non-`success` event are silent no-ops (the publish already succeeded, so nothing errors).
+A repeated event is idempotent: after the first reset the status is no longer resettable, so subsequent
+events no-op — no duplicate log or broadcast. All store/broadcast capabilities are injected, so the
+handler is unit-tested with fakes (no live DB or bus).
+
 ## List / Rename / Delete communication sessions
 
 Three new WS handlers round out the session-collection CRUD:

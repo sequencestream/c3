@@ -878,7 +878,8 @@
         "specUnapproved": "Утверждение отменено",
         "prCreated": "PR создан",
         "prMerged": "PR слит",
-        "prClosed": "PR закрыт"
+        "prClosed": "PR закрыт",
+        "prUpdated": "PR обновлён"
       }
     },
     "intentSession": {
@@ -1521,6 +1522,9 @@
             },
             "comment": {
               "label": "Комментарий"
+            },
+            "update": {
+              "label": "Обновление"
             }
           },
           "result": {

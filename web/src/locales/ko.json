@@ -878,7 +878,8 @@
         "specUnapproved": "승인 취소",
         "prCreated": "PR 생성",
         "prMerged": "PR 병합됨",
-        "prClosed": "PR 종료됨"
+        "prClosed": "PR 종료됨",
+        "prUpdated": "PR 업데이트됨"
       }
     },
     "intentSession": {
@@ -1521,6 +1522,9 @@
             },
             "comment": {
               "label": "댓글"
+            },
+            "update": {
+              "label": "업데이트"
             }
           },
           "result": {

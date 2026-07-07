@@ -132,6 +132,7 @@ const PR_OPERATION_OPTIONS = computed<{ value: PrOperation; label: string }[]>((
   { value: 'merge', label: t('automation.form.event.pr.op.merge.label') },
   { value: 'close', label: t('automation.form.event.pr.op.close.label') },
   { value: 'comment', label: t('automation.form.event.pr.op.comment.label') },
+  { value: 'update', label: t('automation.form.event.pr.op.update.label') },
 ])
 const PR_RESULT_OPTIONS = computed<{ value: PrOperationResult; label: string }[]>(() => [
   { value: 'success', label: t('automation.form.event.pr.result.success.label') },

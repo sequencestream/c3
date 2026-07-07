@@ -877,7 +877,8 @@
         "specUnapproved": "Spec unapproved",
         "prCreated": "PR created",
         "prMerged": "PR merged",
-        "prClosed": "PR closed"
+        "prClosed": "PR closed",
+        "prUpdated": "PR updated"
       }
     },
     "intentSession": {
@@ -1451,6 +1452,9 @@
             },
             "comment": {
               "label": "Comment"
+            },
+            "update": {
+              "label": "Update"
             }
           },
           "result": {

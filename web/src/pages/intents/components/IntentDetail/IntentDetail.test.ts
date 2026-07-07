@@ -54,6 +54,7 @@ function mountDetail(
     activeSession?: string | null
     intentSpecContent?: string | null
     intentSpecLoading?: boolean
+    specSessionRunning?: boolean
     intentLogs?: IntentLog[]
   } = {},
 ) {
@@ -84,6 +85,7 @@ function mountDetail(
       voiceLang: 'en-US',
       intentSpecContent: opts.intentSpecContent ?? null,
       intentSpecLoading: opts.intentSpecLoading ?? false,
+      specSessionRunning: opts.specSessionRunning ?? false,
       intentLogs: opts.intentLogs ?? [],
       intentLogsLoading: false,
     },
@@ -1040,5 +1042,149 @@ describe('IntentDetail.vue — inline content edit', () => {
 
     expect(w.find(EDITOR).exists()).toBe(false)
     expect(w.find('.req-detail').exists()).toBe(true)
+  })
+})
+
+describe('IntentDetail.vue — inline spec edit', () => {
+  const SPEC_ABS = '/home/u/.c3/specs/proj/2026/07/07/2026-07-07-001-x/spec.md'
+  const EDIT = '[data-testid="intent-detail-spec-edit"]'
+  const EDITOR = '[data-testid="intent-detail-spec-editor"]'
+  const TEXTAREA = '[data-testid="intent-detail-spec-textarea"]'
+  const SAVE = '[data-testid="intent-detail-spec-save"]'
+  const CANCEL = '[data-testid="intent-detail-spec-cancel"]'
+  const APPROVE = '[data-testid="intent-detail-spec-approve"]'
+  const MODIFY = '[data-testid="intent-detail-spec-modify"]'
+
+  // Mount on a spec-bearing intent, switch to the spec tab, and (by default)
+  // provide loaded spec content so the editor can prefill.
+  async function mountSpecTab(
+    over: Partial<Intent> & { id: string },
+    opts: { intentSpecContent?: string | null; specSessionRunning?: boolean } = {},
+  ) {
+    const item = intent({ specPath: SPEC_ABS, ...over })
+    const w = mountDetail(item, {
+      intentSpecContent: opts.intentSpecContent ?? '# spec source',
+      specSessionRunning: opts.specSessionRunning,
+    })
+    await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    return { w, item }
+  }
+
+  it('shows the Edit entry only when specPath + todo + no lastWorkSessionId + no live spec session', async () => {
+    // All three gates satisfied → visible.
+    const { w } = await mountSpecTab({ id: 'ok', status: 'todo' })
+    expect(w.find(EDIT).exists()).toBe(true)
+
+    // No specPath → the tab renders empty and there is no edit entry.
+    const noSpec = mountDetail(intent({ id: 'nospec', specPath: null }), { sddEnabled: true })
+    await noSpec.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    expect(noSpec.find(EDIT).exists()).toBe(false)
+
+    // Development started (status not todo) → hidden.
+    const started = await mountSpecTab({ id: 's1', status: 'in_progress' })
+    expect(started.w.find(EDIT).exists()).toBe(false)
+
+    // lastWorkSessionId set (started) even while todo → hidden.
+    const hasWork = await mountSpecTab({ id: 's2', status: 'todo', lastWorkSessionId: 'w1' })
+    expect(hasWork.w.find(EDIT).exists()).toBe(false)
+
+    // A running spec session → hidden.
+    const live = await mountSpecTab({ id: 's3', status: 'todo' }, { specSessionRunning: true })
+    expect(live.w.find(EDIT).exists()).toBe(false)
+  })
+
+  it('clicking Edit swaps the rendered spec for a textarea prefilled with the loaded spec content', async () => {
+    const { w } = await mountSpecTab({ id: 'i1' }, { intentSpecContent: '# original spec' })
+    expect(w.find(EDITOR).exists()).toBe(false)
+    expect(w.find('.req-detail').exists()).toBe(true)
+
+    await w.find(EDIT).trigger('click')
+
+    expect(w.find(EDITOR).exists()).toBe(true)
+    expect(w.find('.req-detail').exists()).toBe(false)
+    expect((w.find(TEXTAREA).element as HTMLTextAreaElement).value).toBe('# original spec')
+    // Approve / modify / edit actions are hidden while editing (no concurrent approve/save).
+    expect(w.find(EDIT).exists()).toBe(false)
+    expect(w.find(MODIFY).exists()).toBe(false)
+  })
+
+  it('Save emits save-spec-content with the intent id and edited draft, then disables until refill', async () => {
+    const { w } = await mountSpecTab({ id: 'i1' }, { intentSpecContent: '# original spec' })
+    await w.find(EDIT).trigger('click')
+    await w.find(TEXTAREA).setValue('# edited spec')
+    await w.find(SAVE).trigger('click')
+
+    expect(w.emitted('save-spec-content')).toEqual([['i1', '# edited spec']])
+    expect((w.find(SAVE).element as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('Cancel discards the draft, restores the rendered spec, and emits nothing', async () => {
+    const { w } = await mountSpecTab({ id: 'i1' }, { intentSpecContent: '# original spec' })
+    await w.find(EDIT).trigger('click')
+    await w.find(TEXTAREA).setValue('# scrapped')
+    await w.find(CANCEL).trigger('click')
+
+    expect(w.find(EDITOR).exists()).toBe(false)
+    expect(w.find('.req-detail').exists()).toBe(true)
+    expect(w.emitted('save-spec-content')).toBeUndefined()
+    await w.find(EDIT).trigger('click')
+    expect((w.find(TEXTAREA).element as HTMLTextAreaElement).value).toBe('# original spec')
+  })
+
+  it('leaves edit mode and re-reads once the server refills the intent (updatedAt bump)', async () => {
+    const { w, item } = await mountSpecTab({ id: 'i1', updatedAt: 1 }, { intentSpecContent: '# a' })
+    await w.find(EDIT).trigger('click')
+    await w.find(TEXTAREA).setValue('# b')
+    await w.find(SAVE).trigger('click')
+    expect(w.find(EDITOR).exists()).toBe(true)
+
+    // Success broadcast: same intent with a bumped updatedAt (approval reset also bumps it).
+    await w.setProps({ intent: { ...item, updatedAt: 2, specApproved: false } })
+
+    expect(w.find(EDITOR).exists()).toBe(false)
+    // A read-spec is re-fired to render the freshly-saved content.
+    const reads = w.emitted('read-spec') as unknown[][] | undefined
+    expect(reads?.some((c) => c[0] === 'i1' && c[1] === SPEC_ABS)).toBe(true)
+  })
+
+  it('releases the save guard on a rejected save (error seq bump), keeping the editor open', async () => {
+    const { w } = await mountSpecTab({ id: 'i1' }, { intentSpecContent: '# a' })
+    await w.find(EDIT).trigger('click')
+    await w.find(TEXTAREA).setValue('# b')
+    await w.find(SAVE).trigger('click')
+    expect((w.find(SAVE).element as HTMLButtonElement).disabled).toBe(true)
+
+    // A server rejection bumps the intent-action error seq.
+    await w.setProps({ intentActionErrorSeq: 1 })
+
+    // Editor stays open (draft preserved) but the save button is clickable again.
+    expect(w.find(EDITOR).exists()).toBe(true)
+    expect((w.find(SAVE).element as HTMLButtonElement).disabled).toBe(false)
+    expect((w.find(TEXTAREA).element as HTMLTextAreaElement).value).toBe('# b')
+  })
+
+  it('discards an in-progress spec edit when the selected intent changes', async () => {
+    const a = intent({ id: 'a', specPath: SPEC_ABS })
+    const b = intent({ id: 'b', specPath: SPEC_ABS })
+    const w = mountDetail(a, { intents: [a, b], intentSpecContent: '# A spec' })
+    await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    await w.find(EDIT).trigger('click')
+    await w.find(TEXTAREA).setValue('# dirty')
+
+    await w.setProps({ intent: b })
+
+    // Back on the intent tab (reset) with no lingering spec editor.
+    expect(w.find(EDITOR).exists()).toBe(false)
+  })
+
+  it('hides the approve action while editing the spec', async () => {
+    // approveSpec state needs SDD on + specPath + unapproved; approve entry appears in spec tab.
+    const item = intent({ id: 'i1', specPath: SPEC_ABS, specApproved: false })
+    const w = mountDetail(item, { sddEnabled: true, intentSpecContent: '# a' })
+    await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    expect(w.find(APPROVE).exists()).toBe(true)
+
+    await w.find(EDIT).trigger('click')
+    expect(w.find(APPROVE).exists()).toBe(false)
   })
 })

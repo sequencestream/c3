@@ -142,6 +142,12 @@ export interface AppMethods {
   setIntentStatus(intentId: string, status: IntentStatus): void
   /** Directly edit an intent's markdown body (only `draft` / `todo`; server-gated). */
   updateIntentContent(intentId: string, content: string): void
+  /**
+   * Directly overwrite an intent's centralized spec Markdown source (server-gated:
+   * spec exists, not started, no live spec session). Sends `update_spec_content`
+   * then re-reads via `read_spec` so the spec tab renders the saved content.
+   */
+  saveSpecContent(intentId: string, content: string): void
   setIntentAutomate(intentId: string, automateOn: boolean): void
   updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void
   createPr(intentId: string): void

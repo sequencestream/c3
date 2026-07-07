@@ -138,6 +138,7 @@ const {
   setIntentStatus,
   setIntentAutomate,
   updateIntentContent,
+  saveSpecContent,
   updateIntentDeps,
   createPr,
   syncIntentPrStatus,
@@ -459,6 +460,7 @@ function onCodesChatWidth(px: number): void {
           :intent-pr-sync="intentPrSync"
           :intent-spec-content="intentSpecContent"
           :intent-spec-loading="intentSpecLoading"
+          :session-status="sessionStatus"
           :intent-logs-by-id="intentLogsById"
           :intent-logs-loading="intentLogsLoading"
           :active-session="activeSession"
@@ -486,6 +488,7 @@ function onCodesChatWidth(px: number): void {
           @filter="setIntentFilter"
           @refine="refineIntent"
           @save-intent-content="updateIntentContent"
+          @save-spec-content="saveSpecContent"
           @write-spec="writeSpec"
           @approve-spec="approveSpec"
           @open-spec-session="openSpecSession"

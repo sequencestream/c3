@@ -726,6 +726,9 @@
       "editContent": {
         "label": "Редактировать"
       },
+      "editSpec": {
+        "label": "Редактировать"
+      },
       "markTodo": {
         "label": "В задачи"
       },
@@ -877,6 +880,7 @@
         "updated": "Обновлено",
         "statusChanged": "Статус изменён",
         "specCreated": "Спецификация создана",
+        "specUpdated": "Спецификация изменена",
         "specApproved": "Спецификация утверждена",
         "specUnapproved": "Утверждение отменено",
         "prCreated": "PR создан",
@@ -1680,6 +1684,8 @@
       "chatOpenFailed": "Не удалось открыть сессию намерения.",
       "cannotStartDev": "Нельзя начать работу из статуса «{status}».",
       "contentEditForbidden": "Нельзя редактировать текст намерения в статусе «{status}».",
+      "specEditForbidden": "Нельзя напрямую редактировать спецификацию после начала разработки (статус «{status}»).",
+      "specSessionRunning": "Нельзя редактировать спецификацию, пока выполняется сессия спецификации.",
       "devStartInFlight": "Разработка для этого намерения уже запускается.",
       "illegalStatusTransition": "Нельзя изменить статус с «{from}» на «{to}».",
       "chatSessionNotFound": "Intent session not found: {sessionId}.",

@@ -102,6 +102,8 @@ const props = defineProps<{
   /** 选中意图 spec.md 内容;null=未加载/无。 */
   intentSpecContent: string | null
   intentSpecLoading: boolean
+  /** 该意图的 spec 会话是否运行中(specSessionId 对应会话活跃);直接编辑 spec 的门禁之一。 */
+  specSessionRunning?: boolean
   // ── 变更日志(changelog tab)──
   /** 选中意图的生命周期变更日志(倒序);切到 changelog tab 时懒加载。 */
   intentLogs: IntentLog[]
@@ -131,6 +133,8 @@ const emit = defineEmits<{
   'open-intent-session': [sessionId: string]
   'open-spec-session': [intentId: string]
   'read-spec': [intentId: string, specPath: string]
+  // 直接编辑 spec 源码:上抛 id + 新内容,由控制层透传为 update_spec_content。
+  'save-spec-content': [intentId: string, content: string]
   'list-intent-logs': [intentId: string]
   // ── 会话重置(带新输入,拼接意图/spec 内容新起会话) ──
   'reset-intent-session': [intentId: string, userInput: string]
@@ -251,7 +255,12 @@ watch(
 watch(
   () => props.intentActionErrorSeq,
   (next, prev) => {
-    if (next !== prev) startDevInFlight.value = false
+    if (next === prev) return
+    // 任一 intent.* 动作被服务端拒绝都会自增该 seq;释放所有在途保存守卫,让被拒的
+    // 直接编辑退出「保存中」态(按钮重新可点),编辑框保留草稿供重试。
+    startDevInFlight.value = false
+    savingContent.value = false
+    savingSpec.value = false
   },
 )
 
@@ -306,6 +315,56 @@ watch(
     if (savingContent.value) {
       savingContent.value = false
       editingContent.value = false
+    }
+  },
+)
+
+// ── spec 源码直接编辑(spec tab;三门禁,服务端为最终门禁) ───────────────────
+// 纯文本 Markdown 源码编辑;草稿只活在组件内。保存只 emit,退出编辑态由服务端
+// 回填(intent.updatedAt 变化,含审批重置的 setSpecApproved 幂等 bump)驱动,
+// 随后重新 read-spec 拉取覆盖后的内容渲染。
+const editingSpec = ref(false)
+const specDraft = ref('')
+const savingSpec = ref(false)
+
+// 三门禁全满足才允许直接编辑 spec:specPath 存在、未启动开发
+// (todo 且无 lastWorkSessionId)、无运行中 spec 会话。任一不满足则隐藏入口。
+const canEditSpec = computed<boolean>(() => {
+  const r = props.intent
+  return (
+    !!r && !!r.specPath && r.status === 'todo' && !r.lastWorkSessionId && !props.specSessionRunning
+  )
+})
+
+function startEditSpec(): void {
+  if (!canEditSpec.value || props.intentSpecContent === null) return
+  specDraft.value = props.intentSpecContent ?? ''
+  savingSpec.value = false
+  editingSpec.value = true
+}
+
+function cancelEditSpec(): void {
+  editingSpec.value = false
+  savingSpec.value = false
+}
+
+function saveEditSpec(): void {
+  const r = props.intent
+  if (!r || savingSpec.value) return
+  savingSpec.value = true
+  emit('save-spec-content', r.id, specDraft.value)
+}
+
+// 保存成功:服务端广播回填(updated_at 变化)后退出编辑态,并重新拉取覆盖后的
+// spec 渲染。仅在提交在途(savingSpec)时响应,避免其它广播误关编辑框。
+watch(
+  () => props.intent?.updatedAt,
+  () => {
+    if (savingSpec.value) {
+      savingSpec.value = false
+      editingSpec.value = false
+      const r = props.intent
+      if (r?.specPath) emit('read-spec', r.id, r.specPath)
     }
   },
 )
@@ -505,6 +564,7 @@ const OP_LABELS: Record<IntentLogOperation, string> = {
   intent_updated: t('intent.changelog.operationType.updated'),
   status_changed: t('intent.changelog.operationType.statusChanged'),
   spec_created: t('intent.changelog.operationType.specCreated'),
+  spec_updated: t('intent.changelog.operationType.specUpdated'),
   spec_approved: t('intent.changelog.operationType.specApproved'),
   spec_unapproved: t('intent.changelog.operationType.specUnapproved'),
   pr_created: t('intent.changelog.operationType.prCreated'),
@@ -528,9 +588,11 @@ watch(
   () => {
     activeTab.value = 'intent'
     startDevInFlight.value = false
-    // 切走意图:丢弃未保存的正文草稿并退出编辑态,避免草稿串到别的意图。
+    // 切走意图:丢弃未保存的正文/spec 草稿并退出编辑态,避免草稿串到别的意图。
     editingContent.value = false
     savingContent.value = false
+    editingSpec.value = false
+    savingSpec.value = false
     // 切走意图:取消挂起的自动切 Tab,避免切到别的意图后误切。门定时器由上方
     // [intent.id, mainAction] watch 负责重排。
     clearSwitchSpecTabTimer()
@@ -1007,10 +1069,11 @@ defineExpose({
         </div>
       </div>
 
-      <!-- spec tab:渲染 spec.md -->
+      <!-- spec tab:渲染 spec.md(或纯文本源码直接编辑) -->
       <div v-else-if="activeTab === 'spec'" class="intent-detail-body" data-testid="tab-spec">
+        <!-- 操作区:编辑态下整体隐藏,避免审批/会话重置与源码保存同区并发。 -->
         <div
-          v-if="showSpecActions"
+          v-if="!editingSpec && (showSpecActions || canEditSpec)"
           class="intent-detail-section-actions"
           data-testid="intent-detail-spec-actions"
         >
@@ -1022,6 +1085,15 @@ defineExpose({
             @click="emit('approve-spec', intent.id)"
           >
             {{ t('intent.action.approveSpec.confirmLabel') }}
+          </button>
+          <button
+            v-if="canEditSpec"
+            type="button"
+            class="req-btn"
+            data-testid="intent-detail-spec-edit"
+            @click="startEditSpec"
+          >
+            {{ t('intent.action.editSpec.label') }}
           </button>
           <button
             v-if="showSpecModifyAction"
@@ -1042,6 +1114,37 @@ defineExpose({
         >
           {{ t('intent.spec.empty') }}
         </p>
+        <!-- 编辑态:纯文本 Markdown 源码框 + 框下方左侧蓝色「保存」+ 取消。 -->
+        <div
+          v-else-if="editingSpec"
+          class="req-content-edit"
+          data-testid="intent-detail-spec-editor"
+        >
+          <textarea
+            v-model="specDraft"
+            class="req-content-textarea"
+            data-testid="intent-detail-spec-textarea"
+          ></textarea>
+          <div class="req-content-edit-actions">
+            <button
+              type="button"
+              class="req-btn primary"
+              data-testid="intent-detail-spec-save"
+              :disabled="savingSpec"
+              @click="saveEditSpec"
+            >
+              {{ t('common.action.save.label') }}
+            </button>
+            <button
+              type="button"
+              class="req-btn"
+              data-testid="intent-detail-spec-cancel"
+              @click="cancelEditSpec"
+            >
+              {{ t('common.action.cancel.label') }}
+            </button>
+          </div>
+        </div>
         <p v-else-if="intentSpecLoading" class="intent-detail-empty">
           {{ t('intent.spec.loading') }}
         </p>

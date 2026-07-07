@@ -18,7 +18,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { PENDING_SESSION_PREFIX, type Intent } from '@ccc/shared/protocol'
-import { addViewer, ensureRuntime, removeViewer } from '../../runs.js'
+import { addViewer, ensureRuntime, isRunning, removeViewer } from '../../runs.js'
 import { pathToId, resolveWorkspaceRoot, touchWorkspace } from '../../state.js'
 import {
   getDefaultMainBranch,
@@ -37,6 +37,7 @@ import type { KernelContext } from '../../kernel/types.js'
 import {
   getIntent,
   isStoreAvailable,
+  listIntentLogs,
   listIntents,
   safeInsertIntentLog,
   setSpecApproved,
@@ -460,4 +461,89 @@ export const readSpecHandler: Handler<'read_spec'> = (_ctx, conn, msg) => {
       error: { code: 'codes.readFailed', params: { path: intent.specPath } },
     })
   }
+}
+
+/**
+ * `update_spec_content` handler — the human inline spec-source edit (distinct from
+ * the `write_spec` / `reset_spec_session` agent sessions). Overwrites the intent's
+ * centralized spec file with the client-supplied Markdown, then reconciles approval
+ * and logs. Three gates, ALL re-checked here so a bypassed client is rejected:
+ *   1. a spec exists (`spec_path` non-null),
+ *   2. development has not started (`status === 'todo' && lastWorkSessionId === null`),
+ *   3. no spec session is running (`spec_session_id` not live).
+ * The write is fail-closed to the centralized specs root (shared with
+ * {@link readSpecHandler}). Order preserves atomic-feel: file overwrite is the
+ * precondition for the approval reset + logs; a write failure leaves the intent
+ * untouched. If the spec was approved, approval is revoked (`setSpecApproved(false)`,
+ * clears the approver) with a `spec_unapproved` log; every success also bumps
+ * `updated_at` and appends a `spec_updated` log (no diff), then broadcasts intents
+ * (the client re-reads the fresh spec via `read_spec`). A same-frame
+ * `intent_logs_list` refresh keeps an already-open changelog tab current.
+ */
+export const updateSpecContentHandler: Handler<'update_spec_content'> = (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const intent = getIntent(msg.intentId)
+  if (!intent) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  if (!intent.specPath) {
+    conn.send({ type: 'error', error: { code: 'intent.specNotWritten' } })
+    return
+  }
+  // Gate: development must not have started (same rule the UI hides the entry on).
+  if (intent.status !== 'todo' || intent.lastWorkSessionId) {
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.specEditForbidden', params: { status: intent.status } },
+    })
+    return
+  }
+  // Gate: a live spec session may be writing the same file — refuse to clobber it.
+  if (intent.specSessionId && isRunning(intent.specSessionId)) {
+    conn.send({ type: 'error', error: { code: 'intent.specSessionRunning' } })
+    return
+  }
+  const fileAbs = resolveSpecFileAbs(proj, intent.specPath)
+  // Fail-closed: only overwrite inside the centralized specs root for this project.
+  if (!isInside(getSpecsBase(proj), fileAbs)) {
+    conn.send({
+      type: 'error',
+      error: { code: 'codes.invalidPath', params: { path: intent.specPath } },
+    })
+    return
+  }
+  try {
+    writeFileSync(fileAbs, msg.content, 'utf8')
+  } catch (err) {
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.specWriteFailed', params: { message: errMsg(err) } },
+    })
+    return
+  }
+
+  // File written: now reconcile approval + logs (never before the write succeeds).
+  // `setSpecApproved(false)` also bumps `updated_at`, giving the client a reliable
+  // broadcast signal even when the spec was already unapproved.
+  const wasApproved = intent.specApproved
+  setSpecApproved(intent.id, false, null)
+  if (wasApproved) {
+    safeInsertIntentLog(intent.id, 'spec_unapproved', '直接编辑 spec 后撤销审批', conn.subject)
+  }
+  safeInsertIntentLog(intent.id, 'spec_updated', '直接编辑 spec 内容', conn.subject)
+  ctx.broadcastIntents(proj)
+  // Refresh the per-intent changelog cache for an already-open changelog tab.
+  conn.send({ type: 'intent_logs_list', intentId: intent.id, items: listIntentLogs(intent.id) })
 }

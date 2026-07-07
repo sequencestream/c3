@@ -725,6 +725,9 @@
       "editContent": {
         "label": "Edit"
       },
+      "editSpec": {
+        "label": "Edit"
+      },
       "markTodo": {
         "label": "Todo"
       },
@@ -876,6 +879,7 @@
         "updated": "Updated",
         "statusChanged": "Status changed",
         "specCreated": "Spec written",
+        "specUpdated": "Spec edited",
         "specApproved": "Spec approved",
         "specUnapproved": "Spec unapproved",
         "prCreated": "PR created",
@@ -1682,6 +1686,8 @@
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "cannotStartDev": "Cannot start work from status \"{status}\".",
       "contentEditForbidden": "Cannot edit the body of an intent in status \"{status}\".",
+      "specEditForbidden": "Cannot directly edit the spec once development has started (status \"{status}\").",
+      "specSessionRunning": "Cannot edit the spec while a spec session is running.",
       "devStartInFlight": "Work is already starting for this intent.",
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
       "prCreateFailed": "PR creation failed: {detail}.",

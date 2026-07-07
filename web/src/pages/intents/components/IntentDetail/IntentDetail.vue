@@ -20,13 +20,16 @@ export function __resetWriteSpecGuards(): void {
  * IntentDetail.vue — 需求页右栏:选中意图的详情面板(常驻头部 + 四 tab)。
  *
  * 顶部常驻头部为单行标题栏:左为意图标题 + 模块 + 优先级 + 状态,右为全部操作
- * (四态主按钮 + refine / open work session / mark done / cancel / create PR / copy PR /
- * automate 切换)——无论在哪个 tab 都可见。其下为 tab 条 + tab 内容,四 tab:
+ * (四态主按钮 + refine / mark done / cancel / create PR / copy PR / automate 切换)
+ * ——无论在哪个 tab 都可见。其下为 tab 条 + tab 内容:
  *   - intent       意图正文 markdown + Git/PR 元信息 + 依赖编辑器
  *   - intent session 该意图的 refine/沟通会话(intentSessionId),复用 ChatColumn
  *   - spec         渲染 specPath 指向的 spec.md(经 read-spec 拉取)
  *   - spec session 写 spec 会话(specSessionId),复用 ChatColumn
- * 两个会话 tab 沿用「单一活动会话」模型:切到该 tab 即请求服务端打开对应会话,
+ *   - work session 最新工作会话(lastWorkSessionId),仅当其存在时可见,复用 ChatColumn;
+ *                  tab 标签带运行中状态点(对齐 WorkSessionList 的 .session-status 点)
+ *   - changelog    生命周期变更日志(倒序)
+ * 三个会话 tab 沿用「单一活动会话」模型:切到该 tab 即请求服务端打开对应会话,
  * 聊天列绑定到全局活动会话;activeSession 与期望 id 一致时才渲染,避免串台。
  * 列表为空(无选中意图)时渲染空态。
  */
@@ -42,6 +45,7 @@ import type {
 import type {
   PromptImage,
   SessionAgentSwitch,
+  SessionStatus,
   SlashCommandInfo,
   VendorId,
 } from '@ccc/shared/protocol'
@@ -104,6 +108,12 @@ const props = defineProps<{
   intentSpecLoading: boolean
   /** 该意图的 spec 会话是否运行中(specSessionId 对应会话活跃);直接编辑 spec 的门禁之一。 */
   specSessionRunning?: boolean
+  /**
+   * 最新工作会话(lastWorkSessionId)的运行状态,用于工作会话 tab 标签的运行中状态点。
+   * 非 idle(running / awaiting_permission / team / reconnecting)时显示状态点;
+   * idle / 未知(null)时不显示。由容器从 sessionStatus 派生透传。
+   */
+  workSessionStatus?: SessionStatus | null
   // ── 变更日志(changelog tab)──
   /** 选中意图的生命周期变更日志(倒序);切到 changelog tab 时懒加载。 */
   intentLogs: IntentLog[]
@@ -120,7 +130,8 @@ const emit = defineEmits<{
   'write-spec': [intentId: string]
   'approve-spec': [intentId: string]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
-  'open-dev': [sessionId: string]
+  // 内嵌工作会话 tab 激活:请求控制层把 lastWorkSessionId 选为全局活动会话(不进会话页)。
+  'open-work-session': [sessionId: string]
   'set-status': [intentId: string, status: IntentStatus]
   'set-automate': [intentId: string, automate: boolean]
   'create-pr': [intentId: string]
@@ -523,7 +534,7 @@ function onMainAction(): void {
 }
 
 // ── Tab 状态 ────────────────────────────────────────────────────────────────
-type DetailTab = 'intent' | 'intentSession' | 'spec' | 'specSession' | 'changelog'
+type DetailTab = 'intent' | 'intentSession' | 'spec' | 'specSession' | 'workSession' | 'changelog'
 const activeTab = ref<DetailTab>('intent')
 
 const TABS: { key: DetailTab; label: string }[] = [
@@ -531,6 +542,7 @@ const TABS: { key: DetailTab; label: string }[] = [
   { key: 'intentSession', label: t('intent.tab.intentSession.label') },
   { key: 'spec', label: t('intent.tab.spec.label') },
   { key: 'specSession', label: t('intent.tab.specSession.label') },
+  { key: 'workSession', label: t('intent.tab.workSession.label') },
   { key: 'changelog', label: t('intent.tab.changelog.label') },
 ]
 
@@ -542,14 +554,24 @@ const specTabsVisible = computed<boolean>(() => {
   const r = props.intent
   return !!(r?.specPath || r?.specSessionId)
 })
+// 工作会话 tab 仅当选中意图存在 lastWorkSessionId(最新工作会话)时可见;不做历史列表。
+const workSessionTabVisible = computed<boolean>(() => !!props.intent?.lastWorkSessionId)
 const visibleTabs = computed<{ key: DetailTab; label: string }[]>(() =>
-  TABS.filter((tab) =>
-    tab.key === 'spec' || tab.key === 'specSession' ? specTabsVisible.value : true,
-  ),
+  TABS.filter((tab) => {
+    if (tab.key === 'spec' || tab.key === 'specSession') return specTabsVisible.value
+    if (tab.key === 'workSession') return workSessionTabVisible.value
+    return true
+  }),
 )
 function isTabVisible(tab: DetailTab): boolean {
   return visibleTabs.value.some((t) => t.key === tab)
 }
+
+// 工作会话 tab 标签的运行中状态点:非 idle/未知(null)才显示,值即 .session-status 的类。
+const workSessionStatusDot = computed<SessionStatus | null>(() => {
+  const st = props.workSessionStatus
+  return st && st !== 'idle' ? st : null
+})
 
 // props 变化(SDD 开关切换 / 意图 spec 字段变化)导致当前激活 tab 不再可见时回退到 intent。
 // 意图切换时的复位由下方 intent.id watch 负责,intent tab 恒可见故与本 watch 不冲突。
@@ -647,6 +669,12 @@ function openActiveSessionIfNeeded(): void {
     props.activeSession !== r.specSessionId
   ) {
     emit('open-spec-session', r.id)
+  } else if (
+    activeTab.value === 'workSession' &&
+    r.lastWorkSessionId &&
+    props.activeSession !== r.lastWorkSessionId
+  ) {
+    emit('open-work-session', r.lastWorkSessionId)
   }
 }
 
@@ -657,6 +685,7 @@ watch(
       props.intent?.id,
       props.intent?.intentSessionId,
       props.intent?.specSessionId,
+      props.intent?.lastWorkSessionId,
       props.activeSession,
     ] as const,
   openActiveSessionIfNeeded,
@@ -686,6 +715,7 @@ const expectedSessionId = computed<string | null>(() => {
   if (!r) return null
   if (activeTab.value === 'intentSession') return r.intentSessionId
   if (activeTab.value === 'specSession') return r.specSessionId
+  if (activeTab.value === 'workSession') return r.lastWorkSessionId
   return null
 })
 const chatReady = computed<boolean>(
@@ -810,13 +840,6 @@ defineExpose({
                 {{ mainActionLabel }}
               </button>
               <button
-                v-if="intent.lastWorkSessionId"
-                class="req-btn"
-                @click="emit('open-dev', intent.lastWorkSessionId as string)"
-              >
-                {{ t('intent.action.session.label') }}
-              </button>
-              <button
                 v-if="
                   intent.lastWorkSessionId &&
                   intent.status !== 'done' &&
@@ -912,6 +935,13 @@ defineExpose({
             @click="selectTab(tab.key)"
           >
             {{ tab.label }}
+            <span
+              v-if="tab.key === 'workSession' && workSessionStatusDot"
+              class="session-status"
+              :class="workSessionStatusDot"
+              :title="workSessionStatusDot"
+              data-testid="intent-detail-work-session-status"
+            ></span>
           </button>
         </div>
       </nav>
@@ -1181,7 +1211,7 @@ defineExpose({
         </ul>
       </div>
 
-      <!-- intent session / spec session tab:复用聊天列 -->
+      <!-- intent session / spec session / work session tab:复用聊天列 -->
       <template v-else>
         <p
           v-if="!expectedSessionId"
@@ -1189,13 +1219,17 @@ defineExpose({
           :data-testid="
             activeTab === 'intentSession'
               ? 'intent-detail-intent-session-empty'
-              : 'intent-detail-spec-session-empty'
+              : activeTab === 'workSession'
+                ? 'intent-detail-work-session-empty'
+                : 'intent-detail-spec-session-empty'
           "
         >
           {{
             activeTab === 'intentSession'
               ? t('intent.intentSession.empty')
-              : t('intent.specSession.empty')
+              : activeTab === 'workSession'
+                ? t('intent.workSession.empty')
+                : t('intent.specSession.empty')
           }}
         </p>
         <p v-else-if="!chatReady" class="intent-detail-empty">
@@ -1396,6 +1430,12 @@ defineExpose({
   color: var(--c-text);
   border-bottom-color: var(--c-accent, var(--c-text));
   font-weight: 600;
+}
+/* 工作会话 tab 标签内联运行中状态点(复用全局 .session-status 视觉,inline 对齐文字)。 */
+.intent-detail-tab .session-status {
+  display: inline-block;
+  margin-left: var(--sp-1);
+  vertical-align: middle;
 }
 @media (max-width: 640px) {
   .intent-detail-titlebar {

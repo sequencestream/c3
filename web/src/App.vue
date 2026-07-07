@@ -134,7 +134,7 @@ const {
   resetIntentSession,
   resetSpecSession,
   startDevelopment,
-  openDevSession,
+  selectWorkSession,
   setIntentStatus,
   setIntentAutomate,
   updateIntentContent,
@@ -496,7 +496,7 @@ function onCodesChatWidth(px: number): void {
           @reset-intent-session="resetIntentSession"
           @reset-spec-session="resetSpecSession"
           @start-dev="startDevelopment"
-          @open-dev="openDevSession"
+          @open-work-session="selectWorkSession"
           @set-status="setIntentStatus"
           @set-automate="setIntentAutomate"
           @update-deps="updateIntentDeps"

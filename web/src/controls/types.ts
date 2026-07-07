@@ -97,6 +97,14 @@ export interface AppMethods {
   deleteSession(path: string, sessionId: string): void
   renameSession(path: string, sessionId: string, title: string): void
   openDevSession(sessionId: string): void
+  /**
+   * Select an intent's latest work session INLINE for IntentDetail's work-session tab:
+   * fill the global active session via `select_session` WITHOUT entering the console
+   * (no top-level tab switch, no console pointer pin). The embedded ChatColumn binds
+   * once the `session_selected` reply aligns `activeSession`. `openDevSession` above
+   * keeps the old jump-to-works behaviour for external entry points.
+   */
+  selectWorkSession(sessionId: string): void
 
   // intents
   openIntents(path: string): void

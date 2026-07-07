@@ -813,7 +813,7 @@ automation 的执行日志。
 
 ## 工作区和会话类型
 
-- **`WorkspaceInfo`** — `{ id, name, lastAccessed }`。已注册的项目目录；`id` 是服务器分配的不透明工作区身份。
+- **`WorkspaceInfo`** — `{ id, name, path, lastAccessed }`。已注册的项目目录；`id` 是服务器分配的不透明工作区身份，所有 workspace-scoped 操作只认 `id`。`path` 是解析后的绝对路径，仅供 WorkspaceSwitcher 下拉展示以区分同名工作区，不作身份、服务端也不接受它回流作 id。
 - **`SessionInfo`** — `{ sessionId, title, lastModified, mode, isToolSession, vendor, state?, sessionKind?, ownerKind?, ownerId?, bound? }`。工作区中的一个会话。`sessionId` 是线路上的会话句柄；`vendor` 是拥有供应商的标签，来自 `session_metadata` 投影/跨供应商 accessor（ADR-0013）——显示维度（侧边栏颜色点 / 过滤 / 同供应商代理切换候选项）。`mode` 是供应商原生 `ModeToken`，根据此行的 `vendor` 通过该供应商的 `VendorModeCatalog` 解释。`sessionKind` 是业务分类(work/intent/spec/discussion/automation/tool)，`ownerKind`/`ownerId` 是可空逻辑归属，供前端纯跳回规则使用；owner 为空表示不可跳回。`state` 是支持此线路条目的投影行生命周期状态（`session_metadata` 投影），驱动侧边栏新鲜度 UX：`born`/`alive` 为正常列表项；`stale` 显示 "Unvalidated" 标签；`orphaned` 灰显该行（原生 store 已清除会话）；`ghost` 显示 "Retry" 操作（原生 store 错误，不知该行是否真实）。
 - **`CodeDirEntry`** — `{ name, path, type }`。`path` 为工作区相对路径；`type` 为 `file` 或 `directory`。
 - **`CodeFileRead`** — `{ path, size, binary, truncated, content? }`。`content` 只在文本且未超限时出现。

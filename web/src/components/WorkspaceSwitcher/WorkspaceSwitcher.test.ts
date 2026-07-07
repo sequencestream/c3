@@ -4,8 +4,16 @@ import WorkspaceSwitcher from './WorkspaceSwitcher.vue'
 import { useAuth } from '@/composables/useAuth'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
 
-const ws = (id: string, name: string): WorkspaceInfo => ({ id, name, lastAccessed: 0 })
-const workspaces = [ws('ws-a', 'proj-a'), ws('ws-b', 'proj-b')]
+const ws = (id: string, name: string, path: string): WorkspaceInfo => ({
+  id,
+  name,
+  path,
+  lastAccessed: 0,
+})
+const workspaces = [
+  ws('ws-a', 'proj-a', '/home/alice/work/proj-a'),
+  ws('ws-b', 'proj-b', '/home/alice/other/proj-b'),
+]
 
 // `isAdmin` is a module-singleton (defaults true). Restore it after each test so
 // the admin-gated cases don't leak into the others.
@@ -27,7 +35,7 @@ describe('WorkspaceSwitcher.vue', () => {
     expect(w.find('.ws-switcher-name.empty').exists()).toBe(true)
   })
 
-  it('点击 ▾ 展开下拉,列出全部工作区的名称(不再泄露绝对路径)', async () => {
+  it('点击 ▾ 展开下拉,每行显示名称 + 名称下方的完整绝对路径', async () => {
     const w = mount(WorkspaceSwitcher, {
       props: { workspaces, currentWorkspaceId: 'ws-a' },
     })
@@ -37,8 +45,9 @@ describe('WorkspaceSwitcher.vue', () => {
     expect(items).toHaveLength(2)
     expect(items[0].find('.ws-switcher-item-name').text()).toBe('proj-a')
     expect(items[1].find('.ws-switcher-item-name').text()).toBe('proj-b')
-    // 路径子标题已彻底移除 — 前端拿不到绝对路径。
-    expect(items[0].find('.ws-switcher-item-path').exists()).toBe(false)
+    // 名称下方以次级行显示完整路径,用于区分同名工作区。
+    expect(items[0].find('.ws-switcher-item-path').text()).toBe('/home/alice/work/proj-a')
+    expect(items[1].find('.ws-switcher-item-path').text()).toBe('/home/alice/other/proj-b')
   })
 
   it('点选某项 → emit select-workspace(id);当前项不重复 emit', async () => {

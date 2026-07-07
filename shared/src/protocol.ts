@@ -30,6 +30,13 @@ export interface WorkspaceInfo {
   id: string
   /** Display name — the directory's basename. */
   name: string
+  /**
+   * Resolved absolute path on disk. Display-only: shown under the name in the
+   * WorkspaceSwitcher dropdown so same-named workspaces are distinguishable.
+   * NOT an identity field — every workspace-scoped operation uses `id`, and the
+   * server never accepts `path` back as identity.
+   */
+  path: string
   /** Last time a session in this workspace was selected, ms since epoch. Sort key (desc). */
   lastAccessed: number
 }

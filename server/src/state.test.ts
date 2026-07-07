@@ -56,8 +56,8 @@ describe('workspace registry', () => {
     // path↔id round-trip
     expect(pathToId(dir)).toBe(ws[0].id)
     expect(resolveWorkspaceRoot(ws[0].id)).toBe(dir)
-    // no path on wire type
-    expect((ws[0] as unknown as Record<string, unknown>).path).toBeUndefined()
+    // path is carried on the wire type for display (still not an identity field)
+    expect(ws[0].path).toBe(dir)
   })
 
   it('is idempotent and orders by most-recent access', () => {

@@ -5,6 +5,7 @@ import type { WorkspaceInfo } from '@ccc/shared/protocol'
 const ws = (id: string): WorkspaceInfo => ({
   id,
   name: id.split('/').pop() ?? id,
+  path: id,
   lastAccessed: 0,
 })
 

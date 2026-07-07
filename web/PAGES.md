@@ -46,7 +46,7 @@ web/src/
 │   ├── SessionTitleBar/SessionTitleBar.vue         # 聊天列顶部标题行:会话标题、权限模式下拉、vendor 标签与 agent 切换器;sourceLabel(intent/discussion/automation/trace)非空时在标题后渲染单一溯源按钮(文案/aria 走 i18n:意图/讨论/自动化/溯源),点击上抛 open-source(无参,目标由控制层 activeSessionSource 决定);null 不渲染;showShare=true 时在溯源按钮后、right-controls 前渲染纯图标「分享」按钮(🔗,data-testid=share-button,aria/tooltip 走 i18n),点击 emit share(默认 false,仅会话页经 ChatColumn 传 true;讨论页改在 action 槽自渲染分享按钮)
 │   ├── SkillApprovalModal/SkillApprovalModal.vue   # 外部 skill 加载审批模态:确认向 .gitignore 追加 _c3_* 的一次性确认;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   ├── TaskPanel/TaskPanel.vue                      # 实时任务面板:只读展示当前 session 任务列表,in_progress 置顶/pending 居中/completed 垫底
-│   └── WorkspaceSwitcher/WorkspaceSwitcher.vue     # 顶部栏最左工作区切换器:显示当前工作区(仅名称;身份是服务端不透明 workspaceId,前端不持有/不展示绝对路径),支持新增(InputDialog 输入路径)/选择/移除(ConfirmDialog danger 二次确认),内含 popover;增删入口受 isAdmin 门控;「新增」是唯一让绝对路径进入系统的入口
+│   └── WorkspaceSwitcher/WorkspaceSwitcher.vue     # 顶部栏最左工作区切换器:触发区仅显示当前工作区名称;下拉每行名称下方以小号次级字显示完整绝对路径(仅展示、用于区分同名工作区,身份仍是服务端不透明 workspaceId),面板宽度加倍;支持新增(InputDialog 输入路径)/选择/移除(ConfirmDialog danger 二次确认),内含 popover;增删入口受 isAdmin 门控;「新增」是唯一让绝对路径进入系统作身份的入口
 │
 ├── pages/                                           # 各功能页面(容器页 + 页内子组件)
 │   ├── workcenter/                                  # 工作台页

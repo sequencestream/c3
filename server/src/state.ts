@@ -171,7 +171,7 @@ export function isDirectory(path: string): boolean {
 export function listWorkspaces(): WorkspaceInfo[] {
   return [...load().workspaces]
     .sort((a, b) => b.lastAccessed - a.lastAccessed)
-    .map((w) => ({ id: w.id, name: w.name, lastAccessed: w.lastAccessed }))
+    .map((w) => ({ id: w.id, name: w.name, path: w.path, lastAccessed: w.lastAccessed }))
 }
 
 export function hasWorkspace(path: string): boolean {

@@ -38,6 +38,7 @@ do format/lint/typecheck at the end of an edit session.
 - scripts/e2e/e2e-guide.md: E2E tests, make sure e2e pass if relative paths are changed.
 - doc/: doc is the source of truth, keep synchronized with code, without ask. Read spec first then code for logics. Write Chinese doc.
 - doc/overview.md: overview of the system
+- doc/features.md: c3 特性功能树状清单(每行一句话说明),有新特性或特性变更时保持同步
 - doc/constitution.md: constitution of the system
 - doc/glossary.md: glossary of the system
 - doc/architecture/architecture.md: architecture spec

@@ -1,0 +1,129 @@
+# c3 特性清单
+
+c3(code creative center)全部特性功能的树状索引,每行一句话说明。按业务组/能力域组织,与 [`doc/domains/`](domains/) 一一对应。特性变更时同步本文件。
+
+- 详细行为见各域 `<domain>-spec.md`;前端页面组件见 [`web/PAGES.md`](../web/PAGES.md);wire 协议见 [`shared/src/protocol.ts`](../shared/src/protocol.ts)。
+
+```
+c3
+│
+├── core — 智能体循环:用户说 → 智能体做 → 用户看并操控
+│   │
+│   ├── agent-session 智能体会话                  # 驱动厂商 SDK 的 query() 循环,单次 run 的引擎室
+│   │   ├── 运行生命周期                          # 接收 prompt → 流式输出 → 收敛(done/error/aborted)
+│   │   ├── SDK↔协议翻译                          # 把 SDK 消息映射为 wire 层 ServerToClient 事件
+│   │   ├── 权限模式                              # default / plan / acceptEdits / bypassPermissions 四态切换
+│   │   ├── 运行态机                              # idle / running / awaiting-permission,每会话单飞(single-flight)
+│   │   ├── 取消中止                              # 用户命令或断连时干净中止在途 run
+│   │   ├── 历史续传                              # 每轮持久化,浏览器刷新可完整回放 transcript
+│   │   └── 多厂商                                # 同时支持 Claude 与 Codex 两个 vendor SDK
+│   │
+│   ├── permission-gateway 权限网关               # 智能体与人之间的控制点,有副作用的工具须过此门
+│   │   ├── 权限拦截                              # 捕获每次 SDK canUseTool 回调,工具运行前暂停
+│   │   ├── 人工路由                              # 转发请求到浏览器,阻塞等待 allow/deny 裁决
+│   │   ├── 策略自动裁决                          # 按已存 allow-rules 与模式在询问人之前自动决定
+│   │   ├── 运行中止语义                          # run 被中止时拒绝在途权限请求
+│   │   └── 审计留痕                              # 记录谁在何时决定了什么,供回放与历史
+│   │
+│   ├── session-registry 会话与工作区目录         # 工作的档案柜与调度器
+│   │   ├── 工作区注册                            # 已知工作区(绝对路径→不透明 workspaceId)、默认工作区
+│   │   ├── 会话目录                              # 按 sessionKind(work/intent/spec/discussion/automation/tool)增删列
+│   │   ├── 最近访问排序                          # 维护会话列表的 MRU 顺序
+│   │   ├── 历史持久化                            # 每轮 transcript 持久化,重连即回放
+│   │   ├── 模式记忆                              # 记住每个会话上次的权限模式
+│   │   └── 游标分页                              # 会话列表按 session_kind 服务端游标分页(窗口/首页/加载更多)
+│   │
+│   ├── web-console Web 控制台                    # 人观察与操控智能体的浏览器窗口
+│   │   ├── 活动流                                # 渲染 assistant 文本、工具调用/结果、权限提示、共识结果
+│   │   ├── 提示输入                              # 提交/排队 prompt;斜杠命令补全、语音输入、图片附件(点/粘/拖+压缩)
+│   │   ├── 待发队列                              # 运行中缓存待发消息,可改可删,run 结束自动 flush
+│   │   ├── 权限 UI                               # allow/deny 对话框、AskUserQuestion 逐题作答、共识意见展示
+│   │   ├── 控制面                                # 模式切换、agent 切换、停止、继续、刷新
+│   │   ├── 会话控制                              # 会话增/删/改名/选择、工作区切换(增删受管理员门控)
+│   │   ├── 双视图                                # 工作区(workspace)与工作台(workcenter)两大视图切换
+│   │   ├── 移动端                                # MobileStack drill-down 栈式布局、软键盘/安全区避让
+│   │   ├── 富文本渲染                            # Markdown+DOMPurify 双防线、Shiki 代码高亮、宽表横滚
+│   │   ├── 分享链接                              # 标题栏「分享」按钮拼 [类型]标题+深链写剪贴板
+│   │   ├── 启动进度遮罩                          # Start Work / Spec 启动的分步进度全屏遮罩
+│   │   ├── 新版本提示                            # update-checker 判定有新版时顶栏蓝色胶囊外链
+│   │   └── 国际化 i18n                           # en/zh/ja/ko/ru 五语 + 日期/数字/管道复数,typed t 编译期检查
+│   │
+│   ├── intent-management 意图管理                # 把想法变成可验证、可追踪的意图账本并驱动其生命周期
+│   │   ├── 意图账本                              # 按工作区持久化意图,追踪 status/生命周期
+│   │   ├── 意图精炼                              # 只读 agent 把想法拆成可验证条目
+│   │   ├── 规格撰写与批准                        # 开发前生成 spec 并经人批准(spec 集中存 ~/.c3/specs)
+│   │   ├── 意图开发                              # 启动可配置 dev skill,追踪 branch/commit/PR
+│   │   ├── 意图交付                              # 追踪交付态(分支、提交、PR 状态)
+│   │   ├── 意图依赖                              # intent_deps 依赖图(blocks/informs/soft_after),依赖门控启动
+│   │   ├── 沟通会话                              # 意图右栏 intent session 多会话(新建/选择/改名/删除)
+│   │   └── Git/PR 收尾                           # 手动 Start Dev 结束时经 gh 建 PR、回填 commit/PR 状态
+│   │
+│   ├── discussion 多智能体讨论                   # 多个 agent(与人)围绕主题圆桌讨论,可转为意图
+│   │   ├── 讨论账本                              # 按工作区持久化讨论(主题+参与者)
+│   │   ├── 多 agent 轮流                         # 组织者引擎编排参与 agent 的轮流发言
+│   │   ├── 人类参与                              # 人可发言进入讨论、暂停/恢复
+│   │   ├── 参与者定向                            # 创建时勾选参与 agent,空集回退全员,组织者恒并入
+│   │   └── 讨论转意图                            # 把讨论结论转化为意图
+│   │
+│   ├── automations 自动化                        # 按计划或响应事件跑智能体工作,无需每次人工输入
+│   │   ├── 自动化注册                            # 按工作区持久化(触发器 + 智能体任务 + 工具策略)
+│   │   ├── 定时触发                              # cron 计划到点触发
+│   │   ├── 事件触发                              # 响应系统事件触发(eventSessionKindFilter + metadata 过滤)
+│   │   ├── 链式触发                              # automation 可触发 automation(纯函数匹配,有意无环检测)
+│   │   ├── 执行记录                              # 每次 run 持久化(start/end/status/session)供审计
+│   │   ├── automation 会话                       # 每次执行跑在独立 automation-kind 会话
+│   │   └── 默认智能体                            # 新建 automation 默认用可配置的「automation 默认智能体」
+│   │
+│   ├── codes 代码浏览                            # 浏览器里只读浏览 Git 仓库 + 代码域内嵌会话
+│   │   ├── 仓库浏览                              # 列分支、提交、某 ref 下的文件树
+│   │   ├── diff 查看                             # 展示某提交或两 ref 间的 diff
+│   │   ├── 代码域会话                            # 内嵌 session 就代码提问(含「+ 新建」「↻ 重置」)
+│   │   └── 只读保证                              # 此视图绝不改动仓库
+│   │
+│   ├── workcenter 工作台                         # 用户通知消息/待办事件的聚合处理中心
+│   │   ├── 事件聚合                              # 左栏通知列表 + 右栏详情两栏
+│   │   ├── 权限响应/作答                         # 在工作台直接 Allow/Deny、AskUserQuestion 作答
+│   │   ├── 状态筛选分页                          # all/todo/done/canceled/auto 筛选 + 20 条游标分页
+│   │   ├── 共识留痕                              # auto 记录的投票/裁决只读回看
+│   │   └── 溯源跳转                              # 按 sessionKind+sessionId 跳回来源页(会话/需求/讨论/自动化)
+│   │
+│   ├── sandbox 沙箱                              # 在隔离容器中安全运行 dev run
+│   │   ├── 三层安全管控                          # read-only / sandboxed / full-access 三级工具权限
+│   │   ├── 容器隔离                              # Docker 容器内跑真实 dev run,worktree 挂载 /workspace
+│   │   ├── 写操作审批队列                        # 沙箱内写操作进审批队列由人裁决
+│   │   └── 沙箱定义                              # 系统设置可配置沙箱镜像/挂载定义
+│   │
+│   └── auth 鉴权                                 # 每条连接过身份门,每次改全局配置过管理员门
+│       ├── 登录                                  # basic 用户名/密码 或 OAuth 校验,签发 session token
+│       ├── 会话 token                            # 签发/校验 bearer token,TTL 默认 30 天
+│       ├── 连接门                                # 拒绝未认证的 WebSocket 握手(token 走握手 ?token=)
+│       ├── 管理员门                              # 仅管理员可改全局配置(agents/workspaces/settings)
+│       └── 多账号                                # 多账号目录,首个创建者为唯一管理员
+│
+├── system-config — 塑造智能体循环行为的用户配置(控制面板)
+│   │
+│   ├── agent-config 智能体配置                   # agent 档案目录与会话用哪个 agent 的规则
+│   │   ├── agent 档案                            # 持久化档案(vendor/url/key/model/name)
+│   │   ├── 默认 agent                            # 未指定时使用的默认 agent
+│   │   ├── 每会话绑定                            # 记住每个会话用哪个 agent
+│   │   └── 降级链                                # 某 agent 不可用时按 degradationChain 回退
+│   │
+│   └── 其他系统配置                              # 工作区设置、默认模式、沙箱定义等
+│       ├── 工作区设置                            # per-workspace 设置(WorkspaceSetting,gitCommitMode 等)
+│       ├── 默认模式                              # defaultMode 按 vendor 分组(Record<VendorId, ModeToken>)
+│       └── 外部技能安装                          # 显式 install_skill 到 .claude/skills 与 .agents/skills
+│
+└── commerce — 产品授权/许可
+    │
+    └── product-license 产品许可                  # 管控 c3 安装是否有权创建新工作(权威在独立 license-server)
+        ├── 激活                                  # 把 license 绑定到本安装
+        ├── 心跳                                  # 周期性向 license-server 确认权益
+        ├── 离线宽限                              # 断网后 30 分钟宽限窗口内仍可用
+        ├── 离线验证                              # 离线校验 Ed25519 签名的权益凭证
+        └── 新会话门控                            # 无权益时阻断新会话创建
+```
+
+## 维护
+
+- 有新特性或特性变更时,同步更新本文件(与代码、`doc/domains/` 保持一致)。
+- 每行一句话概述即可,详细行为下沉到对应 `<domain>-spec.md`。

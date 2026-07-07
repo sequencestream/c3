@@ -137,6 +137,7 @@ const {
   openDevSession,
   setIntentStatus,
   setIntentAutomate,
+  updateIntentContent,
   updateIntentDeps,
   createPr,
   syncIntentPrStatus,
@@ -484,6 +485,7 @@ function onCodesChatWidth(px: number): void {
           @requested-intent-session-consumed="requestedIntentSessionId = null"
           @filter="setIntentFilter"
           @refine="refineIntent"
+          @save-intent-content="updateIntentContent"
           @write-spec="writeSpec"
           @approve-spec="approveSpec"
           @open-spec-session="openSpecSession"

@@ -59,6 +59,7 @@ import {
   setChatSession,
   setLatestCommitHash,
   setPrInfo,
+  updateIntent,
   updateIntentDeps,
   updateStatus,
 } from './store.js'
@@ -996,6 +997,46 @@ export const updateIntentStatus: Handler<'update_intent_status'> = async (ctx, c
   })
   publishIntentStatusTransition(resolveWorkspaceRoot(req.workspaceId)!, req, prevStatus, msg.status)
   ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
+}
+
+/**
+ * `update_intent_content` handler — the human inline-edit entry for an intent's
+ * markdown body. Only `draft` / `todo` intents may be edited; every other status
+ * (in_progress / done / cancelled / blocked / failed …) is rejected here so the
+ * client-side button hiding is never the only gate. On success it updates only
+ * `content` (+ `updated_at`), appends one `intent_updated` log (simple summary,
+ * no before/after diff), re-broadcasts the intents list so the detail refills,
+ * and re-sends this intent's `intent_logs_list` so an already-open changelog tab
+ * picks up the new row.
+ */
+export const updateIntentContent: Handler<'update_intent_content'> = (ctx, conn, msg) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const req = getIntent(msg.intentId)
+  if (!req) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  if (req.status !== 'draft' && req.status !== 'todo') {
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.contentEditForbidden', params: { status: req.status } },
+    })
+    return
+  }
+  updateIntent(msg.intentId, { content: msg.content })
+  safeInsertIntentLog(msg.intentId, 'intent_updated', '更新意图正文', conn.subject ?? 'system')
+  const proj = resolveWorkspaceRoot(req.workspaceId)!
+  ctx.broadcastIntents(proj)
+  // Refresh the per-intent changelog cache for a changelog tab that was already
+  // opened before this edit (it would otherwise keep stale logs until reselected).
+  conn.send({
+    type: 'intent_logs_list',
+    intentId: msg.intentId,
+    items: listIntentLogs(msg.intentId),
+  })
 }
 
 export const setIntentAutomate: Handler<'set_intent_automate'> = (ctx, conn, msg) => {

@@ -58,6 +58,7 @@ import {
   stopWorkflowHandler,
   createPrHandler,
   syncIntentPrStatusHandler,
+  updateIntentContent,
   updateIntentDepsHandler,
   updateIntentStatus,
 } from './intents/index.js'
@@ -152,6 +153,7 @@ export const handlerMap: HandlerMap = {
   reset_intent_session: resetIntentSession,
   reset_spec_session: resetSpecSessionHandler,
   read_spec: readSpecHandler,
+  update_intent_content: updateIntentContent,
   update_intent_status: updateIntentStatus,
   set_intent_automate: setIntentAutomate,
   set_intent_git_info: setIntentGitInfo,

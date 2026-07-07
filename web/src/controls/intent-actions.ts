@@ -276,6 +276,13 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'update_intent_status', intentId, status })
   }
 
+  // Directly edit an intent's markdown body. The server gates on status
+  // (draft / todo only), updates content, appends an `intent_updated` log, and
+  // re-broadcasts the intents list (which IntentDetail uses to leave edit mode).
+  ctx.updateIntentContent = (intentId: string, content: string): void => {
+    send({ type: 'update_intent_content', intentId, content })
+  }
+
   ctx.setIntentAutomate = (intentId: string, automateOn: boolean): void => {
     // 仅 todo 意图可切换自动/手动模式;锁定态(in_progress/done/cancelled 等)点击给出
     // 不可修改提示,不下发协议消息。两个入口(列表行内 icon、IntentDetail)共用此门。

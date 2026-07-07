@@ -96,6 +96,7 @@ const emit = defineEmits<{
   // intent list events
   filter: [status: IntentStatus | null]
   refine: [intentId: string]
+  'save-intent-content': [intentId: string, content: string]
   'write-spec': [intentId: string]
   'approve-spec': [intentId: string]
   'open-spec-session': [intentId: string]
@@ -322,6 +323,9 @@ defineExpose({
         :intent-logs="selectedIntentLogs"
         :intent-logs-loading="intentLogsLoading"
         @refine="(id: string) => emit('refine', id)"
+        @save-intent-content="
+          (id: string, content: string) => emit('save-intent-content', id, content)
+        "
         @list-intent-logs="(id: string) => emit('list-intent-logs', id)"
         @write-spec="(id: string) => emit('write-spec', id)"
         @approve-spec="(id: string) => emit('approve-spec', id)"

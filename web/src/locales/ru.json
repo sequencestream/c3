@@ -723,6 +723,9 @@
       "refine": {
         "label": "Уточнить"
       },
+      "editContent": {
+        "label": "Редактировать"
+      },
       "markTodo": {
         "label": "В задачи"
       },
@@ -1676,6 +1679,7 @@
       "dbUnavailable": "Функция намерений недоступна (c3.db).",
       "chatOpenFailed": "Не удалось открыть сессию намерения.",
       "cannotStartDev": "Нельзя начать работу из статуса «{status}».",
+      "contentEditForbidden": "Нельзя редактировать текст намерения в статусе «{status}».",
       "devStartInFlight": "Разработка для этого намерения уже запускается.",
       "illegalStatusTransition": "Нельзя изменить статус с «{from}» на «{to}».",
       "chatSessionNotFound": "Intent session not found: {sessionId}.",

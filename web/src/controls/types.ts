@@ -140,6 +140,8 @@ export interface AppMethods {
   consumePendingWorkSessionSelect(refreshOnResolvedTarget?: boolean): void
   dispatchSpecLaunch(ev: SpecLaunchEvent): void
   setIntentStatus(intentId: string, status: IntentStatus): void
+  /** Directly edit an intent's markdown body (only `draft` / `todo`; server-gated). */
+  updateIntentContent(intentId: string, content: string): void
   setIntentAutomate(intentId: string, automateOn: boolean): void
   updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void
   createPr(intentId: string): void

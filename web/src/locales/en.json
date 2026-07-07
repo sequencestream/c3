@@ -722,6 +722,9 @@
       "refine": {
         "label": "Refine"
       },
+      "editContent": {
+        "label": "Edit"
+      },
       "markTodo": {
         "label": "Todo"
       },
@@ -1678,6 +1681,7 @@
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "cannotStartDev": "Cannot start work from status \"{status}\".",
+      "contentEditForbidden": "Cannot edit the body of an intent in status \"{status}\".",
       "devStartInFlight": "Work is already starting for this intent.",
       "illegalStatusTransition": "Cannot change status from \"{from}\" to \"{to}\".",
       "prCreateFailed": "PR creation failed: {detail}.",

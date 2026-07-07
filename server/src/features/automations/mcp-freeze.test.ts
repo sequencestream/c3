@@ -145,6 +145,19 @@ describe('freezeTools — c3 in-process MCP tools', () => {
     expect(frozen.writeToolNames.has('mcp__c3__publish_pr_event')).toBe(true)
   })
 
+  it('includes the four discussion tools with find/view read and start/continue write', () => {
+    const frozen = freezeTools([], [], emptyConfig)
+    expect(frozen.readToolNames.has('mcp__c3__find_discussions')).toBe(true)
+    expect(frozen.readToolNames.has('mcp__c3__view_discussion')).toBe(true)
+    expect(frozen.writeToolNames.has('mcp__c3__start_discussion')).toBe(true)
+    expect(frozen.writeToolNames.has('mcp__c3__continue_discussion')).toBe(true)
+  })
+
+  it('mounts c3 when a discussion tool is the only selected c3 entry', () => {
+    expect(hasSelectedC3McpTool(['mcp__c3__find_discussions'])).toBe(true)
+    expect(hasSelectedC3McpTool(['mcp__c3__continue_discussion'])).toBe(true)
+  })
+
   it('classifies find_intents and view_intent as read-only', () => {
     const frozen = freezeTools([], [], emptyConfig)
     expect(isWriteTool('mcp__c3__find_intents', frozen)).toBe(false)

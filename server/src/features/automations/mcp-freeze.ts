@@ -77,6 +77,12 @@ export const C3_MCP_TOOLS: readonly FrozenToolEntry[] = [
   { name: 'mcp__c3__save_intent_pr_info', isWrite: true },
   { name: 'mcp__c3__save_intent_directly', isWrite: true },
   { name: 'mcp__c3__publish_pr_event', isWrite: true },
+  // Discussion tools (automation LLM execution): find/view are read-only;
+  // start/continue drive an orchestration run and are writes.
+  { name: 'mcp__c3__find_discussions', isWrite: false },
+  { name: 'mcp__c3__view_discussion', isWrite: false },
+  { name: 'mcp__c3__start_discussion', isWrite: true },
+  { name: 'mcp__c3__continue_discussion', isWrite: true },
 ]
 
 /** Whether a automation explicitly selected any in-process c3 MCP capability. */

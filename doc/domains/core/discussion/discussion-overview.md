@@ -156,8 +156,13 @@ follow-up question (see [design §organizer-engine](discussion-design.md#organiz
 
 ## Out of scope (now)
 
-- No resume of an orphaned `in_progress` discussion (no live run) after a server restart — pause
-  state is runtime-only and not restored.
+- No **frontend** auto-resume of an orphaned `in_progress` discussion (no live run) after a server
+  restart — pause state is runtime-only and not restored, and no WebSocket handler resumes it.
+  Automation LLM execution **can** now explicitly recover this exact combination
+  (`in_progress` + no live run) via the `continue_discussion` c3 MCP tool, which re-invokes the
+  orchestrator on the persisted transcript/agenda without appending a message
+  (see [automations-spec §c3 MCP tools](../automations/automations-spec.md)). There is still no
+  automatic scan that restarts all orphaned discussions.
 - Pause takes effect only at a round boundary: an already in-flight one-shot `askAgentOnce` finishes
   (so one more message may land after a pause request).
 

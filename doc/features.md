@@ -63,7 +63,8 @@ c3
 │   │   ├── 多 agent 轮流                         # 组织者引擎编排参与 agent 的轮流发言
 │   │   ├── 人类参与                              # 人可发言进入讨论、暂停/恢复
 │   │   ├── 参与者定向                            # 创建时勾选参与 agent,空集回退全员,组织者恒并入
-│   │   └── 讨论转意图                            # 把讨论结论转化为意图
+│   │   ├── 讨论转意图                            # 把讨论结论转化为意图
+│   │   └── 讨论 MCP 工具                         # automation LLM 可 find/view/start/continue 讨论,含 in_progress 无存活run 的错误恢复
 │   │
 │   ├── automations 自动化                        # 按计划或响应事件跑智能体工作,无需每次人工输入
 │   │   ├── 自动化注册                            # 按工作区持久化(触发器 + 智能体任务 + 工具策略)
@@ -72,7 +73,8 @@ c3
 │   │   ├── 链式触发                              # automation 可触发 automation(纯函数匹配,有意无环检测)
 │   │   ├── 执行记录                              # 每次 run 持久化(start/end/status/session)供审计
 │   │   ├── automation 会话                       # 每次执行跑在独立 automation-kind 会话
-│   │   └── 默认智能体                            # 新建 automation 默认用可配置的「automation 默认智能体」
+│   │   ├── 默认智能体                            # 新建 automation 默认用可配置的「automation 默认智能体」
+│   │   └── c3 MCP 工具                           # 意图(find/view/save_directly/pr)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载
 │   │
 │   ├── codes 代码浏览                            # 浏览器里只读浏览 Git 仓库 + 代码域内嵌会话
 │   │   ├── 仓库浏览                              # 列分支、提交、某 ref 下的文件树

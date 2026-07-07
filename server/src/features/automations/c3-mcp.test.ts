@@ -19,11 +19,24 @@ vi.mock('../../state.js', async (importOriginal) => ({
   pathToId: (p: string) => p,
 }))
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
+import type { Discussion } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { listIntents, resetStoreForTests } from '../../features/intents/store.js'
 import { runSaveIntentDirectly } from '../../features/intents/tool-defs.js'
 import { createIntentMcpServer } from '../../features/intents/save-tool.js'
-import { createAutomationMcpServer } from './c3-mcp.js'
+import {
+  createDiscussion,
+  listMessages,
+  resetStoreForTests as resetDiscussionStoreForTests,
+  updateDiscussionStatus,
+} from '../../features/discussions/store.js'
+import { configureAutomationMcp, createAutomationMcpServer } from './c3-mcp.js'
+
+interface CallToolResult {
+  content: { type: string; text: string }[]
+  isError?: boolean
+}
+type ToolHandler = (args: unknown, extra: unknown) => Promise<CallToolResult>
 
 /** Registered tool names on a c3 SDK MCP server config. */
 function registeredToolNames(servers: Record<string, McpServerConfig>): string[] {
@@ -31,6 +44,14 @@ function registeredToolNames(servers: Record<string, McpServerConfig>): string[]
     instance: { _registeredTools: Record<string, unknown> }
   }
   return Object.keys(c3.instance._registeredTools)
+}
+
+/** The REAL handler the SDK registered for one tool (drives actual wiring). */
+function getHandler(servers: Record<string, McpServerConfig>, toolName: string): ToolHandler {
+  const c3 = servers.c3 as unknown as {
+    instance: { _registeredTools: Record<string, { handler: ToolHandler }> }
+  }
+  return c3.instance._registeredTools[toolName].handler
 }
 
 const proj = '/abs/sched-c3-proj'
@@ -41,6 +62,7 @@ beforeEach(() => {
   process.env.C3_DB_PATH = join(dir, 'c3.db')
   resetDbForTests()
   resetStoreForTests()
+  resetDiscussionStoreForTests()
 })
 
 afterEach(() => {
@@ -103,5 +125,74 @@ describe('automation c3 MCP injection boundary', () => {
     const names = registeredToolNames(servers)
     expect(names).not.toContain('save_intent_directly')
     expect(names).toContain('save_intents')
+  })
+
+  it('registers the four discussion tools on the automation server', () => {
+    const names = registeredToolNames(createAutomationMcpServer(proj, 'exec-1'))
+    expect(names).toContain('find_discussions')
+    expect(names).toContain('view_discussion')
+    expect(names).toContain('start_discussion')
+    expect(names).toContain('continue_discussion')
+  })
+})
+
+describe('automation c3 MCP — discussion tool wiring', () => {
+  it('binds find_discussions to the automation workspace', async () => {
+    createDiscussion({ workspacePath: proj, title: 'Bound one', type: 'general', goal: 'g' })
+    createDiscussion({ workspacePath: '/abs/other', title: 'Foreign', type: 'general', goal: 'g' })
+    const handler = getHandler(createAutomationMcpServer(proj, 'exec-1'), 'find_discussions')
+    const res = await handler({}, {})
+    expect(res.isError).toBeFalsy()
+    expect(res.content[0].text).toContain('Bound one')
+    expect(res.content[0].text).not.toContain('Foreign')
+  })
+
+  it('start_discussion passes the bound workspace + run starter through', async () => {
+    const started: Discussion[] = []
+    configureAutomationMcp({
+      broadcastIntents: () => {},
+      publishPrEvent: () => {},
+      broadcastDiscussions: () => {},
+      broadcastDiscussionMessage: () => {},
+      startDiscussionRun: (d) => started.push(d),
+    })
+    const draft = createDiscussion({
+      workspacePath: proj,
+      title: 'Startable',
+      type: 'general',
+      goal: 'g',
+    })
+    const handler = getHandler(createAutomationMcpServer(proj, 'exec-1'), 'start_discussion')
+    const res = await handler({ discussionId: draft.id }, {})
+    expect(res.isError).toBeFalsy()
+    expect(started.map((d) => d.id)).toEqual([draft.id])
+  })
+
+  it('continue_discussion (completed) broadcasts message + refreshed list and starts a run', async () => {
+    const started: Discussion[] = []
+    const messages: string[] = []
+    const refreshed: string[] = []
+    configureAutomationMcp({
+      broadcastIntents: () => {},
+      publishPrEvent: () => {},
+      broadcastDiscussions: (p) => refreshed.push(p),
+      broadcastDiscussionMessage: (_id, m) => messages.push(m.content),
+      startDiscussionRun: (d) => started.push(d),
+    })
+    const done = createDiscussion({
+      workspacePath: proj,
+      title: 'Done',
+      type: 'general',
+      goal: 'g',
+    })
+    updateDiscussionStatus(done.id, 'completed')
+    const handler = getHandler(createAutomationMcpServer(proj, 'exec-1'), 'continue_discussion')
+    const res = await handler({ discussionId: done.id, text: '再来一轮' }, {})
+    expect(res.isError).toBeFalsy()
+    expect(messages).toEqual(['再来一轮'])
+    expect(refreshed).toEqual([proj])
+    expect(started).toHaveLength(1)
+    expect(started[0].status).toBe('in_progress')
+    expect(listMessages(done.id)).toHaveLength(1)
   })
 })

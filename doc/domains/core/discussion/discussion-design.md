@@ -266,6 +266,15 @@ draft ──start_discussion / auto-start after research──▶ in_progress �
   grown transcript. The engine needs no change: it re-enters at the first workflow stage, the prior
   conclusion + the new question are context, and the conclusion is overwritten with the new outcome. A
   re-entry guard (a live run already registered for this id) rejects it while a run is live.
+- **Recovery** (automation c3 MCP `continue_discussion` only) — an `in_progress` discussion with **no
+  live run** (the post-error / post-restart dangling state) is restartable: the automation-facing
+  `continue_discussion` tool re-invokes `startDiscussionRun` on the latest record **without** appending
+  a message or resetting agenda/conclusion/agent-session state, so the orchestrator resumes from the
+  persisted transcript / stage / agenda / per-agent `last_seq`. This reuses the derivable
+  `in_progress` + `!hasDiscussionRun` combination — no new `DiscussionStatus`. The WebSocket
+  `continue_discussion` handler still only accepts `completed`; recovery is exposed exclusively to
+  automation LLM execution (see
+  [automations-spec §Discussion tools](../automations/automations-spec.md)).
 
 **Persistence + streaming.** Every appended message is persisted (monotonic per-discussion sequence)
 and streamed via the message hook → server `discussion_message` broadcast. Status/conclusion changes —
@@ -309,7 +318,9 @@ advance out of a stuck stage; the total-round cap (default 40) is the hard backs
 conclusion. The per-stage cap is the system-configured maximum rounds per stage (minimum 8, default 12
 — see agent-config AC-R9), read from system settings and injected through the run's default
 dependencies; tests may override it on the injected dependencies. An abort (server teardown) breaks the
-loop and leaves the discussion `in_progress` (no resume).
+loop and leaves the discussion `in_progress` with no live run — the frontend does not resume it, but
+automation LLM execution can recover this exact state via the `continue_discussion` c3 MCP tool (see
+the **Recovery** bullet above).
 
 **Background carrier.** The server keeps a registry of live discussion runs, each holding an abort
 handle, a paused flag, and the set of resume waiters. A present entry is the re-entry guard for

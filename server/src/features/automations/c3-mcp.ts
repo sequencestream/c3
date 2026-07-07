@@ -33,11 +33,36 @@ import {
   runPublishPrEvent,
   type PublishPrEventArgs,
 } from '../pr-events/tool-defs.js'
-import type { PrOperationEvent } from '@ccc/shared/protocol'
+import {
+  continueDiscussionDesc,
+  continueDiscussionSchema,
+  findDiscussionsDesc,
+  findDiscussionsSchema,
+  runContinueDiscussion,
+  runFindDiscussions,
+  runStartDiscussion,
+  runViewDiscussion,
+  startDiscussionDesc,
+  startDiscussionSchema,
+  viewDiscussionDesc,
+  viewDiscussionSchema,
+  type ContinueDiscussionArgs,
+  type FindDiscussionsArgs,
+  type StartDiscussionArgs,
+  type ViewDiscussionArgs,
+} from '../discussions/tool-defs.js'
+import { hasDiscussionRun } from '../discussions/run-controls.js'
+import type { Discussion, DiscussionMessage, PrOperationEvent } from '@ccc/shared/protocol'
 
 interface AutomationMcpDeps {
   broadcastIntents: (workspacePath: string) => void
   publishPrEvent: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
+  /** Refresh a workspace's discussion list to every connection. */
+  broadcastDiscussions: (workspacePath: string) => void
+  /** Stream one appended discussion message to every connection. */
+  broadcastDiscussionMessage: (discussionId: string, message: DiscussionMessage) => void
+  /** Start (or resume) a background discussion orchestration run. */
+  startDiscussionRun: (discussion: Discussion) => void
 }
 
 let deps: AutomationMcpDeps | null = null
@@ -66,6 +91,29 @@ export function createAutomationMcpServer(
       current?.publishPrEvent({ workspacePath, sessionId: executionId, ...event }),
     ),
   })
+  // Discussion run-control deps: `hasDiscussionRun` is the feature-private
+  // live-run guard (imported directly); `startDiscussionRun` + broadcasts come
+  // from the composition root so this module never reverse-depends on wiring.
+  const runStarter = {
+    hasDiscussionRun,
+    startDiscussionRun: (discussion: Discussion) => current?.startDiscussionRun(discussion),
+  }
+  const findDiscussionsHandler = async (args: FindDiscussionsArgs) => ({
+    ...runFindDiscussions(workspacePath, args),
+  })
+  const viewDiscussionHandler = async (args: ViewDiscussionArgs) => ({
+    ...runViewDiscussion(workspacePath, args),
+  })
+  const startDiscussionHandler = async (args: StartDiscussionArgs) => ({
+    ...runStartDiscussion(workspacePath, args, runStarter),
+  })
+  const continueDiscussionHandler = async (args: ContinueDiscussionArgs) => ({
+    ...runContinueDiscussion(workspacePath, args, {
+      ...runStarter,
+      broadcastDiscussionMessage: (id, message) => current?.broadcastDiscussionMessage(id, message),
+      broadcastDiscussions: (path) => current?.broadcastDiscussions(path),
+    }),
+  })
   const server = createSdkMcpServer({
     name: 'c3',
     alwaysLoad: true,
@@ -80,6 +128,15 @@ export function createAutomationMcpServer(
         saveDirectlyHandler,
       ),
       tool('publish_pr_event', publishPrEventDesc, publishPrEventSchema, publishHandler),
+      tool('find_discussions', findDiscussionsDesc, findDiscussionsSchema, findDiscussionsHandler),
+      tool('view_discussion', viewDiscussionDesc, viewDiscussionSchema, viewDiscussionHandler),
+      tool('start_discussion', startDiscussionDesc, startDiscussionSchema, startDiscussionHandler),
+      tool(
+        'continue_discussion',
+        continueDiscussionDesc,
+        continueDiscussionSchema,
+        continueDiscussionHandler,
+      ),
     ],
   })
   return { c3: server }

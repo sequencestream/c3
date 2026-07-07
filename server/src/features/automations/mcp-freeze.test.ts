@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import type { WorkspaceMcpConfig } from '@ccc/shared/protocol'
-import { freezeTools, hasSelectedC3McpTool, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
+import {
+  C3_MCP_TOOLS,
+  freezeTools,
+  hasSelectedC3McpTool,
+  matchesFrozenTool,
+  isWriteTool,
+} from './mcp-freeze.js'
+import { AUTOMATION_C3_TOOL_NAMES } from './c3-tools.js'
 
 const emptyConfig: WorkspaceMcpConfig = { mcpServers: {}, denylist: [] }
 
@@ -156,6 +163,18 @@ describe('freezeTools — c3 in-process MCP tools', () => {
   it('mounts c3 when a discussion tool is the only selected c3 entry', () => {
     expect(hasSelectedC3McpTool(['mcp__c3__find_discussions'])).toBe(true)
     expect(hasSelectedC3McpTool(['mcp__c3__continue_discussion'])).toBe(true)
+  })
+
+  it('automation route enabledTools cover every c3 allowlist entry except save_intents', () => {
+    // Drift lock across the freeze allowlist and the codex route's forwarded tool
+    // set: the route exposes exactly the automation c3 profile — every `mcp__c3__*`
+    // capability the freeze recognises, minus the interactive-only `save_intents`
+    // (automations use the gate-bypassing `save_intent_directly` instead). A new c3
+    // tool added to one side but not the other fails here.
+    const fromFreeze = C3_MCP_TOOLS.map((t) => t.name.replace('mcp__c3__', ''))
+      .filter((name) => name !== 'save_intents')
+      .sort()
+    expect([...AUTOMATION_C3_TOOL_NAMES].sort()).toEqual(fromFreeze)
   })
 
   it('classifies find_intents and view_intent as read-only', () => {

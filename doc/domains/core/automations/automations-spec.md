@@ -466,6 +466,33 @@ selected Agent must belong to that vendor. A missing, disabled, or vendor-mismat
 the execution and never falls back to another Agent or vendor. Each vendor runs through its own
 adapter path.
 
+### c3 MCP transport per vendor
+
+The automation c3 tool set (intent query / PR reconciliation write / `save_intent_directly` /
+`publish_pr_event` / the four discussion tools) is the **same** on both vendor paths — one
+framing-free tool list with handlers bound to the execution's `workspacePath` + `executionId` — but
+the transport differs by vendor:
+
+- **Claude** loads it as an **in-process SDK MCP server** (`createSdkMcpServer`), mounted on the
+  `query()` call's `mcpServers`.
+- **Codex** cannot load in-process MCP (`inProcessMcp: false`), so it consumes the **same** tools
+  over a **loopback streamable-HTTP MCP route** (`/internal/automation-mcp/v1`), the codex twin of
+  the intent / pr-event routes. The dispatcher `bind()`s the route for **one** execution — minting an
+  opaque per-execution token carried in the URL query — and hands the resulting `c3` HTTP descriptor
+  (with the **full** enabledTools list, since codex marks each enabled tool required/approved) to
+  `driver.start({ mcpServers })`. The route is loopback-guarded on top of c3's localhost-only bind;
+  an unknown or evicted token returns 404, a non-loopback peer 403. The token is disposed on **every**
+  terminal path (success, driver throw, message-iteration throw, timeout), so the tools cannot be
+  called after the execution ends; the next execution mints a fresh token, server, and closure.
+
+Mounting is **opt-in and identical** across vendors: the c3 tools are attached only when the
+automation explicitly selects at least one `mcp__c3__*` capability (an empty allowlist grants
+nothing); the c3-provided server intentionally replaces a user-configured workspace MCP server named
+`c3`. The read/write authorization rules are unchanged by the transport — the HTTP route is only the
+surface that makes the tools **visible** to codex; the mode / allowlist / denylist / permission-handler
+judgement still governs their effect. So a codex automation now reaches the same c3 capabilities as a
+Claude automation.
+
 ## Domain events (wire)
 
 Consumed by the automations domain:

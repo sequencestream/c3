@@ -31,6 +31,7 @@ import {
   updateDiscussionStatus,
 } from '../../features/discussions/store.js'
 import { configureAutomationMcp, createAutomationMcpServer } from './c3-mcp.js'
+import { AUTOMATION_C3_TOOL_NAMES } from './c3-tools.js'
 
 interface CallToolResult {
   content: { type: string; text: string }[]
@@ -133,6 +134,14 @@ describe('automation c3 MCP injection boundary', () => {
     expect(names).toContain('view_discussion')
     expect(names).toContain('start_discussion')
     expect(names).toContain('continue_discussion')
+  })
+
+  it('route enabledTools list equals the tools registered on the automation SDK server', () => {
+    // Drift lock: the codex HTTP route advertises `AUTOMATION_C3_TOOL_NAMES` as its
+    // explicit enabledTools; it MUST equal what the Claude in-process SDK server
+    // registers, or a tool is registered but silently disabled on codex.
+    const registered = registeredToolNames(createAutomationMcpServer(proj, 'exec-1')).sort()
+    expect([...AUTOMATION_C3_TOOL_NAMES].sort()).toEqual(registered)
   })
 })
 

@@ -44,6 +44,9 @@ import { gatedSave } from './features/intents/save-gate.js'
 import { createPrEventMcpServer } from './features/pr-events/publish-tool.js'
 import { runPublishPrEvent } from './features/pr-events/tool-defs.js'
 import { configureAutomationMcp } from './features/automations/c3-mcp.js'
+import type { AutomationMcpDeps } from './features/automations/c3-mcp.js'
+import { setAutomationHttpMcp } from './features/automations/dispatcher.js'
+import { createAutomationMcp, AUTOMATION_MCP_PATH } from './transport/automation-mcp/index.js'
 import {
   createIntentMcp,
   INTENT_MCP_PATH,
@@ -578,16 +581,25 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       return a
     },
   })
-  // Configure the automation in-process c3 MCP deps AFTER the discussion run
-  // starters exist (the discussion tools need `startDiscussionRun`). The stored
-  // deps are only invoked at automation-dispatch runtime, well after startup.
-  configureAutomationMcp({
+  // Configure the automation c3 MCP deps AFTER the discussion run starters exist
+  // (the discussion tools need `startDiscussionRun`). The stored deps are only
+  // invoked at automation-dispatch runtime, well after startup. ONE deps object
+  // feeds both surfaces: the Claude in-process SDK server (`configureAutomationMcp`)
+  // and the codex loopback HTTP route (`createAutomationMcp`), so both vendors run
+  // the SAME tool behaviors.
+  const automationMcpDeps: AutomationMcpDeps = {
     broadcastIntents: broadcasts.broadcastIntents,
     publishPrEvent,
     broadcastDiscussions: broadcasts.broadcastDiscussions,
     broadcastDiscussionMessage: broadcasts.broadcastDiscussionMessage,
     startDiscussionRun: discussionRuns.startDiscussionRun,
-  })
+  }
+  configureAutomationMcp(automationMcpDeps)
+  // Codex twin of the automation c3 MCP over loopback HTTP: the dispatcher binds
+  // it per Codex execution when the automation selects a c3 tool. Mounted before
+  // the SPA catch-all, same as the intent / pr-event / relay routes.
+  const automationMcp = createAutomationMcp(`http://127.0.0.1:${opts.port}`, automationMcpDeps)
+  setAutomationHttpMcp(automationMcp)
 
   const ctx: KernelContext = {
     eventBus,
@@ -649,6 +661,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Spec-query MCP loopback endpoint. The codex twin of the spec-authoring
   // in-process read-only ledger tools. It never registers save_intents.
   app.all(SPEC_QUERY_MCP_PATH, (c) => specQueryMcp.handler(c))
+
+  // Automation MCP loopback endpoint. The codex twin of the automation in-process
+  // c3 profile (intent query/write-back, PR events, discussion tools). Bound
+  // per-execution by the dispatcher. Loopback-guarded + per-execution token inside
+  // the handler. Before the SPA catch-all, same as the other MCP routes.
+  app.all(AUTOMATION_MCP_PATH, (c) => automationMcp.handler(c))
 
   // Static frontend (production / pkg) vs dev placeholder.
   if (opts.dev) mountDevPlaceholder(app)

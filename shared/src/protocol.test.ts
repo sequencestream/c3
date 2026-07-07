@@ -68,7 +68,7 @@ describe('protocol wire format', () => {
     },
     {
       type: 'workspaces',
-      workspaces: [{ id: 'ws-1', name: 'proj', lastAccessed: 1 }],
+      workspaces: [{ id: 'ws-1', name: 'proj', path: '/tmp/proj', lastAccessed: 1 }],
     },
     {
       type: 'sessions',

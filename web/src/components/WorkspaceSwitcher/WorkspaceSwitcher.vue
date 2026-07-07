@@ -2,10 +2,10 @@
 /*
  * WorkspaceSwitcher.vue — 顶部栏最左侧的「当前工作区」切换器。
  *
- * 触发区:[当前工作区名] [+ 新增] [▾ 下拉]。下拉列出全部工作区(仅名称,服务端不再
- * 下发绝对路径),点选切换当前工作区;每行可移除(二次确认)。所有动作经事件上抛,
- * 由 App 发往服务端。工作区身份是服务端分配的不透明 id,前端只持有 id + 展示名,
- * 既拿不到也构造不出绝对路径。自带 popover(点击外部 / Esc 关闭)。
+ * 触发区:[当前工作区名] [+ 新增] [▾ 下拉]。下拉列出全部工作区,每行以名称为主行、
+ * 完整绝对路径为下方次级行(仅用于区分同名工作区);点选切换当前工作区;每行可移除
+ * (二次确认)。所有动作经事件上抛,由 App 发往服务端。工作区身份仍是服务端分配的不透明
+ * id,path 只是展示数据,前端不用它构造或判定身份。自带 popover(点击外部 / Esc 关闭)。
  */
 import { ref, computed, onBeforeUnmount } from 'vue'
 import type { WorkspaceInfo } from '@ccc/shared/protocol'
@@ -138,6 +138,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', onOutside, tru
       >
         <span class="ws-switcher-item-text">
           <span class="ws-switcher-item-name">{{ w.name }}</span>
+          <span class="ws-switcher-item-path">{{ w.path }}</span>
         </span>
         <span v-if="w.id === currentWorkspaceId" class="ws-switcher-check" aria-hidden="true"
           >✓</span

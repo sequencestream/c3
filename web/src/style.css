@@ -555,8 +555,8 @@ header h1 {
   position: absolute;
   top: calc(100% + var(--sp-1));
   left: 0;
-  min-width: 260px;
-  max-width: 420px;
+  min-width: 520px;
+  max-width: 840px;
   max-height: 360px;
   overflow-y: auto;
   margin: 0;
@@ -607,11 +607,8 @@ header h1 {
   color: var(--c-text-muted);
   font-size: var(--fs-caption);
   font-family: var(--font-mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  direction: rtl;
-  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .ws-switcher-check {
   color: var(--c-primary);

@@ -442,10 +442,6 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       sessionId: string
     } & import('@ccc/shared/protocol').PrOperationEvent,
   ): void => eventBus.publish('pr:operation', payload)
-  configureAutomationMcp({
-    broadcastIntents: broadcasts.broadcastIntents,
-    publishPrEvent,
-  })
   const prEventMcpTools: PrEventMcpTools = {
     publish: (binding, args) =>
       runPublishPrEvent(args, (event) =>
@@ -581,6 +577,16 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       if (!a) throw new Error(`[c3] no adapter registered for vendor "${vendor}"`)
       return a
     },
+  })
+  // Configure the automation in-process c3 MCP deps AFTER the discussion run
+  // starters exist (the discussion tools need `startDiscussionRun`). The stored
+  // deps are only invoked at automation-dispatch runtime, well after startup.
+  configureAutomationMcp({
+    broadcastIntents: broadcasts.broadcastIntents,
+    publishPrEvent,
+    broadcastDiscussions: broadcasts.broadcastDiscussions,
+    broadcastDiscussionMessage: broadcasts.broadcastDiscussionMessage,
+    startDiscussionRun: discussionRuns.startDiscussionRun,
   })
 
   const ctx: KernelContext = {

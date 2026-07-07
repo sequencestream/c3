@@ -226,6 +226,15 @@ than a global whitelist — so `automation` may be selected and one automation's
 another (pipeline chains). `automation` still only tags the scheduler's own socket-less run; a
 automation-_triggered_ target run is still `work`. A `run:started` always has a matching `run:settled`.
 
+The **discussion** orchestrator run is one such publisher: `startDiscussionRun` emits
+`run:started` and `run:settled` with `sessionKind='discussion'`, where the terminal reason maps
+「discussion started / failed / ended」onto `complete` / `error` / `aborted`. An automation with an
+`event` run-lifecycle trigger that selects `discussion` in its `eventSessionKindFilter` (optionally
+filtering `reason`) already covers「a discussion began / errored / finished」— so the discussion c3
+MCP tools deliberately add **no** separate discussion-lifecycle event topic; observability of the
+post-error dangling state (`reason='error'`, then `in_progress` with no live run) rides these
+existing events plus the discussion-list refresh, and recovery is the `continue_discussion` tool.
+
 ### Filtering & throttling
 
 On each event the scheduler selects active `event` automations whose `eventTopic` matches, then keeps
@@ -401,7 +410,9 @@ never mounted merely because a automation is an LLM task or has an empty allowli
 one such capability is the precondition for mounting the workspace-bound c3 MCP service. Templates
 may preselect the entries they require. The in-process c3 capabilities exposed to a automation are:
 `mcp__c3__find_intents` / `mcp__c3__view_intent` (read-only), `mcp__c3__save_intent_pr_info` and
-`mcp__c3__publish_pr_event` (bounded PR reconciliation), and `mcp__c3__save_intent_directly` (write).
+`mcp__c3__publish_pr_event` (bounded PR reconciliation), `mcp__c3__save_intent_directly` (write),
+and the four **discussion** tools `mcp__c3__find_discussions` / `mcp__c3__view_discussion`
+(read-only) and `mcp__c3__start_discussion` / `mcp__c3__continue_discussion` (write).
 
 `save_intent_directly` is a **automation-only** tool: it lands a batch of NEW intents directly as
 `draft`, **bypassing** the `save_intents` confirmation gate. A automation has no browser decision queue,
@@ -411,6 +422,37 @@ intent; de-duplication is the caller's job via `find_intents`) and is registered
 automation c3 MCP server, never on the interactive intent MCP server — so the gate-bypassing write is
 pinned to unattended automation executions. The confirmation-gated `mcp__c3__save_intents` is
 deliberately **not** offered to automations.
+
+### Discussion tools (automation LLM execution)
+
+The four discussion tools let an automation's LLM sense, start, and recover discussions in its own
+workspace. They are registered **only** on the automation c3 MCP server (never on interactive work
+/ intent / discussion-organizer sessions), each bound to the automation's `workspacePath`; the tool
+arguments never accept a workspace override, and every id-typed tool re-checks the discussion's
+workspace root against the binding (the discussion store's `getDiscussion(id)` is a global id read).
+
+- `find_discussions` (read) — lists the workspace's discussions with an optional status filter,
+  returning slim fields (id / title / type / status / agendaIndex / agendaCount / hasConclusion /
+  updatedAt), never full message bodies.
+- `view_discussion` (read) — returns one owned discussion's detail plus its seq-ordered messages;
+  not-found or cross-workspace is rejected (`isError`).
+- `start_discussion` (write) — starts a pre-existing `draft` discussion via the shared
+  orchestrator (no new discussion, no research phase). Rejected unless the target is `draft` with no
+  live run; cross-workspace / non-draft / already-live-run all return `isError`.
+- `continue_discussion` (write) — two semantics, both requiring **no live run** first: on a
+  `completed` discussion it appends a non-empty `human` follow-up, flips `completed → in_progress`,
+  broadcasts, and starts a fresh round (mirrors the WebSocket `continue_discussion`); on an
+  `in_progress` discussion with **no live run** (the post-error / post-restart dangling combination)
+  it **recovers** — it does **not** append a message or reset agenda/conclusion/agent-session state,
+  and simply re-invokes the orchestrator on the latest record so it resumes from the persisted
+  transcript / stage / agenda / per-agent `last_seq`. `draft`, `cancelled`, an already-live run, or a
+  `completed` discussion with empty follow-up all return `isError`.
+
+Recovery introduces **no** new `DiscussionStatus` and **no** migration: the recoverable case is the
+derivable `in_progress` + `!hasDiscussionRun` combination. `start_discussion` / `continue_discussion`
+are classified **write** (they drive an orchestration run) and stay subject to the automation's mode,
+allow/deny lists, and permission handler; `find_discussions` / `view_discussion` are read. Selecting
+any one of the four is sufficient to mount the workspace-bound c3 MCP service.
 
 ## Vendor routing (execution)
 

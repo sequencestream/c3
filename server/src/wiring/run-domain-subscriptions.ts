@@ -57,7 +57,7 @@ import type { Broadcaster } from '../transport/broadcaster.js'
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import type { IntentDevSessionExitCode, PrOperationEvent } from '@ccc/shared/protocol'
 import { getRuntime } from '../runs.js'
-import { setSessionMode } from '../state.js'
+import { pathToId, setSessionMode } from '../state.js'
 import {
   getIntent,
   getIntentSessionBySessionId,
@@ -68,7 +68,9 @@ import {
   setLastWorkSession,
   setLatestCommitHash,
   setPrInfo,
+  setPrStatus,
   setSpecSessionId,
+  safeInsertIntentLog,
   updateIntentSession,
   updateStatus,
   listIntents,
@@ -82,6 +84,7 @@ import { clearPendingSpecLink, takePendingSpecLink } from '../features/intents/s
 import { clearPendingIntentLink, takePendingIntentLink } from '../features/intents/intent-link.js'
 import { isIntentDrivenByWorkflow, notifyTurnSettled } from '../features/intents/workflow.js'
 import { runManualDevCleanup, type DevCleanupDeps } from '../features/intents/dev-cleanup.js'
+import { handlePrUpdateEvent } from '../features/intents/pr-update-consumer.js'
 import {
   publishIntentLifecycle,
   publishIntentStatusTransition,
@@ -417,6 +420,22 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     if (!isWaitUserEventsStoreAvailable()) return
     cancelBySessionId(sessionId)
     broadcastWaitUserEvents(workspacePath)
+  })
+
+  // ── pr:operation (update/success) — intent PR-status reset ────────────────
+  // Resident intent-domain consumer, registered alongside the run-lifecycle
+  // subscriptions and INDEPENDENT of the Automation dispatch bridge in
+  // `scheduler-startup.ts`. When the model publishes `update/success` for an
+  // intent whose PR was rejected/failed/closed, reset it back to `reviewing`,
+  // log `pr_updated`, and broadcast. All other cases are silently ignored.
+  eventBus.subscribe('pr:operation', (payload) => {
+    handlePrUpdateEvent(payload, {
+      getIntent,
+      pathToId,
+      setPrStatus,
+      safeInsertIntentLog,
+      broadcastIntents,
+    })
   })
 }
 

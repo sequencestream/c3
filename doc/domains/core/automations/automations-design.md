@@ -197,6 +197,14 @@ server-side PR creation paths (dev-cleanup / automation / manual create_pr) whic
 `create`/`success` event after successfully creating a PR on the model's behalf. See
 automations-spec.md § Triggers → PR operation events (SCH-R22 / SCH-R23).
 
+The `pr:operation` bus event has a **second, independent** resident consumer registered in
+`run-domain-subscriptions.ts` (NOT this dispatch path): on `operation=update` + `result=success`
+carrying `association.intentId`, the intent domain resets a rejected/failed/closed intent's `prStatus`
+back to `reviewing`. It lives outside `dispatchEventTriggers` on purpose — the ledger state machine must
+recover even when no automation is configured, the Automation store is unavailable, or the automation is
+skipped by the in-flight gate. The two are separate side-effects of the same event; neither blocks the
+other.
+
 ## Execution dispatcher
 
 The dispatcher provides two execution paths, chosen by automation type. Each takes the automation, the

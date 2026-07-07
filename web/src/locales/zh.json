@@ -877,7 +877,8 @@
         "specUnapproved": "取消批准",
         "prCreated": "创建 PR",
         "prMerged": "PR 已合并",
-        "prClosed": "PR 已关闭"
+        "prClosed": "PR 已关闭",
+        "prUpdated": "PR 已更新"
       }
     },
     "intentSession": {
@@ -1542,6 +1543,9 @@
             },
             "comment": {
               "label": "评论"
+            },
+            "update": {
+              "label": "修改重提"
             }
           },
           "result": {

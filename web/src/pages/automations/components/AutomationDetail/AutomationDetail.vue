@@ -112,7 +112,7 @@ function reasonLabel(reason: 'complete' | 'error' | 'aborted'): string {
   }
 }
 
-function prOperationLabel(operation: 'create' | 'review' | 'merge' | 'close' | 'comment'): string {
+function prOperationLabel(operation: PrOperation): string {
   switch (operation) {
     case 'create':
       return t('automation.form.event.pr.op.create.label')
@@ -124,6 +124,8 @@ function prOperationLabel(operation: 'create' | 'review' | 'merge' | 'close' | '
       return t('automation.form.event.pr.op.close.label')
     case 'comment':
       return t('automation.form.event.pr.op.comment.label')
+    case 'update':
+      return t('automation.form.event.pr.op.update.label')
   }
 }
 

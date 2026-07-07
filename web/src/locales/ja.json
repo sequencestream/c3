@@ -878,7 +878,8 @@
         "specUnapproved": "承認取消",
         "prCreated": "PR 作成",
         "prMerged": "PR マージ済み",
-        "prClosed": "PR クローズ"
+        "prClosed": "PR クローズ",
+        "prUpdated": "PR 更新"
       }
     },
     "intentSession": {
@@ -1521,6 +1522,9 @@
             },
             "comment": {
               "label": "コメント"
+            },
+            "update": {
+              "label": "更新"
             }
           },
           "result": {

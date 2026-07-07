@@ -30,7 +30,7 @@ describe('runPublishPrEvent — validation', () => {
     })
   })
 
-  it.each(['create', 'review', 'merge', 'close', 'comment'] as const)(
+  it.each(['create', 'review', 'merge', 'close', 'comment', 'update'] as const)(
     'accepts the %s operation with success, failure and error',
     (operation) => {
       const published: PrOperationEvent[] = []

@@ -75,7 +75,7 @@ c3
 │   │   ├── 执行记录                              # 每次 run 持久化(start/end/status/session)供审计
 │   │   ├── automation 会话                       # 每次执行跑在独立 automation-kind 会话
 │   │   ├── 默认智能体                            # 新建 automation 默认用可配置的「automation 默认智能体」
-│   │   └── c3 MCP 工具                           # 意图(find/view/save_directly/pr)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载
+│   │   └── c3 MCP 工具                           # 意图(find/view/save_directly/pr)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载;Claude 走进程内 SDK,codex 走 loopback HTTP MCP 路由(同一批工具)
 │   │
 │   ├── codes 代码浏览                            # 浏览器里只读浏览 Git 仓库 + 代码域内嵌会话
 │   │   ├── 仓库浏览                              # 列分支、提交、某 ref 下的文件树

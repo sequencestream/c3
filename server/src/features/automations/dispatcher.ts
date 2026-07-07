@@ -37,8 +37,23 @@ import { getWorkspaceMcpConfig, isAgentQuotaRecoveryConfig } from './store.js'
 import { freezeTools, hasSelectedC3McpTool, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
 import type { FrozenToolSet } from './mcp-freeze.js'
 import { createAutomationMcpServer } from './c3-mcp.js'
+import type { ServedAutomationMcp } from '../../transport/automation-mcp/index.js'
 import { upsertAutomationExecutionRow } from '../sessions/session-metadata-store.js'
 import { setAutomationRunning, clearAutomationRunning } from '../../runs.js'
+
+// ---------------------------------------------------------------------------
+// Codex automation c3 MCP route (driver-path twin of the Claude in-process
+// server). Injected by the composition root at startup — the dispatcher runs off
+// the kernel run bus, so it holds the served route as a module-level handle it
+// `bind()`s per Codex execution, mirroring the `configureAutomationMcp` singleton.
+// ---------------------------------------------------------------------------
+
+let automationHttpMcp: ServedAutomationMcp | null = null
+
+/** Inject (or clear, in tests) the loopback HTTP MCP route for Codex automations. */
+export function setAutomationHttpMcp(served: ServedAutomationMcp | null): void {
+  automationHttpMcp = served
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -661,6 +676,20 @@ async function executeCodexLlmPrompt(
         }
   const { actionMode, toolGate } = codexPolicyToGrid(policy)
   const { model, baseUrl, apiKey, wireApi } = launchForAgent(agent)
+  // The c3 MCP route is opt-in: only an explicit c3 entry in this automation's
+  // allowlist mounts it (an empty allowlist does not implicitly grant c3). When
+  // selected, bind the loopback HTTP MCP for THIS execution and hand codex the c3
+  // descriptor; the token is disposed in `finally` on every terminal path so no
+  // execution can call the tools after it ends. The read/write authorization rules
+  // are unchanged — this only makes the tools visible to codex.
+  const selectedC3Mcp = hasSelectedC3McpTool(automation.toolAllowlist ?? [])
+  const c3Binding =
+    selectedC3Mcp && automationHttpMcp
+      ? automationHttpMcp.bind({
+          workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
+          executionId: logId,
+        })
+      : null
   // Cleared in `finally` on every terminal path (success, timeout, thrown error).
   let runningSessionId: string | null = null
   try {
@@ -674,6 +703,7 @@ async function executeCodexLlmPrompt(
       ...(baseUrl ? { baseUrl } : {}),
       ...(apiKey ? { apiKey } : {}),
       ...(wireApi ? { wireApi } : {}),
+      ...(c3Binding ? { mcpServers: c3Binding.servers } : {}),
     })
     const sessionId = await run.sessionId()
     if (sessionId) {
@@ -701,5 +731,8 @@ async function executeCodexLlmPrompt(
     })
   } finally {
     if (runningSessionId) clearAutomationRunning(runningSessionId)
+    // Dispose the per-execution c3 MCP token so the tools cannot be called after
+    // this execution ends (idempotent; no-op when c3 was not selected).
+    c3Binding?.dispose()
   }
 }

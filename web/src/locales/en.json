@@ -1280,28 +1280,6 @@
         "empty": "No metadata"
       }
     },
-    "simulate": {
-      "title": "Simulate trigger",
-      "hint": "Test whether a synthetic event would match this automation's filters. This is a diagnostic — it never runs the task or writes history.",
-      "topic": {
-        "label": "Event"
-      },
-      "metadata": {
-        "label": "Event metadata"
-      },
-      "run": "Test",
-      "matched": "Would trigger",
-      "unmatched": "Would not trigger",
-      "dim": {
-        "topic": "Event topic",
-        "workspace": "Workspace",
-        "sessionKind": "Session kind",
-        "reason": "Outcome",
-        "pr": "PR filter",
-        "intentPhase": "Intent phase",
-        "metadata": "Metadata"
-      }
-    },
     "tab": {
       "detail": "Details",
       "history": "History"

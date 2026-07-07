@@ -17,13 +17,9 @@ import type {
   AgentConfig,
   Automation,
   AutomationExecutionLog,
-  ClientToServer,
   ToolManifestEntry,
   TranscriptItem,
 } from '@ccc/shared/protocol'
-
-/** The simulate-trigger payload (client message minus its `type` tag). */
-type SimulateInput = Omit<Extract<ClientToServer, { type: 'simulate_automation_trigger' }>, 'type'>
 import { useTypedI18n } from '@/i18n'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import AutomationDetail from '../AutomationDetail/AutomationDetail.vue'
@@ -42,12 +38,6 @@ const props = defineProps<{
   /** 当前选中的执行对象 */
   execution: AutomationExecutionLog | null
   transcripts: Record<string, TranscriptItem[]>
-  /** 最近一次模拟触发的结果(null=尚未运行)。 */
-  simulationResult: {
-    automationId: string
-    matched: boolean
-    breakdown: { name: string; passed: boolean }[]
-  } | null
 }>()
 
 const emit = defineEmits<{
@@ -57,7 +47,6 @@ const emit = defineEmits<{
   'run-now': [id: string]
   'select-execution': [id: string]
   'load-session': [executionId: string]
-  simulate: [input: SimulateInput]
 }>()
 
 // ---- 标题栏:选中 automation 名称(name 或触发摘要回退) ----
@@ -289,13 +278,7 @@ watch(
 
       <!-- Tab: 详情 -->
       <div v-if="activeTab === TAB_DETAIL" class="sched-panel-body">
-        <AutomationDetail
-          :automation="automation"
-          :tool-manifest="toolManifest"
-          :agents="agents"
-          :simulation-result="simulationResult"
-          @simulate="(input: SimulateInput) => emit('simulate', input)"
-        />
+        <AutomationDetail :automation="automation" :tool-manifest="toolManifest" :agents="agents" />
       </div>
 
       <!-- Tab: 历史 -->

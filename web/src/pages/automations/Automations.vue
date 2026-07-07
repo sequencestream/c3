@@ -16,15 +16,11 @@ import type {
   AgentConfig,
   Automation,
   AutomationExecutionLog,
-  ClientToServer,
   ToolManifestEntry,
   TranscriptItem,
   UpdateAutomationInput,
   VendorHostStatus,
 } from '@ccc/shared/protocol'
-
-/** The simulate-trigger payload (client message minus its `type` tag). */
-type SimulateInput = Omit<Extract<ClientToServer, { type: 'simulate_automation_trigger' }>, 'type'>
 
 const props = defineProps<{
   automations: Automation[]
@@ -52,12 +48,6 @@ const props = defineProps<{
   automationAgentId: string
   /** System default agent, the follow-chain fallback for `automationAgentId`. */
   defaultAgentId: string
-  /** 最近一次模拟触发的结果(null=尚未运行)。 */
-  simulationResult: {
-    automationId: string
-    matched: boolean
-    breakdown: { name: string; passed: boolean }[]
-  } | null
 }>()
 
 const emit = defineEmits<{
@@ -74,7 +64,6 @@ const emit = defineEmits<{
   update: [id: string, input: UpdateAutomationInput]
   'load-tool-manifest': [vendor: string]
   'mobile-back': [targetKey: string]
-  simulate: [input: SimulateInput]
 }>()
 
 const mobilePanes = [
@@ -113,14 +102,12 @@ const mobileActiveToken = computed(() => props.activeId ?? 'automations')
         :execution-id="executionId"
         :execution="execution"
         :transcripts="transcripts"
-        :simulation-result="simulationResult"
         @delete-automation="(id: string) => emit('delete-automation', id)"
         @edit-automation="(id: string) => emit('open-form', automation)"
         @toggle-enabled="(id: string, enabled: boolean) => emit('toggle-enabled', id, enabled)"
         @run-now="(id: string) => emit('run-now', id)"
         @select-execution="(id: string) => emit('select-execution', id)"
         @load-session="(executionId: string) => emit('load-session', executionId)"
-        @simulate="(input: SimulateInput) => emit('simulate', input)"
       />
     </template>
   </MobileStack>

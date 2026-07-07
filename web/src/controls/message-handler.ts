@@ -113,7 +113,6 @@ export function installMessageHandler(ctx: AppCtx): void {
     automationToolManifest,
     automationToolManifestLoading,
     automationToolManifestError,
-    automationSimulationResult,
     executionTranscripts,
     codesProject,
     codesDirs,
@@ -714,17 +713,6 @@ export function installMessageHandler(ctx: AppCtx): void {
         automationToolManifest.value = { ...automationToolManifest.value, [msg.vendor]: msg.tools }
         automationToolManifestLoading.value = false
         automationToolManifestError.value = null
-        break
-      case 'automation_trigger_simulation_result':
-        // Only apply a result that matches the still-selected automation (a stale
-        // reply for a deselected one is dropped).
-        if (selectedAutomationId.value === msg.automationId) {
-          automationSimulationResult.value = {
-            automationId: msg.automationId,
-            matched: msg.matched,
-            breakdown: msg.breakdown,
-          }
-        }
         break
       case 'execution_transcript':
         executionTranscripts.value = {

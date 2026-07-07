@@ -9,9 +9,7 @@
  * the three-tier MCP security model and the write-approval queue.
  *
  * The per-automation match decision lives in the pure {@link evaluateAutomationTriggerMatch}
- * evaluator so the real dispatch path and the `simulate_automation_trigger`
- * diagnostic share one semantics — a simulation can never report a match the
- * live path would not fire (2026-07-04).
+ * evaluator, keeping the match semantics isolated from the dispatch plumbing.
  */
 
 import { resolve } from 'node:path'
@@ -99,7 +97,7 @@ export interface TriggerEventInput {
  * Returns the overall verdict plus a stable per-dimension breakdown covering only
  * the dimensions that participate for this topic (topic + workspace always; then
  * sessionKind/reason/metadata for run-lifecycle, pr for `pr:operation`, intentPhase
- * for `intent:lifecycle`). Shared by the live dispatch and the simulate handler.
+ * for `intent:lifecycle`).
  */
 export function evaluateAutomationTriggerMatch(
   automation: Automation,

@@ -3322,26 +3322,6 @@ export type ClientToServer =
   | { type: 'get_execution_transcript'; automationId: string; executionId: string }
   /** Manual trigger: execute a automation immediately (outside normal tick). */
   | { type: 'automation_run_now'; automationId: string }
-  /**
-   * Diagnostic: test whether a synthetic event would match an event-triggered
-   * automation's filters (2026-07-04). Pure condition check — the server reuses the
-   * real trigger evaluator and replies with {@link automation_trigger_simulation_result};
-   * it never writes an ExecutionLog, dispatches, or touches in-flight state. The
-   * test fields are read per `topic`: run-lifecycle uses `sessionKind` + optional
-   * `reason` + optional `metadata`; `pr:operation` uses `operation` + `result`;
-   * `intent:lifecycle` uses `phase`.
-   */
-  | {
-      type: 'simulate_automation_trigger'
-      automationId: string
-      topic: ScheduleEventTopic
-      sessionKind?: SessionKind
-      reason?: RunEndReason
-      metadata?: Record<string, string>
-      operation?: PrOperation
-      result?: PrOperationResult
-      phase?: IntentLifecyclePhase
-    }
   /** Get workspace-level MCP server configuration. */
   | { type: 'get_workspace_mcp_config'; workspaceId: string }
   /** Save workspace-level MCP server configuration. */
@@ -4006,17 +3986,6 @@ export type ServerToClient =
   | { type: 'workspace_mcp_config'; workspaceId: string; config: WorkspaceMcpConfig }
   /** A vendor's tool manifest (reply to `get_automation_tool_manifest`). */
   | { type: 'automation_tool_manifest'; vendor: VendorId; tools: ToolManifestEntry[] }
-  /**
-   * Result of a `simulate_automation_trigger` (2026-07-04): whether the synthetic
-   * event matched, plus a per-dimension breakdown (topic / workspace / sessionKind /
-   * reason / pr / intentPhase / metadata — only the dimensions that participated).
-   */
-  | {
-      type: 'automation_trigger_simulation_result'
-      automationId: string
-      matched: boolean
-      breakdown: { name: string; passed: boolean }[]
-    }
   /**
    * A project's wait-user-involve event list (reply to `list_wait_user_events`).
    * Paged replies carry `hasMore`; live todo broadcasts omit it and refresh the

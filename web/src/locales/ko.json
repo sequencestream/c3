@@ -1619,28 +1619,6 @@
         "started": "실행 시작 시",
         "settled": "실행 종료 시"
       }
-    },
-    "simulate": {
-      "title": "트리거 시뮬레이션",
-      "hint": "합성 이벤트가 이 자동화의 필터와 일치하는지 테스트합니다. 진단용이며 작업을 실행하거나 기록을 남기지 않습니다.",
-      "topic": {
-        "label": "이벤트"
-      },
-      "metadata": {
-        "label": "이벤트 메타데이터"
-      },
-      "run": "테스트",
-      "matched": "실행됨",
-      "unmatched": "실행 안 됨",
-      "dim": {
-        "topic": "이벤트 주제",
-        "workspace": "워크스페이스",
-        "sessionKind": "세션 종류",
-        "reason": "결과",
-        "pr": "PR 필터",
-        "intentPhase": "인텐트 단계",
-        "metadata": "메타데이터"
-      }
     }
   },
   "error": {

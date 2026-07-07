@@ -61,7 +61,7 @@ function mountDetail(
   toolManifest: Record<string, ToolManifestEntry[] | null> = {},
 ) {
   return mount(AutomationDetail, {
-    props: { automation, toolManifest, agents: AGENTS, simulationResult: null },
+    props: { automation, toolManifest, agents: AGENTS },
   })
 }
 
@@ -184,73 +184,5 @@ describe('AutomationDetail.vue — 右栏 automation 详情', () => {
   it('automation=null 时隐藏', () => {
     const w = mountDetail(null)
     expect(w.find('.sched-detail-wrap').exists()).toBe(false)
-  })
-})
-
-describe('AutomationDetail.vue — 模拟触发面板', () => {
-  function eventSched(over: Partial<Automation> = {}): Automation {
-    return sched({
-      triggerType: 'event',
-      cronExpression: '',
-      eventTopic: 'run:settled',
-      eventSessionKindFilter: ['work'],
-      metadata: { stage: 'a' },
-      ...over,
-    })
-  }
-
-  function mountWith(
-    automation: Automation | null,
-    simulationResult: {
-      automationId: string
-      matched: boolean
-      breakdown: { name: string; passed: boolean }[]
-    } | null,
-  ) {
-    return mount(AutomationDetail, {
-      props: { automation, toolManifest: {}, agents: AGENTS, simulationResult },
-    })
-  }
-
-  it('cron automation 不显示模拟触发面板', () => {
-    const w = mountWith(sched(), null)
-    expect(w.find('[data-testid="automation-simulate"]').exists()).toBe(false)
-  })
-
-  it('event automation 点击测试 emit simulate,payload 按 topic 取字段', async () => {
-    const w = mountWith(eventSched(), null)
-    expect(w.find('[data-testid="automation-simulate"]').exists()).toBe(true)
-    await w.find('[data-testid="automation-simulate-run"]').trigger('click')
-    const payload = w.emitted('simulate')![0][0] as Record<string, unknown>
-    expect(payload.automationId).toBe('s1')
-    expect(payload.topic).toBe('run:settled')
-    expect(payload.sessionKind).toBe('work')
-    expect(payload.reason).toBe('complete')
-  })
-
-  it('渲染命中结果与逐项 breakdown', () => {
-    const w = mountWith(eventSched(), {
-      automationId: 's1',
-      matched: true,
-      breakdown: [
-        { name: 'topic', passed: true },
-        { name: 'sessionKind', passed: true },
-        { name: 'metadata', passed: false },
-      ],
-    })
-    const verdict = w.find('[data-testid="automation-simulate-verdict"]')
-    expect(verdict.exists()).toBe(true)
-    const dims = w.findAll('.sd-sim-dim')
-    expect(dims).toHaveLength(3)
-    expect(dims[2].classes()).not.toContain('pass')
-  })
-
-  it('丢弃属于其他 automation 的过期结果', () => {
-    const w = mountWith(eventSched(), {
-      automationId: 'other',
-      matched: true,
-      breakdown: [{ name: 'topic', passed: true }],
-    })
-    expect(w.find('[data-testid="automation-simulate-result"]').exists()).toBe(false)
   })
 })

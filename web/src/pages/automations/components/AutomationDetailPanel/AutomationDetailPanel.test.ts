@@ -67,7 +67,6 @@ function mountPanel(over: Record<string, unknown> = {}) {
       executionId: null,
       execution: null,
       transcripts: {},
-      simulationResult: null,
       ...over,
     },
     global: { stubs: STUBS },

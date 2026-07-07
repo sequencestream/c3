@@ -46,15 +46,7 @@ export function installAutomationActions(ctx: AppCtx): void {
   ctx.onSelectAutomation = (id: string): void => {
     selectedAutomationId.value = id
     selectedExecutionId.value = null
-    // Drop any prior simulation result so the panel starts clean for the new target.
-    ctx.automationSimulationResult.value = null
     send({ type: 'get_automation_detail', automationId: id })
-  }
-
-  // Diagnostic: test a synthetic event against the selected automation's filters.
-  // Pure server-side condition check — the reply lands in `automationSimulationResult`.
-  ctx.simulateAutomationTrigger = (input): void => {
-    send({ type: 'simulate_automation_trigger', ...input })
   }
 
   // Expand "View session" on an llm-type history item: fetch its transcript once.

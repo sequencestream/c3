@@ -1274,28 +1274,6 @@
         "empty": "无元数据"
       }
     },
-    "simulate": {
-      "title": "模拟触发",
-      "hint": "测试一个合成事件是否会命中本自动化的过滤条件。这是诊断工具——不会真正执行任务或写入历史。",
-      "topic": {
-        "label": "事件"
-      },
-      "metadata": {
-        "label": "事件元数据"
-      },
-      "run": "测试",
-      "matched": "会触发",
-      "unmatched": "不会触发",
-      "dim": {
-        "topic": "事件主题",
-        "workspace": "工作区",
-        "sessionKind": "会话类型",
-        "reason": "结果",
-        "pr": "PR 过滤",
-        "intentPhase": "意图阶段",
-        "metadata": "元数据"
-      }
-    },
     "tab": {
       "detail": "详情",
       "history": "历史"

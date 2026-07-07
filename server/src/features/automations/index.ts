@@ -19,8 +19,6 @@ import {
   updateAutomation as updateAutomationStore,
 } from './store.js'
 import { triggerRunNow, cancelInFlight } from './engine.js'
-import { evaluateAutomationTriggerMatch, type TriggerEventInput } from '../triggers/index.js'
-import { normalizeAutomationMetadata } from '@ccc/shared/protocol'
 import { readExecutionTranscript } from './transcript.js'
 import { clampName, generateAutomationName } from './naming.js'
 import type { AutomationNameOverride } from './store.js'
@@ -280,46 +278,6 @@ export const automationRunNow: Handler<'automation_run_now'> = (ctx, conn, msg) 
   void triggerRunNow(msg.automationId).then(() => {
     const s = getAutomation(msg.automationId)
     if (s) ctx.broadcastAutomations(resolveWorkspaceRoot(s.workspaceId)!)
-  })
-}
-
-/**
- * Diagnostic: test a synthetic event against an automation's trigger filters using
- * the SAME pure evaluator the live dispatch path uses (2026-07-04). Read-only — it
- * appends no ExecutionLog, dispatches nothing, and never touches in-flight state.
- * The event's workspace is the automation's own workspace (workspace isn't a test
- * field), so the workspace dimension always passes and only the configured filters
- * decide the outcome.
- */
-export const simulateAutomationTrigger: Handler<'simulate_automation_trigger'> = (
-  _ctx,
-  conn,
-  msg,
-) => {
-  if (!isAutomationStoreAvailable()) {
-    conn.send({ type: 'error', error: { code: 'automation.dbUnavailable' } })
-    return
-  }
-  const automation = getAutomation(msg.automationId)
-  if (!automation) {
-    conn.send({ type: 'error', error: { code: 'automation.notFound' } })
-    return
-  }
-  const event: TriggerEventInput = {
-    workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
-    sessionKind: msg.sessionKind,
-    reason: msg.reason,
-    metadata: msg.metadata ? normalizeAutomationMetadata(msg.metadata) : undefined,
-    operation: msg.operation,
-    result: msg.result,
-    phase: msg.phase,
-  }
-  const { matched, breakdown } = evaluateAutomationTriggerMatch(automation, msg.topic, event)
-  conn.send({
-    type: 'automation_trigger_simulation_result',
-    automationId: msg.automationId,
-    matched,
-    breakdown,
   })
 }
 

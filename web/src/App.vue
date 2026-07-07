@@ -183,7 +183,6 @@ const {
   automationToolManifest,
   automationToolManifestLoading,
   automationToolManifestError,
-  automationSimulationResult,
   hostStatus,
   onSelectAutomation,
   openAutomationForm,
@@ -197,7 +196,6 @@ const {
   updateAutomation,
   deleteAutomation,
   onLoadAutomationToolManifest,
-  simulateAutomationTrigger,
   // ---- codes ----
   codesProject,
   codesDirs,
@@ -569,9 +567,7 @@ function onCodesChatWidth(px: number): void {
           :agents="serverSettings?.agents ?? []"
           :automation-agent-id="serverSettings?.automationAgentId ?? ''"
           :default-agent-id="serverSettings?.defaultAgentId ?? ''"
-          :simulation-result="automationSimulationResult"
           @select="onSelectAutomation"
-          @simulate="simulateAutomationTrigger"
           @open-form="openAutomationForm"
           @delete-automation="deleteAutomation"
           @toggle-enabled="onToggleAutomationEnabled"

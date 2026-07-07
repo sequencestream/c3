@@ -1619,28 +1619,6 @@
         "started": "実行開始時",
         "settled": "実行終了時"
       }
-    },
-    "simulate": {
-      "title": "トリガーをシミュレート",
-      "hint": "合成イベントがこの自動化のフィルターに一致するかテストします。診断用で、タスクの実行や履歴の書き込みは行いません。",
-      "topic": {
-        "label": "イベント"
-      },
-      "metadata": {
-        "label": "イベントメタデータ"
-      },
-      "run": "テスト",
-      "matched": "発火する",
-      "unmatched": "発火しない",
-      "dim": {
-        "topic": "イベントトピック",
-        "workspace": "ワークスペース",
-        "sessionKind": "セッション種別",
-        "reason": "結果",
-        "pr": "PRフィルター",
-        "intentPhase": "インテント段階",
-        "metadata": "メタデータ"
-      }
     }
   },
   "error": {

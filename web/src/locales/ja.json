@@ -748,9 +748,6 @@
       "modifySession": {
         "label": "修正したい"
       },
-      "session": {
-        "label": "セッション"
-      },
       "markDone": {
         "label": "完了にする"
       },
@@ -864,6 +861,9 @@
       "specSession": {
         "label": "仕様作成セッション"
       },
+      "workSession": {
+        "label": "作業セッション"
+      },
       "changelog": {
         "label": "変更履歴"
       }
@@ -900,6 +900,9 @@
     },
     "specSession": {
       "empty": "この意図にはまだ仕様セッションがありません。"
+    },
+    "workSession": {
+      "empty": "この意図にはまだ作業セッションがありません。"
     },
     "resetSession": {
       "intentSession": {

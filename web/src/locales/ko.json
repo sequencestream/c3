@@ -748,9 +748,6 @@
       "modifySession": {
         "label": "수정하고 싶어요"
       },
-      "session": {
-        "label": "세션"
-      },
       "markDone": {
         "label": "완료 표시"
       },
@@ -864,6 +861,9 @@
       "specSession": {
         "label": "사양 작성 세션"
       },
+      "workSession": {
+        "label": "작업 세션"
+      },
       "changelog": {
         "label": "변경 이력"
       }
@@ -900,6 +900,9 @@
     },
     "specSession": {
       "empty": "이 의도에는 아직 사양 세션이 없습니다."
+    },
+    "workSession": {
+      "empty": "이 의도에는 아직 작업 세션이 없습니다."
     },
     "resetSession": {
       "intentSession": {

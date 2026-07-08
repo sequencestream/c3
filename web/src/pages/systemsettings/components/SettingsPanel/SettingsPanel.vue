@@ -426,6 +426,12 @@ function save(): void {
   // source of intent; this is where it commits to `enabled` (the server's
   // `normalizeAuth` re-pins `none ⇒ false` as a defence-in-depth second guard).
   if (draft.value.auth) draft.value.auth.enabled = authActive.value
+  // Drop sandbox rows with a blank name: they are incomplete drafts (e.g. an
+  // added-but-never-filled row) that would fail the server's non-empty-name
+  // registration guard and crash startup.
+  if (draft.value.sandboxes) {
+    draft.value.sandboxes = draft.value.sandboxes.filter((sb) => sb.name.trim() !== '')
+  }
   emit('save', draft.value)
 }
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
@@ -25,6 +25,7 @@ import {
   getServerTimezone,
   getSkillRepos,
   getSocketAutoResume,
+  getSystemSandboxes,
   getTimezone,
   getUiLang,
   getUiLangName,
@@ -153,6 +154,33 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
       socketAutoResume: true,
     } as unknown as SystemSettings)
     expect(getSocketAutoResume()).toBe(true)
+  })
+})
+
+describe('getSystemSandboxes — blank-name entries are dropped so startup never crashes', () => {
+  /** Write a raw settings.json to disk, then clear the cache so the next read reloads it. */
+  function writeSettings(settings: unknown): void {
+    mkdirSync(join(dir, '.c3'), { recursive: true })
+    writeAtomic(settingsPath(), settings as SystemSettings)
+    resetSettingsCacheForTests()
+  }
+
+  it('skips a sandbox def whose name is blank/whitespace, keeps the valid ones', () => {
+    writeSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      sandboxes: [
+        { name: 'docker-node', type: 'docker', image: 'node:20' },
+        { name: '', type: 'docker', image: '' },
+        { name: '   ', type: 'docker', image: 'alpine' },
+      ],
+    })
+    expect(getSystemSandboxes().map((s) => s.name)).toEqual(['docker-node'])
+  })
+
+  it('returns an empty array when sandboxes is absent', () => {
+    writeSettings({ agents: [], defaultAgentId: SYSTEM_AGENT_ID })
+    expect(getSystemSandboxes()).toEqual([])
   })
 })
 

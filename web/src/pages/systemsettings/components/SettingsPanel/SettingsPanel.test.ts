@@ -823,6 +823,22 @@ describe('SettingsPanel.vue — sandbox column header', () => {
     // Mobile (<=767px): the same select is reset so it stacks full-width like the other fields.
     expect(css).toMatch(/@media \(max-width: 767px\)[\s\S]*\.sandbox-row \.mode-select,/)
   })
+
+  it('drops blank-name sandbox rows on save so they never reach the server registry', async () => {
+    const withBlankRow: SystemSettings = {
+      ...baseSettings,
+      sandboxes: [
+        { name: 'docker-node', type: 'docker', image: 'node:20', seccomp: '', cpuLimit: 1 },
+        { name: '  ', type: 'docker', image: '', seccomp: '', cpuLimit: 1 },
+      ],
+    }
+    const w = mount(SettingsPanel, { props: { open: true, settings: withBlankRow } })
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].sandboxes).toEqual([
+      { name: 'docker-node', type: 'docker', image: 'node:20', seccomp: '', cpuLimit: 1 },
+    ])
+  })
 })
 
 describe('SettingsPanel.vue — host-CLI diagnostics (ADR-0012)', () => {

@@ -1401,9 +1401,14 @@ export function getMaxSpeechChars(workspacePath: string): number {
  * Get the system-level sandbox definitions. Returns the raw array from
  * settings (passthrough — shape is validated by SandboxRegistry at startup).
  * Absent/empty ⇒ no sandbox definitions exist.
+ *
+ * Blank-name entries are dropped defensively: a leftover incomplete row in
+ * settings.json (name never filled in) would otherwise trip the registry's
+ * non-empty-name guard and crash startup. Skipping them keeps the server
+ * bootable rather than fatally rejecting the whole config.
  */
 export function getSystemSandboxes(): SystemSandboxDef[] {
-  return loadSettings().sandboxes ?? []
+  return (loadSettings().sandboxes ?? []).filter((sb) => (sb.name ?? '').trim() !== '')
 }
 
 /**

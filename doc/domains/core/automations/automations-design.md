@@ -255,6 +255,16 @@ cannot repeat.
 7. The agent session is ephemeral — no WebSocket viewer, not listed in the session sidebar.
    The session id is NOT persisted (no need for traceability in v1).
 
+**Codex vendor path (`driver.start`).** A codex automation runs through the codex driver rather than the
+shared SDK query path. Before starting, the dispatcher resolves the host `gh` keyring credential and,
+when neither `GH_TOKEN` nor `GITHUB_TOKEN` is already set, injects `GH_TOKEN` into the driver
+`envOverrides` so PR review/comment/merge shell commands authenticate inside the seatbelt sandbox (see
+[codex-sdk-guide § GitHub CLI 凭据桥接](../../../architecture/codex-sdk-guide.md)). This is orthogonal to
+network: the codex path does not pass `networkAccess`, so sandbox network stays governed by the
+automation's `mode`/`toolAllowlist`. A resolved token with the network off is **not** an auth failure —
+diagnostics distinguish a missing host token from sandbox network isolation and never reduce to "re-run
+`gh auth login`". Probe failure is non-fatal and never blocks the execution.
+
 ## Write queue
 
 _(Planned — not implemented in v1)_

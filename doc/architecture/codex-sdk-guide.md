@@ -215,6 +215,29 @@ session 一联网即被拒。c3 通过两个中性驱动选项字段控制，由
 
 > Automation 的 `network-access` 是 `toolAllowlist` 里的保留伪条目（非工具）：调度分派在进入 `freezeTools()`/权限网格前将其剔除，仅用于决定 codex `workspace-write` 沙箱的原始网络开关。`read-only` 沙箱网络恒禁；claude vendor 无 seatbelt 网络开关，携带该值时静默忽略。默认不勾＝断网，需要联网的 automation（尤其 PR 评审/合并类需 `gh`/`curl`）显式开启。
 
+### GitHub CLI 凭据桥接（GH_TOKEN 注入）
+
+`gh` CLI 把令牌存在操作系统钥匙串（macOS keychain）。Codex 运行在自身的 seatbelt 沙箱
+（以及可选的 docker 容器）内，其子进程读不到宿主钥匙串——即使宿主 `gh auth status` 完全正常、
+即使沙箱已开网，会话内的 `gh` 也会报「请运行 gh auth login」。`gh` 读取环境变量的优先级高于
+钥匙串，故把令牌以 `GH_TOKEN` 注入子进程环境即可在沙箱内恢复认证。
+
+- **注入点**：Codex 会话启动时（`run-via-driver` 的手动 work/intent，以及 automation 分派的
+  codex 路径），宿主侧在 seatbelt 外执行 `gh auth token`，成功且非空输出经 trim 后作为 `GH_TOKEN`
+  追加到传给 codex driver 的 `envOverrides`——沿用现有唯一注入通道，不新增 API/配置/持久化字段。
+- **优先级（承 `buildChildEnv`）**：先按既有优先级计算有效环境，只要 `GH_TOKEN` 或 `GITHUB_TOKEN`
+  任一（来自用户 shell 或 agent override）已为非空值，就原样沿用、不探测、不覆盖。
+- **失败即降级**：命令缺失、非零退出、超时（有界）、空输出都视为「无可注入凭据」——会话照常启动，
+  绝不因此阻塞；令牌不进参数、日志、错误文本、遥测或测试快照。
+- **仅 codex**：Claude 路径无 seatbelt 边界，不执行探测；该逻辑不并入所有 vendor 共用的
+  `buildChildEnv`。
+- **DIRECT 分支 env 语义**：`CodexOptions.env` 会**替换** `process.env`（见 `codexExecEnv`）。故
+  DIRECT 分支把 `envOverrides` 叠加到继承的宿主环境之上再传入，否则注入 `GH_TOKEN`（或代理变量）会
+  连带抹掉 `PATH` 等——与 RELAY 分支及容器 wrapper 的 `buildChildEnv` 语义一致。
+- **与网络正交**：凭据桥接只解决「认证可见性」。沙箱内 `gh` 能否触网仍由 `networkAccess`
+  独立控制。有令牌但无网络 **不是** 认证失败——诊断须区分「宿主未取得可注入令牌」与「沙箱网络未开/
+  不可达」，不得仅建议重复 `gh auth login`。
+
 ### 零运行时审批（c3 的关键差异）
 
 与 Claude 不同，c3 **不使用** Codex 的批准回调——因为 Codex **没有**等价物。

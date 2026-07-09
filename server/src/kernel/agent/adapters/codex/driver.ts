@@ -606,8 +606,12 @@ export class CodexDriver implements AgentDriver {
         },
       }
     } else {
+      // `CodexOptions.env` REPLACES process.env (see codexExecEnv), so overrides
+      // must be layered onto the inherited env — otherwise passing e.g. an injected
+      // GH_TOKEN (or proxy vars) would strip PATH and everything else from the codex
+      // process. Merging matches the container wrapper's buildChildEnv semantics.
       codexOptions = {
-        ...(opts.envOverrides ? { env: opts.envOverrides } : {}),
+        ...(opts.envOverrides ? { env: { ...inheritedEnv(), ...opts.envOverrides } } : {}),
         ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
         ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
       }
@@ -770,11 +774,17 @@ export class CodexDriver implements AgentDriver {
  * from `apiKey`, so it is not set here.
  */
 function relayEnv(extra?: Record<string, string>): Record<string, string> {
-  const env: Record<string, string> = {}
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
+  const env = inheritedEnv()
   if (extra) Object.assign(env, extra)
   env.NO_PROXY = withLoopback(env.NO_PROXY)
   env.no_proxy = withLoopback(env.no_proxy)
+  return env
+}
+
+/** A copy of the host `process.env` (defined values only) as a plain string map. */
+function inheritedEnv(): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
   return env
 }
 

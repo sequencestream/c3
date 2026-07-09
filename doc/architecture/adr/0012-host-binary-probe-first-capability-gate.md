@@ -54,8 +54,13 @@ reason so fallback does not hide install or upgrade failures.
   `override-invalid`.
 - Managed install failures must not delete or overwrite an existing usable
   version.
-- Manual version pins in `vendorCliVersions.claude` / `vendorCliVersions.codex`
-  must take precedence over automatic latest-compatible selection.
+- `vendorCliVersions.claude` / `vendorCliVersions.codex` select the runtime
+  _effective_ managed version — they are NOT download pins. The sync flow always
+  tracks the newest compatible release; an effective version that is missing or
+  incompatible degrades to the latest compatible version, records a visible
+  `lastError`, and does NOT rewrite the user's choice. Multi-version directories
+  coexist under `~/.c3/vendor/<vendor>/<version>/`; the active version is
+  selectable from the installed set via the system-settings panel.
 - Version parsing is vendor-specific; a generic loose regex is not sufficient.
 - Tests must cover resolver priority, install failure recovery, service-like empty
   PATH managed resolution, npm packument selection, and health/status source

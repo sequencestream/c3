@@ -119,6 +119,7 @@ c3
 │   └── 其他系统配置                              # 工作区设置、默认模式、沙箱定义等
 │       ├── 工作区设置                            # per-workspace 设置(WorkspaceSetting,gitCommitMode 等)
 │       ├── 默认模式                              # defaultMode 按 vendor 分组(Record<VendorId, ModeToken>)
+│       ├── vendor CLI 多版本生效选择             # 下载目标恒取最新兼容版,生效版可从已安装历史版单选(系统设置面板);env override 仍最高优先,host PATH 仅降级回退
 │       └── 外部技能安装                          # 显式 install_skill 到 .claude/skills 与 .agents/skills
 │
 └── commerce — 产品授权/许可

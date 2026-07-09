@@ -868,6 +868,74 @@ describe('SettingsPanel.vue — host-CLI diagnostics (ADR-0012)', () => {
   })
 })
 
+describe('SettingsPanel.vue — vendor CLI multi-version selection', () => {
+  const hostStatus = [
+    {
+      vendor: 'claude' as const,
+      present: true,
+      binary: 'claude',
+      path: '/usr/local/bin/claude',
+      source: 'managed',
+      installHint: '',
+      activeVersion: '1.0.0',
+      downloadTargetVersion: '1.3.0',
+      lastRemoteCheckAt: '2026-07-09T00:00:00.000Z',
+      installedVersions: [
+        { version: '1.0.0', status: 'installed' as const, installedAt: '2026-07-01T00:00:00.000Z' },
+        { version: '1.3.0', status: 'installed' as const, installedAt: '2026-07-09T00:00:00.000Z' },
+      ],
+    },
+    {
+      vendor: 'codex' as const,
+      present: false,
+      binary: 'codex',
+      path: null,
+      installHint: 'install codex',
+      lastError: 'active 0.140.0 not installed/incompatible',
+    },
+  ]
+
+  it('renders installed versions as radio options and excludes failed/missing ones', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings, hostStatus } })
+    const rows = w.findAll('[data-testid="vendor-cli-row"]')
+    expect(rows).toHaveLength(2)
+    // Claude: auto + 2 installed versions = 3 radio inputs.
+    const claudeRadios = w.findAll('[data-testid="vendor-cli-version-claude"]')
+    expect(claudeRadios).toHaveLength(2)
+    // Codex has no installedVersions ⇒ only the auto radio, no version radios.
+    expect(w.findAll('[data-testid="vendor-cli-version-codex"]')).toHaveLength(0)
+  })
+
+  it('shows the active version, download target, and last check status', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings, hostStatus } })
+    expect(w.get('[data-testid="vendor-cli-active-claude"]').text()).toBe('1.0.0')
+    expect(w.get('[data-testid="vendor-cli-target-claude"]').text()).toBe('1.3.0')
+    expect(w.get('[data-testid="vendor-cli-error-codex"]').text()).toContain('0.140.0')
+  })
+
+  it('selecting an installed version emits save with the new vendorCliVersions and no sync message', async () => {
+    const settings: SystemSettings = { ...baseSettings, vendorCliVersions: {} }
+    const w = mount(SettingsPanel, { props: { open: true, settings, hostStatus } })
+    const radios = w.findAll('[data-testid="vendor-cli-version-claude"]')
+    // 1.0.0 is the first installed-version radio.
+    await radios[0].trigger('change')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const saveEmit = w.emitted('save')
+    expect(saveEmit).toBeTruthy()
+    const emitted = (saveEmit![0][0] as SystemSettings).vendorCliVersions
+    expect(emitted?.claude).toBe('1.0.0')
+  })
+
+  it('selecting auto clears the vendor pin in the emitted save payload', async () => {
+    const settings: SystemSettings = { ...baseSettings, vendorCliVersions: { claude: '1.0.0' } }
+    const w = mount(SettingsPanel, { props: { open: true, settings, hostStatus } })
+    await w.get('[data-testid="vendor-cli-auto-claude"]').trigger('change')
+    await w.find('[data-testid="settings-save"]').trigger('click')
+    const emitted = (w.emitted('save')![0][0] as SystemSettings).vendorCliVersions
+    expect(emitted?.claude).toBeUndefined()
+  })
+})
+
 // Skill-repo tests moved to WorkspaceSetting.test.ts (ADR-0016/0017 migration)
 
 describe('SettingsPanel.vue — drag-to-reorder agents (order_seq)', () => {

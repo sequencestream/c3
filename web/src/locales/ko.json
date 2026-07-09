@@ -427,6 +427,26 @@
       "present": "PATH에 있음",
       "missing": "찾을 수 없음"
     },
+    "vendorCli": {
+      "title": {
+        "label": "공급자 CLI 버전"
+      },
+      "hint": "c3가 실행할 설치된 관리 버전을 선택합니다. 다운로드 대상은 항상 최신 호환 릴리스를 추적하므로 이전 버전을 선택해도 업그레이드가 고정되지 않습니다.",
+      "active": {
+        "label": "활성"
+      },
+      "downloadTarget": {
+        "label": "다운로드 대상"
+      },
+      "lastCheck": {
+        "label": "최종 확인"
+      },
+      "auto": {
+        "label": "자동(최신)"
+      },
+      "none": "—",
+      "empty": "설치된 관리 버전이 아직 없습니다."
+    },
     "skillRepos": {
       "title": {
         "label": "외부 스킬"

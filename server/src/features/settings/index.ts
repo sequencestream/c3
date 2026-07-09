@@ -30,7 +30,11 @@ import {
 } from '../../kernel/config/index.js'
 import { detectDefaultBranch } from '../intents/worktree.js'
 import { getSpecsBase } from '../intents/specs-root.js'
-import { probeAll } from '../../kernel/agent/process/launcher.js'
+import {
+  probeAll,
+  applyVendorCliChoices,
+  readVendorCliStatus,
+} from '../../kernel/agent/process/launcher.js'
 import { VENDOR_CAPABILITIES } from '../../kernel/agent/adapters/capabilities.js'
 import { getSkillSupport } from '../../state.js'
 import type { Handler } from '../../transport/handler-registry.js'
@@ -38,21 +42,35 @@ import { requireAdmin } from '../auth/authz.js'
 import { currentLicenseStatus } from '../license/store.js'
 import { currentPlanLimits, limitError } from '../license/plan-limits.js'
 
-/** Map the ProcessLauncher probe into the wire shape (carrying the resolved path). */
+/** Map the ProcessLauncher probe into the wire shape (carrying the resolved path),
+ *  merged with the manifest-derived multi-version status for the vendor CLI panel. */
 function hostStatus(): VendorHostStatus[] {
-  return probeAll().map((p) => ({
-    vendor: p.vendor,
-    present: p.path !== null,
-    binary: p.binary,
-    path: p.path,
-    source: p.source,
-    ...(p.version ? { version: p.version } : {}),
-    ...(p.expectedVersion ? { expectedVersion: p.expectedVersion } : {}),
-    compatibleRange: p.compatibleRange,
-    ...(p.error ? { error: p.error } : {}),
-    ...(p.managedError ? { managedError: p.managedError } : {}),
-    installHint: p.installHint,
-  }))
+  return probeAll().map((p) => {
+    const status = readVendorCliStatus(p.vendor)
+    return {
+      vendor: p.vendor,
+      present: p.path !== null,
+      binary: p.binary,
+      path: p.path,
+      source: p.source,
+      ...(p.version ? { version: p.version } : {}),
+      ...(p.expectedVersion ? { expectedVersion: p.expectedVersion } : {}),
+      compatibleRange: p.compatibleRange,
+      ...(p.error ? { error: p.error } : {}),
+      ...(p.managedError ? { managedError: p.managedError } : {}),
+      installHint: p.installHint,
+      ...(status.installedVersions.length > 0
+        ? { installedVersions: status.installedVersions }
+        : {}),
+      ...(status.activeVersion ? { activeVersion: status.activeVersion } : {}),
+      ...(status.downloadTargetVersion
+        ? { downloadTargetVersion: status.downloadTargetVersion }
+        : {}),
+      ...(status.lastCheckedAt ? { lastCheckedAt: status.lastCheckedAt } : {}),
+      ...(status.lastRemoteCheckAt ? { lastRemoteCheckAt: status.lastRemoteCheckAt } : {}),
+      ...(status.lastError ? { lastError: status.lastError } : {}),
+    }
+  })
 }
 
 /**
@@ -175,9 +193,15 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
     conn.send({ type: 'error', error: { code: authError } })
     return
   }
+  const saved = saveSettings(preserveBasicProvider(msg.settings))
+  // Sync the manifest's selectedVersion to the user's effective-version choices
+  // and refresh the probe cache BEFORE re-probing, so the returned hostStatus and
+  // subsequent session launches reflect the new priority. This never touches
+  // settings.json — only the vendor manifest + probe cache.
+  applyVendorCliChoices(saved.vendorCliVersions ?? {})
   conn.send({
     type: 'settings',
-    settings: saveSettings(preserveBasicProvider(msg.settings)),
+    settings: saved,
     hostStatus: hostStatus(),
     bindingStats: getSessionBindingStats(),
     sessionCapabilities: sessionCapabilities(),

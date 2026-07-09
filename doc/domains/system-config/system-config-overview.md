@@ -28,10 +28,17 @@ proxy settings).
   file lock, with write-time disk re-read and merge-not-overwrite so `save_settings` never wipes
   per-project config. See [persistence](../../shared/data-conventions/persistence.md) (唯一写入路径 + 双层锁，2026-06-08-003).
 - Separate from the session-registry's `state.json` (`${CLAUDE_CONFIG_DIR:-~/.claude}/c3/state.json`).
-- `vendorCliVersions.claude` / `vendorCliVersions.codex` are optional system-level pins for
-  c3-managed vendor CLIs. Empty or absent means automatic latest-compatible selection under
-  `~/.c3/vendor/<vendor>/<version>/bin/<binary>`. Explicit env overrides still win; host PATH is
-  only a degraded fallback after managed resolution or sync fails.
+- `vendorCliVersions.claude` / `vendorCliVersions.codex` select the runtime
+  **effective** managed version — they are NOT download pins. Empty or absent
+  means automatic latest-compatible: the sync flow always tracks the newest
+  compatible npm release under `~/.c3/vendor/<vendor>/<version>/bin/<binary>`,
+  regardless of this field, so historical versions can be selected as active
+  without freezing upgrades. A non-empty value must point to a server-reported
+  installed version; an uninstalled/incompatible value degrades to the latest
+  compatible managed version, records a visible `lastError`, and is not silently
+  cleared. The system-settings panel renders the installed version list as a
+  single-select. Explicit env overrides still win; host PATH is only a degraded
+  fallback after managed resolution or sync fails.
 - **Migration (2026-06-07-017):** `defaultMode` is now a per-vendor map (vendor id → mode token)
   instead of a single mode token. The old single-string format is detected during workspace-setting
   normalization and automatically distributed to each vendor key (the value is used as-is for every

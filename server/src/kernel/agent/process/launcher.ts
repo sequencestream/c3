@@ -398,50 +398,59 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
 
   const pins = getVendorCliVersions()
   const state = readState()
-  const manualVersion = pins[vendor] || undefined
-  const selectedVersion =
-    manualVersion ??
-    state.vendors[vendor]?.latestCompatibleVersion ??
-    state.vendors[vendor]?.selectedVersion
-  if (selectedVersion) {
+  const entry = state.vendors[vendor]
+  const choice = pins[vendor] || undefined
+  // Managed resolution degrades in a fixed order: the user's effective-version
+  // choice (from settings) → the last sync's latest-compatible download target →
+  // the manifest's recorded selectedVersion → host PATH fallback. Each managed
+  // candidate that is missing/incompatible records a visible `lastError` but does
+  // NOT rewrite `vendorCliVersions` (the user's choice is preserved so the panel
+  // can show "selected but currently unavailable").
+  const candidates = [choice, entry?.latestCompatibleVersion, entry?.selectedVersion].filter(
+    (v): v is string => Boolean(v),
+  )
+  const tried = new Set<string>()
+  const errors: string[] = []
+  for (const candidate of candidates) {
+    if (tried.has(candidate)) continue
+    tried.add(candidate)
     try {
-      const probe = probeManaged(vendor, selectedVersion, deps)
+      const probe = probeManaged(vendor, candidate, deps)
+      const degraded = choice && candidate !== choice
+      const managedError = degraded
+        ? `active ${choice} unavailable, degraded to ${candidate}`
+        : undefined
       cache.set(vendor, probe)
       recordState(
         vendor,
         {
           source: 'managed',
-          selectedVersion,
-          manualVersion,
+          selectedVersion: candidate,
           path: probe.path ?? undefined,
-          lastError: undefined,
+          ...(managedError ? { lastError: managedError } : { lastError: undefined }),
           versionHistory: [
             {
-              version: selectedVersion,
+              version: candidate,
               installedPath: probe.path ?? undefined,
               lastUsedAt: nowIso(deps),
               status: 'selected',
             },
-            ...(state.vendors[vendor]?.versionHistory ?? []).filter(
-              (h) => h.version !== selectedVersion,
-            ),
+            ...(entry?.versionHistory ?? []).filter((h) => h.version !== candidate),
           ],
         },
         deps,
       )
       return probe
     } catch (err) {
-      const managedError = `managed ${vendor} ${selectedVersion} unusable: ${(err as Error).message}`
-      const probe = fallbackProbe(vendor, managedError, deps)
-      cache.set(vendor, probe)
-      recordState(vendor, { source: probe.source, manualVersion, lastError: managedError }, deps)
-      return probe
+      errors.push(`${candidate} unusable: ${(err as Error).message}`)
     }
   }
 
-  const probe = fallbackProbe(vendor, 'managed CLI not installed yet', deps)
+  const managedError =
+    errors.length > 0 ? `managed ${vendor} ${errors.join('; ')}` : 'managed CLI not installed yet'
+  const probe = fallbackProbe(vendor, managedError, deps)
   cache.set(vendor, probe)
-  recordState(vendor, { source: probe.source, manualVersion, lastError: probe.managedError }, deps)
+  recordState(vendor, { source: probe.source, lastError: managedError }, deps)
   return probe
 }
 
@@ -481,23 +490,20 @@ function isPreRelease(v: string): boolean {
   return m !== null
 }
 
+/**
+ * Select the download target — always the newest compatible npm version along
+ * the dist-tag candidate chain. This is decoupled from the runtime *effective*
+ * version selection (`vendorCliVersions`): sync always tracks the latest
+ * compatible release so historical versions can coexist and be chosen as the
+ * active version without freezing the download target.
+ */
 export function selectNpmVersion(
   vendor: VendorId,
   packument: NpmPackument,
-  manualVersion?: string,
   platform = process.platform,
   arch = process.arch,
 ): { version: string; sourceTag: string } {
   const spec = HOST_BINARIES[vendor]
-  if (manualVersion) {
-    if (!satisfiesRange(manualVersion, spec.compatibleRange)) {
-      throw new Error(`${vendor} manual version ${manualVersion} outside ${spec.compatibleRange}`)
-    }
-    if (!versionRecord(packument, manualVersion))
-      throw new Error(`${vendor} ${manualVersion} not in npm packument`)
-    return { version: manualVersion, sourceTag: 'manual' }
-  }
-
   const tags = packument['dist-tags'] ?? {}
   const candidates =
     vendor === 'codex'
@@ -571,7 +577,10 @@ export async function syncManagedVendorCli(
   const spec = HOST_BINARIES[vendor]
   const home = c3HomeDir()
   const state = readState(home)
-  const manualVersion = getVendorCliVersions()[vendor] || undefined
+  // The download target is decoupled from the user's effective-version choice
+  // (`vendorCliVersions`): sync always tracks the latest compatible release so
+  // historical versions can be selected as active without freezing the download.
+  const choice = getVendorCliVersions()[vendor] || undefined
   const fetchFn = deps.fetch ?? fetch
   let packument: NpmPackument
   try {
@@ -587,11 +596,11 @@ export async function syncManagedVendorCli(
     const fallback = resolveExecutable(vendor, deps)
     const msg = `npm packument fetch failed for ${vendor}: ${(err as Error).message}`
     console.log(`[c3] vendor packument-failed: ${vendor} (${(err as Error).message})`)
-    recordState(vendor, { source: fallback.source, manualVersion, lastError: msg }, deps)
+    recordState(vendor, { source: fallback.source, lastError: msg }, deps)
     return fallback.path ? { ...fallback, managedError: msg } : missingProbe(vendor, undefined, msg)
   }
 
-  const selected = selectNpmVersion(vendor, packument, manualVersion)
+  const selected = selectNpmVersion(vendor, packument)
   const path = managedBinPath(vendor, selected.version, home)
   if (existsSync(path)) {
     const probe = probeManaged(vendor, selected.version, deps)
@@ -600,9 +609,8 @@ export async function syncManagedVendorCli(
       vendor,
       {
         source: 'managed',
-        selectedVersion: selected.version,
-        manualVersion,
-        latestCompatibleVersion: manualVersion ? prior?.latestCompatibleVersion : selected.version,
+        selectedVersion: choice ? prior?.selectedVersion : selected.version,
+        latestCompatibleVersion: selected.version,
         path,
         lastRemoteCheckAt: nowIso(deps),
         lastError: undefined,
@@ -611,19 +619,23 @@ export async function syncManagedVendorCli(
           sourceTag: selected.sourceTag,
           installedPath: path,
           lastUsedAt: nowIso(deps),
-          status: 'selected',
+          status: 'installed',
         }),
       },
       deps,
     )
     resetProbeCache()
     const priorVersion = prior?.selectedVersion
-    if (priorVersion && priorVersion !== selected.version) {
+    // Log against the resolved new selectedVersion (the effective version),
+    // not the download target — when the user pinned a history version the
+    // download target advances (latest) but the effective version stays.
+    const newSelected = choice ? prior?.selectedVersion : selected.version
+    if (priorVersion && priorVersion !== newSelected) {
       console.log(
-        `[c3] vendor upgrade: ${vendor} v${priorVersion} → v${selected.version} (already downloaded)`,
+        `[c3] vendor upgrade: ${vendor} v${priorVersion} → v${newSelected} (already downloaded)`,
       )
     } else {
-      console.log(`[c3] vendor ok: ${vendor} v${selected.version} (current)`)
+      console.log(`[c3] vendor ok: ${vendor} v${newSelected} (current)`)
     }
     return probe
   }
@@ -715,9 +727,8 @@ export async function syncManagedVendorCli(
       vendor,
       {
         source: 'managed',
-        selectedVersion: selected.version,
-        manualVersion,
-        latestCompatibleVersion: manualVersion ? prior?.latestCompatibleVersion : selected.version,
+        selectedVersion: choice ? prior?.selectedVersion : selected.version,
+        latestCompatibleVersion: selected.version,
         path,
         installedAt: nowIso(deps),
         lastRemoteCheckAt: nowIso(deps),
@@ -736,10 +747,11 @@ export async function syncManagedVendorCli(
     )
     resetProbeCache()
     const priorVersion = prior?.selectedVersion
-    if (priorVersion && priorVersion !== selected.version) {
-      console.log(`[c3] vendor upgrade: ${vendor} v${priorVersion} → v${selected.version}`)
+    const newSelected = choice ? prior?.selectedVersion : selected.version
+    if (priorVersion && priorVersion !== newSelected) {
+      console.log(`[c3] vendor upgrade: ${vendor} v${priorVersion} → v${newSelected}`)
     } else {
-      console.log(`[c3] vendor installed: ${vendor} v${selected.version}`)
+      console.log(`[c3] vendor installed: ${vendor} v${selected.version} (download target)`)
     }
     return probeManaged(vendor, selected.version, deps)
   } catch (err) {
@@ -753,8 +765,7 @@ export async function syncManagedVendorCli(
       vendor,
       {
         source: old.source,
-        manualVersion,
-        latestCompatibleVersion: manualVersion ? prior?.latestCompatibleVersion : selected.version,
+        latestCompatibleVersion: selected.version,
         lastRemoteCheckAt: nowIso(deps),
         lastError: msg,
         versionHistory: installHistory(prior, {
@@ -802,8 +813,15 @@ export function cleanManagedHistory(vendor: VendorId, inUse: readonly string[] =
   const state = readState(home)
   const entry = state.vendors[vendor]
   if (!entry) return
+  // The protected set covers every source of the current effective-version
+  // choice: the manifest's selectedVersion, the settings-level choice
+  // (`vendorCliVersions`), and caller-supplied in-use versions. A version that
+  // is the active selection must never be cleaned even if it is a historical
+  // version older than the latest download target.
   const protectedVersions = new Set(
-    [entry.selectedVersion, entry.manualVersion, ...inUse].filter((v): v is string => Boolean(v)),
+    [entry.selectedVersion, getVendorCliVersions()[vendor], ...inUse].filter((v): v is string =>
+      Boolean(v),
+    ),
   )
   for (const h of entry.versionHistory.slice(HISTORY_LIMIT)) {
     if (protectedVersions.has(h.version)) continue
@@ -811,6 +829,100 @@ export function cleanManagedHistory(vendor: VendorId, inUse: readonly string[] =
   }
   entry.versionHistory = trimHistory(entry.versionHistory)
   writeState(home, state)
+}
+
+/**
+ * Sync the manifest's `selectedVersion` to the user's effective-version choices
+ * after a `save_settings` round-trip, and refresh the probe cache so the next
+ * `get_settings` and subsequent session launches use the new priority. This is
+ * the single entry point the settings save path calls — it never touches
+ * `settings.json` itself, only the manifest + probe cache.
+ *
+ * - choice set & installed+compatible ⇒ selectedVersion = choice, clear lastError.
+ * - choice set but not installed/incompatible ⇒ selectedVersion = choice (kept,
+ *   so the panel shows the selection), record lastError. The choice is NOT
+ *   cleared so the user can see and re-pick.
+ * - choice empty ⇒ selectedVersion = latestCompatibleVersion (auto-follow).
+ */
+export function applyVendorCliChoices(
+  choices: Partial<Record<VendorId, string>>,
+  deps?: VendorInstallerDeps,
+): void {
+  for (const vendor of Object.keys(HOST_BINARIES) as VendorId[]) {
+    const choice = choices[vendor]?.trim() || undefined
+    const entry = readState().vendors[vendor]
+    if (!choice) {
+      const target = entry?.latestCompatibleVersion
+      if (target) {
+        recordState(vendor, { selectedVersion: target, lastError: undefined }, deps)
+      }
+      continue
+    }
+    const path = managedBinPath(vendor, choice)
+    if (existsSync(path) && satisfiesRange(choice, HOST_BINARIES[vendor].compatibleRange)) {
+      recordState(vendor, { selectedVersion: choice, lastError: undefined }, deps)
+    } else {
+      recordState(
+        vendor,
+        {
+          selectedVersion: choice,
+          lastError: `active ${choice} not installed/incompatible`,
+        },
+        deps,
+      )
+    }
+  }
+  resetProbeCache()
+}
+
+/** A selectable installed managed version (failed entries are excluded). */
+export interface VendorCliVersionEntry {
+  version: string
+  installedAt?: string
+  sourceTag?: string
+  status: 'installed' | 'selected'
+}
+
+/** Manifest-derived status for the settings panel: installed version list +
+ *  effective/download target versions + sync/check times + last error. */
+export interface VendorCliStatus {
+  installedVersions: VendorCliVersionEntry[]
+  activeVersion?: string
+  downloadTargetVersion?: string
+  lastCheckedAt?: string
+  lastRemoteCheckAt?: string
+  lastError?: string
+}
+
+/**
+ * Read the manifest-derived vendor CLI status for the settings panel. Only
+ * installed/selected history entries are exposed as selectable; failed entries
+ * are filtered out. This is a pure read — it does not resolve or probe.
+ */
+export function readVendorCliStatus(vendor: VendorId): VendorCliStatus {
+  const entry = readState().vendors[vendor]
+  if (!entry) return { installedVersions: [] }
+  const installedVersions: VendorCliVersionEntry[] = entry.versionHistory
+    .filter(
+      (h): h is VendorVersionHistoryEntry & { status: 'installed' | 'selected' } =>
+        h.status === 'installed' || h.status === 'selected',
+    )
+    .map((h) => ({
+      version: h.version,
+      ...(h.installedAt ? { installedAt: h.installedAt } : {}),
+      ...(h.sourceTag ? { sourceTag: h.sourceTag } : {}),
+      status: h.status,
+    }))
+  return {
+    installedVersions,
+    ...(entry.selectedVersion ? { activeVersion: entry.selectedVersion } : {}),
+    ...(entry.latestCompatibleVersion
+      ? { downloadTargetVersion: entry.latestCompatibleVersion }
+      : {}),
+    ...(entry.lastCheckedAt ? { lastCheckedAt: entry.lastCheckedAt } : {}),
+    ...(entry.lastRemoteCheckAt ? { lastRemoteCheckAt: entry.lastRemoteCheckAt } : {}),
+    ...(entry.lastError ? { lastError: entry.lastError } : {}),
+  }
 }
 
 export function vendorCliDisplayPath(vendor: VendorId, version: string): string {

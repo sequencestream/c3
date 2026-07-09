@@ -3,6 +3,15 @@
 All notable changes to `c3` (Code Creative Center). The version source-of-truth is the git
 tag (`git describe --tags`); `package.json` is the fallback baseline.
 
+## v0.9.5
+
+- consensus voting supports cross-vendor participants with normalized permission risk
+- automation tool panel adds network-access option (passthrough to codex networkAccess)
+- codex session injects GH_TOKEN to fix keyring token unreadable inside sandbox
+- add mermaid dependency for Mermaid diagram rendering
+- drop empty-named sandbox definitions to prevent startup crash
+- fix ja/ko/ru workSession translations
+
 ## v0.9.4
 
 - upgrade sdk for claude agent & codex

@@ -46,7 +46,9 @@ import type { FrozenToolSet } from './mcp-freeze.js'
 import { createAutomationMcpServer } from './c3-mcp.js'
 import type { ServedAutomationMcp } from '../../transport/automation-mcp/index.js'
 import { upsertAutomationExecutionRow } from '../sessions/session-metadata-store.js'
-import { setAutomationRunning, clearAutomationRunning } from '../../runs.js'
+import { ensureRuntime, emit, getRuntime, setStatus } from '../../runs.js'
+import { WireEmitter } from '../../kernel/run/run-via-driver.js'
+import { AutomationViewerStream, translateClaudeSdkMessage } from './viewer-stream.js'
 
 // ---------------------------------------------------------------------------
 // Codex automation c3 MCP route (driver-path twin of the Claude in-process
@@ -466,10 +468,67 @@ function upsertAutomationSessionProjection(automation: Automation, sessionId: st
   } catch (err) {
     console.error('[c3:automations] failed to upsert automation session projection:', err)
   }
-  // Register the real agent session as running in the same phase we bind it to the
-  // projection, so the 「自动化」tab row shows the running dot for the duration. The
-  // matching clear lives in each executor's terminal cleanup (idempotent).
-  setAutomationRunning(sessionId)
+}
+
+/**
+ * Register the real agent session as a live {@link SessionRuntime} for a `llm`
+ * automation, so a viewer on the works page sees the fine-grained running status
+ * and a transcript that updates in real time (not the old static projection).
+ *
+ * The runtime is tagged `sessionKind: 'automation'` + `runKind: 'background'` (the
+ * first place this combination is created) and its `run` pointer carries the
+ * dispatcher's wall-clock `abortController`, so the works-page `stop_run` handler
+ * aborts THIS run through `stopRun(id)` → `rt.run.abort.abort()`. `setStatus('running')`
+ * broadcasts the status snapshot; `listStatuses()`'s "kernel runtimes win" rule then
+ * supersedes the legacy `automationRunning` flag (which llm runs no longer set).
+ */
+function registerAutomationRuntime(
+  automation: Automation,
+  sessionId: string,
+  abortController: AbortController,
+): void {
+  const workspacePath = resolveWorkspaceRoot(automation.workspaceId)!
+  const codexPolicy = typeof automation.mode === 'object' ? automation.mode : undefined
+  const mode: ModeToken = typeof automation.mode === 'string' ? automation.mode : 'auto'
+  const rt = ensureRuntime(
+    sessionId,
+    workspacePath,
+    mode,
+    [],
+    'automation',
+    codexPolicy,
+    'background',
+  )
+  rt.run = { abort: abortController, handle: null }
+  setStatus(sessionId, 'running')
+}
+
+/**
+ * Terminal cleanup for a `llm` automation runtime: null the run pointer so the
+ * liveness reconciler leaves the runtime alone, emit a single terminal `turn_end`
+ * (unless the SDK's own `result` frame already produced one), and settle to `idle`.
+ *
+ * The runtime is deliberately KEPT (not removed) — same as an ordinary session —
+ * so selecting the automation session after it ends replays the full transcript
+ * from the buffer. `finalizeRun` is intentionally NOT used: its `onRunEnd` hook
+ * would rewrite the projection title from the automation name to the native agent
+ * title, sinking the 「自动化」tab's row label.
+ *
+ * The wire `turn_end` only carries `complete | error`; a user stop / wall-clock
+ * timeout maps to `complete` (the viewer converges to idle; the failure itself is
+ * recorded in the execution log, not the wire frame).
+ */
+function settleAutomationRuntime(
+  sessionId: string | null,
+  reason: 'complete' | 'error',
+  error?: string,
+): void {
+  if (!sessionId) return
+  const rt = getRuntime(sessionId)
+  if (!rt) return
+  rt.run = null
+  if (!rt.sawTurnEnd) emit(sessionId, { type: 'turn_end', reason, ...(error ? { error } : {}) })
+  setStatus(sessionId, 'idle')
 }
 
 async function executeLlmPrompt(
@@ -562,10 +621,17 @@ async function executeLlmPrompt(
     : workspaceMcpConfig.mcpServers
   const hasMcpServers = Object.keys(mcpServers).length > 0
 
-  // The real agent session registered as running (via the projection helper) once
-  // the first SDK message carries a `session_id`; cleared in `finally` on every
-  // terminal path — success, schema-fail, timeout, or thrown error.
+  // The real agent session, bound once the first SDK message carries a `session_id`;
+  // used by the `finally` to settle the runtime to idle. Null until bound.
   let runningSessionId: string | null = null
+  // Viewer stream: buffers translated wire events until the runtime is registered,
+  // then fans them out via `emit()`. The `register` callback wires the runtime's
+  // `run` pointer to THIS run's abortController and flips the status to running.
+  const viewer = new AutomationViewerStream((sid) =>
+    registerAutomationRuntime(automation, sid, abortController),
+  )
+  let settleReason: 'complete' | 'error' = 'complete'
+  let settleError: string | undefined
 
   try {
     const q = query({
@@ -592,16 +658,19 @@ async function executeLlmPrompt(
       if (abortController.signal.aborted) break
       // Capture the agent session id from the first event that carries it and
       // persist it immediately, so the transcript stays reachable even if the
-      // run later times out or fails before reaching a terminal update.
+      // run later times out or fails before reaching a terminal update. Binding
+      // the viewer registers the runtime and flushes any pre-session-id events.
       if (!sessionId) {
         const sid = (m as { session_id?: unknown }).session_id
         if (typeof sid === 'string' && sid) {
           sessionId = sid
+          runningSessionId = sessionId
           updateLog(logId, { sessionId })
           upsertAutomationSessionProjection(automation, sessionId)
-          runningSessionId = sessionId
+          viewer.bind(sessionId)
         }
       }
+      // Accumulate assistant text for the execution log's `output` + schema check.
       if (m.type === 'assistant') {
         const content = (m as { message?: { content?: unknown[] } }).message?.content
         if (Array.isArray(content)) {
@@ -612,9 +681,11 @@ async function executeLlmPrompt(
             }
           }
         }
-      } else if (m.type === 'result') {
-        break
       }
+      // Translate the SDK message into wire events and push them to viewers (or
+      // buffer them until the session id binds).
+      viewer.pushAll(translateClaudeSdkMessage(m))
+      if (m.type === 'result') break
     }
 
     clearTimeout(timeoutTimer)
@@ -656,13 +727,20 @@ async function executeLlmPrompt(
     clearTimeout(timeoutTimer)
     const now = Date.now()
     const message = err instanceof Error ? err.message : String(err)
+    // A user stop / wall-clock abort surfaces to the viewer as a clean `complete`
+    // turn_end (the failure is recorded in the execution log, not the wire frame);
+    // only a genuine SDK error settles the viewer with `error`.
+    if (!abortController.signal.aborted) {
+      settleReason = 'error'
+      settleError = message
+    }
     updateLog(logId, {
       finishedAt: now,
       status: 'failed',
       error: message,
     })
   } finally {
-    if (runningSessionId) clearAutomationRunning(runningSessionId)
+    settleAutomationRuntime(runningSessionId, settleReason, settleError)
   }
 }
 
@@ -709,8 +787,18 @@ async function executeCodexLlmPrompt(
           executionId: logId,
         })
       : null
-  // Cleared in `finally` on every terminal path (success, timeout, thrown error).
+  // Bound once the driver reports the real session id; used by `finally` to settle
+  // the runtime to idle. Null until bound.
   let runningSessionId: string | null = null
+  // Viewer stream + canonical→wire diff. Codex resolves its session id up-front
+  // (`await run.sessionId()`), so the pre-session-id buffer is normally empty, but
+  // the same path is used for symmetry with the claude executor.
+  const viewer = new AutomationViewerStream((sid) =>
+    registerAutomationRuntime(automation, sid, abortController),
+  )
+  const wireEmitter = new WireEmitter((event) => viewer.push(event))
+  let settleReason: 'complete' | 'error' = 'complete'
+  let settleError: string | undefined
   try {
     const run = await createCodexAdapter().driver.start({
       prompt,
@@ -731,12 +819,17 @@ async function executeCodexLlmPrompt(
       updateLog(logId, { sessionId })
       upsertAutomationSessionProjection(automation, sessionId)
       runningSessionId = sessionId
+      viewer.bind(sessionId)
     }
     let output = ''
     for await (const message of run.messages()) {
+      if (abortController.signal.aborted) break
       for (const block of message.blocks) {
         if (block.type === 'text') output = block.text
       }
+      // Diff the append-with-upsert canonical frame into incremental wire events
+      // (assistant_text deltas + one-shot tool_use / tool_result) for viewers.
+      wireEmitter.consume(message)
     }
     updateLog(logId, {
       finishedAt: Date.now(),
@@ -745,13 +838,20 @@ async function executeCodexLlmPrompt(
       ...(abortController.signal.aborted ? { error: 'wall_clock_timeout' } : {}),
     })
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    // Abort (user stop / wall-clock) settles the viewer with `complete`; only a
+    // genuine driver error settles with `error` (mirrors the claude executor).
+    if (!abortController.signal.aborted) {
+      settleReason = 'error'
+      settleError = message
+    }
     updateLog(logId, {
       finishedAt: Date.now(),
       status: 'failed',
-      error: err instanceof Error ? err.message : String(err),
+      error: message,
     })
   } finally {
-    if (runningSessionId) clearAutomationRunning(runningSessionId)
+    settleAutomationRuntime(runningSessionId, settleReason, settleError)
     // Dispose the per-execution c3 MCP token so the tools cannot be called after
     // this execution ends (idempotent; no-op when c3 was not selected).
     c3Binding?.dispose()

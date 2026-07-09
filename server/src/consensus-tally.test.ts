@@ -614,13 +614,24 @@ describe('deciderAskPrompt', () => {
 })
 
 describe('prompt split — stable system role vs per-turn user context', () => {
-  it('voterPrompt: the tool name lives in the user turn, never in the system role', () => {
-    const { system, user } = voterPrompt('Bash', { command: 'rm -rf /tmp/x' }, 'recent ctx')
+  it('voterPrompt: renders the neutral risk payload and leaks no native tool name', () => {
+    const { system, user } = voterPrompt(
+      {
+        operationIntent: 'execute-shell-command: Run a shell command',
+        resourceScope: { kind: 'command', targets: ['rm -rf /tmp/x'] },
+        risks: { read: true, write: true, execute: true, network: true },
+        normalizationVersion: 1,
+      },
+      'recent ctx',
+    )
     expect(system).toContain('advisor')
+    // The native tool name must never reach the cross-vendor voter — not in the
+    // system role and not in the user turn (only the neutral intent + targets do).
     expect(system).not.toContain('Bash')
-    expect(system).not.toContain('rm -rf')
-    expect(user).toContain('Bash')
-    expect(user).toContain('rm -rf')
+    expect(user).not.toContain('Bash')
+    expect(user).toContain('execute-shell-command')
+    expect(user).toContain('rm -rf /tmp/x')
+    expect(user).toContain('execute=yes')
     expect(user).toContain('recent ctx')
   })
 

@@ -163,17 +163,19 @@ folding the live gateway through the approval bridge is a later phase.
 > non-interactive exec, so it degrades to a static sandbox (the sandbox is the real enforcement). The
 > tighter cells dominate — plan / always-ask → read-only.
 >
-> **Upper-domain heterogeneous tolerance (2026-06-06-006).** The capability ledger also gates the
-> _upper_ domains, vendor-homogeneity being their organizing principle: (1) **consensus** votes only
-> within the session's own vendor — cross-vendor tool/risk semantics are incomparable, so the outcome
-> carries a vendor-scope marker for an honest UI rather than faking a cross-vendor vote; (2)
-> **agent-teams** are locked to the streaming-push capability — only Claude can host a resident lead,
-> so a non-Claude session never upgrades to a team; (3) the **degradation chain** keeps only
-> same-vendor fallbacks — a different vendor cannot resume context, so cross-vendor entries are
-> skipped and reported. The heavier cross-vendor machinery (risk-tag-neutralized voting,
-> heterogeneous teammates, a replay-seed degradation hand-off with UI-marked context discontinuity)
-> is deferred — spec'd, not built, until a real need appears. The principle is **honest UI over faked
-> capability** (PG-R13, AS-R21/R22).
+> **Upper-domain heterogeneous tolerance (2026-06-06-006; consensus updated 2026-07-09).** The
+> capability ledger also gates the _upper_ domains, vendor-homogeneity being their original organizing
+> principle: (1) **consensus** originally voted only within the session's own vendor. **Superseded
+> (2026-07-09):** the deferred "risk-tag-neutralized voting" is now built — a deterministic server-side
+> normalizer maps a tool request to a vendor-neutral intent + risk payload, so consensus now votes
+> **cross-vendor** and the vendor-scope marker is gone (PG-R13). (2) **agent-teams** are locked to the
+> streaming-push capability — only Claude can host a resident lead, so a non-Claude session never
+> upgrades to a team; (3) the **degradation chain** keeps only same-vendor fallbacks — a different
+> vendor cannot resume context, so cross-vendor entries are skipped and reported. The remaining
+> deferred cross-vendor machinery (heterogeneous teammates, a replay-seed degradation hand-off with
+> UI-marked context discontinuity) stays spec'd, not built, until a real need appears. The principle
+> is **honest UI over faked capability**, and — for consensus — **normalize to a comparable form
+> rather than restrict who participates** (PG-R13, AS-R21/R22).
 
 > **Claude task store reference implementation (2026-06-07).** The 4th neutral interface (the task
 > store) gets its Claude reference, with pure parsing factored out. The Claude Agent SDK has **no

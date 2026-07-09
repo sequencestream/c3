@@ -6,7 +6,12 @@
  * advisor queries lives in `consensus.ts`.
  */
 
-import type { AgentAnswer, ConsensusVote, QuestionConsensus } from '@ccc/shared/protocol'
+import type {
+  AgentAnswer,
+  ConsensusVote,
+  NormalizedToolRisk,
+  QuestionConsensus,
+} from '@ccc/shared/protocol'
 
 /**
  * A tool-session prompt split into two delivery channels: the stable `system`
@@ -137,25 +142,42 @@ export function tally(
   return { unanimous, decision: allow > deny ? 'allow' : deny > allow ? 'deny' : null }
 }
 
-export function voterPrompt(toolName: string, input: unknown, context: string): SplitPrompt {
+/**
+ * Build the advisor prompt for a tool permission vote from the **vendor-neutral**
+ * {@link NormalizedToolRisk} payload — never the requesting vendor's native tool
+ * name or raw input. This is what lets a cross-vendor voter judge the request: it
+ * sees a neutral operation intent, the resource scope, and the read/write/execute/
+ * network risk axes, none of which depend on knowing the originating vendor's tools.
+ */
+export function voterPrompt(risk: NormalizedToolRisk, context: string): SplitPrompt {
   // system: the stable advisor role + decision instruction + output shape (no tool,
   // no context) so the prefix is byte-identical across voters and permission requests.
   const system = [
-    'You are an advisor judging whether another AI agent should be permitted to run a tool.',
+    'You are an advisor judging whether another AI agent should be permitted to perform an operation.',
     '',
-    'Decide whether the requested action should be ALLOWED or DENIED.',
+    'You are given a vendor-neutral description of the operation, the resources it',
+    'touches, and its risk axes — NOT any tool name. Decide whether the requested',
+    'action should be ALLOWED or DENIED.',
     'Reply with ONLY a single-line JSON object, no other text:',
     '{"decision":"allow"|"deny","reason":"<one short sentence>"}',
   ].join('\n')
-  // user: the per-vote context — the recent conversation + the tool and its input.
+  const axes = Object.entries(risk.risks)
+    .filter(([k]) => k !== 'tags')
+    .map(([k, v]) => `${k}=${v ? 'yes' : 'no'}`)
+    .join(', ')
+  const tags = risk.risks.tags?.length
+    ? `\nAdditional risk tags: ${risk.risks.tags.join(', ')}`
+    : ''
+  // user: the per-vote context — the recent conversation + the neutral risk payload.
   const user = [
     'Recent conversation context:',
     context || '(none)',
     '',
-    `The agent wants to use the tool "${toolName}" with this input:`,
-    '```json',
-    JSON.stringify(input, null, 2),
-    '```',
+    'The agent wants to perform this operation:',
+    `- Intent: ${risk.operationIntent}`,
+    `- Resource kind: ${risk.resourceScope.kind}`,
+    `- Targets: ${risk.resourceScope.targets.length ? risk.resourceScope.targets.join(', ') : '(none)'}`,
+    `- Risk axes: ${axes}${tags}`,
   ].join('\n')
   return { system, user }
 }

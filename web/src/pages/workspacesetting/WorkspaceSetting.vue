@@ -239,10 +239,10 @@ function toggleAgent(id: string): void {
 // ---- Consensus custom voter picker ----
 
 /**
- * Agents selectable as custom consensus voters — every enabled agent. The
- * runtime intersects this allowlist with the session's own vendor + enabled set
- * (`vendorScopedVoters`), so the picker need not pre-filter by vendor; a cross-
- * vendor pick is simply inert for a session of a different vendor.
+ * Agents selectable as custom consensus voters — every enabled agent. Consensus
+ * voting is vendor-neutral (`selectConsensusVoters` intersects this allowlist with
+ * the enabled non-self set, never by vendor), so a cross-vendor pick genuinely
+ * participates: tool requests are made comparable by the server's risk normalizer.
  */
 const consensusSelectableAgents = computed<AgentConfig[]>(() =>
   (props.agents ?? []).filter((a) => a.enabled !== false),

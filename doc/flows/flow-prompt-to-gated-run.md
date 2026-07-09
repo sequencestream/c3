@@ -57,13 +57,14 @@ flowchart TD
    sensitive, the SDK's `canUseTool` invokes the gateway, which produces exactly one Permission
    Request and **blocks the run** (`PG-R1`/`PG-R2`). Runtime status → `awaiting_permission`
    (`AS-R12`).
-   - **6a. Consensus pre-step (if enabled).** With `consensus.enabled` and ≥1 same-vendor peer,
-     the request is first put to those peers; a unanimous (or, under the majority toggle, a strict
-     majority) verdict auto-resolves via `consensus_auto` (`PG-R9`, `PG-R13`,
+   - **6a. Consensus pre-step (if enabled).** With `consensus.enabled` and ≥1 enabled non-self peer
+     (**cross-vendor**), the request is first **normalized** into a vendor-neutral risk payload and
+     put to those peers; a unanimous (or, under the majority toggle, a strict majority) verdict
+     auto-resolves via `consensus_auto` (`PG-R9`, `PG-R13`,
      [consensus](../domains/core/permission-gateway/features/permission-gateway-consensus.md)). 该自动决议同时
      落一条 `status: 'auto'` 的非阻塞 WaitUserInvolveEvent（携带 `outcome`）入 WorkCenter，使决策可追溯但不计徽章。
-     A split/abstention falls back
-     to the human prompt with the opinions attached.
+     A split/abstention — including a normalization failure that abstains every voter — falls back
+     to the human prompt with the opinions attached (a normalization failure never auto-allows).
    - **6b. Human prompt.** Otherwise `permission_request` reaches the browser; the human answers
      `permission_response` (allow → original input unchanged, `PG-R6`; deny → `PG-R7`). Default is
      **deny** (`PG-R4`).

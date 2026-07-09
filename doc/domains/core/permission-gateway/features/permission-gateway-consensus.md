@@ -55,7 +55,9 @@ decide whether the development process should `continue` past the checkpoint or 
 human intervention.
 
 Checkpoint consensus reuses the same one-shot advisor infrastructure, the same
-same-vendor-only voter rule, and the same fail-safe invariant (a tie → stop). It differs from
+shared (cross-vendor) participant selector, and the same fail-safe invariant (a tie → stop).
+The continue/wait prompt is already vendor-neutral (natural language), so it does **not** go
+through the tool-risk normalizer. It differs from
 the tool-permission and ask-question consensus in that it is owned by the automation
 orchestrator, not the permission gateway, and that it decides _automation flow_ (`continue`
 vs `wait`) rather than answering a tool-use or AskUserQuestion. The outcome is broadcast on
@@ -68,48 +70,73 @@ separate agent pool or configuration field exists.
 
 ## Roles
 
-| Role    | Who                                                                                                                                             | Job                                                               |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Voters  | Every configured **same-vendor** agent **except** the session's own (resolved), optionally narrowed by the `custom` voter allowlist (see below) | Judge the tool call from recent context; return `allow`/`deny`    |
-| Decider | The session's own agent                                                                                                                         | Summarize the voters' opinions in one sentence (Display language) |
+| Role    | Who                                                                                                                                        | Job                                                               |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| Voters  | Every enabled agent **except** the session's own (resolved), **regardless of vendor**, optionally narrowed by the `custom` voter allowlist | Judge the normalized request from recent context; `allow`/`deny`  |
+| Decider | The session's own agent                                                                                                                    | Summarize the voters' opinions in one sentence (Display language) |
 
-If there are no voters (only the session's own agent, **or** every other agent is a
-different vendor), consensus is skipped and the human is prompted as usual.
+If there are no voters (only the session's own agent, or the `custom` allowlist is empty /
+all-stale), consensus is skipped and the human is prompted as usual.
 
-### Vendor-homogeneous voting (2026-06-06-006)
+### Cross-vendor voting + risk normalization (2026-07-09)
 
-Consensus is **vendor-scoped**: only agents of the **session's own vendor** vote.
-A heterogeneous roundtable can mix vendors, but a cross-vendor vote is **meaningless** —
-the same tool name and its risk meaning differ across vendors' risk taxonomies. So
-c3 does **not** neutralize the request into a vendor-free "intent + risk-tag" form for
-cross-vendor voting (a deliberately-deferred option — low ROI until a real need); it
-simply limits the vote to the homogeneous subset and **labels the outcome honestly**.
-The outcome carries the voting vendor and a count of how many enabled non-self agents
-of a different vendor were dropped; when that count is `> 0` the console notes
-"共识限 \<vendor\> 内 · N 个跨 vendor 顾问未参与" so the human knows the whole
-heterogeneous table did **not** weigh in — never faking a cross-vendor consensus.
+Consensus voting is **vendor-neutral**: every enabled non-self agent votes regardless of
+vendor (a shared participant selector, `selectConsensusVoters`, reused by tool voting,
+`AskUserQuestion` voting, and the automation checkpoint vote). This supersedes the earlier
+vendor-homogeneous rule (2026-06-06-006), which limited voting to the session's own vendor
+because a native tool name + its risk meaning are not comparable across vendors.
 
-### Custom voter selection (2026-06-15)
+A cross-vendor voter is made possible for **tool** permission requests by a server-side
+**risk normalizer** that runs BEFORE fan-out. It deterministically maps
+`(requesting vendor, native tool name, input)` to a vendor-neutral payload:
 
-The consensus `mode` config key chooses **who** votes within the vendor-homogeneous set:
+- `operationIntent` — a stable neutral operation category + short description;
+- `resourceScope` — a neutral `kind` (`file` / `command` / `url` / `search` / …) plus the
+  structurally-extracted targets (paths, command target, remote host/URL). Never the raw
+  native input verbatim;
+- `risks` — explicit `read` / `write` / `execute` / `network` booleans (plus optional
+  non-vendor tags);
+- `normalizationVersion` — so prompts, protocol, and audit stay interpretable.
 
-- `mode: 'all'` (default / absent) — every same-vendor enabled non-self agent
-  votes (the original behaviour). The `agentIds` allowlist is ignored and not persisted.
+Voters see **only** this payload — never the native tool name or raw input — so a Codex
+advisor can judge a Claude session's `Bash`/`Write` request (and vice-versa). A successful
+normalization enters the existing tally unchanged: a `write`/`execute`/`network` axis is
+descriptive, not a hard deny.
+
+**Fail-closed normalization.** The normalizer is deterministic and never throws. An unknown
+tool, a missing critical target, an invalid input shape, or any internal error returns a
+**stable reason code**; the round then records every selected voter as an `abstain` (no
+advisor call is made) ⇒ empty verdict ⇒ the human is prompted. A normalization failure
+**never** auto-allows and never low-risk-defaults a value it could not derive. Adding a new
+native tool means adding a normalizer rule first — until then it safely degrades to abstain +
+human approval.
+
+The `AskUserQuestion` and checkpoint continue/wait votes are already vendor-neutral
+(natural-language prompts) and skip normalization entirely.
+
+**Honest audit.** The outcome carries the normalized payload (or the failure reason code) and
+each voter's `vendor`; the console / permission panel / WorkCenter render the participating
+agents + vendors, the risk axes, any abstentions, and the final verdict. The old "共识限
+\<vendor\> 内" scope marker (and `vendorScope`/`crossVendorExcluded` fields) are gone; old
+audit records without the new fields still read, they just no longer show the scope note.
+
+### Custom voter selection (2026-06-15, cross-vendor since 2026-07-09)
+
+The consensus `mode` config key chooses **who** votes, filtering by id only (never by vendor):
+
+- `mode: 'all'` (default / absent) — every enabled non-self agent votes, across vendors.
+  The `agentIds` allowlist is ignored and not persisted.
 - `mode: 'custom'` — voters are the **intersection** of the `agentIds` allowlist with the
-  same-vendor enabled non-self set. This lets the user exclude irrelevant read-only
-  agents or restrict voting to high-trust ones. It only ever **narrows within the
-  same vendor** — it never crosses the frozen vendor boundary, and the cross-vendor
-  exclusion count is still measured **before** the custom narrowing so an allowlist-dropped
-  same-vendor agent is never miscounted as a cross-vendor exclusion. An empty (or
-  all-stale) allowlist ⇒ zero voters ⇒ consensus is skipped and the human is
-  prompted as usual.
+  enabled non-self set. This lets the user exclude irrelevant read-only agents or restrict
+  voting to high-trust ones. It narrows by id and may include agents of any vendor. An empty
+  (or all-stale) allowlist ⇒ zero voters ⇒ consensus is skipped and the human is prompted.
 
 **Double static filtering of disabled agents.** A disabled agent never votes by
 two independent guards: (1) workspace-setting normalization cleans the `agentIds`
 allowlist, dropping ids that no longer exist or are disabled (deduped); (2) the runtime
-voter set is built from the enabled-only same-vendor agents, so even a stale id that
-slipped through cannot resurrect a voter. Both are **static** snapshots — there is no
-mid-run add/remove of voters; the config snapshot at vote time governs.
+voter set is built from the enabled-only agents, so even a stale id that slipped through
+cannot resurrect a voter. Both are **static** snapshots — there is no mid-run add/remove of
+voters; the config snapshot at vote time governs.
 
 The selection is configured per workspace in the Workspace Setting consensus
 section (an `All / Custom` radio; custom reveals an enabled-agent checklist). The
@@ -127,15 +154,21 @@ sequenceDiagram
     participant WS as WebSocket
 
     GW->>CO: currentAgentId, toolName, input, context, cancellation signal
-    alt disabled OR no other agents
+    alt disabled OR no voters
         CO-->>GW: no outcome
         GW->>WS: permission_request (plain) → wait for human
     else
-        CO->>V: voter prompt (toolName, input, context)  (parallel)
-        V-->>CO: decision + reason | abstain (on error / unparseable)
-        CO->>D: summarize votes  (code fallback on failure)
-        D-->>CO: one-line summary
-        CO-->>GW: outcome {votes, summary, unanimous, decision}
+        CO->>CO: normalize(requesting vendor, toolName, input)
+        alt normalization failed (unknown tool / missing target / invalid / error)
+            Note over CO: every voter abstains — no advisor call
+            CO-->>GW: outcome {abstains, normalizationFailure, decision:null}
+        else normalized OK
+            CO->>V: voter prompt (neutral risk payload + context)  (parallel)
+            V-->>CO: decision + reason | abstain (on error / unparseable)
+            CO->>D: summarize votes  (code fallback on failure)
+            D-->>CO: one-line summary
+            CO-->>GW: outcome {votes+vendor, summary, unanimous, decision, normalized}
+        end
         alt decision set (unanimous, or majority when the toggle is on)
             GW->>WS: consensus_auto{toolName, input, outcome}
             GW->>GW: onConsensusResolved → 记录 status:'auto' 的 WaitUserInvolveEvent(携带 outcome)
@@ -160,12 +193,13 @@ capped at ~4000 chars.
 
 ## Contracts
 
-| Capability           | Contract                                                                                                                                                                                                                                                |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Run a consensus vote | No outcome ⇒ disabled or no voters (caller does the plain human prompt). Otherwise a full outcome.                                                                                                                                                      |
-| Parse a vote         | Strict-JSON first, then a keyword scan; ambiguous/empty ⇒ the caller records an **abstain**.                                                                                                                                                            |
-| Tally                | `unanimous` = literal all-agree (no abstain), independent of the majority toggle. The decision: unanimous-only when majority is off; a strict majority of cast votes (abstain excluded) when on — tie / no clear majority / no cast vote ⇒ no decision. |
-| Summarize            | The decider agent produces one sentence in the Display language; a deterministic tally summary is used on error/abort.                                                                                                                                  |
+| Capability           | Contract                                                                                                                                                                                                                                                 |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Run a consensus vote | No outcome ⇒ disabled or no voters (caller does the plain human prompt). Otherwise a full outcome.                                                                                                                                                       |
+| Normalize a tool req | Deterministic map `(vendor, toolName, input)` → neutral payload; never throws. Failure ⇒ a stable reason code, every voter abstains (no advisor call), outcome carries `normalizationFailure` and `decision: null` (defers to human, never auto-allows). |
+| Parse a vote         | Strict-JSON first, then a keyword scan; ambiguous/empty ⇒ the caller records an **abstain**.                                                                                                                                                             |
+| Tally                | `unanimous` = literal all-agree (no abstain), independent of the majority toggle. The decision: unanimous-only when majority is off; a strict majority of cast votes (abstain excluded) when on — tie / no clear majority / no cast vote ⇒ no decision.  |
+| Summarize            | The decider agent produces one sentence in the Display language; a deterministic tally summary is used on error/abort.                                                                                                                                   |
 
 ## Invariants
 
@@ -320,7 +354,8 @@ original input plus the chosen `answers`. This is the documented PG-R6 exception
 
 每次共识自动决议（`consensus_auto`，无人类参与）除发出 wire 帧外，网控还经 `onConsensusResolved`
 回调记录一条 `status: 'auto'` 的 `WaitUserInvolveEvent`，其 `outcome` 携带做出决议的共识结果
-（投票、裁决、摘要）。该记录是**非阻塞、仅审计**的：永不计入"待处理"徽章，也不阻塞续跑；
+（投票及各投票者 `vendor`、裁决、摘要，工具路径还含归一化风险载荷 `normalized` 或失败原因
+`normalizationFailure`）。该记录是**非阻塞、仅审计**的：永不计入"待处理"徽章，也不阻塞续跑；
 它使自动决策在 WorkCenter 的"自动"筛选下可追溯。这覆盖 allow/deny 工具共识与 `AskUserQuestion`
 全一致自动作答两条自动路径。人类参与的 `permission_request` 走另一条回调
 （`onPermissionRequest` → `status: 'todo'`），二者互斥。持久化失败（如库不可用）被吞并记日志，

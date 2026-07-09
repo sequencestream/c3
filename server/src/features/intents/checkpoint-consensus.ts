@@ -51,7 +51,7 @@ import type {
   Intent,
 } from '@ccc/shared/protocol'
 import { askAgentOnce } from '../../agent-once.js'
-import { vendorScopedVoters } from '../../kernel/agent-config/index.js'
+import { selectConsensusVoters } from '../../kernel/agent-config/index.js'
 import {
   getConsensusConfig,
   getUiLangName,
@@ -232,10 +232,10 @@ async function summarize(
   const fallback = fallbackSummary(votes, unanimous, decision)
   if (signal.aborted) return fallback
   try {
-    // Use the first same-vendor agent as decider, or fall back to the
+    // Use the first configured voter as decider, or fall back to the
     // deterministic summary if none is available. Respect the custom voter
     // allowlist so the decider is drawn from the configured voter pool.
-    const voters = vendorScopedVoters(null, getConsensusConfig(cwd)).voters
+    const voters = selectConsensusVoters(null, getConsensusConfig(cwd))
     if (voters.length === 0) return fallback
     const decider = voters[0]
     // system: the stable summariser role + output instruction; user: the votes cast.
@@ -282,10 +282,7 @@ export async function runCheckpointConsensus(
     return null
   }
 
-  const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(
-    null,
-    getConsensusConfig(workspacePath),
-  )
+  const voters = selectConsensusVoters(null, getConsensusConfig(workspacePath))
   if (voters.length === 0) return null
 
   console.log(
@@ -302,15 +299,17 @@ export async function runCheckpointConsensus(
           return {
             agentId: agent.id,
             agentName: agent.displayName,
+            vendor: agent.vendor,
             decision: 'abstain',
             reason: text.replace(/\s+/g, ' ').trim().slice(0, 200) || 'no parseable answer',
           }
         }
-        return { agentId: agent.id, agentName: agent.displayName, ...parsed }
+        return { agentId: agent.id, agentName: agent.displayName, vendor: agent.vendor, ...parsed }
       } catch (err) {
         return {
           agentId: agent.id,
           agentName: agent.displayName,
+          vendor: agent.vendor,
           decision: 'abstain',
           reason: err instanceof Error ? err.message : String(err),
         }
@@ -327,10 +326,6 @@ export async function runCheckpointConsensus(
   console.log(
     `[c3:checkpoint-consensus] (auto) result: ${decision ?? 'no_decision'} (unanimous=${unanimous}): ${summary}`,
   )
-  if (vendorScope)
-    console.log(
-      `[c3:checkpoint-consensus] 共识限 ${vendorScope} 内 · ${crossVendorExcluded} 个跨 vendor 顾问未参与`,
-    )
 
   return {
     votes,

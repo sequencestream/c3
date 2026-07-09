@@ -1896,8 +1896,14 @@
       "disagreement": {
         "label": "Disagreement"
       },
-      "vendorScope": {
-        "label": "Consensus limited to {vendor} · {count} cross-vendor advisor(s) did not vote (tool/risk semantics are not comparable across vendors)"
+      "risk": {
+        "read": "read",
+        "write": "write",
+        "execute": "execute",
+        "network": "network"
+      },
+      "normalizationFailed": {
+        "label": "Could not normalize risk — deferred to human approval ({reason})"
       }
     },
     "research": {
@@ -2243,7 +2249,6 @@
       "answered": "Answered on your behalf",
       "unanimous": "Unanimous",
       "majority": "Majority",
-      "vendorScope": "Scoped to {vendor}",
       "noAgreement": "No agreement",
       "verdict": {
         "allow": "Allow",

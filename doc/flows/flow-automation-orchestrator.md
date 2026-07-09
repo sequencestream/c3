@@ -88,8 +88,9 @@ an "awaiting authorization" hint meanwhile.
 ## Branch — checkpoint consensus override (`RM-A14`)
 
 When the majority toggle is ON (`ConsensusConfig.majority`), a `stuck` verdict or a
-`pendingQuestion` guard may instead trigger a multi-agent vote (same-vendor peers, one-shot,
-tool-denied) on whether to pass the checkpoint. A majority `continue` overrides the stop and
+`pendingQuestion` guard may instead trigger a multi-agent vote (peers via the shared
+cross-vendor `selectConsensusVoters`, one-shot, tool-denied; the continue/wait prompt is
+vendor-neutral and skips the tool-risk normalizer) on whether to pass the checkpoint. A majority `continue` overrides the stop and
 auto-continues (same cap as `RM-A8`); a tie / `wait` majority stops (`RM-A6`). The outcome
 broadcasts via `AutomationStatus.checkpointConsensus`. It decides only _automation flow_, never the
 underlying `AskUserQuestion` answer. See

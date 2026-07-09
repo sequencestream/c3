@@ -1533,8 +1533,9 @@ export function safeInsertIntentLog(
 }
 
 /**
- * One intent's lifecycle-log entries, newest first (created_at DESC, id DESC —
- * the composite index makes this a straight scan). Full set, no pagination
+ * One intent's lifecycle-log entries, newest first (created_at DESC, rowid DESC
+ * — the random-UUID `id` is no tiebreaker, so same-millisecond rows fall back to
+ * insertion order via rowid). Full set, no pagination
  * (single-intent volumes stay small). Returns `[]` when the db is unavailable.
  */
 export function listIntentLogs(intentId: string): IntentLog[] {
@@ -1542,7 +1543,7 @@ export function listIntentLogs(intentId: string): IntentLog[] {
   if (!d) return []
   return d
     .all<IntentLogRow>(
-      'SELECT * FROM intent_logs WHERE intent_id=? ORDER BY created_at DESC, id DESC',
+      'SELECT * FROM intent_logs WHERE intent_id=? ORDER BY created_at DESC, rowid DESC',
       intentId,
     )
     .map(toIntentLog)

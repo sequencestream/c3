@@ -207,11 +207,13 @@ session 一联网即被拒。c3 通过两个中性驱动选项字段控制，由
 
 各 session 类型的取值（2026-06-15）：
 
-| Session       | 启动点                        | networkAccess / webSearch | 说明                                               |
-| ------------- | ----------------------------- | ------------------------- | -------------------------------------------------- |
-| work / intent | 交互式运行启动路径            | 固定 `true` / `true`      | 交互式、用户驱动的运行，恒开网络                   |
-| discussion    | 讨论 agent 会话管理           | 固定 `true` / `true`      | 讨论 agent 边研究边推演                            |
-| automation    | 调度分派（不经 codex driver） | 不传                      | 仍由 `toolAllowlist`（WebSearch/WebFetch）配置驱动 |
+| Session       | 启动点                        | networkAccess / webSearch         | 说明                                                                                                                                             |
+| ------------- | ----------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| work / intent | 交互式运行启动路径            | 固定 `true` / `true`              | 交互式、用户驱动的运行，恒开网络                                                                                                                 |
+| discussion    | 讨论 agent 会话管理           | 固定 `true` / `true`              | 讨论 agent 边研究边推演                                                                                                                          |
+| automation    | 调度分派（codex driver 路径） | 按 `network-access` 伪条目 / 不传 | `toolAllowlist` 含伪条目 `network-access` 且 `sandboxMode='workspace-write'` 时传 `networkAccess:true`，否则不传（默认断网）；`webSearch` 恒不开 |
+
+> Automation 的 `network-access` 是 `toolAllowlist` 里的保留伪条目（非工具）：调度分派在进入 `freezeTools()`/权限网格前将其剔除，仅用于决定 codex `workspace-write` 沙箱的原始网络开关。`read-only` 沙箱网络恒禁；claude vendor 无 seatbelt 网络开关，携带该值时静默忽略。默认不勾＝断网，需要联网的 automation（尤其 PR 评审/合并类需 `gh`/`curl`）显式开启。
 
 ### 零运行时审批（c3 的关键差异）
 

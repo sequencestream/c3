@@ -2687,6 +2687,16 @@ export interface ToolManifestEntry {
   isWrite: boolean
 }
 
+/**
+ * Reserved pseudo-entry an automation may carry in its `toolAllowlist` to toggle
+ * raw network access for a codex `workspace-write` sandbox (which denies network
+ * by default). It is NOT a real tool: it never enters `freezeTools()` or the
+ * permission grid, is stripped before the real tool allowlist is computed, and is
+ * silently ignored for the claude vendor. Shared so server (strip + passthrough)
+ * and web (form toggle) agree on the exact marker.
+ */
+export const AUTOMATION_NETWORK_ACCESS_TOOL = 'network-access'
+
 // ---- Wait User Involve Events ----
 
 /**

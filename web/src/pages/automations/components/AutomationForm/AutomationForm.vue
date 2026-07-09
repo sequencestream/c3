@@ -19,6 +19,7 @@
  */
 import { ref, computed, watch } from 'vue'
 import {
+  AUTOMATION_NETWORK_ACCESS_TOOL,
   isValidAutomationMaxWallClockMs,
   MAX_AUTOMATION_MAX_WALL_CLOCK_MS,
   MIN_AUTOMATION_MAX_WALL_CLOCK_MS,
@@ -558,12 +559,30 @@ function toolChecked(name: string): boolean {
   return toolAllowlist.value.includes(name)
 }
 
+// Network access is a codex-only pseudo-entry stored alongside real tools in
+// `toolAllowlist`. It is deliberately kept OUT of the read/write grid, the
+// default seeding, and select-all/clear-all so toggling every tool never
+// implicitly widens the sandbox's network boundary (and vice-versa).
+const networkAccessEnabled = computed(() =>
+  toolAllowlist.value.includes(AUTOMATION_NETWORK_ACCESS_TOOL),
+)
+
+function toggleNetworkAccess(): void {
+  const i = toolAllowlist.value.indexOf(AUTOMATION_NETWORK_ACCESS_TOOL)
+  if (i >= 0) toolAllowlist.value.splice(i, 1)
+  else toolAllowlist.value.push(AUTOMATION_NETWORK_ACCESS_TOOL)
+}
+
 function selectAll(): void {
-  toolAllowlist.value = currentTools.value.map((t) => t.name)
+  const names = currentTools.value.map((t) => t.name)
+  // Preserve the network-access flag: select-all governs real tools only.
+  if (networkAccessEnabled.value) names.push(AUTOMATION_NETWORK_ACCESS_TOOL)
+  toolAllowlist.value = names
 }
 
 function clearAll(): void {
-  toolAllowlist.value = []
+  // Clear real tools but leave the network-access flag untouched.
+  toolAllowlist.value = networkAccessEnabled.value ? [AUTOMATION_NETWORK_ACCESS_TOOL] : []
 }
 
 // Derive default selections when a fresh manifest arrives and there's no saved
@@ -575,6 +594,8 @@ watch(
     // Only seed defaults when toolAllowlist is empty (either user cleared it, or
     // this is a fresh vendor with no saved selection). For edit, allowlist was
     // already seeded from automation.toolAllowlist in the form-reset watch, so skip.
+    // The network-access pseudo-entry is preserved by the toggle/select-all helpers,
+    // never seeded here, so an empty list still cleanly means "no saved selection".
     if (toolAllowlist.value.length === 0) {
       toolAllowlist.value = manifest.filter((t) => !t.isWrite).map((t) => t.name)
     }
@@ -1335,6 +1356,28 @@ function save(): void {
 
               <!-- Empty (no tools returned) -->
               <span v-else class="sf-hint">{{ t('automation.form.tools.empty') }}</span>
+            </div>
+
+            <!-- Network access: a codex-only capability switch, kept separate from
+             the tool checklist. Claude has no seatbelt sandbox network knob, so
+             the toggle is hidden there (a stray value is ignored server-side). -->
+            <div
+              v-if="vendor === 'codex'"
+              class="sf-field sf-field--stacked sf-field--network"
+              data-testid="network-access"
+            >
+              <label class="sf-tool-item">
+                <input
+                  type="checkbox"
+                  data-testid="network-access-checkbox"
+                  :checked="networkAccessEnabled"
+                  @change="toggleNetworkAccess"
+                />
+                <span class="sf-tool-name">{{
+                  t('automation.form.tools.networkAccess.label')
+                }}</span>
+              </label>
+              <span class="sf-hint">{{ t('automation.form.tools.networkAccess.hint') }}</span>
             </div>
           </div>
         </div>

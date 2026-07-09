@@ -1447,6 +1447,10 @@
         "clearAll": {
           "label": "全清"
         },
+        "networkAccess": {
+          "label": "允许网络访问",
+          "hint": "仅 Codex、workspace-write 沙箱生效：允许 shell 命令（gh、curl 等）联网。默认关闭。"
+        },
         "loading": "正在加载工具列表…",
         "empty": "没有可用工具",
         "error": "加载工具列表失败"

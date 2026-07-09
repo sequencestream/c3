@@ -34,7 +34,13 @@ import { loadSettings } from '../../kernel/config/index.js'
 import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
 import { codexPolicyToGrid } from '../../kernel/agent/adapters/codex/driver.js'
 import { getWorkspaceMcpConfig, isAgentQuotaRecoveryConfig } from './store.js'
-import { freezeTools, hasSelectedC3McpTool, matchesFrozenTool, isWriteTool } from './mcp-freeze.js'
+import {
+  freezeTools,
+  hasSelectedC3McpTool,
+  hasSelectedNetworkAccess,
+  matchesFrozenTool,
+  isWriteTool,
+} from './mcp-freeze.js'
 import type { FrozenToolSet } from './mcp-freeze.js'
 import { createAutomationMcpServer } from './c3-mcp.js'
 import type { ServedAutomationMcp } from '../../transport/automation-mcp/index.js'
@@ -676,6 +682,14 @@ async function executeCodexLlmPrompt(
         }
   const { actionMode, toolGate } = codexPolicyToGrid(policy)
   const { model, baseUrl, apiKey, wireApi } = launchForAgent(agent)
+  // Network access is the `network-access` pseudo-entry in the tool allowlist. It
+  // only makes sense for the `workspace-write` sandbox (a `read-only` sandbox is
+  // network-denied unconditionally), so gate on both. When unselected / read-only,
+  // the field is omitted so codex's default (network denied) stands. Claude never
+  // reaches this path — it ignores the flag entirely.
+  const networkAccess =
+    policy.sandboxMode === 'workspace-write' &&
+    hasSelectedNetworkAccess(automation.toolAllowlist ?? [])
   // The c3 MCP route is opt-in: only an explicit c3 entry in this automation's
   // allowlist mounts it (an empty allowlist does not implicitly grant c3). When
   // selected, bind the loopback HTTP MCP for THIS execution and hand codex the c3
@@ -703,6 +717,7 @@ async function executeCodexLlmPrompt(
       ...(baseUrl ? { baseUrl } : {}),
       ...(apiKey ? { apiKey } : {}),
       ...(wireApi ? { wireApi } : {}),
+      ...(networkAccess ? { networkAccess: true } : {}),
       ...(c3Binding ? { mcpServers: c3Binding.servers } : {}),
     })
     const sessionId = await run.sessionId()

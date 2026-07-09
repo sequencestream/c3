@@ -705,6 +705,90 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect((checks[3].element as HTMLInputElement).checked).toBe(true)
   })
 
+  // ---- network-access pseudo-entry (codex-only) ----------------------------
+
+  it('network-access 开关仅 codex 可见,claude 隐藏', async () => {
+    const w = mountForm({ toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS } })
+    // 默认 claude → 不渲染
+    expect(w.find('[data-testid="network-access"]').exists()).toBe(false)
+    // 切到 codex → 渲染,且带 codex-only / workspace-write 提示
+    await w.find('select.sf-select').setValue('codex')
+    expect(w.find('[data-testid="network-access"]').exists()).toBe(true)
+    expect(w.find('[data-testid="network-access"]').text()).toContain('Codex only')
+    expect(w.find('[data-testid="network-access"]').text()).toContain('workspace-write')
+  })
+
+  it('network-access 默认未勾选', async () => {
+    const w = mountForm({
+      toolManifest: { codex: ALL_TOOLS },
+      automation: sched({ vendor: 'codex' }),
+    })
+    const cb = w.find('[data-testid="network-access-checkbox"]')
+    expect((cb.element as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('勾选 network-access 后 create payload 的 toolAllowlist 含伪条目', async () => {
+    const w = mountForm({ toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS } })
+    await w.find('textarea').setValue('pnpm build')
+    await w.find('select.sf-select').setValue('codex')
+    await w.find('[data-testid="network-access-checkbox"]').trigger('change')
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.toolAllowlist as string[]).toContain('network-access')
+  })
+
+  it('未勾选 network-access 时 create payload 不含伪条目', async () => {
+    const w = mountForm({ toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS } })
+    await w.find('textarea').setValue('pnpm build')
+    await w.find('select.sf-select').setValue('codex')
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.toolAllowlist as string[]).not.toContain('network-access')
+  })
+
+  it('编辑回读:toolAllowlist 含 network-access → 勾上', () => {
+    const w = mountForm({
+      automation: sched({ vendor: 'codex', toolAllowlist: ['Read', 'network-access'] }),
+      toolManifest: { codex: ALL_TOOLS },
+    })
+    const cb = w.find('[data-testid="network-access-checkbox"]')
+    expect((cb.element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('与「全选工具」互不联动:全选保留已开启的 network-access', async () => {
+    const w = mountForm({
+      automation: sched({ vendor: 'codex', toolAllowlist: ['network-access'] }),
+      toolManifest: { codex: ALL_TOOLS },
+    })
+    // network 开、无真实工具
+    expect(
+      (w.find('[data-testid="network-access-checkbox"]').element as HTMLInputElement).checked,
+    ).toBe(true)
+    // 点「全选」→ 真实工具全进,network 标志保留
+    await w.findAll('.sf-tools-btn')[0].trigger('click')
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
+    const allow = input.toolAllowlist as string[]
+    expect(allow).toContain('network-access')
+    expect(allow).toContain('Read')
+    expect(allow).toContain('Write')
+  })
+
+  it('全选工具(未开 network)不会隐式开启 network-access', async () => {
+    const w = mountForm({
+      automation: sched({ vendor: 'codex', toolAllowlist: ['Read'] }),
+      toolManifest: { codex: ALL_TOOLS },
+    })
+    await w.findAll('.sf-tools-btn')[0].trigger('click') // selectAll
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
+    expect(input.toolAllowlist as string[]).not.toContain('network-access')
+  })
+
   // ---- Permission mode per vendor -----------------------------------------
 
   it('create(codex):payload 携带 CodexPolicy 对象', async () => {

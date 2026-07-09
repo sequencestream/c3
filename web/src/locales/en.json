@@ -1608,6 +1608,10 @@
         "clearAll": {
           "label": "Clear all"
         },
+        "networkAccess": {
+          "label": "Allow network access",
+          "hint": "Codex only, workspace-write sandbox: lets shell commands (gh, curl…) reach the network. Off by default."
+        },
         "loading": "Loading tools…",
         "empty": "No tools available",
         "error": "Failed to load tools"

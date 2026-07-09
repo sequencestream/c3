@@ -425,6 +425,29 @@ automation c3 MCP server, never on the interactive intent MCP server — so the 
 pinned to unattended automation executions. The confirmation-gated `mcp__c3__save_intents` is
 deliberately **not** offered to automations.
 
+### Network access pseudo-entry (`network-access`, codex-only)
+
+`network-access` is a **reserved pseudo-entry** stored inside `toolAllowlist` — a capability flag, not
+a tool. It toggles raw network access for a codex `workspace-write` sandbox (codex denies network by
+default, orthogonal to filesystem write permission), so shell commands like `gh` / `curl` can reach
+the network. Behaviour:
+
+- **Not a tool.** The executor strips it before `freezeTools()` computes the real tool allowlist, so
+  it never enters the frozen set, the read/write classification, or the permission grid. An allowlist
+  containing only `network-access` is therefore equivalent to an **empty** real allowlist (the "no
+  restriction" semantics stand); selecting it never adds or removes any read/write tool.
+- **Codex `workspace-write` only.** The dispatcher passes `networkAccess: true` to the codex driver
+  (→ `ThreadOptions.networkAccessEnabled` / `sandbox_workspace_write.network_access=true`) **only**
+  when the pseudo-entry is selected **and** the resolved `sandboxMode` is `workspace-write`. A
+  `read-only` sandbox is network-denied unconditionally, and the claude vendor has no seatbelt network
+  knob — it **silently ignores** the value even if history or a vendor switch left it present.
+- **Safe default: off.** New automations do not select it; it is not part of "select all tools" and is
+  never implicitly enabled by a full tool selection or a vendor switch, so the network boundary only
+  widens on an explicit opt-in. Needed by automations that make network calls — especially PR
+  review/merge flows that run `gh`. It does **not** enable codex's built-in `web_search`.
+- **Persistence.** Reuses `toolAllowlist: string[]`; no protocol schema change and no DB migration.
+  Older records without the entry keep the current network-denied behaviour.
+
 ### Discussion tools (automation LLM execution)
 
 The four discussion tools let an automation's LLM sense, start, and recover discussions in its own

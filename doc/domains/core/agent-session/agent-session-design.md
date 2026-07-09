@@ -44,6 +44,19 @@ Codex is launched by c3's own minimal `codex exec --experimental-json` wrapper, 
 `@openai/codex-sdk` runtime wrapper; the SDK package remains only the event/type reference inside
 the Codex adapter.
 
+### Codex GitHub CLI credential injection
+
+A codex session runs under codex's own seatbelt sandbox (and optionally a docker container), whose
+subprocesses cannot read the host OS keyring — so `gh`, which stores its token there, fails auth inside
+the session even on an authenticated host with network. `run-via-driver` resolves the host `gh`
+credential once (after agent-launch env resolution, before building the sandbox env-file and calling
+`driver.start`) and, when neither `GH_TOKEN` nor `GITHUB_TOKEN` is already set (following the
+`buildChildEnv` precedence: agent overrides > shell > defaults), injects `GH_TOKEN` into the same
+`envOverrides` — so the host codex process and the container wrapper's env-file get the same value.
+Codex-only (the claude path has no seatbelt boundary); probe failure degrades silently and never blocks
+startup; the token is never written to disk, logged, or surfaced in telemetry. See
+[codex-sdk-guide § GitHub CLI 凭据桥接](../../../architecture/codex-sdk-guide.md).
+
 ### The streaming-input prompt
 
 The streaming-input prompt is a controlled async-iterable of SDK user messages that backs the

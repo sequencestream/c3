@@ -16,7 +16,8 @@ c3
 │   │   ├── 运行态机                              # idle / running / awaiting-permission,每会话单飞(single-flight)
 │   │   ├── 取消中止                              # 用户命令或断连时干净中止在途 run
 │   │   ├── 历史续传                              # 每轮持久化,浏览器刷新可完整回放 transcript
-│   │   └── 多厂商                                # 同时支持 Claude 与 Codex 两个 vendor SDK
+│   │   ├── 多厂商                                # 同时支持 Claude 与 Codex 两个 vendor SDK
+│   │   └── Codex GH_TOKEN 桥接                    # codex 会话启动时把宿主 gh 钥匙串令牌注入 GH_TOKEN,沙箱内 gh 可认证(已有 token 不覆盖/探测失败静默降级)
 │   │
 │   ├── permission-gateway 权限网关               # 智能体与人之间的控制点,有副作用的工具须过此门
 │   │   ├── 权限拦截                              # 捕获每次 SDK canUseTool 回调,工具运行前暂停

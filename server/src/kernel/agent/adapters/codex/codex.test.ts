@@ -537,6 +537,27 @@ describe('CodexDriver sandbox wrapper wiring (ADR-0024)', () => {
     expect(captured?.baseUrl).toBe('https://api.openai.com')
     expect(captured?.apiKey).toBe('sk-real')
   })
+
+  it('layers DIRECT envOverrides onto the inherited process.env (CodexOptions.env replaces it)', async () => {
+    const prev = process.env.PATH
+    process.env.PATH = '/usr/bin:/bin'
+    try {
+      let captured: CodexFactoryOptions | undefined
+      const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+      const driver = new CodexDriver((options) => {
+        captured = options
+        return client
+      })
+      // An injected GH_TOKEN (or any override) must NOT strip the inherited env:
+      // CodexOptions.env replaces process.env, so the driver merges over it.
+      await driver.start(startOpts({ envOverrides: { GH_TOKEN: 'bridged' } }))
+      expect(captured?.env?.GH_TOKEN).toBe('bridged')
+      expect(captured?.env?.PATH).toBe('/usr/bin:/bin')
+    } finally {
+      if (prev === undefined) delete process.env.PATH
+      else process.env.PATH = prev
+    }
+  })
 })
 
 describe('rewriteRelayHostForSandbox (codex RELAY in a container, ADR-0024 follow-up)', () => {

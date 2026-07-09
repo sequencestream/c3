@@ -83,7 +83,10 @@ const params = () => ({
   toolName: 'AskUserQuestion',
   input: QUESTION_INPUT,
   context: 'ctx',
-  cwd: '/ws',
+  // Config read keys off `workspacePath`; advisor queries launch in `cwd`. Kept
+  // distinct so a regression that collapses one onto the other is visible.
+  workspacePath: '/ws',
+  cwd: '/ws/worktrees/intent-1',
   signal: new AbortController().signal,
 })
 
@@ -203,7 +206,9 @@ describe('runConsensusVote — cross-vendor tool voting + risk normalization', (
     toolName,
     input,
     context: 'ctx',
-    cwd: '/ws',
+    // Config key vs. advisor cwd, kept distinct (see `params` above).
+    workspacePath: '/ws',
+    cwd: '/ws/worktrees/intent-1',
     signal: new AbortController().signal,
   })
 

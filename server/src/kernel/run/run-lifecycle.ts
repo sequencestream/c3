@@ -477,6 +477,9 @@ export async function launchRun(
           // history already holds the images, so it must NOT resend them.
           ...(images && !reconnecting ? { images } : {}),
           cwd: rt.effectiveCwd ?? workspacePath,
+          // The registered root — the gateway reads consensus config and attributes
+          // WorkCenter events off this, NOT the effective worktree cwd above.
+          workspacePath,
           signal: attemptAbort.signal,
           // Intent chats (and spec sessions) are pinned to `default` so the
           // gateway always runs. This is the claude-hardwired path (vendor ===

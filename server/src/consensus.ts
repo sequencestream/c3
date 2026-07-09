@@ -69,7 +69,19 @@ export interface ConsensusParams {
   input: unknown
   /** Recent conversation text the voters reason over. */
   context: string
-  /** Working directory for the advisor queries — the active workspace path. */
+  /**
+   * The registered workspace root — the key for reading the consensus config
+   * (enable switch, voter roster, majority toggle) via `loadWorkspaceSetting`.
+   * In worktree-isolated runs this is the project root, NOT the worktree
+   * ({@link cwd}); `loadWorkspaceSetting` keys on the exact path, so passing the
+   * worktree here misses the config and silently disables voting.
+   */
+  workspacePath: string
+  /**
+   * Working directory for the advisor queries — the run's effective cwd (the
+   * isolated worktree in worktree mode). Used only to launch advisor one-shots,
+   * NOT to read project config (that is {@link workspacePath}).
+   */
   cwd: string
   /** Aborts every in-flight advisor query when the run is torn down. */
   signal: AbortSignal
@@ -111,8 +123,8 @@ async function summarize(
  * to the plain human prompt.
  */
 export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOutcome | null> {
-  if (!isConsensusEnabled(p.cwd)) return null
-  const voters = selectConsensusVoters(p.currentAgentId, getConsensusConfig(p.cwd))
+  if (!isConsensusEnabled(p.workspacePath)) return null
+  const voters = selectConsensusVoters(p.currentAgentId, getConsensusConfig(p.workspacePath))
   if (voters.length === 0) return null
 
   // Normalize the native tool request into a vendor-neutral risk payload BEFORE any
@@ -133,7 +145,7 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
       decision: 'abstain',
       reason: `request not normalizable (${normalization.reason})`,
     }))
-    const { unanimous, decision } = tally(votes, isConsensusMajorityEnabled(p.cwd))
+    const { unanimous, decision } = tally(votes, isConsensusMajorityEnabled(p.workspacePath))
     return {
       kind: 'tool',
       votes,
@@ -179,7 +191,7 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
   // Majority toggle (system setting) decides the adjudication rule; `unanimous`
   // still reports literal unanimity so the summary/console can tell a unanimous
   // verdict from a majority-carried one. See `permission-gateway/consensus.md`.
-  const { unanimous, decision } = tally(votes, isConsensusMajorityEnabled(p.cwd))
+  const { unanimous, decision } = tally(votes, isConsensusMajorityEnabled(p.workspacePath))
   const summary = await summarize(
     p.currentAgentId,
     normalization.risk.operationIntent,
@@ -243,8 +255,8 @@ async function decideAndSummarizeAsk(
  * questions — the caller then shows the answer panel without pre-filled opinions.
  */
 export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusOutcome | null> {
-  if (!isConsensusEnabled(p.cwd)) return null
-  const voters = selectConsensusVoters(p.currentAgentId, getConsensusConfig(p.cwd))
+  if (!isConsensusEnabled(p.workspacePath)) return null
+  const voters = selectConsensusVoters(p.currentAgentId, getConsensusConfig(p.workspacePath))
   if (voters.length === 0) return null
   const questions = askQuestions(p.input)
   if (!questions) return null
@@ -287,7 +299,7 @@ export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusO
   // majority-resolved question is already `unanimous` and the decider below skips
   // it (it only judges `!unanimous` questions). Priority: literal unanimous →
   // majority → decider rescue; each question is adjudicated at most once.
-  const majority = isConsensusMajorityEnabled(p.cwd)
+  const majority = isConsensusMajorityEnabled(p.workspacePath)
   const perQuestion = questions.map((q, i) =>
     tallyQuestion(
       q,

@@ -74,6 +74,7 @@ async function runTurn(opts: { resume?: string; reconnectAttempt?: boolean }): P
   await runClaude({
     prompt: 'do the thing',
     cwd: '/tmp',
+    workspacePath: '/tmp',
     signal: new AbortController().signal,
     permissionMode: 'default',
     resume: opts.resume,

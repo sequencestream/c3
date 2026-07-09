@@ -247,8 +247,15 @@ export interface DriverStartOptions {
    * every entry is a supported image.
    */
   images?: import('@ccc/shared/protocol').PromptImage[]
-  /** Working directory for the run. */
+  /** Working directory for the run (the isolated worktree in worktree mode). */
   cwd: string
+  /**
+   * The registered workspace root — the project-config / audit key, distinct from
+   * {@link cwd} (which is the effective worktree). Only the Claude driver consumes
+   * it (it re-enters `runClaude`'s consensus gateway, which reads config off the
+   * root); other drivers ignore it. Omit ⇒ the driver falls back to {@link cwd}.
+   */
+  workspacePath?: string
   /**
    * Extra absolute directories the vendor may permit outside {@link cwd}. The
    * launch layer resolves these from the owning workspace; adapters that support

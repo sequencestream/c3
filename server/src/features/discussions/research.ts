@@ -134,7 +134,10 @@ export async function researchDiscussionContext(
   try {
     await runClaude({
       prompt,
+      // Discussion research runs at the workspace root (no worktree), so the
+      // effective cwd and the config/audit root are the same path.
       cwd: resolveWorkspaceRoot(discussion.workspaceId)!,
+      workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
       signal: abort.signal,
       // Pinned to `default` so the gateway's canUseTool always fires.
       permissionMode: 'default',

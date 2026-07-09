@@ -84,6 +84,29 @@ const diagnostics = computed(() => {
     (h): h is VendorHostStatus => h !== undefined,
   )
 })
+// Vendor CLI multi-version panel rows: each vendor's installed versions +
+// runtime/download status, in canonical vendor order. Used to render the
+// effective-version single-select and read-only sync status.
+const vendorCliRows = computed(() => {
+  const byVendor = new Map(props.hostStatus.map((h) => [h.vendor, h]))
+  return VENDOR_ORDER.map((v) => byVendor.get(v)).filter(
+    (h): h is VendorHostStatus => h !== undefined,
+  )
+})
+// The draft's effective-version choice per vendor ('' ⇒ auto latest).
+function activeVersionChoice(vendor: VendorId): string {
+  return draft.value.vendorCliVersions?.[vendor] ?? ''
+}
+// Selecting an installed version only mutates the draft's vendorCliVersions; it
+// is persisted on Save via the full-settings emit. Empty = auto (latest), and
+// removes the vendor key so the server auto-follows the latest compatible.
+function setActiveVersion(vendor: VendorId, version: string): void {
+  if (!isAdmin.value) return
+  const next = { ...(draft.value.vendorCliVersions ?? {}) }
+  if (version) next[vendor] = version
+  else delete next[vendor]
+  draft.value.vendorCliVersions = next
+}
 function vendorColor(v: VendorId): string {
   return VENDOR_COLOR[v]
 }
@@ -196,6 +219,12 @@ watch(
       baseUrl: settings.baseUrl ?? '',
       showToolSessions: settings.showToolSessions ?? false,
       proxy: settings.proxy ?? { enabled: false, httpProxy: '', httpsProxy: '' },
+      // Effective vendor CLI version selection per vendor (empty object ⇒ auto
+      // latest for both). Carried explicitly so the radio binds to the draft
+      // and survives Save (the full draft is emitted); only this field is
+      // mutated by setActiveVersion, leaving projectConfigs/auth/sandbox/etc.
+      // untouched.
+      vendorCliVersions: { ...(settings.vendorCliVersions ?? {}) },
     }
     // Mirror the proxy block into the template-bound ref.
     const p = full.proxy
@@ -981,6 +1010,91 @@ function selectAdmin(username: string) {
             }}</code>
           </li>
         </ul>
+      </section>
+
+      <!-- Vendor CLI multi-version selection (effective version ≠ download target) -->
+      <section class="settings-section" data-testid="settings-vendor-cli">
+        <p class="settings-section-title">{{ t('settings.vendorCli.title.label') }}</p>
+        <p class="settings-hint">{{ t('settings.vendorCli.hint') }}</p>
+        <div
+          v-for="h in vendorCliRows"
+          :key="h.vendor"
+          class="vendor-cli-row"
+          data-testid="vendor-cli-row"
+        >
+          <div class="vendor-cli-head">
+            <span
+              class="vendor-dot"
+              :style="{ backgroundColor: vendorColor(h.vendor) }"
+              :title="vendorLabel(h.vendor)"
+            ></span>
+            <span class="diagnostics-vendor">{{ vendorLabel(h.vendor) }}</span>
+          </div>
+          <div class="vendor-cli-status">
+            <span class="vendor-cli-field">
+              <span class="vendor-cli-label">{{ t('settings.vendorCli.active.label') }}</span>
+              <code :data-testid="`vendor-cli-active-${h.vendor}`">{{
+                h.activeVersion ?? t('settings.vendorCli.none')
+              }}</code>
+            </span>
+            <span class="vendor-cli-field">
+              <span class="vendor-cli-label">{{
+                t('settings.vendorCli.downloadTarget.label')
+              }}</span>
+              <code :data-testid="`vendor-cli-target-${h.vendor}`">{{
+                h.downloadTargetVersion ?? t('settings.vendorCli.none')
+              }}</code>
+            </span>
+            <span v-if="h.lastRemoteCheckAt" class="vendor-cli-field">
+              <span class="vendor-cli-label">{{ t('settings.vendorCli.lastCheck.label') }}</span>
+              <code>{{ h.lastRemoteCheckAt }}</code>
+            </span>
+          </div>
+          <p
+            v-if="h.lastError"
+            class="settings-hint vendor-cli-error"
+            :data-testid="`vendor-cli-error-${h.vendor}`"
+          >
+            {{ h.lastError }}
+          </p>
+          <div class="vendor-cli-versions">
+            <label class="vendor-cli-option">
+              <input
+                type="radio"
+                :name="`vendor-cli-${h.vendor}`"
+                value=""
+                :checked="activeVersionChoice(h.vendor) === ''"
+                :disabled="!isAdmin"
+                :data-testid="`vendor-cli-auto-${h.vendor}`"
+                @change="setActiveVersion(h.vendor, '')"
+              />
+              <span>{{ t('settings.vendorCli.auto.label') }}</span>
+            </label>
+            <label
+              v-for="v in h.installedVersions ?? []"
+              :key="v.version"
+              class="vendor-cli-option"
+            >
+              <input
+                type="radio"
+                :name="`vendor-cli-${h.vendor}`"
+                :value="v.version"
+                :checked="activeVersionChoice(h.vendor) === v.version"
+                :disabled="!isAdmin"
+                :data-testid="`vendor-cli-version-${h.vendor}`"
+                @change="setActiveVersion(h.vendor, v.version)"
+              />
+              <code>{{ v.version }}</code>
+            </label>
+            <p
+              v-if="!h.installedVersions || h.installedVersions.length === 0"
+              class="settings-hint"
+              :data-testid="`vendor-cli-empty-${h.vendor}`"
+            >
+              {{ t('settings.vendorCli.empty') }}
+            </p>
+          </div>
+        </div>
       </section>
 
       <!-- Sandbox definitions CRUD -->

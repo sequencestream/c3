@@ -3096,6 +3096,49 @@ button.deny:hover:not(:disabled) {
 .diagnostics-status.missing {
   color: var(--c-warn, #c08a00);
 }
+.vendor-cli-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+}
+.vendor-cli-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.vendor-cli-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  font-size: var(--fs-body-sm);
+}
+.vendor-cli-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.vendor-cli-label {
+  color: var(--c-text-dim);
+}
+.vendor-cli-error {
+  color: var(--c-warn, #c08a00);
+}
+.vendor-cli-versions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-top: var(--sp-1);
+}
+.vendor-cli-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-code);
+}
 .mode-select {
   height: 34px;
   padding: 0 var(--sp-3);

@@ -426,6 +426,26 @@
       "present": "已在 PATH",
       "missing": "未找到"
     },
+    "vendorCli": {
+      "title": {
+        "label": "厂商 CLI 版本"
+      },
+      "hint": "选择 c3 运行哪个已安装的自管版本。下载目标始终追踪最新兼容版,因此选择旧版本不会冻结升级。",
+      "active": {
+        "label": "当前生效"
+      },
+      "downloadTarget": {
+        "label": "下载目标"
+      },
+      "lastCheck": {
+        "label": "最近检查"
+      },
+      "auto": {
+        "label": "自动(最新)"
+      },
+      "none": "—",
+      "empty": "尚无已安装的自管版本。"
+    },
     "sandboxes": {
       "title": {
         "label": "沙箱定义"

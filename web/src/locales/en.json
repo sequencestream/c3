@@ -426,6 +426,26 @@
       "present": "on PATH",
       "missing": "not found"
     },
+    "vendorCli": {
+      "title": {
+        "label": "Vendor CLI versions"
+      },
+      "hint": "Choose which installed managed version c3 runs. The download target always tracks the newest compatible release, so selecting an older version does not freeze upgrades.",
+      "active": {
+        "label": "Active"
+      },
+      "downloadTarget": {
+        "label": "Download target"
+      },
+      "lastCheck": {
+        "label": "Last check"
+      },
+      "auto": {
+        "label": "Auto (latest)"
+      },
+      "none": "—",
+      "empty": "No installed managed versions yet."
+    },
     "sandboxes": {
       "title": {
         "label": "Sandboxes"

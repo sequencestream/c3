@@ -1144,9 +1144,17 @@ export interface SystemSettings {
     httpsProxy?: string
   }
   /**
-   * Optional c3-managed vendor CLI version pins. Empty/missing means automatic:
-   * c3 selects the newest npm package version inside its compatible range and
-   * installs it under `~/.c3/vendor/<vendor>/<version>/bin/<binary>`.
+   * Effective (active) vendor CLI version selection per vendor. This selects
+   * which already-installed managed version c3 resolves at runtime — it does NOT
+   * pin the download target. Empty/missing means automatic: c3 uses the newest
+   * compatible managed version. A non-empty value MUST point to a version present
+   * in the server-reported installed-versions list; an uninstalled/incompatible
+   * value degrades to the latest compatible managed version and records a
+   * visible `lastError` rather than silently clearing the selection.
+   *
+   * Sync always tracks the newest compatible npm release regardless of this
+   * field, so historical versions can be selected as active without freezing
+   * upgrades.
    */
   vendorCliVersions?: Partial<Record<VendorId, string>>
   /**
@@ -1557,6 +1565,13 @@ export interface VendorModeCatalog {
  * the settings diagnostics panel can list what is/isn't installed — together with
  * the resolved absolute path of each installed binary, so the operator can see
  * exactly which executable c3 will launch.
+ *
+ * The optional multi-version fields (`installedVersions`/`activeVersion`/
+ * `downloadTargetVersion`/`lastCheckedAt`/`lastRemoteCheckAt`/`lastError`) are a
+ * backward-compatible extension: they carry the manifest-derived multi-version
+ * state for the vendor CLI settings panel. Older clients ignore them; the
+ * classic `present`/`path`/`version` fields keep their original semantics for
+ * session-availability gating.
  */
 export interface VendorHostStatus {
   vendor: VendorId
@@ -1575,6 +1590,30 @@ export interface VendorHostStatus {
   managedError?: string
   /** Operator-facing install guidance shown when the binary is missing. */
   installHint: string
+  /** Installed managed versions selectable as the effective version (failed entries excluded). */
+  installedVersions?: VendorCliVersionEntry[]
+  /** The effective managed version currently resolved at runtime (null/absent when none). */
+  activeVersion?: string
+  /** The download target — latest compatible version confirmed by the last sync. */
+  downloadTargetVersion?: string
+  /** Last local check timestamp (ISO). */
+  lastCheckedAt?: string
+  /** Last remote (npm packument) check timestamp (ISO). */
+  lastRemoteCheckAt?: string
+  /** Last sync/install or resolution-degradation error (absent when healthy). */
+  lastError?: string
+}
+
+/**
+ * One selectable installed managed vendor CLI version, surfaced to the settings
+ * panel. `failed` history entries are filtered out before being sent — only
+ * `installed`/`selected` entries appear as selectable radio options.
+ */
+export interface VendorCliVersionEntry {
+  version: string
+  installedAt?: string
+  sourceTag?: string
+  status: 'installed' | 'selected'
 }
 
 /**

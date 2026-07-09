@@ -1,14 +1,18 @@
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { VendorId } from '../adapters/types.js'
 import {
   HOST_BINARIES,
+  applyVendorCliChoices,
+  cleanManagedHistory,
   lookupCommand,
   managedBinPath,
   parseVendorVersion,
   probeAll,
+  readVendorCliStatus,
   resetProbeCache,
   resolveExecutable,
   satisfiesRange,
@@ -16,7 +20,7 @@ import {
   syncManagedVendorCli,
   vendorManifestPath,
 } from './launcher.js'
-import { setSettingsPath } from '../../config/index.js'
+import { getVendorCliVersions, saveSettings, setSettingsPath } from '../../config/index.js'
 import { writeAtomic } from '../../config/store.js'
 
 let dir = ''
@@ -151,14 +155,10 @@ describe('npm package selection', () => {
   })
 
   it('selects Codex platform dist-tag before latest', () => {
-    expect(selectNpmVersion('codex', packument, undefined, 'darwin', 'arm64')).toEqual({
+    expect(selectNpmVersion('codex', packument, 'darwin', 'arm64')).toEqual({
       version: '0.142.3',
       sourceTag: 'darwin-arm64',
     })
-  })
-
-  it('rejects a manual version outside the compatibility range', () => {
-    expect(() => selectNpmVersion('codex', packument, '1000.0.0')).toThrow(/outside/)
   })
 })
 
@@ -247,5 +247,288 @@ describe('probeAll', () => {
     const probes = probeAll()
     expect(probes.map((p) => p.vendor).sort()).toEqual(['claude', 'codex'])
     for (const p of probes) expect(p.source).toBeTruthy()
+  })
+})
+
+// Write a vendorCliVersions pin through the real saveSettings path so the
+// settings cache (which getVendorCliVersions reads) reflects the choice — the
+// same path the save_settings handler takes. Direct file writes would bypass
+// the in-memory cache and leave getVendorCliVersions reading stale data.
+function pinVendorCliVersion(vendor: VendorId, version: string | undefined): void {
+  const existing = getVendorCliVersions()
+  const next = { ...existing }
+  if (version) next[vendor] = version
+  else delete next[vendor]
+  saveSettings({
+    agents: [
+      {
+        id: 'system',
+        vendor: 'claude',
+        configMode: 'system',
+        displayName: 'System',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+    ],
+    defaultAgentId: 'system',
+    toolAgentId: '',
+    intentAgentId: '',
+    specAgentId: '',
+    automationAgentId: '',
+    vendorCliVersions: next,
+  })
+}
+
+describe('resolveExecutable effective-version priority chain', () => {
+  it('prefers the vendorCliVersions choice when installed and compatible', () => {
+    fakeBin(managedBinPath('claude', '1.0.0', dir), 'claude 1.0.0')
+    fakeBin(managedBinPath('claude', '1.3.0', dir), 'claude 1.3.0')
+    pinVendorCliVersion('claude', '1.0.0')
+    writeManifest({
+      version: 1,
+      vendors: {
+        claude: {
+          vendor: 'claude',
+          source: 'managed',
+          selectedVersion: '1.0.0',
+          latestCompatibleVersion: '1.3.0',
+          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          path: managedBinPath('claude', '1.0.0', dir),
+          versionHistory: [
+            {
+              version: '1.0.0',
+              status: 'installed',
+              installedPath: managedBinPath('claude', '1.0.0', dir),
+            },
+            {
+              version: '1.3.0',
+              status: 'installed',
+              installedPath: managedBinPath('claude', '1.3.0', dir),
+            },
+          ],
+        },
+      },
+    })
+
+    const result = resolveExecutable('claude')
+
+    expect(result.source).toBe('managed')
+    expect(result.expectedVersion).toBe('1.0.0')
+    expect(result.path).toBe(managedBinPath('claude', '1.0.0', dir))
+  })
+
+  it('degrades to latestCompatibleVersion when the choice is missing and records lastError', () => {
+    // Choice 1.0.0 dir does NOT exist (uninstalled); latest 1.3.0 is installed.
+    fakeBin(managedBinPath('claude', '1.3.0', dir), 'claude 1.3.0')
+    pinVendorCliVersion('claude', '1.0.0')
+    writeManifest({
+      version: 1,
+      vendors: {
+        claude: {
+          vendor: 'claude',
+          source: 'managed',
+          selectedVersion: '1.0.0',
+          latestCompatibleVersion: '1.3.0',
+          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          versionHistory: [{ version: '1.3.0', status: 'installed' }],
+        },
+      },
+    })
+
+    const result = resolveExecutable('claude')
+
+    expect(result.source).toBe('managed')
+    expect(result.expectedVersion).toBe('1.3.0')
+    // lastError surfaces the degradation reason via the manifest status read.
+    expect(readVendorCliStatus('claude').lastError).toContain('active 1.0.0')
+    // The user's vendorCliVersions choice must NOT be rewritten.
+    expect(getVendorCliVersions().claude).toBe('1.0.0')
+  })
+
+  it('auto-follows latestCompatibleVersion when no choice is set', () => {
+    fakeBin(managedBinPath('claude', '1.3.0', dir), 'claude 1.3.0')
+    pinVendorCliVersion('claude', undefined)
+    writeManifest({
+      version: 1,
+      vendors: {
+        claude: {
+          vendor: 'claude',
+          source: 'managed',
+          latestCompatibleVersion: '1.3.0',
+          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          versionHistory: [{ version: '1.3.0', status: 'installed' }],
+        },
+      },
+    })
+
+    const result = resolveExecutable('claude')
+
+    expect(result.source).toBe('managed')
+    expect(result.expectedVersion).toBe('1.3.0')
+  })
+})
+
+describe('syncManagedVendorCli download-target decoupling', () => {
+  it('downloads the latest compatible version even when vendorCliVersions pins a history version', async () => {
+    // Pin an installed history version as the effective choice.
+    fakeBin(managedBinPath('claude', '1.0.0', dir), 'claude 1.0.0')
+    pinVendorCliVersion('claude', '1.0.0')
+    writeManifest({
+      version: 1,
+      vendors: {
+        claude: {
+          vendor: 'claude',
+          source: 'managed',
+          selectedVersion: '1.0.0',
+          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          path: managedBinPath('claude', '1.0.0', dir),
+          versionHistory: [{ version: '1.0.0', status: 'installed' }],
+        },
+      },
+    })
+    // The latest 1.3.0 already downloaded (so sync takes the already-present path).
+    fakeBin(managedBinPath('claude', '1.3.0', dir), 'claude 1.3.0')
+    const packument = {
+      'dist-tags': { latest: '1.3.0' },
+      versions: {
+        '1.0.0': { version: '1.0.0', dist: { tarball: 't', integrity: 'i' } },
+        '1.3.0': { version: '1.3.0', dist: { tarball: 't', integrity: 'i' } },
+      },
+    }
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => packument }) as Response)
+
+    await syncManagedVendorCli('claude', { fetch: fetchMock as unknown as typeof fetch })
+
+    const status = readVendorCliStatus('claude')
+    // Download target tracked the latest, NOT the pin.
+    expect(status.downloadTargetVersion).toBe('1.3.0')
+    // The user's effective choice is preserved (not overwritten to latest).
+    expect(status.activeVersion).toBe('1.0.0')
+    // The latest entered the installed history (selectable next time).
+    expect(status.installedVersions.map((v) => v.version)).toContain('1.3.0')
+  })
+})
+
+describe('applyVendorCliChoices (save_settings manifest sync)', () => {
+  it('sets selectedVersion to an installed+compatible choice and clears lastError', () => {
+    fakeBin(managedBinPath('claude', '1.2.0', dir), 'claude 1.2.0')
+    writeManifest({
+      version: 1,
+      vendors: {
+        claude: {
+          vendor: 'claude',
+          source: 'managed',
+          latestCompatibleVersion: '1.3.0',
+          lastError: 'prior error',
+          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          versionHistory: [{ version: '1.2.0', status: 'installed' }],
+        },
+      },
+    })
+
+    applyVendorCliChoices({ claude: '1.2.0' })
+
+    const status = readVendorCliStatus('claude')
+    expect(status.activeVersion).toBe('1.2.0')
+    expect(status.lastError).toBeUndefined()
+  })
+
+  it('keeps an uninstalled choice and records lastError (does not clear)', () => {
+    writeManifest({
+      version: 1,
+      vendors: {
+        claude: {
+          vendor: 'claude',
+          source: 'managed',
+          latestCompatibleVersion: '1.3.0',
+          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          versionHistory: [],
+        },
+      },
+    })
+
+    applyVendorCliChoices({ claude: '9.9.9' })
+
+    const status = readVendorCliStatus('claude')
+    expect(status.activeVersion).toBe('9.9.9')
+    expect(status.lastError).toContain('9.9.9')
+  })
+
+  it('auto-follows latestCompatibleVersion when choice is empty', () => {
+    writeManifest({
+      version: 1,
+      vendors: {
+        claude: {
+          vendor: 'claude',
+          source: 'managed',
+          selectedVersion: '1.0.0',
+          latestCompatibleVersion: '1.3.0',
+          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          versionHistory: [],
+        },
+      },
+    })
+
+    applyVendorCliChoices({})
+
+    expect(readVendorCliStatus('claude').activeVersion).toBe('1.3.0')
+  })
+
+  it('refreshes the probe cache so the next resolve reflects the new choice', () => {
+    fakeBin(managedBinPath('claude', '1.2.0', dir), 'claude 1.2.0')
+    fakeBin(managedBinPath('claude', '1.3.0', dir), 'claude 1.3.0')
+    writeManifest({
+      version: 1,
+      vendors: {
+        claude: {
+          vendor: 'claude',
+          source: 'managed',
+          latestCompatibleVersion: '1.3.0',
+          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          versionHistory: [
+            { version: '1.2.0', status: 'installed' },
+            { version: '1.3.0', status: 'installed' },
+          ],
+        },
+      },
+    })
+    // Prime the cache with the auto choice (1.3.0).
+    pinVendorCliVersion('claude', '1.3.0')
+    expect(resolveExecutable('claude').expectedVersion).toBe('1.3.0')
+
+    // Simulate the save_settings flow: write the new choice to settings, then
+    // applyVendorCliChoices (which resets the probe cache). The next resolve
+    // must reflect 1.2.0, not the cached 1.3.0.
+    pinVendorCliVersion('claude', '1.2.0')
+    applyVendorCliChoices({ claude: '1.2.0' })
+    expect(resolveExecutable('claude').expectedVersion).toBe('1.2.0')
+  })
+})
+
+describe('cleanManagedHistory protects the effective choice', () => {
+  it('does not delete the selectedVersion directory even when over the history limit', () => {
+    const sel = managedBinPath('claude', '1.0.0', dir)
+    fakeBin(sel, 'claude 1.0.0')
+    pinVendorCliVersion('claude', '1.0.0')
+    // Build a history past the limit; the selected 1.0.0 sits beyond HISTORY_LIMIT.
+    const history = []
+    for (let i = 0; i < 25; i++) history.push({ version: `0.0.${i}`, status: 'installed' })
+    history.push({ version: '1.0.0', status: 'installed', installedPath: sel })
+    writeManifest({
+      version: 1,
+      vendors: {
+        claude: {
+          vendor: 'claude',
+          source: 'managed',
+          selectedVersion: '1.0.0',
+          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          versionHistory: history,
+        },
+      },
+    })
+
+    cleanManagedHistory('claude')
+
+    // The selected version dir survives.
+    expect(existsSync(managedBinPath('claude', '1.0.0', dir))).toBe(true)
   })
 })

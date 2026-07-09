@@ -1,13 +1,13 @@
 /**
- * Automation execution surfaces its real agent session as `running` in the shared
- * `session_status` snapshot for the duration of the run, then clears it on every
- * terminal path (success, thrown error). This is the server half of the 「自动化」tab
- * running-dot feature: the dispatcher runs off the kernel run bus, so it registers a
- * lightweight running flag (`runs.ts`) instead of a full `SessionRuntime`.
+ * Automation `llm` execution registers a real {@link SessionRuntime} for its agent
+ * session and translates the SDK/canonical stream into c3 wire events, so a viewer
+ * on the works page sees `running` mid-run + a live transcript, and `idle` + the
+ * final frame when it ends. The runtime is KEPT after the run (same as an ordinary
+ * session) so the session replays from its buffer when selected later.
  *
  * The real `runs.ts` registry is used (NOT mocked) so we can assert its effect on
- * `listStatuses()`; everything the dispatcher touches around the SDK/driver is mocked
- * so no network / child process is spawned.
+ * `listStatuses()` and the runtime buffer; everything the dispatcher touches around
+ * the SDK/driver is mocked so no network / child process is spawned.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
@@ -53,9 +53,15 @@ vi.mock('../../kernel/agent/adapters/codex/index.js', () => ({
   createCodexAdapter: () => ({ driver: { start: (o: unknown) => codexStart.fn(o) } }),
 }))
 
-import type { Automation } from '@ccc/shared/protocol'
+import type { Automation, ServerToClient } from '@ccc/shared/protocol'
 import { execute } from './dispatcher.js'
-import { listStatuses, setOnStatusChange, clearAutomationRunning } from '../../runs.js'
+import {
+  addViewer,
+  getRuntime,
+  listStatuses,
+  removeRuntime,
+  setOnStatusChange,
+} from '../../runs.js'
 
 const SID = 'automation-agent-session'
 
@@ -85,15 +91,19 @@ beforeEach(() => {
 
 afterEach(() => {
   setOnStatusChange(null)
-  clearAutomationRunning(SID)
+  removeRuntime(SID)
 })
 
 function sawRunning(): boolean {
   return snapshots.some((snap) => snap[SID] === 'running')
 }
 
-describe('automation dispatcher — running-status broadcast (claude)', () => {
-  it('broadcasts running mid-run and clears it on success', async () => {
+function statusOf(): string | undefined {
+  return listStatuses().find((s) => s.sessionId === SID)?.status
+}
+
+describe('automation dispatcher — viewer runtime (claude)', () => {
+  it('registers a runtime, broadcasts running mid-run, settles idle on success', async () => {
     queryImpl.fn = () =>
       (async function* () {
         yield { type: 'system', session_id: SID }
@@ -106,12 +116,71 @@ describe('automation dispatcher — running-status broadcast (claude)', () => {
 
     // A broadcast during the run carried running for the real session id.
     expect(sawRunning()).toBe(true)
-    // Terminal state reached success, and the running flag is cleared afterwards.
+    // Terminal state reached success, and the runtime is kept and settled to idle.
     expect(updates.at(-1)?.status).toBe('success')
-    expect(listStatuses().some((s) => s.sessionId === SID)).toBe(false)
+    expect(statusOf()).toBe('idle')
   })
 
-  it('clears the running flag when the run throws after binding a session', async () => {
+  it('translates the SDK stream into wire events on the runtime buffer', async () => {
+    queryImpl.fn = () =>
+      (async function* () {
+        yield { type: 'system', session_id: SID }
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'hello ' }] } }
+        yield {
+          type: 'assistant',
+          message: {
+            content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { path: 'a.ts' } }],
+          },
+        }
+        yield {
+          type: 'user',
+          message: {
+            content: [{ type: 'tool_result', tool_use_id: 't1', content: 'file body' }],
+          },
+        }
+        yield { type: 'result' }
+      })()
+
+    await execute(claudeAutomation(), 'log-2', () => undefined)
+
+    const buffer = getRuntime(SID)?.buffer ?? []
+    const types = buffer.map((e) => e.type)
+    expect(types).toEqual(['assistant_text', 'tool_use', 'tool_result', 'turn_end'])
+    const toolUse = buffer.find((e) => e.type === 'tool_use') as Extract<
+      ServerToClient,
+      { type: 'tool_use' }
+    >
+    expect(toolUse.toolName).toBe('Read')
+    expect((buffer.at(-1) as { reason?: string }).reason).toBe('complete')
+  })
+
+  it('flushes pre-session-id events to a viewer that selects mid-run', async () => {
+    // The assistant text arrives on the SAME frame that first carries the session
+    // id here; the buffer flush guarantees the viewer still receives it.
+    queryImpl.fn = () =>
+      (async function* () {
+        yield { type: 'system', session_id: SID }
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'first' }] } }
+        yield { type: 'result' }
+      })()
+
+    // Attach a viewer the moment the runtime goes running, then assert it saw the
+    // full stream via the buffer replay any later viewer would also get.
+    const received: ServerToClient[] = []
+    setOnStatusChange(() => {
+      snapshots.push(Object.fromEntries(listStatuses().map((s) => [s.sessionId, s.status])))
+      if (getRuntime(SID)) addViewer(SID, (e) => received.push(e))
+    })
+
+    await execute(claudeAutomation(), 'log-3', () => undefined)
+
+    // The buffer holds the complete stream a mid-run viewer replays on select.
+    const buffer = getRuntime(SID)?.buffer ?? []
+    expect(buffer.map((e) => e.type)).toContain('assistant_text')
+    expect(buffer.map((e) => e.type)).toContain('turn_end')
+  })
+
+  it('keeps the runtime and settles idle when the run throws after binding', async () => {
     queryImpl.fn = () =>
       (async function* () {
         yield { type: 'system', session_id: SID }
@@ -119,21 +188,31 @@ describe('automation dispatcher — running-status broadcast (claude)', () => {
       })()
 
     const updates: Record<string, unknown>[] = []
-    await execute(claudeAutomation(), 'log-2', (_id, patch) => updates.push(patch))
+    await execute(claudeAutomation(), 'log-4', (_id, patch) => updates.push(patch))
 
     expect(sawRunning()).toBe(true)
     expect(updates.at(-1)?.status).toBe('failed')
-    expect(listStatuses().some((s) => s.sessionId === SID)).toBe(false)
+    expect(statusOf()).toBe('idle')
+    // The viewer gets a terminal turn_end carrying the error.
+    const last = getRuntime(SID)?.buffer.at(-1) as { type?: string; reason?: string }
+    expect(last?.type).toBe('turn_end')
+    expect(last?.reason).toBe('error')
   })
 })
 
-describe('automation dispatcher — running-status broadcast (codex)', () => {
-  it('broadcasts running mid-run and clears it on success', async () => {
+describe('automation dispatcher — viewer runtime (codex)', () => {
+  it('registers a runtime, broadcasts running, settles idle on success', async () => {
     codexStart.fn = () =>
       Promise.resolve({
         sessionId: async () => SID,
         messages: async function* () {
-          yield { blocks: [{ type: 'text', text: 'codex done' }] }
+          yield {
+            vendor: 'codex',
+            sessionId: SID,
+            role: 'assistant',
+            ts: 0,
+            blocks: [{ type: 'text', text: 'codex done' }],
+          }
         },
       })
 
@@ -143,10 +222,13 @@ describe('automation dispatcher — running-status broadcast (codex)', () => {
       mode: { sandboxMode: 'read-only', approvalPolicy: 'never' },
     })
     const updates: Record<string, unknown>[] = []
-    await execute(auto, 'log-3', (_id, patch) => updates.push(patch))
+    await execute(auto, 'log-5', (_id, patch) => updates.push(patch))
 
     expect(sawRunning()).toBe(true)
     expect(updates.at(-1)?.status).toBe('success')
-    expect(listStatuses().some((s) => s.sessionId === SID)).toBe(false)
+    expect(statusOf()).toBe('idle')
+    // Codex text diffs into an assistant_text wire event on the buffer.
+    const buffer = getRuntime(SID)?.buffer ?? []
+    expect(buffer.map((e) => e.type)).toEqual(['assistant_text', 'turn_end'])
   })
 })

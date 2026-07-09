@@ -77,6 +77,7 @@ c3
 │   │   ├── 链式触发                              # automation 可触发 automation(纯函数匹配,有意无环检测)
 │   │   ├── 执行记录                              # 每次 run 持久化(start/end/status/session)供审计
 │   │   ├── automation 会话                       # 每次执行跑在独立 automation-kind 会话
+│   │   ├── 会话页 live 状态                       # llm 执行注册真 SessionRuntime,SDK 流译成 wire 事件 fan-out 给 viewer:会话页选中运行中 automation 见细粒度状态栏(思考中/正在执行<工具>/就绪)+ transcript 实时增长,结束收敛 idle,事后选中回放完整 buffer;command 类仅 running/idle 二态
 │   │   ├── 默认智能体                            # 新建 automation 默认用可配置的「automation 默认智能体」
 │   │   ├── c3 MCP 工具                           # 意图(find/view/save_directly/pr)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载;Claude 走进程内 SDK,codex 走 loopback HTTP MCP 路由(同一批工具)
 │   │   └── network-access 网络开关               # toolAllowlist 伪条目(非工具),勾选时向 codex workspace-write 沙箱透传 networkAccess;冻结前剔除不进权限网格,claude 忽略,默认断网

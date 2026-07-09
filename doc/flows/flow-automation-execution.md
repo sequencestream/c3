@@ -84,6 +84,36 @@ not modify an intent and cannot publish another intent lifecycle event.
    the workspace session's mode, all tools auto-allowed. **No `permission_request` ever reaches the
    browser for a automation run** — prompts are resolved entirely server-side.
 
+## Live viewer streaming (works page, `llm` only)
+
+An `llm` execution is not just logged — it is **viewable live** on the works page while it runs.
+The dispatcher runs off the kernel run bus with its own three-tier MCP security model (it does NOT
+go through the interactive `kernel/permission` gateway), but once the agent `sessionId` resolves it
+registers a real `SessionRuntime` (`sessionKind='automation'`, `runKind='background'` — the first
+place this combination is created) and translates the SDK / canonical stream into c3 wire events:
+
+- **SDK → wire.** Claude `query()` messages translate via a pure function (`assistant` text →
+  `assistant_text`, `tool_use` → `tool_use`, `user` `tool_result` → `tool_result`, `result` →
+  `turn_end`); Codex `run.messages()` canonical frames diff through the shared driver-path
+  `WireEmitter`. Each event goes through `emit()` — buffered on the runtime and fanned out to every
+  connection viewing that session.
+- **Status.** `setStatus('running')` at start / `idle` at end drives the works-page status bar's
+  fine-grained copy (思考中 / 正在执行&lt;工具&gt; / 就绪), derived from `sessionStatus` + the wire
+  event stream. `listStatuses()`'s "kernel runtimes win" rule lets the runtime supersede the legacy
+  `automationRunning` flag (which `llm` runs no longer set; `command` runs keep it — running/idle only).
+- **Pre-session-id buffering.** Events produced before the `sessionId` binds are parked and flushed
+  the instant the runtime registers, so a viewer never misses the first frames.
+- **Stop.** The dispatcher's wall-clock `abortController` is registered as the runtime's `run`, so the
+  works-page `stop_run` handler aborts the run through `stopRun(id)` → `rt.run.abort.abort()`.
+- **After the run.** The runtime is KEPT (like an ordinary session), so selecting the automation
+  session later replays the full transcript from the buffer. Terminal cleanup does NOT call
+  `finalizeRun` (its `onRunEnd` would rewrite the projection title from the automation name to the
+  native agent title) — instead it nulls `run`, emits one terminal `turn_end`, and settles `idle`.
+
+The **`command`** path is unchanged: no SDK stream, no runtime, no fine-grained events — only a
+running/idle flag. The automations-page `ExecutionDetail` polling path (transcript via
+`get_execution_transcript`) is orthogonal and unchanged.
+
 ## Log & read path
 
 - Execution logs are **append-only** once `startedAt` is set, advancing `pending → running →

@@ -55,7 +55,7 @@ web/src/
 │   │       ├── EventList.vue                        # 事件列表:右侧状态徽标(含 auto)和 todo 标记完成、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、会话类型图标、时间、选中态与加载更多
 │   │       └── EventDetail.vue                      # 事件详情:标题(经 event-title 本地化)+属性列表(工作区名/会话类型/会话 id/意图名,后两者为空隐藏)、Allow/Deny、AskUserQuestion 全题一览作答面板(自定义回复/共识提示/只读态)、共识决策留痕(auto 记录的投票/裁决,只读)、按 sessionKind+sessionId 溯源跳转
 │   ├── works/                                    # 会话页(历史目录名 works)
-│   │   ├── Works.vue                             # 会话容器页:桌面左侧聚合会话列表(工作/意图/spec/讨论/automation/工具六 tab + 运行中浮标;工作/意图/spec/讨论/automation 接真实 session_metadata 数据,工具受 showToolSessions 门控) + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);任意行点击只在右侧展示该会话详情(不跳走),溯源经标题栏 sourceLabel 按钮(open-source)上抛;移动端列表↔聊天 drill-down(返回到列表)
+│   │   ├── Works.vue                             # 会话容器页:桌面左侧聚合会话列表(工作/意图/spec/讨论/automation/工具六 tab + 运行中浮标;工作/意图/spec/讨论/automation 接真实 session_metadata 数据,工具受 showToolSessions 门控) + 右侧聊天列(ChatColumn,show-mode=true 带模式下拉);任意行点击只在右侧展示该会话详情(不跳走),溯源经标题栏 sourceLabel 按钮(open-source)上抛;automation 会话 showInput=false(只读),但状态栏/消息区照走 wire 事件——服务端 dispatcher 把 llm 执行的 SDK 流 fan-out 后,选中运行中的 automation 即见 live 细粒度状态+transcript 实时增长,无需前端轮询;移动端列表↔聊天 drill-down(返回到列表)
 │   │   └── components/
 │   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区按 session_kind 分 tab 的聚合会话(work/intent/spec/discussion/automation/tool 可选,tool 受系统开关门控)、行点击=查看此会话(统一上抛 select-session 在右侧展示详情,不再跳走)、非 work 行不提供改名/删除、有 owner 的行仍保留 ↗ 来源跳回按钮(jump-session-source,次要入口)、无 owner 的工具行仅展示、新增工作会话、删除/改名、服务端游标分页(加载更多/已加载完,SR-R14)、运行中计数浮标、未接入类型占位、offline 警告
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)

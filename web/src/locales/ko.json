@@ -1448,6 +1448,10 @@
         "clearAll": {
           "label": "전체 해제"
         },
+        "networkAccess": {
+          "label": "네트워크 액세스 허용",
+          "hint": "Codex 및 workspace-write 샌드박스에서만 적용: 셸 명령(gh, curl 등)의 네트워크 접근을 허용합니다. 기본값은 꺼짐."
+        },
         "loading": "도구 목록을 불러오는 중…",
         "empty": "사용 가능한 도구가 없습니다",
         "error": "도구 목록을 불러오지 못했습니다"

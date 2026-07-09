@@ -46,6 +46,7 @@ vi.mock('../../kernel/agent/adapters/codex/index.js', () => ({
 }))
 
 import type { Automation } from '@ccc/shared/protocol'
+import { AUTOMATION_NETWORK_ACCESS_TOOL } from '@ccc/shared/protocol'
 import type {
   AutomationMcpBinding,
   ServedAutomationMcp,
@@ -164,6 +165,71 @@ describe('codex automation MCP bridge — mount opt-in', () => {
     expect(mcpServers?.c3.url).toContain('token=')
     expect(mcpServers?.c3.enabledTools).toEqual(FULL_TOOLS)
     expect(disposeCalls()).toBe(1)
+  })
+})
+
+describe('codex automation — network-access pseudo-entry passthrough', () => {
+  it('passes networkAccess:true when selected in a workspace-write sandbox', async () => {
+    const { route } = fakeRoute()
+    setAutomationHttpMcp(route)
+    let startArg: Record<string, unknown> | undefined
+    codexStart.fn = (o) => {
+      startArg = o as Record<string, unknown>
+      return Promise.resolve(successfulRun())
+    }
+
+    await execute(
+      codexAutomation({
+        mode: { sandboxMode: 'workspace-write', approvalPolicy: 'never' },
+        toolAllowlist: ['Read', AUTOMATION_NETWORK_ACCESS_TOOL],
+      }),
+      'log-net-1',
+      () => {},
+    )
+
+    expect(startArg?.networkAccess).toBe(true)
+  })
+
+  it('omits networkAccess when the pseudo-entry is not selected', async () => {
+    const { route } = fakeRoute()
+    setAutomationHttpMcp(route)
+    let startArg: Record<string, unknown> | undefined
+    codexStart.fn = (o) => {
+      startArg = o as Record<string, unknown>
+      return Promise.resolve(successfulRun())
+    }
+
+    await execute(
+      codexAutomation({
+        mode: { sandboxMode: 'workspace-write', approvalPolicy: 'never' },
+        toolAllowlist: ['Read', 'Grep'],
+      }),
+      'log-net-2',
+      () => {},
+    )
+
+    expect(startArg?.networkAccess).toBeUndefined()
+  })
+
+  it('omits networkAccess for a read-only sandbox even when selected', async () => {
+    const { route } = fakeRoute()
+    setAutomationHttpMcp(route)
+    let startArg: Record<string, unknown> | undefined
+    codexStart.fn = (o) => {
+      startArg = o as Record<string, unknown>
+      return Promise.resolve(successfulRun())
+    }
+
+    await execute(
+      codexAutomation({
+        mode: { sandboxMode: 'read-only', approvalPolicy: 'never' },
+        toolAllowlist: [AUTOMATION_NETWORK_ACCESS_TOOL],
+      }),
+      'log-net-3',
+      () => {},
+    )
+
+    expect(startArg?.networkAccess).toBeUndefined()
   })
 })
 

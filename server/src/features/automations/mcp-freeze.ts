@@ -13,6 +13,7 @@
  */
 
 import type { WorkspaceMcpConfig } from '@ccc/shared/protocol'
+import { AUTOMATION_NETWORK_ACCESS_TOOL } from '@ccc/shared/protocol'
 
 // ---------------------------------------------------------------------------
 // Read/write classification
@@ -88,6 +89,16 @@ export const C3_MCP_TOOLS: readonly FrozenToolEntry[] = [
 /** Whether a automation explicitly selected any in-process c3 MCP capability. */
 export function hasSelectedC3McpTool(toolAllowlist: readonly string[]): boolean {
   return C3_MCP_TOOLS.some((tool) => toolAllowlist.includes(tool.name))
+}
+
+/**
+ * Whether a automation selected the `network-access` pseudo-entry. Orthogonal to
+ * the real tool set: the dispatcher reads this to decide the codex sandbox's raw
+ * network flag, while {@link freezeTools} strips the same marker so it never
+ * participates in read/write classification or the permission grid.
+ */
+export function hasSelectedNetworkAccess(toolAllowlist: readonly string[]): boolean {
+  return toolAllowlist.includes(AUTOMATION_NETWORK_ACCESS_TOOL)
 }
 
 // ---------------------------------------------------------------------------
@@ -177,8 +188,16 @@ export function freezeTools(
   // Apply denylist (subtraction, highest priority)
   const combinedDenylist = new Set([...(workspaceConfig.denylist ?? []), ...automationDenylist])
 
+  // Strip reserved pseudo-entries (e.g. `network-access`) before the intersection:
+  // they are capability flags, not tools, so they must not restrict the real set.
+  // Without this, an allowlist of only `network-access` would read as "non-empty"
+  // and collapse the frozen set to empty instead of the intended "no restriction".
+  const realAllowlist = automationAllowlist.filter(
+    (item) => item !== AUTOMATION_NETWORK_ACCESS_TOOL,
+  )
+
   // Apply allowlist (intersection) — empty = no restriction
-  const hasAllowlist = automationAllowlist.length > 0
+  const hasAllowlist = realAllowlist.length > 0
 
   const entries: FrozenToolEntry[] = []
   const writeNames = new Set<string>()
@@ -189,7 +208,7 @@ export function freezeTools(
     if (combinedDenylist.has(item)) continue
 
     // Check allowlist (if specified)
-    if (hasAllowlist && !automationAllowlist.includes(item)) continue
+    if (hasAllowlist && !realAllowlist.includes(item)) continue
 
     // Classify
     const isWrite = classifyTool(item) === 'write'

@@ -4,9 +4,11 @@ import {
   C3_MCP_TOOLS,
   freezeTools,
   hasSelectedC3McpTool,
+  hasSelectedNetworkAccess,
   matchesFrozenTool,
   isWriteTool,
 } from './mcp-freeze.js'
+import { AUTOMATION_NETWORK_ACCESS_TOOL } from '@ccc/shared/protocol'
 import { AUTOMATION_C3_TOOL_NAMES } from './c3-tools.js'
 
 const emptyConfig: WorkspaceMcpConfig = { mcpServers: {}, denylist: [] }
@@ -208,5 +210,38 @@ describe('freezeTools — c3 in-process MCP tools', () => {
     const frozen = freezeTools([], ['mcp__c3__find_intents'], emptyConfig)
     expect(matchesFrozenTool('mcp__c3__find_intents', frozen)).toBe(false)
     expect(matchesFrozenTool('mcp__c3__save_intents', frozen)).toBe(true) // not denied
+  })
+})
+
+describe('freezeTools — network-access pseudo-entry', () => {
+  it('hasSelectedNetworkAccess reflects the marker only', () => {
+    expect(hasSelectedNetworkAccess([])).toBe(false)
+    expect(hasSelectedNetworkAccess(['Read', 'Bash'])).toBe(false)
+    expect(hasSelectedNetworkAccess([AUTOMATION_NETWORK_ACCESS_TOOL])).toBe(true)
+    expect(hasSelectedNetworkAccess(['Read', AUTOMATION_NETWORK_ACCESS_TOOL])).toBe(true)
+  })
+
+  it('never appears in the frozen set (tools / read / write names)', () => {
+    const frozen = freezeTools(['Read', 'Write', AUTOMATION_NETWORK_ACCESS_TOOL], [], emptyConfig)
+    expect(frozen.tools.find((t) => t.name === AUTOMATION_NETWORK_ACCESS_TOOL)).toBeUndefined()
+    expect(frozen.readToolNames.has(AUTOMATION_NETWORK_ACCESS_TOOL)).toBe(false)
+    expect(frozen.writeToolNames.has(AUTOMATION_NETWORK_ACCESS_TOOL)).toBe(false)
+    expect(matchesFrozenTool(AUTOMATION_NETWORK_ACCESS_TOOL, frozen)).toBe(false)
+  })
+
+  it('mixed with real tools: only the real tools enter the frozen set', () => {
+    const frozen = freezeTools(['Read', AUTOMATION_NETWORK_ACCESS_TOOL], [], emptyConfig)
+    expect(frozen.readToolNames.has('Read')).toBe(true)
+    // The allowlist is still an intersection: Write was not listed → excluded.
+    expect(frozen.writeToolNames.has('Write')).toBe(false)
+  })
+
+  it('alone it is equivalent to an empty real allowlist (no restriction)', () => {
+    const only = freezeTools([AUTOMATION_NETWORK_ACCESS_TOOL], [], emptyConfig)
+    const empty = freezeTools([], [], emptyConfig)
+    expect(only.tools.map((t) => t.name).sort()).toEqual(empty.tools.map((t) => t.name).sort())
+    // The canonical "no restriction" markers are present.
+    expect(only.readToolNames.has('Read')).toBe(true)
+    expect(only.writeToolNames.has('Write')).toBe(true)
   })
 })

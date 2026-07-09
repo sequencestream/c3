@@ -429,12 +429,14 @@ export interface ConsensusConfig {
    */
   majority?: boolean
   /**
-   * Voter-selection mode. Optional; absent/`'all'` keeps the current behaviour
-   * (every same-vendor enabled non-self agent votes). `'custom'` restricts the
-   * voters to the intersection of {@link agentIds} with that same-vendor enabled
-   * non-self set — letting the user exclude irrelevant read-only agents or limit
-   * voting to high-trust ones. The vendor-homogeneity rule is unchanged; custom
-   * only ever *narrows* within the same-vendor set, never crosses vendors.
+   * Voter-selection mode. Optional; absent/`'all'` keeps the default behaviour
+   * (every enabled non-self agent votes, **across vendors**). `'custom'` restricts
+   * the voters to the intersection of {@link agentIds} with that enabled non-self
+   * set — letting the user exclude irrelevant read-only agents or limit voting to
+   * high-trust ones. Selection is vendor-neutral: neither `all` nor `custom` groups
+   * by vendor; cross-vendor voters judge a vendor-neutral, normalized risk payload
+   * (tool requests) or the raw questions (`AskUserQuestion`), never the requesting
+   * vendor's native tool names.
    */
   mode?: 'all' | 'custom'
   /**
@@ -1179,13 +1181,50 @@ export interface SystemSettings {
   projectConfigs?: Record<string, WorkspaceSetting>
 }
 
+/**
+ * The vendor-neutral normalization of a tool permission request, the payload the
+ * cross-vendor voters actually judge (never the requesting vendor's native tool
+ * name or raw input). Produced deterministically by the server's risk normalizer
+ * from `(requesting vendor, native tool name, input)` before fan-out. Voters and
+ * the audit trail see only this neutral form, so a Codex advisor can judge a Claude
+ * session's `Bash`/`Write` request (and vice-versa) without knowing the other
+ * vendor's tool vocabulary. Present on a {@link ConsensusOutcome} only when
+ * normalization SUCCEEDED; a failure carries {@link ConsensusOutcome.normalizationFailure}
+ * instead and every voter abstains.
+ */
+export interface NormalizedToolRisk {
+  /** Stable, vendor-neutral operation category + a short human description. */
+  operationIntent: string
+  /**
+   * The resources the operation touches: a neutral `kind` (e.g. `'file'`,
+   * `'command'`, `'url'`, `'search'`) plus the structurally-extracted targets
+   * (paths, command target, remote host/URL). Never the raw native input verbatim.
+   */
+  resourceScope: { kind: string; targets: string[] }
+  /**
+   * The four base risk axes every request is classified on, plus optional
+   * non-vendor-specific extra tags. A `true` axis is descriptive only — it never
+   * hard-codes a deny; the tally still decides allow/deny.
+   */
+  risks: { read: boolean; write: boolean; execute: boolean; network: boolean; tags?: string[] }
+  /** The normalizer ruleset version, so prompts, protocol and audit stay interpretable. */
+  normalizationVersion: number
+}
+
 /** One agent's vote on a pending permission request during consensus voting. */
 export interface ConsensusVote {
   /** Voting agent's id. */
   agentId: string
   /** Voting agent's display name. */
   agentName: string
-  /** Verdict. `abstain` ⇒ the agent errored or returned no parseable answer. */
+  /**
+   * Voting agent's vendor. Optional for back-compat with pre-cross-vendor audit
+   * records (which had no vendor because voting was same-vendor only); new votes
+   * always set it so the UI/audit can show each voter's vendor honestly.
+   */
+  vendor?: VendorId
+  /** Verdict. `abstain` ⇒ the agent errored, returned no parseable answer, or the
+   * request could not be normalized (⇒ the whole round abstains). */
   decision: 'allow' | 'deny' | 'abstain'
   /** One-line rationale from the agent. */
   reason: string
@@ -1218,19 +1257,22 @@ export interface ConsensusOutcome {
    */
   decision: 'allow' | 'deny' | null
   /**
-   * The vendor the vote was scoped to (the session's own agent vendor). Consensus
-   * is **vendor-homogeneous**: only same-vendor agents vote, because tool names and
-   * risk semantics are not comparable across vendors (the heterogeneous-tolerance
-   * decision — see `permission-gateway/consensus.md`). The console labels the
-   * outcome honestly ("共识限 \<vendor\> 内") rather than implying a cross-vendor vote.
+   * The vendor-neutral risk payload the cross-vendor voters judged. Present ONLY
+   * when the request normalized successfully; the voters never saw the requesting
+   * vendor's native tool name or raw input, only this. Absent when normalization
+   * failed (see {@link normalizationFailure}) or on legacy records. Kept optional
+   * so historical outcomes (which had no normalization layer) still read.
    */
-  vendorScope?: VendorId
+  normalized?: NormalizedToolRisk
   /**
-   * How many *enabled* agents of a **different** vendor were excluded from voting
-   * (would-be voters that a cross-vendor scope dropped). `> 0` ⇒ the console notes
-   * the excluded advisors so the human knows the heterogeneous table did not all weigh in.
+   * Stable reason code when the request could NOT be normalized (unknown tool,
+   * missing critical target, invalid input, or an internal normalizer error). When
+   * set, every selected voter abstained without an advisor call, so `decision` is
+   * null and the request defers to the human — normalization failure never
+   * auto-allows. Absent on a normalized outcome. Auditable in the outcome so a
+   * human review sees exactly why cross-vendor voting was skipped.
    */
-  crossVendorExcluded?: number
+  normalizationFailure?: string
 }
 
 /**
@@ -1241,6 +1283,11 @@ export interface ConsensusOutcome {
 export interface AgentAnswer {
   agentId: string
   agentName: string
+  /**
+   * Answering agent's vendor. Optional for back-compat with pre-cross-vendor audit
+   * records; new answers always set it so the UI/audit can show each voter's vendor.
+   */
+  vendor?: VendorId
   /** Matched option label(s); empty when the agent only gave a custom reply. */
   optionLabels: string[]
   /** Free-text reply when no option fits (or as an addition). */
@@ -1297,10 +1344,6 @@ export interface AskConsensusOutcome {
   agreedAnswers: Record<string, string>
   /** Decider-agent (or code-fallback) one-line summary. */
   summary: string
-  /** The vendor the vote was scoped to — see {@link ConsensusOutcome.vendorScope}. */
-  vendorScope?: VendorId
-  /** Same-vendor scope's excluded cross-vendor count — see {@link ConsensusOutcome.crossVendorExcluded}. */
-  crossVendorExcluded?: number
 }
 
 /** Either consensus shape, discriminated by `kind`. */
@@ -1316,6 +1359,11 @@ export interface CheckpointConsensusVote {
   agentId: string
   /** Voting agent's display name. */
   agentName: string
+  /**
+   * Voting agent's vendor. Optional for back-compat with pre-cross-vendor records;
+   * new votes set it (checkpoint voting is now vendor-neutral like the other rounds).
+   */
+  vendor?: VendorId
   /**
    * Verdict. `continue` ⇒ auto-pass the checkpoint; `wait` ⇒ stop for human;
    * `abstain` ⇒ the agent errored or returned no parseable answer.

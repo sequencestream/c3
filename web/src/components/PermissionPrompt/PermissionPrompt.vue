@@ -19,9 +19,29 @@ import { fmt, oneLine } from '../../lib/format'
 import { VENDOR_LABEL } from '../../lib/vendor'
 import { useTypedI18n } from '@/i18n'
 import type { PermissionMsg } from '../../lib/chat-types'
-import type { ProposedIntent } from '@ccc/shared/protocol'
+import type { NormalizedToolRisk, ProposedIntent } from '@ccc/shared/protocol'
 
 const { t } = useTypedI18n()
+
+/** The active risk axes (read/write/execute/network) of a normalized payload, in order. */
+const AXES = ['read', 'write', 'execute', 'network'] as const
+type Axis = (typeof AXES)[number]
+function activeAxes(risks: NormalizedToolRisk['risks']): Axis[] {
+  return AXES.filter((a) => risks[a])
+}
+/** Localized axis label via explicit literal keys (typed `t` rejects template keys). */
+function axisLabel(axis: Axis): string {
+  switch (axis) {
+    case 'read':
+      return t('discussion.consensus.risk.read')
+    case 'write':
+      return t('discussion.consensus.risk.write')
+    case 'execute':
+      return t('discussion.consensus.risk.execute')
+    case 'network':
+      return t('discussion.consensus.risk.network')
+  }
+}
 
 // Fixed tool identifiers shown verbatim in <code> tags (do-not-translate; bound
 // via a const so `no-raw-text` doesn't flag them as hard-coded copy).
@@ -170,17 +190,6 @@ function submitAsk() {
       }}</span>
     </div>
     <div v-if="m.consensus" class="consensus-summary ask-summary">🤝 {{ m.consensus.summary }}</div>
-    <div
-      v-if="m.consensus && m.consensus.vendorScope && (m.consensus.crossVendorExcluded ?? 0) > 0"
-      class="consensus-vendor-scope"
-    >
-      {{
-        t('discussion.consensus.vendorScope.label', {
-          vendor: VENDOR_LABEL[m.consensus.vendorScope],
-          count: m.consensus.crossVendorExcluded ?? 0,
-        })
-      }}
-    </div>
     <div class="ask-panel">
       <div v-for="q in askQuestionsOf(m.input)" :key="q.index" class="ask-q">
         <div class="ask-q-head">
@@ -326,20 +335,34 @@ function submitAsk() {
       <div class="consensus-summary">
         {{ t('permission.consensus.disagree.label') }} {{ m.consensus.summary }}
       </div>
-      <div
-        v-if="m.consensus.vendorScope && (m.consensus.crossVendorExcluded ?? 0) > 0"
-        class="consensus-vendor-scope"
-      >
+      <!-- Vendor-neutral normalized risk payload the cross-vendor voters judged. -->
+      <div v-if="m.consensus.normalized" class="consensus-risk">
+        <span class="risk-intent">{{ m.consensus.normalized.operationIntent }}</span>
+        <span class="risk-axes">
+          <span
+            v-for="axis in activeAxes(m.consensus.normalized.risks)"
+            :key="axis"
+            class="risk-axis"
+            :class="axis"
+            >{{ axisLabel(axis) }}</span
+          >
+        </span>
+        <span v-if="m.consensus.normalized.resourceScope.targets.length" class="risk-targets">{{
+          m.consensus.normalized.resourceScope.targets.join(', ')
+        }}</span>
+      </div>
+      <!-- Normalization failed ⇒ every voter abstained; deferred to this human prompt. -->
+      <div v-else-if="m.consensus.normalizationFailure" class="consensus-norm-failed">
         {{
-          t('discussion.consensus.vendorScope.label', {
-            vendor: VENDOR_LABEL[m.consensus.vendorScope],
-            count: m.consensus.crossVendorExcluded ?? 0,
+          t('discussion.consensus.normalizationFailed.label', {
+            reason: m.consensus.normalizationFailure,
           })
         }}
       </div>
       <ul class="consensus-votes">
         <li v-for="v in m.consensus.votes" :key="v.agentId">
           <span class="vote-name">{{ v.agentName }}</span>
+          <span v-if="v.vendor" class="vote-vendor">{{ VENDOR_LABEL[v.vendor] }}</span>
           <span class="vote-decision" :class="v.decision">{{ v.decision }}</span>
           <span class="vote-reason">{{ v.reason }}</span>
         </li>

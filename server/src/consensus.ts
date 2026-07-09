@@ -19,13 +19,15 @@
  */
 
 import type {
+  AgentAnswer,
   AskConsensusOutcome,
   ConsensusOutcome,
   ConsensusVote,
   QuestionConsensus,
   SessionKind,
 } from '@ccc/shared/protocol'
-import { resolveAgent, vendorScopedVoters } from './kernel/agent-config/index.js'
+import { resolveAgent, selectConsensusVoters } from './kernel/agent-config/index.js'
+import { normalizeToolRequest } from './kernel/permission/risk.js'
 import {
   getConsensusConfig,
   getUiLangName,
@@ -76,7 +78,7 @@ export interface ConsensusParams {
 /** Ask the session's own agent to summarize the opinions in one sentence. */
 async function summarize(
   currentAgentId: string | null,
-  toolName: string,
+  operationLabel: string,
   votes: ConsensusVote[],
   unanimous: boolean,
   decision: 'allow' | 'deny' | null,
@@ -89,11 +91,11 @@ async function summarize(
     const decider = resolveAgent(currentAgentId)
     // system: the stable summariser role + output instruction; user: the votes cast.
     const system = [
-      'You summarize how several advisor agents voted on whether to allow a tool an AI agent wants to run.',
+      'You summarize how several advisor agents voted on whether to allow an operation an AI agent wants to perform.',
       `Write ONE short sentence in ${getUiLangName()} summarizing their collective opinion for a human who must make the final call. Output only that sentence, no preamble.`,
     ].join('\n')
     const user = [
-      `Votes on the tool "${toolName}":`,
+      `Votes on the operation "${operationLabel}":`,
       ...votes.map((v) => `- ${v.agentName}: ${v.decision} — ${v.reason || '(no reason)'}`),
     ].join('\n')
     const text = await askAgentOnce(decider, user, cwd, signal, null, system)
@@ -110,16 +112,43 @@ async function summarize(
  */
 export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOutcome | null> {
   if (!isConsensusEnabled(p.cwd)) return null
-  const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(
-    p.currentAgentId,
-    getConsensusConfig(p.cwd),
-  )
+  const voters = selectConsensusVoters(p.currentAgentId, getConsensusConfig(p.cwd))
   if (voters.length === 0) return null
+
+  // Normalize the native tool request into a vendor-neutral risk payload BEFORE any
+  // fan-out — the cross-vendor voters may not know the requesting vendor's tools.
+  // A failure abstains the whole round (no advisor call, defers to the human) and
+  // is recorded on the outcome; it NEVER auto-allows.
+  const vendor = resolveAgent(p.currentAgentId).vendor
+  const normalization = normalizeToolRequest(vendor, p.toolName, p.input)
+  if (!normalization.ok) {
+    console.log(
+      `[c3:consensus] (${SESSION_KIND}) normalization failed for "${p.toolName}" ` +
+        `(${normalization.reason}) → ${voters.length} voter(s) abstain, defer to human`,
+    )
+    const votes: ConsensusVote[] = voters.map((agent) => ({
+      agentId: agent.id,
+      agentName: agent.displayName,
+      vendor: agent.vendor,
+      decision: 'abstain',
+      reason: `request not normalizable (${normalization.reason})`,
+    }))
+    const { unanimous, decision } = tally(votes, isConsensusMajorityEnabled(p.cwd))
+    return {
+      kind: 'tool',
+      votes,
+      summary: fallbackSummary(votes, unanimous, decision),
+      unanimous,
+      decision,
+      normalizationFailure: normalization.reason,
+    }
+  }
+
   console.log(
-    `[c3:consensus] (${SESSION_KIND}) vote on "${p.toolName}" → ${voters.length} voter(s)`,
+    `[c3:consensus] (${SESSION_KIND}) vote on "${normalization.risk.operationIntent}" → ${voters.length} voter(s)`,
   )
 
-  const { system, user } = voterPrompt(p.toolName, p.input, p.context)
+  const { system, user } = voterPrompt(normalization.risk, p.context)
   const votes: ConsensusVote[] = await Promise.all(
     voters.map(async (agent): Promise<ConsensusVote> => {
       try {
@@ -129,15 +158,17 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
           return {
             agentId: agent.id,
             agentName: agent.displayName,
+            vendor: agent.vendor,
             decision: 'abstain',
             reason: oneLine(text).slice(0, 200) || 'no parseable answer',
           }
         }
-        return { agentId: agent.id, agentName: agent.displayName, ...parsed }
+        return { agentId: agent.id, agentName: agent.displayName, vendor: agent.vendor, ...parsed }
       } catch (err) {
         return {
           agentId: agent.id,
           agentName: agent.displayName,
+          vendor: agent.vendor,
           decision: 'abstain',
           reason: err instanceof Error ? err.message : String(err),
         }
@@ -151,14 +182,21 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
   const { unanimous, decision } = tally(votes, isConsensusMajorityEnabled(p.cwd))
   const summary = await summarize(
     p.currentAgentId,
-    p.toolName,
+    normalization.risk.operationIntent,
     votes,
     unanimous,
     decision,
     p.cwd,
     p.signal,
   )
-  return { kind: 'tool', votes, summary, unanimous, decision, vendorScope, crossVendorExcluded }
+  return {
+    kind: 'tool',
+    votes,
+    summary,
+    unanimous,
+    decision,
+    normalized: normalization.risk,
+  }
 }
 
 /**
@@ -206,10 +244,7 @@ async function decideAndSummarizeAsk(
  */
 export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusOutcome | null> {
   if (!isConsensusEnabled(p.cwd)) return null
-  const { voters, vendorScope, crossVendorExcluded } = vendorScopedVoters(
-    p.currentAgentId,
-    getConsensusConfig(p.cwd),
-  )
+  const voters = selectConsensusVoters(p.currentAgentId, getConsensusConfig(p.cwd))
   if (voters.length === 0) return null
   const questions = askQuestions(p.input)
   if (!questions) return null
@@ -218,19 +253,26 @@ export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusO
   )
 
   // Each voter answers all questions; an errored voter abstains on every question.
+  // `AskUserQuestion` is already vendor-neutral (natural-language questions), so no
+  // risk normalization applies — cross-vendor voters answer the raw questions. Each
+  // answer is tagged with the voter's vendor for honest audit/UI.
   const perAgent = await Promise.all(
-    voters.map(async (agent) => {
+    voters.map(async (agent): Promise<AgentAnswer[]> => {
       // Independent per-voter option ordering dilutes the LLM's positional bias;
       // parse against the ORIGINAL questions so tally/injection key off the
       // canonical labels (matchOption resolves by label content, not by index).
       const { system, user } = askVoterPrompt(shuffleOptions(questions), p.context)
       try {
         const text = await askAgentOnce(agent, user, p.cwd, p.signal, null, system)
-        return parseAskVote(text, questions, agent.id, agent.displayName)
+        return parseAskVote(text, questions, agent.id, agent.displayName).map((a) => ({
+          ...a,
+          vendor: agent.vendor,
+        }))
       } catch {
         return questions.map(() => ({
           agentId: agent.id,
           agentName: agent.displayName,
+          vendor: agent.vendor,
           optionLabels: [],
           reason: '',
           abstain: true,
@@ -283,7 +325,5 @@ export async function runAskConsensus(p: ConsensusParams): Promise<AskConsensusO
     fullyUnanimous,
     agreedAnswers,
     summary,
-    vendorScope,
-    crossVendorExcluded,
   }
 }

@@ -2342,14 +2342,61 @@ button.deny:hover:not(:disabled) {
   font-size: var(--fs-code);
   line-height: var(--lh-normal);
 }
-/* Honest vendor-scope note: consensus is vendor-homogeneous, so cross-vendor
-   advisors did not vote (2026-06-06-006). Muted, secondary to the summary. */
-.consensus-vendor-scope {
+/* Vendor-neutral normalized risk payload the cross-vendor voters judged: the
+   neutral operation intent, the active risk axes, and the resource targets. */
+.consensus-risk {
+  margin-top: var(--sp-1);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-caption);
+}
+.risk-intent {
+  font-weight: 600;
+}
+.risk-axes {
+  display: inline-flex;
+  gap: var(--sp-1);
+}
+.risk-axis {
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-badge);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--c-border);
+  color: var(--c-text-muted);
+}
+.risk-axis.write,
+.risk-axis.execute {
+  color: var(--c-error);
+  border-color: var(--c-error);
+}
+.risk-axis.network {
+  color: var(--c-warning, var(--c-error));
+  border-color: var(--c-warning, var(--c-error));
+}
+.risk-targets {
+  color: var(--c-text-muted);
+  font-family: var(--font-mono, monospace);
+  word-break: break-all;
+}
+/* Normalization failed ⇒ every voter abstained; the request deferred to a human. */
+.consensus-norm-failed {
   margin-top: var(--sp-1);
   font-size: var(--fs-xs, var(--fs-code));
   line-height: var(--lh-normal);
-  opacity: 0.7;
+  opacity: 0.8;
   font-style: italic;
+  color: var(--c-text-muted);
+}
+/* Each voter's vendor, shown next to its name so a cross-vendor round is honest. */
+.vote-vendor {
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-badge);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--c-border);
+  color: var(--c-text-muted);
+  white-space: nowrap;
 }
 .consensus-votes {
   margin: var(--sp-2) 0 0;

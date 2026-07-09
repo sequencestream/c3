@@ -19,10 +19,17 @@ import {
   type AskQuestionView,
 } from '../../../lib/ask'
 import { useTypedI18n, type LocaleKey } from '@/i18n'
-import type { WaitUserInvolveEvent, WorkspaceInfo } from '@ccc/shared/protocol'
+import type { NormalizedToolRisk, WaitUserInvolveEvent, WorkspaceInfo } from '@ccc/shared/protocol'
+import { VENDOR_LABEL } from '@/lib/vendor'
 import { eventDisplayTitle } from '@/lib/event-title'
 
 const { t } = useTypedI18n()
+
+/** The active risk axes (read/write/execute/network) of a normalized payload, in order. */
+const RISK_AXES = ['read', 'write', 'execute', 'network'] as const
+function activeAxes(risks: NormalizedToolRisk['risks']): (typeof RISK_AXES)[number][] {
+  return RISK_AXES.filter((a) => risks[a])
+}
 
 const ASK_TOOL_LABEL = 'AskUserQuestion'
 
@@ -433,11 +440,36 @@ watch(
                 : t('workcenter.consensus.majority')
             }}
           </span>
-          <span v-if="outcome.vendorScope" class="wc-consensus-tag">
-            {{ t('workcenter.consensus.vendorScope', { vendor: outcome.vendorScope }) }}
-          </span>
         </div>
         <p v-if="outcome.summary" class="wc-consensus-summary">{{ outcome.summary }}</p>
+
+        <!-- Vendor-neutral normalized risk payload the cross-vendor voters judged. -->
+        <div v-if="outcome.kind === 'tool' && outcome.normalized" class="wc-consensus-risk">
+          <span class="wc-risk-intent">{{ outcome.normalized.operationIntent }}</span>
+          <span class="wc-risk-axes">
+            <span
+              v-for="axis in activeAxes(outcome.normalized.risks)"
+              :key="axis"
+              class="wc-risk-axis"
+              :class="axis"
+              >{{ t(`discussion.consensus.risk.${axis}` as LocaleKey) }}</span
+            >
+          </span>
+          <span v-if="outcome.normalized.resourceScope.targets.length" class="wc-risk-targets">{{
+            outcome.normalized.resourceScope.targets.join(', ')
+          }}</span>
+        </div>
+        <!-- Normalization failed ⇒ every voter abstained; the request went to a human. -->
+        <p
+          v-else-if="outcome.kind === 'tool' && outcome.normalizationFailure"
+          class="wc-consensus-norm-failed"
+        >
+          {{
+            t('discussion.consensus.normalizationFailed.label', {
+              reason: outcome.normalizationFailure,
+            })
+          }}
+        </p>
 
         <!-- Tool consensus: per-voter allow/deny -->
         <ul v-if="outcome.kind === 'tool'" class="wc-vote-list">
@@ -446,6 +478,7 @@ watch(
               t(`workcenter.consensus.verdict.${vote.decision}` as LocaleKey)
             }}</span>
             <span class="wc-vote-agent">{{ vote.agentName }}</span>
+            <span v-if="vote.vendor" class="wc-vote-vendor">{{ VENDOR_LABEL[vote.vendor] }}</span>
             <span class="wc-vote-reason">{{ vote.reason }}</span>
           </li>
         </ul>
@@ -651,6 +684,58 @@ watch(
   font-size: 12px;
   color: var(--c-text);
   margin: 0 0 var(--sp-2);
+}
+/* Vendor-neutral normalized risk payload the cross-vendor voters judged. */
+.wc-consensus-risk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-2);
+  font-size: 12px;
+  margin: 0 0 var(--sp-2);
+}
+.wc-risk-intent {
+  font-weight: 600;
+  color: var(--c-text);
+}
+.wc-risk-axes {
+  display: inline-flex;
+  gap: 4px;
+}
+.wc-risk-axis {
+  font-size: 11px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--c-border);
+  color: var(--c-text-muted);
+}
+.wc-risk-axis.write,
+.wc-risk-axis.execute {
+  color: #991b1b;
+  border-color: #991b1b;
+}
+.wc-risk-axis.network {
+  color: #92400e;
+  border-color: #92400e;
+}
+.wc-risk-targets {
+  color: var(--c-text-muted);
+  font-family: var(--font-mono, monospace);
+  overflow-wrap: anywhere;
+}
+.wc-consensus-norm-failed {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--c-text-muted);
+  margin: 0 0 var(--sp-2);
+}
+.wc-vote-vendor {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--c-border);
+  color: var(--c-text-muted);
 }
 .wc-vote-list {
   list-style: none;

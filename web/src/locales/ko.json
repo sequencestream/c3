@@ -1897,8 +1897,14 @@
       "disagreement": {
         "label": "의견 불일치"
       },
-      "vendorScope": {
-        "label": "합의는 {vendor} 내로 제한됨 · 크로스 벤더 자문 {count}명은 투표하지 않음(도구·리스크 기준은 벤더 간 비교 불가)"
+      "risk": {
+        "read": "읽기",
+        "write": "쓰기",
+        "execute": "실행",
+        "network": "네트워크"
+      },
+      "normalizationFailed": {
+        "label": "리스크를 정규화할 수 없어 수동 승인으로 전환했습니다 ({reason})"
       }
     },
     "research": {
@@ -2162,7 +2168,6 @@
       "answered": "대신 답변함",
       "unanimous": "만장일치",
       "majority": "과반수",
-      "vendorScope": "{vendor} 내로 제한",
       "noAgreement": "합의 없음",
       "verdict": {
         "allow": "허용",

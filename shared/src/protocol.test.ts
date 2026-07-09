@@ -198,19 +198,50 @@ describe('protocol wire format', () => {
     { type: 'login_result', result: { ok: true, token: 'tok', expiresAt: 1000 } },
     { type: 'login_result', result: { ok: false, code: 'invalid_credentials' } },
     { type: 'unauthenticated', reason: 'expired' },
-    // Consensus scoped to one vendor, noting the cross-vendor advisors it excluded.
+    // Cross-vendor consensus over a normalized tool request: voters of two vendors,
+    // judging the vendor-neutral risk payload rather than the native tool name.
     {
       type: 'consensus_auto',
       toolName: 'Write',
       input: {},
       outcome: {
         kind: 'tool',
-        votes: [],
+        votes: [
+          { agentId: 'a', agentName: 'A', vendor: 'claude', decision: 'allow', reason: 'safe' },
+          { agentId: 'x', agentName: 'X', vendor: 'codex', decision: 'allow', reason: 'ok' },
+        ],
         summary: 'ok',
         unanimous: true,
         decision: 'allow',
-        vendorScope: 'claude',
-        crossVendorExcluded: 2,
+        normalized: {
+          operationIntent: 'write-file: Create or overwrite a file',
+          resourceScope: { kind: 'file', targets: ['/ws/a.ts'] },
+          risks: { read: false, write: true, execute: false, network: false },
+          normalizationVersion: 1,
+        },
+      },
+    },
+    // A request that could not be normalized: every voter abstains, defers to human.
+    {
+      type: 'permission_request',
+      requestId: 'r1',
+      toolName: 'mcp__unknown__do',
+      input: {},
+      consensus: {
+        kind: 'tool',
+        votes: [
+          {
+            agentId: 'x',
+            agentName: 'X',
+            vendor: 'codex',
+            decision: 'abstain',
+            reason: 'request not normalizable (unknown-tool)',
+          },
+        ],
+        summary: 'deferred',
+        unanimous: false,
+        decision: null,
+        normalizationFailure: 'unknown-tool',
       },
     },
   ]

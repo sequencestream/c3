@@ -1183,7 +1183,7 @@ export function isConsensusEnabled(workspacePath: string): boolean {
 
 /**
  * The normalized consensus config for a project (mode + cleaned agentIds), or
- * `undefined` when none is configured. Passed to `vendorScopedVoters` so the
+ * `undefined` when none is configured. Passed to `selectConsensusVoters` so the
  * voter set respects the `custom`-mode allowlist. Returns the already-normalized
  * value (`loadWorkspaceSetting` ran `normalizeWorkspaceSetting`), so `agentIds`
  * is pre-cleaned of stale/disabled ids.

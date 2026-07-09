@@ -451,73 +451,48 @@ export function resolveDegradationAgent(
 }
 
 /**
- * The agents that vote in a consensus round: every *enabled* agent except the
- * one the session itself runs on (`currentAgentId`, already resolved). Disabled
- * agents never vote. **Vendor-homogeneous** — only same-vendor agents are kept
- * (see {@link vendorScopedVoters}); cross-vendor agents never vote because tool
- * names and risk semantics are not comparable across vendors.
+ * The **shared consensus participant selector** — the single source every
+ * consensus consumer (tool-permission voting, `AskUserQuestion` voting, and the
+ * automation checkpoint vote) resolves its voters from: every *enabled* agent
+ * except the one the session itself runs on (`currentAgentId`, already resolved).
+ * Disabled agents never vote. Selection is **vendor-neutral** — voters may be of
+ * any vendor. Cross-vendor tool-permission requests are made comparable by the
+ * server's risk normalizer (a vendor-neutral intent + risk payload) before fan-out,
+ * NOT by restricting who votes; `AskUserQuestion` and the checkpoint prompt are
+ * already vendor-neutral.
  *
  * `consensus` optionally narrows the set: with `mode: 'custom'` only agents whose
- * id is in `consensus.agentIds` vote (intersected with the same-vendor enabled
- * non-self set). Absent / `mode: 'all'` keeps the full same-vendor set.
+ * id is in `consensus.agentIds` vote (intersected with the enabled non-self set);
+ * the allowlist filters by id only, never by vendor. Absent / `mode: 'all'` keeps
+ * the full enabled non-self set. A stale/disabled id in `agentIds` is silently a
+ * no-op (the set is already the enabled non-self agents). Empty result ⇒ consensus
+ * is skipped and the human is prompted as usual (the no-voter fallback).
+ *
+ * Distinct from {@link sameVendorEnabledAgents} — the manual agent switcher and
+ * the degradation chain remain vendor-homogeneous (a different vendor cannot carry
+ * a session's context), so they keep their own same-vendor rule; only consensus
+ * voting crosses the vendor boundary.
  */
-export function consensusVoters(
+export function selectConsensusVoters(
   currentAgentId: string | null,
   consensus?: Pick<ConsensusConfig, 'mode' | 'agentIds'>,
 ): AgentConfig[] {
-  return vendorScopedVoters(currentAgentId, consensus).voters
-}
-
-/**
- * Consensus is **vendor-homogeneous** (2026-06-06-006 heterogeneous-tolerance):
- * voting is limited to agents of the **session's own vendor**, because a tool
- * name + risk meaning the voter must judge is not comparable across vendors
- * (a Claude `Bash` and a Codex `shell` are different verdicts). So this resolves
- * the session agent's vendor, keeps only same-vendor enabled non-self agents as
- * voters, and reports how many enabled non-self agents of a **different** vendor
- * were excluded — so the gateway can label the outcome honestly rather than
- * implying the whole heterogeneous table weighed in. A table where the session's
- * vendor is the only one present yields `voters: []` ⇒ consensus is skipped and
- * the human is prompted as usual (the existing no-voter fallback).
- *
- * `consensus` optionally restricts the voters to a user-chosen subset. With
- * `mode: 'custom'` only same-vendor enabled non-self agents whose id is in
- * `consensus.agentIds` remain; `mode: 'all'`/absent keeps the full set. The
- * custom narrowing is applied **after** the vendor split, so `crossVendorExcluded`
- * still counts only the *different-vendor* drops — agents excluded by the custom
- * allowlist are same-vendor and are not reported as cross-vendor. Disabled agents
- * are already absent (the set is built from {@link sameVendorEnabledAgents}), so a
- * stale/disabled id in `agentIds` is silently a no-op.
- */
-export function vendorScopedVoters(
-  currentAgentId: string | null,
-  consensus?: Pick<ConsensusConfig, 'mode' | 'agentIds'>,
-): {
-  voters: AgentConfig[]
-  vendorScope: VendorId
-  crossVendorExcluded: number
-} {
-  const vendorScope = resolveAgent(currentAgentId).vendor
   const others = enabledAgents().filter((a) => a.id !== currentAgentId)
-  const sameVendor = sameVendorEnabledAgents(vendorScope, currentAgentId)
-  // Cross-vendor exclusions are vendor-only — measured before the custom narrowing
-  // so a same-vendor agent dropped by the allowlist never inflates this count.
-  const crossVendorExcluded = others.length - sameVendor.length
-  let voters = sameVendor
   if (consensus?.mode === 'custom') {
     const allow = new Set(consensus.agentIds ?? [])
-    voters = sameVendor.filter((a) => allow.has(a.id))
+    return others.filter((a) => allow.has(a.id))
   }
-  return { voters, vendorScope, crossVendorExcluded }
+  return others
 }
 
 /**
  * The **same-vendor candidate rule** (2026-06-06-006 vendor-homogeneity), the
- * single source the consensus voters, the manual agent switcher, and the
- * degradation chain's homogeneity all agree on: every *enabled* agent of
- * `vendorScope` except `excludeId` (the session's own agent). Cross-vendor agents
- * are never candidates — a different vendor cannot carry context (no `resume`), so
- * neither voting, switching, nor fallback may cross the frozen vendor boundary.
+ * single source the manual agent switcher and the degradation chain's homogeneity
+ * agree on: every *enabled* agent of `vendorScope` except `excludeId` (the
+ * session's own agent). Cross-vendor agents are never candidates — a different
+ * vendor cannot carry context (no `resume`), so neither switching nor fallback may
+ * cross the frozen vendor boundary. (Consensus voting no longer uses this rule — it
+ * selects across vendors via {@link selectConsensusVoters}.)
  */
 export function sameVendorEnabledAgents(
   vendorScope: VendorId,

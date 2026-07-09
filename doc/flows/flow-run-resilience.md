@@ -62,9 +62,11 @@ unexpectedly` at the source; it is decoupled from recovery.
 ## Branch C — manual same-vendor agent switch
 
 When the current agent is unavailable, the user re-targets the session via the title-bar switcher
-(`set_session_agent`). Candidates come from the **same** vendor-homogeneous rule as the chain and
-consensus voters (the same-vendor enabled-agents set, `AC-R19`): only same-vendor, host-binary-present,
-enabled peers; a cross-vendor change is rejected (`AS-R23`, `AC-R17`). The switch rewrites the fact
+(`set_session_agent`). Candidates come from the **same** vendor-homogeneous rule as the degradation
+chain (`sameVendorEnabledAgents`, `AC-R19`): only same-vendor, host-binary-present, enabled peers;
+a cross-vendor change is rejected (`AS-R23`, `AC-R17`). (Consensus voting no longer shares this rule
+— it selects voters cross-vendor via `selectConsensusVoters`; only the chain and manual switch stay
+vendor-homogeneous, since a different vendor cannot carry a session's context.) The switch rewrites the fact
 only — it does **not** relaunch; the next `user_prompt` resumes the same run with the new agent via
 the unchanged launch path (`AS-R23`). The candidate set rides `session_selected.agentSwitch`.
 

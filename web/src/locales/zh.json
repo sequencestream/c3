@@ -1896,8 +1896,14 @@
       "disagreement": {
         "label": "意见不一致"
       },
-      "vendorScope": {
-        "label": "共识仅限 {vendor} 内 · {count} 个跨 vendor 顾问未参与投票（工具与风险口径跨 vendor 不可比）"
+      "risk": {
+        "read": "读",
+        "write": "写",
+        "execute": "执行",
+        "network": "网络"
+      },
+      "normalizationFailed": {
+        "label": "无法归一化风险，已转人工审批（{reason}）"
       }
     },
     "research": {
@@ -2161,7 +2167,6 @@
       "answered": "已代你回答",
       "unanimous": "一致通过",
       "majority": "多数通过",
-      "vendorScope": "限 {vendor} 内",
       "noAgreement": "无共识",
       "verdict": {
         "allow": "允许",

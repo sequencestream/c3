@@ -1897,8 +1897,14 @@
       "disagreement": {
         "label": "不一致"
       },
-      "vendorScope": {
-        "label": "コンセンサスは {vendor} 内に限定 · クロスベンダーの顧問 {count} 名は投票していません（ツールとリスクの基準はベンダー間で比較できません）"
+      "risk": {
+        "read": "読み取り",
+        "write": "書き込み",
+        "execute": "実行",
+        "network": "ネットワーク"
+      },
+      "normalizationFailed": {
+        "label": "リスクを正規化できず、手動承認に切り替えました（{reason}）"
       }
     },
     "research": {
@@ -2162,7 +2168,6 @@
       "answered": "代わりに回答しました",
       "unanimous": "全会一致",
       "majority": "多数決",
-      "vendorScope": "{vendor} 内に限定",
       "noAgreement": "合意なし",
       "verdict": {
         "allow": "許可",

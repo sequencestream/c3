@@ -4,6 +4,17 @@
  * new suffixes; a tool_use emits once, its result once, no duplicates on re-emit.
  */
 import { describe, expect, it, vi } from 'vitest'
+
+// Stub the codex gh-token bridge so tests never spawn a real `gh auth token`. The
+// default is a passthrough (overrides unchanged); the link test overrides it once
+// to inject a token and assert it reaches driver.start.
+const ghBridge = vi.hoisted(() => ({
+  fn: vi.fn((o?: Record<string, string>) => Promise.resolve(o)),
+}))
+vi.mock('../agent/adapters/codex/gh-token.js', () => ({
+  resolveCodexGhTokenEnv: (o?: Record<string, string>) => ghBridge.fn(o),
+}))
+
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -423,5 +434,62 @@ describe('runViaDriver — Codex specs writable root', () => {
       else process.env.C3_DIR = prevC3Dir
       rmSync(tmpC3, { recursive: true, force: true })
     }
+  })
+})
+
+describe('runViaDriver — gh token bridge', () => {
+  function captureAdapter(
+    vendor: 'codex' | 'claude',
+    sid: string,
+    started: { envOverrides?: Record<string, string> },
+  ): VendorAdapter {
+    return {
+      vendor,
+      approval: { onRequest: () => () => {} },
+      driver: {
+        start: (opts: { envOverrides?: Record<string, string> }) => {
+          started.envOverrides = opts.envOverrides
+          return Promise.resolve({
+            sessionId: () => Promise.resolve(sid),
+            // eslint-disable-next-line require-yield
+            messages: async function* () {
+              return
+            },
+          })
+        },
+      },
+    } as unknown as VendorAdapter
+  }
+
+  it('resolves the host gh credential and threads the injected envOverrides into a codex driver.start', async () => {
+    ghBridge.fn.mockClear()
+    ghBridge.fn.mockImplementationOnce((o?: Record<string, string>) =>
+      Promise.resolve({ ...(o ?? {}), GH_TOKEN: 'bridged' }),
+    )
+    const sid = 'codex-gh-bridge'
+    const rt = ensureRuntime(sid, '/projects/x', 'default', [], 'work')
+    const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
+    const started: { envOverrides?: Record<string, string> } = {}
+
+    await runViaDriver(rt, 'hi', captureAdapter('codex', sid, started), eventBus)
+
+    expect(ghBridge.fn).toHaveBeenCalledTimes(1)
+    // The bridge's resolved result — whatever launch overrides it received, plus the
+    // appended token — is what the codex driver must receive.
+    expect(started.envOverrides).toMatchObject({ GH_TOKEN: 'bridged' })
+    removeRuntime(sid)
+  })
+
+  it('does not probe for a claude session (no seatbelt boundary)', async () => {
+    ghBridge.fn.mockClear()
+    const sid = 'claude-no-gh-bridge'
+    const rt = ensureRuntime(sid, '/projects/y', 'default', [], 'work')
+    const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
+    const started: { envOverrides?: Record<string, string> } = {}
+
+    await runViaDriver(rt, 'hi', captureAdapter('claude', sid, started), eventBus)
+
+    expect(ghBridge.fn).not.toHaveBeenCalled()
+    removeRuntime(sid)
   })
 })

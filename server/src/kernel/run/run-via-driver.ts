@@ -35,6 +35,7 @@ import type { PermissionRequestCtx } from '../permission/gateway.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { codexPolicyToGrid, codexDirectSandboxEnv } from '../agent/adapters/codex/driver.js'
+import { resolveCodexGhTokenEnv } from '../agent/adapters/codex/gh-token.js'
 import { getSpecsBase } from '../config/workspace-path.js'
 import {
   freezeSessionAgent,
@@ -427,6 +428,15 @@ export async function runViaDriver(
   // gate is derived from `actionMode`/`toolGate` in its driver (2026-06-06-008).
   const { agentId, model, baseUrl, apiKey, envOverrides, wireApi } = resolveSessionLaunch(runId)
 
+  // gh stores its token in the OS keyring, which codex's seatbelt sandbox can't
+  // read — so `gh` inside a codex session fails auth even on an authenticated host
+  // with network. Bridge the host credential in as `GH_TOKEN` (gh prefers env over
+  // the keyring). Resolved once here so the host codex process and the container
+  // wrapper's env-file get the same value; a no-op when a token is already set or
+  // the host probe fails, and skipped entirely for claude (no seatbelt boundary).
+  const driverEnvOverrides =
+    adapter.vendor === 'codex' ? await resolveCodexGhTokenEnv(envOverrides) : envOverrides
+
   // Sandbox wrapper: when the session has a running sandbox container, create
   // a wrapper script that runs the vendor CLI inside the container. The adapter
   // uses this path instead of the default host binary resolution.
@@ -441,7 +451,7 @@ export async function runViaDriver(
   // here — it is minted inside the driver's `register()` — so the driver appends it
   // to this same env-file (via `sandboxEnvFile` below) after minting (ADR-0024 follow-up).
   const sandboxEnv = {
-    ...buildChildEnv(envOverrides),
+    ...buildChildEnv(driverEnvOverrides),
     ...(adapter.vendor === 'codex' ? codexDirectSandboxEnv({ apiKey, wireApi }) : {}),
   }
   const sandboxWrapperPath = rt.sandboxHandle
@@ -519,7 +529,7 @@ export async function runViaDriver(
       ...(baseUrl ? { baseUrl } : {}),
       ...(apiKey ? { apiKey } : {}),
       ...(wireApi ? { wireApi } : {}),
-      ...(envOverrides ? { envOverrides } : {}),
+      ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
       ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
       ...(sandboxEnvFile ? { sandboxEnvFile } : {}),
       ...(adapter.vendor === 'codex'

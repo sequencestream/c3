@@ -45,6 +45,18 @@ vi.mock('../../kernel/agent/adapters/codex/index.js', () => ({
   createCodexAdapter: () => ({ driver: { start: (o: unknown) => codexStart.fn(o) } }),
 }))
 
+// Stub the host `gh` credential bridge so no real `gh auth token` spawns; it injects
+// a deterministic token so the link test can assert the resolved override reaches
+// driver.start.
+const ghBridge = vi.hoisted(() => ({
+  fn: vi.fn((o?: Record<string, string>) =>
+    Promise.resolve({ ...(o ?? {}), GH_TOKEN: 'bridged-gh' }),
+  ),
+}))
+vi.mock('../../kernel/agent/adapters/codex/gh-token.js', () => ({
+  resolveCodexGhTokenEnv: (o?: Record<string, string>) => ghBridge.fn(o),
+}))
+
 import type { Automation } from '@ccc/shared/protocol'
 import { AUTOMATION_NETWORK_ACCESS_TOOL } from '@ccc/shared/protocol'
 import type {
@@ -230,6 +242,23 @@ describe('codex automation — network-access pseudo-entry passthrough', () => {
     )
 
     expect(startArg?.networkAccess).toBeUndefined()
+  })
+})
+
+describe('codex automation — gh token bridge', () => {
+  it('resolves the host gh credential and hands driver.start the injected envOverrides', async () => {
+    let startArg: Record<string, unknown> | undefined
+    codexStart.fn = (o) => {
+      startArg = o as Record<string, unknown>
+      return Promise.resolve(successfulRun())
+    }
+
+    await execute(codexAutomation({ toolAllowlist: ['Read'] }), 'log-gh', () => {})
+
+    // launchForAgent is mocked to yield `envOverrides: {}`; the bridge receives it
+    // and appends GH_TOKEN, which must flow through to the codex driver.
+    expect(ghBridge.fn).toHaveBeenCalledWith({})
+    expect(startArg?.envOverrides).toEqual({ GH_TOKEN: 'bridged-gh' })
   })
 })
 

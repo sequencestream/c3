@@ -33,6 +33,7 @@ import { buildChildEnv, findClaudeExecutable } from '../../kernel/infra/child-en
 import { loadSettings } from '../../kernel/config/index.js'
 import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
 import { codexPolicyToGrid } from '../../kernel/agent/adapters/codex/driver.js'
+import { resolveCodexGhTokenEnv } from '../../kernel/agent/adapters/codex/gh-token.js'
 import { getWorkspaceMcpConfig, isAgentQuotaRecoveryConfig } from './store.js'
 import {
   freezeTools,
@@ -681,7 +682,11 @@ async function executeCodexLlmPrompt(
           approvalPolicy: 'never',
         }
   const { actionMode, toolGate } = codexPolicyToGrid(policy)
-  const { model, baseUrl, apiKey, wireApi } = launchForAgent(agent)
+  const { model, baseUrl, apiKey, wireApi, envOverrides } = launchForAgent(agent)
+  // Bridge the host `gh` keyring credential into the codex sandbox as `GH_TOKEN`
+  // so PR review/comment/merge shell commands authenticate; network access stays
+  // orthogonal, governed by this automation's sandbox/toolAllowlist settings.
+  const driverEnvOverrides = await resolveCodexGhTokenEnv(envOverrides)
   // Network access is the `network-access` pseudo-entry in the tool allowlist. It
   // only makes sense for the `workspace-write` sandbox (a `read-only` sandbox is
   // network-denied unconditionally), so gate on both. When unselected / read-only,
@@ -718,6 +723,7 @@ async function executeCodexLlmPrompt(
       ...(apiKey ? { apiKey } : {}),
       ...(wireApi ? { wireApi } : {}),
       ...(networkAccess ? { networkAccess: true } : {}),
+      ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
       ...(c3Binding ? { mcpServers: c3Binding.servers } : {}),
     })
     const sessionId = await run.sessionId()

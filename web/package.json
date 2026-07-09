@@ -13,6 +13,7 @@
     "@ccc/shared": "workspace:*",
     "dompurify": "^3.4.7",
     "markdown-it": "^14.2.0",
+    "mermaid": "^11.16.0",
     "shiki": "^4.1.0",
     "vue": "^3.5.13",
     "vue-i18n": "^11.4.4"

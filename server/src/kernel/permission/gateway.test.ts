@@ -25,6 +25,9 @@ function spec(overrides: Partial<GatewaySpec> = {}): GatewaySpec {
     send: () => {},
     signal: new AbortController().signal,
     currentAgentId: null,
+    // Default to current-branch semantics (config/audit root === effective cwd);
+    // a worktree regression case overrides `workspacePath` to differ from `cwd`.
+    workspacePath: overrides.workspacePath ?? overrides.cwd ?? '/tmp',
     cwd: '/tmp',
     recentContext: () => '',
     sessionId: () => '',
@@ -405,6 +408,86 @@ describe('onPermissionRequest callback', () => {
         sessionKind: 'work',
         outcome: expect.objectContaining({ kind: 'tool', decision: 'allow' }),
       }),
+    )
+  })
+})
+
+describe('worktree isolation — config/audit key is workspacePath, advisor cwd is the worktree', () => {
+  // Regression for the #155 slip: under worktree isolation the gateway must read
+  // consensus config and attribute WorkCenter events off the registered ROOT
+  // (`workspacePath`), while the advisor queries still launch in the worktree
+  // (`cwd`). A run where the two paths differ pins that split.
+  const ROOT = '/project/root'
+  const WORKTREE = '/c3-home/worktrees/project/intent-abc'
+
+  it('write-tool consensus receives workspacePath=root and cwd=worktree; audit ctx uses root', async () => {
+    vi.mocked(runConsensusVote).mockResolvedValue({
+      kind: 'tool',
+      votes: [{ agentId: 'a1', agentName: 'A1', decision: 'allow', reason: 'ok' }],
+      summary: 'all agree',
+      unanimous: true,
+      decision: 'allow',
+    } as never)
+    const onConsensusResolved = vi.fn()
+    const gate = createCanUseTool(
+      spec({ gate: 'standard', cwd: WORKTREE, workspacePath: ROOT, onConsensusResolved }),
+    )
+    const result = await gate('Write', { file_path: '/x' }, {} as never)
+    expect(result).toMatchObject({ behavior: 'allow' })
+    // Config read keys off the registered root; the advisor query launches in the worktree.
+    expect(vi.mocked(runConsensusVote)).toHaveBeenCalledWith(
+      expect.objectContaining({ workspacePath: ROOT, cwd: WORKTREE }),
+    )
+    // The auto-resolution audit event is attributed to the root, not the worktree.
+    expect(onConsensusResolved).toHaveBeenCalledWith(
+      expect.objectContaining({ workspacePath: ROOT }),
+    )
+  })
+
+  it('AskUserQuestion consensus receives workspacePath=root and cwd=worktree; prompt ctx uses root', async () => {
+    // Non-unanimous ⇒ falls through to a human permission_request (fires onPermissionRequest).
+    vi.mocked(runAskConsensus).mockResolvedValue({
+      kind: 'ask',
+      fullyUnanimous: false,
+      perQuestion: [
+        {
+          index: 0,
+          question: 'test?',
+          header: 'h',
+          multiSelect: false,
+          answers: [{ agentId: 'a1', agentName: 'A1', optionLabels: ['yes'], reason: 'ok' }],
+          unanimous: true,
+          agreed: 'yes',
+        },
+      ],
+      agreedAnswers: { 'test?': 'yes' },
+      summary: 'one answer',
+    } as never)
+    const onPermissionRequest = vi.fn()
+    const sent: ServerToClient[] = []
+    const gate = createCanUseTool(
+      spec({
+        gate: 'standard',
+        cwd: WORKTREE,
+        workspacePath: ROOT,
+        send: (m) => sent.push(m),
+        onPermissionRequest,
+      }),
+    )
+    const askInput = {
+      questions: [{ question: 'test?', header: 'h', options: [{ label: 'yes' }, { label: 'no' }] }],
+    }
+    const p = gate('AskUserQuestion', askInput, {} as never)
+    await new Promise<void>((r) => queueMicrotask(r))
+    const req = sent.find((m) => m.type === 'permission_request')
+    if (req?.type === 'permission_request')
+      resolveDecision(req.requestId, 'allow', { 'test?': 'yes' })
+    await p
+    expect(vi.mocked(runAskConsensus)).toHaveBeenCalledWith(
+      expect.objectContaining({ workspacePath: ROOT, cwd: WORKTREE }),
+    )
+    expect(onPermissionRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ toolName: 'AskUserQuestion', workspacePath: ROOT }),
     )
   })
 })

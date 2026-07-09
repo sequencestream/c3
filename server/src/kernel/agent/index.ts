@@ -143,8 +143,20 @@ export interface RunOptions {
    * team-lead `pushInput` turns stay text-only.
    */
   images?: PromptImage[]
-  /** Working directory for this run — the active workspace's path. */
+  /**
+   * Working directory for this run — the run's effective cwd (the isolated
+   * worktree in worktree mode). Sets where the Claude SDK runs tools and where
+   * the consensus advisor queries launch. NOT the project-config key — see
+   * {@link workspacePath}.
+   */
   cwd: string
+  /**
+   * The registered workspace root. Forwarded to the permission gateway to read
+   * project config (consensus enable/voter/majority) and attribute WorkCenter
+   * events. Equals {@link cwd} in current-branch mode; in worktree mode it is the
+   * project root while `cwd` is the worktree.
+   */
+  workspacePath: string
   signal: AbortSignal
   /** Permission mode to start the query in. */
   permissionMode: PermissionMode
@@ -516,6 +528,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     prompt,
     images,
     cwd,
+    workspacePath,
     signal,
     permissionMode,
     resume,
@@ -669,6 +682,8 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         send,
         signal,
         currentAgentId: currentAgentId ?? null,
+        // Config/audit key (registered root); `cwd` is the run's effective worktree.
+        workspacePath,
         cwd,
         recentContext: () => recentContext,
         skillWriteGuard,

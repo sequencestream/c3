@@ -113,6 +113,8 @@ export class ClaudeDriver implements AgentDriver {
       ...(opts.systemInstruction ? { appendSystemPrompt: opts.systemInstruction } : {}),
       ...(opts.images ? { images: opts.images } : {}),
       cwd: opts.cwd,
+      // The config/audit root; current-branch runs pass cwd, worktree runs the root.
+      workspacePath: opts.workspacePath ?? opts.cwd,
       signal: controller.signal,
       permissionMode: toPermissionMode(opts.actionMode, opts.toolGate),
       ...(opts.resume ? { resume: opts.resume } : {}),

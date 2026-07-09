@@ -39,6 +39,7 @@ async function runAndCaptureEnv(
   await runClaude({
     prompt: 'go',
     cwd: '/tmp',
+    workspacePath: '/tmp',
     signal: new AbortController().signal,
     permissionMode: 'default',
     envOverrides,

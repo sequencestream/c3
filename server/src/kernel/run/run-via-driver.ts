@@ -522,6 +522,9 @@ export async function runViaDriver(
       ...(systemInstruction ? { systemInstruction } : {}),
       ...(images && images.length > 0 ? { images } : {}),
       cwd: driverCwd,
+      // The registered root — the Claude driver reads consensus config / attributes
+      // audit off this, not the effective (worktree/sandbox) driverCwd above.
+      workspacePath,
       signal: cycleAbort.signal,
       actionMode,
       toolGate,

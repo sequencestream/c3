@@ -92,7 +92,21 @@ export interface GatewaySpec {
   signal: AbortSignal
   /** The agent the session runs on (excluded from its own consensus vote). */
   currentAgentId: string | null
-  /** The run's working directory (handed to the consensus advisor queries). */
+  /**
+   * The registered workspace root. Used to read project config (consensus
+   * enable/voter/majority) and as the WorkCenter attribution key for every
+   * prompt/auto ctx this gateway raises. In worktree-isolated runs this is the
+   * project root, NOT {@link cwd} (the worktree) — `loadWorkspaceSetting` keys on
+   * the exact path, so using the worktree here silently disables consensus and
+   * drops audit events (their workspace is unregistered).
+   */
+  workspacePath: string
+  /**
+   * The run's effective working directory (the isolated worktree in worktree
+   * mode). Handed to the consensus advisor queries as their launch cwd ONLY —
+   * NOT used to read project config or attribute WorkCenter events (that is
+   * {@link workspacePath}).
+   */
   cwd: string
   /** Getter for the run's rolling recent-context (mutated by the message loop). */
   recentContext: () => string
@@ -209,7 +223,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
           toolName,
           input,
           sessionId: spec.sessionId(),
-          workspacePath: spec.cwd,
+          workspacePath: spec.workspacePath,
           sessionKind: spec.sessionKind,
         })
         send({ type: 'permission_request', requestId, toolName, input, isUserInteraction: true })
@@ -257,7 +271,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
           toolName,
           input,
           sessionId: spec.sessionId(),
-          workspacePath: spec.cwd,
+          workspacePath: spec.workspacePath,
           sessionKind: spec.sessionKind,
         })
         send({ type: 'permission_request', requestId, toolName, input, isUserInteraction: true })
@@ -305,6 +319,8 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         toolName,
         input,
         context: recentContext(),
+        // Config read keys off the registered root; advisor queries launch in cwd.
+        workspacePath: spec.workspacePath,
         cwd,
         signal,
       }).catch((err) => {
@@ -322,7 +338,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
           toolName,
           input,
           sessionId: spec.sessionId(),
-          workspacePath: spec.cwd,
+          workspacePath: spec.workspacePath,
           sessionKind: spec.sessionKind,
           outcome: ask,
         })
@@ -344,7 +360,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         toolName,
         input,
         sessionId: spec.sessionId(),
-        workspacePath: spec.cwd,
+        workspacePath: spec.workspacePath,
         sessionKind: spec.sessionKind,
       })
       send(
@@ -391,7 +407,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         toolName,
         input,
         sessionId: spec.sessionId(),
-        workspacePath: spec.cwd,
+        workspacePath: spec.workspacePath,
         sessionKind: spec.sessionKind,
       })
       send({ type: 'permission_request', requestId, toolName, input })
@@ -407,6 +423,8 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       toolName,
       input,
       context: recentContext(),
+      // Config read keys off the registered root; advisor queries launch in cwd.
+      workspacePath: spec.workspacePath,
       cwd,
       signal,
     }).catch(() => null)
@@ -421,7 +439,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
         toolName,
         input,
         sessionId: spec.sessionId(),
-        workspacePath: spec.cwd,
+        workspacePath: spec.workspacePath,
         sessionKind: spec.sessionKind,
         outcome,
       })
@@ -440,7 +458,7 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       toolName,
       input,
       sessionId: spec.sessionId(),
-      workspacePath: spec.cwd,
+      workspacePath: spec.workspacePath,
       sessionKind: spec.sessionKind,
     })
     // Split / no consensus ⇒ ask the human, attaching the opinions (if any).

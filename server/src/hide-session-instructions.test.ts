@@ -65,6 +65,7 @@ describe('Claude path — internal instruction rides the system append, not the 
     await runClaude({
       prompt: VISIBLE, // launchRun feeds the visible body (no devSkill prefix here)
       cwd: '/tmp',
+      workspacePath: '/tmp',
       signal: new AbortController().signal,
       permissionMode: 'default',
       appendSystemPrompt: SDD_INSTRUCT,
@@ -93,6 +94,7 @@ describe('Claude path — internal instruction rides the system append, not the 
     await runClaude({
       prompt: `/dev ${VISIBLE}`, // launchRun prepends the slash command to the model turn
       cwd: '/tmp',
+      workspacePath: '/tmp',
       signal: new AbortController().signal,
       permissionMode: 'default',
       send: (m) => events.push(m),

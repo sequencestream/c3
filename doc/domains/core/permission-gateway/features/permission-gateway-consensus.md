@@ -10,6 +10,24 @@ page). Orchestration spawns advisor queries; the vote parsing / tally / summary 
 a pure, SDK-free unit so it can be unit-tested in isolation, mirroring the
 permission registry.
 
+### Config source: `workspacePath`, not the worktree `cwd`
+
+The consensus config — the enable switch, the voter roster, and the majority
+toggle — is read by **`workspacePath`** (the registered project root), **never** by
+the run's effective `cwd`. The two differ in worktree-isolated runs (intent
+`start_development` / automation worktree mode), where `cwd` is the detached
+worktree (`<c3-home>/worktrees/<project>/intent-<id>/`) while `workspacePath` stays
+the project root. `loadWorkspaceSetting` keys on the exact path (no parent-directory
+walk, no worktree→root normalization), so reading config off the worktree `cwd`
+misses `projectConfigs[root]` entirely — `enabled` falls back to `false` and voting
+is silently skipped. The gateway therefore threads both: `GatewaySpec.workspacePath`
+(config + WorkCenter audit attribution) and `GatewaySpec.cwd` (the advisor queries'
+launch directory, correctly the worktree). `ConsensusParams` mirrors the split —
+`isConsensusEnabled` / `getConsensusConfig` / `isConsensusMajorityEnabled` read
+`workspacePath`; the one-shot advisor `askAgentOnce` runs in `cwd`. In
+current-branch mode the two paths coincide, so behaviour is unchanged. Checkpoint
+consensus (automation orchestrator) already reads config off `workspacePath`.
+
 ### Majority toggle (config base)
 
 `SystemSettings.consensus.majority` is a second, optional system switch (checkbox

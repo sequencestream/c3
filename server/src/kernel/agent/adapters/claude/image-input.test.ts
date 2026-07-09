@@ -37,6 +37,7 @@ async function firstUserMessage(images?: PromptImage[]): Promise<UserMsg> {
     prompt: 'look at this',
     ...(images ? { images } : {}),
     cwd: '/tmp',
+    workspacePath: '/tmp',
     signal: new AbortController().signal,
     permissionMode: 'default',
     send: () => {},

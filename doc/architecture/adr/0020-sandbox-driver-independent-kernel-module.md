@@ -125,4 +125,4 @@ Phase 1 只有 Docker 后端实现。Phase 2 计划加入 gVisor、Kata、Firecr
 
 - [ADR-0009](0009-unidirectional-boundaries.md) — 单向边界规则
 - [ADR-0022](0022-canonical-not-extended.md) — CanonicalMessage 不扩展，沙箱通过事件总线
-- [sandbox domain spec](../../domains/core/sandbox/sandbox-spec.md) — 模块结构、接口定义、业务规则
+- [sandbox domain design](../../domains/core/sandbox/sandbox-design.md) — 模块结构、接口定义、业务规则

@@ -159,5 +159,5 @@ _Con:_ 与 c3 现有的"项目可覆盖系统设置"的授权模型不一致。
 - 配置层 — 系统沙箱定义列表与项目沙箱配置的读取
 - 沙箱配置 — 验证 schema 与合并函数
 - 沙箱注册表 — 注册/解析行为
-- [sandbox domain spec](../../domains/core/sandbox/sandbox-spec.md) — 业务规则 SND-R3, SND-R4, SND-R5
+- [sandbox domain design](../../domains/core/sandbox/sandbox-design.md) — 业务规则 SND-R3, SND-R4, SND-R5
 - [ADR-0020](0020-sandbox-driver-independent-kernel-module.md) — SandboxDriver 独立 kernel 模块

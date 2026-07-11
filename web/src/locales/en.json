@@ -170,6 +170,31 @@
     "readOnlyNotice": {
       "text": "You are not the administrator. System settings are read-only."
     },
+    "tabs": {
+      "agent": {
+        "label": "Agent"
+      },
+      "runtime": {
+        "label": "Runtime"
+      },
+      "security": {
+        "label": "Security"
+      },
+      "general": {
+        "label": "General"
+      },
+      "unsaved": {
+        "label": "Unsaved changes"
+      },
+      "switch": {
+        "confirm": {
+          "title": "Unsaved changes",
+          "body": "This tab has unsaved changes. Switch tabs anyway? Your changes stay here until you save.",
+          "confirm": "Switch tab",
+          "stay": "Stay"
+        }
+      }
+    },
     "agents": {
       "title": {
         "label": "Agents"

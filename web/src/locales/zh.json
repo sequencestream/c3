@@ -170,6 +170,31 @@
     "readOnlyNotice": {
       "text": "你不是管理员，系统设置为只读。"
     },
+    "tabs": {
+      "agent": {
+        "label": "Agent"
+      },
+      "runtime": {
+        "label": "运行时"
+      },
+      "security": {
+        "label": "安全"
+      },
+      "general": {
+        "label": "通用"
+      },
+      "unsaved": {
+        "label": "有未保存的修改"
+      },
+      "switch": {
+        "confirm": {
+          "title": "有未保存的修改",
+          "body": "当前 Tab 有未保存的修改。仍要切换吗？切换后你的修改会保留在此 Tab，直到保存。",
+          "confirm": "切换 Tab",
+          "stay": "留在当前"
+        }
+      }
+    },
     "agents": {
       "title": {
         "label": "智能体"

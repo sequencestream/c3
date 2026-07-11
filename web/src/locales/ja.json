@@ -171,6 +171,31 @@
     "readOnlyNotice": {
       "text": "管理者ではないため、システム設定は読み取り専用です。"
     },
+    "tabs": {
+      "agent": {
+        "label": "エージェント"
+      },
+      "runtime": {
+        "label": "ランタイム"
+      },
+      "security": {
+        "label": "セキュリティ"
+      },
+      "general": {
+        "label": "一般"
+      },
+      "unsaved": {
+        "label": "未保存の変更があります"
+      },
+      "switch": {
+        "confirm": {
+          "title": "未保存の変更",
+          "body": "このタブには未保存の変更があります。それでもタブを切り替えますか？変更は保存するまでこのタブに保持されます。",
+          "confirm": "タブを切り替える",
+          "stay": "とどまる"
+        }
+      }
+    },
     "agents": {
       "title": {
         "label": "エージェント"

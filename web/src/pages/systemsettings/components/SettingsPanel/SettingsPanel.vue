@@ -1,8 +1,12 @@
 <script setup lang="ts">
 /*
- * SettingsPanel.vue — 系统设置页：agent 列表（含默认 agent）与共识投票开关。
+ * SettingsPanel.vue — 系统设置页：配置按 Agent / Runtime / Security / General 四个 Tab 分组。
  *
- * 编辑用本地草稿，打开时从 App 注入的服务端设置深拷贝而来，保存时整体上抛。
+ * 每个 Tab 维护独立草稿与脏状态,并提供独立保存按钮:保存时只用当前 Tab 白名单字段覆盖
+ * 「最新已提交快照」构造完整 SystemSettings 发送,不携带其他 Tab 草稿(见 TAB_FIELDS)。
+ * 面板打开期间的设置回推按字段归属合并,只有首次打开整体播种;即时持久化字段
+ * (uiLang、账号列表/管理员)总是同步,脏 Tab 的其余字段草稿受保护。保存后面板保持打开。
+ * 切换存在未保存修改的 Tab 时二次确认,确认后仅切换、不保存也不丢弃草稿。
  */
 import { computed, ref, toRaw, watch } from 'vue'
 import { SYSTEM_AGENT_ID, resolveDefaultAgentId } from '@ccc/shared/protocol'
@@ -20,13 +24,14 @@ import type {
 import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 import { useAuth } from '@/composables/useAuth'
+import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import EmojiPicker from './EmojiPicker.vue'
 
 const { t } = useTypedI18n()
 
 // Whether this connection is the unique admin (ADR-0023 authz). Non-admins get a
-// read-only panel: Save + the account-management controls are disabled and a notice
-// explains why. The server enforces the same gate regardless — this is UX only.
+// read-only panel: every Save + the account-management controls are disabled and a
+// notice explains why. The server enforces the same gate regardless — this is UX only.
 const { isAdmin } = useAuth()
 
 // 浏览器本地时区，作为 timezone 草稿的默认值与 timezone 列表不可用时的兜底项。
@@ -74,6 +79,70 @@ const props = withDefaults(
   },
 )
 
+// ---- Tab grouping (2026-07-11-001) ----------------------------------------
+// The four settings tabs and, per tab, the exact SystemSettings fields it owns.
+// This map is the single save whitelist: saving a tab overlays ONLY these fields
+// (transformed) onto the latest committed snapshot, so a tab's Save never carries
+// another tab's unsaved draft. Host diagnostics (Runtime) render read-only from
+// `hostStatus`, not from settings, so they are not listed here.
+type SettingsTab = 'agent' | 'runtime' | 'security' | 'general'
+const TABS: SettingsTab[] = ['agent', 'runtime', 'security', 'general']
+const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
+  agent: [
+    'agents',
+    'defaultAgentId',
+    'toolAgentId',
+    'intentAgentId',
+    'specAgentId',
+    'automationAgentId',
+  ],
+  runtime: ['vendorCliVersions', 'sandboxes', 'proxy'],
+  security: ['auth'],
+  general: ['uiLang', 'voiceLang', 'timezone', 'baseUrl', 'showToolSessions'],
+}
+const activeTab = ref<SettingsTab>('agent')
+function tabLabel(tab: SettingsTab): string {
+  return t(`settings.tabs.${tab}.label` as 'settings.tabs.agent.label')
+}
+
+// The tab whose Save was just emitted and whose server-normalized echo is awaited;
+// on the next settings pushback that tab's draft is reset to the returned values
+// (clean), while other dirty tabs keep their drafts. Cleared on each reconcile.
+const pendingSaveTab = ref<SettingsTab | null>(null)
+// A requested-but-unconfirmed tab switch away from a dirty tab (drives the confirm
+// dialog). Null when no confirmation is pending.
+const pendingTabSwitch = ref<SettingsTab | null>(null)
+
+// A JSON deep clone that preserves the static type of its argument (the agent
+// discriminated union survives, unlike a shallow spread). Used for both seeding
+// and for building an isolated save payload; tolerant of Vue reactive proxies.
+function deepCopy<T>(v: T): T {
+  // `JSON.stringify(undefined)` yields `undefined` (not a string), which
+  // `JSON.parse` chokes on — so pass an absent field straight through.
+  if (v === undefined) return undefined as T
+  return JSON.parse(JSON.stringify(v)) as T
+}
+// Structural value equality for dirty detection. Reads properties directly, which
+// unwraps Vue reactive proxies, so a draft slice can be compared to its baseline.
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
+  const aArr = Array.isArray(a)
+  if (aArr !== Array.isArray(b)) return false
+  if (aArr) {
+    const aa = a as unknown[]
+    const bb = b as unknown[]
+    if (aa.length !== bb.length) return false
+    return aa.every((v, i) => deepEqual(v, bb[i]))
+  }
+  const ao = a as Record<string, unknown>
+  const bo = b as Record<string, unknown>
+  const ak = Object.keys(ao)
+  const bk = Object.keys(bo)
+  if (ak.length !== bk.length) return false
+  return ak.every((k) => k in bo && deepEqual(ao[k], bo[k]))
+}
+
 // Host-CLI diagnostics rows, in canonical vendor order, each with its brand
 // colour/label (ADR-0012).
 const VENDOR_ORDER: VendorId[] = ['claude', 'codex']
@@ -97,8 +166,8 @@ function activeVersionChoice(vendor: VendorId): string {
   return draft.value.vendorCliVersions?.[vendor] ?? ''
 }
 // Selecting an installed version only mutates the draft's vendorCliVersions; it
-// is persisted on Save via the full-settings emit. Empty = auto (latest), and
-// removes the vendor key so the server auto-follows the latest compatible.
+// is persisted on the Runtime tab's Save. Empty = auto (latest), and removes the
+// vendor key so the server auto-follows the latest compatible.
 function setActiveVersion(vendor: VendorId, version: string): void {
   if (!isAdmin.value) return
   const next = { ...(draft.value.vendorCliVersions ?? {}) }
@@ -129,25 +198,36 @@ const emit = defineEmits<{
   'set-admin-account': [payload: { username: string }]
 }>()
 
-// A local, editable copy of the server settings; committed on Save.
-const draft = ref<SystemSettings>({
-  agents: [],
-  defaultAgentId: SYSTEM_AGENT_ID,
-  // '' ⇒ background tool sessions follow the default agent.
-  toolAgentId: '',
-  // '' ⇒ intent-communication sessions follow the default agent.
-  intentAgentId: '',
-  // '' ⇒ spec-authoring sessions follow the default agent.
-  specAgentId: '',
-  // '' ⇒ the new-automation form pre-fills with the default agent.
-  automationAgentId: '',
-  voiceLang: 'zh-CN',
-  uiLang: 'en',
-  timezone: BROWSER_TZ,
-  baseUrl: '',
-  showToolSessions: false,
-  proxy: { enabled: false, httpProxy: '', httpsProxy: '' },
-})
+// A default, empty SystemSettings — the shape both `draft` and `committed` start
+// from before the panel is ever seeded (keeps the dirty computeds crash-free).
+function emptySettings(): SystemSettings {
+  return {
+    agents: [],
+    defaultAgentId: SYSTEM_AGENT_ID,
+    // '' ⇒ background tool sessions follow the default agent.
+    toolAgentId: '',
+    // '' ⇒ intent-communication sessions follow the default agent.
+    intentAgentId: '',
+    // '' ⇒ spec-authoring sessions follow the default agent.
+    specAgentId: '',
+    // '' ⇒ the new-automation form pre-fills with the default agent.
+    automationAgentId: '',
+    voiceLang: 'zh-CN',
+    uiLang: 'en',
+    timezone: BROWSER_TZ,
+    baseUrl: '',
+    showToolSessions: false,
+    proxy: { enabled: false, httpProxy: '', httpsProxy: '' },
+    vendorCliVersions: {},
+  }
+}
+
+// A local, editable copy of the server settings — the tab controls bind to this.
+// Per-tab slices are compared against `committed` to derive dirty state.
+const draft = ref<SystemSettings>(emptySettings())
+// The authoritative last-committed server snapshot. Save payloads are built from
+// this (so pass-through fields survive), and it is the baseline for dirty checks.
+const committed = ref<SystemSettings>(emptySettings())
 
 // 系统时区可选项：全量 IANA 列表（Intl.supportedValuesOf 受支持时），否则退化为
 // 只含浏览器时区的单项。服务端会再校验并在非法时回退到服务器本地时区。
@@ -167,76 +247,158 @@ const TIMEZONES = computed<string[]>(() => {
 })
 
 /**
- * The draft always carries `proxy` (initialized in the watch reseed + the
- * initial ref), but TypeScript cannot prove it through the optional
- * `SystemSettings.proxy?` type. This ref mirrors `draft.value.proxy` for
- * template bindings; it is seeded on every watch run and saved back through
- * the `save()` function which emits the full `draft.value`. Declared before the
- * immediate watch below, which seeds it during setup.
+ * The draft always carries `proxy` (initialized in the seed + the empty default),
+ * but TypeScript cannot prove it through the optional `SystemSettings.proxy?`
+ * type. This ref mirrors `draft.value.proxy` for template bindings; a watcher
+ * keeps `draft.value.proxy` in sync with edits here so Runtime dirty detection
+ * sees live proxy changes, and the Runtime Save reads it back.
  */
 const proxyCfg = ref<{ enabled: boolean; httpProxy: string; httpsProxy: string }>({
   enabled: false,
   httpProxy: '',
   httpsProxy: '',
 })
+// Mirror live proxy-form edits back into the draft so Runtime dirty detection and
+// the Runtime Save payload both see them (the template binds proxyCfg, not draft).
+watch(
+  proxyCfg,
+  (p) => {
+    draft.value.proxy = { ...p }
+  },
+  { deep: true },
+)
+// Seed proxyCfg from the current draft.proxy (used after a full seed / a resync).
+function syncProxyRef(): void {
+  const p = draft.value.proxy
+  proxyCfg.value = p
+    ? {
+        enabled: p.enabled ?? false,
+        httpProxy: p.httpProxy ?? '',
+        httpsProxy: p.httpsProxy ?? '',
+      }
+    : { enabled: false, httpProxy: '', httpsProxy: '' }
+}
 
-// Re-seed the draft whenever the panel opens or fresh server settings arrive.
-// Deep-copy so edits to the draft don't mutate the rendered server state.
+// Build the normalized full-settings seed from a raw server payload. Starts from a
+// deep copy of EVERY server field so pass-through fields this panel does not edit
+// — `projectConfigs` / `degradationChain` / `socketAutoResume` — survive a Save
+// instead of being silently dropped (2026-06-08-003), then fills defaults for the
+// editable fields so `draft` and `committed` share one canonical shape (which keeps
+// dirty comparison free of spurious missing-key diffs).
+function buildSeed(settings: SystemSettings): SystemSettings {
+  const full = deepCopy(settings)
+  return {
+    ...full,
+    // Deep-copy each agent incl. its vendor `config` so draft edits don't mutate
+    // the rendered server state; structuredClone preserves the discriminated-union
+    // type. `toRaw` first — `settings` arrives as a Vue reactive proxy and
+    // structuredClone throws `DataCloneError` on a proxy.
+    agents: settings.agents.map((a) => structuredClone(toRaw(a))),
+    defaultAgentId: settings.defaultAgentId,
+    // '' ⇒ background tool sessions follow the default agent (AC-R21).
+    toolAgentId: settings.toolAgentId ?? '',
+    // '' ⇒ intent-communication sessions follow the default agent (AC-R23).
+    intentAgentId: settings.intentAgentId ?? '',
+    // '' ⇒ spec-authoring sessions follow the default agent (AC-R24).
+    specAgentId: settings.specAgentId ?? '',
+    // '' ⇒ the new-automation form pre-fills with the default agent (AC-R25).
+    automationAgentId: settings.automationAgentId ?? '',
+    voiceLang: settings.voiceLang ?? 'zh-CN',
+    uiLang: settings.uiLang ?? 'en',
+    timezone: settings.timezone ?? BROWSER_TZ,
+    baseUrl: settings.baseUrl ?? '',
+    showToolSessions: settings.showToolSessions ?? false,
+    proxy: settings.proxy ?? { enabled: false, httpProxy: '', httpsProxy: '' },
+    // Effective vendor CLI version selection per vendor (empty object ⇒ auto latest
+    // for both). Carried explicitly so the radios bind to the draft.
+    vendorCliVersions: { ...(settings.vendorCliVersions ?? {}) },
+  }
+}
+
+// Overwrite a target's fields owned by `tab` with deep copies from `src` (used to
+// (re)seed a tab that is clean or was just saved).
+function applyTabFields(target: SystemSettings, src: SystemSettings, tab: SettingsTab): void {
+  const t = target as unknown as Record<string, unknown>
+  const s = src as unknown as Record<string, unknown>
+  for (const f of TAB_FIELDS[tab]) {
+    t[f] = deepCopy(s[f])
+  }
+}
+
+// Sync only the immediate-persist sub-fields of a (dirty, protected) tab from
+// `src`: the UI language (General) and the basic-account list + admin designation
+// (Security). These are persisted by dedicated paths that do not wait for a tab's
+// Save, so they must reflect the server even while the rest of the tab stays dirty.
+function syncImmediateFields(target: SystemSettings, src: SystemSettings, tab: SettingsTab): void {
+  if (tab === 'general') {
+    target.uiLang = src.uiLang
+  } else if (tab === 'security') {
+    if (target.auth?.provider.kind === 'basic' && src.auth?.provider.kind === 'basic') {
+      target.auth.provider.accounts = src.auth.provider.accounts.map((a) => ({ ...a }))
+      target.auth.provider.adminUsername = src.auth.provider.adminUsername
+    }
+  }
+}
+
+// Reconcile a settings pushback that arrives while the panel is open. The just-
+// saved tab and every clean tab are reseeded from the server; dirty tabs keep
+// their drafts (only their immediate-persist sub-fields sync). Never rebuilds the
+// whole draft — that would clobber unsaved work across tabs.
+function reconcile(seed: SystemSettings): void {
+  const prev = committed.value
+  const wasDirty: Record<SettingsTab, boolean> = {
+    agent: tabDirtyAgainst('agent', prev),
+    runtime: tabDirtyAgainst('runtime', prev),
+    security: tabDirtyAgainst('security', prev),
+    general: tabDirtyAgainst('general', prev),
+  }
+  committed.value = seed
+  const saved = pendingSaveTab.value
+  pendingSaveTab.value = null
+  for (const tab of TABS) {
+    if (tab === saved || !wasDirty[tab]) {
+      applyTabFields(draft.value, seed, tab)
+    } else {
+      syncImmediateFields(draft.value, seed, tab)
+    }
+  }
+  syncProxyRef()
+}
+
+// Re-seed on open, then reconcile field-by-field on every later server pushback.
 watch(
   () => [props.open, props.settings] as const,
-  ([open, settings]) => {
+  ([open, settings], prev) => {
     if (!open || !settings) return
-    // Start from a deep copy of EVERY server field so the pass-through fields this
-    // panel does not edit — `projectConfigs` / `degradationChain` / `socketAutoResume`
-    // — survive a Save instead of being silently dropped (2026-06-08-003: the
-    // "project config vanishes after restart" bug; second-line defense behind the
-    // server-side merge). JSON round-trip is used here on purpose: it tolerates Vue
-    // reactive proxies, whereas `structuredClone` throws `DataCloneError` on them.
-    const full = JSON.parse(JSON.stringify(settings)) as SystemSettings
-    draft.value = {
-      ...full,
-      // Deep-copy each agent incl. its vendor `config` so draft edits don't
-      // mutate the rendered server state. `structuredClone` preserves the
-      // discriminated-union type (a manual `{ ...a, config: { ...a.config } }`
-      // spread widens `vendor`/`config` and breaks the arm correlation).
-      // `toRaw` first: `settings` arrives as a Vue reactive proxy, and
-      // `structuredClone` throws `DataCloneError` on a proxy — which would abort
-      // this watcher and leave `draft.agents` empty (no agents rendered at all).
-      agents: settings.agents.map((a) => structuredClone(toRaw(a))),
-      defaultAgentId: settings.defaultAgentId,
-      // '' ⇒ background tool sessions follow the default agent (AC-R21).
-      toolAgentId: settings.toolAgentId ?? '',
-      // '' ⇒ intent-communication sessions follow the default agent (AC-R23).
-      intentAgentId: settings.intentAgentId ?? '',
-      // '' ⇒ spec-authoring sessions follow the default agent (AC-R24).
-      specAgentId: settings.specAgentId ?? '',
-      // '' ⇒ the new-automation form pre-fills with the default agent (AC-R25).
-      automationAgentId: settings.automationAgentId ?? '',
-      voiceLang: settings.voiceLang ?? 'zh-CN',
-      uiLang: settings.uiLang ?? 'en',
-      timezone: settings.timezone ?? BROWSER_TZ,
-      baseUrl: settings.baseUrl ?? '',
-      showToolSessions: settings.showToolSessions ?? false,
-      proxy: settings.proxy ?? { enabled: false, httpProxy: '', httpsProxy: '' },
-      // Effective vendor CLI version selection per vendor (empty object ⇒ auto
-      // latest for both). Carried explicitly so the radio binds to the draft
-      // and survives Save (the full draft is emitted); only this field is
-      // mutated by setActiveVersion, leaving projectConfigs/auth/sandbox/etc.
-      // untouched.
-      vendorCliVersions: { ...(settings.vendorCliVersions ?? {}) },
+    const seed = buildSeed(settings)
+    const prevOpen = prev?.[0] ?? false
+    if (!prevOpen) {
+      // First open (or reopen): whole-draft seed from the server snapshot.
+      committed.value = seed
+      draft.value = deepCopy(seed)
+      pendingSaveTab.value = null
+      syncProxyRef()
+      return
     }
-    // Mirror the proxy block into the template-bound ref.
-    const p = full.proxy
-    proxyCfg.value = p
-      ? {
-          enabled: p.enabled ?? false,
-          httpProxy: p.httpProxy ?? '',
-          httpsProxy: p.httpsProxy ?? '',
-        }
-      : { enabled: false, httpProxy: '', httpsProxy: '' }
+    // Pushback while open: merge by field ownership to protect unsaved drafts.
+    reconcile(seed)
   },
   { immediate: true },
 )
+
+// Whether a tab's draft slice differs from a given baseline snapshot.
+function tabDirtyAgainst(tab: SettingsTab, baseline: SystemSettings): boolean {
+  const d = draft.value as unknown as Record<string, unknown>
+  const b = baseline as unknown as Record<string, unknown>
+  return TAB_FIELDS[tab].some((f) => !deepEqual(d[f], b[f]))
+}
+// Reactive per-tab dirty flags (draft vs the current committed snapshot).
+const tabDirtyMap = computed<Record<SettingsTab, boolean>>(() => ({
+  agent: tabDirtyAgainst('agent', committed.value),
+  runtime: tabDirtyAgainst('runtime', committed.value),
+  security: tabDirtyAgainst('security', committed.value),
+  general: tabDirtyAgainst('general', committed.value),
+}))
 
 // The agent-type (vendor) options and the per-agent config-source options
 // (2026-06-06-007). Vendor decides which client launches; configMode decides
@@ -409,7 +571,7 @@ function copyAgent(a: AgentConfig) {
 // The grip handle is the draggable element (so the row's text inputs stay
 // selectable as usual); the whole row is the drop target. On drop we splice the
 // dragged agent into the dropped row's slot. `order_seq` is (re)stamped from the
-// final array order at Save time (see `save`), so a reorder survives the round
+// final array order at Save time (see `saveTab`), so a reorder survives the round
 // trip to the server, which then regularizes it into a dense 0..n sequence.
 const dragIndex = ref<number | null>(null)
 const dragOverIndex = ref<number | null>(null)
@@ -435,39 +597,94 @@ function onAgentDragEnd(): void {
   dragOverIndex.value = null
 }
 
-// Stamp the user-controlled order onto every agent from its current array
-// position right before emitting, so a drag-reorder (or add / copy / remove) is
-// persisted; the server `normalize` then regularizes it into a dense 0..n and
-// pins the system agent. Single point, so the structural ops above need not each
-// maintain `order_seq` themselves.
-function save(): void {
-  // Non-admins cannot mutate system config (ADR-0023 authz). The Save button is
+// Build a full SystemSettings for a single tab's Save: start from a deep copy of
+// the latest committed snapshot (so pass-through fields survive), overlay ONLY the
+// current tab's whitelist fields from the draft, applying that tab's transforms to
+// the payload copy alone (never writing back into the drafts). Emitting the full
+// object keeps the `save_settings` protocol unchanged; the tab boundary is enforced
+// purely by which fields we overlay.
+function saveTab(tab: SettingsTab): void {
+  // Non-admins cannot mutate system config (ADR-0023 authz). Every Save button is
   // disabled, but guard the handler too so no path emits a doomed save.
   if (!isAdmin.value) return
-  draft.value.agents.forEach((a, i) => {
-    a.order_seq = i
-  })
-  // Sync the proxy UI ref back into the draft before save.
-  draft.value.proxy = { ...proxyCfg.value }
-  // Derive the auth master switch from the chosen provider: `none` ⇒ off,
-  // `basic` ⇒ on only once an admin is configured. The dropdown is the single
-  // source of intent; this is where it commits to `enabled` (the server's
-  // `normalizeAuth` re-pins `none ⇒ false` as a defence-in-depth second guard).
-  if (draft.value.auth) draft.value.auth.enabled = authActive.value
-  // Drop sandbox rows with a blank name: they are incomplete drafts (e.g. an
-  // added-but-never-filled row) that would fail the server's non-empty-name
-  // registration guard and crash startup.
-  if (draft.value.sandboxes) {
-    draft.value.sandboxes = draft.value.sandboxes.filter((sb) => sb.name.trim() !== '')
+  const payload = deepCopy(committed.value)
+  switch (tab) {
+    case 'agent': {
+      // Stamp the user-controlled order onto every agent from its array position so
+      // a drag-reorder (or add / copy / remove) persists; the server regularizes it.
+      const agents = draft.value.agents.map((a, i) => ({
+        ...structuredClone(toRaw(a)),
+        order_seq: i,
+      }))
+      payload.agents = agents
+      payload.defaultAgentId = draft.value.defaultAgentId
+      payload.toolAgentId = draft.value.toolAgentId
+      payload.intentAgentId = draft.value.intentAgentId
+      payload.specAgentId = draft.value.specAgentId
+      payload.automationAgentId = draft.value.automationAgentId
+      break
+    }
+    case 'runtime': {
+      payload.vendorCliVersions = { ...(draft.value.vendorCliVersions ?? {}) }
+      // Drop sandbox rows with a blank name: incomplete drafts that would fail the
+      // server's non-empty-name registration guard and crash startup.
+      const sandboxes = draft.value.sandboxes
+      payload.sandboxes = sandboxes
+        ? deepCopy(sandboxes).filter((sb) => sb.name.trim() !== '')
+        : sandboxes
+      payload.proxy = { ...proxyCfg.value }
+      break
+    }
+    case 'security': {
+      const auth = draft.value.auth ? deepCopy(draft.value.auth) : undefined
+      // Derive the auth master switch from the chosen provider: `none` ⇒ off,
+      // `basic` ⇒ on only once an admin is configured. The server's `normalizeAuth`
+      // re-pins `none ⇒ false` as defence-in-depth.
+      if (auth) auth.enabled = authActive.value
+      payload.auth = auth
+      break
+    }
+    case 'general': {
+      payload.uiLang = draft.value.uiLang
+      payload.voiceLang = draft.value.voiceLang
+      payload.timezone = draft.value.timezone
+      payload.baseUrl = draft.value.baseUrl
+      payload.showToolSessions = draft.value.showToolSessions
+      break
+    }
   }
-  emit('save', draft.value)
+  pendingSaveTab.value = tab
+  emit('save', payload)
+}
+
+// ---- Tab navigation with dirty-guard confirmation -------------------------
+// Switch immediately if the current tab is clean; otherwise open a confirm. On
+// confirm we ONLY change tabs — the leaving tab's draft is neither saved nor
+// discarded, so returning to it shows the same unsaved edits.
+function requestTab(tab: SettingsTab): void {
+  if (tab === activeTab.value) return
+  if (tabDirtyMap.value[activeTab.value]) {
+    pendingTabSwitch.value = tab
+  } else {
+    activeTab.value = tab
+  }
+}
+function confirmTabSwitch(): void {
+  if (pendingTabSwitch.value) activeTab.value = pendingTabSwitch.value
+  pendingTabSwitch.value = null
+}
+function cancelTabSwitch(): void {
+  pendingTabSwitch.value = null
 }
 
 // Live-switch the UI language on select change (App applies + persists + pushes
-// to server); the draft is also updated so a later Save carries the same value.
+// to server). Update the draft so a later General Save carries the same value, and
+// optimistically advance the committed baseline too — the language is persisted
+// immediately, so it must not linger as an unsaved General diff.
 function onUiLangChange(e: Event) {
   const lang = (e.target as HTMLSelectElement).value as UiLang
   draft.value.uiLang = lang
+  committed.value.uiLang = lang
   emit('set-ui-lang', lang)
 }
 
@@ -545,8 +762,8 @@ const removeTarget = ref<string | null>(null)
 // Auth is effectively ON only under `basic` with a configured admin. `none` ⇒
 // always off. This is
 // the single derivation of `enabled` — the dropdown chooses intent, this gates
-// it, and `save()` writes it into the draft (server `normalizeAuth` re-pins
-// `none ⇒ enabled:false` as a second guard).
+// it, and `saveTab('security')` writes it into the payload (server `normalizeAuth`
+// re-pins `none ⇒ enabled:false` as a second guard).
 const authActive = computed(() => authProviderKind.value === 'basic' && adminConfigured.value)
 const exposureOn = computed(() => {
   const addr = draft.value.auth?.exposure?.bindAddress
@@ -601,7 +818,7 @@ function setAuthProviderKind(v: string) {
     a.enabled = false
   } else if (v === 'basic') {
     a.provider = { kind: 'basic', accounts: [], adminUsername: '' }
-    // Becomes effective once an admin is configured (authActive + save()).
+    // Becomes effective once an admin is configured (authActive + saveTab).
     a.enabled = false
   }
 }
@@ -695,646 +912,775 @@ function selectAdmin(username: string) {
     <p v-if="!isAdmin" class="settings-readonly-notice" data-testid="settings-readonly-notice">
       {{ t('settings.readOnlyNotice.text') }}
     </p>
+
+    <!-- Tab navigation. Horizontally scrollable on mobile; a dot marks a tab whose
+         draft has unsaved changes. Requesting a switch away from a dirty tab opens
+         the confirm dialog (see requestTab). -->
+    <nav class="settings-tabs" role="tablist" data-testid="settings-tabs">
+      <button
+        v-for="tab in TABS"
+        :key="tab"
+        class="settings-tab"
+        :class="{ active: activeTab === tab }"
+        role="tab"
+        :aria-selected="activeTab === tab"
+        :data-testid="`settings-tab-btn-${tab}`"
+        @click="requestTab(tab)"
+      >
+        <span>{{ tabLabel(tab) }}</span>
+        <span
+          v-if="tabDirtyMap[tab]"
+          class="settings-tab-dot"
+          :data-testid="`settings-tab-dirty-${tab}`"
+          :title="t('settings.tabs.unsaved.label')"
+          >●</span
+        >
+      </button>
+    </nav>
+
     <div class="settings-body">
-      <section class="settings-section">
-        <p class="settings-section-title">{{ t('settings.agents.title.label') }}</p>
-        <i18n-t keypath="settings.agents.hint.text" tag="p" class="settings-hint">
-          <template #claude
-            ><code>{{ t('settings.agents.hint.claude') }}</code></template
+      <!-- ============ Agent tab ============ -->
+      <div
+        v-show="activeTab === 'agent'"
+        class="settings-tab-panel"
+        role="tabpanel"
+        data-testid="settings-tab-agent"
+      >
+        <div class="settings-tab-actions">
+          <span
+            v-if="tabDirtyMap.agent"
+            class="settings-unsaved"
+            data-testid="settings-unsaved-agent"
+            >{{ t('settings.tabs.unsaved.label') }}</span
           >
-          <template #on
-            ><strong>{{ t('settings.agents.hint.on') }}</strong></template
-          >
-        </i18n-t>
-        <div class="agent-list">
-          <div
-            v-for="(a, i) in draft.agents"
-            :key="a.id"
-            class="agent-row"
-            :class="{ 'drag-over': dragOverIndex === i }"
-            data-testid="agent-card"
-            @dragover.prevent="onAgentDragOver(i)"
-            @drop.prevent="onAgentDrop(i)"
-          >
-            <span
-              class="col-drag"
-              draggable="true"
-              :title="t('settings.agents.reorder.tooltip')"
-              data-testid="agent-drag"
-              @dragstart="onAgentDragStart(i, $event)"
-              @dragend="onAgentDragEnd"
-              >⠿</span
-            >
-            <label class="col-on">
-              <input
-                class="agent-enabled-switch"
-                type="checkbox"
-                role="switch"
-                :checked="isEnabled(a)"
-                :aria-checked="isEnabled(a)"
-                :title="t('settings.agents.toggle.tooltip')"
-                data-testid="agent-enabled-switch"
-                @change="onToggleEnabled(a, ($event.target as HTMLInputElement).checked)"
-              />
-            </label>
-            <div class="icon-cell">
-              <EmojiPicker v-model="a.icon" />
-            </div>
-            <input
-              v-model="a.displayName"
-              class="agent-field agent-name"
-              :placeholder="t('settings.agents.name.placeholder')"
-            />
-            <select
-              class="agent-field agent-vendor"
-              :value="a.vendor"
-              :title="t('settings.agents.vendor.tooltip')"
-              data-testid="agent-vendor"
-              @change="setVendor(a, ($event.target as HTMLSelectElement).value as VendorId)"
-            >
-              <option v-for="v in VENDORS" :key="v" :value="v">{{ VENDOR_LABELS[v] }}</option>
-            </select>
-            <select
-              v-model="a.configMode"
-              class="agent-field agent-configmode"
-              :title="t('settings.agents.configMode.tooltip')"
-              data-testid="agent-configmode"
-            >
-              <option v-for="m in CONFIG_MODES" :key="m" :value="m">
-                {{ configModeLabel(m) }}
-              </option>
-            </select>
-            <input
-              v-if="showProviderFields(a)"
-              v-model="a.config.baseUrl"
-              class="agent-field agent-url"
-              :title="t('settings.agents.col.baseUrl.label')"
-              :placeholder="t('settings.agents.baseUrl.placeholder')"
-            />
-            <input
-              v-if="showProviderFields(a)"
-              v-model="a.config.apiKey"
-              class="agent-field agent-key"
-              type="password"
-              autocomplete="off"
-              :title="t('settings.agents.col.apiKey.label')"
-              :placeholder="t('settings.agents.apiKey.placeholder')"
-            />
-            <input
-              v-model="a.config.model"
-              class="agent-field agent-model"
-              :title="t('settings.agents.col.model.label')"
-              :placeholder="t('settings.agents.model.placeholder')"
-            />
-            <select
-              v-if="showWireApi(a)"
-              class="agent-field agent-wireapi"
-              :value="wireApiOf(a)"
-              :title="t('settings.agents.wireApi.tooltip')"
-              data-testid="agent-wireapi"
-              @change="
-                setWireApi(a, ($event.target as HTMLSelectElement).value as 'responses' | 'chat')
-              "
-            >
-              <option v-for="w in WIRE_APIS" :key="w" :value="w">{{ wireApiLabel(w) }}</option>
-            </select>
-            <span class="col-actions">
-              <button
-                class="icon-btn"
-                :title="t('settings.agents.copy.tooltip')"
-                @click="copyAgent(a)"
-              >
-                📋
-              </button>
-              <button
-                class="icon-btn"
-                :title="t('settings.agents.remove.tooltip')"
-                @click="removeAgent(a.id)"
-              >
-                🗑
-              </button>
-            </span>
-          </div>
-        </div>
-        <button class="agent-add" data-testid="settings-add-agent" @click="addAgent">
-          {{ t('settings.agents.add.label') }}
-        </button>
-        <div class="agent-default-picker">
-          <label class="agent-default-label" for="default-agent-select">
-            {{ t('settings.agents.defaultPicker.label') }}
-          </label>
-          <select
-            id="default-agent-select"
-            v-model="draft.defaultAgentId"
-            class="agent-field"
-            data-testid="default-agent-select"
-            :title="t('settings.agents.default.tooltip')"
-            :disabled="defaultPickerAgents.length === 0"
-          >
-            <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-              {{ a.displayName || a.id }}
-            </option>
-            <option v-if="defaultPickerAgents.length === 0" value="" disabled>
-              {{ t('settings.agents.defaultPicker.empty') }}
-            </option>
-          </select>
-        </div>
-        <div class="agent-default-picker">
-          <label class="agent-default-label" for="tool-agent-select">
-            {{ t('settings.agents.toolPicker.label') }}
-          </label>
-          <select
-            id="tool-agent-select"
-            v-model="draft.toolAgentId"
-            class="agent-field"
-            data-testid="tool-agent-select"
-            :title="t('settings.agents.tool.tooltip')"
-          >
-            <option value="">{{ t('settings.agents.toolPicker.followDefault') }}</option>
-            <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-              {{ a.displayName || a.id }}
-            </option>
-          </select>
-        </div>
-        <div class="agent-default-picker">
-          <label class="agent-default-label" for="intent-agent-select">
-            {{ t('settings.agents.intentPicker.label') }}
-          </label>
-          <select
-            id="intent-agent-select"
-            v-model="draft.intentAgentId"
-            class="agent-field"
-            data-testid="intent-agent-select"
-            :title="t('settings.agents.intent.tooltip')"
-          >
-            <option value="">{{ t('settings.agents.intentPicker.followDefault') }}</option>
-            <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-              {{ a.displayName || a.id }}
-            </option>
-          </select>
-        </div>
-        <div class="agent-default-picker">
-          <label class="agent-default-label" for="spec-agent-select">
-            {{ t('settings.agents.specPicker.label') }}
-          </label>
-          <select
-            id="spec-agent-select"
-            v-model="draft.specAgentId"
-            class="agent-field"
-            data-testid="spec-agent-select"
-            :title="t('settings.agents.spec.tooltip')"
-          >
-            <option value="">{{ t('settings.agents.specPicker.followDefault') }}</option>
-            <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-              {{ a.displayName || a.id }}
-            </option>
-          </select>
-        </div>
-        <div class="agent-default-picker">
-          <label class="agent-default-label" for="automation-agent-select">
-            {{ t('settings.agents.automationPicker.label') }}
-          </label>
-          <select
-            id="automation-agent-select"
-            v-model="draft.automationAgentId"
-            class="agent-field"
-            data-testid="automation-agent-select"
-            :title="t('settings.agents.automation.tooltip')"
-          >
-            <option value="">{{ t('settings.agents.automationPicker.followDefault') }}</option>
-            <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
-              {{ a.displayName || a.id }}
-            </option>
-          </select>
-        </div>
-        <p v-if="bindingStats" class="settings-hint" data-testid="settings-default-note">
-          {{
-            t('settings.agents.defaultNote', {
-              pending: bindingStats.pending,
-              bound: bindingStats.bound,
-            })
-          }}
-        </p>
-      </section>
-
-      <section class="settings-section" data-testid="settings-diagnostics">
-        <p class="settings-section-title">{{ t('settings.diagnostics.title.label') }}</p>
-        <p class="settings-hint">{{ t('settings.diagnostics.hint') }}</p>
-        <ul class="diagnostics-list">
-          <li v-for="h in diagnostics" :key="h.vendor" class="diagnostics-row">
-            <span
-              class="vendor-dot"
-              :style="{ backgroundColor: vendorColor(h.vendor) }"
-              :title="vendorLabel(h.vendor)"
-            ></span>
-            <span class="diagnostics-vendor">{{ vendorLabel(h.vendor) }}</span>
-            <code class="diagnostics-binary">{{ h.binary }}</code>
-            <span
-              class="diagnostics-status"
-              :class="h.present ? 'present' : 'missing'"
-              :title="h.present ? '' : h.installHint"
-            >
-              {{
-                h.present ? t('settings.diagnostics.present') : t('settings.diagnostics.missing')
-              }}
-            </span>
-            <code v-if="h.present && h.path" class="diagnostics-path" :title="h.path">{{
-              h.path
-            }}</code>
-          </li>
-        </ul>
-      </section>
-
-      <!-- Vendor CLI multi-version selection (effective version ≠ download target) -->
-      <section class="settings-section" data-testid="settings-vendor-cli">
-        <p class="settings-section-title">{{ t('settings.vendorCli.title.label') }}</p>
-        <p class="settings-hint">{{ t('settings.vendorCli.hint') }}</p>
-        <div
-          v-for="h in vendorCliRows"
-          :key="h.vendor"
-          class="vendor-cli-row"
-          data-testid="vendor-cli-row"
-        >
-          <div class="vendor-cli-head">
-            <span
-              class="vendor-dot"
-              :style="{ backgroundColor: vendorColor(h.vendor) }"
-              :title="vendorLabel(h.vendor)"
-            ></span>
-            <span class="diagnostics-vendor">{{ vendorLabel(h.vendor) }}</span>
-          </div>
-          <div class="vendor-cli-status">
-            <span class="vendor-cli-field">
-              <span class="vendor-cli-label">{{ t('settings.vendorCli.active.label') }}</span>
-              <code :data-testid="`vendor-cli-active-${h.vendor}`">{{
-                h.activeVersion ?? t('settings.vendorCli.none')
-              }}</code>
-            </span>
-            <span class="vendor-cli-field">
-              <span class="vendor-cli-label">{{
-                t('settings.vendorCli.downloadTarget.label')
-              }}</span>
-              <code :data-testid="`vendor-cli-target-${h.vendor}`">{{
-                h.downloadTargetVersion ?? t('settings.vendorCli.none')
-              }}</code>
-            </span>
-            <span v-if="h.lastRemoteCheckAt" class="vendor-cli-field">
-              <span class="vendor-cli-label">{{ t('settings.vendorCli.lastCheck.label') }}</span>
-              <code>{{ h.lastRemoteCheckAt }}</code>
-            </span>
-          </div>
-          <p
-            v-if="h.lastError"
-            class="settings-hint vendor-cli-error"
-            :data-testid="`vendor-cli-error-${h.vendor}`"
-          >
-            {{ h.lastError }}
-          </p>
-          <div class="vendor-cli-versions">
-            <label class="vendor-cli-option">
-              <input
-                type="radio"
-                :name="`vendor-cli-${h.vendor}`"
-                value=""
-                :checked="activeVersionChoice(h.vendor) === ''"
-                :disabled="!isAdmin"
-                :data-testid="`vendor-cli-auto-${h.vendor}`"
-                @change="setActiveVersion(h.vendor, '')"
-              />
-              <span>{{ t('settings.vendorCli.auto.label') }}</span>
-            </label>
-            <label
-              v-for="v in h.installedVersions ?? []"
-              :key="v.version"
-              class="vendor-cli-option"
-            >
-              <input
-                type="radio"
-                :name="`vendor-cli-${h.vendor}`"
-                :value="v.version"
-                :checked="activeVersionChoice(h.vendor) === v.version"
-                :disabled="!isAdmin"
-                :data-testid="`vendor-cli-version-${h.vendor}`"
-                @change="setActiveVersion(h.vendor, v.version)"
-              />
-              <code>{{ v.version }}</code>
-            </label>
-            <p
-              v-if="!h.installedVersions || h.installedVersions.length === 0"
-              class="settings-hint"
-              :data-testid="`vendor-cli-empty-${h.vendor}`"
-            >
-              {{ t('settings.vendorCli.empty') }}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <!-- Sandbox definitions CRUD -->
-      <section class="settings-section" data-testid="settings-sandboxes">
-        <p class="settings-section-title">{{ t('settings.sandboxes.title.label') }}</p>
-        <p class="settings-hint">{{ t('settings.sandboxes.hint') }}</p>
-        <div v-if="!draft.sandboxes || draft.sandboxes.length === 0" class="settings-hint">
-          {{ t('settings.sandboxes.empty') }}
-        </div>
-        <div
-          v-if="draft.sandboxes && draft.sandboxes.length > 0"
-          class="sandbox-row sandbox-row-header"
-          data-testid="sandbox-row-header"
-        >
-          <div class="agent-field">{{ t('settings.sandboxes.name.label') }}</div>
-          <div class="agent-field">{{ t('settings.sandboxes.type.label') }}</div>
-          <div class="agent-field">{{ t('settings.sandboxes.image.label') }}</div>
-          <div class="agent-field">{{ t('settings.sandboxes.seccomp.label') }}</div>
-          <div class="agent-field sandbox-small">
-            {{ t('settings.sandboxes.memoryLimit.label') }}
-          </div>
-          <div class="agent-field sandbox-small">
-            {{ t('settings.sandboxes.cpuLimit.label') }}
-          </div>
-          <div class="sandbox-row-header-actions" aria-hidden="true"></div>
-        </div>
-        <div
-          v-for="(sb, idx) in draft.sandboxes ?? []"
-          :key="idx"
-          class="sandbox-row"
-          data-testid="sandbox-row"
-        >
-          <input
-            v-model="sb.name"
-            class="agent-field"
-            :placeholder="t('settings.sandboxes.name.placeholder')"
-            data-testid="sandbox-name"
-          />
-          <select v-model="sb.type" class="mode-select" data-testid="sandbox-type">
-            <option v-for="st in SANDOX_TYPES" :key="st" :value="st">{{ st }}</option>
-          </select>
-          <input
-            v-model="sb.image"
-            class="agent-field"
-            :placeholder="t('settings.sandboxes.image.placeholder')"
-            data-testid="sandbox-image"
-          />
-          <input
-            v-model="sb.seccomp"
-            class="agent-field"
-            :placeholder="t('settings.sandboxes.seccomp.placeholder')"
-            data-testid="sandbox-seccomp"
-          />
-          <input
-            v-model="sb.memoryLimit"
-            class="agent-field sandbox-small"
-            :placeholder="t('settings.sandboxes.memoryLimit.placeholder')"
-            data-testid="sandbox-memory"
-          />
-          <input
-            v-model.number="sb.cpuLimit"
-            class="agent-field sandbox-small"
-            type="number"
-            min="0"
-            step="0.5"
-            :placeholder="t('settings.sandboxes.cpuLimit.placeholder')"
-            data-testid="sandbox-cpu"
-          />
-          <button
-            class="icon-btn"
-            :title="t('settings.sandboxes.remove.tooltip')"
-            data-testid="sandbox-remove"
-            @click="removeSandbox(idx)"
-          >
-            🗑
+          <button data-testid="settings-save-agent" :disabled="!isAdmin" @click="saveTab('agent')">
+            {{ t('common.action.save.label') }}
           </button>
         </div>
-        <button class="agent-add" data-testid="settings-add-sandbox" @click="addSandbox">
-          {{ t('settings.sandboxes.add.label') }}
-        </button>
-      </section>
 
-      <!-- Authentication (ADR-0023) -->
-      <section class="settings-section" data-testid="settings-auth">
-        <p class="settings-section-title">{{ t('settings.auth.title.label') }}</p>
-        <p class="settings-hint">{{ t('settings.auth.hint') }}</p>
-
-        <label class="auth-field">
-          <span class="auth-label">{{ t('settings.auth.provider.label') }}</span>
-          <select
-            class="mode-select"
-            data-testid="settings-auth-provider"
-            :value="authProviderKind"
-            @change="setAuthProviderKind(($event.target as HTMLSelectElement).value)"
-          >
-            <option
-              v-for="p in AUTH_PROVIDERS"
-              :key="p.value"
-              :value="p.value"
-              :disabled="p.disabled"
+        <section class="settings-section">
+          <p class="settings-section-title">{{ t('settings.agents.title.label') }}</p>
+          <i18n-t keypath="settings.agents.hint.text" tag="p" class="settings-hint">
+            <template #claude
+              ><code>{{ t('settings.agents.hint.claude') }}</code></template
             >
-              {{ t(`settings.auth.provider.${p.value}` as 'settings.auth.provider.basic') }}
-            </option>
-          </select>
-        </label>
-
-        <p v-if="isNone" class="settings-hint" data-testid="settings-auth-none-hint">
-          {{ t('settings.auth.none.hint') }}
-        </p>
-        <p
-          v-else-if="!adminConfigured"
-          class="settings-hint"
-          data-testid="settings-auth-need-admin"
-        >
-          {{ t('settings.auth.enable.needAdmin') }}
-        </p>
-        <p v-else class="settings-hint" data-testid="settings-auth-active">
-          {{ t('settings.auth.enable.active') }}
-        </p>
-
-        <div
-          v-if="authProviderKind === 'basic'"
-          class="auth-accounts"
-          data-testid="settings-auth-accounts"
-        >
-          <p class="settings-hint">{{ t('settings.auth.account.hint') }}</p>
-          <!-- Existing accounts: admin radio + name on one line, change-password +
-               remove actions trailing on the same row. Password edit / removal both
-               happen in modals (below) so the row stays a single compact line. -->
-          <div
-            v-for="acc in basicAccounts"
-            :key="acc.username"
-            class="auth-account-row"
-            data-testid="settings-auth-account-row"
-          >
-            <label class="auth-admin-pick">
+            <template #on
+              ><strong>{{ t('settings.agents.hint.on') }}</strong></template
+            >
+          </i18n-t>
+          <div class="agent-list">
+            <div
+              v-for="(a, i) in draft.agents"
+              :key="a.id"
+              class="agent-row"
+              :class="{ 'drag-over': dragOverIndex === i }"
+              data-testid="agent-card"
+              @dragover.prevent="onAgentDragOver(i)"
+              @drop.prevent="onAgentDrop(i)"
+            >
+              <span
+                class="col-drag"
+                draggable="true"
+                :title="t('settings.agents.reorder.tooltip')"
+                data-testid="agent-drag"
+                @dragstart="onAgentDragStart(i, $event)"
+                @dragend="onAgentDragEnd"
+                >⠿</span
+              >
+              <label class="col-on">
+                <input
+                  class="agent-enabled-switch"
+                  type="checkbox"
+                  role="switch"
+                  :checked="isEnabled(a)"
+                  :aria-checked="isEnabled(a)"
+                  :title="t('settings.agents.toggle.tooltip')"
+                  data-testid="agent-enabled-switch"
+                  @change="onToggleEnabled(a, ($event.target as HTMLInputElement).checked)"
+                />
+              </label>
+              <div class="icon-cell">
+                <EmojiPicker v-model="a.icon" />
+              </div>
               <input
-                type="radio"
-                name="auth-admin"
-                :checked="acc.username === basicAdminUsername"
-                :disabled="!isAdmin"
-                data-testid="settings-auth-admin-radio"
-                @change="selectAdmin(acc.username)"
+                v-model="a.displayName"
+                class="agent-field agent-name"
+                :placeholder="t('settings.agents.name.placeholder')"
               />
-              <span class="auth-account-name">{{ acc.username }}</span>
-              <span v-if="acc.username === basicAdminUsername" class="auth-admin-badge">{{
-                t('settings.auth.admin.badge')
-              }}</span>
+              <select
+                class="agent-field agent-vendor"
+                :value="a.vendor"
+                :title="t('settings.agents.vendor.tooltip')"
+                data-testid="agent-vendor"
+                @change="setVendor(a, ($event.target as HTMLSelectElement).value as VendorId)"
+              >
+                <option v-for="v in VENDORS" :key="v" :value="v">{{ VENDOR_LABELS[v] }}</option>
+              </select>
+              <select
+                v-model="a.configMode"
+                class="agent-field agent-configmode"
+                :title="t('settings.agents.configMode.tooltip')"
+                data-testid="agent-configmode"
+              >
+                <option v-for="m in CONFIG_MODES" :key="m" :value="m">
+                  {{ configModeLabel(m) }}
+                </option>
+              </select>
+              <input
+                v-if="showProviderFields(a)"
+                v-model="a.config.baseUrl"
+                class="agent-field agent-url"
+                :title="t('settings.agents.col.baseUrl.label')"
+                :placeholder="t('settings.agents.baseUrl.placeholder')"
+              />
+              <input
+                v-if="showProviderFields(a)"
+                v-model="a.config.apiKey"
+                class="agent-field agent-key"
+                type="password"
+                autocomplete="off"
+                :title="t('settings.agents.col.apiKey.label')"
+                :placeholder="t('settings.agents.apiKey.placeholder')"
+              />
+              <input
+                v-model="a.config.model"
+                class="agent-field agent-model"
+                :title="t('settings.agents.col.model.label')"
+                :placeholder="t('settings.agents.model.placeholder')"
+              />
+              <select
+                v-if="showWireApi(a)"
+                class="agent-field agent-wireapi"
+                :value="wireApiOf(a)"
+                :title="t('settings.agents.wireApi.tooltip')"
+                data-testid="agent-wireapi"
+                @change="
+                  setWireApi(a, ($event.target as HTMLSelectElement).value as 'responses' | 'chat')
+                "
+              >
+                <option v-for="w in WIRE_APIS" :key="w" :value="w">{{ wireApiLabel(w) }}</option>
+              </select>
+              <span class="col-actions">
+                <button
+                  class="icon-btn"
+                  :title="t('settings.agents.copy.tooltip')"
+                  @click="copyAgent(a)"
+                >
+                  📋
+                </button>
+                <button
+                  class="icon-btn"
+                  :title="t('settings.agents.remove.tooltip')"
+                  @click="removeAgent(a.id)"
+                >
+                  🗑
+                </button>
+              </span>
+            </div>
+          </div>
+          <button class="agent-add" data-testid="settings-add-agent" @click="addAgent">
+            {{ t('settings.agents.add.label') }}
+          </button>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="default-agent-select">
+              {{ t('settings.agents.defaultPicker.label') }}
             </label>
-            <div class="auth-account-actions">
-              <button
-                class="icon-btn"
-                :disabled="!isAdmin"
-                data-testid="settings-auth-account-change"
-                @click="startChangePassword(acc.username)"
+            <select
+              id="default-agent-select"
+              v-model="draft.defaultAgentId"
+              class="agent-field"
+              data-testid="default-agent-select"
+              :title="t('settings.agents.default.tooltip')"
+              :disabled="defaultPickerAgents.length === 0"
+            >
+              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <option v-if="defaultPickerAgents.length === 0" value="" disabled>
+                {{ t('settings.agents.defaultPicker.empty') }}
+              </option>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="tool-agent-select">
+              {{ t('settings.agents.toolPicker.label') }}
+            </label>
+            <select
+              id="tool-agent-select"
+              v-model="draft.toolAgentId"
+              class="agent-field"
+              data-testid="tool-agent-select"
+              :title="t('settings.agents.tool.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.toolPicker.followDefault') }}</option>
+              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="intent-agent-select">
+              {{ t('settings.agents.intentPicker.label') }}
+            </label>
+            <select
+              id="intent-agent-select"
+              v-model="draft.intentAgentId"
+              class="agent-field"
+              data-testid="intent-agent-select"
+              :title="t('settings.agents.intent.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.intentPicker.followDefault') }}</option>
+              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="spec-agent-select">
+              {{ t('settings.agents.specPicker.label') }}
+            </label>
+            <select
+              id="spec-agent-select"
+              v-model="draft.specAgentId"
+              class="agent-field"
+              data-testid="spec-agent-select"
+              :title="t('settings.agents.spec.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.specPicker.followDefault') }}</option>
+              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="automation-agent-select">
+              {{ t('settings.agents.automationPicker.label') }}
+            </label>
+            <select
+              id="automation-agent-select"
+              v-model="draft.automationAgentId"
+              class="agent-field"
+              data-testid="automation-agent-select"
+              :title="t('settings.agents.automation.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.automationPicker.followDefault') }}</option>
+              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+            </select>
+          </div>
+          <p v-if="bindingStats" class="settings-hint" data-testid="settings-default-note">
+            {{
+              t('settings.agents.defaultNote', {
+                pending: bindingStats.pending,
+                bound: bindingStats.bound,
+              })
+            }}
+          </p>
+        </section>
+      </div>
+
+      <!-- ============ Runtime tab ============ -->
+      <div
+        v-show="activeTab === 'runtime'"
+        class="settings-tab-panel"
+        role="tabpanel"
+        data-testid="settings-tab-runtime"
+      >
+        <div class="settings-tab-actions">
+          <span
+            v-if="tabDirtyMap.runtime"
+            class="settings-unsaved"
+            data-testid="settings-unsaved-runtime"
+            >{{ t('settings.tabs.unsaved.label') }}</span
+          >
+          <button
+            data-testid="settings-save-runtime"
+            :disabled="!isAdmin"
+            @click="saveTab('runtime')"
+          >
+            {{ t('common.action.save.label') }}
+          </button>
+        </div>
+
+        <section class="settings-section" data-testid="settings-diagnostics">
+          <p class="settings-section-title">{{ t('settings.diagnostics.title.label') }}</p>
+          <p class="settings-hint">{{ t('settings.diagnostics.hint') }}</p>
+          <ul class="diagnostics-list">
+            <li v-for="h in diagnostics" :key="h.vendor" class="diagnostics-row">
+              <span
+                class="vendor-dot"
+                :style="{ backgroundColor: vendorColor(h.vendor) }"
+                :title="vendorLabel(h.vendor)"
+              ></span>
+              <span class="diagnostics-vendor">{{ vendorLabel(h.vendor) }}</span>
+              <code class="diagnostics-binary">{{ h.binary }}</code>
+              <span
+                class="diagnostics-status"
+                :class="h.present ? 'present' : 'missing'"
+                :title="h.present ? '' : h.installHint"
               >
-                {{ t('settings.auth.password.change.label') }}
-              </button>
-              <button
-                class="icon-btn"
-                :disabled="!isAdmin"
-                data-testid="settings-auth-account-remove"
-                @click="startRemoveAccount(acc.username)"
+                {{
+                  h.present ? t('settings.diagnostics.present') : t('settings.diagnostics.missing')
+                }}
+              </span>
+              <code v-if="h.present && h.path" class="diagnostics-path" :title="h.path">{{
+                h.path
+              }}</code>
+            </li>
+          </ul>
+        </section>
+
+        <!-- Vendor CLI multi-version selection (effective version ≠ download target) -->
+        <section class="settings-section" data-testid="settings-vendor-cli">
+          <p class="settings-section-title">{{ t('settings.vendorCli.title.label') }}</p>
+          <p class="settings-hint">{{ t('settings.vendorCli.hint') }}</p>
+          <div
+            v-for="h in vendorCliRows"
+            :key="h.vendor"
+            class="vendor-cli-row"
+            data-testid="vendor-cli-row"
+          >
+            <div class="vendor-cli-head">
+              <span
+                class="vendor-dot"
+                :style="{ backgroundColor: vendorColor(h.vendor) }"
+                :title="vendorLabel(h.vendor)"
+              ></span>
+              <span class="diagnostics-vendor">{{ vendorLabel(h.vendor) }}</span>
+            </div>
+            <div class="vendor-cli-status">
+              <span class="vendor-cli-field">
+                <span class="vendor-cli-label">{{ t('settings.vendorCli.active.label') }}</span>
+                <code :data-testid="`vendor-cli-active-${h.vendor}`">{{
+                  h.activeVersion ?? t('settings.vendorCli.none')
+                }}</code>
+              </span>
+              <span class="vendor-cli-field">
+                <span class="vendor-cli-label">{{
+                  t('settings.vendorCli.downloadTarget.label')
+                }}</span>
+                <code :data-testid="`vendor-cli-target-${h.vendor}`">{{
+                  h.downloadTargetVersion ?? t('settings.vendorCli.none')
+                }}</code>
+              </span>
+              <span v-if="h.lastRemoteCheckAt" class="vendor-cli-field">
+                <span class="vendor-cli-label">{{ t('settings.vendorCli.lastCheck.label') }}</span>
+                <code>{{ h.lastRemoteCheckAt }}</code>
+              </span>
+            </div>
+            <p
+              v-if="h.lastError"
+              class="settings-hint vendor-cli-error"
+              :data-testid="`vendor-cli-error-${h.vendor}`"
+            >
+              {{ h.lastError }}
+            </p>
+            <div class="vendor-cli-versions">
+              <label class="vendor-cli-option">
+                <input
+                  type="radio"
+                  :name="`vendor-cli-${h.vendor}`"
+                  value=""
+                  :checked="activeVersionChoice(h.vendor) === ''"
+                  :disabled="!isAdmin"
+                  :data-testid="`vendor-cli-auto-${h.vendor}`"
+                  @change="setActiveVersion(h.vendor, '')"
+                />
+                <span>{{ t('settings.vendorCli.auto.label') }}</span>
+              </label>
+              <label
+                v-for="v in h.installedVersions ?? []"
+                :key="v.version"
+                class="vendor-cli-option"
               >
-                {{ t('settings.auth.account.remove.label') }}
+                <input
+                  type="radio"
+                  :name="`vendor-cli-${h.vendor}`"
+                  :value="v.version"
+                  :checked="activeVersionChoice(h.vendor) === v.version"
+                  :disabled="!isAdmin"
+                  :data-testid="`vendor-cli-version-${h.vendor}`"
+                  @change="setActiveVersion(h.vendor, v.version)"
+                />
+                <code>{{ v.version }}</code>
+              </label>
+              <p
+                v-if="!h.installedVersions || h.installedVersions.length === 0"
+                class="settings-hint"
+                :data-testid="`vendor-cli-empty-${h.vendor}`"
+              >
+                {{ t('settings.vendorCli.empty') }}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Sandbox definitions CRUD -->
+        <section class="settings-section" data-testid="settings-sandboxes">
+          <p class="settings-section-title">{{ t('settings.sandboxes.title.label') }}</p>
+          <p class="settings-hint">{{ t('settings.sandboxes.hint') }}</p>
+          <div v-if="!draft.sandboxes || draft.sandboxes.length === 0" class="settings-hint">
+            {{ t('settings.sandboxes.empty') }}
+          </div>
+          <div
+            v-if="draft.sandboxes && draft.sandboxes.length > 0"
+            class="sandbox-row sandbox-row-header"
+            data-testid="sandbox-row-header"
+          >
+            <div class="agent-field">{{ t('settings.sandboxes.name.label') }}</div>
+            <div class="agent-field">{{ t('settings.sandboxes.type.label') }}</div>
+            <div class="agent-field">{{ t('settings.sandboxes.image.label') }}</div>
+            <div class="agent-field">{{ t('settings.sandboxes.seccomp.label') }}</div>
+            <div class="agent-field sandbox-small">
+              {{ t('settings.sandboxes.memoryLimit.label') }}
+            </div>
+            <div class="agent-field sandbox-small">
+              {{ t('settings.sandboxes.cpuLimit.label') }}
+            </div>
+            <div class="sandbox-row-header-actions" aria-hidden="true"></div>
+          </div>
+          <div
+            v-for="(sb, idx) in draft.sandboxes ?? []"
+            :key="idx"
+            class="sandbox-row"
+            data-testid="sandbox-row"
+          >
+            <input
+              v-model="sb.name"
+              class="agent-field"
+              :placeholder="t('settings.sandboxes.name.placeholder')"
+              data-testid="sandbox-name"
+            />
+            <select v-model="sb.type" class="mode-select" data-testid="sandbox-type">
+              <option v-for="st in SANDOX_TYPES" :key="st" :value="st">{{ st }}</option>
+            </select>
+            <input
+              v-model="sb.image"
+              class="agent-field"
+              :placeholder="t('settings.sandboxes.image.placeholder')"
+              data-testid="sandbox-image"
+            />
+            <input
+              v-model="sb.seccomp"
+              class="agent-field"
+              :placeholder="t('settings.sandboxes.seccomp.placeholder')"
+              data-testid="sandbox-seccomp"
+            />
+            <input
+              v-model="sb.memoryLimit"
+              class="agent-field sandbox-small"
+              :placeholder="t('settings.sandboxes.memoryLimit.placeholder')"
+              data-testid="sandbox-memory"
+            />
+            <input
+              v-model.number="sb.cpuLimit"
+              class="agent-field sandbox-small"
+              type="number"
+              min="0"
+              step="0.5"
+              :placeholder="t('settings.sandboxes.cpuLimit.placeholder')"
+              data-testid="sandbox-cpu"
+            />
+            <button
+              class="icon-btn"
+              :title="t('settings.sandboxes.remove.tooltip')"
+              data-testid="sandbox-remove"
+              @click="removeSandbox(idx)"
+            >
+              🗑
+            </button>
+          </div>
+          <button class="agent-add" data-testid="settings-add-sandbox" @click="addSandbox">
+            {{ t('settings.sandboxes.add.label') }}
+          </button>
+        </section>
+
+        <!-- Session subprocess proxy (2026-07-01-003) -->
+        <section class="settings-section" data-testid="settings-proxy">
+          <p class="settings-section-title">{{ t('settings.proxy.title.label') }}</p>
+          <label class="consensus-toggle">
+            <input
+              v-model="proxyCfg.enabled"
+              type="checkbox"
+              role="switch"
+              data-testid="settings-proxy-enabled"
+            />
+            {{ t('settings.proxy.toggle.label') }}
+          </label>
+          <p class="settings-hint">{{ t('settings.proxy.hint') }}</p>
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.proxy.httpProxy.label') }}</span>
+            <input
+              v-model="proxyCfg.httpProxy"
+              class="agent-field"
+              type="url"
+              :disabled="!proxyCfg.enabled"
+              :placeholder="proxyCfg.enabled ? 'http://proxy.local:3128' : ''"
+              data-testid="settings-proxy-http"
+            />
+          </label>
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.proxy.httpsProxy.label') }}</span>
+            <input
+              v-model="proxyCfg.httpsProxy"
+              class="agent-field"
+              type="url"
+              :disabled="!proxyCfg.enabled"
+              :placeholder="proxyCfg.enabled ? 'http://proxy.local:3128' : ''"
+              data-testid="settings-proxy-https"
+            />
+          </label>
+        </section>
+      </div>
+
+      <!-- ============ Security tab ============ -->
+      <div
+        v-show="activeTab === 'security'"
+        class="settings-tab-panel"
+        role="tabpanel"
+        data-testid="settings-tab-security"
+      >
+        <div class="settings-tab-actions">
+          <span
+            v-if="tabDirtyMap.security"
+            class="settings-unsaved"
+            data-testid="settings-unsaved-security"
+            >{{ t('settings.tabs.unsaved.label') }}</span
+          >
+          <button
+            data-testid="settings-save-security"
+            :disabled="!isAdmin"
+            @click="saveTab('security')"
+          >
+            {{ t('common.action.save.label') }}
+          </button>
+        </div>
+
+        <!-- Authentication (ADR-0023) -->
+        <section class="settings-section" data-testid="settings-auth">
+          <p class="settings-section-title">{{ t('settings.auth.title.label') }}</p>
+          <p class="settings-hint">{{ t('settings.auth.hint') }}</p>
+
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.auth.provider.label') }}</span>
+            <select
+              class="mode-select"
+              data-testid="settings-auth-provider"
+              :value="authProviderKind"
+              @change="setAuthProviderKind(($event.target as HTMLSelectElement).value)"
+            >
+              <option
+                v-for="p in AUTH_PROVIDERS"
+                :key="p.value"
+                :value="p.value"
+                :disabled="p.disabled"
+              >
+                {{ t(`settings.auth.provider.${p.value}` as 'settings.auth.provider.basic') }}
+              </option>
+            </select>
+          </label>
+
+          <p v-if="isNone" class="settings-hint" data-testid="settings-auth-none-hint">
+            {{ t('settings.auth.none.hint') }}
+          </p>
+          <p
+            v-else-if="!adminConfigured"
+            class="settings-hint"
+            data-testid="settings-auth-need-admin"
+          >
+            {{ t('settings.auth.enable.needAdmin') }}
+          </p>
+          <p v-else class="settings-hint" data-testid="settings-auth-active">
+            {{ t('settings.auth.enable.active') }}
+          </p>
+
+          <div
+            v-if="authProviderKind === 'basic'"
+            class="auth-accounts"
+            data-testid="settings-auth-accounts"
+          >
+            <p class="settings-hint">{{ t('settings.auth.account.hint') }}</p>
+            <!-- Existing accounts: admin radio + name on one line, change-password +
+                 remove actions trailing on the same row. Password edit / removal both
+                 happen in modals (below) so the row stays a single compact line. -->
+            <div
+              v-for="acc in basicAccounts"
+              :key="acc.username"
+              class="auth-account-row"
+              data-testid="settings-auth-account-row"
+            >
+              <label class="auth-admin-pick">
+                <input
+                  type="radio"
+                  name="auth-admin"
+                  :checked="acc.username === basicAdminUsername"
+                  :disabled="!isAdmin"
+                  data-testid="settings-auth-admin-radio"
+                  @change="selectAdmin(acc.username)"
+                />
+                <span class="auth-account-name">{{ acc.username }}</span>
+                <span v-if="acc.username === basicAdminUsername" class="auth-admin-badge">{{
+                  t('settings.auth.admin.badge')
+                }}</span>
+              </label>
+              <div class="auth-account-actions">
+                <button
+                  class="icon-btn"
+                  :disabled="!isAdmin"
+                  data-testid="settings-auth-account-change"
+                  @click="startChangePassword(acc.username)"
+                >
+                  {{ t('settings.auth.password.change.label') }}
+                </button>
+                <button
+                  class="icon-btn"
+                  :disabled="!isAdmin"
+                  data-testid="settings-auth-account-remove"
+                  @click="startRemoveAccount(acc.username)"
+                >
+                  {{ t('settings.auth.account.remove.label') }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Add a new account — opens a modal. -->
+            <div class="auth-account-add-bar">
+              <button
+                class="agent-add"
+                :disabled="!isAdmin"
+                data-testid="settings-auth-add-account-open"
+                @click="startAddAccount"
+              >
+                {{ t('settings.auth.account.add.label') }}
               </button>
             </div>
           </div>
 
-          <!-- Add a new account — opens a modal. -->
-          <div class="auth-account-add-bar">
-            <button
-              class="agent-add"
-              :disabled="!isAdmin"
-              data-testid="settings-auth-add-account-open"
-              @click="startAddAccount"
-            >
-              {{ t('settings.auth.account.add.label') }}
-            </button>
-          </div>
+          <label class="consensus-toggle">
+            <input
+              type="checkbox"
+              :checked="exposureOn"
+              :disabled="!adminConfigured"
+              data-testid="settings-auth-exposure"
+              @change="setExposure(($event.target as HTMLInputElement).checked)"
+            />
+            {{ t('settings.auth.exposure.label') }}
+          </label>
+          <p class="settings-hint">
+            {{
+              adminConfigured
+                ? t('settings.auth.exposure.hint')
+                : t('settings.auth.exposure.needAdmin')
+            }}
+          </p>
+
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.auth.ttl.label') }}</span>
+            <input
+              class="agent-field"
+              type="number"
+              min="1"
+              step="1"
+              :value="authTtlDays"
+              data-testid="settings-auth-ttl"
+              @input="setAuthTtlDays(Number(($event.target as HTMLInputElement).value))"
+            />
+          </label>
+          <p class="settings-hint">{{ t('settings.auth.ttl.hint') }}</p>
+        </section>
+      </div>
+
+      <!-- ============ General tab ============ -->
+      <div
+        v-show="activeTab === 'general'"
+        class="settings-tab-panel"
+        role="tabpanel"
+        data-testid="settings-tab-general"
+      >
+        <div class="settings-tab-actions">
+          <span
+            v-if="tabDirtyMap.general"
+            class="settings-unsaved"
+            data-testid="settings-unsaved-general"
+            >{{ t('settings.tabs.unsaved.label') }}</span
+          >
+          <button
+            data-testid="settings-save-general"
+            :disabled="!isAdmin"
+            @click="saveTab('general')"
+          >
+            {{ t('common.action.save.label') }}
+          </button>
         </div>
 
-        <label class="consensus-toggle">
-          <input
-            type="checkbox"
-            :checked="exposureOn"
-            :disabled="!adminConfigured"
-            data-testid="settings-auth-exposure"
-            @change="setExposure(($event.target as HTMLInputElement).checked)"
-          />
-          {{ t('settings.auth.exposure.label') }}
-        </label>
-        <p class="settings-hint">
-          {{
-            adminConfigured
-              ? t('settings.auth.exposure.hint')
-              : t('settings.auth.exposure.needAdmin')
-          }}
-        </p>
+        <section class="settings-section">
+          <p class="settings-section-title">{{ t('settings.displayLang.title.label') }}</p>
+          <p class="settings-hint">{{ t('settings.displayLang.hint') }}</p>
+          <select
+            v-model="draft.uiLang"
+            class="lang-select mode-select"
+            data-testid="settings-ui-lang"
+            @change="onUiLangChange"
+          >
+            <option v-for="l in UI_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
+          </select>
+        </section>
 
-        <label class="auth-field">
-          <span class="auth-label">{{ t('settings.auth.ttl.label') }}</span>
+        <section class="settings-section">
+          <p class="settings-section-title">{{ t('settings.voiceLang.title.label') }}</p>
+          <p class="settings-hint">{{ t('settings.voiceLang.hint') }}</p>
+          <select v-model="draft.voiceLang" class="mode-select">
+            <option v-for="l in VOICE_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
+          </select>
+        </section>
+
+        <section class="settings-section">
+          <p class="settings-section-title">{{ t('settings.timezone.title.label') }}</p>
+          <p class="settings-hint">{{ t('settings.timezone.hint') }}</p>
+          <select v-model="draft.timezone" class="mode-select" data-testid="settings-timezone">
+            <option v-for="tz in TIMEZONES" :key="tz" :value="tz">{{ tz }}</option>
+          </select>
+        </section>
+
+        <section class="settings-section">
+          <p class="settings-section-title">{{ t('settings.baseUrl.title.label') }}</p>
+          <p class="settings-hint">{{ t('settings.baseUrl.hint') }}</p>
           <input
+            v-model="draft.baseUrl"
             class="agent-field"
-            type="number"
-            min="1"
-            step="1"
-            :value="authTtlDays"
-            data-testid="settings-auth-ttl"
-            @input="setAuthTtlDays(Number(($event.target as HTMLInputElement).value))"
+            :disabled="!isAdmin"
+            :placeholder="t('settings.baseUrl.placeholder')"
+            data-testid="settings-base-url"
           />
-        </label>
-        <p class="settings-hint">{{ t('settings.auth.ttl.hint') }}</p>
-      </section>
+        </section>
 
-      <section class="settings-section">
-        <p class="settings-section-title">{{ t('settings.displayLang.title.label') }}</p>
-        <p class="settings-hint">{{ t('settings.displayLang.hint') }}</p>
-        <select
-          v-model="draft.uiLang"
-          class="lang-select mode-select"
-          data-testid="settings-ui-lang"
-          @change="onUiLangChange"
-        >
-          <option v-for="l in UI_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
-        </select>
-      </section>
-
-      <section class="settings-section">
-        <p class="settings-section-title">{{ t('settings.voiceLang.title.label') }}</p>
-        <p class="settings-hint">{{ t('settings.voiceLang.hint') }}</p>
-        <select v-model="draft.voiceLang" class="mode-select">
-          <option v-for="l in VOICE_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
-        </select>
-      </section>
-
-      <section class="settings-section">
-        <p class="settings-section-title">{{ t('settings.timezone.title.label') }}</p>
-        <p class="settings-hint">{{ t('settings.timezone.hint') }}</p>
-        <select v-model="draft.timezone" class="mode-select" data-testid="settings-timezone">
-          <option v-for="tz in TIMEZONES" :key="tz" :value="tz">{{ tz }}</option>
-        </select>
-      </section>
-
-      <section class="settings-section">
-        <p class="settings-section-title">{{ t('settings.baseUrl.title.label') }}</p>
-        <p class="settings-hint">{{ t('settings.baseUrl.hint') }}</p>
-        <input
-          v-model="draft.baseUrl"
-          class="agent-field"
-          :disabled="!isAdmin"
-          :placeholder="t('settings.baseUrl.placeholder')"
-          data-testid="settings-base-url"
-        />
-      </section>
-
-      <section class="settings-section">
-        <p class="settings-section-title">{{ t('settings.display.title.label') }}</p>
-        <label class="consensus-toggle">
-          <input v-model="draft.showToolSessions" type="checkbox" />
-          {{ t('settings.display.showToolSessions.label') }}
-        </label>
-      </section>
-
-      <!-- Session subprocess proxy (2026-07-01-003) -->
-      <section class="settings-section" data-testid="settings-proxy">
-        <p class="settings-section-title">{{ t('settings.proxy.title.label') }}</p>
-        <label class="consensus-toggle">
-          <input
-            v-model="proxyCfg.enabled"
-            type="checkbox"
-            role="switch"
-            data-testid="settings-proxy-enabled"
-          />
-          {{ t('settings.proxy.toggle.label') }}
-        </label>
-        <p class="settings-hint">{{ t('settings.proxy.hint') }}</p>
-        <label class="auth-field">
-          <span class="auth-label">{{ t('settings.proxy.httpProxy.label') }}</span>
-          <input
-            v-model="proxyCfg.httpProxy"
-            class="agent-field"
-            type="url"
-            :disabled="!proxyCfg.enabled"
-            :placeholder="proxyCfg.enabled ? 'http://proxy.local:3128' : ''"
-            data-testid="settings-proxy-http"
-          />
-        </label>
-        <label class="auth-field">
-          <span class="auth-label">{{ t('settings.proxy.httpsProxy.label') }}</span>
-          <input
-            v-model="proxyCfg.httpsProxy"
-            class="agent-field"
-            type="url"
-            :disabled="!proxyCfg.enabled"
-            :placeholder="proxyCfg.enabled ? 'http://proxy.local:3128' : ''"
-            data-testid="settings-proxy-https"
-          />
-        </label>
-      </section>
+        <section class="settings-section">
+          <p class="settings-section-title">{{ t('settings.display.title.label') }}</p>
+          <label class="consensus-toggle">
+            <input v-model="draft.showToolSessions" type="checkbox" />
+            {{ t('settings.display.showToolSessions.label') }}
+          </label>
+        </section>
+      </div>
     </div>
+
     <div class="settings-foot">
-      <button class="ghost" @click="emit('close')">{{ t('common.action.cancel.label') }}</button>
-      <button data-testid="settings-save" :disabled="!isAdmin" @click="save">
-        {{ t('common.action.save.label') }}
+      <button class="ghost" data-testid="settings-close" @click="emit('close')">
+        {{ t('common.action.close.label') }}
       </button>
     </div>
+
+    <!-- Confirm leaving a tab with unsaved changes (the draft is kept, not lost). -->
+    <ConfirmDialog
+      :open="pendingTabSwitch !== null"
+      :title="t('settings.tabs.switch.confirm.title')"
+      :message="t('settings.tabs.switch.confirm.body')"
+      :confirm-label="t('settings.tabs.switch.confirm.confirm')"
+      :cancel-label="t('settings.tabs.switch.confirm.stay')"
+      @confirm="confirmTabSwitch"
+      @cancel="cancelTabSwitch"
+    />
 
     <!-- Add-account modal. -->
     <div

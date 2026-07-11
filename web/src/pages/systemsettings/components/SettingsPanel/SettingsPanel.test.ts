@@ -32,6 +32,23 @@ const baseSettings: SystemSettings = {
   maxSpeechChars: 400,
 }
 
+// The tab whose Save button drives each config block after the Tab grouping
+// refactor (2026-07-11-001). Every panel is rendered (v-show), so a control and
+// its tab's Save button are always in the DOM — a test can drive either without
+// activating the tab first.
+const SAVE = {
+  agent: '[data-testid="settings-save-agent"]',
+  runtime: '[data-testid="settings-save-runtime"]',
+  security: '[data-testid="settings-save-security"]',
+  general: '[data-testid="settings-save-general"]',
+} as const
+
+// `@vue/test-utils` `isVisible()` is unreliable for nested v-show in this env, but
+// v-show writes `display: none` inline — read that directly to check tab visibility.
+function panelHidden(w: ReturnType<typeof mount>, testid: string): boolean {
+  return (w.find(`[data-testid="${testid}"]`).attributes('style') ?? '').includes('display: none')
+}
+
 describe('SettingsPanel.vue — model input visibility by configMode (2026-07-02-001)', () => {
   const systemClaude: SystemSettings = {
     ...baseSettings,
@@ -99,7 +116,7 @@ describe('SettingsPanel.vue — model input visibility by configMode (2026-07-02
     const w = mount(SettingsPanel, { props: { open: true, settings: systemClaude } })
     const modelInput = w.findAll('.agent-model')[0] // first row = system
     await modelInput.setValue('claude-sonnet-5')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     const savedAgent = emitted[0][0].agents.find((a) => a.id === SYSTEM_AGENT_ID)
     expect(savedAgent?.config.model).toBe('claude-sonnet-5')
@@ -167,7 +184,7 @@ describe('SettingsPanel.vue — agent enable/disable', () => {
     const switches = w.findAll('[data-testid="agent-enabled-switch"]')
     await switches[1].setValue(false) // disable a1
     expect(switches[1].attributes('aria-checked')).toBe('false')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].agents.find((a) => a.id === 'a1')?.enabled).toBe(false)
   })
@@ -211,7 +228,7 @@ describe('SettingsPanel.vue — default-agent dropdown + fall-through (2026-06-1
     await checks[1].setValue(false)
     const sel = w.find('[data-testid="default-agent-select"]')
     expect((sel.element as HTMLSelectElement).value).toBe('a3')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].defaultAgentId).toBe('a3')
   })
@@ -222,7 +239,7 @@ describe('SettingsPanel.vue — default-agent dropdown + fall-through (2026-06-1
     await checks[0].setValue(false)
     await checks[1].setValue(false)
     await checks[2].setValue(false)
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].defaultAgentId).toBe(SYSTEM_AGENT_ID)
   })
@@ -263,7 +280,7 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     })
     const sel = w.find('[data-testid="intent-agent-select"]')
     expect((sel.element as HTMLSelectElement).value).toBe('a2')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].intentAgentId).toBe('a2')
   })
@@ -277,7 +294,7 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     await checks[1].setValue(false)
     const sel = w.find('[data-testid="intent-agent-select"]')
     expect((sel.element as HTMLSelectElement).value).toBe('')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].intentAgentId).toBe('')
   })
@@ -291,7 +308,7 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     await checks[1].setValue(false)
     const sel = w.find('[data-testid="intent-agent-select"]')
     expect((sel.element as HTMLSelectElement).value).toBe('a3')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].intentAgentId).toBe('a3')
   })
@@ -302,7 +319,7 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     })
     const sel = w.find('[data-testid="spec-agent-select"]')
     expect((sel.element as HTMLSelectElement).value).toBe('a2')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].specAgentId).toBe('a2')
   })
@@ -316,7 +333,7 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     await checks[1].setValue(false)
     const sel = w.find('[data-testid="spec-agent-select"]')
     expect((sel.element as HTMLSelectElement).value).toBe('')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].specAgentId).toBe('')
   })
@@ -330,7 +347,7 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     await checks[1].setValue(false)
     const sel = w.find('[data-testid="spec-agent-select"]')
     expect((sel.element as HTMLSelectElement).value).toBe('a3')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].specAgentId).toBe('a3')
   })
@@ -355,7 +372,7 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     })
     const sel = w.find('[data-testid="automation-agent-select"]')
     expect((sel.element as HTMLSelectElement).value).toBe('a2')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].automationAgentId).toBe('a2')
   })
@@ -369,7 +386,7 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     await checks[1].setValue(false)
     const sel = w.find('[data-testid="automation-agent-select"]')
     expect((sel.element as HTMLSelectElement).value).toBe('')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].automationAgentId).toBe('')
   })
@@ -383,7 +400,7 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     await checks[1].setValue(false)
     const sel = w.find('[data-testid="automation-agent-select"]')
     expect((sel.element as HTMLSelectElement).value).toBe('a3')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].automationAgentId).toBe('a3')
   })
@@ -421,10 +438,17 @@ describe('SettingsPanel.vue — UI display language', () => {
     expect(emitted[0][0]).toBe('en')
   })
 
-  it('carries the selected language into the Save payload', async () => {
+  it('the immediate UI-language switch does not mark the General tab dirty', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     await w.find('[data-testid="settings-ui-lang"]').setValue('en')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    // uiLang is persisted immediately; it must not linger as an unsaved General diff.
+    expect(w.find('[data-testid="settings-tab-dirty-general"]').exists()).toBe(false)
+  })
+
+  it('carries the selected language into the General Save payload', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-ui-lang"]').setValue('en')
+    await w.find(SAVE.general).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].uiLang).toBe('en')
   })
@@ -466,7 +490,7 @@ describe('SettingsPanel.vue — agent icon emoji picker', () => {
     expect(cells.length).toBeGreaterThan(0)
     const picked = cells[0].text()
     await cells[0].trigger('click')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].agents.find((a) => a.id === 'a1')?.icon).toBe(picked)
   })
@@ -491,20 +515,20 @@ describe('SettingsPanel.vue — time zone', () => {
     expect((select.element as HTMLSelectElement).value).toBe(browserTz)
   })
 
-  it('carries the selected timezone into the Save payload', async () => {
+  it('carries the selected timezone into the General Save payload', async () => {
     const w = mount(SettingsPanel, {
       props: { open: true, settings: { ...baseSettings, timezone: 'Asia/Shanghai' } },
     })
     await w.find('[data-testid="settings-timezone"]').setValue('America/New_York')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.general).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].timezone).toBe('America/New_York')
   })
 })
 
 describe('SettingsPanel.vue — pass-through fields survive Save (2026-06-08-003)', () => {
-  // The panel does not edit these fields, but it MUST carry them into the Save
-  // payload — dropping them is the "project config vanishes after restart" bug.
+  // The panel does not edit these fields, but every tab's Save MUST carry them into
+  // the payload — dropping them is the "project config vanishes after restart" bug.
   const withPassthrough: SystemSettings = {
     ...baseSettings,
     degradationChain: ['a1', SYSTEM_AGENT_ID],
@@ -517,7 +541,7 @@ describe('SettingsPanel.vue — pass-through fields survive Save (2026-06-08-003
 
   it('Save emits the original projectConfigs / degradationChain / socketAutoResume', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withPassthrough } })
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     const saved = emitted[0][0]
     expect(saved.projectConfigs).toEqual(withPassthrough.projectConfigs)
@@ -528,7 +552,7 @@ describe('SettingsPanel.vue — pass-through fields survive Save (2026-06-08-003
   it('keeps pass-through fields even when an edited field also changes', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withPassthrough } })
     await w.find('[data-testid="settings-timezone"]').setValue('America/New_York')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.general).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.timezone).toBe('America/New_York')
     expect(saved.projectConfigs).toEqual(withPassthrough.projectConfigs)
@@ -536,7 +560,7 @@ describe('SettingsPanel.vue — pass-through fields survive Save (2026-06-08-003
 
   it('deep-copies pass-through fields (emitted is a distinct object, not aliased)', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withPassthrough } })
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const emitted = (w.emitted('save') as [SystemSettings][])[0][0]
     // Same content, but a fresh copy — edits to the draft never mutate server state.
     expect(emitted.projectConfigs).not.toBe(withPassthrough.projectConfigs)
@@ -628,7 +652,7 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
   it('saves enabled:false + provider.kind "none" when no authentication is selected', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
     await w.find('[data-testid="settings-auth-provider"]').setValue('none')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.security).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.auth?.enabled).toBe(false)
     expect(saved.auth?.provider.kind).toBe('none')
@@ -636,7 +660,7 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
 
   it('saves enabled:true for basic once an admin is configured', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.security).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.auth?.enabled).toBe(true)
     expect(saved.auth?.provider.kind).toBe('basic')
@@ -730,7 +754,7 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
   it('carries an edited exposure bindAddress through on save', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
     await w.find('[data-testid="settings-auth-exposure"]').setValue(true)
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.security).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.auth?.exposure?.bindAddress).toBe('0.0.0.0')
   })
@@ -744,9 +768,19 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
   it('carries an edited session lifetime (days → seconds) through on save', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
     await w.find('[data-testid="settings-auth-ttl"]').setValue('45')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.security).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.auth?.session.ttlSeconds).toBe(45 * 24 * 60 * 60)
+  })
+
+  it('a normal Security Save never carries draft account mutations (accounts flow through dedicated messages)', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: withTwo } })
+    // Editing the TTL makes Security dirty, but the account set must round-trip
+    // untouched — account CRUD is owned by the server via dedicated messages.
+    await w.find('[data-testid="settings-auth-ttl"]').setValue('10')
+    await w.find(SAVE.security).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.auth?.provider).toEqual(withTwo.auth?.provider)
   })
 })
 
@@ -806,7 +840,7 @@ describe('SettingsPanel.vue — sandbox column header', () => {
       ],
     }
     const w = mount(SettingsPanel, { props: { open: true, settings: withBlankRow } })
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.runtime).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].sandboxes).toEqual([
       { name: 'docker-node', type: 'docker', image: 'node:20', seccomp: '', cpuLimit: 1 },
@@ -892,7 +926,7 @@ describe('SettingsPanel.vue — vendor CLI multi-version selection', () => {
     const radios = w.findAll('[data-testid="vendor-cli-version-claude"]')
     // 1.0.0 is the first installed-version radio.
     await radios[0].trigger('change')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.runtime).trigger('click')
     const saveEmit = w.emitted('save')
     expect(saveEmit).toBeTruthy()
     const emitted = (saveEmit![0][0] as SystemSettings).vendorCliVersions
@@ -903,7 +937,7 @@ describe('SettingsPanel.vue — vendor CLI multi-version selection', () => {
     const settings: SystemSettings = { ...baseSettings, vendorCliVersions: { claude: '1.0.0' } }
     const w = mount(SettingsPanel, { props: { open: true, settings, hostStatus } })
     await w.get('[data-testid="vendor-cli-auto-claude"]').trigger('change')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.runtime).trigger('click')
     const emitted = (w.emitted('save')![0][0] as SystemSettings).vendorCliVersions
     expect(emitted?.claude).toBeUndefined()
   })
@@ -948,7 +982,7 @@ describe('SettingsPanel.vue — drag-to-reorder agents (order_seq)', () => {
     await rows[2].find('[data-testid="agent-drag"]').trigger('dragstart')
     await rows[0].trigger('dragover')
     await rows[0].trigger('drop')
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.agents.map((a) => a.id)).toEqual(['a2', SYSTEM_AGENT_ID, 'a1'])
     expect(saved.agents.map((a) => a.order_seq)).toEqual([0, 1, 2])
@@ -956,7 +990,7 @@ describe('SettingsPanel.vue — drag-to-reorder agents (order_seq)', () => {
 
   it('Save stamps order_seq from array order even without any drag', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.agents.map((a) => a.order_seq)).toEqual([0, 1, 2])
   })
@@ -968,23 +1002,251 @@ describe('SettingsPanel.vue — non-admin is read-only (ADR-0023 authz)', () => 
   // the flag never leaks into other suites.
   afterEach(() => auth.setIsAdmin(true))
 
-  it('admin (default): no read-only notice and Save is enabled', () => {
+  it('admin (default): no read-only notice and every tab Save is enabled', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     expect(w.find('[data-testid="settings-readonly-notice"]').exists()).toBe(false)
-    expect(w.find('[data-testid="settings-save"]').attributes('disabled')).toBeUndefined()
+    for (const sel of Object.values(SAVE)) {
+      expect(w.find(sel).attributes('disabled')).toBeUndefined()
+    }
   })
 
-  it('non-admin: shows the read-only notice and disables Save', () => {
+  it('non-admin: shows the read-only notice and disables every tab Save', () => {
     auth.setIsAdmin(false)
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     expect(w.find('[data-testid="settings-readonly-notice"]').exists()).toBe(true)
-    expect(w.find('[data-testid="settings-save"]').attributes('disabled')).toBeDefined()
+    for (const sel of Object.values(SAVE)) {
+      expect(w.find(sel).attributes('disabled')).toBeDefined()
+    }
   })
 
-  it('non-admin: clicking Save emits nothing (the handler is guarded too)', async () => {
+  it('non-admin: clicking any tab Save emits nothing (handlers are guarded too)', async () => {
     auth.setIsAdmin(false)
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    await w.find('[data-testid="settings-save"]').trigger('click')
+    for (const sel of Object.values(SAVE)) {
+      await w.find(sel).trigger('click')
+    }
     expect(w.emitted('save')).toBeUndefined()
+  })
+
+  it('non-admin: account-management controls are disabled', () => {
+    auth.setIsAdmin(false)
+    const withBasic: SystemSettings = {
+      ...baseSettings,
+      auth: {
+        enabled: true,
+        provider: {
+          kind: 'basic',
+          accounts: [{ username: 'admin', passwordHash: '$scrypt$x' }],
+          adminUsername: 'admin',
+        },
+        session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' },
+      },
+    }
+    const w = mount(SettingsPanel, { props: { open: true, settings: withBasic } })
+    expect(
+      (w.find('[data-testid="settings-auth-add-account-open"]').element as HTMLButtonElement)
+        .disabled,
+    ).toBe(true)
+    expect(
+      (w.find('[data-testid="settings-auth-admin-radio"]').element as HTMLInputElement).disabled,
+    ).toBe(true)
+  })
+})
+
+describe('SettingsPanel.vue — Tab grouping (2026-07-11-001)', () => {
+  it('renders exactly four tabs in order: Agent, Runtime, Security, General', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const labels = w
+      .findAll('[data-testid="settings-tabs"] .settings-tab span')
+      .map((s) => s.text())
+    // Each tab has a label span (and an optional dirty dot span); take the label texts.
+    const tabButtons = w.findAll('[data-testid^="settings-tab-btn-"]')
+    expect(tabButtons).toHaveLength(4)
+    expect(labels.slice(0, 4)).toEqual(['Agent', 'Runtime', 'Security', 'General'])
+  })
+
+  it('assigns every config block to exactly one tab panel', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    // Marker testids that uniquely identify each config block, and the panel each
+    // must live under.
+    const membership: Record<string, string> = {
+      'settings-add-agent': 'settings-tab-agent',
+      'default-agent-select': 'settings-tab-agent',
+      'settings-diagnostics': 'settings-tab-runtime',
+      'settings-vendor-cli': 'settings-tab-runtime',
+      'settings-sandboxes': 'settings-tab-runtime',
+      'settings-proxy': 'settings-tab-runtime',
+      'settings-auth': 'settings-tab-security',
+      'settings-ui-lang': 'settings-tab-general',
+      'settings-timezone': 'settings-tab-general',
+      'settings-base-url': 'settings-tab-general',
+    }
+    for (const [block, panel] of Object.entries(membership)) {
+      // Appears exactly once across the whole panel (no duplication).
+      expect(w.findAll(`[data-testid="${block}"]`)).toHaveLength(1)
+      // And it lives under its designated tab panel.
+      expect(w.find(`[data-testid="${panel}"] [data-testid="${block}"]`).exists()).toBe(true)
+    }
+  })
+
+  it('defaults to the Agent tab and switches to a clean tab without confirmation', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    // Agent panel visible; others hidden (v-show).
+    expect(panelHidden(w, 'settings-tab-agent')).toBe(false)
+    expect(panelHidden(w, 'settings-tab-runtime')).toBe(true)
+    await w.find('[data-testid="settings-tab-btn-runtime"]').trigger('click')
+    // No dirty edits ⇒ immediate switch, no confirm dialog.
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
+    expect(panelHidden(w, 'settings-tab-runtime')).toBe(false)
+    expect(panelHidden(w, 'settings-tab-agent')).toBe(true)
+  })
+
+  it('the tab bar scrolls horizontally so all tabs stay reachable on mobile', () => {
+    const css = readFileSync(resolve(process.cwd(), 'web/src/style.css'), 'utf8')
+    expect(css).toMatch(/\.settings-tabs \{[^}]*overflow-x:\s*auto;/)
+  })
+})
+
+describe('SettingsPanel.vue — per-tab dirty state (2026-07-11-001)', () => {
+  it('marks only the edited tab dirty, and clears it after that tab saves', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    // Clean at first: no dirty dots anywhere.
+    expect(w.find('[data-testid="settings-tab-dirty-general"]').exists()).toBe(false)
+    // Edit a General field.
+    await w.find('[data-testid="settings-timezone"]').setValue('America/New_York')
+    expect(w.find('[data-testid="settings-tab-dirty-general"]').exists()).toBe(true)
+    // Other tabs stay clean.
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(false)
+    expect(w.find('[data-testid="settings-tab-dirty-runtime"]').exists()).toBe(false)
+    // Save General, then simulate the server echo (settings pushback).
+    await w.find(SAVE.general).trigger('click')
+    await w.setProps({ settings: { ...baseSettings, timezone: 'America/New_York' } })
+    expect(w.find('[data-testid="settings-tab-dirty-general"]').exists()).toBe(false)
+  })
+
+  it('detects structural edits (adding an agent) as dirty', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(false)
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
+  })
+
+  it('detects a live proxy toggle (Runtime) as dirty', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    expect(w.find('[data-testid="settings-tab-dirty-runtime"]').exists()).toBe(false)
+    await w.find('[data-testid="settings-proxy-enabled"]').setValue(true)
+    expect(w.find('[data-testid="settings-tab-dirty-runtime"]').exists()).toBe(true)
+  })
+})
+
+describe('SettingsPanel.vue — independent per-tab save (2026-07-11-001)', () => {
+  it('saving one tab emits only that tab’s new values; the other tab uses the committed value', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...baseSettings, timezone: 'Asia/Shanghai' } },
+    })
+    // Edit BOTH the Agent tab (add an agent) and the General tab (timezone).
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    await w.find('[data-testid="settings-timezone"]').setValue('America/New_York')
+    // Save only General.
+    await w.find(SAVE.general).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    // General's new value is present…
+    expect(saved.timezone).toBe('America/New_York')
+    // …but the Agent draft (2 agents) is NOT committed — the payload keeps the
+    // committed single agent.
+    expect(saved.agents).toHaveLength(1)
+    expect(saved.agents[0].id).toBe(SYSTEM_AGENT_ID)
+  })
+
+  it('after the saved tab’s server echo, the other dirty tab keeps its draft and dirty flag', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...baseSettings, timezone: 'Asia/Shanghai' } },
+    })
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    await w.find('[data-testid="settings-timezone"]').setValue('America/New_York')
+    expect(w.findAll('[data-testid="agent-card"]')).toHaveLength(2)
+
+    await w.find(SAVE.general).trigger('click')
+    // Server echoes the General save (timezone applied, agents unchanged).
+    await w.setProps({ settings: { ...baseSettings, timezone: 'America/New_York' } })
+
+    // General is now clean…
+    expect(w.find('[data-testid="settings-tab-dirty-general"]').exists()).toBe(false)
+    // …while the Agent tab keeps its unsaved draft (still 2 agents) and stays dirty.
+    expect(w.findAll('[data-testid="agent-card"]')).toHaveLength(2)
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
+  })
+
+  it('an account-operation pushback refreshes accounts without reseeding other tabs’ drafts', async () => {
+    const H = '$scrypt$x'
+    const withOne: SystemSettings = {
+      ...baseSettings,
+      auth: {
+        enabled: true,
+        provider: {
+          kind: 'basic',
+          accounts: [{ username: 'a', passwordHash: H }],
+          adminUsername: 'a',
+        },
+        session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_KEY' },
+      },
+    }
+    const w = mount(SettingsPanel, { props: { open: true, settings: withOne } })
+    // Dirty the Agent tab.
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    expect(w.findAll('[data-testid="agent-card"]')).toHaveLength(2)
+    // A dedicated account message adds 'b' → the server pushes updated settings.
+    const withTwo: SystemSettings = {
+      ...withOne,
+      auth: {
+        ...withOne.auth!,
+        provider: {
+          kind: 'basic',
+          accounts: [
+            { username: 'a', passwordHash: H },
+            { username: 'b', passwordHash: H },
+          ],
+          adminUsername: 'a',
+        },
+      },
+    }
+    await w.setProps({ settings: withTwo })
+    // Security reflects the new account list…
+    expect(w.findAll('[data-testid="settings-auth-account-row"]')).toHaveLength(2)
+    // …and the Agent draft survives the pushback (not reseeded back to 1 agent).
+    expect(w.findAll('[data-testid="agent-card"]')).toHaveLength(2)
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
+  })
+})
+
+describe('SettingsPanel.vue — dirty-tab switch confirmation (2026-07-11-001)', () => {
+  it('cancelling the confirm keeps the current tab and its draft', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-add-agent"]').trigger('click') // dirty Agent
+    await w.find('[data-testid="settings-tab-btn-general"]').trigger('click')
+    // Confirm appears; still on Agent.
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(true)
+    expect(panelHidden(w, 'settings-tab-agent')).toBe(false)
+    await w.find('[data-testid="confirm-cancel"]').trigger('click')
+    // Stayed on Agent, draft intact.
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
+    expect(panelHidden(w, 'settings-tab-agent')).toBe(false)
+    expect(w.findAll('[data-testid="agent-card"]')).toHaveLength(2)
+  })
+
+  it('confirming switches tabs and preserves the leaving tab’s draft for later editing', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-add-agent"]').trigger('click') // dirty Agent
+    await w.find('[data-testid="settings-tab-btn-general"]').trigger('click')
+    await w.find('[data-testid="confirm-accept"]').trigger('click')
+    // Switched to General.
+    expect(panelHidden(w, 'settings-tab-general')).toBe(false)
+    expect(panelHidden(w, 'settings-tab-agent')).toBe(true)
+    // Agent draft neither saved nor discarded: it is still dirty and editable.
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
+    expect(w.emitted('save')).toBeUndefined()
+    // Returning to Agent (clean General ⇒ no confirm) shows the retained draft.
+    await w.find('[data-testid="settings-tab-btn-agent"]').trigger('click')
+    expect(w.findAll('[data-testid="agent-card"]')).toHaveLength(2)
   })
 })

@@ -2781,6 +2781,65 @@ button.deny:hover:not(:disabled) {
   border-top: 1px solid var(--c-border);
 }
 
+/* ---- Tab navigation (2026-07-11-001) ---- */
+/* Visible tab bar under the header; scrolls horizontally on narrow screens so all
+   four tabs stay reachable without wrapping. */
+.settings-tabs {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-8);
+  border-bottom: 1px solid var(--c-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.settings-tabs::-webkit-scrollbar {
+  display: none;
+}
+.settings-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 0 auto;
+  height: 40px;
+  padding: 0 var(--sp-4);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--c-text-muted);
+  font-size: var(--fs-code);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.settings-tab:hover:not(:disabled) {
+  filter: none;
+  color: var(--c-text);
+}
+.settings-tab.active {
+  color: var(--c-text);
+  border-bottom-color: var(--c-primary);
+}
+/* Unsaved-changes marker on a tab. */
+.settings-tab-dot {
+  color: var(--c-warning);
+  font-size: 0.6em;
+  line-height: 1;
+}
+/* Per-tab Save row: right-aligned save button + optional unsaved-changes label. */
+.settings-tab-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.settings-unsaved {
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+
 .settings-body {
   flex: 1;
   overflow-y: auto;
@@ -3241,6 +3300,12 @@ button.deny:hover:not(:disabled) {
 
   .settings-head h2 {
     font-size: var(--fs-title);
+  }
+
+  /* Tab bar: tighten padding; it already scrolls horizontally so all tabs stay
+     reachable on a phone without wrapping. */
+  .settings-tabs {
+    padding: 0 var(--sp-4);
   }
 
   .settings-body {

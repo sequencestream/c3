@@ -57,9 +57,11 @@ export function installSettingsActions(ctx: AppCtx): void {
     send({ type: 'install_skill', workspaceId: path, skillId })
   }
 
+  // Persist system settings. The panel now saves per-tab and stays open so the
+  // saved tab can reflect the server-normalized echo while other tabs keep their
+  // unsaved drafts (2026-07-11-001).
   ctx.saveSettings = (settings: SystemSettings): void => {
     send({ type: 'save_settings', settings })
-    settingsOpen.value = false
   }
 
   /** Set/change the admin password (ADR-0023). Plaintext is sent once and hashed

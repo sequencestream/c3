@@ -47,13 +47,17 @@
  * `namespace` field.
  */
 import { describe, it, expect } from 'vitest'
-import { responsesRequestToChat, type ResponsesRequest } from './translate.js'
+import {
+  responsesRequestToChat,
+  type ResponsesRequest,
+  type ResponsesInputItem,
+} from './translate.js'
 
 /**
  * A namespaced tool call as codex serializes it into `input[]` on replay: a
  * `function_call` whose `namespace` names the tool group it was dispatched through.
  */
-function namespacedFunctionCall(index: number): Record<string, unknown> {
+function namespacedFunctionCall(index: number): ResponsesInputItem {
   return {
     type: 'function_call',
     id: `fc_${index}`,
@@ -66,8 +70,8 @@ function namespacedFunctionCall(index: number): Record<string, unknown> {
 }
 
 /** A codex history whose 26th item (index 25) is a namespaced tool call. */
-function historyWithNamespacedCallAt25(): Record<string, unknown>[] {
-  const input: Record<string, unknown>[] = []
+function historyWithNamespacedCallAt25(): ResponsesInputItem[] {
+  const input: ResponsesInputItem[] = []
   input.push({ type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'sys' }] })
   for (let i = 1; i < 25; i++) {
     input.push({

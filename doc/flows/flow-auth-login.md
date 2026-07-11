@@ -1,16 +1,15 @@
 # Flow — Auth 登录门
 
-**场景。** 一个连接在驱动智能体之前,必须先完成身份认证。这是把 c3 暴露到 localhost 之外的强制
-前置条件(constitution C-SEC-5,ADR-0023)。
+**场景。** 当启用认证时,一个连接在驱动智能体之前必须先完成身份认证。认证是一项可选能力——
+是否启用、以及是否把 c3 暴露到网络,由使用者决定(ADR-0023)。
 
 **领域。** auth · web-console · system-config。
 
 > **状态:部分运行时已上线(2026-06-16)。** 边界与契约以及一个 **`basic` 提供方**已上线
 > (真实的 scrypt-PHC 哈希、真实的 `login` 校验、多账号 + 唯一管理员管理)。
-> **仍延后:** 令牌签名/校验、请求级别的 auth 中间件,以及
-> “启用 auth ⇒ 才可绑定非本地回环地址”的强制执行——因此服务器的绑定地址**保持不变,仍仅限
-> localhost**。参见 [auth-overview](../domains/core/auth/auth-overview.md) 的 _Roadmap(路线图)_
-> 一节。本流程记录已上线的部分,并在行内标注延后的步骤。
+> **仍延后:** 令牌签名/校验、请求级别的 auth 中间件,以及把 `exposure.bindAddress`
+> 接入服务端实际绑定的运行时应用。参见 [auth-overview](../domains/core/auth/auth-overview.md)
+> 的 _Roadmap(路线图)_ 一节。本流程记录已上线的部分,并在行内标注延后的步骤。
 
 ## 流程图
 
@@ -22,8 +21,8 @@ flowchart TD
     LOGIN -- ok --> TOK[issue session token<br/>signing deferred]
     LOGIN -- fail --> UA[unauthenticated · 401 analogue]
     TOK --> EXP{non-loopback exposure?}
-    EXP -- yes --> NEED[requires enabled auth<br/>runtime enforcement deferred]
-    EXP -- no --> LOOP[localhost-only default]
+    EXP -- yes --> NEED[recommend enabling auth<br/>binding runtime not wired yet]
+    EXP -- no --> LOOP[loopback default 127.0.0.1]
 ```
 
 ## 配置账号 + 唯一管理员(引导阶段)
@@ -36,7 +35,7 @@ flowchart TD
    (没有 RBAC)。
 2. **改密码门。** 修改一个既有账号的密码需要先证明该账号的当前密码正确
    (`currentPassword` 会与其存储的哈希做校验)⇒ 不匹配则返回 `not_authenticated`
-   (`AUTH-R8`)。新增账号则豁免此要求——localhost-only 的默认设定信任本地操作者
+   (`AUTH-R8`)。新增账号则豁免此要求——引导阶段信任本地操作者
    (请求级别的鉴权尚在延后)。
 3. **唯一管理员的完整性。** `set_admin_account { username }` 指定唯一的管理员；
    `remove_account { username }` 删除一个账号,但拒绝让管理员引用变成孤儿——若还有其他账号
@@ -58,16 +57,16 @@ flowchart TD
 3. **未认证。** `unauthenticated` 是 WS 层面对 HTTP 401 的对应；`logout` 结束一个会话。
    **请求级别的强制执行尚在延后**——目前这道门只在 UI 层面生效。
 
-## 暴露前置条件
+## 网络暴露
 
-一个非本地回环的 `exposure.bindAddress`(例如 `0.0.0.0`)表达了要把 c3 暴露到网络的意图,这**要求**
-必须先启用 auth(`AUTH-R6`,C-SEC-5)。目前面板只在 UI 层面门控该开关(必须先配置好管理员才能
-启用暴露)；**绑定放宽的运行时强制执行尚在延后**——服务器仍然只绑定 localhost。
+`exposure.bindAddress` 记录服务端绑定地址;是否把 c3 暴露到网络由使用者决定。当配置为非本地回环
+地址(例如 `0.0.0.0`)时,面板建议先启用 auth,并把暴露开关放在「已配置管理员」之后(必须先配置好
+管理员才能在面板里开启暴露,`AUTH-R6`)。**绑定地址的运行时应用尚未接入设置面板。**
 
 ## 分支与异常(反面场景)
 
 - **默认 = 禁用,失败要软处理。** `SystemSettings.auth` 缺失 / `enabled: false` / 某个提供方
-  校验失败 ⇒ “无 auth”,即 localhost-only 的默认设定。配置归一化会把一个畸形的 `auth` 块
+  校验失败 ⇒ “无 auth”,即默认设定。配置归一化会把一个畸形的 `auth` 块
   丢弃为缺失状态,且从不抛出异常——一份无效配置绝不能把用户锁在外面,也绝不能导致启动失败
   (`AUTH-R1`)。
 - **向后兼容。** 一份没有 `auth` 字段的既有设置存储会以相同的(无 auth)行为原样往返

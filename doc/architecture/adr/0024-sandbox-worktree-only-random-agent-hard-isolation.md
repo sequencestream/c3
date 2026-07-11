@@ -103,10 +103,9 @@ host loopback，到不了 host relay。
 - **Q1-A：relay 不放宽监听面**。容器经 Docker `host.docker.internal`（host-gateway）回连 host loopback relay，
   relay 本身仍只挂主 app；**零新网络暴露**。Docker Desktop 直通 host loopback（支持的目标路径）；Linux 原生只到
   bridge 网关，正式支持留待**方案二（容器内 relay sidecar）**，本期列为已知限制（codex-relay.md §2.6/§6）。
-- **Q2-B：F1 仅记录、本期不动 bind**。发现主 server 监听未传 hostname → Node 绑 `0.0.0.0`，与
-  constitution C-SEC-5（localhost-only）冲突、且使 relay「loopback-only」防御层在当前代码里为假。这是**独立于本任务
-  的既有偏差**，记为 finding（codex-relay.md §2.7/§6 限制 9），建议单独修为绑 `127.0.0.1`；本任务刻意不依赖
-  该 0.0.0.0 行为。
+- **Q2-B：主 server 绑定面仅记录、本期不动 bind**。主 server 监听未传 hostname → Node 绑 `0.0.0.0`；绑定地址
+  由使用者决定，当主 server 绑定回环时 relay「loopback-only」防御层才成立。记为说明（codex-relay.md §2.7/§6 限制 9）；
+  本任务刻意不依赖该 0.0.0.0 行为。
 
 **落地**：
 

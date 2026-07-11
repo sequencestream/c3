@@ -492,7 +492,7 @@ adapter 路径运行。
   intent / pr-event 路由的 codex 孪生版本。分发器为**一次**执行 `bind()` 该路由——铸造
   一个携带在 URL query 中的不透明的按执行 token——并把生成的 `c3` HTTP 描述符
   (带有**完整**的 enabledTools 列表,因为 codex 会把每个启用的工具标记为 required/approved)交给
-  `driver.start({ mcpServers })`。该路由在 c3 仅限本地回环绑定之上再加了一层回环保护;
+  `driver.start({ mcpServers })`。该路由自身只监听本地回环并再加一层回环保护;
   一个未知或已被驱逐的 token 返回 404,一个非回环的对端返回 403。该 token 会在**每一条**
   终止路径上(成功、driver 抛出异常、消息迭代抛出异常、超时)被销毁,因此
   执行结束后工具无法再被调用;下一次执行会铸造一个全新的 token、服务器与闭包。

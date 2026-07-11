@@ -263,7 +263,7 @@ claude 查找(带记忆化):若设置了 `$CLAUDE_PATH` 则用它,否则 `comman
   AS-R8);重连通过 baseline + buffer 回放。
 - **错误暴露** 从不静默(AVAIL-1, AS-R7)。
 - **不持久化运行/权限状态** ——在注册表中内存态(SEC-2);buffer 不
-  被淘汰(对本地单用户工具而言可接受)。会话连续性来自 SDK 转录
+  被淘汰(在当前使用规模下可接受)。会话连续性来自 SDK 转录
   存储(通过 `resume`);工作区/会话注册表由
   [session-registry](../session-registry/session-registry-design.md) 持久化(ADR 0004)。
 

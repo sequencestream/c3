@@ -29,12 +29,11 @@ const repoRoot = resolve(serverDir, '..')
 
 // Friendly target name → Bun --target triple.
 //   P0 wave: macOS-arm64 + Linux-x64-glibc.
-//   P1 wave (release 4/7): macOS-x64 (Intel) + Windows-x64 (ships ⚠️experimental).
+//   Experimental: Windows-x64 (ships ⚠️experimental).
 // Keep in sync with KNOWN_TARGETS in scripts/release/targets.mjs.
 export const TARGETS = {
   'macos-arm64': 'bun-darwin-arm64',
   'linux-x64': 'bun-linux-x64',
-  'macos-x64': 'bun-darwin-x64',
   'windows-x64': 'bun-windows-x64',
 }
 

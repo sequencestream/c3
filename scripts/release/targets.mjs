@@ -6,19 +6,17 @@
 // Keep `KNOWN_TARGETS` in sync with `TARGETS` in server/scripts/release/build-target.mjs.
 
 /**
- * The P0 wave (release 6/7): macOS-arm64 + macOS-x64 (Intel) + Linux-x64-glibc.
- * Every release MUST ship all of these. macos-x64 was promoted from P1 in release
- * 6/7 because the GH Actions native matrix runs it on a real macos-13 (Intel) runner
- * and the headless smoke is green there — see specs/non-functional/release.md.
+ * The P0 wave: macOS-arm64 + Linux-x64-glibc. Every release MUST ship all of these.
+ * The GH Actions native matrix builds each on its own OS runner with a green headless
+ * smoke — see doc/non-functional/release.md.
  */
-export const P0_TARGETS = ['macos-arm64', 'macos-x64', 'linux-x64']
+export const P0_TARGETS = ['macos-arm64', 'linux-x64']
 
 /**
- * The P1 wave (release 4/7, narrowed in 6/7): additive platforms still in queue.
- * NOT required for a release — a P1 absence never blocks publish (postgate gates
- * only on P0). Empty since release 6/7 because macos-x64 was promoted to P0;
- * the slot is reserved for the next de-experimental candidate (windows-x64 once
- * a real windows-latest smoke is green).
+ * The P1 wave: additive platforms still in queue. NOT required for a release —
+ * a P1 absence never blocks publish (postgate gates only on P0). Empty; the slot
+ * is reserved for the next de-experimental candidate (windows-x64 once a real
+ * windows-latest smoke is green).
  */
 export const P1_TARGETS = []
 

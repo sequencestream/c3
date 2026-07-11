@@ -54,20 +54,24 @@ describe('merge-dist', () => {
         target: 'macos-arm64',
         pkgFile: 'c3-v0.1.0-macos-arm64.tar.gz',
       },
-      { artifactName: 'c3-macos-x64', target: 'macos-x64', pkgFile: 'c3-v0.1.0-macos-x64.tar.gz' },
+      {
+        artifactName: 'c3-windows-x64',
+        target: 'windows-x64',
+        pkgFile: 'c3-v0.1.0-windows-x64.zip',
+      },
     ]
     const written = p0.map((t) => writeTargetSubdir(root, t))
 
     const { manifestPath, sumsPath, targets } = mergeDist({ distDir: root })
 
-    expect(targets.sort()).toEqual(['linux-x64', 'macos-arm64', 'macos-x64'])
+    expect(targets.sort()).toEqual(['linux-x64', 'macos-arm64', 'windows-x64'])
 
     // Merged manifest has all three targets.
     const merged = JSON.parse(readFileSync(manifestPath, 'utf-8'))
     expect(merged.artifacts.map((a) => a.target).sort()).toEqual([
       'linux-x64',
       'macos-arm64',
-      'macos-x64',
+      'windows-x64',
     ])
     expect(merged.commit).toBe(COMMIT)
     expect(merged.version).toBe(VERSION)
@@ -88,7 +92,6 @@ describe('merge-dist', () => {
         target: 'macos-arm64',
         pkgFile: 'c3-v0.1.0-macos-arm64.tar.gz',
       },
-      { artifactName: 'c3-macos-x64', target: 'macos-x64', pkgFile: 'c3-v0.1.0-macos-x64.tar.gz' },
     ].forEach((t) => writeTargetSubdir(root, t))
 
     const { manifestPath } = mergeDist({ distDir: root })

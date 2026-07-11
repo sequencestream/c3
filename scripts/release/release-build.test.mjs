@@ -76,7 +76,6 @@ describe('build-target primitive', () => {
     // The package (the distribution unit) carries the version + platform info.
     expect(defaultOutfile('macos-arm64').endsWith('/dist/macos-arm64/c3')).toBe(true)
     expect(defaultOutfile('linux-x64').endsWith('/dist/linux-x64/c3')).toBe(true)
-    expect(defaultOutfile('macos-x64').endsWith('/dist/macos-x64/c3')).toBe(true)
     expect(defaultOutfile('windows-x64').endsWith('/dist/windows-x64/c3.exe')).toBe(true)
   })
 })

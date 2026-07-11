@@ -11,11 +11,10 @@
 >
 > - manifest 框架(2/7),分发信任 — SHA256SUMS + sha256 校验和 +
 >   macOS ad-hoc(3/7),**分层质量门禁** — 构建前阻塞门禁 +
->   制品级无头冒烟测试 + 发布终检(5/7),**P1 平台波次 +
->   Windows 分支** — 矩阵中的 macOS-x64 + Windows-x64,Windows 平台代码路径
+>   制品级无头冒烟测试 + 发布终检(5/7),**Windows 分支** — 矩阵中的
+>   Windows-x64,Windows 平台代码路径
 >   (4/7),**GH Actions 原生矩阵** — 用 `needs:` 链物理强制
->   门禁顺序,macOS ad-hoc 代码签名真实运行在 darwin runner 上,通过 OIDC 无密钥方式的 SLSA 溯源
->   (P1),`macos-x64` 从 P1 晋升为 P0(6/7) — 以及
+>   门禁顺序,macOS ad-hoc 代码签名真实运行在 darwin runner 上,通过 OIDC 无密钥方式的 SLSA 溯源 — 以及
 >   **二进制文件与包拆分(8/7)** — 二进制文件始终命名为 `c3`(Windows 上为 `c3.exe`);版本 + 平台信息只存在于包文件名中
 >   (`c3-v{version}-{target}{.tar.gz|.zip}`);manifest `v1.2` 为每个制品新增 `binary` + `binarySha256`
 >   字段 — 均已上线。macOS 公证(Developer ID + notarytool)与 Windows
@@ -119,25 +118,24 @@ husky/lint-staged 守护的是 **commit 级增量**;release 门禁守护的是**
 GH Actions release workflow 在真实的 GH Actions runner 上执行五层门禁顺序,
 并用 `needs:` **物理**强制阶段顺序——上游任务一红,所有下游任务全部跳过。这正是
 解锁 macOS ad-hoc + SLSA 收益的关键(见下文「SLSA 溯源」):每个目标都构建在自己的
-**原生操作系统 runner** 上(`ubuntu-latest` / `macos-14` / `macos-13` / `windows-latest`),
+**原生操作系统 runner** 上(`ubuntu-latest` / `macos-14` / `windows-latest`),
 因此跨平台编译不再是问题。(字节码本来也会是仅原生才有的收益,但它已被禁用——见
 下文「字节码 — 已禁用」。)
 
 ```text
 setup (ubuntu-latest)
-  └─ 解析 targets(默认:全部 4 个)+ version → outputs.{targets,version}
+  └─ 解析 version → outputs.{version,batch}(目标固定,每次构建全部)
 pregate (ubuntu-latest)
   └─ typecheck → lint → test → i18n:check → i18n:check-freeze
-build:linux-x64      (ubuntu-latest)     needs: [pregate, setup]   if: contains(targets,'linux-x64')
-build:macos-arm64    (macos-14)          needs: [pregate, setup]   if: contains(targets,'macos-arm64')
-build:macos-x64      (macos-13)          needs: [pregate, setup]   if: contains(targets,'macos-x64')
-build:windows-x64    (windows-latest)    needs: [pregate, setup]   if: contains(targets,'windows-x64')  ⚠️experimental
+build:linux-x64      (ubuntu-latest)     needs: [pregate, setup]
+build:macos-arm64    (macos-14)          needs: [pregate, setup]
+build:windows-x64    (windows-latest)    needs: [pregate, setup]   ⚠️experimental
   └─ pnpm release:build --targets=<one> --skip-smoke   (env C3_RELEASE_VERSION=<version>)
   └─ 在 darwin runner 上做 ad-hoc codesign(在 linux/windows 上是空操作)
   └─ actions/upload-artifact@v4 → c3-<target>(上传的是包的 sidecar,而非二进制文件本身)
 smoke:<target>       (same OS as build)  needs: [build:<target>]
   └─ pnpm release:smoke --file=<artifact>  (--version + 无头 HTTP 探测)
-verify-dist          (ubuntu-latest)     needs: [setup, smoke:{linux,macos-arm64,macos-x64,windows}-x64]
+verify-dist          (ubuntu-latest)     needs: [setup, smoke:{linux,macos-arm64,windows}-x64]
   └─ if: !cancelled()  (被排除的目标是 SKIPPED,不是红——发布门禁才是真正的关卡)
   └─ 下载制品(按目标分子目录,NO merge-multiple)→ 合并 → 发布门禁
      (每个 build 任务各自产出自己的 manifest;merge-multiple 会让它们互相覆盖,
@@ -153,11 +151,8 @@ publish              (ubuntu-latest)     needs: [setup, provenance]    if: !canc
 
 来自 `needs:` + `if:` 的阶段顺序保证:
 
-- 红色的 `pregate` 会跳过全部四个 `build:` 任务(不会在红色源码树上尝试跨平台编译)。
-- **被排除的**目标(不在 `setup.outputs.targets` 中)会让它的 `build:`/`smoke:` 任务
-  **被跳过而非变红**;`verify-dist` 仍会运行(`if: !cancelled()`),发布门禁只
-  强制**已选中**的 P0 子集,所以本次发布可以在没有该平台的情况下继续切割(运营者主动选择退出)。
-- 一个**已选中的必需**目标出现红色的 `build:<target>` ⇒ 它的制品在重新聚合的制品集合中
+- 红色的 `pregate` 会跳过全部三个 `build:` 任务(不会在红色源码树上尝试跨平台编译)。
+- 一个**必需**目标出现红色的 `build:<target>` ⇒ 它的制品在重新聚合的制品集合中
   缺席 ⇒ 发布门禁会因缺少必需目标而中止 `verify-dist`。
 - 红色的 `verify-dist` ⇒ `failure()` ⇒ `provenance` 和 `publish` 都跳过(不打 tag,不跑 `gh`)。
 - 红色的 `provenance` ⇒ `failure()` ⇒ `publish` 跳过。
@@ -168,12 +163,9 @@ publish              (ubuntu-latest)     needs: [setup, provenance]    if: !canc
 - **`version`** — 显式的发布版本,例如 `v0.1.0`。会作为 `C3_RELEASE_VERSION` 传递给每个
   build + publish 任务(覆盖 `git describe`;见「版本单一真源」)。为空 ⇒ 从
   git tag 推导(`push tags` 路径总是留空)。
-- **`targets`** — 逗号分隔的构建子集(默认 = 全部四个:
-  `linux-x64,macos-arm64,macos-x64,windows-x64`)。排除一个 **P0** 目标(例如
-  Intel runner 资源紧张时去掉 `macos-x64`)会把发布完整性门禁收窄到
-  已选中的集合,这样部分平台的发布仍然可以被切割。作为 `C3_REQUIRED_TARGETS`
-  传递给发布门禁 / `verify-dist`(必需集合 = `P0 ∩ 已选中`)。
-- **`skip_publish`** — 在生成 sha256 校验和 + verify-dist 步骤后停止,不打 tag 也不创建 GitHub Release。
+- 目标是**固定的**(`linux-x64,macos-arm64,windows-x64`),没有目标子集输入项——每次
+  运行都构建全部目标。每个 build 任务通过 `C3_REQUIRED_TARGETS=<自身目标>` 把该目标
+  传给发布门禁 / `verify-dist`。
 
 本地 `pnpm release` 与 CI 共享**同一套 node 脚本**(`release:build`、
 `release:smoke`、`release:verify-dist`、`release:publish`)——矩阵只是一个扇出的
@@ -217,28 +209,24 @@ GH Actions release workflow 有一个 `provenance` 任务(`needs: [verify-dist]`
 | 波次   | 目标                 | bun target         | 字节码 | 压缩   | 状态                  |
 | ------ | -------------------- | ------------------ | ------ | ------ | --------------------- |
 | **P0** | macOS-arm64          | `bun-darwin-arm64` | 关     | ✓      | 已上线                |
-| **P0** | macOS-x64(Intel)     | `bun-darwin-x64`   | 关     | ✓      | 已上线(6/7 晋升)      |
 | **P0** | Linux-x64-glibc      | `bun-linux-x64`    | 关     | ✓      | 已上线                |
-| **P1** | Windows-x64          | `bun-windows-x64`  | 关     | ✓      | 已上线 — **⚠️实验性** |
+| 实验性 | Windows-x64          | `bun-windows-x64`  | 关     | ✓      | 已上线 — **⚠️实验性** |
 | 后续   | Linux-arm64、musl 等 | _待定_             | _待定_ | _待定_ | 占位                  |
 
 **`--bytecode`** 在**每个目标上都是关闭的**(ESM/CJS 不兼容——见上文「字节码 —
 已禁用」)。发布构建始终 `minify`、不产出 sourcemap。CI 与本地共享同一套脚本。
 
-**P0 与 P1(release 4/7,6/7 精修)。** P0 是**必需**集合——`release:build`
-默认使用完整的 P0 矩阵,且**发布只对已选中的 P0 子集把关**(发布门禁的必需
-集合 = `P0 ∩ C3_REQUIRED_TARGETS`,未设置时默认为完整 P0):一个缺席的
-_已选中_ P0 目标会阻断发布,而一个被刻意排除的 P0 目标(例如 Intel runner
-资源紧张时去掉 `macos-x64`)也会同样退出门禁——运营者主动选择退出。P1(目前
-只有 `windows-x64`)是**尽力而为**:构建编排器会警告并丢弃一个失败的实验性
-目标,而不是中止整个构建,这样 Windows 跨平台编译的小故障不会拖垮 P0 的
-切割。`macos-x64` 在 release 6/7 中从 P1 晋升到 P0,因为 GH Actions 原生矩阵
-把它构建在真实的 `macos-13`(Intel)runner 上,且无头冒烟测试在那里是绿色的。
-P0/P1/实验性分类的友好名称单一真源是一个独立的目标分类模块。
+**P0 与实验性目标。** P0 是**必需**集合——`release:build` 默认使用完整的
+P0 矩阵,且**发布对已选中的 P0 子集把关**(发布门禁的必需集合 =
+`P0 ∩ C3_REQUIRED_TARGETS`,未设置时默认为完整 P0):一个缺席的 P0 目标
+会阻断发布。实验性目标(目前只有 `windows-x64`)是**尽力而为**:构建
+编排器会警告并丢弃一个失败的实验性目标,而不是中止整个构建,这样
+Windows 跨平台编译的小故障不会拖垮 P0 的切割。P0/实验性分类的友好名称
+单一真源是一个独立的目标分类模块。
 
 ### Windows:在真正冒烟测试通过前保持实验性(release 4/7)
 
-**Windows 平台代码路径**在任何冒烟测试之前就已合并(它们是 P1 波次的一部分):
+**Windows 平台代码路径**在任何冒烟测试之前就已合并(它们属于实验性目标):
 
 - **vendor CLI 发现** — Windows 上默认托管路径位于 `%USERPROFILE%\.c3\vendor`,
   POSIX 上是 `~/.c3/vendor`;host PATH 查找仍然是平台特定的回退方式(Windows 上

@@ -21,11 +21,10 @@ const repoRoot = resolve(here, '..', '..')
 /**
  * The set of targets whose presence the dist MUST contain to publish.
  *
- * Default = the full P0 wave. When a release is cut for a target subset (CI passes
- * `C3_REQUIRED_TARGETS=<comma list>`, e.g. macOS-Intel runners are starved), the
- * required set narrows to P0 ∩ selected — so dropping a P0 target from the build
- * also drops it from the completeness gate (the operator opted out), while
- * experimental/non-P0 targets (windows-x64) are never hard-required regardless.
+ * Default = the full P0 wave. Each CI build job passes its own target via
+ * `C3_REQUIRED_TARGETS=<target>`, so its postgate only requires that one target —
+ * the required set narrows to P0 ∩ selected. Experimental/non-P0 targets
+ * (windows-x64) are never hard-required regardless.
  */
 export function requiredTargets(env = process.env) {
   const sel = (env.C3_REQUIRED_TARGETS || '')

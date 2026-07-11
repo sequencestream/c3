@@ -35,15 +35,13 @@ describe('targets', () => {
     expect(isHostRunnable('windows-x64', 'win32', 'x64')).toBe(true)
   })
 
-  it('P0 is the three-platform matrix (release 6/7 promoted macos-x64)', () => {
-    // release 6/7: macos-x64 was promoted from P1 to P0 because the GH Actions native
-    // matrix runs it on a real macos-13 (Intel) runner and the smoke is green there.
-    expect(P0_TARGETS).toEqual(['macos-arm64', 'macos-x64', 'linux-x64'])
+  it('P0 is the two-platform matrix (macos-arm64 + linux-x64)', () => {
+    expect(P0_TARGETS).toEqual(['macos-arm64', 'linux-x64'])
   })
 
-  it('P1 is empty in 6/7; KNOWN_TARGETS = P0 ∪ experimental (windows-x64 is buildable, not P1-promotable yet)', () => {
-    // P1 set is reserved for the next de-experimental candidate. macos-x64 moved to P0;
-    // windows-x64 is still the only experimental. The slot is intentionally empty.
+  it('P1 is empty; KNOWN_TARGETS = P0 ∪ experimental (windows-x64 is buildable, not P1-promotable yet)', () => {
+    // P1 set is reserved for the next de-experimental candidate; windows-x64 is the only
+    // experimental. The slot is intentionally empty.
     //
     // windows-x64 is NOT in P1 — it's in EXPERIMENTAL_TARGETS. But it IS in KNOWN_TARGETS
     // so the windows-latest build job (`pnpm release:build --targets=windows-x64`) is
@@ -57,21 +55,19 @@ describe('targets', () => {
   it('only windows-x64 is experimental (smoke-unverified on its OS)', () => {
     expect(EXPERIMENTAL_TARGETS).toEqual(['windows-x64'])
     expect(isExperimental('windows-x64')).toBe(true)
-    expect(isExperimental('macos-x64')).toBe(false)
     expect(isExperimental('macos-arm64')).toBe(false)
   })
 
-  it('TARGETS carries the P1 bun triples; package name uses .zip for windows, .tar.gz elsewhere', () => {
+  it('TARGETS carries the bun triples; package name uses .zip for windows, .tar.gz elsewhere', () => {
     // Release 8/7: `artifactName` is now an alias of `packageName` (the
     // distribution archive). The BINARY is always `c3` (or `c3.exe`) and
     // is named separately via `binaryName`. The package's `.zip` vs `.tar.gz`
     // is governed by `packageExt` (Windows-conventional).
-    expect(TARGETS['macos-x64']).toBe('bun-darwin-x64')
+    expect(TARGETS['macos-arm64']).toBe('bun-darwin-arm64')
     expect(TARGETS['windows-x64']).toBe('bun-windows-x64')
 
     // Package (the distributable archive; the unit of `shasum` / `gh release`).
     expect(artifactName('0.2.0', 'windows-x64')).toBe('c3-v0.2.0-windows-x64.zip')
-    expect(artifactName('0.2.0', 'macos-x64')).toBe('c3-v0.2.0-macos-x64.tar.gz')
     expect(artifactName('0.2.0', 'linux-x64')).toBe('c3-v0.2.0-linux-x64.tar.gz')
     expect(artifactName('0.2.0', 'macos-arm64')).toBe('c3-v0.2.0-macos-arm64.tar.gz')
     // Back-compat: `artifactName` is an alias of `packageName`.
@@ -81,7 +77,6 @@ describe('targets', () => {
 
     // Binary (always `c3` / `c3.exe`; the in-dist + in-package filename).
     expect(binaryName('macos-arm64')).toBe('c3')
-    expect(binaryName('macos-x64')).toBe('c3')
     expect(binaryName('linux-x64')).toBe('c3')
     expect(binaryName('windows-x64')).toBe('c3.exe')
 

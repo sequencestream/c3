@@ -19,9 +19,9 @@
 # history since the last release (`--generate-notes`, categorized by .github/release.yml).
 # Integrity is the sha256 sidecars + GitHub HTTPS (open-source builds carry no code signature).
 #
-# Target subset + version: a `setup` job resolves the `targets` input (default: all four)
-# and the `version` input (optional, e.g. v0.1.0 → C3_RELEASE_VERSION). Each build job is
-# gated on `contains(targets, '<target>')`; a DESELECTED target is SKIPPED (not red).
+# Targets are fixed (linux-x64, macos-arm64, windows-x64): every run builds all of them,
+# there is no target-subset input. A `setup` job resolves only the `version` input
+# (optional, e.g. v0.1.0 → C3_RELEASE_VERSION) and the shared batch subdirectory.
 #
 # Trigger: workflow_dispatch (manual release entry; runs the full chain).
 #          push tags: v* (re-build + re-publish for the pushed tag).
@@ -38,11 +38,6 @@ on:
         required: false
         default: ''
         type: string
-      targets:
-        description: 'Comma-separated targets to build (default: all = linux-x64,macos-arm64,macos-x64,windows-x64). Deselecting a P0 target (e.g. drop macos-x64 when Intel runners are starved) narrows the publish gate to the selected set.'
-        required: false
-        default: ''
-        type: string
   push:
     tags: ['v*']
 
@@ -51,40 +46,29 @@ permissions:
 
 jobs:
   # ────────────────────────────────────────────────────────────────────
-  # -1. setup — resolve the target subset + version + batch ONCE so every per-target
-  #     job shares one source of truth. `targets` gates which jobs run; `version` is
-  #     the optional explicit release version (C3_RELEASE_VERSION). Every dispatch/tag
-  #     run publishes (`publish` is always true; the publish job's `if` gate keeps it explicit).
+  # -1. setup — resolve the version + batch ONCE so every per-target job shares one
+  #     source of truth. `version` is the optional explicit release version
+  #     (C3_RELEASE_VERSION). Every dispatch/tag run builds all targets and publishes.
   # ────────────────────────────────────────────────────────────────────
   setup:
-    name: 'setup (resolve targets + version + batch)'
+    name: 'setup (resolve version + batch)'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      targets: ${{ steps.resolve.outputs.targets }}
       version: ${{ steps.resolve.outputs.version }}
       batch: ${{ steps.resolve.outputs.batch }}
-      publish: ${{ steps.resolve.outputs.publish }}
     steps:
-      - name: Resolve targets + version + batch
+      - name: Resolve version + batch
         id: resolve
         shell: bash
         run: |
-          targets="${{ inputs.targets }}"
-          if [ -z "$targets" ]; then
-            targets="linux-x64,macos-arm64,macos-x64,windows-x64"
-          fi
-          targets="$(echo "$targets" | tr -d '[:space:]')"
-          echo "targets=$targets" >> "$GITHUB_OUTPUT"
           echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
 
           # Shared time subdirectory for the whole release (UTC, path-safe charset).
           batch="$(date -u +%Y%m%d-%H%MZ)"
           echo "batch=$batch" >> "$GITHUB_OUTPUT"
 
-          # Every dispatch/tag run publishes (no skip toggle).
-          echo "publish=true" >> "$GITHUB_OUTPUT"
-          echo "[setup] targets=$targets version='${{ inputs.version }}' batch=$batch publish=true"
+          echo "[setup] version='${{ inputs.version }}' batch=$batch"
 
   # ────────────────────────────────────────────────────────────────────
   # 0. pregate (source-level blocking gate; release 5/7)
@@ -131,14 +115,11 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   # 1. build-publish-<target> (one self-contained job per target)
   #    build → smoke → checksum → verify(postgate) → upload-artifact (for the publish job).
-  #    Each runs on the target's NATIVE OS. A deselected target gates whether this job runs.
+  #    Each runs on the target's NATIVE OS. All targets build on every run.
   # ────────────────────────────────────────────────────────────────────
   build-publish-linux-x64:
     name: 'build+publish linux-x64'
     needs: [pregate, setup]
-    if: >-
-      (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
-      contains(needs.setup.outputs.targets, 'linux-x64')
     runs-on: ubuntu-latest
     environment: default
     timeout-minutes: 40
@@ -205,9 +186,6 @@ jobs:
   build-publish-macos-arm64:
     name: 'build+publish macos-arm64'
     needs: [pregate, setup]
-    if: >-
-      (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
-      contains(needs.setup.outputs.targets, 'macos-arm64')
     runs-on: macos-14
     environment: default
     timeout-minutes: 40
@@ -271,81 +249,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  build-publish-macos-x64:
-    name: 'build+publish macos-x64'
-    needs: [pregate, setup]
-    if: >-
-      (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
-      contains(needs.setup.outputs.targets, 'macos-x64')
-    runs-on: macos-13
-    environment: default
-    timeout-minutes: 40
-    env:
-      BUN_INSTALL: ${{ github.workspace }}/.bun
-      C3_RELEASE_VERSION: ${{ needs.setup.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install Bun
-        run: curl -fsSL https://bun.sh/install | bash
-        shell: bash
-
-      - name: Install dependencies
-        run: |
-          export PATH="$BUN_INSTALL/bin:$PATH"
-          pnpm install --frozen-lockfile
-
-      - name: Build macos-x64
-        run: |
-          export PATH="$BUN_INSTALL/bin:$PATH"
-          pnpm release:build --targets=macos-x64 --skip-smoke
-
-      - name: Smoke (--version + headless)
-        run: |
-          pkg=$(ls dist/c3-v*-macos-x64.tar.gz | head -1)
-          mkdir -p dist/smoke
-          tar -xzf "$pkg" -C dist/smoke
-          node scripts/release/smoke.mjs --file=dist/smoke/c3 --timeout=20000
-
-      - name: Checksum artifacts
-        run: node scripts/release/sign.mjs --manifest=dist/manifest.json
-
-      - name: Verify distribution consistency
-        env:
-          C3_REQUIRED_TARGETS: macos-x64
-        run: node scripts/release/postgate.mjs --manifest=dist/manifest.json
-
-      - name: Upload signed artifacts for the publish job
-        uses: actions/upload-artifact@v4
-        with:
-          name: c3-macos-x64
-          path: |
-            dist/c3-v*-macos-x64.tar.gz
-            dist/c3-v*-macos-x64.zip
-            dist/*.sha256
-            dist/SHA256SUMS*
-          if-no-files-found: error
-          retention-days: 7
-
   build-publish-windows-x64:
     name: 'build+publish windows-x64 (⚠️ experimental)'
     needs: [pregate, setup]
-    if: >-
-      (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
-      contains(needs.setup.outputs.targets, 'windows-x64')
     runs-on: windows-latest
     environment: default
     timeout-minutes: 40
@@ -415,19 +321,12 @@ jobs:
   # 2. publish — gather every target's signed artifacts and cut ONE public
   #    GitHub Release. Release notes are auto-generated from the merged-PR /
   #    commit history since the previous release (GitHub `--generate-notes`,
-  #    categorized by .github/release.yml). Runs only after all selected
-  #    targets succeed; needs `contents: write` to create the Release + tag.
+  #    categorized by .github/release.yml). Runs only after all targets
+  #    succeed; needs `contents: write` to create the Release + tag.
   # ────────────────────────────────────────────────────────────────────
   publish:
     name: 'publish (GitHub Release + auto notes)'
-    needs:
-      [
-        setup,
-        build-publish-linux-x64,
-        build-publish-macos-arm64,
-        build-publish-macos-x64,
-        build-publish-windows-x64,
-      ]
+    needs: [setup, build-publish-linux-x64, build-publish-macos-arm64, build-publish-windows-x64]
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the Release + tag and upload assets

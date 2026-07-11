@@ -171,6 +171,31 @@
     "readOnlyNotice": {
       "text": "관리자가 아니므로 시스템 설정은 읽기 전용입니다."
     },
+    "tabs": {
+      "agent": {
+        "label": "에이전트"
+      },
+      "runtime": {
+        "label": "런타임"
+      },
+      "security": {
+        "label": "보안"
+      },
+      "general": {
+        "label": "일반"
+      },
+      "unsaved": {
+        "label": "저장되지 않은 변경 사항"
+      },
+      "switch": {
+        "confirm": {
+          "title": "저장되지 않은 변경 사항",
+          "body": "이 탭에 저장되지 않은 변경 사항이 있습니다. 그래도 탭을 전환하시겠습니까? 저장하기 전까지 변경 사항은 이 탭에 유지됩니다.",
+          "confirm": "탭 전환",
+          "stay": "머무르기"
+        }
+      }
+    },
     "agents": {
       "title": {
         "label": "에이전트"

@@ -26,3 +26,5 @@
   沟通运行时变体、保存工具、发起开发接线、自动化编排器(状态机 + 完成判定器 + git 辅助)
 - [intent-management-models.md](intent-management-models.md) —— Intent / Intent Dependency /
   Communication Session / Automation Status 实体
+- [intent-management-codex-save-issue.md](intent-management-codex-save-issue.md) —— 问题分析:
+  codex 意图智能体 save_intents 确认框失效(code_mode 沙箱与 gatedSave 长阻塞确认冲突, 待修复)

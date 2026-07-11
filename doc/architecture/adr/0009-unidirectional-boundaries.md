@@ -1,118 +1,100 @@
-# 0009 — Unidirectional Boundaries: kernel → transport/features, transport → kernel, no back-edges
+# 0009 — 单向边界:kernel → transport/features,transport → kernel,不允许反向边
 
 - **Status:** accepted
 - **Date:** 2026-06-04
 
 ## Context
 
-The server's single entry file had grown into one oversized module that owned the WebSocket
-upgrade, the per-connection viewing state, ~40 message cases in one giant dispatch switch, and the
-many module-level closures that bridged them: the run launcher, the development-turn driver, the
-discussion and research run starters, and the family of broadcasters and snapshot helpers for
-statuses, intents, discussions, automations, discussion/research messages and run status, and
-automation — plus the shared mutable state (the connection set, the run-status cache, the
-judged-session set, the live discussion/research run maps) and the launch / automation hooks. That
-file was the only place that knew how the SDK message stream, the persistence stores, the
-session-runtime registry, the discussion / automation subsystems, and the WebSocket protocol fit
-together. A change to any one drifts all the others.
+服务端的单一入口文件已经膨胀成一个过大的模块,它同时拥有 WebSocket 升级、每连接的查看状态、一个包含约 40
+个消息分支的巨大 dispatch switch,以及把这些串起来的众多模块级闭包:运行启动器、开发轮次驱动器、讨论与
+研究运行的启动器,以及为状态、意图、讨论、自动化、讨论/研究消息与运行状态、自动化各自准备的一整族广播器与
+快照辅助函数——外加共享的可变状态(连接集合、运行状态缓存、已投票会话集合、存活的讨论/研究运行映射)以及
+启动 / 自动化钩子。这个文件是唯一知道 SDK 消息流、持久化存储、会话运行时注册表、讨论 / 自动化子系统以及
+WebSocket 协议如何拼接在一起的地方。改动其中任何一处,都会牵动其余所有部分。
 
-We are about to split this file along three planes:
+我们即将沿三个平面拆分这个文件:
 
-- **kernel layer** — pure domain: the session-runtime registry, settings lookup, the intents /
-  discussions / automations stores, the run launcher, automation hooks. No WebSocket / HTTP / JSON
-  knowledge, no module-level singleton for transport-owned state.
-- **transport layer** — WebSocket / HTTP plumbing. The handler registry keyed by client message
-  type, the one-line dispatcher, the connection-side broadcaster. Consumes kernel events to
-  produce wire frames.
-- **features layer** — one unit per top-level user action, mirroring the client message-type
-  union. Each feature registers exactly one (or a small, named set of) handler(s) at startup.
-  Handlers receive an explicit application context and a connection handle, not a global socket
-  set.
+- **kernel 层**—— 纯粹的领域逻辑:会话运行时注册表、设置查询、意图 / 讨论 / 自动化存储、运行启动器、
+  自动化钩子。不涉及 WebSocket / HTTP / JSON 相关知识,也没有为 transport 所拥有的状态设置模块级单例。
+- **transport 层**—— WebSocket / HTTP 管线。按客户端消息类型索引的处理器注册表、单行分发器、连接侧广播器。
+  消费 kernel 事件以产出线上帧。
+- **features 层**—— 每个顶层用户动作对应一个单元,与客户端消息类型的联合类型一一对应。每个特性在启动时
+  注册恰好一个(或一小组有名字的)处理器。处理器接收一个显式的应用上下文与一个连接句柄,而不是一个全局的
+  socket 集合。
 
-For this split to be reversible one slice at a time (slice 1/3 = skeleton + zero-behavior-change
-shim; slice 2/3 = real moves; slice 3/3 = kernel event bus) the boundaries between the three
-planes have to be enforceable **today**, before any move. Otherwise the next slice will quietly
-grow a back-edge ("just one more import from the features layer") that later slices cannot un-knot.
+为了让这次拆分能够以每次一个切片的方式可逆(切片 1/3 = 骨架 + 零行为变化的 shim;切片 2/3 = 真正的搬迁;
+切片 3/3 = kernel 事件总线),这三个平面之间的边界必须在任何搬迁发生**之前**、也就是今天,就能够被强制执行。
+否则下一个切片就会悄悄长出一条反向边("就多导入 features 层的这一个而已"),而后面的切片再也无法把它解开。
 
-The existing ADR-0006 already pins one direction: every live event flows through the runtime's emit
-path (buffer + viewers), never straight to a socket. ADR-0009 widens that to all three layers and
-all six edge cases that have been seen — and would re-appear — during refactor.
+既有的 ADR-0006 已经钉住了一个方向:所有实时事件都要流经运行时的 emit 路径(缓冲区 + 观察者),绝不直接
+发往某个 socket。ADR-0009 把这一点扩展到全部三层,以及在重构过程中已经出现过——并且还会再次出现——的全部
+六种边界情形。
 
 ## Options considered
 
-1. **No ADR, rely on code review.** _Con:_ the oversized switch has ~40 cut-points; reviewers
-   cannot police every back-edge across that many units, and the rules are not in a place a future
-   agent can consult. The first accidental import of transport state into a feature will silently
-   re-couple them. Same trap ADR-0006 was written to prevent.
-2. **ADR with prose-only rules.** _Con:_ review-time only, drift inevitable. Without a lint rule or
-   a test gate the rules become folklore.
-3. **ADR with lint-enforced rules for the automatable subset, code-review + tests for the rest.**
-   _Pro:_ enforceable where the type checker + linter can see it (cross-layer imports, layer
-   locations, entry sinking); an explicit boot-time guard asserting kernel events carry no
-   transport fields; review + contract tests for the semantic edges (derivation purity,
-   mode-narrowing, pure-domain kernel events). _Con:_ R4/R5/R6 stay review-time in this slice. They
-   become lint rules once the moves in 2/3 make them mechanically checkable.
+1. **不写 ADR,依赖代码评审。** _缺点:_ 那个过大的 switch 有约 40 个切点;评审者无法在这么多单元之间盯住
+   每一条反向边,而这些规则也没有一个地方能让未来的智能体查阅。第一次意外地把 transport 状态导入某个
+   feature,就会悄悄把它们重新耦合起来。这正是 ADR-0006 当初想要防止的同一个陷阱。
+2. **仅有文字描述规则的 ADR。** _缺点:_ 只在评审时起作用,漂移不可避免。没有 lint 规则或测试关卡,这些规则
+   就会沦为口口相传的传说。
+3. **ADR 配合规则:自动化子集用 lint 强制,其余部分用代码评审 + 测试(采用)。** _优点:_ 在类型检查器 +
+   linter 能看到的地方是可强制执行的(跨层导入、层的位置、入口下沉);一个显式的启动时守卫断言 kernel 事件
+   不携带 transport 字段;对语义性边界(派生的纯度、模式收窄、纯领域的 kernel 事件)用评审 + 契约测试。
+   _缺点:_ R4/R5/R6 在这个切片中仍停留在评审阶段。等 2/3 中的搬迁让它们在机制上可检查之后,它们会变成
+   lint 规则。
 
 ## Decision
 
-Adopt option 3. The three layers are the kernel, transport, and features layers. The boundaries are
-**single-direction** and codified as six rules:
+采纳选项 3。三层分别是 kernel、transport、features。边界是**单向**的,并被编纂为六条规则:
 
-| #   | Rule                                                                                                                                                                                                                                                                         | Enforcement                                                                                                                                          |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R1  | The kernel layer MUST NOT import from the features or transport layers.                                                                                                                                                                                                      | a restricted-imports lint rule scoped to the kernel layer.                                                                                           |
-| R2  | The kernel layer MUST NOT touch WebSocket / HTTP semantics (sending frames, JSON serialization, the web framework, the raw socket type). Broadcasting lives in the transport layer, which subscribes to a kernel event bus (hooked in slice 2/3; the shell exists from 1/3). | restricted-imports + restricted-syntax lint rules on the kernel layer; a boot-time no-transport-fields assertion in the application-context factory. |
-| R3  | Entry files MUST stay at the server source root, not sink into subdirectories. The application context is constructed **once** at startup and injected, not a module-level singleton.                                                                                        | a layout lint rule + a single context-construction call site, grep-checked.                                                                          |
-| R4  | Derived/enrichment functions MUST be pure: read-only over their inputs, never writing back to a registry, a module-level cache, or a runtime field.                                                                                                                          | review + dedicated unit tests; becomes a lint rule in 2/3 once the move makes it mechanically checkable.                                             |
-| R5  | A new mode (permission mode, run kind, etc.) MUST NOT cross a kernel boundary as an implicit switch — every kernel function that depends on mode MUST narrow it explicitly at the call site (narrow the run kind inside the kernel, not the message mode inside a feature).  | review + contract tests pinning the narrow; becomes a lint rule in 2/3.                                                                              |
-| R6  | Kernel events (what the emit path and any future event bus carry) MUST contain only pure domain facts. No viewer / socket / connection-set / serialized-payload field — those are transport concerns that travel downstream, not upstream.                                   | the boot-time no-transport-fields assertion + the R2 lint rule keeps the producer side clean.                                                        |
+| #   | 规则                                                                                                                                                                                                      | 强制方式                                                                                          |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| R1  | kernel 层 MUST NOT 导入 features 或 transport 层的内容。                                                                                                                                                  | 一条作用域限定在 kernel 层的受限导入 lint 规则。                                                  |
+| R2  | kernel 层 MUST NOT 触碰 WebSocket / HTTP 语义(发送帧、JSON 序列化、web 框架、原始 socket 类型)。广播逻辑归属 transport 层,它订阅 kernel 事件总线(将在切片 2/3 中接入;骨架从 1/3 起就存在)。               | 针对 kernel 层的受限导入 + 受限语法 lint 规则;应用上下文工厂中的一个启动时无 transport 字段断言。 |
+| R3  | 入口文件 MUST 停留在服务端源码根目录,不得下沉到子目录中。应用上下文只在启动时被构造**一次**并注入,而不是模块级单例。                                                                                      | 一条布局 lint 规则 + 一个通过 grep 检查的、单一的上下文构造调用点。                               |
+| R4  | 派生/加工函数 MUST 是纯函数:仅对其输入只读,永不写回某个注册表、某个模块级缓存或某个运行时字段。                                                                                                           | 评审 + 专门的单元测试;一旦 2/3 中的搬迁使其在机制上可检查,会变为 lint 规则。                      |
+| R5  | 一种新的模式(权限模式、运行种类等)MUST NOT 以隐式开关的形式跨越 kernel 边界——每一个依赖模式的 kernel 函数 MUST 在调用点显式地把它收窄(在 kernel 内部收窄运行种类,而不是在某个 feature 内部收窄消息模式)。 | 评审 + 钉住该收窄行为的契约测试;会在 2/3 中变为 lint 规则。                                       |
+| R6  | kernel 事件(即 emit 路径以及任何未来事件总线所携带的内容)MUST 只包含纯粹的领域事实。不得有观察者 / socket / 连接集合 / 序列化后 payload 这类字段——那些是向下游流动的 transport 关注点,不应向上游流动。    | 启动时的无 transport 字段断言 + 保持生产者一侧干净的 R2 lint 规则。                               |
 
-The handler dispatcher is the new structural centerpiece. It is **not** itself a rule — it is the
-mechanism R1 + R2 + R5 hang on: the handler registry is a compile-time-complete map keyed by every
-client message type, so adding a new client message type without adding a handler fails type
-checking. The server's message-receive path becomes a one-line dispatch into that registry.
+处理器分发器是新的结构性核心。它本身**不是**一条规则——它是 R1 + R2 + R5 所依附的机制:该处理器注册表是一个
+按每种客户端消息类型索引、在编译期就完备的映射,因此新增一种客户端消息类型而不添加对应处理器就会导致类型检查
+失败。服务端的消息接收路径变成了对该注册表的一行式分发。
 
-The old monolithic switch body is delegated, in this slice, to a per-message-type handler set still
-living in the same file. **Slice 1/3 is zero behavior change**: the 40+ case bodies still live in
-the entry file, just behind a thin dispatch. Slice 2/3 moves each body into its feature unit and
-registers it. The dispatcher never sees the move — that's the point.
+在本切片中,原先那个单体 switch 的主体被委派给了仍位于同一文件中的一组按消息类型划分的处理器。**切片 1/3
+是零行为变化**:那 40 多个分支体仍然存在于入口文件中,只是被包在了一层薄薄的分发之后。切片 2/3 会把每个
+分支体搬到它自己的 feature 单元中并完成注册。分发器永远不会察觉这次搬迁——这正是它的意义所在。
 
 ## Consequences
 
-- **Easier:** every cross-layer violation is grep-checkable (a kernel-layer import of a feature or
-  transport module should return nothing). The handler registry turns the 40-case switch into a
-  compile-time-complete map; new client message types are refused until registered. The
-  application-context boundary lets slices 2/3 and 3/3 move shared state out of module-level
-  closures one field at a time without disturbing handlers.
-- **Harder:** a feature handler that wants to "just send a status to one connection" can no longer
-  reach into the kernel's connection set — it has to go through the transport-owned per-connection
-  send. That is the rule, not a leak. Some one-line handlers grow a small plumbing cost in slice
-  1/3 (delegation through the in-file handler set); that is the price of the boundary.
-- **Migration:** slice 1/3 ships re-export shims for the three layers so any future import path is
-  already valid. The entry import wiring is unchanged. The old switch is gone from the file; the old
-  case bodies live as exported functions next to it. Reverting slice 1/3 returns the codebase to the
-  pre-slice state with all tests green (the validation step in the slice spec is exactly this).
-- **Testability:** five golden-standard contract tests (C1–C5) assert end-to-end behavior. They are
-  written to survive any implementation move; only the public contract (the emit path, the run
-  launcher, store-availability checks, etc.) is pinned.
+- **更容易:** 每一次跨层违规都可以用 grep 检查出来(kernel 层对某个 feature 或 transport 模块的导入,理应
+  返回空结果)。处理器注册表把那个 40 分支的 switch 变成了一个编译期完备的映射;新的客户端消息类型在注册
+  之前一律被拒绝。应用上下文这条边界让切片 2/3 与 3/3 能够一次一个字段地把共享状态搬出模块级闭包,而不会
+  打扰到处理器。
+- **更难:** 一个只想"给某个连接发一条状态"的 feature 处理器,不能再伸手去够 kernel 的连接集合了——它必须
+  经由 transport 所拥有的单连接发送通道。这是规则,不是漏洞。在切片 1/3 中,一些一行式的处理器会因此多出
+  一点小小的管线成本(通过文件内的处理器集合做委派);这是边界的代价。
+- **迁移:** 切片 1/3 为三层都提供了重导出 shim,使得任何未来的导入路径已经是合法的。入口的导入接线保持
+  不变。旧的 switch 已经从文件中消失;旧的分支体作为导出函数活在它旁边。回退切片 1/3 会让代码库回到切片前
+  的状态,并且所有测试保持绿色(切片规格中的验证步骤正是这一点)。
+- **可测试性:** 五个金标准契约测试(C1–C5)断言端到端行为。它们的编写方式使其能在任何实现层面的搬迁下
+  存活;被钉住的只是公开契约(emit 路径、运行启动器、存储可用性检查等)。
 
 ## Compliance
 
-- A kernel-layer import of a feature or transport module MUST NOT exist.
-- A kernel-layer reference to WebSocket / HTTP-framework / JSON-serialization semantics MUST NOT
-  exist.
-- `pnpm typecheck` MUST be green; adding a client message type without a matching handler-registry
-  entry MUST fail typecheck immediately.
-- `pnpm test` MUST be green for the 5 contract tests on every slice merge.
-- `pnpm lint` MUST be green; the kernel-layer restricted-imports rule is the mechanical guard.
-- Slice 1/3 ships with a tagged "bisect anchor" commit — any future slice that breaks a contract
-  test points bisect straight here.
+- kernel 层对某个 feature 或 transport 模块的导入 MUST NOT 存在。
+- kernel 层对 WebSocket / HTTP 框架 / JSON 序列化语义的引用 MUST NOT 存在。
+- `pnpm typecheck` MUST 保持绿色;新增一种客户端消息类型而不添加匹配的处理器注册表条目,MUST 立即导致
+  typecheck 失败。
+- 每次切片合并时,`pnpm test` MUST 对这 5 个契约测试保持绿色。
+- `pnpm lint` MUST 保持绿色;kernel 层的受限导入规则是机制层面的守卫。
+- 切片 1/3 附带一个打了标记的"二分定位锚点"提交;任何未来的切片如果破坏了某个契约测试,二分查找都能直接
+  定位到这里。
 
 ## References
 
-- [ADR 0002](0002-websocket-as-permission-transport.md) — WebSocket as the permission transport.
-- [ADR 0006](0006-decouple-runs-from-connections.md) — runs decoupled from connections (the
-  spiritual predecessor: one boundary, one rule, machine-checked at the runtime layer).
-- [architecture overview](../architecture.md) — module map, current shape.
-- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) — the socket auto-resume decision
-  and run launch path (the "AS-R18 / AVAIL-7" the slice 1/3 contract test C2 pins).
+- [ADR 0002](0002-websocket-as-permission-transport.md) —— WebSocket 作为权限传输通道。
+- [ADR 0006](0006-decouple-runs-from-connections.md) —— 运行与连接解耦(本 ADR 的精神先驱:一个边界、一条
+  规则,在运行时层被机器检查)。
+- [architecture overview](../architecture.md) —— 模块地图,当前形态。
+- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) —— socket 自动恢复决策与运行
+  启动路径(切片 1/3 的契约测试 C2 所钉住的 "AS-R18 / AVAIL-7")。

@@ -1,91 +1,91 @@
-# agent-config — Models
+# agent-config — 数据模型
 
-Entity definitions. Business-semantic field contracts; physical wiring in [agent-config-design.md](agent-config-design.md).
-The wire shapes are defined once in the
-[shared protocol](../../../shared/api-conventions/websocket-protocol.md).
+实体定义。业务语义字段契约;物理接线见 [agent-config-design.md](agent-config-design.md)。
+线上格式统一定义在
+[共享协议](../../../shared/api-conventions/websocket-protocol.md)中。
 
-## Agent
+## Agent(智能体)
 
-A launch profile: a vendor-agnostic **public shell** plus a `vendor`-discriminated `config`
-sub-object (AC-R12). The agent config is a discriminated union keyed on `vendor`; the runtime schema
-that validates + routes it is pinned to the wire shape by a compile-time assertion.
+一个启动档案:一个厂商无关的**公共外壳**加上一个按 `vendor` 判别的 `config`
+子对象(AC-R12)。智能体配置是一个以 `vendor` 为键的判别联合类型;负责校验并路由它的
+运行时 schema 通过编译期断言与线上格式绑定一致。
 
-### Public shell
+### 公共外壳
 
-| Attribute     | Type       | Description                                                                                                                                                                                                                 |
-| ------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`          | text       | Stable id; `'system'` for the built-in agent                                                                                                                                                                                |
-| `displayName` | text       | Display name (was `name` before the vendor refactor)                                                                                                                                                                        |
-| `enabled`     | bool (opt) | Enabled flag; absent/`true` ⇒ enabled, only explicit `false` disables. Disabled agents drop out of every list consumer (participants, voters, degradation chain, default picker) but remain valid launch fallbacks (AC-R10) |
-| `icon`        | text (opt) | Optional display icon (emoji / short text). Empty/absent ⇒ no custom icon. Trimmed and capped to 16 chars; not validated as a real emoji. Old configs without the field load as `''` (AC-R11)                               |
+| 属性          | 类型        | 说明                                                                                                                                                           |
+| ------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`          | text        | 稳定 id;内建智能体固定为 `'system'`                                                                                                                            |
+| `displayName` | text        | 展示名称(在厂商重构前叫 `name`)                                                                                                                                |
+| `enabled`     | bool (可选) | 启用标志;缺省/`true` ⇒ 启用,只有显式 `false` 才禁用。禁用的智能体会从所有列表消费方(参与者、投票者、降级链、默认选择器)中退出,但仍可作为有效的启动兜底(AC-R10) |
+| `icon`        | text (可选) | 可选展示图标(表情符号/短文本)。空/缺省 ⇒ 无自定义图标。会被去除首尾空白并截断到 16 字符;不校验是否为真实的表情符号。没有该字段的旧配置加载为 `''`(AC-R11)      |
 
-### Claude config sub-object (`vendor === 'claude'`)
+### Claude 配置子对象(`vendor === 'claude'`)
 
-| Attribute | Type       | Description                                                |
-| --------- | ---------- | ---------------------------------------------------------- |
-| `baseUrl` | text (url) | `ANTHROPIC_BASE_URL` override; empty ⇒ no override (AC-R5) |
-| `apiKey`  | text       | API key / auth token override; empty ⇒ no override (AC-R5) |
-| `model`   | text       | Model alias or id; empty ⇒ no override (AC-R5)             |
+| 属性      | 类型       | 说明                                             |
+| --------- | ---------- | ------------------------------------------------ |
+| `baseUrl` | text (url) | `ANTHROPIC_BASE_URL` 覆盖项;为空 ⇒ 不覆盖(AC-R5) |
+| `apiKey`  | text       | API key / 鉴权 token 覆盖项;为空 ⇒ 不覆盖(AC-R5) |
+| `model`   | text       | 模型别名或 id;为空 ⇒ 不覆盖(AC-R5)               |
 
-### Codex config sub-object (`vendor === 'codex'`)
+### Codex 配置子对象(`vendor === 'codex'`)
 
-The neutral provider triple plus `wireApi`. Codex's launch-time policy gate
-(`sandboxMode`/`approvalPolicy`) is NOT persisted here — it is derived at launch from the
-session `defaultMode` via the neutral grid (2026-06-06-008).
+厂商中立的三元组加上 `wireApi`。Codex 的启动时策略闸门
+(`sandboxMode`/`approvalPolicy`)**不**持久化在这里——它是在启动时根据
+会话 `defaultMode` 通过中立映射表推导出来的(2026-06-06-008)。
 
-| Attribute | Type                    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| --------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `baseUrl` | text (url)              | OpenAI-compatible base URL override (custom mode only); empty ⇒ no override                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `apiKey`  | text                    | API key / auth token override; empty ⇒ no override                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `model`   | text                    | Model alias or id; empty ⇒ no override                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `wireApi` | `'responses' \| 'chat'` | The custom provider's wire protocol — codex's own wire-api term (2026-06-12-006). `'responses'` ⇒ provider serves Responses natively ⇒ codex connects **DIRECT**; `'chat'` ⇒ Chat-Completions-only ⇒ codex routes through c3's in-process Responses→Chat **relay** (ADR-0014). Legacy records without the field migrate to `'chat'` (preserves the prior third-party-via-relay behaviour). Irrelevant to `system`-mode codex. See [codex-relay](../../../architecture/codex-relay.md). |
+| 属性      | 类型                    | 说明                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `baseUrl` | text (url)              | OpenAI 兼容的 base URL 覆盖项(仅自定义模式);为空 ⇒ 不覆盖                                                                                                                                                                                                                                                                                                                                             |
+| `apiKey`  | text                    | API key / 鉴权 token 覆盖项;为空 ⇒ 不覆盖                                                                                                                                                                                                                                                                                                                                                             |
+| `model`   | text                    | 模型别名或 id;为空 ⇒ 不覆盖                                                                                                                                                                                                                                                                                                                                                                           |
+| `wireApi` | `'responses' \| 'chat'` | 自定义厂商的线上协议——codex 自身的 wire-api 术语(2026-06-12-006)。`'responses'` ⇒ 厂商原生提供 Responses 接口 ⇒ codex **直连**;`'chat'` ⇒ 仅支持 Chat-Completions ⇒ codex 通过 c3 进程内的 Responses→Chat **relay(中继)**路由(ADR-0014)。没有该字段的旧记录会迁移为 `'chat'`(保留此前经中继访问第三方的行为)。与 `system` 模式的 codex 无关。见 [codex-relay](../../../architecture/codex-relay.md)。 |
 
-Relationships: zero or more Sessions bind to an Agent; an unbound session uses the default.
+关系:零个或多个 Session(会话)绑定到一个 Agent;未绑定的会话使用默认智能体。
 
-## System Agent
+## System Agent(系统智能体)
 
-The built-in agent. Same shell as Agent, but its id is `'system'`, vendor is `'claude'`, and its
-config is always the vendor **default** (all-empty for claude — AC-R1). Always present, never
-removable. Its enabled flag IS honoured, so the system agent can be disabled like any other
-(AC-R10) — it then leaves the list consumers but still serves as a launch fallback. Its icon
-field is honoured the same way — a custom icon on the system agent is preserved through normalization
-(AC-R11), independently of AC-R1's config-default clearing.
+内建智能体。与 Agent 使用相同的外壳,但其 id 为 `'system'`,vendor 为 `'claude'`,且其
+配置始终是该厂商的**默认值**(对 claude 而言是全空——AC-R1)。始终存在,永不可
+移除。它的 enabled 标志**会**被遵守,所以系统智能体也可以像其他智能体一样被禁用
+(AC-R10)——禁用后它会退出各列表消费方,但仍作为启动兜底。它的 icon
+字段同样会被遵守——系统智能体上的自定义图标会在归一化过程中保留
+(AC-R11),这与 AC-R1 的“配置归零”是独立的两回事。
 
-## System settings
+## System settings(系统设置)
 
-The whole configuration, persisted at `~/.c3/settings.json`.
+整个配置,持久化在 `~/.c3/settings.json`。
 
-| Field               | Type                   | Description                                                                                                                                                                                                                                                              |
-| ------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `agents`            | agent list             | The registry; always includes the system agent (AC-R1)                                                                                                                                                                                                                   |
-| `defaultAgentId`    | text                   | Id of an existing agent; falls back to system agent (AC-R2)                                                                                                                                                                                                              |
-| `toolAgentId`       | text                   | Id of the agent that runs background tool sessions (completion judge, name derivation; exception-handling not yet agent-driven). Empty string ⇒ "follow the default agent" (kept empty on store); a set value falls through by order sequence like the default (AC-R21). |
-| `intentAgentId`     | text                   | Id of the agent that runs intent-communication sessions (the intent analyst's requirement-breakdown conversation). Empty string ⇒ "follow the default agent" (kept empty on store); a set value falls through by order sequence like the default (AC-R23).               |
-| `specAgentId`       | text                   | Id of the agent that runs spec-authoring sessions (writing/refining the project specification). Empty string ⇒ "follow the default agent" (kept empty on store); a set value falls through by order sequence like the default (AC-R24).                                  |
-| `defaultMode`       | permission mode (opt.) | Permission mode new sessions start in; one of the five permission-mode values, falls back to `default` (AC-R8). Seeds a new session's mode in session-registry (SR-R6).                                                                                                  |
-| `consensus`         | `{ enabled }` (opt.)   | Multi-agent consensus voting on permission prompts; off by default. Consumed by the permission gateway — see [consensus](../../core/permission-gateway/features/permission-gateway-consensus.md).                                                                        |
-| `maxRoundsPerStage` | number (opt.)          | Per-stage round cap for multi-agent discussions; normalized to ≥ 8, default 12 (AC-R9). Consumed by the discussion engine.                                                                                                                                               |
-| `timezone`          | text (opt.)            | System-wide IANA time zone (e.g. `Asia/Shanghai`) used to interpret every automation's cron fields; invalid/unset falls back to the server's local zone. Consumed by the [automations](../../core/automations/automations-design.md) engine — see SCH-R3a.               |
+| 字段                | 类型                | 说明                                                                                                                                                                                            |
+| ------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agents`            | 智能体列表          | 注册表;始终包含系统智能体(AC-R1)                                                                                                                                                                |
+| `defaultAgentId`    | text                | 某个已存在智能体的 id;找不到时回退到系统智能体(AC-R2)                                                                                                                                           |
+| `toolAgentId`       | text                | 运行后台工具会话(完成度判定、自动化/会话命名推导;异常处理尚未由智能体驱动)的智能体 id。空字符串 ⇒“跟随默认智能体”(存储时保持为空);一旦设置了非空值,会像默认值一样按顺序号回退(AC-R21)。         |
+| `intentAgentId`     | text                | 运行意图沟通会话(意图分析师的需求拆解对话)的智能体 id。空字符串 ⇒“跟随默认智能体”(存储时保持为空);一旦设置了非空值,会像默认值一样按顺序号回退(AC-R23)。                                         |
+| `specAgentId`       | text                | 运行规格编写会话(编写/完善项目规格)的智能体 id。空字符串 ⇒“跟随默认智能体”(存储时保持为空);一旦设置了非空值,会像默认/工具/意图智能体一样按顺序号回退(AC-R24)。                                  |
+| `defaultMode`       | 权限模式(可选)      | 新会话启动时所处的权限模式;为五种权限模式取值之一,找不到时回退到 `default`(AC-R8)。为 session-registry 中新会话的模式做种(SR-R6)。                                                              |
+| `consensus`         | `{ enabled }`(可选) | 权限提示上的多智能体共识投票;默认关闭。由权限网关消费——见 [consensus](../../core/permission-gateway/features/permission-gateway-consensus.md)。                                                 |
+| `maxRoundsPerStage` | number(可选)        | 多智能体讨论每阶段的轮次上限;归一化为 ≥ 8,默认 12(AC-R9)。由讨论引擎消费。                                                                                                                      |
+| `timezone`          | text(可选)          | 用于解释每个自动化的 cron 字段的系统级 IANA 时区(例如 `Asia/Shanghai`);无效/未设置时回退到服务器本地时区。由 [automations](../../core/automations/automations-design.md) 引擎消费——见 SCH-R3a。 |
 
-## Session binding (state.json, `~/.c3`)
+## Session binding(会话绑定,state.json,`~/.c3`)
 
-The per-session agent binding — a **two-key space** (ADR-0015, AC-R16/R17), distinct from the
-session-registry's state.
+按会话的智能体绑定——一个**双键空间**(ADR-0015,AC-R16/R17),与
+session-registry 自身的状态是分离的。
 
-| Field            | Type                                     | Description                                                                                                           |
-| ---------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `version`        | `2`                                      | Schema version (v1 single-map blobs migrate on first read)                                                            |
-| `pendingIntents` | map `pendingId → { agentId, createdAt }` | **Intent** — a not-yet-run session's desired agent; mutable, no vendor; reaped by the janitor after 7 days (AC-R17)   |
-| `sessionAgents`  | map `realId → { agentId, vendor }`       | **Fact** — the agent a real session ran on + its frozen `vendor`; a missing entry ⇒ use the default agent (AC-R4/R16) |
+| 字段             | 类型                                     | 说明                                                                                                    |
+| ---------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `version`        | `2`                                      | Schema 版本(v1 单一 map 的旧数据在首次读取时迁移)                                                       |
+| `pendingIntents` | map `pendingId → { agentId, createdAt }` | **意图**——尚未运行的会话所期望的智能体;可变,无厂商信息;由清理任务在 7 天后回收(AC-R17)                  |
+| `sessionAgents`  | map `realId → { agentId, vendor }`       | **事实**——某个真实会话实际运行所用的智能体 + 其被冻结的 `vendor`;缺失该条目 ⇒ 使用默认智能体(AC-R4/R16) |
 
-### Session binding entities
+### Session binding 实体
 
-| Entity         | Attribute   | Type      | Description                                                              |
-| -------------- | ----------- | --------- | ------------------------------------------------------------------------ |
-| Pending intent | `agentId`   | text      | The agent the pending session wants to launch with                       |
-| Pending intent | `createdAt` | number    | ms since epoch the intent was first recorded — drives janitor expiry     |
-| Session fact   | `agentId`   | text      | The agent that actually ran (default fallback applied)                   |
-| Session fact   | `vendor`    | vendor id | The **frozen** vendor; same-vendor agent swaps allowed, cross-vendor not |
+| 实体     | 属性        | 类型      | 说明                                                       |
+| -------- | ----------- | --------- | ---------------------------------------------------------- |
+| 待定意图 | `agentId`   | text      | 该待定会话希望据以启动的智能体                             |
+| 待定意图 | `createdAt` | number    | 该意图首次被记录时的毫秒时间戳——用于驱动清理任务的过期判断 |
+| 会话事实 | `agentId`   | text      | 实际运行所用的智能体(已应用默认兜底)                       |
+| 会话事实 | `vendor`    | vendor id | **被冻结**的厂商;允许同厂商内的智能体互换,不允许跨厂商     |
 
-Relationships: a pending intent transitions to **at most one** session fact at first bind (then it is
-deleted); a fact's `vendor` is immutable for the session's life.
+关系:一个待定意图在首次绑定时会转变为**至多一个**会话事实(随后被
+删除);一个事实的 `vendor` 在该会话的生命周期内不可变。

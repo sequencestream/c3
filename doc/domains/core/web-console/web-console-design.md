@@ -1,458 +1,452 @@
-# web-console — Design
+# web-console — 设计
 
-Implements the [spec](web-console-spec.md). A Vue 3 single-page app. One thin container holds all client
-state and the WebSocket wiring and composes a set of presentational components; shared
-non-component helper modules (pure view logic, the WebSocket client) live alongside them. Built
-with Vite, whose dev server proxies the WebSocket to the running server.
+实现[规格](web-console-spec.md)。一个 Vue 3 单页应用。一个薄容器持有全部客户端
+状态与 WebSocket 接线,并组合一组展示型组件;共享的
+非组件辅助模块(纯视图逻辑、WebSocket 客户端)与它们并列存放。使用 Vite
+构建,其开发服务器把 WebSocket 代理到运行中的服务端。
 
-> **Note (terminology).** The console's **Intent (意图)** page + list is the domain work-unit
-> entity, renamed from **Requirement (需求)** in the requirements→intents rename (PR-2). This is
-> distinct from the lowercase _intent events_ that child components emit (a user-action signal,
-> see below): same word, different context. The two are unrelated; only the domain entity was
-> renamed.
+> **说明(术语)。** 控制台的**Intent(意图)**页面 + 列表是领域工作单元
+> 实体,在 requirements→intents 更名(PR-2)中由**Requirement(需求)**改名而来。这与
+> 子组件发出的小写 _intent 事件_(一种用户操作信号,
+> 见下文)是不同的概念:同一个词,不同的语境。二者互不相关;只有领域实体被
+> 更名了。
 
-## Components / structure
+## 组件 / 结构
 
-The container owns all WebSocket state and the single send path; child components are
-presentational, taking props and emitting user-action events (the container performs every
-send). Styling is global, so components carry no scoped styles.
+容器持有全部 WebSocket 状态与唯一的发送路径;子组件都是
+展示型的,接收 props 并发出用户操作事件(所有发送均由容器执行)。
+样式是全局的,因此组件不携带 scoped 样式。
 
-| Unit                   | Role                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App container          | Holds state, owns the WebSocket client, dispatches every inbound wire event, and wires children                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| App header             | Top bar: hosts the workspace switcher (far left), the **project config entry** button (right after the switcher, opens project-level config for the current workspace, disabled when no workspace is selected), the **tab nav** (data-driven 「会话」/「需求」, active highlighted, disabled until a workspace exists), the settings entry, and the connection status. Carries no session title or permission-mode dropdown — those moved to the session title bar (WC-R9)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Session title bar      | Chat column's title row: left session title (+ vendor dot), right an optional **same-vendor agent switcher** (only when switch candidates are present — WC-R22/AS-R23, with an inline 「current agent unavailable」 banner when the current agent is unavailable) then the permission-mode dropdown. Shown only on the console tab with an active session; presentational, signalling mode change / agent switch (the container runs the optimistic mode change; an agent switch sends `set_session_agent` and waits for `session_agent_changed`). WC-R9/WC-R22                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Workspace switcher     | Top-bar current-workspace control: trigger shows the current workspace name + add + open-list affordances; the popover lists every workspace (name + path), selects one, and removes one (second-confirm). Self-contained popover (pointer-capture close); presentational, signalling add/select/remove workspace                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Session list           | The 「会话」tab's left column — the current workspace's unified session list (no workspace tree). It renders six `session_kind` tabs (work / intent / spec / discussion / automation / tool) with running-count badges from the `session_metadata` count path; work, intent, spec, and tool show real rows, while discussion / automation remain disabled placeholders. The tool tab is enabled only when the existing show-tool-sessions system setting is on; when off, tool rows/counts are not requested or shown. Spec rows use projected intent owner metadata to jump to the owning intent's 「spec session」tab and call `open_spec_session(intentId)`, not `select_session(sessionId)`. Tool rows remain selectable as transcript sessions; when they carry owner metadata the row also renders a source-jump action, and ownerless tool rows omit that action. Rendered only on the sessions tab (the intent tab's left column is the intent list; both share the right-side chat console). Owns session pagination + prompt/confirm UX, signalling work-session create/rename/delete. The header carries only ＋ New session; the intent entry moved to the top-bar tab nav, so the session list no longer renders the 「需求录入」💡 shortcut (WC-R18)                                                                                                                                                                                                                                                           |
-| Chat messages          | Groups the rendered stream into render blocks (text / collapsible tool batch), owns expand state + autoscroll. Text blocks delegate to the Markdown text renderer; tool-use/result rows stay verbatim, with code/tool bodies constrained to local horizontal scrolling so narrow screens never widen the chat column. A collapsed batch header shows the name + count summary plus a one-line preview of the batch's first tool-use, sharing the summary's nowrap + ellipsis so overflow truncates. The preview is **collapsed-only** (an open body already renders each input in full) and is omitted when the batch has no tool-use (e.g. permission-only) — the header then degrades to the bare summary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Markdown text          | One text message's renderer. Only **assistant** text is rendered as Markdown (sanitized, no raw HTML — the parser disables raw HTML and a sanitizer strips anything that slips through); user/system text falls through to escaped plain text. A sanitizer hook forces external links to open in a new tab with `noopener noreferrer` and drops `javascript:`/`data:` hrefs. The sanitizer allows the class/language attributes needed for highlighting but no inline style. Markdown tables are wrapped so wide tables scroll locally instead of expanding the message. After mount, code blocks get async syntax highlighting using a regex-engine highlighter (no WASM), with grammars loaded lazily from a curated common-language allowlist (~29 langs) and theme colors mapped to design tokens driven by the active theme; an excluded/unknown lang or a load failure keeps the original code block intact. Curating the allowlist (vs. the full bundle) keeps the build small (~32 lazy chunks / ~2.8MB instead of ~300 chunks / ~10MB). Rendering is non-streaming (whole-message) so no buffering / unclosed-tag handling is needed                                                                                                                                                                                                                                                                                                                                                                                |
-| Permission prompt      | One permission block. When actionable: an AskUserQuestion answer panel or an allow/deny prompt (owns local answer draft, signalling respond / submit-ask). When undecided-but-not-actionable: a single static history line (no buttons, no verdict)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Consensus block        | Read-only render of an auto-resolved multi-agent consensus outcome                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Session status bar     | Thin status line above the input: a single unified status indicator rendered as icon + agent + status (a shared pure helper maps running + activity + reconnecting + side-effect-pending to a tone/icon/status-key/optional-agent; the agent prefix is dropped cleanly with no leftover separator when there is no resolved agent) + Stop button (red square) + refresh button; presentational, signalling refresh and stop. The Stop button is enabled while running or a team is active (its tooltip distinguishes stop-turn vs end-team) and routes to the stop-run action (WC-R14/R15)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Message input          | Prompt textarea + slash-command autocomplete; owns the input draft, signalling submit / enqueue / list-commands, and exposes a prefill capability. The textarea is editable whenever a session is active (only the no-active-session case disables it); during an ordinary in-flight turn Send/Enter **enqueues** instead of submitting (the Stop/End-team control now lives in the status bar, WC-R14). The three action buttons are **embedded inside the textarea field** (`.composer-field`, a flex **column**: textarea above, action bar below): attach + voice sit at the inner bottom-left (`.composer-actions`), and Send sits at the inner bottom-right (`.send-wrap`) as a **down-arrow icon button** (no text label; its title/aria-label carry the accessible name). Keeping text and buttons in normal flow (a bottom bar rather than overlaid absolute buttons) means they never overlap in any state — empty, multi-line, focused, or disabled. The border/focus ring lives on the `.composer-field` container so the highlight wraps the whole field. Freeing the textarea of an external button column widens the editable area. Submit keys: `⌘/Ctrl+Enter`, or two bare `Enter`s within 400ms (skips IME compose & `Shift+Enter`). Hovering Send for 2s shows a send-hint tooltip. On narrow screens the footer is safe-area aware, keeps 48px+ touch targets, and tracks the visual viewport so the composer and slash menu stay above the soft keyboard/home indicator without changing desktop layout |
-| Pending queue          | Pending-send queue rendered between the status bar and the message input; lists queued items (text + ✎ edit / 🗑 delete), signalling edit/delete. Presentational; the container owns the queue state and flush                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Settings panel         | System settings page: the agent table; owns an editable draft seeded from server settings. The agent table's icon column is a manual text input paired with an emoji picker (both bound to the same icon draft field). Per-project controls (default mode, dev skill, rounds, speech chars, consensus) were removed from the settings panel and moved to the workspace-setting page                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Emoji picker           | Zero-dependency emoji picker for the agent icon field: trigger button + popover (search box + category grid). Self-maintained static emoji list with English keywords for search. Bound to the agent's icon string; click-outside / Esc close; keyboard-reachable native cells. A display-only input affordance — writes the picked emoji back to the same icon field, no protocol or persistence change                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Workspace-setting page | Workspace-setting full-page overlay: edits 7 per-project controls (default mode, dev skill, max rounds per stage, max speech chars, consensus enabled/majority, git branch mode, default main branch). Owns an editable draft seeded from the `workspace_setting` server reply; a detected-main-branch value (the reply's server-probed default branch) pre-fills the default main branch when no saved value exists. Saving sends `save_workspace_setting`. Entered from the app header after the workspace switcher, disabled without a workspace. Follows the same draft-editing pattern as the settings panel.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| Base dropdown          | Standard custom dropdown (replaces the native one): trigger + popover with icon rows, keyboard nav, click-outside close                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Intent list            | Intent view left column: intent list + status filter + row actions (refine / start-dev / dev-detail / set-status / set-automate). Receives the full intent list and the automation-orchestrator status as props; signalling intent actions for the container to send. Renders each item's lifecycle status badge plus the derived run-status indicator (running green pulse / dangling amber) next to in-progress items. The panel is collapsible (narrow view hides secondary fields)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| WebSocket client       | Opens the WebSocket to `/ws`, dispatches parsed server-to-client messages to a listener, exposes a send for client-to-server messages plus close; heartbeat + auto-reconnect with a reopen view-recovery callback                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 单元                   | 职责                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App container          | 持有状态,持有 WebSocket 客户端,派发每一个入站的 wire 事件,并接线子组件                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| App header             | 顶部栏:承载工作区切换器(最左侧)、**项目配置入口**按钮(紧随切换器之后,打开当前工作区的项目级配置,未选中工作区时禁用)、**tab 导航**(数据驱动的「会话」/「需求」,当前项高亮,工作区不存在前禁用)、设置入口,以及连接状态。不携带会话标题或权限模式下拉框——它们已移到会话标题栏(WC-R9)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Session title bar      | 聊天列的标题行:左侧是会话标题(+ 厂商圆点),右侧是可选的**同厂商智能体切换器**(仅在存在可切换候选时出现——WC-R22/AS-R23,当前智能体不可用时附带一条内联的「当前智能体不可用」提示条),之后是权限模式下拉框。仅在有活动会话的会话 tab 上显示;展示型,发出模式变更 / 智能体切换信号(容器执行乐观的模式变更;智能体切换发送 `set_session_agent` 并等待 `session_agent_changed`)。WC-R9/WC-R22                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Workspace switcher     | 顶部栏的当前工作区控件:触发器展示当前工作区名称 + 新增 + 展开列表的可交互项;弹出层列出每个工作区(名称 + 路径),可选中一个,可移除一个(二次确认)。自包含的弹出层(pointer-capture 关闭);展示型,发出新增/选中/移除工作区信号                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Session list           | 「会话」tab 的左侧列——当前工作区统一的会话列表(没有工作区树)。它渲染六个 `session_kind` tab(work / intent / spec / discussion / automation / tool),角标为来自 `session_metadata` 计数路径的运行中数量;work、intent、spec 和 tool 展示真实行,而 discussion / automation 仍是禁用的占位符。tool tab 仅在既有的“显示 tool 会话”系统设置开启时启用;关闭时,tool 相关的行/计数不会被请求或展示。spec 行使用投影的 intent 归属元数据跳转到所属 intent 的「spec session」tab 并调用 `open_spec_session(intentId)`,而非 `select_session(sessionId)`。tool 行仍可作为 transcript 会话被选中;当它们携带归属元数据时,该行还会渲染一个来源跳转操作,无归属的 tool 行则省略该操作。仅在 sessions tab 上渲染(intent tab 的左侧列是 intent 列表;两者共用右侧的聊天控制台)。持有会话分页 + 提示/确认交互,发出 work 会话新建/重命名/删除信号。表头只保留 ＋ 新建会话;intent 入口已移到顶部栏的 tab 导航,因此会话列表不再渲染「需求录入」💡 快捷方式(WC-R18)                                                                                  |
+| Chat messages          | 把渲染流分组为渲染块(文本 / 可折叠的工具批次),持有展开状态 + 自动滚动。文本块委托给 Markdown 文本渲染器;tool-use/result 行保持原样,代码/工具正文限制在局部水平滚动内,使窄屏永远不会撑宽聊天列。折叠的批次表头展示名称 + 计数摘要,以及该批次首个 tool-use 的单行预览,与摘要共用 nowrap + 省略号,溢出即截断。预览**仅在折叠时**出现(展开的正文已完整渲染每个输入),当批次没有 tool-use 时(例如仅权限)则省略——此时表头退化为纯摘要                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Markdown text          | 单条文本消息的渲染器。只有**助手**文本被渲染为 Markdown(经过净化、不含原始 HTML——解析器禁用原始 HTML,净化器再剥离任何漏网的内容);用户/系统文本回退为转义后的纯文本。一个净化器钩子强制外部链接以 `noopener noreferrer` 在新标签页打开,并丢弃 `javascript:`/`data:` 的 href。净化器允许高亮所需的 class/language 属性,但不允许内联样式。Markdown 表格被包裹,使宽表格在局部滚动而不是撑宽消息。挂载后,代码块使用一个基于正则引擎的高亮器(无 WASM)获得异步语法高亮,语法定义从一个精选的常用语言白名单(约 29 种语言)懒加载,主题色映射到由当前主题驱动的设计 token;被排除/未知的语言或加载失败会保留原始代码块不变。精选白名单(相较完整打包)让构建体积保持小巧(约 32 个懒加载 chunk / 约 2.8MB,而非约 300 个 chunk / 约 10MB)。渲染是非流式的(整条消息一次性渲染),因此不需要缓冲 / 未闭合标签处理                                                                                                                                                                                                                              |
+| Permission prompt      | 单个权限区块。当可操作时:一个 AskUserQuestion 应答面板或一个允许/拒绝提示(持有本地应答草稿,发出应答/提交-ask 信号)。当未决但不可操作时:一条单一的静态历史行(无按钮、无结论)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Consensus block        | 只读渲染一个自动解决的多智能体共识结果                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Session status bar     | 输入框上方的细状态行:一个统一的状态指示器,渲染为图标 + 智能体 + 状态(一个共享的纯辅助函数把 running + activity + reconnecting + side-effect-pending 映射为色调/图标/状态键/可选智能体;当没有已解析的智能体时,智能体前缀会被干净地丢弃,不留残余分隔符)+ Stop 按钮(红色方块)+ 刷新按钮;展示型,发出刷新与停止信号。Stop 按钮在运行中或团队处于活跃状态时启用(其 tooltip 区分 stop-turn 与 end-team),并路由到停止运行动作(WC-R14/R15)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Message input          | 提示词文本域 + 斜杠命令自动补全;持有输入草稿,发出提交/入队/列出命令信号,并暴露一个预填能力。只要会话处于活跃状态,文本域即可编辑(只有无活动会话的情况才禁用它);在普通的进行中回合期间,Send/Enter **入队**而非提交(Stop/End-team 控件现在位于状态栏,WC-R14)。三个操作按钮**内嵌在文本域字段内**(`.composer-field`,一个 flex **column**:上方文本域,下方操作栏):附件 + 语音位于内部左下角(`.composer-actions`),Send 位于内部右下角(`.send-wrap`),是一个**向下箭头图标按钮**(无文字标签;其 title/aria-label 携带无障碍名称)。把文本与按钮保持在正常文档流中(底部栏而非覆盖式绝对定位按钮)意味着在任何状态下——空、多行、聚焦或禁用——它们都不会重叠。边框/聚焦环位于 `.composer-field` 容器上,使高亮包裹整个字段。让文本域摆脱外部按钮列,拓宽了可编辑区域。提交按键:`⌘/Ctrl+Enter`,或 400ms 内两次单独的 `Enter`(跳过 IME 组字与 `Shift+Enter`)。悬停 Send 2 秒会显示发送提示 tooltip。窄屏上页脚感知安全区,保持 48px 以上的触控目标,并追踪 visual viewport,使输入框与斜杠菜单始终位于软键盘/主屏幕指示条之上,同时不改变桌面布局 |
+| Pending queue          | 待发送队列,渲染在状态栏与消息输入框之间;列出排队中的条目(文本 + ✎ 编辑 / 🗑 删除),发出编辑/删除信号。展示型;容器持有队列状态与刷新                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Settings panel         | 系统设置页:智能体表;持有一个从服务端设置播种的可编辑草稿。智能体表的图标列是一个手动文本输入,搭配一个 emoji 选择器(两者绑定同一个图标草稿字段)。逐项目控件(默认模式、开发技能、轮次、语音字符数、共识)已从设置面板移除,转移到工作区设置页面                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Emoji picker           | 智能体图标字段的零依赖 emoji 选择器:触发按钮 + 弹出层(搜索框 + 分类网格)。自维护的静态 emoji 列表,附英文关键词用于搜索。绑定到智能体的图标字符串;点击外部区域 / Esc 关闭;键盘可达的原生单元格。一个仅展示层面的输入交互——把选中的 emoji 写回同一个图标字段,不涉及协议或持久化变更                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Workspace-setting page | 工作区设置全页面浮层:编辑 7 个逐项目控件(默认模式、开发技能、每阶段最大轮次、最大语音字符数、共识启用/多数表决、git 分支模式、默认主分支)。持有一个从 `workspace_setting` 服务端回复播种的可编辑草稿;一个检测到的主分支值(回复中服务端探测到的默认分支)会在没有已保存值时预填默认主分支。保存时发送 `save_workspace_setting`。从 app header 中工作区切换器之后进入,无工作区时禁用。遵循与设置面板相同的草稿编辑模式。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Base dropdown          | 标准自定义下拉框(替代原生下拉框):触发器 + 带图标行的弹出层、键盘导航、点击外部区域关闭                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Intent list            | Intent 视图左侧列:intent 列表 + 状态筛选 + 行操作(细化 / 开始开发 / 开发详情 / 设置状态 / 设置自动化)。以 props 形式接收完整的 intent 列表与自动化编排器状态;发出 intent 操作供容器发送。为每一项渲染其生命周期状态角标,以及紧邻进行中项的派生运行状态指示器(运行中绿色脉动 / 悬空琥珀色)。该面板可折叠(窄视图下隐藏次要字段)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| WebSocket client       | 打开到 `/ws` 的 WebSocket,把解析后的 server-to-client 消息派发给一个监听器,暴露一个用于 client-to-server 消息的发送方法及关闭方法;心跳 + 自动重连,附带重开时的视图恢复回调                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
-Shared helper modules provide pure, DOM-free, unit-tested logic for: current-workspace
-resolution (keep the persisted choice while it's still listed, else fall back to the most-recent
-workspace); the chat view-model types; AskUserQuestion parsing + consensus pre-fill; JSON-pretty
-and one-line formatting of tool inputs; send-queue logic (merge / should-flush / composer-action /
-append / remove / merge-into-draft); intent-list presentation logic (status labels, run-status
-labels, panel-toggle label, row visibility, completion sort — see _Intent runStatus indicator_
-below); the task-list model (re-exporting the shared task-model source of truth — types plus the
-pure reducer and tool-name set — and adding the DOM-free panel display selector; the model is now
-server-derived over the `task_*` wire path, see _Task-list (wire-driven)_ below); and the
-console-tab entry decision (honor the remembered session, else the workspace's first, else empty —
-see _Per-tab viewed session_ below).
+共享辅助模块提供纯的、无 DOM、经过单元测试的逻辑,涵盖:当前工作区
+解析(在持久化选择仍在列表中时保留它,否则回退到最近使用的
+工作区);聊天视图模型类型;AskUserQuestion 解析 + 共识预填;工具输入的
+JSON 美化与单行格式化;发送队列逻辑(合并 / 是否应刷新 / composer-action /
+追加 / 移除 / 合并进草稿);intent 列表展示逻辑(状态标签、运行状态
+标签、面板折叠按钮标签、行可见性、完成排序——见下文 _Intent runStatus 指示器_
+);任务列表模型(重新导出共享任务模型的唯一真实来源——类型加上
+纯 reducer 与工具名集合——并新增无 DOM 的面板展示选择器;该模型现已
+通过 `task_*` wire 路径由服务端派生,见下文 _任务列表(wire 驱动)_ );以及
+会话 tab 入口决策(优先记住的会话,否则该工作区的第一个,否则为空——
+见下文 _按 tab 分别记忆的会话_ )。
 
-## State (container)
+## 状态(容器)
 
-| State                     | Purpose                                                                                                                                                                                                                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Rendered messages         | Ordered render list (WC-R1); passed to the chat messages view                                                                                                                                                                                                                              |
-| Current workspace         | The single global current workspace path (WC-R8); resolved from the persisted choice or most-recent, persisted locally, drives the console tab's session list (its slice of the per-workspace sessions). Decoupled from the viewed session's workspace                                     |
-| Connection status         | Connection indicator — connecting / open / closed (WC-R6)                                                                                                                                                                                                                                  |
-| Per-session status        | Per-session live status from the `ready` / `session_status` events (WC-R12)                                                                                                                                                                                                                |
-| Running (derived)         | Viewed session's status ≠ idle; enables the status-bar Stop button and switches Send to enqueue (input stays editable; Send copy is fixed) (WC-R2/R14)                                                                                                                                     |
-| Pending queues            | Per-session client-only send queue (ordinary sessions). Survives session switches; lost on reload. The viewed session's slice is the current queue                                                                                                                                         |
-| Run activity              | Fine-grained run state of the viewed session, inferred from the stream; drives the status bar (WC-R15)                                                                                                                                                                                     |
-| Mode                      | Current vendor-native mode token; synced from session selection / `mode_changed` (WC-R4). Interpreted via the active session's vendor catalog                                                                                                                                              |
-| Mode options (derived)    | Options for the mode dropdown, derived from the active session's vendor mode catalog (from `settings.vendorModes`). Falls back to the built-in Claude mode list when the vendor catalog is not yet loaded                                                                                  |
-| Vendor modes              | Per-vendor mode catalogs (2026-06-07-012), seeded from `settings.vendorModes`. Drives per-vendor mode options in the picker                                                                                                                                                                |
-| Actionable permission     | Request id of the one permission the user can still act on, or none; derived from per-session status + transcript (WC-R16)                                                                                                                                                                 |
-| Intents                   | Per-project intent lists; updated on an `intents` push or a `list_intents` reply                                                                                                                                                                                                           |
-| Automation                | Per-project automation-orchestrator status; updated on an `automation_status` push                                                                                                                                                                                                         |
-| Active tab                | The explicit top-bar tab selection driving which page the content area renders (WC-R18). Backed by a data-driven tab list (extensible — a future 「讨论」tab is one more entry + one body branch). Persisted locally (key `c3.viewMode`) so a hard refresh restores the tab                |
-| Intents project           | The project path whose intent page is currently open; persisted alongside the active tab                                                                                                                                                                                                   |
-| Console session           | The 「会话」tab's OWN last-viewed session pointer, independent of the intent tab's comm session — so switching tabs never crosses chat content. Drives the console-tab re-bind. In-memory (survives WS reconnect, lost on reload, like the transcript). See _Per-tab viewed session_ below |
-| Workspace-setting open    | Whether the workspace-setting overlay is open; toggled by the app-header workspace-setting button. Closed on workspace switch and WS reconnect                                                                                                                                             |
-| Current workspace-setting | The last `workspace_setting` reply from the server, seeded into the workspace-setting draft. Cleared on workspace switch and WS reconnect                                                                                                                                                  |
-| Detected main branch      | The server-probed default branch carried on the `workspace_setting` reply; passed to the workspace-setting page to pre-fill the default main branch when no saved value exists. Cleared on workspace switch and WS reconnect                                                               |
+| 状态                      | 用途                                                                                                                                                                                                                 |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rendered messages         | 有序渲染列表(WC-R1);传递给聊天消息视图                                                                                                                                                                               |
+| Current workspace         | 唯一的全局当前工作区路径(WC-R8);从持久化选择或最近使用中解析,本地持久化,驱动会话 tab 的会话列表(其在按工作区分组的会话中的切片)。与当前查看会话的工作区解耦                                                          |
+| Connection status         | 连接指示器——connecting / open / closed(WC-R6)                                                                                                                                                                        |
+| Per-session status        | 来自 `ready` / `session_status` 事件的逐会话实时状态(WC-R12)                                                                                                                                                         |
+| Running (derived)         | 当前查看会话的状态 ≠ idle;启用状态栏的 Stop 按钮并把 Send 切换为入队(输入框保持可编辑;Send 文案固定不变)(WC-R2/R14)                                                                                                  |
+| Pending queues            | 逐会话、仅客户端的发送队列(普通会话)。会话切换后仍保留;刷新页面则丢失。当前查看会话的切片即当前队列                                                                                                                  |
+| Run activity              | 当前查看会话的细粒度运行状态,从事件流推断;驱动状态栏(WC-R15)                                                                                                                                                         |
+| Mode                      | 当前的厂商原生模式 token;从会话选择 / `mode_changed` 同步(WC-R4)。通过活动会话的厂商目录解释                                                                                                                         |
+| Mode options (derived)    | 模式下拉框的选项,从活动会话的厂商模式目录(来自 `settings.vendorModes`)派生。厂商目录尚未加载时回退到内置的 Claude 模式列表                                                                                           |
+| Vendor modes              | 按厂商的模式目录(2026-06-07-012),由 `settings.vendorModes` 播种。驱动选择器中按厂商区分的模式选项                                                                                                                    |
+| Actionable permission     | 用户仍可操作的那一个权限的请求 id,或 none;从逐会话状态 + transcript 派生(WC-R16)                                                                                                                                     |
+| Intents                   | 按项目的 intent 列表;在 `intents` 推送或 `list_intents` 回复时更新                                                                                                                                                   |
+| Automation                | 按项目的自动化编排器状态;在 `automation_status` 推送时更新                                                                                                                                                           |
+| Active tab                | 驱动内容区渲染哪个页面的显式顶部栏 tab 选择(WC-R18)。由一个数据驱动的 tab 列表支撑(可扩展——未来的「讨论」tab 只是多一个条目 + 一个正文分支)。本地持久化(键为 `c3.viewMode`),硬刷新后恢复该 tab                       |
+| Intents project           | 当前打开的 intent 页面所属的项目路径;与当前 tab 一同持久化                                                                                                                                                           |
+| Console session           | 「会话」tab 自己的最后查看会话指针,独立于 intent tab 的通讯会话——因此切换 tab 永远不会跨污聊天内容。驱动会话 tab 的重新绑定。内存态(WS 重连后存活,刷新页面后丢失,与 transcript 一致)。见下文 _按 tab 分别记忆的会话_ |
+| Workspace-setting open    | 工作区设置浮层是否打开;由 app-header 的工作区设置按钮切换。在工作区切换与 WS 重连时关闭                                                                                                                              |
+| Current workspace-setting | 来自服务端的最近一次 `workspace_setting` 回复,播种进工作区设置草稿。在工作区切换与 WS 重连时清空                                                                                                                     |
+| Detected main branch      | `workspace_setting` 回复上携带的、服务端探测到的默认分支;传给工作区设置页面,在没有已保存值时预填默认主分支。在工作区切换与 WS 重连时清空                                                                             |
 
-Component-local UI state (not in the container): prompt draft + slash menu in the message input;
-tool/batch expand sets in the chat messages view; per-question answer draft in the permission
-prompt; session-list pagination in the session list; editable settings draft in the settings
-panel.
+组件本地 UI 状态(不在容器中):消息输入框中的提示词草稿 + 斜杠菜单;
+聊天消息视图中的工具/批次展开集合;权限提示中的逐问题应答草稿;会话列表中的
+会话分页;设置面板中的可编辑设置草稿。
 
-The message-input composer textarea **auto-grows** with its draft: a watch on the draft resizes it
-after every text mutation (typing, voice append, send-queue prefill, slash-command apply, post-send
-clear) to the content height, capped at 200px after which it scrolls internally; the CSS min-height
-floors the single-line idle state. The geometry is a shared pure helper (also reused by the
-discussion create-form textareas).
+消息输入框的 composer 文本域会随其草稿**自动增高**:一个对草稿的 watch 在每次
+文本变更(输入、语音追加、发送队列预填、斜杠命令应用、发送后
+清空)后把它调整到内容高度,上限 200px,超出后内部滚动;CSS 的 min-height
+为单行空闲态设定下限。该几何计算是一个共享的纯辅助函数(也被
+讨论创建表单的文本域复用)。
 
-A rendered chat message is a discriminated union over its kind: user · assistant · tool-use ·
-tool-result · permission · consensus · system, each with a numeric id.
+一条渲染出的聊天消息是按其种类区分的联合类型:user · assistant · tool-use ·
+tool-result · permission · consensus · system,各自带一个数字 id。
 
-## Event handling (wire → UI)
+## 事件处理(wire → UI)
 
-Inbound dispatch switches on the message type:
+入站派发按消息类型分支:
 
-| Wire event                 | UI effect                                                                                                                                                   |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ready`                    | set mode; seed per-session status from `statuses`; resolve the current workspace (persisted → most-recent) and `list_sessions` for it (WC-R8)               |
-| `workspaces`               | replace the workspace list; if the current workspace was removed, fall back to the most-recent and load the new one's sessions (WC-R8)                      |
-| `session_status`           | replace per-session status; notify on background `awaiting_permission` (WC-R13)                                                                             |
-| `mode_changed`             | set mode                                                                                                                                                    |
-| `session_selected`         | clear stream, render `history`, seed the session's status from `status` (locks composer at once); buffer tail follows as live events (WC-R9)                |
-| `user_text`                | append user message                                                                                                                                         |
-| `assistant_text`           | append assistant message                                                                                                                                    |
-| `tool_use` / `tool_result` | append tool-use / tool-result message                                                                                                                       |
-| `permission_request`       | append permission message undecided (live or replayed alike; actionability is derived, see below)                                                           |
-| `consensus_auto`           | append consensus message                                                                                                                                    |
-| `turn_end`                 | append a system note only on `error`; running unlocks via `session_status` (WC-R5)                                                                          |
-| `intents`                  | replace the project's intent list with the pushed list (WC-R10)                                                                                             |
-| `automation_status`        | replace the project's automation-orchestrator status with the pushed status (WC-R11)                                                                        |
-| `workspace_setting`        | set the current workspace-setting to the returned config and the detected main branch to the reply's probed branch; consumed by the workspace-setting draft |
+| Wire 事件                  | UI 效果                                                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `ready`                    | 设置模式;从 `statuses` 播种逐会话状态;解析当前工作区(持久化选择 → 最近使用)并为其请求 `list_sessions`(WC-R8)  |
+| `workspaces`               | 替换工作区列表;若当前工作区已被移除,则回退到最近使用的工作区并加载其会话(WC-R8)                               |
+| `session_status`           | 替换逐会话状态;当后台会话为 `awaiting_permission` 时通知(WC-R13)                                              |
+| `mode_changed`             | 设置模式                                                                                                      |
+| `session_selected`         | 清空事件流,渲染 `history`,从 `status` 播种该会话的状态(立即锁定 composer);缓冲区的尾部作为实时事件跟进(WC-R9) |
+| `user_text`                | 追加用户消息                                                                                                  |
+| `assistant_text`           | 追加助手消息                                                                                                  |
+| `tool_use` / `tool_result` | 追加 tool-use / tool-result 消息                                                                              |
+| `permission_request`       | 追加一条未决的权限消息(实时或回放皆然;可操作性是派生的,见下文)                                                |
+| `consensus_auto`           | 追加共识消息                                                                                                  |
+| `turn_end`                 | 仅在 `error` 时追加一条系统提示;运行状态通过 `session_status` 解锁(WC-R5)                                     |
+| `intents`                  | 用推送的列表替换该项目的 intent 列表(WC-R10)                                                                  |
+| `automation_status`        | 用推送的状态替换该项目的自动化编排器状态(WC-R11)                                                              |
+| `workspace_setting`        | 把当前工作区设置设为返回的配置,把检测到的主分支设为回复中探测到的分支;供工作区设置草稿消费                    |
 
-## Intent runStatus indicator
+## Intent runStatus 指示器
 
-Each intent carries a derived run-status field — running / dangling / idle (see
-[intent-management design](../intent-management/intent-management-design.md)). The server computes it during the
-in-progress reconcile on intent-chat entry, caches the result, and enriches every intent broadcast:
+每个 intent 携带一个派生的运行状态字段——running / dangling / idle(见
+[intent-management 设计](../intent-management/intent-management-design.md))。服务端在
+intent-chat 进入时的进行中和解过程中计算它,缓存结果,并丰富每一条 intent 广播:
 
-- **running** — the dev session's process is alive in the runtime registry. The UI renders a green
-  pulsing dot + "运行中" badge next to the lifecycle status.
-- **dangling** — the dev process is dead but the intent is still in_progress (server restart / crash /
-  normal exit where the completion judge found it not done). The UI renders an amber dot + "已中断" warning.
-- **idle** — not in_progress, or auto-completed. No run-status indicator is rendered.
-- **Reconnect / hard refresh.** The reopen callback re-sends `open_intent_chat`, which triggers a
-  fresh reconcile + enrichment pass, and the persisted tab (and its project) is recovered from local
-  storage. Both paths restore the correct run-status without user action.
-- **Broadcast enrichment.** Every intent broadcast applies the enrichment, which checks the live
-  process first, then falls back to the reconcile cache. So incremental status changes (a dev session
-  completes, the orchestrator progresses) also reflect the correct run-status on all connections.
+- **running** ——开发会话的进程在运行时注册表中存活。UI 渲染一个绿色
+  脉动圆点 + "运行中" 角标,紧邻生命周期状态。
+- **dangling** ——开发进程已死,但 intent 仍处于 in_progress(服务端重启 / 崩溃 /
+  正常退出但完成判定器发现未完成)。UI 渲染一个琥珀色圆点 + "已中断" 警告。
+- **idle** ——非 in_progress,或已自动完成。不渲染运行状态指示器。
+- **重连 / 硬刷新。** 重开回调会重新发送 `open_intent_chat`,触发一次
+  全新的和解 + 丰富过程,持久化的 tab(及其项目)从本地
+  存储恢复。两条路径都无需用户操作即可恢复正确的运行状态。
+- **广播丰富。** 每一条 intent 广播都应用这个丰富过程,它先检查实时
+  进程,再回退到和解缓存。因此增量的状态变化(某个开发会话
+  完成、编排器推进)也能在所有连接上反映出正确的运行状态。
 
-The pure display logic provides: a lifecycle status label (`draft`→`草稿` …), a derived run-status
-label (`running`→`运行中` …), a non-idle run-status predicate, the collapse button label reflecting
-the target state, secondary-field visibility in collapsed mode, and a done-items completion sort
-(completedAt desc, then priority).
+该纯展示逻辑提供:一个生命周期状态标签(`draft`→`草稿` ……)、一个派生的运行状态
+标签(`running`→`运行中` ……)、一个“非 idle”运行状态谓词、反映
+目标状态的折叠按钮标签、折叠模式下的次要字段可见性,以及一个已完成项的完成排序
+(先按 completedAt 降序,再按 priority)。
 
-A shared pulse animation is used by both the unified status indicator's pulsing icon (the status
-bar and the discussion list row) and the green pulsing run-status indicator.
+一个共享的脉动动画同时用于统一状态指示器的脉动图标(状态
+栏与讨论列表行)以及绿色的脉动运行状态指示器。
 
-## User actions (UI → wire)
+## 用户操作(UI → wire)
 
-| Action                 | Guard                                                                                                             | Sends                                                                                                                                                                                                                                                                            |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Submit                 | non-empty, connected; reached only when idle or team (WC-R2)                                                      | `user_prompt`; optimistically marks the viewed session running                                                                                                                                                                                                                   |
-| Enqueue                | ordinary session running (composer action)                                                                        | nothing — appends to the viewed session's pending queue (client-only); clears the composer                                                                                                                                                                                       |
-| Edit queued            | item in queue                                                                                                     | nothing — removes the item and folds its text back into the composer draft                                                                                                                                                                                                       |
-| Delete queued          | item in queue                                                                                                     | nothing — removes the item from the queue                                                                                                                                                                                                                                        |
-| Flush if ready         | should-flush (idle + non-empty; edge watch + level re-check on every status apply)                                | merges the viewed session's queue (blank-line joined) → submit → clears it                                                                                                                                                                                                       |
-| Stop run               | triggered by the status-bar Stop button; enabled while the viewed session is running or a team is active (WC-R14) | `stop_run` (interrupts an ordinary turn, or ends the whole team)                                                                                                                                                                                                                 |
-| Select workspace       | path ≠ current (WC-R8)                                                                                            | sets current workspace + persists; **force** `list_sessions` for the active `sessionKind` slice (bypasses the sessions cache — refreshes only that workspace/kind slice) and requests `get_session_counts`; then switches to 「会话」and re-binds via the console-entry decision |
-| Add / remove workspace | switcher add / row remove (second-confirm) (WC-R8)                                                                | `add_workspace` / `remove_workspace`                                                                                                                                                                                                                                             |
-| Respond                | connected, prompt actionable (⇒ undecided) (WC-R3)                                                                | `permission_response`; sets the decision locally                                                                                                                                                                                                                                 |
-| Set mode               | connected, value changed                                                                                          | optimistic mode update + `set_mode` (WC-R4)                                                                                                                                                                                                                                      |
-| Select tab             | top-bar tab click (WC-R18)                                                                                        | nothing — console → switch to 「会话」(flip + re-bind console session); intents → open the intent chat (no-op without a workspace)                                                                                                                                               |
-| Open intents           | connected                                                                                                         | `open_intent_chat` — server replies with comm `session_selected` + `intents`                                                                                                                                                                                                     |
-| Set intent filter      | intents project set                                                                                               | `list_intents` with optional status filter                                                                                                                                                                                                                                       |
-| Refine intent          | connected                                                                                                         | `refine_intent`; launches a fresh seeded comm session                                                                                                                                                                                                                            |
-| Start development      | connected                                                                                                         | `start_development` — background dev-skill launch, status flips to in_progress                                                                                                                                                                                                   |
-| Set intent status      | connected                                                                                                         | `update_intent_status`; broadcast re-enriches run-status                                                                                                                                                                                                                         |
-| Set intent automate    | connected                                                                                                         | `set_intent_automate`; broadcast re-enriches run-status                                                                                                                                                                                                                          |
-| Start automation       | intents project set                                                                                               | `start_automation` — begins the per-project orchestrator loop                                                                                                                                                                                                                    |
-| Stop automation        | intents project set                                                                                               | `stop_automation` — aborts the current orchestration run                                                                                                                                                                                                                         |
-| Open workspace setting | workspace selected                                                                                                | opens the workspace-setting overlay; sends `load_workspace_setting` for the current workspace                                                                                                                                                                                    |
-| Save workspace setting | workspace selected                                                                                                | sends `save_workspace_setting` with the project path and edited config; closes the workspace-setting overlay                                                                                                                                                                     |
+| 操作                   | 前置条件                                                                  | 发送                                                                                                                                                                                       |
+| ---------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Submit                 | 非空、已连接;只有 idle 或 team 状态下才会触发(WC-R2)                      | `user_prompt`;乐观地把当前查看会话标记为运行中                                                                                                                                             |
+| Enqueue                | 普通会话正在运行(composer 操作)                                           | 无——追加到当前查看会话的待发送队列(仅客户端);清空 composer                                                                                                                                 |
+| Edit queued            | 队列中的条目                                                              | 无——移除该条目,并把其文本折叠回 composer 草稿                                                                                                                                              |
+| Delete queued          | 队列中的条目                                                              | 无——从队列中移除该条目                                                                                                                                                                     |
+| Flush if ready         | should-flush(idle + 非空;每次状态应用时做边沿观察 + 水平复查)             | 合并当前查看会话的队列(以空行连接)→ 提交 → 清空它                                                                                                                                          |
+| Stop run               | 由状态栏 Stop 按钮触发;当前查看会话运行中或团队处于活跃状态时启用(WC-R14) | `stop_run`(打断一次普通回合,或结束整个团队)                                                                                                                                                |
+| Select workspace       | 路径 ≠ 当前(WC-R8)                                                        | 设置当前工作区 + 持久化;对活动的 `sessionKind` 切片**强制** `list_sessions`(绕过会话缓存——只刷新该工作区/种类切片)并请求 `get_session_counts`;然后切换到「会话」并通过会话入口决策重新绑定 |
+| Add / remove workspace | 切换器新增 / 行移除(二次确认)(WC-R8)                                      | `add_workspace` / `remove_workspace`                                                                                                                                                       |
+| Respond                | 已连接,提示可操作(⇒ 未决)(WC-R3)                                          | `permission_response`;在本地设置决定                                                                                                                                                       |
+| Set mode               | 已连接,值发生变化                                                         | 乐观模式更新 + `set_mode`(WC-R4)                                                                                                                                                           |
+| Select tab             | 顶部栏 tab 点击(WC-R18)                                                   | 无——console → 切换到「会话」(翻转 + 重新绑定会话 tab 的会话);intents → 打开 intent 聊天(无工作区时为 no-op)                                                                                |
+| Open intents           | 已连接                                                                    | `open_intent_chat`——服务端以通讯 `session_selected` + `intents` 回复                                                                                                                       |
+| Set intent filter      | intents project 已设置                                                    | 带可选状态筛选的 `list_intents`                                                                                                                                                            |
+| Refine intent          | 已连接                                                                    | `refine_intent`;启动一个新的预置通讯会话                                                                                                                                                   |
+| Start development      | 已连接                                                                    | `start_development`——后台开发技能启动,状态翻转为 in_progress                                                                                                                               |
+| Set intent status      | 已连接                                                                    | `update_intent_status`;广播重新丰富运行状态                                                                                                                                                |
+| Set intent automate    | 已连接                                                                    | `set_intent_automate`;广播重新丰富运行状态                                                                                                                                                 |
+| Start automation       | intents project 已设置                                                    | `start_automation`——启动该项目的编排器循环                                                                                                                                                 |
+| Stop automation        | intents project 已设置                                                    | `stop_automation`——中止当前编排运行                                                                                                                                                        |
+| Open workspace setting | 已选中工作区                                                              | 打开工作区设置浮层;为当前工作区发送 `load_workspace_setting`                                                                                                                               |
+| Save workspace setting | 已选中工作区                                                              | 携带项目路径与编辑后的配置发送 `save_workspace_setting`;关闭工作区设置浮层                                                                                                                 |
 
-## Permission actionability (live vs. replayed)
+## 权限可操作性(实时 vs. 回放)
 
-The server does **not** persist permission decisions, and session selection replays the runtime
-buffer — including past `permission_request` events — as ordinary live events. So a refresh or
-session switch rebuilds every historical permission undecided, identical on the wire to a fresh
-request. To avoid re-offering resolved prompts as actionable cards, the client derives
-actionability rather than trusting the undecided state alone (WC-R16):
+服务端**不**持久化权限决定,而会话选择会把运行时
+缓冲区——包括过去的 `permission_request` 事件——当作普通实时事件重放。因此刷新或
+会话切换会重建每一条历史权限为未决状态,在 wire 上与全新
+请求别无二致。为避免把已解决的提示重新当作可操作卡片提供,客户端会派生
+可操作性,而不是只信任未决状态本身(WC-R16):
 
-- The actionable permission is the single permission the user can still act on, or none. A permission
-  is actionable **iff** the viewed session is `awaiting_permission` **and** it is the latest still-undecided
-  permission in the transcript. The SDK blocks on one permission at a time, so that latest undecided one is
-  the genuinely pending request; everything earlier (or anything replayed once the session moved on) is
-  non-actionable. The decision lives in a pure helper.
-- The permission prompt renders three states: **actionable** → interactive card (buttons); decided →
-  decision verdict (live feedback after the user answers this session); undecided-but-not-actionable →
-  a single **static history line** (no buttons, no verdict).
-- This keeps a genuinely-pending permission answerable after a refresh (it stays the latest undecided
-  one while `awaiting_permission`), while resolved history degrades to a static record.
-- The chat messages view forces a tool batch open only for the actionable permission, not for replayed
-  static ones.
+- 可操作权限是用户仍可操作的唯一那一个权限,或者没有。一个权限
+  在**满足以下条件时**才可操作:当前查看会话处于 `awaiting_permission`,**且**它是
+  transcript 中最新的仍未决权限。SDK 一次只在一个权限上阻塞,因此那个最新的未决权限就是
+  真正待处理的请求;更早的一切(或会话推进后被回放的任何内容)都是
+  不可操作的。该判断位于一个纯辅助函数中。
+- 权限提示渲染三种状态:**可操作** → 交互式卡片(按钮);已决定 →
+  决定结论(用户在本会话作答后的实时反馈);未决但不可操作 →
+  一条单一的**静态历史行**(无按钮、无结论)。
+- 这使得一个真正待处理的权限在刷新后仍可作答(只要处于 `awaiting_permission`,
+  它就保持为最新的未决权限),而已解决的历史则退化为静态记录。
+- 聊天消息视图只为可操作的权限强制展开工具批次,对回放出的
+  静态权限则不会。
 
-## Task-list (wire-driven)
+## 任务列表(wire 驱动)
 
-A dev session calls the SDK task tools (`TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet`). Since
-2026-06-07-009 the **server** derives the normalized "current task list" and pushes it over an
-**independent `task_*` wire path** — the console no longer re-parses tool-result content. The pure
-reducer is the single source of truth in the shared task model (the reducer, the empty model, the
-tool-name predicate and set, plus types); the client task-list module re-exports it and keeps only
-the DOM-free display selector plus the client-side fold that applies one task event (all unit-tested
-DOM-free).
+一个开发会话调用 SDK 的任务工具(`TaskCreate` / `TaskList` / `TaskUpdate` / `TaskGet`)。自
+2026-06-07-009 起,**服务端**派生归一化的"当前任务列表"并通过一条
+**独立的 `task_*` wire 路径**推送它——会话不再重新解析 tool-result 内容。纯
+reducer 是共享任务模型中唯一的真实来源(reducer、空模型、
+工具名谓词与集合,加上类型);客户端任务列表模块重新导出它,只保留
+无 DOM 的展示选择器,以及应用单个任务事件的客户端 fold(全部经过单元测试,
+无 DOM)。
 
-- **Server derivation.** A task-observer hook on the event fan-out folds task-tool tool-use /
-  tool-result (correlated by tool-use id) into a per-session task-list model and emits a `task_list`
-  snapshot on change (Claude has no native task-push event, so the tool stream IS the source). Because
-  the snapshot flows through the event path it lands in the session buffer ⇒ reconnect replays it for
-  free. Cold history replay derives from the baseline transcript and is sent right after session
-  selection, before the live buffer tail. The reducer rules (snapshot-vs-increment, ordering, tolerance)
-  live in the shared task model: `TaskList` replaces the whole list (unparseable snapshot keeps current),
-  `TaskGet`/`TaskCreate` upsert, `TaskUpdate` prefers result else applies the input incrementally; order =
-  snapshot index / max+1 for inserts / preserved on update; the extractor tolerates several serializations
-  and never throws.
-- **Client consumption.** The container holds the task model, reset on session selection, and folds
-  every `task_*` message through the pure fold (one switch, no inline upsert): `task_list` replaces the
-  list wholesale; `task_created`/`task_updated` upsert by id (preserving an existing entry's order,
-  appending unknown ids at max+1); `task_deleted` removes by id. Ordinary tool-use/tool-result chat rows
-  are untouched (kept as history); the task panel reads the task model via the display selector.
-- **Per-task variants.** `task_created`/`task_updated`/`task_deleted` exist for vendors that push
-  per-task deltas; the Claude path uses `task_list` snapshots only.
-- **Capability gating (2026-06-07-010).** The `settings` message carries an optional
-  `vendorCapabilities` (the kernel's per-vendor binary capability ledger). The container derives a
-  task-store-available flag from the active vendor's task-store capability and passes it to the task
-  panel; the panel renders only when the task store is available and the panel view is visible. Unknown
-  capabilities (older server with no capability ledger, comm/pending session with no vendor, or a vendor
-  missing from the ledger) **default open** — never wrongly suppressed. All three shipping vendors report
-  task-store support; the gate exists for future vendors without a native task API.
+- **服务端派生。** 事件扇出上的一个任务观察者钩子把任务工具的 tool-use /
+  tool-result(通过 tool-use id 关联)折叠进一个按会话的任务列表模型,并在变化时发出一个 `task_list`
+  快照(Claude 没有原生的任务推送事件,因此工具流本身就是数据来源)。因为
+  该快照流经事件路径,它会落入会话缓冲区 ⇒ 重连时免费重放。冷历史回放
+  从基线 transcript 派生,并在会话选择之后、实时缓冲尾部之前发送。reducer 规则(快照 vs 增量、排序、容错)
+  位于共享任务模型中:`TaskList` 替换整个列表(无法解析的快照保留当前状态),
+  `TaskGet`/`TaskCreate` 执行 upsert,`TaskUpdate` 优先使用 result,否则增量应用 input;顺序 =
+  快照索引 / 插入时为 max+1 / 更新时保持不变;提取器容忍多种序列化形式,
+  且从不抛出异常。
+- **客户端消费。** 容器持有任务模型,在会话选择时重置,并通过纯 fold
+  折叠每一条 `task_*` 消息(单个 switch,无内联 upsert):`task_list` 整体替换
+  列表;`task_created`/`task_updated` 按 id 执行 upsert(保留既有条目的顺序,
+  未知 id 追加到 max+1);`task_deleted` 按 id 移除。普通的 tool-use/tool-result 聊天行
+  不受影响(作为历史保留);任务面板通过展示选择器读取任务模型。
+- **逐任务变体。** `task_created`/`task_updated`/`task_deleted` 是为推送
+  逐任务增量的厂商而存在;Claude 路径只使用 `task_list` 快照。
+- **能力门控(2026-06-07-010)。** `settings` 消息携带一个可选的
+  `vendorCapabilities`(内核的按厂商二元能力台账)。容器从活动厂商的
+  任务存储能力派生一个 task-store-available 标志,并传给任务
+  面板;该面板仅在任务存储可用且面板视图可见时渲染。未知
+  能力(没有能力台账的旧版服务端、无厂商的通讯/待定会话,或台账中
+  缺失的厂商)**默认展开**——绝不会被错误抑制。三个已发布的厂商都报告
+  支持任务存储;该门控是为未来没有原生任务 API 的厂商准备的。
 
-### Task panel
+### 任务面板
 
-A read-only, resident panel between the chat messages and the status bar renders the viewed
-session's live tasks. Display rules are a pure selector (current list, recent-completed count):
+一个只读的常驻面板,位于聊天消息与状态栏之间,渲染当前查看会话的实时任务。展示规则是一个纯选择器(当前列表、最近完成计数):
 
-- **Grouping & order.** Three groups, each ascending by order: in_progress on top (highlighted),
-  pending in the middle, completed at the bottom (✓, struck-through / greyed).
-- **Truncation.** Completed keeps only the most recent N (highest-order) entries, still ascending; the
-  rest are counted and shown as a "+N 已完成" hint.
-- **Visibility.** Visible is true only when an in_progress or pending task exists; an all-completed or
-  empty list hides the whole panel. The component is the selector's conditional render.
-- The user never edits tasks here — status is driven solely by the agent's tool calls.
-- **Tests.** The selector is covered DOM-free; the panel additionally has a mounted component test —
-  see _Testing_ below.
+- **分组与顺序。** 三个分组,各自按 order 升序:in_progress 在顶部(高亮),
+  pending 在中间,completed 在底部(✓,删除线 / 灰化)。
+- **截断。** completed 只保留最近的 N 条(order 最高)条目,仍按升序排列;
+  其余的被计数并展示为一条 "+N 已完成" 提示。
+- **可见性。** 只有存在 in_progress 或 pending 任务时才可见;全部完成或
+  空列表会隐藏整个面板。该组件就是选择器的条件渲染。
+- 用户从不在此编辑任务——状态完全由智能体的工具调用驱动。
+- **测试。** 该选择器有无 DOM 覆盖;面板另外还有一个已挂载的组件测试——
+  见下文 _测试_ 。
 
-## Discussion agenda progress
+## 讨论议程进度
 
-The discussion detail (the discussion branch of the content area, between the session title bar and
-the chat messages) renders the organizer engine's **explicit agenda** for the open discussion: the
-ordered subtopic list, the current subtopic, and overall completion. It reads straight from the
-active discussion (its agenda list + agenda index); no new container state or wire handling — see the
-[discussion design](../discussion/discussion-design.md) for the agenda model.
+讨论详情(内容区中讨论分支,位于会话标题栏与聊天消息之间)渲染 organizer 引擎为打开的讨论所维护的**显式议程**:
+有序的子话题列表、当前子话题以及整体完成度。它直接读取
+活跃讨论本身(其议程列表 + 议程索引);无需新增容器状态或 wire 处理——议程模型见
+[discussion 设计](../discussion/discussion-design.md)。
 
-- **Pure selector.** A DOM-free, unit-tested selector folds the discussion into visibility, items,
-  current, completed, total, percent, and complete. The 0-based agenda index is the single source of
-  completion (items before it done, the item at it current, the rest upcoming); it is clamped to the
-  valid range so a stale/garbage index can never produce a negative percent or an out-of-range current.
-  An empty agenda ⇒ not visible; a complete agenda (index === length) ⇒ no current, 100%, every item done.
-- **Component.** The agenda progress is the selector's conditional render (renders nothing until the
-  engine sets an agenda): a header (completed/total + percent) + a progress bar + one row per subtopic
-  with a status mark (✓ done / ▶ current / ○ upcoming), reusing the task-panel visual language (current
-  highlighted, done struck-through/greyed). UI copy is English.
-- **Live update.** The agenda re-renders reactively as the prop changes: the engine fires its
-  status-change hook on every `set_agenda`/`focus_subtopic` → `discussions` broadcast → the container's
-  discussions handler refreshes the active discussion (the per-message announcement carries no agenda
-  fields, so the list push is what moves the bar). The discussion detail seeds the initial agenda.
-- **Tests.** The selector is covered DOM-free (hidden / partial / complete / index clamping); a mounted
-  component test asserts the rows, marks, count/percent, bar width, visibility, and live re-render on
-  index advancing.
+- **纯选择器。** 一个无 DOM、经过单元测试的选择器,把讨论折叠为可见性、条目、
+  当前项、已完成、总数、百分比与是否完成。0-based 的议程索引是完成度的唯一来源
+  (索引之前的条目已完成,索引所在项为当前项,其余为待处理);它被限制在
+  有效范围内,因此一个陈旧/异常的索引永远不会产生负的百分比或越界的当前项。
+  空议程 ⇒ 不可见;完整议程(index === length)⇒ 无当前项,100%,每一项均已完成。
+- **组件。** 议程进度是该选择器的条件渲染(在引擎设置议程之前不渲染任何内容):
+  一个表头(已完成/总数 + 百分比)+ 一个进度条 + 每个子话题一行,
+  带一个状态标记(✓ 已完成 / ▶ 当前 / ○ 待处理),复用任务面板的视觉语言(当前项
+  高亮,已完成项删除线/灰化)。UI 文案为英文。
+- **实时更新。** 议程会随 prop 变化响应式重新渲染:引擎在每次
+  `set_agenda`/`focus_subtopic` 时触发其状态变更钩子 → `discussions` 广播 → 容器的
+  discussions 处理器刷新活跃讨论(逐消息通知不携带议程
+  字段,因此推动进度条的是列表推送)。讨论详情播种初始议程。
+- **测试。** 该选择器有无 DOM 覆盖(隐藏 / 部分 / 完整 / 索引钳制);一个已挂载的
+  组件测试断言各行、标记、计数/百分比、进度条宽度、可见性,以及索引推进时的实时重新渲染。
 
-## Discussion dispatch status (in-flight / failed)
+## 讨论派发状态(进行中 / 失败)
 
-The discussion chat tail (between the chat messages and the composer) renders the **transient
-in-flight status** of the agents the organizer just dispatched, so a viewer sees who is replying
-before anything lands in the transcript — and any reply failure that would otherwise be invisible.
-Runtime-only: never persisted, never a chat message; the same transient paradigm as the discussion
-run status. See the [discussion design](../discussion/discussion-design.md) for the engine/wire side.
+讨论聊天尾部(位于聊天消息与 composer 之间)渲染 organizer 刚刚派发的智能体的**瞬时
+进行中状态**,使查看者在任何内容落入 transcript 之前就能看到谁在回复——以及任何原本不可见的
+回复失败。仅运行时态:从不持久化,从不是聊天消息;与讨论
+运行状态相同的瞬时范式。引擎/wire 侧见 [discussion 设计](../discussion/discussion-design.md)。
 
-- **Pure reducers** (DOM-free, unit-tested): one folds a `discussion_dispatch_status` event into a
-  per-discussion dispatch view (pending agents + errors) — pending appends the agents (de-duped by id,
-  arrival order, clearing their stale errors), cleared removes them, failed removes the agent and
-  records a de-duped error; another drops one agent on its reply message (the snappy primary clear,
-  idempotent).
-- **Container state.** A per-discussion dispatch view is keyed off the event; the `discussion_message`
-  handler also clears the speaking agent; the entry is dropped on a discussion run-status of ended and
-  on opening (switching) a discussion. The open discussion's view feeds the renderer. Not reconciled on
-  reconnect — it starts empty and self-heals, so no stuck pending.
-- **Component.** When a discussion is open and the view is non-empty, renders "<name> is replying…" per
-  pending agent (a broadcast shows several) and "⚠ <name> failed to reply: <error>" per error. UI copy
-  is English.
-- **Tests.** Reducers are covered DOM-free (pending/cleared/failed, dedup, re-dispatch clearing errors,
-  immutability, message-clear idempotency); a mounted component test asserts the per-agent replying
-  lines, the failure line, and that nothing renders when empty / no discussion is open.
+- **纯 reducer**(无 DOM,经过单元测试):一个把 `discussion_dispatch_status` 事件折叠进
+  按讨论分组的派发视图(待处理智能体 + 错误)——pending 追加智能体(按 id 去重,
+  按到达顺序,清除其陈旧错误),cleared 移除它们,failed 移除该智能体并
+  记录一个去重后的错误;另一个在其回复消息上丢弃一个智能体(轻快的主清除,
+  幂等)。
+- **容器状态。** 一个按讨论分组的派发视图以事件为键;`discussion_message`
+  处理器同时清除正在发言的智能体;当讨论的运行状态为 ended 时以及
+  打开(切换)一个讨论时,该条目被丢弃。打开的讨论的视图供渲染器使用。重连时不
+  和解——它从空开始并自愈,因此不会有卡住的 pending。
+- **组件。** 当一个讨论处于打开状态且视图非空时,为每个待处理智能体渲染
+  "<name> is replying…"(一次广播可能展示多个),为每个错误渲染
+  "⚠ <name> failed to reply: <error>"。UI 文案为英文。
+- **测试。** Reducer 有无 DOM 覆盖(pending/cleared/failed、去重、重新派发清除错误、
+  不可变性、消息清除的幂等性);一个已挂载的组件测试断言逐智能体的回复中
+  行、失败行,以及为空/无讨论打开时不渲染任何内容。
 
-## Discussion speaker rendering (multi-speaker chat header)
+## 讨论说话人渲染(多说话人聊天表头)
 
-The discussion right pane reuses the chat messages view to render the persisted transcript, so each
-discussion message is normalized into a chat body. The session path maps `user_text` → user and
-`assistant_text` → assistant and never sets any extra meta; the discussion path attaches a small
-「icon + name」 line above each body so the multi-agent discussion reads as a real chat — and crucially
-the session path keeps its single-speaker layout bit-for-bit.
+讨论右侧面板复用聊天消息视图来渲染持久化的 transcript,因此每条
+讨论消息都被归一化为一个聊天正文。会话路径把 `user_text` 映射为 user、
+`assistant_text` 映射为 assistant,且从不设置任何额外元数据;讨论路径在每条正文上方
+附加一行小小的「图标 + 名称」,使多智能体讨论读起来像一场真实的聊天——而
+关键在于,会话路径的单说话人布局逐字节保持不变。
 
-- **Wire model.** A discussion message carries a speaker kind ∈ {organizer, agent, human}, the
-  participating agent's id (nullable), and the server-resolved display name (nullable). An agent's icon
-  is the optional emoji/text set by the operator in the system settings. The web client reads them
-  read-only and never pushes back; the source of truth is the server-side appender.
+- **Wire 模型。** 一条讨论消息携带一个说话人种类 ∈ {organizer, agent, human}、
+  参与智能体的 id(可为空),以及服务端解析出的展示名称(可为空)。智能体的图标
+  是运营者在系统设置中设置的可选 emoji/文本。web 客户端只读地读取它们,
+  从不回写;真实来源是服务端的追加器。
 
-- **Speaker on the chat body.** An optional speaker (icon + name) is carried on the user and assistant
-  chat-body variants. It is set by the discussion path (so the renderer draws the small line) and never
-  by the session path. The field is optional and absent on the system variant, which the discussion path
-  never produces.
+- **聊天正文上的说话人。** 一个可选的说话人(图标 + 名称)携带在 user 与 assistant
+  聊天正文变体上。它由讨论路径设置(因此渲染器会绘制这一小行),而
+  会话路径从不设置。该字段是可选的,在 system 变体上不存在,讨论路径
+  从不产生 system 变体。
 
-- **Pure resolver** (DOM-free, unit-tested) returns icon + name per the rules:
-  - human → fixed icon 🙋 + the localized "You" label. Humans have no agent profile, so there is nothing
-    to look up.
-  - organizer → look up the default agent (the server-side organizer agent). Hit: the agent's icon (or 🤖
-    fallback) + the agent's name. Miss / empty icon / null id: 🤖 + the localized organizer label.
-  - agent → look up the message's agent id. Hit: the agent's icon (or 🤖 fallback) + the message's speaker
-    name or the agent's name. Miss / empty icon: 🤖 + the message's speaker name or the localized agent
-    label (defensive — the server should always set a name for an agent turn).
+- **纯解析器**(无 DOM,经过单元测试)按以下规则返回图标 + 名称:
+  - human → 固定图标 🙋 + 本地化的 "You" 标签。人类没有智能体档案,因此无需
+    查找。
+  - organizer → 查找默认智能体(服务端侧的 organizer 智能体)。命中:该智能体的图标(或 🤖
+    兜底)+ 该智能体的名称。未命中 / 图标为空 / id 为 null:🤖 + 本地化的 organizer 标签。
+  - agent → 查找消息的智能体 id。命中:该智能体的图标(或 🤖 兜底)+ 消息的说话人
+    名称或该智能体的名称。未命中 / 图标为空:🤖 + 消息的说话人名称或本地化的智能体
+    标签(防御性——服务端理应始终为智能体回合设置名称)。
 
-  The two fallback icons are module-private constants. Whitespace-only icons (operator typo) are trimmed
-  and treated as empty. The resolver never throws and never returns an empty icon, so a fresh,
-  no-settings-yet first paint degrades to the generic icons + localized role labels without rendering
-  errors.
+  两个兜底图标是模块私有常量。仅含空白的图标(运营者的输入笔误)会被裁剪
+  并视为空。该解析器从不抛出异常,也从不返回空图标,因此一次全新的、
+  尚无设置的首次渲染会优雅退化为通用图标 + 本地化角色标签,不会产生渲染
+  错误。
 
-- **Mapper change.** The single-message and batched discussion-to-chat mappers take the agent roster and
-  default id (plus the typed localizer) and attach the resolved speaker to the returned chat body. The
-  body text is **never** prefixed with the speaker name — the name lives on the speaker line, so the body
-  is verbatim content. Both call sites in the container (the discussion-detail snapshot path and the
-  live-append path) pass the current agent roster and default agent id; the resolver handles the
-  no-settings and early-paint window without special casing.
+- **Mapper 变更。** 单消息与批量的 discussion-to-chat mapper 接收智能体名册与
+  默认 id(加上带类型的本地化器),把解析出的说话人附加到返回的聊天正文上。
+  正文文本**从不**带说话人名称前缀——名称位于说话人行上,因此正文
+  是逐字内容。容器中的两个调用点(讨论详情快照路径与
+  实时追加路径)都传入当前的智能体名册与默认智能体 id;该解析器处理
+  无设置与早期渲染窗口,无需特殊处理。
 
-- **Renderer.** The chat messages view renders, in the text block, a speaker line (icon + name) above
-  the existing body **only when a speaker is set**. The template re-narrows to user/assistant first so the
-  speaker access is type-safe; the system variant is left header-less. The styling uses the muted-text and
-  caption-size design tokens for a small muted row; session bubbles are untouched.
+- **渲染器。** 聊天消息视图在文本块中,**仅当设置了说话人时**,在既有正文上方
+  渲染一行说话人行(图标 + 名称)。模板先重新收窄到 user/assistant,使
+  说话人访问是类型安全的;system 变体保持无表头。样式使用 muted-text 与
+  caption-size 的设计 token,呈现一小行低调文字;会话气泡不受影响。
 
-- **Tests.** The pure resolver is covered DOM-free (human, organizer hit, organizer miss, organizer
-  default-id null, agent hit, agent hit with blank icon, agent miss, agent miss with null name, blank-icon
-  trim). The mapper cases assert: body text is verbatim (no name prefix), speaker is set with the right
-  icon/name per speaker kind, and the batched mapper preserves order. The five-branch coverage matches the
-  spec acceptance criteria (organizer/agent/human all show their own row; agent without icon → default
-  icon, no error; body never carries a name prefix).
+- **测试。** 该纯解析器有无 DOM 覆盖(human、organizer 命中、organizer 未命中、organizer
+  默认 id 为 null、agent 命中、agent 命中但图标为空、agent 未命中、agent 未命中且名称为 null、空图标
+  裁剪)。Mapper 用例断言:正文文本逐字(无名称前缀)、说话人按说话人种类正确设置
+  图标/名称,以及批量 mapper 保持顺序。这五个分支的覆盖与
+  规格验收标准一致(organizer/agent/human 都展示各自的行;无图标的智能体 → 默认
+  图标,无错误;正文从不携带名称前缀)。
 
-## Per-tab viewed session (no cross-tab pollution)
+## 按 tab 分别记忆的会话(跨 tab 不串扰)
 
-The 「会话」(console) and 「需求」(intents) tabs each maintain their **own** current session;
-switching tabs renders the chat column from that tab's session, never the other's. Previously a single
-global viewed-session / message stream served both: entering the intent tab selected its comm session
-into the global state, and switching back left the console tab showing the comm session's chat
-(cross-talk).
+「会话」(console)与「需求」(intents)两个 tab 各自维护**自己**的当前会话;
+切换 tab 会以该 tab 自己的会话渲染聊天列,绝不会渲染另一个的。此前是单一的
+全局查看会话 / 消息流服务于两者:进入 intent tab 会把其通讯会话选入
+全局状态,切回时会让会话 tab 显示通讯会话的聊天
+(串扰)。
 
-- **Why re-select, not cache.** The server streams live events to only the connection's
-  currently-viewed session, so a cached message stream for the non-viewed tab would go stale. Switching
-  back therefore re-selects the session (replaying history + buffered tail) — the same recovery the
-  reconnect path uses. The intent tab re-sends `open_intent_chat`, which the server resolves to the
-  project's current comm session; no client-side comm pointer is needed.
-- **Console-session pointer.** The console tab's own workspace + session (or none). It is recorded on
-  session selection **only while the console tab is active** — comm-session selections (open/new/refine
-  intent chat) always arrive while the intent tab is active, so they never pollute it. The explicit
-  selectors also pin it up front (covering the already-viewing early-return). Deleting the session clears
-  it when the deleted session was the pointer, so the next entry falls back.
-- **Tab-switch wiring.** The top-bar 「会话」click goes through a switch-to-console path (flip tab +
-  re-bind), distinct from the flip-only path used by the explicit selectors — re-binding there would
-  double-select. A sidebar **workspace switch** also routes through the switch-to-console path — switching
-  the current workspace always lands the view on 「会话」(even from the intent/discussion tab) and
-  force-refreshes that workspace's session list, while the session re-bind stays with the console-entry
-  decision (no new selection strategy). A pure workspace-switch-effects decision gates it: same workspace →
-  no-op; otherwise refresh + enter console. The console re-bind runs the pure console-entry decision:
-  re-select the remembered session, else the current workspace's first session, else clear the viewed
-  session (empty state — resets the viewed session / messages / task model / … so the comm session never
-  lingers). It skips the send when already viewing the target.
-- **Reconnect.** The reopen path is unchanged: it restores the **active** tab's view (console →
-  re-select session; intent → re-open intent chat). The console-session pointer is in-memory and survives
-  a WS reconnect, so the console tab re-binds correctly when next entered.
-- **Tests.** The entry decision is the pure, DOM-free console-entry test (remembered honored / fallback
-  to first / empty when no workspace or empty list / remembered honored even if absent from the list); the
-  same suite covers the workspace-switch effects (same workspace → no-op / different / from-null → force
-  refresh + enter console).
+- **为什么重新选择而不是缓存。** 服务端只把实时事件流式传给该连接
+  当前查看的会话,因此为未查看的 tab 缓存的消息流会过时。因此切
+  回时会重新选择会话(重放历史 + 缓冲尾部)——与重连路径使用的
+  恢复方式相同。intent tab 重新发送 `open_intent_chat`,服务端将其解析到
+  该项目当前的通讯会话;不需要客户端侧的通讯指针。
+- **会话 tab 的会话指针。** 会话 tab 自己的工作区 + 会话(或没有)。它**仅在
+  会话 tab 处于活跃状态时**才在会话选择时被记录——通讯会话选择(打开/新建/refine
+  intent 聊天)总是在 intent tab 处于活跃状态时到达,因此永远不会污染它。显式的
+  选择器也会提前钉住它(覆盖已经在查看的提前返回情形)。删除会话时,若被删除的
+  会话正是该指针,则清空它,使下一次进入回退。
+- **Tab 切换接线。** 顶部栏「会话」的点击走一条切换到 console 的路径(翻转 tab +
+  重新绑定),不同于显式选择器使用的仅翻转路径——若在那里也重新绑定就会
+  重复选择。侧栏的**工作区切换**同样走切换到 console 的路径——切换
+  当前工作区总是把视图落到「会话」(即使从 intent/discussion tab 触发),并
+  强制刷新该工作区的会话列表,而会话重新绑定仍然沿用会话 tab 入口
+  决策(没有新的选择策略)。一个纯粹的工作区切换效果决策为其把关:同一工作区 →
+  no-op;否则刷新 + 进入 console。console 重新绑定运行纯粹的会话 tab 入口决策:
+  重新选择记住的会话,否则当前工作区的第一个会话,否则清空查看中的
+  会话(空状态——重置查看中的会话 / 消息 / 任务模型 / …,使通讯会话永远不会
+  遗留)。当已经在查看目标时会跳过发送。
+- **重连。** 重开路径不变:它恢复**活跃** tab 的视图(console →
+  重新选择会话;intent → 重新打开 intent 聊天)。会话 tab 的会话指针是内存态的,能在
+  WS 重连中存活,因此下次进入时会话 tab 能正确重新绑定。
+- **测试。** 入口决策是纯粹的、无 DOM 的 console-entry 测试(记住的被采用 / 回退
+  到第一个 / 无工作区或空列表时为空 / 记住的即使不在列表中也被采用);同一
+  套件覆盖工作区切换效果(同一工作区 → no-op / 不同 / 从 null → 强制
+  刷新 + 进入 console)。
 
-## Pending send queue (ordinary sessions)
+## 待发送队列(普通会话)
 
-An ordinary session is single-turn: the server rejects a `user_prompt` while a turn is in flight
-(agent-session). So the composer stays editable during a turn, but Send/Enter **enqueues** the text
-instead of sending it. This is a client-only affordance — **no server or protocol change**. Team
-sessions are unaffected: their lead is alive across turns, so the composer still feeds the live lead
-immediately (the composer action returns send).
+一个普通会话是单轮的:当一个回合正在进行时,服务端会拒绝 `user_prompt`
+(agent-session 除外)。因此 composer 在回合期间保持可编辑,但 Send/Enter **入队**
+而非发送文本。这是一个仅客户端的交互——**不涉及服务端或协议变更**。团队
+会话不受影响:它们的 lead 在回合之间持续存活,因此 composer 仍会立即把内容
+喂给活跃的 lead(composer 操作返回 send)。
 
-- **Per-session, in-memory.** The pending queues are keyed by session, so switching sessions keeps each
-  queue intact (switch away and back and it's still there). It is plain reactive state — a hard refresh or
-  server restart loses it (consistent with "no persistence" above).
-- **Queue UI.** The pending queue renders the viewed session's items between the status bar and the
-  composer. Each item is still _pending (not yet in context)_ and carries ✎ (edit) and 🗑 (delete): delete
-  drops it; edit drops it and folds its text back into the composer draft (single-newline append so an
-  in-progress draft isn't lost) for re-editing.
-- **Flush on ready (level-triggered).** When the viewed ordinary session is idle with a non-empty queue,
-  the items are merged in order, joined by a blank line, into one prompt and submitted via the normal
-  submit → `user_prompt` path; the queue is then cleared. The trigger is **level**, not edge: besides the
-  watch on running / viewed session / team-active (which catches the running→idle transition), the
-  status-apply path re-checks the flush after every `session_status` broadcast/reconcile. So a queue still
-  flushes even if that transition was missed (e.g. the broadcast arrives already-idle with no change for
-  the watch to fire on) — the stuck queue would otherwise linger forever. The flush is idempotent: it gates
-  on idle + non-empty, and submit optimistically marks the session running, so it can't re-fire before the
-  server confirms. The merged prompt comes back as an ordinary `user_text` echo bubble — once flushed,
-  those entries are normal context, no longer editable/deletable. The flush is only safe because the server
-  broadcasts idle **after** the run tears down, not from the in-run `turn_end`: otherwise the flushed
-  `user_prompt` would race the teardown and be rejected with "a turn is already running", dropping the
-  queue (session-registry design § `turn_end` → idle is held until teardown).
-- **Routing constraint.** Because `user_prompt` routes to the connection's currently-viewed session,
-  flush only fires for the viewed-and-idle session. An unviewed session's queue is retained until it is
-  viewed again while idle, then flushed.
-- The merge / flush-trigger / add-edit-delete logic is a pure module, unit-tested in Node (no DOM).
+- **逐会话、内存态。** 待发送队列以会话为键,因此切换会话会保持每个
+  队列完好(切走再切回,它依然在)。这只是普通的响应式状态——硬刷新或
+  服务端重启会丢失它(与上文“无持久化”一致)。
+- **队列 UI。** 待发送队列渲染当前查看会话的条目,位于状态栏与
+  composer 之间。每个条目仍是 _待处理(尚未进入上下文)_,带 ✎(编辑)与 🗑(删除):删除
+  会丢弃它;编辑会丢弃它,并把其文本折叠回 composer 草稿(单换行追加,使
+  进行中的草稿不会丢失)以供重新编辑。
+- **就绪时刷新(水平触发)。** 当前查看的普通会话处于 idle 且队列非空时,
+  各条目按顺序合并,以空行连接,合并为一条提示词并通过普通的
+  submit → `user_prompt` 路径提交;随后队列被清空。触发是**水平的**,而非边沿的:除了
+  对 running / 查看中会话 / team-active 的 watch(它捕捉 running→idle 的转换)之外,
+  状态应用路径在每次 `session_status` 广播/和解后都会重新检查是否该刷新。因此即使
+  错过了那次转换(例如广播到达时已经是 idle,watch 没有变化可触发),队列仍会
+  刷新——否则卡住的队列会永远遗留。该刷新是幂等的:它以 idle + 非空为门,
+  而 submit 会乐观地把会话标记为运行中,因此在服务端确认之前不会重复触发。合并后的提示词
+  会以普通的 `user_text` 回显气泡形式回来——一旦刷新,那些条目就成为
+  普通上下文,不再可编辑/删除。该刷新之所以安全,是因为服务端
+  在运行**拆除之后**才广播 idle,而不是来自运行中的 `turn_end`:否则被刷新的
+  `user_prompt` 会与拆除竞态,并被以“回合已在运行中”拒绝,从而丢弃
+  该队列(session-registry 设计 § `turn_end` → idle 会被保持直到拆除完成)。
+- **路由约束。** 因为 `user_prompt` 路由到该连接当前查看的会话,
+  刷新只会为查看中且 idle 的会话触发。未被查看的会话的队列会一直保留,直到它
+  在 idle 时被再次查看,然后才刷新。
+- 合并 / 刷新触发 / 增删改逻辑是一个纯模块,在 Node 中做单元测试(无 DOM)。
 
-## WS client behavior
+## WS 客户端行为
 
-- URL derived from the page location: secure WebSocket when the page is HTTPS, else plain.
-- Inbound messages are parsed from JSON and forwarded; parse errors are ignored. The heartbeat pong is
-  swallowed in the client (transport-only) and never reaches the app listener.
-- Send drops the message with a console warning if the socket is not open.
-- **Heartbeat**: every 25s the client sends a ping; the server replies with a pong. This keeps idle
-  proxies/load-balancers from dropping the socket. If no pong returns within 10s the link is treated as
-  half-open and force-closed, which triggers reconnect.
-- **Auto-reconnect**: a close (from a real drop, a failed heartbeat, or an error) automations a reconnect
-  with exponential backoff (1s → ×2 → cap 30s) plus jitter; backoff resets on a successful open. Closing
-  sets a stopped flag that cancels heartbeat + reconnect for clean teardown.
-- **View recovery**: a reconnect (not the first connect) fires the reopen callback, where the container
-  re-sends a session selection for the active workspace/session (or re-opens the intent chat when the
-  intent view was active). The server's fresh connection re-attaches as a viewer, replays history +
-  buffered live events, reconciles in_progress intents (computing run-status), and pushes the enriched
-  intents list — so both the normal console and the intent view resume correctly without a reload.
+- URL 从页面位置派生:页面为 HTTPS 时用安全 WebSocket,否则用普通 WebSocket。
+- 入站消息从 JSON 解析并转发;解析错误被忽略。心跳 pong
+  在客户端(仅传输层)被吞掉,不会到达 app 监听器。
+- 若 socket 未打开,Send 会丢弃该消息并给出一条控制台警告。
+- **心跳**:客户端每 25 秒发送一次 ping;服务端以 pong 回应。这能防止空闲的
+  代理/负载均衡器丢弃该 socket。若 10 秒内没有 pong 返回,该连接会被视为
+  半开并强制关闭,从而触发重连。
+- **自动重连**:一次关闭(来自真实断开、心跳失败或错误)会以
+  指数退避(1s → ×2 → 上限 30s)加抖动触发重连;成功打开后退避会重置。关闭时
+  会设置一个 stopped 标志,以取消心跳 + 重连,实现干净的拆除。
+- **视图恢复**:一次重连(而非首次连接)会触发重开回调,容器在其中
+  为活跃的工作区/会话重新发送一次会话选择(或在 intent 视图处于活跃状态时
+  重新打开 intent 聊天)。服务端的全新连接会以查看者身份重新附加,重放历史 +
+  缓冲的实时事件,和解进行中的 intent(计算运行状态),并推送丰富后的
+  intent 列表——因此普通会话与 intent 视图都能在不刷新页面的情况下正确恢复。
 
-## Technology choices
+## 技术选型
 
-- **Vue 3 single-file components + refs** — minimal reactive state, no store needed for a single-view app.
-- **Vite dev proxy** forwards the WebSocket to the server so the browser connects transparently in
-  development (ADR 0002).
-- **JSON-pretty rendering** for tool inputs; multi-line collapse + CSS ellipsis for compact display.
+- **Vue 3 单文件组件 + refs**——最小化的响应式状态,单视图应用无需 store。
+- **Vite 开发代理**把 WebSocket 转发给服务端,使浏览器在开发中
+  透明连接(ADR 0002)。
+- 工具输入使用 **JSON 美化渲染**;多行折叠 + CSS 省略号实现紧凑展示。
 
-## Non-functional considerations
+## 非功能考量
 
-- **Render order = arrival order** (PERF-3 forwarded; the console adds no reordering).
-- **No authority** — the console enforces nothing; the server is the decision authority (SEC-4, WC-R7).
-- **No persistence** — reloading the page loses the transcript (consistent with SEC-2).
+- **渲染顺序 = 到达顺序**(转发自 PERF-3;会话不做任何重排序)。
+- **无决定权**——会话不强制任何东西;服务端是决策权威(SEC-4、WC-R7)。
+- **无持久化**——刷新页面会丢失 transcript(与 SEC-2 一致)。
 
-## Visual style
+## 视觉风格
 
-The console's look and feel follows the project style guide at
-[`doc/style/style-spec.md`](../../../style/style-spec.md) (immersive dark base, translucent
-materials, restrained accent color, low information density). Component styling should conform to it
-rather than restating its rules here.
+会话的观感遵循项目风格指南
+[`doc/style/style-spec.md`](../../../style/style-spec.md)(沉浸式深色底、半透明
+材质、克制的强调色、低信息密度)。组件样式应当遵循它,
+而不是在此重复其规则。
 
-## Testing
+## 测试
 
-- A single root test runner runs every package's colocated tests. The default environment is Node;
-  only the web components run in a DOM-emulation environment, and the Vue plugin lets those tests mount
-  single-file components.
-- **Pure logic** (reducers, selectors, view models) is tested DOM-free in Node — the bulk of coverage,
-  fast and free of a mounted DOM.
-- **Component tests** mount the component with the Vue test utilities and assert on rendered DOM /
-  prop-driven re-render — used where behavior is the rendering itself (e.g. the task panel: grouping
-  order, completed-truncation, visibility, per-status markup, live switch on prop change).
+- 一个单一的根测试运行器运行每个包中并列存放的测试。默认环境是 Node;
+  只有 web 组件在 DOM 模拟环境中运行,Vue 插件让那些测试可以挂载
+  单文件组件。
+- **纯逻辑**(reducer、选择器、视图模型)在 Node 中做无 DOM 测试——覆盖的大头,
+  快且无需挂载 DOM。
+- **组件测试**用 Vue 测试工具挂载组件,并对渲染出的 DOM /
+  由 prop 驱动的重新渲染做断言——用于行为即渲染本身的场景(例如任务面板:分组
+  顺序、已完成截断、可见性、逐状态标记、prop 变化时的实时切换)。
 
-## Dependencies
+## 依赖
 
-- **Shared protocol types** — the only cross-package import.
-- **agent-session** — the WebSocket backend.
-- **Dev/test** — the Vue test utilities + a DOM emulation + the Vite Vue plugin (component tests only;
-  pure-logic suites need none of them).
+- **共享协议类型**——唯一的跨包 import。
+- **agent-session**——WebSocket 后端。
+- **开发/测试**——Vue 测试工具 + 一个 DOM 模拟 + Vite Vue 插件(仅组件测试需要;
+  纯逻辑套件都不需要它们)。

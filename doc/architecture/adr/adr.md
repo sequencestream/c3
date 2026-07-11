@@ -1,50 +1,50 @@
-# ADR Conventions
+# ADR 约定
 
-Architecture Decision Records for c3.
+c3 的架构决策记录。
 
-## Numbering
+## 编号
 
-- File pattern: `NNNN-title-with-dashes.md`, zero-padded and sequential (`0001`, `0002`…).
-- Numbers are never reused.
+- 文件命名模式：`NNNN-title-with-dashes.md`，补零且顺序递增（`0001`、`0002`……）。
+- 编号从不复用。
 
-## Lifecycle
+## 生命周期
 
-- Status is one of: `proposed`, `accepted`, `deprecated`, `superseded`.
-- ADRs are **never deleted**. A superseded ADR keeps its file, gains a header note linking
-  to its replacement, and moves to `deprecated/`.
-- `proposed` ADRs should resolve within a sprint.
+- 状态取值之一：`proposed`、`accepted`、`deprecated`、`superseded`。
+- ADR **永不删除**。被取代的 ADR 保留其文件，加上一条指向替代者的头部说明，并移动到
+  `deprecated/`。
+- `proposed` 状态的 ADR 应在一个 sprint 内解决。
 
-## Required sections
+## 必需章节
 
 Status · Date · Context · Options considered · Decision · Consequences · Compliance ·
-References. See `../../.claude/skills/project-spec/references/adr.md` for the template.
+References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 
-## Index
+## 索引
 
-| #                                                                 | Title                                                                                                                                | Status     |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
-| [0001](deprecated/0001-c3-sole-permission-authority.md)           | c3 is the sole permission authority                                                                                                  | superseded |
-| [0002](0002-websocket-as-permission-transport.md)                 | WebSocket as the permission transport                                                                                                | accepted   |
-| [0003](0003-single-binary-via-bun-compile.md)                     | Single binary via `bun build --compile`                                                                                              | accepted   |
-| [0004](0004-persist-workspace-session-registry.md)                | c3 persists a workspace & session registry                                                                                           | accepted   |
-| [0005](0005-inherit-user-project-settings.md)                     | Inherit user & project settings; c3 is the gateway                                                                                   | accepted   |
-| [0006](0006-decouple-runs-from-connections.md)                    | Decouple agent runs from WebSocket connections                                                                                       | accepted   |
-| [0007](0007-read-only-intent-agent.md)                            | Read-only intent agent; save via confirmation; cross-runtime SQLite                                                                  | accepted   |
-| [0008](0008-streaming-input-for-agent-teams.md)                   | Streaming-input prompts for persistent agent teams                                                                                   | accepted   |
-| [0009](0009-unidirectional-boundaries.md)                         | Unidirectional boundaries: kernel → transport/features, no back-edges                                                                | accepted   |
-| [0010](0010-release-and-distribution-trust.md)                    | Release & distribution trust (orchestration skeleton)                                                                                | accepted   |
-| [0011](0011-vendor-neutral-agent-abstraction.md)                  | Vendor-neutral Agent abstraction: three-piece interface + capabilities (amended 2026-06-07 with structured session-lifecycle states) | accepted   |
-| [0012](0012-host-binary-probe-first-capability-gate.md)           | Host-binary probing is the first capability gate                                                                                     | accepted   |
-| [0013](0013-canonical-envelope-on-wire-c3-session-namespace.md)   | Canonical envelope on the wire + c3 session namespace internalization                                                                | accepted   |
-| [0014](0014-codex-in-process-responses-chat-relay.md)             | In-process Responses→Chat relay for codex Chat-Completions providers                                                                 | accepted   |
-| [0015](0015-session-agent-binding-vendor-ownership.md)            | Two-key session→agent binding + frozen vendor ownership                                                                              | accepted   |
-| [0016](0016-external-skill-git-mount.md)                          | 外部 skill 经 git 仓库挂载(扁平目录布局;2026-06-12 改显式安装 + 两公共目录)                                                          | proposed   |
-| [0017](0017-external-skill-mount-mechanism.md)                    | 外部 skill 加载机制:软链 + 写操作管控;2026-06-12 启动挂载→显式安装(`install_skill`)+ 状态查询(`get_skill_link_status`)               | proposed   |
-| [0018](0018-event-bus-kernel-layer.md)                            | In-process event bus in the kernel layer (typed publish/subscribe, error isolation)                                                  | accepted   |
-| [0020](0020-sandbox-driver-independent-kernel-module.md)          | SandboxDriver 作为独立 kernel 模块                                                                                                   | accepted   |
-| [0021](0021-system-project-two-tier-sandbox-config.md)            | 系统定义 + 项目选择双层配置                                                                                                          | accepted   |
-| [0022](0022-canonical-not-extended.md)                            | CanonicalMessage 不扩展（沙箱/Checkpoint 通过事件总线）                                                                              | accepted   |
-| [0023](0023-auth-abstraction-network-exposure.md)                 | 认证抽象边界：网络暴露的强制前提（basic 运行时 + oauth/OIDC 契约就绪、登录待运行时）                                                 | proposed   |
-| [0024](0024-sandbox-worktree-only-random-agent-hard-isolation.md) | Sandbox 仅 worktree intent-dev + custom agent 随机选取 + 启用即硬隔离                                                                | accepted   |
-| [0025](0025-sandbox-network-readonly-workspace-policy.md)         | Sandbox `networkDisabled`/`readonlyRootfs` 下沉为工作区级 deny-by-default 安全策略（readonlyRootfs 默认改 true）                     | accepted   |
-| [0026](0026-product-licensing-separate-license-server.md)         | Product licensing as a separate license-server (Go std-http, PostgreSQL, GitHub OAuth, WeChat Pay, Ed25519; c3-side gating)          | proposed   |
+| #                                                                 | 标题                                                                                                                     | 状态       |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------- |
+| [0001](deprecated/0001-c3-sole-permission-authority.md)           | c3 是唯一的权限权威                                                                                                      | superseded |
+| [0002](0002-websocket-as-permission-transport.md)                 | WebSocket 作为权限传输方式                                                                                               | accepted   |
+| [0003](0003-single-binary-via-bun-compile.md)                     | 通过 `bun build --compile` 构建单一二进制                                                                                | accepted   |
+| [0004](0004-persist-workspace-session-registry.md)                | c3 持久化一份工作区与会话注册表                                                                                          | accepted   |
+| [0005](0005-inherit-user-project-settings.md)                     | 继承用户与项目设置；c3 是 gateway                                                                                        | accepted   |
+| [0006](0006-decouple-runs-from-connections.md)                    | 把 agent 运行与 WebSocket 连接解耦                                                                                       | accepted   |
+| [0007](0007-read-only-intent-agent.md)                            | 只读 intent agent；经确认后保存；跨运行时 SQLite                                                                         | accepted   |
+| [0008](0008-streaming-input-for-agent-teams.md)                   | 面向持久化 agent 团队的流式输入 prompt                                                                                   | accepted   |
+| [0009](0009-unidirectional-boundaries.md)                         | 单向边界：kernel → transport/features，无回边                                                                            | accepted   |
+| [0010](0010-release-and-distribution-trust.md)                    | 发布与分发信任（编排骨架）                                                                                               | accepted   |
+| [0011](0011-vendor-neutral-agent-abstraction.md)                  | Vendor 中性的 Agent 抽象：三件套接口 + 能力（2026-06-07 修订，加入结构化的会话生命周期状态）                             | accepted   |
+| [0012](0012-host-binary-probe-first-capability-gate.md)           | 宿主二进制探测是第一道能力关卡                                                                                           | accepted   |
+| [0013](0013-canonical-envelope-on-wire-c3-session-namespace.md)   | wire 上的规范信封 + c3 会话命名空间内化                                                                                  | accepted   |
+| [0014](0014-codex-in-process-responses-chat-relay.md)             | 面向 codex Chat-Completions provider 的进程内 Responses→Chat relay                                                       | accepted   |
+| [0015](0015-session-agent-binding-vendor-ownership.md)            | 双键 session→agent 绑定 + 冻结的 vendor 归属                                                                             | accepted   |
+| [0016](0016-external-skill-git-mount.md)                          | 外部 skill 经 git 仓库挂载(扁平目录布局;2026-06-12 改显式安装 + 两公共目录)                                              | proposed   |
+| [0017](0017-external-skill-mount-mechanism.md)                    | 外部 skill 加载机制:软链 + 写操作管控;2026-06-12 启动挂载→显式安装(`install_skill`)+ 状态查询(`get_skill_link_status`)   | proposed   |
+| [0018](0018-event-bus-kernel-layer.md)                            | kernel 层的进程内事件总线（类型化发布/订阅、错误隔离）                                                                   | accepted   |
+| [0020](0020-sandbox-driver-independent-kernel-module.md)          | SandboxDriver 作为独立 kernel 模块                                                                                       | accepted   |
+| [0021](0021-system-project-two-tier-sandbox-config.md)            | 系统定义 + 项目选择双层配置                                                                                              | accepted   |
+| [0022](0022-canonical-not-extended.md)                            | CanonicalMessage 不扩展（沙箱/Checkpoint 通过事件总线）                                                                  | accepted   |
+| [0023](0023-auth-abstraction-network-exposure.md)                 | 认证抽象边界：网络暴露的强制前提（basic 运行时 + oauth/OIDC 契约就绪、登录待运行时）                                     | proposed   |
+| [0024](0024-sandbox-worktree-only-random-agent-hard-isolation.md) | Sandbox 仅 worktree intent-dev + custom agent 随机选取 + 启用即硬隔离                                                    | accepted   |
+| [0025](0025-sandbox-network-readonly-workspace-policy.md)         | Sandbox `networkDisabled`/`readonlyRootfs` 下沉为工作区级 deny-by-default 安全策略（readonlyRootfs 默认改 true）         | accepted   |
+| [0026](0026-product-licensing-separate-license-server.md)         | Product licensing 作为一个独立的 license-server（Go std-http、PostgreSQL、GitHub OAuth、WeChat Pay、Ed25519；c3 侧拦截） | proposed   |

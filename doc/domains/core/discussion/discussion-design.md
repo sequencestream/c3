@@ -1,395 +1,395 @@
-# discussion — Design
+# discussion — 设计
 
-The [discussion](discussion-overview.md) domain's server design: the **persistence layer**
-(the discussion store over the shared database adapter, implementing the [models](discussion-models.md)) and the
-**organizer engine** (the orchestration loop + its pure decision/parsing logic) that drives a
-discussion through its workflow. The wire protocol
-(`create_discussion` / `start_discussion` / `discussion_message`) is in
-[websocket-protocol.md](../../../shared/api-conventions/websocket-protocol.md).
+[discussion](discussion-overview.md) 领域的服务端设计：**持久化层**
+（在共享数据库适配器之上实现 [models](discussion-models.md) 的讨论 store）和
+**组织者引擎**（编排循环 + 其纯粹的决策/解析逻辑），驱动一个
+讨论走完其工作流。线上协议
+（`create_discussion` / `start_discussion` / `discussion_message`）见
+[websocket-protocol.md](../../../shared/api-conventions/websocket-protocol.md)。
 
-## Module split
+## 模块划分
 
-| Concern                 | Notes                                                                   |
-| ----------------------- | ----------------------------------------------------------------------- |
-| Shared database adapter | Cross-runtime database driver (ADR 0007); shared with intent-management |
-| Discussion store        | Schema ownership + discussion/message CRUD                              |
+| 关注点           | 说明                                                      |
+| ---------------- | --------------------------------------------------------- |
+| 共享数据库适配器 | 跨运行时数据库驱动（ADR 0007）；与 intent-management 共享 |
+| Discussion store | schema 所有权 + discussion/message CRUD                   |
 
-## Database layer (shared adapter)
+## 数据库层（共享适配器）
 
-The discussion store reuses the shared adapter unchanged (see
-[intent-management design §SQLite layer](../intent-management/intent-management-design.md) and
-[ADR 0007](../../../architecture/adr/0007-read-only-intent-agent.md) for the full rationale):
-one minimal **synchronous** interface (exec / run / all / get) selected by the runtime,
-positional placeholders only, rows read by field, the shared on-disk database file, write-ahead
-logging + a busy timeout, and the driver modules kept out of the bundle.
+讨论 store 原样复用共享适配器（完整原理见
+[intent-management design §SQLite layer](../intent-management/intent-management-design.md) 和
+[ADR 0007](../../../architecture/adr/0007-read-only-intent-agent.md)）：
+一个由运行时选定的最小化**同步**接口（exec / run / all / get），
+仅使用位置占位符，按字段读取行，共享的磁盘数据库文件，预写日志（write-ahead
+logging）+ 一个繁忙超时（busy timeout），驱动模块保持在打包产物之外。
 
-The adapter lives in a neutral location precisely because it is generic: the discussion store and
-the intent store are **sibling domains** over one database, and neither should depend on the other.
-Both ride the single shared connection; each owns its own tables and a private schema-ready flag.
+该适配器之所以放在一个中立位置，正是因为它是通用的：讨论 store 与
+intent store 是同一数据库之上的**兄弟领域**，两者都不应依赖对方。
+两者共用同一个共享连接；各自拥有自己的表和一个私有的 schema-ready 标记。
 
-## Schema (version-counter migrations)
+## Schema（版本计数器迁移）
 
-Two tables, ensured lazily on the discussion store's first access (create-if-not-exists for tables
-and indexes):
+两张表，在讨论 store 首次访问时惰性确保存在（表和索引均为
+create-if-not-exists）：
 
-- discussions — `id` (PK), `workspace_path`, `title`, `type`, `goal` (text, not null, default empty),
-  `context` (text, not null, default empty — the user's original input, never overwritten by
-  research), `research_result` (text, not null, default empty — the read-only research agent's
-  completed output, stored apart from `context`; empty until research yields a non-empty result),
-  `status`, `agenda` (text, not null, default an empty JSON array — the organizer's ordered subtopics),
-  `agenda_index` (integer, not null, default 0 — 0-based current subtopic; equal to the agenda length
-  ⇒ all done), `conclusion` (nullable), `created_at`, `updated_at`, `completed_at` (nullable). Indexed
-  by `(workspace_path, status)`.
-- discussion messages — `id` (PK), `discussion_id`, `seq`, `speaker_kind`, `speaker_agent_id`
-  (nullable), `speaker_name` (nullable), `content`, `created_at`. Indexed by `(discussion_id, seq)` —
-  the natural read path for listing messages.
-- discussion agent sessions — `discussion_id`, `agent_id`, `session_id`, `vendor`, `last_seq`,
-  `created_at`, unique on `(discussion_id, agent_id)`. This is the SoT for the current vendor
-  transcript backing each discussion agent's resumable turns. The unified Sessions page does not read
-  this table directly; lifecycle hooks mirror current rows into `session_metadata` as
-  `session_kind='discussion'` / `owner_kind='discussion'` / `owner_id=<discussion.id>`.
+- discussions —— `id`（PK）、`workspace_path`、`title`、`type`、`goal`（text，非空，默认空），
+  `context`（text，非空，默认空 —— 用户的原始输入，从不被
+  调研覆盖）、`research_result`（text，非空，默认空 —— 只读调研智能体
+  已完成的输出，与 `context` 分开存储；在调研得出非空结果之前为空）、
+  `status`、`agenda`（text，非空，默认一个空 JSON 数组 —— 组织者的有序子话题）、
+  `agenda_index`（integer，非空，默认 0 —— 从 0 开始的当前子话题；等于议程长度
+  ⇒ 全部完成）、`conclusion`（可空）、`created_at`、`updated_at`、`completed_at`（可空）。按
+  `(workspace_path, status)` 建索引。
+- discussion messages —— `id`（PK）、`discussion_id`、`seq`、`speaker_kind`、`speaker_agent_id`
+  （可空）、`speaker_name`（可空）、`content`、`created_at`。按 `(discussion_id, seq)` 建索引——
+  这是列出消息的自然读取路径。
+- discussion agent sessions —— `discussion_id`、`agent_id`、`session_id`、`vendor`、`last_seq`、
+  `created_at`，在 `(discussion_id, agent_id)` 上唯一。这是支撑每个讨论智能体
+  可恢复轮次的当前厂商转录的唯一事实来源（SoT）。统一的 Sessions 页不直接读取
+  这张表；生命周期钩子会把当前行镜像到 `session_metadata` 中，带
+  `session_kind='discussion'` / `owner_kind='discussion'` / `owner_id=<discussion.id>`。
 
-**Schema version (current: v4),** written via the database version counter. v2→v3
-added `participant_agent_ids`; **v3→v4 renamed the workspace-key column `project_path` →
-`workspace_path` in place** (composite index rebuilt), run BEFORE the schema-ensure step —
-idempotent, never drops a table. This **deliberately diverges** from the back-compat `projectConfigs`
-settings.json key (see `database/migrate/2026/06/14/012`). The single shared version counter is
-**shared** with the intent store, so the two clobber each other on write — this is intentional and
-harmless: migrations key off **actual presence** (table-info introspection for columns,
-create-if-not-exists for tables), never off the version number. The value is informational only.
+**Schema 版本（当前：v4）**，通过数据库版本计数器写入。v2→v3
+新增了 `participant_agent_ids`；**v3→v4 原地将工作区键列 `project_path` 重命名为
+`workspace_path`**（复合索引重建），在 schema-ensure 步骤之前运行——
+幂等，从不删表。这**有意地**与向后兼容的 `projectConfigs`
+settings.json 键不同步（见 `database/migrate/2026/06/14/012`）。这个单一的共享版本计数器
+与 intent store **共享**，因此两者写入时会相互覆盖——这是有意为之且
+无害的：迁移的触发依据是**实际存在与否**（对列用 table-info 内省，
+对表用 create-if-not-exists），从不依据版本号。该值仅作参考。
 
-**Idempotent additive migration.** After the schema-ensure step and before writing the version
-counter, the store backfills the optional/nullable columns (`goal`, `context`, `research_result`,
-`agenda`, `agenda_index`, `conclusion`, `completed_at`): each checks the table's columns and only adds
-the column when it is absent. This is a **defensive forward-compat backfill** — a discussions table
-created by an earlier in-development build that predated these columns is upgraded in place; on a
-fresh schema each call is a no-op, and the whole sequence is idempotent across runs. Same
-key-off-column-presence paradigm as the intent store's `module`/`completed_at`/`automate` migrations.
-Both runtimes support column introspection / additive column alters through the shared surface.
+**幂等的增量迁移。** 在 schema-ensure 步骤之后、写入版本
+计数器之前，store 会回填可选/可空的列（`goal`、`context`、`research_result`、
+`agenda`、`agenda_index`、`conclusion`、`completed_at`）：每一列都会检查表的列集合，仅在
+该列缺失时才添加。这是一种**防御性的前向兼容回填**——一张由早期开发中构建版本
+（早于这些列存在）创建的 discussions 表会被原地升级；对于
+全新 schema，每次调用都是空操作，整个序列在多次运行间都是幂等的。与
+intent store 的 `module`/`completed_at`/`automate` 迁移采用相同的“按列存在与否触发”范式。
+两种运行时都通过共享接口支持列内省 / 增量列变更。
 
-**Fail-soft.** When the database cannot be opened/created, reads return empty/null and writes throw
-("讨论库不可用") — c3 boots and runs without the discussion feature, consistent with the intent
-store's degradation contract.
+**软失败。** 当数据库无法打开/创建时，读取返回空/null，写入抛出异常
+（"讨论库不可用"）——c3 在没有讨论功能的情况下仍可启动并运行，与 intent
+store 的降级契约一致。
 
 ## Store
 
-- **Path normalization:** every workspace-path argument (list, create) is resolved to an absolute
-  path before read/write, matching the workspace key / runtime workspace path / SDK working directory.
-  Id-keyed operations (get, update status, set conclusion, append message, list messages) take no
-  workspace path.
-- **List discussions** by workspace, ordered by most recently updated (optionally status-filtered).
-- **Get a discussion** by id (or nothing).
-- **Create a discussion** (workspace, title, type, optional goal/context/status). Mints a uuid,
-  `created_at = updated_at = now`, default `status = draft`; if created directly as `completed`,
-  `completed_at` is stamped.
-- **Update status** — updates status + `updated_at`; `completed_at = now` when completed, cleared on
-  revert (mirrors the intent store's done-stamping rule).
-- **Set conclusion** — sets `conclusion` + bumps `updated_at`.
-- **Set context** — replaces the user-supplied `context` + bumps `updated_at`.
-- **Set research result** — stores the research agent's completed output in the research-result column
-  (kept apart from `context`) + bumps `updated_at`.
-- **Set agenda** — persists the agenda (a JSON array) and the 0-based current index (equal to the
-  agenda length ⇒ all subtopics done) + bumps `updated_at`. Reads parse the agenda back to a string
-  array (null/blank/corrupt JSON → empty).
-- **Append a message** (discussion id, speaker kind, optional agent id / name, content). In **one
-  transaction**: reads the next sequence number (max existing + 1) for that discussion, inserts the
-  message, and bumps the discussion's `updated_at`. The transaction makes the sequence race-free under
-  the single synchronous connection; the sequence is independent per discussion.
-- **List messages** for a discussion, ordered by sequence ascending.
-- **Agent session mapping** — get/set/delete a discussion agent's current vendor session and delete
-  all mappings for a discussion. First creation writes the mapping and a best-effort
-  `session_metadata` projection row; resume failure deletes the stale mapping/projection before
-  creating a fresh session; single-agent and whole-discussion close delete the matching projection
-  rows. Projection failures are logged and do not block discussion cleanup. `last_seq` is the **max
-  discussion-message seq already fed into that agent's vendor session** — _not_ a turn/round counter.
-  Resuming a session never touches it; the orchestrator advances it after each successful turn
-  (`setLastSeq`), reading the current row and writing back the larger seq with the existing
-  `session_id`/`vendor` preserved (monotonic, never regresses, no-op when no row exists). `getLastSeq`
-  returns `null` only when no session row exists yet (first turn / resume unavailable).
-- Availability check / test-reset helpers mirror the intent store.
+- **路径归一化：** 每个工作区路径参数（list、create）在读写之前都会被解析为绝对
+  路径，与工作区键 / 运行时工作区路径 / SDK 工作目录保持一致。
+  按 id 操作的接口（get、更新状态、设置结论、追加消息、列出消息）不接收
+  工作区路径。
+- **按工作区列出讨论**，按最近更新排序（可选按状态过滤）。
+- **按 id 获取一个讨论**（或什么都拿不到）。
+- **创建一个讨论**（工作区、标题、类型，可选 goal/context/status）。铸造一个 uuid，
+  `created_at = updated_at = now`，默认 `status = draft`；若直接创建为 `completed`，
+  则打上 `completed_at` 时间戳。
+- **更新状态** —— 更新状态 + `updated_at`；完成时 `completed_at = now`，回退时
+  清空（与 intent store 的完成打戳规则一致）。
+- **设置结论** —— 设置 `conclusion` + 更新 `updated_at`。
+- **设置上下文** —— 替换用户提供的 `context` + 更新 `updated_at`。
+- **设置调研结果** —— 将调研智能体已完成的输出存入 research-result 列
+  （与 `context` 分开保存）+ 更新 `updated_at`。
+- **设置议程** —— 持久化议程（一个 JSON 数组）和从 0 开始的当前索引（等于
+  议程长度 ⇒ 所有子话题已完成）+ 更新 `updated_at`。读取时将议程解析回字符串
+  数组（null/空白/损坏的 JSON → 空数组）。
+- **追加一条消息**（讨论 id、发言者身份、可选的智能体 id / 名称、内容）。在**一个
+  事务**内：读取该讨论的下一个序号（现有最大值 + 1），插入
+  该消息，并更新该讨论的 `updated_at`。该事务使序号在单一同步
+  连接下无竞态；序号按讨论各自独立。
+- **列出一个讨论的消息**，按序号升序排列。
+- **智能体会话映射** —— 获取/设置/删除一个讨论智能体的当前厂商会话，以及删除
+  一个讨论的所有映射。首次创建会写入该映射及一条尽力而为的
+  `session_metadata` 投影行；恢复失败时会先删除陈旧的映射/投影再
+  创建新会话；单智能体关闭与整个讨论关闭都会删除对应的投影
+  行。投影失败会被记录日志，但不会阻塞讨论清理。`last_seq` 是**已喂入该
+  智能体厂商会话的最大讨论消息 seq**——*不是*轮次/回合计数器。
+  恢复会话从不触碰它；编排器在每次成功的轮次之后推进它
+  （`setLastSeq`），读取当前行并写回更大的 seq，同时保留现有的
+  `session_id`/`vendor`（单调递增，从不回退，无行存在时为空操作）。`getLastSeq`
+  仅当尚不存在会话行时（首轮 / 无法恢复）才返回 `null`。
+- 可用性检查 / 测试重置辅助函数与 intent store 一致。
 
-## Organizer engine
+## 组织者引擎
 
-The orchestration loop that drives a `draft` (or re-driven `completed`) discussion to a `conclusion`.
-Split for testability:
+驱动一个 `draft`（或被重新驱动的 `completed`）讨论走到 `conclusion` 的编排循环。
+为可测试性拆分如下：
 
-| Concern               | Notes                                                                                                                                             |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pure decision/parsing | No I/O/SDK: prompt builders, organizer-decision parsing, participant-speech parsing, step resolution, transcript rendering. Unit-tested.          |
-| Orchestration loop    | The run routine (discussion id, cancellation signal, injected dependencies) + its defaults. All collaborators injected, including the pause gate. |
-| One-shot agent turn   | A single tool-disabled turn under the agent's launch overrides, registered as a tool session (shared with consensus).                             |
+| 关注点           | 说明                                                                                          |
+| ---------------- | --------------------------------------------------------------------------------------------- |
+| 纯粹的决策/解析  | 无 I/O/SDK：提示语构建、组织者决策解析、参与者发言解析、步骤解析、转录渲染。已做单元测试。    |
+| 编排循环         | 运行例程（讨论 id、取消信号、注入的依赖）+ 其默认值。所有协作对象均通过注入提供，包括暂停闸。 |
+| 一次性智能体轮次 | 在智能体的启动覆盖项下进行的单次禁用工具的轮次，注册为一个工具会话（与共识共享）。            |
 
-**Roles.** The **organizer** is the discussion's designated organizer (else the workspace's default
-agent); the **participants** are the subset of agents **selected at creation** (picked in the create
-modal, default-all-enabled), resolved against the live enabled-agent pool, **∪ the organizer** — the
-organizer is always folded in (even if not selected) so it may nominate itself and is the sole speaker
-when only one agent participates (the consensus "no voters" degeneration). **Back-compat:** an empty
-participant set (legacy/pre-selection rows) means _unset_, and the roster falls back to the whole
-enabled-agent pool (the old "everyone participates" behaviour). The selection is fixed for the
-discussion's life — later rounds / resume reuse the same set (no post-creation editing this iteration).
+**角色。** **组织者** 是讨论指定的组织者（否则为工作区的默认
+智能体）；**参与者** 是**创建时选定**的智能体子集（在创建
+弹窗中挑选，默认全启用），依据当前存活的已启用智能体池解析，**∪ 组织者**——
+组织者总是被并入其中（即使未被选中），因此它可以提名自己，并在
+只有一个智能体参与时成为唯一发言者（共识“无投票者”退化的对应情形）。**向后兼容：** 空的
+参与者集合（旧数据/选择功能上线前的行）意味着*未设置*，此时名单回退到整个
+已启用智能体池（旧的“所有人都参与”行为）。该选择在讨论的
+整个生命周期内固定——后续轮次 / 恢复复用同一个集合（本次迭代不支持创建后编辑）。
 
-**Round model.** Each round the organizer is asked, over the live transcript + the active workflow
-stage (+ the live agenda in `discuss`), for a decision; the parse reads it (a JSON object of action /
-speaker / subtopics / index / note / conclusion first, keyword fallback, and a safe `advance`
-default so an unparseable reply never hangs). Step resolution folds the stage, the per-stage round cap,
-and the agenda (items + index, default empty) into a concrete step:
+**轮次模型。** 每一轮，组织者都会基于实时转录 + 当前工作流
+阶段（+ `discuss` 阶段下的实时议程）被要求给出一个决策；解析读取它（优先读取一个包含
+action / speaker / subtopics / index / note / conclusion 的 JSON 对象，其次关键词兜底，
+并以一个安全的 `advance` 作为默认值，使无法解析的回复永远不会卡死）。步骤解析将阶段、单阶段轮次上限
+与议程（条目 + 索引，默认空）折叠为一个具体步骤：
 
-- `speak` — a nominated participant takes a one-shot turn (parsed into its speech); its speech is
-  appended as an `agent` message. The participant prompt asks each turn to stay within a character
-  budget (≈300 chars; no paragraph/structure limit), and the parse no longer enforces a hard
-  truncation — over-long replies are accepted verbatim (the budget serves only as prompt-level
-  guidance). When an agenda is set, the current subtopic is injected into the participant prompt to
-  focus the turn. In converging stages (`summarize`/`confirm`) `speak` is the only speaker action — the
-  organizer refines serially, one participant at a time.
-- `broadcast` (`discuss` **only**) — the **divergent batch** form and the organizer's preferred discuss
-  mechanism: one organizer sub-question (the note, announced as an `organizer` message) is put to
-  several or all participants at once, each answering **in parallel** via its own one-shot turn on the
-  same one-paragraph budget. The speakers list is an explicit id list or "all"/omitted ⇒ the whole
-  roster; an explicit-but-all-invalid list recovers to the whole roster rather than degrading, and only
-  a truly empty roster degrades to `advance`. Every participant in a batch sees the **same transcript
-  snapshot** — taken after the sub-question is announced but before any answer — so the batch is
-  genuinely independent (no participant sees another's batch reply). The N replies are appended **in
-  nomination order, not completion order** (collected concurrently, then appended in a sequential
-  in-order loop), so each batch member's per-discussion sequence deterministically tracks the broadcast
-  order regardless of which agent finishes first. Each is an `agent` message, focused on the current
-  subtopic. A whole batch counts as **one round** (the per-stage and total counters each +1), so it is
-  bound by the R2 per-subtopic cap and never breaks the total-round backstop. Outside `discuss` a
-  `broadcast` decision degrades to `advance`, keeping the converging stages serial.
-- `set_agenda` (`discuss` only) — decompose the goal into ordered subtopics; the engine persists the
-  agenda (index reset to 0), announces it as an organizer message, and **stays in `discuss`**. Parsed
-  only from JSON (a non-empty subtopics array) — no prose fallback, since a list can't be reliably
-  extracted from free text; an empty/unusable list degrades to the safe `advance` default.
-- `focus_subtopic` (`discuss` only) — the current subtopic is done; move to the next (or the optional
-  numeric index). The engine persists the new index, announces the subtopic, and stays in `discuss`.
-  Moving **past the last subtopic** ⇒ every subtopic is done ⇒ resolves to `advance` (→ `summarize`).
-- `advance` — move to the next workflow stage; a non-empty organizer note (e.g. the summary) is
-  appended as an `organizer` message. Leaving `discuss` with an agenda set snaps the agenda index to
-  the agenda length (records "agenda complete").
-- `conclude` — append the final conclusion (organizer message), set the conclusion, mark `completed`.
+- `speak` —— 一名被提名的参与者进行一次一次性轮次（解析为其发言）；其发言
+  作为一条 `agent` 消息被追加。参与者提示语要求每一轮都控制在一个字符
+  预算内（约 300 字符；不限制段落/结构），解析不再强制
+  截断——过长的回复会被原样接受（该预算仅作为提示语层面的指引）。当设置了议程时，
+  当前子话题会被注入参与者提示语以聚焦该轮次。在收敛阶段
+  （`summarize`/`confirm`）中，`speak` 是唯一的发言者动作——组织者
+  串行地逐个精炼，每次一个参与者。
+- `broadcast`（**仅** `discuss`）—— **发散式批量**形式，也是组织者偏好的讨论
+  机制：一个组织者的子问题（该 note，以一条 `organizer` 消息宣布）同时被抛给
+  若干或全部参与者，每人各自通过一次一次性轮次**并行**回答，采用
+  同样的单段落预算。发言者列表可以是显式的 id 列表，或 "all"/省略 ⇒ 整个
+  名单；一个显式但全部无效的列表会恢复为整个名单而非退化，只有
+  真正空的名单才会退化为 `advance`。同一批次中的每个参与者都看到**相同的转录
+  快照**——在子问题宣布之后、任何回答之前拍摄——因此该批次是真正
+  独立的（没有参与者会看到另一个人的批次回复）。N 条回复按**提名顺序而非
+  完成顺序**追加（并发收集，随后按顺序在一个顺序循环中追加），因此
+  无论哪个智能体先完成，每个批次成员的每讨论序号都确定性地跟随
+  广播顺序。每条都是一条 `agent` 消息，聚焦当前
+  子话题。整个批次算作**一轮**（单阶段计数器和总计数器各 +1），因此它
+  受 R2 单子话题上限的约束，且从不打破总轮次的兜底上限。在 `discuss` 之外，
+  `broadcast` 决策会退化为 `advance`，使收敛阶段保持串行。
+- `set_agenda`（仅 `discuss`）—— 将目标分解为有序子话题；引擎持久化
+  议程（索引重置为 0），以一条组织者消息宣布它，并**停留在 `discuss`**。仅从
+  JSON 解析（一个非空的子话题数组）——没有散文兜底，因为列表无法可靠地
+  从自由文本中提取；空的/不可用的列表会退化为安全的 `advance` 默认值。
+- `focus_subtopic`（仅 `discuss`）—— 当前子话题已完成；移动到下一个（或可选的
+  数字索引）。引擎持久化新的索引，宣布该子话题，并停留在 `discuss`。
+  移动**超过最后一个子话题** ⇒ 每个子话题都已完成 ⇒ 解析为 `advance`（→ `summarize`）。
+- `advance` —— 移动到下一个工作流阶段；一条非空的组织者 note（例如摘要）
+  作为一条 `organizer` 消息被追加。若在设置了议程的情况下离开 `discuss`，会将议程索引
+  归位到议程长度（记录“议程已完成”）。
+- `conclude` —— 追加最终结论（组织者消息），设置结论，标记为 `completed`。
 
-**Resume-aware delta prompts.** Each organizer and participant owns an independent, persistent vendor
-session (`(discussion_id, agent_id)` → native session). The **first** turn for an agent has no session
-row, so `getLastSeq` returns `null` and the engine builds the **full** prompt (whole transcript); the
-turn creates the session. **Subsequent** turns resume that session, and the engine builds a **delta**
-prompt carrying only messages with `seq > last_seq` — the session already holds the earlier history in
-its context window, so re-sending it would balloon tokens with the round count. After a turn succeeds,
-the orchestrator advances that agent's `last_seq`:
+**支持恢复的增量提示语。** 每个组织者和参与者都拥有独立的、持久化的厂商
+会话（`(discussion_id, agent_id)` → 原生会话）。某个智能体的**第一**轮次没有会话
+行，因此 `getLastSeq` 返回 `null`，引擎构建**完整**提示语（整个转录）；
+该轮次会创建该会话。**后续**轮次恢复该会话，引擎构建一个**增量**
+提示语，仅携带 `seq > last_seq` 的消息——该会话已在其上下文窗口中持有
+更早的历史，因此重复发送会随着轮次数膨胀 token。轮次成功后，
+编排器会推进该智能体的 `last_seq`：
 
-- **Organizer** — to the max seq after its own freshly-appended messages (note / agenda announce /
-  conclusion) but **before** this round's participant speeches: it consumed the transcript up to its
-  own output, and never saw the speeches it triggered, so those reach it as new messages next round. No
-  append ⇒ advance to the prompt's input boundary, so the same batch of others' messages is not re-fed.
-- **Single `speak`** — to the speaker's own appended speech seq (empty speech ⇒ the input boundary).
-- **`broadcast`** — every participant builds its prompt from the **same batch snapshot** (taken after
-  the sub-question, before any answer). Each successful participant advances **independently** to its
-  own appended speech seq (empty ⇒ the snapshot max); a failed participant does not advance. A
-  batch-mate's answer appended **after** an agent's own (higher seq) therefore stays a new message in
-  that agent's next delta — the per-agent watermark is never bumped to a shared/global max.
+- **组织者** —— 推进到其自身新追加消息（note / 议程宣布 /
+  结论）之后但**在**本轮参与者发言**之前**的最大 seq：它消费了转录直到
+  自身的输出为止，从未见过它触发的那些发言，因此这些发言会作为新消息在下一轮到达它。若
+  没有追加 ⇒ 推进到提示语的输入边界，因此同一批他人的消息不会被重复喂入。
+- **单个 `speak`** —— 推进到发言者自己追加的发言 seq（空发言 ⇒ 输入边界）。
+- **`broadcast`** —— 每个参与者都从**同一个批次快照**（在子问题之后、任何回答之前拍摄）构建提示语。
+  每个成功的参与者都**独立地**推进到其自己追加的发言 seq
+  （空 ⇒ 快照最大值）；失败的参与者不推进。同一批次中另一位成员的回答
+  若追加在某个智能体自己的（更高的 seq）之后，在该智能体的下一次增量中仍然是一条新消息——
+  每智能体的水位线从不被推到共享/全局最大值。
 
-A failed or aborted turn never advances (and a resume failure deletes the row, so the next turn falls
-back to a full prompt). When `getLastSeq`/`setLastSeq` are unwired (stateless `askAgentOnce` deps), the
-engine always builds full prompts — the pre-resume behaviour, unchanged.
+一次失败或中止的轮次从不推进（恢复失败会删除该行，因此下一轮次
+会回退到完整提示语）。当 `getLastSeq`/`setLastSeq` 未接入（无状态的 `askAgentOnce` 依赖）时，
+引擎总是构建完整提示语——与恢复功能上线前的行为不变。
 
-**Explicit agenda.** The agenda is an ordered list of subtopics plus a 0-based index (empty agenda ⇒
-none yet; index equal to the agenda length ⇒ all done). It is **persisted** and **only meaningful in
-`discuss`** — other stages ignore agenda actions (they degrade to `advance`), and an empty agenda makes
-the engine behave exactly as it did before agendas existed (full backward compatibility). The engine
-seeds its live agenda from the persisted discussion at run start and writes back on every
-`set_agenda`/`focus_subtopic`. Each `set_agenda`/`focus_subtopic` also fires the status-change hook (→
-refreshed `discussions` list broadcast), so viewers see the agenda set and the current subtopic advance
-**live** — the persisted agenda + index ride the list push, since the companion `discussion_message`
-announcement carries no agenda fields. In `discuss`, the per-stage round cap is effectively the
-**per-subtopic** speak budget: the loop resets the in-stage round count on each
-`set_agenda`/`focus_subtopic`, and when the cap is hit it auto-moves to the next subtopic if one remains
-(else advances out of the stage). `set_agenda`/`focus_subtopic` bump the **total**-round counter (the
-hard backstop) but never change the stage. The read path (get / list / `discussion_detail`) carries the
-agenda + index for free.
+**显式议程。** 议程是一个有序的子话题列表加上一个从 0 开始的索引（空议程 ⇒
+尚无议程；索引等于议程长度 ⇒ 全部完成）。它是**持久化的**，且**仅在
+`discuss` 中有意义**——其他阶段忽略议程动作（它们退化为 `advance`），空议程使
+引擎行为与议程功能出现之前完全一致（完全向后兼容）。引擎
+在运行开始时从持久化的讨论中为其实时议程播种，并在每次
+`set_agenda`/`focus_subtopic` 时写回。每次 `set_agenda`/`focus_subtopic` 还会触发状态变更钩子（→
+刷新的 `discussions` 列表广播），因此观察者能**实时**看到议程被设置以及
+当前子话题推进——持久化的议程 + 索引乘着列表推送传递，因为伴随的 `discussion_message`
+宣布消息不携带任何议程字段。在 `discuss` 中，单阶段轮次上限实际上就是
+**单子话题**的发言预算：循环在每次 `set_agenda`/`focus_subtopic` 时重置阶段内轮次计数，
+达到上限时若还有剩余子话题就自动移到下一个子话题
+（否则移出该阶段）。`set_agenda`/`focus_subtopic` 会推进**总**轮次计数器（硬性
+兜底），但从不改变阶段。读取路径（get / list / `discussion_detail`）免费携带
+议程 + 索引。
 
-**State machine.**
+**状态机。**
 
-`start_discussion` is also invoked **automatically** after `create_discussion`'s background research
-succeeds: the server re-validates the freshest record with a pure auto-start guard (status is still
-`draft` and no live run) and starts the run. A manual `start_discussion` stays as a fallback (research
-failed/stalled, where the discussion remains a `draft`).
+`start_discussion` 也会在 `create_discussion` 的后台调研成功后被**自动**调用：
+服务端通过一个纯粹的自动启动守卫，基于最新记录重新校验（状态仍为
+`draft` 且没有存活运行）并启动该运行。手动 `start_discussion` 仍作为兜底（调研
+失败/停滞时，讨论保持 `draft`）。
 
-**Research as an observable run.** The research run mirrors a discussion run: a per-id registry
-(presence = liveness) registers the run, `research_run_status` broadcasts `running` then `ended` (on
-finish/failure/dead process — the run is awaited, so a dead process settles the promise to `ended`),
-and the research routine's message callback streams each observable item as `research_message`,
-mirroring the agent stream so the right pane renders the same standard transcript: a `text` kind per
-assistant turn, a `tool_use` kind (with `toolUseId`/`toolName`/`input`) per tool call, a `tool_result`
-kind (with `toolUseId`/`content`/`isError`) per tool return, each occupying a monotonic sequence per
-run. Research messages are **runtime-only** — never persisted to the DB, mirroring
-`discussion_dispatch_status` — but unlike dispatch status the server keeps a bounded runtime transcript
-of the run's visible items and replays it on the `discussion_detail` snapshot, so a reconnect
-mid-research restores the already-shown items and de-dupes later live ones by `seq`; the run's
-liveness is also snapshotted (the research-states snapshot on every `discussions` send). On settle the
-server broadcasts `ended` **before** auto-starting the orchestration, so the right pane switches
-research → discussion stream in one batch; a failed research broadcasts `ended` without auto-start,
-surfacing the manual Start fallback. Frontend phase and Start visibility (status is `draft` and neither
-research nor a discussion run is live) are pure helpers rebuilt from the snapshots on reconnect.
+**调研作为一个可观测的运行。** 调研运行与讨论运行镜像对应：一个按 id 索引的注册表
+（存在即存活）注册该运行，`research_run_status` 依次广播 `running` 和 `ended`（在
+完成/失败/进程死亡时——该运行会被 await，因此进程死亡也会使该 promise
+最终归结为 `ended`），调研例程的消息回调将每个可观测项流式推送为 `research_message`，
+与智能体流镜像对应，使右侧面板能渲染同样的标准转录：每个助手回合一个 `text` 类型，
+每次工具调用一个 `tool_use` 类型（带 `toolUseId`/`toolName`/`input`），每次工具返回一个 `tool_result`
+类型（带 `toolUseId`/`content`/`isError`），每种类型在一次运行内各占一个单调递增的
+序号。调研消息**仅存在于运行时**——从不持久化到数据库，与
+`discussion_dispatch_status` 镜像对应——但与派发状态不同，服务端会保留一份有界的运行时转录，
+记录该运行的可见项，并在 `discussion_detail` 快照上重放，因此
+调研过程中的一次重连能恢复已展示的项目，并按 `seq` 对后续的实时项去重；该运行的
+存活状态也会被快照（每次 `discussions` 推送上的调研状态快照）。结算时
+服务端会**先**广播 `ended`，**再**自动启动编排，因此右侧面板能在一批操作内
+从调研流切换到讨论流；一次失败的调研广播 `ended` 而不自动启动，
+呈现手动 Start 兜底。前端阶段与 Start 可见性（状态为 `draft` 且
+调研与讨论运行均不存活）都是从快照重建的纯粹辅助函数，用于重连场景。
 
-The research agent's output is written to the research-result column (only when non-empty); the user's
-original `context` is **never** overwritten. The organizer engine's prompt background source is the
-research result when present, falling back to the user's original context otherwise.
+调研智能体的输出写入 research-result 列（仅在非空时写入）；用户
+原始的 `context` **绝不**被覆盖。组织者引擎的提示语背景来源在
+调研结果存在时取自它，否则回退到用户的原始上下文。
 
 ```
-draft ──start_discussion / auto-start after research──▶ in_progress ──(walk workflow stages)──▶ completed (conclusion written)
+draft ──start_discussion / 调研后自动启动──▶ in_progress ──(走完工作流各阶段)──▶ completed（结论已写入）
                               │   ▲                                       │
                   pause ──────┤   │ resume                                │ continue_discussion
-                  (gate parks)│   │                                       │ (append human Q)
+                  (闸停驻)    │   │                                       │ (追加 human 问题)
                               └───┘                                       ▼
-   discuss ──advance/agenda done──▶ summarize ──advance──▶ confirm ──advance──▶ conclude ──▶ conclude step
-      ▲  │ broadcast (divergent batch: N participants answer the subtopic in parallel — discuss only)
-      │  │ speak (single participant turn on the current subtopic; the only speaker action in summarize/confirm)
-      │  │ set_agenda (decompose goal into subtopics) / focus_subtopic (next subtopic) — both stay in discuss
-      │  │ (all four are per-subtopic capped by maxRoundsPerStage; a batch counts as one round)
+   discuss ──advance/议程完成──▶ summarize ──advance──▶ confirm ──advance──▶ conclude ──▶ conclude 步骤
+      ▲  │ broadcast（发散式批量：N 个参与者并行回答该子话题 —— 仅 discuss）
+      │  │ speak（单个参与者对当前子话题的一次轮次；summarize/confirm 中唯一的发言者动作）
+      │  │ set_agenda（将目标分解为子话题）/ focus_subtopic（下一个子话题）—— 二者都停留在 discuss
+      │  │ (四者都受 maxRoundsPerStage 的单子话题上限约束；一个批次算作一轮)
       └──┘
-   (an explicit `conclude` decision finishes from any stage; the terminal `conclude` stage
-    always concludes. `continue_discussion` re-enters in_progress at the first stage with the
-    full prior transcript as context, producing a new conclusion.)
+   (一个显式的 `conclude` 决策可以从任意阶段结束；终态的 `conclude` 阶段
+    总是得出结论。`continue_discussion` 以完整的既往转录作为上下文，
+    在第一阶段重新进入 in_progress，产出一个新的结论。)
 ```
 
-**Human-in-the-loop.** Three controls layer onto the loop without touching its decision logic:
+**Human-in-the-loop（人机协同）。** 三个控制项叠加在该循环之上，且不触及其决策逻辑：
 
-- **Pause gate** — the gate is awaited at the top of every round. While paused it parks (no organizer
-  decision, no speech); resume or abort wakes it. So pause/resume suspend the engine **without
-  aborting** it (local stage/round state is preserved). `pause_discussion` / `resume_discussion` flip
-  the per-run flag; an already in-flight one-shot turn still finishes (the pause is a round-boundary
-  gate, so one more message may land after a pause request).
-- **Interjection** (`discussion_speak`) — the server pauses the run, appends a `human` message
-  (streamed as `discussion_message`), and resumes; the loop re-reads the message list each round, so
-  the organizer's next decision sees it. With no live run (in_progress but stopped) the message is
-  simply appended.
-- **New round** (`continue_discussion`) — on a `completed` discussion the server appends the human's
-  follow-up as a `human` message, flips `completed → in_progress`, and re-runs the engine over the
-  grown transcript. The engine needs no change: it re-enters at the first workflow stage, the prior
-  conclusion + the new question are context, and the conclusion is overwritten with the new outcome. A
-  re-entry guard (a live run already registered for this id) rejects it while a run is live.
-- **Recovery** (automation c3 MCP `continue_discussion` only) — an `in_progress` discussion with **no
-  live run** (the post-error / post-restart dangling state) is restartable: the automation-facing
-  `continue_discussion` tool re-invokes `startDiscussionRun` on the latest record **without** appending
-  a message or resetting agenda/conclusion/agent-session state, so the orchestrator resumes from the
-  persisted transcript / stage / agenda / per-agent `last_seq`. This reuses the derivable
-  `in_progress` + `!hasDiscussionRun` combination — no new `DiscussionStatus`. The WebSocket
-  `continue_discussion` handler still only accepts `completed`; recovery is exposed exclusively to
-  automation LLM execution (see
-  [automations-spec §Discussion tools](../automations/automations-spec.md)).
+- **暂停闸** —— 该闸在每一轮开始时被 await。暂停期间它会停驻（无组织者
+  决策，无发言）；恢复或中止会唤醒它。因此暂停/恢复能够挂起引擎而**不
+  中止**它（本地的阶段/轮次状态得以保留）。`pause_discussion` / `resume_discussion` 翻转
+  逐运行的标记；一个已经在进行中的一次性轮次仍会完成（暂停是一个轮次边界的
+  闸，因此暂停请求发出后仍可能落地一条消息）。
+- **插话**（`discussion_speak`）—— 服务端暂停该运行，追加一条 `human` 消息
+  （以 `discussion_message` 流式推送），然后恢复；循环每一轮都会重新读取消息列表，因此
+  组织者的下一个决策会看到它。当没有存活运行时（in_progress 但已停止），该消息只是
+  被简单追加。
+- **新一轮**（`continue_discussion`）—— 在一个 `completed` 的讨论上，服务端将人类的
+  后续问题追加为一条 `human` 消息，将 `completed → in_progress`，并在
+  增长后的转录上重新运行引擎。引擎不需要任何改动：它在第一个工作流阶段重新进入，
+  之前的结论 + 新问题作为上下文，结论会被新的结果覆盖。一个
+  重入守卫（该 id 已注册了一个存活运行）会在运行存活期间拒绝该请求。
+- **恢复**（仅限 automation 的 c3 MCP `continue_discussion`）—— 一个**没有
+  存活运行**的 `in_progress` 讨论（错误后/重启后的悬挂状态）是可重启的：面向 automation 的
+  `continue_discussion` 工具会在最新记录上重新调用 `startDiscussionRun`，**不**追加
+  消息也不重置议程/结论/智能体会话状态，因此编排器会从
+  持久化的转录 / 阶段 / 议程 / 逐智能体 `last_seq` 处恢复。这复用了可推导出的
+  `in_progress` + `!hasDiscussionRun` 组合——不引入新的 `DiscussionStatus`。WebSocket 的
+  `continue_discussion` 处理器仍然只接受 `completed`；恢复功能仅暴露给
+  automation 的 LLM 执行（见
+  [automations-spec §Discussion tools](../automations/automations-spec.md)）。
 
-**Persistence + streaming.** Every appended message is persisted (monotonic per-discussion sequence)
-and streamed via the message hook → server `discussion_message` broadcast. Status/conclusion changes —
-and agenda changes (`set_agenda`/`focus_subtopic`) — fire the status-change hook → refreshed
-`discussions` list broadcast. The live **run-state** (`running` / `paused` / `ended`) is a separate
-`discussion_run_status` broadcast — runtime-only and **decoupled** from the persisted discussion status
-(a paused run is still `in_progress` on disk; the state is lost on server restart). The frontend keys a
-per-discussion run-state map off it (dropping the entry on `ended`) to render the Pause/Resume control,
-the composer mode (Speak vs Continue), and the left list's per-row live badge (running pulses / paused
-steady, distinct from the static status pill), so concurrent background runs are each visible.
+**持久化 + 流式推送。** 每条追加的消息都会被持久化（每讨论单调递增的序号）
+并通过消息钩子流式推送 → 服务端 `discussion_message` 广播。状态/结论变化——
+以及议程变化（`set_agenda`/`focus_subtopic`）——会触发状态变更钩子 → 刷新
+`discussions` 列表广播。实时的**运行状态**（`running` / `paused` / `ended`）是一个独立的
+`discussion_run_status` 广播——仅存在于运行时，**与**持久化的讨论状态**解耦**
+（一个暂停的运行在磁盘上仍是 `in_progress`；该状态在服务端重启后丢失）。前端依据它
+维护一个逐讨论的运行状态映射（`ended` 时丢弃该条目），用于渲染 Pause/Resume 控件、
+输入框模式（Speak 还是 Continue），以及左侧列表逐行的实时徽标（running 呈脉动，paused
+呈静止，区别于静态的状态胶囊），因此并发的后台运行各自可见。
 
-**Run-state snapshot (refresh/reconnect accuracy).** `discussion_run_status` only fires on
-_transitions_, so a freshly-(re)connected view never learns about runs that were already going. To
-close this, every `discussions` list message carries a run-states snapshot — reading the live run
-registry and mapping each _listed_ discussion with an active run to `running`/`paused` (active entries
-only). It rides all three list sends: the `list_discussions` reply, the post-change list push, and (via
-the frontend re-issuing `list_discussions`) reconnect. The frontend's reconciliation then makes its
-global run-state map authoritative for _that list's_ ids — each listed id is set from the snapshot or
-dropped when absent (clearing an `ended` missed during a disconnect) — while leaving other workspaces'
-entries untouched. The transition-only `discussion_run_status` event still drives fine-grained updates
-between list sends.
+**运行状态快照（刷新/重连准确性）。** `discussion_run_status` 只在*状态转换*时
+触发，因此一个刚（重新）连接的视图永远不会得知那些已经在进行中的运行。为
+弥补这一点，每条 `discussions` 列表消息都携带一份运行状态快照——读取存活运行
+注册表，并把每个*被列出*的、带有活跃运行的讨论映射为 `running`/`paused`（仅活跃条目）。
+它乘着三种列表推送传递：`list_discussions` 回复、变更后的列表推送，以及（通过
+前端重新发起 `list_discussions`）重连。前端的协调逻辑随后使其
+全局运行状态映射对*该列表*的 id 具有权威性——每个被列出的 id 都会依据快照设置，
+或在缺失时被丢弃（清除掉断连期间错过的一个 `ended`）——同时不触碰其他工作区的
+条目。仅在状态转换时触发的 `discussion_run_status` 事件仍然驱动列表推送之间的
+细粒度更新。
 
-**Dispatch (in-flight) status.** Before a nominated agent's one-shot turn is awaited, the engine emits
-the agent(s) as in-flight via the injected dispatch-status hook (`speak` lists one, `broadcast` lists
-the whole batch — concurrent replies); when the turn resolves it emits `cleared`, and when it **throws**
-it emits `failed` (with a brief error) instead of the former silent swallow. A failure is no longer
-swallowed into an empty speech — it is surfaced, the speech is skipped, and the round still proceeds (a
-`broadcast` awaits all settled results, so one failure does not drop the rest of the batch). The server
-maps the per-agent dispatch status (`pending` / `cleared` / `failed`) onto a runtime-only
-`discussion_dispatch_status` broadcast — **not persisted**, never a stored message row. The frontend
-keeps a per-discussion view of pending agents + errors reduced from those events; the chat tail renders
-`"<name> is replying…"` per pending agent and a failure line per error. `cleared` is the reliable clear
-for an empty/skipped speech that appends no message; the landed reply also clears its author eagerly
-(keyed by the speaker's agent id). Unlike run-state, dispatch status is **not** snapshotted on the
-`discussions` list — it is too ephemeral; it self-heals via `cleared` / `failed` / the reply message /
-run `ended` / discussion switch (each drops the entry), so a refresh/reconnect (which starts empty)
-leaves no stuck pending.
+**派发（进行中）状态。** 在一个被提名智能体的一次性轮次被 await 之前，引擎会通过注入的
+派发状态钩子发出该智能体（或多个）为进行中（`speak` 列出一个，`broadcast` 列出
+整批——并发回复）；轮次解决时它发出 `cleared`，**抛出异常**时
+它发出 `failed`（带简要错误）而不是之前的静默吞掉。失败不再被
+吞没为一次空发言——它会被呈现出来，该发言被跳过，该轮次仍会继续推进（
+`broadcast` 会等待所有结果落定，因此一次失败不会丢弃批次中的其余部分）。服务端
+将逐智能体的派发状态（`pending` / `cleared` / `failed`）映射到一个仅存在于运行时的
+`discussion_dispatch_status` 广播上——**不持久化**，从不作为一条存储的消息行。前端
+从这些事件归约出一个逐讨论的待处理智能体 + 错误视图；聊天尾部为每个待处理智能体渲染
+`"<name> is replying…"`，为每个错误渲染一行失败信息。`cleared` 是对一个不追加任何消息的
+空/被跳过发言的可靠清除信号；落地的回复也会主动清除其作者的待处理状态
+（以发言者的智能体 id 为键）。与运行状态不同，派发状态在 `discussions`
+列表上**不**做快照——它太短暂了；它通过 `cleared` / `failed` / 回复消息 /
+运行 `ended` / 切换讨论来自愈（各自会丢弃该条目），因此刷新/重连（从空状态开始）
+不会留下卡住的待处理项。
 
-**Termination.** Stages move forward only and `conclude` is terminal; the per-stage round cap forces an
-advance out of a stuck stage; the total-round cap (default 40) is the hard backstop, writing a fallback
-conclusion. The per-stage cap is the system-configured maximum rounds per stage (minimum 8, default 12
-— see agent-config AC-R9), read from system settings and injected through the run's default
-dependencies; tests may override it on the injected dependencies. An abort (server teardown) breaks the
-loop and leaves the discussion `in_progress` with no live run — the frontend does not resume it, but
-automation LLM execution can recover this exact state via the `continue_discussion` c3 MCP tool (see
-the **Recovery** bullet above).
+**终止。** 阶段只能向前推进，`conclude` 是终态；单阶段轮次上限会强制
+将一个卡住的阶段向前推进；总轮次上限（默认 40）是硬性兜底，会写入一个兜底
+结论。单阶段上限是系统配置的每阶段最大轮次数（最小 8，默认 12
+——见 agent-config AC-R9），从系统设置读取并通过运行的默认
+依赖注入；测试可以在注入的依赖上覆盖它。一次中止（服务端拆卸）会打断
+该循环，使讨论保持 `in_progress` 且没有存活运行——前端不会恢复它，但
+automation 的 LLM 执行可以通过 `continue_discussion` 这个 c3 MCP 工具恢复恰好这种状态（见
+上方的**恢复**要点）。
 
-**Background carrier.** The server keeps a registry of live discussion runs, each holding an abort
-handle, a paused flag, and the set of resume waiters. A present entry is the re-entry guard for
-`start_discussion` / `continue_discussion`; the abort handle tears the loop down; the paused flag +
-resume waiters back the pause gate (resume splices+wakes the waiters; the gate also wakes on abort, so
-neither resume nor teardown can hang on a paused loop). A shared run-start entry registers the control,
-wires the broadcast + gate hooks into the run's default dependencies, and on completion deletes the
-entry and broadcasts `discussion_run_status: 'ended'`. The run uses one-shot tool sessions, not a user
-session runtime, so finishing it never ends a session (既有 session 约定: a session ends only on user
-`/clear`).
+**后台承载体。** 服务端保有一个存活讨论运行的注册表，每一项持有一个中止
+句柄、一个暂停标记，以及一组恢复等待者。一个存在的条目就是
+`start_discussion` / `continue_discussion` 的重入守卫；中止句柄拆卸该循环；暂停标记 +
+恢复等待者支撑暂停闸（恢复会拼接并唤醒等待者；该闸在中止时也会唤醒，因此
+恢复和拆卸都不会在一个暂停的循环上挂起）。一个共享的运行启动条目注册该控制项，
+将广播 + 闸钩子接入运行的默认依赖，并在完成时删除该
+条目并广播 `discussion_run_status: 'ended'`。该运行使用一次性工具会话，而非用户
+会话运行时，因此结束它从不会结束一个会话（既有 session 约定：会话仅在用户
+`/clear` 时结束）。
 
-## Testing
+## 测试
 
-**Store** (real temp-file database): table + index creation and the version counter; CRUD (create
-defaults + explicit fields, list ordering [tie-safe non-increasing updated-at] + status filter +
-workspace scope + trailing-slash path normalization, the completed-at stamp/clear, conclusion,
-real-file persistence across cache reset); messages (monotonic per-discussion sequence, sequence
-independence across discussions, updated-at bump, ordered list, nullable speaker fields → null);
-**agenda** (set-agenda round-trips subtopics + index, index reaching the agenda length, create defaults
-of empty/0, real-file persistence); migration (old database with **no** discussion tables → created;
-old discussions table with **only core columns** → additive backfill of
-`goal`/`context`/`research_result`/`agenda`/`agenda_index`/`conclusion`/`completed_at`, historic row
-survives, idempotent on re-ensure); fail-soft degradation (reads empty/null, write throws).
+**Store**（真实临时文件数据库）：表 + 索引的创建以及版本计数器；CRUD（创建时的
+默认值 + 显式字段、列表排序[对相同 updated-at 稳妥的非递减排序] + 状态过滤 +
+工作区范围 + 尾部斜杠的路径归一化、completed-at 打戳/清空、结论、
+跨缓存重置的真实文件持久化）；消息（每讨论单调递增的序号、跨讨论的
+序号独立性、updated-at 更新、有序列表、可空发言者字段 → null）；
+**议程**（set-agenda 往返子话题 + 索引、索引达到议程长度、创建时空/0 的
+默认值、真实文件持久化）；迁移（**没有**讨论表的旧数据库 → 被创建；
+**只有核心列**的旧 discussions 表 → 增量回填
+`goal`/`context`/`research_result`/`agenda`/`agenda_index`/`conclusion`/`completed_at`，历史行
+得以保留，重新 ensure 时幂等）；软失败降级（读取返回空/null，写入抛出异常）。
 
-**Pure decision/parsing**: organizer-decision parsing (JSON / fenced / keyword fallback / invalid
-speaker / unparseable → advance / `set_agenda` with subtopic list / empty subtopics degrade /
-`focus_subtopic` with index / next-subtopic prose / **`broadcast`** with explicit speaker list
-[intersected + deduped + order-preserved] / "all"/omitted ⇒ whole roster / all-invalid list recovers to
-whole roster / no-participants degrades / broadcast prose keyword); participant-speech parsing (trim +
-self-name strip + blank + over-long text preserved verbatim (no truncation) + short speech untouched +
-explicit max-chars override [a no-op — kept for backward compatibility]); step resolution
-(terminal-stage conclude, explicit conclude, cap-forced advance, valid / invalid speaker, set-agenda
-step, focus advances index, focus past last → advance, cap moves to next subtopic when unfinished /
-advances on last subtopic, agenda actions degrade outside `discuss`, **`broadcast` in `discuss` yields a
-broadcast step / degrades to advance outside `discuss` / per-stage cap still forces forward motion over
-a pending broadcast**); transcript rendering; prompt builders carry the key fields (incl. the agenda +
-current subtopic + the `broadcast` contract).
+**纯粹的决策/解析**：组织者决策解析（JSON / 围栏代码块 / 关键词兜底 / 无效
+发言者 / 无法解析 → advance / 带子话题列表的 `set_agenda` / 空子话题退化 /
+带索引的 `focus_subtopic` / 下一子话题的散文表达 / 带显式发言者列表的
+**`broadcast`**[取交集 + 去重 + 保序] / "all"/省略 ⇒ 整个名单 / 全部无效的列表恢复为
+整个名单 / 无参与者退化 / broadcast 散文关键词）；参与者发言解析（去除首尾空白 +
+剥离自我署名 + 空白 + 过长文本原样保留（不截断） + 短发言原样不动 +
+显式的最大字符数覆盖[空操作——为向后兼容而保留]）；步骤解析
+（终态阶段的 conclude、显式 conclude、上限强制的 advance、有效/无效
+发言者、set-agenda 步骤、focus 推进索引、focus 超过最后一个 → advance、上限在未完成时
+移到下一个子话题 / 在最后一个子话题上推进出该阶段、议程动作在 `discuss` 之外退化、
+**`discuss` 中的 `broadcast` 产出一个 broadcast 步骤 / 在 `discuss` 之外退化为 advance /
+单阶段上限仍会在一个待处理的 broadcast 之上强制向前推进**）；转录渲染；提示语构建器携带
+关键字段（包括议程 + 当前子话题 + `broadcast` 契约）。
 
-**Orchestration loop** (fakes — scripted replies, in-memory store, capture hooks): the full workflow
-happy path (status `in_progress` → `completed`, streamed messages mirror appends, conclusion written),
-the single-agent degeneration, mid-run abort leaving `in_progress`, the total-round-cap fallback
-conclusion, the **pause gate** (a gate that parks the first round ⇒ status flips but no message is
-streamed; release ⇒ runs to completion), a **fresh post-conclusion round** (append a `human` question +
-flip to `in_progress` + re-run ⇒ new conclusion, grown transcript), an **explicit agenda walk**
-(`set_agenda` ⇒ subtopic-by-subtopic `speak`/`focus_subtopic` ⇒ all done ⇒ `summarize` → `conclude`;
-agenda persisted, index equal to the agenda length, one participant turn per subtopic), the
-**per-subtopic cap auto-advance** (a subtopic that hits the per-stage cap carries the engine to the next
-subtopic, then out of the stage on the last), a **divergent batch broadcast** (one `discuss` broadcast
-decision ⇒ multiple `agent` speeches from a single round; the organizer announces the sub-question
-first; replies persist in nomination order with monotonic sequence even when a later-nominated agent
-finishes first; streaming mirrors the append order), and the **converging stages stay serial** (a
-`broadcast` decision issued in `summarize` degrades to `advance` and fans out nothing).
+**编排循环**（伪造对象——脚本化的回复、内存 store、捕获钩子）：完整工作流的
+happy path（状态 `in_progress` → `completed`，流式消息与追加镜像对应，结论已写入）、
+单智能体退化、运行中中止后保持 `in_progress`、总轮次上限的兜底
+结论、**暂停闸**（一个使第一轮停驻的闸 ⇒ 状态翻转但没有消息被
+流式推送；释放 ⇒ 运行至完成）、一个**得出结论后的新一轮**（追加一条 `human` 问题 +
+翻转到 `in_progress` + 重新运行 ⇒ 新结论，转录增长）、一个**显式的议程遍历**
+（`set_agenda` ⇒ 逐子话题的 `speak`/`focus_subtopic` ⇒ 全部完成 ⇒ `summarize` → `conclude`；
+议程已持久化，索引等于议程长度，每个子话题一次参与者轮次）、
+**单子话题上限自动推进**（一个触及单阶段上限的子话题会使引擎推进到下一个
+子话题，最后一个子话题上则移出该阶段）、一个**发散式批量 broadcast**（一个 `discuss` 的 broadcast
+决策 ⇒ 单一轮次中的多条 `agent` 发言；组织者先宣布子问题；
+回复按提名顺序以单调递增的序号持久化，即使后提名的智能体先完成也一样；
+流式推送与追加顺序镜像对应），以及**收敛阶段保持串行**（在 `summarize` 中发出的
+`broadcast` 决策会退化为 `advance` 且不做任何扇出）。
 
-## Dependencies
+## 依赖
 
-- **Shared database adapter** — the cross-runtime database driver, kept out of the bundle.
-- **Shared protocol** — the Discussion, Discussion Message, status, and speaker-kind entity types;
-  each agent's icon (operator-set emoji / short text per agent) is the wire-level source of truth for
-  the multi-speaker chat header.
-- **Discussion types** — the workflow stage catalog + next-stage function.
-- **Agent runtime** — the one-shot agent turn and the settings/agent-resolution + launch helpers for
-  the organizer + participants.
+- **共享数据库适配器** —— 跨运行时数据库驱动，保持在打包产物之外。
+- **共享协议** —— Discussion、Discussion Message、status 与 speaker-kind 实体类型；
+  每个智能体的图标（操作者设置的表情符号 / 每个智能体的简短文本）是
+  多发言者聊天头部的线上层唯一事实来源。
+- **Discussion 类型** —— 工作流阶段目录 + 下一阶段函数。
+- **智能体运行时** —— 一次性智能体轮次，以及为组织者 + 参与者提供的
+  设置/智能体解析 + 启动辅助函数。
 
-## Client-side rendering (cross-reference)
+## 客户端渲染（交叉引用）
 
-The server appends messages with the speaker name set from the agent profile; the wire model is the
-source of truth, and the organizer/agent ids resolve to the live agent roster on the client. The web
-client draws a small 「icon + name」 line above every discussion message body and the resolution rules
-(organizer ⇒ designated organizer or default agent, agent ⇒ by id, fallbacks, blank-icon trim) live in
-the web-console design — see
-[Discussion speaker rendering](../web-console/web-console-design.md#discussion-speaker-rendering-multi-speaker-chat-header).
-No server changes are required for that surface; the icon field is consumed read-only.
+服务端追加消息时会从智能体档案设置发言者名称；线上模型是
+唯一事实来源，组织者/智能体 id 在客户端解析为当前存活的智能体名单。web
+客户端会在每条讨论消息正文上方绘制一行小小的「图标 + 名称」，其解析规则
+（organizer ⇒ 指定的组织者或默认智能体，agent ⇒ 按 id 解析，各种回退，空图标裁剪）位于
+web-console 设计文档中——见
+[Discussion speaker rendering](../web-console/web-console-design.md#discussion-speaker-rendering-multi-speaker-chat-header)。
+该界面无需任何服务端改动；图标字段是只读消费的。

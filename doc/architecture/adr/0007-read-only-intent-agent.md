@@ -1,178 +1,136 @@
-# 0007 — Read-only intent-communication agent; save via tool-confirmation; cross-runtime SQLite
+# 0007 — 只读意图沟通智能体；经工具确认后保存；跨运行时 SQLite
 
 - **Status:** accepted
 - **Date:** 2026-05-30
 
 ## Context
 
-The intent-management feature adds a per-project intent ledger and a long-lived agent
-that helps the user break ideas into verifiable intent items. That agent must be able to
-**read** project material to reason well, but must **never** mutate the project — it is a
-planning/analysis surface, not a coding session. Persisting a intent must be a deliberate,
-human-confirmed act, and the ledger must work both under the Node CJS bundle and the Bun single
-binary, which expose different built-in SQLite modules.
+意图管理特性为每个项目新增一份意图台账,以及一个长驻智能体,帮助用户把想法拆解为可验证的意图项。该智能体必须能够
+**读取**项目内容以进行良好推理,但必须**永不**修改项目——它是一个规划/分析界面,不是一个编码会话。持久化一条意图
+必须是一个刻意的、由人类确认的动作,并且该台账必须同时在 Node CJS bundle 与 Bun 单体二进制下工作,而这两者暴露的
+是不同的内置 SQLite 模块。
 
-Three decisions are coupled enough to record together:
+有三个决策足够耦合,值得一并记录:
 
-1. How to make the communication agent genuinely read-only (not merely instructed to be).
-2. How to persist a intent only on explicit human confirmation.
-3. How to store the ledger across two runtimes with different SQLite drivers.
+1. 如何让沟通智能体真正做到只读(而不仅仅是被指示要只读)。
+2. 如何只在人类明确确认后才持久化一条意图。
+3. 如何在两个拥有不同 SQLite 驱动的运行时之间存储该台账。
 
 ## Options considered
 
-1. **Read-only by system prompt only.** Tell the agent not to write. _Con:_ unenforced — the
-   model can still call `Write`/`Bash`, or spawn a sub-agent or slash command that writes, and a
-   prompt cannot stop it. Rejected as the _sole_ mechanism.
-2. **Read-only by tool layer + deny-by-default gateway (chosen).** Disallow all write/exec/orchestration
-   tools and deny anything unexpected at `canUseTool`, while still admitting purely _interactive_
-   tools (`AskUserQuestion`) that have no write side effects. _Con:_ must keep the disallow list and
-   gate in sync with the SDK's tool surface, and classify each new tool as write vs interactive.
-   _Pro:_ defense in depth; a new SDK write tool is still denied by the gateway default.
-3. **Save by a free-form agent action (auto-persist).** _Con:_ no human checkpoint; violates the
-   "human decides" posture and risks junk in the ledger. Rejected.
-4. **Save via a confirmation that reuses the permission gateway (chosen).** A save-intents
-   MCP tool routes through the existing `canUseTool` → `permission_request` flow; the write
-   happens in the tool handler only after the user allows.
-5. **SQLite via a third-party npm driver bundled in.** _Con:_ native bindings complicate the Bun
-   single binary; redundant with built-ins. Rejected.
-6. **SQLite via a thin driver adapter over the runtime built-ins (chosen).** `node:sqlite` on
-   Node, `bun:sqlite` on Bun, behind one minimal synchronous interface selected by
-   `globalThis.Bun`.
+1. **仅靠系统提示做到只读。** 告诉智能体不要写入。_缺点:_ 无法强制执行——模型仍然可以调用 `Write`/`Bash`,
+   或衍生一个会写入的子智能体或 slash 命令,而提示词无法阻止它。作为*唯一*机制被否决。
+2. **在工具层做只读 + 默认拒绝的网关(采用)。** 禁用所有写入/执行/编排类工具,并在 `canUseTool` 处拒绝任何
+   意料之外的调用,同时仍放行纯粹*交互式*、没有写入副作用的工具(`AskUserQuestion`)。_缺点:_ 必须让禁用清单
+   与网关保持与 SDK 工具面同步,并对每个新工具做写入 vs 交互的分类。_优点:_ 纵深防御;SDK 新增的写入类工具
+   即便未列入禁用清单,依然会被网关的默认策略拒绝。
+3. **由自由形式的智能体动作保存(自动持久化)。** _缺点:_ 没有人类检查点;违反"由人类决定"的立场,且有台账
+   混入垃圾数据的风险。被否决。
+4. **通过复用权限网关的确认流程来保存(采用)。** 一个 save-intents 的
+   MCP 工具经由既有的 `canUseTool` → `permission_request` 流程路由;只有在用户允许之后,写入才会在工具
+   处理器中发生。
+5. **通过第三方 npm 驱动内置 SQLite。** _缺点:_ 原生绑定会使 Bun 单体二进制复杂化;与内置模块重复。被否决。
+6. **通过运行时内置模块之上的一层薄驱动适配器实现 SQLite(采用)。** Node 上用 `node:sqlite`,Bun 上用
+   `bun:sqlite`,置于同一个由 `globalThis.Bun` 选择的最小同步接口之后。
 
 ## Decision
 
-Adopt options 2, 4, and 6 together.
+同时采纳选项 2、4、6。
 
-- **Read-only is enforced at the tool layer, double-locked.** The communication run disallows
-  all write/exec tools — `Write`/`Edit`/`MultiEdit`/`NotebookEdit`/`Bash`/`BashOutput`/
-  `KillShell` — plus **`Task`** and **`SlashCommand`** — the last two are essential because a
-  sub-agent's tool calls bypass the parent `canUseTool`, and slash commands could trigger
-  file-writing skills. On top of that, the `canUseTool` gate for this run **denies by default**:
-  read-class tools auto-allow, the save-intents MCP tool is **allowed through to its handler**
-  (the handler raises the confirmation itself — see "Saving" below),
-  `AskUserQuestion` is allowed (routed via answer-injection — see below), everything else is
-  denied — so even a future SDK write tool not in the disallow list is still blocked. The
-  read-class auto-allow set includes, besides the read built-ins (`Read`/`Grep`/`Glob`/`LS`/…),
-  the **two read-only c3 intent-query MCP tools** (`mcp__c3__find_intents` and
-  `mcp__c3__view_intent`) — they only read the agent's **own** project ledger
-  (project-bound when the tool is constructed, like the save tool), so they carry no write/exec
-  side effect and need no confirmation. The gate's tool routing is a pure, unit-tested
-  classifier mapping each tool to allow / ask / deny.
-  - **The same two read-only query tools also serve the spec-authoring session.** The spec session
-    (write-confined to its spec directory; intent-management spec RM-R21 / RM-R27) is given the
-    **same** `find_intents` / `view_intent` tools so the author can ground the spec against existing
-    intents — but **never** `save_intents` (a spec session may not write the ledger). To avoid
-    dragging the save-gate dependencies into the spec path, this is a **separate, smaller in-process
-    MCP constructor** registering only the two read-only tools (not a filtered reuse of the intent
-    server). Project-bound + read-only + `alwaysLoad` are identical. The spec permission gate's
-    read-pass set is an **explicit** read-only union (read built-ins ∪ the two query tools), so
-    `save_intents` falls to **deny-by-default** there even if it were ever mis-registered or
-    vendor-preapproved — unlike the intent gate, which deliberately lets save through to its
-    handler-owned confirmation. Claude spec sessions receive these tools through the in-process SDK
-    MCP server; Codex spec sessions receive the same two-tool set through the loopback HTTP MCP
-    route, with `enabled_tools` derived from that reduced set and no `save_intents`.
-- **`AskUserQuestion` is allowed as an _interactive_, not a _write_, tool.** It only poses
-  clarifying questions to the human and carries no file/exec/orchestration side effects, so letting
-  the read-only agent ask the user does not violate the read-only posture — it is the same
-  human-in-the-loop dialogue the agent already has, just structured. It is therefore **kept out of
-  the disallow list** and admitted by the gate. It is _not_ a plain allow: the SDK only echoes an
-  answer when the tool input already carries answers, so the gate prompts the human via
-  `permission_request` and, on allow, returns the input with the answers injected (deny on
-  cancel). It runs **without consensus** (single agent, no voting party), and an empty/invalid
-  question set falls through to the default deny.
-- **The communication run is forced to `permissionMode: 'default'`** (an _auxiliary_ constraint,
-  no longer the primary defence against silent persistence — see "Saving" below). `set_mode` is
-  ignored for this run and the UI shows no mode selector.
-- **The save confirmation lives in the save handler, not `canUseTool`.** The save-intents action
-  (an in-process MCP tool, `mcp__c3__save_intents`) was originally gated by `canUseTool` — but a
-  vendor's own permission-rule engine can _pre-approve_ a tool and thereby **skip `canUseTool`
-  entirely** (e.g. a user/project allow-rule matching `mcp__c3__save_intents`, or a non-`default`
-  permission mode). That made the confirmation bypassable and let a save persist silently. So the
-  confirmation gate is **sunk into the save handler itself**: the handler emits the same
-  `permission_request` wire frame, blocks on the user's decision, and persists only on `allow`.
-  Because the gate is now the handler's _single execution point_ — reached whenever the tool is
-  called, and vendor rules only decide _whether_ to call it — it is immune to every pre-approval
-  vector. This also **converges both vendors on one gate**: the codex/driver path (which calls the
-  intent tools over HTTP MCP, outside any `canUseTool`) already gated inside the handler, and the
-  claude in-process path now matches it. The intent gate therefore _allows_ save through to the
-  handler (no `confirm-save` branch); on deny/failure the handler reports an error result to the
-  agent and the ledger is untouched.
-- **The save tool is pinned resident (`alwaysLoad`).** The c3 in-process MCP server is built with
-  `createSdkMcpServer({ alwaysLoad: true })`, which stamps `_meta['anthropic/alwaysLoad']` on each
-  tool (≡ API `defer_loading: false`). Otherwise the harness's tool search defers the MCP tool, and
-  the agent must `ToolSearch` the save-tool schema back before every save — an extra
-  round-trip and token cost on the hot path. `alwaysLoad` only keeps the **schema** resident; it
-  does **not** bypass the gate — the save handler still raises the human confirmation. The
-  blocks-startup-until-connected side effect of `alwaysLoad` is moot here: an in-process MCP server
-  connects instantly. Scope is the intent agent only, since the c3 MCP server is built solely on
-  the intent-agent launch path. The same server carries the two read-only query tools, which
-  inherit `alwaysLoad` for the same reason — the agent must not have to ToolSearch them back
-  before checking for related intents.
-  - **Limitation (recorded, not yet solvable):** built-in tools the agent also uses
-    (`AskUserQuestion`, `Read`/`Grep`/`Glob`/`LS`) have **no** always-load lever in
-    `@anthropic-ai/claude-agent-sdk` 0.3.158 — `ToolConfig` exposes only
-    `askUserQuestion.previewFormat`, and there is no global tool-search toggle in `Options`. So those
-    may still be deferred behind tool search. **Trigger to revisit:** when the SDK exposes a
-    built-in-tool `alwaysLoad` (or an `Options`-level tool-search switch), extend the residency to
-    the read-only/interactive built-in set the same way.
-- **The ledger uses a cross-runtime SQLite driver adapter.** One minimal synchronous interface
-  (execute / run / all-rows / single-row) selects `bun:sqlite` vs `node:sqlite` by `globalThis.Bun`;
-  the two never cross. Adapters use only positional `?` placeholders and read rows by field. The
-  bundler must mark both modules `external` (a dynamic import alone does not satisfy the bundler).
-  The store at `~/.c3/c3.db` fails soft: on open/create failure intent features degrade per entry
-  point and c3 still boots.
+- **只读在工具层被强制执行,且双重上锁。** 沟通运行会禁用所有写入/执行类工具——`Write`/`Edit`/`MultiEdit`/
+  `NotebookEdit`/`Bash`/`BashOutput`/`KillShell`——外加 **`Task`** 与 **`SlashCommand`**——后两者至关重要,
+  因为子智能体的工具调用会绕过父级的 `canUseTool`,而 slash 命令可能触发写文件的技能。在此之上,该运行的
+  `canUseTool` 网关**默认拒绝**:读取类工具自动放行,save-intents 这个 MCP 工具**被放行至其处理器**(由处理器
+  自行发起确认——见下文"保存"一节),`AskUserQuestion` 被放行(经由回答注入路径——见下文),其余一律拒绝——
+  因此即便未来 SDK 出现一个不在禁用清单内的写入类新工具,依然会被拦下。这套读取类自动放行集合,除读取内置
+  工具(`Read`/`Grep`/`Glob`/`LS`/……)之外,还包括**两个只读的 c3 意图查询 MCP 工具**(`mcp__c3__find_intents`
+  与 `mcp__c3__view_intent`)——它们只读取该智能体*自身*项目的台账(在工具构造时就绑定到项目,与保存工具
+  一样),因此不带任何写入/执行副作用,也不需要确认。网关的工具路由是一个纯函数、有单元测试覆盖的分类器,
+  把每个工具映射到 allow / ask / deny 三者之一。
+  - **这两个只读查询工具同样服务于 spec 编写会话。** spec 会话(写入范围被限定在其 spec 目录内;意图管理规格
+    RM-R21 / RM-R27)被赋予**相同的** `find_intents` / `view_intent` 工具,以便作者能够把 spec 建立在既有意图
+    的事实基础上——但**永不**给予 `save_intents`(spec 会话不得写入台账)。为了避免把保存网关的依赖拖入
+    spec 路径,这里用的是一个**独立、更小的进程内 MCP 构造器**,只注册这两个只读工具(而不是对意图服务器做
+    过滤复用)。绑定项目 + 只读 + `alwaysLoad` 这三点完全一致。spec 权限网关的读取放行集合是一个**明确**的
+    只读并集(读取内置工具 ∪ 这两个查询工具),因此 `save_intents` 在那里会落入**默认拒绝**,即便它被误注册
+    或被厂商预先批准也是如此——这与意图网关不同,意图网关是刻意把保存放行给处理器自身持有的确认。Claude
+    的 spec 会话通过进程内 SDK MCP 服务器拿到这些工具;Codex 的 spec 会话则通过回环 HTTP MCP 路由拿到相同的
+    双工具集,其 `enabled_tools` 由该精简集合派生,且不含 `save_intents`。
+- **`AskUserQuestion` 作为*交互式*而非*写入*工具被放行。** 它只是向人类提出澄清性问题,不带任何文件/执行/
+  编排类副作用,因此让只读智能体向用户提问并不违反只读的立场——这与智能体已有的人机对话是同一回事,只是被
+  结构化了。因此它被**排除在禁用清单之外**,并由网关放行。它*不是*一次简单的放行:SDK 只有在工具输入本身
+  已经带有答案时才会回显答案,因此网关会通过 `permission_request` 提示人类,并在允许时把带有已注入答案的
+  输入返回(取消则拒绝)。它**不经过共识**运行(单一智能体,没有投票方),一个空的/无效的问题集合会落到
+  默认拒绝。
+- **沟通运行被强制置于 `permissionMode: 'default'`**(一个*辅助性*约束,不再是防止静默持久化的主要防线——
+  见下文"保存"一节)。对该运行,`set_mode` 会被忽略,界面也不显示模式选择器。
+- **保存确认位于保存处理器内,而非 `canUseTool`。** save-intents 动作(一个进程内 MCP 工具,
+  `mcp__c3__save_intents`)最初由 `canUseTool` 把关——但厂商自身的权限规则引擎可以*预先批准*某个工具,从而
+  **完全跳过 `canUseTool`**(例如一条匹配 `mcp__c3__save_intents` 的用户/项目允许规则,或非 `default` 的权限
+  模式)。这使得该确认可被绕过,并让一次保存悄无声息地持久化。因此确认网关被**下沉到保存处理器自身**:处理器
+  发出同样的 `permission_request` 线上帧,阻塞等待用户决定,只有在 `allow` 时才持久化。因为网关如今是处理器
+  的*唯一执行点*——只要该工具被调用就一定会经过这里,厂商的规则只能决定*是否*调用它——它对每一种预先批准途径
+  都免疫。这同时**让两个厂商收敛到同一个网关**:codex/driver 路径(它经由 HTTP MCP 调用意图工具,在任何
+  `canUseTool` 之外)本来就在处理器内部把关,而 claude 的进程内路径现在与之对齐了。因此意图网关会把保存
+  *放行*至处理器(没有 `confirm-save` 分支);在拒绝/失败时,处理器向智能体报告一个错误结果,台账不受影响。
+- **保存工具被固定常驻(`alwaysLoad`)。** c3 的进程内 MCP 服务器由
+  `createSdkMcpServer({ alwaysLoad: true })` 构建,这会在每个工具上打上 `_meta['anthropic/alwaysLoad']`
+  标记(等价于 API 的 `defer_loading: false`)。否则,harness 的工具搜索会延迟加载该 MCP 工具,智能体必须在
+  每次保存前用 `ToolSearch` 把保存工具的 schema 取回来——这在热路径上是额外的往返与 token 成本。`alwaysLoad`
+  只让**schema** 保持常驻;它并**不**绕过网关——保存处理器仍然会发起人类确认。`alwaysLoad` 那种"阻塞启动直到
+  连接完成"的副作用在这里无关紧要:一个进程内 MCP 服务器会即时连接。作用范围仅限于意图智能体,因为 c3 的
+  MCP 服务器只在意图智能体的启动路径上被构建。同一个服务器上承载的那两个只读查询工具,出于同样的理由继承了
+  `alwaysLoad`——智能体在检查相关意图之前不应该还得先把它们 ToolSearch 回来。
+  - **限制(已记录,尚无法解决):** 智能体同时使用的内置工具(`AskUserQuestion`、`Read`/`Grep`/`Glob`/`LS`)
+    在 `@anthropic-ai/claude-agent-sdk` 0.3.158 中**没有**常驻加载的开关——`ToolConfig` 只暴露了
+    `askUserQuestion.previewFormat`,`Options` 中也没有全局的工具搜索开关。所以这些工具可能仍会被延迟在工具
+    搜索之后。**重新审视的触发条件:** 当 SDK 提供内置工具的 `alwaysLoad`(或 `Options` 级别的工具搜索开关)
+    时,把常驻范围以同样方式扩展到只读/交互类内置工具集合。
+- **该台账使用一个跨运行时的 SQLite 驱动适配器。** 一个最小的同步接口(execute / run / all-rows /
+  single-row)根据 `globalThis.Bun` 在 `bun:sqlite` 与 `node:sqlite` 之间做选择;二者永不交叉。适配器只使用
+  位置型 `?` 占位符,并按字段名读取行。打包器必须把两个模块都标记为 `external`(仅靠动态 import 无法满足
+  打包器的要求)。位于 `~/.c3/c3.db` 的存储会软失败:在打开/创建失败时,意图相关特性按接入点各自降级,c3
+  仍能正常启动。
 
 ## Consequences
 
-- **Easier:** the communication agent can freely read the repo while being structurally unable to
-  modify it; persistence always passes through the same human confirmation users already know; the
-  ledger ships in both the Node and Bun builds with no native dependency.
-- **Harder:** the disallow list and gateway default must track the SDK's evolving tool set; the
-  forced-`default` rule is a special case the intent runtime must preserve; two SQLite driver
-  surfaces (placeholder/row-shape differences) must stay behind the adapter; esbuild config carries
-  two mandatory `external` entries.
-- **Reuse, not new mechanism:** no new permission transport — the save confirmation is the existing
-  `permission_request`/`permission_response` pair with a specialized frontend render.
+- **更容易:** 沟通智能体可以自由读取仓库,同时在结构上无法修改它;持久化始终经过用户已经熟悉的同一套人类
+  确认;该台账在 Node 与 Bun 两种构建下都能开箱即用,没有原生依赖。
+- **更难:** 禁用清单与网关默认策略必须随 SDK 不断演进的工具集一起维护;强制 `default` 这条规则是意图运行时
+  必须始终保留的一个特例;两种 SQLite 驱动面(占位符/行形状的差异)必须始终留在适配器之后;esbuild 配置要
+  携带两个必须的 `external` 条目。
+- **复用,而非新机制:** 没有新的权限传输通道——保存确认就是既有的
+  `permission_request`/`permission_response` 这对消息,只是前端渲染做了特化。
 
 ## Compliance
 
-- The communication run MUST disallow write/exec/orchestration tools (incl. `Task`/`SlashCommand`),
-  apply the intent gate's deny-by-default, and run under `permissionMode: 'default'` (an auxiliary
-  constraint — the save confirmation no longer depends on it). Reviewers reject any path that lets it
-  write, spawn a sub-agent, or run a slash command.
-- A intent MUST be persisted only inside the save-intents tool handler, after a human allow, and the
-  save confirmation MUST be raised **by that handler** (not solely by `canUseTool`), so a vendor
-  pre-approval that skips `canUseTool` still prompts. No code path may write the ledger to bypass that
-  confirmation, and the intent gate MUST NOT additionally prompt for save (it allows save through to
-  the handler — double-prompting is a regression). Both vendors MUST share this one handler-owned gate.
-- The read-only query tools MUST be project-bound when constructed (never trust a wire-supplied
-  project) and MUST be auto-allowed by the gate without a confirmation; they are read-only and may
-  not write the ledger. Reviewers reject any path that lets them read another project, or that turns
-  them into a write/confirm tool.
-- The spec-authoring session MUST be given ONLY the two read-only query tools (no `save_intents`),
-  project-bound. Claude uses the in-process SDK MCP server; Codex uses the loopback HTTP MCP route
-  with the same reduced tool list. The spec permission gate MUST allow only an explicit read-only set
-  (read built-ins ∪ the two query tools) so `save_intents` is denied-by-default there. Reviewers
-  reject giving a spec session any write ledger tool, a cross-project read, or the full intent MCP
-  route.
-- The c3 MCP server MUST keep the save tool resident (`alwaysLoad: true`) so it is not
-  deferred behind tool search. Reviewers reject dropping `alwaysLoad`, and reject any reading of it
-  as a permission relaxation — it pins the schema only; the gate confirmation is unchanged.
-- `AskUserQuestion` MUST stay out of the disallow list and be admitted by the intent gate as
-  an interactive (non-write) tool, but only through the answer-injection path (prompt the human,
-  inject the answers on allow, deny on cancel) — never a plain allow. Reviewers reject treating
-  it as a write tool (over-restrictive) or as an auto-allow read tool (the injected answer would be
-  lost).
-- The SQLite driver MUST be selected by `globalThis.Bun`; both `node:sqlite` and `bun:sqlite` MUST
-  be marked `external` to the bundler. The store MUST fail soft so c3 boots without it.
+- 沟通运行 MUST 禁用写入/执行/编排类工具(含 `Task`/`SlashCommand`),应用意图网关的默认拒绝策略,并运行在
+  `permissionMode: 'default'` 下(一个辅助性约束——保存确认已不再依赖它)。评审者应拒绝任何允许其写入、衍生
+  子智能体、或运行 slash 命令的路径。
+- 一条意图 MUST 只能在 save-intents 工具处理器内部、在人类允许之后被持久化,且保存确认 MUST **由该处理器**
+  发起(而不仅仅由 `canUseTool` 发起),这样即便厂商的预先批准跳过了 `canUseTool`,依然会触发提示。任何代码
+  路径都不得绕过该确认写入台账,且意图网关 MUST NOT 额外再为保存弹出提示(它把保存放行给处理器——重复提示
+  是一种回退)。两个厂商 MUST 共享这一个由处理器持有的网关。
+- 只读查询工具 MUST 在构造时绑定项目(永不信任线上传来的项目),且 MUST 被网关自动放行、无需确认;它们是
+  只读的,不得写入台账。评审者应拒绝任何让它们读取另一个项目、或把它们变成写入/确认工具的路径。
+- spec 编写会话 MUST 只被赋予这两个只读查询工具(不含 `save_intents`),并绑定项目。Claude 使用进程内 SDK
+  MCP 服务器;Codex 使用回环 HTTP MCP 路由,携带相同的精简工具列表。spec 权限网关 MUST 只放行一个明确的
+  只读集合(读取内置工具 ∪ 这两个查询工具),使得 `save_intents` 在那里默认被拒绝。评审者应拒绝给 spec 会话
+  任何写入台账的工具、跨项目读取、或完整的意图 MCP 路由。
+- c3 的 MCP 服务器 MUST 让保存工具保持常驻(`alwaysLoad: true`),使其不被延迟在工具搜索之后。评审者应拒绝
+  移除 `alwaysLoad`,也应拒绝把它解读为一种权限放宽——它只固定 schema;网关确认本身不受影响。
+- `AskUserQuestion` MUST 留在禁用清单之外,并被意图网关作为一个交互式(非写入)工具放行,但只能经由答案注入
+  路径(提示人类、在允许时注入答案、取消则拒绝)——绝不是一次简单的放行。评审者应拒绝把它当作写入工具处理
+  (过度限制),也应拒绝把它当作自动放行的读取工具处理(那样注入的答案会丢失)。
+- SQLite 驱动 MUST 由 `globalThis.Bun` 选择;`node:sqlite` 与 `bun:sqlite` MUST 对打包器都标记为 `external`。
+  该存储 MUST 软失败,使 c3 在没有它的情况下依然能启动。
 
 ## References
 
 - [intent-management spec](../../domains/core/intent-management/intent-management-spec.md)
 - [intent-management design](../../domains/core/intent-management/intent-management-design.md)
-- [permission-gateway spec](../../domains/core/permission-gateway/permission-gateway-spec.md) — the reused
-  `canUseTool` flow.
-- [ADR 0006](0006-decouple-runs-from-connections.md) — the runtime registry the communication and
-  development runs reuse.
-- [WebSocket protocol](../../shared/api-conventions/websocket-protocol.md) — `permission_request`,
-  `permission_response`, `select_session`, and the new intent messages.
+- [permission-gateway spec](../../domains/core/permission-gateway/permission-gateway-spec.md) —— 被复用的
+  `canUseTool` 流程。
+- [ADR 0006](0006-decouple-runs-from-connections.md) —— 沟通运行与开发运行共用的运行时注册表。
+- [WebSocket protocol](../../shared/api-conventions/websocket-protocol.md) —— `permission_request`、
+  `permission_response`、`select_session`,以及新增的意图消息。

@@ -1,17 +1,16 @@
-# Flow — Automation Execution
+# Flow — 自动化执行
 
-**Scenario.** A automation's trigger fires — a cron wall-clock match or a subscribed run-lifecycle
-event — and c3 executes its task (a shell command or an LLM prompt) in the bound workspace's
-context under the automation's execution identity, recording the outcome in an execution log.
+**场景。** 一个自动化的触发器被触发——一次 cron 挂钟匹配,或一个已订阅的运行生命周期事件——
+c3 便在其绑定工作区的上下文中,以该自动化的执行身份,执行其任务(一条 shell 命令或一条 LLM
+prompt),并把结果记录到执行日志中。
 
-**Domains.** automations · session-registry · agent-session (+ kernel event bus, ADR-0018).
+**领域。** automations · session-registry · agent-session(+ kernel 事件总线,ADR-0018)。
 
-Automations are **workspace-scoped**: a automation runs with its workspace's `cwd`, settings, sessions,
-and agent config — like a user-initiated run from that workspace. The execution runs under the
-**automation's own** execution identity, not the creating user's (`SCH-R*` boundary). Writes flow
-through a confirmation queue _before_ they take effect.
+自动化是**工作区范围内**的:一个自动化以其工作区的 `cwd`、设置、会话和智能体配置运行——就像
+从该工作区发起的一次用户运行一样。执行以**该自动化自身**的执行身份运行,而非创建者的身份
+(`SCH-R*` 边界)。写操作会先经过一个确认队列,*之后*才会生效。
 
-## Flow graph
+## 流程图
 
 ```mermaid
 flowchart TD
@@ -29,112 +28,110 @@ flowchart TD
     LLM --> SM[(session_metadata projection)]
 ```
 
-## Write path — propose → confirm
+## 写路径 —— 提议 → 确认
 
-1. **web-console → automations.** Any mutation (`automation_create` / `automation_update` /
-   `automation_pause` / `automation_resume`) is captured as a **pending change** in the per-connection
-   write queue and is **not** yet persisted or scheduled (`SCH-R6`, `SCH-R15`).
-2. **Confirm.** `automation_confirm_queue` commits all pending changes atomically (`SCH-R6`). The
-   queue is ephemeral — a refresh/reconnect loses it (`SCH-R15`).
-3. **Exception.** `automation_archive` / `automation_delete` bypass the queue — immediate on a
-   single-prompt confirmation (`SCH-R6`, `SCH-R14`); delete cascades the logs (hard delete).
-4. **Validation.** A automation must reference an existing workspace at create time (`SCH-R1`); task
-   type is immutable `command | llm_prompt` (`SCH-R2`); an `event` trigger without an `eventTopic`
-   is rejected (`SCH-R17`).
+1. **web-console → automations。** 任何变更(`automation_create` / `automation_update` /
+   `automation_pause` / `automation_resume`)都会被捕获为按连接维护的写队列中的一条**待处理
+   变更**,且**尚未**被持久化或纳入调度(`SCH-R6`、`SCH-R15`)。
+2. **确认。** `automation_confirm_queue` 会原子性地提交所有待处理变更(`SCH-R6`)。该队列是
+   临时的——刷新/重连会丢失它(`SCH-R15`)。
+3. **例外。** `automation_archive` / `automation_delete` 绕过该队列——单次 prompt 确认后立即
+   生效(`SCH-R6`、`SCH-R14`);删除会级联删除日志(硬删除)。
+4. **校验。** 一个自动化在创建时必须引用一个已存在的工作区(`SCH-R1`);任务类型
+   `command | llm_prompt` 一经创建不可变(`SCH-R2`);没有 `eventTopic` 的 `event` 触发器
+   会被拒绝(`SCH-R17`)。
 
-## Trigger path
+## 触发路径
 
-A automation's trigger is one of two (`SCH-R17`):
+一个自动化的触发器是以下两种之一(`SCH-R17`):
 
-- **`cron`.** The 10 s tick loop matches `cronExpression` in the **system IANA time zone**
-  (`SystemSettings.timezone`, DST-aware, `SCH-R3a`), then recomputes `nextRunAt`. Only `active`
-  automations are evaluated (`SCH-R5`).
-- **`event`.** A `run:started` / `run:settled`, `pr:operation`, or `intent:lifecycle` kernel-bus event (published by the relevant domain on
-  every run, ADR-0018) fires the automation when **all** hold: the event's `sessionKind` is `work`
-  (internal intent/discussion runs never fire user automations), the workspace matches, and — for
-  `run:settled` — the terminal `reason` passes the optional `eventReasonFilter` (`SCH-R18`). Event
-  automations carry no `cronExpression`/`nextRunAt` and are never tick-evaluated (`SCH-R17`).
+- **`cron`。** 10 秒的 tick 循环按**系统 IANA 时区**(`SystemSettings.timezone`,感知夏令时,
+  `SCH-R3a`)匹配 `cronExpression`,然后重新计算 `nextRunAt`。只有 `active` 的自动化会被评估
+  (`SCH-R5`)。
+- **`event`。** 一次 `run:started` / `run:settled`、`pr:operation` 或 `intent:lifecycle` 的
+  kernel-bus 事件(由相关领域在每次运行时发布,ADR-0018)会触发该自动化,当**所有**条件都
+  成立时:事件的 `sessionKind` 为 `work`(内部的意图/讨论运行绝不会触发用户自动化)、工作区
+  匹配,以及——对 `run:settled` 而言——终态 `reason` 通过可选的 `eventReasonFilter`
+  (`SCH-R18`)。事件型自动化不携带 `cronExpression`/`nextRunAt`,也从不参与 tick 评估
+  (`SCH-R17`)。
 
-Both reuse the **same** dispatch-and-track → execute path, three-tier execution identity, and write
-queue (`SCH-R17`).
+两者都复用**同一套**“调度并跟踪 → 执行”路径、三层执行身份体系,以及写队列(`SCH-R17`)。
 
-Intent lifecycle subscriptions match only the same workspace and, when configured, the selected
-phase. The payload contains a stable intent identity, title, module, phase, and resulting status.
-These events are process-local, best-effort, non-persistent, and never replayed. A automation run does
-not modify an intent and cannot publish another intent lifecycle event.
+意图生命周期订阅只匹配相同的工作区,以及在配置了的情况下匹配所选阶段。负载中包含一个稳定的
+意图身份、标题、模块、阶段和最终状态。这些事件是进程本地的、尽力而为的、非持久化的,且从不
+重放。一次自动化运行不会修改意图,也不能发布另一个意图生命周期事件。
 
-## Execution path
+## 执行路径
 
-1. **Workspace check.** If the workspace was removed between create and trigger, the execution fails
-   immediately with `workspace_removed` (`SCH-R8`); its `pending` log is set `failed` (`SCH-R10`).
-2. **Serial per automation.** At most one execution in-flight per automation; a trigger firing while the
-   previous run is still going is **skipped, not queued** — this also throttles event storms
-   (`SCH-R7`, `SCH-R18`).
-3. **`command` ⇒ headless shell.** A shell process spawns in the workspace `cwd`; stdout+stderr are
-   captured; exit 0 ⇒ `success`, non-zero ⇒ `failed` (`SCH-R12`). No permission prompts.
-4. **`llm_prompt` ⇒ agent session.** A fresh agent session starts via agent-session with the
-   workspace context; the prompt is the first user turn. The agent `sessionId` is captured from the
-   first SDK event and persisted on the log immediately (so the transcript stays reachable even if
-   the run later fails). At the same point c3 fail-soft upserts `session_metadata` with
-   `session_kind='automation'`, `owner_kind='automation'`, `owner_id=<automation.id>`, so the sessions
-   page automation tab can show the still-running execution. The run streams into the log; terminal
-   `complete`/`error` maps to `success`/`failed` (`SCH-R13`). Vendor routing resolves the first enabled agent of
-5. **Execution identity governs permissions (`SCH-R9`).** `read-only` ⇒ `plan`-equivalent, any write
-   tool denied; `sandboxed` ⇒ a curated allowlist, off-list tools denied silently; `full-access` ⇒
-   the workspace session's mode, all tools auto-allowed. **No `permission_request` ever reaches the
-   browser for a automation run** — prompts are resolved entirely server-side.
+1. **工作区检查。** 若工作区在创建与触发之间被移除,执行会立即以 `workspace_removed` 失败
+   (`SCH-R8`);其 `pending` 日志会被置为 `failed`(`SCH-R10`)。
+2. **每个自动化串行执行。** 每个自动化最多同时有一个执行在运行;上一次运行还在进行时触发器
+   再次触发会被**跳过,而非排队**——这也起到了对事件风暴的节流作用(`SCH-R7`、`SCH-R18`)。
+3. **`command` ⇒ 无头 shell。** 一个 shell 进程在工作区 `cwd` 中启动；stdout+stderr 被捕获；
+   退出码 0 ⇒ `success`,非零 ⇒ `failed`(`SCH-R12`)。没有权限弹窗。
+4. **`llm_prompt` ⇒ 智能体会话。** 一个全新的智能体会话通过 agent-session 以该工作区上下文
+   启动;该 prompt 作为第一条用户轮次。智能体的 `sessionId` 从第一个 SDK 事件中被捕获,并
+   立即持久化到日志上(这样即便该次运行之后失败,transcript 仍可访问)。与此同时 c3 以
+   失败软处理的方式 upsert `session_metadata`,设置 `session_kind='automation'`、
+   `owner_kind='automation'`、`owner_id=<automation.id>`,使会话页的自动化标签页能展示仍在
+   运行中的执行。运行过程流式写入日志;终态的 `complete`/`error` 映射为 `success`/`failed`
+   (`SCH-R13`)。厂商路由解析到该工作区中第一个启用的智能体
+5. **执行身份决定权限(`SCH-R9`)。** `read-only` ⇒ 等价于 `plan`,任何写工具都会被拒绝；
+   `sandboxed` ⇒ 一份经过筛选的白名单,不在名单上的工具会被静默拒绝；`full-access` ⇒
+   使用该工作区会话的模式,所有工具自动允许。**自动化运行绝不会向浏览器发送
+   `permission_request`**——所有 prompt 都在服务端完全解决。
 
-## Live viewer streaming (works page, `llm` only)
+## 实时查看流式传输(works 页面,仅 `llm`)
 
-An `llm` execution is not just logged — it is **viewable live** on the works page while it runs.
-The dispatcher runs off the kernel run bus with its own three-tier MCP security model (it does NOT
-go through the interactive `kernel/permission` gateway), but once the agent `sessionId` resolves it
-registers a real `SessionRuntime` (`sessionKind='automation'`, `runKind='background'` — the first
-place this combination is created) and translates the SDK / canonical stream into c3 wire events:
+一次 `llm` 执行不只是被记录——它在运行时还可以在 works 页面上被**实时查看**。该调度器运行在
+kernel 运行总线之上,拥有自己独立的三层 MCP 安全模型(它**不会**经过交互式的
+`kernel/permission` 网关),但一旦智能体的 `sessionId` 解析出来,它就会注册一个真正的
+`SessionRuntime`(`sessionKind='automation'`、`runKind='background'`——这是第一处出现这种组合
+的地方),并把 SDK / 规范化流转换为 c3 的线路事件:
 
-- **SDK → wire.** Claude `query()` messages translate via a pure function (`assistant` text →
-  `assistant_text`, `tool_use` → `tool_use`, `user` `tool_result` → `tool_result`, `result` →
-  `turn_end`); Codex `run.messages()` canonical frames diff through the shared driver-path
-  `WireEmitter`. Each event goes through `emit()` — buffered on the runtime and fanned out to every
-  connection viewing that session.
-- **Status.** `setStatus('running')` at start / `idle` at end drives the works-page status bar's
-  fine-grained copy (思考中 / 正在执行&lt;工具&gt; / 就绪), derived from `sessionStatus` + the wire
-  event stream. `listStatuses()`'s "kernel runtimes win" rule lets the runtime supersede the legacy
-  `automationRunning` flag (which `llm` runs no longer set; `command` runs keep it — running/idle only).
-- **Pre-session-id buffering.** Events produced before the `sessionId` binds are parked and flushed
-  the instant the runtime registers, so a viewer never misses the first frames.
-- **Stop.** The dispatcher's wall-clock `abortController` is registered as the runtime's `run`, so the
-  works-page `stop_run` handler aborts the run through `stopRun(id)` → `rt.run.abort.abort()`.
-- **After the run.** The runtime is KEPT (like an ordinary session), so selecting the automation
-  session later replays the full transcript from the buffer. Terminal cleanup does NOT call
-  `finalizeRun` (its `onRunEnd` would rewrite the projection title from the automation name to the
-  native agent title) — instead it nulls `run`, emits one terminal `turn_end`, and settles `idle`.
+- **SDK → wire。** Claude `query()` 消息通过一个纯函数转换(`assistant` 文本 →
+  `assistant_text`,`tool_use` → `tool_use`,`user` 的 `tool_result` → `tool_result`,
+  `result` → `turn_end`);Codex 的 `run.messages()` 规范化帧则通过共享的驱动路径
+  `WireEmitter` 差分转换。每个事件都经过 `emit()`——在该运行时上缓冲,并向每个正在查看该
+  会话的连接扇出。
+- **状态。** 起始时 `setStatus('running')`,结束时 `idle`,驱动 works 页面状态栏上的细粒度
+  文案(思考中 / 正在执行&lt;工具&gt; / 就绪),由 `sessionStatus` + 线路事件流共同推导得出。
+  `listStatuses()` 的“kernel 运行时优先”规则让该运行时可以取代旧有的 `automationRunning`
+  标志(`llm` 运行不再设置该标志;`command` 运行仍保留它——仅有 running/idle 两态)。
+- **sessionId 绑定前的缓冲。** 在 `sessionId` 绑定之前产生的事件会被暂存,并在运行时注册的
+  瞬间被冲刷出去,因此查看者绝不会错过最初的帧。
+- **停止。** 调度器的挂钟 `abortController` 被注册为该运行时的 `run`,因此 works 页面的
+  `stop_run` 处理器会通过 `stopRun(id)` → `rt.run.abort.abort()` 中止该次运行。
+- **运行结束之后。** 该运行时会被**保留**(如同普通会话一样),因此之后再选中该自动化会话时
+  可以从缓冲中回放完整的 transcript。终态清理**不会**调用 `finalizeRun`(它的 `onRunEnd`
+  会把该投影的标题从自动化名重写为原生智能体标题)——取而代之,它把 `run` 置空,发出一条
+  终态的 `turn_end`,并落定为 `idle`。
 
-The **`command`** path is unchanged: no SDK stream, no runtime, no fine-grained events — only a
-running/idle flag. The automations-page `ExecutionDetail` polling path (transcript via
-`get_execution_transcript`) is orthogonal and unchanged.
+**`command`** 路径保持不变:没有 SDK 流、没有运行时、没有细粒度事件——只有一个 running/idle
+标志。自动化页面上的 `ExecutionDetail` 轮询路径(经 `get_execution_transcript` 获取
+transcript)与此正交,不受影响。
 
-## Log & read path
+## 日志与读取路径
 
-- Execution logs are **append-only** once `startedAt` is set, advancing `pending → running →
-success | failed | cancelled` (`SCH-R10`). A `automations` broadcast on completion re-fetches the
-  selected automation's history so finished runs appear without a manual refresh.
-- The three-column view (automation list → execution-history list → execution detail) shows config,
-  log rows, and a tabbed detail. The **Session** tab (llm only) replays the execution's transcript
-  read-only through the shared chat-message renderer via `get_execution_transcript` (`SCH-R16`);
-  a sessionless/command execution shows no Session tab and returns an empty replay, never an error.
-- The sessions page `automation` tab reads those LLM execution sessions from `session_metadata`,
-  not by assembling rows from `automation_execution_logs`. Running automation-session counts use
-  running execution logs with non-null `session_id`; command executions and LLM failures before a
-  real agent session id do not create session-page rows.
+- 执行日志一旦设置了 `startedAt` 便**只追加**,依次推进 `pending → running →
+success | failed | cancelled`(`SCH-R10`)。完成时的一次 `automations` 广播会重新拉取
+  当前所选自动化的历史记录,使已完成的运行无需手动刷新即可出现。
+- 三栏视图(自动化列表 → 执行历史列表 → 执行详情)展示配置、日志行和一个带标签页的详情面板。
+  **Session** 标签页(仅 llm)通过共享的聊天消息渲染器,以只读方式经 `get_execution_transcript`
+  回放该次执行的 transcript(`SCH-R16`);没有会话/命令类型的执行不会显示 Session 标签页,
+  会返回一个空回放,而不是报错。
+- 会话页面的 `automation` 标签页从 `session_metadata` 中读取这些 LLM 执行会话,而不是从
+  `automation_execution_logs` 拼装出行。正在运行的自动化会话计数使用带非空 `session_id` 的
+  运行中执行日志;命令类执行以及在获得真实智能体会话 id 之前就失败的 LLM 执行不会创建会话
+  页的行。
 
-## Branches & exceptions (anti-scenarios)
+## 分支与异常(反面场景)
 
-- **Confirm before effect.** A trigger time or command change must never take effect before the user
-  confirms the queue — an accidental save must not cause a 3 AM run (`SCH-R6`).
-- **Workspace deletion archives, never deletes silently.** Removing the workspace archives its
-  automations (logs preserved) and cancels in-flight executions (`SCH-R1`, `SCH-R8`).
-- **No concurrent execution per automation.** A second trigger during an in-flight run never starts a
-  second concurrent execution (`SCH-R7`).
-- **Archive/delete are final.** An archived automation can only be deleted, never reactivated
-  (`SCH-R14`); event/cron fields are mutually exclusive (`SCH-R17`).
+- **先确认后生效。** 触发时间或命令的变更绝不能在用户确认队列之前生效——一次误操作的保存
+  绝不能导致凌晨 3 点跑一次(`SCH-R6`)。
+- **删除工作区是归档而非静默删除。** 移除工作区会归档其自动化(日志保留),并取消正在进行的
+  执行(`SCH-R1`、`SCH-R8`)。
+- **每个自动化不并发执行。** 一次正在进行的运行期间的第二次触发绝不会启动第二个并发执行
+  (`SCH-R7`)。
+- **归档/删除是终态。** 一个已归档的自动化只能被删除,绝不能被重新激活(`SCH-R14`);
+  event/cron 字段互斥(`SCH-R17`)。

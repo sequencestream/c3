@@ -1,231 +1,225 @@
-# agent-config — Design
+# agent-config — 设计
 
-Implements the [spec](agent-config-spec.md). Spans four responsibilities: settings persistence + resolution, the
-WebSocket event dispatch + per-run resolution, the SDK launch override application, and the full-page
-settings view in the web console.
+实现 [spec](agent-config-spec.md)。跨越四个职责:设置持久化 + 解析、
+WebSocket 事件分发 + 按运行的解析、SDK 启动覆盖项的应用,以及
+web console 中的完整设置视图页面。
 
-## Responsibility split
+## 职责划分
 
-| Concern                         | Behaviour                                                                                                                                                                                                                                                 |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Settings + binding persistence  | Two files under `~/.c3/`; in-memory cache; atomic write; fail-soft                                                                                                                                                                                        |
-| Vendor config schema + routing  | A `vendor`-discriminated union validator; type-pinned to the wire agent shape; extension point for new vendors (AC-R12)                                                                                                                                   |
-| Quota reset parsing             | A pure parser for quota/session-limit errors carrying a `reset(s) <time>`; maps the reset wall-clock through `SystemSettings.timezone` to a Unix-ms instant (AC-R22)                                                                                      |
-| Event dispatch + run resolution | Handles `get_settings` / `save_settings`; resolves a session launch per run                                                                                                                                                                               |
-| Override application            | Maps overrides onto the SDK launch `env` (merged over the process environment) + `model`                                                                                                                                                                  |
-| Full-page settings view         | Editable draft, one row per agent, add/remove, drag-reorder; a single **default-agent dropdown** below the list (enabled agents only, in order-sequence order) replaces the per-row radio; save. Per-project controls moved to the workspace-setting view |
+| 关注点                 | 行为                                                                                                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 设置 + 绑定持久化      | `~/.c3/` 下的两个文件;内存缓存;原子写;失败降级                                                                                                                                   |
+| 厂商配置 schema + 路由 | 一个按 `vendor` 判别的联合校验器;类型绑定到线上智能体格式;新厂商的扩展点(AC-R12)                                                                                                 |
+| 配额重置解析           | 一个纯解析器,处理带有 `reset(s) <time>` 的配额/会话限制错误;通过 `SystemSettings.timezone` 将重置的挂钟时间映射为 Unix 毫秒时间戳(AC-R22)                                        |
+| 事件分发 + 运行解析    | 处理 `get_settings` / `save_settings`;按每次运行解析会话启动信息                                                                                                                 |
+| 覆盖项应用             | 将覆盖项映射到 SDK 启动的 `env`(合并在进程环境之上)+ `model`                                                                                                                     |
+| 完整设置视图页面       | 可编辑草稿,每个智能体一行,增加/删除,拖拽重排;列表下方一个**默认智能体下拉框**(仅启用的智能体,按顺序号顺序)取代了逐行的单选按钮;保存。按项目的控制项移到了 workspace-setting 视图 |
 
-## Persistence
+## 持久化
 
-- **`settings.json`** at `~/.c3/settings.json` — holds the agent registry, the default agent id, and
-  the per-project configs (under a `projectConfigs` key, see [system-config overview](../system-config-overview.md)).
-- **`state.json`** at `~/.c3/state.json` — the two-key binding (ADR-0015), versioned: a pending-intent
-  map (pending id → desired agent + creation time) is the mutable intent; a session-agent map (real id
-  → agent + frozen vendor) is the frozen fact. A legacy single-map blob migrates on first read:
-  `pending:` keys become intents, others become claude-frozen facts.
-- Each is loaded lazily into an in-memory cache; every mutation persists synchronously.
-- **Atomic write:** write to a per-process temp file, then rename over the target.
-- **Fail-soft:** a missing/corrupt file falls back to defaults (system agent only / empty
-  binding) and the system still boots (AC-R7, AVAIL).
+- **`settings.json`**,位于 `~/.c3/settings.json`——保存智能体注册表、默认智能体 id,以及
+  按项目的配置(在 `projectConfigs` key 下,见 [system-config overview](../system-config-overview.md))。
+- **`state.json`**,位于 `~/.c3/state.json`——双键绑定(ADR-0015),带版本号:一个 pending-intent
+  map(待定 id → 期望的智能体 + 创建时间)是可变的意图;一个 session-agent map(真实 id
+  → 智能体 + 被冻结的厂商)是被冻结的事实。旧版单一 map 的数据在首次读取时迁移:
+  `pending:` 开头的 key 变为意图,其余变为冻结为 claude 的事实。
+- 每个文件都惰性加载到内存缓存中;每次变更都同步持久化。
+- **原子写:** 先写入按进程区分的临时文件,再重命名覆盖目标文件。
+- **失败降级:** 缺失/损坏的文件会回退到默认值(仅系统智能体 / 空
+  绑定),系统仍能正常启动(AC-R7,AVAIL)。
 
-## Vendor schema + routing (AC-R12)
+## 厂商 schema + 路由(AC-R12)
 
-The agent config is a `vendor`-discriminated union. The wire **type** is zero-runtime and SDK-free
-(ADR-0009); the **runtime validation schema** lives apart so the validator never enters the wire
-module. A compile-time assertion pins the two in both directions so they cannot drift — the same
-discipline the adapter-capability shapes use. The union is keyed on `vendor`; today the only arm is
-`claude` (base URL, API key, model). A per-vendor registry is the **extension point**: a new vendor
-adds its arm, appends it to the union, and the type pin forces the matching wire arm. A parse routine
-routes a raw record by its tag and returns the typed agent or nothing.
+智能体配置是一个按 `vendor` 判别的联合类型。线上**类型**是零运行时开销且不依赖 SDK 的
+(ADR-0009);**运行时校验 schema** 单独存放,使校验器永不进入线上模块。一个编译期断言
+把二者双向绑定,使其不会漂移——这与适配器能力形态所用的纪律一致。该联合以 `vendor` 为键,
+目前唯一的分支是 `claude`(base URL、API key、model)。按厂商的注册表就是**扩展点**:新厂商
+新增自己的分支,追加到联合类型中,类型绑定会强制对应的线上分支保持一致。一个解析例程
+按标签路由原始记录,返回带类型的智能体或什么都不返回。
 
-## Normalization
+## 归一化(Normalization)
 
-`save_settings` and every load run through normalization (AC-R1/R2/R3/R12):
+`save_settings` 以及每次加载都要经过归一化(AC-R1/R2/R3/R12):
 
-- The system agent is re-injected at the front as a `claude` agent with the vendor **default**
-  (empty) config; any incoming `system` entry is dropped (its config is never honoured).
-- Each non-system agent keeps its id, or gets a fresh generated uuid if missing; duplicate ids
-  are dropped. The record is shaped into a candidate — **legacy-flat → claude arm** (legacy `name`
-  becomes the display name; flat base URL / API key / model become the nested config); new-shape
-  records keep their vendor / nested config. String fields are trimmed; the display name falls back
-  to the id. The candidate is then validated/routed by the vendor parser; an unknown vendor or a
-  config that fails its arm yields nothing and the agent is **dropped** (fail-soft).
-- The default agent id is resolved by the shared resolution rule (AC-R2, 2026-06-15-001): kept iff it
-  references a surviving **enabled** agent; an unknown, removed, or now-disabled default is
-  **rewritten** to the next enabled agent in order-sequence order (scan forward from its position,
-  then wrap to the first enabled overall); if **no** agent is enabled it falls back to the synthesized
-  fallback id. Normalization runs after order regularization, so the registry is already in dense
-  order-sequence order when the scan runs. The rule is **single-sourced in the shared protocol module**
-  so the web console (on disable/remove) and the server (on save/load) rewrite identically.
-- The legacy global default mode (deprecated in system settings) is still accepted for backward
-  compatibility during the migration window. The authoritative source is the per-project default
-  mode, read from the workspace setting; the same validation (one of the five permission-mode values)
-  and fallback (`default`) apply per-project. It seeds a new session's runtime mode at session
-  creation (SR-R6).
-- The enabled flag is persisted as an explicit boolean treating absent/`true` as `true`, only an
-  explicit `false` as `false` — so old configs lacking the field stay enabled (AC-R10). The
-  re-injected system agent's enabled flag is read from the incoming `system` entry the same way (its
-  overrides are still ignored — AC-R1).
+- 系统智能体会以 vendor 默认值(空)的 `claude` 智能体身份被重新注入到最前面;任何传入的
+  `system` 条目都会被丢弃(其配置永远不会被采纳)。
+- 每个非系统智能体保留其 id,若缺失则生成新的 uuid;重复的 id 会被丢弃。该记录会被整形为一个
+  候选项——**旧版扁平格式 → claude 分支**(旧版 `name` 变为展示名称;扁平的 base URL / API key / model
+  变为嵌套 config);新格式的记录保留其 vendor / 嵌套 config。字符串字段会被去除首尾空白;
+  展示名称缺失时回退到 id。该候选项随后由厂商解析器校验/路由;未知厂商或
+  校验失败的配置会得到空结果,该智能体被**丢弃**(失败降级)。
+- 默认智能体 id 通过共享的解析规则来解析(AC-R2,2026-06-15-001):只要它指向一个存活的
+  **已启用**智能体,就保留;若默认值未知、已被移除,或现在已被禁用,则会被
+  **改写**为按顺序号顺序的下一个已启用智能体(从其所在位置向前扫描,
+  再折回到整体第一个已启用的);若**没有**任何智能体处于启用状态,则回退到合成的
+  兜底 id。归一化在顺序正规化之后运行,所以扫描发生时,注册表已经处于
+  紧凑的顺序号顺序中。该规则**单一来源地存放于共享协议模块**,
+  因此 web console(在禁用/移除时)与服务端(在保存/加载时)会以相同方式改写。
+- 旧版全局默认模式(在系统设置中已废弃)在迁移窗口期内出于向后兼容仍被接受。
+  权威来源是按项目的默认模式,从 workspace setting 中读取;相同的校验
+  (五种权限模式取值之一)与兜底值(`default`)按项目适用。它会在会话
+  创建时为新会话的运行时模式做种(SR-R6)。
+- enabled 标志以显式布尔值持久化,缺省/`true` 视为 `true`,只有
+  显式 `false` 才视为 `false`——因此缺少该字段的旧配置保持启用状态(AC-R10)。被
+  重新注入的系统智能体的 enabled 标志同样以此方式从传入的 `system` 条目中读取(它的
+  其他覆盖项仍被忽略——AC-R1)。
 
-The normalized object is echoed to the client as `settings`, so the browser's temporary
-client-side ids are replaced by the server's stable uuids.
+归一化后的对象会作为 `settings` 回传给客户端,因此浏览器端的临时
+客户端 id 会被服务端的稳定 uuid 取代。
 
-## Order regularization (AC-R20)
+## 顺序正规化(AC-R20)
 
-After the parse/de-dupe loop, normalization collects each survivor together with its raw order read
-**straight off the on-disk record** (a finite number or absent), independent of the schema default,
-so the "this record had no explicit position" signal is not lost. A pure leaf routine then produces
-the canonical order with a single stable sort, three tiers:
+在解析/去重循环之后,归一化会把每个幸存者与其**直接从磁盘记录中**读取的原始顺序
+(一个有限数字或缺失)一并收集起来,与 schema 默认值无关,
+以免丢失“这条记录未显式指定位置”这一信号。随后一个纯叶子例程通过单次稳定排序,
+产出三层的规范顺序:
 
-1. the system agent is **pinned to the front** (kept on top even if its stored order is larger);
-2. then agents with an explicit raw order, ascending;
-3. then agents missing one, in their current array order, appended at the **tail**.
+1. 系统智能体被**固定在最前面**(即使其存储的顺序值更大,也保持在最上面);
+2. 然后是具有显式原始顺序的智能体,按升序;
+3. 然后是缺失顺序的智能体,按其当前数组顺序追加在**末尾**。
 
-Ties (and the whole missing group) break by original index ⇒ stable. The final order sequence is then
-reassigned to a dense `0..n`, which also **dedupes** any duplicate positions a hand-edited config
-might carry. The order sequence is **optional on the wire** (matching the back-compat convention used
-for the enabled/icon fields), but a normalized/persisted registry always carries a dense sequence. The
-empty-registry fallback seeds the synthesized system agent at order sequence 0.
+并列情况(以及整个缺失分组)按原始索引打破——即稳定排序。最终的顺序号
+会被重新分配为紧凑的 `0..n`,这同时也会**去重**手工编辑的配置中可能出现的重复位置。
+顺序号在线上是**可选的**(与 enabled/icon 字段所用的向后兼容惯例一致),但一个
+归一化/已持久化的注册表总是携带紧凑的顺序号。空注册表的兜底会将合成的
+系统智能体置于顺序号 0。
 
-**Out of scope of the order sequence:** the degradation chain is an independent user-authored ordered
-id list (its sequence IS the fallback priority) and is **not** re-sorted here; launch resolution
-resolves by id, never by position.
+**不属于顺序号范畴的:** 降级链是一个独立的、用户编写的有序 id 列表(其顺序**就是**回退优先级),
+在此**不会**被重排;启动解析按 id 解析,从不按位置解析。
 
-## Enabled filtering (AC-R10, AC-R20)
+## 启用过滤(AC-R10,AC-R20)
 
-Enabled-agent selection returns the agents whose enabled flag is not `false`, **in order-sequence
-ascending order** (a defensive ascending sort guards an un-normalized settings object passed straight
-in; the canonical registry is already ordered) — the single source the "list of agents" consumers
-draw from:
+启用中的智能体选择会返回 enabled 标志不为 `false` 的智能体,**按顺序号
+升序排列**(防御性的升序排序用于保护直接传入的未归一化 settings 对象;规范
+注册表本身已经是有序的)——这是所有“智能体列表”消费方获取数据的唯一来源:
 
-- **Discussion participants** — the orchestrator's participant set is the enabled agents.
-- **Consensus voters** — the voter set filters the enabled agents (minus the session's own).
-- **Degradation chain** — chain normalization builds its valid id set from enabled agents only, so
-  disabled ids are dropped from the stored/loaded chain; the server assembles the agents-to-try list
-  from the already-filtered chain with entry 0 = the resolved session agent.
-- **Default-agent picker** — the settings view renders a single dropdown below the agent list (enabled
-  draft agents, options in array/order-sequence order); the per-row radio is gone. Disabling (or
-  removing) an agent re-resolves the default id to the next enabled agent immediately, so the dropdown
-  never points at a disabled agent (AC-R2).
+- **讨论参与者** —— 编排器的参与者集合就是已启用的智能体。
+- **共识投票者** —— 投票者集合是已启用智能体的过滤结果(去掉该会话自身的智能体)。
+- **降级链** —— 链的归一化只从已启用的智能体中构建有效 id 集合,因此
+  已禁用的 id 会从已存储/已加载的链中被剔除;服务端从已过滤的链中组装待尝试的智能体列表,
+  第 0 项即为已解析的会话智能体。
+- **默认智能体选择器** —— 设置视图在智能体列表下方渲染一个单一下拉框(启用中的
+  草稿智能体,选项按数组/顺序号顺序);逐行单选按钮已不再存在。禁用(或
+  移除)一个智能体会立即将默认 id 重新解析为下一个已启用的智能体,因此下拉框
+  永远不会指向一个已禁用的智能体(AC-R2)。
 
-The front-end mirrors the order-sequence order so an unsaved local edit looks like the server result:
-the new-session and discussion views sort their enabled-agent lists by order sequence, and the
-settings view renders/reorders the draft in array order. The settings list is drag-reorderable via
-**native HTML5 drag-and-drop** (no library): a grip handle is the drag source so the row's text inputs
-stay selectable, the row is the drop target, and saving stamps the order sequence from the final array
-order before emitting — so a reorder (or add/copy/remove) survives the round-trip, after which the
-server normalization re-pins the system agent and regularizes to a dense `0..n` (AC-R20).
+前端会镜像顺序号顺序,使未保存的本地编辑看起来与服务端结果一致:
+新建会话和讨论视图按顺序号对其已启用智能体列表排序,而设置视图
+按数组顺序渲染/重排草稿。设置列表可通过**原生 HTML5 拖放**(无需库)进行拖拽重排:
+一个拖拽手柄作为拖拽源,使该行的文本输入框保持可选中状态;该行本身是放置目标,
+保存时会从最终的数组顺序为顺序号打上时间戳后再发出——因此一次重排
+(或增加/复制/移除)能在往返中保留下来,之后服务端归一化会重新固定
+系统智能体并正规化为紧凑的 `0..n`(AC-R20)。
 
-The launch-resolution path deliberately does **not** filter on enabled — a disabled agent stays a
-valid fallback so a bound/default/system launch is never blocked (AC-R10).
+启动解析路径刻意**不**按 enabled 过滤——一个已禁用的智能体仍是
+有效的兜底,因此一次已绑定/默认/系统的启动永远不会被阻塞(AC-R10)。
 
-## Quota-limit auto-disable + recovery (AC-R22)
+## 配额限制自动禁用 + 恢复(AC-R22)
 
-A resident subscriber is wired at startup to the kernel `agent:error` event. On each degradable agent
-failure it parses the error for a quota reset, using the configured timezone. The parser is
-intentionally narrow: the message must look like a quota/session/rate-limit exhaustion and must
-contain a `reset`/`resets` time such as `10:40pm` or `22:40`. The time is interpreted as a wall-clock
-in the normalized system timezone; if that local time has already passed for the current local day, it
-rolls to the next local day.
+一个常驻订阅者在启动时挂接到内核的 `agent:error` 事件上。每当某个可降级的智能体
+失败时,它会用已配置的时区解析该错误中的配额重置信息。该解析器
+刻意设计得很窄:消息必须看起来像配额/会话/速率限制耗尽,并且必须
+包含形如 `10:40pm` 或 `22:40` 的 `reset`/`resets` 时间。该时间被解释为归一化后的
+系统时区中的挂钟时间;若该本地时间在当前本地日已经过去,则滚动到下一个本地日。
 
-When parsing succeeds, the agent's enabled flag is persisted as `false` through the normal save path.
-This means default/tool/intent fall-through is not special-cased: if the disabled agent was the
-default, a non-empty tool agent, or a non-empty intent agent, normalization rewrites those ids to the
-next enabled agent by order sequence. The recovery subscriber then creates an internal one-shot
-automation through the automations store; when it fires, the automation dispatcher re-enables the agent, and
-the scheduler deletes that one-shot row (cascading its execution logs) so no paused zombie is left
-behind.
+解析成功时,该智能体的 enabled 标志会通过正常的保存路径被持久化为 `false`。
+这意味着默认/工具/意图的回退不做特殊处理:如果被禁用的智能体是
+默认智能体、非空的工具智能体,或非空的意图智能体,归一化会把这些 id 改写为
+按顺序号排列的下一个已启用智能体。恢复订阅者随后会通过 automations store 创建一个内部的
+一次性自动化;当它触发时,自动化分发器会重新启用该智能体,
+调度器会删除该一次性记录(级联删除其执行日志),因此不会留下暂停的
+僵尸记录。
 
-If parsing fails, or the automation store is unavailable, the existing agent error/degradation flow is
-left intact. A store outage can still leave the agent disabled without a timed recovery; the warning
-is logged and the user can re-enable the agent manually.
+若解析失败,或 automation store 不可用,现有的智能体错误/降级流程会
+保持不变。store 故障仍可能使智能体处于禁用状态而没有定时恢复;此时会
+记录一条警告,用户可以手动重新启用该智能体。
 
-## Launch resolution
+## 启动解析
 
-The launch resolver does the following per run:
+启动解析器在每次运行时执行以下步骤:
 
-- The agent id is read from the binding (a pending id resolves via the pending-intent space; a real id
-  via the session-agent fact — AC-R6/R16).
-- The agent is the one matching that id, else the one matching the default agent id, else the system
-  agent.
-- Overrides are then derived by vendor. For a `claude` agent: the config base URL maps to the
-  Anthropic base-URL environment variable; the API key maps to both the Anthropic API-key and
-  auth-token environment variables; the model maps to the model override. For any **non-system** agent
-  the adaptive-thinking workaround env (see below) is set. A codex agent's neutral provider triple is
-  carried through unchanged here and then re-routed through the relay inside its driver (AC-R15).
+- 从绑定中读取智能体 id(待定 id 通过 pending-intent 空间解析;
+  真实 id 通过 session-agent 事实解析——AC-R6/R16)。
+- 该智能体是匹配该 id 的智能体,否则是匹配默认智能体 id 的智能体,否则是系统
+  智能体。
+- 覆盖项随后按厂商推导。对于 `claude` 智能体:配置中的 base URL 映射到
+  Anthropic base-URL 环境变量;API key 同时映射到 Anthropic API-key 和
+  auth-token 环境变量;model 映射到模型覆盖项。对于任何**非系统**智能体,
+  会设置自适应思维变通方案的环境变量(见下文)。一个 codex 智能体的中立厂商三元组
+  在此处原样传递,随后在其驱动器内部被重新路由通过 relay(AC-R15)。
 
-The resolver returns the neutral overrides unchanged; the **codex driver** is what re-routes a custom
-provider through c3's in-process Responses→Chat relay (it registers the real base URL + key behind a
-token and points codex at the loopback relay; AC-R15 / ADR-0014). The relay translator + HTTP handler
-are transport, not kernel (ADR-0009 R2).
+解析器原样返回中立覆盖项;把自定义厂商重新路由通过 c3 进程内 Responses→Chat
+relay 的是**codex 驱动器**(它把真实的 base URL + key 注册在一个 token 之后,
+并把 codex 指向回环 relay;AC-R15 / ADR-0014)。relay 的转换器 + HTTP 处理器
+是传输层,不是内核层(ADR-0009 R2)。
 
-With `baseUrl`/`apiKey` empty the system-mode agent yields no connection overrides, so the run
-preserves the vendor CLI's own config. `model`, however, is a **standalone override** read in both
-`system` and `custom` modes (2026-07-02-001): when non-empty it IS passed, even for a system-mode
-agent. Empty model fields contribute nothing, so the system-mode agent with an empty model yields no
-`model` override either — the SDK's own default resolution applies (AC-R4/R5). When environment
-overrides are present they are merged over the full process environment so the spawned process keeps
-its complete environment; when absent the launch omits `env` entirely.
+当 `baseUrl`/`apiKey` 为空时,system 模式的智能体不产生任何连接覆盖项,因此
+运行会保留厂商 CLI 自身的配置。然而 `model` 是一个**独立的覆盖项**,在
+`system` 和 `custom` 两种模式下都会被读取(2026-07-02-001):非空时它**会**被
+传递,即使是 system 模式的智能体。空的 model 字段不产生任何贡献,因此
+system 模式且 model 为空的智能体也不产生 `model` 覆盖项——此时应用 SDK 自身的
+默认解析(AC-R4/R5)。当存在环境覆盖项时,它们会合并在完整的进程环境之上,
+使得被启动的进程保留其完整环境;当不存在时,启动会完全省略 `env`。
 
-### Adaptive-thinking workaround (temporary)
+### 自适应思维变通方案(临时)
 
-Recent Claude Code introduced an **adaptive-thinking** mechanism that changed the request
-message format. Third-party Anthropic-compatible gateways (e.g. DeepSeek's `/anthropic`
-endpoint) do **not** yet accept that format — they reject the inline `system`-role messages
-with `400 messages[].role: unknown variant system`. As a stopgap, every **non-system** agent's
-launch sets an env flag that turns off just that mechanism and restores the compatible message
-format. Verified against DeepSeek: the 400 is gone and CLAUDE.md/memory, Skills, hooks, and the
-working-directory context all still work.
+近期的 Claude Code 引入了一种**自适应思维(adaptive-thinking)**机制,改变了请求
+消息格式。第三方 Anthropic 兼容网关(例如 DeepSeek 的 `/anthropic`
+端点)尚**不**接受该格式——它们会以 `400 messages[].role: unknown variant system`
+拒绝内联的 `system` 角色消息。作为权宜之计,每个**非系统**智能体的
+启动都会设置一个环境标志,关闭这一机制,恢复兼容的消息
+格式。已针对 DeepSeek 验证:400 错误消失,CLAUDE.md/memory、Skills、hooks 以及
+工作目录上下文全部仍能正常工作。
 
-- **Why not the CLI bare mode:** that mode also clears it, but as a heavy hammer — it additionally
-  disables CLAUDE.md/auto-memory, Skills, and hooks and simplifies the system prompt, weakening the
-  working-directory/git context from the Claude Code system-prompt preset. The adaptive-thinking
-  disable flag is the surgical choice and is what we use.
-- **Scope:** only non-system agents; the system agent talks to first-party Anthropic and needs
-  no fallback.
-- **REMOVE when:** the third-party providers support the adaptive-thinking message format —
-  then drop this env injection. (A request-rewriting proxy that hoists inline `system` messages
-  into the top-level `system` field is the other long-term option.)
+- **为何不用 CLI 裸模式:** 该模式也会清除它,但手段过于粗暴——它还会
+  额外禁用 CLAUDE.md/自动记忆、Skills 和 hooks,并简化系统提示词,
+  削弱了 Claude Code 系统提示词预设中的工作目录/git 上下文。禁用自适应思维的
+  标志是更精准的选择,也是我们采用的方案。
+- **范围:** 仅限非系统智能体;系统智能体与第一方 Anthropic 通信,
+  不需要任何兜底。
+- **移除时机:** 当第三方厂商支持自适应思维消息格式后——
+  就可以去掉这个环境变量注入。(另一个长期方案是用一个请求改写代理,
+  把内联的 `system` 消息提升到顶层的 `system` 字段。)
 
-### Tool & intent agent routing (AC-R21 / AC-R23)
+### 工具与意图智能体路由(AC-R21 / AC-R23)
 
-Two settings let specific session classes run on a different agent than "default for new sessions",
-both decoupled from the default agent id and from each other:
+两个设置项让特定的会话类别可以运行在与“新会话的默认”不同的智能体上,
+二者都与默认智能体 id 以及彼此解耦:
 
-- **Tool agent** (AC-R21) — background tool sessions (completion judge, automation/session-name
-  derivation), resolved through the tool-agent resolution path.
-- **Intent agent** (AC-R23) — intent-communication sessions (the intent analyst's
-  requirement-breakdown conversation), resolved through the intent-agent resolution path and bound
-  onto each newly-created intent comm session right after its runtime is ensured.
+- **工具智能体**(AC-R21)—— 后台工具会话(完成度判定、自动化/会话名称
+  推导),通过工具智能体解析路径解析。
+- **意图智能体**(AC-R23)—— 意图沟通会话(意图分析师的
+  需求拆解对话),通过意图智能体解析路径解析,并在其运行时被确保后,
+  立即绑定到每个新创建的意图沟通会话上。
 
-Both share the **same sentinel + fall-through** as the default but with the "follow default"
-exception: an **empty string** means "follow the default agent" and is kept empty on store (never
-auto-filled); a **non-empty** id pointing at a removed/disabled agent is rewritten to the next
-enabled agent by order sequence. The runtime resolves either through the common agent resolver, so the
-chain is `<setting> → default agent → synthesized fallback`. The web console renders them as the
-second (tool) and third (intent) dropdowns under the default-agent picker; the disable handler applies
-the same fall-through the instant an agent is disabled, but only when the id is non-empty. Intent
-routing only changes the **initial** binding — the title-bar same-vendor switcher still lets the user
-re-target an open intent comm session manually.
+二者都与默认值共享**同样的哨兵值 + 回退机制**,但带有“跟随默认值”的
+例外:**空字符串**表示“跟随默认智能体”,存储时保持为空(从不
+自动填充);一个指向已移除/已禁用智能体的**非空** id 会被改写为
+按顺序号排列的下一个已启用智能体。运行时通过通用智能体解析器解析二者,因此
+回退链是 `<设置> → 默认智能体 → 合成兜底`。web console 把它们渲染为
+默认智能体选择器下方的第二个(工具)和第三个(意图)下拉框;禁用处理器
+在一个智能体被禁用的瞬间应用同样的回退,但仅当该 id 非空时才这样做。意图
+路由只改变**初始**绑定——标题栏的同厂商切换器仍然让用户
+手动重新定向一个已打开的意图沟通会话。
 
-## Binding mechanics — two-key space + frozen vendor (ADR-0015)
+## 绑定机制——双键空间 + 冻结厂商(ADR-0015)
 
-The binding splits into **intent** and **fact** so a pending session's desired agent (mutable) is
-kept apart from a real session's settled agent (vendor-bearing).
+该绑定拆分为**意图**和**事实**,使一个待定会话所期望的智能体(可变)
+与一个真实会话的已敲定智能体(带厂商信息)保持分离。
 
-- **Storage, vendor-blind.** Reading an agent id consults both spaces; reading a vendor reads the
-  frozen vendor; setting/clearing an intent stamps its creation time; the first-bind freeze writes
-  the fact iff absent and always deletes the intent (idempotent); a fact change enforces the invariant
-  (same-vendor → write; cross-vendor → reject); a janitor sweeps stale pending intents. Vendor is
-  always a plain argument, so the storage layer never imports the agent registry (the
-  storage → agent-config boundary stays acyclic — ADR-0009).
-- **Resolution.** The freeze routine resolves the agent's vendor and performs the first-bind freeze; the
-  set-agent routine routes a pending id to set-intent and a real id to fact-change, returning an
-  ok/not-ok result.
-- **Bind timing.** The freeze fires at the same moment as the runtime re-key on the first real session
-  id, in both run paths (the claude lifecycle path and the via-driver path).
-- **Janitor.** The server runs the stale-intent cleanup with a 7-day TTL at boot and hourly. Clearing
-  an intent never touches the fact space, so a fact is never orphaned.
+- **存储,厂商无关。** 读取智能体 id 会同时查询两个空间;读取厂商会读取
+  被冻结的厂商;设置/清除一个意图会为其创建时间打上时间戳;首次绑定的冻结操作
+  仅在事实缺失时写入(幂等),并总是删除该意图;一次事实变更会强制执行不变式
+  (同厂商 → 写入;跨厂商 → 拒绝);一个清理任务会清扫过期的待定意图。厂商
+  始终作为一个普通参数传入,因此存储层永不导入智能体注册表(存储 →
+  agent-config 的边界保持无环——ADR-0009)。
+- **解析。** 冻结例程解析该智能体的厂商并执行首次绑定的冻结;
+  set-agent 例程把一个待定 id 路由到 set-intent,把一个真实 id 路由到 fact-change,
+  返回一个 ok/not-ok 结果。
+- **绑定时机。** 冻结操作与首个真实会话 id 上的运行时重新赋键在同一时刻触发,
+  两条运行路径(claude 生命周期路径和经由驱动器的路径)都是如此。
+- **清理任务。** 服务器在启动时以及每小时运行一次带 7 天 TTL 的过期意图清理。
+  清除一个意图从不触及事实空间,因此一个事实永远不会成为孤儿。
 
 ```
 first run:  pending:<uuid>  --bindPending(runtime re-key)-->  realId
@@ -237,19 +231,19 @@ re-target:  set-agent(realId, newAgent) → same vendor ? write fact : reject (n
 janitor:    pending intents older than 7 days → reaped (facts untouched)
 ```
 
-## Non-functional considerations
+## 非功能性考量
 
-- **Secrets** — the API key is stored in plaintext under `~/.c3/settings.json` (same trust model
-  as the user's `~/.claude` credentials); the view renders the field as a password input.
-- **System agent invariant** — re-injected on every load/save, so it cannot be deleted or given
-  overrides even by hand-editing the file (AC-R1).
-- **Decoupled persistence** — the binding lives in `~/.c3/state.json`, independent of the
-  session-registry's state file under `~/.claude/c3/`, so the two concerns evolve separately.
-- **Temporary workaround (tech debt)** — the adaptive-thinking disable env on non-system agents is a
-  stopgap for the message-format incompatibility; remove it once third-party providers support the new
-  format (see the workaround subsection above).
+- **密钥** —— API key 以明文形式存储在 `~/.c3/settings.json` 下(与用户的
+  `~/.claude` 凭证信任模型相同);视图将该字段渲染为密码输入框。
+- **系统智能体不变式** —— 每次加载/保存都会重新注入,因此即使手动编辑文件
+  也无法删除它或给它加上覆盖项(AC-R1)。
+- **解耦的持久化** —— 该绑定存放在 `~/.c3/state.json` 中,独立于
+  `~/.claude/c3/` 下 session-registry 的状态文件,因此这两个关注点可以各自独立演进。
+- **临时变通方案(技术债)** —— 非系统智能体上的自适应思维禁用环境变量
+  是针对消息格式不兼容的权宜之计;一旦第三方厂商支持新
+  格式(见上文变通方案小节),就应移除它。
 
-## Dependencies
+## 依赖
 
-- **agent-session** — consumes the resolved launch output (environment overrides / model).
-- **Node filesystem facilities** — atomic JSON persistence under `~/.c3/`.
+- **agent-session** —— 消费已解析的启动输出(环境覆盖项 / model)。
+- **Node 文件系统设施** —— `~/.c3/` 下的原子 JSON 持久化。

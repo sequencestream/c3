@@ -1,19 +1,17 @@
-# Flow — Automation Orchestrator
+# Flow — 自动化编排器
 
-**Scenario.** The user checks `automate` on the intents they want built and clicks the automation
-button. A per-project background loop develops them one at a time in priority/dependency order,
-judges true completion, commits & pushes, then advances — stopping with a recorded reason on any
-abnormal end.
+**场景。** 用户在想要构建的意图上勾选 `automate`,然后点击自动化按钮。一个按项目划分的后台
+循环按优先级/依赖顺序逐一开发它们,评判是否真正完成,提交并推送,然后推进——一旦出现异常
+终止就记录下原因并停止。
 
-**Domains.** intent-management · agent-session · permission-gateway · git.
+**领域。** intent-management · agent-session · permission-gateway · git。
 
-This is the **unattended** sibling of [intent → development](flow-intent-to-development.md). It is
-the single, explicit, user-opt-in exception to the no-auto-complete rule (`RM-R9`): it marks an
-intent `done` only after an independent judge confirms it **and** the change is committed & pushed
-(`RM-A5`). Automation is **supervised**, not headless — a live permission prompt waits for a
-watching human (`RM-A9`).
+这是 [意图 → 开发](flow-intent-to-development.md) 的**无人值守**版本兄弟流程。它是“不自动
+完成”规则(`RM-R9`)唯一一个显式的、用户主动选择加入的例外:只有在一个独立的评判者确认**且**
+变更已被提交并推送(`RM-A5`)之后,它才会把一个意图标记为 `done`。自动化是**受监督的**,而非
+无人值守:一次实时的权限 prompt 会等待一位正在盯着的人类(`RM-A9`)。
 
-## Flow graph
+## 流程图
 
 ```mermaid
 flowchart TD
@@ -31,80 +29,76 @@ flowchart TD
     STOP -. majority toggle .-> CC[checkpoint consensus<br/>may override]
 ```
 
-## Start & sequencing
+## 启动与排序
 
-1. **web-console → intent-management.** `start_automation`. At most **one** orchestrator runs per
-   project; a second start is a no-op returning the live status (`RM-A2`). The orchestrator is
-   in-memory and does not survive a server restart (`RM-A2`).
-2. **Global concurrency gate.** Before picking the next intent, if **any** `in_progress` intent in the project
-   (including manually-launched) has a **truly running** work session, the orchestrator attaches an
-   internal viewer and waits for that turn to settle before re-checking — preventing concurrent dev
-   sessions that would conflict on file writes (`RM-A12`). A **dangling** session does not block.
-3. **Pick.** Eligible = `automate` AND `status ∈ {todo, in_progress}` AND every known `dependsOn` is
-   `done`; in worktree mode, a `done` dependency whose PR/MR is not confirmed `merged` still blocks
-   because its code is not known to be on mainline. When the workspace enables SDD (`sddEnabled`),
-   the intent must also have passed the spec approval checkpoint (`spec_approved=true`). SDD off
-   keeps the historic behavior and does not require a spec. If no intent is eligible only because a
-   dependency PR/MR has stale unconfirmed state, the server starts a one-shot background PR/MR status
-   sync and re-checks after completion; it does not poll or bypass the gate. Eligible intents are
-   ordered **priority (P0→P3) then oldest-first** (`RM-A3`). `dependsOnIndexes`' submission-order
-   stamp (`RM-R17`) breaks same-priority ties deterministically.
+1. **web-console → intent-management。** `start_automation`。每个项目最多同时运行**一个**
+   编排器；第二次启动是空操作,只会返回当前的运行状态(`RM-A2`)。编排器存在于内存中,不会在
+   服务器重启后存活(`RM-A2`)。
+2. **全局并发闸门。** 在挑选下一个意图之前,若该项目中**任何**一个 `in_progress` 的意图
+   (包括手动启动的)有一个**真正在运行**的工作会话,编排器会附加一个内部查看者,并等待那一轮
+   结束再重新检查——以防止并发的开发会话在文件写入上发生冲突(`RM-A12`)。一个**悬空
+   (dangling)**的会话不会阻塞。
+3. **挑选。** 符合资格的条件是:`automate` 为真,且 `status ∈ {todo, in_progress}`,且所有已知的
+   `dependsOn` 都是 `done`;在 worktree 模式下,若某个 `done` 依赖的 PR/MR 尚未确认为
+   `merged`,则依然会阻塞,因为其代码是否已进入主干尚不确定。当工作区启用了 SDD
+   (`sddEnabled`)时,该意图还必须通过规格审批检查点(`spec_approved=true`)。SDD 关闭时保持
+   历史行为,不要求有规格。若唯一使某个意图不符合资格的原因是某个依赖的 PR/MR 状态陈旧且未
+   确认,服务器会启动一次一次性的后台 PR/MR 状态同步,完成后重新检查;它不会轮询,也不会绕过
+   该闸门。符合资格的意图按**优先级(P0→P3)再按最旧优先**排序(`RM-A3`)。`dependsOnIndexes`
+   的提交顺序戳记(`RM-R17`)会确定性地打破同优先级的平局。
 
-## Develop one intent
+## 开发一个意图
 
-The starting action follows a strict precedence (`RM-A3`, `RM-A10`):
+启动动作遵循严格的优先级次序(`RM-A3`、`RM-A10`):
 
-1. **Attach** — if the picked intent's `lastWorkSessionId` is **already running a turn**, attach and
-   track it (never launch a second turn — a run outlives its turn, `RM-A10`).
-2. **Resume** — else an `in_progress` intent whose `lastWorkSessionId` **still exists on disk** is
-   resumed (`resume` id, `AS-R1`/`AS-R10`), continuing its half-built dev-skill context.
-3. **Fresh** — else a `todo` or **dangling** intent starts a fresh work session (configurable skill),
-   the same dangling rule as manual launch (`RM-R8`).
+1. **Attach(附加)**——若被选中意图的 `lastWorkSessionId` **已经在运行某一轮**,附加并跟踪它
+   (绝不启动第二轮——一次运行会比一轮更长命,`RM-A10`)。
+2. **Resume(恢复)**——否则,若一个 `in_progress` 意图的 `lastWorkSessionId` **仍存在于磁盘上**,
+   则恢复它(`resume` id,`AS-R1`/`AS-R10`),延续其半成品的 dev-skill 上下文。
+3. **Fresh(全新)**——否则,一个 `todo` 或**悬空**的意图会启动一个全新的工作会话(可配置技能),
+   与手动启动相同的悬空规则(`RM-R8`)。
 
-The dev turn runs the standard gated loop. **Permission parity** (`RM-A9`): a prompt during the turn
-behaves exactly like a manual session — the run is **not** aborted; it sits `awaiting_permission`,
-the prompt surfaces to the browser, a watching human answers, the turn continues. The status shows
-an "awaiting authorization" hint meanwhile.
+开发轮次运行标准的受门控循环。**权限一致性**(`RM-A9`):该轮次中出现的一次 prompt 行为与手动
+会话完全一致——该次运行**不会**被中止;它停在 `awaiting_permission`,该 prompt 呈现给浏览器,
+一位正在盯着的人类回答后,该轮次继续。与此同时状态会显示一个“等待授权”的提示。
 
-## Judge → commit → advance
+## 评判 → 提交 → 推进
 
-1. **Completion judge (`RM-A4`).** After the turn ends, a **tool-less** one-shot judge reads the
-   intent + the work session's last assistant message + code-change evidence (multi-repo
-   `git diff`/`git log` as _supporting_ corroboration, **not** a `done` precondition) and returns
-   `done` / `in_progress` / `stuck`, deciding **stuck → done → in_progress**. The turn ending alone
-   is never "done"; empty evidence is never alone a `stuck` signal.
-2. **`done` ⇒ commit & push (`RM-A5`).** The orchestrator commits any uncommitted work
-   (`feat: <title>`, skipped if the tree is clean) and **always** pushes (multi-repo aware), then
-   marks the intent `done` and advances. A commit blocked by a **pre-commit lint hook** is
-   self-healed by a single dev-agent fix turn then retried once (`RM-A13`); any other commit/push
-   failure (or a surviving lint failure) is a hard stop (`RM-A6`).
-3. **`in_progress` ⇒ continue (`RM-A8`).** Resume the same session with a continue (clearing
-   checkpoints) up to a fixed per-intent cap; exceeding the cap is an abnormal stop. The continue is
-   only ever for a **pure checkpoint**, never to answer a human-decision point.
-4. **`stuck` ⇒ stop (`RM-A6`)**, reason recorded next to the automation button.
-5. **Exhausted.** When no eligible intent remains, the loop finishes `done` (success);
-   `stop_automation` aborts the current run and returns to `idle` with no error (`RM-A7`).
+1. **完成度评判(`RM-A4`)。** 该轮次结束后,一个**不带工具**的一次性评判者读取该意图 +
+   工作会话最后一条助手消息 + 代码变更证据(跨多仓库的 `git diff`/`git log` 仅作为*佐证性*
+   旁证,**不是** `done` 的先决条件),返回 `done` / `in_progress` / `stuck`,判定优先级依次
+   为 **stuck → done → in_progress**。轮次结束本身绝不等同于“done”;空的证据本身也绝不单独
+   构成 `stuck` 信号。
+2. **`done` ⇒ 提交并推送(`RM-A5`)。** 编排器提交任何未提交的工作(`feat: <title>`,若工作树
+   干净则跳过),并**总是**推送(感知多仓库),然后把该意图标记为 `done` 并推进。若提交被
+   **pre-commit lint 钩子**拦截,会通过单次开发智能体修复轮次自愈,再重试一次(`RM-A13`);
+   任何其他提交/推送失败(或修复后仍然存在的 lint 失败)都是硬性停止(`RM-A6`)。
+3. **`in_progress` ⇒ 继续(`RM-A8`)。** 用一次 continue 恢复同一会话(清除各检查点),直到达到
+   一个固定的单意图上限;超出该上限即为异常停止。continue 仅用于**纯粹的检查点**,绝不用于
+   回答一个人工决策点。
+4. **`stuck` ⇒ 停止(`RM-A6`)**,原因记录在自动化按钮旁边。
+5. **耗尽。** 当没有符合资格的意图剩余时,该循环以 `done`(成功)结束;`stop_automation` 会
+   中止当前运行,并无错误地返回 `idle`(`RM-A7`)。
 
-## Branch — checkpoint consensus override (`RM-A14`)
+## 分支 —— 检查点共识override(`RM-A14`)
 
-When the majority toggle is ON (`ConsensusConfig.majority`), a `stuck` verdict or a
-`pendingQuestion` guard may instead trigger a multi-agent vote (peers via the shared
-cross-vendor `selectConsensusVoters`, one-shot, tool-denied; the continue/wait prompt is
-vendor-neutral and skips the tool-risk normalizer) on whether to pass the checkpoint. A majority `continue` overrides the stop and
-auto-continues (same cap as `RM-A8`); a tie / `wait` majority stops (`RM-A6`). The outcome
-broadcasts via `AutomationStatus.checkpointConsensus`. It decides only _automation flow_, never the
-underlying `AskUserQuestion` answer. See
-[consensus](../domains/core/permission-gateway/features/permission-gateway-consensus.md).
+当多数票开关(`ConsensusConfig.majority`)为 ON 时,一次 `stuck` 判定或一个
+`pendingQuestion` 守卫可能改为触发一次多智能体投票(通过共享的跨厂商
+`selectConsensusVoters` 选出的对等方,一次性、禁用工具;continue/wait 的 prompt 与厂商无关,
+且跳过工具风险归一化器),来决定是否通过该检查点。多数票 `continue` 会覆盖该次停止并
+自动继续(与 `RM-A8` 相同的上限);平票 / 多数为 `wait` 则停止(`RM-A6`)。结果通过
+`AutomationStatus.checkpointConsensus` 广播。它只决定*自动化流程*本身,绝不决定底层
+`AskUserQuestion` 的答案。参见
+[consensus(共识)](../domains/core/permission-gateway/features/permission-gateway-consensus.md)。
 
-## Branches & exceptions (anti-scenarios)
+## 分支与异常(反面场景)
 
-- **A human-decision point is never steamrolled.** `stuck` covers every "needs a human" signal
-  (`RM-A11`). On top, an independent `pendingQuestion` guard forces a stop for a **torn-down** turn
-  carrying an unanswered `AskUserQuestion` — **even if** the judge said `in_progress` (`RM-A11`,
-  defence in depth).
-- **Turn-end ≠ completion.** The dev skill is checkpoint-driven; a bare turn end is never taken as
-  `done` (`RM-A4`).
-- **Absent evidence never vetoes a credible report.** Committing is c3's job _after_ `done`, so an
-  empty diff/log must not, by itself, deny completion (`RM-A4`/`RM-A5`).
-- **Supervised, not unattended.** With nobody watching, a prompt can wait indefinitely; fully
-  unattended runs must pre-authorize via mode/allow rules (`RM-A9`).
+- **人工决策点绝不会被碾过。** `stuck` 涵盖每一种“需要人类介入”的信号(`RM-A11`)。在此之上,
+  一个独立的 `pendingQuestion` 守卫会强制停止一个**已拆除**且带有未回答的 `AskUserQuestion`
+  的轮次——**即便**评判者判定为 `in_progress`(`RM-A11`,纵深防御)。
+- **轮次结束 ≠ 完成。** dev skill 是由检查点驱动的;一次单纯的轮次结束绝不会被当作 `done`
+  (`RM-A4`)。
+- **缺乏证据绝不否决一份可信的报告。** 提交是 c3 在 `done` *之后*的工作,因此一个空的
+  diff/log 本身绝不能否定完成(`RM-A4`/`RM-A5`)。
+- **受监督而非无人值守。** 若无人在盯着,一次 prompt 可以无限期等待;要完全无人值守运行,
+  必须通过 mode/allow 规则预先授权(`RM-A9`)。

@@ -1,36 +1,35 @@
-# automations — Design
+# automations — 设计
 
-Implements the [spec](automations-spec.md). A self-contained domain module with its own store, scheduler loop,
-and execution dispatcher.
+实现 [spec](automations-spec.md)。一个自包含的领域模块,拥有自己的存储、调度器循环与执行分发器。
 
-## Responsibility split
+## 职责划分
 
-| Concern               | Responsibility                                                                             |
-| --------------------- | ------------------------------------------------------------------------------------------ |
-| Store (CRUD + SQLite) | Workspace-validated CRUD for automations + execution logs                                  |
-| Scheduler engine      | Fixed-interval tick loop; queries due automations by their next-run instant                |
-| Execution dispatcher  | Spawns a command process or an LLM agent session; writes the execution log                 |
-| Write queue           | _(planned)_ Per-connection pending-change queue; confirm/discard lifecycle — not yet impl. |
-| WS handling           | Routes automation-related WebSocket events to the store/scheduler                          |
-| Workspace archiving   | Listens for workspace removal; pauses all automations under that workspace                 |
+| 关注点              | 职责                                                               |
+| ------------------- | ------------------------------------------------------------------ |
+| 存储(CRUD + SQLite) | 对自动化 + 执行日志进行工作区校验的 CRUD                           |
+| 调度引擎            | 固定间隔的 tick 循环;按下次运行时刻查询到期的自动化                |
+| 执行分发器          | 派生命令进程或 LLM 智能体会话;写入执行日志                         |
+| 写入队列            | _(已规划)_ 按连接维护的待确认变更队列;确认/丢弃生命周期 — 尚未实现 |
+| WS 处理             | 将自动化相关的 WebSocket 事件路由到存储/调度器                     |
+| 工作区归档          | 监听工作区移除;暂停该工作区下的所有自动化                          |
 
-## Data model (SQLite)
+## 数据模型(SQLite)
 
-Two tables in the project-level SQLite database (same database as
-[intent-management](../intent-management/intent-management-design.md) and
-[session-registry](../../core/session-registry/session-registry-design.md)):
+项目级 SQLite 数据库中的两张表(与
+[intent-management](../intent-management/intent-management-design.md) 和
+[session-registry](../../core/session-registry/session-registry-design.md) 共用同一数据库):
 
-### `automations` (implemented schema)
+### `automations`(已实现的模式)
 
 ```sql
 CREATE TABLE automations (
     id              TEXT PRIMARY KEY,
     type            TEXT NOT NULL,                           -- 'command' | 'llm'
-    config          TEXT NOT NULL DEFAULT '{}',              -- JSON string
-    workspace_path  TEXT NOT NULL,                           -- resolved absolute path
+    config          TEXT NOT NULL DEFAULT '{}',              -- JSON 字符串
+    workspace_path  TEXT NOT NULL,                           -- 解析后的绝对路径
     trigger_type        TEXT NOT NULL DEFAULT 'cron',         -- 'cron' | 'event' (v5, 2026-06-08)
-    cron_expression     TEXT NOT NULL,                        -- '' for event triggers
-    next_run_at         INTEGER,                              -- Unix ms; null for event triggers
+    cron_expression     TEXT NOT NULL,                        -- event 触发时为 ''
+    next_run_at         INTEGER,                              -- Unix ms;event 触发时为 null
     event_topic         TEXT,                                 -- 'run:started' | 'run:settled' | 'pr:operation' | null
     event_reason_filter TEXT,                                 -- JSON RunEndReason[] | null (run:settled)
     event_pr_filter     TEXT,                                 -- JSON {operations?,results?} | null (pr:operation, v8 2026-06-20)
@@ -44,305 +43,262 @@ CREATE TABLE automations (
 CREATE INDEX idx_sch_workspace ON automations(workspace_path);
 ```
 
-Design notes:
+设计说明:
 
-- `workspace_path` is the resolved absolute path (not UUID), matching the workspace registry key.
-- Timing is **cron-driven**: a cron expression plus a computed next-run instant (Unix ms). The
-  scheduler polls for active rows whose next-run instant is at or before now. After each execution,
-  the next-run instant is recomputed from the cron expression.
-- **Time zone:** cron fields are interpreted in the **system-wide IANA time zone** (the configured
-  system timezone, see [system-config](../../system-config/)), not in UTC. The next-run computation
-  takes the zone and maps the wall-clock cron to an absolute instant, handling daylight-saving
-  transitions (spring-forward gap times are skipped; fall-back fold times take the earlier offset).
-  Both server call sites (create/update and the post-run recompute) pass the configured zone; the web
-  preview passes the same zone so its next/upcoming-run display matches the scheduled instant. The
-  default zone is the **server's local time zone** — an invalid/unset value falls back to it. Omitting
-  the zone (or specifying UTC) keeps the historical UTC computation, unchanged. **Behaviour change:**
-  this replaces the previous UTC-only interpretation. On upgrade, existing automations' actual trigger
-  moments shift from UTC to the server-local (or configured) zone — e.g. `0 11 * * *` moves from 11:00
-  UTC to 11:00 local. This is intentional (it aligns cron with what the user sees) and requires no
-  migration: the next-run instant is recomputed on the next create/update/run.
-- **Trigger type (v5, 2026-06-08):** the trigger type selects `cron` (timing via the cron expression
-  and next-run instant) or `event` (a kernel run-lifecycle event). Event rows keep an empty cron
-  expression, a null next-run instant, and set the event topic (plus an optional event reason filter,
-  a JSON list of terminal reasons). The due-automation query only returns cron rows (event rows have a
-  null next-run instant). The v5 migration adds the three columns idempotently by inspecting the
-  existing column set (the shared global schema-version counter is untrusted, same as the v2–v4
-  migrations), defaulting legacy rows to `cron` (SCH-R17).
-- **Internal one-shot agent recovery (2026-06-15-002):** no schema migration is required. The
-  recovery flow stores a normal `command` row whose config marks it an agent-quota-recovery action,
-  names the disabled agent, and records the absolute reset instant; the next-run instant is set to
-  that reset instant. The dispatcher recognises this config and re-enables the agent instead of
-  spawning a shell; the scheduler then sets the status to `paused` and clears the next-run instant,
-  making the row one-shot.
-- The stored `type` maps to the spec's task type but uses `'llm'` instead of `'llm_prompt'` for brevity.
-- The config column is a JSON blob validated at the application layer. There is no check constraint —
-  validation is type-dependent and happens at create/update time.
-- There is no foreign-key constraint on the workspace path — workspace existence is checked at the
-  application layer when creating automations. When a workspace is removed, its automations are **paused**
-  (not cascaded) by the workspace-archiving step per SCH-R1.
+- `workspace_path` 是解析后的绝对路径(而非 UUID),与工作区注册表的键一致。
+- 计时是**由 cron 驱动**的:一个 cron 表达式加上一个计算出的下次运行时刻(Unix ms)。
+  调度器轮询下次运行时刻早于或等于当前时间的活跃行。每次执行后,下次运行时刻会根据 cron 表达式重新计算。
+- **时区:** cron 字段按**系统级 IANA 时区**(配置的系统时区,见 [system-config](../../system-config/))解释,
+  而非 UTC。下次运行时刻的计算会取该时区,把墙钟意义上的 cron 映射为一个绝对时刻,并处理夏令时切换
+  (春季跳过的间隙时刻被跳过;秋季回退的重叠时刻取较早的偏移)。服务端两个调用点(创建/更新以及运行后的
+  重新计算)都传入配置的时区;前端预览也传入相同的时区,使其下次/即将运行的展示与实际调度时刻一致。
+  默认时区是**服务端所在的本地时区** — 无效/未设置的值会回退到它。省略时区(或指定 UTC)会保持
+  历史上的 UTC 计算方式不变。**行为变化:** 这替换了此前仅按 UTC 解释的方式。升级后,现有自动化的实际
+  触发时刻会从 UTC 变为服务端本地(或配置)时区 — 例如 `0 11 * * *` 会从 UTC 11:00 变为本地时间 11:00。
+  这是有意为之的(使 cron 与用户看到的时间对齐),且不需要迁移:下次运行时刻会在下一次创建/更新/运行时
+  重新计算。
+- **触发类型(v5,2026-06-08):** 触发类型选择 `cron`(通过 cron 表达式与下次运行时刻计时)或 `event`
+  (内核运行生命周期事件)。事件行保留空的 cron 表达式、null 的下次运行时刻,并设置事件主题(以及可选的
+  事件原因过滤器,一个终态原因的 JSON 列表)。到期自动化查询只返回 cron 行(事件行的下次运行时刻为 null)。
+  v5 迁移通过检查现有列集合,幂等地新增这三列(与 v2–v4 迁移一样,共享的全局模式版本计数器不可信),
+  将遗留行默认设为 `cron`(SCH-R17)。
+- **内部一次性智能体恢复(2026-06-15-002):** 不需要模式迁移。恢复流程存储一条普通的 `command` 行,
+  其配置标记为智能体配额恢复动作,记录被禁用智能体的名称与绝对的重置时刻;下次运行时刻被设为该重置时刻。
+  分发器识别这类配置后会重新启用该智能体而非派生 shell;随后调度器将状态设为 `paused` 并清空下次运行时刻,
+  使该行成为一次性的。
+- 存储的 `type` 对应规格中的任务类型,但为简洁起见用 `'llm'` 而非 `'llm_prompt'`。
+- config 列是在应用层校验的 JSON 数据块。没有 check 约束 — 校验依赖类型,在创建/更新时进行。
+- workspace_path 没有外键约束 — 工作区是否存在在应用层于创建自动化时检查。当工作区被移除时,
+  根据 SCH-R1,其自动化会被工作区归档步骤**暂停**(而非级联删除)。
 
-### `automation_execution_logs` (implemented schema)
+### `automation_execution_logs`(已实现的模式)
 
 ```sql
 CREATE TABLE automation_execution_logs (
     id              TEXT PRIMARY KEY,
     automation_id     TEXT NOT NULL,
     started_at      INTEGER NOT NULL,                       -- Unix ms
-    finished_at     INTEGER,                                -- Unix ms; nullable
-    exit_code       INTEGER,                                -- nullable (command type only)
-    output          TEXT NOT NULL DEFAULT '',                -- captured stdout or LLM response
-    error_message   TEXT,                                   -- nullable
+    finished_at     INTEGER,                                -- Unix ms;可为空
+    exit_code       INTEGER,                                -- 可为空(仅 command 类型)
+    output          TEXT NOT NULL DEFAULT '',                -- 捕获的 stdout 或 LLM 响应
+    error_message   TEXT,                                   -- 可为空
     status          TEXT NOT NULL DEFAULT 'running'          -- 'running' | 'success' | 'failed' | 'cancelled'
 );
 CREATE INDEX idx_sch_exec_automation ON automation_execution_logs(automation_id);
 ```
 
-Design notes:
+设计说明:
 
-- Cascade delete — when a automation is deleted, its logs are cascade-removed (performed at the
-  application layer within a transaction, not via a database foreign key, since the schema uses simple
-  text columns).
-- The output column stores full command stdout+stderr, or aggregated LLM text. For LLM prompts
-  exceeding 1 MB the output is truncated.
-- The status follows the forward chain: `running → success | failed | cancelled`. A log never
-  transitions backward (enforced at the application layer — in v1 a log starts as `running` and
-  is finalised to a terminal state).
-- No trigger column — in v1 everything is cron-triggered. A manual trigger ("run now") dispatches
-  through the same execution path.
+- 级联删除 — 当自动化被删除时,其日志会级联移除(在应用层的一个事务内执行,而非通过数据库外键,
+  因为该模式使用的是简单的文本列)。
+- output 列存储完整的命令 stdout+stderr,或聚合后的 LLM 文本。超过 1 MB 的 LLM 提示输出会被截断。
+- 状态遵循单向链:`running → success | failed | cancelled`。日志永不回退(在应用层强制约束 —
+  v1 中日志以 `running` 开始,最终定型为终态)。
+- 没有 trigger 列 — v1 中一切都由 cron 触发。手动触发("立即运行")通过同一执行路径分发。
 
-## Store design
+## 存储设计
 
-The store provides workspace-scoped CRUD for automations and execution logs, using the shared SQLite
-database under the c3 home. Key capabilities used by the scheduler and dispatcher:
+存储为自动化与执行日志提供工作区范围的 CRUD,使用 c3 主目录下共享的 SQLite 数据库。
+调度器与分发器使用的关键能力:
 
-| Capability                | Purpose                                                                            |
-| ------------------------- | ---------------------------------------------------------------------------------- |
-| Fetch due automations     | Return active rows whose next-run instant is set and at or before a given instant  |
-| Fetch event automations   | Return active `event` automations subscribed to a run-lifecycle topic (2026-06-08) |
-| Update next-run instant   | Persist the recomputed next-run instant after execution                            |
-| Pause all for a workspace | Set every automation under a workspace to `paused`                                 |
-| Append execution log      | Create an execution-log entry in the `running` state                               |
-| Update execution log      | Update an execution log's status/output/error after execution                      |
-| List execution logs       | All execution logs for a automation, most-recently-started first                   |
+| 能力                 | 用途                                                            |
+| -------------------- | --------------------------------------------------------------- |
+| 获取到期自动化       | 返回下次运行时刻已设置且早于或等于给定时刻的活跃行              |
+| 获取事件自动化       | 返回订阅了某个运行生命周期主题的活跃 `event` 自动化(2026-06-08) |
+| 更新下次运行时刻     | 执行后持久化重新计算出的下次运行时刻                            |
+| 暂停某工作区下的全部 | 将某工作区下的每个自动化设为 `paused`                           |
+| 追加执行日志         | 以 `running` 状态创建一条执行日志条目                           |
+| 更新执行日志         | 执行后更新一条执行日志的状态/输出/错误                          |
+| 列出执行日志         | 某自动化的全部执行日志,按开始时间从新到旧排列                   |
 
-## Scheduler engine
+## 调度引擎
 
-The scheduler runs a fixed-interval tick loop to query and dispatch due automations. Its responsibilities:
+调度器运行一个固定间隔的 tick 循环来查询并分发到期的自动化。其职责:
 
-- **Start** the tick loop (10 s interval).
-- **Stop** gracefully, awaiting in-flight executions (30 s max).
-- **Run now** — manual trigger: dispatch immediately, bypassing the tick.
-- **Dispatch event automations** — on a run-lifecycle bus event, dispatch the event-subscribed
-  automations for that topic (2026-06-08).
-- **Cancel** an in-flight execution, or cancel all in-flight executions for a workspace.
+- **启动** tick 循环(10 秒间隔)。
+- 优雅**停止**,等待在途执行完成(最多 30 秒)。
+- **立即运行** — 手动触发:绕过 tick 立即分发。
+- **分发事件自动化** — 在运行生命周期总线事件发生时,分发订阅了该主题的自动化(2026-06-08)。
+- **取消**一次在途执行,或取消某工作区的全部在途执行。
 
-It tracks in-flight executions in an in-memory map keyed by automation id (one promise per automation),
-which both enforces serial execution and bounds graceful shutdown.
+它用一个以自动化 id 为键的内存映射(每个自动化一个 promise)追踪在途执行,这既保证了单个自动化的
+串行执行,也为优雅关闭提供了边界。
 
-### Tick loop
+### Tick 循环
 
-Every 10 s: query due automations → for each, create a log → dispatch → track in-flight.
+每 10 秒:查询到期自动化 → 为每个创建一条日志 → 分发 → 追踪在途状态。
 
-1. Query for due automations — active rows whose next-run instant is at or before now.
-2. Filter out automations already in-flight (serial execution per automation).
-3. For each due automation: append a log entry, then dispatch. The dispatch is tracked in the in-flight
-   map and removed when it settles.
-4. Internal agent-recovery rows are paused and have their next-run instant cleared after execution,
-   instead of being re-armed from their cron expression.
-5. All errors in the tick are caught and logged — the tick loop never silently stops.
+1. 查询到期自动化 — 下次运行时刻早于或等于当前时间的活跃行。
+2. 过滤掉已经在途的自动化(每个自动化串行执行)。
+3. 对每个到期自动化:追加一条日志条目,然后分发。分发被追踪在在途映射中,结束时移除。
+4. 内部智能体恢复行在执行后会被暂停,并清空其下次运行时刻,而不是根据 cron 表达式重新武装。
+5. tick 中的所有错误都会被捕获并记录 — tick 循环永不静默停止。
 
-### Grace window for stale triggers
+### 陈旧触发的宽限窗口
 
-When the server restarts, some automations' next-run instant may be in the past:
+当服务端重启时,某些自动化的下次运行时刻可能已经在过去:
 
-- Within 5 minutes of now → execute normally.
-- Beyond 5 minutes → retain `active` status, record a `failed` execution log noting a missed trigger
-  window, and recompute `next_run_at` from now. The missed occurrence is not replayed and the
-  recurring automation continues at its next cron occurrence.
-- Internal agent-recovery rows are exempt from the missed-trigger error path; a late server restart
-  should still re-enable the agent rather than strand it disabled.
+- 距现在 5 分钟以内 → 正常执行。
+- 超过 5 分钟 → 保持 `active` 状态,记录一条 `failed` 执行日志说明错过了触发窗口,并从现在起
+  重新计算 `next_run_at`。错过的这次不会被回放,循环自动化会继续在其下一个 cron 发生时刻触发。
+- 内部智能体恢复行不受错过触发错误路径的约束;即使服务端延迟重启,也应重新启用该智能体而不是让它
+  一直停留在禁用状态。
 
-### Manual trigger (run now)
+### 手动触发(立即运行)
 
-- The `automation_run_now` WebSocket event invokes the scheduler's run-now path for the target automation.
-- Validates: the automation must exist, be `active` or `paused` (not `archived`), and not already
-  in-flight. This one-off manual execution does not change `status`; a paused automation remains
-  paused and its `next_run_at` is not recomputed.
-- Creates an execution log and dispatches immediately (outside the tick loop).
-- The execution result is broadcast to refresh the UI.
+- `automation_run_now` WebSocket 事件为目标自动化调用调度器的立即运行路径。
+- 校验:自动化必须存在,状态为 `active` 或 `paused`(非 `archived`),且尚未在途。这次一次性的
+  手动执行不改变 `status`;暂停的自动化仍保持暂停,其 `next_run_at` 不会被重新计算。
+- 创建一条执行日志并立即分发(在 tick 循环之外)。
+- 执行结果会被广播以刷新 UI。
 
-### Event-triggered dispatch (2026-06-08, extended 2026-06-20)
+### 事件触发分发(2026-06-08,2026-06-20 扩展)
 
-The event-dispatch path is wired to the kernel event bus in the composition root, subscribing to
-`run:started` / `run:settled` (run-lifecycle) and `pr:operation` (model-published or server-side). On each event:
+事件分发路径在组合根中接入内核事件总线,订阅 `run:started` / `run:settled`(运行生命周期)与
+`pr:operation`(模型发布或服务端发布)。每次事件发生时:
 
-1. **Run-lifecycle topics only:** if the event's run kind is not a user `session` run → return
-   (internal comm runs never fire user automations, SCH-R18). `pr:operation` carries no run kind and
-   skips this gate (SCH-R22).
-2. Fetch active `event` automations for this topic.
-3. Keep those whose workspace matches (both sides resolved), then apply the topic filter: for
-   `run:settled`, the event reason filter (null/empty = any); for `pr:operation`, the PR filter — the
-   event's `operation` ∈ `eventPrFilter.operations` AND `result` ∈ `eventPrFilter.results`, each
-   empty/null dimension = any (SCH-R22).
-4. Skip any automation already in-flight (SCH-R7 serial execution = event-storm throttle).
-5. Survivors run through the **same** dispatch-and-track → execute path as cron runs (so the
-   three-tier MCP security + write-approval queue apply unchanged). The post-run re-arm skips the
-   next-run recompute for `event` automations (they have no cron).
+1. **仅限运行生命周期主题:** 若事件的运行种类不是用户 `session` 运行 → 直接返回
+   (内部通信运行永不触发用户自动化,SCH-R18)。`pr:operation` 不携带运行种类,跳过此道门(SCH-R22)。
+2. 获取订阅了该主题的活跃 `event` 自动化。
+3. 保留工作区匹配的那些(双方都已解析),然后应用主题过滤器:对 `run:settled`,应用事件原因过滤器
+   (null/空 = 任意);对 `pr:operation`,应用 PR 过滤器 — 事件的 `operation` ∈ `eventPrFilter.operations`
+   且 `result` ∈ `eventPrFilter.results`,每个空/null 维度 = 任意(SCH-R22)。
+4. 跳过任何已在途的自动化(SCH-R7 串行执行 = 事件风暴限流)。
+5. 幸存者走与 cron 运行**相同**的分发-追踪 → 执行路径(因此三层 MCP 安全 + 写入审批队列不变地适用)。
+   运行后的重新武装会跳过 `event` 自动化的下次运行重新计算(它们没有 cron)。
 
-The run-lifecycle publish points live in the run path. The `pr:operation` publish point has two
-sources: the `publish_pr_event` MCP tool (c3 provides it to every work session so the model can
-publish a vendor-neutral event after performing a PR operation with its own tools), and the
-server-side PR creation paths (dev-cleanup / automation / manual create_pr) which publish a
-`create`/`success` event after successfully creating a PR on the model's behalf. See
-automations-spec.md § Triggers → PR operation events (SCH-R22 / SCH-R23).
+运行生命周期的发布点位于运行路径中。`pr:operation` 的发布点有两个来源:`publish_pr_event` MCP 工具
+(c3 将其提供给每个工作会话,以便模型在用自己的工具执行 PR 操作后发布一个厂商中立的事件),以及
+服务端的 PR 创建路径(dev-cleanup / automation / 手动 create_pr),它们会在代表模型成功创建 PR 后
+发布一个 `create`/`success` 事件。见 automations-spec.md § Triggers → PR operation events
+(SCH-R22 / SCH-R23)。
 
-The `pr:operation` bus event has a **second, independent** resident consumer registered in
-`run-domain-subscriptions.ts` (NOT this dispatch path): on `operation=update` + `result=success`
-carrying `association.intentId`, the intent domain resets a rejected/failed/closed intent's `prStatus`
-back to `reviewing`. It lives outside `dispatchEventTriggers` on purpose — the ledger state machine must
-recover even when no automation is configured, the Automation store is unavailable, or the automation is
-skipped by the in-flight gate. The two are separate side-effects of the same event; neither blocks the
-other.
+`pr:operation` 总线事件在 `run-domain-subscriptions.ts` 中还有**第二个、独立的**常驻消费者
+(不在本分发路径中):当 `operation=update` + `result=success` 且携带 `association.intentId` 时,
+intent 领域会把一个被拒绝/失败/关闭的 intent 的 `prStatus` 重置回 `reviewing`。它有意位于
+`dispatchEventTriggers` 之外 — 即便没有配置任何自动化、Automation 存储不可用、或该自动化被在途门
+跳过,账本状态机也必须能够恢复。两者是同一事件的独立副作用;互不阻塞。
 
-## Execution dispatcher
+## 执行分发器
 
-The dispatcher provides two execution paths, chosen by automation type. Each takes the automation, the
-execution-log id, and a callback to update the log, and runs to a terminal state.
+分发器提供两条执行路径,由自动化类型决定选用哪条。每条都接受自动化本身、执行日志 id、以及一个
+用于更新日志的回调,并运行至终态。
 
-### Command execution
+### 命令执行
 
-1. Read the command string from the automation's JSON config.
-2. Spawn a headless shell process in the automation's workspace directory.
-3. Accumulate stdout + stderr into the output buffer.
-4. Configurable hard timeout through the automation-level `maxWallClockMs` field (default 30 s):
-   - On timeout → kill the process → record `failed` noting a timeout.
-5. On process exit: exit code 0 → `success`; non-zero → `failed` noting the non-zero exit code.
-6. On a process-creation failure → `failed` with the error message.
-7. Support a config max-retries field (default 0): on non-zero exit or timeout, retry up to N times.
-   All retries share the same log entry and the same `maxWallClockMs` deadline — only the final attempt's result is recorded.
+1. 从自动化的 JSON 配置中读取命令字符串。
+2. 在自动化的工作区目录中派生一个无头 shell 进程。
+3. 将 stdout + stderr 累积进输出缓冲区。
+4. 通过自动化级别的 `maxWallClockMs` 字段(默认 30 秒)配置硬超时:
+   - 超时 → 杀死进程 → 记录 `failed` 并说明超时。
+5. 进程退出时:退出码 0 → `success`;非零 → `failed` 并说明非零退出码。
+6. 进程创建失败 → `failed` 并附带错误信息。
+7. 支持配置最大重试次数字段(默认 0):非零退出或超时时,最多重试 N 次。所有重试共用同一条日志
+   条目与同一个 `maxWallClockMs` 截止时间 — 只记录最后一次尝试的结果。
 
-### Internal agent recovery execution
+### 内部智能体恢复执行
 
-Before normal command dispatch, the dispatcher checks whether the config marks the row an
-agent-quota-recovery action. Such a row is system-owned: it never spawns a shell and ignores the user
-command config. The dispatcher re-enables the named agent through the agent-config module, writes a
-success/failure execution log, and returns. The scheduler's post-run branch detects the same config,
-marks the automation `paused`, and clears the next-run instant, so the row is retained for audit but
-cannot repeat.
+在常规命令分发之前,分发器会检查配置是否将该行标记为智能体配额恢复动作。这类行是系统所有的:
+它从不派生 shell,并忽略用户的命令配置。分发器通过智能体配置模块重新启用指定的智能体,写入一条
+成功/失败的执行日志,然后返回。调度器的运行后分支检测到同样的配置,将自动化标记为 `paused` 并
+清空下次运行时刻,使该行被保留以供审计,但不会重复。
 
-### LLM prompt execution
+### LLM 提示执行
 
-1. Read the prompt text from the automation's JSON config.
-2. Resolve the agent by the automation's vendor — the first enabled agent of that vendor, falling back
-   to the default agent. Execution routes through the shared SDK query path; dedicated adapter driver
-   paths are a future entry.
-3. Launch a lightweight agent session via the SDK query path:
-   - Working directory = the automation's workspace (inherits the workspace's project instructions, env
-     vars, settings).
-   - Permission mode = default (so the per-tool permission callback fires for permission control).
-   - Tools available based on the automation's execution identity:
-     - `full-access`: all tools auto-allowed (bypass-permissions).
-     - `sandboxed`: only the read-only tool set (read/grep/glob/list/web-fetch/web-search) is allowed;
-       write tools are denied.
-     - `read-only`: all tools denied.
-   - Wall-clock timeout through the automation-level `maxWallClockMs` field (default 60 s).
-4. Accumulate assistant-text blocks into the output.
-5. If the config carries an output schema (JSON Schema), validate the output:
-   - If validation passes → `success`.
-   - If validation fails → `failed` noting a schema-validation failure with detail.
-6. No auto-retry (LLM execution may have side effects). Retry requires a manual re-run.
-7. The agent session is ephemeral — no WebSocket viewer, not listed in the session sidebar.
-   The session id is NOT persisted (no need for traceability in v1).
+1. 从自动化的 JSON 配置中读取提示文本。
+2. 按自动化的厂商解析智能体 — 该厂商第一个已启用的智能体,回退到默认智能体。执行通过共享的
+   SDK query 路径进行;专用的适配器驱动路径是未来的条目。
+3. 通过 SDK query 路径启动一个轻量智能体会话:
+   - 工作目录 = 自动化的工作区(继承该工作区的项目指令、环境变量、设置)。
+   - 权限模式 = default(以便逐工具的权限回调触发,实现权限控制)。
+   - 可用工具取决于自动化的执行身份:
+     - `full-access`:所有工具自动允许(绕过权限)。
+     - `sandboxed`:只允许只读工具集(read/grep/glob/list/web-fetch/web-search);写入工具被拒绝。
+     - `read-only`:所有工具被拒绝。
+   - 通过自动化级别的 `maxWallClockMs` 字段(默认 60 秒)配置墙钟超时。
+4. 将助手文本块累积进输出。
+5. 若配置携带输出模式(JSON Schema),校验输出:
+   - 校验通过 → `success`。
+   - 校验失败 → `failed` 并说明模式校验失败及详情。
+6. 无自动重试(LLM 执行可能有副作用)。重试需要手动重新运行。
+7. 智能体会话是临时的 — 没有 WebSocket 查看器,不在会话侧栏中列出。会话 id 不会被持久化
+   (v1 中无需可追溯性)。
 
-**Codex vendor path (`driver.start`).** A codex automation runs through the codex driver rather than the
-shared SDK query path. Before starting, the dispatcher resolves the host `gh` keyring credential and,
-when neither `GH_TOKEN` nor `GITHUB_TOKEN` is already set, injects `GH_TOKEN` into the driver
-`envOverrides` so PR review/comment/merge shell commands authenticate inside the seatbelt sandbox (see
-[codex-sdk-guide § GitHub CLI 凭据桥接](../../../architecture/codex-sdk-guide.md)). This is orthogonal to
-network: the codex path does not pass `networkAccess`, so sandbox network stays governed by the
-automation's `mode`/`toolAllowlist`. A resolved token with the network off is **not** an auth failure —
-diagnostics distinguish a missing host token from sandbox network isolation and never reduce to "re-run
-`gh auth login`". Probe failure is non-fatal and never blocks the execution.
+**Codex 厂商路径(`driver.start`)。** codex 自动化通过 codex 驱动而非共享 SDK query 路径运行。
+启动前,分发器解析宿主机 `gh` 密钥环凭据,当 `GH_TOKEN` 与 `GITHUB_TOKEN` 都未设置时,将 `GH_TOKEN`
+注入驱动的 `envOverrides`,使 PR review/comment/merge 相关的 shell 命令能在 seatbelt 沙箱内完成认证
+(见 [codex-sdk-guide § GitHub CLI 凭据桥接](../../../architecture/codex-sdk-guide.md))。这与网络是
+正交的:codex 路径不传递 `networkAccess`,因此沙箱网络仍由自动化的 `mode`/`toolAllowlist` 管控。
+解析出令牌但网络关闭**不是**认证失败 — 诊断会区分"宿主机令牌缺失"与"沙箱网络隔离",绝不简单归结为
+"重新运行 `gh auth login`"。探测失败是非致命的,永不阻塞执行。
 
-## Write queue
+## 写入队列
 
-_(Planned — not implemented in v1)_
+_(已规划 — v1 中未实现)_
 
-See [automations-spec.md](automations-spec.md) § Write confirmation queue for the design. All automation mutations in v1 are
-immediate (direct store operations + broadcast).
+设计见 [automations-spec.md](automations-spec.md) § Write confirmation queue。v1 中所有自动化变更都是
+即时生效的(直接的存储操作 + 广播)。
 
-## Workspace archiving
+## 工作区归档
 
-Listens for workspace-removal events and pauses all automations belonging to that workspace. When a
-workspace is removed from the registry, the archiving step:
+监听工作区移除事件,暂停属于该工作区的所有自动化。当工作区从注册表中移除时,归档步骤会:
 
-1. Cancels any in-flight executions under that workspace.
-2. Pauses all automations in that workspace.
-3. Leaves the post-removal automation broadcast to the caller that handled the workspace removal.
+1. 取消该工作区下的任何在途执行。
+2. 暂停该工作区中的所有自动化。
+3. 将移除后的自动化广播留给处理工作区移除的调用方来做。
 
-## Integration with the server
+## 与服务端的集成
 
-### Init
+### 初始化
 
-After the store is ready (post-db init), start the scheduler and subscribe to the kernel event bus
-for event-triggered automations (2026-06-08). When the automation store is available, the scheduler is
-started and the event-dispatch path is subscribed to both `run:started` and `run:settled` for the
-whole server run (process-lifetime subscriptions, no dispose).
+存储就绪后(数据库初始化之后),启动调度器,并为事件触发的自动化订阅内核事件总线(2026-06-08)。
+当自动化存储可用时,调度器被启动,事件分发路径同时订阅 `run:started` 与 `run:settled`,贯穿整个
+服务端运行期(进程生命周期的订阅,不释放)。
 
-### Workspace removal
+### 工作区移除
 
-The workspace-removal handler is extended to tear down its runtimes, run the archiving step (which
-cancels in-flight executions and pauses the workspace's automations), remove the workspace, and then
-broadcast the now-paused automations and refreshed statuses to the UI.
+工作区移除处理器被扩展为:拆除其运行时、执行归档步骤(取消在途执行并暂停该工作区的自动化)、
+移除工作区,然后向 UI 广播现已暂停的自动化及刷新后的状态。
 
-### Run now
+### 立即运行
 
-The run-now handler validates the store is available, invokes the scheduler's run-now path for the
-target automation, then broadcasts the workspace's automations to refresh the UI with the new execution
-log.
+立即运行处理器校验存储可用,为目标自动化调用调度器的立即运行路径,然后广播该工作区的自动化,
+以带着新的执行日志刷新 UI。
 
-### Server shutdown
+### 服务端关闭
 
-On server close, stop the scheduler gracefully with a 30 s timeout for in-flight tasks.
+服务端关闭时,以 30 秒超时优雅地停止调度器,等待在途任务完成。
 
-## Technology choices
+## 技术选型
 
-- **SQLite** for persistence — shares the existing project-level database. No additional runtime
-  dependency.
-- **A headless shell process** for command execution. Simple, well-understood, no external runner
-  dependency.
-- **Fixed-interval tick** (10 s) rather than an event-driven timer per automation. Avoids managing N
-  timers and is simpler to reason about.
-- **In-process dispatcher** — no job queue. All executions run in the server process.
-- **The SDK query path** for LLM prompt execution — reuses the existing Agent SDK integration pattern.
-- **Config as JSON** avoids schema-evolution complexity across two task types.
+- **SQLite** 用于持久化 — 共用已有的项目级数据库。无需额外运行时依赖。
+- **无头 shell 进程** 用于命令执行。简单、易懂,无需外部执行器依赖。
+- **固定间隔 tick**(10 秒)而非为每个自动化设置事件驱动的定时器。避免管理 N 个定时器,推理更简单。
+- **进程内分发器** — 没有任务队列。所有执行都在服务端进程内运行。
+- **SDK query 路径** 用于 LLM 提示执行 — 复用既有的 Agent SDK 集成模式。
+- **配置以 JSON 存储** 避免了两种任务类型之间模式演化的复杂度。
 
-## Non-functional considerations
+## 非功能性考量
 
-- **Latency:** Scheduler ticks are low-latency (DB query + in-memory filter). Execution latency is
-  task-dependent and unbounded.
-- **Reliability:** The scheduler loop is a single fixed-interval timer. If a tick's handler throws,
-  the error is caught and logged; the interval continues.
-- **Memory:** In-flight tracking uses an in-memory map keyed by automation id. With typical usage (tens
-  of automations), memory is negligible.
-- **Storage:** Execution logs grow indefinitely. A log retention policy is deferred to a future
-  iteration.
-- **Security:** Command automations run as the server process's user. LLM prompt automations use the
-  automation's execution identity for tool-access control.
+- **延迟:** 调度器的 tick 是低延迟的(数据库查询 + 内存过滤)。执行延迟依任务而定,没有上界。
+- **可靠性:** 调度器循环是单个固定间隔的定时器。若某次 tick 的处理器抛出异常,该错误会被捕获并记录;
+  间隔循环继续运行。
+- **内存:** 在途追踪使用以自动化 id 为键的内存映射。在典型用量下(数十个自动化),内存开销可忽略。
+- **存储:** 执行日志会无限增长。日志保留策略被推迟到未来的迭代。
+- **安全性:** 命令自动化以服务端进程的用户身份运行。LLM 提示自动化使用自动化的执行身份做工具访问控制。
 
-## Dependencies
+## 依赖
 
-| Dependency                        | Purpose                                       |
-| --------------------------------- | --------------------------------------------- |
-| A cron-parsing library            | Parse cron expressions, compute next-run time |
-| The host's process-spawn facility | Execute command-type automations              |
-| The Claude Agent SDK              | LLM prompt execution via the query path       |
-| A cryptographic id generator      | Generate log ids                              |
+| 依赖                     | 用途                              |
+| ------------------------ | --------------------------------- |
+| 一个 cron 解析库         | 解析 cron 表达式,计算下次运行时间 |
+| 宿主机的进程派生设施     | 执行 command 类型的自动化         |
+| Claude Agent SDK         | 通过 query 路径执行 LLM 提示      |
+| 一个加密安全的 id 生成器 | 生成日志 id                       |
 
-## Config shapes (JSON)
+## 配置形状(JSON)
 
-### command type
+### command 类型
 
 ```json
 {
@@ -351,7 +307,7 @@ On server close, stop the scheduler gracefully with a 30 s timeout for in-flight
 }
 ```
 
-### llm type
+### llm 类型
 
 ```json
 {
@@ -365,4 +321,4 @@ On server close, stop the scheduler gracefully with a 30 s timeout for in-flight
 }
 ```
 
-Both are stored as the config-column JSON blob, validated at the application layer.
+两者都以 config 列的 JSON 数据块存储,并在应用层校验。

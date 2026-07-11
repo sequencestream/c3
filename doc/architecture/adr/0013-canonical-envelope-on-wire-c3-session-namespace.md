@@ -1,212 +1,183 @@
-# 0013 — Canonical envelope on the wire + c3 session namespace internalization
+# 0013 — 线路上的规范信封 + c3 会话命名空间内部化
 
 - **Status:** accepted
 - **Date:** 2026-06-06
 
 ## Context
 
-ADR-0011 introduced the vendor-neutral canonical message model, but it lived only inside
-the kernel adapter layer. Two follow-on questions were left open:
+ADR-0011 引入了厂商中立的规范消息模型,但它只存在于内核适配层内部。两个后续问题被留了下来:
 
-1. **Where does the neutral envelope belong?** If each vendor's messages map to their own wire
-   shape, the wire grows a second schema per vendor and the front-end learns three message
-   models. The 010 field-diff already proved a single common envelope exists; it should be the
-   one shape that crosses the wire, gaining only a `vendor` _dimension_, never a parallel schema.
-2. **How are sessions named across vendors?** Claude keys transcripts by JSONL under
-   the vendor name) leaks into c3's URLs and storage keys, the namespace is vendor-coupled and a
-   session can't be addressed neutrally. The native stores must stay the source of truth — c3
-   must not become a second copy of every transcript.
+1. **中立信封应该归属于哪里?** 如果每个厂商的消息都映射到各自的 wire 形态,wire 就会为每个
+   厂商多长出一套 schema,前端也要学习三套消息模型。010 的字段 diff 已经证明存在一个共同的
+   信封;它应该是唯一跨越 wire 的形态,只增加一个 `vendor` _维度_,而不是一套并行 schema。
+2. **会话如何跨厂商命名?** Claude 按 JSONL 为 transcript 加键(在厂商名之下),这使命名空间与
+   厂商耦合,一个会话无法被中立地寻址。原生存储必须保持为事实来源,c3 不能变成每份 transcript
+   的第二份拷贝。
 
-A third, smaller question: the two vendor message _forms_ differ. Claude emits a whole message
-per frame; Codex emits incremental update frames that revise an earlier item in place. A
-naive append-only consumer would duplicate blocks for the incremental form.
+第三个、较小的问题:两个厂商的消息*形态*不同。Claude 每帧发出一条完整消息;Codex 发出原地修订
+早前条目的增量更新帧。一个天真的仅追加式消费者会为增量形态重复出 block。
 
 ## Options considered
 
-1. **Keep the envelope in the kernel; map per-vendor to bespoke wire events.** _Con:_ a second
-   schema per vendor on the wire; the front-end branches on vendor; the "one common envelope"
-   conclusion from 010 is thrown away at the boundary.
-2. **Promote the envelope to the wire; persist a c3 session registry mapping c3 id ↔ vendor id.**
-   _Con:_ a persisted registry is a second store that must be kept in sync with every vendor's
-   native store — double-write, drift, and a migration surface, exactly what "native store is SoT"
-   was meant to avoid.
-3. **Promote the envelope to the shared protocol definitions (kernel re-exports); make the c3 id a
-   deterministic vendor-free digest resolved by a read-only lazy accessor.** The envelope is
-   defined once on the wire (SDK-free); the kernel re-exports it so existing consumers are
-   unchanged. The c3 session id is a hash over the vendor and the vendor's session id — stable
-   across restarts (no persistence) and containing neither the vendor name nor the raw id as a
-   substring (URL/ storage safe). A read-only accessor wraps the per-vendor session stores,
-   normalizing listings on demand and building the c3-id → vendor-ref index lazily from those
-   listings. Block updates upsert by (session id, block id), so both vendor forms collapse to one
-   rule.
+1. **信封留在内核里;按厂商映射到各自定制的 wire 事件。** _Con:_ wire 上为每个厂商多一套
+   schema;前端按厂商分支;010 得出的"存在一个共同信封"的结论在边界处被丢弃。
+2. **把信封提升到 wire 上;持久化一个 c3 会话注册表,映射 c3 id ↔ 厂商 id。** _Con:_ 一个
+   持久化的注册表是第二个存储,必须与每个厂商的原生存储保持同步——双写、漂移、迁移面,这恰恰是
+   "原生存储即事实来源"想要避免的。
+3. **把信封提升到共享协议定义(内核重新导出);让 c3 id 成为一个由只读惰性访问器解析的、确定性的
+   无厂商摘要。** 信封在 wire 上只定义一次(不含 SDK);内核重新导出它,使既有消费者不受影响。
+   c3 会话 id 是对厂商和厂商会话 id 的一次哈希——跨重启稳定(无需持久化),且既不包含厂商名也
+   不包含原始 id 作为子串(URL/存储安全)。一个只读访问器包裹各厂商的会话存储,按需归一化
+   listing,并从这些 listing 中惰性构建 c3-id → 厂商引用的索引。Block 更新按 (会话 id, block
+   id) upsert,因此两种厂商形态都收敛到同一条规则。
 
 ## Decision
 
-Adopt option 3.
+采纳方案 3。
 
-- **Canonical envelope on the wire.** The vendor id, the adapter-capability set, the canonical
-  role, the canonical tool result, the canonical block, and the canonical message are defined once
-  in the shared protocol definitions — zero-runtime, SDK-free (ADR-0009). The kernel adapter layer
-  re-exports them (single SoT). The wire gains a `vendor` dimension on one envelope; it does **not**
-  start a per-vendor schema.
-- **D-A — embedded tool result preserved.** 011's D3 ruling stands: there is **no standalone
-  standalone tool-result block**; a tool's return is folded into the tool-use block's result field
-  by id-upsert. The three-vendor common block set is text / thinking / tool-use.
-  Other vendor-specific shapes are NOT promoted to their own block variant (no adapter produces
-  them yet — 宁丢勿强塞). A future vendor-tag-discriminated escape variant is the extension point.
-- **Two-form upsert.** The canonical accumulator keys blocks by (session id, block id) and upserts:
-  a same-id block revises in place, an anonymous (id-less) block appends, a tool result back-fills
-  its owning tool-use block monotonically (a later input-only revision never erases an arrived
-  result). Claude's whole-message form and Codex's incremental form converge to the same normalized
-  view.
-- **D-C — c3 session namespace internalization.** The c3 session id is opaque
-  (an opaque prefix plus a hash over the vendor and the vendor's session id), deterministic, and
-  vendor-free — the only id that crosses out of the kernel. The vendor session reference (vendor +
-  vendor session id) stays inside. The session accessor is a **read-only** union over the
-  available vendors' session stores: listing merges across vendors (native id hidden in a vendor-
-  extra field, never the top level), reading routes to the owning store via a lazily-built
-  c3-id → vendor-ref index. **No double-write:** native stores are SoT; the index is a derived
-  runtime cache rebuilt by listing, not a second copy of session content ("存储形态归一、位置不归一").
-- **Approval stays off the message model.** Approval/permission events are NOT canonical messages
-  — they ride the approval-bridge stream, so the envelope never becomes a god type.
+- **线路上的规范信封。** 厂商 id、适配器能力集、规范角色(role)、规范工具结果、规范 block、
+  规范消息在共享协议定义中只定义一次——零运行时、不含 SDK(ADR-0009)。内核适配层重新导出它们
+  (单一事实来源)。wire 在一个信封上增加一个 `vendor` 维度;它**不**开启一套按厂商的 schema。
+- **D-A —— 保留内嵌工具结果。** 011 的 D3 裁决维持:**没有**独立的 tool-result block;一个
+  工具的返回值按 id-upsert 折叠进 tool-use block 的 result 字段。三厂商共同的 block 集合是
+  text / thinking / tool-use。其他厂商特有的形态**不**被提升为各自的 block 变体(目前没有
+  适配器产出它们——宁丢勿强塞)。一个未来的、按厂商标签区分的转义变体是这条扩展点。
+- **双形态 upsert。** 规范累加器按 (会话 id, block id) 为 block 加键并 upsert:一个同 id 的
+  block 原地修订,一个匿名(无 id)的 block 追加,一个工具结果单调地回填它所属的 tool-use
+  block(一次更晚的、仅有输入的修订永远不会抹掉已经到达的结果)。Claude 的整条消息形态与 Codex
+  的增量形态收敛到同一个归一化视图。
+- **D-C —— c3 会话命名空间内部化。** c3 会话 id 是不透明的(一个不透明前缀加上对厂商和厂商
+  会话 id 的一次哈希),确定性,且无厂商信息——它是唯一跨出内核的 id。厂商会话引用(厂商 +
+  厂商会话 id)留在内核内部。会话访问器是各可用厂商会话存储之上的一个**只读**联合体:listing
+  跨厂商合并(原生 id 隐藏在一个 vendor-extra 字段里,从不出现在顶层),读取通过一个惰性构建的
+  c3-id → 厂商引用索引路由到所属存储。**没有双写:** 原生存储是事实来源;索引是一个派生的、
+  运行时缓存,由 listing 重建,而不是会话内容的第二份拷贝("存储形态归一、位置不归一")。
+- **Approval 不进入消息模型。** Approval / permission 事件**不是**规范消息——它们走
+  approval-bridge 流,因此信封永远不会变成一个上帝类型。
 
-This phase stops at the kernel + shared types and the read-only accessor; it does **not** rewire
-the live wire frames, the Claude run path, or the web URL/storage layer (web currently holds the
-session id in memory only, so there is no migration debt).
+本阶段止步于内核 + 共享类型 + 只读访问器,它**不**重新接线线上的 wire 帧、Claude 运行路径,也
+不涉及 web 的 URL/存储层(web 目前只把会话 id 存在内存里,所以没有迁移债务)。
 
 ## Consequences
 
-- **Easier:** one envelope on the wire; the front-end learns a single message model with a
-  `vendor` tag. A new vendor maps its messages to the same shape and its sessions through the same
-  accessor — no new wire schema, no new id namespace.
-- **Honest storage:** native stores remain the single source of truth; c3 owns only a derived,
-  rebuildable index — no sync/migration surface, no double-write.
-- **URL/storage safety:** a vendor id can never leak into a URL or storage key because the only
-  exposed handle is an opaque digest.
-- **Boundary:** the shared protocol definitions and the adapter layer stay SDK-free (ADR-0009); the
-  accessor depends only on the neutral session-store abstraction.
-- **Deferred:** wiring the envelope/c3 id through the live wire frames, the front-end, and the URL/
-  synthetic frames against the neutral reducer); explicit `reasoning`/`diff` blocks.
+- **Easier:** wire 上只有一个信封;前端学习单一消息模型,带一个 `vendor` 标签。一个新厂商把
+  自己的消息映射到同一个形态,把自己的会话映射到同一个访问器——不需要新的 wire schema,不需要
+  新的 id 命名空间。
+- **Honest storage:** 原生存储仍然是唯一的事实来源;c3 只拥有一个派生的、可重建的索引——没有
+  同步/迁移面,没有双写。
+- **URL/storage safety:** 厂商 id 永远不会泄漏进 URL 或存储键,因为唯一暴露出去的句柄是一个
+  不透明摘要。
+- **Boundary:** 共享协议定义和适配层保持不含 SDK(ADR-0009);访问器只依赖中立的会话存储抽象。
+- **Deferred:** 把信封/c3 id 接线进线上的 wire 帧、前端,以及 URL/ 针对中立 reducer 的合成
+  帧);显式的 `reasoning`/`diff` block。
 
 ## Compliance
 
-- The shared protocol definitions and the kernel adapter + session layers (excluding the Claude-
-  specific adapter) MUST NOT import any vendor SDK type.
-- Minting a c3 session id MUST be deterministic and its output MUST contain neither the vendor name
-  nor the raw vendor id as a substring; pinned by an accessor test.
-- The block upsert MUST revise a same-id block in place (no array growth) and MUST NOT erase an
-  arrived tool result on a later input-only revision; pinned by an accumulator test.
-- The session accessor MUST be read-only and route a read to the owning vendor store with the
-  NATIVE id (never the c3 id); pinned by an accessor test.
-- The kernel re-export MUST keep existing consumers behavior-equivalent: the existing adapter and
-  Claude-adapter tests stay green.
-- Typecheck, lint, and the server test suite MUST be green.
+- 共享协议定义以及内核适配层 + 会话层(不含 Claude 专属适配器)**不得** import 任何厂商 SDK
+  类型。
+- 铸造一个 c3 会话 id **必须**是确定性的,其输出**不得**包含厂商名或原始厂商 id 作为子串;由一个
+  访问器测试钉住。
+- Block upsert **必须**原地修订同 id 的 block(不产生数组增长),**不得**在一次更晚的、仅有
+  输入的修订上抹掉已到达的工具结果;由一个累加器测试钉住。
+- 会话访问器**必须**是只读的,并使用**原生** id(从不是 c3 id)把读取路由到所属的厂商存储;
+  由一个访问器测试钉住。
+- 内核重新导出**必须**保持既有消费者行为等价:既有适配器测试与 Claude 适配器测试保持为绿。
+- Typecheck、lint 以及服务端测试套件**必须**为绿。
 
 ## References
 
-- [ADR 0011](0011-vendor-neutral-agent-abstraction.md) — the canonical message model + D3
-  embedded-result ruling this ADR promotes to the wire.
-- [ADR 0012](0012-host-binary-probe-first-capability-gate.md) — the available-adapter resolution
-  produces the vendor list the session accessor wraps.
-- [ADR 0009](0009-unidirectional-boundaries.md) — the SDK-free boundary the shared layer and the
-  adapter layer honor.
-- [ADR 0004](0004-persist-workspace-session-registry.md) — the workspace/session registry the c3
-  namespace will eventually front (deferred).
-- [agent-session domain spec](../../domains/core/agent-session/agent-session-spec.md) — the envelope/namespace rules.
+- [ADR 0011](0011-vendor-neutral-agent-abstraction.md) —— 本 ADR 把规范消息模型 + D3 内嵌
+  结果裁决提升到 wire 上。
+- [ADR 0012](0012-host-binary-probe-first-capability-gate.md) —— 可用适配器解析产出会话访问器
+  所包裹的厂商列表。
+- [ADR 0009](0009-unidirectional-boundaries.md) —— 共享层与适配层遵守的不含 SDK 边界。
+- [ADR 0004](0004-persist-workspace-session-registry.md) —— c3 命名空间最终将要面向的
+  工作区/会话注册表(推迟)。
+- [agent-session domain spec](../../domains/core/agent-session/agent-session-spec.md) ——
+  信封/命名空间规则。
 
 ---
 
-## Amendment: unified `session_metadata` projection table (2026-06-07; generalized 2026-06-28)
+## Amendment:统一的 `session_metadata` 投影表(2026-06-07;2026-06-28 泛化)
 
-The cross-vendor `list_sessions` path was rewired from a per-request fan-out
-to the accessor union (above) to a direct read of a session-metadata projection
-table in the c3 runtime database. On 2026-06-28 the former
-`work_session_metadata` table was renamed in place to `session_metadata` and
-generalized to carry six business session classes: work, intent, spec,
-discussion, automation, and tool. This amendment records the contract.
+跨厂商的 `list_sessions` 路径,从一次按请求扇出重写为直接读取 c3 运行时数据库中的一张会话
+元数据投影表,读取上文的访问器联合体。2026-06-28,原先的 `work_session_metadata` 表被原地
+改名为 `session_metadata`,并被泛化为承载六种业务会话类别:work、intent、spec、discussion、
+automation、tool。本 amendment 记录这份契约。
 
-### Projection table contract
+### 投影表契约
 
-The session-metadata projection is a **rebuildable cache**, not a second copy of
-session content. The native/vendor stores and each domain's business tables stay
-the sources of truth for session _content_ and ownership facts. This projection
-holds only addressing/lifecycle metadata for read-side aggregation:
+会话元数据投影是一个**可重建的缓存**,而不是会话内容的第二份拷贝。原生/厂商存储以及每个领域
+自己的业务表,仍然是会话*内容*与归属事实的事实来源。这份投影只承载用于读侧聚合的
+寻址/生命周期元数据:
 
-| Field             | Purpose                                                                                                                                                                    |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| c3 session id     | Opaque c3 session id (the deterministic vendor-free digest). Primary key.                                                                                                  |
-| workspace         | The workspace this row belongs to; drives the daily read path's filter.                                                                                                    |
-| vendor session id | The native vendor id (nullable for pending rows).                                                                                                                          |
-| agent             | The agent the session runs on (binding fact or pending intent).                                                                                                            |
-| title             | Display title; rewritten by lazy validation / run-end.                                                                                                                     |
-| last modified     | UTC ms; stamped to the bind time on a real row (all vendors, incl. Codex — SR-R13), refined to the native transcript mtime by lazy validation; null only for pending rows. |
-| state             | Lifecycle state (born / alive / stale / orphaned / ghost).                                                                                                                 |
-| state updated at  | UTC ms; drives the STALE window and warmup policy.                                                                                                                         |
-| kind              | Legacy binding marker retained for compatibility; read paths ignore it.                                                                                                    |
-| session kind      | Business class: work / intent / spec / discussion / automation / tool.                                                                                                     |
-| owner kind        | Nullable logical owner kind (currently intent / discussion / automation) used by client-side jump-back rules.                                                              |
-| owner id          | Nullable logical owner id.                                                                                                                                                 |
-| bound             | Integer boolean replacement for `kind`: real rows are `1`; work-only pending placeholders are `0`.                                                                         |
+| Field             | Purpose                                                                                                                          |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| c3 session id     | 不透明的 c3 会话 id(确定性的无厂商摘要)。主键。                                                                                  |
+| workspace         | 这一行所属的工作区;驱动每日读路径的过滤条件。                                                                                    |
+| vendor session id | 原生的厂商 id(pending 行可为空)。                                                                                                |
+| agent             | 该会话运行所在的 agent(一个绑定事实或一个待处理意图)。                                                                           |
+| title             | 展示标题;由惰性校验/运行结束重写。                                                                                               |
+| last modified     | UTC 毫秒;对一个真实行(所有厂商,包括 Codex——SR-R13)戳记为绑定时刻,由惰性校验细化为原生 transcript 的 mtime;仅 pending 行为 null。 |
+| state             | 生命周期状态(born / alive / stale / orphaned / ghost)。                                                                          |
+| state updated at  | UTC 毫秒;驱动 STALE 窗口和预热策略。                                                                                             |
+| kind              | 为兼容性保留的旧版绑定标记;读路径忽略它。                                                                                        |
+| session kind      | 业务类别:work / intent / spec / discussion / automation / tool。                                                                 |
+| owner kind        | 可为空的逻辑归属者类别(当前为 intent / discussion / automation),供客户端"跳回"规则使用。                                         |
+| owner id          | 可为空的逻辑归属者 id。                                                                                                          |
+| bound             | 取代 `kind` 的整型布尔值:真实行为 `1`,仅供 work 使用的 pending 占位行为 `0`。                                                    |
 
-**No transcript, prompt, tool-call, tool-result, or block content is ever
-written to this projection.** Pinned by a field-whitelist positive assertion
-test.
+**这份投影**从不写入任何 transcript、prompt、工具调用或工具结果内容。由一个字段白名单
+正向断言测试钉住。
 
 ### Lifecycle states
 
-| State    | Meaning                                                                                      |
-| -------- | -------------------------------------------------------------------------------------------- |
-| born     | Just inserted; not yet seen by a native list.                                                |
-| alive    | Written from a recent native list or validated by one in the last STALE window.              |
-| stale    | Not validated in > STALE window (24h). Rendered with an "Unvalidated" tag.                   |
-| orphaned | Confirmed absent from the native store (warmup: 2 janitor passes). Rendered grayed-out.      |
-| ghost    | Native store errored (REST down, transcript unreadable). Rendered with a "Retry" affordance. |
+| State    | Meaning                                                                 |
+| -------- | ----------------------------------------------------------------------- |
+| born     | 刚被插入;尚未被一次原生 listing 见过。                                  |
+| alive    | 由一次最近的原生 listing 写入,或在上一个 STALE 窗口内被其中一次校验过。 |
+| stale    | 超过 STALE 窗口(24 小时)未被校验。渲染带一个"Unvalidated"标签。         |
+| orphaned | 被确认在原生存储中不存在(预热:2 次 janitor 巡检)。渲染为灰显。          |
+| ghost    | 原生存储出错(REST 宕机、transcript 不可读)。渲染带一个"Retry"入口。     |
 
 ### Read path
 
-The daily `list_sessions` reads the projection in a single query per workspace
-and `session_kind`. The session page can therefore render per-kind tabs and
-running-count badges from one contract. Pending rows (`bound = 0`) are excluded
-from the wire list — the per-connection "viewed session" badge is the pending
-entry, not a list item. In this phase, work, intent, spec, and automation are wired
-to real data; discussion/tool rows remain valid schema targets for later phases.
+每日的 `list_sessions` 对每个 workspace 和 `session_kind` 单次查询这张投影表。会话页面因此
+可以从同一份契约渲染按类别分的 tab 和运行计数徽标。Pending 行(`bound = 0`)从 wire list 中
+被排除——每个连接的"正在查看会话"徽标就是这条 pending 条目,而不是一条列表项。本阶段,work、
+intent、spec 和 automation 被接到真实数据上;discussion/tool 行仍是留给后续阶段的合法
+schema 目标。
 
-An environment flag (default ON) rolls the read path back to the legacy
-claude-only listing path.
+一个环境变量开关(默认开启)可以把读路径回滚到旧版仅 Claude 的 listing 路径。
 
 ### Write triggers
 
-| Trigger                     | Effect                                                                                                                                                                                                                                                                                                    |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Create work session (UI)    | Insert a work-kind pending row (the new home for the ADR-0015 intent).                                                                                                                                                                                                                                    |
-| Freeze session agent (bind) | Drop pending row, insert real row (single entry point for both run paths); intent-started dev sessions carry `owner_kind='intent'` and `owner_id=<intent id>`, manual work sessions keep owner null.                                                                                                      |
-| Intent chat lifecycle       | Upsert intent-kind bound rows for intent communication sessions; rename/delete mirror the intent session list.                                                                                                                                                                                            |
-| Same-vendor agent swap      | Update the real row's agent.                                                                                                                                                                                                                                                                              |
-| Rename session              | Update the real row's title.                                                                                                                                                                                                                                                                              |
-| Finalize run (run end)      | Update the real row's title (resolved from the native store — the SAME source as the title bar / janitor, not the baseline which is empty on the first run; first user prompt is the fallback), last-modified, and agent, then re-broadcast the list (the async native read lands after the run settles). |
-| Remove session (delete)     | Delete the row.                                                                                                                                                                                                                                                                                           |
+| Trigger                     | Effect                                                                                                                                                                                                   |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create work session (UI)    | 插入一条 work 类别的 pending 行(ADR-0015 那个意图的新归宿)。                                                                                                                                             |
+| Freeze session agent (bind) | 丢弃 pending 行,插入真实行(两条运行路径共用的单一入口点);由 intent 发起的开发会话携带 `owner_kind='intent'` 与 `owner_id=<intent id>`,手动创建的 work 会话保持 owner 为空。                              |
+| Intent chat lifecycle       | 为 intent 通信会话 upsert intent 类别的已绑定行;rename/delete 与 intent 会话列表保持镜像同步。                                                                                                           |
+| Same-vendor agent swap      | 更新真实行的 agent。                                                                                                                                                                                     |
+| Rename session              | 更新真实行的 title。                                                                                                                                                                                     |
+| Finalize run (run end)      | 更新真实行的 title(从原生存储解析——与标题栏/janitor 使用**同一个**来源,而不是首次运行时为空的基线;首个用户 prompt 作为兜底)、last-modified 和 agent,然后重新广播列表(异步的原生读取在运行结束后才落地)。 |
+| Remove session (delete)     | 删除该行。                                                                                                                                                                                               |
 
 ### Freshness & janitor
 
-A lazy validation re-checks rows older than the validation window (24h)
-against the native stores; Codex rows are explicitly skipped. A daily janitor
-(half the STALE window = 12h) transitions born/alive → stale
-and, after a warmup (2 passes), stale → orphaned.
+一次惰性校验会重新核对超过校验窗口(24 小时)的行,对照原生存储;Codex 行被显式跳过。一个每日
+janitor(半个 STALE 窗口 = 12 小时)把 born/alive → stale,并在一次预热(2 次巡检)之后,把
+stale → orphaned。
 
 ### Schema-version rule
 
-The projection store does NOT write a global schema-version pragma — the three
-domain stores (intents, discussions, session-metadata) would clobber each
-other. All domain stores should follow this posture going forward; migrations
-key off per-table column introspection plus an additive ensure-column step,
-never off a global schema-version pragma.
+这份投影存储**不**写入一个全局 schema-version pragma——三个领域存储(intents、
+discussions、session-metadata)会互相覆盖。所有领域存储今后都应遵循这个立场;迁移应基于
+每张表各自的列内省加一个增量式的 ensure-column 步骤,绝不基于一个全局 schema-version
+pragma。
 
 ### Native-is-SoT invariant
 
-When the projection disagrees with the native store (title mismatch, session
-gone, store errored), the native store wins. The projection is refreshed, not
-preferred. When the projection is empty (a fresh install or a deleted table),
-the read path transparently rebuilds from the accessor plus the recorded
-session-agent facts and re-reads; enumerable vendors such as Claude and Codex
-both participate in this one-shot rebuild. The projection is a cache, not a gate —
-it never blocks the wire.
+当投影与原生存储不一致时(标题不符、会话消失、存储出错),原生存储胜出。投影被刷新,而不是
+被偏向。当投影为空时(一次全新安装或一张被删除的表),读路径会透明地从访问器加上已记录的
+会话-agent 事实重建,并重新读取;可枚举的厂商如 Claude 和 Codex 都会参与这一次性重建。这份
+投影是一个缓存,而不是一道关卡——它从不阻塞 wire。

@@ -1,86 +1,74 @@
-# 0006 — Decouple agent runs from WebSocket connections
+# 0006 — 将智能体运行与 WebSocket 连接解耦
 
 - **Status:** accepted
 - **Date:** 2026-05-29
 
 ## Context
 
-c3's first design bound an agent run to the WebSocket connection that started it: the
-per-connection state held a single abort handle for the one run, and creating a session,
-selecting a session, and sending a prompt each aborted that run before proceeding.
-Consequences:
+c3 最初的设计把一次智能体运行绑定到发起它的 WebSocket 连接：每连接状态只持有该次运行
+的一个 abort 句柄，创建会话、选择会话、发送提示都会在继续之前先中止该运行。后果：
 
-- Switching the viewed session **killed** the running one — only one session could make
-  progress at a time, and looking away from a long task aborted it.
-- Closing the socket (refresh, tab close) discarded all run state and aborted the run.
-- Live stream events were sent straight to the one connection's socket; there was no notion
-  of "which session this event belongs to", so a backgrounded session had nowhere to put its
-  output.
+- 切换正在查看的会话会**杀死**正在运行的会话——同一时刻只有一个会话能取得进展，移开视线
+  查看一个长任务就会中止它。
+- 关闭 socket(刷新页面、关闭标签页)会丢弃所有运行状态并中止运行。
+- 实时流事件直接发送到那一个连接的 socket；没有“这个事件属于哪个会话”的概念，因此被切
+  到后台的会话无处安放其输出。
 
-Users want multiple sessions running concurrently: switch away and the run keeps going in the
-background; switch back and see everything that happened while away.
+用户希望多个会话能并发运行：切走后运行在后台继续；切回来能看到离开期间发生的一切。
 
 ## Options considered
 
-1. **Keep runs per-connection, multiplex in the browser.** Open one WebSocket per session
-   from the browser. _Con:_ duplicates connection state, complicates the single-contract wire
-   protocol, and still loses runs on refresh; the server remains the wrong owner of run
-   lifetime.
-2. **Process-wide session-runtime registry; connection becomes a pure view.** Runs live in a
-   process-wide registry keyed by session id, each runtime owning its abort handle, an in-memory
-   event buffer, and the set of viewers currently watching it. A connection only records which
-   session it views and subscribes/unsubscribes as it switches. _Pro:_ runs survive switching,
-   refresh, and disconnect; one connection can drive many concurrent sessions; replay is
-   exact. _Con:_ in-memory buffers grow with transcript length; cross-process writers (e.g. the
-   `claude` CLI) aren't observed once a runtime exists.
+1. **运行仍按连接绑定，在浏览器端做多路复用。** 浏览器为每个会话打开一个 WebSocket。_缺
+   点：_ 重复了连接状态，使单一契约的线路协议复杂化，刷新后仍会丢失运行；服务端仍然是运
+   行生命周期的错误持有者。
+2. **进程级会话运行时注册表；连接变成纯粹的视图。** 运行存活于一个以会话 id 为键的进程级
+   注册表中，每个运行时拥有自己的 abort 句柄、一个内存事件缓冲区、以及当前正在观察它的
+   查看者集合。连接只记录自己正在查看哪个会话，随切换而订阅/退订。_优点：_ 运行能挺过切
+   换、刷新与断连；一个连接可以驱动多个并发会话；重放是精确的。_缺点：_ 内存缓冲区随
+   transcript 长度增长；一旦运行时已存在，跨进程的写入者(例如 `claude` CLI)就观察不到
+   了。
 
 ## Decision
 
-Adopt option 2. A per-session runtime owns one session's execution, decoupled from any
-connection:
+采纳方案 2。一个按会话划分的运行时拥有一个会话的执行过程，与任何连接解耦：
 
-- **Baseline + buffer replay.** On first entry the runtime snapshots the on-disk transcript as
-  the baseline; every wire event since is appended to a buffer. A connection switching back
-  replays baseline + buffer — disk is read exactly once per session per process, so there is
-  no disk/live double-counting.
-- **Pub/sub fan-out.** Emitting an event for a session appends it to that session's buffer and
-  delivers it to that session's current viewers. A connection adds itself as a viewer on select
-  and removes itself on switch-away or close.
-- **No abort on view change or disconnect.** Switching sessions and closing the socket only
-  change/clear subscriptions; the run continues in the background until it finishes or is
-  explicitly stopped (`stop_run`).
-- **Serial per session, concurrent across sessions.** A session refuses a new prompt while its
-  own turn is in flight; different sessions run concurrently with no fixed cap.
-- **Status broadcast.** Each runtime carries an idle / running / awaiting-permission status; any
-  change broadcasts `session_status` to every connection so sidebars can badge background
-  sessions.
+- **基线 + 缓冲区重放。** 运行时首次进入时，将磁盘上的 transcript 快照为基线；此后每个
+  线路事件都追加到一个缓冲区。切回来的连接重放基线 + 缓冲区——磁盘每个进程每个会话只被
+  读取一次，因此不存在磁盘/实时数据的重复计数。
+- **发布/订阅式扇出。** 为某个会话发出一个事件，会将其追加到该会话的缓冲区，并投递给该
+  会话当前的所有查看者。连接在选中会话时把自己加为查看者，在切走或关闭时把自己移除。
+- **视图切换或断连不中止运行。** 切换会话与关闭 socket 只会改变/清除订阅；运行在后台继
+  续，直到完成或被显式停止(`stop_run`)。
+- **单会话内串行，跨会话并发。** 一个会话在自身回合进行中时拒绝新的提示；不同会话并发
+  运行，没有固定上限。
+- **状态广播。** 每个运行时携带一个空闲/运行中/等待权限的状态；任何变化都会向每个连接
+  广播 `session_status`，以便侧边栏能为后台会话打上徽标。
 
 ## Consequences
 
-- **Easier:** true multi-session concurrency; refresh/reconnect resumes the view of a live run;
-  background sessions surface status, awaiting-permission highlight, and browser notifications.
-- **Harder:** the server now holds run state for the process lifetime (in-memory buffers, no
-  eviction yet) — acceptable for a local single-user tool. A run with no viewers still consumes
-  resources until it ends or is stopped.
-- **Migration:** the per-connection run-abort / run-handle / active-session / active-mode state
-  is gone; the connection holds only which session it is viewing. Permission decisions remain
-  global by their correlation id, so a backgrounded session's prompt is answerable after
-  switching back. The superseded "closing the socket aborts the in-flight run" rule (architecture
-  cross-cutting, agent-session AS-R8) is replaced.
+- **Easier:** 真正的多会话并发；刷新/重连能恢复对一个存活运行的查看；后台会话能呈现状
+  态、等待权限高亮与浏览器通知。
+- **Harder:** 服务端现在在进程整个生命周期内持有运行状态(内存缓冲区，暂无淘汰机
+  制)——对于本地单用户工具而言是可接受的。一个没有任何查看者的运行仍会消耗资源，直到结
+  束或被停止。
+- **Migration:** 按连接的运行中止/运行句柄/活动会话/活动模式状态已不复存在；连接只持有
+  自己正在查看的会话。权限决策仍按其关联 id 保持全局，因此一个被切到后台的会话的提示，
+  在切回来后仍可应答。已被取代的“关闭 socket 会中止正在进行的运行”规则(架构横切规范，
+  agent-session AS-R8)被替换。
 
 ## Compliance
 
-- Runs MUST NOT be aborted by `select_session`, `create_session`, or connection close — only by
-  `stop_run`, `delete_session`, or `remove_workspace`. Reviewers reject any abort on the
-  view-change paths.
-- Every live stream event MUST flow through the runtime's emit path (buffer + viewers), never
-  directly to a socket, so replay stays complete.
+- 运行 MUST NOT 被 `select_session`、`create_session` 或连接关闭中止——只能被
+  `stop_run`、`delete_session` 或 `remove_workspace` 中止。评审者应拒绝在视图切换路径上
+  的任何中止行为。
+- 每个实时流事件 MUST 经由运行时的 emit 路径(缓冲区 + 查看者)流转，绝不直接发往某个
+  socket，以保持重放的完整性。
 
 ## References
 
-- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) — run lifecycle & rules.
-- [session-registry spec](../../domains/core/session-registry/session-registry-spec.md) — viewed session vs runtime.
+- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) — 运行生命周期与规则。
+- [session-registry spec](../../domains/core/session-registry/session-registry-spec.md) — 正在查看的会话 vs 运行时。
 - [WebSocket protocol](../../shared/api-conventions/websocket-protocol.md) — `stop_run`,
-  `session_status`, `user_text`, `session_selected.status`, `ready.statuses`.
-- Supersedes the per-connection-abort aspect of [ADR 0002](0002-websocket-as-permission-transport.md)'s
-  connection model (the transport decision itself stands).
+  `session_status`, `user_text`, `session_selected.status`, `ready.statuses`。
+- 取代了 [ADR 0002](0002-websocket-as-permission-transport.md) 连接模型中的按连接中止那部分
+  (传输方案本身的决策维持不变)。

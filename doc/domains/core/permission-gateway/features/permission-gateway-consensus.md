@@ -1,165 +1,151 @@
-# permission-gateway — Multi-agent Consensus
+# permission-gateway — 多智能体共识
 
-Implements rule [PG-R9](../permission-gateway-spec.md). An **optional** pre-step in front of the human
-permission prompt: instead of asking the user immediately, c3 first asks the
-_other_ configured agents whether the tool call should be allowed, and only
-falls back to the human when they disagree.
+实现规则 [PG-R9](../permission-gateway-spec.md)。人工权限提示前的一个**可选**前置步骤:
+c3 不会立即询问用户，而是先询问*其他*已配置的智能体该工具调用是否应被允许，
+只有在它们意见不一致时才回退到人类。
 
-Off by default. Enabled via `SystemSettings.consensus.enabled` (system settings
-page). Orchestration spawns advisor queries; the vote parsing / tally / summary is
-a pure, SDK-free unit so it can be unit-tested in isolation, mirroring the
-permission registry.
+默认关闭。通过 `SystemSettings.consensus.enabled`(系统设置页)启用。编排负责
+派生顾问查询；投票解析 / 计票 / 摘要是一个纯粹的、不依赖 SDK 的单元，因此可以
+被独立单元测试，与权限注册表如出一辙。
 
-### Config source: `workspacePath`, not the worktree `cwd`
+### 配置来源: `workspacePath`，而非 worktree 的 `cwd`
 
-The consensus config — the enable switch, the voter roster, and the majority
-toggle — is read by **`workspacePath`** (the registered project root), **never** by
-the run's effective `cwd`. The two differ in worktree-isolated runs (intent
-`start_development` / automation worktree mode), where `cwd` is the detached
-worktree (`<c3-home>/worktrees/<project>/intent-<id>/`) while `workspacePath` stays
-the project root. `loadWorkspaceSetting` keys on the exact path (no parent-directory
-walk, no worktree→root normalization), so reading config off the worktree `cwd`
-misses `projectConfigs[root]` entirely — `enabled` falls back to `false` and voting
-is silently skipped. The gateway therefore threads both: `GatewaySpec.workspacePath`
-(config + WorkCenter audit attribution) and `GatewaySpec.cwd` (the advisor queries'
-launch directory, correctly the worktree). `ConsensusParams` mirrors the split —
-`isConsensusEnabled` / `getConsensusConfig` / `isConsensusMajorityEnabled` read
-`workspacePath`; the one-shot advisor `askAgentOnce` runs in `cwd`. In
-current-branch mode the two paths coincide, so behaviour is unchanged. Checkpoint
-consensus (automation orchestrator) already reads config off `workspacePath`.
+共识配置——启用开关、投票者名单、多数决开关——是按 **`workspacePath`**(已注册
+的项目根目录)读取的，**从不**按运行的实际生效 `cwd` 读取。二者在 worktree
+隔离运行中(`start_development` 意图 / automation worktree 模式)是不同的，
+此时 `cwd` 是分离的 worktree(`<c3-home>/worktrees/<project>/intent-<id>/`)，
+而 `workspacePath` 仍是项目根目录。`loadWorkspaceSetting` 按精确路径取键
+(不做上级目录遍历，也不做 worktree→root 归一化)，因此若按 worktree 的 `cwd`
+读取配置会完全错过 `projectConfigs[root]`——`enabled` 会回退为 `false`，
+投票被静默跳过。因此网关同时穿引这两者:`GatewaySpec.workspacePath`(配置 +
+WorkCenter 审计归属)与 `GatewaySpec.cwd`(顾问查询的启动目录，正确地是
+worktree)。`ConsensusParams` 镜像这一拆分——`isConsensusEnabled` /
+`getConsensusConfig` / `isConsensusMajorityEnabled` 读取 `workspacePath`；
+一次性顾问 `askAgentOnce` 在 `cwd` 中运行。在当前分支模式下二者路径重合，
+所以行为不变。检查点共识(automation 编排器)已经是按 `workspacePath` 读取
+配置。
 
-### Majority toggle (config base)
+### 多数决开关(配置基础)
 
-`SystemSettings.consensus.majority` is a second, optional system switch (checkbox
-in the settings page next to "Enable multi-agent consensus voting"). Default
-`false` ⇒ **unanimous-only**: the current behaviour where a prompt auto-resolves
-only when every voter agrees. When `true`, a consensus is allowed to auto-resolve
-on a **clear majority** verdict among the voters instead of requiring unanimity;
-a **tie or no clear majority** still defers to the human (the fail-safe invariant
-is preserved). The flag is normalized strictly: it is true only for an explicit
-`true`; missing/invalid ⇒ `false`, so pre-majority configs keep unanimous
-behaviour. It is independent of `enabled` and only meaningful when consensus is
-also on.
+`SystemSettings.consensus.majority` 是第二个可选的系统开关(设置页中"启用
+多智能体共识投票"旁的复选框)。默认 `false` ⇒ **仅一致同意**:即当前行为，
+一个提示仅在每个投票者都一致同意时才自动解决。当为 `true` 时，共识可以在
+投票者中出现**明确多数**裁决时自动解决，而不要求一致；一个**平局或没有
+明确多数**仍会回退到人类(fail-safe 不变式得以保留）。该标记被严格归一化:
+仅在显式为 `true` 时才为真；缺失/无效 ⇒ `false`，因此多数决出现之前的配置
+保持一致同意行为。它独立于 `enabled`，仅在共识本身也开启时才有意义。
 
-**Allow/deny adjudication.** The vote is tallied with the majority flag in effect:
+**允许/拒绝裁决。** 投票以生效的多数决标记进行计票:
 
-- `majority = false` (default): the decision is set only when **every** voter cast
-  the same `allow`/`deny` verdict (the original unanimous-only rule); any split,
-  abstention, or empty set ⇒ no decision ⇒ human.
-- `majority = true`: abstentions are **not counted**; a **strict majority** of the
-  cast votes decides (`allow > deny` ⇒ allow, `deny > allow` ⇒ deny). A **tie**
-  (`2v2`), no clear majority, or no cast vote (all abstained / empty) ⇒ no
-  decision ⇒ human, preserving the fail-safe invariant.
+- `majority = false`(默认): 仅当**每个**投票者都投出相同的 `allow`/`deny`
+  裁决时才设定决策(原始的仅一致同意规则)；任何分歧、弃权或空集 ⇒ 无决策
+  ⇒ 人类。
+- `majority = true`: 弃权**不计入**统计；已投出票中的**严格多数**决定
+  结果(`allow > deny` ⇒ allow，`deny > allow` ⇒ deny）。**平局**
+  (`2v2`)、没有明确多数，或没有任何有效投票(全弃权 / 空集) ⇒ 无决策
+  ⇒ 人类，保留 fail-safe 不变式。
 
-The tally always reports **literal** unanimity (every voter agreed, no abstain)
-regardless of the toggle, kept separate from the decision so the summary/console
-can honestly tell a unanimous verdict (`所有 agent 一致…`) from a majority-carried
-one (`多数派裁决…`, emitted by the deterministic fallback summary when a decision
-is set while unanimity is false). The gateway auto-resolves whenever a decision is
-present — covering both the unanimous and the majority case — and otherwise prompts
-the human with the opinions attached.
+无论该开关状态如何，计票总是报告**字面**一致性(所有投票者都同意，无弃权），
+与决策分开保存，这样摘要/控制台可以诚实地区分一致裁决(`所有 agent 一致…`)
+与多数决裁决(`多数派裁决…`，由确定性回退摘要在决策被设定但一致性为 false
+时发出）。网关只要有决策存在就会自动解决——同时覆盖一致与多数两种情形——
+否则会附上各方意见提示人类。
 
-The same toggle governs the **AskUserQuestion** path, but per-question rather than
-as one allow/deny verdict — each question is auto-answered on a clear plurality of
-the voters' answers. See [AskUserQuestion — per-question answering](#askuserquestion--per-question-answering).
+同一个开关也支配 **AskUserQuestion** 路径，但不是作为单个 allow/deny
+裁决，而是逐个问题——每个问题在投票者答案出现明确相对多数时自动作答。见
+[AskUserQuestion——逐题作答](#askuserquestion逐题作答)。
 
-### Beyond tool permissions: checkpoint consensus
+### 超越工具权限: 检查点共识
 
-The majority toggle also enables the **automation orchestrator**'s checkpoint consensus
-override (RM-A14, see [intent-management spec](../../intent-management/intent-management-spec.md)). When the loop
-detects either a `stuck` judge verdict or an unanswered AskUserQuestion (the pending-question
-guard), and the majority toggle is ON, the orchestrator spawns a vote among peer agents — who
-decide whether the development process should `continue` past the checkpoint or `wait` for
-human intervention.
+多数决开关还启用了**automation 编排器**的检查点共识覆盖(RM-A14，见
+[intent-management spec](../../intent-management/intent-management-spec.md)）。当循环检测到
+`stuck` 判定结果或一个未回答的 AskUserQuestion(待决问题守卫)，且多数决
+开关为开启状态时，编排器会在对等智能体之间发起一次投票——由它们决定开发
+流程是应该越过检查点`continue`，还是应该`wait`等待人类干预。
 
-Checkpoint consensus reuses the same one-shot advisor infrastructure, the same
-shared (cross-vendor) participant selector, and the same fail-safe invariant (a tie → stop).
-The continue/wait prompt is already vendor-neutral (natural language), so it does **not** go
-through the tool-risk normalizer. It differs from
-the tool-permission and ask-question consensus in that it is owned by the automation
-orchestrator, not the permission gateway, and that it decides _automation flow_ (`continue`
-vs `wait`) rather than answering a tool-use or AskUserQuestion. The outcome is broadcast on
-the automation status so the UI/events can render the process.
+检查点共识复用同一套一次性顾问基础设施、同一个共享的(跨厂商)参与者选择器，
+以及同一个 fail-safe 不变式(平局 → 停止）。continue/wait 提示已经是厂商
+中立的(自然语言)，因此它**不会**经过工具风险归一化器。它与工具权限和
+问答共识的不同之处在于:它由 automation 编排器拥有，而非权限网关；并且它
+决定的是*自动化流程*(`continue` 还是 `wait`)，而不是回答一次工具使用或
+AskUserQuestion。结果会广播到自动化状态上，供 UI/事件渲染该流程。
 
-**Merged gate.** When the majority toggle is OFF, checkpoint consensus is never triggered —
-the orchestrator follows the existing stop path for both the stuck and pending-question cases.
-When it IS on, the same agents vote on both tool-permission and checkpoint questions; no
-separate agent pool or configuration field exists.
+**合并闸门。** 当多数决开关为关闭时，检查点共识永远不会被触发——编排器
+对 stuck 与待决问题两种情况都遵循既有的停止路径。当它开启时，同一批智能体
+既对工具权限投票也对检查点问题投票；不存在单独的智能体池或配置字段。
 
 ## Roles
 
-| Role    | Who                                                                                                                                        | Job                                                               |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| Voters  | Every enabled agent **except** the session's own (resolved), **regardless of vendor**, optionally narrowed by the `custom` voter allowlist | Judge the normalized request from recent context; `allow`/`deny`  |
-| Decider | The session's own agent                                                                                                                    | Summarize the voters' opinions in one sentence (Display language) |
+| Role    | Who                                                                                          | Job                                              |
+| ------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Voters  | 除该会话自身外(已解析)的每个已启用智能体，**不分厂商**，可选地由 `custom` 投票者允许清单收窄 | 依据近期上下文判断归一化后的请求；`allow`/`deny` |
+| Decider | 该会话自身的智能体                                                                           | 用一句话总结投票者的意见(展示语言)               |
 
-If there are no voters (only the session's own agent, or the `custom` allowlist is empty /
-all-stale), consensus is skipped and the human is prompted as usual.
+如果没有投票者(只有会话自身的智能体，或 `custom` 允许清单为空 / 全部过期），
+共识被跳过，照常提示人类。
 
-### Cross-vendor voting + risk normalization (2026-07-09)
+### 跨厂商投票 + 风险归一化(2026-07-09)
 
-Consensus voting is **vendor-neutral**: every enabled non-self agent votes regardless of
-vendor (a shared participant selector, `selectConsensusVoters`, reused by tool voting,
-`AskUserQuestion` voting, and the automation checkpoint vote). This supersedes the earlier
-vendor-homogeneous rule (2026-06-06-006), which limited voting to the session's own vendor
-because a native tool name + its risk meaning are not comparable across vendors.
+共识投票是**厂商中立**的:每个启用的非自身智能体都会投票，不分厂商(一个
+共享的参与者选择器 `selectConsensusVoters`，被工具投票、`AskUserQuestion`
+投票以及自动化检查点投票共同复用）。这取代了此前的厂商同构规则
+(2026-06-06-006)，该规则曾把投票限制在会话自身厂商内，因为一个原生工具名
+及其风险含义在不同厂商间不可比较。
 
-A cross-vendor voter is made possible for **tool** permission requests by a server-side
-**risk normalizer** that runs BEFORE fan-out. It deterministically maps
-`(requesting vendor, native tool name, input)` to a vendor-neutral payload:
+一个跨厂商投票者之所以对**工具**权限请求可行，是因为一个在 fan-out **之前**
+运行的服务器端**风险归一化器**。它把 `(requesting vendor, native tool name,
+input)` 确定性地映射为一个厂商中立载荷:
 
-- `operationIntent` — a stable neutral operation category + short description;
-- `resourceScope` — a neutral `kind` (`file` / `command` / `url` / `search` / …) plus the
-  structurally-extracted targets (paths, command target, remote host/URL). Never the raw
-  native input verbatim;
-- `risks` — explicit `read` / `write` / `execute` / `network` booleans (plus optional
-  non-vendor tags);
-- `normalizationVersion` — so prompts, protocol, and audit stay interpretable.
+- `operationIntent`——一个稳定的中立操作类别 + 简短描述；
+- `resourceScope`——一个中立的 `kind`(`file` / `command` / `url` / `search`
+  / …)加上结构化提取的目标(路径、命令目标、远程主机/URL）。从不是原始的
+  原生输入原文；
+- `risks`——显式的 `read` / `write` / `execute` / `network` 布尔值(加上可选的
+  非厂商标签)；
+- `normalizationVersion`——使提示、协议与审计保持可解释。
 
-Voters see **only** this payload — never the native tool name or raw input — so a Codex
-advisor can judge a Claude session's `Bash`/`Write` request (and vice-versa). A successful
-normalization enters the existing tally unchanged: a `write`/`execute`/`network` axis is
-descriptive, not a hard deny.
+投票者**只**看到这个载荷——从不看到原生工具名或原始输入——因此一个 Codex
+顾问可以判断一个 Claude 会话的 `Bash`/`Write` 请求(反之亦然）。一次成功的
+归一化会原样进入既有的计票:`write`/`execute`/`network` 轴是描述性的，
+而非硬性拒绝。
 
-**Fail-closed normalization.** The normalizer is deterministic and never throws. An unknown
-tool, a missing critical target, an invalid input shape, or any internal error returns a
-**stable reason code**; the round then records every selected voter as an `abstain` (no
-advisor call is made) ⇒ empty verdict ⇒ the human is prompted. A normalization failure
-**never** auto-allows and never low-risk-defaults a value it could not derive. Adding a new
-native tool means adding a normalizer rule first — until then it safely degrades to abstain +
-human approval.
+**失败即关闭的归一化。** 该归一化器是确定性的且从不抛出。未知工具、缺失
+关键目标、无效的输入形状，或任何内部错误都会返回一个**稳定的原因码**；
+该轮随即把每个被选中的投票者记为 `abstain`(不发起顾问调用)⇒ 空裁决 ⇒
+提示人类。归一化失败**从不**自动允许，也从不对无法推导的值套用低风险
+默认值。新增一个原生工具意味着要先添加一条归一化规则——在此之前它会安全
+降级为弃权 + 人工批准。
 
-The `AskUserQuestion` and checkpoint continue/wait votes are already vendor-neutral
-(natural-language prompts) and skip normalization entirely.
+`AskUserQuestion` 与检查点 continue/wait 投票已经是厂商中立的(自然语言
+提示)，会完全跳过归一化。
 
-**Honest audit.** The outcome carries the normalized payload (or the failure reason code) and
-each voter's `vendor`; the console / permission panel / WorkCenter render the participating
-agents + vendors, the risk axes, any abstentions, and the final verdict. The old "共识限
-\<vendor\> 内" scope marker (and `vendorScope`/`crossVendorExcluded` fields) are gone; old
-audit records without the new fields still read, they just no longer show the scope note.
+**诚实审计。** 结果携带归一化后的载荷(或失败原因码)以及每个投票者的
+`vendor`；控制台 / 权限面板 / WorkCenter 会渲染出参与的智能体 + 厂商、
+风险轴、任何弃权情况，以及最终裁决。旧的"共识限 \<vendor\> 内"范围标记
+(以及 `vendorScope`/`crossVendorExcluded` 字段)已被移除；没有新字段的
+旧审计记录仍可读取，只是不再显示范围提示。
 
-### Custom voter selection (2026-06-15, cross-vendor since 2026-07-09)
+### 自定义投票者选择(2026-06-15，2026-07-09 起跨厂商)
 
-The consensus `mode` config key chooses **who** votes, filtering by id only (never by vendor):
+共识 `mode` 配置键选择**谁**投票，仅按 id 过滤(从不按厂商)：
 
-- `mode: 'all'` (default / absent) — every enabled non-self agent votes, across vendors.
-  The `agentIds` allowlist is ignored and not persisted.
-- `mode: 'custom'` — voters are the **intersection** of the `agentIds` allowlist with the
-  enabled non-self set. This lets the user exclude irrelevant read-only agents or restrict
-  voting to high-trust ones. It narrows by id and may include agents of any vendor. An empty
-  (or all-stale) allowlist ⇒ zero voters ⇒ consensus is skipped and the human is prompted.
+- `mode: 'all'`(默认/缺省) —— 每个启用的非自身智能体都投票，跨厂商。
+  `agentIds` 允许清单被忽略且不持久化。
+- `mode: 'custom'` —— 投票者是 `agentIds` 允许清单与启用的非自身集合的
+  **交集**。这让用户可以排除不相关的只读智能体，或将投票限制在高信任
+  智能体上。它按 id 收窄，可以包含任意厂商的智能体。一个空的(或全部
+  过期的)允许清单 ⇒ 零投票者 ⇒ 共识被跳过，照常提示人类。
 
-**Double static filtering of disabled agents.** A disabled agent never votes by
-two independent guards: (1) workspace-setting normalization cleans the `agentIds`
-allowlist, dropping ids that no longer exist or are disabled (deduped); (2) the runtime
-voter set is built from the enabled-only agents, so even a stale id that slipped through
-cannot resurrect a voter. Both are **static** snapshots — there is no mid-run add/remove of
-voters; the config snapshot at vote time governs.
+**已禁用智能体的双重静态过滤。** 一个已禁用的智能体永远不会通过两道独立
+守卫投票:(1) 工作区设置归一化会清理 `agentIds` 允许清单，剔除不再存在或
+已禁用的 id(去重）；(2) 运行时投票者集合是从仅启用的智能体集合构建的，
+因此即便有过期 id 漏过，也无法复活为一个投票者。二者都是**静态**快照——
+运行过程中不存在中途添加/移除投票者；投票时刻的配置快照决定一切。
 
-The selection is configured per workspace in the Workspace Setting consensus
-section (an `All / Custom` radio; custom reveals an enabled-agent checklist). The
-server reads it per workspace and applies it at every voting site (tool permission,
-AskUserQuestion, and the automation checkpoint).
+该选择是在 Workspace Setting 的共识区块按工作区配置的(一个 All /
+Custom 单选；custom 会展开一个已启用智能体的复选清单）。服务器按工作区
+读取它，并在每一个投票场景(工具权限、AskUserQuestion、以及自动化检查点)
+应用它。
 
 ## Flow
 
@@ -200,173 +186,156 @@ sequenceDiagram
 
 ## Advisor query
 
-Each voter (and the decider) runs as a single non-interactive one-shot turn under
-that agent's launch overrides, with **all tools denied** so it reasons only from the
-provided context. No setting sources are loaded, keeping the call light (no CLAUDE.md /
-hooks / Skills). The run's cancellation signal interrupts every in-flight advisor query
-when the session switches or a new prompt starts.
+每个投票者(以及裁决者)都作为一次非交互式的一次性回合，在该智能体的启动
+覆盖参数下运行，且**所有工具都被禁用**，因此它只能根据所提供的上下文推理。
+不加载任何设置来源，以保持该调用轻量(没有 CLAUDE.md / hooks / Skills）。
+当会话切换或新提示开始时，运行的取消信号会中断每一个在途的顾问查询。
 
-The recent-context buffer is the user prompt plus streamed assistant text,
-capped at ~4000 chars.
+近期上下文缓冲区是用户提示加上流式的助手文本，上限约 4000 字符。
 
 ## Contracts
 
-| Capability           | Contract                                                                                                                                                                                                                                                 |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Run a consensus vote | No outcome ⇒ disabled or no voters (caller does the plain human prompt). Otherwise a full outcome.                                                                                                                                                       |
-| Normalize a tool req | Deterministic map `(vendor, toolName, input)` → neutral payload; never throws. Failure ⇒ a stable reason code, every voter abstains (no advisor call), outcome carries `normalizationFailure` and `decision: null` (defers to human, never auto-allows). |
-| Parse a vote         | Strict-JSON first, then a keyword scan; ambiguous/empty ⇒ the caller records an **abstain**.                                                                                                                                                             |
-| Tally                | `unanimous` = literal all-agree (no abstain), independent of the majority toggle. The decision: unanimous-only when majority is off; a strict majority of cast votes (abstain excluded) when on — tie / no clear majority / no cast vote ⇒ no decision.  |
-| Summarize            | The decider agent produces one sentence in the Display language; a deterministic tally summary is used on error/abort.                                                                                                                                   |
+| Capability         | Contract                                                                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 运行一次共识投票   | 无结果 ⇒ 已禁用或无投票者(调用方走普通人工提示）。否则返回一个完整结果。                                                                                                                               |
+| 归一化一个工具请求 | 确定性映射 `(vendor, toolName, input)` → 中立载荷；从不抛出。失败 ⇒ 一个稳定的原因码，每个投票者弃权(不发起顾问调用)，结果携带 `normalizationFailure` 与 `decision: null`(回退到人类，从不自动允许）。 |
+| 解析一次投票       | 先严格 JSON，再关键词扫描；含糊/为空 ⇒ 调用方记为一次**弃权**。                                                                                                                                        |
+| 计票               | `unanimous` = 字面上全体同意(无弃权)，与多数决开关无关。决策:多数决关闭时仅一致同意；开启时以有效投票(排除弃权)的严格多数决定——平局 / 无明确多数 / 无有效投票 ⇒ 无决策。                               |
+| 摘要               | 裁决者智能体用展示语言生成一句话；出错/中止时使用确定性的计票摘要。                                                                                                                                    |
 
 ## Invariants
 
-- **Human override preserved.** Consensus never removes the human prompt for a
-  split decision; it only short-circuits the unanimous case.
-- **Fail-safe to human.** Any voter error/timeout/unparseable answer is an
-  abstain, which is non-unanimous, so the human decides (PG-R9). On the ask path
-  the decider may rescue a split/abstained question into consensus, but only with a
-  re-validated exact-label answer; a decider error/abort/parse-failure or invalid
-  answer emits no upgrade, so the question stays split and defers to the human.
-- **De-bias is presentation-only.** Two de-bias passes (ask path only — see
-  below) touch only the text shown to the advisors, never the option set, the
-  tally, or SDK answer injection:
-  1. _Recommendation stripping_ removes the asker's trailing marker from presented
-     labels. A marker-free echo is restored to its original exact label by the
-     option matcher's stripped-exact pass; stripping a marker-less label is a no-op.
-  2. _Order shuffling_ presents each voter an **independently** randomized option
-     order (and the decider one shuffled order) to dilute the LLM's positional
-     ("first option") bias.
-     Both are transparent downstream: option matching resolves a choice by label
-     **content, never by option index**, and the answer key sorts labels before
-     comparing, so the parse passes the **original** questions and the tally,
-     decider upgrade (`decidedByAgent`), agreed answers, and answer injection (matches
-     by original label) all key off the canonical labels regardless of presentation.
-- **No input mutation.** Auto-allow returns the original input unchanged (PG-R6).
-  The sole exception is `AskUserQuestion` (see below), where the chosen answers
-  are deliberately injected into the input — the only headless channel to answer.
-- **No leak on abort.** Advisor queries attach to the run's cancellation signal and
-  are interrupted on teardown, like the human prompt (PG-R4).
-- **Consensus window never drops a live prompt.** The ask-consensus pass spawns one
-  advisor query per voter plus a decider — a multi-second window in which the
-  `AskUserQuestion` tool-use is pending and the request is not yet visible to the
-  human. The pass is fully contained: an advisor error/abort/slowness can never throw
-  into or abort the main run; the worst case is "no opinions, ask the human".
-  Crucially, while a run is **alive** and a prompt has been emitted but not yet
-  answered, a stray `turn_end` must NOT settle the session to `idle` — the runtime
-  holds it at `awaiting_permission` (backed by the set of pending request ids) so the
-  answer panel stays actionable instead of downgrading to a static "曾请求…" history
-  line. The guard releases per-request when the human answers and wholesale on
-  teardown; once the run is genuinely gone, `idle` is correct (the prompt can no longer
-  be answered). A teardown deny that beats the human answer is logged so the precise
-  trigger can be confirmed in a live multi-agent setup.
-- **No unanswerable residue.** If the run signal is already aborted when the
-  consensus pass returns (the run was torn down _inside_ the window, before the
-  request was ever shown), the gateway does **not** emit the `permission_request`
-  at all — it denies immediately. Emitting it would leave a phantom prompt in the
-  buffer that renders as a dead static "曾请求…" line nobody can answer. Both the
-  `AskUserQuestion` and the allow/deny consensus branches apply this guard.
+- **保留人类否决权。** 共识永远不会移除分歧情况下的人工提示；它只是在一致
+  同意的情形下走捷径。
+- **fail-safe 回退到人类。** 任何投票者的出错/超时/无法解析的答案都记为
+  弃权，这属于非一致，因此由人类决策(PG-R9)。在问答路径上，裁决者可以把
+  一个分歧/弃权的问题挽救为共识，但仅限于提供一个经重新校验的精确标签答案；
+  裁决者出错/中止/解析失败或答案无效不会产生升级，该问题仍保持分歧并回退
+  给人类。
+- **去偏仅限于呈现层面。** 两个去偏处理(仅问答路径——见下文)只触及
+  展示给顾问的文本，从不触及选项集合、计票或 SDK 答案注入:
+  1. _推荐标记剥离_ 从展示的标签中移除提问者附加的尾部标记。一个不带标记的
+     回声会被选项匹配器的去标记精确匹配阶段还原为其原始精确标签；剥离一个
+     本身不带标记的标签是空操作。
+  2. _顺序打乱_ 为每个投票者呈现一个**独立**随机化的选项顺序(裁决者也用一个
+     打乱后的顺序)，以稀释 LLM 的位置("第一个选项")偏见。
+     两者对下游都是透明的:选项匹配按标签**内容**而非选项索引解析选择，
+     答案键在比较前会对标签排序，因此解析所使用的**原始**问题，以及计票、
+     裁决者升级(`decidedByAgent`)、达成一致的答案与答案注入(按原始标签
+     匹配)都以规范标签为准，与呈现方式无关。
+- **无输入修改。** 自动允许会原样返回原始输入(PG-R6）。唯一的例外是
+  `AskUserQuestion`(见下文)，其中所选答案被特意注入到输入中——这是唯一的
+  无头作答通道。
+- **中止时不泄漏。** 顾问查询挂载在运行的取消信号上，会在拆除时被中断，
+  与人工提示一样(PG-R4）。
+- **共识窗口永不丢失一个存活的提示。** 问答共识流程会为每个投票者外加一个
+  裁决者各派生一次顾问查询——这是一个数秒的窗口，其间 `AskUserQuestion`
+  的工具使用处于待决状态，而该请求尚未对人类可见。该流程是完全自包含的:
+  一个顾问的出错/中止/迟缓永远不会抛出到主运行中或中止它；最坏情况是
+  "没有意见，询问人类"。关键的是，当一个运行**存活**且一个提示已发出但
+  尚未被回答时，一次偶发的 `turn_end` **不得**把该会话结算为 `idle`——
+  运行时会将其保持在 `awaiting_permission`(由待决请求 id 集合支撑)，
+  使答案面板保持可操作，而不是降级为一条静态的"曾请求…"历史行。该守卫
+  会在人类回答时按请求逐个释放，在拆除时整体释放；一旦运行确实已消失，
+  `idle` 才是正确的(该提示已无法再被回答）。一个抢在人工回答之前发生的
+  拆除拒绝会被记录日志，以便在真实的多智能体场景中确认精确的触发点。
+- **不留无法回答的残留。** 如果共识流程返回时运行信号已经被中止(运行是
+  在窗口**内部**、请求还从未被展示出来之前就被拆除的），网关**不会**发出
+  `permission_request`——它直接立即拒绝。发出它会在缓冲区中留下一个幽灵
+  提示，渲染成一条没有人能回答的死的静态"曾请求…"行。`AskUserQuestion`
+  与 allow/deny 共识分支都应用这道守卫。
 
-## AskUserQuestion — per-question answering
+## AskUserQuestion——逐题作答
 
-`AskUserQuestion` is **not** an allow/deny tool: it carries `questions`, each
-with `options` (and a `multiSelect` flag), and needs an _answer per question_,
-not a verdict. So the gateway routes it to a separate branch (guarded by detecting
-the questions array) that **always** runs — rendering the answer panel and injecting
-the chosen answers is the base mechanism that makes `AskUserQuestion` answerable at
-all in c3's headless (no-TTY) setup. The consensus _voting_ within that branch,
-however, only happens when consensus is **enabled**: the ask-consensus pass yields no
-outcome when disabled (or with no voters / no questions), so there is no auto-answer
-and the human fills the panel unaided.
+`AskUserQuestion` **不是**一个 allow/deny 工具:它携带 `questions`，每个
+问题都有 `options`(以及一个 `multiSelect` 标记），需要*逐题作答*，而非
+一个裁决。因此网关把它路由到一个单独的分支(由检测 questions 数组来
+守卫)，该分支**总是**运行——渲染答案面板并注入所选答案是使
+`AskUserQuestion` 在 c3 的无头(无 TTY)环境下可被回答的基础机制。然而，
+该分支内的共识*投票*仅在共识**启用**时才发生:问答共识流程在禁用时(或
+无投票者 / 无问题时)不产生结果，因此不会有自动作答，人类需要独自填写
+面板。
 
-| Role    | Job (ask path)                                                                                                   |
-| ------- | ---------------------------------------------------------------------------------------------------------------- |
-| Voters  | Answer **every** question — pick option label(s) or write a custom reply, with reason                            |
-| Decider | Summarize the per-question answers (Display language) **and** adjudicate split questions for effective consensus |
+| Role    | Job (ask path)                                                         |
+| ------- | ---------------------------------------------------------------------- |
+| Voters  | 回答**每一个**问题——选取选项标签(或多个)，或撰写自定义回复，并附上理由 |
+| Decider | 总结逐题答案(展示语言)**并**为分歧的问题裁决是否达成有效共识           |
 
-- Each voter gets a per-question voter prompt and returns structured per-question
-  choices; the parse resolves each choice to an option label via tolerant matching
-  and marks any missing/garbled question an **abstain** (ignored in that question's
-  tally).
-- **Recommendation de-bias.** The `AskUserQuestion` convention lets the asker flag
-  its preferred choice by appending a trailing marker (`方案A (推荐)`,
-  `Use X (Recommended)`). Feeding that to the advisors would anchor them to the
-  asker's leaning and defeat independent judgement, so the voter prompt and the
-  decider prompt (both its option list **and** the echoed advisor answers) present
-  labels with the marker stripped. Stripping is **end-anchored and bracketed only**
-  (`()（）[]【】` × 推荐/建议/默认/recommended/recommend/default), so a label that
-  merely ends in such a word without brackets (`使用系统默认`) is untouched.
-- **Order de-bias.** Beyond the textual marker, the **fixed order** of the options
-  is itself an anchor — an LLM tends to favour whatever comes first. So each voter is
-  presented an **independently** shuffled option order (Fisher–Yates), and the
-  decider's split-question option list is shuffled once. Per-voter diversity dilutes
-  the positional bias across the N votes at no extra cost (still one advisor query per
-  voter). Shuffling is **presentation-only and index-agnostic**: it reorders only the
-  array passed into the prompt builder; the parse is handed the **original** questions,
-  and option matching resolves by label content (not position), so
-  tally/upgrade/injection are unaffected (an earlier scope rejected reordering in
-  favour of marker-stripping only — that decision is now superseded). Ask path
-  only — the allow/deny path has no candidate list to reorder.
-- **Tolerant label matching.** Advisors often echo a label with reasoning appended
-  (`"方案A：扩展协议: <why>"`) or embed it in a sentence. Match order is: exact
-  (case-insensitive) → **stripped-exact** (de-biased label compared to de-biased
-  options, see below) → longest label that prefixes / is prefixed by the choice →
-  longest label contained in / containing it. Longest-first keeps a specific label
-  from losing to a shorter sibling. Without this, a clear pick is mis-recorded as an
-  abstain, wrongly splitting the question. The stripped-exact pass is what **restores**
-  an advisor's marker-free echo (it only ever saw the de-biased label) to the
-  **original exact label** the SDK must be answered with.
-- The tally makes a question literally **unanimous** only when every voter produced a
-  parseable answer (≥1, none abstained) and they all normalize identically (the answer
-  key: option labels sorted + comma-joined, else the custom text). Unanimity is the gate
-  the gateway auto-answers on; the two `decidedBy*` flags below mark the _non-literal_
-  ways a question reached that gate.
-- **Majority pre-step.** When the majority toggle (the same switch as the allow/deny
-  path) is on and the literal vote is **not** unanimous, the tally resolves the question
-  to its **plurality** answer: abstentions are excluded, the cast answers are grouped by
-  answer key, and the **single** most-voted answer wins — the question is marked agreed
-  and `decidedByMajority`. A **tie** for the top count, **no unique leader**, or **no
-  cast vote** (all abstained / empty) keeps it split ⇒ defer to the human. With the
-  toggle **off** the original unanimous-only rule stands. Multi-select and custom answers
-  tally on the same normalized answer key, so the same pair-in-different-order or
-  identical custom text counts as one answer.
-- **Decider escalation.** In ONE decider call (which also writes the summary), every
-  question **still split after the majority pre-step** is put to the session's own agent,
-  which sees each advisor's actual answer + reason. Where the advisors are in _effective_
-  consensus (a mis-parsed reply, or differently-worded answers that mean the same option)
-  the decider returns the agreed answer using an exact option label; the parse re-validates
-  it via tolerant matching and, on success, **upgrades** that question to unanimous with
-  `decidedByAgent`. The decider only ever upgrades a split question — string-unanimous
-  **and** majority-resolved ones are never re-judged (already at the gate), and it can never
-  downgrade one.
-- **Adjudication priority — at most one ruling per question.** literal unanimous →
-  majority pre-step → decider rescue. Each later stage only acts on what the earlier ones
-  left split, so `decidedByMajority` and `decidedByAgent` are **mutually exclusive** and no
-  question is adjudicated twice (the toggle and the decider coexist without overlap).
-- Fully unanimous ⇒ every question agreed (by literal vote **or** decider ruling). Then the
-  gateway **auto-answers**: `consensus_auto` with an `ask`-kind outcome and `allow` with the
-  answers injected.
-- Otherwise the human gets the **answer panel** (`permission_request` with an `ask`-kind
-  consensus): agreed questions pre-filled, split ones highlighted with each agent's pick.
-  The human's `permission_response` answers are injected.
+- 每个投票者都会拿到一个逐题的投票者提示，并返回结构化的逐题选择；解析
+  会通过宽容匹配把每个选择解析为一个选项标签，并把任何缺失/乱码的问题
+  标记为一次**弃权**(在该问题的计票中被忽略）。
+- **推荐去偏。** `AskUserQuestion` 的约定允许提问者通过附加一个尾部标记
+  (`方案A (推荐)`、`Use X (Recommended)`)来标出自己偏好的选择。把这个
+  原样喂给顾问会让它们锚定在提问者的倾向上，破坏独立判断，因此投票者
+  提示与裁决者提示(它的选项列表**以及**回显的顾问答案)都会以剥离标记
+  后的标签呈现。剥离规则是**仅末尾锚定且带括号**
+  (`()（）[]【】` × 推荐/建议/默认/recommended/recommend/default），
+  因此一个仅以此类词结尾但不带括号的标签(`使用系统默认`)不受影响。
+- **顺序去偏。** 除了文本标记之外，选项的**固定顺序**本身也是一种锚点——
+  LLM 往往偏好排在前面的选项。因此每个投票者都会看到一个**独立**打乱的
+  选项顺序(Fisher–Yates），裁决者的分歧问题选项列表也会打乱一次。
+  逐投票者的多样性以不增加额外成本的方式(仍是每个投票者一次顾问查询)
+  在 N 次投票间稀释了位置偏见。打乱是**仅呈现层面且与索引无关**的:它
+  只重新排列传入提示构建器的数组；解析拿到的是**原始**问题，选项匹配
+  按标签内容(而非位置)解析，因此计票/升级/注入都不受影响(此前的一个
+  范围曾拒绝打乱顺序、只采用标记剥离——该决定现已被取代）。仅限问答
+  路径——allow/deny 路径没有可供重排的候选列表。
+- **宽容标签匹配。** 顾问经常在标签后附加推理回声(`"方案A：扩展协议:
+<why>"`)，或将其嵌入一句话中。匹配顺序为:精确(不区分大小写) →
+  **去标记精确匹配**(将去偏后的标签与去偏后的选项比较，见下文) →
+  互为前缀关系中最长的标签 → 被包含/包含其中最长的标签。最长优先可以
+  避免一个具体的标签输给一个更短的兄弟标签。没有这个机制，一个明确的
+  选择会被误记为弃权，错误地把该问题记为分歧。去标记精确匹配阶段正是
+  用来把一个顾问不带标记的回声(它只看到过去偏后的标签)**还原**为 SDK
+  必须被回答的**原始精确标签**。
+- 只有当每个投票者都产出一个可解析的答案(≥1 个，无人弃权)且它们全部
+  归一化后完全一致(答案键:选项标签排序后逗号拼接，否则为自定义文本)时，
+  计票才会把一个问题记为字面上**一致**。一致性是网关自动作答所依据的
+  闸门；下面两个 `decidedBy*` 标记标出了一个问题到达该闸门的*非字面*
+  方式。
+- **多数决预处理步骤。** 当多数决开关(与 allow/deny 路径同一个开关)开启
+  且字面投票**不**一致时，计票会把该问题解析为它的**相对多数**答案:
+  排除弃权，把已投出的答案按答案键分组，**单一**得票最多的答案获胜——
+  该问题被标记为已达成一致，并打上 `decidedByMajority`。最高票数出现
+  **平局**、**没有唯一领先者**，或**没有任何有效投票**(全弃权 / 空集)
+  仍保持分歧 ⇒ 回退给人类。开关**关闭**时原始的仅一致同意规则维持不变。
+  多选与自定义答案都按同一个归一化答案键计票，因此一对以不同顺序出现
+  或相同的自定义文本会被计为同一个答案。
+- **裁决者升级。** 在一次裁决者调用中(它同时也撰写摘要)，每个在多数决
+  预处理步骤后**仍处于分歧**的问题都会被提交给该会话自身的智能体，它会
+  看到每个顾问的实际答案 + 理由。当各顾问处于*实质上*的一致(一个解析
+  有误的回复，或用不同措辞表达同一选项的答案)时，裁决者会用一个精确的
+  选项标签返回达成一致的答案；解析会通过宽容匹配对其重新校验，成功后
+  会把该问题**升级**为一致，并打上 `decidedByAgent`。裁决者只会升级一个
+  分歧的问题——字面一致**和**多数决已解决的问题永远不会被重新裁决(已经
+  在闸门上)，它也永远不能降级一个问题。
+- **裁决优先级——每个问题至多一次裁决。** 字面一致 → 多数决预处理步骤 →
+  裁决者挽救。每个后续阶段只处理前面阶段留下的分歧，因此 `decidedByMajority`
+  和 `decidedByAgent` 是**互斥**的，没有问题会被裁决两次(该开关与裁决者
+  共存而不重叠）。
+- 完全一致 ⇒ 每个问题都达成一致(经字面投票**或**裁决者裁决）。此时网关
+  会**自动作答**:发出一个 `ask` 类型结果的 `consensus_auto`，并以注入了
+  答案的 `allow` 放行。
+- 否则人类会拿到**答案面板**(带有 `ask` 类型共识的 `permission_request`）:
+  已达成一致的问题被预填，分歧的问题连同每个智能体的选择一起高亮显示。
+  人类的 `permission_response` 答案会被注入。
 
-**Answer injection (verified).** The SDK's `AskUserQuestion` reads a pre-supplied
-`answers` map (keyed by question text; multi-select comma-separated) from the tool input
-and echoes it as the tool result. So both paths resolve via an `allow` that carries the
-original input plus the chosen `answers`. This is the documented PG-R6 exception,
-`AskUserQuestion`-only.
+**答案注入(已验证)。** SDK 的 `AskUserQuestion` 会从工具输入中读取一个
+预先提供的、按问题文本为键(多选以逗号分隔)的 `answers` map，并将其作为
+工具结果回显。因此两条路径都通过一个携带原始输入加上所选 `answers` 的
+`allow` 来解决。这就是文档中记载的 PG-R6 例外，仅限 `AskUserQuestion`。
 
-| Capability               | Contract                                                                                                                                                                                                                                      |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Run ask-path consensus   | No outcome ⇒ disabled, no voters, or input has no questions (caller still shows the panel).                                                                                                                                                   |
-| Extract questions        | Extracts/validates the questions array; nothing for non-ask input.                                                                                                                                                                            |
-| Strip recommendation     | Removes an end-anchored, bracketed recommendation marker (推荐/建议/默认/recommended/…); idempotent; no-op when absent. Used only for prompt presentation.                                                                                    |
-| Shuffle options          | Copies the questions with each options array Fisher–Yates–shuffled (labels untouched). Presentation-only; the randomness source is injectable for tests. Applied per-voter and once for the decider; parse still uses the original questions. |
-| Match an option          | Resolves a free-form choice to a canonical option label (exact → stripped-exact → prefix → substring); nothing if none fit. Stripped-exact restores a de-biased echo to the original label.                                                   |
-| Parse a voter answer     | One answer per question; choice resolved via option matching, unmatched / missing entry ⇒ `abstain`.                                                                                                                                          |
-| Tally a question         | Unanimous/agreed on a literal all-answer agreement. With majority on, a still-split question resolves to its strict-plurality answer (abstain excluded; tie / no leader / no cast vote ⇒ split), flagged `decidedByMajority`.                 |
-| Build the decider prompt | Builds the combined judge+summary prompt; lists option labels only for the split questions. The Display-language name (default English) sets the summary sentence's language.                                                                 |
-| Parse the decider reply  | Yields a summary plus overrides; an override is emitted only for consensus rulings whose answer re-validates to a label/custom — else dropped (stays split).                                                                                  |
+| Capability         | Contract                                                                                                                                                                     |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 运行问答路径共识   | 无结果 ⇒ 已禁用、无投票者，或输入中没有问题(调用方仍会展示面板）。                                                                                                           |
+| 提取问题           | 提取/校验 questions 数组；对非问答输入无操作。                                                                                                                               |
+| 剥离推荐标记       | 移除一个末尾锚定的、带括号的推荐标记(推荐/建议/默认/recommended/…)；幂等；不存在时是空操作。仅用于提示呈现。                                                                 |
+| 打乱选项           | 复制问题，每个 options 数组都做 Fisher–Yates 打乱(标签不变）。仅呈现层面；随机源可在测试中注入。对每个投票者应用一次，对裁决者应用一次；解析仍使用原始问题。                 |
+| 匹配一个选项       | 把一个自由形式的选择解析为一个规范选项标签(精确 → 去标记精确匹配 → 前缀 → 子串)；没有一个匹配则不返回结果。去标记精确匹配把一个去偏后的回声还原为原始标签。                  |
+| 解析一个投票者答案 | 每个问题一个答案；选择通过选项匹配解析，未匹配/缺失的条目 ⇒ `abstain`。                                                                                                      |
+| 计票一个问题       | 依据字面全体一致答案判定一致/已达成一致。多数决开启时，仍处于分歧的问题解析为其严格相对多数答案(排除弃权；平局 / 无领先者 / 无有效投票 ⇒ 分歧)，并打上 `decidedByMajority`。 |
+| 构建裁决者提示     | 构建组合的裁决+摘要提示；仅为分歧的问题列出选项标签。展示语言名称(默认英文)决定摘要句子所用的语言。                                                                          |
+| 解析裁决者回复     | 产出一个摘要加上覆盖项；覆盖项仅在裁决结果的答案重新校验为一个标签/自定义答案时才会发出——否则丢弃(保持分歧）。                                                               |
 
 ## 审计留痕（自动决策可追溯）
 
@@ -402,17 +371,17 @@ driver 路径取运行的 `sessionKind`，claude 网控路径取 gate 派生（`
 
 ## Wire protocol
 
-- `permission_request.consensus` is the consensus outcome — the allow/deny outcome
-  (`kind: 'tool'`) **or** the per-question outcome (`kind: 'ask'`).
-- `consensus_auto.outcome` is likewise either consensus-outcome kind.
-- `permission_response` gains optional `answers` (question text → label(s)/custom)
-  for the `AskUserQuestion` panel; the gateway injects them into the tool input.
-- A per-question `decidedByAgent` flag marks a question whose literal vote was split
-  but the decider ruled an effective consensus — so the console can label an
-  AI-adjudicated agreement honestly rather than implying a unanimous vote.
-- A per-question `decidedByMajority` flag marks a question whose literal vote was not
-  unanimous but the majority toggle carried it on a strict plurality — distinguishing a
-  majority-carried answer from a literal unanimous vote and from a decider ruling
-  (`decidedByAgent`); the two `decidedBy*` flags are mutually exclusive.
-- The console renders the allow/deny verdicts (tool kind) or the per-question
-  answer panel / auto-answer roll-up (ask kind).
+- `permission_request.consensus` 是共识结果——allow/deny 结果(`kind:
+'tool'`)**或**逐题结果(`kind: 'ask'`）。
+- `consensus_auto.outcome` 同样是这两种共识结果类型之一。
+- `permission_response` 新增可选的 `answers`(问题文本 → 标签(们)/自定义)，
+  供 `AskUserQuestion` 面板使用；网关会把它们注入到工具输入中。
+- 一个逐题的 `decidedByAgent` 标记标出一个字面投票有分歧、但裁决者裁定
+  已达成有效共识的问题——使控制台可以诚实地标注一次 AI 裁决的一致，而
+  非暗示这是一次一致投票。
+- 一个逐题的 `decidedByMajority` 标记标出一个字面投票并非一致、但多数决
+  开关以严格相对多数使其通过的问题——将一个多数决通过的答案与字面一致
+  投票以及一次裁决者裁决(`decidedByAgent`)区分开来；两个 `decidedBy*`
+  标记互斥。
+- 控制台渲染 allow/deny 裁决(tool 类型)或逐题答案面板 / 自动作答汇总
+  (ask 类型）。

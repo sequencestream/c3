@@ -1,44 +1,44 @@
-# automations — Models
+# automations — 数据模型
 
-Entity definitions. Business-semantic types; physical wiring in [automations-design.md](automations-design.md).
-Wire shapes are defined once in the [shared protocol](../../../shared/api-conventions/websocket-protocol.md).
+实体定义。业务语义类型;物理接线见 [automations-design.md](automations-design.md)。
+线上数据形状统一定义在 [共享协议](../../../shared/api-conventions/websocket-protocol.md) 中。
 
 ## Automation
 
-A time-bound task: a shell command or LLM prompt that fires at a configured time.
+一个限时任务:在配置时间触发的 shell 命令或 LLM 提示。
 
-| Attribute                | Type                                                             | Description                                                                                                                                                                                                                                                                                                                                                                                            |
-| ------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `id`                     | text (UUID)                                                      | Unique identifier for the automation                                                                                                                                                                                                                                                                                                                                                                   |
-| `workspaceId`            | text (UUID)                                                      | FK → session-registry workspace; immutable after creation (SCH-R1)                                                                                                                                                                                                                                                                                                                                     |
-| `name`                   | text                                                             | Human-readable display name. **Auto-generated server-side** from the task content on create (client name stripped). On **update** the client may supply a manual title: a non-empty value is stored sticky (`nameSource='user'`, auto-naming never overrides it); an empty value reverts to an auto-derived name (SCH-R19).                                                                            |
-| `taskType`               | enum `command \| llm_prompt`                                     | Type of task to execute; immutable after creation (SCH-R2)                                                                                                                                                                                                                                                                                                                                             |
-| `taskConfig`             | JSON (typed per taskType)                                        | Task configuration: `command` ⇒ `{ command: string }`; `llm_prompt` ⇒ `{ prompt: string, mode?: PermissionMode }`                                                                                                                                                                                                                                                                                      |
-| `vendor`                 | vendor id                                                        | Persisted vendor scope for the task's tool manifest, execution policy, and adapter route.                                                                                                                                                                                                                                                                                                              |
-| `agentId`                | text \| null                                                     | Explicit enabled Agent selected for an LLM task. Its vendor must equal the Automation vendor; null only for command tasks and legacy tasks awaiting repair.                                                                                                                                                                                                                                            |
-| `maxWallClockMs`         | integer \| null                                                  | Maximum wall-clock duration for one execution in milliseconds. Null uses the task-type default: 30 seconds for command and 60 seconds for LLM. Explicit values are whole milliseconds from 1 second through 24 hours.                                                                                                                                                                                  |
-| `triggerType`            | enum `cron \| event`                                             | How the automation fires (SCH-R17). Defaults to `cron` for rows migrated before this field existed (2026-06-08).                                                                                                                                                                                                                                                                                       |
-| `triggerAt`              | timestamp \| null                                                | One-shot trigger time (exactly one timing field is set, SCH-R3)                                                                                                                                                                                                                                                                                                                                        |
-| `cronExpression`         | text \| null                                                     | Cron expression for `cron` triggers; interpreted in the system IANA time zone (`SystemSettings.timezone`, SCH-R3a), not UTC. Empty string for `event` triggers.                                                                                                                                                                                                                                        |
-| `eventTopic`             | enum `run:started \| run:settled \| pr:operation` \| null        | For `event` triggers: the topic subscribed to on the kernel bus — a run lifecycle topic or the `pr:operation` event (model-published or server-side, SCH-R17, 2026-06-20). Null for `cron`.                                                                                                                                                                                                            |
-| `eventReasonFilter`      | `RunEndReason[]` \| null                                         | For `run:settled` event triggers: fire only on these terminal reasons; null/`[]` = any (SCH-R18). Ignored for `run:started` / `pr:operation`.                                                                                                                                                                                                                                                          |
-| `eventPrFilter`          | `{ operations?, results? }` \| null                              | For `pr:operation` event triggers: fire only when the event's `operation` ∈ `operations` AND `result` ∈ `results`; an empty/absent dimension = any (SCH-R22). Null for cron / run-lifecycle. `operations` ⊆ `create\|review\|merge\|close\|comment`; `results` ⊆ `success\|failure\|error` (2026-06-20, 2026-07-02 扩展 error).                                                                        |
-| `eventSessionKindFilter` | `SessionKind[]` \| null                                          | For run-lifecycle event triggers (`run:started` / `run:settled`): the explicit, **non-empty** set of SessionKind origins that may fire it (SCH-R18, 2026-07-04, replaces the hardcoded `['work']` whitelist). Required — a create/update with a missing/empty value is rejected (`automation.missingSessionKindFilter`). Null for cron / pr / intent. Legacy run-lifecycle rows migrate to `['work']`. |
-| `eventMetadataFilter`    | `{ conditions: {key,value}[], combinator: 'AND'\|'OR' }` \| null | For run-lifecycle event triggers: metadata condition filter (SCH-R25). Null/empty conditions = match any. `AND` = every condition equals the event's `metadata[key]` exactly; `OR` = at least one. Null for cron / pr / intent.                                                                                                                                                                        |
-| `metadata`               | `Record<string,string>`                                          | Free-form key/value annotations (SCH-R25, 2026-07-04). No preset keys / schema; sanitized (trimmed, empty dropped, ≤32 entries, key ≤64 / value ≤256 chars). Only the scheduler's own run events for this automation carry it into the event payload. Defaults to `{}`.                                                                                                                                |
-| `state`                  | enum `active \| paused \| archived`                              | Current lifecycle state (SCH-R5)                                                                                                                                                                                                                                                                                                                                                                       |
-| `executionIdentity`      | enum `read-only \| sandboxed \| full-access`                     | Identity persona at execution time (SCH-R4)                                                                                                                                                                                                                                                                                                                                                            |
-| `lastExecutedAt`         | timestamp \| null                                                | When the last execution started; null if never executed                                                                                                                                                                                                                                                                                                                                                |
-| `createdBy`              | text                                                             | Creator identifier (user session id)                                                                                                                                                                                                                                                                                                                                                                   |
-| `createdAt`              | timestamp                                                        | Creation time                                                                                                                                                                                                                                                                                                                                                                                          |
-| `updatedAt`              | timestamp                                                        | Last modification time                                                                                                                                                                                                                                                                                                                                                                                 |
+| 属性                     | 类型                                                             | 说明                                                                                                                                                                                                                                                                                                               |
+| ------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                     | text (UUID)                                                      | 自动化的唯一标识符                                                                                                                                                                                                                                                                                                 |
+| `workspaceId`            | text (UUID)                                                      | FK → session-registry 工作区;创建后不可变(SCH-R1)                                                                                                                                                                                                                                                                  |
+| `name`                   | text                                                             | 人类可读的显示名称。创建时**由服务端根据任务内容自动生成**(客户端提供的名称会被剥离)。**更新**时客户端可提供手动标题:非空值会被固化存储(`nameSource='user'`,自动命名永不覆盖它);空值则回退为自动派生的名称(SCH-R19)。                                                                                              |
+| `taskType`               | 枚举 `command \| llm_prompt`                                     | 要执行的任务类型;创建后不可变(SCH-R2)                                                                                                                                                                                                                                                                              |
+| `taskConfig`             | JSON(按 taskType 定型)                                           | 任务配置:`command` ⇒ `{ command: string }`;`llm_prompt` ⇒ `{ prompt: string, mode?: PermissionMode }`                                                                                                                                                                                                              |
+| `vendor`                 | 厂商 id                                                          | 持久化的厂商范围,决定任务的工具清单、执行策略与适配器路由。                                                                                                                                                                                                                                                        |
+| `agentId`                | text \| null                                                     | 为 LLM 任务选择的显式已启用 Agent。其厂商必须等于 Automation 的厂商;仅命令任务与等待修复的遗留任务为 null。                                                                                                                                                                                                        |
+| `maxWallClockMs`         | integer \| null                                                  | 单次执行的最大墙钟时长(毫秒)。Null 使用任务类型默认值:command 为 30 秒,LLM 为 60 秒。显式值为 1 秒到 24 小时之间的整毫秒数。                                                                                                                                                                                       |
+| `triggerType`            | 枚举 `cron \| event`                                             | 自动化的触发方式(SCH-R17)。在此字段引入之前迁移的行默认为 `cron`(2026-06-08)。                                                                                                                                                                                                                                     |
+| `triggerAt`              | timestamp \| null                                                | 一次性触发时间(计时字段中只会设置其中一个,SCH-R3)                                                                                                                                                                                                                                                                  |
+| `cronExpression`         | text \| null                                                     | `cron` 触发使用的 cron 表达式;按系统 IANA 时区解释(`SystemSettings.timezone`,SCH-R3a),而非 UTC。`event` 触发时为空字符串。                                                                                                                                                                                         |
+| `eventTopic`             | 枚举 `run:started \| run:settled \| pr:operation` \| null        | 用于 `event` 触发:在内核总线上订阅的主题 — 运行生命周期主题或 `pr:operation` 事件(模型发布或服务端发布,SCH-R17,2026-06-20)。`cron` 时为 null。                                                                                                                                                                     |
+| `eventReasonFilter`      | `RunEndReason[]` \| null                                         | 用于 `run:settled` 事件触发:仅在这些终态原因下触发;null/`[]` 表示任意(SCH-R18)。对 `run:started` / `pr:operation` 忽略。                                                                                                                                                                                           |
+| `eventPrFilter`          | `{ operations?, results? }` \| null                              | 用于 `pr:operation` 事件触发:仅当事件的 `operation` ∈ `operations` 且 `result` ∈ `results` 时触发;空缺维度 = 任意(SCH-R22)。cron / 运行生命周期时为 null。`operations` ⊆ `create\|review\|merge\|close\|comment`;`results` ⊆ `success\|failure\|error`(2026-06-20,2026-07-02 扩展 error)。                         |
+| `eventSessionKindFilter` | `SessionKind[]` \| null                                          | 用于运行生命周期事件触发(`run:started` / `run:settled`):显式的、**非空**的可触发它的 SessionKind 来源集合(SCH-R18,2026-07-04,取代了硬编码的 `['work']` 白名单)。必填 — 创建/更新时缺失或为空会被拒绝(`automation.missingSessionKindFilter`)。cron / pr / intent 时为 null。遗留的运行生命周期行迁移为 `['work']`。 |
+| `eventMetadataFilter`    | `{ conditions: {key,value}[], combinator: 'AND'\|'OR' }` \| null | 用于运行生命周期事件触发:元数据条件过滤器(SCH-R25)。Null/空条件 = 匹配任意。`AND` = 每个条件都精确等于事件的 `metadata[key]`;`OR` = 至少一个满足。cron / pr / intent 时为 null。                                                                                                                                   |
+| `metadata`               | `Record<string,string>`                                          | 自由格式的键值注解(SCH-R25,2026-07-04)。无预设键 / 模式;经过净化(去除首尾空白、丢弃空值、至多 32 条、键 ≤64 / 值 ≤256 字符)。只有该自动化自身调度器产生的运行事件会把它带入事件负载。默认为 `{}`。                                                                                                                 |
+| `state`                  | 枚举 `active \| paused \| archived`                              | 当前生命周期状态(SCH-R5)                                                                                                                                                                                                                                                                                           |
+| `executionIdentity`      | 枚举 `read-only \| sandboxed \| full-access`                     | 执行时的身份画像(SCH-R4)                                                                                                                                                                                                                                                                                           |
+| `lastExecutedAt`         | timestamp \| null                                                | 上一次执行开始的时间;从未执行过则为 null                                                                                                                                                                                                                                                                           |
+| `createdBy`              | text                                                             | 创建者标识符(用户会话 id)                                                                                                                                                                                                                                                                                          |
+| `createdAt`              | timestamp                                                        | 创建时间                                                                                                                                                                                                                                                                                                           |
+| `updatedAt`              | timestamp                                                        | 最近修改时间                                                                                                                                                                                                                                                                                                       |
 
-Relationships: belongs to exactly one Workspace (by `workspaceId`). Has zero or more ExecutionLogs.
-The workspace deletion cascades to **archiving** the automation (not deleting it — SCH-R1).
+关系:恰好属于一个 Workspace(通过 `workspaceId`)。拥有零个或多个 ExecutionLog。
+工作区删除会级联到**归档**该自动化(而非删除它 — SCH-R1)。
 
-### taskConfig shapes
+### taskConfig 形状
 
-**`command` type:**
+**`command` 类型:**
 
 ```json
 {
@@ -46,7 +46,7 @@ The workspace deletion cascades to **archiving** the automation (not deleting it
 }
 ```
 
-**`llm_prompt` type:**
+**`llm_prompt` 类型:**
 
 ```json
 {
@@ -55,61 +55,60 @@ The workspace deletion cascades to **archiving** the automation (not deleting it
 }
 ```
 
-`mode` in `llm_prompt` overrides the workspace session's default mode for this execution. When
-omitted, the workspace session's mode is used (subject to `executionIdentity` constraints).
+`llm_prompt` 中的 `mode` 会覆盖本次执行的工作区会话默认模式。省略时使用工作区会话的模式
+(仍受 `executionIdentity` 约束)。
 
 ## ExecutionLog
 
-The record of a single execution of a automation.
+一次自动化执行的记录。
 
-| Attribute      | Type                                                        | Description                                                              |
-| -------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `id`           | text (UUID)                                                 | Unique identifier for this execution                                     |
-| `automationId` | text (UUID)                                                 | FK → Automation; identifies which automation produced this execution     |
-| `status`       | enum `pending \| running \| success \| failed \| cancelled` | Current execution status (forward-only, SCH-R10)                         |
-| `trigger`      | enum `scheduled \| manual`                                  | How this execution was triggered: by the scheduler or user action        |
-| `scheduledAt`  | timestamp                                                   | When the automation was supposed to trigger                              |
-| `startedAt`    | timestamp \| null                                           | When execution actually started; null while `pending`                    |
-| `completedAt`  | timestamp \| null                                           | When execution reached a terminal state; null while active               |
-| `output`       | text \| JSON \| null                                        | Execution output: stdout for command, message stream for llm_prompt      |
-| `errorMessage` | text \| null                                                | Error detail when status is `failed`                                     |
-| `exitCode`     | integer \| null                                             | Shell exit code (command type only); null while pending/running          |
-| `durationMs`   | integer \| null                                             | Wall-clock duration from startedAt to completedAt; null before terminal  |
-| `sessionId`    | text \| null                                                | Agent session id (llm_prompt type only); null if execution never started |
+| 属性           | 类型                                                        | 说明                                                       |
+| -------------- | ----------------------------------------------------------- | ---------------------------------------------------------- |
+| `id`           | text (UUID)                                                 | 本次执行的唯一标识符                                       |
+| `automationId` | text (UUID)                                                 | FK → Automation;标识是哪个自动化产生了本次执行             |
+| `status`       | 枚举 `pending \| running \| success \| failed \| cancelled` | 当前执行状态(只能向前推进,SCH-R10)                         |
+| `trigger`      | 枚举 `scheduled \| manual`                                  | 本次执行的触发方式:由调度器触发还是用户操作触发            |
+| `scheduledAt`  | timestamp                                                   | 自动化预定触发的时间                                       |
+| `startedAt`    | timestamp \| null                                           | 执行实际开始的时间;`pending` 时为 null                     |
+| `completedAt`  | timestamp \| null                                           | 执行到达终态的时间;活动中为 null                           |
+| `output`       | text \| JSON \| null                                        | 执行输出:command 为 stdout,llm_prompt 为消息流             |
+| `errorMessage` | text \| null                                                | 状态为 `failed` 时的错误详情                               |
+| `exitCode`     | integer \| null                                             | shell 退出码(仅 command 类型);pending/running 时为 null    |
+| `durationMs`   | integer \| null                                             | 从 startedAt 到 completedAt 的墙钟时长;到达终态之前为 null |
+| `sessionId`    | text \| null                                                | Agent 会话 id(仅 llm_prompt 类型);执行从未开始则为 null    |
 
-Relationships: belongs to exactly one Automation (by `automationId`). Deleted when the parent automation
-is deleted (cascade). Append-only once `startedAt` is set.
+关系:恰好属于一个 Automation(通过 `automationId`)。父自动化删除时级联删除。
+`startedAt` 一旦设置即只追加(append-only)。
 
 ## Pending Change
 
-A mutation awaiting user confirmation in the write queue (SCH-R6, SCH-R15).
+写入队列中等待用户确认的一次变更(SCH-R6、SCH-R15)。
 
-| Attribute      | Type                                             | Description                                                                        |
-| -------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `id`           | text (UUID)                                      | Unique identifier for this pending change                                          |
-| `type`         | enum `create \| update_field \| pause \| resume` | Kind of mutation (archive/delete are immediate, not queued)                        |
-| `automationId` | text (UUID) \| null                              | Target automation id; null for `create` types                                      |
-| `payload`      | JSON                                             | The proposed change payload (full AutomationFields for create; partial for update) |
-| `createdAt`    | timestamp                                        | When the change was proposed                                                       |
+| 属性           | 类型                                             | 说明                                                             |
+| -------------- | ------------------------------------------------ | ---------------------------------------------------------------- |
+| `id`           | text (UUID)                                      | 本次待确认变更的唯一标识符                                       |
+| `type`         | 枚举 `create \| update_field \| pause \| resume` | 变更的种类(archive/delete 是即时生效的,不进入队列)               |
+| `automationId` | text (UUID) \| null                              | 目标自动化 id;`create` 类型时为 null                             |
+| `payload`      | JSON                                             | 拟议的变更内容(create 为完整 AutomationFields;update 为部分字段) |
+| `createdAt`    | timestamp                                        | 变更被提出的时间                                                 |
 
-Relationships: owned by a single WebSocket connection; not persisted. Replaced or discarded by the
-owner before confirmation.
+关系:归属于单个 WebSocket 连接;不持久化。确认前由所有者替换或丢弃。
 
-## Domain type values
+## 领域类型取值
 
-The permitted values for each enumerated attribute:
+各枚举属性的允许取值:
 
 - **state** — `active` | `paused` | `archived`
 - **taskType** — `command` | `llm_prompt`
-- **triggerType** (event trigger, 2026-06-08) — `cron` | `event`
-  - event topic — `run:started` | `run:settled` (run-lifecycle) | `pr:operation` (model-published or server-side, 2026-06-20)
-  - run end reason — `complete` | `error` | `aborted`
-  - the kinds carried on `run:started` / `run:settled` are the **SessionKind** (business scenario —
-    `work` | `intent` | `discussion` | `automation` | `consensus` | `tool` | `spec`; only `work` fires
-    user automations) and the **RunKind** (execution form — `interactive` | `background` | `headless` |
+- **triggerType**(事件触发,2026-06-08)— `cron` | `event`
+  - 事件主题 — `run:started` | `run:settled`(运行生命周期)| `pr:operation`(模型发布或服务端发布,2026-06-20)
+  - 运行结束原因 — `complete` | `error` | `aborted`
+  - `run:started` / `run:settled` 上携带的种类是 **SessionKind**(业务场景 —
+    `work` | `intent` | `discussion` | `automation` | `consensus` | `tool` | `spec`;只有 `work` 会触发
+    用户自动化)与 **RunKind**(执行形式 — `interactive` | `background` | `headless` |
     `internal`)
-  - PR operation (`pr:operation`) — `create` | `review` | `merge` | `close` | `comment`
-  - PR operation result — `success` | `failure` | `error`
+  - PR 操作(`pr:operation`)— `create` | `review` | `merge` | `close` | `comment`
+  - PR 操作结果 — `success` | `failure` | `error`
 - **executionIdentity** — `read-only` | `sandboxed` | `full-access`
 - **executionStatus** — `pending` | `running` | `success` | `failed` | `cancelled`
 - **pendingChangeType** — `create` | `update_field` | `pause` | `resume`

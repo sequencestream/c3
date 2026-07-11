@@ -1,76 +1,73 @@
-# session-registry — Models
+# session-registry — 数据模型
 
-Entity definitions in domain terms; physical wiring in [session-registry-design.md](session-registry-design.md).
-The workspace, session, and transcript-item wire shapes are defined once in the
-[shared protocol](../../../shared/api-conventions/websocket-protocol.md); this domain
-references them rather than redefining message shapes.
+以域术语给出的实体定义;物理接线见 [session-registry-design.md](session-registry-design.md)。
+工作区、会话与 transcript-item 的线上形状在
+[共享协议](../../../shared/api-conventions/websocket-protocol.md) 中统一定义;本域引用它们,而不是重新定义消息形状。
 
-## Workspace
+## Workspace(工作区)
 
-A registered project directory.
+一个已注册的项目目录。
 
-| Attribute      | Type        | Description                                                                                             |
-| -------------- | ----------- | ------------------------------------------------------------------------------------------------------- |
-| `path`         | text (path) | Absolute directory; the working directory passed to the agent and the key sessions are enumerated under |
-| `name`         | text        | Display name — the directory's basename                                                                 |
-| `lastAccessed` | timestamp   | Last time a session here was selected/created; sort key desc (SR-R2)                                    |
+| 属性           | 类型        | 说明                                                 |
+| -------------- | ----------- | ---------------------------------------------------- |
+| `path`         | text(路径） | 绝对目录;传给智能体的工作目录,也是会话枚举所依据的键 |
+| `name`         | text        | 显示名称 —— 目录的 basename                          |
+| `lastAccessed` | timestamp   | 此处会话最后一次被选中/创建的时间;排序键降序(SR-R2)  |
 
-Relationships: a workspace has zero or more Sessions. The read-side list comes from
-`session_metadata`; content and transcripts still live in native vendor stores.
+关系:一个 workspace 拥有零个或多个 Session。读侧列表来自
+`session_metadata`;内容与 transcript 仍存放在原生厂商存储中。
 
-## Session
+## Session(会话)
 
-A vendor-backed conversation inside a workspace, projected into `session_metadata`
-for list/count reads.
+工作区内一个由厂商托管的会话,为列表/计数读取投影到 `session_metadata` 中。
 
-| Attribute      | Type            | Description                                                             |
-| -------------- | --------------- | ----------------------------------------------------------------------- |
-| `sessionId`    | text            | Opaque c3 session id on the wire; maps internally to vendor + native id |
-| `title`        | text            | Vendor custom title / summary / first prompt                            |
-| `lastModified` | timestamp       | Vendor last-modified; sort key within a workspace (SR-R4)               |
-| `mode`         | permission mode | c3-tracked per-session permission mode; default `default` (SR-R5)       |
-| `sessionKind`  | enum            | work / intent / spec / discussion / automation / tool                   |
-| `ownerKind`    | enum \| null    | Logical owner kind used for jump-back; null for ownerless sessions      |
-| `ownerId`      | text \| null    | Logical owner id; null means the session cannot jump back to an owner   |
-| `bound`        | boolean         | true for real rows; false only for work pending placeholders            |
+| 属性           | 类型            | 说明                                                  |
+| -------------- | --------------- | ----------------------------------------------------- |
+| `sessionId`    | text            | 线上不透明的 c3 会话 id;内部映射到厂商 + 原生 id      |
+| `title`        | text            | 厂商自定义标题 / 摘要 / 首条提示                      |
+| `lastModified` | timestamp       | 厂商最后修改时间;工作区内的排序键(SR-R4)              |
+| `mode`         | permission mode | c3 跟踪的每会话权限模式;默认 `default`(SR-R5)         |
+| `sessionKind`  | enum            | work / intent / spec / discussion / automation / tool |
+| `ownerKind`    | enum \| null    | 用于跳回的逻辑所有者类别;无所有者会话为 null          |
+| `ownerId`      | text \| null    | 逻辑所有者 id;null 表示该会话无法跳回某个所有者       |
+| `bound`        | boolean         | 真实行为 true;仅当为 work 待处理占位符时为 false      |
 
-Relationships: belongs to one Workspace; its transcript & title are owned by the agent vendor, its
-`mode` by the registry. Owner fields point back to domain entities such as an intent, discussion,
-or automation; they do not make the projection the source of truth for those domains. A spec session
-row uses `sessionKind=spec`, `ownerKind=intent`, and the intent id as `ownerId`; the intent domain
-still owns the current spec-session link through `intents.spec_session_id`. A tool session row uses
-`sessionKind=tool`; when a triggering business origin is known it reuses `ownerKind` / `ownerId` for
-jump-back, and when the origin is unknown or historical it leaves both null so the row is display-only.
+关系:属于一个 Workspace;其 transcript 与 title 由智能体厂商拥有,其
+`mode` 由 registry 拥有。所有者字段指回诸如 intent、discussion 或 automation 等域实体;
+它们并不使该投影成为这些域的事实来源。一条 spec 会话行使用 `sessionKind=spec`、`ownerKind=intent`,
+以及该 intent 的 id 作为 `ownerId`;intent 域仍通过 `intents.spec_session_id` 拥有当前 spec 会话链接。
+一条 tool 会话行使用 `sessionKind=tool`;当触发的业务来源已知时,它复用 `ownerKind` / `ownerId` 实现跳回,
+当来源未知或为历史数据时,两者都留空,使该行仅用于展示。
 
-## Pending Session
+## Pending Session(待处理会话)
 
-A session created in the UI but not yet started.
+在 UI 中创建但尚未启动的会话。
 
-| Attribute  | Type                    | Description                                                   |
-| ---------- | ----------------------- | ------------------------------------------------------------- |
-| `clientId` | text (`pending:<uuid>`) | Temporary id until the first run reports a real `sessionId`   |
-| `mode`     | permission mode         | Starts `default`; persisted under the real id on bind (SR-R7) |
+| 属性       | 类型                    | 说明                                            |
+| ---------- | ----------------------- | ----------------------------------------------- |
+| `clientId` | text(`pending:<uuid>`） | 临时 id,直到首次运行上报真实 `sessionId`        |
+| `mode`     | permission mode         | 起始为 `default`;绑定时按真实 id 持久化(SR-R7） |
 
-Relationships: replaced by a real Session once the first run binds a real session id.
+关系:一旦首次运行绑定了真实会话 id,即被替换为真实的 Session。
 
-## Persisted state (state.json)
+## 持久化状态(state.json)
 
-The c3-owned registry — the only persisted c3 data (ADR 0004).
+c3 拥有的 registry —— 唯一持久化的 c3 数据(ADR 0004）。
 
-| Field             | Type                             | Description                                 |
-| ----------------- | -------------------------------- | ------------------------------------------- |
-| `version`         | `1`                              | Schema version                              |
-| `workspaces`      | list of Workspace                | The registry (SR-R2)                        |
-| `sessionModes`    | map session id → permission mode | Per-session mode (SR-R5); stale ids ignored |
-| `activeSessionId` | text \| null                     | Last active real session, for boot          |
+| 字段              | 类型                             | 说明                                |
+| ----------------- | -------------------------------- | ----------------------------------- |
+| `version`         | `1`                              | 模式版本                            |
+| `workspaces`      | Workspace 列表                   | registry 本身(SR-R2)                |
+| `sessionModes`    | 会话 id → permission mode 的映射 | 每会话模式(SR-R5）;过期 id 会被忽略 |
+| `activeSessionId` | text \| null                     | 最后活跃的真实会话,用于启动时恢复   |
 
-Never contains permission decisions or approvals (SR-R11).
+绝不包含权限决策或批准(SR-R11）。
 
-## Session runtime (in-memory)
+## Session runtime(内存中)
 
-The per-session run state is owned by agent-session — its full shape is the
-**Session Runtime** in the [agent-session models](../agent-session/agent-session-models.md). The registry only
-seeds it (working directory / mode / baseline) and reads its run status. Note its team flag
-(set when a run upgrades to a persistent agent team, reset on teardown; ADR 0008): it overrides
-a `turn_end`'s implied idle to the team status (see [session-registry-design.md](session-registry-design.md) § Team-session
-status). Never persisted.
+每会话的运行状态由 agent-session 拥有 —— 其完整形状即
+[agent-session models](../agent-session/agent-session-models.md) 中的 **Session Runtime**。registry 只负责为其
+播种(工作目录 / 模式 / 基线)并读取其运行状态。注意其 team 标志
+(当一次运行升级为持久化智能体团队时被设置,拆除时被重置;ADR 0008):它会把
+`turn_end` 隐含的 idle 覆盖为 team 状态(见 [session-registry-design.md](session-registry-design.md) § Team 会话
+状态)。绝不持久化。

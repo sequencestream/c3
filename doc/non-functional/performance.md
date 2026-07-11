@@ -1,21 +1,18 @@
-# Non-Functional — Performance
+# 非功能需求 — 性能
 
-c3 is a single-user local tool; performance targets are about responsiveness and bounded
-waiting, not throughput.
+c3 是单用户本地工具;性能目标关注的是响应速度与有界等待,而非吞吐量。
 
-## Requirements
+## 需求
 
-| ID     | Requirement                         | Target                                                                                                                                                        |
-| ------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PERF-1 | Permission request → browser render | The `permission_request` is rendered as soon as it arrives over the local WebSocket; no artificial delay added by c3.                                         |
-| PERF-2 | Permission decision wait            | Bounded only by the human — a pending request waits indefinitely for the user's decision (no timeout), mirroring the CLI prompt. c3 adds no delay of its own. |
-| PERF-3 | Streaming latency                   | Assistant text and tool activity are forwarded to the browser as each SDK message is received; c3 buffers no more than one message at a time.                 |
-| PERF-4 | Run abort                           | A new `user_prompt` aborts the in-flight run before the next run starts; the abort is issued synchronously on message receipt.                                |
-| PERF-5 | Concurrency                         | At most **one** agent run is in flight per connection at any time.                                                                                            |
+| ID     | 需求                  | 目标                                                                                                        |
+| ------ | --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| PERF-1 | 权限请求 → 浏览器渲染 | `permission_request` 一经由本地 WebSocket 到达便立即渲染;c3 不添加任何人为延迟。                            |
+| PERF-2 | 权限决策等待          | 仅受限于人的响应速度——待处理的请求会无限期等待用户决策(无超时),与 CLI 提示行为一致。c3 自身不添加任何延迟。 |
+| PERF-3 | 流式延迟              | 助手文本与工具活动会在每条 SDK 消息收到后即转发给浏览器;c3 一次最多缓冲一条消息。                           |
+| PERF-4 | 运行中止              | 一个新的 `user_prompt` 会在下一次运行开始前中止正在进行的运行;中止操作在收到消息时同步发出。                |
+| PERF-5 | 并发                  | 每个连接同一时刻最多有 **一个** 智能体运行处于进行中。                                                      |
 
-## Notes
+## 说明
 
-- End-to-end latency is dominated by the model and the `claude` process, which c3 does not
-  control. These targets cover only c3's own added overhead.
-- Permission waits are unbounded by design (the user may take as long as they need); a
-  process-side registry holds the pending requests until the user decides.
+- 端到端延迟主要由模型和 `claude` 进程决定,这部分不受 c3 控制。这里的目标只覆盖 c3 自身新增的开销。
+- 权限等待按设计是无界的(用户可以花费任意所需的时间);进程侧的一个注册表会保存待处理的请求,直到用户作出决定。

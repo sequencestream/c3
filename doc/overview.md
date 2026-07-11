@@ -1,72 +1,70 @@
 # Specs Knowledge Base — Overview
 
-This directory is the source of truth for **what c3 does and why**. Source code is the
-source of truth for **how it does it today**; doc describe the intended behavior that
-code must satisfy. When the two disagree, that is a bug in one of them — reconcile, don't
-ignore.
+本目录是 **c3 做什么以及为什么这样做** 的权威来源(source of truth)。源代码是
+**它今天是如何做到的** 的权威来源;文档描述代码必须满足的预期行为。当两者不一致时,
+说明其中一方存在缺陷——需要调和,而不是忽略。
 
-## How to navigate
+## 如何导航
 
-| If you want to know…                          | Read                                                                                           |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| The project's purpose, scope, stakeholders    | [`project.md`](project.md)                                                                     |
-| Hard rules nothing may violate                | [`constitution.md`](constitution.md)                                                           |
-| What a term means                             | [`glossary.md`](glossary.md)                                                                   |
-| The system shape and how the pieces connect   | [`architecture/architecture.md`](architecture/architecture.md)                                 |
-| Why a key decision was made                   | [`architecture/adr/`](architecture/adr/)                                                       |
-| The end-to-end path through a scenario        | [`flows/flows.md`](flows/flows.md)                                                             |
-| The WebSocket wire contract                   | [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md) |
-| The c3 ↔ license-server API contract          | [`shared/api-conventions/license-server-api.md`](shared/api-conventions/license-server-api.md) |
-| The frontend visual style guide               | [`style/style-spec.md`](style/style-spec.md)                                                   |
-| Performance / security / availability targets | [`non-functional/`](non-functional/)                                                           |
-| A specific capability's behavior              | [`domains/core/`](domains/core/)                                                               |
+| 如果你想知道…                   | 请阅读                                                                                         |
+| ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 项目的目的、范围、干系人        | [`project.md`](project.md)                                                                     |
+| 任何人都不得违反的硬性规则      | [`constitution.md`](constitution.md)                                                           |
+| 某个术语的含义                  | [`glossary.md`](glossary.md)                                                                   |
+| 系统的形态以及各部分如何连接    | [`architecture/architecture.md`](architecture/architecture.md)                                 |
+| 为什么做出某个关键决策          | [`architecture/adr/`](architecture/adr/)                                                       |
+| 某个场景的端到端路径            | [`flows/flows.md`](flows/flows.md)                                                             |
+| WebSocket 通信契约              | [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md) |
+| c3 ↔ license-server 的 API 契约 | [`shared/api-conventions/license-server-api.md`](shared/api-conventions/license-server-api.md) |
+| 前端视觉风格指南                | [`style/style-spec.md`](style/style-spec.md)                                                   |
+| 性能 / 安全 / 可用性目标        | [`non-functional/`](non-functional/)                                                           |
+| 某个具体能力的行为              | [`domains/core/`](domains/core/)                                                               |
 
-## Domains
+## 领域(Domains)
 
-c3 has three business groups: `core` (the agent loop), `system-config` (user configuration), and
-`commerce` (product entitlement / licensing).
+c3 有三个业务组:`core`(智能体循环)、`system-config`(用户配置)、
+`commerce`(产品授权/许可)。
 
-### Group `core`
+### 组 `core`
 
-| Domain                                                   | Responsibility                                                                                                                                                    |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`permission-gateway`](domains/core/permission-gateway/) | Intercept SDK permission requests, route them to the browser, block until the user decides (deny on run abort)                                                    |
-| [`agent-session`](domains/core/agent-session/)           | Drive the SDK `query()` loop, map SDK messages to the wire protocol, manage permission mode and run lifecycle                                                     |
-| [`session-registry`](domains/core/session-registry/)     | Manage workspaces & sessions; own per-session mode, recent-access order, history replay                                                                           |
-| [`web-console`](domains/core/web-console/)               | The browser UI: prompt input, activity stream, permission dialog, mode switch                                                                                     |
-| [`intent-management`](domains/core/intent-management/)   | A project-scoped intent ledger and a read-only intent-communication agent that breaks ideas into verifiable items and launches the configurable development skill |
+| 领域                                                     | 职责                                                                                                    |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [`permission-gateway`](domains/core/permission-gateway/) | 拦截 SDK 权限请求,将其路由到浏览器,阻塞直到用户做出决定(运行中止则视为拒绝)                             |
+| [`agent-session`](domains/core/agent-session/)           | 驱动 SDK 的 `query()` 循环,把 SDK 消息映射为通信协议,管理权限模式与运行生命周期                         |
+| [`session-registry`](domains/core/session-registry/)     | 管理工作区与会话;负责每个会话的模式、最近访问顺序、历史回放                                             |
+| [`web-console`](domains/core/web-console/)               | 浏览器 UI:prompt 输入、活动流、权限对话框、模式切换                                                     |
+| [`intent-management`](domains/core/intent-management/)   | 一个项目范围的意图台账,以及一个只读的意图沟通智能体,负责把想法拆解为可验证的条目,并启动可配置的开发技能 |
 
-### Group `system-config`
+### 组 `system-config`
 
-| Domain                                                | Responsibility                                                                       |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [`agent-config`](domains/system-config/agent-config/) | Manage agent profiles (url/key/model + name), the default agent, per-session binding |
+| 领域                                                  | 职责                                                         |
+| ----------------------------------------------------- | ------------------------------------------------------------ |
+| [`agent-config`](domains/system-config/agent-config/) | 管理智能体配置(url/key/model + 名称)、默认智能体、按会话绑定 |
 
-### Group `commerce`
+### 组 `commerce`
 
-| Domain                                                 | Responsibility                                                                                                                                                                                                                              |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`product-license`](domains/commerce/product-license/) | Govern whether a c3 install is commercially **entitled** to create new work; activation, heartbeat + 30-min offline grace, offline Ed25519 verification, new-session gating. Authority lives in the separate **license-server** (ADR-0026). |
+| 领域                                                   | 职责                                                                                                                                                            |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`product-license`](domains/commerce/product-license/) | 管控某个 c3 安装是否具有商业**授权**来创建新工作;激活、心跳 + 30 分钟离线宽限期、离线 Ed25519 验证、新会话门控。权威归属于独立的 **license-server**(ADR-0026)。 |
 
-## Usage rules
+## 使用规则
 
-1. **Spec before code.** New behavior is described here first, then implemented.
-2. **WHAT vs HOW.** `<domain>-spec.md` files state business behavior; `<domain>-design.md` files state
-   technical implementation. Keep them apart.
-3. **Single source of truth for the wire format.** The WebSocket protocol is documented
-   once in [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md).
-   Domain docs reference that document; they do not redefine message shapes.
-4. **Reference, don't duplicate.** Shared rules live once and are cited by ID.
-5. **Dates are `YYYY-MM-DD`.** Business-semantic types over technical types.
-6. **Design altitude, not code dumps.** Specs explain the change clearly — approach, flows, logic,
-   state, and rules — and validate it against the real codebase, without exhaustively enumerating
-   low-level code details (full source-tree listings or per-file/symbol checklists) that duplicate
-   the source and drift out of sync. Describe affected capabilities and contracts at boundary
-   altitude; record shared contracts once and cite them by ID. See
-   [`constitution.md`](constitution.md) Document authoring discipline.
+1. **先写规格,后写代码。** 新行为先在这里描述,然后再实现。
+2. **WHAT 与 HOW。** `<domain>-spec.md` 文件陈述业务行为;`<domain>-design.md` 文件陈述
+   技术实现。两者要分开。
+3. **通信格式的唯一真源。** WebSocket 协议只在
+   [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md)
+   中记录一次。领域文档引用该文档;不重新定义消息形状。
+4. **引用,不要复制。** 共享规则只存在一处,并通过编号引用。
+5. **日期一律使用 `YYYY-MM-DD`。** 业务语义类型优先于技术类型。
+6. **保持设计高度,而非代码堆砌。** 规格清晰地解释变更——方式、流程、逻辑、状态与规则——
+   并对照真实代码库进行校验,而不穷举式地列出低层级代码细节(完整源码树列表,或
+   逐文件/逐符号检查清单),因为那会与源码重复并随之漂移失步。在边界高度描述受影响的
+   能力与契约;共享契约只记录一次,并通过编号引用。见
+   [`constitution.md`](constitution.md) 文档撰写规范一节。
 
-## Maintenance
+## 维护
 
-- Initialized 2026-05-29.
-- Every domain has `<domain>-overview.md`, `<domain>-spec.md`, `<domain>-design.md`, `<domain>-models.md`.
-- Deprecated content moves to `archived/`; ADRs are never deleted, only superseded.
+- 初始化于 2026-05-29。
+- 每个领域都有 `<domain>-overview.md`、`<domain>-spec.md`、`<domain>-design.md`、`<domain>-models.md`。
+- 废弃内容移动到 `archived/`;ADR 从不删除,只会被取代(superseded)。

@@ -1,99 +1,84 @@
-# 0010 — Release & distribution trust
+# 0010 — 发布与分发信任
 
 - **Status:** accepted
 - **Date:** 2026-06-05
 
 ## Context
 
-ADR-0003 established the single-binary build via `bun build --compile`, driven by a single
-build script. That driver builds **one** target and, in a cleanup step, rewrites the
-embedded web-asset module back to an empty stub so the bundler and the working tree stay
-clean. Two structural problems block multi-platform distribution:
+ADR-0003 确立了经由 `bun build --compile`、由单一构建脚本驱动的单体二进制构建。该驱动只构建**一个**目标,
+并在清理步骤中把内嵌的 web 资源模块重写回一个空的桩(stub),以便打包器与工作树保持整洁。有两个结构性问题
+阻碍了多平台分发:
 
-1. **Parallel race.** Every target generates and then resets the same shared embed file.
-   Two targets building concurrently stomp each other and leave the working tree dirty.
-2. **No orchestration.** There is no first-class "build all platforms" entry point, no
-   target matrix, and no place to hang later distribution concerns (signing, version
-   injection, channels, hardening).
+1. **并行竞态。** 每个目标都会生成、然后重置同一个共享的内嵌文件。两个目标并发构建时会相互踩踏,并留下一个
+   脏的工作树。
+2. **缺乏编排。** 不存在一个"构建所有平台"的一等入口点,没有目标矩阵,也没有地方挂载后续的分发相关关注点
+   (签名、版本注入、渠道、加固)。
 
-This is the first of a 7-step release effort. Step 1 is the **orchestration skeleton**:
-make multi-platform builds race-free and add the seams for later trust work — without
-replacing the proven `build` / `binary` primitives. Steps 2 (version injection + manifest +
-harden tiers) and 3 (distribution trust: SHA256SUMS + minisign + macOS ad-hoc + `c3 verify` +
-notes/publish orchestration) build on these seams.
+这是一项 7 步发布工作的第一步。第 1 步是**编排骨架**:让多平台构建做到无竞态,并为后续的信任工作添加接缝——
+同时不替换已经验证过的 `build` / `binary` 原语。第 2 步(版本注入 + 清单 + 加固分级)与第 3 步(分发信任:
+SHA256SUMS + minisign + macOS ad-hoc + `c3 verify` + 发布说明/发布编排)都建立在这些接缝之上。
 
 ## Options considered
 
-- **Phase-gate the existing in-tree embed file (single write + single reset).** Generate the
-  real embed once, reset once after all targets. Pros: keeps the `bun build --compile`
-  CLI; minimal churn. Cons: the artifact still transits the source tree (briefly dirty
-  mid-build); does not satisfy the "embed leaves the source tree" goal; the shared-file seam
-  remains fragile.
-- **Build-only path alias to a generated snapshot.** Redirect the import via a build-only
-  type-checker config. Cons: the bun compiler and the bundler/typecheck would need
-  _different_ alias targets from one shared config — a dual-target conflict with no clean
-  per-invocation override in the current bun release.
-- **Embed snapshot outside the source tree + `onResolve` redirect (chosen).** Keep a permanent
-  committed empty stub in the source tree; generate the real embed once to a generated
-  snapshot outside it; the Bun compile path redirects the stub import to that snapshot via a
-  `Bun.build` `onResolve` plugin. Pros: the import statement, the bundler, dev, and typecheck
-  are untouched; the per-target compile passes are pure readers, so parallelism is race-free
-  by construction and the working tree stays clean. Cons: the compile path moves from the
-  `bun build` CLI to the `Bun.build` JS API (validated to support `--compile` + cross-target
-  - plugins).
+- **对既有的树内内嵌文件做分阶段处理(单次写入 + 单次重置)。** 只生成一次真正的内嵌内容,在所有目标构建
+  完成后只重置一次。优点:保留了 `bun build --compile` 这个 CLI;改动最小。缺点:该产物仍然要经过源码树
+  (构建过程中会短暂变脏);不满足"内嵌内容离开源码树"这一目标;共享文件这个接缝依然脆弱。
+- **仅在构建期把路径别名指向一个生成的快照。** 通过一个仅用于构建的类型检查器配置来重定向该 import。缺点:
+  bun 编译器与打包器/类型检查在当前 bun 版本下需要*不同的*别名目标,而现有配置没有干净的按调用覆写手段——
+  这是一处双目标冲突。
+- **把内嵌快照放到源码树之外 + 用 `onResolve` 重定向(采用)。** 在源码树中保留一个永久提交的空桩;把真正的
+  内嵌内容只生成一次到源码树之外的一个生成快照中;Bun 编译路径通过一个 `Bun.build` 的 `onResolve` 插件,把
+  对该桩的 import 重定向到那个快照。优点:import 语句、打包器、开发环境与类型检查都不受影响;每个目标的
+  编译过程都是纯粹的读取者,因此并行天然无竞态,工作树也保持整洁。缺点:编译路径从 `bun build` CLI 转移到
+  了 `Bun.build` 这个 JS API(已验证支持 `--compile` + 跨目标 + 插件)。
 
 ## Decision
 
-Adopt a thin **release orchestration** layer with an explicit, race-free phase order:
+采用一个薄的**发布编排**层,配合一个明确的、无竞态的阶段顺序:
 
-- **Phase0** web build — once, platform-agnostic.
-- **Phase1** generate the embed snapshot — once, writes the generated snapshot (gitignored)
-  outside the source tree.
-- **Phase2** `bun --compile` fan-out — once per target, in **parallel**, each a pure reader
-  of the Phase1 snapshot via an `onResolve` redirect.
+- **Phase0** web 构建 —— 只做一次,与平台无关。
+- **Phase1** 生成内嵌快照 —— 只做一次,把生成的快照(已 gitignore)写到源码树之外。
+- **Phase2** `bun --compile` 扇出 —— 每个目标各一次,**并行**执行,每个都是对 Phase1 快照的纯读取者,
+  经由一个 `onResolve` 重定向。
 
-A single reusable compile primitive (parameterized by target, output file, embed path, and
-hardening) is the only compile path; both the native quick build and the multi-platform
-release build route through it — no second compile path. The first-pass matrix is
-macOS-arm64 + Linux-x64-glibc; `--bytecode` is never enabled (oven-sh/bun#18416 cross-compile
-segfault), `--minify` stays on. CI and local share the same scripts. Distribution trust
-concerns — version source of truth, channels, hardening tiers, signing/notarization, publish
-— are seams (placeholders) filled by later release waves.
+一个单一的、可复用的编译原语(以目标、输出文件、内嵌路径与加固级别为参数)是唯一的编译路径;无论是原生的
+快速构建还是多平台发布构建,都经由它——不存在第二条编译路径。第一版矩阵是 macOS-arm64 + Linux-x64-glibc;
+`--bytecode` 永不启用(oven-sh/bun#18416 跨编译段错误问题),`--minify` 保持开启。CI 与本地共用同一套脚本。
+分发信任相关的关注点——版本的事实来源、渠道、加固分级、签名/公证、发布——都是留出的接缝(占位符),由后续
+的发布批次去填充。
 
 ## Consequences
 
-- **Easier:** multi-platform builds are one command (`pnpm release:build`), parallel, and
-  leave the working tree clean; later trust work has named seams to extend.
-- **Harder:** the compile path now depends on the `Bun.build` JS API rather than the CLI;
-  cross-compiling a target downloads that target's bun runtime on first use.
-- ADR-0003's "reset the embed module to a stub after each build" mechanism is **superseded**
-  by the committed-stub + generated-snapshot + redirect design (see the pointer added to 0003).
-- `pnpm build` (the CJS bundle) and the Node CJS filesystem fallback are unchanged.
-- The named seams paid off: step 3 hung the **distribution-trust signing chain** (SHA256SUMS
-  - minisign Ed25519 + macOS ad-hoc codesign + embedded-key `c3 verify` + notes/publish
-    orchestration) off the manifest + compile primitive with no structural change. Trust =
-    the signing chain; obfuscation is an explicit non-goal (security.md). See
-    `doc/non-functional/release.md` "Distribution trust".
-- **Self-update (`c3 upgrade` / `c3 restart`)** rides the same chain rather than a new one:
-  upgrade downloads the GitHub Release package + outer sidecars, verifies the package bytes
-  with the SAME embedded key + `verifyArtifact` as `c3 verify` **before** unpacking/replacing,
-  then atomically swaps `process.execPath` (Windows: `.exe.old` placeholder). minisign stays the
-  sole mandatory gate (sha256 a cross-check); a failure preserves the old binary. upgrade never
-  auto-restarts — the decoupled `c3 restart` re-reads the OS service unit (which references the
-  path, now the new binary) or relaunches the `--daemon` from a persisted options sidecar. No new
-  trust anchor, no PATH/profile mutation, no multi-version history. See `doc/non-functional/release.md`
-  "Distribution trust" and security.md DIST-1.
+- **更容易:** 多平台构建是一条命令(`pnpm release:build`),并行执行,并保持工作树整洁;后续的信任工作有
+  现成命名好的接缝可供扩展。
+- **更难:** 编译路径现在依赖 `Bun.build` 这个 JS API,而不是 CLI;跨编译某个目标时,首次使用会下载该目标
+  对应的 bun 运行时。
+- ADR-0003 中"每次构建后把内嵌模块重置为桩"的机制被"提交的桩 + 生成的快照 + 重定向"这一设计**取代**
+  (参见添加到 0003 中的指引)。
+- `pnpm build`(CJS bundle)与 Node CJS 文件系统回退路径保持不变。
+- 这些命名好的接缝得到了回报:第 3 步把**分发信任签名链**(SHA256SUMS + minisign Ed25519 + macOS ad-hoc
+  代码签名 + 内嵌密钥的 `c3 verify` + 发布说明/发布编排)挂在了清单 + 编译原语之上,没有做任何结构性改动。
+  信任 = 签名链;混淆是一个明确的非目标(security.md)。参见 `doc/non-functional/release.md` 的
+  "Distribution trust"一节。
+- **自我更新(`c3 upgrade` / `c3 restart`)** 搭乘的是同一条链,而不是新建一条:upgrade 下载 GitHub Release
+  包 + 外层附属文件,用与 `c3 verify` **相同的**内嵌密钥 + `verifyArtifact` 在解包/替换**之前**验证包字节,
+  然后原子地替换 `process.execPath`(Windows 下用 `.exe.old` 占位)。minisign 始终是唯一的强制关卡(sha256
+  作为交叉校验);验证失败会保留旧的二进制。upgrade 从不自动重启——解耦出来的 `c3 restart` 会重新读取
+  操作系统服务单元(它引用的路径,如今指向新的二进制)或从一份持久化的选项 sidecar 重新拉起 `--daemon`。
+  没有新的信任锚点,不修改 PATH/profile,不维护多版本历史。参见 `doc/non-functional/release.md` 的
+  "Distribution trust"一节以及 security.md 的 DIST-1。
 
 ## Compliance
 
-- A release orchestrator drives the phased multi-platform build (`--targets`, `--dry-run`).
-- All compilation routes through the single reusable compile primitive.
-- A snapshot generator writes the generated embed snapshot outside the source tree.
-- The in-tree embed stub stays committed and is never written by the release path.
-- A smoke/unit gate covers the release build.
+- 一个发布编排器驱动这个分阶段的多平台构建(`--targets`、`--dry-run`)。
+- 所有编译都经由这个单一的、可复用的编译原语。
+- 一个快照生成器把生成的内嵌快照写到源码树之外。
+- 树内的内嵌桩保持提交状态,且发布路径从不写入它。
+- 发布构建有一道冒烟/单元测试关卡覆盖。
 
 ## References
 
-- [ADR-0003](0003-single-binary-via-bun-compile.md) — single binary via `bun build --compile` (evolved by this ADR)
+- [ADR-0003](0003-single-binary-via-bun-compile.md) —— 经由 `bun build --compile` 的单体二进制(被本 ADR
+  演进)
 - `doc/non-functional/release.md`
-- oven-sh/bun#18416 — cross-compile + `--bytecode` segfault
+- oven-sh/bun#18416 —— 跨编译 + `--bytecode` 段错误问题

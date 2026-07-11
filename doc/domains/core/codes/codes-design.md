@@ -1,65 +1,64 @@
 # codes — Design
 
-Implements the [spec](codes-spec.md). The server feature uses the shared WebSocket protocol as its only
-API.
+实现[spec](codes-spec.md)。服务端 feature 以共享 WebSocket 协议作为其唯一
+API。
 
 ## Data Model
 
-| Model          | Shape                                                                                   | Notes                                                          |
-| -------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Directory item | `name`, `path`, `type`                                                                  | `path` is workspace-relative; `type` is `file` or `directory`. |
-| File read      | `path`, `size`, `binary`, optional `content`                                            | `content` is present only for text files under the size limit. |
-| Search hit     | `path`, optional `line`, optional `lineText`, optional `match`, `truncated` information | Content hits include line context; filename hits do not.       |
+| Model          | Shape                                                     | Notes                                                     |
+| -------------- | --------------------------------------------------------- | --------------------------------------------------------- |
+| Directory item | `name`、`path`、`type`                                    | `path` 是工作区相对路径;`type` 为 `file` 或 `directory`。 |
+| File read      | `path`、`size`、`binary`,可选 `content`                   | `content` 仅对体积限制以内的文本文件存在。                |
+| Search hit     | `path`,可选 `line`、`lineText`、`match`、`truncated` 信息 | 内容命中包含行上下文;文件名命中不包含。                   |
 
 ## API Design
 
-All requests carry `workspaceId`, never a root path.
+所有请求都携带 `workspaceId`,而不是根路径。
 
-| Request        | Response         | Behavior                                                                                                                                    |
-| -------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_dir`     | `dir_listed`     | Lists one directory's immediate children, excluding `.git`.                                                                                 |
-| `read_file`    | `file_read`      | Reads metadata and, when safe, text content for one file.                                                                                   |
-| `search_codes` | `codes_searched` | Searches by filename or text content with a result limit and timeout. An optional `pattern` glob filters which file basenames are searched. |
+| Request        | Response         | Behavior                                                                                      |
+| -------------- | ---------------- | --------------------------------------------------------------------------------------------- |
+| `list_dir`     | `dir_listed`     | 列出一个目录的直接子项,排除 `.git`。                                                          |
+| `read_file`    | `file_read`      | 读取一个文件的元数据,以及在安全的情况下读取文本内容。                                         |
+| `search_codes` | `codes_searched` | 按文件名或文本内容搜索,带结果数上限与超时。一个可选的 `pattern` glob 过滤被搜索的文件基础名。 |
 
-Failures use the existing `error` wire message. Path and workspace rejection errors are safe to
-display and must not echo absolute filesystem paths.
+失败使用既有的 `error` 线消息。路径与工作区拒绝错误可安全展示,
+且绝不能回显绝对文件系统路径。
 
 ## Path Guard
 
-The guard is applied before every filesystem operation and again to every path returned from a
-filesystem walk:
+该守卫在每次文件系统操作前应用,并再次应用于文件系统遍历返回的每个路径:
 
-1. Resolve `workspaceId` through the server registry. Unknown ids are rejected.
-2. Resolve the registered workspace path to its real filesystem root.
-3. Reject requested paths containing null bytes, absolute paths, or `..` segments.
-4. Resolve the candidate under the real root and realpath the target.
-5. Accept only the real root itself or paths with the real root plus path separator as prefix.
+1. 通过服务端注册表解析 `workspaceId`。未知 id 被拒绝。
+2. 把已注册工作区路径解析为其真实文件系统根目录。
+3. 拒绝含有空字节、绝对路径或 `..` 片段的请求路径。
+4. 在真实根目录下解析候选路径,并对目标做 realpath。
+5. 只接受真实根目录本身,或以真实根目录加路径分隔符为前缀的路径。
 
-This prevents symlink escape and sibling-prefix confusion (`/workspace` versus
-`/workspace-evil`). `.git` is excluded before descent and before response emission.
+这可以防止符号链接逃逸与同级前缀混淆(`/workspace` 与
+`/workspace-evil`)。`.git` 在下降遍历之前和响应输出之前都会被排除。
 
 ## Limits
 
-- File content limit: 1 MiB. Larger files return metadata only.
-- Binary detection: a null byte in the inspected prefix marks the file as binary.
-- Search result limit: 100 hits per request.
-- Search runtime limit: 1500 ms per request.
-- Content search reads only files that pass the same read eligibility rules.
-- Glob filter: `pattern` is compiled to case-insensitive basename matchers (`*` → any run, `?` → one
-  char); comma/space-separated globs union. `*`/empty disables the filter. Directories are always
-  traversed regardless of the filter; only file basenames are tested against it.
+- 文件内容上限:1 MiB。更大的文件只返回元数据。
+- 二进制检测:检测到的前缀中出现空字节即标记该文件为二进制。
+- 搜索结果上限:每次请求 100 条命中。
+- 搜索运行时限:每次请求 1500 ms。
+- 内容搜索只读取通过相同读取资格规则的文件。
+- Glob 过滤器:`pattern` 被编译为不区分大小写的基础名匹配器(`*` → 任意一段,`?` → 单个
+  字符);逗号/空格分隔的多个 glob 取并集。`*`/空值禁用该过滤器。目录始终被
+  遍历,不受过滤器影响;只有文件基础名会被拿去与之测试。
 
 ## Non-Functional Considerations
 
-- **Security:** The guard implements [SEC-11](../../../non-functional/security.md). The accepted
-  `.env` risk is documented in CODE-R8.
-- **Performance:** Directory walking is lazy for `list_dir`; content search is bounded by both
-  result count and elapsed time.
-- **Availability:** Errors are per-request and do not affect agent sessions or other workspace
-  operations.
+- **Security:** 该守卫实现了 [SEC-11](../../../non-functional/security.md)。可接受的
+  `.env` 风险记录在 CODE-R8 中。
+- **Performance:** `list_dir` 的目录遍历是惰性的;内容搜索同时受结果数量与
+  耗时限制。
+- **Availability:** 错误是按请求级别的,不影响智能体会话或其他工作区
+  操作。
 
 ## Dependencies
 
-- The session registry for workspace id resolution.
-- Operating-system filesystem APIs for read-only inspection.
-- The shared WebSocket protocol contract.
+- session registry,用于工作区 id 解析。
+- 操作系统文件系统 API,用于只读检视。
+- 共享 WebSocket 协议契约。

@@ -1,59 +1,56 @@
 # Project — c3 (Code Creative Center)
 
-## Vision
+## 愿景
 
-Give Claude Code a **browser-based permission console**. Every time the agent wants to
-run a sensitive tool (write a file, edit code, run a dangerous shell command), a human
-approves or denies it in a browser tab instead of the terminal — with a readable view of
-exactly which tool and which inputs are about to run.
+为 Claude Code 提供一个**基于浏览器的权限控制台**。每当智能体想要运行一个敏感工具
+(写文件、编辑代码、运行危险的 shell 命令),由人类在浏览器标签页中批准或拒绝它——
+而不是在终端里——并且能够清晰地看到究竟是哪个工具、带着哪些输入即将运行。
 
-## Problem
+## 问题
 
-Claude Code's permission prompts live in the terminal where the agent runs. That couples
-the approval surface to the terminal session: it is hard to read structured tool inputs,
-hard to expose to a non-terminal workflow, and hard to centralize. c3 decouples the
-**decision surface** (browser) from the **execution surface** (local agent process).
+Claude Code 的权限提示存在于智能体运行所在的终端中。这把批准界面和终端会话耦合在了
+一起:结构化的工具输入难以阅读,难以暴露给非终端的工作流,也难以集中管理。c3 把
+**决策界面**(浏览器)与**执行界面**(本地智能体进程)解耦开来。
 
-## Scope
+## 范围
 
-**In scope**
+**范围内**
 
-- A local server that drives the Claude Agent SDK `query()` loop against one project
-  directory.
-- Interception of every SDK permission request and routing it to a browser over WebSocket.
-- A browser console: send prompts, stream assistant text and tool activity, answer
-  Allow/Deny, and switch permission mode.
-- Packaging as a single self-contained binary.
+- 一个本地服务端,针对单个项目目录驱动 Claude Agent SDK 的 `query()` 循环。
+- 拦截每一个 SDK 权限请求,并通过 WebSocket 把它路由到浏览器。
+- 一个浏览器控制台:发送 prompt、流式展示助手文本与工具活动、回答允许/拒绝、
+  切换权限模式。
+- 打包为单一的自包含二进制文件。
 
-**Out of scope (non-goals)**
+**范围外(非目标)**
 
-- Not a hosted/multi-tenant service. c3 binds to localhost and serves a single local user.
-- Not an authentication or authorization system — it assumes the local OS user is trusted.
-- Not a replacement for Claude Code / Codex authentication. c3 manages default CLI
-  binaries under `~/.c3/vendor`, but vendor login state still belongs to the vendor CLI.
-- Not a multi-project workspace. One server process serves one `--workspace` directory.
-- Not a persistent store. There is no database, no history persistence across restarts.
+- 不是一个托管的/多租户服务。c3 绑定到 localhost,只服务单个本地用户。
+- 不是一个认证或授权系统——它假定本地操作系统用户是可信的。
+- 不是 Claude Code / Codex 认证的替代品。c3 在 `~/.c3/vendor` 下管理默认的 CLI
+  二进制文件,但厂商 CLI 的登录状态仍归厂商所有。
+- 不是一个多项目工作区。一个服务端进程只服务一个 `--workspace` 目录。
+- 不是一个持久化存储。没有数据库,重启之间不做历史持久化。
 
-## Stakeholders
+## 干系人
 
-| Role                           | Interest                                                           |
-| ------------------------------ | ------------------------------------------------------------------ |
-| Local developer (primary user) | Runs c3 against a project, approves tool use from the browser      |
-| Maintainer                     | Owns the server, protocol, and frontend                            |
-| Agent SDKs                     | Three upstream dependencies, each with distinct SDK architecture:  |
-|                                | • `@anthropic-ai/claude-agent-sdk` — subprocess JSON stdio wrapper |
-|                                | • `@openai/codex-sdk` — subprocess HTTP/SSE + Responses→Chat relay |
+| 角色                  | 关注点                                                        |
+| --------------------- | ------------------------------------------------------------- |
+| 本地开发者(主要用户） | 针对某个项目运行 c3,在浏览器中批准工具使用                    |
+| 维护者                | 拥有服务端、协议与前端                                        |
+| 智能体 SDK            | 三个上游依赖,各自拥有不同的 SDK 架构:                         |
+|                       | • `@anthropic-ai/claude-agent-sdk` — 子进程 JSON stdio 包装器 |
+|                       | • `@openai/codex-sdk` — 子进程 HTTP/SSE + Responses→Chat 中继 |
 
-## Success criteria
+## 成功标准
 
-- A user can open the browser console, send a prompt, and have the agent run to
-  completion with every sensitive tool gated through the browser.
-- No tool that the SDK classifies as sensitive ever executes without an explicit browser
-  decision (or an explicit mode that authorizes auto-execution).
-- The single binary can run with c3-managed Claude Code / Codex CLIs under `~/.c3/vendor`;
-  env overrides and host PATH fallback remain available for operations and migration.
+- 用户能够打开浏览器控制台,发送一个 prompt,并让智能体运行到完成,期间每一个敏感工具
+  都经过浏览器的把关。
+- 任何被 SDK 归类为敏感的工具,都绝不会在没有浏览器明确决策(或没有授权自动执行的
+  明确模式)的情况下执行。
+- 单一二进制文件可以配合 `~/.c3/vendor` 下由 c3 管理的 Claude Code / Codex CLI 运行;
+  环境变量覆盖与宿主 PATH 回退仍然可用于运维与迁移场景。
 
-## Current state
+## 当前状态
 
-Version `0.1.0`. Single developer. Workspaces: `server`, `web`, `shared`. Built and
-shipped as a Bun-compiled single binary plus a Node CJS bundle.
+版本 `0.1.0`。单一开发者。工作区(workspaces):`server`、`web`、`shared`。
+构建并交付为一个 Bun 编译的单一二进制文件,外加一个 Node CJS 包。

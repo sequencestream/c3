@@ -1,157 +1,153 @@
 # product-license — Domain Design
 
-The technical shape of how c3 enforces entitlement and how the license-server (LS) asserts it. WHAT
-and WHY live in [product-license-spec.md](product-license-spec.md); this document describes HOW at boundary altitude — it
-stays at the design level rather than exhaustively listing source files or symbols. External
-standards (Ed25519, PostgreSQL, GitHub OAuth, WeChat Pay, Go standard-library HTTP) and the
-[LS API contract](../../../shared/api-conventions/license-server-api.md) are the shared vocabulary.
+c3 如何强制执行授权、license-server(LS)如何断言授权的技术形态。WHAT
+与 WHY 见 [product-license-spec.md](product-license-spec.md);本文档描述边界高度的 HOW —— 它
+停留在设计层面,而非穷举源文件或符号。外部标准
+(Ed25519、PostgreSQL、GitHub OAuth、微信支付、Go 标准库 HTTP)与
+[LS API 契约](../../../shared/api-conventions/license-server-api.md)是共同的词汇表。
 
 ## Split of responsibility
 
-| Concern                            | Owner | Notes                                                                                |
-| ---------------------------------- | ----- | ------------------------------------------------------------------------------------ |
-| Authoritative entitlement record   | LS    | Licenses (with their live binding), orders, revocations — in PostgreSQL              |
-| Token signing                      | LS    | Ed25519 private key; signs entitlement tokens                                        |
-| Account identity + admin identity  | LS    | GitHub OAuth — used **only** for sign-in/registration (both roles, single source)    |
-| Payment (renewal)                  | LS    | WeChat Pay; no-refund-agreement acceptance recorded on the order before charge       |
-| Offline token verification         | c3    | Ed25519 **public** key embedded in the binary                                        |
-| Heartbeat scheduling + grace timer | c3    | In-process; bounded by the 30-minute offline grace                                   |
-| New-session gating + surfacing     | c3    | Gates creation only; renders the badge/menu                                          |
-| Entitlement cache                  | c3    | Small on-disk store: signed token + license key + alive token (accepted by ADR-0026) |
+| Concern                 | Owner | Notes                                                         |
+| ----------------------- | ----- | ------------------------------------------------------------- |
+| 权威授权记录            | LS    | 许可(及其活跃绑定)、订单、吊销 —— 存于 PostgreSQL             |
+| 令牌签名                | LS    | Ed25519 私钥;为授权令牌签名                                   |
+| 账户身份 + 管理员身份   | LS    | GitHub OAuth —— **仅**用于登录/注册(两种角色,同一来源)        |
+| 支付(续费)              | LS    | 微信支付;扣款前将无退款协议接受记录在订单上                   |
+| 离线令牌验证            | c3    | 内置于二进制中的 Ed25519 **公钥**                             |
+| 心跳调度 + 宽限期计时器 | c3    | 进程内;受 30 分钟离线宽限期约束                               |
+| 新会话阻断 + 呈现       | c3    | 仅阻断创建;渲染徽标/菜单                                      |
+| 授权缓存                | c3    | 小型磁盘存储:签名令牌 + 许可密钥 + alive token(ADR-0026 接受) |
 
 ## c3-side mechanism
 
-### Entitlement cache (the one accepted persistent store)
+### Entitlement cache(唯一被接受的持久化存储)
 
-c3 keeps a **small on-disk entitlement cache** holding the installation identifier, the **license
-key**, the most recent LS-signed **entitlement token**, the **alive token**, and the derived
-state/term/last-success metadata. This is the single new persistent store ADR-0026 accepts on the c3
-side; it exists so the 30-minute offline grace and restart continuity work. It carries **no signing
-key and no OAuth/payment secret** — only the public verification key (embedded in the binary) is
-needed to check the token. The file is treated as sensitive: it is written with **0600** permissions
-(owner read/write only) to protect the alive token (the heartbeat bearer credential) from other
-users on the same machine. Log redaction is a later milestone, mirroring the auth settings-file
-roadmap.
+c3 保留一个**小型磁盘授权缓存**,内含安装标识符、**许可密钥**、
+最近一次 LS 签名的**授权令牌**、**alive token**,以及派生出的
+状态/期限/最近成功时间等元数据。这是 ADR-0026 在 c3 侧接受的唯一新增
+持久化存储;它的存在是为了让 30 分钟离线宽限期与重启延续性得以运作。它
+**不携带任何签名密钥或 OAuth/支付密钥**——只有验证令牌所需的公钥(内置于二进制)
+是必需的。该文件被视为敏感文件:以 **0600** 权限(仅所有者可读写)写入,
+以保护 alive token(心跳承载凭据)不被同一台机器上的其他用户获取。日志脱敏
+是后续里程碑,与 auth 设置文件的路线图相呼应。
 
 ### Heartbeat scheduler + grace timer
 
-A process-local scheduler heartbeats LS at the interval LS dictates (returned on each heartbeat). It
-maintains two timestamps: **last-successful-heartbeat** and the derived **grace deadline**
-(last success + 30 minutes). On each successful heartbeat it updates both, caches any refreshed
-token, and applies the next interval. On a failed heartbeat it retries (without crashing or
-interrupting any run) and lets the grace timer run; once the grace deadline passes with no success,
-the derived entitlement state lapses (see the [product-license-spec.md](product-license-spec.md) state machine). The scheduler is
-**fail-soft**: heartbeat errors never propagate into the run path.
+进程本地的调度器按 LS 指定的间隔(每次心跳返回)向 LS 发送心跳。它
+维护两个时间戳:**最近一次成功心跳**与派生的**宽限期截止时间**
+(最近成功时间 + 30 分钟)。每次心跳成功时都会更新两者,缓存任何刷新的
+令牌,并应用下一个间隔。心跳失败时会重试(不崩溃也不打断任何运行),
+并让宽限期计时器继续运行;一旦宽限期截止且期间无成功心跳,派生的
+授权状态即失效(见 [product-license-spec.md](product-license-spec.md) 状态机)。该调度器是
+**fail-soft** 的:心跳错误绝不会传播到运行路径中。
 
 ### Offline verification
 
-Before honoring `active`, c3 verifies the entitlement token's **Ed25519** signature against the
-embedded public key and checks the token's validity window. Verification is **offline** — it does
-not require LS to be reachable. A verification failure is deny-by-default: the installation is
-treated as not entitled, which gates _new_ sessions only (existing sessions and in-flight runs are
-untouched). This is the existing release-signing discipline (ADR-0010) reused for entitlement.
+在信任 `active` 之前,c3 会针对内置公钥验证授权令牌的 **Ed25519** 签名,
+并检查令牌的有效期窗口。验证是**离线**的——不需要 LS 可达。验证失败即
+默认拒绝:该安装被视为未授权,仅阻断*新*会话(已有会话及正在进行的运行
+不受影响)。这沿用了既有的发布签名规范(ADR-0010),将其复用于授权。
 
 ### Gating point
 
-Entitlement is consulted at exactly one decision point: **new-session creation**. When the derived
-state does not permit new sessions (`Unactivated` / `Expired` / `Disabled`, the last being a license
-rebound to another installation — a displaced binding), creation is refused with a clear, surfaced
-reason; the user is directed to the license menu. The run lifecycle, existing sessions, and the
-permission gateway are never consulted or altered by this domain (ADR-0006: runs survive
-independently of connections and, here, of entitlement lapse).
+授权只在一个决策点被查询:**新会话创建**。当派生状态不允许创建新会话时
+(`Unactivated` / `Expired` / `Disabled`,后者指许可被重新绑定到另一安装——
+即被顶替的绑定),创建会被拒绝,并附带清晰的呈现原因;用户会被引导至
+许可菜单。运行生命周期、已有会话与权限网关从不被该域查询或修改
+(ADR-0006:运行独立于连接存续,在此也独立于授权失效)。
 
 ### Surfacing
 
-The current derived entitlement state is pushed to the web-console, which renders a **license
-badge** (entitled / grace / expired / unactivated / disabled) and a **license menu** (activate, view
-status, purchase link). For an entitled badge (`active`/`grace`) the console also renders the
-**term-end date** carried in the pushed `LicenseStatus.termEnd` (unix seconds; `0` ⇒ no date), so
-the user sees the validity/expiry of the purchased service. Beside that date the console offers a
-**manual refresh** control: a dedicated client→server message (distinct from the read-only license
-fetch, which only re-reads the local cache) makes the server **run one heartbeat now** and push the
-refreshed state, so a console renewal lands immediately instead of after the next scheduled beat. It
-reuses the existing heartbeat — no separate sync path, and the scheduler/interval are unchanged. The
-heartbeat stays fail-soft (a network / LS failure neither gates nor mutates the cached term); the
-server acks the round-trip so the console can show an inline error on failure. Throttling is
-client-side only (disabled while in flight + a minimum cooldown); no server-side rate limit. The
-badge is informational; it never blocks the UI on its own — enforcement is the gating point above.
+当前派生的授权状态会被推送到 web 控制台,后者渲染一个**许可徽标**
+(已授权 / 宽限期 / 已过期 / 未激活 / 已禁用)和一个**许可菜单**(激活、
+查看状态、购买链接)。对于已授权的徽标(`active`/`grace`),控制台还会
+渲染推送的 `LicenseStatus.termEnd`(unix 秒;`0` ⇒ 无日期)所携带的
+**期限截止日期**,让用户看到所购服务的有效期/到期时间。在该日期旁,
+控制台提供一个**手动刷新**控件:一条专用的客户端→服务端消息(区别于
+只读的许可读取消息,后者只重新读取本地缓存)会让服务端**立即运行一次
+心跳**并推送刷新后的状态,使控制台的续费立即生效,而无需等待下一次
+计划心跳。它复用现有心跳——没有单独的同步路径,调度器/间隔保持不变。
+心跳仍然是 fail-soft 的(网络/LS 故障既不阻断也不会改变已缓存的期限);
+服务端对这次往返进行确认应答,以便控制台在失败时显示内联错误。限流
+仅在客户端进行(请求进行中禁用 + 最小冷却时间);服务端不做限流。徽标
+只是信息展示;它本身从不阻塞界面——强制执行在上面所述的阻断点。
 
 ## License-server technical shape
 
-- **Runtime:** Go standard-library HTTP — a small, auditable surface, no heavy framework.
-- **Foundation surface:** the authority core boots from environment-driven configuration only (no
-  config file), applies its PostgreSQL schema via **idempotent** migrations on startup, and serves a
-  redacted **health** signal plus the public **plan catalog**. All secrets (signing key, OAuth and
-  payment credentials, database DSN) are presence-only in any health/log output (PL-R12). The whole
-  service — including the embedded web — ships as a **single binary**.
-- **Plan catalog:** the public, fixed set of purchasable terms is **persisted** in its own table and
-  served over the LS API contract's `GET /v1/plans`. A code-owned set (`internal/plans`) is the
-  bootstrap source: it is seeded into the table on startup with `INSERT ... ON CONFLICT DO NOTHING`,
-  so a fresh database is populated while existing rows survive — the database is the live store after
-  the first seed, and `GET /v1/plans` falls back to the code catalog only when the database is
-  unavailable. Prices are integer minor units (cents) in CNY (WeChat Pay's settlement currency); plan
-  ids are stable once published.
-- **Caching:** infrequently-changing read paths (the plan catalog today; license, auth, and payment
-  lookups as those surfaces land) are served through bounded in-process LRU caches.
-- **Embedded web:** the user/admin frontend is built and embedded into the binary and served with a
-  single-page-app fallback; no external asset directory is required at runtime.
-- **Store:** PostgreSQL — four tables. The **account** record (GitHub identity), the **plan** record
-  (the persisted public catalog, bootstrapped from code), the **license** record (the only entitlement
-  row, identified by a random unique **license key** and carrying its **live binding inline**: the
-  bound installation id, the **sha256 hash** of the current alive token, and the last-success time),
-  and the **order** record (purchase + no-refund acceptance, linked to the license it extends). The alive token's raw value is bearer-equivalent, so only its hash is
-  stored — limiting exposure if the database is compromised. There are no separate one-time-code or
-  heartbeat-history tables; binding/heartbeat state lives on the license row. LS data is kept in its
-  own schema area, separate from any c3 store.
-- **Identity:** GitHub OAuth used **only** for account sign-in/registration — user login
-  (purchase/inspection) and the admin back-office (issue/force-expire/inspect). It no longer carries the
-  activation action.
-- **Default license:** on first sign-in (no agreement shown — the agreement is at renewal/upgrade) LS
-  creates the account and **auto-provisions a long-lived free license** (`tier='free'`, PL-R14), so
-  the account always has a license. The user then **selects** it in the browser to bind; there is no
-  key to paste.
-- **Payment (renewal):** WeChat Pay; the **no-refund service-agreement acceptance** is recorded on
-  the **order before** the charge, and a paid order **extends the linked license's term and status**: `term_end = GREATEST(term_end, now) + duration_months`, `status = 'active'`.
-  Payment capture is a later milestone — the order → license-extension relationship is defined now.
-- **Signing:** an Ed25519 private key held only by LS signs entitlement tokens; the matching public
-  key is published for embedding in the c3 binary. Key custody, rotation, and the staging of public
-  keys are an LS-operations concern (a later milestone), analogous to the release-signing key handoff.
-- **Credentials issued at binding:** a **signed entitlement token** (offline-verifiable, with a
-  validity window) plus an **alive token** (the per-binding bearer credential, returned in plaintext
-  only once at bind, rotated on each re-bind, presented on every heartbeat — never the license key
-  alone).
+- **Runtime:** Go 标准库 HTTP —— 小巧、可审计的表面,不使用重型框架。
+- **Foundation surface:** 权威核心仅从环境驱动的配置启动(无配置文件),
+  在启动时通过**幂等**迁移应用其 PostgreSQL schema,并提供脱敏的**健康**信号
+  以及公开的**套餐目录**。所有密钥(签名密钥、OAuth 与支付凭据、数据库 DSN)
+  在任何健康检查/日志输出中都只以"是否存在"的形式呈现(PL-R12)。整个服务——
+  包括内嵌的 web——以**单二进制**形式发布。
+- **Plan catalog:** 公开的、固定的一组可购买期限**持久化**在自己的表中,
+  并通过 LS API 契约的 `GET /v1/plans` 提供。代码内维护的一份集合
+  (`internal/plans`)是引导来源:启动时通过 `INSERT ... ON CONFLICT DO NOTHING`
+  写入该表,因此全新的数据库会被填充,而已有行不受影响——首次写入之后
+  数据库即为活跃存储,`GET /v1/plans` 只在数据库不可用时回退到代码目录。
+  价格以 CNY(微信支付的结算币种)的最小货币单位(分)表示;plan id 一经
+  发布即保持稳定。
+- **Caching:** 变化不频繁的读路径(目前是套餐目录;随着许可、认证、支付
+  相关表面上线也会加入)通过有界的进程内 LRU 缓存提供。
+- **Embedded web:** 用户/管理员前端被构建并内嵌进二进制,以单页应用回退
+  方式提供服务;运行时不需要外部资源目录。
+- **Store:** PostgreSQL —— 四张表。**account** 记录(GitHub 身份)、**plan**
+  记录(持久化的公开目录,由代码引导)、**license** 记录(唯一的授权行,
+  由随机唯一的**许可密钥**标识,并内联携带其**活跃绑定**:绑定的安装 id、
+  当前 alive token 的 **sha256 哈希**,以及最近成功时间),以及 **order** 记录
+  (购买 + 无退款协议接受,关联到其延长的许可)。alive token 的原始值等同于
+  bearer 凭据,因此只存储其哈希——降低数据库被入侵时的暴露面。没有单独的
+  一次性验证码表或心跳历史表;绑定/心跳状态存放在 license 行上。LS 的数据
+  保存在其自己的 schema 区域,与任何 c3 存储分离。
+- **Identity:** GitHub OAuth **仅**用于账户登录/注册——用户登录(购买/查看)
+  与管理员后台(发放/强制到期/查看)。它不再承载激活操作。
+- **Default license:** 首次登录时(不展示协议——协议在续费/升级时出现)LS
+  创建账户并**自动发放一个长期有效的免费许可**(`tier='free'`,PL-R14),
+  因此账户始终拥有一个许可。用户随后在浏览器中**选择**它来绑定;无需
+  粘贴任何密钥。
+- **Payment(续费):** 微信支付;**无退款服务协议接受**记录在订单上,
+  发生在扣款**之前**,而支付成功的订单**延长关联许可的期限与状态**:
+  `term_end = GREATEST(term_end, now) + duration_months`,`status = 'active'`。
+  支付回调是后续里程碑——订单 → 许可延期的关系现已定义。
+- **Signing:** 只有 LS 持有的 Ed25519 私钥为授权令牌签名;匹配的公钥被
+  发布以内嵌进 c3 二进制。密钥托管、轮换及公钥的分发是 LS 运维层面的
+  关注点(后续里程碑),类似于发布签名密钥的交接。
+- **Credentials issued at binding:** 一个**签名的授权令牌**(可离线验证,
+  带有效期窗口)加上一个 **alive token**(每次绑定的承载凭据,绑定时仅
+  以明文返回一次,每次重新绑定时轮换,每次心跳都携带——从不单独使用
+  许可密钥)。
 
 ## State machine
 
-See the [product-license-spec.md](product-license-spec.md) § States & transitions for the authoritative c3-side Entitlement state
-machine (`Unactivated → Active ⇄ Grace → Expired`, plus `Disabled`). The design adds no states; it
-realizes those transitions via the heartbeat scheduler + grace timer + offline verification above.
+关于权威的 c3 侧 Entitlement 状态机(`Unactivated → Active ⇄ Grace → Expired`,
+以及 `Disabled`),见 [product-license-spec.md](product-license-spec.md) § States & transitions。设计层面不新增任何状态;
+它通过上文的心跳调度器 + 宽限期计时器 + 离线验证来实现这些转换。
 
 ## API design
 
-The c3 ↔ LS boundary — license-key binding, heartbeat, payment/order endpoints, token issuance,
-alive-token heartbeat, and error semantics — is documented once in the
-[license-server API contract](../../../shared/api-conventions/license-server-api.md) and cited by
-reference here (single source of truth for the external contract).
+c3 ↔ LS 边界——许可密钥绑定、心跳、支付/订单端点、令牌签发、
+alive-token 心跳与错误语义——统一记录在
+[license-server API 契约](../../../shared/api-conventions/license-server-api.md)中,此处仅作引用
+(外部契约的唯一真源)。
 
 ## Non-functional considerations
 
-- **Security:** offline Ed25519 verification (trust from the signature, not the network); deny-by-
-  default on verification failure; license key as a non-bearer handle; exclusive binding with a
-  rotated, hash-stored alive token; only the public key in c3; secret-by-reference for all LS
-  secrets. See
-  [non-functional/security.md](../../../non-functional/security.md) § Product licensing.
-- **Availability:** the 30-minute offline grace keeps a paying user productive through transient LS
-  or network outages; only a sustained lapse gates new work. A permanently unreachable LS eventually
-  gates new-session creation but never interrupts existing work.
-- **Performance:** activation and heartbeat are infrequent, off the hot path, and fail-soft —
-  neither blocks a run or a UI interaction.
+- **Security:** 离线 Ed25519 验证(信任来自签名,而非网络);验证失败时
+  默认拒绝;许可密钥作为非承载句柄;独占绑定 + 轮换、哈希存储的
+  alive token;c3 中只有公钥;所有 LS 密钥均为按引用存储。见
+  [non-functional/security.md](../../../non-functional/security.md) § Product licensing。
+- **Availability:** 30 分钟离线宽限期让付费用户在 LS 或网络的短暂故障期间
+  仍能正常工作;只有持续的失效才会阻断新工作。永久不可达的 LS 最终会
+  阻断新会话创建,但绝不会打断已有工作。
+- **Performance:** 激活与心跳都是低频、不在热路径上,且 fail-soft ——
+  两者都不会阻塞运行或 UI 交互。
 
 ## Dependencies
 
-- **Outbound to LS** — required for license-key binding and heartbeat; degrades gracefully (offline
-  grace, then new-session gating) when unreachable. Never a hard boot dependency for c3.
-- **Embedded LS public key** — a build-time input to c3; without a matching public key, tokens
-  cannot be verified and the installation is treated as unactivated.
-- **web-console** — renders the badge/menu and the activation entry.
-- **session-registry** — the gating point at new-session creation.
+- **Outbound to LS** —— 许可密钥绑定与心跳所需;不可达时会优雅降级
+  (先离线宽限期,再阻断新会话)。对 c3 而言从不是硬性启动依赖。
+- **Embedded LS public key** —— c3 的构建期输入;若没有匹配的公钥,
+  令牌无法被验证,该安装将被视为未激活。
+- **web-console** —— 渲染徽标/菜单及激活入口。
+- **session-registry** —— 新会话创建处的阻断点。

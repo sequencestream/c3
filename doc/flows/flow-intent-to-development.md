@@ -1,17 +1,17 @@
 # Flow — Intent → Development
 
-**Scenario.** The user has an idea against a project. A read-only communication agent refines it
-into discrete, verifiable intents; the user confirms them into the ledger; then launches one into a
-background work session and follows its progress via a back-link.
+**场景。** 用户针对一个项目有了一个想法。一个只读沟通智能体把它
+细化为离散的、可验证的意图;用户把它们确认进账本;然后启动其中一个进入一个
+后台工作会话,并通过回链跟踪其进度。
 
-**Domains.** intent-management · agent-session · permission-gateway · session-registry · agent-config.
+**领域。** intent-management · agent-session · permission-gateway · session-registry · agent-config。
 
-This flow operates **above** the session level: it captures _what to build_, then feeds the
-[prompt → gated run](flow-prompt-to-gated-run.md) loop. The unattended sibling is the
-[automation orchestrator](flow-automation-orchestrator.md). It reuses the run loop and the gate; it
-owns no permission state (`RM-R*` boundary).
+这个流程运行在会话层**之上**:它捕获*要构建什么*,然后将其送入
+[prompt → gated run](flow-prompt-to-gated-run.md) 循环。其无人值守的姊妹流程是
+[automation orchestrator](flow-automation-orchestrator.md)。它复用运行循环与闸门;它
+不持有任何权限状态(`RM-R*` 边界)。
 
-## Flow graph
+## 流程图
 
 ```mermaid
 flowchart TD
@@ -29,196 +29,195 @@ flowchart TD
     DEV -. dead process on entry .-> REC[reconcile auto-done]
 ```
 
-## Refine — read-only communication agent
+## 细化 — 只读沟通智能体
 
-1. **web-console → intent-management.** The user clicks the idea (💡) button; `open_intent_chat`
-   switches to the intent view and (re)loads the project's `isCurrent` communication session
-   (history + live stream), keyed by the resolved absolute project path (`RM-R4`, `RM-R10`). On
-   entry the server **reconciles** every `in_progress` intent (see _Reconcile_ below, `RM-R18`).
-2. **Communication agent (read-only).** Runs as an `intent`-kind runtime in **forced `default`
-   mode** (`RM-R3`). It may use read-class tools and `AskUserQuestion` (routed via the gateway's
-   answer-injection path, no consensus) and the read-only ledger queries `find_intents` /
-   `view_intent` (auto-allowed, `RM-R19`), but **never** edits, writes, runs commands, spawns
-   sub-agents, or runs slash commands — enforced at the tool layer, not by prompt (`RM-R2`,
-   ADR-0007). It proposes right-sized items covering Why / What / Trade-offs / When / Acceptance,
-   folding code + tests + companion docs into **one** intent (`RM-R15`).
+1. **web-console → intent-management。** 用户点击想法(💡)按钮;`open_intent_chat`
+   切换到意图视图,并(重新)加载该项目 `isCurrent` 的沟通会话
+   (历史 + 实时流),以解析出的绝对项目路径为键(`RM-R4`、`RM-R10`)。进入时
+   服务端会**协调**每一条 `in_progress` 的意图(见下文的*协调*,`RM-R18`)。
+2. **沟通智能体(只读)。** 以 `intent` 类型运行时运行,处于**强制 `default`
+   模式**(`RM-R3`)。它可以使用读类工具与 `AskUserQuestion`(通过网关的
+   答案注入路径路由,无共识),以及只读账本查询 `find_intents` /
+   `view_intent`(自动允许,`RM-R19`),但**永远不能**编辑、写入、运行命令、生成
+   子智能体,或运行斜杠命令 — 在工具层而非提示层强制(`RM-R2`、
+   ADR-0007)。它会提出规模适当的条目,覆盖 Why / What / Trade-offs / When / Acceptance,
+   把代码 + 测试 + 配套文档折叠进**一条**意图(`RM-R15`)。
 
-## Confirm — save to the ledger
+## 确认 — 保存到账本
 
-1. **intent-management → permission-gateway.** The agent calls `save_intents`
-   (`mcp__c3__save_intents`); c3 surfaces a human confirmation reusing the gateway (`RM-R5`). The
-   confirmation lists each proposed item incl. intra-batch "依赖本批" references.
-2. **Allow ⇒ write.** New items land as `todo` for the current project (`RM-R6`); items carrying an
-   `id` **update** in place (upsert — keeps `draft`/`todo`, reactivates `cancelled`, rejects
-   `in_progress`/`done`, `RM-R20`). Intra-batch `dependsOnIndexes` resolve to sibling ids in one
-   atomic transaction; an out-of-range/self/cycle index or a bad update id rejects the **whole**
-   batch (`RM-R17`, `RM-R20`). **Deny ⇒** nothing written, agent told it was rejected (`RM-R5`).
+1. **intent-management → permission-gateway。** 智能体调用 `save_intents`
+   (`mcp__c3__save_intents`);c3 复用网关(`RM-R5`)呈现一次人工确认。
+   确认列出每个拟保存条目,包括批内的"依赖本批"引用。
+2. **允许 ⇒ 写入。** 新条目以 `todo` 落入当前项目(`RM-R6`);携带
+   `id` 的条目**原地更新**(upsert — 保留 `draft`/`todo`,重新激活 `cancelled`,
+   拒绝 `in_progress`/`done`,`RM-R20`)。批内 `dependsOnIndexes` 在一次原子事务中
+   解析为兄弟条目的 id;越界/自引用/循环的索引,或错误的更新 id 会拒绝
+   **整个**批次(`RM-R17`、`RM-R20`)。**拒绝 ⇒** 什么都不写,智能体被告知已被拒绝(`RM-R5`)。
 
-## Write spec (optional quality gate)
+## 撰写规格(可选质量闸门)
 
-1. **Dependency context preparation.** Before first authoring or resetting a spec session,
-   worktree mode requires every known dependency to be available on the mainline. A dependency that
-   is not `done`, or is `done` but remains on a non-main branch without a merged PR, rejects the
-   request without creating a document or replacing the selected session. Current-branch mode skips
-   this check. When the blocked dependency has a PR/MR whose stored state is not confirmed merged,
-   the server starts a one-shot background PR/MR status sync and rebroadcasts intents after it
-   completes; the current request still fails until a later check sees `prStatus = merged`. Once the
-   dependency check passes, the current workspace branch is pulled best-effort before the session
-   starts; a missing remote, failed pull, or divergence is warned but does not prevent spec writing.
-   Both authoring and reset controls remain disabled with a dependency-not-merged explanation until
-   the rule is satisfied.
-2. **web-console → intent-management.** For a saved intent, `write_spec` produces a constrained,
-   reviewable spec document before development — the quality-gate output step (`RM-R21`). The server
-   scaffolds a dated directory under the **fixed, centralized spec root**
-   `<c3 home>/doc/<project-path-segment>` (per project, shared by all the project's worktrees;
-   not user-configurable, not in Git), `<spec-root>/yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>/spec.md`,
-   where `<slug>` derives from the intent's `shortEnTitle` (falling back to the intent id prefix)
-   and `<NNN>` is a per-day sequence. It seeds a **minimal** `spec.md` (frontmatter containing
-   only `intent_id`, `title`, and `created`, plus title + a link back to the intent, no section
-   skeleton and no document-level `status`) and backfills the intent's spec path
-   (the **absolute** centralized location) immediately, so the spec exists even if the run fails.
-   Content positioning: the **user is the first reader** and the development agent the second. The
-   intent already carries the requirements (Why / What / Acceptance / Non-goals), so the spec does
-   **not** restate them — it is a concise, review-oriented document that first states the observable
-   change, its boundaries, the decisions requiring confidence, and verification. A reviewer must be
-   able to approve or reject it without reading the codebase. Its structure follows the real impact,
-   not the request length: a focused single-surface change without contract, data, migration,
-   security, or cross-domain impact is limited to change summary, behavior and boundaries, and
-   concrete verification (normally 8–20 lines); normal changes add only relevant approach,
-   capabilities/contracts, and boundaries; contract/data/migration/security/cross-domain changes
-   also record trade-offs, compatibility, and failure handling. Empty headings and generic prose are
-   forbidden. The spec describes capabilities and contracts in domain language — it does not list
-   source paths, symbols, or per-file edits. A short implementation handoff may follow verification
-   only when necessary, describing technical boundaries and sequencing without code identifiers.
-3. **intent-management → agent-session.** A **write-confined spec session** is launched on the
-   configured spec agent (`specAgentId`). Its sole job is to **write the spec, not change code**:
-   writes are limited to the spec directory (any other project path is denied; the rest is
-   read-only), and shell / sub-agent / slash-command tools are blocked — enforced at the tool +
-   **path** layer, not by prompt (`RM-R21`). On bind, the session id is linked back onto the intent.
-   The path-level write lock is a Claude-path permission-gateway mechanism, so a non-Claude spec
-   agent is **rejected** before launch (`RM-R21`).
+1. **依赖上下文准备。** 在首次撰写或重置一个规格会话之前,
+   worktree 模式要求每一个已知依赖都在主线上可用。一个非 `done` 的依赖,
+   或者 `done` 但仍停留在未合并 PR 的非主分支上的依赖,会拒绝该请求,
+   且不创建文档、不替换已选会话。当前分支模式跳过这项检查。当被阻塞的依赖
+   有一个存储状态未确认已合并的 PR/MR 时,服务端会启动一次一次性的后台
+   PR/MR 状态同步,并在其完成后重新广播意图;当前请求在后续检查看到
+   `prStatus = merged` 之前仍会失败。依赖检查通过后,当前工作区分支会在会话
+   开始前尽力拉取;远程缺失、拉取失败或分支分叉会给出警告但不阻止撰写规格。
+   撰写与重置控件在该规则满足之前都保持禁用,并附带一条依赖未合并的说明。
+2. **web-console → intent-management。** 对于一条已保存的意图,`write_spec` 在开发之前
+   产出一份受约束、可评审的规格文档 — 质量闸门输出步骤(`RM-R21`)。服务端
+   在**固定的、集中式的规格根目录** `<c3 home>/doc/<project-path-segment>`
+   (按项目划分,由该项目的所有 worktree 共享;不可由用户配置,不进 Git)下
+   脚手架出一个带日期的目录 `<spec-root>/yyyy/mm/dd/yyyy-mm-dd-<NNN>-<slug>/spec.md`,
+   其中 `<slug>` 由意图的 `shortEnTitle` 派生(缺省回退到意图 id 前缀),
+   `<NNN>` 是当日内的序号。它会种下一份**最小化**的 `spec.md`(frontmatter 仅包含
+   `intent_id`、`title` 和 `created`,加上标题和一个回链到意图的链接,
+   没有章节骨架,没有文档级 `status`),并立即回填意图的规格路径
+   (即那个**绝对**的集中式位置),这样即便运行失败,规格也已存在。
+   内容定位:**用户是第一读者**,开发智能体是第二读者。意图已经承载了
+   需求(Why / What / Acceptance / Non-goals),因此规格**不**重述它们 —
+   它是一份简洁的、以评审为导向的文档,先陈述可观察的变更、其边界、
+   需要确认的决策以及验证方式。评审者必须能在不阅读代码库的情况下
+   批准或拒绝它。它的结构取决于实际影响的大小,而不是请求的长度:
+   没有契约、数据、迁移、安全或跨领域影响的单一表层聚焦变更,
+   只限于变更摘要、行为与边界、具体验证(通常 8–20 行);普通变更
+   只额外加相关方案、能力/契约与边界;契约/数据/迁移/安全/跨领域变更
+   还要记录权衡、兼容性和失败处理。禁止空章节和泛泛而谈。
+   规格用领域语言描述能力和契约 — 它不列出源码路径、符号或逐文件的编辑。
+   仅在验证之后,可以附加一段简短的实现交接,描述技术边界与顺序,
+   但不含代码标识符。
+3. **intent-management → agent-session。** 一个**写入受限的规格会话**在
+   已配置的规格智能体(`specAgentId`)上启动。它唯一的职责是**撰写规格,而非
+   修改代码**:写入被限制在规格目录内(对任何其他项目路径的写入都会被拒绝;
+   其余路径只读),shell / 子智能体 / 斜杠命令工具被阻断 — 在工具层与
+   **路径**层强制,而非靠提示词(`RM-R21`)。绑定时,会话 id 被回链到该意图。
+   路径级写入锁是一种 Claude-path 的 permission-gateway 机制,因此非 Claude 的
+   规格智能体在启动前会被**拒绝**(`RM-R21`)。
 
-## Approve spec (human checkpoint)
+## 批准规格(人工检查点)
 
-1. **Four-state action button.** When the workspace's SDD switch (`sddEnabled`) is on, the intent's
-   primary action button is SDD-aware: no spec ⇒ `Write Spec`; spec written but unapproved ⇒
-   `Approve Spec`; spec approved ⇒ `Start Work` (SDD off ⇒ always `Start Work`). `sddEnabled` rides
-   every intent-list broadcast so the button needs no separate settings fetch (`RM-R22`, `WC-R25`).
-2. **web-console → intent-management.** `Approve Spec` sends `approve_spec`. The server sets
-   `spec_approved=true` and records the approving user (the current login subject) in
-   `spec_approve_user`, then re-broadcasts the list — single-person confirmation, no multi-sign or
-   un-approve in this phase; approving before a spec exists is rejected (`RM-R22`). Approval is the
-   **human checkpoint that gates development**: it clears the gate so the button advances to
-   `Start Work` but does **not** itself launch development. The automation orchestrator uses the
-   same checkpoint as an eligibility gate: with SDD on, queued `automate` intents are skipped until
-   `spec_approved=true`; with SDD off, automation does not require a spec.
+1. **四态动作按钮。** 当工作区的 SDD 开关(`sddEnabled`)开启时,意图的
+   主动作按钮具备 SDD 感知:无规格 ⇒ `Write Spec`;规格已写但未批准 ⇒
+   `Approve Spec`;规格已批准 ⇒ `Start Work`(SDD 关闭 ⇒ 始终为 `Start Work`)。`sddEnabled`
+   随每次意图列表广播下发,因此按钮无需单独获取设置(`RM-R22`、`WC-R25`)。
+2. **web-console → intent-management。** `Approve Spec` 发送 `approve_spec`。服务端
+   设置 `spec_approved=true`,并记录批准用户(当前登录主体)到
+   `spec_approve_user`,然后重新广播列表 — 单人确认,本阶段无多签也无
+   撤销批准;在规格存在之前批准会被拒绝(`RM-R22`)。批准是**门控开发的
+   人工检查点**:它清除该闸门,使按钮前进到 `Start Work`,但**不**
+   自行启动开发。automation orchestrator 使用同一检查点作为一个准入闸门:
+   SDD 开启时,排队中的 `automate` 意图在 `spec_approved=true` 之前被跳过;
+   SDD 关闭时,自动化不要求规格。
 
-## Start work
+## 启动工作
 
-1. **web-console → intent-management.** A `todo` item's Launch button sends `start_development`,
-   allowed when `todo` or `in_progress` with a dangling work session (`RM-R8`). The server
-   synchronously **claims** the `intentId` in a single-process launch set; a concurrent duplicate
-   start returns `intent.devStartInFlight` and creates nothing (`RM-R8`).
-2. **Git branch mode (`WorkspaceSetting.gitBranchMode`).** `worktree` ⇒ create/reuse an isolated
-   per-intent worktree under the c3 home directory, branched from the latest fetched remote
-   `defaultMainBranch` tip when available, falling back best-effort to the local
-   `defaultMainBranch` when there is no remote, the remote branch is unavailable, or fetch fails;
-   `current-branch` (default) ⇒ develop in place. Worktree startup never auto-merges/rebases the
-   user's local main checkout, and the local main branch's stale/diverged/non-current state does
-   not select the new worktree base. The work session's effective working directory is set
-   accordingly (`RM-R8`).
-3. **intent-management → agent-session.** A **background normal session** is started with the
-   shared dev prompt builder used by both manual launch and automation. The visible turn carries
-   the intent title/content plus dependency note; when `sddEnabled` is on and the approved spec
-   path exists, it also carries the approved spec-path note. Internal launch channels stay out of
-   the visible echo: `devSkill` rides the model user-turn prefix, and when no `devSkill` is
-   configured SDD's work-session prompt rides the system-instruction channel (`RM-R23`). The intent
-   moves to `in_progress` and records `lastWorkSessionId` (`RM-R8`). The work session is a normal
-   session — it appears in the sidebar, stamped to sort to the top, fanned out to every connection
-   on bind/settle (`SR-R13`). For Codex-backed manual launches, the projection title starts as the
-   source intent title and run-end persistence must not replace it with a default placeholder while
-   the native Codex title is not yet readable; a later non-placeholder native title can still refresh
-   it. Claude launches keep the existing session-title path. It runs the standard gated loop ([prompt → gated
-   run](flow-prompt-to-gated-run.md)). The run survives disconnect (`AS-R8`).
-4. **Startup feedback (manual launch only).** Because the steps above can take several seconds
-   (remote main fetch, worktree create / branch pull, then the agent spawn — slowest with sandbox), the server emits
-   coarse, connection-directed `dev_launch_progress` stages after synchronous validation passes:
-   `fetching-remote-main` (before the worktree remote-base fetch), `preparing-worktree` (before the
-   git branch phase), and `launching` (before the spawn); the previously-silent async launch failure
-   now emits `failed`. The web console arms a blocking startup overlay on the click, **shows it
-   immediately, and keeps it visible for a minimum duration to prevent flashing**, stepping through
-   an ordered list aligned to those stages: 拉取远程主分支、准备 worktree、开始工作会话、进入会话。 The overlay closes on the success
-   terminal (the target intent flipping to `in_progress` in the regular `intents` broadcast),
-   on `failed` / an `intent.*` action error, and on a safety timeout so a lost signal never traps
-   the user. Synchronous validation failures stay on the `error` channel and emit no progress.
-   Scope: manual launch only — automation-driven dev (no client connection, unattended) is not covered.
+1. **web-console → intent-management。** 一条 `todo` 条目的 Launch 按钮发送
+   `start_development`,在 `todo` 或带悬挂工作会话的 `in_progress` 时被允许(`RM-R8`)。
+   服务端在单进程启动集合中同步**认领** `intentId`;并发的重复启动
+   返回 `intent.devStartInFlight` 且不创建任何东西(`RM-R8`)。
+2. **Git 分支模式(`WorkspaceSetting.gitBranchMode`)。** `worktree` ⇒ 在 c3 home 目录下
+   创建/复用一个隔离的按意图划分的 worktree,从最新拉取的远程
+   `defaultMainBranch` 尖端分支出去(若可用),在没有远程、远程分支不可用
+   或拉取失败时尽力回退到本地 `defaultMainBranch`;
+   `current-branch`(默认)⇒ 原地开发。worktree 启动永不自动合并/变基
+   用户本地的 main 检出,本地 main 分支的陈旧/分叉/非当前状态
+   不会影响新 worktree 基点的选择。工作会话的有效工作目录
+   会相应设置(`RM-R8`)。
+3. **intent-management → agent-session。** 一个**后台普通会话**通过手动启动与
+   自动化共用的开发提示词构建器启动。可见轮次携带意图标题/内容
+   加上依赖说明;当 `sddEnabled` 开启且已批准的规格路径存在时,
+   还会携带已批准规格路径的说明。内部启动通道不出现在可见回显中:
+   `devSkill` 搭载在模型用户轮前缀上,而当没有配置 `devSkill` 时,SDD 的
+   工作会话提示词搭载在系统指令通道上(`RM-R23`)。该意图移动到
+   `in_progress` 并记录 `lastWorkSessionId`(`RM-R8`)。工作会话是一个普通
+   会话 — 它出现在侧边栏,被打上时间戳排到最上面,在绑定/落定时
+   扇出给每一个连接(`SR-R13`)。对于 Codex 支撑的手动启动,投影标题
+   起初以来源意图标题开始,运行结束持久化时不得在原生 Codex 标题尚不可读时
+   将其替换为默认占位符;之后一个非占位符的原生标题仍可刷新它。
+   Claude 的启动保持既有的会话标题路径。它运行标准的门控循环([prompt → gated
+   run](flow-prompt-to-gated-run.md))。该运行在断连后仍存活(`AS-R8`)。
+4. **启动反馈(仅限手动启动)。** 因为上述步骤可能耗时数秒
+   (远程 main 拉取、worktree 创建/分支拉取,再到智能体生成 — 带 sandbox 时最慢),
+   服务端在同步校验通过后发出粗粒度的、面向连接的 `dev_launch_progress` 阶段:
+   `fetching-remote-main`(worktree 远程基点拉取之前)、`preparing-worktree`
+   (git 分支阶段之前)、`launching`(生成之前);此前静默的异步启动失败
+   现在也会发出 `failed`。web console 在点击时布防一个阻塞式启动遮罩,
+   **立即显示,并在最短时长内保持可见以防闪烁**,按顺序步进一个
+   对齐这些阶段的有序列表:拉取远程主分支、准备 worktree、开始工作会话、进入会话。
+   该遮罩在成功终态(目标意图在常规 `intents` 广播中翻转为
+   `in_progress`)、`failed` / 一个 `intent.*` 动作错误,以及一个安全超时时关闭,
+   这样一次丢失的信号就不会困住用户。同步校验失败会留在 `error` 通道上,
+   不发出任何进度。范围:仅限手动启动 — 自动化驱动的开发(无客户端连接、
+   无人值守)不在此列。
 
-## Back-link & status
+## 回链与状态
 
-- **Work-session back-link.** A launched item's Development-details entry opens `lastWorkSessionId`
-  via `select_session` (history + live stream, `RM-R13`). A deleted session yields a friendly
-  restart/cancel prompt, not a crash (`RM-R13`).
-- **Post-launch right-column jump.** After `start_development` completes and the startup overlay
-  closes (`ready` terminal), the frontend auto-bridges to the console: it switches the active session
-  kind to `work`, enters the console tab, and selects the newly-created work session
-  (`lastWorkSessionId`). During this pending-jump window, the normal kind-switch auto-bind (which
-  would select the first historical work session in the list) is suppressed — the right column stays
-  empty until the target session's row arrives in the sidebar. Once the row lands,
-  `consumePendingWorkSessionSelect` selects only that session, never a historical one. If the target
-  row never arrives (e.g., broadcast loss), the right column remains empty.
-- **Reconcile on entry (`RM-R18`).** On `open_intent_chat`, each `in_progress` intent's
-  `lastWorkSessionId` is checked against the process table: a **dead** process whose last 3 assistant
-  messages the completion judge confirms `done` is **auto-completed** (commit + push +
-  status set to `done`) — for manual **and** automation runs alike; a live process derives
-  `runStatus = 'running'`; otherwise `dangling`. This is one of the two auto-`done` paths.
-- **Session-end Git/PR cleanup (manual, `RM-R26`).** When a **manually-started** work session settles
-  (complete / error / terminated), the server closes the Git/PR loop **without** changing status. In
-  `worktree` mode (or `current-branch` off the `defaultMainBranch`) with changes present it commits,
-  pushes, and creates a PR/MR through the workspace's forge-aware dispatcher: an explicit
-  workspace `forge` setting of `github` or `gitlab` overrides repository-origin detection, while
-  `auto` (or an absent value) uses detection. It invokes `gh` for GitHub or `glab` for GitLab, then writes back `branchName`, `latestCommitHash`, `prId`,
-  `prUrl`, and `prStatus = reviewing`; an intent that already has a PR is refreshed (commit/push +
-  `latestCommitHash`) but **not** re-PR'd. `current-branch` **on** the main branch is a normal success
-  skip. A session the project's orchestrator is actively driving is automation-owned (`RM-A5`) and is
-  **not** cleaned up here — manual and automation are mutually exclusive. After its own successful
-  commit and push, the orchestrator creates the same forge-aware PR/MR: an explicit workspace `forge`
-  override selects GitHub/`gh` or GitLab/`glab`; `auto` or an absent setting uses repository-origin
-  detection.
-- **PR/MR status sync (`RM-R28`).** A `done` intent with `prStatus = reviewing` and an associated
-  PR/MR can be refreshed once from the detail header or Git/PR metadata. The sync queries the forge
-  CLI and only writes `prStatus = merged` when the forge confirms the PR/MR merged. A closed PR/MR
-  may be recorded as `closed`, and failures or unavailable CLI/auth leave the existing state intact;
-  only confirmed `merged` unblocks worktree dependency gates.
+- **工作会话回链。** 一条已启动条目的开发详情项打开 `lastWorkSessionId`
+  通过 `select_session`(历史 + 实时流,`RM-R13`)。已删除的会话会给出一个
+  友好的重启/取消提示,而非崩溃(`RM-R13`)。
+- **启动后右栏跳转。** 在 `start_development` 完成且启动遮罩关闭(`ready` 终态)后,
+  前端会自动桥接到控制台:它把活动会话类型切换为
+  `work`,进入控制台标签页,并选中新创建的工作会话
+  (`lastWorkSessionId`)。在这个待跳转窗口期间,常规的类型切换自动绑定
+  (原本会选择列表中第一个历史工作会话)被抑制 — 右栏保持
+  空白,直到目标会话的行出现在侧边栏中。一旦该行到达,
+  `consumePendingWorkSessionSelect` 只选中那一个会话,绝不选历史会话。
+  如果目标行始终没有到达(例如广播丢失),右栏将保持空白。
+- **进入时协调(`RM-R18`)。** 在 `open_intent_chat` 时,每一条 `in_progress` 意图的
+  `lastWorkSessionId` 会与进程表比对:一个**已死**的进程,若其最后 3 条助手
+  消息被完成度判定确认为 `done`,则被**自动完成**(提交 + 推送 +
+  状态置为 `done`) — 手动**与**自动化运行都适用;一个存活的进程派生出
+  `runStatus = 'running'`;否则为 `dangling`。这是两条自动 `done` 路径之一。
+- **会话结束时的 Git/PR 清理(手动,`RM-R26`)。** 当一个**手动启动**的工作会话落定
+  (完成 / 出错 / 终止)时,服务端会在**不**改变状态的情况下闭合 Git/PR 环节。在
+  `worktree` 模式(或 `current-branch` 且偏离 `defaultMainBranch`)且存在变更时,
+  它会通过工作区的 forge-aware 分发器提交、推送并创建 PR/MR:显式的
+  工作区 `forge` 设置为 `github` 或 `gitlab` 会覆盖仓库来源检测,而
+  `auto`(或缺省值)使用检测。对 GitHub 调用 `gh`,对 GitLab 调用 `glab`,然后回写
+  `branchName`、`latestCommitHash`、`prId`、
+  `prUrl` 和 `prStatus = reviewing`;已经有 PR 的意图会被刷新(提交/推送 +
+  `latestCommitHash`)但**不**重新建 PR。`current-branch` 且**在** main 分支上是一次
+  普通的成功跳过。项目的 orchestrator 正在主动驱动的会话属于自动化所有(`RM-A5`),
+  **不**在此清理 — 手动与自动化互斥。在其自身成功提交与推送之后,
+  orchestrator 创建同样的 forge-aware PR/MR:显式的工作区 `forge`
+  覆盖会选择 GitHub/`gh` 或 GitLab/`glab`;`auto` 或缺省设置使用仓库来源
+  检测。
+- **PR/MR 状态同步(`RM-R28`)。** 一条 `prStatus = reviewing` 且关联了
+  PR/MR 的 `done` 意图,可以从详情头部或 Git/PR 元数据处刷新一次。该同步
+  查询 forge CLI,只有在 forge 确认 PR/MR 已合并时才写入 `prStatus = merged`。
+  一个已关闭的 PR/MR 可能被记录为 `closed`,失败或 CLI/认证不可用则保持
+  既有状态不变;只有确认的 `merged` 才能解除 worktree 依赖闸门。
 
-## Discussion bridge
+## 讨论桥接
 
-`discussion_to_intent` (a `refine_intent` variant owned by the discussion domain) seeds the
-communication session with a completed discussion's `conclusion` instead of an existing intent,
-then funnels into the **unchanged** `save_intents` path (`RM-R7`). See
-[discussion → intent](flow-discussion-to-intent.md).
+`discussion_to_intent`(discussion 领域拥有的一个 `refine_intent` 变体)以一个
+已完成讨论的 `conclusion` 而非既有意图作为种子,为沟通会话下种,
+然后汇入**不变的** `save_intents` 路径(`RM-R7`)。见
+[discussion → intent](flow-discussion-to-intent.md)。
 
-## Branches & exceptions (anti-scenarios)
+## 分支与例外(反场景)
 
-- **Read-only is absolute.** A communication session must never write a file — even via a spawned
-  sub-agent or slash command; `Task`/`SlashCommand` are disallowed and the gate denies by default
-  (`RM-R2`, ADR-0007).
-- **No silent save.** `save_intents` must never persist without the user's allow — even under a
-  `bypassPermissions` system default (`RM-R3`/`RM-R5`).
-- **Spec session writes only the spec.** A `write_spec` session must never write outside its spec
-  directory — a write to project source is denied at the path level, and a non-Claude spec agent
-  (which cannot path-confine writes) is rejected before launch rather than authoring without the
-  lock (`RM-R21`).
-- **Manual launch never auto-completes.** The dev run finishing does not change status; the user
-  marks `done`/`cancelled` (`RM-R9`). The only exceptions are the entry reconcile (`RM-R18`) and the
-  automation orchestrator (`RM-A5`). The session-end Git/PR cleanup (`RM-R26`) likewise touches only
-  the Git/PR fields, never the status machine.
-- **Cleanup failure is explicit, never faked.** When the session-end cleanup should run but cannot —
-  no committable changes, commit/push failure, the selected forge CLI (`gh` or `glab`) unavailable /
-  not logged in, or PR/MR creation failing — it fails explicitly and pushes a workbench wait-user-involve todo asking the
-  user to act; it never sets `prStatus = reviewing` or writes a placeholder `prId`/`prUrl`, and only
-  genuinely-completed steps are recorded (`RM-R26`). It does not auto-merge, resolve conflicts, fix
-  auth, or retry.
-- **Unmet dependencies warn, not block.** Launching with a non-`done` `dependsOn` warns but proceeds
-  (`RM-R11`).
-- **Ledger unavailable degrades softly.** If SQLite is down, intent messages return `error` and the
-  normal list is **not** filtered; c3 still boots and serves normal sessions (`RM-R12`).
+- **只读是绝对的。** 一个沟通会话绝不能写文件 — 即便通过生成的
+  子智能体或斜杠命令也不行;`Task`/`SlashCommand` 被禁用,网关默认拒绝
+  (`RM-R2`、ADR-0007)。
+- **无静默保存。** `save_intents` 绝不能在没有用户允许的情况下持久化 — 即便处于
+  `bypassPermissions` 系统默认值下也是如此(`RM-R3`/`RM-R5`)。
+- **规格会话只写规格。** 一个 `write_spec` 会话绝不能写到其规格
+  目录之外 — 对项目源码的写入在路径层被拒绝,而一个非 Claude 的规格智能体
+  (它无法对写入做路径限定)在启动前就会被拒绝,而不是在没有该锁的情况下
+  撰写(`RM-R21`)。
+- **手动启动绝不自动完成。** 开发运行结束不会改变状态;用户
+  标记 `done`/`cancelled`(`RM-R9`)。唯一的例外是入口协调(`RM-R18`)与
+  automation orchestrator(`RM-A5`)。会话结束时的 Git/PR 清理(`RM-R26`)同样
+  只触及 Git/PR 字段,绝不触及状态机。
+- **清理失败是显式的,绝不伪装。** 当会话结束清理理应运行却无法运行时 —
+  没有可提交的变更、提交/推送失败、所选 forge CLI(`gh` 或 `glab`)不可用/
+  未登录,或 PR/MR 创建失败 — 它会显式失败,并推送一条工作台等待用户介入的
+  待办事项,要求用户处理;它绝不会把 `prStatus` 设为 `reviewing`,也不会写入
+  占位的 `prId`/`prUrl`,只有真正完成的步骤才会被记录(`RM-R26`)。它不会
+  自动合并、解决冲突、修复认证,也不会重试。
+- **未满足的依赖只警告,不阻塞。** 在 `dependsOn` 非 `done` 时启动会警告但仍会继续
+  (`RM-R11`)。
+- **账本不可用时优雅降级。** 如果 SQLite 宕机,意图消息返回 `error`,而
+  常规列表**不**被过滤;c3 仍能启动并服务常规会话(`RM-R12`)。

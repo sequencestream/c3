@@ -1,743 +1,742 @@
-# intent-management — Design
+# intent-management — 设计
 
-Implements the [spec](intent-management-spec.md). The capability is built from a SQLite ledger layer, a store over
-it, the read-only communication run variant plus the save tool, start-work wiring, and the
-automation orchestrator (state machine + completion judge + git helper), with hooks into the agent
-run loop (a run variant), the runtime registry (a run `kind` + shared launcher), the WS dispatch
-layer (new message branches), and session listing (hidden-set filtering). The frontend adds an
-intent view.
+实现 [spec](intent-management-spec.md)。该能力由一个 SQLite 账本层、其上的 store、只读沟通运行变体
+加保存工具、启动开发接线,以及自动化编排器(状态机 + 完成判定器 + git 助手)构成,并挂钩到智能体
+运行循环(一个运行变体)、运行时注册表(一个运行 `kind` + 共享启动器)、WS 分发层(新的消息分支)、
+以及会话列表(隐藏集过滤)。前端新增一个意图视图。
 
-**Reuse baseline.** Almost everything rides on existing machinery: the runtime registry, the
-emit/viewer fan-out, and background runs; the chat stream and `user_prompt`; the permission
-gateway for the save confirmation; `select_session` for the dev back-link. The genuinely new
-parts are: the **SQLite layer**, the **read-only communication run variant + `save_intents`
-tool**, the **intent frontend**, and the **automation orchestrator** (state machine +
-completion judge + git helper) layered on the same runtime/launcher/viewer machinery.
+**复用基线。** 几乎所有部分都建立在既有机制之上:运行时注册表、emit/viewer 扇出、以及后台运行;
+聊天流与 `user_prompt`;用于保存确认的权限网关;`select_session` 用于开发回链。真正全新的部分是:
+**SQLite 层**、**只读沟通运行变体 + `save_intents` 工具**、**意图前端**,以及叠加在同一套
+运行时/启动器/viewer 机制之上的**自动化编排器**(状态机 + 完成判定器 + git 助手)。
 
-## Responsibilities
+## 职责
 
-| Concern                     | Notes                                                                                                                         |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| SQLite driver adapter       | Shared cross-runtime adapter (Node vs Bun built-in SQLite); minimal synchronous API (also used by the discussion store)       |
-| Ledger operations           | Intent CRUD, dependency aggregation, communication-session map                                                                |
-| Communication system prompt | Read-only analyst prompt, injected as an appended system prompt                                                               |
-| `c3` MCP tools              | Exposes `save_intents` (handler-gated confirmation) + read-only `find_intents` / `view_intent` (RM-R19)                       |
-| Run variant                 | The run loop gains appended-system-prompt / disallowed-tools / MCP-servers / gate options; a tool-less one-shot for the judge |
-| Runtime kind + launcher     | A run kind (`session` or `intent`) on the runtime; a shared launcher                                                          |
-| WS branches + orchestration | Eight new message branches; communication-session viewer management; dev-turn helper + automation broadcast                   |
-| Hidden-set list filter      | Session listing excludes the project's hidden set                                                                             |
-| Automation orchestrator     | Per-project state machine: pick-next, continuation loop, judge + commit; injected hooks                                       |
-| Completion judge            | Builds the prompt, runs the tool-less one-shot, parses `done`/`in_progress`/`stuck`                                           |
-| Reconcile                   | Reconciles dead-process `in_progress` intents on list entry (injected deps)                                                   |
-| Git helper                  | Diff-stat + recent-log + commit-and-push (scoped per repo, multi-repo aware); never rejects, returns codes/errors             |
+| 关注点               | 说明                                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------- |
+| SQLite 驱动适配器    | 跨运行时共享适配器(Node 与 Bun 内置 SQLite);最小化同步 API(讨论 store 也使用它)                   |
+| 账本操作             | Intent CRUD、依赖聚合、沟通会话映射                                                               |
+| 沟通系统提示词       | 只读分析师提示词,作为追加系统提示词注入                                                           |
+| `c3` MCP 工具        | 暴露 `save_intents`(handler 内网关确认)+ 只读的 `find_intents` / `view_intent`(RM-R19)            |
+| 运行变体             | 运行循环新增追加系统提示词 / 禁用工具 / MCP 服务器 / 网关等选项;为判定器提供一个无工具的 one-shot |
+| 运行时 kind + 启动器 | 运行时上新增运行 kind(`session` 或 `intent`);一个共享启动器                                       |
+| WS 分支 + 编排       | 八个新消息分支;沟通会话的 viewer 管理;开发轮助手 + 自动化广播                                     |
+| 隐藏集列表过滤       | 会话列表排除该项目的隐藏集                                                                        |
+| 自动化编排器         | 按项目的状态机:挑选下一项、续跑循环、判定 + 提交;注入式钩子                                       |
+| 完成判定器           | 构建提示词、运行无工具 one-shot、解析 `done`/`in_progress`/`stuck`                                |
+| Reconcile            | 在进入列表时对死进程的 `in_progress` 意图做调和(注入式依赖)                                       |
+| Git 助手             | Diff-stat + 近期日志 + commit-and-push(按仓库限定作用域,支持多仓库);从不拒绝,只返回代码/错误      |
 
-## SQLite layer
+## SQLite 层
 
-- **Location:** `~/.c3/c3.db` — aligned with the c3 settings home `~/.c3/`, **not** the registry's
-  `~/.claude/c3/`.
-- **Cross-runtime driver (ADR 0007).** The layer exposes a minimal **synchronous** interface
-  (exec / run / all / get) and picks the driver by runtime: the Bun binary uses Bun's built-in
-  SQLite, Node uses Node's built-in synchronous SQLite. The two never cross. Both are synchronous, so a
-  single sync adapter matches c3's existing synchronous persistence style.
-- **Adapter constraints (the two APIs differ for real):** use only positional placeholders
-  (named params bind differently); read rows by field only (one driver returns null-prototype objects,
-  the other plain objects). The drivers differ in their prepare/query and multi-statement APIs, which
-  the adapter normalizes.
-- **Build (mandatory):** the server bundle must mark both built-in SQLite modules as external. A
-  dynamic import is **not** enough — the bundler still fails to resolve the Bun module without an
-  external marker.
-- **PRAGMA on create:** WAL journal mode + a busy timeout, cheaply reducing lock conflicts
-  when multiple c3 processes point at one db (cross-process is not a v1 goal but the setting is
-  free).
-- **Fail-soft (per entry point):** on open/create failure, mark the db unavailable,
-  disabling intent features without affecting c3 boot (RM-R12) — consistent with the
-  "boot even with broken config" rule.
+- **位置:** `~/.c3/c3.db` — 与 c3 设置主目录 `~/.c3/` 对齐,**而非**注册表的
+  `~/.claude/c3/`。
+- **跨运行时驱动(ADR 0007)。** 该层暴露一个最小化的**同步**接口
+  (exec / run / all / get),按运行时选择驱动:Bun 二进制使用 Bun 内置的
+  SQLite,Node 使用 Node 内置的同步 SQLite。二者绝不交叉使用。两者都是同步的,因此
+  单一同步适配器与 c3 既有的同步持久化风格相匹配。
+- **适配器约束(两套 API 确实存在差异):** 只使用位置占位符
+  (命名参数的绑定方式不同);只按字段读取行(一个驱动返回 null 原型对象,
+  另一个返回普通对象)。两个驱动在 prepare/query 及多语句 API 上也有差异,由
+  适配器统一处理。
+- **构建(强制):** 服务端打包必须把两个内置 SQLite 模块都标记为 external。仅靠
+  动态 import **是不够的**——没有 external 标记,打包器仍无法解析 Bun 模块。
+- **创建时的 PRAGMA:** WAL 日志模式 + 忙等超时,在多个 c3 进程指向同一个
+  db 时低成本地减少锁冲突(跨进程并非 v1 目标,但该设置是零成本的)。
+- **软失败(按每个入口点):** open/create 失败时,将 db 标记为不可用,
+  在不影响 c3 启动的前提下禁用意图功能(RM-R12)——与
+  「即使配置损坏也要能启动」这条规则保持一致。
 
-## Schema (`PRAGMA user_version` migrations)
+## Schema(`PRAGMA user_version` 迁移)
 
-- `intents` — the ledger (`id`, `workspace_path`, `title`, `content`, `priority`, `status`,
-  `module`, `last_work_session_id`, `automate`, `created_at`, `updated_at`, `completed_at`), indexed
-  by `(workspace_path, status)`. `module` is `TEXT NOT NULL DEFAULT ''`; `automate` is
-  `INTEGER NOT NULL DEFAULT 0`.
-- `intent_deps` — `(intent_id, depends_on_id)` edges.
-- `intent_chats` — one table doubling as the **per-workspace communication session
-  collection** and the **hidden set**: `session_id` (PK, may be a `pending:` id), `workspace_path`,
-  `title` (nullable, client fallback to "New Intent" or first-prompt derivation),
-  `is_current` (0/1, at most one per project — the default-open pointer),
-  `updated_at`. The full set of rows for a project is the hidden set; the `is_current=1` row
-  is the session re-loaded on entering the intent view without a specific `sessionId`.
+- `intents` — 账本(`id`、`workspace_path`、`title`、`content`、`priority`、`status`、
+  `module`、`last_work_session_id`、`automate`、`created_at`、`updated_at`、`completed_at`),按
+  `(workspace_path, status)` 建索引。`module` 为 `TEXT NOT NULL DEFAULT ''`;`automate` 为
+  `INTEGER NOT NULL DEFAULT 0`。
+- `intent_deps` — `(intent_id, depends_on_id)` 边。
+- `intent_chats` — 一张表身兼**按工作区的沟通会话集合**与**隐藏集**两职:`session_id`
+  (主键,可能是 `pending:` id)、`workspace_path`、
+  `title`(可空,客户端回退为「New Intent」或由首个提示词推导)、
+  `is_current`(0/1,每个项目最多一条——默认打开指针)、
+  `updated_at`。一个项目全部行的集合即为隐藏集;`is_current=1` 的那一行
+  是未指定具体 `sessionId` 进入意图视图时重新加载的会话。
 
-**Schema version (current: v11).** The schema version is `11`. Each bump adds one idempotent
-migration after the legacy renames and before applying the schema: v2 `module`, v3
-`completed_at` (nullable), v4 `automate` (`INTEGER NOT NULL DEFAULT 0`), v6 legacy `requirement*`
-→ `intent*` rename, v7 `intent_chats.title` (`TEXT`), v8 git-tracking fields, v9 `intent_deps`
-(`dep_type` and `created_at`), v10 an audit table, **v11 the workspace-key column
-`project_path` → `workspace_path` in-place rename** on `intents` + `intent_chats` (composite index rebuilt as
-`idx_intent_workspace_status`; the single-column chat index keeps its name, its column reference
-auto-updated by the rename). v11 **deliberately diverges** from the back-compat `projectConfigs`
-settings.json key, which keeps its legacy name (see the 2026-06-14 workspace-path migration record). The rename
-runs BEFORE the schema is applied (the new composite index references
-the renamed column); idempotent, never drops a table. Same key-off-column-presence pattern as below.
+**Schema 版本(当前:v11)。** Schema 版本为 `11`。每次升级都在旧字段重命名之后、
+应用 schema 之前追加一个幂等迁移:v2 `module`,v3
+`completed_at`(可空),v4 `automate`(`INTEGER NOT NULL DEFAULT 0`),v6 旧的 `requirement*`
+→ `intent*` 重命名,v7 `intent_chats.title`(`TEXT`),v8 git 追踪字段,v9 `intent_deps`
+(`dep_type` 与 `created_at`),v10 一张审计表,**v11 在 `intents` + `intent_chats` 上
+将工作区键列 `project_path` → `workspace_path` 原地重命名**(复合索引重建为
+`idx_intent_workspace_status`;chat 的单列索引保留原名,其列引用
+随重命名自动更新)。v11 **有意与** settings.json 中保持向后兼容的 `projectConfigs`
+键**分道而行**,后者沿用旧名(参见 2026-06-14 的 workspace-path 迁移记录)。该重命名
+在 schema 应用之前执行(新的复合索引引用了
+重命名后的列);幂等,从不删表。与下文相同的「按列是否存在来判断」模式。
 
-**Schema version & migration (v1 → v2).** The fresh-create schema
-already declares `intents.module`. For pre-existing dbs (v1, no `module` column), the open path
-runs an **idempotent column migration** after applying the schema and before writing the schema
-version: it checks the table info and only adds the `module` column (`TEXT NOT NULL DEFAULT ''`) if
-absent. This keys off the actual column presence (not
-the exact version history), so it is safe on new and old dbs and idempotent across runs;
-adding a column is a lightweight metadata-only op and historical rows take the `''`
-default (no backfill). Both built-in SQLite drivers support table-info inspection and
-add-column through the shared adapter (RM-R14).
+**Schema 版本与迁移(v1 → v2)。** 新建时的 schema
+已声明 `intents.module`。对于已存在的 db(v1,无 `module` 列),open 路径
+会在应用 schema 之后、写入 schema 版本之前运行一个**幂等的列迁移**:检查表结构信息,
+仅在该列缺失时才添加 `module` 列(`TEXT NOT NULL DEFAULT ''`)。这依据的是实际的列是否存在
+(而非精确的版本历史),因此在新库和旧库上都是安全的,且可跨次运行幂等执行;
+添加一列是轻量的仅元数据操作,历史行取 `''`
+默认值(不做回填)。两种内置 SQLite 驱动都通过共享适配器支持表结构信息检查与
+加列操作(RM-R14)。
 
 ## Store
 
-- **Path normalization (RM-R10):** every `workspacePath` arg is resolved to an absolute path before
-  read/write, matching the workspace key / runtime working directory / agent working directory.
-  Otherwise queries miss and hidden filtering breaks.
-- Intents: list (with `dependsOn` aggregation), insert (transactional batch, uuid, status `todo`;
-  persists `module` as `it.module ?? ''`, `automate` defaults to `0`), upsert
-  (the `save_intents` write path — insert or in-place update per item `id`, RM-R20; see below),
-  update-status, set-last-dev-session, set-automate, update-intent, get-intent. The
-  internal row hydration carries `module` + `automate` (mapped to boolean) so every read path returns
-  them; the plain update does not patch `module` (the upsert writes `module` directly instead).
-- **Upsert write path (RM-R20).** The upsert backs `save_intents` (replacing
-  the old direct insert call). It resolves each item to a stable id up front — the supplied
-  `id` for an update, a fresh uuid for an insert — so `dependsOnIndexes` (RM-R17) resolves against the
-  full batch regardless of whether a referenced sibling is new or being updated. **All validation runs
-  before the transaction opens** (atomic reject, nothing half-written): each update `id` is fetched and
-  guarded to belong to the resolved workspace (unknown / cross-project ⇒ reject), and its current
-  status is checked — `in_progress`/`done` reject as immutable, `cancelled` is flagged for reactivation.
-  Inside the single transaction, an update writes `title`/`content`/`priority`, writes `module` only when supplied
-  (else keeps the prior), sets status to `todo` for a reactivated `cancelled` (else unchanged) with
-  `completed_at` cleared, and rewrites the dependency edges only when `dependsOn`/`dependsOnIndexes` was supplied;
-  an insert behaves exactly as a plain insert (status `todo`, creation time offset by index). The
-  `save_intents` handler turns any rejection into an error result so the agent learns nothing was written.
-  - **Single-intent session back-link (`intentSessionId`).** When — and only when — the batch holds
-    **exactly one** item carrying `intentSessionId`, the upsert writes it to that row's
-    `intent_session_id` (on both the insert and the in-place-update sub-path; the update uses
-    `COALESCE(?, intent_session_id)` so an absent value preserves any prior link). A batch of more than
-    one item forces the column to null regardless of what was supplied — there is no single source
-    session for a batch. This is a **double guard**: the schema description tells the agent "single
-    only", and the store enforces it independently. `insertIntents` (the automation-only
-    `save_intent_directly` path) never reads the field — drafts have no communication-session semantics.
-    This explicit-field write covers the gap the refine `run:bound` backfill (below) cannot reach:
-    a comm session that **creates a brand-new** intent has no pending→intent link to backfill, so the
-    one-shot field is how that new intent links back to its originating conversation.
-- **Read-only agent query (RM-R19):** the find operation backs the agent's `find_intents` tool —
-  filters compose with `AND`, all optional: `keyword`
-  is a substring match over `title` OR `content` (wildcard characters in the keyword are escaped so a
-  literal `%` doesn't act as a wildcard), `module`/`status` are exact-match;
-  same resolve + workspace scoping and `priority ASC, updated_at DESC` order as
-  the list; empty when the db is unavailable. The `view_intent` tool reuses the id-only
-  get and the **tool handler** guards that the intent belongs to the bound project,
-  so an id from another project reads as not-found (no cross-project leak).
-- **Intra-batch dependencies (RM-R17).** The insert mints **all** row ids up front
-  so a batch can reference its own siblings before any row has an
-  id. A pure batch-dependency resolver then, per item, validates
-  `dependsOnIndexes` (each must be an in-range, non-self index), runs a 3-colour cycle detection
-  to reject any intra-batch cycle, and returns the merged & de-duplicated
-  dependency-id list (existing-id `dependsOn` ∪ the indexes resolved to sibling ids). It runs
-  **before** the transaction opens, so an invalid batch is rejected and nothing is written; the
-  `save_intents` handler turns the rejection into an error result. Being pure (items + ids in,
-  id-lists out) it is unit-tested without a db. Each row is stamped with a creation time offset by index so
-  same-priority, dependency-free items keep a deterministic submission-order rank in the
-  orchestrator's oldest-first tiebreak (RM-A3), instead of the arbitrary order a single shared
-  timestamp produced.
-- Communication session (collection table): get the current session
-  (`is_current=1` — default-open pointer); set the current session (clear the project's `is_current` then
-  upsert the new row as `is_current=1`, also entering the hidden set);
-  list all rows (ordered by `updated_at` DESC);
-  rename (updates `title` + bumps `updated_at`);
-  delete (physically deletes the row; if the deleted row was
-  `is_current`, promotes the most recent remaining row by `updated_at` to `is_current=1`);
-  hidden-set queries;
-  rebind (rewrite the pending row to the real id on first bind,
-  keeping `is_current` and hidden-set membership).
+- **路径归一化(RM-R10):** 每个 `workspacePath` 参数在读写前都会被解析为绝对路径,
+  以匹配工作区键 / 运行时工作目录 / 智能体工作目录。
+  否则查询会落空,隐藏过滤也会失效。
+- Intents:list(带 `dependsOn` 聚合)、insert(事务性批量、uuid、状态 `todo`;
+  将 `module` 持久化为 `it.module ?? ''`,`automate` 默认为 `0`)、upsert
+  (`save_intents` 的写入路径——按每项 `id` 插入或原地更新,RM-R20;详见下文)、
+  update-status、set-last-dev-session、set-automate、update-intent、get-intent。
+  内部行水合携带 `module` + `automate`(映射为布尔值),因此每条读路径都会返回
+  它们;普通 update 不会修补 `module`(而是由 upsert 直接写入 `module`)。
+- **Upsert 写入路径(RM-R20)。** upsert 是 `save_intents` 的后端实现(取代
+  了旧的直接 insert 调用)。它会预先为每一项解析出一个稳定 id——更新用传入的
+  `id`,插入用新生成的 uuid——这样无论被引用的同批成员是新增还是被更新,
+  `dependsOnIndexes`(RM-R17)都能针对完整批次解析。**所有校验都在
+  事务开启前完成**(原子性拒绝,不写入任何半成品):每个更新 `id` 都会被取出,
+  并校验其属于解析出的工作区(未知 / 跨项目 ⇒ 拒绝),同时检查其当前
+  状态——`in_progress`/`done` 因不可变而拒绝,`cancelled` 被标记为待重新激活。
+  在同一个事务内,更新会写入 `title`/`content`/`priority`,仅当提供了 `module` 时才写入
+  (否则保留原值),对被重新激活的 `cancelled` 将状态置为 `todo`(否则不变)并
+  清空 `completed_at`,并且仅当提供了 `dependsOn`/`dependsOnIndexes` 时才重写依赖边;
+  插入的行为与普通插入完全一致(状态 `todo`,创建时间按索引偏移)。
+  `save_intents` 的 handler 会把任何拒绝转换为一个错误结果,让智能体知道没有任何写入发生。
+  - **单意图会话回链(`intentSessionId`)。** 当且仅当批次中**恰好一项**携带了
+    `intentSessionId` 时,upsert 才会把它写入该行的
+    `intent_session_id`(insert 和原地更新两条子路径都适用;更新使用
+    `COALESCE(?, intent_session_id)`,因此缺省值会保留任何既有链接)。批次中若有超过一项,
+    则不论传入什么都强制将该列置空——批次没有单一来源会话的概念。这是一道**双重防护**:
+    schema 描述告诉智能体「仅限单项」,而 store 独立地强制执行这一约束。`insertIntents`
+    (仅供自动化使用的 `save_intent_directly` 路径)从不读取该字段——草稿没有沟通会话语义。
+    这个显式字段写入,弥补了下文 refine 的 `run:bound` 回填无法触达的空缺:
+    一个沟通会话**创建全新**意图时,没有 pending→intent 链接可回填,所以
+    这个一次性字段就是该新意图链回其源头对话的方式。
+- **只读智能体查询(RM-R19):** find 操作是智能体 `find_intents` 工具的后端——
+  各过滤条件以 `AND` 组合,均为可选:`keyword`
+  是对 `title` 或 `content` 的子串匹配(关键词中的通配字符会被转义,以免字面量
+  `%` 被当作通配符),`module`/`status` 为精确匹配;
+  与 list 相同的 resolve + 工作区限定作用域,以及 `priority ASC, updated_at DESC`
+  排序;db 不可用时返回空。`view_intent` 工具复用了仅按 id 的
+  get,并由**工具 handler** 守卫该意图归属于绑定的项目,
+  因此另一个项目的 id 读到的是「未找到」(不会跨项目泄漏)。
+- **批内依赖(RM-R17)。** insert 会预先铸造**所有**行 id,
+  这样一个批次可以在任何行拥有 id 之前引用自己的同批成员。随后一个纯函数式的
+  批内依赖解析器逐项校验
+  `dependsOnIndexes`(每个都必须是范围内、非自身的索引),运行三色环检测
+  来拒绝任何批内环,并返回合并且去重后的
+  依赖 id 列表(既有 id 的 `dependsOn` ∪ 解析为同批成员 id 的索引)。它运行在
+  事务开启**之前**,因此一个非法批次会被拒绝且不会写入任何内容;
+  `save_intents` 的 handler 会把该拒绝转换为一个错误结果。由于其是纯函数(输入 items + ids,
+  输出 id 列表),可以在没有 db 的情况下做单元测试。每一行都会被打上按索引偏移的创建时间戳,
+  这样同优先级、无依赖的项在编排器「最早优先」的平局裁决(RM-A3)中能保持
+  确定性的提交顺序名次,而不是单一共享时间戳产生的任意顺序。
+- 沟通会话(集合表):获取当前会话
+  (`is_current=1`——默认打开指针);设置当前会话(先清除该项目的 `is_current`,
+  再把新行 upsert 为 `is_current=1`,同时纳入隐藏集);
+  列出全部行(按 `updated_at` 降序);
+  重命名(更新 `title` 并推进 `updated_at`);
+  删除(物理删除该行;若被删除的行原是
+  `is_current`,则按 `updated_at` 把剩余最新的一行提升为 `is_current=1`);
+  隐藏集查询;
+  重绑定(在首次绑定时把 pending 行改写为真实 id,
+  保留 `is_current` 与隐藏集归属)。
 
-## Run variant
+## 运行变体
 
-- The runtime gains a run `kind` (default `session`; was a two-value `normal | intent`, with
-  `normal → session` — see glossary / ADR-0018); `user_prompt`
-  dispatches on the runtime's kind to the standard or intent variant of the run loop.
-- A shared launcher is extracted from `user_prompt`. **Boundary:**
-  it only touches module-level emit / status-broadcast / the registry; connection-specific
-  replies stay with the caller as optional callbacks — so
-  `start_development` (no-connection background run) and `refine_intent` (seeded first prompt) reuse
-  the same launcher.
-- The run loop gains optional appended system prompt, disallowed tools, MCP servers, and a
-  gate selector (`standard` | `intent`) without breaking existing callers. The communication agent's
-  MCP servers are constructed **server-side** in the `user_prompt` branch (closing over the
-  resolved workspace), keeping the run loop free of the store.
+- 运行时新增一个运行 `kind`(默认 `session`;此前是二值的 `normal | intent`,
+  `normal → session` ——见术语表 / ADR-0018);`user_prompt`
+  根据运行时的 kind 分派到运行循环的标准变体或意图变体。
+- 从 `user_prompt` 中抽取出一个共享启动器。**边界:**
+  它只触碰模块级的 emit / 状态广播 / 注册表;与连接相关的
+  回复作为可选回调留给调用方——因此
+  `start_development`(无连接的后台运行)与 `refine_intent`(带种子首条提示词)复用
+  同一个启动器。
+- 运行循环新增可选的追加系统提示词、禁用工具、MCP 服务器,以及一个
+  网关选择器(`standard` | `intent`),不破坏既有调用方。沟通智能体的
+  MCP 服务器是在 `user_prompt` 分支中**服务端**构造的(闭包捕获
+  已解析的工作区),使运行循环不依赖 store。
 
-## Read-only communication session (ADR 0007)
+## 只读沟通会话(ADR 0007)
 
-- **Forced `default` mode (RM-R3, auxiliary).** The communication runtime is started in
-  `default` permission mode and does **not** inherit the system default mode; `set_mode` is
-  ignored for the intent kind and the view renders no mode selector. This is now an _auxiliary_
-  constraint: it does **not** carry the silent-save defence on its own. A vendor allow-rule can
-  pre-approve `save_intents` and skip the permission gate even under `default` mode, so the save
-  confirmation is enforced **inside the save handler** instead (see "Save confirmation in the
-  handler" below) — immune to every pre-approval vector.
-- **Double-locked read-only (RM-R2).** The hard-disabled tool list blocks
-  Write / Edit / MultiEdit / NotebookEdit / Bash / BashOutput / KillShell / Task / SlashCommand.
-  Task and SlashCommand are essential: a spawned sub-agent's tool calls bypass the parent
-  permission gate, and slash commands could trigger writing skills. On top of that the
-  intent gate **denies by default**, routed by a pure, exported tool classifier
-  → `allow` | `ask` | `deny` (unit-tested, since the live closure is otherwise
-  e2e-only): read-class tools
-  (Read / Grep / Glob / LS / NotebookRead / WebFetch / WebSearch / TaskCreate / TaskList / TaskUpdate / TaskGet) **and**
-  the two read-only c3 query tools (`find_intents` / `view_intent`, RM-R19) → `allow` (auto-allow,
-  no prompt — they only read the agent's own project ledger); `save_intents` → `allow` **through to
-  its handler** (the handler raises the confirmation itself — see "Save confirmation in the handler";
-  the gate must not prompt for save, or it would double-prompt); `AskUserQuestion` → `ask`. `AskUserQuestion` is an **interactive
-  (clarifying-only) tool, not a write tool** — it has no file/exec side effects, so the read-only
-  agent may use it. It is therefore **kept out of the hard-disabled list** and **allowed but routed via
-  user-answer injection** — send a `permission_request`, await the user decision, on allow return
-  the answers (the SDK only echoes answers when they are pre-filled),
-  on cancel deny. It runs **without consensus** (single agent, no voting party). A guard
-  filters empty/invalid questions, which fall through to the default
-  deny. Everything else is denied (belt-and-braces even if the SDK adds a new write tool). The
-  SDK-level hard-disabled list
-  (Write / Edit / MultiEdit / NotebookEdit / Bash / BashOutput / KillShell / Task / SlashCommand) is unchanged and
-  **does not include `AskUserQuestion`**.
-- **Codex driver permission shape.** When the default/bound communication agent is Codex, the
-  driver path still runs the intent profile and injects the localhost HTTP MCP server, but uses the
-  Codex grid `plan + never-ask` (mapped to `read-only + never`) instead of `plan + always-ask`.
-  Codex has no live approval channel, so `always-ask` can block MCP use; the filesystem remains
-  read-only, while `save_intents` is still gated by c3 inside the MCP handler before any ledger
-  write.
-- **Independent viewer orchestration.** `open_intent_chat` / `new_intent_chat` /
-  `refine_intent` manage the
-  viewer switch themselves (remove the old viewer → set the viewed session → add the new viewer) and
-  do **not** reuse `select_session`'s internals (which unconditionally set the active session). The
-  communication session's session-id binding rebinds the real id but **never** writes the persisted
-  active-session hint — hidden sessions must not pollute it.
-- **Open/resume (`open_intent_chat`):** db unavailable → `error`. Accepts an optional
-  `sessionId` — when provided, verifies the session exists for this project and opens it (also
-  making it `isCurrent` so a subsequent no-sessionId open returns here); when absent, uses
-  the current (`is_current=1`) session, creating a new `pending:` session if none exists.
-  Then switch the viewer, reply `session_selected` (history), and reply an `intents` list
-  **immediately** (run-state reconcile runs in the background afterward — see Reconcile). This same
-  branch is what re-loads the project's current communication session on first entry, WS
-  reconnect, and full-page refresh (RM-R4).
-- **New session (`new_intent_chat`):** unknown workspace / db unavailable → `error`; otherwise
-  unconditionally start a fresh `pending:` intent runtime (`default` mode) and set it as the current
-  session — which clears the project's prior current row before marking the new one current.
-  Switch the viewer, reply `session_selected` (empty history) and an `intents` list. No first
-  prompt is injected (unlike refine): the dialog opens empty for a new round of communication.
-  Because the new session is now current, a later `open_intent_chat` (refresh/reconnect)
-  resumes **this** session, not the abandoned one. Triggered by the "+" in the title bar (RM-R4).
-- **Refine (`refine_intent`):** switch away from the old communication view, start a new
-  `pending:` intent runtime (`default` mode), set it as current, reply `session_selected`
-  (empty), then the launcher injects a first `user_prompt` equivalent to a user message (RM-R7). The
-  seed prompt carries the **original intent id and its current status** and instructs the agent to
-  call `save_intents` with that id so定稿 updates the original entry in place (upsert, RM-R20)
-  — not a duplicate — and to tell the user it cannot be modified if the intent is already
-  `in_progress`/`done`. ("开始完善已存在意图 <id>(当前状态:…) …, 定稿后调用 save_intents 并回填
-  id 以原地更新原意图") Refine also registers a **pending→intent link** before launch so the
-  resident `run:bound` subscription backfills the originating intent's `intentSessionId` with the
-  real comm session id on first bind — mirroring the spec-session link that backfills
-  `specSessionId` — making the refine conversation reopenable later from the intent detail's
-  「intent session」tab (`open_intent_chat` with that id). An error-before-bind edge is swept by a
-  `run:settled` (kind=intent) safety net.
-- **From discussion (`discussion_to_intent`):** the same refine machinery, but the seed is a
-  completed discussion's `conclusion` rather than an existing intent. The server loads the
-  discussion, rejects unless `completed` with a non-empty `conclusion`, resolves
-  the project from the discussion's workspace, then runs the identical `pending:` intent-runtime
-  flow with a first prompt carrying the discussion title + conclusion ("基于以下讨论结论拆分出可验证
-  的需求条目 …, 定稿后调用 save_intents"). Triggered by the discussion view's **Convert to
-  Intent** button (RM-R7).
-- **Reset intent session (`reset_intent_session`):** the escape hatch for a context-rotted refine
-  conversation after the intent changed (RM-R24). The intent detail header's 「我要修改」 opens the
-  controlled input dialog; the intent-session tab itself has no reset button. Identical machinery to
-  **Refine**, but the seed prompt prepends the user's **new steering input** ahead of the intent's
-  current title + content, then instructs the agent to upsert the original id in place
-  ("继续完善已存在意图 <id>… 我的新输入:… 当前意图内容:…"). It registers the same pending→intent link, so
-  the resident `run:bound` subscription **replaces** the intent's `intentSessionId` with the new
-  comm session id on first bind. The prior session stays queryable under Works (Run center) but is
-  no longer the intent's linked session; no batch reset.
-- **Reset spec session (`reset_spec_session`):** the spec document tab's 「我要修改」 action, mirroring
-  **Write spec** but reusing the EXISTING spec directory / path (no scaffolding). The spec-session
-  tab itself has no reset button. Rejected (`error`
-  `intent.specNotWritten`) when no spec was ever written. Claude and Codex both may run this session,
-  but they use different hard boundaries: Claude keeps cwd at the project and uses the spec
-  permission gate to restrict writes to the spec directory; Codex moves cwd to the centralized specs
-  root, forces `workspace-write` + `approval_policy=never`, and passes the specs root as
-  `--add-dir`, so the project, ledger DB, and other non-specs-root paths stay outside writable roots.
-  The server launches a fresh write-confined `'spec'` session seeded with the user's **new input** +
-  a pointer to the current `spec_path` (only the path — the agent reads the spec file itself; the
-  prompt no longer inlines the spec body), replies `session_selected` (so the detail's 「spec
-  session」tab switches to it), and registers the pending→intent link so `run:bound` replaces the
-  intent's `specSessionId` on first bind. The bind path also upserts the unified
-  `session_metadata` projection as `session_kind='spec'` with `owner_kind='intent'` and this
-  intent id, and clears the previous spec session's owner when the intent is reset to a new spec
-  session. Projection write failure only hides the row from the Sessions page and does not block
-  the spec launch. The server no longer pre-reads the spec file, so its
-  readability is not a launch precondition; a missing/unreadable spec becomes a normal file error
-  the agent faces when it reads the path.
+- **强制 `default` 模式(RM-R3,辅助性)。** 沟通运行时以
+  `default` 权限模式启动,且**不**继承系统默认模式;`set_mode` 对
+  intent kind 无效,视图也不渲染模式选择器。这如今是一道*辅助性*
+  约束:它**并不**独立承担静默保存的防御职责。厂商的允许规则可以
+  预先批准 `save_intents` 并跳过权限网关(即便处于 `default` 模式下),因此保存
+  确认改为**在保存 handler 内部**强制执行(见下文「handler 内的保存确认」)——
+  免疫于任何预批准途径。
+- **双重锁定的只读性(RM-R2)。** 硬禁用工具列表拦截
+  Write / Edit / MultiEdit / NotebookEdit / Bash / BashOutput / KillShell / Task / SlashCommand。
+  Task 与 SlashCommand 是必须拦截的:被派生的子智能体的工具调用会绕过父级
+  权限网关,而斜杠命令可能触发写入类技能。在此之上,
+  intent 网关**默认拒绝**,由一个纯函数、可导出的工具分类器路由
+  → `allow` | `ask` | `deny`(已做单元测试,因为实际闭包否则
+  只能靠端到端测试覆盖):读类工具
+  (Read / Grep / Glob / LS / NotebookRead / WebFetch / WebSearch / TaskCreate / TaskList / TaskUpdate / TaskGet)**以及**
+  两个只读的 c3 查询工具(`find_intents` / `view_intent`,RM-R19)→ `allow`(自动允许,
+  不弹窗——它们只读取智能体自己项目的账本);`save_intents` → `allow`**一路放行到
+  其 handler**(handler 自己发起确认——见「handler 内的保存确认」;
+  网关不得为保存弹窗,否则会重复弹窗);`AskUserQuestion` → `ask`。`AskUserQuestion` 是一个**交互性
+  (仅用于澄清)工具,而非写入工具**——它没有文件/执行副作用,所以只读
+  智能体可以使用它。因此它被**排除在硬禁用列表之外**,并**被允许,但经由
+  用户答案注入路由**——发送一个 `permission_request`,等待用户决定,允许时返回
+  答案(SDK 仅在答案被预填时才会回显它们),
+  取消时拒绝。它在**无共识**下运行(单一智能体,无投票方)。一道防护会
+  过滤空/无效问题,这些问题会落入默认的
+  拒绝分支。其余所有情况一律拒绝(即使 SDK 新增写入工具也有双重保险)。
+  SDK 层面的硬禁用列表
+  (Write / Edit / MultiEdit / NotebookEdit / Bash / BashOutput / KillShell / Task / SlashCommand)不变,且
+  **不包含 `AskUserQuestion`**。
+- **Codex 驱动的权限形态。** 当默认/绑定的沟通智能体是 Codex 时,
+  驱动路径仍运行 intent profile 并注入本地 HTTP MCP 服务器,但使用
+  Codex 的 `plan + never-ask` 网格(映射为 `read-only + never`)而非 `plan + always-ask`。
+  Codex 没有实时批准通道,因此 `always-ask` 可能阻塞 MCP 的使用;文件系统仍保持
+  只读,而 `save_intents` 仍由 c3 在任何账本写入之前在 MCP handler 内部
+  网关控制。
+- **独立的 viewer 编排。** `open_intent_chat` / `new_intent_chat` /
+  `refine_intent` 自行管理
+  viewer 切换(移除旧 viewer → 设置被查看的会话 → 添加新 viewer),并且
+  **不**复用 `select_session` 的内部逻辑(后者会无条件设置活动会话)。
+  沟通会话的 session-id 绑定会重绑定真实 id,但**从不**写入持久化的
+  活动会话提示——隐藏会话绝不能污染它。
+- **打开/恢复(`open_intent_chat`):** db 不可用 → `error`。接受一个可选的
+  `sessionId`——若提供,校验该会话存在于本项目并打开它(同时
+  将其标记为 `isCurrent`,这样后续无 sessionId 的打开会回到这里);若缺省,则使用
+  当前(`is_current=1`)会话,若不存在则创建一个新的 `pending:` 会话。
+  然后切换 viewer,回复 `session_selected`(历史记录),并**立即**回复一个 `intents`
+  列表(运行状态的 reconcile 之后在后台运行——见 Reconcile)。这个分支同样是
+  首次进入、WS 重连、以及整页刷新时重新加载项目当前沟通会话的
+  路径(RM-R4)。
+- **新会话(`new_intent_chat`):** 未知工作区 / db 不可用 → `error`;否则
+  无条件启动一个全新的 `pending:` intent 运行时(`default` 模式)并将其设为当前
+  会话——这会先清除该项目此前的当前行,再把新行标记为当前。
+  切换 viewer,回复 `session_selected`(空历史)与一个 `intents` 列表。不会
+  注入首条提示词(与 refine 不同):对话框以空白状态打开,开始新一轮沟通。
+  由于新会话现在是当前会话,之后的 `open_intent_chat`(刷新/重连)会
+  恢复**这个**会话,而非被放弃的那个。由标题栏的「+」触发(RM-R4)。
+- **精炼(`refine_intent`):** 切出旧的沟通视图,启动一个新的
+  `pending:` intent 运行时(`default` 模式),将其设为当前,回复 `session_selected`
+  (空),随后启动器注入一条等同于用户消息的首条 `user_prompt`(RM-R7)。种子
+  提示词携带**原意图 id 及其当前状态**,并指示智能体在
+  定稿时以该 id 调用 `save_intents`,以原地更新原条目(upsert,RM-R20)
+  ——而非产生重复项——若该意图已是
+  `in_progress`/`done`,则告知用户无法修改。(「开始完善已存在意图 <id>(当前状态:…) …, 定稿后调用 save_intents 并回填
+  id 以原地更新原意图」)Refine 还会在启动前注册一条 **pending→intent 链接**,以便
+  常驻的 `run:bound` 订阅在首次绑定时,用真实的沟通会话 id 回填源意图的
+  `intentSessionId`——与回填 `specSessionId` 的 spec-session 链接机制相同——
+  使该 refine 对话之后可以从意图详情的
+  「intent session」标签页重新打开(用该 id 调用 `open_intent_chat`)。一个绑定前出错的边界情况
+  由 `run:settled`(kind=intent)安全网清理。
+- **来自讨论(`discussion_to_intent`):** 与 refine 相同的机制,但种子是一个
+  已完成讨论的 `conclusion`,而非既有意图。服务端加载该
+  讨论,除非其为 `completed` 且 `conclusion` 非空,否则拒绝;从讨论的工作区
+  解析出项目,然后运行相同的 `pending:` intent-runtime
+  流程,首条提示词携带讨论标题 + 结论(「基于以下讨论结论拆分出可验证
+  的需求条目 …, 定稿后调用 save_intents」)。由讨论视图的**转为
+  Intent** 按钮触发(RM-R7)。
+- **重置意图会话(`reset_intent_session`):** 用于意图变更后、
+  refine 对话上下文腐化时的逃生舱(RM-R24)。意图详情头部的「我要修改」打开
+  受控输入对话框;intent-session 标签页本身没有重置按钮。与
+  **Refine** 机制完全相同,但种子提示词会把用户的**新引导输入**前置于意图
+  当前的标题 + 内容之前,然后指示智能体原地 upsert 原 id
+  (「继续完善已存在意图 <id>… 我的新输入:… 当前意图内容:…」)。它注册相同的 pending→intent 链接,因此
+  常驻的 `run:bound` 订阅会在首次绑定时**替换**意图的 `intentSessionId` 为新的
+  沟通会话 id。之前的会话仍可在 Works(运行中心)下查询,但
+  不再是该意图的关联会话;不做批量重置。
+- **重置 spec 会话(`reset_spec_session`):** spec 文档标签页的「我要修改」操作,镜像
+  **编写 spec**,但复用**既有的** spec 目录/路径(不做脚手架搭建)。spec-session
+  标签页本身没有重置按钮。当从未写过 spec 时被拒绝(`error`
+  `intent.specNotWritten`)。Claude 与 Codex 都可以运行该会话,
+  但二者使用不同的硬边界:Claude 保持 cwd 位于项目,并用 spec
+  权限网关把写入限制在 spec 目录内;Codex 将 cwd 移到集中式 specs
+  根目录,强制 `workspace-write` + `approval_policy=never`,并把 specs 根目录作为
+  `--add-dir` 传入,从而使项目、账本 DB 及其他非 specs-root 路径都留在可写根目录之外。
+  服务端启动一个新的、写入受限的 `'spec'` 会话,种子为用户的**新输入** +
+  一个指向当前 `spec_path` 的指针(仅路径——智能体自己读取 spec 文件;
+  提示词不再内联 spec 正文),回复 `session_selected`(以便详情页的「spec
+  session」标签页切换过去),并注册 pending→intent 链接,使 `run:bound` 在首次绑定时
+  替换意图的 `specSessionId`。绑定路径还会把统一的
+  `session_metadata` 投影 upsert 为 `session_kind='spec'`、`owner_kind='intent'`
+  加该意图 id,并在意图被重置到新的 spec 会话时清除前一个 spec 会话的 owner。投影写入
+  失败只会使该行在 Sessions 页面隐藏,不会阻塞
+  spec 的启动。服务端不再预读 spec 文件,因此其
+  可读性不是启动的前置条件;缺失/不可读的 spec 会成为智能体读取该路径时
+  面对的一个普通文件错误。
 
-## Communication system prompt
+## 沟通系统提示词
 
-Injected as an appended system prompt on the `claude_code` preset, built per run with the display
-language. **The prompt skeleton is in English**; only the closing
-"reply in this language" instruction follows the **Display language** —
-read at run start so the analyst converses in the user's console language,
-instead of a hard-coded one. In brief: you are an intent analyst; read
-project material only, never edit/write/run change commands/spawn sub-agents/run slash commands;
-you may query THIS project's existing ledger read-only via `find_intents` / `view_intent`,
-and should do so **before** splitting new items or setting `dependsOn` (reuse related items, avoid
-duplicates, reference the correct existing id — RM-R19);
-converse with the user and break requests into discrete, verifiable, right-sized items (each with
-title/content/priority P0–P3/optional dependencies/**inferred module name**); confirm a list with
-the user first; on approval call `save_intents` (the system pops the confirmation, the real
-write follows the user's allow); never pretend a save happened. The dependency guidance is
-explicit: use `dependsOn` for intents that already exist (by id) and `dependsOnIndexes` for
-**sibling items in the same batch** (by 0-based array index), and **must** declare the batch's
-order — putting the prerequisite earlier in the array and pointing the dependent item's
-`dependsOnIndexes` at it — whenever items have先后关系, so the orchestrator sequences them right
-(RM-R17). The prompt asks the agent to infer
-each item's **module name** from its title/content (e.g. auth、session、intent-management),
-leaving it blank when unsure, and to pass `module` per item to `save_intents`. This is scheme
-**a** (infer from title/content); a future extension may key off the project's actual module
-structure for more precise classification (RM-R14).
+以追加系统提示词的形式注入 `claude_code` preset,按运行时构建,携带展示
+语言。**提示词骨架为英文**;只有结尾的
+「用此语言回复」指令跟随**展示语言**——
+在运行开始时读取,使分析师用用户控制台的语言交流,
+而非写死某一种语言。简述:你是一名意图分析师;只读取
+项目资料,绝不编辑/写入/运行变更命令/派生子智能体/运行斜杠命令;
+你可以通过 `find_intents` / `view_intent` 只读查询**本**项目既有的账本,
+并应在拆分新条目或设置 `dependsOn` **之前**这样做(复用相关条目,避免
+重复,引用正确的既有 id——RM-R19);
+与用户交流,把需求拆分为离散、可验证、大小适中的条目(每项都带
+title/content/priority P0–P3/可选依赖/**推断出的 module 名**);先与用户
+确认列表;获得批准后调用 `save_intents`(系统会弹出确认,真正的
+写入紧随用户的允许而来);绝不假装保存已发生。依赖指引是
+明确的:对已存在的意图用 `dependsOn`(按 id),对
+**同一批次内的同批成员**用 `dependsOnIndexes`(按从 0 开始的数组索引),并且当条目间
+存在先后关系时**必须**声明该批次的顺序——把前置条件放在数组更靠前的位置,
+并让依赖项的 `dependsOnIndexes` 指向它——以便编排器正确排序
+(RM-R17)。提示词要求智能体从标题/内容中推断
+每一项的**module 名**(如 auth、session、intent-management),
+不确定时留空,并把 `module` 随每一项传给 `save_intents`。这是方案
+**a**(从标题/内容推断);未来的扩展可能改为根据项目实际的模块
+结构做更精确的分类(RM-R14)。
 
-The prompt also carries a **refine-upsert rule (RM-R20):** when refining an intent that already
-exists (the seed prompt hands the agent its id), the agent **must** set that item's `id` on
-`save_intents` so the original entry is updated in place — never omit it and create a duplicate; a
-`cancelled` original is reactivated to `todo`, while an `in_progress`/`done` original is immutable
-(the agent tells the user it cannot be modified rather than attempting a save). A batch may mix
-updates (with id) and brand-new items (without id).
+提示词还携带一条**refine-upsert 规则(RM-R20):** 当精炼一个已经
+存在的意图时(种子提示词把其 id 交给智能体),智能体**必须**在
+`save_intents` 上设置该项的 `id`,以便原地更新原条目——绝不能省略而产生重复项;
+`cancelled` 的原条目会被重新激活为 `todo`,而 `in_progress`/`done` 的原条目不可变
+(智能体应告知用户无法修改,而非尝试保存)。一个批次可以混合
+更新(带 id)与全新条目(不带 id)。
 
-The prompt **injects this run's session id** so the agent can back-link a single saved intent to
-the conversation: when a round saves **exactly one** intent, the agent copies the injected id into
-that item's `intentSessionId` (the prompt forbids it on a multi-item batch — there is no single
-source session). The id injected at prompt-build time is a `pending:` id (the SDK has not bound
-yet), so the **save handler normalizes** it to the bound comm-session id before persisting — the
-same id `open_intent_chat` resolves against and that the refine `run:bound` backfill writes, so the
-two link sources land in one id space. The model only decides **whether** to set the field; the
-**value** is server-authoritative.
+提示词会**注入本次运行的会话 id**,使智能体能把单个已保存意图回链到
+该对话:当一轮恰好保存**一个**意图时,智能体把注入的 id 复制到
+该项的 `intentSessionId`(提示词禁止在多条目批次上这样做——批次没有单一
+源会话)。在提示词构建时注入的 id 是一个 `pending:` id(SDK 尚未绑定),
+因此**保存 handler 会将其归一化**为绑定后的沟通会话 id 再持久化——与
+`open_intent_chat` 解析所依据的以及 refine 的 `run:bound` 回填所写入的是同一个 id,
+使两条链接来源落在同一 id 空间。模型只决定**是否**设置该字段;
+**值**由服务端权威决定。
 
-The prompt also carries a **decomposition rule (a single goal is never split)**: when one goal
-touches **code, its tests, and/or its companion docs** (spec / README / comments), the analyst
-folds the test- and doc-sync work into the **same** intent's content + acceptance points
-rather than emitting a separate「更新测试」/「文档更新」item — code, its tests, and its docs are one
-change, kept on one ticket so no half is scheduled apart or dropped, which would drift tests/docs
-out of sync with code (RM-R15).
+提示词还携带一条**拆分规则(一个目标从不拆开)**:当一个目标
+同时涉及**代码、其测试、及/或其配套文档**(spec / README / 注释)时,分析师
+把测试与文档同步的工作并入**同一个**意图的内容与验收要点中,
+而不是另外生成一个单独的「更新测试」/「文档更新」条目——代码、其测试与其文档是同一次
+变更,保留在同一张票据上,避免其中一半被单独排期或遗漏,从而导致测试/文档
+与代码不同步(RM-R15)。
 
-## `c3` MCP tools
+## `c3` MCP 工具
 
-The in-process MCP server is named `c3` and carries `save_intents`, `find_intents`, and
-`view_intent`. Each registered tool is stamped to **stay resident in the turn-1 prompt** instead of
-being deferred behind the harness's tool search — so `save_intents` is available without the agent
-having to search its schema back before a save. The "blocks startup until the server connects" side
-effect is moot: this is an in-process MCP server, so it connects instantly. Scope is the intent
-agent only — this server is built solely on the intent kind / intent gate launch path (ADR 0007).
-Each intent element
-includes an optional `id` (the existing-intent id to update
-in place — upsert, RM-R20; omit to insert) and an optional `module`
-(the inferred module name, may be left blank); both flow through to the upsert
-(RM-R14/RM-R20). It also carries `dependsOn` (ids of already-existing intents) and
-`dependsOnIndexes` (0-based indexes into the same batch,
-the intra-batch dependency to fill when items have先后关系); both flow through to
-the upsert, which resolves the indexes against the full batch (RM-R17). The tool's top-level
-description tells the agent to use `id` for refine-in-place and `dependsOnIndexes` for intra-batch
-order so the orchestrator sequences correctly. The handler **runs the confirmation gate itself**
-(emit `permission_request`, block on the decision, persist only on `allow` — see "Save confirmation
-in the handler"); on allow it writes via the store's upsert (insert or in-place update per
-item id) and broadcasts an `intents` refresh, returning a text result that notes the insert/update
-split (or an error text on db-unavailable / failure — incl. an immutable-status or unknown / cross-project
-update id rejecting the whole batch — so the agent learns it did not save). The handler binding —
-project path, **live** run-id getter, and abort signal — is supplied per run (the run-id getter and
-signal are constructed at query time, where they exist; the project path is closed over from the
-runtime's resolved workspace), so the tool never crosses projects and routes the confirmation to the
-bound session.
+进程内 MCP 服务器名为 `c3`,携带 `save_intents`、`find_intents` 与
+`view_intent`。每个注册工具都被标记为**常驻于第一轮提示词**,而不是
+延迟在 harness 的工具搜索之后——因此 `save_intents` 无需智能体在保存前
+先搜索其 schema 就可用。「阻塞启动直到服务器连接」这一副作用
+在此并不成立:这是一个进程内 MCP 服务器,连接是即时的。作用范围仅限于意图
+智能体——该服务器只在 intent kind / intent 网关启动路径上构建(ADR 0007)。
+每个意图元素
+都包含一个可选的 `id`(用于原地更新的既有意图 id
+——upsert,RM-R20;省略则表示插入)与一个可选的 `module`
+(推断出的模块名,可留空);两者都会流经 upsert
+(RM-R14/RM-R20)。它还携带 `dependsOn`(既有意图的 id)与
+`dependsOnIndexes`(同一批次内从 0 开始的索引,
+用于填写条目间存在先后关系时的批内依赖);两者都会流经
+upsert,由其针对完整批次解析索引(RM-R17)。该工具顶层的
+描述告诉智能体:用 `id` 做原地精炼,用 `dependsOnIndexes` 表达批内
+顺序,以便编排器正确排序。handler **自行运行确认网关**
+(发出 `permission_request`,阻塞等待决定,仅在 `allow` 时才持久化——见「handler 内的保存确认」);
+允许时,它通过 store 的 upsert 写入(按每项 id 插入或原地更新),
+并广播一次 `intents` 刷新,返回一段说明插入/更新拆分情况的文本结果(或在 db 不可用/
+失败时——包括不可变状态或未知/跨项目的更新 id 会拒绝整个批次——返回一段错误文本,
+让智能体知道自己没有保存成功)。handler 的绑定——项目路径、
+**实时**的 run-id getter、以及 abort signal——是按每次运行提供的(run-id getter 与
+signal 在查询时构造,若存在的话;项目路径闭包捕获自
+运行时已解析的工作区),因此该工具绝不会跨项目,并把确认路由到
+绑定的会话。
 
-**Save confirmation in the handler (immune to vendor pre-approval).** Originally the claude path
-gated save in `canUseTool`. But a vendor's permission-rule engine can _pre-approve_ a tool and skip
-`canUseTool` entirely (a user/project allow-rule matching `mcp__c3__save_intents`, or a non-`default`
-mode), which let a save persist silently. So the confirmation is **sunk into the save handler** — its
-single execution point, reached whenever the tool is called, which vendor rules cannot bypass (they
-only decide _whether_ to call it). This converges **both vendors on one gate**: the codex/driver path
-(calling the tools over HTTP MCP, outside any `canUseTool`) already gated in the handler, and the
-claude in-process path now matches it. The intent gate therefore allows save straight through (no
-`confirm-save` branch, no second prompt). On non-`default` modes / allow-rules the handler still
-prompts; on deny / cancel / abort it returns a「未落库」result and never touches the store.
+**handler 内的保存确认(免疫于厂商预批准)。** 最初 claude 路径
+在 `canUseTool` 中网关保存操作。但厂商的权限规则引擎可以*预先批准*一个工具并完全跳过
+`canUseTool`(用户/项目的允许规则匹配 `mcp__c3__save_intents`,或处于非 `default`
+模式),这会让保存静默持久化。因此确认被**下沉到保存 handler 中**——它的
+唯一执行点,只要工具被调用就会到达,厂商规则无法绕过它(它们只能决定
+*是否*调用它)。这使**两个厂商收敛到同一道网关**上:codex/驱动路径
+(通过 HTTP MCP 调用工具,在任何 `canUseTool` 之外)本就在 handler 中网关控制,而
+claude 的进程内路径现在与其一致。因此 intent 网关直接放行保存(不再有
+`confirm-save` 分支,不会二次弹窗)。在非 `default` 模式/允许规则下 handler 仍会
+弹窗;在拒绝/取消/中止时它返回一个「未落库」结果,绝不触碰 store。
 
-The three tools' shapes, descriptions, and core logic live in ONE source, consumed by both MCP
-surfaces (the in-process SDK MCP here and the HTTP MCP below) so they never drift.
+这三个工具的形状、描述与核心逻辑都存在于同一份源代码中,被两个 MCP
+接口共用(这里的进程内 SDK MCP 与下文的 HTTP MCP),因此二者绝不会产生分歧。
 
-**Read-only query tools (RM-R19).** The same server also carries `find_intents`
-(`{ keyword?, module?, status? }`, all optional; `status` is constrained to the five
-status values) → the store's find → a **slim** JSON list
-(`id`/`title`/`module`/`priority`/`status`/`dependsOn`; `content` is deliberately omitted to keep the
-list compact) or a「未找到」message, and `view_intent` (`{ id }`) → the store's get →
-the single intent's **full** JSON, guarding that the intent belongs to the bound project so an
-unknown / other-project id returns a friendly「未找到」text (not an error). Both close over the same
-workspace (no cross-project reads), stay resident, and are auto-allowed by the gate, unlike
-`save_intents`'s confirmation. The agent is
-prompted to query the ledger before splitting items or setting `dependsOn`.
+**只读查询工具(RM-R19)。** 同一个服务器还携带 `find_intents`
+(`{ keyword?, module?, status? }`,均为可选;`status` 被约束为五个
+状态值之一)→ store 的 find → 一份**精简**的 JSON 列表
+(`id`/`title`/`module`/`priority`/`status`/`dependsOn`;`content` 被特意省略以保持
+列表紧凑)或一条「未找到」消息;以及 `view_intent`(`{ id }`)→ store 的 get →
+单个意图的**完整** JSON,并守卫该意图归属于绑定的项目,使
+未知/其他项目的 id 返回一条友好的「未找到」文本(而非错误)。两者都闭包捕获同一个
+工作区(无跨项目读取),保持常驻,并被网关自动允许,不同于
+`save_intents` 需要确认。智能体
+被提示在拆分条目或设置 `dependsOn` 之前先查询账本。
 
-## Intent tools over localhost HTTP MCP — cross-vendor (2026-06-12-005)
+## 跨厂商的意图工具:通过 localhost HTTP MCP(2026-06-12-005)
 
-The `c3` server above is an **in-process** SDK MCP server, which only the Claude path can see;
-driver-path vendors cannot. To keep the intent
-panel vendor-neutral, the SAME three tools are re-exposed over a **localhost streamable-HTTP MCP
-route**, mounted on c3's own server (before the SPA catch-all, like the codex relay).
+上文的 `c3` 服务器是一个**进程内** SDK MCP 服务器,只有 Claude 路径能看到它;
+驱动路径的厂商则不能。为保持意图
+面板与厂商无关,同样的三个工具被重新暴露在一条**本地 streamable-HTTP MCP
+路由**上,挂载在 c3 自己的服务器上(位于 SPA 兜底路由之前,与 codex relay 类似)。
 
-- **Per-run binding + isolation.** The intent profile binds a per-run MCP server (only for Codex
-  today): an opaque token maps to a private MCP server whose tool handlers close over that run's
-  project. The token rides the URL query; the project binding lives in the closure, so an agent can
-  neither read nor write another project's ledger. The binding is evicted at run end.
-- **Loopback-only.** A defence-in-depth guard rejects non-loopback peers (403) on top of c3's
-  localhost bind; an unknown/expired token is 404 (Constitution localhost-only / deny-by-default).
-- **Save gate (shared by both vendors).** The save confirmation lives **in the save handler**, the
-  one gate both surfaces share: it emits the same `permission_request` frame (the `save_intents` tool
-  name plus the proposed intents), blocks on the decision, and persists only on `allow`.
-  `find_intents`/`view_intent` are auto-allowed (read-only). A deny / aborted run never reaches the
-  store. Codex must gate here because it calls the tool outside any c3 `canUseTool`; the claude
-  in-process path now gates here too, so a vendor pre-approval that skips `canUseTool` still prompts.
-- **Driver translation.** The neutral remote-MCP descriptor (type, url, optional bearer-token env
-  var) is translated by the codex driver to the streamable-HTTP MCP form it writes.
-- **Claude isolation.** The claude path still uses the in-process MCP server (now bound per run with
-  the same gate deps) and ignores the token URL — a later intent must design its isolation, not relax
-  the per-project guard.
+- **按运行绑定 + 隔离。** intent profile 绑定一个按运行区分的 MCP 服务器(目前
+  仅用于 Codex):一个不透明 token 映射到一个私有 MCP 服务器,其工具 handler 闭包捕获
+  该次运行的项目。token 随 URL query 传递;项目绑定存在于闭包中,因此智能体
+  既不能读也不能写另一个项目的账本。该绑定在运行结束时被驱逐。
+- **仅限回环。** 一道纵深防御守卫在 c3 的
+  localhost 绑定之上拒绝非回环对端(403);未知/过期的 token 返回 404(Constitution 中
+  仅限 localhost / 默认拒绝的原则)。
+- **保存网关(两个厂商共享)。** 保存确认存在于**保存 handler 内部**,是两个
+  接口共用的同一道网关:它发出相同的 `permission_request` 帧(`save_intents` 工具
+  名加上拟保存的意图),阻塞等待决定,仅在 `allow` 时才持久化。
+  `find_intents`/`view_intent` 被自动允许(只读)。被拒绝/中止的运行永远不会到达
+  store。Codex 必须在此处网关控制,因为它在任何 c3 `canUseTool` 之外调用该工具;
+  claude 的进程内路径现在也在此处网关控制,因此一个跳过 `canUseTool` 的厂商预批准仍会弹窗。
+- **驱动转译。** 中立的远程 MCP 描述符(type、url、可选的 bearer-token 环境变量)
+  被 codex 驱动转译为其写入的 streamable-HTTP MCP 形式。
+- **Claude 隔离。** claude 路径仍使用进程内 MCP 服务器(现在按运行绑定,依赖同一批网关
+  依赖),并忽略 token URL——后续若有意图要放宽按项目的隔离,必须重新设计其隔离方案,
+  而不是直接放松这道守卫。
 
-## Start work (`start_development`)
+## 启动开发(`start_development`)
 
-1. Resolve the project and synchronously claim the intent id in the feature-private in-memory
-   launch set before worktree creation or launch. If already claimed, reply
-   a dev-start-in-flight error and stop. Release the claim once the pending dev link
-   is consumed on bind, and on every pre-launch / startup failure path (including worktree creation failure
-   and launch rejection).
-2. Validate the intent exists and is `todo`, or `in_progress` with a dangling (deleted)
-   `lastWorkSessionId` (allowing relaunch; other states → `error`) (RM-R8).
-3. Unmet-dependency check: any `dependsOn` not `done` → still allowed, but the frontend
-   second-confirms before sending in the manual path (RM-R11).
-4. **Pull latest before launch** (2026-06-20) so the work session builds on up-to-date code:
-   - `worktree` mode: `git fetch` the base branch from the remote and root the worktree at
-     `<remote>/<base>` (via `git worktree add --no-track`), falling back to the local base branch
-     when there is no remote / the fetch fails. Synchronous — preserves the automation controller's
-     microtask timing contract. Fetch never merges, so this branch never blocks.
-   - `current-branch` mode: `git pull --ff-only` on the project checkout. No remote / no upstream /
-     offline ⇒ best-effort skip; a **diverged** branch (non-fast-forward) ⇒ hard stop returning a
-     pull-failed error (manual path: send error + release claim; automation: surfaced as an
-     automation failure). Never auto-merges / auto-rebases.
-5. Start a **background normal runtime** (`pending:`) via the shared dev prompt builder. The
-   visible prompt is `title + content + dependency summary`, plus the approved spec-path note
-   when SDD is enabled and a spec path exists. Internal prompt channels are separate from the
-   visible echo: a configured `devSkill` leads the model user turn, while SDD's work-session
-   prompt uses the system-instruction channel when no `devSkill` is configured. Manual launch and
-   automation use the same prompt construction and do not change the branch/worktree/session flow.
-   On session bind, set last-dev-session + status `in_progress` + broadcast `intents` + broadcast
-   statuses.
-6. The run is backgrounded and survives disconnect; the work session is a **normal**
-   session that appears in the sidebar; `lastWorkSessionId` powers the back-link.
+1. 解析项目,并在创建 worktree 或启动之前,同步地在该特性私有的内存
+   启动集合中占用该意图 id。若已被占用,回复
+   一个「开发启动进行中」错误并停止。一旦 pending dev 链接在绑定时被消费,
+   即释放该占用;在每一条启动前/启动失败路径(包括 worktree 创建失败
+   和启动被拒绝)上也会释放。
+2. 校验该意图存在且为 `todo`,或为 `in_progress` 但 `lastWorkSessionId`
+   悬空(已删除)(允许重新启动;其他状态 → `error`)(RM-R8)。
+3. 未满足依赖检查:任何 `dependsOn` 未 `done` → 仍然允许,但前端
+   会在手动路径发送前二次确认(RM-R11)。
+4. **启动前拉取最新代码**(2026-06-20),使工作会话构建在最新代码之上:
+   - `worktree` 模式:从远程 `git fetch` 基础分支,并把 worktree 的根设为
+     `<remote>/<base>`(通过 `git worktree add --no-track`),在没有远程/拉取失败
+     时回退到本地基础分支。同步执行——保持自动化控制器的
+     微任务时序约定。fetch 从不做 merge,因此该分支从不阻塞。
+   - `current-branch` 模式:在项目检出上执行 `git pull --ff-only`。无远程/无上游/
+     离线 ⇒ 尽力而为地跳过;**发生分叉**的分支(非快进)⇒ 硬性停止并返回一个
+     拉取失败的错误(手动路径:发送错误 + 释放占用;自动化:呈现为一个
+     自动化失败)。从不自动合并/自动变基。
+5. 通过共享的开发提示词构建器启动一个**后台普通运行时**(`pending:`)。
+   可见的提示词为 `title + content + 依赖摘要`,若启用了 SDD 且存在 spec 路径,
+   再加上已批准的 spec 路径提示。内部提示词通道与
+   可见回显是分离的:若配置了 `devSkill`,由其主导模型用户轮;而当未配置
+   `devSkill` 时,SDD 的工作会话提示词使用系统指令通道。手动启动与
+   自动化使用相同的提示词构建方式,且不改变分支/worktree/会话流程。
+   在会话绑定时,设置 last-dev-session + 状态 `in_progress` + 广播 `intents` + 广播
+   状态。
+6. 该运行是后台化的,断开连接也能存活;工作会话是一个**普通**
+   会话,会出现在侧边栏中;`lastWorkSessionId` 驱动回链。
 
-## Automation orchestrator
+## 自动化编排器
 
-A per-project, in-memory state machine driven entirely by message handlers and an internal viewer
-— no polling, no cron. One controller per project lives in a module map; its automation status
-is the single source of truth, broadcast on every change.
+一个按项目、内存中的状态机,完全由消息 handler 与一个内部 viewer 驱动
+——无轮询,无 cron。每个项目一个控制器,存活在一个模块级 map 中;其自动化状态
+是唯一真相来源,在每次变化时广播。
 
-- **Wire branches.** `set_intent_automate` → set the automate flag + broadcast
-  `intents`. `start_automation` → start the orchestrator (no-op if already
-  running) then broadcast the status. `stop_automation` → stop the orchestrator (aborts the live
-  run). Entering the intent view (`open_intent_chat`) also pushes the current
-  `automation_status` so a fresh connection restores the button state.
-- **Dependency injection.** The orchestrator imports the store/judge/git directly but takes server
-  wiring via injected hooks: a dev-turn runner (bound to the WS-server closure),
-  an intents broadcaster, a status emitter, a session-exists disk check (the same
-  one manual launch uses — injected so the resume/dangling branch
-  stays unit-testable with fakes), and an is-running in-flight check (injected so the
-  attach branch — RM-A10 — stays unit-testable with fakes). This keeps the state machine unit-testable.
-- **Dev-turn runner (server closure).** Ensures a normal runtime for the intent (fresh
-  `pending:` id, or resume an existing id for the continue continuation), registers an **internal
-  viewer** on it, and launches/resumes via the shared launcher. It surfaces the SDK session bind
-  **early** via a callback (fired well before the turn ends). The viewer captures the last
-  assistant message and resolves the turn on: `turn_end`
-  → `complete`/`error`; the controller's abort → blocked (aborted). A `permission_request` does
-  **not** resolve the turn — automation **mirrors manual** (RM-A9): the run stays alive awaiting the
-  watching human's browser answer, and the viewer only flips the awaiting-permission flag (cleared on
-  the answering tool-result, or on `turn_end`) so the controller can flip `awaitingPermission` on
-  the status ("awaiting authorization" hint). A live team lead (rare for a dev skill) is fed via a
-  push instead of a fresh launch.
-  - **Attach mode (RM-A10).** When the controller passes attach mode, the closure
-    only registers the viewer — it **never** launches or pushes. It seeds the last text from the runtime
-    **buffer**'s last assistant message (the in-flight turn's latest message may have been emitted
-    before the viewer attached, so the judge would otherwise read empty). If the run already settled in
-    the race between the controller's is-running check and viewer registration, it resolves
-    immediately from the buffer's trailing `turn_end` (`complete`/`error`) instead of hanging. On
-    this replay path it also computes the pending-question flag from the buffer so a settled turn
-    that ended on an unanswered `AskUserQuestion` is flagged for the human-decision guard
-    (RM-A11) — otherwise it would read as a plain `complete` and risk a blind continue.
-- **Main loop.** At the top of each loop iteration, **before** picking the next intent, the global concurrency gate (RM-A12) scans **all** `in_progress` intents (regardless of the `automate` flag) for a work session that is **truly running** (`lastWorkSessionId` non-null AND the run is live). When found, it attaches an internal viewer to that in-flight turn (in attach mode) and waits for it to settle — logging the outcome but **never** judging or interfering with the intent's lifecycle (manual intents are outside the orchestrator's scope). After the turn settles, the loop re-checks the gate; when clear, it falls through to pick the next intent. A dangling session (on disk but not running) passes the gate immediately. This is independent of the per-intent attach logic (RM-A10), which handles a **selected** intent's own running session after the pick; the gate covers **any** running session from intents the pick would not select (notably non-`automate` manual runs), preventing concurrent work sessions that would conflict on file modifications in the same working tree.
-- **Pick next** selects the best eligible intent
-  (RM-A3: `automate` ∧ status∈{todo,in_progress} ∧ deps done; sorted P0→P3 then `createdAt`). For
-  each, the develop step first picks its **starting** action by precedence: (1) if `lastWorkSessionId` is
-  **already running** it **attaches** (RM-A10) — attach mode, starting id =
-  `lastWorkSessionId`, and the in-progress mark is applied **before** the dev turn (no launch ⇒ no early
-  bind, so the status must point at the tracked session up front); else (2) an `in_progress`
-  intent whose `lastWorkSessionId` passes the session-exists check is **resumed** (real id ⇒ the dev turn
-  continues that context, first prompt continue); else (3) a `todo` or dangling one starts a fresh
-  launch — the same dangling rule as manual launch. The attach flag applies to the
-  **first** turn only; it is cleared after the first turn so any continue continuation uses the
-  ordinary resume path (the attached turn settled the run). Then the develop step loops: run a dev turn → **as soon as the work session binds**
-  (early — mirroring manual launch) the in-progress mark does set-last-dev-session +
-  status `in_progress` + broadcast + emit, so the UI flips to `in_progress` immediately, not
-  at turn end (a fallback re-marks if the early bind never fired); → on `complete`, gather diff-stat +
-  run the completion judge; `done` → commit (with lint self-heal) then mark `done` + push id to the completed set;
-  `in_progress` → resume continue (cap of 10 continuations, RM-A8); `stuck`/`error`/push-fail (and a
-  torn-down pending question, RM-A11) → fail with a reason and stop the whole loop (RM-A6). A live
-  permission prompt does **not** stop the loop — it waits for the watching human (RM-A9), and
-  the awaiting-permission flag flips the status hint while paused. No eligible item
-  → state `done` (RM-A7). Abort mid-run (blocked/aborted) → state `idle`.
-  - **Human-decision guard (RM-A11).** Before the `done`/`in_progress`/`stuck` branch, the develop step
-    checks the turn's pending-question flag: when the turn ended on an **unanswered `AskUserQuestion`**, it
-    fails immediately — **even if the judge said `in_progress`** — so a mis-judged verdict
-    can never drive a blind continue over a real user choice. The flag is computed by a pure
-    detector (exported, unit-tested): an `AskUserQuestion`
-    tool-use with no matching tool-result (by tool-use id) means the question was never answered.
-    A **live** AskUserQuestion no longer blocks — the dev-turn runner keeps the run alive for the watching
-    human to answer (RM-A9); the flag specifically covers the **torn-down / attach buffer-replay** path, where a
-    settled run carrying a pending question would otherwise surface as `complete`.
-  - **Auto-commit lint self-heal (RM-A13).** The `done` branch commits through
-    a commit-with-lint-heal helper rather than a bare commit. It first commits; on
-    success it returns committed. A failure that is **not** a commit-hook failure (push rejected, no
-    upstream, no repo …) is returned verbatim → hard stop (RM-A6), **never** retried. A
-    commit-hook failure (a pre-commit lint hook) is healed by a **single dev-agent attempt** —
-    lint toolchains differ per project, so there is no portable fix _command_: it resumes the **same**
-    work session (same id, no attach) with a targeted prompt embedding the
-    lint error summary, lets the agent fix it, then retries the commit **once** (re-staging
-    everything). A retry that succeeds ends the heal; a retry that fails non-commit-hook surfaces
-    verbatim; a retry that is still a lint failure returns `lint 自动修复失败(修复 agent 介入后仍未通过)…`
-    → fail (RM-A6, intent not `done`). The abort signal is checked around every await (abort returns
-    failure with no error so the caller stays quiet); the agent fix turn's permission pause flips
-    the awaiting flag per RM-A9. Every stage logs a trail.
-- **Completion judge.** The judge builds an English prompt (intent + last
-  message + **evidence**: `git diff HEAD --stat` for uncommitted work AND `git log --oneline -5` for
-  recent commits — the dev skill often self-commits, leaving a clean tree, so an empty diff must NOT
-  read as incomplete; either source counts) demanding a strict `{"verdict","reason"}` JSON. The
-  verdict rules are ordered **stuck → done → in_progress** with the priority pinned in the prompt:
-  (1) **stuck first** — any human-intervention signal (asking the user / `AskUserQuestion`,
-  presenting options or seeking a preference/direction/scope/trade-off; waiting on a permission;
-  blocked for lack of context; errored/gave up; or claims done with no consistent evidence);
-  (2) **done** only if not stuck and the change evidence is consistent (the agent's word alone is
-  insufficient); (3) **in_progress** as the **fallback** for a pure dev-skill checkpoint or
-  self-driven remaining steps. The old "bias toward done / continue" wording is **removed** —
-  `in_progress` is no longer a default. It runs through the tool-less one-shot query (default-agent
-  env/model), logs the verdict, and tolerantly parses the first
-  JSON object; an unparseable / out-of-range answer is treated as `stuck` (fail-safe — never silently
-  `in_progress`, RM-A4). The judge is the **first** line of the human-decision defence; the
-  orchestrator's pending-question guard (RM-A11) is the second.
-- **Git helper.** Diff-stat, recent-log, and commit-and-push shell out via the git CLI scoped to a
-  directory and never reject (they return exit codes/stderr).
-  Commit-and-push is **multi-repo aware**:
-  - If the project root has a `.git` marker it is treated as the single repo — classic behaviour:
-    stage all, commit `feat: <title>` **only when there are changes**, then **always push** (an empty
-    tree means the dev skill already self-committed — we still push so those commits reach the remote).
-  - Otherwise it discovers git repos under the root (recursive, bounded depth,
-    skips `node_modules`/`dist`/etc., stops at each repo boundary) and commits each **affected** repo
-    independently. Staging is scoped per repo, so changed files group to their
-    owning repo by location. A repo is affected when its tree is dirty **or** it is ahead of upstream
-    (covers a subrepo the dev skill self-committed); untouched repos are left alone. Finding **no** repo
-    is an error (`工作区内未找到 git 仓库,无法提交`).
-  - Any non-zero step returns a failure (the failing subrepo's relative path is
-    named in the message), which becomes the orchestrator's stop reason (RM-A5/A6). The failure
-    kind classifies **why**: a failed `git commit` whose output carries a
-    lint/pre-commit-hook signature (`eslint`/`prettier`/`lint-staged`/`husky`/`pre-commit`/`✖`, via a
-    pure, unit-tested classifier) is a commit-hook failure (self-heal-eligible, RM-A13); every
-    other failure (`git add`/`status`/`push`, no-repo) is a hard stop. Multi-repo runs
-    propagate the sub-repo's failure kind so a sub-repo lint failure still triggers the self-heal
-    (RM-A13). There is **no** lint-fix _command_ helper — the heal is a single dev-agent fix, since
-    lint toolchains are not portable across projects.
+- **接线分支。** `set_intent_automate` → 设置 automate 标志 + 广播
+  `intents`。`start_automation` → 启动编排器(若已在运行则为
+  no-op),然后广播状态。`stop_automation` → 停止编排器(中止正在进行的
+  运行)。进入意图视图(`open_intent_chat`)也会推送当前的
+  `automation_status`,以便一个新连接恢复按钮状态。
+- **依赖注入。** 编排器直接 import store/judge/git,但通过注入式钩子
+  获取服务端接线:一个开发轮运行器(绑定到 WS-server 闭包)、
+  一个 intents 广播器、一个状态 emitter、一个会话是否存在的磁盘检查(与手动启动
+  使用的是同一个——被注入,以便 resume/dangling 分支
+  能用假实现做单元测试),以及一个是否正在运行的即时检查(被注入,以便
+  attach 分支——RM-A10——能用假实现做单元测试)。这使得该状态机可单元测试。
+- **开发轮运行器(服务端闭包)。** 为该意图确保一个普通运行时(全新的
+  `pending:` id,或为续跑复用一个既有 id),在其上注册一个**内部
+  viewer**,并通过共享启动器启动/恢复。它通过一个回调**尽早**呈现 SDK
+  会话绑定(远早于该轮结束时触发)。viewer 捕获最后一条
+  assistant 消息,并在以下情形结束该轮:`turn_end`
+  → `complete`/`error`;控制器的 abort → blocked(aborted)。`permission_request`
+  **不会**结束该轮——自动化**镜像手动路径**(RM-A9):运行保持存活,等待
+  正在观看的人在浏览器中作答,viewer 只翻转「等待权限」标志(在
+  作答的 tool-result 上,或在 `turn_end` 时清除),使控制器能在状态上
+  翻转 `awaitingPermission`(「等待授权」提示)。一个存活的 team lead(对开发技能而言罕见)
+  由推送喂给,而非重新启动。
+  - **Attach 模式(RM-A10)。** 当控制器传入 attach 模式时,闭包
+    只注册 viewer——它**从不**启动或推送。它从运行时**缓冲区**的最后一条
+    assistant 消息中获取种子文本(进行中那一轮的最新消息可能在 viewer
+    附加之前就已发出,否则判定器会读到空)。若运行已在控制器的
+    is-running 检查与 viewer 注册之间的竞态中结束,它会立即从缓冲区
+    尾部的 `turn_end`(`complete`/`error`)解析,而不是挂起。在
+    这条回放路径上,它还会从缓冲区计算 pending-question 标志,使一个
+    以未作答的 `AskUserQuestion` 结束的已结束轮被标记给人工决策防护
+    (RM-A11)使用——否则它会被读作普通的 `complete`,冒着盲目续跑的风险。
+- **主循环。** 在每次循环迭代的开头,在挑选下一个意图**之前**,全局并发闸门(RM-A12)会扫描**所有**
+  `in_progress` 意图(无论 `automate` 标志如何),查找一个**真正在运行**的工作会话
+  (`lastWorkSessionId` 非空且该运行存活)。一旦发现,便对该进行中的一轮附加一个内部
+  viewer(以 attach 模式)并等待其结束——记录结果,但**从不**
+  评判或干预该意图的生命周期(手动意图不在编排器的职责范围内)。该轮结束后,
+  循环重新检查该闸门;闸门清空时,继续挑选下一个意图。一个悬空会话(存在于磁盘上但未运行)
+  会立即通过该闸门。这与每意图的 attach 逻辑(RM-A10)相互独立,后者处理挑选出的
+  **被选中**意图自身的运行会话;闸门覆盖的是挑选逻辑**不会**选中的意图所拥有的**任何**
+  运行中会话(尤其是非 `automate` 的手动运行),从而防止并发的工作会话在
+  同一工作树上因文件修改产生冲突。
+- **挑选下一个**选出最佳的合格意图
+  (RM-A3:`automate` ∧ status∈{todo,in_progress} ∧ 依赖已完成;按 P0→P3 再按 `createdAt` 排序)。对
+  每一个,develop 步骤先按优先级挑选其**起始**动作:(1)若 `lastWorkSessionId`
+  **已在运行**,则**附加**(RM-A10)——attach 模式,起始 id =
+  `lastWorkSessionId`,且 in-progress 标记在开发轮**之前**就已应用(不启动 ⇒ 无早期
+  绑定,因此状态必须预先指向被跟踪的会话);否则 (2) 一个 `in_progress`
+  意图,其 `lastWorkSessionId` 通过会话是否存在的检查,则**恢复**它(真实 id ⇒ 开发轮
+  延续该上下文,首个提示词为 continue);否则 (3) 一个 `todo` 或悬空的意图开始一次全新
+  启动——与手动启动相同的悬空规则。attach 标志只对
+  **第一**轮生效;第一轮之后即被清除,因此任何续跑都走
+  普通的恢复路径(已附加的那一轮已经结束了该运行)。随后 develop 步骤循环:运行一个开发轮 → **一旦工作会话绑定**
+  (尽早——镜像手动启动)in-progress 标记就执行 set-last-dev-session +
+  状态 `in_progress` + 广播 + emit,使 UI 立即翻转为 `in_progress`,而不是
+  等到该轮结束(若早期绑定从未触发,有一个兜底会重新标记);→ 在 `complete` 时,收集
+  diff-stat 并运行完成判定器;`done` → 提交(带 lint 自愈)然后标记 `done` + 把 id 推入
+  已完成集合;`in_progress` → 恢复续跑(上限 10 次续跑,RM-A8);`stuck`/`error`/push 失败
+  (以及一个被拆除的待处理问题,RM-A11)→ 带原因失败并停止整个循环(RM-A6)。一个存活的
+  权限弹窗**不会**停止循环——它等待正在观看的人(RM-A9),
+  等待权限标志会在暂停期间翻转状态提示。没有合格条目
+  → 状态 `done`(RM-A7)。运行中途中止(blocked/aborted)→ 状态 `idle`。
+  - **人工决策防护(RM-A11)。** 在 `done`/`in_progress`/`stuck` 分支之前,develop 步骤
+    检查该轮的 pending-question 标志:当该轮以一个**未作答的 `AskUserQuestion`** 结束时,它
+    立即失败——**即便判定器给出了 `in_progress`**——这样一个误判的结论
+    绝不会覆盖真实的用户选择而驱动盲目续跑。该标志由一个纯函数
+    检测器计算(已导出、已做单元测试):一个 `AskUserQuestion`
+    的工具调用若没有匹配的 tool-result(按 tool-use id),即意味着该问题从未被作答。
+    一个**存活的** AskUserQuestion 不再造成阻塞——开发轮运行器会让运行保持存活,等待观看的
+    人来作答(RM-A9);该标志专门覆盖**被拆除/attach 缓冲区回放**路径,在该路径上一个
+    携带待处理问题的已结束运行原本会呈现为 `complete`。
+  - **自动提交的 lint 自愈(RM-A13)。** `done` 分支通过一个
+    commit-with-lint-heal 助手来提交,而非裸提交。它先提交;
+    成功则返回已提交。一个**不是**提交钩子失败的失败(push 被拒、无上游、无仓库……)
+    会原样返回 → 硬性停止(RM-A6),**绝不**重试。一个
+    提交钩子失败(一个 pre-commit lint 钩子)会通过**单次开发智能体尝试**来自愈——
+    lint 工具链因项目而异,因此没有可移植的修复*命令*:它恢复**同一个**
+    工作会话(相同 id,不 attach),用一条嵌入 lint 错误摘要的针对性提示词,
+    让智能体去修复,然后**仅重试一次**提交(重新暂存
+    所有文件)。重试成功即结束自愈;重试失败且非提交钩子问题则原样呈现;
+    重试仍是 lint 失败则返回 `lint 自动修复失败(修复 agent 介入后仍未通过)…`
+    → 失败(RM-A6,意图不为 `done`)。abort signal 在每次 await 前后都会被检查
+    (中止时返回无错误的失败,以便调用方保持安静);智能体修复轮的权限暂停会按 RM-A9
+    翻转等待标志。每个阶段都记录一条轨迹。
+- **完成判定器。** 判定器构建一条英文提示词(意图 + 最后一条
+  消息 + **证据**:未提交工作用 `git diff HEAD --stat`,近期提交用 `git log --oneline -5`
+  ——开发技能常常自行提交,留下干净的工作树,因此空 diff **绝不能**
+  被读作未完成;任一来源都算数),要求严格的 `{"verdict","reason"}` JSON。
+  裁定规则按 **stuck → done → in_progress** 排序,优先级固定在提示词中:
+  (1) **stuck 优先**——任何需要人工介入的信号(询问用户/`AskUserQuestion`、
+  给出选项或寻求偏好/方向/范围/取舍;等待权限;因缺乏上下文而受阻;
+  出错/放弃;或声称已完成但没有一致的证据);
+  (2) 仅当不是 stuck 且变更证据一致时才判 **done**(仅凭智能体自己的说法
+  不够);(3) **in_progress** 作为纯开发技能检查点或
+  自驱动剩余步骤的**兜底**。旧的「偏向 done / continue」措辞已被**移除**——
+  `in_progress` 不再是默认值。它通过无工具的 one-shot 查询运行(默认智能体
+  环境/模型),记录该裁定,并容错地解析第一个
+  JSON 对象;一个无法解析/超出范围的答案会被视为 `stuck`(故障安全——绝不静默地判为
+  `in_progress`,RM-A4)。判定器是人工决策防线的**第一**道;
+  编排器的 pending-question 防护(RM-A11)是第二道。
+- **Git 助手。** Diff-stat、近期日志与 commit-and-push 通过 git CLI 在限定的
+  目录范围内执行,且从不拒绝(它们返回退出码/stderr)。
+  Commit-and-push 是**多仓库感知**的:
+  - 若项目根目录有 `.git` 标记,则视为单一仓库——经典行为:
+    暂存所有文件,**仅当有变更时**提交 `feat: <title>`,然后**始终**推送(空
+    工作树意味着开发技能已经自行提交——我们仍然推送,以便那些提交到达远程)。
+  - 否则它会在根目录下发现 git 仓库(递归、有界深度,
+    跳过 `node_modules`/`dist` 等,在每个仓库边界处停止),并独立地为每个**受影响**的
+    仓库提交。暂存按仓库限定作用域,因此变更文件按位置归属到
+    其所属仓库。当一个仓库的工作树是脏的**或**它领先于上游时(覆盖开发技能自行提交的
+    子仓库场景),即视为受影响;未变更的仓库不予处理。若找**不到**任何仓库,
+    则为一个错误(`工作区内未找到 git 仓库,无法提交`)。
+  - 任何非零的步骤都会返回一个失败(失败子仓库的相对路径会
+    在消息中给出),这会成为编排器的停止原因(RM-A5/A6)。失败
+    种类会分类**原因**:一个失败的 `git commit`,若其输出携带
+    lint/pre-commit-hook 特征(`eslint`/`prettier`/`lint-staged`/`husky`/`pre-commit`/`✖`,
+    通过一个纯函数、已做单元测试的分类器判定),则为提交钩子失败(可自愈,RM-A13);
+    其他所有失败(`git add`/`status`/`push`、无仓库)都是硬性停止。多仓库运行会
+    传播子仓库的失败种类,因此一个子仓库的 lint 失败仍会触发自愈
+    (RM-A13)。**没有** lint 修复*命令*助手——自愈是单次开发智能体修复,因为
+    lint 工具链在各项目间不可移植。
 
 ## Reconcile
 
-A standalone (injected) reconcile function is called by the server's
-`open_intent_chat` handler **in the background, after** the intent
-list is already sent to the client (perf: the panel renders immediately on the
-cached/derived `runStatus`, and an intents-refresh broadcast pushes the refreshed
-list once reconcile settles — judging a dead session is an LLM call and must
-never block the first paint). It processes every `in_progress` intent for a
-project:
+一个独立(注入式)的 reconcile 函数由服务端的
+`open_intent_chat` handler 调用,**在后台、在**意图
+列表已经发送给客户端**之后**运行(性能考量:面板基于
+缓存/派生的 `runStatus` 立即渲染,而一次 intents 刷新广播会在 reconcile 结束后
+推送刷新后的列表——判断一个死会话是一次 LLM 调用,绝不能
+阻塞首次绘制)。它为一个项目处理每一个 `in_progress` 意图:
 
-1. **Liveness check:** if `lastWorkSessionId` is non-null and the run is live,
-   the dev process is still alive — yields `runStatus: 'running'`.
-2. **Dead process path:** otherwise, load the session's last 3 assistant
-   messages from disk and run the completion
-   judge (**without git evidence** since the process is gone).
-3. **Judge `done`:** commit & push + mark `done` — yields
-   `runStatus: 'idle'` (auto-completed).
-4. **Judge `in_progress` / `stuck` or no session:** yields `runStatus: 'dangling'`
-   (keeps `in_progress`, but marked interrupted).
+1. **存活检查:** 若 `lastWorkSessionId` 非空且该运行存活,
+   说明开发进程仍然活着——得出 `runStatus: 'running'`。
+2. **死进程路径:** 否则,从磁盘加载该会话最后 3 条 assistant
+   消息并运行完成
+   判定器(由于进程已消失,**不带 git 证据**)。
+3. **判定为 `done`:** 提交并推送 + 标记 `done`——得出
+   `runStatus: 'idle'`(自动完成)。
+4. **判定为 `in_progress` / `stuck` 或无会话:** 得出 `runStatus: 'dangling'`
+   (保持 `in_progress`,但标记为已中断)。
 
-All side-effect access (runtime registry, disk transcripts, AI judge, git,
-store) is injected so the logic is pure and
-unit-testable. The reconcile auto-`done` is the explicit, documented exception
-to RM-R9 for process death, covering both manual and automation-started runs
-(RM-R18). On completion the server caches each derived `runStatus` (consumed
-on later broadcasts) and pushes an intents refresh so every
-connection sees the refreshed run-states and any auto-completes.
+所有有副作用的访问(运行时注册表、磁盘上的记录、AI 判定器、git、
+store)都是被注入的,因此该逻辑是纯函数式的、可
+单元测试的。reconcile 的自动 `done` 是针对进程死亡对 RM-R9 的一个显式的、
+有文档记录的例外,覆盖手动启动与自动化启动的运行
+(RM-R18)。完成后,服务端缓存每个派生出的 `runStatus`(在
+后续广播中被使用),并推送一次 intents 刷新,让每个
+连接都能看到刷新后的运行状态及任何自动完成。
 
-**Dead-session de-dup (perf).** The handler keeps a judged-sessions map
-(intent id → the `lastWorkSessionId` last judged while dead) and filters the
-reconcile input: an intent whose **current dead session** is already recorded
-is skipped — re-judging on every entry / refresh / WS reconnect yields the same
-verdict at the cost of another LLM call. A live process (re-derived cheaply) and
-a brand-new session id (differs from the record) still get
-(re)judged. The entry is cleared when the intent leaves `in_progress`.
+**死会话去重(性能考量)。** 该 handler 维护一个已判定会话 map
+(意图 id → 上次在死亡状态下被判定的 `lastWorkSessionId`),并过滤
+reconcile 的输入:一个意图若其**当前的死会话**已被记录过,
+则被跳过——在每次进入/刷新/WS 重连时都重新判定会得出相同的
+裁定,却要多付出一次 LLM 调用的代价。一个存活的进程(廉价地重新推导)以及
+一个全新的会话 id(与记录不同)仍会被
+(重新)判定。当该意图离开 `in_progress` 时,该记录条目会被清除。
 
-## PR-status reset on model `update` event (RM-R29)
+## 模型 `update` 事件触发的 PR 状态重置(RM-R29)
 
-`features/intents/pr-update-consumer.ts` owns a pure `handlePrUpdateEvent(payload, deps)` — the
-intent-domain reaction to a model-published `pr:operation` `update`/`success` event. It is registered
-as a **resident subscription** in `wiring/run-domain-subscriptions.ts`, alongside the run-lifecycle
-subscriptions and **independent** of the Automation event bridge in `scheduler-startup.ts`. It is
-deliberately kept out of `dispatchEventTriggers`: `prStatus` is part of the ledger state machine, so the
-reset must fire even when no automation is configured, the Automation store is unavailable, or an
-in-flight gate skips the automation. The Automation dispatch and this consumer are two independent
-side-effects of the **same** bus event; neither blocks the other (the `EventBus` isolates handler
-errors, and the consumer additionally try/catches its own store access).
+`features/intents/pr-update-consumer.ts` 承载一个纯函数 `handlePrUpdateEvent(payload, deps)`——
+意图领域对模型发布的 `pr:operation` `update`/`success` 事件的响应。它在
+`wiring/run-domain-subscriptions.ts` 中注册为一个**常驻订阅**,与运行生命周期
+订阅并列,且**独立于** `scheduler-startup.ts` 中的 Automation 事件桥接。它被特意排除在
+`dispatchEventTriggers` 之外:`prStatus` 是账本状态机的一部分,因此即便未配置任何
+自动化、Automation store 不可用、或某个进行中的闸门跳过了自动化,该重置也必须触发。
+Automation 分发与该 consumer 是**同一个**总线事件的两个独立副作用;二者互不阻塞
+(`EventBus` 隔离了各 handler 的错误,该 consumer 还额外对自己的 store 访问做了 try/catch)。
 
-The handler short-circuits unless `operation === 'update' && result === 'success'` and
-`association.intentId` is present. It then `getIntent(intentId)`, verifies
-`intent.workspaceId === pathToId(payload.workspacePath)` (blocks a cross-workspace `intentId`), and —
-only if `prStatus ∈ {rejected, failed, closed}` — calls `setPrStatus(id, 'reviewing')`,
-`safeInsertIntentLog(id, 'pr_updated', …, 'automation')`, and `broadcastIntents(workspacePath)`. `merged`
-is terminal and skipped; `reviewing`/`null`/other statuses, a missing/unknown/cross-workspace intent, or
-a non-`update`/non-`success` event are silent no-ops (the publish already succeeded, so nothing errors).
-A repeated event is idempotent: after the first reset the status is no longer resettable, so subsequent
-events no-op — no duplicate log or broadcast. All store/broadcast capabilities are injected, so the
-handler is unit-tested with fakes (no live DB or bus).
+该 handler 会在非 `operation === 'update' && result === 'success'` 或
+`association.intentId` 不存在时短路返回。之后它会 `getIntent(intentId)`,校验
+`intent.workspaceId === pathToId(payload.workspacePath)`(阻止跨工作区的 `intentId`),并且——
+仅当 `prStatus ∈ {rejected, failed, closed}` 时——调用 `setPrStatus(id, 'reviewing')`、
+`safeInsertIntentLog(id, 'pr_updated', …, 'automation')`,以及 `broadcastIntents(workspacePath)`。`merged`
+是终态,会被跳过;`reviewing`/`null`/其他状态、一个缺失/未知/跨工作区的意图,或
+一个非 `update`/非 `success` 的事件,都是静默的空操作(发布本身已经成功,因此不会有错误)。
+一个重复的事件是幂等的:首次重置之后该状态不再可重置,因此后续
+事件都是空操作——不会重复记录日志或广播。所有 store/广播能力都是被注入的,因此该
+handler 用假实现做单元测试(无需实时 DB 或总线)。
 
-## List / Rename / Delete communication sessions
+## 列出 / 重命名 / 删除沟通会话
 
-Three new WS handlers round out the session-collection CRUD:
+三个新的 WS handler 补齐了会话集合的 CRUD:
 
-- **`list_intent_sessions`**: reads the session list, derives a run-states snapshot
-  (sessions with a live agent run are running, absent = idle), and replies `intent_sessions`
-  on the same connection.
-- **`rename_intent_session`**: renames the session, then broadcasts
-  `intent_sessions` to all connections.
-- **`delete_intent_session`**: removes the runtime (abort + drop the in-memory
-  runtime), then deletes the session row (with `is_current` fallback).
-  Clears the connection's viewed session if the deleted session was being watched, then broadcasts both
-  `intent_sessions` and `session_status` to all connections.
+- **`list_intent_sessions`**:读取会话列表,派生一份运行状态快照
+  (拥有存活智能体运行的会话为 running,缺席则为 idle),并在同一连接上回复
+  `intent_sessions`。
+- **`rename_intent_session`**:重命名该会话,然后向所有连接广播
+  `intent_sessions`。
+- **`delete_intent_session`**:移除运行时(中止 + 丢弃内存中的
+  运行时),然后删除该会话行(带 `is_current` 兜底)。
+  若被删除的会话正被观看,则清除该连接被查看的会话,然后向所有连接广播
+  `intent_sessions` 与 `session_status`。
 
-All three check store availability first and return `error` on db-unavailable.
+三者都先检查 store 是否可用,在 db 不可用时返回 `error`。
 
-A fourth, read-only opener serves the intent detail's 「spec session」tab:
+第四个只读的打开器服务于意图详情的「spec session」标签页:
 
-- **`open_spec_session`**: resolves the intent's stored `specSessionId`; if that `'spec'` runtime
-  was dropped (process restart / GC) it is rebuilt from the transcript with writes re-confined to
-  the spec directory (the parent of the intent's **absolute** centralized `specPath`) and the spec
-  agent re-pinned, then replies
-  `session_selected` and registers the viewer. The intent's own comm/refine session
-  (`intentSessionId`) is opened by the existing `open_intent_chat` instead — the two sessions are
-  different runtime kinds. Rejected (`error`) when the intent has no `specSessionId`.
-  The unified Sessions page never opens a spec row by raw session id; it uses the projected
-  `owner_kind='intent'` / `owner_id` pair to navigate to the owning intent's 「spec session」tab,
-  then calls this opener with the intent id.
+- **`open_spec_session`**:解析该意图存储的 `specSessionId`;若该 `'spec'` 运行时
+  已被丢弃(进程重启/GC),则从记录重建,并把写入重新限定在
+  spec 目录内(意图**绝对**的集中式 `specPath` 的父目录),重新钉住 spec
+  智能体,然后回复
+  `session_selected` 并注册 viewer。意图自身的沟通/refine 会话
+  (`intentSessionId`)则由既有的 `open_intent_chat` 打开——两种会话是
+  不同的运行时 kind。当该意图没有 `specSessionId` 时被拒绝(`error`)。
+  统一的 Sessions 页面从不通过原始会话 id 打开一个 spec 行;它使用投影出的
+  `owner_kind='intent'` / `owner_id` 组合导航到所属意图的「spec session」标签页,
+  再用该意图 id 调用此打开器。
 
-## Broadcast
+## 广播
 
-The intent-session broadcast follows the same pattern as the discussion broadcast:
-it reads the session list, attaches a run-states snapshot derived from the
-in-flight check, and fans out `{ type: 'intent_sessions', workspacePath, items, runStates }` to
-every connection. It is wired into the shared kernel context so intent session handlers
-and any background mutation can push the refreshed list.
+意图会话的广播遵循与讨论广播相同的模式:
+它读取会话列表,附加一份从即时检查派生出的运行状态快照,
+并把 `{ type: 'intent_sessions', workspacePath, items, runStates }` 扇出到
+每个连接。它被接入共享的内核上下文,以便意图会话 handler
+和任何后台变更都能推送刷新后的列表。
 
-- `list_intents` / `update_intent_status` read/write the store and reply `intents`.
-  `update_intent_status` is `async`: cancelling an intent that owns a `prId` first closes the remote
-  PR/MR via `closeForgePr` (`gh pr close` / `glab mr close`). A close failure sends
-  `intent.prCloseFailed` and returns **before** any status change; on success it flips the status,
-  writes `prStatus='closed'` (keeping `prUrl`) via `setPrInfo`, and appends a `pr_closed` lifecycle
-  log. Intents with no PR keep the original synchronous path.
-- Dev back-link: the frontend sends `select_session` with `lastWorkSessionId`; if the session no
-  longer exists, the existing `error` path returns and the frontend offers a friendly
-  restart/cancel exit (RM-R13).
+- `list_intents` / `update_intent_status` 读写 store 并回复 `intents`。
+  `update_intent_status` 是 `async` 的:取消一个拥有 `prId` 的意图会先通过
+  `closeForgePr`(`gh pr close` / `glab mr close`)关闭远程 PR/MR。关闭失败会发送
+  `intent.prCloseFailed`,并在任何状态变化**之前**返回;成功则翻转状态,
+  通过 `setPrInfo` 写入 `prStatus='closed'`(保留 `prUrl`),并追加一条 `pr_closed` 生命周期
+  日志。没有 PR 的意图保留原有的同步路径。
+- 开发回链:前端发送带 `lastWorkSessionId` 的 `select_session`;若该会话不再
+  存在,既有的 `error` 路径会返回,前端会提供一个友好的
+  重启/取消退出选项(RM-R13)。
 
-## Hidden-set filtering
+## 隐藏集过滤
 
-The workspace session listing filters out the project's hidden set so communication
-sessions **and intent spec sessions** never enter the normal list (RM-R4) — both are gathered
-into one hidden set at list-build time, using the resolved path so the keys match the stored
-workspace path. The filter runs before pagination, so the page window and `hasMore` are computed
-over the already-filtered list. If the store is unavailable it does **not** filter (degrade,
-don't break the list) (RM-R12).
+工作区会话列表会过滤掉该项目的隐藏集,使沟通
+会话**及意图的 spec 会话**永远不会进入普通列表(RM-R4)——二者在构建列表时
+被收集进同一个隐藏集,使用解析后的路径以匹配存储的
+工作区路径。该过滤在分页**之前**运行,因此分页窗口与 `hasMore` 是基于
+已过滤后的列表计算的。若 store 不可用,则**不**做过滤(降级,
+而非破坏列表)(RM-R12)。
 
-## Frontend
+## 前端
 
-- **Entry button:** the session sidebar adds an idea (💡) button left of "＋ new session"
-  emitting an open-intents event with the workspace path.
-- **View switch:** the app gains a view mode (`console` | `intents`) + the intents project.
-  Opening sends `open_intent_chat` (its response carries the list); selecting any normal
-  session resets to `console`. The intent view renders no mode selector (RM-R3).
-- **Title bar (RM-R3):** the dialog column reuses the session title bar with the mode selector
-  hidden. The console tab keeps the mode selector shown. Title shows the active title or "New Intent".
-- **New-intent button:** the "+" button lives in the intent list's header, to the
-  right of the status filter. It emits a new-intent event → the app sends
-  `new_intent_chat`; the resulting `session_selected` (empty history) clears the dialog so a
-  fresh round starts.
-- **Reconnect / refresh recovery:** each project's current communication session is persisted in
-  the chat table's current flag, so entering the intent view auto-reloads it. On WS reopen,
-  if the view mode is intents, re-send `open_intent_chat`; the view mode and intents project
-  are also mirrored to local storage to survive a hard refresh. No new server message is needed —
-  the existing resume branch suffices.
-- **Layout:** left intent list (默认完整宽度 960px,窄屏 `min(960px,68vw)`;可在标题栏
+- **入口按钮:** 会话侧边栏在「＋ new session」左侧新增一个 idea(💡)按钮,
+  会发出一个带工作区路径的 open-intents 事件。
+- **视图切换:** app 新增一个视图模式(`console` | `intents`)+ intents 项目。
+  打开时发送 `open_intent_chat`(其响应携带列表);选中任何普通
+  会话都会重置回 `console`。intent 视图不渲染模式选择器(RM-R3)。
+- **标题栏(RM-R3):** 对话列复用会话标题栏,但隐藏模式选择器。
+  console 标签页仍显示模式选择器。标题展示活动标题或「New Intent」。
+- **新建意图按钮:** 「+」按钮位于意图列表头部,状态过滤器的
+  右侧。它发出一个 new-intent 事件 → app 发送
+  `new_intent_chat`;随之而来的 `session_selected`(空历史)会清空对话框,
+  开始新的一轮。
+- **重连/刷新恢复:** 每个项目当前的沟通会话被持久化在
+  chat 表的 current 标志中,因此进入意图视图会自动重新加载它。在 WS 重开时,
+  若视图模式为 intents,重新发送 `open_intent_chat`;视图模式与 intents 项目
+  也会被镜像到本地存储中,以在强制刷新后存活。无需新的服务端消息——
+  既有的恢复分支已经足够。
+- **布局:** 左侧意图列表(默认完整宽度 960px,窄屏 `min(960px,68vw)`;可在标题栏
   通过折叠按钮在展开/收缩两态间切换,折叠态是组件本地 UI 状态,收缩态宽度减半至 480px 并**不渲染**
   模块标签与操作区,展开态恢复;折叠态文案/可见性由一个纯函数决定)
-  (header: title + an **automation** button [▶ / ■ stop,
-  highlighted while running, red on error] + status filter, with a status line below showing the
-  current item or the stop reason;
+  (头部:标题 + 一个**自动化**按钮[▶ / ■ 停止,
+  运行中高亮,出错时变红]+ 状态过滤器,下方一行状态线显示
+  当前条目或停止原因;
   **列表排序(纯客户端展示排序,服务端 `priority ASC, updated_at DESC`
   不变):**「全部」视图未完成项保持服务端原序置顶、已完成(`done`)项置底;置底段与「已完成」筛选整列均
   **按完成时间倒序、再优先级排序**——一个纯比较函数:`completedAt` 降序为
   主键(缺失时回退 `createdAt`),同完成时刻按 `priority` 升序 P0→P3;其它单状态筛选原样不重排;
-  per row a `MM/DD` date prefix
-  — `completedAt` for done items, else `createdAt`, both zero-padded — an optional **module tag**
+  每行一个 `MM/DD` 日期前缀
+  ——已完成项用 `completedAt`,否则用 `createdAt`,均补零——一个可选的**模块标签**
   (胶囊标签,渲染于 date 与 title 之间;`module===''` 时不渲染,无占位不破版)
-  before the title/priority badge/status (彩色 pill 徽标,按
+  位于标题/优先级徽标/状态之前(彩色 pill 徽标,按
   draft 灰 / todo 主色 / in_progress 橙 / done 绿 / cancelled 红映射语义色,风格同优先级徽标,
   收缩态不隐藏;标签文案来自一个纯函数)
-  and a dependency hint;
-  **展开详情(手风琴,至多一项展开):** 详情区复用安全 Markdown 渲染
+  以及一个依赖提示;
+  **展开详情(手风琴,至多一项展开):** 详情区复用安全 Markdown 渲染,
   把 `content` 全文以 Markdown 安全渲染——
   详情显式走 Markdown 管线(markdown-it `html:false` → DOMPurify 清洗 → 注入),与聊天消息
   一致的 XSS 防护与外链加固(`target=_blank rel=noopener noreferrer`,剔除 `javascript:`/`data:`);
   套用同一排版样式,聊天既有行为不回归。
   下方元信息区显示次要元信息(小字号、灰色):
-  创建时间 (完整格式 `YYYY-MM-DD HH:mm`)、
+  创建时间(完整格式 `YYYY-MM-DD HH:mm`)、
   完成时间(仅 `completedAt` 非空时显示,同完整格式)、
   依赖列表(无依赖时不显示;已完成依赖灰色、未完成依赖橙色并加 ⚠ 标记);
   时间与依赖格式化由纯函数完成;
   再下方仅当存在未完成依赖时显示简短警告;
-  per-status actions: Refine + Launch-development for `todo`, Development-details
-  for launched, mark done/cancel for any), then a **trailing automate toggle icon**
-  (渲染于操作按钮排末尾、所有操作按钮之后;`automate` → ⏳ tooltip `in auto queue`,
-  否则 ✋ tooltip `manual trigger mode`;因属于操作区,收缩态随操作区一并隐藏);
-  right **reuses** the chat messages + session status bar +
-  message input against the already-viewed communication session. The automate icon emits
-  a set-automate event (toggles the flag); the button emits start/stop-automation.
-- **Save confirmation:** the permission prompt adds a branch for the
-  `save_intents` tool name, rendering each proposed item as a card
-  (title/priority/dependency) with Save/Cancel mapped to allow/deny. Dependencies render on two
-  lines: existing-id deps as "依赖:…" and intra-batch deps (`dependsOnIndexes`) as
-  "依赖本批:#N「title」" — a helper resolves each 0-based index back to the
-  sibling's title in the same proposed-intents array so the user sees the order relationship
-  before allowing (RM-R17).
-- **Intent data:** the app holds intents keyed by workspace path,
-  refreshed by the `intents` message, and automation status keyed by workspace path,
-  refreshed by the `automation_status` message; the intent list receives the current project's
-  status as a prop.
+  按状态提供操作:`todo` 为精炼 + 启动开发,已启动的为开发详情,
+  任意状态可标记完成/取消),然后是一个**尾部的自动化切换图标**
+  (渲染于操作按钮排末尾、所有操作按钮之后;`automate` → ⏳ 提示「in auto queue」,
+  否则 ✋ 提示「manual trigger mode」;因属于操作区,收缩态随操作区一并隐藏);
+  右侧**复用**聊天消息 + 会话状态栏 +
+  消息输入框,作用于已被查看的沟通会话。自动化图标发出
+  一个 set-automate 事件(切换该标志);按钮发出 start/stop-automation。
+- **保存确认:** 权限弹窗为
+  `save_intents` 工具名新增一个分支,把每个拟保存的条目渲染为一张卡片
+  (标题/优先级/依赖),Save/Cancel 分别映射到 allow/deny。依赖分两
+  行渲染:既有 id 的依赖显示为「依赖:…」,批内依赖(`dependsOnIndexes`)显示为
+  「依赖本批:#N「title」」——一个辅助函数把每个从 0 开始的索引解析回
+  同一个拟保存意图数组中同批成员的标题,使用户在允许之前
+  就能看到顺序关系(RM-R17)。
+- **意图数据:** app 保存按工作区路径为键的 intents,
+  由 `intents` 消息刷新;以及按工作区路径为键的自动化状态,
+  由 `automation_status` 消息刷新;意图列表以 prop 形式接收当前项目的
+  状态。
 
-## Dependencies
+## 依赖
 
-- **SQLite** — Node's built-in SQLite (Node) / Bun's built-in SQLite (Bun single binary); both
-  marked external in the server bundle.
-- **agent-session** — the intent-kind runtime and the shared launcher.
-- **permission-gateway** — gates `save_intents` via the existing permission flow.
-- **session-registry** — its list filter consumes this domain's hidden set.
-- **git (local CLI)** — the orchestrator's commit/push on a verified `done`.
-- **agent-session (one-shot)** — the completion judge runs a tool-less one-shot SDK query.
-- **Claude Agent SDK** — appended-system-prompt preset, disallowed tools, in-process MCP server.
+- **SQLite** — Node 内置的 SQLite(Node)/ Bun 内置的 SQLite(Bun 单二进制);两者都
+  在服务端打包中标记为 external。
+- **agent-session** — intent kind 运行时以及共享启动器。
+- **permission-gateway** — 通过既有权限流程网关控制 `save_intents`。
+- **session-registry** — 其列表过滤消费本领域的隐藏集。
+- **git(本地 CLI)** — 编排器在验证 `done` 后的提交/推送。
+- **agent-session(one-shot)** — 完成判定器运行一次无工具的 one-shot SDK 查询。
+- **Claude Agent SDK** — 追加系统提示词 preset、禁用工具、进程内 MCP 服务器。

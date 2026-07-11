@@ -1,18 +1,18 @@
-# Flow — Auth Login Gate
+# Flow — Auth 登录门
 
-**Scenario.** Before a connection may drive agents, it authenticates. This is the mandatory
-precondition for exposing c3 beyond localhost (constitution C-SEC-5, ADR-0023).
+**场景。** 一个连接在驱动智能体之前,必须先完成身份认证。这是把 c3 暴露到 localhost 之外的强制
+前置条件(constitution C-SEC-5,ADR-0023)。
 
-**Domains.** auth · web-console · system-config.
+**领域。** auth · web-console · system-config。
 
-> **Status: partial runtime (2026-06-16).** The boundary + contracts and a **`basic` provider** are
-> live (real scrypt-PHC hashing, real `login` verification, multi-account + unique-admin management).
-> **Still deferred:** token signing/verification, request-level auth middleware, and the
-> "enabled auth ⇒ may bind non-loopback" enforcement — so the server's bind address is **unchanged,
-> still localhost-only**. See [auth-overview](../domains/core/auth/auth-overview.md) _Roadmap_. This
-> flow documents the live slice and marks deferred steps inline.
+> **状态:部分运行时已上线(2026-06-16)。** 边界与契约以及一个 **`basic` 提供方**已上线
+> (真实的 scrypt-PHC 哈希、真实的 `login` 校验、多账号 + 唯一管理员管理)。
+> **仍延后:** 令牌签名/校验、请求级别的 auth 中间件,以及
+> “启用 auth ⇒ 才可绑定非本地回环地址”的强制执行——因此服务器的绑定地址**保持不变,仍仅限
+> localhost**。参见 [auth-overview](../domains/core/auth/auth-overview.md) 的 _Roadmap(路线图)_
+> 一节。本流程记录已上线的部分,并在行内标注延后的步骤。
 
-## Flow graph
+## 流程图
 
 ```mermaid
 flowchart TD
@@ -26,57 +26,55 @@ flowchart TD
     EXP -- no --> LOOP[localhost-only default]
 ```
 
-## Configure accounts + the single admin (bootstrap)
+## 配置账号 + 唯一管理员(引导阶段)
 
-1. **web-console → auth.** In the System Settings auth panel the operator picks the `basic` provider
-   and adds one or more accounts via `set_admin_password { username, password, currentPassword? }`
-   (it **upserts**: a new username adds an account, the first one becoming the admin; an existing one
-   changes its password). The plaintext is hashed **server-side** (scrypt PHC) and only the hash is
-   persisted (`AUTH-R3`/`AUTH-R7`). Every account may sign in; the admin is the config authority, not
-   a login privilege (no RBAC).
-2. **Change-password gate.** Changing an existing account's password requires proving that account's
-   current password (`currentPassword` verified against its stored hash) ⇒ `not_authenticated` on
-   mismatch (`AUTH-R8`). Adding a new account is exempt — the localhost-only default trusts the local
-   operator (request-level authz deferred).
-3. **Unique-admin integrity.** `set_admin_account { username }` designates the single admin;
-   `remove_account { username }` deletes an account but refuses to orphan the admin reference —
-   removing the admin while other accounts remain returns `admin_must_reassign` (designate a new admin
-   first); removing the only account empties the store back to the unconfigured state (`AUTH-R9`).
-   `basic.enabled` is derived: true ⇔ accounts non-empty and `adminUsername` references one.
-4. **Account-store ownership.** The whole `basic` account set is mutated **only** by these dedicated
-   messages; a generic `save_settings` never touches it — the server forces the entire basic provider
-   back to the on-disk value, so a stale/empty client draft cannot wipe,
-   reassign, or overwrite accounts (`AUTH-R7`). OAuth's `adminEmail` (which flows through `save_settings`)
-   must be non-empty and a member of `allowedEmails`, else the save is rejected (`auth.oauthAdminInvalid`).
+1. **web-console → auth。** 在系统设置的 auth 面板中,操作者选择 `basic` 提供方,并通过
+   `set_admin_password { username, password, currentPassword? }` 添加一个或多个账号
+   (它执行的是 **upsert**:新用户名添加一个账号,第一个添加的成为管理员;已存在的用户名则
+   修改其密码)。明文在**服务端**进行哈希(scrypt PHC),只有哈希值被持久化
+   (`AUTH-R3`/`AUTH-R7`)。任何账号都可以登录;管理员是配置层面的权威,而非登录特权
+   (没有 RBAC)。
+2. **改密码门。** 修改一个既有账号的密码需要先证明该账号的当前密码正确
+   (`currentPassword` 会与其存储的哈希做校验)⇒ 不匹配则返回 `not_authenticated`
+   (`AUTH-R8`)。新增账号则豁免此要求——localhost-only 的默认设定信任本地操作者
+   (请求级别的鉴权尚在延后)。
+3. **唯一管理员的完整性。** `set_admin_account { username }` 指定唯一的管理员；
+   `remove_account { username }` 删除一个账号,但拒绝让管理员引用变成孤儿——若还有其他账号
+   存在时删除管理员,会返回 `admin_must_reassign`(需先指定新的管理员)；删除唯一剩下的账号
+   会让存储清空,回到未配置状态(`AUTH-R9`)。`basic.enabled` 是派生值:当账号集合非空且
+   `adminUsername` 指向其中一个账号时为 true。
+4. **账号存储的归属。** 整个 `basic` 账号集合**只**由这些专用消息修改;通用的
+   `save_settings` 从不触碰它——服务器会强制把整个 basic 提供方还原为磁盘上的值,因此一份
+   陈旧/空白的客户端草稿不能清空、重新指派或覆盖账号(`AUTH-R7`)。OAuth 的 `adminEmail`
+   (它经由 `save_settings` 流转)必须非空且是 `allowedEmails` 的成员,否则保存会被拒绝
+   (`auth.oauthAdminInvalid`)。
 
-## Login
+## 登录
 
-1. **web-console → auth.** The login page sends `login` (`AuthLoginRequest`). The server looks up the
-   account by username in `accounts` and verifies the plaintext against that account's stored hash;
-   the plaintext exists in transit only, never persisted (`AUTH-R3`).
-2. **Result.** `login_result` (`AuthLoginResult`) — success issues a provider-neutral
-   `AuthSessionToken` (`{ tokenId, subject, issuedAt, expiresAt }`); the token signing secret is
-   referenced by `signingKeyRef`, never persisted in the system settings (`AUTH-R4`). **Token
-   signing/verification is deferred.**
-3. **Unauthenticated.** `unauthenticated` is the WS analogue of HTTP 401; `logout` ends a session.
-   **Request-level enforcement is deferred** — today the gate is UI-level only.
+1. **web-console → auth。** 登录页发送 `login`(`AuthLoginRequest`)。服务器在 `accounts` 中
+   按用户名查找账号,并把明文与该账号存储的哈希做校验;明文只在传输过程中存在,从不持久化
+   (`AUTH-R3`)。
+2. **结果。** `login_result`(`AuthLoginResult`)——成功时签发一个与提供方无关的
+   `AuthSessionToken`(`{ tokenId, subject, issuedAt, expiresAt }`);令牌签名密钥通过
+   `signingKeyRef` 引用,从不持久化在系统设置中(`AUTH-R4`)。**令牌的签名/校验尚在延后。**
+3. **未认证。** `unauthenticated` 是 WS 层面对 HTTP 401 的对应；`logout` 结束一个会话。
+   **请求级别的强制执行尚在延后**——目前这道门只在 UI 层面生效。
 
-## Exposure precondition
+## 暴露前置条件
 
-A non-loopback `exposure.bindAddress` (e.g. `0.0.0.0`) expresses intent to expose c3 to a network,
-which **requires** enabled auth (`AUTH-R6`, C-SEC-5). Today the panel only gates the toggle in the
-UI (an admin must be configured before exposure can be enabled); **runtime enforcement of the bind
-relaxation is deferred** — the server still binds localhost-only.
+一个非本地回环的 `exposure.bindAddress`(例如 `0.0.0.0`)表达了要把 c3 暴露到网络的意图,这**要求**
+必须先启用 auth(`AUTH-R6`,C-SEC-5)。目前面板只在 UI 层面门控该开关(必须先配置好管理员才能
+启用暴露)；**绑定放宽的运行时强制执行尚在延后**——服务器仍然只绑定 localhost。
 
-## Branches & exceptions (anti-scenarios)
+## 分支与异常(反面场景)
 
-- **Default = disabled, fail-soft.** `SystemSettings.auth` absent / `enabled: false` / a provider
-  that fails validation ⇒ "no auth", the localhost-only default. Config normalization drops a malformed
-  `auth` block to absent and never throws — an invalid config can never lock the user out or
-  break boot (`AUTH-R1`).
-- **Backward compatible.** An existing settings store with no `auth` field round-trips with
-  identical (no-auth) behaviour (`AUTH-R2`).
-- **Never plaintext.** No type, example, or test carries a real plaintext password as a stored
-  value; only the PHC hash is persisted (`AUTH-R3`).
-- **Provider-neutral.** A future OAuth/SSO/multi-user provider adds only an `AuthProvider` arm + a
-  server zod arm; the session model and wire messages are untouched (`AUTH-R5`).
+- **默认 = 禁用,失败要软处理。** `SystemSettings.auth` 缺失 / `enabled: false` / 某个提供方
+  校验失败 ⇒ “无 auth”,即 localhost-only 的默认设定。配置归一化会把一个畸形的 `auth` 块
+  丢弃为缺失状态,且从不抛出异常——一份无效配置绝不能把用户锁在外面,也绝不能导致启动失败
+  (`AUTH-R1`)。
+- **向后兼容。** 一份没有 `auth` 字段的既有设置存储会以相同的(无 auth)行为原样往返
+  (`AUTH-R2`)。
+- **绝不明文。** 任何类型、示例或测试都不携带真实明文密码作为存储值;只有 PHC 哈希被持久化
+  (`AUTH-R3`)。
+- **与提供方无关。** 未来加入 OAuth/SSO/多用户提供方只需新增一个 `AuthProvider` 分支 + 一个
+  服务端 zod 分支;会话模型与线路消息保持不变(`AUTH-R5`)。

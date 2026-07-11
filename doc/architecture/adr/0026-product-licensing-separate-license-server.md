@@ -1,191 +1,116 @@
-# 0026 — Product licensing as a separate license-server
+# 0026 — 产品许可作为独立的 license-server
 
 - **Status:** proposed
 - **Date:** 2026-06-16
-- **Driver:** c3 needs a governed commercial-entitlement model with a server-side source of truth,
-  established before any implementation so license, payment, and gating work cannot drift into
-  conflict with the constitution.
+- **Driver:** c3 需要一个受治理的商业授权模型,并以服务端为唯一可信来源,且必须在任何实现之前确立,以免 license、支付、门禁的相关工作与 constitution 产生冲突。
 
 ## Context
 
-c3 is moving from a free local tool to a **paid product**. A paid product needs to answer one
-question authoritatively: _is this installation entitled to run?_ That answer cannot live only on
-the local machine — a purely-local license check is shareable between machines, forgeable by a
-determined user, and can never be **deactivated** after a refund/chargeback/abuse. Commercial
-entitlement therefore requires a **server-side source of truth**.
+c3 正从一个免费的本地工具转向**付费产品**。付费产品需要权威地回答一个问题:_这套安装是否有权运行?_ 这个答案不能只存在于本地机器上——纯本地的 license 检查可在多台机器间共享、可被有心用户伪造,且在退款/拒付/滥用之后永远无法**吊销**。因此商业授权需要一个**服务端的唯一可信来源**。
 
-The constitution's tech-stack baseline forbids — _in the c3 process_ — any database, any
-auth/identity provider, any second agent runtime, and any non-loopback bind, each "forbidden without
-an ADR". A licensing authority needs exactly those forbidden things (a database of orders and
-licenses, an identity provider for users, a payment integration, a public network listener). The
-resolution is **not** to relax c3's constraints, but to place the authority in a **separate
-product** — the **license-server (LS)** — that lives entirely outside the c3 process. This ADR is
-the constitution's required exception record for introducing that service and for the one small
-concession the c3 side must make.
+constitution 的技术栈基线在 _c3 进程内_ 禁止任何数据库、任何认证/身份提供方、任何第二个 agent 运行时、以及任何非回环绑定,每一项都“未经 ADR 不得使用”。而一个许可授权机构恰恰需要这些被禁止的东西(订单与 license 的数据库、面向用户的身份提供方、支付集成、公网监听器)。解决方案**不是**放宽 c3 的约束,而是把该授权机构放进一个**独立产品**——**license-server(LS)**——它完全位于 c3 进程之外。本 ADR 就是 constitution 所要求的、引入该服务以及 c3 侧需做出的那一处小让步的例外记录。
 
-This decision must also be kept **distinct from the existing [auth domain](../../domains/core/auth/auth-overview.md)**
-(ADR-0023). The two are different concerns with different lifecycles:
+本决策还必须与既有的 [auth 域](../../domains/core/auth/auth-overview.md)(ADR-0023)**明确区分**。二者是生命周期不同的不同关注点:
 
-| Concern      | **auth** (ADR-0023)                | **product-license** (this ADR)                       |
-| ------------ | ---------------------------------- | ---------------------------------------------------- |
-| Question     | _Who_ may drive agents in this c3? | _Is this installation paid-for?_                     |
-| Authority    | Local (c3 config)                  | Remote (license-server)                              |
-| Runs when…   | Always (even with no license)      | Independent of which auth provider is active         |
-| Failure mode | Reject the connection              | Gate **new** session creation; preserve running work |
+| Concern   | **auth**(ADR-0023)              | **product-license**(本 ADR)                 |
+| --------- | ------------------------------- | ------------------------------------------- |
+| 问题      | *谁*可以在这个 c3 中驱动 agent? | _这套安装是否已付费?_                       |
+| 权威机构  | 本地(c3 配置)                   | 远程(license-server)                        |
+| 何时运行… | 始终(即使没有 license)          | 与哪个 auth 提供方生效无关                  |
+| 失败模式  | 拒绝连接                        | 只对**新建**会话进行门禁;保留正在运行的工作 |
 
-Conflating them would couple two independent lifecycles into one — auth must protect a free,
-unlicensed, localhost c3 the same way it protects a paid one, and licensing must apply whether auth
-is disabled, `basic`, or `oauth`. They are deliberately separate domains.
+将二者混为一谈会把两个独立的生命周期耦合成一个——auth 必须以同样的方式保护免费的、未授权的本地 c3 与已付费的 c3,而 licensing 无论 auth 是禁用、`basic` 还是 `oauth` 都必须生效。它们是刻意分离的两个域。
 
 ## Options considered
 
-### 1. In-c3 local license check (offline key file)
+### 1. c3 内本地 license 校验(离线密钥文件)
 
-Ship a license key / signed file that c3 verifies locally with no server.
+发放一个 c3 在本地无需服务端即可验证的 license 密钥/签名文件。
 
-_Pro:_ no second service; no network dependency; stays inside the single process.
-_Con:_ **no revocation** — a refunded or abused license keeps working forever.
-_Con:_ trivially **shareable** — one key file copied to many machines.
-_Con:_ **no payment path** — purchase, order records, and entitlement issuance have nowhere to live.
-_Rejected:_ a commercial product cannot rely on an unrevocable, copyable local artifact.
+_优点:_ 无需第二个服务;无网络依赖;仍留在单一进程内。
+_缺点:_ **无法吊销**——一个已退款或被滥用的 license 会永远有效。
+_缺点:_ 极易**被共享**——一份密钥文件可被复制到多台机器。
+_缺点:_ **没有支付路径**——购买、订单记录和授权签发无处安放。
+_已否决:_ 商业产品不能依赖一个不可吊销、可复制的本地工件。
 
-### 2. Overload the existing auth domain
+### 2. 叠加到既有的 auth 域上
 
-Express entitlement as another `AuthProvider` arm, or fold licensing checks into the auth runtime.
+把授权表达为另一个 `AuthProvider` 分支,或将 licensing 检查并入 auth 运行时。
 
-_Pro:_ reuses the existing config/login plumbing; no new domain.
-_Con:_ couples two independent lifecycles — auth is local access control that must run for a free,
-unlicensed c3; licensing is server-authoritative entitlement that is orthogonal to the auth method.
-_Con:_ breaks single-responsibility: the auth domain's invariants (localhost trust, provider union,
-single admin) have nothing to do with orders, payments, or revocation.
-_Con:_ the auth domain explicitly models _access_, not _entitlement_ — overloading it would corrupt
-a clean boundary that ADR-0023 just established.
-_Rejected:_ entitlement is a separate bounded context, not an auth provider.
+_优点:_ 复用既有的配置/登录管线;无需新域。
+_缺点:_ 耦合了两个独立的生命周期——auth 是必须对免费的、未授权 c3 也生效的本地访问控制;licensing 是服务端权威的授权,与 auth 方式正交。
+_缺点:_ 破坏单一职责:auth 域的不变量(localhost 信任、provider 联合、单一管理员)与订单、支付或吊销毫无关系。
+_缺点:_ auth 域明确建模的是*访问*,而非*授权*——叠加进去会破坏 ADR-0023 刚刚建立起来的清晰边界。
+_已否决:_ 授权是一个独立的限界上下文,而不是一个 auth 提供方。
 
-### 3. Separate license-server + c3-side gating (selected)
+### 3. 独立的 license-server + c3 侧门禁(已选)
 
-A distinct LS product owns the authoritative entitlement record, payment, and admin operations. c3
-becomes a **client** of LS: it activates once, heartbeats periodically, verifies a signed
-entitlement token offline, and gates new-session creation when not entitled.
+一个独立的 LS 产品拥有权威的授权记录、支付和管理操作。c3 成为 LS 的**客户端**:它一次性激活、周期性心跳、离线验证一个已签名的授权令牌,并在未获授权时对新建会话进行门禁。
 
-_Pro:_ server-side source of truth ⇒ real revocation, per-installation binding, payment integration.
-_Pro:_ keeps c3's local-first constraints intact — the forbidden technologies live in LS, a
-separate deployable, not in the c3 process.
-_Pro:_ offline-verifiable signed tokens + an offline grace window keep c3 usable through transient
-network/LS outages without trusting the network for the "active" answer.
-_Pro:_ cleanly separated from auth — the two domains evolve independently.
-_Con:_ a second service to build and operate (plus PostgreSQL); c3 gains an outbound network
-dependency and one small on-disk cache. Accepted as the cost of commercial entitlement.
+_优点:_ 服务端唯一可信来源 ⇒ 真正的吊销、按安装绑定、支付集成成为可能。
+_优点:_ 保持 c3 的本地优先约束不变——被禁止的技术都活在 LS 这个独立可部署单元里,而不在 c3 进程中。
+_优点:_ 可离线验证的签名令牌 + 离线宽限窗口,使 c3 在网络/LS 短暂中断期间仍可用,而无需依赖网络来判断“是否有效”。
+_优点:_ 与 auth 干净分离——两个域可独立演进。
+_缺点:_ 需要构建和运维第二个服务(外加 PostgreSQL);c3 增加了一个出站网络依赖以及一小块磁盘缓存。作为商业授权的代价被接受。
 
 ## Decision
 
-**Adopt option 3.** Product entitlement is owned by a **separate license-server (LS)**; c3 enforces
-it client-side. The constitution's "forbidden without an ADR" list governs the **c3 process** — LS
-is a distinct product outside that process, so the following are accepted **for LS only**:
+**采用选项 3。** 产品授权由一个**独立的 license-server(LS)**拥有;c3 在客户端强制执行。constitution 的“未经 ADR 不得使用”清单管辖的是 **c3 进程**——LS 是该进程之外的一个独立产品,因此以下几项**仅对 LS**被接受:
 
-- **Go standard-library HTTP** as the LS runtime (no heavy framework; a small, auditable surface).
-- **PostgreSQL** as the LS persistent store (licenses, orders, activations, heartbeats, revocations).
-- **GitHub OAuth** as the LS identity provider for **both user login and the admin back-office**
-  (single identity source).
-- **WeChat Pay** as the LS payment integration.
-- **Ed25519** signatures on entitlement tokens — LS signs, c3 verifies with an **embedded public
-  key** (the same signing discipline already used for releases, ADR-0010).
+- **Go 标准库 HTTP** 作为 LS 的运行时(无重型框架;一个小而可审计的面)。
+- **PostgreSQL** 作为 LS 的持久化存储(license、订单、激活、心跳、吊销)。
+- **GitHub OAuth** 作为 LS 面向**用户登录与管理后台**共用的身份提供方(单一身份来源)。
+- **微信支付** 作为 LS 的支付集成。
+- 授权令牌上的 **Ed25519** 签名——LS 签名,c3 用**内嵌的公钥**验证(与发布签名已采用的同一签名规范一致,ADR-0010)。
 
-On the **c3 side**, the accepted concessions are deliberately minimal:
+在 **c3 一侧**,被接受的让步刻意保持最小:
 
-- **One new persistent store** — a small on-disk **entitlement cache** holding the last LS-signed
-  entitlement token plus the heartbeat bearer token, so the 30-minute offline grace and restart
-  continuity work. This is an accepted cost, analogous to the local configuration already carrying
-  password hashes (ADR-0023). c3 still has **no general database** and **no second agent runtime**.
-- **c3-side gating** — c3 verifies the Ed25519-signed token **offline**, treats entitlement as
-  `active` while a valid token is within its term and the last successful heartbeat is under the
-  grace window, and **gates new-session creation** when it is not. Running sessions and in-flight
-  runs are **never** interrupted by gating (ADR-0006: runs are decoupled from connections and
-  survive; entitlement lapse is treated the same way — it stops _new_ work, not _current_ work).
+- **一个新的持久化存储**——一个小型的磁盘上**授权缓存**,保存最近一次 LS 签名的授权令牌以及心跳 bearer 令牌,使 30 分钟离线宽限和重启后的连续性得以工作。这是一项被接受的成本,类似于本地配置早已承载密码哈希(ADR-0023)。c3 仍然**没有通用数据库**,也**没有第二个 agent 运行时**。
+- **c3 侧门禁**——c3 离线验证 Ed25519 签名的令牌,只要有效令牌处于其有效期内且最近一次心跳成功仍在宽限窗口内,就将授权状态视为 `active`,否则**对新建会话进行门禁**。正在运行的会话和进行中的 run **永远不会**因门禁而被中断(ADR-0006:run 与连接解耦并得以存续;授权失效被同等对待——它只阻止*新*工作,不影响*当前*工作)。
 
-The c3 ↔ LS public boundary (activation, heartbeat, payment, error semantics) is documented once in
-the [license-server API contract](../../shared/api-conventions/license-server-api.md). Activation
-**auth codes are one-time and short-lived** and are **never** reused as the long-lived heartbeat
-credential.
+c3 ↔ LS 的公开边界(激活、心跳、支付、错误语义)统一记录在 [license-server API 契约](../../shared/api-conventions/license-server-api.md)中。激活用的 **auth code 是一次性且短期有效的**,**绝不**会被复用为长期存在的心跳凭据。
 
 ## Consequences
 
 ### Positive
 
-- **Real entitlement control** — revocation, per-installation binding, and a payment path become
-  possible because the authority is server-side.
-- **c3 stays local-first** — every forbidden technology lives in a separate product; the c3 process
-  keeps its no-database / single-runtime / localhost posture (the one exception, a small entitlement
-  cache, is recorded here).
-- **Resilient to outages** — offline Ed25519 verification + a 30-minute grace window mean a network
-  blip or LS restart does not immediately stop a paying user; only a sustained lapse gates new work.
-- **Clean separation from auth** — licensing and access control evolve independently.
+- **真正的授权控制**——吊销、按安装绑定和支付路径成为可能,因为权威机构在服务端。
+- **c3 保持本地优先**——每一项被禁止的技术都活在一个独立的产品里;c3 进程保持其无数据库/单一运行时/仅 localhost 的姿态(唯一的例外,一个小的授权缓存,已在此记录)。
+- **对中断有韧性**——离线 Ed25519 验证 + 30 分钟宽限窗口,意味着网络抖动或 LS 重启不会立即让一个付费用户被阻断;只有持续的失效才会对新工作进行门禁。
+- **与 auth 干净分离**——licensing 与访问控制可独立演进。
 
 ### Negative / accepted costs
 
-- **A second service + PostgreSQL to operate**, with its own deploy, backup, and on-call surface.
-- **c3 gains an outbound network dependency** on LS. Mitigated by offline verification + grace, but
-  a permanently unreachable LS eventually gates new sessions.
-- **No-refund policy for MVP** — the product is sold as a virtual/digital good; the service
-  agreement states it does not support refunds, and **no refund workflow is built** for the MVP.
-  This is a deliberate business non-goal, recorded in the
-  [product-license domain spec](../../domains/commerce/product-license/product-license-spec.md).
-- **Trust boundary** — because c3 verifies a signature with an embedded public key, a forged
-  "active" cannot be injected by tampering with the network. A verification failure is treated as
-  **not entitled** (deny-by-default), but — balancing the C-SEC deny-by-default value against
-  "never kill in-flight work" — it **gates new sessions only** and preserves running ones.
+- **需要运维一个第二服务 + PostgreSQL**,有其自己的部署、备份和值班面。
+- **c3 增加了对 LS 的出站网络依赖。** 通过离线验证 + 宽限来缓解,但一个永久不可达的 LS 最终会对新会话进行门禁。
+- **MVP 阶段的无退款政策**——该产品作为虚拟/数字商品出售,服务协议声明不支持退款,且 MVP **不构建退款流程**。这是一项刻意的业务非目标,记录在 [product-license 域规格](../../domains/commerce/product-license/product-license-spec.md)中。
+- **信任边界**——由于 c3 用内嵌公钥验证签名,伪造的“active”状态无法通过篡改网络注入。验证失败被视为**未授权**(默认拒绝),但——在权衡 C-SEC 默认拒绝的价值与“绝不终止进行中的工作”之间——它**只对新建会话进行门禁**,并保留正在运行的会话。
 
 ## Compliance
 
-- c3 MUST verify the Ed25519 signature of an entitlement token against the embedded LS public key
-  **before** honoring `active`; an unverifiable or tampered token is treated as not entitled.
-- Activation auth codes MUST be one-time and short-lived; c3 MUST NOT reuse an activation code as a
-  heartbeat credential, and LS MUST reject a consumed code.
-- Gating MUST block **only** new-session creation; existing sessions and in-flight runs MUST remain
-  fully usable on entitlement lapse (traceable to ADR-0006).
-- No LS secret ships in the c3 binary except the **public** verification key; signing keys, OAuth
-  client secrets, and payment credentials live only in LS (secret-by-reference, mirroring ADR-0023).
-- The c3 ↔ LS contract is documented once in the LS API contract and cited by ID elsewhere.
-- The licensing domain MUST NOT be expressed as an `AuthProvider` arm or merged into the auth runtime.
+- c3 必须在认可 `active` 之前,用内嵌的 LS 公钥验证授权令牌的 Ed25519 签名;无法验证或被篡改的令牌一律视为未授权。
+- 激活用的 auth code 必须是一次性且短期有效的;c3 不得将激活码复用为心跳凭据,LS 必须拒绝一个已被消费的 code。
+- 门禁必须**仅**阻止新建会话;现有会话和进行中的 run 在授权失效时必须保持完全可用(可追溯到 ADR-0006)。
+- c3 二进制中不得携带任何 LS 密钥,除**公开**验证密钥外;签名密钥、OAuth 客户端密钥和支付凭据只存在于 LS 中(按引用保存密钥,与 ADR-0023 一致)。
+- c3 ↔ LS 的契约在 LS API 契约中统一记录,并在别处按 ID 引用。
+- licensing 域不得被表达为 `AuthProvider` 的一个分支,也不得并入 auth 运行时。
 
 ## References
 
-- [constitution](../../constitution.md) — tech-stack baseline (forbidden-without-ADR list) + the
-  C-SEC values this ADR balances; this ADR is the required exception record.
-- [ADR-0023](0023-auth-abstraction-network-exposure.md) — the **auth** boundary, kept distinct here.
-- [ADR-0010](0010-release-and-distribution-trust.md) — the existing Ed25519 release-signing precedent.
-- [ADR-0006](0006-decouple-runs-from-connections.md) — runs survive; the basis for "preserve running
-  sessions on entitlement lapse".
-- [product-license domain](../../domains/commerce/product-license/product-license-overview.md) — the
-  business behavior this decision governs.
-- [license-server API contract](../../shared/api-conventions/license-server-api.md) — the c3 ↔ LS
-  public boundary.
-- [license-server architecture](../license-server-architecture.md) — the LS service's own internal
-  architecture (process shape, layering, activation flow, data model, signing chain).
+- [constitution](../../constitution.md) — 技术栈基线(未经 ADR 不得使用清单)+ 本 ADR 所权衡的 C-SEC 价值;本 ADR 就是所要求的例外记录。
+- [ADR-0023](0023-auth-abstraction-network-exposure.md) — **auth** 边界,与此处保持区分。
+- [ADR-0010](0010-release-and-distribution-trust.md) — 既有的 Ed25519 发布签名先例。
+- [ADR-0006](0006-decouple-runs-from-connections.md) — run 得以存续;是“授权失效时保留正在运行的会话”的依据。
+- [product-license 域](../../domains/commerce/product-license/product-license-overview.md) — 本决策所管辖的业务行为。
+- [license-server API 契约](../../shared/api-conventions/license-server-api.md) — c3 ↔ LS 的公开边界。
+- [license-server 架构](../license-server-architecture.md) — LS 服务自身的内部架构(进程形态、分层、激活流程、数据模型、签名链)。
 
-## Revision — 2026-06-17 (activation model simplified)
+## Revision — 2026-06-17(激活模型简化)
 
-The original activation model (one-time auth code → browser loopback → server-to-server claim →
-separate heartbeat token, backed by dedicated activation-code/request/heartbeat tables) has been
-**simplified** to a license-key binding model. The ADR's core decision is unchanged — entitlement
-remains LS-authoritative, c3 verifies an Ed25519-signed token offline, and gating blocks only
-new-session creation. What changed:
+原有的激活模型(一次性 auth code → 浏览器回环 → 服务端到服务端的领取 → 独立的心跳令牌,由专门的 activation-code/request/heartbeat 表支撑)已被**简化**为一种 license-key 绑定模型。本 ADR 的核心决策不变——授权仍以 LS 为权威来源,c3 离线验证 Ed25519 签名的令牌,门禁仅阻止新建会话。改变的部分是:
 
-- **License-key binding replaces the one-time code.** A license is identified by a random, unique,
-  **shareable `licenseKey`** (a handle, not a bearer credential). The user obtains it from LS and
-  pastes it into c3, which **binds** the installation (`POST /v1/license/bind` with the key + an
-  installation id). There is no c3-generated auth code, no browser loopback, and no separate
-  server-to-server claim step.
-- **Binding state is inlined on the license row.** The license carries its **exclusive live
-  binding**: the bound installation, the **sha256 hash** of a per-binding **`aliveToken`** (the
-  heartbeat bearer credential, returned in plaintext once at bind and rotated on each re-bind), and
-  the last-success time. Re-binding to a new installation **displaces** the old one, which is reported
-  `disabled` on its next heartbeat (it cannot be recovered offline).
-- **GitHub OAuth is sign-in only.** GitHub authenticates **account login/registration**. On first
-  sign-in LS issues a **default long-lived free license** that can be browser-bound to c3.
-- **Renewal is order-driven.** A user may hold multiple licenses; extending a license's term and
-  status requires a paid **order** linked to that license (WeChat Pay payment capture remains a later
-  milestone). The no-refund acceptance is recorded on the order for renewal/upgrade.
-- **Schema simplified.** Tables renamed to `c3_ls_user` / `c3_ls_order` / `c3_ls_license`; the
-  one-time-code and heartbeat-history helper tables are removed. The `PL-R*` rule numbers are
-  retained; their wording is updated to this model.
+- **License-key 绑定取代一次性 code。** 一个 license 由一个随机、唯一、**可分享的 `licenseKey`**(一个句柄,而非 bearer 凭据)标识。用户从 LS 获取该 key 并粘贴到 c3 中,c3 随即**绑定**该安装(`POST /v1/license/bind`,携带 key + 安装 id)。不再有 c3 生成的 auth code,不再有浏览器回环,也不再有独立的服务端到服务端领取步骤。
+- **绑定状态内联在 license 行上。** 该 license 携带其**唯一的存活绑定**:所绑定的安装、一个逐次绑定的 **`aliveToken`**(心跳 bearer 凭据,仅在绑定时以明文返回一次,并在每次重新绑定时轮换)的 **sha256 哈希**、以及最近一次成功的时间。重新绑定到一个新安装会**取代**旧的绑定,后者会在其下一次心跳时被报告为 `disabled`(且离线状态下无法恢复)。
+- **GitHub OAuth 仅用于登录。** GitHub 只认证**账号登录/注册**。首次登录时,LS 会签发一个可被浏览器绑定到 c3 的**默认长期免费 license**。
+- **续期由订单驱动。** 一个用户可持有多个 license;延长某个 license 的期限与状态需要一笔关联到该 license 的付费**订单**(微信支付的支付捕获仍是后续里程碑)。无退款的承诺被记录在续期/升级的订单上。
+- **Schema 已简化。** 表重命名为 `c3_ls_user` / `c3_ls_order` / `c3_ls_license`;一次性 code 与心跳历史的辅助表已被移除。`PL-R*` 规则编号予以保留;其措辞已更新以匹配此模型。

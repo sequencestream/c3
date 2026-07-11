@@ -1,124 +1,120 @@
-# Non-Functional — Release & Distribution
+# 非功能性 — 发布与分发
 
-> **Status:** release 8/7 + 7/7 + 6/7 + 5/7 + 4/7. Orchestration + P0 matrix (1/7), version injection
+> **状态:** release 8/7 + 7/7 + 6/7 + 5/7 + 4/7。编排 + P0 矩阵(1/7),版本注入
 >
-> - manifest + harden-tier framework (2/7), distribution trust — SHA256SUMS + minisign +
->   macOS ad-hoc + `c3 verify` (3/7), **layered quality gates** — pre-build blocking gate +
->   artifact-level headless smoke + publish final check (5/7), the **P1 platform wave +
->   Windows branches** — macOS-x64 + Windows-x64 in the matrix, Windows platform code paths
->   (4/7), the **GH Actions native matrix** — workflow with `needs:` chain physically enforcing
->   the five-layer gate order, macOS ad-hoc codesign runs on darwin runners for real, SLSA provenance
->   (P1) via OIDC keyless, `macos-x64` promoted from P1 to P0 (6/7), the **standard
->   obfuscation tier (7/7)** — `javascript-obfuscator` with string-array + identifier rename,
->   e2e/smoke as logic-regression hard evidence, graceful fallback to bare compile on failure,
->   manifest `v1.1` per-artifact `obfuscation.applied` field, source maps local-only — and
->   the **binary → package split (8/7)** — the binary is always `c3` (or `c3.exe` on
->   Windows); version + platform info live ONLY in the package filename
->   (`c3-v{version}-{target}{.tar.gz|.zip}`); manifest `v1.2` adds `binary` + `binarySha256`
->   per artifact — are live. macOS notarization (Developer ID + notarytool) and Windows
->   Authenticode (signtool + PFX) are deferred to a later wave — they need real
->   certificates in GitHub Secrets, which we don't have yet.
+> - manifest + harden 分级框架(2/7),分发信任 — SHA256SUMS + minisign +
+>   macOS ad-hoc + `c3 verify`(3/7),**分层质量门禁** — 构建前阻塞门禁 +
+>   制品级无头冒烟测试 + 发布终检(5/7),**P1 平台波次 +
+>   Windows 分支** — 矩阵中的 macOS-x64 + Windows-x64,Windows 平台代码路径
+>   (4/7),**GH Actions 原生矩阵** — 用 `needs:` 链物理强制
+>   五层门禁顺序,macOS ad-hoc 代码签名真实运行在 darwin runner 上,通过 OIDC 无密钥方式的 SLSA 溯源
+>   (P1),`macos-x64` 从 P1 晋升为 P0(6/7),**标准
+>   混淆层级(7/7)** — 用 `javascript-obfuscator` 做字符串数组化 + 标识符改名,
+>   以 e2e/冒烟测试作为逻辑回归的硬证据,失败时优雅回退到裸编译,
+>   manifest `v1.1` 新增每制品的 `obfuscation.applied` 字段,source map 仅本地保留 — 以及
+>   **二进制文件与包拆分(8/7)** — 二进制文件始终命名为 `c3`(Windows 上为 `c3.exe`);版本 + 平台信息只存在于包文件名中
+>   (`c3-v{version}-{target}{.tar.gz|.zip}`);manifest `v1.2` 为每个制品新增 `binary` + `binarySha256`
+>   字段 — 均已上线。macOS 公证(Developer ID + notarytool)与 Windows
+>   Authenticode(signtool + PFX)推迟到后续波次 — 它们需要 GitHub Secrets 中的真实
+>   证书,而我们目前还没有。
 
-`release` is a thin **orchestration** layer over the existing build/binary primitives.
-It does not replace `pnpm build` (the bundled web-plus-server output) or `pnpm binary`
-(single native executable); it sequences and fans them out for multi-platform output. See
-[ADR-0010](../architecture/adr/0010-release-and-distribution-trust.md) and
-[ADR-0003](../architecture/adr/0003-single-binary-via-bun-compile.md).
+`release` 是建立在既有 build/binary 原语之上的一层薄薄的**编排**层。
+它不会替代 `pnpm build`(打包好的 web-plus-server 产物)或 `pnpm binary`
+(单个原生可执行文件);它负责对多平台产物进行排序和扇出。参见
+[ADR-0010](../architecture/adr/0010-release-and-distribution-trust.md) 与
+[ADR-0003](../architecture/adr/0003-single-binary-via-bun-compile.md)。
 
-## Distribution contract — the single binary is NOT self-contained (ADR-0012)
+## 分发契约 — 单一二进制文件并非自包含(ADR-0012)
 
-The `c3` single binary ships c3 itself plus the installer/resolver logic for vendor CLIs. Default
-agent execution uses c3-managed vendor installs under `~/.c3/vendor/<vendor>/<version>/bin/<binary>`.
-The release docs must make this contract explicit:
+`c3` 单一二进制文件本身携带 c3,再加上 vendor CLI 的安装器/解析器逻辑。默认的
+智能体执行使用 c3 管理的 vendor 安装,路径为 `~/.c3/vendor/<vendor>/<version>/bin/<binary>`。
+发布文档必须把这一契约写明:
 
-- **Resolution priority is fixed.** `CLAUDE_PATH` / `CODEX_PATH` wins, then c3 managed CLI, then
-  degraded host PATH fallback.
-- **Managed installs are verified and stateful.** c3 reads npm packuments, downloads tarballs,
-  verifies `dist.integrity`, stages/self-checks the binary, and records source/version/error state in
-  `~/.c3/vendor/manifest.json`.
-- **Fallback is not success.** If managed install or sync fails but host PATH contains a usable CLI,
-  the agent can run in `host-path-fallback` state; logs must retain the managed failure reason.
-- **Credentials are outside c3.** c3 never writes or migrates `~/.claude`, `~/.codex`, tokens, shell
-  profiles, package-manager installs, or PATH.
+- **解析优先级是固定的。** `CLAUDE_PATH` / `CODEX_PATH` 优先,其次是 c3 管理的 CLI,最后是
+  降级的 host PATH 回退。
+- **托管安装是经过校验且有状态的。** c3 读取 npm packument,下载 tarball,
+  校验 `dist.integrity`,暂存/自检二进制文件,并把来源/版本/错误状态记录在
+  `~/.c3/vendor/manifest.json` 中。
+- **回退不等于成功。** 如果托管安装或同步失败,但 host PATH 中存在可用的 CLI,
+  智能体可以在 `host-path-fallback` 状态下运行;日志必须保留托管失败的原因。
+- **凭据在 c3 之外。** c3 从不写入或迁移 `~/.claude`、`~/.codex`、令牌、shell
+  配置文件、包管理器安装,或 PATH。
 
-This is the distribution-facing face of ADR-0012 (vendor executable resolution is the first
-capability gate).
+这是 ADR-0012(vendor 可执行文件解析是第一个能力门禁)在分发层面的体现。
 
-## Phase order (quality gate order)
+## 阶段顺序(质量门禁顺序)
 
-The build runs in strict, race-free phases. Phase0/1 happen exactly once; Phase2 fans
-out and is a pure reader, so N targets never write a shared file (the old race root).
+构建以严格的、无竞态的阶段运行。Phase0/1 恰好各执行一次;Phase2 扇出且只是
+纯读取者,因此 N 个目标从不会写同一个共享文件(这是旧竞态的根源)。
 
-| Phase    | Step                    | Cardinality                              | Produces                                                                                                                   |
-| -------- | ----------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Phase0   | web build               | once, platform-agnostic                  | the compiled web bundle                                                                                                    |
-| Phase1   | generate-static-embed   | once                                     | a one-off snapshot of the web bundle, embeddable into the binary (gitignored, not committed)                               |
-| Phase2   | `bun --compile` fan-out | once per target, **parallel**            | the per-target `c3` binary in its own scratch area (read-only against the Phase1 snapshot)                                 |
-| Phase2.5 | pack                    | once per target, **serial** after Phase2 | the distributable package `c3-v{ver}-{target}{.tar.gz\|.zip}` plus the binary's inner sha256 + minisig sidecars, tarred in |
+| Phase    | 步骤                  | 基数                             | 产出                                                                                                  |
+| -------- | --------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Phase0   | web 构建              | 一次,与平台无关                  | 编译后的 web bundle                                                                                   |
+| Phase1   | generate-static-embed | 一次                             | web bundle 的一次性快照,可嵌入二进制文件(已被 gitignore,不提交)                                       |
+| Phase2   | `bun --compile` 扇出  | 每个目标一次,**并行**            | 每个目标各自 scratch 区域中的 `c3` 二进制文件(相对 Phase1 快照只读)                                   |
+| Phase2.5 | pack                  | 每个目标一次,Phase2 之后**串行** | 可分发的包 `c3-v{ver}-{target}{.tar.gz\|.zip}`,连同二进制文件内部的 sha256 + minisig sidecar 一起打包 |
 
-The embeddable snapshot is kept **outside the committed source tree**: the source carries a
-permanent empty stub the everyday bundle/dev/typecheck paths consume, while the Bun compile
-path redirects that import to the Phase1 snapshot at build time. This is what keeps the
-working tree clean across parallel targets.
+可嵌入的快照保存在**已提交源码树之外**:源码里携带一个永久性的空占位符,供日常
+bundle/dev/typecheck 路径使用,而 Bun 编译路径在构建时把该 import 重定向到 Phase1
+快照。这正是让并行多目标构建时工作区保持干净的关键。
 
-Quality-gate ordering beyond build is specified in **Quality gates** below.
+构建之后的质量门禁顺序在下面的**质量门禁**一节中规定。
 
-## Quality gates (release 5/7)
+## 质量门禁(release 5/7)
 
-Three non-overlapping gate layers, ordered by cost so a cheap red never burns an
-expensive stage. This ordering **is the spec for the CI release workflow** (a later
-wave) — the `pnpm release:github` orchestrator implements the same sequence. Local
-`pnpm release` runs gate 0 (pregate) + gate 1 (artifact smoke) but not gate 2 (publish
-gate is tag/`gh`-only); its output is the license-server store, not a GitHub Release.
+三层互不重叠的门禁,按成本排序,让廉价的红灯永远不会烧到昂贵的阶段。这个顺序
+**就是 CI release workflow 的规格**(后续波次)——`pnpm release:github` 编排器
+实现的是同一套顺序。本地 `pnpm release` 只跑门禁 0(pregate)+ 门禁 1(制品冒烟),
+不跑门禁 2(发布门禁仅限打 tag/`gh`);它的产出是 license-server 存储,而不是
+GitHub Release。
 
-| #   | Gate                | Layer        | Runs                                                                                               | On red                       |
-| --- | ------------------- | ------------ | -------------------------------------------------------------------------------------------------- | ---------------------------- |
-| 0   | **pregate**         | source       | `typecheck → lint → test → i18n:check → i18n:check-freeze` (strict order)                          | abort **before** any compile |
-| 1   | **artifact gate**   | product      | per host-runnable target: `c3 --version` + headless smoke                                          | fail the build               |
-| —   | e2e (standard only) | product      | `pnpm e2e --obfuscated` — obfuscated server bundle as logic-regression hard evidence (release 7/7) | fail the release             |
-| 2   | **publish gate**    | distribution | manifest ↔ SHA256SUMS ↔ on-disk sha256 agree + **all P0 targets present**                          | abort **before** tag / `gh`  |
+| #   | 门禁             | 层级 | 运行内容                                                                             | 遇红时                       |
+| --- | ---------------- | ---- | ------------------------------------------------------------------------------------ | ---------------------------- |
+| 0   | **pregate**      | 源码 | `typecheck → lint → test → i18n:check → i18n:check-freeze`(严格顺序)                 | 在任何编译**之前**中止       |
+| 1   | **制品门禁**     | 产物 | 每个 host-runnable 目标:`c3 --version` + 无头冒烟测试                                | 构建失败                     |
+| —   | e2e(仅 standard) | 产物 | `pnpm e2e --obfuscated` — 以混淆后的 server bundle 作为逻辑回归的硬证据(release 7/7) | 发布失败                     |
+| 2   | **发布门禁**     | 分发 | manifest ↔ SHA256SUMS ↔ 磁盘上 sha256 三方一致 + **所有 P0 目标齐全**                | 在打 tag / `gh` **之前**中止 |
 
-- **Pregate** (`release:gate`) runs first in `pnpm release` and fails fast: the first
-  non-zero gate aborts, so a red typecheck never reaches the multi-platform `bun --compile`.
-  `--skip-gate` opts out; `--dry-run` lists the plan.
-- **Artifact gate** is the build's **Phase3** smoke. The headless smoke starts the server on
-  a **random free port** (OS-assigned bind-0; the CLI rejects `--port 0`), HTTP-probes `/`
-  until it answers, then kills it. It **never invokes claude** — a claude call would block CI
-  forever (no interactive answerer), and a bare server boot touches claude only when a run
-  launches. Cross-compiled binaries can't execute on a foreign host, so smoke runs **only on
-  the host-runnable target**; CI smokes each platform on its own OS runner. `--skip-smoke`
-  opts out. The smoke routine **is** the test carrier; a companion unit test covers the pure
-  helpers (so `pnpm test` — itself the pregate — stays green before any artifact exists).
-- **Publish gate** (`release:verify-dist`) runs inside the publish step after signing and
-  before the tag: it re-hashes every artifact and checks the manifest, `SHA256SUMS`, and
-  on-disk bytes all agree line-for-line, and that **every P0 target is present** — a
-  half-baked or drifted set blocks the release.
+- **Pregate**(`release:gate`)在 `pnpm release` 中最先运行,并且快速失败:第一个
+  非零门禁就中止,所以红色的 typecheck 永远不会走到多平台的 `bun --compile`。
+  `--skip-gate` 可以跳过;`--dry-run` 只打印计划。
+- **制品门禁**是构建过程的 **Phase3** 冒烟测试。无头冒烟测试在**随机空闲端口**上启动
+  服务器(操作系统分配的 bind-0;CLI 拒绝 `--port 0`),对 `/` 做 HTTP 探测
+  直到有响应,然后杀掉进程。它**从不调用 claude**——调用 claude 会让 CI 永远
+  阻塞(没有交互式应答者),而一次裸的服务器启动只有在发起一次 run 时才会触碰
+  claude。跨平台编译出来的二进制文件无法在异构主机上执行,所以冒烟测试**只在
+  host-runnable 的目标上**运行;CI 会在各自的操作系统 runner 上冒烟测试每个平台。
+  `--skip-smoke` 可以跳过。这条冒烟例程**本身就是**测试载体;一个配套的单元测试
+  覆盖其中的纯函数辅助逻辑(这样 `pnpm test`——本身就是 pregate 的一部分——在任何
+  制品存在之前就能保持绿色)。
+- **发布门禁**(`release:verify-dist`)在签名之后、打 tag 之前的发布步骤内运行:
+  它重新对每个制品做哈希,检查 manifest、`SHA256SUMS` 与磁盘上的字节是否逐行一致,
+  并确认**每个 P0 目标都在场**——集合不完整或已漂移都会阻断发布。
 
-### Gate ownership: commit-increment vs release-full
+### 门禁归属:commit 级增量 vs release 全量
 
-| Gate                        | Scope                         | Trigger            | Owns                                       |
-| --------------------------- | ----------------------------- | ------------------ | ------------------------------------------ |
-| husky + lint-staged         | **staged files only** (delta) | every `git commit` | `eslint --fix` + `prettier` + `i18n:check` |
-| CI on push/PR               | whole tree                    | every push / PR    | `typecheck` + `lint` + `i18n:check`        |
-| **release pregate + gates** | whole tree + every artifact   | cutting a release  | the full table above                       |
+| 门禁                        | 范围                 | 触发时机          | 负责内容                                   |
+| --------------------------- | -------------------- | ----------------- | ------------------------------------------ |
+| husky + lint-staged         | **仅暂存文件**(增量) | 每次 `git commit` | `eslint --fix` + `prettier` + `i18n:check` |
+| CI on push/PR               | 整棵树               | 每次 push / PR    | `typecheck` + `lint` + `i18n:check`        |
+| **release pregate + gates** | 整棵树 + 每个制品    | 切割一次发布      | 上面完整的表格                             |
 
-husky/lint-staged guard the **commit increment**; the release gates guard the **full
-distribution**. They deliberately don't overlap — `test` and `i18n:check-freeze` are
-release-only (too heavy for every commit).
+husky/lint-staged 守护的是 **commit 级增量**;release 门禁守护的是**完整分发**。
+它们刻意不重叠——`test` 和 `i18n:check-freeze` 只在 release 时跑(对每次 commit
+来说太重)。
 
-## CI: GH Actions native matrix (release 6/7)
+## CI:GH Actions 原生矩阵(release 6/7)
 
-The GH Actions release workflow executes the five-layer gate order on real
-GH Actions runners and uses `needs:` to **physically** enforce phase sequencing — a red
-upstream job skips every downstream job. This is what unlocks the macOS ad-hoc + SLSA
-gains (see "SLSA provenance" below): each target is built on its **native OS runner**
-(`ubuntu-latest` / `macos-14` / `macos-13` / `windows-latest`), so cross-compile is a
-non-issue. (Bytecode would also have been a native-only gain, but it is disabled — see
-"Bytecode — disabled" below.)
+GH Actions release workflow 在真实的 GH Actions runner 上执行五层门禁顺序,
+并用 `needs:` **物理**强制阶段顺序——上游任务一红,所有下游任务全部跳过。这正是
+解锁 macOS ad-hoc + SLSA 收益的关键(见下文「SLSA 溯源」):每个目标都构建在自己的
+**原生操作系统 runner** 上(`ubuntu-latest` / `macos-14` / `macos-13` / `windows-latest`),
+因此跨平台编译不再是问题。(字节码本来也会是仅原生才有的收益,但它已被禁用——见
+下文「字节码 — 已禁用」。)
 
 ```text
 setup (ubuntu-latest)
-  └─ resolve targets (default: all 4) + version → outputs.{targets,version}
+  └─ 解析 targets(默认:全部 4 个)+ version → outputs.{targets,version}
 pregate (ubuntu-latest)
   └─ typecheck → lint → test → i18n:check → i18n:check-freeze
 build:linux-x64      (ubuntu-latest)     needs: [pregate, setup]   if: contains(targets,'linux-x64')
@@ -126,276 +122,270 @@ build:macos-arm64    (macos-14)          needs: [pregate, setup]   if: contains(
 build:macos-x64      (macos-13)          needs: [pregate, setup]   if: contains(targets,'macos-x64')
 build:windows-x64    (windows-latest)    needs: [pregate, setup]   if: contains(targets,'windows-x64')  ⚠️experimental
   └─ pnpm release:build --targets=<one> --skip-smoke --harden=standard   (env C3_RELEASE_VERSION=<version>, C3_OBFUSCATE_FAIL=abort)
-  └─ ad-hoc codesign on darwin runners (no-op on linux/windows)
-  └─ actions/upload-artifact@v4 → c3-<target>  (uploads the package sidecars, not the binary)
+  └─ 在 darwin runner 上做 ad-hoc codesign(在 linux/windows 上是空操作)
+  └─ actions/upload-artifact@v4 → c3-<target>(上传的是包的 sidecar,而非二进制文件本身)
 smoke:<target>       (same OS as build)  needs: [build:<target>]
-  └─ pnpm release:smoke --file=<artifact>  (--version + headless HTTP probe)
+  └─ pnpm release:smoke --file=<artifact>  (--version + 无头 HTTP 探测)
 verify-dist          (ubuntu-latest)     needs: [setup, smoke:{linux,macos-arm64,macos-x64,windows}-x64]
-  └─ if: !cancelled()  (a deselected target is SKIPPED, not red — the publish gate is the real gate)
-  └─ download artifacts (per-target subdirs, NO merge-multiple) → merge → publish gate
-     (each build job emits its own manifest; merge-multiple would COLLIDE them so
-      only one target survives — the merge folds the subdirs into one complete manifest +
-      SHA256SUMS, then the publish gate checks manifest↔SHA256SUMS↔disk + required-target completeness)
+  └─ if: !cancelled()  (被排除的目标是 SKIPPED,不是红——发布门禁才是真正的关卡)
+  └─ 下载制品(按目标分子目录,NO merge-multiple)→ 合并 → 发布门禁
+     (每个 build 任务各自产出自己的 manifest;merge-multiple 会让它们互相覆盖,
+      导致只有一个目标存活——合并步骤把各子目录折叠成一份完整的 manifest +
+      SHA256SUMS,随后发布门禁检查 manifest↔SHA256SUMS↔磁盘 + 必需目标完整性)
 provenance           (ubuntu-latest)     needs: [setup, verify-dist]   if: !cancelled() && !failure()
-  └─ download all artifacts (merge-multiple OK — packages have unique names, no manifest needed)
-  └─ actions/attest-build-provenance@v2 per SELECTED target (OIDC keyless; SLSA L3)
+  └─ 下载所有制品(merge-multiple 可以——包名各不相同,不需要 manifest)
+  └─ actions/attest-build-provenance@v2 针对每个已选目标(OIDC 无密钥;SLSA L3)
 publish              (ubuntu-latest)     needs: [setup, provenance]    if: !cancelled() && !failure()
-  └─ download artifacts (per-target subdirs) → merge (the publish step reads the merged manifest)
-  └─ pnpm release:publish (sign + verify-dist re-check + tag + gh release)
+  └─ 下载制品(按目标分子目录)→ 合并(发布步骤读取合并后的 manifest)
+  └─ pnpm release:publish(签名 + verify-dist 复检 + 打 tag + gh release)
 ```
 
-Phase ordering guarantees from `needs:` + `if:`:
+来自 `needs:` + `if:` 的阶段顺序保证:
 
-- A red `pregate` skips all four `build:` jobs (no cross-compile attempted on a red source tree).
-- A **deselected** target (not in `setup.outputs.targets`) leaves its `build:`/`smoke:` jobs
-  **skipped, not red**; `verify-dist` still runs (`if: !cancelled()`) and the publish gate enforces
-  only the **selected** P0 subset, so the cut proceeds without that platform (the operator opted out).
-- A red `build:<target>` for a **selected required** target ⇒ its artifact is absent from the
-  re-aggregated artifact set ⇒ the publish gate aborts `verify-dist` on the missing required target.
-- A red `verify-dist` ⇒ `failure()` ⇒ `provenance` and `publish` skip (no tag, no `gh`).
-- A red `provenance` ⇒ `failure()` ⇒ `publish` skips.
+- 红色的 `pregate` 会跳过全部四个 `build:` 任务(不会在红色源码树上尝试跨平台编译)。
+- **被排除的**目标(不在 `setup.outputs.targets` 中)会让它的 `build:`/`smoke:` 任务
+  **被跳过而非变红**;`verify-dist` 仍会运行(`if: !cancelled()`),发布门禁只
+  强制**已选中**的 P0 子集,所以本次发布可以在没有该平台的情况下继续切割(运营者主动选择退出)。
+- 一个**已选中的必需**目标出现红色的 `build:<target>` ⇒ 它的制品在重新聚合的制品集合中
+  缺席 ⇒ 发布门禁会因缺少必需目标而中止 `verify-dist`。
+- 红色的 `verify-dist` ⇒ `failure()` ⇒ `provenance` 和 `publish` 都跳过(不打 tag,不跑 `gh`)。
+- 红色的 `provenance` ⇒ `failure()` ⇒ `publish` 跳过。
 
-The workflow runs on `workflow_dispatch` (manual release entry) and `push tags: 'v*'`
-(re-publish re-verify). `workflow_dispatch` inputs:
+该 workflow 在 `workflow_dispatch`(手动发布入口)和 `push tags: 'v*'`
+(重新发布、重新校验)上运行。`workflow_dispatch` 的输入项:
 
-- **`version`** — explicit release version, e.g. `v0.1.0`. Threaded to every build + publish
-  job as `C3_RELEASE_VERSION` (overrides `git describe`; see "Version SoT"). Empty ⇒ derive
-  from the git tag (the `push tags` path always leaves it empty).
-- **`targets`** — comma-separated subset to build (default = all four:
-  `linux-x64,macos-arm64,macos-x64,windows-x64`). Deselecting a **P0** target (e.g. drop
-  `macos-x64` when Intel runners are starved) narrows the publish completeness gate to the
-  selected set, so a partial-platform release can still be cut. Threaded to the publish gate /
-  `verify-dist` as `C3_REQUIRED_TARGETS` (required set = `P0 ∩ selected`).
-- **`skip_publish`** — stop at the sign+verify-dist step without cutting a tag or GitHub Release.
+- **`version`** — 显式的发布版本,例如 `v0.1.0`。会作为 `C3_RELEASE_VERSION` 传递给每个
+  build + publish 任务(覆盖 `git describe`;见「版本单一真源」)。为空 ⇒ 从
+  git tag 推导(`push tags` 路径总是留空)。
+- **`targets`** — 逗号分隔的构建子集(默认 = 全部四个:
+  `linux-x64,macos-arm64,macos-x64,windows-x64`)。排除一个 **P0** 目标(例如
+  Intel runner 资源紧张时去掉 `macos-x64`)会把发布完整性门禁收窄到
+  已选中的集合,这样部分平台的发布仍然可以被切割。作为 `C3_REQUIRED_TARGETS`
+  传递给发布门禁 / `verify-dist`(必需集合 = `P0 ∩ 已选中`)。
+- **`skip_publish`** — 在签名+verify-dist 步骤后停止,不打 tag 也不创建 GitHub Release。
 
-Local `pnpm release` and CI share the **same node scripts** (`release:build`,
-`release:smoke`, `release:verify-dist`, `release:publish`) — the matrix is just a fan-out
-carrier, not a second implementation.
+本地 `pnpm release` 与 CI 共享**同一套 node 脚本**(`release:build`、
+`release:smoke`、`release:verify-dist`、`release:publish`)——矩阵只是一个扇出的
+载体,不是第二套实现。
 
-## Bytecode — disabled (ESM/CJS incompatibility)
+## 字节码 — 已禁用(ESM/CJS 不兼容)
 
-Bun `--bytecode` pre-compiles JS to bytecode, shaving a few hundred ms off cold start. It
-is **disabled** on every target. Bun's bytecode path only accepts a **CommonJS** bundle,
-but our staged bundle is **ESM**, so `bun --compile --bytecode` produces a binary that
-aborts at startup with `TypeError: Expected CommonJS module to have a function wrapper`.
+Bun 的 `--bytecode` 会把 JS 预编译成字节码,给冷启动省下几百毫秒。目前它在每个
+目标上都**已禁用**。Bun 的字节码路径只接受 **CommonJS** bundle,而我们暂存的
+bundle 是 **ESM**,所以 `bun --compile --bytecode` 产出的二进制文件会在启动时
+中止,报出 `TypeError: Expected CommonJS module to have a function wrapper`。
 
-Bytecode is only a startup-time perf cache — it is **not** anti-tamper and gives no
-anti-decompile value (the obfuscation tier is the protection layer). Rather than convert
-the whole bundle to CJS (risking Zod method-dispatch breakage and obfuscation regressions),
-we keep `--bytecode` off and accept the small cold-start cost. The per-target build log
-prints `bytecode=off` to make this explicit.
+字节码只是一个启动耗时的性能缓存——它**不是**防篡改手段,也不提供任何反反编译
+价值(混淆层才是保护层)。与其把整个 bundle 转成 CJS(有 Zod 方法分发被破坏
+以及混淆回归的风险),我们选择保持 `--bytecode` 关闭,接受这点小小的冷启动
+代价。每个目标的构建日志会打印 `bytecode=off` 以明确这一点。
 
-> Note (release 6/7 history): the spec previously claimed bytecode auto-on for native host
-> builds, but the flag was never actually injected into the compile command — a latent
-> no-op. When it was finally wired in, it surfaced the ESM/CJS incompatibility above, so it
-> was disabled deliberately.
+> 说明(release 6/7 历史):规格文档曾经声称原生 host 构建会自动开启字节码,
+> 但这个标志实际上从未被真正注入到编译命令中——是个潜藏的空操作。等它真正
+> 被接上之后,才暴露出上面的 ESM/CJS 不兼容问题,于是被刻意禁用。
 
-## SLSA provenance — P1 (release 6/7)
+## SLSA 溯源 — P1(release 6/7)
 
-The GH Actions release workflow has a `provenance` job (`needs: [verify-dist]`) that
-runs `actions/attest-build-provenance@v2` once per artifact, using the runner's **OIDC
-token** (`permissions: id-token: write`, `attestations: write`). The resulting
-`.intoto.jsonl` SLSA L3 provenance attestations are uploaded to the GitHub Release
-alongside the binaries and are verifiable offline with `gh attestation verify <file>`.
+GH Actions release workflow 有一个 `provenance` 任务(`needs: [verify-dist]`),
+针对每个制品运行一次 `actions/attest-build-provenance@v2`,使用 runner 的
+**OIDC token**(`permissions: id-token: write`、`attestations: write`)。生成的
+`.intoto.jsonl` SLSA L3 溯源认证会连同二进制文件一起上传到 GitHub Release,
+可以用 `gh attestation verify <file>` 离线验证。
 
-**Provenance is intentionally NOT in the `verify-dist` gate.** It is a parallel
-"supply-chain transparency" artifact; the **minisign signing chain is the trust root**
-(see "Distribution trust" below). This separation lets us add provenance without
-tightening the trust floor or making OIDC outages a release-blocker — the chain still
-completes if provenance generation fails (it just skips the attest step), and
-`release:verify-dist` is unchanged.
+**溯源认证有意不放进 `verify-dist` 门禁。** 它是一个并行的「供应链透明度」制品;
+**minisign 签名链才是信任根**(见下文「分发信任」)。这种分离让我们可以在不
+收紧信任底线、也不让 OIDC 故障成为发布阻断项的前提下加入溯源——即便溯源生成
+失败,链条仍会走完(只是跳过 attest 步骤),`release:verify-dist` 不受影响。
 
-Provenance is **P1** in the priority sense: it is generated and shipped, but the
-project does not yet depend on downstream verifiers consuming it. Future waves can
-tighten the gate by requiring attestation presence in `verify-dist`.
+从优先级意义上说,溯源认证是 **P1**:它会被生成并随发布上线,但项目目前还不
+依赖下游验证方去消费它。未来的波次可以通过在 `verify-dist` 中要求 attestation
+存在来收紧这道门禁。
 
-## Platform waves
+## 平台波次
 
-| Wave   | Target               | bun target         | bytecode | minify | Status                    |
-| ------ | -------------------- | ------------------ | -------- | ------ | ------------------------- |
-| **P0** | macOS-arm64          | `bun-darwin-arm64` | off      | ✓      | live                      |
-| **P0** | macOS-x64 (Intel)    | `bun-darwin-x64`   | off      | ✓      | live (promoted in 6/7)    |
-| **P0** | Linux-x64-glibc      | `bun-linux-x64`    | off      | ✓      | live                      |
-| **P1** | Windows-x64          | `bun-windows-x64`  | off      | ✓      | live — **⚠️experimental** |
-| later  | Linux-arm64, musl, … | _tbd_              | _tbd_    | _tbd_  | placeholder               |
+| 波次   | 目标                 | bun target         | 字节码 | 压缩   | 状态                  |
+| ------ | -------------------- | ------------------ | ------ | ------ | --------------------- |
+| **P0** | macOS-arm64          | `bun-darwin-arm64` | 关     | ✓      | 已上线                |
+| **P0** | macOS-x64(Intel)     | `bun-darwin-x64`   | 关     | ✓      | 已上线(6/7 晋升)      |
+| **P0** | Linux-x64-glibc      | `bun-linux-x64`    | 关     | ✓      | 已上线                |
+| **P1** | Windows-x64          | `bun-windows-x64`  | 关     | ✓      | 已上线 — **⚠️实验性** |
+| 后续   | Linux-arm64、musl 等 | _待定_             | _待定_ | _待定_ | 占位                  |
 
-**`--bytecode`** is **off on every target** (ESM/CJS incompatibility — see "Bytecode —
-disabled" above). `minify`/`sourcemap` are governed by the harden tier (see below), not
-hard-coded. CI and local share the same scripts.
+**`--bytecode`** 在**每个目标上都是关闭的**(ESM/CJS 不兼容——见上文「字节码 —
+已禁用」)。`minify`/`sourcemap` 由 harden 层级支配(见下文),而非硬编码。CI 与
+本地共享同一套脚本。
 
-**P0 vs P1 (release 4/7, refined 6/7).** P0 is the **required** set — `release:build`
-defaults to the full P0 matrix, and **publish gates on the selected P0 subset** (the publish
-gate's required set = `P0 ∩ C3_REQUIRED_TARGETS`, defaulting to the full P0 when unset): a missing
-_selected_ P0 target blocks the release, while a deliberately deselected P0 target (e.g.
-`macos-x64` dropped when Intel runners are starved) drops out of the gate too — the operator
-opted out. P1 (currently just `windows-x64`) is **best-effort**: the build orchestrator
-warns and drops a failed experimental target instead of aborting, so
-a Windows cross-compile hiccup can't sink the P0 cut. `macos-x64` was promoted from P1
-to P0 in release 6/7 because the GH Actions native matrix runs it on a real
-`macos-13` (Intel) runner and the headless smoke is green there. The friendly-name
-SoT for the P0/P1/experimental classification is a single target-classification module.
+**P0 与 P1(release 4/7,6/7 精修)。** P0 是**必需**集合——`release:build`
+默认使用完整的 P0 矩阵,且**发布只对已选中的 P0 子集把关**(发布门禁的必需
+集合 = `P0 ∩ C3_REQUIRED_TARGETS`,未设置时默认为完整 P0):一个缺席的
+_已选中_ P0 目标会阻断发布,而一个被刻意排除的 P0 目标(例如 Intel runner
+资源紧张时去掉 `macos-x64`)也会同样退出门禁——运营者主动选择退出。P1(目前
+只有 `windows-x64`)是**尽力而为**:构建编排器会警告并丢弃一个失败的实验性
+目标,而不是中止整个构建,这样 Windows 跨平台编译的小故障不会拖垮 P0 的
+切割。`macos-x64` 在 release 6/7 中从 P1 晋升到 P0,因为 GH Actions 原生矩阵
+把它构建在真实的 `macos-13`(Intel)runner 上,且无头冒烟测试在那里是绿色的。
+P0/P1/实验性分类的友好名称单一真源是一个独立的目标分类模块。
 
-### Windows: experimental until a real smoke (release 4/7)
+### Windows:在真正冒烟测试通过前保持实验性(release 4/7)
 
-The **Windows platform code paths** are merged ahead of any smoke (they're part of the P1 wave):
+**Windows 平台代码路径**在任何冒烟测试之前就已合并(它们是 P1 波次的一部分):
 
-- **vendor CLI discovery** — default managed paths are under `%USERPROFILE%\.c3\vendor` on Windows
-  and `~/.c3/vendor` on POSIX; host PATH lookup remains platform-specific fallback (`where` on
-  Windows, `command -v` via `sh` on POSIX).
-- **Home dir** — `~/.c3` resolves through the OS home-directory convention (→ `%USERPROFILE%\.c3`
-  on Windows), never a raw `~`. Already true everywhere c3 reads its home; 4/7 only adds coverage.
-- **`bun:sqlite` startup probe** — at server boot c3 opens an in-memory db + `SELECT 1`
-  on the platform driver. A missing `bun:sqlite` on a Windows Bun binary now
-  fails **loud** (`[c3] FATAL: SQLite driver "bun:sqlite" unavailable …`) instead of silently
-  degrading to a persistence-less app. The app still boots (callers degrade), but loudly.
-- **Build host** — the build orchestrator's Bun lookup also branches (`where bun` on win32) so a
-  windows-latest runner can build + smoke.
+- **vendor CLI 发现** — Windows 上默认托管路径位于 `%USERPROFILE%\.c3\vendor`,
+  POSIX 上是 `~/.c3/vendor`;host PATH 查找仍然是平台特定的回退方式(Windows 上
+  用 `where`,POSIX 上通过 `sh` 用 `command -v`)。
+- **家目录** — `~/.c3` 通过操作系统的家目录约定来解析(Windows 上 →
+  `%USERPROFILE%\.c3`),从不使用裸的 `~`。这在 c3 读取家目录的所有场景中一直
+  成立;4/7 只是补充了覆盖范围。
+- **`bun:sqlite` 启动探测** — 服务器启动时,c3 会在平台驱动上打开一个内存数据库
+  并执行 `SELECT 1`。如今在 Windows Bun 二进制文件上缺失 `bun:sqlite` 会**响亮地**
+  失败(`[c3] FATAL: SQLite driver "bun:sqlite" unavailable …`),而不是悄悄降级成
+  一个没有持久化能力的应用。应用仍然会启动(调用方降级处理),但会大声报警。
+- **构建主机** — 构建编排器查找 Bun 的逻辑也有分支(win32 上用 `where bun`),
+  这样 windows-latest runner 就能构建 + 冒烟测试。
 
-**De-experimental gate (release 6/7 wired).** `windows-x64` stays in the experimental set
-(its manifest entry carries `"experimental": true`, README marks it ⚠️) **until a real headless
-smoke passes on a windows-latest runner** — its own OS, since cross-compiled binaries can't
-be smoke-run on a foreign host. That smoke is wired by the GH Actions
-release workflow (`smoke:windows-x64` job, `runs-on: windows-latest`); once that job is green,
-dropping `windows-x64` from the experimental set is the one-line change that removes the
-tag (it cascades: manifest entry loses `"experimental": true`, README loses ⚠️, the publish gate
-keeps enforcing P0 completeness unchanged because the P1 set is empty either way).
+**去实验性门禁(release 6/7 已接入)。** `windows-x64` 会一直留在实验性集合中
+(其 manifest 条目携带 `"experimental": true`,README 用 ⚠️ 标记)**直到真正的
+无头冒烟测试在 windows-latest runner 上通过为止**——因为跨平台编译出来的二进制
+文件无法在异构主机上做冒烟测试,必须用它自己的操作系统。这个冒烟测试由
+GH Actions release workflow 接入(`smoke:windows-x64` 任务,`runs-on: windows-latest`);
+一旦该任务变绿,把 `windows-x64` 从实验性集合中移除就是一行改动就能去掉这个
+标签(它会级联生效:manifest 条目失去 `"experimental": true`,README 失去 ⚠️,
+发布门禁继续强制 P0 完整性不变,因为无论如何 P1 集合都是空的)。
 
-## Artifact naming (release 8/7)
+## 制品命名(release 8/7)
 
-`release:build` produces TWO distinct outputs per target, by design:
+`release:build` 有意为每个目标产出**两种**不同的输出:
 
-- The **binary** is always named `c3` (or `c3.exe` on Windows), kept per target in its own
-  internal scratch area. The version and platform info do **not** live in the binary
-  filename — the binary is the consumer's `c3`, period. The per-target scratch areas are
-  internal (one per native target so multiple platforms coexist in a multi-target build).
-- The **package** is the distributable archive the GitHub Release ships:
-  `c3-v{version}-{target}.tar.gz` for POSIX, `c3-v{version}-{target}.zip`
-  for Windows. Inside the archive, the top-level files are `c3`, `c3.sha256`,
-  `c3.minisig` (flat, no enclosing dir), so `tar -xzf … && ./c3 --version`
-  works out of the box.
+- **二进制文件**始终命名为 `c3`(Windows 上为 `c3.exe`),按目标各自保存在自己的
+  内部 scratch 区域中。版本与平台信息**不**存在于二进制文件名中——这个二进制
+  文件就是消费者拿到的 `c3`,仅此而已。各目标的 scratch 区域是内部的(每个原生
+  目标一个,以便多平台在一次多目标构建中共存)。
+- **包**是 GitHub Release 发布的可分发归档文件:POSIX 上是
+  `c3-v{version}-{target}.tar.gz`,Windows 上是 `c3-v{version}-{target}.zip`。
+  归档内部的顶层文件是 `c3`、`c3.sha256`、`c3.minisig`(平铺,没有外层目录),
+  所以 `tar -xzf … && ./c3 --version` 开箱即用。
 
-In the target token, `darwin`→`macos` and `win32`→`windows`; the leading `v` is fixed and a
-`v`-prefixed version is not doubled.
+在 target 标记中,`darwin`→`macos`,`win32`→`windows`;开头的 `v` 是固定的,
+已带 `v` 前缀的版本号不会被重复添加。
 
-`pnpm binary` (self-use quickcut) keeps the **un-versioned, un-packaged**
-host-target `c3` and does not produce a package.
+`pnpm binary`(自用快捷方式)保留的是**不带版本号、不打包**的
+host-target `c3`,不产出包。
 
-Channel suffixes (e.g. `-nightly`) remain a later-wave placeholder.
+渠道后缀(例如 `-nightly`)仍是后续波次的占位项。
 
-The naming rules (a single source of truth governs all of them):
+命名规则(由单一真源统一支配):
 
-- the in-package binary name is `c3` / `c3.exe`;
-- the package filename is `c3-v{ver}-{target}{.tar.gz|.zip}`;
-- the package extension is `.zip` on Windows, `.tar.gz` elsewhere.
+- 包内的二进制文件名是 `c3` / `c3.exe`;
+- 包文件名是 `c3-v{ver}-{target}{.tar.gz|.zip}`;
+- 包扩展名在 Windows 上是 `.zip`,其他平台是 `.tar.gz`。
 
-## Version SoT (release 2/7)
+## 版本单一真源(release 2/7)
 
-The version **source-of-truth is the git tag**, not a `package.json` bump — releases are
-cut by tagging (`git describe --tags --abbrev=7`). Version-resolution precedence:
-an explicit **`C3_RELEASE_VERSION`** override (the CI `version` input, e.g. `v0.1.0`, with a
-single leading `v` normalized off) wins; else the **git tag**; else the `package.json`
-**fallback baseline**, kept in sync with the most recent tag and used only when no tag is
-reachable (e.g. a fresh clone with zero tags). The override lets a `workflow_dispatch` run
-stamp a chosen version before the tag exists — `release:publish` then cuts that exact tag.
+版本的**单一真源是 git tag**,而不是 `package.json` 的版本号递增——发布是通过
+打 tag 来切割的(`git describe --tags --abbrev=7`)。版本解析优先级:显式的
+**`C3_RELEASE_VERSION`** 覆盖值(CI 的 `version` 输入,例如 `v0.1.0`,开头的单个
+`v` 会被归一化去掉)优先;其次是 **git tag**;再其次是 `package.json` 中的
+**兜底基线值**,它与最新 tag 保持同步,只有在没有可达的 tag 时才会使用
+(例如一次零 tag 的全新 clone)。这个覆盖值让 `workflow_dispatch` 运行可以在
+tag 存在之前先盖上一个选定的版本号——之后 `release:publish` 再去切割那个
+确切的 tag。
 
-The resolved version, the short commit (`git rev-parse --short=7`), and the build time
-(ISO 8601) are injected at **compile time** as build-define constants via esbuild / Bun
-`define`. Both build chains inject the same constants. The orchestrator computes them
-**once** and threads them to every target so all artifacts (and the manifest) share one
-build time.
+解析出的版本号、短 commit(`git rev-parse --short=7`)以及构建时间
+(ISO 8601)在**编译期**通过 esbuild / Bun 的 `define` 作为构建期常量注入。
+两条构建链注入的是同一批常量。编排器**只计算一次**,再传递给每个目标,
+这样所有制品(以及 manifest)共享同一个构建时间。
 
 ```text
 $ c3 --version
 0.1.0 (commit c58a0b5, built 2026-06-05T07:22:53.535Z)
 ```
 
-The dev path applies no `define` (≈ harden `none`); the version reporter then falls back to
-`0.0.0-dev` / `unknown` / `dev` via runtime guards.
+开发路径不应用任何 `define`(约等于 harden 的 `none`);版本报告器随后通过
+运行时兜底逻辑退回到 `0.0.0-dev` / `unknown` / `dev`。
 
-## Hardening tiers (release 2/7, obfuscation real in 7/7)
+## Hardening 分级(release 2/7,混淆在 7/7 落地为真实实现)
 
-`RELEASE_HARDEN` (env) or `--harden=` selects the tier; the build primitive default is
-**`basic`**, but the **CI release workflow pins `--harden=standard`** (with
-`C3_OBFUSCATE_FAIL=abort`) — every published artifact is obfuscated. It governs
-the **native binaries** (`pnpm release:build`, `pnpm binary`) only — the plain node bundle
-run by `pnpm start` gets the version `define` but no harden.
+`RELEASE_HARDEN`(环境变量)或 `--harden=` 用来选择层级;构建原语的默认值是
+**`basic`**,但 **CI release workflow 固定使用 `--harden=standard`**(配合
+`C3_OBFUSCATE_FAIL=abort`)——每个已发布的制品都会被混淆。它只支配**原生
+二进制文件**(`pnpm release:build`、`pnpm binary`)——由 `pnpm start` 运行的
+普通 node bundle 会拿到版本 `define`,但不会被 harden。
 
-| Tier              | minify | sourcemap | manifest                                        | Obfuscation                                                  | Notes                                                                                              |
-| ----------------- | ------ | --------- | ----------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `none`            | ✗      | inline    | ✗                                               | —                                                            | dev/debug; the tsx dev path is `none` by nature                                                    |
-| `basic` (default) | ✓      | none      | ✓ (`v1.1`)                                      | —                                                            | strip (Bun `minify` strips) + drop sourcemap + manifest                                            |
-| `standard` (7/7)  | ✓      | none      | ✓ (`v1.1` + `obfuscation.applied` per artifact) | string-array + identifier rename via `javascript-obfuscator` | **CI release default**; fallback = bare compile, but CI pins `C3_OBFUSCATE_FAIL=abort` (hard-fail) |
+| 层级            | 压缩 | source map | manifest                                     | 混淆                                                     | 备注                                                                                   |
+| --------------- | ---- | ---------- | -------------------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `none`          | ✗    | 内联       | ✗                                            | —                                                        | 开发/调试;tsx 开发路径天生就是 `none`                                                  |
+| `basic`(默认)   | ✓    | 无         | ✓(`v1.1`)                                    | —                                                        | 精简(靠 Bun 的 `minify` 完成)+ 去掉 sourcemap + manifest                               |
+| `standard`(7/7) | ✓    | 无         | ✓(`v1.1` + 每个制品的 `obfuscation.applied`) | 通过 `javascript-obfuscator` 做字符串数组化 + 标识符改名 | **CI release 默认**;回退方式 = 裸编译,但 CI 固定使用 `C3_OBFUSCATE_FAIL=abort`(硬失败) |
 
-Motivation is **distribution trust ≫ obfuscation**: `basic` lands the trust floor
-(traceable version + verifiable artifact manifest) before any obfuscation work. The
-`standard` tier is **opt-in, never default** — `RELEASE_HARDEN=standard` (or
-`--harden=standard`) is required to enable it. Release 7/7 turns it from a
-spec-gated placeholder into a real, opt-in implementation with hard evidence and
-graceful fallback (see below).
+动机是**分发信任远重于混淆**:`basic` 在任何混淆工作之前先落地信任底线
+(可追溯的版本 + 可校验的制品 manifest)。`standard` 层级是**可选启用,从不
+作为默认**——需要 `RELEASE_HARDEN=standard`(或 `--harden=standard`)才能启用。
+Release 7/7 把它从一个被规格挡住的占位符,变成一个带硬证据、且能优雅回退
+的真实可选实现(见下文)。
 
-### Standard tier (release 7/7) — `javascript-obfuscator`
+### Standard 层级(release 7/7) — `javascript-obfuscator`
 
-`harden=standard` runs `javascript-obfuscator` between bundling and compiling — a
-per-target intermediate staging bundle is string-array-encoded + identifier-renamed, then
-`bun build --compile` produces the final native binary from that bundle.
+`harden=standard` 在打包与编译之间运行 `javascript-obfuscator`——每个目标的
+中间暂存 bundle 会先做字符串数组编码 + 标识符改名,然后 `bun build --compile`
+再基于这个 bundle 产出最终的原生二进制文件。
 
-**Locked option set** (a single locked, frozen configuration governs it):
-`stringArray: true` + `stringArrayThreshold: 1.0` (ALL string literals hoisted into a
-rotating shuffled array) + `identifierNamesGenerator: 'mangled'` + `renameGlobals: false`
-(globals keep real names so bun runtime / Node builtins / dlsym lookups work) +
-`sourceMap: true` + `sourceMapMode: 'separate'`. **NOT enabled** (see security.md
-"Non-goal: hardening" for the full list + reasons): `controlFlowFlattening`,
-`stringEncryption` full set, `transformObjectKeys`, `selfDefending`, `debugProtection`,
-`numbersToExpressions`, `simplify`, `unicodeEscapeSequence`.
+**锁定的选项集**(由单一锁定、冻结的配置支配):`stringArray: true` +
+`stringArrayThreshold: 1.0`(所有字符串字面量都被提升进一个轮转打乱的数组)+
+`identifierNamesGenerator: 'mangled'` + `renameGlobals: false`(全局变量保留
+真实名字,这样 bun 运行时 / Node 内置模块 / dlsym 查找才能正常工作)+
+`sourceMap: true` + `sourceMapMode: 'separate'`。**未启用的选项**(完整清单
 
-**Sourcemap sidecar** (release 7/7): a separate per-target source map is written for every
-obfuscated artifact (gitignored, **local-only — never uploaded to GitHub Releases**). On-demand re-symbolication for the maintainer when triaging an issue;
-not a release consumer artifact.
+- 原因见 security.md 的「非目标:hardening」):`controlFlowFlattening`、完整
+  的 `stringEncryption` 选项集、`transformObjectKeys`、`selfDefending`、
+  `debugProtection`、`numbersToExpressions`、`simplify`、`unicodeEscapeSequence`。
 
-### Fallback behavior (release 7/7)
+**Source map sidecar**(release 7/7):每个混淆制品都会写出一份独立的、按
+目标区分的 source map(已被 gitignore,**仅本地保留——从不上传到 GitHub
+Release**)。供维护者排查问题时按需重新符号化,不是发布给消费者的制品。
 
-The build primitive's default fallback is **graceful**, but the **CI release workflow
-pins `C3_OBFUSCATE_FAIL=abort`** so a published artifact is never silently downgraded to
-a bare (un-obfuscated) bundle — obfuscation failure hard-fails that target's job.
+### 回退行为(release 7/7)
 
-Default (graceful) behavior, when `C3_OBFUSCATE_FAIL` is unset — any error (obfuscator
-throws, timeout, the `C3_OBFUSCATE_FORCE_FAIL` test hook) leaves the bundle
-**un-obfuscated** and the build keeps going; the trust floor (minify + signing chain) is
-intact and the manifest records what actually shipped:
+构建原语的默认回退方式是**优雅**的,但 **CI release workflow 固定使用
+`C3_OBFUSCATE_FAIL=abort`**,所以已发布的制品永远不会被悄悄降级成一个裸的
+(未混淆的)bundle——混淆失败会让该目标的任务硬失败。
+
+默认(优雅)行为,即 `C3_OBFUSCATE_FAIL` 未设置时——任何错误(混淆器抛出异常、
+超时、`C3_OBFUSCATE_FORCE_FAIL` 测试钩子)都会让 bundle 保持**未混淆**状态,
+构建继续往下走;信任底线(精简 + 签名链)完好无损,manifest 会记录实际发布
+的内容:
 
 - `[build-target] WARN <target>: obfuscation failed (<err>) — falling back to bare compile`
-- The artifact ships as the un-obfuscated minified bundle.
-- The manifest stamps `obfuscation: { applied: false }` for that artifact (and
-  `applied: true, durationMs: N` when it succeeded).
-- Build exit code is **0** (release is NOT blocked).
+- 该制品以未混淆的精简 bundle 形式发布。
+- manifest 为该制品打上 `obfuscation: { applied: false }`(成功时打上
+  `applied: true, durationMs: N`)。
+- 构建退出码为 **0**(发布不会被阻断)。
 
-`C3_OBFUSCATE_FAIL=abort` (CI default) flips this to a hard fail: obfuscation failure
-refuses to ship and the build exits non-zero, so no bare-compile artifact reaches the store.
+`C3_OBFUSCATE_FAIL=abort`(CI 默认)把这一行为翻转成硬失败:混淆失败时拒绝
+发布,构建以非零码退出,这样就不会有裸编译的制品进入存储。
 
-The e2e/smoke gates still run on the shipped artifact, so any logic regression
-introduced by the obfuscator is caught at the artifact gate (smoke) or the standard
-e2e path (full suite against the obfuscated server bundle).
+e2e/冒烟门禁仍然会针对最终发布的制品运行,所以混淆器引入的任何逻辑回归都会
+在制品门禁(冒烟测试)或标准 e2e 路径(针对混淆后的 server bundle 跑完整
+测试套件)上被抓到。
 
-### Volume / startup overhead baseline (release 7/7)
+### 体积 / 启动开销基线(release 7/7)
 
-_(to be filled after the first standard-tier run on the GH Actions native matrix —
-local numbers are noisy; CI numbers are the ones that count)_
+_(等 GH Actions 原生矩阵上第一次 standard 层级运行之后再填写——本地数据噪声
+较大,CI 的数据才算数)_
 
-| Target      | basic size | standard size | Δ     | basic `--version` (ms) | standard `--version` (ms) | Δ     |
-| ----------- | ---------- | ------------- | ----- | ---------------------- | ------------------------- | ----- |
-| macos-arm64 | _TBD_      | _TBD_         | _TBD_ | _TBD_                  | _TBD_                     | _TBD_ |
-| macos-x64   | _TBD_      | _TBD_         | _TBD_ | _TBD_                  | _TBD_                     | _TBD_ |
-| linux-x64   | _TBD_      | _TBD_         | _TBD_ | _TBD_                  | _TBD_                     | _TBD_ |
-| windows-x64 | _TBD_      | _TBD_         | _TBD_ | _TBD_                  | _TBD_                     | _TBD_ |
+| 目标        | basic 体积 | standard 体积 | Δ      | basic `--version`(ms） | standard `--version`(ms） | Δ      |
+| ----------- | ---------- | ------------- | ------ | ---------------------- | ------------------------- | ------ |
+| macos-arm64 | _待定_     | _待定_        | _待定_ | _待定_                 | _待定_                    | _待定_ |
+| macos-x64   | _待定_     | _待定_        | _待定_ | _待定_                 | _待定_                    | _待定_ |
+| linux-x64   | _待定_     | _待定_        | _待定_ | _待定_                 | _待定_                    | _待定_ |
+| windows-x64 | _待定_     | _待定_        | _待定_ | _待定_                 | _待定_                    | _待定_ |
 
-The expected order of magnitude is **+10–30%** on size and **+5–15%** on startup
-(string-array indirection is the dominant cost; identifier rename is mostly compile-time
-and minified by the `minify: true` that ships with the standard tier).
+预期的量级是体积 **+10–30%**、启动 **+5–15%**(字符串数组的间接访问是主要开销;
+标识符改名大多发生在编译期,并被 standard 层级自带的 `minify: true` 压缩掉)。
 
-## Manifest (release 2/7, v1.2 in release 8/7)
+## Manifest(release 2/7,v1.2 于 release 8/7)
 
-For `harden` ≠ `none`, `pnpm release:build` writes a distribution manifest — a verify-now
-distribution-trust record (signing is a later wave). Its
+当 `harden` ≠ `none` 时,`pnpm release:build` 会写出一份分发 manifest —— 一份
+可即时校验的分发信任记录(签名是后续波次)。它的
 `schema: c3-release-manifest/v1.2`:
 
 ```json
@@ -418,200 +408,211 @@ distribution-trust record (signing is a later wave). Its
 }
 ```
 
-- `file` is the **package** name; `bytes` / `sha256` are the package's.
-- `binary` is the in-package binary name (`c3` on POSIX, `c3.exe` on Windows).
-- `binarySha256` is the hex of the **inner binary**, matching what
-  `c3 verify <package>` reports for the inner-binary check.
+- `file` 是**包**的名字;`bytes` / `sha256` 是包的字节数 / 哈希值。
+- `binary` 是包内二进制文件的名字(POSIX 上是 `c3`,Windows 上是 `c3.exe`)。
+- `binarySha256` 是**内层二进制文件**的十六进制哈希,与
+  `c3 verify <package>` 报告的内层二进制文件检查结果一致。
 
-A consumer can `shasum -a 256 c3-v{ver}-{target}{.tar.gz|.zip}` and match
-`artifacts[].sha256`; the inner-binary `binarySha256` matches what
-`c3 verify` reports when run on the extracted binary. The manifest
-is a **multi-artifact** distribution record; `pnpm binary` (single self-use binary) does
-not emit one. An experimental P1 artifact (release 4/7) additionally carries
-`"experimental": true` on its entry (absent on P0/verified entries — schema stays `v1.2`).
-The standard tier (release 7/7) adds the per-artifact `obfuscation: { applied, durationMs }`
-block, preserved across the v1.2 rename.
+消费者可以对 `c3-v{ver}-{target}{.tar.gz|.zip}` 执行 `shasum -a 256` 并与
+`artifacts[].sha256` 比对;内层二进制文件的 `binarySha256` 与在解压出的
+二进制文件上运行 `c3 verify` 得到的结果一致。这份 manifest 是一份
+**多制品**分发记录;`pnpm binary`(单个自用二进制文件)不会产出它。一个
+实验性的 P1 制品(release 4/7)会在其条目上额外携带 `"experimental": true`
+(P0/已验证的条目上没有——schema 仍保持 `v1.2`)。standard 层级(release 7/7)
+为每个制品新增了 `obfuscation: { applied, durationMs }` 块,并在 v1.2 改名
+后依然保留。
 
-## Distribution trust (release 3/7, two-layer in 8/7)
+## 分发信任(release 3/7,8/7 变为两层)
 
-The trust floor is a **signing chain** (see security.md DIST-1/SEC-8). After release 8/7,
-signing happens at **two distinct layers**:
+信任底线是一条**签名链**(见 security.md DIST-1/SEC-8)。release 8/7 之后,
+签名发生在**两个不同的层级**:
 
-- **Inner sidecars** (in the package, next to the `c3` binary): `c3.sha256` and
-  `c3.minisig` — generated by the packaging step against the post-codesign binary bytes.
-  `c3 verify c3` (after untar) checks the binary against these.
-- **Outer sidecars** (alongside the package): `<package>.sha256` and
-  `<package>.minisig` — generated by `release:sign` (and `release:publish`) over
-  the package bytes. An aggregate `SHA256SUMS`(+`.minisig`) covers every package.
+- **内层 sidecar**(在包内,紧挨着 `c3` 二进制文件):`c3.sha256` 和
+  `c3.minisig`——由打包步骤针对代码签名后的二进制文件字节生成。
+  (解压后)`c3 verify c3` 会用它们校验这个二进制文件。
+- **外层 sidecar**(与包并列):`<package>.sha256` 和
+  `<package>.minisig`——由 `release:sign`(以及 `release:publish`)针对
+  包的字节生成。一份汇总的 `SHA256SUMS`(+`.minisig`)覆盖每一个包。
 
-`release:sign` (and `release:publish`) read the distribution manifest and emit the
-**outer** sidecars + aggregate `SHA256SUMS`(`.minisig`). All outer sidecars
-cover the **final** bytes of the package (post tar/zip); the inner sidecars
-cover the **final** bytes of the binary (after macOS ad-hoc `codesign`, which
-runs inside the compile primitive so hashing sees the signed Mach-O).
+`release:sign`(以及 `release:publish`)读取分发 manifest,生成**外层**
+sidecar + 汇总的 `SHA256SUMS`(`.minisig`)。所有外层 sidecar 覆盖的是包
+(tar/zip 之后)的**最终**字节;内层 sidecar 覆盖的是二进制文件的**最终**字节
+(在 macOS ad-hoc `codesign` 之后——这一步发生在编译原语内部,所以哈希看到的
+是已签名的 Mach-O)。
 
-- **Keys.** Standard minisign format (pure `node:crypto`, interoperable with the official
-  `minisign` CLI). The secret is a raw `keyId||seed` blob held offline / as the
-  `C3_MINISIGN_SECRET_KEY` GitHub Secret; the public key is embedded in the binary and
-  published in the README. `pnpm release:keygen` mints a pair (public → stdout, secret →
-  gitignored file). Prehashed (`ED`, BLAKE2b-512) signatures.
-- **`c3 verify <file>`** — offline self-check against the **embedded** public key; verifies
-  the `.sha256` (if present) and the mandatory `.minisig`. No network, no external `minisign`.
-  The signer and the in-binary verifier are cross-runtime twins, kept in lockstep by tests.
-- **`c3 upgrade`** — self-update reuses the same `verifyArtifact` + embedded key over the
-  **outer** package sidecars: it downloads `<package>` + `<package>.minisig` + `<package>.sha256`
-  and verifies the package bytes **before unpacking**, then unpacks the inner `c3`/`c3.exe` and
-  atomically replaces the running binary (Windows: `.exe.old` placeholder swap). minisign stays
-  the mandatory gate; a failure aborts with the old binary intact. upgrade never restarts a
-  running c3 — `c3 restart` re-reads the service unit / relaunches the `--daemon` to load the
-  new version. The platform→target mapping and package naming are a small in-binary copy of
-  `scripts/release/{targets,artifact-name}.mjs` (that dir is not bundled), cross-asserted by a
-  test so the two cannot drift.
-  - **Latest-version resolution** favors the GitHub Releases **redirect** over the JSON API to
-    dodge the unauthenticated `api.github.com` rate limit (60/h/IP), which shared-exit users
-    (corporate proxy / NAT) routinely trip into a 403. The primary path requests
-    `github.com/<repo>/releases/latest` with `redirect: 'manual'` and reads the release tag out
-    of the `Location` header; the download URLs are then **derived deterministically** from that
-    tag (`releases/download/<tag>/<pkg>{,.minisig,.sha256}`, package basename from
-    `packageNameFor`) — no asset-list enumeration, no token. Only when the redirect yields no
-    usable tag does it **fall back** to `api.github.com/repos/<repo>/releases/latest` (JSON), which
-    keeps the token-aware `GITHUB_TOKEN`/`GH_TOKEN` headers, asset-list selection, and the 403
-    rate-limit hint. This changes only _how the latest version + download URLs are located_; the
-    minisign trust gate and every download-and-verify step above are unchanged, and GitHub Releases
-    remains the sole distribution source (no new mirror or trust anchor).
-- **macOS ad-hoc** `codesign --force -s -` — gated on macOS target + darwin host + `codesign`
-  present; best-effort with a warn-and-continue otherwise. Ad-hoc only (no Developer ID /
-  notarization); users clear Gatekeeper quarantine with `xattr -dr com.apple.quarantine`.
+- **密钥。** 标准 minisign 格式(纯 `node:crypto` 实现,与官方 `minisign` CLI
+  互通)。密钥是一段原始的 `keyId||seed` blob,离线保存 / 作为
+  `C3_MINISIGN_SECRET_KEY` GitHub Secret;公钥内嵌在二进制文件中,并发布在
+  README 里。`pnpm release:keygen` 会铸造一对密钥(公钥 → stdout,私钥 → 已被
+  gitignore 的文件)。使用预哈希(`ED`,BLAKE2b-512)签名。
+- **`c3 verify <file>`** —— 针对**内嵌**公钥的离线自检;校验 `.sha256`
+  (如果存在)和必需的 `.minisig`。无需联网,无需外部 `minisign`。签名器
+  与内嵌在二进制文件中的验证器是跨运行时的孪生实现,由测试保持同步。
+- **`c3 upgrade`** —— 自更新复用同一套 `verifyArtifact` + 内嵌密钥,作用于
+  **外层**包 sidecar 上:它下载 `<package>` + `<package>.minisig` +
+  `<package>.sha256`,在**解包之前**校验包的字节,然后解包出内层的
+  `c3`/`c3.exe`,原子性地替换正在运行的二进制文件(Windows 上是
+  `.exe.old` 占位交换)。minisign 始终是必需的关卡;一旦失败就会中止,
+  旧的二进制文件保持完好。upgrade 从不会重启正在运行的 c3——`c3 restart`
+  会重新读取 service unit / 重新启动 `--daemon` 来加载新版本。平台→目标的
+  映射与包命名是 `scripts/release/{targets,artifact-name}.mjs` 在二进制文件内的
+  一个小副本(该目录不会被打包),由测试交叉断言以确保两者不会漂移。
+  - **最新版本解析**优先使用 GitHub Releases 的**重定向**而非 JSON API,以
+    绕开未认证的 `api.github.com` 限速(60/小时/IP)——共享出口的用户(企业
+    代理 / NAT)经常因此触发 403。主路径以 `redirect: 'manual'` 请求
+    `github.com/<repo>/releases/latest`,从 `Location` 响应头中读取发布 tag;
+    下载 URL 随后从该 tag **确定性地推导**出来
+    (`releases/download/<tag>/<pkg>{,.minisig,.sha256}`,包的 basename 来自
+    `packageNameFor`)——不枚举资源列表,不需要 token。只有当重定向没有拿到
+    可用的 tag 时,才会**回退**到 `api.github.com/repos/<repo>/releases/latest`
+    (JSON),这条路径保留了带 token 的 `GITHUB_TOKEN`/`GH_TOKEN` 请求头、
+    资源列表选择,以及 403 限速提示。这个改动只影响*如何定位最新版本 +
+    下载 URL*;minisign 信任关卡以及上面每一步下载并校验的流程都不变,
+    GitHub Releases 仍然是唯一的分发来源(没有新增镜像或信任锚点)。
+- **macOS ad-hoc** `codesign --force -s -` —— 仅在 macOS 目标 + darwin 主机 +
+  存在 `codesign` 时才生效;否则尽力而为、警告后继续。仅 ad-hoc(没有
+  Developer ID / 公证);用户需要用 `xattr -dr com.apple.quarantine` 清除
+  Gatekeeper 隔离标记。
 
-`pnpm release` is the **interactive local build+store** flow: it prompts for a version (or takes
-`--version=X.Y.Z`), cross-compiles the three shipping targets on this host — `linux-x64`,
-`macos-arm64`, `windows-x64`, all built from one macOS/Linux machine via Bun's `--target` (no
-Docker, no Windows runner; `bun --compile --target=bun-windows-x64` writes `c3.exe` directly) —
-signs them, collects the package set + sidecars + `manifest.json` under
-`dist/release-artifacts/v<ver>/`, then offers to upload them to the self-hosted license-server
-store. Signing is **on by default**: the minisign secret resolves from `C3_MINISIGN_SECRET_KEY[_FILE]`
+`pnpm release` 是**交互式本地构建+入库**流程:提示输入版本号(或接受
+`--version=X.Y.Z`),在本机跨平台编译三个发布目标——`linux-x64`、
+`macos-arm64`、`windows-x64`,全部通过 Bun 的 `--target` 在一台
+macOS/Linux 机器上完成构建(不需要 Docker,不需要 Windows runner;
+`bun --compile --target=bun-windows-x64` 直接写出 `c3.exe`)——然后为它们
+签名,把包集合 + sidecar + `manifest.json` 收集到
+`dist/release-artifacts/v<ver>/` 下,再询问是否要上传到自托管的
+license-server 存储。签名**默认开启**:minisign 私钥依次从
+`C3_MINISIGN_SECRET_KEY[_FILE]`
 
-> `--key-file` > `dist/c3-minisign-secret.key`, and the run emits per-package `<pkg>.minisig`,
-> `SHA256SUMS.minisig`, and a shippable `minisign.pub` (derived from that same secret, so `c3 verify`
-> and `minisign -V` both validate the downloads); with no key found the run warns and ships hashes
-> only. `--skip-gate` bypasses the source pregate, `--skip-upload` stops after collecting, and
-> `--targets`/`--harden` override the defaults (three targets, and the obfuscated `standard` tier —
-> a bare `pnpm release` ships hardened; opt down with `--harden=basic|none`). `--dry-run` rehearses gate
+> `--key-file` > `dist/c3-minisign-secret.key` 解析,本次运行会生成每个包的
+> `<pkg>.minisig`、`SHA256SUMS.minisig`,以及一份可发布的 `minisign.pub`
+> (从同一个私钥推导而来,所以 `c3 verify` 和 `minisign -V` 都能校验下载
+> 的文件);找不到密钥时运行会发出警告,只发布哈希值。`--skip-gate`
+> 绕过源码 pregate,`--skip-upload` 在收集完成后停止,
+> `--targets`/`--harden` 可以覆盖默认值(默认三个目标,以及混淆过的
+> `standard` 层级——不带参数的 `pnpm release` 默认发布经过加固的版本;
+> 用 `--harden=basic|none` 可以选择降级)。`--dry-run` 会预演门禁
 
-- plan and touches nothing. License-server upload targets `https://c3.sequencestream.com/` by
-  default (override with `C3_ARTIFACT_SERVER_URL` or `--server`); the bearer token resolves from
-  `C3_ARTIFACT_UPLOAD_TOKEN` > `--token` > `dist/.upload_license_server_auth_token.key`. With no
-  token found the run skips upload and just leaves the packages on disk.
+- 与计划但不触碰任何东西。License-server 上传默认指向
+  `https://c3.sequencestream.com/`(可用 `C3_ARTIFACT_SERVER_URL` 或
+  `--server` 覆盖);bearer token 依次从 `C3_ARTIFACT_UPLOAD_TOKEN` >
+  `--token` > `dist/.upload_license_server_auth_token.key` 解析。找不到
+  token 时运行会跳过上传,只把包留在磁盘上。
 
-The former GitHub-publish orchestrator lives on unchanged as **`pnpm release:github`** (chains
-gate → build → notes → publish; `--dry-run` rehearses with no signing/tag/`gh`; `--no-publish`
-signs locally but stops before the tag + GitHub Release). The package stays unpublished to npm
-(binaries ship via GitHub Releases / the license-server store, never npm).
+原来的 GitHub 发布编排器保持不变,仍是 **`pnpm release:github`**(串联
+gate → build → notes → publish;`--dry-run` 预演,不签名/不打 tag/不跑
+`gh`;`--no-publish` 会在本地签名,但在打 tag + 创建 GitHub Release 之前
+停止)。该包始终不会发布到 npm(二进制文件只通过 GitHub Releases /
+license-server 存储发布,从不发布到 npm)。
 
-## Public-mirror publish (private source → public binaries)
+## 公共镜像发布(私有源码 → 公开二进制文件)
 
-The source repo (`sequencestream/code-creative-center`) is **private**, but the signed binaries
-ship from a **public** distribution repo (`sequencestream/c3`). CI builds the artifacts in the
-private repo; the binaries are then signed locally and published to the public mirror by an
-operator who holds the minisign secret key:
+源码仓库(`sequencestream/code-creative-center`)是**私有**的,但签名后的
+二进制文件从一个**公开**的分发仓库(`sequencestream/c3`)发布出去。CI 在
+私有仓库中构建制品;二进制文件随后由持有 minisign 私钥的运营者在本地签名,
+再发布到公共镜像:
 
-1. **Download** a CI run's per-target artifacts to the local machine (one subdir per target,
-   each holding that target's package + its manifest).
-2. `pnpm publish:binaries [<version>]` — on the trusted local machine:
-   - **merge** the per-target subdirs into one flat set (reuses the same merge step as CI),
-   - **sign** every package with the secret key (same byte-identical outer sidecars
-     as `release:publish`; default key source is a local key file, overridable via
-     `C3_MINISIGN_SECRET_KEY[_FILE]`), write a shippable `minisign.pub`, and self-verify one
-     signature against it,
-   - **verify-dist** (the publish gate) — manifest ↔ SHA256SUMS ↔ on-disk; required-target set is
-     narrowed to what was downloaded (build/CI already gated P0 completeness), missing P0 logged,
-   - **bootstrap** the public repo's default branch with one README commit if it is still empty
-     (outward-facing — confirmed before push, skip with `--yes`),
-   - **`gh release create`** on the **public** repo (`--repo`, default `$C3_PUBLISH_REPO` or
-     `sequencestream/c3`) with every artifact + sidecar + `SHA256SUMS`(`.minisig`) + `minisign.pub`.
+1. **下载**某次 CI 运行的按目标分类的制品到本地机器(每个目标一个子目录,
+   各自持有该目标的包及其 manifest)。
+2. `pnpm publish:binaries [<version>]` —— 在受信任的本地机器上:
+   - **合并**各目标子目录成一个扁平集合(复用与 CI 相同的合并步骤),
+   - 用私钥为每个包**签名**(与 `release:publish` 产出的外层 sidecar 字节
+     完全相同;默认密钥来源是本地密钥文件,可通过
+     `C3_MINISIGN_SECRET_KEY[_FILE]` 覆盖),写出一份可发布的
+     `minisign.pub`,并对其中一个签名做自校验,
+   - **verify-dist**(发布门禁)—— manifest ↔ SHA256SUMS ↔ 磁盘;必需目标
+     集合被收窄为实际下载到的那些(build/CI 已经把关过 P0 完整性),缺失的
+     P0 会被记录下来,
+   - 如果公共仓库的默认分支仍是空的,就用一次 README 提交来**引导**它
+     (面向外部——推送前会先确认,可用 `--yes` 跳过),
+   - 在**公共**仓库上执行 **`gh release create`**(`--repo`,默认为
+     `$C3_PUBLISH_REPO` 或 `sequencestream/c3`),携带每个制品 + sidecar +
+     `SHA256SUMS`(`.minisig`)+ `minisign.pub`。
 
-`--dry-run` prints the full plan (version, key id, targets, bootstrap-needed, create-vs-clobber)
-and touches nothing — no merge, sign, commit, or `gh`. `--clobber` re-uploads assets to an
-existing tag; `--allow-unsigned` (not recommended) ships hashes without `.minisig`. This flow is
-distinct from CI's `release:publish`, which cuts the Release **in the private source repo**.
+`--dry-run` 打印完整计划(版本、密钥 id、目标、是否需要引导、
+create-vs-clobber)且不触碰任何东西——不合并、不签名、不提交、不跑 `gh`。
+`--clobber` 会向已存在的 tag 重新上传资源;`--allow-unsigned`(不推荐)会
+发布不带 `.minisig` 的哈希值。这条流程与 CI 的 `release:publish` 不同,
+后者是**在私有源码仓库中**切割 Release。
 
-## Commands
+## 命令
 
 ```bash
-pnpm release:build                                  # P0 matrix, parallel, harden=basic, +manifest (bytecode off)
-pnpm release:build --targets=linux-x64              # subset
-pnpm release:build --harden=none                    # no minify/manifest (debug)
-pnpm release:build --harden=standard                # standard tier (release 7/7): bundle → javascript-obfuscator → compile
-RELEASE_HARDEN=standard pnpm release:build          #   (env form, equivalent); string-array + identifier rename; fallback = bare compile on failure
-pnpm release:build --dry-run                        # print the plan, execute nothing
-pnpm release:sign                                    # SHA256SUMS + .sha256 + .minisig (reads manifest)
-pnpm release:notes                                   # release notes (version + top CHANGELOG section)
-pnpm release:gate                                    # pregate: typecheck→lint→test→i18n:check→check-freeze
-pnpm release:smoke -- --file=<inner-binary>        # headless smoke the inner BINARY (extract tarball first in CI)
-pnpm release:smoke -- --manifest=<manifest>        # or: pick the inner binary from the package via the manifest
-pnpm release:verify-dist                              # publish final check: manifest↔SHA256SUMS↔disk + P0
-pnpm release:publish --dry-run                        # rehearse publish: plan only, no tag/gh/sign
-pnpm release                                          # interactive: prompt version → build linux-x64+macos-arm64+windows-x64 (harden=standard/obfuscated by default) → sign → collect → offer LS upload
-pnpm release --harden=basic                            # opt down to minify-only (no obfuscation)
-pnpm release --version=0.8.0                           # non-interactive version (needed when there is no TTY)
-pnpm release --skip-upload                             # stop after collecting into dist/release-artifacts/v<ver>/
-pnpm release --skip-gate --targets=windows-x64         # skip the source pregate / override the target set (debug)
-pnpm release --dry-run                                 # rehearse gate + plan, touch nothing
-pnpm release:github                                    # GitHub-publish orchestrator: gate → build(+smoke) → notes → publish (full)
-pnpm release:github --no-publish                       # gate + build + sign + notes, no GitHub Release
-RELEASE_HARDEN=standard pnpm release:github            # additionally forces `pnpm e2e --obfuscated` (release 7/7)
-pnpm e2e --obfuscated                                 # e2e against the obfuscated server bundle (requires standard build first)
-pnpm release:keygen                                   # mint a minisign keypair
-pnpm binary                                          # native single binary (self-use quickcut, bytecode off)
-# License-server store upload (self-hosted):
-pnpm publish:server --dist=dist/release-artifacts/v0.8.0 --version=v0.8.0   # upload an already-built dir. Server defaults to https://c3.sequencestream.com/ (C3_ARTIFACT_SERVER_URL / --server to override); token = C3_ARTIFACT_UPLOAD_TOKEN > --token > dist/.upload_license_server_auth_token.key; no-ops without a token. `pnpm release` also offers this at the end.
-pnpm publish:server --dist=… --dry-run                # rehearse: print the PUT set, upload nothing
-# Public mirror (private source → public binaries):
-# (first download a CI run's per-target artifacts to the local machine)
-pnpm publish:binaries --dry-run                        # rehearse public-mirror publish: plan only, no merge/sign/commit/gh
-pnpm publish:binaries [<version>]                      # sign locally + cut a GitHub Release on sequencestream/c3
-pnpm publish:binaries --repo=owner/name --clobber      # override target repo / re-upload to an existing tag
+pnpm release:build                                  # P0 矩阵,并行,harden=basic,+manifest(字节码关闭)
+pnpm release:build --targets=linux-x64              # 子集
+pnpm release:build --harden=none                    # 不压缩/不生成 manifest(调试用)
+pnpm release:build --harden=standard                # standard 层级(release 7/7):bundle → javascript-obfuscator → compile
+RELEASE_HARDEN=standard pnpm release:build          #   (环境变量形式,等价);字符串数组化 + 标识符改名;失败时回退为裸编译
+pnpm release:build --dry-run                        # 打印计划,不执行
+pnpm release:sign                                    # SHA256SUMS + .sha256 + .minisig(读取 manifest)
+pnpm release:notes                                   # 发布说明(版本 + CHANGELOG 顶部小节)
+pnpm release:gate                                    # pregate:typecheck→lint→test→i18n:check→check-freeze
+pnpm release:smoke -- --file=<inner-binary>        # 对内层二进制文件做无头冒烟测试(CI 中先解压 tarball)
+pnpm release:smoke -- --manifest=<manifest>        # 或:通过 manifest 挑出内层二进制文件
+pnpm release:verify-dist                              # 发布终检:manifest↔SHA256SUMS↔磁盘 + P0
+pnpm release:publish --dry-run                        # 预演发布:只出计划,不打 tag/不跑 gh/不签名
+pnpm release                                          # 交互式:提示版本 → 构建 linux-x64+macos-arm64+windows-x64(默认 harden=standard/混淆)→ 签名 → 收集 → 询问是否上传 LS
+pnpm release --harden=basic                            # 降级为仅压缩(不混淆)
+pnpm release --version=0.8.0                           # 非交互式指定版本(没有 TTY 时需要)
+pnpm release --skip-upload                             # 收集到 dist/release-artifacts/v<ver>/ 后停止
+pnpm release --skip-gate --targets=windows-x64         # 跳过源码 pregate / 覆盖目标集合(调试用)
+pnpm release --dry-run                                 # 预演门禁 + 计划,不触碰任何东西
+pnpm release:github                                    # GitHub 发布编排器:gate → build(+smoke) → notes → publish(完整)
+pnpm release:github --no-publish                       # gate + build + sign + notes,不创建 GitHub Release
+RELEASE_HARDEN=standard pnpm release:github            # 额外强制跑 `pnpm e2e --obfuscated`(release 7/7)
+pnpm e2e --obfuscated                                 # 针对混淆后的 server bundle 跑 e2e(需要先做 standard 构建)
+pnpm release:keygen                                   # 铸造一对 minisign 密钥
+pnpm binary                                          # 原生单一二进制文件(自用快捷方式,字节码关闭)
+# License-server 存储上传(自托管):
+pnpm publish:server --dist=dist/release-artifacts/v0.8.0 --version=v0.8.0   # 上传一个已构建好的目录。服务器默认 https://c3.sequencestream.com/(C3_ARTIFACT_SERVER_URL / --server 可覆盖);token = C3_ARTIFACT_UPLOAD_TOKEN > --token > dist/.upload_license_server_auth_token.key;没有 token 就空操作。`pnpm release` 结尾也会提供这个选项。
+pnpm publish:server --dist=… --dry-run                # 预演:打印 PUT 集合,不上传任何东西
+# 公共镜像(私有源码 → 公开二进制文件):
+# (先把某次 CI 运行的按目标分类的制品下载到本地机器)
+pnpm publish:binaries --dry-run                        # 预演公共镜像发布:只出计划,不合并/不签名/不提交/不跑 gh
+pnpm publish:binaries [<version>]                      # 本地签名 + 在 sequencestream/c3 上切割一次 GitHub Release
+pnpm publish:binaries --repo=owner/name --clobber      # 覆盖目标仓库 / 向已存在的 tag 重新上传
 # CI:
-#   GH Actions release workflow  →  workflow_dispatch (manual) or push tags: v*
+#   GH Actions release workflow  →  workflow_dispatch(手动)或 push tags: v*
 ```
 
-## Responsibilities (capabilities, not files)
+## 职责划分(以能力划分,而非文件)
 
-The release machinery decomposes into these responsibilities — described by what they do, not by
-where they live:
+发布机制被拆解为以下职责——按它们做什么来描述,而不是按它们放在哪里:
 
-- **Build orchestrator** — fans the per-target build out across the P0 matrix (`--targets`,
-  `--harden`, `--dry-run`, `--skip-smoke`), and carries the Phase3 artifact smoke.
-- **Local orchestrator** (`pnpm release`) — the interactive build+store flow: prompt version →
-  cross-compile the three shipping targets on this host → sign → collect into
-  `dist/release-artifacts/v<ver>/` → offer license-server upload (`--version`, `--targets`,
-  `--harden`, `--skip-gate`, `--skip-upload`, `--server`/`--token`, `--dry-run`).
-- **GitHub orchestrator** (`pnpm release:github`) — chains gate → build → notes → publish
-  (`--dry-run`, `--no-publish`, `--skip-gate`), and forces the obfuscated e2e on the standard tier.
-- **Target classification** — the single source of truth for the P0 / P1 / experimental /
-  known / default target sets, host-target detection, and host-runnable detection.
-- **Platform branches** — the `claude`-discovery and SQLite-driver-probe branches per OS, and
-  the per-target build matrix (incl. the P1 + Windows `.exe` cases).
-- **Pregate** — the strict-ordered source gate.
-- **Artifact smoke** — the headless artifact gate plus its free-port / version-assertion helpers.
-- **Publish gate** — the final manifest ↔ `SHA256SUMS` ↔ disk + required-target check.
-- **Single-target build primitive** — bundle → (obfuscate) → compile, the harden tiers
-  (bytecode disabled — ESM/CJS), and ad-hoc codesign.
-- **Standard-tier obfuscation** — the staged obfuscation pass, the enable check, the fallback
-  decision, and the locked (no-aggressive-options) configuration.
-- **Version source of truth** — version/commit/build-time resolution and the build-define values.
-- **Manifest** — building the distribution manifest and per-artifact hashing.
-- **Artifact naming** — the binary name, package name, package extension, and version normalization.
-- **Packaging** — inner sidecars + the `.tar.gz` / `.zip` archive.
-- **minisign core, signing, notes, publish, keygen** — the signing primitives and the
-  notes/publish/keygen steps.
-- **Public-mirror publish** — pull CI artifacts, then merge → sign → verify-dist → bootstrap →
-  `gh release` on the public repo.
-- **Embedded pubkey + verify** — the in-binary public key and the offline `c3 verify` self-check.
-- **Runtime version** — the version string the binary reports.
-- **Snapshot generator** — produces the embeddable web-bundle snapshot.
-- **CI release workflow** — the matrix `pregate → 4 build → 4 smoke → verify-dist → provenance →
-publish` with `needs:` enforcing order.
-- **Tests** — cover the build, harden, signing (proving signer/verifier parity), smoke
-  (artifact-gate helpers + conditional real smoke), and obfuscation (helper, NOT-doing option
-  set, fallback decision, manifest obfuscation block, publish-gate tolerance) behaviors.
+- **构建编排器** —— 把每个目标的构建扇出到 P0 矩阵上(`--targets`、
+  `--harden`、`--dry-run`、`--skip-smoke`),并承载 Phase3 制品冒烟测试。
+- **本地编排器**(`pnpm release`) —— 交互式构建+入库流程:提示版本 →
+  在本机跨平台编译三个发布目标 → 签名 → 收集到
+  `dist/release-artifacts/v<ver>/` → 询问是否上传 license-server(`--version`、
+  `--targets`、`--harden`、`--skip-gate`、`--skip-upload`、`--server`/`--token`、
+  `--dry-run`)。
+- **GitHub 编排器**(`pnpm release:github`) —— 串联 gate → build → notes →
+  publish(`--dry-run`、`--no-publish`、`--skip-gate`),并在 standard 层级上
+  强制跑混淆后的 e2e。
+- **目标分类** —— P0 / P1 / 实验性 / 已知 / 默认目标集合,以及 host-target
+  检测、host-runnable 检测的单一真源。
+- **平台分支** —— 按操作系统区分的 `claude` 发现分支和 SQLite 驱动探测分支,
+  以及按目标区分的构建矩阵(包括 P1 + Windows `.exe` 的情形)。
+- **Pregate** —— 严格顺序的源码门禁。
+- **制品冒烟测试** —— 无头制品门禁,以及它的空闲端口 / 版本断言辅助函数。
+- **发布门禁** —— 最终的 manifest ↔ `SHA256SUMS` ↔ 磁盘 + 必需目标检查。
+- **单目标构建原语** —— bundle →(混淆)→ compile、harden 分级(字节码
+  已禁用——ESM/CJS)、以及 ad-hoc 代码签名。
+- **Standard 层级混淆** —— 暂存混淆步骤、启用检查、回退决策,以及锁定的
+  (不启用激进选项的)配置。
+- **版本单一真源** —— 版本/commit/构建时间的解析,以及构建期 define 值。
+- **Manifest** —— 构建分发 manifest 与逐制品哈希。
+- **制品命名** —— 二进制文件名、包名、包扩展名,以及版本号归一化。
+- **打包** —— 内层 sidecar + `.tar.gz` / `.zip` 归档。
+- **minisign 核心、签名、notes、publish、keygen** —— 签名原语以及
+  notes/publish/keygen 步骤。
+- **公共镜像发布** —— 拉取 CI 制品,然后合并 → 签名 → verify-dist → 引导 →
+  在公共仓库上 `gh release`。
+- **内嵌公钥 + 校验** —— 内嵌在二进制文件中的公钥,以及离线的 `c3 verify` 自检。
+- **运行时版本** —— 二进制文件报告的版本字符串。
+- **快照生成器** —— 产出可嵌入的 web-bundle 快照。
+- **CI release workflow** —— 矩阵式的 `pregate → 4 个 build → 4 个 smoke →
+verify-dist → provenance → publish`,由 `needs:` 强制顺序。
+- **测试** —— 覆盖 build、harden、signing(证明签名器/验证器的一致性）、smoke
+  (制品门禁辅助函数 + 有条件的真实冒烟测试),以及 obfuscation(辅助函数、
+  未启用选项集、回退决策、manifest 混淆字段、发布门禁容忍度)等行为。

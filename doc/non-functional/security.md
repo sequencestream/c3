@@ -1,155 +1,106 @@
-# Non-Functional — Security
+# 非功能需求 — 安全
 
-Security is c3's primary value (constitution § Mission & values). Targets here refine the
-constitution's `C-SEC-*` rules into checkable expectations.
+安全是 c3 的核心价值(constitution § Mission & values)。这里的目标是把 constitution 中的 `C-SEC-*` 规则细化为可核查的期望。
 
-## Threat model
+## 威胁模型
 
-- **Trusted:** the local OS user running c3 and the browser on the same machine.
-- **Untrusted:** anything off-host. c3 is not designed to be exposed to a network.
-- **Out of scope:** protecting against a malicious local user; sandboxing the `claude`
-  process; protecting the project directory contents.
+- **可信:** 运行 c3 的本地操作系统用户,以及同一台机器上的浏览器。
+- **不可信:** 主机之外的任何东西。c3 不是为暴露在网络上而设计的。
+- **不在范围内:** 防范恶意的本地用户;对 `claude` 进程做沙箱隔离;保护项目目录的内容。
 
-## Requirements
+## 需求
 
-| ID     | Requirement                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SEC-1  | The server binds to `localhost` only. Binding to a non-loopback interface requires an ADR and an auth design (constitution C-SEC-5).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| SEC-2  | No persistent store, no logging of tool inputs/outputs to disk by c3. State lives in memory for the connection's lifetime only. _Exception (ADR-0026):_ a small on-disk **entitlement cache** (last LS-signed entitlement token + heartbeat bearer token) is accepted so product-licensing's 30-minute offline grace and restart continuity work; it holds no signing key and no Claude credential. See § Product licensing.                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| SEC-3  | The SDK runs with `settingSources: ['user', 'project']` — user and project settings, hooks, and allow/deny rules are inherited and applied before c3's browser gate. Tools not pre-decided by them flow through `canUseTool` (C-SEC-1, ADR 0005).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| SEC-4  | A sensitive tool executes only on an explicit `allow`, or under a mode the user explicitly selected that authorizes auto-execution (`acceptEdits`, `bypassPermissions`) (C-SEC-2).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| SEC-5  | The default outcome is **deny**: an unrecognized decision or an aborted run never yields `allow` (C-SEC-3). An unanswered request does not resolve at all — it blocks until the user decides or the run is aborted.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| SEC-6  | c3 never reads, stores, or transmits Claude credentials; the `claude` CLI owns auth (C-SEC-4).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| SEC-7  | Switching into `bypassPermissions` is always the result of an explicit, observable UI action; it is never set silently by c3.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| SEC-8  | Distribution trust (DIST-1): released binaries carry a per-artifact sha256 and an Ed25519 (minisign) signature; `c3 verify` self-checks against a public key embedded in the binary. A tampered or unsigned artifact fails verification.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| SEC-9  | **Workspace identity is a server-assigned opaque id.** Every workspace-scoped wire message carries a `workspaceId` (random, persisted in the registry), never an absolute path. The server is the sole authority that maps `id → realpath`, rejecting any unregistered/forged id — so a client cannot inject an arbitrary filesystem root by construction (it can neither read nor fabricate a valid id). `add_workspace`/`remove_workspace` are the ONLY messages that carry a path; absolute paths never appear on any other message (grep-enforced).                                                                                                                                                                                                                                                                                                     |
-| SEC-10 | **`add_workspace` (and `remove_workspace`) require an authenticated session.** They are the only entry where an absolute path legitimately enters the system — i.e. where a new trust root is established — so they are refused on an unauthenticated connection (`unauthenticated` reply). This is the hook for future per-role authorization; single-user localhost + login-gate is unchanged otherwise.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| SEC-11 | **Workspace file browsing is contained to registered roots.** Any read-only code-browsing request must resolve its root from `workspaceId → registered workspace realpath`, then `realpath` both the root and target and accept only the root itself or paths under `root + path separator`. It must reject unknown ids, absolute paths, parent traversal, null bytes, prefix-confused siblings, and symlinks whose real target escapes the root. Directory walks/searches must apply the same guard to emitted paths and exclude `.git`. Binary or oversized files return metadata only. Accepted risk: non-`.git` secrets inside the registered workspace (for example `.env`) are readable by the local workspace owner because codes is a localhost-only inspection feature, not a secret scanner.                                                      |
-| SEC-13 | **A custom agent's `apiKey` is encrypted at rest in `settings.json`** (AES-256-GCM under a version-tagged embedded key, `c3secretvN:` prefix — see § Agent apiKey at-rest encryption). This is **obfuscation-grade only**: it removes the plaintext upstream key from the config file (so an accidental file/backup/log leak doesn't hand it over), but does NOT protect against someone who has the c3 binary (the key is embedded and statically extractable — an accepted trade-off, consistent with the anti-decompilation non-goal). Distinct from SEC-6: SEC-6 covers the first-party Claude credential (owned by the `claude` CLI, system-mode); SEC-13 covers the third-party/gateway key a `custom` agent stores. The wire protocol, frontend, and WebSocket transport still carry the key in plaintext (transport security is out of scope here). |
+| ID     | 需求                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SEC-1  | 服务端仅绑定 `localhost`。绑定到非回环接口需要一份 ADR 以及认证设计(constitution C-SEC-5)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| SEC-2  | c3 不做持久化存储,不把工具的输入/输出记录到磁盘日志。状态只在连接的生命周期内存于内存中。_例外(ADR-0026):_ 一个小型的磁盘上**授权缓存**(最近一次由 LS 签名的授权令牌 + 心跳承载令牌)是被允许的,以支撑产品许可的 30 分钟离线宽限期与重启后的连续性;它不持有签名密钥,也不持有 Claude 凭据。见 § 产品许可。                                                                                                                                                                                                                                                                                       |
+| SEC-3  | SDK 以 `settingSources: ['user', 'project']` 运行——用户与项目设置、hook、允许/拒绝规则会在进入 c3 的浏览器门控之前被继承并应用。未被它们预先决定的工具会流经 `canUseTool`(C-SEC-1,ADR 0005)。                                                                                                                                                                                                                                                                                                                                                                                                  |
+| SEC-4  | 敏感工具只有在得到明确的 `allow`,或处于用户明确选择的、授权自动执行的模式(`acceptEdits`、`bypassPermissions`)下才会执行(C-SEC-2)。                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| SEC-5  | 默认结果是**拒绝**:无法识别的决策或被中止的运行绝不会得出 `allow`(C-SEC-3)。一个未被应答的请求根本不会被解析——它会一直阻塞,直到用户作出决定或运行被中止。                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| SEC-6  | c3 绝不读取、存储或传输 Claude 凭据;`claude` CLI 拥有认证权(C-SEC-4)。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| SEC-7  | 切换进入 `bypassPermissions` 永远是一次明确的、可观察的 UI 操作的结果;c3 绝不会静默地设置它。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| SEC-8  | 分发信任(DIST-1):发布的二进制文件携带逐工件的 sha256 以及 Ed25519(minisign)签名;`c3 verify` 会针对内嵌在二进制中的公钥进行自校验。被篡改或未签名的工件会校验失败。                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| SEC-9  | **工作区身份是一个由服务端分配的不透明 id。** 每一条工作区范围内的线路消息都携带一个 `workspaceId`(随机生成,持久化在注册表中),而不是绝对路径。服务端是唯一有权将 `id → 真实路径` 建立映射的一方,拒绝任何未注册/伪造的 id——因此客户端在构造上就无法注入任意的文件系统根目录(它既不能读取也不能伪造出一个有效的 id)。`add_workspace`/`remove_workspace` 是**唯一**携带路径的消息;绝对路径不会出现在其他任何消息中(通过 grep 强制检查)。                                                                                                                                                          |
+| SEC-10 | **`add_workspace`(以及 `remove_workspace`)需要一个已认证的会话。** 它们是唯一一个绝对路径可以合法进入系统的入口——也就是一个新的信任根被建立的地方——因此在未认证的连接上会被拒绝(`unauthenticated` 应答)。这是未来按角色授权的挂钩点;单用户 localhost + 登录门控在其余方面保持不变。                                                                                                                                                                                                                                                                                                            |
+| SEC-11 | **工作区文件浏览被限定在已注册的根目录内。** 任何只读的代码浏览请求都必须从 `workspaceId → 已注册工作区真实路径` 解析出其根目录,然后对根目录和目标路径都执行 `realpath`,只接受根目录本身或 `根目录 + 路径分隔符` 之下的路径。它必须拒绝未知 id、绝对路径、上级目录穿越、空字节、前缀混淆的同名兄弟目录,以及真实指向逃出根目录之外的符号链接。目录遍历/搜索必须对所产出的路径应用同一守卫,并排除 `.git`。二进制文件或超大文件只返回元数据。已接受的风险:已注册工作区内非 `.git` 的敏感信息(例如 `.env`)对本地工作区所有者是可读的,因为 codes 是一个仅限 localhost 的检视功能,而不是密钥扫描器。 |
+| SEC-13 | **自定义智能体的 `apiKey` 在 `settings.json` 中静态加密。**(在带版本标签的内嵌密钥下使用 AES-256-GCM,前缀 `c3secretvN:`——见 § Agent apiKey 静态加密。)这**仅达到混淆级别**:它把明文的上游密钥从配置文件中移除(因此意外的文件/备份/日志泄露不会把它交出去),但**不能**防范持有 c3 二进制文件的人(密钥是内嵌的,可以静态提取——这是一个与反反编译非目标一致的、被接受的权衡)。与 SEC-6 的区别:SEC-6 覆盖第一方的 Claude 凭据(由 `claude` CLI 拥有,系统模式);SEC-13 覆盖 `custom` 智能体存储的第三方/网关密钥。线路协议、前端与 WebSocket 传输仍以明文携带该密钥(传输层安全不在此范围内)。           |
 
-## Distribution trust (DIST-1 / SEC-8)
+## 分发信任(DIST-1 / SEC-8)
 
-Since SEC-6 keeps credentials out of the binary, the real distribution threat is **artifact
-impersonation / supply-chain tampering** (a malicious mirror or MITM serving a trojaned
-`c3`), not reverse-engineering. The trust anchor is an **offline Ed25519 signing key** (held
-as the `C3_MINISIGN_SECRET_KEY` GitHub Secret); only its public half ships — embedded in the
-binary and published in the README. Mechanism (release 3/7):
+由于 SEC-6 已经把凭据挡在二进制之外,真正的分发威胁是**工件冒充/供应链篡改**(恶意镜像或 MITM 分发被植入木马的 `c3`),而不是逆向工程。信任锚点是一把**离线的 Ed25519 签名密钥**(以 `C3_MINISIGN_SECRET_KEY` GitHub Secret 的形式持有);只有它的公钥半部分会被分发——内嵌在二进制中,并发布在 README 里。机制(release 3/7):
 
-- **`SHA256SUMS` + per-artifact `.sha256`** — integrity, `shasum -a 256 -c` compatible.
-- **minisign `.minisig`** (Ed25519, standard format) over each artifact and over
-  `SHA256SUMS` — authenticity. Interoperable with the official `minisign` CLI.
-- **`c3 verify <file>`** — offline self-verification using only `node:crypto`
-  (Ed25519 + BLAKE2b-512) against the **embedded** public key; no network, no external tool.
-- **`c3 upgrade`** — self-update from GitHub Releases reuses the SAME embedded key and the
-  SAME `verifyArtifact` logic as `c3 verify`; it adds **no new trust anchor**. The downloaded
-  package's `.minisig` is verified against the embedded key **before unpacking or replacing
-  anything** — minisign is the mandatory gate, sha256 only a cross-check. A failed signature
-  (missing/mismatched key id, bad content/global signature, sha256 mismatch, corrupt bytes)
-  refuses the replacement and leaves the installed binary untouched. upgrade swaps only the
-  current writable binary and never auto-restarts; the separate `c3 restart` loads the new
-  version (it re-reads the service unit / relaunches the daemon, never bypassing the gate).
-- **macOS ad-hoc `codesign -s -`** — applied before hashing so the signed bytes are what the
-  sha256/minisig cover. (Ad-hoc only; not Apple notarization — Gatekeeper quarantine is
-  cleared by the user with `xattr -dr com.apple.quarantine`, documented in the README.)
+- **`SHA256SUMS` + 逐工件 `.sha256`** — 完整性校验,与 `shasum -a 256 -c` 兼容。
+- **minisign `.minisig`**(Ed25519,标准格式)对每个工件以及对 `SHA256SUMS` 本身签名——真实性校验。与官方 `minisign` CLI 互通。
+- **`c3 verify <file>`** — 仅使用 `node:crypto`(Ed25519 + BLAKE2b-512)针对**内嵌**公钥进行离线自校验;无需网络,无需外部工具。
+- **`c3 upgrade`** — 从 GitHub Releases 自更新,复用与 `c3 verify` **相同**的内嵌密钥与**相同**的 `verifyArtifact` 逻辑;不新增任何信任锚点。下载的包在**解包或替换任何内容之前**,其 `.minisig` 会针对内嵌公钥进行校验——minisign 是强制性的门控,sha256 只是交叉校验。校验失败(密钥 id 缺失/不匹配、内容/全局签名有误、sha256 不匹配、字节损坏)会拒绝替换,并让已安装的二进制保持不变。upgrade 只会替换当前可写的二进制,且从不自动重启;单独的 `c3 restart` 才会加载新版本(它会重新读取 service unit / 重新启动守护进程,不会绕过该门控)。
+- **macOS 临时签名 `codesign -s -`** — 在哈希计算之前应用,使被签名的字节正是 sha256/minisign 所覆盖的内容。(仅为临时签名;不是 Apple 公证——Gatekeeper 隔离属性由用户用 `xattr -dr com.apple.quarantine` 清除,已在 README 中说明。)
 
-A consumer with the README public key can verify any download offline; the matching secret
-never leaves the maintainer's control.
+持有 README 中公钥的使用者可以离线校验任何下载内容;与之匹配的私钥永远不会离开维护者的掌控。
 
-## Agent apiKey at-rest encryption (SEC-13)
+## Agent apiKey 静态加密(SEC-13)
 
-A `custom` agent (claude or codex) stores a provider/gateway `apiKey` in
-`~/.c3/settings.json`. To keep that key out of the file in plaintext, c3 encrypts it
-**at the disk boundary**: plaintext lives only in memory (the runtime — e.g.
-`launchForAgent`'s `ANTHROPIC_API_KEY` injection — always sees the real key), and the
-on-disk value is ciphertext.
+一个 `custom` 智能体(claude 或 codex)会在 `~/.c3/settings.json` 中存储一个 provider/网关的 `apiKey`。为了让该密钥不以明文留在文件中,c3 在**磁盘边界**处对其加密:明文只存在于内存中(运行时——例如 `launchForAgent` 的 `ANTHROPIC_API_KEY` 注入——始终看到真实密钥),磁盘上的值是密文。
 
-**Wire format** of an encrypted secret:
+一个加密后密钥的**线路格式**:
 
 ```
 c3secretvN:<base64url( IV ‖ ciphertext ‖ authTag )>
 ```
 
-- `c3secretvN:` — literal prefix carrying the **key version** (`v1` today).
-- `IV` — 12 random bytes, fresh per encryption ⇒ the same plaintext yields different
-  ciphertext each save (no equality oracle).
-- `ciphertext` — AES-256-GCM output under the version's embedded key.
-- `authTag` — 16-byte GCM tag; a tampered token or wrong key fails authentication and
-  **throws** (decryption never silently returns a wrong plaintext).
+- `c3secretvN:` — 字面前缀,携带**密钥版本**(目前是 `v1`)。
+- `IV` — 12 个随机字节,每次加密都是新生成的 ⇒ 相同的明文每次加密都会得到不同的密文(不存在相等性 oracle)。
+- `ciphertext` — 在该版本的内嵌密钥下的 AES-256-GCM 输出。
+- `authTag` — 16 字节的 GCM 标签;被篡改的令牌或错误的密钥会认证失败并**抛出异常**(解密绝不会静默返回错误的明文)。
 
-**Multi-version contract.** The prefix names the key version so a future rotation can add
-`v2`, `v3`, … each with its own embedded key; encryption always writes the latest version,
-decryption dispatches by the stored version. A `c3secret`-prefixed token whose version is
-unknown is an **error** (never treated as plaintext). Only the dispatch structure exists
-today — there is no key-rotation tooling yet.
+**多版本约定。** 前缀标明密钥版本,以便未来的轮换可以新增 `v2`、`v3`……每个版本都有自己的内嵌密钥;加密始终写入最新版本,解密则按存储的版本进行分发。一个带 `c3secret` 前缀但版本未知的令牌是一个**错误**(绝不会被当作明文处理)。目前只存在分发结构本身——尚无密钥轮换工具。
 
-**Lazy migration.** A value _without_ the `c3secret` prefix is treated as legacy plaintext
-and returned verbatim on read; the next `saveSettings` re-writes it as ciphertext. An empty
-`apiKey` (system mode / unconfigured provider) is never encrypted and gains no prefix.
+**惰性迁移。** 一个**不带** `c3secret` 前缀的值会被当作遗留明文处理,读取时原样返回;下一次 `saveSettings` 会把它重新写为密文。一个空的 `apiKey`(系统模式/未配置的 provider)永远不会被加密,也不会获得前缀。
 
-**Honesty about strength.** The combined key is **embedded in the binary** (assembled from
-compile-time constant shards). This is obfuscation-grade — see § Non-goal below — and is NOT
-a defense against a local user with the binary. It defends only against the _plaintext config
-file_ leaking on its own (misdirected copy, backup, shared machine, log). Per-install random
-keys / external KMS are explicit non-goals.
+**关于强度的坦白说明。** 组合密钥是**内嵌在二进制中的**(由编译期常量分片组装而成)。这是混淆级别的——见下方 § 非目标一节——并**不是**针对持有该二进制的本地用户的防护。它只防范*明文配置文件*自身泄露的情形(误发的副本、备份、共享的机器、日志)。按安装生成的随机密钥/外部 KMS 是明确的非目标。
 
-Implementation: `server/src/kernel/config/encryption.ts`; wired into the single settings
-read/write boundary (`server/src/kernel/config/index.ts`).
+实现位置:`server/src/kernel/config/encryption.ts`;接入了设置读写的唯一边界(`server/src/kernel/config/index.ts`)。
 
-## Non-goal: anti-decompilation / obfuscation
+## 非目标:反反编译/混淆
 
-Resistance to **decompilation or reverse-engineering is explicitly NOT a security goal**.
-`minify`/`strip` (harden tiers, release 2/7) only raise the bar against casual copying — they
-are **not** a confidentiality or integrity control and must never be relied on as one. Real
-distribution trust comes entirely from the signing chain above (DIST-1). Treating obfuscation
-as security is a known anti-pattern; c3 does not.
+对**反编译或逆向工程**的抵抗**明确不是**一个安全目标。`minify`/`strip`(harden 分级,release 2/7)只是略微提高了随意复制的门槛——它们**不是**机密性或完整性控制手段,绝不能被当作这样的手段依赖。真正的分发信任完全来自上面的签名链(DIST-1)。把混淆当作安全是一个已知的反模式;c3 不会这样做。
 
-## Non-goal: hardening (release 7/7 — full NOT-doing list)
+## 非目标:加固(release 7/7 — 完整的“不做”清单)
 
-The **standard** harden tier (`RELEASE_HARDEN=standard`, opt-in) enables a narrow obfuscation
-pass — `javascript-obfuscator` with `stringArray` + `identifierRename` only. The following
-hardening options are **explicitly NOT** part of c3's release pipeline. They were evaluated
-and rejected; the list lives here so future contributors don't re-introduce them and code
-review has a single place to point at.
+**standard** harden 分级(`RELEASE_HARDEN=standard`,选择性启用)只启用一道窄范围的混淆处理——`javascript-obfuscator` 且仅使用 `stringArray` + `identifierRename`。以下加固选项**明确不属于** c3 发布流水线的一部分。它们都经过评估并被拒绝;这份清单存在于此,是为了让未来的贡献者不会重新引入它们,也让代码评审有一个统一可指向的地方。
 
-| Class                                         | Why we don't do it                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Control-flow flattening**                   | E2E/smoke become hard to diagnose on regression (a stack trace tells you less); doubles bundle size; gives zero defensive value against the real threat.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| **String encryption (full)**                  | Redundant with `stringArray` (which is what we use); adds 5–10% startup; would also break e2e regex assertions on the obfuscated bundle.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| **Object-key transformation**                 | Breaks runtime dispatch (`obj['key']`); high regression risk; no real defensive value.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| **`selfDefending` / anti-debug**              | False-positives our smoke tests and CI on first run; bypassed by `eval`-aware tooling in the same minute an attacker bothers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| **Debug-protection / anti-VM**                | Same as above — false-positives + bypass; e2e/smoke catches the noise as FAIL.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| **UPX packing / exe compression**             | `upx -d` reverses it in ~1s; triggers Windows Defender false positives; slows startup; nothing more than a fingerprint for malware scanners.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **Binary-embedded license/activation checks** | A license check welded into the **binary** (and propped up by obfuscation) stays rejected: it is not a trust control, and the harden tier must not pretend it is. _Reconciled (ADR-0026):_ product entitlement is **not** done this way — it is a **separate server-authoritative** model (the license-server), verified by an **Ed25519 signature against an embedded public key** (reusing the SEC-8 anchor), with **no credential embedded in the binary** (only the public key). It does not rely on obfuscation. See § Product licensing. The earlier premise "no server to validate against / copying is by design" applied to the free tool; ADR-0026 supersedes it for the paid product. |
-| **Anti-tamper / integrity self-check**        | Adds a startup-time bypass surface; redundant with the manifest sha256 + minisign chain that already covers integrity end-to-end.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| 类别                                      | 我们为什么不这样做                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **控制流平坦化(Control-flow flattening)** | 出现回归时 E2E/smoke 会变得难以诊断(堆栈信息变得更少);打包体积翻倍;对真正的威胁没有任何防御价值。                                                                                                                                                                                                                                                                                                                                                        |
+| **字符串加密(完整版)**                    | 与 `stringArray`(我们所使用的方案)重复;增加 5–10% 的启动耗时;还会破坏对混淆后打包产物的 e2e 正则断言。                                                                                                                                                                                                                                                                                                                                                   |
+| **对象键变换**                            | 会破坏运行时的动态分发(`obj['key']`);回归风险高;没有实际防御价值。                                                                                                                                                                                                                                                                                                                                                                                       |
+| **`selfDefending` / 反调试**              | 首次运行时会让我们的 smoke 测试与 CI 出现误报;在攻击者肯花一分钟功夫的情况下,会被具备 `eval` 感知能力的工具绕过。                                                                                                                                                                                                                                                                                                                                        |
+| **调试防护/反虚拟机**                     | 同上——误报加上可被绕过;e2e/smoke 会把这类噪音当作 FAIL 捕获到。                                                                                                                                                                                                                                                                                                                                                                                          |
+| **UPX 打包/可执行文件压缩**               | `upx -d` 大约 1 秒即可还原;会触发 Windows Defender 误报;拖慢启动速度;对恶意软件扫描器而言只不过多了一个可识别的指纹。                                                                                                                                                                                                                                                                                                                                    |
+| **内嵌在二进制中的许可/激活检查**         | 一个焊死在**二进制**里(并靠混淆撑腰)的许可检查依然被拒绝:它不是一种信任控制手段,加固分级也绝不能假装它是。_已通过 ADR-0026 解决:_ 产品授权**不是**这样做的——它是一个**独立的、服务端权威**的模型(license-server),通过针对内嵌公钥的 **Ed25519 签名**校验(复用 SEC-8 的锚点),**二进制中不内嵌任何凭据**(只有公钥)。它不依赖混淆。见 § 产品许可。此前“没有服务端可供校验/复制本身就是设计使然”这一前提适用于免费工具;ADR-0026 针对付费产品取代了这一前提。 |
+| **防篡改/完整性自检**                     | 增加了一个启动时的绕过面;与已经端到端覆盖完整性的清单 sha256 + minisign 链重复。                                                                                                                                                                                                                                                                                                                                                                         |
 
-The standard tier uses a single locked, frozen option set, and a test asserts the NOT-doing
-list is honored (`controlFlowFlattening` falsy, `selfDefending: false`, `debugProtection: false`,
-`transformObjectKeys: false`, `renameGlobals: false`, options object frozen — these name the
-external obfuscator's configuration, not c3's code).
+standard 分级使用一套单一、锁定、固化的选项集,并有一个测试断言“不做”清单被遵守(`controlFlowFlattening` 为假值,`selfDefending: false`,`debugProtection: false`,`transformObjectKeys: false`,`renameGlobals: false`,选项对象被冻结——这些命名的是外部混淆器的配置项,而非 c3 自身的代码)。
 
-## Product licensing (ADR-0026, SEC-12)
+## 产品许可(ADR-0026,SEC-12)
 
-Product **entitlement** is owned by a separate **license-server (LS)** and enforced client-side by
-c3. Its security posture reuses the existing signing anchor and the secret-by-reference discipline;
-it does **not** weaken any `C-SEC-*` rule. The invariants (full statement + `PL-R*` rules in the
-[product-license spec](../domains/commerce/product-license/product-license-spec.md)):
+产品**授权**由一个独立的 **license-server(LS)** 拥有,并由 c3 在客户端侧强制执行。它的安全姿态复用了既有的签名锚点以及“通过引用而非明文携带密钥”的纪律;它**不会**削弱任何 `C-SEC-*` 规则。这些不变量(完整表述以及 `PL-R*` 规则见 [product-license 规格](../domains/commerce/product-license/product-license-spec.md)):
 
-| ID      | Requirement                                                                                                                                                                                                                                                                                              |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SEC-12a | **Trust from the signature, not the network.** c3 honors `active` only after verifying the entitlement token's **Ed25519** signature against the **embedded public key**, offline (same anchor as SEC-8). A forged "active" cannot be injected over the wire (PL-R5).                                    |
-| SEC-12b | **Deny-by-default on verification failure.** A missing/malformed/expired/unverifiable token ⇒ **not entitled**. Balanced against "never kill in-flight work", the consequence is gating **new** sessions only — never interrupting running ones (PL-R6).                                                 |
-| SEC-12c | **One-time, short-lived activation codes.** Activation codes are single-use and expire quickly, and are **never** reusable as heartbeat credentials; the heartbeat **bearer token** is the only long-lived license credential, and it is **revocable** by LS (PL-R1/PL-R2/PL-R8).                        |
-| SEC-12d | **Only the public key in c3 (secret-by-reference).** No signing key, OAuth client secret, or payment credential ever ships in the c3 binary or rests in its config/cache; they live only in LS. The heartbeat token is a **license** credential, not a Claude credential — SEC-6 is unaffected (PL-R12). |
+| ID      | 需求                                                                                                                                                                                                                       |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SEC-12a | **信任来自签名,而非网络。** c3 只有在离线校验了授权令牌的 **Ed25519** 签名(针对**内嵌公钥**,与 SEC-8 使用同一锚点)之后才会认可 `active` 状态。伪造的 “active” 无法通过线路注入(PL-R5)。                                    |
+| SEC-12b | **校验失败时默认拒绝。** 缺失/格式错误/过期/无法校验的令牌 ⇒ **未授权**。在与“绝不终止进行中的工作”相权衡之后,其后果是只对**新**会话进行门控——绝不会中断正在运行的会话(PL-R6)。                                            |
+| SEC-12c | **一次性、短生命周期的激活码。** 激活码单次使用且很快过期,且**绝不能**被复用为心跳凭据;心跳**承载令牌**是唯一的长生命周期许可凭据,并且可以被 LS **吊销**(PL-R1/PL-R2/PL-R8)。                                              |
+| SEC-12d | **c3 中只有公钥(通过引用持有密钥)。** 任何签名密钥、OAuth 客户端密钥或支付凭据都不会出现在 c3 二进制中,也不会驻留在其配置/缓存中;它们只存在于 LS 中。心跳令牌是一种**许可**凭据,而非 Claude 凭据——SEC-6 不受影响(PL-R12)。 |
 
-## Anti-scenarios (must never happen)
+## 反场景(绝不能发生)
 
-- A malformed WebSocket frame is interpreted as an `allow`.
-- A permission request hangs forever with no resolution.
-- Credentials appear in a log line, error message, or wire message.
-- A tampered binary passes `c3 verify`, or obfuscation is treated as a trust control.
-- A hardening option from the NOT-doing list (control-flow flattening, UPX, anti-debug, license check, …) sneaks into the standard tier's option set.
-- An absolute path reaches a feature handler from any wire message other than `add_workspace`/`remove_workspace` (SEC-9), or a forged/unregistered `workspaceId` resolves to a filesystem root instead of being rejected.
-- `add_workspace`/`remove_workspace` register/tear down a trust root on an unauthenticated connection (SEC-10).
-- A code-browsing request uses a client-supplied path as its trust root; accepts `~/.ssh`, `../../etc/passwd`, an absolute path, a null-byte path, a symlink escape, or a `/workspace-evil` sibling by prefix confusion; or returns `.git` contents (SEC-11).
-- c3 honors entitlement `active` from a token whose Ed25519 signature does not verify against the embedded public key, or entitlement gating interrupts an in-flight run / makes an existing session unusable (SEC-12a/SEC-12b, PL-R5/PL-R6).
-- An activation code is accepted as a heartbeat credential or reused after consumption, or a signing key / OAuth secret / payment credential ships in the c3 binary or its config/cache (SEC-12c/SEC-12d, PL-R2/PL-R12).
+- 一个畸形的 WebSocket 帧被解读为 `allow`。
+- 一个权限请求永远挂起、没有任何解析。
+- 凭据出现在日志行、错误信息或线路消息中。
+- 一个被篡改的二进制通过了 `c3 verify`,或混淆被当作一种信任控制手段。
+- “不做”清单中的某个加固选项(控制流平坦化、UPX、反调试、许可检查……)混入了 standard 分级的选项集。
+- 一个绝对路径从 `add_workspace`/`remove_workspace` 之外的任何线路消息到达了某个功能处理器(SEC-9),或者一个伪造/未注册的 `workspaceId` 被解析成了文件系统根目录,而不是被拒绝。
+- `add_workspace`/`remove_workspace` 在未认证的连接上注册/拆除了一个信任根(SEC-10)。
+- 一次代码浏览请求把客户端提供的路径当作其信任根;接受了 `~/.ssh`、`../../etc/passwd`、一个绝对路径、一个带空字节的路径、一个符号链接逃逸,或者一个通过前缀混淆冒充的 `/workspace-evil` 同名兄弟目录;或者返回了 `.git` 的内容(SEC-11)。
+- c3 认可了一个 Ed25519 签名未通过内嵌公钥校验的令牌所声明的 `active` 授权,或者授权门控中断了一次进行中的运行/使一个既有会话变得不可用(SEC-12a/SEC-12b,PL-R5/PL-R6)。
+- 一个激活码被当作心跳凭据接受,或在消费后被复用;或者一个签名密钥/OAuth 密钥/支付凭据出现在 c3 二进制或其配置/缓存中(SEC-12c/SEC-12d,PL-R2/PL-R12)。

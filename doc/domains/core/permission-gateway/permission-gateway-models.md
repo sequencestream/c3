@@ -1,45 +1,42 @@
-# permission-gateway — Models
+# permission-gateway — 数据模型
 
-Entity definitions for the gateway. Types are business-semantic; physical representation
-is in [permission-gateway-design.md](permission-gateway-design.md).
+网关的实体定义。类型是业务语义层面的；物理表示见
+[permission-gateway-design.md](permission-gateway-design.md)。
 
 ## Permission Request
 
-A single pending question about one tool call.
+关于一次工具调用的单个待决问题。
 
-| Attribute   | Type        | Description                                                    |
-| ----------- | ----------- | -------------------------------------------------------------- |
-| `requestId` | text (UUID) | Unique correlation key for this request                        |
-| `toolName`  | text        | Name of the tool the agent wants to run (e.g. `Write`, `Bash`) |
-| `input`     | opaque      | The tool's proposed input, passed through verbatim for display |
-| state       | enum        | `Pending` → `Allowed` \| `Denied` (see spec state machine)     |
+| Attribute   | Type        | Description                                       |
+| ----------- | ----------- | ------------------------------------------------- |
+| `requestId` | text (UUID) | 该请求的唯一关联键                                |
+| `toolName`  | text        | 智能体想要运行的工具名称(例如 `Write`、`Bash`)    |
+| `input`     | opaque      | 工具提议的输入，原样透传用于展示                  |
+| state       | enum        | `Pending` → `Allowed` \| `Denied`(见 spec 状态机) |
 
-Relationships: produced by one sensitive-tool callback invocation; resolved by at most one
-Permission Decision.
+Relationships: 由一次敏感工具回调调用产生；至多由一个 Permission Decision 解决。
 
 ## Permission Decision
 
-The resolution of a request.
+一次请求的解决结果。
 
-| Attribute  | Type | Description                                                                     |
-| ---------- | ---- | ------------------------------------------------------------------------------- |
-| `decision` | enum | `allow` \| `deny`                                                               |
-| source     | enum | `user` (browser response) \| `abort` (run torn down) \| `timeout` (out-of-loop) |
+| Attribute  | Type | Description                                                  |
+| ---------- | ---- | ------------------------------------------------------------ |
+| `decision` | enum | `allow` \| `deny`                                            |
+| source     | enum | `user`(浏览器响应) \| `abort`(运行被终止) \| `timeout`(环外) |
 
-Relationships: at most one Decision per Permission Request (spec invariant). An `abort`
-source always carries `deny`. The `timeout` source exists **only for out-of-loop vendors**
-unanswered one times out to `deny` rather than hanging forever. The in-loop Claude path has
-no timeout source — its request waits indefinitely (PG-R2).
+Relationships: 每个 Permission Request 至多一个 Decision(spec 不变式)。`abort`
+来源总是携带 `deny`。`timeout` 来源**仅存在于环外厂商**——未被回答时超时归于
+`deny`，而不是永远挂起。环内 Claude 路径没有 timeout 来源——其请求无限期等待
+(PG-R2)。
 
-### Vendor write-back (out-of-loop only, 2026-06-06-003)
+### 厂商回写(仅限环外，2026-06-06-003)
 
-For an out-of-loop vendor the neutral `allow`/`deny` is translated to the vendor's native
-response: `allow` → "allow once", `deny` → "reject" (the "always allow" form is not used). A
-structured "permission not found" (404) on write-back means the id went stale and is treated as
-resolved.
+对于环外厂商，中立的 `allow`/`deny` 会被转译为该厂商的原生响应:`allow` → "allow
+once"，`deny` → "reject"("always allow" 形式不使用)。回写时收到结构化的
+"permission not found"(404)意味着该 id 已过期失效，视为已解决。
 
 ## Notes
 
-- These entities are transient and in-memory; they are not persisted (SEC-2).
-- `input` is opaque at the domain boundary and is never interpreted or mutated by the
-  gateway (rule PG-R6).
+- 这些实体是瞬态且驻内存的；不做持久化(SEC-2)。
+- `input` 在域边界处是不透明的，网关永远不会解释或修改它(规则 PG-R6)。

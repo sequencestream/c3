@@ -1,105 +1,86 @@
-# 0011 — Vendor-neutral Agent abstraction: three-piece interface + capability ledger
+# 0011 — 厂商中立的 Agent 抽象:三件套接口 + 能力台账
 
 - **Status:** accepted
 - **Date:** 2026-06-05
-- **Amended:** 2026-06-07 — the capability ledger extended with structured session-lifecycle
-  capability states (list / read / resume / rename / delete, each a graded capability state).
-  See the _Amendment_ paragraph under "Capability ledger" below for the matrix and rationale.
-- **Amended:** 2026-06-07 — a task-store capability flag added to the ledger (7th boolean
-  flag — all three current vendors true). A 4th neutral interface, a task store, added to the
-  adapter surface (create / list / update / get).
-- **Amended:** 2026-06-07 — the Claude task-store reference implementation landed. See the
-  _Claude task store_ paragraph under "Decision".
-- **Amended:** 2026-06-07 (012) — the neutral permission grid (action mode / tool gate) promoted
-  to the wire representation of session mode via a per-vendor mode catalog. See the _Vendor mode
-  catalog_ paragraph.
+- **Amended:** 2026-06-07 — 能力台账扩展为包含结构化的会话生命周期能力状态(list / read / resume /
+  rename / delete,每一项都是一个分级的能力状态)。矩阵与理由见下文"Capability ledger"下的
+  _Amendment_ 段落。
+- **Amended:** 2026-06-07 — 台账新增一个 task-store 能力标志(第 7 个布尔标志——当前三个厂商均为
+  true)。适配层新增第 4 个中立接口:任务存储(create / list / update / get)。
+- **Amended:** 2026-06-07 — Claude 任务存储的参考实现落地。见"Decision"下的 _Claude task store_
+  段落。
+- **Amended:** 2026-06-07(012)— 中立权限网格(action mode / tool gate)通过按厂商的模式目录,被
+  提升为会话模式的 wire 表示。见 _Vendor mode catalog_ 段落。
 
 ## Context
 
-Through ADR-0010 c3 was a Claude-only product: the run loop imported the Claude Agent SDK
-directly, the permission gateway returned the SDK's permission-result type, session history was
-read straight from Claude's transcripts, and the wire permission-mode value was the SDK's
-five-way union verbatim. To support more than one vendor we need a neutral agent layer the rest
-of the kernel can drive, with each vendor's SDK quirks sealed behind it.
+在 ADR-0010 之前,c3 是一个仅支持 Claude 的产品:运行循环(run loop)直接导入 Claude Agent SDK,
+权限网关(permission gateway)返回 SDK 的权限结果类型,会话历史直接从 Claude 的 transcript 中
+读取,线路上的权限模式(permission-mode)值就是 SDK 五态联合类型本身。为支持不止一个厂商,我们
+需要一个内核其余部分可以驱动的中立 agent 层,把每个厂商 SDK 的怪癖都封在其后。
 
-Three Phase-0 probes established the ground truth that any neutral interface must respect — the
-vendors do **not** share one mechanism:
+三次 Phase-0 探针确立了任何中立接口都必须遵守的事实基础——各厂商**并不**共享同一种机制:
 
-- **008 (Codex) — NO-GO on per-tool runtime approval.** The Codex SDK closes the child's stdin
-  after dispatching a turn; its event stream is read-only with no write-back half-channel and no
-  "approval request" event. A tool can only be allowed/denied for the **whole turn** via an abort
-  signal. There is no in-the-loop interception point.
-- A third vendor's approval is a remote REST write-back (`POST /session/{id}/permissions/{permissionID}`),
-  needing a Promise bridge, a timeout default-deny (~600 ms), and reconnect reconciliation. Its
-  lifecycle is a remote long-running server, not an in-process child.
-- **010 (message diff) — narrow common set.** Across the three vendors only the session id is an
-  unconditional common field; role (Codex must synthesize it) and blocks (append-with-upsert, not
-  carry) come at a discount. Everything else ("宁丢勿强塞") belongs in a vendor-extra overflow, not
-  a faked top-level union.
+- **008(Codex)——单工具运行时批准 NO-GO。** Codex SDK 在派发一个回合(turn)后会关闭子进程的
+  stdin;它的事件流是只读的,没有回写半信道,也没有"批准请求"事件。一个工具只能通过 abort 信号对
+  **整个回合**进行允许/拒绝。没有可介入的循环内拦截点。
+- 第三个厂商的批准是一次远程 REST 回写(`POST /session/{id}/permissions/{permissionID}`),需要一个
+  Promise 桥接、一个超时默认拒绝(约 600ms)以及重连协调。它的生命周期是一个远程长驻服务,而非
+  进程内子进程。
+- **010(消息 diff)——公共集很窄。** 在三个厂商之间,只有会话 id 是无条件的公共字段;role
+  (Codex 必须自行合成)和 blocks(追加式 upsert,而非整体携带)则是打折扣得来的。其余一切
+  ("宁丢勿强塞")都归入厂商额外字段(vendor-extra)溢出区,而不是伪造一个顶层联合类型。
 
-A naïve "make everyone look like Claude" interface would lie about all three. The boundary rule
-from ADR-0009 (SDK types never leave the kernel, never enter the shared wire contract) must also
-hold for whatever shape we pick.
+一个天真的"让所有人看起来都像 Claude"式接口,会对三个厂商都撒谎。ADR-0009 的边界规则(SDK 类型
+永不离开内核,永不进入共享的 wire 契约)对我们选定的任何形态都必须同样成立。
 
 ## Options considered
 
-1. **Widen the Claude types into the shared interface.** Promote the permission mode, the SDK
-   message shapes, and the per-tool approval callback to the neutral surface. _Con:_ enshrines
-   Claude-isms the other vendors can't honor (Codex has no per-tool approval; nobody else has a
-   five-way mode), and drags SDK types toward the wire contract — a direct ADR-0009 violation.
-2. **One fat interface with every capability required.** Force every adapter to implement
-   interrupt / fork / in-process MCP / per-tool approval. _Con:_ Codex physically cannot do
-   per-tool approval (008); a required method it can only throw on is worse than an absent one —
-   the upper layer can't degrade gracefully because it can't tell.
-3. **A required common subset + a probed capability ledger for everything divergent.** Three
-   neutral interfaces (driver / approval / session-store) whose _required_ surface every vendor
-   satisfies, plus a probed capability ledger of optional/degradable flags the upper layer checks
-   before reaching for a divergent control. Permission collapses to an orthogonal 2-axis grid; SDK
-   values cross as `unknown` and are narrowed inside each vendor's adapter. _Pro:_ honest about the
-   probes, keeps SDK types in the kernel, lets the upper layer degrade per-vendor. _Con:_ the
-   additive phase ships the Claude adapter delegating to the existing run loop rather than replacing
-   it; the full rewrite (folding the gateway + run loop through the driver) is a later phase.
+1. **把 Claude 的类型放宽为共享接口。** 把权限模式、SDK 消息形态、逐工具批准回调都提升为中立
+   接口。_Con:_ 把 Claude 的特有作风固化下来,而其他厂商无法遵从(Codex 没有逐工具批准;没有其他
+   厂商有五态模式),而且把 SDK 类型拖向 wire 契约——直接违反 ADR-0009。
+2. **一个要求所有能力都必备的胖接口。** 强制每个适配器都实现 interrupt / fork / 进程内 MCP /
+   逐工具批准。_Con:_ Codex 物理上做不到逐工具批准(008);一个只能抛异常的必备方法,比一个缺失的
+   方法更糟——上层无法区分,也就无法优雅降级。
+3. **一个必备公共子集 + 一个针对所有分歧点的、经过探针验证的能力台账(选定)。** 三个中立接口
+   (driver / approval / session-store),它们的*必备*接口面是每个厂商都能满足的,再加上一个由
+   可选/可降级标志构成的能力台账,上层在触及某个有分歧的控制之前先检查它。权限收敛为一个正交的
+   二维网格;SDK 值以 `unknown` 形式跨界,并在各厂商的适配器内部收窄。_Pro:_ 对探针结果诚实,把
+   SDK 类型留在内核里,让上层可以按厂商各自降级。_Con:_ 增量阶段先让 Claude 适配器委托给既有的
+   运行循环,而非替换它;把网关 + 运行循环都折叠进 driver 的完整重写留待后续阶段。
 
 ## Decision
 
-Adopt option 3. Establish a vendor-adapter layer with:
+采纳方案 3。建立一个厂商适配层,包含:
 
-- **Three neutral interfaces:**
-  - **Agent driver** — lifecycle + streaming canonical-message iteration. Required: starting a
-    run, and on the returned run handle: reading the session id, iterating messages, aborting.
-    Optional run controls (interrupt / set-action-mode / push-input / fork-session) exist iff the
-    capability flag is set.
-  - **Approval bridge** — intercept → suspend → write back. Required: registering a request
-    handler that returns a disposer. For vendors with per-tool approval the handler fires per tool
-    and the verdict is written back; without it, it degrades to launch-time policy.
-  - **Session store** — the dirtiest coupling (direct transcript reads) sealed behind list / read
-    (returning neutral canonical messages), with optional rename / delete.
-- **Neutral permission policy** — given a tool name, its input, and context, decide allow / ask /
-  deny. The five-way permission-mode 1:1 mapping is **abandoned**; it collapses to two orthogonal
-  axes: an action mode (plan / build) × a tool gate (always-ask / on-sensitive / trusted-prefix /
-  never-ask). Each adapter translates its native mode(s) into the grid (table below); the grid never
-  round-trips back 1:1 (Claude `auto`'s bias and `always-ask`'s lack of a Claude peer are documented
-  losses).
-- **Capability ledger** — required capabilities have **no flag** (they are the interface contract);
-  the ledger holds exactly seven **optional/degradable** flags: interrupt, set-action-mode,
-  streaming-push, in-process MCP, fork-session, per-tool-approval, and task-store. The sixth
-  (per-tool-approval) is added beyond the original five Claude-proprietary controls because 008
-  proved per-tool approval is **not** universal. The seventh (task-store) is the SDK task-tool
-  surface, true for all three current vendors.
-- **Amendment (this phase) — structured session-lifecycle capability states.** The six flags above
-  are honestly boolean (a vendor either has a mid-turn interrupt point or it does not). The
-  **session-lifecycle** operations (list / read / resume / rename / delete) are **not**: 008 proved
-  the Codex SDK has no listing/reading API; later local transcript readers made Codex rename/delete
-  exist behind a REST write-back that is not yet wired, and a remote server that is briefly down
-  would be the same shape. A boolean cannot tell "none" (structural NO) apart from
-  "temporarily-unavailable" (mechanism exists, not currently reachable), and that distinction is
-  exactly what the UI must render. So these ops are graded honestly as a capability state per op:
-  none / partial / full / temporarily-unavailable, carried on the ledger as a structured
-  session-capabilities sub-ledger. The method _contract_ (every vendor exposes list/read on its
-  session store) stays the unconditional interface — methods always _exist_, what each method can
-  deliver is what the ledger honestly reports. A new vendor that self-reports its grades is correctly
-  degraded with **zero per-vendor branching** in the upper layer. The authoritative matrix as of this
-  amendment:
+- **三个中立接口:**
+  - **Agent driver** ——生命周期 + 流式的规范消息(canonical-message)迭代。必备:发起一次运行,
+    以及在返回的 run handle 上:读取会话 id、迭代消息、abort。可选的运行控制(interrupt /
+    set-action-mode / push-input / fork-session)仅在对应能力标志置位时才存在。
+  - **Approval bridge** ——拦截 → 挂起 → 回写。必备:注册一个返回 disposer 的请求处理器。对于
+    支持逐工具批准的厂商,该处理器按工具触发,裁决被回写;不支持的厂商则降级为启动时策略。
+  - **Session store** ——最脏的耦合点(直接读取 transcript)被封在 list / read(返回中立的规范
+    消息)之后,rename / delete 为可选。
+- **中立权限策略**——给定一个工具名、其输入以及上下文,决定 allow / ask / deny。五态权限模式的
+  1:1 映射被**放弃**;它收敛为两条正交的轴:一个 action mode(plan / build)× 一个 tool gate
+  (always-ask / on-sensitive / trusted-prefix / never-ask)。每个适配器把自己原生的模式翻译到
+  这个网格上(见下表);该网格永远无法 1:1 逆向还原(Claude `auto` 的偏向以及 `always-ask` 在
+  Claude 侧没有对应项,都是被记录在案的损失)。
+- **能力台账**——必备能力**没有标志**(它们就是接口契约本身);台账恰好持有七个**可选/可降级**
+  标志:interrupt、set-action-mode、streaming-push、进程内 MCP、fork-session、逐工具批准
+  (per-tool-approval)以及 task-store。第六项(逐工具批准)是在最初五个 Claude 专属控制项之外
+  新增的,因为 008 证明了逐工具批准**并非**普适能力。第七项(task-store)是 SDK 任务工具面,当前
+  三个厂商均为 true。
+- **Amendment(本阶段)——结构化的会话生命周期能力状态。** 上述六个标志是诚实的布尔值(一个厂商
+  要么有一个回合中途的 interrupt 点,要么没有)。**会话生命周期**操作(list / read / resume /
+  rename / delete)则**不是**:008 证明了 Codex SDK 没有 listing/reading API;后来本地
+  transcript 读取器让 Codex 的 rename/delete 存在于一个尚未接线的 REST 回写之后,而一个偶尔宕机
+  的远程服务器也会呈现同样的形态。一个布尔值无法区分"没有"(结构性 NO)和"暂时不可用"(机制
+  存在,当下不可达),而这个区别恰恰是 UI 必须呈现的。所以这些操作按每个 op 被诚实地分级为:
+  none / partial / full / temporarily-unavailable,作为结构化的 session-capabilities 子台账挂在
+  能力台账上。方法*契约*(每个厂商都在其 session store 上暴露 list/read)仍然是无条件的接口——
+  方法总是*存在*,每个方法能交付什么则由台账诚实上报。一个自行上报分级的新厂商,在上层**零厂商
+  分支**的情况下就能被正确降级。截至本次 amendment 的权威矩阵:
 
   | op     | Claude | Codex                   | remote |
   | ------ | ------ | ----------------------- | ------ |
@@ -109,192 +90,164 @@ Adopt option 3. Establish a vendor-adapter layer with:
   | rename | full   | temporarily-unavailable | none   |
   | delete | full   | temporarily-unavailable | none   |
 
-  The console renders the rename/delete row buttons by capability _state_ (hide on none, disabled
-  on temporarily-unavailable, enabled on full/partial) — one degradation function, no vendor
-  branching. The wire carries the same matrix on a new top-level session-capabilities-by-vendor
-  companion field (parallel to host status / binding stats), orthogonal to host-CLI presence
-  (ability vs availability).
+  控制台按能力*状态*渲染 rename/delete 行按钮(none 隐藏,temporarily-unavailable 禁用,
+  full/partial 启用)——一个降级函数,没有厂商分支。wire 在一个新的顶层
+  session-capabilities-by-vendor 伴生字段上携带同一份矩阵(与 host 状态 / 绑定统计并列),与
+  host-CLI 是否存在(能力 vs 可用性)正交。
 
-- **Canonical message model** — per 010: a required vendor tag; the session id unconditional;
-  role / blocks / timestamp / turn id discounted; a two-level vendor-extra overflow (envelope +
-  block). Tool returns are **embedded** on the tool-use block (a result field), back-filled by
-  id-upsert — there is **no standalone tool-result canonical block** (ruling D3; the incremental
-  vendors revise a block in place, which Claude's two-block split folds inward).
+- **规范消息模型**——依据 010:一个必备的厂商标签;会话 id 无条件;role / blocks / timestamp /
+  turn id 打折扣;一个两级的 vendor-extra 溢出(envelope + block)。工具返回值被**内嵌**在
+  tool-use block 上(一个 result 字段),按 id-upsert 回填——**没有**独立的 tool-result 规范
+  block(D3 裁决维持;增量式厂商原地修订一个 block,Claude 的两段式拆分则向内折叠进这个模型)。
 
-**Permission translation (informative):**
+**权限翻译(供参考):**
 
-| Source                     | → action mode        | → tool gate              |
-| -------------------------- | -------------------- | ------------------------ |
-| Claude `default`           | build                | on-sensitive             |
-| Claude `auto`              | build                | on-sensitive (bias lost) |
-| Claude `plan`              | plan                 | on-sensitive             |
-| Claude `acceptEdits`       | build                | trusted-prefix           |
-| Claude `bypassPermissions` | build                | never-ask                |
-| Codex sandbox + approval   | sandbox ⇒ plan/build | approval policy ⇒ gate   |
+| Source                     | → action mode        | → tool gate            |
+| -------------------------- | -------------------- | ---------------------- |
+| Claude `default`           | build                | on-sensitive           |
+| Claude `auto`              | build                | on-sensitive(偏向丢失) |
+| Claude `plan`              | plan                 | on-sensitive           |
+| Claude `acceptEdits`       | build                | trusted-prefix         |
+| Claude `bypassPermissions` | build                | never-ask              |
+| Codex sandbox + approval   | sandbox ⇒ plan/build | approval policy ⇒ gate |
 
-**Scope (decision D1 — additive-only):** this phase ships the interfaces + a **Claude reference
-adapter** that delegates to the existing run loop / permission gateway / session reads (untouched);
-folding the live gateway through the approval bridge is a later phase.
+**Scope(决策 D1——仅增量):** 本阶段交付这些接口 + 一个**Claude 参考适配器**,委托给既有的运行
+循环 / 权限网关 / 会话读取(不做改动);把线上网关折叠进 approval bridge 是后续阶段的事。
 
-> integration (2026-06-06-003): a supervised-server vendor, with out-of-loop per-tool approval and
-> a pre-approved audit. The **Codex** adapter shipped as c3's **read-only advisor seat**
-> (2026-06-06-005), honouring the 008 NO-GO verbatim: capability ledger **all-false** (per-tool
-> approval false), a launch-time sandbox + approval-policy gate substituting for per-tool approval,
-> a run-time read-only monitor + whole-turn abort, and a structural pre-approved stamp on every tool
-> item (each is auto-allowed by the sandbox gate, never a c3 decision). The MCP-approval fallback
-> (§4 escape hatch 2) is left an inert skeleton — Phase 0 judged it a narrow lever (cannot gate
-> Codex's built-in shell / apply-patch). Fork-session stays false: 008 killed the branch that would
-> have used Codex's thread resume as a fork; that resume instead serves neutral session resume.
+> integration(2026-06-06-003):一个受监督的服务端厂商,拥有循环外的逐工具批准和预批准审计。
+> **Codex** 适配器以 c3 的**只读顾问席位**形式交付(2026-06-06-005),严格遵循 008 的 NO-GO
+> 结论:能力台账**全为 false**(逐工具批准为 false),用启动时的 sandbox + approval-policy 网关
+> 替代逐工具批准,一个运行时只读监视器 + 整回合 abort,以及每个工具项上一个结构性的预批准戳记
+> (每一项都由 sandbox 网关自动允许,从不是 c3 的决策)。MCP-approval 兜底(§4 escape hatch 2)
+> 保留为一个惰性骨架——Phase 0 判定它是一个狭窄的杠杆(无法拦截 Codex 内建的 shell /
+> apply-patch)。Fork-session 保持 false:008 否决了原本要用 Codex 的 thread resume 作为 fork
+> 的分支;那个 resume 转而服务于中立的会话 resume。
 >
-> **Codex as a primary session driver (2026-06-06-007).** The read-only advisor framing is
-> **widened**: a Codex agent can now be a session's primary driver, not only a consensus voter. The
-> run launcher forks a Codex run via a host-binary-gated factory. This does **not** reverse 008:
-> there is still no per-tool runtime approval (per-tool approval false, the approval bridge never
-> fires) — the launch-time sandbox/approval gate is the accepted substitute.
+> **Codex 作为主驱动智能体(2026-06-06-007)。** 只读顾问的定位被**放宽**:一个 Codex 智能体
+> 现在可以成为一个会话的主驱动方,而不仅是共识投票者。运行启动器通过一个受 host-binary 门控的
+> 工厂来 fork 一次 Codex 运行。这**并未**推翻 008:仍然没有逐工具运行时批准(逐工具批准为
+> false,approval bridge 从不触发)——启动时的 sandbox/approval 网关是被接受的替代方案。
 >
-> **Codex policy derived from the default mode, not per-agent (2026-06-06-008).** The per-agent
-> sandbox/approval-policy config (and its plumbing) of 007 is removed. The launch-time gate is
-> derived from the session permission mode the same way every vendor's is — the session's default
-> mode → the neutral action-mode × tool-gate grid → the Codex policy translation → Codex's
-> sandbox/approval-policy — so one permission knob drives the whole table and a Codex agent needs no
-> separate permission configuration. Rationale: the neutral grid already expresses the permission
-> intent and the translation already existed as the fallback; 007's explicit override duplicated that
-> knob. Accepted trade-off: `default`'s "ask on sensitive" intent has no live channel in Codex's
-> non-interactive exec, so it degrades to a static sandbox (the sandbox is the real enforcement). The
-> tighter cells dominate — plan / always-ask → read-only.
+> **Codex 策略源自默认模式,而非按 agent 各自配置(2026-06-06-008)。** 007 引入的按 agent 各自
+> 的 sandbox/approval-policy 配置(及其相关管线)被移除。启动时网关的推导方式与每个厂商一致——
+> 都源自会话的权限模式:会话默认模式 → 中立的 action-mode × tool-gate 网格 → Codex 策略翻译 →
+> Codex 的 sandbox/approval-policy——因此一个权限开关驱动整张表,一个 Codex 智能体不需要单独的
+> 权限配置。理由:中立网格已经表达了权限意图,而翻译早已作为兜底存在;007 的显式覆盖重复了这个
+> 开关。可接受的权衡:`default` 的"敏感时询问"意图在 Codex 非交互式 exec 中没有实时信道,因此
+> 退化为一个静态 sandbox(sandbox 才是真正的强制手段)。更严格的格子占主导——plan / always-ask
+> → 只读。
 >
-> **Upper-domain heterogeneous tolerance (2026-06-06-006; consensus updated 2026-07-09).** The
-> capability ledger also gates the _upper_ domains, vendor-homogeneity being their original organizing
-> principle: (1) **consensus** originally voted only within the session's own vendor. **Superseded
-> (2026-07-09):** the deferred "risk-tag-neutralized voting" is now built — a deterministic server-side
-> normalizer maps a tool request to a vendor-neutral intent + risk payload, so consensus now votes
-> **cross-vendor** and the vendor-scope marker is gone (PG-R13). (2) **agent-teams** are locked to the
-> streaming-push capability — only Claude can host a resident lead, so a non-Claude session never
-> upgrades to a team; (3) the **degradation chain** keeps only same-vendor fallbacks — a different
-> vendor cannot resume context, so cross-vendor entries are skipped and reported. The remaining
-> deferred cross-vendor machinery (heterogeneous teammates, a replay-seed degradation hand-off with
-> UI-marked context discontinuity) stays spec'd, not built, until a real need appears. The principle
-> is **honest UI over faked capability**, and — for consensus — **normalize to a comparable form
-> rather than restrict who participates** (PG-R13, AS-R21/R22).
+> **上层领域对异构的容忍度(2026-06-06-006;2026-07-09 更新为共识)。** 能力台账同样约束着
+> *上层*领域,厂商同质性曾是它们最初的组织原则:(1)**共识(consensus)**最初只在会话自身的
+> 厂商内部投票。**已被取代(2026-07-09):** 被推迟的"风险标签中立化投票"现已建成——一个确定性
+> 的服务端归一化器把一次工具请求映射为厂商中立的意图 + 风险载荷,因此共识现在可以**跨厂商**
+> 投票,厂商范围标记也随之消失(PG-R13)。(2)**agent-teams** 被锁定在 streaming-push 能力
+> 上——只有 Claude 能承载一个常驻 lead,因此一个非 Claude 会话永远不会升级为一个 team;
+> (3)**降级链**只保留同厂商的兜底——不同厂商无法恢复上下文,因此跨厂商条目被跳过并上报。剩余
+> 的、被推迟的跨厂商机制(异构队友、带 UI 标记上下文中断的 replay-seed 降级交接)仍停留在规格
+> 阶段,未构建,直到出现真实需求。这里的原则是**诚实的 UI 优于伪造的能力**,而对共识而言,是
+> **归一化为可比较的形态,而不是限制谁能参与**(PG-R13,AS-R21/R22)。
 
-> **Claude task store reference implementation (2026-06-07).** The 4th neutral interface (the task
-> store) gets its Claude reference, with pure parsing factored out. The Claude Agent SDK has **no
-> programmatic single-tool entry point** — its built-in `TaskCreate`/`TaskList`/`TaskUpdate`/`TaskGet`
-> tools run only when the model calls them inside a query — so the Claude task store is a **shadow**
-> of the SDK task system: every method drives the matching SDK tool through an injected executor and
-> folds the parsed result into an in-memory shadow map (keyed by task id). The production executor
-> delegates to a minimal one-shot query in the run loop that instructs the model to call exactly one
-> task tool while every other tool is disallowed and the gate auto-allows only the driven tool,
-> **forcing its exact input** (so the prompt needs no JSON serialization — the JSON-serialization ban
-> under the kernel, ADR-0009 R2, stands). Keeping the SDK import in the run loop (not the adapter
-> layer) preserves the boundary, exactly as the driver delegates to the existing run loop.
+> **Claude 任务存储参考实现(2026-06-07)。** 第 4 个中立接口(任务存储)获得了它的 Claude 参考
+> 实现,纯解析逻辑被拆分出来。Claude Agent SDK **没有编程式的单工具入口**——它内建的
+> `TaskCreate`/`TaskList`/`TaskUpdate`/`TaskGet` 工具只在模型于一次 query 内调用它们时才会
+> 运行——所以 Claude 任务存储是 SDK 任务系统的一个**影子(shadow)**:每个方法通过一个注入的
+> 执行器驱动对应的 SDK 工具,并把解析后的结果折叠进一个内存中的影子 map(以任务 id 为键)。生产
+> 环境的执行器委托给运行循环里的一个最小化一次性 query,指示模型恰好调用一个任务工具,同时禁用
+> 其他所有工具,网关只自动允许被驱动的那个工具,**强制其精确的输入**(因此提示词无需 JSON
+> 序列化——内核下的 JSON 序列化禁令,ADR-0009 R2,依然成立)。把 SDK 导入留在运行循环里(而非
+> 适配层)保持了边界完整,正如 driver 委托给既有运行循环一样。
 >
-> The SDK serializes a task result as a **string**, not a typed object, and the exact format is not
-> pinned (a structured result may arrive serialized; the create confirmation is a human line like
-> "Created task 1: …"). So each parser is **dual-mode** — JSON first, text regex as fallback — and
-> **degrades safely**: an error/garbage output yields empty/absent values, never a throw, and the
-> shadow keeps the last good state (a list parse-miss is NOT a clear, mirroring the web task list's
-> "无法解析快照时保持现状" rule). Update returns only a confirmation, so the store merges the patch onto
-> its shadow entry to return a full task record. A live update push channel is **omitted**: it is
-> absent and the upper layer degrades to pull-based list/get (the probe protocol). The store is
-> **session-scoped** (it binds its executor to a cwd/model/env/resume context), so it is built per
-> session by the upper layer rather than wired onto the stateless no-arg adapter factory — the same
-> additive-phase parallel as interrupt / fork-session being vendor-true yet not yet exposed as run
-> controls. Tests are hermetic: the executor is mocked, no `claude` process spawns, and they cover the
-> JSON+text parse matrix and the shadow-merge/degradation rules.
+> SDK 把任务结果序列化为一个**字符串**,而非一个类型化对象,且确切格式没有被钉死(一个结构化
+> 结果可能以序列化形式到达;创建确认是一行人类可读的话,如"Created task 1: …")。所以每个解析器
+> 都是**双模**的——先 JSON,后文本正则兜底——并且**安全降级**:一个出错/乱码输出产生空/缺失
+> 值,从不抛异常,影子保留最后一个良好状态(一次 list 解析失败**不是**一次清空,呼应 web 任务
+> 列表"无法解析快照时保持现状"的规则)。Update 只返回一个确认,所以存储把这个补丁合并到它的影子
+> 条目上,以返回一条完整的任务记录。一个实时的 update 推送信道被**省略**:它不存在,上层降级为
+> 基于拉取的 list/get(探针协议)。该存储是**会话作用域**的(它把执行器绑定到一个
+> cwd/model/env/resume 上下文),因此由上层按每个会话构建,而不是接到无参的、无状态的适配器
+> 工厂上——与 interrupt / fork-session 虽然厂商为 true 但尚未作为运行控制暴露,是同一种增量
+> 阶段的并行处理方式。测试是密闭的:执行器被 mock,不会派生 `claude` 进程,并覆盖 JSON+文本解析
+> 矩阵以及影子合并/降级规则。
 
-> **imperative**: the Claude store _drives_ the SDK task tools, so create / update / get all do real
-> work. The incremental vendors instead expose the agent's own running plan, which c3 _watches_ but
-> does not author. The Codex task store consumes the Codex todo-list thread item — a stable list id
-> with a list of text/completed items, a **full snapshot** re-emitted on the item start/update/complete
-> events (the driver maps it to a null canonical stream, ADR-0013). The remote vendor's store seeds
-> from a REST full-fetch of the session todo list (an init step) then tracks the todo-updated event.
-> Both stores: list / get serve an in-memory snapshot; the update-push channel is the **live push
-> channel** (present ⇒ the optional-method probe is true, unlike Claude which omits it); and create /
-> update **reject** — neither vendor exposes an external write path into the agent's plan, and the
-> honesty rule (present ≠ fabricate) bans a fake one.
+> **imperative**:Claude 存储*驱动* SDK 任务工具,所以 create / update / get 都做真实的工作。
+> 增量式厂商则相反,暴露智能体自身正在运行的计划,c3 *观察*它但不撰写它。Codex 任务存储消费
+> Codex 的 todo-list 线程条目——一个带文本/完成状态条目列表的稳定 list id,在 item 的
+> start/update/complete 事件上重新发出一份**完整快照**(driver 把它映射为一条空的规范流,
+> ADR-0013)。远程厂商的存储从会话 todo list 的一次 REST 全量拉取(一个 init 步骤)播种,然后
+> 跟踪 todo-updated 事件。两个存储都是:list / get 服务于一个内存中的快照;update-push 信道是
+> **实时推送信道**(存在 ⇒ 可选方法探针为 true,不同于 Claude 省略它);而 create / update 都会
+> **拒绝**——两个厂商都不暴露一条写入智能体计划的外部路径,诚实原则(存在 ≠ 伪造)禁止伪造一条
+> 出来。
 >
-> Three mapping decisions. (1) **Feed seam, not a second stream:** both stores are FED by the driver's
-> own event stream the approval bridges are dispatched into, so there is one connection and one
-> jitter-recovery, not two. Tests drive these seams directly, hermetic with no process/server. (2)
-> **Id synthesis (Codex):** a todo item carries no id, so a stable id is synthesised from the list id
->
-> - index (ordering is the only stable handle). (3) **Status mapping:** native statuses map onto the
->   neutral task status — cancelled → completed (no longer active) and any unknown value → pending, both
->   preserving the raw string in a vendor-extra field; priority rides a vendor-extra field. Each
->   frame/event is a full snapshot ⇒ the cache is replaced wholesale and the update-push fires only for
->   **new or changed** tasks (subject/status diff), not the whole list. Like the Claude store, both are
->   **session-scoped** (bound to a session/event stream) and built per session.
+> 三个映射决策。(1)**接入点是同一条信道,而非第二条流:** 两个存储都由 driver 自身的事件流
+> (approval bridge 也被派发进这条流)喂入,所以只有一个连接、一次抖动恢复,而不是两条。测试
+> 直接驱动这些接入点,密闭且无需进程/服务器。(2)**Id 合成(Codex):** 一个 todo 条目不携带
+> id,所以一个稳定 id 由 list id + 下标合成(顺序是唯一稳定的抓手)。(3)**状态映射:** 原生
+> 状态映射到中立的任务状态——cancelled → completed(不再活跃),任何未知值 → pending,两者都把
+> 原始字符串保留在一个 vendor-extra 字段里;priority 搭载在一个 vendor-extra 字段上。每一帧/
+> 事件都是一份完整快照 ⇒ 缓存被整体替换,update-push 只为**新增或变化**的任务(subject/status
+> diff)触发,而非整个列表。和 Claude 存储一样,两者都是**会话作用域**的(绑定到一个会话/事件
+> 流)并按每个会话构建。
 
-> **Vendor mode catalog — token ⇄ grid translation (2026-06-07-012).** The neutral permission grid
-> (action mode × tool gate) had been the kernel's internal permission truth since Phase 1, but the
-> wire representation of session mode was still Claude's five-value permission mode. The
-> generalization replaces it with a **per-vendor vendor mode catalog** — the single source of truth
-> for one vendor's native mode tokens. Each mode descriptor pairs a vendor's native token (e.g. Claude
-> `plan`, a Codex token) with the grid cell it maps to. Generic token-to-grid / grid-to-token helpers
-> turn that declaration into the bidirectional translation every adapter needs.
+> **Vendor mode catalog——token ⇄ 网格双向翻译(2026-06-07-012)。** 中立权限网格(action mode
+> × tool gate)自 Phase 1 起就一直是内核内部的权限真值,但会话模式的 wire 表示仍然是 Claude 的
+> 五值权限模式。这次泛化用一个**按厂商的 vendor mode catalog** 取代了它——它是某个厂商原生模式
+> token 的单一事实来源。每个模式描述符把一个厂商的原生 token(例如 Claude 的 `plan`,一个
+> Codex token)与它映射到的网格格子配对。通用的 token-to-grid / grid-to-token 辅助函数把这个
+> 声明转化为每个适配器都需要的双向翻译。
 >
-> Three design rules hold. (1) **Catalog IS the interface, no hand-written switches.** Claude's former
-> permission map is refactored onto the generic translators driven by Claude's catalog; Codex
-> registers its catalog the same way. A by-vendor catalog record provides the compile-time
-> exhaustiveness pin — adding a vendor without registering its catalog stops type-checking. (2) **Lossy
-> reverse but safe.** The grid → token direction picks the closest declared token (exact cell → same
-> action mode → default token) and never crosses the plan/build action boundary. An unknown token on
-> the forward path degrades to the vendor's default-token grid — so a stored token from an older/other
-> vendor never throws. (3) **Wire always carries the vendor's catalog.** The vendor-modes wire field
-> ships the entire record to the web, where the console reads the active session's vendor catalog to
-> label the mode and build the dropdown — the same by-vendor, no-branching pattern as the capability
-> ledgers.
+> 三条设计规则成立。(1)**目录即接口,没有手写的 switch。** Claude 原先的权限映射被重构到由
+> Claude 目录驱动的通用翻译器上;Codex 用同样的方式注册它的目录。一个按厂商的目录记录提供了
+> 编译期的穷尽性钉子——新增一个厂商而不注册它的目录会导致类型检查失败。(2)**有损的逆向
+> 翻译,但是安全的。** 网格 → token 方向挑选最接近的已声明 token(精确格子 → 相同 action
+> mode → 默认 token),且永不跨越 plan/build 这条 action 边界。正向路径上一个未知 token 会
+> 退化为该厂商默认 token 所在的格子——所以一个来自更早/其他厂商的存量 token 永远不会抛异常。
+> (3)**Wire 始终携带该厂商的目录。** vendor-modes 这个 wire 字段把整份记录发给 web 端,控制台
+> 读取当前活跃会话的厂商目录来标注模式并构建下拉菜单——与能力台账相同的按厂商、无分支的模式。
 
-**Probe protocol.** A capability flag reports the **vendor** ability. A caller reaching for an
-optional control checks the flag **and** that the run handle actually exposes the method (the
-build-wiring probe), then degrades when either is false. The reference Claude adapter wires the
-controls reachable through the run handle this phase (set-action-mode, push-input); interrupt /
-fork-session are vendor-true but exposed only after the rewrite phase. The invariant the contract
-test pins is the safe direction: a method **present ⇒ its flag is true** (no false method without
-capability).
+**Probe protocol。** 一个能力标志上报的是**厂商**能力。一个想要触及某个可选控制的调用方,需要
+同时检查该标志**以及** run handle 是否确实暴露了这个方法(build-wiring 探针),二者有一个为
+false 就降级。参考 Claude 适配器在本阶段接好了通过 run handle 可达的控制(set-action-mode、
+push-input);interrupt / fork-session 虽然厂商为 true,但要等到重写阶段之后才会暴露。契约
+测试钉住的不变量是那个安全方向:一个方法**存在 ⇒ 其标志为 true**(不存在没有对应能力的虚假
+方法)。
 
 ## Consequences
 
-- **Easier:** a new vendor adds a sibling adapter implementing the three interfaces and declaring its
-  capability ledger; the upper layer drives it through the neutral faces with no new Claude
-  assumptions. The required-vs-optional line is mechanically checked (a contract test pins that the
-  capability ledger is exactly the seven optional flags and the required surface is always present).
-- **Harder:** the neutral permission grid is coarser than Claude's five modes — `auto`'s bias and an
-  always-ask gate have no exact Claude peer (documented losses, surfaced at the translation site).
-  A future UI that wants the lost nuance must re-introduce it as a vendor extra, not the neutral grid.
-- **Boundary:** no vendor SDK type appears in the neutral interface surface or the shared wire
-  contract; SDK values cross as `unknown` and are narrowed inside each vendor's adapter. A grep gate
-  enforces this (Compliance below).
-- **Migration:** additive — the existing run loop and gateway are unchanged, so this phase is a pure
-  add with all existing behavior intact. The reference adapter is the conformance witness; the
-  run-loop rewrite that makes the driver the _only_ path is a separate, revertible phase.
+- **Easier:** 一个新厂商添加一个实现三个接口并声明自己能力台账的兄弟适配器;上层通过中立接口
+  驱动它,不带任何新的 Claude 假设。必备与可选的界线是机械地被检查的(一个契约测试钉住能力
+  台账恰好是那七个可选标志,且必备接口面始终存在)。
+- **Harder:** 中立权限网格比 Claude 的五种模式更粗;`auto` 的偏向以及一个 always-ask 网关在
+  Claude 侧没有精确对应项(这些损失被记录在案,并在翻译处被暴露出来)。未来若某个 UI 想要找回
+  丢失的细节,必须把它作为一个厂商额外字段重新引入,而不是塞进中立网格。
+- **Boundary:** 没有任何厂商 SDK 类型出现在中立接口面或共享的 wire 契约里;SDK 值以 `unknown`
+  形式跨界,并在各厂商适配器内部收窄。一个 grep 关卡强制此规则(见下文 Compliance)。
+- **Migration:** 仅增量——既有的运行循环和网关不变,所以本阶段是一次纯粹的新增,所有既有行为
+  保持完整。参考适配器是符合性见证;把 driver 变成*唯一*路径的运行循环重写,是一个独立的、
+  可回退的阶段。
 
 ## Compliance
 
-- The Claude Agent SDK import MUST NOT appear in the shared wire contract (SDK never enters the wire
-  contract). The grep targets the **import** form, not the bare string — a prose mention in a doc
-  comment is allowed.
-- The Claude Agent SDK import MUST NOT appear in the vendor-adapter layer (SDK types never reach the
-  neutral surface; adapters narrow from `unknown` or delegate to existing SDK-narrowing kernel code
-  such as the session reads). The neutral interface surface names the SDK only in a boundary-rule
-  comment.
-- The vendor-adapter layer MUST NOT import the features or transport layers (ADR-0009 R1).
-- `pnpm typecheck` + `pnpm lint` MUST be green.
-- `pnpm vitest run` MUST be green: the vendor-agnostic contract pins the required surface + seven
-  boolean flags + the session sub-ledger; a capabilities test pins the authoritative
-  session-capability matrix end-to-end; the Claude conformance reports every session op full for the
-  reference adapter; and the web session list exercises the row-action gating by capability _state_
-  (none ⇒ hidden, temporarily-unavailable ⇒ disabled, full ⇒ enabled) without a single per-vendor
-  branch.
+- Claude Agent SDK 的 import **不得**出现在共享 wire 契约中(SDK 永不进入 wire 契约)。grep
+  针对的是 **import** 这种形式,而不是裸字符串——文档注释里的一句提及是允许的。
+- Claude Agent SDK 的 import **不得**出现在厂商适配层中(SDK 类型永不到达中立接口面;适配器从
+  `unknown` 收窄,或委托给既有的、在内核里做 SDK 收窄的代码,例如会话读取)。中立接口面只在
+  一条边界规则注释里提到 SDK 的名字。
+- 厂商适配层**不得** import features 层或 transport 层(ADR-0009 R1)。
+- `pnpm typecheck` + `pnpm lint` **必须**为绿。
+- `pnpm vitest run` **必须**为绿:厂商中立的契约钉住必备接口面 + 七个布尔标志 + 会话子台账;
+  一个能力测试端到端地钉住权威的会话能力矩阵;Claude 符合性测试对参考适配器上报每个会话操作均
+  为 full;web 会话列表按能力*状态*(none ⇒ 隐藏,temporarily-unavailable ⇒ 禁用,full ⇒
+  启用)演练行操作门控,不带任何一处按厂商的分支。
 
 ## References
 
-- [ADR 0009](0009-unidirectional-boundaries.md) — unidirectional boundaries; the SDK-never-leaves-kernel
-  rule this ADR extends to the neutral surface.
-- [ADR 0005](0005-inherit-user-project-settings.md) — c3 is the permission gateway (the role the neutral
-  approval bridge generalizes across vendors).
-- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) — the run lifecycle the agent driver
-  abstracts; the permission-mode table the neutral grid replaces.
-- Phase-0 probes: `changes/2026/06/05/2026-06-05-008-codex-approval-probe/` (NO-GO).
-- This phase's spec: `changes/2026/06/05/2026-06-05-011-vendor-neutral-agent-abstraction/2026-06-05-011-vendor-neutral-agent-abstraction-spec.md`.
+- [ADR 0009](0009-unidirectional-boundaries.md) —— 单向边界;本 ADR 把 SDK-永不离开内核这条
+  规则扩展到中立接口面。
+- [ADR 0005](0005-inherit-user-project-settings.md) —— c3 是权限网关(中立的 approval bridge
+  把这个角色泛化到了所有厂商)。
+- [agent-session spec](../../domains/core/agent-session/agent-session-spec.md) —— agent
+  driver 所抽象的运行生命周期;中立网格所取代的权限模式表。
+- Phase-0 探针:`changes/2026/06/05/2026-06-05-008-codex-approval-probe/`(NO-GO)。
+- 本阶段的 spec:`changes/2026/06/05/2026-06-05-011-vendor-neutral-agent-abstraction/2026-06-05-011-vendor-neutral-agent-abstraction-spec.md`。

@@ -148,18 +148,6 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
   路径或 none；只有当其二进制能解析出来时，才会为该 vendor 构造一个适配器，因此 CLI 缺失
   意味着该 agent 类型不可用（这是一个产品约定，不是 bug），并附带安装指引，其能力台账也就
   永远不会派上用场。启动时的健康报告会响亮但非致命地列出存在/缺失的二进制。
-- **产品授权由服务端权威裁定，客户端强制执行（ADR-0026）。** 商业许可存在于一个**独立产品，
-  即 license-server（LS）**中 —— 在 c3 进程之外，因此 c3 保持其无数据库 / 单运行时 /
-  localhost 的姿态。c3 是一个**客户端**：它一次性激活（一次性、短生命周期的 code），
-  定期心跳（bearer token），并针对一个内嵌公钥**离线**验证一份 LS 签名的 **Ed25519**
-  授权 token（复用了 SEC-8 的签名锚点）。授权只在一个点被查询 ——
-  **新建会话时** —— 未获授权时会在此处拦截；已存在的会话和进行中的运行永远不会被打断
-  （ADR-0006）。从上一次成功心跳算起的 **30 分钟离线宽限期**用来度过瞬时故障。这**不是**
-  认证（访问由 auth 域控制，而非 entitlement）。c3 侧唯一被接受的让步，是一份小的磁盘上
-  **entitlement 缓存**。见
-  [product-license 域](../domains/commerce/product-license/product-license-overview.md)、
-  [license-server API 契约](../shared/api-conventions/license-server-api.md)，以及
-  [license-server 架构](license-server-architecture.md)（LS 自身的服务架构）。
 - **构建顺序：** 先 `web` 后 `server` —— server 内嵌了 web bundle。
 - **Web 模块结构。** 前端按三层组织：
   - 共享（跨页面）组件，每个都配有同址单元测试。mobile drill-down shell 是
@@ -181,17 +169,16 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
 
 ## 关键决策
 
-| ADR                                                           | 决策                                                                                                                                                        |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [0001](adr/deprecated/0001-c3-sole-permission-authority.md)   | _（已被 0005 取代）_ c3 是唯一的权限权威                                                                                                                    |
-| [0002](adr/0002-websocket-as-permission-transport.md)         | WebSocket 是权限传输方式                                                                                                                                    |
-| [0003](adr/0003-single-binary-via-bun-compile.md)             | 通过 `bun build --compile` 发布为单一二进制                                                                                                                 |
-| [0004](adr/0004-persist-workspace-session-registry.md)        | 持久化一份 c3 所有的工作区与会话注册表                                                                                                                      |
-| [0005](adr/0005-inherit-user-project-settings.md)             | 继承用户与项目设置；c3 是权限 gateway（`settingSources: ['user', 'project']`）                                                                              |
-| [0006](adr/0006-decouple-runs-from-connections.md)            | 把 agent 运行与 WebSocket 连接解耦；运行存在于模块级注册表中                                                                                                |
-| [0007](adr/0007-read-only-intent-agent.md)                    | 只读的 intent-communication agent；`save_intents` 经由权限 gateway；跨运行时 SQLite ledger                                                                  |
-| [0009](adr/0009-unidirectional-boundaries.md)                 | 单向边界：kernel → transport/features；SDK 类型永不离开 kernel                                                                                              |
-| [0011](adr/0011-vendor-neutral-agent-abstraction.md)          | Vendor 中性的 Agent 抽象：要求三件套接口 + 探测式能力台账；五档权限模式改为 action-mode × tool-gate 网格                                                    |
-| [0012](adr/0012-host-binary-probe-first-capability-gate.md)   | 宿主二进制探测是第一道能力关卡；vendor CLI 缺失 ⇒ agent 类型不可用（按 agent 类型安装，单一二进制并非自包含）                                               |
-| [0018](adr/0018-event-bus-kernel-layer.md)                    | kernel 层的进程内类型化事件总线（发布/订阅、错误隔离、同步分发，符合 ADR-0009 边界安全）                                                                    |
-| [0026](adr/0026-product-licensing-separate-license-server.md) | 产品许可存在于一个独立的 **license-server**（服务端权威裁定 entitlement）中；c3 离线验证一个 Ed25519 签名的 token，只在新建会话时拦截，带 30 分钟离线宽限期 |
+| ADR                                                         | 决策                                                                                                          |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| [0001](adr/deprecated/0001-c3-sole-permission-authority.md) | _（已被 0005 取代）_ c3 是唯一的权限权威                                                                      |
+| [0002](adr/0002-websocket-as-permission-transport.md)       | WebSocket 是权限传输方式                                                                                      |
+| [0003](adr/0003-single-binary-via-bun-compile.md)           | 通过 `bun build --compile` 发布为单一二进制                                                                   |
+| [0004](adr/0004-persist-workspace-session-registry.md)      | 持久化一份 c3 所有的工作区与会话注册表                                                                        |
+| [0005](adr/0005-inherit-user-project-settings.md)           | 继承用户与项目设置；c3 是权限 gateway（`settingSources: ['user', 'project']`）                                |
+| [0006](adr/0006-decouple-runs-from-connections.md)          | 把 agent 运行与 WebSocket 连接解耦；运行存在于模块级注册表中                                                  |
+| [0007](adr/0007-read-only-intent-agent.md)                  | 只读的 intent-communication agent；`save_intents` 经由权限 gateway；跨运行时 SQLite ledger                    |
+| [0009](adr/0009-unidirectional-boundaries.md)               | 单向边界：kernel → transport/features；SDK 类型永不离开 kernel                                                |
+| [0011](adr/0011-vendor-neutral-agent-abstraction.md)        | Vendor 中性的 Agent 抽象：要求三件套接口 + 探测式能力台账；五档权限模式改为 action-mode × tool-gate 网格      |
+| [0012](adr/0012-host-binary-probe-first-capability-gate.md) | 宿主二进制探测是第一道能力关卡；vendor CLI 缺失 ⇒ agent 类型不可用（按 agent 类型安装，单一二进制并非自包含） |
+| [0018](adr/0018-event-bus-kernel-layer.md)                  | kernel 层的进程内类型化事件总线（发布/订阅、错误隔离、同步分发，符合 ADR-0009 边界安全）                      |

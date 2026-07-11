@@ -31,7 +31,6 @@ function writeTargetSubdir(root, { artifactName, target, pkgFile }) {
     version: VERSION,
     commit: COMMIT,
     buildTime: '2026-06-05T00:00:00Z',
-    harden: 'basic',
     artifacts: [{ target, file: pkgFile, bytes: bytes.length, sha256: hash, binary: 'c3' }],
   }
   writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
@@ -115,7 +114,6 @@ describe('merge-dist', () => {
         version: VERSION,
         commit: 'deadbee',
         buildTime: '2026-06-05T00:00:00Z',
-        harden: 'basic',
         artifacts: [
           {
             target: 'macos-arm64',

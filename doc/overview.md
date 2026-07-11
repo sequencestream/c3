@@ -6,24 +6,22 @@
 
 ## 如何导航
 
-| 如果你想知道…                   | 请阅读                                                                                         |
-| ------------------------------- | ---------------------------------------------------------------------------------------------- |
-| 项目的目的、范围、干系人        | [`project.md`](project.md)                                                                     |
-| 任何人都不得违反的硬性规则      | [`constitution.md`](constitution.md)                                                           |
-| 某个术语的含义                  | [`glossary.md`](glossary.md)                                                                   |
-| 系统的形态以及各部分如何连接    | [`architecture/architecture.md`](architecture/architecture.md)                                 |
-| 为什么做出某个关键决策          | [`architecture/adr/`](architecture/adr/)                                                       |
-| 某个场景的端到端路径            | [`flows/flows.md`](flows/flows.md)                                                             |
-| WebSocket 通信契约              | [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md) |
-| c3 ↔ license-server 的 API 契约 | [`shared/api-conventions/license-server-api.md`](shared/api-conventions/license-server-api.md) |
-| 前端视觉风格指南                | [`style/style-spec.md`](style/style-spec.md)                                                   |
-| 性能 / 安全 / 可用性目标        | [`non-functional/`](non-functional/)                                                           |
-| 某个具体能力的行为              | [`domains/core/`](domains/core/)                                                               |
+| 如果你想知道…                | 请阅读                                                                                         |
+| ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| 项目的目的、范围、干系人     | [`project.md`](project.md)                                                                     |
+| 任何人都不得违反的硬性规则   | [`constitution.md`](constitution.md)                                                           |
+| 某个术语的含义               | [`glossary.md`](glossary.md)                                                                   |
+| 系统的形态以及各部分如何连接 | [`architecture/architecture.md`](architecture/architecture.md)                                 |
+| 为什么做出某个关键决策       | [`architecture/adr/`](architecture/adr/)                                                       |
+| 某个场景的端到端路径         | [`flows/flows.md`](flows/flows.md)                                                             |
+| WebSocket 通信契约           | [`shared/api-conventions/websocket-protocol.md`](shared/api-conventions/websocket-protocol.md) |
+| 前端视觉风格指南             | [`style/style-spec.md`](style/style-spec.md)                                                   |
+| 性能 / 安全 / 可用性目标     | [`non-functional/`](non-functional/)                                                           |
+| 某个具体能力的行为           | [`domains/core/`](domains/core/)                                                               |
 
 ## 领域(Domains)
 
-c3 有三个业务组:`core`(智能体循环)、`system-config`(用户配置)、
-`commerce`(产品授权/许可)。
+c3 有两个业务组:`core`(智能体循环)、`system-config`(用户配置)。
 
 ### 组 `core`
 
@@ -40,12 +38,6 @@ c3 有三个业务组:`core`(智能体循环)、`system-config`(用户配置)、
 | 领域                                                  | 职责                                                         |
 | ----------------------------------------------------- | ------------------------------------------------------------ |
 | [`agent-config`](domains/system-config/agent-config/) | 管理智能体配置(url/key/model + 名称)、默认智能体、按会话绑定 |
-
-### 组 `commerce`
-
-| 领域                                                   | 职责                                                                                                                                                            |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`product-license`](domains/commerce/product-license/) | 管控某个 c3 安装是否具有商业**授权**来创建新工作;激活、心跳 + 30 分钟离线宽限期、离线 Ed25519 验证、新会话门控。权威归属于独立的 **license-server**(ADR-0026)。 |
 
 ## 使用规则
 

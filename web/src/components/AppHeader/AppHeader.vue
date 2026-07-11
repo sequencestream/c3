@@ -11,19 +11,15 @@
  * 移动端底部 tab 仅含 5 个工作区子视图(工作台入口已上移到顶部切换器,不再在底部 tab)。
  */
 import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
-import type { LicenseStatus, UpdateStatus, WorkspaceInfo } from '@ccc/shared/protocol'
+import type { UpdateStatus, WorkspaceInfo } from '@ccc/shared/protocol'
 import { useTypedI18n, type LocaleKey } from '@/i18n'
 import { useAuth } from '@/composables/useAuth'
 import { computed, onBeforeUnmount, ref } from 'vue'
 
-const { t, d } = useTypedI18n()
+const { t } = useTypedI18n()
 
-// c3 控制台:查看密钥信息 / 续期。密钥按钮在许可下拉内跳转此地址(新标签页)。
-const LICENSE_CONSOLE_URL = 'https://c3.sequencestream.com/'
 // 新版本提示外链:点击新标签页跳到升级文档(实际升级仍由用户手动 `c3 upgrade`)。
 const UPGRADE_DOCS_URL = 'https://github.com/sequencestream/c3#upgrade'
-// 使用手册外链:许可下拉 / 移动操作菜单内跳转产品文档(新标签页)。
-const USER_MANUAL_URL = 'https://github.com/sequencestream/c3/tree/main/doc'
 // 仅管理员显示系统设置入口(ADR-0023 authz)。无认证 / 握手前 isAdmin 默认 true,
 // 故无认证场景行为不变;服务端 save_settings 仍是真正的鉴权门(AUTH-R10)。
 // 登录身份(basic 用户名 / oauth 邮箱),响应式来自每个 `ready`。供桌面账户菜单与
@@ -34,15 +30,10 @@ const { isAdmin, subject } = useAuth()
 // details 既不在选项点击后收起,也无外部点击关闭——会悬浮在打开的 sheet/页面之上。
 // 三个浮层共用一个文档级 pointerdown 监听,任一打开即挂载、全部关闭即卸载。
 const actionsEl = ref<HTMLDetailsElement | null>(null)
-const licenseEl = ref<HTMLDetailsElement | null>(null)
 const accountEl = ref<HTMLDetailsElement | null>(null)
 
 function closeActions(): void {
   if (actionsEl.value) actionsEl.value.open = false
-}
-
-function closeLicense(): void {
-  if (licenseEl.value) licenseEl.value.open = false
 }
 
 function closeAccount(): void {
@@ -52,12 +43,11 @@ function closeAccount(): void {
 function onDocumentPointerDown(event: PointerEvent): void {
   const target = event.target as Node
   if (actionsEl.value?.open && !actionsEl.value.contains(target)) closeActions()
-  if (licenseEl.value?.open && !licenseEl.value.contains(target)) closeLicense()
   if (accountEl.value?.open && !accountEl.value.contains(target)) closeAccount()
 }
 
 function syncOutsideListener(): void {
-  if (actionsEl.value?.open || licenseEl.value?.open || accountEl.value?.open) {
+  if (actionsEl.value?.open || accountEl.value?.open) {
     document.addEventListener('pointerdown', onDocumentPointerDown)
   } else {
     document.removeEventListener('pointerdown', onDocumentPointerDown)
@@ -79,12 +69,6 @@ function chooseLogout(): void {
   closeActions()
   closeAccount()
   emit('logout')
-}
-// 触发激活流程:收起两个浮层(桌面许可下拉 / 移动操作菜单皆可承载该入口)再上抛。
-function chooseActivate(): void {
-  closeLicense()
-  closeActions()
-  emit('activate-license')
 }
 
 interface HeaderTab {
@@ -110,12 +94,6 @@ const props = defineProps<{
   /** Show the logout button. Only true once authenticated (ADR-0023); when auth
    *  is disabled this stays false so the no-auth UI is unchanged. */
   showLogout?: boolean
-  /** Current product-license status for the badge/menu (PL-R7). Null when not yet known. */
-  license?: LicenseStatus | null
-  /** A manual term refresh (`refresh-license`) is in flight; disables the control + shows loading (PL-R7). */
-  licenseRefreshing?: boolean
-  /** Inline error shown beside the refresh control when the last manual sync failed (PL-R7). */
-  licenseRefreshError?: string | null
   /** Server-detected update-availability snapshot; drives the header upgrade hint. */
   updateStatus?: UpdateStatus | null
 }>()
@@ -129,67 +107,7 @@ const emit = defineEmits<{
   'remove-workspace': [path: string]
   'update:viewMode': [mode: 'workspace' | 'workcenter']
   logout: []
-  'activate-license': []
-  'refresh-license': []
 }>()
-
-function licenseBadgeKey(state: string): LocaleKey {
-  if (state === 'active') return 'license.badge.active' as LocaleKey
-  if (state === 'grace') return 'license.badge.grace' as LocaleKey
-  if (state === 'expired') return 'license.badge.expired' as LocaleKey
-  if (state === 'unactivated') return 'license.badge.unactivated' as LocaleKey
-  if (state === 'disabled') return 'license.badge.disabled' as LocaleKey
-  return 'license.badge.unactivated' as LocaleKey
-}
-
-function licensePlanKey(plan: string | undefined): LocaleKey {
-  if (plan === 'free') return 'license.plan.free' as LocaleKey
-  if (plan === 'enterprise') return 'license.plan.enterprise' as LocaleKey
-  return 'license.plan.paid' as LocaleKey
-}
-
-const licensePlanText = computed<string>(() =>
-  props.license ? t(licensePlanKey(props.license.plan)) : '',
-)
-
-// 已激活态(entitled):active/grace。决定许可状态控件渲染哪一支——
-// 已激活 → 图标 + 信息下拉;未激活/过期/停用 → 红色带下划线文字 + 激活下拉。
-const licenseEntitled = computed<boolean>(() => {
-  const s = props.license?.state
-  return s === 'active' || s === 'grace'
-})
-
-// 有效期/到期日(PL-R7):仅 entitled(active/grace)且 termEnd 已知(>0)时展示;
-// 过期/未激活/被禁用态沿用 badge 状态文案,不渲染日期。termEnd 是 unix 秒。
-const licenseTermText = computed<string>(() => {
-  const lic = props.license
-  if (!lic) return ''
-  if (lic.state !== 'active' && lic.state !== 'grace') return ''
-  if (!lic.termEnd || lic.termEnd <= 0) return ''
-  const date = d(new Date(lic.termEnd * 1000), 'date')
-  return t('license.badge.validUntil' as LocaleKey, { date })
-})
-
-// 手动刷新有效期(PL-R7):点击触发一次到 LS 的即时 heartbeat 同步 termEnd。
-// 节流仅前端:在途(licenseRefreshing)期间禁用 + 最小冷却间隔防连点;失败由父级
-// 经 licenseRefreshError 下传,在按钮旁 inline 展示。
-const REFRESH_COOLDOWN_MS = 3000
-const refreshCooldown = ref(false)
-let refreshCooldownTimer: ReturnType<typeof setTimeout> | undefined
-const refreshDisabled = computed<boolean>(
-  () => props.licenseRefreshing === true || refreshCooldown.value,
-)
-function onRefreshLicense(): void {
-  if (refreshDisabled.value) return
-  emit('refresh-license')
-  refreshCooldown.value = true
-  refreshCooldownTimer = setTimeout(() => {
-    refreshCooldown.value = false
-  }, REFRESH_COOLDOWN_MS)
-}
-onBeforeUnmount(() => {
-  if (refreshCooldownTimer) clearTimeout(refreshCooldownTimer)
-})
 
 // 新版本提示:仅当服务端判定"有更新"且已知最新版本号时渲染;无更新 / 未知 / 检查失败
 // 都表现为不渲染(available=false 或 latestVersion 为空)。文案走 i18n,点击外链到升级文档。
@@ -338,10 +256,9 @@ function selectTab(tab: HeaderTab): void {
         </button>
       </nav>
 
-      <!-- Right area: update hint + settings + account + status + license -->
+      <!-- Right area: update hint + settings + account + status -->
       <div class="header-right">
-        <!-- 新版本提示(独立控件,不复用 license 状态语义):仅"有更新"时渲染,
-             点击新标签页跳转升级文档。 -->
+        <!-- 新版本提示(独立控件):仅"有更新"时渲染,点击新标签页跳转升级文档。 -->
         <a
           v-if="showUpdate"
           class="update-hint"
@@ -396,95 +313,6 @@ function selectTab(tab: HeaderTab): void {
         <span class="status" :class="status === 'open' ? 'ok' : 'err'">
           {{ status }}
         </span>
-
-        <!-- Product-license 状态控件(PL-R7),受控 <details> 下拉。位于连接状态右侧、
-             顶栏最右:
-             · 已激活(active/grace)→ ✓ 图标(按 state 着色),下拉显示许可密钥 + 有效期
-             · 未激活/过期/停用 → 圆圈内红色感叹号图标,下拉内「激活许可」按钮触发激活流程
-             · 下拉底部恒有「使用手册」外链(仅依赖 license 已知,不受 entitled 控制) -->
-        <details v-if="license" ref="licenseEl" class="license-menu" @toggle="syncOutsideListener">
-          <summary
-            class="license-trigger"
-            :class="licenseEntitled ? 'entitled' : 'unentitled'"
-            :aria-label="t(licenseBadgeKey(license.state))"
-          >
-            <span
-              v-if="licenseEntitled"
-              class="license-icon"
-              :class="license.state"
-              :title="t(licenseBadgeKey(license.state))"
-              aria-hidden="true"
-              >✓</span
-            >
-            <span
-              v-else
-              class="license-icon license-warn"
-              :title="t(licenseBadgeKey(license.state))"
-              aria-hidden="true"
-              >!</span
-            >
-            <span v-if="license.plan === 'free'" class="license-plan">{{ licensePlanText }}</span>
-          </summary>
-          <div class="license-dropdown">
-            <template v-if="licenseEntitled">
-              <div class="license-info-row">{{ licensePlanText }}</div>
-              <!-- 已激活:展示有效期(.license-term)+ 右侧密钥按钮(跳转 c3 控制台查看/续期);
-                   term 未知(termEnd=0)时回退为状态文案。 -->
-              <div v-if="licenseTermText" class="license-info-row license-term">
-                <span class="license-term-text">{{ licenseTermText }}</span>
-                <button
-                  type="button"
-                  class="license-refresh-btn"
-                  :disabled="refreshDisabled"
-                  :title="t('license.refresh.label' as LocaleKey)"
-                  :aria-label="t('license.refresh.label' as LocaleKey)"
-                  @click="onRefreshLicense"
-                >
-                  <span class="license-refresh-icon" :class="{ spinning: licenseRefreshing }"
-                    >⟳</span
-                  >
-                </button>
-                <a
-                  class="license-key-btn"
-                  :href="LICENSE_CONSOLE_URL"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  :title="t('license.badge.manageKey' as LocaleKey)"
-                  :aria-label="t('license.badge.manageKey' as LocaleKey)"
-                  @click="closeLicense"
-                  >🔑</a
-                >
-              </div>
-              <div v-else class="license-info-row">{{ t(licenseBadgeKey(license.state)) }}</div>
-              <!-- 手动刷新失败(网络 / LS 5xx,heartbeat fail-soft 不抛)→ 按钮旁 inline 提示,
-                   不改变已缓存有效期(PL-R7)。 -->
-              <p
-                v-if="licenseRefreshError"
-                class="license-refresh-error"
-                role="alert"
-                :title="licenseRefreshError"
-              >
-                {{ licenseRefreshError }}
-              </p>
-            </template>
-            <button v-else class="license-activate-btn" @click="chooseActivate">
-              {{ t('license.activate.button') }}
-            </button>
-            <!-- 使用手册外链:紧跟有效期/状态或激活按钮之后,只依赖 license 已知,
-                 未激活态也可查手册。点击新标签页打开产品文档并收起下拉。 -->
-            <a
-              class="license-manual"
-              :href="USER_MANUAL_URL"
-              target="_blank"
-              rel="noopener noreferrer"
-              :title="t('license.manual.tooltip' as LocaleKey)"
-              @click="closeLicense"
-            >
-              <span class="license-manual-icon" aria-hidden="true">📖</span>
-              <span class="license-manual-text">{{ t('license.manual.label' as LocaleKey) }}</span>
-            </a>
-          </div>
-        </details>
       </div>
     </div>
 
@@ -589,30 +417,6 @@ function selectTab(tab: HeaderTab): void {
           <button v-if="showLogout" class="mobile-action-item" @click="chooseLogout">
             {{ t('auth.logout.label') }}
           </button>
-          <!-- 许可状态(PL-R7):移动端并入操作菜单——已激活展示密钥/有效期(只读),
-               未激活/过期/停用为红色「激活」项,点击触发激活流程并收起菜单。 -->
-          <template v-if="license">
-            <button
-              v-if="!licenseEntitled"
-              class="mobile-action-item license-needs"
-              @click="chooseActivate"
-            >
-              {{ t(licenseBadgeKey(license.state)) }} · {{ t('license.activate.button') }}
-            </button>
-            <span v-else class="mobile-action-item license-info-static">
-              ✓ {{ licensePlanText }} · {{ licenseTermText || t(licenseBadgeKey(license.state)) }}
-            </span>
-            <!-- 使用手册外链(移动端,与桌面对等):license 已知即渲染,点击跳转并收起菜单。 -->
-            <a
-              class="mobile-action-item license-manual-mobile"
-              :href="USER_MANUAL_URL"
-              target="_blank"
-              rel="noopener noreferrer"
-              @click="closeActions"
-            >
-              📖 {{ t('license.manual.label' as LocaleKey) }}
-            </a>
-          </template>
           <span class="status mobile-status" :class="status === 'open' ? 'ok' : 'err'">
             {{ status }}
           </span>
@@ -709,7 +513,7 @@ function selectTab(tab: HeaderTab): void {
   border-radius: 8px;
 }
 
-/* 新版本提示(独立控件):蓝底胶囊外链,与 license 徽标视觉区分 */
+/* 新版本提示(独立控件):蓝底胶囊外链 */
 .update-hint {
   display: inline-flex;
   align-items: center;
@@ -727,187 +531,6 @@ function selectTab(tab: HeaderTab): void {
 }
 .update-hint:hover {
   opacity: 0.85;
-}
-
-/* Product-license 状态控件(PL-R7):受控 <details> 下拉 */
-.license-menu {
-  position: relative;
-}
-.license-trigger {
-  list-style: none;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  user-select: none;
-}
-.license-trigger::-webkit-details-marker {
-  display: none;
-}
-/* 未激活/过期/停用:红色带下划线文字 */
-.license-trigger .license-needs {
-  font-size: var(--fs-caption);
-  color: var(--c-red);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  white-space: nowrap;
-}
-/* 已激活:体现"已激活"概念的 ✓ 图标,按 state 着色 */
-.license-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1px solid currentColor;
-  font-size: 11px;
-  line-height: 1;
-}
-.license-icon.active {
-  color: var(--c-green);
-}
-.license-icon.grace {
-  color: var(--c-yellow);
-}
-.license-plan {
-  font-size: var(--fs-caption);
-  font-weight: 600;
-  color: var(--c-text);
-  white-space: nowrap;
-}
-/* 未激活/过期/停用:圆圈内红色感叹号 */
-.license-icon.license-warn {
-  color: var(--c-red);
-  font-weight: 700;
-}
-
-.license-dropdown {
-  position: absolute;
-  right: 0;
-  top: calc(100% + var(--sp-2));
-  z-index: 120;
-  min-width: 220px;
-  max-width: 320px;
-  padding: var(--sp-2);
-  display: grid;
-  gap: var(--sp-1);
-  background: var(--c-panel);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-md);
-}
-.license-info-row {
-  font-size: var(--fs-caption);
-  color: var(--c-text);
-}
-.license-term {
-  color: var(--c-text-muted);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-}
-.license-term-text {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.license-key-btn {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  font-size: var(--fs-caption);
-  line-height: 1;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease-standard);
-}
-.license-key-btn:hover {
-  background: var(--c-card);
-}
-/* 手动刷新有效期按钮(PL-R7):与密钥按钮同尺寸,在途旋转、禁用降透明 */
-.license-refresh-btn {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  font-size: var(--fs-caption);
-  line-height: 1;
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease-standard);
-}
-.license-refresh-btn:hover:not(:disabled) {
-  background: var(--c-card);
-}
-.license-refresh-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.license-refresh-icon {
-  display: inline-block;
-}
-.license-refresh-icon.spinning {
-  animation: license-refresh-spin 0.8s linear infinite;
-}
-@keyframes license-refresh-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.license-refresh-error {
-  margin: 0;
-  font-size: var(--fs-caption);
-  color: var(--c-red);
-}
-.license-activate-btn {
-  width: 100%;
-  min-height: 32px;
-  padding: 0 var(--sp-3);
-  border: 1px solid var(--c-red);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--c-red);
-  font-size: var(--fs-caption);
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease-standard);
-}
-.license-activate-btn:hover {
-  background: var(--c-card);
-}
-
-/* 使用手册外链(桌面下拉):图标 + 文字一行,弱化为链接样式,与密钥/激活按钮区分 */
-.license-manual {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: var(--sp-1) var(--sp-1);
-  font-size: var(--fs-caption);
-  color: var(--c-text);
-  text-decoration: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease-standard);
-}
-.license-manual:hover {
-  background: var(--c-card);
-}
-.license-manual-icon {
-  flex: 0 0 auto;
-  line-height: 1;
-}
-.license-manual-text {
-  min-width: 0;
 }
 
 /* 账户菜单(ADR-0023):受控 <details> 下拉,人形图标触发 */
@@ -1126,25 +749,6 @@ function selectTab(tab: HeaderTab): void {
     display: block;
     color: var(--c-primary);
     font-weight: 600;
-    text-decoration: none;
-  }
-
-  /* 移动操作菜单内的许可项(PL-R7) */
-  .mobile-action-item.license-needs {
-    color: var(--c-red);
-    text-decoration: underline;
-    text-underline-offset: 2px;
-  }
-  .mobile-action-item.license-info-static {
-    color: var(--c-text-muted);
-    white-space: normal;
-    word-break: break-all;
-    cursor: default;
-  }
-  /* 移动操作菜单内的使用手册外链:与桌面对等,普通链接样式 */
-  .mobile-action-item.license-manual-mobile {
-    display: block;
-    color: var(--c-text);
     text-decoration: none;
   }
   /* 移动操作菜单内的登录名(ADR-0023):静态只读,与登出项区分 */

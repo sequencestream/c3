@@ -29,7 +29,6 @@ import type {
   Intent,
   IntentLog,
   IntentSessionInfo,
-  LicenseStatus,
   UpdateStatus,
   PromptImage,
   WorkspaceSetting as WorkspaceSettingType,
@@ -290,18 +289,6 @@ export function createState(deps: StateDeps) {
   // Available commands/skills for the active session's cwd (fetched lazily on the
   // first `/`). Cleared on session switch.
   const availableCommands = ref<SlashCommandInfo[]>([])
-
-  // ---- Product license (ADR-0026) ----
-  // Current entitlement state for the badge/menu (null until the first
-  // `license_state`); the activation URL is surfaced as a manual fallback when
-  // a browser could not be opened by the server.
-  const license = ref<LicenseStatus | null>(null)
-  const licenseActivationUrl = ref<string | null>(null)
-  // Manual term refresh (PL-R7): an in-flight flag (disables the control while a
-  // `refresh_license` round-trip is pending) and an inline error shown beside the
-  // refresh control when the heartbeat sync fails (cleared on the next attempt).
-  const licenseRefreshing = ref(false)
-  const licenseRefreshError = ref<string | null>(null)
 
   // ---- Update availability ----
   // Server-detected "is a newer c3 release available?" snapshot (seeded on `ready`,
@@ -695,10 +682,6 @@ export function createState(deps: StateDeps) {
     sideEffectPendingBySession,
     currentAgentIndexBySession,
     availableCommands,
-    license,
-    licenseActivationUrl,
-    licenseRefreshing,
-    licenseRefreshError,
     updateStatus,
     viewMode,
     savedTab,

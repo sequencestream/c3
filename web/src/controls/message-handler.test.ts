@@ -725,10 +725,6 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       skillApprovalRequest: ref<
         import('@/components/SkillApprovalModal/SkillApprovalModal.vue').ApprovalRequest | null
       >(null),
-      license: ref<import('@ccc/shared/protocol').LicenseStatus | null>(null),
-      licenseActivationUrl: ref<string | null>(null),
-      licenseRefreshing: ref(false),
-      licenseRefreshError: ref<string | null>(null),
       updateStatus: ref<import('@ccc/shared/protocol').UpdateStatus>({
         available: false,
         latestVersion: null,

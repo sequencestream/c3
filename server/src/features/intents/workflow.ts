@@ -63,9 +63,7 @@ import {
   getGitBranchMode,
   getSddEnabled,
 } from '../../kernel/config/index.js'
-import { activeWorktreeRuntimeCount, ensureRuntime, getRuntime } from '../../runs.js'
-import { currentLicenseStatus } from '../license/store.js'
-import { currentPlanLimits } from '../license/plan-limits.js'
+import { ensureRuntime, getRuntime } from '../../runs.js'
 import {
   createWorktree,
   getWorktreePath,
@@ -512,13 +510,6 @@ class WorkflowController {
     const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
     let effectiveCwd: string
     if (getGitBranchMode(this.workspacePath) === 'worktree') {
-      const limits = currentPlanLimits(currentLicenseStatus())
-      if (
-        limits.activeWorktrees !== null &&
-        activeWorktreeRuntimeCount() >= limits.activeWorktrees
-      ) {
-        throw new Error(`free plan allows at most ${limits.activeWorktrees} active worktrees`)
-      }
       const wt = createWorktree(
         this.workspacePath,
         req.id,

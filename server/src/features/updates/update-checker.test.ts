@@ -35,7 +35,7 @@ describe('runUpdateCheckOnce — version comparison', () => {
 
   it('remote higher than local → available=true with latestVersion + checkedAt', async () => {
     const snap = await runUpdateCheckOnce({
-      baseUrl: BASE,
+      url: BASE,
       fetchImpl: fetchReturning(okJson({ version: `v${HIGHER}`, batch: 'b1' })),
       now: 1234,
     })
@@ -46,7 +46,7 @@ describe('runUpdateCheckOnce — version comparison', () => {
 
   it('normalizes a leading `v` off the remote version', async () => {
     const snap = await runUpdateCheckOnce({
-      baseUrl: BASE,
+      url: BASE,
       fetchImpl: fetchReturning(okJson({ version: 'v999.0.0' })),
       now: 1,
     })
@@ -56,7 +56,7 @@ describe('runUpdateCheckOnce — version comparison', () => {
   it('remote lower than local → available=false (still records the version)', async () => {
     expect(compareVersions(LOWER, VERSION)).toBeLessThan(0) // sanity
     const snap = await runUpdateCheckOnce({
-      baseUrl: BASE,
+      url: BASE,
       fetchImpl: fetchReturning(okJson({ version: LOWER })),
       now: 7,
     })
@@ -66,7 +66,7 @@ describe('runUpdateCheckOnce — version comparison', () => {
 
   it('remote equal to local → available=false', async () => {
     const snap = await runUpdateCheckOnce({
-      baseUrl: BASE,
+      url: BASE,
       fetchImpl: fetchReturning(okJson({ version: VERSION })),
       now: 7,
     })
@@ -80,7 +80,7 @@ describe('runUpdateCheckOnce — fail-soft', () => {
   // Seed a successful "available" snapshot, then assert each failure path keeps it.
   async function seedAvailable(): Promise<void> {
     await runUpdateCheckOnce({
-      baseUrl: BASE,
+      url: BASE,
       fetchImpl: fetchReturning(okJson({ version: `v${HIGHER}` })),
       now: 100,
     })
@@ -89,7 +89,7 @@ describe('runUpdateCheckOnce — fail-soft', () => {
   it('network error → does not throw, preserves last snapshot', async () => {
     await seedAvailable()
     const snap = await runUpdateCheckOnce({
-      baseUrl: BASE,
+      url: BASE,
       fetchImpl: fetchReturning({ throws: new Error('ECONNREFUSED') }),
     })
     expect(snap).toEqual({ available: true, latestVersion: HIGHER, checkedAt: 100 })
@@ -98,7 +98,7 @@ describe('runUpdateCheckOnce — fail-soft', () => {
   it('non-2xx → does not throw, preserves last snapshot', async () => {
     await seedAvailable()
     const snap = await runUpdateCheckOnce({
-      baseUrl: BASE,
+      url: BASE,
       fetchImpl: fetchReturning({ ok: false, status: 503 }),
     })
     expect(snap.available).toBe(true)
@@ -108,7 +108,7 @@ describe('runUpdateCheckOnce — fail-soft', () => {
   it('malformed JSON → does not throw, preserves last snapshot', async () => {
     await seedAvailable()
     const snap = await runUpdateCheckOnce({
-      baseUrl: BASE,
+      url: BASE,
       fetchImpl: fetchReturning({
         ok: true,
         status: 200,
@@ -124,7 +124,7 @@ describe('runUpdateCheckOnce — fail-soft', () => {
     await seedAvailable()
     for (const body of [{}, { version: '' }, { version: '   ' }, { version: 42 }]) {
       const snap = await runUpdateCheckOnce({
-        baseUrl: BASE,
+        url: BASE,
         fetchImpl: fetchReturning(okJson(body)),
       })
       expect(snap).toEqual({ available: true, latestVersion: HIGHER, checkedAt: 100 })
@@ -133,7 +133,7 @@ describe('runUpdateCheckOnce — fail-soft', () => {
 
   it('failure from the initial (unknown) snapshot leaves it unknown+invisible', async () => {
     const snap = await runUpdateCheckOnce({
-      baseUrl: BASE,
+      url: BASE,
       fetchImpl: fetchReturning({ ok: false, status: 500 }),
     })
     expect(snap).toEqual({ available: false, latestVersion: null, checkedAt: null })
@@ -153,7 +153,7 @@ describe('startUpdateCheckScheduler — timer loop', () => {
   it('runs once after the initial delay, then repeats on the fixed interval', async () => {
     const fetchImpl = fetchReturning(okJson({ version: `v${HIGHER}` }))
     const onChange = vi.fn()
-    startUpdateCheckScheduler({ baseUrl: BASE, fetchImpl, onChange })
+    startUpdateCheckScheduler({ url: BASE, fetchImpl, onChange })
 
     // Nothing before the initial delay.
     expect(fetchImpl).not.toHaveBeenCalled()
@@ -171,7 +171,7 @@ describe('startUpdateCheckScheduler — timer loop', () => {
 
   it('stopUpdateCheckScheduler clears the timer (no further checks)', async () => {
     const fetchImpl = fetchReturning(okJson({ version: `v${HIGHER}` }))
-    startUpdateCheckScheduler({ baseUrl: BASE, fetchImpl })
+    startUpdateCheckScheduler({ url: BASE, fetchImpl })
     await vi.advanceTimersByTimeAsync(5000)
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     stopUpdateCheckScheduler()
@@ -181,8 +181,8 @@ describe('startUpdateCheckScheduler — timer loop', () => {
 
   it('repeated start does not multiplex loops (a prior loop is stopped first)', async () => {
     const fetchImpl = fetchReturning(okJson({ version: `v${HIGHER}` }))
-    startUpdateCheckScheduler({ baseUrl: BASE, fetchImpl })
-    startUpdateCheckScheduler({ baseUrl: BASE, fetchImpl })
+    startUpdateCheckScheduler({ url: BASE, fetchImpl })
+    startUpdateCheckScheduler({ url: BASE, fetchImpl })
     await vi.advanceTimersByTimeAsync(5000)
     // Only one loop is live → exactly one check, not two.
     expect(fetchImpl).toHaveBeenCalledTimes(1)

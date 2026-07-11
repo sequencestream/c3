@@ -5,7 +5,6 @@ packages:
 allowBuilds:
   cpu-features: true
   esbuild: true
-  javascript-obfuscator: true
   protobufjs: true
   ssh2: true
 minimumReleaseAgeExclude:

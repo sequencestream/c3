@@ -121,15 +121,6 @@ c3
 │       ├── 默认模式                              # defaultMode 按 vendor 分组(Record<VendorId, ModeToken>)
 │       ├── vendor CLI 多版本生效选择             # 下载目标恒取最新兼容版,生效版可从已安装历史版单选(系统设置面板);env override 仍最高优先,host PATH 仅降级回退
 │       └── 外部技能安装                          # 显式 install_skill 到 .claude/skills 与 .agents/skills
-│
-└── commerce — 产品授权/许可
-    │
-    └── product-license 产品许可                  # 管控 c3 安装是否有权创建新工作(权威在独立 license-server)
-        ├── 激活                                  # 把 license 绑定到本安装
-        ├── 心跳                                  # 周期性向 license-server 确认权益
-        ├── 离线宽限                              # 断网后 30 分钟宽限窗口内仍可用
-        ├── 离线验证                              # 离线校验 Ed25519 签名的权益凭证
-        └── 新会话门控                            # 无权益时阻断新会话创建
 ```
 
 ## 维护

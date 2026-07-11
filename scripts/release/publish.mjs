@@ -1,11 +1,11 @@
-// release:publish (release 3/7) — sign the built artifacts + cut a GitHub Release.
+// release:publish (release 3/7) — checksum the built artifacts + cut a GitHub Release.
 //
 // Operates on an already-built dist/ (run `pnpm release:build` first; manifest.json drives
-// the artifact list). Steps: warn on dirty tree → sign (SHA256SUMS + .sha256 + .minisig) →
+// the artifact list). Steps: warn on dirty tree → checksum (SHA256SUMS + .sha256) →
 // create the git tag → `gh release create` with every artifact + sidecar + notes.
 //
 // `--dry-run` REHEARSES: it prints the full plan (tag, files, notes) and executes nothing
-// with an external or irreversible effect — no signing, no tag, no `gh`. This is what makes
+// with an external or irreversible effect — no tag, no `gh`. This is what makes
 // `release:publish --dry-run` safe to run anywhere.
 //
 //   node scripts/release/publish.mjs [--dry-run]
@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { artifactsFromManifest, signArtifacts, secretFromEnv } from './sign.mjs'
+import { artifactsFromManifest, signArtifacts } from './sign.mjs'
 import { buildNotes } from './notes.mjs'
 import { verifyDist } from './postgate.mjs'
 
@@ -41,28 +41,21 @@ export async function publish({ dryRun = false, noPublish = false, manifestPath:
   }
   const { version, artifacts } = artifactsFromManifest(manifestPath)
   const { tag, notes } = buildNotes()
-  const hasKey = Boolean(secretFromEnv())
 
-  // Upload set = each artifact + its sidecars + the aggregate SHA256SUMS(.minisig).
+  // Upload set = each artifact + its .sha256 sidecar + the aggregate SHA256SUMS.
   const uploads = []
   for (const a of artifacts) {
     uploads.push(a.name, `${a.name}.sha256`)
-    if (hasKey) uploads.push(`${a.name}.minisig`)
   }
   uploads.push('SHA256SUMS')
-  if (hasKey) uploads.push('SHA256SUMS.minisig')
 
   const dirty = (git(['status', '--porcelain']).stdout || '').trim()
 
-  console.log(
-    `[publish] tag ${tag} — ${artifacts.length} artifact(s), minisign ${hasKey ? 'ON' : 'OFF (no key)'}`,
-  )
+  console.log(`[publish] tag ${tag} — ${artifacts.length} artifact(s)`)
   if (dirty)
     console.warn('[publish] ⚠ working tree is dirty — release should be cut from a clean tree')
   console.log('[publish] plan:')
-  console.log(
-    `  1. sign        → SHA256SUMS + per-artifact .sha256${hasKey ? ' + .minisig' : ' (no key → skip .minisig)'}`,
-  )
+  console.log('  1. checksum    → SHA256SUMS + per-artifact .sha256')
   console.log(
     '  1b. verify     → manifest ↔ SHA256SUMS ↔ on-disk + P0 complete (abort on mismatch)',
   )
@@ -71,32 +64,25 @@ export async function publish({ dryRun = false, noPublish = false, manifestPath:
     console.log(`  3. gh release  → gh release create ${tag} (${uploads.length} files)`)
     for (const u of uploads) console.log(`       upload ${u}`)
   } else {
-    console.log('  3. gh release  → skipped (--no-publish: sign locally only)')
+    console.log('  3. gh release  → skipped (--no-publish: checksum locally only)')
   }
 
   if (dryRun) {
-    console.log('[publish] --dry-run: nothing signed, no tag, no GitHub Release created.')
+    console.log('[publish] --dry-run: nothing written, no tag, no GitHub Release created.')
     return { dryRun: true, tag, uploads }
   }
 
-  if (!hasKey) {
-    console.warn(
-      '[publish] ⚠ C3_MINISIGN_SECRET_KEY[_FILE] not set — publishing WITHOUT minisign signatures.',
-    )
-  }
-
-  // 1. sign
-  console.log('\n[publish] signing artifacts…')
+  // 1. checksum
+  console.log('\n[publish] hashing artifacts…')
   signArtifacts({
     artifacts,
     outDir: dirname(manifestPath),
     version,
-    secretKeyB64: secretFromEnv(),
     log: (m) => console.log(m),
   })
 
   // 1b. final check (release 5/7) — manifest ↔ SHA256SUMS ↔ on-disk + P0 complete.
-  //     Runs after signing (needs SHA256SUMS) and before anything irreversible.
+  //     Runs after checksumming (needs SHA256SUMS) and before anything irreversible.
   console.log('\n[publish] verify-dist final check…')
   try {
     verifyDist({ manifestPath, log: (m) => console.log(m) })
@@ -107,7 +93,7 @@ export async function publish({ dryRun = false, noPublish = false, manifestPath:
   }
 
   if (noPublish) {
-    console.log('[publish] --no-publish: signed + verified locally; no tag, no GitHub Release.')
+    console.log('[publish] --no-publish: hashed + verified locally; no tag, no GitHub Release.')
     return { dryRun: false, noPublish: true, tag, uploads }
   }
 

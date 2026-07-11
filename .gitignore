@@ -3,10 +3,6 @@ changes/
 dist/
 tmp/
 
-# Source maps + scratch stage dir for the standard harden tier obfuscation pass
-# (release 7/7). Local-only; never uploaded to GitHub Releases.
-dist/maps/
-dist/.obf-stage/
 scripts/i18n/extract.candidates.json
 scripts/i18n/code-key.map.json
 

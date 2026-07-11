@@ -21,7 +21,6 @@
 | [讨论 → 意图](flow-discussion-to-intent.md)                     | 对一个目标进行调研,由组织者主持的圆桌讨论得出结论,再转化为多个意图          | discussion · agent-config · intent-management                                            |
 | [自动化执行](flow-automation-execution.md)                      | cron/事件触发器触发一个命令或 LLM-prompt 任务,以某个执行身份运行;结果被记录 | automations · session-registry · agent-session                                           |
 | [auth 登录门](flow-auth-login.md)                               | 一个连接在驱动智能体之前先完成身份认证(这是对外暴露到网络的前置条件)        | auth · web-console · system-config                                                       |
-| [激活与授权](flow-activation-and-entitlement.md)                | 用户购买并激活；心跳保持安装持续获得授权；失效只会门控新会话的创建          | product-license · web-console · session-registry · license-server                        |
 
 ## 阅读约定
 

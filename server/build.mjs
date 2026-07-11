@@ -7,9 +7,8 @@ const outDir = resolve(import.meta.dirname, 'dist')
 rmSync(outDir, { recursive: true, force: true })
 mkdirSync(outDir, { recursive: true })
 
-// Version injection (release 2/7). This is the node bundle (`pnpm start`); harden
-// tiers govern only the native binaries (release:build), so only the version defines
-// apply here — minify/sourcemap are left as-is.
+// Version injection (release 2/7). This is the node bundle (`pnpm start`); only the
+// version defines apply here — minify/sourcemap are left as-is.
 await build({
   entryPoints: [resolve(import.meta.dirname, 'src/cli.ts')],
   bundle: true,

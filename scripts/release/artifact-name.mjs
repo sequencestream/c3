@@ -7,8 +7,8 @@
 //      consumer's `c3`, period. Multiple platforms coexist in a multi-target
 //      build by being placed in per-target subdirs under `dist/<target>/c3`.
 //   2. The PACKAGE (`c3-v{ver}-{target}{.ext}`) is what gets uploaded to the
-//      GitHub Release. It bundles the binary + its inner sidecars
-//      (`c3.sha256`, `c3.minisig`) into a single distributable archive; the
+//      GitHub Release. It bundles the binary + its inner sidecar
+//      (`c3.sha256`) into a single distributable archive; the
 //      version and platform info live ONLY in the package filename.
 //
 // `pnpm binary` (self-use quickcut) keeps the un-versioned `dist/<target>/c3`
@@ -22,7 +22,7 @@
 //   binary:  dist/macos-arm64/c3
 //   package: c3-v0.2.0-macos-arm64.tar.gz
 //   package: c3-v0.2.0-windows-x64.zip
-//   inner:   c3-v0.2.0-macos-arm64.tar.gz → c3, c3.sha256, c3.minisig
+//   inner:   c3-v0.2.0-macos-arm64.tar.gz → c3, c3.sha256
 
 /** Normalize a version string: strip a single leading `v`. */
 export function normalizeVersion(version) {

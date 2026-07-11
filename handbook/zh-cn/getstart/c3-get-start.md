@@ -18,8 +18,8 @@
 
 > **一句话总结：** 以前你用终端跟 Claude Code 对话，c3 把这个体验搬到了浏览器里，同时让 AI 编码变得更可控、更工程化。
 
-![c3 智能体界面](../../../images/c3-agents.png)
-![c3 会话界面](../../../images/c3-sessions.png)
+![c3 智能体界面](images/c3-agents.png)
+![c3 会话界面](images/c3-sessions.png)
 
 ---
 

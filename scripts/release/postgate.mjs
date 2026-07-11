@@ -1,9 +1,9 @@
 // Publish final check (release 5/7) — the last gate before tag + GitHub Release.
 //
-// After signing, prove the distribution set is internally consistent and complete
+// After checksumming, prove the distribution set is internally consistent and complete
 // BEFORE anything irreversible (git tag, `gh release create`):
 //   1. re-hash every artifact and match manifest.artifacts[].sha256   (no post-build drift)
-//   2. SHA256SUMS ↔ manifest agree line-for-line                       (signer saw the same bytes)
+//   2. SHA256SUMS ↔ manifest agree line-for-line                       (same bytes throughout)
 //   3. every P0 target is present in the manifest                      (no half-baked release)
 //
 // Any mismatch / missing P0 throws → publish aborts, no tag, no upload.
@@ -67,9 +67,10 @@ export function verifyDist({ manifestPath, log = () => {} } = {}) {
   if (missing.length)
     throw new Error(`required target(s) missing from manifest: ${missing.join(', ')}`)
 
-  // 2. SHA256SUMS must exist (signing ran) and agree with the manifest.
+  // 2. SHA256SUMS must exist (checksumming ran) and agree with the manifest.
   const sumsPath = resolve(distDir, 'SHA256SUMS')
-  if (!existsSync(sumsPath)) throw new Error(`SHA256SUMS missing: ${sumsPath} — run sign first.`)
+  if (!existsSync(sumsPath))
+    throw new Error(`SHA256SUMS missing: ${sumsPath} — run checksum first.`)
   const sums = parseSha256Sums(readFileSync(sumsPath, 'utf-8'))
 
   for (const a of manifest.artifacts) {

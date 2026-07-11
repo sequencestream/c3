@@ -14,7 +14,7 @@ export type DateStyleName = 'short' | 'date' | 'full' | 'datetime'
 export const DATE_FORMATS: Record<DateStyleName, Intl.DateTimeFormatOptions> = {
   // 月/日两位 —— 列表行内日期前缀(原 MM/DD)。
   short: { month: '2-digit', day: '2-digit' },
-  // 年月日(无时间)—— license 有效期/到期日(PL-R7)。
+  // 年月日(无时间)—— 纯日期展示。
   date: { year: 'numeric', month: '2-digit', day: '2-digit' },
   // 年月日 时:分(24h)—— 需求元信息区(原手写 YYYY-MM-DD HH:mm)。
   full: {

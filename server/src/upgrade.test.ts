@@ -23,12 +23,11 @@ import {
   type ReleaseAsset,
   type UpgradeIo,
 } from './upgrade.js'
-// Cross-consistency anchors + signing helpers from the release scripts. These are
-// plain .mjs (no inline types); minimal `.d.mts` siblings declare the exports used
-// here so the assertions stay typed and cannot silently drift from the binary copy.
+// Cross-consistency anchors from the release scripts. These are plain .mjs (no inline
+// types); minimal `.d.mts` siblings declare the exports used here so the assertions stay
+// typed and cannot silently drift from the binary copy.
 import { packageName as scriptsPackageName } from '../../scripts/release/artifact-name.mjs'
 import { hostTarget as scriptsHostTarget } from '../../scripts/release/targets.mjs'
-import { generateKeypair, signContent } from '../../scripts/release/minisign.mjs'
 
 // ── Pure: version comparison ────────────────────────────────────────────────
 
@@ -91,15 +90,13 @@ describe('hostTarget / packageNameFor', () => {
 describe('selectAssets', () => {
   const assets: ReleaseAsset[] = [
     { name: 'c3-v1.0.0-macos-arm64.tar.gz', url: 'u/pkg' },
-    { name: 'c3-v1.0.0-macos-arm64.tar.gz.minisig', url: 'u/sig' },
     { name: 'c3-v1.0.0-macos-arm64.tar.gz.sha256', url: 'u/sha' },
     { name: 'c3-v1.0.0-linux-x64.tar.gz', url: 'u/other' },
   ]
 
-  it('selects the package and its sidecars by target', () => {
+  it('selects the package and its sha256 sidecar by target', () => {
     const sel = selectAssets(assets, 'c3-v1.0.0-macos-arm64.tar.gz')
     expect(sel.pkgUrl).toBe('u/pkg')
-    expect(sel.minisigUrl).toBe('u/sig')
     expect(sel.sha256Url).toBe('u/sha')
   })
 
@@ -113,12 +110,12 @@ describe('selectAssets', () => {
     }
   })
 
-  it('tolerates a missing .minisig at selection (rejected later by the trust gate)', () => {
+  it('tolerates a missing .sha256 at selection (checksum cross-check is skipped)', () => {
     const sel = selectAssets(
       [{ name: 'c3-v1.0.0-macos-arm64.tar.gz', url: 'u/pkg' }],
       'c3-v1.0.0-macos-arm64.tar.gz',
     )
-    expect(sel.minisigUrl).toBeUndefined()
+    expect(sel.sha256Url).toBeUndefined()
   })
 })
 
@@ -153,7 +150,6 @@ describe('buildDownloadUrls', () => {
     const base = `https://github.com/${DEFAULT_REPO}/releases/download/${tag}/${pkgName}`
     expect(sel.pkgName).toBe(pkgName)
     expect(sel.pkgUrl).toBe(base)
-    expect(sel.minisigUrl).toBe(`${base}.minisig`)
     expect(sel.sha256Url).toBe(`${base}.sha256`)
   })
   it('uses the raw published tag (not the normalized version) in the download path', () => {
@@ -405,19 +401,12 @@ function tagRedirect(repo: string, version: string): FakeResponse {
   return redirectResponse(`https://github.com/${repo}/releases/tag/v${version}`)
 }
 
-/** A signed release fixture: a fake package signed by a fresh test keypair. */
+/** A release fixture: a fake package plus its matching sha256 checksum line. */
 function signedRelease(version: string, target: string) {
-  const kp = generateKeypair({ comment: 'test' })
   const pkgName = packageNameFor(version, target)
   const pkgBytes = Buffer.from(`fake-archive-${version}-${target}`)
-  const sigText = signContent(pkgBytes, {
-    seed: kp.seed,
-    keyId: kp.keyId,
-    trustedComment: `c3 release v${version} ${target}`,
-    untrustedComment: `signed test`,
-  })
   const sha256Line = `${createHash('sha256').update(pkgBytes).digest('hex')}  ${pkgName}\n`
-  return { kp, pkgName, pkgBytes, sigText, sha256Line, target, version }
+  return { pkgName, pkgBytes, sha256Line, target, version }
 }
 
 function releaseJson(version: string, pkgName: string) {
@@ -425,7 +414,6 @@ function releaseJson(version: string, pkgName: string) {
     tag_name: `v${version}`,
     assets: [
       { name: pkgName, browser_download_url: 'https://dl/pkg' },
-      { name: `${pkgName}.minisig`, browser_download_url: 'https://dl/sig' },
       { name: `${pkgName}.sha256`, browser_download_url: 'https://dl/sha' },
     ],
   }
@@ -527,16 +515,15 @@ describe('runUpgrade (dev / source refusal)', () => {
   })
 })
 
-describe('runUpgrade (verification gate)', () => {
-  it('rejects and never replaces when the signature does not verify', async () => {
+describe('runUpgrade (integrity gate)', () => {
+  it('rejects and never replaces when the sha256 checksum does not match', async () => {
     const fx = signedRelease('2.0.0', 'macos-arm64')
-    // Tamper: serve a DIFFERENT public key than the one that signed it.
-    const wrongKey = generateKeypair({ comment: 'attacker' }).publicKeyText
+    // Tamper: serve a .sha256 line whose hash does not match the package bytes.
+    const wrongSha = `${'0'.repeat(64)}  ${fx.pkgName}\n`
     const fetchFn = vi.fn(async (url: string) => {
       if (url === `https://github.com/${DEFAULT_REPO}/releases/latest`)
         return tagRedirect(DEFAULT_REPO, '2.0.0')
-      if (url.endsWith('.minisig')) return bytesResponse(Buffer.from(fx.sigText))
-      if (url.endsWith('.sha256')) return bytesResponse(Buffer.from(fx.sha256Line))
+      if (url.endsWith('.sha256')) return bytesResponse(Buffer.from(wrongSha))
       return bytesResponse(fx.pkgBytes)
     })
     const replaceSpy = vi.fn()
@@ -544,7 +531,7 @@ describe('runUpgrade (verification gate)', () => {
       mkdtemp: () => mkdtempSync(join(tmpdir(), 'c3-verify-')),
       rename: replaceSpy,
       unpack: () => {
-        throw new Error('unpack must not run after a failed verify')
+        throw new Error('unpack must not run after a failed checksum')
       },
     })
     const code = await runUpgrade(
@@ -554,7 +541,6 @@ describe('runUpgrade (verification gate)', () => {
         platform: 'darwin',
         arch: 'arm64',
         execPath: '/usr/local/bin/c3',
-        publicKeyText: wrongKey,
         fetch: fetchFn as never,
         io,
         log: vi.fn(),
@@ -564,44 +550,15 @@ describe('runUpgrade (verification gate)', () => {
     expect(code).toBe(UPGRADE_EXIT.verifyFailed)
     expect(replaceSpy).not.toHaveBeenCalled()
   })
-
-  it('rejects when the .minisig sidecar is absent (no signature)', async () => {
-    const fx = signedRelease('2.0.0', 'macos-arm64')
-    const fetchFn = vi.fn(async (url: string) => {
-      if (url.includes('releases/latest')) {
-        return jsonResponse({
-          tag_name: 'v2.0.0',
-          assets: [{ name: fx.pkgName, browser_download_url: 'https://dl/pkg' }], // no .minisig
-        })
-      }
-      return bytesResponse(fx.pkgBytes)
-    })
-    const code = await runUpgrade(
-      {},
-      {
-        version: '1.0.0',
-        platform: 'darwin',
-        arch: 'arm64',
-        execPath: '/usr/local/bin/c3',
-        publicKeyText: fx.kp.publicKeyText,
-        fetch: fetchFn as never,
-        io: realIo({ mkdtemp: () => mkdtempSync(join(tmpdir(), 'c3-nosig-')) }),
-        log: vi.fn(),
-        errlog: vi.fn(),
-      },
-    )
-    expect(code).toBe(UPGRADE_EXIT.verifyFailed)
-  })
 })
 
 describe('runUpgrade (unpack + success)', () => {
   // Primary path: redirect resolves the tag, then downloads use the deterministic
-  // `releases/download/<tag>/<pkg>{,.minisig,.sha256}` URLs — no asset list, no API.
+  // `releases/download/<tag>/<pkg>{,.sha256}` URLs — no asset list, no API.
   function fetchFor(fx: ReturnType<typeof signedRelease>) {
     return vi.fn(async (url: string) => {
       if (url === `https://github.com/${DEFAULT_REPO}/releases/latest`)
         return tagRedirect(DEFAULT_REPO, fx.version)
-      if (url.endsWith('.minisig')) return bytesResponse(Buffer.from(fx.sigText))
       if (url.endsWith('.sha256')) return bytesResponse(Buffer.from(fx.sha256Line))
       return bytesResponse(fx.pkgBytes)
     })
@@ -627,7 +584,6 @@ describe('runUpgrade (unpack + success)', () => {
         arch: 'arm64',
         execPath,
         home: installDir,
-        publicKeyText: fx.kp.publicKeyText,
         fetch: fetchFor(fx) as never,
         io,
         log: vi.fn(),
@@ -665,7 +621,6 @@ describe('runUpgrade (unpack + success)', () => {
         arch: 'arm64',
         execPath,
         home: installDir, // empty c3 home → no service/daemon detected → foreground hint
-        publicKeyText: fx.kp.publicKeyText,
         fetch: fetchFor(fx) as never,
         io,
         log,
@@ -699,7 +654,6 @@ describe('runUpgrade (unpack + success)', () => {
         arch: 'arm64',
         execPath,
         home: installDir,
-        publicKeyText: fx.kp.publicKeyText,
         fetch: fetchFor(fx) as never,
         io,
         log: vi.fn(),
@@ -763,7 +717,6 @@ describe('runUpgrade (latest-version resolution)', () => {
       seen.push(url)
       if (url === `https://github.com/${DEFAULT_REPO}/releases/latest`)
         return tagRedirect(DEFAULT_REPO, '2.0.0')
-      if (url === `${base}.minisig`) return bytesResponse(Buffer.from(fx.sigText))
       if (url === `${base}.sha256`) return bytesResponse(Buffer.from(fx.sha256Line))
       if (url === base) return bytesResponse(fx.pkgBytes)
       throw new Error(`unexpected fetch: ${url}`)
@@ -785,7 +738,6 @@ describe('runUpgrade (latest-version resolution)', () => {
         arch: 'arm64',
         execPath,
         home: installDir,
-        publicKeyText: fx.kp.publicKeyText,
         fetch: fetchFn as never,
         io,
         log: vi.fn(),
@@ -794,9 +746,8 @@ describe('runUpgrade (latest-version resolution)', () => {
     )
     expect(code).toBe(UPGRADE_EXIT.ok)
     expect(readFileSync(execPath, 'utf-8')).toBe('NEW-v2-binary')
-    // The deterministic package + both sidecars were fetched; the API was never called.
+    // The deterministic package + its sha256 sidecar were fetched; the API was never called.
     expect(seen).toContain(base)
-    expect(seen).toContain(`${base}.minisig`)
     expect(seen).toContain(`${base}.sha256`)
     expect(seen.every((u) => !u.includes('api.github.com'))).toBe(true)
     rmSync(installDir, { recursive: true, force: true })

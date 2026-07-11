@@ -7,7 +7,6 @@ import { existsSync, statSync } from 'node:fs'
 import { startServer } from './server.js'
 import { setSettingsPath } from './kernel/config/index.js'
 import { versionString } from './version.js'
-import { runVerify } from './verify.js'
 import { startDaemon, type DaemonStartOptions } from './daemon.js'
 import { installService, UnsupportedPlatformError } from './service-install.js'
 import { uninstallService } from './service-uninstall.js'
@@ -211,15 +210,8 @@ program
   })
 
 program
-  .command('verify <file>')
-  .description('Verify a downloaded c3 artifact against the embedded minisign public key')
-  .action((file: string) => {
-    process.exit(runVerify(resolve(file)))
-  })
-
-program
   .command('upgrade')
-  .description('Self-update the c3 binary from the latest GitHub release (minisign-verified)')
+  .description('Self-update the c3 binary from the latest GitHub release (sha256-checked)')
   .option('--check', 'only check whether a newer release exists; do not download or replace', false)
   .option('--force', 'reinstall the same version (not a downgrade channel)', false)
   .option(

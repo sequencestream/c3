@@ -19,20 +19,12 @@ import { applyTaskEvent, emptyTaskModel } from '@/lib/task-list'
 import { advanceOnFailure, resolveAgentIndex } from '@/lib/agent-prefix'
 import { activeSessionTitleFromSessions } from '@/lib/session-title-sync'
 import { mergeSessionPage, type SessionWindow } from '@/lib/session-page'
-import { applyLocale, setStoredLocale, i18n, type LocaleKey } from '@/i18n'
+import { applyLocale, setStoredLocale, i18n } from '@/i18n'
 import { translateUiError } from '@/i18n/errors'
 import { transcriptToChat } from './transcript'
 import type { AppCtx } from './types'
 import { sessionCacheKey, type SessionPageKind } from './state'
 import { resolveSessionSourceAction } from '@/lib/session-jump'
-
-// License-gate (PL-R6) reason → localized-phrase key. Maps the wire entitlement
-// state to a human reason; an unknown state falls back to the unactivated copy.
-function licenseGateReasonKey(state: string): LocaleKey {
-  if (state === 'expired') return 'error.license.reason.expired'
-  if (state === 'disabled') return 'error.license.reason.disabled'
-  return 'error.license.reason.unactivated'
-}
 
 /** 深链兑现超时:10 秒,足够服务端回包,但不至于在慢网下过多等待。 */
 const DEEP_LINK_TIMEOUT_MS = 10_000
@@ -325,8 +317,6 @@ export function installMessageHandler(ctx: AppCtx): void {
         // Pull settings up front so the new-session agent picker has the agent list +
         // per-vendor host-CLI status ready before the user clicks "+".
         send({ type: 'get_settings' })
-        // Fetch the current product-license state for the badge/menu (PL-R7).
-        send({ type: 'get_license' })
 
         if (!deepLinkConsumed) {
           // Restore the intent / discussion / automations view if a hard refresh left us in it.
@@ -973,14 +963,6 @@ export function installMessageHandler(ctx: AppCtx): void {
           if (specLaunch.value) ctx.dispatchSpecLaunch({ kind: 'failed', now: Date.now() })
           break
         }
-        // License gate (PL-R6): upgrade the raw entitlement `reason` (the wire
-        // state) into a localized phrase before interpolating, so the cause +
-        // renewal pointer read naturally in every locale.
-        if (msg.error.code === 'license.notEntitled') {
-          const reason = t(licenseGateReasonKey(String(msg.error.params?.reason ?? '')))
-          add({ kind: 'system', text: `— ${t('error.license.notEntitled', { reason })} —` })
-          break
-        }
         // Automation save/update failed — release the saving overlay.
         if (automationSaving.value) automationSaving.value = false
         add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
@@ -1049,37 +1031,10 @@ export function installMessageHandler(ctx: AppCtx): void {
         codesSearchLoading.value = false
         break
       }
-      case 'license_state':
-        // Current entitlement, derived from the offline-verified token (PL-R7).
-        ctx.license.value = msg.license
-        break
       case 'update_status':
         // Refreshed "is a newer c3 release available?" snapshot. Drives the header
         // upgrade hint; fail-soft on the server means this only moves toward known.
         ctx.updateStatus.value = msg.updateStatus
-        break
-      case 'license_refresh_result':
-        // Ack for a manual term refresh (PL-R7). A `license_state` push with the
-        // refreshed term precedes this. Clear the in-flight flag; on failure show
-        // a readable inline error beside the control (raw reason is not surfaced).
-        ctx.licenseRefreshing.value = false
-        ctx.licenseRefreshError.value = msg.ok ? null : t('license.refresh.failed')
-        break
-      case 'license_activation_started':
-        // The browser is being sent to the LS activation URL; keep it so the
-        // console can offer it as a manual fallback if the browser didn't open.
-        ctx.licenseActivationUrl.value = msg.ok ? (msg.activationUrl ?? null) : null
-        if (!msg.ok) add({ kind: 'system', text: t('license.startFailed') })
-        break
-      case 'license_bind_result':
-        // Result of binding a pasted license key. Success surfaces a confirmation
-        // (a `license_state` push follows); failure surfaces the reason (PL-R13).
-        add({
-          kind: 'system',
-          text: msg.ok
-            ? t('license.bind.success')
-            : t('license.bind.failed', { reason: msg.reason ?? '' }),
-        })
         break
     }
   }

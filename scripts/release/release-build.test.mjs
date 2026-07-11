@@ -36,8 +36,7 @@ describe('release-build orchestrator', () => {
     const { stdout } = dryRun()
     expect(stdout).toMatch(/Phase0\s+web build/)
     expect(stdout).toMatch(/Phase1\s+generate-static-embed/)
-    // Release 7/7: the standard tier prints `bundle → obfuscate → compile`;
-    // basic/none print `bundle → compile`. The compile word must always appear.
+    // Phase2 prints `bundle → compile (parallel)`.
     expect(stdout).toMatch(/Phase2\s+(.*\s+)?compile \(parallel\)/)
   })
 

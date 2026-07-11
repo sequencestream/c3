@@ -3,21 +3,21 @@
 // Why this exists: the GH Actions matrix builds each target on its NATIVE OS runner
 // (see release.yml), and EACH build job emits its own `dist/manifest.json` (one
 // artifact) plus its package. Downloading those artifacts with `merge-multiple: true`
-// flattens every file into one dir — but the same-named `manifest.json` (and, once
-// signing runs, `SHA256SUMS`) COLLIDE, so only the last-written target survives and
+// flattens every file into one dir — but the same-named `manifest.json` (and
+// `SHA256SUMS`) COLLIDE, so only the last-written target survives and
 // postgate reports the other P0 targets "missing from manifest".
 //
 // So the aggregation jobs (verify-dist, publish) download WITHOUT merge-multiple —
 // each artifact lands in its own subdir `dist/<artifact-name>/…` — and run this
 // script to:
 //   1. read every per-target `manifest.json`,
-//   2. assert they describe the SAME build (version + commit + schema + harden),
+//   2. assert they describe the SAME build (version + commit + schema),
 //   3. concat their `artifacts[]` (dedup by target),
 //   4. flatten each package + sidecar up into dist/,
 //   5. write the merged `dist/manifest.json`,
 //   6. write `dist/SHA256SUMS` from the manifest's per-package sha256 (so the
 //      downstream postgate has manifest ↔ SHA256SUMS ↔ on-disk to check; publish
-//      re-signs SHA256SUMS over the same set, which is byte-identical).
+//      re-generates SHA256SUMS over the same set, which is byte-identical).
 //
 // Pure Node, no deps. CLI: node scripts/release/merge-dist.mjs [--dist=dist]
 import { readdirSync, readFileSync, existsSync, renameSync, statSync, writeFileSync } from 'node:fs'
@@ -72,7 +72,7 @@ export function mergeDist({ distDir, log = () => {} } = {}) {
     const subDir = dirname(mp)
 
     if (!base) {
-      base = { schema: m.schema, version: m.version, commit: m.commit, harden: m.harden }
+      base = { schema: m.schema, version: m.version, commit: m.commit }
     } else {
       // Every per-target manifest MUST describe the same build — a mismatch means
       // artifacts from two different runs/commits got mixed and the release is unsafe.
@@ -92,10 +92,8 @@ export function mergeDist({ distDir, log = () => {} } = {}) {
       const pkg = resolve(subDir, basename(a.file))
       if (existsSync(pkg)) {
         flatten(pkg, root)
-        for (const ext of ['.sha256', '.minisig']) {
-          const side = `${pkg}${ext}`
-          if (existsSync(side)) flatten(side, root)
-        }
+        const side = `${pkg}.sha256`
+        if (existsSync(side)) flatten(side, root)
       }
       byTarget.set(a.target, a)
       log(`  merged ${a.target}  ${basename(a.file)}  ${a.sha256.slice(0, 12)}…`)
@@ -107,16 +105,15 @@ export function mergeDist({ distDir, log = () => {} } = {}) {
     schema: base.schema,
     version: base.version,
     commit: base.commit,
-    // buildTime/harden come from the first manifest; all share the same commit so
-    // any per-job buildTime skew is cosmetic. Re-read harden from base.
-    harden: base.harden,
+    // buildTime comes from the first manifest; all share the same commit so any
+    // per-job buildTime skew is cosmetic.
     artifacts,
   }
   const manifestPath = resolve(root, 'manifest.json')
   writeManifest(manifestPath, merged)
 
-  // SHA256SUMS from the manifest's per-package hashes (publish re-signs this set;
-  // the bytes are identical). One `<hex>  <name>` line per artifact, sorted by name
+  // SHA256SUMS from the manifest's per-package hashes (publish re-generates this
+  // set; the bytes are identical). One `<hex>  <name>` line per artifact, sorted by name
   // for a stable, reproducible file.
   const sumsLines = artifacts.map((a) => `${a.sha256}  ${basename(a.file)}`).sort()
   const sha256sums = sumsLines.join('\n') + '\n'

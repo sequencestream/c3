@@ -31,12 +31,7 @@ const {
   // ---- auth / connection / top bar ----
   auth,
   authStatus,
-  license,
-  licenseRefreshing,
-  licenseRefreshError,
   updateStatus,
-  activateLicense,
-  refreshLicense,
   status,
   workspaces,
   currentWorkspace,
@@ -350,12 +345,7 @@ function onCodesChatWidth(px: number): void {
       :view-mode="viewMode"
       :workcenter-badge-count="workcenterPendingCount"
       :show-logout="authStatus === 'authenticated'"
-      :license="license"
-      :license-refreshing="licenseRefreshing"
-      :license-refresh-error="licenseRefreshError"
       :update-status="updateStatus"
-      @activate-license="activateLicense"
-      @refresh-license="refreshLicense"
       @select-tab="onSelectTab"
       @update:view-mode="setViewMode"
       @open-settings="openSettings"

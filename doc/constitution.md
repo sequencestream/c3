@@ -24,14 +24,6 @@ Vue 3 + Vite(前端)、`@anthropic-ai/claude-agent-sdk`、pnpm workspaces、Vite
 **未经 ADR 禁止使用:** 任何数据库或持久化存储;任何默认绑定到非回环接口的网络监听器;
 任何认证/身份提供方;除 Claude Agent SDK 之外的任何第二套智能体运行时。
 
-**License-server 边界:** 上述禁止清单约束的是 **c3 进程**。商业产品的**授权(entitlement)**
-归属于一个**独立产品 license-server(LS)**,刻意置于 c3 进程之外——因此 LS 的 PostgreSQL、
-GitHub OAuth(身份提供方)、微信支付都存在于**那里**,而不在 c3 中。c3 **内部**唯一的妥协
-是一个小型磁盘上**授权缓存**(一个 LS 签名的令牌 + 一个心跳承载令牌),支持 30 分钟离线宽限期;
-c3 不保留通用数据库,也不保留第二套智能体运行时。ADR-0026 是必需的例外记录。见
-[ADR-0026](architecture/adr/0026-product-licensing-separate-license-server.md)
-与 [product-license 领域](domains/commerce/product-license/product-license-overview.md)。
-
 **例外流程:** 引入被禁止的技术需要在 `architecture/adr/` 下新建一个 ADR,列出所考虑的方案,
 并由维护者批准。
 

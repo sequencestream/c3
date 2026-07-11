@@ -2964,40 +2964,15 @@ export interface CodeSearchHit {
 }
 
 /**
- * The c3-side derived product-license state surfaced to the console as a license
- * badge + menu (product-license PL-R7). Vendor-neutral: it reflects the local
- * entitlement derived from the offline-verified token, not any LS-native shape.
- * `Active`/`grace` permit new sessions; `unactivated`/`expired`/`disabled` gate
- * them (the gating point itself is new-session creation, PL-R6). `disabled` is a
- * license rebound to another installation ("one license, one installation").
- */
-export type LicenseState = 'unactivated' | 'active' | 'grace' | 'expired' | 'disabled'
-export type LicensePlan = 'free' | 'paid' | 'enterprise'
-
-export interface LicenseStatus {
-  state: LicenseState
-  /** Effective plan tier after local fallback/downgrade policy. */
-  plan: LicensePlan
-  /** Whether new sessions are permitted (`active`/`grace`). */
-  entitled: boolean
-  /** License term end, unix seconds (0 when unactivated). */
-  termEnd: number
-  /** Stable per-installation id bound to the entitlement. */
-  installationId: string
-  /** The bound license key (empty when unactivated); shown in the license menu. */
-  licenseKey: string
-}
-
-/**
  * A minimal, pure-data snapshot of "is a newer c3 release available?", produced by
- * the server-side update checker (polls license-server's `GET /v1/artifact/latest`
- * and compares the remote version with the running `VERSION`). Carried on the
- * `ready` handshake and re-pushed via {@link update_status} after each check.
+ * the server-side update checker (polls the GitHub releases API for the latest
+ * release and compares the remote version with the running `VERSION`). Carried on
+ * the `ready` handshake and re-pushed via {@link update_status} after each check.
  *
  * The console renders an upgrade hint ONLY when `available === true && latestVersion`;
  * "no update", "not yet checked", and "check failed" all present as `available:false`
- * (or `latestVersion:null`) and render nothing. Intentionally carries no error, URL,
- * or license data — it is a UX-visible-to-all state, never an admin-gated one.
+ * (or `latestVersion:null`) and render nothing. Intentionally carries no error or
+ * URL — it is a UX-visible-to-all state, never an admin-gated one.
  */
 export interface UpdateStatus {
   /** True only when the remote version is strictly newer than the local `VERSION`. */
@@ -3486,31 +3461,6 @@ export type ClientToServer =
    * by `last_modified`; the `running` counts are a live "now" notion and ignore it.
    */
   | { type: 'get_timerange_stats'; startTime?: number; endTime?: number }
-  /**
-   * Fetch the current product-license state (reply: {@link license_state}).
-   * Read-only; drives the license badge/menu on connect (PL-R7).
-   */
-  | { type: 'get_license' }
-  /**
-   * Open the LS landing page in the browser so the user can log in with GitHub
-   * and **bind a license in the browser** (ADR-0026, PL-R1/PL-R9). GitHub is
-   * account login/registration only. c3 mints a binding round and starts polling
-   * `checkbind`; it does not bind itself. Reply: {@link license_activation_started}
-   * (the URL, for manual fallback). When the round resolves, a
-   * {@link license_bind_result} (and, on success, {@link license_state}) is pushed.
-   */
-  | { type: 'start_license_activation' }
-  /**
-   * Actively sync the product-license term with LS right now: c3 runs one
-   * heartbeat ({@link license_state} is pushed with the refreshed term, then a
-   * {@link license_refresh_result} ack). Distinct from the read-only
-   * {@link get_license} (which only re-reads the local cache) — used by the
-   * manual refresh control beside the validity date so a console renewal shows
-   * without waiting for the next scheduled heartbeat (PL-R7). Heartbeat stays
-   * fail-soft: a failure pushes `license_refresh_result {ok:false}` and never
-   * throws into the run path.
-   */
-  | { type: 'refresh_license' }
   | { type: 'ping' }
 
 // Server → Client
@@ -4138,30 +4088,4 @@ export type ServerToClient =
       reason?: 'not-configured' | 'repo-error' | 'gitignore-cancelled'
       detail?: string
     }
-  /** Current product-license state for the badge/menu (PL-R7). Pushed on connect,
-   *  on `get_license`, and whenever activation changes it. */
-  | { type: 'license_state'; license: LicenseStatus }
-  /**
-   * Acknowledges {@link start_license_activation}: the browser is being sent to
-   * `activationUrl` (the LS sign-in page). Returned so the console can offer the
-   * URL as a manual fallback if the browser could not be opened. `ok:false`
-   * carries a `reason`.
-   */
-  | { type: 'license_activation_started'; ok: boolean; activationUrl?: string; reason?: string }
-  /**
-   * Result of a browser-mediated binding round, pushed when c3's `checkbind` poll
-   * resolves (ADR-0026). `ok:true` means the installation is bound and activated
-   * (a {@link license_state} push follows). `ok:false` carries a `reason` (e.g. a
-   * verification failure). Unsolicited — it follows {@link start_license_activation}
-   * asynchronously, since c3 cannot know when the user completes the browser bind.
-   */
-  | { type: 'license_bind_result'; ok: boolean; reason?: string }
-  /**
-   * Ack for {@link refresh_license}: the manual heartbeat sync finished. `ok:true`
-   * means LS was reached (a {@link license_state} push with the refreshed term
-   * precedes this); `ok:false` carries a `reason` (network / LS 5xx) so the
-   * console can show an inline error beside the refresh control without
-   * disturbing the already-cached term (PL-R7, fail-soft per PL-R13).
-   */
-  | { type: 'license_refresh_result'; ok: boolean; reason?: string }
   | { type: 'pong' }

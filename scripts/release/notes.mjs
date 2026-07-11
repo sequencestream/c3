@@ -38,8 +38,7 @@ export function buildNotes({ changelogPath } = {}) {
   const body = section ?? `## ${v}\n\n_No CHANGELOG.md section found._`
   const notes =
     `${body}\n\n---\n\n` +
-    `Verify downloads: \`c3 verify <artifact>\` (embedded minisign key) or\n` +
-    '`minisign -Vm <artifact> -P <public key from README>`. See README → Download & verify.\n'
+    'Verify downloads: `shasum -a 256 -c <artifact>.sha256` (or check against `SHA256SUMS`).\n'
   return { version: v, tag, notes }
 }
 

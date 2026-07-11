@@ -19,12 +19,15 @@
 // Phase2 never writes a shared file, so the working tree stays clean and targets
 // cannot stomp each other. CI and local share this exact script.
 //
+// 开源版说明:构建始终为「编译(bun --compile)→ 打包(pack)→ sha256 校验和」——
+// 无代码混淆、无 harden 分层。
+//
 // Usage:
 //   node scripts/release/release-build.mjs [--targets=macos-arm64,linux-x64] [--dry-run] [--skip-web] [--skip-pack]
 import { spawn, spawnSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { computeVersionInfo } from './version-info.mjs'
 import { buildManifest, writeManifest } from './manifest.mjs'
 import { binaryName } from './artifact-name.mjs'
@@ -34,8 +37,6 @@ import { packOne } from './pack.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
-
-const HARDEN_TIERS = ['none', 'basic', 'standard']
 
 function parseArgs(argv) {
   const o = {}
@@ -96,23 +97,12 @@ if (unknown.length) {
   process.exit(1)
 }
 
-// Harden tier: --harden flag > RELEASE_HARDEN env > 'basic' (release 2/7).
-// `||` so an empty string (set-but-blank env) falls through to the default.
-const harden = String(args.harden || process.env.RELEASE_HARDEN || 'basic')
-if (!HARDEN_TIERS.includes(harden)) {
-  console.error(`[release:build] unknown harden tier: ${harden}`)
-  console.error(`[release:build] known: ${HARDEN_TIERS.join(', ')}`)
-  process.exit(1)
-}
-
 // Compute the version info ONCE here so every target (and the manifest) share one
 // version/commit/build-time. SoT is the git tag; package.json is the fallback baseline.
 const versionInfo = computeVersionInfo()
-// Manifest is a multi-artifact distribution-trust record — emitted for basic/standard,
-// skipped for none. Pack is the consumer-facing distribution unit; it's always
-// produced for basic/standard. `none` is debug — no manifest, no pack.
-const emitManifest = harden !== 'none'
-const emitPack = harden !== 'none' && !args['skip-pack']
+// Manifest is the multi-artifact distribution-trust record; pack is the consumer-facing
+// distribution unit. Both are always produced (pack unless --skip-pack).
+const emitPack = !args['skip-pack']
 const manifestPath = resolve(repoRoot, 'dist', 'manifest.json')
 
 const embedPath = resolve(repoRoot, 'dist', 'static-embed.generated.ts')
@@ -128,18 +118,13 @@ const plan = targets.map((t) => ({
 
 console.log('[release:build] plan:')
 console.log(`  version  ${versionInfo.version} (commit ${versionInfo.commit})`)
+console.log(`  manifest write → ${manifestPath}`)
 console.log(
-  `  harden   ${harden}${harden === 'standard' ? ' (string-array + identifier-rename; fallback = bare compile on failure)' : ''}`,
-)
-console.log(`  manifest ${emitManifest ? `write → ${manifestPath}` : 'skipped (harden=none)'}`)
-console.log(
-  `  pack     ${emitPack ? `dist/c3-v{ver}-{target}{.tar.gz|.zip}` : 'skipped (harden=none or --skip-pack)'}`,
+  `  pack     ${emitPack ? `dist/c3-v{ver}-{target}{.tar.gz|.zip}` : 'skipped (--skip-pack)'}`,
 )
 console.log(`  Phase0  web build${args['skip-web'] ? ' (skipped)' : ''}`)
 console.log('  Phase1  generate-static-embed → dist/static-embed.generated.ts')
-console.log(
-  `  Phase2  bundle${harden === 'standard' ? ' → obfuscate' : ''} → compile (parallel): ${plan.map((p) => p.target).join(', ')}`,
-)
+console.log(`  Phase2  bundle → compile (parallel): ${plan.map((p) => p.target).join(', ')}`)
 for (const p of plan)
   console.log(
     `            ${p.target}${p.experimental ? ' ⚠️experimental' : ''} → ${p.outfile} (binary: ${binaryName(p.target)})`,
@@ -174,7 +159,6 @@ await run(
 
 // Phase2 — fan-out compile (parallel, read-only on the snapshot)
 console.log('\n[release:build] Phase2 — compile (parallel)')
-const stageDir = resolve(repoRoot, 'dist', '.obf-stage')
 const results = await Promise.allSettled(
   plan.map((p) =>
     run(
@@ -185,26 +169,12 @@ const results = await Promise.allSettled(
         `--target=${p.target}`,
         `--outfile=${p.outfile}`,
         `--embed=${embedPath}`,
-        `--harden=${harden}`,
         `--version-str=${versionInfo.version}`,
         `--commit=${versionInfo.commit}`,
         `--build-time=${versionInfo.buildTime}`,
       ],
       `compile ${p.target}`,
-    ).then(() => {
-      // Read the per-target sidecar that buildTarget writes to
-      // dist/.obf-stage/<target>.result.json. It carries the obfuscation result
-      // (release 7/7) so the manifest can stamp it for audit. The sidecar is
-      // optional — if it's missing (older buildTarget, or buildTarget decided
-      // not to write one), we default to obfuscated:false.
-      const rp = resolve(stageDir, `${p.target}.result.json`)
-      if (!existsSync(rp)) return { obfuscated: false, obfDurationMs: 0 }
-      try {
-        return JSON.parse(readFileSync(rp, 'utf-8'))
-      } catch {
-        return { obfuscated: false, obfDurationMs: 0 }
-      }
-    }),
+    ),
   ),
 )
 
@@ -232,26 +202,18 @@ if (blockingFailed.length) {
 
 // The targets that actually produced an artifact — drop dropped experimentals so the
 // manifest, pack, and smoke gate only see real outputs.
-const builtPlan = plan
-  .filter((p) => !experimentalFailed.some((f) => f.t === p.target))
-  .map((p) => {
-    // Find the matching fulfilled result; default obfuscated:false on miss.
-    const r = results[plan.indexOf(p)]
-    const obf = r.status === 'fulfilled' ? r.value : { obfuscated: false, obfDurationMs: 0 }
-    return { ...p, obfuscated: obf.obfuscated === true, obfDurationMs: obf.obfDurationMs ?? 0 }
-  })
+const builtPlan = plan.filter((p) => !experimentalFailed.some((f) => f.t === p.target))
 
 console.log('\n[release:build] OK — all targets built:')
 for (const p of builtPlan) {
-  const obfTag = harden === 'standard' ? ` obfuscated=${p.obfuscated}` : ''
   console.log(
-    `  ${p.target}${p.experimental ? ' ⚠️experimental' : ''} → ${p.outfile} (binary: ${binaryName(p.target)})${obfTag}`,
+    `  ${p.target}${p.experimental ? ' ⚠️experimental' : ''} → ${p.outfile} (binary: ${binaryName(p.target)})`,
   )
 }
 
 // Phase2.5 — pack (release: package each built target's binary + inner sidecars
 // into a distributable archive: dist/c3-v{ver}-{target}{.tar.gz|.zip}). Skipped
-// for `harden=none` (debug) and when `--skip-pack` is set.
+// when `--skip-pack` is set.
 let packages = []
 if (emitPack) {
   console.log('\n[release:build] Phase2.5 — pack (dist/c3-v{ver}-{target}.{tar.gz|zip})')
@@ -266,8 +228,6 @@ if (emitPack) {
       packages.push({
         target: p.target,
         experimental: p.experimental,
-        obfuscated: p.obfuscated,
-        obfDurationMs: p.obfDurationMs,
         // `pk.package` is the bare package FILENAME (c3-v{ver}-{target}.{tar.gz|zip}).
         // Resolve it to an absolute path here so the manifest's disk fallback
         // (statSync/sha256File on a.file) can't ENOENT against a cwd-relative name —
@@ -281,7 +241,6 @@ if (emitPack) {
         // `sha256` undefined and forced the cwd-relative disk fallback → ENOENT.
         sha256: pk.sha256,
         innerSha256: pk.innerSha256,
-        signed: pk.signed,
       })
     } catch (err) {
       console.error(`[release:build] pack failed for ${p.target}: ${err.message}`)
@@ -293,14 +252,14 @@ if (emitPack) {
   }
 }
 
-// Manifest (release 2/7, obfuscation block added 7/7) — per-artifact sha256 + provenance,
-// for verify-now trust. The `file` field is the PACKAGE name (the upload unit); the
-// `binary` field is the in-package binary name (`c3` / `c3.exe`).
-if (emitManifest) {
-  // The manifest is the single source of truth for sign/publish. The artifacts
-  // it lists are the packages. If packing was skipped, the manifest still has
-  // to record something — fall back to the bare binary path so the downstream
-  // sign/publish steps have a non-empty list (this is a debug build anyway).
+// Manifest (release 2/7) — per-artifact sha256 + provenance, for verify-now trust.
+// The `file` field is the PACKAGE name (the upload unit); the `binary` field is the
+// in-package binary name (`c3` / `c3.exe`).
+{
+  // The manifest is the single source of truth for publish. The artifacts it lists
+  // are the packages. If packing was skipped, the manifest still has to record
+  // something — fall back to the bare binary path so the downstream publish steps
+  // have a non-empty list.
   const manifestArtifacts = emitPack
     ? packages.map((p) => ({
         target: p.target,
@@ -310,8 +269,6 @@ if (emitManifest) {
         bytes: p.bytes,
         sha256: p.sha256, // sha256 of the PACKAGE (matches SHA256SUMS line)
         experimental: p.experimental,
-        obfuscated: p.obfuscated,
-        obfDurationMs: p.obfDurationMs,
       }))
     : builtPlan.map((p) => ({
         target: p.target,
@@ -319,22 +276,16 @@ if (emitManifest) {
         bytes: 0,
         sha256: '',
         experimental: p.experimental,
-        obfuscated: p.obfuscated,
-        obfDurationMs: p.obfDurationMs,
       }))
 
   const manifest = buildManifest({
     versionInfo,
-    harden,
     artifacts: manifestArtifacts,
   })
   writeManifest(manifestPath, manifest)
   console.log(`\n[release:build] manifest → ${manifestPath}`)
   for (const a of manifest.artifacts) {
-    const obfTag = a.obfuscation
-      ? ` obf=${a.obfuscation.applied}${a.obfuscation.applied && a.obfuscation.durationMs ? ` (${a.obfuscation.durationMs}ms)` : ''}`
-      : ''
-    console.log(`  ${a.target}  ${a.file}  (${a.bytes}B)${obfTag}`)
+    console.log(`  ${a.target}  ${a.file}  (${a.bytes}B)`)
   }
 }
 

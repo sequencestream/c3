@@ -8,7 +8,6 @@
 import { resolveWorkspaceRoot, pathToId } from '../../state.js'
 import {
   createAutomation,
-  countEnabledAutomations,
   deleteAutomation as deleteAutomationStore,
   getAutomation,
   getAutomationDetail,
@@ -28,8 +27,6 @@ import { isValidAutomationMaxWallClockMs, type ToolManifestEntry } from '@ccc/sh
 import { C3_MCP_TOOLS } from './mcp-freeze.js'
 import { loadSettings } from '../../kernel/config/index.js'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
-import { currentLicenseStatus } from '../license/store.js'
-import { currentPlanLimits, limitError } from '../license/plan-limits.js'
 // Static tool listing (no I/O needed) — the only adapter path that can create
 // lightweight instances without a supervisor or registry probe.
 import { createClaudeAdapter } from '../../kernel/agent/adapters/claude/index.js'
@@ -97,17 +94,6 @@ export const createAutomationHandler: Handler<'create_automation'> = async (ctx,
     conn.send({ type: 'error', error: { code: agentError } })
     return
   }
-  const limits = currentPlanLimits(currentLicenseStatus())
-  if (
-    limits.enabledAutomations !== null &&
-    countEnabledAutomations() >= limits.enabledAutomations
-  ) {
-    conn.send({
-      type: 'error',
-      error: limitError('license.automationLimit', limits.enabledAutomations),
-    })
-    return
-  }
   // Name is auto-generated server-side from the task content; any
   // client-supplied name in config is ignored (stripped by the store).
   const generatedName = await generateAutomationName(msg.input)
@@ -170,20 +156,6 @@ export const updateAutomationHandler: Handler<'update_automation'> = async (ctx,
     !isValidAutomationMaxWallClockMs(msg.input.maxWallClockMs)
   ) {
     conn.send({ type: 'error', error: { code: 'automation.invalidMaxWallClockMs' } })
-    return
-  }
-  const nextStatus = msg.input.status ?? existing.status
-  const limits = currentPlanLimits(currentLicenseStatus())
-  if (
-    existing.status !== 'active' &&
-    nextStatus === 'active' &&
-    limits.enabledAutomations !== null &&
-    countEnabledAutomations() >= limits.enabledAutomations
-  ) {
-    conn.send({
-      type: 'error',
-      error: limitError('license.automationLimit', limits.enabledAutomations),
-    })
     return
   }
   // Unlike create, update accepts a client-supplied `config.name`: a non-empty

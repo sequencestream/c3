@@ -3,15 +3,14 @@
  *
  * Flow: resolve runtime form → resolve the latest release tag (GitHub Releases
  * redirect first, JSON API only as fallback) → pick this platform's
- * package → download package + `.minisig` + `.sha256` → verify the PACKAGE bytes
- * with the EMBEDDED minisign public key (the mandatory trust gate, reused from
- * verify.ts — no new trust anchor) → unpack the inner `c3`/`c3.exe` → replace the
+ * package → download package + `.sha256` → cross-check the PACKAGE bytes against
+ * the published sha256 checksum → unpack the inner `c3`/`c3.exe` → replace the
  * current binary with a same-directory temp file + atomic rename (POSIX) or a
  * `.exe.old` placeholder swap (Windows, where a running exe cannot be overwritten
  * in place). Any failure before the final rename leaves the original binary intact.
  *
  * Hard rules (see doc/non-functional/release.md + the spec):
- *   - minisign signature is mandatory; sha256 is only a cross-check.
+ *   - the download is cross-checked against its published sha256 checksum when present.
  *   - only the current, locatable, writable binary (`process.execPath`) is touched.
  *   - PATH / shell profiles / package-manager locations are never modified.
  *   - upgrade NEVER restarts anything — it prints precise next-step guidance and
@@ -23,6 +22,7 @@
  * real binary.
  */
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
@@ -37,9 +37,7 @@ import { dirname, join } from 'node:path'
 import { c3HomeDir } from './kernel/config/index.js'
 import { isInterpreter } from './daemon.js'
 import { detectRuntimeForms, type RuntimeForms } from './restart.js'
-import { C3_MINISIGN_PUBLIC_KEY } from './release-pubkey.js'
 import { VERSION } from './version.js'
-import { verifyArtifact } from './verify.js'
 
 /** Default GitHub repo serving c3 releases (overridable via `--repo` for tests/emergencies). */
 export const DEFAULT_REPO = 'sequencestream/c3'
@@ -227,15 +225,14 @@ export interface ResolvedRelease {
 export interface SelectedAssets {
   pkgName: string
   pkgUrl: string
-  minisigUrl?: string
   sha256Url?: string
 }
 
 /**
- * Locate the package asset and its sidecars in a release's asset list. The package
- * MUST be present (else there is no artifact for this platform → fail without
- * touching local files); a missing `.minisig` is tolerated here and rejected later
- * by the mandatory signature check.
+ * Locate the package asset and its sha256 sidecar in a release's asset list. The
+ * package MUST be present (else there is no artifact for this platform → fail
+ * without touching local files); a missing `.sha256` is tolerated (the checksum
+ * cross-check is skipped).
  */
 export function selectAssets(assets: ReleaseAsset[], pkgName: string): SelectedAssets {
   const byName = new Map(assets.map((a) => [a.name, a.url]))
@@ -249,7 +246,6 @@ export function selectAssets(assets: ReleaseAsset[], pkgName: string): SelectedA
   return {
     pkgName,
     pkgUrl,
-    minisigUrl: byName.get(`${pkgName}.minisig`),
     sha256Url: byName.get(`${pkgName}.sha256`),
   }
 }
@@ -273,16 +269,15 @@ export function parseTagFromLocation(location: string | null | undefined): strin
  * Deterministic download URLs for a package + its sidecars, given a known release
  * tag. Anchored to `packageNameFor` (same naming the release scripts publish), so
  * the primary path needs no asset-list lookup: the package lives at
- * `.../releases/download/<tag>/<pkgName>` and the two sidecars are that URL plus
- * `.minisig` / `.sha256`. The raw published `tag` (e.g. `v2.0.0`) is used in the
- * path, not the normalized version.
+ * `.../releases/download/<tag>/<pkgName>` and the sidecar is that URL plus
+ * `.sha256`. The raw published `tag` (e.g. `v2.0.0`) is used in the path, not the
+ * normalized version.
  */
 export function buildDownloadUrls(repo: string, tag: string, pkgName: string): SelectedAssets {
   const pkgUrl = `https://github.com/${repo}/releases/download/${tag}/${pkgName}`
   return {
     pkgName,
     pkgUrl,
-    minisigUrl: `${pkgUrl}.minisig`,
     sha256Url: `${pkgUrl}.sha256`,
   }
 }
@@ -576,7 +571,6 @@ export interface UpgradeDeps {
   home?: string
   env?: NodeJS.ProcessEnv
   fetch?: typeof fetch
-  publicKeyText?: string
   io?: UpgradeIo
   log?: (msg: string) => void
   errlog?: (msg: string) => void
@@ -598,7 +592,6 @@ export async function runUpgrade(
   const home = deps.home ?? c3HomeDir()
   const env = deps.env ?? process.env
   const fetchFn = deps.fetch ?? fetch
-  const publicKeyText = deps.publicKeyText ?? C3_MINISIGN_PUBLIC_KEY
   const io = deps.io ?? defaultIo
   const log = deps.log ?? ((m: string) => console.log(m))
   const errlog = deps.errlog ?? ((m: string) => console.error(m))
@@ -653,38 +646,36 @@ export async function runUpgrade(
         : `[c3 upgrade] upgrading ${version} → ${latest} (${pkgName})`,
     )
 
-    // Download package + sidecars into a scratch dir.
+    // Download package + sha256 sidecar into a scratch dir.
     tempDir = io.mkdtemp('c3-upgrade-')
     const pkgPath = join(tempDir, selected.pkgName)
     io.writeFile(pkgPath, await downloadBuffer(selected.pkgUrl, fetchFn, env))
-    const sigText = selected.minisigUrl
-      ? (await downloadBuffer(selected.minisigUrl, fetchFn, env)).toString('utf-8')
-      : undefined
     const sha256Line = selected.sha256Url
       ? (await downloadBuffer(selected.sha256Url, fetchFn, env)).toString('utf-8')
       : undefined
 
-    // MANDATORY trust gate: verify the PACKAGE bytes before unpacking anything.
-    const verdict = verifyArtifact({
-      content: io.readFile(pkgPath),
-      sigText,
-      sha256Line,
-      publicKeyText,
-    })
-    if (!verdict.ok) {
-      errlog(`[c3 upgrade] signature verification failed: ${verdict.reason}`)
-      errlog(
-        `[c3 upgrade] refusing to install an unverified artifact; your current c3 is unchanged`,
-      )
-      return UPGRADE_EXIT.verifyFailed
+    // Integrity gate: cross-check the PACKAGE bytes against the published .sha256
+    // sidecar before unpacking. (Open-source builds carry no minisign signature; the
+    // sha256 checksum + GitHub HTTPS are the integrity anchor.) A missing sidecar is
+    // tolerated — the transport is already TLS-authenticated to github.com.
+    if (sha256Line && sha256Line.trim() !== '') {
+      const actual = createHash('sha256').update(io.readFile(pkgPath)).digest('hex')
+      const expected = sha256Line.trim().split(/\s+/)[0]?.toLowerCase()
+      if (expected && expected !== actual) {
+        errlog(`[c3 upgrade] sha256 mismatch (have ${actual}, expected ${expected})`)
+        errlog(
+          `[c3 upgrade] refusing to install a corrupted artifact; your current c3 is unchanged`,
+        )
+        return UPGRADE_EXIT.verifyFailed
+      }
+      log(`[c3 upgrade] sha256 verified ${selected.pkgName}`)
+    } else {
+      log(`[c3 upgrade] no .sha256 sidecar published — skipping checksum cross-check`)
     }
-    log(
-      `[c3 upgrade] verified ${selected.pkgName}${verdict.trustedComment ? ` — ${verdict.trustedComment}` : ''}`,
-    )
 
     // Unpack into the (already-created) scratch dir and locate the inner binary.
-    // Package contents are flat (c3, c3.sha256, c3.minisig); their names don't
-    // collide with the downloaded package-level files (c3-v…{.tar.gz,.minisig,.sha256}).
+    // Package contents are flat (c3, c3.sha256); their names don't collide with the
+    // downloaded package-level files (c3-v…{.tar.gz,.sha256}).
     io.unpack(pkgPath, tempDir, target)
     const innerBin = join(tempDir, binaryNameFor(target))
     if (!io.exists(innerBin)) {

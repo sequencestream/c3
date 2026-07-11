@@ -41,7 +41,6 @@ import {
   isStoreAvailable as isWaitUserEventsStoreAvailable,
   listEvents as listWaitUserEvents,
 } from '../features/user-involve/store.js'
-import { currentLicenseStatus } from '../features/license/store.js'
 import { currentUpdateStatus } from '../features/updates/update-checker.js'
 
 /** The single fan-out reference; threaded in by the composition root. */
@@ -99,8 +98,6 @@ export interface Broadcasts {
   broadcastResearchRunStatus: (discussionId: string, state: 'running' | 'ended') => void
   /** Push a project's refreshed wait-user-involve event list (todo status). */
   broadcastWaitUserEvents: (workspacePath: string) => void
-  /** Push the current product-license state to every connection (PL-R7). */
-  broadcastLicense: () => void
   /** Push the current update-availability snapshot to every connection. */
   broadcastUpdateStatus: () => void
 }
@@ -286,12 +283,6 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcaster.toAll({ type: 'wait_user_events', items })
   }
 
-  // Push the current product-license state to every connection. The frontend
-  // renders it as the license badge/menu (PL-R7). Cheap, no store dependency.
-  const broadcastLicense = (): void => {
-    broadcaster.toAll({ type: 'license_state', license: currentLicenseStatus() })
-  }
-
   // Push the current update-availability snapshot to every connection. The
   // frontend shows the header upgrade hint only when a newer release is available.
   // Cheap in-memory read, no store dependency.
@@ -313,7 +304,6 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcastResearchMessage,
     broadcastResearchRunStatus,
     broadcastWaitUserEvents,
-    broadcastLicense,
     broadcastUpdateStatus,
   }
 }

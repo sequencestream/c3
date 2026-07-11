@@ -1742,19 +1742,6 @@
     "auth": {
       "oauthAdminInvalid": "관리자 이메일을 설정하고 허용된 이메일 목록에 포함해야 합니다.",
       "adminOnly": "시스템 설정은 관리자만 변경할 수 있습니다."
-    },
-    "license": {
-      "notEntitled": "새 세션을 시작할 수 없습니다 — {reason}. 상단 배지에서 라이선스를 활성화하거나 갱신하세요.",
-      "workspaceLimit": "Free plan allows up to {limit} workspaces.",
-      "worktreeLimit": "Free plan allows only {limit} active worktree.",
-      "discussionParticipantLimit": "Free plan allows up to {limit} discussion participants, not counting the organizer.",
-      "automationLimit": "Free plan allows up to {limit} enabled automations.",
-      "sandboxDisabled": "Free plan can save sandbox settings, but cannot enable sandbox.",
-      "reason": {
-        "expired": "라이선스가 만료되었습니다",
-        "disabled": "라이선스가 다른 설치에 바인딩되어 있습니다",
-        "unactivated": "활성화된 라이선스가 없습니다"
-      }
     }
   },
   "statusIndicator": {
@@ -2375,41 +2362,6 @@
       "discussion": {
         "label": "토론"
       }
-    }
-  },
-  "license": {
-    "badge": {
-      "active": "라이선스 활성",
-      "grace": "유예 기간",
-      "expired": "만료됨",
-      "unactivated": "미활성화",
-      "disabled": "비활성화됨",
-      "validUntil": "{date}까지 유효",
-      "manageKey": "키 보기 및 갱신"
-    },
-    "plan": {
-      "free": "Free",
-      "paid": "Paid",
-      "enterprise": "Enterprise"
-    },
-    "activate": {
-      "button": "라이선스 활성화",
-      "urlFallback": "브라우저가 열리지 않으면 이 URL을 붙여넣으십시오: {url}"
-    },
-    "startFailed": "라이선스 활성화를 시작하지 못했습니다. 인터넷 연결 및 라이선스 서버를 확인하십시오.",
-    "refresh": {
-      "label": "유효기간 새로고침",
-      "failed": "유효기간을 새로고침하지 못했습니다. 연결을 확인한 후 다시 시도하십시오."
-    },
-    "manual": {
-      "label": "사용 설명서",
-      "tooltip": "제품 문서를 새 탭에서 열기"
-    },
-    "bind": {
-      "placeholder": "라이선스 키 붙여넣기",
-      "button": "바인딩",
-      "success": "라이선스가 활성화되었습니다.",
-      "failed": "라이선스 바인딩에 실패했습니다: {reason}"
     }
   }
 }

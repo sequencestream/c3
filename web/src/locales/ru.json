@@ -1742,19 +1742,6 @@
     "auth": {
       "oauthAdminInvalid": "Эл. почта администратора должна быть задана и присутствовать в списке разрешённых.",
       "adminOnly": "Изменять системные настройки может только администратор."
-    },
-    "license": {
-      "notEntitled": "Не удаётся создать новую сессию — {reason}. Активируйте или продлите лицензию через значок вверху.",
-      "workspaceLimit": "Free plan allows up to {limit} workspaces.",
-      "worktreeLimit": "Free plan allows only {limit} active worktree.",
-      "discussionParticipantLimit": "Free plan allows up to {limit} discussion participants, not counting the organizer.",
-      "automationLimit": "Free plan allows up to {limit} enabled automations.",
-      "sandboxDisabled": "Free plan can save sandbox settings, but cannot enable sandbox.",
-      "reason": {
-        "expired": "срок действия вашей лицензии истёк",
-        "disabled": "ваша лицензия теперь привязана к другой установке",
-        "unactivated": "лицензия не активирована"
-      }
     }
   },
   "statusIndicator": {
@@ -2375,41 +2362,6 @@
       "discussion": {
         "label": "Обсуждение"
       }
-    }
-  },
-  "license": {
-    "badge": {
-      "active": "Лицензия активна",
-      "grace": "Льготный период",
-      "expired": "Истекла",
-      "unactivated": "Не активирована",
-      "disabled": "Отключена",
-      "validUntil": "Действует до {date}",
-      "manageKey": "Ключ и продление"
-    },
-    "plan": {
-      "free": "Free",
-      "paid": "Paid",
-      "enterprise": "Enterprise"
-    },
-    "activate": {
-      "button": "Активировать лицензию",
-      "urlFallback": "Если браузер не открылся, вставьте эту ссылку: {url}"
-    },
-    "startFailed": "Не удалось запустить активацию лицензии. Проверьте подключение к интернету и доступность сервера лицензий.",
-    "refresh": {
-      "label": "Обновить срок действия",
-      "failed": "Не удалось обновить срок действия. Проверьте подключение и повторите попытку."
-    },
-    "manual": {
-      "label": "Руководство пользователя",
-      "tooltip": "Открыть документацию продукта в новой вкладке"
-    },
-    "bind": {
-      "placeholder": "Вставьте ключ лицензии",
-      "button": "Привязать",
-      "success": "Лицензия активирована.",
-      "failed": "Не удалось привязать лицензию: {reason}"
     }
   }
 }

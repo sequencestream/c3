@@ -1,6 +1,6 @@
 ## What
 
-c3 - code creative center - harness/loop engineering for AI software work
+c3 - code creative center - An **AI workbench** that centrally manages and drives the work of multiple AI coding agents.
 
 ## Tech Stack
 
@@ -47,12 +47,5 @@ do format/lint/typecheck at the end of an edit session.
 - doc/flows/flows.md: flow doc
 - doc/non-functional/: non-functional doc
 - database/tables.md: 数据库表结构索引，DDL 在 database/<module>/<table>.sql ,表结构变更需同步更新，变更记录 database/migrate/<YYYY>/<MM>/<DD>/<NNN>-<table>.sql
-- license-server/: 独立 Go 服务，与 c3 进程分离，自带 go.mod 不属于 pnpm workspace；std-lib net/http、PostgreSQL（迁移在 license-server/database/，独立于 c3 的 database/）、内嵌 Vue 前端、单二进制；见 license-server/README.md
-
-## TypeScript Code Style
-
-- **No `enum`**: use `as const` arrays + derived string unions; `enum` bloats emit and breaks tree-shaking
-- **No `any`**: use `unknown` + type guards; `any` silences the compiler, `unknown` forces narrowing
-- **`import type` for type-only imports**: keeps imports erased at runtime, prevents circular refs
-- **Explicit return types on all exported functions**: the public API is a contract; inference hides breaks
-- **`interface` for object shapes, `type` for everything else**: `interface` = named record; `type` = unions, intersections, mapped/conditional types, type aliases
+- doc/style/typescript-code-style.md: TypeScript code style
+- doc/style/color-style-spec.md: color style spec

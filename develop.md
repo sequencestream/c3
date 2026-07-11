@@ -176,7 +176,7 @@ allow-rule may auto-approve without prompting).
 ## Project layout
 
 ```
-code-creative-center/
+c3/
 ├── shared/src/protocol.ts    # WS message types
 ├── server/
 │   ├── src/cli.ts            # commander entry

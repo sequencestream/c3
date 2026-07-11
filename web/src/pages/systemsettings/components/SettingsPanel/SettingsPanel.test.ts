@@ -576,14 +576,10 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
     },
   }
 
-  it('renders three selectable provider options: none, basic, oauth', () => {
+  it('renders two selectable provider options: none, basic', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     const opts = w.findAll('[data-testid="settings-auth-provider"] option')
-    expect(opts.map((o) => (o.element as HTMLOptionElement).value)).toEqual([
-      'none',
-      'basic',
-      'oauth',
-    ])
+    expect(opts.map((o) => (o.element as HTMLOptionElement).value)).toEqual(['none', 'basic'])
     expect(opts.every((o) => !(o.element as HTMLOptionElement).disabled)).toBe(true)
   })
 
@@ -592,7 +588,6 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
     const sel = w.find('[data-testid="settings-auth-provider"]').element as HTMLSelectElement
     expect(sel.value).toBe('none')
     expect(w.find('[data-testid="settings-auth-accounts"]').exists()).toBe(false)
-    expect(w.find('[data-testid="settings-auth-oauth"]').exists()).toBe(false)
     expect(w.find('[data-testid="settings-auth-none-hint"]').exists()).toBe(true)
   })
 
@@ -646,28 +641,6 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
     expect(saved.auth?.enabled).toBe(true)
     expect(saved.auth?.provider.kind).toBe('basic')
     expect(w.find('[data-testid="settings-auth-active"]').exists()).toBe(true)
-  })
-
-  it('keeps oauth disabled (runtime pending) — saves enabled:false', async () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: withAdmin } })
-    await w.find('[data-testid="settings-auth-provider"]').setValue('oauth')
-    await w.find('[data-testid="settings-save"]').trigger('click')
-    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
-    expect(saved.auth?.enabled).toBe(false)
-    expect(saved.auth?.provider.kind).toBe('oauth')
-    expect(w.find('[data-testid="settings-auth-oauth-pending"]').exists()).toBe(true)
-  })
-
-  it('renders the oauth adminEmail input and patches it', async () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    await w.find('[data-testid="settings-auth-provider"]').setValue('oauth')
-    const input = w.find('[data-testid="settings-auth-oauth-admin-email"]')
-    expect(input.exists()).toBe(true)
-    await input.setValue('alice@example.com')
-    await w.find('[data-testid="settings-save"]').trigger('click')
-    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
-    if (saved.auth?.provider.kind !== 'oauth') throw new Error('expected oauth')
-    expect(saved.auth.provider.adminEmail).toBe('alice@example.com')
   })
 
   it('never pre-fills the add-password input (write-only)', async () => {

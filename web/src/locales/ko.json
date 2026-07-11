@@ -533,49 +533,10 @@
       "provider": {
         "label": "제공자",
         "none": "인증 없음",
-        "basic": "사용자 이름 및 비밀번호",
-        "oauth": "OAuth / OIDC"
+        "basic": "사용자 이름 및 비밀번호"
       },
       "none": {
         "hint": "이 서버에 접근할 수 있는 사람은 누구나 로그인 없이 사용할 수 있습니다. localhost의 로컬 단일 사용자 환경에 대한 기본값입니다."
-      },
-      "oauth": {
-        "hint": "로그인을 외부 OpenID Connect 제공자(Google, Keycloak 또는 호환되는 issuer)에 위임합니다.",
-        "runtimePending": "OAuth 계약은 준비되었지만 로그인은 OAuth 런타임 구현을 기다리고 있습니다. 현재로서는 인증을 켜더라도 사용자 이름과 비밀번호로만 동작합니다.",
-        "issuer": {
-          "label": "Issuer(discovery URL)",
-          "placeholder": "https://accounts.example.com"
-        },
-        "clientId": {
-          "label": "클라이언트 ID",
-          "placeholder": "your-oauth-client-id"
-        },
-        "clientSecretRef": {
-          "label": "클라이언트 시크릿 참조",
-          "placeholder": "C3_OAUTH_CLIENT_SECRET",
-          "hint": "시크릿 값 자체가 아니라 참조(환경 변수 이름 / keystore id)를 저장합니다."
-        },
-        "redirectUri": {
-          "label": "리디렉션 URI",
-          "placeholder": "https://console.example.com/auth/callback"
-        },
-        "scopes": {
-          "label": "스코프",
-          "placeholder": "openid profile email"
-        },
-        "usePkce": {
-          "label": "PKCE 사용"
-        },
-        "allowedEmails": {
-          "label": "허용된 이메일",
-          "placeholder": "alice{'@'}example.com\nbob{'@'}example.com",
-          "hint": "이 확인된 이메일만 로그인할 수 있습니다. 목록이 비어 있으면 아무도 허용되지 않습니다."
-        },
-        "adminEmail": {
-          "label": "관리자 이메일",
-          "placeholder": "alice{'@'}example.com",
-          "hint": "유일한 관리자의 이메일입니다. 위의 허용된 이메일 중 하나여야 합니다."
-        }
       },
       "enable": {
         "needAdmin": "로그인을 적용하려면 먼저 아래에서 관리자 계정을 설정하세요.",
@@ -1740,7 +1701,6 @@
       "invalidDefaultMode": "벤더 \"{vendor}\" 의 기본 모드 \"{mode}\" 가 유효하지 않습니다."
     },
     "auth": {
-      "oauthAdminInvalid": "관리자 이메일을 설정하고 허용된 이메일 목록에 포함해야 합니다.",
       "adminOnly": "시스템 설정은 관리자만 변경할 수 있습니다."
     }
   },

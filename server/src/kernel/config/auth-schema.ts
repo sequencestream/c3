@@ -5,13 +5,12 @@
  * module. A type-level assertion at the bottom pins the two together so they
  * cannot drift (same discipline as `agent-config/schema.ts`).
  *
- * `basic` and `oauth` (generic OIDC, contract-only) have provider arms this
- * phase. `sso`/multi-user remain the **extension point**: a new provider adds its
- * `z.object` arm to {@link AUTH_PROVIDER_SCHEMAS}, appends it to
- * {@link authProviderSchema}, and the type pin forces the matching wire arm in
- * `shared/protocol.ts`. Until then an unknown `kind` simply fails to parse —
- * `normalizeAuth` drops it (fail-soft, equivalent to "auth disabled"), keeping
- * the C-SEC-5 localhost-only default.
+ * `none` and `basic` have provider arms this phase. Other providers remain the
+ * **extension point**: a new provider adds its `z.object` arm to
+ * {@link AUTH_PROVIDER_SCHEMAS}, appends it to {@link authProviderSchema}, and
+ * the type pin forces the matching wire arm in `shared/protocol.ts`. Until then
+ * an unknown `kind` simply fails to parse — `normalizeAuth` drops it (fail-soft,
+ * equivalent to "auth disabled"), keeping the C-SEC-5 localhost-only default.
  *
  * Contract-only: no middleware, login, hashing, or token signing exists yet
  * (ADR-0023). This module only validates the persisted shape.
@@ -46,34 +45,6 @@ export const basicAuthProviderSchema = z.object({
   adminUsername: z.string().default(''),
 })
 
-/** Default OAuth scopes — OIDC core identity + verified email. */
-export const DEFAULT_OAUTH_SCOPES = ['openid', 'profile', 'email']
-
-/**
- * The generic-OIDC `oauth` provider arm — contract-only (no runtime). `scopes`,
- * `usePkce`, and `allowedEmails` carry zod defaults so a persisted block always
- * normalizes to fully-populated, matching the wire type's required fields (the
- * type pin checks the inferred *output* type). `clientSecretRef` is a reference
- * (env var name / keystore id), never the plaintext secret. An empty
- * `allowedEmails` is valid here — it means "nobody authorized", a decision the
- * future runtime enforces; the contract does not reject it.
- */
-export const oauthAuthProviderSchema = z.object({
-  kind: z.literal('oauth'),
-  issuer: z.string(),
-  clientId: z.string(),
-  clientSecretRef: z.string(),
-  redirectUri: z.string(),
-  scopes: z.array(z.string()).default(DEFAULT_OAUTH_SCOPES),
-  usePkce: z.boolean().default(true),
-  allowedEmails: z.array(z.string()).default([]),
-  // The single admin email (OAuth analogue of basic's adminUsername). Defaults to
-  // '' so a freshly-switched/legacy oauth block normalizes; the save layer enforces
-  // non-empty + ∈ allowedEmails. oauth is contract-only (enabled always false), so
-  // an invalid adminEmail has no runtime effect and is NOT a normalize fail-soft trigger.
-  adminEmail: z.string().default(''),
-})
-
 /**
  * Per-kind provider-arm registry — the **extension point**. A new auth method
  * registers its arm here (and in {@link authProviderSchema}). Partial over
@@ -82,19 +53,17 @@ export const oauthAuthProviderSchema = z.object({
 export const AUTH_PROVIDER_SCHEMAS = {
   none: noneAuthProviderSchema,
   basic: basicAuthProviderSchema,
-  oauth: oauthAuthProviderSchema,
 } satisfies Partial<Record<AuthProvider['kind'], z.ZodTypeAny>>
 
 /**
  * The full {@link AuthProvider} schema, routed by the `kind` discriminant.
  * `safeParse` dispatches an object to its kind's arm and rejects an unknown
- * kind or a provider that fails its arm. `none` + `basic` + `oauth` arms this
- * phase; new providers append their arm.
+ * kind or a provider that fails its arm. `none` + `basic` arms this phase; new
+ * providers append their arm.
  */
 export const authProviderSchema = z.discriminatedUnion('kind', [
   noneAuthProviderSchema,
   basicAuthProviderSchema,
-  oauthAuthProviderSchema,
 ])
 
 /** Session-token policy: TTL (seconds) + a reference to the signing key. */
@@ -183,9 +152,6 @@ function migrateLegacyBasicProvider(raw: unknown): unknown {
  * - `basic` ⇒ usernames unique AND `adminUsername` references an account when accounts
  *   are non-empty; a violation has a runtime login consequence (a dangling admin), so the
  *   whole block is dropped to `null` (no auth). `enabled` is then re-derived (AC3.5).
- * - `oauth` ⇒ `enabled` forced false (contract-only, AC5.4). An invalid `adminEmail` is
- *   NOT a fail-soft trigger (no runtime effect; would needlessly wipe issuer/clientId) —
- *   it is rejected only at the save layer.
  */
 export function normalizeAuth(raw: unknown): AuthConfig | null {
   if (raw === undefined || raw === null) return null
@@ -194,7 +160,6 @@ export function normalizeAuth(raw: unknown): AuthConfig | null {
   if (!result.success) return null
   const auth = result.data
   if (auth.provider.kind === 'none') return auth.enabled ? { ...auth, enabled: false } : auth
-  if (auth.provider.kind === 'oauth') return auth.enabled ? { ...auth, enabled: false } : auth
   // basic: enforce the unique-username + admin-reference invariants, fail-soft on violation.
   const provider = auth.provider
   if (!usernamesUnique(provider)) return null

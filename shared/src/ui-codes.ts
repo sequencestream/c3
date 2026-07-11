@@ -147,7 +147,6 @@ export const UI_ERROR_CODES = {
     params: ['vendor', 'mode'],
   },
   // auth (ADR-0023)
-  'auth.oauthAdminInvalid': { key: 'error.auth.oauthAdminInvalid' },
   // Rejected a system-config mutation from a non-admin connection (ADR-0023 authz).
   'auth.adminOnly': { key: 'error.auth.adminOnly' },
 } as const satisfies Record<string, UiErrorDef>

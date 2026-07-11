@@ -102,7 +102,7 @@ c3
 │   │   └── 沙箱定义                              # 系统设置可配置沙箱镜像/挂载定义
 │   │
 │   └── auth 鉴权                                 # 每条连接过身份门,每次改全局配置过管理员门
-│       ├── 登录                                  # basic 用户名/密码 或 OAuth 校验,签发 session token
+│       ├── 登录                                  # basic 用户名/密码校验,签发 session token
 │       ├── 会话 token                            # 签发/校验 bearer token,TTL 默认 30 天
 │       ├── 连接门                                # 拒绝未认证的 WebSocket 握手(token 走握手 ?token=)
 │       ├── 管理员门                              # 仅管理员可改全局配置(agents/workspaces/settings)

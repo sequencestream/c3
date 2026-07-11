@@ -332,8 +332,8 @@ describe('resolveDefaultAgentId — fall through to next enabled (AC-R2/AC-R10, 
 })
 
 describe('auth provider kinds (ADR-0023)', () => {
-  it('exposes none, basic, and oauth as the provider kinds', () => {
-    expect(AUTH_PROVIDER_KINDS).toEqual(['none', 'basic', 'oauth'])
+  it('exposes none and basic as the provider kinds', () => {
+    expect(AUTH_PROVIDER_KINDS).toEqual(['none', 'basic'])
   })
 
   it('accepts a none provider (no-auth) in an AuthConfig and survives JSON round-trip', () => {

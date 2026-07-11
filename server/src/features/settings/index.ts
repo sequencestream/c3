@@ -18,7 +18,6 @@ import type {
   VendorId,
   VendorModeCatalog,
 } from '@ccc/shared/protocol'
-import type { UiErrorCode } from '@ccc/shared/ui-codes'
 import { MODE_CATALOGS } from '../../kernel/agent/adapters/index.js'
 import { resolveWorkspaceRoot, pathToId } from '../../state.js'
 import {
@@ -142,7 +141,7 @@ function vendorModes(): Record<VendorId, VendorModeCatalog> {
  * `remove_account` / `set_admin_account`) — never by a generic `save_settings`
  * (AUTH-R7). So when the saved draft is `basic`, force the ENTIRE basic provider
  * back to the on-disk value: a stale/empty client draft can neither wipe accounts
- * nor change the admin. When disk is not basic (the user just switched none/oauth
+ * nor change the admin. When disk is not basic (the user just switched none
  * → basic via the dropdown), the saved draft keeps its fresh empty-shell basic
  * provider (accounts: [], adminUsername: '') — accounts are then filled only via
  * the dedicated messages. `enabled` is re-derived on load by `normalizeAuth`.
@@ -152,21 +151,6 @@ export function preserveBasicProvider(next: SystemSettings): SystemSettings {
   const diskProvider = loadSettings().auth?.provider
   if (diskProvider?.kind !== 'basic') return next
   return { ...next, auth: { ...next.auth, provider: { ...diskProvider } } }
-}
-
-/**
- * Cross-field validation for an auth block flowing through the generic save
- * (AC5.3). Only `oauth` is checked here — `basic` accounts are owned by the
- * dedicated messages (and restored by {@link preserveBasicProvider}), never set
- * via save. Returns the {@link UiErrorCode} to reject with, or `null` if valid:
- * the OAuth admin must be set AND be a member of the login allowlist.
- */
-export function validateAuthForSave(next: SystemSettings): UiErrorCode | null {
-  const provider = next.auth?.provider
-  if (provider?.kind !== 'oauth') return null
-  if (!provider.adminEmail || !provider.allowedEmails.includes(provider.adminEmail))
-    return 'auth.oauthAdminInvalid'
-  return null
 }
 
 export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
@@ -186,11 +170,6 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
   // Only the admin may mutate system configuration (ADR-0023 authz). Inert when no
   // admin gate applies (auth disabled / unconfigured) — loopback bootstrap-trust.
   if (!requireAdmin(conn)) return
-  const authError = validateAuthForSave(msg.settings)
-  if (authError) {
-    conn.send({ type: 'error', error: { code: authError } })
-    return
-  }
   const saved = saveSettings(preserveBasicProvider(msg.settings))
   // Sync the manifest's selectedVersion to the user's effective-version choices
   // and refresh the probe cache BEFORE re-probing, so the returned hostStatus and

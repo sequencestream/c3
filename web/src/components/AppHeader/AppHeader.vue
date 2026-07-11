@@ -22,7 +22,7 @@ const { t } = useTypedI18n()
 const UPGRADE_DOCS_URL = 'https://github.com/sequencestream/c3#upgrade'
 // 仅管理员显示系统设置入口(ADR-0023 authz)。无认证 / 握手前 isAdmin 默认 true,
 // 故无认证场景行为不变;服务端 save_settings 仍是真正的鉴权门(AUTH-R10)。
-// 登录身份(basic 用户名 / oauth 邮箱),响应式来自每个 `ready`。供桌面账户菜单与
+// 登录身份(basic 用户名),响应式来自每个 `ready`。供桌面账户菜单与
 // 移动操作菜单展示「当前登录的是谁」;未登录时为 null(此时 showLogout 亦为 false)。
 const { isAdmin, subject } = useAuth()
 

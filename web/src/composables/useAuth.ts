@@ -39,7 +39,7 @@ const lastReason = ref<UnauthenticatedReason | null>(null)
 // renders config controls normally (the server is the real gate either way — when
 // auth is on and we are not the admin, `ready.isAdmin` flips this to false).
 const isAdmin = ref(true)
-// The signed-in subject (basic username / oauth email), server-authoritative from
+// The signed-in subject (basic username), server-authoritative from
 // every `ready`. `null` whenever no one is signed in (auth disabled / none / pre-login);
 // drives the top-bar account menu's "who am I" display. Cleared on logout / 401.
 const subject = ref<string | null>(null)

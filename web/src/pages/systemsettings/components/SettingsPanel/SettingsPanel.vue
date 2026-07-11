@@ -9,7 +9,6 @@ import { SYSTEM_AGENT_ID, resolveDefaultAgentId } from '@ccc/shared/protocol'
 import type {
   AgentConfig,
   AuthConfig,
-  OAuthAuthProvider,
   SessionBindingStats,
   SystemSandboxDef,
   SandboxType,
@@ -450,7 +449,7 @@ function save(): void {
   })
   // Sync the proxy UI ref back into the draft before save.
   draft.value.proxy = { ...proxyCfg.value }
-  // Derive the auth master switch from the chosen provider: `none`/`oauth` ⇒ off,
+  // Derive the auth master switch from the chosen provider: `none` ⇒ off,
   // `basic` ⇒ on only once an admin is configured. The dropdown is the single
   // source of intent; this is where it commits to `enabled` (the server's
   // `normalizeAuth` re-pins `none ⇒ false` as a defence-in-depth second guard).
@@ -501,14 +500,11 @@ function removeSandbox(index: number) {
 // The provider dropdown is the single auth on/off control (the old standalone
 // "enable" checkbox is gone): `none` ⇒ no auth (sign-in disabled, the C-SEC-5
 // localhost default); `basic` ⇒ require sign-in (effective only once an admin is
-// configured); `oauth` (generic OIDC, contract-only) persists config but cannot
-// truly enable yet — with no OAuth runtime, sign-in still works only with basic.
+// configured).
 const AUTH_PROVIDERS: { value: string; disabled: boolean }[] = [
   { value: 'none', disabled: false },
   { value: 'basic', disabled: false },
-  { value: 'oauth', disabled: false },
 ]
-const DEFAULT_OAUTH_SCOPES = ['openid', 'profile', 'email']
 // Signing key is a reference (an env name), never the key itself (ADR-0023).
 // 30-day TTL mirrors the server default (auth-schema.ts DEFAULT_SESSION_TTL_SECONDS).
 const SECONDS_PER_DAY = 24 * 60 * 60
@@ -547,7 +543,7 @@ const pwNew = ref('')
 // Which account a pending Remove confirmation targets (drives the confirm modal).
 const removeTarget = ref<string | null>(null)
 // Auth is effectively ON only under `basic` with a configured admin. `none` ⇒
-// always off; `oauth` ⇒ off (runtime pending, cannot truly enable yet). This is
+// always off. This is
 // the single derivation of `enabled` — the dropdown chooses intent, this gates
 // it, and `save()` writes it into the draft (server `normalizeAuth` re-pins
 // `none ⇒ enabled:false` as a second guard).
@@ -589,7 +585,7 @@ function setAuthTtlDays(v: number) {
   ensureAuth().session.ttlSeconds = days * SECONDS_PER_DAY
 }
 
-// ---- Provider kind switch + OAuth (generic OIDC) contract form -----------
+// ---- Provider kind switch -------------------------------------------------
 // Switching kind materializes a fresh default block of that kind (provider is a
 // single arm — the previous kind's draft is replaced; saved config round-trips
 // back on reopen). An absent block reads as `none` (no auth, the default). The
@@ -597,26 +593,11 @@ function setAuthTtlDays(v: number) {
 // `authActive`) and written at save, so switching only sets the provider shape.
 const authProviderKind = computed(() => draft.value.auth?.provider.kind ?? 'none')
 const isNone = computed(() => authProviderKind.value === 'none')
-const isOAuth = computed(() => authProviderKind.value === 'oauth')
 function setAuthProviderKind(v: string) {
   const a = ensureAuth()
   if (v === a.provider.kind) return
   if (v === 'none') {
     a.provider = { kind: 'none' }
-    a.enabled = false
-  } else if (v === 'oauth') {
-    a.provider = {
-      kind: 'oauth',
-      issuer: '',
-      clientId: '',
-      clientSecretRef: '',
-      redirectUri: '',
-      scopes: [...DEFAULT_OAUTH_SCOPES],
-      usePkce: true,
-      allowedEmails: [],
-      adminEmail: '',
-    }
-    // Cannot truly enable without the OAuth runtime; keep off (re-pinned at save).
     a.enabled = false
   } else if (v === 'basic') {
     a.provider = { kind: 'basic', accounts: [], adminUsername: '' }
@@ -624,54 +605,6 @@ function setAuthProviderKind(v: string) {
     a.enabled = false
   }
 }
-/** Mutate the oauth provider in place (no-op unless the active arm is oauth). */
-function patchOAuth(patch: Partial<OAuthAuthProvider>) {
-  const a = ensureAuth()
-  if (a.provider.kind === 'oauth') Object.assign(a.provider, patch)
-}
-const oauthIssuer = computed(() =>
-  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.issuer : '',
-)
-const oauthClientId = computed(() =>
-  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.clientId : '',
-)
-const oauthClientSecretRef = computed(() =>
-  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.clientSecretRef : '',
-)
-const oauthRedirectUri = computed(() =>
-  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.redirectUri : '',
-)
-const oauthUsePkce = computed(() =>
-  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.usePkce : true,
-)
-// Scopes edit as whitespace/comma-separated text; emails one-per-line.
-const oauthScopesText = computed(() =>
-  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.scopes.join(' ') : '',
-)
-function setOAuthScopes(v: string) {
-  patchOAuth({
-    scopes: v
-      .split(/[\s,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean),
-  })
-}
-const oauthAllowedEmailsText = computed(() =>
-  draft.value.auth?.provider.kind === 'oauth'
-    ? draft.value.auth.provider.allowedEmails.join('\n')
-    : '',
-)
-function setOAuthAllowedEmails(v: string) {
-  patchOAuth({
-    allowedEmails: v
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean),
-  })
-}
-const oauthAdminEmail = computed(() =>
-  draft.value.auth?.provider.kind === 'oauth' ? draft.value.auth.provider.adminEmail : '',
-)
 
 // ---- basic account management (emits → dedicated server messages) --------
 // A new account's username must not collide with an existing one (AC2.1). Caught
@@ -1204,9 +1137,6 @@ function selectAdmin(username: string) {
         <p v-if="isNone" class="settings-hint" data-testid="settings-auth-none-hint">
           {{ t('settings.auth.none.hint') }}
         </p>
-        <p v-else-if="isOAuth" class="settings-hint" data-testid="settings-auth-oauth-pending">
-          {{ t('settings.auth.oauth.runtimePending') }}
-        </p>
         <p
           v-else-if="!adminConfigured"
           class="settings-hint"
@@ -1278,93 +1208,6 @@ function selectAdmin(username: string) {
               {{ t('settings.auth.account.add.label') }}
             </button>
           </div>
-        </div>
-
-        <div v-if="isOAuth" class="auth-oauth" data-testid="settings-auth-oauth">
-          <p class="settings-hint">{{ t('settings.auth.oauth.hint') }}</p>
-          <label class="auth-field">
-            <span class="auth-label">{{ t('settings.auth.oauth.issuer.label') }}</span>
-            <input
-              class="agent-field"
-              :value="oauthIssuer"
-              :placeholder="t('settings.auth.oauth.issuer.placeholder')"
-              data-testid="settings-auth-oauth-issuer"
-              @input="patchOAuth({ issuer: ($event.target as HTMLInputElement).value })"
-            />
-          </label>
-          <label class="auth-field">
-            <span class="auth-label">{{ t('settings.auth.oauth.clientId.label') }}</span>
-            <input
-              class="agent-field"
-              :value="oauthClientId"
-              :placeholder="t('settings.auth.oauth.clientId.placeholder')"
-              data-testid="settings-auth-oauth-client-id"
-              @input="patchOAuth({ clientId: ($event.target as HTMLInputElement).value })"
-            />
-          </label>
-          <label class="auth-field">
-            <span class="auth-label">{{ t('settings.auth.oauth.clientSecretRef.label') }}</span>
-            <input
-              class="agent-field"
-              :value="oauthClientSecretRef"
-              :placeholder="t('settings.auth.oauth.clientSecretRef.placeholder')"
-              data-testid="settings-auth-oauth-client-secret-ref"
-              @input="patchOAuth({ clientSecretRef: ($event.target as HTMLInputElement).value })"
-            />
-          </label>
-          <p class="settings-hint">{{ t('settings.auth.oauth.clientSecretRef.hint') }}</p>
-          <label class="auth-field">
-            <span class="auth-label">{{ t('settings.auth.oauth.redirectUri.label') }}</span>
-            <input
-              class="agent-field"
-              :value="oauthRedirectUri"
-              :placeholder="t('settings.auth.oauth.redirectUri.placeholder')"
-              data-testid="settings-auth-oauth-redirect-uri"
-              @input="patchOAuth({ redirectUri: ($event.target as HTMLInputElement).value })"
-            />
-          </label>
-          <label class="auth-field">
-            <span class="auth-label">{{ t('settings.auth.oauth.scopes.label') }}</span>
-            <input
-              class="agent-field"
-              :value="oauthScopesText"
-              :placeholder="t('settings.auth.oauth.scopes.placeholder')"
-              data-testid="settings-auth-oauth-scopes"
-              @input="setOAuthScopes(($event.target as HTMLInputElement).value)"
-            />
-          </label>
-          <label class="consensus-toggle">
-            <input
-              type="checkbox"
-              :checked="oauthUsePkce"
-              data-testid="settings-auth-oauth-pkce"
-              @change="patchOAuth({ usePkce: ($event.target as HTMLInputElement).checked })"
-            />
-            {{ t('settings.auth.oauth.usePkce.label') }}
-          </label>
-          <label class="auth-field">
-            <span class="auth-label">{{ t('settings.auth.oauth.allowedEmails.label') }}</span>
-            <textarea
-              class="agent-field"
-              rows="3"
-              :value="oauthAllowedEmailsText"
-              :placeholder="t('settings.auth.oauth.allowedEmails.placeholder')"
-              data-testid="settings-auth-oauth-allowed-emails"
-              @input="setOAuthAllowedEmails(($event.target as HTMLTextAreaElement).value)"
-            ></textarea>
-          </label>
-          <p class="settings-hint">{{ t('settings.auth.oauth.allowedEmails.hint') }}</p>
-          <label class="auth-field">
-            <span class="auth-label">{{ t('settings.auth.oauth.adminEmail.label') }}</span>
-            <input
-              class="agent-field"
-              :value="oauthAdminEmail"
-              :placeholder="t('settings.auth.oauth.adminEmail.placeholder')"
-              data-testid="settings-auth-oauth-admin-email"
-              @input="patchOAuth({ adminEmail: ($event.target as HTMLInputElement).value })"
-            />
-          </label>
-          <p class="settings-hint">{{ t('settings.auth.oauth.adminEmail.hint') }}</p>
         </div>
 
         <label class="consensus-toggle">

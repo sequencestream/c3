@@ -60,26 +60,6 @@ describe('configuredAdmin (provider-neutral admin resolution)', () => {
     expect(configuredAdmin(basicAuth(''))).toBeNull()
   })
 
-  it('returns the oauth adminEmail, or null for the unconfigured shell', () => {
-    const oauth = (adminEmail: string): AuthConfig => ({
-      enabled: true,
-      provider: {
-        kind: 'oauth',
-        issuer: 'https://i',
-        clientId: 'c',
-        clientSecretRef: 'r',
-        redirectUri: 'https://cb',
-        scopes: [],
-        usePkce: true,
-        allowedEmails: ['a@x.com'],
-        adminEmail,
-      },
-      session: SESSION,
-    })
-    expect(configuredAdmin(oauth('a@x.com'))).toBe('a@x.com')
-    expect(configuredAdmin(oauth(''))).toBeNull()
-  })
-
   it('returns null for the none provider (no admin concept)', () => {
     expect(
       configuredAdmin({ enabled: true, provider: { kind: 'none' }, session: SESSION }),
@@ -112,30 +92,6 @@ describe('isAdminConn (the admin gate — three access classes)', () => {
   it('is inert during the basic bootstrap window (no admin configured yet)', () => {
     h.store.auth = basicAuth('') // enabled shell, adminUsername === ''
     expect(isAdminConn(connFor(null))).toBe(true)
-  })
-
-  it('oauth enforcement is deferred: inert while no subject can be resolved (contract-only)', () => {
-    h.store.auth = {
-      enabled: true,
-      provider: {
-        kind: 'oauth',
-        issuer: 'https://i',
-        clientId: 'c',
-        clientSecretRef: 'r',
-        redirectUri: 'https://cb',
-        scopes: [],
-        usePkce: true,
-        allowedEmails: ['admin@x.com'],
-        adminEmail: 'admin@x.com',
-      },
-      session: SESSION,
-    }
-    // No OAuth runtime ⇒ conn.subject is null ⇒ gate stays inert (trusted).
-    expect(isAdminConn(connFor(null))).toBe(true)
-    // But the comparison branch IS wired: the day the runtime binds a subject, a
-    // non-admin email is rejected and the admin email is admitted.
-    expect(isAdminConn(connFor('mallory@x.com'))).toBe(false)
-    expect(isAdminConn(connFor('admin@x.com'))).toBe(true)
   })
 })
 

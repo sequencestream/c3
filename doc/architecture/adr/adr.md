@@ -44,6 +44,6 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 | [0020](0020-sandbox-driver-independent-kernel-module.md)          | SandboxDriver 作为独立 kernel 模块                                                                                     | accepted   |
 | [0021](0021-system-project-two-tier-sandbox-config.md)            | 系统定义 + 项目选择双层配置                                                                                            | accepted   |
 | [0022](0022-canonical-not-extended.md)                            | CanonicalMessage 不扩展（沙箱/Checkpoint 通过事件总线）                                                                | accepted   |
-| [0023](0023-auth-abstraction-network-exposure.md)                 | 认证抽象边界：网络暴露的强制前提（basic 运行时 + oauth/OIDC 契约就绪、登录待运行时）                                   | proposed   |
+| [0023](0023-auth-abstraction-network-exposure.md)                 | 认证抽象边界：网络暴露的强制前提（none/basic 两种 provider，basic 运行时已上线）                                       | proposed   |
 | [0024](0024-sandbox-worktree-only-random-agent-hard-isolation.md) | Sandbox 仅 worktree intent-dev + custom agent 随机选取 + 启用即硬隔离                                                  | accepted   |
 | [0025](0025-sandbox-network-readonly-workspace-policy.md)         | Sandbox `networkDisabled`/`readonlyRootfs` 下沉为工作区级 deny-by-default 安全策略（readonlyRootfs 默认改 true）       | accepted   |

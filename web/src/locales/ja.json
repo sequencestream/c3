@@ -533,49 +533,10 @@
       "provider": {
         "label": "プロバイダ",
         "none": "認証なし",
-        "basic": "ユーザー名とパスワード",
-        "oauth": "OAuth / OIDC"
+        "basic": "ユーザー名とパスワード"
       },
       "none": {
         "hint": "このサーバーに到達できる人は誰でも、サインインなしで利用できます。localhost 上のローカル・単一ユーザー構成の既定値です。"
-      },
-      "oauth": {
-        "hint": "外部の OpenID Connect プロバイダ（Google、Keycloak、または準拠する issuer）にサインインを委任します。",
-        "runtimePending": "OAuth 契約は準備できていますが、サインインは OAuth ランタイムの実装待ちです。現時点では認証を有効にしてもユーザー名とパスワードでのみ動作します。",
-        "issuer": {
-          "label": "Issuer（discovery URL）",
-          "placeholder": "https://accounts.example.com"
-        },
-        "clientId": {
-          "label": "クライアント ID",
-          "placeholder": "your-oauth-client-id"
-        },
-        "clientSecretRef": {
-          "label": "クライアントシークレットの参照",
-          "placeholder": "C3_OAUTH_CLIENT_SECRET",
-          "hint": "シークレット値そのものではなく、参照（環境変数名 / keystore id）を保存します。"
-        },
-        "redirectUri": {
-          "label": "リダイレクト URI",
-          "placeholder": "https://console.example.com/auth/callback"
-        },
-        "scopes": {
-          "label": "スコープ",
-          "placeholder": "openid profile email"
-        },
-        "usePkce": {
-          "label": "PKCE を使用"
-        },
-        "allowedEmails": {
-          "label": "許可するメールアドレス",
-          "placeholder": "alice{'@'}example.com\nbob{'@'}example.com",
-          "hint": "これらの確認済みメールアドレスのみサインインできます。空のリストでは誰も許可されません。"
-        },
-        "adminEmail": {
-          "label": "管理者メール",
-          "placeholder": "alice{'@'}example.com",
-          "hint": "唯一の管理者のメール。上記の許可メールのいずれかである必要があります。"
-        }
       },
       "enable": {
         "needAdmin": "サインインを有効にするには、先に下で管理者アカウントを設定してください。",
@@ -1740,7 +1701,6 @@
       "invalidDefaultMode": "ベンダー \"{vendor}\" のデフォルトモード \"{mode}\" が無効です。"
     },
     "auth": {
-      "oauthAdminInvalid": "管理者メールを設定し、許可メールに含める必要があります。",
       "adminOnly": "システム設定を変更できるのは管理者のみです。"
     }
   },

@@ -36,8 +36,8 @@ export interface Conn {
   /** The session token bound to this connection (for `logout` revocation). */
   authToken: string | null
   /**
-   * The authenticated subject (signed-in `basic.adminUsername`-eligible username,
-   * or — once the OAuth runtime lands — the OIDC email) bound to this connection,
+   * The authenticated subject (a signed-in `basic.adminUsername`-eligible
+   * username) bound to this connection,
    * or `null` when unauthenticated / auth disabled (ADR-0023 authz slice). Set at
    * the handshake (from the verified token) and on `login`; cleared on `logout`.
    * The admin gate (`isAdminConn`) compares it against the provider's configured

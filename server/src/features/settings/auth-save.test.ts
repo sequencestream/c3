@@ -12,7 +12,7 @@ vi.mock('../../kernel/config/index.js', () => ({
   saveWorkspaceSetting: (_p: string, c: unknown) => c,
 }))
 
-import { preserveBasicProvider, validateAuthForSave, saveSettingsHandler } from './index.js'
+import { preserveBasicProvider, saveSettingsHandler } from './index.js'
 
 const H = '$scrypt$ln=15,r=8,p=1$s$h'
 const base = {
@@ -84,60 +84,6 @@ describe('preserveBasicProvider (AUTH-R7 multi-account)', () => {
       },
     }
     expect(preserveBasicProvider(draft)).toBe(draft)
-  })
-})
-
-describe('validateAuthForSave (oauth admin ∈ allowedEmails — AC5.3)', () => {
-  function oauth(adminEmail: string, allowedEmails: string[]): SystemSettings {
-    return {
-      ...base,
-      auth: {
-        enabled: false,
-        provider: {
-          kind: 'oauth',
-          issuer: 'https://i',
-          clientId: 'c',
-          clientSecretRef: 'r',
-          redirectUri: 'https://cb',
-          scopes: [],
-          usePkce: true,
-          allowedEmails,
-          adminEmail,
-        },
-        session: { ttlSeconds: 3600, signingKeyRef: 'k' },
-      },
-    }
-  }
-
-  it('accepts an adminEmail that is in the allowlist', () => {
-    expect(validateAuthForSave(oauth('a@x.com', ['a@x.com', 'b@x.com']))).toBeNull()
-  })
-
-  it('rejects an empty adminEmail', () => {
-    expect(validateAuthForSave(oauth('', ['a@x.com']))).toBe('auth.oauthAdminInvalid')
-  })
-
-  it('rejects an adminEmail absent from the allowlist', () => {
-    expect(validateAuthForSave(oauth('mallory@evil.com', ['a@x.com']))).toBe(
-      'auth.oauthAdminInvalid',
-    )
-  })
-
-  it('does not constrain basic / none providers', () => {
-    expect(validateAuthForSave({ ...base })).toBeNull()
-    const basic: SystemSettings = {
-      ...base,
-      auth: {
-        enabled: true,
-        provider: {
-          kind: 'basic',
-          accounts: [{ username: 'a', passwordHash: H }],
-          adminUsername: 'a',
-        },
-        session: { ttlSeconds: 3600, signingKeyRef: 'k' },
-      },
-    }
-    expect(validateAuthForSave(basic)).toBeNull()
   })
 })
 

@@ -1,9 +1,6 @@
 # c3 — Code Creative Center
 
-A local, single-user **personal AI workbench** that centrally manages and drives
-the work of multiple AI coding agents — [Claude Code](https://docs.claude.com/en/docs/claude-code),
-Codex, and more — from one browser UI. Every sensitive tool-use permission request
-is intercepted and approved through the browser, instead of the terminal.
+An **AI workbench** that centrally manages and drives the work of multiple AI coding agents — Claude Code, Codex, and more — from one browser UI.
 
 ```
 ┌────────────┐       /ws        ┌──────────────────────────┐

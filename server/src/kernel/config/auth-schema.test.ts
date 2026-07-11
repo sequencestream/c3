@@ -13,8 +13,7 @@ import {
  * Contract tests for the ADR-0023 auth config schema (multi-account basic +
  * unique admin). They guard: a valid basic config parses; an absent/malformed
  * block fails-soft to `null` (⇒ "no auth"); legacy single-account migration;
- * the unique-username + admin-reference invariants; `enabled` derivation; and the
- * oauth adminEmail handling (normalize does NOT drop on invalid adminEmail).
+ * the unique-username + admin-reference invariants; and `enabled` derivation.
  */
 describe('auth-schema', () => {
   const HASH = '$scrypt$ln=15,r=8,p=1$c2FsdHNhbHQ$aGFzaGhhc2g'
@@ -226,88 +225,6 @@ describe('auth-schema', () => {
       const normalized = normalizeAuth(stale)
       expect(normalized?.provider.kind).toBe('none')
       expect(normalized?.enabled).toBe(false)
-    })
-  })
-
-  // ---- oauth (generic OIDC) provider arm — contract-only (no runtime) ----
-  describe('oauth provider arm', () => {
-    const validOAuth: AuthConfig = {
-      enabled: false,
-      provider: {
-        kind: 'oauth',
-        issuer: 'https://accounts.example.com',
-        clientId: 'c3-console',
-        clientSecretRef: 'C3_OAUTH_CLIENT_SECRET',
-        redirectUri: 'https://console.example.com/auth/callback',
-        scopes: ['openid', 'profile', 'email'],
-        usePkce: true,
-        allowedEmails: ['alice@example.com'],
-        adminEmail: 'alice@example.com',
-      },
-      session: { ttlSeconds: 3600, signingKeyRef: 'C3_AUTH_SIGNING_KEY' },
-    }
-
-    it('parses a complete valid oauth config', () => {
-      expect(authConfigSchema.safeParse(validOAuth).success).toBe(true)
-      expect(normalizeAuth(validOAuth)).toEqual(validOAuth)
-    })
-
-    it('applies defaults for scopes, usePkce, allowedEmails, adminEmail when omitted', () => {
-      const minimal = {
-        enabled: false,
-        provider: {
-          kind: 'oauth',
-          issuer: 'https://accounts.example.com',
-          clientId: 'c3-console',
-          clientSecretRef: 'C3_OAUTH_CLIENT_SECRET',
-          redirectUri: 'https://console.example.com/auth/callback',
-        },
-        session: { ttlSeconds: 900, signingKeyRef: 'k' },
-      }
-      const normalized = normalizeAuth(minimal)
-      if (normalized?.provider.kind !== 'oauth') throw new Error('expected oauth')
-      expect(normalized.provider.scopes).toEqual(['openid', 'profile', 'email'])
-      expect(normalized.provider.usePkce).toBe(true)
-      expect(normalized.provider.allowedEmails).toEqual([])
-      expect(normalized.provider.adminEmail).toBe('')
-    })
-
-    it('does NOT fail-soft on an invalid adminEmail — kept, enabled stays false (S1/AC5.4)', () => {
-      // An adminEmail not in allowedEmails is rejected only at the save layer; normalize
-      // keeps the block (no runtime effect, would needlessly wipe issuer/clientId).
-      const badAdmin = {
-        ...validOAuth,
-        enabled: true,
-        provider: { ...validOAuth.provider, adminEmail: 'mallory@evil.com' },
-      }
-      const n = normalizeAuth(badAdmin)
-      expect(n?.provider.kind).toBe('oauth')
-      expect(n?.enabled).toBe(false)
-    })
-
-    it('rejects an oauth config missing the issuer', () => {
-      const noIssuer = {
-        ...validOAuth,
-        provider: {
-          kind: 'oauth',
-          clientId: 'c3-console',
-          clientSecretRef: 'C3_OAUTH_CLIENT_SECRET',
-          redirectUri: 'https://console.example.com/auth/callback',
-        },
-      }
-      expect(normalizeAuth(noIssuer)).toBeNull()
-    })
-
-    it('stores only the secret *reference*, never a plaintext secret', () => {
-      const withPlaintext = {
-        ...validOAuth,
-        provider: { ...validOAuth.provider, clientSecret: 'super-secret-plaintext' },
-      }
-      const normalized = normalizeAuth(withPlaintext)
-      if (normalized?.provider.kind !== 'oauth') throw new Error('expected oauth')
-      expect(normalized.provider.clientSecretRef).toBe('C3_OAUTH_CLIENT_SECRET')
-      expect('clientSecret' in normalized.provider).toBe(false)
-      expect(JSON.stringify(normalized)).not.toContain('super-secret-plaintext')
     })
   })
 

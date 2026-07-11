@@ -532,49 +532,10 @@
       "provider": {
         "label": "认证方式",
         "none": "无需认证",
-        "basic": "用户名与密码",
-        "oauth": "OAuth / OIDC"
+        "basic": "用户名与密码"
       },
       "none": {
         "hint": "任何能访问到本服务的人都可直接使用，无需登录。本地单人、localhost 场景下的默认选项。"
-      },
-      "oauth": {
-        "hint": "把登录委托给外部 OpenID Connect 提供方（Google、Keycloak 或任何兼容的 issuer）。",
-        "runtimePending": "OAuth 契约已就绪，但登录仍待 OAuth 运行时上线。目前启用认证仍只能用用户名与密码。",
-        "issuer": {
-          "label": "Issuer（discovery URL）",
-          "placeholder": "https://accounts.example.com"
-        },
-        "clientId": {
-          "label": "Client ID",
-          "placeholder": "your-oauth-client-id"
-        },
-        "clientSecretRef": {
-          "label": "Client secret 引用",
-          "placeholder": "C3_OAUTH_CLIENT_SECRET",
-          "hint": "存的是引用（环境变量名 / keystore id），绝不存 secret 明文本身。"
-        },
-        "redirectUri": {
-          "label": "回调 URI",
-          "placeholder": "https://console.example.com/auth/callback"
-        },
-        "scopes": {
-          "label": "Scopes",
-          "placeholder": "openid profile email"
-        },
-        "usePkce": {
-          "label": "启用 PKCE"
-        },
-        "allowedEmails": {
-          "label": "授权邮箱白名单",
-          "placeholder": "alice{'@'}example.com\nbob{'@'}example.com",
-          "hint": "仅这些已验证邮箱可登录。留空则无人可登录。"
-        },
-        "adminEmail": {
-          "label": "管理员邮箱",
-          "placeholder": "alice{'@'}example.com",
-          "hint": "唯一管理员的邮箱——必须是上方允许邮箱之一。"
-        }
       },
       "enable": {
         "needAdmin": "请先在下方设置管理员账号，登录认证才会生效。",
@@ -1739,7 +1700,6 @@
       "invalidDefaultMode": "vendor \"{vendor}\" 的默认模式 \"{mode}\" 无效。"
     },
     "auth": {
-      "oauthAdminInvalid": "必须设置管理员邮箱，且它需在允许邮箱列表中。",
       "adminOnly": "只有管理员可以修改系统配置。"
     }
   },

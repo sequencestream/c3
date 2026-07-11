@@ -2,9 +2,9 @@
  * Request-level authorization — the admin gate (ADR-0023 authz slice).
  *
  * "Only the administrator may change system configuration." The account roster
- * already records exactly one admin per provider (`basic.adminUsername` /
- * `oauth.adminEmail`, see the unique-admin config layer); this module turns that
- * config-layer fact into a RUNTIME gate the config-mutating handlers consult.
+ * already records exactly one admin (`basic.adminUsername`, see the unique-admin
+ * config layer); this module turns that config-layer fact into a RUNTIME gate the
+ * config-mutating handlers consult.
  *
  * Provider-neutral by construction (the same neutral-abstraction shape as the
  * vendor model): `isAdminConn` resolves the active provider's admin identity and
@@ -14,13 +14,8 @@
  *  - an unconfigured `basic` shell (`adminUsername === ''`) → the bootstrap window
  *    where the first admin is still being created (mirrors `set_admin_password`).
  *
- * OAuth is contract-only this phase: its login/session runtime (and therefore a
- * resolvable `conn.subject`) is deferred (ADR-0023). So while an `oauth` provider
- * yields no subject the gate stays inert; the comparison branch is already wired
- * against `adminEmail`, so enforcement activates automatically the day the OAuth
- * runtime starts binding `conn.subject`. The gate is never the sole defense — it
- * composes with the handshake/dispatch auth gate (an unauthenticated connection
- * cannot reach these handlers at all).
+ * The gate is never the sole defense — it composes with the handshake/dispatch
+ * auth gate (an unauthenticated connection cannot reach these handlers at all).
  */
 import type { AuthConfig } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
@@ -28,15 +23,14 @@ import { loadSettings } from '../../kernel/config/index.js'
 
 /**
  * The configured admin identity for an auth block, or `null` when no admin gate
- * applies (auth disabled/absent, `kind: 'none'`, or an unconfigured `basic`/`oauth`
- * shell whose admin field is still empty). Pure over its argument (no I/O) so it
- * is trivially unit-testable across every provider arm.
+ * applies (auth disabled/absent, `kind: 'none'`, or an unconfigured `basic` shell
+ * whose admin field is still empty). Pure over its argument (no I/O) so it is
+ * trivially unit-testable across every provider arm.
  */
 export function configuredAdmin(auth: AuthConfig | undefined): string | null {
   if (!auth || !auth.enabled) return null
   const provider = auth.provider
   if (provider.kind === 'basic') return provider.adminUsername || null
-  if (provider.kind === 'oauth') return provider.adminEmail || null
   return null // 'none' — no admin concept
 }
 
@@ -50,11 +44,6 @@ export function isAdminConn(conn: Conn): boolean {
   const auth = loadSettings().auth
   const admin = configuredAdmin(auth)
   if (admin === null) return true // no admin gate applies ⇒ trusted
-  // OAuth login/session is deferred (contract-only): until its runtime can bind
-  // `conn.subject`, the gate stays INERT rather than locking everyone out of an
-  // oauth-configured server. The equality branch below is already wired against
-  // `adminEmail`, so enforcement activates the moment a subject appears.
-  if (auth?.provider.kind === 'oauth' && conn.subject === null) return true
   return conn.subject !== null && conn.subject === admin
 }
 

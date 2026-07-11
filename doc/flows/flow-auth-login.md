@@ -45,9 +45,7 @@ flowchart TD
    `adminUsername` 指向其中一个账号时为 true。
 4. **账号存储的归属。** 整个 `basic` 账号集合**只**由这些专用消息修改;通用的
    `save_settings` 从不触碰它——服务器会强制把整个 basic 提供方还原为磁盘上的值,因此一份
-   陈旧/空白的客户端草稿不能清空、重新指派或覆盖账号(`AUTH-R7`)。OAuth 的 `adminEmail`
-   (它经由 `save_settings` 流转)必须非空且是 `allowedEmails` 的成员,否则保存会被拒绝
-   (`auth.oauthAdminInvalid`)。
+   陈旧/空白的客户端草稿不能清空、重新指派或覆盖账号(`AUTH-R7`)。
 
 ## 登录
 
@@ -76,5 +74,5 @@ flowchart TD
   (`AUTH-R2`)。
 - **绝不明文。** 任何类型、示例或测试都不携带真实明文密码作为存储值;只有 PHC 哈希被持久化
   (`AUTH-R3`)。
-- **与提供方无关。** 未来加入 OAuth/SSO/多用户提供方只需新增一个 `AuthProvider` 分支 + 一个
+- **与提供方无关。** 未来加入 SSO/多用户提供方只需新增一个 `AuthProvider` 分支 + 一个
   服务端 zod 分支;会话模型与线路消息保持不变(`AUTH-R5`)。

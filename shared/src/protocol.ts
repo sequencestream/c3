@@ -737,7 +737,7 @@ export interface WorkspaceSetting {
 // An extensible auth abstraction so the single-admin `basic` provider this phase
 // does not weld one auth method into every layer. The session-token model and
 // the login/logout/unauthenticated messages are PROVIDER-NEUTRAL (reused by any
-// provider); a future OAuth/SSO provider only appends a `kind` arm to
+// provider); a future provider only appends a `kind` arm to
 // {@link AuthProvider}. Runtime (middleware, login page, password hashing, token
 // signing/verification) is NOT in this phase. The matching zod schema +
 // type-pin lives server-side in `kernel/config/auth-schema.ts` (ADR-0009).
@@ -745,13 +745,12 @@ export interface WorkspaceSetting {
 
 /**
  * Auth provider kinds — the extension point. `none` (no auth — the C-SEC-5
- * localhost-only default), `basic` (single admin) and `oauth` (generic OIDC,
- * contract-only — see {@link OAuthAuthProvider}) are defined; `sso`/multi-user
- * remain reserved (add a `kind` here + an arm to {@link AuthProvider} + a server
- * zod arm; nothing else changes — same shape as the ADR-0011 vendor extension
- * point).
+ * localhost-only default) and `basic` (single admin) are defined; other
+ * providers remain reserved (add a `kind` here + an arm to {@link AuthProvider}
+ * + a server zod arm; nothing else changes — same shape as the ADR-0011 vendor
+ * extension point).
  */
-export const AUTH_PROVIDER_KINDS = ['none', 'basic', 'oauth'] as const
+export const AUTH_PROVIDER_KINDS = ['none', 'basic'] as const
 export type AuthProviderKind = (typeof AUTH_PROVIDER_KINDS)[number]
 
 /**
@@ -799,55 +798,11 @@ export interface BasicAuthProvider {
 }
 
 /**
- * Generic OIDC `oauth` provider — **contract-only** (no runtime this phase). The
- * config an admin fills so c3 can later delegate login to an external IdP
- * (Google / Keycloak / any compliant OpenID Connect issuer). Authorization is by
- * email allowlist only (no sub allowlist / roles this phase).
- *
- * Runtime — `/auth/callback`, discovery fetch, PKCE/state, token exchange, JWKS
- * verification, session minting — is ALL deferred to a later OAuth-runtime task.
- * Persisting this block does NOT enable OAuth login; with the runtime absent,
- * turning auth on still only works with `basic` (the UI marks oauth accordingly).
- */
-export interface OAuthAuthProvider {
-  kind: 'oauth'
-  /** OIDC issuer / discovery base URL (its `.well-known/openid-configuration`). */
-  issuer: string
-  /** OAuth 2.0 client id registered with the IdP. */
-  clientId: string
-  /**
-   * Reference (env var name / keystore id) to the OAuth client secret — NEVER
-   * the secret itself. Same secret-by-indirection discipline as
-   * {@link AuthSessionPolicy.signingKeyRef}; the runtime resolves the real value.
-   */
-  clientSecretRef: string
-  /** Redirect URI the IdP returns the user to (validated by the future runtime). */
-  redirectUri: string
-  /** Requested OAuth scopes. Defaults to `['openid', 'profile', 'email']`. */
-  scopes: string[]
-  /** Whether to use PKCE on the authorization-code flow. Defaults to `true`. */
-  usePkce: boolean
-  /**
-   * Authorization allowlist: only these verified emails may sign in. An empty
-   * list means nobody is authorized (the future runtime enforces this).
-   */
-  allowedEmails: string[]
-  /**
-   * The single admin's email — the authority source for system-config changes
-   * (the OAuth analogue of {@link BasicAuthProvider.adminUsername}). Exactly one,
-   * and MUST be a member of {@link allowedEmails} (exact string match). Validated
-   * at the save layer (`auth.oauthAdminInvalid` on violation). `''` ⇒ unconfigured.
-   */
-  adminEmail: string
-}
-
-/**
  * The active auth provider — a `kind`-discriminated union. Narrow on `kind`
  * before reading provider-specific fields. `none` is no-auth (the localhost-only
- * default); `basic` is runtime-live; `oauth` is contract-only (config persists,
- * login awaits the OAuth-runtime task).
+ * default); `basic` is runtime-live.
  */
-export type AuthProvider = NoneAuthProvider | BasicAuthProvider | OAuthAuthProvider
+export type AuthProvider = NoneAuthProvider | BasicAuthProvider
 
 /**
  * Session-token policy — provider-neutral. The signing secret itself is NEVER
@@ -885,7 +840,7 @@ export interface AuthConfig {
   /** Master switch. `false` / absent block ⇒ no auth (C-SEC-5 default). A
    *  `none` provider pins this to `false` (see {@link NoneAuthProvider}). */
   enabled: boolean
-  /** The active auth provider (`none` ⇒ no auth; `basic` runtime-live; `oauth` contract-only). */
+  /** The active auth provider (`none` ⇒ no auth; `basic` runtime-live). */
   provider: AuthProvider
   /** Session-token policy (TTL + signing-key reference). */
   session: AuthSessionPolicy
@@ -3476,14 +3431,14 @@ export type ServerToClient =
        * (ADR-0023 authz slice). `true` whenever no admin gate applies — auth
        * disabled / `none` / an unconfigured `basic` shell (loopback bootstrap-trust,
        * AUTH-R2) — or when the signed-in subject equals the provider's admin
-       * (`basic.adminUsername` / `oauth.adminEmail`). Drives the console hiding /
+       * (`basic.adminUsername`). Drives the console hiding /
        * disabling system-config controls for non-admins; the server enforces the
        * same gate regardless (the wire flag is UX only, never the authority).
        */
       isAdmin: boolean
       /**
-       * The signed-in subject for THIS connection — `basic.adminUsername`-eligible
-       * username, or (once the OAuth runtime lands) the OIDC email — used only to
+       * The signed-in subject for THIS connection — a `basic.adminUsername`-eligible
+       * username — used only to
        * surface "who am I" in the top-bar account menu. `null` whenever no one is
        * signed in: auth disabled / `none` / an unconfigured `basic` shell, or before
        * a `login`. Purely a display hint; never an authority for any gate.

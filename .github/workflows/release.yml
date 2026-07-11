@@ -428,9 +428,6 @@ jobs:
         build-publish-macos-x64,
         build-publish-windows-x64,
       ]
-    if: >-
-      (github.event_name == 'workflow_dispatch' || github.event_name == 'push') &&
-      needs.setup.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the Release + tag and upload assets

@@ -6,7 +6,7 @@
 #
 # Per-target build jobs: because cross-compile is banned, every target builds on its own
 # native OS runner. Each target job runs build → smoke → checksum → verify(postgate), then
-# uploads its signed artifacts (actions/upload-artifact). A final `publish` job gathers all
+# uploads its checksummed artifacts (actions/upload-artifact). A final `publish` job gathers all
 # targets and cuts ONE public GitHub Release. The `needs:` chain enforces the gate order: a
 # red pregate skips every target; within a target a failed build/smoke/checksum/verify aborts it.
 #
@@ -27,7 +27,7 @@
 #          push tags: v* (re-build + re-publish for the pushed tag).
 #
 # Local `pnpm release` still works — this workflow calls the same node scripts
-# (release:build, release:smoke, sign, postgate) so local and CI share one source of truth.
+# (release:build, release:smoke, checksum, postgate) so local and CI share one source of truth.
 name: Release
 
 on:
@@ -164,14 +164,14 @@ jobs:
           node scripts/release/smoke.mjs --file=dist/smoke/c3 --timeout=20000
 
       - name: Checksum artifacts
-        run: node scripts/release/sign.mjs --manifest=dist/manifest.json
+        run: node scripts/release/checksum.mjs --manifest=dist/manifest.json
 
       - name: Verify distribution consistency
         env:
           C3_REQUIRED_TARGETS: linux-x64
         run: node scripts/release/postgate.mjs --manifest=dist/manifest.json
 
-      - name: Upload signed artifacts for the publish job
+      - name: Upload checksummed artifacts for the publish job
         uses: actions/upload-artifact@v4
         with:
           name: c3-linux-x64
@@ -230,14 +230,14 @@ jobs:
           node scripts/release/smoke.mjs --file=dist/smoke/c3 --timeout=20000
 
       - name: Checksum artifacts
-        run: node scripts/release/sign.mjs --manifest=dist/manifest.json
+        run: node scripts/release/checksum.mjs --manifest=dist/manifest.json
 
       - name: Verify distribution consistency
         env:
           C3_REQUIRED_TARGETS: macos-arm64
         run: node scripts/release/postgate.mjs --manifest=dist/manifest.json
 
-      - name: Upload signed artifacts for the publish job
+      - name: Upload checksummed artifacts for the publish job
         uses: actions/upload-artifact@v4
         with:
           name: c3-macos-arm64
@@ -298,14 +298,14 @@ jobs:
           node scripts/release/smoke.mjs --file=dist/smoke/c3.exe --timeout=20000
 
       - name: Checksum artifacts
-        run: node scripts/release/sign.mjs --manifest=dist/manifest.json
+        run: node scripts/release/checksum.mjs --manifest=dist/manifest.json
 
       - name: Verify distribution consistency
         env:
           C3_REQUIRED_TARGETS: windows-x64
         run: node scripts/release/postgate.mjs --manifest=dist/manifest.json
 
-      - name: Upload signed artifacts for the publish job
+      - name: Upload checksummed artifacts for the publish job
         uses: actions/upload-artifact@v4
         with:
           name: c3-windows-x64
@@ -318,7 +318,7 @@ jobs:
           retention-days: 7
 
   # ────────────────────────────────────────────────────────────────────
-  # 2. publish — gather every target's signed artifacts and cut ONE public
+  # 2. publish — gather every target's checksummed artifacts and cut ONE public
   #    GitHub Release. Release notes are auto-generated from the merged-PR /
   #    commit history since the previous release (GitHub `--generate-notes`,
   #    categorized by .github/release.yml). Runs only after all targets

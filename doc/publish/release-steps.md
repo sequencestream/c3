@@ -2,12 +2,9 @@
 
 > 对应 doc/non-functional/release.md(release 1–7)。
 >
-> **开源版说明:** 已移除 minisign 签名子系统与 `c3 verify` 命令(签名密钥、`.minisig`
-> 产物、`release:keygen`、`publish:binaries` 均已删除)。产物完整性由 **sha256 校验和**
-> (`.sha256` / `SHA256SUMS`)+ **公开 GitHub Release 的 HTTPS** 提供。早期的自建
-> license-server 产物分发端(`/v1/artifact/upload`)也已随 license-server 一并移除。
-> **开源版的产物分发以 CI 切割的公开 GitHub Release 为准**;release notes 由 GitHub
-> `--generate-notes` 基于 PR 历史自动生成。
+> **说明:** 产物完整性由 **sha256 校验和**(`.sha256` / `SHA256SUMS`)+ **公开
+> GitHub Release 的 HTTPS** 提供。产物分发以 CI 切割的公开 GitHub Release 为准;
+> release notes 由 GitHub `--generate-notes` 基于 PR 历史自动生成。
 
 ## 概述
 
@@ -109,7 +106,7 @@ pnpm release:github --dry-run      # 排练每个阶段,不打 tag / 不跑 gh
 | -------------------------- | -------------------------------------------------------------------------------------------------- |
 | `pnpm release`             | **交互式本地构建**:提示版本 → 交叉编译三目标 → 生成校验和 → 汇集 `dist/release-artifacts/v<版本>/` |
 | `pnpm release:build`       | 仅构建 + 打包 + manifest(`--targets` / `--skip-web` / `--skip-pack`)                               |
-| `pnpm release:sign`        | 对 dist/ 产物生成校验和(出 `.sha256` / `SHA256SUMS`)                                               |
+| `pnpm release:checksum`    | 对 dist/ 产物生成校验和(出 `.sha256` / `SHA256SUMS`)                                               |
 | `pnpm release:smoke`       | 冒烟:`--version` + headless 启动                                                                   |
 | `pnpm release:verify-dist` | postgate:manifest ↔ SHA256SUMS ↔ 磁盘一致性                                                        |
 | `pnpm release:github`      | GitHub 发布编排:gate → build → notes → 切公开 GitHub Release                                       |

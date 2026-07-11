@@ -7,10 +7,9 @@
 // archive, the top-level files are `c3`, `c3.sha256` (flat, no
 // subdirectory) so `tar -xzf … && ./c3 --version` works out of the box.
 //
-// 开源版已移除 minisign 签名:只生成 `c3.sha256` 完整性校验和(不再生成 `c3.minisig`)。
-// 该 sidecar 在此步生成,因为二进制字节此时已最终确定(codesign 已在 `buildTarget`
-// 内运行)。sidecar 以稳定的包内名 `c3` 引用二进制,解包后即可用
-// `shasum -a 256 -c c3.sha256` 校验。
+// 生成 `c3.sha256` 完整性校验和。该 sidecar 在此步生成,因为二进制字节此时已最终确定
+// (codesign 已在 `buildTarget` 内运行)。sidecar 以稳定的包内名 `c3` 引用二进制,
+// 解包后即可用 `shasum -a 256 -c c3.sha256` 校验。
 //
 // Cross-platform: the archive tool is the shell `tar` (POSIX targets) or `zip`.
 // The Windows `.zip` is host-branched so it works BOTH on a native Windows runner

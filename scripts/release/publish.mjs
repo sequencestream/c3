@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { artifactsFromManifest, signArtifacts } from './sign.mjs'
+import { artifactsFromManifest, checksumArtifacts } from './checksum.mjs'
 import { buildNotes } from './notes.mjs'
 import { verifyDist } from './postgate.mjs'
 
@@ -74,7 +74,7 @@ export async function publish({ dryRun = false, noPublish = false, manifestPath:
 
   // 1. checksum
   console.log('\n[publish] hashing artifacts…')
-  signArtifacts({
+  checksumArtifacts({
     artifacts,
     outDir: dirname(manifestPath),
     version,

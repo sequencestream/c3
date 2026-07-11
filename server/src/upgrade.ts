@@ -655,9 +655,9 @@ export async function runUpgrade(
       : undefined
 
     // Integrity gate: cross-check the PACKAGE bytes against the published .sha256
-    // sidecar before unpacking. (Open-source builds carry no minisign signature; the
-    // sha256 checksum + GitHub HTTPS are the integrity anchor.) A missing sidecar is
-    // tolerated — the transport is already TLS-authenticated to github.com.
+    // sidecar before unpacking. (The sha256 checksum + GitHub HTTPS are the integrity
+    // anchor.) A missing sidecar is tolerated — the transport is already
+    // TLS-authenticated to github.com.
     if (sha256Line && sha256Line.trim() !== '') {
       const actual = createHash('sha256').update(io.readFile(pkgPath)).digest('hex')
       const expected = sha256Line.trim().split(/\s+/)[0]?.toLowerCase()

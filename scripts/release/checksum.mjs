@@ -4,10 +4,9 @@
 //   <artifact>.sha256          一行 `<hex>  <name>`(与 shasum -a 256 -c 兼容)
 //   SHA256SUMS                 所有产物的汇总
 //
-// 开源版已移除 minisign 签名:分发经公开 GitHub Release,完整性由 sha256 校验和 +
-// GitHub HTTPS 提供,不再生成 .minisig 或需要签名密钥。
+// 分发经公开 GitHub Release,完整性由 sha256 校验和 + GitHub HTTPS 提供。
 //
-// 纯 Node。CLI: node scripts/release/sign.mjs [--manifest=dist/manifest.json] [--dry-run]
+// 纯 Node。CLI: node scripts/release/checksum.mjs [--manifest=dist/manifest.json] [--dry-run]
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { resolve, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,7 +24,7 @@ const repoRoot = resolve(here, '..', '..')
  * @param {(m: string) => void} [o.log]
  * @returns {{ sha256sums: string, written: string[] }}
  */
-export function signArtifacts({ artifacts, outDir, log = () => {} }) {
+export function checksumArtifacts({ artifacts, outDir, log = () => {} }) {
   const written = []
   const sumsLines = []
 
@@ -74,21 +73,23 @@ if (isMain()) {
   )
   const manifestPath = resolve(repoRoot, args.manifest || 'dist/manifest.json')
   if (!existsSync(manifestPath)) {
-    console.error(`[sign] manifest not found: ${manifestPath} — run \`pnpm release:build\` first.`)
+    console.error(
+      `[checksum] manifest not found: ${manifestPath} — run \`pnpm release:build\` first.`,
+    )
     process.exit(1)
   }
   const { version, artifacts } = artifactsFromManifest(manifestPath)
-  console.log(`[sign] version v${version} — ${artifacts.length} artifact(s)`)
+  console.log(`[checksum] version v${version} — ${artifacts.length} artifact(s)`)
   if (args['dry-run']) {
-    console.log('[sign] --dry-run: would write .sha256 + SHA256SUMS')
+    console.log('[checksum] --dry-run: would write .sha256 + SHA256SUMS')
     for (const a of artifacts) console.log(`  ${a.name}`)
     process.exit(0)
   }
-  const res = signArtifacts({
+  const res = checksumArtifacts({
     artifacts,
     outDir: dirname(manifestPath),
     version,
     log: (m) => console.log(m),
   })
-  console.log(`[sign] hashed — ${res.written.length} file(s) written.`)
+  console.log(`[checksum] hashed — ${res.written.length} file(s) written.`)
 }

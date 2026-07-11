@@ -15,8 +15,8 @@
 //   5. collect   — copy the package set + sidecars + manifest.json into
 //                  dist/release-artifacts/v<ver>/
 //
-// 开源版已移除 minisign 签名:分发经公开 GitHub Release,完整性由 sha256 校验和 +
-// GitHub HTTPS 提供。发布经 CI 的 GitHub Release(`pnpm release:github`)。
+// 分发经公开 GitHub Release,完整性由 sha256 校验和 + GitHub HTTPS 提供。
+// 发布经 CI 的 GitHub Release(`pnpm release:github`)。
 import { spawn } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,7 +25,7 @@ import { createInterface } from 'node:readline/promises'
 import { runPregate } from './pregate.mjs'
 import { computeVersionInfo } from './version-info.mjs'
 import { normalizeVersion } from './artifact-name.mjs'
-import { artifactsFromManifest, signArtifacts } from './sign.mjs'
+import { artifactsFromManifest, checksumArtifacts } from './checksum.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
@@ -167,7 +167,7 @@ async function main() {
   if (!existsSync(manifestPath)) throw new Error(`build produced no manifest at ${manifestPath}.`)
   const { artifacts } = artifactsFromManifest(manifestPath)
   console.log('\n[release] hashing…')
-  signArtifacts({
+  checksumArtifacts({
     artifacts,
     outDir: distDir,
     version,

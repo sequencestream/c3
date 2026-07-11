@@ -547,7 +547,6 @@ automation / 手动 create_pr),后者在成功创建
 | `automation_tool_manifest`    | `{ vendor, tools }`  | 对 `get_automation_tool_manifest` 的回复 |
 
 Wire 结构定义在[共享协议](../../../shared/api-conventions/websocket-protocol.md)中。
-Wire shapes are defined in the [shared protocol](../../../shared/api-conventions/websocket-protocol.md).
 
 ## 用户场景
 

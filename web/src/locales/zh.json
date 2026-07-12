@@ -2302,7 +2302,13 @@
         }
       },
       "refresh": {
-        "tooltip": "刷新文件树"
+        "tooltip": "刷新文件树与 Git 状态"
+      },
+      "git": {
+        "modified": "已修改",
+        "untracked": "未跟踪",
+        "staged": "已暂存",
+        "dirChanges": "包含改动"
       },
       "contextMenu": {
         "copyName": "复制名称",

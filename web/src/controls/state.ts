@@ -20,6 +20,7 @@ import type { DeepLinkTarget } from '@/lib/deep-link'
 import type {
   WorkflowStatus,
   CodeDirEntry,
+  CodeGitStatus,
   CodeSearchMode,
   CodexPolicy,
   DepType,
@@ -452,6 +453,9 @@ export function createState(deps: StateDeps) {
   const codesExpanded = ref<Set<string>>(new Set())
   // Directories with an in-flight `list_dir`.
   const codesLoadingDirs = ref<Set<string>>(new Set())
+  // Authoritative workspace Git-status snapshot: changed-file path → flags.
+  // Replaced wholesale on each `code_git_status`; empty = clean / non-git / error.
+  const codesGitStatus = ref<Record<string, CodeGitStatus>>({})
   // Open file tabs, in tab order. Refresh clears them (no persistence by design).
   const codesTabs = ref<CodeTab[]>([])
   // The focused tab's path, or null when none are open.
@@ -725,6 +729,7 @@ export function createState(deps: StateDeps) {
     codesDirs,
     codesExpanded,
     codesLoadingDirs,
+    codesGitStatus,
     codesTabs,
     codesActivePath,
     codesSearchMode,

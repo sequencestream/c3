@@ -196,6 +196,7 @@ const {
   codesDirs,
   codesExpanded,
   codesLoadingDirs,
+  codesGitStatus,
   codesTabs,
   codesActivePath,
   codesActiveTab,
@@ -578,6 +579,7 @@ function onCodesChatWidth(px: number): void {
           :dirs="codesDirs"
           :expanded="codesExpanded"
           :loading-dirs="codesLoadingDirs"
+          :git-status="codesGitStatus"
           :tabs="codesTabs"
           :active-path="codesActivePath"
           :active-tab="codesActiveTab"

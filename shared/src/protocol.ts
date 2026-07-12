@@ -2894,10 +2894,32 @@ export interface TimeRangeProjectStats {
 
 export type CodeEntryType = 'file' | 'directory'
 
+/**
+ * A single file's working-tree Git state, as composable flags (not a mutually
+ * exclusive enum): `MM`/`AM` are both `staged` and `modified` at once. `untracked`
+ * never combines with the other two. Absent ⇒ no Git state (clean, non-git
+ * workspace, or older directory data). Derived read-only from `git status
+ * --porcelain`; deletions, renames, copies and conflicts never produce one.
+ */
+export interface CodeGitStatus {
+  /** Working-tree column is `M` (unstaged edit). */
+  modified: boolean
+  /** `??` — a new, untracked path. */
+  untracked: boolean
+  /** Index column is `A` or `M` (change staged in the index). */
+  staged: boolean
+}
+
 export interface CodeDirEntry {
   name: string
   path: string
   type: CodeEntryType
+  /**
+   * Optional Git state for this entry. Populated client-side by merging the
+   * workspace Git-status snapshot (`code_git_status`); absent ⇒ no state. Kept
+   * optional so `dir_listed` and non-git workspaces need not carry it.
+   */
+  gitStatus?: CodeGitStatus
 }
 
 export interface CodeFileRead {
@@ -3021,6 +3043,12 @@ export type ClientToServer =
   | { type: 'list_dir'; workspaceId: string; rel: string }
   /** Read one workspace-relative file. Server replies with `file_read`. */
   | { type: 'read_file'; workspaceId: string; rel: string }
+  /**
+   * Request the workspace's read-only Git-status snapshot (decorates the file
+   * tree). Carries only `workspaceId` — never a client path. Server replies with
+   * `code_git_status`; a non-git or unreadable workspace degrades to an empty map.
+   */
+  | { type: 'get_code_git_status'; workspaceId: string }
   /**
    * Search code by filename or content. Server replies with `codes_searched`.
    * `pattern` is an optional glob filter on file *basenames* (e.g. `*.ts`,
@@ -3484,6 +3512,13 @@ export type ServerToClient =
   | { type: 'dir_listed'; workspaceId: string; rel: string; entries: CodeDirEntry[] }
   /** File metadata and optional text content for one workspace-relative path. */
   | { type: 'file_read'; workspaceId: string; file: CodeFileRead }
+  /**
+   * Authoritative workspace Git-status snapshot: `files` maps every changed
+   * workspace-relative file path to its `CodeGitStatus`. The client replaces its
+   * prior snapshot wholesale (so cleared paths drop their markers) and aggregates
+   * ancestor directories for the folder rollup. Empty ⇒ clean / non-git / error.
+   */
+  | { type: 'code_git_status'; workspaceId: string; files: Record<string, CodeGitStatus> }
   /** Bounded code search result set. */
   | {
       type: 'codes_searched'

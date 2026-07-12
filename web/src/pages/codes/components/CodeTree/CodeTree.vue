@@ -6,9 +6,15 @@
  * content 命中带行号并定位),否则展示树。所有路径均为 workspace 相对路径。
  */
 import { computed, onBeforeUnmount, watch } from 'vue'
-import type { CodeDirEntry, CodeSearchHit, CodeSearchMode } from '@ccc/shared/protocol'
+import type {
+  CodeDirEntry,
+  CodeGitStatus,
+  CodeSearchHit,
+  CodeSearchMode,
+} from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
+import { computeGitDirtyDirs } from '@/lib/codes-git-status'
 import type { CodesSearchResultView } from '@/lib/codes-view'
 import CodeTreeNode from './CodeTreeNode.vue'
 
@@ -18,6 +24,8 @@ const props = defineProps<{
   expanded: Set<string>
   loadingDirs: Set<string>
   activePath: string | null
+  // Workspace Git-status snapshot (changed-file path → flags).
+  gitStatus: Record<string, CodeGitStatus>
   searchMode: CodeSearchMode
   searchQuery: string
   searchPattern: string
@@ -50,6 +58,10 @@ const treeExpanded = usePersistentToggle('c3.codesTreeExpanded')
 function toggleExpand(): void {
   treeExpanded.value = !treeExpanded.value
 }
+
+// Ancestor directories with any changed descendant, aggregated from the snapshot
+// (independent of which dirs are loaded/expanded) so collapsed dirs still roll up.
+const gitDirtyDirs = computed(() => computeGitDirtyDirs(props.gitStatus))
 
 const searchActive = computed(() => props.searchQuery.trim().length > 0)
 const SEARCH_MODES: CodeSearchMode[] = ['filename', 'content']
@@ -244,6 +256,8 @@ function runNow(): void {
           :loading-dirs="loadingDirs"
           :active-path="activePath"
           :depth="0"
+          :git-status="gitStatus"
+          :git-dirty-dirs="gitDirtyDirs"
           @toggle="emit('toggle-dir', $event)"
           @open="emit('open-file', $event)"
           @toast="emit('toast', $event)"

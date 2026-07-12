@@ -31,6 +31,7 @@ function makeCtx(activeSessionId: string | null = null) {
     codesDirs: ref<Record<string, unknown[]>>({}),
     codesExpanded: ref<Set<string>>(new Set()),
     codesLoadingDirs: ref<Set<string>>(new Set()),
+    codesGitStatus: ref<Record<string, unknown>>({}),
     codesTabs: ref<unknown[]>([]),
     codesActivePath: ref<string | null>(null),
     codesSearchMode: ref('filename'),
@@ -153,5 +154,87 @@ describe('codes-actions embedded chat', () => {
     const { ctx } = makeCtx()
     ctx.persistCodesChatWidth(WS, 520)
     expect(ctx.readCodesChatWidth(WS)).toBe(520)
+  })
+})
+
+describe('codes-actions git status', () => {
+  const clean = { modified: false, untracked: false, staged: false }
+
+  beforeEach(() => {
+    stored.clear()
+    originalStorage = globalWithStorage.localStorage
+    globalWithStorage.localStorage = storage
+  })
+  afterEach(() => {
+    globalWithStorage.localStorage = originalStorage
+  })
+
+  it('requestCodesGitStatus sends get_code_git_status for the current workspace', () => {
+    const { ctx, send } = makeCtx()
+    ctx.openCodes(WS)
+    ctx.requestCodesGitStatus()
+    expect(sentOfType(send, 'get_code_git_status')).toEqual([
+      { type: 'get_code_git_status', workspaceId: WS },
+    ])
+  })
+
+  it('coalesces while one is in flight, then fires exactly one merged follow-up', () => {
+    const { ctx, send } = makeCtx()
+    ctx.openCodes(WS)
+    ctx.requestCodesGitStatus() // → sends #1, in flight
+    ctx.requestCodesGitStatus() // in flight → queued
+    ctx.requestCodesGitStatus() // still queued (merged)
+    expect(sentOfType(send, 'get_code_git_status')).toHaveLength(1)
+
+    // Reply arrives → clears in-flight, fires the single merged follow-up.
+    ctx.applyCodeGitStatus(WS, { 'a.ts': { modified: true, untracked: false, staged: false } })
+    expect(sentOfType(send, 'get_code_git_status')).toHaveLength(2)
+
+    // The follow-up's reply, with nothing queued, sends no further request.
+    ctx.applyCodeGitStatus(WS, {})
+    expect(sentOfType(send, 'get_code_git_status')).toHaveLength(2)
+  })
+
+  it('applyCodeGitStatus replaces the snapshot wholesale (cleared paths drop)', () => {
+    const { ctx } = makeCtx()
+    ctx.openCodes(WS)
+    ctx.applyCodeGitStatus(WS, { 'a.ts': clean, 'b.ts': clean })
+    expect(Object.keys(ctx.codesGitStatus.value)).toEqual(['a.ts', 'b.ts'])
+    // New authoritative snapshot: b.ts is gone → its marker must not linger.
+    ctx.applyCodeGitStatus(WS, { 'a.ts': clean })
+    expect(Object.keys(ctx.codesGitStatus.value)).toEqual(['a.ts'])
+  })
+
+  it('ignores a reply for a workspace other than the one being browsed', () => {
+    const { ctx } = makeCtx()
+    ctx.openCodes(WS)
+    ctx.applyCodeGitStatus('/other-ws', { 'x.ts': clean })
+    expect(ctx.codesGitStatus.value).toEqual({})
+  })
+
+  it('refreshCodesTree reloads root + expanded dirs AND re-pulls git status', () => {
+    const { ctx, send } = makeCtx()
+    ctx.openCodes(WS)
+    ctx.codesDirs.value = { '': [], src: [] }
+    ctx.codesExpanded.value = new Set(['src'])
+    ctx.codesLoadingDirs.value = new Set() // clear the openCodes in-flight guard
+    send.mockClear()
+
+    ctx.refreshCodesTree()
+
+    const listed = sentOfType(send, 'list_dir').map((m) => (m as { rel: string }).rel)
+    expect(listed).toContain('')
+    expect(listed).toContain('src')
+    expect(sentOfType(send, 'get_code_git_status')).toHaveLength(1)
+  })
+
+  it('switching workspace clears the snapshot so no stale markers leak across', () => {
+    const { ctx } = makeCtx()
+    ctx.openCodes(WS)
+    ctx.applyCodeGitStatus(WS, { 'a.ts': clean })
+    expect(ctx.codesGitStatus.value).not.toEqual({})
+
+    ctx.openCodes('/ws2') // workspace change → resetCodesState
+    expect(ctx.codesGitStatus.value).toEqual({})
   })
 })

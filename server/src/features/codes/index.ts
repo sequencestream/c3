@@ -10,10 +10,12 @@ import type {
   CodeDirEntry,
   CodeEntryType,
   CodeFileRead,
+  CodeGitStatus,
   CodeSearchHit,
   ServerToClient,
 } from '@ccc/shared/protocol'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
+import { collectGitStatus } from '../../git.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
@@ -319,6 +321,30 @@ export const listDirHandler: Handler<'list_dir'> = async (_ctx, conn, msg) => {
   } catch {
     conn.send(errorFrame({ code: 'codes.readFailed', path: msg.rel }))
   }
+}
+
+/**
+ * Read-only workspace Git-status snapshot for the file tree. Resolves the trust
+ * root from the registered workspace id (never a client path), then delegates to
+ * the multi-repo-aware `collectGitStatus`. Any failure — unknown workspace,
+ * non-git tree, git unavailable — degrades to an empty map rather than an error
+ * frame, so a missing snapshot never breaks the tree. Always replies with
+ * `code_git_status` so the client can clear a stale snapshot.
+ */
+async function codeGitStatus(workspaceId: string): Promise<Record<string, CodeGitStatus>> {
+  const root = resolveWorkspaceRoot(workspaceId)
+  if (!root) return {}
+  return collectGitStatus(root)
+}
+
+export const getCodeGitStatusHandler: Handler<'get_code_git_status'> = async (_ctx, conn, msg) => {
+  let files: Record<string, CodeGitStatus>
+  try {
+    files = await codeGitStatus(msg.workspaceId)
+  } catch {
+    files = {}
+  }
+  conn.send({ type: 'code_git_status', workspaceId: msg.workspaceId, files })
 }
 
 export const readFileHandler: Handler<'read_file'> = async (_ctx, conn, msg) => {

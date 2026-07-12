@@ -97,7 +97,12 @@ import { startRetentionCleanup } from './user-involve/store.js'
 import { getTimeRangeStatsHandler } from './workcenter/index.js'
 import { resolveSkillApproval as resolveSkillApprovalImpl } from '../kernel/skill-loader/approval.js'
 import { getSkillLinkStatus, installSkillHandler } from './skills/index.js'
-import { listDirHandler, readFileHandler, searchCodesHandler } from './codes/index.js'
+import {
+  getCodeGitStatusHandler,
+  listDirHandler,
+  readFileHandler,
+  searchCodesHandler,
+} from './codes/index.js'
 
 /**
  * The complete handler map. One entry per `ClientToServer['type']` — the
@@ -123,6 +128,7 @@ export const handlerMap: HandlerMap = {
   get_session_counts: getSessionCounts,
   list_dir: listDirHandler,
   read_file: readFileHandler,
+  get_code_git_status: getCodeGitStatusHandler,
   search_codes: searchCodesHandler,
   list_commands: listCommandsHandler,
   create_session: createSession,

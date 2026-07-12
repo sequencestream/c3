@@ -3,6 +3,7 @@ import type { PermissionMsg } from '@/lib/chat-types'
 import type { PendingItem } from '@/lib/pending-queue'
 import type {
   ClientToServer,
+  CodeGitStatus,
   CodeSearchHit,
   CodexPolicy,
   CreateAutomationInput,
@@ -190,6 +191,10 @@ export interface AppMethods {
   openCodes(workspaceId: string): void
   loadCodesDir(rel: string): void
   refreshCodesTree(): void
+  /** Request the workspace Git-status snapshot (coalesced while one is in flight). */
+  requestCodesGitStatus(): void
+  /** Adopt a `code_git_status` reply (authoritative replace for the current workspace). */
+  applyCodeGitStatus(workspaceId: string, files: Record<string, CodeGitStatus>): void
   toggleCodesDir(rel: string): void
   openCodeFile(path: string, line?: number): void
   closeCodeTab(path: string): void

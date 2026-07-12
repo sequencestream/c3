@@ -19,12 +19,18 @@ import type { KernelContext } from '../../kernel/types.js'
 
 vi.mock('../../git.js', async () => {
   const actual = await vi.importActual<typeof import('../../git.js')>('../../git.js')
-  return { ...actual, createGhPr: vi.fn(), getForgePrStatus: vi.fn() }
+  return {
+    ...actual,
+    createGhPr: vi.fn(),
+    getForgePrStatus: vi.fn(),
+    commitAndPush: vi.fn(),
+    hasCommittableChanges: vi.fn(),
+  }
 })
 
-import { createGhPr, getForgePrStatus } from '../../git.js'
+import { commitAndPush, createGhPr, getForgePrStatus, hasCommittableChanges } from '../../git.js'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
-import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
+import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import {
   addWorkspace,
   pathToId,
@@ -37,6 +43,7 @@ import {
   listIntentLogs,
   listIntents,
   resetStoreForTests,
+  setBranchName,
   setPrInfo,
   setSpecPath,
   updateStatus,
@@ -69,6 +76,8 @@ beforeEach(() => {
   proj = resolveWorkspaceRoot(workspaceId)!
   vi.mocked(createGhPr).mockReset()
   vi.mocked(getForgePrStatus).mockReset()
+  vi.mocked(commitAndPush).mockReset()
+  vi.mocked(hasCommittableChanges).mockReset()
 })
 
 afterEach(() => {
@@ -220,11 +229,17 @@ describe('spec instrumentation', () => {
 })
 
 describe('PR instrumentation', () => {
-  it('createPrHandler logs pr_created on success', async () => {
+  it('createPrHandler logs pr_created on success (worktree + branch + changes, non-done)', async () => {
     const [r] = insertIntents(proj, [
       { title: 'PR me', shortEnTitle: 'pr-me', content: '', priority: 'P1' },
     ])
-    updateStatus(r.id, 'done')
+    // Manual PR creation no longer requires `done`: an in_progress intent with a
+    // branch and committable changes qualifies under the worktree gate.
+    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree' })
+    updateStatus(r.id, 'in_progress')
+    setBranchName(r.id, 'intent/pr-me')
+    vi.mocked(hasCommittableChanges).mockResolvedValue(true)
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
     vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
     const { conn } = fakeConn({ subject: 'erin' })
     await createPrHandler(fakeCtx(), conn, { type: 'create_pr', workspaceId, intentId: r.id })

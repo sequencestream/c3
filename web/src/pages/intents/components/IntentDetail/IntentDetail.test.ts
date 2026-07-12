@@ -375,7 +375,35 @@ describe('IntentDetail.vue — actions', () => {
     expect(w.emitted('set-automate')).toEqual([['intent-1', true]])
   })
 
-  it('emits create-pr when the intent branch differs from the workspace main branch and no pr exists', async () => {
+  it('emits create-pr in worktree mode when branch/session/no-pr/non-main and any non-done status', async () => {
+    for (const status of ['todo', 'in_progress'] as const) {
+      const item = intent({
+        id: 'intent-1',
+        status,
+        branchName: 'feature/work',
+        lastWorkSessionId: 'dev-1',
+      })
+      const w = mountDetail(item, { workspaceGitBranchMode: 'worktree' })
+
+      await w.find('[data-action="createPr"]').trigger('click')
+
+      expect(w.emitted('create-pr')).toEqual([['intent-1']])
+    }
+  })
+
+  it('hides create-pr in current-branch mode even when branch/session/no-pr', () => {
+    const item = intent({
+      id: 'intent-1',
+      status: 'in_progress',
+      branchName: 'feature/work',
+      lastWorkSessionId: 'dev-1',
+    })
+    const w = mountDetail(item, { workspaceGitBranchMode: 'current-branch' })
+
+    expect(w.find('[data-action="createPr"]').exists()).toBe(false)
+  })
+
+  it('hides create-pr when the workspace git branch mode is missing (treated as non-worktree)', () => {
     const item = intent({
       id: 'intent-1',
       status: 'in_progress',
@@ -384,14 +412,12 @@ describe('IntentDetail.vue — actions', () => {
     })
     const w = mountDetail(item)
 
-    await w.find('[data-action="createPr"]').trigger('click')
-
-    expect(w.emitted('create-pr')).toEqual([['intent-1']])
+    expect(w.find('[data-action="createPr"]').exists()).toBe(false)
   })
 
   it('hides create-pr when the intent branch is empty', () => {
-    const item = intent({ id: 'intent-1', status: 'done', completedAt: 2, branchName: null })
-    const w = mountDetail(item)
+    const item = intent({ id: 'intent-1', status: 'in_progress', branchName: null })
+    const w = mountDetail(item, { workspaceGitBranchMode: 'worktree' })
 
     expect(w.find('[data-action="createPr"]').exists()).toBe(false)
   })
@@ -403,7 +429,20 @@ describe('IntentDetail.vue — actions', () => {
       branchName: 'feature/work',
       lastWorkSessionId: null,
     })
-    const w = mountDetail(item)
+    const w = mountDetail(item, { workspaceGitBranchMode: 'worktree' })
+
+    expect(w.find('[data-action="createPr"]').exists()).toBe(false)
+  })
+
+  it('hides create-pr when the intent already has a PR', () => {
+    const item = intent({
+      id: 'intent-1',
+      status: 'in_progress',
+      branchName: 'feature/work',
+      lastWorkSessionId: 'dev-1',
+      prId: '9',
+    })
+    const w = mountDetail(item, { workspaceGitBranchMode: 'worktree' })
 
     expect(w.find('[data-action="createPr"]').exists()).toBe(false)
   })
@@ -505,11 +544,14 @@ describe('IntentDetail.vue — actions', () => {
   it('hides create-pr when the intent branch matches the workspace main branch', () => {
     const item = intent({
       id: 'intent-1',
-      status: 'done',
-      completedAt: 2,
+      status: 'in_progress',
       branchName: 'origin/main',
+      lastWorkSessionId: 'dev-1',
     })
-    const w = mountDetail(item, { workspaceMainBranch: 'refs/heads/main' })
+    const w = mountDetail(item, {
+      workspaceGitBranchMode: 'worktree',
+      workspaceMainBranch: 'refs/heads/main',
+    })
 
     expect(w.find('[data-action="createPr"]').exists()).toBe(false)
   })

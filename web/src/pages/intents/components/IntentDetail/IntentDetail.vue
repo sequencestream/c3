@@ -482,7 +482,11 @@ onBeforeUnmount(() => {
 const showCreatePr = computed<boolean>(() => {
   const r = props.intent
   const branchName = normalizeBranchName(r?.branchName)
+  // Manual PR creation serves worktree mode only; a missing/unknown mode is
+  // treated as non-worktree so a stale client never shows the button. Status is
+  // deliberately not checked (todo/in_progress qualify like done).
   return (
+    props.workspaceGitBranchMode === 'worktree' &&
     !!r &&
     branchName !== null &&
     !!r.lastWorkSessionId &&

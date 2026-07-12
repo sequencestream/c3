@@ -75,6 +75,10 @@ export const UI_ERROR_CODES = {
     key: 'error.intent.prCreateFailed',
     params: ['detail'],
   },
+  // Manual create_pr gate rejections (worktree mode + branch + committable changes).
+  'intent.prCreateNotWorktree': { key: 'error.intent.prCreateNotWorktree' },
+  'intent.prCreateNoBranch': { key: 'error.intent.prCreateNoBranch' },
+  'intent.prCreateNoChanges': { key: 'error.intent.prCreateNoChanges' },
   'intent.prCloseFailed': {
     key: 'error.intent.prCloseFailed',
     params: ['detail'],

@@ -1926,6 +1926,31 @@
     "entry": {
       "tooltip": "Workspace setting"
     },
+    "tabs": {
+      "defaultMode": {
+        "label": "Default mode"
+      },
+      "gitSandbox": {
+        "label": "Git & Sandbox"
+      },
+      "collab": {
+        "label": "Collaboration"
+      },
+      "skillRepos": {
+        "label": "Skill repos"
+      },
+      "unsaved": {
+        "label": "Unsaved changes"
+      },
+      "switch": {
+        "confirm": {
+          "title": "Unsaved changes",
+          "body": "This tab has unsaved changes. Switch tabs anyway? Your changes stay here until you save.",
+          "confirm": "Switch tab",
+          "stay": "Stay"
+        }
+      }
+    },
     "defaultMode": {
       "title": {
         "label": "Default mode"

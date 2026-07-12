@@ -1927,6 +1927,31 @@
     "entry": {
       "tooltip": "ワークスペース設定"
     },
+    "tabs": {
+      "defaultMode": {
+        "label": "デフォルトモード"
+      },
+      "gitSandbox": {
+        "label": "Git とサンドボックス"
+      },
+      "collab": {
+        "label": "コラボレーション"
+      },
+      "skillRepos": {
+        "label": "スキルリポジトリ"
+      },
+      "unsaved": {
+        "label": "未保存の変更"
+      },
+      "switch": {
+        "confirm": {
+          "title": "未保存の変更",
+          "body": "このタブには未保存の変更があります。それでもタブを切り替えますか？変更は保存するまでこのタブに保持されます。",
+          "confirm": "タブを切り替える",
+          "stay": "とどまる"
+        }
+      }
+    },
     "defaultMode": {
       "title": {
         "label": "デフォルトモード"

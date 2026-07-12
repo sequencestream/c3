@@ -1927,6 +1927,31 @@
     "entry": {
       "tooltip": "워크스페이스 설정"
     },
+    "tabs": {
+      "defaultMode": {
+        "label": "기본 모드"
+      },
+      "gitSandbox": {
+        "label": "Git 및 샌드박스"
+      },
+      "collab": {
+        "label": "협업"
+      },
+      "skillRepos": {
+        "label": "스킬 저장소"
+      },
+      "unsaved": {
+        "label": "저장되지 않은 변경 사항"
+      },
+      "switch": {
+        "confirm": {
+          "title": "저장되지 않은 변경 사항",
+          "body": "이 탭에 저장되지 않은 변경 사항이 있습니다. 그래도 탭을 전환하시겠습니까? 저장하기 전까지 변경 사항은 이 탭에 유지됩니다.",
+          "confirm": "탭 전환",
+          "stay": "머무르기"
+        }
+      }
+    },
     "defaultMode": {
       "title": {
         "label": "기본 모드"

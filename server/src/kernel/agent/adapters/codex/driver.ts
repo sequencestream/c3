@@ -337,6 +337,11 @@ function isConfigObject(value: unknown): value is { [key: string]: CodexConfigVa
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** Narrow an unknown config subtree to a spreadable object (or `{}`), for merging nested keys. */
+function asConfigObject(value: unknown): { [key: string]: CodexConfigValue | undefined } {
+  return isConfigObject(value) ? value : {}
+}
+
 function formatTomlKey(key: string): string {
   return /^[A-Za-z0-9_-]+$/.test(key) ? key : quoteTomlString(key)
 }
@@ -414,6 +419,26 @@ export function mcpServersToCodexConfig(
     }
   }
   return out
+}
+
+/**
+ * Does an attached MCP set expose `save_intents`? That tool is the intent
+ * comm-agent's write capability and is unique to the intent profile — the spec
+ * profile carries only `find_intents`/`view_intent`, the work profile only
+ * `publish_pr_event`. So a run whose MCP `enabledTools` includes `save_intents`
+ * IS an intent-communication run, and only those runs get the code-execution /
+ * web-search shutdown (see {@link CodexDriver.start}). The `?? INTENT_MCP_TOOL_NAMES`
+ * fallback mirrors {@link mcpServersToCodexConfig}: a descriptor that omits
+ * `enabledTools` defaults to the three intent tools, so an old-style intent
+ * binding (no explicit allowlist) is still recognised.
+ */
+export function mcpServersEnableSaveIntents(
+  servers: Record<string, RemoteMcpServer> | undefined,
+): boolean {
+  if (!servers) return false
+  return Object.values(servers).some((s) =>
+    ((s.enabledTools ?? INTENT_MCP_TOOL_NAMES) as readonly string[]).includes('save_intents'),
+  )
 }
 
 /**
@@ -628,6 +653,32 @@ export class CodexDriver implements AgentDriver {
       // or non-MCP response during initialize.
       codexOptions.env = relayEnv(opts.envOverrides)
     }
+    // Intent comm-agent shutdown (save_intents confirmation gate): codex's code
+    // execution (`js_repl`) wraps an MCP call as `await tools.mcp__c3__save_intents(...)`
+    // inside a time-budgeted JS sandbox. The gate needs the human to click Save in the
+    // c3 UI — longer than the sandbox lasts — so the sandbox aborts, the run cycle's
+    // binding signal fires, `waitForDecision` degrades to `deny`, and the intent never
+    // persists. Force every `mcp__c3` tool through the standard MCP tool-call path
+    // (no sandbox budget) by turning code execution OFF for intent runs, so the gate
+    // can block as long as it needs. Web search is closed alongside (the intent role
+    // never uses it, and `web_search="live"` may pull the js_repl surface up). Only
+    // intent runs — identified by `save_intents` in the MCP allowlist — are touched;
+    // work/spec/discussion codex runs keep their tool surface. Three keys ship at once
+    // to span codex config-format evolution; an older codex silently ignores keys it
+    // does not know (verified on 0.142.4). The `web_search="live"` opts.webSearch sends
+    // is overridden to `disabled` in threadOptions below.
+    const intentRun = mcpServersEnableSaveIntents(opts.mcpServers)
+    if (intentRun) {
+      codexOptions.config = {
+        ...(codexOptions.config ?? {}),
+        // `features.js_repl=false` is the root switch: no code-execution sandbox for
+        // the model to route save_intents through.
+        features: { ...asConfigObject(codexOptions.config?.features), js_repl: false },
+        // `tools.web_search=false` is the new `[tools]`-table form; the old top-level
+        // `web_search="disabled"` rides via threadOptions (codexExecArgs) below.
+        tools: { ...asConfigObject(codexOptions.config?.tools), web_search: false },
+      }
+    }
     // Binary resolution. In a sandbox run a wrapper script is supplied
     // (`opts.sandboxWrapperPath`) — it becomes the codex executable, so c3
     // spawns `docker exec … codex "$@"` and the run executes INSIDE the container
@@ -659,7 +710,15 @@ export class CodexDriver implements AgentDriver {
       // raw socket access for sandboxed shell commands; `webSearch` enables codex's
       // first-party web-search tool. Both omitted ⇒ codex defaults (denied) stand.
       ...(opts.networkAccess !== undefined ? { networkAccessEnabled: opts.networkAccess } : {}),
-      ...(opts.webSearch ? { webSearchEnabled: true, webSearchMode: 'live' as const } : {}),
+      // Intent runs force web search OFF (see the shutdown block above) even though
+      // run-via-driver passes `webSearch: true` for every interactive run — this
+      // emits the old-format `web_search="disabled"` and overrides the `"live"` the
+      // flag would otherwise produce. Non-intent runs keep the live web-search tool.
+      ...(intentRun
+        ? { webSearchEnabled: false }
+        : opts.webSearch
+          ? { webSearchEnabled: true, webSearchMode: 'live' as const }
+          : {}),
     }
     const thread = opts.resume
       ? codex.resumeThread(opts.resume, threadOptions)

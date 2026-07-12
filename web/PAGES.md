@@ -97,7 +97,7 @@ web/src/
 │   │   └── Login.vue                                # 全屏登录门(ADR-0023):账号+密码表单,提交走 WS login 消息,pending/错误码经 useAuth 回流
 │   │
 │   ├── workspacesetting/                         # 工作区配置页
-│   │   └── WorkspaceSetting.vue                  # 工作区级配置编辑(弹窗):per-vendor 默认模式、讨论轮数上限、演讲字符限制、git 分支模式(current-branch/worktree)+默认主分支(打开时服务端探测预填);sandbox 区块紧随分支策略且仅 worktree 模式显示(切回 current-branch 隐藏并在 save 出参丢弃 sandbox),启用后含 custom agent 多选面板(只列 enabled+configMode==='custom',写入 agentIds,无可选时空态)、external skill repos 等 workspace 级配置;移动端全屏 sheet 安全区适配且紧凑表单单列堆叠
+│   │   └── WorkspaceSetting.vue                  # 工作区级配置编辑(全屏浮层):配置按 默认模式/Git 与沙箱/协作/技能仓库 四个 Tab 分组(桌面可见 Tab 导航,移动端横向滚动)。每 Tab 维护独立草稿脏状态与独立保存按钮:打开时以服务端 workspace_setting 深拷贝生成「已提交快照」,draft 按字段白名单切片、与快照深层值比较得出各 Tab 脏状态(gitSandbox 的 sandbox 按 worktree+enabled 有效形态比较);保存某 Tab 时仅用该 Tab 白名单字段(经其转换:默认模式组装 Codex 双策略、Git 与沙箱裁剪空白主分支并按 worktree/启用保留或移除 sandbox)覆盖已提交快照构造完整 WorkspaceSetting 上抛,forge 等非页面字段原样透传,不携带其它 Tab 草稿且保存后保持打开。workspace_setting 回推按字段归属合并(首次整体播种,之后仅刚保存 Tab 与干净 Tab 重播种,脏 Tab 保留草稿);技能安装/链接状态走独立事件不重播种。切换存在未保存修改的 Tab 时 ConfirmDialog 二次确认,确认后仅切换、不保存不丢弃草稿。字段归属:默认模式(per-vendor 默认模式、devSkill)/Git 与沙箱(分支模式+默认主分支[打开时服务端探测预填]、sandbox 区块仅 worktree 显示且含 custom agent 多选)/协作(讨论轮数上限、演讲字符限制、共识、SDD 开关+只读 spec root)/技能仓库(external skill repos);移动端全屏 sheet 安全区适配且紧凑表单单列堆叠
 │   │
 │   └── systemsettings/                              # 系统设置页
 │       ├── SystemSettings.vue                       # 系统设置容器(弹窗):封装 SettingsPanel

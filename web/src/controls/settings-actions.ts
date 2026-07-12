@@ -35,10 +35,13 @@ export function installSettingsActions(ctx: AppCtx): void {
     if (path) send({ type: 'load_workspace_setting', workspaceId: path })
   }
 
+  // Persist workspace settings. The panel now saves per-tab and stays open so the
+  // saved tab can reflect the server-normalized echo while other tabs keep their
+  // unsaved drafts. The panel still closes on workspace switch / reconnect / the
+  // user's explicit close (handled elsewhere).
   ctx.saveWorkspaceSetting = (config: WorkspaceSettingType): void => {
     const path = currentWorkspace.value
     if (path) send({ type: 'save_workspace_setting', workspaceId: path, config })
-    workspaceSettingOpen.value = false
   }
 
   // Fetch link status for every configured skill repo in the current workspace.

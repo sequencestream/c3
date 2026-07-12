@@ -110,17 +110,34 @@ c3
 │
 ├── system-config — 塑造智能体循环行为的用户配置(控制面板)
 │   │
-│   ├── agent-config 智能体配置                   # agent 档案目录与会话用哪个 agent 的规则
-│   │   ├── agent 档案                            # 持久化档案(vendor/url/key/model/name)
-│   │   ├── 默认 agent                            # 未指定时使用的默认 agent
+│   ├── agent-config 智能体配置                   # agent 档案目录与会话用哪个 agent 的规则(系统设置·agent 页)
+│   │   ├── agent 档案                            # 持久化档案(vendor/url/key/model/name),可增删/排序/启停/复制
+│   │   ├── 默认 agent                            # 未指定时使用的默认 agent(defaultAgentId)
+│   │   ├── 专用 agent 路由                       # 工具/意图/规格/自动化会话可各指定 agent,空串「跟随默认」(tool/intent/spec/automationAgentId)
 │   │   ├── 每会话绑定                            # 记住每个会话用哪个 agent
-│   │   └── 降级链                                # 某 agent 不可用时按 degradationChain 回退
+│   │   └── 降级链                                # 某 agent 不可用时按 degradationChain 顺序回退
 │   │
-│   └── 其他系统配置                              # 工作区设置、默认模式、沙箱定义等
-│       ├── 工作区设置                            # per-workspace 设置(WorkspaceSetting,gitCommitMode 等)
-│       ├── 默认模式                              # defaultMode 按 vendor 分组(Record<VendorId, ModeToken>)
-│       ├── vendor CLI 多版本生效选择             # 下载目标恒取最新兼容版,生效版可从已安装历史版单选(系统设置面板);env override 仍最高优先,host PATH 仅降级回退
-│       └── 外部技能安装                          # 显式 install_skill 到 .claude/skills 与 .agents/skills
+│   ├── system-setting 系统设置                   # 管理员全局配置(SystemSettings,过管理员门,系统设置面板)
+│   │   ├── 显示与本地化                          # uiLang 界面语言 / voiceLang 语音输入语言 / timezone 系统时区(驱动 cron 解释)
+│   │   ├── 公开访问地址                          # baseUrl 部署对外基址,用于拼分享深链
+│   │   ├── 工具会话显示                          # showToolSessions 开关,决定工具类会话是否进侧栏
+│   │   ├── vendor CLI 多版本生效选择             # 下载目标恒取最新兼容版,生效版可从已安装历史版单选;env override 仍最高优先,host PATH 仅降级回退
+│   │   ├── 系统沙箱定义                          # sandboxes 镜像/挂载模板库,供各工作区按名引用
+│   │   ├── 子进程代理                            # proxy 开关 + HTTP/HTTPS 地址,注入新会话子进程环境(不改服务端自身出网)
+│   │   ├── 鉴权配置                              # auth:basic 多账号/唯一管理员、会话 token TTL、bind 地址暴露意图
+│   │   ├── socket 自动续跑                        # socketAutoResume 开关,断连后单次自动 resume(默认开)
+│   │   └── 环境诊断                              # 只读展示各 vendor host CLI/令牌探测结果
+│   │
+│   └── workspace-setting 工作区设置              # 按工作区独立配置(WorkspaceSetting,projectConfigs 按路径存,工作区设置面板)
+│       ├── 默认权限模式                          # defaultMode 按 vendor 分组(claude=ModeToken / codex=CodexPolicy)
+│       ├── dev 启动技能                          # devSkill 启动开发时前缀的斜杠命令
+│       ├── Git 分支策略                          # gitBranchMode(current-branch / worktree)+ defaultMainBranch 基线/合并目标分支
+│       ├── 工作区沙箱引用                        # sandbox 按名引用系统沙箱定义,启用后 dev run 进容器
+│       ├── 共识投票                              # consensus 多智能体权限共识配置(一致/多数、投票者集)
+│       ├── 讨论上限                              # maxRoundsPerStage 每阶段轮次(≥8)/ maxSpeechChars 每轮发言字数(≥300)
+│       ├── 规格驱动开发开关                      # sddEnabled 总开关,关时 SDD 质量门与批准检查点失效
+│       ├── 外部技能仓库                          # skillRepos 技能源仓库,clone 到 ~/.c3/repo 并软链进各 vendor 发现目录;含显式 install_skill
+│       └── 代码托管平台                          # forge(auto/github/gitlab)建 PR/MR 时的 forge 识别
 ```
 
 ## 维护

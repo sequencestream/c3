@@ -881,6 +881,26 @@ describe('WorkspaceSetting.vue — independent per-tab save', () => {
     expect(payload.sandbox?.enabled).toBe(true)
     expect(payload.sandbox?.sandbox).toBe('x')
   })
+
+  it('saving a second tab before the first save echoes does not revert the first save', async () => {
+    const w = mountWs(cfg())
+    // Save the default-mode tab with an edited value…
+    await w.find('[data-testid="default-mode-claude"]').setValue('default')
+    await w.find(SAVE.defaultMode).trigger('click')
+    // …then, WITHOUT the server echo arriving, edit + save the collaboration tab.
+    const inputs = w.findAll('.project-config-number')
+    await inputs[0].setValue(20)
+    await w.find(SAVE.collab).trigger('click')
+    // The second payload must carry the first save's default-mode value (not the
+    // stale committed one), or the second save would silently revert the first.
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
+    expect(emitted).toHaveLength(2)
+    expect((emitted[1][0].defaultMode as Record<VendorId, unknown>).claude).toBe('default')
+    expect(emitted[1][0].maxRoundsPerStage).toBe(20)
+    // And the saved default-mode tab's dirty flag clears optimistically (no lingering
+    // "unsaved" dot before the echo).
+    expect(w.find('[data-testid="project-config-tab-dirty-defaultMode"]').exists()).toBe(false)
+  })
 })
 
 describe('WorkspaceSetting.vue — dirty-tab switch confirmation', () => {

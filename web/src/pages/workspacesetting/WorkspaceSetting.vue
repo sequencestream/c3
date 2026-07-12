@@ -572,6 +572,13 @@ function saveTab(tab: WsTab): void {
   // No spec path: the SDD spec root is FIXED/centralized and never editable, so
   // the save payload carries no spec directory value (the server ignores any).
   emit('save', payload)
+  // Optimistically fold the just-saved tab into `committed` (this tab's transformed
+  // fields, exactly as emitted). Two reasons: (1) a second tab saved before this
+  // save's echo builds its payload from the up-to-date snapshot instead of a stale
+  // one that would silently revert this save; (2) the saved tab's dirty flag clears
+  // now rather than lingering until the pushback. The pushback still reconciles the
+  // saved tab to the server-normalized truth (see reconcile / pendingSaveTab).
+  applyTabFields(committed.value, payload, tab)
 }
 
 // ---- Tab navigation with dirty-guard confirmation -------------------------

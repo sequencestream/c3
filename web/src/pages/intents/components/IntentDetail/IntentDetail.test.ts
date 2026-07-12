@@ -549,6 +549,87 @@ describe('IntentDetail.vue — draft ↔ todo status transition buttons', () => 
   })
 })
 
+describe('IntentDetail.vue — meta block position and field order', () => {
+  // 顶部区域字段的稳定顺序:ID → 分支 → PR → 已创建 → 已完成 → 已更新 → 依赖明细。
+  function metaLabels(w: ReturnType<typeof mountDetail>): string[] {
+    return w.findAll('.req-meta > .req-meta-item').map((el) => el.text())
+  }
+
+  it('renders req-meta before the body/edit action area within the intent tab', () => {
+    const item = intent({ id: 'i1', status: 'todo', content: 'body text' })
+    const w = mountDetail(item)
+    const body = w.find('[data-testid="tab-intent"]').element
+    const meta = w.find('.req-meta').element
+    const detail = w.find('.req-detail').element
+    const actions = w.find('.intent-detail-section-actions').element
+
+    // req-meta 是意图 tab 的第一个子节点,且位于正文与正文操作区之前。
+    expect(body.firstElementChild).toBe(meta)
+    expect(meta.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(meta.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('orders all present fields as ID → branch → PR → created → completed → updated → deps', () => {
+    const current = intent({
+      id: 'the-intent-id',
+      status: 'done',
+      branchName: 'feature/x',
+      latestCommitHash: 'abcdef1234567',
+      prId: '42',
+      prUrl: 'https://github.com/o/r/pull/42',
+      prStatus: 'reviewing',
+      completedAt: 5,
+      dependsOn: ['dep1'],
+      dependsOnTypes: { dep1: 'blocks' },
+    })
+    const w = mountDetail(current, {
+      intents: [current, intent({ id: 'dep1', title: 'Dep one' })],
+    })
+    const labels = metaLabels(w)
+
+    expect(labels).toHaveLength(7)
+    expect(labels[0]).toContain('the-intent-id')
+    expect(labels[1]).toContain('feature/x')
+    expect(labels[1]).toContain('abcdef1') // commit 前 7 位
+    expect(labels[2]).toContain('#42')
+    expect(labels[3]).toContain('Created:')
+    expect(labels[4]).toContain('Completed:')
+    expect(labels[5]).toContain('Updated:')
+    expect(w.findAll('.req-meta > .req-meta-item').at(6)!.classes()).toContain(
+      'req-meta-dependencies',
+    )
+  })
+
+  it('omits empty branch/PR/completed/deps while keeping the surviving field order', () => {
+    const item = intent({
+      id: 'only-id',
+      status: 'todo',
+      branchName: null,
+      prId: null,
+      completedAt: null,
+      dependsOn: [],
+    })
+    const w = mountDetail(item)
+    const labels = metaLabels(w)
+
+    // 仅 ID / 已创建 / 已更新 恒显示,空字段不占位。
+    expect(labels).toHaveLength(3)
+    expect(labels[0]).toContain('only-id')
+    expect(labels[1]).toContain('Created:')
+    expect(labels[2]).toContain('Updated:')
+    expect(w.find('.req-meta-dependencies').exists()).toBe(false)
+    expect(w.find('.req-meta-pr-link').exists()).toBe(false)
+  })
+
+  it('shows the branch without a commit suffix when latestCommitHash is empty', () => {
+    const item = intent({ id: 'i1', branchName: 'feature/y', latestCommitHash: null })
+    const w = mountDetail(item)
+    const branch = w.findAll('.req-meta > .req-meta-item').at(1)!
+    expect(branch.text()).toContain('feature/y')
+    expect(branch.text()).not.toContain('·')
+  })
+})
+
 describe('IntentDetail.vue — dependency metadata', () => {
   it('renders each dependency with title, text status, type, and an edit button', () => {
     const current = intent({

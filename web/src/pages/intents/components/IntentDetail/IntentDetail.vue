@@ -946,8 +946,92 @@ defineExpose({
         </div>
       </nav>
 
-      <!-- intent tab:正文 + 元信息 -->
+      <!-- intent tab:元信息(顶部) + 正文 -->
       <div v-if="activeTab === 'intent'" class="intent-detail-body" data-testid="tab-intent">
+        <div class="req-meta">
+          <span class="req-meta-item">{{ t('intent.meta.id.label') }} {{ intent.id }}</span>
+          <span v-if="intent.branchName" class="req-meta-item">
+            {{ t('intent.meta.branch.label') }} {{ intent.branchName
+            }}<span v-if="intent.latestCommitHash">
+              · {{ intent.latestCommitHash.slice(0, 7) }}</span
+            >
+          </span>
+          <span v-if="intent.prId" class="req-meta-item">
+            {{ t('intent.meta.pr.label') }}
+            <a
+              v-if="intent.prUrl"
+              class="req-meta-pr-link"
+              :href="intent.prUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              :title="t('intent.action.pr.open.tooltip')"
+              >#{{ intent.prId }}</a
+            >
+            <template v-else>#{{ intent.prId }}</template>
+            <span
+              v-if="intent.prStatus"
+              class="req-pr-status"
+              :class="'req-pr-status--' + intent.prStatus"
+              >{{ prStatusLabel(intent.prStatus) }}</span
+            >
+            <button
+              v-if="canSyncPrStatus"
+              type="button"
+              class="req-btn req-pr-sync-btn"
+              :disabled="prSyncInFlight"
+              @click="syncPrStatus"
+            >
+              {{ prSyncInFlight ? t('intent.prSync.syncing') : t('intent.prSync.label') }}
+            </button>
+            <span
+              v-if="currentPrSync"
+              class="req-pr-sync-feedback"
+              :class="'req-pr-sync-feedback--' + currentPrSync.state"
+              >{{ currentPrSync.message }}</span
+            >
+          </span>
+          <span class="req-meta-item"
+            >{{ t('intent.meta.created.label') }} {{ formatDate(intent.createdAt, locale) }}</span
+          >
+          <span v-if="intent.completedAt" class="req-meta-item"
+            >{{ t('intent.meta.completed.label') }}
+            {{ formatDate(intent.completedAt, locale) }}</span
+          >
+          <span class="req-meta-item"
+            >{{ t('intent.meta.updated.label') }} {{ formatDate(intent.updatedAt, locale) }}</span
+          >
+          <div v-if="dependencyInfos.length" class="req-meta-item req-meta-dependencies">
+            {{ t('intent.meta.dependsOn.label') }}
+            <div
+              v-for="dep in dependencyInfos"
+              :key="dep.id"
+              class="req-dependency-row"
+              :class="dep.done ? 'req-dep-done' : 'req-dep-pending'"
+            >
+              <button
+                type="button"
+                class="req-dependency-title"
+                @click="emit('select-dependency', dep.id)"
+              >
+                {{ dep.title }}
+              </button>
+              <span class="req-dep-status">{{
+                dep.done ? t('intent.deps.status.done') : t('intent.deps.status.pending')
+              }}</span>
+              <span class="req-dep-type-badge" :class="'dep-type--' + dep.depType">{{
+                depTypeLabel(dep.depType)
+              }}</span>
+              <button
+                type="button"
+                class="req-btn req-dep-edit-btn"
+                :title="t('intent.deps.depType.edit.tooltip')"
+                @click="openDepEdit(intent, dep.id)"
+              >
+                {{ t('intent.deps.depType.edit.label') }}
+              </button>
+            </div>
+          </div>
+        </div>
         <div
           v-if="!editingContent && (intent.status === 'todo' || canEditContent)"
           class="intent-detail-section-actions"
@@ -1001,90 +1085,6 @@ defineExpose({
         </div>
         <div v-else class="req-detail">
           <MarkdownText :text="intent.content" markdown />
-        </div>
-        <div class="req-meta">
-          <span class="req-meta-item"
-            >{{ t('intent.meta.created.label') }} {{ formatDate(intent.createdAt, locale) }}</span
-          >
-          <span v-if="intent.completedAt" class="req-meta-item"
-            >{{ t('intent.meta.completed.label') }}
-            {{ formatDate(intent.completedAt, locale) }}</span
-          >
-          <div v-if="dependencyInfos.length" class="req-meta-item req-meta-dependencies">
-            {{ t('intent.meta.dependsOn.label') }}
-            <div
-              v-for="dep in dependencyInfos"
-              :key="dep.id"
-              class="req-dependency-row"
-              :class="dep.done ? 'req-dep-done' : 'req-dep-pending'"
-            >
-              <button
-                type="button"
-                class="req-dependency-title"
-                @click="emit('select-dependency', dep.id)"
-              >
-                {{ dep.title }}
-              </button>
-              <span class="req-dep-status">{{
-                dep.done ? t('intent.deps.status.done') : t('intent.deps.status.pending')
-              }}</span>
-              <span class="req-dep-type-badge" :class="'dep-type--' + dep.depType">{{
-                depTypeLabel(dep.depType)
-              }}</span>
-              <button
-                type="button"
-                class="req-btn req-dep-edit-btn"
-                :title="t('intent.deps.depType.edit.tooltip')"
-                @click="openDepEdit(intent, dep.id)"
-              >
-                {{ t('intent.deps.depType.edit.label') }}
-              </button>
-            </div>
-          </div>
-          <span class="req-meta-item"
-            >{{ t('intent.meta.updated.label') }} {{ formatDate(intent.updatedAt, locale) }}</span
-          >
-          <span class="req-meta-item">{{ t('intent.meta.id.label') }} {{ intent.id }}</span>
-          <span v-if="intent.branchName" class="req-meta-item">
-            {{ t('intent.meta.branch.label') }} {{ intent.branchName
-            }}<span v-if="intent.latestCommitHash">
-              · {{ intent.latestCommitHash.slice(0, 7) }}</span
-            >
-          </span>
-          <span v-if="intent.prId" class="req-meta-item">
-            {{ t('intent.meta.pr.label') }}
-            <a
-              v-if="intent.prUrl"
-              class="req-meta-pr-link"
-              :href="intent.prUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              :title="t('intent.action.pr.open.tooltip')"
-              >#{{ intent.prId }}</a
-            >
-            <template v-else>#{{ intent.prId }}</template>
-            <span
-              v-if="intent.prStatus"
-              class="req-pr-status"
-              :class="'req-pr-status--' + intent.prStatus"
-              >{{ prStatusLabel(intent.prStatus) }}</span
-            >
-            <button
-              v-if="canSyncPrStatus"
-              type="button"
-              class="req-btn req-pr-sync-btn"
-              :disabled="prSyncInFlight"
-              @click="syncPrStatus"
-            >
-              {{ prSyncInFlight ? t('intent.prSync.syncing') : t('intent.prSync.label') }}
-            </button>
-            <span
-              v-if="currentPrSync"
-              class="req-pr-sync-feedback"
-              :class="'req-pr-sync-feedback--' + currentPrSync.state"
-              >{{ currentPrSync.message }}</span
-            >
-          </span>
         </div>
         <div
           v-if="unfinishedDeps.length"

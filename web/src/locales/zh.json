@@ -1926,6 +1926,31 @@
     "entry": {
       "tooltip": "工作区设置"
     },
+    "tabs": {
+      "defaultMode": {
+        "label": "默认模式"
+      },
+      "gitSandbox": {
+        "label": "Git 与沙箱"
+      },
+      "collab": {
+        "label": "协作"
+      },
+      "skillRepos": {
+        "label": "技能仓库"
+      },
+      "unsaved": {
+        "label": "有未保存的修改"
+      },
+      "switch": {
+        "confirm": {
+          "title": "有未保存的修改",
+          "body": "当前 Tab 有未保存的修改。仍要切换吗？切换后你的修改会保留在此 Tab，直到保存。",
+          "confirm": "切换 Tab",
+          "stay": "留在当前"
+        }
+      }
+    },
     "defaultMode": {
       "title": {
         "label": "默认模式"

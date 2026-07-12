@@ -3682,6 +3682,7 @@ button.deny:hover:not(:disabled) {
 }
 .req-meta-item {
   display: block;
+  overflow-wrap: anywhere;
 }
 .req-meta-dependencies {
   display: grid;

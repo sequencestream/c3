@@ -4,6 +4,7 @@ import {
   closeTab,
   formatFileSize,
   langFromPath,
+  normalizeCodePath,
   parseAncestors,
   type CodeTab,
 } from './codes-view'
@@ -69,6 +70,32 @@ describe('basename', () => {
   it('returns the last path segment', () => {
     expect(basename('a/b/c.ts')).toBe('c.ts')
     expect(basename('top.ts')).toBe('top.ts')
+  })
+})
+
+describe('normalizeCodePath', () => {
+  it('strips a leading ./', () => {
+    expect(normalizeCodePath('./web/src/App.vue')).toBe('web/src/App.vue')
+  })
+
+  it('leaves an already-canonical path unchanged', () => {
+    expect(normalizeCodePath('web/src/App.vue')).toBe('web/src/App.vue')
+  })
+
+  it('collapses interior . and // segments', () => {
+    expect(normalizeCodePath('a/./b//c.ts')).toBe('a/b/c.ts')
+  })
+
+  it('resolves interior .. segments', () => {
+    expect(normalizeCodePath('a/b/../c.ts')).toBe('a/c.ts')
+  })
+
+  it('keeps a leading .. (escaping) for the server to reject', () => {
+    expect(normalizeCodePath('../outside.ts')).toBe('../outside.ts')
+  })
+
+  it('strips a trailing slash', () => {
+    expect(normalizeCodePath('a/b/')).toBe('a/b')
   })
 })
 

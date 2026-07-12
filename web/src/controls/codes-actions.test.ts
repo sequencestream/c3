@@ -301,6 +301,27 @@ describe('codes-actions navigateToCodeFile', () => {
     expect(listed).toEqual(['a/b'])
   })
 
+  it('normalizes a ./-prefixed path so the tab matches the server reply', () => {
+    const { ctx, send } = makeCtx()
+    ctx.currentWorkspace.value = WS
+    ctx.codesProject.value = WS
+    ctx.activeTab.value = 'codes'
+    ctx.codesDirs.value = { '': [] }
+
+    ctx.navigateToCodeFile('./web/src/App.vue')
+
+    // Tab + expansion + read_file all use the canonical (normalized) path.
+    expect(ctx.codesActivePath.value).toBe('web/src/App.vue')
+    expect(ctx.codesExpanded.value.has('web')).toBe(true)
+    expect(ctx.codesExpanded.value.has('web/src')).toBe(true)
+    const reads = send.mock.calls
+      .map((c: unknown[]) => c[0] as ClientToServer)
+      .filter((m) => m.type === 'read_file')
+      .map((m) => (m as { rel: string }).rel)
+    expect(reads).toContain('web/src/App.vue')
+    expect(reads).not.toContain('./web/src/App.vue')
+  })
+
   it('passes line number to openCodeFile', () => {
     const { ctx } = makeCtx()
     ctx.currentWorkspace.value = WS

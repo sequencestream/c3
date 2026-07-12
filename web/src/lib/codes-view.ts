@@ -128,6 +128,31 @@ export function isMarkdownPath(path: string): boolean {
 }
 
 /**
+ * Lexically normalize a workspace-relative path so it matches the canonical
+ * form the server echoes back (server resolves via `resolve` + `realpath`,
+ * which collapses `./`, `..`, and `//`). Without this, a markdown link like
+ * `./web/src/App.vue` opens a tab keyed by the raw path while the server's
+ * `file_read` reply carries `web/src/App.vue` — the tab never matches and stays
+ * stuck on "loading". Symlinks can't be replicated client-side, but authored
+ * links are lexical. A path that escapes the root (leading `..`) is left as-is
+ * for the server to reject.
+ */
+export function normalizeCodePath(path: string): string {
+  const out: string[] = []
+  for (const seg of path.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') {
+      // Pop the last real segment; keep a leading `..` (escaping) untouched.
+      if (out.length && out[out.length - 1] !== '..') out.pop()
+      else out.push('..')
+      continue
+    }
+    out.push(seg)
+  }
+  return out.join('/')
+}
+
+/**
  * Parse the directory ancestors of a relative file path.
  * Example: 'a/b/c/d.ts' → ['a', 'a/b', 'a/b/c']
  * Single file with no directory → []

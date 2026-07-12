@@ -3,6 +3,18 @@
 All notable changes to `c3` (Code Creative Center). The version source-of-truth is the git
 tag (`git describe --tags`); `package.json` is the fallback baseline.
 
+## v0.9.8
+
+### New Features
+
+- automation config JSON import/export
+- file tree shows git file status (modified/added/staged + directory rollup + periodic refresh)
+- intent detail page: metadata moved to the top with reordered fields
+
+### Fixes
+
+- manual PR creation drops the done gate — now requires worktree mode + a branch + code changes
+
 ## v0.9.7
 
 ### New Features

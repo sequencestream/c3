@@ -1,6 +1,7 @@
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
 import { createWsClient } from '@/lib/ws'
 import { parseDeepLink } from '@/lib/deep-link'
+import { CODES_GIT_STATUS_INTERVAL_MS, createCodesGitStatusPoller } from '@/lib/codes-git-poller'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 import { useAuth } from '@/composables/useAuth'
@@ -137,11 +138,32 @@ export function useAppController(): AppCtx {
       }
     }, 10_000)
 
+    // Codes Git-status auto-poll: only while ON the Codes view AND the page is
+    // visible AND the window is focused. Activating fetches immediately, then every
+    // 15s; leaving/hiding/blurring pauses. Request coalescing lives in the action.
+    const codesGitPoller = createCodesGitStatusPoller({
+      intervalMs: CODES_GIT_STATUS_INTERVAL_MS,
+      isActive: () =>
+        ctx.activeTab.value === 'codes' &&
+        document.visibilityState === 'visible' &&
+        document.hasFocus(),
+      request: () => ctx.requestCodesGitStatus(),
+    })
+    const syncCodesGitPoller = (): void => codesGitPoller.sync()
+    // React to every gate: view switch (watch), visibility, and window focus/blur.
+    const stopCodesTabWatch = watch(() => ctx.activeTab.value, syncCodesGitPoller)
+    window.addEventListener('focus', syncCodesGitPoller)
+    window.addEventListener('blur', syncCodesGitPoller)
+    // Evaluate the current state once at mount, in case the app boots directly on
+    // the Codes view (the watch only fires on a subsequent change).
+    syncCodesGitPoller()
+
     // Tab restored from background → fetch fresh status.
     const onVis = (): void => {
       if (document.visibilityState === 'visible') {
         ctx.send({ type: 'request_session_status' })
       }
+      syncCodesGitPoller()
     }
     document.addEventListener('visibilitychange', onVis)
 
@@ -149,6 +171,10 @@ export function useAppController(): AppCtx {
       clearInterval(hbTimer)
       clearInterval(sessionsTimer)
       document.removeEventListener('visibilitychange', onVis)
+      stopCodesTabWatch()
+      window.removeEventListener('focus', syncCodesGitPoller)
+      window.removeEventListener('blur', syncCodesGitPoller)
+      codesGitPoller.stop()
     })
   })
 

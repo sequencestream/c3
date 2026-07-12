@@ -2303,7 +2303,13 @@
         }
       },
       "refresh": {
-        "tooltip": "ファイルツリーを更新"
+        "tooltip": "ファイルツリーと Git ステータスを更新"
+      },
+      "git": {
+        "modified": "変更あり",
+        "untracked": "未追跡",
+        "staged": "ステージ済み",
+        "dirChanges": "変更を含む"
       },
       "contextMenu": {
         "copyName": "名前をコピー",

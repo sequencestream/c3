@@ -2180,7 +2180,13 @@
         }
       },
       "refresh": {
-        "tooltip": "Refresh the file tree"
+        "tooltip": "Refresh the file tree and Git status"
+      },
+      "git": {
+        "modified": "Modified",
+        "untracked": "Untracked",
+        "staged": "Staged",
+        "dirChanges": "Contains changes"
       },
       "contextMenu": {
         "copyName": "Copy name",

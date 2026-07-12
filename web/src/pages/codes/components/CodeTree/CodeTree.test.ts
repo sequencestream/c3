@@ -34,6 +34,10 @@ const chatShowTip = t('codes.chat.toggle.show.tooltip')
 const chatHideTip = t('codes.chat.toggle.hide.tooltip')
 const copyNameLabel = t('codes.tree.contextMenu.copyName')
 const copyRelPathLabel = t('codes.tree.contextMenu.copyRelPath')
+const gitModifiedLabel = t('codes.tree.git.modified')
+const gitUntrackedLabel = t('codes.tree.git.untracked')
+const gitStagedLabel = t('codes.tree.git.staged')
+const gitDirChangesLabel = t('codes.tree.git.dirChanges')
 
 const rootFile: CodeDirEntry = { type: 'file', name: 'README.md', path: 'README.md' }
 const rootDir: CodeDirEntry = { type: 'directory', name: 'src', path: 'src' }
@@ -50,6 +54,7 @@ function mountTree(overrides: Record<string, unknown> = {}) {
       dirs: {},
       expanded: new Set<string>(),
       loadingDirs: new Set<string>(),
+      gitStatus: {},
       activePath: null,
       searchMode: 'filename',
       searchQuery: '',
@@ -287,5 +292,82 @@ describe('CodeTree.vue — 文件树节点右键复制', () => {
 
     await w.find('.file-row').trigger('click')
     expect(w.emitted('open-file')?.at(-1)).toEqual(['README.md'])
+  })
+})
+
+describe('CodeTree.vue — 文件树 Git 状态标记', () => {
+  it('无 git 状态时文件行不渲染任何标记(视觉不变)', () => {
+    const w = mountTree({ rootEntries: [rootFile] })
+    expect(w.find('.file-row [data-testid="git-marks"]').exists()).toBe(false)
+    expect(w.find('[data-testid="dir-change-dot"]').exists()).toBe(false)
+  })
+
+  it('untracked→成功色 / modified→警告色 / staged→强调色,三种标记可辨识', () => {
+    const w = mountTree({
+      rootEntries: [
+        { type: 'file', name: 'a.ts', path: 'a.ts' },
+        { type: 'file', name: 'b.ts', path: 'b.ts' },
+        { type: 'file', name: 'c.ts', path: 'c.ts' },
+      ],
+      gitStatus: {
+        'a.ts': { modified: false, untracked: true, staged: false },
+        'b.ts': { modified: true, untracked: false, staged: false },
+        'c.ts': { modified: false, untracked: false, staged: true },
+      },
+    })
+    const rows = w.findAll('.file-row')
+    expect(rows[0].find('.git-mark--untracked').exists()).toBe(true)
+    expect(rows[0].find('[data-testid="git-marks"]').attributes('aria-label')).toBe(
+      gitUntrackedLabel,
+    )
+    expect(rows[1].find('.git-mark--modified').exists()).toBe(true)
+    expect(rows[1].find('[data-testid="git-marks"]').attributes('aria-label')).toBe(
+      gitModifiedLabel,
+    )
+    expect(rows[2].find('.git-mark--staged').exists()).toBe(true)
+    expect(rows[2].find('[data-testid="git-marks"]').attributes('aria-label')).toBe(gitStagedLabel)
+  })
+
+  it('staged + modified 同时呈现两个标记,固定顺序 staged 在前', () => {
+    const w = mountTree({
+      rootEntries: [{ type: 'file', name: 'a.ts', path: 'a.ts' }],
+      gitStatus: { 'a.ts': { modified: true, untracked: false, staged: true } },
+    })
+    const marks = w.findAll('.file-row .git-mark')
+    expect(marks).toHaveLength(2)
+    expect(marks[0].attributes('data-git-kind')).toBe('staged')
+    expect(marks[1].attributes('data-git-kind')).toBe('modified')
+    expect(w.find('.file-row [data-testid="git-marks"]').attributes('aria-label')).toBe(
+      `${gitStagedLabel}, ${gitModifiedLabel}`,
+    )
+  })
+
+  it('折叠目录:子孙有改动时显示汇总圆点(带无障碍标签),无改动的目录不显示', () => {
+    const w = mountTree({
+      rootEntries: [
+        { type: 'directory', name: 'src', path: 'src' },
+        { type: 'directory', name: 'docs', path: 'docs' },
+      ],
+      // src 折叠且从未加载,但快照里有 src 下改动 → 目录仍显示汇总
+      gitStatus: { 'src/deep/nested.ts': { modified: true, untracked: false, staged: false } },
+    })
+    const dirs = w.findAll('.dir-row')
+    const srcDot = dirs[0].find('[data-testid="dir-change-dot"]')
+    expect(srcDot.exists()).toBe(true)
+    expect(srcDot.attributes('aria-label')).toBe(gitDirChangesLabel)
+    expect(dirs[1].find('[data-testid="dir-change-dot"]').exists()).toBe(false)
+  })
+
+  it('相似前缀目录不串扰:src-old 的改动不点亮 src', () => {
+    const w = mountTree({
+      rootEntries: [
+        { type: 'directory', name: 'src', path: 'src' },
+        { type: 'directory', name: 'src-old', path: 'src-old' },
+      ],
+      gitStatus: { 'src-old/x.ts': { modified: true, untracked: false, staged: false } },
+    })
+    const dirs = w.findAll('.dir-row')
+    expect(dirs[0].find('[data-testid="dir-change-dot"]').exists()).toBe(false)
+    expect(dirs[1].find('[data-testid="dir-change-dot"]').exists()).toBe(true)
   })
 })

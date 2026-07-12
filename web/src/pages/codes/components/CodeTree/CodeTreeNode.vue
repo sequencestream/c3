@@ -5,9 +5,10 @@
  * 目录:点击切换展开/折叠(展开时由父层懒加载 list_dir);展开后递归渲染子节点。
  * 文件:点击打开 tab。仅持有并上抛 workspace 相对路径(entry.path),不构造绝对路径。
  */
-import type { CodeDirEntry } from '@ccc/shared/protocol'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import type { CodeDirEntry, CodeGitStatus } from '@ccc/shared/protocol'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useTypedI18n } from '@/i18n'
+import { gitStatusKinds, type GitStatusKind } from '@/lib/codes-git-status'
 
 const props = defineProps<{
   entry: CodeDirEntry
@@ -16,6 +17,10 @@ const props = defineProps<{
   loadingDirs: Set<string>
   activePath: string | null
   depth: number
+  // Workspace Git-status snapshot (changed-file path → flags) + the set of
+  // directory paths with any changed descendant, for the folder rollup indicator.
+  gitStatus: Record<string, CodeGitStatus>
+  gitDirtyDirs: Set<string>
 }>()
 
 const emit = defineEmits<{
@@ -25,6 +30,37 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useTypedI18n()
+
+// A file's active status flags in fixed order (`staged`, `modified`, `untracked`);
+// prefer the merged snapshot entry, falling back to any inline `entry.gitStatus`.
+const fileStatusKinds = computed<GitStatusKind[]>(() =>
+  props.entry.type === 'file'
+    ? gitStatusKinds(props.gitStatus[props.entry.path] ?? props.entry.gitStatus)
+    : [],
+)
+// A directory shows its rollup dot when any descendant changed (even collapsed).
+const dirHasChanges = computed(
+  () => props.entry.type === 'directory' && props.gitDirtyDirs.has(props.entry.path),
+)
+
+// Short, single-glyph marks differ in shape (S/M/U) AND colour, so status is
+// never conveyed by colour alone. Localised names go on the accessible label.
+const GIT_MARK_GLYPH: Record<GitStatusKind, string> = {
+  staged: 'S',
+  modified: 'M',
+  untracked: 'U',
+}
+function gitKindLabel(kind: GitStatusKind): string {
+  switch (kind) {
+    case 'staged':
+      return t('codes.tree.git.staged')
+    case 'modified':
+      return t('codes.tree.git.modified')
+    case 'untracked':
+      return t('codes.tree.git.untracked')
+  }
+}
+const fileStatusLabel = computed(() => fileStatusKinds.value.map(gitKindLabel).join(', '))
 
 const MENU_WIDTH = 180
 const MENU_HEIGHT = 72
@@ -86,6 +122,16 @@ onBeforeUnmount(() => {
       >
         <span class="twisty" :class="{ open: expanded.has(entry.path) }">▸</span>
         <span class="row-label">{{ entry.name }}</span>
+        <!-- 目录汇总:子孙有任一改动时显示紧凑圆点(独立于文件三态标记,避免混淆)。 -->
+        <span
+          v-if="dirHasChanges"
+          class="dir-change-dot"
+          data-testid="dir-change-dot"
+          :title="t('codes.tree.git.dirChanges')"
+          :aria-label="t('codes.tree.git.dirChanges')"
+          role="img"
+          >●</span
+        >
       </button>
 
       <template v-if="expanded.has(entry.path)">
@@ -112,6 +158,8 @@ onBeforeUnmount(() => {
           :loading-dirs="loadingDirs"
           :active-path="activePath"
           :depth="depth + 1"
+          :git-status="gitStatus"
+          :git-dirty-dirs="gitDirtyDirs"
           @toggle="emit('toggle', $event)"
           @open="emit('open', $event)"
           @toast="emit('toast', $event)"
@@ -131,6 +179,25 @@ onBeforeUnmount(() => {
     >
       <span class="file-dot">·</span>
       <span class="row-label">{{ entry.name }}</span>
+      <!-- 文件 Git 三态短标记:可同时出现,固定顺序(staged→modified→untracked),
+           形状(S/M/U)+ 语义色双通道区分,不仅靠颜色;完整名称走无障碍标签。 -->
+      <span
+        v-if="fileStatusKinds.length"
+        class="git-marks"
+        data-testid="git-marks"
+        :aria-label="fileStatusLabel"
+        role="img"
+      >
+        <span
+          v-for="kind in fileStatusKinds"
+          :key="kind"
+          class="git-mark"
+          :class="`git-mark--${kind}`"
+          :data-git-kind="kind"
+          aria-hidden="true"
+          >{{ GIT_MARK_GLYPH[kind] }}</span
+        >
+      </span>
     </button>
 
     <div
@@ -205,6 +272,43 @@ onBeforeUnmount(() => {
   width: 12px;
   text-align: center;
   color: var(--c-text-disabled);
+}
+/* 文件三态标记容器:靠右,不参与 label 截断 */
+.git-marks {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: var(--sp-1);
+}
+.git-mark {
+  flex-shrink: 0;
+  min-width: 12px;
+  text-align: center;
+  font-size: var(--fs-micro, 11px);
+  font-weight: 600;
+  line-height: 1;
+  font-family: var(--font-mono);
+}
+/* 语义色:untracked→成功 / modified→警告 / staged→强调(见 color-style-spec) */
+.git-mark--untracked {
+  color: var(--c-success);
+}
+.git-mark--modified {
+  color: var(--c-warning);
+}
+.git-mark--staged {
+  color: var(--c-primary);
+}
+/* 目录汇总圆点:紧凑、中性色,靠右,形状与文件字母标记区分 */
+.dir-change-dot {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: var(--sp-1);
+  font-size: 8px;
+  line-height: 1;
+  color: var(--c-text-muted);
 }
 .hint {
   color: var(--c-text-muted);

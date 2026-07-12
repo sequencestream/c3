@@ -25,7 +25,12 @@ import {
   CODES_CHAT_WIDTH_MAX,
   CODES_CHAT_WIDTH_DEFAULT,
 } from '../../controls/state'
-import type { CodeDirEntry, CodeSearchHit, CodeSearchMode } from '@ccc/shared/protocol'
+import type {
+  CodeDirEntry,
+  CodeGitStatus,
+  CodeSearchHit,
+  CodeSearchMode,
+} from '@ccc/shared/protocol'
 import type {
   CodexPolicy,
   ModeToken,
@@ -44,6 +49,8 @@ const props = defineProps<{
   dirs: Record<string, CodeDirEntry[]>
   expanded: Set<string>
   loadingDirs: Set<string>
+  /** Workspace Git-status snapshot (changed-file path → flags) decorating the tree. */
+  gitStatus: Record<string, CodeGitStatus>
   tabs: CodeTab[]
   activePath: string | null
   activeTab: CodeTab | null
@@ -237,6 +244,7 @@ defineExpose({
         :expanded="expanded"
         :loading-dirs="loadingDirs"
         :active-path="activePath"
+        :git-status="gitStatus"
         :search-mode="searchMode"
         :search-query="searchQuery"
         :search-pattern="searchPattern"

@@ -2303,7 +2303,13 @@
         }
       },
       "refresh": {
-        "tooltip": "파일 트리 새로고침"
+        "tooltip": "파일 트리와 Git 상태 새로고침"
+      },
+      "git": {
+        "modified": "수정됨",
+        "untracked": "추적 안 됨",
+        "staged": "스테이지됨",
+        "dirChanges": "변경 포함"
       },
       "contextMenu": {
         "copyName": "이름 복사",

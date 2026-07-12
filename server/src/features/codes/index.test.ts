@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { ServerToClient } from '@ccc/shared/protocol'
+import type { CodeGitStatus, ServerToClient } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 
 const h = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ vi.mock('../../state.js', () => ({
 
 import {
   compilePatterns,
+  getCodeGitStatusHandler,
   listDirHandler,
   readFileHandler,
   resolveCodePath,
@@ -275,5 +277,49 @@ describe('codes handlers', () => {
     })
 
     expect(sent[0]).toMatchObject({ type: 'codes_searched', hits: [], timedOut: true })
+  })
+})
+
+describe('get_code_git_status handler', () => {
+  function initRepo(path: string): void {
+    execFileSync('git', ['init', '-q'], { cwd: path })
+    execFileSync('git', ['config', 'user.email', 't@t.dev'], { cwd: path })
+    execFileSync('git', ['config', 'user.name', 'tester'], { cwd: path })
+    execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: path })
+    execFileSync('git', ['add', '-A'], { cwd: path })
+    execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init'], { cwd: path })
+  }
+
+  it('replies with the workspace-relative status map for a git workspace', async () => {
+    initRepo(workspace)
+    await writeFile(join(workspace, 'new.ts'), 'export const n = 1\n')
+
+    const { conn, sent } = capture()
+    await getCodeGitStatusHandler(KCTX, conn, { type: 'get_code_git_status', workspaceId: 'ws-1' })
+
+    expect(sent).toHaveLength(1)
+    const msg = sent[0] as Extract<ServerToClient, { type: 'code_git_status' }>
+    expect(msg.type).toBe('code_git_status')
+    expect(msg.workspaceId).toBe('ws-1')
+    expect(msg.files['new.ts']).toEqual<CodeGitStatus>({
+      modified: false,
+      untracked: true,
+      staged: false,
+    })
+  })
+
+  it('non-git workspace → empty snapshot, never an error frame', async () => {
+    const { conn, sent } = capture()
+    await getCodeGitStatusHandler(KCTX, conn, { type: 'get_code_git_status', workspaceId: 'ws-1' })
+    expect(sent[0]).toEqual({ type: 'code_git_status', workspaceId: 'ws-1', files: {} })
+  })
+
+  it('unknown workspace id → empty snapshot for that id (degrade, no throw)', async () => {
+    const { conn, sent } = capture()
+    await getCodeGitStatusHandler(KCTX, conn, {
+      type: 'get_code_git_status',
+      workspaceId: 'ws-unknown',
+    })
+    expect(sent[0]).toEqual({ type: 'code_git_status', workspaceId: 'ws-unknown', files: {} })
   })
 })

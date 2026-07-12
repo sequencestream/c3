@@ -1,6 +1,10 @@
 import { watch } from 'vue'
 import { closeTab } from '@/lib/codes-view'
-import { PENDING_SESSION_PREFIX, type CodeSearchHit } from '@ccc/shared/protocol'
+import {
+  PENDING_SESSION_PREFIX,
+  type CodeGitStatus,
+  type CodeSearchHit,
+} from '@ccc/shared/protocol'
 import type { AppCtx } from './types'
 
 // Install Codes-tab actions (read-only file browser) onto the ctx.
@@ -15,6 +19,7 @@ export function installCodesActions(ctx: AppCtx): void {
     codesDirs,
     codesExpanded,
     codesLoadingDirs,
+    codesGitStatus,
     codesTabs,
     codesActivePath,
     codesSearchMode,
@@ -27,12 +32,22 @@ export function installCodesActions(ctx: AppCtx): void {
     activeTab,
   } = ctx
 
-  // Wipe every per-workspace artefact (tree cache, tabs, search) — used when the
-  // browsed workspace changes so no stale path can leak across workspaces.
+  // At most one `get_code_git_status` per workspace in flight; a refresh while one
+  // is pending sets `statusQueued` so exactly one follow-up runs on reply (merge).
+  let statusInFlight = false
+  let statusQueued = false
+
+  // Wipe every per-workspace artefact (tree cache, tabs, search, git snapshot) —
+  // used when the browsed workspace changes so no stale path can leak across
+  // workspaces. The in-flight guards reset too: a late reply for the old
+  // workspace is discarded by the id check in applyCodeGitStatus.
   function resetCodesState(): void {
     codesDirs.value = {}
     codesExpanded.value = new Set()
     codesLoadingDirs.value = new Set()
+    codesGitStatus.value = {}
+    statusInFlight = false
+    statusQueued = false
     codesTabs.value = []
     codesActivePath.value = null
     codesSearchMode.value = 'filename'
@@ -107,14 +122,42 @@ export function installCodesActions(ctx: AppCtx): void {
     send({ type: 'list_dir', workspaceId: ws, rel })
   }
 
+  // Request the workspace Git-status snapshot (idempotent: coalesced while one is
+  // already in flight). Decoupled from `list_dir` — the auto-poller calls only
+  // this; the manual refresh calls it alongside the tree reload.
+  ctx.requestCodesGitStatus = (): void => {
+    const ws = codesProject.value
+    if (!ws) return
+    if (statusInFlight) {
+      statusQueued = true
+      return
+    }
+    statusInFlight = true
+    send({ type: 'get_code_git_status', workspaceId: ws })
+  }
+
+  // Adopt a `code_git_status` reply: authoritative wholesale replace, but only for
+  // the workspace currently browsed (a stale reply for a switched-away workspace is
+  // dropped). Fire the merged follow-up if a refresh arrived while in flight.
+  ctx.applyCodeGitStatus = (workspaceId: string, files: Record<string, CodeGitStatus>): void => {
+    statusInFlight = false
+    if (workspaceId === codesProject.value) codesGitStatus.value = files
+    if (statusQueued) {
+      statusQueued = false
+      ctx.requestCodesGitStatus()
+    }
+  }
+
   // Re-fetch the file tree from disk: reload the root plus every currently
   // expanded directory so newly added / removed files show up without collapsing
   // the tree. `list_dir` overwrites each cached listing on reply; in-flight dirs
-  // are skipped by loadCodesDir's guard.
+  // are skipped by loadCodesDir's guard. The manual refresh also re-pulls the Git
+  // snapshot concurrently (spec: same button, decoupled requests).
   ctx.refreshCodesTree = (): void => {
     if (!codesProject.value) return
     ctx.loadCodesDir('')
     for (const rel of codesExpanded.value) ctx.loadCodesDir(rel)
+    ctx.requestCodesGitStatus()
   }
 
   // Expand/collapse a tree directory; expanding triggers a one-time lazy load.

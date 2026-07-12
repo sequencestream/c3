@@ -997,6 +997,12 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       }
+      case 'code_git_status': {
+        // Authoritative workspace Git-status snapshot; the action guards workspace
+        // isolation and the in-flight/merge bookkeeping.
+        ctx.applyCodeGitStatus(msg.workspaceId, msg.files)
+        break
+      }
       case 'file_read': {
         // Intent-detail `spec` tab: adopt the reply only for the rel we are
         // awaiting, so a concurrent codes read never overwrites the spec view.

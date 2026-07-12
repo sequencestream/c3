@@ -7,6 +7,7 @@ import {
   classifyCommitFailure,
   closeForgePr,
   closeGhPr,
+  collectGitStatus,
   commitAndPush,
   createForgePr,
   createGlabMr,
@@ -14,6 +15,7 @@ import {
   getForgePrStatus,
   gitDiffStat,
   gitRecentLog,
+  parsePorcelainStatus,
 } from './git.js'
 
 // These tests drive the REAL `git` CLI against throwaway repos in a temp dir, with
@@ -446,5 +448,110 @@ describe('gitDiffStat / gitRecentLog — multi-repo aware evidence', () => {
 
     expect(await gitDiffStat(work)).toBe('')
     expect(await gitRecentLog(work)).toBe('')
+  })
+})
+
+describe('parsePorcelainStatus — NUL porcelain parsing', () => {
+  // Build a `-z` porcelain blob: each record `XY <path>` joined by NUL, with a
+  // trailing NUL like real git output.
+  const z = (...records: string[]): string => records.join('\0') + '\0'
+
+  it('?? → untracked;` M` → modified;`M ` → staged', () => {
+    const out = parsePorcelainStatus(z('?? new.ts', ' M edited.ts', 'M  staged.ts'))
+    expect(out['new.ts']).toEqual({ modified: false, untracked: true, staged: false })
+    expect(out['edited.ts']).toEqual({ modified: true, untracked: false, staged: false })
+    expect(out['staged.ts']).toEqual({ modified: false, untracked: false, staged: true })
+  })
+
+  it('MM / AM → staged 且 modified(可组合标志)', () => {
+    const out = parsePorcelainStatus(z('MM both.ts', 'AM added.ts'))
+    expect(out['both.ts']).toEqual({ modified: true, untracked: false, staged: true })
+    expect(out['added.ts']).toEqual({ modified: true, untracked: false, staged: true })
+  })
+
+  it('保留空格与非 ASCII 路径(NUL 分隔不误拆)', () => {
+    const out = parsePorcelainStatus(z('?? a file.ts', ' M 目录/文件 名.ts'))
+    expect(out['a file.ts']).toEqual({ modified: false, untracked: true, staged: false })
+    expect(out['目录/文件 名.ts']).toEqual({ modified: true, untracked: false, staged: false })
+  })
+
+  it('删除(`D `/` D`)、重命名(`R `+旧路径)、冲突(UU/DD/AA)均被过滤', () => {
+    const out = parsePorcelainStatus(
+      z(
+        'D  gone.ts', // 暂存删除
+        ' D vanished.ts', // 工作区删除
+        'R  new-name.ts', // 重命名(下一 token 为旧路径)
+        'old-name.ts',
+        'UU conflict.ts', // 未合并冲突
+        'DD bothdel.ts',
+        'AA bothadd.ts',
+        ' M survivor.ts', // 正常项,确认解析未被前面的旧路径 token 打乱
+      ),
+    )
+    expect(out).toEqual({
+      'survivor.ts': { modified: true, untracked: false, staged: false },
+    })
+  })
+
+  it('空输入 → 空对象', () => {
+    expect(parsePorcelainStatus('')).toEqual({})
+    expect(parsePorcelainStatus('\0')).toEqual({})
+  })
+})
+
+describe('collectGitStatus — workspace snapshot (real git)', () => {
+  it('root repo: staged / modified / untracked 三态,路径为工作区相对', async () => {
+    initRepo(work, 'root', false)
+    // 已跟踪并 committed 的文件做未暂存修改
+    writeFileSync(join(work, 'README.md'), 'init\nmore\n')
+    // 新建并 stage
+    writeFileSync(join(work, 'staged.ts'), 'export const s = 1\n')
+    run('git', ['add', 'staged.ts'], work)
+    // 未跟踪
+    writeFileSync(join(work, 'untracked.ts'), 'export const u = 1\n')
+
+    const out = await collectGitStatus(work)
+    expect(out['README.md']).toEqual({ modified: true, untracked: false, staged: false })
+    // 新增并 stage 的文件:索引列 A → staged
+    expect(out['staged.ts']).toEqual({ modified: false, untracked: false, staged: true })
+    expect(out['untracked.ts']).toEqual({ modified: false, untracked: true, staged: false })
+  })
+
+  it('multi-repo root: 子仓库路径加仓库相对前缀', async () => {
+    const api = join(work, 'packages', 'api')
+    const ui = join(work, 'packages', 'ui')
+    initRepo(api, 'api', false)
+    initRepo(ui, 'ui', false)
+    writeFileSync(join(api, 'a.ts'), 'export const a = 1\n') // untracked in api
+    writeFileSync(join(ui, 'README.md'), 'init\nchanged\n') // modified in ui
+
+    const out = await collectGitStatus(work)
+    expect(out['packages/api/a.ts']).toEqual({ modified: false, untracked: true, staged: false })
+    expect(out['packages/ui/README.md']).toEqual({
+      modified: true,
+      untracked: false,
+      staged: false,
+    })
+  })
+
+  it('非 git 根:空快照(安全降级)', async () => {
+    mkdirSync(join(work, 'src'), { recursive: true })
+    writeFileSync(join(work, 'src', 'note.txt'), 'hello\n')
+    expect(await collectGitStatus(work)).toEqual({})
+  })
+
+  it('multi-repo root:单个子仓库损坏被忽略,其余仓库结果保留', async () => {
+    const good = join(work, 'good')
+    const broken = join(work, 'broken')
+    initRepo(good, 'good', false)
+    writeFileSync(join(good, 'g.ts'), 'export const g = 1\n') // untracked
+    // 伪造一个“看起来是仓库但 git status 会失败”的目录:.git 是文件但内容无效
+    mkdirSync(broken, { recursive: true })
+    writeFileSync(join(broken, '.git'), 'gitdir: /nonexistent/path\n')
+
+    const out = await collectGitStatus(work)
+    expect(out['good/g.ts']).toEqual({ modified: false, untracked: true, staged: false })
+    // 损坏子仓库不贡献任何条目,也不抛错
+    expect(Object.keys(out).some((k) => k.startsWith('broken/'))).toBe(false)
   })
 })

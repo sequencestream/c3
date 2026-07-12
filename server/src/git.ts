@@ -9,8 +9,8 @@
  */
 import { execFile } from 'node:child_process'
 import { existsSync, readdirSync } from 'node:fs'
-import { join, relative } from 'node:path'
-import type { IntentPrStatus } from '@ccc/shared/protocol'
+import { join, relative, sep } from 'node:path'
+import type { CodeGitStatus, IntentPrStatus } from '@ccc/shared/protocol'
 
 /**
  * Why a commit/push attempt failed, so the automation orchestrator can decide
@@ -197,6 +197,84 @@ function discoverSubRepos(root: string, maxDepth = 6): string[] {
   }
   walk(root, 0)
   return found.sort()
+}
+
+// ---------------------------------------------------------------------------
+// Read-only working-tree status snapshot (decorates the Codes file tree)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse `git status --porcelain -z --untracked-files=all` output into a map of
+ * repo-relative path → {@link CodeGitStatus}. NUL (`-z`) framing keeps spaces,
+ * quotes and non-ASCII bytes in paths intact (no C-quoting to undo).
+ *
+ * Status columns are `XY`: `X` the index, `Y` the working tree. `??` ⇒
+ * `untracked`; `X ∈ {A,M}` ⇒ `staged`; `Y === 'M'` ⇒ `modified`; flags compose
+ * (`MM`/`AM` are staged **and** modified). Renames/copies carry a trailing
+ * old-path token we consume and drop. Deletions, renames, copies and conflicts
+ * never enter the snapshot. Pure (string in, map out) so it is unit-testable.
+ */
+export function parsePorcelainStatus(z: string): Record<string, CodeGitStatus> {
+  const out: Record<string, CodeGitStatus> = {}
+  const tokens = z.split('\0')
+  for (let i = 0; i < tokens.length; i++) {
+    const entry = tokens[i]
+    // Each record is `XY <path>`: 2 status chars + a space + the path.
+    if (entry.length < 4) continue
+    const x = entry[0]
+    const y = entry[1]
+    const path = entry.slice(3)
+
+    // Renames/copies emit a second NUL token (the OLD path) — skip it and the
+    // whole record: neither the new nor old path enters the snapshot.
+    if (x === 'R' || y === 'R' || x === 'C' || y === 'C') {
+      i++
+      continue
+    }
+    // Unmerged/conflict states (`DD`, `AA`, or any `U`) are excluded.
+    if (x === 'U' || y === 'U' || (x === 'D' && y === 'D') || (x === 'A' && y === 'A')) continue
+    // Working-tree deletions never appear as tree nodes — drop them.
+    if (y === 'D') continue
+
+    const untracked = x === '?' && y === '?'
+    const staged = x === 'A' || x === 'M'
+    const modified = y === 'M'
+    if (!untracked && !staged && !modified) continue // pure staged deletion etc.
+    out[path] = { modified, untracked, staged }
+  }
+  return out
+}
+
+/** Run the read-only porcelain status in one repo; `{}` on any git error. */
+async function statusForRepo(repo: string, prefix: string): Promise<Record<string, CodeGitStatus>> {
+  const res = await git(repo, ['-C', repo, 'status', '--porcelain', '-z', '--untracked-files=all'])
+  if (res.code !== 0) return {}
+  const parsed = parsePorcelainStatus(res.stdout)
+  if (!prefix) return parsed
+  const out: Record<string, CodeGitStatus> = {}
+  for (const [p, flags] of Object.entries(parsed)) out[`${prefix}/${p}`] = flags
+  return out
+}
+
+/**
+ * Read-only working-tree status for a whole workspace, keyed by workspace-relative
+ * path. **Multi-repo aware** like {@link commitAndPush}: a root that is itself a
+ * repo reports that repo directly; otherwise each discovered sub-repo is queried
+ * and its paths prefixed with the repo's path relative to the root, so the output
+ * is always workspace-relative. A non-git root (no root repo, no sub-repos) or any
+ * single sub-repo failure degrades to an empty/partial map — it never throws, and
+ * never returns absolute paths or git stderr.
+ */
+export async function collectGitStatus(
+  workspacePath: string,
+): Promise<Record<string, CodeGitStatus>> {
+  if (isGitRepo(workspacePath)) return statusForRepo(workspacePath, '')
+  const out: Record<string, CodeGitStatus> = {}
+  for (const repo of discoverSubRepos(workspacePath)) {
+    const prefix = relative(workspacePath, repo).split(sep).join('/')
+    Object.assign(out, await statusForRepo(repo, prefix))
+  }
+  return out
 }
 
 /**

@@ -48,7 +48,7 @@ CREATE INDEX idx_sch_workspace ON automations(workspace_path);
 - `workspace_path` 是解析后的绝对路径(而非 UUID),与工作区注册表的键一致。
 - 计时是**由 cron 驱动**的:一个 cron 表达式加上一个计算出的下次运行时刻(Unix ms)。
   调度器轮询下次运行时刻早于或等于当前时间的活跃行。每次执行后,下次运行时刻会根据 cron 表达式重新计算。
-- **时区:** cron 字段按**系统级 IANA 时区**(配置的系统时区,见 [settings](../../settings/))解释,
+- **时区:** cron 字段按**系统级 IANA 时区**(配置的系统时区,见 [system-setting](../../settings/system-setting/system-setting-spec.md))解释,
   而非 UTC。下次运行时刻的计算会取该时区,把墙钟意义上的 cron 映射为一个绝对时刻,并处理夏令时切换
   (春季跳过的间隙时刻被跳过;秋季回退的重叠时刻取较早的偏移)。服务端两个调用点(创建/更新以及运行后的
   重新计算)都传入配置的时区;前端预览也传入相同的时区,使其下次/即将运行的展示与实际调度时刻一致。

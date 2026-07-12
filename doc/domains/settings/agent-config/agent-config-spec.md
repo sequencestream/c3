@@ -30,13 +30,13 @@ agent-config 领域管理会话据以启动的**智能体**。一个智能体是
 
 ## 核心实体
 
-| 实体       | 说明                                                                                                                                                                                                                          |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| configMode | `'system'`(使用厂商 CLI 自身的配置——不覆盖 `baseUrl`/`apiKey`;`model` 是一个在两种模式下都会被读取的独立覆盖项)或 `'custom'`(应用 `baseUrl`/`apiKey`/`model`)。与 `vendor` 正交(2026-07-02-001)                               |
-| 兜底智能体 | 合成的 `{ vendor: 'claude', configMode: 'system' }` 智能体(id 为 `'system'`),仅在首次启动时或 settings 为空/损坏时用作默认种子——**不是**受保护的单例                                                                          |
-| 系统设置   | 整个配置:智能体 + 默认智能体 id(按项目的旋钮 `defaultMode`/`consensus`/`devSkill`/`maxRoundsPerStage`/`maxSpeechChars` 已移到 `projectConfigs` map 下的 workspace setting 中,见 [settings overview](../settings-overview.md)) |
-| 待定意图   | 一个 `pendingId → { agentId, createdAt }` 条目:尚未运行的会话希望使用哪个智能体。可变;在首次绑定时被复制为一个事实,否则由清理任务回收(AC-R17)                                                                                 |
-| 会话事实   | 一个 `realId → { agentId, vendor }` 条目:某个真实会话实际运行所用的智能体 + 其**被冻结的**厂商;缺失 ⇒ 该会话使用默认智能体(AC-R6)                                                                                             |     |
+| 实体       | 说明                                                                                                                                                                                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| configMode | `'system'`(使用厂商 CLI 自身的配置——不覆盖 `baseUrl`/`apiKey`;`model` 是一个在两种模式下都会被读取的独立覆盖项)或 `'custom'`(应用 `baseUrl`/`apiKey`/`model`)。与 `vendor` 正交(2026-07-02-001)                                                      |
+| 兜底智能体 | 合成的 `{ vendor: 'claude', configMode: 'system' }` 智能体(id 为 `'system'`),仅在首次启动时或 settings 为空/损坏时用作默认种子——**不是**受保护的单例                                                                                                 |
+| 系统设置   | 整个配置:智能体 + 默认智能体 id(按项目的旋钮 `defaultMode`/`consensus`/`devSkill`/`maxRoundsPerStage`/`maxSpeechChars` 已移到 `projectConfigs` map 下的 workspace setting 中,见 [workspace-setting](../workspace-setting/workspace-setting-spec.md)) |
+| 待定意图   | 一个 `pendingId → { agentId, createdAt }` 条目:尚未运行的会话希望使用哪个智能体。可变;在首次绑定时被复制为一个事实,否则由清理任务回收(AC-R17)                                                                                                        |
+| 会话事实   | 一个 `realId → { agentId, vendor }` 条目:某个真实会话实际运行所用的智能体 + 其**被冻结的**厂商;缺失 ⇒ 该会话使用默认智能体(AC-R6)                                                                                                                    |     |
 
 见 [agent-config-models.md](agent-config-models.md)。
 

@@ -35,11 +35,11 @@ c3 有两个业务组:`core`(智能体循环)、`settings`(用户配置)。
 
 ### 组 `settings`
 
-| 领域                                                         | 职责                                                                                    |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| [`agent-config`](domains/settings/agent-config/)             | 管理智能体配置(url/key/model + 名称)、默认智能体、专用 agent 路由、按会话绑定           |
-| [`system-setting`](domains/settings/settings-overview.md)    | 管理员全局配置(显示/时区/baseUrl、vendor CLI 版本、系统沙箱定义、代理、鉴权、诊断)      |
-| [`workspace-setting`](domains/settings/settings-overview.md) | 按工作区配置(默认模式、dev 技能、Git 分支策略、沙箱引用、共识、讨论上限、SDD、技能仓库) |
+| 领域                                                                                | 职责                                                                                    |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [`agent-config`](domains/settings/agent-config/)                                    | 管理智能体配置(url/key/model + 名称)、默认智能体、专用 agent 路由、按会话绑定           |
+| [`system-setting`](domains/settings/system-setting/system-setting-spec.md)          | 管理员全局配置(显示/时区/baseUrl、vendor CLI 版本、系统沙箱定义、代理、鉴权、诊断)      |
+| [`workspace-setting`](domains/settings/workspace-setting/workspace-setting-spec.md) | 按工作区配置(默认模式、dev 技能、Git 分支策略、沙箱引用、共识、讨论上限、SDD、技能仓库) |
 
 ## 使用规则
 

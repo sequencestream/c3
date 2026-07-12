@@ -19,6 +19,7 @@ import {
   rewriteRelayHostForSandbox,
   gateToCodexPolicy,
   mcpServersToCodexConfig,
+  mcpServersEnableSaveIntents,
   type CodexClient,
   type CodexFactoryOptions,
   type CodexThread,
@@ -419,6 +420,202 @@ describe('CodexDriver mcpServers injection (2026-06-12-005)', () => {
     })
     await driver.start(startOpts())
     expect(captured?.config?.mcp_servers).toBeUndefined()
+  })
+})
+
+describe('mcpServersEnableSaveIntents (intent-run identification)', () => {
+  it('is false for absent servers', () => {
+    expect(mcpServersEnableSaveIntents(undefined)).toBe(false)
+    expect(mcpServersEnableSaveIntents({})).toBe(false)
+  })
+
+  it('is true when a server enables save_intents (intent profile)', () => {
+    expect(
+      mcpServersEnableSaveIntents({
+        c3: {
+          type: 'http',
+          url: 'http://x',
+          enabledTools: ['find_intents', 'view_intent', 'save_intents'],
+        },
+      }),
+    ).toBe(true)
+  })
+
+  it('is true when enabledTools is omitted (old-style intent binding defaults to the three intent tools)', () => {
+    expect(mcpServersEnableSaveIntents({ c3: { type: 'http', url: 'http://x' } })).toBe(true)
+  })
+
+  it('is false for the spec find/view-only profile and the work publish_pr_event profile', () => {
+    expect(
+      mcpServersEnableSaveIntents({
+        c3: { type: 'http', url: 'http://x', enabledTools: ['find_intents', 'view_intent'] },
+      }),
+    ).toBe(false)
+    expect(
+      mcpServersEnableSaveIntents({
+        c3: { type: 'http', url: 'http://x', enabledTools: ['publish_pr_event'] },
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('CodexDriver intent-run code-execution + web-search shutdown', () => {
+  const intentServers = {
+    c3: {
+      type: 'http' as const,
+      url: 'http://127.0.0.1:3000/internal/intent-mcp/v1?token=t',
+      enabledTools: ['find_intents', 'view_intent', 'save_intents'],
+    },
+  }
+
+  it('merges features.js_repl=false + tools.web_search=false and forces web search off, keeping mcp_servers', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    })
+    // run-via-driver passes webSearch:true for every interactive run; the intent
+    // shutdown must override it.
+    await driver.start(startOpts({ mcpServers: intentServers, webSearch: true }))
+    expect(captured?.config?.features).toEqual({ js_repl: false })
+    expect(captured?.config?.tools).toEqual({ web_search: false })
+    // The intent MCP servers survive the merge.
+    expect(captured?.config?.mcp_servers).toBeDefined()
+    // web search is forced off (old-format disabled), never live.
+    expect(calls[0].options).toMatchObject({ webSearchEnabled: false })
+    expect(calls[0].options).not.toHaveProperty('webSearchMode')
+  })
+
+  it('recognises an old-style intent binding (no explicit enabledTools) and shuts it down', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    })
+    await driver.start(
+      startOpts({
+        mcpServers: { c3: { type: 'http', url: 'http://127.0.0.1:3000/x?token=t' } },
+        webSearch: true,
+      }),
+    )
+    expect(captured?.config?.features).toEqual({ js_repl: false })
+    expect(captured?.config?.tools).toEqual({ web_search: false })
+    expect(calls[0].options).toMatchObject({ webSearchEnabled: false })
+  })
+
+  it('applies the same shutdown on resume as on a new thread', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    })
+    await driver.start(
+      startOpts({ mcpServers: intentServers, webSearch: true, resume: 'thread_old' }),
+    )
+    expect(calls[0].kind).toBe('resume')
+    expect(captured?.config?.features).toEqual({ js_repl: false })
+    expect(captured?.config?.tools).toEqual({ web_search: false })
+    expect(calls[0].options).toMatchObject({ webSearchEnabled: false })
+  })
+
+  it('does NOT shut down work (publish_pr_event) or spec (find/view) runs — web search stays live', async () => {
+    for (const enabledTools of [['publish_pr_event'], ['find_intents', 'view_intent']]) {
+      let captured: CodexFactoryOptions | undefined
+      const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+      const driver = new CodexDriver((options) => {
+        captured = options
+        return client
+      })
+      await driver.start(
+        startOpts({
+          mcpServers: { c3: { type: 'http', url: 'http://x', enabledTools } },
+          webSearch: true,
+        }),
+      )
+      expect(captured?.config?.features).toBeUndefined()
+      expect(captured?.config?.tools).toBeUndefined()
+      expect(calls[0].options).toMatchObject({ webSearchEnabled: true, webSearchMode: 'live' })
+    }
+  })
+
+  it('does NOT shut down a no-MCP run — web search stays live', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    })
+    await driver.start(startOpts({ webSearch: true }))
+    expect(captured?.config?.features).toBeUndefined()
+    expect(captured?.config?.tools).toBeUndefined()
+    expect(calls[0].options).toMatchObject({ webSearchEnabled: true, webSearchMode: 'live' })
+  })
+
+  it('shuts down on the RELAY route without dropping the relay provider config', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const relay = {
+      baseUrl: 'http://127.0.0.1:3000/internal/codex-relay/v1',
+      register: () => 'relay-token',
+      unregister: () => {},
+    }
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    }, relay)
+    await driver.start(
+      startOpts({
+        baseUrl: 'https://api.deepseek.com',
+        apiKey: 'sk-real',
+        wireApi: 'chat',
+        mcpServers: intentServers,
+        webSearch: true,
+      }),
+    )
+    // Relay provider config survives the shutdown merge alongside the intent keys.
+    expect(captured?.config?.model_provider).toBe('c3relay')
+    expect(captured?.config?.features).toEqual({ js_repl: false })
+    expect(captured?.config?.tools).toEqual({ web_search: false })
+    expect(captured?.config?.mcp_servers).toBeDefined()
+  })
+
+  it('final CLI argv carries all three shutdown keys and no web_search="live"', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'c3-codex-intent-'))
+    const fakeCodexBin = join(dir, 'codex')
+    const argsFile = join(dir, 'args.txt')
+    writeFileSync(
+      fakeCodexBin,
+      [
+        '#!/bin/sh',
+        `printf '%s\\n' "$@" > ${shQuote(argsFile)}`,
+        'cat >/dev/null',
+        'printf \'%s\\n\' \'{"type":"thread.started","thread_id":"thread_intent"}\'',
+        'printf \'%s\\n\' \'{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}\'',
+      ].join('\n'),
+    )
+    chmodSync(fakeCodexBin, 0o755)
+    try {
+      const driver = new CodexDriver()
+      const run = await driver.start(
+        startOpts({ sandboxWrapperPath: fakeCodexBin, mcpServers: intentServers, webSearch: true }),
+      )
+      expect(await run.sessionId()).toBe('thread_intent')
+      await collect(run.messages())
+      const argv = readFileSync(argsFile, 'utf-8').split('\n').filter(Boolean)
+      expect(argv).toContain('features.js_repl=false')
+      expect(argv).toContain('tools.web_search=false')
+      expect(argv).toContain('web_search="disabled"')
+      expect(argv).not.toContain('web_search="live"')
+      // The intent MCP server config is not lost to the shutdown merge.
+      expect(argv).toContain(
+        'mcp_servers.c3.url="http://127.0.0.1:3000/internal/intent-mcp/v1?token=t"',
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

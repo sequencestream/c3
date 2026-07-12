@@ -25,9 +25,15 @@ $platform = 'windows-x64'
 $version = $env:C3_VERSION
 if (-not $version) {
   Info 'Resolving latest version...'
-  $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" `
-    -Headers @{ 'User-Agent' = 'c3-installer' }
-  $version = $rel.tag_name
+  # 跟随 releases/latest 的重定向，从最终 URL 里取出版本 tag（不调用有速率限制的 GitHub API）
+  try {
+    $resp = Invoke-WebRequest -Uri "https://github.com/$Repo/releases/latest" `
+      -MaximumRedirection 0 -UseBasicParsing -ErrorAction SilentlyContinue
+    $location = $resp.Headers.Location
+  } catch {
+    $location = $_.Exception.Response.Headers.Location.ToString()
+  }
+  if ($location -match '/tag/(.+)$') { $version = $Matches[1] }
   if (-not $version) { throw 'could not determine latest version' }
 }
 Info "Installing c3 $version ($platform)"

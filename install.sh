@@ -18,10 +18,15 @@ err()  { printf '\033[1;31merror:\033[0m %s\n' "$1" >&2; exit 1; }
 # --- pick a download tool -------------------------------------------------
 if command -v curl >/dev/null 2>&1; then
   dl() { curl -fsSL "$1" -o "$2"; }
-  dl_stdout() { curl -fsSL "$1"; }
+  # 跟随 releases/latest 的重定向，从最终 URL 里取出版本 tag（不调用有速率限制的 GitHub API）
+  resolve_latest() { curl -fsSLI -o /dev/null -w '%{url_effective}' "$1" | sed -E 's#.*/tag/##'; }
 elif command -v wget >/dev/null 2>&1; then
   dl() { wget -qO "$2" "$1"; }
-  dl_stdout() { wget -qO- "$1"; }
+  resolve_latest() {
+    wget -S --max-redirect=0 -O /dev/null "$1" 2>&1 \
+      | sed -n 's/^[[:space:]]*Location:[[:space:]]*//p' | head -n1 \
+      | sed -E 's#.*/tag/##; s/[[:space:]]*$//'
+  }
 else
   err "curl or wget is required"
 fi
@@ -50,8 +55,7 @@ esac
 version="${C3_VERSION:-}"
 if [ -z "$version" ]; then
   info "Resolving latest version..."
-  version="$(dl_stdout "https://api.github.com/repos/$REPO/releases/latest" \
-    | grep '"tag_name"' | head -n1 | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
+  version="$(resolve_latest "https://github.com/$REPO/releases/latest")"
   [ -n "$version" ] || err "could not determine latest version"
 fi
 info "Installing c3 $version ($platform)"

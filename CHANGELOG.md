@@ -3,6 +3,22 @@
 All notable changes to `c3` (Code Creative Center). The version source-of-truth is the git
 tag (`git describe --tags`); `package.json` is the fallback baseline.
 
+## v0.9.6
+
+### New Features
+
+- vendor CLI multi-version support: decouple download target from active version, with selection panel in system settings
+- automation session live viewer streaming: fine-grained status bar and live transcript updates on the session page
+- system settings and workspace settings are grouped into tabs and saved independently
+- add cross-platform install scripts and homebrew update workflow
+
+### Fixes
+
+- workspace settings optimistically mark committed after save to eliminate rapid-save rollback races
+- fix codex intent session save_intents confirmation gate (disable code_mode/js_repl)
+- fix consensus voting to query config by workspacePath, restoring voting under worktree isolation
+- drop macos-x64 build target; remove minisign, rename release:sign to release:checksum
+
 ## v0.9.5
 
 - consensus voting supports cross-vendor participants with normalized permission risk

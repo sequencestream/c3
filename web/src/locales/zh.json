@@ -1141,6 +1141,11 @@
       "title": {
         "label": "自动化"
       },
+      "more": {
+        "label": "更多操作",
+        "export": "导出",
+        "import": "导入"
+      },
       "new": {
         "label": "新建自动化"
       },
@@ -1204,6 +1209,38 @@
         "disabled": {
           "tooltip": "已禁用——点击启用"
         }
+      }
+    },
+    "importExport": {
+      "export": {
+        "title": "导出自动化",
+        "description": "选择要写入 JSON 文件的自动化。",
+        "empty": "当前没有可导出的自动化。",
+        "selectAll": "全选",
+        "selectedCount": "已选 {selected} / {total}",
+        "confirm": "导出",
+        "cancel": "取消"
+      },
+      "import": {
+        "title": "导入自动化",
+        "pickFile": "选择文件",
+        "fileHint": "选择一个从 c3 导出的 JSON 文件。",
+        "empty": "文件中没有可导入的自动化。",
+        "selectAll": "全选",
+        "selectedCount": "已选 {selected} / {total}",
+        "pausedNote": "导入的自动化会在当前 workspace 以暂停状态创建,请手动启用。",
+        "importing": "导入中…",
+        "summary": "已导入 {done} / {total} 个自动化(已暂停)。",
+        "confirm": "导入",
+        "cancel": "取消",
+        "reason": {
+          "noAgent": "该 vendor 无可用的已启用 agent,无法导入。"
+        }
+      },
+      "error": {
+        "badJson": "文件不是合法的 JSON。",
+        "badVersion": "不支持的文件版本。",
+        "badStructure": "文件结构不是合法的自动化导出文件。"
       }
     },
     "meta": {
@@ -1712,6 +1749,7 @@
       "invalidEventTrigger": "事件触发型自动化需要订阅一个运行事件。",
       "missingSessionKindFilter": "运行事件触发器必须至少选择一个会话类型。",
       "invalidMaxWallClockMs": "执行超时必须是 1,000 到 86,400,000 毫秒之间的整数。",
+      "invalidInitialStatus": "导入的自动化初始状态只能为 paused。",
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",

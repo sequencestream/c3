@@ -87,6 +87,37 @@ describe('AutomationList.vue — 左栏纯选择列表', () => {
     expect(w.find('.sched-empty').exists()).toBe(true)
   })
 
+  it('「⋯」菜单含导出/导入,且带 aria-label(非符号)', async () => {
+    const w = mountList([sched({ id: 'a' })])
+    const more = w.find('.sched-more-btn')
+    expect(more.exists()).toBe(true)
+    // 无障碍名称走 i18n 文案,不以符号充当可访问名。
+    expect(more.attributes('aria-label')).toBe('More actions')
+    // 默认收起。
+    expect(w.find('.sched-more-menu').exists()).toBe(false)
+    await more.trigger('click')
+    const menu = w.find('.sched-more-menu')
+    expect(menu.exists()).toBe(true)
+    const items = w.findAll('.sched-more-item')
+    expect(items.map((i) => i.text())).toEqual(['Export', 'Import'])
+  })
+
+  it('点击「导出」emit open-export 并收起菜单', async () => {
+    const w = mountList([sched({ id: 'a' })])
+    await w.find('.sched-more-btn').trigger('click')
+    await w.findAll('.sched-more-item')[0].trigger('click')
+    expect(w.emitted('open-export')).toHaveLength(1)
+    expect(w.find('.sched-more-menu').exists()).toBe(false)
+  })
+
+  it('点击「导入」emit open-import 并收起菜单', async () => {
+    const w = mountList([sched({ id: 'a' })])
+    await w.find('.sched-more-btn').trigger('click')
+    await w.findAll('.sched-more-item')[1].trigger('click')
+    expect(w.emitted('open-import')).toHaveLength(1)
+    expect(w.find('.sched-more-menu').exists()).toBe(false)
+  })
+
   it('行标签为类型前缀 + 名称(有 name 时)', () => {
     const w = mountList([sched({ id: 'a', config: { command: 'x', name: 'Nightly Build' } })])
     expect(w.find('.sched-label').text()).toContain('Nightly Build')

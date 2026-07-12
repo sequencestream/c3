@@ -1142,6 +1142,11 @@
       "title": {
         "label": "自動化"
       },
+      "more": {
+        "label": "その他の操作",
+        "export": "エクスポート",
+        "import": "インポート"
+      },
       "new": {
         "label": "新しい自動化"
       },
@@ -1205,6 +1210,38 @@
         "disabled": {
           "tooltip": "無効 — クリックで有効化"
         }
+      }
+    },
+    "importExport": {
+      "export": {
+        "title": "自動化をエクスポート",
+        "description": "JSON ファイルに含める自動化を選択してください。",
+        "empty": "エクスポートできる自動化がありません。",
+        "selectAll": "すべて選択",
+        "selectedCount": "{total} 件中 {selected} 件を選択",
+        "confirm": "エクスポート",
+        "cancel": "キャンセル"
+      },
+      "import": {
+        "title": "自動化をインポート",
+        "pickFile": "ファイルを選択",
+        "fileHint": "c3 からエクスポートした JSON ファイルを選択してください。",
+        "empty": "ファイルにインポートできる自動化がありません。",
+        "selectAll": "すべて選択",
+        "selectedCount": "{total} 件中 {selected} 件を選択",
+        "pausedNote": "インポートした自動化は現在のワークスペースに一時停止状態で作成されます。手動で有効化してください。",
+        "importing": "インポート中…",
+        "summary": "{total} 件中 {done} 件の自動化をインポートしました(一時停止)。",
+        "confirm": "インポート",
+        "cancel": "キャンセル",
+        "reason": {
+          "noAgent": "この vendor に有効な agent がないため、インポートできません。"
+        }
+      },
+      "error": {
+        "badJson": "ファイルが有効な JSON ではありません。",
+        "badVersion": "サポートされていないファイルバージョンです。",
+        "badStructure": "ファイル構造が有効な自動化エクスポートではありません。"
       }
     },
     "meta": {
@@ -1712,6 +1749,7 @@
       "approvalNotFound": "承認エントリが見つからないか、すでに処理済みです。",
       "invalidEventTrigger": "イベントトリガー型の自動化には購読する実行イベントが必要です。",
       "invalidMaxWallClockMs": "実行タイムアウトは 1,000 から 86,400,000 ミリ秒までの整数である必要があります。",
+      "invalidInitialStatus": "インポートする自動化の初期状態は paused のみ指定できます。",
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",

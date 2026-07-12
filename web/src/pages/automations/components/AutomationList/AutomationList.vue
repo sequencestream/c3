@@ -25,9 +25,21 @@ const emit = defineEmits<{
   select: [id: string]
   'new-automation': []
   'new-from-template': [templateId: string]
+  'open-export': []
+  'open-import': []
 }>()
 
 const templatesOpen = ref(false)
+const moreOpen = ref(false)
+
+function openExport(): void {
+  moreOpen.value = false
+  emit('open-export')
+}
+function openImport(): void {
+  moreOpen.value = false
+  emit('open-import')
+}
 
 // Live countdown: refreshed every 30s so relative times stay current.
 const now = ref(Date.now())
@@ -139,6 +151,27 @@ function selectTemplate(templateId: string): void {
         >
           +
         </button>
+        <div class="sched-more-wrap">
+          <button
+            type="button"
+            class="sched-more-btn"
+            :aria-label="t('automation.list.more.label')"
+            :title="t('automation.list.more.label')"
+            :aria-expanded="moreOpen"
+            aria-haspopup="menu"
+            @click="moreOpen = !moreOpen"
+          >
+            ⋯
+          </button>
+          <div v-if="moreOpen" class="sched-more-menu" role="menu">
+            <button type="button" class="sched-more-item" role="menuitem" @click="openExport">
+              {{ t('automation.list.more.export') }}
+            </button>
+            <button type="button" class="sched-more-item" role="menuitem" @click="openImport">
+              {{ t('automation.list.more.import') }}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
     <div class="sched-items">
@@ -303,6 +336,58 @@ function selectTemplate(templateId: string): void {
 .sched-new-btn:hover {
   color: var(--c-text);
   border-color: var(--c-primary);
+}
+/* 「⋯」三点菜单:与模板下拉一致的容器/浮层范式 */
+.sched-more-wrap {
+  position: relative;
+}
+.sched-more-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: var(--fs-title-sm);
+  line-height: 1;
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.sched-more-btn:hover {
+  color: var(--c-text);
+  border-color: var(--c-primary);
+}
+.sched-more-menu {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 160px;
+  padding: var(--sp-2);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sched-more-item {
+  width: 100%;
+  text-align: left;
+  padding: var(--sp-2);
+  color: var(--c-text);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.sched-more-item:hover {
+  background: var(--c-hover);
 }
 .sched-items {
   flex: 1;

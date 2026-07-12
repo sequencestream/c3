@@ -183,6 +183,7 @@ export interface AppMethods {
   openAutomationForm(target: Automation | null): void
   createAutomation(input: CreateAutomationInput): void
   createAutomationFromTemplate(templateId: string): void
+  importAutomations(inputs: CreateAutomationInput[]): void
   updateAutomation(id: string, input: UpdateAutomationInput): void
   deleteAutomation(id: string): void
   onLoadAutomationToolManifest(vendor: string): void

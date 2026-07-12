@@ -188,6 +188,7 @@ const {
   onAutomationMobileBack,
   createAutomation,
   createAutomationFromTemplate,
+  importAutomations,
   updateAutomation,
   deleteAutomation,
   onLoadAutomationToolManifest,
@@ -568,6 +569,7 @@ function onCodesChatWidth(px: number): void {
           @mobile-back="onAutomationMobileBack"
           @close-form="automationFormOpen = false"
           @create="createAutomation"
+          @import-automations="importAutomations"
           @new-from-template="createAutomationFromTemplate"
           @update="updateAutomation"
           @load-tool-manifest="onLoadAutomationToolManifest"

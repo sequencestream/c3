@@ -89,14 +89,26 @@ export const createAutomationHandler: Handler<'create_automation'> = async (ctx,
     conn.send({ type: 'error', error: { code: 'automation.invalidMaxWallClockMs' } })
     return
   }
+  // Only `'paused'` may be requested as an explicit initial status (the import
+  // path uses it to land paused atomically). Reject any other value so a client
+  // cannot bypass the create-then-active lifecycle rule.
+  if (msg.input.initialStatus !== undefined && msg.input.initialStatus !== 'paused') {
+    conn.send({ type: 'error', error: { code: 'automation.invalidInitialStatus' } })
+    return
+  }
   const agentError = automationAgentError(msg.input.type, msg.input.vendor, msg.input.agentId)
   if (agentError) {
     conn.send({ type: 'error', error: { code: agentError } })
     return
   }
-  // Name is auto-generated server-side from the task content; any
-  // client-supplied name in config is ignored (stripped by the store).
-  const generatedName = await generateAutomationName(msg.input)
+  // Name is normally auto-generated server-side from the task content (any
+  // client-supplied name in config is stripped by the store). An import supplies
+  // an explicit `initialName` to preserve the exported title — honour it directly
+  // and skip the LLM naming call.
+  const importedName = typeof msg.input.initialName === 'string' ? msg.input.initialName.trim() : ''
+  const generatedName = importedName
+    ? clampName(importedName)
+    : await generateAutomationName(msg.input)
   const created = createAutomation(msg.input, generatedName)
   ctx.broadcastAutomations(resolveWorkspaceRoot(created.workspaceId)!)
 }

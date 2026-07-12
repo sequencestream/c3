@@ -1141,6 +1141,11 @@
       "title": {
         "label": "Automations"
       },
+      "more": {
+        "label": "More actions",
+        "export": "Export",
+        "import": "Import"
+      },
       "new": {
         "label": "New automation"
       },
@@ -1204,6 +1209,38 @@
         "disabled": {
           "tooltip": "Disabled — click to enable"
         }
+      }
+    },
+    "importExport": {
+      "export": {
+        "title": "Export automations",
+        "description": "Select the automations to include in the JSON file.",
+        "empty": "There are no automations to export.",
+        "selectAll": "Select all",
+        "selectedCount": "{selected} of {total} selected",
+        "confirm": "Export",
+        "cancel": "Cancel"
+      },
+      "import": {
+        "title": "Import automations",
+        "pickFile": "Choose file",
+        "fileHint": "Select a JSON file exported from c3.",
+        "empty": "The file contains no automations.",
+        "selectAll": "Select all",
+        "selectedCount": "{selected} of {total} selected",
+        "pausedNote": "Imported automations are created paused in the current workspace — enable them manually.",
+        "importing": "Importing…",
+        "summary": "Imported {done} of {total} automations (paused).",
+        "confirm": "Import",
+        "cancel": "Cancel",
+        "reason": {
+          "noAgent": "No enabled agent for this vendor; cannot import."
+        }
+      },
+      "error": {
+        "badJson": "The file is not valid JSON.",
+        "badVersion": "Unsupported file version.",
+        "badStructure": "The file structure is not a valid automation export."
       }
     },
     "trigger": {
@@ -1712,6 +1749,7 @@
       "invalidEventTrigger": "An event-triggered automation needs a run event to subscribe to.",
       "missingSessionKindFilter": "A run-event trigger must fire on at least one session kind.",
       "invalidMaxWallClockMs": "The execution timeout must be a whole number between 1,000 and 86,400,000 milliseconds.",
+      "invalidInitialStatus": "The initial status of an imported automation may only be paused.",
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",

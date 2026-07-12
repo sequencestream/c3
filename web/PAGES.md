@@ -17,7 +17,7 @@ web/src/
 │   ├── session-actions.ts                          # 工作区/会话/顶栏 tab 导航:按 session_kind 缓存的游标分页刷新(窗口/首页)/加载更多;selectSession 任意行统一 enterConsole+select_session 在右侧展示详情(无跳走分支),已是活动会话时不重复发送;selectSessionKind 清空视图+设置 pending bind,新类型列表回包后自动选首条(空列表保持空态);openSourceTarget 单一路径按 resolveSessionJumpTarget 目标打开意图详情/intent session 子 tab/spec session 子 tab(无 owner 的独立 chat 经 requestedIntentSessionId 在意图页右栏打开该会话)/讨论/自动化页,供 jumpSessionSource(行 ↗,传 row)与 jumpActiveSessionSource(标题栏溯源按钮,读 activeSessionSource+活动会话)复用;六类会话计数、新建工作会话弹窗、乐观删除改名、会话 tab 进入与重绑、清空视图会话
 │   ├── intent-actions.ts                           # 需求页动作:筛选/精炼/写spec/批准spec/开发/PR/状态/自动化 + 沟通 session 列表(新建/选择/重命名/删除)
 │   ├── discussion-actions.ts                       # 讨论页动作(只读路径 + 组织者引擎):打开/创建/开始/暂停/恢复/转需求/发言/移动返回
-│   ├── automation-actions.ts                         # 自动化页动作:打开/选择/执行记录/会话回放 + 创建编辑表单(含 toolManifest 缓存 watch);选中且运行中的 llm 执行按周期自动刷新 detail+transcript(可见性闸/页内才刷),结束补拉一次后停止
+│   ├── automation-actions.ts                         # 自动化页动作:打开/选择/执行记录/会话回放 + 创建编辑表单(含 toolManifest 缓存 watch) + importAutomations(逐条发 create_automation 落库,均带 initialStatus=paused,完成后汇总 toast);选中且运行中的 llm 执行按周期自动刷新 detail+transcript(可见性闸/页内才刷),结束补拉一次后停止
 │   ├── chat-actions.ts                             # 聊天/输入动作 + 客户端待发队列(enqueue/edit/delete/flush watch)、提交/继续/停止/刷新/模式/agent 切换/权限响应
 │   ├── settings-actions.ts                         # 系统/工作区设置、技能安装、运行时语言切换(回滚)、workspace↔workcenter 视图模式、技能加载审批
 │   ├── license-actions.ts                          # 产品许可(ADR-0026):打开 LS 登录页取 license_key(start_license_activation)、用 key 绑定本安装(bind_license),状态由 license_state/license_activation_started/license_bind_result 回流
@@ -74,9 +74,12 @@ web/src/
 │   │       └── AgendaProgress/AgendaProgress.vue    # 讨论议程进度:展示议程、当前进展、完成度百分比;窄屏收紧横向 padding
 │   │
 │   ├── automations/                                   # 自动化页
-│   │   ├── Automations.vue                            # 自动化容器页:桌面两栏(左栏纯选择列表 + 右栏 AutomationDetailPanel)+ 创建/编辑表单弹窗;移动端经 MobileStack 退化为两级 drill-down(任务列表→详情逐级滑入/返回)
+│   │   ├── Automations.vue                            # 自动化容器页:桌面两栏(左栏纯选择列表 + 右栏 AutomationDetailPanel)+ 创建/编辑表单弹窗 + 导入/导出弹窗(页面域内持有 open 状态,导入确认经 import-automations 上抛控制层);移动端经 MobileStack 退化为两级 drill-down(任务列表→详情逐级滑入/返回)
+│   │   ├── import-export.ts                            # 纯函数编解码层:导出整对象复制(无字段白名单)为 { version:1, exportedAt, automations } 信封 + 可辨识文件名(workspace+UTC);导入解析 + 文件级校验(根对象/version===1/数组/成员)、逐字段容错映射为 CreateAutomationInput(缺失/错类/未知回退默认、触发器互斥归一、实例态忽略、llm agent 回退或标不可导入、始终 initialStatus=paused)
 │   │   └── components/
-│   │       ├── AutomationList/AutomationList.vue        # 左栏任务选择列表:行点击 = 选中(emit select,activeId 高亮)、创建(+)、模板菜单(选择后直接创建)、下次执行倒计时(30s 刷新)、状态 badge;run/edit/delete/toggle 操作已迁出至右栏标题栏
+│   │       ├── AutomationList/AutomationList.vue        # 左栏任务选择列表:行点击 = 选中(emit select,activeId 高亮)、创建(+)、模板菜单(选择后直接创建)、「⋯」菜单(导出/导入,带 aria-label)、下次执行倒计时(30s 刷新)、状态 badge;run/edit/delete/toggle 操作已迁出至右栏标题栏
+│   │       ├── AutomationImportExport/AutomationExportDialog.vue  # 导出弹框:列全部自动化默认全选可增减(空态提示),确认经 import-export.ts 序列化并触发浏览器下载;纯前端不发写消息
+│   │       ├── AutomationImportExport/AutomationImportDialog.vue  # 导入弹框:选文件→解析校验(失败仅 i18n 报错、不发写消息)→列文件内自动化默认全选可增减(不可导入项灰显+原因),确认防重后经 confirm 上抛已映射的 CreateAutomationInput[](控制层逐条创建为 paused)
 │   │       ├── AutomationDetailPanel/AutomationDetailPanel.vue  # 右栏容器:常驻标题栏(选中 automation 名称 + run-now/delete(ConfirmDialog 二次确认)/enable-disable 开关,不提供编辑入口)+「详情/历史」Tab;详情 Tab 渲染 AutomationDetail,历史 Tab 经 ExecutionHistoryDialog 选执行后渲染 ExecutionDetail;切换选中 automation 复位到详情 Tab
 │   │       ├── AutomationDetail/AutomationDetail.vue    # 详情 Tab 内容:vendor 品牌名+色点、绑定 agent、类型、命令/提示词、超时、模式、触发方式及事件筛选(run-lifecycle 含 sessionKind 多选/metadata 条件展示)、metadata 标注、只读 cron 排期、可自动换行的工具列表;event 类型附「模拟触发」面板(选事件类型+填测试字段→emit simulate,展示命中与逐项 breakdown)
 │   │       ├── AutomationDetail/AutomationCronEditor.vue  # 「修改时间」cron 编辑弹框(由 AutomationForm 编辑态 ✎ 打开):频率(每分/每时/每日/每周)+时间;每周时展示周一到周日多选切换(至少选 1 个否则禁用保存+提示),day-of-week 1-5 压缩/逗号拼接;实时表达式预览;仅 emit save(标准 5 字段 cron)

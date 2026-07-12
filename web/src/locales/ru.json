@@ -1142,6 +1142,11 @@
       "title": {
         "label": "Автоматизации"
       },
+      "more": {
+        "label": "Ещё",
+        "export": "Экспорт",
+        "import": "Импорт"
+      },
       "new": {
         "label": "Новая автоматизация"
       },
@@ -1205,6 +1210,38 @@
         "disabled": {
           "tooltip": "Отключено — нажмите, чтобы включить"
         }
+      }
+    },
+    "importExport": {
+      "export": {
+        "title": "Экспорт автоматизаций",
+        "description": "Выберите автоматизации для включения в JSON-файл.",
+        "empty": "Нет автоматизаций для экспорта.",
+        "selectAll": "Выбрать все",
+        "selectedCount": "Выбрано {selected} из {total}",
+        "confirm": "Экспортировать",
+        "cancel": "Отмена"
+      },
+      "import": {
+        "title": "Импорт автоматизаций",
+        "pickFile": "Выбрать файл",
+        "fileHint": "Выберите JSON-файл, экспортированный из c3.",
+        "empty": "В файле нет автоматизаций для импорта.",
+        "selectAll": "Выбрать все",
+        "selectedCount": "Выбрано {selected} из {total}",
+        "pausedNote": "Импортированные автоматизации создаются в текущем рабочем пространстве на паузе — включите их вручную.",
+        "importing": "Импорт…",
+        "summary": "Импортировано {done} из {total} автоматизаций (на паузе).",
+        "confirm": "Импортировать",
+        "cancel": "Отмена",
+        "reason": {
+          "noAgent": "Нет включённого агента для этого вендора; импорт невозможен."
+        }
+      },
+      "error": {
+        "badJson": "Файл не является корректным JSON.",
+        "badVersion": "Неподдерживаемая версия файла.",
+        "badStructure": "Структура файла не является корректным экспортом автоматизаций."
       }
     },
     "meta": {
@@ -1712,6 +1749,7 @@
       "approvalNotFound": "Запись на одобрение не найдена или уже обработана.",
       "invalidEventTrigger": "Для автоматизации по событию нужно выбрать событие запуска.",
       "invalidMaxWallClockMs": "Тайм-аут выполнения должен быть целым числом от 1 000 до 86 400 000 миллисекунд.",
+      "invalidInitialStatus": "Начальный статус импортируемой автоматизации может быть только paused.",
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",

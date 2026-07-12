@@ -127,6 +127,7 @@ export const UI_ERROR_CODES = {
   'automation.invalidEventTrigger': { key: 'error.automation.invalidEventTrigger' },
   'automation.missingSessionKindFilter': { key: 'error.automation.missingSessionKindFilter' },
   'automation.invalidMaxWallClockMs': { key: 'error.automation.invalidMaxWallClockMs' },
+  'automation.invalidInitialStatus': { key: 'error.automation.invalidInitialStatus' },
   'automation.agentRequired': { key: 'error.automation.agentRequired' },
   'automation.agentNotFound': { key: 'error.automation.agentNotFound' },
   'automation.agentDisabled': { key: 'error.automation.agentDisabled' },

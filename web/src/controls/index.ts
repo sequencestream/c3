@@ -167,10 +167,20 @@ export function useAppController(): AppCtx {
     }
     document.addEventListener('visibilitychange', onVis)
 
+    // MarkdownText 代码文件链接导航事件:点击代码文件链接时切换到 codes 页并打开文件。
+    const onCodeFileClick = (e: Event): void => {
+      const detail = (e as CustomEvent).detail as { path?: unknown; line?: unknown } | undefined
+      if (!detail || typeof detail.path !== 'string' || !detail.path) return
+      if (detail.line != null && typeof detail.line !== 'number') return
+      ctx.navigateToCodeFile(detail.path, detail.line as number | undefined)
+    }
+    document.addEventListener('c3:code-file-click', onCodeFileClick)
+
     onUnmounted(() => {
       clearInterval(hbTimer)
       clearInterval(sessionsTimer)
       document.removeEventListener('visibilitychange', onVis)
+      document.removeEventListener('c3:code-file-click', onCodeFileClick)
       stopCodesTabWatch()
       window.removeEventListener('focus', syncCodesGitPoller)
       window.removeEventListener('blur', syncCodesGitPoller)

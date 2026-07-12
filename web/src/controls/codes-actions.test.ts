@@ -238,3 +238,106 @@ describe('codes-actions git status', () => {
     expect(ctx.codesGitStatus.value).toEqual({})
   })
 })
+
+describe('codes-actions navigateToCodeFile', () => {
+  const WS = '/ws'
+
+  it('from non-codes tab switches to codes, expands ancestors, and opens file', () => {
+    const { ctx } = makeCtx()
+    ctx.currentWorkspace.value = WS
+    ctx.activeTab.value = 'intents'
+    ctx.codesDirs.value = { '': [] }
+
+    ctx.navigateToCodeFile('a/b/c.ts')
+
+    expect(ctx.activeTab.value).toBe('codes')
+    expect(ctx.codesProject.value).toBe(WS)
+    expect(ctx.codesExpanded.value.has('a')).toBe(true)
+    expect(ctx.codesExpanded.value.has('a/b')).toBe(true)
+    expect(ctx.codesActivePath.value).toBe('a/b/c.ts')
+  })
+
+  it('already on codes tab does not reset state', () => {
+    const { ctx } = makeCtx()
+    ctx.currentWorkspace.value = WS
+    ctx.codesProject.value = WS
+    ctx.activeTab.value = 'codes'
+    // Simulate already-open tabs and expanded dirs.
+    ctx.codesExpanded.value = new Set(['src'])
+    ctx.codesDirs.value = { '': [], src: [] }
+
+    ctx.navigateToCodeFile('src/lib/util.ts')
+
+    // Should keep existing expanded dirs and add new ones.
+    expect(ctx.codesExpanded.value.has('src')).toBe(true)
+    expect(ctx.codesExpanded.value.has('src/lib')).toBe(true)
+    expect(ctx.codesActivePath.value).toBe('src/lib/util.ts')
+  })
+
+  it('expands all ancestor directories', () => {
+    const { ctx } = makeCtx()
+    ctx.currentWorkspace.value = WS
+    ctx.openCodes(WS)
+
+    ctx.navigateToCodeFile('a/b/c/d.ts')
+
+    expect([...ctx.codesExpanded.value].sort()).toEqual(['a', 'a/b', 'a/b/c'])
+  })
+
+  it('lazy-loads un-cached ancestor directories', () => {
+    const { ctx, send } = makeCtx()
+    ctx.currentWorkspace.value = WS
+    ctx.openCodes(WS)
+    send.mockClear()
+
+    ctx.codesDirs.value = { '': [], a: [] }
+    ctx.navigateToCodeFile('a/b/c.ts')
+
+    // 'a' is already cached, 'a/b' is not — should request load for 'a/b' only.
+    const listed = send.mock.calls
+      .map((c: unknown[]) => c[0] as ClientToServer)
+      .filter((m) => m.type === 'list_dir')
+      .map((m) => (m as { rel: string }).rel)
+    expect(listed).toEqual(['a/b'])
+  })
+
+  it('passes line number to openCodeFile', () => {
+    const { ctx } = makeCtx()
+    ctx.currentWorkspace.value = WS
+    ctx.openCodes(WS)
+    // Clear any pre-existing expanded/open state from openCodes.
+    ctx.codesExpanded.value = new Set()
+
+    ctx.navigateToCodeFile('main.ts', 42)
+
+    expect(ctx.codesActivePath.value).toBe('main.ts')
+  })
+
+  it('no workspace is no-op', () => {
+    const { ctx } = makeCtx()
+    ctx.currentWorkspace.value = null
+    ctx.activeTab.value = 'intents'
+
+    ctx.navigateToCodeFile('main.ts')
+
+    expect(ctx.activeTab.value).toBe('intents')
+    expect(ctx.codesActivePath.value).toBeNull()
+  })
+
+  it('when already on codes tab does not reset search mode', () => {
+    const { ctx } = makeCtx()
+    ctx.currentWorkspace.value = WS
+    ctx.codesProject.value = WS
+    ctx.activeTab.value = 'codes'
+    ctx.codesSearchMode.value = 'content'
+    ctx.codesSearchQuery.value = 'foo'
+    ctx.codesDirs.value = { '': [], src: [] }
+    ctx.codesExpanded.value = new Set(['src'])
+
+    ctx.navigateToCodeFile('src/main.ts')
+
+    // navigateToCodeFile itself must not clear search mode.
+    expect(ctx.codesSearchMode.value).toBe('content')
+    expect(ctx.codesSearchQuery.value).toBe('foo')
+  })
+})

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { basename, closeTab, formatFileSize, langFromPath, type CodeTab } from './codes-view'
+import {
+  basename,
+  closeTab,
+  formatFileSize,
+  langFromPath,
+  parseAncestors,
+  type CodeTab,
+} from './codes-view'
 
 function tab(path: string): CodeTab {
   return { path, file: null, loading: false }
@@ -62,6 +69,24 @@ describe('basename', () => {
   it('returns the last path segment', () => {
     expect(basename('a/b/c.ts')).toBe('c.ts')
     expect(basename('top.ts')).toBe('top.ts')
+  })
+})
+
+describe('parseAncestors', () => {
+  it('deep path returns all ancestor directories', () => {
+    expect(parseAncestors('a/b/c/d.ts')).toEqual(['a', 'a/b', 'a/b/c'])
+  })
+
+  it('single-level path returns empty', () => {
+    expect(parseAncestors('d.ts')).toEqual([])
+  })
+
+  it('shallow path returns one ancestor', () => {
+    expect(parseAncestors('a/b.ts')).toEqual(['a'])
+  })
+
+  it('handles empty string', () => {
+    expect(parseAncestors('')).toEqual([])
   })
 })
 

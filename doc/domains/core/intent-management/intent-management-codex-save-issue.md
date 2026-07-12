@@ -1,10 +1,13 @@
 # 问题分析: codex 意图智能体 save_intents 确认框失效
 
 > 本文档记录一次问题排查: 当 codex 作为意图沟通智能体时, `save_intents` 的人工确认框
-> 无法正常弹出/确认, 导致意图始终无法落库。聚焦根因与证据, 修复方向单列, 尚未实施。
+> 无法正常弹出/确认, 导致意图始终无法落库。聚焦根因与证据, 修复已实施(下发侧关闭 code
+> execution / web search), 见 §6。
 
-- **状态:** 已定位根因, 待修复
+- **状态:** 已修复(下发侧显式关闭 `js_repl` + web search, 已通过驱动单测 + codex
+  0.142.4 CLI 兼容冒烟; 端到端 UI「点 Save → 落库」回归待在真实 c3 部署由人工确认)
 - **首次观察:** 2026-07-11
+- **修复:** 2026-07-12(`server/src/kernel/agent/adapters/codex/driver.ts`)
 - **影响面:** 仅 codex 厂商的意图沟通会话(claude 不受影响); 波及所有依赖
   `gatedSave` 式**长阻塞人工确认**的 codex MCP 工具, 目前唯一命中的是 `save_intents`
 - **关联:** [design](intent-management-design.md) 的保存确认门 · [spec](intent-management-spec.md) RM-R5 ·
@@ -157,42 +160,69 @@ binding.signal)` 阻塞。
   `mcp__c3` namespace 的历史均成功。
 - **链路接线缺失 / 厂商不对称(见 3.1):** 后端与前端对两个厂商对称正确, 弹框渲染 vendor 无关。
 
-## 6. 修复方向(未实施)
+## 6. 修复方案(已实施)
 
-为 c3 的 codex 运行**关闭 code execution(`js_repl`)**, 使所有 `mcp__c3` 工具都走**标准
-MCP tool call 路径**(如 `find_intents` 一样, 无 code_execution 沙箱时限), 这样 `gatedSave`
-才能真正长阻塞、等到用户从容点击确认。
+为 c3 的 codex **意图会话**运行**关闭 code execution(`js_repl`)与 web search**, 使所有
+`mcp__c3` 工具都走**标准 MCP tool call 路径**(如 `find_intents` 一样, 无 code_execution 沙箱
+时限), 这样 `gatedSave` 才能真正长阻塞、等到用户从容点击确认。
 
-- **接线位置:** `server/src/kernel/agent/adapters/codex/driver.ts` 组装 codex config 处
-  (`mcp_servers` / `web_search` 下发附近), 追加关闭项。
-- **建议三管齐下下发**(理由见下方兼容性说明):
-  - `features.js_repl=false` —— 根治开关(主力), 关闭 code execution 沙箱。
-  - `web_search="disabled"` —— codex 旧版顶层键; 意图/沟通会话本就不需要 web 搜索,
-    而 `web_search="live"` 可能连带拉起 js_repl 环境(见 §7 待验证)。c3 当前对意图会话
-    默认下发 `web_search="live"`(`webSearch: true`), 应改为对意图会话关闭。
-  - `tools.web_search=false` —— codex 新版 `[tools]` 表格式, 与旧顶层键等价。
-- **版本兼容(已实测):** codex `0.142.4` 上 `-c key=value` 对**未知 config 键宽容忽略**
-  (退出码 0, 无报错) —— 实测 `features.<未知键>`、`tools.web_search`、`web_search="disabled"`
-  均被接受, 仅结构畸形(无 `=`)才拒绝。因此**新旧格式可同时下发, 各版本各取所需、互不
-  干扰**, 低版本遇到高版本才有的键会静默忽略, 不会崩。
-- **附带收益:** 一并消除 `namespace-repro.test.ts` 记录的潜在 400 隐患(namespace 字段
-  源头也随之消失)。
+- **接线位置:** `server/src/kernel/agent/adapters/codex/driver.ts` `CodexDriver.start()`
+  组装 `codexOptions.config`(`mcp_servers` 合并之后)与 `threadOptions`(`web_search` 下发)处。
+- **意图会话识别:** 不凭"存在 `mcpServers.c3`"判断(会误纳只有 find/view 的 spec profile
+  或只有 `publish_pr_event` 的 work profile), 而是依据某 MCP server 的 `enabledTools` 是否
+  含 `save_intents`(意图 profile 独有的写能力)。见 `mcpServersEnableSaveIntents()`; 其
+  `?? INTENT_MCP_TOOL_NAMES` 回退与 `mcpServersToCodexConfig()` 一致, 使省略 `enabledTools`
+  的旧式意图绑定仍被识别。
+- **三管齐下下发**(理由见下方兼容性说明):
+  - `features.js_repl=false` —— 根治开关(主力), 关闭 code execution 沙箱。合并进
+    `codexOptions.config`, 扁平化为 `--config features.js_repl=false`。
+  - `tools.web_search=false` —— codex 新版 `[tools]` 表格式。合并进 `codexOptions.config`,
+    扁平化为 `--config tools.web_search=false`。
+  - `web_search="disabled"` —— codex 旧版顶层键。意图会话把 `threadOptions.webSearchEnabled`
+    置为 `false`(覆盖 `run-via-driver` 对所有交互会话统一下发的 `webSearch: true`), 由
+    `codexExecArgs` 产出 `--config web_search="disabled"`, 且最终 argv 不再出现
+    `web_search="live"`。
+- **仅意图会话受影响:** work / spec / discussion 等非意图 codex 会话不获得这些关闭项,
+  web search 行为保持原样; 驱动单测覆盖新建/resume、DIRECT/RELAY、正/负向各路径。
+- **版本兼容(已实测, codex 0.142.4):** `-c key=value` 对**未知 config 键宽容忽略**(退出码 0,
+  无报错)。冒烟命令: `codex exec -c features.js_repl=false -c tools.web_search=false -c
+web_search="disabled" --skip-git-repo-check --sandbox read-only 'say hi'` —— 正常启动并
+  `task_complete`(见 §7)。因此**新旧格式可同时下发, 各版本各取所需、互不干扰**, 低版本
+  遇到高版本才有的键会静默忽略, 不会崩。
+- **附带收益:** 意图运行不再启用 code execution, 也就不再由 code_mode 给 MCP 工具调用打上
+  `namespace: "mcp__c3"` —— `namespace-repro.test.ts` 记录的潜在 400 隐患的**源头随之消失**
+  (该测试本身按 spec 保留, 继续守护 RELAY 协议校验/转换契约, 未被改写成 save gate 测试)。
 - **对 c3 的只读顾问用法无副作用:** c3 从不使用 codex 的 code execution / multi-agent 能力(ADR 0011)。
 
-## 7. 待验证 / 待补充
+## 7. 验证结论与残留
 
-- **`web_search` 与 `js_repl` 的依赖关系:** `web_search="live"` 是否会连带拉起 `js_repl`
-  code execution 环境(从而让模型有 code_mode 可用)尚未 100% 坐实。若成立, 对意图会话关闭
-  web_search 即可间接抑制 code_mode; 若 `js_repl` 独立于 web_search, 则必须直接关 `js_repl`。
-- **全局 `js_repl=false` 为何在 c3 会话未生效:** 本地 `~/.codex/config.toml` 已设
-  `js_repl = false`, 但 c3 启动的意图会话里 code_execution 仍生效 —— 说明 c3 的 `codex exec`
-  启动路径未继承全局 config, 或被 `--config` / profile 覆盖。修复需在 c3 下发侧显式关闭。
-- **沙箱执行时限:** code_execution 沙箱执行时限的确切数值, 以及"中止 → `binding.signal.abort`"
-  的确切传导路径(当前由 gatedSave 返回 `deny` 文本 + `success: true` 反推)。
-- **前端弹框时序:** code_mode 场景下弹框的实际渲染时长(服务端可确认 `emit` 已发出, 但弹框
-  在浏览器中出现/消失的时序需前端侧确认)。
-- **修复后回归:** 用 codex 意图会话完整走一遍"列出意图 → 用户点 Save → 落库", 确认
-  `save_intents` 回到标准 `mcp_tool_call_end` 路径且确认框可稳定操作。
+已坐实 / 已排除:
+
+- **CLI 兼容(已实测 codex 0.142.4):** 三项配置键 `features.js_repl=false`、
+  `tools.web_search=false`、`web_search="disabled"` 同时下发时, `codex exec` 正常启动并
+  完成(退出码 0), 未因任一新键报错。**低版本遇未知键宽容忽略这一前提成立。**
+- **全局 `js_repl=false` 未被继承 → 已从下发侧根治:** 无论 c3 的 `codex exec` 启动路径是否
+  继承用户级 `~/.codex/config.toml`, 现每次意图运行都**显式**携带运行级 `-c features.js_repl=false`,
+  不再依赖全局 config 是否生效。这把"未继承"这一开放项从根因侧移除(下发侧强制关闭)。
+- **驱动单测(已通过):** 最终 config/argv 同含三项关闭键、不含 `web_search="live"`、
+  `mcp_servers` 与 provider 配置不丢失; work/spec/无-MCP 运行不获关闭项且 web-search 行为
+  不变; 旧式默认 `enabled_tools` 推导仍识别意图 profile。
+
+未能在本机坐实(如实记录, 不以推断代替结果):
+
+- **`web_search="live"` 是否连带拉起 `js_repl`:** 本机为 ChatGPT 桌面认证 + Codex.app 运行时
+  (`auth_mode="Chatgpt"`), 会**无条件**注入 `node_repl` / `codex_apps` 两个 MCP server(桌面
+  端 BrowserUse / ComputerUse 运行时), 与 `js_repl` 配置开关无关; `RUST_LOG` 里
+  `feedback_tags` 的 `features=[...]` 是编译期能力枚举(切换 `-c features.js_repl=true/false`
+  三次输出完全相同), 不反映运行态。故本机**无法纯净复现 c3 服务端 headless `codex exec` 的
+  code_mode 场景**, `web_search`↔`js_repl` 的耦合关系**未能 100% 坐实**。但修复采用三管齐下,
+  无论该耦合是否成立**均已独立覆盖**(js_repl 与 web search 各自关闭), 因此该开放项不再影响
+  修复正确性。
+- **端到端 UI 回归:** "列出意图 → 用户点 Save → 落库"需在真实 c3 部署 + 浏览器中由人工点击
+  确认, 属人在环节, 本环境无法执行。待在真实部署确认 `save_intents` 回到标准
+  `mcp_tool_call_end` 路径、日志无对应 `custom_tool_call` / `code_execution`、确认框稳定可操作。
+- **沙箱执行时限数值 / 前端弹框时序:** 精确数值与浏览器渲染时序仍待观测, 但不影响本修复
+  (关闭 code_mode 后该短时限窗口整体消失)。
 
 ## 8. 附: 意图智能体是否需要 web_search
 
@@ -212,9 +242,9 @@ understand context")。但它的核心职责是: **与用户对话澄清 Why / W
 意图智能体在真实使用中从未真正动用过 web 搜索。
 
 **从代价看 —— 有害。** `web_search="live"` 可能连带拉起 codex 的 `js_repl` code execution
-环境(§7 待验证), 而后者正是本问题的根因 —— 它让模型可用 code_mode 调用 `save_intents`, 从而
-使确认门失效。即便该连带关系最终不成立, 对一个从不使用 web_search 的角色保留该工具也只是
-无谓地扩大了工具面。
+环境(该耦合关系本机未能坐实, 见 §7), 而后者正是本问题的根因 —— 它让模型可用 code_mode 调用
+`save_intents`, 从而使确认门失效。即便该连带关系最终不成立, 对一个从不使用 web_search 的角色
+保留该工具也只是无谓地扩大了工具面。
 
 **结论:** 对意图(沟通)会话**关闭 web_search** 是正确取舍 —— 符合其"只读拆解 + 对话澄清"
 的职责边界, 消除(或至少缩小)触发 code_mode 的风险面, 且实证显示零能力损失。工作会话

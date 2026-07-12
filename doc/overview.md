@@ -21,7 +21,7 @@
 
 ## 领域(Domains)
 
-c3 有两个业务组:`core`(智能体循环)、`system-config`(用户配置)。
+c3 有两个业务组:`core`(智能体循环)、`settings`(用户配置)。
 
 ### 组 `core`
 
@@ -33,11 +33,13 @@ c3 有两个业务组:`core`(智能体循环)、`system-config`(用户配置)。
 | [`web-console`](domains/core/web-console/)               | 浏览器 UI:prompt 输入、活动流、权限对话框、模式切换                                                     |
 | [`intent-management`](domains/core/intent-management/)   | 一个项目范围的意图台账,以及一个只读的意图沟通智能体,负责把想法拆解为可验证的条目,并启动可配置的开发技能 |
 
-### 组 `system-config`
+### 组 `settings`
 
-| 领域                                                  | 职责                                                         |
-| ----------------------------------------------------- | ------------------------------------------------------------ |
-| [`agent-config`](domains/system-config/agent-config/) | 管理智能体配置(url/key/model + 名称)、默认智能体、按会话绑定 |
+| 领域                                                         | 职责                                                                                    |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| [`agent-config`](domains/settings/agent-config/)             | 管理智能体配置(url/key/model + 名称)、默认智能体、专用 agent 路由、按会话绑定           |
+| [`system-setting`](domains/settings/settings-overview.md)    | 管理员全局配置(显示/时区/baseUrl、vendor CLI 版本、系统沙箱定义、代理、鉴权、诊断)      |
+| [`workspace-setting`](domains/settings/settings-overview.md) | 按工作区配置(默认模式、dev 技能、Git 分支策略、沙箱引用、共识、讨论上限、SDD、技能仓库) |
 
 ## 使用规则
 

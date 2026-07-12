@@ -839,7 +839,7 @@ automation 的执行日志。
 - **`ModeToken`** — `string`。供应商原生权限模式 token。`PermissionMode`（`'default' | 'auto' | 'plan' | 'acceptEdits' | 'bypassPermissions'`）现在是 Claude 独有的 token 集合。
 - **`CodexPolicy`** — `{ sandboxMode: CodexSandboxMode, approvalPolicy: CodexApprovalPolicy }`。Codex 双策略配置（2026-06-08），替换 `codex` 供应商的单一 `ModeToken`。
 
-参见 [system-config 规范](../../domains/system-config/agent-config/agent-config-spec.md)。
+参见 [settings 规范](../../domains/settings/agent-config/agent-config-spec.md)。
 
 ## 规范代理消息模型（供应商中立）——ADR-0013
 

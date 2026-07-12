@@ -108,7 +108,7 @@ c3
 │       ├── 管理员门                              # 仅管理员可改全局配置(agents/workspaces/settings)
 │       └── 多账号                                # 多账号目录,首个创建者为唯一管理员
 │
-├── system-config — 塑造智能体循环行为的用户配置(控制面板)
+├── settings — 塑造智能体循环行为的用户配置(控制面板)
 │   │
 │   ├── agent-config 智能体配置                   # agent 档案目录与会话用哪个 agent 的规则(系统设置·agent 页)
 │   │   ├── agent 档案                            # 持久化档案(vendor/url/key/model/name),可增删/排序/启停/复制

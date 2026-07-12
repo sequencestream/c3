@@ -1,17 +1,17 @@
-# Group: system-config
+# Group: settings
 
-The `system-config` group holds c3's user-managed configuration that is not per-session
-bookkeeping. Today it has three domains — **agent-config** (agent profiles),
-**project-config** (per-workspace configuration knobs), and **proxy** (session subprocess
-proxy settings).
+The `settings` group holds c3's user-managed configuration that is not per-session
+bookkeeping. It has three domains — **agent-config** (agent profiles),
+**system-setting** (admin-only global knobs, incl. session subprocess proxy), and
+**workspace-setting** (per-workspace configuration knobs).
 
 ## Domains
 
-| Domain                                                | Responsibility                                                                                                                                                                   | API                                   | Status |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------ |
-| [agent-config](agent-config/agent-config-overview.md) | Manage agent profiles (url/key/model + name), the default agent, and per-session agent binding                                                                                   | WebSocket `/ws` (see shared protocol) | active |
-| project-config                                        | Per-workspace config knobs (defaultMode, consensus, devSkill, maxRoundsPerStage, maxSpeechChars, gitBranchMode, sandbox, sddEnabled). SDD 规范目录是固定/只读的集中位置,非配置项 | WebSocket `/ws` (see shared protocol) | active |
-| proxy                                                 | Session subprocess proxy: toggle + HTTP/HTTPS proxy URLs. Injected as `HTTP_PROXY`/`http_proxy`/`HTTPS_PROXY`/`https_proxy` into new session subprocesses                        | `SystemSettings.proxy` (see protocol) | active |
+| Domain                                                | Responsibility                                                                                                                                                                               | API                                   | Status |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ------ |
+| [agent-config](agent-config/agent-config-overview.md) | Manage agent profiles (url/key/model + name), the default agent, per-role agent routing, and per-session agent binding                                                                       | WebSocket `/ws` (see shared protocol) | active |
+| system-setting                                        | Admin-only global knobs: display/timezone/baseUrl, vendor CLI effective version, system sandbox defs, session subprocess proxy, auth, host diagnostics                                       | `SystemSettings` (see protocol)       | active |
+| workspace-setting                                     | Per-workspace config knobs (defaultMode, consensus, devSkill, maxRoundsPerStage, maxSpeechChars, gitBranchMode, sandbox, sddEnabled, skillRepos). SDD 规范目录是固定/只读的集中位置,非配置项 | WebSocket `/ws` (see shared protocol) | active |
 
 ## Shared context
 

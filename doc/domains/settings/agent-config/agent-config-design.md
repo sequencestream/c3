@@ -18,7 +18,7 @@ web console 中的完整设置视图页面。
 ## 持久化
 
 - **`settings.json`**,位于 `~/.c3/settings.json`——保存智能体注册表、默认智能体 id,以及
-  按项目的配置(在 `projectConfigs` key 下,见 [system-config overview](../system-config-overview.md))。
+  按项目的配置(在 `projectConfigs` key 下,见 [settings overview](../settings-overview.md))。
 - **`state.json`**,位于 `~/.c3/state.json`——双键绑定(ADR-0015),带版本号:一个 pending-intent
   map(待定 id → 期望的智能体 + 创建时间)是可变的意图;一个 session-agent map(真实 id
   → 智能体 + 被冻结的厂商)是被冻结的事实。旧版单一 map 的数据在首次读取时迁移:

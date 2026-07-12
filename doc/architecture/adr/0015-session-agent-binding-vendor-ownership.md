@@ -86,6 +86,6 @@ c3 普通会话领域正在从"100% 只读的 Claude 目录"演进为多 agent /
 
 - ADR-0011(厂商中立 agent;推迟的 replay-seed / 异构队友)、ADR-0013(c3 会话命名空间 +
   按厂商的存储)、ADR-0009(单向边界)、ADR-0004(会话注册表)。
-- [agent-config domain spec](../../domains/system-config/agent-config/)(AC-R\* 绑定规则)、
+- [agent-config domain spec](../../domains/settings/agent-config/)(AC-R\* 绑定规则)、
   [session-registry domain spec](../../domains/core/session-registry/)(pending 会话生命周期)、
   [agent-session domain spec](../../domains/core/agent-session/)(AS-R10 重新加键)。

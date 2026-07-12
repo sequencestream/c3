@@ -20,7 +20,7 @@
 | [自动化编排器](flow-automation-orchestrator.md)                 | 一批标记为 `automate` 的意图逐一被构建:开发、评判、提交/推送、推进          | intent-management · agent-session · permission-gateway · git                             |
 | [讨论 → 意图](flow-discussion-to-intent.md)                     | 对一个目标进行调研,由组织者主持的圆桌讨论得出结论,再转化为多个意图          | discussion · agent-config · intent-management                                            |
 | [自动化执行](flow-automation-execution.md)                      | cron/事件触发器触发一个命令或 LLM-prompt 任务,以某个执行身份运行;结果被记录 | automations · session-registry · agent-session                                           |
-| [auth 登录门](flow-auth-login.md)                               | 一个连接在驱动智能体之前先完成身份认证(这是对外暴露到网络的前置条件)        | auth · web-console · system-config                                                       |
+| [auth 登录门](flow-auth-login.md)                               | 一个连接在驱动智能体之前先完成身份认证(这是对外暴露到网络的前置条件)        | auth · web-console · settings                                                            |
 
 ## 阅读约定
 

@@ -25,20 +25,6 @@
 
 ## 前置准备
 
-### 安装 Claude Code
-
-c3 使用 Claude Code 作为底层智能体引擎。你需要先安装并登录 Claude Code：
-
-```bash
-# 安装
-npm install -g @anthropic-ai/claude-code
-
-# 登录（会打开浏览器完成认证）
-claude
-```
-
-> c3 启动后会自动管理 Claude Code 的二进制文件，但首次登录仍需通过 `claude` 命令完成。
-
 ### 可选工具
 
 以下工具不是强制安装的，但如果你用对应的代码托管平台，安装后会获得更好的 Git 集成：

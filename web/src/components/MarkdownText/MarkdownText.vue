@@ -88,10 +88,55 @@ async function highlightBlocks() {
   }
 }
 
+// 识别文件路径链接:无 URI scheme、不以 // # / 开头的相对引用视为代码文件链接。
+// 为命中的链接添加 .code-file-link class、移除 DOMPurify 强加的 target/rel 安全属性,
+// 并在 click 时 dispatch 可冒泡的 c3:code-file-click 事件(供控制层导航到 codes 页)。
+function enhanceCodeFileLinks(): void {
+  const el = root.value
+  if (!el) return
+  const links = el.querySelectorAll<HTMLAnchorElement>('a[href]')
+  for (const a of links) {
+    const href = a.getAttribute('href') ?? ''
+    // 协议相对 URL / 锚点 / 绝对路径 / 显式 URI scheme → 不是代码文件链接。
+    if (
+      href.startsWith('//') ||
+      href.startsWith('#') ||
+      href.startsWith('/') ||
+      /^[a-zA-Z][a-zA-Z0-9+.-]*:/i.test(href)
+    )
+      continue
+    // 解析 #L<N> 行号后缀;含其他 fragment 格式的不予增强。
+    let path = href
+    let line: number | undefined
+    const hashIndex = href.indexOf('#')
+    if (hashIndex >= 0) {
+      const fragment = href.slice(hashIndex + 1)
+      const lineMatch = fragment.match(/^L(\d+)$/)
+      if (!lineMatch) continue
+      path = href.slice(0, hashIndex)
+      line = parseInt(lineMatch[1], 10)
+    }
+    // 增强:class + 移除外链安全属性 + 自定义事件。
+    a.classList.add('code-file-link')
+    a.removeAttribute('target')
+    a.removeAttribute('rel')
+    a.onclick = (e) => {
+      e.preventDefault()
+      a.dispatchEvent(
+        new CustomEvent('c3:code-file-click', {
+          bubbles: true,
+          detail: { path, line },
+        }),
+      )
+    }
+  }
+}
+
 onMounted(() => {
   if (isMarkdown.value) {
     wrapScrollableTables()
     void highlightBlocks()
+    enhanceCodeFileLinks()
   }
 })
 watch(
@@ -101,6 +146,7 @@ watch(
       void nextTick(() => {
         wrapScrollableTables()
         void highlightBlocks()
+        enhanceCodeFileLinks()
       })
   },
 )
@@ -113,3 +159,14 @@ watch(
   <div v-if="isMarkdown" ref="root" class="md-body" v-html="html"></div>
   <template v-else>{{ text }}</template>
 </template>
+
+<style>
+/* 代码文件链接与外部链接视觉区分:虚线、hover 加下划线(内链导航风格)。 */
+.md-body a.code-file-link {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+.md-body a.code-file-link:hover {
+  text-decoration-style: solid;
+}
+</style>

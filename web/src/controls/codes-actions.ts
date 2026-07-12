@@ -1,5 +1,5 @@
 import { watch } from 'vue'
-import { closeTab } from '@/lib/codes-view'
+import { closeTab, parseAncestors } from '@/lib/codes-view'
 import {
   PENDING_SESSION_PREFIX,
   type CodeGitStatus,
@@ -30,6 +30,7 @@ export function installCodesActions(ctx: AppCtx): void {
     codesBoundSessionId,
     activeSession,
     activeTab,
+    currentWorkspace,
   } = ctx
 
   // At most one `get_code_git_status` per workspace in flight; a refresh while one
@@ -170,6 +171,24 @@ export function installCodesActions(ctx: AppCtx): void {
       if (!codesDirs.value[rel]) ctx.loadCodesDir(rel)
     }
     codesExpanded.value = next
+  }
+
+  // Navigate to a file from a markdown code link: switch to codes tab (if needed),
+  // expand all ancestor directories (lazy-loading un-cached ones), then open the file.
+  ctx.navigateToCodeFile = (path: string, line?: number): void => {
+    const ws = activeTab.value === 'codes' ? codesProject.value : currentWorkspace.value
+    if (!ws) return
+    if (activeTab.value !== 'codes') ctx.openCodes(ws)
+    // Parse and expand all ancestor directories in the code tree.
+    const ancestors = parseAncestors(path)
+    const nextExpanded = new Set(codesExpanded.value)
+    for (const rel of ancestors) {
+      nextExpanded.add(rel)
+      if (!codesDirs.value[rel]) ctx.loadCodesDir(rel)
+    }
+    codesExpanded.value = nextExpanded
+    // Open the file (focus or create tab).
+    ctx.openCodeFile(path, line)
   }
 
   // Open a file in the right pane: focus an already-open tab (optionally jumping

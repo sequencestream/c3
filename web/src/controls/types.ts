@@ -203,6 +203,8 @@ export interface AppMethods {
   setCodesSearchMode(mode: 'filename' | 'content'): void
   runCodeSearch(): void
   openCodeSearchHit(hit: CodeSearchHit): void
+  /** Navigate to a file from a markdown code link: switch to codes tab, expand ancestors, open file. */
+  navigateToCodeFile(path: string, line?: number): void
   // Codes 内嵌 ChatColumn:空态「+ 新建」/ 标题栏「↻ 重置」都创建一个普通 work
   // session(不弹 agent 选择弹窗,沿用 workspace 默认 agent)。
   createCodesChatSession(workspaceId: string): void

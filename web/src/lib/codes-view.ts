@@ -127,6 +127,24 @@ export function isMarkdownPath(path: string): boolean {
   return path.toLocaleLowerCase().endsWith('.md')
 }
 
+/**
+ * Parse the directory ancestors of a relative file path.
+ * Example: 'a/b/c/d.ts' → ['a', 'a/b', 'a/b/c']
+ * Single file with no directory → []
+ */
+export function parseAncestors(path: string): string[] {
+  const parts = path.split('/')
+  if (parts.length <= 1) return []
+  parts.pop() // remove the file name
+  const ancestors: string[] = []
+  let acc = ''
+  for (const part of parts) {
+    acc = acc ? `${acc}/${part}` : part
+    ancestors.push(acc)
+  }
+  return ancestors
+}
+
 /** 字节数人类可读化(B / KB / MB),用于「文件过大」提示。 */
 export function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`

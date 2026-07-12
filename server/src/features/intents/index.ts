@@ -72,7 +72,7 @@ import { clearPendingIntentLink, registerPendingIntentLink } from './intent-link
 import { reconcileInProgress } from './reconcile.js'
 import { publishIntentStatusTransition } from './lifecycle-events.js'
 import { buildDevPrompt } from './dev-prompt.js'
-import { findDependencyBlockingMainline } from './dependency-gate.js'
+import { findDependencyBlockingMainline, normalizeBranchName } from './dependency-gate.js'
 import { syncIntentPrStatus, syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
 import { judgeCompletion } from './judge.js'
 import {
@@ -85,7 +85,7 @@ import {
 } from './run-status.js'
 import { getWorkflowHooks, getWorkflowStatus, startWorkflow, stopWorkflow } from './workflow.js'
 import { getDiscussion } from '../discussions/store.js'
-import { closeForgePr, commitAndPush, createGhPr } from '../../git.js'
+import { closeForgePr, commitAndPush, createGhPr, hasCommittableChanges } from '../../git.js'
 import { buildServerSidePrCreateEvent } from '../pr-events/tool-defs.js'
 import {
   createWorktree,
@@ -1119,17 +1119,8 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
     conn.send({ type: 'error', error: { code: 'intent.notFound' } })
     return
   }
-  // Only allow PR creation for done intents (completed but no PR yet).
-  if (req.status !== 'done') {
-    conn.send({
-      type: 'error',
-      error: {
-        code: 'intent.prCreateFailed',
-        params: { detail: `intent 状态为 ${req.status},需要 done` },
-      },
-    })
-    return
-  }
+  // Idempotent guard first: an intent that already has a PR is never re-created —
+  // no Git checks, no commit, no push. Independent of intent status.
   if (req.prId) {
     conn.send({
       type: 'error',
@@ -1138,6 +1129,22 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
         params: { detail: `intent 已有 PR #${req.prId}` },
       },
     })
+    return
+  }
+  // Manual PR creation no longer reads intent status; it serves the isolated
+  // worktree only, and requires a branch plus committable changes. Fixed order:
+  // worktree mode → non-empty branch → worktree has committable changes.
+  if (getGitBranchMode(proj) !== 'worktree') {
+    conn.send({ type: 'error', error: { code: 'intent.prCreateNotWorktree' } })
+    return
+  }
+  if (normalizeBranchName(req.branchName) === null) {
+    conn.send({ type: 'error', error: { code: 'intent.prCreateNoBranch' } })
+    return
+  }
+  const worktreePath = getWorktreePath(proj, msg.intentId)
+  if (!(await hasCommittableChanges(worktreePath))) {
+    conn.send({ type: 'error', error: { code: 'intent.prCreateNoChanges' } })
     return
   }
 
@@ -1156,7 +1163,17 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
   const title = `feat: ${req.title}`
 
   try {
-    const pr = await createGhPr(proj, title, body, headBranch)
+    // Commit and push the worktree's changes first (same helper the orchestrator
+    // uses); only create the PR when the commit/push succeeded.
+    const commit = await commitAndPush(worktreePath, title)
+    if (!commit.ok) {
+      conn.send({
+        type: 'error',
+        error: { code: 'intent.prCreateFailed', params: { detail: commit.error ?? '提交失败' } },
+      })
+      return
+    }
+    const pr = await createGhPr(worktreePath, title, body, headBranch)
     if (pr.ok && pr.prId) {
       setPrInfo(msg.intentId, pr.prId, 'reviewing', pr.prUrl ?? null)
       safeInsertIntentLog(msg.intentId, 'pr_created', `创建 PR #${pr.prId}`, conn.subject)

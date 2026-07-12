@@ -234,3 +234,106 @@ describe('deleteAutomationHandler', () => {
     ).not.toHaveBeenCalled()
   })
 })
+
+describe('createAutomationHandler — import path (initialStatus / initialName)', () => {
+  function createMsg(input: Record<string, unknown>) {
+    return { type: 'create_automation', workspaceId: proj, input } as never
+  }
+  // The naming mock is module-scoped and accumulates across the file, so assert on
+  // call-count deltas rather than absolute called/not-called.
+  const namingCalls = async () =>
+    vi.mocked((await import('./naming.js')).generateAutomationName).mock.calls.length
+
+  it('skips auto-naming when an initialName is supplied', async () => {
+    const before = await namingCalls()
+    const ctx = fakeCtx()
+    await createAutomationHandler(
+      ctx,
+      fakeConn(),
+      createMsg({
+        type: 'command',
+        config: { command: 'echo hi' },
+        workspaceId: proj,
+        vendor: 'claude',
+        cronExpression: '*/5 * * * *',
+        mode: 'read-only',
+        initialStatus: 'paused',
+        initialName: 'Imported Task',
+      }),
+    )
+    expect(
+      (ctx as unknown as { broadcastAutomations: ReturnType<typeof vi.fn> }).broadcastAutomations,
+    ).toHaveBeenCalled()
+    // The imported name wins — auto-naming is skipped entirely.
+    expect(await namingCalls()).toBe(before)
+  })
+
+  it('persists the imported automation paused with the exported sticky name', async () => {
+    const ctx = fakeCtx()
+    await createAutomationHandler(
+      ctx,
+      fakeConn(),
+      createMsg({
+        type: 'command',
+        config: { command: 'echo hi', name: 'ignored-config-name' },
+        workspaceId: proj,
+        vendor: 'claude',
+        cronExpression: '*/5 * * * *',
+        mode: 'read-only',
+        initialStatus: 'paused',
+        initialName: 'Imported Task',
+      }),
+    )
+    // Find the paused import by scanning the workspace's automations.
+    const { listAutomations } = await import('./store.js')
+    const imported = listAutomations(proj).find(
+      (a) => (a.config as Record<string, unknown>).name === 'Imported Task',
+    )
+    expect(imported).toBeDefined()
+    expect(imported!.status).toBe('paused')
+    expect((imported!.config as Record<string, unknown>).nameSource).toBe('user')
+  })
+
+  it('rejects a non-paused explicit initial status and writes nothing', async () => {
+    const conn = fakeConn()
+    const ctx = fakeCtx()
+    await createAutomationHandler(
+      ctx,
+      conn,
+      createMsg({
+        type: 'command',
+        config: { command: 'echo hi' },
+        workspaceId: proj,
+        vendor: 'claude',
+        cronExpression: '*/5 * * * *',
+        mode: 'read-only',
+        initialStatus: 'active',
+      }),
+    )
+    expect((conn as unknown as { send: ReturnType<typeof vi.fn> }).send).toHaveBeenCalledWith({
+      type: 'error',
+      error: { code: 'automation.invalidInitialStatus' },
+    })
+    expect(
+      (ctx as unknown as { broadcastAutomations: ReturnType<typeof vi.fn> }).broadcastAutomations,
+    ).not.toHaveBeenCalled()
+  })
+
+  it('creates a normal automation active and auto-named when no import fields are present', async () => {
+    const before = await namingCalls()
+    const ctx = fakeCtx()
+    await createAutomationHandler(
+      ctx,
+      fakeConn(),
+      createMsg({
+        type: 'command',
+        config: { command: 'echo hi' },
+        workspaceId: proj,
+        vendor: 'claude',
+        cronExpression: '*/5 * * * *',
+        mode: 'read-only',
+      }),
+    )
+    expect(await namingCalls()).toBe(before + 1)
+  })
+})

@@ -688,6 +688,14 @@ export function createAutomation(input: CreateAutomationInput, generatedName?: s
     ? input.maxWallClockMs
     : null
   config.name = (generatedName ?? '').trim() || fallbackName(input.type, input.config)
+  // A supplied `initialName` (import path) is a user-chosen title: mark it sticky
+  // so a later auto-naming pass never overrides the preserved exported name.
+  if (typeof input.initialName === 'string' && input.initialName.trim()) {
+    config.nameSource = 'user'
+  }
+  // Only `'paused'` is honoured as an explicit initial status (the handler rejects
+  // any other value); the default stays `'active'` so normal creates are unchanged.
+  const status: AutomationStatus = input.initialStatus === 'paused' ? 'paused' : 'active'
   // Event-triggered automations carry no cron and never have a planned next_run_at:
   // they fire from the run lifecycle bus, not the tick loop. Cron automations keep
   // the existing backfill (getDueAutomations filters `next_run_at IS NULL`, so the
@@ -742,7 +750,7 @@ export function createAutomation(input: CreateAutomationInput, generatedName?: s
     eventSessionKindFilter,
     eventMetadataFilter,
     metadata,
-    'active',
+    status,
     serializeMode(input.mode),
     JSON.stringify(allowlist),
     JSON.stringify(denylist),

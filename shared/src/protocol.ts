@@ -2667,6 +2667,21 @@ export interface CreateAutomationInput {
   mode: ModeToken | CodexPolicy
   toolAllowlist?: string[]
   toolDenylist?: string[]
+  /**
+   * Optional initial lifecycle status. Only `'paused'` is accepted — the server
+   * rejects any other explicit value, so a client cannot bypass the normal
+   * create-then-active flow. Used by JSON import to land a automation paused in the
+   * SAME insert (no active→pause window a cron tick / event bus could exploit).
+   * Omitted ⇒ the automation is created `'active'` as before.
+   */
+  initialStatus?: 'paused'
+  /**
+   * Optional initial display name. When a non-empty value is supplied the server
+   * skips auto-naming and stores it as a sticky user-set `config.name`
+   * (`nameSource === 'user'`), preserving an exported title across workspaces.
+   * Omitted ⇒ the server auto-generates the name from the task content as before.
+   */
+  initialName?: string
 }
 
 /** Fields the client may supply when updating a automation. All optional. */

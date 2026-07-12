@@ -270,4 +270,39 @@ describe('automation save overlay', () => {
     expect(c.send).not.toHaveBeenCalled()
     expect(c.showToast).toHaveBeenCalledOnce()
   })
+
+  it('importAutomations dispatches one create per input and toasts a summary', () => {
+    const c = makeCtx()
+    const inputs = [
+      {
+        type: 'command',
+        config: { command: 'a' },
+        workspaceId: 'ws1',
+        cronExpression: '* * * * *',
+        mode: 'read-only',
+        vendor: 'claude',
+        initialStatus: 'paused',
+      },
+      {
+        type: 'command',
+        config: { command: 'b' },
+        workspaceId: 'ws1',
+        cronExpression: '* * * * *',
+        mode: 'read-only',
+        vendor: 'claude',
+        initialStatus: 'paused',
+      },
+    ] as never
+    c.ctx.importAutomations(inputs)
+    const creates = c.send.mock.calls.filter(([m]) => m.type === 'create_automation')
+    expect(creates).toHaveLength(2)
+    expect(c.showToast).toHaveBeenCalledWith('automation.importExport.import.summary')
+  })
+
+  it('importAutomations is a no-op for an empty list', () => {
+    const c = makeCtx()
+    c.ctx.importAutomations([])
+    expect(c.send).not.toHaveBeenCalled()
+    expect(c.showToast).not.toHaveBeenCalled()
+  })
 })

@@ -16,6 +16,7 @@ import {
   updateAutomation,
   getAutomation,
   getDueAutomations,
+  getEventAutomations,
   getWorkspaceMcpConfig,
   saveWorkspaceMcpConfig,
   appendExecutionLog,
@@ -463,5 +464,89 @@ describe('deleteAutomation', () => {
 
   it('is a no-op for an unknown id', () => {
     expect(() => deleteAutomation('nope')).not.toThrow()
+  })
+})
+
+describe('createAutomation import extensions (initialStatus / initialName)', () => {
+  it('lands the automation paused in the same insert when initialStatus is paused', () => {
+    const sch = createAutomation({
+      type: 'command',
+      config: { command: 'echo hi' },
+      workspaceId: proj,
+      cronExpression: '*/5 * * * *',
+      mode: 'read-only',
+      vendor: 'claude',
+      initialStatus: 'paused',
+    })
+    expect(sch.status).toBe('paused')
+    // A paused cron automation is never returned as due even past its next_run_at.
+    const due = getDueAutomations((sch.nextRunAt ?? Date.now()) + 60_000)
+    expect(due.find((d) => d.id === sch.id)).toBeUndefined()
+  })
+
+  it('defaults to active when initialStatus is omitted', () => {
+    const sch = createAutomation({
+      type: 'command',
+      config: { command: 'echo hi' },
+      workspaceId: proj,
+      cronExpression: '*/5 * * * *',
+      mode: 'read-only',
+      vendor: 'claude',
+    })
+    expect(sch.status).toBe('active')
+  })
+
+  it('preserves a supplied initialName as a sticky user-set config.name', () => {
+    const sch = createAutomation(
+      {
+        type: 'command',
+        config: { command: 'echo hi' },
+        workspaceId: proj,
+        cronExpression: '*/5 * * * *',
+        mode: 'read-only',
+        vendor: 'claude',
+        initialName: 'My imported task',
+      },
+      'My imported task',
+    )
+    const cfg = sch.config as Record<string, unknown>
+    expect(cfg.name).toBe('My imported task')
+    expect(cfg.nameSource).toBe('user')
+  })
+
+  it('assigns a fresh id and the current workspace, ignoring any exported instance state', () => {
+    const a = createAutomation({
+      type: 'command',
+      config: { command: 'echo a' },
+      workspaceId: proj,
+      cronExpression: '*/5 * * * *',
+      mode: 'read-only',
+      vendor: 'claude',
+      initialStatus: 'paused',
+      initialName: 'Imported A',
+    })
+    expect(a.id).toBeTruthy()
+    expect(a.workspaceId).toBe(proj)
+    expect(a.status).toBe('paused')
+  })
+
+  it('a paused event automation is not returned to the event dispatcher until enabled', () => {
+    const sch = createAutomation({
+      type: 'command',
+      config: { command: 'echo hi' },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventTopic: 'run:settled',
+      eventSessionKindFilter: ['work'],
+      mode: 'read-only',
+      vendor: 'claude',
+      initialStatus: 'paused',
+    })
+    // Paused ⇒ the event bus lookup ignores it, so no execution can fire.
+    expect(getEventAutomations('run:settled').find((s) => s.id === sch.id)).toBeUndefined()
+    // Manually enabling it makes it eligible for the existing dispatch path.
+    updateAutomation(sch.id, { status: 'active' })
+    expect(getEventAutomations('run:settled').find((s) => s.id === sch.id)).toBeDefined()
   })
 })

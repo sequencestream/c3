@@ -6,11 +6,13 @@
  * 「详情/历史」Tab,历史经弹框选执行)+ 创建/编辑表单弹窗。所有数据(列表/日志/
  * transcript)与弹窗开关状态由 App.vue 持有,经 props 注入;用户动作经 emit 上抛。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import AutomationList from './components/AutomationList/AutomationList.vue'
 import AutomationDetailPanel from './components/AutomationDetailPanel/AutomationDetailPanel.vue'
 import AutomationForm from './components/AutomationForm/AutomationForm.vue'
+import AutomationExportDialog from './components/AutomationImportExport/AutomationExportDialog.vue'
+import AutomationImportDialog from './components/AutomationImportExport/AutomationImportDialog.vue'
 import type {
   CreateAutomationInput,
   AgentConfig,
@@ -61,6 +63,7 @@ const emit = defineEmits<{
   'select-execution': [id: string]
   'close-form': []
   create: [input: CreateAutomationInput]
+  'import-automations': [inputs: CreateAutomationInput[]]
   update: [id: string, input: UpdateAutomationInput]
   'load-tool-manifest': [vendor: string]
   'mobile-back': [targetKey: string]
@@ -73,6 +76,15 @@ const mobilePanes = [
 
 const mobileActiveKey = computed(() => (props.activeId ? 'detail' : 'automations'))
 const mobileActiveToken = computed(() => props.activeId ?? 'automations')
+
+// Import/export dialogs live in the page domain; the list only raises the menu.
+const exportOpen = ref(false)
+const importOpen = ref(false)
+
+function onImportConfirm(inputs: CreateAutomationInput[]): void {
+  importOpen.value = false
+  emit('import-automations', inputs)
+}
 </script>
 
 <template>
@@ -90,6 +102,8 @@ const mobileActiveToken = computed(() => props.activeId ?? 'automations')
         @select="(id: string) => emit('select', id)"
         @new-automation="emit('open-form', null)"
         @new-from-template="(templateId: string) => emit('new-from-template', templateId)"
+        @open-export="exportOpen = true"
+        @open-import="importOpen = true"
       />
     </template>
 
@@ -128,5 +142,20 @@ const mobileActiveToken = computed(() => props.activeId ?? 'automations')
     @create="(input: CreateAutomationInput) => emit('create', input)"
     @update="(id: string, input: UpdateAutomationInput) => emit('update', id, input)"
     @load-tool-manifest="(vendor: string) => emit('load-tool-manifest', vendor)"
+  />
+
+  <AutomationExportDialog
+    :open="exportOpen"
+    :automations="automations"
+    :workspace-path="workspacePath"
+    @close="exportOpen = false"
+  />
+
+  <AutomationImportDialog
+    :open="importOpen"
+    :agents="agents"
+    :workspace-path="workspacePath"
+    @close="importOpen = false"
+    @confirm="onImportConfirm"
   />
 </template>

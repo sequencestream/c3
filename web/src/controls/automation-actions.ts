@@ -102,6 +102,24 @@ export function installAutomationActions(ctx: AppCtx): void {
     send({ type: 'create_automation', workspaceId: input.workspaceId, input })
   }
 
+  // Bulk import: dispatch one create per already-mapped input (each carries
+  // initialStatus:'paused' so the server lands it paused in a single insert). The
+  // list refreshes via the server's automations broadcast; a single-item server
+  // failure surfaces through the normal error toast and does not roll back the
+  // items already created. A summary toast makes the paused outcome visible.
+  ctx.importAutomations = (inputs: CreateAutomationInput[]): void => {
+    if (inputs.length === 0) return
+    for (const input of inputs) {
+      send({ type: 'create_automation', workspaceId: input.workspaceId, input })
+    }
+    ctx.showToast(
+      ctx.t('automation.importExport.import.summary', {
+        done: inputs.length,
+        total: inputs.length,
+      }),
+    )
+  }
+
   ctx.createAutomationFromTemplate = (templateId: string): void => {
     const template = getAutomationTemplate(templateId)
     const workspaceId = automationsProject.value

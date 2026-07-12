@@ -1,5 +1,5 @@
 import { watch } from 'vue'
-import { closeTab, parseAncestors } from '@/lib/codes-view'
+import { closeTab, normalizeCodePath, parseAncestors } from '@/lib/codes-view'
 import {
   PENDING_SESSION_PREFIX,
   type CodeGitStatus,
@@ -179,16 +179,20 @@ export function installCodesActions(ctx: AppCtx): void {
     const ws = activeTab.value === 'codes' ? codesProject.value : currentWorkspace.value
     if (!ws) return
     if (activeTab.value !== 'codes') ctx.openCodes(ws)
+    // Canonicalize the authored path so the optimistic tab key matches the
+    // server's `file_read` reply (which echoes the resolved path); otherwise a
+    // `./`-prefixed or `..`-bearing link would leave the tab stuck loading.
+    const rel = normalizeCodePath(path)
     // Parse and expand all ancestor directories in the code tree.
-    const ancestors = parseAncestors(path)
+    const ancestors = parseAncestors(rel)
     const nextExpanded = new Set(codesExpanded.value)
-    for (const rel of ancestors) {
-      nextExpanded.add(rel)
-      if (!codesDirs.value[rel]) ctx.loadCodesDir(rel)
+    for (const dir of ancestors) {
+      nextExpanded.add(dir)
+      if (!codesDirs.value[dir]) ctx.loadCodesDir(dir)
     }
     codesExpanded.value = nextExpanded
     // Open the file (focus or create tab).
-    ctx.openCodeFile(path, line)
+    ctx.openCodeFile(rel, line)
   }
 
   // Open a file in the right pane: focus an already-open tab (optionally jumping

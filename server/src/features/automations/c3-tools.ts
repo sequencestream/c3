@@ -19,6 +19,7 @@
  * so it never reverse-depends on wiring; the SDK / MCP framing lives in each surface.
  */
 import type { ZodRawShape } from 'zod'
+import { z } from 'zod'
 import {
   findDesc,
   findSchema,
@@ -62,6 +63,12 @@ import {
   type ViewDiscussionArgs,
 } from '../discussions/tool-defs.js'
 import { hasDiscussionRun } from '../discussions/run-controls.js'
+import {
+  launchSpecSession,
+  launchWorkSession,
+  type SessionLaunchDeps,
+  type SessionLaunchResult,
+} from '../intents/session-launcher.js'
 import type {
   Discussion,
   DiscussionMessage,
@@ -82,6 +89,8 @@ export interface AutomationMcpDeps {
   broadcastDiscussionMessage: (discussionId: string, message: DiscussionMessage) => void
   /** Start (or resume) a background discussion orchestration run. */
   startDiscussionRun: (discussion: Discussion) => void
+  /** Start an agent run — injected by the composition root for session launcher tools. */
+  readonly launchRun: SessionLaunchDeps['launchRun']
 }
 
 /** An MCP tool result. Structurally identical across the Claude SDK and the MCP SDK. */
@@ -118,6 +127,16 @@ export function buildAutomationC3Tools(
     hasDiscussionRun,
     startDiscussionRun: (discussion: Discussion) => deps?.startDiscussionRun(discussion),
   }
+  // Session-launcher deps: built from the automation composition-root callbacks
+  // so the shared core never depends on MCP framing.
+  const sessionLaunchDeps: SessionLaunchDeps = {
+    launchRun: (rt, prompt, images, inject) =>
+      deps?.launchRun(rt, prompt, images, inject) ?? Promise.resolve(),
+    broadcastIntents: (path) => deps?.broadcastIntents(path),
+  }
+  const text = (s: string): AutomationC3ToolResult['content'] => [
+    { type: 'text' as const, text: s },
+  ]
   return [
     {
       name: 'find_intents',
@@ -200,6 +219,54 @@ export function buildAutomationC3Tools(
           broadcastDiscussions: (path) => deps?.broadcastDiscussions(path),
         }),
       }),
+    },
+    {
+      name: 'start_session_for_intent',
+      description:
+        '为一条意图启动 spec 编写或开发会话。' +
+        'sessionType="spec":首次创建 spec 目录与种子文件,启动受限 spec 会话;' +
+        '若 intent 已有 specSessionId 则续写同一会话(不重建目录,返回原 id)。' +
+        'sessionType="work":校验状态、SDD 审批、依赖阻塞与 Git 分支策略后,' +
+        '启动开发会话并注册 pending→intent 回链。' +
+        '成功返回 JSON:{"sessionId":"…","sessionType":"…"},失败返回 JSON:{"code":"…","params":{…}}。',
+      inputSchema: {
+        intentId: z.string().describe('要启动会话的意图 id'),
+        sessionType: z.enum(['spec', 'work']).describe('会话类型:spec=编写需求文档, work=开始开发'),
+      },
+      handler: async (args) => {
+        const { intentId, sessionType } = args as {
+          intentId: string
+          sessionType: 'spec' | 'work'
+        }
+        try {
+          const result: SessionLaunchResult =
+            sessionType === 'work'
+              ? await launchWorkSession(workspacePath, intentId, sessionLaunchDeps)
+              : await launchSpecSession(workspacePath, intentId, sessionLaunchDeps)
+
+          if (result.success) {
+            return {
+              content: text(JSON.stringify({ sessionId: result.sessionId, sessionType })),
+            }
+          }
+          const errorPayload: Record<string, unknown> = { code: result.code }
+          if (result.params) errorPayload.params = result.params
+          return {
+            content: text(JSON.stringify(errorPayload)),
+            isError: true,
+          }
+        } catch (err) {
+          return {
+            content: text(
+              JSON.stringify({
+                code: 'intent.launchInternalError',
+                params: { message: String(err) },
+              }),
+            ),
+            isError: true,
+          }
+        }
+      },
     },
   ]
 }

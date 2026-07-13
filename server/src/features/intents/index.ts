@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { dirname } from 'node:path'
 import {
   PENDING_SESSION_PREFIX,
+  type DevLaunchStage,
   type Intent,
   type SessionAgentSwitch,
   type VendorId,
@@ -24,15 +25,8 @@ import {
   removeViewer,
 } from '../../runs.js'
 import { hasWorkspace, resolveWorkspaceRoot, pathToId, touchWorkspace } from '../../state.js'
+import { getDefaultMode, getGitBranchMode, getSddEnabled } from '../../kernel/config/index.js'
 import {
-  getDefaultMainBranch,
-  getDefaultMode,
-  getDevSkill,
-  getGitBranchMode,
-  getSddEnabled,
-} from '../../kernel/config/index.js'
-import {
-  getDefaultAgentId,
   resolveIntentAgent,
   resolveSessionAgentSwitch,
   resolveSessionVendor,
@@ -40,7 +34,7 @@ import {
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
-import { loadHistory, loadLastAssistantMessages, sessionExists } from '../../sessions.js'
+import { loadHistory, loadLastAssistantMessages } from '../../sessions.js'
 import {
   canTransition,
   getChatSession,
@@ -62,18 +56,11 @@ import {
   updateIntentDeps,
   updateStatus,
 } from './store.js'
-import {
-  clearPendingDevLink,
-  registerPendingDevLink,
-  releaseDevLaunch,
-  tryClaimDevLaunch,
-} from './dev-link.js'
 import { clearPendingIntentLink, registerPendingIntentLink } from './intent-link.js'
 import { reconcileInProgress } from './reconcile.js'
 import { publishIntentStatusTransition } from './lifecycle-events.js'
-import { buildDevPrompt } from './dev-prompt.js'
-import { findDependencyBlockingMainline, normalizeBranchName } from './dependency-gate.js'
-import { syncIntentPrStatus, syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
+import { normalizeBranchName } from './dependency-gate.js'
+import { syncIntentPrStatus } from './pr-status-sync.js'
 import { judgeCompletion } from './judge.js'
 import {
   cacheRunStatus,
@@ -87,21 +74,16 @@ import { getWorkflowHooks, getWorkflowStatus, startWorkflow, stopWorkflow } from
 import { getDiscussion } from '../discussions/store.js'
 import { closeForgePr, commitAndPush, createGhPr, hasCommittableChanges } from '../../git.js'
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
-import {
-  createWorktree,
-  fetchRemoteBase,
-  getWorktreePath,
-  pullCurrentBranch,
-  readBranch,
-} from './worktree.js'
+import { getWorktreePath } from './worktree.js'
 import { resolveSpecFileAbs } from './specs-root.js'
 import {
   deleteByVendorId,
   updateRealRowTitle,
   upsertBoundRow,
-  upsertPendingRow,
 } from '../sessions/session-metadata-store.js'
+import type { UiErrorCode } from '@ccc/shared/ui-codes.js'
 import type { Handler } from '../../transport/handler-registry.js'
+import { launchWorkSession } from './session-launcher.js'
 
 // ---- Local helpers (agent binding for intent comm sessions) ----
 
@@ -728,194 +710,26 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
     })
     return
   }
-  if (!isStoreAvailable()) {
-    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
-    return
-  }
-  if (!tryClaimDevLaunch(msg.intentId)) {
-    conn.send({ type: 'error', error: { code: 'intent.devStartInFlight' } })
-    return
-  }
-  const releaseClaim = (): void => releaseDevLaunch(msg.intentId)
-  const req = getIntent(msg.intentId)
-  if (!req) {
-    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
-    releaseClaim()
-    return
-  }
-  // Allow `todo`, or `in_progress` whose work session has gone missing (a
-  // dangling launch — let the user restart rather than stay stuck).
-  const dangling =
-    req.status === 'in_progress' &&
-    (!req.lastWorkSessionId || !(await sessionExists(proj, req.lastWorkSessionId)))
-  if (req.status !== 'todo' && !dangling) {
+  const result = await launchWorkSession(
+    proj,
+    msg.intentId,
+    { launchRun: ctx.launchRun, broadcastIntents: ctx.broadcastIntents },
+    (stage) =>
+      conn.send({
+        type: 'dev_launch_progress',
+        intentId: msg.intentId,
+        stage: stage as DevLaunchStage,
+      }),
+    conn.subject,
+  )
+  if (!result.success) {
     conn.send({
       type: 'error',
-      error: { code: 'intent.cannotStartDev', params: { status: req.status } },
+      error: {
+        code: result.code as UiErrorCode,
+        ...(result.params ? { params: result.params } : {}),
+      },
     })
-    releaseClaim()
-    return
-  }
-  // ── SDD quality gate (server-side, forced) ─────────────────────────────
-  // When SDD is on, development may only start once the spec has passed the
-  // human approval checkpoint (RM-R22). Hiding the button on the client is not
-  // enough — reject here so no path can bypass the gate.
-  if (getSddEnabled(proj) && !req.specApproved) {
-    conn.send({ type: 'error', error: { code: 'intent.specNotApproved' } })
-    releaseClaim()
-    return
-  }
-  // ── Dependency validation (2026-06-10) ─────────────────────────────────
-  // In worktree mode, a depended-on intent's code must already be on the main
-  // branch before a downstream intent can safely branch off it. A `done`
-  // dependency counts as on-trunk UNLESS it was developed on its own isolated
-  // worktree branch whose PR is not yet merged. Concretely, a `done` dependency
-  // is treated as merged when ANY of:
-  //   - its PR is merged (`prStatus === 'merged'`); or
-  //   - it has no recorded branch (`branch_name` empty — developed in place /
-  //     historic rows predating the branch_name field; the code is on the
-  //     current checkout, i.e. the trunk); or
-  //   - its branch IS the workspace main branch (current-branch mode in-place dev).
-  // Only a `done` dependency that lives on a NON-main branch with an unmerged
-  // PR still blocks. In current-branch mode this whole check is skipped
-  // (status-only validation is done by the domain layer / pickNext for automation).
-  if (req.dependsOn.length > 0 && getGitBranchMode(proj) === 'worktree') {
-    const unmerged = findDependencyBlockingMainline(
-      req.dependsOn,
-      listIntents(proj),
-      getDefaultMainBranch(proj),
-    )
-    if (unmerged) {
-      syncUnconfirmedDependencyPrsInBackground({
-        ctx,
-        workspacePath: proj,
-        dependsOn: req.dependsOn,
-      })
-      conn.send({
-        type: 'error',
-        error: {
-          code: 'intent.dependencyNotMerged',
-          params: { title: unmerged.title, id: unmerged.id },
-        },
-      })
-      releaseClaim()
-      return
-    }
-  }
-  // All synchronous validation passed — from here on the work is the slow part
-  // (git branch strategy, then the agent launch). Emit coarse, connection-
-  // directed progress so the client can show a startup overlay if it outlasts
-  // the client-side threshold. Sync-validation failures above stay on the
-  // `error` channel only; they never emit progress.
-  conn.send({ type: 'dev_launch_progress', intentId: req.id, stage: 'fetching-remote-main' })
-  // ── Git branch strategy (2026-06-10) ───────────────────────────────────
-  // The workspace's `gitBranchMode` decides where the dev agent runs:
-  //  - `worktree`: create (or reuse) an isolated git worktree at
-  //    <c3-home>/worktrees/<project>/intent-<ID>, branched from the workspace's
-  //    default main branch. Idempotent on dangling / resume.
-  //  - `current-branch` (default): no worktree — develop in place on the project
-  //    checkout's current branch.
-  let effectiveCwd: string
-  if (getGitBranchMode(proj) === 'worktree') {
-    try {
-      const baseBranch = getDefaultMainBranch(proj)
-      if (baseBranch?.trim()) fetchRemoteBase(proj, baseBranch)
-      conn.send({ type: 'dev_launch_progress', intentId: req.id, stage: 'preparing-worktree' })
-      const wt = createWorktree(proj, req.id, req.title, baseBranch)
-      effectiveCwd = wt.worktreePath
-      setBranchName(req.id, wt.branchName)
-    } catch (err) {
-      conn.send({
-        type: 'error',
-        error: {
-          code: 'intent.worktreeCreateFailed',
-          params: { message: err instanceof Error ? err.message : String(err) },
-        },
-      })
-      releaseClaim()
-      return
-    }
-  } else {
-    conn.send({ type: 'dev_launch_progress', intentId: req.id, stage: 'preparing-worktree' })
-    // current-branch: develop directly in the project checkout. Pull latest
-    // first so dev builds on up-to-date code; a diverged branch is a hard stop
-    // (the user must reconcile before we touch it).
-    const pull = pullCurrentBranch(proj)
-    if (!pull.ok) {
-      conn.send({
-        type: 'error',
-        error: { code: 'intent.pullFailed', params: { message: pull.message ?? '' } },
-      })
-      releaseClaim()
-      return
-    }
-    effectiveCwd = proj
-    const branch = readBranch(proj)
-    if (branch) setBranchName(req.id, branch)
-  }
-
-  const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  // Use the ORIGINAL project path for ensureRuntime so broadcasts (run:bound /
-  // run:settled events) use the correct workspace scope. The agent SDK's CWD
-  // is overridden via devRt.effectiveCwd (the worktree, or the project checkout
-  // itself in current-branch mode).
-  const devRt = ensureRuntime(devId, proj, getDefaultMode(proj), [], 'work')
-  devRt.effectiveCwd = effectiveCwd
-  const resolvedVendor = resolveSessionVendor(devId)
-  if (resolvedVendor === 'codex') {
-    upsertPendingRow({
-      pendingId: devId,
-      workspacePath: proj,
-      vendor: resolvedVendor,
-      agentId: getDefaultAgentId(),
-      title: req.title,
-      ownerKind: 'intent',
-      ownerId: req.id,
-    })
-  }
-  // Split the first turn into its delivery channels: the SDD work contract rides the
-  // system channel, a slash-command dev skill leads the (non-echoed) model user turn,
-  // and only the visible business context is echoed (hide-session-system-instructions).
-  const devParts = buildDevPrompt({
-    title: req.title,
-    content: req.content,
-    dependsOn: req.dependsOn,
-    devSkill: getDevSkill(proj),
-    sddEnabled: getSddEnabled(proj),
-    specPath: req.specPath,
-  })
-  // Register the pending→intent link so the resident `run:bound` subscription
-  // flips the intent to `in_progress` and links the real work session id
-  // (ADR-0018 resident subs model).
-  registerPendingDevLink(devId, req.id)
-  // Last coarse phase before the (fire-and-forget) agent spawn. The success
-  // terminal is not signalled here — the resident `run:bound` subscription
-  // flips the intent to `in_progress`, and the client closes the overlay on
-  // that `intents` broadcast.
-  conn.send({ type: 'dev_launch_progress', intentId: req.id, stage: 'launching' })
-  try {
-    void ctx
-      .launchRun(devRt, devParts.visible, undefined, {
-        systemInstruction: devParts.systemInstruction,
-        userTurnPrefix: devParts.userTurnPrefix,
-      })
-      .catch((err: unknown) => {
-        clearPendingDevLink(devId)
-        releaseClaim()
-        // Surface the async failure to the client (previously silent) so the
-        // overlay leaves its in-flight state instead of waiting out the safety
-        // timeout. Connection-directed; `conn` is still captured in this closure.
-        conn.send({ type: 'dev_launch_progress', intentId: req.id, stage: 'failed' })
-        console.warn(
-          `[c3:intents] start_development launch failed before bind: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        )
-      })
-  } catch (err) {
-    clearPendingDevLink(devId)
-    releaseClaim()
-    throw err
   }
 }
 

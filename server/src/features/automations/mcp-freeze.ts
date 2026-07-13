@@ -84,6 +84,8 @@ export const C3_MCP_TOOLS: readonly FrozenToolEntry[] = [
   { name: 'mcp__c3__view_discussion', isWrite: false },
   { name: 'mcp__c3__start_discussion', isWrite: true },
   { name: 'mcp__c3__continue_discussion', isWrite: true },
+  // Session launcher tool: starts spec or work sessions — a write operation.
+  { name: 'mcp__c3__start_session_for_intent', isWrite: true },
 ]
 
 /** Whether a automation explicitly selected any in-process c3 MCP capability. */

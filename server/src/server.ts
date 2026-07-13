@@ -602,6 +602,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastDiscussions: broadcasts.broadcastDiscussions,
     broadcastDiscussionMessage: broadcasts.broadcastDiscussionMessage,
     startDiscussionRun: discussionRuns.startDiscussionRun,
+    launchRun: (rt, prompt, images, inject) => launchRun(rt, prompt, launchDeps, images, inject),
   }
   configureAutomationMcp(automationMcpDeps)
   // Codex twin of the automation c3 MCP over loopback HTTP: the dispatcher binds

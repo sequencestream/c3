@@ -165,6 +165,7 @@ describe('automation c3 MCP — discussion tool wiring', () => {
       broadcastDiscussions: () => {},
       broadcastDiscussionMessage: () => {},
       startDiscussionRun: (d) => started.push(d),
+      launchRun: vi.fn().mockResolvedValue(undefined),
     })
     const draft = createDiscussion({
       workspacePath: proj,
@@ -189,6 +190,7 @@ describe('automation c3 MCP — discussion tool wiring', () => {
       broadcastDiscussions: (p) => refreshed.push(p),
       broadcastDiscussionMessage: (_id, m) => messages.push(m.content),
       startDiscussionRun: (d) => started.push(d),
+      launchRun: vi.fn().mockResolvedValue(undefined),
     })
     const done = createDiscussion({
       workspacePath: proj,

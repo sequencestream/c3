@@ -91,6 +91,27 @@ flowchart TD
 `AskUserQuestion` 的答案。参见
 [consensus(共识)](../domains/core/permission-gateway/features/permission-gateway-consensus.md)。
 
+## 自动化 c3 MCP 工具集
+
+编排器执行环境(每个 `llm_prompt` 类型的自动化运行)绑定一个受限的 c3 MCP 服务,暴露以下
+工具(与手动 WebSocket 路径相同的行为,但以 MCP 返回值表达结果):
+
+| 工具名                     | 类型 | 说明                                                                                                                                                                                                                                                                                 |
+| -------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `find_intents`             | 只读 | 按 status/module/keyword 检索项目意图列表                                                                                                                                                                                                                                            |
+| `view_intent`              | 只读 | 按 id 查看单条意图完整详情                                                                                                                                                                                                                                                           |
+| `save_intent_pr_info`      | 写   | 回填意图的 PR 状态(由 PR 对账自动化使用)                                                                                                                                                                                                                                             |
+| `save_intent_directly`     | 写   | 直接落库新建草稿意图(绕过人工确认,仅限自动化)                                                                                                                                                                                                                                        |
+| `publish_pr_event`         | 写   | 发布 PR 操作事件(触发其他自动化)                                                                                                                                                                                                                                                     |
+| `find_discussions`         | 只读 | 检索项目讨论列表                                                                                                                                                                                                                                                                     |
+| `view_discussion`          | 只读 | 查看单条讨论详情及消息                                                                                                                                                                                                                                                               |
+| `start_discussion`         | 写   | 启动一个 draft 讨论                                                                                                                                                                                                                                                                  |
+| `continue_discussion`      | 写   | 继续或恢复一个讨论                                                                                                                                                                                                                                                                   |
+| `start_session_for_intent` | 写   | **按意图启动 spec 或 work 会话**。接受 `intentId` + `sessionType`(`'spec'` / `'work'`),复用与手动操作一致的校验门禁(状态、SDD 审批、依赖阻塞、Git 分支策略)。成功返回 JSON `{sessionId, sessionType}`,失败返回 JSON `{code, params}` 且 `isError: true`。不发送 WebSocket 进度事件。 |
+
+工具列表源是 `AUTOMATION_C3_TOOL_NAMES`——所有表面(Claude SDK、Codex HTTP)自动同步,
+无需维护第二份名单。
+
 ## 分支与异常(反面场景)
 
 - **人工决策点绝不会被碾过。** `stuck` 涵盖每一种“需要人类介入”的信号(`RM-A11`)。在此之上,

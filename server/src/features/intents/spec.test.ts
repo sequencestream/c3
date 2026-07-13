@@ -123,7 +123,7 @@ describe('buildSeedSpec', () => {
 })
 
 describe('writeSpecHandler dependency context', () => {
-  it('blocks an unfinished worktree dependency before scaffolding or launching', () => {
+  it('blocks an unfinished worktree dependency before scaffolding or launching', async () => {
     saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', defaultMainBranch: 'main' })
     const [dependency, target] = insertIntents(proj, [
       { title: 'Dependency', shortEnTitle: 'dep', content: '', priority: 'P1' },
@@ -132,11 +132,15 @@ describe('writeSpecHandler dependency context', () => {
     updateIntentDeps(target.id, [{ dependsOnId: dependency.id, depType: 'blocks' }])
     const launchRun = vi.fn()
     const { conn, sent } = fakeConn()
-    writeSpecHandler({ launchRun, broadcastIntents: vi.fn() } as unknown as KernelContext, conn, {
-      type: 'write_spec',
-      workspaceId,
-      intentId: target.id,
-    })
+    await writeSpecHandler(
+      { launchRun, broadcastIntents: vi.fn() } as unknown as KernelContext,
+      conn,
+      {
+        type: 'write_spec',
+        workspaceId,
+        intentId: target.id,
+      },
+    )
     expect(sent).toEqual([
       {
         type: 'error',

@@ -63,6 +63,7 @@ describe('automation MCP HTTP route', () => {
     broadcastDiscussions: () => {},
     broadcastDiscussionMessage: () => {},
     startDiscussionRun: () => {},
+    launchRun: async () => {},
   }
 
   let server: ServerType

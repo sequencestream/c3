@@ -28,7 +28,7 @@ const { t } = useTypedI18n()
 const viewModes = reactive(new Map<string, CodeViewMode>())
 
 function viewModeFor(path: string): CodeViewMode {
-  return viewModes.get(path) ?? 'source'
+  return viewModes.get(path) ?? 'preview'
 }
 
 function setViewMode(path: string, mode: CodeViewMode): void {
@@ -36,7 +36,7 @@ function setViewMode(path: string, mode: CodeViewMode): void {
 }
 
 function onClose(path: string): void {
-  // 关闭即遗忘:重新打开同一路径视为新 tab,回到默认 'source'。
+  // 关闭即遗忘:重新打开同一路径视为新 tab,回到默认 'preview'。
   viewModes.delete(path)
   emit('close', path)
 }

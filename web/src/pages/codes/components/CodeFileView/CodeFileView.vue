@@ -21,9 +21,9 @@ import {
 } from '@/lib/codes-view'
 
 // viewMode 是受控 prop:状态由多 tab 容器(CodeTabs)按 path 记忆,因为本组件被
-// :key="tab.path" 逐 tab 重挂载,内部 ref 无法跨 tab 保留。默认 'source'。
+// :key="tab.path" 逐 tab 重挂载,内部 ref 无法跨 tab 保留。默认 'preview'。
 const props = withDefaults(defineProps<{ tab: CodeTab; viewMode?: CodeViewMode }>(), {
-  viewMode: 'source',
+  viewMode: 'preview',
 })
 const emit = defineEmits<{ 'update:viewMode': [mode: CodeViewMode] }>()
 const { t } = useTypedI18n()
@@ -143,7 +143,7 @@ watch(
 
     <!-- 预览模式:只读渲染,复用 MarkdownText 的安全管线;无行号/聚焦 marker。 -->
     <div v-else-if="showPreview" class="code-preview">
-      <MarkdownText :text="content" markdown />
+      <MarkdownText :text="content" :code-link-base-path="tab.path" markdown />
     </div>
 
     <div v-else ref="scrollEl" class="code-scroll">

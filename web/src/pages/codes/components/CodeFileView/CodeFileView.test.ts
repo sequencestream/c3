@@ -94,29 +94,27 @@ describe('CodeFileView Markdown 视图开关', () => {
     expect(wrapper.find('.code-preview').exists()).toBe(false)
   })
 
-  it('.md 文件显示两态开关,默认原文(source 激活、走 .code-scroll)', () => {
+  it('.md 文件显示两态开关,默认预览(preview 激活)', () => {
     const wrapper = mount(CodeFileView, { props: { tab: makeMdTab() } })
     const toggle = wrapper.find('.code-view-toggle')
     expect(toggle.exists()).toBe(true)
     const btns = toggle.findAll('.code-view-btn')
     expect(btns).toHaveLength(2)
-    // 默认 viewMode='source':第一个按钮为激活态。
-    expect(btns[0].classes()).toContain('active')
-    expect(btns[1].classes()).not.toContain('active')
-    // 默认仍是原文视图。
-    expect(wrapper.find('.code-scroll').exists()).toBe(true)
-    expect(wrapper.find('.code-gutter').exists()).toBe(true)
-    expect(wrapper.find('.code-preview').exists()).toBe(false)
+    expect(btns[0].classes()).not.toContain('active')
+    expect(btns[1].classes()).toContain('active')
+    expect(wrapper.find('.code-scroll').exists()).toBe(false)
+    expect(wrapper.find('.code-gutter').exists()).toBe(false)
+    expect(wrapper.find('.code-preview').exists()).toBe(true)
   })
 
-  it('点击预览按钮上抛 update:viewMode=preview(受控,自身不切换)', async () => {
+  it('点击原文按钮上抛 update:viewMode=source(受控,自身不切换)', async () => {
     const wrapper = mount(CodeFileView, { props: { tab: makeMdTab() } })
-    const previewBtn = wrapper.findAll('.code-view-btn')[1]
-    await previewBtn.trigger('click')
-    expect(wrapper.emitted('update:viewMode')).toEqual([['preview']])
-    // 受控组件:prop 未变前视图保持原文。
-    expect(wrapper.find('.code-scroll').exists()).toBe(true)
-    expect(wrapper.find('.code-preview').exists()).toBe(false)
+    const sourceBtn = wrapper.findAll('.code-view-btn')[0]
+    await sourceBtn.trigger('click')
+    expect(wrapper.emitted('update:viewMode')).toEqual([['source']])
+    // 受控组件:prop 未变前视图保持预览。
+    expect(wrapper.find('.code-scroll').exists()).toBe(false)
+    expect(wrapper.find('.code-preview').exists()).toBe(true)
   })
 
   it('viewMode=preview 渲染 MarkdownText(.md-body),无行号 gutter', () => {

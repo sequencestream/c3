@@ -93,8 +93,8 @@ web/src/
 │   │   └── components/
 │   │       ├── CodeTree/CodeTree.vue                # 左栏:顶部 Files 标题 + 左侧 ⇤/⇥ 展开切换(展开后宽度 560px,localStorage 持久化)+ 右侧刷新按钮(↻ SVG,emit refresh-tree→重拉根目录+所有已展开目录+ Git 状态)+「修改会话」开关按钮(showChat prop 驱动空心/实心消息气泡 SVG 图标,点击 emit toggle-chat 由 Codes.vue 翻转右栏显隐)+ 搜索框(filename/content 切换 + 文件模式 glob 过滤框 *.ts,默认 * 全部,Enter/防抖触发 search_codes)+ 懒加载文件树/搜索结果(点结果打开文件,content 命中带行号定位);接收 gitStatus 快照 prop,computeGitDirtyDirs 聚合脏目录集合下传节点
 │   │       ├── CodeTree/CodeTreeNode.vue            # 文件树单节点(递归):目录点击展开/折叠(懒加载 list_dir),文件点击打开 tab,激活态高亮;文件行按 gitStatus 显示三态短标记(staged→强调色 S / modified→警告色 M / untracked→成功色 U,可组合,固定顺序,形状+色双通道非仅颜色,完整名走 aria-label i18n);目录行子孙有改动时显示独立紧凑汇总圆点(中性色,gitDirtyDirs 命中);文件/目录右键菜单可复制名称或 workspace 相对路径并通过全局 toast 反馈
-│   │       ├── CodeTabs/CodeTabs.vue                # 右栏多 tab 容器:tab 条(可手动关闭,关闭后聚焦相邻)+ 渲染激活 tab 内容,空态;持有各 tab 的 Markdown 视图模式(原文/预览)内存 Map,按 path 记忆并透传给 CodeFileView,关闭/移除时清理该 path
-│   │       └── CodeFileView/CodeFileView.vue        # 单文件内容渲染:复用 Shiki 高亮管线(后缀推断语言,白名单外/二进制/超限降级)+ 行号 gutter 逐行对齐 + 搜索命中滚动并高亮目标行;.md 文件在 meta 栏右侧显示「原文/预览」两态开关(受控 viewMode prop),预览态复用 MarkdownText 只读渲染 file.content
+│   │       ├── CodeTabs/CodeTabs.vue                # 右栏多 tab 容器:tab 条(可手动关闭,关闭后聚焦相邻)+ 渲染激活 tab 内容,空态;持有各 tab 的 Markdown 视图模式(原文/预览)内存 Map,新打开默认预览,按 path 记忆并透传给 CodeFileView,关闭/移除时清理该 path
+│   │       └── CodeFileView/CodeFileView.vue        # 单文件内容渲染:复用 Shiki 高亮管线(后缀推断语言,白名单外/二进制/超限降级)+ 行号 gutter 逐行对齐 + 搜索命中滚动并高亮目标行;.md 文件在 meta 栏右侧显示「原文/预览」两态开关(受控 viewMode prop),预览态复用 MarkdownText 只读渲染 file.content,内部文件链接以当前 Markdown 所在目录为基准打开 Codes tab
 │   │
 │   ├── login/                                       # 登录页
 │   │   └── Login.vue                                # 全屏登录门(ADR-0023):账号+密码表单,提交走 WS login 消息,pending/错误码经 useAuth 回流

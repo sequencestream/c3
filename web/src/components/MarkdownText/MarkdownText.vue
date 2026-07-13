@@ -22,6 +22,8 @@ const props = defineProps<{
   kind?: TextMsg['kind']
   // 强制启用 Markdown 管线,不论 kind——用于需求详情等非聊天场景。
   markdown?: boolean
+  // Markdown 源文件的 workspace 相对路径。提供时,代码链接相对此文件所在目录解析。
+  codeLinkBasePath?: string
 }>()
 
 // 模块级单例：避免每次渲染都 new MarkdownIt / 重复注册 hook。
@@ -115,6 +117,12 @@ function enhanceCodeFileLinks(): void {
       if (!lineMatch) continue
       path = href.slice(0, hashIndex)
       line = parseInt(lineMatch[1], 10)
+    }
+    // Codes 文件预览中的链接遵循 Markdown 的相对路径语义:相对于当前 .md 所在目录。
+    // 其他调用方不传 codeLinkBasePath,继续把链接视为 workspace 根相对路径。
+    if (props.codeLinkBasePath) {
+      const slash = props.codeLinkBasePath.lastIndexOf('/')
+      if (slash >= 0) path = `${props.codeLinkBasePath.slice(0, slash)}/${path}`
     }
     // 增强:class + 移除外链安全属性 + 自定义事件。
     a.classList.add('code-file-link')

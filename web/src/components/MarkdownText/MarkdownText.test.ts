@@ -182,6 +182,33 @@ describe('MarkdownText.vue — 代码文件链接检测', () => {
     )
   })
 
+  it('提供 Markdown 源路径时以源文件目录解析相对文件链接', () => {
+    const w = mount(MarkdownText, {
+      props: {
+        text: '[child](child.md) [sibling](../sibling.md#L7)',
+        markdown: true,
+        codeLinkBasePath: 'doc/guides/index.md',
+      },
+    })
+    const links = w.findAll<HTMLAnchorElement>('.md-body a')
+    const firstDispatch = vi.spyOn(links[0].element, 'dispatchEvent')
+    links[0].element.onclick?.(new MouseEvent('click', { cancelable: true, bubbles: true }))
+    expect(firstDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'c3:code-file-click',
+        detail: { path: 'doc/guides/child.md', line: undefined },
+      }),
+    )
+    const secondDispatch = vi.spyOn(links[1].element, 'dispatchEvent')
+    links[1].element.onclick?.(new MouseEvent('click', { cancelable: true, bubbles: true }))
+    expect(secondDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'c3:code-file-click',
+        detail: { path: 'doc/guides/../sibling.md', line: 7 },
+      }),
+    )
+  })
+
   it('文件链接 click 阻止默认导航', () => {
     const w = mountMd('[src/main.ts](src/main.ts)')
     const a = w.find('.md-body a').element as HTMLAnchorElement

@@ -20,7 +20,12 @@ import {
   type PrEventMcpTools,
   type ServedPrEventMcp,
 } from './index.js'
-import { runPublishPrEvent } from '../../features/pr-events/tool-defs.js'
+import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
+import {
+  PR_EVENT_TYPE,
+  normalizePrGenericEvent,
+  runPublishPrEvent,
+} from '../../features/pr-events/tool-defs.js'
 
 describe('isLoopback', () => {
   it.each([
@@ -37,15 +42,20 @@ describe('isLoopback', () => {
 
 describe('pr-event MCP HTTP route', () => {
   const published: unknown[] = []
+  const registry = new EventNormalizerRegistry()
+  registry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
   const tools: PrEventMcpTools = {
     // Use the real core so the route exercises validation + normalization + publish.
     publish: (binding, args) =>
-      runPublishPrEvent(args, (event) =>
-        published.push({
-          workspacePath: binding.workspacePath,
-          sessionId: binding.getRunId(),
-          ...event,
-        }),
+      runPublishPrEvent(
+        args,
+        (core) => registry.normalize(core),
+        (event) =>
+          published.push({
+            workspacePath: binding.workspacePath,
+            sessionId: binding.getRunId(),
+            ...event,
+          }),
       ),
   }
 

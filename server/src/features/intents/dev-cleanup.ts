@@ -29,10 +29,17 @@
  * Dependency-injected (mirrors `save-gate.ts`) so the whole flow is unit-testable
  * without a live git tree, the wire, or the db.
  */
-import type { GitBranchMode, Intent, IntentPrStatus, PrOperationEvent } from '@ccc/shared/protocol'
+import type {
+  GenericEvent,
+  GitBranchMode,
+  Intent,
+  IntentPrStatus,
+  PrOperationEvent,
+} from '@ccc/shared/protocol'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
+import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import type { CommitResult, CreatePrResult, ForgeProvider } from '../../git.js'
-import { buildServerSidePrCreateEvent } from '../pr-events/tool-defs.js'
+import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
 
 /** Why a cleanup failed — each maps to a workbench todo UiError code. */
 export type CleanupFailureCode = 'noChanges' | 'commitPushFailed' | 'ghUnavailable' | 'prFailed'
@@ -78,6 +85,8 @@ export interface DevCleanupDeps {
   }) => void
   broadcastIntents: (workspacePath: string) => void
   broadcastWaitUserEvents: (workspacePath: string) => void
+  /** Normalize an untrusted event core through the kernel normalizer registry. */
+  normalizeEvent: (core: GenericEvent) => NormalizeResult
   /** Publish a normalized PR operation event onto the kernel event bus. */
   publishPrEvent: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
 }
@@ -203,7 +212,7 @@ export async function runManualDevCleanup(
 
   // Publish a pr:operation create event so event-triggered automations can react.
   const effectiveSessionId = sessionId ?? intentId
-  const prEvent = buildServerSidePrCreateEvent(
+  runServerSidePrCreate(
     {
       prId: pr.prId,
       prUrl: pr.prUrl ?? null,
@@ -211,9 +220,9 @@ export async function runManualDevCleanup(
       baseBranch: undefined,
       intentId,
     },
-    { workspacePath, sessionId: effectiveSessionId },
+    deps.normalizeEvent,
+    (event) => deps.publishPrEvent({ workspacePath, sessionId: effectiveSessionId, ...event }),
   )
-  deps.publishPrEvent({ workspacePath, sessionId: effectiveSessionId, ...prEvent.event })
 
   return { kind: 'success', createdPr: true }
 }

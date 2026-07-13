@@ -160,6 +160,7 @@ describe('automation c3 MCP — discussion tool wiring', () => {
     const started: Discussion[] = []
     configureAutomationMcp({
       broadcastIntents: () => {},
+      normalizeEvent: () => ({ ok: false, reason: 'not wired in this test' }),
       publishPrEvent: () => {},
       broadcastDiscussions: () => {},
       broadcastDiscussionMessage: () => {},
@@ -183,6 +184,7 @@ describe('automation c3 MCP — discussion tool wiring', () => {
     const refreshed: string[] = []
     configureAutomationMcp({
       broadcastIntents: () => {},
+      normalizeEvent: () => ({ ok: false, reason: 'not wired in this test' }),
       publishPrEvent: () => {},
       broadcastDiscussions: (p) => refreshed.push(p),
       broadcastDiscussionMessage: (_id, m) => messages.push(m.content),

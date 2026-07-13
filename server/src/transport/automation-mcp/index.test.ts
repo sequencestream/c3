@@ -58,6 +58,7 @@ describe('automation MCP HTTP route', () => {
   const proj = '/abs/automation-mcp-proj'
   const deps: AutomationMcpDeps = {
     broadcastIntents: () => {},
+    normalizeEvent: () => ({ ok: false, reason: 'not wired in this test' }),
     publishPrEvent: () => {},
     broadcastDiscussions: () => {},
     broadcastDiscussionMessage: () => {},

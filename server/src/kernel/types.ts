@@ -18,9 +18,15 @@
  *   genuinely cross-feature services remain on the context (the hard rule:
  *   transport-shared / cross-feature → context; feature-private → feature store).
  */
-import type { WorkflowStatus, Discussion, DiscussionMessage } from '@ccc/shared/protocol'
+import type {
+  WorkflowStatus,
+  Discussion,
+  DiscussionMessage,
+  GenericEvent,
+} from '@ccc/shared/protocol'
 import type { SessionRuntime } from '../runs.js'
 import { EventBus, type EventBusEvents } from './events/event-bus.js'
+import type { NormalizeResult } from './events/generic-event.js'
 
 /**
  * The sealed-union typed DOMAIN events the run launcher fires (legacy type,
@@ -67,6 +73,14 @@ export interface LaunchRunDeps {
 export interface KernelContext {
   /** Shared kernel event bus (ADR-0018). Publish domain events; subscribe to consume them. */
   readonly eventBus: EventBus<EventBusEvents>
+
+  /**
+   * Normalize an untrusted {@link GenericEvent} core through the kernel
+   * `type → normalizer` registry (an unregistered type is rejected). Handlers
+   * that publish a registered event (e.g. the manual `create_pr` path) run their
+   * raw input through this before wrapping it with the per-run bus envelope.
+   */
+  readonly normalizeEvent: (core: GenericEvent) => NormalizeResult
 
   // ── run launcher dependencies (the launcher itself is the top-level `launchRun`) ──
   readonly launchDeps: LaunchRunDeps

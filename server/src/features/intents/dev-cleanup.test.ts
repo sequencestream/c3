@@ -7,6 +7,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Intent } from '@ccc/shared/protocol'
 import { runManualDevCleanup, type DevCleanupDeps } from './dev-cleanup.js'
+import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
+import { PR_EVENT_TYPE, normalizePrGenericEvent } from '../pr-events/tool-defs.js'
+
+const prRegistry = new EventNormalizerRegistry()
+prRegistry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
 
 const WS = '/abs/ws'
 
@@ -105,6 +110,7 @@ function harness(
     pushFailureEvent: mocks.pushFailureEvent,
     broadcastIntents: mocks.broadcastIntents,
     broadcastWaitUserEvents: mocks.broadcastWaitUserEvents,
+    normalizeEvent: (core) => prRegistry.normalize(core),
     publishPrEvent: mocks.publishPrEvent,
   }
   return { deps, intent, mocks }

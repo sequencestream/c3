@@ -5,20 +5,35 @@
  * event before it leaves c3.
  */
 import { describe, expect, it, vi } from 'vitest'
-import type { PrOperationEvent } from '@ccc/shared/protocol'
+import type { GenericEvent, PrOperationEvent } from '@ccc/shared/protocol'
+import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import {
+  PR_EVENT_TYPE,
+  genericEventToPrOperation,
   normalizeErrorSummary,
   normalizePrEvent,
+  normalizePrGenericEvent,
+  prArgsToGenericEvent,
   redactSecrets,
   runPublishPrEvent,
   type PublishPrEventArgs,
 } from './tool-defs.js'
 
-describe('runPublishPrEvent — validation', () => {
+/** A registry with only the PR normalizer, mirroring the composition root. */
+function makeNormalize(): (core: GenericEvent) => ReturnType<EventNormalizerRegistry['normalize']> {
+  const registry = new EventNormalizerRegistry()
+  registry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
+  return (core) => registry.normalize(core)
+}
+
+describe('runPublishPrEvent — validation (routed through the registry)', () => {
+  const normalize = makeNormalize()
+
   it('publishes on a valid create/success event', () => {
     const published: PrOperationEvent[] = []
     const r = runPublishPrEvent(
       { operation: 'create', result: 'success', pr: { number: 7, url: 'https://x/pr/7' } },
+      normalize,
       (e) => published.push(e),
     )
     expect(r.isError).toBeUndefined()
@@ -34,9 +49,9 @@ describe('runPublishPrEvent — validation', () => {
     'accepts the %s operation with success, failure and error',
     (operation) => {
       const published: PrOperationEvent[] = []
-      runPublishPrEvent({ operation, result: 'success' }, (e) => published.push(e))
-      runPublishPrEvent({ operation, result: 'failure' }, (e) => published.push(e))
-      runPublishPrEvent({ operation, result: 'error' }, (e) => published.push(e))
+      runPublishPrEvent({ operation, result: 'success' }, normalize, (e) => published.push(e))
+      runPublishPrEvent({ operation, result: 'failure' }, normalize, (e) => published.push(e))
+      runPublishPrEvent({ operation, result: 'error' }, normalize, (e) => published.push(e))
       expect(published.map((e) => e.result)).toEqual(['success', 'failure', 'error'])
       expect(published.every((e) => e.operation === operation)).toBe(true)
     },
@@ -46,6 +61,7 @@ describe('runPublishPrEvent — validation', () => {
     const publish = vi.fn()
     const r = runPublishPrEvent(
       { operation: 'rebase' as PublishPrEventArgs['operation'], result: 'success' },
+      normalize,
       publish,
     )
     expect(r.isError).toBe(true)
@@ -56,10 +72,133 @@ describe('runPublishPrEvent — validation', () => {
     const publish = vi.fn()
     const r = runPublishPrEvent(
       { operation: 'merge', result: 'maybe' as PublishPrEventArgs['result'] },
+      normalize,
       publish,
     )
     expect(r.isError).toBe(true)
     expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('fails (publishing nothing) when the PR type has no registered normalizer', () => {
+    const emptyRegistry = new EventNormalizerRegistry()
+    const publish = vi.fn()
+    const r = runPublishPrEvent(
+      { operation: 'create', result: 'success' },
+      (core) => emptyRegistry.normalize(core),
+      publish,
+    )
+    expect(r.isError).toBe(true)
+    expect(publish).not.toHaveBeenCalled()
+  })
+})
+
+describe('normalizePrGenericEvent — the pr:operation registry entry (AC3)', () => {
+  const normalize = makeNormalize()
+
+  it('round-trips a full event core through normalize → bridge unchanged', () => {
+    const core = prArgsToGenericEvent({
+      operation: 'review',
+      result: 'success',
+      pr: { number: 42, id: 'pr-1', title: 'Add cache', state: 'open' },
+      repo: { provider: 'gitlab', host: 'gitlab.com', owner: 'g', name: 'r' },
+      ref: { head: 'feat/cache', base: 'main' },
+      association: { intentId: 'intent-1', intentTitle: 'Cache work' },
+    })
+    const res = normalize(core)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.event.type).toBe(PR_EVENT_TYPE)
+    expect(genericEventToPrOperation(res.event)).toEqual({
+      operation: 'review',
+      result: 'success',
+      pr: { number: 42, id: 'pr-1', title: 'Add cache', state: 'open' },
+      repo: { provider: 'gitlab', host: 'gitlab.com', owner: 'g', name: 'r' },
+      ref: { head: 'feat/cache', base: 'main' },
+      association: { intentId: 'intent-1', intentTitle: 'Cache work' },
+    })
+  })
+
+  it.each([
+    ['pr.title', { pr: { title: 'x ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345' } }],
+    ['repo.owner', { repo: { owner: 'o glpat-ABCDEFGHIJKLMNOP1234' } }],
+    ['ref.head', { ref: { head: 'feat sk-abcdefghijklmnopqrstuvwxyz' } }],
+    [
+      'association.intentTitle',
+      { association: { intentTitle: 'x ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345' } },
+    ],
+  ] as const)('redacts a secret embedded in %s', (_label, extra) => {
+    const core = prArgsToGenericEvent({ operation: 'review', result: 'failure', ...extra })
+    const res = normalize(core)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    const serialized = JSON.stringify(res.event)
+    expect(serialized).toContain('[redacted]')
+    expect(serialized).not.toMatch(/ghp_|glpat-|sk-[A-Za-z]/)
+  })
+
+  it('strips POSIX and Windows absolute paths from the error summary', () => {
+    const core = prArgsToGenericEvent({
+      operation: 'merge',
+      result: 'error',
+      errorSummary: 'failed at /Users/alice/repo/.git and C:\\Users\\bob\\secret\\repo',
+    })
+    const res = normalize(core)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.event.description).not.toContain('/Users/alice')
+    expect(res.event.description).not.toContain('C:\\Users\\bob')
+  })
+
+  it('caps a structural field at 256 chars', () => {
+    const core = prArgsToGenericEvent({
+      operation: 'review',
+      result: 'success',
+      pr: { title: 'x'.repeat(500) },
+    })
+    const res = normalize(core)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(genericEventToPrOperation(res.event).pr?.title?.length).toBe(256)
+  })
+
+  it('caps the error summary at 500 chars and collapses whitespace', () => {
+    const core = prArgsToGenericEvent({
+      operation: 'merge',
+      result: 'failure',
+      errorSummary: `${'x'.repeat(600)}\n\n  multi   line`,
+    })
+    const res = normalize(core)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect((res.event.description ?? '').length).toBeLessThanOrEqual(501)
+    expect(res.event.description).not.toContain('\n')
+  })
+
+  it('removes an empty nested object after normalization', () => {
+    const core = prArgsToGenericEvent({
+      operation: 'close',
+      result: 'success',
+      pr: { title: '   ' },
+    })
+    const res = normalize(core)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(res.event.data?.pr).toBeUndefined()
+    expect(genericEventToPrOperation(res.event).pr).toBeUndefined()
+  })
+
+  it('ignores unknown/forged data keys (they never reach the bus payload)', () => {
+    const res = normalize({
+      type: PR_EVENT_TYPE,
+      status: 'success',
+      metadata: { operation: 'create' },
+      data: { workspacePath: 'evil', sessionId: 'evil', pr: { number: 1 } },
+    })
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    const recovered = genericEventToPrOperation(res.event)
+    expect(recovered).toEqual({ operation: 'create', result: 'success', pr: { number: 1 } })
+    expect(JSON.stringify(res.event)).not.toContain('evil')
   })
 })
 

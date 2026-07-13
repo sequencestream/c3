@@ -11,9 +11,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ServerToClient } from '@ccc/shared/protocol'
+import type { GenericEvent, ServerToClient } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
+import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
+import { PR_EVENT_TYPE, normalizePrGenericEvent } from '../pr-events/tool-defs.js'
 
 vi.mock('../../git.js', async () => {
   const actual = await vi.importActual<typeof import('../../git.js')>('../../git.js')
@@ -106,7 +108,13 @@ function fakeCtx(): {
 } {
   const broadcast = vi.fn()
   const publish = vi.fn()
-  const ctx = { broadcastIntents: broadcast, eventBus: { publish } } as unknown as KernelContext
+  const registry = new EventNormalizerRegistry()
+  registry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
+  const ctx = {
+    broadcastIntents: broadcast,
+    eventBus: { publish },
+    normalizeEvent: (core: GenericEvent) => registry.normalize(core),
+  } as unknown as KernelContext
   return { ctx, broadcast, publish }
 }
 

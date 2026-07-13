@@ -86,7 +86,7 @@ import {
 import { getWorkflowHooks, getWorkflowStatus, startWorkflow, stopWorkflow } from './workflow.js'
 import { getDiscussion } from '../discussions/store.js'
 import { closeForgePr, commitAndPush, createGhPr, hasCommittableChanges } from '../../git.js'
-import { buildServerSidePrCreateEvent } from '../pr-events/tool-defs.js'
+import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
 import {
   createWorktree,
   fetchRemoteBase,
@@ -1181,7 +1181,7 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
       conn.send({ type: 'create_pr_response', prId: pr.prId, prUrl: pr.prUrl ?? pr.prId })
 
       // Publish a pr:operation create event so event-triggered automations can react.
-      const prEvent = buildServerSidePrCreateEvent(
+      runServerSidePrCreate(
         {
           prId: pr.prId,
           prUrl: pr.prUrl ?? null,
@@ -1189,13 +1189,14 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
           baseBranch: undefined,
           intentId: msg.intentId,
         },
-        { workspacePath: proj, sessionId: msg.intentId },
+        ctx.normalizeEvent,
+        (event) =>
+          ctx.eventBus.publish('pr:operation', {
+            workspacePath: proj,
+            sessionId: msg.intentId,
+            ...event,
+          }),
       )
-      ctx.eventBus.publish('pr:operation', {
-        workspacePath: proj,
-        sessionId: msg.intentId,
-        ...prEvent.event,
-      })
     } else {
       conn.send({
         type: 'error',

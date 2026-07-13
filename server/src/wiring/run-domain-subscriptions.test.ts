@@ -116,6 +116,7 @@ describe('resident domain subscriptions — discussion + automation', () => {
       broadcastDiscussions: mockBroadcastDiscussions,
       broadcastAutomations: mockBroadcastAutomations,
       broadcastWaitUserEvents: mockBroadcastWaitUserEvents,
+      normalizeEvent: () => ({ ok: false, reason: 'not wired in this test' }),
       publishPrEvent: mockPublishPrEvent,
     }
     registerRunDomainSubscriptions(deps)

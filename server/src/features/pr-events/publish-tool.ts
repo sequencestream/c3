@@ -25,7 +25,8 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 // eslint-disable-next-line no-restricted-imports
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
-import type { PrOperationEvent } from '@ccc/shared/protocol'
+import type { GenericEvent, PrOperationEvent } from '@ccc/shared/protocol'
+import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import {
   publishPrEventDesc,
   publishPrEventSchema,
@@ -42,8 +43,15 @@ export interface PrEventBinding {
   signal: AbortSignal
 }
 
-/** The injected publish sink — the composition root wires it to `eventBus.publish('pr:operation', …)`. */
+/**
+ * The injected event pipeline — wired at the composition root:
+ *  - `normalize` runs the untrusted core through the kernel normalizer registry
+ *    (the `pr:operation` entry redacts + truncates); a rejection publishes nothing.
+ *  - `publish` receives the recovered {@link PrOperationEvent} and wraps it with
+ *    the bus envelope (`eventBus.publish('pr:operation', …)`).
+ */
 export interface PrEventDeps {
+  normalize: (core: GenericEvent) => NormalizeResult
   publish: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
 }
 
@@ -60,7 +68,7 @@ export function createPrEventMcpServer(
   // Spread into a fresh literal: the SDK's `tool()` result type carries an index
   // signature, which a named interface (PrEventToolResult) is not assignable to.
   const handler = async (args: PublishPrEventArgs) => ({
-    ...runPublishPrEvent(args, (event) =>
+    ...runPublishPrEvent(args, deps.normalize, (event) =>
       deps.publish({
         workspacePath: binding.workspacePath,
         sessionId: binding.getRunId(),

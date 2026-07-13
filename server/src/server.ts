@@ -42,7 +42,11 @@ import { createSpecQueryMcpServer } from './features/intents/spec-query-tool.js'
 import { runFind, runView } from './features/intents/tool-defs.js'
 import { gatedSave } from './features/intents/save-gate.js'
 import { createPrEventMcpServer } from './features/pr-events/publish-tool.js'
-import { runPublishPrEvent } from './features/pr-events/tool-defs.js'
+import {
+  normalizePrGenericEvent,
+  PR_EVENT_TYPE,
+  runPublishPrEvent,
+} from './features/pr-events/tool-defs.js'
 import { configureAutomationMcp } from './features/automations/c3-mcp.js'
 import type { AutomationMcpDeps } from './features/automations/c3-mcp.js'
 import { setAutomationHttpMcp } from './features/automations/dispatcher.js'
@@ -68,6 +72,7 @@ import {
   stopUpdateCheckScheduler,
 } from './features/updates/update-checker.js'
 import { EventBus } from './kernel/events/event-bus.js'
+import { EventNormalizerRegistry } from './kernel/events/generic-event.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
 import { createBroadcaster, type Deliver } from './transport/index.js'
 import { registerHandlers } from './features/index.js'
@@ -430,12 +435,25 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const eventBus = new EventBus()
   setIntentLifecycleEventBus(eventBus)
 
+  // Generic event contract + kernel normalizer registry. Every model-publishable
+  // event is routed through `type → normalizer`: an UNREGISTERED type is rejected,
+  // and the registered normalizer performs the field-level redaction/truncation.
+  // The PR operation event is the first registered type (`pr:operation`); its
+  // normalizer is the SINGLE normalization used by both the model publish paths
+  // and the three server-side PR-create paths. `normalizeEvent` is injected wide;
+  // a missing PR registration is a publish failure, never a bypass.
+  const eventNormalizers = new EventNormalizerRegistry()
+  eventNormalizers.register(PR_EVENT_TYPE, normalizePrGenericEvent)
+  const normalizeEvent = (core: import('@ccc/shared/protocol').GenericEvent) =>
+    eventNormalizers.normalize(core)
+
   // Vendor-neutral PR operation events (2026-06-20). The model performs PR
   // operations with its OWN tools, then calls `publish_pr_event` to publish ONE
-  // event onto the bus; event-triggered automations subscribed to `pr:operation`
-  // react to it. ONE publish sink is shared by both MCP surfaces (Claude
-  // in-process below + the codex localhost HTTP route here) so they converge on
-  // the same event. The route is mounted before the SPA catch-all (like intent).
+  // event; the generic pipeline normalizes it and the compat bridge delivers the
+  // recovered `PrOperationEvent` onto the existing `pr:operation` bus topic, so
+  // Automation + the intent PR-status reset consumer see an unchanged contract.
+  // ONE bus sink is shared by both MCP surfaces (Claude in-process below + the
+  // codex localhost HTTP route here). The route is mounted before the SPA catch-all.
   const publishPrEvent = (
     payload: {
       workspacePath: string
@@ -444,7 +462,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   ): void => eventBus.publish('pr:operation', payload)
   const prEventMcpTools: PrEventMcpTools = {
     publish: (binding, args) =>
-      runPublishPrEvent(args, (event) =>
+      runPublishPrEvent(args, normalizeEvent, (event) =>
         publishPrEvent({
           workspacePath: binding.workspacePath,
           sessionId: binding.getRunId(),
@@ -528,7 +546,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       bindInProcessMcp: (binding) =>
         createPrEventMcpServer(
           { workspacePath, getRunId: binding.getRunId, signal: binding.signal },
-          { publish: publishPrEvent },
+          { normalize: normalizeEvent, publish: publishPrEvent },
         ),
       bindDriverMcp: (binding) => prEventMcp.bind(binding),
     }),
@@ -559,6 +577,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     emitStatus: broadcasts.broadcastWorkflow,
     sessionExists,
     isRunning,
+    normalizeEvent,
     publishPrEvent,
   })
   // Build the adapter lookup for AgentSessionManager (used by discussion runs).
@@ -585,6 +604,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // the SAME tool behaviors.
   const automationMcpDeps: AutomationMcpDeps = {
     broadcastIntents: broadcasts.broadcastIntents,
+    normalizeEvent,
     publishPrEvent,
     broadcastDiscussions: broadcasts.broadcastDiscussions,
     broadcastDiscussionMessage: broadcasts.broadcastDiscussionMessage,
@@ -599,6 +619,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
   const ctx: KernelContext = {
     eventBus,
+    normalizeEvent,
     launchDeps,
     launchRun: (rt, prompt, images, inject) => launchRun(rt, prompt, launchDeps, images, inject),
     broadcastStatuses: broadcasts.broadcastStatuses,
@@ -630,6 +651,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastDiscussions: broadcasts.broadcastDiscussions,
     broadcastAutomations: broadcasts.broadcastAutomations,
     broadcastWaitUserEvents: broadcasts.broadcastWaitUserEvents,
+    normalizeEvent,
     publishPrEvent,
   })
 

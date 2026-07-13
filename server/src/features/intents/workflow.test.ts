@@ -98,7 +98,12 @@ vi.mock('./checkpoint-consensus.js', () => ({
 
 import { pickNext, startWorkflow, notifyTurnSettled, isIntentDrivenByWorkflow } from './workflow.js'
 import type { WorkflowHooks, DevTurnResult, RunDevTurnInput } from './workflow.js'
+import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
+import { PR_EVENT_TYPE, normalizePrGenericEvent } from '../pr-events/tool-defs.js'
 import { startDevelopment } from './index.js'
+
+const workflowPrRegistry = new EventNormalizerRegistry()
+workflowPrRegistry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
 import { listIntents, getIntent, setBranchName, setPrInfo, updateStatus } from './store.js'
 import {
   getDevSkill,
@@ -773,6 +778,7 @@ describe('automation controller — branch-mode git alignment', () => {
       emitStatus: vi.fn(),
       sessionExists: vi.fn(() => Promise.resolve(false)),
       isRunning: vi.fn(() => false),
+      normalizeEvent: (core) => workflowPrRegistry.normalize(core),
       publishPrEvent: vi.fn(),
     }
     return { hooks, runDevTurn }

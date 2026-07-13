@@ -62,11 +62,19 @@ import {
   type ViewDiscussionArgs,
 } from '../discussions/tool-defs.js'
 import { hasDiscussionRun } from '../discussions/run-controls.js'
-import type { Discussion, DiscussionMessage, PrOperationEvent } from '@ccc/shared/protocol'
+import type {
+  Discussion,
+  DiscussionMessage,
+  GenericEvent,
+  PrOperationEvent,
+} from '@ccc/shared/protocol'
+import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 
 /** Composition-root callbacks the automation c3 tool handlers need at dispatch time. */
 export interface AutomationMcpDeps {
   broadcastIntents: (workspacePath: string) => void
+  /** Normalize an untrusted event core through the kernel normalizer registry. */
+  normalizeEvent: (core: GenericEvent) => NormalizeResult
   publishPrEvent: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
   /** Refresh a workspace's discussion list to every connection. */
   broadcastDiscussions: (workspacePath: string) => void
@@ -148,8 +156,11 @@ export function buildAutomationC3Tools(
       description: publishPrEventDesc,
       inputSchema: publishPrEventSchema,
       handler: async (args) => ({
-        ...runPublishPrEvent(args as PublishPrEventArgs, (event) =>
-          deps?.publishPrEvent({ workspacePath, sessionId: executionId, ...event }),
+        ...runPublishPrEvent(
+          args as PublishPrEventArgs,
+          (core) =>
+            deps?.normalizeEvent(core) ?? { ok: false, reason: 'automation event deps not wired' },
+          (event) => deps?.publishPrEvent({ workspacePath, sessionId: executionId, ...event }),
         ),
       }),
     },

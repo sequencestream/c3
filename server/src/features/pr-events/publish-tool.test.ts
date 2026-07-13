@@ -7,8 +7,17 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
-import type { PrOperationEvent } from '@ccc/shared/protocol'
+import type { GenericEvent, PrOperationEvent } from '@ccc/shared/protocol'
+import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import { createPrEventMcpServer } from './publish-tool.js'
+import { PR_EVENT_TYPE, normalizePrGenericEvent } from './tool-defs.js'
+
+/** The registry-backed normalize the composition root injects into the tool. */
+function makeNormalize(): (core: GenericEvent) => ReturnType<EventNormalizerRegistry['normalize']> {
+  const registry = new EventNormalizerRegistry()
+  registry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
+  return (core) => registry.normalize(core)
+}
 
 interface CallToolResult {
   content: { type: string; text: string }[]
@@ -27,7 +36,7 @@ describe('createPrEventMcpServer — publish_pr_event (claude in-process)', () =
   it('registers publish_pr_event on the c3 server', () => {
     const servers = createPrEventMcpServer(
       { workspacePath: '/proj', getRunId: () => 'run-1', signal: new AbortController().signal },
-      { publish: vi.fn() },
+      { normalize: makeNormalize(), publish: vi.fn() },
     )
     expect(getHandler(servers, 'publish_pr_event')).toBeTypeOf('function')
   })
@@ -37,7 +46,7 @@ describe('createPrEventMcpServer — publish_pr_event (claude in-process)', () =
     let liveRunId = 'pending-1'
     const servers = createPrEventMcpServer(
       { workspacePath: '/proj', getRunId: () => liveRunId, signal: new AbortController().signal },
-      { publish: (p) => published.push(p) },
+      { normalize: makeNormalize(), publish: (p) => published.push(p) },
     )
     const handler = getHandler(servers, 'publish_pr_event')
 
@@ -60,7 +69,7 @@ describe('createPrEventMcpServer — publish_pr_event (claude in-process)', () =
     const published: Array<{ workspacePath: string; sessionId: string } & PrOperationEvent> = []
     const servers = createPrEventMcpServer(
       { workspacePath: '/proj', getRunId: () => 'run-2', signal: new AbortController().signal },
-      { publish: (p) => published.push(p) },
+      { normalize: makeNormalize(), publish: (p) => published.push(p) },
     )
     const handler = getHandler(servers, 'publish_pr_event')
     const r = await handler(
@@ -86,7 +95,7 @@ describe('createPrEventMcpServer — publish_pr_event (claude in-process)', () =
     const published: Array<{ workspacePath: string; sessionId: string } & PrOperationEvent> = []
     const servers = createPrEventMcpServer(
       { workspacePath: '/proj', getRunId: () => 'run-3', signal: new AbortController().signal },
-      { publish: (p) => published.push(p) },
+      { normalize: makeNormalize(), publish: (p) => published.push(p) },
     )
     const handler = getHandler(servers, 'publish_pr_event')
     const r = await handler(
@@ -114,7 +123,7 @@ describe('createPrEventMcpServer — publish_pr_event (claude in-process)', () =
     const publish = vi.fn()
     const servers = createPrEventMcpServer(
       { workspacePath: '/proj', getRunId: () => 'run-1', signal: new AbortController().signal },
-      { publish },
+      { normalize: makeNormalize(), publish },
     )
     const handler = getHandler(servers, 'publish_pr_event')
     const r = await handler({ operation: 'rebase', result: 'success' }, {})

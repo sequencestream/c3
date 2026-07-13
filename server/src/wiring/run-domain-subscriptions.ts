@@ -55,7 +55,8 @@
  */
 import type { Broadcaster } from '../transport/broadcaster.js'
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
-import type { IntentDevSessionExitCode, PrOperationEvent } from '@ccc/shared/protocol'
+import type { NormalizeResult } from '../kernel/events/generic-event.js'
+import type { GenericEvent, IntentDevSessionExitCode, PrOperationEvent } from '@ccc/shared/protocol'
 import { getRuntime } from '../runs.js'
 import { pathToId, setSessionMode } from '../state.js'
 import {
@@ -134,6 +135,8 @@ export interface DomainSubDeps {
   broadcastAutomations: (workspacePath: string) => void
   /** Fan the wait-user-involve event (todo) list for a project to every connection. */
   broadcastWaitUserEvents: (workspacePath: string) => void
+  /** Normalize an untrusted event core through the kernel normalizer registry. */
+  normalizeEvent: (core: GenericEvent) => NormalizeResult
   /** Publish a normalized PR operation event onto the kernel event bus. */
   publishPrEvent: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
 }
@@ -155,6 +158,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastDiscussions,
     broadcastAutomations,
     broadcastWaitUserEvents,
+    normalizeEvent,
     publishPrEvent,
   } = deps
 
@@ -196,6 +200,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     },
     broadcastIntents,
     broadcastWaitUserEvents,
+    normalizeEvent,
     publishPrEvent,
   }
 

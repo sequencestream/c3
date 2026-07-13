@@ -34,11 +34,13 @@ import { randomUUID } from 'node:crypto'
 import type {
   WorkflowStatus,
   Intent,
+  GenericEvent,
   PrOperationEvent,
   RunEndReason,
   ServerToClient,
 } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
+import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import {
   getIntent,
   listIntents,
@@ -53,7 +55,7 @@ import { publishIntentLifecycle, publishIntentStatusTransition } from './lifecyc
 import { judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
-import { buildServerSidePrCreateEvent } from '../pr-events/tool-defs.js'
+import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
 import { pathToId } from '../../state.js'
 import {
   getDevSkill,
@@ -117,6 +119,8 @@ export interface WorkflowHooks {
   emitStatus(status: WorkflowStatus): void
   sessionExists(workspacePath: string, sessionId: string): Promise<boolean>
   isRunning(sessionId: string): boolean
+  /** Normalize an untrusted event core through the kernel normalizer registry. */
+  normalizeEvent: (core: GenericEvent) => NormalizeResult
   /** Publish a normalized PR operation event onto the kernel event bus. */
   publishPrEvent: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
 }
@@ -900,7 +904,7 @@ class WorkflowController {
       // Publish a pr:operation create event so event-triggered automations can react.
       const headBranch = req.branchName ?? undefined
       const effectiveSessionId = req.lastWorkSessionId ?? req.id
-      const prEvent = buildServerSidePrCreateEvent(
+      runServerSidePrCreate(
         {
           prId: prResult.prId,
           prUrl: prResult.prUrl,
@@ -908,13 +912,14 @@ class WorkflowController {
           baseBranch: undefined,
           intentId: req.id,
         },
-        { workspacePath: this.workspacePath, sessionId: effectiveSessionId },
+        this.hooks.normalizeEvent,
+        (event) =>
+          this.hooks.publishPrEvent({
+            workspacePath: this.workspacePath,
+            sessionId: effectiveSessionId,
+            ...event,
+          }),
       )
-      this.hooks.publishPrEvent({
-        workspacePath: this.workspacePath,
-        sessionId: effectiveSessionId,
-        ...prEvent.event,
-      })
     } else if (prResult) {
       console.warn(`[c3:automation]「${req.title}」PR 创建失败: ${prResult.error}`)
     }

@@ -136,7 +136,7 @@ export interface SpecProfile {
 /**
  * The base launch profile bound to EVERY ordinary work session (`rt.sessionKind ===
  * 'work'`), resolved before the vendor fork in `launchRun` (2026-06-20). It
- * carries ONLY the `publish_pr_event` MCP tool — no gate override, no
+ * carries ONLY the `publish_event` MCP tool — no gate override, no
  * disallowed-tools lock — so a work run keeps its normal standard gate and tool
  * surface while gaining the ability to publish a vendor-neutral PR operation
  * event. Like {@link IntentProfile}, the per-run binding (live run id + abort
@@ -341,7 +341,7 @@ export async function runViaDriver(
    */
   inject?: RunInject,
   /**
-   * The work-session base MCP profile (`publish_pr_event`), present for
+   * The work-session base MCP profile (`publish_event`), present for
    * `rt.sessionKind === 'work'` runs (2026-06-20). Mutually exclusive with
    * `intentProfile` (a run is either an intent run or a session run); when set
    * and the vendor is codex, its driver MCP is bound over the localhost HTTP route.
@@ -496,7 +496,7 @@ export async function runViaDriver(
     driverMcpServers = bound.servers
     disposeDriverMcp = bound.dispose
   } else if (sessionProfile?.bindDriverMcp && adapter.vendor === 'codex') {
-    // Work-session base MCP (publish_pr_event) over the localhost HTTP route — the
+    // Work-session base MCP (publish_event) over the localhost HTTP route — the
     // codex twin of the in-process binder. A run is either intent or session, so
     // this never coexists with the intent binding above (2026-06-20).
     const bound = sessionProfile.bindDriverMcp({

@@ -167,11 +167,12 @@ CREATE INDEX idx_sch_exec_automation ON automation_execution_logs(automation_id)
 5. 幸存者走与 cron 运行**相同**的分发-追踪 → 执行路径(因此三层 MCP 安全 + 写入审批队列不变地适用)。
    运行后的重新武装会跳过 `event` 自动化的下次运行重新计算(它们没有 cron)。
 
-运行生命周期的发布点位于运行路径中。`pr:operation` 的发布点有两个来源:`publish_pr_event` MCP 工具
-(c3 将其提供给每个工作会话,以便模型在用自己的工具执行 PR 操作后发布一个厂商中立的事件),以及
-服务端的 PR 创建路径(dev-cleanup / automation / 手动 create_pr),它们会在代表模型成功创建 PR 后
-发布一个 `create`/`success` 事件。见 automations-spec.md § Triggers → PR operation events
-(SCH-R22 / SCH-R23)。
+运行生命周期的发布点位于运行路径中。PR 操作事件(通用事件 `type='pr:operation'`,落在单一 `'event'`
+总线 topic 上)的发布点有两个来源:`publish_event` MCP 工具(c3 将其提供给每个工作会话,以便模型在用
+自己的工具执行 PR 操作后发布一个厂商中立的通用事件),以及服务端的 PR 创建路径(dev-cleanup /
+automation / 手动 create_pr),它们会在代表模型成功创建 PR 后构造一个 `create`/`success` 事件。
+Automation 事件桥订阅 `'event'`、判别 `event.type==='pr:operation'` 后投影 operation/result 再匹配。
+见 automations-spec.md § Triggers → PR operation events(SCH-R22 / SCH-R23)。
 
 `pr:operation` 总线事件在 `run-domain-subscriptions.ts` 中还有**第二个、独立的**常驻消费者
 (不在本分发路径中):当 `operation=update` + `result=success` 且携带 `association.intentId` 时,

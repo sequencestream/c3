@@ -71,7 +71,7 @@ const FULL_TOOLS = [
   'view_intent',
   'save_intent_pr_info',
   'save_intent_directly',
-  'publish_pr_event',
+  'publish_event',
   'find_discussions',
   'view_discussion',
   'start_discussion',

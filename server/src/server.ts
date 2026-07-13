@@ -41,12 +41,9 @@ import { createIntentMcpServer } from './features/intents/save-tool.js'
 import { createSpecQueryMcpServer } from './features/intents/spec-query-tool.js'
 import { runFind, runView } from './features/intents/tool-defs.js'
 import { gatedSave } from './features/intents/save-gate.js'
-import { createPrEventMcpServer } from './features/pr-events/publish-tool.js'
-import {
-  normalizePrGenericEvent,
-  PR_EVENT_TYPE,
-  runPublishPrEvent,
-} from './features/pr-events/tool-defs.js'
+import { createPublishEventMcpServer } from './features/pr-events/publish-tool.js'
+import { normalizePrGenericEvent, PR_EVENT_TYPE } from './features/pr-events/tool-defs.js'
+import { runPublishEvent } from './features/events/tool-defs.js'
 import { configureAutomationMcp } from './features/automations/c3-mcp.js'
 import type { AutomationMcpDeps } from './features/automations/c3-mcp.js'
 import { setAutomationHttpMcp } from './features/automations/dispatcher.js'
@@ -447,26 +444,22 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const normalizeEvent = (core: import('@ccc/shared/protocol').GenericEvent) =>
     eventNormalizers.normalize(core)
 
-  // Vendor-neutral PR operation events (2026-06-20). The model performs PR
-  // operations with its OWN tools, then calls `publish_pr_event` to publish ONE
-  // event; the generic pipeline normalizes it and the compat bridge delivers the
-  // recovered `PrOperationEvent` onto the existing `pr:operation` bus topic, so
-  // Automation + the intent PR-status reset consumer see an unchanged contract.
+  // Vendor-neutral model-publishable events. The model performs its operation
+  // with its OWN tools, then calls `publish_event` to publish ONE generic event;
+  // the pipeline normalizes it (per-type registry) and delivers the normalized
+  // `GenericEvent` inside a `GenericEventEnvelope` onto the single `'event'` bus
+  // topic. Consumers discriminate `event.type` (`pr:operation` is the first type).
   // ONE bus sink is shared by both MCP surfaces (Claude in-process below + the
   // codex localhost HTTP route here). The route is mounted before the SPA catch-all.
-  const publishPrEvent = (
-    payload: {
-      workspacePath: string
-      sessionId: string
-    } & import('@ccc/shared/protocol').PrOperationEvent,
-  ): void => eventBus.publish('pr:operation', payload)
+  const publishEvent = (payload: import('@ccc/shared/protocol').GenericEventEnvelope): void =>
+    eventBus.publish('event', payload)
   const prEventMcpTools: PrEventMcpTools = {
     publish: (binding, args) =>
-      runPublishPrEvent(args, normalizeEvent, (event) =>
-        publishPrEvent({
+      runPublishEvent(args, normalizeEvent, (event) =>
+        publishEvent({
           workspacePath: binding.workspacePath,
           sessionId: binding.getRunId(),
-          ...event,
+          event,
         }),
       ),
   }
@@ -537,16 +530,16 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       bindDriverMcp: (binding) => specQueryMcp.bind(binding),
       gate: 'spec' as const,
     }),
-    // Work-session base MCP profile (2026-06-20): every new and resumed work
-    // session gets `publish_pr_event` so the model can publish a vendor-neutral
-    // PR operation event after acting on a PR with its own tools. No gate
-    // override, no disallowed-tools lock — the run keeps its standard surface.
-    // Claude binds the in-process server; codex binds the localhost HTTP route.
+    // Work-session base MCP profile: every new and resumed work session gets
+    // `publish_event` so the model can publish a vendor-neutral generic event
+    // after acting with its own tools. No gate override, no disallowed-tools lock
+    // — the run keeps its standard surface. Claude binds the in-process server;
+    // codex binds the localhost HTTP route.
     sessionProfile: (workspacePath) => ({
       bindInProcessMcp: (binding) =>
-        createPrEventMcpServer(
+        createPublishEventMcpServer(
           { workspacePath, getRunId: binding.getRunId, signal: binding.signal },
-          { normalize: normalizeEvent, publish: publishPrEvent },
+          { normalize: normalizeEvent, publish: publishEvent },
         ),
       bindDriverMcp: (binding) => prEventMcp.bind(binding),
     }),
@@ -578,7 +571,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     sessionExists,
     isRunning,
     normalizeEvent,
-    publishPrEvent,
+    publishEvent,
   })
   // Build the adapter lookup for AgentSessionManager (used by discussion runs).
   // claude is always present; codex joins only when its host CLI
@@ -605,7 +598,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const automationMcpDeps: AutomationMcpDeps = {
     broadcastIntents: broadcasts.broadcastIntents,
     normalizeEvent,
-    publishPrEvent,
+    publishEvent,
     broadcastDiscussions: broadcasts.broadcastDiscussions,
     broadcastDiscussionMessage: broadcasts.broadcastDiscussionMessage,
     startDiscussionRun: discussionRuns.startDiscussionRun,
@@ -653,7 +646,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastAutomations: broadcasts.broadcastAutomations,
     broadcastWaitUserEvents: broadcasts.broadcastWaitUserEvents,
     normalizeEvent,
-    publishPrEvent,
+    publishEvent,
   })
 
   // 40+ case switch collapsed to a single registry dispatch (ADR-0009).

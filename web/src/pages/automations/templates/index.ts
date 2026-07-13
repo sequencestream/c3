@@ -25,7 +25,7 @@ export const PR_STATUS_POLLER_PROMPT = `Reconcile GitHub PR status for this work
 1. Find candidate intents, inspect each candidate, and process only intents whose prStatus is reviewing and which have a prUrl or prId.
 2. Use Bash with gh to query the real GitHub PR status. Do not change intents whose PR is still open/reviewing.
 3. If a PR is merged, call save_intent_pr_info with prStatus "merged" and done true. If it is closed without merging, call save_intent_pr_info with prStatus "closed" and leave done unset.
-4. Only when a status actually changed, call publish_pr_event with result "success", operation "merge" or "close", the PR identity/state, and association.intentId.
+4. Only when a status actually changed, call publish_event with type "pr:operation", status "success", metadata.operation "merge" or "close", and data carrying the PR identity/state plus association.intentId.
 
 Do not reopen PRs, merge PRs, resolve conflicts, or change intents outside this reconciliation.`
 
@@ -50,7 +50,7 @@ const PR_STATUS_POLLER: AutomationTemplate = {
       'mcp__c3__find_intents',
       'mcp__c3__view_intent',
       'mcp__c3__save_intent_pr_info',
-      'mcp__c3__publish_pr_event',
+      'mcp__c3__publish_event',
     ],
   }),
 }

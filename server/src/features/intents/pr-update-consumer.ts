@@ -1,5 +1,6 @@
 /**
- * Intent-domain consumer for model-published `pr:operation` events.
+ * Intent-domain consumer for model-published `pr:operation` events, carried on the
+ * single generic `'event'` bus topic as a {@link GenericEventEnvelope}.
  *
  * This is a resident consumer registered alongside the run-lifecycle domain
  * subscriptions — INDEPENDENT of the Automation dispatch path
@@ -9,18 +10,17 @@
  * The two are separate side-effects of the SAME bus event; neither blocks the
  * other.
  *
- * Behaviour: only an `update/success` event that carries `association.intentId`
- * and belongs to the event's workspace can reset a PR whose current status is
- * `rejected`, `failed` or `closed` back to `reviewing`. `merged` (a real
- * terminal state) and every other status are left untouched. All other cases —
- * missing intentId, unknown intent, cross-workspace intentId, non-success or
- * non-update operation — are silently ignored (the publish itself already
- * succeeded, so there is nothing to error on).
+ * Behaviour: it first discriminates `event.type === 'pr:operation'`, then projects
+ * the PR fields off the normalized generic event. Only an `update/success` event
+ * that carries `data.association.intentId` and belongs to the event's workspace can
+ * reset a PR whose current status is `rejected`, `failed` or `closed` back to
+ * `reviewing`. `merged` (a real terminal state) and every other status are left
+ * untouched. All other cases — a non-PR type, missing intentId, unknown intent,
+ * cross-workspace intentId, non-success or non-update operation — are silently
+ * ignored (the publish itself already succeeded, so there is nothing to error on).
  */
-import type { IntentPrStatus, PrOperationEvent } from '@ccc/shared/protocol'
-
-/** The bus payload shape for a `pr:operation` event (envelope + normalized event). */
-export type PrOperationBusPayload = { workspacePath: string; sessionId: string } & PrOperationEvent
+import type { GenericEventEnvelope, IntentPrStatus } from '@ccc/shared/protocol'
+import { PR_EVENT_TYPE, projectPrOperationEvent } from '../pr-events/tool-defs.js'
 
 /** PR statuses that an `update/success` event may reset back to `reviewing`. */
 const RESETTABLE_PR_STATUSES: readonly IntentPrStatus[] = ['rejected', 'failed', 'closed']
@@ -47,19 +47,24 @@ export interface PrUpdateConsumerDeps {
 }
 
 /**
- * Consume one `pr:operation` bus payload and reset the associated intent's PR
- * status when applicable. Returns `true` when a reset actually happened (state
- * changed + log written + broadcast fired), `false` for every ignored case.
- * Never throws: intent lookup / write exceptions are caught and warned so a bad
- * event cannot destabilize the bus or the parallel Automation dispatch.
+ * Consume one generic `'event'` bus envelope and reset the associated intent's PR
+ * status when applicable. Discriminates the PR type, then projects operation /
+ * result / association off the normalized event. Returns `true` when a reset
+ * actually happened (state changed + log written + broadcast fired), `false` for
+ * every ignored case. Never throws: intent lookup / write exceptions are caught
+ * and warned so a bad event cannot destabilize the bus or the parallel Automation
+ * dispatch.
  */
 export function handlePrUpdateEvent(
-  payload: PrOperationBusPayload,
+  envelope: GenericEventEnvelope,
   deps: PrUpdateConsumerDeps,
 ): boolean {
-  if (payload.operation !== 'update' || payload.result !== 'success') return false
+  if (envelope.event.type !== PR_EVENT_TYPE) return false
+  const pr = projectPrOperationEvent(envelope.event)
+  if (!pr) return false
+  if (pr.operation !== 'update' || pr.result !== 'success') return false
 
-  const intentId = payload.association?.intentId
+  const intentId = pr.association?.intentId
   if (!intentId) return false
 
   try {
@@ -67,7 +72,7 @@ export function handlePrUpdateEvent(
     if (!intent) return false
 
     // Reject a cross-workspace intentId: the event's workspace must own the intent.
-    if (intent.workspaceId !== deps.pathToId(payload.workspacePath)) return false
+    if (intent.workspaceId !== deps.pathToId(envelope.workspacePath)) return false
 
     // Only rejected/failed/closed are resettable; merged is terminal, and
     // reviewing/null/other statuses are already correct — no log, no broadcast.
@@ -83,7 +88,7 @@ export function handlePrUpdateEvent(
       'automation',
     )
     // Broadcast only after a real state change.
-    deps.broadcastIntents(payload.workspacePath)
+    deps.broadcastIntents(envelope.workspacePath)
     return true
   } catch (err) {
     console.warn(

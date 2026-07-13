@@ -39,11 +39,11 @@ import {
   type ViewArgs,
 } from '../intents/tool-defs.js'
 import {
-  publishPrEventDesc,
-  publishPrEventSchema,
-  runPublishPrEvent,
-  type PublishPrEventArgs,
-} from '../pr-events/tool-defs.js'
+  publishEventDesc,
+  publishEventSchema,
+  runPublishEvent,
+  type PublishEventArgs,
+} from '../events/tool-defs.js'
 import {
   continueDiscussionDesc,
   continueDiscussionSchema,
@@ -73,7 +73,7 @@ import type {
   Discussion,
   DiscussionMessage,
   GenericEvent,
-  PrOperationEvent,
+  GenericEventEnvelope,
 } from '@ccc/shared/protocol'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 
@@ -82,7 +82,7 @@ export interface AutomationMcpDeps {
   broadcastIntents: (workspacePath: string) => void
   /** Normalize an untrusted event core through the kernel normalizer registry. */
   normalizeEvent: (core: GenericEvent) => NormalizeResult
-  publishPrEvent: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
+  publishEvent: (payload: GenericEventEnvelope) => void
   /** Refresh a workspace's discussion list to every connection. */
   broadcastDiscussions: (workspacePath: string) => void
   /** Stream one appended discussion message to every connection. */
@@ -171,15 +171,15 @@ export function buildAutomationC3Tools(
       }),
     },
     {
-      name: 'publish_pr_event',
-      description: publishPrEventDesc,
-      inputSchema: publishPrEventSchema,
+      name: 'publish_event',
+      description: publishEventDesc,
+      inputSchema: publishEventSchema,
       handler: async (args) => ({
-        ...runPublishPrEvent(
-          args as PublishPrEventArgs,
+        ...runPublishEvent(
+          args as PublishEventArgs,
           (core) =>
             deps?.normalizeEvent(core) ?? { ok: false, reason: 'automation event deps not wired' },
-          (event) => deps?.publishPrEvent({ workspacePath, sessionId: executionId, ...event }),
+          (event) => deps?.publishEvent({ workspacePath, sessionId: executionId, event }),
         ),
       }),
     },

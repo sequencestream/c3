@@ -1,22 +1,20 @@
 /**
- * Unit tests for the framing-free `publish_pr_event` core (AC1, AC2): input
- * validation rejects illegal/missing required fields without publishing, and the
- * safety normalization strips tokens / raw CLI output / absolute paths from the
- * event before it leaves c3.
+ * Unit tests for the `pr:operation` normalizer + consumer projection (AC2, AC3):
+ * the field-level safety normalization strips tokens / raw CLI output / absolute
+ * paths, illegal operation/result enums make the registry reject the publish, and
+ * `projectPrOperationEvent` deterministically recovers the PR fields for consumers.
  */
-import { describe, expect, it, vi } from 'vitest'
-import type { GenericEvent, PrOperationEvent } from '@ccc/shared/protocol'
+import { describe, expect, it } from 'vitest'
+import type { GenericEvent, PrOperation } from '@ccc/shared/protocol'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import {
   PR_EVENT_TYPE,
-  genericEventToPrOperation,
   normalizeErrorSummary,
   normalizePrEvent,
   normalizePrGenericEvent,
   prArgsToGenericEvent,
+  projectPrOperationEvent,
   redactSecrets,
-  runPublishPrEvent,
-  type PublishPrEventArgs,
 } from './tool-defs.js'
 
 /** A registry with only the PR normalizer, mirroring the composition root. */
@@ -26,76 +24,40 @@ function makeNormalize(): (core: GenericEvent) => ReturnType<EventNormalizerRegi
   return (core) => registry.normalize(core)
 }
 
-describe('runPublishPrEvent — validation (routed through the registry)', () => {
-  const normalize = makeNormalize()
-
-  it('publishes on a valid create/success event', () => {
-    const published: PrOperationEvent[] = []
-    const r = runPublishPrEvent(
-      { operation: 'create', result: 'success', pr: { number: 7, url: 'https://x/pr/7' } },
-      normalize,
-      (e) => published.push(e),
-    )
-    expect(r.isError).toBeUndefined()
-    expect(published).toHaveLength(1)
-    expect(published[0]).toMatchObject({
-      operation: 'create',
-      result: 'success',
-      pr: { number: 7 },
-    })
-  })
-
-  it.each(['create', 'review', 'merge', 'close', 'comment', 'update'] as const)(
-    'accepts the %s operation with success, failure and error',
-    (operation) => {
-      const published: PrOperationEvent[] = []
-      runPublishPrEvent({ operation, result: 'success' }, normalize, (e) => published.push(e))
-      runPublishPrEvent({ operation, result: 'failure' }, normalize, (e) => published.push(e))
-      runPublishPrEvent({ operation, result: 'error' }, normalize, (e) => published.push(e))
-      expect(published.map((e) => e.result)).toEqual(['success', 'failure', 'error'])
-      expect(published.every((e) => e.operation === operation)).toBe(true)
-    },
-  )
-
-  it('rejects an illegal operation enum and publishes nothing', () => {
-    const publish = vi.fn()
-    const r = runPublishPrEvent(
-      { operation: 'rebase' as PublishPrEventArgs['operation'], result: 'success' },
-      normalize,
-      publish,
-    )
-    expect(r.isError).toBe(true)
-    expect(publish).not.toHaveBeenCalled()
-  })
-
-  it('rejects an illegal result enum and publishes nothing', () => {
-    const publish = vi.fn()
-    const r = runPublishPrEvent(
-      { operation: 'merge', result: 'maybe' as PublishPrEventArgs['result'] },
-      normalize,
-      publish,
-    )
-    expect(r.isError).toBe(true)
-    expect(publish).not.toHaveBeenCalled()
-  })
-
-  it('fails (publishing nothing) when the PR type has no registered normalizer', () => {
-    const emptyRegistry = new EventNormalizerRegistry()
-    const publish = vi.fn()
-    const r = runPublishPrEvent(
-      { operation: 'create', result: 'success' },
-      (core) => emptyRegistry.normalize(core),
-      publish,
-    )
-    expect(r.isError).toBe(true)
-    expect(publish).not.toHaveBeenCalled()
-  })
-})
-
 describe('normalizePrGenericEvent — the pr:operation registry entry (AC3)', () => {
   const normalize = makeNormalize()
 
-  it('round-trips a full event core through normalize → bridge unchanged', () => {
+  it('normalizes every operation with success, failure and error', () => {
+    for (const operation of ['create', 'review', 'merge', 'close', 'comment', 'update'] as const) {
+      for (const result of ['success', 'failure', 'error'] as const) {
+        const res = normalize(prArgsToGenericEvent({ operation, result }))
+        expect(res.ok).toBe(true)
+        if (!res.ok) return
+        const pr = projectPrOperationEvent(res.event)
+        expect(pr).toMatchObject({ operation, result })
+      }
+    }
+  })
+
+  it('rejects an illegal operation enum and produces no event', () => {
+    const res = normalize({
+      type: PR_EVENT_TYPE,
+      status: 'success',
+      metadata: { operation: 'rebase' as PrOperation },
+    })
+    expect(res.ok).toBe(false)
+  })
+
+  it('rejects an illegal result enum and produces no event', () => {
+    const res = normalize({
+      type: PR_EVENT_TYPE,
+      status: 'maybe',
+      metadata: { operation: 'merge' },
+    })
+    expect(res.ok).toBe(false)
+  })
+
+  it('round-trips a full event core through normalize → projection unchanged', () => {
     const core = prArgsToGenericEvent({
       operation: 'review',
       result: 'success',
@@ -108,7 +70,7 @@ describe('normalizePrGenericEvent — the pr:operation registry entry (AC3)', ()
     expect(res.ok).toBe(true)
     if (!res.ok) return
     expect(res.event.type).toBe(PR_EVENT_TYPE)
-    expect(genericEventToPrOperation(res.event)).toEqual({
+    expect(projectPrOperationEvent(res.event)).toEqual({
       operation: 'review',
       result: 'success',
       pr: { number: 42, id: 'pr-1', title: 'Add cache', state: 'open' },
@@ -158,7 +120,7 @@ describe('normalizePrGenericEvent — the pr:operation registry entry (AC3)', ()
     const res = normalize(core)
     expect(res.ok).toBe(true)
     if (!res.ok) return
-    expect(genericEventToPrOperation(res.event).pr?.title?.length).toBe(256)
+    expect(projectPrOperationEvent(res.event)!.pr?.title?.length).toBe(256)
   })
 
   it('caps the error summary at 500 chars and collapses whitespace', () => {
@@ -184,7 +146,7 @@ describe('normalizePrGenericEvent — the pr:operation registry entry (AC3)', ()
     expect(res.ok).toBe(true)
     if (!res.ok) return
     expect(res.event.data?.pr).toBeUndefined()
-    expect(genericEventToPrOperation(res.event).pr).toBeUndefined()
+    expect(projectPrOperationEvent(res.event)!.pr).toBeUndefined()
   })
 
   it('ignores unknown/forged data keys (they never reach the bus payload)', () => {
@@ -196,7 +158,7 @@ describe('normalizePrGenericEvent — the pr:operation registry entry (AC3)', ()
     })
     expect(res.ok).toBe(true)
     if (!res.ok) return
-    const recovered = genericEventToPrOperation(res.event)
+    const recovered = projectPrOperationEvent(res.event)
     expect(recovered).toEqual({ operation: 'create', result: 'success', pr: { number: 1 } })
     expect(JSON.stringify(res.event)).not.toContain('evil')
   })

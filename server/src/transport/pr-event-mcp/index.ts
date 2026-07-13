@@ -1,6 +1,6 @@
 /**
- * Localhost HTTP MCP route for the `publish_pr_event` tool (2026-06-20). The
- * work-session's publish tool is a Claude in-process SDK MCP server
+ * Localhost HTTP MCP route for the `publish_event` tool. The work-session's
+ * publish tool is a Claude in-process SDK MCP server
  * (`features/pr-events/publish-tool.ts`); codex (`inProcessMcp: false`) can't
  * load that, so this route re-exposes the SAME tool over a streamable-HTTP MCP
  * server bound to ONE run.
@@ -24,11 +24,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import type { RemoteMcpServer } from '../../kernel/agent/adapters/types.js'
 import {
-  publishPrEventDesc,
-  publishPrEventSchema,
-  type PrEventToolResult,
-  type PublishPrEventArgs,
-} from '../../features/pr-events/tool-defs.js'
+  publishEventDesc,
+  publishEventSchema,
+  type EventToolResult,
+  type PublishEventArgs,
+} from '../../features/events/tool-defs.js'
 
 /** The loopback path the PR-event MCP route is mounted at. */
 export const PR_EVENT_MCP_PATH = '/internal/pr-event-mcp/v1'
@@ -43,7 +43,7 @@ export interface PrEventMcpBinding {
 
 /** The injected tool behavior: validate + normalize + publish onto the event bus. */
 export interface PrEventMcpTools {
-  publish(binding: PrEventMcpBinding, args: PublishPrEventArgs): PrEventToolResult
+  publish(binding: PrEventMcpBinding, args: PublishEventArgs): EventToolResult
 }
 
 /** The served route: the kernel-facing bind handle plus the HTTP handler the root mounts. */
@@ -95,9 +95,9 @@ export function createPrEventMcp(
   const buildServer = (binding: PrEventMcpBinding): McpServer => {
     const server = new McpServer({ name: 'c3', version: '1.0.0' })
     server.registerTool(
-      'publish_pr_event',
-      { description: publishPrEventDesc, inputSchema: publishPrEventSchema },
-      async (args) => toCallResult(tools.publish(binding, args as PublishPrEventArgs)),
+      'publish_event',
+      { description: publishEventDesc, inputSchema: publishEventSchema },
+      async (args) => toCallResult(tools.publish(binding, args as PublishEventArgs)),
     )
     return server
   }
@@ -120,7 +120,7 @@ export function createPrEventMcp(
           c3: {
             type: 'http',
             url: `${baseUrl}?token=${token}`,
-            enabledTools: ['publish_pr_event'],
+            enabledTools: ['publish_event'],
           },
         },
         dispose: () => {
@@ -150,7 +150,7 @@ export function createPrEventMcp(
 }
 
 /** Map our framing-free tool result to the MCP SDK `CallToolResult` shape (structurally identical). */
-function toCallResult(r: PrEventToolResult): {
+function toCallResult(r: EventToolResult): {
   content: Array<{ type: 'text'; text: string }>
   isError?: boolean
 } {

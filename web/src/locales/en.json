@@ -1434,6 +1434,18 @@
         }
       },
       "event": {
+        "type": {
+          "label": "Event type",
+          "placeholder": "e.g. run:settled",
+          "hint": "The event type this automation subscribes to. Known types are suggestions — any published type works."
+        },
+        "status": {
+          "label": "Only on status",
+          "placeholder": "status value",
+          "add": "Add status",
+          "remove": "Remove",
+          "hint": "Leave empty to fire on any status. Add values to match the event's status exactly."
+        },
         "topic": {
           "label": "Run event",
           "started": {

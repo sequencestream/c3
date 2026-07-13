@@ -1,0 +1,34 @@
+-- v12 (2026-07-13): converge the per-topic event-trigger filters into a single
+-- generic `event_filter`.
+--
+-- Automation event triggers previously carried one bespoke column per topic
+-- (`event_reason_filter` / `event_pr_filter` / `event_intent_filter`) plus the
+-- run-lifecycle `event_metadata_filter`, each read via a topic branch. They are
+-- collapsed into ONE JSON column holding a `GenericEventFilter`:
+--
+--   { type: string, statuses?: string[], metadata?: { conditions, combinator } }
+--
+--   - type      ← event_topic (the subscribed event type; open string)
+--   - statuses  ← event_reason_filter | event_pr_filter.results | event_intent_filter.phases
+--   - metadata  ← event_metadata_filter (run-lifecycle), and event_pr_filter.operations
+--                 as OR conditions [{ key:'operation', value:<op> }]
+--
+-- The retired columns (event_topic + the four filter columns) are RETAINED as
+-- migration input only — runtime reads/writes/matches exclusively through
+-- event_filter. `event_session_kind_filter` stays independent (the run-lifecycle
+-- security boundary, not a business filter).
+--
+-- Idempotent via a columnExists guard in the store; the JS backfill runs inside a
+-- transaction and only fills rows whose `event_filter` is still NULL, so a newer
+-- client's value is never overwritten and re-runs are no-ops. Corrupt legacy JSON
+-- in any single dimension degrades to "that dimension wildcards" (never widening
+-- beyond the type, never throwing). A failed backfill aborts schema init rather
+-- than starting with a partially-migrated table.
+ALTER TABLE automations ADD COLUMN event_filter TEXT;
+
+-- Behaviour-preserving backfill (illustrative; the store performs it in JS so the
+-- tolerant per-dimension parsing + OR-condition projection are shared with reads):
+--   run:started / run:settled → { type, statuses:<reasons>, metadata:<event_metadata_filter> }
+--   pr:operation              → { type, statuses:<results>, metadata:{OR operation conditions} }
+--   intent:lifecycle          → { type, statuses:<phases> }
+-- Only rows with trigger_type='event' AND event_filter IS NULL are filled.

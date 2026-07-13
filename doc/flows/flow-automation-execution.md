@@ -38,7 +38,7 @@ flowchart TD
 3. **例外。** `automation_archive` / `automation_delete` 绕过该队列——单次 prompt 确认后立即
    生效(`SCH-R6`、`SCH-R14`);删除会级联删除日志(硬删除)。
 4. **校验。** 一个自动化在创建时必须引用一个已存在的工作区(`SCH-R1`);任务类型
-   `command | llm_prompt` 一经创建不可变(`SCH-R2`);没有 `eventTopic` 的 `event` 触发器
+   `command | llm_prompt` 一经创建不可变(`SCH-R2`);没有合法 `eventFilter.type` 的 `event` 触发器
    会被拒绝(`SCH-R17`)。
 
 ## 触发路径
@@ -50,9 +50,11 @@ flowchart TD
   (`SCH-R5`)。
 - **`event`。** 一次 `run:started` / `run:settled`、`pr:operation` 或 `intent:lifecycle` 的
   kernel-bus 事件(由相关领域在每次运行时发布,ADR-0018)会触发该自动化,当**所有**条件都
-  成立时:事件的 `sessionKind` 为 `work`(内部的意图/讨论运行绝不会触发用户自动化)、工作区
-  匹配,以及——对 `run:settled` 而言——终态 `reason` 通过可选的 `eventReasonFilter`
-  (`SCH-R18`)。事件型自动化不携带 `cronExpression`/`nextRunAt`,也从不参与 tick 评估
+  成立时:通用匹配器按 workspace → type → status → metadata 逐项判定——`eventFilter.type`
+  等于 `event.type`、工作区匹配、`event.status` 通过 `eventFilter.statuses`(缺省/空 = 任意,
+  例如 `run:settled` 的终态 reason 就落在这里)、`eventFilter.metadata` 条件成立;此外对
+  `run:started`/`run:settled` 还先过 `eventSessionKindFilter` 的 fail-closed 边界(内部的
+  意图/讨论运行绝不会触发用户自动化,`SCH-R18`)。事件型自动化不携带 `cronExpression`/`nextRunAt`,也从不参与 tick 评估
   (`SCH-R17`)。
 
 两者都复用**同一套**“调度并跟踪 → 执行”路径、三层执行身份体系,以及写队列(`SCH-R17`)。

@@ -537,7 +537,7 @@ describe('createAutomation import extensions (initialStatus / initialName)', () 
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventTopic: 'run:settled',
+      eventFilter: { type: 'run:settled' },
       eventSessionKindFilter: ['work'],
       mode: 'read-only',
       vendor: 'claude',

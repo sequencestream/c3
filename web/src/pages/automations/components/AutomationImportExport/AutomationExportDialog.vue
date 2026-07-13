@@ -58,7 +58,7 @@ function displayName(a: Automation): string {
       ? ((cfg as Record<string, unknown>).name as string).trim()
       : ''
   if (name) return name
-  return a.triggerType === 'event' ? (a.eventTopic ?? 'event') : a.cronExpression
+  return a.triggerType === 'event' ? (a.eventFilter?.type ?? 'event') : a.cronExpression
 }
 
 function download(filename: string, content: string): void {

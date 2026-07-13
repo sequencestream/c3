@@ -90,9 +90,7 @@ function sched(over: Partial<Automation> = {}): Automation {
     triggerType: 'cron',
     cronExpression: '0 8 * * *',
     nextRunAt: null,
-    eventTopic: null,
-    eventReasonFilter: null,
-    eventPrFilter: null,
+    eventFilter: null,
     status: 'active',
     mode: 'sandboxed',
     toolAllowlist: [],
@@ -229,21 +227,22 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect((edited.emitted('update')![0][1] as Record<string, unknown>).maxWallClockMs).toBe(90000)
   })
 
-  it('create(event):切到事件触发 → payload 含 triggerType/eventTopic,cron 为空', async () => {
+  it('create(event):切到事件触发 → payload 含 triggerType/eventFilter,cron 为空', async () => {
     const w = mountForm()
     await w.find('textarea').setValue('echo done')
     // 第 2 个 segmented 是 trigger 类型(第 1 个是任务类型);[1] = event。
     const segmenteds = w.findAll('.sf-segmented')
     await segmenteds[1].findAll('.sf-seg')[1].trigger('click')
-    // run:settled 需先勾选至少一个 sessionKind 才能保存(.sf-day: reason[0..2] + sessionKind[3..9])。
-    await w.findAll('.sf-day')[3].trigger('click') // work
+    // 默认事件类型 run:settled(run-lifecycle),保存前需勾选至少一个 sessionKind。
+    // event 模式下 .sf-day 仅为 7 个 sessionKind chip(work 为首)。
+    await w.findAll('.sf-day')[0].trigger('click') // work
     await w.find('.sf-btn.primary').trigger('click')
 
     const input = w.emitted('create')![0][0] as Record<string, unknown>
     expect(input.triggerType).toBe('event')
     expect(input.cronExpression).toBe('')
-    expect(input.eventTopic).toBe('run:settled') // 默认订阅运行结束
-    expect(input.eventReasonFilter).toBeNull() // 未选 reason → 任意结果
+    // 默认订阅运行结束,未填 status → 仅 type。
+    expect(input.eventFilter).toEqual({ type: 'run:settled' })
     expect(input.eventSessionKindFilter).toEqual(['work'])
   })
 
@@ -257,34 +256,32 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(w.emitted('create')).toBeUndefined()
   })
 
-  it('create(event/settled):勾选 reason + sessionKind → payload 含 eventReasonFilter', async () => {
-    const w = mountForm()
-    await w.find('textarea').setValue('echo done')
-    const segmenteds = w.findAll('.sf-segmented')
-    await segmenteds[1].findAll('.sf-seg')[1].trigger('click') // event
-    // run:settled 时显示 reason(3) + sessionKind(7) 共 10 个 .sf-day。
-    const days = w.findAll('.sf-day')
-    expect(days).toHaveLength(10)
-    await days[1].trigger('click') // reason 'error'
-    await days[3].trigger('click') // sessionKind 'work'
-    await w.find('.sf-btn.primary').trigger('click')
-
-    const input = w.emitted('create')![0][0] as Record<string, unknown>
-    expect(input.eventReasonFilter).toEqual(['error'])
-    expect(input.eventSessionKindFilter).toEqual(['work'])
-  })
-
-  it('create(event/settled):metadata 编辑 + metadata 条件构建 → payload 携带', async () => {
+  it('create(event/settled):填 status + 勾选 sessionKind → eventFilter.statuses 携带', async () => {
     const w = mountForm()
     await w.find('textarea').setValue('echo done')
     await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
-    await w.findAll('.sf-day')[3].trigger('click') // sessionKind 'work'
+    // 增加一个 status 行并填 'error'。
+    await w.find('[data-testid="status-add"]').trigger('click')
+    await w.find('[data-testid="status-row"]').find('input').setValue('error')
+    await w.findAll('.sf-day')[0].trigger('click') // sessionKind 'work'
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.eventFilter).toEqual({ type: 'run:settled', statuses: ['error'] })
+    expect(input.eventSessionKindFilter).toEqual(['work'])
+  })
+
+  it('create(event/settled):metadata 注解 + metadata 条件构建 → payload 携带', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('echo done')
+    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
+    await w.findAll('.sf-day')[0].trigger('click') // sessionKind 'work'
     // metadata 注解:增行并填 key/value。
     await w.find('[data-testid="metadata-add"]').trigger('click')
     const metaInputs = w.find('[data-testid="metadata-row"]').findAll('input')
     await metaInputs[0].setValue('stage')
     await metaInputs[1].setValue('a')
-    // metadata 条件:增行并填 key/value。
+    // metadata 条件(进入 eventFilter.metadata):增行并填 key/value。
     await w.find('[data-testid="metadata-condition-add"]').trigger('click')
     const condInputs = w.find('[data-testid="metadata-condition-row"]').findAll('input')
     await condInputs[0].setValue('team')
@@ -293,19 +290,17 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
     const input = w.emitted('create')![0][0] as Record<string, unknown>
     expect(input.metadata).toEqual({ stage: 'a' })
-    expect(input.eventMetadataFilter).toEqual({
-      conditions: [{ key: 'team', value: 'core' }],
-      combinator: 'AND',
+    expect(input.eventFilter).toEqual({
+      type: 'run:settled',
+      metadata: { conditions: [{ key: 'team', value: 'core' }], combinator: 'AND' },
     })
   })
 
-  it('create(event/pr:operation):切到 PR 事件 → 展示 MCP 集成说明,payload eventTopic=pr:operation', async () => {
+  it('create(event/pr:operation):事件类型填 pr:operation → 展示 MCP 说明,无需 sessionKind', async () => {
     const w = mountForm()
     await w.find('textarea').setValue('echo done')
-    const segmenteds = w.findAll('.sf-segmented')
-    await segmenteds[1].findAll('.sf-seg')[1].trigger('click') // event
-    // 一级分类三选一:选 PR 操作。
-    await w.find('[data-testid="event-category-pr-operation"]').trigger('click')
+    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
+    await w.find('[data-testid="event-type-input"]').setValue('pr:operation')
     // 展示「模型自行执行 PR 操作、MCP 仅发布事件」边界说明。
     expect(w.find('.sf-pr-note').exists()).toBe(true)
     await w.find('.sf-btn.primary').trigger('click')
@@ -313,55 +308,75 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     const input = w.emitted('create')![0][0] as Record<string, unknown>
     expect(input.triggerType).toBe('event')
     expect(input.cronExpression).toBe('')
-    expect(input.eventTopic).toBe('pr:operation')
-    expect(input.eventReasonFilter).toBeNull()
-    expect(input.eventPrFilter).toBeNull() // 未选 → 任意操作/结果
+    expect(input.eventFilter).toEqual({ type: 'pr:operation' })
+    // 非 run-lifecycle 类型不携带 sessionKind 安全边界。
+    expect(input.eventSessionKindFilter).toBeNull()
   })
 
-  it('create(event/pr:operation):勾选 operation+result → payload 含 eventPrFilter', async () => {
+  it('create(event/pr:operation):operation 作为 metadata OR 条件 + result 作为 status', async () => {
     const w = mountForm()
     await w.find('textarea').setValue('echo done')
     await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
-    await w.find('[data-testid="event-category-pr-operation"]').trigger('click') // pr:operation
-    // pr:operation 隐藏 reason 过滤;.sf-day 现为 6 个操作 + 3 个结果。
-    const days = w.findAll('.sf-day')
-    expect(days).toHaveLength(9)
-    await days[2].trigger('click') // operations: create,review,merge,close,comment,update → [2]=merge
-    await days[6].trigger('click') // results: success[6], failure[7], error[8] → success
+    await w.find('[data-testid="event-type-input"]').setValue('pr:operation')
+    // result → status
+    await w.find('[data-testid="status-add"]').trigger('click')
+    await w.find('[data-testid="status-row"]').find('input').setValue('success')
+    // operation → OR metadata 条件
+    await w.find('.sf-combinator').findAll('.sf-seg')[1].trigger('click') // OR
+    await w.find('[data-testid="metadata-condition-add"]').trigger('click')
+    const cond = w.find('[data-testid="metadata-condition-row"]').findAll('input')
+    await cond[0].setValue('operation')
+    await cond[1].setValue('merge')
     await w.find('.sf-btn.primary').trigger('click')
 
     const input = w.emitted('create')![0][0] as Record<string, unknown>
-    expect(input.eventPrFilter).toEqual({ operations: ['merge'], results: ['success'] })
+    expect(input.eventFilter).toEqual({
+      type: 'pr:operation',
+      statuses: ['success'],
+      metadata: { conditions: [{ key: 'operation', value: 'merge' }], combinator: 'OR' },
+    })
   })
 
-  it('create(event/pr:operation):可勾选 update 操作并序列化到 eventPrFilter', async () => {
+  it('create(event):自定义(非硬编码)事件类型无需改协议枚举即可保存', async () => {
     const w = mountForm()
     await w.find('textarea').setValue('echo done')
     await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
-    await w.find('[data-testid="event-category-pr-operation"]').trigger('click') // pr:operation
-    const days = w.findAll('.sf-day')
-    // operations: create[0],review[1],merge[2],close[3],comment[4],update[5]
-    await days[5].trigger('click') // update
+    await w.find('[data-testid="event-type-input"]').setValue('custom:thing')
+    await w.find('[data-testid="status-add"]').trigger('click')
+    await w.find('[data-testid="status-row"]').find('input').setValue('ok')
     await w.find('.sf-btn.primary').trigger('click')
 
     const input = w.emitted('create')![0][0] as Record<string, unknown>
-    expect(input.eventPrFilter).toEqual({ operations: ['update'] })
+    expect(input.eventFilter).toEqual({ type: 'custom:thing', statuses: ['ok'] })
+    expect(input.eventSessionKindFilter).toBeNull()
   })
 
-  it('edit(event/pr:operation):从 automation.eventPrFilter 回读勾选', () => {
+  it('edit(event/pr:operation):从 automation.eventFilter 回读 type/statuses/metadata', () => {
     const w = mountForm({
       automation: sched({
         triggerType: 'event',
         cronExpression: '',
-        eventTopic: 'pr:operation',
-        eventPrFilter: { operations: ['close'], results: ['failure'] },
+        eventFilter: {
+          type: 'pr:operation',
+          statuses: ['failure'],
+          metadata: { conditions: [{ key: 'operation', value: 'close' }], combinator: 'OR' },
+        },
       }),
     })
-    const days = w.findAll('.sf-day')
-    // operations: close[3] active; results: failure[7] active (success[6],failure[7],error[8]).
-    expect(days[3].classes()).toContain('active')
-    expect(days[7].classes()).toContain('active')
-    expect(days[2].classes()).not.toContain('active') // merge not selected
+    expect((w.find('[data-testid="event-type-input"]').element as HTMLInputElement).value).toBe(
+      'pr:operation',
+    )
+    // status 行回读。
+    expect(
+      (w.find('[data-testid="status-row"]').find('input').element as HTMLInputElement).value,
+    ).toBe('failure')
+    // metadata 条件回读。
+    const cond = w.find('[data-testid="metadata-condition-row"]').findAll('input')
+    expect((cond[0].element as HTMLInputElement).value).toBe('operation')
+    expect((cond[1].element as HTMLInputElement).value).toBe('close')
+    // PR 说明可见,且非 run-lifecycle 不显示 sessionKind chip。
+    expect(w.find('.sf-pr-note').exists()).toBe(true)
+    expect(w.findAll('.sf-day')).toHaveLength(0)
   })
 
   // ---- Sectioned layout ----------------------------------------------------
@@ -400,72 +415,85 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(tools.find('.sf-tool-item').exists()).toBe(true)
   })
 
-  // ---- Event two-tier category / stage -------------------------------------
+  // ---- Generic event type (free-string) ------------------------------------
 
-  it('event 一级默认运行事件 + 二级默认结束,映射 run:settled', async () => {
+  it('event 默认事件类型为 run:settled,显示 sessionKind 选择', async () => {
     const w = mountForm()
     await w.find('textarea').setValue('echo done')
     await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
-    // 一级运行事件高亮,二级阶段选择器可见。
-    expect(w.find('[data-testid="event-category-run-lifecycle"]').classes()).toContain('active')
-    expect(w.find('[data-testid="event-stage"]').exists()).toBe(true)
-    expect(w.find('[data-testid="event-stage-settled"]').classes()).toContain('active')
-    // 保存前需选 sessionKind。
-    await w.findAll('.sf-day')[3].trigger('click') // work
-    await w.find('.sf-btn.primary').trigger('click')
-    expect((w.emitted('create')![0][0] as Record<string, unknown>).eventTopic).toBe('run:settled')
-  })
-
-  it('event 二级选开始 → 映射 run:started,且不显示 reason 过滤', async () => {
-    const w = mountForm()
-    await w.find('textarea').setValue('echo done')
-    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
-    await w.find('[data-testid="event-stage-started"]').trigger('click')
-    // run:started 无结果,reason 过滤不显示;.sf-day 仅 7 个 sessionKind。
+    // 默认事件类型输入框预填 run:settled(run-lifecycle → 显示 7 个 sessionKind chip)。
+    expect((w.find('[data-testid="event-type-input"]').element as HTMLInputElement).value).toBe(
+      'run:settled',
+    )
     expect(w.findAll('.sf-day')).toHaveLength(7)
     await w.findAll('.sf-day')[0].trigger('click') // work
     await w.find('.sf-btn.primary').trigger('click')
-    expect((w.emitted('create')![0][0] as Record<string, unknown>).eventTopic).toBe('run:started')
+    expect((w.emitted('create')![0][0] as Record<string, unknown>).eventFilter).toEqual({
+      type: 'run:settled',
+    })
   })
 
-  it('event 一级选意图生命周期 → payload eventTopic=intent:lifecycle,无二级阶段', async () => {
+  it('event 改类型为 run:started → 仍显示 sessionKind,映射 run:started', async () => {
     const w = mountForm()
     await w.find('textarea').setValue('echo done')
     await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
-    await w.find('[data-testid="event-category-intent-lifecycle"]').trigger('click')
-    expect(w.find('[data-testid="event-stage"]').exists()).toBe(false)
+    await w.find('[data-testid="event-type-input"]').setValue('run:started')
+    expect(w.findAll('.sf-day')).toHaveLength(7)
+    await w.findAll('.sf-day')[0].trigger('click') // work
+    await w.find('.sf-btn.primary').trigger('click')
+    expect((w.emitted('create')![0][0] as Record<string, unknown>).eventFilter).toEqual({
+      type: 'run:started',
+    })
+  })
+
+  it('event 类型为 intent:lifecycle → 无 sessionKind 边界', async () => {
+    const w = mountForm()
+    await w.find('textarea').setValue('echo done')
+    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
+    await w.find('[data-testid="event-type-input"]').setValue('intent:lifecycle')
+    // 非 run-lifecycle → 不渲染 sessionKind chip。
+    expect(w.findAll('.sf-day')).toHaveLength(0)
     await w.find('.sf-btn.primary').trigger('click')
     const input = w.emitted('create')![0][0] as Record<string, unknown>
-    expect(input.eventTopic).toBe('intent:lifecycle')
-    expect(input.eventSessionKindFilter).toBeNull() // 非运行事件不带 sessionKind
+    expect(input.eventFilter).toEqual({ type: 'intent:lifecycle' })
+    expect(input.eventSessionKindFilter).toBeNull()
   })
 
-  it('edit 回显:run:started → 一级运行事件 + 二级开始', () => {
+  it('edit 回显:run:started → 事件类型输入预填,sessionKind 回读高亮', () => {
     const w = mountForm({
-      automation: sched({ triggerType: 'event', cronExpression: '', eventTopic: 'run:started' }),
+      automation: sched({
+        triggerType: 'event',
+        cronExpression: '',
+        eventFilter: { type: 'run:started' },
+        eventSessionKindFilter: ['work', 'automation'],
+      }),
     })
-    expect(w.find('[data-testid="event-category-run-lifecycle"]').classes()).toContain('active')
-    expect(w.find('[data-testid="event-stage-started"]').classes()).toContain('active')
-    expect(w.find('[data-testid="event-stage-settled"]').classes()).not.toContain('active')
+    expect((w.find('[data-testid="event-type-input"]').element as HTMLInputElement).value).toBe(
+      'run:started',
+    )
+    const days = w.findAll('.sf-day')
+    expect(days).toHaveLength(7)
+    expect(days[0].classes()).toContain('active') // work
+    expect(days[3].classes()).toContain('active') // automation
   })
 
-  it('edit 回显:run:settled → 一级运行事件 + 二级结束,并显示 reason 过滤', () => {
+  it('edit 回显:run:settled → 事件类型输入预填,显示 sessionKind chip', () => {
     const w = mountForm({
-      automation: sched({ triggerType: 'event', cronExpression: '', eventTopic: 'run:settled' }),
+      automation: sched({
+        triggerType: 'event',
+        cronExpression: '',
+        eventFilter: { type: 'run:settled', statuses: ['error'] },
+        eventSessionKindFilter: ['work'],
+      }),
     })
-    expect(w.find('[data-testid="event-category-run-lifecycle"]').classes()).toContain('active')
-    expect(w.find('[data-testid="event-stage-settled"]').classes()).toContain('active')
-    // reason 仅在运行结束显示 → sf-day 含 reason(3)+sessionKind(7)=10。
-    expect(w.findAll('.sf-day')).toHaveLength(10)
-  })
-
-  it('edit 回显:pr:operation → 一级 PR 操作,无二级阶段', () => {
-    const w = mountForm({
-      automation: sched({ triggerType: 'event', cronExpression: '', eventTopic: 'pr:operation' }),
-    })
-    expect(w.find('[data-testid="event-category-pr-operation"]').classes()).toContain('active')
-    expect(w.find('[data-testid="event-stage"]').exists()).toBe(false)
-    expect(w.find('.sf-pr-note').exists()).toBe(true)
+    expect((w.find('[data-testid="event-type-input"]').element as HTMLInputElement).value).toBe(
+      'run:settled',
+    )
+    // status 行回读。
+    expect(
+      (w.find('[data-testid="status-row"]').find('input').element as HTMLInputElement).value,
+    ).toBe('error')
+    expect(w.findAll('.sf-day')).toHaveLength(7)
   })
 
   it('edit:cron 显示为紧凑摘要，修改弹框确认后回填并随表单提交', async () => {

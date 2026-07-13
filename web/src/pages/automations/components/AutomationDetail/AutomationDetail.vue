@@ -13,14 +13,7 @@
  */
 import { computed } from 'vue'
 import { describeCron } from '@ccc/shared/cron'
-import type {
-  AgentConfig,
-  PrOperation,
-  PrOperationResult,
-  Automation,
-  SessionKind,
-  ToolManifestEntry,
-} from '@ccc/shared/protocol'
+import type { AgentConfig, Automation, SessionKind, ToolManifestEntry } from '@ccc/shared/protocol'
 import { VENDOR_LABEL, VENDOR_COLOR } from '@/lib/vendor'
 import { useTypedI18n } from '@/i18n'
 
@@ -65,58 +58,6 @@ const timeout = computed(() => {
     : `${value} ms`
 })
 
-function eventTopicLabel(topic: Automation['eventTopic']): string {
-  switch (topic) {
-    case 'run:started':
-      return t('automation.form.event.topic.started.label')
-    case 'run:settled':
-      return t('automation.form.event.topic.settled.label')
-    case 'pr:operation':
-      return t('automation.form.event.topic.prOperation.label')
-    default:
-      return '—'
-  }
-}
-
-function reasonLabel(reason: 'complete' | 'error' | 'aborted'): string {
-  switch (reason) {
-    case 'complete':
-      return t('automation.form.event.reason.complete.label')
-    case 'error':
-      return t('automation.form.event.reason.error.label')
-    case 'aborted':
-      return t('automation.form.event.reason.aborted.label')
-  }
-}
-
-function prOperationLabel(operation: PrOperation): string {
-  switch (operation) {
-    case 'create':
-      return t('automation.form.event.pr.op.create.label')
-    case 'review':
-      return t('automation.form.event.pr.op.review.label')
-    case 'merge':
-      return t('automation.form.event.pr.op.merge.label')
-    case 'close':
-      return t('automation.form.event.pr.op.close.label')
-    case 'comment':
-      return t('automation.form.event.pr.op.comment.label')
-    case 'update':
-      return t('automation.form.event.pr.op.update.label')
-  }
-}
-
-function prResultLabel(result: PrOperationResult): string {
-  switch (result) {
-    case 'success':
-      return t('automation.form.event.pr.result.success.label')
-    case 'failure':
-      return t('automation.form.event.pr.result.failure.label')
-    case 'error':
-      return t('automation.form.event.pr.result.error.label')
-  }
-}
-
 function sessionKindLabel(kind: SessionKind): string {
   switch (kind) {
     case 'work':
@@ -136,19 +77,21 @@ function sessionKindLabel(kind: SessionKind): string {
   }
 }
 
-const eventTopic = computed(() => eventTopicLabel(props.automation?.eventTopic ?? null))
-const reasonFilter = computed(() => props.automation?.eventReasonFilter?.map(reasonLabel) ?? [])
+// The event trigger is summarized directly from the generic filter: the raw event
+// `type` string, the raw `statuses` values, and the metadata conditions.
+const eventTypeText = computed(() => props.automation?.eventFilter?.type ?? '—')
+const statusFilterLabels = computed(() => props.automation?.eventFilter?.statuses ?? [])
 const metadataEntries = computed(() => Object.entries(props.automation?.metadata ?? {}))
 const sessionKindFilterLabels = computed(
   () => props.automation?.eventSessionKindFilter?.map(sessionKindLabel) ?? [],
 )
-const isRunLifecycleTopic = computed(
+const isRunLifecycleType = computed(
   () =>
-    props.automation?.eventTopic === 'run:started' ||
-    props.automation?.eventTopic === 'run:settled',
+    props.automation?.eventFilter?.type === 'run:started' ||
+    props.automation?.eventFilter?.type === 'run:settled',
 )
 const metadataConditionText = computed(() => {
-  const filter = props.automation?.eventMetadataFilter
+  const filter = props.automation?.eventFilter?.metadata
   if (!filter?.conditions.length) return ''
   const joiner =
     filter.combinator === 'OR'
@@ -156,12 +99,6 @@ const metadataConditionText = computed(() => {
       : ` ${t('automation.form.event.metadataFilter.and')} `
   return filter.conditions.map((c) => `${c.key}=${c.value}`).join(joiner)
 })
-const prOperationFilter = computed(
-  () => props.automation?.eventPrFilter?.operations?.map(prOperationLabel) ?? [],
-)
-const prResultFilter = computed(
-  () => props.automation?.eventPrFilter?.results?.map(prResultLabel) ?? [],
-)
 
 /** mode → 显示标签。不再走 i18n（mode token 本身已是英文可读值）。 */
 function modeLabel(mode: unknown): string {
@@ -245,54 +182,34 @@ function vendorLabel(vendor: string): string {
 
       <template v-if="automation.triggerType === 'event'">
         <div class="sd-row">
-          <span class="sd-label">{{ t('automation.form.event.topic.label') }}</span>
-          <span class="sd-value">{{ eventTopic }}</span>
+          <span class="sd-label">{{ t('automation.form.event.type.label') }}</span>
+          <span class="sd-value mono">{{ eventTypeText }}</span>
         </div>
-        <div v-if="automation.eventTopic === 'run:settled'" class="sd-row sd-row--content">
-          <span class="sd-label">{{ t('automation.form.event.reason.label') }}</span>
-          <span v-if="reasonFilter.length" class="sd-value">{{ reasonFilter.join(' · ') }}</span>
+        <div class="sd-row sd-row--content">
+          <span class="sd-label">{{ t('automation.form.event.status.label') }}</span>
+          <span v-if="statusFilterLabels.length" class="sd-value mono">{{
+            statusFilterLabels.join(' · ')
+          }}</span>
           <span v-else class="sd-value sd-value--hint">{{
-            t('automation.form.event.reason.hint')
+            t('automation.form.event.status.hint')
           }}</span>
         </div>
-        <template v-if="isRunLifecycleTopic">
-          <div class="sd-row sd-row--content">
-            <span class="sd-label">{{ t('automation.form.event.sessionKind.label') }}</span>
-            <span v-if="sessionKindFilterLabels.length" class="sd-value">{{
-              sessionKindFilterLabels.join(' · ')
-            }}</span>
-            <span v-else class="sd-value sd-value--hint">—</span>
-          </div>
-          <div class="sd-row sd-row--content">
-            <span class="sd-label">{{ t('automation.form.event.metadataFilter.label') }}</span>
-            <span v-if="metadataConditionText" class="sd-value mono">{{
-              metadataConditionText
-            }}</span>
-            <span v-else class="sd-value sd-value--hint">{{
-              t('automation.form.event.metadataFilter.none')
-            }}</span>
-          </div>
-        </template>
-        <template v-if="automation.eventTopic === 'pr:operation'">
-          <div class="sd-row sd-row--content">
-            <span class="sd-label">{{ t('automation.form.event.pr.op.label') }}</span>
-            <span v-if="prOperationFilter.length" class="sd-value">{{
-              prOperationFilter.join(' · ')
-            }}</span>
-            <span v-else class="sd-value sd-value--hint">{{
-              t('automation.form.event.pr.hint')
-            }}</span>
-          </div>
-          <div class="sd-row sd-row--content">
-            <span class="sd-label">{{ t('automation.form.event.pr.result.label') }}</span>
-            <span v-if="prResultFilter.length" class="sd-value">{{
-              prResultFilter.join(' · ')
-            }}</span>
-            <span v-else class="sd-value sd-value--hint">{{
-              t('automation.form.event.pr.hint')
-            }}</span>
-          </div>
-        </template>
+        <div class="sd-row sd-row--content">
+          <span class="sd-label">{{ t('automation.form.event.metadataFilter.label') }}</span>
+          <span v-if="metadataConditionText" class="sd-value mono">{{
+            metadataConditionText
+          }}</span>
+          <span v-else class="sd-value sd-value--hint">{{
+            t('automation.form.event.metadataFilter.none')
+          }}</span>
+        </div>
+        <div v-if="isRunLifecycleType" class="sd-row sd-row--content">
+          <span class="sd-label">{{ t('automation.form.event.sessionKind.label') }}</span>
+          <span v-if="sessionKindFilterLabels.length" class="sd-value">{{
+            sessionKindFilterLabels.join(' · ')
+          }}</span>
+          <span v-else class="sd-value sd-value--hint">—</span>
+        </div>
       </template>
 
       <div v-if="automation.triggerType === 'cron'" class="sd-row sd-row--automation">

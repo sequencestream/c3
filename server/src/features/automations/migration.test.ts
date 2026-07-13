@@ -141,12 +141,10 @@ describe('automation store v5 (event-trigger) migration', () => {
     // Reading the legacy row triggers the migration on this connection.
     const legacy = getAutomation('legacy-cron')
     expect(legacy).not.toBeNull()
-    // A row written before the column existed defaults to a cron trigger.
+    // A row written before the column existed defaults to a cron trigger with no
+    // generic event filter (cron rows never carry one).
     expect(legacy!.triggerType).toBe('cron')
-    expect(legacy!.eventTopic).toBeNull()
-    expect(legacy!.eventReasonFilter).toBeNull()
-    // v8: a legacy row predating event_pr_filter defaults to null (= any PR op).
-    expect(legacy!.eventPrFilter).toBeNull()
+    expect(legacy!.eventFilter).toBeNull()
     expect(legacy!.cronExpression).toBe('0 8 * * *')
     expect(legacy!.maxWallClockMs).toBe(120_000)
 
@@ -168,8 +166,8 @@ describe('automation store v5 (event-trigger) migration', () => {
       workspaceId: '/abs/ws',
       triggerType: 'event',
       cronExpression: '',
-      eventTopic: 'run:settled',
-      eventReasonFilter: ['error'],
+      eventFilter: { type: 'run:settled', statuses: ['error'] },
+      eventSessionKindFilter: ['work'],
       mode: 'sandboxed',
       vendor: 'claude',
     })
@@ -183,12 +181,19 @@ describe('automation store v5 (event-trigger) migration', () => {
       workspaceId: '/abs/ws',
       triggerType: 'event',
       cronExpression: '',
-      eventTopic: 'pr:operation',
-      eventPrFilter: { operations: ['merge'], results: ['success'] },
+      eventFilter: {
+        type: 'pr:operation',
+        statuses: ['success'],
+        metadata: { conditions: [{ key: 'operation', value: 'merge' }], combinator: 'OR' },
+      },
       mode: 'sandboxed',
       vendor: 'claude',
     })
-    expect(pr.eventPrFilter).toEqual({ operations: ['merge'], results: ['success'] })
+    expect(pr.eventFilter).toEqual({
+      type: 'pr:operation',
+      statuses: ['success'],
+      metadata: { conditions: [{ key: 'operation', value: 'merge' }], combinator: 'OR' },
+    })
     expect(getEventAutomations('pr:operation').map((s) => s.id)).toContain(pr.id)
   })
 })
@@ -275,9 +280,10 @@ describe('automation store v11 (metadata + sessionKind/metadata filter) migratio
     expect(evt).not.toBeNull()
     // Behaviour-preserving backfill: exactly the removed hardcoded whitelist.
     expect(evt!.eventSessionKindFilter).toEqual(['work'])
-    // No metadata / metadata filter for a legacy row.
+    // No metadata for a legacy row; the v12 backfill projects the bare topic to a
+    // generic filter carrying only the type (no statuses, no metadata).
     expect(evt!.metadata).toEqual({})
-    expect(evt!.eventMetadataFilter).toBeNull()
+    expect(evt!.eventFilter).toEqual({ type: 'run:settled' })
 
     const cron = getAutomation('legacy-cron2')
     expect(cron!.eventSessionKindFilter).toBeNull()
@@ -287,5 +293,171 @@ describe('automation store v11 (metadata + sessionKind/metadata filter) migratio
     expect(names).toContain('metadata')
     expect(names).toContain('event_session_kind_filter')
     expect(names).toContain('event_metadata_filter')
+  })
+})
+
+/**
+ * v12 (2026-07-13): converge the per-topic event-trigger columns (event_reason_filter
+ * / event_pr_filter / event_intent_filter / event_metadata_filter) into a single
+ * generic `event_filter`. Seed a v11-era table (all legacy filter columns present,
+ * no `event_filter`) and let a store read trigger the backfill; the projected
+ * GenericEventFilter must have the exact same hit set as the retired columns.
+ */
+function seedV11AutomationsTable(d: Db): void {
+  d.exec(`
+    CREATE TABLE automations (
+      id                        TEXT PRIMARY KEY,
+      type                      TEXT NOT NULL,
+      config                    TEXT NOT NULL DEFAULT '{}',
+      max_wall_clock_ms         INTEGER,
+      workspace_path            TEXT NOT NULL,
+      trigger_type              TEXT NOT NULL DEFAULT 'cron',
+      cron_expression           TEXT NOT NULL,
+      next_run_at               INTEGER,
+      event_topic               TEXT,
+      event_reason_filter       TEXT,
+      event_pr_filter           TEXT,
+      event_intent_filter       TEXT,
+      event_session_kind_filter TEXT,
+      event_metadata_filter     TEXT,
+      metadata                  TEXT NOT NULL DEFAULT '{}',
+      status                    TEXT NOT NULL,
+      mode                      TEXT NOT NULL DEFAULT '',
+      tool_allowlist            TEXT NOT NULL DEFAULT '[]',
+      tool_denylist             TEXT NOT NULL DEFAULT '[]',
+      vendor                    TEXT NOT NULL DEFAULT 'claude',
+      agent_id                  TEXT,
+      created_at                INTEGER NOT NULL,
+      updated_at                INTEGER NOT NULL
+    );
+  `)
+  const insert = (row: {
+    id: string
+    topic: string | null
+    reason?: string | null
+    pr?: string | null
+    intent?: string | null
+    meta?: string | null
+    trigger?: string
+  }): void => {
+    d.run(
+      `INSERT INTO automations
+         (id, type, config, workspace_path, trigger_type, cron_expression, next_run_at,
+          event_topic, event_reason_filter, event_pr_filter, event_intent_filter, event_metadata_filter,
+          status, mode, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      row.id,
+      'command',
+      JSON.stringify({ command: 'echo hi', name: row.id }),
+      '/abs/ws',
+      row.trigger ?? 'event',
+      '',
+      null,
+      row.topic,
+      row.reason ?? null,
+      row.pr ?? null,
+      row.intent ?? null,
+      row.meta ?? null,
+      'active',
+      'sandboxed',
+      1,
+      1,
+    )
+  }
+  // run:settled — reason list → statuses; metadata filter → eventFilter.metadata.
+  insert({
+    id: 'mig-settled',
+    topic: 'run:settled',
+    reason: JSON.stringify(['error', 'aborted']),
+    meta: JSON.stringify({ conditions: [{ key: 'stage', value: 'a' }], combinator: 'AND' }),
+  })
+  // run:started — carries no reason → type-only filter.
+  insert({ id: 'mig-started', topic: 'run:started' })
+  // pr:operation — results → statuses; operations → OR metadata conditions on `operation`.
+  insert({
+    id: 'mig-pr',
+    topic: 'pr:operation',
+    pr: JSON.stringify({ operations: ['merge', 'close'], results: ['success'] }),
+  })
+  // intent:lifecycle — phases → statuses.
+  insert({
+    id: 'mig-intent',
+    topic: 'intent:lifecycle',
+    intent: JSON.stringify({ phases: ['done'] }),
+  })
+  // Corrupt reason JSON must not throw and must NOT tighten (that dimension wildcards).
+  insert({ id: 'mig-corrupt', topic: 'run:settled', reason: '{ not json' })
+  d.exec('PRAGMA user_version=11;')
+}
+
+describe('automation store v12 (generic event_filter) migration', () => {
+  it('projects each retired per-topic column to an equivalent GenericEventFilter', () => {
+    const raw = getDb()
+    expect(raw).not.toBeNull()
+    seedV11AutomationsTable(raw!)
+    resetStoreForTests()
+
+    // Reading a row triggers schema init + the v12 backfill on this connection.
+    expect(getAutomation('mig-settled')!.eventFilter).toEqual({
+      type: 'run:settled',
+      statuses: ['error', 'aborted'],
+      metadata: { conditions: [{ key: 'stage', value: 'a' }], combinator: 'AND' },
+    })
+    expect(getAutomation('mig-started')!.eventFilter).toEqual({ type: 'run:started' })
+    expect(getAutomation('mig-pr')!.eventFilter).toEqual({
+      type: 'pr:operation',
+      statuses: ['success'],
+      metadata: {
+        conditions: [
+          { key: 'operation', value: 'merge' },
+          { key: 'operation', value: 'close' },
+        ],
+        combinator: 'OR',
+      },
+    })
+    expect(getAutomation('mig-intent')!.eventFilter).toEqual({
+      type: 'intent:lifecycle',
+      statuses: ['done'],
+    })
+
+    // The retired columns are still present as migration input.
+    const names = raw!.all<{ name: string }>('PRAGMA table_info(automations)').map((c) => c.name)
+    expect(names).toContain('event_filter')
+    expect(names).toContain('event_topic')
+    expect(names).toContain('event_reason_filter')
+  })
+
+  it('does not throw on corrupt legacy JSON and leaves that dimension wildcarded', () => {
+    const raw = getDb()
+    expect(raw).not.toBeNull()
+    seedV11AutomationsTable(raw!)
+    resetStoreForTests()
+
+    // Corrupt event_reason_filter degrades to "any reason": the projected filter
+    // keeps the type but carries no statuses (never tightened to an empty set).
+    expect(() => getAutomation('mig-corrupt')).not.toThrow()
+    expect(getAutomation('mig-corrupt')!.eventFilter).toEqual({ type: 'run:settled' })
+  })
+
+  it('is idempotent: re-running schema init never overwrites an existing event_filter', () => {
+    const raw = getDb()
+    expect(raw).not.toBeNull()
+    seedV11AutomationsTable(raw!)
+    resetStoreForTests()
+
+    const first = getAutomation('mig-pr')!.eventFilter
+    expect(first).not.toBeNull()
+
+    // Mutate a retired column to a DIFFERENT hit set, then force a second schema
+    // init: the backfill only fills rows whose event_filter IS NULL, so the value
+    // written by the first migration is preserved (never re-projected / widened).
+    raw!.run(
+      `UPDATE automations SET event_pr_filter=? WHERE id=?`,
+      JSON.stringify({ operations: ['create'], results: ['failure'] }),
+      'mig-pr',
+    )
+    resetStoreForTests()
+
+    expect(getAutomation('mig-pr')!.eventFilter).toEqual(first)
   })
 })

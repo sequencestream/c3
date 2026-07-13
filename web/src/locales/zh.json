@@ -1529,6 +1529,18 @@
         }
       },
       "event": {
+        "type": {
+          "label": "事件类型",
+          "placeholder": "如 run:settled",
+          "hint": "该自动化订阅的事件类型。已知类型仅作建议——任何已发布的类型都可填写。"
+        },
+        "status": {
+          "label": "仅当状态匹配",
+          "placeholder": "状态值",
+          "add": "添加状态",
+          "remove": "移除",
+          "hint": "留空则任意状态都触发。添加值后须与事件状态完全一致。"
+        },
         "topic": {
           "label": "运行事件",
           "started": {

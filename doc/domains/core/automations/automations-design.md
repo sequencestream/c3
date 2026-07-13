@@ -155,14 +155,17 @@ CREATE INDEX idx_sch_exec_automation ON automation_execution_logs(automation_id)
 ### 事件触发分发(2026-06-08,2026-06-20 扩展)
 
 事件分发路径在组合根中接入内核事件总线,订阅 `run:started` / `run:settled`(运行生命周期)与
-`pr:operation`(模型发布或服务端发布)。每次事件发生时:
+`pr:operation`(模型发布或服务端发布)。各订阅桥把总线事件归一化为通用 `view={workspacePath, event,
+sessionKind?}` 后统一调用分发核 `dispatchEventTriggers(view)`。每次事件发生时:
 
-1. **仅限运行生命周期主题:** 若事件的运行种类不是用户 `session` 运行 → 直接返回
-   (内部通信运行永不触发用户自动化,SCH-R18)。`pr:operation` 不携带运行种类,跳过此道门(SCH-R22)。
-2. 获取订阅了该主题的活跃 `event` 自动化。
-3. 保留工作区匹配的那些(双方都已解析),然后应用主题过滤器:对 `run:settled`,应用事件原因过滤器
-   (null/空 = 任意);对 `pr:operation`,应用 PR 过滤器 — 事件的 `operation` ∈ `eventPrFilter.operations`
-   且 `result` ∈ `eventPrFilter.results`,每个空/null 维度 = 任意(SCH-R22)。
+1. **仅限运行生命周期类型:** 对 `run:started`/`run:settled`,纯匹配器在最前面加一道 sessionKind
+   fail-closed 边界——若事件 `sessionKind` 未落在 `eventSessionKindFilter` 内即不匹配(内部通信运行
+   永不触发用户自动化,SCH-R18)。`pr:operation` / `intent:lifecycle` 不携带 sessionKind,跳过此道门。
+2. `getEventAutomations(event.type)` 按 `eventFilter.type` 取出候选的活跃 `event` 自动化。
+3. 纯匹配器 `genericEventFilterMatches` 按通用语义 workspace → type → status → metadata 逐项判定:
+   `statuses` 缺省/空 = 任意,非空时精确区分大小写地匹配 `event.status`;`metadata` 复用
+   `{conditions,combinator}`。`pr:operation` 的 result 落在 `statuses`、operation 多选落在
+   `metadata.operation` 的 `OR` 条件上(SCH-R22),不再有专属 PR 过滤器投影。
 4. 跳过任何已在途的自动化(SCH-R7 串行执行 = 事件风暴限流)。
 5. 幸存者走与 cron 运行**相同**的分发-追踪 → 执行路径(因此三层 MCP 安全 + 写入审批队列不变地适用)。
    运行后的重新武装会跳过 `event` 自动化的下次运行重新计算(它们没有 cron)。
@@ -171,7 +174,8 @@ CREATE INDEX idx_sch_exec_automation ON automation_execution_logs(automation_id)
 总线 topic 上)的发布点有两个来源:`publish_event` MCP 工具(c3 将其提供给每个工作会话,以便模型在用
 自己的工具执行 PR 操作后发布一个厂商中立的通用事件),以及服务端的 PR 创建路径(dev-cleanup /
 automation / 手动 create_pr),它们会在代表模型成功创建 PR 后构造一个 `create`/`success` 事件。
-Automation 事件桥订阅 `'event'`、判别 `event.type==='pr:operation'` 后投影 operation/result 再匹配。
+Automation 事件桥订阅 `'event'`,把归一化 envelope 直接透传给 `dispatchEventTriggers`(type='pr:operation'、
+status=result、metadata.operation=operation),交由通用匹配器处理,不再单独投影 operation/result。
 见 automations-spec.md § Triggers → PR operation events(SCH-R22 / SCH-R23)。
 
 `pr:operation` 总线事件在 `run-domain-subscriptions.ts` 中还有**第二个、独立的**常驻消费者

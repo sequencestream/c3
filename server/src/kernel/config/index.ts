@@ -535,6 +535,9 @@ function normalizeConsensusConfig(raw: unknown, agents: readonly AgentConfig[]):
  *   The SDD spec root is a FIXED, centralized, non-configurable location
  *   (`~/.c3/specs/<project-path-segment>`, see `features/intents/specs-root.ts`),
  *   so there is no `specPath` config field — any such input is ignored here.
+ * - `automationEnabled` defaults to `true` (only an explicit boolean `false`
+ *   closes the workspace automation gate); the normalized boolean is always
+ *   present so saving other fields never drops the gate.
  */
 export function normalizeWorkspaceSetting(
   raw: unknown,
@@ -560,6 +563,7 @@ export function normalizeWorkspaceSetting(
   const sandbox = normalizeSandboxConfig(rec.sandbox, gitBranchMode, validCustomAgentIds)
   const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
   const sddEnabled = normalizeSddEnabled(rec.sddEnabled)
+  const automationEnabled = normalizeAutomationEnabled(rec.automationEnabled)
   const forge = normalizeWorkspaceForge(rec.forge)
   return {
     forge,
@@ -570,6 +574,7 @@ export function normalizeWorkspaceSetting(
     maxSpeechChars,
     gitBranchMode,
     sddEnabled,
+    automationEnabled,
     ...(defaultMainBranch ? { defaultMainBranch } : {}),
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
@@ -591,6 +596,17 @@ function normalizeWorkspaceForge(raw: unknown): 'auto' | 'github' | 'gitlab' {
  */
 function normalizeSddEnabled(raw: unknown): boolean {
   return raw === true
+}
+
+/**
+ * Normalize the workspace automation gate — enabled by default. Only an explicit
+ * boolean `false` closes the gate; any other value (absent, non-boolean, a legacy
+ * persisted string) normalizes to `true`. This keeps existing workspaces
+ * auto-dispatching after upgrade and treats a corrupted value as "keep running"
+ * rather than silently muting automations.
+ */
+function normalizeAutomationEnabled(raw: unknown): boolean {
+  return raw !== false
 }
 
 /**
@@ -1248,6 +1264,16 @@ export function getDevSkill(workspacePath: string): string {
 /** Whether spec-driven development is enabled for the workspace (default false). */
 export function getSddEnabled(workspacePath: string): boolean {
   return normalizeSddEnabled(loadWorkspaceSetting(workspacePath).sddEnabled)
+}
+
+/**
+ * Whether the workspace-level automation auto-dispatch gate is open (default
+ * `true`). Read by the cron tick loop and the event-trigger dispatcher before
+ * dispatching; a missing/failed config read yields `true` so a transient fault
+ * never silently mutes existing automations.
+ */
+export function getAutomationEnabled(workspacePath: string): boolean {
+  return normalizeAutomationEnabled(loadWorkspaceSetting(workspacePath).automationEnabled)
 }
 
 /**

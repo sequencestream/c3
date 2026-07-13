@@ -6,10 +6,17 @@
  * execution engine (`../automations/engine`), which enforces serial execution per
  * automation (SCH-R7) and publishes run lifecycle events. Event-triggered
  * automations are skipped here — they fire from `../triggers` instead.
+ *
+ * A workspace-level automation gate (`WorkspaceSetting.automationEnabled`) short-
+ * circuits due items before the grace-window check and dispatch: when closed, the
+ * tick re-arms the cron `nextRunAt` from the current time and moves on — no
+ * dispatch, no missed-window log (a deliberate mute is not a system miss), and no
+ * catch-up on re-open.
  */
 
 import type { Automation } from '@ccc/shared/protocol'
-import { getTimezone } from '../../kernel/config/index.js'
+import { getAutomationEnabled, getTimezone } from '../../kernel/config/index.js'
+import { resolveWorkspaceRoot } from '../../state.js'
 import { isAgentQuotaRecoveryAutomation } from '../automations/store.js'
 import { computeNextRunAt, dispatchAndTrack, getStore, inFlight } from '../automations/engine.js'
 
@@ -71,7 +78,35 @@ async function tick(): Promise<void> {
     return
   }
 
+  // Cache the per-workspace gate for this tick so a workspace with many due
+  // automations reads its config once, not once per automation.
+  const gateCache = new Map<string, boolean>()
+  const gateOpen = (workspacePath: string): boolean => {
+    const cached = gateCache.get(workspacePath)
+    if (cached !== undefined) return cached
+    const open = getAutomationEnabled(workspacePath)
+    gateCache.set(workspacePath, open)
+    return open
+  }
+
   for (const automation of due) {
+    // Workspace automation gate: when closed, drop this due window without any
+    // dispatch, missed-window log, or error. Re-arm the cron `nextRunAt` from the
+    // current tick so the same stale instant is not reported next tick and so a
+    // re-open only waits for the next future trigger (no catch-up). A failed
+    // re-arm logs a scheduler diagnostic only — never a business execution log —
+    // and the gate stays short-circuited so a re-arm fault cannot run the task.
+    const workspacePath = resolveWorkspaceRoot(automation.workspaceId)
+    if (workspacePath && !gateOpen(workspacePath)) {
+      try {
+        const next = computeNextRunAt(automation.cronExpression, now, getTimezone())
+        store.updateNextRunAt(automation.id, next)
+      } catch (rearmErr) {
+        console.error('[scheduler] gate-closed re-arm failed for %s:', automation.id, rearmErr)
+      }
+      continue
+    }
+
     // Grace window check
     if (
       automation.nextRunAt !== null &&

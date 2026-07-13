@@ -8,7 +8,7 @@
  * 标题右侧「+」上抛 `new-automation`,由 App 打开创建表单;「⇤/⇥」折叠面板宽度。
  * 首次挂载后每 30s 更新下次执行倒计时。
  */
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import type { Automation } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
@@ -16,9 +16,17 @@ import { AUTOMATION_TEMPLATES } from '../../templates'
 
 const { t } = useTypedI18n()
 
-defineProps<{
+const props = defineProps<{
   automations: Automation[]
   activeId: string | null
+  /**
+   * Workspace-level automation gate. `null` while the workspace setting is still
+   * loading (or right after a workspace switch): the toggle renders disabled and
+   * in its last-known/neutral position until the value resolves.
+   */
+  automationEnabled: boolean | null
+  /** True while a gate save is in flight — the toggle is disabled to avoid a race. */
+  automationEnabledSaving: boolean
 }>()
 
 const emit = defineEmits<{
@@ -27,7 +35,19 @@ const emit = defineEmits<{
   'new-from-template': [templateId: string]
   'open-export': []
   'open-import': []
+  'set-automation-enabled': [enabled: boolean]
 }>()
+
+// The gate is ON unless an explicit `false` has resolved. `null` (loading) shows a
+// disabled toggle in the ON position — the safe default matching the server rule.
+const gateOn = computed(() => props.automationEnabled !== false)
+const gateReady = computed(() => props.automationEnabled !== null)
+const gateDisabled = computed(() => !gateReady.value || props.automationEnabledSaving)
+
+function toggleGate(): void {
+  if (gateDisabled.value) return
+  emit('set-automation-enabled', !gateOn.value)
+}
 
 const templatesOpen = ref(false)
 const moreOpen = ref(false)
@@ -119,6 +139,23 @@ function selectTemplate(templateId: string): void {
         <span class="sched-list-title">{{ t('automation.list.title.label') }}</span>
       </div>
       <div class="sched-head-actions">
+        <button
+          type="button"
+          class="sched-gate"
+          role="switch"
+          :aria-checked="gateOn"
+          :aria-label="t('automation.list.gate.ariaLabel')"
+          :title="
+            gateOn ? t('automation.list.gate.on.tooltip') : t('automation.list.gate.off.tooltip')
+          "
+          :disabled="gateDisabled"
+          @click="toggleGate"
+        >
+          <span class="sched-gate-label">{{ t('automation.list.gate.label') }}</span>
+          <span class="sched-gate-track" :class="{ on: gateOn }">
+            <span class="sched-gate-thumb"></span>
+          </span>
+        </button>
         <div class="sched-template-wrap">
           <button
             type="button"
@@ -174,6 +211,9 @@ function selectTemplate(templateId: string): void {
         </div>
       </div>
     </div>
+    <p v-if="gateReady && !gateOn" class="sched-gate-banner" role="status">
+      {{ t('automation.list.gate.offBanner') }}
+    </p>
     <div class="sched-items">
       <p v-if="automations.length === 0" class="sched-empty">{{ t('automation.list.empty') }}</p>
       <div
@@ -289,6 +329,74 @@ function selectTemplate(templateId: string): void {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+}
+/* Workspace automation gate: an accessible slide switch + label. Kept compact so
+   it stays visible in the 36px header even on narrow screens. */
+.sched-gate {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 6px;
+  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  color: var(--c-text-muted);
+  white-space: nowrap;
+}
+.sched-gate:hover:not(:disabled) {
+  color: var(--c-text);
+  border-color: var(--c-primary);
+}
+.sched-gate:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.sched-gate-label {
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+/* Narrow screens: drop the text label, keep the track (still has aria-label). */
+@media (max-width: 767px) {
+  .sched-gate-label {
+    display: none;
+  }
+}
+.sched-gate-track {
+  position: relative;
+  display: inline-block;
+  width: 30px;
+  height: 16px;
+  flex-shrink: 0;
+  background: var(--c-hover-strong);
+  border-radius: var(--radius-pill);
+  transition: background 0.15s ease;
+}
+.sched-gate-track.on {
+  background: var(--c-success);
+}
+.sched-gate-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.15s ease;
+}
+.sched-gate-track.on .sched-gate-thumb {
+  transform: translateX(14px);
+}
+/* Off-state banner: persistent, obvious reminder that auto-triggering is muted. */
+.sched-gate-banner {
+  flex-shrink: 0;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-caption);
+  color: var(--c-warning);
+  background: rgba(245, 158, 11, 0.12);
+  border-bottom: 1px solid var(--c-border);
 }
 .sched-template-wrap {
   position: relative;

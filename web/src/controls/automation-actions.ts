@@ -36,10 +36,47 @@ export function installAutomationActions(ctx: AppCtx): void {
     ctx.activeTab.value = 'automations'
     automationsProject.value = path
     selectedAutomationId.value = null
+    // Reset the workspace-gate snapshot; the `load_workspace_setting` reply below
+    // reseeds it for THIS workspace, so the toggle never shows a prior workspace's
+    // value while the fresh setting is in flight.
+    ctx.automationWorkspaceSetting.value = null
+    ctx.automationWorkspaceSettingId.value = null
+    ctx.automationEnabledSaving.value = false
+    ctx.automationSettingBeforeSave.value = null
     ctx.persistViewMode()
     send({ type: 'list_automations', workspaceId: path })
+    // Load the workspace setting alongside the list so the automation gate toggle
+    // reflects the persisted `automationEnabled`.
+    send({ type: 'load_workspace_setting', workspaceId: path })
     // Pull settings so the next-run preview uses the configured `timezone`.
     send({ type: 'get_settings' })
+  }
+
+  // Flip the workspace-level automation gate. Saves the full server-echoed snapshot
+  // with only `automationEnabled` replaced (sibling settings preserved), optimistically
+  // flips locally, and lets the server `workspace_setting` echo reconcile the final
+  // value. Guards against a stale/cross-workspace snapshot and a lost connection.
+  ctx.setAutomationEnabled = (enabled: boolean): void => {
+    const path = automationsProject.value
+    const base = ctx.automationWorkspaceSetting.value
+    if (!path || !base || ctx.automationWorkspaceSettingId.value !== path) return
+    if (ctx.automationEnabledSaving.value) return
+    if ((base.automationEnabled ?? true) === enabled) return
+    // Capture the pre-flip snapshot so an error reply can roll the toggle back.
+    ctx.automationSettingBeforeSave.value = base
+    const next = { ...base, automationEnabled: enabled }
+    ctx.automationWorkspaceSetting.value = next
+    ctx.automationEnabledSaving.value = true
+    try {
+      if (!ctx.client) throw new Error('no connection')
+      send({ type: 'save_workspace_setting', workspaceId: path, config: next })
+    } catch {
+      // Lost connection before the send landed — restore and surface the failure.
+      ctx.automationWorkspaceSetting.value = ctx.automationSettingBeforeSave.value
+      ctx.automationSettingBeforeSave.value = null
+      ctx.automationEnabledSaving.value = false
+      ctx.showToast(ctx.t('automation.list.gate.saveFailed'))
+    }
   }
 
   // Click a automation in the list: switch the right panel to its detail + logs.

@@ -431,6 +431,30 @@ export function createState(deps: StateDeps) {
     return selectedAutomationLogs.value.find((l) => l.id === selectedExecutionId.value) ?? null
   })
 
+  // ---- Automations workspace gate (WorkspaceSetting.automationEnabled) ----
+  // A snapshot of the automations workspace's full setting, bound to
+  // `automationsProject`. Held separately from `currentWorkspaceSetting` (the
+  // settings panel's snapshot) and tagged with the workspace it belongs to, so a
+  // late `workspace_setting` reply for a previous workspace never leaks the wrong
+  // gate value into the current view.
+  const automationWorkspaceSetting = ref<WorkspaceSettingType | null>(null)
+  const automationWorkspaceSettingId = ref<string | null>(null)
+  // True while a gate save is awaiting the server echo; disables the toggle so a
+  // double-flip cannot race. The snapshot captured before an optimistic flip, so
+  // a server-side rejection can roll the toggle back to the last confirmed value.
+  const automationEnabledSaving = ref(false)
+  const automationSettingBeforeSave = ref<WorkspaceSettingType | null>(null)
+  // The gate value for the CURRENT automations workspace: available (a boolean)
+  // only when the held snapshot matches `automationsProject`; `null` while loading
+  // or right after a workspace switch (toggle renders disabled until it resolves).
+  const automationEnabled = computed<boolean | null>(() => {
+    const path = automationsProject.value
+    if (!path || automationWorkspaceSettingId.value !== path || !automationWorkspaceSetting.value) {
+      return null
+    }
+    return automationWorkspaceSetting.value.automationEnabled ?? true
+  })
+
   // Automation-form tool manifest: cached per vendor, cleared on form close.
   const automationToolManifest = ref<Record<string, ToolManifestEntry[] | null>>({})
   const automationToolManifestLoading = ref(false)
@@ -719,6 +743,11 @@ export function createState(deps: StateDeps) {
     automationLogs,
     executionTranscripts,
     selectedExecutionId,
+    automationWorkspaceSetting,
+    automationWorkspaceSettingId,
+    automationEnabled,
+    automationEnabledSaving,
+    automationSettingBeforeSave,
     automationToolManifest,
     automationToolManifestLoading,
     automationToolManifestError,

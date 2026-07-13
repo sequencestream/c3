@@ -35,6 +35,13 @@ const props = defineProps<{
   workspacePath: string
   /** System IANA time zone the cron next-run preview is computed in. */
   timezone: string
+  /**
+   * Workspace-level automation gate (`WorkspaceSetting.automationEnabled`) for the
+   * current workspace: `null` while the setting is still loading / after a switch.
+   */
+  automationEnabled: boolean | null
+  /** True while a gate save awaits the server echo — disables the toggle. */
+  automationEnabledSaving: boolean
   /** 当前选中的执行 ID(历史 Tab 选中态) */
   executionId: string | null
   /** 当前选中的执行对象 */
@@ -58,6 +65,7 @@ const emit = defineEmits<{
   'new-from-template': [templateId: string]
   'delete-automation': [id: string]
   'toggle-enabled': [id: string, enabled: boolean]
+  'set-automation-enabled': [enabled: boolean]
   'run-now': [id: string]
   'load-session': [executionId: string]
   'select-execution': [id: string]
@@ -99,11 +107,14 @@ function onImportConfirm(inputs: CreateAutomationInput[]): void {
       <AutomationList
         :automations="automations"
         :active-id="activeId"
+        :automation-enabled="automationEnabled"
+        :automation-enabled-saving="automationEnabledSaving"
         @select="(id: string) => emit('select', id)"
         @new-automation="emit('open-form', null)"
         @new-from-template="(templateId: string) => emit('new-from-template', templateId)"
         @open-export="exportOpen = true"
         @open-import="importOpen = true"
+        @set-automation-enabled="(enabled: boolean) => emit('set-automation-enabled', enabled)"
       />
     </template>
 

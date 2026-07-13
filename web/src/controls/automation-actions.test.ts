@@ -55,6 +55,15 @@ function makeCtx() {
   const selectedExecution = ref<AutomationExecutionLog | null>(null)
   const automationSaving = ref(false)
   const automationsProject = ref<string | null>(null)
+  const automationWorkspaceSetting = ref<import('@ccc/shared/protocol').WorkspaceSetting | null>(
+    null,
+  )
+  const automationWorkspaceSettingId = ref<string | null>(null)
+  const automationEnabledSaving = ref(false)
+  const automationSettingBeforeSave = ref<import('@ccc/shared/protocol').WorkspaceSetting | null>(
+    null,
+  )
+  const persistViewMode = vi.fn()
   const showToast = vi.fn()
   const t = vi.fn((key: string) => key)
   const serverSettings = ref({
@@ -64,8 +73,14 @@ function makeCtx() {
   })
   const ctx = {
     send,
+    client: {} as unknown as AppCtx['client'],
     activeTab,
     automationsProject,
+    automationWorkspaceSetting,
+    automationWorkspaceSettingId,
+    automationEnabledSaving,
+    automationSettingBeforeSave,
+    persistViewMode,
     selectedAutomationId,
     selectedExecutionId,
     selectedAutomation,
@@ -94,6 +109,10 @@ function makeCtx() {
     serverSettings,
     ctx,
     automationsProject,
+    automationWorkspaceSetting,
+    automationWorkspaceSettingId,
+    automationEnabledSaving,
+    automationSettingBeforeSave,
   }
 }
 
@@ -304,5 +323,108 @@ describe('automation save overlay', () => {
     c.ctx.importAutomations([])
     expect(c.send).not.toHaveBeenCalled()
     expect(c.showToast).not.toHaveBeenCalled()
+  })
+})
+
+describe('openAutomations — loads the workspace gate setting', () => {
+  it('sends load_workspace_setting and resets the gate snapshot for the new workspace', () => {
+    const c = makeCtx()
+    c.automationWorkspaceSetting.value = {
+      automationEnabled: false,
+    } as import('@ccc/shared/protocol').WorkspaceSetting
+    c.automationWorkspaceSettingId.value = 'old-ws'
+    c.automationEnabledSaving.value = true
+
+    c.ctx.openAutomations('ws1')
+
+    expect(
+      c.send.mock.calls.some(
+        (call) =>
+          (call[0] as ClientToServer).type === 'load_workspace_setting' &&
+          (call[0] as { workspaceId: string }).workspaceId === 'ws1',
+      ),
+    ).toBe(true)
+    // The prior workspace's snapshot is cleared so the toggle never shows it.
+    expect(c.automationWorkspaceSetting.value).toBeNull()
+    expect(c.automationWorkspaceSettingId.value).toBeNull()
+    expect(c.automationEnabledSaving.value).toBe(false)
+  })
+})
+
+describe('setAutomationEnabled — workspace gate save', () => {
+  function seed(c: ReturnType<typeof makeCtx>, enabled: boolean): void {
+    c.automationsProject.value = 'ws1'
+    c.automationWorkspaceSettingId.value = 'ws1'
+    c.automationWorkspaceSetting.value = {
+      forge: 'auto',
+      devSkill: '/keep-me',
+      automationEnabled: enabled,
+    } as import('@ccc/shared/protocol').WorkspaceSetting
+  }
+
+  it('saves the full snapshot with only automationEnabled replaced, optimistic + saving flag', () => {
+    const c = makeCtx()
+    seed(c, true)
+
+    c.ctx.setAutomationEnabled(false)
+
+    const saveCall = c.send.mock.calls.find(
+      (call) => (call[0] as ClientToServer).type === 'save_workspace_setting',
+    )
+    expect(saveCall).toBeDefined()
+    const payload = saveCall![0] as {
+      workspaceId: string
+      config: import('@ccc/shared/protocol').WorkspaceSetting
+    }
+    expect(payload.workspaceId).toBe('ws1')
+    expect(payload.config.automationEnabled).toBe(false)
+    // Sibling settings are preserved (full snapshot, not a gate-only object).
+    expect(payload.config.devSkill).toBe('/keep-me')
+    // Optimistic local flip + pending-save flag + rollback capture.
+    expect(c.automationWorkspaceSetting.value?.automationEnabled).toBe(false)
+    expect(c.automationEnabledSaving.value).toBe(true)
+    expect(c.automationSettingBeforeSave.value?.automationEnabled).toBe(true)
+  })
+
+  it('ignores a save when the snapshot belongs to a different workspace', () => {
+    const c = makeCtx()
+    seed(c, true)
+    c.automationWorkspaceSettingId.value = 'other-ws' // stale snapshot
+
+    c.ctx.setAutomationEnabled(false)
+
+    expect(
+      c.send.mock.calls.some(
+        (call) => (call[0] as ClientToServer).type === 'save_workspace_setting',
+      ),
+    ).toBe(false)
+  })
+
+  it('is a no-op when the target value equals the current gate', () => {
+    const c = makeCtx()
+    seed(c, true)
+
+    c.ctx.setAutomationEnabled(true)
+
+    expect(
+      c.send.mock.calls.some(
+        (call) => (call[0] as ClientToServer).type === 'save_workspace_setting',
+      ),
+    ).toBe(false)
+    expect(c.automationEnabledSaving.value).toBe(false)
+  })
+
+  it('rolls back and toasts when there is no live connection', () => {
+    const c = makeCtx()
+    seed(c, true)
+    ;(c.ctx as { client: unknown }).client = null
+
+    c.ctx.setAutomationEnabled(false)
+
+    // Restored to the last confirmed value; flag cleared; failure surfaced.
+    expect(c.automationWorkspaceSetting.value?.automationEnabled).toBe(true)
+    expect(c.automationEnabledSaving.value).toBe(false)
+    expect(c.automationSettingBeforeSave.value).toBeNull()
+    expect(c.showToast).toHaveBeenCalledWith('automation.list.gate.saveFailed')
   })
 })

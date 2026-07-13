@@ -179,6 +179,8 @@ export interface AppMethods {
   onSelectExecution(id: string): void
   onAutomationMobileBack(targetKey: string): void
   onToggleAutomationEnabled(id: string, enabled: boolean): void
+  /** Flip the workspace-level automation gate for the current automations workspace. */
+  setAutomationEnabled(enabled: boolean): void
   runNowAutomation(id: string): void
   openAutomationForm(target: Automation | null): void
   createAutomation(input: CreateAutomationInput): void

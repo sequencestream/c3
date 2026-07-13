@@ -869,7 +869,7 @@ describe('AutomationForm.vue — 弹窗宽度 / 工具区高度样式契约', ()
 
   it('工具网格用 auto-fit 折叠空轨道,避免少量工具时的右侧空白', () => {
     expect(ruleBody(componentSrc, '.sf-tools-grid')).toMatch(
-      /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(200px,\s*1fr\)\)/,
+      /grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(240px,\s*1fr\)\)/,
     )
   })
 

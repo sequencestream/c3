@@ -112,7 +112,7 @@ export interface LaunchRunDeps {
    */
   specProfile?: (workspacePath: string) => SpecProfile
   /**
-   * Work-session base MCP profile (`publish_pr_event`), injected at the
+   * Work-session base MCP profile (`publish_event`), injected at the
    * composition root so the kernel launcher never imports `features/` (ADR-0009
    * R1). Consulted ONLY for `rt.sessionKind === 'work'` runs — every new and resumed
    * work session gets the publish tool. Absent ⇒ no work-session MCP (a plain run
@@ -252,7 +252,7 @@ export async function launchRun(
     isIntent && deps.intentProfile ? deps.intentProfile(workspacePath, runId) : undefined
   const resolvedSpecProfile =
     isSpec && deps.specProfile ? deps.specProfile(workspacePath) : undefined
-  // Resolve the work-session base MCP profile once (publish_pr_event), for plain
+  // Resolve the work-session base MCP profile once (publish_event), for plain
   // work sessions only — never for intent/spec runs (those carry their own
   // profiles). Both the claude path and the driver path consume it (2026-06-20).
   const resolvedSessionProfile =
@@ -518,7 +518,7 @@ export async function launchRun(
                 // intent comm agent is excluded (different lifecycle). A work run's
                 // internal instruction (SDD work contract) rides claude's preset
                 // system append here, so it reaches the model without being echoed.
-                // Work sessions also get the base MCP profile (publish_pr_event)
+                // Work sessions also get the base MCP profile (publish_event)
                 // via its in-process binder; the gate stays 'standard' (2026-06-20).
                 {
                   ...(inject?.systemInstruction

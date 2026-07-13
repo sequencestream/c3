@@ -161,7 +161,7 @@ describe('automation c3 MCP — discussion tool wiring', () => {
     configureAutomationMcp({
       broadcastIntents: () => {},
       normalizeEvent: () => ({ ok: false, reason: 'not wired in this test' }),
-      publishPrEvent: () => {},
+      publishEvent: () => {},
       broadcastDiscussions: () => {},
       broadcastDiscussionMessage: () => {},
       startDiscussionRun: (d) => started.push(d),
@@ -185,7 +185,7 @@ describe('automation c3 MCP — discussion tool wiring', () => {
     configureAutomationMcp({
       broadcastIntents: () => {},
       normalizeEvent: () => ({ ok: false, reason: 'not wired in this test' }),
-      publishPrEvent: () => {},
+      publishEvent: () => {},
       broadcastDiscussions: (p) => refreshed.push(p),
       broadcastDiscussionMessage: (_id, m) => messages.push(m.content),
       startDiscussionRun: (d) => started.push(d),

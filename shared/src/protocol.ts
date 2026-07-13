@@ -2304,9 +2304,10 @@ export type RunEndReason = 'complete' | 'error' | 'aborted'
 // A single, vendor-neutral shape a model-published event may take BEFORE it is
 // carried on the bus. The kernel event layer keeps a `type → normalizer`
 // registry; only a registered `type` may publish, and its normalizer performs
-// the field-level redaction/truncation. The PR operation event (below) is the
-// first registered type and is bridged onto the existing `pr:operation` bus
-// topic for backwards compatibility. See `doc/architecture/event-mechanism.md`.
+// the field-level redaction/truncation. The normalized event is wrapped in a
+// {@link GenericEventEnvelope} and carried on the single `'event'` bus topic;
+// consumers discriminate on `event.type`. The PR operation event (below) is the
+// first registered type. See `doc/architecture/event-mechanism.md`.
 
 /**
  * A JSON-compatible value. Excludes functions, class instances, `undefined`,
@@ -2440,10 +2441,10 @@ export function validateGenericEvent(value: unknown): GenericEventValidation {
 //
 // c3 never executes a PR operation. The model uses its OWN tools (gh CLI, a
 // GitHub MCP, …) to create / review / merge / close / comment on a PR, and AFTER
-// the operation completes (or fails) it calls the `publish_pr_event` MCP tool to
-// publish ONE vendor-neutral PR operation event. A automation can subscribe to
-// these events and trigger its existing follow-up action. The contract is NOT
-// bound to GitHub — `repo.provider` keeps room for GitLab and others.
+// the operation completes (or fails) it calls the `publish_event` MCP tool with
+// `type: 'pr:operation'` to publish ONE vendor-neutral PR operation event. A
+// automation can subscribe and trigger its existing follow-up action. The
+// contract is NOT bound to GitHub — `repo.provider` keeps room for GitLab.
 
 /**
  * PR operation kinds a model may report (vendor-neutral). `update` means an
@@ -2489,9 +2490,9 @@ export interface PrEventAssociation {
 
 /**
  * A vendor-neutral PR operation event, published by the model via the
- * `publish_pr_event` MCP tool after it performs a PR operation with its own
- * tools. Doubles as the MCP input shape and the event-bus payload core.
- * `errorSummary` is meaningful only when `result === 'failure'` or
+ * `publish_event` MCP tool (`type: 'pr:operation'`) after it performs a PR
+ * operation with its own tools. Projected off the normalized generic event by the
+ * PR consumers. `errorSummary` is meaningful only when `result === 'failure'` or
  * `result === 'error'` and is safely normalized server-side (never carries
  * tokens or raw CLI output).
  */

@@ -29,9 +29,9 @@
  */
 
 import type {
+  GenericEventEnvelope,
   IntentStatus,
   IntentLifecycleEvent,
-  PrOperationEvent,
   RunEndReason,
   RunKind,
   SessionKind,
@@ -151,15 +151,16 @@ export interface EventBusEvents {
    */
   'intent:lifecycle': { workspacePath: string } & IntentLifecycleEvent
   /**
-   * A model-published, vendor-neutral PR operation event (2026-06-20). Published
-   * by the `publish_pr_event` MCP tool's handler AFTER the model performed a PR
-   * operation with its own tools — c3 never executes the operation itself. The
-   * `workspacePath` + `sessionId` come from the per-run binding closure (the
-   * model cannot forge another workspace), and the rest is the validated,
-   * safely-normalized {@link PrOperationEvent}. Event-triggered automations
-   * subscribed to `'pr:operation'` match it by operation + result.
+   * The single topic for model-publishable events (the `publish_event` MCP tool)
+   * and the server-side PR-create paths. The handler hands the validated,
+   * safely-normalized {@link GenericEvent} inside a {@link GenericEventEnvelope}:
+   * `workspacePath` + `sessionId` come from the per-run binding closure (the model
+   * cannot forge another workspace), and `event` is the normalized generic core.
+   * Consumers discriminate on `event.type` — e.g. `pr:operation`, the first
+   * registered type, is projected by the Automation dispatch bridge and the intent
+   * PR-status reset consumer from `event.metadata.operation` + `event.status`.
    */
-  'pr:operation': { workspacePath: string; sessionId: string } & PrOperationEvent
+  event: GenericEventEnvelope
 }
 
 /** A handler function for a given event topic. May return a Promise (fire-and-forget). */

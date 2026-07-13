@@ -26,7 +26,7 @@ describe('PR status poller automation template', () => {
         'mcp__c3__find_intents',
         'mcp__c3__view_intent',
         'mcp__c3__save_intent_pr_info',
-        'mcp__c3__publish_pr_event',
+        'mcp__c3__publish_event',
       ]),
     )
     expect(PR_STATUS_POLLER_PROMPT).toContain('reviewing')

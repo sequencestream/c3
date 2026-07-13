@@ -151,7 +151,7 @@ describe('freezeTools — c3 in-process MCP tools', () => {
     expect(frozen.writeToolNames.has('mcp__c3__save_intents')).toBe(true)
     expect(frozen.writeToolNames.has('mcp__c3__save_intent_pr_info')).toBe(true)
     expect(frozen.writeToolNames.has('mcp__c3__save_intent_directly')).toBe(true)
-    expect(frozen.writeToolNames.has('mcp__c3__publish_pr_event')).toBe(true)
+    expect(frozen.writeToolNames.has('mcp__c3__publish_event')).toBe(true)
   })
 
   it('includes the four discussion tools with find/view read and start/continue write', () => {

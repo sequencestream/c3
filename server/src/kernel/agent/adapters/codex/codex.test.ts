@@ -445,7 +445,7 @@ describe('mcpServersEnableSaveIntents (intent-run identification)', () => {
     expect(mcpServersEnableSaveIntents({ c3: { type: 'http', url: 'http://x' } })).toBe(true)
   })
 
-  it('is false for the spec find/view-only profile and the work publish_pr_event profile', () => {
+  it('is false for the spec find/view-only profile and the work publish_event profile', () => {
     expect(
       mcpServersEnableSaveIntents({
         c3: { type: 'http', url: 'http://x', enabledTools: ['find_intents', 'view_intent'] },
@@ -453,7 +453,7 @@ describe('mcpServersEnableSaveIntents (intent-run identification)', () => {
     ).toBe(false)
     expect(
       mcpServersEnableSaveIntents({
-        c3: { type: 'http', url: 'http://x', enabledTools: ['publish_pr_event'] },
+        c3: { type: 'http', url: 'http://x', enabledTools: ['publish_event'] },
       }),
     ).toBe(false)
   })
@@ -521,8 +521,8 @@ describe('CodexDriver intent-run code-execution + web-search shutdown', () => {
     expect(calls[0].options).toMatchObject({ webSearchEnabled: false })
   })
 
-  it('does NOT shut down work (publish_pr_event) or spec (find/view) runs — web search stays live', async () => {
-    for (const enabledTools of [['publish_pr_event'], ['find_intents', 'view_intent']]) {
+  it('does NOT shut down work (publish_event) or spec (find/view) runs — web search stays live', async () => {
+    for (const enabledTools of [['publish_event'], ['find_intents', 'view_intent']]) {
       let captured: CodexFactoryOptions | undefined
       const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
       const driver = new CodexDriver((options) => {

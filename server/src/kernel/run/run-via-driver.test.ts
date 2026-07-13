@@ -264,7 +264,7 @@ describe('runViaDriver — codex delivery split (hide-session-system-instruction
   })
 })
 
-describe('runViaDriver — work-session base MCP injection (publish_pr_event, codex)', () => {
+describe('runViaDriver — work-session base MCP injection (publish_event, codex)', () => {
   const sid = 'codex-native-pr'
   const eventBus = { publish: () => {} } as unknown as EventBus<EventBusEvents>
 

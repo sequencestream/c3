@@ -779,7 +779,7 @@ describe('automation controller — branch-mode git alignment', () => {
       sessionExists: vi.fn(() => Promise.resolve(false)),
       isRunning: vi.fn(() => false),
       normalizeEvent: (core) => workflowPrRegistry.normalize(core),
-      publishPrEvent: vi.fn(),
+      publishEvent: vi.fn(),
     }
     return { hooks, runDevTurn }
   }

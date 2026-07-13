@@ -169,7 +169,7 @@ binding.signal)` 阻塞。
 - **接线位置:** `server/src/kernel/agent/adapters/codex/driver.ts` `CodexDriver.start()`
   组装 `codexOptions.config`(`mcp_servers` 合并之后)与 `threadOptions`(`web_search` 下发)处。
 - **意图会话识别:** 不凭"存在 `mcpServers.c3`"判断(会误纳只有 find/view 的 spec profile
-  或只有 `publish_pr_event` 的 work profile), 而是依据某 MCP server 的 `enabledTools` 是否
+  或只有 `publish_event` 的 work profile), 而是依据某 MCP server 的 `enabledTools` 是否
   含 `save_intents`(意图 profile 独有的写能力)。见 `mcpServersEnableSaveIntents()`; 其
   `?? INTENT_MCP_TOOL_NAMES` 回退与 `mcpServersToCodexConfig()` 一致, 使省略 `enabledTools`
   的旧式意图绑定仍被识别。

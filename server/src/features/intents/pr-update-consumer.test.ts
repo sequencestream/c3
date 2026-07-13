@@ -1,18 +1,21 @@
 /**
- * Unit tests for the intent-domain `pr:operation` update consumer
- * (`handlePrUpdateEvent`). Drives the pure handler with injected store/broadcast
- * fakes so the reset logic is verified without a live DB or event bus. Covers:
- * rejected/failed/closed each reset to reviewing (+ log + broadcast); merged and
- * other statuses are not reset; missing intentId, unknown intent, cross-workspace
- * intentId, non-success and non-update events are silently ignored.
+ * Unit tests for the intent-domain PR update consumer (`handlePrUpdateEvent`),
+ * which reads a generic `'event'` envelope. Drives the pure handler with injected
+ * store/broadcast fakes so the reset logic is verified without a live DB or event
+ * bus. Covers: rejected/failed/closed each reset to reviewing (+ log + broadcast);
+ * merged and other statuses are not reset; missing intentId, unknown intent,
+ * cross-workspace intentId, non-success, non-update and non-PR-type events are
+ * silently ignored.
  */
 import { describe, expect, it, vi } from 'vitest'
-import type { IntentPrStatus } from '@ccc/shared/protocol'
-import {
-  handlePrUpdateEvent,
-  type PrOperationBusPayload,
-  type PrUpdateConsumerDeps,
-} from './pr-update-consumer.js'
+import type {
+  GenericEventEnvelope,
+  IntentPrStatus,
+  PrEventAssociation,
+  PrOperation,
+  PrOperationResult,
+} from '@ccc/shared/protocol'
+import { handlePrUpdateEvent, type PrUpdateConsumerDeps } from './pr-update-consumer.js'
 
 type FakeIntent = { id: string; workspaceId: string; prStatus: IntentPrStatus | null }
 
@@ -36,14 +39,27 @@ function makeDeps(intent: FakeIntent | null): {
   return { deps, setPrStatus, safeInsertIntentLog, broadcastIntents }
 }
 
-function payload(over: Partial<PrOperationBusPayload> = {}): PrOperationBusPayload {
+/** Build a generic `'event'` envelope carrying a `pr:operation` core. */
+function payload(
+  over: {
+    operation?: PrOperation
+    result?: PrOperationResult
+    association?: PrEventAssociation
+    type?: string
+  } = {},
+): GenericEventEnvelope {
+  const operation = over.operation ?? 'update'
+  const result = over.result ?? 'success'
+  const association = over.association ?? { intentId: 'intent-1' }
   return {
     workspacePath: '/proj',
     sessionId: 'run-1',
-    operation: 'update',
-    result: 'success',
-    association: { intentId: 'intent-1' },
-    ...over,
+    event: {
+      type: over.type ?? 'pr:operation',
+      status: result,
+      metadata: { operation },
+      ...(Object.keys(association).length ? { data: { association: { ...association } } } : {}),
+    },
   }
 }
 
@@ -149,6 +165,16 @@ describe('handlePrUpdateEvent — ignored cases', () => {
       prStatus: 'rejected',
     })
     expect(handlePrUpdateEvent(payload({ operation: 'review' }), deps)).toBe(false)
+    expect(setPrStatus).not.toHaveBeenCalled()
+  })
+
+  it('ignores a non-pr:operation event type', () => {
+    const { deps, setPrStatus } = makeDeps({
+      id: 'intent-1',
+      workspaceId: WS_ID,
+      prStatus: 'rejected',
+    })
+    expect(handlePrUpdateEvent(payload({ type: 'other:event' }), deps)).toBe(false)
     expect(setPrStatus).not.toHaveBeenCalled()
   })
 

@@ -17,12 +17,12 @@ export const FIND_INTENTS_TOOL = 'mcp__c3__find_intents'
 export const VIEW_INTENT_TOOL = 'mcp__c3__view_intent'
 
 /**
- * The c3 `publish_pr_event` MCP tool's fully-qualified name (server name `c3`).
- * Bound to every work session (2026-06-20). The standard gate auto-allows it with
- * NO human prompt: publishing a vendor-neutral PR operation event is
- * non-destructive (the gated, side-effecting step is the automation it may trigger).
+ * The c3 `publish_event` MCP tool's fully-qualified name (server name `c3`).
+ * Bound to every work session. The standard gate auto-allows it with NO human
+ * prompt: publishing a vendor-neutral generic event is non-destructive (the
+ * gated, side-effecting step is the automation it may trigger).
  */
-export const PUBLISH_PR_EVENT_TOOL = 'mcp__c3__publish_pr_event'
+export const PUBLISH_EVENT_TOOL = 'mcp__c3__publish_event'
 
 /**
  * The read-only c3 MCP query tools the intent agent may call without a

@@ -15,7 +15,7 @@
  * centralized specs root and the project stays outside the writable set.
  */
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { PENDING_SESSION_PREFIX, type Intent } from '@ccc/shared/protocol'
 import { addViewer, ensureRuntime, isRunning, removeViewer } from '../../runs.js'
@@ -32,8 +32,11 @@ import {
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
 import { upsertPendingRow } from '../sessions/session-metadata-store.js'
+import type { SpecLaunchStage } from '@ccc/shared/protocol'
+import type { UiErrorCode } from '@ccc/shared/ui-codes.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
+import { launchSpecSession } from './session-launcher.js'
 import {
   getIntent,
   isStoreAvailable,
@@ -41,9 +44,7 @@ import {
   listIntents,
   safeInsertIntentLog,
   setSpecApproved,
-  setSpecPath,
 } from './store.js'
-import { computeSpecLayout } from './spec-path.js'
 import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 import { findDependencyBlockingMainline } from './dependency-gate.js'
@@ -196,7 +197,27 @@ ${projectBlock}
 The current spec lives at \`${fileAbs}\`. Read it first to see what already exists, then overwrite the same file with the revised spec. When done, briefly summarise what changed.`
 }
 
-export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
+/**
+ * The per-run VISIBLE prompt that continues an EXISTING spec session — no
+ * scaffold, no reset, just a pointer to the existing spec file and a
+ * "continue working" instruction. Pure (no I/O) so the concatenation is
+ * unit-testable.
+ */
+export function buildContinueSpecPrompt(
+  intent: Intent,
+  fileAbs: string,
+  projectRoot?: string,
+): string {
+  const projectBlock = projectRoot ? `Project root: \`${projectRoot}\`\n\n` : ''
+  return `Continue working on the spec document for intent \`${intent.id}\`.
+
+Intent title: ${intent.title}
+
+${projectBlock}
+The current spec lives at \`${fileAbs}\`. Read it first to review what has already been authored, then continue working on the same file. When done, briefly summarise what you changed.`
+}
+
+export const writeSpecHandler: Handler<'write_spec'> = async (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
   if (!proj) {
     conn.send({
@@ -205,80 +226,26 @@ export const writeSpecHandler: Handler<'write_spec'> = (ctx, conn, msg) => {
     })
     return
   }
-  if (!isStoreAvailable()) {
-    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
-    return
-  }
-  const intent = getIntent(msg.intentId)
-  if (!intent) {
-    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
-    return
-  }
-
-  const specAgent = resolveSpecAgent()
-  if (!prepareSpecDependencyContext(proj, intent, ctx, conn)) return
-
-  // Compute the dated layout under the FIXED centralized spec root and scaffold
-  // the directory + seed spec.md. The directory must exist before the agent runs
-  // (its write lands inside it), and a durable seed means spec_path is
-  // backfillable even if the launch fails.
-  const layout = computeSpecLayout({
-    specRoot: getSpecsBase(proj),
-    shortEnTitle: intent.shortEnTitle,
-    intentId: intent.id,
-    now: new Date(),
-    listDay: (dir) => {
-      try {
-        return readdirSync(dir)
-      } catch {
-        return []
-      }
-    },
-  })
-  try {
-    mkdirSync(layout.dirAbs, { recursive: true })
-    writeFileSync(layout.fileAbs, buildSeedSpec(intent, new Date().toISOString()), 'utf8')
-  } catch (err) {
+  const result = await launchSpecSession(
+    proj,
+    msg.intentId,
+    { launchRun: ctx.launchRun, broadcastIntents: ctx.broadcastIntents },
+    (stage) =>
+      conn.send({
+        type: 'spec_launch_progress',
+        intentId: msg.intentId,
+        stage: stage as SpecLaunchStage,
+      }),
+    conn.subject,
+  )
+  if (!result.success) {
     conn.send({
       type: 'error',
-      error: { code: 'intent.specWriteFailed', params: { message: errMsg(err) } },
+      error: {
+        code: result.code as UiErrorCode,
+        ...(result.params ? { params: result.params } : {}),
+      },
     })
-    return
-  }
-
-  // Backfill spec_path immediately and broadcast, so the ledger reflects the spec
-  // even if the session below fails to launch. The stored path is ABSOLUTE (the
-  // spec lives outside the workspace under the centralized root).
-  setSpecPath(intent.id, layout.fileAbs)
-  safeInsertIntentLog(intent.id, 'spec_created', '编写 spec', conn.subject)
-  ctx.broadcastIntents(proj)
-
-  // Launch the write-confined spec session: pin the spec agent, confine writes to
-  // the spec dir, register the pending→real link for the spec_session_id backfill.
-  const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  const rt = ensureRuntime(specId, proj, getDefaultMode(proj), [], 'spec')
-  rt.specDir = layout.dirAbs
-  setSessionAgent(specId, specAgent.id)
-  syncSpecPendingProjection({
-    pendingId: specId,
-    workspacePath: proj,
-    vendor: specAgent.vendor,
-    agentId: specAgent.id,
-    title: intent.title,
-    intentId: intent.id,
-  })
-  registerPendingSpecLink(specId, intent.id)
-  try {
-    void ctx
-      .launchRun(rt, buildSpecInstructPrompt(intent, layout.fileAbs, proj))
-      .catch((err: unknown) => {
-        clearPendingSpecLink(specId)
-        conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage: 'failed' })
-        console.warn(`[c3:intents] write_spec launch failed before bind: ${errMsg(err)}`)
-      })
-  } catch (err) {
-    clearPendingSpecLink(specId)
-    throw err
   }
 }
 

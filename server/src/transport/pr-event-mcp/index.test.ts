@@ -1,10 +1,10 @@
 /**
- * PR-event MCP HTTP route (2026-06-20), the codex twin of the in-process publish
- * tool. Covers:
+ * Event MCP HTTP route, the codex twin of the in-process publish tool. Covers:
  *  - the loopback predicate (non-local peers rejected; defence in depth);
  *  - unknown-token rejection (404) at the route;
- *  - a REAL MCP client over streamable-HTTP listing + calling `publish_pr_event`
- *    (the codex integration path; AC3 codex + vendor-neutral parity with claude).
+ *  - a REAL MCP client over streamable-HTTP listing + calling `publish_event`
+ *    (the codex integration path; AC1/AC2 codex + vendor-neutral parity with
+ *    claude).
  * The publish behavior is injected, so this exercises the transport plumbing
  * end-to-end without codex's binary.
  */
@@ -13,6 +13,7 @@ import { serve, type ServerType } from '@hono/node-server'
 import { Hono } from 'hono'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import type { GenericEventEnvelope } from '@ccc/shared/protocol'
 import {
   createPrEventMcp,
   PR_EVENT_MCP_PATH,
@@ -24,8 +25,9 @@ import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import {
   PR_EVENT_TYPE,
   normalizePrGenericEvent,
-  runPublishPrEvent,
+  projectPrOperationEvent,
 } from '../../features/pr-events/tool-defs.js'
+import { runPublishEvent } from '../../features/events/tool-defs.js'
 
 describe('isLoopback', () => {
   it.each([
@@ -40,21 +42,21 @@ describe('isLoopback', () => {
   })
 })
 
-describe('pr-event MCP HTTP route', () => {
-  const published: unknown[] = []
+describe('event MCP HTTP route', () => {
+  const published: GenericEventEnvelope[] = []
   const registry = new EventNormalizerRegistry()
   registry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
   const tools: PrEventMcpTools = {
     // Use the real core so the route exercises validation + normalization + publish.
     publish: (binding, args) =>
-      runPublishPrEvent(
+      runPublishEvent(
         args,
         (core) => registry.normalize(core),
         (event) =>
           published.push({
             workspacePath: binding.workspacePath,
             sessionId: binding.getRunId(),
-            ...event,
+            event,
           }),
       ),
   }
@@ -93,7 +95,7 @@ describe('pr-event MCP HTTP route', () => {
     expect(res.status).toBe(404)
   })
 
-  it('lists and calls publish_pr_event over a real MCP client', async () => {
+  it('lists and calls publish_event over a real MCP client', async () => {
     const bound = prEventMcp.bind({
       workspacePath: '/proj',
       getRunId: () => 'run-9',
@@ -108,28 +110,33 @@ describe('pr-event MCP HTTP route', () => {
     await client.connect(transport)
     try {
       const list = await client.listTools()
-      expect(list.tools.map((t) => t.name)).toContain('publish_pr_event')
+      expect(list.tools.map((t) => t.name)).toContain('publish_event')
 
       const res = (await client.callTool({
-        name: 'publish_pr_event',
-        arguments: { operation: 'comment', result: 'success', pr: { number: 5 } },
+        name: 'publish_event',
+        arguments: {
+          type: 'pr:operation',
+          status: 'success',
+          metadata: { operation: 'comment' },
+          data: { pr: { number: 5 } },
+        },
       })) as { isError?: boolean }
       expect(res.isError).toBeFalsy()
-      expect(published).toContainEqual(
-        expect.objectContaining({
-          workspacePath: '/proj',
-          sessionId: 'run-9',
-          operation: 'comment',
-          result: 'success',
-        }),
-      )
+      const last = published[published.length - 1]
+      expect(last.workspacePath).toBe('/proj')
+      expect(last.sessionId).toBe('run-9')
+      expect(projectPrOperationEvent(last.event)).toMatchObject({
+        operation: 'comment',
+        result: 'success',
+        pr: { number: 5 },
+      })
     } finally {
       await transport.close()
       bound.dispose()
     }
   })
 
-  it('calls publish_pr_event with error result and intentTitle', async () => {
+  it('calls publish_event with error result and intentTitle', async () => {
     const bound = prEventMcp.bind({
       workspacePath: '/proj',
       getRunId: () => 'run-10',
@@ -141,27 +148,29 @@ describe('pr-event MCP HTTP route', () => {
     await client.connect(transport)
     try {
       const res = (await client.callTool({
-        name: 'publish_pr_event',
+        name: 'publish_event',
         arguments: {
-          operation: 'review',
-          result: 'error',
-          pr: { id: 'pr-xyz' },
-          association: { intentId: 'intent-1', intentTitle: 'Fix login' },
-          errorSummary: 'CI pipeline timed out',
+          type: 'pr:operation',
+          status: 'error',
+          metadata: { operation: 'review' },
+          description: 'CI pipeline timed out',
+          data: {
+            pr: { id: 'pr-xyz' },
+            association: { intentId: 'intent-1', intentTitle: 'Fix login' },
+          },
         },
       })) as { isError?: boolean }
       expect(res.isError).toBeFalsy()
-      expect(published).toContainEqual(
-        expect.objectContaining({
-          workspacePath: '/proj',
-          sessionId: 'run-10',
-          operation: 'review',
-          result: 'error',
-          pr: { id: 'pr-xyz' },
-          association: { intentId: 'intent-1', intentTitle: 'Fix login' },
-          errorSummary: 'CI pipeline timed out',
-        }),
-      )
+      const last = published[published.length - 1]
+      expect(last.workspacePath).toBe('/proj')
+      expect(last.sessionId).toBe('run-10')
+      expect(projectPrOperationEvent(last.event)).toMatchObject({
+        operation: 'review',
+        result: 'error',
+        pr: { id: 'pr-xyz' },
+        association: { intentId: 'intent-1', intentTitle: 'Fix login' },
+        errorSummary: 'CI pipeline timed out',
+      })
     } finally {
       await transport.close()
       bound.dispose()

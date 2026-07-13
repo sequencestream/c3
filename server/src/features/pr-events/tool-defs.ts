@@ -1,26 +1,22 @@
 /**
- * Shared, framing-free definitions for the `publish_pr_event` MCP tool, kept ONE
- * source so the two MCP surfaces that expose it never drift:
- *  - the in-process Claude SDK MCP server (`publish-tool.ts`, `createSdkMcpServer`),
- *  - the localhost HTTP MCP route for driver-path vendors (`transport/pr-event-mcp`,
- *    codex; 2026-06-20).
+ * The `pr:operation` normalizer + the server-side PR-create constructor — the
+ * feature-side pieces that plug into the vendor-neutral `publish_event` pipeline.
  *
- * This module owns the zod input shape (the source of the vendor-neutral
- * {@link PrOperationEvent} contract), the description advertised in the system
- * prompt, the safety normalization (strip tokens / raw CLI output / absolute
- * paths), and the core publish logic. The MCP framing — tool registration, the
- * per-run binding closure that supplies workspacePath + sessionId — lives in each
- * surface.
+ * The model-facing tool surface itself is generic and framing-free (schema +
+ * description + core handler live in `../events/tool-defs.ts`); this module owns
+ * only the FIRST registered `type`: `pr:operation`. It provides the field-level
+ * safety normalization (strip tokens / raw CLI output / absolute paths) registered
+ * against that type, the deterministic consumer-side projection back to a
+ * {@link PrOperationEvent}, and the shared server-side `create/success` constructor.
  *
- * The model uses its OWN tools to create / review / merge / close / comment on
- * a PR — or update it (modify + re-submit / re-open) — and then calls this tool
- * to publish ONE event; a automation may subscribe and trigger its follow-up
- * action. An `update/success` event additionally lets the intent domain reset a
- * rejected/failed/closed PR back to `reviewing`. The server-side PR creation paths
- * (dev-cleanup / automation / manual create_pr) also publish a `create` event
- * after successfully creating a PR on the model's behalf.
+ * The model uses its OWN tools to create / review / merge / close / comment on a
+ * PR — or update it (modify + re-submit / re-open) — and then calls `publish_event`
+ * with `type: 'pr:operation'` to publish ONE generic event; a automation may
+ * subscribe and trigger its follow-up action. An `update/success` event additionally
+ * lets the intent domain reset a rejected/failed/closed PR back to `reviewing`. The
+ * server-side PR creation paths (dev-cleanup / automation / manual create_pr) also
+ * publish a `create` event after successfully creating a PR on the model's behalf.
  */
-import { z } from 'zod'
 import {
   PR_OPERATIONS,
   PR_OPERATION_RESULTS,
@@ -36,91 +32,16 @@ import {
 } from '@ccc/shared/protocol'
 import type { EventNormalizer, NormalizeResult } from '../../kernel/events/generic-event.js'
 
-/** An MCP tool result. Identical shape across the Claude SDK and the MCP SDK. */
-export interface PrEventToolResult {
-  content: Array<{ type: 'text'; text: string }>
-  isError?: boolean
-}
-
-const text = (s: string): PrEventToolResult['content'] => [{ type: 'text' as const, text: s }]
-
-// ---- Zod input shape (raw shape; both `tool()` and `registerTool` accept it) ----
-
-export const publishPrEventSchema = {
-  operation: z
-    .enum(PR_OPERATIONS)
-    .describe(
-      'PR 操作类型:create(创建)/review(评审)/merge(合并)/close(关闭)/comment(评论)/' +
-        'update(已有 PR 被修改后重新提交/重新打开,非创建新 PR)。',
-    ),
-  result: z
-    .enum(PR_OPERATION_RESULTS)
-    .describe('操作结果:success(成功)/failure(失败)/error(异常,如 CI 挂了/工具异常)。'),
-  pr: z
-    .object({
-      number: z.number().int().optional().describe('PR 编号(若平台提供)'),
-      id: z.string().optional().describe('PR 的平台内部 id(若有)'),
-      url: z.string().optional().describe('PR 的网页链接'),
-      title: z.string().optional().describe('PR 标题'),
-      state: z.string().optional().describe('PR 状态(如 open/merged/closed)'),
-    })
-    .optional()
-    .describe('PR 标识(全部可选,供应商中立)'),
-  repo: z
-    .object({
-      provider: z.string().optional().describe("代码托管商,默认 'github',可为 'gitlab' 等"),
-      host: z.string().optional().describe('托管主机名(如 github.com)'),
-      owner: z.string().optional().describe('仓库归属(组织/用户)'),
-      name: z.string().optional().describe('仓库名'),
-    })
-    .optional()
-    .describe('仓库上下文(全部可选,供应商中立)'),
-  ref: z
-    .object({
-      head: z.string().optional().describe('源分支名'),
-      base: z.string().optional().describe('目标分支名'),
-    })
-    .optional()
-    .describe('分支信息'),
-  association: z
-    .object({
-      intentId: z.string().optional().describe('关联的 c3 意图 id,供监听器把事件关联回工作项'),
-      intentTitle: z
-        .string()
-        .optional()
-        .describe('意图名称(自解释),经安全归一后再发布,勿放敏感信息'),
-    })
-    .optional()
-    .describe('关联信息。review 场景请填写 intentId + intentTitle，让事件在通知阶段即可自解释'),
-  errorSummary: z
-    .string()
-    .optional()
-    .describe(
-      '仅 result=failure 或 result=error 时有意义:简短的失败原因摘要(自然语言)。' +
-        '切勿包含令牌、密钥、命令行原始输出或绝对路径——服务端会做安全归一化。',
-    ),
-}
-
-export type PublishPrEventArgs = {
-  operation: PrOperationEvent['operation']
-  result: PrOperationEvent['result']
-  pr?: PrOperationEvent['pr']
-  repo?: PrOperationEvent['repo']
-  ref?: PrOperationEvent['ref']
-  association?: PrOperationEvent['association']
+/** Internal args shape the PR normalizer reconstructs from an untrusted generic core. */
+type PublishPrEventArgs = {
+  operation: PrOperation
+  result: PrOperationResult
+  pr?: PrRef
+  repo?: PrRepo
+  ref?: PrBranchRef
+  association?: PrEventAssociation
   errorSummary?: string
 }
-
-// ---- Description string (advertised in the system prompt) ----
-
-export const publishPrEventDesc =
-  '发布一条供应商中立的「PR 操作事件」。你应先用自己的工具(gh CLI / GitHub MCP 等)完成 ' +
-  'PR 的创建/评审/合并/关闭/评论/修改重提(update),操作完成或失败后调用本工具发布对应事件;' +
-  'c3 本身不执行任何 PR 操作。事件包含 operation、result、pr、repo、ref、association,' +
-  '供订阅了 pr:operation 的 Automation 匹配并触发后续动作。' +
-  'result 是三态:success(成功)/failure(评审判定未通过)/error(执行异常,如 CI 挂了)。' +
-  'review 场景请务必填写 pr.id + association.intentTitle(意图名称),让事件自解释。' +
-  '失败时可在 errorSummary 给出简短原因,勿放令牌/密钥/命令行原始输出/绝对路径(服务端会归一化)。'
 
 // ---- Safety normalization (strip tokens / raw CLI output / absolute paths) ----
 
@@ -243,12 +164,13 @@ export function normalizePrEvent(args: PublishPrEventArgs): PrOperationEvent {
 //
 // The PR event is the first registered generic-event `type`. Its normalizer
 // (`normalizePrGenericEvent`) is the SINGLE field-level normalization used by
-// both the model publish path and the three server-side PR-create paths — the
-// old `normalizePrEvent` bypass no longer runs standalone. `prArgsToGenericEvent`
-// encodes tool args into the untrusted core; `genericEventToPrOperation` is the
-// deterministic reverse adapter the compat bridge uses to recover the current
-// {@link PrOperationEvent} for the `pr:operation` bus topic — it does NOT
-// re-clean (normalization already happened).
+// both the model publish path and the three server-side PR-create paths.
+// `prArgsToGenericEvent` encodes server-side create args into the untrusted core;
+// `projectPrOperationEvent` is the deterministic CONSUMER-side projection that
+// recovers a {@link PrOperationEvent} from a NORMALIZED generic event so the
+// Automation dispatch bridge + intent PR-status reset consumer can read the PR
+// fields — it does NOT re-clean (normalization already happened) and is NOT a
+// publish-path bridge: the bus carries the generic envelope, not a typed payload.
 
 /** The stable discriminant the PR normalizer registers against. */
 export const PR_EVENT_TYPE = 'pr:operation'
@@ -393,16 +315,25 @@ export const normalizePrGenericEvent: EventNormalizer = (core) => {
 }
 
 /**
- * Deterministic reverse adapter: recover a {@link PrOperationEvent} from a
- * NORMALIZED generic PR event. Used by the compat bridge to publish onto the
- * existing `pr:operation` bus topic. It does NOT re-clean — normalization already
- * happened — and preserves the empty-drop + optional-field semantics.
+ * Deterministic CONSUMER-side projection: recover a {@link PrOperationEvent} from a
+ * NORMALIZED generic PR event (`event.type === 'pr:operation'`). Used by the
+ * Automation dispatch bridge and the intent PR-status reset consumer to read the
+ * PR fields off the generic envelope. It does NOT re-clean — normalization already
+ * happened — and preserves the empty-drop + optional-field semantics. Returns
+ * `null` when the projected operation / result are not valid enum members (a
+ * defensive guard; a normalized PR event always satisfies them).
  */
-export function genericEventToPrOperation(event: GenericEvent): PrOperationEvent {
+export function projectPrOperationEvent(event: GenericEvent): PrOperationEvent | null {
+  const operation = event.metadata?.operation
+  const result = event.status
+  if (operation === undefined || !PR_OPERATIONS.includes(operation as PrOperation)) return null
+  if (result === undefined || !PR_OPERATION_RESULTS.includes(result as PrOperationResult)) {
+    return null
+  }
   const data = event.data ?? {}
   const out: PrOperationEvent = {
-    operation: event.metadata?.operation as PrOperation,
-    result: event.status as PrOperationResult,
+    operation: operation as PrOperation,
+    result: result as PrOperationResult,
   }
   const pr = readPr(data.pr)
   if (pr) out.pr = pr
@@ -433,13 +364,13 @@ export interface ServerSidePrCreateInput {
  * this single entry so their mapping never drifts, and — like the model path —
  * they route through the SAME generic pipeline: `normalize` runs the registered
  * PR normalizer (a missing registration is a publish failure, NOT a bypass), and
- * `publish` receives the recovered {@link PrOperationEvent} to wrap with the
- * bus envelope. Returns the {@link NormalizeResult} for optional logging.
+ * `publish` receives the NORMALIZED {@link GenericEvent} to wrap with the bus
+ * envelope. Returns the {@link NormalizeResult} for optional logging.
  */
 export function runServerSidePrCreate(
   input: ServerSidePrCreateInput,
   normalize: (core: GenericEvent) => NormalizeResult,
-  publish: (event: PrOperationEvent) => void,
+  publish: (event: GenericEvent) => void,
 ): NormalizeResult {
   const args: PublishPrEventArgs = {
     operation: 'create',
@@ -449,37 +380,6 @@ export function runServerSidePrCreate(
     association: { intentId: input.intentId },
   }
   const res = normalize(prArgsToGenericEvent(args))
-  if (res.ok) publish(genericEventToPrOperation(res.event))
+  if (res.ok) publish(res.event)
   return res
-}
-
-/**
- * Validate + normalize the args through the generic pipeline and publish the
- * recovered event via the injected `publish` sink (bound to the run's workspace +
- * session at the composition root). `normalize` runs the registered PR normalizer:
- * an unknown type / registration gap / normalizer rejection returns an `isError`
- * result and publishes NOTHING. Defensive enum re-validation keeps a malformed
- * call from even reaching the registry if a surface ever skips the zod gate.
- */
-export function runPublishPrEvent(
-  args: PublishPrEventArgs,
-  normalize: (core: GenericEvent) => NormalizeResult,
-  publish: (event: PrOperationEvent) => void,
-): PrEventToolResult {
-  if (!PR_OPERATIONS.includes(args.operation)) {
-    return { content: text(`非法 operation:${String(args.operation)}`), isError: true }
-  }
-  if (!PR_OPERATION_RESULTS.includes(args.result)) {
-    return { content: text(`非法 result:${String(args.result)}`), isError: true }
-  }
-  const res = normalize(prArgsToGenericEvent(args))
-  if (!res.ok) {
-    return { content: text(`PR 事件发布失败:${res.reason}`), isError: true }
-  }
-  try {
-    publish(genericEventToPrOperation(res.event))
-  } catch (err) {
-    return { content: text(`PR 事件发布失败:${String(err)}`), isError: true }
-  }
-  return { content: text(`已发布 PR 操作事件:${args.operation}/${args.result}`) }
 }

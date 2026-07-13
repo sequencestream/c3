@@ -56,7 +56,11 @@
 import type { Broadcaster } from '../transport/broadcaster.js'
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import type { NormalizeResult } from '../kernel/events/generic-event.js'
-import type { GenericEvent, IntentDevSessionExitCode, PrOperationEvent } from '@ccc/shared/protocol'
+import type {
+  GenericEvent,
+  GenericEventEnvelope,
+  IntentDevSessionExitCode,
+} from '@ccc/shared/protocol'
 import { getRuntime } from '../runs.js'
 import { pathToId, setSessionMode } from '../state.js'
 import {
@@ -137,8 +141,8 @@ export interface DomainSubDeps {
   broadcastWaitUserEvents: (workspacePath: string) => void
   /** Normalize an untrusted event core through the kernel normalizer registry. */
   normalizeEvent: (core: GenericEvent) => NormalizeResult
-  /** Publish a normalized PR operation event onto the kernel event bus. */
-  publishPrEvent: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
+  /** Publish a normalized generic event (envelope) onto the kernel event bus. */
+  publishEvent: (payload: GenericEventEnvelope) => void
 }
 
 /**
@@ -159,7 +163,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastAutomations,
     broadcastWaitUserEvents,
     normalizeEvent,
-    publishPrEvent,
+    publishEvent,
   } = deps
 
   // Manual Start-Work session-end Git/PR cleanup deps (MSC-R1…R6). Stateless
@@ -201,7 +205,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastIntents,
     broadcastWaitUserEvents,
     normalizeEvent,
-    publishPrEvent,
+    publishEvent,
   }
 
   // ── run:bound ────────────────────────────────────────────────────────
@@ -427,14 +431,16 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastWaitUserEvents(workspacePath)
   })
 
-  // ── pr:operation (update/success) — intent PR-status reset ────────────────
+  // ── event (pr:operation update/success) — intent PR-status reset ──────────
   // Resident intent-domain consumer, registered alongside the run-lifecycle
   // subscriptions and INDEPENDENT of the Automation dispatch bridge in
-  // `scheduler-startup.ts`. When the model publishes `update/success` for an
-  // intent whose PR was rejected/failed/closed, reset it back to `reviewing`,
-  // log `pr_updated`, and broadcast. All other cases are silently ignored.
-  eventBus.subscribe('pr:operation', (payload) => {
-    handlePrUpdateEvent(payload, {
+  // `scheduler-startup.ts`. It subscribes to the single generic `'event'` topic;
+  // `handlePrUpdateEvent` discriminates `pr:operation` and projects the fields.
+  // When the model publishes `update/success` for an intent whose PR was
+  // rejected/failed/closed, reset it back to `reviewing`, log `pr_updated`, and
+  // broadcast. All other cases (non-PR type included) are silently ignored.
+  eventBus.subscribe('event', (envelope) => {
+    handlePrUpdateEvent(envelope, {
       getIntent,
       pathToId,
       setPrStatus,

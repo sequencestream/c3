@@ -31,10 +31,10 @@
  */
 import type {
   GenericEvent,
+  GenericEventEnvelope,
   GitBranchMode,
   Intent,
   IntentPrStatus,
-  PrOperationEvent,
 } from '@ccc/shared/protocol'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
@@ -87,8 +87,8 @@ export interface DevCleanupDeps {
   broadcastWaitUserEvents: (workspacePath: string) => void
   /** Normalize an untrusted event core through the kernel normalizer registry. */
   normalizeEvent: (core: GenericEvent) => NormalizeResult
-  /** Publish a normalized PR operation event onto the kernel event bus. */
-  publishPrEvent: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
+  /** Publish a normalized generic event (envelope) onto the kernel event bus. */
+  publishEvent: (payload: GenericEventEnvelope) => void
 }
 
 /** Normalize a branch ref so `origin/main` / `refs/heads/main` / `main` compare equal. */
@@ -221,7 +221,7 @@ export async function runManualDevCleanup(
       intentId,
     },
     deps.normalizeEvent,
-    (event) => deps.publishPrEvent({ workspacePath, sessionId: effectiveSessionId, ...event }),
+    (event) => deps.publishEvent({ workspacePath, sessionId: effectiveSessionId, event }),
   )
 
   return { kind: 'success', createdPr: true }

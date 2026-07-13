@@ -3,6 +3,8 @@
 - **Status:** accepted
 - **Date:** 2026-07-13
 
+> **后续演进（2026-07-13）**：本 ADR 当时把「统一模型工具 `publish_event`」记为**后续可复用目标**、明确不在本 ADR 范围（见下方 Scope 表）。该后续目标随后已落地:`publish_pr_event` 被**替换**为单一通用 `publish_event`(入参即 `GenericEvent`),归一化后以 `GenericEventEnvelope` 落到单一 `'event'` 总线 topic,PR 消费者按 `event.type` 判别投影。因此本 ADR 正文中描述 `publish_pr_event` 窄工具与 `pr:operation` 总线 topic 的段落是**决策时的历史语境**;当前状态见 `event-mechanism.md §6`。
+
 ## Context
 
 事件总线（ADR-0018）天然多类型、可自由扩 topic。真正被**有意收敛**的是「模型对外发布」这一层：ADR-0018 之后加的 `publish_pr_event` 工具，字段级强类型 + 字段级安全归一化（脱敏、剥绝对路径、折叠空白、截断）+ per-run 信封不可伪造，是这层的核心安全资产。

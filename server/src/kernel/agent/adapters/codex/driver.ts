@@ -425,7 +425,7 @@ export function mcpServersToCodexConfig(
  * Does an attached MCP set expose `save_intents`? That tool is the intent
  * comm-agent's write capability and is unique to the intent profile — the spec
  * profile carries only `find_intents`/`view_intent`, the work profile only
- * `publish_pr_event`. So a run whose MCP `enabledTools` includes `save_intents`
+ * `publish_event`. So a run whose MCP `enabledTools` includes `save_intents`
  * IS an intent-communication run, and only those runs get the code-execution /
  * web-search shutdown (see {@link CodexDriver.start}). The `?? INTENT_MCP_TOOL_NAMES`
  * fallback mirrors {@link mcpServersToCodexConfig}: a descriptor that omits

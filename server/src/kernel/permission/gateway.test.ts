@@ -85,13 +85,13 @@ describe('intent gate — read-only, deny-by-default', () => {
   })
 })
 
-describe('publish_pr_event — auto-allowed with no prompt (2026-06-20)', () => {
+describe('publish_event — auto-allowed with no prompt', () => {
   it('auto-allows in the standard gate and emits NO permission_request', async () => {
     const sent: ServerToClient[] = []
     const gate = createCanUseTool(spec({ gate: 'standard', send: (m) => sent.push(m) }))
     const out = await gate(
-      'mcp__c3__publish_pr_event',
-      { operation: 'merge', result: 'success' },
+      'mcp__c3__publish_event',
+      { type: 'pr:operation', status: 'success', metadata: { operation: 'merge' } },
       {} as never,
     )
     expect(out).toMatchObject({ behavior: 'allow' })

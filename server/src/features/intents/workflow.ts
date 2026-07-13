@@ -35,7 +35,7 @@ import type {
   WorkflowStatus,
   Intent,
   GenericEvent,
-  PrOperationEvent,
+  GenericEventEnvelope,
   RunEndReason,
   ServerToClient,
 } from '@ccc/shared/protocol'
@@ -121,8 +121,8 @@ export interface WorkflowHooks {
   isRunning(sessionId: string): boolean
   /** Normalize an untrusted event core through the kernel normalizer registry. */
   normalizeEvent: (core: GenericEvent) => NormalizeResult
-  /** Publish a normalized PR operation event onto the kernel event bus. */
-  publishPrEvent: (payload: { workspacePath: string; sessionId: string } & PrOperationEvent) => void
+  /** Publish a normalized generic event (envelope) onto the kernel event bus. */
+  publishEvent: (payload: GenericEventEnvelope) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -914,10 +914,10 @@ class WorkflowController {
         },
         this.hooks.normalizeEvent,
         (event) =>
-          this.hooks.publishPrEvent({
+          this.hooks.publishEvent({
             workspacePath: this.workspacePath,
             sessionId: effectiveSessionId,
-            ...event,
+            event,
           }),
       )
     } else if (prResult) {

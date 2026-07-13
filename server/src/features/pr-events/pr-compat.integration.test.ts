@@ -1,57 +1,63 @@
 /**
- * PR compatibility integration test (AC: existing `pr:operation` consumer sees an
- * unchanged contract). Both publish paths — the model's `publish_pr_event` tool
- * (Claude in-process surface) and the server-side PR-create builder — route
- * through the SAME generic pipeline (kernel normalizer registry → compat bridge →
- * `pr:operation` bus topic). We assert:
- *  - a real `pr:operation` subscriber receives EXACTLY ONE payload per business
- *    publish, equivalent to the pre-existing `{ workspacePath, sessionId } &
- *    PrOperationEvent` contract;
+ * PR event integration test (AC: model tool + server-side create share the single
+ * generic publish link, and the two PR consumers both read the same envelope).
+ * Both publish paths — the model's `publish_event` tool (Claude in-process surface)
+ * and the server-side PR-create builder — route through the SAME generic pipeline
+ * (kernel normalizer registry → normalized `GenericEvent` → single `'event'` bus
+ * topic). We assert:
+ *  - a real `'event'` subscriber receives EXACTLY ONE envelope per business
+ *    publish, projecting to the pre-existing `PrOperationEvent` fields;
  *  - the envelope carries the CLOSURE's workspace + the LIVE session id;
  *  - forged same-name data (`workspacePath` / `sessionId` in `data`) cannot
- *    override the envelope.
+ *    override the envelope;
+ *  - two independent subscribers both react to the same envelope and one throwing
+ *    does not block the other (bus error isolation).
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
-import type { GenericEvent, PrOperationEvent } from '@ccc/shared/protocol'
+import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared/protocol'
 import { EventBus } from '../../kernel/events/event-bus.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
-import { createPrEventMcpServer } from './publish-tool.js'
-import { PR_EVENT_TYPE, normalizePrGenericEvent, runServerSidePrCreate } from './tool-defs.js'
+import { createPublishEventMcpServer } from './publish-tool.js'
+import {
+  PR_EVENT_TYPE,
+  normalizePrGenericEvent,
+  projectPrOperationEvent,
+  runServerSidePrCreate,
+} from './tool-defs.js'
 
-type BusPayload = { workspacePath: string; sessionId: string } & PrOperationEvent
 type Handler = (args: unknown, extra: unknown) => Promise<{ isError?: boolean }>
 
 function getHandler(servers: Record<string, McpServerConfig>): Handler {
   const c3 = servers.c3 as unknown as {
     instance: { _registeredTools: Record<string, { handler: Handler }> }
   }
-  return c3.instance._registeredTools.publish_pr_event.handler
+  return c3.instance._registeredTools.publish_event.handler
 }
 
 /** Assemble the composition-root pipeline exactly as `server.ts` does. */
 function wire() {
   const eventBus = new EventBus()
-  const received: BusPayload[] = []
+  const received: GenericEventEnvelope[] = []
   // A stand-in for the Automation event bridge + intent PR-status reset consumers.
-  eventBus.subscribe('pr:operation', (p) => {
-    received.push(p as BusPayload)
+  eventBus.subscribe('event', (p) => {
+    received.push(p)
   })
 
   const registry = new EventNormalizerRegistry()
   registry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
   const normalizeEvent = (core: GenericEvent) => registry.normalize(core)
-  const publishPrEvent = (payload: BusPayload) => eventBus.publish('pr:operation', payload)
-  return { received, normalizeEvent, publishPrEvent }
+  const publishEvent = (payload: GenericEventEnvelope) => eventBus.publish('event', payload)
+  return { eventBus, received, normalizeEvent, publishEvent }
 }
 
-describe('PR compat integration — model tool + server-side create share the generic link', () => {
-  it('model publish_pr_event delivers ONE envelope with closure workspace + live session', async () => {
-    const { received, normalizeEvent, publishPrEvent } = wire()
+describe('PR event integration — model tool + server-side create share the generic link', () => {
+  it('model publish_event delivers ONE envelope with closure workspace + live session', async () => {
+    const { received, normalizeEvent, publishEvent } = wire()
     let liveRunId = 'pending-1'
-    const servers = createPrEventMcpServer(
+    const servers = createPublishEventMcpServer(
       { workspacePath: '/proj', getRunId: () => liveRunId, signal: new AbortController().signal },
-      { normalize: normalizeEvent, publish: publishPrEvent },
+      { normalize: normalizeEvent, publish: publishEvent },
     )
     const handler = getHandler(servers)
 
@@ -59,19 +65,20 @@ describe('PR compat integration — model tool + server-side create share the ge
     liveRunId = 'real-7'
     const r = await handler(
       {
-        operation: 'review',
-        result: 'success',
-        pr: { number: 5 },
-        association: { intentId: 'I1' },
+        type: 'pr:operation',
+        status: 'success',
+        metadata: { operation: 'review' },
+        data: { pr: { number: 5 }, association: { intentId: 'I1' } },
       },
       {},
     )
 
     expect(r.isError).toBeUndefined()
     expect(received).toHaveLength(1)
-    expect(received[0]).toEqual({
-      workspacePath: '/proj',
-      sessionId: 'real-7',
+    expect(received[0].workspacePath).toBe('/proj')
+    expect(received[0].sessionId).toBe('real-7')
+    expect(received[0].event.type).toBe(PR_EVENT_TYPE)
+    expect(projectPrOperationEvent(received[0].event)).toEqual({
       operation: 'review',
       result: 'success',
       pr: { number: 5 },
@@ -80,22 +87,26 @@ describe('PR compat integration — model tool + server-side create share the ge
   })
 
   it('forged workspacePath / sessionId in the model payload cannot override the envelope', async () => {
-    const { received, normalizeEvent, publishPrEvent } = wire()
-    const servers = createPrEventMcpServer(
+    const { received, normalizeEvent, publishEvent } = wire()
+    const servers = createPublishEventMcpServer(
       { workspacePath: '/proj', getRunId: () => 'real-9', signal: new AbortController().signal },
-      { normalize: normalizeEvent, publish: publishPrEvent },
+      { normalize: normalizeEvent, publish: publishEvent },
     )
     const handler = getHandler(servers)
 
-    // The model tool schema has no workspace/session fields; a hostile client
-    // could still smuggle same-name keys into pr/association/etc. — they are
-    // ignored by the normalizer's field readers and never reach the envelope.
+    // The workspace/session live on the envelope wrapper; same-name keys smuggled
+    // into `data` are ignored by the normalizer's field readers and never surface.
     await handler(
       {
-        operation: 'merge',
-        result: 'success',
-        pr: { number: 1, workspacePath: '/evil' },
-        association: { intentId: 'I2', sessionId: 'evil-session' },
+        type: 'pr:operation',
+        status: 'success',
+        metadata: { operation: 'merge' },
+        data: {
+          workspacePath: '/evil',
+          sessionId: 'evil-session',
+          pr: { number: 1 },
+          association: { intentId: 'I2' },
+        },
       },
       {},
     )
@@ -106,8 +117,8 @@ describe('PR compat integration — model tool + server-side create share the ge
     expect(JSON.stringify(received[0])).not.toContain('evil')
   })
 
-  it('server-side PR create builder delivers ONE equivalent payload through the same link', () => {
-    const { received, normalizeEvent, publishPrEvent } = wire()
+  it('server-side PR create builder delivers ONE equivalent envelope through the same link', () => {
+    const { received, normalizeEvent, publishEvent } = wire()
     runServerSidePrCreate(
       {
         prId: 'pr-42',
@@ -117,13 +128,13 @@ describe('PR compat integration — model tool + server-side create share the ge
         intentId: 'I3',
       },
       normalizeEvent,
-      (event) => publishPrEvent({ workspacePath: '/proj', sessionId: 'sess-3', ...event }),
+      (event) => publishEvent({ workspacePath: '/proj', sessionId: 'sess-3', event }),
     )
 
     expect(received).toHaveLength(1)
-    expect(received[0]).toEqual({
-      workspacePath: '/proj',
-      sessionId: 'sess-3',
+    expect(received[0].workspacePath).toBe('/proj')
+    expect(received[0].sessionId).toBe('sess-3')
+    expect(projectPrOperationEvent(received[0].event)).toEqual({
       operation: 'create',
       result: 'success',
       pr: { url: 'https://h/pull/42' },
@@ -132,18 +143,38 @@ describe('PR compat integration — model tool + server-side create share the ge
     })
   })
 
+  it('two subscribers both react to one envelope; one throwing does not block the other', () => {
+    const { eventBus, received, normalizeEvent, publishEvent } = wire()
+    const other = vi.fn(() => {
+      throw new Error('consumer A exploded')
+    })
+    const stable = vi.fn()
+    // Register a throwing consumer BEFORE a stable one; the bus isolates the throw.
+    eventBus.subscribe('event', other)
+    eventBus.subscribe('event', stable)
+
+    runServerSidePrCreate(
+      { prId: 'pr-1', prUrl: null, headBranch: 'h', baseBranch: undefined, intentId: 'I5' },
+      normalizeEvent,
+      (event) => publishEvent({ workspacePath: '/proj', sessionId: 's', event }),
+    )
+
+    expect(received).toHaveLength(1)
+    expect(other).toHaveBeenCalledTimes(1)
+    expect(stable).toHaveBeenCalledTimes(1)
+  })
+
   it('publishes NOTHING when the PR type is not registered (no old normalizePrEvent bypass)', () => {
     const eventBus = new EventBus()
-    const received: BusPayload[] = []
-    eventBus.subscribe('pr:operation', (p) => {
-      received.push(p as BusPayload)
+    const received: GenericEventEnvelope[] = []
+    eventBus.subscribe('event', (p) => {
+      received.push(p)
     })
     const emptyRegistry = new EventNormalizerRegistry()
     const res = runServerSidePrCreate(
       { prId: 'pr-1', prUrl: null, headBranch: 'h', baseBranch: undefined, intentId: 'I4' },
       (core) => emptyRegistry.normalize(core),
-      (event) =>
-        eventBus.publish('pr:operation', { workspacePath: '/proj', sessionId: 's', ...event }),
+      (event) => eventBus.publish('event', { workspacePath: '/proj', sessionId: 's', event }),
     )
     expect(res.ok).toBe(false)
     expect(received).toHaveLength(0)

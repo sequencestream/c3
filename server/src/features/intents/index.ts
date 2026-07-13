@@ -1191,10 +1191,10 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
         },
         ctx.normalizeEvent,
         (event) =>
-          ctx.eventBus.publish('pr:operation', {
+          ctx.eventBus.publish('event', {
             workspacePath: proj,
             sessionId: msg.intentId,
-            ...event,
+            event,
           }),
       )
     } else {

@@ -2,7 +2,7 @@
  * `createPrHandler` gate — manual PR creation drops the `done` requirement and
  * instead demands worktree mode + a branch + committable changes. Covers the
  * success path (commit/push in the intent worktree, then create the PR, write the
- * three PR fields, broadcast, log `pr_created`, publish one `pr:operation`
+ * three PR fields, broadcast, log `pr_created`, publish one 'event' (pr:operation)
  * create/success event) and every rejection branch (existing PR, current-branch,
  * blank branch, no changes, commit/push failure, PR-create failure) — asserting
  * each short-circuits with no PR fields, no success log, and no success event.
@@ -172,7 +172,7 @@ describe('createPrHandler — worktree gate success paths', () => {
 
       expect(logsOf(r.id, 'pr_created')).toMatchObject([{ summary: '创建 PR #42', actor: 'erin' }])
       expect(broadcast).toHaveBeenCalled()
-      const prEvents = publish.mock.calls.filter((c) => c[0] === 'pr:operation')
+      const prEvents = publish.mock.calls.filter((c) => c[0] === 'event')
       expect(prEvents).toHaveLength(1)
     })
   }
@@ -184,7 +184,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     expect(after.prId).toBeNull()
     expect(after.prStatus).toBeNull()
     expect(logsOf(intentId, 'pr_created')).toHaveLength(0)
-    expect(publish.mock.calls.filter((c) => c[0] === 'pr:operation')).toHaveLength(0)
+    expect(publish.mock.calls.filter((c) => c[0] === 'event')).toHaveLength(0)
   }
 
   it('rejects an intent that already has a PR without touching Git', async () => {
@@ -201,7 +201,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     expect(createGhPr).not.toHaveBeenCalled()
     // The pre-existing PR fields are left intact; no new create log or event.
     expect(logsOf(r.id, 'pr_created')).toHaveLength(0)
-    expect(publish.mock.calls.filter((c) => c[0] === 'pr:operation')).toHaveLength(0)
+    expect(publish.mock.calls.filter((c) => c[0] === 'event')).toHaveLength(0)
   })
 
   it('rejects current-branch mode with prCreateNotWorktree', async () => {

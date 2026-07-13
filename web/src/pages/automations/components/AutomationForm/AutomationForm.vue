@@ -1800,7 +1800,7 @@ function save(): void {
    自然多列换行，高度只随实际行数增长。 */
 .sf-tools-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--sp-1);
 }
 .sf-tool-item {

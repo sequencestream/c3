@@ -10,7 +10,7 @@
  * `run:settled` to broadcast the refreshed automation list.
  */
 
-import type { Automation, RunEndReason, ScheduleEventTopic } from '@ccc/shared/protocol'
+import type { Automation, RunEndReason } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { computeNextRunAt } from '@ccc/shared/cron'
 import type { EventBus, EventBusEvents } from '../../kernel/events/event-bus.js'
@@ -22,7 +22,8 @@ export { computeNextRunAt }
 
 export type ExecutionStore = {
   getDueAutomations: (now: number) => Automation[]
-  getEventAutomations: (topic: ScheduleEventTopic) => Automation[]
+  /** Active event-trigger automations whose `eventFilter.type` equals the given type. */
+  getEventAutomations: (type: string) => Automation[]
   getAutomation: (id: string) => Automation | null
   updateNextRunAt: (id: string, nextRunAt: number | null) => void
   updateAutomation: (id: string, patch: { status?: string }) => void

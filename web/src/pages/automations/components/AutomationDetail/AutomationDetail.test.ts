@@ -14,9 +14,7 @@ function sched(over: Partial<Automation> = {}): Automation {
     triggerType: 'cron',
     cronExpression: '0 8 * * *',
     nextRunAt: null,
-    eventTopic: null,
-    eventReasonFilter: null,
-    eventPrFilter: null,
+    eventFilter: null,
     status: 'active',
     mode: 'sandboxed',
     toolAllowlist: [],
@@ -124,32 +122,43 @@ describe('AutomationDetail.vue — 右栏 automation 详情', () => {
     expect(w.find('.sd-row--automation').exists()).toBe(false)
   })
 
-  it('事件触发展示主题及运行结果筛选', () => {
+  it('事件触发展示通用事件类型及状态筛选', () => {
     const w = mountDetail(
       sched({
         triggerType: 'event',
         cronExpression: '',
-        eventTopic: 'run:settled',
-        eventReasonFilter: ['complete', 'error'],
+        eventFilter: { type: 'run:settled', statuses: ['complete', 'error'] },
+        eventSessionKindFilter: ['work'],
       }),
     )
-    expect(w.text()).toContain('On a run event')
-    expect(w.text()).toContain('Run finished')
-    expect(w.text()).toContain('Completed · Error')
+    // The generic detail renders the raw event type + its status list verbatim.
+    expect(w.text()).toContain('run:settled')
+    expect(w.text()).toContain('complete · error')
   })
 
-  it('PR 事件触发展示操作和结果筛选', () => {
+  it('PR 事件触发展示类型、状态及 metadata 条件', () => {
     const w = mountDetail(
       sched({
         triggerType: 'event',
         cronExpression: '',
-        eventTopic: 'pr:operation',
-        eventPrFilter: { operations: ['merge', 'comment'], results: ['failure'] },
+        eventFilter: {
+          type: 'pr:operation',
+          statuses: ['failure'],
+          metadata: {
+            conditions: [
+              { key: 'operation', value: 'merge' },
+              { key: 'operation', value: 'comment' },
+            ],
+            combinator: 'OR',
+          },
+        },
       }),
     )
-    expect(w.text()).toContain('PR operation')
-    expect(w.text()).toContain('Merge · Comment')
-    expect(w.text()).toContain('Failure')
+    expect(w.text()).toContain('pr:operation')
+    expect(w.text()).toContain('failure')
+    // Metadata conditions render as key=value joined by the OR combinator label.
+    expect(w.text()).toContain('operation=merge')
+    expect(w.text()).toContain('operation=comment')
   })
 
   it('空 toolAllowlist 显示 "All tools unrestricted"', () => {

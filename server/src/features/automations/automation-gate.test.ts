@@ -50,9 +50,7 @@ function cronAutomation(over: Partial<Automation> = {}): Automation {
     triggerType: 'cron',
     cronExpression: '0 * * * *',
     nextRunAt: Date.now() - 60_000,
-    eventTopic: null,
-    eventReasonFilter: null,
-    eventPrFilter: null,
+    eventFilter: null,
     status: 'active',
     mode: 'sandboxed',
     toolAllowlist: [],
@@ -74,11 +72,8 @@ function eventAutomation(over: Partial<Automation> = {}): Automation {
     triggerType: 'event',
     cronExpression: '',
     nextRunAt: null,
-    eventTopic: 'run:settled',
-    eventReasonFilter: null,
-    eventPrFilter: null,
+    eventFilter: { type: 'run:settled' },
     eventSessionKindFilter: ['work'],
-    eventMetadataFilter: null,
     metadata: {},
     status: 'active',
     mode: 'sandboxed',
@@ -193,9 +188,9 @@ describe('automation gate — event dispatch', () => {
   function install(automations: Automation[]): void {
     const store: ExecutionStore = {
       getDueAutomations: () => [],
-      getEventAutomations: (topic) =>
+      getEventAutomations: (type) =>
         automations.filter(
-          (s) => s.status === 'active' && s.triggerType === 'event' && s.eventTopic === topic,
+          (s) => s.status === 'active' && s.triggerType === 'event' && s.eventFilter?.type === type,
         ),
       getAutomation: (id) => automations.find((s) => s.id === id) ?? null,
       updateNextRunAt: vi.fn(),
@@ -218,11 +213,10 @@ describe('automation gate — event dispatch', () => {
   it('closed workspace: a matching event does not dispatch and writes no log', () => {
     gate.map.set(WS_CLOSED, false)
     install([eventAutomation({ id: 'e-closed', workspaceId: WS_CLOSED })])
-    dispatchEventTriggers('run:settled', {
-      sessionId: 's',
+    dispatchEventTriggers({
       workspacePath: WS_CLOSED,
-      reason: 'complete',
       sessionKind: 'work',
+      event: { type: 'run:settled', status: 'complete' },
     })
     expect(appendLog).not.toHaveBeenCalled()
     expect(execute).not.toHaveBeenCalled()
@@ -231,11 +225,10 @@ describe('automation gate — event dispatch', () => {
   it('open workspace: the same event dispatches (re-open restores handling of new events)', () => {
     gate.map.set(WS_OPEN, true)
     install([eventAutomation({ id: 'e-open', workspaceId: WS_OPEN })])
-    dispatchEventTriggers('run:settled', {
-      sessionId: 's',
+    dispatchEventTriggers({
       workspacePath: WS_OPEN,
-      reason: 'complete',
       sessionKind: 'work',
+      event: { type: 'run:settled', status: 'complete' },
     })
     expect(appendLog).toHaveBeenCalledTimes(1)
     cancelInFlight('e-open')
@@ -243,12 +236,17 @@ describe('automation gate — event dispatch', () => {
 
   it('pr:operation events are gated the same way', () => {
     gate.map.set(WS_CLOSED, false)
-    install([eventAutomation({ id: 'e-pr', workspaceId: WS_CLOSED, eventTopic: 'pr:operation' })])
-    dispatchEventTriggers('pr:operation', {
-      sessionId: 's',
+    install([
+      eventAutomation({
+        id: 'e-pr',
+        workspaceId: WS_CLOSED,
+        eventFilter: { type: 'pr:operation' },
+        eventSessionKindFilter: null,
+      }),
+    ])
+    dispatchEventTriggers({
       workspacePath: WS_CLOSED,
-      operation: 'merge',
-      result: 'success',
+      event: { type: 'pr:operation', status: 'success', metadata: { operation: 'merge' } },
     })
     expect(appendLog).not.toHaveBeenCalled()
   })

@@ -2629,6 +2629,134 @@ export function metadataFilterMatches(
   return filter.combinator === 'OR' ? filter.conditions.some(hit) : filter.conditions.every(hit)
 }
 
+// ---- Generic event filter (Automation trigger contract, 2026-07-13) --------
+//
+// A single, vendor-neutral trigger filter every event-triggered automation
+// carries, in place of one bespoke `eventXxxFilter` field per topic. Matching
+// reads only the trusted minimal view a {@link GenericEventEnvelope} already
+// provides (`workspacePath` + `event`) — a new event type never requires a new
+// protocol field, dispatch branch, or form panel. See
+// `doc/architecture/event-mechanism.md` §7.
+
+/**
+ * An automation's generic event-trigger filter. `type` is the single stable
+ * event type this automation subscribes to (required, non-empty — "one
+ * automation subscribes to one event type", mirroring the retired
+ * `ScheduleEventTopic` single-topic model). `statuses` is an optional set of
+ * accepted `event.status` values (absent/empty = any status); it losslessly
+ * captures the old `run:settled` reason list, PR result list, and intent phase
+ * list as one dimension. `metadata` reuses {@link EventMetadataFilter} verbatim
+ * (absent/empty = no metadata filter) — a PR operation multi-select migrates to
+ * an `OR` of `{key:'operation', value}` conditions.
+ */
+export interface GenericEventFilter {
+  type: string
+  statuses?: string[]
+  metadata?: EventMetadataFilter | null
+}
+
+/**
+ * The run-lifecycle event types (the former `RunLifecycleTopic` values). An
+ * event trigger whose `eventFilter.type` is one of these is a "run-lifecycle"
+ * trigger: it carries the mandatory `eventSessionKindFilter` security boundary
+ * and its `status` dimension is the run's terminal reason. Kept as a runtime
+ * array so save-boundary / dispatch checks stay data-driven, not string-literal.
+ */
+export const RUN_LIFECYCLE_EVENT_TYPES = ['run:started', 'run:settled'] as const
+
+/** True when a generic event `type` is a run-lifecycle type (sessionKind boundary applies). */
+export function isRunLifecycleEventType(type: string | null | undefined): boolean {
+  return type === 'run:started' || type === 'run:settled'
+}
+
+/** Upper bounds for a generic event filter — reuses the metadata hygiene bounds. */
+export const MAX_EVENT_FILTER_TYPE_LEN = MAX_AUTOMATION_METADATA_KEY_LEN
+export const MAX_EVENT_FILTER_STATUSES = MAX_AUTOMATION_METADATA_ENTRIES
+export const MAX_EVENT_FILTER_STATUS_LEN = MAX_AUTOMATION_METADATA_VALUE_LEN
+
+/**
+ * Normalize an untrusted event-filter payload to a clean {@link GenericEventFilter}
+ * or `null`. `null` means "no valid filter" — a trigger without a valid `type`
+ * MUST NOT be saved as "matches every type"; the caller (server save boundary)
+ * rejects the create/update instead of silently widening the trigger. `statuses`
+ * is trimmed, deduplicated, capped in count/length, and dropped entirely (→
+ * `undefined`, meaning "any status") when nothing valid survives.
+ */
+export function normalizeGenericEventFilter(input: unknown): GenericEventFilter | null {
+  if (!input || typeof input !== 'object') return null
+  const obj = input as { type?: unknown; statuses?: unknown; metadata?: unknown }
+  const type = typeof obj.type === 'string' ? obj.type.trim() : ''
+  if (!type || type.length > MAX_EVENT_FILTER_TYPE_LEN) return null
+
+  const statuses: string[] = []
+  const seen = new Set<string>()
+  if (Array.isArray(obj.statuses)) {
+    for (const raw of obj.statuses) {
+      if (statuses.length >= MAX_EVENT_FILTER_STATUSES) break
+      const status = typeof raw === 'string' ? raw.trim() : ''
+      if (!status || status.length > MAX_EVENT_FILTER_STATUS_LEN || seen.has(status)) continue
+      seen.add(status)
+      statuses.push(status)
+    }
+  }
+
+  const filter: GenericEventFilter = { type }
+  if (statuses.length) filter.statuses = statuses
+  const metadata = normalizeEventMetadataFilter(obj.metadata)
+  if (metadata) filter.metadata = metadata
+  return filter
+}
+
+/** One dimension's pass/fail in a generic event-filter match breakdown. */
+export interface GenericEventFilterBreakdownItem {
+  name: 'workspace' | 'type' | 'status' | 'metadata'
+  passed: boolean
+}
+
+/** The full result of a generic event-filter match: verdict + per-dimension breakdown. */
+export interface GenericEventFilterMatchResult {
+  matched: boolean
+  breakdown: GenericEventFilterBreakdownItem[]
+}
+
+/** The trusted minimal view a matcher reads — directly satisfied by a {@link GenericEventEnvelope}. */
+export interface GenericEventView {
+  workspacePath: string
+  event: GenericEvent
+}
+
+/**
+ * Pure matcher: does `view` (an event on some workspace) satisfy `filter` for an
+ * automation whose resolved workspace root is `automationWorkspacePath`? Checks,
+ * in fixed order, workspace equality, `view.event.type === filter.type`, `status`
+ * (absent/empty `statuses` = any; else exact case-sensitive membership; an event
+ * with no `status` fails a non-empty `statuses` filter), then `metadata` (exact
+ * case-sensitive key/value match via {@link metadataFilterMatches}; absent/empty
+ * = no filter). A `null` filter never matches (fails closed) — `type` fails and
+ * `status`/`metadata` degrade to "no filter" so the breakdown stays meaningful.
+ */
+export function genericEventFilterMatches(
+  automationWorkspacePath: string,
+  filter: GenericEventFilter | null,
+  view: GenericEventView,
+): GenericEventFilterMatchResult {
+  const breakdown: GenericEventFilterBreakdownItem[] = [
+    { name: 'workspace', passed: automationWorkspacePath === view.workspacePath },
+    { name: 'type', passed: !!filter && view.event.type === filter.type },
+    {
+      name: 'status',
+      passed:
+        !filter?.statuses?.length ||
+        (view.event.status !== undefined && filter.statuses.includes(view.event.status)),
+    },
+    {
+      name: 'metadata',
+      passed: metadataFilterMatches(filter?.metadata ?? null, view.event.metadata ?? {}),
+    },
+  ]
+  return { matched: breakdown.every((b) => b.passed), breakdown }
+}
+
 /**
  * **Business-scenario** taxonomy: WHICH agent-invocation scenario produced an
  * event or drives a runtime. One value per distinct business origin so listeners
@@ -2732,21 +2860,16 @@ export interface Automation {
   cronExpression: string
   /** Unix ms timestamp of the next planned run; null when not scheduled (always null for `'event'`). */
   nextRunAt: number | null
-  /** For `'event'` triggers: the event topic subscribed to (run lifecycle or `'pr:operation'`); null for cron. */
-  eventTopic: ScheduleEventTopic | null
   /**
-   * For `'run:settled'` event triggers: only fire when the run ended with one of
-   * these reasons. `null` or `[]` means any reason. Ignored for `'run:started'`.
+   * For `'event'` triggers: the single generic event-trigger filter (2026-07-13).
+   * Its `type` is the subscribed event type (the former `eventTopic`); `statuses`
+   * losslessly carries the former `run:settled` reasons / PR results / intent
+   * phases; `metadata` carries the former run-lifecycle metadata filter and the
+   * former PR `operations` (as `OR` conditions on `metadata.operation`). `null`
+   * for cron triggers. Replaces the former `eventTopic` / `eventReasonFilter` /
+   * `eventPrFilter` / `eventIntentFilter` / `eventMetadataFilter` fields.
    */
-  eventReasonFilter: RunEndReason[] | null
-  /**
-   * For `'pr:operation'` event triggers: only fire when the PR operation matches
-   * this filter (by operation kind and/or result). `null` means any PR operation.
-   * Ignored for run-lifecycle topics.
-   */
-  eventPrFilter: PrOperationFilter | null
-  /** For `intent:lifecycle` event triggers: null means every lifecycle phase. */
-  eventIntentFilter?: IntentLifecycleFilter | null
+  eventFilter: GenericEventFilter | null
   /**
    * Free-form user annotations on this automation (2026-07-04). Only the scheduler's
    * own `run:started` / `run:settled` for this automation carry this map into the
@@ -2755,15 +2878,16 @@ export interface Automation {
    */
   metadata?: Record<string, string>
   /**
-   * For run-lifecycle event triggers (`run:started` / `run:settled`): the explicit
-   * set of {@link SessionKind} origins that may fire this automation (2026-07-04).
-   * MUST be a non-empty list for run-lifecycle triggers (enforced at save); `null`
-   * for cron and non-run-lifecycle event triggers. Replaces the former hardcoded
-   * `['work']` whitelist — legacy run-lifecycle rows migrate to explicit `['work']`.
+   * For run-lifecycle event triggers (`eventFilter.type` = `run:started` /
+   * `run:settled`): the explicit set of {@link SessionKind} origins that may fire
+   * this automation (2026-07-04). MUST be a non-empty list for run-lifecycle
+   * triggers (enforced at save); `null` for cron and non-run-lifecycle event
+   * triggers. Replaces the former hardcoded `['work']` whitelist — legacy
+   * run-lifecycle rows migrate to explicit `['work']`. Kept independent of
+   * `eventFilter` because it is a mandatory security boundary, not a business
+   * filter, and only applies to the run-lifecycle event types.
    */
   eventSessionKindFilter?: SessionKind[] | null
-  /** For run-lifecycle event triggers: metadata condition filter; null = no filter. */
-  eventMetadataFilter?: EventMetadataFilter | null
   status: AutomationStatus
   mode: ModeToken | CodexPolicy
   toolAllowlist: string[]
@@ -2794,24 +2918,21 @@ export interface CreateAutomationInput {
   triggerType?: ScheduleTriggerType
   /** Required for `'cron'` triggers; empty string for `'event'` triggers. */
   cronExpression: string
-  /** Required for `'event'` triggers: the event topic to subscribe to (run lifecycle or `'pr:operation'`). */
-  eventTopic?: ScheduleEventTopic | null
-  /** Optional reason filter for `'run:settled'` event triggers; null/[] = any. */
-  eventReasonFilter?: RunEndReason[] | null
-  /** Optional filter for `'pr:operation'` event triggers; null/empty = any PR operation. */
-  eventPrFilter?: PrOperationFilter | null
-  /** Optional filter for `intent:lifecycle` event triggers; null/empty = any phase. */
-  eventIntentFilter?: IntentLifecycleFilter | null
+  /**
+   * Required for `'event'` triggers: the single generic event-trigger filter. Its
+   * `type` (the subscribed event type) is mandatory; the server rejects an event
+   * trigger whose filter has no valid `type`. Ignored for cron triggers.
+   */
+  eventFilter?: GenericEventFilter | null
   /** Free-form annotations for the automation; sanitized server-side. Absent = `{}`. */
   metadata?: Record<string, string>
   /**
-   * Required for run-lifecycle event triggers: the non-empty set of SessionKind
-   * origins that may fire it. Rejected by the server when missing/empty for a
-   * `run:started` / `run:settled` trigger. Ignored for cron / pr / intent triggers.
+   * Required for run-lifecycle event triggers (`eventFilter.type` = `run:started`
+   * / `run:settled`): the non-empty set of SessionKind origins that may fire it.
+   * Rejected by the server when missing/empty for a run-lifecycle trigger. Ignored
+   * for cron and non-run-lifecycle event triggers.
    */
   eventSessionKindFilter?: SessionKind[] | null
-  /** Optional metadata condition filter for run-lifecycle event triggers; null = any. */
-  eventMetadataFilter?: EventMetadataFilter | null
   mode: ModeToken | CodexPolicy
   toolAllowlist?: string[]
   toolDenylist?: string[]
@@ -2849,16 +2970,12 @@ export interface UpdateAutomationInput {
   agentId?: string | null
   triggerType?: ScheduleTriggerType
   cronExpression?: string
-  eventTopic?: ScheduleEventTopic | null
-  eventReasonFilter?: RunEndReason[] | null
-  eventPrFilter?: PrOperationFilter | null
-  eventIntentFilter?: IntentLifecycleFilter | null
+  /** Replace the generic event-trigger filter; its `type` is required for an event trigger. */
+  eventFilter?: GenericEventFilter | null
   /** Replace the free-form annotations; sanitized server-side. */
   metadata?: Record<string, string>
   /** Replace the run-lifecycle SessionKind filter; non-empty required for run-lifecycle triggers. */
   eventSessionKindFilter?: SessionKind[] | null
-  /** Replace the run-lifecycle metadata condition filter; null = no filter. */
-  eventMetadataFilter?: EventMetadataFilter | null
   mode?: ModeToken | CodexPolicy
   toolAllowlist?: string[]
   toolDenylist?: string[]

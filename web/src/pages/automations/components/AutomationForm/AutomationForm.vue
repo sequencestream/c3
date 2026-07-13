@@ -31,13 +31,9 @@ import type {
   AgentConfig,
   CreateAutomationInput,
   EventMetadataFilter,
-  IntentLifecyclePhase,
+  GenericEventFilter,
   ModeToken,
-  PrOperation,
-  PrOperationResult,
-  RunEndReason,
   Automation,
-  ScheduleEventTopic,
   ScheduleTriggerType,
   AutomationType,
   SessionKind,
@@ -106,40 +102,29 @@ const TRIGGER_TYPES = computed<{ value: ScheduleTriggerType; label: string }[]>(
   { value: 'event', label: t('automation.form.trigger.event.label') },
 ])
 
-// Event trigger is chosen in two tiers: a level-1 category (run lifecycle / PR /
-// intent) and, only for run lifecycle, a level-2 stage (started / finished).
-// Both are views over the single `eventTopic` protocol field — the category is a
-// display grouping that never enters the payload.
-type EventCategory = 'run-lifecycle' | 'pr-operation' | 'intent-lifecycle'
-type RunStage = 'started' | 'settled'
+// A automation subscribes to ONE generic event type (a free string). The known
+// c3 event types are only SUGGESTIONS in a datalist — the form never renders a
+// per-type panel or gates submission on a closed enum, so a newly-published event
+// type is configurable the moment it exists.
+const EVENT_TYPE_SUGGESTIONS: readonly string[] = [
+  'run:started',
+  'run:settled',
+  'pr:operation',
+  'intent:lifecycle',
+]
 
-const EVENT_CATEGORIES = computed<{ value: EventCategory; label: string }[]>(() => [
-  { value: 'run-lifecycle', label: t('automation.form.event.category.runLifecycle.label') },
-  { value: 'pr-operation', label: t('automation.form.event.topic.prOperation.label') },
-  { value: 'intent-lifecycle', label: t('automation.form.event.topic.intentLifecycle.label') },
-])
-
-const EVENT_REASONS = computed<{ value: RunEndReason; label: string }[]>(() => [
-  { value: 'complete', label: t('automation.form.event.reason.complete.label') },
-  { value: 'error', label: t('automation.form.event.reason.error.label') },
-  { value: 'aborted', label: t('automation.form.event.reason.aborted.label') },
-])
-
-// PR operation event filter options (the `pr:operation` topic; 2026-06-20).
-// Literal i18n keys (the typed `t` rejects dynamic template keys).
-const PR_OPERATION_OPTIONS = computed<{ value: PrOperation; label: string }[]>(() => [
-  { value: 'create', label: t('automation.form.event.pr.op.create.label') },
-  { value: 'review', label: t('automation.form.event.pr.op.review.label') },
-  { value: 'merge', label: t('automation.form.event.pr.op.merge.label') },
-  { value: 'close', label: t('automation.form.event.pr.op.close.label') },
-  { value: 'comment', label: t('automation.form.event.pr.op.comment.label') },
-  { value: 'update', label: t('automation.form.event.pr.op.update.label') },
-])
-const PR_RESULT_OPTIONS = computed<{ value: PrOperationResult; label: string }[]>(() => [
-  { value: 'success', label: t('automation.form.event.pr.result.success.label') },
-  { value: 'failure', label: t('automation.form.event.pr.result.failure.label') },
-  { value: 'error', label: t('automation.form.event.pr.result.error.label') },
-])
+// Status suggestions offered (as a datalist) for the currently-typed event type.
+// These mirror the retired reason / PR result / intent phase enums so an operator
+// building a filter for a known type still gets autocompletion; they are hints
+// only — any free string is accepted as a status value.
+const STATUS_SUGGESTIONS_BY_TYPE: Readonly<Record<string, readonly string[]>> = {
+  'run:settled': ['complete', 'error', 'aborted'],
+  'pr:operation': ['success', 'failure', 'error'],
+  'intent:lifecycle': ['created', 'dev_started', 'done', 'failed', 'cancelled'],
+}
+const statusSuggestions = computed<readonly string[]>(
+  () => STATUS_SUGGESTIONS_BY_TYPE[eventType.value.trim()] ?? [],
+)
 
 // ---- Vendor ----------------------------------------------------------------
 const VENDOR_ORDER: VendorId[] = ['claude', 'codex']
@@ -175,14 +160,12 @@ const maxWallClockMs = ref<number | null>(null)
 const cronExpression = ref('*/30 * * * *')
 const cronEditorOpen = ref(false)
 const triggerType = ref<ScheduleTriggerType>('cron')
-const eventTopic = ref<ScheduleEventTopic>('run:settled')
-const eventReasonFilter = ref<RunEndReason[]>([])
-// PR operation event filter (the `pr:operation` topic). Empty list = any.
-const prOperations = ref<PrOperation[]>([])
-const prResults = ref<PrOperationResult[]>([])
-const intentPhases = ref<IntentLifecyclePhase[]>([])
-// Run-lifecycle sessionKind filter (required, no default selection) + free-form
-// metadata annotations + metadata condition builder.
+// The single generic event-trigger filter, split into UI-friendly refs: the event
+// `type` (free string), a `statuses` multi-value list, and a metadata condition
+// builder (reused below). `eventSessionKinds` stays the mandatory run-lifecycle
+// security boundary. `metadataRows` are the automation's own free-form annotations.
+const eventType = ref<string>('run:settled')
+const statusRows = ref<{ value: string }[]>([])
 const eventSessionKinds = ref<SessionKind[]>([])
 const metadataRows = ref<{ key: string; value: string }[]>([])
 const metadataConditions = ref<{ key: string; value: string }[]>([])
@@ -200,13 +183,6 @@ const SESSION_KIND_LABEL = computed<Record<SessionKind, string>>(() => ({
 const SESSION_KIND_OPTIONS = computed<{ value: SessionKind; label: string }[]>(() =>
   SESSION_KINDS.map((value) => ({ value, label: SESSION_KIND_LABEL.value[value] })),
 )
-const INTENT_PHASE_OPTIONS = computed<{ value: IntentLifecyclePhase; label: string }[]>(() => [
-  { value: 'created', label: t('automation.form.event.intent.created.label') },
-  { value: 'dev_started', label: t('automation.form.event.intent.devStarted.label') },
-  { value: 'done', label: t('automation.form.event.intent.done.label') },
-  { value: 'failed', label: t('automation.form.event.intent.failed.label') },
-  { value: 'cancelled', label: t('automation.form.event.intent.cancelled.label') },
-])
 
 const toolAllowlist = ref<string[]>([])
 
@@ -214,52 +190,20 @@ const vendorAgents = computed(() =>
   (props.agents ?? []).filter((agent) => agent.vendor === vendor.value && agent.enabled !== false),
 )
 
-// The reason filter only applies to run:settled (run:started has no outcome).
-const showReasonFilter = computed(
-  () => triggerType.value === 'event' && eventTopic.value === 'run:settled',
+// A run-lifecycle event type is the ONLY one that gates on the sessionKind security
+// boundary — the single per-type branch left in the form, keyed off the free-string
+// type value (not a closed enum).
+const isRunLifecycleType = computed(
+  () => eventType.value.trim() === 'run:started' || eventType.value.trim() === 'run:settled',
 )
-// The PR filter panel only applies to the pr:operation topic (2026-06-20).
-const showPrFilter = computed(
-  () => triggerType.value === 'event' && eventTopic.value === 'pr:operation',
+const showSessionKindFilter = computed(
+  () => triggerType.value === 'event' && isRunLifecycleType.value,
 )
-const showIntentFilter = computed(
-  () => triggerType.value === 'event' && eventTopic.value === 'intent:lifecycle',
+// A contextual note for the PR event type (selecting it IS the opt-in: the model
+// performs PR operations with its own tools and only publishes the event).
+const showPrNote = computed(
+  () => triggerType.value === 'event' && eventType.value.trim() === 'pr:operation',
 )
-// sessionKind + metadata filters apply only to run-lifecycle event triggers.
-const showRunLifecycleFilters = computed(
-  () =>
-    triggerType.value === 'event' &&
-    (eventTopic.value === 'run:started' || eventTopic.value === 'run:settled'),
-)
-
-// Level-1 event category derived from the underlying topic. Purely a view model.
-const eventCategory = computed<EventCategory>(() => {
-  if (eventTopic.value === 'pr:operation') return 'pr-operation'
-  if (eventTopic.value === 'intent:lifecycle') return 'intent-lifecycle'
-  return 'run-lifecycle'
-})
-// Level-2 run stage; only meaningful while the category is run-lifecycle.
-const runStage = computed<RunStage>(() =>
-  eventTopic.value === 'run:started' ? 'started' : 'settled',
-)
-
-// Selecting a category writes back to `eventTopic` so all existing show/hide and
-// save logic keeps keying off the single protocol field. Switching to run
-// lifecycle keeps the current run stage, else defaults to run:settled (matching
-// the create default).
-function selectEventCategory(cat: EventCategory): void {
-  if (cat === 'pr-operation') {
-    eventTopic.value = 'pr:operation'
-  } else if (cat === 'intent-lifecycle') {
-    eventTopic.value = 'intent:lifecycle'
-  } else if (eventTopic.value !== 'run:started' && eventTopic.value !== 'run:settled') {
-    eventTopic.value = 'run:settled'
-  }
-}
-
-function selectRunStage(stage: RunStage): void {
-  eventTopic.value = stage === 'started' ? 'run:started' : 'run:settled'
-}
 
 // Advanced segmented builder.
 type Frequency = 'minutely' | 'hourly' | 'daily' | 'weekly'
@@ -313,15 +257,10 @@ watch(
       prompt.value = readConfigField(sched.config, 'prompt')
       maxWallClockMs.value = sched.maxWallClockMs
       triggerType.value = sched.triggerType
-      eventTopic.value = sched.eventTopic ?? 'run:settled'
-      eventReasonFilter.value = sched.eventReasonFilter ? [...sched.eventReasonFilter] : []
-      prOperations.value = sched.eventPrFilter?.operations
-        ? [...sched.eventPrFilter.operations]
-        : []
-      prResults.value = sched.eventPrFilter?.results ? [...sched.eventPrFilter.results] : []
-      intentPhases.value = sched.eventIntentFilter?.phases
-        ? [...sched.eventIntentFilter.phases]
-        : []
+      // Restore the generic event filter (migrated legacy records show their
+      // equivalent type / statuses / metadata conditions).
+      eventType.value = sched.eventFilter?.type ?? 'run:settled'
+      statusRows.value = (sched.eventFilter?.statuses ?? []).map((value) => ({ value }))
       eventSessionKinds.value = sched.eventSessionKindFilter
         ? [...sched.eventSessionKindFilter]
         : []
@@ -329,10 +268,10 @@ watch(
         key,
         value,
       }))
-      metadataConditions.value = sched.eventMetadataFilter?.conditions
-        ? sched.eventMetadataFilter.conditions.map((c) => ({ key: c.key, value: c.value }))
+      metadataConditions.value = sched.eventFilter?.metadata?.conditions
+        ? sched.eventFilter.metadata.conditions.map((c) => ({ key: c.key, value: c.value }))
         : []
-      metadataCombinator.value = sched.eventMetadataFilter?.combinator ?? 'AND'
+      metadataCombinator.value = sched.eventFilter?.metadata?.combinator ?? 'AND'
       // Vendor: restore from automation, then trigger manifest load.
       vendor.value = sched.vendor
       agentId.value = sched.agentId ?? ''
@@ -350,11 +289,8 @@ watch(
       prompt.value = ''
       maxWallClockMs.value = null
       triggerType.value = 'cron'
-      eventTopic.value = 'run:settled'
-      eventReasonFilter.value = []
-      prOperations.value = []
-      prResults.value = []
-      intentPhases.value = []
+      eventType.value = 'run:settled'
+      statusRows.value = []
       // No default sessionKind selection: a run-lifecycle event trigger must be
       // explicitly scoped before it can be saved.
       eventSessionKinds.value = []
@@ -383,6 +319,18 @@ watch(
   },
   { immediate: true },
 )
+
+// Switching the trigger back to cron clears the event-filter draft so a later
+// re-toggle to event starts from the defaults rather than resurrecting stale
+// type / statuses / metadata / sessionKind state.
+watch(triggerType, (t) => {
+  if (t !== 'cron') return
+  eventType.value = 'run:settled'
+  statusRows.value = []
+  eventSessionKinds.value = []
+  metadataConditions.value = []
+  metadataCombinator.value = 'AND'
+})
 
 // Trigger tool manifest fetch on vendor change (only after initial seed).
 watch(vendor, (v) => {
@@ -455,9 +403,9 @@ const nextRunPreview = computed(() => {
 const taskFilled = computed(() =>
   type.value === 'command' ? command.value.trim().length > 0 : prompt.value.trim().length > 0,
 )
-// Cron triggers need a valid expression; event triggers need a topic to subscribe to.
+// Cron triggers need a valid expression; event triggers need a non-empty event type.
 const triggerValid = computed(() =>
-  triggerType.value === 'cron' ? cronValid.value : !!eventTopic.value,
+  triggerType.value === 'cron' ? cronValid.value : eventType.value.trim().length > 0,
 )
 const maxWallClockMsValid = computed(() => isValidAutomationMaxWallClockMs(maxWallClockMs.value))
 const canSave = computed(
@@ -474,28 +422,11 @@ function setMaxWallClockMs(event: Event): void {
   maxWallClockMs.value = raw === '' ? null : Number(raw)
 }
 
-function toggleReason(r: RunEndReason): void {
-  const i = eventReasonFilter.value.indexOf(r)
-  if (i >= 0) eventReasonFilter.value.splice(i, 1)
-  else eventReasonFilter.value.push(r)
+function addStatusRow(): void {
+  statusRows.value.push({ value: '' })
 }
-
-function togglePrOperation(op: PrOperation): void {
-  const i = prOperations.value.indexOf(op)
-  if (i >= 0) prOperations.value.splice(i, 1)
-  else prOperations.value.push(op)
-}
-
-function togglePrResult(r: PrOperationResult): void {
-  const i = prResults.value.indexOf(r)
-  if (i >= 0) prResults.value.splice(i, 1)
-  else prResults.value.push(r)
-}
-
-function toggleIntentPhase(phase: IntentLifecyclePhase): void {
-  const i = intentPhases.value.indexOf(phase)
-  if (i >= 0) intentPhases.value.splice(i, 1)
-  else intentPhases.value.push(phase)
+function removeStatusRow(index: number): void {
+  statusRows.value.splice(index, 1)
 }
 
 function toggleSessionKind(kind: SessionKind): void {
@@ -537,9 +468,28 @@ function buildMetadataFilter(): EventMetadataFilter | null {
   return conditions.length ? { conditions, combinator: metadataCombinator.value } : null
 }
 
+/**
+ * Collapse the event refs into a {@link GenericEventFilter} or null. `type` is
+ * required (a blank type yields null → the caller does not send an event trigger);
+ * `statuses` is trimmed, de-duplicated and dropped when empty; `metadata` reuses
+ * the condition builder. Mirrors the server's `normalizeGenericEventFilter`.
+ */
+function buildEventFilter(): GenericEventFilter | null {
+  const type = eventType.value.trim()
+  if (!type) return null
+  const statuses = [
+    ...new Set(statusRows.value.map((s) => s.value.trim()).filter((s) => s.length > 0)),
+  ]
+  const metadata = buildMetadataFilter()
+  const filter: GenericEventFilter = { type }
+  if (statuses.length) filter.statuses = statuses
+  if (metadata) filter.metadata = metadata
+  return filter
+}
+
 // A run-lifecycle event trigger must pick at least one sessionKind before saving.
 const sessionKindValid = computed(
-  () => !showRunLifecycleFilters.value || eventSessionKinds.value.length > 0,
+  () => !showSessionKindFilter.value || eventSessionKinds.value.length > 0,
 )
 
 // ---- Tool manifest helpers -------------------------------------------------
@@ -625,32 +575,11 @@ function save(): void {
   if (!canSave.value) return
   const config = buildConfig()
   const isEvent = triggerType.value === 'event'
-  // Reason filter only carries for run:settled; an empty list means "any outcome".
-  const reasonFilter: RunEndReason[] | null =
-    isEvent && eventTopic.value === 'run:settled' && eventReasonFilter.value.length
-      ? [...eventReasonFilter.value]
-      : null
-  // PR filter only carries for pr:operation; empty dimensions mean "any".
-  const prFilter =
-    isEvent &&
-    eventTopic.value === 'pr:operation' &&
-    (prOperations.value.length || prResults.value.length)
-      ? {
-          ...(prOperations.value.length ? { operations: [...prOperations.value] } : {}),
-          ...(prResults.value.length ? { results: [...prResults.value] } : {}),
-        }
-      : null
-  const intentFilter =
-    isEvent && eventTopic.value === 'intent:lifecycle' && intentPhases.value.length
-      ? { phases: [...intentPhases.value] }
-      : null
-  // sessionKind + metadata filters only carry for run-lifecycle event triggers.
-  const isRunLifecycle =
-    isEvent && (eventTopic.value === 'run:started' || eventTopic.value === 'run:settled')
-  const sessionKindFilter: SessionKind[] | null = isRunLifecycle
-    ? [...eventSessionKinds.value]
-    : null
-  const metadataFilter = isRunLifecycle ? buildMetadataFilter() : null
+  // One generic event filter carries type + statuses + metadata conditions.
+  const eventFilter = isEvent ? buildEventFilter() : null
+  // The sessionKind security boundary only carries for run-lifecycle event types.
+  const sessionKindFilter: SessionKind[] | null =
+    isEvent && isRunLifecycleType.value ? [...eventSessionKinds.value] : null
   const metadata = buildMetadata()
   if (isEdit.value && props.automation) {
     // Carry the manual title: a non-empty value is stored sticky server-side; an
@@ -669,12 +598,8 @@ function save(): void {
     // The store clears the other trigger's fields on a triggerType switch, so we
     // only send the fields matching the chosen type (avoids a double column set).
     if (isEvent) {
-      input.eventTopic = eventTopic.value
-      input.eventReasonFilter = reasonFilter
-      input.eventPrFilter = prFilter
-      input.eventIntentFilter = intentFilter
+      input.eventFilter = eventFilter
       input.eventSessionKindFilter = sessionKindFilter
-      input.eventMetadataFilter = metadataFilter
     } else {
       input.cronExpression = cronExpression.value
     }
@@ -690,12 +615,8 @@ function save(): void {
       agentId: type.value === 'llm' ? agentId.value : null,
       triggerType: triggerType.value,
       cronExpression: isEvent ? '' : cronExpression.value,
-      eventTopic: isEvent ? eventTopic.value : null,
-      eventReasonFilter: reasonFilter,
-      eventPrFilter: prFilter,
-      eventIntentFilter: intentFilter,
+      eventFilter,
       eventSessionKindFilter: sessionKindFilter,
-      eventMetadataFilter: metadataFilter,
       metadata,
       toolAllowlist: [...toolAllowlist.value],
     })
@@ -930,134 +851,125 @@ function save(): void {
               </template>
             </div>
 
-            <!-- Event trigger config: level-1 category, then level-2 run stage. -->
+            <!-- Event trigger config: one generic event type + statuses + metadata
+             conditions. No per-type panels — known types are datalist hints only. -->
             <div v-if="triggerType === 'event'" class="sf-field sf-field--stacked">
-              <span class="sf-label">{{ t('automation.form.event.category.label') }}</span>
-              <div class="sf-segmented" data-testid="event-category">
+              <span class="sf-label">{{ t('automation.form.event.type.label') }}</span>
+              <input
+                v-model="eventType"
+                class="sf-input"
+                list="sf-event-type-suggestions"
+                data-testid="event-type-input"
+                :placeholder="t('automation.form.event.type.placeholder')"
+              />
+              <datalist id="sf-event-type-suggestions">
+                <option v-for="s in EVENT_TYPE_SUGGESTIONS" :key="s" :value="s" />
+              </datalist>
+              <span class="sf-hint">{{ t('automation.form.event.type.hint') }}</span>
+
+              <!-- PR event type: a contextual opt-in note (the model performs PR
+               operations with its own tools; c3 never executes them). -->
+              <p v-if="showPrNote" class="sf-pr-note">{{ t('automation.form.event.pr.note') }}</p>
+
+              <!-- Statuses: a free-string multi-value list (any status). -->
+              <span class="sf-label sf-event-reason-label">{{
+                t('automation.form.event.status.label')
+              }}</span>
+              <div
+                v-for="(row, i) in statusRows"
+                :key="`status-${i}`"
+                class="sf-kv-row"
+                data-testid="status-row"
+              >
+                <input
+                  v-model="row.value"
+                  class="sf-input sf-kv-input"
+                  list="sf-event-status-suggestions"
+                  :placeholder="t('automation.form.event.status.placeholder')"
+                />
                 <button
-                  v-for="cat in EVENT_CATEGORIES"
-                  :key="cat.value"
                   type="button"
-                  class="sf-seg"
-                  :class="{ active: eventCategory === cat.value }"
-                  :data-testid="`event-category-${cat.value}`"
-                  @click="selectEventCategory(cat.value)"
+                  class="sf-kv-del"
+                  :aria-label="t('automation.form.event.status.remove')"
+                  @click="removeStatusRow(i)"
                 >
-                  {{ cat.label }}
+                  ✕
                 </button>
               </div>
+              <datalist id="sf-event-status-suggestions">
+                <option v-for="s in statusSuggestions" :key="s" :value="s" />
+              </datalist>
+              <button
+                type="button"
+                class="sf-kv-add"
+                data-testid="status-add"
+                @click="addStatusRow"
+              >
+                + {{ t('automation.form.event.status.add') }}
+              </button>
+              <span class="sf-hint">{{ t('automation.form.event.status.hint') }}</span>
 
-              <!-- Level-2 run stage: only under the run-lifecycle category. -->
-              <template v-if="eventCategory === 'run-lifecycle'">
-                <span class="sf-label sf-event-reason-label">{{
-                  t('automation.form.event.stage.label')
-                }}</span>
-                <div class="sf-segmented" data-testid="event-stage">
-                  <button
-                    type="button"
-                    class="sf-seg"
-                    :class="{ active: runStage === 'started' }"
-                    data-testid="event-stage-started"
-                    @click="selectRunStage('started')"
-                  >
-                    {{ t('automation.form.event.stage.started.label') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="sf-seg"
-                    :class="{ active: runStage === 'settled' }"
-                    data-testid="event-stage-settled"
-                    @click="selectRunStage('settled')"
-                  >
-                    {{ t('automation.form.event.stage.settled.label') }}
-                  </button>
-                </div>
-              </template>
+              <!-- Metadata condition builder (all event types). PR operation
+               multi-selects are expressed as OR conditions on `operation`. -->
+              <span class="sf-label sf-event-reason-label">{{
+                t('automation.form.event.metadataFilter.label')
+              }}</span>
+              <div class="sf-combinator">
+                <button
+                  type="button"
+                  class="sf-seg"
+                  :class="{ active: metadataCombinator === 'AND' }"
+                  @click="metadataCombinator = 'AND'"
+                >
+                  {{ t('automation.form.event.metadataFilter.and') }}
+                </button>
+                <button
+                  type="button"
+                  class="sf-seg"
+                  :class="{ active: metadataCombinator === 'OR' }"
+                  @click="metadataCombinator = 'OR'"
+                >
+                  {{ t('automation.form.event.metadataFilter.or') }}
+                </button>
+              </div>
+              <div
+                v-for="(cond, i) in metadataConditions"
+                :key="`cond-${i}`"
+                class="sf-kv-row"
+                data-testid="metadata-condition-row"
+              >
+                <input
+                  v-model="cond.key"
+                  class="sf-input sf-kv-input"
+                  :placeholder="t('automation.form.event.metadataFilter.keyPlaceholder')"
+                />
+                <span class="sf-kv-eq">=</span>
+                <input
+                  v-model="cond.value"
+                  class="sf-input sf-kv-input"
+                  :placeholder="t('automation.form.event.metadataFilter.valuePlaceholder')"
+                />
+                <button
+                  type="button"
+                  class="sf-kv-del"
+                  :aria-label="t('automation.form.metadata.remove')"
+                  @click="removeMetadataCondition(i)"
+                >
+                  ✕
+                </button>
+              </div>
+              <button
+                type="button"
+                class="sf-kv-add"
+                data-testid="metadata-condition-add"
+                @click="addMetadataCondition"
+              >
+                + {{ t('automation.form.event.metadataFilter.add') }}
+              </button>
+              <span class="sf-hint">{{ t('automation.form.event.metadataFilter.hint') }}</span>
 
-              <span class="sf-hint">{{ t('automation.form.event.hint') }}</span>
-
-              <template v-if="showReasonFilter">
-                <span class="sf-label sf-event-reason-label">{{
-                  t('automation.form.event.reason.label')
-                }}</span>
-                <div class="sf-days">
-                  <button
-                    v-for="r in EVENT_REASONS"
-                    :key="r.value"
-                    type="button"
-                    class="sf-day"
-                    :class="{ active: eventReasonFilter.includes(r.value) }"
-                    @click="toggleReason(r.value)"
-                  >
-                    {{ r.label }}
-                  </button>
-                </div>
-                <span class="sf-hint">{{ t('automation.form.event.reason.hint') }}</span>
-              </template>
-
-              <!-- PR operation event (pr:operation): the MCP integration. Selecting
-               this topic IS the explicit opt-in; the model performs PR operations
-               with its own tools and only publishes the event — c3 never executes
-               PR operations. -->
-              <template v-if="showPrFilter">
-                <p class="sf-pr-note">{{ t('automation.form.event.pr.note') }}</p>
-
-                <span class="sf-label sf-event-reason-label">{{
-                  t('automation.form.event.pr.op.label')
-                }}</span>
-                <div class="sf-days">
-                  <button
-                    v-for="op in PR_OPERATION_OPTIONS"
-                    :key="op.value"
-                    type="button"
-                    class="sf-day"
-                    :class="{ active: prOperations.includes(op.value) }"
-                    @click="togglePrOperation(op.value)"
-                  >
-                    {{ op.label }}
-                  </button>
-                </div>
-
-                <span class="sf-label sf-event-reason-label">{{
-                  t('automation.form.event.pr.result.label')
-                }}</span>
-                <div class="sf-days">
-                  <button
-                    v-for="r in PR_RESULT_OPTIONS"
-                    :key="r.value"
-                    type="button"
-                    class="sf-day"
-                    :class="{ active: prResults.includes(r.value) }"
-                    @click="togglePrResult(r.value)"
-                  >
-                    {{ r.label }}
-                  </button>
-                </div>
-                <span class="sf-hint">{{ t('automation.form.event.pr.hint') }}</span>
-              </template>
-
-              <template v-if="showIntentFilter">
-                <span class="sf-label sf-event-reason-label">{{
-                  t('automation.form.event.intent.label')
-                }}</span>
-                <div class="sf-days">
-                  <button
-                    v-for="phase in INTENT_PHASE_OPTIONS"
-                    :key="phase.value"
-                    type="button"
-                    class="sf-day"
-                    :class="{ active: intentPhases.includes(phase.value) }"
-                    @click="toggleIntentPhase(phase.value)"
-                  >
-                    {{ phase.label }}
-                  </button>
-                </div>
-                <span class="sf-hint">{{ t('automation.form.event.intent.hint') }}</span>
-              </template>
-
-              <!-- Run-lifecycle: mandatory sessionKind multi-select (no default) + an
-               optional metadata condition builder. -->
-              <template v-if="showRunLifecycleFilters">
+              <!-- Run-lifecycle types: mandatory sessionKind multi-select (no default). -->
+              <template v-if="showSessionKindFilter">
                 <span class="sf-label sf-event-reason-label">{{
                   t('automation.form.event.sessionKind.label')
                 }}</span>
@@ -1079,63 +991,6 @@ function save(): void {
                 <span v-else class="sf-hint">{{
                   t('automation.form.event.sessionKind.hint')
                 }}</span>
-
-                <span class="sf-label sf-event-reason-label">{{
-                  t('automation.form.event.metadataFilter.label')
-                }}</span>
-                <div class="sf-combinator">
-                  <button
-                    type="button"
-                    class="sf-seg"
-                    :class="{ active: metadataCombinator === 'AND' }"
-                    @click="metadataCombinator = 'AND'"
-                  >
-                    {{ t('automation.form.event.metadataFilter.and') }}
-                  </button>
-                  <button
-                    type="button"
-                    class="sf-seg"
-                    :class="{ active: metadataCombinator === 'OR' }"
-                    @click="metadataCombinator = 'OR'"
-                  >
-                    {{ t('automation.form.event.metadataFilter.or') }}
-                  </button>
-                </div>
-                <div
-                  v-for="(cond, i) in metadataConditions"
-                  :key="`cond-${i}`"
-                  class="sf-kv-row"
-                  data-testid="metadata-condition-row"
-                >
-                  <input
-                    v-model="cond.key"
-                    class="sf-input sf-kv-input"
-                    :placeholder="t('automation.form.event.metadataFilter.keyPlaceholder')"
-                  />
-                  <span class="sf-kv-eq">=</span>
-                  <input
-                    v-model="cond.value"
-                    class="sf-input sf-kv-input"
-                    :placeholder="t('automation.form.event.metadataFilter.valuePlaceholder')"
-                  />
-                  <button
-                    type="button"
-                    class="sf-kv-del"
-                    :aria-label="t('automation.form.metadata.remove')"
-                    @click="removeMetadataCondition(i)"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  class="sf-kv-add"
-                  data-testid="metadata-condition-add"
-                  @click="addMetadataCondition"
-                >
-                  + {{ t('automation.form.event.metadataFilter.add') }}
-                </button>
-                <span class="sf-hint">{{ t('automation.form.event.metadataFilter.hint') }}</span>
               </template>
             </div>
           </div>

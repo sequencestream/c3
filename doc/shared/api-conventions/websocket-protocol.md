@@ -912,7 +912,7 @@ automation 的执行日志。
 - **`RunKind`** — `'interactive' | 'background' | 'headless' | 'internal'`。运行的**执行形态**分类（执行机制判断走它），与 `SessionKind` 正交。2026-06-26 收窄而来，目前仅作记录/审计字段。未被任何线协议消息引用。
 - **`AutomationStatus`** — `'active' | 'paused' | 'error'`。
 - **`McpMode`** — `'read-only' | 'sandboxed' | 'full-access'`。
-- **`Automation`** — `{ id, type, config, maxWallClockMs, workspacePath, vendor, triggerType, cronExpression, nextRunAt, eventTopic, eventReasonFilter, status, mode, toolAllowlist, toolDenylist, createdAt, updatedAt }`。`maxWallClockMs` 为单次执行的最大墙钟时间（毫秒）；null 使用任务类型默认值。`mode` 是 `ModeToken | CodexPolicy`。
+- **`Automation`** — `{ id, type, config, maxWallClockMs, workspacePath, vendor, triggerType, cronExpression, nextRunAt, eventFilter, eventSessionKindFilter, status, mode, toolAllowlist, toolDenylist, createdAt, updatedAt }`。`maxWallClockMs` 为单次执行的最大墙钟时间（毫秒）；null 使用任务类型默认值。`mode` 是 `ModeToken | CodexPolicy`。
 - **`AutomationExecutionLog`** — `{ id, automationId, startedAt, finishedAt, exitCode, output, error, status, sessionId }`。
 - **`PendingWriteApproval`** — `{ id, automationId, workspacePath, toolName, toolInput, diffPreview, createdAt, expiresAt, status, resolvedBy, resolvedAt }`。沙箱化 automation 执行的待处理写操作审批。
 - **`ToolManifestEntry`** — `{ name, isWrite }`。供应商工具清单中的条目。

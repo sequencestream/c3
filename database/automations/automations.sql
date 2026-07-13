@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS automations (
   event_pr_filter     TEXT,                                -- JSON {operations?,results?}, pr:operation 过滤 (v8 新增, NULL=任意)
   event_intent_filter TEXT,                                -- JSON {phases?}, intent:lifecycle 阶段过滤 (v9 新增, NULL=任意阶段)
   event_session_kind_filter TEXT,                          -- JSON 数组, run-lifecycle 事件的 sessionKind 多选 (v11 新增, 非空必填; cron/pr/intent 为 NULL)
-  event_metadata_filter     TEXT,                          -- JSON {conditions,combinator}, run-lifecycle 事件的 metadata 条件过滤 (v11 新增, NULL=不过滤)
+  event_metadata_filter     TEXT,                          -- [遗留, v12 起仅作迁移输入] JSON {conditions,combinator}, run-lifecycle 事件 metadata 过滤 (v11)
+  event_filter        TEXT,                                -- JSON GenericEventFilter {type, statuses?, metadata?}, 统一事件触发过滤 (v12 新增, 2026-07-13; 运行时唯一事实源; cron 为 NULL)
   metadata            TEXT NOT NULL DEFAULT '{}',           -- JSON 对象, 自由 key/value 标注 (v11 新增, 仅随该 automation 自身运行事件下发)
   status              TEXT NOT NULL,                        -- 状态: 'active' | 'paused' | 'error' | 'archived'
   mode                TEXT NOT NULL DEFAULT '',             -- 执行模式: ModeToken 字符串或 CodexPolicy JSON (v7 改名自 mcp_mode)

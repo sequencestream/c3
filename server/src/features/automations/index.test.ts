@@ -146,7 +146,7 @@ describe('run-lifecycle event trigger — sessionKind filter is mandatory', () =
         vendor: 'claude',
         triggerType: 'event',
         cronExpression: '',
-        eventTopic: 'run:settled',
+        eventFilter: { type: 'run:settled' },
         mode: 'sandboxed',
       },
     } as never)
@@ -163,7 +163,7 @@ describe('run-lifecycle event trigger — sessionKind filter is mandatory', () =
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventTopic: 'run:settled',
+      eventFilter: { type: 'run:settled' },
       eventSessionKindFilter: ['work'],
       mode: 'sandboxed',
       vendor: 'claude',

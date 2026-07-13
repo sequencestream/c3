@@ -23,7 +23,11 @@ import { clampName, generateAutomationName } from './naming.js'
 import type { AutomationNameOverride } from './store.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { requireAdmin } from '../auth/authz.js'
-import { isValidAutomationMaxWallClockMs, type ToolManifestEntry } from '@ccc/shared/protocol'
+import {
+  isValidAutomationMaxWallClockMs,
+  normalizeGenericEventFilter,
+  type ToolManifestEntry,
+} from '@ccc/shared/protocol'
 import { C3_MCP_TOOLS } from './mcp-freeze.js'
 import { loadSettings } from '../../kernel/config/index.js'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
@@ -65,9 +69,13 @@ export const createAutomationHandler: Handler<'create_automation'> = async (ctx,
     conn.send({ type: 'error', error: { code: 'automation.dbUnavailable' } })
     return
   }
-  // An event-triggered automation with no topic is a dead task (it can never match
-  // a lifecycle event), so reject it up front rather than persisting a no-op.
-  if ((msg.input.triggerType ?? 'cron') === 'event' && !msg.input.eventTopic) {
+  // An event-triggered automation whose filter has no valid event type is a dead
+  // task (it can never match), so reject it up front rather than persisting a no-op
+  // or silently widening it to "matches every type".
+  if (
+    (msg.input.triggerType ?? 'cron') === 'event' &&
+    !normalizeGenericEventFilter(msg.input.eventFilter)
+  ) {
     conn.send({ type: 'error', error: { code: 'automation.invalidEventTrigger' } })
     return
   }
@@ -76,7 +84,8 @@ export const createAutomationHandler: Handler<'create_automation'> = async (ctx,
   // relying on the front-end disabled button.
   if (
     (msg.input.triggerType ?? 'cron') === 'event' &&
-    (msg.input.eventTopic === 'run:started' || msg.input.eventTopic === 'run:settled') &&
+    (msg.input.eventFilter?.type === 'run:started' ||
+      msg.input.eventFilter?.type === 'run:settled') &&
     !msg.input.eventSessionKindFilter?.length
   ) {
     conn.send({ type: 'error', error: { code: 'automation.missingSessionKindFilter' } })
@@ -140,11 +149,14 @@ export const updateAutomationHandler: Handler<'update_automation'> = async (ctx,
     conn.send({ type: 'error', error: { code: agentError } })
     return
   }
-  // Reject an update that would leave an event-triggered automation without a topic
-  // (either switching to 'event' without a topic, or clearing an existing one).
+  // Reject an update that would leave an event-triggered automation without a valid
+  // event type (either switching to 'event' without a filter, or clearing an
+  // existing one). Use the patch's filter if present, else the stored one.
   const nextTrigger = msg.input.triggerType ?? existing.triggerType
-  const nextTopic = msg.input.eventTopic !== undefined ? msg.input.eventTopic : existing.eventTopic
-  if (nextTrigger === 'event' && !nextTopic) {
+  const nextFilter =
+    msg.input.eventFilter !== undefined ? msg.input.eventFilter : existing.eventFilter
+  const nextFilterType = normalizeGenericEventFilter(nextFilter)?.type ?? null
+  if (nextTrigger === 'event' && !nextFilterType) {
     conn.send({ type: 'error', error: { code: 'automation.invalidEventTrigger' } })
     return
   }
@@ -157,7 +169,7 @@ export const updateAutomationHandler: Handler<'update_automation'> = async (ctx,
       : existing.eventSessionKindFilter
   if (
     nextTrigger === 'event' &&
-    (nextTopic === 'run:started' || nextTopic === 'run:settled') &&
+    (nextFilterType === 'run:started' || nextFilterType === 'run:settled') &&
     !nextSessionKindFilter?.length
   ) {
     conn.send({ type: 'error', error: { code: 'automation.missingSessionKindFilter' } })

@@ -62,7 +62,13 @@ beforeEach(() => {
   setExecutionStore(store)
   // Wire the kernel bus exactly as scheduler-startup does for run-lifecycle.
   const bus = new EventBus<EventBusEvents>()
-  bus.subscribe('run:settled', (e) => dispatchEventTriggers('run:settled', e))
+  bus.subscribe('run:settled', (e) =>
+    dispatchEventTriggers({
+      workspacePath: e.workspacePath,
+      sessionKind: e.sessionKind,
+      event: { type: 'run:settled', status: e.reason, metadata: e.metadata ?? undefined },
+    }),
+  )
   setEventBus(bus)
 })
 
@@ -89,12 +95,14 @@ describe('automation chain: A (metadata) → B (sessionKind=automation + metadat
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventTopic: 'run:settled',
-      eventSessionKindFilter: ['automation'],
-      eventMetadataFilter: {
-        conditions: [{ key: 'pipeline', value: 'deploy' }],
-        combinator: 'AND',
+      eventFilter: {
+        type: 'run:settled',
+        metadata: {
+          conditions: [{ key: 'pipeline', value: 'deploy' }],
+          combinator: 'AND',
+        },
       },
+      eventSessionKindFilter: ['automation'],
       mode: 'sandboxed',
       vendor: 'claude',
     })
@@ -130,12 +138,14 @@ describe('automation chain: A (metadata) → B (sessionKind=automation + metadat
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventTopic: 'run:settled',
-      eventSessionKindFilter: ['automation'],
-      eventMetadataFilter: {
-        conditions: [{ key: 'pipeline', value: 'deploy' }],
-        combinator: 'AND',
+      eventFilter: {
+        type: 'run:settled',
+        metadata: {
+          conditions: [{ key: 'pipeline', value: 'deploy' }],
+          combinator: 'AND',
+        },
       },
+      eventSessionKindFilter: ['automation'],
       mode: 'sandboxed',
       vendor: 'claude',
     })

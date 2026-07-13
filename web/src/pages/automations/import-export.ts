@@ -17,15 +17,14 @@ import type {
   Automation,
   AutomationType,
   CreateAutomationInput,
-  IntentLifecycleFilter,
+  EventMetadataFilterCondition,
+  GenericEventFilter,
   IntentLifecyclePhase,
   ModeToken,
   CodexPolicy,
   PrOperation,
-  PrOperationFilter,
   PrOperationResult,
   RunEndReason,
-  ScheduleEventTopic,
   ScheduleTriggerType,
   SessionKind,
   VendorId,
@@ -37,7 +36,7 @@ import {
   SESSION_KINDS,
   isValidAutomationMaxWallClockMs,
   normalizeAutomationMetadata,
-  normalizeEventMetadataFilter,
+  normalizeGenericEventFilter,
 } from '@ccc/shared/protocol'
 
 /** Current export file contract. `version` is validated with a strict `=== 1`. */
@@ -53,12 +52,9 @@ const DEFAULT_MODE: ModeToken = 'read-only'
 const AUTOMATION_TYPES: readonly AutomationType[] = ['command', 'llm']
 const VENDOR_IDS: readonly VendorId[] = ['claude', 'codex']
 const TRIGGER_TYPES: readonly ScheduleTriggerType[] = ['cron', 'event']
-const EVENT_TOPICS: readonly ScheduleEventTopic[] = [
-  'run:started',
-  'run:settled',
-  'pr:operation',
-  'intent:lifecycle',
-]
+// The run-lifecycle event types still gate the sessionKind security boundary on
+// import; every other type does not.
+const RUN_LIFECYCLE_TYPES: ReadonlySet<string> = new Set(['run:started', 'run:settled'])
 const RUN_END_REASONS: readonly RunEndReason[] = ['complete', 'error', 'aborted']
 
 /** The versioned export envelope written to / read from disk. */
@@ -112,21 +108,63 @@ function pickEnumArray<T extends string>(value: unknown, allowed: readonly T[]):
   return out.length ? out : null
 }
 
-function pickPrFilter(value: unknown): PrOperationFilter | null {
-  if (!isPlainObject(value)) return null
-  const operations = pickEnumArray<PrOperation>(value.operations, PR_OPERATIONS)
-  const results = pickEnumArray<PrOperationResult>(value.results, PR_OPERATION_RESULTS)
-  if (!operations && !results) return null
-  const out: PrOperationFilter = {}
-  if (operations) out.operations = operations
-  if (results) out.results = results
-  return out
-}
+/**
+ * Resolve the generic event filter for an imported member, tolerant of BOTH the
+ * new `eventFilter` shape and the retired per-topic fields. A new-format export is
+ * normalized directly; a legacy export (`eventTopic` + `eventReasonFilter` /
+ * `eventPrFilter` / `eventIntentFilter` / `eventMetadataFilter`) is projected to
+ * the exact same generic filter the server migration produces (topic→type;
+ * reason/result/phase→statuses; PR operations→OR conditions on `operation`; run
+ * metadata filter→metadata). Returns `null` when no valid event type survives.
+ */
+function pickEventFilter(raw: Record<string, unknown>): GenericEventFilter | null {
+  // Prefer a present new-format filter.
+  const direct = normalizeGenericEventFilter(raw.eventFilter)
+  if (direct) return direct
 
-function pickIntentFilter(value: unknown): IntentLifecycleFilter | null {
-  if (!isPlainObject(value)) return null
-  const phases = pickEnumArray<IntentLifecyclePhase>(value.phases, INTENT_LIFECYCLE_PHASES)
-  return phases ? { phases } : null
+  // Legacy projection.
+  const type = typeof raw.eventTopic === 'string' ? raw.eventTopic.trim() : ''
+  if (!type) return null
+  const filter: GenericEventFilter = { type }
+  const statuses: string[] = []
+  let metadata: { conditions: EventMetadataFilterCondition[]; combinator: 'AND' | 'OR' } | null =
+    null
+
+  if (type === 'run:started' || type === 'run:settled') {
+    for (const r of pickEnumArray<RunEndReason>(raw.eventReasonFilter, RUN_END_REASONS) ?? [])
+      statuses.push(r)
+    const legacyMeta = isPlainObject(raw.eventMetadataFilter) ? raw.eventMetadataFilter : null
+    const conditions = Array.isArray(legacyMeta?.conditions)
+      ? (legacyMeta!.conditions as unknown[])
+          .filter(isPlainObject)
+          .map((c) => ({ key: String(c.key ?? ''), value: String(c.value ?? '') }))
+          .filter((c) => c.key && c.value)
+      : []
+    if (conditions.length) {
+      metadata = { conditions, combinator: legacyMeta?.combinator === 'OR' ? 'OR' : 'AND' }
+    }
+  } else if (type === 'pr:operation') {
+    const prf = isPlainObject(raw.eventPrFilter) ? raw.eventPrFilter : null
+    for (const r of pickEnumArray<PrOperationResult>(prf?.results, PR_OPERATION_RESULTS) ?? [])
+      statuses.push(r)
+    const operations = pickEnumArray<PrOperation>(prf?.operations, PR_OPERATIONS)
+    if (operations?.length) {
+      metadata = {
+        conditions: operations.map((op) => ({ key: 'operation', value: op })),
+        combinator: 'OR',
+      }
+    }
+  } else if (type === 'intent:lifecycle') {
+    const intf = isPlainObject(raw.eventIntentFilter) ? raw.eventIntentFilter : null
+    for (const p of pickEnumArray<IntentLifecyclePhase>(intf?.phases, INTENT_LIFECYCLE_PHASES) ??
+      [])
+      statuses.push(p)
+  }
+
+  if (statuses.length) filter.statuses = statuses
+  if (metadata) filter.metadata = metadata
+  // Round-trip through the shared normalizer so the imported filter matches server hygiene.
+  return normalizeGenericEventFilter(filter)
 }
 
 /** Read a string `config.name` (the exported display title), else `undefined`. */
@@ -257,14 +295,11 @@ export function mapToCreateInput(
   const initialName = readConfigName(config)?.trim()
   const label = candidateLabel(config, type, type === 'command' ? 'Command task' : 'LLM task')
 
-  // Trigger resolution: an event trigger needs a valid topic, else it demotes to cron.
+  // Trigger resolution: an event trigger needs a valid generic filter (new or
+  // legacy shape), else it demotes to cron.
   const rawTrigger = pickEnum<ScheduleTriggerType>(raw.triggerType, TRIGGER_TYPES, 'cron')
-  const eventTopic: ScheduleEventTopic | null =
-    typeof raw.eventTopic === 'string' &&
-    (EVENT_TOPICS as readonly string[]).includes(raw.eventTopic)
-      ? (raw.eventTopic as ScheduleEventTopic)
-      : null
-  const isEvent = rawTrigger === 'event' && eventTopic !== null
+  const eventFilter = rawTrigger === 'event' ? pickEventFilter(raw) : null
+  const isEvent = eventFilter !== null
 
   const input: CreateAutomationInput = {
     type,
@@ -280,12 +315,8 @@ export function mapToCreateInput(
       : typeof raw.cronExpression === 'string' && raw.cronExpression.trim()
         ? raw.cronExpression
         : DEFAULT_CRON,
-    eventTopic: null,
-    eventReasonFilter: null,
-    eventPrFilter: null,
-    eventIntentFilter: null,
+    eventFilter,
     eventSessionKindFilter: null,
-    eventMetadataFilter: null,
     metadata: normalizeAutomationMetadata(raw.metadata),
     toolAllowlist: pickStringArray(raw.toolAllowlist),
     toolDenylist: pickStringArray(raw.toolDenylist),
@@ -293,18 +324,12 @@ export function mapToCreateInput(
   }
   if (initialName) input.initialName = initialName
 
-  if (isEvent && eventTopic) {
-    input.eventTopic = eventTopic
-    if (eventTopic === 'run:started' || eventTopic === 'run:settled') {
-      input.eventReasonFilter = pickEnumArray<RunEndReason>(raw.eventReasonFilter, RUN_END_REASONS)
-      const skf = pickEnumArray<SessionKind>(raw.eventSessionKindFilter, SESSION_KINDS)
-      input.eventSessionKindFilter = skf && skf.length ? skf : ['work']
-      input.eventMetadataFilter = normalizeEventMetadataFilter(raw.eventMetadataFilter)
-    } else if (eventTopic === 'pr:operation') {
-      input.eventPrFilter = pickPrFilter(raw.eventPrFilter)
-    } else if (eventTopic === 'intent:lifecycle') {
-      input.eventIntentFilter = pickIntentFilter(raw.eventIntentFilter)
-    }
+  // A run-lifecycle event trigger requires a non-empty sessionKind filter; fall
+  // back to the behaviour-preserving ['work'] (matching the server migration) when
+  // the export lacks a valid one.
+  if (isEvent && eventFilter && RUN_LIFECYCLE_TYPES.has(eventFilter.type)) {
+    const skf = pickEnumArray<SessionKind>(raw.eventSessionKindFilter, SESSION_KINDS)
+    input.eventSessionKindFilter = skf && skf.length ? skf : ['work']
   }
 
   if (type === 'llm') {

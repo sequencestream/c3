@@ -6,7 +6,8 @@ import { installClaudeSdkWarningFilter } from './adapters/claude/sdk-warning-fil
 
 // Drop the SDK's benign `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` warning (0.3.198+) that
 // fires on every never-ask (`bypassPermissions`) query() and otherwise floods the
-// log. Installed once here — this module owns every Claude `query()` call site.
+// log. Installed once here — this module owns every never-ask `query()` call site.
+// The filter wraps `process.emitWarning`, so it holds on both Node and Bun.
 installClaudeSdkWarningFilter()
 import { stringifyToolResult } from '../../format.js'
 import { addToolSession } from '../../sessions.js'

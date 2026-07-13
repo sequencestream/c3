@@ -9,46 +9,57 @@
  * on every turn of a never-ask session. See the 0.3.201 SDK upgrade record,
  * "bypassPermissions 警告实盘确认".
  *
- * Node keeps printing a warning even when a `process.on('warning')` listener is
- * added (the listener runs *alongside* the default printer, it does not replace it),
- * and `--no-warnings` silences ALL warnings indiscriminately. The only way to drop
- * exactly one warning code is to intercept it before it is emitted — hence the
- * narrow `process.emit` wrapper. It drops ONLY this one code on the `'warning'`
- * event and passes every other event (and every other warning) through untouched.
+ * The SDK emits the warning via `process.emitWarning(msg, { code })`. We intercept
+ * at that exact call — NOT at `process.emit('warning', …)` — because the two are
+ * NOT equivalent across runtimes: Node's `emitWarning` dispatches through
+ * `process.emit`, but Bun's writes straight to stderr and never touches it. c3 runs
+ * on both Node and Bun (dev/tsx vs. the `bun build --compile` binary), so a
+ * `process.emit` wrapper is a silent no-op under Bun. Wrapping `emitWarning` catches
+ * the warning at its source on every runtime. `--no-warnings` is rejected because it
+ * silences ALL warnings indiscriminately; here we drop ONLY this one code and pass
+ * every other warning (including a genuine misconfig) through untouched.
  */
 
 /** The SDK warning code we drop. Any other warning — including a genuine misconfig — passes through. */
 export const SHADOWED_WARNING_CODE = 'CLAUDE_SDK_CAN_USE_TOOL_SHADOWED'
 
 /**
- * True iff this process event is the benign Claude SDK shadow warning we suppress.
- * Pure (no global mutation) so the drop rule is unit-testable in isolation.
+ * Extract the `code` from a `process.emitWarning` call's arguments, supporting both
+ * documented signatures: the options-object form `emitWarning(msg, { code })` (what
+ * the SDK uses) and the legacy positional form `emitWarning(msg, type, code)`.
  */
-export function isSuppressedClaudeWarning(event: string | symbol, warning: unknown): boolean {
-  return (
-    event === 'warning' &&
-    typeof warning === 'object' &&
-    warning !== null &&
-    (warning as { code?: unknown }).code === SHADOWED_WARNING_CODE
-  )
+function warningCodeOf(options: unknown, legacyCode: unknown): string | undefined {
+  if (options !== null && typeof options === 'object') {
+    const code = (options as { code?: unknown }).code
+    return typeof code === 'string' ? code : undefined
+  }
+  // Positional form: emitWarning(warning, type?, code?) — options slot holds `type`.
+  return typeof legacyCode === 'string' ? legacyCode : undefined
+}
+
+/**
+ * True iff this `process.emitWarning` call is the benign Claude SDK shadow warning we
+ * suppress. Pure (no global mutation) so the drop rule is unit-testable in isolation.
+ * `options`/`legacyCode` are the 2nd/3rd `emitWarning` arguments.
+ */
+export function isSuppressedClaudeWarning(options: unknown, legacyCode?: unknown): boolean {
+  return warningCodeOf(options, legacyCode) === SHADOWED_WARNING_CODE
 }
 
 let installed = false
 
 /**
  * Install the process-wide warning filter. Idempotent: safe to call on every entry
- * path (server, daemon, dev, agent-once); installs at most once.
+ * path (server, daemon, dev, agent-once); installs at most once. Runtime-agnostic —
+ * works on both Node and Bun because it wraps `emitWarning` itself.
  */
 export function installClaudeSdkWarningFilter(): void {
   if (installed) return
   installed = true
-  const original = process.emit.bind(process) as (
-    event: string | symbol,
-    ...args: unknown[]
-  ) => boolean
-  const wrapped = (event: string | symbol, ...args: unknown[]): boolean => {
-    if (isSuppressedClaudeWarning(event, args[0])) return false
-    return original(event, ...args)
+  const original = process.emitWarning.bind(process)
+  const wrapped = (warning: string | Error, ...rest: unknown[]): void => {
+    if (isSuppressedClaudeWarning(rest[0], rest[1])) return
+    ;(original as (...args: unknown[]) => void)(warning, ...rest)
   }
-  process.emit = wrapped as typeof process.emit
+  process.emitWarning = wrapped as typeof process.emitWarning
 }

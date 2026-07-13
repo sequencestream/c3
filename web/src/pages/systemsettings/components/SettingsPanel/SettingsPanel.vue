@@ -946,18 +946,6 @@ function selectAdmin(username: string) {
         role="tabpanel"
         data-testid="settings-tab-agent"
       >
-        <div class="settings-tab-actions">
-          <span
-            v-if="tabDirtyMap.agent"
-            class="settings-unsaved"
-            data-testid="settings-unsaved-agent"
-            >{{ t('settings.tabs.unsaved.label') }}</span
-          >
-          <button data-testid="settings-save-agent" :disabled="!isAdmin" @click="saveTab('agent')">
-            {{ t('common.action.save.label') }}
-          </button>
-        </div>
-
         <section class="settings-section">
           <p class="settings-section-title">{{ t('settings.agents.title.label') }}</p>
           <i18n-t keypath="settings.agents.hint.text" tag="p" class="settings-hint">
@@ -1187,22 +1175,6 @@ function selectAdmin(username: string) {
         role="tabpanel"
         data-testid="settings-tab-runtime"
       >
-        <div class="settings-tab-actions">
-          <span
-            v-if="tabDirtyMap.runtime"
-            class="settings-unsaved"
-            data-testid="settings-unsaved-runtime"
-            >{{ t('settings.tabs.unsaved.label') }}</span
-          >
-          <button
-            data-testid="settings-save-runtime"
-            :disabled="!isAdmin"
-            @click="saveTab('runtime')"
-          >
-            {{ t('common.action.save.label') }}
-          </button>
-        </div>
-
         <section class="settings-section" data-testid="settings-diagnostics">
           <p class="settings-section-title">{{ t('settings.diagnostics.title.label') }}</p>
           <p class="settings-hint">{{ t('settings.diagnostics.hint') }}</p>
@@ -1441,22 +1413,6 @@ function selectAdmin(username: string) {
         role="tabpanel"
         data-testid="settings-tab-security"
       >
-        <div class="settings-tab-actions">
-          <span
-            v-if="tabDirtyMap.security"
-            class="settings-unsaved"
-            data-testid="settings-unsaved-security"
-            >{{ t('settings.tabs.unsaved.label') }}</span
-          >
-          <button
-            data-testid="settings-save-security"
-            :disabled="!isAdmin"
-            @click="saveTab('security')"
-          >
-            {{ t('common.action.save.label') }}
-          </button>
-        </div>
-
         <!-- Authentication (ADR-0023) -->
         <section class="settings-section" data-testid="settings-auth">
           <p class="settings-section-title">{{ t('settings.auth.title.label') }}</p>
@@ -1598,22 +1554,6 @@ function selectAdmin(username: string) {
         role="tabpanel"
         data-testid="settings-tab-general"
       >
-        <div class="settings-tab-actions">
-          <span
-            v-if="tabDirtyMap.general"
-            class="settings-unsaved"
-            data-testid="settings-unsaved-general"
-            >{{ t('settings.tabs.unsaved.label') }}</span
-          >
-          <button
-            data-testid="settings-save-general"
-            :disabled="!isAdmin"
-            @click="saveTab('general')"
-          >
-            {{ t('common.action.save.label') }}
-          </button>
-        </div>
-
         <section class="settings-section">
           <p class="settings-section-title">{{ t('settings.displayLang.title.label') }}</p>
           <p class="settings-hint">{{ t('settings.displayLang.hint') }}</p>
@@ -1666,6 +1606,63 @@ function selectAdmin(username: string) {
     </div>
 
     <div class="settings-foot">
+      <!-- Per-tab Save lives beside Close; only the active tab's Save is shown. -->
+      <div v-show="activeTab === 'agent'" class="settings-tab-actions">
+        <span
+          v-if="tabDirtyMap.agent"
+          class="settings-unsaved"
+          data-testid="settings-unsaved-agent"
+          >{{ t('settings.tabs.unsaved.label') }}</span
+        >
+        <button data-testid="settings-save-agent" :disabled="!isAdmin" @click="saveTab('agent')">
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
+      <div v-show="activeTab === 'runtime'" class="settings-tab-actions">
+        <span
+          v-if="tabDirtyMap.runtime"
+          class="settings-unsaved"
+          data-testid="settings-unsaved-runtime"
+          >{{ t('settings.tabs.unsaved.label') }}</span
+        >
+        <button
+          data-testid="settings-save-runtime"
+          :disabled="!isAdmin"
+          @click="saveTab('runtime')"
+        >
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
+      <div v-show="activeTab === 'security'" class="settings-tab-actions">
+        <span
+          v-if="tabDirtyMap.security"
+          class="settings-unsaved"
+          data-testid="settings-unsaved-security"
+          >{{ t('settings.tabs.unsaved.label') }}</span
+        >
+        <button
+          data-testid="settings-save-security"
+          :disabled="!isAdmin"
+          @click="saveTab('security')"
+        >
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
+      <div v-show="activeTab === 'general'" class="settings-tab-actions">
+        <span
+          v-if="tabDirtyMap.general"
+          class="settings-unsaved"
+          data-testid="settings-unsaved-general"
+          >{{ t('settings.tabs.unsaved.label') }}</span
+        >
+        <button
+          data-testid="settings-save-general"
+          :disabled="!isAdmin"
+          @click="saveTab('general')"
+        >
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
       <button class="ghost" data-testid="settings-close" @click="emit('close')">
         {{ t('common.action.close.label') }}
       </button>

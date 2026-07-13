@@ -2827,13 +2827,13 @@ button.deny:hover:not(:disabled) {
   font-size: 0.6em;
   line-height: 1;
 }
-/* Per-tab Save row: right-aligned save button + optional unsaved-changes label. */
+/* Per-tab Save row in the footer: save button + optional unsaved-changes label,
+   shown beside the Close button for the active tab. */
 .settings-tab-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--sp-3);
-  margin-bottom: var(--sp-4);
 }
 .settings-unsaved {
   font-size: var(--fs-caption);
@@ -3379,6 +3379,9 @@ button.deny:hover:not(:disabled) {
     padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom));
   }
 
+  .settings-foot > .settings-tab-actions {
+    flex: 1;
+  }
   .settings-foot button {
     flex: 1;
     padding: 0 var(--sp-3);

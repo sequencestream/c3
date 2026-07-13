@@ -662,18 +662,6 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         role="tabpanel"
         data-testid="project-config-tab-defaultMode"
       >
-        <div class="project-config-tab-actions">
-          <span
-            v-if="tabDirtyMap.defaultMode"
-            class="project-config-unsaved"
-            data-testid="project-config-unsaved-defaultMode"
-            >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
-          >
-          <button data-testid="project-config-save-defaultMode" @click="saveTab('defaultMode')">
-            {{ t('common.action.save.label') }}
-          </button>
-        </div>
-
         <section class="project-config-section">
           <p class="project-config-section-title">
             {{ t('workspaceSetting.defaultMode.title.label') }}
@@ -743,18 +731,6 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         role="tabpanel"
         data-testid="project-config-tab-gitSandbox"
       >
-        <div class="project-config-tab-actions">
-          <span
-            v-if="tabDirtyMap.gitSandbox"
-            class="project-config-unsaved"
-            data-testid="project-config-unsaved-gitSandbox"
-            >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
-          >
-          <button data-testid="project-config-save-gitSandbox" @click="saveTab('gitSandbox')">
-            {{ t('common.action.save.label') }}
-          </button>
-        </div>
-
         <section class="project-config-section">
           <p class="project-config-section-title">
             {{ t('workspaceSetting.gitBranchMode.title.label') }}
@@ -927,18 +903,6 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         role="tabpanel"
         data-testid="project-config-tab-collab"
       >
-        <div class="project-config-tab-actions">
-          <span
-            v-if="tabDirtyMap.collab"
-            class="project-config-unsaved"
-            data-testid="project-config-unsaved-collab"
-            >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
-          >
-          <button data-testid="project-config-save-collab" @click="saveTab('collab')">
-            {{ t('common.action.save.label') }}
-          </button>
-        </div>
-
         <section class="project-config-section">
           <div class="project-config-row">
             <span class="project-config-row-label">{{
@@ -1100,18 +1064,6 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
         role="tabpanel"
         data-testid="project-config-tab-skillRepos"
       >
-        <div class="project-config-tab-actions">
-          <span
-            v-if="tabDirtyMap.skillRepos"
-            class="project-config-unsaved"
-            data-testid="project-config-unsaved-skillRepos"
-            >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
-          >
-          <button data-testid="project-config-save-skillRepos" @click="saveTab('skillRepos')">
-            {{ t('common.action.save.label') }}
-          </button>
-        </div>
-
         <section class="project-config-section">
           <p class="project-config-section-title">
             {{ t('workspaceSetting.skillRepos.title.label') }}
@@ -1208,6 +1160,51 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
     </div>
 
     <div class="project-config-foot">
+      <!-- Per-tab Save lives beside Close; only the active tab's Save is shown. -->
+      <div v-show="activeTab === 'defaultMode'" class="project-config-tab-actions">
+        <span
+          v-if="tabDirtyMap.defaultMode"
+          class="project-config-unsaved"
+          data-testid="project-config-unsaved-defaultMode"
+          >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
+        >
+        <button data-testid="project-config-save-defaultMode" @click="saveTab('defaultMode')">
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
+      <div v-show="activeTab === 'gitSandbox'" class="project-config-tab-actions">
+        <span
+          v-if="tabDirtyMap.gitSandbox"
+          class="project-config-unsaved"
+          data-testid="project-config-unsaved-gitSandbox"
+          >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
+        >
+        <button data-testid="project-config-save-gitSandbox" @click="saveTab('gitSandbox')">
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
+      <div v-show="activeTab === 'collab'" class="project-config-tab-actions">
+        <span
+          v-if="tabDirtyMap.collab"
+          class="project-config-unsaved"
+          data-testid="project-config-unsaved-collab"
+          >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
+        >
+        <button data-testid="project-config-save-collab" @click="saveTab('collab')">
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
+      <div v-show="activeTab === 'skillRepos'" class="project-config-tab-actions">
+        <span
+          v-if="tabDirtyMap.skillRepos"
+          class="project-config-unsaved"
+          data-testid="project-config-unsaved-skillRepos"
+          >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
+        >
+        <button data-testid="project-config-save-skillRepos" @click="saveTab('skillRepos')">
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
       <button class="ghost" data-testid="project-config-close" @click="emit('close')">
         {{ t('common.action.close.label') }}
       </button>
@@ -1297,13 +1294,13 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   font-size: 0.6em;
   line-height: 1;
 }
-/* Per-tab Save row: right-aligned save button + optional unsaved-changes label. */
+/* Per-tab Save row in the footer: save button + optional unsaved-changes label,
+   shown beside the Close button for the active tab. */
 .project-config-tab-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  margin-bottom: 16px;
 }
 .project-config-unsaved {
   font-size: 12px;
@@ -1505,6 +1502,9 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
   }
 
+  .project-config-foot > .project-config-tab-actions {
+    flex: 1;
+  }
   .project-config-foot button {
     flex: 1;
   }

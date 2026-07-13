@@ -172,6 +172,9 @@ const {
   automationFormTarget,
   automationsProject,
   automationTimezone,
+  automationEnabled,
+  automationEnabledSaving,
+  setAutomationEnabled,
   selectedExecutionId,
   automationSaving,
   selectedExecution,
@@ -550,6 +553,8 @@ function onCodesChatWidth(px: number): void {
           :form-target="automationFormTarget"
           :workspace-path="automationsProject ?? ''"
           :timezone="automationTimezone"
+          :automation-enabled="automationEnabled"
+          :automation-enabled-saving="automationEnabledSaving"
           :execution-id="selectedExecutionId"
           :execution="selectedExecution"
           :tool-manifest="automationToolManifest"
@@ -563,6 +568,7 @@ function onCodesChatWidth(px: number): void {
           @open-form="openAutomationForm"
           @delete-automation="deleteAutomation"
           @toggle-enabled="onToggleAutomationEnabled"
+          @set-automation-enabled="setAutomationEnabled"
           @run-now="runNowAutomation"
           @load-session="onLoadExecutionSession"
           @select-execution="onSelectExecution"

@@ -10,6 +10,11 @@
  *
  * The per-automation match decision lives in the pure {@link evaluateAutomationTriggerMatch}
  * evaluator, keeping the match semantics isolated from the dispatch plumbing.
+ *
+ * A workspace-level automation gate (`WorkspaceSetting.automationEnabled`) is
+ * checked first: when the event's target workspace has the gate closed, the whole
+ * dispatch returns before any candidate matching or execution, and the event is
+ * dropped (not queued).
  */
 
 import { resolve } from 'node:path'
@@ -27,6 +32,7 @@ import type {
   SessionKind,
 } from '@ccc/shared/protocol'
 import { metadataFilterMatches } from '@ccc/shared/protocol'
+import { getAutomationEnabled } from '../../kernel/config/index.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { dispatchAndTrack, getStore, inFlight } from '../automations/engine.js'
 
@@ -193,6 +199,13 @@ export function dispatchEventTriggers(
 ): void {
   const store = getStore()
   if (!store) return
+
+  // Workspace automation gate: resolve the event's target workspace and, when the
+  // gate is closed, drop the whole dispatch before any candidate matching, in-flight
+  // warning, or execution log. Suppressed events are not queued — a re-open only
+  // acts on newly arriving events, never a backlog.
+  const workspacePath = resolve(payload.workspacePath)
+  if (!getAutomationEnabled(workspacePath)) return
 
   let candidates: Automation[]
   try {

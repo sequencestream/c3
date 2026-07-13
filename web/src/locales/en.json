@@ -1141,6 +1141,18 @@
       "title": {
         "label": "Automations"
       },
+      "gate": {
+        "label": "Automation",
+        "ariaLabel": "Workspace automation master switch",
+        "on": {
+          "tooltip": "Automation is on: scheduled and event triggers run normally."
+        },
+        "off": {
+          "tooltip": "Automation is off: scheduled and event triggers are paused. Click to turn on."
+        },
+        "offBanner": "Auto-triggering is off — scheduled and event automations will not fire. \"Run now\" still works.",
+        "saveFailed": "Failed to save the automation switch."
+      },
       "more": {
         "label": "More actions",
         "export": "Export",

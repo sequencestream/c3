@@ -729,6 +729,16 @@ export interface WorkspaceSetting {
    * Absent ⇒ `false` (normalized on read).
    */
   sddEnabled?: boolean
+  /**
+   * Workspace-level master gate for automation *auto-dispatch*. When off, neither
+   * the cron tick loop nor the event-trigger dispatcher fires any automation in
+   * this workspace, regardless of each automation's own `active` / `paused`
+   * status (which the gate never mutates); manual "run now" is unaffected.
+   * Absent / non-boolean / legacy values ⇒ `true` (only an explicit boolean
+   * `false` closes the gate, normalized on read), so existing workspaces keep
+   * dispatching after upgrade.
+   */
+  automationEnabled?: boolean
 }
 
 // ===========================================================================

@@ -99,6 +99,10 @@ export function installMessageHandler(ctx: AppCtx): void {
     discussionDispatch,
     automations,
     automationsProject,
+    automationWorkspaceSetting,
+    automationWorkspaceSettingId,
+    automationEnabledSaving,
+    automationSettingBeforeSave,
     selectedAutomationId,
     automationSaving,
     automationLogs,
@@ -558,6 +562,17 @@ export function installMessageHandler(ctx: AppCtx): void {
         currentWorkspaceSetting.value = msg.config
         detectedMainBranch.value = msg.detectedMainBranch ?? null
         resolvedSpecRoot.value = msg.resolvedSpecRoot ?? null
+        // The automations view keeps its own gate snapshot, bound to
+        // `automationsProject`. Adopt only a reply whose workspace matches, so a
+        // late reply for a previous workspace never updates the current toggle.
+        // The matching echo (initial load or the save round-trip) is the source of
+        // truth: it reconciles the gate value and clears any pending-save flag.
+        if (msg.workspaceId === automationsProject.value) {
+          automationWorkspaceSetting.value = msg.config
+          automationWorkspaceSettingId.value = msg.workspaceId
+          automationEnabledSaving.value = false
+          automationSettingBeforeSave.value = null
+        }
         break
       case 'settings':
         serverSettings.value = msg.settings
@@ -965,6 +980,15 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         // Automation save/update failed — release the saving overlay.
         if (automationSaving.value) automationSaving.value = false
+        // A rejected workspace-gate save rolls the toggle back to the last
+        // server-confirmed value; the global toast below surfaces the reason.
+        if (automationEnabledSaving.value) {
+          if (automationSettingBeforeSave.value) {
+            automationWorkspaceSetting.value = automationSettingBeforeSave.value
+          }
+          automationSettingBeforeSave.value = null
+          automationEnabledSaving.value = false
+        }
         add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
         break
       case 'wait_user_events':

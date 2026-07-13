@@ -35,6 +35,17 @@ function makeCtx() {
   const automationSaving = ref(false)
   const automations = ref({})
   const automationsProject = ref<string | null>(null)
+  const automationWorkspaceSetting = ref<import('@ccc/shared/protocol').WorkspaceSetting | null>(
+    null,
+  )
+  const automationWorkspaceSettingId = ref<string | null>(null)
+  const automationEnabledSaving = ref(false)
+  const automationSettingBeforeSave = ref<import('@ccc/shared/protocol').WorkspaceSetting | null>(
+    null,
+  )
+  const currentWorkspaceSetting = ref<import('@ccc/shared/protocol').WorkspaceSetting | null>(null)
+  const detectedMainBranch = ref<string | null>(null)
+  const resolvedSpecRoot = ref<string | null>(null)
   const activeTab = ref<string>('console')
   const selectedAutomationId = ref<string | null>(null)
   // Discussion / research refs touched by discussion_detail + research_message.
@@ -69,6 +80,13 @@ function makeCtx() {
     automationSaving,
     automations,
     automationsProject,
+    automationWorkspaceSetting,
+    automationWorkspaceSettingId,
+    automationEnabledSaving,
+    automationSettingBeforeSave,
+    currentWorkspaceSetting,
+    detectedMainBranch,
+    resolvedSpecRoot,
     activeTab,
     selectedAutomationId,
     serverSettings,
@@ -101,6 +119,10 @@ function makeCtx() {
     automationSaving,
     automations,
     automationsProject,
+    automationWorkspaceSetting,
+    automationWorkspaceSettingId,
+    automationEnabledSaving,
+    automationSettingBeforeSave,
     researchMessages,
     researchMaxSeq,
   }
@@ -927,5 +949,68 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     expect(r.maybeRestoreCodes).toHaveBeenCalled()
     expect(r.selectSession).not.toHaveBeenCalled()
     expect(r.showToast).not.toHaveBeenCalled()
+  })
+})
+
+describe('automation workspace-gate snapshot (workspace_setting routing)', () => {
+  function gateSetting(
+    automationEnabled: boolean,
+  ): import('@ccc/shared/protocol').WorkspaceSetting {
+    return {
+      forge: 'auto',
+      defaultMode: {} as import('@ccc/shared/protocol').WorkspaceSetting['defaultMode'],
+      gitBranchMode: 'current-branch',
+      sddEnabled: false,
+      automationEnabled,
+    } as import('@ccc/shared/protocol').WorkspaceSetting
+  }
+
+  function wsSetting(workspaceId: string, automationEnabled: boolean): ServerToClient {
+    return {
+      type: 'workspace_setting',
+      workspaceId,
+      config: gateSetting(automationEnabled),
+    } as unknown as ServerToClient
+  }
+
+  it('adopts a reply whose workspace matches the current automations project', () => {
+    const r = makeCtx()
+    r.automationsProject.value = 'ws1'
+    r.ctx.handleMessage(wsSetting('ws1', false))
+    expect(r.automationWorkspaceSettingId.value).toBe('ws1')
+    expect(r.automationWorkspaceSetting.value?.automationEnabled).toBe(false)
+  })
+
+  it('ignores a late reply for a previous workspace (isolation)', () => {
+    const r = makeCtx()
+    r.automationsProject.value = 'ws2'
+    // A stale reply for the workspace we just navigated away from must not leak in.
+    r.ctx.handleMessage(wsSetting('ws1', false))
+    expect(r.automationWorkspaceSetting.value).toBeNull()
+    expect(r.automationWorkspaceSettingId.value).toBeNull()
+  })
+
+  it('a matching echo clears the pending-save flag and rollback snapshot', () => {
+    const r = makeCtx()
+    r.automationsProject.value = 'ws1'
+    r.automationEnabledSaving.value = true
+    r.automationSettingBeforeSave.value = gateSetting(true)
+    r.ctx.handleMessage(wsSetting('ws1', false))
+    expect(r.automationEnabledSaving.value).toBe(false)
+    expect(r.automationSettingBeforeSave.value).toBeNull()
+    expect(r.automationWorkspaceSetting.value?.automationEnabled).toBe(false)
+  })
+
+  it('a server error while saving rolls the gate back to the last confirmed value', () => {
+    const r = makeCtx()
+    r.automationsProject.value = 'ws1'
+    // Pending save: optimistic value is false; last confirmed was true.
+    r.automationEnabledSaving.value = true
+    r.automationWorkspaceSetting.value = gateSetting(false)
+    r.automationSettingBeforeSave.value = gateSetting(true)
+    r.ctx.handleMessage(error('workspaceSetting.invalidDefaultMode'))
+    expect(r.automationEnabledSaving.value).toBe(false)
+    expect(r.automationSettingBeforeSave.value).toBeNull()
+    expect(r.automationWorkspaceSetting.value?.automationEnabled).toBe(true)
   })
 })

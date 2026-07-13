@@ -27,8 +27,19 @@ function sched(over: Partial<Automation> = {}): Automation {
   }
 }
 
-function mountList(automations: Automation[], activeId: string | null = null) {
-  return mount(AutomationList, { props: { automations, activeId } })
+function mountList(
+  automations: Automation[],
+  activeId: string | null = null,
+  gate: { automationEnabled?: boolean | null; automationEnabledSaving?: boolean } = {},
+) {
+  return mount(AutomationList, {
+    props: {
+      automations,
+      activeId,
+      automationEnabled: 'automationEnabled' in gate ? (gate.automationEnabled ?? null) : true,
+      automationEnabledSaving: gate.automationEnabledSaving ?? false,
+    },
+  })
 }
 
 describe('AutomationList.vue — 左栏纯选择列表', () => {
@@ -133,5 +144,63 @@ describe('AutomationList.vue — 左栏纯选择列表', () => {
     const badge = w.find('.sched-status')
     expect(badge.exists()).toBe(true)
     expect(badge.classes()).toContain('paused')
+  })
+})
+
+describe('AutomationList.vue — workspace 自动化总开关', () => {
+  it('gate 开启:switch 为 checked,可访问名走 i18n,无关闭提示', () => {
+    const w = mountList([sched()], null, { automationEnabled: true })
+    const gate = w.find('.sched-gate')
+    expect(gate.exists()).toBe(true)
+    expect(gate.attributes('role')).toBe('switch')
+    expect(gate.attributes('aria-checked')).toBe('true')
+    // 无障碍名称走 i18n,而非依赖可见标签文本。
+    expect(gate.attributes('aria-label')).toBe('Workspace automation master switch')
+    // 可见标签文案同样接入 i18n。
+    expect(w.find('.sched-gate-label').text()).toBe('Automation')
+    expect(w.find('.sched-gate-banner').exists()).toBe(false)
+  })
+
+  it('gate 关闭:switch 未选中,标题区持续显示关闭提示', () => {
+    const w = mountList([sched()], null, { automationEnabled: false })
+    const gate = w.find('.sched-gate')
+    expect(gate.attributes('aria-checked')).toBe('false')
+    const banner = w.find('.sched-gate-banner')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Auto-triggering is off')
+    // 关闭提示是状态通告,便于无障碍读出。
+    expect(banner.attributes('role')).toBe('status')
+  })
+
+  it('点击 switch emit set-automation-enabled(取反)', async () => {
+    const on = mountList([sched()], null, { automationEnabled: true })
+    await on.find('.sched-gate').trigger('click')
+    expect(on.emitted('set-automation-enabled')?.[0]).toEqual([false])
+
+    const off = mountList([sched()], null, { automationEnabled: false })
+    await off.find('.sched-gate').trigger('click')
+    expect(off.emitted('set-automation-enabled')?.[0]).toEqual([true])
+  })
+
+  it('加载中(automationEnabled=null):switch 禁用且不 emit,显示 ON 安全默认', async () => {
+    const w = mountList([sched()], null, { automationEnabled: null })
+    const gate = w.find('.sched-gate')
+    expect(gate.attributes('disabled')).toBeDefined()
+    expect(gate.attributes('aria-checked')).toBe('true')
+    // null 视为加载中,不显示关闭提示,避免误导。
+    expect(w.find('.sched-gate-banner').exists()).toBe(false)
+    await gate.trigger('click')
+    expect(w.emitted('set-automation-enabled')).toBeUndefined()
+  })
+
+  it('保存中:switch 禁用且不 emit', async () => {
+    const w = mountList([sched()], null, {
+      automationEnabled: true,
+      automationEnabledSaving: true,
+    })
+    const gate = w.find('.sched-gate')
+    expect(gate.attributes('disabled')).toBeDefined()
+    await gate.trigger('click')
+    expect(w.emitted('set-automation-enabled')).toBeUndefined()
   })
 })

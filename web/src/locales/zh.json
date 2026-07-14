@@ -1820,6 +1820,11 @@
     },
     "auth": {
       "adminOnly": "只有管理员可以修改系统配置。"
+    },
+    "dashboard": {
+      "loadFailed": "加载工作区总览失败。",
+      "workspaceMissing": "工作区已不存在。",
+      "gateSaveFailed": "保存自动化总闸失败。"
     }
   },
   "statusIndicator": {
@@ -2251,6 +2256,42 @@
       "onFailure": "失败时询问",
       "onRequest": "请求时询问"
     }
+  },
+  "dashboard": {
+    "title": "工作区总览",
+    "nav": {
+      "ariaLabel": "工作台页面",
+      "dashboard": "总览",
+      "notifications": "用户通知"
+    },
+    "column": {
+      "workspace": "工作区",
+      "running": "运行中",
+      "sessions": "会话数",
+      "intents": "需求数",
+      "discussions": "讨论数",
+      "automations": "自动化数",
+      "gate": "自动化总闸"
+    },
+    "gate": {
+      "on": "开",
+      "off": "关"
+    },
+    "bulk": {
+      "enable": "开启自动化",
+      "disable": "关闭自动化",
+      "allSuccess": "已更新 {count} 个工作区的自动化。",
+      "allFailed": "更新 {count} 个工作区的自动化失败。",
+      "partial": "成功 {ok} 个,失败 {failed} 个。"
+    },
+    "selectAll": "选择全部工作区",
+    "selectRow": "选择 {name}",
+    "selectedCount": "已选 {count} 个",
+    "rowFailed": "失败",
+    "loading": "加载中…",
+    "empty": "暂无工作区。",
+    "refreshFailed": "刷新总览失败。",
+    "retry": "重试"
   },
   "workcenter": {
     "title": "工作台",

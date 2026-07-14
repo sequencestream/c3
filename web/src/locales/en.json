@@ -1820,6 +1820,11 @@
     },
     "auth": {
       "adminOnly": "Only the administrator can change system settings."
+    },
+    "dashboard": {
+      "loadFailed": "Failed to load the workspace dashboard.",
+      "workspaceMissing": "Workspace no longer exists.",
+      "gateSaveFailed": "Failed to save the automation gate."
     }
   },
   "statusIndicator": {
@@ -2339,6 +2344,42 @@
       "onFailure": "On Failure",
       "onRequest": "On Request"
     }
+  },
+  "dashboard": {
+    "title": "Workspace Dashboard",
+    "nav": {
+      "ariaLabel": "Workcenter pages",
+      "dashboard": "Dashboard",
+      "notifications": "Notifications"
+    },
+    "column": {
+      "workspace": "Workspace",
+      "running": "Running",
+      "sessions": "Sessions",
+      "intents": "Intents",
+      "discussions": "Discussions",
+      "automations": "Automations",
+      "gate": "Automation"
+    },
+    "gate": {
+      "on": "On",
+      "off": "Off"
+    },
+    "bulk": {
+      "enable": "Enable automation",
+      "disable": "Disable automation",
+      "allSuccess": "Updated automation for {count} workspace(s).",
+      "allFailed": "Failed to update automation for {count} workspace(s).",
+      "partial": "Updated {ok}, failed {failed}."
+    },
+    "selectAll": "Select all workspaces",
+    "selectRow": "Select {name}",
+    "selectedCount": "{count} selected",
+    "rowFailed": "Failed",
+    "loading": "Loading…",
+    "empty": "No workspaces.",
+    "refreshFailed": "Failed to refresh the dashboard.",
+    "retry": "Retry"
   },
   "workcenter": {
     "title": "Workcenter",

@@ -261,6 +261,19 @@ export interface AppMethods {
   ): void
   /** Mark a todo event done from the WorkCenter list. */
   markDoneWorkcenter(eventId: string): void
+  // workcenter dashboard
+  /** Switch the Workcenter page-internal nav; loads the newly-active page. */
+  setWorkcenterPage(page: 'dashboard' | 'notifications'): void
+  /** (Re)fetch the cross-workspace Dashboard snapshot; coalesces while one is in flight. */
+  loadDashboard(): void
+  /** Refresh the Dashboard only when it is the active view (domain-broadcast hook). */
+  maybeRefreshDashboard(): void
+  /** Toggle one workspace row's selection in the Dashboard. */
+  toggleDashboardWorkspace(workspaceId: string): void
+  /** Select all rows, or clear the selection if all are already selected. */
+  toggleAllDashboard(): void
+  /** Bulk-set the automation gate for the selected workspaces (admin only). */
+  setWorkspacesAutomation(enabled: boolean): void
 }
 
 // The shared controller context: reactive state + runtime plumbing + all the

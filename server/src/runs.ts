@@ -525,6 +525,21 @@ export function runningCountForWorkspace(workspacePath: string): number {
   return n
 }
 
+/**
+ * The session ids of the live (non-`idle`) runtimes whose `workspacePath` matches.
+ * The Workcenter Dashboard unions this with the automation sessions that only have
+ * a running execution log (no runtime surface) and takes the set size, so a session
+ * backed by BOTH a runtime and a running log is counted once. Returns the raw ids
+ * (not a count) precisely so that de-duplication can happen at the union site.
+ */
+export function runningRuntimeSessionIdsForWorkspace(workspacePath: string): string[] {
+  const ids: string[] = []
+  for (const rt of runtimes.values()) {
+    if (rt.workspacePath === workspacePath && rt.status !== 'idle') ids.push(rt.sessionId)
+  }
+  return ids
+}
+
 /** Count active worktree-backed dev runtimes across the installation. */
 export function activeWorktreeRuntimeCount(): number {
   let n = 0

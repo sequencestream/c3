@@ -3326,6 +3326,55 @@ export interface TimeRangeProjectStats {
   automations: { running: number; active: number; total: number }
 }
 
+/**
+ * One workspace's row in the Workcenter Dashboard snapshot — a single, live,
+ * time-range-independent aggregation of a workspace's scale and current activity
+ * (reply to {@link get_workspace_dashboard}). Unlike {@link TimeRangeProjectStats}
+ * this deliberately has no time filter and counts **every** `SessionKind` in
+ * `sessions.total` (not just work sessions).
+ */
+export interface WorkspaceDashboardRow {
+  /** Opaque workspace id (never a path — the server resolves id → path internally). */
+  workspaceId: string
+  /** Display name — the workspace directory's basename. */
+  name: string
+  /** Resolved absolute path on disk. Display-only, for distinguishing same-named workspaces. */
+  path: string
+  /**
+   * `total`: all real (`bound=1`) session projections across every `SessionKind`.
+   * `running`: distinct live sessions — non-idle runtimes plus automation sessions
+   * with a running execution log, de-duplicated by session id (idle / completed /
+   * failed / terminated never counted).
+   */
+  sessions: { running: number; total: number }
+  /** All intent rows in the workspace (no status or time filter). */
+  intents: { total: number }
+  /** All discussion rows in the workspace (no status or time filter). */
+  discussions: { total: number }
+  /** All automation config rows in the workspace (a config count, not running tasks). */
+  automations: { total: number }
+  /**
+   * The workspace-level automation master gate, normalized on read
+   * ({@link WorkspaceSetting.automationEnabled}); absent / non-boolean / legacy ⇒ `true`.
+   */
+  automationEnabled: boolean
+}
+
+/**
+ * Per-workspace outcome of a bulk automation-gate write
+ * ({@link set_workspaces_automation_enabled}). The batch is NOT transactional:
+ * each workspace settles independently, so a result carries `ok: false` + a
+ * structured {@link UiError} for that one workspace without failing the rest.
+ */
+export interface WorkspaceAutomationGateResult {
+  /** Opaque id of the workspace this outcome is for. */
+  workspaceId: string
+  /** Whether the gate write for this workspace succeeded. */
+  ok: boolean
+  /** Structured, localizable failure reason when `ok` is false. */
+  error?: UiError
+}
+
 export type CodeEntryType = 'file' | 'directory'
 
 /**
@@ -3878,6 +3927,28 @@ export type ClientToServer =
    * by `last_modified`; the `running` counts are a live "now" notion and ignore it.
    */
   | { type: 'get_timerange_stats'; startTime?: number; endTime?: number }
+  /**
+   * Workcenter Dashboard snapshot: one live, time-range-independent aggregation
+   * per **all** registered workspaces in a single round-trip. Replies with
+   * {@link workspace_dashboard}. Available to any authenticated connection.
+   * Unlike `get_timerange_stats`, `sessions.total` counts every `SessionKind`
+   * and no time filter applies. A domain db being unavailable or a single
+   * workspace failing to aggregate yields a structured error, never a misleading
+   * all-zero row.
+   */
+  | { type: 'get_workspace_dashboard' }
+  /**
+   * Bulk-set the workspace-level automation master gate for a set of workspaces
+   * to a single boolean. Admin-only (rejected wholesale before any write for a
+   * non-admin connection). `workspaceIds` is de-duplicated server-side; an empty
+   * list is a no-op (never interpreted as "all workspaces"). The batch is NOT
+   * transactional — each workspace settles independently and the server reads the
+   * latest full {@link WorkspaceSetting} per item, replacing only `automationEnabled`
+   * so no other config field is clobbered. Replies with
+   * {@link workspaces_automation_result}: a per-workspace outcome list plus the
+   * post-operation Dashboard snapshot.
+   */
+  | { type: 'set_workspaces_automation_enabled'; workspaceIds: string[]; enabled: boolean }
   | { type: 'ping' }
 
 // Server → Client
@@ -4492,6 +4563,30 @@ export type ServerToClient =
     }
   /** WorkCenter cross-project rollup (reply to `get_timerange_stats`). One entry per workspace. */
   | { type: 'timerange_stats'; stats: TimeRangeProjectStats[] }
+  /**
+   * Reply to {@link get_workspace_dashboard}. On success `rows` is the full
+   * snapshot (one {@link WorkspaceDashboardRow} per registered workspace, in
+   * `listWorkspaces()` order; empty registry ⇒ empty array) and `error` is
+   * absent. On failure (a domain db unavailable / a single workspace aggregation
+   * threw) `rows` is empty and `error` carries a structured {@link UiError} — the
+   * client keeps its previous snapshot and shows a refresh-failed state rather
+   * than deleting live rows.
+   */
+  | { type: 'workspace_dashboard'; rows: WorkspaceDashboardRow[]; error?: UiError }
+  /**
+   * Reply to {@link set_workspaces_automation_enabled}. `results` is the
+   * per-workspace outcome list (settled independently, so a mix of success and
+   * failure is expected); `dashboard` is the post-operation snapshot used to
+   * calibrate the client, with `dashboardError` set when that snapshot itself
+   * could not be built (the client still shows the settled per-item results and
+   * re-requests a snapshot).
+   */
+  | {
+      type: 'workspaces_automation_result'
+      results: WorkspaceAutomationGateResult[]
+      dashboard: WorkspaceDashboardRow[]
+      dashboardError?: UiError
+    }
   /**
    * Reply to {@link get_skill_link_status} (2026-06-12): one {@link SkillLinkStatus}
    * per configured skill repo, reporting `_c3_<id>` symlink presence in each of the

@@ -52,7 +52,9 @@ import type {
   VendorId,
   WaitUserInvolveEvent,
   WorkspaceInfo,
+  WorkspaceDashboardRow,
 } from '@ccc/shared/protocol'
+import type { UiError } from '@ccc/shared/ui-codes'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel, CLAUDE_MODE_FALLBACK } from '@/composables/useModeLabel'
 import { useAuth } from '@/composables/useAuth'
@@ -186,6 +188,23 @@ export function createState(deps: StateDeps) {
   const workcenterPendingCount = computed(
     () => workcenterEvents.value.filter((event) => event.status === 'todo').length,
   )
+
+  // Workcenter page-internal nav: which page the workcenter view is showing.
+  const workcenterPage = ref<'dashboard' | 'notifications'>('dashboard')
+
+  // Workcenter Dashboard: the cross-workspace snapshot + its selection/feedback.
+  const dashboardRows = ref<WorkspaceDashboardRow[]>([])
+  const dashboardLoading = ref(false)
+  // The whole snapshot failed to refresh; the last good rows are kept on screen.
+  const dashboardError = ref<UiError | null>(null)
+  // Multi-selected workspace ids for the bulk gate action.
+  const dashboardSelected = ref<Set<string>>(new Set())
+  // A bulk gate request is in flight (blocks re-entry).
+  const dashboardBusy = ref(false)
+  // Per-workspace failures from the last bulk action, flagged on their rows.
+  const dashboardFailedIds = ref<Set<string>>(new Set())
+  // A coalesced refresh was requested while a request was in flight — run once after.
+  const dashboardRefreshPending = ref(false)
 
   // The 「会话」(console) tab remembers its OWN last-viewed session, independent of
   // the 「需求」tab's comm session — so switching tabs never crosses chat content.
@@ -702,6 +721,14 @@ export function createState(deps: StateDeps) {
     workcenterHasMore,
     workcenterLoading,
     workcenterAppendNext,
+    workcenterPage,
+    dashboardRows,
+    dashboardLoading,
+    dashboardError,
+    dashboardSelected,
+    dashboardBusy,
+    dashboardFailedIds,
+    dashboardRefreshPending,
     consoleSession,
     teamSessions,
     pendingQueues,

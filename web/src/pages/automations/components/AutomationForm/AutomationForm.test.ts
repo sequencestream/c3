@@ -305,14 +305,17 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(input.eventSessionKindFilter).toEqual(['work'])
   })
 
-  it('未勾选 sessionKind 时 run:settled 事件触发不可保存', async () => {
+  it('未勾选 sessionKind 时 run:settled 事件触发仍可保存(空 = 所有会话类型)', async () => {
     const w = mountForm()
     await w.find('textarea').setValue('echo done')
     await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
-    // 一个 sessionKind 都没选 → 保存按钮禁用,点击不触发 create。
-    expect(w.find('.sf-btn.primary').attributes('disabled')).toBeDefined()
+    // sessionKind 可选:一个都不选时保存按钮不禁用,点击照常触发 create。
+    expect(w.find('.sf-btn.primary').attributes('disabled')).toBeUndefined()
     await w.find('.sf-btn.primary').trigger('click')
-    expect(w.emitted('create')).toBeUndefined()
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.triggerType).toBe('event')
+    // 空选择随空数组提交(服务端持久化时规范化为 NULL)。
+    expect(input.eventSessionKindFilter).toEqual([])
   })
 
   it.skip('create(event/settled):填 status + 勾选 sessionKind → eventFilters statuses 携带', async () => {

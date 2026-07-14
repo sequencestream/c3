@@ -1654,8 +1654,8 @@
         "hint": "このワークスペースの実行が選択したイベントに達したときに実行されます。",
         "sessionKind": {
           "label": "セッション種別で発火",
-          "hint": "どの実行元がこの自動化をトリガーできるか選択します。",
-          "required": "少なくとも1つのセッション種別を選択してください。",
+          "hint": "任意——どの実行元がこの自動化をトリガーできるか選択します。空欄の場合はすべてのセッション種別が対象です。",
+          "all": "すべてのセッション種別",
           "work": {
             "label": "作業"
           },
@@ -1809,8 +1809,7 @@
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the automation vendor.",
-      "missingSessionKindFilter": "実行イベントトリガーは少なくとも1つのセッション種別で発火する必要があります。"
+      "agentVendorMismatch": "The selected agent does not match the automation vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve ストアは利用できません (c3.db)。",

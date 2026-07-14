@@ -1654,8 +1654,8 @@
         "hint": "이 작업 공간의 실행이 선택한 이벤트에 도달하면 실행됩니다.",
         "sessionKind": {
           "label": "세션 종류에서 실행",
-          "hint": "어떤 실행 출처가 이 자동화를 트리거할 수 있는지 선택합니다.",
-          "required": "세션 종류를 하나 이상 선택하세요.",
+          "hint": "선택 사항 — 어떤 실행 출처가 이 자동화를 트리거할 수 있는지 선택합니다. 비워 두면 모든 세션 종류가 대상입니다.",
+          "all": "모든 세션 종류",
           "work": {
             "label": "작업"
           },
@@ -1809,8 +1809,7 @@
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the automation vendor.",
-      "missingSessionKindFilter": "실행 이벤트 트리거는 세션 종류를 하나 이상 선택해야 합니다."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve 저장소를 사용할 수 없습니다 (c3.db).",

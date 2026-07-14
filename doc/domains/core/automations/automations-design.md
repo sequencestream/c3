@@ -158,9 +158,10 @@ CREATE INDEX idx_sch_exec_automation ON automation_execution_logs(automation_id)
 `pr:operation`(模型发布或服务端发布)。各订阅桥把总线事件归一化为通用 `view={workspacePath, event,
 sessionKind?}` 后统一调用分发核 `dispatchEventTriggers(view)`。每次事件发生时:
 
-1. **仅限运行生命周期类型:** 对 `run:started`/`run:settled`,纯匹配器在最前面加一道 sessionKind
-   fail-closed 边界——若事件 `sessionKind` 未落在 `eventSessionKindFilter` 内即不匹配(内部通信运行
-   永不触发用户自动化,SCH-R18)。`pr:operation` / `intent:lifecycle` 不携带 sessionKind,跳过此道门。
+1. **仅限运行生命周期类型:** 对 `run:started`/`run:settled`,当 `eventSessionKindFilter` **非空**时,
+   纯匹配器在最前面加一道 sessionKind 白名单边界——事件 `sessionKind` 必须落在其中才匹配,无会话来源的事件
+   一律不命中(SCH-R18)。过滤器缺失/为空表示不限制会话类型,跳过此维度。`pr:operation` / `intent:lifecycle`
+   不携带 sessionKind,同样跳过此道门。
 2. `getEventAutomations(event.type)` 按 `eventFilter.type` 取出候选的活跃 `event` 自动化。
 3. 纯匹配器 `genericEventFilterMatches` 按通用语义 workspace → type → status → metadata 逐项判定:
    `statuses` 缺省/空 = 任意,非空时精确区分大小写地匹配 `event.status`;`metadata` 复用

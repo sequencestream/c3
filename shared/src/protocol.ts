@@ -2660,8 +2660,8 @@ export interface GenericEventFilter {
  * The run-lifecycle event types (the former `RunLifecycleTopic` values). An
  * event trigger whose filter `type` is one of these (or the `run:*` category
  * wildcard, which covers both) is a "run-lifecycle" trigger: it carries the
- * mandatory `eventSessionKindFilter` security boundary and its `status`
- * dimension is the run's terminal reason. Kept as a runtime array so
+ * optional `eventSessionKindFilter` (absent/empty = every session kind) and its
+ * `status` dimension is the run's terminal reason. Kept as a runtime array so
  * save-boundary / dispatch checks stay data-driven, not string-literal.
  */
 export const RUN_LIFECYCLE_EVENT_TYPES = ['run:started', 'run:settled'] as const
@@ -3033,13 +3033,14 @@ export interface Automation {
   metadata?: Record<string, string>
   /**
    * For run-lifecycle event triggers (any `eventFilters` row of a run-lifecycle
-   * `type`): the explicit set of {@link SessionKind} origins that may fire
-   * this automation (2026-07-04). MUST be a non-empty list for run-lifecycle
-   * triggers (enforced at save); `null` for cron and non-run-lifecycle event
-   * triggers. Replaces the former hardcoded `['work']` whitelist — legacy
-   * run-lifecycle rows migrate to explicit `['work']`. Kept independent of
-   * `eventFilters` because it is a mandatory security boundary, not a business
-   * filter, and only applies to the run-lifecycle event types.
+   * `type`): an OPTIONAL set of {@link SessionKind} origins that may fire this
+   * automation (2026-07-04). Absent, `null` and `[]` are equivalent and mean
+   * "every session kind" — the sessionKind dimension is skipped entirely; a
+   * non-empty list stays an exact whitelist (only the listed kinds match, and an
+   * event with no session origin never does). `null` for cron and
+   * non-run-lifecycle event triggers. Legacy run-lifecycle rows migrated to
+   * explicit `['work']` keep that behaviour. Kept independent of `eventFilters`
+   * because it applies only to the run-lifecycle event types.
    */
   eventSessionKindFilter?: SessionKind[] | null
   status: AutomationStatus
@@ -3081,10 +3082,11 @@ export interface CreateAutomationInput {
   /** Free-form annotations for the automation; sanitized server-side. Absent = `{}`. */
   metadata?: Record<string, string>
   /**
-   * Required for run-lifecycle event triggers (any `eventFilters` row of a
-   * run-lifecycle `type`): the non-empty set of SessionKind origins that may fire it.
-   * Rejected by the server when missing/empty for a run-lifecycle trigger. Ignored
-   * for cron and non-run-lifecycle event triggers.
+   * Optional for run-lifecycle event triggers (any `eventFilters` row of a
+   * run-lifecycle `type`): the set of SessionKind origins that may fire it.
+   * Absent / `null` / `[]` all mean "every session kind" (accepted, no
+   * sessionKind filtering); a non-empty list is an exact whitelist. Ignored for
+   * cron and non-run-lifecycle event triggers.
    */
   eventSessionKindFilter?: SessionKind[] | null
   mode: ModeToken | CodexPolicy
@@ -3128,7 +3130,7 @@ export interface UpdateAutomationInput {
   eventFilters?: GenericEventFilter[] | null
   /** Replace the free-form annotations; sanitized server-side. */
   metadata?: Record<string, string>
-  /** Replace the run-lifecycle SessionKind filter; non-empty required for run-lifecycle triggers. */
+  /** Replace the run-lifecycle SessionKind filter; absent/null/empty = every session kind. */
   eventSessionKindFilter?: SessionKind[] | null
   mode?: ModeToken | CodexPolicy
   toolAllowlist?: string[]

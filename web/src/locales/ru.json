@@ -1654,8 +1654,8 @@
         "hint": "Срабатывает, когда запуск в этом рабочем пространстве достигает выбранного события.",
         "sessionKind": {
           "label": "Срабатывает для видов сессий",
-          "hint": "Выберите, какие источники запуска могут запускать эту автоматизацию.",
-          "required": "Выберите хотя бы один вид сессии.",
+          "hint": "Необязательно — выберите, какие источники запуска могут запускать эту автоматизацию. Оставьте пустым, чтобы разрешить все виды сессий.",
+          "all": "Все виды сессий",
           "work": {
             "label": "Работа"
           },
@@ -1809,8 +1809,7 @@
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the automation vendor.",
-      "missingSessionKindFilter": "Триггер события запуска должен срабатывать хотя бы для одного вида сессии."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Хранилище Wait-User-Involve недоступно (c3.db).",

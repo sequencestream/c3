@@ -231,7 +231,7 @@ describe('mapToCreateInput — fault-tolerant field mapping', () => {
     expect(result.input.eventFilters).toEqual([{ type: 'run:settled', statuses: ['error'] }])
   })
 
-  it('falls back a run-lifecycle trigger with no valid sessionKind filter to ["work"]', () => {
+  it('keeps a run-lifecycle trigger with an empty sessionKind filter unrestricted (no ["work"] fallback)', () => {
     const result = mapToCreateInput(
       {
         type: 'command',
@@ -242,7 +242,30 @@ describe('mapToCreateInput — fault-tolerant field mapping', () => {
       opts,
     )
     if (!result.importable) throw new Error('expected importable')
-    expect(result.input.eventSessionKindFilter).toEqual(['work'])
+    expect(result.input.eventSessionKindFilter).toBeNull()
+  })
+
+  it('keeps a run-lifecycle trigger with an absent sessionKind filter unrestricted', () => {
+    const result = mapToCreateInput(
+      { type: 'command', triggerType: 'event', eventTopic: 'run:started' },
+      opts,
+    )
+    if (!result.importable) throw new Error('expected importable')
+    expect(result.input.eventSessionKindFilter).toBeNull()
+  })
+
+  it('keeps a run-lifecycle trigger with an all-invalid sessionKind filter unrestricted', () => {
+    const result = mapToCreateInput(
+      {
+        type: 'command',
+        triggerType: 'event',
+        eventTopic: 'run:started',
+        eventSessionKindFilter: ['bogus', 42, null],
+      },
+      opts,
+    )
+    if (!result.importable) throw new Error('expected importable')
+    expect(result.input.eventSessionKindFilter).toBeNull()
   })
 
   it('demotes an event trigger with no resolvable event type to the cron default', () => {

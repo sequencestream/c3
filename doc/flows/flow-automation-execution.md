@@ -53,8 +53,8 @@ flowchart TD
   成立时:通用匹配器按 workspace → type → status → metadata 逐项判定——`eventFilter.type`
   等于 `event.type`、工作区匹配、`event.status` 通过 `eventFilter.statuses`(缺省/空 = 任意,
   例如 `run:settled` 的终态 reason 就落在这里)、`eventFilter.metadata` 条件成立;此外对
-  `run:started`/`run:settled` 还先过 `eventSessionKindFilter` 的 fail-closed 边界(内部的
-  意图/讨论运行绝不会触发用户自动化,`SCH-R18`)。事件型自动化不携带 `cronExpression`/`nextRunAt`,也从不参与 tick 评估
+  `run:started`/`run:settled` 且 `eventSessionKindFilter` **非空**时,还先过一道会话类型白名单边界
+  (事件 `sessionKind` 必须在其中,否则不命中;过滤器空/缺失表示不限制会话类型,`SCH-R18`)。事件型自动化不携带 `cronExpression`/`nextRunAt`,也从不参与 tick 评估
   (`SCH-R17`)。
 
 两者都复用**同一套**“调度并跟踪 → 执行”路径、三层执行身份体系,以及写队列(`SCH-R17`)。

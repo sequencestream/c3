@@ -1409,6 +1409,10 @@
         "label": "提示词",
         "placeholder": "运行一次安全审计并总结发现…"
       },
+      "embedEventContext": {
+        "label": "在提示词中嵌入触发事件",
+        "hint": "执行时把完整的命中事件追加到提示词，便于模型针对触发它的事件作出处理。仅对事件驱动的 LLM 任务生效；可能增加 token 消耗。"
+      },
       "maxWallClockMs": {
         "label": "执行超时（毫秒）",
         "placeholder": "使用任务默认值",

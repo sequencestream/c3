@@ -963,6 +963,130 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
   })
 })
 
+// ---- Embed triggering event into the prompt (event + LLM only) ------------
+
+const EMBED = '[data-testid="embed-event-context"]'
+const EMBED_BOX = '[data-testid="embed-event-context-checkbox"]'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function pickTaskType(w: any, index: 0 | 1): Promise<void> {
+  await w.findAll('.sf-segmented')[0].findAll('.sf-seg')[index].trigger('click')
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function pickTrigger(w: any, index: 0 | 1): Promise<void> {
+  await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[index].trigger('click')
+}
+// Select the first sessionKind chip (work) — required to save a run:settled event.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function pickWorkSessionKind(w: any): Promise<void> {
+  const days = w
+    .findAll('.sf-section[data-testid="section-trigger"] .sf-days')
+    .filter((d: { findAll: (s: string) => unknown[] }) => d.findAll('.sf-day').length >= 7)
+  if (days.length) await days[days.length - 1].findAll('.sf-day')[0].trigger('click')
+}
+
+// An event-triggered LLM automation fixture for edit-mode round-trip (pr:create
+// is not a run-lifecycle type, so it needs no sessionKind gate).
+function eventLlm(over: Partial<Automation> = {}): Automation {
+  return sched({
+    type: 'llm',
+    triggerType: 'event',
+    cronExpression: '',
+    eventFilters: [{ type: 'pr:create' }],
+    mode: 'auto',
+    vendor: 'claude',
+    agentId: 'claude-default',
+    config: { prompt: 'Investigate', name: 'evt', embedEventContext: true },
+    ...over,
+  })
+}
+
+describe('AutomationForm.vue — 嵌入触发事件复选框', () => {
+  it('仅在 事件 + LLM 组合下显示复选框', async () => {
+    // cron + command(默认):不显示。
+    expect(mountForm().find(EMBED).exists()).toBe(false)
+
+    // cron + llm:不显示。
+    const cronLlm = mountForm()
+    await pickTaskType(cronLlm, 1)
+    expect(cronLlm.find(EMBED).exists()).toBe(false)
+
+    // event + command:不显示。
+    const eventCmd = mountForm()
+    await pickTrigger(eventCmd, 1)
+    expect(eventCmd.find(EMBED).exists()).toBe(false)
+
+    // event + llm:显示。
+    const eventLlmForm = mountForm()
+    await pickTaskType(eventLlmForm, 1)
+    await pickTrigger(eventLlmForm, 1)
+    expect(eventLlmForm.find(EMBED).exists()).toBe(true)
+  })
+
+  it('create:默认关闭;勾选后 config.embedEventContext 为 true', async () => {
+    const w = mountForm()
+    await pickTaskType(w, 1) // llm
+    await pickTrigger(w, 1) // event
+    await w.find('.sf-agent-select').setValue('claude-default')
+    await w.find('textarea').setValue('Investigate')
+    await pickWorkSessionKind(w)
+    // 默认未勾选。
+    expect((w.find(EMBED_BOX).element as HTMLInputElement).checked).toBe(false)
+    await w.find(EMBED_BOX).setValue(true)
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect((input.config as Record<string, unknown>).embedEventContext).toBe(true)
+  })
+
+  it('create:关闭时不提交启用值', async () => {
+    const w = mountForm()
+    await pickTaskType(w, 1)
+    await pickTrigger(w, 1)
+    await w.find('.sf-agent-select').setValue('claude-default')
+    await w.find('textarea').setValue('Investigate')
+    await pickWorkSessionKind(w)
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect((input.config as Record<string, unknown>).embedEventContext).toBe(false)
+  })
+
+  it('edit:回显已保存的启用值并可 update 往返', async () => {
+    const w = mountForm({ automation: eventLlm() })
+    expect(w.find(EMBED).exists()).toBe(true)
+    expect((w.find(EMBED_BOX).element as HTMLInputElement).checked).toBe(true)
+    await w.find('.sf-btn.primary').trigger('click')
+    const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
+    expect((input.config as Record<string, unknown>).embedEventContext).toBe(true)
+  })
+
+  it('edit:回显关闭状态', () => {
+    const w = mountForm({
+      automation: eventLlm({ config: { prompt: 'go', name: 'evt', embedEventContext: false } }),
+    })
+    expect((w.find(EMBED_BOX).element as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('切到 cron 后隐藏复选框,且不把启用值保存为有效组合', async () => {
+    const w = mountForm()
+    await pickTaskType(w, 1) // llm
+    await pickTrigger(w, 1) // event
+    await w.find('.sf-agent-select').setValue('claude-default')
+    await w.find('textarea').setValue('Investigate')
+    await pickWorkSessionKind(w)
+    await w.find(EMBED_BOX).setValue(true)
+    // 切回 cron:复选框隐藏,cron 默认表达式有效。
+    await pickTrigger(w, 0)
+    expect(w.find(EMBED).exists()).toBe(false)
+    await w.find('.sf-btn.primary').trigger('click')
+
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.triggerType).toBe('cron')
+    expect(input.config).not.toHaveProperty('embedEventContext')
+  })
+})
+
 // ---- Modal width / tool-list height style contract -----------------------
 
 // happy-dom 不计算布局,样式契约直接对组件源码里的 CSS 规则做断言。

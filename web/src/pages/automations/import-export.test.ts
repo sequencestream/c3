@@ -339,4 +339,39 @@ describe('mapToCreateInput — fault-tolerant field mapping', () => {
     if (!result.importable) throw new Error('expected importable')
     expect(result.input.agentId).toBeNull()
   })
+
+  it('carries embedEventContext through the export → import round-trip verbatim', () => {
+    // Export deep-clones whole automations, so a modern config field survives the
+    // envelope; import maps `config` verbatim (the server re-enforces the boundary).
+    const file = buildExportFile(
+      [
+        makeAutomation({
+          id: 'evt-llm',
+          type: 'llm',
+          vendor: 'claude',
+          agentId: 'claude-1',
+          triggerType: 'event',
+          cronExpression: '',
+          eventFilters: [{ type: 'pr:create' }],
+          config: { prompt: 'go', name: 'E', embedEventContext: true },
+        }),
+      ],
+      ['evt-llm'],
+      '2026-07-14T00:00:00.000Z',
+    )
+    const parsed = parseImportFile(serializeExportFile(file))
+    if (!parsed.ok) throw new Error('expected ok')
+    const result = mapToCreateInput(parsed.automations[0], opts)
+    if (!result.importable) throw new Error('expected importable')
+    expect((result.input.config as Record<string, unknown>).embedEventContext).toBe(true)
+  })
+
+  it('an old export without embedEventContext imports with the flag absent (off)', () => {
+    const result = mapToCreateInput(
+      { type: 'llm', vendor: 'claude', agentId: 'claude-1', config: { prompt: 'go' } },
+      opts,
+    )
+    if (!result.importable) throw new Error('expected importable')
+    expect('embedEventContext' in (result.input.config as Record<string, unknown>)).toBe(false)
+  })
 })

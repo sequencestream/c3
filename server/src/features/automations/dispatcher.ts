@@ -22,6 +22,7 @@ import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
 import type {
   AgentConfig,
   CodexPolicy,
+  GenericEvent,
   ModeToken,
   Automation,
   SessionKind,
@@ -44,6 +45,7 @@ import {
 } from './mcp-freeze.js'
 import type { FrozenToolSet } from './mcp-freeze.js'
 import { createAutomationMcpServer } from './c3-mcp.js'
+import { buildAutomationPrompt, readEmbedEventContext } from './event-prompt.js'
 import type { ServedAutomationMcp } from '../../transport/automation-mcp/index.js'
 import { upsertAutomationExecutionRow } from '../sessions/session-metadata-store.js'
 import { ensureRuntime, emit, getRuntime, setStatus } from '../../runs.js'
@@ -88,6 +90,8 @@ interface CommandConfig {
 interface LlmConfig {
   prompt: string
   outputSchema?: Record<string, unknown> // JSON Schema
+  /** Event + LLM only: append the triggering event to the prompt at run time. */
+  embedEventContext?: boolean
 }
 
 const DEFAULT_COMMAND_MAX_WALL_CLOCK_MS = 30_000
@@ -130,11 +134,16 @@ function claudeModeForAutomation(mode: ModeToken | CodexPolicy): ClaudeAutomatio
  * 2. Both handlers write the final status back via `updateLog`.
  * 3. Throws only on unexpected errors (db failures, etc.) — execution errors
  *    (non-zero exit, timeout, schema mismatch) are captured in the log record.
+ *
+ * `triggerEvent` is the immutable, single-execution event supplied only by the
+ * event-dispatch path; an LLM task with `config.embedEventContext === true`
+ * appends it to its prompt. Command tasks ignore it.
  */
 export async function execute(
   automation: Automation,
   executionLogId: string,
   updateLog: UpdateLogFn,
+  triggerEvent?: GenericEvent,
 ): Promise<void> {
   // A workspace can be removed after a automation is persisted but before its
   // queued execution starts. Do not pass an undefined cwd/path into a runner.
@@ -153,7 +162,7 @@ export async function execute(
   if (automation.type === 'command') {
     await executeCommand(automation, executionLogId, updateLog)
   } else {
-    await executeLlmPrompt(automation, executionLogId, updateLog)
+    await executeLlmPrompt(automation, executionLogId, updateLog, triggerEvent)
   }
 }
 
@@ -535,10 +544,11 @@ async function executeLlmPrompt(
   automation: Automation,
   logId: string,
   updateLog: UpdateLogFn,
+  triggerEvent?: GenericEvent,
 ): Promise<void> {
   const config = (automation.config ?? {}) as LlmConfig
-  const prompt = typeof config.prompt === 'string' ? config.prompt : ''
-  if (!prompt.trim()) {
+  const basePrompt = typeof config.prompt === 'string' ? config.prompt : ''
+  if (!basePrompt.trim()) {
     const now = Date.now()
     updateLog(logId, {
       finishedAt: now,
@@ -546,6 +556,23 @@ async function executeLlmPrompt(
       error: 'empty_prompt',
     })
     return
+  }
+
+  // Build the final prompt AFTER validating the saved prompt is non-empty. When
+  // this LLM task opted into embedding and an actual triggering event is present,
+  // the normalized event is serialized and appended once inside a fixed frame;
+  // otherwise the saved prompt is used verbatim. Both vendor paths reuse this
+  // single result so Claude and Codex receive identical text. A degraded
+  // serialization tier is logged (never with the event content) and does not
+  // fail the execution.
+  const embedEvent = readEmbedEventContext(automation.config) && triggerEvent ? triggerEvent : null
+  const { prompt, tier } = buildAutomationPrompt(basePrompt, embedEvent)
+  if (tier === 'safe' || tier === 'concat') {
+    console.warn(
+      '[dispatcher] event context serialization degraded to %s for automation %s',
+      tier,
+      automation.id,
+    )
   }
 
   console.log(

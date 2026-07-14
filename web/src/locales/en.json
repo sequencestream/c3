@@ -1415,6 +1415,10 @@
         "label": "Prompt",
         "placeholder": "Run a security audit and summarize findings…"
       },
+      "embedEventContext": {
+        "label": "Include triggering event in the prompt",
+        "hint": "Appends the full matched event to the prompt at run time so the model can act on what fired it. Only affects event-triggered LLM tasks; may increase token usage."
+      },
       "maxWallClockMs": {
         "label": "Execution timeout (ms)",
         "placeholder": "Use task default",

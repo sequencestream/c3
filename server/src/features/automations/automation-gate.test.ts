@@ -175,6 +175,7 @@ describe('automation gate — cron tick', () => {
       expect.objectContaining({ id: 'c-open' }),
       expect.anything(),
       expect.any(Function),
+      undefined, // cron dispatch carries no trigger event
     )
     cancelInFlight('c-open')
   })
@@ -302,7 +303,7 @@ describe('automation gate — triggerRunNow is unaffected', () => {
     await triggerRunNow('run-active')
 
     expect(appendLog).toHaveBeenCalledOnce()
-    expect(execute).toHaveBeenCalledWith(active, 'manual-log', expect.any(Function))
+    expect(execute).toHaveBeenCalledWith(active, 'manual-log', expect.any(Function), undefined)
     await vi.waitFor(() => expect(hasInFlight('run-active')).toBe(false))
     // The gate never mutates the automation's own status: an active one stays active.
     expect(active.status).toBe('active')

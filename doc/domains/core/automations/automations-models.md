@@ -13,7 +13,7 @@
 | `workspaceId`            | text (UUID)                                                 | FK → session-registry 工作区;创建后不可变(SCH-R1)                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `name`                   | text                                                        | 人类可读的显示名称。创建时**由服务端根据任务内容自动生成**(客户端提供的名称会被剥离)。**更新**时客户端可提供手动标题:非空值会被固化存储(`nameSource='user'`,自动命名永不覆盖它);空值则回退为自动派生的名称(SCH-R19)。                                                                                                                                                                                                                                                                       |
 | `taskType`               | 枚举 `command \| llm_prompt`                                | 要执行的任务类型;创建后不可变(SCH-R2)                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `taskConfig`             | JSON(按 taskType 定型)                                      | 任务配置:`command` ⇒ `{ command: string }`;`llm_prompt` ⇒ `{ prompt: string, mode?: PermissionMode }`                                                                                                                                                                                                                                                                                                                                                                                       |
+| `taskConfig`             | JSON(按 taskType 定型)                                      | 任务配置:`command` ⇒ `{ command: string }`;`llm_prompt` ⇒ `{ prompt: string, mode?: PermissionMode, embedEventContext?: boolean }`(`embedEventContext` 仅事件 + LLM 组合有效,见 SCH-R29)                                                                                                                                                                                                                                                                                                    |
 | `vendor`                 | 厂商 id                                                     | 持久化的厂商范围,决定任务的工具清单、执行策略与适配器路由。                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `agentId`                | text \| null                                                | 为 LLM 任务选择的显式已启用 Agent。其厂商必须等于 Automation 的厂商;仅命令任务与等待修复的遗留任务为 null。                                                                                                                                                                                                                                                                                                                                                                                 |
 | `maxWallClockMs`         | integer \| null                                             | 单次执行的最大墙钟时长(毫秒)。Null 使用任务类型默认值:command 为 30 秒,LLM 为 60 秒。显式值为 1 秒到 24 小时之间的整毫秒数。                                                                                                                                                                                                                                                                                                                                                                |
@@ -48,12 +48,15 @@
 ```json
 {
   "prompt": "Run a security audit on the codebase",
-  "mode": "default"
+  "mode": "default",
+  "embedEventContext": true
 }
 ```
 
 `llm_prompt` 中的 `mode` 会覆盖本次执行的工作区会话默认模式。省略时使用工作区会话的模式
-(仍受 `executionIdentity` 约束)。
+(仍受 `executionIdentity` 约束)。`embedEventContext`(布尔,可选)仅在「事件触发 + LLM Prompt」
+组合下有效:启用后执行时把本次命中的规范化事件序列化并追加到 Prompt 末尾(只作用于当前执行,
+不写回 `config`);其他组合下服务端保存边界会剥离该字段。详见 SCH-R29。
 
 ## ExecutionLog
 

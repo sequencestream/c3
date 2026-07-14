@@ -825,7 +825,7 @@ function save(): void {
           <span class="sf-section-title">{{ t('automation.form.section.basic') }}</span>
           <div class="sf-section-body">
             <!-- Title (edit only): auto-named on create, manually editable here. -->
-            <label v-if="isEdit" class="sf-field">
+            <label v-if="isEdit" class="sf-field sf-item">
               <span class="sf-label">{{ t('automation.form.title.label') }}</span>
               <input
                 v-model="title"
@@ -835,7 +835,7 @@ function save(): void {
               <span class="sf-hint">{{ t('automation.form.title.hint') }}</span>
             </label>
 
-            <div class="sf-field">
+            <div class="sf-field sf-item">
               <span class="sf-label">{{ t('automation.form.taskType.label') }}</span>
               <div class="sf-segmented">
                 <button
@@ -861,7 +861,7 @@ function save(): void {
             </div>
 
             <!-- Command body -->
-            <label v-if="type === 'command'" class="sf-field sf-field--stacked">
+            <label v-if="type === 'command'" class="sf-field sf-field--stacked sf-item">
               <span class="sf-label">{{ t('automation.form.command.label') }}</span>
               <textarea
                 v-model="command"
@@ -872,7 +872,7 @@ function save(): void {
             </label>
 
             <!-- LLM prompt -->
-            <label v-else class="sf-field sf-field--stacked">
+            <label v-else class="sf-field sf-field--stacked sf-item">
               <span class="sf-label">{{ t('automation.form.prompt.label') }}</span>
               <textarea
                 v-model="prompt"
@@ -885,7 +885,7 @@ function save(): void {
             <!-- Embed the triggering event into the prompt: event + LLM only. -->
             <div
               v-if="showEmbedEventContext"
-              class="sf-field sf-field--stacked"
+              class="sf-field sf-field--stacked sf-item"
               data-testid="embed-event-context"
             >
               <label class="sf-tool-item">
@@ -899,7 +899,7 @@ function save(): void {
               <span class="sf-hint">{{ t('automation.form.embedEventContext.hint') }}</span>
             </div>
 
-            <label class="sf-field sf-field--stacked">
+            <label class="sf-field sf-field--stacked sf-item">
               <span class="sf-label">{{ t('automation.form.maxWallClockMs.label') }}</span>
               <input
                 class="sf-input sf-timeout-input"
@@ -924,7 +924,7 @@ function save(): void {
           <span class="sf-section-title">{{ t('automation.form.section.trigger') }}</span>
           <div class="sf-section-body">
             <!-- Trigger type: a cron automation vs a run lifecycle event -->
-            <div class="sf-field">
+            <div class="sf-field sf-item">
               <span class="sf-label">{{ t('automation.form.trigger.label') }}</span>
               <div class="sf-segmented">
                 <button
@@ -941,7 +941,7 @@ function save(): void {
             </div>
 
             <!-- Automation (cron) builder -->
-            <div v-if="triggerType === 'cron'" class="sf-field sf-field--stacked">
+            <div v-if="triggerType === 'cron'" class="sf-field sf-field--stacked sf-item">
               <span class="sf-label">{{ t('automation.form.automation.label') }}</span>
 
               <!-- 编辑态收起为当前 cron 摘要；频率和时间在专用弹框中修改。 -->
@@ -1051,7 +1051,7 @@ function save(): void {
             <!-- Event trigger config: cascading subscription rows (category →
              action → statuses multi-select), plus shared metadata conditions
              and the run-lifecycle sessionKind security boundary. -->
-            <div v-if="triggerType === 'event'" class="sf-field sf-field--stacked">
+            <div v-if="triggerType === 'event'" class="sf-field sf-field--stacked sf-item">
               <span class="sf-label">{{ t('automation.form.event.type.label') }}</span>
               <p class="sf-hint" style="margin-bottom: var(--sp-2)">
                 {{ t('automation.form.event.type.hint') }}
@@ -1237,7 +1237,7 @@ function save(): void {
         <div class="sf-section" data-testid="section-metadata">
           <span class="sf-section-title">{{ t('automation.form.section.metadata') }}</span>
           <div class="sf-section-body">
-            <div class="sf-field sf-field--stacked">
+            <div class="sf-field sf-field--stacked sf-item">
               <span class="sf-label">{{ t('automation.form.metadata.label') }}</span>
               <div
                 v-for="(row, i) in metadataRows"
@@ -1283,7 +1283,7 @@ function save(): void {
           <span class="sf-section-title">{{ t('automation.form.section.execution') }}</span>
           <div class="sf-section-body">
             <!-- Vendor selector -->
-            <div class="sf-field sf-vendor-agent">
+            <div class="sf-field sf-vendor-agent sf-item">
               <span class="sf-label">{{ t('automation.form.vendor.label') }}</span>
               <select v-model="vendor" class="sf-input sf-select">
                 <option v-for="v in VENDOR_ORDER" :key="v" :value="v" :disabled="!vendorPresent(v)">
@@ -1302,7 +1302,7 @@ function save(): void {
             </div>
 
             <!-- Permission mode: controls differ by vendor -->
-            <div class="sf-field" :class="{ 'sf-field--stacked': vendor === 'codex' }">
+            <div class="sf-field sf-item" :class="{ 'sf-field--stacked': vendor === 'codex' }">
               <span class="sf-label">{{ t('automation.form.permissionMode.label') }}</span>
 
               <!-- Claude: dropdown -->
@@ -1382,7 +1382,7 @@ function save(): void {
           <span class="sf-section-title">{{ t('automation.form.section.tools') }}</span>
           <div class="sf-section-body">
             <!-- Tool checklist -->
-            <div class="sf-field sf-field--stacked sf-field--tools">
+            <div class="sf-field sf-field--stacked sf-field--tools sf-item">
               <div class="sf-tools-labelrow">
                 <span class="sf-label">{{ t('automation.form.tools.label') }}</span>
                 <!-- Select/clear stay on the label row for quick access. -->
@@ -1453,7 +1453,7 @@ function save(): void {
              the toggle is hidden there (a stray value is ignored server-side). -->
             <div
               v-if="vendor === 'codex'"
-              class="sf-field sf-field--stacked sf-field--network"
+              class="sf-field sf-field--stacked sf-field--network sf-item"
               data-testid="network-access"
             >
               <label class="sf-tool-item">
@@ -1570,6 +1570,18 @@ function save(): void {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
+}
+/* Each direct child of a section body is one top-level config item (label +
+   description + input + validation + derived controls all stay inside it).
+   Adjacent items are split by a divider with symmetric spacing: the body's gap
+   sits above the line, this padding below it. Composite items (cron builder,
+   event subscription block, tool checklist, codex permissions) own their inner
+   layout and are never split by this top-level rule. Conditionally hidden items
+   never render, so the sibling combinator reflows without orphan dividers; a
+   single-item section shows no divider at all. */
+.sf-section-body > .sf-item + .sf-item {
+  border-top: 1px solid var(--c-border);
+  padding-top: var(--sp-4);
 }
 .sf-field {
   display: flex;

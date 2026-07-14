@@ -1817,6 +1817,11 @@
     },
     "auth": {
       "adminOnly": "시스템 설정은 관리자만 변경할 수 있습니다."
+    },
+    "dashboard": {
+      "loadFailed": "워크스페이스 대시보드를 불러오지 못했습니다.",
+      "workspaceMissing": "워크스페이스가 더 이상 존재하지 않습니다.",
+      "gateSaveFailed": "자동화 게이트 저장에 실패했습니다."
     }
   },
   "statusIndicator": {
@@ -2248,6 +2253,42 @@
       "onFailure": "On Failure",
       "onRequest": "On Request"
     }
+  },
+  "dashboard": {
+    "title": "워크스페이스 대시보드",
+    "nav": {
+      "ariaLabel": "워크센터 페이지",
+      "dashboard": "대시보드",
+      "notifications": "알림"
+    },
+    "column": {
+      "workspace": "워크스페이스",
+      "running": "실행 중",
+      "sessions": "세션",
+      "intents": "인텐트",
+      "discussions": "토론",
+      "automations": "자동화",
+      "gate": "자동화 게이트"
+    },
+    "gate": {
+      "on": "켜짐",
+      "off": "꺼짐"
+    },
+    "bulk": {
+      "enable": "자동화 활성화",
+      "disable": "자동화 비활성화",
+      "allSuccess": "워크스페이스 {count}개의 자동화를 업데이트했습니다.",
+      "allFailed": "워크스페이스 {count}개의 자동화 업데이트에 실패했습니다.",
+      "partial": "성공 {ok}개, 실패 {failed}개."
+    },
+    "selectAll": "모든 워크스페이스 선택",
+    "selectRow": "{name} 선택",
+    "selectedCount": "{count}개 선택됨",
+    "rowFailed": "실패",
+    "loading": "불러오는 중…",
+    "empty": "워크스페이스가 없습니다.",
+    "refreshFailed": "대시보드 새로고침에 실패했습니다.",
+    "retry": "다시 시도"
   },
   "workcenter": {
     "title": "Workcenter",

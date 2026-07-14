@@ -11,6 +11,7 @@ import Discussions from './pages/discussions/Discussions.vue'
 import Automations from './pages/automations/Automations.vue'
 import Codes from './pages/codes/Codes.vue'
 import WorkCenter from './pages/workcenter/WorkCenter.vue'
+import Dashboard from './pages/workcenter/components/WorkspaceDashboard.vue'
 import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
 import WorkspaceSettingPage from './pages/workspacesetting/WorkspaceSetting.vue'
 import Login from './pages/login/Login.vue'
@@ -233,6 +234,19 @@ const {
   reloadWorkcenter,
   loadMoreWorkcenter,
   markDoneWorkcenter,
+  // ---- workcenter dashboard ----
+  workcenterPage,
+  dashboardRows,
+  dashboardLoading,
+  dashboardError,
+  dashboardSelected,
+  dashboardBusy,
+  dashboardFailedIds,
+  setWorkcenterPage,
+  loadDashboard,
+  toggleDashboardWorkspace,
+  toggleAllDashboard,
+  setWorkspacesAutomation,
   // ---- modals ----
   newSessionOpen,
   confirmNewSession,
@@ -651,20 +665,60 @@ function onCodesChatWidth(px: number): void {
         />
       </template>
 
-      <WorkCenter
-        v-else
-        :events="workcenterEvents"
-        :has-more="workcenterHasMore"
-        :loading="workcenterLoading"
-        :current-workspace="currentWorkspace"
-        :workspaces="workspaces"
-        @respond="respondWorkcenter"
-        @submit-ask="submitAskWorkcenter"
-        @jump-to-source="jumpToSource"
-        @reload="reloadWorkcenter"
-        @load-more="loadMoreWorkcenter"
-        @mark-done="markDoneWorkcenter"
-      />
+      <div v-else class="workcenter-view">
+        <nav class="wc-nav" role="tablist" :aria-label="t('dashboard.nav.ariaLabel')">
+          <button
+            type="button"
+            role="tab"
+            class="wc-nav-tab"
+            :class="{ active: workcenterPage === 'dashboard' }"
+            :aria-selected="workcenterPage === 'dashboard'"
+            @click="setWorkcenterPage('dashboard')"
+          >
+            {{ t('dashboard.nav.dashboard') }}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="wc-nav-tab"
+            :class="{ active: workcenterPage === 'notifications' }"
+            :aria-selected="workcenterPage === 'notifications'"
+            @click="setWorkcenterPage('notifications')"
+          >
+            {{ t('dashboard.nav.notifications') }}
+          </button>
+        </nav>
+
+        <Dashboard
+          v-if="workcenterPage === 'dashboard'"
+          :rows="dashboardRows"
+          :loading="dashboardLoading"
+          :refresh-failed="dashboardError !== null"
+          :selected="dashboardSelected"
+          :failed-ids="dashboardFailedIds"
+          :busy="dashboardBusy"
+          :is-admin="auth.isAdmin.value"
+          @toggle-workspace="toggleDashboardWorkspace"
+          @toggle-all="toggleAllDashboard"
+          @bulk="setWorkspacesAutomation"
+          @refresh="loadDashboard"
+        />
+
+        <WorkCenter
+          v-else
+          :events="workcenterEvents"
+          :has-more="workcenterHasMore"
+          :loading="workcenterLoading"
+          :current-workspace="currentWorkspace"
+          :workspaces="workspaces"
+          @respond="respondWorkcenter"
+          @submit-ask="submitAskWorkcenter"
+          @jump-to-source="jumpToSource"
+          @reload="reloadWorkcenter"
+          @load-more="loadMoreWorkcenter"
+          @mark-done="markDoneWorkcenter"
+        />
+      </div>
     </div>
 
     <NewSessionModal
@@ -737,6 +791,37 @@ function onCodesChatWidth(px: number): void {
 </template>
 
 <style scoped>
+.workcenter-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.wc-nav {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--c-border);
+  flex-shrink: 0;
+}
+.wc-nav-tab {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--c-text-muted);
+  cursor: pointer;
+}
+.wc-nav-tab:hover {
+  color: var(--c-text);
+}
+.wc-nav-tab.active {
+  color: var(--c-primary);
+  border-bottom-color: var(--c-primary);
+}
 .toast {
   position: fixed;
   bottom: 24px;

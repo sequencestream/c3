@@ -125,7 +125,9 @@ export function installSettingsActions(ctx: AppCtx): void {
       // 记住当前标签页
       savedTab.value = activeTab.value
       viewMode.value = 'workcenter'
-      if (flags.viewModeFirstWorkcenter) {
+      // Load whichever page-internal nav is active (Dashboard by default).
+      if (ctx.workcenterPage.value === 'dashboard') ctx.loadDashboard()
+      else if (flags.viewModeFirstWorkcenter) {
         flags.viewModeFirstWorkcenter = false
         ctx.reloadWorkcenter()
       }

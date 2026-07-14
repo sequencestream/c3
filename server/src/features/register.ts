@@ -94,7 +94,11 @@ import {
 import { login, logout, setAdminPassword, removeAccount, setAdminAccount } from './auth/index.js'
 import { listWaitUserEvents, updateWaitUserEvent } from './user-involve/index.js'
 import { startRetentionCleanup } from './user-involve/store.js'
-import { getTimeRangeStatsHandler } from './workcenter/index.js'
+import {
+  getTimeRangeStatsHandler,
+  getWorkspaceDashboardHandler,
+  setWorkspacesAutomationEnabledHandler,
+} from './workcenter/index.js'
 import { resolveSkillApproval as resolveSkillApprovalImpl } from '../kernel/skill-loader/approval.js'
 import { getSkillLinkStatus, installSkillHandler } from './skills/index.js'
 import {
@@ -199,6 +203,8 @@ export const handlerMap: HandlerMap = {
   update_wait_user_event: updateWaitUserEvent,
   // workcenter
   get_timerange_stats: getTimeRangeStatsHandler,
+  get_workspace_dashboard: getWorkspaceDashboardHandler,
+  set_workspaces_automation_enabled: setWorkspacesAutomationEnabledHandler,
   // skill-load gates (mount layer 2/3)
   skill_load_approval_resolve: (_ctx, _conn, msg) => {
     resolveSkillApprovalImpl(msg.requestId, msg.decision)

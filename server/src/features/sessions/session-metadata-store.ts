@@ -801,6 +801,24 @@ export function countRealInRange(
   return row?.count ?? 0
 }
 
+/**
+ * Count ALL of a workspace's real (`bound=1`) session projection rows, across
+ * every {@link SessionKind} and with no time filter — the Workcenter Dashboard's
+ * "session total" notion. Unlike {@link countRealInRange} this does not restrict
+ * to `session_kind='work'` and ignores `last_modified`. Returns 0 when the db is
+ * unavailable (callers that must distinguish "db down" from "genuinely zero"
+ * check {@link getDb} separately).
+ */
+export function countBoundSessions(workspacePath: string): number {
+  const d = db()
+  if (!d) return 0
+  const row = d.get<{ count: number }>(
+    'SELECT COUNT(*) AS count FROM session_metadata WHERE workspace_path=? AND bound=1',
+    workspacePath,
+  )
+  return row?.count ?? 0
+}
+
 // ---- Lazy validation (F-8) ----
 
 /**

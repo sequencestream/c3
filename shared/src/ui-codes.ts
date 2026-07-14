@@ -154,6 +154,13 @@ export const UI_ERROR_CODES = {
   // auth (ADR-0023)
   // Rejected a system-config mutation from a non-admin connection (ADR-0023 authz).
   'auth.adminOnly': { key: 'error.auth.adminOnly' },
+  // workcenter dashboard
+  // Whole-snapshot aggregation failed (a domain db unavailable / a workspace threw).
+  'dashboard.loadFailed': { key: 'error.dashboard.loadFailed' },
+  // A bulk-gate target workspace is unknown / was removed before the write.
+  'dashboard.workspaceMissing': { key: 'error.dashboard.workspaceMissing' },
+  // Persisting the automation gate for one workspace failed.
+  'dashboard.gateSaveFailed': { key: 'error.dashboard.gateSaveFailed' },
 } as const satisfies Record<string, UiErrorDef>
 
 /** Every registered UI error code. */

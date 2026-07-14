@@ -379,10 +379,22 @@ export function countRunningAutomations(workspacePath: string): number {
 }
 
 export function countRunningAutomationSessions(workspacePath: string): number {
+  return runningAutomationSessionIdsForWorkspace(workspacePath).length
+}
+
+/**
+ * The distinct agent session ids of a workspace's automation sessions that
+ * currently have a running (`status='running'`) execution log — a live "now"
+ * notion, independent of any time range. The Workcenter Dashboard unions these
+ * with the non-idle runtime session ids (see `runningRuntimeSessionIdsForWorkspace`)
+ * and takes the set size, so a session that is both a live runtime and has a
+ * running log counts once. Empty when the db is unavailable.
+ */
+export function runningAutomationSessionIdsForWorkspace(workspacePath: string): string[] {
   const d = db()
-  if (!d) return 0
-  const row = d.get<{ count: number }>(
-    `SELECT COUNT(DISTINCT sm.vendor_session_id) AS count
+  if (!d) return []
+  const rows = d.all<{ vendor_session_id: string }>(
+    `SELECT DISTINCT sm.vendor_session_id AS vendor_session_id
        FROM session_metadata sm
        JOIN automations s ON sm.owner_kind='automation' AND sm.owner_id=s.id
        JOIN automation_execution_logs l
@@ -394,7 +406,7 @@ export function countRunningAutomationSessions(workspacePath: string): number {
         AND sm.vendor_session_id IS NOT NULL`,
     resolve(workspacePath),
   )
-  return row?.count ?? 0
+  return rows.map((r) => r.vendor_session_id)
 }
 
 /**

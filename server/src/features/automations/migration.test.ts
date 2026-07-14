@@ -89,6 +89,100 @@ describe('automation store schema migration', () => {
 })
 
 /**
+ * Oldest start point: a db still carrying the pre-rename `schedules` /
+ * `schedule_execution_logs` table names and the `schedule_id` log column. The
+ * rename MUST run before the base `CREATE TABLE IF NOT EXISTS automations` so the
+ * old rows are carried into the new names rather than orphaned behind a fresh
+ * empty table. Data rows must stay readable through the renamed tables afterwards.
+ */
+function seedLegacyNamedTables(d: Db): void {
+  d.exec(`
+    CREATE TABLE schedules (
+      id              TEXT PRIMARY KEY,
+      type            TEXT NOT NULL,
+      config          TEXT NOT NULL DEFAULT '{}',
+      workspace_path  TEXT NOT NULL,
+      cron_expression TEXT NOT NULL,
+      next_run_at     INTEGER,
+      status          TEXT NOT NULL,
+      mcp_mode        TEXT NOT NULL,
+      tool_allowlist  TEXT NOT NULL DEFAULT '[]',
+      tool_denylist   TEXT NOT NULL DEFAULT '[]',
+      created_at      INTEGER NOT NULL,
+      updated_at      INTEGER NOT NULL
+    );
+    CREATE TABLE schedule_execution_logs (
+      id            TEXT PRIMARY KEY,
+      schedule_id   TEXT NOT NULL,
+      started_at    INTEGER NOT NULL,
+      finished_at   INTEGER,
+      exit_code     INTEGER,
+      output        TEXT NOT NULL DEFAULT '',
+      error         TEXT
+    );
+  `)
+  d.run(
+    `INSERT INTO schedules
+       (id, type, config, workspace_path, cron_expression, next_run_at, status, mcp_mode, tool_allowlist, tool_denylist, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    'old-named',
+    'command',
+    JSON.stringify({ command: 'echo hi', name: 'Legacy Named' }),
+    '/abs/ws',
+    '0 8 * * *',
+    null,
+    'active',
+    'sandboxed',
+    '[]',
+    '[]',
+    1,
+    1,
+  )
+  d.run(
+    `INSERT INTO schedule_execution_logs
+       (id, schedule_id, started_at, finished_at, exit_code, output, error)
+     VALUES (?,?,?,?,?,?,?)`,
+    'log-1',
+    'old-named',
+    10,
+    20,
+    0,
+    'done',
+    null,
+  )
+  d.exec('PRAGMA user_version=5;')
+}
+
+describe('automation store legacy table-name rename migration', () => {
+  it('renames schedules / schedule_execution_logs (+ schedule_id column) and keeps rows readable', () => {
+    const raw = getDb()
+    expect(raw).not.toBeNull()
+    seedLegacyNamedTables(raw!)
+    resetStoreForTests()
+
+    // Reading the old-named row triggers the rename + migration on this connection.
+    const legacy = getAutomation('old-named')
+    expect(legacy).not.toBeNull()
+    expect(legacy!.cronExpression).toBe('0 8 * * *')
+    expect(legacy!.triggerType).toBe('cron')
+
+    // The tables now carry the new names, and the old-named ones are gone.
+    expect(raw!.all<{ name: string }>('PRAGMA table_info(automations)').length).toBeGreaterThan(0)
+    expect(raw!.all<{ name: string }>('PRAGMA table_info(schedules)')).toHaveLength(0)
+    const logCols = raw!.all<{ name: string }>('PRAGMA table_info(automation_execution_logs)')
+    expect(logCols.some((c) => c.name === 'automation_id')).toBe(true)
+    expect(logCols.some((c) => c.name === 'schedule_id')).toBe(false)
+
+    // The pre-existing execution log row survived the rename and reads back through
+    // the renamed automation_id column.
+    const logs = listExecutionLogs('old-named')
+    expect(logs).toHaveLength(1)
+    expect(logs[0].id).toBe('log-1')
+    expect(logs[0].output).toBe('done')
+  })
+})
+
+/**
  * v5 (2026-06-08): event-trigger columns. An old `automations` table predating
  * trigger_type / event_topic / event_reason_filter must be backfilled so legacy
  * cron rows keep working (trigger_type defaults to 'cron') and event automations

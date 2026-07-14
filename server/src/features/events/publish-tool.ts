@@ -15,9 +15,9 @@
  *
  * The tool is named on the `c3` server, so the fully-qualified name is
  * `mcp__c3__publish_event`. The driver-path twin (codex) lives in
- * `transport/pr-event-mcp`. This is the CLAUDE path's in-process binder, mirroring
+ * `transport/event-mcp`. This is the CLAUDE path's in-process binder, mirroring
  * `features/intents/save-tool.ts`. The generic tool defs live in
- * `features/events/tool-defs.ts`; this file only supplies the MCP framing + the
+ * `./tool-defs.ts`; this file only supplies the MCP framing + the
  * per-run binding closure.
  */
 // C-SEC exception (annotated): this DEFINES an in-process MCP tool handed to the
@@ -35,7 +35,7 @@ import {
   publishEventSchema,
   runPublishEvent,
   type PublishEventArgs,
-} from '../events/tool-defs.js'
+} from './tool-defs.js'
 
 /** Per-run binding: which workspace the events belong to, and the live run id. */
 export interface PublishEventBinding {

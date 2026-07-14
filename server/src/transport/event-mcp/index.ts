@@ -1,7 +1,7 @@
 /**
  * Localhost HTTP MCP route for the `publish_event` tool. The work-session's
  * publish tool is a Claude in-process SDK MCP server
- * (`features/pr-events/publish-tool.ts`); codex (`inProcessMcp: false`) can't
+ * (`features/events/publish-tool.ts`); codex (`inProcessMcp: false`) can't
  * load that, so this route re-exposes the SAME tool over a streamable-HTTP MCP
  * server bound to ONE run.
  *
@@ -30,11 +30,11 @@ import {
   type PublishEventArgs,
 } from '../../features/events/tool-defs.js'
 
-/** The loopback path the PR-event MCP route is mounted at. */
-export const PR_EVENT_MCP_PATH = '/internal/pr-event-mcp/v1'
+/** The loopback path the event MCP route is mounted at. */
+export const EVENT_MCP_PATH = '/internal/event-mcp/v1'
 
 /** Per-run binding: which workspace the events belong to, and the live run id. */
-export interface PrEventMcpBinding {
+export interface EventMcpBinding {
   workspacePath: string
   /** Reads the LIVE run id so a pending→real session rebind tags events with the bound session. */
   getRunId: () => string
@@ -42,12 +42,12 @@ export interface PrEventMcpBinding {
 }
 
 /** The injected tool behavior: validate + normalize + publish onto the event bus. */
-export interface PrEventMcpTools {
-  publish(binding: PrEventMcpBinding, args: PublishEventArgs): EventToolResult
+export interface EventMcpTools {
+  publish(binding: EventMcpBinding, args: PublishEventArgs): EventToolResult
 }
 
 /** The served route: the kernel-facing bind handle plus the HTTP handler the root mounts. */
-export interface ServedPrEventMcp {
+export interface ServedEventMcp {
   /** Loopback base URL the bound descriptors point at (`http://127.0.0.1:<port><PATH>`). */
   readonly baseUrl: string
   /**
@@ -55,7 +55,7 @@ export interface ServedPrEventMcp {
    * and return the neutral {@link RemoteMcpServer} descriptors (for
    * `DriverStartOptions.mcpServers`) plus a `dispose` to evict at run end.
    */
-  bind(binding: PrEventMcpBinding): {
+  bind(binding: EventMcpBinding): {
     servers: Record<string, RemoteMcpServer>
     dispose: () => void
   }
@@ -80,19 +80,19 @@ export function isLoopback(address: string | undefined): boolean {
 }
 
 /**
- * Build the PR-event MCP route. `origin` is c3's own loopback origin
+ * Build the event MCP route. `origin` is c3's own loopback origin
  * (`http://127.0.0.1:<port>`); `tools` injects the publish behavior; `makeToken`
  * is injected for tests (defaults to `crypto.randomUUID`).
  */
-export function createPrEventMcp(
+export function createEventMcp(
   origin: string,
-  tools: PrEventMcpTools,
+  tools: EventMcpTools,
   makeToken: () => string = () => crypto.randomUUID(),
-): ServedPrEventMcp {
-  const baseUrl = `${origin.replace(/\/$/, '')}${PR_EVENT_MCP_PATH}`
+): ServedEventMcp {
+  const baseUrl = `${origin.replace(/\/$/, '')}${EVENT_MCP_PATH}`
   const entries = new Map<string, Entry>()
 
-  const buildServer = (binding: PrEventMcpBinding): McpServer => {
+  const buildServer = (binding: EventMcpBinding): McpServer => {
     const server = new McpServer({ name: 'c3', version: '1.0.0' })
     server.registerTool(
       'publish_event',
@@ -136,12 +136,12 @@ export function createPrEventMcp(
       // Defence in depth: reject non-loopback peers even though c3 binds localhost.
       const remote = getConnInfo(c).remote.address
       if (!isLoopback(remote)) {
-        return c.json({ error: 'pr-event MCP is loopback-only' }, 403)
+        return c.json({ error: 'event MCP is loopback-only' }, 403)
       }
       const token = c.req.query('token') ?? ''
       const entry = entries.get(token)
       if (!entry) {
-        return c.json({ error: 'unknown or expired pr-event-MCP token' }, 404)
+        return c.json({ error: 'unknown or expired event-MCP token' }, 404)
       }
       await entry.ready
       return entry.transport.handleRequest(c.req.raw)

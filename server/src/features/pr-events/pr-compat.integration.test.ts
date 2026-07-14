@@ -18,7 +18,7 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared/protocol'
 import { EventBus } from '../../kernel/events/event-bus.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
-import { createPublishEventMcpServer } from './publish-tool.js'
+import { createPublishEventMcpServer } from '../events/publish-tool.js'
 import {
   PR_EVENT_TYPES,
   PR_LEGACY_EVENT_TYPE,

@@ -1,8 +1,8 @@
 /**
  * Shared, framing-free definitions for the vendor-neutral `publish_event` MCP
  * tool, kept ONE source so the surfaces that expose it never drift:
- *  - the in-process Claude SDK MCP server (`../pr-events/publish-tool.ts`),
- *  - the localhost HTTP MCP route for driver-path vendors (`transport/pr-event-mcp`,
+ *  - the in-process Claude SDK MCP server (`./publish-tool.ts`),
+ *  - the localhost HTTP MCP route for driver-path vendors (`transport/event-mcp`,
  *    codex),
  *  - the unattended-automation c3 MCP tool set (`../automations/c3-tools.ts`).
  *

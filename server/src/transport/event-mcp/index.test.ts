@@ -15,11 +15,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { GenericEventEnvelope } from '@ccc/shared/protocol'
 import {
-  createPrEventMcp,
-  PR_EVENT_MCP_PATH,
+  createEventMcp,
+  EVENT_MCP_PATH,
   isLoopback,
-  type PrEventMcpTools,
-  type ServedPrEventMcp,
+  type EventMcpTools,
+  type ServedEventMcp,
 } from './index.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import {
@@ -48,7 +48,7 @@ describe('event MCP HTTP route', () => {
   const registry = new EventNormalizerRegistry()
   for (const t of PR_EVENT_TYPES) registry.register(t, normalizePrGenericEvent)
   registry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
-  const tools: PrEventMcpTools = {
+  const tools: EventMcpTools = {
     // Use the real core so the route exercises validation + normalization + publish.
     publish: (binding, args) =>
       runPublishEvent(
@@ -65,14 +65,14 @@ describe('event MCP HTTP route', () => {
 
   let server: ServerType
   let port: number
-  let prEventMcp: ServedPrEventMcp
+  let eventMcp: ServedEventMcp
 
   let tokCounter = 0
 
   beforeAll(async () => {
-    prEventMcp = createPrEventMcp('http://127.0.0.1', tools, () => `tok-${++tokCounter}`)
+    eventMcp = createEventMcp('http://127.0.0.1', tools, () => `tok-${++tokCounter}`)
     const app = new Hono()
-    app.all(PR_EVENT_MCP_PATH, (c) => prEventMcp.handler(c))
+    app.all(EVENT_MCP_PATH, (c) => eventMcp.handler(c))
     await new Promise<void>((resolve) => {
       server = serve({ fetch: app.fetch, port: 0 }, (info) => {
         port = info.port
@@ -86,7 +86,7 @@ describe('event MCP HTTP route', () => {
   })
 
   const routeUrl = (token: string): URL =>
-    new URL(`http://127.0.0.1:${port}${PR_EVENT_MCP_PATH}?token=${token}`)
+    new URL(`http://127.0.0.1:${port}${EVENT_MCP_PATH}?token=${token}`)
 
   it('rejects an unknown token with 404', async () => {
     const res = await fetch(routeUrl('nope'), {
@@ -98,13 +98,13 @@ describe('event MCP HTTP route', () => {
   })
 
   it('lists and calls publish_event over a real MCP client', async () => {
-    const bound = prEventMcp.bind({
+    const bound = eventMcp.bind({
       workspacePath: '/proj',
       getRunId: () => 'run-9',
       signal: new AbortController().signal,
     })
     // The bound descriptor's token (deterministic 'tok-1'); connect via the real
-    // listening port (the origin passed to createPrEventMcp carries no port).
+    // listening port (the origin passed to createEventMcp carries no port).
     expect(bound.servers.c3.url).toContain('tok-1')
 
     const client = new Client({ name: 'test', version: '1.0.0' })
@@ -139,7 +139,7 @@ describe('event MCP HTTP route', () => {
   })
 
   it('calls publish_event with error result and intentTitle', async () => {
-    const bound = prEventMcp.bind({
+    const bound = eventMcp.bind({
       workspacePath: '/proj',
       getRunId: () => 'run-10',
       signal: new AbortController().signal,

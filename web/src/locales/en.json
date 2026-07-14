@@ -1557,8 +1557,8 @@
         },
         "sessionKind": {
           "label": "Fires on session kinds",
-          "hint": "Pick which run origins may trigger this automation.",
-          "required": "Pick at least one session kind.",
+          "hint": "Optional — pick which run origins may trigger this automation. Leave empty to allow all session kinds.",
+          "all": "All session kinds",
           "work": {
             "label": "Work"
           },
@@ -1803,7 +1803,6 @@
       "executionNotFound": "Execution record not found.",
       "approvalNotFound": "Approval entry not found or already handled.",
       "invalidEventTrigger": "An event-triggered automation needs a run event to subscribe to.",
-      "missingSessionKindFilter": "A run-event trigger must fire on at least one session kind.",
       "invalidMaxWallClockMs": "The execution timeout must be a whole number between 1,000 and 86,400,000 milliseconds.",
       "invalidInitialStatus": "The initial status of an imported automation may only be paused.",
       "agentRequired": "Select an execution agent.",

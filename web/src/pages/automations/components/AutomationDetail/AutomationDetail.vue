@@ -216,7 +216,9 @@ function vendorLabel(vendor: string): string {
           <span v-if="sessionKindFilterLabels.length" class="sd-value">{{
             sessionKindFilterLabels.join(' · ')
           }}</span>
-          <span v-else class="sd-value sd-value--hint">—</span>
+          <span v-else class="sd-value sd-value--hint">{{
+            t('automation.form.event.sessionKind.all')
+          }}</span>
         </div>
       </template>
 

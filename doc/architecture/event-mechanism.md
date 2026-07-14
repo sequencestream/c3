@@ -238,7 +238,7 @@ GenericEventFilter = {
 
 1. **workspace 总闸**（`WorkspaceSetting.automationEnabled`）：关闭则整批丢弃、不排队；
 2. `getEventAutomations(event.type)` 取该 type 的 active event 候选；
-3. 对每个候选：**SessionKind 安全边界**（仅当 `eventFilter.type` ∈ {run:started, run:settled}，在通用匹配前 fail-closed：`event.sessionKind` 必须 ∈ 非空 `eventSessionKindFilter`）→ 通用匹配（`evaluateAutomationTriggerMatch`，breakdown 首列 `sessionKind`，其后 workspace/type/status/metadata）；单条候选评估抛错时 fail closed 并记录 automation id，不影响同事件其他候选；
+3. 对每个候选：**SessionKind 过滤**（仅当 `eventFilter.type` ∈ {run:started, run:settled} 且 `eventSessionKindFilter` **非空**时，在通用匹配前作为白名单：`event.sessionKind` 必须 ∈ 该集合，无会话来源事件不命中；空/缺失则跳过该维度）→ 通用匹配（`evaluateAutomationTriggerMatch`，breakdown 仅在应用了非空过滤器时含 `sessionKind` 列，其后 workspace/type/status/metadata）；单条候选评估抛错时 fail closed 并记录 automation id，不影响同事件其他候选；
 4. **串行门**：该 automation 已有 in-flight 执行则跳过（防 event storm 堆叠）；
 5. 命中 → `dispatchAndTrack(automation)` → 执行并发 `run:*`（sessionKind=`automation`、runKind=`headless`）回总线。
 

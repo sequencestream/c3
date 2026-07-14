@@ -243,7 +243,7 @@ const cronEditorOpen = ref(false)
 const triggerType = ref<ScheduleTriggerType>('cron')
 // The subscription rows (cascade drafts, any-match OR), plus the shared metadata
 // condition builder (its conditions are written onto EVERY row on save).
-// `eventSessionKinds` stays the mandatory run-lifecycle security boundary.
+// `eventSessionKinds` is the optional run-lifecycle filter (empty = all kinds).
 // `metadataRows` are the automation's own free-form annotations.
 const eventRows = ref<EventFilterRowDraft[]>([defaultEventRow()])
 const eventSessionKinds = ref<SessionKind[]>([])
@@ -442,8 +442,8 @@ watch(
       maxWallClockMs.value = null
       triggerType.value = 'cron'
       eventRows.value = [defaultEventRow()]
-      // No default sessionKind selection: a run-lifecycle event trigger must be
-      // explicitly scoped before it can be saved.
+      // No default sessionKind selection: the filter is optional and an empty
+      // selection means "every session kind".
       eventSessionKinds.value = []
       metadataRows.value = []
       metadataConditions.value = []
@@ -560,15 +560,11 @@ const triggerValid = computed(() =>
     ? cronValid.value
     : eventRows.value.some((r) => rowType(r).length > 0),
 )
-const sessionKindValid = computed(
-  () => !showSessionKindFilter.value || eventSessionKinds.value.length > 0,
-)
 const maxWallClockMsValid = computed(() => isValidAutomationMaxWallClockMs(maxWallClockMs.value))
 const canSave = computed(
   () =>
     taskFilled.value &&
     triggerValid.value &&
-    sessionKindValid.value &&
     maxWallClockMsValid.value &&
     (type.value === 'command' || agentId.value.length > 0),
 )
@@ -1212,7 +1208,7 @@ function save(): void {
               </button>
               <span class="sf-hint">{{ t('automation.form.event.metadataFilter.hint') }}</span>
 
-              <!-- Run-lifecycle types: mandatory sessionKind multi-select (no default). -->
+              <!-- Run-lifecycle types: optional sessionKind multi-select (empty = all kinds). -->
               <template v-if="showSessionKindFilter">
                 <span class="sf-label sf-event-reason-label">{{
                   t('automation.form.event.sessionKind.label')
@@ -1229,12 +1225,7 @@ function save(): void {
                     {{ sk.label }}
                   </button>
                 </div>
-                <span v-if="!sessionKindValid" class="sf-warn">{{
-                  t('automation.form.event.sessionKind.required')
-                }}</span>
-                <span v-else class="sf-hint">{{
-                  t('automation.form.event.sessionKind.hint')
-                }}</span>
+                <span class="sf-hint">{{ t('automation.form.event.sessionKind.hint') }}</span>
               </template>
             </div>
           </div>

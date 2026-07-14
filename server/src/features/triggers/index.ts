@@ -12,8 +12,9 @@
  *
  * The per-automation match decision is a single generic filter (type + statuses +
  * metadata) evaluated by the pure {@link evaluateAutomationTriggerMatch}, which
- * layers the run-lifecycle `eventSessionKindFilter` SECURITY boundary on top of
- * the shared `genericEventFilterMatches`. There are no per-type branches: a new
+ * layers the optional run-lifecycle `eventSessionKindFilter` (a non-empty
+ * whitelist; absent/empty = every session kind) on top of the shared
+ * `genericEventFilterMatches`. There are no per-type branches: a new
  * event type triggers automations by publishing a registered generic event and
  * configuring string filter values — no protocol enum, dispatch branch, or form
  * panel required.
@@ -40,8 +41,8 @@ import { dispatchAndTrack, getStore, inFlight } from '../automations/engine.js'
  * The trusted minimal view a matcher reads for one incoming event. `workspacePath`
  * + `event` come straight off the bus envelope (the model cannot forge another
  * workspace). `sessionKind` is present ONLY for run-lifecycle events — it is the
- * mandatory security-boundary input for `eventSessionKindFilter` and is absent for
- * PR / intent / any other event type (which carry no session origin).
+ * input a non-empty `eventSessionKindFilter` whitelist is checked against, and is
+ * absent for PR / intent / any other event type (which carry no session origin).
  */
 export interface TriggerEventView {
   workspacePath: string
@@ -63,12 +64,14 @@ export interface TriggerMatchResult {
 /**
  * Pure evaluator: does `view` match any of `automation`'s subscription rows? When
  * any row subscribes a run-lifecycle type (`run:started` / `run:settled` /
- * `run:*`) it FIRST applies the mandatory `eventSessionKindFilter` security
- * boundary — an absent/empty filter, or an event whose `sessionKind` is not in
- * it, fails closed — then the shared generic match (any row: workspace + type +
- * status + metadata). For every other type only the generic match runs (a PR /
- * intent event carries no sessionKind). The breakdown reports the sessionKind
- * dimension (when applicable) followed by the generic dimensions of the matching
+ * `run:*`) AND the automation has a NON-EMPTY `eventSessionKindFilter`, it FIRST
+ * applies that filter as an exact whitelist — an event whose `sessionKind` is not
+ * in it (or that carries no session origin) fails — then the shared generic match
+ * (any row: workspace + type + status + metadata). An absent/empty filter means
+ * "every session kind" and skips the sessionKind dimension entirely. For every
+ * other type only the generic match runs (a PR / intent event carries no
+ * sessionKind). The breakdown reports the sessionKind dimension (only when a
+ * non-empty filter applied) followed by the generic dimensions of the matching
  * (or last evaluated) row under their vendor-neutral names.
  */
 export function evaluateAutomationTriggerMatch(
@@ -78,18 +81,25 @@ export function evaluateAutomationTriggerMatch(
   const filters = automation.eventFilters ?? null
   const breakdown: TriggerMatchBreakdownItem[] = []
 
-  if (hasRunLifecycleEventFilter(filters) && view.event.type.startsWith('run:')) {
-    // sessionKind boundary is mandatory for run-lifecycle triggers: an absent/empty
-    // filter fails closed (a stored run-lifecycle automation always has one, via
-    // migration + save validation). It runs BEFORE the generic match so a generic
-    // metadata filter can never widen the run-source scope. With multi-row
-    // subscriptions the gate applies exactly to incoming RUN events on an
-    // automation that subscribes run lifecycle — a pr/intent event on the same
-    // automation is matched by its own non-run row and carries no sessionKind.
-    const skf = automation.eventSessionKindFilter
+  const skf = automation.eventSessionKindFilter
+  if (
+    hasRunLifecycleEventFilter(filters) &&
+    view.event.type.startsWith('run:') &&
+    !!skf &&
+    skf.length > 0
+  ) {
+    // The sessionKind filter is optional: an absent/empty filter means "every
+    // session kind" and skips this dimension entirely (including events with no
+    // session origin). Only a NON-EMPTY filter is enforced, as an exact
+    // whitelist — the event's `sessionKind` must be a member, so an event with no
+    // session origin never matches a non-empty filter. It runs BEFORE the generic
+    // match so a generic metadata filter can never widen the run-source scope.
+    // With multi-row subscriptions the gate applies exactly to incoming RUN events
+    // on an automation that subscribes run lifecycle — a pr/intent event on the
+    // same automation is matched by its own non-run row and carries no sessionKind.
     breakdown.push({
       name: 'sessionKind',
-      passed: !!skf && skf.length > 0 && !!view.sessionKind && skf.includes(view.sessionKind),
+      passed: !!view.sessionKind && skf.includes(view.sessionKind),
     })
   }
 

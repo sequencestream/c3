@@ -133,10 +133,13 @@ describe('updateAutomationHandler — manual title', () => {
   })
 })
 
-describe('run-lifecycle event trigger — sessionKind filter is mandatory', () => {
-  it('rejects a create with a run-lifecycle topic and no sessionKind filter', async () => {
+describe('run-lifecycle event trigger — sessionKind filter is optional', () => {
+  async function createRunLifecycle(
+    input: Partial<{ eventSessionKindFilter: unknown }>,
+    ctx = fakeCtx(),
+  ) {
     const conn = fakeConn()
-    await createAutomationHandler(fakeCtx(), conn, {
+    await createAutomationHandler(ctx, conn, {
       type: 'create_automation',
       workspaceId: proj,
       input: {
@@ -148,15 +151,40 @@ describe('run-lifecycle event trigger — sessionKind filter is mandatory', () =
         cronExpression: '',
         eventFilters: [{ type: 'run:settled' }],
         mode: 'sandboxed',
+        ...input,
       },
     } as never)
-    expect((conn as unknown as { send: ReturnType<typeof vi.fn> }).send).toHaveBeenCalledWith({
-      type: 'error',
-      error: { code: 'automation.missingSessionKindFilter' },
-    })
+    return conn
+  }
+
+  async function latestRunLifecycle() {
+    const { listAutomations } = await import('./store.js')
+    return listAutomations(proj).find((a) => a.triggerType === 'event')!
+  }
+
+  it('accepts a create with a run-lifecycle topic and an absent sessionKind filter', async () => {
+    const ctx = fakeCtx()
+    const conn = await createRunLifecycle({}, ctx)
+    expect((conn as unknown as { send: ReturnType<typeof vi.fn> }).send).not.toHaveBeenCalled()
+    expect(
+      (ctx as unknown as { broadcastAutomations: ReturnType<typeof vi.fn> }).broadcastAutomations,
+    ).toHaveBeenCalled()
+    // Absent filter normalizes to null (= every session kind).
+    expect((await latestRunLifecycle()).eventSessionKindFilter).toBeNull()
   })
 
-  it('rejects an update that clears the sessionKind filter on a run-lifecycle automation', async () => {
+  it('accepts a create with an empty sessionKind filter (= every session kind)', async () => {
+    const conn = await createRunLifecycle({ eventSessionKindFilter: [] })
+    expect((conn as unknown as { send: ReturnType<typeof vi.fn> }).send).not.toHaveBeenCalled()
+    expect((await latestRunLifecycle()).eventSessionKindFilter).toBeNull()
+  })
+
+  it('keeps a non-empty sessionKind filter verbatim', async () => {
+    await createRunLifecycle({ eventSessionKindFilter: ['work', 'intent'] })
+    expect((await latestRunLifecycle()).eventSessionKindFilter).toEqual(['work', 'intent'])
+  })
+
+  it('accepts an update that clears the sessionKind filter on a run-lifecycle automation', async () => {
     const sch = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
@@ -174,12 +202,12 @@ describe('run-lifecycle event trigger — sessionKind filter is mandatory', () =
       automationId: sch.id,
       input: { eventSessionKindFilter: [] },
     } as never)
-    expect((conn as unknown as { send: ReturnType<typeof vi.fn> }).send).toHaveBeenCalledWith({
+    expect((conn as unknown as { send: ReturnType<typeof vi.fn> }).send).not.toHaveBeenCalledWith({
       type: 'error',
-      error: { code: 'automation.missingSessionKindFilter' },
+      error: { code: 'automation.invalidEventTrigger' },
     })
-    // Unchanged: the filter is still ['work'].
-    expect(getAutomation(sch.id)!.eventSessionKindFilter).toEqual(['work'])
+    // Cleared to null (= every session kind).
+    expect(getAutomation(sch.id)!.eventSessionKindFilter).toBeNull()
   })
 })
 

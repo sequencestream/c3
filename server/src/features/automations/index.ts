@@ -24,7 +24,6 @@ import type { AutomationNameOverride } from './store.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { requireAdmin } from '../auth/authz.js'
 import {
-  hasRunLifecycleEventFilter,
   isValidAutomationMaxWallClockMs,
   normalizeGenericEventFilters,
   type ToolManifestEntry,
@@ -81,13 +80,9 @@ export const createAutomationHandler: Handler<'create_automation'> = async (ctx,
     conn.send({ type: 'error', error: { code: 'automation.invalidEventTrigger' } })
     return
   }
-  // A run-lifecycle subscription MUST declare at least one sessionKind (the form
-  // pre-selects none); reject an empty/absent filter server-side rather than
-  // relying on the front-end disabled button.
-  if (hasRunLifecycleEventFilter(createdFilters) && !msg.input.eventSessionKindFilter?.length) {
-    conn.send({ type: 'error', error: { code: 'automation.missingSessionKindFilter' } })
-    return
-  }
+  // The run-lifecycle sessionKind filter is optional: an absent/empty value means
+  // "every session kind" and is accepted as-is. A non-empty value stays an exact
+  // whitelist (validated to legal SessionKind values at the store boundary).
   if (
     msg.input.maxWallClockMs !== undefined &&
     !isValidAutomationMaxWallClockMs(msg.input.maxWallClockMs)
@@ -157,21 +152,9 @@ export const updateAutomationHandler: Handler<'update_automation'> = async (ctx,
     conn.send({ type: 'error', error: { code: 'automation.invalidEventTrigger' } })
     return
   }
-  // A run-lifecycle subscription must keep a non-empty sessionKind filter — whether
-  // switching into one or editing an existing one (use the patch value if present,
-  // else the stored one).
-  const nextSessionKindFilter =
-    msg.input.eventSessionKindFilter !== undefined
-      ? msg.input.eventSessionKindFilter
-      : existing.eventSessionKindFilter
-  if (
-    nextTrigger === 'event' &&
-    hasRunLifecycleEventFilter(nextFilters) &&
-    !nextSessionKindFilter?.length
-  ) {
-    conn.send({ type: 'error', error: { code: 'automation.missingSessionKindFilter' } })
-    return
-  }
+  // The run-lifecycle sessionKind filter is optional: clearing it (or never
+  // setting one) means "every session kind" and is accepted; a non-empty value
+  // stays an exact whitelist.
   if (
     msg.input.maxWallClockMs !== undefined &&
     !isValidAutomationMaxWallClockMs(msg.input.maxWallClockMs)

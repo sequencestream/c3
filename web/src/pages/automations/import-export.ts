@@ -281,8 +281,8 @@ export function parseImportFile(text: string): ImportParseResult {
  * Map one validated file member to an import candidate. Every field is mapped
  * independently with a default fallback; the trigger fields are normalized against
  * the final `triggerType` / `eventTopic` (cron clears event fields, event clears
- * cron, a run-lifecycle trigger with no valid sessionKind filter falls back to
- * `['work']`). An `event` trigger whose topic is missing / unknown demotes to the
+ * cron, a run-lifecycle trigger with no valid sessionKind filter stays
+ * unrestricted = every session kind). An `event` trigger whose topic is missing / unknown demotes to the
  * cron default rather than producing a server-rejected request. The item is always
  * `paused`, owned by `workspaceId`, with `id` / `workspaceId` / `status` /
  * timestamps / `nextRunAt` ignored.
@@ -330,12 +330,12 @@ export function mapToCreateInput(
   }
   if (initialName) input.initialName = initialName
 
-  // A run-lifecycle subscription requires a non-empty sessionKind filter; fall
-  // back to the behaviour-preserving ['work'] (matching the server migration) when
-  // the export lacks a valid one.
+  // The run-lifecycle sessionKind filter is optional: keep a non-empty export
+  // value verbatim, but a missing / empty / all-invalid value stays unrestricted
+  // (null = every session kind) rather than falling back to ['work'].
   if (isEvent && hasRunLifecycleEventFilter(eventFilters)) {
     const skf = pickEnumArray<SessionKind>(raw.eventSessionKindFilter, SESSION_KINDS)
-    input.eventSessionKindFilter = skf && skf.length ? skf : ['work']
+    input.eventSessionKindFilter = skf && skf.length ? skf : null
   }
 
   if (type === 'llm') {

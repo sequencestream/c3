@@ -473,6 +473,44 @@ describe('scheduler — dispatchEventTriggers', () => {
     expect(appendLog).not.toHaveBeenCalled()
   })
 
+  it('an empty filter fires regardless of the run sessionKind', () => {
+    install([evSched({ id: 'sk-empty', eventSessionKindFilter: [] })])
+    dispatchEventTriggers({
+      workspacePath: '/abs/ws-a',
+      sessionKind: 'intent',
+      event: { type: 'run:settled', status: 'complete' },
+    })
+    expect(appendLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('an absent (null) filter fires regardless of the run sessionKind', () => {
+    install([evSched({ id: 'sk-null', eventSessionKindFilter: null })])
+    dispatchEventTriggers({
+      workspacePath: '/abs/ws-a',
+      sessionKind: 'automation',
+      event: { type: 'run:settled', status: 'complete' },
+    })
+    expect(appendLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('an empty filter still fires for a run event carrying no sessionKind origin', () => {
+    install([evSched({ id: 'sk-none', eventSessionKindFilter: [] })])
+    dispatchEventTriggers({
+      workspacePath: '/abs/ws-a',
+      event: { type: 'run:settled', status: 'complete' },
+    })
+    expect(appendLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('a non-empty filter never fires for a run event carrying no sessionKind origin', () => {
+    install([evSched({ id: 'sk-strict', eventSessionKindFilter: ['work'] })])
+    dispatchEventTriggers({
+      workspacePath: '/abs/ws-a',
+      event: { type: 'run:settled', status: 'complete' },
+    })
+    expect(appendLog).not.toHaveBeenCalled()
+  })
+
   it('metadata AND filter fires only when every condition matches', () => {
     install([
       evSched({

@@ -1652,8 +1652,8 @@
         },
         "sessionKind": {
           "label": "在以下会话类型时触发",
-          "hint": "选择哪些运行来源可以触发本自动化。",
-          "required": "至少选择一个会话类型。",
+          "hint": "可选——选择哪些运行来源可以触发本自动化;留空表示所有会话类型。",
+          "all": "所有会话类型",
           "work": {
             "label": "工作"
           },
@@ -1803,7 +1803,6 @@
       "executionNotFound": "执行记录不存在。",
       "approvalNotFound": "审批条目不存在或已被处理。",
       "invalidEventTrigger": "事件触发型自动化需要订阅一个运行事件。",
-      "missingSessionKindFilter": "运行事件触发器必须至少选择一个会话类型。",
       "invalidMaxWallClockMs": "执行超时必须是 1,000 到 86,400,000 毫秒之间的整数。",
       "invalidInitialStatus": "导入的自动化初始状态只能为 paused。",
       "agentRequired": "Select an execution agent.",

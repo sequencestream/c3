@@ -10,7 +10,7 @@
  * `run:settled` to broadcast the refreshed automation list.
  */
 
-import type { Automation, RunEndReason } from '@ccc/shared/protocol'
+import type { Automation, GenericEvent, RunEndReason } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { computeNextRunAt } from '@ccc/shared/cron'
 import type { EventBus, EventBusEvents } from '../../kernel/events/event-bus.js'
@@ -113,8 +113,14 @@ export function hasInFlight(automationId: string): boolean {
  * Create the execution log, publish run lifecycle events, run the automation via
  * the dispatcher, and re-arm / clean up on settle. Shared by the tick loop and
  * the event-trigger dispatch so both use the identical execution path.
+ *
+ * `triggerEvent` is the normalized event that matched an event trigger, supplied
+ * ONLY by the event-dispatch path; the cron tick and manual run-now pass nothing.
+ * It is an immutable, single-execution input handed straight to the dispatcher
+ * (never stored on the automation) so an LLM task that opted into
+ * `embedEventContext` can append it to its prompt.
  */
-export function dispatchAndTrack(automation: Automation): void {
+export function dispatchAndTrack(automation: Automation, triggerEvent?: GenericEvent): void {
   if (!store) return
   const activeStore = store
   // Create execution log before dispatch
@@ -167,7 +173,7 @@ export function dispatchAndTrack(automation: Automation): void {
     updateLog(id, patch)
   }
 
-  const exec = execute(automation, logId, trackingUpdateLog)
+  const exec = execute(automation, logId, trackingUpdateLog, triggerEvent)
     .finally(() => {
       inFlight.delete(automation.id)
       const workspacePath = resolveWorkspaceRoot(automation.workspaceId)!

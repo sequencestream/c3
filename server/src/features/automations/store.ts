@@ -59,6 +59,25 @@ function sanitizeConfig(config: unknown): Record<string, unknown> {
   return out
 }
 
+/**
+ * Enforce the `embedEventContext` save boundary in place: the flag is only valid
+ * for an event-triggered LLM task, so it is kept (coerced to a strict `true`)
+ * ONLY for that combination and stripped otherwise. A command task or a
+ * non-event trigger can never persist a truthy value, and a missing / non-`true`
+ * value collapses to "off" (the key is dropped, keeping stored config minimal).
+ */
+function normalizeEmbedEventContext(
+  config: Record<string, unknown>,
+  type: AutomationType,
+  triggerType: ScheduleTriggerType,
+): void {
+  if (type === 'llm' && triggerType === 'event' && config.embedEventContext === true) {
+    config.embedEventContext = true
+  } else {
+    delete config.embedEventContext
+  }
+}
+
 /** Resolved display name + provenance the update path writes into config. */
 export interface AutomationNameOverride {
   name: string
@@ -443,6 +462,9 @@ export function createAutomation(input: CreateAutomationInput, generatedName?: s
   // rather than throwing and rejecting the create.
   const triggerType: ScheduleTriggerType = input.triggerType ?? 'cron'
   const isEvent = triggerType === 'event'
+  // Only an event-triggered LLM task may persist `embedEventContext`; any other
+  // combination (command task, cron trigger) is stripped at this save boundary.
+  normalizeEmbedEventContext(config, input.type, triggerType)
   const cronExpression = isEvent ? '' : input.cronExpression
   const nextRunAt =
     !isEvent && isValidCron(cronExpression)
@@ -562,6 +584,13 @@ export function updateAutomation(
       if (typeof prev?.name === 'string' && prev.name.trim()) next.name = prev.name
       if (prev?.nameSource === 'user') next.nameSource = 'user'
     }
+    // `embedEventContext` is only valid for an event-triggered LLM task. `type` is
+    // locked after create (never in an update), so the effective type is the
+    // stored one; the trigger comes from this patch when switching, else the
+    // stored value. A patch that moves off event / to a command shape drops it.
+    const effType = patch.type ?? existing?.type ?? 'command'
+    const effTrigger = patch.triggerType ?? existing?.triggerType ?? 'cron'
+    normalizeEmbedEventContext(next, effType, effTrigger)
     sets.push('config=?')
     params.push(JSON.stringify(next))
   }

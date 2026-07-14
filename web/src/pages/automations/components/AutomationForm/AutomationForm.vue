@@ -235,6 +235,8 @@ const codexSandboxMode = ref<CodexSandboxMode>('workspace-write')
 const codexApprovalPolicy = ref<CodexApprovalPolicy>('on-request')
 const command = ref('')
 const prompt = ref('')
+// LLM + event only: append the triggering event to the prompt at execution time.
+const embedEventContext = ref(false)
 const maxWallClockMs = ref<number | null>(null)
 const cronExpression = ref('*/30 * * * *')
 const cronEditorOpen = ref(false)
@@ -292,6 +294,9 @@ const showSessionKindFilter = computed(
 const showPrNote = computed(
   () => triggerType.value === 'event' && eventRows.value.some((r) => rowType(r).startsWith('pr:')),
 )
+// The embed-event-context option only makes sense for an event-triggered LLM
+// task: other trigger / task combinations never carry a triggering event.
+const showEmbedEventContext = computed(() => triggerType.value === 'event' && type.value === 'llm')
 
 // Advanced segmented builder.
 type Frequency = 'minutely' | 'hourly' | 'daily' | 'weekly'
@@ -307,6 +312,11 @@ function readConfigField(cfg: unknown, key: string): string {
     return typeof v === 'string' ? v : ''
   }
   return ''
+}
+
+/** Read a strict-boolean config flag; only a literal `true` reads back as checked. */
+function readConfigBool(cfg: unknown, key: string): boolean {
+  return !!cfg && typeof cfg === 'object' && (cfg as Record<string, unknown>)[key] === true
 }
 
 /** The create-form default subscription row: run settled, any status. */
@@ -392,6 +402,7 @@ watch(
       cronExpression.value = sched.cronExpression || '*/30 * * * *'
       command.value = readConfigField(sched.config, 'command')
       prompt.value = readConfigField(sched.config, 'prompt')
+      embedEventContext.value = readConfigBool(sched.config, 'embedEventContext')
       maxWallClockMs.value = sched.maxWallClockMs
       triggerType.value = sched.triggerType
       // Restore the subscription rows (migrated legacy records show their
@@ -427,6 +438,7 @@ watch(
       cronExpression.value = '*/30 * * * *'
       command.value = ''
       prompt.value = ''
+      embedEventContext.value = false
       maxWallClockMs.value = null
       triggerType.value = 'cron'
       eventRows.value = [defaultEventRow()]
@@ -726,6 +738,10 @@ function buildConfig(): Record<string, unknown> {
   const base: Record<string, unknown> = {}
   if (type.value === 'command') base.command = command.value.trim()
   else base.prompt = prompt.value
+  // Only carry the embed flag for the event + LLM combo the checkbox is shown
+  // for; a hidden (invalid) combination must never save it as enabled. The
+  // server re-enforces this boundary regardless.
+  if (showEmbedEventContext.value) base.embedEventContext = embedEventContext.value
   return base
 }
 
@@ -869,6 +885,23 @@ function save(): void {
                 :placeholder="t('automation.form.prompt.placeholder')"
               />
             </label>
+
+            <!-- Embed the triggering event into the prompt: event + LLM only. -->
+            <div
+              v-if="showEmbedEventContext"
+              class="sf-field sf-field--stacked"
+              data-testid="embed-event-context"
+            >
+              <label class="sf-tool-item">
+                <input
+                  v-model="embedEventContext"
+                  type="checkbox"
+                  data-testid="embed-event-context-checkbox"
+                />
+                <span class="sf-tool-name">{{ t('automation.form.embedEventContext.label') }}</span>
+              </label>
+              <span class="sf-hint">{{ t('automation.form.embedEventContext.hint') }}</span>
+            </div>
 
             <label class="sf-field sf-field--stacked">
               <span class="sf-label">{{ t('automation.form.maxWallClockMs.label') }}</span>

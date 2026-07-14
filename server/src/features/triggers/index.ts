@@ -152,6 +152,8 @@ export function dispatchEventTriggers(view: TriggerEventView): void {
       )
       continue
     }
-    dispatchAndTrack(automation)
+    // Hand the matched normalized event to the dispatcher as this execution's
+    // immutable trigger context (an opted-in LLM task embeds it in its prompt).
+    dispatchAndTrack(automation, view.event)
   }
 }

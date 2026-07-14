@@ -700,7 +700,7 @@ describe('scheduler — triggerRunNow', () => {
     await triggerRunNow(paused.id)
 
     expect(appendLog).toHaveBeenCalledOnce()
-    expect(execute).toHaveBeenCalledWith(paused, 'manual-log', expect.any(Function))
+    expect(execute).toHaveBeenCalledWith(paused, 'manual-log', expect.any(Function), undefined)
     await vi.waitFor(() => expect(hasInFlight(paused.id)).toBe(false))
     expect(paused.status).toBe('paused')
     expect(paused.nextRunAt).toBe(1_800_000_000_000)

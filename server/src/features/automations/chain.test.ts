@@ -114,11 +114,13 @@ describe('automation chain: A (metadata) → B (sessionKind=automation + metadat
     dispatchAndTrack(a)
     await vi.waitFor(() => expect(listExecutionLogs(b.id).length).toBe(1))
 
-    // B actually executed (real dispatch path, same matcher as production).
+    // B actually executed (real dispatch path, same matcher as production), and
+    // carries A's run:settled event as its 4th-arg trigger context.
     expect(vi.mocked(execute)).toHaveBeenCalledWith(
       expect.objectContaining({ id: b.id }),
       expect.any(String),
       expect.any(Function),
+      expect.objectContaining({ type: 'run:settled' }),
     )
     cancelInFlight(a.id)
     cancelInFlight(b.id)

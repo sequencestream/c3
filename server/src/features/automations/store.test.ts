@@ -550,3 +550,91 @@ describe('createAutomation import extensions (initialStatus / initialName)', () 
     expect(getEventAutomations('run:settled').find((s) => s.id === sch.id)).toBeDefined()
   })
 })
+
+describe('embedEventContext save boundary', () => {
+  const readEmbed = (id: string): unknown =>
+    (getAutomation(id)!.config as Record<string, unknown>).embedEventContext
+
+  it('persists the flag for an event-triggered LLM task', () => {
+    const s = createAutomation({
+      type: 'llm',
+      config: { prompt: 'go', embedEventContext: true },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventFilters: [{ type: 'run:settled' }],
+      eventSessionKindFilter: ['work'],
+      mode: 'read-only',
+      vendor: 'claude',
+      agentId: 'a1',
+    })
+    expect(readEmbed(s.id)).toBe(true)
+  })
+
+  it('drops the flag for a command task even when the client sends true', () => {
+    const s = createAutomation({
+      type: 'command',
+      config: { command: 'echo hi', embedEventContext: true },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventFilters: [{ type: 'run:settled' }],
+      eventSessionKindFilter: ['work'],
+      mode: 'read-only',
+      vendor: 'claude',
+    })
+    expect(readEmbed(s.id)).toBeUndefined()
+  })
+
+  it('drops the flag for a cron-triggered LLM task', () => {
+    const s = createAutomation({
+      type: 'llm',
+      config: { prompt: 'go', embedEventContext: true },
+      workspaceId: proj,
+      cronExpression: '0 8 * * *',
+      mode: 'read-only',
+      vendor: 'claude',
+      agentId: 'a1',
+    })
+    expect(readEmbed(s.id)).toBeUndefined()
+  })
+
+  it('coerces a non-strict-true value to off', () => {
+    const s = createAutomation({
+      type: 'llm',
+      config: { prompt: 'go', embedEventContext: 'yes' } as unknown as Record<string, unknown>,
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventFilters: [{ type: 'run:settled' }],
+      eventSessionKindFilter: ['work'],
+      mode: 'read-only',
+      vendor: 'claude',
+      agentId: 'a1',
+    })
+    expect(readEmbed(s.id)).toBeUndefined()
+  })
+
+  it('drops a previously-enabled flag when an update switches the trigger to cron', () => {
+    const s = createAutomation({
+      type: 'llm',
+      config: { prompt: 'go', embedEventContext: true },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventFilters: [{ type: 'run:settled' }],
+      eventSessionKindFilter: ['work'],
+      mode: 'read-only',
+      vendor: 'claude',
+      agentId: 'a1',
+    })
+    expect(readEmbed(s.id)).toBe(true)
+    // The form re-sends config together with the new trigger type on save.
+    updateAutomation(s.id, {
+      config: { prompt: 'go', embedEventContext: true },
+      triggerType: 'cron',
+      cronExpression: '0 8 * * *',
+    })
+    expect(readEmbed(s.id)).toBeUndefined()
+  })
+})

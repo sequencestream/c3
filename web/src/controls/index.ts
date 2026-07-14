@@ -16,6 +16,7 @@ import { installCodesActions } from './codes-actions'
 import { installChatActions } from './chat-actions'
 import { installSettingsActions } from './settings-actions'
 import { installWorkcenterActions } from './workcenter-actions'
+import { installDashboardActions } from './dashboard-actions'
 import { installShareActions } from './share-actions'
 import type { AppCtx } from './types'
 
@@ -61,6 +62,7 @@ export function useAppController(): AppCtx {
   installChatActions(ctx)
   installSettingsActions(ctx)
   installWorkcenterActions(ctx)
+  installDashboardActions(ctx)
   installShareActions(ctx)
 
   onMounted(() => {
@@ -108,8 +110,16 @@ export function useAppController(): AppCtx {
             })
           }
         } else if (ctx.viewMode.value === 'workcenter') {
-          // Re-fetch the event list (read path).
-          ctx.reloadWorkcenter()
+          if (ctx.workcenterPage.value === 'dashboard') {
+            // The fresh socket dropped any in-flight snapshot request — reset the
+            // coalescing flags and pull a clean snapshot.
+            ctx.dashboardLoading.value = false
+            ctx.dashboardRefreshPending.value = false
+            ctx.loadDashboard()
+          } else {
+            // Re-fetch the event list (read path).
+            ctx.reloadWorkcenter()
+          }
         } else if (ctx.activeWorkspace.value && ctx.activeSession.value) {
           ctx.send({
             type: 'select_session',

@@ -3,6 +3,7 @@ import type {
   SessionInfo,
   SessionRunStatus,
   SessionStatus,
+  WorkspaceDashboardRow,
 } from '@ccc/shared/protocol'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import { resolveCurrentWorkspace } from '@/lib/current-workspace'
@@ -28,6 +29,28 @@ import { resolveSessionSourceAction } from '@/lib/session-jump'
 
 /** 深链兑现超时:10 秒,足够服务端回包,但不至于在慢网下过多等待。 */
 const DEEP_LINK_TIMEOUT_MS = 10_000
+
+// Broadcast types that can change a Dashboard count (session/intent/discussion/
+// automation surfaces). While the Dashboard is the active view, each triggers one
+// coalesced snapshot refresh (dedup handled in `loadDashboard`).
+const DASHBOARD_REFRESH_TYPES = new Set<ServerToClient['type']>([
+  'sessions',
+  'session_status',
+  'intents',
+  'discussions',
+  'automations',
+])
+
+/** Drop selection / failure flags for workspaces no longer present in the snapshot. */
+function pruneDashboardSelection(ctx: AppCtx, rows: WorkspaceDashboardRow[]): void {
+  const ids = new Set(rows.map((row) => row.workspaceId))
+  ctx.dashboardSelected.value = new Set(
+    [...ctx.dashboardSelected.value].filter((id) => ids.has(id)),
+  )
+  ctx.dashboardFailedIds.value = new Set(
+    [...ctx.dashboardFailedIds.value].filter((id) => ids.has(id)),
+  )
+}
 
 // Install the WebSocket message router (`handleMessage`) plus its status helpers
 // onto the shared ctx. The router is the app's single inbound switch: it folds
@@ -1010,6 +1033,48 @@ export function installMessageHandler(ctx: AppCtx): void {
           ctx.workcenterLoading.value = false
         }
         break
+      case 'workspace_dashboard':
+        ctx.dashboardLoading.value = false
+        if (msg.error) {
+          // Whole-snapshot failure: keep the last good rows, surface the error.
+          ctx.dashboardError.value = msg.error
+        } else {
+          ctx.dashboardError.value = null
+          ctx.dashboardRows.value = msg.rows
+          pruneDashboardSelection(ctx, msg.rows)
+        }
+        // A refresh requested while this one was in flight — run exactly one more.
+        if (ctx.dashboardRefreshPending.value) {
+          ctx.dashboardRefreshPending.value = false
+          ctx.loadDashboard()
+        }
+        break
+      case 'workspaces_automation_result': {
+        ctx.dashboardBusy.value = false
+        const failed = new Set(msg.results.filter((r) => !r.ok).map((r) => r.workspaceId))
+        ctx.dashboardFailedIds.value = failed
+        // Keep failed rows selected (for the failure marker + retry); clear the rest.
+        ctx.dashboardSelected.value = new Set(failed)
+        if (msg.dashboardError) {
+          // The post-op snapshot failed; keep settled results and re-request once.
+          ctx.dashboardError.value = msg.dashboardError
+          ctx.loadDashboard()
+        } else {
+          ctx.dashboardError.value = null
+          ctx.dashboardRows.value = msg.dashboard
+          pruneDashboardSelection(ctx, msg.dashboard)
+        }
+        // Summarize: all-success / all-failure / partial.
+        const okCount = msg.results.filter((r) => r.ok).length
+        const failCount = msg.results.length - okCount
+        if (msg.results.length > 0) {
+          if (failCount === 0) ctx.showToast(ctx.t('dashboard.bulk.allSuccess', { count: okCount }))
+          else if (okCount === 0)
+            ctx.showToast(ctx.t('dashboard.bulk.allFailed', { count: failCount }))
+          else ctx.showToast(ctx.t('dashboard.bulk.partial', { ok: okCount, failed: failCount }))
+        }
+        break
+      }
       case 'dir_listed': {
         // Adopt the listing only for the workspace currently being browsed.
         if (msg.workspaceId !== codesProject.value) break
@@ -1067,6 +1132,8 @@ export function installMessageHandler(ctx: AppCtx): void {
         ctx.updateStatus.value = msg.updateStatus
         break
     }
+    // A count-affecting broadcast while the Dashboard is active → one coalesced refresh.
+    if (DASHBOARD_REFRESH_TYPES.has(msg.type)) ctx.maybeRefreshDashboard()
   }
 
   // Replace the status map and fire a notification when a *background* session

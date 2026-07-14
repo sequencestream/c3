@@ -104,6 +104,8 @@ function makeCtx() {
     // The handler reads `ctx.t` at install time; a passthrough is enough here.
     t: (key: string) => key,
     add: vi.fn(),
+    // Post-switch Dashboard refresh hook — a no-op in these session/intent tests.
+    maybeRefreshDashboard: vi.fn(),
   } as unknown as AppCtx
   installMessageHandler(ctx)
   return {
@@ -291,6 +293,7 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
       bindConsoleSession,
       clearViewedSession,
       consumePendingWorkSessionSelect,
+      maybeRefreshDashboard: vi.fn(),
     } as unknown as AppCtx
     installMessageHandler(ctx)
     return {
@@ -773,6 +776,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       requestedIntentSessionId: ref(null),
       toast: ref<string | null>(null),
       intentActionError: ref<string | null>(null),
+      maybeRefreshDashboard: vi.fn(),
     } as unknown as AppCtx
     installMessageHandler(ctx)
     return {

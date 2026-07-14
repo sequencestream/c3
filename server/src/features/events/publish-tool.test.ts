@@ -16,7 +16,7 @@ import {
   PR_LEGACY_EVENT_TYPE,
   normalizePrGenericEvent,
   projectPrOperationEvent,
-} from './tool-defs.js'
+} from '../pr-events/tool-defs.js'
 
 /** The registry-backed normalize the composition root injects into the tool. */
 function makeNormalize(): (core: GenericEvent) => ReturnType<EventNormalizerRegistry['normalize']> {

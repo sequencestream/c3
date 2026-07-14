@@ -299,7 +299,7 @@ describe('runViaDriver — work-session base MCP injection (publish_event, codex
 
     const dispose = vi.fn()
     const servers = {
-      c3: { type: 'http' as const, url: 'http://127.0.0.1/internal/pr-event-mcp/v1?token=t' },
+      c3: { type: 'http' as const, url: 'http://127.0.0.1/internal/event-mcp/v1?token=t' },
     }
     const bindDriverMcp = vi.fn(() => ({ servers, dispose }))
     const { adapter, started } = fakeCodexAdapter()

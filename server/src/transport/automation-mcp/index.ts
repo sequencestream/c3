@@ -5,8 +5,8 @@
  * that, so this route re-exposes the SAME tool set over a streamable-HTTP MCP
  * server bound to ONE automation execution.
  *
- * Mirrors the intent / pr-event MCP routes (`transport/intent-mcp`,
- * `transport/pr-event-mcp`): a kernel-neutral bind/dispose + opaque per-execution
+ * Mirrors the intent / event MCP routes (`transport/intent-mcp`,
+ * `transport/event-mcp`): a kernel-neutral bind/dispose + opaque per-execution
  * token, the HTTP `handler` mounted by the composition root, and defence-in-depth
  * (loopback guard ON TOP of c3's localhost-only bind, plus token lookup). The tool
  * behaviors come from the shared framing-free builder

@@ -41,7 +41,7 @@ import { createIntentMcpServer } from './features/intents/save-tool.js'
 import { createSpecQueryMcpServer } from './features/intents/spec-query-tool.js'
 import { runFind, runView } from './features/intents/tool-defs.js'
 import { gatedSave } from './features/intents/save-gate.js'
-import { createPublishEventMcpServer } from './features/pr-events/publish-tool.js'
+import { createPublishEventMcpServer } from './features/events/publish-tool.js'
 import {
   normalizePrGenericEvent,
   PR_EVENT_TYPES,
@@ -57,11 +57,7 @@ import {
   INTENT_MCP_PATH,
   type IntentMcpTools,
 } from './transport/intent-mcp/index.js'
-import {
-  createPrEventMcp,
-  PR_EVENT_MCP_PATH,
-  type PrEventMcpTools,
-} from './transport/pr-event-mcp/index.js'
+import { createEventMcp, EVENT_MCP_PATH, type EventMcpTools } from './transport/event-mcp/index.js'
 import { createSpecQueryMcp, SPEC_QUERY_MCP_PATH } from './transport/spec-query-mcp/index.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
 import {
@@ -459,7 +455,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // codex localhost HTTP route here). The route is mounted before the SPA catch-all.
   const publishEvent = (payload: import('@ccc/shared/protocol').GenericEventEnvelope): void =>
     eventBus.publish('event', payload)
-  const prEventMcpTools: PrEventMcpTools = {
+  const eventMcpTools: EventMcpTools = {
     publish: (binding, args) =>
       runPublishEvent(args, normalizeEvent, (event) =>
         publishEvent({
@@ -469,7 +465,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
         }),
       ),
   }
-  const prEventMcp = createPrEventMcp(`http://127.0.0.1:${opts.port}`, prEventMcpTools)
+  const eventMcp = createEventMcp(`http://127.0.0.1:${opts.port}`, eventMcpTools)
   const specQueryMcp = createSpecQueryMcp(`http://127.0.0.1:${opts.port}`)
 
   // ── Sandbox wiring (ADR-0024) ──────────────────────────────────────────────
@@ -547,7 +543,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
           { workspacePath, getRunId: binding.getRunId, signal: binding.signal },
           { normalize: normalizeEvent, publish: publishEvent },
         ),
-      bindDriverMcp: (binding) => prEventMcp.bind(binding),
+      bindDriverMcp: (binding) => eventMcp.bind(binding),
     }),
     // The neutral Codex adapter, or null when its host CLI is missing (launchRun
     // forks to the driver path for codex sessions; 2026-06-06-007).
@@ -613,7 +609,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   configureAutomationMcp(automationMcpDeps)
   // Codex twin of the automation c3 MCP over loopback HTTP: the dispatcher binds
   // it per Codex execution when the automation selects a c3 tool. Mounted before
-  // the SPA catch-all, same as the intent / pr-event / relay routes.
+  // the SPA catch-all, same as the intent / event / relay routes.
   const automationMcp = createAutomationMcp(`http://127.0.0.1:${opts.port}`, automationMcpDeps)
   setAutomationHttpMcp(automationMcp)
 
@@ -671,10 +667,10 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // per-run token inside the handler. Before the SPA catch-all, same as the relay.
   app.all(INTENT_MCP_PATH, (c) => intentMcp.handler(c))
 
-  // PR-event MCP loopback endpoint (2026-06-20). The codex twin of the
+  // Event MCP loopback endpoint (2026-06-20). The codex twin of the
   // work-session in-process publish tool. Loopback-guarded + per-run token inside
   // the handler. Before the SPA catch-all, same as the intent/relay routes.
-  app.all(PR_EVENT_MCP_PATH, (c) => prEventMcp.handler(c))
+  app.all(EVENT_MCP_PATH, (c) => eventMcp.handler(c))
 
   // Spec-query MCP loopback endpoint. The codex twin of the spec-authoring
   // in-process read-only ledger tools. It never registers save_intents.

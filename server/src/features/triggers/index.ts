@@ -31,13 +31,10 @@ import type {
   Automation,
   SessionKind,
 } from '@ccc/shared/protocol'
-import { genericEventFilterMatches } from '@ccc/shared/protocol'
+import { genericEventFiltersMatch, hasRunLifecycleEventFilter } from '@ccc/shared/protocol'
 import { getAutomationEnabled } from '../../kernel/config/index.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { dispatchAndTrack, getStore, inFlight } from '../automations/engine.js'
-
-/** The run-lifecycle event types the sessionKind security boundary applies to. */
-const RUN_LIFECYCLE_TYPES = new Set(['run:started', 'run:settled'])
 
 /**
  * The trusted minimal view a matcher reads for one incoming event. `workspacePath`
@@ -64,27 +61,31 @@ export interface TriggerMatchResult {
 }
 
 /**
- * Pure evaluator: does `view` match `automation`'s generic event filter? For a
- * run-lifecycle event type (`run:started` / `run:settled`) it FIRST applies the
- * mandatory `eventSessionKindFilter` security boundary — an absent/empty filter,
- * or an event whose `sessionKind` is not in it, fails closed — then the shared
- * generic match (workspace + type + status + metadata). For every other type only
- * the generic match runs (a PR / intent event carries no sessionKind). The
- * breakdown reports the sessionKind dimension (when applicable) followed by the
- * generic dimensions under their vendor-neutral names.
+ * Pure evaluator: does `view` match any of `automation`'s subscription rows? When
+ * any row subscribes a run-lifecycle type (`run:started` / `run:settled` /
+ * `run:*`) it FIRST applies the mandatory `eventSessionKindFilter` security
+ * boundary — an absent/empty filter, or an event whose `sessionKind` is not in
+ * it, fails closed — then the shared generic match (any row: workspace + type +
+ * status + metadata). For every other type only the generic match runs (a PR /
+ * intent event carries no sessionKind). The breakdown reports the sessionKind
+ * dimension (when applicable) followed by the generic dimensions of the matching
+ * (or last evaluated) row under their vendor-neutral names.
  */
 export function evaluateAutomationTriggerMatch(
   automation: Automation,
   view: TriggerEventView,
 ): TriggerMatchResult {
-  const filter = automation.eventFilter ?? null
+  const filters = automation.eventFilters ?? null
   const breakdown: TriggerMatchBreakdownItem[] = []
 
-  if (filter && RUN_LIFECYCLE_TYPES.has(filter.type)) {
+  if (hasRunLifecycleEventFilter(filters) && view.event.type.startsWith('run:')) {
     // sessionKind boundary is mandatory for run-lifecycle triggers: an absent/empty
     // filter fails closed (a stored run-lifecycle automation always has one, via
     // migration + save validation). It runs BEFORE the generic match so a generic
-    // metadata filter can never widen the run-source scope.
+    // metadata filter can never widen the run-source scope. With multi-row
+    // subscriptions the gate applies exactly to incoming RUN events on an
+    // automation that subscribes run lifecycle — a pr/intent event on the same
+    // automation is matched by its own non-run row and carries no sessionKind.
     const skf = automation.eventSessionKindFilter
     breakdown.push({
       name: 'sessionKind',
@@ -92,7 +93,7 @@ export function evaluateAutomationTriggerMatch(
     })
   }
 
-  const generic = genericEventFilterMatches(resolveWorkspaceRoot(automation.workspaceId)!, filter, {
+  const generic = genericEventFiltersMatch(resolveWorkspaceRoot(automation.workspaceId)!, filters, {
     workspacePath: resolve(view.workspacePath),
     event: view.event,
   })

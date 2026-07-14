@@ -26,6 +26,7 @@ vi.mock('../../kernel/config/index.js', () => ({
 vi.mock('./dispatcher.js', () => ({ execute: vi.fn(async () => {}) }))
 
 import type { Automation } from '@ccc/shared/protocol'
+import { eventTypeMatches } from '@ccc/shared/protocol'
 import { execute } from './dispatcher.js'
 import {
   cancelInFlight,
@@ -50,7 +51,7 @@ function cronAutomation(over: Partial<Automation> = {}): Automation {
     triggerType: 'cron',
     cronExpression: '0 * * * *',
     nextRunAt: Date.now() - 60_000,
-    eventFilter: null,
+    eventFilters: null,
     status: 'active',
     mode: 'sandboxed',
     toolAllowlist: [],
@@ -72,7 +73,7 @@ function eventAutomation(over: Partial<Automation> = {}): Automation {
     triggerType: 'event',
     cronExpression: '',
     nextRunAt: null,
-    eventFilter: { type: 'run:settled' },
+    eventFilters: [{ type: 'run:settled' }],
     eventSessionKindFilter: ['work'],
     metadata: {},
     status: 'active',
@@ -190,7 +191,10 @@ describe('automation gate — event dispatch', () => {
       getDueAutomations: () => [],
       getEventAutomations: (type) =>
         automations.filter(
-          (s) => s.status === 'active' && s.triggerType === 'event' && s.eventFilter?.type === type,
+          (s) =>
+            s.status === 'active' &&
+            s.triggerType === 'event' &&
+            s.eventFilters?.some((f) => eventTypeMatches(f.type, type)),
         ),
       getAutomation: (id) => automations.find((s) => s.id === id) ?? null,
       updateNextRunAt: vi.fn(),
@@ -234,19 +238,19 @@ describe('automation gate — event dispatch', () => {
     cancelInFlight('e-open')
   })
 
-  it('pr:operation events are gated the same way', () => {
+  it('pr:<op> events are gated the same way', () => {
     gate.map.set(WS_CLOSED, false)
     install([
       eventAutomation({
         id: 'e-pr',
         workspaceId: WS_CLOSED,
-        eventFilter: { type: 'pr:operation' },
+        eventFilters: [{ type: 'pr:merge' }],
         eventSessionKindFilter: null,
       }),
     ])
     dispatchEventTriggers({
       workspacePath: WS_CLOSED,
-      event: { type: 'pr:operation', status: 'success', metadata: { operation: 'merge' } },
+      event: { type: 'pr:merge', status: 'success', metadata: { operation: 'merge' } },
     })
     expect(appendLog).not.toHaveBeenCalled()
   })

@@ -43,9 +43,13 @@ import {
   PR_OPERATIONS,
   PR_OPERATION_RESULTS,
   SESSION_KINDS,
+  eventTypeMatches,
+  hasRunLifecycleEventFilter,
   normalizeAutomationMetadata,
   normalizeEventMetadataFilter,
   normalizeGenericEventFilter,
+  normalizeGenericEventFilters,
+  upgradeV12EventFilter,
 } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
@@ -76,7 +80,7 @@ export interface AutomationNameOverride {
 }
 
 const AGENT_RECOVERY_ACTION = 'agent_quota_recovery'
-const SCHEMA_VERSION = 12
+const SCHEMA_VERSION = 13
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS automations (
@@ -95,6 +99,7 @@ CREATE TABLE IF NOT EXISTS automations (
   event_session_kind_filter TEXT,
   event_metadata_filter     TEXT,
   event_filter        TEXT,
+  event_filters       TEXT,
   metadata            TEXT NOT NULL DEFAULT '{}',
   status              TEXT NOT NULL,
   mode                TEXT NOT NULL DEFAULT '',
@@ -285,6 +290,19 @@ function runMigrations(d: Db): void {
     d.exec(`ALTER TABLE automations ADD COLUMN event_filter TEXT`)
   }
   backfillEventFilter(d)
+  // v13 (2026-07-14): `<category>:<action>` event types + multi-row subscriptions.
+  // The single `event_filter` becomes a JSON ARRAY column `event_filters` (any-row
+  // OR). The action dimension moves out of status/metadata into the type itself:
+  // `pr:operation` splits into `pr:create`…`pr:update` (its `metadata.operation`
+  // OR conditions become one row per operation), `intent:lifecycle` phases move
+  // from `statuses` into `intent:<phase>` rows; "any action" is the `<category>:*`
+  // wildcard. `event_filter` is RETAINED as migration input only — runtime
+  // reads/writes/matches exclusively through event_filters. Backfill fills only
+  // rows whose event_filters is still NULL (idempotent, never overwrites).
+  if (!columnExists(d, 'automations', 'event_filters')) {
+    d.exec(`ALTER TABLE automations ADD COLUMN event_filters TEXT`)
+  }
+  backfillEventFilters(d)
 }
 
 /**
@@ -362,6 +380,30 @@ function backfillEventFilter(d: Db): void {
   })
 }
 
+/**
+ * Backfill `event_filters` from the v12 single `event_filter` for every event
+ * automation not migrated yet. The hit-set-preserving projection lives in the
+ * shared {@link upgradeV12EventFilter} (also used by the client-side automation
+ * import for old export files). Same discipline as {@link backfillEventFilter}:
+ * one transaction, corrupt/absent input leaves the row inert (NULL), a failure
+ * aborts schema init.
+ */
+function backfillEventFilters(d: Db): void {
+  const rows = d.all<{ id: string; event_filter: string | null }>(
+    `SELECT id, event_filter FROM automations
+      WHERE trigger_type = 'event' AND event_filters IS NULL AND event_filter IS NOT NULL`,
+  )
+  if (!rows.length) return
+  tx(d, () => {
+    for (const row of rows) {
+      const filter = parseEventFilter(row.event_filter)
+      if (!filter) continue
+      const filters = upgradeV12EventFilter(filter)
+      d.run(`UPDATE automations SET event_filters=? WHERE id=?`, JSON.stringify(filters), row.id)
+    }
+  })
+}
+
 let schemaReady = false
 
 /** Return the db with the automation schema ensured once, or null if unavailable. */
@@ -428,6 +470,7 @@ interface AutomationRow {
   event_session_kind_filter: string | null
   event_metadata_filter: string | null
   event_filter: string | null
+  event_filters: string | null
   metadata: string | null
   status: string
   mode: string
@@ -585,13 +628,23 @@ function parseEventFilter(raw: string | null): GenericEventFilter | null {
   }
 }
 
+/** Parse the event_filters column to subscription rows; null/blank/corrupt/empty → null. */
+function parseEventFilters(raw: string | null): GenericEventFilter[] | null {
+  if (!raw) return null
+  try {
+    return normalizeGenericEventFilters(JSON.parse(raw))
+  } catch {
+    return null
+  }
+}
+
 /**
- * Serialize a generic event filter to JSON for storage; a filter without a valid
- * `type` (or absent) stores NULL. The caller only reaches here for event triggers,
- * whose `type` is validated at the handler save boundary.
+ * Serialize subscription rows to JSON for storage; a list that normalizes to
+ * empty (or absent) stores NULL. The caller only reaches here for event triggers,
+ * whose rows are validated at the handler save boundary.
  */
-function serializeEventFilter(filter: GenericEventFilter | null | undefined): string | null {
-  const normalized = normalizeGenericEventFilter(filter)
+function serializeEventFilters(filters: GenericEventFilter[] | null | undefined): string | null {
+  const normalized = normalizeGenericEventFilters(filters)
   return normalized ? JSON.stringify(normalized) : null
 }
 
@@ -613,7 +666,7 @@ function toAutomation(r: AutomationRow): Automation {
     triggerType: (r.trigger_type as ScheduleTriggerType | null) ?? 'cron',
     cronExpression: r.cron_expression,
     nextRunAt: r.next_run_at,
-    eventFilter: parseEventFilter(r.event_filter),
+    eventFilters: parseEventFilters(r.event_filters),
     eventSessionKindFilter: parseSessionKindFilter(r.event_session_kind_filter),
     metadata: parseMetadata(r.metadata),
     status: r.status as AutomationStatus,
@@ -799,20 +852,19 @@ export function createAutomation(input: CreateAutomationInput, generatedName?: s
     !isEvent && isValidCron(cronExpression)
       ? computeNextRunAt(cronExpression, now, getTimezone())
       : null
-  // The single generic event filter is written only for event triggers; cron rows
-  // store NULL. Its `type` is validated at the handler save boundary.
-  const eventFilter = isEvent ? serializeEventFilter(input.eventFilter) : null
-  // The sessionKind security boundary applies only to run-lifecycle event triggers;
-  // cron and pr/intent rows store NULL.
-  const filterType = isEvent ? (input.eventFilter?.type ?? null) : null
-  const isRunLifecycle = filterType === 'run:started' || filterType === 'run:settled'
-  const eventSessionKindFilter = isRunLifecycle
+  // The subscription rows are written only for event triggers; cron rows store
+  // NULL. At least one valid row is validated at the handler save boundary.
+  const normalizedFilters = isEvent ? normalizeGenericEventFilters(input.eventFilters) : null
+  const eventFilters = normalizedFilters ? JSON.stringify(normalizedFilters) : null
+  // The sessionKind security boundary applies only when some row subscribes the
+  // run lifecycle; cron and pure pr/intent rows store NULL.
+  const eventSessionKindFilter = hasRunLifecycleEventFilter(normalizedFilters)
     ? serializeSessionKindFilter(input.eventSessionKindFilter)
     : null
   const metadata = JSON.stringify(normalizeAutomationMetadata(input.metadata))
   d.run(
     `INSERT INTO automations
-       (id, type, config, max_wall_clock_ms, workspace_path, trigger_type, cron_expression, next_run_at, event_filter, event_session_kind_filter, metadata, status, mode, tool_allowlist, tool_denylist, vendor, agent_id, created_at, updated_at)
+       (id, type, config, max_wall_clock_ms, workspace_path, trigger_type, cron_expression, next_run_at, event_filters, event_session_kind_filter, metadata, status, mode, tool_allowlist, tool_denylist, vendor, agent_id, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     id,
     input.type,
@@ -822,7 +874,7 @@ export function createAutomation(input: CreateAutomationInput, generatedName?: s
     triggerType,
     cronExpression,
     nextRunAt,
-    eventFilter,
+    eventFilters,
     eventSessionKindFilter,
     metadata,
     status,
@@ -934,7 +986,7 @@ export function updateAutomation(
       sets.push('next_run_at=?')
       params.push(null)
     } else {
-      sets.push('event_filter=?')
+      sets.push('event_filters=?')
       params.push(null)
       sets.push('event_session_kind_filter=?')
       params.push(null)
@@ -952,9 +1004,9 @@ export function updateAutomation(
         : null,
     )
   }
-  if (patch.eventFilter !== undefined) {
-    sets.push('event_filter=?')
-    params.push(serializeEventFilter(patch.eventFilter))
+  if (patch.eventFilters !== undefined) {
+    sets.push('event_filters=?')
+    params.push(serializeEventFilters(patch.eventFilters))
   }
   if (patch.metadata !== undefined) {
     sets.push('metadata=?')
@@ -964,13 +1016,13 @@ export function updateAutomation(
     sets.push('event_session_kind_filter=?')
     params.push(serializeSessionKindFilter(patch.eventSessionKindFilter))
   }
-  // Event-type switch within event mode: a move to a non-run-lifecycle type clears
-  // the sessionKind security boundary (it only applies to run:started / run:settled).
-  // Guarded on the sessionKind field being absent from this patch so a column set once.
+  // Subscription switch within event mode: when the new rows no longer subscribe
+  // any run-lifecycle type, clear the sessionKind security boundary (it only
+  // applies to run events). Guarded on the sessionKind field being absent from
+  // this patch so a column is set once.
   if (
-    patch.eventFilter !== undefined &&
-    patch.eventFilter?.type !== 'run:started' &&
-    patch.eventFilter?.type !== 'run:settled' &&
+    patch.eventFilters !== undefined &&
+    !hasRunLifecycleEventFilter(normalizeGenericEventFilters(patch.eventFilters)) &&
     patch.eventSessionKindFilter === undefined
   ) {
     sets.push('event_session_kind_filter=?')
@@ -1046,11 +1098,12 @@ export function getDueAutomations(now: number): Automation[] {
 }
 
 /**
- * All active event-triggered automations whose generic `eventFilter.type` equals
- * `type`. The event type now lives inside the `event_filter` JSON (no dedicated
- * indexed column), so the SQL selects every active event row and the `type` filter
- * is applied in JS after parsing; the per-installation event-automation set is
- * small. Cron and inactive rows are excluded by the query.
+ * All active event-triggered automations with a subscription row accepting
+ * `type` (exact, or a `<category>:*` wildcard row). The rows live inside the
+ * `event_filters` JSON (no dedicated indexed column), so the SQL selects every
+ * active event row and the type prefilter is applied in JS after parsing; the
+ * per-installation event-automation set is small. Cron and inactive rows are
+ * excluded by the query; the full status/metadata match runs in the dispatcher.
  */
 export function getEventAutomations(type: string): Automation[] {
   const d = db()
@@ -1058,7 +1111,7 @@ export function getEventAutomations(type: string): Automation[] {
   return d
     .all<AutomationRow>("SELECT * FROM automations WHERE status='active' AND trigger_type='event'")
     .map(toAutomation)
-    .filter((a) => a.eventFilter?.type === type)
+    .filter((a) => a.eventFilters?.some((f) => eventTypeMatches(f.type, type)))
 }
 
 /** Update a automation's next_run_at after a successful execution. */

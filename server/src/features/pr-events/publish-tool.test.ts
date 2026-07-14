@@ -11,12 +11,18 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared/protocol'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import { createPublishEventMcpServer } from './publish-tool.js'
-import { PR_EVENT_TYPE, normalizePrGenericEvent, projectPrOperationEvent } from './tool-defs.js'
+import {
+  PR_EVENT_TYPES,
+  PR_LEGACY_EVENT_TYPE,
+  normalizePrGenericEvent,
+  projectPrOperationEvent,
+} from './tool-defs.js'
 
 /** The registry-backed normalize the composition root injects into the tool. */
 function makeNormalize(): (core: GenericEvent) => ReturnType<EventNormalizerRegistry['normalize']> {
   const registry = new EventNormalizerRegistry()
-  registry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
+  for (const t of PR_EVENT_TYPES) registry.register(t, normalizePrGenericEvent)
+  registry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
   return (core) => registry.normalize(core)
 }
 

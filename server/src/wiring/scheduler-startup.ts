@@ -72,15 +72,21 @@ export function startSchedulerWiring(deps: {
   // dispatch entry. These are process-lifetime subscriptions (no dispose): the
   // scheduler lives for the whole server run.
   //
-  // Run lifecycle carries `sessionKind` (the mandatory security-boundary input);
-  // `run:settled` maps its terminal `reason` to `event.status`, `run:started` has
-  // no status. The scheduler's own automation runs stamp `metadata` onto the run
-  // payload, which flows through as `event.metadata` for chain filtering.
+  // Run lifecycle carries `sessionKind` (the mandatory security-boundary input,
+  // still passed as its own view field) and ALSO writes `sessionKind`/`runKind`
+  // into `event.metadata` so the generic view is self-describing (metadata
+  // conditions can read them like any other context). `run:settled` maps its
+  // terminal `reason` to `event.status`, `run:started` has no status. The
+  // scheduler's own automation runs stamp `metadata` onto the run payload, which
+  // flows through (its keys never override the reserved context keys).
   eventBus.subscribe('run:started', (e) =>
     dispatchEventTriggers({
       workspacePath: e.workspacePath,
       sessionKind: e.sessionKind,
-      event: { type: 'run:started', ...(e.metadata ? { metadata: e.metadata } : {}) },
+      event: {
+        type: 'run:started',
+        metadata: { ...e.metadata, sessionKind: e.sessionKind, runKind: e.runKind },
+      },
     }),
   )
   eventBus.subscribe('run:settled', (e) =>
@@ -90,25 +96,34 @@ export function startSchedulerWiring(deps: {
       event: {
         type: 'run:settled',
         status: e.reason,
-        ...(e.metadata ? { metadata: e.metadata } : {}),
+        metadata: { ...e.metadata, sessionKind: e.sessionKind, runKind: e.runKind },
       },
     }),
   )
   // The single generic `'event'` topic already carries a NORMALIZED GenericEvent
   // (its `type`/`status`/`metadata` are baked in by the per-type normalizer — a PR
-  // event has `status=result`, `metadata.operation=operation`). It needs no
-  // per-type projection: the envelope's workspace + event ARE the trusted view, so
-  // any registered event type (PR today, a future type tomorrow) flows straight to
+  // event has `type=pr:<operation>`, `status=result`). It needs no per-type
+  // projection: the envelope's workspace + event ARE the trusted view, so any
+  // registered event type (PR today, a future type tomorrow) flows straight to
   // the generic matcher with no code change here. PR events carry no session origin,
   // so no `sessionKind` is supplied (the sessionKind boundary is run-lifecycle only).
   eventBus.subscribe('event', (envelope) =>
     dispatchEventTriggers({ workspacePath: envelope.workspacePath, event: envelope.event }),
   )
-  // Intent lifecycle: `type=intent:lifecycle`, `status=phase`. No session origin.
+  // Intent lifecycle: the phase IS the action — `type=intent:<phase>` (no status
+  // dimension); the safe lifecycle context rides in metadata. No session origin.
   eventBus.subscribe('intent:lifecycle', (e) =>
     dispatchEventTriggers({
       workspacePath: e.workspacePath,
-      event: { type: 'intent:lifecycle', status: e.phase },
+      event: {
+        type: `intent:${e.phase}`,
+        metadata: {
+          intentId: e.intentId,
+          title: e.title,
+          ...(e.module ? { module: e.module } : {}),
+          toStatus: e.toStatus,
+        },
+      },
     }),
   )
   startScheduler()

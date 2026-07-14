@@ -10,10 +10,20 @@ tag (`git describe --tags`); `package.json` is the fallback baseline.
 - automation config JSON import/export
 - file tree shows git file status (modified/added/staged + directory rollup + periodic refresh)
 - intent detail page: metadata moved to the top with reordered fields
+- MarkdownText: generic code-file link detection with jump-to-code-page navigation
+- markdown preview defaults to preview mode; relative file links resolve against the source file's directory
+- automation list gains a workspace-level "enable automation" master switch
+- generic event format contract: bus envelope + normalizer registry
+- automation MCP tool `start_session_for_intent` to launch spec/work sessions
+- unify `publish_event` MCP tool, replacing the narrower `publish_pr_event`
+- automation event triggers use a generic filter (type/status/metadata) instead of dedicated fields per event type
 
 ### Fixes
 
 - manual PR creation drops the done gate — now requires worktree mode + a branch + code changes
+- settings panel: per-tab save button moves next to Close in the footer
+- claude sdk warning filter now intercepts `process.emitWarning` directly, fixing warnings that leaked through the old `process.emit` wrapper
+- automation form tool-permission grid: 5 columns → 4
 
 ## v0.9.7
 

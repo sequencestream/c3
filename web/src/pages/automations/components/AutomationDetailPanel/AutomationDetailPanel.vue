@@ -60,7 +60,7 @@ const title = computed(() => {
       : ''
   const fallback =
     s.triggerType === 'event'
-      ? (s.eventFilter?.type ?? t('automation.form.trigger.event.label'))
+      ? s.eventFilters?.map((f) => f.type).join(' · ') || t('automation.form.trigger.event.label')
       : s.cronExpression
   return name || fallback
 })

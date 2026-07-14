@@ -901,7 +901,7 @@ class WorkflowController {
       setPrInfo(req.id, prResult.prId, 'reviewing')
       console.log(`[c3:automation]「${req.title}」PR #${prResult.prId} 已创建`)
 
-      // Publish a pr:operation create event so event-triggered automations can react.
+      // Publish a pr:create event so event-triggered automations can react.
       const headBranch = req.branchName ?? undefined
       const effectiveSessionId = req.lastWorkSessionId ?? req.id
       runServerSidePrCreate(

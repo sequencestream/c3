@@ -14,7 +14,7 @@ function sched(over: Partial<Automation> = {}): Automation {
     triggerType: 'cron',
     cronExpression: '0 8 * * *',
     nextRunAt: null,
-    eventFilter: null,
+    eventFilters: null,
     status: 'active',
     mode: 'sandboxed',
     toolAllowlist: [],
@@ -127,7 +127,7 @@ describe('AutomationDetail.vue — 右栏 automation 详情', () => {
       sched({
         triggerType: 'event',
         cronExpression: '',
-        eventFilter: { type: 'run:settled', statuses: ['complete', 'error'] },
+        eventFilters: [{ type: 'run:settled', statuses: ['complete', 'error'] }],
         eventSessionKindFilter: ['work'],
       }),
     )
@@ -141,17 +141,19 @@ describe('AutomationDetail.vue — 右栏 automation 详情', () => {
       sched({
         triggerType: 'event',
         cronExpression: '',
-        eventFilter: {
-          type: 'pr:operation',
-          statuses: ['failure'],
-          metadata: {
-            conditions: [
-              { key: 'operation', value: 'merge' },
-              { key: 'operation', value: 'comment' },
-            ],
-            combinator: 'OR',
+        eventFilters: [
+          {
+            type: 'pr:operation',
+            statuses: ['failure'],
+            metadata: {
+              conditions: [
+                { key: 'operation', value: 'merge' },
+                { key: 'operation', value: 'comment' },
+              ],
+              combinator: 'OR',
+            },
           },
-        },
+        ],
       }),
     )
     expect(w.text()).toContain('pr:operation')

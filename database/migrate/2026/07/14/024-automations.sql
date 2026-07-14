@@ -1,0 +1,27 @@
+-- v13 (2026-07-14): `<大类>:<动作>` 事件类型规范 + 多行订阅 `event_filters`。
+--
+-- 事件类型统一为 `<category>:<action>`(大类:动作)。动作维度从 status/metadata
+-- 中提升为类型本身:`pr:operation` 拆为 `pr:create`…`pr:update`,`intent:lifecycle`
+-- 的 phase 从 statuses 移入 `intent:<phase>`;「任意动作」用 `<category>:*` 通配。
+-- 同时一个 Automation 可携带多行订阅条件(任一命中即触发,OR 语义),v12 的单一
+-- `event_filter` 升级为 JSON 数组列 `event_filters`(GenericEventFilter[])。
+--
+-- 旧列 `event_filter` 保留为迁移输入,运行时只读写/匹配 `event_filters`;
+-- `event_session_kind_filter` 保持独立(run 生命周期安全边界,现判定条件为
+-- 「任一订阅行的 type 属于 run 生命周期,含 run:*」)。
+--
+-- 幂等:store 内 columnExists 守卫 + JS 回填事务,仅填 trigger_type='event' 且
+-- event_filters IS NULL 且 event_filter IS NOT NULL 的行,重复运行为 no-op,
+-- 不覆盖新客户端写入的值;回填失败中止 schema 初始化。
+ALTER TABLE automations ADD COLUMN event_filters TEXT;
+
+-- 语义保持的回填映射(示意;实际在 store 的 JS 中执行以复用宽松解析):
+--   run:*、自定义 type            → [原 filter 原样包一层数组]
+--   pr:operation
+--     · metadata 为纯 operation 条件的 OR(v12 UI/回填产物)
+--                                  → 每个 operation 一行 { type:'pr:<op>', statuses }
+--     · 其他 metadata 形态          → [{ type:'pr:*', statuses, metadata 原样 }]
+--       (语义等价:改名后的 PR 事件仍冗余携带 metadata.operation)
+--   intent:lifecycle
+--     · statuses(phases)非空      → 每个 phase 一行 { type:'intent:<phase>', metadata? }
+--     · statuses 为空(任意阶段)   → [{ type:'intent:*', metadata? }]

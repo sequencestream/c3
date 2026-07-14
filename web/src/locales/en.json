@@ -1446,6 +1446,9 @@
           "remove": "Remove",
           "hint": "Leave empty to fire on any status. Add values to match the event's status exactly."
         },
+        "other": {
+          "label": "Other"
+        },
         "topic": {
           "label": "Run event",
           "started": {
@@ -1543,7 +1546,10 @@
           "cancelled": {
             "label": "Cancelled"
           },
-          "hint": "Leave empty to match every intent lifecycle phase."
+          "hint": "Leave empty to match every intent lifecycle phase.",
+          "specApprove": {
+            "label": "Spec approved"
+          }
         },
         "sessionKind": {
           "label": "Fires on session kinds",
@@ -1581,7 +1587,26 @@
           "hint": "Fires only when the event metadata matches these conditions.",
           "none": "No metadata conditions"
         },
-        "hint": "Fires when a run in this workspace reaches the selected event."
+        "hint": "Fires when a run in this workspace reaches the selected event.",
+        "cat": {
+          "run": {
+            "label": "Run"
+          },
+          "pr": {
+            "label": "PR"
+          },
+          "intent": {
+            "label": "Intent"
+          }
+        },
+        "action": {
+          "any": {
+            "label": "All"
+          }
+        },
+        "row": {
+          "add": "Add subscription row"
+        }
       },
       "metadata": {
         "label": "Metadata",

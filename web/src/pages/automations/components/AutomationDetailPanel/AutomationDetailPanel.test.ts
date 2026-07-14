@@ -13,7 +13,7 @@ function sched(over: Partial<Automation> = {}): Automation {
     triggerType: 'cron',
     cronExpression: '0 8 * * *',
     nextRunAt: null,
-    eventFilter: null,
+    eventFilters: null,
     status: 'active',
     mode: 'sandboxed',
     toolAllowlist: [],

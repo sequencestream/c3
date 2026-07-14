@@ -1,21 +1,24 @@
 /**
- * The `pr:operation` normalizer + the server-side PR-create constructor — the
+ * The PR event normalizer + the server-side PR-create constructor — the
  * feature-side pieces that plug into the vendor-neutral `publish_event` pipeline.
  *
  * The model-facing tool surface itself is generic and framing-free (schema +
  * description + core handler live in `../events/tool-defs.ts`); this module owns
- * only the FIRST registered `type`: `pr:operation`. It provides the field-level
- * safety normalization (strip tokens / raw CLI output / absolute paths) registered
- * against that type, the deterministic consumer-side projection back to a
- * {@link PrOperationEvent}, and the shared server-side `create/success` constructor.
+ * the PR event types `pr:<operation>` (create/review/merge/close/comment/update —
+ * `<category>:<action>` naming, plus the retired `pr:operation` as a transitional
+ * alias). It provides the field-level safety normalization (strip tokens / raw CLI
+ * output / absolute paths) registered against those types, the deterministic
+ * consumer-side projection back to a {@link PrOperationEvent}, and the shared
+ * server-side `create/success` constructor.
  *
  * The model uses its OWN tools to create / review / merge / close / comment on a
  * PR — or update it (modify + re-submit / re-open) — and then calls `publish_event`
- * with `type: 'pr:operation'` to publish ONE generic event; a automation may
- * subscribe and trigger its follow-up action. An `update/success` event additionally
- * lets the intent domain reset a rejected/failed/closed PR back to `reviewing`. The
- * server-side PR creation paths (dev-cleanup / automation / manual create_pr) also
- * publish a `create` event after successfully creating a PR on the model's behalf.
+ * with the matching `pr:<operation>` type to publish ONE generic event; a
+ * automation may subscribe and trigger its follow-up action. A `pr:update/success`
+ * event additionally lets the intent domain reset a rejected/failed/closed PR back
+ * to `reviewing`. The server-side PR creation paths (dev-cleanup / automation /
+ * manual create_pr) also publish a `pr:create` event after successfully creating a
+ * PR on the model's behalf.
  */
 import {
   PR_OPERATIONS,
@@ -172,8 +175,21 @@ export function normalizePrEvent(args: PublishPrEventArgs): PrOperationEvent {
 // fields — it does NOT re-clean (normalization already happened) and is NOT a
 // publish-path bridge: the bus carries the generic envelope, not a typed payload.
 
-/** The stable discriminant the PR normalizer registers against. */
-export const PR_EVENT_TYPE = 'pr:operation'
+/**
+ * The stable discriminants the PR normalizer registers against: one
+ * `pr:<operation>` type per operation (`<category>:<action>` naming), PLUS the
+ * retired `pr:operation` kept as a TRANSITIONAL ALIAS — an in-flight model
+ * session briefed on the old contract still publishes, and the normalizer
+ * rewrites its core to the `pr:<operation>` type. Remove the alias one release
+ * after the rename ships.
+ */
+export const PR_EVENT_TYPES = PR_OPERATIONS.map((op) => `pr:${op}`)
+export const PR_LEGACY_EVENT_TYPE = 'pr:operation'
+
+/** The `pr:<operation>` type string for one operation. */
+export function prEventType(operation: PrOperation): string {
+  return `pr:${operation}`
+}
 
 const readStr = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
 const readNum = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined)
@@ -259,8 +275,10 @@ export function prArgsToGenericEvent(args: PublishPrEventArgs): GenericEvent {
     if (Object.keys(assoc).length) data.association = assoc
   }
   const core: GenericEvent = {
-    type: PR_EVENT_TYPE,
+    type: prEventType(args.operation),
     status: args.result,
+    // The operation also stays in metadata (redundant with the type's action
+    // segment) so existing metadata-condition filters keep matching.
     metadata: { operation: args.operation },
   }
   if (args.errorSummary !== undefined) core.description = args.errorSummary
@@ -268,17 +286,26 @@ export function prArgsToGenericEvent(args: PublishPrEventArgs): GenericEvent {
   return core
 }
 
-/** Encode a normalized {@link PrOperationEvent} back into a normalized generic event. */
-function prOperationToGenericEvent(event: PrOperationEvent): GenericEvent {
+/**
+ * Encode a normalized {@link PrOperationEvent} back into a normalized generic event.
+ * `originalType` is the type the normalizer was registered under (either
+ * `pr:<operation>` for new-format cores, or `pr:operation` for the legacy alias):
+ * the output keeps this type so the kernel registry's type-change guard passes.
+ */
+function prOperationToGenericEvent(event: PrOperationEvent, originalType: string): GenericEvent {
   const data: Record<string, unknown> = {}
   if (event.pr) data.pr = { ...event.pr }
   if (event.repo) data.repo = { ...event.repo }
   if (event.ref) data.ref = { ...event.ref }
   if (event.association) data.association = { ...event.association }
   const core: GenericEvent = {
-    type: PR_EVENT_TYPE,
+    type: originalType,
     status: event.result,
-    metadata: { operation: event.operation },
+    metadata: {
+      // The operation stays in metadata for legacy `pr:operation` format (where
+      // consumers read it from there) and for backward-compatible metadata filters.
+      operation: event.operation,
+    },
   }
   if (event.errorSummary !== undefined) core.description = event.errorSummary
   if (Object.keys(data).length) core.data = data as JsonObject
@@ -286,17 +313,30 @@ function prOperationToGenericEvent(event: PrOperationEvent): GenericEvent {
 }
 
 /**
- * The registered normalizer for `type: 'pr:operation'`. Validates the operation +
- * result enums (throws on an unknown value so the generic layer rejects the
- * publish), reconstructs the tool args from the untrusted core (ignoring any
- * unknown `data` keys), runs the field-level {@link normalizePrEvent} redaction,
- * and re-encodes the clean event as a generic event.
+ * The registered normalizer for the PR event types. The operation comes from the
+ * type's action segment (`pr:<operation>`); a legacy `pr:operation` core reads it
+ * from `metadata.operation` instead and is REWRITTEN to the `pr:<operation>` type
+ * on the way out (the alias conversion). Validates the operation + result enums
+ * (throws on an unknown value so the generic layer rejects the publish),
+ * reconstructs the tool args from the untrusted core (ignoring any unknown `data`
+ * keys), runs the field-level {@link normalizePrEvent} redaction, and re-encodes
+ * the clean event as a generic event.
  */
 export const normalizePrGenericEvent: EventNormalizer = (core) => {
-  const operation = core.metadata?.operation
+  const operation =
+    core.type === PR_LEGACY_EVENT_TYPE ? core.metadata?.operation : core.type.slice('pr:'.length)
   const result = core.status
   if (operation === undefined || !PR_OPERATIONS.includes(operation as PrOperation)) {
     throw new Error('unknown pr operation')
+  }
+  if (
+    core.metadata?.operation !== undefined &&
+    core.metadata.operation !== operation &&
+    core.type !== PR_LEGACY_EVENT_TYPE
+  ) {
+    // A `pr:<op>` core whose metadata.operation contradicts the type is ambiguous
+    // — reject rather than guessing which segment the model meant.
+    throw new Error('pr operation mismatch between type and metadata')
   }
   if (result === undefined || !PR_OPERATION_RESULTS.includes(result as PrOperationResult)) {
     throw new Error('unknown pr result')
@@ -311,7 +351,7 @@ export const normalizePrGenericEvent: EventNormalizer = (core) => {
     association: readAssociation(data.association),
     errorSummary: core.description,
   }
-  return prOperationToGenericEvent(normalizePrEvent(args))
+  return prOperationToGenericEvent(normalizePrEvent(args), core.type)
 }
 
 /**

@@ -14,6 +14,7 @@
 import { computed } from 'vue'
 import { describeCron } from '@ccc/shared/cron'
 import type { AgentConfig, Automation, SessionKind, ToolManifestEntry } from '@ccc/shared/protocol'
+import { hasRunLifecycleEventFilter } from '@ccc/shared/protocol'
 import { VENDOR_LABEL, VENDOR_COLOR } from '@/lib/vendor'
 import { useTypedI18n } from '@/i18n'
 
@@ -77,21 +78,28 @@ function sessionKindLabel(kind: SessionKind): string {
   }
 }
 
-// The event trigger is summarized directly from the generic filter: the raw event
-// `type` string, the raw `statuses` values, and the metadata conditions.
-const eventTypeText = computed(() => props.automation?.eventFilter?.type ?? '—')
-const statusFilterLabels = computed(() => props.automation?.eventFilter?.statuses ?? [])
+// The event trigger is summarized directly from the subscription rows: the raw
+// event `type` strings, the union of raw `statuses` values, and the first row's
+// metadata conditions (the form writes the same conditions onto every row).
+const eventTypeText = computed(
+  () => props.automation?.eventFilters?.map((f) => f.type).join(' · ') ?? '—',
+)
+const statusFilterLabels = computed(() => {
+  const seen = new Set<string>()
+  for (const f of props.automation?.eventFilters ?? []) {
+    for (const s of f.statuses ?? []) seen.add(s)
+  }
+  return [...seen]
+})
 const metadataEntries = computed(() => Object.entries(props.automation?.metadata ?? {}))
 const sessionKindFilterLabels = computed(
   () => props.automation?.eventSessionKindFilter?.map(sessionKindLabel) ?? [],
 )
-const isRunLifecycleType = computed(
-  () =>
-    props.automation?.eventFilter?.type === 'run:started' ||
-    props.automation?.eventFilter?.type === 'run:settled',
+const isRunLifecycleType = computed(() =>
+  hasRunLifecycleEventFilter(props.automation?.eventFilters),
 )
 const metadataConditionText = computed(() => {
-  const filter = props.automation?.eventFilter?.metadata
+  const filter = props.automation?.eventFilters?.find((f) => f.metadata)?.metadata
   if (!filter?.conditions.length) return ''
   const joiner =
     filter.combinator === 'OR'

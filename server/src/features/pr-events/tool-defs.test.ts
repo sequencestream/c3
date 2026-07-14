@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest'
 import type { GenericEvent, PrOperation } from '@ccc/shared/protocol'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import {
-  PR_EVENT_TYPE,
+  PR_EVENT_TYPES,
+  PR_LEGACY_EVENT_TYPE,
   normalizeErrorSummary,
   normalizePrEvent,
   normalizePrGenericEvent,
@@ -20,7 +21,8 @@ import {
 /** A registry with only the PR normalizer, mirroring the composition root. */
 function makeNormalize(): (core: GenericEvent) => ReturnType<EventNormalizerRegistry['normalize']> {
   const registry = new EventNormalizerRegistry()
-  registry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
+  for (const t of PR_EVENT_TYPES) registry.register(t, normalizePrGenericEvent)
+  registry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
   return (core) => registry.normalize(core)
 }
 
@@ -41,7 +43,7 @@ describe('normalizePrGenericEvent — the pr:operation registry entry (AC3)', ()
 
   it('rejects an illegal operation enum and produces no event', () => {
     const res = normalize({
-      type: PR_EVENT_TYPE,
+      type: PR_LEGACY_EVENT_TYPE,
       status: 'success',
       metadata: { operation: 'rebase' as PrOperation },
     })
@@ -50,7 +52,7 @@ describe('normalizePrGenericEvent — the pr:operation registry entry (AC3)', ()
 
   it('rejects an illegal result enum and produces no event', () => {
     const res = normalize({
-      type: PR_EVENT_TYPE,
+      type: PR_LEGACY_EVENT_TYPE,
       status: 'maybe',
       metadata: { operation: 'merge' },
     })
@@ -69,7 +71,7 @@ describe('normalizePrGenericEvent — the pr:operation registry entry (AC3)', ()
     const res = normalize(core)
     expect(res.ok).toBe(true)
     if (!res.ok) return
-    expect(res.event.type).toBe(PR_EVENT_TYPE)
+    expect(res.event.type).toBe('pr:review')
     expect(projectPrOperationEvent(res.event)).toEqual({
       operation: 'review',
       result: 'success',
@@ -151,7 +153,7 @@ describe('normalizePrGenericEvent — the pr:operation registry entry (AC3)', ()
 
   it('ignores unknown/forged data keys (they never reach the bus payload)', () => {
     const res = normalize({
-      type: PR_EVENT_TYPE,
+      type: PR_LEGACY_EVENT_TYPE,
       status: 'success',
       metadata: { operation: 'create' },
       data: { workspacePath: 'evil', sessionId: 'evil', pr: { number: 1 } },

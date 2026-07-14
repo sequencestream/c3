@@ -42,10 +42,11 @@ import type {
   VendorHostStatus,
   VendorId,
 } from '@ccc/shared/protocol'
-import { SESSION_KINDS } from '@ccc/shared/protocol'
+import { EVENT_CATALOG, SESSION_KINDS, isRunLifecycleEventType } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
 import { VENDOR_LABEL } from '@/lib/vendor'
 import { useTypedI18n } from '@/i18n'
+import BaseDropdown, { type DropdownOption } from '@/components/BaseDropdown/BaseDropdown.vue'
 import AutomationCronEditor from '../AutomationDetail/AutomationCronEditor.vue'
 import { resolveAutomationDefaultAgent } from './resolveAutomationDefaultAgent'
 
@@ -102,29 +103,107 @@ const TRIGGER_TYPES = computed<{ value: ScheduleTriggerType; label: string }[]>(
   { value: 'event', label: t('automation.form.trigger.event.label') },
 ])
 
-// A automation subscribes to ONE generic event type (a free string). The known
-// c3 event types are only SUGGESTIONS in a datalist — the form never renders a
-// per-type panel or gates submission on a closed enum, so a newly-published event
-// type is configurable the moment it exists.
-const EVENT_TYPE_SUGGESTIONS: readonly string[] = [
-  'run:started',
-  'run:settled',
-  'pr:operation',
-  'intent:lifecycle',
-]
+// ---- Event subscription cascade (category → action → statuses) -------------
+//
+// An event automation carries subscription ROWS; each row picks a category and
+// an action off the shared EVENT_CATALOG (the `<category>:<action>` type), plus
+// a multi-select of that action's known statuses. Every level keeps an "other"
+// escape hatch (free-text category:action / action / statuses) so the open
+// string contract survives — a newly-published type is subscribable the moment
+// it exists. The catalog is a suggestion registry, never a closed enum.
 
-// Status suggestions offered (as a datalist) for the currently-typed event type.
-// These mirror the retired reason / PR result / intent phase enums so an operator
-// building a filter for a known type still gets autocompletion; they are hints
-// only — any free string is accepted as a status value.
-const STATUS_SUGGESTIONS_BY_TYPE: Readonly<Record<string, readonly string[]>> = {
-  'run:settled': ['complete', 'error', 'aborted'],
-  'pr:operation': ['success', 'failure', 'error'],
-  'intent:lifecycle': ['created', 'dev_started', 'done', 'failed', 'cancelled'],
+/** Sentinel option value for the "other → free text" escape at each level. */
+const OTHER_KEY = '__other__'
+/** The catalog's category-wildcard action (`<category>:*` = any action). */
+const ANY_ACTION = '*'
+
+/** One subscription row's UI draft state. */
+interface EventFilterRowDraft {
+  category: string
+  action: string
+  /** Full free-text type (`custom:thing`) when category is the "other" escape. */
+  customType: string
+  /** Free-text action segment when action is the "other" escape. */
+  customAction: string
+  /** Selected known status values (chips). */
+  statuses: string[]
+  /** Extra free-text statuses, comma-separated; toggled by the "other" chip. */
+  customStatus: string
+  customStatusOpen: boolean
 }
-const statusSuggestions = computed<readonly string[]>(
-  () => STATUS_SUGGESTIONS_BY_TYPE[eventType.value.trim()] ?? [],
-)
+
+const CATEGORY_LABELS = computed<Record<string, string>>(() => ({
+  run: t('automation.form.event.cat.run.label'),
+  pr: t('automation.form.event.cat.pr.label'),
+  intent: t('automation.form.event.cat.intent.label'),
+}))
+
+// Literal i18n keys per known `<category>:<action>` (the typed `t` rejects
+// dynamic template keys); an uncatalogued action falls back to its raw segment.
+const ACTION_LABELS = computed<Record<string, string>>(() => ({
+  'run:started': t('automation.form.event.stage.started.label'),
+  'run:settled': t('automation.form.event.stage.settled.label'),
+  'pr:create': t('automation.form.event.pr.op.create.label'),
+  'pr:review': t('automation.form.event.pr.op.review.label'),
+  'pr:merge': t('automation.form.event.pr.op.merge.label'),
+  'pr:close': t('automation.form.event.pr.op.close.label'),
+  'pr:comment': t('automation.form.event.pr.op.comment.label'),
+  'pr:update': t('automation.form.event.pr.op.update.label'),
+  'intent:created': t('automation.form.event.intent.created.label'),
+  'intent:dev_started': t('automation.form.event.intent.devStarted.label'),
+  'intent:done': t('automation.form.event.intent.done.label'),
+  'intent:failed': t('automation.form.event.intent.failed.label'),
+  'intent:cancelled': t('automation.form.event.intent.cancelled.label'),
+  'intent:spec_approve': t('automation.form.event.intent.specApprove.label'),
+}))
+
+// Status labels keyed `<category>|<status>` — the same raw value can label
+// differently per category (run `error` = 出错, pr `error` = 异常).
+const STATUS_LABELS = computed<Record<string, string>>(() => ({
+  'run|complete': t('automation.form.event.reason.complete.label'),
+  'run|error': t('automation.form.event.reason.error.label'),
+  'run|aborted': t('automation.form.event.reason.aborted.label'),
+  'pr|success': t('automation.form.event.pr.result.success.label'),
+  'pr|failure': t('automation.form.event.pr.result.failure.label'),
+  'pr|error': t('automation.form.event.pr.result.error.label'),
+}))
+
+const CATEGORY_OPTIONS = computed<DropdownOption<string>[]>(() => [
+  ...Object.keys(EVENT_CATALOG).map((key) => ({
+    value: key,
+    label: CATEGORY_LABELS.value[key] ?? key,
+  })),
+  { value: OTHER_KEY, label: t('automation.form.event.other.label') },
+])
+
+function actionOptions(category: string): DropdownOption<string>[] {
+  const actions = EVENT_CATALOG[category]?.actions ?? {}
+  return [
+    { value: ANY_ACTION, label: t('automation.form.event.action.any.label') },
+    ...Object.keys(actions).map((action) => ({
+      value: action,
+      label: ACTION_LABELS.value[`${category}:${action}`] ?? action,
+    })),
+    { value: OTHER_KEY, label: t('automation.form.event.other.label') },
+  ]
+}
+
+/** Known status values for a row: the action's own list, or the category union for `*`. */
+function knownStatusValues(row: EventFilterRowDraft): string[] {
+  if (row.category === OTHER_KEY) return []
+  const actions = EVENT_CATALOG[row.category]?.actions ?? {}
+  if (row.action === ANY_ACTION) {
+    return [...new Set(Object.values(actions).flatMap((a) => [...a.statuses]))]
+  }
+  return [...(actions[row.action]?.statuses ?? [])]
+}
+
+function statusOptionsFor(row: EventFilterRowDraft): { value: string; label: string }[] {
+  return knownStatusValues(row).map((value) => ({
+    value,
+    label: STATUS_LABELS.value[`${row.category}|${value}`] ?? value,
+  }))
+}
 
 // ---- Vendor ----------------------------------------------------------------
 const VENDOR_ORDER: VendorId[] = ['claude', 'codex']
@@ -160,12 +239,11 @@ const maxWallClockMs = ref<number | null>(null)
 const cronExpression = ref('*/30 * * * *')
 const cronEditorOpen = ref(false)
 const triggerType = ref<ScheduleTriggerType>('cron')
-// The single generic event-trigger filter, split into UI-friendly refs: the event
-// `type` (free string), a `statuses` multi-value list, and a metadata condition
-// builder (reused below). `eventSessionKinds` stays the mandatory run-lifecycle
-// security boundary. `metadataRows` are the automation's own free-form annotations.
-const eventType = ref<string>('run:settled')
-const statusRows = ref<{ value: string }[]>([])
+// The subscription rows (cascade drafts, any-match OR), plus the shared metadata
+// condition builder (its conditions are written onto EVERY row on save).
+// `eventSessionKinds` stays the mandatory run-lifecycle security boundary.
+// `metadataRows` are the automation's own free-form annotations.
+const eventRows = ref<EventFilterRowDraft[]>([defaultEventRow()])
 const eventSessionKinds = ref<SessionKind[]>([])
 const metadataRows = ref<{ key: string; value: string }[]>([])
 const metadataConditions = ref<{ key: string; value: string }[]>([])
@@ -190,19 +268,29 @@ const vendorAgents = computed(() =>
   (props.agents ?? []).filter((agent) => agent.vendor === vendor.value && agent.enabled !== false),
 )
 
-// A run-lifecycle event type is the ONLY one that gates on the sessionKind security
-// boundary — the single per-type branch left in the form, keyed off the free-string
-// type value (not a closed enum).
-const isRunLifecycleType = computed(
-  () => eventType.value.trim() === 'run:started' || eventType.value.trim() === 'run:settled',
+// The resolved type string of one row (empty when its free-text part is blank).
+function rowType(row: EventFilterRowDraft): string {
+  if (row.category === OTHER_KEY) return row.customType.trim()
+  if (row.action === OTHER_KEY) {
+    const action = row.customAction.trim()
+    return action ? `${row.category}:${action}` : ''
+  }
+  return `${row.category}:${row.action}`
+}
+
+// A run-lifecycle subscription row is the ONLY kind that gates on the sessionKind
+// security boundary — evaluated over the resolved row types (open strings, so a
+// hand-typed `run:started` under "other" counts too).
+const hasRunLifecycleRow = computed(() =>
+  eventRows.value.some((row) => isRunLifecycleEventType(rowType(row))),
 )
 const showSessionKindFilter = computed(
-  () => triggerType.value === 'event' && isRunLifecycleType.value,
+  () => triggerType.value === 'event' && hasRunLifecycleRow.value,
 )
-// A contextual note for the PR event type (selecting it IS the opt-in: the model
+// A contextual note for the PR category (selecting it IS the opt-in: the model
 // performs PR operations with its own tools and only publishes the event).
 const showPrNote = computed(
-  () => triggerType.value === 'event' && eventType.value.trim() === 'pr:operation',
+  () => triggerType.value === 'event' && eventRows.value.some((r) => rowType(r).startsWith('pr:')),
 )
 
 // Advanced segmented builder.
@@ -219,6 +307,55 @@ function readConfigField(cfg: unknown, key: string): string {
     return typeof v === 'string' ? v : ''
   }
   return ''
+}
+
+/** The create-form default subscription row: run settled, any status. */
+function defaultEventRow(): EventFilterRowDraft {
+  return {
+    category: 'run',
+    action: 'settled',
+    customType: '',
+    customAction: '',
+    statuses: [],
+    customStatus: '',
+    customStatusOpen: false,
+  }
+}
+
+/**
+ * Hydrate one stored {@link GenericEventFilter} back into a cascade draft:
+ * a catalogued `<category>:<action>` selects its dropdown entries, `<category>:*`
+ * selects the "any action" entry, an uncatalogued action opens the action
+ * escape, and a type outside the catalog opens the full free-text escape.
+ * Statuses split into known chips vs the free-text remainder.
+ */
+function filterToRow(filter: GenericEventFilter): EventFilterRowDraft {
+  const row = defaultEventRow()
+  const sep = filter.type.indexOf(':')
+  const category = sep > 0 ? filter.type.slice(0, sep) : ''
+  const action = sep > 0 ? filter.type.slice(sep + 1) : ''
+  if (EVENT_CATALOG[category] && action) {
+    row.category = category
+    if (action === ANY_ACTION) {
+      row.action = ANY_ACTION
+    } else if (EVENT_CATALOG[category].actions[action]) {
+      row.action = action
+    } else {
+      row.action = OTHER_KEY
+      row.customAction = action
+    }
+  } else {
+    row.category = OTHER_KEY
+    row.action = ''
+    row.customType = filter.type
+  }
+  const known = new Set(knownStatusValues(row))
+  const statuses = filter.statuses ?? []
+  row.statuses = statuses.filter((s) => known.has(s))
+  const custom = statuses.filter((s) => !known.has(s))
+  row.customStatus = custom.join(', ')
+  row.customStatusOpen = custom.length > 0
+  return row
 }
 
 // Re-seed the draft whenever the modal opens (or the target automation changes).
@@ -257,10 +394,13 @@ watch(
       prompt.value = readConfigField(sched.config, 'prompt')
       maxWallClockMs.value = sched.maxWallClockMs
       triggerType.value = sched.triggerType
-      // Restore the generic event filter (migrated legacy records show their
-      // equivalent type / statuses / metadata conditions).
-      eventType.value = sched.eventFilter?.type ?? 'run:settled'
-      statusRows.value = (sched.eventFilter?.statuses ?? []).map((value) => ({ value }))
+      // Restore the subscription rows (migrated legacy records show their
+      // equivalent category / action / statuses); the shared metadata condition
+      // builder reads the first row carrying conditions (the form writes the
+      // same conditions onto every row).
+      eventRows.value = sched.eventFilters?.length
+        ? sched.eventFilters.map(filterToRow)
+        : [defaultEventRow()]
       eventSessionKinds.value = sched.eventSessionKindFilter
         ? [...sched.eventSessionKindFilter]
         : []
@@ -268,10 +408,10 @@ watch(
         key,
         value,
       }))
-      metadataConditions.value = sched.eventFilter?.metadata?.conditions
-        ? sched.eventFilter.metadata.conditions.map((c) => ({ key: c.key, value: c.value }))
-        : []
-      metadataCombinator.value = sched.eventFilter?.metadata?.combinator ?? 'AND'
+      const storedMeta = sched.eventFilters?.find((f) => f.metadata)?.metadata
+      metadataConditions.value =
+        storedMeta?.conditions.map((c) => ({ key: c.key, value: c.value })) ?? []
+      metadataCombinator.value = storedMeta?.combinator ?? 'AND'
       // Vendor: restore from automation, then trigger manifest load.
       vendor.value = sched.vendor
       agentId.value = sched.agentId ?? ''
@@ -289,8 +429,7 @@ watch(
       prompt.value = ''
       maxWallClockMs.value = null
       triggerType.value = 'cron'
-      eventType.value = 'run:settled'
-      statusRows.value = []
+      eventRows.value = [defaultEventRow()]
       // No default sessionKind selection: a run-lifecycle event trigger must be
       // explicitly scoped before it can be saved.
       eventSessionKinds.value = []
@@ -320,13 +459,12 @@ watch(
   { immediate: true },
 )
 
-// Switching the trigger back to cron clears the event-filter draft so a later
+// Switching the trigger back to cron clears the subscription draft so a later
 // re-toggle to event starts from the defaults rather than resurrecting stale
-// type / statuses / metadata / sessionKind state.
+// rows / metadata / sessionKind state.
 watch(triggerType, (t) => {
   if (t !== 'cron') return
-  eventType.value = 'run:settled'
-  statusRows.value = []
+  eventRows.value = [defaultEventRow()]
   eventSessionKinds.value = []
   metadataConditions.value = []
   metadataCombinator.value = 'AND'
@@ -403,9 +541,15 @@ const nextRunPreview = computed(() => {
 const taskFilled = computed(() =>
   type.value === 'command' ? command.value.trim().length > 0 : prompt.value.trim().length > 0,
 )
-// Cron triggers need a valid expression; event triggers need a non-empty event type.
+// Cron triggers need a valid expression; event triggers need at least one
+// subscription row with a resolved type string.
 const triggerValid = computed(() =>
-  triggerType.value === 'cron' ? cronValid.value : eventType.value.trim().length > 0,
+  triggerType.value === 'cron'
+    ? cronValid.value
+    : eventRows.value.some((r) => rowType(r).length > 0),
+)
+const sessionKindValid = computed(
+  () => !showSessionKindFilter.value || eventSessionKinds.value.length > 0,
 )
 const maxWallClockMsValid = computed(() => isValidAutomationMaxWallClockMs(maxWallClockMs.value))
 const canSave = computed(
@@ -422,17 +566,27 @@ function setMaxWallClockMs(event: Event): void {
   maxWallClockMs.value = raw === '' ? null : Number(raw)
 }
 
-function addStatusRow(): void {
-  statusRows.value.push({ value: '' })
+function addEventRow(): void {
+  eventRows.value.push(defaultEventRow())
 }
-function removeStatusRow(index: number): void {
-  statusRows.value.splice(index, 1)
+function removeEventRow(index: number): void {
+  eventRows.value.splice(index, 1)
 }
 
 function toggleSessionKind(kind: SessionKind): void {
   const i = eventSessionKinds.value.indexOf(kind)
   if (i >= 0) eventSessionKinds.value.splice(i, 1)
   else eventSessionKinds.value.push(kind)
+}
+
+function toggleStatus(row: EventFilterRowDraft, value: string): void {
+  const i = row.statuses.indexOf(value)
+  if (i >= 0) row.statuses.splice(i, 1)
+  else row.statuses.push(value)
+}
+
+function toggleCustomStatusOpen(row: EventFilterRowDraft): void {
+  row.customStatusOpen = !row.customStatusOpen
 }
 
 function addMetadataRow(): void {
@@ -447,6 +601,15 @@ function addMetadataCondition(): void {
 }
 function removeMetadataCondition(index: number): void {
   metadataConditions.value.splice(index, 1)
+}
+
+/** Quick-pick values for a metadata condition value field: `pr:*` rows show operation kinds. */
+function _metadataConditionValueOptions(key: string): DropdownOption<string>[] {
+  if (key.trim() !== 'operation' || !eventRows.value.some((r) => r.category === 'pr')) return []
+  return Object.keys(EVENT_CATALOG.pr?.actions ?? {}).map((op) => ({
+    value: op,
+    label: ACTION_LABELS.value[`pr:${op}`] ?? op,
+  }))
 }
 
 /** Collapse the metadata rows into a clean object (trimmed, non-empty, last-wins). */
@@ -469,28 +632,33 @@ function buildMetadataFilter(): EventMetadataFilter | null {
 }
 
 /**
- * Collapse the event refs into a {@link GenericEventFilter} or null. `type` is
- * required (a blank type yields null → the caller does not send an event trigger);
- * `statuses` is trimmed, de-duplicated and dropped when empty; `metadata` reuses
- * the condition builder. Mirrors the server's `normalizeGenericEventFilter`.
+ * Collapse subscription row drafts + the shared metadata condition builder into
+ * a non-empty array of {@link GenericEventFilter} (any-row OR), or null when no
+ * valid row survives. Each draft row becomes one filter with the shared metadata
+ * conditions appended. Mirrors the server's `normalizeGenericEventFilters`.
  */
-function buildEventFilter(): GenericEventFilter | null {
-  const type = eventType.value.trim()
-  if (!type) return null
-  const statuses = [
-    ...new Set(statusRows.value.map((s) => s.value.trim()).filter((s) => s.length > 0)),
-  ]
+function buildEventFilters(): GenericEventFilter[] | null {
+  const filters: GenericEventFilter[] = []
   const metadata = buildMetadataFilter()
-  const filter: GenericEventFilter = { type }
-  if (statuses.length) filter.statuses = statuses
-  if (metadata) filter.metadata = metadata
-  return filter
+  for (const row of eventRows.value) {
+    const type = rowType(row)
+    if (!type) continue
+    const filter: GenericEventFilter = { type }
+    const statuses = [...new Set(row.statuses)]
+    if (statuses.length) filter.statuses = statuses
+    // Extra free-text statuses: comma-separated.
+    const extra = row.customStatus
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !statuses.includes(s))
+    if (extra.length) {
+      filter.statuses = [...statuses, ...extra]
+    }
+    if (metadata) filter.metadata = metadata
+    filters.push(filter)
+  }
+  return filters.length ? filters : null
 }
-
-// A run-lifecycle event trigger must pick at least one sessionKind before saving.
-const sessionKindValid = computed(
-  () => !showSessionKindFilter.value || eventSessionKinds.value.length > 0,
-)
 
 // ---- Tool manifest helpers -------------------------------------------------
 const currentTools = computed<ToolManifestEntry[]>(() => props.toolManifest[vendor.value] ?? [])
@@ -575,11 +743,11 @@ function save(): void {
   if (!canSave.value) return
   const config = buildConfig()
   const isEvent = triggerType.value === 'event'
-  // One generic event filter carries type + statuses + metadata conditions.
-  const eventFilter = isEvent ? buildEventFilter() : null
+  // The subscription rows array (any-match OR).
+  const eventFilters = isEvent ? buildEventFilters() : null
   // The sessionKind security boundary only carries for run-lifecycle event types.
   const sessionKindFilter: SessionKind[] | null =
-    isEvent && isRunLifecycleType.value ? [...eventSessionKinds.value] : null
+    isEvent && hasRunLifecycleRow.value ? [...eventSessionKinds.value] : null
   const metadata = buildMetadata()
   if (isEdit.value && props.automation) {
     // Carry the manual title: a non-empty value is stored sticky server-side; an
@@ -598,7 +766,7 @@ function save(): void {
     // The store clears the other trigger's fields on a triggerType switch, so we
     // only send the fields matching the chosen type (avoids a double column set).
     if (isEvent) {
-      input.eventFilter = eventFilter
+      input.eventFilters = eventFilters
       input.eventSessionKindFilter = sessionKindFilter
     } else {
       input.cronExpression = cronExpression.value
@@ -615,7 +783,7 @@ function save(): void {
       agentId: type.value === 'llm' ? agentId.value : null,
       triggerType: triggerType.value,
       cronExpression: isEvent ? '' : cronExpression.value,
-      eventFilter,
+      eventFilters,
       eventSessionKindFilter: sessionKindFilter,
       metadata,
       toolAllowlist: [...toolAllowlist.value],
@@ -851,63 +1019,106 @@ function save(): void {
               </template>
             </div>
 
-            <!-- Event trigger config: one generic event type + statuses + metadata
-             conditions. No per-type panels — known types are datalist hints only. -->
+            <!-- Event trigger config: cascading subscription rows (category →
+             action → statuses multi-select), plus shared metadata conditions
+             and the run-lifecycle sessionKind security boundary. -->
             <div v-if="triggerType === 'event'" class="sf-field sf-field--stacked">
               <span class="sf-label">{{ t('automation.form.event.type.label') }}</span>
-              <input
-                v-model="eventType"
-                class="sf-input"
-                list="sf-event-type-suggestions"
-                data-testid="event-type-input"
-                :placeholder="t('automation.form.event.type.placeholder')"
-              />
-              <datalist id="sf-event-type-suggestions">
-                <option v-for="s in EVENT_TYPE_SUGGESTIONS" :key="s" :value="s" />
-              </datalist>
-              <span class="sf-hint">{{ t('automation.form.event.type.hint') }}</span>
+              <p class="sf-hint" style="margin-bottom: var(--sp-2)">
+                {{ t('automation.form.event.type.hint') }}
+              </p>
 
-              <!-- PR event type: a contextual opt-in note (the model performs PR
-               operations with its own tools; c3 never executes them). -->
-              <p v-if="showPrNote" class="sf-pr-note">{{ t('automation.form.event.pr.note') }}</p>
-
-              <!-- Statuses: a free-string multi-value list (any status). -->
-              <span class="sf-label sf-event-reason-label">{{
-                t('automation.form.event.status.label')
-              }}</span>
+              <!-- Subscription rows: each row is category → action → statuses -->
               <div
-                v-for="(row, i) in statusRows"
-                :key="`status-${i}`"
+                v-for="(row, ri) in eventRows"
+                :key="`er-${ri}`"
                 class="sf-kv-row"
-                data-testid="status-row"
+                data-testid="event-filter-row"
               >
-                <input
-                  v-model="row.value"
-                  class="sf-input sf-kv-input"
-                  list="sf-event-status-suggestions"
-                  :placeholder="t('automation.form.event.status.placeholder')"
+                <!-- Category -->
+                <BaseDropdown
+                  v-if="row.category !== OTHER_KEY"
+                  v-model="row.category"
+                  :options="CATEGORY_OPTIONS"
+                  :aria-label="t('automation.form.event.type.label')"
                 />
+                <input
+                  v-else
+                  v-model="row.customType"
+                  class="sf-input sf-kv-input"
+                  :placeholder="t('automation.form.event.type.placeholder')"
+                />
+
+                <!-- Action (cascaded from category) -->
+                <template v-if="row.category !== OTHER_KEY">
+                  <BaseDropdown
+                    v-if="row.action !== OTHER_KEY"
+                    v-model="row.action"
+                    :options="actionOptions(row.category)"
+                    :aria-label="t('automation.form.event.status.label')"
+                  />
+                  <input
+                    v-else
+                    v-model="row.customAction"
+                    class="sf-input sf-kv-input"
+                    placeholder="action"
+                  />
+                </template>
+
+                <!-- Status chip multi-select -->
+                <template v-if="row.category !== OTHER_KEY && knownStatusValues(row).length">
+                  <button
+                    v-for="opt in statusOptionsFor(row)"
+                    :key="opt.value"
+                    type="button"
+                    class="sf-day"
+                    :class="{ active: row.statuses.includes(opt.value) }"
+                    @click="toggleStatus(row, opt.value)"
+                  >
+                    {{ opt.label }}
+                  </button>
+                  <button
+                    type="button"
+                    class="sf-day"
+                    :class="{ active: row.customStatusOpen }"
+                    @click="toggleCustomStatusOpen(row)"
+                  >
+                    {{ t('automation.form.event.other.label') }}
+                  </button>
+                  <input
+                    v-if="row.customStatusOpen"
+                    v-model="row.customStatus"
+                    class="sf-input"
+                    :placeholder="t('automation.form.event.status.placeholder')"
+                    style="max-width: 120px"
+                  />
+                </template>
+
+                <!-- Remove row -->
                 <button
+                  v-if="eventRows.length > 1"
                   type="button"
                   class="sf-kv-del"
                   :aria-label="t('automation.form.event.status.remove')"
-                  @click="removeStatusRow(i)"
+                  @click="removeEventRow(ri)"
                 >
                   ✕
                 </button>
               </div>
-              <datalist id="sf-event-status-suggestions">
-                <option v-for="s in statusSuggestions" :key="s" :value="s" />
-              </datalist>
+
+              <!-- Add row -->
               <button
                 type="button"
                 class="sf-kv-add"
-                data-testid="status-add"
-                @click="addStatusRow"
+                data-testid="event-filter-add"
+                @click="addEventRow"
               >
-                + {{ t('automation.form.event.status.add') }}
+                + {{ t('automation.form.event.row.add') }}
               </button>
-              <span class="sf-hint">{{ t('automation.form.event.status.hint') }}</span>
+
+              <!-- PR event type: a contextual opt-in note (the model performs PR
+               operations with its own tools; c3 never executes them). -->
+              <p v-if="showPrNote" class="sf-pr-note">{{ t('automation.form.event.pr.note') }}</p>
 
               <!-- Metadata condition builder (all event types). PR operation
                multi-selects are expressed as OR conditions on `operation`. -->

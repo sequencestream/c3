@@ -3,6 +3,11 @@
  * `dispatchEventTriggers` filtering / debounce. The dispatcher is mocked so no
  * real command/LLM runs — we assert only that a matching event dispatches (an
  * execution log is appended) via the same path a cron run takes.
+ *
+ * 2026-07-14: event types follow `<category>:<action>` (pr:operation →
+ * pr:create…pr:update, intent:lifecycle → intent:<phase>), and an automation
+ * subscribes through `eventFilters` — a list of rows matched with OR semantics;
+ * a `<category>:*` row wildcards every action of that category.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // The store maps `workspace_path` <-> opaque `workspaceId` through the registry;
@@ -16,6 +21,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Automation } from '@ccc/shared/protocol'
+import { eventTypeMatches } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   createAutomation,
@@ -60,14 +66,14 @@ describe('store — event-trigger automation CRUD', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  it('creates an event automation with empty cron, null nextRunAt, and a filter', () => {
+  it('creates an event automation with empty cron, null nextRunAt, and subscription rows', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: { type: 'run:settled', statuses: ['error', 'aborted'] },
+      eventFilters: [{ type: 'run:settled', statuses: ['error', 'aborted'] }],
       eventSessionKindFilter: ['work'],
       mode: 'sandboxed',
       vendor: 'claude',
@@ -75,7 +81,7 @@ describe('store — event-trigger automation CRUD', () => {
     expect(s.triggerType).toBe('event')
     expect(s.cronExpression).toBe('')
     expect(s.nextRunAt).toBeNull()
-    expect(s.eventFilter).toEqual({ type: 'run:settled', statuses: ['error', 'aborted'] })
+    expect(s.eventFilters).toEqual([{ type: 'run:settled', statuses: ['error', 'aborted'] }])
   })
 
   it('round-trips metadata + sessionKind + metadata filter for a run-lifecycle automation', () => {
@@ -85,17 +91,19 @@ describe('store — event-trigger automation CRUD', () => {
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: {
-        type: 'run:settled',
-        metadata: { conditions: [{ key: 'stage', value: 'a' }], combinator: 'AND' },
-      },
+      eventFilters: [
+        {
+          type: 'run:settled',
+          metadata: { conditions: [{ key: 'stage', value: 'a' }], combinator: 'AND' },
+        },
+      ],
       eventSessionKindFilter: ['work', 'automation'],
       metadata: { stage: 'a', team: 'core' },
       mode: 'sandboxed',
       vendor: 'claude',
     })
     expect(s.eventSessionKindFilter).toEqual(['work', 'automation'])
-    expect(s.eventFilter?.metadata).toEqual({
+    expect(s.eventFilters?.[0]?.metadata).toEqual({
       conditions: [{ key: 'stage', value: 'a' }],
       combinator: 'AND',
     })
@@ -105,41 +113,45 @@ describe('store — event-trigger automation CRUD', () => {
     expect(reloaded.metadata).toEqual({ stage: 'a', team: 'core' })
   })
 
-  it('clears the sessionKind filter for a pr:operation automation but keeps its generic metadata', () => {
+  it('clears the sessionKind filter for a pr:<op> automation but keeps its generic metadata', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'echo hi' },
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: {
-        type: 'pr:operation',
-        metadata: { conditions: [{ key: 'x', value: 'y' }], combinator: 'AND' },
-      },
+      eventFilters: [
+        {
+          type: 'pr:merge',
+          metadata: { conditions: [{ key: 'x', value: 'y' }], combinator: 'AND' },
+        },
+      ],
       eventSessionKindFilter: ['work'],
       mode: 'sandboxed',
       vendor: 'claude',
     })
-    // The sessionKind boundary is run-lifecycle only → dropped for pr:operation.
+    // The sessionKind boundary is run-lifecycle only → dropped for a PR subscription.
     expect(s.eventSessionKindFilter).toBeNull()
     // The generic metadata filter is a first-class part of the event filter for any type.
-    expect(s.eventFilter?.metadata).toEqual({
+    expect(s.eventFilters?.[0]?.metadata).toEqual({
       conditions: [{ key: 'x', value: 'y' }],
       combinator: 'AND',
     })
   })
 
-  it('switching a run-lifecycle event → cron clears the event filter and sessionKind filter', () => {
+  it('switching a run-lifecycle event → cron clears the event filters and sessionKind filter', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'a' },
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: {
-        type: 'run:settled',
-        metadata: { conditions: [{ key: 'x', value: 'y' }], combinator: 'AND' },
-      },
+      eventFilters: [
+        {
+          type: 'run:settled',
+          metadata: { conditions: [{ key: 'x', value: 'y' }], combinator: 'AND' },
+        },
+      ],
       eventSessionKindFilter: ['work'],
       mode: 'sandboxed',
       vendor: 'claude',
@@ -147,7 +159,7 @@ describe('store — event-trigger automation CRUD', () => {
     updateAutomation(s.id, { triggerType: 'cron', cronExpression: '0 9 * * *' })
     const after = getAutomation(s.id)!
     expect(after.eventSessionKindFilter).toBeNull()
-    expect(after.eventFilter).toBeNull()
+    expect(after.eventFilters).toBeNull()
   })
 
   it('getEventAutomations returns only matching active event automations', () => {
@@ -157,7 +169,7 @@ describe('store — event-trigger automation CRUD', () => {
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: { type: 'run:settled' },
+      eventFilters: [{ type: 'run:settled' }],
       eventSessionKindFilter: ['work'],
       mode: 'sandboxed',
       vendor: 'claude',
@@ -168,7 +180,7 @@ describe('store — event-trigger automation CRUD', () => {
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: { type: 'run:started' },
+      eventFilters: [{ type: 'run:started' }],
       eventSessionKindFilter: ['work'],
       mode: 'sandboxed',
       vendor: 'claude',
@@ -194,6 +206,40 @@ describe('store — event-trigger automation CRUD', () => {
     expect(due.map((s) => s.id)).not.toContain(settled.id)
   })
 
+  it('getEventAutomations matches a `<category>:*` wildcard subscription row', () => {
+    const wild = createAutomation({
+      type: 'command',
+      config: { command: 'a' },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventFilters: [{ type: 'pr:*' }],
+      mode: 'sandboxed',
+      vendor: 'claude',
+    })
+    expect(getEventAutomations('pr:merge').map((s) => s.id)).toEqual([wild.id])
+    expect(getEventAutomations('pr:close').map((s) => s.id)).toEqual([wild.id])
+    // The wildcard only covers its own category.
+    expect(getEventAutomations('run:settled')).toHaveLength(0)
+  })
+
+  it('getEventAutomations matches when ANY subscription row accepts the type', () => {
+    const multi = createAutomation({
+      type: 'command',
+      config: { command: 'a' },
+      workspaceId: proj,
+      triggerType: 'event',
+      cronExpression: '',
+      eventFilters: [{ type: 'run:settled' }, { type: 'pr:merge' }],
+      eventSessionKindFilter: ['work'],
+      mode: 'sandboxed',
+      vendor: 'claude',
+    })
+    expect(getEventAutomations('run:settled').map((s) => s.id)).toEqual([multi.id])
+    expect(getEventAutomations('pr:merge').map((s) => s.id)).toEqual([multi.id])
+    expect(getEventAutomations('pr:close')).toHaveLength(0)
+  })
+
   it('paused event automations are excluded from getEventAutomations', () => {
     const s = createAutomation({
       type: 'command',
@@ -201,7 +247,7 @@ describe('store — event-trigger automation CRUD', () => {
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: { type: 'run:settled' },
+      eventFilters: [{ type: 'run:settled' }],
       eventSessionKindFilter: ['work'],
       mode: 'sandboxed',
       vendor: 'claude',
@@ -210,7 +256,7 @@ describe('store — event-trigger automation CRUD', () => {
     expect(getEventAutomations('run:settled')).toHaveLength(0)
   })
 
-  it('switching cron → event clears cron/nextRunAt and sets the filter type', () => {
+  it('switching cron → event clears cron/nextRunAt and sets the subscription rows', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'a' },
@@ -222,96 +268,81 @@ describe('store — event-trigger automation CRUD', () => {
     expect(s.triggerType).toBe('cron')
     expect(s.nextRunAt).not.toBeNull()
 
-    updateAutomation(s.id, { triggerType: 'event', eventFilter: { type: 'run:started' } })
+    updateAutomation(s.id, { triggerType: 'event', eventFilters: [{ type: 'run:started' }] })
     const after = getAutomation(s.id)!
     expect(after.triggerType).toBe('event')
     expect(after.cronExpression).toBe('')
     expect(after.nextRunAt).toBeNull()
-    expect(after.eventFilter).toEqual({ type: 'run:started' })
+    expect(after.eventFilters).toEqual([{ type: 'run:started' }])
   })
 
-  it('creates a pr:operation automation with a PR filter that round-trips', () => {
+  it('creates a PR automation whose per-operation rows round-trip', () => {
+    // Operation filtering is now expressed by subscribing the matching pr:<op>
+    // types — one row per operation, matched with OR semantics.
     const s = createAutomation({
       type: 'command',
       config: { command: 'echo pr' },
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: {
-        type: 'pr:operation',
-        statuses: ['success'],
-        metadata: {
-          conditions: [
-            { key: 'operation', value: 'merge' },
-            { key: 'operation', value: 'close' },
-          ],
-          combinator: 'OR',
-        },
-      },
+      eventFilters: [
+        { type: 'pr:merge', statuses: ['success'] },
+        { type: 'pr:close', statuses: ['success'] },
+      ],
       mode: 'sandboxed',
       vendor: 'claude',
     })
-    expect(s.eventFilter).toEqual({
-      type: 'pr:operation',
-      statuses: ['success'],
-      metadata: {
-        conditions: [
-          { key: 'operation', value: 'merge' },
-          { key: 'operation', value: 'close' },
-        ],
-        combinator: 'OR',
-      },
-    })
-    expect(getEventAutomations('pr:operation').map((x) => x.id)).toEqual([s.id])
-    // A pr:operation automation never surfaces under a run-lifecycle type.
+    expect(s.eventFilters).toEqual([
+      { type: 'pr:merge', statuses: ['success'] },
+      { type: 'pr:close', statuses: ['success'] },
+    ])
+    expect(getEventAutomations('pr:merge').map((x) => x.id)).toEqual([s.id])
+    expect(getEventAutomations('pr:close').map((x) => x.id)).toEqual([s.id])
+    // A PR automation never surfaces under a run-lifecycle type or another PR action.
     expect(getEventAutomations('run:settled')).toHaveLength(0)
+    expect(getEventAutomations('pr:create')).toHaveLength(0)
   })
 
-  it('drops empty PR filter dimensions to a type-only filter (= any)', () => {
+  it('drops empty PR filter dimensions to a type-only row (= any)', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'a' },
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: {
-        type: 'pr:operation',
-        statuses: [],
-        metadata: { conditions: [], combinator: 'OR' },
-      },
+      eventFilters: [
+        { type: 'pr:merge', statuses: [], metadata: { conditions: [], combinator: 'OR' } },
+      ],
       mode: 'sandboxed',
       vendor: 'claude',
     })
-    expect(s.eventFilter).toEqual({ type: 'pr:operation' })
+    expect(s.eventFilters).toEqual([{ type: 'pr:merge' }])
   })
 
-  it('switching a pr:operation automation → cron clears the event filter', () => {
+  it('switching a PR automation → cron clears the event filters', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'a' },
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: {
-        type: 'pr:operation',
-        metadata: { conditions: [{ key: 'operation', value: 'create' }], combinator: 'OR' },
-      },
+      eventFilters: [{ type: 'pr:create' }],
       mode: 'sandboxed',
       vendor: 'claude',
     })
     updateAutomation(s.id, { triggerType: 'cron', cronExpression: '0 9 * * *' })
     const after = getAutomation(s.id)!
-    expect(after.eventFilter).toBeNull()
+    expect(after.eventFilters).toBeNull()
   })
 
-  it('switching event → cron clears the event filter and re-arms nextRunAt', () => {
+  it('switching event → cron clears the event filters and re-arms nextRunAt', () => {
     const s = createAutomation({
       type: 'command',
       config: { command: 'a' },
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: { type: 'run:settled', statuses: ['error'] },
+      eventFilters: [{ type: 'run:settled', statuses: ['error'] }],
       eventSessionKindFilter: ['work'],
       mode: 'sandboxed',
       vendor: 'claude',
@@ -319,7 +350,7 @@ describe('store — event-trigger automation CRUD', () => {
     updateAutomation(s.id, { triggerType: 'cron', cronExpression: '0 9 * * *' })
     const after = getAutomation(s.id)!
     expect(after.triggerType).toBe('cron')
-    expect(after.eventFilter).toBeNull()
+    expect(after.eventFilters).toBeNull()
     expect(after.nextRunAt).not.toBeNull()
   })
 })
@@ -327,6 +358,31 @@ describe('store — event-trigger automation CRUD', () => {
 // ---------------------------------------------------------------------------
 // scheduler: dispatchEventTriggers filtering + debounce
 // ---------------------------------------------------------------------------
+
+/** Shared install helper: a fake ExecutionStore whose event query mirrors the real one. */
+function makeInstall(appendLogRef: () => ReturnType<typeof vi.fn>) {
+  return (automations: Automation[]): void => {
+    const store: ExecutionStore = {
+      getDueAutomations: () => [],
+      getEventAutomations: (type) =>
+        automations.filter(
+          (s) =>
+            s.status === 'active' &&
+            s.triggerType === 'event' &&
+            s.eventFilters?.some((f) => eventTypeMatches(f.type, type)),
+        ),
+      getAutomation: (id) => automations.find((s) => s.id === id) ?? null,
+      updateNextRunAt: vi.fn(),
+      updateAutomation: vi.fn(),
+      deleteAutomation: vi.fn(),
+      appendExecutionLog: appendLogRef() as unknown as ExecutionStore['appendExecutionLog'],
+      updateExecutionLog: vi.fn(),
+      broadcast: vi.fn(),
+    }
+    setExecutionStore(store)
+  }
+}
+
 describe('scheduler — dispatchEventTriggers', () => {
   let appendLog: ReturnType<typeof vi.fn>
 
@@ -340,7 +396,7 @@ describe('scheduler — dispatchEventTriggers', () => {
       triggerType: 'event',
       cronExpression: '',
       nextRunAt: null,
-      eventFilter: { type: 'run:settled' },
+      eventFilters: [{ type: 'run:settled' }],
       eventSessionKindFilter: ['work'],
       metadata: {},
       status: 'active',
@@ -354,23 +410,7 @@ describe('scheduler — dispatchEventTriggers', () => {
     }
   }
 
-  function install(automations: Automation[]): void {
-    const store: ExecutionStore = {
-      getDueAutomations: () => [],
-      getEventAutomations: (type) =>
-        automations.filter(
-          (s) => s.status === 'active' && s.triggerType === 'event' && s.eventFilter?.type === type,
-        ),
-      getAutomation: (id) => automations.find((s) => s.id === id) ?? null,
-      updateNextRunAt: vi.fn(),
-      updateAutomation: vi.fn(),
-      deleteAutomation: vi.fn(),
-      appendExecutionLog: appendLog as unknown as ExecutionStore['appendExecutionLog'],
-      updateExecutionLog: vi.fn(),
-      broadcast: vi.fn(),
-    }
-    setExecutionStore(store)
-  }
+  const install = makeInstall(() => appendLog)
 
   beforeEach(() => {
     vi.mocked(execute).mockReset()
@@ -380,10 +420,15 @@ describe('scheduler — dispatchEventTriggers', () => {
 
   it('fires a matching run:settled automation in the same workspace', () => {
     install([evSched({ id: 'm1' })])
+    // The wiring projection always stamps sessionKind/runKind into event.metadata.
     dispatchEventTriggers({
       workspacePath: '/abs/ws-a',
       sessionKind: 'work',
-      event: { type: 'run:settled', status: 'complete' },
+      event: {
+        type: 'run:settled',
+        status: 'complete',
+        metadata: { sessionKind: 'work', runKind: 'interactive' },
+      },
     })
     expect(appendLog).toHaveBeenCalledTimes(1)
   })
@@ -432,16 +477,18 @@ describe('scheduler — dispatchEventTriggers', () => {
     install([
       evSched({
         id: 'md-and',
-        eventFilter: {
-          type: 'run:settled',
-          metadata: {
-            conditions: [
-              { key: 'stage', value: 'a' },
-              { key: 'team', value: 'core' },
-            ],
-            combinator: 'AND',
+        eventFilters: [
+          {
+            type: 'run:settled',
+            metadata: {
+              conditions: [
+                { key: 'stage', value: 'a' },
+                { key: 'team', value: 'core' },
+              ],
+              combinator: 'AND',
+            },
           },
-        },
+        ],
       }),
     ])
     // Only one condition matches → no fire.
@@ -464,16 +511,18 @@ describe('scheduler — dispatchEventTriggers', () => {
     install([
       evSched({
         id: 'md-or',
-        eventFilter: {
-          type: 'run:settled',
-          metadata: {
-            conditions: [
-              { key: 'stage', value: 'a' },
-              { key: 'stage', value: 'b' },
-            ],
-            combinator: 'OR',
+        eventFilters: [
+          {
+            type: 'run:settled',
+            metadata: {
+              conditions: [
+                { key: 'stage', value: 'a' },
+                { key: 'stage', value: 'b' },
+              ],
+              combinator: 'OR',
+            },
           },
-        },
+        ],
       }),
     ])
     dispatchEventTriggers({
@@ -488,10 +537,12 @@ describe('scheduler — dispatchEventTriggers', () => {
     install([
       evSched({
         id: 'md-none',
-        eventFilter: {
-          type: 'run:settled',
-          metadata: { conditions: [{ key: 'stage', value: 'a' }], combinator: 'AND' },
-        },
+        eventFilters: [
+          {
+            type: 'run:settled',
+            metadata: { conditions: [{ key: 'stage', value: 'a' }], combinator: 'AND' },
+          },
+        ],
       }),
     ])
     dispatchEventTriggers({
@@ -503,7 +554,7 @@ describe('scheduler — dispatchEventTriggers', () => {
   })
 
   it('honours the status filter (fires only on listed statuses)', () => {
-    install([evSched({ id: 'm4', eventFilter: { type: 'run:settled', statuses: ['error'] } })])
+    install([evSched({ id: 'm4', eventFilters: [{ type: 'run:settled', statuses: ['error'] }] })])
     dispatchEventTriggers({
       workspacePath: '/abs/ws-a',
       sessionKind: 'work',
@@ -519,13 +570,61 @@ describe('scheduler — dispatchEventTriggers', () => {
   })
 
   it('does not fire a run:settled automation on a run:started event', () => {
-    install([evSched({ id: 'm5' })]) // eventFilter.type = run:settled
+    install([evSched({ id: 'm5' })]) // eventFilters = [run:settled]
     dispatchEventTriggers({
       workspacePath: '/abs/ws-a',
       sessionKind: 'work',
       event: { type: 'run:started' },
     })
     expect(appendLog).not.toHaveBeenCalled()
+  })
+
+  it('a run:* wildcard row fires on both run:started and run:settled', () => {
+    install([evSched({ id: 'wild-run', eventFilters: [{ type: 'run:*' }] })])
+    dispatchEventTriggers({
+      workspacePath: '/abs/ws-a',
+      sessionKind: 'work',
+      event: { type: 'run:started' },
+    })
+    expect(appendLog).toHaveBeenCalledTimes(1)
+    cancelInFlight('wild-run')
+    dispatchEventTriggers({
+      workspacePath: '/abs/ws-a',
+      sessionKind: 'work',
+      event: { type: 'run:settled', status: 'complete' },
+    })
+    expect(appendLog).toHaveBeenCalledTimes(2)
+    cancelInFlight('wild-run')
+  })
+
+  it('multi-row subscription fires when ANY row matches; sessionKind gates only run events', () => {
+    install([
+      evSched({
+        id: 'multi',
+        eventFilters: [{ type: 'run:settled', statuses: ['error'] }, { type: 'custom:ping' }],
+        eventSessionKindFilter: ['work'],
+      }),
+    ])
+    // The non-run row matches with no sessionKind at all (the security boundary
+    // only applies to incoming run-lifecycle events).
+    dispatchEventTriggers({ workspacePath: '/abs/ws-a', event: { type: 'custom:ping' } })
+    expect(appendLog).toHaveBeenCalledTimes(1)
+    cancelInFlight('multi')
+    // The run row still honours its own status filter…
+    dispatchEventTriggers({
+      workspacePath: '/abs/ws-a',
+      sessionKind: 'work',
+      event: { type: 'run:settled', status: 'complete' },
+    })
+    expect(appendLog).toHaveBeenCalledTimes(1)
+    // …and fires when it matches.
+    dispatchEventTriggers({
+      workspacePath: '/abs/ws-a',
+      sessionKind: 'work',
+      event: { type: 'run:settled', status: 'error' },
+    })
+    expect(appendLog).toHaveBeenCalledTimes(2)
+    cancelInFlight('multi')
   })
 
   it('debounces: a second event does not double-fire while in flight', () => {
@@ -558,7 +657,7 @@ describe('scheduler — triggerRunNow', () => {
       triggerType: 'cron',
       cronExpression: '0 8 * * *',
       nextRunAt: 1_800_000_000_000,
-      eventFilter: null,
+      eventFilters: null,
       status: 'paused',
       mode: 'sandboxed',
       toolAllowlist: [],
@@ -652,7 +751,7 @@ describe('scheduler — stale cron trigger', () => {
       triggerType: 'cron',
       cronExpression: '0 * * * *',
       nextRunAt: Date.now() - 5 * 60 * 1000 - 1,
-      eventFilter: null,
+      eventFilters: null,
       status: 'active',
       mode: 'sandboxed',
       toolAllowlist: [],
@@ -689,9 +788,9 @@ describe('scheduler — stale cron trigger', () => {
 })
 
 // ---------------------------------------------------------------------------
-// scheduler: dispatchEventTriggers — pr:operation (2026-06-20)
+// scheduler: dispatchEventTriggers — pr:<operation> (2026-06-20; renamed 2026-07-14)
 // ---------------------------------------------------------------------------
-describe('scheduler — dispatchEventTriggers (pr:operation)', () => {
+describe('scheduler — dispatchEventTriggers (pr:<operation>)', () => {
   let appendLog: ReturnType<typeof vi.fn>
 
   function prSched(over: Partial<Automation> = {}): Automation {
@@ -704,7 +803,8 @@ describe('scheduler — dispatchEventTriggers (pr:operation)', () => {
       triggerType: 'event',
       cronExpression: '',
       nextRunAt: null,
-      eventFilter: { type: 'pr:operation' },
+      // The `pr:*` category wildcard = "any PR operation".
+      eventFilters: [{ type: 'pr:*' }],
       status: 'active',
       mode: 'sandboxed',
       toolAllowlist: [],
@@ -716,23 +816,7 @@ describe('scheduler — dispatchEventTriggers (pr:operation)', () => {
     }
   }
 
-  function install(automations: Automation[]): void {
-    const store: ExecutionStore = {
-      getDueAutomations: () => [],
-      getEventAutomations: (type) =>
-        automations.filter(
-          (s) => s.status === 'active' && s.triggerType === 'event' && s.eventFilter?.type === type,
-        ),
-      getAutomation: (id) => automations.find((s) => s.id === id) ?? null,
-      updateNextRunAt: vi.fn(),
-      updateAutomation: vi.fn(),
-      deleteAutomation: vi.fn(),
-      appendExecutionLog: appendLog as unknown as ExecutionStore['appendExecutionLog'],
-      updateExecutionLog: vi.fn(),
-      broadcast: vi.fn(),
-    }
-    setExecutionStore(store)
-  }
+  const install = makeInstall(() => appendLog)
 
   beforeEach(() => {
     vi.mocked(execute).mockReset()
@@ -741,36 +825,49 @@ describe('scheduler — dispatchEventTriggers (pr:operation)', () => {
   })
 
   // The wiring bridge hands PR events to dispatch as a NORMALIZED generic view:
-  // `type='pr:operation'`, `status=result`, `metadata.operation=operation`, and no
-  // sessionKind (PR events carry no session origin).
+  // `type='pr:<operation>'`, `status=result`, `metadata.operation=operation`
+  // (redundant with the type's action segment), and no sessionKind (PR events
+  // carry no session origin).
   const prView = (over: { workspacePath?: string; operation?: string; result?: string } = {}) => {
     const { workspacePath = '/abs/ws-a', operation = 'merge', result = 'success' } = over
     return {
       workspacePath,
-      event: { type: 'pr:operation', status: result, metadata: { operation } },
+      event: { type: `pr:${operation}`, status: result, metadata: { operation } },
     }
   }
 
-  it('fires a matching pr:operation automation (no filter = any) in the same workspace', () => {
+  it('fires a pr:* automation (any operation) in the same workspace', () => {
     install([prSched({ id: 'm1' })])
     dispatchEventTriggers(prView())
     expect(appendLog).toHaveBeenCalledTimes(1)
   })
 
-  it('skips a pr:operation automation in a different workspace', () => {
+  it('skips a PR automation in a different workspace', () => {
     install([prSched({ id: 'm2' })])
     dispatchEventTriggers(prView({ workspacePath: '/abs/other' }))
     expect(appendLog).not.toHaveBeenCalled()
   })
 
-  it('honours the operation filter', () => {
+  it('honours the operation filter (subscribing the matching pr:<op> type)', () => {
+    install([prSched({ id: 'm3', eventFilters: [{ type: 'pr:close' }] })])
+    dispatchEventTriggers(prView({ operation: 'merge' }))
+    expect(appendLog).not.toHaveBeenCalled()
+    dispatchEventTriggers(prView({ operation: 'close' }))
+    expect(appendLog).toHaveBeenCalledTimes(1)
+  })
+
+  it('a metadata.operation condition on a pr:* row still filters operations', () => {
+    // The renamed PR events keep `metadata.operation`, so a legacy-style metadata
+    // condition remains a valid (if now redundant) way to filter operations.
     install([
       prSched({
-        id: 'm3',
-        eventFilter: {
-          type: 'pr:operation',
-          metadata: { conditions: [{ key: 'operation', value: 'close' }], combinator: 'OR' },
-        },
+        id: 'm3-meta',
+        eventFilters: [
+          {
+            type: 'pr:*',
+            metadata: { conditions: [{ key: 'operation', value: 'close' }], combinator: 'OR' },
+          },
+        ],
       }),
     ])
     dispatchEventTriggers(prView({ operation: 'merge' }))
@@ -780,7 +877,7 @@ describe('scheduler — dispatchEventTriggers (pr:operation)', () => {
   })
 
   it('honours the result filter', () => {
-    install([prSched({ id: 'm4', eventFilter: { type: 'pr:operation', statuses: ['failure'] } })])
+    install([prSched({ id: 'm4', eventFilters: [{ type: 'pr:merge', statuses: ['failure'] }] })])
     dispatchEventTriggers(prView({ result: 'success' }))
     expect(appendLog).not.toHaveBeenCalled()
     dispatchEventTriggers(prView({ result: 'failure' }))
@@ -788,47 +885,40 @@ describe('scheduler — dispatchEventTriggers (pr:operation)', () => {
   })
 
   it('matches an error result when error is in the filter', () => {
-    install([prSched({ id: 'm4e', eventFilter: { type: 'pr:operation', statuses: ['error'] } })])
+    install([prSched({ id: 'm4e', eventFilters: [{ type: 'pr:merge', statuses: ['error'] }] })])
     dispatchEventTriggers(prView({ result: 'error' }))
     expect(appendLog).toHaveBeenCalledTimes(1)
   })
 
   it('skips an error result when error is NOT in the filter', () => {
-    install([prSched({ id: 'm4x', eventFilter: { type: 'pr:operation', statuses: ['failure'] } })])
+    install([prSched({ id: 'm4x', eventFilters: [{ type: 'pr:merge', statuses: ['failure'] }] })])
     dispatchEventTriggers(prView({ result: 'error' }))
     expect(appendLog).not.toHaveBeenCalled()
   })
 
   it('requires BOTH operation and result to match when both are filtered', () => {
-    install([
-      prSched({
-        id: 'm5',
-        eventFilter: {
-          type: 'pr:operation',
-          statuses: ['success'],
-          metadata: { conditions: [{ key: 'operation', value: 'merge' }], combinator: 'OR' },
-        },
-      }),
-    ])
+    install([prSched({ id: 'm5', eventFilters: [{ type: 'pr:merge', statuses: ['success'] }] })])
     dispatchEventTriggers(prView({ operation: 'merge', result: 'failure' }))
+    expect(appendLog).not.toHaveBeenCalled()
+    dispatchEventTriggers(prView({ operation: 'close', result: 'success' }))
     expect(appendLog).not.toHaveBeenCalled()
     dispatchEventTriggers(prView({ operation: 'merge', result: 'success' }))
     expect(appendLog).toHaveBeenCalledTimes(1)
   })
 
-  it('does not fire a run:settled automation on a pr:operation event (type isolation)', () => {
+  it('does not fire a run:settled automation on a pr:<op> event (type isolation)', () => {
     install([
-      {
-        ...prSched({ id: 'm6' }),
-        eventFilter: { type: 'run:settled' },
+      prSched({
+        id: 'm6',
+        eventFilters: [{ type: 'run:settled' }],
         eventSessionKindFilter: ['work'],
-      },
+      }),
     ])
     dispatchEventTriggers(prView())
     expect(appendLog).not.toHaveBeenCalled()
   })
 
-  it('debounces: a second pr:operation event does not double-fire while in flight', () => {
+  it('debounces: a second PR event does not double-fire while in flight', () => {
     vi.mocked(execute).mockImplementation(() => new Promise<void>(() => {}))
     install([prSched({ id: 'dbnc-pr' })])
     dispatchEventTriggers(prView())
@@ -839,9 +929,9 @@ describe('scheduler — dispatchEventTriggers (pr:operation)', () => {
 })
 
 // ---------------------------------------------------------------------------
-// scheduler: dispatchEventTriggers — intent:lifecycle (no session origin)
+// scheduler: dispatchEventTriggers — intent:<phase> (no session origin)
 // ---------------------------------------------------------------------------
-describe('scheduler — dispatchEventTriggers (intent:lifecycle)', () => {
+describe('scheduler — dispatchEventTriggers (intent:<phase>)', () => {
   let appendLog: ReturnType<typeof vi.fn>
 
   function intentSched(over: Partial<Automation> = {}): Automation {
@@ -854,7 +944,8 @@ describe('scheduler — dispatchEventTriggers (intent:lifecycle)', () => {
       triggerType: 'event',
       cronExpression: '',
       nextRunAt: null,
-      eventFilter: { type: 'intent:lifecycle', statuses: ['done'] },
+      // The phase IS the action segment now — no status dimension.
+      eventFilters: [{ type: 'intent:done' }],
       status: 'active',
       mode: 'sandboxed',
       toolAllowlist: [],
@@ -866,22 +957,7 @@ describe('scheduler — dispatchEventTriggers (intent:lifecycle)', () => {
     }
   }
 
-  function install(automations: Automation[]): void {
-    setExecutionStore({
-      getDueAutomations: () => [],
-      getEventAutomations: (type) =>
-        automations.filter(
-          (s) => s.status === 'active' && s.triggerType === 'event' && s.eventFilter?.type === type,
-        ),
-      getAutomation: (id) => automations.find((s) => s.id === id) ?? null,
-      updateNextRunAt: vi.fn(),
-      updateAutomation: vi.fn(),
-      deleteAutomation: vi.fn(),
-      appendExecutionLog: appendLog as unknown as ExecutionStore['appendExecutionLog'],
-      updateExecutionLog: vi.fn(),
-      broadcast: vi.fn(),
-    })
-  }
+  const install = makeInstall(() => appendLog)
 
   beforeEach(() => {
     vi.mocked(execute).mockReset()
@@ -889,22 +965,52 @@ describe('scheduler — dispatchEventTriggers (intent:lifecycle)', () => {
     appendLog = vi.fn(() => ({ id: 'log1' }))
   })
 
-  it('fires when the phase status matches (no sessionKind supplied)', () => {
+  // The wiring bridge projects an intent lifecycle event as `type=intent:<phase>`
+  // with the safe lifecycle context in metadata and NO status / sessionKind.
+  const intentView = (phase: string) => ({
+    workspacePath: '/abs/ws-a',
+    event: {
+      type: `intent:${phase}`,
+      metadata: { intentId: 'i-1', title: 'T', toStatus: phase },
+    },
+  })
+
+  it('fires when the phase type matches (no sessionKind supplied)', () => {
     install([intentSched({ id: 'il-hit' })])
-    dispatchEventTriggers({
-      workspacePath: '/abs/ws-a',
-      event: { type: 'intent:lifecycle', status: 'done' },
-    })
+    dispatchEventTriggers(intentView('done'))
     expect(appendLog).toHaveBeenCalledTimes(1)
     cancelInFlight('il-hit')
   })
 
-  it('does not fire when the phase status differs', () => {
+  it('does not fire when the phase differs', () => {
     install([intentSched({ id: 'il-miss' })])
-    dispatchEventTriggers({
-      workspacePath: '/abs/ws-a',
-      event: { type: 'intent:lifecycle', status: 'failed' },
-    })
+    dispatchEventTriggers(intentView('failed'))
+    expect(appendLog).not.toHaveBeenCalled()
+  })
+
+  it('an intent:* wildcard row fires on any phase', () => {
+    install([intentSched({ id: 'il-wild', eventFilters: [{ type: 'intent:*' }] })])
+    dispatchEventTriggers(intentView('created'))
+    expect(appendLog).toHaveBeenCalledTimes(1)
+    cancelInFlight('il-wild')
+    dispatchEventTriggers(intentView('failed'))
+    expect(appendLog).toHaveBeenCalledTimes(2)
+    cancelInFlight('il-wild')
+  })
+
+  it('a metadata condition on the intent context (intentId) is honoured', () => {
+    install([
+      intentSched({
+        id: 'il-meta',
+        eventFilters: [
+          {
+            type: 'intent:done',
+            metadata: { conditions: [{ key: 'intentId', value: 'i-other' }], combinator: 'AND' },
+          },
+        ],
+      }),
+    ])
+    dispatchEventTriggers(intentView('done')) // intentId=i-1 → mismatch
     expect(appendLog).not.toHaveBeenCalled()
   })
 })
@@ -927,11 +1033,13 @@ describe('scheduler — dispatchEventTriggers (custom event type)', () => {
       triggerType: 'event',
       cronExpression: '',
       nextRunAt: null,
-      eventFilter: {
-        type: 'custom:thing',
-        statuses: ['ok'],
-        metadata: { conditions: [{ key: 'k', value: 'v' }], combinator: 'AND' },
-      },
+      eventFilters: [
+        {
+          type: 'custom:thing',
+          statuses: ['ok'],
+          metadata: { conditions: [{ key: 'k', value: 'v' }], combinator: 'AND' },
+        },
+      ],
       status: 'active',
       mode: 'sandboxed',
       toolAllowlist: [],
@@ -943,22 +1051,7 @@ describe('scheduler — dispatchEventTriggers (custom event type)', () => {
     }
   }
 
-  function install(automations: Automation[]): void {
-    setExecutionStore({
-      getDueAutomations: () => [],
-      getEventAutomations: (type) =>
-        automations.filter(
-          (s) => s.status === 'active' && s.triggerType === 'event' && s.eventFilter?.type === type,
-        ),
-      getAutomation: (id) => automations.find((s) => s.id === id) ?? null,
-      updateNextRunAt: vi.fn(),
-      updateAutomation: vi.fn(),
-      deleteAutomation: vi.fn(),
-      appendExecutionLog: appendLog as unknown as ExecutionStore['appendExecutionLog'],
-      updateExecutionLog: vi.fn(),
-      broadcast: vi.fn(),
-    })
-  }
+  const install = makeInstall(() => appendLog)
 
   beforeEach(() => {
     vi.mocked(execute).mockReset()

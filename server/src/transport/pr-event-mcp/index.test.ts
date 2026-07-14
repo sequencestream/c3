@@ -23,7 +23,8 @@ import {
 } from './index.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import {
-  PR_EVENT_TYPE,
+  PR_EVENT_TYPES,
+  PR_LEGACY_EVENT_TYPE,
   normalizePrGenericEvent,
   projectPrOperationEvent,
 } from '../../features/pr-events/tool-defs.js'
@@ -45,7 +46,8 @@ describe('isLoopback', () => {
 describe('event MCP HTTP route', () => {
   const published: GenericEventEnvelope[] = []
   const registry = new EventNormalizerRegistry()
-  registry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
+  for (const t of PR_EVENT_TYPES) registry.register(t, normalizePrGenericEvent)
+  registry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
   const tools: PrEventMcpTools = {
     // Use the real core so the route exercises validation + normalization + publish.
     publish: (binding, args) =>

@@ -9,13 +9,15 @@ import type { Intent } from '@ccc/shared/protocol'
 import { runManualDevCleanup, type DevCleanupDeps } from './dev-cleanup.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import {
-  PR_EVENT_TYPE,
+  PR_EVENT_TYPES,
+  PR_LEGACY_EVENT_TYPE,
   normalizePrGenericEvent,
   projectPrOperationEvent,
 } from '../pr-events/tool-defs.js'
 
 const prRegistry = new EventNormalizerRegistry()
-prRegistry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
+for (const t of PR_EVENT_TYPES) prRegistry.register(t, normalizePrGenericEvent)
+prRegistry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
 
 const WS = '/abs/ws'
 
@@ -281,7 +283,7 @@ describe('runManualDevCleanup', () => {
     expect(envelope).toMatchObject({
       workspacePath: WS,
       sessionId: 'sess-1',
-      event: { type: 'pr:operation' },
+      event: { type: 'pr:create' },
     })
     expect(projectPrOperationEvent(envelope.event)).toEqual({
       operation: 'create',

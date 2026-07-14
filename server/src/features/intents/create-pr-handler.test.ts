@@ -15,7 +15,11 @@ import type { GenericEvent, ServerToClient } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
-import { PR_EVENT_TYPE, normalizePrGenericEvent } from '../pr-events/tool-defs.js'
+import {
+  PR_EVENT_TYPES,
+  PR_LEGACY_EVENT_TYPE,
+  normalizePrGenericEvent,
+} from '../pr-events/tool-defs.js'
 
 vi.mock('../../git.js', async () => {
   const actual = await vi.importActual<typeof import('../../git.js')>('../../git.js')
@@ -109,7 +113,8 @@ function fakeCtx(): {
   const broadcast = vi.fn()
   const publish = vi.fn()
   const registry = new EventNormalizerRegistry()
-  registry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
+  for (const t of PR_EVENT_TYPES) registry.register(t, normalizePrGenericEvent)
+  registry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
   const ctx = {
     broadcastIntents: broadcast,
     eventBus: { publish },

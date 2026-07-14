@@ -20,7 +20,8 @@ import { EventBus } from '../../kernel/events/event-bus.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import { createPublishEventMcpServer } from './publish-tool.js'
 import {
-  PR_EVENT_TYPE,
+  PR_EVENT_TYPES,
+  PR_LEGACY_EVENT_TYPE,
   normalizePrGenericEvent,
   projectPrOperationEvent,
   runServerSidePrCreate,
@@ -45,7 +46,8 @@ function wire() {
   })
 
   const registry = new EventNormalizerRegistry()
-  registry.register(PR_EVENT_TYPE, normalizePrGenericEvent)
+  registry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
+  for (const t of PR_EVENT_TYPES) registry.register(t, normalizePrGenericEvent)
   const normalizeEvent = (core: GenericEvent) => registry.normalize(core)
   const publishEvent = (payload: GenericEventEnvelope) => eventBus.publish('event', payload)
   return { eventBus, received, normalizeEvent, publishEvent }
@@ -77,7 +79,7 @@ describe('PR event integration — model tool + server-side create share the gen
     expect(received).toHaveLength(1)
     expect(received[0].workspacePath).toBe('/proj')
     expect(received[0].sessionId).toBe('real-7')
-    expect(received[0].event.type).toBe(PR_EVENT_TYPE)
+    expect(received[0].event.type).toBe(PR_LEGACY_EVENT_TYPE)
     expect(projectPrOperationEvent(received[0].event)).toEqual({
       operation: 'review',
       result: 'success',

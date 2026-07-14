@@ -98,10 +98,12 @@ function automationLabel(s: Automation): string {
   return `${tag} · ${name || triggerSummary(s)}`
 }
 
-// 触发摘要:cron 任务显示 cron 表达式;event 任务显示订阅的事件 type(通用字符串)。
+// 触发摘要:cron 任务显示 cron 表达式;event 任务显示订阅行的事件 type 列表(通用字符串)。
 function triggerSummary(s: Automation): string {
   if (s.triggerType === 'event') {
-    return s.eventFilter?.type ?? t('automation.form.trigger.event.label')
+    return (
+      s.eventFilters?.map((f) => f.type).join(' · ') || t('automation.form.trigger.event.label')
+    )
   }
   return s.cronExpression
 }

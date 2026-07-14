@@ -95,13 +95,15 @@ describe('automation chain: A (metadata) → B (sessionKind=automation + metadat
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: {
-        type: 'run:settled',
-        metadata: {
-          conditions: [{ key: 'pipeline', value: 'deploy' }],
-          combinator: 'AND',
+      eventFilters: [
+        {
+          type: 'run:settled',
+          metadata: {
+            conditions: [{ key: 'pipeline', value: 'deploy' }],
+            combinator: 'AND',
+          },
         },
-      },
+      ],
       eventSessionKindFilter: ['automation'],
       mode: 'sandboxed',
       vendor: 'claude',
@@ -138,13 +140,15 @@ describe('automation chain: A (metadata) → B (sessionKind=automation + metadat
       workspaceId: proj,
       triggerType: 'event',
       cronExpression: '',
-      eventFilter: {
-        type: 'run:settled',
-        metadata: {
-          conditions: [{ key: 'pipeline', value: 'deploy' }],
-          combinator: 'AND',
+      eventFilters: [
+        {
+          type: 'run:settled',
+          metadata: {
+            conditions: [{ key: 'pipeline', value: 'deploy' }],
+            combinator: 'AND',
+          },
         },
-      },
+      ],
       eventSessionKindFilter: ['automation'],
       mode: 'sandboxed',
       vendor: 'claude',

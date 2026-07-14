@@ -42,7 +42,11 @@ import { createSpecQueryMcpServer } from './features/intents/spec-query-tool.js'
 import { runFind, runView } from './features/intents/tool-defs.js'
 import { gatedSave } from './features/intents/save-gate.js'
 import { createPublishEventMcpServer } from './features/pr-events/publish-tool.js'
-import { normalizePrGenericEvent, PR_EVENT_TYPE } from './features/pr-events/tool-defs.js'
+import {
+  normalizePrGenericEvent,
+  PR_EVENT_TYPES,
+  PR_LEGACY_EVENT_TYPE,
+} from './features/pr-events/tool-defs.js'
 import { runPublishEvent } from './features/events/tool-defs.js'
 import { configureAutomationMcp } from './features/automations/c3-mcp.js'
 import type { AutomationMcpDeps } from './features/automations/c3-mcp.js'
@@ -435,12 +439,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Generic event contract + kernel normalizer registry. Every model-publishable
   // event is routed through `type → normalizer`: an UNREGISTERED type is rejected,
   // and the registered normalizer performs the field-level redaction/truncation.
-  // The PR operation event is the first registered type (`pr:operation`); its
-  // normalizer is the SINGLE normalization used by both the model publish paths
-  // and the three server-side PR-create paths. `normalizeEvent` is injected wide;
-  // a missing PR registration is a publish failure, never a bypass.
+  // The PR event types (`pr:<operation>`, plus the retired `pr:operation` alias
+  // the normalizer rewrites) are the first registered set; their normalizer is
+  // the SINGLE normalization used by both the model publish paths and the three
+  // server-side PR-create paths. `normalizeEvent` is injected wide; a missing PR
+  // registration is a publish failure, never a bypass.
   const eventNormalizers = new EventNormalizerRegistry()
-  eventNormalizers.register(PR_EVENT_TYPE, normalizePrGenericEvent)
+  for (const type of PR_EVENT_TYPES) eventNormalizers.register(type, normalizePrGenericEvent)
+  eventNormalizers.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
   const normalizeEvent = (core: import('@ccc/shared/protocol').GenericEvent) =>
     eventNormalizers.normalize(core)
 

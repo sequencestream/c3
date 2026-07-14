@@ -21,7 +21,7 @@ function makeAutomation(over: Partial<Automation> = {}): Automation {
     triggerType: 'cron',
     cronExpression: '*/5 * * * *',
     nextRunAt: 123,
-    eventFilter: null,
+    eventFilters: null,
     eventSessionKindFilter: null,
     metadata: {},
     status: 'active',
@@ -193,7 +193,7 @@ describe('mapToCreateInput — fault-tolerant field mapping', () => {
     )
     if (!result.importable) throw new Error('expected importable')
     expect(result.input.triggerType).toBe('cron')
-    expect(result.input.eventFilter).toBeNull()
+    expect(result.input.eventFilters).toBeNull()
     expect(result.input.eventSessionKindFilter).toBeNull()
   })
 
@@ -212,23 +212,23 @@ describe('mapToCreateInput — fault-tolerant field mapping', () => {
     if (!result.importable) throw new Error('expected importable')
     expect(result.input.triggerType).toBe('event')
     expect(result.input.cronExpression).toBe('')
-    expect(result.input.eventFilter).toEqual({ type: 'run:settled', statuses: ['error'] })
+    expect(result.input.eventFilters).toEqual([{ type: 'run:settled', statuses: ['error'] }])
     expect(result.input.eventSessionKindFilter).toEqual(['work', 'intent'])
   })
 
-  it('accepts a new-format eventFilter directly (round-tripping a modern export)', () => {
+  it('accepts a new-format eventFilters directly (round-tripping a modern export)', () => {
     const result = mapToCreateInput(
       {
         type: 'command',
         triggerType: 'event',
-        eventFilter: { type: 'run:settled', statuses: ['error'] },
+        eventFilters: [{ type: 'run:settled', statuses: ['error'] }],
         eventSessionKindFilter: ['work'],
       },
       opts,
     )
     if (!result.importable) throw new Error('expected importable')
     expect(result.input.triggerType).toBe('event')
-    expect(result.input.eventFilter).toEqual({ type: 'run:settled', statuses: ['error'] })
+    expect(result.input.eventFilters).toEqual([{ type: 'run:settled', statuses: ['error'] }])
   })
 
   it('falls back a run-lifecycle trigger with no valid sessionKind filter to ["work"]', () => {
@@ -250,7 +250,7 @@ describe('mapToCreateInput — fault-tolerant field mapping', () => {
     if (!result.importable) throw new Error('expected importable')
     expect(result.input.triggerType).toBe('cron')
     expect(result.input.cronExpression).toBe('*/30 * * * *')
-    expect(result.input.eventFilter).toBeNull()
+    expect(result.input.eventFilters).toBeNull()
   })
 
   it('accepts a custom (non-hardcoded) event type with no protocol enum change', () => {
@@ -258,13 +258,13 @@ describe('mapToCreateInput — fault-tolerant field mapping', () => {
       {
         type: 'command',
         triggerType: 'event',
-        eventFilter: { type: 'custom:thing', statuses: ['ok'] },
+        eventFilters: [{ type: 'custom:thing', statuses: ['ok'] }],
       },
       opts,
     )
     if (!result.importable) throw new Error('expected importable')
     expect(result.input.triggerType).toBe('event')
-    expect(result.input.eventFilter).toEqual({ type: 'custom:thing', statuses: ['ok'] })
+    expect(result.input.eventFilters).toEqual([{ type: 'custom:thing', statuses: ['ok'] }])
     // A custom (non-run-lifecycle) type carries no sessionKind boundary.
     expect(result.input.eventSessionKindFilter).toBeNull()
   })
@@ -280,11 +280,7 @@ describe('mapToCreateInput — fault-tolerant field mapping', () => {
       opts,
     )
     if (!result.importable) throw new Error('expected importable')
-    expect(result.input.eventFilter).toEqual({
-      type: 'pr:operation',
-      statuses: ['success'],
-      metadata: { conditions: [{ key: 'operation', value: 'merge' }], combinator: 'OR' },
-    })
+    expect(result.input.eventFilters).toEqual([{ type: 'pr:merge', statuses: ['success'] }])
   })
 
   it('keeps a valid exported llm agentId of the same vendor', () => {

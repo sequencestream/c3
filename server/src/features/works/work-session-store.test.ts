@@ -334,7 +334,7 @@ describe('automation execution projection rows', () => {
         triggerType: 'cron',
         cronExpression: '0 1 * * *',
         nextRunAt: null,
-        eventFilter: null,
+        eventFilters: null,
         status: 'active',
         mode: 'default',
         toolAllowlist: [],

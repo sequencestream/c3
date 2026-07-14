@@ -210,7 +210,7 @@ export async function runManualDevCleanup(
   deps.setPrInfo(intentId, pr.prId, 'reviewing', pr.prUrl ?? null)
   deps.broadcastIntents(workspacePath)
 
-  // Publish a pr:operation create event so event-triggered automations can react.
+  // Publish a pr:create event so event-triggered automations can react.
   const effectiveSessionId = sessionId ?? intentId
   runServerSidePrCreate(
     {

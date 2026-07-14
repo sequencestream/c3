@@ -431,12 +431,12 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastWaitUserEvents(workspacePath)
   })
 
-  // ── event (pr:operation update/success) — intent PR-status reset ──────────
+  // ── event (pr:update/success) — intent PR-status reset ────────────────────
   // Resident intent-domain consumer, registered alongside the run-lifecycle
   // subscriptions and INDEPENDENT of the Automation dispatch bridge in
   // `scheduler-startup.ts`. It subscribes to the single generic `'event'` topic;
-  // `handlePrUpdateEvent` discriminates `pr:operation` and projects the fields.
-  // When the model publishes `update/success` for an intent whose PR was
+  // `handlePrUpdateEvent` discriminates the `pr:` category and projects the fields.
+  // When the model publishes `pr:update` + `success` for an intent whose PR was
   // rejected/failed/closed, reset it back to `reviewing`, log `pr_updated`, and
   // broadcast. All other cases (non-PR type included) are silently ignored.
   eventBus.subscribe('event', (envelope) => {

@@ -33,10 +33,14 @@ import {
   INTENT_LIFECYCLE_PHASES,
   PR_OPERATIONS,
   PR_OPERATION_RESULTS,
+  RUN_END_REASONS,
   SESSION_KINDS,
+  hasRunLifecycleEventFilter,
   isValidAutomationMaxWallClockMs,
   normalizeAutomationMetadata,
   normalizeGenericEventFilter,
+  normalizeGenericEventFilters,
+  upgradeV12EventFilter,
 } from '@ccc/shared/protocol'
 
 /** Current export file contract. `version` is validated with a strict `=== 1`. */
@@ -52,10 +56,6 @@ const DEFAULT_MODE: ModeToken = 'read-only'
 const AUTOMATION_TYPES: readonly AutomationType[] = ['command', 'llm']
 const VENDOR_IDS: readonly VendorId[] = ['claude', 'codex']
 const TRIGGER_TYPES: readonly ScheduleTriggerType[] = ['cron', 'event']
-// The run-lifecycle event types still gate the sessionKind security boundary on
-// import; every other type does not.
-const RUN_LIFECYCLE_TYPES: ReadonlySet<string> = new Set(['run:started', 'run:settled'])
-const RUN_END_REASONS: readonly RunEndReason[] = ['complete', 'error', 'aborted']
 
 /** The versioned export envelope written to / read from disk. */
 export interface AutomationExportFile {
@@ -109,18 +109,22 @@ function pickEnumArray<T extends string>(value: unknown, allowed: readonly T[]):
 }
 
 /**
- * Resolve the generic event filter for an imported member, tolerant of BOTH the
- * new `eventFilter` shape and the retired per-topic fields. A new-format export is
- * normalized directly; a legacy export (`eventTopic` + `eventReasonFilter` /
- * `eventPrFilter` / `eventIntentFilter` / `eventMetadataFilter`) is projected to
- * the exact same generic filter the server migration produces (topic→type;
- * reason/result/phase→statuses; PR operations→OR conditions on `operation`; run
- * metadata filter→metadata). Returns `null` when no valid event type survives.
+ * Resolve the subscription rows for an imported member, tolerant of every export
+ * generation: the current `eventFilters` array, the v12 single `eventFilter`
+ * (upgraded via the shared {@link upgradeV12EventFilter}, same projection as the
+ * server schema backfill), and the retired per-topic fields (`eventTopic` +
+ * `eventReasonFilter` / `eventPrFilter` / `eventIntentFilter` /
+ * `eventMetadataFilter`, projected to the v12 shape first). Returns `null` when
+ * no valid subscription survives.
  */
-function pickEventFilter(raw: Record<string, unknown>): GenericEventFilter | null {
-  // Prefer a present new-format filter.
-  const direct = normalizeGenericEventFilter(raw.eventFilter)
-  if (direct) return direct
+function pickEventFilters(raw: Record<string, unknown>): GenericEventFilter[] | null {
+  // Prefer a present current-format list.
+  const rows = normalizeGenericEventFilters(raw.eventFilters)
+  if (rows) return rows
+
+  // A v12 export carries the single filter shape.
+  const single = normalizeGenericEventFilter(raw.eventFilter)
+  if (single) return upgradeV12EventFilter(single)
 
   // Legacy projection.
   const type = typeof raw.eventTopic === 'string' ? raw.eventTopic.trim() : ''
@@ -163,8 +167,10 @@ function pickEventFilter(raw: Record<string, unknown>): GenericEventFilter | nul
 
   if (statuses.length) filter.statuses = statuses
   if (metadata) filter.metadata = metadata
-  // Round-trip through the shared normalizer so the imported filter matches server hygiene.
-  return normalizeGenericEventFilter(filter)
+  // Round-trip through the shared normalizer so the imported filter matches
+  // server hygiene, then lift the v12 shape to subscription rows.
+  const normalized = normalizeGenericEventFilter(filter)
+  return normalized ? upgradeV12EventFilter(normalized) : null
 }
 
 /** Read a string `config.name` (the exported display title), else `undefined`. */
@@ -298,8 +304,8 @@ export function mapToCreateInput(
   // Trigger resolution: an event trigger needs a valid generic filter (new or
   // legacy shape), else it demotes to cron.
   const rawTrigger = pickEnum<ScheduleTriggerType>(raw.triggerType, TRIGGER_TYPES, 'cron')
-  const eventFilter = rawTrigger === 'event' ? pickEventFilter(raw) : null
-  const isEvent = eventFilter !== null
+  const eventFilters = rawTrigger === 'event' ? pickEventFilters(raw) : null
+  const isEvent = eventFilters !== null
 
   const input: CreateAutomationInput = {
     type,
@@ -315,7 +321,7 @@ export function mapToCreateInput(
       : typeof raw.cronExpression === 'string' && raw.cronExpression.trim()
         ? raw.cronExpression
         : DEFAULT_CRON,
-    eventFilter,
+    eventFilters,
     eventSessionKindFilter: null,
     metadata: normalizeAutomationMetadata(raw.metadata),
     toolAllowlist: pickStringArray(raw.toolAllowlist),
@@ -324,10 +330,10 @@ export function mapToCreateInput(
   }
   if (initialName) input.initialName = initialName
 
-  // A run-lifecycle event trigger requires a non-empty sessionKind filter; fall
+  // A run-lifecycle subscription requires a non-empty sessionKind filter; fall
   // back to the behaviour-preserving ['work'] (matching the server migration) when
   // the export lacks a valid one.
-  if (isEvent && eventFilter && RUN_LIFECYCLE_TYPES.has(eventFilter.type)) {
+  if (isEvent && hasRunLifecycleEventFilter(eventFilters)) {
     const skf = pickEnumArray<SessionKind>(raw.eventSessionKindFilter, SESSION_KINDS)
     input.eventSessionKindFilter = skf && skf.length ? skf : ['work']
   }

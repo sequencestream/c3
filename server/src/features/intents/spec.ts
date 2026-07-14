@@ -285,6 +285,15 @@ export const approveSpecHandler: Handler<'approve_spec'> = (ctx, conn, msg) => {
   setSpecApproved(intent.id, true, conn.subject)
   safeInsertIntentLog(intent.id, 'spec_approved', '批准 spec', conn.subject)
   ctx.broadcastIntents(proj)
+  // Publish a generic event so event-triggered automations can react to spec approval.
+  ctx.eventBus.publish('event', {
+    workspacePath: proj,
+    sessionId: randomUUID(),
+    event: {
+      type: 'intent:spec_approve',
+      metadata: { intentId: intent.id, title: intent.title ?? '' },
+    },
+  })
 }
 
 /**

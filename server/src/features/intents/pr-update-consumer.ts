@@ -20,7 +20,7 @@
  * ignored (the publish itself already succeeded, so there is nothing to error on).
  */
 import type { GenericEventEnvelope, IntentPrStatus } from '@ccc/shared/protocol'
-import { PR_EVENT_TYPE, projectPrOperationEvent } from '../pr-events/tool-defs.js'
+import { projectPrOperationEvent } from '../pr-events/tool-defs.js'
 
 /** PR statuses that an `update/success` event may reset back to `reviewing`. */
 const RESETTABLE_PR_STATUSES: readonly IntentPrStatus[] = ['rejected', 'failed', 'closed']
@@ -59,7 +59,7 @@ export function handlePrUpdateEvent(
   envelope: GenericEventEnvelope,
   deps: PrUpdateConsumerDeps,
 ): boolean {
-  if (envelope.event.type !== PR_EVENT_TYPE) return false
+  if (!envelope.event.type.startsWith('pr:')) return false
   const pr = projectPrOperationEvent(envelope.event)
   if (!pr) return false
   if (pr.operation !== 'update' || pr.result !== 'success') return false

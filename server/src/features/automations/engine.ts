@@ -22,7 +22,7 @@ export { computeNextRunAt }
 
 export type ExecutionStore = {
   getDueAutomations: (now: number) => Automation[]
-  /** Active event-trigger automations whose `eventFilter.type` equals the given type. */
+  /** Active event-trigger automations with a subscription row accepting the given type. */
   getEventAutomations: (type: string) => Automation[]
   getAutomation: (id: string) => Automation | null
   updateNextRunAt: (id: string, nextRunAt: number | null) => void

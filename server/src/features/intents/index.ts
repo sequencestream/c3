@@ -994,7 +994,7 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
       ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
       conn.send({ type: 'create_pr_response', prId: pr.prId, prUrl: pr.prUrl ?? pr.prId })
 
-      // Publish a pr:operation create event so event-triggered automations can react.
+      // Publish a pr:create event so event-triggered automations can react.
       runServerSidePrCreate(
         {
           prId: pr.prId,

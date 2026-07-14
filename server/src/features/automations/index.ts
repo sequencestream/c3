@@ -24,8 +24,9 @@ import type { AutomationNameOverride } from './store.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { requireAdmin } from '../auth/authz.js'
 import {
+  hasRunLifecycleEventFilter,
   isValidAutomationMaxWallClockMs,
-  normalizeGenericEventFilter,
+  normalizeGenericEventFilters,
   type ToolManifestEntry,
 } from '@ccc/shared/protocol'
 import { C3_MCP_TOOLS } from './mcp-freeze.js'
@@ -69,25 +70,21 @@ export const createAutomationHandler: Handler<'create_automation'> = async (ctx,
     conn.send({ type: 'error', error: { code: 'automation.dbUnavailable' } })
     return
   }
-  // An event-triggered automation whose filter has no valid event type is a dead
-  // task (it can never match), so reject it up front rather than persisting a no-op
-  // or silently widening it to "matches every type".
-  if (
-    (msg.input.triggerType ?? 'cron') === 'event' &&
-    !normalizeGenericEventFilter(msg.input.eventFilter)
-  ) {
+  // An event-triggered automation whose subscription rows all lack a valid event
+  // type is a dead task (it can never match), so reject it up front rather than
+  // persisting a no-op or silently widening it to "matches every type".
+  const createdFilters =
+    (msg.input.triggerType ?? 'cron') === 'event'
+      ? normalizeGenericEventFilters(msg.input.eventFilters)
+      : null
+  if ((msg.input.triggerType ?? 'cron') === 'event' && !createdFilters) {
     conn.send({ type: 'error', error: { code: 'automation.invalidEventTrigger' } })
     return
   }
-  // A run-lifecycle event trigger MUST declare at least one sessionKind (the form
+  // A run-lifecycle subscription MUST declare at least one sessionKind (the form
   // pre-selects none); reject an empty/absent filter server-side rather than
   // relying on the front-end disabled button.
-  if (
-    (msg.input.triggerType ?? 'cron') === 'event' &&
-    (msg.input.eventFilter?.type === 'run:started' ||
-      msg.input.eventFilter?.type === 'run:settled') &&
-    !msg.input.eventSessionKindFilter?.length
-  ) {
+  if (hasRunLifecycleEventFilter(createdFilters) && !msg.input.eventSessionKindFilter?.length) {
     conn.send({ type: 'error', error: { code: 'automation.missingSessionKindFilter' } })
     return
   }
@@ -149,18 +146,18 @@ export const updateAutomationHandler: Handler<'update_automation'> = async (ctx,
     conn.send({ type: 'error', error: { code: agentError } })
     return
   }
-  // Reject an update that would leave an event-triggered automation without a valid
-  // event type (either switching to 'event' without a filter, or clearing an
-  // existing one). Use the patch's filter if present, else the stored one.
+  // Reject an update that would leave an event-triggered automation without a
+  // valid subscription (either switching to 'event' without rows, or clearing the
+  // existing ones). Use the patch's rows if present, else the stored ones.
   const nextTrigger = msg.input.triggerType ?? existing.triggerType
-  const nextFilter =
-    msg.input.eventFilter !== undefined ? msg.input.eventFilter : existing.eventFilter
-  const nextFilterType = normalizeGenericEventFilter(nextFilter)?.type ?? null
-  if (nextTrigger === 'event' && !nextFilterType) {
+  const nextFilters = normalizeGenericEventFilters(
+    msg.input.eventFilters !== undefined ? msg.input.eventFilters : existing.eventFilters,
+  )
+  if (nextTrigger === 'event' && !nextFilters) {
     conn.send({ type: 'error', error: { code: 'automation.invalidEventTrigger' } })
     return
   }
-  // A run-lifecycle event trigger must keep a non-empty sessionKind filter — whether
+  // A run-lifecycle subscription must keep a non-empty sessionKind filter — whether
   // switching into one or editing an existing one (use the patch value if present,
   // else the stored one).
   const nextSessionKindFilter =
@@ -169,7 +166,7 @@ export const updateAutomationHandler: Handler<'update_automation'> = async (ctx,
       : existing.eventSessionKindFilter
   if (
     nextTrigger === 'event' &&
-    (nextFilterType === 'run:started' || nextFilterType === 'run:settled') &&
+    hasRunLifecycleEventFilter(nextFilters) &&
     !nextSessionKindFilter?.length
   ) {
     conn.send({ type: 'error', error: { code: 'automation.missingSessionKindFilter' } })

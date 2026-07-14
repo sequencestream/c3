@@ -1154,3 +1154,80 @@ describe('AutomationForm.vue — 弹窗宽度 / 工具区高度样式契约', ()
     expect(many.findAll('.sf-tool-item')).toHaveLength(manyRead.length + manyWrite.length)
   })
 })
+
+// ---- Config-item grouping & separation -----------------------------------
+//
+// Each direct child of a section body is one top-level config item carrying the
+// stable `.sf-item` grouping marker; adjacent items are split by a divider, and
+// composite items (cron builder, event block, tool checklist) never expose an
+// inner `.sf-item`. Since only direct children carry the marker, `findAll` over
+// a section returns exactly that section's config items in document order.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function sectionItems(w: any, id: string) {
+  return w.find(`[data-testid="${id}"]`).findAll('.sf-item')
+}
+
+describe('AutomationForm.vue — 配置项归组与分隔结构', () => {
+  it('create:各多项分区的直接配置项带稳定归组标识 sf-item', () => {
+    const w = mountForm({ toolManifest: { claude: ALL_TOOLS } })
+    // 基本信息(command + cron):任务类型 / 命令 / 超时 = 3(无 Title、无嵌入项)。
+    expect(sectionItems(w, 'section-basic')).toHaveLength(3)
+    // 触发条件:触发类型 + cron 构造块 = 2。
+    expect(sectionItems(w, 'section-trigger')).toHaveLength(2)
+    // 执行身份:vendor + 权限模式 = 2。
+    expect(sectionItems(w, 'section-execution')).toHaveLength(2)
+    // 工具权限(claude):工具清单 = 1(无网络项)。
+    expect(sectionItems(w, 'section-tools')).toHaveLength(1)
+  })
+
+  it('单项分区(metadata)只有一个配置项 → 无首尾分隔', () => {
+    expect(sectionItems(mountForm(), 'section-metadata')).toHaveLength(1)
+  })
+
+  it('edit:基本信息分区多出 Title 配置项 = 4', () => {
+    const w = mountForm({ automation: sched() })
+    expect(sectionItems(w, 'section-basic')).toHaveLength(4)
+  })
+
+  it('命令 ↔ LLM 切换:归组随可见项重排,无孤立分隔', async () => {
+    const w = mountForm()
+    expect(sectionItems(w, 'section-basic')).toHaveLength(3) // command
+    await w.findAll('.sf-segmented')[0].findAll('.sf-seg')[1].trigger('click') // llm(cron)
+    // 命令项换为提示项,嵌入项仅 event+llm 才出现 → 仍 3 项。
+    expect(sectionItems(w, 'section-basic')).toHaveLength(3)
+  })
+
+  it('event+LLM:基本信息分区显示嵌入事件配置项 → 4 项', async () => {
+    const w = mountForm()
+    await w.findAll('.sf-segmented')[0].findAll('.sf-seg')[1].trigger('click') // llm
+    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
+    // 任务类型 + 提示 + 嵌入事件 + 超时 = 4。
+    expect(sectionItems(w, 'section-basic')).toHaveLength(4)
+  })
+
+  it('cron ↔ event 切换:触发分区恒为两项,事件复合内容不作顶层配置项', async () => {
+    const w = mountForm()
+    expect(sectionItems(w, 'section-trigger')).toHaveLength(2) // 触发类型 + cron 块
+    await w.findAll('.sf-segmented')[1].findAll('.sf-seg')[1].trigger('click') // event
+    const items = sectionItems(w, 'section-trigger')
+    expect(items).toHaveLength(2) // 触发类型 + 事件块
+    // 事件块是复合顶层项:订阅行/条件/sessionKind 属其内部,不套用顶层分隔标识。
+    const eventItem = items[1]
+    expect(eventItem.find('[data-testid="event-filter-row"]').exists()).toBe(true)
+    expect(eventItem.findAll('.sf-item')).toHaveLength(0)
+  })
+
+  it('claude ↔ codex 切换:工具分区在 codex 下多出网络访问配置项', async () => {
+    const w = mountForm({ toolManifest: { claude: ALL_TOOLS, codex: ALL_TOOLS } })
+    expect(sectionItems(w, 'section-tools')).toHaveLength(1) // claude
+    await w.find('select.sf-select').setValue('codex')
+    expect(sectionItems(w, 'section-tools')).toHaveLength(2) // + 网络访问
+  })
+
+  it('样式契约:相邻配置项间才有分隔线(border-top + 对称 padding),单项分区不触发', () => {
+    const rule = ruleBody(componentSrc, '.sf-section-body > .sf-item + .sf-item')
+    expect(rule).toMatch(/border-top:/)
+    expect(rule).toMatch(/padding-top:/)
+  })
+})

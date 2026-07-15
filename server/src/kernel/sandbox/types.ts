@@ -85,7 +85,7 @@ export interface SystemSandboxDef {
   /**
    * Network egress allowlist — CIDR or hostname patterns allowed through.
    * When non-empty, enables limited network egress (overrides the workspace
-   * {@link WorkspaceSandboxConfig.networkDisabled} flag).
+   * {@link WorkspaceSandboxConfig.allowExternalNetwork} flag).
    *
    * Phase 2 (planned) — MVP throws unsupported if configured.
    *
@@ -120,11 +120,12 @@ export interface WorkspaceSandboxConfig {
    */
   readonly agentIds?: readonly string[]
   /**
-   * Per-workspace network policy (deny-by-default).
-   * When true or unset, the container has no network access. Set to false to
-   * grant network egress (subject to the system def's networkAllowlist).
+   * Per-workspace external-egress toggle (deny-by-default).
+   * When unset or false, the container has no external network access (it still
+   * joins the internal c3-mcp network so the agent can reach c3's MCP). Set to
+   * true to grant external egress (subject to the system def's networkAllowlist).
    */
-  readonly networkDisabled?: boolean
+  readonly allowExternalNetwork?: boolean
   /**
    * Per-workspace read-only root filesystem policy (deny-by-default).
    * When true or unset, the container root filesystem is read-only.

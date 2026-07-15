@@ -83,26 +83,26 @@ describe('normalizeSandboxConfig invariants (via normalizeWorkspaceSetting)', ()
     expect(result.sandbox?.agentIds).toEqual(['b', 'a'])
   })
 
-  it('persists explicit networkDisabled / readonlyRootfs (true and false survive)', () => {
+  it('persists explicit allowExternalNetwork / readonlyRootfs (true and false survive)', () => {
     const loosened = normalizeWorkspaceSetting(
       {
         gitBranchMode: 'worktree',
-        sandbox: { ...ENABLED_SANDBOX, networkDisabled: false, readonlyRootfs: false },
+        sandbox: { ...ENABLED_SANDBOX, allowExternalNetwork: true, readonlyRootfs: false },
       },
       [],
     )
-    // A `false` (loosen the deny-by-default policy) must round-trip, not be dropped.
-    expect(loosened.sandbox?.networkDisabled).toBe(false)
+    // A `true` (loosen the deny-by-default policy) must round-trip, not be dropped.
+    expect(loosened.sandbox?.allowExternalNetwork).toBe(true)
     expect(loosened.sandbox?.readonlyRootfs).toBe(false)
 
     const tightened = normalizeWorkspaceSetting(
       {
         gitBranchMode: 'worktree',
-        sandbox: { ...ENABLED_SANDBOX, networkDisabled: true, readonlyRootfs: true },
+        sandbox: { ...ENABLED_SANDBOX, allowExternalNetwork: false, readonlyRootfs: true },
       },
       [],
     )
-    expect(tightened.sandbox?.networkDisabled).toBe(true)
+    expect(tightened.sandbox?.allowExternalNetwork).toBe(false)
     expect(tightened.sandbox?.readonlyRootfs).toBe(true)
   })
 
@@ -111,7 +111,21 @@ describe('normalizeSandboxConfig invariants (via normalizeWorkspaceSetting)', ()
       { gitBranchMode: 'worktree', sandbox: { ...ENABLED_SANDBOX } },
       [],
     )
-    expect(result.sandbox?.networkDisabled).toBeUndefined()
+    expect(result.sandbox?.allowExternalNetwork).toBeUndefined()
     expect(result.sandbox?.readonlyRootfs).toBeUndefined()
+  })
+
+  it('migrates legacy on-disk networkDisabled to allowExternalNetwork (inverted)', () => {
+    const fromDisabled = normalizeWorkspaceSetting(
+      { gitBranchMode: 'worktree', sandbox: { ...ENABLED_SANDBOX, networkDisabled: true } },
+      [],
+    )
+    expect(fromDisabled.sandbox?.allowExternalNetwork).toBe(false)
+
+    const fromEnabled = normalizeWorkspaceSetting(
+      { gitBranchMode: 'worktree', sandbox: { ...ENABLED_SANDBOX, networkDisabled: false } },
+      [],
+    )
+    expect(fromEnabled.sandbox?.allowExternalNetwork).toBe(true)
   })
 })

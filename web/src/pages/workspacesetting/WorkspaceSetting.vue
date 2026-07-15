@@ -198,11 +198,11 @@ function seedSandbox(
   if (raw && raw.sandbox && sandboxes.some((sb) => sb.name === raw.sandbox)) {
     return {
       ...raw,
-      networkDisabled: raw.networkDisabled ?? true,
+      allowExternalNetwork: raw.allowExternalNetwork ?? false,
       readonlyRootfs: raw.readonlyRootfs ?? true,
     }
   }
-  return { networkDisabled: true, readonlyRootfs: true }
+  return { allowExternalNetwork: false, readonlyRootfs: true }
 }
 
 /**
@@ -338,7 +338,7 @@ function effectiveSandbox(
   if (!raw.enabled) return undefined
   return {
     ...raw,
-    networkDisabled: raw.networkDisabled ?? true,
+    allowExternalNetwork: raw.allowExternalNetwork ?? false,
     readonlyRootfs: raw.readonlyRootfs ?? true,
   }
 }
@@ -810,9 +810,9 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 
             <div class="project-config-row">
               <span class="project-config-row-label">{{
-                t('workspaceSetting.sandbox.networkDisabled.label')
+                t('workspaceSetting.sandbox.allowExternalNetwork.label')
               }}</span>
-              <input v-model="sandboxDraft.networkDisabled" type="checkbox" />
+              <input v-model="sandboxDraft.allowExternalNetwork" type="checkbox" />
             </div>
 
             <div class="project-config-row">

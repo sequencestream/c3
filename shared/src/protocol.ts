@@ -585,7 +585,7 @@ export interface SystemSandboxDef {
   /**
    * Network egress allowlist — CIDR or hostname patterns allowed through.
    * When non-empty, enables limited network egress (overrides the workspace
-   * {@link WorkspaceSandboxConfig.networkDisabled} flag).
+   * {@link WorkspaceSandboxConfig.allowExternalNetwork} flag).
    *
    * Phase 2 (planned) — MVP throws unsupported if configured.
    *
@@ -630,11 +630,15 @@ export interface WorkspaceSandboxConfig {
    */
   agentIds?: string[]
   /**
-   * Per-workspace network policy (deny-by-default).
-   * When true or unset, the container has no network access. Set to false to
-   * grant network egress (subject to the system def's {@link SystemSandboxDef.networkAllowlist}).
+   * Per-workspace external-egress toggle (deny-by-default). When unset/false the
+   * container joins ONLY the internal `c3-mcp-net` (c3 MCP reachable, no
+   * internet). When true it additionally gets an egress-capable network for
+   * DIRECT-mode provider calls / package fetches. The internal MCP network is
+   * always attached when the sandbox is enabled, regardless of this flag, so the
+   * agent can always reach c3's MCP endpoints (subject to the system def's
+   * {@link SystemSandboxDef.networkAllowlist} for external egress).
    */
-  networkDisabled?: boolean
+  allowExternalNetwork?: boolean
   /**
    * Per-workspace read-only root filesystem policy (deny-by-default).
    * When true or unset, the container root filesystem is read-only. Set to
@@ -649,6 +653,15 @@ export interface WorkspaceSandboxConfig {
   imageOverride?: string
   /** Additional env vars merged on top of the system def's envVars. */
   envVarsOverride?: Record<string, string>
+  /**
+   * Session kinds that run inside the sandbox when enabled. Absent ⇒ defaults
+   * to `['work']`. A run enters the sandbox only when its {@link SessionKind}
+   * is in this set, layered on top of the worktree-only + resolvable-def
+   * preconditions — kinds that never produce a worktree run simply never match.
+   * Server normalize dedupes and drops values outside {@link SESSION_KINDS};
+   * an empty set after normalize falls back to `['work']`.
+   */
+  sandboxSessionKinds?: SessionKind[]
 }
 
 /**

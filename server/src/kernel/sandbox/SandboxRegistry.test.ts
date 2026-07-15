@@ -189,11 +189,11 @@ describe('SandboxRegistry', () => {
       expect(resolved.image).toBe(DOCKER_DEFAULT.image)
     })
 
-    it('applies the workspace networkDisabled / readonlyRootfs overrides', () => {
+    it('applies the workspace allowExternalNetwork / readonlyRootfs overrides', () => {
       const reg = new SandboxRegistry()
       reg.register(DOCKER_DEFAULT)
       // Loosen both deny-by-default policies from the workspace config.
-      const resolved = reg.resolve('default', { networkDisabled: false, readonlyRootfs: false })
+      const resolved = reg.resolve('default', { allowExternalNetwork: true, readonlyRootfs: false })
       expect(resolved.networkDisabled).toBe(false)
       expect(resolved.readonlyRootfs).toBe(false)
     })

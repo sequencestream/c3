@@ -654,7 +654,10 @@ function normalizeSandboxConfig(
   if (rec.enabled === true) sb.enabled = true
   // Per-workspace security policies (deny-by-default at merge time). Persist the
   // explicit boolean either way so a `false` (loosen) survives — not just `true`.
-  if (typeof rec.networkDisabled === 'boolean') sb.networkDisabled = rec.networkDisabled
+  // Legacy on-disk `networkDisabled` migrates to `allowExternalNetwork` (inverted).
+  if (typeof rec.allowExternalNetwork === 'boolean')
+    sb.allowExternalNetwork = rec.allowExternalNetwork
+  else if (typeof rec.networkDisabled === 'boolean') sb.allowExternalNetwork = !rec.networkDisabled
   if (typeof rec.readonlyRootfs === 'boolean') sb.readonlyRootfs = rec.readonlyRootfs
   if (typeof rec.memoryLimitOverride === 'string' && rec.memoryLimitOverride.trim())
     sb.memoryLimitOverride = rec.memoryLimitOverride.trim()

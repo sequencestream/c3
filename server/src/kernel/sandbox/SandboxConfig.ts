@@ -66,7 +66,7 @@ export const systemSandboxDefSchema = z.object({
 export const workspaceSandboxConfigSchema = z.object({
   enabled: z.boolean().optional(),
   sandbox: z.string().optional(),
-  networkDisabled: z.boolean().optional(),
+  allowExternalNetwork: z.boolean().optional(),
   readonlyRootfs: z.boolean().optional(),
   imageOverride: z.string().optional(),
   memoryLimitOverride: z
@@ -85,8 +85,9 @@ export const workspaceSandboxConfigSchema = z.object({
  * Default values applied when neither the system def nor the workspace config
  * specifies an optional field.
  *
- * `networkDisabled` / `readonlyRootfs` are deny-by-default per-workspace
- * security policies: absent ⇒ no network, read-only root filesystem.
+ * `allowExternalNetwork` / `readonlyRootfs` are deny-by-default per-workspace
+ * security policies: absent ⇒ no external network (resolved `networkDisabled:
+ * true`), read-only root filesystem.
  */
 const DEFAULTS = {
   memoryLimit: '512m',
@@ -120,7 +121,7 @@ export function mergeSandboxConfig(
     memoryLimit: projectCfg?.memoryLimitOverride ?? systemDef.memoryLimit ?? DEFAULTS.memoryLimit,
     cpuLimit: projectCfg?.cpuLimitOverride ?? systemDef.cpuLimit ?? DEFAULTS.cpuLimit,
     resourceLimits: systemDef.resourceLimits,
-    networkDisabled: projectCfg?.networkDisabled ?? DEFAULTS.networkDisabled,
+    networkDisabled: projectCfg?.allowExternalNetwork === true ? false : DEFAULTS.networkDisabled,
     networkAllowlist: systemDef.networkAllowlist,
     readonlyRootfs: projectCfg?.readonlyRootfs ?? DEFAULTS.readonlyRootfs,
     envVars: {

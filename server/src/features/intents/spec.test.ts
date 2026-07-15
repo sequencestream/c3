@@ -228,7 +228,8 @@ describe('approveSpecHandler', () => {
     setSpecPath(r.id, '.specs/2026/06/18/2026-06-18-001-cache/spec.md')
 
     const broadcastIntents = vi.fn()
-    const ctx = { broadcastIntents } as unknown as KernelContext
+    const eventBus = { publish: vi.fn() }
+    const ctx = { broadcastIntents, eventBus } as unknown as KernelContext
     const { conn, sent } = fakeConn({ subject: 'bob' })
 
     approveSpecHandler(ctx, conn, { type: 'approve_spec', workspaceId, intentId: r.id })

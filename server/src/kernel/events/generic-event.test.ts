@@ -1,9 +1,10 @@
 /**
- * Unit tests for the kernel `type → normalizer` registry (AC: unregistered type
- * rejected). Covers successful registration + dispatch, duplicate registration,
- * unknown type, and a normalizer that fails validation or throws. Every failure
- * must resolve to `{ ok: false }` WITHOUT surfacing raw sensitive values, and the
- * caller must never treat a failure as publishable.
+ * Unit tests for the kernel `type → normalizer` registry. Covers successful
+ * registration + dispatch, duplicate registration, the default-normalizer fallback
+ * for custom/unregistered types (open `<category>:<action>` contract), the
+ * still-closed behavior when no default is wired, and a normalizer that fails
+ * validation or throws. Every failure must resolve to `{ ok: false }` WITHOUT
+ * surfacing raw sensitive values, and the caller must never treat it as publishable.
  */
 import { describe, expect, it } from 'vitest'
 import type { GenericEvent } from '@ccc/shared/protocol'
@@ -43,8 +44,37 @@ describe('EventNormalizerRegistry — registration', () => {
   })
 })
 
+describe('EventNormalizerRegistry — default normalizer (open custom types)', () => {
+  it('falls through to the default normalizer for an unregistered type', () => {
+    const registry = new EventNormalizerRegistry((core) => ({ ...core, status: 'defaulted' }))
+    const res = registry.normalize({ type: 'custom:create', data: { a: 1 } })
+    expect(res).toEqual({
+      ok: true,
+      event: { type: 'custom:create', status: 'defaulted', data: { a: 1 } },
+    })
+  })
+
+  it('prefers a dedicated normalizer over the default when both match', () => {
+    const registry = new EventNormalizerRegistry(() => ({
+      type: 'custom:create',
+      status: 'default',
+    }))
+    registry.register('custom:create', (core) => ({ ...core, status: 'dedicated' }))
+    const res = registry.normalize({ type: 'custom:create' })
+    expect(res.ok && res.event.status).toBe('dedicated')
+  })
+
+  it('still rejects a default normalizer that changes the event type', () => {
+    const registry = new EventNormalizerRegistry(() => ({ type: 'forged' }))
+    const res = registry.normalize({ type: 'custom:create' })
+    expect(res.ok).toBe(false)
+    if (res.ok) return
+    expect(res.reason).toMatch(/must not change the event type/i)
+  })
+})
+
 describe('EventNormalizerRegistry.normalize — rejection (publishes nothing)', () => {
-  it('rejects an unknown type', () => {
+  it('rejects an unknown type when no default normalizer is wired', () => {
     const registry = new EventNormalizerRegistry()
     const res = registry.normalize({ type: 'never-registered' })
     expect(res.ok).toBe(false)

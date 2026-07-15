@@ -18,8 +18,10 @@
  * `status` / `description` / `metadata` / `data`) and calls this tool ONCE; the
  * core is normalized through the kernel registry and — on success only — wrapped
  * in a {@link GenericEventEnvelope} and delivered to the single `'event'` bus
- * topic. An UNREGISTERED type, an invalid core, or a normalizer rejection returns
- * an `isError` result and publishes NOTHING.
+ * topic. The `type` is an OPEN `<category>:<action>` string: a known type gets its
+ * typed normalizer, any custom type falls through to the default (structural)
+ * normalizer, and either way the payload is safely redacted/truncated. An invalid
+ * core or a normalizer rejection returns an `isError` result and publishes NOTHING.
  */
 import { z } from 'zod'
 import type { GenericEvent } from '@ccc/shared/protocol'
@@ -35,17 +37,19 @@ const text = (s: string): EventToolResult['content'] => [{ type: 'text' as const
 
 // ---- Zod input shape (raw shape; both `tool()` and `registerTool` accept it) ----
 //
-// Mirrors {@link GenericEvent}: `type` is the required, non-empty registered
-// discriminant; the rest is optional free-form context. The kernel registry
-// re-validates + normalizes per type after this gate, so this shape stays loose.
+// Mirrors {@link GenericEvent}: `type` is the required, non-empty open
+// `<category>:<action>` discriminant; the rest is optional free-form context. The
+// kernel registry re-validates + normalizes per type after this gate, so this
+// shape stays loose.
 
 export const publishEventSchema = {
   type: z
     .string()
     .describe(
-      '事件类型判别值(必填,非空),形如 "<大类>:<动作>",须为已注册类型,否则拒绝发布。' +
-        '当前支持 PR 操作事件:pr:create / pr:review / pr:merge / pr:close / ' +
-        'pr:comment / pr:update(update=已有 PR 修改后重新提交/重新打开,非新建)。',
+      '事件类型判别值(必填,非空),形如 "<大类>:<动作>"(开放字符串,可自定义,如 custom:create)。' +
+        '已知的 PR 操作事件:pr:create / pr:review / pr:merge / pr:close / ' +
+        'pr:comment / pr:update(update=已有 PR 修改后重新提交/重新打开,非新建),' +
+        '自定义 type 也会被安全归一化后发布。',
     ),
   status: z
     .string()
@@ -84,20 +88,20 @@ export const publishEventDesc =
   '发布一条供应商中立的通用事件到 c3 事件总线。你应先用自己的工具(gh CLI / GitHub MCP 等)' +
   '完成实际操作,c3 本身不执行任何操作;操作完成或失败后调用本工具发布对应事件,供订阅的 ' +
   'Automation / 消费者匹配并触发后续动作。入参为通用事件:type(必填,形如 "<大类>:<动作>",' +
-  '须为已注册类型)、status、description、metadata(扁平 string→string)、data(JSON)。' +
-  '当前支持 PR 操作事件 type=pr:create / pr:review / pr:merge / pr:close / pr:comment / ' +
+  '开放字符串,可自定义)、status、description、metadata(扁平 string→string)、data(JSON)。' +
+  '已知 PR 操作事件 type=pr:create / pr:review / pr:merge / pr:close / pr:comment / ' +
   'pr:update(update=已有 PR 修改后重新提交/重新打开,非新建):status 填操作结果 ' +
   'success/failure/error,data 携带 { pr, repo, ref, association },失败原因写入 description。' +
-  '服务端会对字段做安全归一化(脱敏/剥绝对路径/截断);未注册的 type 会被拒绝发布。'
+  '服务端会对所有字段做安全归一化(脱敏/剥绝对路径/截断);自定义 type 同样会被安全发布,不会因未预注册而拒绝。'
 
 // ---- Core publish logic (shared handler) ----
 
 /**
  * Validate + normalize the generic event core through the injected `normalize`
- * (the kernel registry: looks up `core.type`, runs the registered per-type
- * normalizer, re-validates) and publish the NORMALIZED event via the injected
- * `publish` sink (bound to the run's workspace + session at the composition root).
- * An unknown type, an invalid core, or a normalizer rejection returns an `isError`
+ * (the kernel registry: looks up `core.type`, runs the matching per-type or the
+ * default normalizer, re-validates) and publish the NORMALIZED event via the
+ * injected `publish` sink (bound to the run's workspace + session at the
+ * composition root). An invalid core or a normalizer rejection returns an `isError`
  * result and publishes NOTHING.
  */
 export function runPublishEvent(

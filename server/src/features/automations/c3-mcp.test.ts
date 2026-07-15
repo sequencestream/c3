@@ -19,7 +19,7 @@ vi.mock('../../state.js', async (importOriginal) => ({
   pathToId: (p: string) => p,
 }))
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
-import type { Discussion } from '@ccc/shared/protocol'
+import type { Discussion, GenericEvent, GenericEventEnvelope } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { listIntents, resetStoreForTests } from '../../features/intents/store.js'
 import { runSaveIntentDirectly } from '../../features/intents/tool-defs.js'
@@ -142,6 +142,67 @@ describe('automation c3 MCP injection boundary', () => {
     // registers, or a tool is registered but silently disabled on codex.
     const registered = registeredToolNames(createAutomationMcpServer(proj, 'exec-1')).sort()
     expect([...AUTOMATION_C3_TOOL_NAMES].sort()).toEqual(registered)
+  })
+})
+
+describe('automation c3 MCP — publish_event metadata seeding', () => {
+  /** Wire deps whose normalizeEvent echoes the core so we can inspect the merged metadata. */
+  function wireEchoDeps(sink: GenericEventEnvelope[]): void {
+    configureAutomationMcp({
+      broadcastIntents: () => {},
+      normalizeEvent: (core: GenericEvent) => ({ ok: true, event: core }),
+      publishEvent: (p) => sink.push(p),
+      broadcastDiscussions: () => {},
+      broadcastDiscussionMessage: () => {},
+      startDiscussionRun: () => {},
+      launchRun: vi.fn().mockResolvedValue(undefined),
+    })
+  }
+
+  it("seeds the automation's own metadata into the published event", async () => {
+    const published: GenericEventEnvelope[] = []
+    wireEchoDeps(published)
+    const handler = getHandler(
+      createAutomationMcpServer(proj, 'exec-1', { source: 'auto', run: 'nightly' }),
+      'publish_event',
+    )
+    const res = await handler({ type: 'custom:done', metadata: { extra: 'x' } }, {})
+    expect(res.isError).toBeFalsy()
+    expect(published).toHaveLength(1)
+    expect(published[0].event.metadata).toEqual({ source: 'auto', run: 'nightly', extra: 'x' })
+  })
+
+  it('lets the model-supplied metadata win on key conflicts', async () => {
+    const published: GenericEventEnvelope[] = []
+    wireEchoDeps(published)
+    const handler = getHandler(
+      createAutomationMcpServer(proj, 'exec-1', { run: 'nightly', source: 'auto' }),
+      'publish_event',
+    )
+    const res = await handler({ type: 'custom:done', metadata: { run: 'override' } }, {})
+    expect(res.isError).toBeFalsy()
+    expect(published[0].event.metadata).toEqual({ run: 'override', source: 'auto' })
+  })
+
+  it('uses only the automation metadata when the model supplies none', async () => {
+    const published: GenericEventEnvelope[] = []
+    wireEchoDeps(published)
+    const handler = getHandler(
+      createAutomationMcpServer(proj, 'exec-1', { source: 'auto' }),
+      'publish_event',
+    )
+    const res = await handler({ type: 'custom:done' }, {})
+    expect(res.isError).toBeFalsy()
+    expect(published[0].event.metadata).toEqual({ source: 'auto' })
+  })
+
+  it('leaves the event untouched when the automation has no metadata', async () => {
+    const published: GenericEventEnvelope[] = []
+    wireEchoDeps(published)
+    const handler = getHandler(createAutomationMcpServer(proj, 'exec-1'), 'publish_event')
+    const res = await handler({ type: 'custom:done', metadata: { extra: 'x' } }, {})
+    expect(res.isError).toBeFalsy()
+    expect(published[0].event.metadata).toEqual({ extra: 'x' })
   })
 })
 

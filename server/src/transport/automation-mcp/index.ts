@@ -40,6 +40,12 @@ export interface AutomationMcpBinding {
   workspacePath: string
   /** The automation execution (log) id — attributes published PR events to this run. */
   executionId: string
+  /**
+   * The automation's own free-form annotations, seeded into every `publish_event`
+   * this execution emits (the model's own `metadata` wins on key conflicts).
+   * Absent means none.
+   */
+  metadata?: Record<string, string>
 }
 
 /** The served route: the kernel-facing bind handle plus the HTTP handler the root mounts. */
@@ -94,7 +100,12 @@ export function createAutomationMcp(
     binding: AutomationMcpBinding,
   ): { server: McpServer; toolNames: string[] } => {
     const server = new McpServer({ name: 'c3', version: '1.0.0' })
-    const tools = buildAutomationC3Tools(binding.workspacePath, binding.executionId, deps)
+    const tools = buildAutomationC3Tools(
+      binding.workspacePath,
+      binding.executionId,
+      deps,
+      binding.metadata,
+    )
     for (const t of tools) {
       server.registerTool(
         t.name,

@@ -643,7 +643,11 @@ async function executeLlmPrompt(
   const mcpServers = selectedC3Mcp
     ? {
         ...workspaceMcpConfig.mcpServers,
-        ...createAutomationMcpServer(resolveWorkspaceRoot(automation.workspaceId)!, logId),
+        ...createAutomationMcpServer(
+          resolveWorkspaceRoot(automation.workspaceId)!,
+          logId,
+          automation.metadata,
+        ),
       }
     : workspaceMcpConfig.mcpServers
   const hasMcpServers = Object.keys(mcpServers).length > 0
@@ -812,6 +816,7 @@ async function executeCodexLlmPrompt(
       ? automationHttpMcp.bind({
           workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
           executionId: logId,
+          metadata: automation.metadata,
         })
       : null
   // Bound once the driver reports the real session id; used by `finally` to settle

@@ -3025,9 +3025,11 @@ export interface Automation {
    */
   eventFilters: GenericEventFilter[] | null
   /**
-   * Free-form user annotations on this automation (2026-07-04). Only the scheduler's
-   * own `run:started` / `run:settled` for this automation carry this map into the
-   * event payload, so other automations can filter chains by it. Absent/missing
+   * Free-form user annotations on this automation (2026-07-04). Carried into the
+   * event payload so other automations can filter chains by it: the scheduler's own
+   * `run:started` / `run:settled` for this automation, plus any event this
+   * automation emits via the c3 `publish_event` tool (seeded as that event's
+   * metadata base; the model's own `metadata` wins on key conflicts). Absent/missing
    * means `{}`.
    */
   metadata?: Record<string, string>

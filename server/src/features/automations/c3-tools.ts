@@ -119,6 +119,7 @@ export function buildAutomationC3Tools(
   workspacePath: string,
   executionId: string,
   deps: AutomationMcpDeps | null,
+  automationMetadata?: Record<string, string>,
 ): AutomationC3Tool[] {
   // Discussion run-control deps: `hasDiscussionRun` is the feature-private
   // live-run guard (imported directly); `startDiscussionRun` + broadcasts come
@@ -174,14 +175,27 @@ export function buildAutomationC3Tools(
       name: 'publish_event',
       description: publishEventDesc,
       inputSchema: publishEventSchema,
-      handler: async (args) => ({
-        ...runPublishEvent(
-          args as PublishEventArgs,
-          (core) =>
-            deps?.normalizeEvent(core) ?? { ok: false, reason: 'automation event deps not wired' },
-          (event) => deps?.publishEvent({ workspacePath, sessionId: executionId, event }),
-        ),
-      }),
+      handler: async (args) => {
+        // Seed the published event's metadata with this automation's own
+        // annotations so downstream automations can filter chains by them, then
+        // let the model's own `metadata` win on key conflicts (spread last).
+        const core = args as PublishEventArgs
+        const merged =
+          automationMetadata && Object.keys(automationMetadata).length > 0
+            ? { ...core, metadata: { ...automationMetadata, ...core.metadata } }
+            : core
+        return {
+          ...runPublishEvent(
+            merged,
+            (event) =>
+              deps?.normalizeEvent(event) ?? {
+                ok: false,
+                reason: 'automation event deps not wired',
+              },
+            (event) => deps?.publishEvent({ workspacePath, sessionId: executionId, event }),
+          ),
+        }
+      },
     },
     {
       name: 'find_discussions',

@@ -118,5 +118,11 @@ export function runPublishEvent(
   } catch (err) {
     return { content: text(`事件发布失败:${String(err)}`), isError: true }
   }
-  return { content: text(`已发布事件:${res.event.type}`) }
+  // Echo the NORMALIZED metadata so the caller sees what was actually published —
+  // including any server-side injected keys (e.g. an automation's own annotations)
+  // the model never passed in. Without this the model can only restate its own
+  // input, hiding whether the merge/normalization changed the final payload.
+  const meta = res.event.metadata
+  const metaNote = meta && Object.keys(meta).length > 0 ? `,metadata=${JSON.stringify(meta)}` : ''
+  return { content: text(`已发布事件:${res.event.type}${metaNote}`) }
 }

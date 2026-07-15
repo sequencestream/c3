@@ -29,11 +29,12 @@ export function configureAutomationMcp(next: AutomationMcpDeps): void {
 export function createAutomationMcpServer(
   workspacePath: string,
   executionId: string,
+  automationMetadata?: Record<string, string>,
 ): Record<string, McpServerConfig> {
   const server = createSdkMcpServer({
     name: 'c3',
     alwaysLoad: true,
-    tools: buildAutomationC3Tools(workspacePath, executionId, deps).map((t) =>
+    tools: buildAutomationC3Tools(workspacePath, executionId, deps, automationMetadata).map((t) =>
       // Spread into a fresh object literal so it carries the implicit index
       // signature the SDK `CallToolResult` return type requires.
       tool(t.name, t.description, t.inputSchema, async (args) => ({ ...(await t.handler(args)) })),

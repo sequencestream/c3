@@ -32,28 +32,15 @@ export function installDashboardActions(ctx: AppCtx): void {
     ctx.loadDashboard()
   }
 
-  ctx.toggleDashboardWorkspace = (workspaceId: string): void => {
-    const next = new Set(ctx.dashboardSelected.value)
-    if (next.has(workspaceId)) next.delete(workspaceId)
-    else next.add(workspaceId)
-    ctx.dashboardSelected.value = next
-  }
-
-  ctx.toggleAllDashboard = (): void => {
-    const rows = ctx.dashboardRows.value
-    const allSelected = rows.length > 0 && ctx.dashboardSelected.value.size === rows.length
-    ctx.dashboardSelected.value = allSelected
-      ? new Set()
-      : new Set(rows.map((row) => row.workspaceId))
-  }
-
-  ctx.setWorkspacesAutomation = (enabled: boolean): void => {
-    // Non-admins never see the control, but guard the write path too.
+  ctx.toggleWorkspaceAutomation = (workspaceId: string, enabled: boolean): void => {
+    // Non-admins never see the switch, but guard the write path too.
     if (!ctx.auth.isAdmin.value || !ctx.client) return
-    const ids = [...ctx.dashboardSelected.value]
-    // No selection ⇒ never a batch; a bulk request already in flight ⇒ no re-entry.
-    if (ids.length === 0 || ctx.dashboardBusy.value) return
-    ctx.dashboardBusy.value = true
-    send({ type: 'set_workspaces_automation_enabled', workspaceIds: ids, enabled })
+    // This row's toggle is already in flight ⇒ no re-entry (its switch is busy).
+    if (ctx.dashboardPending.value.has(workspaceId)) return
+    const next = new Set(ctx.dashboardPending.value)
+    next.add(workspaceId)
+    ctx.dashboardPending.value = next
+    // Reuse the batch gate message with a single-workspace list.
+    send({ type: 'set_workspaces_automation_enabled', workspaceIds: [workspaceId], enabled })
   }
 }

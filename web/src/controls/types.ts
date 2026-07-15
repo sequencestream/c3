@@ -268,12 +268,8 @@ export interface AppMethods {
   loadDashboard(): void
   /** Refresh the Dashboard only when it is the active view (domain-broadcast hook). */
   maybeRefreshDashboard(): void
-  /** Toggle one workspace row's selection in the Dashboard. */
-  toggleDashboardWorkspace(workspaceId: string): void
-  /** Select all rows, or clear the selection if all are already selected. */
-  toggleAllDashboard(): void
-  /** Bulk-set the automation gate for the selected workspaces (admin only). */
-  setWorkspacesAutomation(enabled: boolean): void
+  /** Set one workspace row's automation gate directly from its switch (admin only). */
+  toggleWorkspaceAutomation(workspaceId: string, enabled: boolean): void
 }
 
 // The shared controller context: reactive state + runtime plumbing + all the

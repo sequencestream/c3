@@ -1,7 +1,7 @@
 /**
  * Workcenter Dashboard control layer: the actions (`installDashboardActions`) and
  * the two inbound cases (`installMessageHandler`) that apply the snapshot and the
- * bulk-gate result. A focused ctx of plain refs is enough — only the dashboard
+ * per-row gate result. A focused ctx of plain refs is enough — only the dashboard
  * refs + a captured `send` are exercised.
  */
 import { describe, it, expect, vi } from 'vitest'
@@ -41,9 +41,7 @@ function makeCtx(opts: { isAdmin?: boolean } = {}) {
     dashboardRows: ref<WorkspaceDashboardRow[]>([]),
     dashboardLoading: ref(false),
     dashboardError: ref<{ code: string } | null>(null),
-    dashboardSelected: ref<Set<string>>(new Set()),
-    dashboardBusy: ref(false),
-    dashboardFailedIds: ref<Set<string>>(new Set()),
+    dashboardPending: ref<Set<string>>(new Set()),
     dashboardRefreshPending: ref(false),
   } as unknown as AppCtx
   installDashboardActions(ctx)
@@ -88,57 +86,36 @@ describe('dashboard actions — load + coalesce', () => {
   })
 })
 
-describe('dashboard actions — selection', () => {
-  it('toggles a workspace in and out of the selection', () => {
-    const { ctx } = makeCtx()
-    ctx.toggleDashboardWorkspace('a')
-    expect([...ctx.dashboardSelected.value]).toEqual(['a'])
-    ctx.toggleDashboardWorkspace('a')
-    expect(ctx.dashboardSelected.value.size).toBe(0)
-  })
-
-  it('toggleAll selects every row, then clears when all are selected', () => {
-    const { ctx } = makeCtx()
-    ctx.dashboardRows.value = [row('a'), row('b')]
-    ctx.toggleAllDashboard()
-    expect(ctx.dashboardSelected.value.size).toBe(2)
-    ctx.toggleAllDashboard()
-    expect(ctx.dashboardSelected.value.size).toBe(0)
-  })
-})
-
-describe('dashboard actions — bulk gate guards', () => {
+describe('dashboard actions — per-row gate guards', () => {
   it('does not send for a non-admin', () => {
     const { ctx, send } = makeCtx({ isAdmin: false })
-    ctx.dashboardSelected.value = new Set(['a'])
-    ctx.setWorkspacesAutomation(true)
+    ctx.toggleWorkspaceAutomation('a', true)
     expect(send).not.toHaveBeenCalled()
   })
 
-  it('does not send with an empty selection', () => {
+  it('does not re-enter while that row toggle is in flight', () => {
     const { ctx, send } = makeCtx()
-    ctx.setWorkspacesAutomation(true)
+    ctx.dashboardPending.value = new Set(['a'])
+    ctx.toggleWorkspaceAutomation('a', false)
     expect(send).not.toHaveBeenCalled()
   })
 
-  it('does not re-enter while a bulk request is in flight', () => {
+  it('sends the single-workspace target and marks the row pending', () => {
     const { ctx, send } = makeCtx()
-    ctx.dashboardSelected.value = new Set(['a'])
-    ctx.dashboardBusy.value = true
-    ctx.setWorkspacesAutomation(false)
-    expect(send).not.toHaveBeenCalled()
-  })
-
-  it('sends the de-duplicated selection + target and marks busy', () => {
-    const { ctx, send } = makeCtx()
-    ctx.dashboardSelected.value = new Set(['a', 'b'])
-    ctx.setWorkspacesAutomation(false)
-    expect(ctx.dashboardBusy.value).toBe(true)
+    ctx.toggleWorkspaceAutomation('a', false)
+    expect([...ctx.dashboardPending.value]).toEqual(['a'])
     expect(lastSent(send)).toEqual({
       type: 'set_workspaces_automation_enabled',
-      workspaceIds: ['a', 'b'],
+      workspaceIds: ['a'],
       enabled: false,
     })
+  })
+
+  it('leaves other in-flight rows pending when a new row toggles', () => {
+    const { ctx } = makeCtx()
+    ctx.dashboardPending.value = new Set(['a'])
+    ctx.toggleWorkspaceAutomation('b', true)
+    expect([...ctx.dashboardPending.value].sort()).toEqual(['a', 'b'])
   })
 })
 
@@ -160,16 +137,16 @@ describe('dashboard actions — page nav', () => {
 })
 
 describe('dashboard message handling — snapshot', () => {
-  it('applies rows, clears error, prunes selection to existing ids', () => {
+  it('applies rows, clears error, prunes pending to existing ids', () => {
     const { ctx } = makeCtx()
     ctx.dashboardLoading.value = true
     ctx.dashboardError.value = { code: 'dashboard.loadFailed' }
-    ctx.dashboardSelected.value = new Set(['a', 'gone'])
+    ctx.dashboardPending.value = new Set(['a', 'gone'])
     ctx.handleMessage({ type: 'workspace_dashboard', rows: [row('a'), row('b')] })
     expect(ctx.dashboardLoading.value).toBe(false)
     expect(ctx.dashboardError.value).toBeNull()
     expect(ctx.dashboardRows.value.map((r) => r.workspaceId)).toEqual(['a', 'b'])
-    expect([...ctx.dashboardSelected.value]).toEqual(['a']) // 'gone' pruned
+    expect([...ctx.dashboardPending.value]).toEqual(['a']) // 'gone' pruned
   })
 
   it('keeps the previous rows and surfaces the error on a failed snapshot', () => {
@@ -197,57 +174,35 @@ describe('dashboard message handling — snapshot', () => {
   })
 })
 
-describe('dashboard message handling — bulk result', () => {
-  it('all-success clears busy, clears selection, adopts snapshot, toasts success', () => {
+describe('dashboard message handling — per-row gate result', () => {
+  it('success clears the row pending flag, adopts snapshot, no toast', () => {
     const { ctx, showToast } = makeCtx()
-    ctx.dashboardBusy.value = true
-    ctx.dashboardSelected.value = new Set(['a', 'b'])
+    ctx.dashboardPending.value = new Set(['a', 'b'])
     ctx.handleMessage({
       type: 'workspaces_automation_result',
-      results: [
-        { workspaceId: 'a', ok: true },
-        { workspaceId: 'b', ok: true },
-      ],
-      dashboard: [row('a', { automationEnabled: false }), row('b', { automationEnabled: false })],
+      results: [{ workspaceId: 'a', ok: true }],
+      dashboard: [row('a', { automationEnabled: false }), row('b')],
     })
-    expect(ctx.dashboardBusy.value).toBe(false)
-    expect(ctx.dashboardFailedIds.value.size).toBe(0)
-    expect(ctx.dashboardSelected.value.size).toBe(0)
-    expect(ctx.dashboardRows.value.every((r) => !r.automationEnabled)).toBe(true)
-    expect(showToast).toHaveBeenCalledWith('dashboard.bulk.allSuccess')
+    expect([...ctx.dashboardPending.value]).toEqual(['b']) // only 'a' settled
+    expect(ctx.dashboardRows.value[0].automationEnabled).toBe(false)
+    expect(showToast).not.toHaveBeenCalled()
   })
 
-  it('partial failure keeps failed rows selected + flagged and toasts partial', () => {
+  it('failure clears the row pending flag and toasts the failure', () => {
     const { ctx, showToast } = makeCtx()
-    ctx.dashboardBusy.value = true
-    ctx.dashboardSelected.value = new Set(['a', 'b'])
-    ctx.handleMessage({
-      type: 'workspaces_automation_result',
-      results: [
-        { workspaceId: 'a', ok: true },
-        { workspaceId: 'b', ok: false, error: { code: 'dashboard.gateSaveFailed' } },
-      ],
-      dashboard: [row('a'), row('b')],
-    })
-    expect([...ctx.dashboardFailedIds.value]).toEqual(['b'])
-    expect([...ctx.dashboardSelected.value]).toEqual(['b']) // failed stays selected
-    expect(showToast).toHaveBeenCalledWith('dashboard.bulk.partial')
-  })
-
-  it('all-failure toasts the all-failed summary', () => {
-    const { ctx, showToast } = makeCtx()
-    ctx.dashboardBusy.value = true
+    ctx.dashboardPending.value = new Set(['a'])
     ctx.handleMessage({
       type: 'workspaces_automation_result',
       results: [{ workspaceId: 'a', ok: false, error: { code: 'dashboard.gateSaveFailed' } }],
       dashboard: [row('a')],
     })
-    expect(showToast).toHaveBeenCalledWith('dashboard.bulk.allFailed')
+    expect(ctx.dashboardPending.value.size).toBe(0)
+    expect(showToast).toHaveBeenCalledWith('dashboard.toggleFailed')
   })
 
   it('re-requests a snapshot when the post-op snapshot itself failed', () => {
     const { ctx, send } = makeCtx()
-    ctx.dashboardBusy.value = true
+    ctx.dashboardPending.value = new Set(['a'])
     send.mockClear()
     ctx.handleMessage({
       type: 'workspaces_automation_result',

@@ -2277,17 +2277,10 @@
       "on": "オン",
       "off": "オフ"
     },
-    "bulk": {
-      "enable": "自動化を有効化",
-      "disable": "自動化を無効化",
-      "allSuccess": "{count} 個のワークスペースの自動化を更新しました。",
-      "allFailed": "{count} 個のワークスペースの自動化の更新に失敗しました。",
-      "partial": "成功 {ok} 件、失敗 {failed} 件。"
+    "toggle": {
+      "ariaLabel": "{name} の自動化を切り替え"
     },
-    "selectAll": "すべてのワークスペースを選択",
-    "selectRow": "{name} を選択",
-    "selectedCount": "{count} 件選択中",
-    "rowFailed": "失敗",
+    "toggleFailed": "{count} 個のワークスペースの自動化の更新に失敗しました。",
     "loading": "読み込み中…",
     "empty": "ワークスペースがありません。",
     "refreshFailed": "ダッシュボードの更新に失敗しました。",

@@ -2261,7 +2261,8 @@
     "nav": {
       "ariaLabel": "工作台页面",
       "dashboard": "总览",
-      "notifications": "用户通知"
+      "notifications": "用户通知",
+      "notificationsBadgeAriaLabel": "待处理通知 {count} 条"
     },
     "column": {
       "workspace": "工作区",
@@ -2286,7 +2287,6 @@
     "retry": "重试"
   },
   "workcenter": {
-    "title": "工作台",
     "notificationTitle": "用户通知消息",
     "toolInput": "工具输入",
     "filter": {

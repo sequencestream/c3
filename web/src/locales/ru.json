@@ -2262,7 +2262,8 @@
     "nav": {
       "ariaLabel": "Страницы рабочего центра",
       "dashboard": "Панель",
-      "notifications": "Уведомления"
+      "notifications": "Уведомления",
+      "notificationsBadgeAriaLabel": "Ожидающие уведомления: {count}"
     },
     "column": {
       "workspace": "Рабочее пространство",
@@ -2287,7 +2288,6 @@
     "retry": "Повторить"
   },
   "workcenter": {
-    "title": "Workcenter",
     "notificationTitle": "Уведомления пользователя",
     "toolInput": "Ввод инструмента",
     "filter": {

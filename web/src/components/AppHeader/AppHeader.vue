@@ -5,9 +5,9 @@
  *
  * viewMode(工作区/工作台)切换器位于顶栏最左侧,为两个显示器图标按钮(工作区=屏内
  * 三横条;工作台=屏内会话气泡),生效模式蓝、另一个灰;桌面与移动端共用同一份图标标记。
- * 工作台未处理事件徽标(workcenterBadgeCount)挂在顶部工作台图标上。
  * - workspace 模式:左侧切换器 + WS switcher + 项目配置,中间标签页,右侧设置/账户/状态/许可
- * - workcenter 模式:左侧切换器 + workcenter 导航按钮,中间区域隐藏,右侧同上
+ * - workcenter 模式:左侧切换器 + 工作台页面入口(总览 / 用户通知,tab 语义),中间区域隐藏,右侧同上
+ *   工作台页面入口占据原「工作台」标题位置;待处理事件角标(workcenterBadgeCount)挂在「用户通知」入口上。
  * 移动端底部 tab 仅含 5 个工作区子视图(工作台入口已上移到顶部切换器,不再在底部 tab)。
  */
 import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
@@ -89,7 +89,9 @@ const props = defineProps<{
   tabsEnabled?: boolean
   /** Current view mode: workspace or workcenter. */
   viewMode: 'workspace' | 'workcenter'
-  /** Pending user-involve events shown on the WorkCenter tab. */
+  /** Current workcenter page (drives the top-bar page entries' selected state). */
+  workcenterPage?: 'dashboard' | 'notifications'
+  /** Pending user-involve events shown on the「用户通知」workcenter page entry. */
   workcenterBadgeCount?: number
   /** Show the logout button. Only true once authenticated (ADR-0023); when auth
    *  is disabled this stays false so the no-auth UI is unchanged. */
@@ -106,6 +108,7 @@ const emit = defineEmits<{
   'select-workspace': [path: string]
   'remove-workspace': [path: string]
   'update:viewMode': [mode: 'workspace' | 'workcenter']
+  'select-workcenter-page': [page: 'dashboard' | 'notifications']
   logout: []
 }>()
 
@@ -125,6 +128,17 @@ const updateText = computed<string>(() =>
 const VIEW_MODES: ReadonlyArray<{ key: 'workspace' | 'workcenter'; labelKey: LocaleKey }> = [
   { key: 'workspace', labelKey: 'nav.viewMode.workspace' as LocaleKey },
   { key: 'workcenter', labelKey: 'nav.viewMode.workcenter' as LocaleKey },
+]
+
+// 工作台页面入口(顶栏,工作台模式下占据原「工作台」标题位置;桌面 + 移动端共用同一组
+// 页面键与 tab 语义)。「用户通知」入口携带待处理数角标(badge=true),计数为 0 时不渲染。
+const WORKCENTER_PAGES: ReadonlyArray<{
+  key: 'dashboard' | 'notifications'
+  labelKey: LocaleKey
+  badge?: boolean
+}> = [
+  { key: 'dashboard', labelKey: 'dashboard.nav.dashboard' as LocaleKey },
+  { key: 'notifications', labelKey: 'dashboard.nav.notifications' as LocaleKey, badge: true },
 ]
 
 // 底部 tab 仅承载工作区子视图(工作台入口已上移到顶部图标切换器);故无 workcenter 分支。
@@ -196,11 +210,6 @@ function selectTab(tab: HeaderTab): void {
               d="M7.5 7.5h9a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1h-4.5l-2.5 2v-2H7.5a1 1 0 0 1-1-1V8.5a1 1 0 0 1 1-1Z"
             />
           </svg>
-          <span
-            v-if="mode.key === 'workcenter' && (workcenterBadgeCount ?? 0) > 0"
-            class="vm-badge"
-            >{{ workcenterBadgeCount }}</span
-          >
         </button>
       </div>
 
@@ -223,12 +232,40 @@ function selectTab(tab: HeaderTab): void {
         </button>
       </template>
 
-      <!-- Left area: workcenter mode — nav button -->
-      <template v-else>
-        <button class="header-tab active" disabled>
-          {{ t('workcenter.title') }}
+      <!-- Left area: workcenter mode — page entries (总览 / 用户通知),tab 语义,
+           占据原「工作台」标题位置。「用户通知」入口携带待处理数角标。 -->
+      <nav
+        v-else
+        class="header-tabs wc-page-nav"
+        role="tablist"
+        :aria-label="t('dashboard.nav.ariaLabel')"
+      >
+        <button
+          v-for="page in WORKCENTER_PAGES"
+          :key="page.key"
+          type="button"
+          role="tab"
+          class="header-tab"
+          :class="{
+            active: workcenterPage === page.key,
+            'has-badge': page.badge && (workcenterBadgeCount ?? 0) > 0,
+          }"
+          :aria-selected="workcenterPage === page.key"
+          @click="emit('select-workcenter-page', page.key)"
+        >
+          <span class="tab-label">
+            {{ t(page.labelKey) }}
+            <span
+              v-if="page.badge && (workcenterBadgeCount ?? 0) > 0"
+              class="tab-badge"
+              :aria-label="
+                t('dashboard.nav.notificationsBadgeAriaLabel', { count: workcenterBadgeCount ?? 0 })
+              "
+              >{{ workcenterBadgeCount }}</span
+            >
+          </span>
         </button>
-      </template>
+      </nav>
 
       <!-- Middle: workspace tabs (hidden in workcenter mode) -->
       <nav
@@ -369,15 +406,11 @@ function selectTab(tab: HeaderTab): void {
               d="M7.5 7.5h9a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1h-4.5l-2.5 2v-2H7.5a1 1 0 0 1-1-1V8.5a1 1 0 0 1 1-1Z"
             />
           </svg>
-          <span
-            v-if="mode.key === 'workcenter' && (workcenterBadgeCount ?? 0) > 0"
-            class="vm-badge"
-            >{{ workcenterBadgeCount }}</span
-          >
         </button>
       </div>
 
-      <div class="mobile-workspace">
+      <!-- workspace 模式:工作区切换器;workcenter 模式:同桌面的工作台页面入口 -->
+      <div v-if="viewMode === 'workspace'" class="mobile-workspace">
         <WorkspaceSwitcher
           :workspaces="workspaces"
           :current-workspace-id="currentWorkspace"
@@ -386,6 +419,38 @@ function selectTab(tab: HeaderTab): void {
           @remove-workspace="emit('remove-workspace', $event)"
         />
       </div>
+      <nav
+        v-else
+        class="header-tabs wc-page-nav mobile-wc-page-nav"
+        role="tablist"
+        :aria-label="t('dashboard.nav.ariaLabel')"
+      >
+        <button
+          v-for="page in WORKCENTER_PAGES"
+          :key="page.key"
+          type="button"
+          role="tab"
+          class="header-tab"
+          :class="{
+            active: workcenterPage === page.key,
+            'has-badge': page.badge && (workcenterBadgeCount ?? 0) > 0,
+          }"
+          :aria-selected="workcenterPage === page.key"
+          @click="emit('select-workcenter-page', page.key)"
+        >
+          <span class="tab-label">
+            {{ t(page.labelKey) }}
+            <span
+              v-if="page.badge && (workcenterBadgeCount ?? 0) > 0"
+              class="tab-badge"
+              :aria-label="
+                t('dashboard.nav.notificationsBadgeAriaLabel', { count: workcenterBadgeCount ?? 0 })
+              "
+              >{{ workcenterBadgeCount }}</span
+            >
+          </span>
+        </button>
+      </nav>
 
       <details ref="actionsEl" class="mobile-actions" @toggle="syncOutsideListener">
         <summary class="icon-btn mobile-actions-trigger" aria-label="Actions">⋯</summary>
@@ -494,23 +559,13 @@ function selectTab(tab: HeaderTab): void {
 .vm-icon {
   display: block;
 }
-/* 工作台未处理事件徽标:挂在工作台图标按钮右上角,计数为 0 时不渲染 */
-.vm-badge {
-  position: absolute;
-  top: 0;
-  right: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  color: #fff;
-  background: var(--c-danger, #e53e3e);
-  border-radius: 8px;
+
+/* 工作台页面入口(总览 / 用户通知):复用 .header-tabs/.header-tab 视觉,与工作区
+   顶栏标签统一层级。桌面占据原「工作台」标题位置;移动端占据工作区切换器位置。 */
+.mobile-wc-page-nav {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 /* 新版本提示(独立控件):蓝底胶囊外链 */
@@ -716,9 +771,9 @@ function selectTab(tab: HeaderTab): void {
     white-space: nowrap;
   }
 
-  /* 移动端底部 tab 角标:锚定在标签文字右上角(与桌面一致),红底白字与 .vm-badge
-     视觉统一。.mobile-tab-label 自身 overflow:hidden 会裁掉上抬的角标,故角标放在
-     不裁剪的 .mobile-tab-content 包裹层内、与 label 同级。 */
+  /* 移动端底部 tab 角标:锚定在标签文字右上角(与桌面一致),红底白字与顶栏
+     .header-tab .tab-badge 视觉统一。.mobile-tab-label 自身 overflow:hidden 会裁掉上抬
+     的角标,故角标放在不裁剪的 .mobile-tab-content 包裹层内、与 label 同级。 */
   .mobile-tab-content {
     position: relative;
     display: inline-flex;

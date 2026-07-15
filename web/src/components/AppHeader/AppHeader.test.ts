@@ -156,6 +156,20 @@ describe('i18n — nav.tab.console.ariaLabel 插值', () => {
   })
 })
 
+describe('i18n — dashboard.nav.notificationsBadgeAriaLabel 插值', () => {
+  it('en 下正确插值 count', () => {
+    expect(i18n.global.t('dashboard.nav.notificationsBadgeAriaLabel', { count: 5 })).toBe(
+      'Pending notifications: 5',
+    )
+  })
+
+  it('zh 下正确插值 count', () => {
+    expect(
+      i18n.global.t('dashboard.nav.notificationsBadgeAriaLabel', { count: 5 }, { locale: 'zh' }),
+    ).toBe('待处理通知 5 条')
+  })
+})
+
 describe('AppHeader.vue — 顶部 viewMode 图标切换器', () => {
   it('桌面切换器渲染为 desktop-header-row 第一个元素,header-right 不再含切换器', () => {
     const w = mount(AppHeader, { props: baseProps })
@@ -200,16 +214,104 @@ describe('AppHeader.vue — 顶部 viewMode 图标切换器', () => {
     expect(w.emitted('update:viewMode')).toEqual([['workspace']])
   })
 
-  it('工作台徽标(workcenterBadgeCount)显示在工作台图标上(桌面 + 移动端)', () => {
+  it('viewMode 图标不再承载工作台待处理徽标(已迁移到「用户通知」入口)', () => {
     const w = mount(AppHeader, { props: baseProps })
-    const badges = w.findAll('.vm-badge')
-    expect(badges).toHaveLength(2)
-    expect(badges.every((b) => b.text() === '2')).toBe(true)
+    expect(w.find('.vm-badge').exists()).toBe(false)
+    const wc = mount(AppHeader, {
+      props: { ...baseProps, viewMode: 'workcenter', workcenterPage: 'dashboard' },
+    })
+    expect(wc.find('.vm-badge').exists()).toBe(false)
+  })
+})
+
+describe('AppHeader.vue — 工作台页面入口(总览 / 用户通知)', () => {
+  // 角标计为 0 以便断言纯标签文本;角标显隐单独在下方 describe 覆盖。
+  const wcProps = {
+    ...baseProps,
+    viewMode: 'workcenter' as const,
+    workcenterPage: 'dashboard' as const,
+    workcenterBadgeCount: 0,
+  }
+
+  it('工作台模式:桌面顶栏渲染两个页面入口且不出现「工作台」文字标题', () => {
+    const w = mount(AppHeader, { props: wcProps })
+    const tabs = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
+    expect(tabs.map((t) => t.text())).toEqual(['Dashboard', 'Notifications'])
+    expect(w.text()).not.toContain('Workcenter')
   })
 
-  it('徽标计数为 0 时不渲染', () => {
-    const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 0 } })
-    expect(w.findAll('.vm-badge')).toHaveLength(0)
+  it('工作区模式:不渲染工作台页面入口', () => {
+    const w = mount(AppHeader, { props: baseProps })
+    expect(w.find('.wc-page-nav').exists()).toBe(false)
+  })
+
+  it('容器有 tablist 语义与可访问名称,当前项 aria-selected=true', () => {
+    const w = mount(AppHeader, { props: wcProps })
+    const nav = w.find('.desktop-header-row .wc-page-nav')
+    expect(nav.attributes('role')).toBe('tablist')
+    expect(nav.attributes('aria-label')).toBe('Workcenter pages')
+    const tabs = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
+    expect(tabs[0].classes()).toContain('active')
+    expect(tabs[0].attributes('aria-selected')).toBe('true')
+    expect(tabs[1].attributes('aria-selected')).toBe('false')
+  })
+
+  it('当前页跟随 workcenterPage(notifications)', () => {
+    const w = mount(AppHeader, { props: { ...wcProps, workcenterPage: 'notifications' } })
+    const tabs = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
+    expect(tabs[0].attributes('aria-selected')).toBe('false')
+    expect(tabs[1].classes()).toContain('active')
+    expect(tabs[1].attributes('aria-selected')).toBe('true')
+  })
+
+  it('点击入口 → emit select-workcenter-page(key)', async () => {
+    const w = mount(AppHeader, { props: wcProps })
+    await w.findAll('.desktop-header-row .wc-page-nav .header-tab')[1].trigger('click')
+    expect(w.emitted('select-workcenter-page')).toEqual([['notifications']])
+  })
+
+  it('移动端顶栏同样渲染两个页面入口', () => {
+    const w = mount(AppHeader, { props: wcProps })
+    const tabs = w.findAll('.mobile-header-row .wc-page-nav .header-tab')
+    expect(tabs.map((t) => t.text())).toEqual(['Dashboard', 'Notifications'])
+  })
+
+  it('移动端点击入口 → emit select-workcenter-page(key)', async () => {
+    const w = mount(AppHeader, { props: wcProps })
+    await w.findAll('.mobile-header-row .wc-page-nav .header-tab')[1].trigger('click')
+    expect(w.emitted('select-workcenter-page')).toEqual([['notifications']])
+  })
+})
+
+describe('AppHeader.vue — 「用户通知」入口待处理数角标', () => {
+  const wcProps = {
+    ...baseProps,
+    viewMode: 'workcenter' as const,
+    workcenterPage: 'dashboard' as const,
+  }
+
+  it('badgeCount>0 → 「用户通知」入口渲染角标(桌面 + 移动端),文本正确', () => {
+    const w = mount(AppHeader, { props: { ...wcProps, workcenterBadgeCount: 2 } })
+    const desktop = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
+    expect(desktop[0].find('.tab-badge').exists()).toBe(false)
+    expect(desktop[1].find('.tab-badge').text()).toBe('2')
+    const mobile = w.findAll('.mobile-header-row .wc-page-nav .header-tab')
+    expect(mobile[1].find('.tab-badge').text()).toBe('2')
+  })
+
+  it('角标带 i18n aria-label,含待处理计数', () => {
+    const w = mount(AppHeader, { props: { ...wcProps, workcenterBadgeCount: 2 } })
+    const aria = w
+      .find('.desktop-header-row .wc-page-nav .header-tab.has-badge .tab-badge')
+      .attributes('aria-label')
+    expect(aria).toBeDefined()
+    expect(aria).toContain('2')
+  })
+
+  it('badgeCount 为 0 时桌面/移动端「用户通知」入口均不渲染角标', () => {
+    const w = mount(AppHeader, { props: { ...wcProps, workcenterBadgeCount: 0 } })
+    expect(w.find('.desktop-header-row .wc-page-nav .tab-badge').exists()).toBe(false)
+    expect(w.find('.mobile-header-row .wc-page-nav .tab-badge').exists()).toBe(false)
   })
 })
 

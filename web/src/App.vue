@@ -239,14 +239,10 @@ const {
   dashboardRows,
   dashboardLoading,
   dashboardError,
-  dashboardSelected,
-  dashboardBusy,
-  dashboardFailedIds,
+  dashboardPending,
   setWorkcenterPage,
   loadDashboard,
-  toggleDashboardWorkspace,
-  toggleAllDashboard,
-  setWorkspacesAutomation,
+  toggleWorkspaceAutomation,
   // ---- modals ----
   newSessionOpen,
   confirmNewSession,
@@ -694,13 +690,9 @@ function onCodesChatWidth(px: number): void {
           :rows="dashboardRows"
           :loading="dashboardLoading"
           :refresh-failed="dashboardError !== null"
-          :selected="dashboardSelected"
-          :failed-ids="dashboardFailedIds"
-          :busy="dashboardBusy"
+          :pending="dashboardPending"
           :is-admin="auth.isAdmin.value"
-          @toggle-workspace="toggleDashboardWorkspace"
-          @toggle-all="toggleAllDashboard"
-          @bulk="setWorkspacesAutomation"
+          @toggle="toggleWorkspaceAutomation"
           @refresh="loadDashboard"
         />
 

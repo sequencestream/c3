@@ -2277,17 +2277,10 @@
       "on": "켜짐",
       "off": "꺼짐"
     },
-    "bulk": {
-      "enable": "자동화 활성화",
-      "disable": "자동화 비활성화",
-      "allSuccess": "워크스페이스 {count}개의 자동화를 업데이트했습니다.",
-      "allFailed": "워크스페이스 {count}개의 자동화 업데이트에 실패했습니다.",
-      "partial": "성공 {ok}개, 실패 {failed}개."
+    "toggle": {
+      "ariaLabel": "{name}의 자동화 전환"
     },
-    "selectAll": "모든 워크스페이스 선택",
-    "selectRow": "{name} 선택",
-    "selectedCount": "{count}개 선택됨",
-    "rowFailed": "실패",
+    "toggleFailed": "워크스페이스 {count}개의 자동화 업데이트에 실패했습니다.",
     "loading": "불러오는 중…",
     "empty": "워크스페이스가 없습니다.",
     "refreshFailed": "대시보드 새로고침에 실패했습니다.",

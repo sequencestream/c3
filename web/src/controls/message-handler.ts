@@ -41,15 +41,10 @@ const DASHBOARD_REFRESH_TYPES = new Set<ServerToClient['type']>([
   'automations',
 ])
 
-/** Drop selection / failure flags for workspaces no longer present in the snapshot. */
-function pruneDashboardSelection(ctx: AppCtx, rows: WorkspaceDashboardRow[]): void {
+/** Drop in-flight toggle flags for workspaces no longer present in the snapshot. */
+function pruneDashboardPending(ctx: AppCtx, rows: WorkspaceDashboardRow[]): void {
   const ids = new Set(rows.map((row) => row.workspaceId))
-  ctx.dashboardSelected.value = new Set(
-    [...ctx.dashboardSelected.value].filter((id) => ids.has(id)),
-  )
-  ctx.dashboardFailedIds.value = new Set(
-    [...ctx.dashboardFailedIds.value].filter((id) => ids.has(id)),
-  )
+  ctx.dashboardPending.value = new Set([...ctx.dashboardPending.value].filter((id) => ids.has(id)))
 }
 
 // Install the WebSocket message router (`handleMessage`) plus its status helpers
@@ -1041,7 +1036,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         } else {
           ctx.dashboardError.value = null
           ctx.dashboardRows.value = msg.rows
-          pruneDashboardSelection(ctx, msg.rows)
+          pruneDashboardPending(ctx, msg.rows)
         }
         // A refresh requested while this one was in flight — run exactly one more.
         if (ctx.dashboardRefreshPending.value) {
@@ -1050,11 +1045,12 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'workspaces_automation_result': {
-        ctx.dashboardBusy.value = false
-        const failed = new Set(msg.results.filter((r) => !r.ok).map((r) => r.workspaceId))
-        ctx.dashboardFailedIds.value = failed
-        // Keep failed rows selected (for the failure marker + retry); clear the rest.
-        ctx.dashboardSelected.value = new Set(failed)
+        // Clear the in-flight flag for exactly the rows this reply settled (concurrent
+        // per-row toggles each get their own reply; never wipe another row's pending).
+        const settled = new Set(msg.results.map((r) => r.workspaceId))
+        ctx.dashboardPending.value = new Set(
+          [...ctx.dashboardPending.value].filter((id) => !settled.has(id)),
+        )
         if (msg.dashboardError) {
           // The post-op snapshot failed; keep settled results and re-request once.
           ctx.dashboardError.value = msg.dashboardError
@@ -1062,17 +1058,12 @@ export function installMessageHandler(ctx: AppCtx): void {
         } else {
           ctx.dashboardError.value = null
           ctx.dashboardRows.value = msg.dashboard
-          pruneDashboardSelection(ctx, msg.dashboard)
+          pruneDashboardPending(ctx, msg.dashboard)
         }
-        // Summarize: all-success / all-failure / partial.
-        const okCount = msg.results.filter((r) => r.ok).length
-        const failCount = msg.results.length - okCount
-        if (msg.results.length > 0) {
-          if (failCount === 0) ctx.showToast(ctx.t('dashboard.bulk.allSuccess', { count: okCount }))
-          else if (okCount === 0)
-            ctx.showToast(ctx.t('dashboard.bulk.allFailed', { count: failCount }))
-          else ctx.showToast(ctx.t('dashboard.bulk.partial', { ok: okCount, failed: failCount }))
-        }
+        // A successful toggle is visible (the switch flips to the snapshot state); only
+        // surface failures, where the switch reverts and the reason is otherwise silent.
+        const failCount = msg.results.filter((r) => !r.ok).length
+        if (failCount > 0) ctx.showToast(ctx.t('dashboard.toggleFailed', { count: failCount }))
         break
       }
       case 'dir_listed': {

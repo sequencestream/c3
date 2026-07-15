@@ -2364,17 +2364,10 @@
       "on": "On",
       "off": "Off"
     },
-    "bulk": {
-      "enable": "Enable automation",
-      "disable": "Disable automation",
-      "allSuccess": "Updated automation for {count} workspace(s).",
-      "allFailed": "Failed to update automation for {count} workspace(s).",
-      "partial": "Updated {ok}, failed {failed}."
+    "toggle": {
+      "ariaLabel": "Toggle automation for {name}"
     },
-    "selectAll": "Select all workspaces",
-    "selectRow": "Select {name}",
-    "selectedCount": "{count} selected",
-    "rowFailed": "Failed",
+    "toggleFailed": "Failed to update automation for {count} workspace(s).",
     "loading": "Loading…",
     "empty": "No workspaces.",
     "refreshFailed": "Failed to refresh the dashboard.",

@@ -192,17 +192,13 @@ export function createState(deps: StateDeps) {
   // Workcenter page-internal nav: which page the workcenter view is showing.
   const workcenterPage = ref<'dashboard' | 'notifications'>('dashboard')
 
-  // Workcenter Dashboard: the cross-workspace snapshot + its selection/feedback.
+  // Workcenter Dashboard: the cross-workspace snapshot + its per-row gate feedback.
   const dashboardRows = ref<WorkspaceDashboardRow[]>([])
   const dashboardLoading = ref(false)
   // The whole snapshot failed to refresh; the last good rows are kept on screen.
   const dashboardError = ref<UiError | null>(null)
-  // Multi-selected workspace ids for the bulk gate action.
-  const dashboardSelected = ref<Set<string>>(new Set())
-  // A bulk gate request is in flight (blocks re-entry).
-  const dashboardBusy = ref(false)
-  // Per-workspace failures from the last bulk action, flagged on their rows.
-  const dashboardFailedIds = ref<Set<string>>(new Set())
+  // Workspace ids whose per-row automation toggle is in flight (its switch is busy).
+  const dashboardPending = ref<Set<string>>(new Set())
   // A coalesced refresh was requested while a request was in flight — run once after.
   const dashboardRefreshPending = ref(false)
 
@@ -725,9 +721,7 @@ export function createState(deps: StateDeps) {
     dashboardRows,
     dashboardLoading,
     dashboardError,
-    dashboardSelected,
-    dashboardBusy,
-    dashboardFailedIds,
+    dashboardPending,
     dashboardRefreshPending,
     consoleSession,
     teamSessions,

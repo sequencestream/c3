@@ -2,261 +2,182 @@
 
 ## 1. 定位
 
-sandbox 领域为 agent 执行提供容器级隔离。c3 不再让 vendor CLI 直接在宿主工作区里运行，而是在满足条件的 worktree intent-dev run 中启动一个轻量容器，把 run 的 worktree 与项目原目录按宿主绝对路径同路径映射进容器，再通过宿主 wrapper 把 Claude Code / Codex CLI 进程转发到容器内执行。工具（claude、codex、npm 等）随使用方自建镜像分发，c3 不下载、不版本化 vendor CLI。
+sandbox 领域为 agent 执行提供**进程级轻量隔离**。c3 不再让 vendor CLI 直接在宿主工作区里裸跑，而是在满足条件的 worktree intent-dev run 中，用 [arapuca](https://github.com/sergio-correia/arapuca) 把 Claude Code / Codex CLI 进程包裹起来：进程仍在宿主同一文件系统内、以当前宿主用户身份、在宿主原路径上运行，由内核 MAC（Linux Landlock / macOS Seatbelt / Windows AppContainer）收窄它能读写哪些目录。不使用容器、镜像、bind mount、独立 rootfs。vendor CLI（claude / codex）由使用方在宿主预装；c3 不下载、不版本化 vendor CLI，也不捆绑分发 arapuca。
 
-本文负责实现细节：配置模型、配置合并、sandbox driver contract、Docker runtime、run lifecycle 接线、wrapper、目录映射、网络与文件系统策略、运行期环境卫生。大方向架构、目录映射与镜像分发模型见 `doc/architecture/sandbox-architecture.md`。
+本文负责实现细节：配置模型、路径放行解析、arapuca wrapper 生成、run lifecycle 接线、文件系统策略、网络策略、运行期环境卫生、启动前探测。大方向架构（为什么用进程级 arapuca、平台能力面、演进方向）见 `doc/architecture/sandbox-architecture.md`。
 
-sandbox 是 kernel infrastructure domain，属于 ADR-0009 的内层能力。它只提供可启动、可停止、可 exec、可 stream、可 snapshot、可 health check 的 runtime 能力；是否启用 sandbox、选择哪个 agent、provider 凭据如何进入容器，由 run lifecycle 与 vendor adapter 决定。
+sandbox 是内核基础设施领域，属于内层能力（受单向依赖边界约束）。它只提供"把一次 vendor CLI 启动包进受限进程"的能力；是否启用 sandbox、选择哪个 agent、如何接线 provider，由 run lifecycle 与 vendor adapter 决定。
 
 ## 2. 范围与边界
 
 范围：
 
 - sandbox 配置类型与默认值。
-- system sandbox definition 与 workspace sandbox config 的合并规则。
-- named-definition registry。
-- sandbox driver contract。
-- Docker-backed runtime。
-- seccomp profile 加载与合并。
-- `SandboxLauncher` 启动容器、创建 wrapper、清理临时目录。
-- worktree/specs bind mount 与 container label。
-- codex relay 的 container→host hop。
+- workspace sandbox config 的 normalize 规则。
+- 路径放行解析：项目原目录 ro、worktree rw、specsBase rw、`extraMounts` 逐项 ro/rw。
+- arapuca wrapper 生成与临时目录清理。
+- 启动前探测 arapuca 二进制与平台能力。
+- run lifecycle 接线：随机选取 sandbox agent、包裹 vendor CLI 启动、run 结束清理。
 
 边界：
 
 - sandbox 领域不决定普通 chat run 是否进入 sandbox。
 - sandbox 领域不理解业务 session、intent、automation 的语义。
-- sandbox 领域不实现 Kubernetes、Swarm、远程 Docker host。
-- sandbox 领域不下载、不版本化、不验证 vendor CLI；工具由使用方预装进镜像，见 `doc/architecture/sandbox-architecture.md`。
-- sandbox 领域不构建镜像；镜像名由 workspace 配置，c3 视其为不透明工具环境。
+- sandbox 领域不实现远程 / 云端 sandbox。
+- sandbox 领域不下载、不版本化、不验证 vendor CLI；工具由使用方在宿主预装。
+- sandbox 领域不捆绑、不分发 arapuca；只探测其存在与平台能力。
+- sandbox 领域当前不施加网络约束（网络全开），网络收窄是后续阶段。
 
 ## 3. 模块结构
 
-| 模块                                 | 职责                                                                                                                                    |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `server/src/kernel/sandbox/types.ts` | sandbox 类型定义：runtime type、system def、workspace config、resolved config、handle、exec result、health status、start/stop options。 |
-| `SandboxConfig.ts`                   | 校验 system/workspace 配置，并合并为 `ResolvedSandboxConfig`。                                                                          |
-| `SandboxRegistry.ts`                 | 注册 system sandbox definition，按 name 解析 workspace override。                                                                       |
-| `SandboxDriver.ts`                   | runtime backend contract。                                                                                                              |
-| `docker/DockerDriver.ts`             | Docker backend，实现 start/stop/exec/stream/snapshot/health/copy。                                                                      |
-| `seccomp/profiles.ts`                | 加载默认 seccomp profile 和用户指定 profile。                                                                                           |
-| `SandboxLauncher.ts`                 | run lifecycle 与 sandbox driver 的集成层：读取 workspace sandbox 配置、启动容器、创建 wrapper、停止容器、清理 tmpDir。                  |
-| `kernel/run/sandbox-agent.ts`        | sandbox 启用时从 workspace agent pool 随机选择一个可容器化 agent。                                                                      |
+| 模块                          | 职责                                                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `server/src/kernel/sandbox/`  | sandbox 类型定义：workspace config、resolved 路径集、放行项权限、启动 options。                                     |
+| workspace sandbox 配置校验    | 校验并 normalize `WorkspaceSandboxConfig`（`enabled` + `extraMounts` + `sandboxSessionKinds`）。                    |
+| `SandboxLauncher`             | run lifecycle 与 sandbox 的集成层：读取 workspace 配置、探测 arapuca、`resolvePaths()`、生成 wrapper、清理 tmpDir。 |
+| ProcessSandbox 层（arapuca）  | 把 resolved 路径集映射为 arapuca `run` 参数；把 vendor CLI 包成 `arapuca run … -- <cli> "$@"` 形态的 wrapper。      |
+| `kernel/run/sandbox-agent.ts` | sandbox 启用时从 workspace agent pool 随机选一个可沙箱化 agent，其 vendor 决定入口命令。                            |
+
+> 与容器方案的差异：不再有 `DockerDriver`、镜像 / registry、seccomp profile 加载、bind mount、forwarder sidecar、内部网络。原容器 runtime、容器供应链、网络分段相关模块整体移除。既有"沙箱 backend 作为独立内核模块""系统 + 项目双层配置"的抽象概念保留，但不再承载镜像 / 资源 / 网络等容器字段；当前范围内所有隔离参数由 workspace 配置与该 run 的 worktree 直接驱动。具体文件切分由实现阶段确定。
 
 ## 4. 配置模型
 
-### 4.1 SystemSandboxDef
+### 4.1 WorkspaceSandboxConfig
 
-system definition 是管理员配置的 sandbox 模板，保存于 system settings 的 `sandboxes`：
-
-```ts
-interface SystemSandboxDef {
-  name: string
-  type: 'docker' | 'gvisor' | 'kata' | 'firecracker'
-  image: string
-  seccomp?: string
-  memoryLimit?: string
-  cpuLimit?: number
-  resourceLimits?: ResourceLimits
-  envVars?: Record<string, string>
-  networkAllowlist?: readonly string[]
-  workingDir?: string
-  entrypoint?: readonly string[]
-  dockerOptions?: Record<string, unknown>
-}
-```
-
-注意：`networkDisabled` 和 `readonlyRootfs` 不在 system definition 上。它们是 workspace 级安全策略。
-
-### 4.2 WorkspaceSandboxConfig
-
-workspace config 是项目级配置：
+workspace config 是项目级配置，收敛为三项：
 
 ```ts
 interface WorkspaceSandboxConfig {
   enabled?: boolean
-  sandbox?: string
-  agentIds?: readonly string[]
-  allowExternalNetwork?: boolean
-  readonlyRootfs?: boolean
-  imageOverride?: string
-  memoryLimitOverride?: string
-  cpuLimitOverride?: number
-  envVarsOverride?: Record<string, string>
-  extraMounts?: readonly { path: string; readonly?: boolean }[]
-  sandboxSessionKinds?: SessionKind[]
+  extraMounts?: readonly {
+    path: string // 宿主绝对路径，同路径放行
+    readonly?: boolean // 默认 true；缺省即 ro，可逐项显式设为 false 放开 rw
+  }[]
+  sandboxSessionKinds?: SessionKind[] // 哪些 SessionKind 进沙箱，缺省 ['work']
+  // 网络开关留待网络阶段引入；当前网络全开，无对应字段。
 }
 ```
 
-`enabled` 为真且能解析到沙箱定义（`sandbox` 显式指定，或未指定时回退名为 `default` 的 system 定义）时，才有机会启动 sandbox。`agentIds` 来自 normalize 后的 custom agent pool；sandbox 只从这个 pool 随机选一个 agent。`image`（或 `imageOverride`）指向使用方自建、预装 vendor CLI 的镜像；未 override 时用所解析 system 定义的 `image`。`extraMounts` 是补充映射目录，每项按宿主绝对路径同路径映射进容器，默认只读。`sandboxSessionKinds` 决定哪些 `SessionKind` 的 run 进沙箱，缺省 `['work']`。
+- `enabled` 为真时，满足结构性前提（隔离 worktree）的 run 才有机会进入沙箱。
+- `extraMounts` 是补充放行目录，每项按宿主绝对路径同路径放行，默认只读，可逐项声明 rw。用于把额外依赖目录、共享缓存、参考仓库带进放行集。
+- `sandboxSessionKinds` 决定哪些 `SessionKind` 的 run 进沙箱，缺省 `['work']`。
 
-### 4.3 ResolvedSandboxConfig
+移除的容器 / 网络字段（不在当前模型中）：镜像名 / `imageOverride`、`readonlyRootfs`、`networkDisabled`、`allowExternalNetwork`、`memoryLimit` / `cpuLimit` / `resourceLimits`、`envVarsOverride`、`networkAllowlist`、`seccomp`、`sandbox`（system definition 引用名）、`agentIds` 之外的容器专属项等。网络收窄阶段再按需引入网络字段。
 
-合并后得到 driver 可直接使用的 resolved config：
+同时移除容器供应链协议（`RuntimeVendorConfig`、`VendorInstallManifest`、`FetchPlan` 等），不引入。
 
-```ts
-interface ResolvedSandboxConfig {
-  type: SandboxType
-  image: string
-  seccomp?: string
-  memoryLimit: string
-  cpuLimit: number
-  resourceLimits?: ResourceLimits
-  networkDisabled: boolean
-  networkAllowlist?: readonly string[]
-  readonlyRootfs: boolean
-  envVars: Record<string, string>
-  workingDir?: string
-  entrypoint?: readonly string[]
-  dockerOptions?: Record<string, unknown>
-}
-```
+### 4.2 normalize 规则
 
-默认值：
-
-- `memoryLimit = "512m"`。
-- `cpuLimit = 1`。
-- `networkDisabled = true`。
-- `readonlyRootfs = true`。
-- `envVars = {}`。
+- `sandboxSessionKinds` 缺省 `['work']`；normalize 去重、丢弃合法集合之外的值，归一化后为空则回退 `['work']`。
+- `extraMounts` 每项 `readonly` 缺省视为 `true`。
+- 遗留磁盘上的容器字段（如旧 `networkDisabled` / `readonlyRootfs` / 镜像相关键）在读取时直接丢弃，不迁移为新字段——当前范围没有对应语义承接。具体的旧键兼容处理由实现阶段确定。
 
 ## 5. 业务规则
 
-| ID       | 规则                                                                                                                                                                                                                                                                                                            |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SND-R1   | Phase 1 仅支持 Docker runtime。`gvisor`、`kata`、`firecracker` 是后续 backend。                                                                                                                                                                                                                                 |
-| SND-R2   | 每个 system sandbox definition 通过唯一 `name` 标识。重复注册时 registry 覆盖旧值。                                                                                                                                                                                                                             |
-| SND-R3   | workspace config 通过 `sandbox` 字段引用 system definition；解析时把 system base 与 workspace override 合并。                                                                                                                                                                                                   |
-| SND-R3b  | workspace 未指定 `sandbox` 名时，回退到名为 `default` 的 system 沙箱定义（用其镜像与模板）；若不存在 `default` 定义，则视为未配置沙箱（等同禁用）。                                                                                                                                                             |
-| SND-R4   | workspace override 优先级高于 system definition。同名 env var 由 workspace 覆盖，env map 是 merge 不是 replace。                                                                                                                                                                                                |
-| SND-R5   | 缺省值 deny-by-default：512 MB、1 CPU、禁网、只读 rootfs、空 env。                                                                                                                                                                                                                                              |
-| SND-R6   | Docker runtime 只连接本地 Docker daemon；不支持远程 Docker host。                                                                                                                                                                                                                                               |
-| SND-R7   | stop 是幂等操作；容器已停止或已删除时吞掉错误。                                                                                                                                                                                                                                                                 |
-| SND-R8   | health check 不抛运行态错误；inspect 失败返回 `running: false` 与错误信息。                                                                                                                                                                                                                                     |
-| SND-R9   | 当前默认 seccomp profile 是 MVP permissive；后续阶段收紧。                                                                                                                                                                                                                                                      |
-| SND-R10  | sandbox 启用时容器始终接入内部网络 `c3-mcp-net`（`docker network --internal`，无外网路由），供访问宿主 c3 MCP；外网由 `allowExternalNetwork` 控制（缺省 false ⇒ 不挂 egress bridge）。旧 `networkDisabled` 已移除，normalize 时把遗留磁盘键迁移为 `allowExternalNetwork = !networkDisabled`。                   |
-| SND-R10b | 宿主 c3 MCP（及 codex relay）经 forwarder sidecar 暴露到 `c3-mcp-net`；sidecar 双网卡（内部网 + 可达宿主 bridge），仅做端口转发，digest pin、cap-drop、只读根、非 root。                                                                                                                                        |
-| SND-R10c | MCP 传输统一为 loopback HTTP：两个 vendor 都走 c3 HTTP MCP 端点，Claude 改用 HTTP、移除进程内绑定。sandbox 下两 vendor 的 MCP server URL（及 codex relay base URL）改写为 sidecar 网络别名；回环纵深防御由 `isLoopback` 调整为「`c3-mcp-net` 可达 + per-run token」。大方向见 `sandbox-architecture.md` §12.5。 |
-| SND-R11  | `networkAllowlist` 是 Phase 2 extension point；当前非空时拒绝启动。                                                                                                                                                                                                                                             |
-| SND-R12  | `resourceLimits` 优先于 flat `memoryLimit` / `cpuLimit`；stop timeout 只能通过 `resourceLimits.stopTimeoutMs` 表达。                                                                                                                                                                                            |
-| SND-R13  | sandbox 仅对具备隔离 worktree（`effectiveCwd`）且 `gitBranchMode === 'worktree'` 的 run 生效；在此结构性前提上，再按 `sandboxSessionKinds` 过滤 run 的 `sessionKind`。普通 chat run（无 worktree）与 current-branch dev run 结构性排除。                                                                        |
-| SND-R13b | `sandboxSessionKinds` 缺省 `['work']`；normalize 去重、丢弃 `SESSION_KINDS` 之外的值，归一化后为空则回退 `['work']`。勾选某 kind 只对该 kind 且具隔离 worktree 的 run 生效；从不产生 worktree run 的 kind 即使勾选也不会进沙箱。                                                                                |
-| SND-R14  | sandbox 采用同路径映射：宿主绝对路径 = 容器绝对路径。项目原目录（workspace root）只读挂载，run worktree 读写挂载，workspace specs root 以宿主相同绝对路径读写挂载。                                                                                                                                             |
-| SND-R14b | workspace 可配置 `extraMounts` 补充映射目录，每项同路径映射、默认只读；补充目录不得覆盖 worktree、项目原目录、specsBase 等保留路径，映射前须 canonicalize 并做 allowlist 校验。                                                                                                                                 |
-| SND-R15  | sandbox 启用时，从 normalized custom agent pool 随机选择一个 agent 并 pin 到 pending run；被选 agent 的 vendor 决定容器内入口命令（镜像 PATH 中的 CLI）与 provider 接线。                                                                                                                                       |
-| SND-R16  | 工具随镜像分发：镜像名由 workspace 配置，预装 claude/codex/npm 等；c3 不下载、不版本化 vendor CLI，启动前 `docker image inspect` 确认镜像存在与 arch，缺失/不符 hard-fail。                                                                                                                                     |
-| SND-R17  | codex RELAY 在 sandbox 下经 forwarder sidecar（`c3-mcp-net`）回连宿主 loopback relay，不再依赖 `host.docker.internal:host-gateway` 直连，也不要求 `allowExternalNetwork`；relay 监听面不扩大。                                                                                                                  |
-| SND-R18  | composition root 必须实例化 Docker runtime 与 SandboxRegistry，并注入 run launch 依赖；否则 sandbox gate 永远不会触发。                                                                                                                                                                                         |
-| SND-R19  | Docker daemon socket 解析顺序为 `DOCKER_HOST`、`/var/run/docker.sock`、`~/.docker/run/docker.sock`、`~/.colima/default/docker.sock`、`~/.rd/docker.sock`、dockerode 默认值。                                                                                                                                    |
-| SND-R20  | 宿主 spawn wrapper 的 cwd 必须是宿主 worktree；容器内 cwd 由 wrapper 的 `docker exec -w <worktree 宿主同路径>` 设置，与宿主 worktree 绝对路径一致。                                                                                                                                                             |
-| SND-R21  | wrapper env-file 会过滤指向宿主 loopback 的 proxy env，避免容器内访问 `127.0.0.1` 时误连自己。                                                                                                                                                                                                                  |
-| SND-R22  | Claude sandbox wrapper 注入 `IS_SANDBOX=1`，允许 root 容器内使用 skip-permissions 模式。                                                                                                                                                                                                                        |
-| SND-R23  | 同路径映射的所有目录（项目原目录、worktree、specsBase、extraMounts）必须位于 Docker Desktop file sharing 范围内，否则 macOS 下会空挂载；worktree 仍要求位于 c3 home 下。                                                                                                                                        |
-| SND-R24  | `allowExternalNetwork`（缺省 false，deny-by-default）/ `readonlyRootfs`（缺省 true）是 workspace 级安全策略，不属于 system definition；遗留磁盘键 `networkDisabled` 在 normalize 时迁移为 `allowExternalNetwork`。                                                                                              |
+1. 沙箱后端为 arapuca 进程级隔离，不使用容器 / 镜像 / rootfs 隔离。
+2. sandbox 仅对具备隔离 worktree（有效 cwd）且以 worktree 模式创建的 run 生效；在此结构性前提上，再按 `sandboxSessionKinds` 过滤 run 的 `sessionKind`。普通 chat run（无 worktree）与 current-branch dev run 结构性排除。
+3. `sandboxSessionKinds` 缺省 `['work']`；勾选某 kind 只对该 kind 且具隔离 worktree 的 run 生效；从不产生 worktree run 的 kind 即使勾选也不会进沙箱。
+4. 同路径原则：进程在宿主原路径上运行，宿主绝对路径就是进程看到的绝对路径，不存在任何路径改写；沙箱只给路径打 ro/rw 标签。
+5. 固定放行：项目原目录（workspace root）只读，run worktree 读写，workspace specs root 以宿主相同绝对路径读写。
+6. 补充放行：workspace 可配置 `extraMounts`，每项同路径放行、默认只读、可逐项声明 rw；补充目录不得覆盖 worktree、项目原目录、specsBase 等保留路径，放行前须 canonicalize 并做 allowlist / denylist 校验，拒绝软链逃逸。
+7. deny-by-default 是安全底座：未显式放行的目录（其它项目、`~/.ssh`、`~/.aws` 等 home 内敏感目录）一律不可见，无需额外配置即隔离凭证与无关代码。
+8. 无凭证注入：进程即当前宿主用户，沿用宿主侧既有认证（env 变量或 vendor CLI 自身配置目录）；vendor CLI 自身认证所需的最小配置目录由 wrapper 生成逻辑放行，不牵连 home 其它敏感目录。
+9. 网络当前全开，不施加网络约束。网络禁用 / 出站白名单 / 代理列为后续阶段。
+10. sandbox 启用时，从 normalized custom agent pool 随机选一个 agent 并 pin 到 pending run；被选 agent 的 vendor 决定入口命令（宿主 PATH 中的 CLI）与 provider 接线。
+11. 启用即硬隔离：arapuca fail-closed（任一隔离层失效即非零退出），与 deny-by-default 一致；探测缺失 / 平台不支持 / 放行路径非法 / 启动失败时该 run 硬失败，绝不回落宿主裸跑。
+12. arapuca 二进制走宿主预装 + 探测：c3 不捆绑；启动前探测二进制存在与平台能力，缺失 / 不支持 hard-fail 并给出明确 `UiCode`。
+13. 宿主 spawn wrapper 的 cwd 是宿主 worktree；进程同路径运行，cwd 语义天然一致，无需任何容器内 cwd 设置。
+14. 无长驻容器：run 结束只需清理临时 wrapper 文件，不存在 start/stop 容器。
 
-## 6. Driver contract
+## 6. 启动集成层
 
-每个 runtime backend 必须实现同一组能力：
+`SandboxLauncher` 是 run lifecycle 与 arapuca 之间唯一的集成点，职责：
 
-| 操作          | 输入                                         | 输出            | Docker 实现                                |
-| ------------- | -------------------------------------------- | --------------- | ------------------------------------------ |
-| `start`       | `ResolvedSandboxConfig` + `StartOptions`     | `SandboxHandle` | create container，然后 start。             |
-| `stop`        | `SandboxHandle` + `StopOptions`              | void            | stop container，可选 remove。              |
-| `exec`        | `SandboxHandle` + argv                       | `ExecResult`    | Docker exec，收集 stdout/stderr/exitCode。 |
-| `spawnStream` | `SandboxHandle` + argv                       | readable stream | Docker exec stream。                       |
-| `snapshot`    | `SandboxHandle` + tag                        | image id        | Docker commit。                            |
-| `healthCheck` | `SandboxHandle`                              | `HealthStatus`  | Docker inspect。                           |
-| `copyFrom`    | `SandboxHandle` + container path + host path | void            | Docker archive copy，用于 checkpoint。     |
+- 读取并 normalize workspace sandbox config，判断本次 run 是否进沙箱。
+- 探测 arapuca 二进制与平台能力，缺失 / 不支持 hard-fail。
+- `resolvePaths()`：把固定放行（项目原目录 ro、worktree rw、specsBase rw）与 `extraMounts`（逐项 ro/rw）解析成一个 canonicalize + 校验过的放行路径集。
+- `createSandboxWrapper()`：把入口命令、放行路径集、cwd 生成为 arapuca wrapper 脚本。
+- run 结束后清理 wrapper 临时目录。
 
-上层只依赖 `SandboxDriver`，不直接依赖 dockerode。
+上层不直接依赖 arapuca 的调用细节；`SandboxLauncher` 之下的 ProcessSandbox 层负责把放行路径集翻译为 arapuca `run` 参数。
 
-## 7. Docker runtime 实现
+## 7. arapuca 参数映射
 
-`DockerDriver.start()` 把 resolved config 映射为 Docker create options：
+`resolvePaths()` 产出的放行路径集映射为 arapuca `run` 的挂载标志：
 
-| c3 字段                                 | Docker 字段                                                                                       |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `memoryLimit` / `resourceLimits.memory` | `HostConfig.Memory`                                                                               |
-| `cpuLimit` / `resourceLimits.cpu`       | `HostConfig.CpuPeriod` + `HostConfig.CpuQuota`                                                    |
-| `readonlyRootfs`                        | `HostConfig.ReadonlyRootfs`                                                                       |
-| sandbox 启用（始终）                    | 容器接入内部网络 `c3-mcp-net`（`NetworkMode`/`EndpointsConfig` 指向该网），并起 forwarder sidecar |
-| `allowExternalNetwork = true`           | 额外挂一张可 egress 的 bridge（多网络 attach）                                                    |
-| `allowExternalNetwork = false`（默认）  | 只在 `c3-mcp-net` 上，无 egress bridge                                                            |
-| `resourceLimits.stopTimeoutMs`          | `HostConfig.StopTimeout`                                                                          |
-| `seccomp`                               | `HostConfig.SecurityOpt`                                                                          |
-| start `binds`                           | `HostConfig.Binds`                                                                                |
-| `envVars`                               | `Env`                                                                                             |
-| `workingDir`                            | `WorkingDir`                                                                                      |
-| `entrypoint`                            | `Cmd`                                                                                             |
+| c3 概念                      | arapuca 参数                    |
+| ---------------------------- | ------------------------------- |
+| 项目原目录（workspace root） | `-v <workspaceRoot>:ro`         |
+| run worktree                 | `-v <worktree>:rw`              |
+| specsBase                    | `-v <specsBase>:rw`             |
+| `extraMounts[i]`（默认 ro）  | `-v <path>:ro`                  |
+| `extraMounts[i]`（声明 rw）  | `-v <path>:rw`                  |
+| vendor CLI 自身最小配置目录  | `-v <configDir>:ro`（最小放行） |
+| 入口命令 + 参数              | `-- <entryCommand> "$@"`        |
+| 网络（当前全开）             | 不传网络收窄参数                |
 
-`dockerOptions.HostConfig` 会 deep merge 到 `HostConfig`，用于专家级扩展。使用者要避免通过 `dockerOptions` 绕开 deny-by-default 安全策略；需要新增安全能力时优先扩展显式字段。
+约束：
+
+- 所有放行路径先 canonicalize，再对照 allowlist / denylist；拒绝放行敏感系统目录、拒绝软链逃逸。
+- 保留路径（worktree / 项目原目录 / specsBase）不可被 `extraMounts` 覆盖或被其覆盖。
+- deny-by-default：未列入放行集的目录一律不可见，无需显式禁止。
+- vendor CLI 运行自身所需的最小集（可执行文件、运行库、其自身 home / 配置目录）由 wrapper 生成逻辑纳入放行，最小化暴露，不牵连 home 其它敏感目录。具体放行哪些目录由实现阶段结合各 vendor CLI 的配置布局确定。
 
 ## 8. Sandbox 启动流程
 
-当前启动流程：
-
 ```
-run lifecycle
-  → 确认 run 有 effectiveCwd，即 worktree run
-  → 读取 workspace sandbox config
-  → sandbox 未启用或 system def 不存在：返回 null，不启动 sandbox
-  → registry.resolve(systemName, workspaceConfig)
-  → docker image inspect <image>：缺失或 arch 不符 hard-fail
-  → resolveMounts()：项目原目录 ro + worktree rw + specsBase rw + extraMounts
-  → ensure c3-mcp-net + forwarder sidecar（转发宿主 MCP/relay）
-  → driver.start(resolvedConfig, binds + labels + 内部网 [+ egress bridge if allowExternalNetwork])
-  → 创建 tmpDir
-  → createSandboxWrapper(handle, tmpDir, entryCommand, envVars)
-  → codex：MCP/relay URL 改写为 sidecar 网络别名
-  → vendor SDK/driver spawn wrapper
-  → run 完成后 stop container + 清理 sidecar/网络（按复用策略）+ 删除 tmpDir
+用户启动 worktree intent-dev run
+  → 确认 run 有 effectiveCwd，即隔离 worktree run（否则不进沙箱）
+  → 读取 workspace sandbox config；未启用或 sessionKind 不在 sandboxSessionKinds：返回 null，不启动沙箱
+  → probe arapuca 二进制 + 平台能力：缺失 / 不支持 → hard-fail run
+  → pickSandboxAgent()：从 agent pool 随机选一个，得到 vendor（决定入口命令）
+  → resolvePaths()：
+       workspace root : ro
+       worktree       : rw
+       specsBase      : rw
+       extraMounts[i] : (ro | rw)
+       vendor CLI 最小配置目录 : ro
+  → createSandboxWrapper(entryCommand, paths, cwd=worktree, env)
+  → vendor SDK / driver spawn wrapper（SDK 以为 spawn 的是本地 CLI）
+  → run 完成后清理 wrapper tmpDir（无容器需停止）
 ```
 
-启动时固定 mount（宿主绝对路径 = 容器绝对路径）：
+固定放行（宿主原路径，无改写）：
 
-- `<workspace root>:<workspace root>:ro`（项目原目录，参考基线代码，禁止写回）。
-- `<worktree>:<worktree>`（run 的唯一代码改动面，读写）。
-- `<specsBase>:<specsBase>`（读写，支持 specs reverse-sync）。
+- 项目原目录（workspace root）：ro，参考基线代码，禁止写回主 checkout。
+- worktree：rw，agent 修改代码的唯一主路径。
+- specsBase：rw，宿主同绝对路径，支持 specs reverse-sync。
 
-启动时固定 label：
+补充放行（可选，来自 `extraMounts`）：同路径放行，默认 ro，可逐项 rw。
 
-- `c3.sandbox=true`。
-- `c3.project=<workspace path escaped>`。
-- `c3.worktree=<worktree path escaped>`。
-
-补充 mount（可选，来自 `extraMounts`）：
-
-- `<path>:<path>[:ro]`，默认只读，同路径映射。
-
-工具不再通过 mount 注入：claude/codex/npm 由镜像预装，wrapper 直接调用镜像 PATH 中的入口命令，无 `/opt/vendor` 只读挂载。
+不再有容器 label、bind mount、镜像 inspect、内部网络与 sidecar 创建等步骤。
 
 ## 9. Wrapper 机制
 
-`createSandboxWrapper()` 在宿主 tmpDir 写两个文件：
-
-- `env.txt`：传给 `docker exec --env-file`。
-- `wrapper.sh`：宿主可执行脚本。
-
-wrapper 形态：
+`createSandboxWrapper()` 在宿主临时目录写一个可执行 wrapper 脚本，把这次 vendor CLI 启动包进 arapuca：
 
 ```sh
 #!/bin/sh
-exec docker exec --env-file "<envFile>" -i -w "<worktreeHostPath>" "<containerId>" "<entryCommand>" "$@"
+exec arapuca run \
+  -v "<workspaceRoot>":ro \
+  -v "<worktree>":rw \
+  -v "<specsBase>":rw \
+  [ -v "<extraMount>":ro|rw ... ] \
+  -- "<entryCommand>" "$@"
 ```
 
-vendor SDK/driver 仍以为自己在 spawn 一个普通本地 CLI；实际进程被 wrapper 转发到容器内。
+vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这次 spawn 被 wrapper 包进 arapuca 受限进程。这与容器方案里"wrapper 替换二进制"的 per-run 隔离模型一致，只是包裹形态从 `docker exec … -- <cli> "$@"` 换成 `arapuca run … -- <cli> "$@"`。
 
 关键要求：
 
-- 宿主 spawn cwd 必须是宿主 worktree。
-- 容器内 cwd 与宿主 worktree 绝对路径一致（同路径映射）。
-- `<entryCommand>` 是镜像 PATH 中的 vendor CLI 名（如 `claude`、`codex`），不是 `/opt/vendor` 路径。
-- wrapper 需要能找到宿主 `docker` executable。
-- env-file 在 `docker exec` 时读取，允许 codex RELAY 在 wrapper 创建后追加 per-run token。
+- 宿主 spawn cwd 是宿主 worktree；进程同路径运行，cwd 天然一致，无需额外设置容器内 cwd。
+- `<entryCommand>` 是宿主 PATH 中的 vendor CLI 名（如 `claude`、`codex`），不是任何容器内安装路径。
+- wrapper 需要能在宿主 PATH 中找到 arapuca 可执行文件。
+- 无 env-file：进程即当前宿主用户，沿用宿主既有认证；需要额外传递的 per-run 变量随 wrapper 环境或 `"$@"` 参数进入，具体由 vendor adapter 决定。
 
 ## 10. Agent 选择与 provider 接线
 
-sandbox 启用时，`pickSandboxAgent()` 从 workspace 的 normalized `agentIds` 中随机选一个：
+sandbox 启用时，`pickSandboxAgent()` 从 workspace 的 normalized agent pool 中随机选一个：
 
 - pool 为空：hard-fail。
 - id 已失效或 resolve 回落 default：hard-fail。
@@ -265,95 +186,83 @@ sandbox 启用时，`pickSandboxAgent()` 从 workspace 的 normalized `agentIds`
 
 当前支持：
 
-- Claude：provider env 通过 wrapper env-file 进入容器，注入 `IS_SANDBOX=1`。
-- Codex DIRECT：base URL/model 由 SDK 生成 argv，经 wrapper `"$@"` 进入容器；`CODEX_API_KEY` 写入 env-file。
-- Codex RELAY：base URL 改写到 `host.docker.internal`；per-run relay token 写入 env-file 作为 `CODEX_API_KEY`；容器网络放通时 Docker 加 `host-gateway` extra-host。
+- Claude：以当前宿主用户身份运行，沿用宿主既有 provider 认证（env 或其自身配置目录）；无凭证注入。
+- Codex DIRECT：base URL / model 由 SDK 生成 argv，经 wrapper `"$@"` 进入进程；网络全开下直连 provider 天然可用。
+- Codex RELAY：agent 是宿主进程，`127.0.0.1` 就是宿主本机，直接回连宿主 loopback relay，无需 host-gateway、内部网络或 sidecar。
 
-hard-fail 是安全要求：sandbox enabled 的 run 不能因为容器或 vendor 接线失败而退回宿主裸跑。
+hard-fail 是安全要求：sandbox enabled 的 run 不能因为 arapuca 探测或 vendor 接线失败而退回宿主裸跑。
 
 ## 11. 文件系统策略
 
-运行期文件系统目标：
+运行期文件系统目标（宿主原路径，无改写）：
 
-| 路径（宿主=容器同路径） | 权限          | 说明                                            |
-| ----------------------- | ------------- | ----------------------------------------------- |
-| 项目原目录              | ro            | 参考基线代码，禁止写回主 checkout。             |
-| worktree                | rw            | agent 修改代码的唯一主路径。                    |
-| `<specsBase>`           | rw            | 与宿主同绝对路径挂载，支持 specs reverse-sync。 |
-| `extraMounts[i]`        | ro（默认）    | 补充依赖/缓存/参考目录，可按项声明为 rw。       |
-| container rootfs        | ro by default | 由 workspace `readonlyRootfs` 控制，默认只读。  |
-| 工具运行时 home/cache   | rw            | 由镜像内工具默认路径或 tmpfs 承载。             |
+| 路径             | 权限       | 说明                                                  |
+| ---------------- | ---------- | ----------------------------------------------------- |
+| 项目原目录       | ro         | 参考基线代码，禁止写回主 checkout。                   |
+| worktree         | rw         | agent 修改代码的唯一主路径。                          |
+| `<specsBase>`    | rw         | 宿主同绝对路径，支持 specs reverse-sync。             |
+| `extraMounts[i]` | ro（默认） | 补充依赖 / 缓存 / 参考目录，可按项声明为 rw。         |
+| 其它一切目录     | 不可见     | deny-by-default：未放行即不可见，含 home 内敏感目录。 |
 
-项目原目录只读挂载：agent 可读取基线代码，但所有写入只能落在 worktree，避免一次 run 污染用户当前 checkout。工具已随镜像分发，不再挂载 `/opt/vendor` 只读安装树。
+项目原目录只读：agent 可读取基线代码，但所有写入只能落在 worktree，避免一次 run 污染用户当前 checkout。敏感目录（其它项目、`~/.ssh`、`~/.aws`、其它工具 token）因不在放行集内而默认不可见，凭证无需传递也不暴露。
 
 ## 12. 网络策略
 
-网络分两个平面（大方向见 `sandbox-architecture.md` §12）：
+**当前：网络全开。** 沙箱当前不施加网络约束，vendor CLI 与 agent 可正常访问 provider API、拉取依赖等。
 
-**MCP 内部平面（始终常开）：**
+c3 MCP 接入天然成立：沙箱内 vendor agent 需要调用 c3 自身的 MCP 工具（`publish_event`、`save_intents`、spec 查询、automation 等），两个 vendor 都通过宿主回环上的 c3 HTTP MCP 端点（`http://127.0.0.1:<port>/internal/...`）访问。agent 是宿主进程，`127.0.0.1` 就是宿主本机，直接够到该端点——不需要内部网络、转发 sidecar 或 URL 改写。回环纵深防御沿用现成的 `isLoopback` + per-run 不透明 token。
 
-- sandbox 启用时容器接入内部网络 `c3-mcp-net`（`docker network create --internal`，无外网路由）。
-- forwarder sidecar 双网卡（`c3-mcp-net` + 可达宿主的 bridge），把宿主 loopback 上的 c3 MCP（及 codex relay）转发进来。
-- MCP 传输统一为 loopback HTTP：两个 vendor（Claude 改用 HTTP、移除进程内绑定）的 MCP URL、以及 codex relay base URL，均改写为 sidecar 网络别名（如 `http://c3-mcp:<port>/...?token=`）。
+后续阶段（非当前范围）可按平台收窄网络：
 
-**外部平面（`allowExternalNetwork` 控制）：**
+- Linux：网络命名空间禁直连 + 宿主 CONNECT 代理，配 `--allow-host host:port` 出站白名单（经 unix domain socket，无需 TLS 拦截）。
+- macOS：全开 / 代理 / 全断三档，无 per-host 白名单。
 
-- 缺省 `false`：容器只在 `c3-mcp-net` 上，无 internet egress。能调 c3 MCP，不能上外网。
-- `true`：额外挂一张可 egress 的 bridge。用于 DIRECT 模式 CLI 直连 provider API、npm/go 拉依赖等。
-- RELAY 模式无需外网：LLM 流量经 sidecar → 宿主 relay → 外网；DIRECT 模式未开外网则请求无路由 hard-fail。
-
-限制：
-
-- `networkAllowlist` 当前不支持，非空即拒绝启动（Phase 2）。
-- 遗留磁盘键 `networkDisabled` 在 normalize 时迁移为 `allowExternalNetwork`（`= !networkDisabled`）；wire 层已单一字段。MCP 内部网始终常开，不再是旧 `--network none` 全断。
-- Linux native Docker 的 `host.docker.internal` 可达性与 Docker Desktop 不完全一致，正式收敛需要后续 in-container relay sidecar 或 egress proxy。
-- c3 自己的 MCP 工具面现在对两个厂商都走**宿主回环 HTTP MCP 端点**。容器内 `127.0.0.1` / `localhost` 指向容器自身而非宿主,因此从**沙箱容器内部**到达该宿主端点的能力尚未打通,与上一条同属后续 sandbox-network 工作(in-container relay sidecar / egress 通道)——本期只保证并验证宿主直连路径,是一个已知的后续阶段,而非回退。
+收窄时以 workspace 级开关控制，并需保证回环 c3 MCP 端点在收窄后仍在放行集内。这部分留待网络阶段单独设计与决策。
 
 ## 13. 运行期环境卫生
 
-env-file 来源包含 c3 server 环境与 vendor-specific env。写入前必须过滤宿主 loopback proxy：
+进程即当前宿主用户，`127.0.0.1` 就是宿主本机，因此**不再需要过滤指向宿主 loopback 的 proxy env**——容器方案里过滤 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` 等是因为容器内 `127.0.0.1` 是容器自己；进程级下宿主 loopback proxy 指向仍然正确，无需剥离。
 
-- `HTTP_PROXY`
-- `HTTPS_PROXY`
-- `ALL_PROXY`
-- 小写同名变量
-- `NO_PROXY` 按 vendor 需求补充
+arapuca 自身会对危险前缀环境变量做卫生处理：剥离 `ARAPUCA_*` / `LD_*` / `DYLD_*` 等前缀，保留 `AGENT_*`。c3 在生成 wrapper 环境时应据此确认需要传入进程的变量不落在被剥离前缀下。
 
-原因：容器内 `127.0.0.1` / `localhost` 是容器自己，不是宿主。把宿主 loopback proxy 带进容器会导致 provider 请求 connection refused。
+## 14. arapuca 探测
 
-## 14. Docker 健康检查
+启动前探测替代原 Docker 健康检查：
 
-`checkDockerAvailable()` 使用最小 `hello-world:latest` 配置启动 throw-away container，并立即 stop/remove。失败时返回明确错误，sandbox enabled 的 run 应 hard-fail 并向 UI 暴露 Docker 不可用原因。
+- 探测 arapuca 二进制是否存在于宿主 PATH。
+- 探测宿主平台是否支持当前策略所需能力（当前范围为文件系统 ro/rw MAC；三平台均支持）。
+- 缺失或平台不支持时返回明确错误，sandbox enabled 的 run hard-fail 并向 UI 暴露原因（明确 `UiCode`，不硬编码英文文案），不静默降级。
+- 探测结果可缓存于 host 能力状态，供 UI 展示"沙箱是否可用"。
 
-实际启动时的 Docker socket 解析由 `DockerDriver` 完成，覆盖 Docker Desktop、Colima、Rancher Desktop、Linux native 常见路径。
+c3 不捆绑 arapuca；使用方在宿主自行安装（musl 静态二进制或 `cargo install`）。探测是第一道能力关卡，类比宿主二进制探测。
 
-## 15. Checkpoint copy
+## 15. 写操作预审 / checkpoint
 
-`preApproveCheckpoint()` 使用 `driver.copyFrom(handle, "<worktree 宿主同路径>", snapshotDir)` 把容器内 worktree 快照复制到宿主临时目录，再执行轻量检查。当前是 MVP 级 top-level 文件检查；后续可扩展为 git diff、文件白名单、大小限制、敏感文件扫描。
+worktree 直接位于宿主同路径，agent 的写入实时落在宿主 worktree 上，因此预审无需任何"从容器拷回"步骤：预审逻辑可直接检查宿主 worktree。当前是 MVP 级 top-level 文件检查；后续可扩展为 git diff、文件白名单、大小限制、敏感文件扫描。写操作审批队列的具体接线（触发时机、审批粒度）沿用既有非容器部分，细节由实现阶段确定。
 
 ## 16. 与架构文档的分工
 
 本文是实现设计，回答：
 
 - 当前 sandbox 具体怎么启动？
-- Docker 参数怎么映射？
-- wrapper/env-file 怎么工作？
-- worktree、specs、network、readonlyRootfs 的规则是什么？
+- 放行路径怎么解析、arapuca 参数怎么映射？
+- wrapper 怎么工作？
+- worktree、specs、extraMounts、网络的规则是什么？
 - run lifecycle 如何接入？
 
 `doc/architecture/sandbox-architecture.md` 是大方向架构，回答：
 
-- c3 sandbox 的总体机制与演进方向是什么？
-- 参考 OpenClaw、OpenHands、SWE-ReX、Docker Sandboxes 后，c3 采用什么路线？
-- 目录如何同路径映射？工具如何随使用方自建镜像分发？
-- 容器内 agent 如何调用 c3 MCP？网络如何分段（内部 MCP 网 + 外网开关）？
-- 未来如何扩展到 stronger runtime、egress proxy、credential broker？
+- c3 sandbox 为什么从容器整体切换为进程级 arapuca？
+- arapuca 的平台能力面（文件系统 / 网络 / 系统调用 / 资源）与跨平台差异是什么？
+- 目录如何同路径放行、凭证为何默认不可见？
+- 进程内 agent 如何天然直连 c3 MCP？
+- 网络收窄等后续阶段如何演进？
 
 ## 17. Phase plan
 
-| 阶段      | 范围                                                                                                       | 状态             |
-| --------- | ---------------------------------------------------------------------------------------------------------- | ---------------- |
-| Phase 1   | Docker runtime、配置/registry/driver、seccomp profile、worktree-only run 接线、wrapper、hard-fail。        | 当前             |
-| Phase 1.5 | 同路径映射（项目原目录 ro + worktree rw + extraMounts）、镜像 inspect 健康检查、wrapper cwd/入口命令切换。 | 规划，见架构文档 |
-| Phase 2   | gVisor/Kata/Firecracker backend、seccomp 收紧、resource monitoring、network allowlist/egress proxy。       | 规划             |
-| Phase 3   | 远程 sandbox / cloud runtime，需要单独 ADR。                                                               | 未来             |
+| 阶段    | 范围                                                                                                                                                                                            | 状态 |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| Phase A | 文档与配置类型：`WorkspaceSandboxConfig` 收敛为 `enabled` + `extraMounts` + `sandboxSessionKinds`；移除容器 / 网络字段与供应链协议。                                                            | 当前 |
+| Phase B | arapuca wrapper 与路径放行：`resolvePaths()`（项目原目录 ro + worktree rw + specsBase rw + extraMounts）、保留路径校验 + canonicalize + allowlist、生成 `arapuca run … -- <cli> "$@"` wrapper。 | 规划 |
+| Phase C | 探测与硬失败：启动前探测 arapuca 二进制 + 平台能力，缺失 / 不支持 hard-fail 并 UI 提示安装；所有失败路径保持 hard-fail，不回落宿主裸跑。                                                        | 规划 |
+| Phase D | 网络收窄（后续阶段）：按平台引入网络禁用 / 出站白名单 / 代理与对应 workspace 开关，保证回环 c3 MCP 端点收窄后仍可达。                                                                           | 未来 |

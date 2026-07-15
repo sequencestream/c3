@@ -103,11 +103,11 @@ c3
 │   │   ├── 共识留痕                              # auto 记录的投票/裁决只读回看
 │   │   └── 溯源跳转                              # 按 sessionKind+sessionId 跳回来源页(会话/需求/讨论/自动化)
 │   │
-│   ├── sandbox 沙箱                              # 在隔离容器中安全运行 dev run
+│   ├── sandbox 沙箱                              # 进程级隔离下安全运行 dev run
 │   │   ├── 三层安全管控                          # read-only / sandboxed / full-access 三级工具权限
-│   │   ├── 容器隔离                              # Docker 容器内跑真实 dev run,worktree 挂载 /workspace
+│   │   ├── 进程级隔离                            # arapuca 内核 MAC 限制目录 ro/rw,宿主同路径无映射
 │   │   ├── 写操作审批队列                        # 沙箱内写操作进审批队列由人裁决
-│   │   └── 沙箱定义                              # 系统设置可配置沙箱镜像/挂载定义
+│   │   └── 沙箱定义                              # 系统设置可配置放行目录(ro/rw)
 │   │
 │   └── auth 鉴权                                 # 每条连接过身份门,每次改全局配置过管理员门
 │       ├── 登录                                  # basic 用户名/密码校验,签发 session token

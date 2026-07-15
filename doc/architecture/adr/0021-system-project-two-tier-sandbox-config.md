@@ -105,7 +105,7 @@ _Con:_ 与 c3 现有的"项目可覆盖系统设置"的授权模型不一致。
 
 > **改名说明（2026-06-12）**：原项目级沙箱配置统一改名为工作区沙箱配置，与工作区设置对齐。仅改概念标识符，磁盘键（工作区设置的 `sandbox` 字段及其内部键）不变，无 wire/磁盘迁移。
 >
-> **字段下沉修订（2026-06-16，见 [ADR-0025](0025-sandbox-network-readonly-workspace-policy.md)）**：
+> **字段下沉修订（2026-06-16，见 [ADR-0025](deprecated/0025-sandbox-network-readonly-workspace-policy.md)，已被 ADR-0028 取代）**：
 > `networkDisabled`、`readonlyRootfs` 从系统级沙箱定义移除，仅由工作区沙箱配置承载（deny-by-default，缺省 `true`/`true`）。上文系统级定义中的这两项、以及合并规则 7 的 `readonlyRootfs: false` 均以 ADR-0025 为准；`networkAllowlist` 仍留在系统定义。
 
 ### 合并规则

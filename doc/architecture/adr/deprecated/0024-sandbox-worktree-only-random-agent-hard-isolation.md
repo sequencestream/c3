@@ -1,6 +1,11 @@
 # 0024 — Sandbox 仅 worktree intent-dev + custom agent 随机选取 + 启用即硬隔离
 
-- **Status:** accepted
+> **其容器相关机制已被 [ADR-0028](../0028-process-level-lightweight-sandbox-arapuca.md) 取代**(2026-07-15)。
+> 沙箱后端从 Docker 容器整体切换为 arapuca 进程级隔离:容器/镜像/bind mount/env-file 凭证注入等作废。
+> 仍适用的原则(sandbox 仅 worktree intent-dev、随机选 custom agent 定 vendor、启用即硬隔离、
+> 失败 hard-fail 不裸跑)由 ADR-0028 沿用。保留本文作为历史记录。
+
+- **Status:** superseded
 - **Date:** 2026-06-12
 - **Driver:** 让"sandbox 绑 worktree"真正落地——容器挂 worktree 工作目录而非主项目目录，并以 deny-by-default 收敛失败路径
 

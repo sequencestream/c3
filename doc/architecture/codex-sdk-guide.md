@@ -218,7 +218,7 @@ session 一联网即被拒。c3 通过两个中性驱动选项字段控制，由
 ### GitHub CLI 凭据桥接（GH_TOKEN 注入）
 
 `gh` CLI 把令牌存在操作系统钥匙串（macOS keychain）。Codex 运行在自身的 seatbelt 沙箱
-（以及可选的 docker 容器）内，其子进程读不到宿主钥匙串——即使宿主 `gh auth status` 完全正常、
+（以及 c3 的 arapuca 进程级沙箱）内，其子进程读不到宿主钥匙串——即使宿主 `gh auth status` 完全正常、
 即使沙箱已开网，会话内的 `gh` 也会报「请运行 gh auth login」。`gh` 读取环境变量的优先级高于
 钥匙串，故把令牌以 `GH_TOKEN` 注入子进程环境即可在沙箱内恢复认证。
 

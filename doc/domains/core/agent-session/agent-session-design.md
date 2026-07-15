@@ -51,13 +51,13 @@ Codex 是由 c3 自身极简的 `codex exec --experimental-json` 包装器启动
 
 ### Codex GitHub CLI 凭据注入
 
-一个 codex 会话运行在 codex 自身的 seatbelt 沙箱下(可选还有 docker 容器),其
+一个 codex 会话运行在 codex 自身的 seatbelt 沙箱下,其
 子进程无法读取宿主 OS 密钥链——因此把令牌存在那里的 `gh` 即使在已鉴权、有网络的宿主上
 也会在会话内鉴权失败。`run-via-driver` 会解析一次宿主的 `gh`
-凭据(在 agent-launch 环境解析之后、构建沙箱 env-file 并调用
-`driver.start` 之前),并在 `GH_TOKEN` 和 `GITHUB_TOKEN` 都尚未设置时(遵循
-`buildChildEnv` 的优先级:agent 覆盖 > shell > 默认值),把 `GH_TOKEN` 注入到同一个
-`envOverrides` 中——这样宿主 codex 进程和容器包装器的 env-file 就能得到相同的值。
+凭据(在 agent-launch 环境解析之后、启动 vendor 进程之前),并在 `GH_TOKEN` 和
+`GITHUB_TOKEN` 都尚未设置时(遵循
+`buildChildEnv` 的优先级:agent 覆盖 > shell > 默认值),把 `GH_TOKEN` 注入到
+`envOverrides` 中——这样 codex 进程(含沙箱 wrapper)就能得到相同的值。
 仅限 Codex(claude 路径没有 seatbelt 边界);探测失败会静默降级,从不阻塞
 启动;该令牌从不写入磁盘、记录日志或出现在遥测中。见
 [codex-sdk-guide § GitHub CLI 凭据桥接](../../../architecture/codex-sdk-guide.md)。

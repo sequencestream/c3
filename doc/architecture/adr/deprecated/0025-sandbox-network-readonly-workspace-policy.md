@@ -1,6 +1,10 @@
 # 0025 — Sandbox `networkDisabled`/`readonlyRootfs` 下沉为工作区级安全策略
 
-- **Status:** accepted
+> **已被 [ADR-0028](../0028-process-level-lightweight-sandbox-arapuca.md) 取代**(2026-07-15)。
+> 进程级 arapuca 方案下当前网络全开、无只读根/网络分段字段;`networkDisabled` / `readonlyRootfs` /
+> `allowExternalNetwork` 等容器网络配置整体移除,网络收窄留待后续阶段。保留本文作为历史记录。
+
+- **Status:** superseded
 - **Date:** 2026-06-16
 - **Driver:** 网络隔离与只读根文件系统本质是「每个工作区各自的安全策略」，不应由管理员级系统模板承载
 

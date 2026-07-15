@@ -10,13 +10,12 @@ tag (`git describe --tags`); `package.json` is the fallback baseline.
 - automation config JSON import/export
 - file tree shows git file status (modified/added/staged + directory rollup + periodic refresh)
 - intent detail page: metadata moved to the top with reordered fields
-- MarkdownText: generic code-file link detection with jump-to-code-page navigation
-- markdown preview defaults to preview mode; relative file links resolve against the source file's directory
-- automation list gains a workspace-level "enable automation" master switch
-- generic event format contract: bus envelope + normalizer registry
+- markdown preview: generic code-file link detection with jump-to-code-page navigation, defaults to preview mode, and relative links resolve against the source file's directory
+- workspace-level "enable automation" switches: a master switch on the automation list title bar, and a per-row accessible toggle on the new Workcenter run-overview Dashboard
+- generic event mechanism: envelope + normalizer registry, unified `publish_event` MCP tool (replacing the narrower `publish_pr_event`, ADR-0026), and custom event types are now accepted via a default-normalizer fallback (field-level redaction/truncation preserved)
+- automation event triggers: generic filter (type/status/metadata) instead of dedicated fields per event type, multi-row subscriptions, optional session-kind filter, and event context can now be embedded into LLM prompts (ADR-0027)
+- automation config form: fields grouped into clearly separated sections
 - automation MCP tool `start_session_for_intent` to launch spec/work sessions
-- unify `publish_event` MCP tool, replacing the narrower `publish_pr_event`
-- automation event triggers use a generic filter (type/status/metadata) instead of dedicated fields per event type
 
 ### Fixes
 

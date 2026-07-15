@@ -328,7 +328,7 @@ workspace 新增 `allowExternalNetwork`（缺省 `false`），控制容器是否
 - 保留/新增启动路径的结构化错误 topic：镜像缺失、arch 不符、Docker 不可用、启动失败。
 - workspace sandbox 设置面板：
   - 镜像名/digest 输入。
-  - 补充映射目录列表：`path` + `ro/rw`。
+  - 补充映射目录列表：每项 `path` + `ro/rw` 权限选择器。权限必须显式暴露给使用方逐项选择，默认落在 `ro`；需要写入时由使用方主动切到 `rw`，不隐藏该选项。
   - 会话种类勾选 `sandboxSessionKinds`（缺省只勾 `work`）。
   - 外部网络开关 `allowExternalNetwork`（缺省关，仅放通 c3 MCP 内部网）/ `readonlyRootfs` 开关。
 - 首次启用 sandbox：检查镜像是否存在。缺失时提示使用方准备镜像（拉取或构建），而不是由 c3 自动下载工具。
@@ -343,7 +343,7 @@ interface WorkspaceSandboxConfig {
   // ...existing fields...
   extraMounts?: readonly {
     path: string // 宿主绝对路径，同路径映射进容器
-    readonly?: boolean // 默认 true
+    readonly?: boolean // 默认 true；缺省即 ro，使用方可逐项显式设为 false 放开 rw
   }[]
   sandboxSessionKinds?: SessionKind[] // 哪些 SessionKind 进沙箱，缺省 ['work']
   allowExternalNetwork?: boolean // 是否放通外网,缺省 false(仅 c3-mcp 内部网)

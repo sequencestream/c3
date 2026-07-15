@@ -44,7 +44,7 @@ import {
   isWriteTool,
 } from './mcp-freeze.js'
 import type { FrozenToolSet } from './mcp-freeze.js'
-import { createAutomationMcpServer } from './c3-mcp.js'
+import { remoteMcpToClaudeConfig } from '../../kernel/agent/adapters/claude/mcp.js'
 import { buildAutomationPrompt, readEmbedEventContext } from './event-prompt.js'
 import type { ServedAutomationMcp } from '../../transport/automation-mcp/index.js'
 import { upsertAutomationExecutionRow } from '../sessions/session-metadata-store.js'
@@ -53,15 +53,15 @@ import { WireEmitter } from '../../kernel/run/run-via-driver.js'
 import { AutomationViewerStream, translateClaudeSdkMessage } from './viewer-stream.js'
 
 // ---------------------------------------------------------------------------
-// Codex automation c3 MCP route (driver-path twin of the Claude in-process
-// server). Injected by the composition root at startup — the dispatcher runs off
-// the kernel run bus, so it holds the served route as a module-level handle it
-// `bind()`s per Codex execution, mirroring the `configureAutomationMcp` singleton.
+// Automation c3 MCP route (the SINGLE loopback HTTP MCP transport both Claude and
+// Codex automations bind). Injected by the composition root at startup — the
+// dispatcher runs off the kernel run bus, so it holds the served route as a
+// module-level handle it `bind()`s per execution for either vendor.
 // ---------------------------------------------------------------------------
 
 let automationHttpMcp: ServedAutomationMcp | null = null
 
-/** Inject (or clear, in tests) the loopback HTTP MCP route for Codex automations. */
+/** Inject (or clear, in tests) the loopback HTTP MCP route for c3 automations. */
 export function setAutomationHttpMcp(served: ServedAutomationMcp | null): void {
   automationHttpMcp = served
 }
@@ -638,17 +638,21 @@ async function executeLlmPrompt(
   // allowlist mounts it. Templates can preselect these entries; an empty
   // allowlist does not implicitly grant c3 capabilities. It intentionally
   // replaces a user-configured server named `c3`; other workspace MCP servers
-  // remain available.
+  // remain available. Claude now binds the SAME loopback HTTP MCP route Codex uses
+  // (no in-process SDK server): bind per execution, translate the neutral
+  // descriptors into the Claude SDK HTTP config, and dispose the token in `finally`
+  // so the tools cannot be called after this execution ends.
   const selectedC3Mcp = hasSelectedC3McpTool(automation.toolAllowlist ?? [])
-  const mcpServers = selectedC3Mcp
-    ? {
-        ...workspaceMcpConfig.mcpServers,
-        ...createAutomationMcpServer(
-          resolveWorkspaceRoot(automation.workspaceId)!,
-          logId,
-          automation.metadata,
-        ),
-      }
+  const c3Binding =
+    selectedC3Mcp && automationHttpMcp
+      ? automationHttpMcp.bind({
+          workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
+          executionId: logId,
+          metadata: automation.metadata,
+        })
+      : null
+  const mcpServers = c3Binding
+    ? { ...workspaceMcpConfig.mcpServers, ...remoteMcpToClaudeConfig(c3Binding.servers) }
     : workspaceMcpConfig.mcpServers
   const hasMcpServers = Object.keys(mcpServers).length > 0
 
@@ -772,6 +776,9 @@ async function executeLlmPrompt(
     })
   } finally {
     settleAutomationRuntime(runningSessionId, settleReason, settleError)
+    // Dispose the per-execution c3 MCP token so the tools cannot be called after
+    // this execution ends (idempotent; no-op when c3 was not selected).
+    c3Binding?.dispose()
   }
 }
 

@@ -33,7 +33,6 @@ import type {
 } from '../agent/adapters/types.js'
 import type { PermissionRequestCtx } from '../permission/gateway.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import { codexPolicyToGrid, codexDirectSandboxEnv } from '../agent/adapters/codex/driver.js'
 import { resolveCodexGhTokenEnv } from '../agent/adapters/codex/gh-token.js'
 import { getSpecsBase } from '../config/workspace-path.js'
@@ -67,35 +66,22 @@ export interface IntentProfile {
   appendSystemPrompt: string
   disallowedTools: string[]
   /**
-   * Bind the in-process SDK MCP server — the CLAUDE path twin of
-   * {@link bindDriverMcp}. The three intent tools' run-level binding (live run id
-   * + abort signal) does not exist at profile-build time, so the composition root
-   * returns a binder instead of a pre-built server: `runClaude` calls it at query
-   * construction with `opts.sessionId` / `signal`. The project path + gate deps
-   * (emit / waitForDecision / broadcast / WorkCenter hook) are captured at the
-   * root. `save_intents`'s confirmation gate lives in its handler (`gatedSave`),
-   * so a vendor allow-rule that skips `canUseTool` still raises a human prompt.
+   * Bind the three intent tools over c3's loopback streamable-HTTP MCP route, the
+   * SINGLE vendor-neutral transport both Claude and Codex now consume. The run-level
+   * binding (workspace + live run id + abort signal) does not exist at profile-build
+   * time, so the composition root returns a binder the run paths call once started:
+   * it mints a per-run token, stands up the private MCP server, and returns the
+   * neutral {@link RemoteMcpServer} descriptors plus a `dispose` to evict the token
+   * at run end. `getRunId` reads the LIVE run id so a pending→real rebind routes the
+   * save gate's `permission_request` to the bound session. `save_intents`'s
+   * confirmation gate lives in its handler (`gatedSave`), so a vendor allow-rule that
+   * skips `canUseTool` still raises a human prompt — Claude and Codex share one gate.
    */
-  bindInProcessMcp: (binding: {
-    getRunId: () => string
-    signal: AbortSignal
-  }) => Record<string, McpServerConfig>
+  bindMcp: (binding: { workspacePath: string; getRunId: () => string; signal: AbortSignal }) => {
+    servers: Record<string, RemoteMcpServer>
+    dispose: () => void
+  }
   gate: 'intent'
-  /**
-   * Driver-path remote MCP (2026-06-12-005). Codex can't load in-process
-   * SDK MCP, so the three intent tools are exposed over c3's localhost HTTP MCP
-   * route instead. The composition root binds a per-run token (project + run id +
-   * abort signal) and returns the neutral {@link RemoteMcpServer} descriptors plus
-   * a `dispose` to evict the binding at run end. Absent ⇒ no remote MCP route
-   * (the run gets no intent tools, same as before this change). Only codex
-   * consumes it today.
-   * server-level, incompatible with a per-run token URL).
-   */
-  bindDriverMcp?: (binding: {
-    workspacePath: string
-    getRunId: () => string
-    signal: AbortSignal
-  }) => { servers: Record<string, RemoteMcpServer>; dispose: () => void }
 }
 
 /**
@@ -112,25 +98,18 @@ export interface SpecProfile {
   disallowedTools: string[]
   gate: 'spec'
   /**
-   * Bind the in-process SDK MCP server carrying the spec author's two read-only
-   * ledger query tools (`find_intents` / `view_intent`) — the CLAUDE-path twin of
-   * {@link IntentProfile.bindInProcessMcp}, kept to the SAME binder shape so
-   * `runClaude` consumes both uniformly. The spec server is project-bound (the
-   * `workspacePath` is captured at the composition root) and needs no run-level
-   * binding (no save, no confirmation gate), so it ignores the `getRunId` / `signal`
-   * the binder is handed. Absent ⇒ no in-process MCP (a spec session with no ledger
-   * query tools, the pre-2026-06-20 behaviour). Codex spec sessions use the
-   * driver-path twin below.
+   * Bind the spec author's two read-only ledger query tools (`find_intents` /
+   * `view_intent`) over the loopback HTTP MCP route — the SAME vendor-neutral
+   * transport shape {@link IntentProfile.bindMcp} uses, so both run paths consume it
+   * uniformly. There is no save and no confirmation gate, so the binder ignores the
+   * `getRunId` / `signal` it is handed; the `workspacePath` binds the read to one
+   * project. The same path runs on `reset_spec_session`, so a reset session gets the
+   * tools too.
    */
-  bindInProcessMcp?: (binding: {
-    getRunId: () => string
-    signal: AbortSignal
-  }) => Record<string, McpServerConfig>
-  bindDriverMcp?: (binding: {
-    workspacePath: string
-    getRunId: () => string
-    signal: AbortSignal
-  }) => { servers: Record<string, RemoteMcpServer>; dispose: () => void }
+  bindMcp: (binding: { workspacePath: string; getRunId: () => string; signal: AbortSignal }) => {
+    servers: Record<string, RemoteMcpServer>
+    dispose: () => void
+  }
 }
 
 /**
@@ -141,20 +120,14 @@ export interface SpecProfile {
  * surface while gaining the ability to publish a vendor-neutral PR operation
  * event. Like {@link IntentProfile}, the per-run binding (live run id + abort
  * signal) does not exist at profile-build time, so the composition root returns
- * binders the run paths call once started: `runClaude` calls {@link
- * bindInProcessMcp} (in-process SDK MCP), the driver path calls {@link
- * bindDriverMcp} (localhost HTTP MCP) for codex.
+ * a binder the run paths call once started: both `runClaude` and the driver path
+ * call {@link bindMcp} to bind `publish_event` over the loopback HTTP MCP route.
  */
 export interface SessionMcpProfile {
-  bindInProcessMcp: (binding: {
-    getRunId: () => string
-    signal: AbortSignal
-  }) => Record<string, McpServerConfig>
-  bindDriverMcp?: (binding: {
-    workspacePath: string
-    getRunId: () => string
-    signal: AbortSignal
-  }) => { servers: Record<string, RemoteMcpServer>; dispose: () => void }
+  bindMcp: (binding: { workspacePath: string; getRunId: () => string; signal: AbortSignal }) => {
+    servers: Record<string, RemoteMcpServer>
+    dispose: () => void
+  }
 }
 
 function errMsg(err: unknown): string {
@@ -478,36 +451,19 @@ export async function runViaDriver(
     ? '/workspace'
     : (specDriverCwd ?? rt.effectiveCwd ?? workspacePath)
 
-  // Intent tools over localhost HTTP MCP (2026-06-12-005). Codex can't load
-  // the in-process SDK MCP claude uses, so the comm-agent's find/view/save tools are
-  // exposed via c3's loopback HTTP MCP route, bound to THIS run (project + run id +
-  // abort signal).
-  // (incompatible with a per-run token URL) and is a later intent. `getRunId`
-  // reads the live `runId` so a pending→real rebind routes the save gate's
-  // `permission_request` to the bound session, not the stale pending id.
+  // c3 tools over the loopback streamable-HTTP MCP route — the SINGLE transport
+  // both Claude and Codex now consume (no vendor branch selects the c3 transport).
+  // The active profile's `bindMcp` mints a per-run token, stands up the private MCP
+  // server for this run's tool face (intent find/view/save, spec find/view, or work
+  // `publish_event`), and returns the neutral descriptors + a `dispose` evicted in
+  // `finally`. `getRunId` reads the live `runId` so a pending→real rebind routes the
+  // save gate's `permission_request` to the bound session, not the stale pending id.
+  // A run is exactly one of intent / session / spec, so at most one binder fires.
   let disposeDriverMcp: () => void = () => {}
   let driverMcpServers: Record<string, RemoteMcpServer> | undefined
-  if (intentProfile?.bindDriverMcp && adapter.vendor === 'codex') {
-    const bound = intentProfile.bindDriverMcp({
-      workspacePath: workspacePath,
-      getRunId: () => runId,
-      signal: cycleAbort.signal,
-    })
-    driverMcpServers = bound.servers
-    disposeDriverMcp = bound.dispose
-  } else if (sessionProfile?.bindDriverMcp && adapter.vendor === 'codex') {
-    // Work-session base MCP (publish_event) over the localhost HTTP route — the
-    // codex twin of the in-process binder. A run is either intent or session, so
-    // this never coexists with the intent binding above (2026-06-20).
-    const bound = sessionProfile.bindDriverMcp({
-      workspacePath: workspacePath,
-      getRunId: () => runId,
-      signal: cycleAbort.signal,
-    })
-    driverMcpServers = bound.servers
-    disposeDriverMcp = bound.dispose
-  } else if (specProfile?.bindDriverMcp && adapter.vendor === 'codex') {
-    const bound = specProfile.bindDriverMcp({
+  const activeMcpBinder = intentProfile?.bindMcp ?? sessionProfile?.bindMcp ?? specProfile?.bindMcp
+  if (activeMcpBinder) {
+    const bound = activeMcpBinder({
       workspacePath: workspacePath,
       getRunId: () => runId,
       signal: cycleAbort.signal,
@@ -592,7 +548,7 @@ export async function runViaDriver(
     }
   } finally {
     disposeApproval()
-    disposeDriverMcp() // evict the per-run intent-MCP token binding (2026-06-12-005).
+    disposeDriverMcp() // evict the per-run c3 HTTP MCP token binding.
     if (rt.run) rt.run = null
     // The driver path is non-Claude. Agent-teams are Claude-locked
     // (2026-06-06-006): no non-Claude vendor has `streamingPush`, so this path never

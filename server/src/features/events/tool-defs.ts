@@ -1,9 +1,7 @@
 /**
  * Shared, framing-free definitions for the vendor-neutral `publish_event` MCP
  * tool, kept ONE source so the surfaces that expose it never drift:
- *  - the in-process Claude SDK MCP server (`./publish-tool.ts`),
- *  - the localhost HTTP MCP route for driver-path vendors (`transport/event-mcp`,
- *    codex),
+ *  - the localhost HTTP MCP route both Claude and Codex consume (`transport/event-mcp`),
  *  - the unattended-automation c3 MCP tool set (`../automations/c3-tools.ts`).
  *
  * This module owns the zod input shape (which mirrors the {@link GenericEvent}

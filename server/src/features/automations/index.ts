@@ -320,10 +320,10 @@ export const getAutomationToolManifest: Handler<'get_automation_tool_manifest'> 
       tools = createClaudeAdapter().listTools(msg.workspaceId)
   }
 
-  // Always append in-process c3 MCP tools so the user can select them
-  // regardless of vendor or workspace MCP config. These live outside the
-  // workspace MCP config (defined in features/intents/save-tool.ts), so
-  // the vendor adapter's listTools() never includes them.
+  // Always append c3 MCP tools so the user can select them regardless of vendor
+  // or workspace MCP config. These live outside the workspace MCP config (c3's own
+  // tools, served over the loopback HTTP MCP route), so the vendor adapter's
+  // listTools() never includes them.
   tools.push(...C3_MCP_TOOLS)
 
   conn.send({ type: 'automation_tool_manifest', vendor: msg.vendor, tools })

@@ -519,14 +519,12 @@ export async function launchRun(
                 // internal instruction (SDD work contract) rides claude's preset
                 // system append here, so it reaches the model without being echoed.
                 // Work sessions also get the base MCP profile (publish_event)
-                // via its in-process binder; the gate stays 'standard' (2026-06-20).
+                // over the loopback HTTP MCP route; the gate stays 'standard'.
                 {
                   ...(inject?.systemInstruction
                     ? { appendSystemPrompt: inject.systemInstruction }
                     : {}),
-                  ...(resolvedSessionProfile
-                    ? { bindInProcessMcp: resolvedSessionProfile.bindInProcessMcp }
-                    : {}),
+                  ...(resolvedSessionProfile ? { bindMcp: resolvedSessionProfile.bindMcp } : {}),
                   onSocketDisconnect: (info) => {
                     socketInfo = info
                   },

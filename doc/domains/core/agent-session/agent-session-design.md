@@ -31,16 +31,20 @@ team 工具时触发一次——服务器把 runtime 标记为 `team` 并发出 
 sessions)。运行的 send callback 把每个事件都路由到 runtime 的 buffer + viewers,从不
 直接发到 socket(AS-R11)。
 
-### Driver-path 远程 MCP(2026-06-12-005)
+### 远程 MCP(回环 HTTP,厂商统一,2026-06-12-005)
 
-Claude 路径通过进程内 SDK 服务器(`createSdkMcpServer`)接入 MCP。Driver-path 厂商
-无法加载这些,因此中立的 driver-start 选项携带一个中立的远程 MCP map(以名称标识的
-HTTP 服务器,带 URL 和可选的 bearer-token 环境变量),每个 driver 将其转换为
-自身原生的配置——codex driver 写入 codex CLI 的
-`codex mcp add --url` 形式所产生的 streamable-HTTP 服务器条目。c3 目前唯一的生产者是
-intent comm-agent:driver 路径绑定一个每次运行的 localhost HTTP MCP 路由,携带
-三个 intent 工具(见
+c3 自己的 MCP 工具面对**两个厂商**都走**同一条回环 streamable-HTTP MCP 路由**:一个中立的
+`bindMcp(binding) -> { servers, dispose }` 绑定为每次运行/每次执行铸造中立的远程 MCP
+描述符(以名称标识的 HTTP 服务器,带 URL 和可选的 bearer-token 环境变量),并交由厂商边界
+转译为各自原生的配置——codex driver 写入 codex CLI 的 `codex mcp add --url` 形式所产生的
+streamable-HTTP 服务器条目;Claude 边界的一个小转换器把同一批中立描述符翻译成 Claude SDK
+的 HTTP MCP 配置(`{ type: 'http', url, alwaysLoad: true }`)。Claude SDK 仍**具备**托管进程内
+MCP 的能力(`AdapterCapabilities.inProcessMcp` 保留为一个潜在能力),但 c3 自己的工具面
+不再使用它。c3 目前的生产者是 intent comm-agent:两个厂商路径都绑定一个每次运行的回环
+HTTP MCP 路由,携带三个 intent 工具(见
 [intent-management design § Intent tools over localhost HTTP MCP](../intent-management/intent-management-design.md))。
+每次绑定都在 c3 回环 origin 上铸造一个不透明 token,受回环守卫(非回环对端 403)与
+token 守卫(未知/已释放 404)保护,并在每一条终止路径的 `finally` 中被释放。
 Codex 是由 c3 自身极简的 `codex exec --experimental-json` 包装器启动的,而非
 `@openai/codex-sdk` 运行时包装器;该 SDK 包在 Codex adapter 内部仅作为
 事件/类型参考保留。

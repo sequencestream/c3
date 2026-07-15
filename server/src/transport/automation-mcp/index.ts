@@ -1,9 +1,8 @@
 /**
  * Localhost HTTP MCP route for the automation c3 tool profile. The unattended
- * automation's c3 tools are a Claude in-process SDK MCP server
- * (`features/automations/c3-mcp.ts`); codex (`inProcessMcp: false`) can't load
- * that, so this route re-exposes the SAME tool set over a streamable-HTTP MCP
- * server bound to ONE automation execution.
+ * automation's c3 tools are served over this ONE streamable-HTTP MCP route bound to
+ * a single automation execution — the SAME transport both Claude and Codex consume
+ * (neither uses an in-process SDK MCP server for c3 tools).
  *
  * Mirrors the intent / event MCP routes (`transport/intent-mcp`,
  * `transport/event-mcp`): a kernel-neutral bind/dispose + opaque per-execution

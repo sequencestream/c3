@@ -21,7 +21,7 @@
 ## 2. 预期机制(正常链路)
 
 `save_intents` 的确认**由保存处理器 `gatedSave` 自身发起**(RM-R5), 而非依赖厂商的
-`canUseTool`。claude(进程内 SDK MCP)与 codex(loopback HTTP MCP)共享这一个门:
+`canUseTool`。claude 与 codex 现在都通过同一条 loopback HTTP MCP 路由到达同一个处理器,共享这一个门:
 
 ```mermaid
 sequenceDiagram
@@ -60,7 +60,7 @@ sequenceDiagram
 ### 3.1 后端 / 前端链路对称且正确
 
 逐环节确认: codex 意图会话确实分派到 driver 路径并携带 `intentProfile` +
-`bindDriverMcp` + `onPermissionRequest`(`run-lifecycle.ts` → `run-via-driver.ts`);
+`bindMcp` + `onPermissionRequest`(`run-lifecycle.ts` → `run-via-driver.ts`);
 codex 侧 `c3` HTTP MCP server 注册了 `save_intents`; 前端渲染 vendor 无关。**没有发现
 不对称的缺陷**, 说明问题不在这条已知链路的接线上。
 

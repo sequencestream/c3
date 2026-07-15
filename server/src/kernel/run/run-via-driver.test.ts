@@ -292,7 +292,7 @@ describe('runViaDriver — work-session base MCP injection (publish_event, codex
     return { adapter, started }
   }
 
-  it('binds the session profile driver MCP and threads its servers to driver.start', async () => {
+  it('binds the session profile MCP and threads its servers to driver.start', async () => {
     const rt = ensureRuntime(sid, '/proj', 'default', [], 'work')
     const viewer: Viewer = () => {}
     addViewer(sid, viewer)
@@ -301,15 +301,14 @@ describe('runViaDriver — work-session base MCP injection (publish_event, codex
     const servers = {
       c3: { type: 'http' as const, url: 'http://127.0.0.1/internal/event-mcp/v1?token=t' },
     }
-    const bindDriverMcp = vi.fn(() => ({ servers, dispose }))
+    const bindMcp = vi.fn(() => ({ servers, dispose }))
     const { adapter, started } = fakeCodexAdapter()
 
     await runViaDriver(rt, 'hi', adapter, eventBus, undefined, undefined, undefined, undefined, {
-      bindInProcessMcp: () => ({}),
-      bindDriverMcp,
+      bindMcp,
     })
 
-    expect(bindDriverMcp).toHaveBeenCalledTimes(1)
+    expect(bindMcp).toHaveBeenCalledTimes(1)
     expect(started.mcpServers).toEqual(servers)
     // The per-run binding is evicted at run end.
     expect(dispose).toHaveBeenCalledTimes(1)
@@ -414,7 +413,7 @@ describe('runViaDriver — Codex specs writable root', () => {
           appendSystemPrompt: 'SPEC SYSTEM',
           disallowedTools: [],
           gate: 'spec',
-          bindDriverMcp: () => ({ servers, dispose }),
+          bindMcp: () => ({ servers, dispose }),
         },
       )
 

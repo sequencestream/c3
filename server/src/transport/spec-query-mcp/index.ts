@@ -1,7 +1,8 @@
 /**
- * Localhost HTTP MCP route for the spec author's read-only ledger tools. Codex
- * cannot load the Claude in-process MCP server, so spec sessions attach this
- * smaller HTTP server carrying only `find_intents` and `view_intent`.
+ * Localhost HTTP MCP route for the spec author's read-only ledger tools. Spec
+ * sessions attach this smaller HTTP server carrying only `find_intents` and
+ * `view_intent` — the SAME transport both Claude and Codex consume (neither uses
+ * an in-process SDK MCP server for c3 tools).
  */
 import type { Context } from 'hono'
 import { getConnInfo } from '@hono/node-server/conninfo'

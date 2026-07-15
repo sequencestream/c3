@@ -28,6 +28,13 @@ See [`doc/features.md`](doc/features.md) for the full feature tree.
 
 ## Usage
 
+### Homebrew
+
+```bash
+brew install sequencestream/tap/c3   # install
+brew upgrade sequencestream/tap/c3   # update to the latest release
+```
+
 ### Download
 
 Release binaries are published on **GitHub Releases**.

@@ -8,6 +8,7 @@
 import SettingsPanel from './components/SettingsPanel/SettingsPanel.vue'
 import type {
   SessionBindingStats,
+  SandboxHostStatus,
   SystemSettings,
   UiLang,
   VendorHostStatus,
@@ -17,6 +18,7 @@ defineProps<{
   open: boolean
   settings: SystemSettings | null
   hostStatus: VendorHostStatus[]
+  sandboxStatus: SandboxHostStatus | null
   bindingStats: SessionBindingStats | null
 }>()
 
@@ -35,6 +37,7 @@ defineEmits<{
     :open="open"
     :settings="settings"
     :host-status="hostStatus"
+    :sandbox-status="sandboxStatus"
     :binding-stats="bindingStats"
     @close="$emit('close')"
     @save="(s: SystemSettings) => $emit('save', s)"

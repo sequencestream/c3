@@ -3130,6 +3130,10 @@ button.deny:hover:not(:disabled) {
   flex-wrap: wrap;
   gap: var(--sp-2);
 }
+
+.diagnostics-row .sandbox-dot {
+  background: var(--c-primary);
+}
 .diagnostics-path {
   flex-basis: 100%;
   margin-left: calc(6rem + var(--sp-2));

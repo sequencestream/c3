@@ -809,6 +809,24 @@ describe('SettingsPanel.vue — host-CLI diagnostics (ADR-0012)', () => {
     expect(paths).toHaveLength(1)
     expect(paths[0].text()).toBe('/usr/local/bin/claude')
   })
+
+  it('shows the sandbox driver state and resolved arapuca path', () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: baseSettings,
+        hostStatus,
+        sandboxStatus: {
+          present: true,
+          binary: 'arapuca',
+          path: '/opt/homebrew/bin/arapuca',
+        },
+      },
+    })
+    const row = w.get('[data-testid="sandbox-diagnostics"]')
+    expect(row.text()).toContain('arapuca')
+    expect(row.get('.diagnostics-path').text()).toBe('/opt/homebrew/bin/arapuca')
+  })
 })
 
 describe('SettingsPanel.vue — vendor CLI multi-version selection', () => {

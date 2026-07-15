@@ -14,6 +14,7 @@ import type {
   AgentConfig,
   AuthConfig,
   SessionBindingStats,
+  SandboxHostStatus,
   SystemSettings,
   UiLang,
   VendorHostStatus,
@@ -69,10 +70,12 @@ const props = withDefaults(
     open: boolean
     settings: SystemSettings | null
     hostStatus?: VendorHostStatus[]
+    sandboxStatus?: SandboxHostStatus | null
     bindingStats?: SessionBindingStats | null
   }>(),
   {
     hostStatus: () => [],
+    sandboxStatus: null,
     bindingStats: null,
   },
 )
@@ -1166,6 +1169,27 @@ function selectAdmin(username: string) {
               <code v-if="h.present && h.path" class="diagnostics-path" :title="h.path">{{
                 h.path
               }}</code>
+            </li>
+            <li v-if="sandboxStatus" class="diagnostics-row" data-testid="sandbox-diagnostics">
+              <span class="vendor-dot sandbox-dot"></span>
+              <span class="diagnostics-vendor">{{ t('settings.diagnostics.sandbox') }}</span>
+              <code class="diagnostics-binary">{{ sandboxStatus.binary }}</code>
+              <span
+                class="diagnostics-status"
+                :class="sandboxStatus.present ? 'present' : 'missing'"
+              >
+                {{
+                  sandboxStatus.present
+                    ? t('settings.diagnostics.present')
+                    : t('settings.diagnostics.missing')
+                }}
+              </span>
+              <code
+                v-if="sandboxStatus.present && sandboxStatus.path"
+                class="diagnostics-path"
+                :title="sandboxStatus.path"
+                >{{ sandboxStatus.path }}</code
+              >
             </li>
           </ul>
         </section>

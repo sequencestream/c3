@@ -133,7 +133,7 @@ export function probeArapuca(): ArapucaProbeResult {
     return probeCache
   }
   const bin = findOnPath(ARAPUCA_BIN)
-  probeCache = bin ? { ok: true } : { ok: false, uiCode: 'arapuca-missing' }
+  probeCache = bin ? { ok: true, path: bin } : { ok: false, uiCode: 'arapuca-missing' }
   return probeCache
 }
 

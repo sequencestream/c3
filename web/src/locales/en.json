@@ -445,11 +445,12 @@
     },
     "diagnostics": {
       "title": {
-        "label": "Agent host CLIs"
+        "label": "Runtime drivers"
       },
-      "hint": "Each agent type needs its vendor CLI available on PATH.",
+      "hint": "Runtime availability and resolved paths for agent vendor CLIs and the Sandbox driver.",
       "present": "on PATH",
-      "missing": "not found"
+      "missing": "not found",
+      "sandbox": "Sandbox driver"
     },
     "vendorCli": {
       "title": {

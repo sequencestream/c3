@@ -40,6 +40,7 @@ import type {
   SessionAgentSwitch,
   SessionBindingStats,
   SessionCapabilities,
+  SandboxHostStatus,
   SessionInfo,
   SessionKind,
   SessionStatus,
@@ -521,6 +522,7 @@ export function createState(deps: StateDeps) {
   const settingsOpen = ref(false)
   const serverSettings = ref<SystemSettings | null>(null)
   const hostStatus = ref<VendorHostStatus[]>([])
+  const sandboxStatus = ref<SandboxHostStatus | null>(null)
   const bindingStats = ref<SessionBindingStats | null>(null)
   const sessionCapabilities = ref<Record<VendorId, SessionCapabilities> | null>(null)
   const skillSupport = ref<Record<VendorId, SkillSupportState> | null>(null)
@@ -795,6 +797,7 @@ export function createState(deps: StateDeps) {
     settingsOpen,
     serverSettings,
     hostStatus,
+    sandboxStatus,
     bindingStats,
     sessionCapabilities,
     skillSupport,

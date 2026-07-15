@@ -445,11 +445,12 @@
     },
     "diagnostics": {
       "title": {
-        "label": "Agent 宿主 CLI"
+        "label": "运行时驱动"
       },
-      "hint": "每种 agent 类型都需要其厂商 CLI 在 PATH 中可用。",
+      "hint": "显示 Agent 厂商 CLI 与 Sandbox 驱动的运行时可用状态及解析路径。",
       "present": "已在 PATH",
-      "missing": "未找到"
+      "missing": "未找到",
+      "sandbox": "Sandbox 驱动"
     },
     "vendorCli": {
       "title": {

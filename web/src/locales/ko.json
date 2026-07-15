@@ -446,11 +446,12 @@
     },
     "diagnostics": {
       "title": {
-        "label": "에이전트 호스트 CLI"
+        "label": "런타임 드라이버"
       },
-      "hint": "각 에이전트 유형에는 해당 공급자 CLI가 PATH에서 사용 가능해야 합니다.",
+      "hint": "에이전트 공급자 CLI와 Sandbox 드라이버의 런타임 가용성 및 확인된 경로를 표시합니다.",
       "present": "PATH에 있음",
-      "missing": "찾을 수 없음"
+      "missing": "찾을 수 없음",
+      "sandbox": "Sandbox 드라이버"
     },
     "vendorCli": {
       "title": {

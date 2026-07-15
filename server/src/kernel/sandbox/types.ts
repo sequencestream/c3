@@ -91,7 +91,7 @@ export interface ResolvedSandboxPaths {
  * never a silent host fallback.
  */
 export type ArapucaProbeResult =
-  | { readonly ok: true }
+  | { readonly ok: true; readonly path: string }
   | { readonly ok: false; readonly uiCode: SandboxUiCode }
 
 /** Structured error codes for sandbox launch failures (UI localizes these). */

@@ -145,7 +145,7 @@ describe('probeArapuca', () => {
     chmodSync(bin, 0o755)
     process.env.PATH = binDir
     resetArapucaProbeForTests()
-    expect(probeArapuca()).toEqual({ ok: true })
+    expect(probeArapuca()).toEqual({ ok: true, path: bin })
   })
 })
 

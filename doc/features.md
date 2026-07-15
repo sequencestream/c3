@@ -126,7 +126,7 @@ c3
 │   │   ├── 每会话绑定                            # 记住每个会话用哪个 agent
 │   │   └── 降级链                                # 某 agent 不可用时按 degradationChain 顺序回退
 │   │
-│   ├── system-setting 系统设置                   # 管理员全局配置(SystemSettings,过管理员门,系统设置面板)
+│   ├── system-setting 系统设置                   # 管理员全局配置；运行时页展示 vendor CLI 与 sandbox(arapuca)驱动状态/绝对路径
 │   │   ├── 显示与本地化                          # uiLang 界面语言 / voiceLang 语音输入语言 / timezone 系统时区(驱动 cron 解释)
 │   │   ├── 公开访问地址                          # baseUrl 部署对外基址,用于拼分享深链
 │   │   ├── 工具会话显示                          # showToolSessions 开关,决定工具类会话是否进侧栏

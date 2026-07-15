@@ -446,11 +446,12 @@
     },
     "diagnostics": {
       "title": {
-        "label": "エージェントのホスト CLI"
+        "label": "ランタイムドライバー"
       },
-      "hint": "各エージェントタイプには、そのベンダー CLI が PATH 上で利用可能である必要があります。",
+      "hint": "エージェントベンダー CLI と Sandbox ドライバーの実行時の可用性と解決済みパスを表示します。",
       "present": "PATH にあり",
-      "missing": "見つかりません"
+      "missing": "見つかりません",
+      "sandbox": "Sandbox ドライバー"
     },
     "vendorCli": {
       "title": {

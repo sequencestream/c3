@@ -183,6 +183,7 @@ const {
   automationToolManifestLoading,
   automationToolManifestError,
   hostStatus,
+  sandboxStatus,
   onSelectAutomation,
   openAutomationForm,
   onToggleAutomationEnabled,
@@ -707,6 +708,7 @@ function onCodesChatWidth(px: number): void {
       :open="settingsOpen"
       :settings="serverSettings"
       :host-status="hostStatus"
+      :sandbox-status="sandboxStatus"
       :binding-stats="bindingStats"
       @close="settingsOpen = false"
       @save="saveSettings"

@@ -87,6 +87,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     teamSessions,
     serverSettings,
     hostStatus,
+    sandboxStatus,
     bindingStats,
     sessionCapabilities,
     vendorCapabilities,
@@ -598,6 +599,7 @@ export function installMessageHandler(ctx: AppCtx): void {
       case 'settings':
         serverSettings.value = msg.settings
         hostStatus.value = msg.hostStatus
+        sandboxStatus.value = msg.sandboxStatus ?? null
         bindingStats.value = msg.bindingStats
         sessionCapabilities.value = msg.sessionCapabilities
         vendorCapabilities.value = msg.vendorCapabilities ?? null

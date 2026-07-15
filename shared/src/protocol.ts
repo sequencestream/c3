@@ -1511,6 +1511,15 @@ export interface VendorHostStatus {
   lastError?: string
 }
 
+/** Runtime availability of the process-level sandbox driver. */
+export interface SandboxHostStatus {
+  present: boolean
+  binary: 'arapuca'
+  /** Resolved absolute executable path, or `null` when unavailable. */
+  path: string | null
+  error?: 'arapuca-missing' | 'platform-unsupported' | 'path-illegal' | 'launch-failed'
+}
+
 /**
  * One selectable installed managed vendor CLI version, surfaced to the settings
  * panel. `failed` history entries are filtered out before being sent — only
@@ -4076,6 +4085,8 @@ export type ServerToClient =
       type: 'settings'
       settings: SystemSettings
       hostStatus: VendorHostStatus[]
+      /** Process-level sandbox driver status; absent on older servers. */
+      sandboxStatus?: SandboxHostStatus
       bindingStats: SessionBindingStats
       sessionCapabilities: Record<VendorId, SessionCapabilities>
       /**

@@ -17,6 +17,7 @@ import type {
   SkillSupportState,
   VendorId,
   VendorModeCatalog,
+  SandboxHostStatus,
 } from '@ccc/shared/protocol'
 import { MODE_CATALOGS } from '../../kernel/agent/adapters/index.js'
 import { resolveWorkspaceRoot, pathToId } from '../../state.js'
@@ -29,7 +30,7 @@ import {
 } from '../../kernel/config/index.js'
 import { detectDefaultBranch } from '../intents/worktree.js'
 import { getSpecsBase } from '../intents/specs-root.js'
-import { sysExtraMounts } from '../../kernel/sandbox/SandboxLauncher.js'
+import { probeArapuca, sysExtraMounts } from '../../kernel/sandbox/SandboxLauncher.js'
 import {
   probeAll,
   applyVendorCliChoices,
@@ -69,6 +70,13 @@ function hostStatus(): VendorHostStatus[] {
       ...(status.lastError ? { lastError: status.lastError } : {}),
     }
   })
+}
+
+function sandboxStatus(): SandboxHostStatus {
+  const probe = probeArapuca()
+  return probe.ok
+    ? { present: true, binary: 'arapuca', path: probe.path }
+    : { present: false, binary: 'arapuca', path: null, error: probe.uiCode }
 }
 
 /**
@@ -159,6 +167,7 @@ export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
     type: 'settings',
     settings: loadSettings(),
     hostStatus: hostStatus(),
+    sandboxStatus: sandboxStatus(),
     bindingStats: getSessionBindingStats(),
     sessionCapabilities: sessionCapabilities(),
     vendorCapabilities: vendorCapabilities(),
@@ -181,6 +190,7 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
     type: 'settings',
     settings: saved,
     hostStatus: hostStatus(),
+    sandboxStatus: sandboxStatus(),
     bindingStats: getSessionBindingStats(),
     sessionCapabilities: sessionCapabilities(),
     vendorCapabilities: vendorCapabilities(),

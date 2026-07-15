@@ -11,9 +11,13 @@
  * ── Why a registry (intentional revision of the old "no polymorphic publish_event")
  *   The prior stance was "add a new narrow tool per event type" to keep field-level
  *   type-safety + field-level safety normalization. This layer keeps BOTH the
- *   generality (one publish path) AND the safety (per-type normalizer) by making
- *   the registry a CLOSED set: an UNREGISTERED `type` is rejected outright, so
- *   generality never degrades into arbitrary-object passthrough.
+ *   generality (one publish path) AND the safety (per-type normalizer): a known
+ *   `type` gets its dedicated typed normalizer, while any OTHER (custom) `type`
+ *   falls through to an optional DEFAULT normalizer. The default still enforces the
+ *   safety pillar (structural secret redaction + truncation) — it just isn't tied
+ *   to a fixed field shape — so the open `<category>:<action>` contract holds
+ *   (a `custom:*` event publishes) without degrading into raw passthrough. When no
+ *   default is wired, an unregistered type is still rejected outright.
  *
  * ── Boundary (ADR-0009 R1)
  *   This module lives in `kernel/` and MUST NOT import from `features/` or
@@ -44,14 +48,21 @@ export type EventNormalizer = (core: GenericEvent) => GenericEvent
 export type NormalizeResult = { ok: true; event: GenericEvent } | { ok: false; reason: string }
 
 /**
- * The kernel `type → normalizer` registry. A registered normalizer is the ONLY
- * gate through which an event of that type may be published; an unregistered
- * type is rejected. Registering a duplicate type is a startup configuration
- * error (throws), because the registry must be assembled deterministically
- * before any publish entry point runs.
+ * The kernel `type → normalizer` registry. A registered normalizer is the gate
+ * through which an event of that type may be published; a type WITHOUT a dedicated
+ * normalizer falls through to the optional `defaultNormalizer` (custom/open types),
+ * or — when no default was supplied — is rejected. Registering a duplicate type is
+ * a startup configuration error (throws), because the registry must be assembled
+ * deterministically before any publish entry point runs.
  */
 export class EventNormalizerRegistry {
   private readonly normalizers = new Map<string, EventNormalizer>()
+
+  /**
+   * @param defaultNormalizer Fallback for a `type` with no dedicated normalizer.
+   *   Omit to keep the registry a CLOSED set (unregistered type → rejected).
+   */
+  constructor(private readonly defaultNormalizer?: EventNormalizer) {}
 
   /** Register the normalizer for `type`. Throws on an empty or duplicate type. */
   register(type: string, normalizer: EventNormalizer): void {
@@ -70,17 +81,18 @@ export class EventNormalizerRegistry {
   }
 
   /**
-   * Validate + normalize an untrusted core through the registered normalizer.
-   * Never throws. Returns a failure (and publishes NOTHING — the caller must not
-   * proceed) when the core is invalid, its `type` has no registered normalizer,
-   * the normalizer throws, or the normalized result is invalid / changed `type`.
+   * Validate + normalize an untrusted core through the registered (or default)
+   * normalizer. Never throws. Returns a failure (and publishes NOTHING — the caller
+   * must not proceed) when the core is invalid, its `type` has neither a registered
+   * nor a default normalizer, the normalizer throws, or the normalized result is
+   * invalid / changed `type`.
    */
   normalize(core: GenericEvent): NormalizeResult {
     const parsed = validateGenericEvent(core)
     if (!parsed.ok) return { ok: false, reason: `invalid event: ${parsed.reason}` }
 
     const { type } = parsed.value
-    const normalizer = this.normalizers.get(type)
+    const normalizer = this.normalizers.get(type) ?? this.defaultNormalizer
     if (!normalizer)
       return { ok: false, reason: `no normalizer registered for event type "${type}"` }
 

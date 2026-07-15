@@ -5,6 +5,8 @@
 
 > **后续演进（2026-07-13）**：本 ADR 当时把「统一模型工具 `publish_event`」记为**后续可复用目标**、明确不在本 ADR 范围（见下方 Scope 表）。该后续目标随后已落地:`publish_pr_event` 被**替换**为单一通用 `publish_event`(入参即 `GenericEvent`),归一化后以 `GenericEventEnvelope` 落到单一 `'event'` 总线 topic,PR 消费者按 `event.type` 判别投影。因此本 ADR 正文中描述 `publish_pr_event` 窄工具与 `pr:operation` 总线 topic 的段落是**决策时的历史语境**;当前状态见 `event-mechanism.md §6`。
 
+> **修订（2026-07-15）——注册表由「封闭」改为「开放 + 默认归一化器兜底」**：本 ADR 原选项 3 把注册表定为**封闭集合**、「未注册 type 一律拒绝」。实践中这与 `<category>:<action>` 命名规范（ADR-0027，type 本就是开放字符串,订阅侧已支持任意 `custom:*` type）冲突,也挡住了用户自定义事件。现修订为:注册表额外接受一个**默认归一化器**(`server/src/features/events/default-normalizer.ts`),已知 type 走其专用归一化器,**其余自定义 type 落到默认归一化器**——它复用同一套 secret 脱敏/绝对路径剥离/截断,但不绑定固定字段形状(递归清洗每个 string 叶子,`type` 不改写)。核心取舍不变:**字段级安全仍在**(默认归一化器同样脱敏/剥路径/截断),放弃的只是「未注册即拒」这条封闭边界——它不再是安全资产,而是无谓的发布限制。下文正文中「封闭注册表 / 未注册即拒」的表述按此修订理解;当前状态见 `event-mechanism.md §6.3 / §9.3`。
+
 ## Context
 
 事件总线（ADR-0018）天然多类型、可自由扩 topic。真正被**有意收敛**的是「模型对外发布」这一层：ADR-0018 之后加的 `publish_pr_event` 工具，字段级强类型 + 字段级安全归一化（脱敏、剥绝对路径、折叠空白、截断）+ per-run 信封不可伪造，是这层的核心安全资产。

@@ -17,9 +17,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
+import { z } from 'zod'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
-import { createIntentMcpServer } from './save-tool.js'
+import { gatedSave } from './save-gate.js'
+import { saveSchema } from './tool-defs.js'
+import type { IntentToolResult } from './tool-defs.js'
 import {
   getIntent,
   insertIntents,
@@ -44,34 +46,26 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-// --- save_intents handler plumbing (mirrors save-tool.test.ts) -----------
-interface CallToolResult {
-  content: { type: string; text: string }[]
-  isError?: boolean
-}
-type Handler = (args: unknown, extra: unknown) => Promise<CallToolResult>
-
-/** Reach into the SDK MCP server instance for the actual registered handler. */
-function getSaveHandler(servers: Record<string, McpServerConfig>): Handler {
-  const c3 = servers.c3 as unknown as {
-    instance: { _registeredTools: Record<string, { handler: Handler }> }
-  }
-  return c3.instance._registeredTools.save_intents.handler
-}
-
-/** Build the c3 server with a save gate that auto-allows (post-confirmation path). */
-function mkServer(
+// --- save_intents plumbing: drive the SHARED confirmation gate directly ------
+// The c3 tools no longer have a Claude-SDK in-process wrapper; both vendors run
+// this same `gatedSave` handler over the loopback HTTP MCP route. Parse the raw
+// args through `saveSchema` (as the MCP layer does) then run the gate with an
+// auto-ALLOW decision to exercise the post-confirmation persistence path.
+async function saveIntents(
   workspacePath: string,
+  rawArgs: unknown,
   onSaved: (p: string) => void = () => {},
-): Record<string, McpServerConfig> {
-  return createIntentMcpServer(
-    { workspacePath, getRunId: () => 'run-1', signal: new AbortController().signal },
+): Promise<IntentToolResult> {
+  const args = z.object(saveSchema).parse(rawArgs)
+  return gatedSave(
     {
       emit: () => {},
       waitForDecision: async () => ({ decision: 'allow' }),
       broadcastIntents: onSaved,
       onPermissionRequest: () => {},
     },
+    { workspacePath, getRunId: () => 'run-1', signal: new AbortController().signal },
+    args,
   )
 }
 
@@ -180,8 +174,8 @@ describe('module field — save_intents end-to-end (scenarios 3 & 4)', () => {
     // Scenario 3: the agent (post-confirmation) submits modules; each saved row's
     // module must equal what was given, readable via listIntents.
     const onSaved = vi.fn()
-    const handler = getSaveHandler(mkServer(proj, onSaved))
-    const res = await handler(
+    const res = await saveIntents(
+      proj,
       {
         intents: [
           {
@@ -200,7 +194,7 @@ describe('module field — save_intents end-to-end (scenarios 3 & 4)', () => {
           },
         ],
       },
-      {},
+      onSaved,
     )
     expect(res.isError).toBeFalsy()
     expect(onSaved).toHaveBeenCalledWith(proj)
@@ -213,16 +207,12 @@ describe('module field — save_intents end-to-end (scenarios 3 & 4)', () => {
   it('persists "" for items that OMIT module, while siblings keep theirs (mixed batch)', async () => {
     // Scenario 4: a mixed batch where one item omits module must not error; the
     // omitted one falls back to '' end-to-end through the registered handler.
-    const handler = getSaveHandler(mkServer(proj))
-    const res = await handler(
-      {
-        intents: [
-          { title: 'WithMod', shortEnTitle: 'auto', content: '', priority: 'P0', module: '权限' },
-          { title: 'NoMod', shortEnTitle: 'auto', content: '', priority: 'P1' }, // module omitted
-        ],
-      },
-      {},
-    )
+    const res = await saveIntents(proj, {
+      intents: [
+        { title: 'WithMod', shortEnTitle: 'auto', content: '', priority: 'P0', module: '权限' },
+        { title: 'NoMod', shortEnTitle: 'auto', content: '', priority: 'P1' }, // module omitted
+      ],
+    })
     expect(res.isError).toBeFalsy()
 
     const byTitle = new Map(listIntents(proj).map((r) => [r.title, r.module]))
@@ -259,7 +249,7 @@ describe('module field — read-back carries module (scenario 5)', () => {
 describe('module field — degradation contract not regressed (constraint)', () => {
   it('with the db unavailable, reads stay empty and writes still throw', () => {
     // Constraint: adding the module column must not change the db-down contract —
-    // reads return empty, writes throw (the save-tool turns that into isError).
+    // reads return empty, writes throw (the save handler turns that into isError).
     resetDbForTests()
     resetStoreForTests()
     process.env.C3_DB_PATH = '/dev/null/broken/c3.db'

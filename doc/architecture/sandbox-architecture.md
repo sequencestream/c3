@@ -114,6 +114,7 @@ c3 现有实现决定了新架构必须满足这些约束：
 - 本方案不把 c3 server 放进 sandbox。
 - 本方案不实现 Phase 2 网络 allowlist MITM 代理，只预留接口。
 - 本方案不保证 vendor 上游包管理器的所有签名能力立即可用；但 manifest、sha256、integrity、镜像 digest pin 和 smoke verify 必须在第一期具备。
+- c3 自己的 MCP 工具面现在对两个厂商（Claude 与 Codex）都走**宿主回环 HTTP MCP 端点**。容器内 `127.0.0.1` / `localhost` 指向容器自身而非宿主，因此从**沙箱容器内部**到达该宿主端点的能力**不在本期范围**，推迟到后续 sandbox-network 工作（in-container relay sidecar / egress 通道，与 §12 网络策略的后续收敛同属一处）；本期只保证宿主直连路径，这是一个已知的后续阶段，而非回退。
 
 ## 5. 架构总览
 

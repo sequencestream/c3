@@ -37,11 +37,8 @@ import { setWorkflowHooks } from './features/intents/workflow.js'
 import { setIntentLifecycleEventBus } from './features/intents/lifecycle-events.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { buildSpecAgentPrompt } from './features/intents/spec-prompt.js'
-import { createIntentMcpServer } from './features/intents/save-tool.js'
-import { createSpecQueryMcpServer } from './features/intents/spec-query-tool.js'
 import { runFind, runView } from './features/intents/tool-defs.js'
 import { gatedSave } from './features/intents/save-gate.js'
-import { createPublishEventMcpServer } from './features/events/publish-tool.js'
 import { normalizeGenericEventDefault } from './features/events/default-normalizer.js'
 import {
   normalizePrGenericEvent,
@@ -49,8 +46,7 @@ import {
   PR_LEGACY_EVENT_TYPE,
 } from './features/pr-events/tool-defs.js'
 import { runPublishEvent } from './features/events/tool-defs.js'
-import { configureAutomationMcp } from './features/automations/c3-mcp.js'
-import type { AutomationMcpDeps } from './features/automations/c3-mcp.js'
+import type { AutomationMcpDeps } from './features/automations/c3-tools.js'
 import { setAutomationHttpMcp } from './features/automations/dispatcher.js'
 import { createAutomationMcp, AUTOMATION_MCP_PATH } from './transport/automation-mcp/index.js'
 import {
@@ -339,13 +335,13 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // (no human prompt), so automatic decisions stay traceable in WorkCenter.
   const onConsensusResolved = createConsensusAutoHandler()
 
-  // Intent tools over localhost HTTP MCP (2026-06-12-005): the driver-path twin of
-  // the in-process SDK MCP (`createIntentMcpServer`). codex's comm-agent reaches
-  // find/view/save here. find/view are read-only; `save` runs the SAME confirmation
-  // gate the claude path uses — a `permission_request` frame on the bound run +
-  // `waitForDecision` — so a save still needs the user's OK in c3 UI, and a deny
-  // never reaches the store. The intent route is mounted below (before the SPA
-  // catch-all) and bound per-run via `intentProfile.bindDriverMcp`.
+  // Intent tools over the loopback HTTP MCP route — the SINGLE transport both
+  // Claude and Codex now consume for the comm-agent's find/view/save. find/view are
+  // read-only; `save` runs ONE confirmation gate (`gatedSave`) shared by both
+  // vendors — a `permission_request` frame on the bound run + `waitForDecision` — so
+  // a save still needs the user's OK in c3 UI, and a deny never reaches the store.
+  // The route is mounted below (before the SPA catch-all) and bound per-run via
+  // `intentProfile.bindMcp`.
   const intentMcpTools: IntentMcpTools = {
     find: (workspacePath, args) => runFind(workspacePath, args),
     view: (workspacePath, args) => runView(workspacePath, args),
@@ -498,55 +494,35 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       // model can back-link a single saved intent to this comm session.
       appendSystemPrompt: buildIntentAgentPrompt(getUiLang(), sessionId),
       disallowedTools: INTENT_DISALLOWED_TOOLS,
-      // In-process MCP for the CLAUDE path, bound per-run (runClaude supplies the
-      // live run id + signal). The project path + the SAME save-gate deps the
-      // codex/driver path uses are captured here. `save_intents`'s confirmation
-      // lives in the handler (`gatedSave`), so a vendor allow-rule that skips
-      // `canUseTool` still raises a human prompt — claude/codex share one gate.
-      bindInProcessMcp: (binding) =>
-        createIntentMcpServer(
-          { workspacePath, getRunId: binding.getRunId, signal: binding.signal },
-          {
-            emit,
-            waitForDecision,
-            broadcastIntents: broadcasts.broadcastIntents,
-            onPermissionRequest,
-          },
-        ),
+      // The three intent tools over c3's loopback HTTP MCP route — the SINGLE
+      // transport both Claude and Codex consume. Bound per-run (the run path
+      // supplies workspace + live run id + signal); `save_intents`'s confirmation
+      // lives in the shared handler (`gatedSave`, wired into `intentMcpTools`
+      // above), so a vendor allow-rule that skips `canUseTool` still raises a human
+      // prompt — claude/codex share one gate.
+      bindMcp: (binding) => intentMcp.bind(binding),
       gate: 'intent' as const,
-      // Driver-path (codex) intent tools over localhost HTTP MCP (2026-06-12-005).
-      // runViaDriver binds this per-run and injects the descriptors; claude ignores
-      // it (it uses the in-process binder above).
-      bindDriverMcp: (binding) => intentMcp.bind(binding),
     }),
     // Spec-authoring profile (write-confined gate + disallowed-tools lock + spec
     // prompt). `specDir` is per-run and rides on the runtime, not this static
-    // profile. Claude consumes the in-process read-only MCP server; Codex consumes
-    // the HTTP equivalent over loopback because it cannot load in-process MCP.
-    specProfile: (workspacePath) => ({
+    // profile. Both Claude and Codex consume the two READ-ONLY ledger query tools
+    // (find/view) over the same loopback HTTP MCP route. No save, no run-level
+    // binding — the spec author reads existing intents to ground the spec but can
+    // never write the ledger. The same path runs on reset_spec_session, so a reset
+    // session gets the tools too.
+    specProfile: () => ({
       appendSystemPrompt: buildSpecAgentPrompt(getUiLang()),
       disallowedTools: SPEC_DISALLOWED_TOOLS,
-      // In-process MCP for the CLAUDE path: the two READ-ONLY ledger query tools
-      // (find/view), project-bound. No save, no run-level binding — the spec author
-      // reads existing intents to ground the spec but can never write the ledger.
-      // The binder ignores the run id / signal it is handed (no save gate). The
-      // same path runs on reset_spec_session, so a reset session gets the tools too.
-      bindInProcessMcp: () => createSpecQueryMcpServer(workspacePath),
-      bindDriverMcp: (binding) => specQueryMcp.bind(binding),
+      bindMcp: (binding) => specQueryMcp.bind(binding),
       gate: 'spec' as const,
     }),
     // Work-session base MCP profile: every new and resumed work session gets
     // `publish_event` so the model can publish a vendor-neutral generic event
     // after acting with its own tools. No gate override, no disallowed-tools lock
-    // — the run keeps its standard surface. Claude binds the in-process server;
-    // codex binds the localhost HTTP route.
-    sessionProfile: (workspacePath) => ({
-      bindInProcessMcp: (binding) =>
-        createPublishEventMcpServer(
-          { workspacePath, getRunId: binding.getRunId, signal: binding.signal },
-          { normalize: normalizeEvent, publish: publishEvent },
-        ),
-      bindDriverMcp: (binding) => eventMcp.bind(binding),
+    // — the run keeps its standard surface. Both Claude and Codex bind the same
+    // loopback HTTP MCP route.
+    sessionProfile: () => ({
+      bindMcp: (binding) => eventMcp.bind(binding),
     }),
     // The neutral Codex adapter, or null when its host CLI is missing (launchRun
     // forks to the driver path for codex sessions; 2026-06-06-007).
@@ -597,9 +573,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Configure the automation c3 MCP deps AFTER the discussion run starters exist
   // (the discussion tools need `startDiscussionRun`). The stored deps are only
   // invoked at automation-dispatch runtime, well after startup. ONE deps object
-  // feeds both surfaces: the Claude in-process SDK server (`configureAutomationMcp`)
-  // and the codex loopback HTTP route (`createAutomationMcp`), so both vendors run
-  // the SAME tool behaviors.
+  // feeds the loopback HTTP MCP route (`createAutomationMcp`) that BOTH Claude and
+  // Codex automations bind per execution, so both vendors run the SAME tool
+  // behaviors from one definition.
   const automationMcpDeps: AutomationMcpDeps = {
     broadcastIntents: broadcasts.broadcastIntents,
     normalizeEvent,
@@ -609,9 +585,8 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     startDiscussionRun: discussionRuns.startDiscussionRun,
     launchRun: (rt, prompt, images, inject) => launchRun(rt, prompt, launchDeps, images, inject),
   }
-  configureAutomationMcp(automationMcpDeps)
-  // Codex twin of the automation c3 MCP over loopback HTTP: the dispatcher binds
-  // it per Codex execution when the automation selects a c3 tool. Mounted before
+  // The automation c3 MCP over loopback HTTP: the dispatcher binds it per execution
+  // (Claude and Codex both) when the automation selects a c3 tool. Mounted before
   // the SPA catch-all, same as the intent / event / relay routes.
   const automationMcp = createAutomationMcp(`http://127.0.0.1:${opts.port}`, automationMcpDeps)
   setAutomationHttpMcp(automationMcp)

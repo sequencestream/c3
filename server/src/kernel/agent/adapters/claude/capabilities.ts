@@ -19,6 +19,10 @@ export const claudeCapabilities: AdapterCapabilities = {
   interrupt: true,
   setActionMode: true,
   streamingPush: true,
+  // Claude's SDK CAN host in-process MCP servers (`createSdkMcpServer`) — this
+  // capability contract stays true — but c3's OWN tools no longer use it: both
+  // Claude and Codex now reach the c3 intent / spec / event / automation tools over
+  // the loopback HTTP MCP routes. Kept as a latent capability for future extension.
   inProcessMcp: true,
   forkSession: true,
   perToolApproval: true,

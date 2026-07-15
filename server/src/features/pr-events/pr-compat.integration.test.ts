@@ -1,10 +1,13 @@
 /**
  * PR event integration test (AC: model tool + server-side create share the single
  * generic publish link, and the two PR consumers both read the same envelope).
- * Both publish paths — the model's `publish_event` tool (Claude in-process surface)
- * and the server-side PR-create builder — route through the SAME generic pipeline
- * (kernel normalizer registry → normalized `GenericEvent` → single `'event'` bus
- * topic). We assert:
+ * Both publish paths — the model's `publish_event` tool (now served over the
+ * loopback HTTP MCP route for both vendors) and the server-side PR-create builder —
+ * route through the SAME generic pipeline (kernel normalizer registry → normalized
+ * `GenericEvent` → single `'event'` bus topic). The model path is exercised by
+ * running the shared `runPublishEvent` handler with the SAME envelope-tagging
+ * closure the composition root wires (`{ workspacePath, sessionId: getRunId() }`).
+ * We assert:
  *  - a real `'event'` subscriber receives EXACTLY ONE envelope per business
  *    publish, projecting to the pre-existing `PrOperationEvent` fields;
  *  - the envelope carries the CLOSURE's workspace + the LIVE session id;
@@ -14,11 +17,12 @@
  *    does not block the other (bus error isolation).
  */
 import { describe, expect, it, vi } from 'vitest'
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared/protocol'
 import { EventBus } from '../../kernel/events/event-bus.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
-import { createPublishEventMcpServer } from '../events/publish-tool.js'
+import { runPublishEvent } from '../events/tool-defs.js'
+import type { PublishEventArgs } from '../events/tool-defs.js'
+import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import {
   PR_EVENT_TYPES,
   PR_LEGACY_EVENT_TYPE,
@@ -27,13 +31,19 @@ import {
   runServerSidePrCreate,
 } from './tool-defs.js'
 
-type Handler = (args: unknown, extra: unknown) => Promise<{ isError?: boolean }>
-
-function getHandler(servers: Record<string, McpServerConfig>): Handler {
-  const c3 = servers.c3 as unknown as {
-    instance: { _registeredTools: Record<string, { handler: Handler }> }
-  }
-  return c3.instance._registeredTools.publish_event.handler
+/** The model `publish_event` path: the shared handler + the composition root's
+ *  envelope-tagging closure (`{ workspacePath, sessionId: getRunId() }`). */
+function modelPublish(
+  binding: { workspacePath: string; getRunId: () => string },
+  deps: {
+    normalize: (core: GenericEvent) => NormalizeResult
+    publish: (payload: GenericEventEnvelope) => void
+  },
+  rawArgs: PublishEventArgs,
+): { isError?: boolean } {
+  return runPublishEvent(rawArgs, deps.normalize, (event) =>
+    deps.publish({ workspacePath: binding.workspacePath, sessionId: binding.getRunId(), event }),
+  )
 }
 
 /** Assemble the composition-root pipeline exactly as `server.ts` does. */
@@ -54,25 +64,22 @@ function wire() {
 }
 
 describe('PR event integration — model tool + server-side create share the generic link', () => {
-  it('model publish_event delivers ONE envelope with closure workspace + live session', async () => {
+  it('model publish_event delivers ONE envelope with closure workspace + live session', () => {
     const { received, normalizeEvent, publishEvent } = wire()
     let liveRunId = 'pending-1'
-    const servers = createPublishEventMcpServer(
-      { workspacePath: '/proj', getRunId: () => liveRunId, signal: new AbortController().signal },
-      { normalize: normalizeEvent, publish: publishEvent },
-    )
-    const handler = getHandler(servers)
+    const binding = { workspacePath: '/proj', getRunId: () => liveRunId }
 
     // A pending→real rebind happens before the model calls the tool.
     liveRunId = 'real-7'
-    const r = await handler(
+    const r = modelPublish(
+      binding,
+      { normalize: normalizeEvent, publish: publishEvent },
       {
         type: 'pr:operation',
         status: 'success',
         metadata: { operation: 'review' },
         data: { pr: { number: 5 }, association: { intentId: 'I1' } },
       },
-      {},
     )
 
     expect(r.isError).toBeUndefined()
@@ -88,17 +95,15 @@ describe('PR event integration — model tool + server-side create share the gen
     })
   })
 
-  it('forged workspacePath / sessionId in the model payload cannot override the envelope', async () => {
+  it('forged workspacePath / sessionId in the model payload cannot override the envelope', () => {
     const { received, normalizeEvent, publishEvent } = wire()
-    const servers = createPublishEventMcpServer(
-      { workspacePath: '/proj', getRunId: () => 'real-9', signal: new AbortController().signal },
-      { normalize: normalizeEvent, publish: publishEvent },
-    )
-    const handler = getHandler(servers)
+    const binding = { workspacePath: '/proj', getRunId: () => 'real-9' }
 
     // The workspace/session live on the envelope wrapper; same-name keys smuggled
     // into `data` are ignored by the normalizer's field readers and never surface.
-    await handler(
+    modelPublish(
+      binding,
+      { normalize: normalizeEvent, publish: publishEvent },
       {
         type: 'pr:operation',
         status: 'success',
@@ -110,7 +115,6 @@ describe('PR event integration — model tool + server-side create share the gen
           association: { intentId: 'I2' },
         },
       },
-      {},
     )
 
     expect(received).toHaveLength(1)

@@ -60,15 +60,15 @@ const READ_MCP_PREFIXES = [
 ]
 
 /**
- * In-process c3 MCP tools shown in the automation allowlist UI. They are injected
- * into a Claude execution only when that automation explicitly selects one.
+ * c3 MCP tools shown in the automation allowlist UI. They are attached to an
+ * execution (Claude or Codex) only when that automation explicitly selects one.
  *
- * These are defined in `features/intents/save-tool.ts` under the `c3` MCP
- * server name. They live outside the workspace MCP config (they're in-process,
- * not user-configured), so they're explicitly registered both here in
- * `freezeTools()` and in the automation form's tool manifest handler.
+ * Both vendors reach these over the loopback HTTP MCP route (`transport/automation-mcp`,
+ * from the shared `c3-tools.ts` builder). They live outside the workspace MCP config
+ * (they're c3's own tools, not user-configured), so they're explicitly registered
+ * both here in `freezeTools()` and in the automation form's tool manifest handler.
  *
- * Fully-qualified SDK names: `mcp__c3__find_intents`, `mcp__c3__view_intent`,
+ * Fully-qualified names: `mcp__c3__find_intents`, `mcp__c3__view_intent`,
  * `mcp__c3__save_intents`.
  */
 export const C3_MCP_TOOLS: readonly FrozenToolEntry[] = [

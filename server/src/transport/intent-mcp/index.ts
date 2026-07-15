@@ -1,9 +1,10 @@
 /**
- * Localhost HTTP MCP route for the three intent tools (2026-06-12-005). The
- * comm-agent's `find_intents` / `view_intent` / `save_intents` are a Claude
- * in-process SDK MCP server (`features/intents/save-tool.ts`); codex
- * (`inProcessMcp: false`) can't load that, so this route re-exposes the SAME
- * three tools over a streamable-HTTP MCP server bound to ONE run.
+ * Localhost HTTP MCP route for the three intent tools. The comm-agent's
+ * `find_intents` / `view_intent` / `save_intents` are served over this ONE
+ * streamable-HTTP MCP route bound to a single run — the SAME transport both Claude
+ * and Codex now consume (neither uses an in-process SDK MCP server for c3 tools).
+ * The tool logic comes from the shared framing-free definitions, so both vendors
+ * run identical behavior and permission gates from one place.
  *
  * Mirrors the codex relay (`transport/codex-relay`): a kernel-neutral bind/dispose
  * + opaque per-run token, the HTTP `handler` mounted by the composition root, and

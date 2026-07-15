@@ -285,6 +285,7 @@ hard-fail 是安全要求：sandbox enabled 的 run 不能因为容器或 vendor
 
 - `networkAllowlist` 当前不支持，非空即拒绝启动。
 - Linux native Docker 的 `host.docker.internal` 可达性与 Docker Desktop 不完全一致，正式收敛需要后续 in-container relay sidecar 或 egress proxy。
+- c3 自己的 MCP 工具面现在对两个厂商都走**宿主回环 HTTP MCP 端点**。容器内 `127.0.0.1` / `localhost` 指向容器自身而非宿主,因此从**沙箱容器内部**到达该宿主端点的能力尚未打通,与上一条同属后续 sandbox-network 工作(in-container relay sidecar / egress 通道)——本期只保证并验证宿主直连路径,是一个已知的后续阶段,而非回退。
 
 ## 13. 运行期环境卫生
 

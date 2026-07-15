@@ -1,7 +1,9 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { McpServerConfig, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { PermissionMode, PromptImage, ServerToClient } from '@ccc/shared/protocol'
 import { EMPTY_TURN_NOTICE } from '@ccc/shared/protocol'
+import type { RemoteMcpServer } from './adapters/types.js'
+import { remoteMcpToClaudeConfig } from './adapters/claude/mcp.js'
 import { installClaudeSdkWarningFilter } from './adapters/claude/sdk-warning-filter.js'
 
 // Drop the SDK's benign `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` warning (0.3.198+) that
@@ -208,17 +210,22 @@ export interface RunOptions {
    */
   onConsensusResolved?: (ctx: ConsensusAutoCtx) => void
   /**
-   * Bind the in-process MCP server (the c3 intent tools) to THIS run. Called at
-   * query construction with the live run id getter + abort signal; the project
-   * path + gate deps are captured at the composition root. The `save_intents`
-   * handler runs its OWN confirmation gate (`gatedSave`), so a vendor allow-rule
-   * that pre-approves the tool — and therefore skips `canUseTool` — still raises a
-   * human prompt. Absent ⇒ no in-process MCP (non-intent runs).
+   * Bind the c3 tools (intent find/view/save, spec find/view, or a work run's
+   * `publish_event`) over c3's loopback streamable-HTTP MCP route — the SAME
+   * transport Codex consumes, so both vendors share one route, handler and tool
+   * definition. Called at query construction with the workspace + live run id getter
+   * + abort signal; it mints a per-run token, stands up the private MCP server, and
+   * returns the neutral {@link RemoteMcpServer} descriptors plus a `dispose` this run
+   * evicts in its `finally`. runClaude translates the descriptors into the Claude SDK
+   * HTTP MCP config at the Claude boundary. The `save_intents` handler runs its OWN
+   * confirmation gate (`gatedSave`), so a vendor allow-rule that pre-approves the tool
+   * — and therefore skips `canUseTool` — still raises a human prompt. Absent ⇒ no c3
+   * MCP (a run outside the intent / spec / work profiles).
    */
-  bindInProcessMcp?: (binding: {
-    getRunId: () => string
-    signal: AbortSignal
-  }) => Record<string, McpServerConfig>
+  bindMcp?: (binding: { workspacePath: string; getRunId: () => string; signal: AbortSignal }) => {
+    servers: Record<string, RemoteMcpServer>
+    dispose: () => void
+  }
   /**
    * Permission gateway policy. `standard` (default) is the normal c3 flow
    * (consensus + human prompt). `intent` is the read-only communication
@@ -538,7 +545,7 @@ export async function runClaude(opts: RunOptions): Promise<void> {
     currentAgentId,
     appendSystemPrompt,
     disallowedTools,
-    bindInProcessMcp,
+    bindMcp,
     gate = 'standard',
     specDir,
     skillWriteGuard,
@@ -586,15 +593,20 @@ export async function runClaude(opts: RunOptions): Promise<void> {
   const input = new InputStream()
   input.push(prompt, images)
 
-  // Bind the in-process intent MCP server to THIS run (intent comm agent only).
-  // The binder is supplied by the composition root with the project path + gate
-  // deps; we supply the live run-id getter + abort signal at query-construction
-  // time. `save_intents`'s confirmation gate lives in its handler (`gatedSave`),
-  // not `canUseTool`, so it is immune to vendor pre-approval.
-  const inProcessMcpServers = bindInProcessMcp?.({
+  // Bind the c3 tools over c3's loopback streamable-HTTP MCP route — the SAME
+  // transport Codex consumes. The binder (supplied by the composition root, gate
+  // deps captured there) mints a per-run token and returns neutral descriptors +
+  // `dispose`; we supply the workspace + live run-id getter + abort signal at
+  // query-construction time. Translate the neutral descriptors into the Claude SDK
+  // HTTP MCP config at the Claude boundary. `save_intents`'s confirmation gate lives
+  // in its handler (`gatedSave`), not `canUseTool`, so it is immune to vendor
+  // pre-approval. The token binding is evicted in this run's `finally`.
+  const mcpBinding = bindMcp?.({
+    workspacePath,
     getRunId: opts.sessionId ?? (() => ''),
     signal,
   })
+  const inProcessMcpServers = mcpBinding ? remoteMcpToClaudeConfig(mcpBinding.servers) : undefined
 
   // When sandbox is active, wrap the vendor binary to run inside the container
   const claudePath = opts.sandboxHandle
@@ -641,7 +653,8 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       // Hard tool lock (the comm agent's read-only set). Disabling here also
       // blocks harness-internal invocations the gateway never sees.
       ...(disallowedTools ? { disallowedTools } : {}),
-      // In-process MCP servers (the c3 intent tools). Bound to THIS run here:
+      // c3 tools over the loopback HTTP MCP route (the Claude SDK HTTP config
+      // translated from the neutral descriptors above). Bound to THIS run:
       // `getRunId` reads the live id (`opts.sessionId`, the SAME getter the
       // gateway routes permission frames through, so a pending→real rebind lands
       // the save confirmation on the bound session); `signal` default-denies on
@@ -863,6 +876,10 @@ export async function runClaude(opts: RunOptions): Promise<void> {
       })
     }
   } finally {
+    // Evict the per-run c3 HTTP MCP token binding so the tools cannot be called
+    // after this run ends (idempotent; no-op when no c3 profile bound one). Every
+    // terminal path — clean result, error, cancel, socket disconnect — flows here.
+    mcpBinding?.dispose()
     // Terminal-state guarantee at the run-loop layer: the iterator can finish (or
     // the Claude process can exit) without ever delivering a `result` — e.g. it
     // died mid-turn. Then neither the `result` branch nor the `catch` fired, so no

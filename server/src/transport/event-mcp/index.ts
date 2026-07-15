@@ -1,9 +1,9 @@
 /**
  * Localhost HTTP MCP route for the `publish_event` tool. The work-session's
- * publish tool is a Claude in-process SDK MCP server
- * (`features/events/publish-tool.ts`); codex (`inProcessMcp: false`) can't
- * load that, so this route re-exposes the SAME tool over a streamable-HTTP MCP
- * server bound to ONE run.
+ * publish tool is served over this ONE streamable-HTTP MCP route bound to a single
+ * run — the SAME transport both Claude and Codex consume (neither uses an in-process
+ * SDK MCP server for c3 tools). The tool logic comes from the shared framing-free
+ * definition so both vendors run identical behavior.
  *
  * Mirrors the intent MCP route (`transport/intent-mcp`): a kernel-neutral
  * bind/dispose + opaque per-run token, the HTTP `handler` mounted by the

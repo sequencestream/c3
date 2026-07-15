@@ -1,15 +1,14 @@
 /**
- * Shared definitions for the three intent tools, kept ONE source so the two MCP
- * surfaces that expose them never drift:
- *  - the in-process Claude SDK MCP server (`save-tool.ts`, `createSdkMcpServer`),
- *  - the localhost HTTP MCP route for driver-path vendors (`transport/intent-mcp`,
- *    codex; 2026-06-12-005).
+ * Shared definitions for the three intent tools, kept ONE source so every surface
+ * that exposes them never drifts. Both Claude and Codex now reach these tools over
+ * the SAME loopback HTTP MCP route (`transport/intent-mcp`); there is no in-process
+ * SDK MCP server for c3 tools anymore.
  *
  * This module is framing-free: it owns the zod input shapes, the description
  * strings advertised in the system prompt, and the CORE logic (search the ledger,
  * view one item, persist a confirmed batch). The MCP framing — tool registration,
- * the save confirmation gate — lives in each surface. `runSaveConfirmed` is the
- * POST-confirmation persist: both surfaces gate `save_intents` BEFORE calling it
+ * the save confirmation gate — lives in the route + gate. `runSaveConfirmed` is the
+ * POST-confirmation persist: the save path gates `save_intents` BEFORE calling it
  * (Claude via `canUseTool`, the HTTP route via `permission_request`/`waitForDecision`).
  */
 import { resolve } from 'node:path'

@@ -1,10 +1,8 @@
 /**
- * Framing-free builder for the automation c3 MCP tool set — ONE source consumed
- * by both surfaces that expose these tools to an unattended automation execution:
- *  - the in-process Claude SDK MCP server (`c3-mcp.ts`, `createSdkMcpServer`),
- *  - the localhost HTTP MCP route for the driver-path vendor
- *    (`transport/automation-mcp`, codex — `inProcessMcp: false`, so it cannot load
- *    the SDK server and reads the same tools over streamable-HTTP instead).
+ * Framing-free builder for the automation c3 MCP tool set — ONE source registered
+ * onto the localhost HTTP MCP route (`transport/automation-mcp`) that BOTH Claude
+ * and Codex automations bind per execution. There is no separate in-process SDK MCP
+ * surface anymore; both vendors read these tools over the same streamable-HTTP route.
  *
  * Each entry pairs a tool name + description + zod input shape with a handler
  * closure bound to ONE automation execution (its `workspacePath` + `executionId`).
@@ -110,8 +108,8 @@ export interface AutomationC3Tool {
 
 /**
  * Build the automation c3 tool list bound to ONE execution. `deps` are the
- * composition-root callbacks (null before {@link configureAutomationMcp}, guarded
- * with `?.` on every branch). The handlers close over `workspacePath` /
+ * composition-root callbacks (may be null before the route is wired at startup,
+ * guarded with `?.` on every branch). The handlers close over `workspacePath` /
  * `executionId` so the model can neither read nor write another workspace's data,
  * and the tool args never accept a workspace or session override.
  */

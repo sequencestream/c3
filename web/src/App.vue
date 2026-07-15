@@ -358,11 +358,13 @@ function onCodesChatWidth(px: number): void {
       :active-tab="activeTab"
       :tabs-enabled="currentWorkspace !== null"
       :view-mode="viewMode"
+      :workcenter-page="workcenterPage"
       :workcenter-badge-count="workcenterPendingCount"
       :show-logout="authStatus === 'authenticated'"
       :update-status="updateStatus"
       @select-tab="onSelectTab"
       @update:view-mode="setViewMode"
+      @select-workcenter-page="setWorkcenterPage"
       @open-settings="openSettings"
       @open-workspace-setting="openWorkspaceSetting"
       @add-workspace="addWorkspace"
@@ -662,29 +664,6 @@ function onCodesChatWidth(px: number): void {
       </template>
 
       <div v-else class="workcenter-view">
-        <nav class="wc-nav" role="tablist" :aria-label="t('dashboard.nav.ariaLabel')">
-          <button
-            type="button"
-            role="tab"
-            class="wc-nav-tab"
-            :class="{ active: workcenterPage === 'dashboard' }"
-            :aria-selected="workcenterPage === 'dashboard'"
-            @click="setWorkcenterPage('dashboard')"
-          >
-            {{ t('dashboard.nav.dashboard') }}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            class="wc-nav-tab"
-            :class="{ active: workcenterPage === 'notifications' }"
-            :aria-selected="workcenterPage === 'notifications'"
-            @click="setWorkcenterPage('notifications')"
-          >
-            {{ t('dashboard.nav.notifications') }}
-          </button>
-        </nav>
-
         <Dashboard
           v-if="workcenterPage === 'dashboard'"
           :rows="dashboardRows"
@@ -789,30 +768,6 @@ function onCodesChatWidth(px: number): void {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-}
-.wc-nav {
-  display: flex;
-  gap: 4px;
-  padding: 8px 12px 0;
-  border-bottom: 1px solid var(--c-border);
-  flex-shrink: 0;
-}
-.wc-nav-tab {
-  padding: 8px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--c-text-muted);
-  cursor: pointer;
-}
-.wc-nav-tab:hover {
-  color: var(--c-text);
-}
-.wc-nav-tab.active {
-  color: var(--c-primary);
-  border-bottom-color: var(--c-primary);
 }
 .toast {
   position: fixed;

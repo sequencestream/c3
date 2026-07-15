@@ -2349,7 +2349,8 @@
     "nav": {
       "ariaLabel": "Workcenter pages",
       "dashboard": "Dashboard",
-      "notifications": "Notifications"
+      "notifications": "Notifications",
+      "notificationsBadgeAriaLabel": "Pending notifications: {count}"
     },
     "column": {
       "workspace": "Workspace",
@@ -2374,7 +2375,6 @@
     "retry": "Retry"
   },
   "workcenter": {
-    "title": "Workcenter",
     "notificationTitle": "User notifications",
     "toolInput": "Tool Input",
     "filter": {

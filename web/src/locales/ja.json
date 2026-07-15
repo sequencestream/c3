@@ -2262,7 +2262,8 @@
     "nav": {
       "ariaLabel": "ワークセンターのページ",
       "dashboard": "ダッシュボード",
-      "notifications": "通知"
+      "notifications": "通知",
+      "notificationsBadgeAriaLabel": "未処理の通知 {count} 件"
     },
     "column": {
       "workspace": "ワークスペース",
@@ -2287,7 +2288,6 @@
     "retry": "再試行"
   },
   "workcenter": {
-    "title": "Workcenter",
     "notificationTitle": "ユーザー通知メッセージ",
     "toolInput": "ツール入力",
     "filter": {

@@ -2262,7 +2262,8 @@
     "nav": {
       "ariaLabel": "워크센터 페이지",
       "dashboard": "대시보드",
-      "notifications": "알림"
+      "notifications": "알림",
+      "notificationsBadgeAriaLabel": "처리 대기 알림 {count}개"
     },
     "column": {
       "workspace": "워크스페이스",
@@ -2287,7 +2288,6 @@
     "retry": "다시 시도"
   },
   "workcenter": {
-    "title": "Workcenter",
     "notificationTitle": "사용자 알림 메시지",
     "toolInput": "도구 입력",
     "filter": {

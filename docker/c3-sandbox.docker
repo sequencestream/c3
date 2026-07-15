@@ -1,0 +1,65 @@
+# c3 sandbox 镜像:Debian bookworm + 常用开发工具与 agent CLI。
+#
+# c3 sandbox 按镜像分发工具:claude / codex / npm 等由本镜像预装,
+# c3 运行时只做同路径目录映射(项目原目录 ro + worktree rw),不下载/版本化 vendor CLI。
+# 详见 doc/architecture/sandbox-architecture.md。
+#
+# 构建(单架构,按宿主):
+#   docker build -f docker/c3-sandbox.docker -t c3-sandbox:latest docker/
+# 多架构(需 buildx):
+#   docker buildx build --platform linux/amd64,linux/arm64 -f docker/c3-sandbox.docker -t c3-sandbox:latest docker/
+
+FROM debian:bookworm
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# 工具版本(可用 --build-arg 覆盖)
+ARG NODE_MAJOR=22
+ARG GO_VERSION=1.26.5
+
+# 基础系统 + git + python + 构建/网络工具
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl gnupg git \
+      python3 python3-pip python3-venv \
+      build-essential pkg-config unzip xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# python -> python3 便捷别名
+RUN ln -sf /usr/bin/python3 /usr/local/bin/python
+
+# Node.js + npm (NodeSource) + pnpm (corepack)
+RUN curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/* \
+    && corepack enable \
+    && corepack prepare pnpm@latest --activate
+
+# Go
+ENV PATH=/usr/local/go/bin:/root/go/bin:$PATH
+ENV GOPATH=/root/go
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) goarch=amd64 ;; \
+      arm64) goarch=arm64 ;; \
+      *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${goarch}.tar.gz" -o /tmp/go.tgz; \
+    tar -C /usr/local -xzf /tmp/go.tgz; \
+    rm /tmp/go.tgz
+
+# Agent CLIs:Claude Code + OpenAI Codex
+RUN npm install -g @anthropic-ai/claude-code @openai/codex \
+    && npm cache clean --force
+
+# 冒烟校验:入口命令均可用
+RUN git --version \
+    && python --version \
+    && go version \
+    && node --version \
+    && npm --version \
+    && pnpm --version \
+    && command -v claude \
+    && command -v codex
+
+CMD ["/bin/bash"]

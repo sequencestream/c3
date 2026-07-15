@@ -2226,8 +2226,8 @@
         "label": "CPU 限制覆盖",
         "placeholder": "例如 2、4"
       },
-      "networkDisabled": {
-        "label": "禁用网络"
+      "allowExternalNetwork": {
+        "label": "允许外部网络"
       },
       "readonlyRootfs": {
         "label": "只读根文件系统"

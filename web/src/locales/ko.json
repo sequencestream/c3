@@ -2227,8 +2227,8 @@
         "label": "CPU limit override",
         "placeholder": "e.g. 2, 4"
       },
-      "networkDisabled": {
-        "label": "Disable network"
+      "allowExternalNetwork": {
+        "label": "Allow external network"
       },
       "readonlyRootfs": {
         "label": "Read-only root filesystem"

@@ -203,6 +203,45 @@ describe('codes handlers', () => {
     expect(JSON.stringify(sent)).not.toContain('.git')
   })
 
+  it('matches a query as a case-insensitive basename substring across hyphens and extension', async () => {
+    await mkdir(join(workspace, 'doc'))
+    await mkdir(join(workspace, '.git'))
+    await writeFile(join(workspace, 'doc', 'sandbox-architecture.md'), '# sandbox\n')
+    await writeFile(join(workspace, 'doc', 'unrelated.txt'), 'other\n')
+    // Same-named file hidden under .git must never surface.
+    await writeFile(join(workspace, '.git', 'sandbox-architecture.md'), '# hidden\n')
+
+    async function search(query: string, pattern?: string) {
+      const { conn, sent } = capture()
+      await searchCodesHandler(KCTX, conn, {
+        type: 'search_codes',
+        workspaceId: 'ws-1',
+        query,
+        mode: 'filename',
+        ...(pattern ? { pattern } : {}),
+      })
+      return (sent[0] as Extract<ServerToClient, { type: 'codes_searched' }>).hits
+    }
+
+    // Leading fragment, mixed case, and a fragment straddling the hyphen all hit,
+    // and the hit carries the FULL basename as `match`.
+    for (const q of ['sandbox', 'SANDBOX', 'box-architecture', 'architecture', '.md']) {
+      const hits = await search(q)
+      expect(hits).toEqual([
+        { path: 'doc/sandbox-architecture.md', type: 'file', match: 'sandbox-architecture.md' },
+      ])
+    }
+
+    // A query that is not a substring of the basename returns nothing.
+    expect(await search('nomatch')).toEqual([])
+
+    // Glob that admits markdown still hits; a glob that excludes markdown does not.
+    expect((await search('sandbox', '*.md')).map((hh) => hh.path)).toEqual([
+      'doc/sandbox-architecture.md',
+    ])
+    expect(await search('sandbox', '*.ts')).toEqual([])
+  })
+
   it('scopes search to a glob file pattern in both modes', async () => {
     await mkdir(join(workspace, 'src'))
     await writeFile(join(workspace, 'src', 'target.ts'), 'needle here\n')

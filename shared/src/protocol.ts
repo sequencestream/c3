@@ -3538,9 +3538,13 @@ export type ClientToServer =
   | { type: 'get_code_git_status'; workspaceId: string }
   /**
    * Search code by filename or content. Server replies with `codes_searched`.
-   * `pattern` is an optional glob filter on file *basenames* (e.g. `*.ts`,
-   * `*.ts,*.tsx`); `*`/empty/absent ⇒ all files. It scopes which files are
-   * searched in both modes — directories are always traversed regardless.
+   * `mode: 'filename'` matches `query` as a case-insensitive substring of each
+   * entry's *basename* (not its relative path) — hyphens and the extension are
+   * not match boundaries, so `sandbox` hits `sandbox-architecture.md` — and the
+   * hit's `match` is the full basename. `pattern` is an optional glob filter on
+   * file *basenames* (e.g. `*.ts`, `*.ts,*.tsx`); `*`/empty/absent ⇒ all files.
+   * It scopes which files are matched/searched in both modes — directories are
+   * always traversed regardless.
    */
   | {
       type: 'search_codes'

@@ -129,7 +129,7 @@ interface WorkspaceSandboxConfig {
 用户启动 worktree intent-dev run
   → 确认 run 有 effectiveCwd，即隔离 worktree run（否则不进沙箱）
   → 读取 workspace sandbox config；未启用或 sessionKind 不在 sandboxSessionKinds：返回 null，不启动沙箱
-  → probe arapuca 二进制 + 平台能力：缺失 / 不支持 → hard-fail run
+  → probe arapuca 二进制 + 平台能力，并检测 macOS 父进程 sandbox：缺失 / 不支持 / 嵌套 Seatbelt → hard-fail run
   → pickSandboxAgent()：从 agent pool 随机选一个，得到 vendor（决定入口命令）
   → resolvePaths()：
        workspace root : ro
@@ -191,6 +191,11 @@ sandbox 启用时，`pickSandboxAgent()` 从 workspace 的 normalized agent pool
 - Codex RELAY：agent 是宿主进程，`127.0.0.1` 就是宿主本机，直接回连宿主 loopback relay，无需 host-gateway、内部网络或 sidecar。
 
 hard-fail 是安全要求：sandbox enabled 的 run 不能因为 arapuca 探测或 vendor 接线失败而退回宿主裸跑。
+
+macOS 不支持从已受 Seatbelt 约束的父进程再次应用 arapuca 的 Seatbelt profile。c3 在准备
+wrapper 前检查明确的宿主 sandbox 环境标记，命中时以 `nested-sandbox-unsupported` 前置失败，
+避免生成无法 bind vendor session 的 pending work run。`arapuca wrapper prepared` 日志只表示
+路径与 wrapper 临时目录已经准备完成；vendor session 是否启动以之后的 bind 为准。
 
 ## 11. 文件系统策略
 

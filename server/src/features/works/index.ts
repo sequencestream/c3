@@ -238,8 +238,9 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   // The pending intent (ADR-0015) now lives in the `session_metadata`
   // projection table as a `pending` row (F-11). The first run launches
   // with this agent and freezes its vendor on bind. The row is written
-  // BEFORE `session_selected` is sent so a `list_sessions` immediately
-  // after `create_session` (e.g. the sidebar refresh) sees the new row.
+  // BEFORE `session_selected` is sent so launch-time resolution can read it.
+  // Pending rows are intentionally excluded from `list_sessions`; the active
+  // connection renders its pending session separately until bind.
   //
   // The raw `agentId` is stored as the intent (not the resolved agent id)
   // — the same contract as the old `setPendingIntent` — so a future

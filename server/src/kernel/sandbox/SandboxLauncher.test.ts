@@ -122,13 +122,21 @@ describe('resolvePaths', () => {
 
 describe('probeArapuca', () => {
   const savedPath = process.env.PATH
+  const savedCodexSandbox = process.env.CODEX_SANDBOX
+  const savedAppSandbox = process.env.APP_SANDBOX_CONTAINER_ID
 
   afterEach(() => {
     process.env.PATH = savedPath
+    if (savedCodexSandbox === undefined) delete process.env.CODEX_SANDBOX
+    else process.env.CODEX_SANDBOX = savedCodexSandbox
+    if (savedAppSandbox === undefined) delete process.env.APP_SANDBOX_CONTAINER_ID
+    else process.env.APP_SANDBOX_CONTAINER_ID = savedAppSandbox
     resetArapucaProbeForTests()
   })
 
   it('reports arapuca-missing when the binary is not on PATH', () => {
+    delete process.env.CODEX_SANDBOX
+    delete process.env.APP_SANDBOX_CONTAINER_ID
     process.env.PATH = ''
     resetArapucaProbeForTests()
     const result = probeArapuca()
@@ -138,6 +146,8 @@ describe('probeArapuca', () => {
 
   it('reports ok when an executable arapuca is on PATH', () => {
     if (process.platform === 'win32') return // PATHEXT/.exe resolution differs
+    delete process.env.CODEX_SANDBOX
+    delete process.env.APP_SANDBOX_CONTAINER_ID
     const binDir = join(root, 'bin')
     mkdirSync(binDir)
     const bin = join(binDir, 'arapuca')
@@ -146,6 +156,13 @@ describe('probeArapuca', () => {
     process.env.PATH = binDir
     resetArapucaProbeForTests()
     expect(probeArapuca()).toEqual({ ok: true, path: bin })
+  })
+
+  it('rejects a nested macOS sandbox before attempting to launch arapuca', () => {
+    if (process.platform !== 'darwin') return
+    process.env.CODEX_SANDBOX = 'seatbelt'
+    resetArapucaProbeForTests()
+    expect(probeArapuca()).toEqual({ ok: false, uiCode: 'nested-sandbox-unsupported' })
   })
 })
 

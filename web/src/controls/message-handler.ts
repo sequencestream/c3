@@ -5,7 +5,7 @@ import type {
   SessionStatus,
   WorkspaceDashboardRow,
 } from '@ccc/shared/protocol'
-import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX, SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import { resolveCurrentWorkspace } from '@/lib/current-workspace'
 import {
   discussionMessageToChat,
@@ -184,6 +184,11 @@ export function installMessageHandler(ctx: AppCtx): void {
     }
     const pinned = ctx.consoleSession.value
     if (!pinned || pinned.workspacePath !== input.workspaceId) return input.sessions
+    // Pending sessions already have a dedicated active row in WorkSessionList.
+    // They are intentionally absent from list_sessions until their first run
+    // binds a real vendor session id, so synthesizing another row here would
+    // duplicate "New session" at the bottom as a stale entry.
+    if (pinned.sessionId.startsWith(PENDING_SESSION_PREFIX)) return input.sessions
     if (input.sessions.some((s) => s.sessionId === pinned.sessionId)) return input.sessions
     const existing = findSessionRow(pinned.sessionId)
     if (existing) return [...input.sessions, existing]
@@ -516,6 +521,18 @@ export function installMessageHandler(ctx: AppCtx): void {
         if (activeSession.value === msg.clientId) {
           activeAgentSwitch.value = msg.agentSwitch ?? null
           activeSession.value = msg.sessionId
+          // Complete the pending -> real re-key for the console pointer too.
+          // Any synthetic/cached pending row is obsolete once the server binds
+          // the real id and must not survive later pagination merges.
+          const pinned = ctx.consoleSession.value
+          if (pinned?.sessionId === msg.clientId) {
+            ctx.consoleSession.value = { ...pinned, sessionId: msg.sessionId }
+          }
+          const cleaned: Record<string, SessionInfo[]> = {}
+          for (const [key, sessions] of Object.entries(sessionsByWorkspace.value)) {
+            cleaned[key] = sessions.filter((session) => session.sessionId !== msg.clientId)
+          }
+          sessionsByWorkspace.value = cleaned
           // Carry the agent degradation index from the pending clientId to the real
           // sessionId.
           const prevIdx = currentAgentIndexBySession.value[msg.clientId] ?? 0

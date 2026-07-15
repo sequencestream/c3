@@ -132,6 +132,18 @@ export function probeArapuca(): ArapucaProbeResult {
     probeCache = { ok: false, uiCode: 'platform-unsupported' }
     return probeCache
   }
+  // macOS does not permit applying a second Seatbelt profile from a process
+  // that is already sandboxed. arapuca's binary probe would succeed, but the
+  // later `sandbox-exec` child would immediately fail with EPERM. Detect the
+  // host application's explicit sandbox markers before creating a run that can
+  // never bind to a native vendor session.
+  if (
+    platform === 'darwin' &&
+    (process.env.CODEX_SANDBOX || process.env.APP_SANDBOX_CONTAINER_ID)
+  ) {
+    probeCache = { ok: false, uiCode: 'nested-sandbox-unsupported' }
+    return probeCache
+  }
   const bin = findOnPath(ARAPUCA_BIN)
   probeCache = bin ? { ok: true, path: bin } : { ok: false, uiCode: 'arapuca-missing' }
   return probeCache
@@ -304,7 +316,9 @@ export function launchSandbox(workspaceRoot: string, worktree: string): SandboxL
       probe.uiCode,
       probe.uiCode === 'platform-unsupported'
         ? `sandbox is unsupported on this platform (${process.platform})`
-        : 'arapuca binary not found on PATH (install it to use the sandbox)',
+        : probe.uiCode === 'nested-sandbox-unsupported'
+          ? 'nested macOS sandbox is unsupported (start c3 outside the parent sandbox)'
+          : 'arapuca binary not found on PATH (install it to use the sandbox)',
     )
   }
 
@@ -313,7 +327,7 @@ export function launchSandbox(workspaceRoot: string, worktree: string): SandboxL
   const tmpDir = mkdtempSync(join(tmpdir(), 'c3-sb-'))
 
   console.log(
-    `[sandbox] arapuca ready: worktree(rw)=${paths.worktree} root(ro)=${paths.workspaceRoot} ` +
+    `[sandbox] arapuca wrapper prepared: worktree(rw)=${paths.worktree} root(ro)=${paths.workspaceRoot} ` +
       `specs(rw)=${paths.specsBase} extra=${paths.extra.length}`,
   )
 

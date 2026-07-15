@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ref, computed } from 'vue'
-import type { Discussion, ResearchMessage, ServerToClient } from '@ccc/shared/protocol'
+import {
+  PENDING_SESSION_PREFIX,
+  type Discussion,
+  type ResearchMessage,
+  type ServerToClient,
+} from '@ccc/shared/protocol'
 import type { SessionInfo } from '@ccc/shared/protocol'
 import { installMessageHandler } from './message-handler'
 import type { ChatMsg } from '@/lib/chat-types'
@@ -234,6 +239,8 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
     const activeWorkspace = ref<string | null>(null)
     const activeTitle = ref('')
     const activeVendor = ref<'claude' | 'codex' | null>(null)
+    const activeAgentSwitch = ref<import('@ccc/shared/protocol').SessionAgentSwitch | null>(null)
+    const currentAgentIndexBySession = ref<Record<string, number>>({})
     const activity = ref({ phase: 'idle' } as { phase: string })
     const currentWorkspace = ref<string | null>(null)
     const consoleSession = ref<{ workspacePath: string; sessionId: string } | null>(null)
@@ -284,6 +291,8 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
       activeSession,
       activeTitle,
       activeVendor,
+      activeAgentSwitch,
+      currentAgentIndexBySession,
       consoleSession,
       activity,
       flags,
@@ -433,6 +442,51 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
       ownerKind: 'intent',
       state: 'stale',
     })
+  })
+
+  it('does not duplicate a pending console session as a stale list row', () => {
+    const r = makeSessionsCtx()
+    const pendingId = `${PENDING_SESSION_PREFIX}new`
+    r.currentWorkspace.value = WS
+    r.activeSessionKind.value = 'work'
+    r.consoleSession.value = { workspacePath: WS, sessionId: pendingId }
+    r.activeSession.value = pendingId
+    r.activeTitle.value = 'New session'
+
+    r.ctx.handleMessage({
+      type: 'sessions',
+      workspaceId: WS,
+      sessionKind: 'work',
+      sessions: [s('history-1', 400)],
+      page: { kind: 'first', hasMore: true },
+    } as unknown as ServerToClient)
+
+    expect(
+      r.sessionsByWorkspace.value[sessionCacheKey(WS, 'work')].map((x) => x.sessionId),
+    ).toEqual(['history-1'])
+  })
+
+  it('re-keys the console pointer and removes cached pending rows when a session starts', () => {
+    const r = makeSessionsCtx()
+    const pendingId = `${PENDING_SESSION_PREFIX}new`
+    r.activeSession.value = pendingId
+    r.consoleSession.value = { workspacePath: WS, sessionId: pendingId }
+    r.sessionsByWorkspace.value = {
+      [sessionCacheKey(WS, 'work')]: [s('history-1', 400), s(pendingId, 0)],
+      [sessionCacheKey(WS, 'spec')]: [s(pendingId, 0), s('spec-1', 300)],
+    }
+
+    r.ctx.handleMessage({
+      type: 'session_started',
+      clientId: pendingId,
+      sessionId: 'real-1',
+    } as unknown as ServerToClient)
+
+    expect(r.activeSession.value).toBe('real-1')
+    expect(r.consoleSession.value).toEqual({ workspacePath: WS, sessionId: 'real-1' })
+    expect(Object.values(r.sessionsByWorkspace.value).flat()).not.toContainEqual(
+      expect.objectContaining({ sessionId: pendingId }),
+    )
   })
 
   it('does not append the pinned console session to a non-active session kind response', () => {

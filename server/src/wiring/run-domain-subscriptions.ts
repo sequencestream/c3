@@ -102,6 +102,7 @@ import {
   getSessionAgentId,
 } from '../kernel/config/index.js'
 import {
+  deleteByPendingId,
   deleteByVendorId,
   updateRowOwner,
   upsertBoundRow,
@@ -331,7 +332,17 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     if (sessionKind !== 'work') return // only work runs affect intent state
 
     const unboundIntentId = clearPendingDevLink(sessionId)
-    if (unboundIntentId) releaseDevLaunch(unboundIntentId)
+    if (unboundIntentId) {
+      releaseDevLaunch(unboundIntentId)
+      deleteByPendingId(sessionId)
+      const intent = getIntent(unboundIntentId)
+      if (reason === 'error' && intent?.status === 'in_progress' && !intent.lastWorkSessionId) {
+        updateStatus(unboundIntentId, 'todo')
+        publishIntentStatusTransition(workspacePath, intent, 'in_progress', 'todo')
+      }
+      broadcastSessions(workspacePath)
+      broadcastIntents(workspacePath)
+    }
 
     // Match settled session to an intent's lastWorkSessionId.
     // Scan the workspace's intents — O(n) per settle; n is small (active

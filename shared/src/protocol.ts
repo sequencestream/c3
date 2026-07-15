@@ -1517,7 +1517,12 @@ export interface SandboxHostStatus {
   binary: 'arapuca'
   /** Resolved absolute executable path, or `null` when unavailable. */
   path: string | null
-  error?: 'arapuca-missing' | 'platform-unsupported' | 'path-illegal' | 'launch-failed'
+  error?:
+    | 'arapuca-missing'
+    | 'platform-unsupported'
+    | 'nested-sandbox-unsupported'
+    | 'path-illegal'
+    | 'launch-failed'
 }
 
 /**

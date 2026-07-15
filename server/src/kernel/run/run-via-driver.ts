@@ -512,6 +512,10 @@ export async function runViaDriver(
   } catch (err) {
     settledReason = 'error'
     const message = errMsg(err)
+    console.error(
+      `[c3] ${adapter.vendor} driver run failed before settle ` +
+        `(session=${runId}, workspace=${workspacePath}): ${message}`,
+    )
     if (isDegradableError(message)) {
       const agent = resolveAgent(agentId)
       eventBus.publish(

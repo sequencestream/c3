@@ -40,6 +40,7 @@ vi.mock('../features/intents/store.js', () => ({
   listIntents: vi.fn(() => []),
 }))
 vi.mock('../features/sessions/session-metadata-store.js', () => ({
+  deleteByPendingId: vi.fn(),
   deleteByVendorId: vi.fn(),
   updateRowOwner: vi.fn(),
   upsertBoundRow: vi.fn(),
@@ -305,6 +306,38 @@ describe('resident domain subscriptions — discussion + automation', () => {
     })
     expect(cancelBySessionId).toHaveBeenCalledWith('sess-y')
     expect(mockBroadcastWaitUserEvents).toHaveBeenCalledWith('/proj')
+  })
+
+  it('rolls an unbound intent work run back to todo and deletes its pending projection', async () => {
+    install()
+    const devLink = await import('../features/intents/dev-link.js')
+    const store = await import('../features/intents/store.js')
+    const metadata = await import('../features/sessions/session-metadata-store.js')
+    vi.mocked(devLink.clearPendingDevLink).mockReturnValueOnce('intent-1')
+    vi.mocked(store.getIntent).mockReturnValueOnce({
+      id: 'intent-1',
+      workspacePath: '/proj',
+      title: 'Sandbox work',
+      content: '',
+      priority: 'medium',
+      module: '',
+      status: 'in_progress',
+      dependsOn: [],
+      lastWorkSessionId: null,
+    } as unknown as Intent)
+
+    eb.publish('run:settled', {
+      sessionId: 'pending:failed',
+      workspacePath: '/proj',
+      reason: 'error',
+      sessionKind: 'work',
+      runKind: 'interactive',
+    })
+
+    expect(devLink.releaseDevLaunch).toHaveBeenCalledWith('intent-1')
+    expect(metadata.deleteByPendingId).toHaveBeenCalledWith('pending:failed')
+    expect(store.updateStatus).toHaveBeenCalledWith('intent-1', 'todo')
+    expect(mockBroadcastIntents).toHaveBeenCalledWith('/proj')
   })
 
   it('run:settled sessionKind=work (aborted reason) cancels events and broadcasts', async () => {

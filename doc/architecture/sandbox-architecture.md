@@ -150,7 +150,7 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 用户启动 worktree intent-dev run
   → runtime.mode == sandbox ? 否：direct 路径
   → resolve workspace sandbox config（启用? + extraMounts）
-  → probe arapuca 二进制 + 平台能力：缺失/不支持 → hard-fail run
+  → probe arapuca 二进制 + 平台能力及 macOS 嵌套 Seatbelt：缺失/不支持/嵌套 → hard-fail run
   → pick sandbox agent 得到 vendor（决定入口命令）
   → resolvePaths():
        workspace root:ro

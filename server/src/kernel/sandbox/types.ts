@@ -98,5 +98,6 @@ export type ArapucaProbeResult =
 export type SandboxUiCode =
   | 'arapuca-missing'
   | 'platform-unsupported'
+  | 'nested-sandbox-unsupported'
   | 'path-illegal'
   | 'launch-failed'

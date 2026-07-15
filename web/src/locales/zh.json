@@ -2185,6 +2185,22 @@
         "add": "+ 添加目录",
         "remove": "移除此目录"
       },
+      "embedded": {
+        "label": "默认嵌入目录(内置放行,不可修改、不可删除)",
+        "lockedTitle": "内置放行 —— 始终生效,不可修改、不可删除",
+        "workspaceRoot": {
+          "name": "项目原目录",
+          "desc": "参考基线代码,只读"
+        },
+        "worktree": {
+          "name": "运行 worktree",
+          "desc": "本次 run 的隔离工作树(路径随 run 变化)"
+        },
+        "specs": {
+          "name": "spec 目录",
+          "desc": "集中式 SDD 规范根,支持反向同步"
+        }
+      },
       "sessionKinds": {
         "label": "进入沙箱的会话种类",
         "hint": "哪些 run 种类进入沙箱。默认 work;从不产生 worktree run 的种类即使勾选也不会匹配。"

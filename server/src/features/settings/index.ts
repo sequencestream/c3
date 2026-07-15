@@ -29,6 +29,7 @@ import {
 } from '../../kernel/config/index.js'
 import { detectDefaultBranch } from '../intents/worktree.js'
 import { getSpecsBase } from '../intents/specs-root.js'
+import { sysExtraMounts } from '../../kernel/sandbox/SandboxLauncher.js'
 import {
   probeAll,
   applyVendorCliChoices,
@@ -208,6 +209,8 @@ export const loadWorkspaceSettingHandler: Handler<'load_workspace_setting'> = (_
     detectedMainBranch,
     // Read-only display of the FIXED, centralized SDD spec root (REQ-3).
     resolvedSpecRoot: getSpecsBase(proj),
+    // Read-only display of the workspace-scoped built-in sandbox allow set.
+    sysExtraMounts: sysExtraMounts(proj),
   })
 }
 
@@ -252,5 +255,6 @@ export const saveWorkspaceSettingHandler: Handler<'save_workspace_setting'> = (_
     workspaceId: pathToId(proj)!,
     config,
     resolvedSpecRoot: getSpecsBase(proj),
+    sysExtraMounts: sysExtraMounts(proj),
   })
 }

@@ -62,6 +62,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     currentWorkspaceSetting,
     detectedMainBranch,
     resolvedSpecRoot,
+    sysExtraMounts,
     currentWorkspace,
     sessionsByWorkspace,
     sessionPagingByWorkspace,
@@ -275,6 +276,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         currentWorkspaceSetting.value = null
         detectedMainBranch.value = null
         resolvedSpecRoot.value = null
+        sysExtraMounts.value = []
         ctx.applyStatuses(msg.statuses)
 
         // ---- Deep-link consumption (takes priority over localStorage restore) ----
@@ -580,6 +582,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         currentWorkspaceSetting.value = msg.config
         detectedMainBranch.value = msg.detectedMainBranch ?? null
         resolvedSpecRoot.value = msg.resolvedSpecRoot ?? null
+        sysExtraMounts.value = msg.sysExtraMounts ?? []
         // The automations view keeps its own gate snapshot, bound to
         // `automationsProject`. Adopt only a reply whose workspace matches, so a
         // late reply for a previous workspace never updates the current toggle.

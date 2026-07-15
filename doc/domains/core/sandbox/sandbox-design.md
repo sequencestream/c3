@@ -78,7 +78,7 @@ interface WorkspaceSandboxConfig {
 2. sandbox 仅对具备隔离 worktree（有效 cwd）且以 worktree 模式创建的 run 生效；在此结构性前提上，再按 `sandboxSessionKinds` 过滤 run 的 `sessionKind`。普通 chat run（无 worktree）与 current-branch dev run 结构性排除。
 3. `sandboxSessionKinds` 缺省 `['work']`；勾选某 kind 只对该 kind 且具隔离 worktree 的 run 生效；从不产生 worktree run 的 kind 即使勾选也不会进沙箱。
 4. 同路径原则：进程在宿主原路径上运行，宿主绝对路径就是进程看到的绝对路径，不存在任何路径改写；沙箱只给路径打 ro/rw 标签。
-5. 固定放行：项目原目录（workspace root）只读，run worktree 读写，workspace specs root 以宿主相同绝对路径读写。
+5. 固定放行：项目原目录（workspace root）只读，run worktree 读写，workspace specs root 以宿主相同绝对路径读写。其中**工作区可派生**的两项（项目原目录 ro、specs root rw）由单一来源 `sysExtraMounts(workspace)` 产出——**同一函数**既在 sandbox 启动时被 `resolvePaths()` 取用并入放行集，又随工作区设置回复下发前端。run worktree 为**逐 run** 放行（无法仅由工作区路径派生），不在 `sysExtraMounts` 内，由 `resolvePaths()` 单独加入。这三项固定放行在 workspace 设置的「补充放行目录」区域**只读列出（默认嵌入目录列表）**，供用户了解始终生效的放行集：不可修改、不可删除、界面与协议均不接受其入参（worktree 随 run 变化，以描述展示）。
 6. 补充放行：workspace 可配置 `extraMounts`，每项同路径放行、默认只读、可逐项声明 rw；补充目录不得覆盖 worktree、项目原目录、specsBase 等保留路径，放行前须 canonicalize 并做 allowlist / denylist 校验，拒绝软链逃逸。
 7. deny-by-default 是安全底座：未显式放行的目录（其它项目、`~/.ssh`、`~/.aws` 等 home 内敏感目录）一律不可见，无需额外配置即隔离凭证与无关代码。
 8. 无凭证注入：进程即当前宿主用户，沿用宿主侧既有认证（env 变量或 vendor CLI 自身配置目录）；vendor CLI 自身认证所需的最小配置目录由 wrapper 生成逻辑放行，不牵连 home 其它敏感目录。

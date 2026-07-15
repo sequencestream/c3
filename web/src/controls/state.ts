@@ -46,6 +46,7 @@ import type {
   SkillLinkStatus,
   SkillSupportState,
   SlashCommandInfo,
+  SysExtraMount,
   SystemSettings,
   TranscriptItem,
   VendorHostStatus,
@@ -536,6 +537,9 @@ export function createState(deps: StateDeps) {
   // Read-only: the FIXED, centralized SDD spec root the server resolved for the
   // workspace (`~/.c3/specs/<project-path-segment>`). Displayed, never editable.
   const resolvedSpecRoot = ref<string | null>(null)
+  // Read-only: the workspace-scoped built-in sandbox allow set the server resolved
+  // (project directory ro, specs root rw). Displayed next to editable extraMounts.
+  const sysExtraMounts = ref<SysExtraMount[]>([])
 
   // ---- New-session agent picker (the "+" modal) ----
   const newSessionOpen = ref(false)
@@ -803,6 +807,7 @@ export function createState(deps: StateDeps) {
     currentWorkspaceSetting,
     detectedMainBranch,
     resolvedSpecRoot,
+    sysExtraMounts,
     newSessionOpen,
     newSessionWorkspace,
     activeVendor,

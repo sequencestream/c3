@@ -2186,6 +2186,22 @@
         "add": "+ 디렉터리 추가",
         "remove": "이 디렉터리 제거"
       },
+      "embedded": {
+        "label": "기본 내장 허용 디렉터리(고정, 편집/삭제 불가)",
+        "lockedTitle": "내장 — 항상 허용되며 편집하거나 삭제할 수 없습니다",
+        "workspaceRoot": {
+          "name": "프로젝트 디렉터리",
+          "desc": "기준 코드, 읽기 전용 참조"
+        },
+        "worktree": {
+          "name": "실행 worktree",
+          "desc": "이 run의 격리 worktree(경로는 run마다 다름)"
+        },
+        "specs": {
+          "name": "specs 디렉터리",
+          "desc": "중앙 집중식 SDD 사양 루트, 역동기화 지원"
+        }
+      },
       "sessionKinds": {
         "label": "샌드박스 대상 세션 종류",
         "hint": "어떤 run 종류를 샌드박스에 넣을지. 기본값은 work이며, worktree run을 만들지 않는 종류는 선택해도 일치하지 않습니다."

@@ -15,6 +15,7 @@ import type {
   WorkspaceSetting,
   WorkspaceSandboxConfig,
   SandboxExtraMount,
+  SysExtraMount,
   AgentConfig,
   SkillRepoConfig,
   SkillLinkStatus,
@@ -53,6 +54,12 @@ const props = defineProps<{
    * Optional: absent until the `workspace_setting` reply lands.
    */
   resolvedSpecRoot?: string | null
+  /**
+   * The workspace-scoped built-in sandbox allow set (project directory ro, specs
+   * root rw) from the server's `sysExtraMounts(workspace)`. Read-only display —
+   * users cannot edit or remove these. Absent until the reply lands.
+   */
+  sysExtraMounts?: SysExtraMount[]
   currentWorkspace: string | null
   vendorModes: Record<VendorId, VendorModeCatalog> | null
   /** All configured agents — the consensus voter picker shows enabled ones. */
@@ -391,6 +398,58 @@ const sandboxDraft = computed<WorkspaceSandboxConfig>({
 
 /** The sandbox draft's supplementary allowed dirs (never null for the template). */
 const extraMounts = computed<SandboxExtraMount[]>(() => sandboxDraft.value.extraMounts ?? [])
+
+/** A read-only built-in allowed-dir row for display (path null ⇒ per-run, shown by desc). */
+interface EmbeddedRow {
+  key: string
+  name: string
+  desc: string
+  path: string | null
+  readonly: boolean
+}
+
+/** Localized display name for a built-in mount key (literal keys keep `t` typed). */
+function embeddedName(key: string): string {
+  if (key === 'workspaceRoot') return t('workspaceSetting.sandbox.embedded.workspaceRoot.name')
+  if (key === 'specs') return t('workspaceSetting.sandbox.embedded.specs.name')
+  return t('workspaceSetting.sandbox.embedded.worktree.name')
+}
+/** Localized description for a built-in mount key. */
+function embeddedDesc(key: string): string {
+  if (key === 'workspaceRoot') return t('workspaceSetting.sandbox.embedded.workspaceRoot.desc')
+  if (key === 'specs') return t('workspaceSetting.sandbox.embedded.specs.desc')
+  return t('workspaceSetting.sandbox.embedded.worktree.desc')
+}
+
+/**
+ * Built-in (embedded) allowed dirs that are ALWAYS in the allow set. Listed
+ * read-only so users understand the always-on allow set; they cannot be edited
+ * or removed here.
+ *
+ * Workspace-derivable entries (project directory ro, specs root rw) come from
+ * the server's single source `sysExtraMounts(workspace)`; the run worktree (rw)
+ * is per-run — not workspace-derivable — so it is shown descriptively (no fixed
+ * path), inserted after the project directory to match resolve order.
+ */
+const embeddedMounts = computed<EmbeddedRow[]>(() => {
+  const rows: EmbeddedRow[] = (props.sysExtraMounts ?? []).map((m) => ({
+    key: m.key,
+    name: embeddedName(m.key),
+    desc: embeddedDesc(m.key),
+    path: m.path,
+    readonly: m.readonly,
+  }))
+  const worktreeRow: EmbeddedRow = {
+    key: 'worktree',
+    name: embeddedName('worktree'),
+    desc: embeddedDesc('worktree'),
+    path: null,
+    readonly: false,
+  }
+  const rootIdx = rows.findIndex((m) => m.key === 'workspaceRoot')
+  rows.splice(rootIdx >= 0 ? rootIdx + 1 : rows.length, 0, worktreeRow)
+  return rows
+})
 
 /** Append a blank extra-mount row (host absolute path, read-only by default). */
 function addExtraMount(): void {
@@ -793,6 +852,36 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
                 <p class="project-config-hint">
                   {{ t('workspaceSetting.sandbox.extraMounts.hint') }}
                 </p>
+                <!-- Built-in (embedded) allowances: always in the allow set, shown
+                     read-only so users see them; cannot be edited or removed here. -->
+                <ul
+                  class="project-config-embedded-mounts"
+                  data-testid="project-config-sandbox-embedded"
+                >
+                  <li class="project-config-embedded-caption">
+                    {{ t('workspaceSetting.sandbox.embedded.label') }}
+                  </li>
+                  <li
+                    v-for="em in embeddedMounts"
+                    :key="em.key"
+                    class="project-config-embedded-row"
+                    :data-testid="`project-config-sandbox-embedded-${em.key}`"
+                  >
+                    <span class="project-config-embedded-name">{{ em.name }}</span>
+                    <code v-if="em.path" class="project-config-readonly">{{ em.path }}</code>
+                    <span v-else class="project-config-embedded-desc">{{ em.desc }}</span>
+                    <span class="project-config-embedded-badge">{{
+                      em.readonly
+                        ? t('workspaceSetting.sandbox.extraMounts.ro')
+                        : t('workspaceSetting.sandbox.extraMounts.rw')
+                    }}</span>
+                    <span
+                      class="project-config-embedded-lock"
+                      :title="t('workspaceSetting.sandbox.embedded.lockedTitle')"
+                      >🔒</span
+                    >
+                  </li>
+                </ul>
                 <div
                   v-for="(m, idx) in extraMounts"
                   :key="idx"
@@ -1333,6 +1422,56 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   font-size: 12px;
   font-family: var(--font-mono, ui-monospace, monospace);
   word-break: break-all;
+}
+
+/* Built-in (embedded) allowed dirs — read-only, non-editable informational list. */
+.project-config-embedded-mounts {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border, #313244);
+  border-radius: 6px;
+  background: var(--bg, #11111b);
+}
+.project-config-embedded-caption {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary, #a6adc8);
+  margin-bottom: 6px;
+}
+.project-config-embedded-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 4px 0;
+}
+.project-config-embedded-name {
+  flex-shrink: 0;
+  min-width: 96px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary, #cdd6f4);
+}
+.project-config-embedded-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-secondary, #a6adc8);
+}
+.project-config-embedded-badge {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--text-secondary, #a6adc8);
+  background: var(--bg-secondary, #181825);
+  border: 1px solid var(--border, #313244);
+}
+.project-config-embedded-lock {
+  flex-shrink: 0;
+  font-size: 11px;
+  opacity: 0.7;
 }
 
 /* --- Compact row layout (label + control on same line) --- */

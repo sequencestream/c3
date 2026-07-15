@@ -2186,6 +2186,22 @@
         "add": "+ ディレクトリを追加",
         "remove": "このディレクトリを削除"
       },
+      "embedded": {
+        "label": "組み込みの許可ディレクトリ(固定・編集/削除不可)",
+        "lockedTitle": "組み込み — 常に許可され、編集・削除できません",
+        "workspaceRoot": {
+          "name": "プロジェクトディレクトリ",
+          "desc": "ベースラインコード、読み取り専用の参照"
+        },
+        "worktree": {
+          "name": "実行 worktree",
+          "desc": "この run の隔離 worktree(パスは run ごとに異なる)"
+        },
+        "specs": {
+          "name": "specs ディレクトリ",
+          "desc": "集中管理された SDD 仕様ルート。逆同期に対応"
+        }
+      },
       "sessionKinds": {
         "label": "サンドボックス対象のセッション種別",
         "hint": "どの run 種別をサンドボックスに入れるか。既定は work。worktree run を生成しない種別は選択しても一致しません。"

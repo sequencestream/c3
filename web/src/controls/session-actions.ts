@@ -18,6 +18,7 @@ export function installSessionActions(ctx: AppCtx): void {
     currentWorkspaceSetting,
     detectedMainBranch,
     resolvedSpecRoot,
+    sysExtraMounts,
     newSessionWorkspace,
     newSessionOpen,
     activeTab,
@@ -213,6 +214,7 @@ export function installSessionActions(ctx: AppCtx): void {
     currentWorkspaceSetting.value = null
     detectedMainBranch.value = null
     resolvedSpecRoot.value = null
+    sysExtraMounts.value = []
     // The console tab's remembered session belonged to the previous workspace —
     // drop it and clear the chat column so it can't keep showing stale content.
     // The new workspace's first session is bound once its `list_sessions` reply

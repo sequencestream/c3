@@ -46,6 +46,7 @@ function makeCtx() {
   const currentWorkspaceSetting = ref<import('@ccc/shared/protocol').WorkspaceSetting | null>(null)
   const detectedMainBranch = ref<string | null>(null)
   const resolvedSpecRoot = ref<string | null>(null)
+  const sysExtraMounts = ref<import('@ccc/shared/protocol').SysExtraMount[]>([])
   const activeTab = ref<string>('console')
   const selectedAutomationId = ref<string | null>(null)
   // Discussion / research refs touched by discussion_detail + research_message.
@@ -87,6 +88,7 @@ function makeCtx() {
     currentWorkspaceSetting,
     detectedMainBranch,
     resolvedSpecRoot,
+    sysExtraMounts,
     activeTab,
     selectedAutomationId,
     serverSettings,
@@ -724,6 +726,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       currentWorkspaceSetting: ref(null),
       detectedMainBranch: ref(null),
       resolvedSpecRoot: ref(null),
+      sysExtraMounts: ref([]),
       readStoredWorkspace: vi.fn(() => null),
       flushIfReady: vi.fn(),
       notifyAwaitingPermission: vi.fn(),

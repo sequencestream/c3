@@ -258,6 +258,7 @@ const {
   currentWorkspaceSetting,
   detectedMainBranch,
   resolvedSpecRoot,
+  sysExtraMounts,
   vendorModes,
   skillLinkStatuses,
   installingSkillIds,
@@ -720,6 +721,7 @@ function onCodesChatWidth(px: number): void {
       :workspace-setting="currentWorkspaceSetting"
       :detected-main-branch="detectedMainBranch"
       :resolved-spec-root="resolvedSpecRoot"
+      :sys-extra-mounts="sysExtraMounts"
       :current-workspace="currentWorkspace"
       :vendor-modes="vendorModes"
       :agents="serverSettings?.agents ?? []"

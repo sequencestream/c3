@@ -549,6 +549,26 @@ export interface SandboxExtraMount {
 }
 
 /**
+ * A built-in (system default) allowed directory for the sandbox, derived
+ * server-side from the owning workspace path. These are the WORKSPACE-scoped
+ * fixed allowances (project directory ro, specs root rw) — a single source of
+ * truth (`sysExtraMounts(workspace)`) consumed BOTH at sandbox launch (merged
+ * into the resolved allow set) and for read-only display in the workspace
+ * setting UI. Users cannot edit or remove them.
+ *
+ * The run worktree (rw) is another fixed allowance but is per-run (not
+ * workspace-derivable), so it is not part of this list.
+ */
+export interface SysExtraMount {
+  /** Stable id for display/i18n (e.g. `workspaceRoot`, `specs`). */
+  key: string
+  /** Host absolute path, exposed at the same path inside the sandbox. */
+  path: string
+  /** Read-only when true; false grants read-write. */
+  readonly: boolean
+}
+
+/**
  * Workspace-level sandbox configuration (arapuca process-level isolation).
  *
  * Two server-side normalize invariants apply (see `normalizeSandboxConfig`):
@@ -4094,6 +4114,10 @@ export type ServerToClient =
    * (`~/.c3/specs/<project-path-segment>`), resolved server-side from the owning
    * workspace path. It is READ-ONLY display data: the form shows it but cannot
    * edit it, and `save_workspace_setting` never accepts a spec directory value.
+   *
+   * `sysExtraMounts` is the workspace-scoped built-in sandbox allow set (project
+   * directory ro, specs root rw) from the single source `sysExtraMounts(workspace)`
+   * — READ-ONLY display data shown alongside the editable `extraMounts`.
    */
   | {
       type: 'workspace_setting'
@@ -4101,6 +4125,7 @@ export type ServerToClient =
       config: WorkspaceSetting
       detectedMainBranch?: string
       resolvedSpecRoot?: string
+      sysExtraMounts?: SysExtraMount[]
     }
   /**
    * Result of a `login` attempt (ADR-0023). Carries an {@link AuthLoginResult}:

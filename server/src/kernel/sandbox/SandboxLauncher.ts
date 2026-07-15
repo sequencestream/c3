@@ -43,12 +43,35 @@ import { tmpdir, homedir } from 'node:os'
 import { join, delimiter, sep } from 'node:path'
 import { getProjectSandbox } from '../../kernel/config/index.js'
 import { getSpecsBase } from '../../kernel/config/workspace-path.js'
+import type { SysExtraMount } from '@ccc/shared/protocol'
 import type {
   ResolvedMount,
   ResolvedSandboxPaths,
   ArapucaProbeResult,
   SandboxUiCode,
 } from './types.js'
+
+// ─── System Default Mounts ───────────────────────────────────────────────────
+
+/**
+ * The workspace-scoped built-in sandbox allow set — the single source of truth
+ * for the fixed allowances derivable from the workspace path: the project
+ * directory (ro) and the centralized specs root (rw). Consumed BOTH at launch
+ * (folded into {@link resolvePaths}) and by the settings handler for read-only
+ * display next to the editable `extraMounts`.
+ *
+ * The run worktree (rw) is a per-run fixed allowance and is NOT included here —
+ * it is not derivable from the workspace path alone.
+ *
+ * Paths are raw (not canonicalized): `resolvePaths` canonicalizes at launch,
+ * while the UI shows the intended host paths.
+ */
+export function sysExtraMounts(workspaceRoot: string): SysExtraMount[] {
+  return [
+    { key: 'workspaceRoot', path: workspaceRoot, readonly: true },
+    { key: 'specs', path: getSpecsBase(workspaceRoot), readonly: false },
+  ]
+}
 
 // ─── Typed Errors ────────────────────────────────────────────────────────────
 
@@ -180,18 +203,25 @@ export function resolvePaths(
   worktree: string,
   extraMounts: readonly { path: string; readonly?: boolean }[] = [],
 ): ResolvedSandboxPaths {
-  const canonWorkspaceRoot = canonicalize(workspaceRoot, 'workspaceRoot')
   const canonWorktree = canonicalize(worktree, 'worktree')
-  const specsBaseRaw = getSpecsBase(workspaceRoot)
-  // Ensure the specs root exists so it can be canonicalized and written.
-  try {
-    mkdirSync(specsBaseRaw, { recursive: true })
-  } catch {
-    // best-effort; canonicalize below will surface a real failure
+  // Workspace-scoped fixed allowances from the single source of truth. A rw
+  // system mount (the specs root) is a write target: ensure it exists so it can
+  // be canonicalized and written.
+  const sys = sysExtraMounts(workspaceRoot)
+  for (const m of sys) {
+    if (!m.readonly) {
+      try {
+        mkdirSync(m.path, { recursive: true })
+      } catch {
+        // best-effort; canonicalize below will surface a real failure
+      }
+    }
   }
-  const canonSpecsBase = canonicalize(specsBaseRaw, 'specsBase')
+  const canonSys = new Map(sys.map((m) => [m.key, canonicalize(m.path, m.key)]))
+  const canonWorkspaceRoot = canonSys.get('workspaceRoot')!
+  const canonSpecsBase = canonSys.get('specs')!
 
-  const reserved = [canonWorkspaceRoot, canonWorktree, canonSpecsBase]
+  const reserved = [canonWorktree, ...canonSys.values()]
   // Canonicalize denied dirs (best-effort) so a symlinked system path (e.g. macOS
   // /etc → /private/etc) still matches an extraMount's canonicalized real path.
   const denied = denyList().map((d) => {

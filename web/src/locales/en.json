@@ -2185,6 +2185,22 @@
         "add": "+ Add directory",
         "remove": "Remove this directory"
       },
+      "embedded": {
+        "label": "Built-in allowed directories (fixed, cannot be edited or removed)",
+        "lockedTitle": "Built-in — always allowed, cannot be edited or removed",
+        "workspaceRoot": {
+          "name": "Project directory",
+          "desc": "Baseline code, read-only reference"
+        },
+        "worktree": {
+          "name": "Run worktree",
+          "desc": "This run's isolated worktree (path varies per run)"
+        },
+        "specs": {
+          "name": "Specs directory",
+          "desc": "Centralized SDD spec root; supports reverse-sync"
+        }
+      },
       "sessionKinds": {
         "label": "Sandboxed session kinds",
         "hint": "Which run kinds enter the sandbox. Defaults to work; kinds that never produce a worktree run simply never match."

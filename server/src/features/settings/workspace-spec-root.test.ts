@@ -27,6 +27,7 @@ import {
 } from '../../state.js'
 import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
 import { getSpecsBase } from '../intents/specs-root.js'
+import { sysExtraMounts } from '../../kernel/sandbox/SandboxLauncher.js'
 import { loadWorkspaceSettingHandler, saveWorkspaceSettingHandler } from './index.js'
 
 let dir: string
@@ -84,6 +85,19 @@ describe('workspace setting — fixed centralized spec root (REQ-3)', () => {
     expect(reply && 'resolvedSpecRoot' in reply ? reply.resolvedSpecRoot : undefined).toBe(
       getSpecsBase(proj),
     )
+  })
+
+  it('load reply carries the workspace-scoped built-in sandbox allow set (sysExtraMounts)', () => {
+    const { conn, sent } = fakeConn()
+    loadWorkspaceSettingHandler(ctx, conn, { type: 'load_workspace_setting', workspaceId })
+    const reply = sent.find((m) => m.type === 'workspace_setting')
+    if (!reply || reply.type !== 'workspace_setting') throw new Error('no workspace_setting reply')
+    // Same single source used at sandbox launch: project dir ro + specs root rw.
+    expect(reply.sysExtraMounts).toEqual(sysExtraMounts(proj))
+    expect(reply.sysExtraMounts).toEqual([
+      { key: 'workspaceRoot', path: proj, readonly: true },
+      { key: 'specs', path: getSpecsBase(proj), readonly: false },
+    ])
   })
 
   it('AC-3.2: a client-supplied spec directory does not change the resolved root and is not persisted', () => {

@@ -471,43 +471,6 @@
       "none": "—",
       "empty": "No installed managed versions yet."
     },
-    "sandboxes": {
-      "title": {
-        "label": "Sandboxes"
-      },
-      "hint": "Define sandbox templates that projects can reference for containerised execution. Each sandbox has a unique name, a container runtime type, an image, and optional resource limits / seccomp profile.",
-      "empty": "No sandbox definitions yet.",
-      "add": {
-        "label": "+ Add sandbox"
-      },
-      "remove": {
-        "tooltip": "Remove this sandbox definition"
-      },
-      "name": {
-        "label": "Name",
-        "placeholder": "e.g. default, nodejs, python"
-      },
-      "type": {
-        "label": "Type",
-        "placeholder": "Container runtime type"
-      },
-      "image": {
-        "label": "Image",
-        "placeholder": "e.g. node:20-alpine"
-      },
-      "seccomp": {
-        "label": "Seccomp profile",
-        "placeholder": "e.g. default, (empty = no seccomp)"
-      },
-      "memoryLimit": {
-        "label": "Memory limit",
-        "placeholder": "e.g. 512m, 2g"
-      },
-      "cpuLimit": {
-        "label": "CPU limit (cores)",
-        "placeholder": "e.g. 1, 2, 0.5"
-      }
-    },
     "skillRepos": {
       "title": {
         "label": "External skills"
@@ -2209,37 +2172,22 @@
       "title": {
         "label": "Sandbox"
       },
-      "hint": "Enable container sandboxing for this project. Choose a sandbox definition from the system settings. The sandbox runs every tool execution in an isolated container with the configured resource limits.",
+      "hint": "Run this project's worktree dev agents under arapuca process-level isolation: the vendor CLI runs as a host process with directory read/write narrowed by a kernel MAC. The project directory is read-only, the worktree and specs are read-write; everything else is hidden by default. Requires the arapuca binary on the host PATH.",
       "enable": {
         "label": "Enable sandbox"
       },
-      "name": {
-        "label": "Sandbox definition",
-        "placeholder": "Select a sandbox",
-        "empty": "No sandbox definitions available. Add one in System Settings first."
+      "extraMounts": {
+        "label": "Extra allowed directories",
+        "hint": "Add supplementary host directories to the allow set (same path). Read-only by default; choose RW to grant write access. Reserved paths (project, worktree, specs) cannot be listed here.",
+        "pathPlaceholder": "/absolute/host/path",
+        "ro": "Read-only",
+        "rw": "Read-write",
+        "add": "+ Add directory",
+        "remove": "Remove this directory"
       },
-      "memoryLimitOverride": {
-        "label": "Memory limit override",
-        "placeholder": "e.g. 1g, 1024m"
-      },
-      "cpuLimitOverride": {
-        "label": "CPU limit override",
-        "placeholder": "e.g. 2, 4"
-      },
-      "allowExternalNetwork": {
-        "label": "Allow external network"
-      },
-      "readonlyRootfs": {
-        "label": "Read-only root filesystem"
-      },
-      "imageOverride": {
-        "label": "Image override",
-        "placeholder": "e.g. node:22-alpine"
-      },
-      "agents": {
-        "label": "Agents allowed in sandbox",
-        "hint": "Pick which custom agents may run inside the sandbox container.",
-        "empty": "No eligible agents. Only enabled custom agents can run in the sandbox."
+      "sessionKinds": {
+        "label": "Sandboxed session kinds",
+        "hint": "Which run kinds enter the sandbox. Defaults to work; kinds that never produce a worktree run simply never match."
       }
     }
   },

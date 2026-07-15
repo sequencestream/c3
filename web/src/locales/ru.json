@@ -513,43 +513,6 @@
         "placeholder": "Опциональный подкаталог (например, skills/my-skill)"
       }
     },
-    "sandboxes": {
-      "title": {
-        "label": "Sandboxes"
-      },
-      "hint": "Define sandbox templates that projects can reference for containerised execution. Each sandbox has a unique name, a container runtime type, an image, and optional resource limits / seccomp profile.",
-      "empty": "No sandbox definitions yet.",
-      "add": {
-        "label": "+ Add sandbox"
-      },
-      "remove": {
-        "tooltip": "Remove this sandbox definition"
-      },
-      "name": {
-        "label": "Name",
-        "placeholder": "e.g. default, nodejs, python"
-      },
-      "type": {
-        "label": "Type",
-        "placeholder": "Container runtime type"
-      },
-      "image": {
-        "label": "Image",
-        "placeholder": "e.g. node:20-alpine"
-      },
-      "seccomp": {
-        "label": "Seccomp profile",
-        "placeholder": "e.g. default, (empty = no seccomp)"
-      },
-      "memoryLimit": {
-        "label": "Memory limit",
-        "placeholder": "e.g. 512m, 2g"
-      },
-      "cpuLimit": {
-        "label": "CPU limit (cores)",
-        "placeholder": "e.g. 1, 2, 0.5"
-      }
-    },
     "auth": {
       "title": {
         "label": "Аутентификация"
@@ -2208,39 +2171,24 @@
     },
     "sandbox": {
       "title": {
-        "label": "Sandbox"
+        "label": "Песочница"
       },
-      "hint": "Enable container sandboxing for this project. Choose a sandbox definition from the system settings. The sandbox runs every tool execution in an isolated container with the configured resource limits.",
+      "hint": "Запускать worktree-агентов разработки этого проекта в изоляции уровня процесса arapuca: vendor CLI работает как процесс хоста с ограничением чтения/записи каталогов через MAC ядра. Исходный каталог проекта доступен только для чтения, worktree и specs — для чтения и записи; всё остальное по умолчанию скрыто. Требуется бинарник arapuca в PATH хоста.",
       "enable": {
-        "label": "Enable sandbox"
+        "label": "Включить песочницу"
       },
-      "name": {
-        "label": "Sandbox definition",
-        "placeholder": "Select a sandbox",
-        "empty": "No sandbox definitions available. Add one in System Settings first."
+      "extraMounts": {
+        "label": "Дополнительные разрешённые каталоги",
+        "hint": "Добавьте каталоги хоста в набор разрешений (тот же путь). По умолчанию только для чтения; выберите RW, чтобы разрешить запись. Зарезервированные пути (проект, worktree, specs) здесь указывать нельзя.",
+        "pathPlaceholder": "/абсолютный/путь/хоста",
+        "ro": "Только чтение",
+        "rw": "Чтение и запись",
+        "add": "+ Добавить каталог",
+        "remove": "Удалить этот каталог"
       },
-      "memoryLimitOverride": {
-        "label": "Memory limit override",
-        "placeholder": "e.g. 1g, 1024m"
-      },
-      "cpuLimitOverride": {
-        "label": "CPU limit override",
-        "placeholder": "e.g. 2, 4"
-      },
-      "allowExternalNetwork": {
-        "label": "Allow external network"
-      },
-      "readonlyRootfs": {
-        "label": "Read-only root filesystem"
-      },
-      "imageOverride": {
-        "label": "Image override",
-        "placeholder": "e.g. node:22-alpine"
-      },
-      "agents": {
-        "label": "Agents allowed in sandbox",
-        "hint": "Pick which custom agents may run inside the sandbox container.",
-        "empty": "No eligible agents. Only enabled custom agents can run in the sandbox."
+      "sessionKinds": {
+        "label": "Виды сессий в песочнице",
+        "hint": "Какие виды run попадают в песочницу. По умолчанию work; виды, которые никогда не создают worktree-run, не совпадают даже при выборе."
       }
     }
   },

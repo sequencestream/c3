@@ -37,11 +37,9 @@ import {
   resolveAgent,
   launchForAgent,
   freezeSessionAgent,
-  setSessionAgent,
 } from '../agent-config/index.js'
 import { getSocketAutoResume, getProjectSandbox } from '../config/index.js'
-import { launchSandbox } from '../sandbox/SandboxLauncher.js'
-import { pickSandboxAgent } from './sandbox-agent.js'
+import { launchSandbox, SandboxLaunchError } from '../sandbox/SandboxLauncher.js'
 import {
   bindPending,
   clearPending,
@@ -153,13 +151,12 @@ export interface LaunchRunDeps {
    */
   onConsensusResolved?: (ctx: ConsensusAutoCtx) => void
   /**
-   * Sandbox driver and registry for container-based run isolation.
-   * When both are present, `launchRun` attempts to start a sandbox container
-   * before the run (based on the project's sandbox config). When absent or
-   * the project's sandbox is disabled, runs proceed on the host unchanged.
+   * Gate for arapuca process-level sandbox isolation. When `sandboxEnabled` is
+   * true (or absent → treated as enabled), `launchRun` wraps the vendor CLI in
+   * arapuca for eligible worktree intent-dev runs (based on the project's
+   * sandbox config). When false, runs proceed on the host unchanged.
    */
-  sandboxDriver?: import('../sandbox/SandboxDriver.js').SandboxDriver
-  sandboxRegistry?: import('../sandbox/SandboxRegistry.js').SandboxRegistry
+  sandboxEnabled?: boolean
   /** Runtime policy hook from the composition root; false suppresses sandbox launch. */
   sandboxAllowed?: () => boolean
 }
@@ -258,23 +255,24 @@ export async function launchRun(
   const resolvedSessionProfile =
     !isIntent && !isSpec && deps.sessionProfile ? deps.sessionProfile(workspacePath) : undefined
 
-  // Sandbox launch (ADR-0024): containers serve ONLY the worktree intent-dev run —
-  // a run with an isolated `rt.effectiveCwd` (the worktree). A plain chat run has no
-  // effectiveCwd and never sandboxes; a current-branch dev run's sandbox config is
-  // stripped by normalize (worktree-only), so it falls through too. When the
-  // workspace's sandbox is enabled, this is HARD isolation (deny-by-default): an
-  // empty agent pool, a deleted/non-claude pick, or a container start failure settles
-  // the run as an error — never a bare host run. The container outlives socket
-  // disconnects (ADR-0006); it is stopped by `finalizeRun` / `removeRuntime` via
-  // `rt.sandboxStop`.
-  if (deps.sandboxDriver && deps.sandboxRegistry && rt.effectiveCwd) {
+  // Sandbox launch (arapuca process-level isolation): serves ONLY the worktree
+  // intent-dev run — a run with an isolated `rt.effectiveCwd` (the worktree). A
+  // plain chat run has no effectiveCwd and never sandboxes; a current-branch dev
+  // run's sandbox config is stripped by normalize (worktree-only), so it falls
+  // through too. On top of that structural gate, the run's `sessionKind` must be
+  // in `sandboxSessionKinds` (default `['work']`). When enabled, this is HARD
+  // isolation (deny-by-default): a missing arapuca binary, an unsupported
+  // platform, or an illegal allow path settles the run as an error — never a
+  // bare host run. The sandbox outlives socket disconnects (ADR-0006); its temp
+  // dir is removed by `finalizeRun` / `removeRuntime` via `rt.sandboxStop`. The
+  // run keeps its normally-resolved agent — the sandbox only wraps that vendor's
+  // CLI in arapuca; there is no sandbox-specific agent selection.
+  if ((deps.sandboxEnabled ?? true) && rt.effectiveCwd) {
     const sbCfg = getProjectSandbox(workspacePath)
-    const sandboxEnabled =
-      (deps.sandboxAllowed?.() ?? true) &&
-      !!sbCfg?.enabled &&
-      !!sbCfg.sandbox &&
-      deps.sandboxRegistry.has(sbCfg.sandbox)
-    if (sandboxEnabled) {
+    const sandboxKinds = sbCfg?.sandboxSessionKinds ?? ['work']
+    const sandboxOn =
+      (deps.sandboxAllowed?.() ?? true) && !!sbCfg?.enabled && sandboxKinds.includes(rt.sessionKind)
+    if (sandboxOn) {
       // Hard-isolation failure: settle the run as an error and stop. Mirrors the
       // vendor-unavailable early return below so the started→settled invariant holds.
       const failHard = (error: string): void => {
@@ -290,51 +288,14 @@ export async function launchRun(
           runKind: rt.runKind,
         })
       }
-      // Randomly pick one custom agent from the normalized pool; it decides the run's
-      // vendor (the container binary) and provider env. The pick resolver also reports
-      // the agent's `wireApi` so a codex DIRECT (responses) OR RELAY (chat) custom agent
-      // is admitted while a system-login codex (no injected creds) is rejected (ADR-0024
-      // + follow-up). No health check / retry — a bad pick hard-fails (user-confirmed
-      // random strategy).
-      const pick = pickSandboxAgent(sbCfg.agentIds ?? [], (id) => {
-        const a = resolveAgent(id)
-        return { id: a.id, vendor: a.vendor, wireApi: launchForAgent(a).wireApi }
-      })
-      if (!pick.ok) {
-        failHard(
-          pick.reason === 'empty-pool'
-            ? '[c3] sandbox is enabled but its agent pool is empty (configure at least one sandbox-capable agent).'
-            : pick.reason === 'unavailable'
-              ? `[c3] sandbox-selected agent ${pick.agentId} is unavailable (deleted after the config was saved).`
-              : pick.reason === 'unsupported-wire'
-                ? `[c3] sandbox-selected codex agent ${pick.agentId} is a system-login codex (no injected provider credentials); the sandbox supports custom codex agents — DIRECT (wireApi=responses) and RELAY (wireApi=chat, via host.docker.internal) — but system-login codex is a follow-up (ADR-0024).`
-                : `[c3] sandbox-selected agent ${pick.agentId} is not a sandbox-capable vendor (the sandbox supports Claude and custom Codex agents; ADR-0024).`,
-        )
-        return
-      }
-      // Pin the picked agent onto this (pending) dev session so every downstream
-      // resolveSessionLaunch(runId) — the vendor fork, the agent chain, the SDK
-      // launch — resolves to it, and its provider connection flows into the
-      // container: claude via env-file (ANTHROPIC_*); codex DIRECT via the wrapper
-      // argv (baseUrl/model) plus CODEX_API_KEY in the env-file; codex RELAY via the
-      // host.docker.internal relay hop with the per-run token in the env-file (ADR-0024).
-      setSessionAgent(runId, pick.agentId)
       try {
-        const sandbox = await launchSandbox(
-          deps.sandboxDriver,
-          deps.sandboxRegistry,
-          workspacePath,
-          rt.effectiveCwd,
-        )
-        if (!sandbox) {
-          failHard('[c3] sandbox is enabled but the container did not start.')
-          return
-        }
-        rt.sandboxHandle = sandbox.handle
+        const sandbox = launchSandbox(workspacePath, rt.effectiveCwd)
+        rt.sandboxPaths = sandbox.paths
         rt.sandboxTmpDir = sandbox.tmpDir
-        rt.sandboxStop = sandbox.stop
+        rt.sandboxStop = async () => sandbox.cleanup()
       } catch (err) {
-        failHard(`[c3] sandbox container launch failed: ${errMsg(err)}`)
+        const uiCode = err instanceof SandboxLaunchError ? err.uiCode : 'launch-failed'
+        failHard(`[c3] sandbox launch failed (${uiCode}): ${errMsg(err)}`)
         return
       }
     }
@@ -500,9 +461,9 @@ export async function launchRun(
           envOverrides: agentCfg.envOverrides,
           model: agentCfg.model,
           currentAgentId: agentCfg.agentId,
-          // Forward sandbox handle so the SDK spawns the vendor CLI inside the container
-          ...(rt.sandboxHandle
-            ? { sandboxHandle: rt.sandboxHandle, sandboxTmpDir: rt.sandboxTmpDir }
+          // Forward the arapuca allow set so the claude path wraps the CLI in arapuca
+          ...(rt.sandboxPaths
+            ? { sandboxPaths: rt.sandboxPaths, sandboxTmpDir: rt.sandboxTmpDir }
             : {}),
           ...(isIntent
             ? // The intent read-only profile (gate + disallowed-tools lock +

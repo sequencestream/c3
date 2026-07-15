@@ -784,70 +784,6 @@ describe('SettingsPanel.vue — authentication (ADR-0023, multi-account)', () =>
   })
 })
 
-describe('SettingsPanel.vue — sandbox column header', () => {
-  const withSandbox: SystemSettings = {
-    ...baseSettings,
-    sandboxes: [{ name: 'default', type: 'docker', image: 'node:20', seccomp: '', cpuLimit: 1 }],
-  }
-
-  it('renders a column-title header with six localized labels when a sandbox exists', () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: withSandbox } })
-    const header = w.find('[data-testid="sandbox-row-header"]')
-    expect(header.exists()).toBe(true)
-    const labels = header.findAll('.agent-field')
-    expect(labels).toHaveLength(6)
-    // Default locale is en in tests: Name / Type / Image / Seccomp profile / Memory limit / CPU limit.
-    expect(labels.map((l) => l.text())).toEqual([
-      'Name',
-      'Type',
-      'Image',
-      'Seccomp profile',
-      'Memory limit',
-      'CPU limit (cores)',
-    ])
-  })
-
-  it('omits the header when there are no sandbox definitions', () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    expect(w.find('[data-testid="sandbox-row-header"]').exists()).toBe(false)
-  })
-
-  it('renders the type-column select with the mode-select class the layout rule targets', () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: withSandbox } })
-    const typeSelect = w.find('[data-testid="sandbox-type"]')
-    expect(typeSelect.exists()).toBe(true)
-    // The alignment fix hangs off `.sandbox-row .mode-select`; the select must keep this class.
-    expect(typeSelect.classes()).toContain('mode-select')
-  })
-
-  it('aligns the type-column select via the shared sandbox flex rule on desktop and resets it on mobile', () => {
-    const css = readFileSync(resolve(process.cwd(), 'web/src/style.css'), 'utf8')
-    // Desktop: `.sandbox-row .mode-select` shares the `.agent-field` flex column so the
-    // "Type" input's left/right edges line up under its header label.
-    expect(css).toMatch(
-      /\.sandbox-row \.agent-field,\s*\.sandbox-row \.mode-select \{[^}]*min-width:\s*80px;[^}]*flex:\s*1 0 120px;/,
-    )
-    // Mobile (<=767px): the same select is reset so it stacks full-width like the other fields.
-    expect(css).toMatch(/@media \(max-width: 767px\)[\s\S]*\.sandbox-row \.mode-select,/)
-  })
-
-  it('drops blank-name sandbox rows on save so they never reach the server registry', async () => {
-    const withBlankRow: SystemSettings = {
-      ...baseSettings,
-      sandboxes: [
-        { name: 'docker-node', type: 'docker', image: 'node:20', seccomp: '', cpuLimit: 1 },
-        { name: '  ', type: 'docker', image: '', seccomp: '', cpuLimit: 1 },
-      ],
-    }
-    const w = mount(SettingsPanel, { props: { open: true, settings: withBlankRow } })
-    await w.find(SAVE.runtime).trigger('click')
-    const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].sandboxes).toEqual([
-      { name: 'docker-node', type: 'docker', image: 'node:20', seccomp: '', cpuLimit: 1 },
-    ])
-  })
-})
-
 describe('SettingsPanel.vue — host-CLI diagnostics (ADR-0012)', () => {
   const hostStatus = [
     {
@@ -1074,7 +1010,6 @@ describe('SettingsPanel.vue — Tab grouping (2026-07-11-001)', () => {
       'default-agent-select': 'settings-tab-agent',
       'settings-diagnostics': 'settings-tab-runtime',
       'settings-vendor-cli': 'settings-tab-runtime',
-      'settings-sandboxes': 'settings-tab-runtime',
       'settings-proxy': 'settings-tab-runtime',
       'settings-auth': 'settings-tab-security',
       'settings-ui-lang': 'settings-tab-general',

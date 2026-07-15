@@ -36,12 +36,12 @@ import type {
   WorkspaceSetting,
   WorkspaceSandboxConfig,
   SkillRepoConfig,
-  SystemSandboxDef,
   SystemSettings,
   UiLang,
   VendorId,
 } from '@ccc/shared/protocol'
-import { PENDING_SESSION_PREFIX, resolveDefaultAgentId } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX, resolveDefaultAgentId, SESSION_KINDS } from '@ccc/shared/protocol'
+import type { SandboxExtraMount, SessionKind } from '@ccc/shared/protocol'
 import {
   canonicalizeAgentOrder,
   defaultSettings,
@@ -423,8 +423,6 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // `getSkillRepos(workspacePath)`, which reads from `loadWorkspaceSetting(workspacePath)`.
   // Per-project configurations passthrough (project-level knobs).
   const projectConfigs = raw?.projectConfigs
-  // System sandbox definitions passthrough. Validated by SandboxRegistry at startup.
-  const sandboxes = raw?.sandboxes
   // Auth config (ADR-0023): validate via the zod schema; a malformed or absent
   // block normalizes to undefined ⇒ "no auth" (the C-SEC-5 localhost-only
   // default). Contract-only — no runtime enforcement exists yet.
@@ -448,7 +446,6 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     socketAutoResume,
     proxy: normalizeProxyConfig(raw?.proxy),
     // skillRepos intentionally omitted — deprecated, migrated to WorkspaceSetting
-    ...(sandboxes !== undefined ? { sandboxes } : {}),
     ...(auth !== undefined ? { auth } : {}),
     ...(projectConfigs ? { projectConfigs } : {}),
     ...(vendorCliVersions ? { vendorCliVersions } : {}),
@@ -556,11 +553,7 @@ export function normalizeWorkspaceSetting(
   // legacy on-disk key `gitCommitMode` so pre-rename saved configs aren't lost.
   // Resolved before sandbox because sandbox is worktree-only (drops otherwise).
   const gitBranchMode = normalizeGitBranchMode(rec.gitBranchMode ?? rec.gitCommitMode)
-  // Pool of agents that may run inside the sandbox container: enabled + custom only.
-  const validCustomAgentIds = new Set(
-    agents.filter((a) => a.enabled && a.configMode === 'custom').map((a) => a.id),
-  )
-  const sandbox = normalizeSandboxConfig(rec.sandbox, gitBranchMode, validCustomAgentIds)
+  const sandbox = normalizeSandboxConfig(rec.sandbox, gitBranchMode)
   const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
   const sddEnabled = normalizeSddEnabled(rec.sddEnabled)
   const automationEnabled = normalizeAutomationEnabled(rec.automationEnabled)
@@ -626,67 +619,57 @@ function normalizeDefaultMainBranch(raw: unknown): string | undefined {
 }
 
 /**
- * Normalize a raw workspace sandbox config value. Returns `undefined` when the
- * value is absent/null/non-object, preserving the "not configured" signal so
- * the UI knows to hide sandbox options. When present, trims string fields and
- * delegates numeric/boolean passthrough. Absent/empty after trimming ⇒ undefined.
+ * Normalize a raw workspace sandbox config value (arapuca process-level
+ * isolation). Returns `undefined` when the value is absent/null/non-object or
+ * nothing meaningful survives, preserving the "not configured" signal so the UI
+ * knows to hide sandbox options.
  *
- * Two invariants are enforced here (see `WorkspaceSandboxConfig` doc):
+ * One invariant is enforced here (see `WorkspaceSandboxConfig` doc):
  * - **worktree-only**: when `gitBranchMode !== 'worktree'` the config is dropped
- *   entirely (returns `undefined`) — under `current-branch` the container would
- *   bind-mount the live project checkout, so sandboxing offers no isolation.
- * - **custom-only**: `agentIds` keeps only ids present in `validCustomAgentIds`
- *   (the workspace's `enabled && configMode: 'custom'` agents); invalid / system
- *   / disabled ids are silently dropped — mirrors the "stale sandbox def name ⇒
- *   not configured" handling.
+ *   entirely (returns `undefined`) — without an isolated worktree there is no
+ *   run for the sandbox to wrap.
+ *
+ * Legacy on-disk container keys (`sandbox` name ref, `allowExternalNetwork`,
+ * `readonlyRootfs`, image/resource/env overrides, `agentIds`, `networkDisabled`)
+ * are read and DROPPED — there is no semantic carry-over under arapuca.
  */
 function normalizeSandboxConfig(
   raw: unknown,
   gitBranchMode: GitBranchMode,
-  validCustomAgentIds: ReadonlySet<string>,
 ): WorkspaceSandboxConfig | undefined {
   // worktree-only: sandbox is meaningless outside worktree isolation.
   if (gitBranchMode !== 'worktree') return undefined
   if (!raw || typeof raw !== 'object') return undefined
   const rec = raw as Record<string, unknown>
   const sb: WorkspaceSandboxConfig = {}
-  if (typeof rec.sandbox === 'string' && rec.sandbox.trim()) sb.sandbox = rec.sandbox.trim()
   if (rec.enabled === true) sb.enabled = true
-  // Per-workspace security policies (deny-by-default at merge time). Persist the
-  // explicit boolean either way so a `false` (loosen) survives — not just `true`.
-  // Legacy on-disk `networkDisabled` migrates to `allowExternalNetwork` (inverted).
-  if (typeof rec.allowExternalNetwork === 'boolean')
-    sb.allowExternalNetwork = rec.allowExternalNetwork
-  else if (typeof rec.networkDisabled === 'boolean') sb.allowExternalNetwork = !rec.networkDisabled
-  if (typeof rec.readonlyRootfs === 'boolean') sb.readonlyRootfs = rec.readonlyRootfs
-  if (typeof rec.memoryLimitOverride === 'string' && rec.memoryLimitOverride.trim())
-    sb.memoryLimitOverride = rec.memoryLimitOverride.trim()
-  if (
-    typeof rec.cpuLimitOverride === 'number' &&
-    Number.isFinite(rec.cpuLimitOverride) &&
-    rec.cpuLimitOverride > 0
-  )
-    sb.cpuLimitOverride = rec.cpuLimitOverride
-  if (typeof rec.imageOverride === 'string' && rec.imageOverride.trim())
-    sb.imageOverride = rec.imageOverride.trim()
-  if (
-    rec.envVarsOverride &&
-    typeof rec.envVarsOverride === 'object' &&
-    !Array.isArray(rec.envVarsOverride)
-  )
-    sb.envVarsOverride = rec.envVarsOverride as Record<string, string>
-  // custom-only: drop ids that aren't enabled custom agents; de-dupe; preserve order.
-  if (Array.isArray(rec.agentIds)) {
+  // Supplementary allowed dirs: same-path passthrough, read-only by default.
+  // Drop entries without an absolute-path string; trim the path.
+  if (Array.isArray(rec.extraMounts)) {
     const seen = new Set<string>()
-    const agentIds: string[] = []
-    for (const id of rec.agentIds) {
-      if (typeof id !== 'string') continue
-      const trimmed = id.trim()
-      if (!trimmed || seen.has(trimmed) || !validCustomAgentIds.has(trimmed)) continue
-      seen.add(trimmed)
-      agentIds.push(trimmed)
+    const extraMounts: SandboxExtraMount[] = []
+    for (const item of rec.extraMounts) {
+      if (!item || typeof item !== 'object') continue
+      const m = item as Record<string, unknown>
+      const path = typeof m.path === 'string' ? m.path.trim() : ''
+      if (!path || !path.startsWith('/') || seen.has(path)) continue
+      seen.add(path)
+      extraMounts.push(m.readonly === false ? { path, readonly: false } : { path })
     }
-    if (agentIds.length > 0) sb.agentIds = agentIds
+    if (extraMounts.length > 0) sb.extraMounts = extraMounts
+  }
+  // Session kinds that enter the sandbox: dedupe, drop values outside
+  // SESSION_KINDS; an empty set after normalize falls back to ['work'].
+  if (Array.isArray(rec.sandboxSessionKinds)) {
+    const valid = new Set<string>(SESSION_KINDS)
+    const seen = new Set<string>()
+    const kinds: SessionKind[] = []
+    for (const k of rec.sandboxSessionKinds) {
+      if (typeof k !== 'string' || !valid.has(k) || seen.has(k)) continue
+      seen.add(k)
+      kinds.push(k as SessionKind)
+    }
+    sb.sandboxSessionKinds = kinds.length > 0 ? kinds : ['work']
   }
   // Return undefined when nothing meaningful was set (keeps old configs clean).
   if (Object.keys(sb).length === 0) return undefined
@@ -1427,25 +1410,11 @@ export function getMaxSpeechChars(workspacePath: string): number {
 }
 
 /**
- * Get the system-level sandbox definitions. Returns the raw array from
- * settings (passthrough — shape is validated by SandboxRegistry at startup).
- * Absent/empty ⇒ no sandbox definitions exist.
- *
- * Blank-name entries are dropped defensively: a leftover incomplete row in
- * settings.json (name never filled in) would otherwise trip the registry's
- * non-empty-name guard and crash startup. Skipping them keeps the server
- * bootable rather than fatally rejecting the whole config.
- */
-export function getSystemSandboxes(): SystemSandboxDef[] {
-  return (loadSettings().sandboxes ?? []).filter((sb) => (sb.name ?? '').trim() !== '')
-}
-
-/**
  * Get the project-level sandbox config (normalized). Returns `undefined`
  * when the project has no sandbox config (equivalent to disabled).
  */
 export function getProjectSandbox(workspacePath: string): WorkspaceSandboxConfig | undefined {
-  // Already normalized (worktree-only + custom-only invariants applied) by
+  // Already normalized (worktree-only invariant applied) by
   // loadWorkspaceSetting → normalizeWorkspaceSetting → normalizeSandboxConfig.
   return loadWorkspaceSetting(workspacePath).sandbox
 }

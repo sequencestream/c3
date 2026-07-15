@@ -241,13 +241,13 @@ export interface RunOptions {
    */
   specDir?: string
   /**
-   * Sandbox container handle. When present, the vendor CLI binary is wrapped
-   * to run inside the sandbox container via `docker exec`.
+   * Resolved arapuca allow set. When present, the vendor CLI is wrapped to run
+   * inside an arapuca-narrowed process (`arapuca run -v … -- claude "$@"`).
    */
-  sandboxHandle?: import('../sandbox/types.js').SandboxHandle
+  sandboxPaths?: import('../sandbox/types.js').ResolvedSandboxPaths
   /**
-   * Temp directory created by the sandbox launcher, used for wrapper scripts
-   * and env files. Set alongside `sandboxHandle`.
+   * Per-run temp directory created by the sandbox launcher, holding the wrapper
+   * script. Set alongside `sandboxPaths`.
    */
   sandboxTmpDir?: string
   send: (msg: ServerToClient) => void
@@ -608,27 +608,17 @@ export async function runClaude(opts: RunOptions): Promise<void> {
   })
   const inProcessMcpServers = mcpBinding ? remoteMcpToClaudeConfig(mcpBinding.servers) : undefined
 
-  // When sandbox is active, wrap the vendor binary to run inside the container
-  const claudePath = opts.sandboxHandle
-    ? createSandboxWrapper(
-        opts.sandboxHandle,
-        opts.sandboxTmpDir!,
-        'claude',
-        // IS_SANDBOX=1: the container IS the sandbox, so claude must allow
-        // `--dangerously-skip-permissions` even though it runs as root inside the
-        // image (without this claude aborts: "cannot be used with root/sudo
-        // privileges"). Safe here precisely because the run is container-isolated.
-        { ...buildChildEnv(envOverrides), IS_SANDBOX: '1' },
-      )
+  // When sandbox is active, wrap the vendor binary in arapuca. No IS_SANDBOX and
+  // no `--dangerously-skip-permissions`: the process runs as the current host
+  // user (not container root), so claude's root guard never trips. The wrapper
+  // carries no env — the SDK's `env` (buildChildEnv) is set on the wrapper
+  // process below and inherited by the arapuca child.
+  const claudePath = opts.sandboxPaths
+    ? createSandboxWrapper(opts.sandboxPaths, 'claude', opts.sandboxTmpDir!)
     : findClaudeExecutable()
-  // The SDK spawns the wrapper ON THE HOST, so `cwd` must be a real host dir.
-  // `cwd` here is the run's worktree (`effectiveCwd`) — exactly the directory
-  // bind-mounted into the container at /workspace. The CONTAINER working dir is
-  // set independently by the wrapper's `docker exec -w /workspace`, and claude
-  // (running in the container) reports /workspace to the model from its own
-  // process cwd. Setting this to '/workspace' (a path that exists only inside the
-  // container) made the host spawn fail with ENOENT — "native binary ... failed
-  // to launch" — so always keep the host `cwd` here.
+  // The SDK spawns the wrapper ON THE HOST. Same-path principle: `cwd` is the
+  // run's worktree (`effectiveCwd`), the same absolute path the arapuca child
+  // sees — no path rewrite, so the model's reported cwd matches the host dir.
   const q = query({
     prompt: input,
     options: {

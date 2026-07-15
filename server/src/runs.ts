@@ -114,19 +114,21 @@ export interface SessionRuntime {
    */
   lastActivityAt: number
   /**
-   * Sandbox handle for container-based isolation. Set when the run is launched
-   * inside a sandbox container; cleared when `finalizeRun` or `removeRuntime`
-   * stops the container. The sandbox outlives socket disconnects (ADR-0006).
+   * Resolved arapuca allow set for process-level sandbox isolation. Set when
+   * the run is launched inside a sandbox; consumed downstream to build the
+   * arapuca wrapper for the vendor CLI. The sandbox outlives socket
+   * disconnects (ADR-0006).
    */
-  sandboxHandle?: import('./kernel/sandbox/types.js').SandboxHandle
+  sandboxPaths?: import('./kernel/sandbox/types.js').ResolvedSandboxPaths
   /**
-   * Temp directory for sandbox wrapper scripts and env files.
-   * Created atomically with `sandboxHandle`; cleaned up by `sandboxStop`.
+   * Per-run temp directory holding the sandbox wrapper script.
+   * Created atomically with `sandboxPaths`; removed by `sandboxStop`.
    */
   sandboxTmpDir?: string
   /**
-   * Cleanup function for the sandbox container. Called by `finalizeRun` and
-   * `removeRuntime`. Registered atomically with `sandboxHandle`.
+   * Cleanup function for the sandbox (removes the temp dir; there is no
+   * container to stop). Called by `finalizeRun` and `removeRuntime`.
+   * Registered atomically with `sandboxPaths`.
    */
   sandboxStop?: () => Promise<void>
   /**
@@ -384,14 +386,13 @@ export function setStatus(id: string, status: SessionStatus): void {
 export function finalizeRun(id: string): void {
   const rt = runtimes.get(id)
   if (!rt) return
-  // Stop the sandbox container if one is running. Fire-and-forget: the run is
-  // already over, we don't block on container cleanup (best-effort). Errors are
-  // swallowed (container cleanup is best-effort).
+  // Clean up the sandbox temp dir if one was created. Fire-and-forget: the run
+  // is already over (best-effort; there is no container to stop).
   if (rt.sandboxStop) {
     const stop = rt.sandboxStop
     rt.sandboxStop = undefined
-    rt.sandboxHandle = undefined
-    stop().catch((err) => console.warn('[c3] sandbox stop error:', err))
+    rt.sandboxPaths = undefined
+    stop().catch((err) => console.warn('[c3] sandbox cleanup error:', err))
   }
   if (!rt.sawTurnEnd) emit(id, { type: 'turn_end', reason: 'complete' })
   setStatus(id, 'idle')
@@ -477,13 +478,13 @@ export function stopRun(id: string): void {
 export function removeRuntime(id: string): void {
   const rt = runtimes.get(id)
   if (!rt) return
-  // Stop the sandbox container before dropping the runtime (same fire-and-forget
-  // pattern as finalizeRun).
+  // Clean up the sandbox temp dir before dropping the runtime (same
+  // fire-and-forget pattern as finalizeRun).
   if (rt.sandboxStop) {
     const stop = rt.sandboxStop
     rt.sandboxStop = undefined
-    rt.sandboxHandle = undefined
-    stop().catch((err) => console.warn('[c3] sandbox stop error:', err))
+    rt.sandboxPaths = undefined
+    stop().catch((err) => console.warn('[c3] sandbox cleanup error:', err))
   }
   rt.run?.abort.abort()
   runtimes.delete(id)

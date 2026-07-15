@@ -471,43 +471,6 @@
       "none": "—",
       "empty": "尚无已安装的自管版本。"
     },
-    "sandboxes": {
-      "title": {
-        "label": "沙箱定义"
-      },
-      "hint": "定义沙箱模板供项目引用以实现容器化执行。每个沙箱有唯一名称、容器运行时类型、镜像以及可选资源限制 / seccomp 配置文件。",
-      "empty": "尚未配置沙箱定义。",
-      "add": {
-        "label": "+ 添加沙箱"
-      },
-      "remove": {
-        "tooltip": "移除此沙箱定义"
-      },
-      "name": {
-        "label": "名称",
-        "placeholder": "例如 default、nodejs、python"
-      },
-      "type": {
-        "label": "类型",
-        "placeholder": "容器运行时类型"
-      },
-      "image": {
-        "label": "镜像",
-        "placeholder": "例如 node:20-alpine"
-      },
-      "seccomp": {
-        "label": "Seccomp 配置文件",
-        "placeholder": "例如 default（留空=不使用 seccomp）"
-      },
-      "memoryLimit": {
-        "label": "内存限制",
-        "placeholder": "例如 512m、2g"
-      },
-      "cpuLimit": {
-        "label": "CPU 限制（核心数）",
-        "placeholder": "例如 1、2、0.5"
-      }
-    },
     "skillRepos": {
       "title": {
         "label": "外部技能"
@@ -2209,37 +2172,22 @@
       "title": {
         "label": "沙箱"
       },
-      "hint": "为本项目启用容器沙箱。从系统设置中选择一个沙箱定义。启用后,每个工具执行都会在隔离的容器中运行,并应用配置的资源限制。",
+      "hint": "为本项目的 worktree 开发 agent 启用 arapuca 进程级隔离:vendor CLI 作为宿主进程运行,由内核 MAC 收窄目录读写。项目原目录只读,worktree 与 specs 可读写,其余目录默认不可见。需要宿主 PATH 中已安装 arapuca 二进制。",
       "enable": {
         "label": "启用沙箱"
       },
-      "name": {
-        "label": "沙箱定义",
-        "placeholder": "选择一个沙箱",
-        "empty": "暂无可用沙箱定义,请先在系统设置中添加。"
+      "extraMounts": {
+        "label": "补充放行目录",
+        "hint": "向放行集追加宿主目录(同路径)。默认只读;选择读写以授予写权限。保留路径(项目、worktree、specs)不可在此列出。",
+        "pathPlaceholder": "/宿主绝对路径",
+        "ro": "只读",
+        "rw": "读写",
+        "add": "+ 添加目录",
+        "remove": "移除此目录"
       },
-      "memoryLimitOverride": {
-        "label": "内存限制覆盖",
-        "placeholder": "例如 1g、1024m"
-      },
-      "cpuLimitOverride": {
-        "label": "CPU 限制覆盖",
-        "placeholder": "例如 2、4"
-      },
-      "allowExternalNetwork": {
-        "label": "允许外部网络"
-      },
-      "readonlyRootfs": {
-        "label": "只读根文件系统"
-      },
-      "imageOverride": {
-        "label": "镜像覆盖",
-        "placeholder": "例如 node:22-alpine"
-      },
-      "agents": {
-        "label": "允许进入沙箱的 agent",
-        "hint": "选择哪些 custom agent 可以在沙箱容器内运行。",
-        "empty": "没有可选 agent。只有已启用的 custom agent 才能进入沙箱。"
+      "sessionKinds": {
+        "label": "进入沙箱的会话种类",
+        "hint": "哪些 run 种类进入沙箱。默认 work;从不产生 worktree run 的种类即使勾选也不会匹配。"
       }
     }
   },

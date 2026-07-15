@@ -1,7 +1,9 @@
 /**
- * Unit tests for the sandbox-config normalize invariants (2026-06-12):
+ * Unit tests for the sandbox-config normalize invariants (arapuca):
  * - worktree-only: sandbox is dropped unless gitBranchMode === 'worktree'
- * - custom-only: agentIds keeps only enabled custom agent ids
+ * - extraMounts: same-path passthrough, read-only by default, absolute paths only
+ * - sandboxSessionKinds: dedupe, drop unknown, empty → ['work']
+ * - legacy container keys are read and dropped (no semantic carry-over)
  *
  * Exercised through the public `normalizeWorkspaceSetting(raw, agents)`.
  */
@@ -22,110 +24,117 @@ function agent(id: string, configMode: 'system' | 'custom', enabled: boolean): A
   } as unknown as AgentConfig
 }
 
-const ENABLED_SANDBOX = { enabled: true, sandbox: 'default' }
-
 describe('normalizeSandboxConfig invariants (via normalizeWorkspaceSetting)', () => {
   it('drops sandbox entirely when gitBranchMode is not worktree', () => {
     const result = normalizeWorkspaceSetting(
-      { gitBranchMode: 'current-branch', sandbox: { ...ENABLED_SANDBOX } },
+      { gitBranchMode: 'current-branch', sandbox: { enabled: true } },
       [agent('a', 'custom', true)],
     )
     expect(result.sandbox).toBeUndefined()
   })
 
   it('drops sandbox when gitBranchMode is absent (defaults to current-branch)', () => {
-    const result = normalizeWorkspaceSetting({ sandbox: { ...ENABLED_SANDBOX } }, [])
+    const result = normalizeWorkspaceSetting({ sandbox: { enabled: true } }, [])
     expect(result.sandbox).toBeUndefined()
   })
 
-  it('keeps sandbox under worktree and retains valid custom agent ids', () => {
+  it('keeps enabled under worktree', () => {
     const result = normalizeWorkspaceSetting(
-      { gitBranchMode: 'worktree', sandbox: { ...ENABLED_SANDBOX, agentIds: ['a', 'ghost'] } },
+      { gitBranchMode: 'worktree', sandbox: { enabled: true } },
+      [],
+    )
+    expect(result.sandbox).toMatchObject({ enabled: true })
+  })
+
+  it('keeps extraMounts, defaulting readonly to true and preserving explicit false', () => {
+    const result = normalizeWorkspaceSetting(
+      {
+        gitBranchMode: 'worktree',
+        sandbox: {
+          enabled: true,
+          extraMounts: [
+            { path: '/opt/cache' }, // default ro
+            { path: '/opt/rw', readonly: false }, // explicit rw
+          ],
+        },
+      },
+      [],
+    )
+    expect(result.sandbox?.extraMounts).toEqual([
+      { path: '/opt/cache' },
+      { path: '/opt/rw', readonly: false },
+    ])
+  })
+
+  it('drops extraMounts entries that are not absolute paths and de-dupes', () => {
+    const result = normalizeWorkspaceSetting(
+      {
+        gitBranchMode: 'worktree',
+        sandbox: {
+          enabled: true,
+          extraMounts: [
+            { path: 'relative/dir' }, // dropped — not absolute
+            { path: '  ' }, // dropped — blank
+            { path: '/opt/a' },
+            { path: '/opt/a' }, // dropped — duplicate
+          ],
+        },
+      },
+      [],
+    )
+    expect(result.sandbox?.extraMounts).toEqual([{ path: '/opt/a' }])
+  })
+
+  it('normalizes sandboxSessionKinds: dedupe + drop unknown values', () => {
+    const result = normalizeWorkspaceSetting(
+      {
+        gitBranchMode: 'worktree',
+        sandbox: {
+          enabled: true,
+          sandboxSessionKinds: ['work', 'intent', 'work', 'bogus'],
+        },
+      },
+      [],
+    )
+    expect(result.sandbox?.sandboxSessionKinds).toEqual(['work', 'intent'])
+  })
+
+  it('falls back sandboxSessionKinds to ["work"] when none survive', () => {
+    const result = normalizeWorkspaceSetting(
+      {
+        gitBranchMode: 'worktree',
+        sandbox: { enabled: true, sandboxSessionKinds: ['bogus'] },
+      },
+      [],
+    )
+    expect(result.sandbox?.sandboxSessionKinds).toEqual(['work'])
+  })
+
+  it('reads and drops legacy container keys without carry-over', () => {
+    const result = normalizeWorkspaceSetting(
+      {
+        gitBranchMode: 'worktree',
+        sandbox: {
+          enabled: true,
+          sandbox: 'default',
+          allowExternalNetwork: true,
+          readonlyRootfs: false,
+          imageOverride: 'node:20',
+          agentIds: ['a'],
+          networkDisabled: true,
+        },
+      },
       [agent('a', 'custom', true)],
     )
-    expect(result.sandbox).toMatchObject({ enabled: true, sandbox: 'default' })
-    // 'ghost' is not a known agent → dropped; 'a' is enabled custom → kept.
-    expect(result.sandbox?.agentIds).toEqual(['a'])
+    // enabled survives; every legacy container key is dropped.
+    expect(result.sandbox).toEqual({ enabled: true })
   })
 
-  it('filters out system and disabled agents from agentIds', () => {
+  it('returns undefined when nothing meaningful is set', () => {
     const result = normalizeWorkspaceSetting(
-      {
-        gitBranchMode: 'worktree',
-        sandbox: { ...ENABLED_SANDBOX, agentIds: ['sys', 'dis', 'ok'] },
-      },
-      [
-        agent('sys', 'system', true), // system → excluded
-        agent('dis', 'custom', false), // disabled → excluded
-        agent('ok', 'custom', true), // enabled custom → kept
-      ],
-    )
-    expect(result.sandbox?.agentIds).toEqual(['ok'])
-  })
-
-  it('omits agentIds when none survive the custom-only filter', () => {
-    const result = normalizeWorkspaceSetting(
-      { gitBranchMode: 'worktree', sandbox: { ...ENABLED_SANDBOX, agentIds: ['sys'] } },
-      [agent('sys', 'system', true)],
-    )
-    expect(result.sandbox).toMatchObject({ enabled: true, sandbox: 'default' })
-    expect(result.sandbox?.agentIds).toBeUndefined()
-  })
-
-  it('de-duplicates agentIds while preserving first-seen order', () => {
-    const result = normalizeWorkspaceSetting(
-      {
-        gitBranchMode: 'worktree',
-        sandbox: { ...ENABLED_SANDBOX, agentIds: ['b', 'a', 'b'] },
-      },
-      [agent('a', 'custom', true), agent('b', 'custom', true)],
-    )
-    expect(result.sandbox?.agentIds).toEqual(['b', 'a'])
-  })
-
-  it('persists explicit allowExternalNetwork / readonlyRootfs (true and false survive)', () => {
-    const loosened = normalizeWorkspaceSetting(
-      {
-        gitBranchMode: 'worktree',
-        sandbox: { ...ENABLED_SANDBOX, allowExternalNetwork: true, readonlyRootfs: false },
-      },
+      { gitBranchMode: 'worktree', sandbox: { imageOverride: 'node:20' } },
       [],
     )
-    // A `true` (loosen the deny-by-default policy) must round-trip, not be dropped.
-    expect(loosened.sandbox?.allowExternalNetwork).toBe(true)
-    expect(loosened.sandbox?.readonlyRootfs).toBe(false)
-
-    const tightened = normalizeWorkspaceSetting(
-      {
-        gitBranchMode: 'worktree',
-        sandbox: { ...ENABLED_SANDBOX, allowExternalNetwork: false, readonlyRootfs: true },
-      },
-      [],
-    )
-    expect(tightened.sandbox?.allowExternalNetwork).toBe(false)
-    expect(tightened.sandbox?.readonlyRootfs).toBe(true)
-  })
-
-  it('omits the security policies when unset (deny-by-default applies at merge)', () => {
-    const result = normalizeWorkspaceSetting(
-      { gitBranchMode: 'worktree', sandbox: { ...ENABLED_SANDBOX } },
-      [],
-    )
-    expect(result.sandbox?.allowExternalNetwork).toBeUndefined()
-    expect(result.sandbox?.readonlyRootfs).toBeUndefined()
-  })
-
-  it('migrates legacy on-disk networkDisabled to allowExternalNetwork (inverted)', () => {
-    const fromDisabled = normalizeWorkspaceSetting(
-      { gitBranchMode: 'worktree', sandbox: { ...ENABLED_SANDBOX, networkDisabled: true } },
-      [],
-    )
-    expect(fromDisabled.sandbox?.allowExternalNetwork).toBe(false)
-
-    const fromEnabled = normalizeWorkspaceSetting(
-      { gitBranchMode: 'worktree', sandbox: { ...ENABLED_SANDBOX, networkDisabled: false } },
-      [],
-    )
-    expect(fromEnabled.sandbox?.allowExternalNetwork).toBe(true)
+    expect(result.sandbox).toBeUndefined()
   })
 })

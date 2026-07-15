@@ -513,43 +513,6 @@
         "placeholder": "선택적 하위 디렉토리(예: skills/my-skill)"
       }
     },
-    "sandboxes": {
-      "title": {
-        "label": "Sandboxes"
-      },
-      "hint": "Define sandbox templates that projects can reference for containerised execution. Each sandbox has a unique name, a container runtime type, an image, and optional resource limits / seccomp profile.",
-      "empty": "No sandbox definitions yet.",
-      "add": {
-        "label": "+ Add sandbox"
-      },
-      "remove": {
-        "tooltip": "Remove this sandbox definition"
-      },
-      "name": {
-        "label": "Name",
-        "placeholder": "e.g. default, nodejs, python"
-      },
-      "type": {
-        "label": "Type",
-        "placeholder": "Container runtime type"
-      },
-      "image": {
-        "label": "Image",
-        "placeholder": "e.g. node:20-alpine"
-      },
-      "seccomp": {
-        "label": "Seccomp profile",
-        "placeholder": "e.g. default, (empty = no seccomp)"
-      },
-      "memoryLimit": {
-        "label": "Memory limit",
-        "placeholder": "e.g. 512m, 2g"
-      },
-      "cpuLimit": {
-        "label": "CPU limit (cores)",
-        "placeholder": "e.g. 1, 2, 0.5"
-      }
-    },
     "auth": {
       "title": {
         "label": "인증"
@@ -2208,39 +2171,24 @@
     },
     "sandbox": {
       "title": {
-        "label": "Sandbox"
+        "label": "샌드박스"
       },
-      "hint": "Enable container sandboxing for this project. Choose a sandbox definition from the system settings. The sandbox runs every tool execution in an isolated container with the configured resource limits.",
+      "hint": "이 프로젝트의 worktree 개발 에이전트를 arapuca 프로세스 수준 격리로 실행합니다. vendor CLI는 호스트 프로세스로 동작하며 디렉터리 읽기/쓰기가 커널 MAC으로 제한됩니다. 프로젝트 원본 디렉터리는 읽기 전용, worktree와 specs는 읽기/쓰기 가능하며 그 외는 기본적으로 보이지 않습니다. 호스트 PATH에 arapuca 바이너리가 필요합니다.",
       "enable": {
-        "label": "Enable sandbox"
+        "label": "샌드박스 활성화"
       },
-      "name": {
-        "label": "Sandbox definition",
-        "placeholder": "Select a sandbox",
-        "empty": "No sandbox definitions available. Add one in System Settings first."
+      "extraMounts": {
+        "label": "추가 허용 디렉터리",
+        "hint": "허용 집합에 호스트 디렉터리를 추가합니다(동일 경로). 기본은 읽기 전용이며 쓰기를 허용하려면 RW를 선택합니다. 예약 경로(프로젝트, worktree, specs)는 여기에 지정할 수 없습니다.",
+        "pathPlaceholder": "/호스트 절대 경로",
+        "ro": "읽기 전용",
+        "rw": "읽기/쓰기",
+        "add": "+ 디렉터리 추가",
+        "remove": "이 디렉터리 제거"
       },
-      "memoryLimitOverride": {
-        "label": "Memory limit override",
-        "placeholder": "e.g. 1g, 1024m"
-      },
-      "cpuLimitOverride": {
-        "label": "CPU limit override",
-        "placeholder": "e.g. 2, 4"
-      },
-      "allowExternalNetwork": {
-        "label": "Allow external network"
-      },
-      "readonlyRootfs": {
-        "label": "Read-only root filesystem"
-      },
-      "imageOverride": {
-        "label": "Image override",
-        "placeholder": "e.g. node:22-alpine"
-      },
-      "agents": {
-        "label": "Agents allowed in sandbox",
-        "hint": "Pick which custom agents may run inside the sandbox container.",
-        "empty": "No eligible agents. Only enabled custom agents can run in the sandbox."
+      "sessionKinds": {
+        "label": "샌드박스 대상 세션 종류",
+        "hint": "어떤 run 종류를 샌드박스에 넣을지. 기본값은 work이며, worktree run을 만들지 않는 종류는 선택해도 일치하지 않습니다."
       }
     }
   },

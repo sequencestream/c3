@@ -290,20 +290,13 @@ export interface DriverStartOptions {
    */
   wireApi?: 'responses' | 'chat'
   /**
-   * Path to a sandbox-wrapper script. When set, the driver MUST use this path
-   * as the vendor binary executable instead of the default host binary resolution.
-   * The wrapper transparently runs the vendor CLI inside a sandbox container.
+   * Path to an arapuca sandbox-wrapper script. When set, the driver MUST use
+   * this path as the vendor binary executable instead of default host binary
+   * resolution. The wrapper runs the vendor CLI as an arapuca-narrowed host
+   * process (`arapuca run -v … -- <cli> "$@"`); the child inherits the driver's
+   * spawn env, so no env-file is needed.
    */
   sandboxWrapperPath?: string
-  /**
-   * Path to the sandbox wrapper's `docker --env-file` (set alongside
-   * {@link sandboxWrapperPath} on a sandbox run). The codex RELAY route appends the
-   * per-run relay token (`CODEX_API_KEY`) + NO_PROXY here so it crosses into the
-   * container — the SDK only sets the token as a host-process env, which
-   * `docker exec --env-file` does not carry in (ADR-0024 follow-up). Other vendors /
-   * routes ignore it.
-   */
-  sandboxEnvFile?: string
   /**
    * Remote (HTTP) MCP servers to attach to this run, keyed by server name
    * (2026-06-12-005). Each driver translates to its native MCP config; a driver
@@ -396,43 +389,6 @@ export type Disposer = () => void
 export interface ApprovalBridge {
   /** Register the decision handler. Returns a disposer. Required. */
   onRequest(handler: ApprovalHandler): Disposer
-
-  /**
-   * Optional pre-approval checkpoint for sandboxed runs.
-   *
-   * Before a tool is auto-approved (pre-approved by vendor policy), this
-   * method is called with the sandbox context. It can snapshot the workspace
-   * files (via {@link import('../../sandbox/SandboxDriver.js').SandboxDriver.copyFrom})
-   * and inspect for modified files. Returns a checkpoint result that the
-   * caller uses to decide whether pre-approval is safe.
-   *
-   * When absent (sandbox not enabled, or the bridge doesn't support it),
-   * pre-approval proceeds without a checkpoint.
-   */
-  preApproveCheckpoint?(
-    sandbox: import('../../sandbox/types.js').SandboxHandle,
-    driver: import('../../sandbox/SandboxDriver.js').SandboxDriver,
-  ): Promise<CheckpointResult>
-}
-
-/**
- * Result of a pre-approval checkpoint inspection.
- */
-export interface CheckpointResult {
-  /**
-   * Whether the checkpoint deems pre-approval safe.
-   * When false, the caller should escalate to user approval.
-   */
-  readonly safe: boolean
-  /**
-   * Human-readable explanation of the checkpoint result.
-   */
-  readonly reason: string
-  /**
-   * List of files that were modified (relative paths inside the workspace),
-   * when available. Empty when no modifications detected.
-   */
-  readonly modifiedFiles?: readonly string[]
 }
 
 /** A session in the store's listing (neutral subset). */

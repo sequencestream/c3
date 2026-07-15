@@ -10,7 +10,6 @@ import type {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   ModeToken,
   VendorModeCatalog,
-  SystemSandboxDef,
   AgentConfig,
 } from '@ccc/shared/protocol'
 
@@ -97,7 +96,6 @@ function mountWs(config: WorkspaceSettingType | null, extra?: Record<string, unk
       detectedMainBranch: null,
       currentWorkspace: '/test',
       vendorModes: MOCK_VENDOR_MODES,
-      systemSandboxes: [],
       ...extra,
     },
   })
@@ -596,48 +594,17 @@ describe('WorkspaceSetting.vue — spec-driven development (SDD)', () => {
   })
 })
 
-describe('WorkspaceSetting.vue — sandbox worktree gating + agent multi-select', () => {
-  const SANDBOXES: SystemSandboxDef[] = [
-    { name: 'default', type: 'docker', image: 'node:22-alpine' },
-  ]
-  // A custom-enabled agent (selectable), a custom-disabled one, and a system one.
-  const AGENTS: AgentConfig[] = [
-    {
-      id: 'custom-on',
-      vendor: 'claude',
-      configMode: 'custom',
-      displayName: 'Custom On',
-      enabled: true,
-      config: { baseUrl: '', apiKey: '', model: '' },
-    },
-    {
-      id: 'custom-off',
-      vendor: 'claude',
-      configMode: 'custom',
-      displayName: 'Custom Off',
-      enabled: false,
-      config: { baseUrl: '', apiKey: '', model: '' },
-    },
-    {
-      id: 'system-on',
-      vendor: 'claude',
-      configMode: 'system',
-      displayName: 'System On',
-      enabled: true,
-      config: { baseUrl: '', apiKey: '', model: '' },
-    },
-  ]
-
+describe('WorkspaceSetting.vue — arapuca sandbox worktree gating + extraMounts + sessionKinds', () => {
   function mountSandbox(overrides?: Partial<WorkspaceSettingType>) {
-    return mountWs(cfg(overrides), { systemSandboxes: SANDBOXES, agents: AGENTS })
+    return mountWs(cfg(overrides))
   }
 
-  it('hides the sandbox section under current-branch even with system defs', () => {
+  it('hides the sandbox section under current-branch', () => {
     const w = mountSandbox({ gitBranchMode: 'current-branch' })
     expect(w.find('[data-testid="project-config-sandbox"]').exists()).toBe(false)
   })
 
-  it('shows the sandbox section under worktree when system defs exist', () => {
+  it('shows the sandbox section under worktree', () => {
     const w = mountSandbox({ gitBranchMode: 'worktree' })
     expect(w.find('[data-testid="project-config-sandbox"]').exists()).toBe(true)
   })
@@ -649,46 +616,53 @@ describe('WorkspaceSetting.vue — sandbox worktree gating + agent multi-select'
     expect(w.find('[data-testid="project-config-sandbox"]').exists()).toBe(true)
   })
 
-  it('lists only enabled custom agents in the picker', () => {
-    const w = mountSandbox({
-      gitBranchMode: 'worktree',
-      sandbox: { enabled: true, sandbox: 'default' },
-    })
-    expect(w.find('[data-testid="project-config-sandbox-agent-custom-on"]').exists()).toBe(true)
-    expect(w.find('[data-testid="project-config-sandbox-agent-custom-off"]').exists()).toBe(false)
-    expect(w.find('[data-testid="project-config-sandbox-agent-system-on"]').exists()).toBe(false)
+  it('shows the extraMounts + sessionKinds editors only when enabled', async () => {
+    const w = mountSandbox({ gitBranchMode: 'worktree', sandbox: { enabled: false } })
+    expect(w.find('[data-testid="project-config-sandbox-mount-add"]').exists()).toBe(false)
+    await w.find('[data-testid="project-config-sandbox-enabled"]').setValue(true)
+    expect(w.find('[data-testid="project-config-sandbox-mount-add"]').exists()).toBe(true)
+    expect(w.find('[data-testid="project-config-sandbox-kinds"]').exists()).toBe(true)
+    // 'work' is selected by default.
+    const workBox = w.find('[data-testid="project-config-sandbox-kind-work"]')
+      .element as HTMLInputElement
+    expect(workBox.checked).toBe(true)
   })
 
-  it('shows the empty state when no custom agents are eligible', () => {
-    const w = mountWs(
-      cfg({
-        gitBranchMode: 'worktree',
-        sandbox: { enabled: true, sandbox: 'default' },
-      }),
-      { systemSandboxes: SANDBOXES, agents: [AGENTS[1], AGENTS[2]] }, // only disabled-custom + system
-    )
-    expect(w.find('[data-testid="project-config-sandbox-agents-empty"]').exists()).toBe(true)
-    expect(w.find('[data-testid="project-config-sandbox-agents"]').exists()).toBe(false)
-  })
-
-  it('writes the toggled agent ids into the saved sandbox config (git-sandbox tab)', async () => {
-    const w = mountSandbox({
-      gitBranchMode: 'worktree',
-      sandbox: { enabled: true, sandbox: 'default' },
-    })
-    await w.find('[data-testid="project-config-sandbox-agent-custom-on"]').trigger('change')
+  it('writes an added extra mount (default read-only) into the saved sandbox config', async () => {
+    const w = mountSandbox({ gitBranchMode: 'worktree', sandbox: { enabled: true } })
+    await w.find('[data-testid="project-config-sandbox-mount-add"]').trigger('click')
+    await w.find('[data-testid="project-config-sandbox-mount-path-0"]').setValue('/opt/cache')
     await w.find(SAVE.gitSandbox).trigger('click')
     const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
     expect(payload.sandbox?.enabled).toBe(true)
-    expect(payload.sandbox?.agentIds).toEqual(['custom-on'])
+    expect(payload.sandbox?.extraMounts).toEqual([{ path: '/opt/cache' }])
+  })
+
+  it('round-trips a read-write extra mount seeded from config', async () => {
+    const w = mountSandbox({
+      gitBranchMode: 'worktree',
+      sandbox: { enabled: true, extraMounts: [{ path: '/opt/rw', readonly: false }] },
+    })
+    // The rw mode select reflects the seeded value.
+    const modeSelect = w.find('[data-testid="project-config-sandbox-mount-mode-0"]')
+      .element as HTMLSelectElement
+    expect(modeSelect.value).toBe('false')
+    await w.find(SAVE.gitSandbox).trigger('click')
+    const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
+    expect(payload.sandbox?.extraMounts).toEqual([{ path: '/opt/rw', readonly: false }])
+  })
+
+  it('emits sandboxSessionKinds only when it differs from the default [work]', async () => {
+    const w = mountSandbox({ gitBranchMode: 'worktree', sandbox: { enabled: true } })
+    await w.find('[data-testid="project-config-sandbox-kind-intent"]').trigger('change')
+    await w.find(SAVE.gitSandbox).trigger('click')
+    const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
+    expect(payload.sandbox?.sandboxSessionKinds).toEqual(['work', 'intent'])
   })
 
   it('drops the sandbox from the save payload when not in worktree mode', async () => {
     // Start in worktree with an enabled sandbox, then switch back to current-branch.
-    const w = mountSandbox({
-      gitBranchMode: 'worktree',
-      sandbox: { enabled: true, sandbox: 'default' },
-    })
+    const w = mountSandbox({ gitBranchMode: 'worktree', sandbox: { enabled: true } })
     await w.find('[data-testid="git-branch-mode"]').setValue('current-branch')
     await w.find(SAVE.gitSandbox).trigger('click')
     const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
@@ -747,10 +721,9 @@ describe('WorkspaceSetting.vue — Tab grouping', () => {
       cfg({
         gitBranchMode: 'worktree',
         sddEnabled: true,
-        sandbox: { enabled: true, sandbox: 'x' },
+        sandbox: { enabled: true },
       }),
       {
-        systemSandboxes: [{ name: 'x', type: 'docker', image: 'node' }],
         resolvedSpecRoot: '/home/u/.c3/specs/test',
       },
     )
@@ -810,9 +783,7 @@ describe('WorkspaceSetting.vue — per-tab dirty state', () => {
   })
 
   it('detects a sandbox enable toggle (git-sandbox) as dirty', async () => {
-    const w = mountWs(cfg({ gitBranchMode: 'worktree' }), {
-      systemSandboxes: [{ name: 'x', type: 'docker', image: 'node' }],
-    })
+    const w = mountWs(cfg({ gitBranchMode: 'worktree' }))
     expect(w.find('[data-testid="project-config-tab-dirty-gitSandbox"]').exists()).toBe(false)
     await w.find('[data-testid="project-config-sandbox-enabled"]').setValue(true)
     expect(w.find('[data-testid="project-config-tab-dirty-gitSandbox"]').exists()).toBe(true)
@@ -872,14 +843,16 @@ describe('WorkspaceSetting.vue — independent per-tab save', () => {
 
   it('saving a non-git tab preserves the committed sandbox and does not clear it', async () => {
     const w = mountWs(
-      cfg({ gitBranchMode: 'worktree', sandbox: { enabled: true, sandbox: 'x' } }),
-      { systemSandboxes: [{ name: 'x', type: 'docker', image: 'node' }] },
+      cfg({
+        gitBranchMode: 'worktree',
+        sandbox: { enabled: true, extraMounts: [{ path: '/opt/cache' }] },
+      }),
     )
     // Save the collaboration tab — the committed sandbox must pass through intact.
     await w.find(SAVE.collab).trigger('click')
     const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
     expect(payload.sandbox?.enabled).toBe(true)
-    expect(payload.sandbox?.sandbox).toBe('x')
+    expect(payload.sandbox?.extraMounts).toEqual([{ path: '/opt/cache' }])
   })
 
   it('saving a second tab before the first save echoes does not revert the first save', async () => {

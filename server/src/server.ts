@@ -15,9 +15,7 @@ import {
   waitForDecision,
 } from './kernel/permission/index.js'
 import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
-import { DockerDriver } from './kernel/sandbox/docker/DockerDriver.js'
-import { SandboxRegistry } from './kernel/sandbox/SandboxRegistry.js'
-import { getSystemSandboxes } from './kernel/config/index.js'
+import { probeArapuca } from './kernel/sandbox/SandboxLauncher.js'
 import { initLogging, shutdownLogging } from './kernel/infra/logger.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
 import { addWorkspace, listWorkspaces, resolveWorkspaceRoot } from './state.js'
@@ -467,23 +465,20 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const eventMcp = createEventMcp(`http://127.0.0.1:${opts.port}`, eventMcpTools)
   const specQueryMcp = createSpecQueryMcp(`http://127.0.0.1:${opts.port}`)
 
-  // ── Sandbox wiring (ADR-0024) ──────────────────────────────────────────────
-  // Build the system sandbox-def registry from settings and instantiate the
-  // Docker driver, then thread both into the run lifecycle. The run-lifecycle
-  // gate only fires when a project actually enables sandbox with an existing
-  // def, so wiring this unconditionally is harmless for non-sandbox users (and
-  // dockerode connects lazily — no throw when Docker is absent). Defs are read
-  // at startup; a settings change needs a restart to re-register (MVP).
-  const sandboxRegistry = new SandboxRegistry()
-  for (const def of getSystemSandboxes()) sandboxRegistry.register(def)
-  const sandboxDriver = new DockerDriver()
-  if (sandboxRegistry.size > 0) {
-    console.log(`[sandbox] registry ready: ${sandboxRegistry.names().join(', ')}`)
-  }
+  // ── Sandbox wiring (arapuca process-level isolation) ───────────────────────
+  // Probe arapuca once at startup for the "sandbox available?" signal (log only;
+  // the run-lifecycle gate only fires when a project actually enables sandbox, and
+  // re-probes with a hard-fail there). Wiring is unconditional and harmless for
+  // non-sandbox users — no container daemon to reach.
+  const arapucaProbe = probeArapuca()
+  console.log(
+    arapucaProbe.ok
+      ? '[sandbox] arapuca available (process-level isolation ready)'
+      : `[sandbox] arapuca unavailable (${arapucaProbe.uiCode}) — sandbox-enabled runs will hard-fail`,
+  )
 
   const launchDeps: LaunchRunDeps = {
-    sandboxDriver,
-    sandboxRegistry,
+    sandboxEnabled: true,
     eventBus,
     broadcastStatuses: broadcasts.broadcastStatuses,
     broadcastIntents: broadcasts.broadcastIntents,

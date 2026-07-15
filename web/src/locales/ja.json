@@ -513,43 +513,6 @@
         "placeholder": "オプションのサブディレクトリ（例: skills/my-skill）"
       }
     },
-    "sandboxes": {
-      "title": {
-        "label": "Sandboxes"
-      },
-      "hint": "Define sandbox templates that projects can reference for containerised execution. Each sandbox has a unique name, a container runtime type, an image, and optional resource limits / seccomp profile.",
-      "empty": "No sandbox definitions yet.",
-      "add": {
-        "label": "+ Add sandbox"
-      },
-      "remove": {
-        "tooltip": "Remove this sandbox definition"
-      },
-      "name": {
-        "label": "Name",
-        "placeholder": "e.g. default, nodejs, python"
-      },
-      "type": {
-        "label": "Type",
-        "placeholder": "Container runtime type"
-      },
-      "image": {
-        "label": "Image",
-        "placeholder": "e.g. node:20-alpine"
-      },
-      "seccomp": {
-        "label": "Seccomp profile",
-        "placeholder": "e.g. default, (empty = no seccomp)"
-      },
-      "memoryLimit": {
-        "label": "Memory limit",
-        "placeholder": "e.g. 512m, 2g"
-      },
-      "cpuLimit": {
-        "label": "CPU limit (cores)",
-        "placeholder": "e.g. 1, 2, 0.5"
-      }
-    },
     "auth": {
       "title": {
         "label": "認証"
@@ -2208,39 +2171,24 @@
     },
     "sandbox": {
       "title": {
-        "label": "Sandbox"
+        "label": "サンドボックス"
       },
-      "hint": "Enable container sandboxing for this project. Choose a sandbox definition from the system settings. The sandbox runs every tool execution in an isolated container with the configured resource limits.",
+      "hint": "このプロジェクトの worktree 開発エージェントを arapuca プロセスレベル分離で実行します。vendor CLI はホストプロセスとして動作し、ディレクトリの読み書きはカーネル MAC で制限されます。プロジェクト元ディレクトリは読み取り専用、worktree と specs は読み書き可、それ以外は既定で不可視です。ホストの PATH に arapuca バイナリが必要です。",
       "enable": {
-        "label": "Enable sandbox"
+        "label": "サンドボックスを有効化"
       },
-      "name": {
-        "label": "Sandbox definition",
-        "placeholder": "Select a sandbox",
-        "empty": "No sandbox definitions available. Add one in System Settings first."
+      "extraMounts": {
+        "label": "追加の許可ディレクトリ",
+        "hint": "許可セットにホストディレクトリを追加します(同一パス)。既定は読み取り専用。書き込みを許可するには RW を選択します。予約パス(プロジェクト、worktree、specs)はここに指定できません。",
+        "pathPlaceholder": "/ホストの絶対パス",
+        "ro": "読み取り専用",
+        "rw": "読み書き",
+        "add": "+ ディレクトリを追加",
+        "remove": "このディレクトリを削除"
       },
-      "memoryLimitOverride": {
-        "label": "Memory limit override",
-        "placeholder": "e.g. 1g, 1024m"
-      },
-      "cpuLimitOverride": {
-        "label": "CPU limit override",
-        "placeholder": "e.g. 2, 4"
-      },
-      "allowExternalNetwork": {
-        "label": "Allow external network"
-      },
-      "readonlyRootfs": {
-        "label": "Read-only root filesystem"
-      },
-      "imageOverride": {
-        "label": "Image override",
-        "placeholder": "e.g. node:22-alpine"
-      },
-      "agents": {
-        "label": "Agents allowed in sandbox",
-        "hint": "Pick which custom agents may run inside the sandbox container.",
-        "empty": "No eligible agents. Only enabled custom agents can run in the sandbox."
+      "sessionKinds": {
+        "label": "サンドボックス対象のセッション種別",
+        "hint": "どの run 種別をサンドボックスに入れるか。既定は work。worktree run を生成しない種別は選択しても一致しません。"
       }
     }
   },

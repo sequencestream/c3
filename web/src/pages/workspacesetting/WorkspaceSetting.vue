@@ -14,15 +14,16 @@ import type {
   CodexPolicy,
   WorkspaceSetting,
   WorkspaceSandboxConfig,
+  SandboxExtraMount,
   AgentConfig,
   SkillRepoConfig,
   SkillLinkStatus,
-  SystemSandboxDef,
+  SessionKind,
   VendorId,
   VendorModeCatalog,
   ModeToken,
 } from '@ccc/shared/protocol'
-import { GIT_BRANCH_MODES } from '@ccc/shared/protocol'
+import { GIT_BRANCH_MODES, SESSION_KINDS } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
@@ -54,9 +55,7 @@ const props = defineProps<{
   resolvedSpecRoot?: string | null
   currentWorkspace: string | null
   vendorModes: Record<VendorId, VendorModeCatalog> | null
-  /** System sandbox definitions — drives the sandbox name dropdown. */
-  systemSandboxes: SystemSandboxDef[]
-  /** All configured agents — the sandbox agent picker shows enabled custom ones. */
+  /** All configured agents — the consensus voter picker shows enabled ones. */
   agents?: AgentConfig[]
   /** Per-skill link status for the current workspace (reply to get_skill_link_status). */
   linkStatuses?: SkillLinkStatus[]
@@ -184,25 +183,17 @@ function seedDefaultMode(
 }
 
 /**
- * Build an editable sandbox draft from a raw sandbox value. Validates that the
- * referenced sandbox name still exists in the current system definitions — if it
- * was deleted/renamed, treat as unconfigured. Seeds the deny-by-default security
- * policies so the checkboxes reflect the server-side merge defaults (absent ⇒
- * network off, read-only rootfs on). Always returns a reactive object so the
- * `sandboxDraft` v-model bindings propagate.
+ * Build an editable sandbox draft from a raw sandbox value (arapuca). Always
+ * returns a reactive object with an extraMounts array and a sessionKinds list so
+ * the `sandboxDraft` v-model bindings propagate; absent fields fall back to the
+ * defaults (disabled, no extra mounts, `['work']`).
  */
-function seedSandbox(
-  raw: WorkspaceSandboxConfig | undefined,
-  sandboxes: SystemSandboxDef[],
-): WorkspaceSandboxConfig {
-  if (raw && raw.sandbox && sandboxes.some((sb) => sb.name === raw.sandbox)) {
-    return {
-      ...raw,
-      allowExternalNetwork: raw.allowExternalNetwork ?? false,
-      readonlyRootfs: raw.readonlyRootfs ?? true,
-    }
+function seedSandbox(raw: WorkspaceSandboxConfig | undefined): WorkspaceSandboxConfig {
+  return {
+    enabled: raw?.enabled ?? false,
+    extraMounts: raw?.extraMounts ? raw.extraMounts.map((m) => ({ ...m })) : [],
+    sandboxSessionKinds: raw?.sandboxSessionKinds ? [...raw.sandboxSessionKinds] : ['work'],
   }
-  return { allowExternalNetwork: false, readonlyRootfs: true }
 }
 
 /**
@@ -264,7 +255,7 @@ function reseedTab(tab: WsTab, seed: WorkspaceSetting): void {
   if (tab === 'gitSandbox') {
     draft.value.gitBranchMode = seed.gitBranchMode
     draft.value.defaultMainBranch = seed.defaultMainBranch
-    draft.value.sandbox = seedSandbox(seed.sandbox, props.systemSandboxes)
+    draft.value.sandbox = seedSandbox(seed.sandbox)
   } else {
     applyTabFields(draft.value, seed, tab)
   }
@@ -290,16 +281,9 @@ function reconcile(seed: WorkspaceSetting): void {
 }
 
 // Re-seed on open, then reconcile field-by-field on every later server pushback
-// (or when vendorModes / systemSandboxes / detected branch arrive async).
+// (or when vendorModes / detected branch arrive async).
 watch(
-  () =>
-    [
-      props.open,
-      props.workspaceSetting,
-      props.detectedMainBranch,
-      props.vendorModes,
-      props.systemSandboxes,
-    ] as const,
+  () => [props.open, props.workspaceSetting, props.detectedMainBranch, props.vendorModes] as const,
   (curr, prev) => {
     const open = curr[0]
     if (!open) return
@@ -309,7 +293,7 @@ watch(
       // First open (or reopen): whole-draft seed from the server snapshot.
       committed.value = seed
       draft.value = deepCopy(seed)
-      draft.value.sandbox = seedSandbox(seed.sandbox, props.systemSandboxes)
+      draft.value.sandbox = seedSandbox(seed.sandbox)
       pendingSaveTab.value = null
       // Ask the parent to (re)fetch each skill repo's link status for this workspace.
       // No auto-polling — only on open (and after an install completes, via the parent).
@@ -323,24 +307,25 @@ watch(
 )
 
 // The effective sandbox a Save would persist, used for BOTH dirty comparison and
-// as the canonical form the draft (synthesized net/ro) and the raw committed value
-// normalize to. Mirrors the save gate: worktree + enabled only. Fills the
-// deny-by-default policies so a synthesized draft equals a raw server value, and
-// treats a present-but-unknown sandbox NAME as unconfigured — symmetric with
-// `seedSandbox`, which drops a stale/deleted name to the default draft — while
-// keeping an explicitly-enabled sandbox that has no name yet (matches saveTab).
+// as the canonical form the draft and the raw committed value normalize to.
+// Mirrors the save gate: worktree + enabled only. Drops empty extraMounts and a
+// trivial `['work']` sessionKinds so a synthesized draft equals a raw server value.
 function effectiveSandbox(
   gitBranchMode: WorkspaceSetting['gitBranchMode'],
   raw: WorkspaceSandboxConfig | undefined,
 ): WorkspaceSandboxConfig | undefined {
-  if (gitBranchMode !== 'worktree' || !raw) return undefined
-  if (raw.sandbox && !props.systemSandboxes.some((sb) => sb.name === raw.sandbox)) return undefined
-  if (!raw.enabled) return undefined
-  return {
-    ...raw,
-    allowExternalNetwork: raw.allowExternalNetwork ?? false,
-    readonlyRootfs: raw.readonlyRootfs ?? true,
+  if (gitBranchMode !== 'worktree' || !raw || !raw.enabled) return undefined
+  const extraMounts = (raw.extraMounts ?? [])
+    .map((m) => ({ path: (m.path ?? '').trim(), readonly: m.readonly !== false }))
+    .filter((m) => m.path.length > 0)
+  const kinds = raw.sandboxSessionKinds ?? ['work']
+  const out: WorkspaceSandboxConfig = { enabled: true }
+  if (extraMounts.length > 0) {
+    out.extraMounts = extraMounts.map((m) => (m.readonly ? { path: m.path } : { ...m }))
   }
+  const isDefaultKinds = kinds.length === 1 && kinds[0] === 'work'
+  if (!isDefaultKinds && kinds.length > 0) out.sandboxSessionKinds = [...kinds]
+  return out
 }
 
 // The gitSandbox tab's dirty comparison slice — the fields (transformed) a Save
@@ -404,24 +389,34 @@ const sandboxDraft = computed<WorkspaceSandboxConfig>({
   },
 })
 
-/**
- * Custom agents that may be selected for the sandbox container — mirrors the
- * server's custom-only normalize invariant (`enabled && configMode === 'custom'`).
- */
-const selectableAgents = computed<AgentConfig[]>(() =>
-  (props.agents ?? []).filter((a) => a.enabled && a.configMode === 'custom'),
-)
+/** The sandbox draft's supplementary allowed dirs (never null for the template). */
+const extraMounts = computed<SandboxExtraMount[]>(() => sandboxDraft.value.extraMounts ?? [])
 
-/** Whether the given agent id is in the sandbox draft's `agentIds` pool. */
-function isAgentSelected(id: string): boolean {
-  return (sandboxDraft.value.agentIds ?? []).includes(id)
+/** Append a blank extra-mount row (host absolute path, read-only by default). */
+function addExtraMount(): void {
+  const next = [...extraMounts.value, { path: '', readonly: true }]
+  sandboxDraft.value = { ...sandboxDraft.value, extraMounts: next }
 }
 
-/** Toggle an agent id in the sandbox draft's `agentIds` pool. */
-function toggleAgent(id: string): void {
-  const current = sandboxDraft.value.agentIds ?? []
-  const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
-  sandboxDraft.value = { ...sandboxDraft.value, agentIds: next.length > 0 ? next : undefined }
+/** Remove the extra-mount row at `idx`. */
+function removeExtraMount(idx: number): void {
+  const next = extraMounts.value.filter((_, i) => i !== idx)
+  sandboxDraft.value = { ...sandboxDraft.value, extraMounts: next }
+}
+
+/** All session kinds, for the sandbox sessionKinds checkbox group. */
+const sessionKindOptions = SESSION_KINDS
+
+/** Whether `kind` is in the sandbox draft's sessionKinds set (default `['work']`). */
+function isSessionKindSelected(kind: SessionKind): boolean {
+  return (sandboxDraft.value.sandboxSessionKinds ?? ['work']).includes(kind)
+}
+
+/** Toggle a session kind in the sandbox draft's sessionKinds set. */
+function toggleSessionKind(kind: SessionKind): void {
+  const current = sandboxDraft.value.sandboxSessionKinds ?? ['work']
+  const next = current.includes(kind) ? current.filter((k) => k !== kind) : [...current, kind]
+  sandboxDraft.value = { ...sandboxDraft.value, sandboxSessionKinds: next }
 }
 
 // ---- Consensus custom voter picker ----
@@ -546,14 +541,13 @@ function saveTab(tab: WsTab): void {
       payload.gitBranchMode = draft.value.gitBranchMode
       // Trim the branch; empty ⇒ omit (server normalizes blank → undefined anyway).
       payload.defaultMainBranch = draft.value.defaultMainBranch?.trim() || undefined
-      // Sandbox is worktree-only: emit it only when the branch mode is `worktree`
-      // AND it is enabled. Otherwise explicitly drop the committed sandbox field so
-      // switching to current-branch (or disabling) clears it on this tab's Save.
-      if (draft.value.gitBranchMode === 'worktree' && sandboxDraft.value.enabled) {
-        payload.sandbox = deepCopy(sandboxDraft.value)
-      } else {
-        delete payload.sandbox
-      }
+      // Sandbox is worktree-only: emit the normalized effective form only when the
+      // branch mode is `worktree` AND it is enabled. Otherwise explicitly drop the
+      // committed sandbox field so switching to current-branch (or disabling) clears
+      // it on this tab's Save.
+      const eff = effectiveSandbox(draft.value.gitBranchMode, sandboxDraft.value)
+      if (eff) payload.sandbox = eff
+      else delete payload.sandbox
       break
     }
     case 'collab': {
@@ -769,7 +763,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
              the live checkout), so it is grouped right after the git branch
              strategy and hidden whenever the mode is not `worktree`. -->
         <section
-          v-if="draft.gitBranchMode === 'worktree' && props.systemSandboxes.length > 0"
+          v-if="draft.gitBranchMode === 'worktree'"
           class="project-config-section"
           data-testid="project-config-sandbox"
         >
@@ -783,114 +777,90 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
               v-model="sandboxDraft.enabled"
               type="checkbox"
               :true-value="true"
-              :false-value="undefined"
+              :false-value="false"
               data-testid="project-config-sandbox-enabled"
             />
             {{ t('workspaceSetting.sandbox.enable.label') }}
           </label>
 
           <template v-if="sandboxDraft.enabled">
-            <div class="project-config-row">
+            <!-- Supplementary allowed directories (same-path, read-only by default). -->
+            <div class="project-config-row project-config-sandbox-mounts">
               <span class="project-config-row-label">{{
-                t('workspaceSetting.sandbox.name.label')
+                t('workspaceSetting.sandbox.extraMounts.label')
               }}</span>
-              <select
-                v-model="sandboxDraft.sandbox"
-                class="mode-select"
-                data-testid="project-config-sandbox-name"
-              >
-                <option value="" disabled>
-                  {{ t('workspaceSetting.sandbox.name.placeholder') }}
-                </option>
-                <option v-for="sb in props.systemSandboxes" :key="sb.name" :value="sb.name">
-                  {{ sb.name }}
-                </option>
-              </select>
+              <div class="project-config-agent-list">
+                <p class="project-config-hint">
+                  {{ t('workspaceSetting.sandbox.extraMounts.hint') }}
+                </p>
+                <div
+                  v-for="(m, idx) in extraMounts"
+                  :key="idx"
+                  class="project-config-mount-row"
+                  data-testid="project-config-sandbox-mount"
+                >
+                  <input
+                    v-model="m.path"
+                    class="project-config-field"
+                    :placeholder="t('workspaceSetting.sandbox.extraMounts.pathPlaceholder')"
+                    :data-testid="`project-config-sandbox-mount-path-${idx}`"
+                  />
+                  <select
+                    v-model="m.readonly"
+                    class="mode-select"
+                    :data-testid="`project-config-sandbox-mount-mode-${idx}`"
+                  >
+                    <option :value="true">
+                      {{ t('workspaceSetting.sandbox.extraMounts.ro') }}
+                    </option>
+                    <option :value="false">
+                      {{ t('workspaceSetting.sandbox.extraMounts.rw') }}
+                    </option>
+                  </select>
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    :title="t('workspaceSetting.sandbox.extraMounts.remove')"
+                    :data-testid="`project-config-sandbox-mount-remove-${idx}`"
+                    @click="removeExtraMount(idx)"
+                  >
+                    🗑
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  class="agent-add"
+                  data-testid="project-config-sandbox-mount-add"
+                  @click="addExtraMount"
+                >
+                  {{ t('workspaceSetting.sandbox.extraMounts.add') }}
+                </button>
+              </div>
             </div>
 
-            <div class="project-config-row">
+            <!-- Session kinds that enter the sandbox (default: work). -->
+            <div class="project-config-row project-config-sandbox-kinds">
               <span class="project-config-row-label">{{
-                t('workspaceSetting.sandbox.allowExternalNetwork.label')
+                t('workspaceSetting.sandbox.sessionKinds.label')
               }}</span>
-              <input v-model="sandboxDraft.allowExternalNetwork" type="checkbox" />
-            </div>
-
-            <div class="project-config-row">
-              <span class="project-config-row-label">{{
-                t('workspaceSetting.sandbox.readonlyRootfs.label')
-              }}</span>
-              <input v-model="sandboxDraft.readonlyRootfs" type="checkbox" />
-            </div>
-
-            <div class="project-config-row">
-              <span class="project-config-row-label">{{
-                t('workspaceSetting.sandbox.memoryLimitOverride.label')
-              }}</span>
-              <input
-                v-model="sandboxDraft.memoryLimitOverride"
-                class="project-config-field"
-                :placeholder="t('workspaceSetting.sandbox.memoryLimitOverride.placeholder')"
-                data-testid="project-config-sandbox-memory"
-              />
-            </div>
-
-            <div class="project-config-row">
-              <span class="project-config-row-label">{{
-                t('workspaceSetting.sandbox.cpuLimitOverride.label')
-              }}</span>
-              <input
-                v-model.number="sandboxDraft.cpuLimitOverride"
-                class="project-config-field project-config-number"
-                type="number"
-                min="0"
-                step="0.5"
-                :placeholder="t('workspaceSetting.sandbox.cpuLimitOverride.placeholder')"
-                data-testid="project-config-sandbox-cpu"
-              />
-            </div>
-
-            <div class="project-config-row">
-              <span class="project-config-row-label">{{
-                t('workspaceSetting.sandbox.imageOverride.label')
-              }}</span>
-              <input
-                v-model="sandboxDraft.imageOverride"
-                class="project-config-field"
-                :placeholder="t('workspaceSetting.sandbox.imageOverride.placeholder')"
-                data-testid="project-config-sandbox-image"
-              />
-            </div>
-
-            <!-- Agent multi-select: the whole section is already worktree-gated,
-                 so no inner branch-mode check is needed — list the enabled custom
-                 agents, or an empty-state hint when there are none. -->
-            <div class="project-config-row project-config-sandbox-agents">
-              <span class="project-config-row-label">{{
-                t('workspaceSetting.sandbox.agents.label')
-              }}</span>
-              <div
-                v-if="selectableAgents.length > 0"
-                class="project-config-agent-list"
-                data-testid="project-config-sandbox-agents"
-              >
-                <p class="project-config-hint">{{ t('workspaceSetting.sandbox.agents.hint') }}</p>
-                <label v-for="a in selectableAgents" :key="a.id" class="project-config-agent-item">
+              <div class="project-config-agent-list" data-testid="project-config-sandbox-kinds">
+                <p class="project-config-hint">
+                  {{ t('workspaceSetting.sandbox.sessionKinds.hint') }}
+                </p>
+                <label
+                  v-for="kind in sessionKindOptions"
+                  :key="kind"
+                  class="project-config-agent-item"
+                >
                   <input
                     type="checkbox"
-                    :checked="isAgentSelected(a.id)"
-                    :data-testid="`project-config-sandbox-agent-${a.id}`"
-                    @change="toggleAgent(a.id)"
+                    :checked="isSessionKindSelected(kind)"
+                    :data-testid="`project-config-sandbox-kind-${kind}`"
+                    @change="toggleSessionKind(kind)"
                   />
-                  {{ a.displayName || a.id }}
+                  {{ kind }}
                 </label>
               </div>
-              <p
-                v-else
-                class="project-config-hint"
-                data-testid="project-config-sandbox-agents-empty"
-              >
-                {{ t('workspaceSetting.sandbox.agents.empty') }}
-              </p>
             </div>
           </template>
         </section>

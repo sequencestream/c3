@@ -33,7 +33,7 @@ import type {
 } from '../agent/adapters/types.js'
 import type { PermissionRequestCtx } from '../permission/gateway.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
-import { codexPolicyToGrid, codexDirectSandboxEnv } from '../agent/adapters/codex/driver.js'
+import { codexPolicyToGrid } from '../agent/adapters/codex/driver.js'
 import { resolveCodexGhTokenEnv } from '../agent/adapters/codex/gh-token.js'
 import { getSpecsBase } from '../config/workspace-path.js'
 import {
@@ -43,10 +43,9 @@ import {
   resolveSessionLaunch,
 } from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
-import { createSandboxWrapper, sandboxEnvFilePath } from '../sandbox/SandboxLauncher.js'
+import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
 import { agentErrorEvent } from './agent-events.js'
 import { modelUserTurn, type RunInject } from './prompt-delivery.js'
-import { buildChildEnv } from '../infra/child-env.js'
 import {
   bindPending,
   clearPending,
@@ -401,39 +400,26 @@ export async function runViaDriver(
   // gate is derived from `actionMode`/`toolGate` in its driver (2026-06-06-008).
   const { agentId, model, baseUrl, apiKey, envOverrides, wireApi } = resolveSessionLaunch(runId)
 
-  // gh stores its token in the OS keyring, which codex's seatbelt sandbox can't
-  // read — so `gh` inside a codex session fails auth even on an authenticated host
-  // with network. Bridge the host credential in as `GH_TOKEN` (gh prefers env over
-  // the keyring). Resolved once here so the host codex process and the container
-  // wrapper's env-file get the same value; a no-op when a token is already set or
-  // the host probe fails, and skipped entirely for claude (no seatbelt boundary).
+  // gh stores its token in the OS keyring, which codex's sandbox can't read — so
+  // `gh` inside a codex session fails auth even on an authenticated host with
+  // network. Bridge the host credential in as `GH_TOKEN` (gh prefers env over the
+  // keyring); under arapuca the keyring dir stays deny-by-default, so the env
+  // bridge is still needed. A no-op when a token is already set or the host probe
+  // fails, and skipped entirely for claude.
   const driverEnvOverrides =
     adapter.vendor === 'codex' ? await resolveCodexGhTokenEnv(envOverrides) : envOverrides
 
-  // Sandbox wrapper: when the session has a running sandbox container, create
-  // a wrapper script that runs the vendor CLI inside the container. The adapter
-  // uses this path instead of the default host binary resolution.
-  const vendorBinaryName = adapter.vendor
-  // Env-file for the sandbox wrapper. Base = the same child env the host path
-  // builds (keepalive + process.env + agent env overrides). For a codex DIRECT
-  // (wireApi=responses) run the SDK delivers the provider apiKey as the
-  // host-process `CODEX_API_KEY`, which `docker exec --env-file` does NOT carry
-  // into the container — so mirror it into the env-file here (overriding any host
-  // CODEX_API_KEY). baseUrl/model ride the wrapper's "$@" argv natively and need
-  // no env translation (ADR-0024). The codex RELAY (wireApi=chat) token is NOT known
-  // here — it is minted inside the driver's `register()` — so the driver appends it
-  // to this same env-file (via `sandboxEnvFile` below) after minting (ADR-0024 follow-up).
-  const sandboxEnv = {
-    ...buildChildEnv(driverEnvOverrides),
-    ...(adapter.vendor === 'codex' ? codexDirectSandboxEnv({ apiKey, wireApi }) : {}),
-  }
-  const sandboxWrapperPath = rt.sandboxHandle
-    ? createSandboxWrapper(rt.sandboxHandle, rt.sandboxTmpDir ?? '', vendorBinaryName, sandboxEnv)
+  // Sandbox wrapper: when the run has a resolved arapuca allow set, wrap the
+  // vendor CLI in `arapuca run -v … -- <cli> "$@"`. The adapter uses this path
+  // instead of default host binary resolution. No env-file: the driver spawns the
+  // wrapper with a full env (codexExecEnv — process.env + overrides + CODEX_API_KEY
+  // from apiKey), which the arapuca child inherits. baseUrl/model ride the
+  // wrapper's "$@" argv; the codex RELAY token flows in as CODEX_API_KEY too.
+  const sandboxWrapperPath = rt.sandboxPaths
+    ? createSandboxWrapper(rt.sandboxPaths, adapter.vendor, rt.sandboxTmpDir ?? '')
     : undefined
-  const sandboxEnvFile =
-    rt.sandboxHandle && rt.sandboxTmpDir ? sandboxEnvFilePath(rt.sandboxTmpDir) : undefined
-  // Override cwd: sandbox container, Codex spec sessions (specs root write
-  // boundary), effectiveCwd (worktree isolation), or original workspacePath.
+  // Override cwd: Codex spec sessions (specs root write boundary), effectiveCwd
+  // (worktree isolation — also the arapuca same-path cwd), or original workspacePath.
   const specDriverCwd =
     rt.sessionKind === 'spec' && adapter.vendor === 'codex'
       ? getSpecsBase(workspacePath)
@@ -447,9 +433,7 @@ export async function runViaDriver(
       })
     }
   }
-  const driverCwd = rt.sandboxHandle
-    ? '/workspace'
-    : (specDriverCwd ?? rt.effectiveCwd ?? workspacePath)
+  const driverCwd = specDriverCwd ?? rt.effectiveCwd ?? workspacePath
 
   // c3 tools over the loopback streamable-HTTP MCP route — the SINGLE transport
   // both Claude and Codex now consume (no vendor branch selects the c3 transport).
@@ -490,7 +474,6 @@ export async function runViaDriver(
       ...(wireApi ? { wireApi } : {}),
       ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
       ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
-      ...(sandboxEnvFile ? { sandboxEnvFile } : {}),
       ...(adapter.vendor === 'codex'
         ? { additionalDirectories: [getSpecsBase(workspacePath)] }
         : {}),

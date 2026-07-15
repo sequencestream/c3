@@ -103,11 +103,12 @@ c3
 │   │   ├── 共识留痕                              # auto 记录的投票/裁决只读回看
 │   │   └── 溯源跳转                              # 按 sessionKind+sessionId 跳回来源页(会话/需求/讨论/自动化)
 │   │
-│   ├── sandbox 沙箱                              # 进程级隔离下安全运行 dev run
-│   │   ├── 三层安全管控                          # read-only / sandboxed / full-access 三级工具权限
-│   │   ├── 进程级隔离                            # arapuca 内核 MAC 限制目录 ro/rw,宿主同路径无映射
-│   │   ├── 写操作审批队列                        # 沙箱内写操作进审批队列由人裁决
-│   │   └── 沙箱定义                              # 系统设置可配置放行目录(ro/rw)
+│   ├── sandbox 沙箱                              # 仅 worktree intent-dev run 进 arapuca 进程级隔离,网络当前全开
+│   │   ├── 进程级隔离                            # arapuca 内核 MAC 限制目录 ro/rw,宿主同路径无映射、无凭证注入、无容器
+│   │   ├── 固定放行                              # 项目原目录 ro / worktree rw / specsBase rw,其余 deny-by-default 不可见
+│   │   ├── 补充放行                              # extraMounts 逐项 {path, ro/rw},保留路径不可覆盖、canonicalize 拒软链逃逸
+│   │   ├── 会话种类过滤                          # sandboxSessionKinds 决定哪些 SessionKind 进沙箱(缺省 ['work'])
+│   │   └── 硬失败                                # arapuca 缺失/平台不支持/放行路径非法即 hard-fail,绝不回落宿主裸跑
 │   │
 │   └── auth 鉴权                                 # 每条连接过身份门,每次改全局配置过管理员门
 │       ├── 登录                                  # basic 用户名/密码校验,签发 session token
@@ -130,7 +131,6 @@ c3
 │   │   ├── 公开访问地址                          # baseUrl 部署对外基址,用于拼分享深链
 │   │   ├── 工具会话显示                          # showToolSessions 开关,决定工具类会话是否进侧栏
 │   │   ├── vendor CLI 多版本生效选择             # 下载目标恒取最新兼容版,生效版可从已安装历史版单选;env override 仍最高优先,host PATH 仅降级回退
-│   │   ├── 系统沙箱定义                          # sandboxes 镜像/挂载模板库,供各工作区按名引用
 │   │   ├── 子进程代理                            # proxy 开关 + HTTP/HTTPS 地址,注入新会话子进程环境(不改服务端自身出网)
 │   │   ├── 鉴权配置                              # auth:basic 多账号/唯一管理员、会话 token TTL、bind 地址暴露意图
 │   │   ├── socket 自动续跑                        # socketAutoResume 开关,断连后单次自动 resume(默认开)
@@ -140,7 +140,7 @@ c3
 │       ├── 默认权限模式                          # defaultMode 按 vendor 分组(claude=ModeToken / codex=CodexPolicy)
 │       ├── dev 启动技能                          # devSkill 启动开发时前缀的斜杠命令
 │       ├── Git 分支策略                          # gitBranchMode(current-branch / worktree)+ defaultMainBranch 基线/合并目标分支
-│       ├── 工作区沙箱引用                        # sandbox 按名引用系统沙箱定义,启用后 dev run 进容器
+│       ├── 工作区沙箱                            # sandbox:enabled + extraMounts(逐项 ro/rw)+ sandboxSessionKinds;仅 worktree 显示,启用后 dev run 进 arapuca
 │       ├── 共识投票                              # consensus 多智能体权限共识配置(一致/多数、投票者集)
 │       ├── 讨论上限                              # maxRoundsPerStage 每阶段轮次(≥8)/ maxSpeechChars 每轮发言字数(≥300)
 │       ├── 规格驱动开发开关                      # sddEnabled 总开关,关时 SDD 质量门与批准检查点失效

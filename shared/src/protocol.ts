@@ -522,144 +522,61 @@ export type SkillSupportState = CapabilityState
 export type SkillApprovalKind = 'gitignore'
 
 // ─── Sandbox Config Types ───────────────────────────────────────────────────
-// Wire representation of the kernel's SystemSandboxDef / WorkspaceSandboxConfig.
-// The kernel maintains its own copies in server/src/kernel/sandbox/types.ts
-// (with runtime types like SandboxHandle); these protocol-level interfaces are
-// the persistence shape, kept in sync by the normalize layer.
-
-/** Supported container runtime backends for sandbox execution. */
-export type SandboxType = 'docker' | 'gvisor' | 'kata' | 'firecracker'
+// Wire representation of the kernel's WorkspaceSandboxConfig. The kernel
+// maintains its own copy in server/src/kernel/sandbox/types.ts (with runtime
+// types like ResolvedSandboxPaths); this protocol-level interface is the
+// persistence shape, kept in sync by the normalize layer.
+//
+// Backend: arapuca process-level isolation (kernel-enforced MAC — Linux
+// Landlock / macOS Seatbelt / Windows AppContainer). No container / image /
+// bind mount / rootfs. Current scope: directory ro/rw only; network fully open.
 
 /**
- * Structured resource limits for sandboxed containers.
+ * A supplementary allowed directory for the sandbox (same-path passthrough).
  *
- * Each field corresponds to a Docker runtime flag. Fields are optional so
- * the admin can set only the limits they care about; unset fields let Docker
- * use its own defaults.
- *
- * Phase 1 (MVP) — basic memory/cpu/timeout.
- * Phase 2 (planned) — pidsLimit, ulimits, diskQuota, oomScoreAdj.
+ * Each entry is a host absolute path exposed to the sandboxed process at the
+ * SAME path (no rewrite). Read-only by default; set {@link readonly} to false
+ * to grant read-write. Used to bring extra dependency dirs, shared caches, or
+ * reference repos into the deny-by-default allow set. Reserved paths (workspace
+ * root / worktree / specsBase) cannot be overridden here — the server drops any
+ * such overlap during resolution.
  */
-export interface ResourceLimits {
-  /** Memory limit in Docker format: "256m", "2g", etc. Maps to --memory. */
-  memory?: string
-  /** CPU limit in fractional cores (e.g. 2 = 2 CPUs, 0.5 = half a core). Maps to --cpus. */
-  cpu?: number
-  /**
-   * Container stop timeout in milliseconds.
-   * Maps to --stop-timeout (converted to seconds for the Docker API).
-   * Docker will wait this long for the container to stop gracefully before
-   * sending SIGKILL. Defaults to Docker's own default (10 s) when unset.
-   */
-  stopTimeoutMs?: number
+export interface SandboxExtraMount {
+  /** Host absolute path, exposed at the same path inside the sandbox. */
+  path: string
+  /** Read-only when true or absent; false grants read-write. */
+  readonly?: boolean
 }
 
 /**
- * System-level sandbox definition — a "template" the administrator defines
- * in System Settings. Each has a unique {@link name} that a project-level
- * {@link WorkspaceSandboxConfig.sandbox} references.
- */
-export interface SystemSandboxDef {
-  /** Unique name for this sandbox definition (e.g. "default", "nodejs"). */
-  name: string
-  /** Container runtime type. */
-  type: SandboxType
-  /** Container image (e.g. "node:20-alpine", "python:3.12-slim"). */
-  image: string
-  /** Seccomp profile name (loaded from the seccomp directory). */
-  seccomp?: string
-  /** Memory limit in Docker format: "256m", "2g", etc. */
-  memoryLimit?: string
-  /** CPU limit in fractional cores (e.g. 2 = 2 CPUs, 0.5 = half a core). */
-  cpuLimit?: number
-  /**
-   * Structured resource limits.
-   * When set, takes precedence over the flat memoryLimit / cpuLimit fields.
-   * Allows also setting stopTimeoutMs (not expressible via the flat fields).
-   */
-  resourceLimits?: ResourceLimits
-  /** Human-readable description shown in the UI. */
-  description?: string
-  /** Environment variables injected into the container. */
-  envVars?: Record<string, string>
-  /**
-   * Network egress allowlist — CIDR or hostname patterns allowed through.
-   * When non-empty, enables limited network egress (overrides the workspace
-   * {@link WorkspaceSandboxConfig.allowExternalNetwork} flag).
-   *
-   * Phase 2 (planned) — MVP throws unsupported if configured.
-   *
-   * Note: network on/off and read-only rootfs are per-workspace security
-   * policies and live on {@link WorkspaceSandboxConfig}, not here.
-   */
-  networkAllowlist?: string[]
-  /** Working directory inside the container. */
-  workingDir?: string
-  /** Entrypoint override (replaces CMD). */
-  entrypoint?: string[]
-  /** Additional Docker-specific options (passed verbatim to dockerode). */
-  dockerOptions?: Record<string, unknown>
-}
-
-/**
- * Workspace-level sandbox configuration — what a project user can configure
- * after an administrator has defined a {@link SystemSandboxDef}.
- *
- * The project **selects** a system def by name and may enable/disable
- * sandboxing. Image/type/seccomp are NOT overridable at the project level
- * (they are security-sensitive and only the admin sets them).
+ * Workspace-level sandbox configuration (arapuca process-level isolation).
  *
  * Two server-side normalize invariants apply (see `normalizeSandboxConfig`):
  * - **worktree-only**: sandbox is only meaningful when the workspace's
  *   {@link WorkspaceSetting.gitBranchMode} is `worktree`. Under `current-branch`
- *   the container would bind-mount the live project checkout, so the config is
- *   dropped (treated as not configured).
- * - **custom-only**: {@link agentIds} keeps only ids of agents that are both
- *   `enabled` and `configMode: 'custom'`; invalid / system / disabled ids are
- *   silently dropped.
+ *   the run has no isolated worktree, so the config is dropped (treated as not
+ *   configured).
+ * - **agent selection is NOT overridden**: the run uses its normally-resolved
+ *   agent (the default selection logic); the sandbox only wraps that agent's
+ *   vendor CLI in arapuca. There is no sandbox-specific agent pool.
  */
 export interface WorkspaceSandboxConfig {
-  /** Name of the system sandbox def to use. Required when enabled. */
-  sandbox?: string
-  /** Master switch — sandboxing is off by default. */
+  /** Master switch — sandboxing is off by default (absent or false ⇔ disabled). */
   enabled?: boolean
   /**
-   * Custom agents allowed to run inside the sandbox container when enabled.
-   * Pool of `enabled && configMode: 'custom'` agent ids (worktree-only +
-   * custom-only — see the interface doc). Absent / empty ⇒ empty pool.
+   * Supplementary allowed directories (same-path). Each entry is read-only by
+   * default; declare `readonly: false` per item to grant read-write. Fixed
+   * allowances (workspace root ro, worktree rw, specsBase rw) are implicit and
+   * not listed here. Absent / empty ⇒ only the fixed allowances apply.
    */
-  agentIds?: string[]
-  /**
-   * Per-workspace external-egress toggle (deny-by-default). When unset/false the
-   * container joins ONLY the internal `c3-mcp-net` (c3 MCP reachable, no
-   * internet). When true it additionally gets an egress-capable network for
-   * DIRECT-mode provider calls / package fetches. The internal MCP network is
-   * always attached when the sandbox is enabled, regardless of this flag, so the
-   * agent can always reach c3's MCP endpoints (subject to the system def's
-   * {@link SystemSandboxDef.networkAllowlist} for external egress).
-   */
-  allowExternalNetwork?: boolean
-  /**
-   * Per-workspace read-only root filesystem policy (deny-by-default).
-   * When true or unset, the container root filesystem is read-only. Set to
-   * false when a build/cache needs a writable root.
-   */
-  readonlyRootfs?: boolean
-  /** Override memory limit (Docker format). */
-  memoryLimitOverride?: string
-  /** Override CPU limit (fractional cores). */
-  cpuLimitOverride?: number
-  /** Override base image (use with caution — changes the runtime environment). */
-  imageOverride?: string
-  /** Additional env vars merged on top of the system def's envVars. */
-  envVarsOverride?: Record<string, string>
+  extraMounts?: SandboxExtraMount[]
   /**
    * Session kinds that run inside the sandbox when enabled. Absent ⇒ defaults
    * to `['work']`. A run enters the sandbox only when its {@link SessionKind}
-   * is in this set, layered on top of the worktree-only + resolvable-def
-   * preconditions — kinds that never produce a worktree run simply never match.
-   * Server normalize dedupes and drops values outside {@link SESSION_KINDS};
-   * an empty set after normalize falls back to `['work']`.
+   * is in this set, layered on top of the worktree-only precondition — kinds
+   * that never produce a worktree run simply never match. Server normalize
+   * dedupes and drops values outside {@link SESSION_KINDS}; an empty set after
+   * normalize falls back to `['work']`.
    */
   sandboxSessionKinds?: SessionKind[]
 }
@@ -719,9 +636,8 @@ export interface WorkspaceSetting {
    * build-link-capable vendor's discovery directory. Validated by `getSkillRepos()`
    * (fail-hard). Absent/empty ⇒ no external skills configured for this project. */
   skillRepos?: SkillRepoConfig[]
-  /** Project-level sandbox configuration. References a system sandbox def
-   * by name. Absent or undefined ⇒ sandboxing is not configured (equivalent
-   * to disabled). The system's sandboxes list is in {@link SystemSettings.sandboxes}. */
+  /** Project-level sandbox configuration (arapuca process-level isolation).
+   * Absent or undefined ⇒ sandboxing is not configured (equivalent to disabled). */
   sandbox?: WorkspaceSandboxConfig
   /**
    * Git branch strategy for `start_development` (2026-06-10). See
@@ -1135,13 +1051,6 @@ export interface SystemSettings {
    * upgrades.
    */
   vendorCliVersions?: Partial<Record<VendorId, string>>
-  /**
-   * System-level sandbox definitions. Each definition is a "template" that
-   * project-level configs reference by name. Admin-only CRUD via the System
-   * Settings panel. Absent or empty ⇒ no sandbox definitions exist; the
-   * Project Config panel hides its sandbox section accordingly.
-   */
-  sandboxes?: SystemSandboxDef[]
   /**
    * Authentication configuration (ADR-0023). Absent ⇒ no auth (the C-SEC-5
    * localhost-only default): the server stays bound to loopback and never

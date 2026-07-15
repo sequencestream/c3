@@ -14,9 +14,6 @@ import type { ThreadEvent, ThreadOptions } from '@openai/codex-sdk'
 import type { CanonicalMessage, DriverStartOptions } from '../types.js'
 import {
   CodexDriver,
-  codexDirectSandboxEnv,
-  codexRelaySandboxEnv,
-  rewriteRelayHostForSandbox,
   gateToCodexPolicy,
   mcpServersToCodexConfig,
   mcpServersEnableSaveIntents,
@@ -683,27 +680,7 @@ describe('CodexDriver provider routing — wireApi DIRECT vs RELAY (2026-06-12-0
   })
 })
 
-describe('codexDirectSandboxEnv (sandbox DIRECT provider, ADR-0024)', () => {
-  it('mirrors the DIRECT apiKey into CODEX_API_KEY', () => {
-    expect(codexDirectSandboxEnv({ apiKey: 'sk-real', wireApi: 'responses' })).toEqual({
-      CODEX_API_KEY: 'sk-real',
-    })
-  })
-
-  it('writes nothing for the RELAY route (wireApi=chat)', () => {
-    expect(codexDirectSandboxEnv({ apiKey: 'sk-real', wireApi: 'chat' })).toEqual({})
-  })
-
-  it('writes nothing when wireApi is absent (system-mode codex)', () => {
-    expect(codexDirectSandboxEnv({ apiKey: 'sk-real' })).toEqual({})
-  })
-
-  it('writes nothing when the apiKey is missing even on the DIRECT route', () => {
-    expect(codexDirectSandboxEnv({ wireApi: 'responses' })).toEqual({})
-  })
-})
-
-describe('CodexDriver sandbox wrapper wiring (ADR-0024)', () => {
+describe('CodexDriver sandbox wrapper wiring (arapuca)', () => {
   it('uses sandboxWrapperPath as the codex executable when supplied', async () => {
     let captured: CodexFactoryOptions | undefined
     const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
@@ -757,42 +734,7 @@ describe('CodexDriver sandbox wrapper wiring (ADR-0024)', () => {
   })
 })
 
-describe('rewriteRelayHostForSandbox (codex RELAY in a container, ADR-0024 follow-up)', () => {
-  it('rewrites a loopback relay host to host.docker.internal, preserving port + path', () => {
-    expect(rewriteRelayHostForSandbox('http://127.0.0.1:3000/internal/codex-relay/v1')).toBe(
-      'http://host.docker.internal:3000/internal/codex-relay/v1',
-    )
-  })
-
-  it('rewrites localhost and ::1 too', () => {
-    expect(rewriteRelayHostForSandbox('http://localhost:8080/internal/codex-relay/v1')).toBe(
-      'http://host.docker.internal:8080/internal/codex-relay/v1',
-    )
-    expect(rewriteRelayHostForSandbox('http://[::1]:3000/x')).toBe(
-      'http://host.docker.internal:3000/x',
-    )
-  })
-
-  it('leaves a non-loopback host unchanged', () => {
-    expect(rewriteRelayHostForSandbox('http://10.0.0.5:3000/x')).toBe('http://10.0.0.5:3000/x')
-  })
-
-  it('returns an unparseable input unchanged', () => {
-    expect(rewriteRelayHostForSandbox('not a url')).toBe('not a url')
-  })
-})
-
-describe('codexRelaySandboxEnv (RELAY token into the container env-file, ADR-0024 follow-up)', () => {
-  it('mirrors the relay token as CODEX_API_KEY + NO_PROXY for the host.docker.internal hop', () => {
-    expect(codexRelaySandboxEnv('relay-token-xyz')).toEqual({
-      CODEX_API_KEY: 'relay-token-xyz',
-      NO_PROXY: 'host.docker.internal,127.0.0.1,localhost,::1',
-      no_proxy: 'host.docker.internal,127.0.0.1,localhost,::1',
-    })
-  })
-})
-
-describe('CodexDriver RELAY route inside a sandbox container (ADR-0024 follow-up)', () => {
+describe('CodexDriver RELAY route under an arapuca sandbox', () => {
   function fakeRelay() {
     const registered: { baseUrl: string; apiKey: string }[] = []
     const relay = {
@@ -806,48 +748,34 @@ describe('CodexDriver RELAY route inside a sandbox container (ADR-0024 follow-up
     return { relay, registered }
   }
 
-  it('rewrites base_url to host.docker.internal and appends the token to the env-file', async () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-test-'))
-    const envFile = join(tmp, 'env.txt')
-    writeFileSync(envFile, 'PATH=/usr/bin\n', 'utf-8')
-    try {
-      let captured: CodexFactoryOptions | undefined
-      const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
-      const { relay, registered } = fakeRelay()
-      const driver = new CodexDriver((options) => {
-        captured = options
-        return client
-      }, relay)
-      await driver.start(
-        startOpts({
-          baseUrl: 'https://api.deepseek.com',
-          apiKey: 'sk-real',
-          wireApi: 'chat',
-          sandboxWrapperPath: join(tmp, 'wrapper.sh'),
-          sandboxEnvFile: envFile,
-        }),
-      )
-      // The real upstream is registered behind the token; codex sees only the token.
-      expect(registered).toEqual([{ baseUrl: 'https://api.deepseek.com', apiKey: 'sk-real' }])
-      expect(captured?.apiKey).toBe('relay-token-xyz')
-      // base_url points at the container-reachable host alias, NOT loopback.
-      const providers = captured?.config?.model_providers as
-        | Record<string, { base_url?: string }>
-        | undefined
-      const provider = providers?.c3relay
-      expect(provider?.base_url).toBe('http://host.docker.internal:3000/internal/codex-relay/v1')
-      // The token crossed into the env-file (host-process CODEX_API_KEY would be dropped).
-      const env = readFileSync(envFile, 'utf-8')
-      expect(env).toContain('CODEX_API_KEY=relay-token-xyz')
-      expect(env).toContain('NO_PROXY=host.docker.internal,127.0.0.1,localhost,::1')
-      // The base env the wrapper wrote is preserved (append, not overwrite).
-      expect(env).toContain('PATH=/usr/bin')
-    } finally {
-      rmSync(tmp, { recursive: true, force: true })
-    }
+  it('keeps the loopback base_url (same-path process reaches 127.0.0.1 directly) and needs no env-file', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const { relay, registered } = fakeRelay()
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    }, relay)
+    await driver.start(
+      startOpts({
+        baseUrl: 'https://api.deepseek.com',
+        apiKey: 'sk-real',
+        wireApi: 'chat',
+        sandboxWrapperPath: '/tmp/c3-sb-xyz/wrapper.sh',
+      }),
+    )
+    // The real upstream is registered behind the token; codex sees only the token
+    // (delivered as CODEX_API_KEY via codexExecEnv, inherited by the arapuca child).
+    expect(registered).toEqual([{ baseUrl: 'https://api.deepseek.com', apiKey: 'sk-real' }])
+    expect(captured?.apiKey).toBe('relay-token-xyz')
+    const providers = captured?.config?.model_providers as
+      | Record<string, { base_url?: string }>
+      | undefined
+    // No host-gateway rewrite: the sandboxed process is on the host loopback.
+    expect(providers?.c3relay?.base_url).toBe('http://127.0.0.1:3000/internal/codex-relay/v1')
   })
 
-  it('host (non-sandbox) RELAY keeps the loopback base_url and never touches an env-file', async () => {
+  it('host (non-sandbox) RELAY keeps the loopback base_url', async () => {
     let captured: CodexFactoryOptions | undefined
     const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
     const { relay } = fakeRelay()

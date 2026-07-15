@@ -722,7 +722,6 @@ function onCodesChatWidth(px: number): void {
       :resolved-spec-root="resolvedSpecRoot"
       :current-workspace="currentWorkspace"
       :vendor-modes="vendorModes"
-      :system-sandboxes="serverSettings?.sandboxes ?? []"
       :agents="serverSettings?.agents ?? []"
       :link-statuses="skillLinkStatuses"
       :installing-skill-ids="installingSkillIds"

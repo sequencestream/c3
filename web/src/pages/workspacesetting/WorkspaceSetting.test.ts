@@ -594,14 +594,23 @@ describe('WorkspaceSetting.vue — spec-driven development (SDD)', () => {
   })
 })
 
-describe('WorkspaceSetting.vue — arapuca sandbox worktree gating + extraMounts + sessionKinds', () => {
-  function mountSandbox(overrides?: Partial<WorkspaceSettingType>) {
-    return mountWs(cfg(overrides))
+describe('WorkspaceSetting.vue — arapuca sandbox (both branch modes) + extraMounts + sessionKinds', () => {
+  function mountSandbox(
+    overrides?: Partial<WorkspaceSettingType>,
+    extra?: Record<string, unknown>,
+  ) {
+    return mountWs(cfg(overrides), extra)
   }
 
-  it('hides the sandbox section under current-branch', () => {
+  // The workspace-derivable built-in allow set the server sends for display.
+  const SYS_MOUNTS = [
+    { key: 'workspaceRoot', path: '/test', readonly: true },
+    { key: 'specs', path: '/home/u/.c3/specs/test', readonly: false },
+  ]
+
+  it('shows the sandbox section under current-branch', () => {
     const w = mountSandbox({ gitBranchMode: 'current-branch' })
-    expect(w.find('[data-testid="project-config-sandbox"]').exists()).toBe(false)
+    expect(w.find('[data-testid="project-config-sandbox"]').exists()).toBe(true)
   })
 
   it('shows the sandbox section under worktree', () => {
@@ -609,11 +618,41 @@ describe('WorkspaceSetting.vue — arapuca sandbox worktree gating + extraMounts
     expect(w.find('[data-testid="project-config-sandbox"]').exists()).toBe(true)
   })
 
-  it('reveals the section when switching current-branch → worktree', async () => {
-    const w = mountSandbox({ gitBranchMode: 'current-branch' })
-    expect(w.find('[data-testid="project-config-sandbox"]').exists()).toBe(false)
-    await w.find('[data-testid="git-branch-mode"]').setValue('worktree')
+  it('keeps the section visible when switching worktree → current-branch', async () => {
+    const w = mountSandbox({ gitBranchMode: 'worktree' })
     expect(w.find('[data-testid="project-config-sandbox"]').exists()).toBe(true)
+    await w.find('[data-testid="git-branch-mode"]').setValue('current-branch')
+    expect(w.find('[data-testid="project-config-sandbox"]').exists()).toBe(true)
+  })
+
+  it('shows the execution-root embedded row as read-write under current-branch (no ro workspace-root row)', () => {
+    const w = mountSandbox(
+      { gitBranchMode: 'current-branch', sandbox: { enabled: true } },
+      { sysExtraMounts: SYS_MOUNTS },
+    )
+    // Current-branch: the source workspace is the read-write execution root; the
+    // ro project-directory row is replaced by the rw execution-root row.
+    expect(w.find('[data-testid="project-config-sandbox-embedded-executionRoot"]').exists()).toBe(
+      true,
+    )
+    expect(w.find('[data-testid="project-config-sandbox-embedded-workspaceRoot"]').exists()).toBe(
+      false,
+    )
+    expect(w.find('[data-testid="project-config-sandbox-embedded-worktree"]').exists()).toBe(false)
+  })
+
+  it('shows the worktree embedded row (rw) + workspace-root row (ro) under worktree', () => {
+    const w = mountSandbox(
+      { gitBranchMode: 'worktree', sandbox: { enabled: true } },
+      { sysExtraMounts: SYS_MOUNTS },
+    )
+    expect(w.find('[data-testid="project-config-sandbox-embedded-worktree"]').exists()).toBe(true)
+    expect(w.find('[data-testid="project-config-sandbox-embedded-workspaceRoot"]').exists()).toBe(
+      true,
+    )
+    expect(w.find('[data-testid="project-config-sandbox-embedded-executionRoot"]').exists()).toBe(
+      false,
+    )
   })
 
   it('shows the extraMounts + sessionKinds editors only when enabled', async () => {
@@ -660,13 +699,25 @@ describe('WorkspaceSetting.vue — arapuca sandbox worktree gating + extraMounts
     expect(payload.sandbox?.sandboxSessionKinds).toEqual(['work', 'intent'])
   })
 
-  it('drops the sandbox from the save payload when not in worktree mode', async () => {
-    // Start in worktree with an enabled sandbox, then switch back to current-branch.
-    const w = mountSandbox({ gitBranchMode: 'worktree', sandbox: { enabled: true } })
+  it('preserves the enabled sandbox in the save payload when switching to current-branch', async () => {
+    // Sandbox is branch-independent: switching worktree → current-branch must NOT
+    // silently drop the saved sandbox config.
+    const w = mountSandbox({
+      gitBranchMode: 'worktree',
+      sandbox: { enabled: true, extraMounts: [{ path: '/opt/cache' }] },
+    })
     await w.find('[data-testid="git-branch-mode"]').setValue('current-branch')
     await w.find(SAVE.gitSandbox).trigger('click')
     const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
-    expect(payload.sandbox).toBeUndefined()
+    expect(payload.gitBranchMode).toBe('current-branch')
+    expect(payload.sandbox).toEqual({ enabled: true, extraMounts: [{ path: '/opt/cache' }] })
+  })
+
+  it('emits an enabled sandbox saved directly under current-branch', async () => {
+    const w = mountSandbox({ gitBranchMode: 'current-branch', sandbox: { enabled: true } })
+    await w.find(SAVE.gitSandbox).trigger('click')
+    const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
+    expect(payload.sandbox?.enabled).toBe(true)
   })
 })
 
@@ -716,7 +767,7 @@ describe('WorkspaceSetting.vue — Tab grouping', () => {
     expect(panelHidden(w, 'project-config-tab-defaultMode')).toBe(true)
   })
 
-  it('the sandbox worktree gate + SDD read-only spec root are unchanged inside their tabs', async () => {
+  it('the sandbox section + SDD read-only spec root live inside their tabs', async () => {
     const w = mountWs(
       cfg({
         gitBranchMode: 'worktree',
@@ -727,7 +778,7 @@ describe('WorkspaceSetting.vue — Tab grouping', () => {
         resolvedSpecRoot: '/home/u/.c3/specs/test',
       },
     )
-    // Sandbox visible under worktree, inside the git-sandbox panel.
+    // Sandbox visible inside the git-sandbox panel.
     expect(
       w
         .find(

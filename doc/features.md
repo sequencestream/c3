@@ -103,9 +103,9 @@ c3
 │   │   ├── 共识留痕                              # auto 记录的投票/裁决只读回看
 │   │   └── 溯源跳转                              # 按 sessionKind+sessionId 跳回来源页(会话/需求/讨论/自动化)
 │   │
-│   ├── sandbox 沙箱                              # 仅 worktree intent-dev run 进 arapuca 进程级隔离,网络当前全开
+│   ├── sandbox 沙箱                              # 工作区启用且 SessionKind 入选的 run 进 arapuca 进程级隔离(不限来源/分支模式),网络当前全开
 │   │   ├── 进程级隔离                            # arapuca 内核 MAC 限制目录 ro/rw,宿主同路径无映射、无凭证注入、无容器
-│   │   ├── 固定放行                              # 项目原目录 ro / worktree rw / specsBase rw,其余 deny-by-default 不可见
+│   │   ├── 固定放行                              # 执行根 rw(worktree 或源工作区)/ 源工作区 ro(仅执行根为 worktree 时,同路径并入 rw)/ specsBase rw,其余 deny-by-default 不可见
 │   │   ├── 补充放行                              # extraMounts 逐项 {path, ro/rw},保留路径不可覆盖、canonicalize 拒软链逃逸
 │   │   ├── 会话种类过滤                          # sandboxSessionKinds 决定哪些 SessionKind 进沙箱(缺省 ['work'])
 │   │   ├── system agent 冲突                     # 沙箱 run 绑定 system agent(沙箱内无法登录)时:显式绑定→弹窗让用户选「不走沙箱」(bypass)或「换同 vendor custom agent」(switch);Auto/默认→静默替换为沙箱角色 custom agent
@@ -142,7 +142,7 @@ c3
 │       ├── 默认权限模式                          # defaultMode 按 vendor 分组(claude=ModeToken / codex=CodexPolicy)
 │       ├── dev 启动技能                          # devSkill 启动开发时前缀的斜杠命令
 │       ├── Git 分支策略                          # gitBranchMode(current-branch / worktree)+ defaultMainBranch 基线/合并目标分支
-│       ├── 工作区沙箱                            # sandbox:enabled + extraMounts(逐项 ro/rw)+ sandboxSessionKinds;仅 worktree 显示,启用后 dev run 进 arapuca
+│       ├── 工作区沙箱                            # sandbox:enabled + extraMounts(逐项 ro/rw)+ sandboxSessionKinds;两种分支模式均可编辑,启用后入选 run 进 arapuca
 │       ├── 共识投票                              # consensus 多智能体权限共识配置(一致/多数、投票者集)
 │       ├── 讨论上限                              # maxRoundsPerStage 每阶段轮次(≥8)/ maxSpeechChars 每轮发言字数(≥300)
 │       ├── 规格驱动开发开关                      # sddEnabled 总开关,关时 SDD 质量门与批准检查点失效

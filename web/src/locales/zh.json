@@ -2237,13 +2237,13 @@
       "title": {
         "label": "沙箱"
       },
-      "hint": "为本项目的 worktree 开发 agent 启用 arapuca 进程级隔离:vendor CLI 作为宿主进程运行,由内核 MAC 收窄目录读写。项目原目录只读,worktree 与 specs 可读写,其余目录默认不可见。需要宿主 PATH 中已安装 arapuca 二进制。",
+      "hint": "为本项目的开发 agent 启用 arapuca 进程级隔离:vendor CLI 作为宿主进程运行,由内核 MAC 收窄目录读写。本次 run 的执行目录与 specs 可读写;worktree 模式下源项目目录保持只读,current-branch 模式下 run 直接写源工作区。其余目录默认不可见。需要宿主 PATH 中已安装 arapuca 二进制。",
       "enable": {
         "label": "启用沙箱"
       },
       "extraMounts": {
         "label": "补充放行目录",
-        "hint": "向放行集追加宿主目录(同路径)。默认只读;选择读写以授予写权限。保留路径(项目、worktree、specs)不可在此列出。",
+        "hint": "向放行集追加宿主目录(同路径)。默认只读;选择读写以授予写权限。保留路径(项目、执行根、specs)不可在此列出。",
         "pathPlaceholder": "/宿主绝对路径",
         "ro": "只读",
         "rw": "读写",
@@ -2259,7 +2259,11 @@
         },
         "worktree": {
           "name": "运行 worktree",
-          "desc": "本次 run 的隔离工作树(路径随 run 变化)"
+          "desc": "本次 run 的隔离工作树,读写(路径随 run 变化)"
+        },
+        "executionRoot": {
+          "name": "工作区目录",
+          "desc": "current-branch run 直接写源工作区,读写"
         },
         "specs": {
           "name": "spec 目录",
@@ -2268,7 +2272,7 @@
       },
       "sessionKinds": {
         "label": "进入沙箱的会话种类",
-        "hint": "哪些 run 种类进入沙箱。默认 work;从不产生 worktree run 的种类即使勾选也不会匹配。"
+        "hint": "启用后哪些会话种类进入沙箱。默认 work;每个勾选的种类都会进入沙箱,与其 git 分支模式或来源无关。"
       }
     }
   },

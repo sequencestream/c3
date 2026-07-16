@@ -33,12 +33,13 @@
 - **`gitBranchMode`** — `start_development` 的分支策略:`current-branch`(缺省)或 `worktree`。缺省与旧配置向后兼容,读时规范化。
 - **`defaultMainBranch`** — `worktree` 模式下新 worktree 的基线/合并目标分支;缺省 ⇒ 从当前 HEAD 分叉。设置面板打开时自动探测(origin/HEAD → 当前 HEAD)。
 
-## 工作区沙箱引用 `sandbox`
+## 工作区沙箱 `sandbox`
 
-按 name 引用系统级沙箱定义(定义侧见 [system-setting](../system-setting/system-setting-spec.md) 的 `sandboxes`)。未指定 name ⇒ 回退名为 `default` 的系统沙箱定义(用其镜像与模板);若不存在 `default` 定义 ⇒ 未配置沙箱(等同禁用)。启用后 dev run 进容器。运行语义见 [sandbox](../../core/sandbox/sandbox-design.md)。
+工作区级 arapuca 进程级隔离配置,收敛为 `enabled` + `extraMounts` + `sandboxSessionKinds`。是否进沙箱只由 `enabled` 主开关与该 run 的 `sessionKind` 是否命中 `sandboxSessionKinds` 决定,**与 run 来源(Intent / spec / 普通)、是否使用 worktree、`gitBranchMode` 无关**。配置**独立于分支模式**:`current-branch` 与 `worktree` 下均展示同一编辑区并可保存;归一化只校验 sandbox 内容,切换分支模式不会静默删除已保存的 `enabled` / `extraMounts` / `sandboxSessionKinds`。运行语义(执行根、固定放行、失败硬隔离)见 [sandbox](../../core/sandbox/sandbox-design.md)。
 
-- **`sandboxSessionKinds`(会话种类勾选)** — 配置沙箱时列出全部 `SessionKind`(`work` / `intent` / `discussion` / `automation` / `consensus` / `tool` / `spec`),用户勾选哪些种类的 run 进沙箱。**缺省只勾选 `work`**。仅 run 的 `sessionKind` 命中勾选集合时才进容器,叠加在「worktree-only + 可解析定义」前置条件之上:从不产生隔离 worktree 的种类即使勾选也不会进沙箱(勾选对其为空操作)。归一化去重、丢弃未知值,清空后回退 `['work']`。
-- **`allowExternalNetwork`(外部网络开关)** — 容器是否放通外网访问,**缺省关**。关闭时容器只接入内部 `c3-mcp-net`(能调 c3 MCP、不能上外网);勾选后额外挂 egress 网络,供 DIRECT 模式 CLI 直连 provider API、npm/go 拉依赖等。取代已移除的 `networkDisabled`(deny-by-default;遗留磁盘键自动迁移);RELAY 模式经宿主 relay 代发,无需开此开关。网络拓扑见 [sandbox](../../core/sandbox/sandbox-design.md) §12。
+- **`enabled`(主开关)** — 缺省关(缺失/`false` 即禁用)。启用后入选 run 的 vendor CLI 经 arapuca wrapper 启动。
+- **`extraMounts`(补充放行目录)** — 逐项 `{ path, readonly? }` 同路径放行,默认只读、可逐项声明 rw;不得覆盖执行根 / 源工作区 / specsBase 等保留路径。
+- **`sandboxSessionKinds`(会话种类勾选)** — 配置沙箱时列出全部 `SessionKind`(`work` / `intent` / `discussion` / `automation` / `consensus` / `tool` / `spec`),用户勾选哪些种类的 run 进沙箱。**缺省只勾选 `work`**。仅 run 的 `sessionKind` 命中勾选集合时才进沙箱,不再叠加任何 worktree 前置条件;每个勾选的种类都对该种类的全部 run 生效。归一化去重、丢弃未知值,清空后回退 `['work']`。
 
 ## 规格驱动开发 `sddEnabled`
 

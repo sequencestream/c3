@@ -71,10 +71,19 @@ export interface ResolvedMount {
  * after canonicalize + allowlist/denylist + reserved-path overlap checks.
  */
 export interface ResolvedSandboxPaths {
-  /** Project original directory (workspace root) — read-only baseline code. */
-  readonly workspaceRoot: string
-  /** Run worktree — the sole read-write path for agent code changes. */
-  readonly worktree: string
+  /**
+   * The run's actual code execution directory — the sole read-write code path.
+   * An isolated worktree for a worktree run; the source workspace for a
+   * current-branch run or any selected run without an isolated cwd.
+   */
+  readonly executionRoot: string
+  /**
+   * Source workspace root — read-only baseline code. Absent when it is the same
+   * canonical path as {@link executionRoot} (a current-branch run): the two
+   * collapse into the single read-write {@link executionRoot} grant so arapuca
+   * never receives a conflicting ro/rw pair for one path.
+   */
+  readonly workspaceRoot?: string
   /** Centralized specs root — read-write, same host absolute path. */
   readonly specsBase: string
   /** Supplementary allowed directories, each ro/rw as declared. */

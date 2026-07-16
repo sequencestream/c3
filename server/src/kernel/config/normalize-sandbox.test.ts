@@ -1,6 +1,7 @@
 /**
  * Unit tests for the sandbox-config normalize invariants (arapuca):
- * - worktree-only: sandbox is dropped unless gitBranchMode === 'worktree'
+ * - branch-independent: the sandbox config is preserved under BOTH gitBranchMode
+ *   values (switching modes never drops a saved sandbox config)
  * - extraMounts: same-path passthrough, read-only by default, absolute paths only
  * - sandboxSessionKinds: dedupe, drop unknown, empty → ['work']
  * - legacy container keys are read and dropped (no semantic carry-over)
@@ -25,17 +26,17 @@ function agent(id: string, configMode: 'system' | 'custom', enabled: boolean): A
 }
 
 describe('normalizeSandboxConfig invariants (via normalizeWorkspaceSetting)', () => {
-  it('drops sandbox entirely when gitBranchMode is not worktree', () => {
+  it('keeps sandbox under current-branch (branch-independent)', () => {
     const result = normalizeWorkspaceSetting(
       { gitBranchMode: 'current-branch', sandbox: { enabled: true } },
       [agent('a', 'custom', true)],
     )
-    expect(result.sandbox).toBeUndefined()
+    expect(result.sandbox).toMatchObject({ enabled: true })
   })
 
-  it('drops sandbox when gitBranchMode is absent (defaults to current-branch)', () => {
+  it('keeps sandbox when gitBranchMode is absent (defaults to current-branch)', () => {
     const result = normalizeWorkspaceSetting({ sandbox: { enabled: true } }, [])
-    expect(result.sandbox).toBeUndefined()
+    expect(result.sandbox).toMatchObject({ enabled: true })
   })
 
   it('keeps enabled under worktree', () => {
@@ -44,6 +45,23 @@ describe('normalizeSandboxConfig invariants (via normalizeWorkspaceSetting)', ()
       [],
     )
     expect(result.sandbox).toMatchObject({ enabled: true })
+  })
+
+  it('preserves the sandbox config across a branch-mode switch (no silent drop)', () => {
+    const saved = {
+      sandbox: {
+        enabled: true,
+        extraMounts: [{ path: '/opt/cache' }],
+        sandboxSessionKinds: ['work', 'intent'],
+      },
+    }
+    const worktree = normalizeWorkspaceSetting({ gitBranchMode: 'worktree', ...saved }, [])
+    const currentBranch = normalizeWorkspaceSetting(
+      { gitBranchMode: 'current-branch', ...saved },
+      [],
+    )
+    expect(currentBranch.sandbox).toEqual(worktree.sandbox)
+    expect(currentBranch.sandbox).toMatchObject({ enabled: true })
   })
 
   it('keeps extraMounts, defaulting readonly to true and preserving explicit false', () => {

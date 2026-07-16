@@ -67,13 +67,24 @@ afterEach(() => {
 // ─── resolvePaths ────────────────────────────────────────────────────────────
 
 describe('resolvePaths', () => {
-  it('resolves the fixed allowances (workspace root, worktree, specs base)', () => {
+  it('resolves the fixed allowances (execution root, workspace root ro, specs base)', () => {
     const paths = resolvePaths(workspaceRoot, worktree)
-    expect(existsSync(paths.workspaceRoot)).toBe(true)
-    expect(existsSync(paths.worktree)).toBe(true)
+    expect(existsSync(paths.executionRoot)).toBe(true)
+    // A worktree run keeps the distinct source workspace root (read-only).
+    expect(paths.workspaceRoot).toBeDefined()
+    expect(existsSync(paths.workspaceRoot!)).toBe(true)
+    expect(paths.executionRoot).toBe(realpathSync(worktree))
     // specsBase was created under the stubbed c3 home by resolvePaths.
     expect(existsSync(paths.specsBase)).toBe(true)
     expect(paths.extra).toEqual([])
+  })
+
+  it('merges workspace root into the single rw execution grant when they are the same path (current-branch)', () => {
+    // A current-branch run's execution root IS the workspace: no separate ro
+    // workspace-root entry, so arapuca never gets a conflicting ro/rw pair.
+    const paths = resolvePaths(workspaceRoot, workspaceRoot)
+    expect(paths.executionRoot).toBe(realpathSync(workspaceRoot))
+    expect(paths.workspaceRoot).toBeUndefined()
   })
 
   it('defaults extraMounts to read-only, preserving an explicit rw', () => {
@@ -187,9 +198,9 @@ describe('createSandboxWrapper', () => {
       const script = readFileSync(scriptPath, 'utf-8')
       expect(script).toContain('exec arapuca run')
       expect(script).toContain(`${paths.workspaceRoot}:ro`)
-      expect(script).toContain(`${paths.worktree}:rw`)
+      expect(script).toContain(`${paths.executionRoot}:rw`)
       expect(script).toContain(`${paths.specsBase}:rw`)
-      expect(script).toContain(`--cwd '${paths.worktree}'`)
+      expect(script).toContain(`--cwd '${paths.executionRoot}'`)
       expect(script).toContain(`--env 'CODEX_HOME=${tmp}/home/.codex'`)
       expect(script).toContain(`-v '${tmp}/home/.codex:rw'`)
       expect(script).toContain(`-- 'claude' "$@"`)
@@ -200,6 +211,22 @@ describe('createSandboxWrapper', () => {
       const uid = typeof process.getuid === 'function' ? process.getuid() : 0
       expect(script).toContain(`mkdir -p '/tmp/claude-${uid}'`)
       expect(script).toContain(`${realpathSync('/tmp')}/claude-${uid}:rw`)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('emits a single rw grant for a current-branch run (workspace == execution root, no ro/rw conflict)', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
+    try {
+      const paths = resolvePaths(workspaceRoot, workspaceRoot)
+      const canonRoot = realpathSync(workspaceRoot)
+      const script = readFileSync(createSandboxWrapper(paths, 'claude', tmp), 'utf-8')
+      // The source workspace is read-write (it is the execution root) …
+      expect(script).toContain(`-v '${canonRoot}:rw'`)
+      // … and there is no conflicting read-only grant for the same path.
+      expect(script).not.toContain(`${canonRoot}:ro`)
+      expect(script).toContain(`--cwd '${canonRoot}'`)
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }

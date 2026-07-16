@@ -574,9 +574,10 @@ export function normalizeWorkspaceSetting(
     : undefined
   // Backward compat: new key `gitBranchMode` takes precedence; fall back to the
   // legacy on-disk key `gitCommitMode` so pre-rename saved configs aren't lost.
-  // Resolved before sandbox because sandbox is worktree-only (drops otherwise).
   const gitBranchMode = normalizeGitBranchMode(rec.gitBranchMode ?? rec.gitCommitMode)
-  const sandbox = normalizeSandboxConfig(rec.sandbox, gitBranchMode)
+  // Sandbox config is independent of the branch mode — switching modes must not
+  // silently drop a saved sandbox config.
+  const sandbox = normalizeSandboxConfig(rec.sandbox)
   const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
   const sddEnabled = normalizeSddEnabled(rec.sddEnabled)
   const automationEnabled = normalizeAutomationEnabled(rec.automationEnabled)
@@ -647,21 +648,16 @@ function normalizeDefaultMainBranch(raw: unknown): string | undefined {
  * nothing meaningful survives, preserving the "not configured" signal so the UI
  * knows to hide sandbox options.
  *
- * One invariant is enforced here (see `WorkspaceSandboxConfig` doc):
- * - **worktree-only**: when `gitBranchMode !== 'worktree'` the config is dropped
- *   entirely (returns `undefined`) — without an isolated worktree there is no
- *   run for the sandbox to wrap.
+ * The config is independent of `gitBranchMode`: it validates the sandbox content
+ * only, so switching branch mode never drops a saved `enabled` / `extraMounts` /
+ * `sandboxSessionKinds`. Whether a given run enters the sandbox (and which dirs
+ * are read-write) is decided at run time from the run's execution root, not here.
  *
  * Legacy on-disk container keys (`sandbox` name ref, `allowExternalNetwork`,
  * `readonlyRootfs`, image/resource/env overrides, `agentIds`, `networkDisabled`)
  * are read and DROPPED — there is no semantic carry-over under arapuca.
  */
-function normalizeSandboxConfig(
-  raw: unknown,
-  gitBranchMode: GitBranchMode,
-): WorkspaceSandboxConfig | undefined {
-  // worktree-only: sandbox is meaningless outside worktree isolation.
-  if (gitBranchMode !== 'worktree') return undefined
+function normalizeSandboxConfig(raw: unknown): WorkspaceSandboxConfig | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const rec = raw as Record<string, unknown>
   const sb: WorkspaceSandboxConfig = {}
@@ -1437,7 +1433,7 @@ export function getMaxSpeechChars(workspacePath: string): number {
  * when the project has no sandbox config (equivalent to disabled).
  */
 export function getProjectSandbox(workspacePath: string): WorkspaceSandboxConfig | undefined {
-  // Already normalized (worktree-only invariant applied) by
+  // Already normalized (branch-independent sandbox content) by
   // loadWorkspaceSetting → normalizeWorkspaceSetting → normalizeSandboxConfig.
   return loadWorkspaceSetting(workspacePath).sandbox
 }

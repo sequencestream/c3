@@ -45,7 +45,7 @@ import {
   unbindRelay,
 } from '../agent-config/index.js'
 import { getSocketAutoResume, getProjectSandbox, getSessionAgentId } from '../config/index.js'
-import { launchSandbox, SandboxLaunchError } from '../sandbox/SandboxLauncher.js'
+import { launchSandbox, sandboxEligible, SandboxLaunchError } from '../sandbox/SandboxLauncher.js'
 import { waitForSandboxDecision, type SandboxConflictCtx } from '../sandbox/conflict-registry.js'
 import {
   bindPending,
@@ -160,8 +160,9 @@ export interface LaunchRunDeps {
   /**
    * Gate for arapuca process-level sandbox isolation. When `sandboxEnabled` is
    * true (or absent → treated as enabled), `launchRun` wraps the vendor CLI in
-   * arapuca for eligible worktree intent-dev runs (based on the project's
-   * sandbox config). When false, runs proceed on the host unchanged.
+   * arapuca for any run whose workspace enabled the sandbox and whose
+   * `sessionKind` is in the workspace `sandboxSessionKinds` allowlist (source and
+   * git branch mode do not matter). When false, runs proceed on the host unchanged.
    */
   sandboxEnabled?: boolean
   /** Runtime policy hook from the composition root; false suppresses sandbox launch. */
@@ -270,25 +271,31 @@ export async function launchRun(
   const resolvedSessionProfile =
     !isIntent && !isSpec && deps.sessionProfile ? deps.sessionProfile(workspacePath) : undefined
 
-  // Sandbox launch (arapuca process-level isolation): serves ONLY the worktree
-  // intent-dev run — a run with an isolated `rt.effectiveCwd` (the worktree). A
-  // plain chat run has no effectiveCwd and never sandboxes; a current-branch dev
-  // run's sandbox config is stripped by normalize (worktree-only), so it falls
-  // through too. On top of that structural gate, the run's `sessionKind` must be
-  // in `sandboxSessionKinds` (default `['work']`). When enabled, this is HARD
-  // isolation (deny-by-default): a missing arapuca binary, an unsupported
+  // Sandbox launch (arapuca process-level isolation): the entry condition is the
+  // workspace's `enabled` master switch AND this run's `sessionKind` being in
+  // `sandboxSessionKinds` (default `['work']`) — never the run's source (Intent /
+  // spec / plain) nor whether it has an isolated worktree. The run's actual code
+  // directory is `executionRoot = rt.effectiveCwd ?? workspacePath`: an isolated
+  // worktree run gets its worktree (rw) + source workspace (ro); a current-branch
+  // or no-isolated-cwd run gets the source workspace (rw). When enabled, this is
+  // HARD isolation (deny-by-default): a missing arapuca binary, an unsupported
   // platform, or an illegal allow path settles the run as an error — never a
   // bare host run. The sandbox outlives socket disconnects (ADR-0006); its temp
   // dir is removed by `finalizeRun` / `removeRuntime` via `rt.sandboxStop`. The
   // run keeps its normally-resolved agent — the sandbox only wraps that vendor's
   // CLI in arapuca; there is no sandbox-specific agent selection.
   let bypassSandbox = inject?.bypassSandbox ?? false
-  if ((deps.sandboxEnabled ?? true) && rt.effectiveCwd && !bypassSandbox) {
+  if (!bypassSandbox) {
     const sbCfg = getProjectSandbox(workspacePath)
-    const sandboxKinds = sbCfg?.sandboxSessionKinds ?? ['work']
-    const sandboxOn =
-      (deps.sandboxAllowed?.() ?? true) && !!sbCfg?.enabled && sandboxKinds.includes(rt.sessionKind)
+    const sandboxOn = sandboxEligible({
+      sandboxEnabled: deps.sandboxEnabled ?? true,
+      sandboxAllowed: deps.sandboxAllowed?.() ?? true,
+      config: sbCfg,
+      sessionKind: rt.sessionKind,
+    })
     if (sandboxOn) {
+      // The run's actual code execution directory (worktree, or the source workspace).
+      const executionRoot = rt.effectiveCwd ?? workspacePath
       // Hard-isolation failure: settle the run as an error and stop. Mirrors the
       // vendor-unavailable early return below so the started→settled invariant holds.
       const failHard = (error: string): void => {
@@ -371,7 +378,7 @@ export async function launchRun(
 
       if (!bypassSandbox) {
         try {
-          const sandbox = launchSandbox(workspacePath, rt.effectiveCwd)
+          const sandbox = launchSandbox(workspacePath, executionRoot)
           rt.sandboxPaths = sandbox.paths
           rt.sandboxTmpDir = sandbox.tmpDir
           rt.sandboxStop = async () => sandbox.cleanup()

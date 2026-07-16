@@ -43,12 +43,13 @@ import { homedir } from 'node:os'
 import { join, delimiter, sep } from 'node:path'
 import { getProjectSandbox } from '../../kernel/config/index.js'
 import { getSpecsBase } from '../../kernel/config/workspace-path.js'
-import type { SysExtraMount } from '@ccc/shared/protocol'
+import type { SysExtraMount, SessionKind } from '@ccc/shared/protocol'
 import type {
   ResolvedMount,
   ResolvedSandboxPaths,
   ArapucaProbeResult,
   SandboxUiCode,
+  WorkspaceSandboxConfig,
 } from './types.js'
 
 // ─── System Default Mounts ───────────────────────────────────────────────────
@@ -60,8 +61,10 @@ import type {
  * (folded into {@link resolvePaths}) and by the settings handler for read-only
  * display next to the editable `extraMounts`.
  *
- * The run worktree (rw) is a per-run fixed allowance and is NOT included here —
- * it is not derivable from the workspace path alone.
+ * The run's execution root (rw) is a per-run fixed allowance and is NOT included
+ * here — it is not derivable from the workspace path alone. When the execution
+ * root IS the workspace path (a current-branch run), `resolvePaths` collapses
+ * the workspace-root ro entry into that single rw grant.
  *
  * Paths are raw (not canonicalized): `resolvePaths` canonicalizes at launch,
  * while the UI shows the intended host paths.
@@ -71,6 +74,33 @@ export function sysExtraMounts(workspaceRoot: string): SysExtraMount[] {
     { key: 'workspaceRoot', path: workspaceRoot, readonly: true },
     { key: 'specs', path: getSpecsBase(workspaceRoot), readonly: false },
   ]
+}
+
+// ─── Eligibility ─────────────────────────────────────────────────────────────
+
+/**
+ * Decide whether a run enters the sandbox. The entry condition is purely the
+ * workspace config's `enabled` master switch AND the run's `sessionKind` being
+ * in the workspace `sandboxSessionKinds` allowlist (default `['work']`), gated by
+ * the host capability/policy (`sandboxEnabled`, `sandboxAllowed`). It does NOT
+ * depend on the run's source (Intent / spec / plain), on whether the run has an
+ * isolated worktree, or on the git branch mode — those never appear here, so an
+ * Intent run and a plain work run with the same kind decide identically.
+ */
+export function sandboxEligible(params: {
+  /** Host capability/wiring gate from the composition root. */
+  readonly sandboxEnabled: boolean
+  /** Runtime policy hook result (false suppresses the sandbox). */
+  readonly sandboxAllowed: boolean
+  /** The workspace's normalized sandbox config (undefined ⇒ not configured). */
+  readonly config: WorkspaceSandboxConfig | undefined
+  /** The run's session kind. */
+  readonly sessionKind: SessionKind
+}): boolean {
+  if (!params.sandboxEnabled || !params.sandboxAllowed) return false
+  if (!params.config?.enabled) return false
+  const kinds = params.config.sandboxSessionKinds ?? ['work']
+  return kinds.includes(params.sessionKind)
 }
 
 // ─── Typed Errors ────────────────────────────────────────────────────────────
@@ -201,21 +231,24 @@ function canonicalize(path: string, label: string): string {
 /**
  * Resolve the full allowed path set for a run.
  *
- * Fixed allowances: workspace root (ro), worktree (rw), specsBase (rw). The
- * specs root is created if missing (it is a write target for reverse-sync).
- * Supplementary `extraMounts` are canonicalized, checked against the reserved
- * paths (no overlap either direction) and the denylist, and dropped when they
- * point at a non-existent path (skipped, not fatal — unlike a security
- * violation, which throws).
+ * Fixed allowances: execution root (rw), workspace root (ro), specsBase (rw).
+ * The `executionRoot` is the run's actual code directory — an isolated worktree,
+ * or the source workspace for a current-branch / no-isolated-cwd run. When it is
+ * the same canonical path as the workspace root, the two collapse into a single
+ * rw grant (no conflicting ro/rw pair). The specs root is created if missing (it
+ * is a write target for reverse-sync). Supplementary `extraMounts` are
+ * canonicalized, checked against the reserved paths (no overlap either
+ * direction) and the denylist, and dropped when they point at a non-existent
+ * path (skipped, not fatal — unlike a security violation, which throws).
  *
  * @throws {@link SandboxLaunchError} on reserved-path overlap or denylist hit.
  */
 export function resolvePaths(
   workspaceRoot: string,
-  worktree: string,
+  executionRoot: string,
   extraMounts: readonly { path: string; readonly?: boolean }[] = [],
 ): ResolvedSandboxPaths {
-  const canonWorktree = canonicalize(worktree, 'worktree')
+  const canonExecutionRoot = canonicalize(executionRoot, 'executionRoot')
   // Workspace-scoped fixed allowances from the single source of truth. A rw
   // system mount (the specs root) is a write target: ensure it exists so it can
   // be canonicalized and written.
@@ -232,8 +265,11 @@ export function resolvePaths(
   const canonSys = new Map(sys.map((m) => [m.key, canonicalize(m.path, m.key)]))
   const canonWorkspaceRoot = canonSys.get('workspaceRoot')!
   const canonSpecsBase = canonSys.get('specs')!
+  // Current-branch (and no-isolated-cwd) runs execute in the workspace itself:
+  // the ro workspace-root allowance is merged into the rw execution-root grant.
+  const sameRoot = canonWorkspaceRoot === canonExecutionRoot
 
-  const reserved = [canonWorktree, ...canonSys.values()]
+  const reserved = [canonExecutionRoot, ...canonSys.values()]
   // Canonicalize denied dirs (best-effort) so a symlinked system path (e.g. macOS
   // /etc → /private/etc) still matches an extraMount's canonicalized real path.
   const denied = denyList().map((d) => {
@@ -256,7 +292,7 @@ export function resolvePaths(
       continue
     }
     // Reserved-path overlap (either direction) is illegal — extraMounts must not
-    // cover or be covered by workspace root / worktree / specsBase.
+    // cover or be covered by execution root / workspace root / specsBase.
     for (const r of reserved) {
       if (isWithin(canon, r) || isWithin(r, canon)) {
         throw new SandboxLaunchError(
@@ -280,8 +316,10 @@ export function resolvePaths(
   }
 
   return {
-    workspaceRoot: canonWorkspaceRoot,
-    worktree: canonWorktree,
+    executionRoot: canonExecutionRoot,
+    // Omit the ro workspace-root grant when it is the same path as the rw
+    // execution root — a single rw mount, never a conflicting ro/rw pair.
+    ...(sameRoot ? {} : { workspaceRoot: canonWorkspaceRoot }),
     specsBase: canonSpecsBase,
     extra,
   }
@@ -300,16 +338,18 @@ export interface SandboxLaunchResult {
 }
 
 /**
- * Prepare an arapuca sandbox for a worktree intent-dev run.
+ * Prepare an arapuca sandbox for a run whose workspace enabled the sandbox and
+ * whose session kind is in the sandbox allowlist.
  *
  * The config is keyed by the workspace (`workspaceRoot`); the read-write code
- * path is the run's isolated `worktree`. Probing is the caller's first gate
- * (`probeArapuca`), but this also throws if resolution finds an illegal path —
- * both settle the run as a hard-fail.
+ * path is the run's `executionRoot` — an isolated worktree, or the source
+ * workspace for a current-branch / no-isolated-cwd run. Probing is the caller's
+ * first gate (`probeArapuca`), but this also throws if resolution finds an
+ * illegal path — both settle the run as a hard-fail.
  *
  * @throws {@link SandboxLaunchError} when probe fails or a path is illegal.
  */
-export function launchSandbox(workspaceRoot: string, worktree: string): SandboxLaunchResult {
+export function launchSandbox(workspaceRoot: string, executionRoot: string): SandboxLaunchResult {
   const probe = probeArapuca()
   if (!probe.ok) {
     throw new SandboxLaunchError(
@@ -323,16 +363,17 @@ export function launchSandbox(workspaceRoot: string, worktree: string): SandboxL
   }
 
   const sbCfg = getProjectSandbox(workspaceRoot)
-  const paths = resolvePaths(workspaceRoot, worktree, sbCfg?.extraMounts ?? [])
-  // Put per-run process state in the already-authorized worktree. arapuca's
+  const paths = resolvePaths(workspaceRoot, executionRoot, sbCfg?.extraMounts ?? [])
+  // Put per-run process state in the already-authorized execution root. arapuca's
   // default isolated HOME lives below the OS temp root, where Codex refuses to
   // install PATH helpers and macOS Seatbelt rejects subsequent writes. HOME is
   // sandbox-managed, so point Codex here through CODEX_HOME.
-  const tmpDir = mkdtempSync(join(paths.worktree, '.c3-sb-'))
+  const tmpDir = mkdtempSync(join(paths.executionRoot, '.c3-sb-'))
   mkdirSync(join(tmpDir, 'home', '.codex'), { recursive: true })
 
   console.log(
-    `[sandbox] arapuca wrapper prepared: worktree(rw)=${paths.worktree} root(ro)=${paths.workspaceRoot} ` +
+    `[sandbox] arapuca wrapper prepared: exec(rw)=${paths.executionRoot} ` +
+      `root(ro)=${paths.workspaceRoot ?? '(merged into exec)'} ` +
       `specs(rw)=${paths.specsBase} extra=${paths.extra.length}`,
   )
 
@@ -386,8 +427,10 @@ export function createSandboxWrapper(
   const claudeRuntimeHost = `/tmp/claude-${uid}`
   const claudeRuntimeCanon = `${realpathSync('/tmp')}/claude-${uid}`
   const mounts: ResolvedMount[] = [
-    { path: paths.workspaceRoot, readonly: true },
-    { path: paths.worktree, readonly: false },
+    { path: paths.executionRoot, readonly: false },
+    // Present only when distinct from the execution root (worktree runs); a
+    // current-branch run merges it into the single rw execution-root grant.
+    ...(paths.workspaceRoot ? [{ path: paths.workspaceRoot, readonly: true }] : []),
     { path: paths.specsBase, readonly: false },
     ...paths.extra,
   ]
@@ -405,7 +448,7 @@ export function createSandboxWrapper(
 mkdir -p ${shQuote(claudeRuntimeHost)} 2>/dev/null || true
 exec arapuca run \\
   --seccomp baseline \\
-  --cwd ${shQuote(paths.worktree)} \\
+  --cwd ${shQuote(paths.executionRoot)} \\
   --env ${shQuote(`CODEX_HOME=${codexHome}`)} \\
   -v ${shQuote(`${codexHome}:rw`)} \\
   -v ${shQuote(`${claudeRuntimeCanon}:rw`)} \\

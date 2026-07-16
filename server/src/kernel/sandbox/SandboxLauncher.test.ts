@@ -81,6 +81,9 @@ describe('resolvePaths', () => {
     // per-run cleanup for codex `resume`.
     expect(existsSync(paths.codexHome)).toBe(true)
     expect(paths.codexHome.startsWith(realpathSync(stub.home))).toBe(true)
+    // The claude config dir (a sandbox claude run's CLAUDE_CONFIG_DIR) is resolved
+    // + ensured too, so a claude run has a canonical rw data root to mount.
+    expect(existsSync(paths.claudeConfigDir)).toBe(true)
     expect(paths.extra).toEqual([])
   })
 
@@ -211,10 +214,13 @@ describe('createSandboxWrapper', () => {
       expect(script).toContain(`${paths.executionRoot}:rw`)
       expect(script).toContain(`${paths.specsBase}:rw`)
       expect(script).toContain(`--cwd '${paths.executionRoot}'`)
-      // CODEX_HOME points at the persistent per-workspace home (outside the temp
-      // dir), mounted rw so codex thread rollouts survive for the next `resume`.
-      expect(script).toContain(`--env 'CODEX_HOME=${paths.codexHome}'`)
-      expect(script).toContain(`-v '${paths.codexHome}:rw'`)
+      // A claude run exports CLAUDE_CONFIG_DIR (the host claude config dir, so its
+      // transcript is host-readable) and mounts it rw; it must NOT carry codex's
+      // CODEX_HOME nor mount the codex home.
+      expect(script).toContain(`--env 'CLAUDE_CONFIG_DIR=${paths.claudeConfigDir}'`)
+      expect(script).toContain(`-v '${paths.claudeConfigDir}:rw'`)
+      expect(script).not.toContain('CODEX_HOME')
+      expect(script).not.toContain(`-v '${paths.codexHome}:rw'`)
       expect(script).toContain(`-- 'claude' "$@"`)
       // arapuca is env deny-by-default; claude's provider credential is forwarded
       // as `--env "KEY=$KEY"`, expanded from the wrapper env at run time (value
@@ -247,6 +253,13 @@ describe('createSandboxWrapper', () => {
       // A codex run must not pull claude's provider credential into its sandbox.
       expect(script).not.toContain('ANTHROPIC_')
       expect(script).toContain(`-- 'codex' "$@"`)
+      // A codex run exports CODEX_HOME (persistent per-workspace home, rollouts
+      // survive for `resume`) + mounts it rw, and carries NONE of claude's data
+      // root, config-dir env, or /tmp runtime dir.
+      expect(script).toContain(`--env 'CODEX_HOME=${paths.codexHome}'`)
+      expect(script).toContain(`-v '${paths.codexHome}:rw'`)
+      expect(script).not.toContain('CLAUDE_CONFIG_DIR')
+      expect(script).not.toContain('claude-')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }

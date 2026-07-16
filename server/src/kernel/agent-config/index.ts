@@ -19,6 +19,7 @@ import type {
   ConsensusConfig,
   SessionAgentSwitch,
   SessionKind,
+  StoreScope,
   SystemSettings,
   VendorId,
 } from '@ccc/shared/protocol'
@@ -58,6 +59,7 @@ import {
   changeSessionAgentFact,
   getProxyConfig,
   getSessionAgentId,
+  getSessionStoreScope,
   loadSettings,
   saveSettings,
   setPendingIntent,
@@ -473,6 +475,17 @@ export function resolveSessionVendor(sessionId: string | null): VendorId {
 }
 
 /**
+ * The frozen store scope of a session (ADR-0015), for the read/resume path. A
+ * real session returns its frozen scope; anything without a fact (pending or
+ * unknown) defaults to `'host'` — a session that never ran has no transcript to
+ * locate, and every legacy session lived on the host. Sibling of
+ * {@link resolveSessionVendor}; a thin pass-through to the vendor-blind store.
+ */
+export function resolveSessionStoreScope(sessionId: string | null): StoreScope {
+  return sessionId ? getSessionStoreScope(sessionId) : 'host'
+}
+
+/**
  * First bind (pending → real): freeze the session's fact onto the agent it just
  * ran with, resolving that agent's vendor here (the storage layer is vendor-blind
  * — ADR-0015 — so the resolution lives in this layer, which already depends on
@@ -490,6 +503,7 @@ export function freezeSessionAgent(
   realId: string,
   agentId: string,
   workspacePath: string,
+  storeScope: StoreScope,
 ): void {
   const resolved = resolveAgent(agentId)
   // Preserve a virtual group binding (`_c3_<group>`, ADR-0029): the session stays
@@ -497,13 +511,16 @@ export function freezeSessionAgent(
   // highest-priority member. The frozen vendor is the group's locked vendor (the
   // resolved representative member's vendor). A real ref binds to the resolved id.
   const boundId = isGroupAgentRef(agentId) ? agentId : resolved.id
-  bindSessionAgent(pendingId, realId, boundId, resolved.vendor)
+  // storeScope is frozen alongside the vendor: whether this first run was
+  // sandboxed decides which native data root holds the transcript for its life.
+  bindSessionAgent(pendingId, realId, boundId, resolved.vendor, storeScope)
   onBind?.({
     pendingId,
     realId,
     workspacePath,
     vendor: resolved.vendor,
     agentId: boundId,
+    storeScope,
   })
 }
 
@@ -571,6 +588,8 @@ export interface OnBindInput {
   workspacePath: string
   vendor: VendorId
   agentId: string
+  /** Frozen transcript store scope for this bind (host vs sandbox run). */
+  storeScope: StoreScope
 }
 
 export interface OnAgentSwapInput {

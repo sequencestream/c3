@@ -42,7 +42,11 @@ import {
 import { homedir } from 'node:os'
 import { join, delimiter, sep } from 'node:path'
 import { getProjectSandbox } from '../../kernel/config/index.js'
-import { getSpecsBase, getSandboxCodexHome } from '../../kernel/config/workspace-path.js'
+import {
+  getSpecsBase,
+  getSandboxCodexHome,
+  getSandboxClaudeConfigDir,
+} from '../../kernel/config/workspace-path.js'
 import type { SysExtraMount, SessionKind } from '@ccc/shared/protocol'
 import type {
   ResolvedMount,
@@ -277,11 +281,23 @@ export function resolvePaths(
     // best-effort; canonicalize below will surface a real failure
   }
   const canonCodexHome = canonicalize(sandboxCodexHome, 'codexHome')
+  // The claude config dir a sandbox claude run uses (rw). It is the HOST claude
+  // config dir (so the transcript is host-readable via the SDK), which already
+  // exists; ensure + canonicalize + reserve it just like codexHome. Mounted only
+  // for a claude run (createSandboxWrapper), but resolved unconditionally so the
+  // path set is vendor-neutral.
+  const sandboxClaudeConfigDir = getSandboxClaudeConfigDir(workspaceRoot)
+  try {
+    mkdirSync(sandboxClaudeConfigDir, { recursive: true })
+  } catch {
+    // best-effort; canonicalize below will surface a real failure
+  }
+  const canonClaudeConfigDir = canonicalize(sandboxClaudeConfigDir, 'claudeConfigDir')
   // Current-branch (and no-isolated-cwd) runs execute in the workspace itself:
   // the ro workspace-root allowance is merged into the rw execution-root grant.
   const sameRoot = canonWorkspaceRoot === canonExecutionRoot
 
-  const reserved = [canonExecutionRoot, ...canonSys.values(), canonCodexHome]
+  const reserved = [canonExecutionRoot, ...canonSys.values(), canonCodexHome, canonClaudeConfigDir]
   // Canonicalize denied dirs (best-effort) so a symlinked system path (e.g. macOS
   // /etc → /private/etc) still matches an extraMount's canonicalized real path.
   const denied = denyList().map((d) => {
@@ -334,6 +350,7 @@ export function resolvePaths(
     ...(sameRoot ? {} : { workspaceRoot: canonWorkspaceRoot }),
     specsBase: canonSpecsBase,
     codexHome: canonCodexHome,
+    claudeConfigDir: canonClaudeConfigDir,
     extra,
   }
 }
@@ -428,17 +445,22 @@ export function createSandboxWrapper(
   entryCommand: string,
   tmpDir: string,
 ): string {
-  // Persistent per-workspace CODEX_HOME (resolved + ensured by resolvePaths). It
-  // lives outside the per-run temp dir, so codex thread rollouts written here
-  // survive cleanup and the next turn can `resume` them. Mounted rw explicitly
-  // below since it is outside the execution root's grant.
-  const codexHome = paths.codexHome
+  const isCodex = entryCommand === 'codex'
+  const isClaude = entryCommand === 'claude'
+  // The vendor transcript/config data root (resolved + ensured by resolvePaths),
+  // exported so the CLI writes/reads its native store there and mounted rw since
+  // it lives outside the execution root's grant. codex → persistent per-workspace
+  // CODEX_HOME (thread rollouts survive cleanup for the next turn's `resume`);
+  // claude → the HOST CLAUDE_CONFIG_DIR (transcript stays host-readable). Scoped
+  // per vendor so a codex run never mounts the claude dir and vice-versa.
+  const dataRoot = isCodex ? paths.codexHome : isClaude ? paths.claudeConfigDir : null
+  const dataRootEnvVar = isCodex ? 'CODEX_HOME' : isClaude ? 'CLAUDE_CONFIG_DIR' : null
   // Claude Code hardcodes its per-user runtime dir at /tmp/claude-<uid>
   // (shell-snapshots / IPC). It ignores TMPDIR and arapuca locks TMPDIR, so the
   // dir cannot be redirected — it must be allowed. The host path (`/tmp/...`) is
   // created by the wrapper; the canonical path (macOS `/private/tmp/...`) is the
   // one arapuca matches. It is a shared, per-user dir (not per-run) — allow it,
-  // do not clean it. codex never touches it.
+  // do not clean it. codex never touches it, so it is mounted for claude only.
   const uid = typeof process.getuid === 'function' ? process.getuid() : 0
   const claudeRuntimeHost = `/tmp/claude-${uid}`
   const claudeRuntimeCanon = `${realpathSync('/tmp')}/claude-${uid}`
@@ -448,6 +470,9 @@ export function createSandboxWrapper(
     // current-branch run merges it into the single rw execution-root grant.
     ...(paths.workspaceRoot ? [{ path: paths.workspaceRoot, readonly: true }] : []),
     { path: paths.specsBase, readonly: false },
+    // The vendor data root (rw), and — for claude only — its /tmp runtime dir.
+    ...(dataRoot ? [{ path: dataRoot, readonly: false }] : []),
+    ...(isClaude ? [{ path: claudeRuntimeCanon, readonly: false }] : []),
     ...paths.extra,
   ]
   const mountFlags = mounts
@@ -478,6 +503,16 @@ export function createSandboxWrapper(
     .map((name) => `  --env "${name}=$${name}" \\\n`)
     .join('')
 
+  // The vendor data-root env line (`CODEX_HOME=…` / `CLAUDE_CONFIG_DIR=…`), or
+  // empty for an unknown vendor. Its VALUE is a fixed host path, safe to inline.
+  const dataRootEnvLine =
+    dataRootEnvVar && dataRoot ? `  --env ${shQuote(`${dataRootEnvVar}=${dataRoot}`)} \\\n` : ''
+  // Pre-create claude's /tmp runtime dir (mounted above) before arapuca starts;
+  // codex needs no such line.
+  const runtimeMkdirLine = isClaude
+    ? `mkdir -p ${shQuote(claudeRuntimeHost)} 2>/dev/null || true\n`
+    : ''
+
   const scriptPath = join(tmpDir, 'wrapper.sh')
   // `--seccomp baseline` opens outbound network (sandbox network model is
   // "fully open" for now; strict — the arapuca default — blocks all network and
@@ -485,14 +520,10 @@ export function createSandboxWrapper(
   // Linux can later narrow via `--allow-host`.
   const script = `#!/bin/sh
 # c3 sandbox wrapper — runs the vendor CLI inside an arapuca-narrowed process
-mkdir -p ${shQuote(claudeRuntimeHost)} 2>/dev/null || true
-exec arapuca run \\
+${runtimeMkdirLine}exec arapuca run \\
   --seccomp baseline \\
   --cwd ${shQuote(paths.executionRoot)} \\
-  --env ${shQuote(`CODEX_HOME=${codexHome}`)} \\
-${credentialEnvBlock}  -v ${shQuote(`${codexHome}:rw`)} \\
-  -v ${shQuote(`${claudeRuntimeCanon}:rw`)} \\
-${mountFlags}
+${dataRootEnvLine}${credentialEnvBlock}${mountFlags}
   -- ${shQuote(entryCommand)} "$@"
 `
   writeFileSync(scriptPath, script, 'utf-8')

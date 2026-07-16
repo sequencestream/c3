@@ -51,3 +51,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 | [0027](0027-event-naming-and-multi-row-subscription.md)                      | `<category>:<action>` 事件命名 + 多行订阅 + 级联表单                                                                   | proposed   |
 | [0028](0028-process-level-lightweight-sandbox-arapuca.md)                    | 进程级 arapuca 沙箱取代容器方案（当前只控目录 ro/rw、网络全开、凭证默认不可见）                                        | accepted   |
 | [0029](0029-vendor-neutral-relay-and-agent-group-failover.md)                | Vendor 中立 relay 核心 + agent group failover（取代 ADR-0014）                                                         | accepted   |
+| [0030](0030-session-store-scope-vendor-neutral-data-root.md)                 | 冻结的会话 store scope（host/sandbox）+ vendor 中立 sandbox 数据根（transcript 定位/续接随冻结解耦开关）               | accepted   |

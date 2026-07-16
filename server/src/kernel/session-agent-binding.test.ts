@@ -11,6 +11,7 @@ import {
   deleteSessionAgentId,
   getSessionAgentId,
   getSessionBindingStats,
+  getSessionStoreScope,
   getSessionVendor,
   PENDING_INTENT_TTL_MS,
   resetSettingsCacheForTests,
@@ -100,7 +101,7 @@ describe('two-key write space (intent vs fact)', () => {
     expect(getSessionVendor(pending)).toBeNull()
     expect(getSessionVendor('claude-b')).toBeNull()
 
-    bindSessionAgent(pending, 'real-1', 'claude-b', 'claude')
+    bindSessionAgent(pending, 'real-1', 'claude-b', 'claude', 'host')
     expect(getSessionAgentId('real-1')).toBe('claude-b')
     expect(getSessionVendor('real-1')).toBe('claude')
   })
@@ -118,7 +119,7 @@ describe('freezeSessionAgent (bind → freeze vendor)', () => {
 
   it('copies the intent into a fact, freezes vendor, and drops the intent', () => {
     setPendingIntent('pending:p1', 'cx')
-    freezeSessionAgent('pending:p1', 'real-cx', 'cx', '/abs/proj')
+    freezeSessionAgent('pending:p1', 'real-cx', 'cx', '/abs/proj', 'host')
     expect(getSessionAgentId('real-cx')).toBe('cx')
     expect(getSessionVendor('real-cx')).toBe('codex')
     // Intent is gone — only the fact remains.
@@ -126,18 +127,49 @@ describe('freezeSessionAgent (bind → freeze vendor)', () => {
   })
 
   it('freezes the actually-run agent even with no explicit intent', () => {
-    freezeSessionAgent('pending:p2', 'real-cx', 'cx', '/abs/proj')
+    freezeSessionAgent('pending:p2', 'real-cx', 'cx', '/abs/proj', 'host')
     expect(getSessionAgentId('real-cx')).toBe('cx')
     expect(getSessionVendor('real-cx')).toBe('codex')
   })
 
   it('is idempotent: a re-bind never re-freezes the vendor', () => {
-    freezeSessionAgent('pending:p3', 'real-claude', SYSTEM_AGENT_ID, '/abs/proj')
+    freezeSessionAgent('pending:p3', 'real-claude', SYSTEM_AGENT_ID, '/abs/proj', 'host')
     expect(getSessionVendor('real-claude')).toBe('claude')
     // A second bind to the same real id (e.g. a retry) must not overwrite the fact.
-    freezeSessionAgent('pending:p3b', 'real-claude', 'oc', '/abs/proj')
+    freezeSessionAgent('pending:p3b', 'real-claude', 'oc', '/abs/proj', 'host')
     expect(getSessionAgentId('real-claude')).toBe(SYSTEM_AGENT_ID)
     expect(getSessionVendor('real-claude')).toBe('claude')
+  })
+})
+
+describe('freezeSessionAgent (bind → freeze store scope, ADR-0015)', () => {
+  beforeEach(seedAgents)
+
+  it('freezes a sandbox run to the sandbox store scope', () => {
+    freezeSessionAgent('pending:sb', 'real-sb', 'cx', '/abs/proj', 'sandbox')
+    expect(getSessionStoreScope('real-sb')).toBe('sandbox')
+  })
+
+  it('freezes a host run to the host store scope', () => {
+    freezeSessionAgent('pending:hs', 'real-hs', 'cx', '/abs/proj', 'host')
+    expect(getSessionStoreScope('real-hs')).toBe('host')
+  })
+
+  it('defaults to host for a session with no fact yet', () => {
+    expect(getSessionStoreScope('never-ran')).toBe('host')
+  })
+
+  it('never re-freezes the store scope on a re-bind', () => {
+    freezeSessionAgent('pending:re', 'real-re', 'cx', '/abs/proj', 'sandbox')
+    // A retry that runs on the host must not flip the frozen sandbox scope.
+    freezeSessionAgent('pending:re2', 'real-re', 'cx', '/abs/proj', 'host')
+    expect(getSessionStoreScope('real-re')).toBe('sandbox')
+  })
+
+  it('a same-vendor agent swap preserves the frozen sandbox scope', () => {
+    bindSessionAgent('pending:sw', 'real-sw', SYSTEM_AGENT_ID, 'claude', 'sandbox')
+    expect(changeSessionAgentFact('real-sw', 'claude-b', 'claude')).toBe(true)
+    expect(getSessionStoreScope('real-sw')).toBe('sandbox')
   })
 })
 
@@ -145,14 +177,14 @@ describe('changeSessionAgentFact / setSessionAgent (same-vendor swap vs cross-ve
   beforeEach(seedAgents)
 
   it('allows a same-vendor agent swap', () => {
-    bindSessionAgent('pending:s1', 'real-1', SYSTEM_AGENT_ID, 'claude')
+    bindSessionAgent('pending:s1', 'real-1', SYSTEM_AGENT_ID, 'claude', 'host')
     expect(changeSessionAgentFact('real-1', 'claude-b', 'claude')).toBe(true)
     expect(getSessionAgentId('real-1')).toBe('claude-b')
     expect(getSessionVendor('real-1')).toBe('claude')
   })
 
   it('rejects a cross-vendor change and leaves the fact untouched', () => {
-    bindSessionAgent('pending:s2', 'real-2', SYSTEM_AGENT_ID, 'claude')
+    bindSessionAgent('pending:s2', 'real-2', SYSTEM_AGENT_ID, 'claude', 'host')
     expect(changeSessionAgentFact('real-2', 'cx', 'codex')).toBe(false)
     expect(getSessionAgentId('real-2')).toBe(SYSTEM_AGENT_ID)
     expect(getSessionVendor('real-2')).toBe('claude')
@@ -164,7 +196,7 @@ describe('changeSessionAgentFact / setSessionAgent (same-vendor swap vs cross-ve
     expect(getSessionAgentId('pending:s3')).toBe('cx')
 
     // Real, same vendor → ok; cross vendor → rejected.
-    bindSessionAgent('pending:s3', 'real-3', SYSTEM_AGENT_ID, 'claude')
+    bindSessionAgent('pending:s3', 'real-3', SYSTEM_AGENT_ID, 'claude', 'host')
     expect(setSessionAgent('real-3', 'claude-b')).toEqual({ ok: true })
     expect(setSessionAgent('real-3', 'cx')).toEqual({ ok: false })
     expect(getSessionAgentId('real-3')).toBe('claude-b')
@@ -361,7 +393,7 @@ describe('resolveSessionAgentSwitch (title-bar switcher payload)', () => {
   })
 
   it('lists same-vendor available peers, marking the current agent', () => {
-    bindSessionAgent('pending:w1', 'real-1', SYSTEM_AGENT_ID, 'claude')
+    bindSessionAgent('pending:w1', 'real-1', SYSTEM_AGENT_ID, 'claude', 'host')
     const sw = resolveSessionAgentSwitch('real-1', allPresent)
     expect(sw).not.toBeNull()
     expect(sw?.current).toEqual({ id: SYSTEM_AGENT_ID, displayName: 'System' })
@@ -370,7 +402,7 @@ describe('resolveSessionAgentSwitch (title-bar switcher payload)', () => {
   })
 
   it('excludes a same-vendor peer whose host binary is missing', () => {
-    bindSessionAgent('pending:w2', 'real-2', SYSTEM_AGENT_ID, 'claude')
+    bindSessionAgent('pending:w2', 'real-2', SYSTEM_AGENT_ID, 'claude', 'host')
     // claude present, but suppose only system is reachable — claude-b shares the
     // claude binary, so host presence is per-vendor: claude present ⇒ both listed.
     // Drop claude from the present set to assert the current-unavailable path below.
@@ -381,7 +413,7 @@ describe('resolveSessionAgentSwitch (title-bar switcher payload)', () => {
   })
 
   it('includes current agent when available and has no same-vendor peer', () => {
-    bindSessionAgent('pending:w3', 'real-3', 'cx', 'codex')
+    bindSessionAgent('pending:w3', 'real-3', 'cx', 'codex', 'host')
     const sw = resolveSessionAgentSwitch('real-3', allPresent)
     expect(sw).not.toBeNull()
     expect(sw?.current).toEqual({ id: 'cx', displayName: 'CX' })
@@ -420,7 +452,7 @@ describe('resolveSessionAgentSwitch (title-bar switcher payload)', () => {
       defaultAgentId: 'cl-a',
     } as unknown as SystemSettings)
     resetSettingsCacheForTests()
-    bindSessionAgent('pending:g1', 'real-g1', 'cl-a', 'claude')
+    bindSessionAgent('pending:g1', 'real-g1', 'cl-a', 'claude', 'host')
     const sw = resolveSessionAgentSwitch('real-g1', allPresent)
     // The claude session can switch to the claude peer AND the claude group `_c3_claude_fast`
     // (labelled with the prefix); the codex group `_c3_codex_cheap` is a different vendor.
@@ -444,7 +476,7 @@ describe('resolveSessionAgentSwitch (title-bar switcher payload)', () => {
       defaultAgentId: 'cl-a',
     } as unknown as SystemSettings)
     resetSettingsCacheForTests()
-    bindSessionAgent('pending:g2', 'real-g2', '_c3_claude_fast', 'claude')
+    bindSessionAgent('pending:g2', 'real-g2', '_c3_claude_fast', 'claude', 'host')
     const sw = resolveSessionAgentSwitch('real-g2', allPresent)
     expect(sw?.current).toEqual({ id: '_c3_claude_fast', displayName: '_c3_claude_fast' })
     // The group itself is excluded from its own candidate list; the member is offered.
@@ -480,7 +512,7 @@ describe('cleanupStalePendingIntents (janitor)', () => {
 describe('deleteSessionAgentId clears both spaces', () => {
   it('drops a pending intent and a real fact alike', () => {
     setPendingIntent('pending:d', 'oc')
-    bindSessionAgent('pending:other', 'real-d', 'claude-b', 'claude')
+    bindSessionAgent('pending:other', 'real-d', 'claude-b', 'claude', 'host')
     deleteSessionAgentId('pending:d')
     deleteSessionAgentId('real-d')
     expect(getSessionAgentId('pending:d')).toBeNull()
@@ -494,7 +526,7 @@ describe('getSessionBindingStats', () => {
     expect(getSessionBindingStats()).toEqual({ bound: 0, pending: 0 })
     setPendingIntent('pending:a', 'oc')
     setPendingIntent('pending:b', 'claude-b')
-    bindSessionAgent('pending:c', 'real-1', 'claude-b', 'claude')
+    bindSessionAgent('pending:c', 'real-1', 'claude-b', 'claude', 'host')
     // bind drops `pending:c`'s (absent) intent and writes one fact; the two
     // standalone intents remain pending.
     expect(getSessionBindingStats()).toEqual({ bound: 1, pending: 2 })

@@ -35,12 +35,13 @@ import type { PermissionRequestCtx } from '../permission/gateway.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
 import { codexPolicyToGrid } from '../agent/adapters/codex/driver.js'
 import { resolveCodexGhTokenEnv } from '../agent/adapters/codex/gh-token.js'
-import { getSpecsBase } from '../config/workspace-path.js'
+import { getSpecsBase, getSandboxCodexHome } from '../config/workspace-path.js'
 import {
   freezeSessionAgent,
   isDegradableError,
   resolveAgent,
   resolveSessionLaunch,
+  resolveSessionStoreScope,
 } from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
 import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
@@ -406,8 +407,22 @@ export async function runViaDriver(
   // keyring); under arapuca the keyring dir stays deny-by-default, so the env
   // bridge is still needed. A no-op when a token is already set or the host probe
   // fails, and skipped entirely for claude.
-  const driverEnvOverrides =
+  const ghBridgedEnv =
     adapter.vendor === 'codex' ? await resolveCodexGhTokenEnv(envOverrides) : envOverrides
+  // Cross-mode resume: a codex session frozen to the sandbox store (ADR-0015) has
+  // its rollout under the persistent sandbox CODEX_HOME. Resumed in a NON-sandbox
+  // run it would otherwise get host `~/.codex` and fail `no rollout found`. Point
+  // CODEX_HOME at that frozen sandbox home so the host process can resume it —
+  // safe, as the sandbox home holds no host credentials. A sandbox run already
+  // gets its CODEX_HOME from the wrapper; the reverse case (a host-frozen session
+  // resumed under sandbox) keeps the wrapper's sandbox home — an accepted limit.
+  const crossModeCodexHome =
+    adapter.vendor === 'codex' && !rt.sandboxPaths && resolveSessionStoreScope(runId) === 'sandbox'
+      ? getSandboxCodexHome(workspacePath)
+      : undefined
+  const driverEnvOverrides = crossModeCodexHome
+    ? { ...(ghBridgedEnv ?? {}), CODEX_HOME: crossModeCodexHome }
+    : ghBridgedEnv
 
   // Sandbox wrapper: when the run has a resolved arapuca allow set, wrap the
   // vendor CLI in `arapuca run -v … -- <cli> "$@"`. The adapter uses this path
@@ -495,8 +510,9 @@ export async function runViaDriver(
       const prev = runId
       bindPending(prev, sid)
       // Freeze the session→agent fact onto the agent that ran, pinning its vendor
-      // for the session's life (ADR-0015).
-      freezeSessionAgent(prev, sid, agentId, workspacePath)
+      // AND transcript store scope for the session's life (ADR-0015). A sandbox
+      // run wrote into the sandbox vendor data root, so freeze `sandbox`.
+      freezeSessionAgent(prev, sid, agentId, workspacePath, rt.sandboxPaths ? 'sandbox' : 'host')
       runId = sid
       eventBus.publish('run:bound', { prevId: prev, realId: sid, workspacePath })
     }

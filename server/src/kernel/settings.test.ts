@@ -997,7 +997,7 @@ describe('enabled flag (AC-R10)', () => {
     // agent never locks a session out. The 2026-06-15-001 default rewrite only
     // moves the *unbound* default off a disabled agent (see normalize tests); a
     // frozen binding is untouched.
-    bindSessionAgent('pending:s', 'some-session', 'a1', 'claude')
+    bindSessionAgent('pending:s', 'some-session', 'a1', 'claude', 'host')
     const launch = resolveSessionLaunch('some-session')
     expect(launch.agentId).toBe('a1')
     // loadSettings is consistent with the saved set.

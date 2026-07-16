@@ -36,6 +36,7 @@ import type {
   WorkspaceSetting,
   WorkspaceSandboxConfig,
   SkillRepoConfig,
+  StoreScope,
   SystemSettings,
   UiLang,
   VendorId,
@@ -193,6 +194,13 @@ interface SessionAgentFact {
   agentId: string
   /** Frozen at the first bind; same-vendor agent swaps are allowed, cross-vendor isn't. */
   vendor: VendorId
+  /**
+   * Which native store holds this session's transcript — frozen at first bind
+   * from whether the run was sandboxed (ADR-0015). Lets the read/resume path
+   * locate the vendor data root even after the workspace sandbox toggle changes.
+   * Absent on legacy facts ⇒ treated as `'host'` (every pre-sandbox session).
+   */
+  storeScope?: StoreScope
 }
 
 /**
@@ -1028,10 +1036,16 @@ function migrateState(raw: unknown, now: number): SessionAgentState {
       }
       // v2 fact.
       if (!v || typeof v !== 'object') continue
-      const { agentId, vendor } = v as Record<string, unknown>
+      const { agentId, vendor, storeScope } = v as Record<string, unknown>
       if (typeof agentId !== 'string' || !agentId) continue
       if (vendor !== 'claude' && vendor !== 'codex') continue
-      sessionAgents[id] = { agentId, vendor }
+      // Preserve a frozen storeScope when present; a fact written before the
+      // scope existed is a host session (sandbox stores are newer), so absence
+      // stays absent and reads as 'host' at the getter.
+      sessionAgents[id] =
+        storeScope === 'host' || storeScope === 'sandbox'
+          ? { agentId, vendor, storeScope }
+          : { agentId, vendor }
     }
   }
 
@@ -1103,6 +1117,16 @@ export function getSessionVendor(realId: string): VendorId | null {
 }
 
 /**
+ * The frozen store scope of a real session (ADR-0015). Defaults to `'host'` when
+ * the fact predates the scope (every pre-sandbox session) or has no fact yet —
+ * so the read/resume path looks in the host store unless a sandbox run explicitly
+ * froze it there.
+ */
+export function getSessionStoreScope(realId: string): StoreScope {
+  return loadState().sessionAgents[realId]?.storeScope ?? 'host'
+}
+
+/**
  * Set (or, with a null/empty agent, clear) a pending session's intent — the
  * mutable half of the binding space. No-op-safe to call repeatedly; the
  * `createdAt` stamp is set on first write and refreshed each time the agent
@@ -1132,6 +1156,7 @@ export function bindSessionAgent(
   realId: string,
   agentId: string,
   vendor: VendorId,
+  storeScope: StoreScope,
 ): void {
   const state = loadState()
   let dirty = false
@@ -1140,7 +1165,7 @@ export function bindSessionAgent(
     dirty = true
   }
   if (!(realId in state.sessionAgents)) {
-    state.sessionAgents[realId] = { agentId, vendor }
+    state.sessionAgents[realId] = { agentId, vendor, storeScope }
     dirty = true
   }
   if (dirty) persistState()
@@ -1157,7 +1182,13 @@ export function changeSessionAgentFact(realId: string, agentId: string, vendor: 
   const state = loadState()
   const existing = state.sessionAgents[realId]
   if (existing && existing.vendor !== vendor) return false
-  state.sessionAgents[realId] = { agentId, vendor: existing?.vendor ?? vendor }
+  // storeScope is frozen like vendor — an agent swap never relocates the store;
+  // preserve the existing scope (absent stays absent ⇒ reads as 'host').
+  state.sessionAgents[realId] = {
+    agentId,
+    vendor: existing?.vendor ?? vendor,
+    ...(existing?.storeScope ? { storeScope: existing.storeScope } : {}),
+  }
   persistState()
   return true
 }

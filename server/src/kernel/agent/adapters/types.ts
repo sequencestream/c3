@@ -396,6 +396,15 @@ export interface SessionSummary {
 /** Listing scope (the workspace/cwd whose sessions to enumerate). */
 export interface SessionListOptions {
   cwd: string
+  /**
+   * Vendor data-root directories to scan for this vendor's transcript store,
+   * highest-priority first. Lets the caller point a codex read at the host
+   * `~/.codex` and/or the sandbox `CODEX_HOME` (ADR-0015 store scope) — a session
+   * that ran sandboxed lives under a different root than a host one. Omit ⇒ the
+   * store uses its own host default. Ignored by vendors whose store is read
+   * through an SDK keyed off the process env (claude).
+   */
+  storeRoots?: readonly string[]
 }
 
 /**

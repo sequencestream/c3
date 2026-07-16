@@ -609,8 +609,16 @@ export async function launchRun(
               if (prev.startsWith(PENDING_SESSION_PREFIX)) {
                 bindPending(prev, sid)
                 // Freeze the session→agent fact onto the agent that actually ran,
-                // pinning its vendor for the session's life (ADR-0015).
-                freezeSessionAgent(prev, sid, agentCfg.agentId, workspacePath)
+                // pinning its vendor AND transcript store scope for the session's
+                // life (ADR-0015). `rt.sandboxPaths` set ⇒ this run wrote into the
+                // sandbox vendor data root, so the transcript lives there.
+                freezeSessionAgent(
+                  prev,
+                  sid,
+                  agentCfg.agentId,
+                  workspacePath,
+                  rt.sandboxPaths ? 'sandbox' : 'host',
+                )
                 runId = sid
                 if (!hasBound) {
                   hasBound = true

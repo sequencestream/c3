@@ -1472,6 +1472,17 @@ export interface SlashCommandInfo {
 /** The agent vendors c3 can drive. New vendors extend this union (ADR-0011). */
 export type VendorId = 'claude' | 'codex'
 
+/**
+ * Where a session's native transcript store lives — the second frozen invariant
+ * alongside {@link VendorId} (ADR-0015). A run's vendor data root (codex
+ * `CODEX_HOME`, claude `CLAUDE_CONFIG_DIR`) differs between a host run and a
+ * sandbox run, so a session's transcript physically lands in one or the other.
+ * The scope is frozen at first bind (from whether the run was sandboxed) so the
+ * read/resume path can always locate that store, even after the workspace's
+ * sandbox toggle later changes. `host` for every pre-existing session.
+ */
+export type StoreScope = 'host' | 'sandbox'
+
 // ---------------------------------------------------------------------------
 // Neutral permission grid + per-vendor mode catalog (ADR-0011, 2026-06-07-012)
 // ---------------------------------------------------------------------------

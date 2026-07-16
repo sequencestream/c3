@@ -94,9 +94,18 @@ export interface ResolvedSandboxPaths {
   /**
    * Persistent per-workspace sandbox CODEX_HOME — read-write, same host absolute
    * path. Outlives the per-run temp dir so codex thread rollouts survive for the
-   * next turn's `resume` (see `getSandboxCodexHome`).
+   * next turn's `resume` (see `getSandboxCodexHome`). Mounted + exported as
+   * `CODEX_HOME` only for a codex run.
    */
   readonly codexHome: string
+  /**
+   * The claude config dir a sandbox claude run uses (`CLAUDE_CONFIG_DIR`) —
+   * read-write, same host absolute path. Unlike codex this is the HOST claude
+   * config dir (`getSandboxClaudeConfigDir`), so the transcript the sandbox writes
+   * is read back host-side through the claude SDK unchanged. Mounted + exported as
+   * `CLAUDE_CONFIG_DIR` only for a claude run.
+   */
+  readonly claudeConfigDir: string
   /** Supplementary allowed directories, each ro/rw as declared. */
   readonly extra: readonly ResolvedMount[]
 }

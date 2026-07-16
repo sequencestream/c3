@@ -311,3 +311,58 @@ describe('run-end title backfill — codex via SessionAccessor (regression)', ()
     expect(hit?.title).toBe('New session')
   })
 })
+
+describe('CodexSessionStore — multi-root store scope (ADR-0015 dual-scan)', () => {
+  // A second CODEX_HOME standing in for a workspace's persistent sandbox home,
+  // distinct from the host `~/.codex` (tmpHome). Written directly on disk.
+  let sandboxRoot: string
+
+  function writeSessionAt(root: string, sessionId: string, cwd: string, lines: string[]): void {
+    const d = new Date()
+    const yyyy = String(d.getFullYear())
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    const dir = path.join(root, 'sessions', yyyy, mm, dd)
+    mkdirSync(dir, { recursive: true })
+    const body = [metaLine(sessionId, cwd), ...lines].join('\n') + '\n'
+    writeFileSync(path.join(dir, `${sessionId}.jsonl`), body, 'utf-8')
+  }
+
+  beforeEach(() => {
+    sandboxRoot = mkdtempSync(path.join(os.tmpdir(), 'c3-codex-sbroot-'))
+  })
+  afterEach(() => {
+    rmSync(sandboxRoot, { recursive: true, force: true })
+  })
+
+  it('reads a session that lives only under the passed sandbox root', async () => {
+    const cwd = '/work/proj'
+    writeSessionAt(sandboxRoot, 'sb-sess', cwd, [
+      userMessage('sandbox prompt'),
+      responseItemAssistant('done'),
+    ])
+    // Host root (tmpHome/.codex) has no such session; only the explicit sandbox
+    // root does. Passing it as the store root must surface the history.
+    const out = await new CodexSessionStore().read('sb-sess', { cwd, storeRoots: [sandboxRoot] })
+    expect(out.length).toBeGreaterThan(0)
+    expect(out[0].blocks[0]).toMatchObject({ type: 'text', text: 'sandbox prompt' })
+  })
+
+  it('lists sessions across both host and sandbox roots, deduped by id', async () => {
+    const cwd = '/work/proj'
+    writeSession('host-only', cwd, [userMessage('host prompt')])
+    writeSessionAt(sandboxRoot, 'sandbox-only', cwd, [userMessage('sandbox prompt')])
+    const hostRoot = path.join(tmpHome, '.codex')
+    const out = await new CodexSessionStore().list({ cwd, storeRoots: [hostRoot, sandboxRoot] })
+    const ids = out.map((s) => s.sessionId).sort()
+    expect(ids).toEqual(['host-only', 'sandbox-only'])
+  })
+
+  it('returns empty history when the session is in neither passed root', async () => {
+    const out = await new CodexSessionStore().read('missing', {
+      cwd: '/work/proj',
+      storeRoots: [sandboxRoot],
+    })
+    expect(out).toEqual([])
+  })
+})

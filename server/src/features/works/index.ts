@@ -46,9 +46,11 @@ import {
 import {
   resolveAgent,
   resolveSessionAgentSwitch,
+  resolveSessionStoreScope,
   resolveSessionVendor,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
+import { codexStoreRoots } from '../../kernel/agent/adapters/codex/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { MODE_CATALOGS, isKnownToken } from '../../kernel/agent/adapters/index.js'
 import { CodexSessionStore } from '../../kernel/agent/adapters/codex/index.js'
@@ -116,8 +118,18 @@ async function loadHistoryForVendor(
   sessionId: string,
 ): Promise<TranscriptItem[]> {
   if (vendor === 'codex') {
-    return canonicalToTranscript(await codexHistoryStore.read(sessionId, { cwd: workspacePath }))
+    // Read from the session's frozen store scope's CODEX_HOME first, with the
+    // other root as a fallback (ADR-0015) — so a session that ran in the sandbox
+    // is read back from the persistent sandbox home, not host `~/.codex`.
+    const storeRoots = codexStoreRoots(workspacePath, resolveSessionStoreScope(sessionId))
+    return canonicalToTranscript(
+      await codexHistoryStore.read(sessionId, { cwd: workspacePath, storeRoots }),
+    )
   }
+  // Claude transcripts are read via the SDK, which keys its projects root off the
+  // server process's CLAUDE_CONFIG_DIR. The sandbox writes claude transcripts into
+  // that same host config dir (getSandboxClaudeConfigDir), so no scope branch is
+  // needed here — a sandboxed claude session is already host-readable.
   return loadHistory(workspacePath, sessionId)
 }
 

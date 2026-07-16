@@ -49,11 +49,15 @@ vi.mock('../../sessions.js', () => ({
 }))
 vi.mock('../../kernel/config/index.js', () => ({
   getDefaultMode: vi.fn((_path?: string, _vendor?: string) => 'default'),
+  // Consumed transitively by `codexStoreRoots → getSandboxCodexHome` when the
+  // read path resolves a codex session's data roots.
+  c3HomeDir: vi.fn(() => '/tmp/c3-test-home'),
 }))
 vi.mock('../../kernel/agent-config/index.js', () => ({
   resolveAgent: vi.fn(() => ({ id: 'sys', vendor: 'claude' })),
   resolveSessionAgentSwitch: vi.fn(() => null),
   resolveSessionVendor: vi.fn(() => 'claude'),
+  resolveSessionStoreScope: vi.fn(() => 'host'),
   setSessionAgent: vi.fn(() => ({ ok: true })),
 }))
 vi.mock('../../kernel/agent/process/launcher.js', () => ({ probeAll: vi.fn(() => []) }))

@@ -11,7 +11,6 @@
  */
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
 import path from 'node:path'
-import os from 'node:os'
 import type {
   CanonicalBlock,
   CanonicalMessage,
@@ -19,7 +18,21 @@ import type {
   SessionStore,
   SessionSummary,
 } from '../types.js'
-import type { CanonicalRole } from '@ccc/shared/protocol'
+import type { CanonicalRole, StoreScope } from '@ccc/shared/protocol'
+import { getSandboxCodexHome, hostCodexHome } from '../../../config/workspace-path.js'
+
+/**
+ * The ordered CODEX_HOME roots to scan when reading/listing a codex session for a
+ * workspace: the frozen {@link StoreScope}'s root first, the other as a fallback.
+ * Passing BOTH (rather than only the frozen one) keeps existing/legacy sessions
+ * readable when the workspace sandbox toggle no longer matches how the session
+ * ran — the on-disk match is by session id + cwd, so the extra root is harmless.
+ */
+export function codexStoreRoots(workspacePath: string, scope: StoreScope): string[] {
+  const host = hostCodexHome()
+  const sandbox = getSandboxCodexHome(workspacePath)
+  return scope === 'sandbox' ? [sandbox, host] : [host, sandbox]
+}
 
 export class CodexSessionStore implements SessionStore {
   /**
@@ -37,7 +50,23 @@ export class CodexSessionStore implements SessionStore {
    * first user prompt. Session files beyond `MAX_LIST_DAYS` are not enumerated.
    */
   async list(opts: SessionListOptions): Promise<SessionSummary[]> {
-    const sessionsDir = path.join(os.homedir(), '.codex', 'sessions')
+    // Scan every configured data root (host `~/.codex` and/or the sandbox
+    // CODEX_HOME — ADR-0015 store scope), deduping by session id so a session is
+    // listed once even if two roots are passed. A sandboxed session lives under a
+    // different root than a host one, so both must be walked for the sidebar to
+    // show them all.
+    const roots = storeRootsOrDefault(opts.storeRoots, opts.cwd)
+    const byId = new Map<string, SessionSummary>()
+    for (const root of roots) {
+      for (const summary of this.listRoot(path.join(root, 'sessions'), opts.cwd)) {
+        if (!byId.has(summary.sessionId)) byId.set(summary.sessionId, summary)
+      }
+    }
+    return [...byId.values()]
+  }
+
+  /** Enumerate one `<codexHome>/sessions` tree for a workspace (see {@link list}). */
+  private listRoot(sessionsDir: string, cwd: string): SessionSummary[] {
     if (!existsSync(sessionsDir)) {
       return []
     }
@@ -80,7 +109,7 @@ export class CodexSessionStore implements SessionStore {
           for (const file of readdirSync(dayPath)) {
             if (!file.endsWith('.jsonl')) continue
             const filepath = path.join(dayPath, file)
-            const summary = this.readSessionFile(filepath, opts.cwd)
+            const summary = this.readSessionFile(filepath, cwd)
             if (summary) {
               results.push(summary)
             }
@@ -202,17 +231,26 @@ export class CodexSessionStore implements SessionStore {
   }
 
   async read(sessionId: string, opts: SessionListOptions): Promise<CanonicalMessage[]> {
-    const filepath = this.findSessionFile(sessionId, opts.cwd)
-    if (!filepath) return []
-    try {
-      return this.readSessionHistoryFile(filepath, sessionId)
-    } catch {
-      return []
+    // Try each data root in priority order (frozen store scope first, the other
+    // as a fallback) so a sandbox session's transcript is found under its
+    // CODEX_HOME and a host session's under `~/.codex` — ADR-0015 store scope.
+    for (const root of storeRootsOrDefault(opts.storeRoots, opts.cwd)) {
+      const filepath = this.findSessionFile(sessionId, opts.cwd, path.join(root, 'sessions'))
+      if (!filepath) continue
+      try {
+        return this.readSessionHistoryFile(filepath, sessionId)
+      } catch {
+        return []
+      }
     }
+    return []
   }
 
-  private findSessionFile(sessionId: string, workspacePath: string): string | null {
-    const sessionsDir = path.join(os.homedir(), '.codex', 'sessions')
+  private findSessionFile(
+    sessionId: string,
+    workspacePath: string,
+    sessionsDir: string,
+  ): string | null {
     if (!existsSync(sessionsDir)) return null
     const now = new Date()
     const MAX_READ_DAYS = 365
@@ -654,6 +692,17 @@ function isInjectedContext(text: string): boolean {
     text.includes('<environment_context>') ||
     text.includes('<user_instructions>')
   )
+}
+
+/**
+ * Normalise the caller's data-root list to a non-empty set of CODEX_HOME dirs.
+ * Omitted / empty ⇒ scan BOTH the host `~/.codex` and the workspace's sandbox
+ * CODEX_HOME (dual-scan, ADR-0015) so a caller that doesn't know a session's
+ * frozen scope — e.g. the sidebar's cold enumeration/backfill — still discovers
+ * sandbox sessions. Callers that know the scope pass an explicit ordered list.
+ */
+function storeRootsOrDefault(roots: readonly string[] | undefined, cwd: string): readonly string[] {
+  return roots && roots.length > 0 ? roots : codexStoreRoots(cwd, 'host')
 }
 
 /** Safe JSON parse that returns null (not throws) on invalid input. */

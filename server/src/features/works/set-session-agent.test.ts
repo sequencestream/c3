@@ -94,7 +94,7 @@ function fakeConn() {
 
 describe('set_session_agent handler', () => {
   it('applies a same-vendor swap and replies ok with the unchanged vendor', () => {
-    bindSessionAgent('pending:a', 'real-1', SYSTEM_AGENT_ID, 'claude')
+    bindSessionAgent('pending:a', 'real-1', SYSTEM_AGENT_ID, 'claude', 'host')
     const conn = fakeConn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setSessionAgentHandler({} as any, conn as any, {
@@ -115,7 +115,7 @@ describe('set_session_agent handler', () => {
   })
 
   it('rejects a cross-vendor change and leaves the fact untouched', () => {
-    bindSessionAgent('pending:b', 'real-2', SYSTEM_AGENT_ID, 'claude')
+    bindSessionAgent('pending:b', 'real-2', SYSTEM_AGENT_ID, 'claude', 'host')
     const conn = fakeConn()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setSessionAgentHandler({} as any, conn as any, {

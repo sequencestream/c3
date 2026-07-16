@@ -2,7 +2,7 @@
 
 ## 1. 背景与结论
 
-c3 的 sandbox 只服务 worktree intent-dev run:在隔离 worktree 上开发的意图运行进入沙箱,普通 chat run、current-branch dev run 不进沙箱。沙箱的职责是给这次 run 的 vendor CLI(claude / codex)加一层**进程级隔离**,约束它能读写哪些目录、能否访问网络。
+c3 的 sandbox 服务**工作区启用且 SessionKind 入选**的 run:是否进沙箱由工作区 `enabled` 主开关与该 run 的 `sessionKind` 是否命中 `sandboxSessionKinds` 决定,与 run 来源(Intent / spec / 普通)、是否使用 worktree、`gitBranchMode` 无关。普通工作会话、current-branch dev run 只要 kind 命中即进沙箱。沙箱的职责是给这次 run 的 vendor CLI(claude / codex)加一层**进程级隔离**,约束它能读写哪些目录、能否访问网络。
 
 本文负责"大方向架构设计"。具体启动参数、wrapper、配置合并、run lifecycle 接线等实现细节,由 `doc/domains/core/sandbox/sandbox-design.md` 维护。
 
@@ -52,8 +52,8 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 
 以下约束沿用,不因换成 arapuca 而变:
 
-1. sandbox 仅服务 worktree intent-dev run。chat run、current-branch dev run 不进沙箱。
-2. sandbox 配置按 workspace 解析;实际参与隔离的代码目录是该 run 的 worktree。
+1. sandbox 的适用条件为工作区 `enabled` + 该 run 的 `sessionKind` 命中 `sandboxSessionKinds`,不再以 worktree、来源或分支模式为前提。
+2. sandbox 配置按 workspace 解析;实际参与隔离的代码目录是该 run 的执行根(`rt.effectiveCwd ?? workspacePath`——worktree 或源工作区)。
 3. sandbox 启用后失败路径 hard-fail,不降级 host 裸跑。arapuca 的 fail-closed 与此一致。
 4. run 时随机从有效 agent 池选一个 custom agent 定 vendor,决定沙箱内启动哪个 CLI。
 
@@ -61,8 +61,8 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 
 ### 5.1 当前功能范围
 
-- worktree intent-dev run 启动时,vendor CLI 经 arapuca wrapper 启动。
-- 文件系统 deny-by-default:项目原目录 ro、run worktree rw、specsBase rw;补充目录(`extraMounts`)默认 ro、可逐项声明 rw。
+- 工作区启用且 SessionKind 入选的 run 启动时,vendor CLI 经 arapuca wrapper 启动。
+- 文件系统 deny-by-default:执行根 rw、源工作区 ro(执行根为 worktree 时;current-branch 下二者同路径合并为单条 rw)、specsBase rw;补充目录(`extraMounts`)默认 ro、可逐项声明 rw。
 - 同路径:宿主 `/abs/path` 就是进程看到的 `/abs/path`,不存在路径改写。
 - 敏感目录(其它项目、`~/.ssh`、`~/.aws` 等)不在放行集内即不可见。
 - **网络全开**:当前不施加网络约束。
@@ -147,18 +147,18 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 目标启动流程:
 
 ```
-用户启动 worktree intent-dev run
-  → runtime.mode == sandbox ? 否：direct 路径
-  → resolve workspace sandbox config（启用? + extraMounts）
+run 启动（任意来源 / 分支模式）
+  → 工作区 enabled 且 sessionKind 命中 sandboxSessionKinds ? 否：direct 路径
+  → executionRoot = rt.effectiveCwd ?? workspacePath（worktree 或源工作区）
   → probe arapuca 二进制 + 平台能力及 macOS 嵌套 Seatbelt：缺失/不支持/嵌套 → hard-fail run
-  → pick sandbox agent 得到 vendor（决定入口命令）
+  → resolve 入选 run 的 vendor（决定入口命令）
   → resolvePaths():
-       workspace root:ro
-       worktree:rw
+       executionRoot:rw
+       workspace root:ro（仅当 ≠ executionRoot；同路径并入 executionRoot rw）
        specsBase:rw
        extraMounts[i]:(ro|rw)
-  → 在 worktree 内创建逐 run runtime 目录，提供隔离的 CODEX_HOME
-  → createSandboxWrapper(entryCommand, paths, cwd=worktree, env)
+  → 在执行根内创建逐 run runtime 目录，提供隔离的 CODEX_HOME
+  → createSandboxWrapper(entryCommand, paths, cwd=executionRoot, env)
   → vendor adapter spawn wrapper
   → run 完成后清理 wrapper tmpDir（无容器需停止）
 ```
@@ -170,12 +170,12 @@ wrapper 形态(进程包裹,非 `docker exec`):
 mkdir -p "/tmp/claude-<uid>" 2>/dev/null || true
 exec arapuca run \
   --seccomp baseline \
-  --cwd "<worktree>" \
-  --env "CODEX_HOME=<worktree 内逐 run runtime>/home/.codex" \
-  -v "<worktree 内逐 run runtime>/home/.codex:rw" \
+  --cwd "<executionRoot>" \
+  --env "CODEX_HOME=<执行根内逐 run runtime>/home/.codex" \
+  -v "<执行根内逐 run runtime>/home/.codex:rw" \
   -v "<canonical /tmp>/claude-<uid>:rw" \
-  -v "<workspaceRoot>":ro \
-  -v "<worktree>":rw \
+  -v "<executionRoot>":rw \
+  [ -v "<workspaceRoot>":ro ]   # 仅当 workspaceRoot ≠ executionRoot \
   -v "<specsBase>":rw \
   [ -v "<extraMount>":ro|rw ... ] \
   -- "<entryCommand>" "$@"
@@ -298,5 +298,5 @@ interface WorkspaceSandboxConfig {
 
 - 沙箱从"容器 + 镜像 + bind mount + 凭证注入 + 网络 sidecar"整体切换为"arapuca 进程级隔离"。
 - 删除:`DockerDriver`、镜像健康检查、供应链、env-file 凭证注入、`c3-mcp-net` 内部网络与 forwarder sidecar、MCP/relay URL 改写。
-- 保留:worktree-only 门控、随机 agent 选取定 vendor、启用即硬隔离、wrapper 替换二进制的 per-run 隔离模型、宿主回环 c3 MCP 端点(现在天然直达)。
+- 保留:`enabled` + `sandboxSessionKinds` 资格门控、随机 agent 选取定 vendor、启用即硬隔离、wrapper 替换二进制的 per-run 隔离模型、宿主回环 c3 MCP 端点(现在天然直达)。
 - 相关历史 ADR(容器驱动、双层配置、网络/只读工作区策略)由 ADR-0028 标记 supersede;按宪法这些 ADR 文件保留不删。

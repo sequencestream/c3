@@ -84,7 +84,8 @@ const emit = defineEmits<{
 // it owns. This map is the single save whitelist: saving a tab overlays ONLY these
 // fields (transformed) onto the latest committed snapshot, so a tab's Save never
 // carries another tab's unsaved draft. The `gitSandbox` tab's `sandbox` field is
-// compared/saved with the worktree gate applied (see gitSandboxCmp / saveTab).
+// compared/saved by its enabled state alone, independent of the git branch mode
+// (see gitSandboxCmp / saveTab).
 type WsTab = 'defaultMode' | 'gitSandbox' | 'collab' | 'skillRepos'
 const TABS: WsTab[] = ['defaultMode', 'gitSandbox', 'collab', 'skillRepos']
 const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
@@ -315,13 +316,13 @@ watch(
 
 // The effective sandbox a Save would persist, used for BOTH dirty comparison and
 // as the canonical form the draft and the raw committed value normalize to.
-// Mirrors the save gate: worktree + enabled only. Drops empty extraMounts and a
-// trivial `['work']` sessionKinds so a synthesized draft equals a raw server value.
+// Mirrors the save gate: `enabled` only (independent of git branch mode). Drops
+// empty extraMounts and a trivial `['work']` sessionKinds so a synthesized draft
+// equals a raw server value.
 function effectiveSandbox(
-  gitBranchMode: WorkspaceSetting['gitBranchMode'],
   raw: WorkspaceSandboxConfig | undefined,
 ): WorkspaceSandboxConfig | undefined {
-  if (gitBranchMode !== 'worktree' || !raw || !raw.enabled) return undefined
+  if (!raw || !raw.enabled) return undefined
   const extraMounts = (raw.extraMounts ?? [])
     .map((m) => ({ path: (m.path ?? '').trim(), readonly: m.readonly !== false }))
     .filter((m) => m.path.length > 0)
@@ -345,7 +346,7 @@ function gitSandboxCmp(
   return {
     gitBranchMode: gitBranchMode ?? 'current-branch',
     defaultMainBranch: (defaultMainBranch ?? '').trim(),
-    sandbox: effectiveSandbox(gitBranchMode, rawSandbox),
+    sandbox: effectiveSandbox(rawSandbox),
   }
 }
 
@@ -412,12 +413,14 @@ interface EmbeddedRow {
 function embeddedName(key: string): string {
   if (key === 'workspaceRoot') return t('workspaceSetting.sandbox.embedded.workspaceRoot.name')
   if (key === 'specs') return t('workspaceSetting.sandbox.embedded.specs.name')
+  if (key === 'executionRoot') return t('workspaceSetting.sandbox.embedded.executionRoot.name')
   return t('workspaceSetting.sandbox.embedded.worktree.name')
 }
 /** Localized description for a built-in mount key. */
 function embeddedDesc(key: string): string {
   if (key === 'workspaceRoot') return t('workspaceSetting.sandbox.embedded.workspaceRoot.desc')
   if (key === 'specs') return t('workspaceSetting.sandbox.embedded.specs.desc')
+  if (key === 'executionRoot') return t('workspaceSetting.sandbox.embedded.executionRoot.desc')
   return t('workspaceSetting.sandbox.embedded.worktree.desc')
 }
 
@@ -426,28 +429,56 @@ function embeddedDesc(key: string): string {
  * read-only so users understand the always-on allow set; they cannot be edited
  * or removed here.
  *
- * Workspace-derivable entries (project directory ro, specs root rw) come from
- * the server's single source `sysExtraMounts(workspace)`; the run worktree (rw)
- * is per-run — not workspace-derivable — so it is shown descriptively (no fixed
- * path), inserted after the project directory to match resolve order.
+ * The per-run execution root reflects the git branch mode (never asserting the
+ * source workspace is read-only in a mode where it is not):
+ * - worktree: the source project directory (ro) plus the run's isolated worktree
+ *   (rw, per-run — shown descriptively with no fixed path).
+ * - current-branch: the source workspace IS the execution root (rw); the ro
+ *   project-directory row is replaced by this single rw row.
+ * The specs root (rw) comes from the server's single source `sysExtraMounts`.
  */
 const embeddedMounts = computed<EmbeddedRow[]>(() => {
-  const rows: EmbeddedRow[] = (props.sysExtraMounts ?? []).map((m) => ({
-    key: m.key,
-    name: embeddedName(m.key),
-    desc: embeddedDesc(m.key),
-    path: m.path,
-    readonly: m.readonly,
-  }))
-  const worktreeRow: EmbeddedRow = {
-    key: 'worktree',
-    name: embeddedName('worktree'),
-    desc: embeddedDesc('worktree'),
-    path: null,
-    readonly: false,
+  const sys = props.sysExtraMounts ?? []
+  const wsRoot = sys.find((m) => m.key === 'workspaceRoot')
+  const specs = sys.find((m) => m.key === 'specs')
+  const rows: EmbeddedRow[] = []
+  if (draft.value.gitBranchMode === 'worktree') {
+    // Source project directory (ro) + per-run isolated worktree (rw).
+    if (wsRoot) {
+      rows.push({
+        key: 'workspaceRoot',
+        name: embeddedName('workspaceRoot'),
+        desc: embeddedDesc('workspaceRoot'),
+        path: wsRoot.path,
+        readonly: wsRoot.readonly,
+      })
+    }
+    rows.push({
+      key: 'worktree',
+      name: embeddedName('worktree'),
+      desc: embeddedDesc('worktree'),
+      path: null,
+      readonly: false,
+    })
+  } else {
+    // Current-branch: the source workspace is the read-write execution root.
+    rows.push({
+      key: 'executionRoot',
+      name: embeddedName('executionRoot'),
+      desc: embeddedDesc('executionRoot'),
+      path: wsRoot?.path ?? null,
+      readonly: false,
+    })
   }
-  const rootIdx = rows.findIndex((m) => m.key === 'workspaceRoot')
-  rows.splice(rootIdx >= 0 ? rootIdx + 1 : rows.length, 0, worktreeRow)
+  if (specs) {
+    rows.push({
+      key: 'specs',
+      name: embeddedName('specs'),
+      desc: embeddedDesc('specs'),
+      path: specs.path,
+      readonly: specs.readonly,
+    })
+  }
   return rows
 })
 
@@ -600,11 +631,10 @@ function saveTab(tab: WsTab): void {
       payload.gitBranchMode = draft.value.gitBranchMode
       // Trim the branch; empty ⇒ omit (server normalizes blank → undefined anyway).
       payload.defaultMainBranch = draft.value.defaultMainBranch?.trim() || undefined
-      // Sandbox is worktree-only: emit the normalized effective form only when the
-      // branch mode is `worktree` AND it is enabled. Otherwise explicitly drop the
-      // committed sandbox field so switching to current-branch (or disabling) clears
-      // it on this tab's Save.
-      const eff = effectiveSandbox(draft.value.gitBranchMode, sandboxDraft.value)
+      // Sandbox is independent of the branch mode: emit the normalized effective
+      // form when enabled, else drop the field (disabled). Switching branch modes
+      // preserves the saved sandbox config.
+      const eff = effectiveSandbox(sandboxDraft.value)
       if (eff) payload.sandbox = eff
       else delete payload.sandbox
       break
@@ -817,15 +847,11 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
           <p class="project-config-hint">{{ t('workspaceSetting.defaultMainBranch.hint') }}</p>
         </section>
 
-        <!-- Sandbox section: worktree-only — isolation only makes sense in an
-             isolated worktree (under current-branch the container would bind-mount
-             the live checkout), so it is grouped right after the git branch
-             strategy and hidden whenever the mode is not `worktree`. -->
-        <section
-          v-if="draft.gitBranchMode === 'worktree'"
-          class="project-config-section"
-          data-testid="project-config-sandbox"
-        >
+        <!-- Sandbox section: available in both git branch modes. Which run enters
+             the sandbox is decided by the `enabled` switch and the session-kind
+             allowlist; the read-write execution root differs per mode (isolated
+             worktree, or the source workspace under current-branch). -->
+        <section class="project-config-section" data-testid="project-config-sandbox">
           <p class="project-config-section-title">
             {{ t('workspaceSetting.sandbox.title.label') }}
           </p>

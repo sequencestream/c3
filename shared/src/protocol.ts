@@ -610,9 +610,9 @@ export type SkillApprovalKind = 'gitignore'
  * Each entry is a host absolute path exposed to the sandboxed process at the
  * SAME path (no rewrite). Read-only by default; set {@link readonly} to false
  * to grant read-write. Used to bring extra dependency dirs, shared caches, or
- * reference repos into the deny-by-default allow set. Reserved paths (workspace
- * root / worktree / specsBase) cannot be overridden here — the server drops any
- * such overlap during resolution.
+ * reference repos into the deny-by-default allow set. Reserved paths (execution
+ * root / workspace root / specsBase) cannot be overridden here — the server drops
+ * any such overlap during resolution.
  */
 export interface SandboxExtraMount {
   /** Host absolute path, exposed at the same path inside the sandbox. */
@@ -629,8 +629,10 @@ export interface SandboxExtraMount {
  * into the resolved allow set) and for read-only display in the workspace
  * setting UI. Users cannot edit or remove them.
  *
- * The run worktree (rw) is another fixed allowance but is per-run (not
- * workspace-derivable), so it is not part of this list.
+ * The run's execution root (rw) is another fixed allowance but is per-run (not
+ * workspace-derivable), so it is not part of this list. When it is a worktree it
+ * is shown alongside the ro project directory; when it IS the workspace
+ * (current-branch) resolution collapses the two into a single rw grant.
  */
 export interface SysExtraMount {
   /** Stable id for display/i18n (e.g. `workspaceRoot`, `specs`). */
@@ -644,11 +646,12 @@ export interface SysExtraMount {
 /**
  * Workspace-level sandbox configuration (arapuca process-level isolation).
  *
- * Two server-side normalize invariants apply (see `normalizeSandboxConfig`):
- * - **worktree-only**: sandbox is only meaningful when the workspace's
- *   {@link WorkspaceSetting.gitBranchMode} is `worktree`. Under `current-branch`
- *   the run has no isolated worktree, so the config is dropped (treated as not
- *   configured).
+ * Applicability is decided at run time from `enabled` + `sandboxSessionKinds`,
+ * NOT from the git branch mode. Two properties hold (see `normalizeSandboxConfig`):
+ * - **branch-independent**: the config is validated on its own content and
+ *   preserved under both `gitBranchMode` values — switching modes never drops a
+ *   saved config. Which directories are read-write is resolved per run from its
+ *   execution root (worktree rw + workspace ro, or workspace rw for current-branch).
  * - **agent selection is NOT overridden**: the run uses its normally-resolved
  *   agent (the default selection logic); the sandbox only wraps that agent's
  *   vendor CLI in arapuca. There is no sandbox-specific agent pool.
@@ -665,11 +668,10 @@ export interface WorkspaceSandboxConfig {
   extraMounts?: SandboxExtraMount[]
   /**
    * Session kinds that run inside the sandbox when enabled. Absent ⇒ defaults
-   * to `['work']`. A run enters the sandbox only when its {@link SessionKind}
-   * is in this set, layered on top of the worktree-only precondition — kinds
-   * that never produce a worktree run simply never match. Server normalize
-   * dedupes and drops values outside {@link SESSION_KINDS}; an empty set after
-   * normalize falls back to `['work']`.
+   * to `['work']`. A run enters the sandbox exactly when `enabled` is true and
+   * its {@link SessionKind} is in this set — independent of the run's source or
+   * git branch mode. Server normalize dedupes and drops values outside
+   * {@link SESSION_KINDS}; an empty set after normalize falls back to `['work']`.
    */
   sandboxSessionKinds?: SessionKind[]
 }

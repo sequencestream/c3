@@ -2237,13 +2237,13 @@
       "title": {
         "label": "Sandbox"
       },
-      "hint": "Run this project's worktree dev agents under arapuca process-level isolation: the vendor CLI runs as a host process with directory read/write narrowed by a kernel MAC. The project directory is read-only, the worktree and specs are read-write; everything else is hidden by default. Requires the arapuca binary on the host PATH.",
+      "hint": "Run this project's dev agents under arapuca process-level isolation: the vendor CLI runs as a host process with directory read/write narrowed by a kernel MAC. The run's execution directory and specs are read-write; under worktree mode the source project directory stays read-only, while under current-branch mode the run writes the workspace directly. Everything else is hidden by default. Requires the arapuca binary on the host PATH.",
       "enable": {
         "label": "Enable sandbox"
       },
       "extraMounts": {
         "label": "Extra allowed directories",
-        "hint": "Add supplementary host directories to the allow set (same path). Read-only by default; choose RW to grant write access. Reserved paths (project, worktree, specs) cannot be listed here.",
+        "hint": "Add supplementary host directories to the allow set (same path). Read-only by default; choose RW to grant write access. Reserved paths (project, execution root, specs) cannot be listed here.",
         "pathPlaceholder": "/absolute/host/path",
         "ro": "Read-only",
         "rw": "Read-write",
@@ -2259,7 +2259,11 @@
         },
         "worktree": {
           "name": "Run worktree",
-          "desc": "This run's isolated worktree (path varies per run)"
+          "desc": "This run's isolated worktree, read-write (path varies per run)"
+        },
+        "executionRoot": {
+          "name": "Workspace directory",
+          "desc": "Current-branch runs write the workspace directly, read-write"
         },
         "specs": {
           "name": "Specs directory",
@@ -2268,7 +2272,7 @@
       },
       "sessionKinds": {
         "label": "Sandboxed session kinds",
-        "hint": "Which run kinds enter the sandbox. Defaults to work; kinds that never produce a worktree run simply never match."
+        "hint": "Which session kinds enter the sandbox when enabled. Defaults to work; every selected kind is sandboxed regardless of its git branch mode or source."
       }
     }
   },

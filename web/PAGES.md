@@ -119,7 +119,8 @@ web/src/
 │   └── useSpeechRecognition.ts                      # Web Speech API 轻封装:浏览器语音转文字,持续聆听、自动重启、final/interim 回调
 │
 ├── lib/                                             # 纯逻辑工具模块(无 DOM/框架依赖优先)
-│   ├── agent-prefix.ts                              # 客户端推断当前 session 运行的 agent 展示名:本地复刻服务端降级链
+│   ├── agent-prefix.ts                              # 客户端推断当前 session 运行的 agent 展示名:本地复刻服务端降级链;识别 `_c3_<group>` 虚拟 group agent(ADR-0029)展示组名
+│   ├── group-agents.ts                              # 客户端派生虚拟 group agent(ADR-0029):listGroupAgents/groupAgentsOfVendor 本地复刻服务端枚举(每个 (vendor,group) 一项,不同 vendor 可同名),agentRefDisplayName 把 `_c3_<vendor>_<group>` ref 原样带前缀展示;供各 agent 选择器以 `_c3_<vendor>_<组名>` 列出 group 选项
 │   ├── authToken.ts                                 # 会话 token 持久化(localStorage,guard 无 DOM 环境):get/set/clear,供 ws.ts 握手 ?token= 复用
 │   ├── ask.ts                                       # AskUserQuestion 辅助:提取问题列表、共识意见、选项/自定义答案聚合
 │   ├── chat-types.ts                                # 聊天消息数据模型:ChatBody/ChatMsg/PermissionMsg/RunActivity/Block 类型(含 standalone 块)、多说话人 SpeakerView

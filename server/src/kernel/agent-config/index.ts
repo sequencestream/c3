@@ -21,27 +21,36 @@ import type {
   SystemSettings,
   VendorId,
 } from '@ccc/shared/protocol'
-import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+import {
+  groupAgentRef,
+  isGroupAgentRef,
+  parseGroupAgentRef,
+  SYSTEM_AGENT_ID,
+} from '@ccc/shared/protocol'
+import type { RelayCandidate } from '../relay/contract.js'
+import { getRelay, withLoopbackNoProxy } from '../relay/runtime.js'
 
 /**
- * The launch overrides {@link launchForAgent} resolves from one agent. `claude`
- * routes provider config into {@link envOverrides} (env vars); driver-path vendors
- * (`codex`) carry raw {@link baseUrl}/{@link apiKey} their SDK takes as
- * constructor options; `model` is neutral. Empty/system-mode agents yield `{}`
- * (no overrides). Codex's launch-time policy gate is NOT here — it is derived from
- * the session `defaultMode` in the driver, not from the agent config (2026-06-06-008).
+ * The launch overrides {@link launchForCandidates} resolves from an agent (or a
+ * group's candidate list). ALL vendors now route their provider connection through
+ * the loopback relay (ADR-0029): a `custom` agent yields a {@link relayCandidates}
+ * list (the real upstreams, bound behind a per-run token at the spawn site) instead
+ * of raw baseUrl/key, so the real key never reaches the vendor subprocess. A
+ * `system`/empty agent yields no candidates (the vendor CLI's own login) and only a
+ * neutral `model` override. `envOverrides` carries only non-secret env (proxy vars,
+ * the claude third-party workaround flag). Codex's launch-time policy gate is NOT
+ * here — the driver derives it from the session `defaultMode` (2026-06-06-008).
  */
 export interface LaunchOverrides {
   envOverrides?: Record<string, string>
   model?: string
-  baseUrl?: string
-  apiKey?: string
   /**
-   * Codex-only: the custom provider's wire protocol (`responses`/`chat`), which
-   * the codex driver routes on — `chat` ⇒ relay, `responses` ⇒ direct
-   * (2026-06-12-006). Only set for a `custom` codex agent; omitted otherwise.
+   * The ordered relay candidate list for a `custom` agent / group (one entry per
+   * enabled member, in priority order). Absent ⇒ system mode (own login), direct.
+   * The spawn site (`codex` driver / the claude launch path / the one-shot advisor)
+   * registers this behind a per-run token; the relay fails over across it.
    */
-  wireApi?: 'responses' | 'chat'
+  relayCandidates?: RelayCandidate[]
 }
 import {
   bindSessionAgent,
@@ -134,9 +143,20 @@ export function resolveFirstAgentOfVendor(vendor: VendorId): AgentConfig {
   return match ?? resolveAgent(null)
 }
 
-/** The agent for an id, or the default agent if the id is null/unknown. */
+/**
+ * The agent for a reference, or the default agent if it is null/unknown. A virtual
+ * group reference (`_c3_<vendor>_<group>`) resolves to that group's highest-priority
+ * enabled member (its representative — for vendor/model display and the single-agent
+ * callers); an empty group falls through to the default (ADR-0029).
+ */
 export function resolveAgent(agentId: string | null): AgentConfig {
   const settings = loadSettings()
+  const g = agentId ? parseGroupAgentRef(agentId) : null
+  if (g) {
+    const members = groupAgents(g.vendor, g.group, settings)
+    if (members.length > 0) return members[0]
+    agentId = null // empty group ⇒ fall through to the default fallback
+  }
   const byId = agentId ? settings.agents.find((a) => a.id === agentId) : undefined
   return (
     byId ??
@@ -164,8 +184,7 @@ export function resolveToolAgent(): AgentConfig {
  * judge / naming one-shots execute on the configured tool agent.
  */
 export function resolveToolSessionLaunch(): { agentId: string } & LaunchOverrides {
-  const agent = resolveToolAgent()
-  return { agentId: agent.id, ...launchForAgent(agent) }
+  return resolveLaunchForRef(getToolAgentId() || null)
 }
 
 /**
@@ -193,78 +212,56 @@ export function resolveSpecAgent(): AgentConfig {
 }
 
 /**
- * Map one agent's config to {@link LaunchOverrides}, routed by its `vendor` tag
- * and gated by its `configMode` (2026-06-06-007). `configMode: 'system'` ⇒ use
- * the vendor CLI's own config: NO provider connection override (`baseUrl`/`apiKey`
- * are ignored) — the old system-agent behaviour, now available on any vendor —
- * but `model` IS a standalone override read in both `system` and `custom` mode
- * (2026-07-02-001). `configMode: 'custom'` ⇒ apply the full provider triple
- * (baseUrl, apiKey, model). Codex's launch-time policy gate
- * (`sandboxMode`/`approvalPolicy`) is NOT a provider override and is NOT
- * carried here — the driver derives it from the session `defaultMode`
- * (2026-06-06-008). Shared by session launches and consensus advisor calls.
+ * Map one agent's `custom` provider config to a relay candidate — the real upstream
+ * `{baseUrl, apiKey, model, wireApi?}` the relay binds behind a per-run token
+ * (ADR-0029). Returns null for a `system`-mode agent or an empty base URL ⇒ no
+ * relay, the vendor CLI's own login applies. `wireApi` rides only for codex (it
+ * selects the relay's translate-vs-passthrough); claude is anthropic passthrough.
  */
-export function launchForAgent(agent: AgentConfig): LaunchOverrides {
+function agentToRelayCandidate(agent: AgentConfig): RelayCandidate | null {
+  if (agent.configMode !== 'custom') return null
+  const { baseUrl, apiKey, model } = agent.config
+  if (!baseUrl) return null
+  return agent.vendor === 'codex'
+    ? { baseUrl, apiKey, model, wireApi: agent.config.wireApi }
+    : { baseUrl, apiKey, model }
+}
+
+/**
+ * Map an ordered candidate list (one agent ⇒ length 1, a group ⇒ its members in
+ * priority order) to {@link LaunchOverrides} (ADR-0029). Every `custom` member
+ * becomes a relay candidate — the real key is bound behind a per-run token at the
+ * spawn site, never handed to the vendor subprocess. `system`/empty members carry
+ * no candidate (the CLI's own login). The CLI's fixed launch `model` is the first
+ * candidate's real model (a placeholder — the relay overrides it per hit candidate);
+ * with no candidate it is the first agent's standalone `model` override. Codex's
+ * launch-time policy gate is derived from the session `defaultMode` in the driver
+ * (2026-06-06-008), not here.
+ */
+export function launchForCandidates(candidates: AgentConfig[]): LaunchOverrides {
   const env: Record<string, string> = {}
-  let model: string | undefined
-  let baseUrl: string | undefined
-  let apiKey: string | undefined
-  let wireApi: 'responses' | 'chat' | undefined
+  const relayCandidates: RelayCandidate[] = []
+  let hasCustomClaude = false
+  for (const agent of candidates) {
+    const cand = agentToRelayCandidate(agent)
+    if (!cand) continue
+    relayCandidates.push(cand)
+    if (agent.vendor === 'claude') hasCustomClaude = true
+  }
+  // model: the CLI's fixed launch model — the first candidate's real model, else the
+  // first agent's standalone model override (read in both system and custom mode).
+  const model = relayCandidates[0]?.model || candidates[0]?.config.model || undefined
 
-  // `custom` applies the full provider triple (baseUrl/apiKey/model + env);
-  // `system` injects ONLY the standalone `model` override (when non-empty),
-  // leaving the connection to the vendor CLI's own config (2026-07-02-001).
-  const custom = agent.configMode === 'custom'
-
-  switch (agent.vendor) {
-    case 'claude': {
-      // model override is standalone — read in BOTH system and custom mode
-      // (2026-07-02-001). Non-empty ⇒ overrides the vendor default model.
-      const { model: m } = agent.config
-      if (m) model = m
-      if (custom) {
-        const { baseUrl: u, apiKey: k } = agent.config
-        if (u) env.ANTHROPIC_BASE_URL = u
-        if (k) {
-          // Cover both auth schemes: ANTHROPIC_API_KEY for first-party,
-          // ANTHROPIC_AUTH_TOKEN for gateways/proxies that expect a bearer token.
-          env.ANTHROPIC_API_KEY = k
-          env.ANTHROPIC_AUTH_TOKEN = k
-        }
-        // WORKAROUND (remove later): recent Claude Code introduced an "adaptive
-        // thinking" mechanism that changes the request message format. Third-party
-        // Anthropic-compatible gateways (e.g. DeepSeek) don't yet accept that format —
-        // they reject the inline `system`-role messages with a 400
-        // (`messages[].role: unknown variant system`). CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1
-        // turns off just that mechanism, restoring the compatible message format while
-        // keeping CLAUDE.md/memory, Skills, and hooks (unlike the heavier
-        // CLAUDE_CODE_SIMPLE=1 / `--bare` fallback). REMOVE once third-party providers
-        // support the new format. Only a `custom` claude agent is third-party; a
-        // `system` claude agent (first-party Anthropic) skips this whole arm.
-        env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = '1'
-      }
-      break
-    }
-    case 'codex': {
-      // model override is standalone — read in BOTH system and custom mode
-      // (2026-07-02-001). Non-empty ⇒ overrides the vendor default model.
-      const { model: m } = agent.config
-      if (m) model = m
-      // Provider connection (custom only): raw baseUrl/apiKey for the Codex SDK
-      // constructor (NOT env — CodexOptions.env replaces process.env), model neutral.
-      // `wireApi` rides along so the driver routes DIRECT (responses) vs RELAY
-      // (chat) deterministically rather than guessing from baseUrl (2026-06-12-006).
-      if (custom) {
-        const { baseUrl: u, apiKey: k, wireApi: w } = agent.config
-        if (u) baseUrl = u
-        if (k) apiKey = k
-        wireApi = w
-      }
-      // The launch-time policy gate (sandbox/approval) is the per-tool-approval
-      // substitute (008), but it is NOT stored on the agent: the codex driver
-      // derives it from the session `defaultMode` via the neutral grid (2026-06-06-008).
-      break
-    }
+  if (hasCustomClaude) {
+    // WORKAROUND (remove later): recent Claude Code introduced an "adaptive thinking"
+    // mechanism that changes the request message format. Third-party Anthropic-compatible
+    // gateways (e.g. DeepSeek) reject that format with a 400 (`messages[].role: unknown
+    // variant system`). CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1 turns off just that
+    // mechanism, restoring the compatible message format while keeping CLAUDE.md/memory,
+    // Skills, and hooks. REMOVE once third-party providers support the new format. Only a
+    // `custom` claude provider (a relay candidate) is third-party; a `system` claude
+    // agent (first-party Anthropic) never sets this.
+    env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = '1'
   }
 
   // Session subprocess proxy env vars: only inject when enabled AND the URL is
@@ -285,22 +282,130 @@ export function launchForAgent(agent: AgentConfig): LaunchOverrides {
   return {
     ...(Object.keys(env).length > 0 ? { envOverrides: env } : {}),
     ...(model ? { model } : {}),
-    ...(baseUrl ? { baseUrl } : {}),
-    ...(apiKey ? { apiKey } : {}),
-    ...(wireApi ? { wireApi } : {}),
+    ...(relayCandidates.length > 0 ? { relayCandidates } : {}),
   }
 }
 
+/** Back-compat single-agent launch — a length-1 candidate list. */
+export function launchForAgent(agent: AgentConfig): LaunchOverrides {
+  return launchForCandidates([agent])
+}
+
+/** A claude relay binding: the ANTHROPIC env pointing the SDK at the relay + the
+ *  per-run token to release when the spawn ends. */
+export interface ClaudeRelayBinding {
+  envOverrides: Record<string, string>
+  token: string
+}
+
 /**
- * Resolve how to launch Claude Code for a session: the resolved agent's id plus
- * its Claude config mapped to SDK launch overrides.
+ * Register a claude candidate list with the process relay and build the ANTHROPIC
+ * env that points the Claude SDK at the relay's anthropic endpoint with the per-run
+ * token — the real key stays in the relay, never in the subprocess/sandbox
+ * (ADR-0029). Returns null when no relay is wired (tests / no composition root) or
+ * there are no candidates (system mode) ⇒ the caller launches with the CLI's own
+ * login. The codex driver does the equivalent registration itself; this helper
+ * serves the two claude spawn sites (the resident run loop and the one-shot advisor)
+ * that drive the SDK directly. Release the token with {@link unbindRelay}.
+ */
+export function bindClaudeRelay(
+  candidates: RelayCandidate[] | undefined,
+): ClaudeRelayBinding | null {
+  const relay = getRelay()
+  if (!relay || !candidates || candidates.length === 0) return null
+  const token = relay.register(candidates)
+  return {
+    token,
+    envOverrides: {
+      ANTHROPIC_BASE_URL: relay.endpoint('claude'),
+      ANTHROPIC_API_KEY: token,
+      ANTHROPIC_AUTH_TOKEN: token,
+      NO_PROXY: withLoopbackNoProxy(process.env.NO_PROXY),
+      no_proxy: withLoopbackNoProxy(process.env.no_proxy),
+    },
+  }
+}
+
+/** Release a relay token bound by {@link bindClaudeRelay} (run/one-shot teardown). */
+export function unbindRelay(token: string): void {
+  getRelay()?.unregister(token)
+}
+
+/**
+ * The enabled agents that make up a group `(vendor, group)`, in priority order
+ * (`order_seq` ascending). The group identity carries the vendor (ADR-0029), so
+ * DIFFERENT vendors may reuse the same group name — each is a distinct group. Empty
+ * when no enabled agent of that vendor carries that group.
+ */
+export function groupAgents(
+  vendor: VendorId,
+  group: string,
+  settings: SystemSettings = loadSettings(),
+): AgentConfig[] {
+  return enabledAgents(settings).filter(
+    (a) => a.vendor === vendor && (a.group?.trim() ?? '') === group,
+  )
+}
+
+/**
+ * Enumerate the virtual group agents (`_c3_<vendor>_<group>`, ADR-0029): for each
+ * distinct `(vendor, group)` among enabled agents (in `order_seq` order), one entry.
+ * The single source every agent-selection point on the server draws group options
+ * from (e.g. the session agent switcher). `id`/`displayName` are both the prefixed ref
+ * so the group reads as `_c3_<vendor>_<group>`.
+ */
+export function enumerateGroupAgents(
+  settings: SystemSettings = loadSettings(),
+): Array<{ id: string; group: string; vendor: VendorId }> {
+  const seen = new Map<string, { id: string; group: string; vendor: VendorId }>()
+  for (const a of enabledAgents(settings)) {
+    const g = a.group?.trim()
+    if (!g) continue
+    const id = groupAgentRef(a.vendor, g)
+    if (!seen.has(id)) seen.set(id, { id, group: g, vendor: a.vendor })
+  }
+  return [...seen.values()]
+}
+
+/**
+ * Resolve an agent reference to its ordered candidate list (ADR-0029):
+ *  - a real id             → `[that agent]` (length 1)
+ *  - `_c3_<vendor>_<group>` → that `(vendor, group)`'s enabled members, priority order
+ *  - unknown / empty group  → the default-agent fallback (length 1)
+ * Never empty — a group that resolved to nothing falls back like {@link resolveAgent}.
+ * A plain (non-group) agent is the degenerate length-1 candidate list, sharing the
+ * same launch/failover path as a group.
+ */
+export function resolveAgentCandidates(ref: string | null): AgentConfig[] {
+  const g = ref ? parseGroupAgentRef(ref) : null
+  if (g) {
+    const members = groupAgents(g.vendor, g.group)
+    return members.length > 0 ? members : [resolveAgent(null)]
+  }
+  return [resolveAgent(ref)]
+}
+
+/**
+ * Resolve a reference (real id / `_c3_<vendor>_<group>` / empty) to its bound agent id
+ * plus candidate launch overrides. A group reference stays bound as the agent id so
+ * every run re-resolves the group and re-failovers from its highest-priority member; a
+ * real reference binds to the resolved (fallback-applied) id.
+ */
+function resolveLaunchForRef(ref: string | null): { agentId: string } & LaunchOverrides {
+  const candidates = resolveAgentCandidates(ref)
+  const g = ref ? parseGroupAgentRef(ref) : null
+  const agentId = g && groupAgents(g.vendor, g.group).length > 0 ? ref! : candidates[0].id
+  return { agentId, ...launchForCandidates(candidates) }
+}
+
+/**
+ * Resolve how to launch a session: its bound agent (real id or `_c3_<group>`) mapped
+ * to the candidate launch overrides. A group binding re-resolves + re-failovers each run.
  */
 export function resolveSessionLaunch(
   sessionId: string | null,
 ): { agentId: string } & LaunchOverrides {
-  const agentId = sessionId ? getSessionAgentId(sessionId) : null
-  const agent = resolveAgent(agentId)
-  return { agentId: agent.id, ...launchForAgent(agent) }
+  return resolveLaunchForRef(sessionId ? getSessionAgentId(sessionId) : null)
 }
 
 /**
@@ -333,13 +438,18 @@ export function freezeSessionAgent(
   workspacePath: string,
 ): void {
   const resolved = resolveAgent(agentId)
-  bindSessionAgent(pendingId, realId, resolved.id, resolved.vendor)
+  // Preserve a virtual group binding (`_c3_<group>`, ADR-0029): the session stays
+  // bound to the group so every future run re-resolves it and re-failovers from the
+  // highest-priority member. The frozen vendor is the group's locked vendor (the
+  // resolved representative member's vendor). A real ref binds to the resolved id.
+  const boundId = isGroupAgentRef(agentId) ? agentId : resolved.id
+  bindSessionAgent(pendingId, realId, boundId, resolved.vendor)
   onBind?.({
     pendingId,
     realId,
     workspacePath,
     vendor: resolved.vendor,
-    agentId: resolved.id,
+    agentId: boundId,
   })
 }
 
@@ -370,20 +480,23 @@ export function setSessionAgent(sessionId: string, agentId: string | null): { ok
         scope: 'pending',
         sessionId,
         vendor: resolved.vendor,
-        agentId: resolved.id,
+        // Preserve a virtual group ref (`_c3_<group>`) so the pending session
+        // re-resolves the group each run (ADR-0029); a real ref uses the resolved id.
+        agentId: isGroupAgentRef(agentId) ? agentId : resolved.id,
       })
     }
     return { ok: true }
   }
   if (agentId === null || agentId === '') return { ok: false }
   const resolved = resolveAgent(agentId)
-  const ok = changeSessionAgentFact(sessionId, resolved.id, resolved.vendor)
+  const boundId = isGroupAgentRef(agentId) ? agentId : resolved.id
+  const ok = changeSessionAgentFact(sessionId, boundId, resolved.vendor)
   if (ok) {
     onAgentSwap?.({
       scope: 'real',
       sessionId,
       vendor: resolved.vendor,
-      agentId: resolved.id,
+      agentId: boundId,
     })
   }
   return { ok }
@@ -446,8 +559,7 @@ export function resolveDegradationAgent(
 ): ({ agentId: string } & LaunchOverrides) | null {
   const chain = getDegradationChain()
   if (!chain || chainIndex < 0 || chainIndex >= chain.length) return null
-  const agent = resolveAgent(chain[chainIndex])
-  return { agentId: agent.id, ...launchForAgent(agent) }
+  return resolveLaunchForRef(chain[chainIndex])
 }
 
 /**
@@ -516,14 +628,29 @@ export function resolveSessionAgentSwitch(
   presentVendors: Set<VendorId>,
 ): SessionAgentSwitch | null {
   if (!sessionId) return null
-  const current = resolveAgent(getSessionAgentId(sessionId))
+  const rawId = getSessionAgentId(sessionId)
+  // A group-bound session (`_c3_<vendor>_<group>`, ADR-0029) shows the GROUP as its
+  // current agent (id/display = the ref itself); its representative member's vendor is
+  // the frozen vendor. A real binding shows the agent itself.
+  const group = rawId ? parseGroupAgentRef(rawId) : null
+  const current = resolveAgent(rawId)
   const vendor = current.vendor
-  const candidates = sameVendorEnabledAgents(vendor, current.id)
+  const currentId = group ? rawId! : current.id
+  // A group shows as its prefixed ref `_c3_<vendor>_<group>`; a real agent as its name.
+  const currentName = group ? rawId! : current.displayName
+  // Candidates: the other same-vendor real agents PLUS the same-vendor virtual group
+  // agents (so a session can be switched onto a group — relay failover). Group refs
+  // read as `_c3_<vendor>_<group>`. The current binding (real id or group ref) is excluded.
+  const realCandidates = sameVendorEnabledAgents(vendor, group ? null : current.id)
     .filter((a) => presentVendors.has(a.vendor))
     .map((a) => ({ id: a.id, displayName: a.displayName }))
+  const groupCandidates = enumerateGroupAgents()
+    .filter((g) => g.vendor === vendor && g.id !== currentId && presentVendors.has(g.vendor))
+    .map((g) => ({ id: g.id, displayName: g.id }))
+  const candidates = [...realCandidates, ...groupCandidates]
   const currentUnavailable = !presentVendors.has(vendor)
   return {
-    current: { id: current.id, displayName: current.displayName },
+    current: { id: currentId, displayName: currentName },
     candidates,
     currentUnavailable,
   }

@@ -226,6 +226,9 @@
         },
         "icon": {
           "label": "アイコン"
+        },
+        "group": {
+          "label": "グループ"
         }
       },
       "toggle": {
@@ -343,6 +346,13 @@
       },
       "reorder": {
         "tooltip": "ドラッグして並べ替え"
+      },
+      "group": {
+        "placeholder": "グループ名(任意)",
+        "tooltip": "グループ名——同じグループの agent は 1 つのフェイルオーバー候補集になります。"
+      },
+      "groupPicker": {
+        "label": "グループ"
       }
     },
     "defaultMode": {
@@ -1080,7 +1090,8 @@
       "agent": {
         "label": "エージェント",
         "autoHint": "デフォルトエージェントを使用（{name}）",
-        "autoHintNoDefault": "デフォルトエージェントを使用"
+        "autoHintNoDefault": "デフォルトエージェントを使用",
+        "groupLabel": "グループ"
       },
       "missing": {
         "suffix": "バイナリが PATH にありません",
@@ -1455,7 +1466,8 @@
       },
       "agent": {
         "label": "Agent",
-        "placeholder": "Select an agent"
+        "placeholder": "Select an agent",
+        "groupLabel": "グループ"
       },
       "tools": {
         "label": "許可されたツール",

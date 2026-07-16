@@ -226,6 +226,9 @@
         },
         "icon": {
           "label": "Значок"
+        },
+        "group": {
+          "label": "Группа"
         }
       },
       "toggle": {
@@ -343,6 +346,13 @@
       },
       "reorder": {
         "tooltip": "Перетащите для изменения порядка"
+      },
+      "group": {
+        "placeholder": "Имя группы (необязательно)",
+        "tooltip": "Имя группы — агенты одной группы образуют пул отказоустойчивости."
+      },
+      "groupPicker": {
+        "label": "Группы"
       }
     },
     "defaultMode": {
@@ -1080,7 +1090,8 @@
       "agent": {
         "label": "Агент",
         "autoHint": "Используется агент по умолчанию ({name})",
-        "autoHintNoDefault": "Используется агент по умолчанию"
+        "autoHintNoDefault": "Используется агент по умолчанию",
+        "groupLabel": "Группы"
       },
       "missing": {
         "suffix": "бинарный файл не в PATH",
@@ -1455,7 +1466,8 @@
       },
       "agent": {
         "label": "Agent",
-        "placeholder": "Select an agent"
+        "placeholder": "Select an agent",
+        "groupLabel": "Группы"
       },
       "tools": {
         "label": "Разрешённые инструменты",

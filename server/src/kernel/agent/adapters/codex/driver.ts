@@ -37,7 +37,7 @@ import type {
 import type { CodexPolicy } from '@ccc/shared/protocol'
 import { codexCapabilities } from './capabilities.js'
 import { itemToCanonical } from './translate.js'
-import { CODEX_RELAY_PROVIDER, type CodexRelay } from './relay-contract.js'
+import { CODEX_RELAY_PROVIDER, type Relay } from '../../../relay/contract.js'
 import { writeImageTempFiles, cleanupImageTempFiles, type ImageTempFiles } from './image-files.js'
 import { resolve } from '../../process/launcher.js'
 
@@ -528,14 +528,14 @@ export class CodexDriver implements AgentDriver {
 
   /**
    * @param createCodex SDK boundary (tests inject a fake).
-   * @param relay The in-process Responses→Chat relay (ADR-0014). When present and
-   *   the run has a custom provider URL, codex is pointed at the relay instead of
-   *   the raw provider; when absent (or no custom URL), the provider connects
-   *   directly (the original path).
+   * @param relay The in-process vendor-neutral relay. When present and the run
+   *   carries a custom provider (relay candidate list), codex is pointed at the
+   *   relay's codex endpoint instead of the raw provider; when absent (or no
+   *   candidates — system mode), codex uses its own login/config directly.
    */
   constructor(
     private readonly createCodex: CodexFactory = defaultFactory,
-    private readonly relay?: CodexRelay,
+    private readonly relay?: Relay,
   ) {}
 
   async start(opts: DriverStartOptions): Promise<AgentRun> {
@@ -547,27 +547,20 @@ export class CodexDriver implements AgentDriver {
     if (opts.signal.aborted) controller.abort()
     else opts.signal.addEventListener('abort', () => controller.abort(), { once: true })
 
-    // Provider connection comes from the agent's `custom` config. The route is
-    // decided by the provider's declared `wireApi` (2026-06-12-006), NOT guessed
-    // from the presence of a baseUrl — the old heuristic sent EVERY custom codex
-    // provider through the relay, corrupting providers that natively speak
-    // Responses. Two routes:
-    //  - RELAY (ADR-0014): `wireApi === 'chat'` + a custom provider URL + the relay
-    //    present ⇒ the provider is Chat-Completions-only, but codex 0.137 only
-    //    speaks Responses. So point codex at c3's in-process Responses→Chat relay:
-    //    register the REAL upstream behind an opaque token, pass the token as the
-    //    codex API key, define a custom model_provider with `supports_websockets=false`
-    //    (forces plain HTTP POST + SSE the relay serves), and inject NO_PROXY so the
-    //    loopback hop bypasses a user proxy.
-    //  - DIRECT (original path): `wireApi === 'responses'` (provider serves Responses
-    //    natively), or no relay / no custom URL (system mode) ⇒ baseUrl/apiKey go
-    //    straight to the SDK as constructor options (NOT env — CodexOptions.env
-    //    REPLACES process.env and would drop PATH). `system` configMode leaves
-    //    them undefined ⇒ the Codex CLI's own login/config applies.
+    // Provider connection comes from the agent's `custom` config, delivered as a
+    // relay candidate list (one entry for a plain agent, N for a group). Two routes:
+    //  - RELAY: candidates present + the relay wired ⇒ ALL custom codex providers go
+    //    through c3's in-process vendor-neutral relay (the relay translates
+    //    Responses↔Chat for `chat` upstreams and passes through `responses` ones, and
+    //    fails over across the candidate list). Register the candidate list behind an
+    //    opaque token, pass the token as the codex API key, define a custom
+    //    model_provider with `supports_websockets=false` (forces plain HTTP POST + SSE
+    //    the relay serves), and inject NO_PROXY so the loopback hop bypasses a user proxy.
+    //  - DIRECT: no candidates (system mode) ⇒ the Codex CLI's own login/config applies.
     let relayToken: string | undefined
     let codexOptions: CodexFactoryOptions
-    if (this.relay && opts.baseUrl && opts.wireApi === 'chat') {
-      relayToken = this.relay.register({ baseUrl: opts.baseUrl, apiKey: opts.apiKey ?? '' })
+    if (this.relay && opts.relayCandidates && opts.relayCandidates.length > 0) {
+      relayToken = this.relay.register(opts.relayCandidates)
       // Sandbox (arapuca): the run is a host process on the host loopback, so the
       // relay is reached at `127.0.0.1` directly — no host-gateway alias, no URL
       // rewrite. The per-run token rides as `CODEX_API_KEY` (set by codexExecEnv on
@@ -581,7 +574,7 @@ export class CodexDriver implements AgentDriver {
           model_providers: {
             [CODEX_RELAY_PROVIDER]: {
               name: CODEX_RELAY_PROVIDER,
-              base_url: this.relay.baseUrl,
+              base_url: this.relay.endpoint('codex'),
               env_key: 'CODEX_API_KEY',
               wire_api: 'responses',
               supports_websockets: false,
@@ -596,8 +589,6 @@ export class CodexDriver implements AgentDriver {
       // process. Merging matches the container wrapper's buildChildEnv semantics.
       codexOptions = {
         ...(opts.envOverrides ? { env: { ...inheritedEnv(), ...opts.envOverrides } } : {}),
-        ...(opts.baseUrl ? { baseUrl: opts.baseUrl } : {}),
-        ...(opts.apiKey ? { apiKey: opts.apiKey } : {}),
       }
     }
     // Remote MCP servers (2026-06-12-005): codex 0.139 supports streamable-HTTP MCP

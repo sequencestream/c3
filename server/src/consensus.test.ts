@@ -50,6 +50,8 @@ vi.mock('./kernel/agent-config/index.js', () => ({
   selectConsensusVoters: () => roster.ids.map(agent),
   launchForAgent: () => ({}),
   resolveAgent: () => agent('decider'),
+  bindClaudeRelay: () => null,
+  unbindRelay: () => {},
 }))
 vi.mock('./kernel/config/index.js', () => ({
   isConsensusEnabled: (_workspacePath?: string) => true,

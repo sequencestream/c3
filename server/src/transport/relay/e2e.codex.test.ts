@@ -16,7 +16,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createCodexRelay, CODEX_RELAY_PATH, CODEX_RELAY_PROVIDER } from './index.js'
+import { createRelay, RELAY_CODEX_PATH, CODEX_RELAY_PROVIDER } from './index.js'
 
 const codexBin = spawnSync('which', ['codex']).stdout?.toString().trim()
 const codexExecProbe = codexBin
@@ -73,10 +73,17 @@ describe.skipIf(!hasCodex)('codex ⇄ relay end-to-end', () => {
         s.close(() => r(p))
       })
     })
-    const relay = createCodexRelay(`http://127.0.0.1:${relayPort}`)
-    token = relay.register({ baseUrl: `http://127.0.0.1:${upstream.port}`, apiKey: 'sk-upstream' })
+    const relay = createRelay(`http://127.0.0.1:${relayPort}`)
+    token = relay.register([
+      {
+        baseUrl: `http://127.0.0.1:${upstream.port}`,
+        apiKey: 'sk-upstream',
+        model: 'deepseek-chat',
+        wireApi: 'chat',
+      },
+    ])
     const app = new Hono()
-    app.post(`${CODEX_RELAY_PATH}/responses`, (c) => relay.handler(c))
+    app.post(`${RELAY_CODEX_PATH}/responses`, (c) => relay.codexHandler(c))
     relayServer = serve({ fetch: app.fetch, port: relayPort, hostname: '127.0.0.1' })
   })
 
@@ -105,7 +112,7 @@ function runCodex(relayPort: number, token: string, prompt: string): Promise<str
       '-c',
       `model_providers.${CODEX_RELAY_PROVIDER}.name="${CODEX_RELAY_PROVIDER}"`,
       '-c',
-      `model_providers.${CODEX_RELAY_PROVIDER}.base_url="http://127.0.0.1:${relayPort}${CODEX_RELAY_PATH}"`,
+      `model_providers.${CODEX_RELAY_PROVIDER}.base_url="http://127.0.0.1:${relayPort}${RELAY_CODEX_PATH}"`,
       '-c',
       `model_providers.${CODEX_RELAY_PROVIDER}.env_key="CODEX_API_KEY"`,
       '-c',

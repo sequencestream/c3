@@ -31,6 +31,7 @@ import type {
   ToolManifestEntry,
   VendorId,
 } from '@ccc/shared/protocol'
+import type { RelayCandidate } from '../../relay/contract.js'
 
 /**
  * The canonical message model now lives on the WIRE (`shared/protocol.ts`) so it
@@ -271,24 +272,17 @@ export interface DriverStartOptions {
   resume?: string
   /** Model alias/id override. Omit ⇒ adapter default. */
   model?: string
-  /** Child-process env overrides (e.g. an agent's base URL / key). */
+  /** Child-process env overrides (e.g. proxy vars, the claude workaround flag). */
   envOverrides?: Record<string, string>
   /**
-   * Raw provider base URL override for driver-path vendors whose SDK takes it as
-   * a constructor option rather than an env var (Codex). Omit ⇒ vendor default /
-   * system config (2026-06-06-007). Claude carries this via {@link envOverrides}
-   * instead.
+   * The ordered relay candidate list for a `custom` agent (one entry for a plain
+   * agent, N for a group). When present and the driver has a relay handle, the
+   * vendor CLI is pointed at c3's loopback relay with a per-run token and the real
+   * upstream key never reaches the subprocess; the relay tries candidates in order,
+   * failing over before the first response byte. Omit ⇒ system mode (own login),
+   * direct. See `kernel/relay/contract.ts`.
    */
-  baseUrl?: string
-  /** Raw provider api key override, paired with {@link baseUrl} (driver-path vendors). */
-  apiKey?: string
-  /**
-   * Codex-only: the custom provider's wire protocol (`responses`/`chat`). The
-   * codex driver routes on it — `chat` ⇒ the in-process Responses→Chat relay,
-   * `responses` ⇒ direct to the provider (2026-06-12-006). Omit ⇒ no custom
-   * provider (system mode / first-party) ⇒ direct. Other vendors ignore it.
-   */
-  wireApi?: 'responses' | 'chat'
+  relayCandidates?: RelayCandidate[]
   /**
    * Path to an arapuca sandbox-wrapper script. When set, the driver MUST use
    * this path as the vendor binary executable instead of default host binary

@@ -17,7 +17,7 @@ import { CodexDriver, type CodexFactory } from './driver.js'
 import { CodexApprovalBridge, type CodexApprovalOptions } from './approval.js'
 import { CodexSessionStore } from './session-store.js'
 import { createCodexSkillLoader } from './skill.js'
-import type { CodexRelay } from './relay-contract.js'
+import type { Relay } from '../../../relay/contract.js'
 
 export { codexCapabilities } from './capabilities.js'
 export { createCodexSkillLoader } from './skill.js'
@@ -26,7 +26,7 @@ export { CodexApprovalBridge, type CodexApprovalOptions } from './approval.js'
 export { CodexSessionStore } from './session-store.js'
 export { CodexTaskStore } from './task-store.js'
 export { itemToBlock, itemToCanonical } from './translate.js'
-export { CODEX_RELAY_PROVIDER, type CodexRelay, type RelayUpstream } from './relay-contract.js'
+export { CODEX_RELAY_PROVIDER, type Relay, type RelayCandidate } from '../../../relay/contract.js'
 
 // ---------------------------------------------------------------------------
 // Codex native tool surface — these are the tool names Codex
@@ -53,7 +53,7 @@ const SDK_WRITE_TOOLS = new Set(['shell', 'apply_patch'])
 export function createCodexAdapter(
   createCodex?: CodexFactory,
   approvalOpts?: CodexApprovalOptions,
-  relay?: CodexRelay,
+  relay?: Relay,
 ): VendorAdapter {
   return {
     vendor: 'codex',

@@ -398,7 +398,7 @@ export async function runViaDriver(
   // claude-hardwired path applies these to the SDK; the driver path threads the
   // neutral subset the vendor's driver understands (2026-06-06-007). Codex's policy
   // gate is derived from `actionMode`/`toolGate` in its driver (2026-06-06-008).
-  const { agentId, model, baseUrl, apiKey, envOverrides, wireApi } = resolveSessionLaunch(runId)
+  const { agentId, model, envOverrides, relayCandidates } = resolveSessionLaunch(runId)
 
   // gh stores its token in the OS keyring, which codex's sandbox can't read — so
   // `gh` inside a codex session fails auth even on an authenticated host with
@@ -469,9 +469,7 @@ export async function runViaDriver(
       actionMode,
       toolGate,
       ...(model ? { model } : {}),
-      ...(baseUrl ? { baseUrl } : {}),
-      ...(apiKey ? { apiKey } : {}),
-      ...(wireApi ? { wireApi } : {}),
+      ...(relayCandidates ? { relayCandidates } : {}),
       ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
       ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
       ...(adapter.vendor === 'codex'

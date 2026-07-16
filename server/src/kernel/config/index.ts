@@ -45,6 +45,7 @@ import type { SandboxExtraMount, SessionKind } from '@ccc/shared/protocol'
 import {
   canonicalizeAgentOrder,
   defaultSettings,
+  guardReservedAgentIds,
   normalizeDegradationChain,
   normalizeIcon,
   systemAgent,
@@ -288,6 +289,10 @@ function migrateAgentCandidate(id: string, rec: Record<string, unknown>): unknow
   // for legacy records: the old reserved system singleton, or an all-empty
   // provider triple, means "use system config" — everything else is custom.
   const configMode = inferConfigMode(rec.configMode)
+  // Group membership (ADR-0029): a shared shell field carried through verbatim so it
+  // survives the load/save normalize round-trip (this migrate whitelists fields, so
+  // an omitted `group` would be silently dropped on every save).
+  const group = typeof rec.group === 'string' ? { group: rec.group } : {}
   if (vendor === 'claude') {
     return {
       id,
@@ -296,12 +301,13 @@ function migrateAgentCandidate(id: string, rec: Record<string, unknown>): unknow
       displayName,
       enabled,
       icon,
+      ...group,
       config: buildClaudeConfig(configSrc),
     }
   }
   // codex (and any unknown vendor): pass the nested config through for the
   // schema to validate + route by tag; an unknown vendor / bad config ⇒ dropped.
-  return { id, vendor, configMode, displayName, enabled, icon, config: configSrc }
+  return { id, vendor, configMode, displayName, enabled, icon, ...group, config: configSrc }
 }
 
 /**
@@ -359,7 +365,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   if (entries.length === 0) entries.push({ agent: systemAgent(), rawOrder: 0 })
   // Regularize the user-controlled order: pin the system agent, sort by explicit
   // `order_seq`, append missing ones by array order, stamp a dense 0..n sequence.
-  const agents: AgentConfig[] = canonicalizeAgentOrder(entries)
+  const agents: AgentConfig[] = guardReservedAgentIds(canonicalizeAgentOrder(entries))
   // The default must reference an existing *enabled* agent; an unknown, removed,
   // or now-disabled default falls through to the next enabled agent in order_seq
   // (rewrite-on-store, AC-R2/AC-R10) — `resolveDefaultAgentId` returns SYSTEM_AGENT_ID

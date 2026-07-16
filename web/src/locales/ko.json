@@ -226,6 +226,9 @@
         },
         "icon": {
           "label": "아이콘"
+        },
+        "group": {
+          "label": "그룹"
         }
       },
       "toggle": {
@@ -343,6 +346,13 @@
       },
       "reorder": {
         "tooltip": "드래그하여 순서 변경"
+      },
+      "group": {
+        "placeholder": "그룹 이름(선택)",
+        "tooltip": "그룹 이름 — 같은 그룹의 agent 는 하나의 페일오버 후보군을 이룹니다."
+      },
+      "groupPicker": {
+        "label": "그룹"
       }
     },
     "defaultMode": {
@@ -1080,7 +1090,8 @@
       "agent": {
         "label": "에이전트",
         "autoHint": "기본 에이전트 사용 ({name})",
-        "autoHintNoDefault": "기본 에이전트 사용"
+        "autoHintNoDefault": "기본 에이전트 사용",
+        "groupLabel": "그룹"
       },
       "missing": {
         "suffix": "바이너리가 PATH에 없음",
@@ -1455,7 +1466,8 @@
       },
       "agent": {
         "label": "Agent",
-        "placeholder": "Select an agent"
+        "placeholder": "Select an agent",
+        "groupLabel": "그룹"
       },
       "tools": {
         "label": "허용된 도구",

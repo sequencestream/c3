@@ -27,6 +27,9 @@ const baseShellSchema = z.object({
   // the server `normalize`). Optional on the wire — a legacy record without it is
   // backfilled by array order; the matching wire field is `order_seq?: number`.
   order_seq: z.number().optional(),
+  // Group membership (ADR-0029): non-empty ⇒ this agent joins the `(group, vendor)`
+  // group exposed as the virtual `_c3_<group>` agent. Optional on the wire.
+  group: z.string().optional(),
 })
 
 /** The `claude` vendor's config sub-object (the Claude Code launch overrides). */

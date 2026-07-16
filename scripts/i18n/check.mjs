@@ -30,11 +30,11 @@ const SERVER_DIR = join(REPO_ROOT, 'server', 'src')
 const BASE_LOCALE = 'en'
 // The typed-t wrapper itself calls `t(key, ...)` with a variable; not a usage site.
 const CODE_SCAN_IGNORE = [join('web', 'src', 'i18n', 'index.ts')]
-// The codex-relay transport emits OpenAI Responses-API wire errors
+// The relay transport emits OpenAI Responses-API / Anthropic wire errors
 // (`error: { code: 'upstream_error', … }` on `response.failed`) for codex's own
 // parser — these are protocol values, not c3 UI error codes, so exclude the dir
-// from the server UI-code SoT scan.
-const SERVER_CODE_SCAN_IGNORE = [join('server', 'src', 'transport', 'codex-relay')]
+// from the server UI-code SoT scan (renamed from codex-relay to relay, ADR-0029).
+const SERVER_CODE_SCAN_IGNORE = [join('server', 'src', 'transport', 'relay')]
 
 /**
  * Top-level keys that are locale-file metadata, not translations. The double-

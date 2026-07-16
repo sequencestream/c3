@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import type { SystemSettings } from '@ccc/shared/protocol'
 
 // Mock loadSettings to return a controlled agent list.
@@ -59,15 +59,98 @@ vi.mock('../config/index.js', () => ({
 
 // Import AFTER the mock is set up.
 import {
+  groupAgents,
   launchForAgent,
+  launchForCandidates,
+  resolveAgent,
+  resolveAgentCandidates,
   resolveFirstAgentOfVendor,
   resolveIntentAgent,
   resolveSpecAgent,
   resolveToolAgent,
 } from './index.js'
+import type { AgentConfig } from '@ccc/shared/protocol'
 
-describe('launchForAgent — system mode model override (2026-07-02-001)', () => {
-  it('claude + system + model non-empty → model passed, envOverrides/baseUrl/apiKey absent', () => {
+describe('group agents + candidate resolution (ADR-0029)', () => {
+  // A custom claude agent factory for group tests.
+  function claudeCustom(id: string, order: number, group: string, model: string): AgentConfig {
+    return {
+      id,
+      vendor: 'claude',
+      configMode: 'custom',
+      displayName: id,
+      order_seq: order,
+      group,
+      config: { baseUrl: `https://${id}.example/anthropic`, apiKey: `sk-${id}`, model },
+      enabled: true,
+    }
+  }
+
+  const originalAgents = mockSettings.agents
+  beforeEach(() => {
+    mockSettings.agents = originalAgents
+  })
+  afterEach(() => {
+    // Restore the shared fixture so later describes (which have no beforeEach of
+    // their own for `agents`) are not polluted by this block's mutations.
+    mockSettings.agents = originalAgents
+  })
+
+  it('groupAgents(vendor, group) returns that vendor+group enabled members in order', () => {
+    mockSettings.agents = [
+      claudeCustom('a2', 1, 'fast', 'kimi-k2'),
+      claudeCustom('a1', 0, 'fast', 'deepseek-v4'),
+      { ...claudeCustom('a3', 2, 'fast', 'mimo'), enabled: false }, // disabled ⇒ excluded
+      {
+        ...claudeCustom('cx', 3, 'fast', 'm'),
+        vendor: 'codex',
+        config: { baseUrl: 'https://cx', apiKey: 'k', model: 'm', wireApi: 'chat' },
+      }, // same group name, different vendor ⇒ its OWN (codex, fast) group
+    ]
+    expect(groupAgents('claude', 'fast').map((a) => a.id)).toEqual(['a1', 'a2'])
+    // Different vendors may reuse the same group name — the codex "fast" is separate.
+    expect(groupAgents('codex', 'fast').map((a) => a.id)).toEqual(['cx'])
+  })
+
+  it('resolveAgentCandidates(_c3_<vendor>_<group>) yields the ordered members; launchForCandidates maps them', () => {
+    mockSettings.agents = [
+      claudeCustom('a1', 0, 'fast', 'deepseek-v4'),
+      claudeCustom('a2', 1, 'fast', 'kimi-k2'),
+    ]
+    const candidates = resolveAgentCandidates('_c3_claude_fast')
+    expect(candidates.map((a) => a.id)).toEqual(['a1', 'a2'])
+    const launch = launchForCandidates(candidates)
+    // model placeholder = the highest-priority candidate's model.
+    expect(launch.model).toBe('deepseek-v4')
+    expect(launch.relayCandidates).toEqual([
+      { baseUrl: 'https://a1.example/anthropic', apiKey: 'sk-a1', model: 'deepseek-v4' },
+      { baseUrl: 'https://a2.example/anthropic', apiKey: 'sk-a2', model: 'kimi-k2' },
+    ])
+  })
+
+  it('resolveAgent tolerates a group ref, returning the highest-priority member', () => {
+    mockSettings.agents = [
+      claudeCustom('a1', 0, 'fast', 'deepseek-v4'),
+      claudeCustom('a2', 1, 'fast', 'kimi-k2'),
+    ]
+    expect(resolveAgent('_c3_claude_fast').id).toBe('a1')
+  })
+
+  it('an empty group ref falls back to the default agent (never empty)', () => {
+    mockSettings.agents = originalAgents
+    const candidates = resolveAgentCandidates('_c3_claude_nonexistent')
+    expect(candidates.length).toBe(1)
+    expect(candidates[0].id).toBe('claude-pro') // the default fallback
+  })
+
+  it('a real id resolves to a length-1 candidate list', () => {
+    mockSettings.agents = [claudeCustom('a1', 0, 'fast', 'deepseek-v4')]
+    expect(resolveAgentCandidates('a1').map((a) => a.id)).toEqual(['a1'])
+  })
+})
+
+describe('launchForAgent — system mode model override + relay candidates (ADR-0029)', () => {
+  it('claude + system + model non-empty → model passed, no relay candidates', () => {
     const launch = launchForAgent({
       id: 'cl-sys-m',
       vendor: 'claude',
@@ -77,8 +160,7 @@ describe('launchForAgent — system mode model override (2026-07-02-001)', () =>
       enabled: true,
     })
     expect(launch.model).toBe('claude-sonnet-5')
-    expect(launch.baseUrl).toBeUndefined()
-    expect(launch.apiKey).toBeUndefined()
+    expect(launch.relayCandidates).toBeUndefined()
     // envOverrides must be absent or contain nothing provider-related
     // (proxy config is mocked off, so no env at all)
     expect(launch.envOverrides).toBeUndefined()
@@ -94,12 +176,11 @@ describe('launchForAgent — system mode model override (2026-07-02-001)', () =>
       enabled: true,
     })
     expect(launch.model).toBeUndefined()
-    expect(launch.baseUrl).toBeUndefined()
-    expect(launch.apiKey).toBeUndefined()
+    expect(launch.relayCandidates).toBeUndefined()
     expect(launch.envOverrides).toBeUndefined()
   })
 
-  it('codex + system + model non-empty → model passed, baseUrl/apiKey/wireApi absent', () => {
+  it('codex + system + model non-empty → model passed, no relay candidates', () => {
     const launch = launchForAgent({
       id: 'cx-sys-m',
       vendor: 'codex',
@@ -109,9 +190,7 @@ describe('launchForAgent — system mode model override (2026-07-02-001)', () =>
       enabled: true,
     })
     expect(launch.model).toBe('deepseek-chat')
-    expect(launch.baseUrl).toBeUndefined()
-    expect(launch.apiKey).toBeUndefined()
-    expect(launch.wireApi).toBeUndefined()
+    expect(launch.relayCandidates).toBeUndefined()
   })
 
   it('codex + system + model empty → model absent (regression)', () => {
@@ -124,12 +203,10 @@ describe('launchForAgent — system mode model override (2026-07-02-001)', () =>
       enabled: true,
     })
     expect(launch.model).toBeUndefined()
-    expect(launch.baseUrl).toBeUndefined()
-    expect(launch.apiKey).toBeUndefined()
-    expect(launch.wireApi).toBeUndefined()
+    expect(launch.relayCandidates).toBeUndefined()
   })
 
-  it('custom mode: model + connection fields still together (regression)', () => {
+  it('custom codex → a relay candidate carries the real upstream + wireApi; model placeholder', () => {
     const launch = launchForAgent({
       id: 'cx-cust',
       vendor: 'codex',
@@ -144,9 +221,36 @@ describe('launchForAgent — system mode model override (2026-07-02-001)', () =>
       enabled: true,
     })
     expect(launch.model).toBe('test-model')
-    expect(launch.baseUrl).toBe('https://api.example.com')
-    expect(launch.apiKey).toBe('sk-test')
-    expect(launch.wireApi).toBe('responses')
+    expect(launch.relayCandidates).toEqual([
+      {
+        baseUrl: 'https://api.example.com',
+        apiKey: 'sk-test',
+        model: 'test-model',
+        wireApi: 'responses',
+      },
+    ])
+  })
+
+  it('custom claude → a relay candidate (no wireApi) + the adaptive-thinking workaround flag', () => {
+    const launch = launchForAgent({
+      id: 'cl-cust',
+      vendor: 'claude',
+      configMode: 'custom',
+      displayName: 'Claude Cust',
+      config: {
+        baseUrl: 'https://api.deepseek.com/anthropic',
+        apiKey: 'sk-real',
+        model: 'deepseek-v4',
+      },
+      enabled: true,
+    })
+    expect(launch.model).toBe('deepseek-v4')
+    expect(launch.relayCandidates).toEqual([
+      { baseUrl: 'https://api.deepseek.com/anthropic', apiKey: 'sk-real', model: 'deepseek-v4' },
+    ])
+    // The real key is NOT in the env — it rides the relay candidate only.
+    expect(launch.envOverrides?.ANTHROPIC_API_KEY).toBeUndefined()
+    expect(launch.envOverrides?.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING).toBe('1')
   })
 })
 
@@ -274,8 +378,8 @@ describe('resolveSpecAgent — specAgentId → defaultAgentId → system fall-th
   })
 })
 
-describe('launchForAgent — codex wireApi (2026-06-12-006)', () => {
-  it('a custom codex agent carries baseUrl/apiKey + wireApi into the launch overrides', () => {
+describe('launchForAgent — codex wireApi rides the relay candidate (ADR-0029)', () => {
+  it('a custom codex agent carries baseUrl/apiKey + wireApi into the relay candidate', () => {
     const launch = launchForAgent({
       id: 'cx',
       vendor: 'codex',
@@ -289,12 +393,12 @@ describe('launchForAgent — codex wireApi (2026-06-12-006)', () => {
       },
       enabled: true,
     })
-    expect(launch.baseUrl).toBe('https://api.deepseek.com')
-    expect(launch.apiKey).toBe('sk')
-    expect(launch.wireApi).toBe('responses')
+    expect(launch.relayCandidates).toEqual([
+      { baseUrl: 'https://api.deepseek.com', apiKey: 'sk', model: 'm', wireApi: 'responses' },
+    ])
   })
 
-  it('a system-mode codex agent — model override IS passed, provider fields still omitted (2026-07-02-001)', () => {
+  it('a system-mode codex agent — model override IS passed, no relay candidate (2026-07-02-001)', () => {
     const launch = launchForAgent({
       id: 'cx-sys',
       vendor: 'codex',
@@ -305,9 +409,7 @@ describe('launchForAgent — codex wireApi (2026-06-12-006)', () => {
     })
     // model is standalone — system mode still passes it
     expect(launch.model).toBe('m')
-    // provider connection fields stay custom-only
-    expect(launch.baseUrl).toBeUndefined()
-    expect(launch.apiKey).toBeUndefined()
-    expect(launch.wireApi).toBeUndefined()
+    // provider connection stays custom-only ⇒ no relay candidate
+    expect(launch.relayCandidates).toBeUndefined()
   })
 })

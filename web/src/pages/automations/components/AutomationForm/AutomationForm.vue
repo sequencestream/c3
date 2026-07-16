@@ -45,6 +45,7 @@ import type {
 import { EVENT_CATALOG, SESSION_KINDS, isRunLifecycleEventType } from '@ccc/shared/protocol'
 import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
 import { VENDOR_LABEL } from '@/lib/vendor'
+import { groupAgentsOfVendor } from '@/lib/group-agents'
 import { useTypedI18n } from '@/i18n'
 import BaseDropdown, { type DropdownOption } from '@/components/BaseDropdown/BaseDropdown.vue'
 import AutomationCronEditor from '../AutomationDetail/AutomationCronEditor.vue'
@@ -269,6 +270,10 @@ const toolAllowlist = ref<string[]>([])
 const vendorAgents = computed(() =>
   (props.agents ?? []).filter((agent) => agent.vendor === vendor.value && agent.enabled !== false),
 )
+
+// The virtual group agents (`_c3_<group>`, ADR-0029) of the chosen vendor, offered
+// alongside the real agents so an automation can bind to a group (relay failover).
+const vendorGroupAgents = computed(() => groupAgentsOfVendor(props.agents ?? [], vendor.value))
 
 // The resolved type string of one row (empty when its free-text part is blank).
 function rowType(row: EventFilterRowDraft): string {
@@ -1297,6 +1302,14 @@ function save(): void {
                   <option v-for="agent in vendorAgents" :key="agent.id" :value="agent.id">
                     {{ agent.displayName }}
                   </option>
+                  <optgroup
+                    v-if="vendorGroupAgents.length > 0"
+                    :label="t('automation.form.agent.groupLabel')"
+                  >
+                    <option v-for="g in vendorGroupAgents" :key="g.id" :value="g.id">
+                      {{ g.id }}
+                    </option>
+                  </optgroup>
                 </select>
               </template>
             </div>

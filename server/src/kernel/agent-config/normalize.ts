@@ -5,7 +5,7 @@
  * import it without a cycle: store → here, readers → store + here, here → nobody.
  */
 import type { AgentConfig, ClaudeAgentConfig, SystemSettings, VendorId } from '@ccc/shared/protocol'
-import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+import { GROUP_AGENT_PREFIX, SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 
 /** Hard cap for an agent's `icon` string. Generous enough for family/ZWJ emoji
  *  sequences (can be 7-11 code units), short enough to deter abuse. */
@@ -102,6 +102,26 @@ export function canonicalizeAgentOrder(entries: AgentOrderEntry[]): AgentConfig[
     agent.order_seq = idx
     return agent
   })
+}
+
+/**
+ * Guard the virtual group-agent namespace (ADR-0029). A group's identity is
+ * `(vendor, group)` and its virtual reference `_c3_<vendor>_<group>` encodes the
+ * vendor, so DIFFERENT vendors may reuse the same group name (each is its own group)
+ * — no vendor locking is needed. This pass only *warns* when a real agent id intrudes
+ * on the reserved `_c3_` prefix (which could collide with a group reference); it never
+ * mutates the agents. Pure aside from console warnings; returns `agents`.
+ */
+export function guardReservedAgentIds(agents: AgentConfig[]): AgentConfig[] {
+  for (const a of agents) {
+    if (a.id.startsWith(GROUP_AGENT_PREFIX)) {
+      console.warn(
+        `[c3] agent id "${a.id}" uses the reserved "${GROUP_AGENT_PREFIX}" prefix ` +
+          `(the virtual group-agent namespace) — it may collide with a group reference.`,
+      )
+    }
+  }
+  return agents
 }
 
 export function defaultSettings(): SystemSettings {

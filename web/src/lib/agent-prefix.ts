@@ -9,6 +9,7 @@
  * 查找在降级链中的位置,让状态栏显示 session 实际绑定的 agent 名。
  */
 import type { SystemSettings } from '@ccc/shared/protocol'
+import { isGroupAgentRef, parseGroupAgentRef } from '@ccc/shared/protocol'
 
 /**
  * 服务端尝试顺序的客户端复刻:链头是 session 绑定的 agent(`anchorAgentId`,缺省或
@@ -26,6 +27,22 @@ export function agentAttemptOrder(
   anchorAgentId?: string,
 ): string[] {
   if (!settings) return []
+  // A group-bound session (`_c3_<vendor>_<group>`, ADR-0029) has no client-visible
+  // per-member chain — the relay hides the failover — so the attempt order is just the
+  // group ref itself (its display name is resolved in agentNameAt). Only when that
+  // (vendor, group) still has an enabled member; otherwise fall through to the default.
+  const anchorGroup = anchorAgentId ? parseGroupAgentRef(anchorAgentId) : null
+  if (
+    anchorGroup &&
+    settings.agents.some(
+      (a) =>
+        a.enabled !== false &&
+        a.vendor === anchorGroup.vendor &&
+        (a.group?.trim() ?? '') === anchorGroup.group,
+    )
+  ) {
+    return [anchorAgentId!]
+  }
   const byId = new Map(settings.agents.map((a) => [a.id, a]))
   const headId = anchorAgentId && byId.has(anchorAgentId) ? anchorAgentId : settings.defaultAgentId
   const head = byId.get(headId)
@@ -53,6 +70,9 @@ export function agentNameAt(
   if (order.length === 0) return ''
   const clamped = Math.min(Math.max(index, 0), order.length - 1)
   const id = order[clamped]
+  // A group ref shows as its prefixed form `_c3_<group>` (the ref itself), not a
+  // real agent — it is not in the agent list.
+  if (isGroupAgentRef(id)) return id
   return settings?.agents.find((a) => a.id === id)?.displayName ?? ''
 }
 

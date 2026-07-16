@@ -29,7 +29,7 @@
 
 import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
 import type { AgentDriver, AgentRun, VendorAdapter } from '../../kernel/agent/adapters/types.js'
-import { launchForAgent } from '../../kernel/agent-config/index.js'
+import { bindClaudeRelay, launchForAgent, unbindRelay } from '../../kernel/agent-config/index.js'
 import { ensureRuntime, removeRuntime, setStatus } from '../../runs.js'
 import type { AgentSessionRow } from './store.js'
 
@@ -194,44 +194,54 @@ export class AgentSessionManager {
   ): Promise<string> {
     const driver = this.resolveDriver(agent.vendor)
     const launch = launchForAgent(agent)
+    // Route a custom provider through the loopback relay (ADR-0029). The codex driver
+    // registers the candidate list itself (it holds the relay handle); claude drives
+    // the SDK via env, so bind here and merge the relay env, releasing the token in
+    // the `finally`. Null ⇒ system mode (own login).
+    const claudeRelay = agent.vendor === 'claude' ? bindClaudeRelay(launch.relayCandidates) : null
+    const envOverrides = claudeRelay
+      ? { ...launch.envOverrides, ...claudeRelay.envOverrides }
+      : launch.envOverrides
 
-    const run = await driver.start({
-      prompt,
-      cwd,
-      signal,
-      actionMode: DISCUSS_ACTION_MODE,
-      toolGate: DISCUSS_TOOL_GATE,
-      // Discussion agents research as they deliberate, so they get network access
-      // + web search; codex denies both by default (2026-06-15).
-      networkAccess: true,
-      webSearch: true,
-      ...(launch.model ? { model: launch.model } : {}),
-      ...(launch.envOverrides ? { envOverrides: launch.envOverrides } : {}),
-      ...(launch.baseUrl ? { baseUrl: launch.baseUrl } : {}),
-      ...(launch.apiKey ? { apiKey: launch.apiKey } : {}),
-      ...(launch.wireApi ? { wireApi: launch.wireApi } : {}),
-    })
+    try {
+      const run = await driver.start({
+        prompt,
+        cwd,
+        signal,
+        actionMode: DISCUSS_ACTION_MODE,
+        toolGate: DISCUSS_TOOL_GATE,
+        // Discussion agents research as they deliberate, so they get network access
+        // + web search; codex denies both by default (2026-06-15).
+        networkAccess: true,
+        webSearch: true,
+        ...(launch.model ? { model: launch.model } : {}),
+        ...(envOverrides ? { envOverrides } : {}),
+        ...(launch.relayCandidates ? { relayCandidates: launch.relayCandidates } : {}),
+      })
 
-    // Collect assistant text FIRST, then resolve sessionId (the id is always
-    // available by the time the stream completes).
-    const textPromise = collectAssistantText(run)
-    const sessionId = await run.sessionId()
-    const text = await this.withRunningRuntime(
-      sessionId,
-      cwd,
-      signal,
-      async () => await textPromise,
-    )
+      // Collect assistant text FIRST, then resolve sessionId (the id is always
+      // available by the time the stream completes).
+      const textPromise = collectAssistantText(run)
+      const sessionId = await run.sessionId()
+      const text = await this.withRunningRuntime(
+        sessionId,
+        cwd,
+        signal,
+        async () => await textPromise,
+      )
 
-    this.deps.store.setAgentSession(discussionId, agent.id, sessionId, agent.vendor)
-    this.upsertProjection({
-      discussionId,
-      workspacePath: cwd,
-      agent,
-      sessionId,
-      vendor: agent.vendor,
-    })
-    return text
+      this.deps.store.setAgentSession(discussionId, agent.id, sessionId, agent.vendor)
+      this.upsertProjection({
+        discussionId,
+        workspacePath: cwd,
+        agent,
+        sessionId,
+        vendor: agent.vendor,
+      })
+      return text
+    } finally {
+      if (claudeRelay) unbindRelay(claudeRelay.token)
+    }
   }
 
   /**
@@ -247,32 +257,40 @@ export class AgentSessionManager {
   ): Promise<string> {
     const driver = this.resolveDriver(agent.vendor)
     const launch = launchForAgent(agent)
+    // Same relay routing as createSession (ADR-0029): codex registers itself; claude
+    // binds here and merges the relay env, releasing the token in the `finally`.
+    const claudeRelay = agent.vendor === 'claude' ? bindClaudeRelay(launch.relayCandidates) : null
+    const envOverrides = claudeRelay
+      ? { ...launch.envOverrides, ...claudeRelay.envOverrides }
+      : launch.envOverrides
 
-    const run = await driver.start({
-      prompt,
-      cwd,
-      signal,
-      resume: stored.sessionId,
-      actionMode: DISCUSS_ACTION_MODE,
-      toolGate: DISCUSS_TOOL_GATE,
-      // Discussion agents research as they deliberate, so they get network access
-      // + web search; codex denies both by default (2026-06-15).
-      networkAccess: true,
-      webSearch: true,
-      ...(launch.model ? { model: launch.model } : {}),
-      ...(launch.envOverrides ? { envOverrides: launch.envOverrides } : {}),
-      ...(launch.baseUrl ? { baseUrl: launch.baseUrl } : {}),
-      ...(launch.apiKey ? { apiKey: launch.apiKey } : {}),
-      ...(launch.wireApi ? { wireApi: launch.wireApi } : {}),
-    })
+    try {
+      const run = await driver.start({
+        prompt,
+        cwd,
+        signal,
+        resume: stored.sessionId,
+        actionMode: DISCUSS_ACTION_MODE,
+        toolGate: DISCUSS_TOOL_GATE,
+        // Discussion agents research as they deliberate, so they get network access
+        // + web search; codex denies both by default (2026-06-15).
+        networkAccess: true,
+        webSearch: true,
+        ...(launch.model ? { model: launch.model } : {}),
+        ...(envOverrides ? { envOverrides } : {}),
+        ...(launch.relayCandidates ? { relayCandidates: launch.relayCandidates } : {}),
+      })
 
-    const text = await collectAssistantText(run)
+      const text = await collectAssistantText(run)
 
-    // `last_seq` is NOT touched here: it is the max discussion message seq the
-    // agent has consumed, advanced by the orchestrator via {@link setLastSeq}
-    // after the turn — not a per-resume turn counter. Resuming reuses the same
-    // vendor session unchanged.
-    return text
+      // `last_seq` is NOT touched here: it is the max discussion message seq the
+      // agent has consumed, advanced by the orchestrator via {@link setLastSeq}
+      // after the turn — not a per-resume turn counter. Resuming reuses the same
+      // vendor session unchanged.
+      return text
+    } finally {
+      if (claudeRelay) unbindRelay(claudeRelay.token)
+    }
   }
 
   /**

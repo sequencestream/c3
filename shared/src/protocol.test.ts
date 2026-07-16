@@ -334,6 +334,17 @@ describe('resolveDefaultAgentId — fall through to next enabled (AC-R2/AC-R10, 
     const agents = [agent('a'), agent('b')]
     expect(resolveDefaultAgentId(agents, 'a')).toBe('a')
   })
+
+  it('keeps a group ref default while the group still has an enabled member (ADR-0029)', () => {
+    const grouped = { ...agent('a'), group: 'fast' }
+    const agents = [grouped, agent('b')]
+    expect(resolveDefaultAgentId(agents, '_c3_claude_fast')).toBe('_c3_claude_fast')
+  })
+
+  it('falls a group ref default through to the first enabled agent when the group emptied', () => {
+    const agents = [agent('a'), agent('b')] // no member carries `fast`
+    expect(resolveDefaultAgentId(agents, '_c3_claude_fast')).toBe('a')
+  })
 })
 
 describe('auth provider kinds (ADR-0023)', () => {

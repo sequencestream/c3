@@ -190,6 +190,32 @@ describe('defaultAgentId rewrite-on-store — fall through to next enabled (AC-R
     } as unknown as SystemSettings)
     expect(loadSettings().defaultAgentId).toBe('a2')
   })
+
+  it('preserves the `group` field across a save/load round-trip for BOTH vendors (ADR-0029)', () => {
+    // Regression: migrateAgentCandidate whitelists fields, so an omitted `group`
+    // used to be silently dropped on every save, losing all group configuration.
+    const codex = (id: string, order: number, group: string): unknown => ({
+      id,
+      vendor: 'codex',
+      configMode: 'custom',
+      displayName: id,
+      order_seq: order,
+      group,
+      config: { baseUrl: `https://${id}`, apiKey: 'k', model: 'm', wireApi: 'chat' },
+    })
+    saveSettings({
+      agents: [
+        { ...(agent('a1', 0) as object), group: 'claude-grp' },
+        codex('cx1', 1, 'codex-grp'),
+      ],
+      defaultAgentId: 'a1',
+    } as unknown as SystemSettings)
+    const loaded = loadSettings().agents
+    expect(loaded.find((a) => a.id === 'a1')?.group).toBe('claude-grp')
+    // Regression: a codex agent's group must survive the save (was lost — first via
+    // the migrate whitelist, then via the cross-vendor field-clear).
+    expect(loaded.find((a) => a.id === 'cx1')?.group).toBe('codex-grp')
+  })
 })
 
 describe('toolAgentId rewrite-on-store — empty=follow-default, set=fall-through (2026-06-15-001)', () => {
@@ -1393,8 +1419,9 @@ describe('apiKey at-rest encryption (c3secretv1:)', () => {
     const cx = loaded.agents.find((a) => a.id === 'cx')!
     expect(cl.config.apiKey).toBe(CLAUDE_KEY)
     expect(cx.config.apiKey).toBe(CODEX_KEY)
-    expect(launchForAgent(cl).envOverrides?.ANTHROPIC_API_KEY).toBe(CLAUDE_KEY)
-    expect(launchForAgent(cx).apiKey).toBe(CODEX_KEY)
+    // The decrypted key now rides the relay candidate (never the vendor subprocess env).
+    expect(launchForAgent(cl).relayCandidates?.[0]?.apiKey).toBe(CLAUDE_KEY)
+    expect(launchForAgent(cx).relayCandidates?.[0]?.apiKey).toBe(CODEX_KEY)
   })
 
   it('legacy no-prefix plaintext loads fine and is upgraded to ciphertext on next save', () => {
@@ -1471,19 +1498,19 @@ describe('Claude launch non-regression (AC-R4/R5)', () => {
     expect(launchForAgent(sys)).toEqual({})
   })
 
-  it('a migrated non-system claude agent maps config → env + model + thinking workaround', () => {
+  it('a migrated non-system claude agent maps config → relay candidate + model + thinking workaround', () => {
     const saved = saveAgents([
       { id: 'a1', name: 'One', baseUrl: 'https://one', apiKey: 'k', model: 'm1' },
     ])
     const a1 = saved.agents.find((a) => a.id === 'a1')!
+    // ADR-0029: the real key rides the relay candidate, NOT the subprocess env; only the
+    // non-secret adaptive-thinking workaround flag is injected as env.
     expect(launchForAgent(a1)).toEqual({
       envOverrides: {
-        ANTHROPIC_BASE_URL: 'https://one',
-        ANTHROPIC_API_KEY: 'k',
-        ANTHROPIC_AUTH_TOKEN: 'k',
         CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: '1',
       },
       model: 'm1',
+      relayCandidates: [{ baseUrl: 'https://one', apiKey: 'k', model: 'm1' }],
     })
   })
 })

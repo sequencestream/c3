@@ -53,6 +53,8 @@ vi.mock('./kernel/agent-config/index.js', () => ({
   selectConsensusVoters: () => ['a', 'b'].map(agent),
   launchForAgent: () => ({}),
   resolveAgent: () => agent('decider'),
+  bindClaudeRelay: () => null,
+  unbindRelay: () => {},
 }))
 
 import { runAskConsensus, runConsensusVote } from './consensus.js'

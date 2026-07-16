@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ThreadEvent, ThreadOptions } from '@openai/codex-sdk'
 import type { CanonicalMessage, DriverStartOptions } from '../types.js'
+import type { RelayCandidate } from '../../../relay/contract.js'
 import {
   CodexDriver,
   gateToCodexPolicy,
@@ -555,7 +556,7 @@ describe('CodexDriver intent-run code-execution + web-search shutdown', () => {
     let captured: CodexFactoryOptions | undefined
     const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
     const relay = {
-      baseUrl: 'http://127.0.0.1:3000/internal/codex-relay/v1',
+      endpoint: () => 'http://127.0.0.1:3000/internal/relay/v1/codex',
       register: () => 'relay-token',
       unregister: () => {},
     }
@@ -565,9 +566,14 @@ describe('CodexDriver intent-run code-execution + web-search shutdown', () => {
     }, relay)
     await driver.start(
       startOpts({
-        baseUrl: 'https://api.deepseek.com',
-        apiKey: 'sk-real',
-        wireApi: 'chat',
+        relayCandidates: [
+          {
+            baseUrl: 'https://api.deepseek.com',
+            apiKey: 'sk-real',
+            model: 'deepseek-chat',
+            wireApi: 'chat',
+          },
+        ],
         mcpServers: intentServers,
         webSearch: true,
       }),
@@ -616,14 +622,14 @@ describe('CodexDriver intent-run code-execution + web-search shutdown', () => {
   })
 })
 
-describe('CodexDriver provider routing — wireApi DIRECT vs RELAY (2026-06-12-006)', () => {
-  /** A fake relay that records register calls and mints a fixed token. */
+describe('CodexDriver provider routing — RELAY vs own-login (ADR-0029)', () => {
+  /** A fake relay that records the candidate list it binds and mints a fixed token. */
   function fakeRelay() {
-    const registered: { baseUrl: string; apiKey: string }[] = []
+    const registered: RelayCandidate[][] = []
     const relay = {
-      baseUrl: 'http://127.0.0.1:3000/internal/codex-relay/v1',
-      register(upstream: { baseUrl: string; apiKey: string }) {
-        registered.push(upstream)
+      endpoint: (_vendor: 'claude' | 'codex') => 'http://127.0.0.1:3000/internal/relay/v1/codex',
+      register(candidates: RelayCandidate[]) {
+        registered.push(candidates)
         return 'relay-token-xyz'
       },
       unregister() {},
@@ -631,7 +637,7 @@ describe('CodexDriver provider routing — wireApi DIRECT vs RELAY (2026-06-12-0
     return { relay, registered }
   }
 
-  it('wireApi=chat + custom baseUrl + relay ⇒ RELAY (token as apiKey, c3relay provider)', async () => {
+  it('relay candidates + relay ⇒ RELAY (token as apiKey, c3relay provider)', async () => {
     let captured: CodexFactoryOptions | undefined
     const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
     const { relay, registered } = fakeRelay()
@@ -640,17 +646,35 @@ describe('CodexDriver provider routing — wireApi DIRECT vs RELAY (2026-06-12-0
       return client
     }, relay)
     await driver.start(
-      startOpts({ baseUrl: 'https://api.deepseek.com', apiKey: 'sk-real', wireApi: 'chat' }),
+      startOpts({
+        relayCandidates: [
+          {
+            baseUrl: 'https://api.deepseek.com',
+            apiKey: 'sk-real',
+            model: 'deepseek-chat',
+            wireApi: 'chat',
+          },
+        ],
+      }),
     )
-    // The REAL upstream is registered behind the token; codex only sees the token.
-    expect(registered).toEqual([{ baseUrl: 'https://api.deepseek.com', apiKey: 'sk-real' }])
+    // The REAL upstream candidate list is registered behind the token; codex only sees the token.
+    expect(registered).toEqual([
+      [
+        {
+          baseUrl: 'https://api.deepseek.com',
+          apiKey: 'sk-real',
+          model: 'deepseek-chat',
+          wireApi: 'chat',
+        },
+      ],
+    ])
     expect(captured?.apiKey).toBe('relay-token-xyz')
     expect(captured?.config?.model_provider).toBe('c3relay')
     // The raw provider URL never reaches the SDK as a baseUrl on the relay path.
     expect(captured?.baseUrl).toBeUndefined()
   })
 
-  it('wireApi=responses + custom baseUrl + relay ⇒ DIRECT (raw baseUrl/apiKey, no relay)', async () => {
+  it('responses-native candidate still routes through the relay (passthrough)', async () => {
     let captured: CodexFactoryOptions | undefined
     const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
     const { relay, registered } = fakeRelay()
@@ -659,23 +683,58 @@ describe('CodexDriver provider routing — wireApi DIRECT vs RELAY (2026-06-12-0
       return client
     }, relay)
     await driver.start(
-      startOpts({ baseUrl: 'https://api.openai.com', apiKey: 'sk-real', wireApi: 'responses' }),
+      startOpts({
+        relayCandidates: [
+          {
+            baseUrl: 'https://api.openai.com',
+            apiKey: 'sk-real',
+            model: 'gpt-5',
+            wireApi: 'responses',
+          },
+        ],
+      }),
     )
+    // ADR-0029: all custom providers go through the relay (it passes `responses` through).
+    expect(registered.length).toBe(1)
+    expect(captured?.apiKey).toBe('relay-token-xyz')
+    expect(captured?.config?.model_provider).toBe('c3relay')
+    expect(captured?.baseUrl).toBeUndefined()
+  })
+
+  it('no relay candidates (system mode) ⇒ own login (no relay provider)', async () => {
+    let captured: CodexFactoryOptions | undefined
+    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const { relay, registered } = fakeRelay()
+    const driver = new CodexDriver((options) => {
+      captured = options
+      return client
+    }, relay)
+    await driver.start(startOpts({}))
     expect(registered).toEqual([]) // never went through the relay
-    expect(captured?.baseUrl).toBe('https://api.openai.com')
-    expect(captured?.apiKey).toBe('sk-real')
+    expect(captured?.baseUrl).toBeUndefined()
     expect(captured?.config?.model_provider).toBeUndefined()
   })
 
-  it('no relay present ⇒ DIRECT even with a custom baseUrl', async () => {
+  it('no relay present ⇒ own login even with candidates', async () => {
     let captured: CodexFactoryOptions | undefined
     const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
     const driver = new CodexDriver((options) => {
       captured = options
       return client
     }) // no relay injected
-    await driver.start(startOpts({ baseUrl: 'https://api.deepseek.com', wireApi: 'chat' }))
-    expect(captured?.baseUrl).toBe('https://api.deepseek.com')
+    await driver.start(
+      startOpts({
+        relayCandidates: [
+          {
+            baseUrl: 'https://api.deepseek.com',
+            apiKey: 'sk-real',
+            model: 'deepseek-chat',
+            wireApi: 'chat',
+          },
+        ],
+      }),
+    )
+    expect(captured?.baseUrl).toBeUndefined()
     expect(captured?.config?.model_provider).toBeUndefined()
   })
 })
@@ -696,27 +755,20 @@ describe('CodexDriver sandbox wrapper wiring (arapuca)', () => {
     })
   })
 
-  it('keeps DIRECT baseUrl/apiKey as SDK options (they ride the wrapper argv/env)', async () => {
+  it('system-mode sandbox run keeps own login (no relay provider, no baseUrl)', async () => {
     let captured: CodexFactoryOptions | undefined
     const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
     const driver = new CodexDriver((options) => {
       captured = options
       return client
     })
-    await driver.start(
-      startOpts({
-        baseUrl: 'https://api.openai.com',
-        apiKey: 'sk-real',
-        wireApi: 'responses',
-        sandboxWrapperPath: '/tmp/c3-sb-xyz/wrapper.sh',
-      }),
-    )
+    await driver.start(startOpts({ sandboxWrapperPath: '/tmp/c3-sb-xyz/wrapper.sh' }))
     expect(captured?.codexPathOverride).toBe('/tmp/c3-sb-xyz/wrapper.sh')
-    expect(captured?.baseUrl).toBe('https://api.openai.com')
-    expect(captured?.apiKey).toBe('sk-real')
+    expect(captured?.baseUrl).toBeUndefined()
+    expect(captured?.config?.model_provider).toBeUndefined()
   })
 
-  it('layers DIRECT envOverrides onto the inherited process.env (CodexOptions.env replaces it)', async () => {
+  it('layers own-login envOverrides onto the inherited process.env (CodexOptions.env replaces it)', async () => {
     const prev = process.env.PATH
     process.env.PATH = '/usr/bin:/bin'
     try {
@@ -739,12 +791,13 @@ describe('CodexDriver sandbox wrapper wiring (arapuca)', () => {
 })
 
 describe('CodexDriver RELAY route under an arapuca sandbox', () => {
+  const RELAY_CODEX_ENDPOINT = 'http://127.0.0.1:3000/internal/relay/v1/codex'
   function fakeRelay() {
-    const registered: { baseUrl: string; apiKey: string }[] = []
+    const registered: RelayCandidate[][] = []
     const relay = {
-      baseUrl: 'http://127.0.0.1:3000/internal/codex-relay/v1',
-      register(upstream: { baseUrl: string; apiKey: string }) {
-        registered.push(upstream)
+      endpoint: (_vendor: 'claude' | 'codex') => RELAY_CODEX_ENDPOINT,
+      register(candidates: RelayCandidate[]) {
+        registered.push(candidates)
         return 'relay-token-xyz'
       },
       unregister() {},
@@ -762,21 +815,35 @@ describe('CodexDriver RELAY route under an arapuca sandbox', () => {
     }, relay)
     await driver.start(
       startOpts({
-        baseUrl: 'https://api.deepseek.com',
-        apiKey: 'sk-real',
-        wireApi: 'chat',
+        relayCandidates: [
+          {
+            baseUrl: 'https://api.deepseek.com',
+            apiKey: 'sk-real',
+            model: 'deepseek-chat',
+            wireApi: 'chat',
+          },
+        ],
         sandboxWrapperPath: '/tmp/c3-sb-xyz/wrapper.sh',
       }),
     )
     // The real upstream is registered behind the token; codex sees only the token
     // (delivered as CODEX_API_KEY via codexExecEnv, inherited by the arapuca child).
-    expect(registered).toEqual([{ baseUrl: 'https://api.deepseek.com', apiKey: 'sk-real' }])
+    expect(registered).toEqual([
+      [
+        {
+          baseUrl: 'https://api.deepseek.com',
+          apiKey: 'sk-real',
+          model: 'deepseek-chat',
+          wireApi: 'chat',
+        },
+      ],
+    ])
     expect(captured?.apiKey).toBe('relay-token-xyz')
     const providers = captured?.config?.model_providers as
       | Record<string, { base_url?: string }>
       | undefined
     // No host-gateway rewrite: the sandboxed process is on the host loopback.
-    expect(providers?.c3relay?.base_url).toBe('http://127.0.0.1:3000/internal/codex-relay/v1')
+    expect(providers?.c3relay?.base_url).toBe(RELAY_CODEX_ENDPOINT)
   })
 
   it('host (non-sandbox) RELAY keeps the loopback base_url', async () => {
@@ -788,13 +855,22 @@ describe('CodexDriver RELAY route under an arapuca sandbox', () => {
       return client
     }, relay)
     await driver.start(
-      startOpts({ baseUrl: 'https://api.deepseek.com', apiKey: 'sk-real', wireApi: 'chat' }),
+      startOpts({
+        relayCandidates: [
+          {
+            baseUrl: 'https://api.deepseek.com',
+            apiKey: 'sk-real',
+            model: 'deepseek-chat',
+            wireApi: 'chat',
+          },
+        ],
+      }),
     )
     const providers = captured?.config?.model_providers as
       | Record<string, { base_url?: string }>
       | undefined
     const provider = providers?.c3relay
-    expect(provider?.base_url).toBe('http://127.0.0.1:3000/internal/codex-relay/v1')
+    expect(provider?.base_url).toBe(RELAY_CODEX_ENDPOINT)
   })
 })
 

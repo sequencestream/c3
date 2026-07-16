@@ -225,6 +225,9 @@
         },
         "icon": {
           "label": "Icon"
+        },
+        "group": {
+          "label": "Group"
         }
       },
       "toggle": {
@@ -342,6 +345,13 @@
       },
       "reorder": {
         "tooltip": "Drag to reorder"
+      },
+      "group": {
+        "placeholder": "Group name (optional)",
+        "tooltip": "Group name — agents sharing a group form one failover pool."
+      },
+      "groupPicker": {
+        "label": "Groups"
       }
     },
     "defaultMode": {
@@ -1079,7 +1089,8 @@
       "agent": {
         "label": "Agent",
         "autoHint": "Uses the default agent ({name})",
-        "autoHintNoDefault": "Uses the default agent"
+        "autoHintNoDefault": "Uses the default agent",
+        "groupLabel": "Groups"
       },
       "missing": {
         "suffix": "binary not in PATH",
@@ -1652,7 +1663,8 @@
       },
       "agent": {
         "label": "Agent",
-        "placeholder": "Select an agent"
+        "placeholder": "Select an agent",
+        "groupLabel": "Groups"
       },
       "tools": {
         "label": "Allowed tools",

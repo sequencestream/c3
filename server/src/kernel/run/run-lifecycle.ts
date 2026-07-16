@@ -37,6 +37,8 @@ import {
   resolveAgent,
   launchForAgent,
   freezeSessionAgent,
+  bindClaudeRelay,
+  unbindRelay,
 } from '../agent-config/index.js'
 import { getSocketAutoResume, getProjectSandbox } from '../config/index.js'
 import { launchSandbox, SandboxLaunchError } from '../sandbox/SandboxLauncher.js'
@@ -429,6 +431,14 @@ export async function launchRun(
       // The socket disconnect verdict for THIS run pass (null ⇒ no disconnect).
       let socketInfo: { error: string; sideEffectPending: boolean } | null = null
 
+      // Bind this attempt's candidate list to the loopback relay (ADR-0029): the
+      // Claude SDK connects to the relay's anthropic endpoint with a per-run token,
+      // and the real provider key stays in the relay — never in the subprocess /
+      // sandbox. Null ⇒ system mode (first-party login, own config). The token is
+      // released in the `finally` below. A group `_c3_<group>` binds N candidates so
+      // the relay fails over across the group's providers within this one attempt.
+      const claudeRelay = bindClaudeRelay(agentCfg.relayCandidates)
+
       try {
         await runClaude({
           prompt: modelPrompt,
@@ -458,7 +468,9 @@ export async function launchRun(
                 : runId
               : undefined,
           reconnectAttempt: reconnecting,
-          envOverrides: agentCfg.envOverrides,
+          envOverrides: claudeRelay
+            ? { ...agentCfg.envOverrides, ...claudeRelay.envOverrides }
+            : agentCfg.envOverrides,
           model: agentCfg.model,
           currentAgentId: agentCfg.agentId,
           // Forward the arapuca allow set so the claude path wraps the CLI in arapuca
@@ -577,6 +589,7 @@ export async function launchRun(
         })
       } finally {
         cycleAbort.signal.removeEventListener('abort', onCycleAbort)
+        if (claudeRelay) unbindRelay(claudeRelay.token)
       }
 
       // Classify how the attempt ended (user stop wins; then a socket disconnect;

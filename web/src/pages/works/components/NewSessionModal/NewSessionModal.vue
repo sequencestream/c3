@@ -13,6 +13,7 @@
 import { computed, ref, watch } from 'vue'
 import type { AgentConfig, VendorHostStatus, VendorId } from '@ccc/shared/protocol'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
+import { groupAgentsOfVendor } from '@/lib/group-agents'
 import { useTypedI18n } from '@/i18n'
 
 const { t } = useTypedI18n()
@@ -76,6 +77,12 @@ function vendorOptionLabel(v: VendorId): string {
 // The agents of the currently-chosen vendor (empty when Auto).
 const agentsOfVendor = computed(() =>
   vendor.value === '' ? [] : enabledAgents.value.filter((a) => a.vendor === vendor.value),
+)
+
+// The virtual group agents (`_c3_<group>`, ADR-0029) of the chosen vendor, offered
+// alongside the real agents; picking one binds the session to the group (failover).
+const vendorGroupAgents = computed(() =>
+  vendor.value === '' ? [] : groupAgentsOfVendor(enabledAgents.value, vendor.value),
 )
 
 // The default agent's display name + vendor, for the Auto hint + dot.
@@ -187,6 +194,14 @@ function onCreate(): void {
             <option v-for="a in agentsOfVendor" :key="a.id" :value="a.id">
               {{ a.displayName }}
             </option>
+            <optgroup
+              v-if="vendorGroupAgents.length > 0"
+              :label="t('session.new.agent.groupLabel')"
+            >
+              <option v-for="g in vendorGroupAgents" :key="g.id" :value="g.id">
+                {{ g.id }}
+              </option>
+            </optgroup>
           </select>
           <span v-else class="ns-hint" data-testid="new-session-auto-hint">
             {{

@@ -14,7 +14,7 @@
 
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentConfig } from '@ccc/shared/protocol'
-import { launchForAgent } from './kernel/agent-config/index.js'
+import { bindClaudeRelay, launchForAgent, unbindRelay } from './kernel/agent-config/index.js'
 import { findClaudeExecutable } from './kernel/infra/child-env.js'
 import { addToolSession } from './sessions.js'
 import type { SessionOwnerKind } from './features/sessions/session-metadata-store.js'
@@ -37,13 +37,21 @@ export async function askAgentOnce(
 ): Promise<string> {
   const launch = launchForAgent(agent)
   const claudePath = findClaudeExecutable()
+  // Route a custom provider through the loopback relay (ADR-0029): the SDK connects
+  // with a per-run token, the real key stays in the relay. Null ⇒ system mode (own
+  // login). The claude env (relay endpoint + token) merges over the launch env; the
+  // token is released in the `finally` below.
+  const claudeRelay = bindClaudeRelay(launch.relayCandidates)
+  const envOverrides = claudeRelay
+    ? { ...launch.envOverrides, ...claudeRelay.envOverrides }
+    : launch.envOverrides
   const q = query({
     prompt,
     options: {
       cwd,
       ...(systemInstruction ? { systemPrompt: systemInstruction } : {}),
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
-      ...(launch.envOverrides ? { env: { ...process.env, ...launch.envOverrides } } : {}),
+      ...(envOverrides ? { env: { ...process.env, ...envOverrides } } : {}),
       ...(launch.model ? { model: launch.model } : {}),
       permissionMode: 'default',
       // Advisor must not act — it only answers from context.
@@ -93,6 +101,7 @@ export async function askAgentOnce(
     }
   } finally {
     signal.removeEventListener('abort', onAbort)
+    if (claudeRelay) unbindRelay(claudeRelay.token)
   }
   return text.trim()
 }

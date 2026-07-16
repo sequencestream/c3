@@ -6,7 +6,7 @@
  * The tool logic comes from the shared framing-free definitions, so both vendors
  * run identical behavior and permission gates from one place.
  *
- * Mirrors the codex relay (`transport/codex-relay`): a kernel-neutral bind/dispose
+ * Mirrors the provider relay (`transport/relay`): a kernel-neutral bind/dispose
  * + opaque per-run token, the HTTP `handler` mounted by the composition root, and
  * defence-in-depth (loopback guard ON TOP of c3's localhost-only bind, plus token
  * lookup). The feature logic (store reads, the save confirmation gate) is INJECTED

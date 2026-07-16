@@ -203,6 +203,34 @@ in-process via the same AES-GCM scheme as `config/encryption.ts`) — subscripti
   → exit 0 when claude's real request succeeds; 5 = SKIP (agent/binary missing);
   1 = FAIL. Requires the patched arapuca (mount-ancestor + `/tmp` fixes) on PATH.
 
+## Relay real turn test (vendor-neutral relay, ADR-0029)
+
+The full server-run counterpart the sandbox-vendor-token test defers to: drives one
+tool-less turn on a specific **custom** agent through a live c3 server, proving the
+vendor-neutral relay path end-to-end. Because every custom provider now flows through
+c3's loopback relay, a clean reply carrying the sentinel word validates the whole path
+with the real provider key held only in the relay (never in the vendor subprocess):
+
+- **claude custom** (e.g. deepseek `…/anthropic`) → the relay's **anthropic passthrough**
+  (auth swap + model override).
+- **codex custom, `wireApi=chat`** (e.g. deepseek chat) → the relay's **Responses↔Chat
+  translation** — this is exactly what a direct codex→deepseek connection cannot do.
+
+The script re-targets a fresh session onto the agent via `set_session_agent`, sends a
+prompt asking the model to echo a sentinel, and PASSes iff `turn_end` is clean AND the
+sentinel comes back. Spends real tokens on the agent's provider.
+
+Boot an isolated, auth-free server seeded from the real settings (keys decrypt via the
+embedded static key — path-independent), then run once per agent:
+
+- `C3_DB_PATH=<tmp>/c3.db pnpm -F @ccc/server exec tsx src/cli.ts start --workspace /tmp
+--port 13123 --settings <copy-of-~/.c3/settings.json, auth stripped> --dev`
+- `node scripts/e2e/e2e-relay-real-test.mjs ws://127.0.0.1:13123/ws <agentId> [sentinel]`
+  → `RESULT: PASS` (exit 0). 1 = FAIL, 2 = TIMEOUT, 5 = SKIP (no seed workspace).
+
+Not part of `pnpm e2e` (needs configured custom agents + spends tokens), like the
+sandbox-vendor-token test.
+
 ## SDK answer-injection spike (one-off)
 
 Standalone proof that AskUserQuestion answers can be fed back via the

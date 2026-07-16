@@ -22,6 +22,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
+import { listGroupAgents } from '@/lib/group-agents'
 import { useAuth } from '@/composables/useAuth'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import EmojiPicker from './EmojiPicker.vue'
@@ -434,6 +435,9 @@ function makeAgent(
     displayName: string
     icon: string
     enabled: boolean
+    // Group membership (ADR-0029) is a shared shell field — preserved across a
+    // vendor switch so a filled group name is not dropped when the config rebuilds.
+    group?: string
   },
 ): AgentConfig {
   switch (vendor) {
@@ -453,12 +457,19 @@ function addAgent() {
   // server keeps it as-is (only id-less agents get a fresh uuid on normalize).
   const id = `new-${Date.now()}-${draft.value.agents.length}`
   draft.value.agents.push(
-    makeAgent('claude', { id, configMode: 'custom', displayName: '', icon: '', enabled: true }),
+    makeAgent('claude', {
+      id,
+      configMode: 'custom',
+      displayName: '',
+      icon: '',
+      enabled: true,
+      group: '',
+    }),
   )
 }
 
 /** Switch an agent's vendor, rebuilding its `config` to the new vendor's shell
- *  while keeping the shared shell fields (id/configMode/name/icon/enabled). */
+ *  while keeping the shared shell fields (id/configMode/name/icon/enabled/group). */
 function setVendor(a: AgentConfig, vendor: VendorId) {
   const idx = draft.value.agents.indexOf(a)
   if (idx < 0 || a.vendor === vendor) return
@@ -468,6 +479,7 @@ function setVendor(a: AgentConfig, vendor: VendorId) {
     displayName: a.displayName,
     icon: a.icon ?? '',
     enabled: a.enabled !== false,
+    group: a.group ?? '',
   })
 }
 
@@ -480,6 +492,11 @@ function isEnabled(a: AgentConfig): boolean {
 // The default-agent dropdown only offers enabled agents, in the current array
 // order (= the visual order_seq order before Save stamps it).
 const defaultPickerAgents = computed<AgentConfig[]>(() => draft.value.agents.filter(isEnabled))
+
+// Virtual group agents (`_c3_<group>`, ADR-0029) offered alongside real agents in
+// every agent picker; selecting one binds the session/role to the group (relay
+// failover across its members). Derived client-side from the draft's `group` fields.
+const pickerGroupAgents = computed(() => listGroupAgents(draft.value.agents))
 
 // Toggle an agent's enabled flag. If this disables (or the inverse — never)
 // the current default, fall through to the next enabled agent and persist that
@@ -1018,6 +1035,13 @@ function selectAdmin(username: string) {
               >
                 <option v-for="w in WIRE_APIS" :key="w" :value="w">{{ wireApiLabel(w) }}</option>
               </select>
+              <input
+                v-model="a.group"
+                class="agent-field agent-group"
+                :title="t('settings.agents.group.tooltip')"
+                :placeholder="t('settings.agents.group.placeholder')"
+                data-testid="agent-group"
+              />
               <span class="col-actions">
                 <button
                   class="icon-btn"
@@ -1054,6 +1078,14 @@ function selectAdmin(username: string) {
               <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
                 {{ a.displayName || a.id }}
               </option>
+              <optgroup
+                v-if="pickerGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
               <option v-if="defaultPickerAgents.length === 0" value="" disabled>
                 {{ t('settings.agents.defaultPicker.empty') }}
               </option>
@@ -1074,6 +1106,14 @@ function selectAdmin(username: string) {
               <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
                 {{ a.displayName || a.id }}
               </option>
+              <optgroup
+                v-if="pickerGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
             </select>
           </div>
           <div class="agent-default-picker">
@@ -1091,6 +1131,14 @@ function selectAdmin(username: string) {
               <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
                 {{ a.displayName || a.id }}
               </option>
+              <optgroup
+                v-if="pickerGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
             </select>
           </div>
           <div class="agent-default-picker">
@@ -1108,6 +1156,14 @@ function selectAdmin(username: string) {
               <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
                 {{ a.displayName || a.id }}
               </option>
+              <optgroup
+                v-if="pickerGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
             </select>
           </div>
           <div class="agent-default-picker">
@@ -1125,6 +1181,14 @@ function selectAdmin(username: string) {
               <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
                 {{ a.displayName || a.id }}
               </option>
+              <optgroup
+                v-if="pickerGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
             </select>
           </div>
           <p v-if="bindingStats" class="settings-hint" data-testid="settings-default-note">

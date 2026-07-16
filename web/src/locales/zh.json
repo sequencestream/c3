@@ -225,6 +225,9 @@
         },
         "icon": {
           "label": "图标"
+        },
+        "group": {
+          "label": "分组"
         }
       },
       "toggle": {
@@ -342,6 +345,13 @@
       },
       "reorder": {
         "tooltip": "拖动以重新排序"
+      },
+      "group": {
+        "placeholder": "分组名(可选)",
+        "tooltip": "分组名——同组 agent 构成一个故障转移候选集。"
+      },
+      "groupPicker": {
+        "label": "分组"
       }
     },
     "defaultMode": {
@@ -1079,7 +1089,8 @@
       "agent": {
         "label": "Agent",
         "autoHint": "使用默认 agent（{name}）",
-        "autoHintNoDefault": "使用默认 agent"
+        "autoHintNoDefault": "使用默认 agent",
+        "groupLabel": "分组"
       },
       "missing": {
         "suffix": "binary 不在 PATH",
@@ -1454,7 +1465,8 @@
       },
       "agent": {
         "label": "Agent",
-        "placeholder": "Select an agent"
+        "placeholder": "Select an agent",
+        "groupLabel": "分组"
       },
       "tools": {
         "label": "允许的工具",

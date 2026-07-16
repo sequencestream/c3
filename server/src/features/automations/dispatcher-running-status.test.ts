@@ -33,6 +33,8 @@ vi.mock('../../kernel/config/index.js', () => ({
 vi.mock('../../kernel/agent-config/index.js', () => ({
   launchForAgent: () => ({ model: 'test-model', envOverrides: {} }),
   setAgentEnabled: () => true,
+  bindClaudeRelay: () => null,
+  unbindRelay: () => {},
 }))
 vi.mock('../../kernel/infra/child-env.js', () => ({
   buildChildEnv: () => ({}),

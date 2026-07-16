@@ -29,7 +29,13 @@ import type {
   VendorId,
 } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
-import { launchForAgent, setAgentEnabled } from '../../kernel/agent-config/index.js'
+import {
+  bindClaudeRelay,
+  launchForAgent,
+  setAgentEnabled,
+  unbindRelay,
+} from '../../kernel/agent-config/index.js'
+import { getRelay } from '../../kernel/relay/runtime.js'
 import { buildChildEnv, findClaudeExecutable } from '../../kernel/infra/child-env.js'
 import { loadSettings } from '../../kernel/config/index.js'
 import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
@@ -609,13 +615,19 @@ async function executeLlmPrompt(
     })
     return
   }
-  const { model, envOverrides } = launchForAgent(launchAgent)
+  const { model, envOverrides: launchEnv, relayCandidates } = launchForAgent(launchAgent)
 
   if (automation.vendor === 'codex') {
     await executeCodexLlmPrompt(automation, logId, updateLog, prompt, abortController, launchAgent)
     clearTimeout(timeoutTimer)
     return
   }
+
+  // Route a custom claude provider through the loopback relay (ADR-0029): the SDK
+  // connects with a per-run token, the real key stays in the relay. Null ⇒ system
+  // mode (own login). Released in the `finally` below.
+  const claudeRelay = bindClaudeRelay(relayCandidates)
+  const envOverrides = claudeRelay ? { ...launchEnv, ...claudeRelay.envOverrides } : launchEnv
 
   const claudePath = findClaudeExecutable()
 
@@ -779,6 +791,7 @@ async function executeLlmPrompt(
     // Dispose the per-execution c3 MCP token so the tools cannot be called after
     // this execution ends (idempotent; no-op when c3 was not selected).
     c3Binding?.dispose()
+    if (claudeRelay) unbindRelay(claudeRelay.token)
   }
 }
 
@@ -798,7 +811,7 @@ async function executeCodexLlmPrompt(
           approvalPolicy: 'never',
         }
   const { actionMode, toolGate } = codexPolicyToGrid(policy)
-  const { model, baseUrl, apiKey, wireApi, envOverrides } = launchForAgent(agent)
+  const { model, relayCandidates, envOverrides } = launchForAgent(agent)
   // Bridge the host `gh` keyring credential into the codex sandbox as `GH_TOKEN`
   // so PR review/comment/merge shell commands authenticate; network access stays
   // orthogonal, governed by this automation's sandbox/toolAllowlist settings.
@@ -839,16 +852,18 @@ async function executeCodexLlmPrompt(
   let settleReason: 'complete' | 'error' = 'complete'
   let settleError: string | undefined
   try {
-    const run = await createCodexAdapter().driver.start({
+    const run = await createCodexAdapter(
+      undefined,
+      undefined,
+      getRelay() ?? undefined,
+    ).driver.start({
       prompt,
       cwd: resolveWorkspaceRoot(automation.workspaceId)!,
       signal: abortController.signal,
       actionMode,
       toolGate,
       ...(model ? { model } : {}),
-      ...(baseUrl ? { baseUrl } : {}),
-      ...(apiKey ? { apiKey } : {}),
-      ...(wireApi ? { wireApi } : {}),
+      ...(relayCandidates ? { relayCandidates } : {}),
       ...(networkAccess ? { networkAccess: true } : {}),
       ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
       ...(c3Binding ? { mcpServers: c3Binding.servers } : {}),

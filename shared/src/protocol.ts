@@ -231,6 +231,51 @@ export const PENDING_SESSION_PREFIX = 'pending:'
 export const SYSTEM_AGENT_ID = 'system'
 
 /**
+ * Reserved prefix for **virtual group agents** (ADR-0029). A non-empty
+ * {@link AgentConfigBase.group} `<group>` on a `<vendor>` agent is surfaced in every
+ * agent-selection point as a virtual agent with id `_c3_<vendor>_<group>`; resolving
+ * it yields that `(vendor, group)`'s ordered candidate list (relay failover). Real
+ * (user-configured) agent ids may never start with this prefix — `normalize` guards
+ * the namespace.
+ */
+export const GROUP_AGENT_PREFIX = '_c3_'
+
+/** The known vendor ids as a runtime list (the type {@link VendorId} is the union). */
+export const VENDOR_IDS: readonly VendorId[] = ['claude', 'codex']
+
+/**
+ * The virtual group-agent reference id for a `(vendor, group)` — `_c3_<vendor>_<group>`.
+ * Encoding the vendor makes the group identity unambiguous, so DIFFERENT vendors may
+ * reuse the SAME group name (each `(vendor, group)` is its own group / its own virtual
+ * agent). Example: `('claude', 'fast')` → `_c3_claude_fast`.
+ */
+export function groupAgentRef(vendor: VendorId, group: string): string {
+  return `${GROUP_AGENT_PREFIX}${vendor}_${group}`
+}
+
+/**
+ * Parse a virtual group-agent id into its `(vendor, group)`, or null when it is not
+ * one. The vendor is matched against the closed {@link VENDOR_IDS} set (so the group
+ * name may itself contain underscores — everything after `_c3_<vendor>_` is the group).
+ */
+export function parseGroupAgentRef(id: string): { vendor: VendorId; group: string } | null {
+  if (!id.startsWith(GROUP_AGENT_PREFIX)) return null
+  const rest = id.slice(GROUP_AGENT_PREFIX.length)
+  for (const vendor of VENDOR_IDS) {
+    const marker = `${vendor}_`
+    if (rest.startsWith(marker) && rest.length > marker.length) {
+      return { vendor, group: rest.slice(marker.length) }
+    }
+  }
+  return null
+}
+
+/** Whether an agent reference id is a virtual group agent (`_c3_<vendor>_<group>`). */
+export function isGroupAgentRef(id: string): boolean {
+  return parseGroupAgentRef(id) !== null
+}
+
+/**
  * The vendor-agnostic public shell common to every agent profile (ADR-0011's
  * `vendor` dimension applied to the config layer). The per-vendor launch
  * specifics live in a discriminated `config` sub-object — see {@link AgentConfig}.
@@ -299,6 +344,18 @@ export interface AgentConfigBase {
    * their present visual order until the user drags to re-rank.
    */
   order_seq?: number
+  /**
+   * Optional group name (ADR-0029). Non-empty ⇒ this agent joins the
+   * `(group, vendor)` group; empty/absent ⇒ it participates in no group. Every
+   * non-empty group is exposed as a virtual **group agent** `_c3_<group>` in every
+   * agent-selection point; a request to that virtual agent picks the highest-priority
+   * (`order_seq` ascending) enabled member and fails over to the next through the
+   * relay. A group-name belongs to a single vendor: `normalize` locks a group's
+   * vendor to the FIRST agent that defines it and drops same-name / different-vendor
+   * agents from the group (with a warning). Real agent ids may not start with the
+   * reserved `_c3_` prefix (normalize enforces this).
+   */
+  group?: string
 }
 
 /**
@@ -400,6 +457,22 @@ export type AgentConfig = AgentConfigBase &
  */
 export function resolveDefaultAgentId(agents: AgentConfig[], currentDefaultId: string): string {
   const isEnabled = (a: AgentConfig): boolean => a.enabled !== false
+  // A virtual group reference (`_c3_<vendor>_<group>`, ADR-0029) stays selected as
+  // long as that (vendor, group) still has an enabled member; an emptied group falls
+  // through like a removed agent. Group refs are not in `agents` (they are virtual),
+  // so this must precede the by-id lookup below or a valid group pick would be reset.
+  const ref = parseGroupAgentRef(currentDefaultId)
+  if (ref) {
+    if (
+      agents.some(
+        (a) => isEnabled(a) && a.vendor === ref.vendor && (a.group?.trim() ?? '') === ref.group,
+      )
+    ) {
+      return currentDefaultId
+    }
+    const firstEnabled = agents.find(isEnabled)
+    return firstEnabled ? firstEnabled.id : SYSTEM_AGENT_ID
+  }
   const current = agents.find((a) => a.id === currentDefaultId)
   if (current && isEnabled(current)) return currentDefaultId
   const idx = agents.findIndex((a) => a.id === currentDefaultId)

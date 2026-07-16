@@ -388,6 +388,69 @@ describe('resolveSessionAgentSwitch (title-bar switcher payload)', () => {
     expect(sw?.candidates).toEqual([])
     expect(sw?.currentUnavailable).toBe(false)
   })
+
+  it('offers same-vendor group agents (`_c3_<group>`) as switch candidates (ADR-0029)', () => {
+    saveSettings({
+      agents: [
+        {
+          id: 'cl-a',
+          vendor: 'claude',
+          configMode: 'custom',
+          displayName: 'CL A',
+          group: 'fast',
+          config: { baseUrl: 'https://a/anthropic', apiKey: 'k', model: 'm' },
+        },
+        {
+          id: 'cl-b',
+          vendor: 'claude',
+          configMode: 'custom',
+          displayName: 'CL B',
+          group: 'fast',
+          config: { baseUrl: 'https://b/anthropic', apiKey: 'k', model: 'm' },
+        },
+        {
+          id: 'cx',
+          vendor: 'codex',
+          configMode: 'custom',
+          displayName: 'CX',
+          group: 'cheap',
+          config: { baseUrl: 'https://c', apiKey: 'k', model: 'm', wireApi: 'chat' },
+        },
+      ],
+      defaultAgentId: 'cl-a',
+    } as unknown as SystemSettings)
+    resetSettingsCacheForTests()
+    bindSessionAgent('pending:g1', 'real-g1', 'cl-a', 'claude')
+    const sw = resolveSessionAgentSwitch('real-g1', allPresent)
+    // The claude session can switch to the claude peer AND the claude group `_c3_claude_fast`
+    // (labelled with the prefix); the codex group `_c3_codex_cheap` is a different vendor.
+    expect(sw?.candidates).toContainEqual({ id: 'cl-b', displayName: 'CL B' })
+    expect(sw?.candidates).toContainEqual({ id: '_c3_claude_fast', displayName: '_c3_claude_fast' })
+    expect(sw?.candidates.some((c) => c.id === '_c3_codex_cheap')).toBe(false)
+  })
+
+  it('shows a group-bound session as its prefixed ref and can switch away', () => {
+    saveSettings({
+      agents: [
+        {
+          id: 'cl-a',
+          vendor: 'claude',
+          configMode: 'custom',
+          displayName: 'CL A',
+          group: 'fast',
+          config: { baseUrl: 'https://a/anthropic', apiKey: 'k', model: 'm' },
+        },
+      ],
+      defaultAgentId: 'cl-a',
+    } as unknown as SystemSettings)
+    resetSettingsCacheForTests()
+    bindSessionAgent('pending:g2', 'real-g2', '_c3_claude_fast', 'claude')
+    const sw = resolveSessionAgentSwitch('real-g2', allPresent)
+    expect(sw?.current).toEqual({ id: '_c3_claude_fast', displayName: '_c3_claude_fast' })
+    // The group itself is excluded from its own candidate list; the member is offered.
+    expect(sw?.candidates.some((c) => c.id === '_c3_claude_fast')).toBe(false)
+    expect(sw?.candidates).toContainEqual({ id: 'cl-a', displayName: 'CL A' })
+  })
 })
 
 describe('cleanupStalePendingIntents (janitor)', () => {

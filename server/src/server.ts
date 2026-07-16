@@ -86,7 +86,13 @@ import {
 } from './kernel/agent/process/launcher.js'
 import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
 import { createClaudeAdapter } from './kernel/agent/adapters/claude/index.js'
-import { createCodexRelay, CODEX_RELAY_PATH } from './transport/codex-relay/index.js'
+import {
+  createRelay,
+  RELAY_CODEX_PATH,
+  RELAY_ANTHROPIC_PATH,
+  CODEX_RELAY_LEGACY_PATH,
+} from './transport/relay/index.js'
+import { setRelay } from './kernel/relay/runtime.js'
 import type { VendorAdapter } from './kernel/agent/adapters/types.js'
 import type { VendorId } from '@ccc/shared/protocol'
 import { hasAnyInstalledSkill } from './kernel/skill-loader/index.js'
@@ -272,15 +278,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // gated like the others. Built here so the kernel launcher only sees the neutral
   // VendorAdapter (injected via launchDeps.getCodexAdapter). Missing CLI ⇒ null, and
   // the codex agent type is simply unavailable (a session falls back / errors loud).
-  // In-process Responses→Chat relay (ADR-0014): codex 0.137 speaks only the
-  // Responses API, so a codex agent on a Chat-Completions-only provider (DeepSeek,
-  // Kimi, …) is driven through this loopback shim. Built unconditionally and mounted
-  // below; the driver only engages it for a custom provider URL.
-  const codexRelay = createCodexRelay(`http://127.0.0.1:${opts.port}`)
+  // Vendor-neutral in-process relay (ADR-0029): every vendor CLI's provider traffic
+  // is routed to a loopback endpoint with a per-run token so the real provider key
+  // never reaches the subprocess/sandbox; the relay translates/passes-through per
+  // vendor and fails over across a group's candidate list. Built unconditionally,
+  // mounted below, injected into the codex adapter, and registered as the process
+  // relay singleton so the claude launch path and the one-shot advisor reach it too.
+  const relay = createRelay(`http://127.0.0.1:${opts.port}`)
+  setRelay(relay)
   let codexAdapter: VendorAdapter | null = null
   if (resolveVendorCli('codex')) {
     try {
-      codexAdapter = createCodexAdapter(undefined, undefined, codexRelay)
+      codexAdapter = createCodexAdapter(undefined, undefined, relay)
       console.log('[c3] codex ready (per-run CLI)')
     } catch (e) {
       console.warn(`[c3] codex unavailable: ${e instanceof Error ? e.message : String(e)}`)
@@ -631,9 +640,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     createWsHandler({ upgradeWebSocket, broadcaster, ctx, handlerRegistry, sessionAccessor }),
   )
 
-  // Codex relay loopback endpoint (ADR-0014). MUST be registered before the static
-  // catch-all (`app.get('*')`) so it is not swallowed by the SPA fallback.
-  app.post(`${CODEX_RELAY_PATH}/responses`, (c) => codexRelay.handler(c))
+  // Vendor-neutral relay loopback endpoints (ADR-0029). MUST be registered before
+  // the static catch-all (`app.get('*')`) so they are not swallowed by the SPA
+  // fallback. codex POSTs `<codex>/responses`; the claude SDK POSTs
+  // `<anthropic>/v1/messages`. The legacy codex-only path is kept as a transition
+  // alias for one release window.
+  app.post(`${RELAY_CODEX_PATH}/responses`, (c) => relay.codexHandler(c))
+  app.post(`${CODEX_RELAY_LEGACY_PATH}/responses`, (c) => relay.codexHandler(c))
+  app.post(`${RELAY_ANTHROPIC_PATH}/v1/messages`, (c) => relay.anthropicHandler(c))
 
   // Intent MCP loopback endpoint (2026-06-12-005). `all` covers POST (JSON-RPC
   // messages), GET (SSE stream), and DELETE (session end). Loopback-guarded +

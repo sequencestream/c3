@@ -16,12 +16,16 @@
  * builder is unit-tested directly (`build-chain.test.ts`).
  */
 import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
+import type { RelayCandidate } from '../relay/contract.js'
 
 /** One agent attempt the launcher runs (entry 0 = session agent, rest = chain). */
 export interface AgentAttempt {
   agentId: string
   envOverrides?: Record<string, string>
   model?: string
+  /** The relay candidate list for this attempt's agent/group (ADR-0029); the claude
+   *  launch site binds it behind a per-run relay token. Absent ⇒ system mode. */
+  relayCandidates?: RelayCandidate[]
 }
 
 /** A chain agent dropped for being a different vendor than the session agent. */
@@ -54,7 +58,11 @@ export function buildAgentsToTry(
   firstVendor: VendorId,
   chain: string[] | undefined,
   resolve: (id: string) => AgentConfig,
-  launch: (agent: AgentConfig) => { envOverrides?: Record<string, string>; model?: string },
+  launch: (agent: AgentConfig) => {
+    envOverrides?: Record<string, string>
+    model?: string
+    relayCandidates?: RelayCandidate[]
+  },
 ): BuiltChain {
   const agentsToTry: AgentAttempt[] = [firstLaunch]
   const crossVendorSkipped: SkippedAgent[] = []

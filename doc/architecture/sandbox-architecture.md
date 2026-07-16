@@ -157,10 +157,11 @@ run 启动（任意来源 / 分支模式）
        workspace root:ro（仅当 ≠ executionRoot；同路径并入 executionRoot rw）
        specsBase:rw
        extraMounts[i]:(ro|rw)
-  → 在执行根内创建逐 run runtime 目录，提供隔离的 CODEX_HOME
+       codexHome:rw（`~/.c3/sandbox-home/<project>/.codex`，持久，跨 run 存活）
+  → 在执行根内创建逐 run tmpDir（仅放 wrapper 脚本）
   → createSandboxWrapper(entryCommand, paths, cwd=executionRoot, env)
   → vendor adapter spawn wrapper
-  → run 完成后清理 wrapper tmpDir（无容器需停止）
+  → run 完成后清理 wrapper tmpDir（无容器需停止；持久 codexHome 不清理）
 ```
 
 wrapper 形态(进程包裹,非 `docker exec`):
@@ -171,8 +172,10 @@ mkdir -p "/tmp/claude-<uid>" 2>/dev/null || true
 exec arapuca run \
   --seccomp baseline \
   --cwd "<executionRoot>" \
-  --env "CODEX_HOME=<执行根内逐 run runtime>/home/.codex" \
-  -v "<执行根内逐 run runtime>/home/.codex:rw" \
+  --env "CODEX_HOME=<持久 per-workspace codexHome>" \   # ~/.c3/sandbox-home/<project>/.codex，跨 run 存活
+  --env "CODEX_API_KEY=$CODEX_API_KEY" \   # codex 分支:relay token,运行时展开,值不落盘
+  # claude 分支改为:--env "ANTHROPIC_BASE_URL=$ANTHROPIC_BASE_URL" --env "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" --env "ANTHROPIC_AUTH_TOKEN=$ANTHROPIC_AUTH_TOKEN" \
+  -v "<持久 per-workspace codexHome>:rw" \
   -v "<canonical /tmp>/claude-<uid>:rw" \
   -v "<executionRoot>":rw \
   [ -v "<workspaceRoot>":ro ]   # 仅当 workspaceRoot ≠ executionRoot \
@@ -183,14 +186,22 @@ exec arapuca run \
 
 - `<entryCommand>` 是宿主 PATH 中的 vendor CLI 名(`claude` / `codex`)。
 - vendor SDK/driver 仍以为自己 spawn 的是本地 CLI;wrapper 只是把这次 spawn 包进 arapuca。
-  provider 认证由 driver 经子进程 env 注入(claude 的 `ANTHROPIC_*`、codex 的 provider 三元组),
-  arapuca 保留普通 env,故 wrapper 自身不处理凭证,也不挂订阅 / keychain。
+  provider 认证由 driver 经子进程 env 注入(claude 的 `ANTHROPIC_*`、codex 的 relay token `CODEX_API_KEY`),
+  但 arapuca env deny-by-default 不继承父 env,故 wrapper 须按 vendor 用 `--env "KEY=$KEY"` 显式透传
+  ——`$KEY` 由 `/bin/sh` 在运行时从 wrapper 进程 env 展开,token **值不落盘**到脚本文本;未设的变量展开为
+  `KEY=`,arapuca 视为未设(安全 no-op)。wrapper 仍不挂订阅 / keychain。
 - `--seccomp baseline` 打开出站网络(当前网络模型"全开",见 §8);arapuca 默认 `strict` 会
   全断网络,导致 vendor CLI 的 provider 调用 `ConnectionRefused`。macOS 无 per-host 白名单;
   Linux 后续可用 `--allow-host` 收窄到 provider 域名。
-- CODEX_HOME 位于已放行的 worktree 内并随 run 清理。arapuca 管理 HOME/TMPDIR 且禁止覆盖，
-  因此通过 Codex 支持的 CODEX_HOME 避免默认临时 HOME 被 Codex 拒绝创建 PATH helper；该目录
-  还需作为独立 rw volume 传入，以满足 macOS profile 对启动期 canonicalize 的授权。
+- **CODEX_HOME 持久化(codex resume)**:CODEX_HOME 指向 **per-workspace 持久目录**
+  `~/.c3/sandbox-home/<project>/.codex`(`getSandboxCodexHome(workspace)`),位于执行根**之外**、
+  独立 rw volume 挂载。arapuca 管理 HOME/TMPDIR 且禁止覆盖,故通过 Codex 支持的 CODEX_HOME
+  避免默认临时 HOME 被 Codex 拒绝创建 PATH helper。**为何持久而非逐 run**:codex 多轮对话第二轮
+  `thread/resume` 需要第一轮 `startThread` 写在 `CODEX_HOME/sessions/` 的 rollout 文件;若 CODEX_HOME
+  随 run 清理,下一轮拿到空目录 → `no rollout found`。持久目录让同工作区所有 session 共用一个 home、
+  每个 thread 的 rollout(以 thread id 命名)跨 run 存活以供续接。**不挂宿主 `~/.codex`**:rollout 本就
+  写在持久目录而非宿主 `~/.codex`,且挂宿主 `auth.json` 会破坏 deny-by-default。逐 run tmpDir 现仅放
+  wrapper 脚本并随 run 清理;持久 codexHome 由每日 janitor 按工作区保留天数清理(见 §10.1)。
 - Claude Code 把逐用户运行时目录硬编码在 `/tmp/claude-<uid>`(shell-snapshot / IPC),不尊重
   TMPDIR 且 arapuca 锁定 TMPDIR 无法重定向,故 wrapper 预建该宿主目录并按 canonical 路径放行。
   它是逐用户共享目录(非逐 run),放行但不清理;codex 不使用它。
@@ -205,6 +216,14 @@ exec arapuca run \
 > `mkdir /tmp/claude-<uid>` EPERM)。二者已在 arapuca 上游修复;使用方需安装含该修复的
 > arapuca。验证见 `scripts/e2e/e2e-arapuca-capability-test.mjs` 与
 > `scripts/e2e/e2e-sandbox-vendor-token-test.mjs`。
+
+### 10.1 rollout 保留与每日清理(janitor)
+
+持久 CODEX_HOME 不逐 run 清理,rollout 会无限累积。**每日 janitor**(`features/sandbox/rollout-janitor.ts`,
+随服务启动、开机延迟首跑后固定 24h 周期,`setTimeout().unref()`,fail-soft)扫描
+`~/.c3/sandbox-home/*/.codex/sessions/`,删除 mtime 超过该工作区**保留天数**的 rollout 文件。
+保留天数为 per-workspace 配置 `WorkspaceSandboxConfig.sessionRetentionDays`(默认 30,最小 1;见 §15),
+janitor 用 `projectDirName` 把每个磁盘目录映射回工作区取其窗口,无匹配配置的孤儿目录(如已删除工作区)按默认窗口清理。仅删文件、不删空目录树,单文件出错记录后跳过不中断整轮。
 
 ## 11. c3 MCP 接入
 
@@ -251,24 +270,28 @@ interface WorkspaceSandboxConfig {
     readonly?: boolean // 默认 true;缺省即 ro,可逐项显式设为 false 放开 rw
   }[]
   sandboxSessionKinds?: SessionKind[] // 哪些 SessionKind 进沙箱,缺省 ['work']
+  sessionRetentionDays?: number // 持久 CODEX_HOME rollout 保留天数,缺省 30、最小 1(见 §10.1)
   // 网络开关留待网络阶段引入;当前网络全开,无对应字段。
 }
 ```
+
+- `sessionRetentionDays`:normalize 对有限正数向下取整并 clamp 到最小 1;非有限 / ≤ 0 / 缺省视为未设(读取时回落默认 30)。仅当值 ≠ 默认才落盘,保持旧配置整洁。
 
 - 移除容器相关配置:镜像名 / `imageOverride` / `readonlyRootfs` / `networkDisabled` / `allowExternalNetwork` 等一律不在当前模型中。网络收窄阶段再按需引入网络字段。
 - 移除容器供应链协议:`RuntimeVendorConfig`、`VendorInstallManifest`、`FetchPlan` 等一律不引入。
 
 ## 16. 风险与决策
 
-| 风险                          | 决策                                                                    |
-| ----------------------------- | ----------------------------------------------------------------------- |
-| 进程级隔离弱于容器/microVM    | 明确定位:当前只做目录 ro/rw + 网络全开,不承诺完全不可信代码的强隔离。   |
-| 同路径放行暴露宿主目录结构    | canonicalize + allowlist;项目原目录 ro;补充目录默认 ro;敏感目录不放行。 |
-| arapuca 缺失或平台不支持      | 启动前探测,hard-fail 并给出明确 UiCode。                                |
-| 补充目录逃逸或覆盖保留路径    | 保留路径(worktree/原目录/specsBase)不可被 `extraMounts` 覆盖。          |
-| vendor CLI 认证所需配置读不到 | wrapper 最小化放行其自身配置目录;不牵连 home 其它敏感目录。             |
-| macOS Seatbelt 已 deprecated  | 当前范围只用文件系统 MAC(15 仍可用);能力差异在文档标注。                |
-| 网络当前全开带来的出站风险    | 已知取舍:当前范围不控网络;网络收窄列为后续阶段(§8)。                    |
+| 风险                             | 决策                                                                                                                                                                                                                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 进程级隔离弱于容器/microVM       | 明确定位:当前只做目录 ro/rw + 网络全开,不承诺完全不可信代码的强隔离。                                                                                                                                                                                                   |
+| 同路径放行暴露宿主目录结构       | canonicalize + allowlist;项目原目录 ro;补充目录默认 ro;敏感目录不放行。                                                                                                                                                                                                 |
+| arapuca 缺失或平台不支持         | 启动前探测,hard-fail 并给出明确 UiCode。                                                                                                                                                                                                                                |
+| 补充目录逃逸或覆盖保留路径       | 保留路径(worktree/原目录/specsBase)不可被 `extraMounts` 覆盖。                                                                                                                                                                                                          |
+| vendor CLI 认证所需配置读不到    | wrapper 最小化放行其自身配置目录;不牵连 home 其它敏感目录。                                                                                                                                                                                                             |
+| macOS Seatbelt 已 deprecated     | 当前范围只用文件系统 MAC(15 仍可用);能力差异在文档标注。                                                                                                                                                                                                                |
+| 网络当前全开带来的出站风险       | 已知取舍:当前范围不控网络;网络收窄列为后续阶段(§8)。                                                                                                                                                                                                                    |
+| sandbox session 历史读写目录错位 | 已知限制(待修):transcript 读取端硬编码宿主 home,与 sandbox per-workspace home 不一致,sandbox session 历史读不到 / 切模式续接失败。vendor 中立(codex `CODEX_HOME` / claude `CLAUDE_CONFIG_DIR`)。方向见 design §9.1(读取端两处扫兜底 + session `storeScope` 冻结 fact)。 |
 
 ## 17. 分阶段实施
 

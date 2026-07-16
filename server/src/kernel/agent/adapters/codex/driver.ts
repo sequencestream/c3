@@ -634,8 +634,12 @@ export class CodexDriver implements AgentDriver {
     // `arapuca run … -- codex "$@"` and the run executes as an arapuca-narrowed
     // host process. The wrapper forwards every c3-built argv via `"$@"`, so
     // `baseUrl` (→ `--config openai_base_url`) and `model` (→ `--model`) reach
-    // codex natively, and `CODEX_API_KEY` rides the wrapper process env (inherited
-    // by the arapuca child) — no env-file. Without a wrapper, use c3's own
+    // codex natively. `CODEX_API_KEY` (the relay token) sits on the wrapper
+    // process env here, but arapuca is env deny-by-default and drops the parent
+    // env — so the wrapper forwards it explicitly as `--env "CODEX_API_KEY=$CODEX_API_KEY"`,
+    // expanded by /bin/sh from this process's env at run time, without writing
+    // the token value into the wrapper script (see createSandboxWrapper) — no
+    // env-file. Without a wrapper, use c3's own
     // ProcessLauncher PATH probe (cached; a no-op after the first health check).
     // When the binary is not on PATH, higher layers handle the absence before the
     // adapter is constructed — by this point it is always present.

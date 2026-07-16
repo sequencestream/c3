@@ -47,6 +47,11 @@ export interface WorkspaceSandboxConfig {
   readonly extraMounts?: readonly SandboxExtraMount[]
   /** Session kinds that run inside the sandbox when enabled. Absent ⇒ `['work']`. */
   readonly sandboxSessionKinds?: readonly SessionKind[]
+  /**
+   * Retention window (days) for the persistent sandbox CODEX_HOME rollouts. The
+   * daily janitor prunes rollout files older than this. Absent ⇒ 30 days.
+   */
+  readonly sessionRetentionDays?: number
 }
 
 // ─── Resolved Path Model ─────────────────────────────────────────────────────
@@ -86,6 +91,12 @@ export interface ResolvedSandboxPaths {
   readonly workspaceRoot?: string
   /** Centralized specs root — read-write, same host absolute path. */
   readonly specsBase: string
+  /**
+   * Persistent per-workspace sandbox CODEX_HOME — read-write, same host absolute
+   * path. Outlives the per-run temp dir so codex thread rollouts survive for the
+   * next turn's `resume` (see `getSandboxCodexHome`).
+   */
+  readonly codexHome: string
   /** Supplementary allowed directories, each ro/rw as declared. */
   readonly extra: readonly ResolvedMount[]
 }

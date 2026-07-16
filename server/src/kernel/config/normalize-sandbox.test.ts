@@ -155,4 +155,37 @@ describe('normalizeSandboxConfig invariants (via normalizeWorkspaceSetting)', ()
     )
     expect(result.sandbox).toBeUndefined()
   })
+
+  it('keeps an explicit non-default sessionRetentionDays (floored, clamped up)', () => {
+    const result = normalizeWorkspaceSetting(
+      { sandbox: { enabled: true, sessionRetentionDays: 7.9 } },
+      [],
+    )
+    expect(result.sandbox).toMatchObject({ enabled: true, sessionRetentionDays: 7 })
+  })
+
+  it('clamps a below-floor sessionRetentionDays up to the minimum', () => {
+    const result = normalizeWorkspaceSetting(
+      { sandbox: { enabled: true, sessionRetentionDays: 0 } },
+      [],
+    )
+    // 0 is not finite-positive after clamp semantics → treated as absent (default applies).
+    expect(result.sandbox?.sessionRetentionDays).toBeUndefined()
+  })
+
+  it('omits sessionRetentionDays when it equals the default (keeps config clean)', () => {
+    const result = normalizeWorkspaceSetting(
+      { sandbox: { enabled: true, sessionRetentionDays: 30 } },
+      [],
+    )
+    expect(result.sandbox).toEqual({ enabled: true })
+  })
+
+  it('drops a non-finite sessionRetentionDays', () => {
+    const result = normalizeWorkspaceSetting(
+      { sandbox: { enabled: true, sessionRetentionDays: 'lots' } },
+      [],
+    )
+    expect(result.sandbox?.sessionRetentionDays).toBeUndefined()
+  })
 })

@@ -38,6 +38,7 @@ export const workspaceSandboxConfigSchema = z.object({
   enabled: z.boolean().optional(),
   extraMounts: z.array(sandboxExtraMountSchema).optional(),
   sandboxSessionKinds: z.array(z.enum(SESSION_KINDS)).optional(),
+  sessionRetentionDays: z.number().optional(),
 })
 
 // ─── Compile-Time Type Pins ──────────────────────────────────────────────────

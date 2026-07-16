@@ -76,6 +76,11 @@ describe('resolvePaths', () => {
     expect(paths.executionRoot).toBe(realpathSync(worktree))
     // specsBase was created under the stubbed c3 home by resolvePaths.
     expect(existsSync(paths.specsBase)).toBe(true)
+    // The persistent per-workspace CODEX_HOME is created + canonicalized too, and
+    // lives under the stubbed c3 home (outside the execution root) so it survives
+    // per-run cleanup for codex `resume`.
+    expect(existsSync(paths.codexHome)).toBe(true)
+    expect(paths.codexHome.startsWith(realpathSync(stub.home))).toBe(true)
     expect(paths.extra).toEqual([])
   })
 
@@ -171,10 +176,15 @@ describe('probeArapuca', () => {
     const sandbox = launchSandbox(workspaceRoot, worktree)
     try {
       expect(sandbox.tmpDir.startsWith(`${realpathSync(worktree)}/.c3-sb-`)).toBe(true)
-      expect(existsSync(join(sandbox.tmpDir, 'home', '.codex'))).toBe(true)
+      // The per-run temp dir holds only the wrapper — no codex home under it. The
+      // persistent CODEX_HOME lives outside (under c3 home) and survives cleanup.
+      expect(existsSync(join(sandbox.tmpDir, 'home', '.codex'))).toBe(false)
+      expect(existsSync(sandbox.paths.codexHome)).toBe(true)
     } finally {
       sandbox.cleanup()
     }
+    // Persistent home outlives the run's cleanup.
+    expect(existsSync(sandbox.paths.codexHome)).toBe(true)
   })
 
   it('rejects a nested macOS sandbox before attempting to launch arapuca', () => {
@@ -201,9 +211,19 @@ describe('createSandboxWrapper', () => {
       expect(script).toContain(`${paths.executionRoot}:rw`)
       expect(script).toContain(`${paths.specsBase}:rw`)
       expect(script).toContain(`--cwd '${paths.executionRoot}'`)
-      expect(script).toContain(`--env 'CODEX_HOME=${tmp}/home/.codex'`)
-      expect(script).toContain(`-v '${tmp}/home/.codex:rw'`)
+      // CODEX_HOME points at the persistent per-workspace home (outside the temp
+      // dir), mounted rw so codex thread rollouts survive for the next `resume`.
+      expect(script).toContain(`--env 'CODEX_HOME=${paths.codexHome}'`)
+      expect(script).toContain(`-v '${paths.codexHome}:rw'`)
       expect(script).toContain(`-- 'claude' "$@"`)
+      // arapuca is env deny-by-default; claude's provider credential is forwarded
+      // as `--env "KEY=$KEY"`, expanded from the wrapper env at run time (value
+      // never written into the script). codex-only vars are not leaked into a
+      // claude run.
+      expect(script).toContain(`--env "ANTHROPIC_BASE_URL=$ANTHROPIC_BASE_URL"`)
+      expect(script).toContain(`--env "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"`)
+      expect(script).toContain(`--env "ANTHROPIC_AUTH_TOKEN=$ANTHROPIC_AUTH_TOKEN"`)
+      expect(script).not.toContain('CODEX_API_KEY')
       // Network opened for provider calls (strict — the default — blocks it).
       expect(script).toContain('--seccomp baseline')
       // Claude's hardcoded /tmp/claude-<uid> runtime dir: created by the wrapper
@@ -211,6 +231,22 @@ describe('createSandboxWrapper', () => {
       const uid = typeof process.getuid === 'function' ? process.getuid() : 0
       expect(script).toContain(`mkdir -p '/tmp/claude-${uid}'`)
       expect(script).toContain(`${realpathSync('/tmp')}/claude-${uid}:rw`)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('forwards the codex relay credential by bare name and does not leak claude vars', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
+    try {
+      const paths = resolvePaths(workspaceRoot, worktree)
+      const script = readFileSync(createSandboxWrapper(paths, 'codex', tmp), 'utf-8')
+      // `--env "KEY=$KEY"`: /bin/sh expands $CODEX_API_KEY from the wrapper env at
+      // run time; the script text holds only the `$`-reference, never a value.
+      expect(script).toContain(`--env "CODEX_API_KEY=$CODEX_API_KEY"`)
+      // A codex run must not pull claude's provider credential into its sandbox.
+      expect(script).not.toContain('ANTHROPIC_')
+      expect(script).toContain(`-- 'codex' "$@"`)
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }

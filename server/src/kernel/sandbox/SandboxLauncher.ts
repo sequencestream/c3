@@ -42,7 +42,7 @@ import {
 import { homedir } from 'node:os'
 import { join, delimiter, sep } from 'node:path'
 import { getProjectSandbox } from '../../kernel/config/index.js'
-import { getSpecsBase } from '../../kernel/config/workspace-path.js'
+import { getSpecsBase, getSandboxCodexHome } from '../../kernel/config/workspace-path.js'
 import type { SysExtraMount, SessionKind } from '@ccc/shared/protocol'
 import type {
   ResolvedMount,
@@ -265,11 +265,23 @@ export function resolvePaths(
   const canonSys = new Map(sys.map((m) => [m.key, canonicalize(m.path, m.key)]))
   const canonWorkspaceRoot = canonSys.get('workspaceRoot')!
   const canonSpecsBase = canonSys.get('specs')!
+  // Persistent per-workspace sandbox CODEX_HOME (rw). It lives OUTSIDE the
+  // execution root (under c3 home), so unlike the per-run temp dir it survives
+  // cleanup — codex thread rollouts persist here for the next turn's `resume`.
+  // Ensure it exists so it can be canonicalized and written, then treat it as a
+  // reserved allowance (extraMounts must not overlap it).
+  const sandboxCodexHome = getSandboxCodexHome(workspaceRoot)
+  try {
+    mkdirSync(sandboxCodexHome, { recursive: true })
+  } catch {
+    // best-effort; canonicalize below will surface a real failure
+  }
+  const canonCodexHome = canonicalize(sandboxCodexHome, 'codexHome')
   // Current-branch (and no-isolated-cwd) runs execute in the workspace itself:
   // the ro workspace-root allowance is merged into the rw execution-root grant.
   const sameRoot = canonWorkspaceRoot === canonExecutionRoot
 
-  const reserved = [canonExecutionRoot, ...canonSys.values()]
+  const reserved = [canonExecutionRoot, ...canonSys.values(), canonCodexHome]
   // Canonicalize denied dirs (best-effort) so a symlinked system path (e.g. macOS
   // /etc → /private/etc) still matches an extraMount's canonicalized real path.
   const denied = denyList().map((d) => {
@@ -321,6 +333,7 @@ export function resolvePaths(
     // execution root — a single rw mount, never a conflicting ro/rw pair.
     ...(sameRoot ? {} : { workspaceRoot: canonWorkspaceRoot }),
     specsBase: canonSpecsBase,
+    codexHome: canonCodexHome,
     extra,
   }
 }
@@ -364,17 +377,16 @@ export function launchSandbox(workspaceRoot: string, executionRoot: string): San
 
   const sbCfg = getProjectSandbox(workspaceRoot)
   const paths = resolvePaths(workspaceRoot, executionRoot, sbCfg?.extraMounts ?? [])
-  // Put per-run process state in the already-authorized execution root. arapuca's
-  // default isolated HOME lives below the OS temp root, where Codex refuses to
-  // install PATH helpers and macOS Seatbelt rejects subsequent writes. HOME is
-  // sandbox-managed, so point Codex here through CODEX_HOME.
+  // The per-run temp dir holds ONLY the wrapper script — it is deleted on cleanup.
+  // Codex process state (CODEX_HOME) lives in the persistent per-workspace home
+  // (`paths.codexHome`, ensured by resolvePaths), NOT here, so thread rollouts
+  // survive for the next turn's `resume`.
   const tmpDir = mkdtempSync(join(paths.executionRoot, '.c3-sb-'))
-  mkdirSync(join(tmpDir, 'home', '.codex'), { recursive: true })
 
   console.log(
     `[sandbox] arapuca wrapper prepared: exec(rw)=${paths.executionRoot} ` +
       `root(ro)=${paths.workspaceRoot ?? '(merged into exec)'} ` +
-      `specs(rw)=${paths.specsBase} extra=${paths.extra.length}`,
+      `specs(rw)=${paths.specsBase} codexHome(rw)=${paths.codexHome} extra=${paths.extra.length}`,
   )
 
   return {
@@ -416,7 +428,11 @@ export function createSandboxWrapper(
   entryCommand: string,
   tmpDir: string,
 ): string {
-  const codexHome = join(tmpDir, 'home', '.codex')
+  // Persistent per-workspace CODEX_HOME (resolved + ensured by resolvePaths). It
+  // lives outside the per-run temp dir, so codex thread rollouts written here
+  // survive cleanup and the next turn can `resume` them. Mounted rw explicitly
+  // below since it is outside the execution root's grant.
+  const codexHome = paths.codexHome
   // Claude Code hardcodes its per-user runtime dir at /tmp/claude-<uid>
   // (shell-snapshots / IPC). It ignores TMPDIR and arapuca locks TMPDIR, so the
   // dir cannot be redirected — it must be allowed. The host path (`/tmp/...`) is
@@ -438,6 +454,30 @@ export function createSandboxWrapper(
     .map((m) => `  -v ${shQuote(`${m.path}:${m.readonly ? 'ro' : 'rw'}`)} \\`)
     .join('\n')
 
+  // arapuca is env deny-by-default: it drops the parent process env (except the
+  // vars it manages itself, HOME/PATH) and forwards ONLY variables passed as
+  // `--env KEY=VALUE` (a bare `--env KEY` is rejected as invalid). The driver
+  // already places the run's provider credential on the wrapper process env
+  // (codexExecEnv sets CODEX_API_KEY from the relay token; the claude launch env
+  // carries ANTHROPIC_*). Forward each as `--env "KEY=$KEY"` where `$KEY` is
+  // expanded by /bin/sh AT RUN TIME from the wrapper's own env — so the token
+  // VALUE never lands in this script's text on disk, only the variable name and
+  // a `$`-reference do. An unset var expands to `KEY=`, which arapuca drops
+  // (leaves it unset in the sandbox) rather than erroring — a safe no-op. Scope
+  // the list per vendor so a codex run never leaks ANTHROPIC_* into its sandbox
+  // and vice-versa.
+  const credentialEnvNames =
+    entryCommand === 'codex'
+      ? ['CODEX_API_KEY']
+      : entryCommand === 'claude'
+        ? ['ANTHROPIC_BASE_URL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']
+        : []
+  // Emit unquoted `$NAME` so /bin/sh expands it at run time; the whole KEY=VALUE
+  // is double-quoted so a value with spaces stays one argv token.
+  const credentialEnvBlock = credentialEnvNames
+    .map((name) => `  --env "${name}=$${name}" \\\n`)
+    .join('')
+
   const scriptPath = join(tmpDir, 'wrapper.sh')
   // `--seccomp baseline` opens outbound network (sandbox network model is
   // "fully open" for now; strict — the arapuca default — blocks all network and
@@ -450,7 +490,7 @@ exec arapuca run \\
   --seccomp baseline \\
   --cwd ${shQuote(paths.executionRoot)} \\
   --env ${shQuote(`CODEX_HOME=${codexHome}`)} \\
-  -v ${shQuote(`${codexHome}:rw`)} \\
+${credentialEnvBlock}  -v ${shQuote(`${codexHome}:rw`)} \\
   -v ${shQuote(`${claudeRuntimeCanon}:rw`)} \\
 ${mountFlags}
   -- ${shQuote(entryCommand)} "$@"

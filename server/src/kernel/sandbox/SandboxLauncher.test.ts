@@ -37,6 +37,7 @@ vi.mock('../../kernel/config/index.js', () => ({
 import {
   resolvePaths,
   probeArapuca,
+  launchSandbox,
   createSandboxWrapper,
   resetArapucaProbeForTests,
   SandboxLaunchError,
@@ -156,6 +157,13 @@ describe('probeArapuca', () => {
     process.env.PATH = binDir
     resetArapucaProbeForTests()
     expect(probeArapuca()).toEqual({ ok: true, path: bin })
+    const sandbox = launchSandbox(workspaceRoot, worktree)
+    try {
+      expect(sandbox.tmpDir.startsWith(`${realpathSync(worktree)}/.c3-sb-`)).toBe(true)
+      expect(existsSync(join(sandbox.tmpDir, 'home', '.codex'))).toBe(true)
+    } finally {
+      sandbox.cleanup()
+    }
   })
 
   it('rejects a nested macOS sandbox before attempting to launch arapuca', () => {
@@ -181,7 +189,17 @@ describe('createSandboxWrapper', () => {
       expect(script).toContain(`${paths.workspaceRoot}:ro`)
       expect(script).toContain(`${paths.worktree}:rw`)
       expect(script).toContain(`${paths.specsBase}:rw`)
+      expect(script).toContain(`--cwd '${paths.worktree}'`)
+      expect(script).toContain(`--env 'CODEX_HOME=${tmp}/home/.codex'`)
+      expect(script).toContain(`-v '${tmp}/home/.codex:rw'`)
       expect(script).toContain(`-- 'claude' "$@"`)
+      // Network opened for provider calls (strict — the default — blocks it).
+      expect(script).toContain('--seccomp baseline')
+      // Claude's hardcoded /tmp/claude-<uid> runtime dir: created by the wrapper
+      // and allowed via its canonical path.
+      const uid = typeof process.getuid === 'function' ? process.getuid() : 0
+      expect(script).toContain(`mkdir -p '/tmp/claude-${uid}'`)
+      expect(script).toContain(`${realpathSync('/tmp')}/claude-${uid}:rw`)
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }

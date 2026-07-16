@@ -683,13 +683,17 @@ describe('CodexDriver provider routing — wireApi DIRECT vs RELAY (2026-06-12-0
 describe('CodexDriver sandbox wrapper wiring (arapuca)', () => {
   it('uses sandboxWrapperPath as the codex executable when supplied', async () => {
     let captured: CodexFactoryOptions | undefined
-    const { client } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
+    const { client, calls } = fakeCodex([{ type: 'thread.started', thread_id: 't' }])
     const driver = new CodexDriver((options) => {
       captured = options
       return client
     })
     await driver.start(startOpts({ sandboxWrapperPath: '/tmp/c3-sb-xyz/wrapper.sh' }))
     expect(captured?.codexPathOverride).toBe('/tmp/c3-sb-xyz/wrapper.sh')
+    expect(calls[0]?.options).toMatchObject({
+      sandboxMode: 'danger-full-access',
+      approvalPolicy: 'on-request',
+    })
   })
 
   it('keeps DIRECT baseUrl/apiKey as SDK options (they ride the wrapper argv/env)', async () => {

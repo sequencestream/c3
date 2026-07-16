@@ -39,7 +39,7 @@ import {
   accessSync,
   constants as fsConstants,
 } from 'node:fs'
-import { tmpdir, homedir } from 'node:os'
+import { homedir } from 'node:os'
 import { join, delimiter, sep } from 'node:path'
 import { getProjectSandbox } from '../../kernel/config/index.js'
 import { getSpecsBase } from '../../kernel/config/workspace-path.js'
@@ -324,7 +324,12 @@ export function launchSandbox(workspaceRoot: string, worktree: string): SandboxL
 
   const sbCfg = getProjectSandbox(workspaceRoot)
   const paths = resolvePaths(workspaceRoot, worktree, sbCfg?.extraMounts ?? [])
-  const tmpDir = mkdtempSync(join(tmpdir(), 'c3-sb-'))
+  // Put per-run process state in the already-authorized worktree. arapuca's
+  // default isolated HOME lives below the OS temp root, where Codex refuses to
+  // install PATH helpers and macOS Seatbelt rejects subsequent writes. HOME is
+  // sandbox-managed, so point Codex here through CODEX_HOME.
+  const tmpDir = mkdtempSync(join(paths.worktree, '.c3-sb-'))
+  mkdirSync(join(tmpDir, 'home', '.codex'), { recursive: true })
 
   console.log(
     `[sandbox] arapuca wrapper prepared: worktree(rw)=${paths.worktree} root(ro)=${paths.workspaceRoot} ` +
@@ -370,6 +375,16 @@ export function createSandboxWrapper(
   entryCommand: string,
   tmpDir: string,
 ): string {
+  const codexHome = join(tmpDir, 'home', '.codex')
+  // Claude Code hardcodes its per-user runtime dir at /tmp/claude-<uid>
+  // (shell-snapshots / IPC). It ignores TMPDIR and arapuca locks TMPDIR, so the
+  // dir cannot be redirected — it must be allowed. The host path (`/tmp/...`) is
+  // created by the wrapper; the canonical path (macOS `/private/tmp/...`) is the
+  // one arapuca matches. It is a shared, per-user dir (not per-run) — allow it,
+  // do not clean it. codex never touches it.
+  const uid = typeof process.getuid === 'function' ? process.getuid() : 0
+  const claudeRuntimeHost = `/tmp/claude-${uid}`
+  const claudeRuntimeCanon = `${realpathSync('/tmp')}/claude-${uid}`
   const mounts: ResolvedMount[] = [
     { path: paths.workspaceRoot, readonly: true },
     { path: paths.worktree, readonly: false },
@@ -381,9 +396,19 @@ export function createSandboxWrapper(
     .join('\n')
 
   const scriptPath = join(tmpDir, 'wrapper.sh')
+  // `--seccomp baseline` opens outbound network (sandbox network model is
+  // "fully open" for now; strict — the arapuca default — blocks all network and
+  // would fail the vendor CLI's provider calls). macOS has no per-host filter;
+  // Linux can later narrow via `--allow-host`.
   const script = `#!/bin/sh
 # c3 sandbox wrapper — runs the vendor CLI inside an arapuca-narrowed process
+mkdir -p ${shQuote(claudeRuntimeHost)} 2>/dev/null || true
 exec arapuca run \\
+  --seccomp baseline \\
+  --cwd ${shQuote(paths.worktree)} \\
+  --env ${shQuote(`CODEX_HOME=${codexHome}`)} \\
+  -v ${shQuote(`${codexHome}:rw`)} \\
+  -v ${shQuote(`${claudeRuntimeCanon}:rw`)} \\
 ${mountFlags}
   -- ${shQuote(entryCommand)} "$@"
 `

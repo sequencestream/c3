@@ -133,6 +133,76 @@ on a glibc base (`node:22-bookworm-slim`; NOT alpine — codex ships a native
 - `node scripts/e2e/e2e-sandbox-container-test.mjs ws://localhost:13000/ws` →
   expect `RESULT: PASS`. SKIPs (exit 5) when Docker or the image is missing.
 
+## arapuca capability test (host process-sandbox probe)
+
+Standalone, server-free probe of the host `arapuca` binary that c3's process-level
+sandbox depends on. Runs a matrix of `arapuca run` invocations directly (argv
+arrays, no shell — dodges the zsh `"$dir:ro"` → `:r` modifier trap) and reports
+each capability:
+
+- **MUST (rw/ro/deny):** basic process launch, `-v <dir>` read+write, `-v <dir>:ro`
+  read + write-denied, and deny-by-default (unmounted path unreadable). Failure of
+  any → arapuca isolation is incomplete, sandbox unusable (exit 1).
+- **Capability gate (canonicalize):** whether the sandboxed process can `chdir` /
+  `realpath` into a mounted subdirectory. This is codex's startup gate — codex
+  canonicalizes `CODEX_HOME` on launch, so if this fails the whole run dies with
+  `failed to canonicalize CODEX_HOME … Operation not permitted (os error 1)`.
+
+  Stock macOS arapuca 0.2.4 FAILS this gate: its Seatbelt profile grants only the
+  mount subpath, not traversal (read-metadata) on the mount's _ancestor_
+  directories, so any absolute-path `realpath`/`chdir` resolving from `/` hits an
+  un-granted ancestor (e.g. `/Users/<user>` above a `~/.c3/worktrees/<run>` mount)
+  and returns ENOTDIR/EPERM. Root-caused to an upstream arapuca profile gap (not a
+  c3 mount-flag bug) and fixed there: the profile now emits
+  `(allow file-read-metadata (literal "<ancestor>"))` per mount ancestor —
+  traversal only, so directory contents stay deny-by-default. Rebuild/reinstall
+  arapuca from that branch (`cargo install --path .`) and this gate turns green.
+  The script uses `realpathSync` on its temp mounts to mirror c3's `resolvePaths`
+  (so macOS `/var`→`/private/var` firmlink mismatch — a separate EPERM cause — is
+  excluded).
+
+- **Vendor launch probe (`claude` / `codex`):** token-free — runs `<bin> --version`
+  inside the sandbox from a deep worktree cwd (SKIP when the CLI isn't installed).
+  Proves the vendor CLI starts under arapuca and that deep-cwd resolution works
+  (the ancestor-traversal fix's payoff). Real turns (`-p`) need creds + tokens and
+  are out of scope.
+- **`/tmp` symlink gate (claude runtime dir):** claude hardcodes its runtime dir at
+  `/tmp/claude-<uid>` (shell-snapshots/IPC). `/tmp` is a symlink to `/private/tmp`;
+  stock arapuca's fixed ancestor list (`/opt /etc /Users /private /private/var`)
+  omits `/tmp`, so the symlink entry can't be resolved and `mkdir /tmp/claude-<uid>`
+  fails EPERM even when canonical `/private/tmp` is mounted. arapuca locks `TMPDIR`
+  (`--env cannot override sandbox-managed var`) and claude ignores `TMPDIR`, so it
+  can't be redirected via env. This is a claude-specific startup blocker (same
+  family as the canonicalize gap); codex is unaffected (it uses `CODEX_HOME`).
+
+- `node scripts/e2e/e2e-arapuca-capability-test.mjs [/abs/path/to/arapuca]` →
+  exit 0 when all MUST pass; exit 2 when the binary is missing. The canonicalize
+  gate is reported as `⚠️ LIMIT` and does not fail the MUST tally.
+
+## Sandbox vendor token test (real request through arapuca)
+
+Complements the token-free capability probe: uses a real agent from
+`~/.c3/settings.json` (default `claude-deepseek` / `codex-deepseek`) to send an
+actual token-billed request from inside a patched-arapuca sandbox, mirroring the
+arapuca command shape `SandboxLauncher.createSandboxWrapper` emits (`--seccomp
+baseline` for network, `/tmp/claude-<uid>` runtime dir allowed, `CODEX_HOME`
+isolated). Auth is env-only (the agent's `baseUrl` + its `apiKey`, decrypted
+in-process via the same AES-GCM scheme as `config/encryption.ts`) — subscription
+/ keychain are never mounted.
+
+- **claude:** `-p` returns just the model reply, so hitting the sentinel word is
+  a genuine end-to-end success (validates the ancestor + `/tmp` + baseline fixes
+  together with env auth).
+- **codex:** a direct provider connection uses the OpenAI Responses API
+  (`/responses`), which most OpenAI-compatible gateways (deepseek included) don't
+  serve — c3 production bridges this with `CodexRelay`. So this script only
+  asserts codex reached the network + auth was accepted (not ConnectionRefused /
+  not 401); the real completion belongs to a full server-run e2e.
+
+- `node scripts/e2e/e2e-sandbox-vendor-token-test.mjs [claude-agent] [codex-agent]`
+  → exit 0 when claude's real request succeeds; 5 = SKIP (agent/binary missing);
+  1 = FAIL. Requires the patched arapuca (mount-ancestor + `/tmp` fixes) on PATH.
+
 ## SDK answer-injection spike (one-off)
 
 Standalone proof that AskUserQuestion answers can be fed back via the

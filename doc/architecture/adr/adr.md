@@ -36,7 +36,7 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 | [0011](0011-vendor-neutral-agent-abstraction.md)                             | Vendor 中性的 Agent 抽象：三件套接口 + 能力（2026-06-07 修订，加入结构化的会话生命周期状态）                           | accepted   |
 | [0012](0012-host-binary-probe-first-capability-gate.md)                      | 宿主二进制探测是第一道能力关卡                                                                                         | accepted   |
 | [0013](0013-canonical-envelope-on-wire-c3-session-namespace.md)              | wire 上的规范信封 + c3 会话命名空间内化                                                                                | accepted   |
-| [0014](0014-codex-in-process-responses-chat-relay.md)                        | 面向 codex Chat-Completions provider 的进程内 Responses→Chat relay                                                     | accepted   |
+| [0014](deprecated/0014-codex-in-process-responses-chat-relay.md)             | 面向 codex Chat-Completions provider 的进程内 Responses→Chat relay(已被 ADR-0029 取代)                                 | superseded |
 | [0015](0015-session-agent-binding-vendor-ownership.md)                       | 双键 session→agent 绑定 + 冻结的 vendor 归属                                                                           | accepted   |
 | [0016](0016-external-skill-git-mount.md)                                     | 外部 skill 经 git 仓库挂载(扁平目录布局;2026-06-12 改显式安装 + 两公共目录)                                            | proposed   |
 | [0017](0017-external-skill-mount-mechanism.md)                               | 外部 skill 加载机制:软链 + 写操作管控;2026-06-12 启动挂载→显式安装(`install_skill`)+ 状态查询(`get_skill_link_status`) | proposed   |
@@ -50,3 +50,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 | [0026](0026-generic-event-normalizer-registry.md)                            | 通用事件契约 + 按 type 注册的归一化器（有意修订「每种事件新增窄工具」为「type 判别 + 封闭归一化器注册」）              | accepted   |
 | [0027](0027-event-naming-and-multi-row-subscription.md)                      | `<category>:<action>` 事件命名 + 多行订阅 + 级联表单                                                                   | proposed   |
 | [0028](0028-process-level-lightweight-sandbox-arapuca.md)                    | 进程级 arapuca 沙箱取代容器方案（当前只控目录 ro/rw、网络全开、凭证默认不可见）                                        | accepted   |
+| [0029](0029-vendor-neutral-relay-and-agent-group-failover.md)                | Vendor 中立 relay 核心 + agent group failover（取代 ADR-0014）                                                         | accepted   |

@@ -655,10 +655,14 @@ export class CodexDriver implements AgentDriver {
     // sandbox/approval), so one permission knob drives every vendor and a codex
     // agent needs no separate sandbox/approval config (2026-06-06-008).
     const policy = gateToCodexPolicy(opts.actionMode, opts.toolGate)
+    // arapuca is already the filesystem sandbox. On macOS a second Seatbelt
+    // application from Codex fails with EPERM, so disable only Codex's nested
+    // filesystem sandbox while preserving its approval policy.
+    const sandboxMode = opts.sandboxWrapperPath ? 'danger-full-access' : policy.sandboxMode
     const threadOptions: ThreadOptions = {
       workingDirectory: opts.cwd,
       skipGitRepoCheck: true, // c3 may run in a non-git cwd; do not hard-fail the run.
-      sandboxMode: policy.sandboxMode,
+      sandboxMode,
       approvalPolicy: policy.approvalPolicy,
       ...(opts.model ? { model: opts.model } : {}),
       ...(opts.additionalDirectories ? { additionalDirectories: opts.additionalDirectories } : {}),

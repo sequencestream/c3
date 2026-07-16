@@ -126,7 +126,7 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 
 ## 8. 网络模型
 
-**当前:网络全开。** 沙箱当前不施加网络约束,vendor CLI 与 agent 可正常访问 provider API、拉取依赖等。
+**当前:网络全开。** 沙箱当前不施加网络约束,vendor CLI 与 agent 可正常访问 provider API、拉取依赖等。实现上 wrapper 传 `--seccomp baseline` 打开出站网络;arapuca 默认 `strict` 会全断网络,vendor CLI 的 provider 调用会 `ConnectionRefused`,故必须显式开网。
 
 后续阶段(非当前范围)可按平台收窄:
 
@@ -157,6 +157,7 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
        worktree:rw
        specsBase:rw
        extraMounts[i]:(ro|rw)
+  → 在 worktree 内创建逐 run runtime 目录，提供隔离的 CODEX_HOME
   → createSandboxWrapper(entryCommand, paths, cwd=worktree, env)
   → vendor adapter spawn wrapper
   → run 完成后清理 wrapper tmpDir（无容器需停止）
@@ -166,7 +167,13 @@ wrapper 形态(进程包裹,非 `docker exec`):
 
 ```sh
 #!/bin/sh
+mkdir -p "/tmp/claude-<uid>" 2>/dev/null || true
 exec arapuca run \
+  --seccomp baseline \
+  --cwd "<worktree>" \
+  --env "CODEX_HOME=<worktree 内逐 run runtime>/home/.codex" \
+  -v "<worktree 内逐 run runtime>/home/.codex:rw" \
+  -v "<canonical /tmp>/claude-<uid>:rw" \
   -v "<workspaceRoot>":ro \
   -v "<worktree>":rw \
   -v "<specsBase>":rw \
@@ -176,8 +183,28 @@ exec arapuca run \
 
 - `<entryCommand>` 是宿主 PATH 中的 vendor CLI 名(`claude` / `codex`)。
 - vendor SDK/driver 仍以为自己 spawn 的是本地 CLI;wrapper 只是把这次 spawn 包进 arapuca。
+  provider 认证由 driver 经子进程 env 注入(claude 的 `ANTHROPIC_*`、codex 的 provider 三元组),
+  arapuca 保留普通 env,故 wrapper 自身不处理凭证,也不挂订阅 / keychain。
+- `--seccomp baseline` 打开出站网络(当前网络模型"全开",见 §8);arapuca 默认 `strict` 会
+  全断网络,导致 vendor CLI 的 provider 调用 `ConnectionRefused`。macOS 无 per-host 白名单;
+  Linux 后续可用 `--allow-host` 收窄到 provider 域名。
+- CODEX_HOME 位于已放行的 worktree 内并随 run 清理。arapuca 管理 HOME/TMPDIR 且禁止覆盖，
+  因此通过 Codex 支持的 CODEX_HOME 避免默认临时 HOME 被 Codex 拒绝创建 PATH helper；该目录
+  还需作为独立 rw volume 传入，以满足 macOS profile 对启动期 canonicalize 的授权。
+- Claude Code 把逐用户运行时目录硬编码在 `/tmp/claude-<uid>`(shell-snapshot / IPC),不尊重
+  TMPDIR 且 arapuca 锁定 TMPDIR 无法重定向,故 wrapper 预建该宿主目录并按 canonical 路径放行。
+  它是逐用户共享目录(非逐 run),放行但不清理;codex 不使用它。
+- Codex 在 arapuca 内以 `danger-full-access` 关闭其内层文件系统 sandbox，避免 macOS Seatbelt
+  嵌套启动返回 EPERM；外层 arapuca 仍执行目录隔离，Codex approval policy 保持原值。
 - 宿主 spawn cwd 是宿主 worktree;进程同路径运行,cwd 语义天然一致。
 - 无长驻容器,无需 start/stop 容器;run 结束清理临时 wrapper 文件即可。
+
+> **平台前提(macOS)**:上述在 macOS 上依赖 arapuca 的两处 Seatbelt profile 修复——
+> (1) 为每个用户挂载补各级祖先目录的 `file-read-metadata` 遍历(否则 codex 的
+> `canonicalize(CODEX_HOME)` EPERM);(2) 放行 `/tmp` symlink 入口(否则 claude 的
+> `mkdir /tmp/claude-<uid>` EPERM)。二者已在 arapuca 上游修复;使用方需安装含该修复的
+> arapuca。验证见 `scripts/e2e/e2e-arapuca-capability-test.mjs` 与
+> `scripts/e2e/e2e-sandbox-vendor-token-test.mjs`。
 
 ## 11. c3 MCP 接入
 

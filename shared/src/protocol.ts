@@ -674,6 +674,16 @@ export interface WorkspaceSandboxConfig {
    * {@link SESSION_KINDS}; an empty set after normalize falls back to `['work']`.
    */
   sandboxSessionKinds?: SessionKind[]
+  /**
+   * Retention window (days) for the persistent sandbox CODEX_HOME rollouts.
+   *
+   * The sandbox anchors codex's CODEX_HOME at a fixed per-workspace path so a
+   * thread's rollout survives across runs for the next turn's `resume` (host
+   * `~/.codex` is never exposed — deny-by-default). A daily janitor prunes
+   * rollout files whose mtime is older than this window. Absent ⇒ 30 days;
+   * server normalize floors to a minimum and rejects non-finite values.
+   */
+  sessionRetentionDays?: number
 }
 
 /**

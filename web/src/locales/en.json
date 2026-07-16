@@ -2273,6 +2273,10 @@
       "sessionKinds": {
         "label": "Sandboxed session kinds",
         "hint": "Which session kinds enter the sandbox when enabled. Defaults to work; every selected kind is sandboxed regardless of its git branch mode or source."
+      },
+      "retention": {
+        "label": "Session retention (days)",
+        "hint": "How long codex thread rollouts in the persistent sandbox home are kept for resume before a daily cleanup prunes them. Defaults to 30 days; minimum 1."
       }
     }
   },

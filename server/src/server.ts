@@ -64,6 +64,7 @@ import {
   startUpdateCheckScheduler,
   stopUpdateCheckScheduler,
 } from './features/updates/update-checker.js'
+import { startRolloutJanitor, stopRolloutJanitor } from './features/sandbox/rollout-janitor.js'
 import { EventBus } from './kernel/events/event-bus.js'
 import { EventNormalizerRegistry } from './kernel/events/generic-event.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
@@ -706,10 +707,16 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Fail-soft; drives the header's "new version available" hint.
   startUpdateCheckScheduler({ onChange: broadcasts.broadcastUpdateStatus })
 
+  // Start the sandbox rollout janitor: prune codex thread rollouts older than
+  // each workspace's retention window from the persistent per-workspace
+  // CODEX_HOME, so the sandbox-home store stays bounded. Fail-soft, daily cadence.
+  startRolloutJanitor()
+
   // Graceful shutdown: stop the scheduler on process termination.
   const shutdown = async (): Promise<void> => {
     console.log('[c3] shutting down...')
     stopUpdateCheckScheduler()
+    stopRolloutJanitor()
     await stopSchedulerWiring(30_000)
     server.close()
     shutdownLogging()

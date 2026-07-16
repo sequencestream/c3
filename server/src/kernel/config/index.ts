@@ -178,6 +178,11 @@ export const DEFAULT_SPEECH_CHARS = 300
  * for 7 days is presumed abandoned (ADR-0015). */
 export const PENDING_INTENT_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
+/** Default retention window (days) for persistent sandbox CODEX_HOME rollouts. */
+export const DEFAULT_SANDBOX_RETENTION_DAYS = 30
+/** Hard floor for the sandbox rollout retention window; lower values clamp up. */
+export const MIN_SANDBOX_RETENTION_DAYS = 1
+
 /**
  * A *fact* in the {@link SessionAgentState.sessionAgents} map: the agent a real
  * session actually ran on plus its **frozen** vendor. The vendor is the immutable
@@ -689,6 +694,15 @@ function normalizeSandboxConfig(raw: unknown): WorkspaceSandboxConfig | undefine
       kinds.push(k as SessionKind)
     }
     sb.sandboxSessionKinds = kinds.length > 0 ? kinds : ['work']
+  }
+  // Retention window (days) for persistent CODEX_HOME rollouts: a finite positive
+  // number is floored and clamped up to the minimum; anything else (absent,
+  // non-finite, ≤ 0) is left unset so the default applies at read time. Only
+  // persist an explicit non-default value to keep old configs clean.
+  const rawRetention = typeof rec.sessionRetentionDays === 'number' ? rec.sessionRetentionDays : NaN
+  if (Number.isFinite(rawRetention) && rawRetention > 0) {
+    const days = Math.max(MIN_SANDBOX_RETENTION_DAYS, Math.floor(rawRetention))
+    if (days !== DEFAULT_SANDBOX_RETENTION_DAYS) sb.sessionRetentionDays = days
   }
   // Return undefined when nothing meaningful was set (keeps old configs clean).
   if (Object.keys(sb).length === 0) return undefined
@@ -1436,6 +1450,25 @@ export function getProjectSandbox(workspacePath: string): WorkspaceSandboxConfig
   // Already normalized (branch-independent sandbox content) by
   // loadWorkspaceSetting → normalizeWorkspaceSetting → normalizeSandboxConfig.
   return loadWorkspaceSetting(workspacePath).sandbox
+}
+
+/**
+ * Retention window (days) for a workspace's persistent sandbox CODEX_HOME
+ * rollouts. Reads the normalized per-project value; falls back to
+ * {@link DEFAULT_SANDBOX_RETENTION_DAYS} when unset (normalize only persists a
+ * non-default value).
+ */
+export function getSandboxRetentionDays(workspacePath: string): number {
+  return getProjectSandbox(workspacePath)?.sessionRetentionDays ?? DEFAULT_SANDBOX_RETENTION_DAYS
+}
+
+/**
+ * All workspace paths that carry a persisted per-project config. Used by the
+ * sandbox rollout janitor to map each on-disk `sandbox-home` directory back to
+ * its workspace retention window.
+ */
+export function listConfiguredWorkspacePaths(): string[] {
+  return Object.keys(loadSettings().projectConfigs ?? {})
 }
 
 /** Test-only: drop the in-memory caches so the next call re-reads from disk. */

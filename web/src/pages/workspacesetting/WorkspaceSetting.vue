@@ -190,6 +190,10 @@ function seedDefaultMode(
   return base
 }
 
+/** Default retention window (days) for persistent sandbox CODEX_HOME rollouts —
+ * kept in sync with the server's DEFAULT_SANDBOX_RETENTION_DAYS. */
+const DEFAULT_SANDBOX_RETENTION_DAYS = 30
+
 /**
  * Build an editable sandbox draft from a raw sandbox value (arapuca). Always
  * returns a reactive object with an extraMounts array and a sessionKinds list so
@@ -201,6 +205,7 @@ function seedSandbox(raw: WorkspaceSandboxConfig | undefined): WorkspaceSandboxC
     enabled: raw?.enabled ?? false,
     extraMounts: raw?.extraMounts ? raw.extraMounts.map((m) => ({ ...m })) : [],
     sandboxSessionKinds: raw?.sandboxSessionKinds ? [...raw.sandboxSessionKinds] : ['work'],
+    sessionRetentionDays: raw?.sessionRetentionDays ?? DEFAULT_SANDBOX_RETENTION_DAYS,
   }
 }
 
@@ -333,6 +338,13 @@ function effectiveSandbox(
   }
   const isDefaultKinds = kinds.length === 1 && kinds[0] === 'work'
   if (!isDefaultKinds && kinds.length > 0) out.sandboxSessionKinds = [...kinds]
+  // Retention window: mirror the server normalize — floor + clamp up to 1, and
+  // omit when it equals the default so a synthesized draft equals a raw value.
+  const rawDays = raw.sessionRetentionDays
+  if (typeof rawDays === 'number' && Number.isFinite(rawDays) && rawDays > 0) {
+    const days = Math.max(1, Math.floor(rawDays))
+    if (days !== DEFAULT_SANDBOX_RETENTION_DAYS) out.sessionRetentionDays = days
+  }
   return out
 }
 
@@ -508,6 +520,19 @@ function toggleSessionKind(kind: SessionKind): void {
   const next = current.includes(kind) ? current.filter((k) => k !== kind) : [...current, kind]
   sandboxDraft.value = { ...sandboxDraft.value, sandboxSessionKinds: next }
 }
+
+/**
+ * The persistent-CODEX_HOME rollout retention window (days). v-model for the
+ * number input; defaults to the shared default and floors non-positive input up
+ * to 1 so the field never persists a value the server would reject.
+ */
+const sandboxRetentionDays = computed<number>({
+  get: () => sandboxDraft.value.sessionRetentionDays ?? DEFAULT_SANDBOX_RETENTION_DAYS,
+  set: (val: number) => {
+    const days = Number.isFinite(val) && val > 0 ? Math.max(1, Math.floor(val)) : 1
+    sandboxDraft.value = { ...sandboxDraft.value, sessionRetentionDays: days }
+  },
+})
 
 // ---- Consensus custom voter picker ----
 
@@ -977,6 +1002,24 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
                 </label>
               </div>
             </div>
+
+            <!-- Retention window (days) for the persistent codex CODEX_HOME rollouts. -->
+            <div class="project-config-row">
+              <span class="project-config-row-label">{{
+                t('workspaceSetting.sandbox.retention.label')
+              }}</span>
+              <input
+                v-model.number="sandboxRetentionDays"
+                class="project-config-field project-config-number"
+                type="number"
+                min="1"
+                step="1"
+                data-testid="project-config-sandbox-retention"
+              />
+            </div>
+            <p class="project-config-hint">
+              {{ t('workspaceSetting.sandbox.retention.hint') }}
+            </p>
           </template>
         </section>
       </div>

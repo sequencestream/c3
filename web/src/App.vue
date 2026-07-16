@@ -16,6 +16,7 @@ import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
 import WorkspaceSettingPage from './pages/workspacesetting/WorkspaceSetting.vue'
 import Login from './pages/login/Login.vue'
 import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalModal.vue'
+import SandboxConflictModal from './components/SandboxConflictModal/SandboxConflictModal.vue'
 import NewSessionModal from './pages/works/components/NewSessionModal/NewSessionModal.vue'
 import DevStartupOverlay from './components/DevStartupOverlay/DevStartupOverlay.vue'
 import SpecStartupOverlay from './components/SpecStartupOverlay/SpecStartupOverlay.vue'
@@ -270,6 +271,9 @@ const {
   approveSkillLoad,
   cancelSkillLoad,
   dismissSkillApproval,
+  // ---- sandbox-conflict modal ----
+  sandboxConflict,
+  respondSandboxConflict,
   // ---- share (three title-bar「分享」buttons) ----
   shareLink,
   // ---- global toast ----
@@ -758,6 +762,15 @@ function onCodesChatWidth(px: number): void {
        immediately while a manual Start-Dev launch is in flight. -->
   <DevStartupOverlay :model="devLaunch" />
   <SpecStartupOverlay :model="specLaunch" />
+
+  <!-- Sandbox-conflict modal (App-global): a system-auth agent bound to a sandbox
+       run. Blocks the run until the user picks bypass / switch / cancel. -->
+  <SandboxConflictModal
+    :request="sandboxConflict"
+    @bypass="respondSandboxConflict('bypass')"
+    @switch="(agentId) => respondSandboxConflict('switch', agentId)"
+    @cancel="respondSandboxConflict('cancel')"
+  />
 
   <!-- Automation save overlay: blocks interaction while a automation create/update is
        in flight (2-4s typical round-trip). -->

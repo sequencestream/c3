@@ -118,6 +118,11 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
       intentAgentId: '',
       specAgentId: '',
       automationAgentId: '',
+      sandboxDefaultAgentId: '',
+      sandboxToolAgentId: '',
+      sandboxIntentAgentId: '',
+      sandboxSpecAgentId: '',
+      sandboxAutomationAgentId: '',
     } as SystemSettings)
     expect(loadSettings().projectConfigs?.['/proj/a']).toBeTruthy()
     expect(getDevSkill('/proj/a')).toBe('/a')
@@ -406,6 +411,11 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
       agents: [agent('a1', 0), agent('a2', 1)],
       defaultAgentId: 'a1',
       automationAgentId: '',
+      sandboxDefaultAgentId: '',
+      sandboxToolAgentId: '',
+      sandboxIntentAgentId: '',
+      sandboxSpecAgentId: '',
+      sandboxAutomationAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().automationAgentId).toBe('')
   })
@@ -423,6 +433,11 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
       agents: [agent('a1', 0), agent('a2', 1), agent('a3', 2)],
       defaultAgentId: 'a1',
       automationAgentId: 'a2',
+      sandboxDefaultAgentId: '',
+      sandboxToolAgentId: '',
+      sandboxIntentAgentId: '',
+      sandboxSpecAgentId: '',
+      sandboxAutomationAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().automationAgentId).toBe('a2')
   })
@@ -432,6 +447,11 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
       agents: [agent('a1', 0), agent('a2', 1, false), agent('a3', 2)],
       defaultAgentId: 'a1',
       automationAgentId: 'a2',
+      sandboxDefaultAgentId: '',
+      sandboxToolAgentId: '',
+      sandboxIntentAgentId: '',
+      sandboxSpecAgentId: '',
+      sandboxAutomationAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().automationAgentId).toBe('a3')
   })
@@ -441,6 +461,11 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
       agents: [agent('a1', 0), agent('a3', 2)],
       defaultAgentId: 'a1',
       automationAgentId: 'gone',
+      sandboxDefaultAgentId: '',
+      sandboxToolAgentId: '',
+      sandboxIntentAgentId: '',
+      sandboxSpecAgentId: '',
+      sandboxAutomationAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().automationAgentId).toBe('a1')
   })
@@ -450,6 +475,11 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
       agents: [agent('a1', 0, false), agent('a2', 1, false)],
       defaultAgentId: 'a1',
       automationAgentId: 'a1',
+      sandboxDefaultAgentId: '',
+      sandboxToolAgentId: '',
+      sandboxIntentAgentId: '',
+      sandboxSpecAgentId: '',
+      sandboxAutomationAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().automationAgentId).toBe(SYSTEM_AGENT_ID)
   })
@@ -464,6 +494,11 @@ describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
       intentAgentId: '',
       specAgentId: '',
       automationAgentId: '',
+      sandboxDefaultAgentId: '',
+      sandboxToolAgentId: '',
+      sandboxIntentAgentId: '',
+      sandboxSpecAgentId: '',
+      sandboxAutomationAgentId: '',
       socketAutoResume,
     } as SystemSettings)
   }
@@ -1093,6 +1128,11 @@ function saveWithUiLang(uiLang: unknown): void {
     intentAgentId: '',
     specAgentId: '',
     automationAgentId: '',
+    sandboxDefaultAgentId: '',
+    sandboxToolAgentId: '',
+    sandboxIntentAgentId: '',
+    sandboxSpecAgentId: '',
+    sandboxAutomationAgentId: '',
     uiLang,
   } as SystemSettings)
 }
@@ -1127,6 +1167,11 @@ describe('getUiLang normalization', () => {
       intentAgentId: '',
       specAgentId: '',
       automationAgentId: '',
+      sandboxDefaultAgentId: '',
+      sandboxToolAgentId: '',
+      sandboxIntentAgentId: '',
+      sandboxSpecAgentId: '',
+      sandboxAutomationAgentId: '',
       uiLang: 'zh',
       voiceLang: 'en-US',
     } as SystemSettings)
@@ -1171,6 +1216,11 @@ function saveWithTimezone(timezone: unknown): void {
     intentAgentId: '',
     specAgentId: '',
     automationAgentId: '',
+    sandboxDefaultAgentId: '',
+    sandboxToolAgentId: '',
+    sandboxIntentAgentId: '',
+    sandboxSpecAgentId: '',
+    sandboxAutomationAgentId: '',
     timezone,
   } as SystemSettings)
 }

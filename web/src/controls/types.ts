@@ -243,6 +243,7 @@ export interface AppMethods {
   approveSkillLoad(requestId: string): void
   cancelSkillLoad(requestId: string): void
   dismissSkillApproval(): void
+  respondSandboxConflict(choice: 'bypass' | 'switch' | 'cancel', agentId?: string): void
 
   // share (三处标题栏的「分享」按钮:拼深链 + 写剪贴板 + toast)
   shareLink(target: ShareTarget): void

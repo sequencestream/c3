@@ -175,6 +175,11 @@ describe('protocol wire format', () => {
         intentAgentId: '',
         specAgentId: '',
         automationAgentId: '',
+        sandboxDefaultAgentId: '',
+        sandboxToolAgentId: '',
+        sandboxIntentAgentId: '',
+        sandboxSpecAgentId: '',
+        sandboxAutomationAgentId: '',
       },
       hostStatus: [
         {

@@ -107,6 +107,11 @@ export function installSettingsActions(ctx: AppCtx): void {
         intentAgentId: '',
         specAgentId: '',
         automationAgentId: '',
+        sandboxDefaultAgentId: '',
+        sandboxToolAgentId: '',
+        sandboxIntentAgentId: '',
+        sandboxSpecAgentId: '',
+        sandboxAutomationAgentId: '',
       }
       const settings: SystemSettings = { ...base, uiLang: next }
       send({ type: 'save_settings', settings })
@@ -155,5 +160,15 @@ export function installSettingsActions(ctx: AppCtx): void {
     // modal without deciding would leave the backend hanging. We do NOT auto-cancel
     // here because the user may switch away and come back. The modal stays open
     // until a decision is made.
+  }
+
+  // ---- Sandbox-conflict resolution (system agent bound to a sandbox run) ----
+  // `bypass` runs this turn on the host (no sandbox); `switch` re-binds the session
+  // to a same-vendor custom agent and keeps the sandbox; `cancel` abandons the run.
+  ctx.respondSandboxConflict = (choice: 'bypass' | 'switch' | 'cancel', agentId?: string): void => {
+    const req = ctx.sandboxConflict.value
+    if (!req) return
+    send({ type: 'sandbox_conflict_response', requestId: req.requestId, choice, agentId })
+    ctx.sandboxConflict.value = null
   }
 }

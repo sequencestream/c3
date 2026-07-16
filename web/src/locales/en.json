@@ -268,6 +268,43 @@
         "label": "Automation agent",
         "followDefault": "Follow default agent"
       },
+      "sandboxRoles": {
+        "head": "Sandbox mode",
+        "hint": "Runs inside the sandbox use these agents instead. Only custom agents are eligible — a system-auth agent cannot log in inside the sandbox.",
+        "followSandboxDefault": "Follow sandbox default",
+        "empty": "No enabled custom agent — add one above"
+      },
+      "sandboxDefault": {
+        "tooltip": "Default agent for sandbox runs (must be a custom agent). Empty ⇒ the first enabled custom agent."
+      },
+      "sandboxDefaultPicker": {
+        "label": "Sandbox default agent",
+        "auto": "Auto (first custom agent)"
+      },
+      "sandboxTool": {
+        "tooltip": "Custom agent for background tool sessions running in the sandbox"
+      },
+      "sandboxToolPicker": {
+        "label": "Sandbox tool agent"
+      },
+      "sandboxIntent": {
+        "tooltip": "Custom agent for intent-communication sessions running in the sandbox"
+      },
+      "sandboxIntentPicker": {
+        "label": "Sandbox intent agent"
+      },
+      "sandboxSpec": {
+        "tooltip": "Custom agent for spec-authoring sessions running in the sandbox"
+      },
+      "sandboxSpecPicker": {
+        "label": "Sandbox spec agent"
+      },
+      "sandboxAutomation": {
+        "tooltip": "Custom agent for automation dev runs in the sandbox"
+      },
+      "sandboxAutomationPicker": {
+        "label": "Sandbox automation agent"
+      },
       "remove": {
         "tooltip": "Remove agent"
       },
@@ -1974,6 +2011,21 @@
     },
     "research": {
       "toolActivity": "🔍 Researching with {tool}…"
+    }
+  },
+  "sandboxConflict": {
+    "title": "This agent can't run in the sandbox",
+    "body": "The session's agent \"{agent}\" uses system authentication, which can't log in inside the sandbox. Run this turn without the sandbox, or switch to a custom agent and keep it.",
+    "noCustom": "No same-vendor custom agent is configured. Add one in system settings, or run without the sandbox.",
+    "bypass": {
+      "label": "Run without sandbox"
+    },
+    "switch": {
+      "label": "Switch to custom agent",
+      "action": "Switch & keep sandbox"
+    },
+    "cancel": {
+      "label": "Cancel"
     }
   },
   "skillApproval": {

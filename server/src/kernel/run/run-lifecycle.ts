@@ -31,17 +31,22 @@ import { buildAgentsToTry } from './build-chain.js'
 import { agentErrorEvent, agentFallbackEvent, agentAllFailedEvent } from './agent-events.js'
 import type { EventBus, EventBusEvents } from '../events/event-bus.js'
 import type { ConsensusAutoCtx, PermissionRequestCtx } from '../permission/index.js'
+import { randomUUID } from 'node:crypto'
 import {
   getDegradationChain,
   resolveSessionLaunch,
   resolveAgent,
+  resolveSandboxAgent,
+  enabledCustomAgentsOfVendor,
+  setSessionAgent,
   launchForAgent,
   freezeSessionAgent,
   bindClaudeRelay,
   unbindRelay,
 } from '../agent-config/index.js'
-import { getSocketAutoResume, getProjectSandbox } from '../config/index.js'
+import { getSocketAutoResume, getProjectSandbox, getSessionAgentId } from '../config/index.js'
 import { launchSandbox, SandboxLaunchError } from '../sandbox/SandboxLauncher.js'
+import { waitForSandboxDecision, type SandboxConflictCtx } from '../sandbox/conflict-registry.js'
 import {
   bindPending,
   clearPending,
@@ -161,6 +166,14 @@ export interface LaunchRunDeps {
   sandboxEnabled?: boolean
   /** Runtime policy hook from the composition root; false suppresses sandbox launch. */
   sandboxAllowed?: () => boolean
+  /**
+   * Optional callback that raises the sandbox-conflict console modal (broadcasts a
+   * `sandbox_conflict_request`) when a sandbox run's bound agent is `system`-mode.
+   * `launchRun` then awaits {@link waitForSandboxDecision}. Wired at the composition
+   * root (`server.ts`); absent ⇒ the run cancels rather than launching a doomed
+   * system agent inside the sandbox.
+   */
+  onSandboxConflict?: (ctx: SandboxConflictCtx) => void
 }
 
 /**
@@ -269,7 +282,8 @@ export async function launchRun(
   // dir is removed by `finalizeRun` / `removeRuntime` via `rt.sandboxStop`. The
   // run keeps its normally-resolved agent — the sandbox only wraps that vendor's
   // CLI in arapuca; there is no sandbox-specific agent selection.
-  if ((deps.sandboxEnabled ?? true) && rt.effectiveCwd) {
+  let bypassSandbox = inject?.bypassSandbox ?? false
+  if ((deps.sandboxEnabled ?? true) && rt.effectiveCwd && !bypassSandbox) {
     const sbCfg = getProjectSandbox(workspacePath)
     const sandboxKinds = sbCfg?.sandboxSessionKinds ?? ['work']
     const sandboxOn =
@@ -290,15 +304,82 @@ export async function launchRun(
           runKind: rt.runKind,
         })
       }
-      try {
-        const sandbox = launchSandbox(workspacePath, rt.effectiveCwd)
-        rt.sandboxPaths = sandbox.paths
-        rt.sandboxTmpDir = sandbox.tmpDir
-        rt.sandboxStop = async () => sandbox.cleanup()
-      } catch (err) {
-        const uiCode = err instanceof SandboxLaunchError ? err.uiCode : 'launch-failed'
-        failHard(`[c3] sandbox launch failed (${uiCode}): ${errMsg(err)}`)
-        return
+
+      // System-agent auth cannot survive the sandbox: the vendor CLI's own login /
+      // keychain is not reachable inside arapuca (deny-by-default HOME isolation), so
+      // a `system`-mode agent hits "Not logged in". Resolve that BEFORE launching the
+      // sandbox — either swap to a configured custom agent (relay-backed, key injected
+      // into the sandbox env) or bypass the sandbox for this run.
+      const boundRef = getSessionAgentId(runId)
+      const boundAgent = resolveAgent(boundRef)
+      if (boundAgent.configMode === 'system') {
+        if (boundRef) {
+          // The user explicitly bound this system agent ⇒ ask (bypass vs switch).
+          const choices = enabledCustomAgentsOfVendor(boundAgent.vendor).map((a) => ({
+            id: a.id,
+            displayName: a.displayName,
+          }))
+          const requestId = randomUUID()
+          const decision = deps.onSandboxConflict
+            ? (deps.onSandboxConflict({
+                requestId,
+                sessionId: runId,
+                agentId: boundAgent.id,
+                agentName: boundAgent.displayName,
+                vendor: boundAgent.vendor,
+                choices,
+              }),
+              await waitForSandboxDecision(requestId))
+            : ({ choice: 'cancel' } as const)
+          if (decision.choice === 'bypass') {
+            bypassSandbox = true
+          } else if (decision.choice === 'switch' && decision.agentId) {
+            if (!setSessionAgent(runId, decision.agentId).ok) {
+              failHard(
+                `[c3] sandbox: cannot switch to agent "${decision.agentId}" — its vendor ` +
+                  `differs from the session's frozen vendor.`,
+              )
+              return
+            }
+          } else {
+            failHard(
+              '[c3] sandbox run canceled: the bound agent uses system auth, which cannot ' +
+                'authenticate inside the sandbox.',
+            )
+            return
+          }
+        } else {
+          // Auto / default resolved to a system agent ⇒ silently substitute the
+          // configured sandbox custom agent (role → sandbox default → first custom).
+          const sub = resolveSandboxAgent(rt.sessionKind, boundAgent.vendor)
+          if (!sub) {
+            failHard(
+              '[c3] sandbox: no enabled custom agent is configured. Set a sandbox default ' +
+                'agent in system settings (system-auth agents cannot run inside the sandbox).',
+            )
+            return
+          }
+          if (!setSessionAgent(runId, sub.id).ok) {
+            failHard(
+              `[c3] sandbox: cannot bind custom agent "${sub.id}" — its vendor differs from ` +
+                `the session's frozen vendor.`,
+            )
+            return
+          }
+        }
+      }
+
+      if (!bypassSandbox) {
+        try {
+          const sandbox = launchSandbox(workspacePath, rt.effectiveCwd)
+          rt.sandboxPaths = sandbox.paths
+          rt.sandboxTmpDir = sandbox.tmpDir
+          rt.sandboxStop = async () => sandbox.cleanup()
+        } catch (err) {
+          const uiCode = err instanceof SandboxLaunchError ? err.uiCode : 'launch-failed'
+          failHard(`[c3] sandbox launch failed (${uiCode}): ${errMsg(err)}`)
+          return
+        }
       }
     }
   }

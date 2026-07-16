@@ -353,6 +353,43 @@
       },
       "groupPicker": {
         "label": "그룹"
+      },
+      "sandboxRoles": {
+        "head": "샌드박스 모드",
+        "hint": "샌드박스 내에서 실행할 때 이 에이전트를 사용합니다. system 인증 에이전트는 샌드박스 내에서 로그인할 수 없으므로 custom 에이전트만 선택할 수 있습니다.",
+        "followSandboxDefault": "샌드박스 기본값 따르기",
+        "empty": "사용 가능한 custom 에이전트 없음 — 위에서 추가하세요"
+      },
+      "sandboxDefault": {
+        "tooltip": "샌드박스 실행의 기본 에이전트(custom 에이전트여야 함). 비어 있으면 첫 번째 활성 custom 에이전트."
+      },
+      "sandboxDefaultPicker": {
+        "label": "샌드박스 기본 에이전트",
+        "auto": "자동(첫 번째 custom 에이전트)"
+      },
+      "sandboxTool": {
+        "tooltip": "샌드박스 내 백그라운드 도구 세션용 custom 에이전트"
+      },
+      "sandboxToolPicker": {
+        "label": "샌드박스 도구 에이전트"
+      },
+      "sandboxIntent": {
+        "tooltip": "샌드박스 내 의도 커뮤니케이션 세션용 custom 에이전트"
+      },
+      "sandboxIntentPicker": {
+        "label": "샌드박스 의도 에이전트"
+      },
+      "sandboxSpec": {
+        "tooltip": "샌드박스 내 사양 작성 세션용 custom 에이전트"
+      },
+      "sandboxSpecPicker": {
+        "label": "샌드박스 사양 에이전트"
+      },
+      "sandboxAutomation": {
+        "tooltip": "샌드박스 내 자동화 개발 실행용 custom 에이전트"
+      },
+      "sandboxAutomationPicker": {
+        "label": "샌드박스 자동화 에이전트"
       }
     },
     "defaultMode": {
@@ -2482,6 +2519,21 @@
       "discussion": {
         "label": "토론"
       }
+    }
+  },
+  "sandboxConflict": {
+    "title": "이 에이전트는 샌드박스에서 실행할 수 없습니다",
+    "body": "세션의 에이전트 \"{agent}\"는 system 인증을 사용하여 샌드박스 내에서 로그인할 수 없습니다. 이번 턴은 샌드박스 없이 실행하거나 custom 에이전트로 전환하여 유지하세요.",
+    "noCustom": "동일한 벤더의 custom 에이전트가 구성되지 않았습니다. 시스템 설정에서 추가하거나 샌드박스 없이 실행하세요.",
+    "bypass": {
+      "label": "샌드박스 없이 실행"
+    },
+    "switch": {
+      "label": "custom 에이전트로 전환",
+      "action": "전환하고 샌드박스 유지"
+    },
+    "cancel": {
+      "label": "취소"
     }
   }
 }

@@ -66,6 +66,18 @@ export type TypedT = ReturnType<typeof useTypedI18n>['t']
 export type ModeLabel = ReturnType<typeof useModeLabel>
 export type AuthApi = ReturnType<typeof useAuth>
 
+/** A pending sandbox-conflict prompt (mirrors the `sandbox_conflict_request` frame):
+ *  a sandbox run whose bound agent is system-mode. The App renders a blocking modal. */
+export interface SandboxConflictModel {
+  requestId: string
+  sessionId: string
+  agentId: string
+  agentName: string
+  vendor: VendorId
+  /** Same-vendor enabled custom agents offered as the "switch" targets. */
+  choices: Array<{ id: string; displayName: string }>
+}
+
 export interface StateDeps {
   t: TypedT
   modeLabel: ModeLabel
@@ -609,6 +621,11 @@ export function createState(deps: StateDeps) {
     () => serverSettings.value?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
   )
 
+  // ---- Sandbox-conflict modal (App-global) ----
+  // Set when a sandbox run's bound agent is system-mode (unusable in the sandbox);
+  // the App renders a blocking modal offering bypass / switch. null = no conflict.
+  const sandboxConflict = ref<SandboxConflictModel | null>(null)
+
   // ---- Toast (transient, auto-dismissing global toast) ----
   const toast = ref<string | null>(null)
   // Intent action failures need an explicit acknowledgement, unlike transient toast feedback.
@@ -824,6 +841,7 @@ export function createState(deps: StateDeps) {
     pendingDeepLink,
     deepLinkFulfilled,
     deepLinkTimers,
+    sandboxConflict,
     toast,
     intentActionError,
     intentActionErrorSeq,

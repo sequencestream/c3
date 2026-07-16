@@ -48,6 +48,7 @@ import {
   guardReservedAgentIds,
   normalizeDegradationChain,
   normalizeIcon,
+  normalizeSandboxRoleId,
   systemAgent,
 } from '../agent-config/normalize.js'
 import type { AgentOrderEntry } from '../agent-config/normalize.js'
@@ -400,6 +401,17 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const wantedAutomation = typeof raw?.automationAgentId === 'string' ? raw.automationAgentId : ''
   const automationAgentId =
     wantedAutomation === '' ? '' : resolveDefaultAgentId(agents, wantedAutomation)
+  // sandbox*AgentId: the sandbox-mode role profile. UNLIKE the five above, a
+  // sandbox role MUST reference an enabled `configMode: 'custom'` agent — a
+  // `system` agent cannot authenticate inside the arapuca sandbox. `normalizeSandboxRoleId`
+  // keeps "" ("follow the sandbox default") empty and resets any missing/disabled/
+  // `system` reference to "" (never auto-filled), so the runtime falls through
+  // `sandboxDefaultAgentId → first enabled custom agent`.
+  const sandboxDefaultAgentId = normalizeSandboxRoleId(raw?.sandboxDefaultAgentId, agents)
+  const sandboxToolAgentId = normalizeSandboxRoleId(raw?.sandboxToolAgentId, agents)
+  const sandboxIntentAgentId = normalizeSandboxRoleId(raw?.sandboxIntentAgentId, agents)
+  const sandboxSpecAgentId = normalizeSandboxRoleId(raw?.sandboxSpecAgentId, agents)
+  const sandboxAutomationAgentId = normalizeSandboxRoleId(raw?.sandboxAutomationAgentId, agents)
   // ---- Legacy migration (one-shot): capture old global top-level fields ----
   // The 5 workspace-level knobs used to live at the SystemSettings top level.
   // Capture them once for the project-level migration; they no longer survive in
@@ -443,6 +455,11 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     intentAgentId,
     specAgentId,
     automationAgentId,
+    sandboxDefaultAgentId,
+    sandboxToolAgentId,
+    sandboxIntentAgentId,
+    sandboxSpecAgentId,
+    sandboxAutomationAgentId,
     voiceLang,
     uiLang,
     timezone,

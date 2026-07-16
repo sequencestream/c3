@@ -274,6 +274,11 @@ function pinVendorCliVersion(vendor: VendorId, version: string | undefined): voi
     intentAgentId: '',
     specAgentId: '',
     automationAgentId: '',
+    sandboxDefaultAgentId: '',
+    sandboxToolAgentId: '',
+    sandboxIntentAgentId: '',
+    sandboxSpecAgentId: '',
+    sandboxAutomationAgentId: '',
     vendorCliVersions: next,
   })
 }

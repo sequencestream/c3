@@ -23,6 +23,7 @@ import {
   saveWorkspaceSettingHandler,
 } from './settings/index.js'
 import { permissionResponse } from './permissions/index.js'
+import { sandboxConflictResponse } from './sandbox/index.js'
 import { addWorkspaceHandler, removeWorkspaceHandler } from './workspaces/index.js'
 import {
   createSession,
@@ -124,6 +125,8 @@ export const handlerMap: HandlerMap = {
   save_workspace_setting: saveWorkspaceSettingHandler,
   // permissions
   permission_response: permissionResponse,
+  // sandbox
+  sandbox_conflict_response: sandboxConflictResponse,
   // workspaces
   add_workspace: addWorkspaceHandler,
   remove_workspace: removeWorkspaceHandler,

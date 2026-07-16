@@ -220,6 +220,11 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
       intentAgentId: '',
       specAgentId: '',
       automationAgentId: '',
+      sandboxDefaultAgentId: '',
+      sandboxToolAgentId: '',
+      sandboxIntentAgentId: '',
+      sandboxSpecAgentId: '',
+      sandboxAutomationAgentId: '',
       showToolSessions: true,
     })
 
@@ -242,6 +247,11 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
       intentAgentId: '',
       specAgentId: '',
       automationAgentId: '',
+      sandboxDefaultAgentId: '',
+      sandboxToolAgentId: '',
+      sandboxIntentAgentId: '',
+      sandboxSpecAgentId: '',
+      sandboxAutomationAgentId: '',
       showToolSessions: true,
     })
     recordToolSession('tool-historic')

@@ -18,6 +18,7 @@ import type {
   AgentConfig,
   ConsensusConfig,
   SessionAgentSwitch,
+  SessionKind,
   SystemSettings,
   VendorId,
 } from '@ccc/shared/protocol'
@@ -62,7 +63,7 @@ import {
   setPendingIntent,
 } from '../config/index.js'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import { systemAgent } from './normalize.js'
+import { firstEnabledCustomAgent, systemAgent } from './normalize.js'
 
 export {
   AGENT_ICON_MAX_CHARS,
@@ -209,6 +210,59 @@ export function resolveIntentAgent(): AgentConfig {
  */
 export function resolveSpecAgent(): AgentConfig {
   return resolveAgent(loadSettings().specAgentId)
+}
+
+/** The sandbox-role id configured for a session kind (the `sandbox*AgentId` field
+ *  matching the kind); "" ("follow the sandbox default") for kinds without a
+ *  dedicated field. Custom-validated on store — see {@link normalizeSandboxRoleId}. */
+function sandboxRoleIdForKind(settings: SystemSettings, kind: SessionKind): string {
+  switch (kind) {
+    case 'intent':
+      return settings.sandboxIntentAgentId
+    case 'spec':
+      return settings.sandboxSpecAgentId
+    case 'tool':
+      return settings.sandboxToolAgentId
+    case 'automation':
+      return settings.sandboxAutomationAgentId
+    default:
+      return '' // work / discussion / consensus ⇒ the sandbox default
+  }
+}
+
+/**
+ * The custom agent a sandboxed run of `kind` should use when its normally-resolved
+ * agent is `system`-mode (which cannot authenticate inside the arapuca sandbox).
+ * Resolution never lands on a `system` agent:
+ *   sandbox<role>Id → sandboxDefaultAgentId → first enabled custom agent (same
+ *   `vendor` preferred, then any).
+ * `vendor` is the bound agent's vendor, preferred so the substitute can re-bind a
+ * vendor-frozen session (a real session rejects a cross-vendor swap). Returns null
+ * only when NO enabled custom agent exists — the caller then surfaces "configure a
+ * sandbox custom agent" instead of silently launching a doomed `system` agent.
+ */
+export function resolveSandboxAgent(kind: SessionKind, vendor: VendorId): AgentConfig | null {
+  const settings = loadSettings()
+  const isUsableCustom = (id: string): AgentConfig | undefined => {
+    if (!id) return undefined
+    const a = settings.agents.find((x) => x.id === id)
+    return a && a.enabled !== false && a.configMode === 'custom' ? a : undefined
+  }
+  return (
+    isUsableCustom(sandboxRoleIdForKind(settings, kind)) ??
+    isUsableCustom(settings.sandboxDefaultAgentId) ??
+    firstEnabledCustomAgent(settings.agents, vendor) ??
+    null
+  )
+}
+
+/** Enabled `custom` agents of one vendor, `order_seq` order — the same-vendor
+ *  switch targets offered in the sandbox-conflict dialog (a session's agent swap is
+ *  vendor-frozen, so a cross-vendor target would be rejected). */
+export function enabledCustomAgentsOfVendor(vendor: VendorId): AgentConfig[] {
+  return loadSettings().agents.filter(
+    (a) => a.enabled !== false && a.configMode === 'custom' && a.vendor === vendor,
+  )
 }
 
 /**

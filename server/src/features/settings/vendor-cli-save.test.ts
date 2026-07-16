@@ -72,6 +72,11 @@ const base = {
   intentAgentId: '',
   specAgentId: '',
   automationAgentId: '',
+  sandboxDefaultAgentId: '',
+  sandboxToolAgentId: '',
+  sandboxIntentAgentId: '',
+  sandboxSpecAgentId: '',
+  sandboxAutomationAgentId: '',
 } as SystemSettings
 
 function connFor(subject: string | null): { conn: Conn; sent: ServerToClient[] } {

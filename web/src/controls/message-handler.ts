@@ -941,6 +941,18 @@ export function installMessageHandler(ctx: AppCtx): void {
         })
         activity.value = { phase: 'thinking' }
         break
+      case 'sandbox_conflict_request':
+        // A sandbox run's bound agent is system-mode (can't authenticate in the
+        // sandbox). Raise the App-global modal; the run blocks until we answer.
+        ctx.sandboxConflict.value = {
+          requestId: msg.requestId,
+          sessionId: msg.sessionId,
+          agentId: msg.agentId,
+          agentName: msg.agentName,
+          vendor: msg.vendor,
+          choices: msg.choices,
+        }
+        break
       case 'turn_end':
         // A turn finished — the session stays active for the next prompt.
         if (msg.reason === 'error') {

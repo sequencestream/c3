@@ -353,6 +353,43 @@
       },
       "groupPicker": {
         "label": "グループ"
+      },
+      "sandboxRoles": {
+        "head": "サンドボックスモード",
+        "hint": "サンドボックス内での実行にはこれらのエージェントを使用します。system 認証のエージェントはサンドボックス内でログインできないため、custom エージェントのみ選択できます。",
+        "followSandboxDefault": "サンドボックス既定に従う",
+        "empty": "有効な custom エージェントがありません — 上で追加してください"
+      },
+      "sandboxDefault": {
+        "tooltip": "サンドボックス実行の既定エージェント(custom エージェントである必要があります)。空 ⇒ 最初の有効な custom エージェント。"
+      },
+      "sandboxDefaultPicker": {
+        "label": "サンドボックス既定エージェント",
+        "auto": "自動(最初の custom エージェント)"
+      },
+      "sandboxTool": {
+        "tooltip": "サンドボックス内のバックグラウンドツールセッション用の custom エージェント"
+      },
+      "sandboxToolPicker": {
+        "label": "サンドボックスツールエージェント"
+      },
+      "sandboxIntent": {
+        "tooltip": "サンドボックス内の意図コミュニケーションセッション用の custom エージェント"
+      },
+      "sandboxIntentPicker": {
+        "label": "サンドボックス意図エージェント"
+      },
+      "sandboxSpec": {
+        "tooltip": "サンドボックス内の仕様作成セッション用の custom エージェント"
+      },
+      "sandboxSpecPicker": {
+        "label": "サンドボックス仕様エージェント"
+      },
+      "sandboxAutomation": {
+        "tooltip": "サンドボックス内の自動化開発実行用の custom エージェント"
+      },
+      "sandboxAutomationPicker": {
+        "label": "サンドボックス自動化エージェント"
       }
     },
     "defaultMode": {
@@ -2482,6 +2519,21 @@
       "discussion": {
         "label": "ディスカッション"
       }
+    }
+  },
+  "sandboxConflict": {
+    "title": "このエージェントはサンドボックス内で実行できません",
+    "body": "セッションのエージェント「{agent}」は system 認証を使用しており、サンドボックス内でログインできません。今回はサンドボックスなしで実行するか、custom エージェントに切り替えて維持してください。",
+    "noCustom": "同じベンダーの custom エージェントが設定されていません。システム設定で追加するか、サンドボックスなしで実行してください。",
+    "bypass": {
+      "label": "サンドボックスなしで実行"
+    },
+    "switch": {
+      "label": "custom エージェントに切り替え",
+      "action": "切り替えてサンドボックスを維持"
+    },
+    "cancel": {
+      "label": "キャンセル"
     }
   }
 }

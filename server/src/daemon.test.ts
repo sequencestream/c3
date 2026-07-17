@@ -140,7 +140,7 @@ describe('daemon options sidecar', () => {
     const parsed = readDaemonOptions(p)
     expect(parsed).not.toBeNull()
     expect(parsed).toEqual({ port: 3000, dev: true })
-    expect((parsed as Record<string, unknown>).workspacePath).toBeUndefined()
+    expect((parsed as unknown as Record<string, unknown>).workspacePath).toBeUndefined()
   })
 
   it('returns null for a missing file', () => {

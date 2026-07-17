@@ -25,9 +25,7 @@ describe('planServiceInstall — platform dispatch', () => {
     const plan = planServiceInstall(inputs('linux'))
     expect(plan.platform).toBe('linux')
     expect(plan.unitPath).toBe(`/home/alice/.config/systemd/user/${SYSTEMD_UNIT_NAME}`)
-    expect(plan.unitContent).toContain(
-      'ExecStart=/opt/c3/c3 start --port 4321',
-    )
+    expect(plan.unitContent).toContain('ExecStart=/opt/c3/c3 start --port 4321')
     expect(plan.unitContent).not.toContain('--workspace')
     expect(plan.unitContent).not.toContain('--daemon')
     // WorkingDirectory is home, not a workspace path.

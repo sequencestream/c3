@@ -149,7 +149,7 @@ export function readDaemonOptions(optionsPath: string): DaemonStartOptions | nul
   const o = parsed as Record<string, unknown>
   if (typeof o.port !== 'number' || !Number.isFinite(o.port)) return null
   if (typeof o.dev !== 'boolean') return null
-  // Gracefully ignore legacy workspacePath field — it was removed in 2026-07-17.
+  // Gracefully ignore the legacy workspacePath field left by older runtime files.
   if (o.settingsPath !== undefined && typeof o.settingsPath !== 'string') return null
   return {
     port: o.port,

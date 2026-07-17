@@ -31,14 +31,7 @@ describe('buildStartArgs', () => {
       dev: true,
       settingsPath: '/abs/settings.json',
     })
-    expect(args).toEqual([
-      'start',
-      '--settings',
-      '/abs/settings.json',
-      '--port',
-      '8080',
-      '--dev',
-    ])
+    expect(args).toEqual(['start', '--settings', '/abs/settings.json', '--port', '8080', '--dev'])
   })
 })
 

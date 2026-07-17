@@ -19,6 +19,7 @@ c3 - code creative center - An **AI workbench** that centrally manages and drive
 ## Commands
 
 ```bash
+pnpm allcheck                                   # format → lint:fix → typecheck → i18n:check (&& chain, stops on failure)
 pnpm typecheck                                  # vue-tsc --noEmit across packages
 pnpm lint                                        # eslint . , exec `pnpm lint:fix` to fix lint errors
 pnpm i18n:check                                  # check i18n keys in code
@@ -27,7 +28,7 @@ pnpm dev                                        # server :3000 + Vite :5173 — 
 pnpm start [--workspace /abs/path] [--port 3000] # start is default cmd; --workspace defaults to cwd (--project deprecated alias), --port to 3000
 ```
 
-do format/lint/typecheck/i18n:check at the end of an edit session.
+do `pnpm allcheck` or format/lint/typecheck/i18n:check individually at the end of an edit session.
 
 ## Dir&File Index
 

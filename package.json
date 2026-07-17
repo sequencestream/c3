@@ -21,6 +21,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
+    "allcheck": "pnpm format && pnpm lint:fix && pnpm typecheck && pnpm i18n:check",
     "format:check": "prettier --check .",
     "i18n:check": "node scripts/i18n/check.mjs",
     "i18n:check-freeze": "node scripts/i18n/check-freeze.mjs",

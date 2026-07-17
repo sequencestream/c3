@@ -23,8 +23,14 @@ export const PID_FILE_NAME = 'c3.pid'
 export const DAEMON_LOG_NAME = 'c3-daemon.log'
 /** Snapshot of the resolved start options for the live daemon, under the c3 home
  * dir. Written next to the pid file so `c3 restart` can faithfully rebuild the
- * original launch command (the pid file alone carries no workspace/port/dev/settings).
- * Consumed ONLY by restart; absence/corruption never affects start/daemon itself. */
+ * original launch command (the pid file alone carries no port/dev/settings).
+ * Consumed ONLY by restart; absence/corruption never affects start/daemon itself.
+ *
+ * NOTE: a prior version also baked `workspacePath` into the options sidecar. On
+ * upgrade that field is still present on disk; it is gracefully ignored by
+ * readDaemonOptions (the reader allows both with and without it). Once every daemon
+ * has re-written a fresh snapshot (at the next `start --daemon` after upgrade), old
+ * sidecars with workspacePath are gone. */
 export const DAEMON_OPTIONS_NAME = 'c3.daemon.json'
 
 /** Runtime basenames that mean "we are running under an interpreter" (dev/tsx),
@@ -34,7 +40,6 @@ const INTERPRETER_BASENAMES = new Set(['node', 'bun', 'tsx', 'deno'])
 
 /** The resolved `start`-launch parameters to bake into the daemon child. */
 export interface DaemonStartOptions {
-  workspacePath?: string
   port: number
   dev: boolean
   /** Absolute settings.json path when `--settings` was given (so the child reads
@@ -56,14 +61,13 @@ export interface DaemonDeps {
 
 /**
  * The argv (after the executable) for the daemon child: a plain `start` carrying
- * the SAME workspace/port/dev/settings, and pointedly NO `--daemon` (the child
- * must run the server, not fork again). `--settings` is emitted first so the
- * child relocates its config root before anything reads it.
+ * the SAME port/dev/settings, and pointedly NO `--daemon` (the child must run
+ * the server, not fork again). `--settings` is emitted first so the child
+ * relocates its config root before anything reads it.
  */
 export function buildStartArgs(opts: DaemonStartOptions): string[] {
   const args = ['start']
   if (opts.settingsPath) args.push('--settings', opts.settingsPath)
-  if (opts.workspacePath) args.push('--workspace', opts.workspacePath)
   args.push('--port', String(opts.port))
   if (opts.dev) args.push('--dev')
   return args
@@ -125,7 +129,8 @@ export function writeDaemonOptions(optionsPath: string, opts: DaemonStartOptions
 /**
  * Read the daemon options sidecar. Returns null on a missing / unreadable /
  * malformed file (restart then reports it must be started manually rather than
- * guessing workspace/port/dev/settings).
+ * guessing port/dev/settings). Gracefully ignores a legacy `workspacePath` field
+ * that existed in older snapshots — it is no longer used.
  */
 export function readDaemonOptions(optionsPath: string): DaemonStartOptions | null {
   let raw: string
@@ -144,10 +149,9 @@ export function readDaemonOptions(optionsPath: string): DaemonStartOptions | nul
   const o = parsed as Record<string, unknown>
   if (typeof o.port !== 'number' || !Number.isFinite(o.port)) return null
   if (typeof o.dev !== 'boolean') return null
-  if (o.workspacePath !== undefined && typeof o.workspacePath !== 'string') return null
+  // Gracefully ignore the legacy workspacePath field left by older runtime files.
   if (o.settingsPath !== undefined && typeof o.settingsPath !== 'string') return null
   return {
-    workspacePath: o.workspacePath as string | undefined,
     port: o.port,
     dev: o.dev,
     settingsPath: o.settingsPath as string | undefined,

@@ -18,33 +18,20 @@ import {
 
 describe('buildStartArgs', () => {
   it('emits a plain start and never re-adds --daemon (no self-fork)', () => {
-    const args = buildStartArgs({ workspacePath: '/ws', port: 3000, dev: false })
+    const args = buildStartArgs({ port: 3000, dev: false })
     expect(args[0]).toBe('start')
     expect(args).not.toContain('--daemon')
-    expect(args).toEqual(['start', '--workspace', '/ws', '--port', '3000'])
+    expect(args).not.toContain('--workspace')
+    expect(args).toEqual(['start', '--port', '3000'])
   })
 
   it('threads settings first, plus dev when set', () => {
     const args = buildStartArgs({
-      workspacePath: '/ws',
       port: 8080,
       dev: true,
       settingsPath: '/abs/settings.json',
     })
-    expect(args).toEqual([
-      'start',
-      '--settings',
-      '/abs/settings.json',
-      '--workspace',
-      '/ws',
-      '--port',
-      '8080',
-      '--dev',
-    ])
-  })
-
-  it('omits --workspace when none is given', () => {
-    expect(buildStartArgs({ port: 3000, dev: false })).toEqual(['start', '--port', '3000'])
+    expect(args).toEqual(['start', '--settings', '/abs/settings.json', '--port', '8080', '--dev'])
   })
 })
 
@@ -127,16 +114,26 @@ describe('daemon options sidecar', () => {
 
   it('round-trips the resolved start options', () => {
     const p = join(dir, DAEMON_OPTIONS_NAME)
-    const opts = { workspacePath: '/ws', port: 8080, dev: true, settingsPath: '/abs/settings.json' }
+    const opts = { port: 8080, dev: true, settingsPath: '/abs/settings.json' }
     writeDaemonOptions(p, opts)
     expect(readDaemonOptions(p)).toEqual(opts)
   })
 
-  it('round-trips minimal options (no workspace/settings)', () => {
+  it('round-trips minimal options (no settings)', () => {
     const p = join(dir, DAEMON_OPTIONS_NAME)
     const opts = { port: 3000, dev: false }
     writeDaemonOptions(p, opts)
     expect(readDaemonOptions(p)).toEqual(opts)
+  })
+
+  it('gracefully ignores legacy workspacePath field', () => {
+    const p = join(dir, DAEMON_OPTIONS_NAME)
+    const old = { workspacePath: '/old/ws', port: 3000, dev: true }
+    writeFileSync(p, JSON.stringify(old))
+    const parsed = readDaemonOptions(p)
+    expect(parsed).not.toBeNull()
+    expect(parsed).toEqual({ port: 3000, dev: true })
+    expect((parsed as unknown as Record<string, unknown>).workspacePath).toBeUndefined()
   })
 
   it('returns null for a missing file', () => {
@@ -175,20 +172,21 @@ describe('startDaemon', () => {
     return { pid, unref: vi.fn() } as unknown as ChildProcess
   }
 
-  it("respawns detached, stdio-redirected, unref'd, without --daemon, and writes the pid file", () => {
+  it("respawns detached, stdio-redirected, unref'd, without --daemon/--workspace, and writes the pid file", () => {
     const child = fakeChild(12345)
     const spawn = vi.fn().mockReturnValue(child)
     const outcome = startDaemon(
-      { workspacePath: '/ws', port: 3000, dev: false },
+      { port: 3000, dev: false },
       { spawn: spawn as never, isAlive: () => false },
     )
 
     expect(spawn).toHaveBeenCalledTimes(1)
     const [, args, opts] = spawn.mock.calls[0]
     expect(args).not.toContain('--daemon')
+    expect(args).not.toContain('--workspace')
     // The `start …` child args are always a trailing slice (an interpreter run —
     // e.g. under vitest — prepends the script path; the compiled binary does not).
-    expect(args.slice(-5)).toEqual(['start', '--workspace', '/ws', '--port', '3000'])
+    expect(args.slice(-3)).toEqual(['start', '--port', '3000'])
     expect(opts.detached).toBe(true)
     // stdio redirects stdout+stderr to the same log fd, stdin ignored.
     expect(opts.stdio[0]).toBe('ignore')
@@ -204,7 +202,6 @@ describe('startDaemon', () => {
       expect(readFileSync(outcome.pidPath, 'utf-8').trim()).toBe('12345')
       // a restart-only options sidecar lands next to the pid file
       expect(readDaemonOptions(join(dir, DAEMON_OPTIONS_NAME))).toEqual({
-        workspacePath: '/ws',
         port: 3000,
         dev: false,
       })

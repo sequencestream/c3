@@ -21,7 +21,14 @@
  * Usage:
  *   node scripts/e2e/e2e-pending-flush-test.mjs [ws-url]
  */
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 const URL = process.argv[2] || 'ws://localhost:13000/ws'
+const PROJECT_DIR = mkdtempSync(join(tmpdir(), 'c3-e2e-pending-flush-'))
+writeFileSync(join(PROJECT_DIR, 'README.md'), '# c3 e2e pending-flush\n')
+
 const PROMPT_1 = 'Reply with exactly the word ONE and nothing else. Do not use any tools.'
 const PROMPT_2 = 'Reply with exactly the word TWO and nothing else. Do not use any tools.'
 const TIMEOUT_MS = 120_000
@@ -59,13 +66,21 @@ ws.addEventListener('message', (evt) => {
   switch (msg.type) {
     case 'ready': {
       sawReady = true
-      const ws0 = msg.workspaces?.[0]?.id
+      console.log(`[e2e] ready → adding workspace ${PROJECT_DIR}`)
+      ws.send(JSON.stringify({ type: 'add_workspace', path: PROJECT_DIR }))
+      break
+    }
+    case 'workspaces': {
+      if (sessionId) break
+      const added =
+        msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop()) ?? msg.workspaces?.[0]
+      const ws0 = added?.id ?? null
       if (!ws0) {
-        console.error('[e2e] no seed workspace in ready — start with --workspace <dir>')
+        console.error('[e2e] no workspace after add_workspace')
         finish(5)
         return
       }
-      console.log(`[e2e] ready → creating session in ${ws0}`)
+      console.log(`[e2e] workspaces → creating session in ${ws0}`)
       ws.send(JSON.stringify({ type: 'create_session', workspaceId: ws0 }))
       break
     }
@@ -167,6 +182,11 @@ function finish(code) {
     ws.close()
   } catch {
     // already closed — nothing to do
+  }
+  try {
+    rmSync(PROJECT_DIR, { recursive: true, force: true })
+  } catch {
+    /* ignore */
   }
   process.exit(code)
 }

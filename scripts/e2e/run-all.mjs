@@ -42,7 +42,7 @@ const portArg = (() => {
 const PORT = Number(portArg) || 13099
 const WS_URL = `ws://localhost:${PORT}/ws`
 
-// Throwaway state dir: isolates the intent db; the seed workspace lives here too.
+// Throwaway state dir: isolates the intent db; an available test directory lives here too.
 const STATE_DIR = mkdtempSync(join(tmpdir(), 'c3-e2e-suite-'))
 const DB_PATH = join(STATE_DIR, 'c3.db')
 const SEED_PROJECT = join(STATE_DIR, 'seed')
@@ -130,8 +130,6 @@ async function main() {
     [
       join(ROOT, 'server', 'dist', 'cli.cjs'),
       'start',
-      '--workspace',
-      SEED_PROJECT,
       '--port',
       String(PORT),
       '--settings',

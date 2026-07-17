@@ -14,9 +14,16 @@
  *
  * Usage:
  *   node scripts/e2e/e2e-relay-real-test.mjs <ws-url> <agentId> [sentinel]
- * Exit: 0 PASS, 1 FAIL, 2 TIMEOUT, 3 ws-error, 5 SKIP (no seed workspace).
+ * Exit: 0 PASS, 1 FAIL, 2 TIMEOUT, 3 ws-error.
  */
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 const URL = process.argv[2] || 'ws://localhost:13123/ws'
+const PROJECT_DIR = mkdtempSync(join(tmpdir(), 'c3-e2e-relay-'))
+writeFileSync(join(PROJECT_DIR, 'README.md'), '# c3 e2e relay\n')
+
 const AGENT_ID = process.argv[3]
 const SENTINEL = process.argv[4] || 'BANANA42'
 const TIMEOUT_MS = 120_000
@@ -56,13 +63,19 @@ ws.addEventListener('message', (evt) => {
   events.push(msg.type)
 
   if (msg.type === 'ready') {
-    const ws0 = msg.workspaces?.[0]?.id
+    console.log(`[relay-e2e] ready → add_workspace ${PROJECT_DIR}`)
+    ws.send(JSON.stringify({ type: 'add_workspace', path: PROJECT_DIR }))
+  } else if (msg.type === 'workspaces') {
+    if (sessionId) return
+    const added =
+      msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop()) ?? msg.workspaces?.[0]
+    const ws0 = added?.id ?? null
     if (!ws0) {
-      console.error('[relay-e2e] no seed workspace — start server with --workspace <dir>')
+      console.error('[relay-e2e] no workspace after add_workspace')
       finish(5)
       return
     }
-    console.log(`[relay-e2e] ready → create_session in ${ws0}`)
+    console.log(`[relay-e2e] workspaces → create_session in ${ws0}`)
     ws.send(JSON.stringify({ type: 'create_session', workspaceId: ws0 }))
   } else if (msg.type === 'session_selected') {
     sessionId = msg.sessionId
@@ -122,6 +135,11 @@ function finish(code) {
     ws.close()
   } catch {
     /* already closed */
+  }
+  try {
+    rmSync(PROJECT_DIR, { recursive: true, force: true })
+  } catch {
+    /* ignore */
   }
   process.exit(code)
 }

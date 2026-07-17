@@ -9,14 +9,14 @@ import {
   type ServiceInstallInputs,
 } from './service-install.js'
 
-/** A compiled-binary install on a fixed HOME with a baked workspace + port. */
+/** A compiled-binary install on a fixed HOME with a baked port. */
 function inputs(platform: NodeJS.Platform): ServiceInstallInputs {
   return {
     platform,
     execPath: '/opt/c3/c3',
     scriptPath: undefined,
     home: '/home/alice',
-    start: { workspacePath: '/home/alice/proj', port: 4321, dev: false },
+    start: { port: 4321, dev: false },
   }
 }
 
@@ -25,10 +25,11 @@ describe('planServiceInstall — platform dispatch', () => {
     const plan = planServiceInstall(inputs('linux'))
     expect(plan.platform).toBe('linux')
     expect(plan.unitPath).toBe(`/home/alice/.config/systemd/user/${SYSTEMD_UNIT_NAME}`)
-    expect(plan.unitContent).toContain(
-      'ExecStart=/opt/c3/c3 start --workspace /home/alice/proj --port 4321',
-    )
+    expect(plan.unitContent).toContain('ExecStart=/opt/c3/c3 start --port 4321')
+    expect(plan.unitContent).not.toContain('--workspace')
     expect(plan.unitContent).not.toContain('--daemon')
+    // WorkingDirectory is home, not a workspace path.
+    expect(plan.unitContent).toContain('WorkingDirectory=/home/alice')
     // localhost-only is the server default; the unit injects no host/bind override.
     expect(plan.unitContent).not.toMatch(/--host|0\.0\.0\.0|--bind/)
     expect(plan.unitContent).toContain('WantedBy=default.target')
@@ -49,7 +50,10 @@ describe('planServiceInstall — platform dispatch', () => {
     expect(plan.unitContent).toContain('<string>start</string>')
     expect(plan.unitContent).toContain('<string>--port</string>')
     expect(plan.unitContent).toContain('<string>4321</string>')
+    expect(plan.unitContent).not.toContain('--workspace')
     expect(plan.unitContent).not.toContain('--daemon')
+    // WorkingDirectory is home, not a workspace path.
+    expect(plan.unitContent).toContain('<string>/home/alice</string>')
     expect(plan.registerCommands).toEqual([
       {
         cmd: 'launchctl',
@@ -63,7 +67,7 @@ describe('planServiceInstall — platform dispatch', () => {
       ...inputs('win32'),
       execPath: 'C:\\Program Files\\c3\\c3.exe',
       home: 'C:\\Users\\alice',
-      start: { workspacePath: 'C:\\proj', port: 4321, dev: false },
+      start: { port: 4321, dev: false },
     })
     expect(plan.platform).toBe('win32')
     expect(plan.unitPath).toBeNull()
@@ -74,18 +78,19 @@ describe('planServiceInstall — platform dispatch', () => {
     expect(cmd.args).toContain('/Create')
     expect(cmd.args).toContain('ONLOGON')
     expect(cmd.args).toContain(SCHTASKS_TASK_NAME)
-    // executable with spaces is quoted inside the /TR string; never --daemon.
+    // executable with spaces is quoted inside the /TR string; never --daemon/--workspace.
     const trIdx = cmd.args.indexOf('/TR')
     const tr = cmd.args[trIdx + 1]
     expect(tr).toContain('"C:\\Program Files\\c3\\c3.exe"')
     expect(tr).toContain('start')
+    expect(tr).not.toContain('--workspace')
     expect(tr).not.toContain('--daemon')
   })
 
   it('bakes the absolute --settings path so the service reads the same ~/.c3', () => {
     const plan = planServiceInstall({
       ...inputs('linux'),
-      start: { workspacePath: '/ws', port: 3000, dev: false, settingsPath: '/abs/settings.json' },
+      start: { port: 3000, dev: false, settingsPath: '/abs/settings.json' },
     })
     expect(plan.unitContent).toContain('--settings /abs/settings.json')
   })

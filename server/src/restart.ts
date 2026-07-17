@@ -227,7 +227,7 @@ async function restartDaemon(
   const opts = readOptions(join(c3Home, DAEMON_OPTIONS_NAME))
   if (!opts) {
     errlog(`[c3 restart] daemon options sidecar missing or corrupt (${DAEMON_OPTIONS_NAME})`)
-    errlog(`[c3 restart] start it manually: c3 start --daemon [--workspace … --port …]`)
+    errlog(`[c3 restart] start it manually: c3 start --daemon [--port …]`)
     return 1
   }
   const outcome = startDaemonFn(opts)

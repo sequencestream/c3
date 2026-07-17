@@ -19,7 +19,7 @@ import { probeArapuca } from './kernel/sandbox/SandboxLauncher.js'
 import type { SandboxConflictCtx } from './kernel/sandbox/conflict-registry.js'
 import { initLogging, shutdownLogging } from './kernel/infra/logger.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
-import { addWorkspace, listWorkspaces, resolveWorkspaceRoot } from './state.js'
+import { listWorkspaces, resolveWorkspaceRoot } from './state.js'
 import { sessionExists } from './sessions.js'
 import {
   reconcileLiveness,
@@ -115,8 +115,6 @@ import {
 } from './wiring/index.js'
 
 export interface ServerOptions {
-  /** Optional seed workspace — added to the registry and made discoverable. */
-  workspacePath?: string
   port: number
   dev: boolean
 }
@@ -322,9 +320,6 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
   const app = new Hono()
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app })
-
-  // Seed the registry with the CLI-provided workspace (idempotent).
-  if (opts.workspacePath) addWorkspace(opts.workspacePath, Date.now())
 
   // Single broadcast egress (ADR-0009 R2 / server refactor 2/3b). All wire frames
   // funnel through `broadcaster.toAll`; the per-run delivery (emit/viewers,
@@ -694,7 +689,6 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const server = serve({ fetch: app.fetch, port: opts.port }, (info) => {
     const url = `http://localhost:${info.port}`
     console.log(`[c3] server running at ${url}`)
-    if (opts.workspacePath) console.log(`[c3] seed workspace: ${opts.workspacePath}`)
     if (opts.dev) console.log(`[c3] dev mode — open Vite at http://localhost:5173`)
   })
   injectWebSocket(server)

@@ -8,7 +8,14 @@
  *   node scripts/e2e-ws-test.mjs [ws-url] [prompt]
  */
 // Node 22+ has WebSocket as a global; no external dep needed.
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 const URL = process.argv[2] || 'ws://localhost:13000/ws'
+const PROJECT_DIR = mkdtempSync(join(tmpdir(), 'c3-e2e-ws-'))
+writeFileSync(join(PROJECT_DIR, 'README.md'), '# c3 e2e ws test\n')
+
 const PROMPT =
   process.argv[3] ||
   'Use the Write tool to create the file /tmp/c3-e2e-test.txt with content exactly "c3-e2e-ok". Do not run any other commands.'
@@ -49,13 +56,19 @@ ws.addEventListener('message', (evt) => {
 
   if (msg.type === 'ready') {
     sawReady = true
-    const ws0 = msg.workspaces?.[0]?.id
+    console.log(`[e2e] ready → adding workspace ${PROJECT_DIR}`)
+    ws.send(JSON.stringify({ type: 'add_workspace', path: PROJECT_DIR }))
+  } else if (msg.type === 'workspaces') {
+    if (sessionCreated) return
+    const added =
+      msg.workspaces?.find((w) => w.name === PROJECT_DIR.split('/').pop()) ?? msg.workspaces?.[0]
+    const ws0 = added?.id ?? null
     if (!ws0) {
-      console.error('[e2e] no seed workspace in ready — start with --workspace <dir>')
+      console.error('[e2e] no workspace after add_workspace')
       finish(5)
       return
     }
-    console.log(`[e2e] ready → creating session in ${ws0}`)
+    console.log(`[e2e] workspaces → creating session in ${ws0}`)
     sessionCreated = true
     ws.send(JSON.stringify({ type: 'create_session', workspaceId: ws0 }))
   } else if (msg.type === 'session_selected') {
@@ -142,6 +155,11 @@ function finish(code) {
     ws.close()
   } catch {
     // already closed — nothing to do
+  }
+  try {
+    rmSync(PROJECT_DIR, { recursive: true, force: true })
+  } catch {
+    /* ignore */
   }
   process.exit(code)
 }

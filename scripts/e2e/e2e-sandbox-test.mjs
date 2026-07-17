@@ -11,7 +11,7 @@
  * Usage:
  *   node scripts/e2e/e2e-sandbox-test.mjs [ws-url] [prompt]
  */
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execSync } from 'node:child_process'
@@ -33,7 +33,8 @@ const PROMPT =
  * 4 = done
  */
 let phase = 0
-let seedWorkspace = '' // seed workspace's opaque id (from `ready`)
+let seedWorkspace = '' // seed workspace's opaque id (from `workspaces` after add_workspace)
+let seedProjectPath = '' // seed workspace's temp dir path (for cleanup)
 let sandboxProject = '' // sandbox project's absolute path (only for add_workspace + cleanup)
 let sandboxProjectId = '' // sandbox project's opaque id (from `workspaces` after add)
 let sandboxDefName = ''
@@ -64,6 +65,11 @@ function finish(code) {
   clearTimeout(timeout)
   try {
     ws.close()
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (seedProjectPath) rmSync(seedProjectPath, { recursive: true, force: true })
   } catch {
     /* ignore */
   }
@@ -114,15 +120,13 @@ function onMessage(evt) {
 
   // ── Phase 0: init ─────────────────────────────────────────────────
   if (msg.type === 'ready') {
-    seedWorkspace = msg.workspaces?.[0]?.id
-    if (!seedWorkspace) {
-      console.error('[e2e-sandbox] no seed workspace — start with --workspace <dir>')
-      finish(5)
-      return
-    }
-    console.log(`[e2e-sandbox] ready → workspace: ${seedWorkspace}`)
-    phase = 1
-    runSetup()
+    // Create a temp project dir for Phase 1 (non-sandboxed run) and add it as a workspace
+    seedProjectPath = mkdtempSync(join(tmpdir(), 'c3-e2e-sandbox-host-'))
+    mkdirSync(seedProjectPath, { recursive: true })
+    writeFileSync(join(seedProjectPath, 'README.md'), '# c3 e2e sandbox host\n')
+    console.log(`[e2e-sandbox] ready → adding workspace ${seedProjectPath}`)
+    send({ type: 'add_workspace', path: seedProjectPath })
+    // Stay in phase 0 — wait for `workspaces` response
     return
   }
 
@@ -142,10 +146,24 @@ function onMessage(evt) {
   }
 
   if (msg.type === 'workspaces') {
-    // add_workspace response — project now registered
-    // Guard: only handle this once during sandbox setup (phase 1).
+    // Phase 0: seed workspace add_workspace response
+    if (phase === 0) {
+      const added =
+        msg.workspaces?.find((w) => w.name === seedProjectPath.split('/').pop()) ??
+        msg.workspaces?.[0]
+      seedWorkspace = added?.id ?? ''
+      if (!seedWorkspace) {
+        console.error('[e2e-sandbox] no workspaceId after add_workspace seed')
+        finish(5)
+        return
+      }
+      console.log(`[e2e-sandbox] seed workspace added: ${seedWorkspace}`)
+      phase = 1
+      runSetup()
+      return
+    }
+    // Phase 1: sandbox project add_workspace response
     if (phase !== 1) return
-    // Capture the just-added project's opaque id (sorts first after add).
     const added =
       msg.workspaces?.find((w) => w.name === sandboxProject.split('/').pop()) ?? msg.workspaces?.[0]
     sandboxProjectId = added?.id ?? ''

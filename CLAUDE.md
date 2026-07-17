@@ -24,7 +24,7 @@ pnpm lint                                        # eslint . , exec `pnpm lint:fi
 pnpm i18n:check                                  # check i18n keys in code
 pnpm format                                      # prettier --write . (--check via format:check)
 pnpm dev                                        # server :3000 + Vite :5173 — open :5173
-pnpm start [--workspace /abs/path] [--port 3000] # start is default cmd; --workspace defaults to cwd (--project deprecated alias), --port to 3000
+pnpm start [--port 3000] # start is default cmd; workspaces added from Web UI
 ```
 
 do format/lint/typecheck/i18n:check at the end of an edit session.

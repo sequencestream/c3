@@ -105,7 +105,7 @@ function launchCommand(inputs: ServiceInstallInputs): { command: string; args: s
 function planLinux(inputs: ServiceInstallInputs): ServicePlan {
   const { command, args } = launchCommand(inputs)
   const execStart = [command, ...args].map(systemdQuote).join(' ')
-  const workingDir = inputs.start.workspacePath ?? inputs.home
+  const workingDir = inputs.home
   const unitContent = [
     '[Unit]',
     'Description=c3 - Code Creative Center',
@@ -145,7 +145,7 @@ function planDarwin(inputs: ServiceInstallInputs): ServicePlan {
   const programArgs = [command, ...args]
     .map((a) => `    <string>${xmlEscape(a)}</string>`)
     .join('\n')
-  const workingDir = inputs.start.workspacePath ?? inputs.home
+  const workingDir = inputs.home
   const unitPath = join(inputs.home, 'Library', 'LaunchAgents', `${LAUNCHD_LABEL}.plist`)
   const unitContent = [
     '<?xml version="1.0" encoding="UTF-8"?>',

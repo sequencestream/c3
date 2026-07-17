@@ -85,7 +85,7 @@ export async function smokeArtifact(file, { timeoutMs = 15000, log = () => {} } 
   // the smoke never touches real state; HUSKY=0 keeps it hook-free.
   const port = await freePort()
   const sandbox = mkdtempSync(join(tmpdir(), 'c3-smoke-'))
-  const child = spawn(file, ['--port', String(port), '--workspace', sandbox], {
+  const child = spawn(file, ['--port', String(port)], {
     env: { ...process.env, C3_DB_PATH: join(sandbox, 'c3.db'), HUSKY: '0' },
     stdio: ['ignore', 'pipe', 'pipe'],
   })

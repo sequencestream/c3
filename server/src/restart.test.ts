@@ -185,7 +185,7 @@ describe('runRestart service', () => {
 // ── runRestart: daemon ──────────────────────────────────────────────────────
 
 describe('runRestart daemon', () => {
-  const opts: DaemonStartOptions = { workspacePath: '/ws', port: 8080, dev: false }
+  const opts: DaemonStartOptions = { port: 8080, dev: false }
 
   it('stops the recorded pid then relaunches from the persisted options', async () => {
     writePid(1234)

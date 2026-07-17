@@ -8,7 +8,7 @@
   },
   "scripts": {
     "predev": "node scripts/ensure-static-embed.mjs",
-    "dev": "tsx watch src/cli.ts start --workspace ${CCC_PROJECT:-$PWD} --port 3000 --dev",
+    "dev": "tsx watch src/cli.ts start --port 3000 --dev",
     "prebuild": "node scripts/ensure-static-embed.mjs",
     "build": "node build.mjs",
     "binary": "node scripts/pkg.mjs",

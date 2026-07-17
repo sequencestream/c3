@@ -57,7 +57,7 @@ shasum -a 256 -c SHA256SUMS
 
 ```bash
 c3 install # registers c3 as a **per-user** OS service (no root/admin required) that runs
-c3 start # under the platform's service manager. The current `--workspace`/`--port`/`--settings`
+c3 start # under the platform's service manager. The current `--port`/`--settings`
 c3 uninstall # removes the current platform's registration and is idempotent. It **only**
 ```
 

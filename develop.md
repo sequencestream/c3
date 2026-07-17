@@ -30,8 +30,7 @@ pnpm test        # vitest run
 ```bash
 pnpm build
 pnpm start
-# defaults: --workspace = current directory, --port 3000
-# or override: pnpm start --workspace /absolute/path/to/your/project --port 3000
+# defaults: --port 3000 (workspaces added from Web UI)
 # open http://localhost:3000
 ```
 
@@ -43,7 +42,7 @@ pnpm start
 pnpm binary
 # outputs: dist/c3-macos-arm64  (~61MB)
 ./dist/c3-macos-arm64
-# or override: ./dist/c3-macos-arm64 start --workspace /abs/path --port 3000
+# or: ./dist/c3-macos-arm64 start --port 3000
 ```
 
 Built with [`bun build --compile`](https://bun.sh/docs/bundler/executables).
@@ -111,7 +110,7 @@ the smoke test:
 
 ```bash
 # Terminal A
-pnpm start --workspace /tmp --port 13000
+pnpm start --port 13000
 
 # Terminal B
 node scripts/e2e/e2e-ws-test.mjs ws://localhost:13000/ws

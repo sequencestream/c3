@@ -27,7 +27,7 @@ section.
 
 ## Smoke test (permission flow)
 
-- `pnpm start --workspace /tmp --port 13000`
+- `pnpm start --port 13000`
 - `node scripts/e2e/e2e-ws-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
 ## Pending-queue flush race (running→idle re-submit)
@@ -43,7 +43,7 @@ turn completes; FAIL = the "already running" error fires.
 
 Needs only the default agent (spends two short tool-less turns of real tokens).
 
-- `pnpm start --workspace /tmp --port 13000`
+- `pnpm start --port 13000`
 - `node scripts/e2e/e2e-pending-flush-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
 ## Intent management (save flow + AskUserQuestion gate)
@@ -69,7 +69,7 @@ Needs only the default agent (spends two short turns of real tokens — save, th
 AskUserQuestion) and the intent db available (`C3_DB_PATH`, which `pnpm e2e`
 provides automatically).
 
-- `pnpm start --workspace /tmp --port 13000` (with a throwaway `C3_DB_PATH` set if
+- `pnpm start --port 13000` (with a throwaway `C3_DB_PATH` set if
   you don't want to touch `~/.c3/c3.db`)
 - `node scripts/e2e/e2e-intent-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
@@ -85,7 +85,7 @@ original settings are restored on exit; the agents are never modified.
 Requires at least one agent besides the default (to vote). Hits the configured
 providers' APIs (spends real tokens).
 
-- `pnpm build` then `pnpm start --workspace /tmp --port 13000`
+- `pnpm build` then `pnpm start --port 13000`
   (or `pnpm dev` and use `ws://localhost:3000/ws`)
 - `node scripts/e2e/e2e-consensus-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
@@ -129,7 +129,7 @@ on a glibc base (`node:22-bookworm-slim`; NOT alpine — codex ships a native
 
 - Build the image (once): `node scripts/e2e/sandbox/build-image.mjs`
   (custom tag via `C3_SANDBOX_IMAGE=foo:bar`, clean rebuild via `--no-cache`).
-- `pnpm start --workspace /tmp --port 13000`
+- `pnpm start --port 13000`
 - `node scripts/e2e/e2e-sandbox-container-test.mjs ws://localhost:13000/ws` →
   expect `RESULT: PASS`. SKIPs (exit 5) when Docker or the image is missing.
 
@@ -223,10 +223,10 @@ sentinel comes back. Spends real tokens on the agent's provider.
 Boot an isolated, auth-free server seeded from the real settings (keys decrypt via the
 embedded static key — path-independent), then run once per agent:
 
-- `C3_DB_PATH=<tmp>/c3.db pnpm -F @ccc/server exec tsx src/cli.ts start --workspace /tmp
+- `C3_DB_PATH=<tmp>/c3.db pnpm -F @ccc/server exec tsx src/cli.ts start
 --port 13123 --settings <copy-of-~/.c3/settings.json, auth stripped> --dev`
 - `node scripts/e2e/e2e-relay-real-test.mjs ws://127.0.0.1:13123/ws <agentId> [sentinel]`
-  → `RESULT: PASS` (exit 0). 1 = FAIL, 2 = TIMEOUT, 5 = SKIP (no seed workspace).
+  → `RESULT: PASS` (exit 0). 1 = FAIL, 2 = TIMEOUT.
 
 Not part of `pnpm e2e` (needs configured custom agents + spends tokens), like the
 sandbox-vendor-token test.

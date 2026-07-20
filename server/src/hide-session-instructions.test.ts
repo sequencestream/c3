@@ -38,8 +38,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
             : Array.isArray(content)
               ? ((
                   content.find((b) => (b as { type?: string }).type === 'text') as
-                    | { text?: string }
-                    | undefined
+                    { text?: string } | undefined
                 )?.text ?? '')
               : ''
         yield { type: 'result', session_id: 'sid-claude' }

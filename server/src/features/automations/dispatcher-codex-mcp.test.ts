@@ -171,8 +171,7 @@ describe('codex automation MCP bridge — mount opt-in', () => {
     expect(binds).toHaveLength(1)
     expect(binds[0]).toEqual({ workspacePath: '/ws', executionId: 'log-2' })
     const mcpServers = startArg?.mcpServers as
-      | Record<string, { type: string; url: string; enabledTools: string[] }>
-      | undefined
+      Record<string, { type: string; url: string; enabledTools: string[] }> | undefined
     expect(mcpServers?.c3.type).toBe('http')
     expect(mcpServers?.c3.url).toContain('token=')
     expect(mcpServers?.c3.enabledTools).toEqual(FULL_TOOLS)

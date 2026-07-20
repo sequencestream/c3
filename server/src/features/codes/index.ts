@@ -40,8 +40,7 @@ interface CodesError {
 }
 
 type GuardResult =
-  | { ok: true; root: string; abs: string; rel: string }
-  | { ok: false; error: CodesError }
+  { ok: true; root: string; abs: string; rel: string } | { ok: false; error: CodesError }
 
 interface SearchState {
   query: string

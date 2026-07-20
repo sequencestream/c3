@@ -95,8 +95,7 @@ export interface SocketManualTurnEnd {
 }
 
 export type SocketResumeDecision =
-  | { action: 'auto-resume' }
-  | { action: 'manual-error'; turnEnd: SocketManualTurnEnd }
+  { action: 'auto-resume' } | { action: 'manual-error'; turnEnd: SocketManualTurnEnd }
 
 /**
  * Pure decision for a socket disconnect (AS-R18/R19): auto-`resume` the same run

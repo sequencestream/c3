@@ -360,12 +360,7 @@ export function clearDispatchAgent(
  * order, picks the default and corrects the active tab when it goes out of view.
  */
 export type DiscussionTabKind =
-  | 'goal'
-  | 'context'
-  | 'research'
-  | 'conclusion'
-  | 'process'
-  | 'details'
+  'goal' | 'context' | 'research' | 'conclusion' | 'process' | 'details'
 
 export interface DiscussionTab {
   kind: DiscussionTabKind

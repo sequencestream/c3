@@ -71,8 +71,7 @@ export type ImportErrorKey = 'badJson' | 'badVersion' | 'badStructure'
 
 /** Result of parsing + envelope-validating an import file. */
 export type ImportParseResult =
-  | { ok: true; automations: Record<string, unknown>[] }
-  | { ok: false; errorKey: ImportErrorKey }
+  { ok: true; automations: Record<string, unknown>[] } | { ok: false; errorKey: ImportErrorKey }
 
 /** One mapped import candidate: importable with its create input, or blocked with a reason. */
 export type ImportCandidate =

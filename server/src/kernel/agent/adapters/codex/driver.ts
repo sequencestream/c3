@@ -92,11 +92,7 @@ interface CodexMcpServerConfig {
 }
 
 type CodexConfigValue =
-  | string
-  | number
-  | boolean
-  | CodexConfigValue[]
-  | { [key: string]: CodexConfigValue | undefined }
+  string | number | boolean | CodexConfigValue[] | { [key: string]: CodexConfigValue | undefined }
 
 const defaultFactory: CodexFactory = (options) => new CliCodexClient(options)
 

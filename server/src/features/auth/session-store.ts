@@ -18,8 +18,7 @@ export type SessionFailureReason = 'missing' | 'expired' | 'invalid'
 
 /** `verifySession` outcome: the authenticated subject, or a structured reason. */
 export type SessionVerifyResult =
-  | { ok: true; subject: string }
-  | { ok: false; reason: SessionFailureReason }
+  { ok: true; subject: string } | { ok: false; reason: SessionFailureReason }
 
 // tokenId → issued token record. Module singleton: one store per server process.
 const sessions = new Map<string, AuthSessionToken>()

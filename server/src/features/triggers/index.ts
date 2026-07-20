@@ -52,8 +52,7 @@ export interface TriggerEventView {
 
 /** One dimension's pass/fail in a trigger-match breakdown. */
 export type TriggerMatchBreakdownItem =
-  | { name: 'sessionKind'; passed: boolean }
-  | GenericEventFilterBreakdownItem
+  { name: 'sessionKind'; passed: boolean } | GenericEventFilterBreakdownItem
 
 /** The full result of a trigger match: overall verdict + per-dimension breakdown. */
 export interface TriggerMatchResult {

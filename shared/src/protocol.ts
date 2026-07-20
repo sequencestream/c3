@@ -932,8 +932,7 @@ export type AuthFailureCode = (typeof AUTH_FAILURE_CODES)[number]
  * absolute expiry; on failure carries a structured {@link AuthFailureCode}.
  */
 export type AuthLoginResult =
-  | { ok: true; token: string; expiresAt: number }
-  | { ok: false; code: AuthFailureCode }
+  { ok: true; token: string; expiresAt: number } | { ok: false; code: AuthFailureCode }
 
 /**
  * Admin-password change failure codes (ADR-0023, runtime slice). `not_authenticated`
@@ -1872,13 +1871,7 @@ export type IntentPriority = 'P0' | 'P1' | 'P2' | 'P3'
  *   May re-enter `todo` for a retry.
  */
 export type IntentStatus =
-  | 'draft'
-  | 'todo'
-  | 'in_progress'
-  | 'done'
-  | 'cancelled'
-  | 'blocked'
-  | 'failed'
+  'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled' | 'blocked' | 'failed'
 
 /**
  * Coarse-grained phase of a manual `start_development` launch, carried by the
@@ -2134,13 +2127,7 @@ export interface IntentLog {
  *   completion check failed, or commit/push failed). `error` text says why.
  */
 export type WorkflowState =
-  | 'idle'
-  | 'running'
-  | 'awaiting_gate'
-  | 'developing'
-  | 'fixing'
-  | 'done'
-  | 'error'
+  'idle' | 'running' | 'awaiting_gate' | 'developing' | 'fixing' | 'done' | 'error'
 
 /** A project's workflow orchestrator status, broadcast to every connection. */
 export interface WorkflowStatus {
@@ -2397,12 +2384,7 @@ export type RunEndReason = (typeof RUN_END_REASONS)[number]
  * and transport-safe. Used for the recursive `data` payload of a generic event.
  */
 export type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonValue[]
-  | { [key: string]: JsonValue }
+  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
 /** A JSON-compatible object — the top-level shape of a generic event's `data`. */
 export type JsonObject = { [key: string]: JsonValue }
@@ -2439,8 +2421,7 @@ export interface GenericEventEnvelope {
 
 /** Result of validating an untrusted generic-event core against the contract. */
 export type GenericEventValidation =
-  | { ok: true; value: GenericEvent }
-  | { ok: false; reason: string }
+  { ok: true; value: GenericEvent } | { ok: false; reason: string }
 
 /**
  * True if `v` is a finite JSON value: string, boolean, finite number, `null`,
@@ -3020,13 +3001,7 @@ export function genericEventFiltersMatch(
  * scenario may trigger a automation, which security gate applies) read `sessionKind`.
  */
 export type SessionKind =
-  | 'work'
-  | 'intent'
-  | 'discussion'
-  | 'automation'
-  | 'consensus'
-  | 'tool'
-  | 'spec'
+  'work' | 'intent' | 'discussion' | 'automation' | 'consensus' | 'tool' | 'spec'
 
 /**
  * All {@link SessionKind} values, for runtime validation and UI iteration (kept in

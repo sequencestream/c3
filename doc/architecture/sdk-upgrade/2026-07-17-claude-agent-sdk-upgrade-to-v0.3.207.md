@@ -26,22 +26,20 @@ input }`），所以该修复对 c3 当前所有调用路径**没有行为改变
 
 ## 逐项 changelog 评估
 
-每条 SDK 变化都给出「接入/不接入/升级即受益/兼容确认」的决策、依据与留痕去向，便于人工逐项抽查。
+每条 SDK 变化都给出「接入/不接入/升级即受益/兼容确认」的决策与依据，便于人工逐项抽查。
 
-| SDK 变化（版本）                                                        | 决策           | 依据                                                                                                                                                                                                                                                                                                                           | 留痕去向                        |
-| ----------------------------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------- |
-| `parent_agent_id` 子代理会话字段（0.3.202）                             | 不接入         | c3 在 `runClaude` 中仅提取 `session_id`（用于 `onSessionId` 回调 + `addToolSession` 注册），不构建深度 >1 的代理树。`parent_agent_id` 是 SDK 的磁盘持久化元数据字段，c3 无消费点。                                                                                                                                             | 本表                            |
-| `apply_flag_settings` 非对象参数崩溃修复（0.3.202）                     | 升级即自动受益 | c3 不直接调用 `apply_flag_settings`。修复无害、零代码改动。                                                                                                                                                                                                                                                                    | 本表                            |
-| `background_tasks_changed` 系统消息（0.3.203）                          | 兼容但忽略     | 新消息 `type === 'background_tasks_changed'` 在 `runClaude` 的 `for await` 迭代中不匹配 `'assistant'` / `'user'` / `'result'` 分支，无害 fall-through。按 spec：不作为内容消息处理、不影响可见输出、不影响 turn 结束、不影响团队存活判断。**不消费**。                                                                         | 本表                            |
-| `sdk.d.ts` 未解析类型引用修复（0.3.203）                                | 升级即自动受益 | 修复 SDK 类型声明中未解析的类型引用。c3 的 `skipLibCheck` 设置使此修复透明受益，`pnpm typecheck` 全绿证实无破坏性类型变化。                                                                                                                                                                                                    | 本表                            |
-| `terminal_reason` 扩展 6 值（0.3.204）                                  | 兼容但忽略     | 新增值：`tool_deferred_unavailable`、`turn_setup_failed`、`api_error`、`malformed_tool_use_exhausted`、`budget_exhausted`、`structured_output_retry_exhausted`。c3 的 `result` 分支只检查 `m.type === 'result'`，不读取 `terminal_reason` 字段。枚举加性成员——新增不破坏既有穷尽性检查。                                       | 本表                            |
-| `command_lifecycle` 帧（0.3.204 / 0.3.206）                             | 兼容但忽略     | 新消息 `type === 'command_lifecycle'` 在 `for await` 中无害 fall-through（同上）。每条 uuid-stamped 消息的终端状态（queued/started/completed/cancelled/discarded）SDK 内部追踪，c3 不消费。0.3.206 进一步将其引入 stream-json 和 SDK sessions——对 c3 无新增影响。**不消费、不生成共享 wire 帧、不提升到 `CanonicalMessage`**。 | 本表                            |
-| 合并后取消反冲修复（0.3.204）                                           | 升级即自动受益 | 修复 coalesced prompt batch 中仅取消一个成员时取消全部的问题。c3 不使用 SDK-managed prompt coalescing，但 bugfix 无害。                                                                                                                                                                                                        | 本表                            |
-| Claude Code v2.1.204 引擎同步（0.3.204）                                | 兼容确认       | 纯引擎同步，无 SDK 功能或类型新增。                                                                                                                                                                                                                                                                                            | 本表                            |
-| `interrupt_receipt_v1` 能力 + 结构化中断回执（0.3.205）                 | 不接入         | `interrupt_receipt_v1` 是 SDK 内部 capability 通告，用于 interrupt 协议兼容性探测。c3 的 `q.interrupt?.()` 带 `.catch()` 处理异步拒绝，按 spec 不将此协议能力提升到 ADR-0011 ledger。c3 不从回执中提取 `still_queued` 字段（无 SDK-managed 异步消息队列消费点）。                                                              | 本表                            |
-| peer message 结构化 `name`/`body` 字段（0.3.205）                       | 不接入         | c3 不使用 SDK-managed peer messaging（团队通信走 c3 自有协议：SendMessage channel + 工作项输入推送）。peer message 事件中新增的结构化字段无消费点。                                                                                                                                                                            | 本表                            |
-| `canUseTool` allow-without-updatedInput 被 ZodError 拒绝修复（0.3.207） | 升级即自动受益 | `{ behavior: 'allow' }`（无 `updatedInput`）此前被 SDK Zod schema 拒绝为 deny + 原始 ZodError 消息，0.3.207 修复为按文档契约正常 allow（使用原始输入）。c3 的 `allow()` 全部传入 `input` → 生成 `{ behavior: 'allow', updatedInput: input }`，所以该修复对 c3 当前调用路径**无行为改变**。详见「canUseTool 修复深评」节。      | 本表；「canUseTool 修复深评」节 |
-| `AgentToolCompletedOutput` 公开类型（0.3.207）                          | 不接入         | Agent tool 的结构化结果类型。c3 不直接引用 Agent tool 的返回类型（`runClaude` 中 `Agent` tool 的 tool_result 经 `stringifyToolResult` 不透明转字符串消费）。                                                                                                                                                                   | 本表                            |
+- **`parent_agent_id` 子代理会话字段（0.3.202）** — 不接入：c3 在 `runClaude` 中仅提取 `session_id`（用于 `onSessionId` 回调 + `addToolSession` 注册），不构建深度 >1 的代理树。`parent_agent_id` 是 SDK 的磁盘持久化元数据字段，c3 无消费点。
+- **`apply_flag_settings` 非对象参数崩溃修复（0.3.202）** — 升级即自动受益：c3 不直接调用 `apply_flag_settings`。修复无害、零代码改动。
+- **`background_tasks_changed` 系统消息（0.3.203）** — 兼容但忽略：新消息 `type === 'background_tasks_changed'` 在 `runClaude` 的 `for await` 迭代中不匹配 `'assistant'` / `'user'` / `'result'` 分支，无害 fall-through。按 spec：不作为内容消息处理、不影响可见输出、不影响 turn 结束、不影响团队存活判断。**不消费**。
+- **`sdk.d.ts` 未解析类型引用修复（0.3.203）** — 升级即自动受益：修复 SDK 类型声明中未解析的类型引用。c3 的 `skipLibCheck` 设置使此修复透明受益，`pnpm typecheck` 全绿证实无破坏性类型变化。
+- **`terminal_reason` 扩展 6 值（0.3.204）** — 兼容但忽略：新增值：`tool_deferred_unavailable`、`turn_setup_failed`、`api_error`、`malformed_tool_use_exhausted`、`budget_exhausted`、`structured_output_retry_exhausted`。c3 的 `result` 分支只检查 `m.type === 'result'`，不读取 `terminal_reason` 字段。枚举加性成员——新增不破坏既有穷尽性检查。
+- **`command_lifecycle` 帧（0.3.204 / 0.3.206）** — 兼容但忽略：新消息 `type === 'command_lifecycle'` 在 `for await` 中无害 fall-through（同上）。每条 uuid-stamped 消息的终端状态（queued/started/completed/cancelled/discarded）SDK 内部追踪，c3 不消费。0.3.206 进一步将其引入 stream-json 和 SDK sessions——对 c3 无新增影响。**不消费、不生成共享 wire 帧、不提升到 `CanonicalMessage`**。
+- **合并后取消反冲修复（0.3.204）** — 升级即自动受益：修复 coalesced prompt batch 中仅取消一个成员时取消全部的问题。c3 不使用 SDK-managed prompt coalescing，但 bugfix 无害。
+- **Claude Code v2.1.204 引擎同步（0.3.204）** — 兼容确认：纯引擎同步，无 SDK 功能或类型新增。
+- **`interrupt_receipt_v1` 能力 + 结构化中断回执（0.3.205）** — 不接入：`interrupt_receipt_v1` 是 SDK 内部 capability 通告，用于 interrupt 协议兼容性探测。c3 的 `q.interrupt?.()` 带 `.catch()` 处理异步拒绝，按 spec 不将此协议能力提升到 ADR-0011 ledger。c3 不从回执中提取 `still_queued` 字段（无 SDK-managed 异步消息队列消费点）。
+- **peer message 结构化 `name`/`body` 字段（0.3.205）** — 不接入：c3 不使用 SDK-managed peer messaging（团队通信走 c3 自有协议：SendMessage channel + 工作项输入推送）。peer message 事件中新增的结构化字段无消费点。
+- **`canUseTool` allow-without-updatedInput 被 ZodError 拒绝修复（0.3.207）** — 升级即自动受益：`{ behavior: 'allow' }`（无 `updatedInput`）此前被 SDK Zod schema 拒绝为 deny + 原始 ZodError 消息，0.3.207 修复为按文档契约正常 allow（使用原始输入）。c3 的 `allow()` 全部传入 `input` → 生成 `{ behavior: 'allow', updatedInput: input }`，所以该修复对 c3 当前调用路径**无行为改变**。详见「canUseTool 修复深评」节。（留痕:本表；「canUseTool 修复深评」节）
+- **`AgentToolCompletedOutput` 公开类型（0.3.207）** — 不接入：Agent tool 的结构化结果类型。c3 不直接引用 Agent tool 的返回类型（`runClaude` 中 `Agent` tool 的 tool_result 经 `stringifyToolResult` 不透明转字符串消费）。
 
 ## canUseTool 修复深评（0.3.207 唯一深入评估项）
 
@@ -110,16 +108,16 @@ capability ledger 的 8 个 boolean flags（`interrupt`、`setActionMode`、`str
 - `pnpm typecheck`：通过（server + web 全绿，SDK 类型无破坏性变化）。
 - `pnpm lint`（`pnpm exec eslint . --max-warnings=0`）：0 error，0 warning。
 - `pnpm vitest run` 关键文件（对 SDK 升级敏感的权限/消息循环测试）：
-  | 测试文件 | 用例数 | 结果 |
-  |---|---|---|
-  | `server/src/kernel/permission/gateway.test.ts` | 25 | 全绿（auto-allow/deny/consensus/AskUserQuestion 各分支） |
-  | `server/src/kernel/permission/registry.test.ts` | 11 | 全绿 |
-  | `server/src/kernel/permission/risk.test.ts` | 17 | 全绿 |
-  | `server/src/kernel/agent/adapters/claude/sdk-warning-filter.test.ts` | 5 | 全绿 |
-  | `server/src/features/permissions/index.test.ts` | 5 | 全绿 |
-  累计 **63 用例、0 失败**。完整套件因 worktree 沙箱中 tinypool worker 清理递归导致
-  `Maximum call stack size exceeded`（已知环境限制，不影响测试正确性），无法在本次工作流中
-  获取完整汇总行。单独测试均通过。
+  | 测试文件                                                                                 | 用例数 | 结果                                                     |
+  | ---------------------------------------------------------------------------------------- | ------ | -------------------------------------------------------- |
+  | `server/src/kernel/permission/gateway.test.ts`                                           | 25     | 全绿（auto-allow/deny/consensus/AskUserQuestion 各分支） |
+  | `server/src/kernel/permission/registry.test.ts`                                          | 11     | 全绿                                                     |
+  | `server/src/kernel/permission/risk.test.ts`                                              | 17     | 全绿                                                     |
+  | `server/src/kernel/agent/adapters/claude/sdk-warning-filter.test.ts`                     | 5      | 全绿                                                     |
+  | `server/src/features/permissions/index.test.ts`                                          | 5      | 全绿                                                     |
+  | 累计 **63 用例、0 失败**。完整套件因 worktree 沙箱中 tinypool worker 清理递归导致        |
+  | `Maximum call stack size exceeded`（已知环境限制，不影响测试正确性），无法在本次工作流中 |
+  | 获取完整汇总行。单独测试均通过。                                                         |
 - `server/package.json`：仅 `@anthropic-ai/claude-agent-sdk` `^0.3.201 → ^0.3.207`。
 - `pnpm-lock.yaml`：diff 仅含 claude-agent-sdk 主包 specifier + 各平台子包版本号 `0.3.201 → 0.3.211`，
   无关依赖零改动。

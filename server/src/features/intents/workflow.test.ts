@@ -768,9 +768,8 @@ describe('automation controller — branch-mode git alignment', () => {
 
   /** Build a hooks bag whose runDevTurn records its launch input. */
   function makeHooks(): { hooks: WorkflowHooks; runDevTurn: ReturnType<typeof vi.fn> } {
-    const runDevTurn = vi.fn(
-      (_input: RunDevTurnInput): Promise<DevTurnResult> =>
-        Promise.resolve({ outcome: 'complete', sessionId: 'real', lastMessage: '' }),
+    const runDevTurn = vi.fn((_input: RunDevTurnInput): Promise<DevTurnResult> =>
+      Promise.resolve({ outcome: 'complete', sessionId: 'real', lastMessage: '' }),
     )
     const hooks: WorkflowHooks = {
       runDevTurn,

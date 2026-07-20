@@ -34,15 +34,11 @@ export const NORMALIZATION_VERSION = 1
 
 /** Success ⇒ the neutral payload; failure ⇒ a stable reason code. Never thrown. */
 export type NormalizationResult =
-  | { ok: true; risk: NormalizedToolRisk }
-  | { ok: false; reason: NormalizationFailureReason }
+  { ok: true; risk: NormalizedToolRisk } | { ok: false; reason: NormalizationFailureReason }
 
 /** Stable, auditable failure codes (never free-form) so prompts/audit can key off them. */
 export type NormalizationFailureReason =
-  | 'unknown-tool'
-  | 'missing-target'
-  | 'invalid-input'
-  | 'normalizer-error'
+  'unknown-tool' | 'missing-target' | 'invalid-input' | 'normalizer-error'
 
 interface RiskRule {
   /** Stable neutral operation category (a machine key). */

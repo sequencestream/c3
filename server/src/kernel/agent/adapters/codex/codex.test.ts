@@ -840,8 +840,7 @@ describe('CodexDriver RELAY route under an arapuca sandbox', () => {
     ])
     expect(captured?.apiKey).toBe('relay-token-xyz')
     const providers = captured?.config?.model_providers as
-      | Record<string, { base_url?: string }>
-      | undefined
+      Record<string, { base_url?: string }> | undefined
     // No host-gateway rewrite: the sandboxed process is on the host loopback.
     expect(providers?.c3relay?.base_url).toBe(RELAY_CODEX_ENDPOINT)
   })
@@ -867,8 +866,7 @@ describe('CodexDriver RELAY route under an arapuca sandbox', () => {
       }),
     )
     const providers = captured?.config?.model_providers as
-      | Record<string, { base_url?: string }>
-      | undefined
+      Record<string, { base_url?: string }> | undefined
     const provider = providers?.c3relay
     expect(provider?.base_url).toBe(RELAY_CODEX_ENDPOINT)
   })

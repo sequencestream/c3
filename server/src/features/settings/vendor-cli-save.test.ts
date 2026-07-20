@@ -112,8 +112,7 @@ describe('save_settings vendor CLI sync (multi-version)', () => {
     // The reply carries the multi-version status fields synthesized from the
     // manifest summary (readVendorCliStatus) merged with the probe.
     const reply = sent.find((m) => m.type === 'settings') as
-      | { hostStatus: VendorHostStatus[] }
-      | undefined
+      { hostStatus: VendorHostStatus[] } | undefined
     expect(reply).toBeTruthy()
     const claude = reply!.hostStatus.find((h) => h.vendor === 'claude')
     expect(claude?.activeVersion).toBe('1.0.0')

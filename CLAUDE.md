@@ -28,7 +28,7 @@ pnpm dev                                        # server :3000 + Vite :5173 — 
 pnpm start [--port 3000] # start is default cmd; workspaces added from Web UI
 ```
 
-do `pnpm allcheck` or format/lint/typecheck/i18n:check individually at the end of an edit session.
+do `pnpm allcheck` at the end of an edit session.
 
 ## Dir&File Index
 

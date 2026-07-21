@@ -18,6 +18,8 @@ import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 import type {
+  CodexPolicy,
+  ModeToken,
   WorkflowStatus,
   Intent,
   IntentLog,
@@ -84,6 +86,10 @@ const props = defineProps<{
   queue: PendingItem[]
   availableCommands: SlashCommandInfo[]
   voiceLang: string
+  /** 活动会话的权限模式 token / codex 双策略 / 可选项,透传到两处聊天列的标题栏。 */
+  mode?: ModeToken
+  codexPolicy?: CodexPolicy | null
+  modeOptions?: { value: ModeToken; label: string }[]
   /** One-shot sub-tab request for IntentDetail (WorkCenter jump-to-source / post-Start-Work jump). */
   requestedIntentSubTab?: 'intentSession' | 'specSession' | 'workSession' | null
   /**
@@ -121,6 +127,8 @@ const emit = defineEmits<{
   'sync-pr-status': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   share: [intentId: string]
+  'set-mode': [mode: ModeToken]
+  'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
   // external select request consumed (parent clears `requestedIntentId`)
   'requested-intent-consumed': []
@@ -341,6 +349,9 @@ defineExpose({
         :queue="queue"
         :available-commands="availableCommands"
         :voice-lang="voiceLang"
+        :mode="mode"
+        :codex-policy="codexPolicy"
+        :mode-options="modeOptions"
         :intent-spec-content="intentSpecContent"
         :intent-spec-loading="intentSpecLoading"
         :spec-session-running="selectedSpecSessionRunning"
@@ -371,6 +382,8 @@ defineExpose({
         @share="(id: string) => emit('share', id)"
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
         @select-dependency="handleSelectDependency"
+        @set-mode="(m: ModeToken) => emit('set-mode', m)"
+        @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
         @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"
         @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
         @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
@@ -390,7 +403,11 @@ defineExpose({
         :active-title="activeTitle || t('intent.intentSession.title.label')"
         :vendor="vendor ?? null"
         :agent-switch="agentSwitch ?? null"
-        :show-mode="false"
+        :show-mode="true"
+        :mode="mode"
+        :codex-policy="codexPolicy"
+        :mode-options="modeOptions"
+        :mode-disabled="true"
         :always-title="true"
         :has-active-session="hasActiveSession"
         :messages="messages"

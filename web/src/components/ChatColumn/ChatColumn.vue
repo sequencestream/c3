@@ -7,7 +7,8 @@
  * `spec session` 两 tab。所有状态/连接经 props 注入,用户动作经 emit 上抛;不持有
  * 任何会话状态——绑定哪个会话由上层(App.vue 控制层)的单一活动会话决定。
  *
- * 变体:`show-mode` 控制标题栏是否展示模式/codex 策略下拉(会话页 true、意图侧 false);
+ * 变体:`show-mode` 控制标题栏是否展示模式/codex 策略下拉,`mode-disabled` 让它只读
+ * (意图会话 / spec 会话的模式由服务端钉死,只展示不可改);
  * `always-title` 控制无活动会话时是否仍渲染标题栏(意图侧常驻标题、会话页隐藏)。
  * composer 的 prefill 经 defineExpose 透传,供上层待发队列「编辑」回填草稿。
  */
@@ -42,6 +43,8 @@ withDefaults(
     mode?: ModeToken
     codexPolicy?: CodexPolicy | null
     modeOptions?: { value: ModeToken; label: string }[]
+    /** Render the mode controls read-only (intent / spec sessions are pinned server-side). */
+    modeDisabled?: boolean
     /** Render the title bar even with no active session (intent side keeps it). */
     alwaysTitle?: boolean
     showTitleBar?: boolean
@@ -83,6 +86,7 @@ withDefaults(
     mode: undefined,
     codexPolicy: null,
     modeOptions: () => [],
+    modeDisabled: false,
     sourceLabel: null,
     showShare: false,
     hasTaskStore: true,
@@ -132,6 +136,7 @@ defineExpose({
       :mode="mode"
       :codex-policy="codexPolicy"
       :mode-options="modeOptions"
+      :mode-disabled="modeDisabled"
       :source-label="sourceLabel"
       :show-share="showShare"
       @set-mode="(m: ModeToken) => emit('set-mode', m)"

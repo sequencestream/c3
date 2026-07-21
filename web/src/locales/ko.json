@@ -1022,7 +1022,8 @@
         "ariaLabel": "이 세션을 만든 출처 열기"
       },
       "mode": {
-        "ariaLabel": "권한 모드"
+        "ariaLabel": "권한 모드",
+        "lockedHint": "의도 세션과 스펙 세션은 항상 기본 권한 모드로 실행됩니다"
       },
       "agent": {
         "ariaLabel": "에이전트 전환",

@@ -45,6 +45,32 @@ describe('SessionTitleBar.vue — 会话标题行', () => {
     expect(w.emitted('set-mode')).toEqual([['plan']])
   })
 
+  it('modeDisabled=true → 下拉禁用、挂只读 tooltip 且点击不展开', async () => {
+    const w = mountBar({ modeDisabled: true })
+    expect(w.find('.mode').attributes('title')).toBe(
+      i18n.global.t('session.titleBar.mode.lockedHint'),
+    )
+    expect(w.find('.mode .dd-disabled').exists()).toBe(true)
+    await w.find('.dd-trigger').trigger('click')
+    expect(w.findAll('.dd-item')).toHaveLength(0)
+    expect(w.emitted('set-mode')).toBeUndefined()
+  })
+
+  it('modeDisabled=false → 无 tooltip 且下拉可用', () => {
+    const w = mountBar()
+    expect(w.find('.mode').attributes('title')).toBeUndefined()
+    expect(w.find('.mode .dd-disabled').exists()).toBe(false)
+  })
+
+  it('codex + modeDisabled=true → 沙箱与审批两个下拉都禁用', () => {
+    const w = mountBar({ vendor: 'codex', modeDisabled: true })
+    const hint = i18n.global.t('session.titleBar.mode.lockedHint')
+    for (const cls of ['.sandbox-mode', '.approval-policy']) {
+      expect(w.find(cls).attributes('title')).toBe(hint)
+      expect(w.find(`${cls} .dd-disabled`).exists()).toBe(true)
+    }
+  })
+
   it('有 vendor 时渲染色点(颜色取自 VENDOR_COLOR)', () => {
     const w = mountBar({ vendor: 'codex' })
     const dot = w.find('[data-testid="session-vendor-dot"]')

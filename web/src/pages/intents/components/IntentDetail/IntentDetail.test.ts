@@ -91,7 +91,14 @@ function mountDetail(
     },
     global: {
       // Keep the chat column inert: we test IntentDetail's tab/gate logic, not it.
-      stubs: { ChatColumn: { template: '<div data-testid="intent-detail-chat" />' } },
+      // `showMode` / `modeDisabled` are declared so tab-driven mode locking is assertable.
+      stubs: {
+        ChatColumn: {
+          props: ['showMode', 'modeDisabled'],
+          template:
+            '<div data-testid="intent-detail-chat" :data-show-mode="String(showMode)" :data-mode-disabled="String(modeDisabled)" />',
+        },
+      },
     },
   })
 }
@@ -787,6 +794,30 @@ describe('IntentDetail.vue — tabs', () => {
     })
     await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
     expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(true)
+  })
+
+  it('会话 tab 都展示权限模式:意图/spec 会话只读,工作会话可切换', async () => {
+    const item = intent({
+      id: 'i1',
+      intentSessionId: 'sess-refine',
+      specSessionId: 'sess-spec',
+      lastWorkSessionId: 'sess-work',
+    })
+    const w = mountDetail(item, { sddEnabled: true, activeSession: 'sess-refine' })
+    const chat = () => w.find('[data-testid="intent-detail-chat"]').attributes()
+
+    await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
+    expect(chat()['data-show-mode']).toBe('true')
+    expect(chat()['data-mode-disabled']).toBe('true')
+
+    await w.setProps({ activeSession: 'sess-spec' })
+    await w.find('.intent-detail-tab[data-tab="specSession"]').trigger('click')
+    expect(chat()['data-mode-disabled']).toBe('true')
+
+    await w.setProps({ activeSession: 'sess-work' })
+    await w.find('.intent-detail-tab[data-tab="workSession"]').trigger('click')
+    expect(chat()['data-show-mode']).toBe('true')
+    expect(chat()['data-mode-disabled']).toBe('false')
   })
 
   it('spec tab: empty state when no spec path, emits read-spec when present', async () => {

@@ -43,6 +43,8 @@ import type {
   IntentStatus,
 } from '@ccc/shared/protocol'
 import type {
+  CodexPolicy,
+  ModeToken,
   PromptImage,
   SessionAgentSwitch,
   SessionStatus,
@@ -102,6 +104,11 @@ const props = defineProps<{
   queue: PendingItem[]
   availableCommands: SlashCommandInfo[]
   voiceLang: string
+  // ── 权限模式(标题栏)──
+  /** 活动会话的权限模式 token / codex 双策略,与会话页共用同一份控制层状态。 */
+  mode?: ModeToken
+  codexPolicy?: CodexPolicy | null
+  modeOptions?: { value: ModeToken; label: string }[]
   // ── spec 文档(spec tab)──
   /** 选中意图 spec.md 内容;null=未加载/无。 */
   intentSpecContent: string | null
@@ -152,6 +159,8 @@ const emit = defineEmits<{
   'reset-intent-session': [intentId: string, userInput: string]
   'reset-spec-session': [intentId: string, userInput: string]
   // ── chat column passthrough ──
+  'set-mode': [mode: ModeToken]
+  'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
   respond: [m: PermissionMsg, decision: 'allow' | 'deny']
   'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
@@ -727,6 +736,10 @@ const chatReady = computed<boolean>(
   () => expectedSessionId.value !== null && props.activeSession === expectedSessionId.value,
 )
 
+// 意图会话 / spec 会话的权限模式由服务端钉死为默认(权限网关必须触发),标题栏
+// 仍展示当前生效值但只读;只有工作会话 tab 的模式可切换。
+const modeLocked = computed<boolean>(() => activeTab.value !== 'workSession')
+
 // ── 会话重置弹框(intent session / spec session 共用,按入口分流) ─────────────
 const resetDialogOpen = ref(false)
 const resetDialogTarget = ref<'intentSession' | 'specSession'>('intentSession')
@@ -1247,7 +1260,11 @@ defineExpose({
           :active-title="activeTitle"
           :vendor="vendor"
           :agent-switch="agentSwitch"
-          :show-mode="false"
+          :show-mode="true"
+          :mode="mode"
+          :codex-policy="codexPolicy"
+          :mode-options="modeOptions"
+          :mode-disabled="modeLocked"
           :always-title="true"
           :has-active-session="hasActiveSession"
           :messages="messages"
@@ -1264,6 +1281,8 @@ defineExpose({
           :queue="queue"
           :available-commands="availableCommands"
           :voice-lang="voiceLang"
+          @set-mode="(m: ModeToken) => emit('set-mode', m)"
+          @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
           @set-session-agent="(id: string) => emit('set-session-agent', id)"
           @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
           @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"

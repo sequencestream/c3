@@ -1,10 +1,9 @@
 <script setup lang="ts">
 /*
  * SessionTitleBar.vue — 聊天列(.content)顶部的会话标题行:左侧会话标题。
- * 两种用途:
- *  - 「会话」tab(WC-R9):右侧渲染权限模式下拉,模式切换经 set-mode 上抛。
- *  - 需求视图(RM-R3):show-mode=false 不渲染模式选择器(新建沟通会话的 "+"
- *    按钮改由左栏需求列表头部承载)。
+ * 右侧渲染权限模式下拉(show-mode),模式切换经 set-mode / set-codex-policy 上抛。
+ * mode-disabled 时下拉只读:展示当前生效值但拒绝修改(意图 / spec 会话的权限模式
+ * 由服务端钉死为默认),并挂一条 tooltip 说明原因。
  * presentational:所有交互上抛由 App 处理。
  */
 import { computed } from 'vue'
@@ -29,6 +28,13 @@ const props = withDefaults(
     mode?: ModeToken
     modeOptions?: { value: ModeToken; label: string }[]
     showMode?: boolean
+    /**
+     * Render the mode / codex-policy controls read-only. Intent and spec sessions
+     * are pinned to the default permission mode server-side (the `canUseTool`
+     * gateway must always fire), so their controls display the effective value
+     * but reject changes, with a tooltip explaining why.
+     */
+    modeDisabled?: boolean
     /** The session's resolved agent vendor; absent ⇒ no dot (comm sessions). */
     vendor?: VendorId | null
     /** Codex dual-policy config (2026-06-08); null for non-codex sessions. */
@@ -59,6 +65,7 @@ const props = withDefaults(
     mode: 'default',
     modeOptions: () => [],
     showMode: true,
+    modeDisabled: false,
     vendor: null,
     codexPolicy: null,
     agentSwitch: null,
@@ -111,6 +118,11 @@ const approvalPolicyOptions = computed(() => [
   { value: 'on-failure' as CodexApprovalPolicy, label: t('codex.approvalPolicy.onFailure') },
   { value: 'never' as CodexApprovalPolicy, label: t('codex.approvalPolicy.never') },
 ])
+
+// Tooltip on the locked controls; empty (⇒ no tooltip) when they're editable.
+const modeLockedHint = computed(() =>
+  props.modeDisabled ? t('session.titleBar.mode.lockedHint') : undefined,
+)
 
 const emit = defineEmits<{
   'set-mode': [mode: ModeToken]
@@ -187,20 +199,22 @@ function onPickAgent(agentId: string): void {
       </div>
       <!-- Codex dual-policy controls (2026-06-08): sandboxMode + approvalPolicy -->
       <template v-if="vendor === 'codex'">
-        <label v-if="showMode" class="mode sandbox-mode">
+        <label v-if="showMode" class="mode sandbox-mode" :title="modeLockedHint">
           <BaseDropdown
             :model-value="codexPolicy?.sandboxMode ?? 'workspace-write'"
             :options="sandboxModeOptions"
+            :disabled="modeDisabled"
             :aria-label="t('session.titleBar.sandboxMode.ariaLabel')"
             @update:model-value="
               emit('set-codex-policy', { ...codexPolicy, sandboxMode: $event } as CodexPolicy)
             "
           />
         </label>
-        <label v-if="showMode" class="mode approval-policy">
+        <label v-if="showMode" class="mode approval-policy" :title="modeLockedHint">
           <BaseDropdown
             :model-value="codexPolicy?.approvalPolicy ?? 'on-request'"
             :options="approvalPolicyOptions"
+            :disabled="modeDisabled"
             :aria-label="t('session.titleBar.approvalPolicy.ariaLabel')"
             @update:model-value="
               emit('set-codex-policy', { ...codexPolicy, approvalPolicy: $event } as CodexPolicy)
@@ -209,10 +223,11 @@ function onPickAgent(agentId: string): void {
         </label>
       </template>
       <!-- Non-codex vendor: single mode dropdown -->
-      <label v-else-if="showMode" class="mode">
+      <label v-else-if="showMode" class="mode" :title="modeLockedHint">
         <BaseDropdown
           :model-value="mode"
           :options="modeOptions"
+          :disabled="modeDisabled"
           :aria-label="t('session.titleBar.mode.ariaLabel')"
           @update:model-value="emit('set-mode', $event)"
         />

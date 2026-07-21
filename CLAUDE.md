@@ -49,6 +49,6 @@ do `pnpm allcheck` at the end of an edit session.
 - doc/domains/: domain doc
 - doc/flows/flows.md: flow doc
 - doc/non-functional/: non-functional doc
-- database/tables.md: database table schema index，DDL in database/<module>/<table>.sql ,schema change need to be synchronized, change record in database/migrate/<YYYY>/<MM>/<DD>/<NNN>-<table>.sql
+- database/tables.md: database table schema index，DDL in `database/<module>/<table>.sql` ,schema change need to be synchronized, change record in `database/migrate/<YYYY>/<MM>/<DD>/<NNN>-<table>.sql`
 - doc/style/typescript-code-style.md: TypeScript code style
 - doc/style/color-style-spec.md: color style spec

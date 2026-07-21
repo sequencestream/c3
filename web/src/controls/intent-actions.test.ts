@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, ref } from 'vue'
 import type { Intent, SessionInfo } from '@ccc/shared/protocol'
-import { beginDevLaunch } from '@/lib/dev-launch-view'
+import { beginDevLaunch, DEV_LAUNCH_SAFETY_TIMEOUT_MS } from '@/lib/dev-launch-view'
 import type { PendingWorkSessionSelectRequest } from '@/lib/work-session-jump'
 import { WORK_SESSION_JUMP_DELAY_MS } from '@/lib/work-session-jump'
 import { installIntentActions } from './intent-actions'
@@ -138,7 +138,8 @@ describe('post-Start-Dev jump wiring', () => {
 
   it('does not arm a jump on `timeout`', () => {
     const h = makeCtx({ intents: [intent('i-1', 'dev-1')], sessions: [session('dev-1')] })
-    h.ctx.dispatchDevLaunch({ kind: 'timeout', now: 1_000 })
+    // The safety timeout only closes once the ceiling elapses (startedAt=0).
+    h.ctx.dispatchDevLaunch({ kind: 'timeout', now: DEV_LAUNCH_SAFETY_TIMEOUT_MS })
     vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
     expect(h.selectWorkSession).not.toHaveBeenCalled()
     expect(h.requestedIntentSubTab.value).toBeNull()

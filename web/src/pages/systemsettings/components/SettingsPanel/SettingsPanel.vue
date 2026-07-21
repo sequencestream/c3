@@ -9,7 +9,8 @@
  * 切换存在未保存修改的 Tab 时二次确认,确认后仅切换、不保存也不丢弃草稿。
  */
 import { computed, ref, toRaw, watch } from 'vue'
-import { SYSTEM_AGENT_ID, resolveDefaultAgentId } from '@ccc/shared/protocol'
+import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+import { resolveDefaultAgentId } from '@ccc/shared'
 import type {
   AgentConfig,
   AuthConfig,

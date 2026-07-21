@@ -56,11 +56,8 @@
 import type { Broadcaster } from '../transport/broadcaster.js'
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import type { NormalizeResult } from '../kernel/events/generic-event.js'
-import type {
-  GenericEvent,
-  GenericEventEnvelope,
-  IntentDevSessionExitCode,
-} from '@ccc/shared/protocol'
+import type { IntentDevSessionExitCode } from '@ccc/shared/protocol'
+import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
 import { getRuntime } from '../runs.js'
 import { pathToId, setSessionMode } from '../state.js'
 import {

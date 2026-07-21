@@ -8,13 +8,13 @@
  * silently ignored.
  */
 import { describe, expect, it, vi } from 'vitest'
+import type { IntentPrStatus } from '@ccc/shared/protocol'
 import type {
   GenericEventEnvelope,
-  IntentPrStatus,
   PrEventAssociation,
   PrOperation,
   PrOperationResult,
-} from '@ccc/shared/protocol'
+} from '@ccc/shared'
 import { handlePrUpdateEvent, type PrUpdateConsumerDeps } from './pr-update-consumer.js'
 
 type FakeIntent = { id: string; workspaceId: string; prStatus: IntentPrStatus | null }

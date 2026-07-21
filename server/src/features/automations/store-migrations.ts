@@ -12,22 +12,22 @@ import type {
   EventMetadataFilter,
   EventMetadataFilterCondition,
   GenericEventFilter,
+  RunEndReason,
+} from '@ccc/shared/protocol'
+import type {
   IntentLifecycleFilter,
   IntentLifecyclePhase,
   PrOperation,
   PrOperationFilter,
   PrOperationResult,
-  RunEndReason,
-} from '@ccc/shared/protocol'
+} from '@ccc/shared'
+import { INTENT_LIFECYCLE_PHASES, PR_OPERATIONS, PR_OPERATION_RESULTS } from '@ccc/shared'
 import {
-  INTENT_LIFECYCLE_PHASES,
-  PR_OPERATIONS,
-  PR_OPERATION_RESULTS,
   isValidAutomationMaxWallClockMs,
   normalizeEventMetadataFilter,
   normalizeGenericEventFilter,
   upgradeV12EventFilter,
-} from '@ccc/shared/protocol'
+} from '@ccc/shared'
 import type { Db } from '../../kernel/infra/db.js'
 
 const SCHEMA_VERSION = 13

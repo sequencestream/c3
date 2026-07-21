@@ -29,14 +29,13 @@
  */
 
 import type {
-  GenericEventEnvelope,
   IntentStatus,
-  IntentLifecycleEvent,
   RunEndReason,
   RunKind,
   SessionKind,
   VendorId,
 } from '@ccc/shared/protocol'
+import type { GenericEventEnvelope, IntentLifecycleEvent } from '@ccc/shared'
 
 /** Default event map for c3 kernel events. Extend this interface to add new topics. */
 export interface EventBusEvents {

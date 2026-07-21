@@ -5,7 +5,7 @@
  * `projectPrOperationEvent` deterministically recovers the PR fields for consumers.
  */
 import { describe, expect, it } from 'vitest'
-import type { GenericEvent, PrOperation } from '@ccc/shared/protocol'
+import type { GenericEvent, PrOperation } from '@ccc/shared'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import {
   PR_EVENT_TYPES,

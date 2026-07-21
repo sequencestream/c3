@@ -32,7 +32,7 @@ import {
   type PrOperationResult,
   type PrRef,
   type PrRepo,
-} from '@ccc/shared/protocol'
+} from '@ccc/shared'
 import type { EventNormalizer, NormalizeResult } from '../../kernel/events/generic-event.js'
 
 /** Internal args shape the PR normalizer reconstructs from an untrusted generic core. */

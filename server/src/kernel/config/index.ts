@@ -41,7 +41,8 @@ import type {
   UiLang,
   VendorId,
 } from '@ccc/shared/protocol'
-import { PENDING_SESSION_PREFIX, resolveDefaultAgentId, SESSION_KINDS } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX, SESSION_KINDS } from '@ccc/shared/protocol'
+import { resolveDefaultAgentId } from '@ccc/shared'
 import type { SandboxExtraMount, SessionKind } from '@ccc/shared/protocol'
 import {
   canonicalizeAgentOrder,

@@ -26,13 +26,13 @@
  */
 
 import { resolve } from 'node:path'
-import type {
-  GenericEvent,
-  GenericEventFilterBreakdownItem,
-  Automation,
-  SessionKind,
-} from '@ccc/shared/protocol'
-import { genericEventFiltersMatch, hasRunLifecycleEventFilter } from '@ccc/shared/protocol'
+import type { Automation, SessionKind } from '@ccc/shared/protocol'
+import type { GenericEvent } from '@ccc/shared'
+import { hasRunLifecycleEventFilter } from '@ccc/shared'
+import {
+  genericEventFiltersMatch,
+  type GenericEventFilterBreakdownItem,
+} from '../../kernel/events/event-match.js'
 import { getAutomationEnabled } from '../../kernel/config/index.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { dispatchAndTrack, getStore, inFlight } from '../automations/engine.js'

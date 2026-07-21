@@ -22,7 +22,7 @@ vi.mock('../../state.js', async (importOriginal) => ({
   resolveWorkspaceRoot: (id: string) => id,
   pathToId: (p: string) => p,
 }))
-import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared/protocol'
+import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { listIntents, resetStoreForTests } from '../../features/intents/store.js'
 import { buildAutomationC3Tools, type AutomationMcpDeps } from './c3-tools.js'

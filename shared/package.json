@@ -11,6 +11,12 @@
     "./task-model": "./src/task-model.ts",
     "./ui-codes": "./src/ui-codes.ts",
     "./discussion-types": "./src/discussion-types.ts",
+    "./agent-model": "./src/agent-model.ts",
+    "./image-media": "./src/image-media.ts",
+    "./automation-model": "./src/automation-model.ts",
+    "./event-filter-model": "./src/event-filter-model.ts",
+    "./event-model": "./src/event-model.ts",
+    "./event-catalog": "./src/event-catalog.ts",
     "./cron": "./src/cron.ts",
     "./nl-cron": "./src/nl-cron.ts"
   }

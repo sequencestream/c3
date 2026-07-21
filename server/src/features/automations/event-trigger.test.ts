@@ -21,7 +21,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Automation } from '@ccc/shared/protocol'
-import { eventTypeMatches } from '@ccc/shared/protocol'
+import { eventTypeMatches } from '../../kernel/events/event-match.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   createAutomation,

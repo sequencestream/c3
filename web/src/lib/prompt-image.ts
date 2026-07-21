@@ -9,7 +9,8 @@
  * toWire)无 DOM 依赖,可在 Node 下单测;readImageFiles 走 FileReader/Image/canvas,
  * 仅在浏览器(或 happy-dom 组件测试)中调用。
  */
-import { isImageMediaType, type PromptImage } from '@ccc/shared/protocol'
+import type { PromptImage } from '@ccc/shared/protocol'
+import { isImageMediaType } from '@ccc/shared'
 
 /** 单图解码体积超过此阈值(5MB)才触发前端压缩。 */
 export const COMPRESS_OVER_BYTES = 5 * 1024 * 1024

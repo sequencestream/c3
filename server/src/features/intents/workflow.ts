@@ -31,14 +31,8 @@
  * churn; it does NOT survive a server restart (in-memory).
  */
 import { randomUUID } from 'node:crypto'
-import type {
-  WorkflowStatus,
-  Intent,
-  GenericEvent,
-  GenericEventEnvelope,
-  RunEndReason,
-  ServerToClient,
-} from '@ccc/shared/protocol'
+import type { WorkflowStatus, Intent, RunEndReason, ServerToClient } from '@ccc/shared/protocol'
+import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import {

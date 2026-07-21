@@ -10,7 +10,8 @@
  * `run:settled` to broadcast the refreshed automation list.
  */
 
-import type { Automation, GenericEvent, RunEndReason } from '@ccc/shared/protocol'
+import type { Automation, RunEndReason } from '@ccc/shared/protocol'
+import type { GenericEvent } from '@ccc/shared'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { computeNextRunAt } from '@ccc/shared/cron'
 import type { EventBus, EventBusEvents } from '../../kernel/events/event-bus.js'

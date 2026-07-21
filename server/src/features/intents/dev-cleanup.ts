@@ -29,13 +29,8 @@
  * Dependency-injected (mirrors `save-gate.ts`) so the whole flow is unit-testable
  * without a live git tree, the wire, or the db.
  */
-import type {
-  GenericEvent,
-  GenericEventEnvelope,
-  GitBranchMode,
-  Intent,
-  IntentPrStatus,
-} from '@ccc/shared/protocol'
+import type { GitBranchMode, Intent, IntentPrStatus } from '@ccc/shared/protocol'
+import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import type { CommitResult, CreatePrResult, ForgeProvider } from '../../git.js'

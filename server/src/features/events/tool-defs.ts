@@ -22,7 +22,7 @@
  * core or a normalizer rejection returns an `isError` result and publishes NOTHING.
  */
 import { z } from 'zod'
-import type { GenericEvent } from '@ccc/shared/protocol'
+import type { GenericEvent } from '@ccc/shared'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 
 /** An MCP tool result. Identical shape across the Claude SDK and the MCP SDK. */

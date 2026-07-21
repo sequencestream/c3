@@ -16,7 +16,7 @@
  * warning that never echoes the event content) and the automation still runs.
  */
 
-import type { GenericEvent } from '@ccc/shared/protocol'
+import type { GenericEvent } from '@ccc/shared'
 
 /** Which serialization tier produced the embedded event text. */
 export type EventSerializationTier = 'json' | 'safe' | 'concat'

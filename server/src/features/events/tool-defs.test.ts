@@ -6,7 +6,7 @@
  * a normalizer that throws all return `isError` and publish NOTHING.
  */
 import { describe, expect, it, vi } from 'vitest'
-import type { GenericEvent } from '@ccc/shared/protocol'
+import type { GenericEvent } from '@ccc/shared'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import { runPublishEvent } from './tool-defs.js'
 

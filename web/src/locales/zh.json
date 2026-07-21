@@ -1021,7 +1021,8 @@
         "ariaLabel": "打开创建此会话的来源"
       },
       "mode": {
-        "ariaLabel": "权限模式"
+        "ariaLabel": "权限模式",
+        "lockedHint": "意图会话与规格会话固定使用默认权限模式"
       },
       "agent": {
         "ariaLabel": "切换 agent",

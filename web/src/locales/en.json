@@ -1021,7 +1021,8 @@
         "ariaLabel": "Open the source that created this session"
       },
       "mode": {
-        "ariaLabel": "Permission mode"
+        "ariaLabel": "Permission mode",
+        "lockedHint": "Intent and spec sessions always run in the default permission mode"
       },
       "agent": {
         "ariaLabel": "Switch agent",

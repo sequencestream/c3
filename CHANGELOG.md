@@ -7,27 +7,25 @@ tag (`git describe --tags`); `package.json` is the fallback baseline.
 
 ### New Features
 
-- sandbox: process-level isolation via arapuca (kernel MAC — Landlock/Seatbelt/AppContainer) replacing the Docker container approach — no image/bind mount/credential injection/network sidecar, vendor CLI runs as a host process with same-path directory mapping and direct 127.0.0.1 access to the c3 MCP
-- sandbox: config collapses to `enabled` + `extraMounts` + `sandboxSessionKinds` + `sessionRetentionDays`; workspace settings show the always-on default allow list (project dir ro, run worktree rw, spec dir rw) read-only, sourced from a single `sysExtraMounts` definition
-- sandbox: dedicated agent roles (sandboxDefault/tool/intent/spec/automation) — sandbox runs never fall back to a system-auth agent (keychain/HOME is isolated); an explicitly bound system agent raises a conflict dialog with bypass/switch/cancel
-- sandbox: intents can run in worktree mode inside the sandbox (structural restriction lifted)
-- sandbox: codex resume survives across runs via a per-workspace persistent `CODEX_HOME`, with a daily janitor pruning rollouts past the workspace retention window
-- sandbox: session store scope is frozen per session (host/sandbox) so claude and codex both run, resume, and show transcripts in either mode; vendor-neutral store root resolution (ADR-0030)
-- relay: vendor-neutral relay core (was codex-only) with an anthropic passthrough adapter — real provider keys no longer reach the process env; agent groups with pre-first-byte candidate failover and per-candidate model override (ADR-0029, replaces ADR-0014)
-- workcenter: overview / user-notifications entries move to the app top bar, with the pending-notification badge on the notifications entry
+- sandbox: replaced the Docker container with arapuca process-level isolation (kernel MAC) — vendor CLI runs as a host process with same-path directory mapping and direct 127.0.0.1 access to the c3 MCP
+- sandbox: slimmed config, dedicated agent roles (no fallback to system-auth agents), intents can run in worktree mode, codex resume persists across runs, and session store scope is frozen per session so claude and codex both run/resume/show transcripts in either mode
+- relay: vendor-neutral core with an anthropic passthrough adapter (provider keys no longer reach the process env); agent groups with candidate failover and per-candidate model override
+- workcenter: unified top-bar navigation with a pending-notification badge
 - unified c3 MCP HTTP transport for both Claude and Codex
-- `pnpm allcheck` aggregates format → lint:fix → typecheck → i18n:check
-- README documents brew install/upgrade
+- Start Work keeps you on the intent detail page and switches to the Work Session tab
+- protocol.ts narrowed to a pure wire contract (runtime implementation split out)
+- `pnpm allcheck` aggregates format/lint/typecheck/i18n; README documents brew install/upgrade
 
 ### Fixes
 
 - Codes filename substring search missed matches
 - `--workspace` CLI flag removed; workspace management goes through the Web UI only
+- PR creation check now compares against `main` instead of upstream
 
 ### Dependencies
 
-- Claude Agent SDK 0.3.201 → 0.3.207
-- Codex SDK 0.142.5 → 0.144.1 (with PATH CLI alignment)
+- Claude Agent SDK 0.3.201 → 0.3.216
+- Codex SDK 0.142.5 → 0.144.6 (with PATH CLI alignment)
 
 ## v0.9.8
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import type { Intent, IntentLog } from '@ccc/shared/protocol'
+import type { Intent, IntentLog, SessionStatus } from '@ccc/shared/protocol'
 import IntentDetail, { __resetWriteSpecGuards } from './IntentDetail.vue'
 
 // 模块级防误审门状态在用例间共享 → 每个用例前清空,避免相互污染。
@@ -55,6 +55,7 @@ function mountDetail(
     intentSpecContent?: string | null
     intentSpecLoading?: boolean
     specSessionRunning?: boolean
+    workSessionStatus?: SessionStatus | null
     intentLogs?: IntentLog[]
   } = {},
 ) {
@@ -86,6 +87,7 @@ function mountDetail(
       intentSpecContent: opts.intentSpecContent ?? null,
       intentSpecLoading: opts.intentSpecLoading ?? false,
       specSessionRunning: opts.specSessionRunning ?? false,
+      workSessionStatus: opts.workSessionStatus ?? null,
       intentLogs: opts.intentLogs ?? [],
       intentLogsLoading: false,
     },
@@ -1059,6 +1061,41 @@ describe('IntentDetail.vue — spec/spec-session tab visibility by SDD', () => {
     expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
     expect(w.find('.intent-detail-tab[data-tab="specSession"]').exists()).toBe(false)
     expect(w.emitted('open-spec-session')).toBeUndefined()
+    expect(w.emitted('requested-subtab-consumed')).toEqual([[]])
+  })
+
+  // Start Work 成功后控制层设 requestedSubTab='workSession',详情页原地切到工作会话 tab。
+  it('requestedSubTab=workSession activates the tab, consumes the request, and binds the session', async () => {
+    const item = intent({ id: 'i1', status: 'in_progress', lastWorkSessionId: 'dev-1' })
+    const w = mountDetail(item, { activeSession: null, workSessionStatus: 'running' })
+
+    await w.setProps({ requestedSubTab: 'workSession' })
+
+    const tab = w.find('.intent-detail-tab[data-tab="workSession"]')
+    expect(tab.classes()).toContain('active')
+    expect(w.emitted('requested-subtab-consumed')).toEqual([[]])
+    // 活动会话尚未对齐 → 请求绑定 lastWorkSessionId,聊天列先显示加载态。
+    expect(w.emitted('open-work-session')).toEqual([['dev-1']])
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(false)
+    // 运行中状态点仍按 workSessionStatus 呈现。
+    expect(w.find('[data-testid="intent-detail-work-session-status"]').classes()).toContain(
+      'running',
+    )
+
+    // 活动会话对齐后渲染聊天列,且不重复发出 open。
+    await w.setProps({ activeSession: 'dev-1', hasActiveSession: true })
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(true)
+    expect(w.emitted('open-work-session')).toEqual([['dev-1']])
+  })
+
+  it('requestedSubTab=workSession while the tab is hidden: stays on intent, still consumes', async () => {
+    const w = mountDetail(intent({ id: 'i1', lastWorkSessionId: null }))
+
+    await w.setProps({ requestedSubTab: 'workSession' })
+
+    expect(w.find('.intent-detail-tab[data-tab="workSession"]').exists()).toBe(false)
+    expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
+    expect(w.emitted('open-work-session')).toBeUndefined()
     expect(w.emitted('requested-subtab-consumed')).toEqual([[]])
   })
 })

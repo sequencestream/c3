@@ -1135,6 +1135,27 @@ describe('SettingsPanel.vue — independent per-tab save (2026-07-11-001)', () =
     expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(true)
   })
 
+  it('saving a second tab before the first save echoes does not revert the first save', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...baseSettings, timezone: 'Asia/Shanghai' } },
+    })
+    // Save the General tab with an edited timezone…
+    await w.find('[data-testid="settings-timezone"]').setValue('America/New_York')
+    await w.find(SAVE.general).trigger('click')
+    // …then, WITHOUT the server echo arriving, edit + save the Agent tab.
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
+    // The second payload must carry the first save's timezone (not the stale
+    // committed one), or the second save would silently revert the first.
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted).toHaveLength(2)
+    expect(emitted[1][0].timezone).toBe('America/New_York')
+    expect(emitted[1][0].agents).toHaveLength(2)
+    // And the saved General tab's dirty flag clears optimistically (no lingering
+    // "unsaved" dot before the echo).
+    expect(w.find('[data-testid="settings-tab-dirty-general"]').exists()).toBe(false)
+  })
+
   it('an account-operation pushback refreshes accounts without reseeding other tabs’ drafts', async () => {
     const H = '$scrypt$x'
     const withOne: SystemSettings = {

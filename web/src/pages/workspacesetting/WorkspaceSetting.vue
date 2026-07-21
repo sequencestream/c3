@@ -9,7 +9,7 @@
  * 保存后面板保持打开以接收回包并清理刚保存 Tab 的脏状态。切换存在未保存修改的 Tab 时二次确认,
  * 确认后仅切换、不保存也不丢弃草稿。技能安装/链接状态走独立事件,不重播种任何 Tab 草稿。
  */
-import { ref, computed, watch } from 'vue'
+import { computed, watch } from 'vue'
 import type {
   CodexPolicy,
   WorkspaceSetting,
@@ -27,7 +27,9 @@ import type {
 import { GIT_BRANCH_MODES, SESSION_KINDS } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
+import { applyTabFields, deepCopy, useTabbedDraftSave } from '@/composables/useTabbedDraftSave'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
+import TabNav from '@/components/TabNav/TabNav.vue'
 
 const { t } = useTypedI18n()
 const modeLabel = useModeLabel()
@@ -94,45 +96,8 @@ const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
   collab: ['maxRoundsPerStage', 'maxSpeechChars', 'consensus', 'sddEnabled'],
   skillRepos: ['skillRepos'],
 }
-const activeTab = ref<WsTab>('defaultMode')
 function tabLabel(tab: WsTab): string {
   return t(`workspaceSetting.tabs.${tab}.label` as 'workspaceSetting.tabs.defaultMode.label')
-}
-
-// The tab whose Save was just emitted and whose server-normalized echo is awaited;
-// on the next workspace_setting pushback that tab's draft is reseeded from the
-// returned values (clean), while other dirty tabs keep their drafts.
-const pendingSaveTab = ref<WsTab | null>(null)
-// A requested-but-unconfirmed tab switch away from a dirty tab (drives the confirm
-// dialog). Null when no confirmation is pending.
-const pendingTabSwitch = ref<WsTab | null>(null)
-
-// A JSON deep clone. `JSON.stringify(undefined)` yields `undefined` (not a string)
-// which `JSON.parse` chokes on — pass an absent field straight through. Tolerant
-// of Vue reactive proxies.
-function deepCopy<T>(v: T): T {
-  if (v === undefined) return undefined as T
-  return JSON.parse(JSON.stringify(v)) as T
-}
-// Structural value equality for dirty detection. Reads properties directly, which
-// unwraps Vue reactive proxies, so a draft slice can be compared to its baseline.
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
-  const aArr = Array.isArray(a)
-  if (aArr !== Array.isArray(b)) return false
-  if (aArr) {
-    const aa = a as unknown[]
-    const bb = b as unknown[]
-    if (aa.length !== bb.length) return false
-    return aa.every((v, i) => deepEqual(v, bb[i]))
-  }
-  const ao = a as Record<string, unknown>
-  const bo = b as Record<string, unknown>
-  const ak = Object.keys(ao)
-  const bk = Object.keys(bo)
-  if (ak.length !== bk.length) return false
-  return ak.every((k) => k in bo && deepEqual(ao[k], bo[k]))
 }
 
 /**
@@ -245,56 +210,57 @@ function buildSeed(
   }
 }
 
-// The authoritative last-committed server snapshot. Save payloads are built from
-// this (so pass-through fields survive), and it is the baseline for dirty checks.
-const committed = ref<WorkspaceSetting>(buildSeed(null, null, null))
-// A local, editable copy — the tab controls bind to this. Per-tab slices are
-// compared against `committed` to derive dirty state.
-const draft = ref<WorkspaceSetting>(buildSeed(null, null, null))
-
-// Overwrite a target's fields owned by `tab` with deep copies from `src`.
-function applyTabFields(target: WorkspaceSetting, src: WorkspaceSetting, tab: WsTab): void {
-  const tt = target as unknown as Record<string, unknown>
-  const ss = src as unknown as Record<string, unknown>
-  for (const f of TAB_FIELDS[tab]) {
-    tt[f] = deepCopy(ss[f])
-  }
-}
+// The shared Tab-grouped draft/save state machine: `draft` is the editable copy the
+// tab controls bind to, `committed` the authoritative last-committed server snapshot
+// that save payloads are built from (so pass-through fields like `forge` survive)
+// and dirty is measured against. Only the workspace specifics enter here as options
+// — the per-tab payload transforms, and gitSandbox's synthesized draft / effective
+// comparison slice.
+const {
+  draft,
+  committed,
+  activeTab,
+  pendingTabSwitch,
+  tabDirtyMap,
+  seedAll,
+  reconcile,
+  requestTab,
+  confirmTabSwitch,
+  cancelTabSwitch,
+  saveTab,
+} = useTabbedDraftSave<WsTab, WorkspaceSetting>({
+  tabs: TABS,
+  tabFields: TAB_FIELDS,
+  initialTab: 'defaultMode',
+  initial: () => buildSeed(null, null, null),
+  buildPayload: buildTabPayload,
+  reseedTab: reseedTab,
+  dirtySlice: (tab, v) =>
+    tab === 'gitSandbox'
+      ? gitSandboxCmp(v.gitBranchMode, v.defaultMainBranch, v.sandbox)
+      : undefined,
+  onSave: (payload) =>
+    // No spec path: the SDD spec root is FIXED/centralized and never editable, so
+    // the save payload carries no spec directory value (the server ignores any).
+    emit('save', payload),
+})
 
 // (Re)seed a single tab's draft from the committed seed. gitSandbox is special:
 // its `sandbox` draft is synthesized (deny-by-default policies + stale-name drop)
 // rather than a raw deep copy, so the form checkboxes have reactive backing.
-function reseedTab(tab: WsTab, seed: WorkspaceSetting): void {
+function reseedTab(tab: WsTab, target: WorkspaceSetting, seed: WorkspaceSetting): void {
   if (tab === 'gitSandbox') {
-    draft.value.gitBranchMode = seed.gitBranchMode
-    draft.value.defaultMainBranch = seed.defaultMainBranch
-    draft.value.sandbox = seedSandbox(seed.sandbox)
+    target.gitBranchMode = seed.gitBranchMode
+    target.defaultMainBranch = seed.defaultMainBranch
+    target.sandbox = seedSandbox(seed.sandbox)
   } else {
-    applyTabFields(draft.value, seed, tab)
-  }
-}
-
-// Reconcile a workspace_setting pushback that arrives while the panel is open. The
-// just-saved tab and every clean tab are reseeded from the server; dirty tabs keep
-// their drafts. Never rebuilds the whole draft — that would clobber unsaved work.
-function reconcile(seed: WorkspaceSetting): void {
-  const prev = committed.value
-  const wasDirty: Record<WsTab, boolean> = {
-    defaultMode: tabDirtyAgainst('defaultMode', prev),
-    gitSandbox: tabDirtyAgainst('gitSandbox', prev),
-    collab: tabDirtyAgainst('collab', prev),
-    skillRepos: tabDirtyAgainst('skillRepos', prev),
-  }
-  committed.value = seed
-  const saved = pendingSaveTab.value
-  pendingSaveTab.value = null
-  for (const tab of TABS) {
-    if (tab === saved || !wasDirty[tab]) reseedTab(tab, seed)
+    applyTabFields(target, seed, TAB_FIELDS[tab])
   }
 }
 
 // Re-seed on open, then reconcile field-by-field on every later server pushback
-// (or when vendorModes / detected branch arrive async).
+// (or when vendorModes / detected branch arrive async). The shared layer owns the
+// merge rules; this page only supplies the canonical seed and its open-time effects.
 watch(
   () => [props.open, props.workspaceSetting, props.detectedMainBranch, props.vendorModes] as const,
   (curr, prev) => {
@@ -303,11 +269,10 @@ watch(
     const seed = buildSeed(props.workspaceSetting, props.detectedMainBranch, props.vendorModes)
     const prevOpen = prev?.[0] ?? false
     if (!prevOpen) {
-      // First open (or reopen): whole-draft seed from the server snapshot.
-      committed.value = seed
-      draft.value = deepCopy(seed)
+      // First open (or reopen): whole-draft seed from the server snapshot, with the
+      // gitSandbox draft synthesized into its editable form.
+      seedAll(seed)
       draft.value.sandbox = seedSandbox(seed.sandbox)
-      pendingSaveTab.value = null
       // Ask the parent to (re)fetch each skill repo's link status for this workspace.
       // No auto-polling — only on open (and after an install completes, via the parent).
       emit('queryLinkStatus')
@@ -361,26 +326,6 @@ function gitSandboxCmp(
     sandbox: effectiveSandbox(rawSandbox),
   }
 }
-
-// Whether a tab's draft slice differs from a given baseline snapshot.
-function tabDirtyAgainst(tab: WsTab, baseline: WorkspaceSetting): boolean {
-  if (tab === 'gitSandbox') {
-    return !deepEqual(
-      gitSandboxCmp(draft.value.gitBranchMode, draft.value.defaultMainBranch, draft.value.sandbox),
-      gitSandboxCmp(baseline.gitBranchMode, baseline.defaultMainBranch, baseline.sandbox),
-    )
-  }
-  const d = draft.value as unknown as Record<string, unknown>
-  const b = baseline as unknown as Record<string, unknown>
-  return TAB_FIELDS[tab].some((f) => !deepEqual(d[f], b[f]))
-}
-// Reactive per-tab dirty flags (draft vs the current committed snapshot).
-const tabDirtyMap = computed<Record<WsTab, boolean>>(() => ({
-  defaultMode: tabDirtyAgainst('defaultMode', committed.value),
-  gitSandbox: tabDirtyAgainst('gitSandbox', committed.value),
-  collab: tabDirtyAgainst('collab', committed.value),
-  skillRepos: tabDirtyAgainst('skillRepos', committed.value),
-}))
 
 // Always-non-null defaultMode ref for the template (WorkspaceSetting.defaultMode is optional).
 const draftDefaultMode = computed(
@@ -636,26 +581,29 @@ function onInstall(r: SkillRepoConfig): void {
   emit('installSkill', r.id)
 }
 
-// Build a full WorkspaceSetting for a single tab's Save: start from a deep copy of
-// the latest committed snapshot (so pass-through fields like `forge` survive),
-// overlay ONLY the current tab's whitelist fields from the draft, applying that
-// tab's transforms to the payload copy alone (never writing back into the drafts).
+// Build a full WorkspaceSetting for a single tab's Save: `payload` arrives as a deep
+// copy of the latest committed snapshot (so pass-through fields like `forge` survive),
+// and this overlays ONLY the current tab's whitelist fields from the draft, applying
+// that tab's transforms to the payload copy alone (never writing back into the drafts).
 // Emitting the full object keeps the `save_workspace_setting` protocol unchanged;
 // the tab boundary is enforced purely by which fields we overlay.
-function saveTab(tab: WsTab): void {
-  const payload = deepCopy(committed.value)
+function buildTabPayload(
+  tab: WsTab,
+  payload: WorkspaceSetting,
+  src: WorkspaceSetting,
+): WorkspaceSetting {
   switch (tab) {
     case 'defaultMode': {
       // The Codex dual-policy object is already embedded in the draft's defaultMode
       // (seeded via normalizeCodex), so a deep copy carries it as-is.
-      payload.defaultMode = deepCopy(draft.value.defaultMode)
-      payload.devSkill = draft.value.devSkill
+      payload.defaultMode = deepCopy(src.defaultMode)
+      payload.devSkill = src.devSkill
       break
     }
     case 'gitSandbox': {
-      payload.gitBranchMode = draft.value.gitBranchMode
+      payload.gitBranchMode = src.gitBranchMode
       // Trim the branch; empty ⇒ omit (server normalizes blank → undefined anyway).
-      payload.defaultMainBranch = draft.value.defaultMainBranch?.trim() || undefined
+      payload.defaultMainBranch = src.defaultMainBranch?.trim() || undefined
       // Sandbox is independent of the branch mode: emit the normalized effective
       // form when enabled, else drop the field (disabled). Switching branch modes
       // preserves the saved sandbox config.
@@ -665,48 +613,18 @@ function saveTab(tab: WsTab): void {
       break
     }
     case 'collab': {
-      payload.maxRoundsPerStage = draft.value.maxRoundsPerStage
-      payload.maxSpeechChars = draft.value.maxSpeechChars
-      payload.consensus = deepCopy(draft.value.consensus)
-      payload.sddEnabled = draft.value.sddEnabled
+      payload.maxRoundsPerStage = src.maxRoundsPerStage
+      payload.maxSpeechChars = src.maxSpeechChars
+      payload.consensus = deepCopy(src.consensus)
+      payload.sddEnabled = src.sddEnabled
       break
     }
     case 'skillRepos': {
-      payload.skillRepos = deepCopy(draft.value.skillRepos ?? [])
+      payload.skillRepos = deepCopy(src.skillRepos ?? [])
       break
     }
   }
-  pendingSaveTab.value = tab
-  // No spec path: the SDD spec root is FIXED/centralized and never editable, so
-  // the save payload carries no spec directory value (the server ignores any).
-  emit('save', payload)
-  // Optimistically fold the just-saved tab into `committed` (this tab's transformed
-  // fields, exactly as emitted). Two reasons: (1) a second tab saved before this
-  // save's echo builds its payload from the up-to-date snapshot instead of a stale
-  // one that would silently revert this save; (2) the saved tab's dirty flag clears
-  // now rather than lingering until the pushback. The pushback still reconciles the
-  // saved tab to the server-normalized truth (see reconcile / pendingSaveTab).
-  applyTabFields(committed.value, payload, tab)
-}
-
-// ---- Tab navigation with dirty-guard confirmation -------------------------
-// Switch immediately if the current tab is clean; otherwise open a confirm. On
-// confirm we ONLY change tabs — the leaving tab's draft is neither saved nor
-// discarded, so returning to it shows the same unsaved edits.
-function requestTab(tab: WsTab): void {
-  if (tab === activeTab.value) return
-  if (tabDirtyMap.value[activeTab.value]) {
-    pendingTabSwitch.value = tab
-  } else {
-    activeTab.value = tab
-  }
-}
-function confirmTabSwitch(): void {
-  if (pendingTabSwitch.value) activeTab.value = pendingTabSwitch.value
-  pendingTabSwitch.value = null
-}
-function cancelTabSwitch(): void {
-  pendingTabSwitch.value = null
+  return payload
 }
 
 /** Paste handler: parse GitHub URL to auto-fill ref/subpath. */
@@ -737,30 +655,17 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
       </button>
     </div>
 
-    <!-- Tab navigation. Horizontally scrollable on mobile; a dot marks a tab whose
-         draft has unsaved changes. Requesting a switch away from a dirty tab opens
-         the confirm dialog (see requestTab). -->
-    <nav class="project-config-tabs" role="tablist" data-testid="project-config-tabs">
-      <button
-        v-for="tab in TABS"
-        :key="tab"
-        class="project-config-tab"
-        :class="{ active: activeTab === tab }"
-        role="tab"
-        :aria-selected="activeTab === tab"
-        :data-testid="`project-config-tab-btn-${tab}`"
-        @click="requestTab(tab)"
-      >
-        <span>{{ tabLabel(tab) }}</span>
-        <span
-          v-if="tabDirtyMap[tab]"
-          class="project-config-tab-dot"
-          :data-testid="`project-config-tab-dirty-${tab}`"
-          :title="t('workspaceSetting.tabs.unsaved.label')"
-          >●</span
-        >
-      </button>
-    </nav>
+    <!-- Tab navigation (shared with the system-settings page). Requesting a switch
+         away from a dirty tab opens the confirm dialog (see requestTab). -->
+    <TabNav
+      :tabs="TABS"
+      :active-tab="activeTab"
+      :dirty-map="tabDirtyMap"
+      :tab-label="tabLabel"
+      prefix="project-config"
+      :dirty-title="t('workspaceSetting.tabs.unsaved.label')"
+      @select="requestTab"
+    />
 
     <div class="project-config-body">
       <!-- ============ Default mode tab ============ -->
@@ -1377,8 +1282,11 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 }
 
 /* ---- Tab navigation ---- */
-/* Visible tab bar under the header; scrolls horizontally on narrow screens so all
-   tabs stay reachable without wrapping. */
+/* Rendered by the shared TabNav component: `.project-config-tabs` is its root, which
+   still carries this page's scope attribute, so it styles normally; the buttons and
+   the dot live inside the component and need `:deep`. This page keeps ownership of
+   the selectors so each settings page can style its own tab bar.
+   Scrolls horizontally on narrow screens so all tabs stay reachable without wrapping. */
 .project-config-tabs {
   display: flex;
   flex-shrink: 0;
@@ -1391,7 +1299,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 .project-config-tabs::-webkit-scrollbar {
   display: none;
 }
-.project-config-tab {
+.project-config-tabs :deep(.project-config-tab) {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1408,16 +1316,16 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   cursor: pointer;
   white-space: nowrap;
 }
-.project-config-tab:hover:not(:disabled) {
+.project-config-tabs :deep(.project-config-tab:hover:not(:disabled)) {
   filter: none;
   color: var(--text-primary, #cdd6f4);
 }
-.project-config-tab.active {
+.project-config-tabs :deep(.project-config-tab.active) {
   color: var(--text-primary, #cdd6f4);
   border-bottom-color: var(--c-primary, #89b4fa);
 }
 /* Unsaved-changes marker on a tab. */
-.project-config-tab-dot {
+.project-config-tabs :deep(.project-config-tab-dot) {
   color: var(--c-warning, #f9e2af);
   font-size: 0.6em;
   line-height: 1;

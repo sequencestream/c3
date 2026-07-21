@@ -209,7 +209,6 @@ const {
   draft,
   committed,
   activeTab,
-  pendingSaveTab,
   pendingTabSwitch,
   tabDirtyMap,
   seedAll,

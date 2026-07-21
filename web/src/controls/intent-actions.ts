@@ -14,7 +14,6 @@ import {
   type SpecLaunchEvent,
 } from '@/lib/spec-launch-view'
 import {
-  beginPendingWorkSessionSelect,
   shouldJumpAfterDevLaunch,
   resolvePendingWorkSessionSelect,
   WORK_SESSION_JUMP_DELAY_MS,
@@ -66,19 +65,24 @@ export function installIntentActions(ctx: AppCtx): void {
     else if (tr.closedReason === 'timeout') ctx.showToast(t('intent.specLaunch.timeout'))
   }
 
-  // Arm the post-`ready` jump: after the deliberate ~1s "已就绪" buffer, flip to
-  // the console tab, force the work-session kind, and select this launch's work
-  // session once both the intent's `lastWorkSessionId` and the row are available.
+  // Arm the post-`ready` jump: after the deliberate ~1s "已就绪" buffer, stay on the
+  // intents page and land on this intent's 工作会话 tab — bind the launch's work
+  // session as the global active session (no console jump, no session-kind switch)
+  // and request the sub-tab switch. If the intent / workspace no longer matches or
+  // `lastWorkSessionId` has not landed yet, the jump is silently dropped: no waiting
+  // state is created and no later broadcast re-triggers it.
   // The timer lives in `devLaunchTimers` so a new launch / overlay close cancels it.
   ctx.armWorkSessionJump = (intentId: string): void => {
     const workspace = ctx.currentWorkspace.value
     if (!workspace) return
-    ctx.requestedWorkSessionId.value = beginPendingWorkSessionSelect(workspace, intentId)
     ctx.devLaunchTimers.jump = setTimeout(() => {
       ctx.devLaunchTimers.jump = null
-      if (ctx.activeSessionKind.value !== 'work') ctx.selectSessionKind('work')
-      ctx.enterConsole()
-      ctx.consumePendingWorkSessionSelect(true)
+      if (ctx.currentWorkspace.value !== workspace) return
+      const target = (ctx.intents.value[workspace] ?? []).find((r) => r.id === intentId)
+      const sessionId = target?.lastWorkSessionId
+      if (!sessionId) return
+      ctx.selectWorkSession(sessionId)
+      ctx.requestedIntentSubTab.value = 'workSession'
     }, WORK_SESSION_JUMP_DELAY_MS)
   }
 

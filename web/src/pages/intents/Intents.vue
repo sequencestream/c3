@@ -84,8 +84,8 @@ const props = defineProps<{
   queue: PendingItem[]
   availableCommands: SlashCommandInfo[]
   voiceLang: string
-  /** One-shot sub-tab request for IntentDetail (WorkCenter jump-to-source). */
-  requestedIntentSubTab?: 'intentSession' | 'specSession' | null
+  /** One-shot sub-tab request for IntentDetail (WorkCenter jump-to-source / post-Start-Work jump). */
+  requestedIntentSubTab?: 'intentSession' | 'specSession' | 'workSession' | null
   /**
    * One-shot request to open a standalone intent (chat) session here (from the
    * session page's title-bar source button, for a chat with no owning intent).

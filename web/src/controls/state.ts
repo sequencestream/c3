@@ -579,8 +579,9 @@ export function createState(deps: StateDeps) {
   // wait first for the intent's last work session id, then for that work row.
   const requestedWorkSessionId = ref<PendingWorkSessionSelectRequest | null>(null)
   // One-shot request to force IntentDetail to switch to a specific sub-tab (set by
-  // the WorkCenter jump-to-source, consumed + cleared by IntentDetail once applied).
-  const requestedIntentSubTab = ref<'intentSession' | 'specSession' | null>(null)
+  // the WorkCenter jump-to-source and by the post-Start-Work jump, consumed +
+  // cleared by IntentDetail once applied).
+  const requestedIntentSubTab = ref<'intentSession' | 'specSession' | 'workSession' | null>(null)
   // One-shot request to force IntentMergedList to switch to a specific tab (set by
   // the WorkCenter jump-to-source when no intent matches the session id).
   const requestedMergedTab = ref<'intents' | 'sessions' | null>(null)

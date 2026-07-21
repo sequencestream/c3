@@ -118,9 +118,10 @@ const props = defineProps<{
   /** 选中意图的生命周期变更日志(倒序);切到 changelog tab 时懒加载。 */
   intentLogs: IntentLog[]
   intentLogsLoading: boolean
-  /** One-shot request from WorkCenter jump-to-source: force a detail sub-tab switch
-   * (intentSession / specSession). Cleared via `requested-subtab-consumed`. */
-  requestedSubTab?: 'intentSession' | 'specSession' | null
+  /** One-shot request from WorkCenter jump-to-source or the post-Start-Work jump:
+   * force a detail sub-tab switch (intentSession / specSession / workSession).
+   * Cleared via `requested-subtab-consumed`. */
+  requestedSubTab?: 'intentSession' | 'specSession' | 'workSession' | null
 }>()
 
 const emit = defineEmits<{
@@ -627,7 +628,7 @@ watch(
   },
 )
 
-// 外部子 tab 请求(WorkCenter 溯源跳转),在 intent 选中复位 tab 后再切换。
+// 外部子 tab 请求(WorkCenter 溯源跳转 / Start Work 后落到工作会话),在 intent 选中复位 tab 后再切换。
 watch(
   () => props.requestedSubTab,
   (tab) => {

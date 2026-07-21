@@ -24,11 +24,11 @@ vi.mock('../../git.js', async () => {
     createGhPr: vi.fn(),
     getForgePrStatus: vi.fn(),
     commitAndPush: vi.fn(),
-    hasCommittableChanges: vi.fn(),
+    hasDiffAgainstMain: vi.fn(),
   }
 })
 
-import { commitAndPush, createGhPr, getForgePrStatus, hasCommittableChanges } from '../../git.js'
+import { commitAndPush, createGhPr, getForgePrStatus, hasDiffAgainstMain } from '../../git.js'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import {
@@ -77,7 +77,7 @@ beforeEach(() => {
   vi.mocked(createGhPr).mockReset()
   vi.mocked(getForgePrStatus).mockReset()
   vi.mocked(commitAndPush).mockReset()
-  vi.mocked(hasCommittableChanges).mockReset()
+  vi.mocked(hasDiffAgainstMain).mockReset()
 })
 
 afterEach(() => {
@@ -234,11 +234,11 @@ describe('PR instrumentation', () => {
       { title: 'PR me', shortEnTitle: 'pr-me', content: '', priority: 'P1' },
     ])
     // Manual PR creation no longer requires `done`: an in_progress intent with a
-    // branch and committable changes qualifies under the worktree gate.
+    // branch and diffs against main qualifies under the worktree gate.
     saveWorkspaceSetting(proj, { gitBranchMode: 'worktree' })
     updateStatus(r.id, 'in_progress')
     setBranchName(r.id, 'intent/pr-me')
-    vi.mocked(hasCommittableChanges).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
     vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
     const { conn } = fakeConn({ subject: 'erin' })

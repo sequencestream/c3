@@ -15,6 +15,7 @@ import {
   getForgePrStatus,
   gitDiffStat,
   gitRecentLog,
+  hasDiffAgainstMain,
   parsePorcelainStatus,
 } from './git.js'
 
@@ -210,6 +211,45 @@ describe('commitAndPush — repository discovery & per-repo commit', () => {
     expect(res.ok).toBe(false)
     expect(res.error).toContain('git commit 失败')
     expect(res.failure).toBe('commit-hook') // lint signature → orchestrator self-heals
+  })
+})
+
+describe('hasDiffAgainstMain — PR creation gate compares against local main', () => {
+  /** Init a repo whose default branch is renamed to `main`, no remote/upstream. */
+  function initMainRepo(path: string): void {
+    initRepo(path, 'main-repo', false)
+    run('git', ['branch', '-M', 'main'], path)
+  }
+
+  it('branch ahead of main with no upstream configured → true', async () => {
+    initMainRepo(work)
+    run('git', ['checkout', '-q', '-b', 'intent/x'], work)
+    writeFileSync(join(work, 'a.ts'), 'export const a = 1\n')
+    run('git', ['add', '-A'], work)
+    run('git', ['commit', '-q', '-m', 'feat: a'], work)
+
+    expect(await hasDiffAgainstMain(work)).toBe(true)
+  })
+
+  it('uncommitted tracked edits relative to main → true', async () => {
+    initMainRepo(work)
+    writeFileSync(join(work, 'README.md'), 'edited\n')
+
+    expect(await hasDiffAgainstMain(work)).toBe(true)
+  })
+
+  it('same commit as main with a clean tree → false', async () => {
+    initMainRepo(work)
+    run('git', ['checkout', '-q', '-b', 'intent/x'], work)
+
+    expect(await hasDiffAgainstMain(work)).toBe(false)
+  })
+
+  it('no local main branch → true (let the later push/CLI report the real error)', async () => {
+    initRepo(work, 'no-main', false)
+    run('git', ['branch', '-M', 'trunk'], work)
+
+    expect(await hasDiffAgainstMain(work)).toBe(true)
   })
 })
 

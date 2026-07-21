@@ -72,7 +72,7 @@ import {
 } from './run-status.js'
 import { getWorkflowHooks, getWorkflowStatus, startWorkflow, stopWorkflow } from './workflow.js'
 import { getDiscussion } from '../discussions/store.js'
-import { closeForgePr, commitAndPush, createGhPr, hasCommittableChanges } from '../../git.js'
+import { closeForgePr, commitAndPush, createGhPr, hasDiffAgainstMain } from '../../git.js'
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
 import { getWorktreePath } from './worktree.js'
 import { resolveSpecFileAbs } from './specs-root.js'
@@ -947,7 +947,7 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
   }
   // Manual PR creation no longer reads intent status; it serves the isolated
   // worktree only, and requires a branch plus committable changes. Fixed order:
-  // worktree mode → non-empty branch → worktree has committable changes.
+  // worktree mode → non-empty branch → worktree differs from main.
   if (getGitBranchMode(proj) !== 'worktree') {
     conn.send({ type: 'error', error: { code: 'intent.prCreateNotWorktree' } })
     return
@@ -957,7 +957,7 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
     return
   }
   const worktreePath = getWorktreePath(proj, msg.intentId)
-  if (!(await hasCommittableChanges(worktreePath))) {
+  if (!(await hasDiffAgainstMain(worktreePath))) {
     conn.send({ type: 'error', error: { code: 'intent.prCreateNoChanges' } })
     return
   }

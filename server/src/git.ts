@@ -457,6 +457,35 @@ export async function hasCommittableChanges(workspacePath: string): Promise<bool
 }
 
 /**
+ * Whether a single repo differs from the local `main` branch: tracked-file diffs
+ * against `main`, OR commits in HEAD that `main` doesn't contain. Unlike
+ * {@link hasCommittableChanges} this never consults the upstream, so a worktree
+ * branch without tracking config is still recognised as having work.
+ *
+ * When local `main` can't be resolved we return `true` rather than block: the
+ * real error belongs to the later commit/push or the forge CLI, not to a
+ * misleading "no changes" gate. Note `git diff main --stat` ignores untracked
+ * files — an untracked-only tree with no commits ahead of `main` reads as false.
+ */
+export async function hasDiffAgainstMain(repoPath: string): Promise<boolean> {
+  const mainExists = await git(repoPath, [
+    '-C',
+    repoPath,
+    'rev-parse',
+    '--verify',
+    '--quiet',
+    'main',
+  ])
+  if (mainExists.code !== 0 || mainExists.stdout.trim() === '') return true
+
+  const diff = await git(repoPath, ['-C', repoPath, 'diff', 'main', '--stat'])
+  if (diff.code === 0 && diff.stdout.trim() !== '') return true
+
+  const ahead = await git(repoPath, ['-C', repoPath, 'rev-list', '--count', 'main..HEAD'])
+  return ahead.code === 0 && ahead.stdout.trim() !== '' && ahead.stdout.trim() !== '0'
+}
+
+/**
  * The current HEAD commit hash of a workspace's repo, or `null` when it can't be
  * resolved (not a repo / git error). For a multi-repo workspace root (root is not
  * itself a repo), reports the first discovered sub-repo's HEAD — a best-effort

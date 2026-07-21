@@ -28,11 +28,11 @@ vi.mock('../../git.js', async () => {
     ...actual,
     createGhPr: vi.fn(),
     commitAndPush: vi.fn(),
-    hasCommittableChanges: vi.fn(),
+    hasDiffAgainstMain: vi.fn(),
   }
 })
 
-import { commitAndPush, createGhPr, hasCommittableChanges } from '../../git.js'
+import { commitAndPush, createGhPr, hasDiffAgainstMain } from '../../git.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import {
@@ -75,7 +75,7 @@ beforeEach(() => {
   proj = resolveWorkspaceRoot(workspaceId)!
   vi.mocked(createGhPr).mockReset()
   vi.mocked(commitAndPush).mockReset()
-  vi.mocked(hasCommittableChanges).mockReset()
+  vi.mocked(hasDiffAgainstMain).mockReset()
 })
 
 afterEach(() => {
@@ -149,7 +149,7 @@ describe('createPrHandler — worktree gate success paths', () => {
   for (const status of ['todo', 'in_progress'] as const) {
     it(`commits in the intent worktree then creates a PR for a ${status} intent`, async () => {
       const r = seedQualifying(status)
-      vi.mocked(hasCommittableChanges).mockResolvedValue(true)
+      vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
       vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
       vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
       const { ctx, broadcast, publish } = fakeCtx()
@@ -159,7 +159,7 @@ describe('createPrHandler — worktree gate success paths', () => {
 
       const worktreePath = getWorktreePath(proj, r.id)
       // Ordered: check changes → commit/push in the worktree → create the PR there.
-      expect(hasCommittableChanges).toHaveBeenCalledWith(worktreePath)
+      expect(hasDiffAgainstMain).toHaveBeenCalledWith(worktreePath)
       expect(commitAndPush).toHaveBeenCalledWith(worktreePath, 'feat: PR me')
       expect(createGhPr).toHaveBeenCalledWith(worktreePath, 'feat: PR me', 'body', 'intent/pr-me')
 
@@ -202,7 +202,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
-    expect(hasCommittableChanges).not.toHaveBeenCalled()
+    expect(hasDiffAgainstMain).not.toHaveBeenCalled()
     expect(commitAndPush).not.toHaveBeenCalled()
     expect(createGhPr).not.toHaveBeenCalled()
     // The pre-existing PR fields are left intact; no new create log or event.
@@ -222,7 +222,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateNotWorktree'])
-    expect(hasCommittableChanges).not.toHaveBeenCalled()
+    expect(hasDiffAgainstMain).not.toHaveBeenCalled()
     expect(commitAndPush).not.toHaveBeenCalled()
     expect(createGhPr).not.toHaveBeenCalled()
     expectNoSuccessSideEffects(r.id, publish)
@@ -240,14 +240,14 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateNoBranch'])
-    expect(hasCommittableChanges).not.toHaveBeenCalled()
+    expect(hasDiffAgainstMain).not.toHaveBeenCalled()
     expect(commitAndPush).not.toHaveBeenCalled()
     expectNoSuccessSideEffects(r.id, publish)
   })
 
   it('rejects a clean worktree with prCreateNoChanges', async () => {
     const r = seedQualifying()
-    vi.mocked(hasCommittableChanges).mockResolvedValue(false)
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(false)
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -261,7 +261,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
 
   it('surfaces a commit/push failure as prCreateFailed and never creates the PR', async () => {
     const r = seedQualifying()
-    vi.mocked(hasCommittableChanges).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({
       ok: false,
       committed: true,
@@ -280,7 +280,7 @@ describe('createPrHandler — rejection branches short-circuit without side effe
 
   it('surfaces a PR-create failure as prCreateFailed with no PR fields or event', async () => {
     const r = seedQualifying()
-    vi.mocked(hasCommittableChanges).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
     vi.mocked(createGhPr).mockResolvedValue({ ok: false, error: 'gh failed' })
     const { ctx, publish } = fakeCtx()

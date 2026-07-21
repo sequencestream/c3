@@ -6,7 +6,7 @@
  * (JSON → safe → protected String).
  */
 import { describe, expect, it } from 'vitest'
-import type { GenericEvent } from '@ccc/shared/protocol'
+import type { GenericEvent } from '@ccc/shared'
 import {
   buildAutomationPrompt,
   readEmbedEventContext,

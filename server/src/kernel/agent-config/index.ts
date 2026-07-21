@@ -23,12 +23,8 @@ import type {
   SystemSettings,
   VendorId,
 } from '@ccc/shared/protocol'
-import {
-  groupAgentRef,
-  isGroupAgentRef,
-  parseGroupAgentRef,
-  SYSTEM_AGENT_ID,
-} from '@ccc/shared/protocol'
+import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+import { groupAgentRef, isGroupAgentRef, parseGroupAgentRef } from '@ccc/shared'
 import type { RelayCandidate } from '../relay/contract.js'
 import { getRelay, withLoopbackNoProxy } from '../relay/runtime.js'
 

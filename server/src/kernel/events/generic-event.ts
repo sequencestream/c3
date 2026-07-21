@@ -32,8 +32,8 @@
  *   before any `EventBus.publish`. The `reason` is machine-friendly and never
  *   echoes the raw (possibly sensitive) input value.
  */
-import type { GenericEvent } from '@ccc/shared/protocol'
-import { validateGenericEvent } from '@ccc/shared/protocol'
+import type { GenericEvent } from '@ccc/shared'
+import { validateGenericEvent } from './generic-event-validate.js'
 
 /**
  * A per-type normalizer. Receives the UNTRUSTED (but structurally valid) generic

@@ -23,11 +23,8 @@ import { clampName, generateAutomationName } from './naming.js'
 import type { AutomationNameOverride } from './store.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import { requireAdmin } from '../auth/authz.js'
-import {
-  isValidAutomationMaxWallClockMs,
-  normalizeGenericEventFilters,
-  type ToolManifestEntry,
-} from '@ccc/shared/protocol'
+import type { ToolManifestEntry } from '@ccc/shared/protocol'
+import { isValidAutomationMaxWallClockMs, normalizeGenericEventFilters } from '@ccc/shared'
 import { C3_MCP_TOOLS } from './mcp-freeze.js'
 import { loadSettings } from '../../kernel/config/index.js'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'

@@ -8,7 +8,7 @@
  * lib/agent-prefix.ts「本地复刻服务端降级链」同一模式。
  */
 import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
-import { groupAgentRef, parseGroupAgentRef } from '@ccc/shared/protocol'
+import { groupAgentRef, parseGroupAgentRef } from '@ccc/shared'
 
 /** A virtual group agent: the reference id `_c3_<group>`, its group name (display),
  *  and the group's locked vendor (its first enabled member's vendor). */

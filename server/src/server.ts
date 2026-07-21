@@ -460,7 +460,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const eventNormalizers = new EventNormalizerRegistry(normalizeGenericEventDefault)
   for (const type of PR_EVENT_TYPES) eventNormalizers.register(type, normalizePrGenericEvent)
   eventNormalizers.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
-  const normalizeEvent = (core: import('@ccc/shared/protocol').GenericEvent) =>
+  const normalizeEvent = (core: import('@ccc/shared').GenericEvent) =>
     eventNormalizers.normalize(core)
 
   // Vendor-neutral model-publishable events. The model performs its operation
@@ -470,7 +470,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // topic. Consumers discriminate `event.type` (`pr:operation` is the first type).
   // ONE bus sink is shared by both MCP surfaces (Claude in-process below + the
   // codex localhost HTTP route here). The route is mounted before the SPA catch-all.
-  const publishEvent = (payload: import('@ccc/shared/protocol').GenericEventEnvelope): void =>
+  const publishEvent = (payload: import('@ccc/shared').GenericEventEnvelope): void =>
     eventBus.publish('event', payload)
   const eventMcpTools: EventMcpTools = {
     publish: (binding, args) =>

@@ -17,7 +17,7 @@
  *    does not block the other (bus error isolation).
  */
 import { describe, expect, it, vi } from 'vitest'
-import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared/protocol'
+import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
 import { EventBus } from '../../kernel/events/event-bus.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import { runPublishEvent } from '../events/tool-defs.js'

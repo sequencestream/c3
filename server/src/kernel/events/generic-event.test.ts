@@ -7,7 +7,7 @@
  * surfacing raw sensitive values, and the caller must never treat it as publishable.
  */
 import { describe, expect, it } from 'vitest'
-import type { GenericEvent } from '@ccc/shared/protocol'
+import type { GenericEvent } from '@ccc/shared'
 import { EventNormalizerRegistry } from './generic-event.js'
 
 describe('EventNormalizerRegistry — registration', () => {

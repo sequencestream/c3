@@ -199,16 +199,11 @@ export type ImageMediaType = (typeof IMAGE_MEDIA_TYPES)[number]
  * An image attached to a {@link ClientToServer} `user_prompt`. `data` is the
  * raw base64-encoded image bytes WITHOUT a `data:` URI prefix (the caller strips
  * it); `mediaType` is one of {@link IMAGE_MEDIA_TYPES}. The neutral shape both
- * adapters consume — see {@link isImageMediaType} for the boundary guard.
+ * adapters consume — the boundary guard `isImageMediaType` lives in `image-media.ts`.
  */
 export interface PromptImage {
   mediaType: string
   data: string
-}
-
-/** Narrow an arbitrary media type to an accepted {@link ImageMediaType}. */
-export function isImageMediaType(mediaType: string): mediaType is ImageMediaType {
-  return (IMAGE_MEDIA_TYPES as readonly string[]).includes(mediaType)
 }
 
 /**
@@ -242,38 +237,6 @@ export const GROUP_AGENT_PREFIX = '_c3_'
 
 /** The known vendor ids as a runtime list (the type {@link VendorId} is the union). */
 export const VENDOR_IDS: readonly VendorId[] = ['claude', 'codex']
-
-/**
- * The virtual group-agent reference id for a `(vendor, group)` — `_c3_<vendor>_<group>`.
- * Encoding the vendor makes the group identity unambiguous, so DIFFERENT vendors may
- * reuse the SAME group name (each `(vendor, group)` is its own group / its own virtual
- * agent). Example: `('claude', 'fast')` → `_c3_claude_fast`.
- */
-export function groupAgentRef(vendor: VendorId, group: string): string {
-  return `${GROUP_AGENT_PREFIX}${vendor}_${group}`
-}
-
-/**
- * Parse a virtual group-agent id into its `(vendor, group)`, or null when it is not
- * one. The vendor is matched against the closed {@link VENDOR_IDS} set (so the group
- * name may itself contain underscores — everything after `_c3_<vendor>_` is the group).
- */
-export function parseGroupAgentRef(id: string): { vendor: VendorId; group: string } | null {
-  if (!id.startsWith(GROUP_AGENT_PREFIX)) return null
-  const rest = id.slice(GROUP_AGENT_PREFIX.length)
-  for (const vendor of VENDOR_IDS) {
-    const marker = `${vendor}_`
-    if (rest.startsWith(marker) && rest.length > marker.length) {
-      return { vendor, group: rest.slice(marker.length) }
-    }
-  }
-  return null
-}
-
-/** Whether an agent reference id is a virtual group agent (`_c3_<vendor>_<group>`). */
-export function isGroupAgentRef(id: string): boolean {
-  return parseGroupAgentRef(id) !== null
-}
 
 /**
  * The vendor-agnostic public shell common to every agent profile (ADR-0011's
@@ -432,56 +395,6 @@ export interface CodexAgentConfig {
  */
 export type AgentConfig = AgentConfigBase &
   ({ vendor: 'claude'; config: ClaudeAgentConfig } | { vendor: 'codex'; config: CodexAgentConfig })
-
-/**
- * Resolve the effective `defaultAgentId` for an agent registry, applying the
- * **"fall through to the next enabled agent"** rule (AC-R2/AC-R10/AC-R20,
- * 2026-06-15-001). The chosen id is meant to be **persisted** (rewrite-on-store
- * semantics, not a runtime-only resolution) — both the web SettingsPanel (on
- * disabling/removing an agent) and the server `normalize` (on every save) call
- * this so a disabled default never silently degrades to the synthesized system
- * fallback at launch time.
- *
- * `agents` must be in the user-controlled order (`order_seq` ascending; the
- * server passes the canonicalized registry, the console passes its draft array
- * whose order already is the visual order). Rule:
- *  1. the current default still present **and** enabled ⇒ keep it;
- *  2. otherwise the **next enabled** agent after its position (scanning forward),
- *     wrapping to the first enabled agent overall when nothing follows or the
- *     current default was removed;
- *  3. no enabled agent at all ⇒ {@link SYSTEM_AGENT_ID} (the id `resolveAgent`
- *     synthesizes a fallback for — a session is never locked out).
- *
- * An agent counts as enabled unless `enabled === false` (back-compat with
- * configs predating the field, matching {@link AgentConfigBase.enabled}).
- */
-export function resolveDefaultAgentId(agents: AgentConfig[], currentDefaultId: string): string {
-  const isEnabled = (a: AgentConfig): boolean => a.enabled !== false
-  // A virtual group reference (`_c3_<vendor>_<group>`, ADR-0029) stays selected as
-  // long as that (vendor, group) still has an enabled member; an emptied group falls
-  // through like a removed agent. Group refs are not in `agents` (they are virtual),
-  // so this must precede the by-id lookup below or a valid group pick would be reset.
-  const ref = parseGroupAgentRef(currentDefaultId)
-  if (ref) {
-    if (
-      agents.some(
-        (a) => isEnabled(a) && a.vendor === ref.vendor && (a.group?.trim() ?? '') === ref.group,
-      )
-    ) {
-      return currentDefaultId
-    }
-    const firstEnabled = agents.find(isEnabled)
-    return firstEnabled ? firstEnabled.id : SYSTEM_AGENT_ID
-  }
-  const current = agents.find((a) => a.id === currentDefaultId)
-  if (current && isEnabled(current)) return currentDefaultId
-  const idx = agents.findIndex((a) => a.id === currentDefaultId)
-  for (let k = idx + 1; idx >= 0 && k < agents.length; k++) {
-    if (isEnabled(agents[k])) return agents[k].id
-  }
-  const firstEnabled = agents.find(isEnabled)
-  return firstEnabled ? firstEnabled.id : SYSTEM_AGENT_ID
-}
 
 /**
  * Multi-agent consensus voting over permission prompts. When enabled, a pending
@@ -2343,17 +2256,6 @@ export const MIN_AUTOMATION_MAX_WALL_CLOCK_MS = 1_000
 /** Largest accepted automation execution wall-clock limit (twenty-four hours). */
 export const MAX_AUTOMATION_MAX_WALL_CLOCK_MS = 24 * 60 * 60 * 1_000
 
-/** Whether a wire value is a valid explicit automation execution time limit. */
-export function isValidAutomationMaxWallClockMs(value: unknown): value is number | null {
-  return (
-    value === null ||
-    (typeof value === 'number' &&
-      Number.isSafeInteger(value) &&
-      value >= MIN_AUTOMATION_MAX_WALL_CLOCK_MS &&
-      value <= MAX_AUTOMATION_MAX_WALL_CLOCK_MS)
-  )
-}
-
 export type McpMode = 'read-only' | 'sandboxed' | 'full-access'
 
 export type AutomationStatus = 'active' | 'paused' | 'error' | 'archived'
@@ -2367,247 +2269,6 @@ export type RunLifecycleTopic = 'run:started' | 'run:settled'
 /** Terminal reason a run settled with: clean finish, error, or user abort. */
 export const RUN_END_REASONS = ['complete', 'error', 'aborted'] as const
 export type RunEndReason = (typeof RUN_END_REASONS)[number]
-
-// ---- Generic event contract (vendor-neutral) -------------------------------
-//
-// A single, vendor-neutral shape a model-published event may take BEFORE it is
-// carried on the bus. The kernel event layer keeps a `type → normalizer`
-// registry; only a registered `type` may publish, and its normalizer performs
-// the field-level redaction/truncation. The normalized event is wrapped in a
-// {@link GenericEventEnvelope} and carried on the single `'event'` bus topic;
-// consumers discriminate on `event.type`. The PR operation event (below) is the
-// first registered type. See `doc/architecture/event-mechanism.md`.
-
-/**
- * A JSON-compatible value. Excludes functions, class instances, `undefined`,
- * symbols, non-finite numbers and cycles so an event stays copyable, loggable
- * and transport-safe. Used for the recursive `data` payload of a generic event.
- */
-export type JsonValue =
-  string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
-
-/** A JSON-compatible object — the top-level shape of a generic event's `data`. */
-export type JsonObject = { [key: string]: JsonValue }
-
-/**
- * A vendor-neutral generic event core (the untrusted shape a producer supplies).
- *
- * - `type` — REQUIRED, non-empty stable discriminant a normalizer registers
- *   against. It selects the field-level safety rules and must survive
- *   normalization unchanged.
- * - `status` / `description` — OPTIONAL free-text (e.g. an outcome + a summary).
- * - `metadata` — OPTIONAL FLAT `string → string` map (nested values are rejected).
- * - `data` — OPTIONAL JSON-compatible (recursively nested) object.
- */
-export interface GenericEvent {
-  type: string
-  status?: string
-  description?: string
-  metadata?: Record<string, string>
-  data?: JsonObject
-}
-
-/**
- * The bus envelope carrying a NORMALIZED {@link GenericEvent}. `workspacePath` +
- * `sessionId` are injected by the per-run binding closure AFTER normalization
- * succeeds — the raw event, its `metadata` and `data` may NOT override them (the
- * model cannot forge another workspace or session).
- */
-export interface GenericEventEnvelope {
-  workspacePath: string
-  sessionId: string
-  event: GenericEvent
-}
-
-/** Result of validating an untrusted generic-event core against the contract. */
-export type GenericEventValidation =
-  { ok: true; value: GenericEvent } | { ok: false; reason: string }
-
-/**
- * True if `v` is a finite JSON value: string, boolean, finite number, `null`,
- * array of JSON values, or plain object of JSON values. Rejects functions,
- * `undefined`, symbols, bigints, non-finite numbers, class instances and cycles.
- */
-export function isJsonValue(v: unknown, seen: Set<object> = new Set()): boolean {
-  if (v === null) return true
-  const t = typeof v
-  if (t === 'string' || t === 'boolean') return true
-  if (t === 'number') return Number.isFinite(v as number)
-  if (t !== 'object') return false // function, symbol, bigint, undefined
-  const obj = v as object
-  if (seen.has(obj)) return false // cycle
-  seen.add(obj)
-  try {
-    if (Array.isArray(obj)) {
-      for (const item of obj) if (!isJsonValue(item, seen)) return false
-      return true
-    }
-    const proto = Object.getPrototypeOf(obj)
-    if (proto !== Object.prototype && proto !== null) return false // class instance
-    for (const key of Object.keys(obj)) {
-      if (!isJsonValue((obj as Record<string, unknown>)[key], seen)) return false
-    }
-    return true
-  } finally {
-    seen.delete(obj)
-  }
-}
-
-/**
- * Validate an untrusted generic-event core: non-empty string `type`, string
- * `status`/`description`, a FLAT `string → string` `metadata`, and a
- * JSON-compatible `data` object. On success returns a copy with only the known
- * fields (extra keys dropped); on failure returns a machine-friendly `reason`
- * that never echoes the offending value.
- */
-export function validateGenericEvent(value: unknown): GenericEventValidation {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return { ok: false, reason: 'event must be an object' }
-  }
-  const e = value as Record<string, unknown>
-  if (typeof e.type !== 'string' || e.type.trim() === '') {
-    return { ok: false, reason: 'event.type must be a non-empty string' }
-  }
-  if (e.status !== undefined && typeof e.status !== 'string') {
-    return { ok: false, reason: 'event.status must be a string' }
-  }
-  if (e.description !== undefined && typeof e.description !== 'string') {
-    return { ok: false, reason: 'event.description must be a string' }
-  }
-  if (e.metadata !== undefined) {
-    if (typeof e.metadata !== 'object' || e.metadata === null || Array.isArray(e.metadata)) {
-      return { ok: false, reason: 'event.metadata must be a flat object' }
-    }
-    for (const [k, val] of Object.entries(e.metadata)) {
-      if (typeof val !== 'string') {
-        return { ok: false, reason: `event.metadata.${k} must be a string` }
-      }
-    }
-  }
-  if (e.data !== undefined) {
-    if (typeof e.data !== 'object' || e.data === null || Array.isArray(e.data)) {
-      return { ok: false, reason: 'event.data must be an object' }
-    }
-    if (!isJsonValue(e.data)) {
-      return { ok: false, reason: 'event.data must be JSON-compatible' }
-    }
-  }
-  const clean: GenericEvent = { type: e.type }
-  if (e.status !== undefined) clean.status = e.status as string
-  if (e.description !== undefined) clean.description = e.description as string
-  if (e.metadata !== undefined) clean.metadata = { ...(e.metadata as Record<string, string>) }
-  if (e.data !== undefined) clean.data = e.data as JsonObject
-  return { ok: true, value: clean }
-}
-
-// ---- Vendor-neutral PR operation events (2026-06-20) -----------------------
-//
-// c3 never executes a PR operation. The model uses its OWN tools (gh CLI, a
-// GitHub MCP, …) to create / review / merge / close / comment on a PR, and AFTER
-// the operation completes (or fails) it calls the `publish_event` MCP tool with
-// `type: 'pr:operation'` to publish ONE vendor-neutral PR operation event. A
-// automation can subscribe and trigger its existing follow-up action. The
-// contract is NOT bound to GitHub — `repo.provider` keeps room for GitLab.
-
-/**
- * PR operation kinds a model may report (vendor-neutral). `update` means an
- * EXISTING PR was modified by the model and re-submitted / re-opened (e.g. after
- * a rejected review the model pushes a fix), NOT the creation of a new PR.
- */
-export const PR_OPERATIONS = ['create', 'review', 'merge', 'close', 'comment', 'update'] as const
-export type PrOperation = (typeof PR_OPERATIONS)[number]
-
-/** Outcome of a PR operation the model performed with its own tools. */
-export const PR_OPERATION_RESULTS = ['success', 'failure', 'error'] as const
-export type PrOperationResult = (typeof PR_OPERATION_RESULTS)[number]
-
-/** PR identity — every field optional and vendor-neutral. */
-export interface PrRef {
-  number?: number
-  id?: string
-  url?: string
-  title?: string
-  state?: string
-}
-
-/** Repository context — vendor-neutral. `provider` defaults to `'github'`, may be `'gitlab'` etc. */
-export interface PrRepo {
-  provider?: string
-  host?: string
-  owner?: string
-  name?: string
-}
-
-/** Branch context for the PR. */
-export interface PrBranchRef {
-  head?: string
-  base?: string
-}
-
-/** Association linking the event back to a c3 work item so a listener can correlate it. */
-export interface PrEventAssociation {
-  intentId?: string
-  /** Human-readable intent name for self-describing events; normalized server-side (redacted + truncated to 256). */
-  intentTitle?: string
-}
-
-/**
- * A vendor-neutral PR operation event, published by the model via the
- * `publish_event` MCP tool (`type: 'pr:operation'`) after it performs a PR
- * operation with its own tools. Projected off the normalized generic event by the
- * PR consumers. `errorSummary` is meaningful only when `result === 'failure'` or
- * `result === 'error'` and is safely normalized server-side (never carries
- * tokens or raw CLI output).
- */
-export interface PrOperationEvent {
-  operation: PrOperation
-  result: PrOperationResult
-  pr?: PrRef
-  repo?: PrRepo
-  ref?: PrBranchRef
-  association?: PrEventAssociation
-  errorSummary?: string
-}
-
-/** Intent lifecycle boundaries a automation may subscribe to. */
-export const INTENT_LIFECYCLE_PHASES = [
-  'created',
-  'dev_started',
-  'done',
-  'failed',
-  'cancelled',
-] as const
-export type IntentLifecyclePhase = (typeof INTENT_LIFECYCLE_PHASES)[number]
-
-/** Safe, stable context emitted at an intent lifecycle boundary. */
-export interface IntentLifecycleEvent {
-  phase: IntentLifecyclePhase
-  intentId: string
-  title: string
-  module: string | null
-  toStatus: IntentStatus
-}
-
-/**
- * Topics an event-triggered automation may subscribe to: the run lifecycle topics
- * plus the model-published `pr:operation` event (2026-06-20).
- */
-export type ScheduleEventTopic = RunLifecycleTopic | 'pr:operation' | 'intent:lifecycle'
-
-/**
- * Filter for `pr:operation` event triggers: a automation fires only when the
- * event's operation is in `operations` AND its result is in `results`. An empty
- * (or absent) list for either dimension matches any value of that dimension.
- */
-export interface PrOperationFilter {
-  operations?: PrOperation[]
-  results?: PrOperationResult[]
-}
-
-/** Optional phase filter for `intent:lifecycle`; absent or empty matches every phase. */
-export interface IntentLifecycleFilter {
-  phases?: IntentLifecyclePhase[]
-}
 
 /** One metadata condition: an event's `metadata[key]` must equal `value` (exact string match). */
 export interface EventMetadataFilterCondition {
@@ -2631,66 +2292,6 @@ export interface EventMetadataFilter {
 export const MAX_AUTOMATION_METADATA_ENTRIES = 32
 export const MAX_AUTOMATION_METADATA_KEY_LEN = 64
 export const MAX_AUTOMATION_METADATA_VALUE_LEN = 256
-
-/**
- * Sanitize free-form automation metadata to a clean `Record<string,string>`:
- * trims keys/values, drops empty-key / empty-value / non-string / over-long
- * entries, caps the total entry count. A non-object input yields `{}`. Used at
- * the protocol/server save boundary so no unexpected structure is persisted.
- */
-export function normalizeAutomationMetadata(input: unknown): Record<string, string> {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return {}
-  const out: Record<string, string> = {}
-  for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
-    if (Object.keys(out).length >= MAX_AUTOMATION_METADATA_ENTRIES) break
-    const key = typeof rawKey === 'string' ? rawKey.trim() : ''
-    if (!key || key.length > MAX_AUTOMATION_METADATA_KEY_LEN) continue
-    if (typeof rawValue !== 'string') continue
-    const value = rawValue.trim()
-    if (!value || value.length > MAX_AUTOMATION_METADATA_VALUE_LEN) continue
-    out[key] = value
-  }
-  return out
-}
-
-/**
- * Normalize an untrusted metadata-filter payload to a clean {@link EventMetadataFilter}
- * or `null` (= no filter). Drops malformed / empty / over-long conditions and caps
- * their count; an unknown combinator defaults to `AND`. Returns `null` when no
- * valid condition survives so an empty filter never gates matching.
- */
-export function normalizeEventMetadataFilter(input: unknown): EventMetadataFilter | null {
-  if (!input || typeof input !== 'object') return null
-  const obj = input as { conditions?: unknown; combinator?: unknown }
-  const combinator: 'AND' | 'OR' = obj.combinator === 'OR' ? 'OR' : 'AND'
-  const rawConditions = Array.isArray(obj.conditions) ? obj.conditions : []
-  const conditions: EventMetadataFilterCondition[] = []
-  for (const raw of rawConditions) {
-    if (conditions.length >= MAX_AUTOMATION_METADATA_ENTRIES) break
-    if (!raw || typeof raw !== 'object') continue
-    const rec = raw as { key?: unknown; value?: unknown }
-    const key = typeof rec.key === 'string' ? rec.key.trim() : ''
-    const value = typeof rec.value === 'string' ? rec.value.trim() : ''
-    if (!key || key.length > MAX_AUTOMATION_METADATA_KEY_LEN) continue
-    if (!value || value.length > MAX_AUTOMATION_METADATA_VALUE_LEN) continue
-    conditions.push({ key, value })
-  }
-  return conditions.length ? { conditions, combinator } : null
-}
-
-/**
- * Whether an event's metadata satisfies a metadata filter. A `null`/empty filter
- * matches any metadata. `AND` requires every condition to match exactly; `OR`
- * requires at least one. Comparison is exact string equality.
- */
-export function metadataFilterMatches(
-  filter: EventMetadataFilter | null | undefined,
-  metadata: Record<string, string>,
-): boolean {
-  if (!filter || !filter.conditions.length) return true
-  const hit = (c: EventMetadataFilterCondition): boolean => metadata[c.key] === c.value
-  return filter.combinator === 'OR' ? filter.conditions.some(hit) : filter.conditions.every(hit)
-}
 
 // ---- Generic event filter (Automation trigger contract, 2026-07-13) --------
 //
@@ -2728,74 +2329,18 @@ export interface GenericEventFilter {
  */
 export const RUN_LIFECYCLE_EVENT_TYPES = ['run:started', 'run:settled'] as const
 
-/** True when a filter `type` subscribes run-lifecycle events (sessionKind boundary applies). */
-export function isRunLifecycleEventType(type: string | null | undefined): boolean {
-  return type === 'run:started' || type === 'run:settled' || type === 'run:*'
-}
-
-/** True when any filter of the list subscribes run-lifecycle events. */
-export function hasRunLifecycleEventFilter(
-  filters: readonly GenericEventFilter[] | null | undefined,
-): boolean {
-  return !!filters?.some((f) => isRunLifecycleEventType(f.type))
-}
-
-// ---- Event catalog (category:action naming, 2026-07-14) ---------------------
+// ---- Event type naming (category:action, 2026-07-14) -----------------------
 //
 // Event types follow `<category>:<action>` — the category groups a domain, the
 // action names the fact that happened; `status` carries that fact's outcome and
-// `metadata` the remaining flat context. The catalog below is the single code
-// source for KNOWN categories/actions/statuses. It is a SUGGESTION registry for
-// the cascade form and docs, NOT a closed enum — the wire contract stays an open
-// string, so an unlisted `custom:thing` type publishes and subscribes fine. A
+// `metadata` the remaining flat context. The wire contract stays an OPEN string,
+// so an unlisted `custom:thing` type publishes and subscribes fine; the known
+// categories/actions/statuses are suggestions listed in `event-catalog.ts`. A
 // filter `type` of `<category>:*` subscribes every action of that category.
 // Definition catalog + naming spec live in `doc/architecture/event-mechanism.md`.
 
-/** One catalog action: its known status suggestions (empty = no status dimension). */
-export interface EventCatalogAction {
-  statuses: readonly string[]
-}
-
-/** One catalog category: its known actions. */
-export interface EventCatalogCategory {
-  actions: Readonly<Record<string, EventCatalogAction>>
-}
-
-/** Known event categories/actions/statuses — suggestions only (see note above). */
-export const EVENT_CATALOG: Readonly<Record<string, EventCatalogCategory>> = {
-  run: {
-    actions: {
-      started: { statuses: [] },
-      settled: { statuses: RUN_END_REASONS },
-    },
-  },
-  pr: {
-    actions: Object.fromEntries(
-      PR_OPERATIONS.map((op) => [op, { statuses: PR_OPERATION_RESULTS }]),
-    ),
-  },
-  intent: {
-    actions: Object.assign(
-      Object.fromEntries(INTENT_LIFECYCLE_PHASES.map((p) => [p, { statuses: [] }])),
-      { spec_approve: { statuses: [] as const } },
-    ),
-  },
-}
-
 /** The category-wildcard action segment: `<category>:*` matches every action. */
 export const EVENT_ACTION_WILDCARD = '*'
-
-/**
- * Does a filter `type` accept an event `type`? Exact match, or the filter is a
- * `<category>:*` category wildcard whose category equals the event's. Only the
- * action segment may be wildcarded — no `*:action`, prefix or regex forms.
- */
-export function eventTypeMatches(filterType: string, eventType: string): boolean {
-  if (filterType === eventType) return true
-  if (!filterType.endsWith(`:${EVENT_ACTION_WILDCARD}`)) return false
-  const category = filterType.slice(0, -2)
-  return category.length > 0 && eventType.startsWith(`${category}:`)
-}
 
 /** Upper bounds for a generic event filter — reuses the metadata hygiene bounds. */
 export const MAX_EVENT_FILTER_TYPE_LEN = MAX_AUTOMATION_METADATA_KEY_LEN
@@ -2803,176 +2348,6 @@ export const MAX_EVENT_FILTER_STATUSES = MAX_AUTOMATION_METADATA_ENTRIES
 export const MAX_EVENT_FILTER_STATUS_LEN = MAX_AUTOMATION_METADATA_VALUE_LEN
 /** Upper bound on subscription rows (filters) one event automation may carry. */
 export const MAX_EVENT_FILTERS = 16
-
-/**
- * Normalize an untrusted event-filter payload to a clean {@link GenericEventFilter}
- * or `null`. `null` means "no valid filter" — a trigger without a valid `type`
- * MUST NOT be saved as "matches every type"; the caller (server save boundary)
- * rejects the create/update instead of silently widening the trigger. `statuses`
- * is trimmed, deduplicated, capped in count/length, and dropped entirely (→
- * `undefined`, meaning "any status") when nothing valid survives.
- */
-export function normalizeGenericEventFilter(input: unknown): GenericEventFilter | null {
-  if (!input || typeof input !== 'object') return null
-  const obj = input as { type?: unknown; statuses?: unknown; metadata?: unknown }
-  const type = typeof obj.type === 'string' ? obj.type.trim() : ''
-  if (!type || type.length > MAX_EVENT_FILTER_TYPE_LEN) return null
-
-  const statuses: string[] = []
-  const seen = new Set<string>()
-  if (Array.isArray(obj.statuses)) {
-    for (const raw of obj.statuses) {
-      if (statuses.length >= MAX_EVENT_FILTER_STATUSES) break
-      const status = typeof raw === 'string' ? raw.trim() : ''
-      if (!status || status.length > MAX_EVENT_FILTER_STATUS_LEN || seen.has(status)) continue
-      seen.add(status)
-      statuses.push(status)
-    }
-  }
-
-  const filter: GenericEventFilter = { type }
-  if (statuses.length) filter.statuses = statuses
-  const metadata = normalizeEventMetadataFilter(obj.metadata)
-  if (metadata) filter.metadata = metadata
-  return filter
-}
-
-/**
- * Normalize an untrusted list of event filters to a clean non-empty array or
- * `null`. Each entry runs through {@link normalizeGenericEventFilter}; invalid
- * entries are dropped, the list is capped at {@link MAX_EVENT_FILTERS}. `null`
- * means "no valid subscription" — the save boundary rejects the event trigger
- * rather than storing an empty (match-nothing or match-everything) list.
- */
-export function normalizeGenericEventFilters(input: unknown): GenericEventFilter[] | null {
-  if (!Array.isArray(input)) return null
-  const filters: GenericEventFilter[] = []
-  for (const raw of input) {
-    if (filters.length >= MAX_EVENT_FILTERS) break
-    const filter = normalizeGenericEventFilter(raw)
-    if (filter) filters.push(filter)
-  }
-  return filters.length ? filters : null
-}
-
-/**
- * Upgrade one pre-rename single filter (the v12 shape, where the action lived in
- * `status`/`metadata` for pr/intent) to the equivalent subscription rows under
- * `<category>:<action>` types, preserving its exact hit set. Shared by the server
- * store's schema backfill and the client-side automation import (old export files
- * carry the single-filter shape):
- *
- * - `run:*` types and unknown custom types pass through as a one-row list;
- * - `pr:operation`: an `OR` metadata filter of pure `operation` conditions (the
- *   shape the old UI and migrations produced) becomes one `pr:<op>` row per
- *   operation; any other metadata shape falls back to one `pr:*` row carrying
- *   statuses + metadata verbatim — semantics-preserving, because the renamed PR
- *   events still carry `metadata.operation`;
- * - `intent:lifecycle`: each `statuses` phase becomes its own `intent:<phase>`
- *   row (the phase moved from status into the type); no statuses = any phase =
- *   one `intent:*` row. Metadata carries over.
- */
-export function upgradeV12EventFilter(filter: GenericEventFilter): GenericEventFilter[] {
-  if (filter.type === 'pr:operation') {
-    const conditions = filter.metadata?.conditions ?? []
-    const pureOperationOr =
-      conditions.length > 0 &&
-      filter.metadata?.combinator === 'OR' &&
-      conditions.every((c) => c.key === 'operation')
-    if (pureOperationOr) {
-      return conditions.map((c) => ({
-        type: `pr:${c.value}`,
-        ...(filter.statuses?.length ? { statuses: filter.statuses } : {}),
-      }))
-    }
-    const row: GenericEventFilter = { type: 'pr:*' }
-    if (filter.statuses?.length) row.statuses = filter.statuses
-    if (filter.metadata) row.metadata = filter.metadata
-    return [row]
-  }
-  if (filter.type === 'intent:lifecycle') {
-    const phases = filter.statuses ?? []
-    const base = (type: string): GenericEventFilter => ({
-      type,
-      ...(filter.metadata ? { metadata: filter.metadata } : {}),
-    })
-    return phases.length ? phases.map((p) => base(`intent:${p}`)) : [base('intent:*')]
-  }
-  return [filter]
-}
-
-/** One dimension's pass/fail in a generic event-filter match breakdown. */
-export interface GenericEventFilterBreakdownItem {
-  name: 'workspace' | 'type' | 'status' | 'metadata'
-  passed: boolean
-}
-
-/** The full result of a generic event-filter match: verdict + per-dimension breakdown. */
-export interface GenericEventFilterMatchResult {
-  matched: boolean
-  breakdown: GenericEventFilterBreakdownItem[]
-}
-
-/** The trusted minimal view a matcher reads — directly satisfied by a {@link GenericEventEnvelope}. */
-export interface GenericEventView {
-  workspacePath: string
-  event: GenericEvent
-}
-
-/**
- * Pure matcher: does `view` (an event on some workspace) satisfy `filter` for an
- * automation whose resolved workspace root is `automationWorkspacePath`? Checks,
- * in fixed order, workspace equality, `type` (exact, or the filter's
- * `<category>:*` wildcard via {@link eventTypeMatches}), `status` (absent/empty
- * `statuses` = any; else exact case-sensitive membership; an event with no
- * `status` fails a non-empty `statuses` filter), then `metadata` (exact
- * case-sensitive key/value match via {@link metadataFilterMatches}; absent/empty
- * = no filter). A `null` filter never matches (fails closed) — `type` fails and
- * `status`/`metadata` degrade to "no filter" so the breakdown stays meaningful.
- */
-export function genericEventFilterMatches(
-  automationWorkspacePath: string,
-  filter: GenericEventFilter | null,
-  view: GenericEventView,
-): GenericEventFilterMatchResult {
-  const breakdown: GenericEventFilterBreakdownItem[] = [
-    { name: 'workspace', passed: automationWorkspacePath === view.workspacePath },
-    { name: 'type', passed: !!filter && eventTypeMatches(filter.type, view.event.type) },
-    {
-      name: 'status',
-      passed:
-        !filter?.statuses?.length ||
-        (view.event.status !== undefined && filter.statuses.includes(view.event.status)),
-    },
-    {
-      name: 'metadata',
-      passed: metadataFilterMatches(filter?.metadata ?? null, view.event.metadata ?? {}),
-    },
-  ]
-  return { matched: breakdown.every((b) => b.passed), breakdown }
-}
-
-/**
- * OR wrapper over an automation's subscription rows: matched when ANY filter of
- * the list matches. The returned breakdown is the first matching filter's (on
- * success) or the last evaluated one's (on failure) so callers keep a meaningful
- * per-dimension trace; an empty/`null` list fails closed like a `null` filter.
- */
-export function genericEventFiltersMatch(
-  automationWorkspacePath: string,
-  filters: readonly GenericEventFilter[] | null | undefined,
-  view: GenericEventView,
-): GenericEventFilterMatchResult {
-  if (!filters?.length) {
-    return genericEventFilterMatches(automationWorkspacePath, null, view)
-  }
-  let last: GenericEventFilterMatchResult | null = null
-  for (const filter of filters) {
-    last = genericEventFilterMatches(automationWorkspacePath, filter, view)
-    if (last.matched) return last
-  }
-  return last as GenericEventFilterMatchResult
-}
 
 /**
  * **Business-scenario** taxonomy: WHICH agent-invocation scenario produced an

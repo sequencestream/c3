@@ -14,7 +14,6 @@
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { resolveWorkspaceRoot, pathToId } from '../../state.js'
-import { isValidAutomationMaxWallClockMs } from '@ccc/shared/protocol'
 import type {
   CodexPolicy,
   CreateAutomationInput,
@@ -30,13 +29,14 @@ import type {
   VendorId,
   WorkspaceMcpConfig,
 } from '@ccc/shared/protocol'
+import { SESSION_KINDS } from '@ccc/shared/protocol'
 import {
-  SESSION_KINDS,
-  eventTypeMatches,
   hasRunLifecycleEventFilter,
+  isValidAutomationMaxWallClockMs,
   normalizeAutomationMetadata,
   normalizeGenericEventFilters,
-} from '@ccc/shared/protocol'
+} from '@ccc/shared'
+import { eventTypeMatches } from '../../kernel/events/event-match.js'
 import { computeNextRunAt, isValidCron } from '@ccc/shared/cron'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 import { getTimezone } from '../../kernel/config/index.js'

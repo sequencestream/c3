@@ -13,7 +13,7 @@ import { serve, type ServerType } from '@hono/node-server'
 import { Hono } from 'hono'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import type { GenericEventEnvelope } from '@ccc/shared/protocol'
+import type { GenericEventEnvelope } from '@ccc/shared'
 import {
   createEventMcp,
   EVENT_MCP_PATH,

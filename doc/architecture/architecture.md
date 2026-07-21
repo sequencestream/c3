@@ -79,7 +79,8 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
 | 结果格式化             | 把工具结果内容摊平为展示字符串                                                                                                                                                               |
 | Intent ledger          | SQLite ledger、只读通信 agent、intent-save 工具（ADR 0007）                                                                                                                                  |
 | 静态内嵌               | 生成并内联的 web bundle                                                                                                                                                                      |
-| Wire 协议              | client→server / server→client 消息联合类型，以及工作区/会话类型                                                                                                                              |
+| Wire 协议              | client→server / server→client 消息联合类型，以及工作区/会话类型；只有类型/联合类型/常量，无运行时实现                                                                                        |
+| 共享领域 helper        | `shared/src/` 下按领域拆分的双端纯函数模块（agent 引用与默认回退、图片媒体守卫、automation 清洗、事件过滤器归一化/升级、事件模型与事件目录），经 `@ccc/shared` barrel 导出                   |
 | WS client              | 浏览器 WebSocket 包装器                                                                                                                                                                      |
 | UI shell               | 拥有 WS client、入站消息处理器与所有共享状态；按 tab 分发给各 page container                                                                                                                 |
 | Pages                  | 逐页面 container（works / intents / discussions / automations / systemsettings）加上私有组件                                                                                                 |

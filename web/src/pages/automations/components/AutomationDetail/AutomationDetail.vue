@@ -14,7 +14,7 @@
 import { computed } from 'vue'
 import { describeCron } from '@ccc/shared/cron'
 import type { AgentConfig, Automation, SessionKind, ToolManifestEntry } from '@ccc/shared/protocol'
-import { hasRunLifecycleEventFilter } from '@ccc/shared/protocol'
+import { hasRunLifecycleEventFilter } from '@ccc/shared'
 import { VENDOR_LABEL, VENDOR_COLOR } from '@/lib/vendor'
 import { useTypedI18n } from '@/i18n'
 

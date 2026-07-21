@@ -67,12 +67,8 @@ import {
   type SessionLaunchDeps,
   type SessionLaunchResult,
 } from '../intents/session-launcher.js'
-import type {
-  Discussion,
-  DiscussionMessage,
-  GenericEvent,
-  GenericEventEnvelope,
-} from '@ccc/shared/protocol'
+import type { Discussion, DiscussionMessage } from '@ccc/shared/protocol'
+import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 
 /** Composition-root callbacks the automation c3 tool handlers need at dispatch time. */

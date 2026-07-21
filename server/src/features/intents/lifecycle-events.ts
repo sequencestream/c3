@@ -1,4 +1,5 @@
-import type { Intent, IntentLifecyclePhase, IntentStatus } from '@ccc/shared/protocol'
+import type { Intent, IntentStatus } from '@ccc/shared/protocol'
+import type { IntentLifecyclePhase } from '@ccc/shared'
 import type { EventBus, EventBusEvents } from '../../kernel/events/event-bus.js'
 
 let eventBus: EventBus<EventBusEvents> | null = null

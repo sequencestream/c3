@@ -26,7 +26,7 @@ vi.mock('../../kernel/config/index.js', () => ({
 vi.mock('./dispatcher.js', () => ({ execute: vi.fn(async () => {}) }))
 
 import type { Automation } from '@ccc/shared/protocol'
-import { eventTypeMatches } from '@ccc/shared/protocol'
+import { eventTypeMatches } from '../../kernel/events/event-match.js'
 import { execute } from './dispatcher.js'
 import {
   cancelInFlight,

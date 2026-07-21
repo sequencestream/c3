@@ -42,7 +42,7 @@
 
 ## 影响
 
-- **模式 (`shared/src/protocol.ts`)**: 新增 `EVENT_CATALOG`、`eventTypeMatches`、`upgradeV12EventFilter`。
+- **模式**: 新增 `EVENT_CATALOG`（`shared/src/event-catalog.ts`）、`eventTypeMatches`（`server/src/kernel/events/event-match.ts`）、`upgradeV12EventFilter`（`shared/src/event-filter-model.ts`）。
 - **服务端**: PR 归一化器注册 6 个 type + 别名；run/intent 桥投影改写。
 - **数据库**: v13 新增 `event_filters` 列 + 幂等回填。
 - **前端**: 级联表单替换旧 ChoiceInput；导入/导出兼容三种格式。

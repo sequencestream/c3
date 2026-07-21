@@ -22,12 +22,12 @@ import type { CanUseTool } from '@anthropic-ai/claude-agent-sdk'
 import type {
   AgentConfig,
   CodexPolicy,
-  GenericEvent,
   ModeToken,
   Automation,
   SessionKind,
   VendorId,
 } from '@ccc/shared/protocol'
+import type { GenericEvent } from '@ccc/shared'
 import { resolveWorkspaceRoot } from '../../state.js'
 import {
   bindClaudeRelay,

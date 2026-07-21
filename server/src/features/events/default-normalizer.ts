@@ -12,7 +12,7 @@
  * No field is required and none is dropped for being unknown — the whole point of the
  * default path is to carry an arbitrary custom shape without a fixed schema.
  */
-import type { GenericEvent, JsonObject, JsonValue } from '@ccc/shared/protocol'
+import type { GenericEvent, JsonObject, JsonValue } from '@ccc/shared'
 import type { EventNormalizer } from '../../kernel/events/generic-event.js'
 import { redactSecrets } from '../pr-events/tool-defs.js'
 

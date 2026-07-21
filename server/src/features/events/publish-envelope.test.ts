@@ -13,7 +13,7 @@
  * data, normalizer throws) live in tool-defs.test.ts and are not repeated here.
  */
 import { describe, expect, it } from 'vitest'
-import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared/protocol'
+import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import { runPublishEvent, type PublishEventArgs } from './tool-defs.js'
 import {

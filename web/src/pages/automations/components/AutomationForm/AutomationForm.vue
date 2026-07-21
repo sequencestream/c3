@@ -20,10 +20,10 @@
 import { ref, computed, watch } from 'vue'
 import {
   AUTOMATION_NETWORK_ACCESS_TOOL,
-  isValidAutomationMaxWallClockMs,
   MAX_AUTOMATION_MAX_WALL_CLOCK_MS,
   MIN_AUTOMATION_MAX_WALL_CLOCK_MS,
 } from '@ccc/shared/protocol'
+import { isValidAutomationMaxWallClockMs } from '@ccc/shared'
 import type {
   CodexApprovalPolicy,
   CodexPolicy,
@@ -42,7 +42,8 @@ import type {
   VendorHostStatus,
   VendorId,
 } from '@ccc/shared/protocol'
-import { EVENT_CATALOG, SESSION_KINDS, isRunLifecycleEventType } from '@ccc/shared/protocol'
+import { SESSION_KINDS } from '@ccc/shared/protocol'
+import { EVENT_CATALOG, isRunLifecycleEventType } from '@ccc/shared'
 import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
 import { VENDOR_LABEL } from '@/lib/vendor'
 import { groupAgentsOfVendor } from '@/lib/group-agents'

@@ -18,12 +18,8 @@
  *   genuinely cross-feature services remain on the context (the hard rule:
  *   transport-shared / cross-feature → context; feature-private → feature store).
  */
-import type {
-  WorkflowStatus,
-  Discussion,
-  DiscussionMessage,
-  GenericEvent,
-} from '@ccc/shared/protocol'
+import type { WorkflowStatus, Discussion, DiscussionMessage } from '@ccc/shared/protocol'
+import type { GenericEvent } from '@ccc/shared'
 import type { SessionRuntime } from '../runs.js'
 import { EventBus, type EventBusEvents } from './events/event-bus.js'
 import type { NormalizeResult } from './events/generic-event.js'

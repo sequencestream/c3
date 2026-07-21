@@ -19,7 +19,8 @@
  * cross-workspace intentId, non-success or non-update operation — are silently
  * ignored (the publish itself already succeeded, so there is nothing to error on).
  */
-import type { GenericEventEnvelope, IntentPrStatus } from '@ccc/shared/protocol'
+import type { IntentPrStatus } from '@ccc/shared/protocol'
+import type { GenericEventEnvelope } from '@ccc/shared'
 import { projectPrOperationEvent } from '../pr-events/tool-defs.js'
 
 /** PR statuses that an `update/success` event may reset back to `reviewing`. */

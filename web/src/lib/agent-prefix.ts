@@ -9,7 +9,7 @@
  * 查找在降级链中的位置,让状态栏显示 session 实际绑定的 agent 名。
  */
 import type { SystemSettings } from '@ccc/shared/protocol'
-import { isGroupAgentRef, parseGroupAgentRef } from '@ccc/shared/protocol'
+import { isGroupAgentRef, parseGroupAgentRef } from '@ccc/shared'
 
 /**
  * 服务端尝试顺序的客户端复刻:链头是 session 绑定的 agent(`anchorAgentId`,缺省或

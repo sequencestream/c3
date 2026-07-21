@@ -14,7 +14,8 @@ import type {
   SessionKind,
   TranscriptItem,
 } from '@ccc/shared/protocol'
-import { PENDING_SESSION_PREFIX, isImageMediaType } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
+import { isImageMediaType } from '@ccc/shared'
 import {
   addViewer,
   emit,

@@ -19,29 +19,24 @@ import type {
   CreateAutomationInput,
   EventMetadataFilterCondition,
   GenericEventFilter,
-  IntentLifecyclePhase,
   ModeToken,
   CodexPolicy,
-  PrOperation,
-  PrOperationResult,
   RunEndReason,
   ScheduleTriggerType,
   SessionKind,
   VendorId,
 } from '@ccc/shared/protocol'
+import type { IntentLifecyclePhase, PrOperation, PrOperationResult } from '@ccc/shared'
+import { RUN_END_REASONS, SESSION_KINDS } from '@ccc/shared/protocol'
+import { INTENT_LIFECYCLE_PHASES, PR_OPERATIONS, PR_OPERATION_RESULTS } from '@ccc/shared'
 import {
-  INTENT_LIFECYCLE_PHASES,
-  PR_OPERATIONS,
-  PR_OPERATION_RESULTS,
-  RUN_END_REASONS,
-  SESSION_KINDS,
   hasRunLifecycleEventFilter,
   isValidAutomationMaxWallClockMs,
   normalizeAutomationMetadata,
   normalizeGenericEventFilter,
   normalizeGenericEventFilters,
   upgradeV12EventFilter,
-} from '@ccc/shared/protocol'
+} from '@ccc/shared'
 
 /** Current export file contract. `version` is validated with a strict `=== 1`. */
 export const AUTOMATION_EXPORT_VERSION = 1

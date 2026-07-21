@@ -146,7 +146,13 @@ export function installMessageHandler(ctx: AppCtx): void {
     pendingDeepLink,
     deepLinkFulfilled,
     deepLinkTimers,
+    settingsOpen,
   } = ctx
+
+  // 首屏引导的一次性守卫:只有本处理器收到的**第一条** settings 才参与判定。
+  // 保存在客户端内存里,不持久化 —— 重连、切换工作空间、保存设置都不会再次弹窗,
+  // 整页刷新则视为新会话重新判定一次。
+  let firstSettingsEvaluated = false
 
   // Find a loaded session-list row by id across all workspace/kind buckets. The
   // list rows carry reliable `sessionKind/ownerKind/ownerId` (unlike the
@@ -627,6 +633,13 @@ export function installMessageHandler(ctx: AppCtx): void {
         if (msg.settings.uiLang && msg.settings.uiLang !== i18n.global.locale.value) {
           applyLocale(msg.settings.uiLang)
           setStoredLocale(msg.settings.uiLang)
+        }
+        // 冷启动引导:首个快照里若没有任何真实(非 system 回退)agent,直接打开
+        // 系统设置 —— SettingsPanel 自身默认落在 Agent Tab,这里不引入额外的 Tab 状态。
+        if (!firstSettingsEvaluated) {
+          firstSettingsEvaluated = true
+          const configured = msg.settings.agents.some((agent) => agent.id !== SYSTEM_AGENT_ID)
+          if (!configured) settingsOpen.value = true
         }
         break
       case 'skill_link_status':

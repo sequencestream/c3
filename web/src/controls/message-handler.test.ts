@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { ref, computed } from 'vue'
 import {
   PENDING_SESSION_PREFIX,
+  SYSTEM_AGENT_ID,
   type Discussion,
   type ResearchMessage,
   type ServerToClient,
@@ -73,7 +74,25 @@ function makeCtx() {
     latestVersion: null,
     checkedAt: null,
   })
+  // `settings` 分支写入的其余快照 refs —— 测试只断言 settingsOpen,其余仅为避免
+  // 处理器写入 undefined 而抛错。
+  const settingsOpen = ref(false)
+  const hostStatus = ref<unknown>(null)
+  const sandboxStatus = ref<unknown>(null)
+  const bindingStats = ref<unknown>(null)
+  const sessionCapabilities = ref<unknown>(null)
+  const vendorCapabilities = ref<unknown>(null)
+  const vendorModes = ref<unknown>(null)
+  const skillSupport = ref<unknown>(null)
   const ctx = {
+    settingsOpen,
+    hostStatus,
+    sandboxStatus,
+    bindingStats,
+    sessionCapabilities,
+    vendorCapabilities,
+    vendorModes,
+    skillSupport,
     toast,
     intentActionError,
     intentActionErrorSeq,
@@ -134,6 +153,7 @@ function makeCtx() {
     automationSettingBeforeSave,
     researchMessages,
     researchMaxSeq,
+    settingsOpen,
   }
 }
 
@@ -1073,5 +1093,58 @@ describe('automation workspace-gate snapshot (workspace_setting routing)', () =>
     expect(r.automationEnabledSaving.value).toBe(false)
     expect(r.automationSettingBeforeSave.value).toBeNull()
     expect(r.automationWorkspaceSetting.value?.automationEnabled).toBe(true)
+  })
+})
+
+// 冷启动引导:首个 settings 快照没有真实 agent 时自动打开系统设置。
+function settingsMsg(agentIds: string[]): ServerToClient {
+  return {
+    type: 'settings',
+    settings: { agents: agentIds.map((id) => ({ id, name: id })) },
+    hostStatus: [],
+    bindingStats: {},
+    sessionCapabilities: {},
+  } as unknown as ServerToClient
+}
+
+describe('auto-open settings when no agent is configured', () => {
+  it('opens on a first snapshot with an empty agent list', () => {
+    const r = makeCtx()
+    r.ctx.handleMessage(settingsMsg([]))
+    expect(r.settingsOpen.value).toBe(true)
+  })
+
+  it('opens on a first snapshot holding only the system fallback agent', () => {
+    const r = makeCtx()
+    r.ctx.handleMessage(settingsMsg([SYSTEM_AGENT_ID]))
+    expect(r.settingsOpen.value).toBe(true)
+  })
+
+  it('stays closed when any non-system agent is present, whatever the ordering', () => {
+    const r = makeCtx()
+    r.ctx.handleMessage(settingsMsg([SYSTEM_AGENT_ID, 'agent-1']))
+    expect(r.settingsOpen.value).toBe(false)
+
+    const r2 = makeCtx()
+    r2.ctx.handleMessage(settingsMsg(['agent-1', SYSTEM_AGENT_ID]))
+    expect(r2.settingsOpen.value).toBe(false)
+  })
+
+  it('does not re-open after the user closes the dialog, even on repeated unconfigured pushes', () => {
+    const r = makeCtx()
+    r.ctx.handleMessage(settingsMsg([]))
+    expect(r.settingsOpen.value).toBe(true)
+    // 用户关闭弹窗;随后的重连 / 刷新式重复推送不得再次弹出。
+    r.settingsOpen.value = false
+    r.ctx.handleMessage(settingsMsg([]))
+    r.ctx.handleMessage(settingsMsg([SYSTEM_AGENT_ID]))
+    expect(r.settingsOpen.value).toBe(false)
+  })
+
+  it('never opens when the first snapshot was configured, even if a later one is not', () => {
+    const r = makeCtx()
+    r.ctx.handleMessage(settingsMsg(['agent-1']))
+    r.ctx.handleMessage(settingsMsg([]))
+    expect(r.settingsOpen.value).toBe(false)
   })
 })

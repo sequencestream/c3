@@ -25,7 +25,9 @@ import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 import { listGroupAgents } from '@/lib/group-agents'
 import { useAuth } from '@/composables/useAuth'
+import { deepCopy, useTabbedDraftSave } from '@/composables/useTabbedDraftSave'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
+import TabNav from '@/components/TabNav/TabNav.vue'
 import EmojiPicker from './EmojiPicker.vue'
 
 const { t } = useTypedI18n()
@@ -108,47 +110,8 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
   security: ['auth'],
   general: ['uiLang', 'voiceLang', 'timezone', 'baseUrl', 'showToolSessions'],
 }
-const activeTab = ref<SettingsTab>('agent')
 function tabLabel(tab: SettingsTab): string {
   return t(`settings.tabs.${tab}.label` as 'settings.tabs.agent.label')
-}
-
-// The tab whose Save was just emitted and whose server-normalized echo is awaited;
-// on the next settings pushback that tab's draft is reset to the returned values
-// (clean), while other dirty tabs keep their drafts. Cleared on each reconcile.
-const pendingSaveTab = ref<SettingsTab | null>(null)
-// A requested-but-unconfirmed tab switch away from a dirty tab (drives the confirm
-// dialog). Null when no confirmation is pending.
-const pendingTabSwitch = ref<SettingsTab | null>(null)
-
-// A JSON deep clone that preserves the static type of its argument (the agent
-// discriminated union survives, unlike a shallow spread). Used for both seeding
-// and for building an isolated save payload; tolerant of Vue reactive proxies.
-function deepCopy<T>(v: T): T {
-  // `JSON.stringify(undefined)` yields `undefined` (not a string), which
-  // `JSON.parse` chokes on — so pass an absent field straight through.
-  if (v === undefined) return undefined as T
-  return JSON.parse(JSON.stringify(v)) as T
-}
-// Structural value equality for dirty detection. Reads properties directly, which
-// unwraps Vue reactive proxies, so a draft slice can be compared to its baseline.
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
-  const aArr = Array.isArray(a)
-  if (aArr !== Array.isArray(b)) return false
-  if (aArr) {
-    const aa = a as unknown[]
-    const bb = b as unknown[]
-    if (aa.length !== bb.length) return false
-    return aa.every((v, i) => deepEqual(v, bb[i]))
-  }
-  const ao = a as Record<string, unknown>
-  const bo = b as Record<string, unknown>
-  const ak = Object.keys(ao)
-  const bk = Object.keys(bo)
-  if (ak.length !== bk.length) return false
-  return ak.every((k) => k in bo && deepEqual(ao[k], bo[k]))
 }
 
 // Host-CLI diagnostics rows, in canonical vendor order, each with its brand
@@ -236,12 +199,37 @@ function emptySettings(): SystemSettings {
   }
 }
 
-// A local, editable copy of the server settings — the tab controls bind to this.
-// Per-tab slices are compared against `committed` to derive dirty state.
-const draft = ref<SystemSettings>(emptySettings())
-// The authoritative last-committed server snapshot. Save payloads are built from
-// this (so pass-through fields survive), and it is the baseline for dirty checks.
-const committed = ref<SystemSettings>(emptySettings())
+// The shared Tab-grouped draft/save state machine: `draft` is the editable copy the
+// tab controls bind to, `committed` the authoritative last-committed server snapshot
+// that save payloads are built from (so pass-through fields survive) and dirty is
+// measured against. Only the system-settings specifics enter here as options — the
+// per-tab payload transforms (buildTabPayload), the admin gate and the
+// immediate-persist sync for a protected dirty tab.
+const {
+  draft,
+  committed,
+  activeTab,
+  pendingSaveTab,
+  pendingTabSwitch,
+  tabDirtyMap,
+  seedAll,
+  reconcile,
+  requestTab,
+  confirmTabSwitch,
+  cancelTabSwitch,
+  saveTab,
+} = useTabbedDraftSave<SettingsTab, SystemSettings>({
+  tabs: TABS,
+  tabFields: TAB_FIELDS,
+  initialTab: 'agent',
+  initial: emptySettings,
+  buildPayload: buildTabPayload,
+  // Non-admins cannot mutate system config (ADR-0023 authz). Every Save button is
+  // disabled, but guard the handler too so no path emits a doomed save.
+  canSave: () => isAdmin.value,
+  syncProtectedTab: syncImmediateFields,
+  onSave: (payload) => emit('save', payload),
+})
 
 // 系统时区可选项：全量 IANA 列表（Intl.supportedValuesOf 受支持时），否则退化为
 // 只含浏览器时区的单项。服务端会再校验并在非法时回退到服务器本地时区。
@@ -335,21 +323,11 @@ function buildSeed(settings: SystemSettings): SystemSettings {
   }
 }
 
-// Overwrite a target's fields owned by `tab` with deep copies from `src` (used to
-// (re)seed a tab that is clean or was just saved).
-function applyTabFields(target: SystemSettings, src: SystemSettings, tab: SettingsTab): void {
-  const t = target as unknown as Record<string, unknown>
-  const s = src as unknown as Record<string, unknown>
-  for (const f of TAB_FIELDS[tab]) {
-    t[f] = deepCopy(s[f])
-  }
-}
-
 // Sync only the immediate-persist sub-fields of a (dirty, protected) tab from
-// `src`: the UI language (General) and the basic-account list + admin designation
+// `seed`: the UI language (General) and the basic-account list + admin designation
 // (Security). These are persisted by dedicated paths that do not wait for a tab's
 // Save, so they must reflect the server even while the rest of the tab stays dirty.
-function syncImmediateFields(target: SystemSettings, src: SystemSettings, tab: SettingsTab): void {
+function syncImmediateFields(tab: SettingsTab, target: SystemSettings, src: SystemSettings): void {
   if (tab === 'general') {
     target.uiLang = src.uiLang
   } else if (tab === 'security') {
@@ -360,65 +338,23 @@ function syncImmediateFields(target: SystemSettings, src: SystemSettings, tab: S
   }
 }
 
-// Reconcile a settings pushback that arrives while the panel is open. The just-
-// saved tab and every clean tab are reseeded from the server; dirty tabs keep
-// their drafts (only their immediate-persist sub-fields sync). Never rebuilds the
-// whole draft — that would clobber unsaved work across tabs.
-function reconcile(seed: SystemSettings): void {
-  const prev = committed.value
-  const wasDirty: Record<SettingsTab, boolean> = {
-    agent: tabDirtyAgainst('agent', prev),
-    runtime: tabDirtyAgainst('runtime', prev),
-    security: tabDirtyAgainst('security', prev),
-    general: tabDirtyAgainst('general', prev),
-  }
-  committed.value = seed
-  const saved = pendingSaveTab.value
-  pendingSaveTab.value = null
-  for (const tab of TABS) {
-    if (tab === saved || !wasDirty[tab]) {
-      applyTabFields(draft.value, seed, tab)
-    } else {
-      syncImmediateFields(draft.value, seed, tab)
-    }
-  }
-  syncProxyRef()
-}
-
 // Re-seed on open, then reconcile field-by-field on every later server pushback.
+// The shared layer owns the merge rules; the panel only supplies the canonical seed
+// and re-mirrors `proxyCfg`, whose form binding lives outside the draft.
 watch(
   () => [props.open, props.settings] as const,
   ([open, settings], prev) => {
     if (!open || !settings) return
     const seed = buildSeed(settings)
     const prevOpen = prev?.[0] ?? false
-    if (!prevOpen) {
-      // First open (or reopen): whole-draft seed from the server snapshot.
-      committed.value = seed
-      draft.value = deepCopy(seed)
-      pendingSaveTab.value = null
-      syncProxyRef()
-      return
-    }
-    // Pushback while open: merge by field ownership to protect unsaved drafts.
-    reconcile(seed)
+    // First open (or reopen): whole-draft seed. Otherwise a pushback while open,
+    // merged by field ownership so unsaved drafts survive.
+    if (!prevOpen) seedAll(seed)
+    else reconcile(seed)
+    syncProxyRef()
   },
   { immediate: true },
 )
-
-// Whether a tab's draft slice differs from a given baseline snapshot.
-function tabDirtyAgainst(tab: SettingsTab, baseline: SystemSettings): boolean {
-  const d = draft.value as unknown as Record<string, unknown>
-  const b = baseline as unknown as Record<string, unknown>
-  return TAB_FIELDS[tab].some((f) => !deepEqual(d[f], b[f]))
-}
-// Reactive per-tab dirty flags (draft vs the current committed snapshot).
-const tabDirtyMap = computed<Record<SettingsTab, boolean>>(() => ({
-  agent: tabDirtyAgainst('agent', committed.value),
-  runtime: tabDirtyAgainst('runtime', committed.value),
-  security: tabDirtyAgainst('security', committed.value),
-  general: tabDirtyAgainst('general', committed.value),
-}))
 
 // The agent-type (vendor) options and the per-agent config-source options
 // (2026-06-06-007). Vendor decides which client launches; configMode decides
@@ -657,45 +593,45 @@ function onAgentDragEnd(): void {
   dragOverIndex.value = null
 }
 
-// Build a full SystemSettings for a single tab's Save: start from a deep copy of
-// the latest committed snapshot (so pass-through fields survive), overlay ONLY the
-// current tab's whitelist fields from the draft, applying that tab's transforms to
-// the payload copy alone (never writing back into the drafts). Emitting the full
-// object keeps the `save_settings` protocol unchanged; the tab boundary is enforced
-// purely by which fields we overlay.
-function saveTab(tab: SettingsTab): void {
-  // Non-admins cannot mutate system config (ADR-0023 authz). Every Save button is
-  // disabled, but guard the handler too so no path emits a doomed save.
-  if (!isAdmin.value) return
-  const payload = deepCopy(committed.value)
+// Build a full SystemSettings for a single tab's Save: `payload` arrives as a deep
+// copy of the latest committed snapshot (so pass-through fields survive), and this
+// overlays ONLY the current tab's whitelist fields from the draft, applying that
+// tab's transforms to the payload copy alone (never writing back into the drafts).
+// Emitting the full object keeps the `save_settings` protocol unchanged; the tab
+// boundary is enforced purely by which fields we overlay.
+function buildTabPayload(
+  tab: SettingsTab,
+  payload: SystemSettings,
+  src: SystemSettings,
+): SystemSettings {
   switch (tab) {
     case 'agent': {
       // Stamp the user-controlled order onto every agent from its array position so
       // a drag-reorder (or add / copy / remove) persists; the server regularizes it.
-      const agents = draft.value.agents.map((a, i) => ({
+      const agents = src.agents.map((a, i) => ({
         ...structuredClone(toRaw(a)),
         order_seq: i,
       }))
       payload.agents = agents
-      payload.defaultAgentId = draft.value.defaultAgentId
-      payload.toolAgentId = draft.value.toolAgentId
-      payload.intentAgentId = draft.value.intentAgentId
-      payload.specAgentId = draft.value.specAgentId
-      payload.automationAgentId = draft.value.automationAgentId
-      payload.sandboxDefaultAgentId = draft.value.sandboxDefaultAgentId
-      payload.sandboxToolAgentId = draft.value.sandboxToolAgentId
-      payload.sandboxIntentAgentId = draft.value.sandboxIntentAgentId
-      payload.sandboxSpecAgentId = draft.value.sandboxSpecAgentId
-      payload.sandboxAutomationAgentId = draft.value.sandboxAutomationAgentId
+      payload.defaultAgentId = src.defaultAgentId
+      payload.toolAgentId = src.toolAgentId
+      payload.intentAgentId = src.intentAgentId
+      payload.specAgentId = src.specAgentId
+      payload.automationAgentId = src.automationAgentId
+      payload.sandboxDefaultAgentId = src.sandboxDefaultAgentId
+      payload.sandboxToolAgentId = src.sandboxToolAgentId
+      payload.sandboxIntentAgentId = src.sandboxIntentAgentId
+      payload.sandboxSpecAgentId = src.sandboxSpecAgentId
+      payload.sandboxAutomationAgentId = src.sandboxAutomationAgentId
       break
     }
     case 'runtime': {
-      payload.vendorCliVersions = { ...(draft.value.vendorCliVersions ?? {}) }
+      payload.vendorCliVersions = { ...(src.vendorCliVersions ?? {}) }
       payload.proxy = { ...proxyCfg.value }
       break
     }
     case 'security': {
-      const auth = draft.value.auth ? deepCopy(draft.value.auth) : undefined
+      const auth = src.auth ? deepCopy(src.auth) : undefined
       // Derive the auth master switch from the chosen provider: `none` ⇒ off,
       // `basic` ⇒ on only once an admin is configured. The server's `normalizeAuth`
       // re-pins `none ⇒ false` as defence-in-depth.
@@ -704,36 +640,15 @@ function saveTab(tab: SettingsTab): void {
       break
     }
     case 'general': {
-      payload.uiLang = draft.value.uiLang
-      payload.voiceLang = draft.value.voiceLang
-      payload.timezone = draft.value.timezone
-      payload.baseUrl = draft.value.baseUrl
-      payload.showToolSessions = draft.value.showToolSessions
+      payload.uiLang = src.uiLang
+      payload.voiceLang = src.voiceLang
+      payload.timezone = src.timezone
+      payload.baseUrl = src.baseUrl
+      payload.showToolSessions = src.showToolSessions
       break
     }
   }
-  pendingSaveTab.value = tab
-  emit('save', payload)
-}
-
-// ---- Tab navigation with dirty-guard confirmation -------------------------
-// Switch immediately if the current tab is clean; otherwise open a confirm. On
-// confirm we ONLY change tabs — the leaving tab's draft is neither saved nor
-// discarded, so returning to it shows the same unsaved edits.
-function requestTab(tab: SettingsTab): void {
-  if (tab === activeTab.value) return
-  if (tabDirtyMap.value[activeTab.value]) {
-    pendingTabSwitch.value = tab
-  } else {
-    activeTab.value = tab
-  }
-}
-function confirmTabSwitch(): void {
-  if (pendingTabSwitch.value) activeTab.value = pendingTabSwitch.value
-  pendingTabSwitch.value = null
-}
-function cancelTabSwitch(): void {
-  pendingTabSwitch.value = null
+  return payload
 }
 
 // Live-switch the UI language on select change (App applies + persists + pushes
@@ -947,30 +862,17 @@ function selectAdmin(username: string) {
       {{ t('settings.readOnlyNotice.text') }}
     </p>
 
-    <!-- Tab navigation. Horizontally scrollable on mobile; a dot marks a tab whose
-         draft has unsaved changes. Requesting a switch away from a dirty tab opens
-         the confirm dialog (see requestTab). -->
-    <nav class="settings-tabs" role="tablist" data-testid="settings-tabs">
-      <button
-        v-for="tab in TABS"
-        :key="tab"
-        class="settings-tab"
-        :class="{ active: activeTab === tab }"
-        role="tab"
-        :aria-selected="activeTab === tab"
-        :data-testid="`settings-tab-btn-${tab}`"
-        @click="requestTab(tab)"
-      >
-        <span>{{ tabLabel(tab) }}</span>
-        <span
-          v-if="tabDirtyMap[tab]"
-          class="settings-tab-dot"
-          :data-testid="`settings-tab-dirty-${tab}`"
-          :title="t('settings.tabs.unsaved.label')"
-          >●</span
-        >
-      </button>
-    </nav>
+    <!-- Tab navigation (shared with the workspace-setting page). Requesting a switch
+         away from a dirty tab opens the confirm dialog (see requestTab). -->
+    <TabNav
+      :tabs="TABS"
+      :active-tab="activeTab"
+      :dirty-map="tabDirtyMap"
+      :tab-label="tabLabel"
+      prefix="settings"
+      :dirty-title="t('settings.tabs.unsaved.label')"
+      @select="requestTab"
+    />
 
     <div class="settings-body">
       <!-- ============ Agent tab ============ -->

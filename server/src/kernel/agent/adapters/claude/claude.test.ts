@@ -5,8 +5,10 @@
  * translation seam ({@link ClaudeStreamTranslator}), which IS `messages()`'s core.
  */
 import { describe, it, expect } from 'vitest'
+import type { PermissionMode as SdkPermissionMode } from '@anthropic-ai/claude-agent-sdk'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import type { ActionMode, PolicyContext, ToolGate } from '../types.js'
+import { claudeModeCatalog } from './modes.js'
 import { claudeCapabilities } from './capabilities.js'
 import { ClaudeApprovalBridge } from './approval.js'
 import { claudePolicy } from './policy.js'
@@ -68,6 +70,35 @@ describe('permission-map (PermissionMode ⇄ neutral grid)', () => {
     expect(toPermissionMode('build', 'on-sensitive')).toBe('default')
     // always-ask has no Claude peer ⇒ nearest is default.
     expect(toPermissionMode('build', 'always-ask')).toBe('default')
+  })
+
+  // The SDK rejects unrecognised permission modes outright instead of silently
+  // accepting them, so every token c3 can hand to `query({ permissionMode })` or
+  // `setPermissionMode()` must be a member of the SDK's own union. The
+  // `satisfies` below is the real guard: it fails `pnpm typecheck` the moment an
+  // SDK upgrade drops or renames one of our five tokens.
+  it('only ever produces modes the SDK accepts, across the whole neutral grid', () => {
+    const actionModes: ActionMode[] = ['plan', 'build']
+    const toolGates: ToolGate[] = ['always-ask', 'on-sensitive', 'trusted-prefix', 'never-ask']
+
+    const catalogTokens = claudeModeCatalog.modes.map((m) => m.token)
+    expect(catalogTokens).toEqual([
+      'default',
+      'auto',
+      'plan',
+      'acceptEdits',
+      'bypassPermissions',
+    ] satisfies SdkPermissionMode[])
+    // The catalog's neutral `defaultToken` is a plain string, so its membership
+    // is checked at runtime against the list the `satisfies` above pins.
+    expect(catalogTokens).toContain(claudeModeCatalog.defaultToken)
+
+    for (const actionMode of actionModes) {
+      for (const toolGate of toolGates) {
+        const token: SdkPermissionMode = toPermissionMode(actionMode, toolGate)
+        expect(catalogTokens).toContain(token)
+      }
+    }
   })
 })
 

@@ -1,7 +1,8 @@
 /**
  * Control-layer wiring for the post-Start-Dev jump: a `ready` close arms a ~1s
- * delayed jump that flips to the console tab and selects the intent's new work
- * session; `failed` / `timeout` arm nothing. Pairs with the pure decisions in
+ * delayed jump that stays on the intents page — it binds the intent's new work
+ * session as the active session and requests the 工作会话 sub-tab; `failed` /
+ * `timeout` arm nothing. Pairs with the pure decisions in
  * `lib/work-session-jump.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -45,11 +46,13 @@ function makeCtx(opts: {
     if (kind === 'work') currentSessions.value = opts.workSessions ?? opts.sessions ?? []
   })
   const refreshSessions = vi.fn()
+  const selectWorkSession = vi.fn()
   const showToast = vi.fn()
   const clearDevLaunchTimers = vi.fn()
   const currentWorkspace = ref<string | null>(WS)
   const intents = ref<Record<string, Intent[]>>({ [WS]: opts.intents ?? [] })
   const requestedWorkSessionId = ref<PendingWorkSessionSelectRequest | null>(null)
+  const requestedIntentSubTab = ref<'intentSession' | 'specSession' | 'workSession' | null>(null)
   const devLaunch = ref(beginDevLaunch('i-1', 0))
   const devLaunchTimers: {
     dwell: ReturnType<typeof setTimeout> | null
@@ -67,6 +70,7 @@ function makeCtx(opts: {
     currentIntents: computed(() => intents.value[WS] ?? []),
     currentSessions,
     requestedWorkSessionId,
+    requestedIntentSubTab,
     activeSessionKind,
     devLaunch,
     intentPrSync: ref({}),
@@ -76,6 +80,7 @@ function makeCtx(opts: {
     enterConsole,
     selectSessionKind,
     selectSession,
+    selectWorkSession,
     refreshSessions,
   } as unknown as AppCtx
   installIntentActions(ctx)
@@ -83,13 +88,16 @@ function makeCtx(opts: {
     ctx,
     enterConsole,
     selectSession,
+    selectWorkSession,
     refreshSessions,
     showToast,
     requestedWorkSessionId,
+    requestedIntentSubTab,
     activeSessionKind,
     selectSessionKind,
     devLaunchTimers,
     intents,
+    currentWorkspace,
     currentSessions,
   }
 }
@@ -98,123 +106,90 @@ describe('post-Start-Dev jump wiring', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
-  it('`ready` close arms a ~1s jump that selects the already-loaded target session', () => {
+  it('`ready` close arms a ~1s jump that binds the work session and requests its sub-tab', () => {
     const h = makeCtx({ intents: [intent('i-1', 'dev-1')], sessions: [session('dev-1')] })
     // Dwell already elapsed (visibleAt=0) → the ready close resolves immediately.
     h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
-    expect(h.selectSession).not.toHaveBeenCalled() // still inside the buffer
-    vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
-    expect(h.enterConsole).toHaveBeenCalledOnce()
-    expect(h.selectSession).toHaveBeenCalledWith(WS, 'dev-1')
-    expect(h.requestedWorkSessionId.value).toBeNull()
-  })
+    expect(h.selectWorkSession).not.toHaveBeenCalled() // still inside the buffer
+    expect(h.requestedIntentSubTab.value).toBeNull()
 
-  it('stages a one-shot request + refresh when the target has not yet landed, then applies it', () => {
-    const h = makeCtx({ intents: [intent('i-1', 'dev-1')], sessions: [] })
-    h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
     vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
+
+    expect(h.selectWorkSession).toHaveBeenCalledWith('dev-1')
+    expect(h.requestedIntentSubTab.value).toBe('workSession')
+    // Stays on the intents page: no console jump, no session-kind switch, and no
+    // pending-select waiting state.
+    expect(h.enterConsole).not.toHaveBeenCalled()
+    expect(h.selectSessionKind).not.toHaveBeenCalled()
     expect(h.selectSession).not.toHaveBeenCalled()
-    expect(h.requestedWorkSessionId.value).toEqual({
-      workspacePath: WS,
-      intentId: 'i-1',
-      sessionId: 'dev-1',
-    })
-    expect(h.refreshSessions).toHaveBeenCalledWith(WS)
-    // The session lands; consumption selects it and clears the one-shot request.
-    h.currentSessions.value = [session('dev-1')]
-    h.ctx.consumePendingWorkSessionSelect()
-    expect(h.selectSession).toHaveBeenCalledWith(WS, 'dev-1')
     expect(h.requestedWorkSessionId.value).toBeNull()
+    expect(h.refreshSessions).not.toHaveBeenCalled()
   })
 
   it('does not arm a jump on `failed`', () => {
     const h = makeCtx({ intents: [intent('i-1', 'dev-1')], sessions: [session('dev-1')] })
     h.ctx.dispatchDevLaunch({ kind: 'stage', intentId: 'i-1', stage: 'failed', now: 1_000 })
     vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
-    expect(h.selectSession).not.toHaveBeenCalled()
+    expect(h.selectWorkSession).not.toHaveBeenCalled()
+    expect(h.requestedIntentSubTab.value).toBeNull()
     expect(h.enterConsole).not.toHaveBeenCalled()
     expect(h.showToast).toHaveBeenCalledWith('intent.devLaunch.failed')
   })
 
-  it('keeps the pending jump armed when the intent has no work session id yet', () => {
-    const h = makeCtx({ intents: [intent('i-1', null)], sessions: [] })
-    h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
+  it('does not arm a jump on `timeout`', () => {
+    const h = makeCtx({ intents: [intent('i-1', 'dev-1')], sessions: [session('dev-1')] })
+    h.ctx.dispatchDevLaunch({ kind: 'timeout', now: 1_000 })
     vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
-    expect(h.selectSession).not.toHaveBeenCalled()
-    expect(h.requestedWorkSessionId.value).toEqual({
-      workspacePath: WS,
-      intentId: 'i-1',
-      sessionId: null,
-    })
+    expect(h.selectWorkSession).not.toHaveBeenCalled()
+    expect(h.requestedIntentSubTab.value).toBeNull()
+    expect(h.showToast).toHaveBeenCalledWith('intent.devLaunch.timeout')
   })
 
-  it('resolves a pending jump when lastWorkSessionId arrives after the ready jump', () => {
+  it('silently drops the jump when lastWorkSessionId has not landed by the deadline', () => {
     const h = makeCtx({ intents: [intent('i-1', null)], sessions: [] })
     h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
     vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
-    expect(h.requestedWorkSessionId.value).toEqual({
-      workspacePath: WS,
-      intentId: 'i-1',
-      sessionId: null,
-    })
 
+    expect(h.selectWorkSession).not.toHaveBeenCalled()
+    expect(h.requestedIntentSubTab.value).toBeNull()
+    expect(h.requestedWorkSessionId.value).toBeNull()
+
+    // A later broadcast filling in the id must NOT retro-trigger the jump.
     h.intents.value = { [WS]: [intent('i-1', 'dev-1')] }
     h.currentSessions.value = [session('dev-1')]
     h.ctx.consumePendingWorkSessionSelect(true)
-
-    expect(h.selectSession).toHaveBeenCalledWith(WS, 'dev-1')
-    expect(h.requestedWorkSessionId.value).toBeNull()
+    vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
+    expect(h.selectWorkSession).not.toHaveBeenCalled()
+    expect(h.requestedIntentSubTab.value).toBeNull()
   })
 
-  it('forces the work tab before selecting so a previous spec session cannot win', () => {
-    const h = makeCtx({
-      intents: [intent('i-1', 'dev-1')],
-      sessions: [session('spec-old')],
-      workSessions: [session('dev-1')],
-      activeKind: 'spec',
-    })
+  it('drops the jump when the workspace changed during the buffer', () => {
+    const h = makeCtx({ intents: [intent('i-1', 'dev-1')], sessions: [session('dev-1')] })
     h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
+    h.currentWorkspace.value = '/other'
     vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
 
-    expect(h.selectSessionKind).toHaveBeenCalledWith('work')
-    expect(h.activeSessionKind.value).toBe('work')
-    expect(h.enterConsole).toHaveBeenCalled()
-    expect(h.selectSession).toHaveBeenCalledWith(WS, 'dev-1')
-    expect(h.selectSession).not.toHaveBeenCalledWith(WS, 'spec-old')
+    expect(h.selectWorkSession).not.toHaveBeenCalled()
+    expect(h.requestedIntentSubTab.value).toBeNull()
   })
 
-  it('from spec kind, waits for lastWorkSessionId + row before selecting the target', () => {
-    const h = makeCtx({
-      intents: [intent('i-1', null)],
-      sessions: [session('spec-old')],
-      workSessions: [],
-      activeKind: 'spec',
-    })
-    h.ctx.dispatchDevLaunch({ kind: 'ready', intentId: 'i-1', now: 1_000 })
-    vi.advanceTimersByTime(WORK_SESSION_JUMP_DELAY_MS)
+  it('consumePendingWorkSessionSelect still selects a console-flow target once its row lands', () => {
+    const h = makeCtx({ intents: [intent('i-1', 'dev-1')], sessions: [] })
+    h.requestedWorkSessionId.value = { workspacePath: WS, intentId: 'i-1', sessionId: null }
 
-    // Kind switched to work, but no target yet — should not select anything.
-    expect(h.selectSessionKind).toHaveBeenCalledWith('work')
-    expect(h.activeSessionKind.value).toBe('work')
-    expect(h.enterConsole).toHaveBeenCalled()
-    expect(h.selectSession).not.toHaveBeenCalled()
-
-    // lastWorkSessionId arrives via intent broadcast.
-    h.intents.value = { [WS]: [intent('i-1', 'dev-1')] }
+    // lastWorkSessionId resolved but the row is still missing → refresh, keep waiting.
     h.ctx.consumePendingWorkSessionSelect(true)
-    // Row still absent — still no select.
     expect(h.selectSession).not.toHaveBeenCalled()
+    expect(h.refreshSessions).toHaveBeenCalledWith(WS)
     expect(h.requestedWorkSessionId.value).toEqual({
       workspacePath: WS,
       intentId: 'i-1',
       sessionId: 'dev-1',
     })
 
-    // Session row lands — now selects the target.
     h.currentSessions.value = [session('dev-1')]
     h.ctx.consumePendingWorkSessionSelect()
     expect(h.selectSession).toHaveBeenCalledWith(WS, 'dev-1')
-    expect(h.selectSession).not.toHaveBeenCalledWith(WS, 'spec-old')
     expect(h.requestedWorkSessionId.value).toBeNull()
   })
 

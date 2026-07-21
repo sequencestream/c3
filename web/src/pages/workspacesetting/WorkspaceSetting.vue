@@ -218,7 +218,6 @@ function buildSeed(
 // comparison slice.
 const {
   draft,
-  committed,
   activeTab,
   pendingTabSwitch,
   tabDirtyMap,

@@ -578,7 +578,7 @@
 
 ### `delete_intent`
 
-`delete_intent { workspaceId, intentId }` 仅允许物理删除没有 intent/spec/work/git/PR 下游资产的 `draft`。删除前先校验工作区可用且意图归属该工作区（跨工作区 intentId 按 `intent.notFound` 拒绝，杜绝跨工作区删除）；删除事务同时清除入边、出边和生命周期日志；其他状态或已有资产均拒绝。
+`delete_intent { workspaceId, intentId }` 永久删除意图及其 c3 管理的本地资源。删除前先校验工作区可用且意图归属该工作区（跨工作区 intentId 按 `intent.notFound` 拒绝）；随后停止并删除关联会话、删除确定性的本地 worktree 与已记录的 `intent/` 本地分支，并在事务中清除依赖边、会话关联、生命周期日志和意图记录。远端分支和 PR 不受影响。
 
 **字段：** `workspaceId: string`, `items: Intent[]`, `sddEnabled: boolean`
 

@@ -3192,8 +3192,6 @@ export type ClientToServer =
    * priority / dependency / status / spec change.
    */
   | { type: 'update_intent_content'; intentId: string; content: string }
-  /** Physically delete an asset-free draft intent. */
-  | { type: 'delete_intent'; workspaceId: string; intentId: string }
   /** Manually set a intent's status (e.g. mark done/cancelled). */
   | { type: 'update_intent_status'; intentId: string; status: IntentStatus }
   /** Toggle a intent's automation flag (whether the orchestrator may pick it). */

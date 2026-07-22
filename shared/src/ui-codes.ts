@@ -64,6 +64,7 @@ export const UI_ERROR_CODES = {
     key: 'error.intent.deleteChatSessionFailed',
     params: ['detail'],
   },
+  'intent.deleteFailed': { key: 'error.intent.deleteFailed', params: ['detail'] },
   'intent.createFailed': { key: 'error.intent.createFailed', params: ['detail'] },
   'intent.startSessionFailed': { key: 'error.intent.startSessionFailed', params: ['detail'] },
   'intent.sessionAlreadyBound': { key: 'error.intent.sessionAlreadyBound' },

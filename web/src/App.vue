@@ -134,6 +134,7 @@ const {
   startDevelopment,
   selectWorkSession,
   setIntentStatus,
+  deleteIntent,
   setIntentAutomate,
   updateIntentContent,
   saveSpecContent,
@@ -519,6 +520,7 @@ function onCodesChatWidth(px: number): void {
           @start-dev="startDevelopment"
           @open-work-session="selectWorkSession"
           @set-status="setIntentStatus"
+          @delete="deleteIntent"
           @set-automate="setIntentAutomate"
           @update-deps="updateIntentDeps"
           @create-pr="createPr"

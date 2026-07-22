@@ -128,6 +128,7 @@ const emit = defineEmits<{
   'sync-pr-status': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   share: [intentId: string]
+  delete: [intentId: string]
   'set-mode': [mode: ModeToken]
   'set-codex-policy': [policy: CodexPolicy]
   'set-session-agent': [agentId: string]
@@ -383,6 +384,7 @@ defineExpose({
         @start-dev="(id: string, hasDeps: boolean) => emit('start-dev', id, hasDeps)"
         @open-work-session="(sessionId: string) => emit('open-work-session', sessionId)"
         @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"
+        @delete="(id: string) => emit('delete', id)"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @create-pr="(id: string) => emit('create-pr', id)"
         @sync-pr-status="(id: string) => emit('sync-pr-status', id)"

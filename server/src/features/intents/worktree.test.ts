@@ -11,8 +11,58 @@ import {
   getWorktreePath,
   projectDirName,
   pullCurrentBranch,
+  removeIntentGitResources,
   worktreeExists,
 } from './worktree.js'
+
+describe('removeIntentGitResources', () => {
+  let root: string
+  let repo: string
+  let oldC3Dir: string | undefined
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'c3-wt-delete-'))
+    repo = join(root, 'repo')
+    execFileSync('mkdir', ['-p', repo])
+    createGitRepo(repo)
+    oldC3Dir = process.env.C3_DIR
+    process.env.C3_DIR = join(root, 'c3-home')
+  })
+
+  afterEach(() => {
+    if (oldC3Dir === undefined) delete process.env.C3_DIR
+    else process.env.C3_DIR = oldC3Dir
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('force-removes a dirty worktree and unmerged local branch without touching remote refs', () => {
+    const id = 'abc123'
+    const branch = 'intent/abc123-delete-me'
+    const worktree = getWorktreePath(repo, id)
+    execFileSync('git', ['worktree', 'add', '-b', branch, worktree], { cwd: repo })
+    writeFileSync(join(worktree, 'dirty.txt'), 'uncommitted')
+    execFileSync('git', ['update-ref', `refs/remotes/origin/${branch}`, 'HEAD'], { cwd: repo })
+
+    expect(removeIntentGitResources(repo, id, branch)).toEqual({
+      worktreeRemoved: true,
+      branchRemoved: true,
+    })
+    expect(worktreeExists(worktree)).toBe(false)
+    expect(() => gitOut(repo, ['show-ref', '--verify', `refs/heads/${branch}`])).toThrow()
+    expect(gitOut(repo, ['show-ref', '--verify', `refs/remotes/origin/${branch}`])).toBeTruthy()
+  })
+
+  it('is idempotent when worktree and branch are already absent', () => {
+    expect(removeIntentGitResources(repo, 'missing', 'intent/missing-branch')).toEqual({
+      worktreeRemoved: false,
+      branchRemoved: false,
+    })
+  })
+
+  it('rejects a recorded branch outside the managed intent namespace', () => {
+    expect(() => removeIntentGitResources(repo, 'x', 'main')).toThrow(/outside intent namespace/)
+  })
+})
 
 // ---------------------------------------------------------------------------
 // Helpers: create a minimal git repo for tests that need a real git env.

@@ -74,6 +74,59 @@ export function getWorktreePath(workspacePath: string, intentId: string): string
   return join(getWorktreeBase(workspacePath), `intent-${intentId}`)
 }
 
+export interface RemoveIntentGitResourcesResult {
+  worktreeRemoved: boolean
+  branchRemoved: boolean
+}
+
+/**
+ * Remove only the deterministic c3 worktree and the exact recorded local intent
+ * branch. Missing resources are already-clean success; every other git failure
+ * is surfaced so the intent record remains available for a retry.
+ */
+export function removeIntentGitResources(
+  workspacePath: string,
+  intentId: string,
+  branchName: string | null,
+): RemoveIntentGitResourcesResult {
+  if (branchName !== null && !branchName.startsWith('intent/')) {
+    throw new Error(`refusing to delete branch outside intent namespace: ${branchName}`)
+  }
+
+  const worktreePath = getWorktreePath(workspacePath, intentId)
+  let worktreeRemoved = false
+  if (worktreeExists(worktreePath)) {
+    const removed = execGit(workspacePath, ['worktree', 'remove', '--force', worktreePath])
+    if (removed.code !== 0) {
+      throw new Error((removed.stderr || removed.stdout).trim() || 'failed to remove worktree')
+    }
+    worktreeRemoved = true
+  }
+
+  let branchRemoved = false
+  if (branchName !== null) {
+    const exists = execGit(workspacePath, [
+      'show-ref',
+      '--verify',
+      '--quiet',
+      `refs/heads/${branchName}`,
+    ])
+    if (exists.code === 0) {
+      const removed = execGit(workspacePath, ['branch', '-D', '--', branchName])
+      if (removed.code !== 0) {
+        throw new Error(
+          (removed.stderr || removed.stdout).trim() || 'failed to remove local branch',
+        )
+      }
+      branchRemoved = true
+    } else if (exists.code !== 1) {
+      throw new Error((exists.stderr || exists.stdout).trim() || 'failed to inspect local branch')
+    }
+  }
+
+  return { worktreeRemoved, branchRemoved }
+}
+
 // ---------------------------------------------------------------------------
 // Branch naming
 // ---------------------------------------------------------------------------

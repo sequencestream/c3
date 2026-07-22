@@ -1,6 +1,7 @@
 -- intents — 意图 (需求/任务) 台账
 -- 所属模块: intents
 -- 对应 Store: server/src/features/intents/store.ts
+-- 永久删除由 Store 事务同时清理双向 intent_deps、intent_sessions、intent_logs。
 
 
 CREATE TABLE IF NOT EXISTS intents (

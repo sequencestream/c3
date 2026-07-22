@@ -58,6 +58,7 @@ import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import ChatColumn from '../../../../components/ChatColumn/ChatColumn.vue'
 import ResetSessionDialog from '../../../../components/ResetSessionDialog/ResetSessionDialog.vue'
+import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import {
   formatDate,
   formatDependsOn,
@@ -153,6 +154,7 @@ const emit = defineEmits<{
   'select-dependency': [intentId: string]
   // 分享:上抛意图 id,由 App 组装深链复制(workspace/typeLabel 在上层)。
   share: [intentId: string]
+  delete: [intentId: string]
   // ── 会话/spec 打开 ──
   'open-intent-session': [sessionId: string]
   'open-spec-session': [intentId: string]
@@ -191,6 +193,30 @@ const engineeringProgress = computed(() =>
       )
     : [],
 )
+
+const deleteDialogOpen = ref(false)
+const deleteSent = ref(false)
+const deleteMessage = computed(() => {
+  const r = props.intent
+  if (!r) return ''
+  // in_progress / done 都可能留下工作产物(worktree 改动、本地分支提交),文案额外强化提示。
+  return r.status === 'in_progress' || r.status === 'done'
+    ? t('intent.delete.confirmWithArtifacts', { title: r.title })
+    : t('intent.delete.confirm', { title: r.title })
+})
+
+function openDeleteDialog(): void {
+  deleteSent.value = false
+  deleteDialogOpen.value = true
+}
+
+function confirmDelete(): void {
+  const r = props.intent
+  if (!r || deleteSent.value) return
+  deleteSent.value = true
+  deleteDialogOpen.value = false
+  emit('delete', r.id)
+}
 
 function progressStageLabel(stage: EngineeringProgressStage): string {
   if (stage === 'intent') return t('intent.engineeringProgress.stage.intent')
@@ -974,6 +1000,14 @@ defineExpose({
               >
                 {{ intent.automate ? '⚙' : '🖱' }}
               </button>
+              <button
+                type="button"
+                class="req-btn danger"
+                data-testid="intent-detail-delete"
+                @click="openDeleteDialog"
+              >
+                {{ t('common.action.delete.label') }}
+              </button>
             </div>
           </div>
         </div>
@@ -1395,6 +1429,16 @@ defineExpose({
       :cancel-label="t('common.action.cancel.label')"
       @confirm="onResetConfirm"
       @cancel="resetDialogOpen = false"
+    />
+    <ConfirmDialog
+      :open="deleteDialogOpen"
+      :title="t('intent.delete.title')"
+      :message="deleteMessage"
+      :confirm-label="t('common.action.delete.label')"
+      :cancel-label="t('common.action.cancel.label')"
+      danger
+      @confirm="confirmDelete"
+      @cancel="deleteDialogOpen = false"
     />
   </section>
 </template>

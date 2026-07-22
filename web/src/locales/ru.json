@@ -654,6 +654,11 @@
     }
   },
   "intent": {
+    "delete": {
+      "title": "Delete intent?",
+      "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
+      "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
+    },
     "create": { "label": "Add intent" },
     "startDev": {
       "confirmUnfinishedDeps": "У этого намерения есть незавершённые зависимости. Всё равно начать работу?"
@@ -1806,6 +1811,7 @@
       "chatSessionNotFound": "Intent session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
+      "deleteFailed": "Failed to delete intent: {detail}.",
       "createFailed": "Failed to create intent: {detail}.",
       "startSessionFailed": "Failed to start intent session: {detail}.",
       "sessionAlreadyBound": "This intent already has a session. Refresh and open it.",

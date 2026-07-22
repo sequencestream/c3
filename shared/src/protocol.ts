@@ -659,8 +659,8 @@ export interface WorkspaceSetting {
   sandbox?: WorkspaceSandboxConfig
   /**
    * Git branch strategy for `start_development` (2026-06-10). See
-   * {@link GitBranchMode}. Absent ⇒ `current-branch` (backward compatible with
-   * pre-2026-06-10 configs, normalized on read). The legacy on-disk key is still
+   * {@link GitBranchMode}. Absent or invalid ⇒ `worktree` (normalized on read).
+   * The legacy on-disk key is still
    * read as a fallback — see `normalizeWorkspaceSetting`.
    */
   gitBranchMode?: GitBranchMode
@@ -671,9 +671,9 @@ export interface WorkspaceSetting {
    */
   defaultMainBranch?: string
   /**
-   * Master switch for spec-driven development (SDD) in this workspace. When off
-   * (default), the SDD spec quality gate and approval checkpoints are inactive.
-   * Absent ⇒ `false` (normalized on read).
+   * Master switch for spec-driven development (SDD) in this workspace. When off,
+   * the SDD spec quality gate and approval checkpoints are inactive. Absent or
+   * non-boolean ⇒ `true` (normalized on read).
    */
   sddEnabled?: boolean
   /**

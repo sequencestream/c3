@@ -18,6 +18,7 @@ import {
   getForgeOverride,
   getDevSkill,
   getGitBranchMode,
+  getSddEnabled,
   getMaxRoundsPerStage,
   getProxyConfig,
   getMaxSpeechChars,
@@ -1566,15 +1567,15 @@ describe('Claude launch non-regression (AC-R4/R5)', () => {
 })
 
 describe('gitBranchMode + defaultMainBranch (2026-06-10)', () => {
-  it('defaults to current-branch when absent (backward compatible)', () => {
+  it('defaults to worktree when absent', () => {
     saveWorkspaceSetting(TEST_PROJ, {} as WorkspaceSetting)
-    expect(getGitBranchMode(TEST_PROJ)).toBe('current-branch')
+    expect(getGitBranchMode(TEST_PROJ)).toBe('worktree')
     expect(getDefaultMainBranch(TEST_PROJ)).toBeUndefined()
   })
 
   it('normalize emits gitBranchMode even on an empty config', () => {
     saveWorkspaceSetting(TEST_PROJ, {} as WorkspaceSetting)
-    expect(loadWorkspaceSetting(TEST_PROJ).gitBranchMode).toBe('current-branch')
+    expect(loadWorkspaceSetting(TEST_PROJ).gitBranchMode).toBe('worktree')
   })
 
   it('persists and reads back worktree mode + a default main branch', () => {
@@ -1586,11 +1587,11 @@ describe('gitBranchMode + defaultMainBranch (2026-06-10)', () => {
     expect(getDefaultMainBranch(TEST_PROJ)).toBe('develop')
   })
 
-  it('falls back to current-branch for an unknown mode value', () => {
+  it('falls back to worktree for an unknown mode value', () => {
     saveWorkspaceSetting(TEST_PROJ, {
       gitBranchMode: 'bogus',
     } as unknown as WorkspaceSetting)
-    expect(getGitBranchMode(TEST_PROJ)).toBe('current-branch')
+    expect(getGitBranchMode(TEST_PROJ)).toBe('worktree')
   })
 
   it('trims a blank default main branch to undefined', () => {
@@ -1630,6 +1631,15 @@ describe('gitBranchMode + defaultMainBranch (2026-06-10)', () => {
       },
     })
     expect(getGitBranchMode(TEST_PROJ)).toBe('current-branch')
+  })
+})
+
+describe('SDD workspace default', () => {
+  it('returns true for an unconfigured workspace and preserves explicit false after save', () => {
+    expect(getSddEnabled(TEST_PROJ)).toBe(true)
+    saveWorkspaceSetting(TEST_PROJ, { sddEnabled: false } as WorkspaceSetting)
+    expect(getSddEnabled(TEST_PROJ)).toBe(false)
+    expect(loadWorkspaceSetting(TEST_PROJ).sddEnabled).toBe(false)
   })
 })
 

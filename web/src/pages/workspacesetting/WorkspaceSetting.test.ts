@@ -168,9 +168,9 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
   it('renders a row label for each config item', () => {
     const w = mountWs(null)
     // 2 vendor row-labels + devSkill + rounds + speechChars
-    // + gitBranchMode + defaultMainBranch = 7
+    // + gitBranchMode + defaultMainBranch + default-visible SDD spec root = 8
     const labels = w.findAll('.project-config-row-label')
-    expect(labels).toHaveLength(7)
+    expect(labels).toHaveLength(8)
     expect(labels[0].text()).toBeTruthy()
   })
 
@@ -512,10 +512,10 @@ describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => 
 })
 
 describe('WorkspaceSetting.vue — git branch mode + default main branch', () => {
-  it('defaults to current-branch with an empty branch when config is null', () => {
+  it('defaults to worktree with an empty branch when config is null', () => {
     const w = mountWs(null)
     expect((w.find('[data-testid="git-branch-mode"]').element as HTMLSelectElement).value).toBe(
-      'current-branch',
+      'worktree',
     )
     expect((w.find('[data-testid="default-main-branch"]').element as HTMLInputElement).value).toBe(
       '',
@@ -541,6 +541,18 @@ describe('WorkspaceSetting.vue — git branch mode + default main branch', () =>
     )
   })
 
+  it('uses new defaults for a partial config and preserves an explicit current branch', () => {
+    const partial = mountWs(cfg({ devSkill: '/develop' }))
+    expect(
+      (partial.find('[data-testid="git-branch-mode"]').element as HTMLSelectElement).value,
+    ).toBe('worktree')
+
+    const explicit = mountWs(cfg({ gitBranchMode: 'current-branch' }))
+    expect(
+      (explicit.find('[data-testid="git-branch-mode"]').element as HTMLSelectElement).value,
+    ).toBe('current-branch')
+  })
+
   it('emits the edited git branch mode + branch on the git-sandbox tab save', async () => {
     const w = mountWs(cfg())
     await w.find('[data-testid="git-branch-mode"]').setValue('worktree')
@@ -561,17 +573,16 @@ describe('WorkspaceSetting.vue — git branch mode + default main branch', () =>
 })
 
 describe('WorkspaceSetting.vue — spec-driven development (SDD)', () => {
-  it('hides the spec root display when SDD is disabled (default)', () => {
+  it('enables SDD and shows the spec root by default', () => {
     const w = mountWs(null, { resolvedSpecRoot: '/home/u/.c3/specs/test' })
-    expect((w.find('[data-testid="sdd-enabled"]').element as HTMLInputElement).checked).toBe(false)
-    expect(w.find('[data-testid="sdd-spec-root"]').exists()).toBe(false)
+    expect((w.find('[data-testid="sdd-enabled"]').element as HTMLInputElement).checked).toBe(true)
+    expect(w.find('[data-testid="sdd-spec-root"]').exists()).toBe(true)
   })
 
-  it('reveals the read-only spec root when SDD is toggled on', async () => {
-    const w = mountWs(null, { resolvedSpecRoot: '/home/u/.c3/specs/test' })
+  it('preserves explicit SDD disablement', () => {
+    const w = mountWs(cfg({ sddEnabled: false }), { resolvedSpecRoot: '/home/u/.c3/specs/test' })
+    expect((w.find('[data-testid="sdd-enabled"]').element as HTMLInputElement).checked).toBe(false)
     expect(w.find('[data-testid="sdd-spec-root"]').exists()).toBe(false)
-    await w.find('[data-testid="sdd-enabled"]').setValue(true)
-    expect(w.find('[data-testid="sdd-spec-root"]').exists()).toBe(true)
   })
 
   it('displays the resolved spec root and it is NOT an editable input (REQ-3)', () => {

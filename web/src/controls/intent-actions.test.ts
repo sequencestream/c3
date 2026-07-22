@@ -62,6 +62,7 @@ function makeCtx(opts: {
   const ctx = {
     send: vi.fn(),
     t: (k: string) => k,
+    persistViewMode: vi.fn(),
     intentsProject: ref<string | null>(WS),
     selectedIntentSessionId: ref<string | null>(null),
     activeTab: ref('intents'),
@@ -101,6 +102,21 @@ function makeCtx(opts: {
     currentSessions,
   }
 }
+
+describe('intent view loading', () => {
+  it('loads the workspace setting with the intent sessions', () => {
+    const h = makeCtx({})
+
+    h.ctx.openIntents(WS)
+
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'load_workspace_setting',
+      workspaceId: WS,
+    })
+    expect(h.ctx.send).toHaveBeenCalledWith({ type: 'open_intent_session', workspaceId: WS })
+    expect(h.ctx.send).toHaveBeenCalledWith({ type: 'list_intent_sessions', workspaceId: WS })
+  })
+})
 
 describe('post-Start-Dev jump wiring', () => {
   beforeEach(() => vi.useFakeTimers())

@@ -112,6 +112,8 @@ export function installIntentActions(ctx: AppCtx): void {
     activeTab.value = 'intents'
     intentsProject.value = path
     ctx.persistViewMode()
+    // The detail progress and PR actions depend on the normalized workspace branch mode.
+    send({ type: 'load_workspace_setting', workspaceId: path })
     // The response carries both the comm `session_selected` and the list.
     send({ type: 'open_intent_session', workspaceId: path })
     // Populate the middle-column intent session list.

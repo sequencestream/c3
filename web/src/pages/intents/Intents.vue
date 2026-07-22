@@ -124,7 +124,6 @@ const emit = defineEmits<{
   'start-automation': []
   'stop-automation': []
   'new-intent': []
-  'new-intent-session': []
   'create-pr': [intentId: string]
   'sync-pr-status': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
@@ -264,13 +263,12 @@ function handleSelectIntent(intentId: string): void {
   mobileActiveKey.value = 'right'
 }
 
-// 列表标题栏「+」:新建意图会话。右栏切到独立聊天列;新会话经服务端
-// session_selected 成为活动会话后由 ChatColumn 渲染。移动端 drill 进右栏。
-function handleNewIntentSession(): void {
-  viewingNewIntentSession.value = true
-  mobileActiveKey.value = 'right'
-  emit('new-intent-session')
-}
+// 外部子 tab 请求若与一个尚未落入快照的意图选择请求同时到达，先不把它交给当前
+// 详情页，避免旧意图提前消费。目标意图选中后再透传，由新详情页打开指定 tab。
+const detailRequestedSubTab = computed(() => {
+  if (props.requestedIntentId && selectedIntentId.value !== props.requestedIntentId) return null
+  return props.requestedIntentSubTab ?? null
+})
 
 function handleSelectDependency(intentId: string): void {
   handleSelectIntent(intentId)
@@ -319,7 +317,6 @@ defineExpose({
         @ordered-change="handleOrderedChange"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @refine="(id: string) => emit('refine', id)"
-        @new-intent-session="handleNewIntentSession"
         @new-intent="emit('new-intent')"
       />
     </template>
@@ -335,7 +332,7 @@ defineExpose({
         :sdd-enabled="sddEnabled"
         :workspace-main-branch="workspaceMainBranch"
         :workspace-git-branch-mode="workspaceGitBranchMode"
-        :requested-sub-tab="requestedIntentSubTab"
+        :requested-sub-tab="detailRequestedSubTab"
         :active-session="activeSession"
         :active-title="activeTitle"
         :vendor="vendor ?? null"

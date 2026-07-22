@@ -135,6 +135,16 @@ describe('IntentDetail.vue — engineering progress', () => {
     expect(stages.every((stage) => stage.find('.intent-engineering-progress-state').text())).toBe(
       true,
     )
+    expect(
+      stages.every((stage) => {
+        const children = Array.from(stage.element.children)
+        return (
+          children[0]?.classList.contains('intent-engineering-progress-name') &&
+          children[1]?.classList.contains('intent-engineering-progress-marker') &&
+          children[2]?.classList.contains('intent-engineering-progress-state')
+        )
+      }),
+    ).toBe(true)
   })
 
   it('omits the spec stage with SDD disabled even when historical spec data exists', () => {

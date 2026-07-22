@@ -8,7 +8,7 @@
  * 头部包含:
  * - 折叠按钮(控制整列宽窄)
  * - 列表标题
- * - 右域:自动化按钮 + 状态过滤(移动端折叠进 overflow 菜单)+「+」新建意图会话
+ * - 右域:自动化按钮 + 状态过滤(移动端折叠进 overflow 菜单)+「+」增加意图
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { WorkflowStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
@@ -43,7 +43,6 @@ const emit = defineEmits<{
   'ordered-change': [ids: string[]]
   'set-automate': [intentId: string, automate: boolean]
   refine: [intentId: string]
-  'new-intent-session': []
   'new-intent': []
 }>()
 
@@ -126,17 +125,6 @@ function setFilterFromMenu(value: string): void {
       <div class="merged-list-head-left">
         <button
           type="button"
-          class="req-new-btn"
-          :aria-label="t('intent.create.label')"
-          :title="t('intent.create.label')"
-          data-testid="intent-list-create-intent"
-          :disabled="createIntentPending"
-          @click="emit('new-intent')"
-        >
-          {{ t('intent.create.label') }}
-        </button>
-        <button
-          type="button"
           class="req-collapse-btn"
           :title="toggleLabel.title"
           :aria-pressed="collapsed"
@@ -213,10 +201,11 @@ function setFilterFromMenu(value: string): void {
         <button
           type="button"
           class="req-new-btn"
-          :aria-label="t('intent.intentSession.new.tooltip')"
-          :title="t('intent.intentSession.new.tooltip')"
-          data-testid="intent-list-new-session"
-          @click="emit('new-intent-session')"
+          :aria-label="t('intent.create.label')"
+          :title="t('intent.create.label')"
+          data-testid="intent-list-create-intent"
+          :disabled="createIntentPending"
+          @click="emit('new-intent')"
         >
           +
         </button>

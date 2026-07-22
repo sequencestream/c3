@@ -982,10 +982,10 @@ defineExpose({
             :data-stage="item.stage"
             :data-state="item.state"
           >
-            <span class="intent-engineering-progress-marker" aria-hidden="true"></span>
             <span class="intent-engineering-progress-name">{{
               progressStageLabel(item.stage)
             }}</span>
+            <span class="intent-engineering-progress-marker" aria-hidden="true"></span>
             <span class="intent-engineering-progress-state">{{
               progressStateLabel(item.state)
             }}</span>
@@ -1482,17 +1482,19 @@ defineExpose({
   min-width: 112px;
   flex: 1 0 112px;
   display: grid;
-  grid-template-columns: auto 1fr;
-  column-gap: var(--sp-2);
+  grid-template-rows: auto 12px auto;
+  row-gap: var(--sp-1);
+  justify-items: start;
   color: var(--c-text-muted);
   font-size: var(--fs-caption);
+  text-align: left;
 }
 .intent-engineering-progress-stage:not(:last-child)::after {
   content: '';
   position: absolute;
-  top: 6px;
-  left: 16px;
-  right: 0;
+  top: calc(1em * var(--lh-normal) + var(--sp-1) + 5px);
+  left: 6px;
+  right: -6px;
   height: 2px;
   background: var(--c-border);
 }
@@ -1500,7 +1502,6 @@ defineExpose({
   z-index: 1;
   width: 12px;
   height: 12px;
-  margin-top: 1px;
   border: 2px solid var(--c-border);
   border-radius: 50%;
   box-sizing: border-box;
@@ -1512,17 +1513,22 @@ defineExpose({
   white-space: nowrap;
 }
 .intent-engineering-progress-state {
-  grid-column: 2;
   white-space: nowrap;
 }
 .intent-engineering-progress-stage.is-in_progress .intent-engineering-progress-marker {
-  border-color: var(--c-accent, var(--c-text));
+  border-color: var(--c-success);
   box-shadow: inset 0 0 0 2px var(--c-bg);
-  background: var(--c-accent, var(--c-text));
+  background: var(--c-success);
 }
 .intent-engineering-progress-stage.is-completed .intent-engineering-progress-marker {
-  border-color: var(--c-success);
-  background: var(--c-success);
+  border-color: var(--c-accent, var(--c-text));
+  background: var(--c-accent, var(--c-text));
+}
+.intent-engineering-progress-stage.is-in_progress .intent-engineering-progress-state {
+  color: var(--c-success);
+}
+.intent-engineering-progress-stage.is-completed .intent-engineering-progress-state {
+  color: var(--c-accent, var(--c-text));
 }
 .intent-detail-tabs {
   flex-shrink: 0;

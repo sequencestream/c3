@@ -143,7 +143,6 @@ const {
   startWorkflow,
   stopWorkflow,
   selectIntentSession,
-  newIntentSession,
   createIntent,
   startIntentSession,
   // ---- discussions ----
@@ -527,7 +526,6 @@ function onCodesChatWidth(px: number): void {
           @share="shareIntent"
           @start-automation="startWorkflow"
           @stop-automation="stopWorkflow"
-          @new-intent-session="newIntentSession"
           @new-intent="createIntent"
           @start-intent-session="startIntentSession"
           @set-session-agent="onSetSessionAgent"

@@ -153,7 +153,6 @@ export interface AppMethods {
   startWorkflow(): void
   stopWorkflow(): void
   selectIntentSession(sessionId: string): void
-  newIntentSession(): void
   createIntent(): void
   startIntentSession(intentId: string, text: string, images: PromptImage[]): void
 

@@ -51,20 +51,15 @@ describe('IntentMergedList.vue — header', () => {
     expect(w.find('[data-testid="tab-sessions"]').exists()).toBe(false)
   })
 
-  it('renders the new-session entry and emits new-intent-session on click', async () => {
-    const w = mountMerged()
-    const btn = w.find('[data-testid="intent-list-new-session"]')
-    expect(btn.exists()).toBe(true)
-    await btn.trigger('click')
-    expect(w.emitted('new-intent-session')).toHaveLength(1)
-  })
-
-  it('renders a distinct add-intent entry', async () => {
+  it('uses the title-bar plus button to add an intent', async () => {
     const w = mountMerged()
     const btn = w.find('[data-testid="intent-list-create-intent"]')
+    expect(btn.exists()).toBe(true)
+    expect(btn.text()).toBe('+')
     expect(btn.attributes('aria-label')).toBe('Add intent')
     await btn.trigger('click')
     expect(w.emitted('new-intent')).toHaveLength(1)
+    expect(w.find('[data-testid="intent-list-new-session"]').exists()).toBe(false)
   })
 
   it('shows the automation button and status filter on desktop', () => {

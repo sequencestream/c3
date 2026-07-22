@@ -216,18 +216,18 @@ describe('Intents.vue — dependency selection', () => {
 })
 
 describe('Intents.vue — right column', () => {
-  it('emits add intent without entering the standalone session view', async () => {
+  it('uses the title-bar plus button to add an intent without entering standalone chat', async () => {
     const wrapper = mountIntents([intent({ id: 'todo-1', status: 'todo', priority: 'P1' })])
     await wrapper.find('[data-testid="intent-list-create-intent"]').trigger('click')
     expect(wrapper.emitted('new-intent')).toHaveLength(1)
+    expect(wrapper.emitted('new-intent-session')).toBeUndefined()
     expect(wrapper.find('[data-testid="intent-detail"]').exists()).toBe(true)
   })
 
-  it('lands on a newly returned id after its snapshot arrives and exits standalone chat', async () => {
+  it('holds the requested session tab until the newly created intent snapshot arrives', async () => {
     const wrapper = mountIntents([intent({ id: 'old', status: 'todo', priority: 'P1' })])
-    await wrapper.find('[data-testid="intent-list-new-session"]').trigger('click')
     await wrapper.setProps({ requestedIntentId: 'created', requestedIntentSubTab: 'intentSession' })
-    expect(wrapper.find('[data-testid="standalone-chat"]').exists()).toBe(true)
+    expect(wrapper.findComponent(IntentDetailStub).props('requestedSubTab')).toBeNull()
     await wrapper.setProps({
       intents: [intent({ id: 'old' }), intent({ id: 'created', status: 'draft' })],
     })
@@ -245,21 +245,10 @@ describe('Intents.vue — right column', () => {
     expect(wrapper.find('[data-testid="tab-sessions"]').exists()).toBe(false)
   })
 
-  it('clicking "+" toggles the right column to a standalone intent-session chat and emits new-intent-session', async () => {
+  it('selecting an intent row exits a standalone chat opened by an external request', async () => {
     const wrapper = mountIntents([intent({ id: 'todo-1', status: 'todo', priority: 'P1' })])
     await nextTick()
-
-    await wrapper.find('[data-testid="intent-list-new-session"]').trigger('click')
-
-    expect(wrapper.emitted('new-intent-session')).toHaveLength(1)
-    expect(wrapper.find('[data-testid="standalone-chat"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="intent-detail"]').exists()).toBe(false)
-  })
-
-  it('selecting an intent row toggles back from the standalone chat to the detail', async () => {
-    const wrapper = mountIntents([intent({ id: 'todo-1', status: 'todo', priority: 'P1' })])
-    await nextTick()
-    await wrapper.find('[data-testid="intent-list-new-session"]').trigger('click')
+    await wrapper.setProps({ requestedIntentSessionId: 'standalone-session' })
     expect(wrapper.find('[data-testid="standalone-chat"]').exists()).toBe(true)
 
     await wrapper.find('[data-intent-id="todo-1"] .req-item-main').trigger('click')

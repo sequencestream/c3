@@ -118,7 +118,10 @@ describe('IntentDetail.vue — engineering progress', () => {
     const stages = progress.findAll('[data-stage]')
 
     expect(progress.attributes('aria-label')).toBeTruthy()
-    expect(w.find('.intent-detail-head').element.contains(progress.element)).toBe(true)
+    const header = w.find('.intent-detail-head')
+    expect(header.element.contains(progress.element)).toBe(true)
+    expect(w.find('.intent-detail-titlebar').element.nextElementSibling).toBe(progress.element)
+    expect(header.element.nextElementSibling).toBe(w.find('.intent-detail-tabs').element)
     expect(stages.map((stage) => stage.attributes('data-stage'))).toEqual([
       'intent',
       'spec',

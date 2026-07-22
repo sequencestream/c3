@@ -1,4 +1,4 @@
-import type { IntentStatus } from '@ccc/shared/protocol'
+import type { IntentStatus, PromptImage } from '@ccc/shared/protocol'
 import {
   beginDevLaunch,
   reduceDevLaunch,
@@ -135,12 +135,20 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'open_intent_session', workspaceId: intentsProject.value, sessionId })
   }
 
-  // "+" in the intent list title bar: start a brand-new comm session. The server
-  // replies with a `session_selected`, which Intents.vue shows in the right
-  // column (its standalone chat view, toggled on by `new-intent-session`).
-  ctx.newIntentSession = (): void => {
-    if (!intentsProject.value) return
-    send({ type: 'new_intent_session', workspaceId: intentsProject.value })
+  ctx.createIntent = (): void => {
+    if (!intentsProject.value || ctx.createIntentPending.value) return
+    ctx.createIntentPending.value = true
+    send({ type: 'create_intent', workspaceId: intentsProject.value })
+  }
+  ctx.startIntentSession = (intentId: string, text: string, images: PromptImage[]): void => {
+    if (!intentsProject.value || (!text.trim() && images.length === 0)) return
+    send({
+      type: 'start_intent_session',
+      workspaceId: intentsProject.value,
+      intentId,
+      text,
+      images,
+    })
   }
 
   ctx.setIntentFilter = (status: IntentStatus | null): void => {

@@ -658,6 +658,7 @@
       "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
       "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
     },
+    "create": { "label": "Add intent" },
     "startDev": {
       "confirmUnfinishedDeps": "This intent has unfinished dependencies. Start work anyway?"
     },
@@ -898,12 +899,14 @@
       "stage": {
         "intent": "Intent",
         "spec": "Spec",
-        "work": "Work"
+        "work": "Work",
+        "pr": "PR"
       },
       "state": {
         "notStarted": "Not started",
         "inProgress": "In progress",
-        "completed": "Completed"
+        "completed": "Completed",
+        "closed": "Closed / failed"
       }
     },
     "spec": {
@@ -1802,6 +1805,10 @@
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "deleteFailed": "Failed to delete intent: {detail}.",
+      "createFailed": "Failed to create intent: {detail}.",
+      "startSessionFailed": "Failed to start intent session: {detail}.",
+      "sessionAlreadyBound": "This intent already has a session. Refresh and open it.",
+      "deleteForbidden": "This draft cannot be deleted: {detail}.",
       "cannotStartDev": "Cannot start work from status \"{status}\".",
       "contentEditForbidden": "Cannot edit the body of an intent in status \"{status}\".",
       "specEditForbidden": "Cannot directly edit the spec once development has started (status \"{status}\").",

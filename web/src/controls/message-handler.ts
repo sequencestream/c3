@@ -106,6 +106,9 @@ export function installMessageHandler(ctx: AppCtx): void {
     intentLogsById,
     intentLogsLoading,
     intentsProject,
+    requestedIntentId,
+    requestedIntentSubTab,
+    createIntentPending,
     automation,
     discussions,
     discussionRunState,
@@ -710,6 +713,13 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       }
+      case 'create_intent_result':
+        createIntentPending.value = false
+        if (msg.workspaceId === intentsProject.value) {
+          requestedIntentId.value = msg.intent.id
+          requestedIntentSubTab.value = 'intentSession'
+        }
+        break
       case 'dev_launch_progress':
         // Advance the overlay's coarse phase; a `failed` stage closes it with an
         // error toast (the reducer + dispatch handle the side-effects).
@@ -1063,6 +1073,18 @@ export function installMessageHandler(ctx: AppCtx): void {
         // looked like "nothing happened". The seq bump still releases the start-dev
         // in-flight guard. Not added to the chat stream — an action error is not session
         // content.
+        // `create_intent` fails via three codes — workspace.unknown, intent.dbUnavailable,
+        // intent.createFailed. Any of them must release the "增加意图" in-flight guard, or the
+        // button stays disabled until the page state is rebuilt. workspace.unknown is not an
+        // `intent.*` code, so release here (ahead of the intent-only branch) for all three.
+        if (
+          createIntentPending.value &&
+          (msg.error.code === 'workspace.unknown' ||
+            msg.error.code === 'intent.dbUnavailable' ||
+            msg.error.code === 'intent.createFailed')
+        ) {
+          createIntentPending.value = false
+        }
         if (msg.error.code.startsWith('intent.')) {
           intentActionErrorSeq.value += 1
           ctx.showIntentActionError(translateUiError(msg.error))

@@ -135,6 +135,16 @@ describe('IntentDetail.vue — engineering progress', () => {
     expect(stages.every((stage) => stage.find('.intent-engineering-progress-state').text())).toBe(
       true,
     )
+    expect(
+      stages.every((stage) => {
+        const children = Array.from(stage.element.children)
+        return (
+          children[0]?.classList.contains('intent-engineering-progress-name') &&
+          children[1]?.classList.contains('intent-engineering-progress-marker') &&
+          children[2]?.classList.contains('intent-engineering-progress-state')
+        )
+      }),
+    ).toBe(true)
   })
 
   it('omits the spec stage with SDD disabled even when historical spec data exists', () => {
@@ -147,6 +157,26 @@ describe('IntentDetail.vue — engineering progress', () => {
         .findAll('[data-testid="intent-engineering-progress"] [data-stage]')
         .map((stage) => stage.attributes('data-stage')),
     ).toEqual(['intent', 'work'])
+  })
+
+  it('renders the PR label and closed state in worktree mode', () => {
+    const w = mountDetail(intent({ id: 'i1', status: 'done', prId: '42', prStatus: 'closed' }), {
+      sddEnabled: true,
+      workspaceGitBranchMode: 'worktree',
+    })
+    const stages = w.findAll('[data-testid="intent-engineering-progress"] [data-stage]')
+    const pr = stages.at(-1)
+
+    expect(stages.map((stage) => stage.attributes('data-stage'))).toEqual([
+      'intent',
+      'spec',
+      'work',
+      'pr',
+    ])
+    expect(pr?.attributes('data-state')).toBe('closed')
+    expect(pr?.classes()).toContain('is-closed')
+    expect(pr?.find('.intent-engineering-progress-name').text()).toBe('PR')
+    expect(pr?.find('.intent-engineering-progress-state').text()).toBe('Closed / failed')
   })
 
   it('reacts when intent fields are backfilled', async () => {
@@ -855,10 +885,10 @@ describe('IntentDetail.vue — tabs', () => {
     expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
   })
 
-  it('intent session tab: empty state when no intent session, no open emit', async () => {
+  it('intent session tab: offers first-message input when no session, without opening one', async () => {
     const w = mountDetail(intent({ id: 'i1', intentSessionId: null }))
     await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
-    expect(w.find('[data-testid="intent-detail-intent-session-empty"]').exists()).toBe(true)
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(true)
     expect(w.emitted('open-intent-session')).toBeUndefined()
   })
 

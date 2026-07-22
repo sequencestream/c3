@@ -659,6 +659,7 @@
       "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
       "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
     },
+    "create": { "label": "Add intent" },
     "startDev": {
       "confirmUnfinishedDeps": "この意図には未完了の依存があります。それでも作業を開始しますか?"
     },
@@ -899,12 +900,14 @@
       "stage": {
         "intent": "意図",
         "spec": "仕様",
-        "work": "作業"
+        "work": "作業",
+        "pr": "PR"
       },
       "state": {
         "notStarted": "未開始",
         "inProgress": "進行中",
-        "completed": "完了"
+        "completed": "完了",
+        "closed": "クローズ / 失敗"
       }
     },
     "spec": {
@@ -1809,6 +1812,10 @@
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
       "deleteFailed": "Failed to delete intent: {detail}.",
+      "createFailed": "Failed to create intent: {detail}.",
+      "startSessionFailed": "Failed to start intent session: {detail}.",
+      "sessionAlreadyBound": "This intent already has a session. Refresh and open it.",
+      "deleteForbidden": "This draft cannot be deleted: {detail}.",
       "prCreateFailed": "PRの作成に失敗しました: {detail}。",
       "prCreateNotWorktree": "PRを作成できるのはworktreeモードのみです。先にワークスペースをworktreeモードに切り替えてください。",
       "prCreateNoBranch": "このインテントにはまだブランチがありません。PRを作成する前に開発を開始してブランチを作成してください。",

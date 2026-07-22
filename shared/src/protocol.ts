@@ -3054,6 +3054,16 @@ export type ClientToServer =
   | { type: 'save_workspace_setting'; workspaceId: string; config: WorkspaceSetting }
   /** List a project's intents (reply: `intents`), optionally filtered by status. */
   | { type: 'list_intents'; workspaceId: string; status?: IntentStatus }
+  /** Create one empty draft intent and return its exact server-generated id. */
+  | { type: 'create_intent'; workspaceId: string }
+  /** Create and bind an intent-owned communication session, then send its first turn. */
+  | {
+      type: 'start_intent_session'
+      workspaceId: string
+      intentId: string
+      text: string
+      images?: PromptImage[]
+    }
   /**
    * Enter the intent view for a project: open or resume a communication session
    * and return the intent list. `sessionId` is optional — when provided the
@@ -3182,6 +3192,8 @@ export type ClientToServer =
    * priority / dependency / status / spec change.
    */
   | { type: 'update_intent_content'; intentId: string; content: string }
+  /** Physically delete an asset-free draft intent. */
+  | { type: 'delete_intent'; workspaceId: string; intentId: string }
   /** Manually set a intent's status (e.g. mark done/cancelled). */
   | { type: 'update_intent_status'; intentId: string; status: IntentStatus }
   /** Toggle a intent's automation flag (whether the orchestrator may pick it). */
@@ -3669,6 +3681,8 @@ export type ServerToClient =
    * (Write Spec / Approve Spec / Start Work) without a separate settings fetch.
    */
   | { type: 'intents'; workspaceId: string; items: Intent[]; sddEnabled: boolean }
+  /** Exact result for `create_intent`; the regular `intents` snapshot follows. */
+  | { type: 'create_intent_result'; workspaceId: string; intent: Intent }
   /**
    * Connection-directed coarse progress of a manual `start_development` launch,
    * driving the client's startup-progress overlay (shown only when the launch

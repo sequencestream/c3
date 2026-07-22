@@ -640,6 +640,7 @@ export function createState(deps: StateDeps) {
   // Intent action failures need an explicit acknowledgement, unlike transient toast feedback.
   const intentActionError = ref<string | null>(null)
   const intentActionErrorSeq = ref(0)
+  const createIntentPending = ref(false)
   const intentPrSync = ref<
     Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
   >({})
@@ -854,6 +855,7 @@ export function createState(deps: StateDeps) {
     toast,
     intentActionError,
     intentActionErrorSeq,
+    createIntentPending,
     intentPrSync,
     devLaunch,
     specLaunch,

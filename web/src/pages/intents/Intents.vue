@@ -38,6 +38,7 @@ const props = defineProps<{
   intents: Intent[]
   automation: WorkflowStatus | null
   intentActionErrorSeq?: number
+  createIntentPending?: boolean
   /**
    * One-shot external select request (from a work session's title-bar jump button).
    * When set and the target lands in `intents`, it's selected (right panel shows its
@@ -115,6 +116,7 @@ const emit = defineEmits<{
   'list-intent-logs': [intentId: string]
   'reset-intent-session': [intentId: string, userInput: string]
   'reset-spec-session': [intentId: string, userInput: string]
+  'start-intent-session': [intentId: string, text: string, images: PromptImage[]]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
   'open-work-session': [sessionId: string]
   'set-status': [intentId: string, status: IntentStatus]
@@ -122,7 +124,6 @@ const emit = defineEmits<{
   'start-automation': []
   'stop-automation': []
   'new-intent': []
-  'new-intent-session': []
   'create-pr': [intentId: string]
   'sync-pr-status': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
@@ -218,6 +219,8 @@ watch(
     if (!props.intents.some((it) => it.id === requestedId)) return
     selectedIntentId.value = requestedId
     userSelectedIntent.value = true
+    viewingNewIntentSession.value = false
+    mobileActiveKey.value = 'right'
     emit('requested-intent-consumed')
   },
   { immediate: true },
@@ -261,13 +264,12 @@ function handleSelectIntent(intentId: string): void {
   mobileActiveKey.value = 'right'
 }
 
-// 列表标题栏「+」:新建意图会话。右栏切到独立聊天列;新会话经服务端
-// session_selected 成为活动会话后由 ChatColumn 渲染。移动端 drill 进右栏。
-function handleNewIntentSession(): void {
-  viewingNewIntentSession.value = true
-  mobileActiveKey.value = 'right'
-  emit('new-intent-session')
-}
+// 外部子 tab 请求若与一个尚未落入快照的意图选择请求同时到达，先不把它交给当前
+// 详情页，避免旧意图提前消费。目标意图选中后再透传，由新详情页打开指定 tab。
+const detailRequestedSubTab = computed(() => {
+  if (props.requestedIntentId && selectedIntentId.value !== props.requestedIntentId) return null
+  return props.requestedIntentSubTab ?? null
+})
 
 function handleSelectDependency(intentId: string): void {
   handleSelectIntent(intentId)
@@ -307,6 +309,7 @@ defineExpose({
         :sdd-enabled="sddEnabled"
         :workspace-main-branch="workspaceMainBranch"
         :workspace-git-branch-mode="workspaceGitBranchMode"
+        :create-intent-pending="createIntentPending"
         :selected-intent-id="selectedIntentId"
         @filter="(status: IntentStatus | null) => emit('filter', status)"
         @start-automation="emit('start-automation')"
@@ -315,7 +318,7 @@ defineExpose({
         @ordered-change="handleOrderedChange"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @refine="(id: string) => emit('refine', id)"
-        @new-intent-session="handleNewIntentSession"
+        @new-intent="emit('new-intent')"
       />
     </template>
 
@@ -330,7 +333,7 @@ defineExpose({
         :sdd-enabled="sddEnabled"
         :workspace-main-branch="workspaceMainBranch"
         :workspace-git-branch-mode="workspaceGitBranchMode"
-        :requested-sub-tab="requestedIntentSubTab"
+        :requested-sub-tab="detailRequestedSubTab"
         :active-session="activeSession"
         :active-title="activeTitle"
         :vendor="vendor ?? null"
@@ -374,6 +377,10 @@ defineExpose({
           (id: string, input: string) => emit('reset-intent-session', id, input)
         "
         @reset-spec-session="(id: string, input: string) => emit('reset-spec-session', id, input)"
+        @start-intent-session="
+          (id: string, text: string, images: PromptImage[]) =>
+            emit('start-intent-session', id, text, images)
+        "
         @start-dev="(id: string, hasDeps: boolean) => emit('start-dev', id, hasDeps)"
         @open-work-session="(sessionId: string) => emit('open-work-session', sessionId)"
         @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"

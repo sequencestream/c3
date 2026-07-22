@@ -17,6 +17,7 @@ import type { ServerToClient } from '@ccc/shared/protocol'
 import { SAVE_INTENTS_TOOL } from '../../kernel/permission/index.js'
 import type { PermissionRequestCtx } from '../../kernel/permission/index.js'
 import { runSaveConfirmed, type IntentToolResult, type SaveArgs } from './tool-defs.js'
+import { findIntentIdByAnySessionId } from './store.js'
 
 export interface SaveGateDeps {
   emit: (runId: string, frame: ServerToClient) => void
@@ -51,6 +52,18 @@ export async function gatedSave(
 ): Promise<IntentToolResult> {
   const requestId = (deps.makeRequestId ?? (() => crypto.randomUUID()))()
   const runId = binding.getRunId()
+  const ownerIntentId = findIntentIdByAnySessionId(runId)
+  if (ownerIntentId) {
+    const occurrences = args.intents.filter((intent) => intent.id === ownerIntentId).length
+    if (occurrences !== 1) {
+      return {
+        content: [
+          { type: 'text', text: `保存被拒绝:批次必须恰好一次包含当前意图 id="${ownerIntentId}"。` },
+        ],
+        isError: true,
+      }
+    }
+  }
   const input = { intents: args.intents }
   // Register the WorkCenter event + broadcast BEFORE the wire frame (claude-parity).
   // A codex intent save always originates from the read-only comm agent ⇒ sessionKind

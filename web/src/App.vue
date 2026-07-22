@@ -115,6 +115,7 @@ const {
   currentWorkflow,
   intentActionErrorSeq,
   intentActionError,
+  createIntentPending,
   intentPrSync,
   closeIntentActionError,
   intentSpecContent,
@@ -143,7 +144,8 @@ const {
   startWorkflow,
   stopWorkflow,
   selectIntentSession,
-  newIntentSession,
+  createIntent,
+  startIntentSession,
   // ---- discussions ----
   discussionsProject,
   currentDiscussions,
@@ -469,6 +471,7 @@ function onCodesChatWidth(px: number): void {
           "
           :automation="currentWorkflow"
           :intent-action-error-seq="intentActionErrorSeq"
+          :create-intent-pending="createIntentPending"
           :intent-pr-sync="intentPrSync"
           :intent-spec-content="intentSpecContent"
           :intent-spec-loading="intentSpecLoading"
@@ -525,7 +528,8 @@ function onCodesChatWidth(px: number): void {
           @share="shareIntent"
           @start-automation="startWorkflow"
           @stop-automation="stopWorkflow"
-          @new-intent-session="newIntentSession"
+          @new-intent="createIntent"
+          @start-intent-session="startIntentSession"
           @set-session-agent="onSetSessionAgent"
           @respond="respond"
           @submit-ask="submitAsk"

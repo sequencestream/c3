@@ -165,6 +165,7 @@ const emit = defineEmits<{
   // ── 会话重置(带新输入,拼接意图/spec 内容新起会话) ──
   'reset-intent-session': [intentId: string, userInput: string]
   'reset-spec-session': [intentId: string, userInput: string]
+  'start-intent-session': [intentId: string, text: string, images: PromptImage[]]
   // ── chat column passthrough ──
   'set-mode': [mode: ModeToken]
   'set-codex-policy': [policy: CodexPolicy]
@@ -184,7 +185,13 @@ const emit = defineEmits<{
 }>()
 
 const engineeringProgress = computed(() =>
-  props.intent ? deriveIntentEngineeringProgress(props.intent, props.sddEnabled === true) : [],
+  props.intent
+    ? deriveIntentEngineeringProgress(
+        props.intent,
+        props.sddEnabled === true,
+        props.workspaceGitBranchMode,
+      )
+    : [],
 )
 
 const deleteDialogOpen = ref(false)
@@ -214,13 +221,15 @@ function confirmDelete(): void {
 function progressStageLabel(stage: EngineeringProgressStage): string {
   if (stage === 'intent') return t('intent.engineeringProgress.stage.intent')
   if (stage === 'spec') return t('intent.engineeringProgress.stage.spec')
-  return t('intent.engineeringProgress.stage.work')
+  if (stage === 'work') return t('intent.engineeringProgress.stage.work')
+  return t('intent.engineeringProgress.stage.pr')
 }
 
 function progressStateLabel(state: EngineeringProgressState): string {
   if (state === 'not_started') return t('intent.engineeringProgress.state.notStarted')
   if (state === 'in_progress') return t('intent.engineeringProgress.state.inProgress')
-  return t('intent.engineeringProgress.state.completed')
+  if (state === 'completed') return t('intent.engineeringProgress.state.completed')
+  return t('intent.engineeringProgress.state.closed')
 }
 
 function copyPrId(prId: string): void {
@@ -782,6 +791,14 @@ const expectedSessionId = computed<string | null>(() => {
 const chatReady = computed<boolean>(
   () => expectedSessionId.value !== null && props.activeSession === expectedSessionId.value,
 )
+const firstIntentTurn = computed<boolean>(
+  () => activeTab.value === 'intentSession' && expectedSessionId.value === null,
+)
+function submitChat(text: string, images: PromptImage[]): void {
+  const intent = props.intent
+  if (firstIntentTurn.value && intent) emit('start-intent-session', intent.id, text, images)
+  else emit('submit', text, images)
+}
 
 // 意图会话 / spec 会话的权限模式由服务端钉死为默认(权限网关必须触发),标题栏
 // 仍展示当前生效值但只读;只有工作会话 tab 的模式可切换。
@@ -1007,10 +1024,10 @@ defineExpose({
             :data-stage="item.stage"
             :data-state="item.state"
           >
-            <span class="intent-engineering-progress-marker" aria-hidden="true"></span>
             <span class="intent-engineering-progress-name">{{
               progressStageLabel(item.stage)
             }}</span>
+            <span class="intent-engineering-progress-marker" aria-hidden="true"></span>
             <span class="intent-engineering-progress-state">{{
               progressStateLabel(item.state)
             }}</span>
@@ -1309,32 +1326,28 @@ defineExpose({
       <!-- intent session / spec session / work session tab:复用聊天列 -->
       <template v-else>
         <p
-          v-if="!expectedSessionId"
+          v-if="!expectedSessionId && activeTab !== 'intentSession'"
           class="intent-detail-empty"
           :data-testid="
-            activeTab === 'intentSession'
-              ? 'intent-detail-intent-session-empty'
-              : activeTab === 'workSession'
-                ? 'intent-detail-work-session-empty'
-                : 'intent-detail-spec-session-empty'
+            activeTab === 'workSession'
+              ? 'intent-detail-work-session-empty'
+              : 'intent-detail-spec-session-empty'
           "
         >
           {{
-            activeTab === 'intentSession'
-              ? t('intent.intentSession.empty')
-              : activeTab === 'workSession'
-                ? t('intent.workSession.empty')
-                : t('intent.specSession.empty')
+            activeTab === 'workSession'
+              ? t('intent.workSession.empty')
+              : t('intent.specSession.empty')
           }}
         </p>
-        <p v-else-if="!chatReady" class="intent-detail-empty">
+        <p v-else-if="!chatReady && !firstIntentTurn" class="intent-detail-empty">
           {{ t('intent.chat.loading') }}
         </p>
         <ChatColumn
           v-else
           ref="chatColumn"
           data-testid="intent-detail-chat"
-          :active-title="activeTitle"
+          :active-title="firstIntentTurn ? (intent?.title ?? '') : activeTitle"
           :vendor="vendor"
           :agent-switch="agentSwitch"
           :show-mode="true"
@@ -1343,19 +1356,19 @@ defineExpose({
           :mode-options="modeOptions"
           :mode-disabled="modeLocked"
           :always-title="true"
-          :has-active-session="hasActiveSession"
-          :messages="messages"
+          :has-active-session="firstIntentTurn ? true : hasActiveSession"
+          :messages="firstIntentTurn ? [] : messages"
           :actionable-permission-id="actionablePermissionId"
           :task-model="taskModel"
           :has-task-store="hasTaskStore"
-          :running="running"
-          :team-active="teamActive"
+          :running="firstIntentTurn ? false : running"
+          :team-active="firstIntentTurn ? false : teamActive"
           :connection="connection"
           :activity="activity"
           :current-agent-name="currentAgentName"
           :reconnecting="reconnecting"
           :side-effect-pending="sideEffectPending"
-          :queue="queue"
+          :queue="firstIntentTurn ? [] : queue"
           :available-commands="availableCommands"
           :voice-lang="voiceLang"
           @set-mode="(m: ModeToken) => emit('set-mode', m)"
@@ -1366,7 +1379,7 @@ defineExpose({
           @refresh="emit('refresh')"
           @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
           @delete-queued="(id: number) => emit('delete-queued', id)"
-          @submit="(text: string, imgs: PromptImage[]) => emit('submit', text, imgs)"
+          @submit="submitChat"
           @enqueue="(text: string, imgs: PromptImage[]) => emit('enqueue', text, imgs)"
           @stop="emit('stop')"
           @continue="emit('continue')"
@@ -1521,17 +1534,19 @@ defineExpose({
   min-width: 112px;
   flex: 1 0 112px;
   display: grid;
-  grid-template-columns: auto 1fr;
-  column-gap: var(--sp-2);
+  grid-template-rows: auto 12px auto;
+  row-gap: var(--sp-1);
+  justify-items: start;
   color: var(--c-text-muted);
   font-size: var(--fs-caption);
+  text-align: left;
 }
 .intent-engineering-progress-stage:not(:last-child)::after {
   content: '';
   position: absolute;
-  top: 6px;
-  left: 16px;
-  right: 0;
+  top: calc(1em * var(--lh-normal) + var(--sp-1) + 5px);
+  left: 6px;
+  right: -6px;
   height: 2px;
   background: var(--c-border);
 }
@@ -1539,7 +1554,6 @@ defineExpose({
   z-index: 1;
   width: 12px;
   height: 12px;
-  margin-top: 1px;
   border: 2px solid var(--c-border);
   border-radius: 50%;
   box-sizing: border-box;
@@ -1551,17 +1565,26 @@ defineExpose({
   white-space: nowrap;
 }
 .intent-engineering-progress-state {
-  grid-column: 2;
   white-space: nowrap;
 }
 .intent-engineering-progress-stage.is-in_progress .intent-engineering-progress-marker {
-  border-color: var(--c-accent, var(--c-text));
+  border-color: var(--c-success);
   box-shadow: inset 0 0 0 2px var(--c-bg);
-  background: var(--c-accent, var(--c-text));
+  background: var(--c-success);
 }
 .intent-engineering-progress-stage.is-completed .intent-engineering-progress-marker {
-  border-color: var(--c-success);
-  background: var(--c-success);
+  border-color: var(--c-accent, var(--c-text));
+  background: var(--c-accent, var(--c-text));
+}
+.intent-engineering-progress-stage.is-in_progress .intent-engineering-progress-state {
+  color: var(--c-success);
+}
+.intent-engineering-progress-stage.is-completed .intent-engineering-progress-state {
+  color: var(--c-accent, var(--c-text));
+}
+.intent-engineering-progress-stage.is-closed .intent-engineering-progress-marker {
+  border-color: var(--c-error);
+  background: var(--c-error);
 }
 .intent-detail-tabs {
   flex-shrink: 0;

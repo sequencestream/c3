@@ -47,6 +47,8 @@ import {
   listIntents,
   renameChatSession,
   deleteChatSession,
+  createEmptyIntent,
+  deleteEmptyDraftIntent,
   findIntentIdByAnySessionId,
   safeInsertIntentLog,
   setAutomate,
@@ -54,6 +56,7 @@ import {
   setChatSession,
   setLatestCommitHash,
   setPrInfo,
+  setIntentSessionId,
   updateIntent,
   updateIntentDeps,
   updateStatus,
@@ -156,6 +159,124 @@ export const listIntentsHandler: Handler<'list_intents'> = (_ctx, conn, msg) => 
     items: listIntents(proj, msg.status),
     sddEnabled: getSddEnabled(proj),
   })
+}
+
+export const createIntent: Handler<'create_intent'> = (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj || !hasWorkspace(proj)) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  try {
+    const intent = createEmptyIntent(proj, conn.subject ?? 'system')
+    conn.send({ type: 'create_intent_result', workspaceId: pathToId(proj)!, intent })
+    ctx.broadcastIntents(proj)
+  } catch (err) {
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.createFailed', params: { detail: String(err) } },
+    })
+  }
+}
+
+export const startIntentSession: Handler<'start_intent_session'> = async (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  const intent = getIntent(msg.intentId)
+  if (!proj || !intent || resolveWorkspaceRoot(intent.workspaceId) !== proj) {
+    conn.send({ type: 'error', error: { code: intent ? 'workspace.unknown' : 'intent.notFound' } })
+    return
+  }
+  if (!msg.text.trim() && (!msg.images || msg.images.length === 0)) return
+  if (intent.intentSessionId) {
+    conn.send({ type: 'error', error: { code: 'intent.sessionAlreadyBound' } })
+    return
+  }
+  const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  try {
+    if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
+    const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+    bindIntentAgent(chatId)
+    setChatSession(proj, chatId, intent.title)
+    syncIntentSessionProjection({
+      workspacePath: proj,
+      sessionId: chatId,
+      title: intent.title,
+      ownerId: intent.id,
+    })
+    setIntentSessionId(intent.id, chatId)
+    registerPendingIntentLink(chatId, intent.id)
+    conn.viewing = chatId
+    addViewer(chatId, conn.deliver)
+    conn.send({
+      type: 'session_selected',
+      workspaceId: pathToId(proj)!,
+      sessionId: chatId,
+      title: intent.title,
+      mode: 'default',
+      history: [],
+      status: 'idle',
+      vendor: resolveSessionVendor(chatId),
+      agentSwitch: agentSwitchFor(chatId),
+    })
+    ctx.broadcastIntents(proj)
+    const prompt = `继续完善已存在意图 ${intent.id}(当前状态:${intent.status})。这是本轮唯一允许原地更新的目标。标题:${intent.title}。当前内容:${intent.content}\n\n用户输入:\n${msg.text}\n\n定稿前先查询相关意图。调用 save_intents 时批次必须恰好一项携带 id="${intent.id}"；拆分出的其他项不得使用该 id。`
+    await ctx.launchRun(rt, prompt, msg.images)
+  } catch (err) {
+    clearPendingIntentLink(chatId)
+    removeRuntime(chatId)
+    try {
+      deleteChatSession(proj, chatId)
+    } catch {
+      /* no persisted chat */
+    }
+    setIntentSessionId(intent.id, null)
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.startSessionFailed', params: { detail: String(err) } },
+    })
+    ctx.broadcastIntents(proj)
+  }
+}
+
+export const deleteIntent: Handler<'delete_intent'> = (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj || !hasWorkspace(proj)) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const intent = getIntent(msg.intentId)
+  // The intent must belong to the workspace named in the request. Without this a
+  // connection holding another workspace's intent id could physically delete its
+  // draft cross-workspace. Resolve/verify ownership BEFORE deleting so the later
+  // broadcast reuses the already-validated root instead of a forced non-null on a
+  // root that may fail to resolve only after the row is gone.
+  if (!intent || resolveWorkspaceRoot(intent.workspaceId) !== proj) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  try {
+    deleteEmptyDraftIntent(msg.intentId)
+    ctx.broadcastIntents(proj)
+  } catch (err) {
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.deleteForbidden', params: { detail: String(err) } },
+    })
+  }
 }
 
 export const openIntentSession: Handler<'open_intent_session'> = async (ctx, conn, msg) => {

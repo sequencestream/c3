@@ -568,6 +568,18 @@
 
 项目的 intent 列表，回复 `list_intents` / `open_intent_chat`，或在确认 `save_intents` 后广播（intent-management）。`sddEnabled` 是该 workspace 的 SDD 总开关,随每次列表广播携带,供四态意图操作按钮无需单独拉取设置即可定态（RM-R22）。
 
+### `create_intent` / `create_intent_result`
+
+`create_intent { workspaceId }` 是不经过智能体确认的轻量登记入口。服务端在单个事务中创建一条 `title="new intent"`、空正文、`P2`、`draft`、未开启自动化且无下游资产的意图和 `intent_created` 日志。仅向请求连接回复 `create_intent_result { workspaceId, intent }` 以精确定位服务端 UUID，随后仍广播常规 `intents` 快照；客户端须等待该 ID 出现在当前工作区快照后再选中，不得按标题或排序猜测。
+
+### `start_intent_session`
+
+`start_intent_session { workspaceId, intentId, text, images? }` 为尚无 `intentSessionId` 的指定意图创建 owner 沟通会话并发送首条消息。空文本且无图片不创建；已有绑定返回冲突。成功沿用 `session_selected`、运行事件和 `intents` 快照。owner 会话后续调用 `save_intents` 时，批次必须恰好一项携带 owner intent ID，且在确认和落库前校验；拆分出的其他项省略 ID 并作为 `todo` 新建。
+
+### `delete_intent`
+
+`delete_intent { workspaceId, intentId }` 仅允许物理删除没有 intent/spec/work/git/PR 下游资产的 `draft`。删除前先校验工作区可用且意图归属该工作区（跨工作区 intentId 按 `intent.notFound` 拒绝，杜绝跨工作区删除）；删除事务同时清除入边、出边和生命周期日志；其他状态或已有资产均拒绝。
+
 **字段：** `workspaceId: string`, `items: Intent[]`, `sddEnabled: boolean`
 
 ### `dev_launch_progress`

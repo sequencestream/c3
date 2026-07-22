@@ -658,6 +658,7 @@
       "confirm": "永久删除“{title}”?其本地 Git worktree 与本地分支也会一并删除。远端分支和 PR 不受影响。",
       "confirmWithArtifacts": "永久删除“{title}”?已有工作产物、本地 Git worktree 与本地分支也会一并删除。远端分支和 PR 不受影响。"
     },
+    "create": { "label": "增加意图" },
     "startDev": {
       "confirmUnfinishedDeps": "该意图存在未完成的依赖。仍要开始工作吗?"
     },
@@ -898,12 +899,14 @@
       "stage": {
         "intent": "意图",
         "spec": "规范",
-        "work": "工作"
+        "work": "工作",
+        "pr": "PR"
       },
       "state": {
         "notStarted": "未开始",
         "inProgress": "进行中",
-        "completed": "已完成"
+        "completed": "已完成",
+        "closed": "已关闭/失败"
       }
     },
     "spec": {
@@ -1802,6 +1805,10 @@
       "renameChatSessionFailed": "重命名意图会话失败: {detail}。",
       "deleteChatSessionFailed": "删除意图会话失败: {detail}。",
       "deleteFailed": "删除意图失败: {detail}。",
+      "createFailed": "创建意图失败: {detail}。",
+      "startSessionFailed": "启动意图会话失败: {detail}。",
+      "sessionAlreadyBound": "该意图已绑定会话,请刷新后打开。",
+      "deleteForbidden": "无法删除该草稿意图: {detail}。",
       "cannotStartDev": "当前状态({status})不可开始工作。",
       "contentEditForbidden": "当前状态({status})不可编辑意图正文。",
       "specEditForbidden": "开发已启动(状态 {status}),不可直接编辑 spec。",

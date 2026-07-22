@@ -160,6 +160,31 @@ describe('set_admin_password (ADR-0023, upsert account)', () => {
     expect(h.store.auth?.enabled).toBe(true)
   })
 
+  it.each([
+    ['no auth config', false],
+    ['an empty basic provider', true],
+  ])(
+    'first admin from %s returns success before requiring login and clears the connection',
+    (_, seedShell) => {
+      if (seedShell) seedBasic([], '', false)
+      const { conn, sent } = capture('bootstrap-user')
+
+      setAdminPassword(KCTX, conn, {
+        type: 'set_admin_password',
+        username: 'admin',
+        password: 'freshpass',
+      })
+
+      expect(sent).toEqual([
+        { type: 'admin_password_result', result: { ok: true } },
+        { type: 'unauthenticated', reason: 'missing' },
+      ])
+      expect(conn.authed).toBe(false)
+      expect(conn.authToken).toBeNull()
+      expect(conn.subject).toBeNull()
+    },
+  )
+
   it('rejects empty username or too-short password as invalid', () => {
     expect(setPw({ username: '  ', password: 'longenough' })[0]).toMatchObject({
       result: { ok: false, code: 'invalid' },
@@ -187,7 +212,14 @@ describe('set_admin_password (ADR-0023, upsert account)', () => {
 
   it('the admin adds a second account without proof; the admin is unchanged (AC2.2)', () => {
     setPw({ username: 'alice', password: 'alicepass' }) // bootstrap ⇒ alice is admin
-    setPw({ username: 'bob', password: 'bobpass' }, 'alice')
+    const { conn, sent } = capture('alice')
+    setAdminPassword(KCTX, conn, {
+      type: 'set_admin_password',
+      username: 'bob',
+      password: 'bobpass',
+    })
+    expect(sent).toEqual([{ type: 'admin_password_result', result: { ok: true } }])
+    expect(conn).toMatchObject({ authed: true, authToken: 'tok', subject: 'alice' })
     const p = basicProvider()
     expect(p.accounts.map((a) => a.username).sort()).toEqual(['alice', 'bob'])
     expect(p.adminUsername).toBe('alice')
@@ -211,6 +243,34 @@ describe('set_admin_password (ADR-0023, upsert account)', () => {
     const { conn, sent } = capture()
     login(KCTX, conn, { type: 'login', request: { username: 'admin', password: 'freshpass' } })
     expect((sent[0] as Extract<ServerToClient, { type: 'login_result' }>).result.ok).toBe(true)
+  })
+
+  it('changing an existing password does not require login or clear the connection', () => {
+    seedBasic([{ username: 'admin', password: 'oldpassword' }], 'admin')
+    const { conn, sent } = capture('admin')
+
+    setAdminPassword(KCTX, conn, {
+      type: 'set_admin_password',
+      username: 'admin',
+      password: 'newpassword',
+      currentPassword: 'oldpassword',
+    })
+
+    expect(sent).toEqual([{ type: 'admin_password_result', result: { ok: true } }])
+    expect(conn).toMatchObject({ authed: true, authToken: 'tok', subject: 'admin' })
+  })
+
+  it('validation failure leaves the connection authentication state unchanged', () => {
+    const { conn, sent } = capture('bootstrap-user')
+    setAdminPassword(KCTX, conn, {
+      type: 'set_admin_password',
+      username: 'admin',
+      password: 'no',
+    })
+    expect(sent).toEqual([
+      { type: 'admin_password_result', result: { ok: false, code: 'invalid' } },
+    ])
+    expect(conn).toMatchObject({ authed: true, authToken: 'tok', subject: 'bootstrap-user' })
   })
 })
 
@@ -329,7 +389,10 @@ describe('admin gate on account-management handlers (ADR-0023 authz)', () => {
   }
 
   it('rejects an authenticated NON-admin (bob) with auth.adminOnly and mutates nothing', () => {
-    for (const sent of mutateAs('bob')) expect(sent[0]).toEqual(ADMIN_ONLY)
+    for (const sent of mutateAs('bob')) {
+      expect(sent).toEqual([ADMIN_ONLY])
+      expect(sent).not.toContainEqual({ type: 'unauthenticated', reason: 'missing' })
+    }
     // Roster untouched: still exactly alice + bob, admin still alice.
     expect(
       basicProvider()

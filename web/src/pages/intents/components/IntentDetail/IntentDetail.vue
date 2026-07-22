@@ -192,7 +192,8 @@ const deleteSent = ref(false)
 const deleteMessage = computed(() => {
   const r = props.intent
   if (!r) return ''
-  return r.status === 'in_progress'
+  // in_progress / done 都可能留下工作产物(worktree 改动、本地分支提交),文案额外强化提示。
+  return r.status === 'in_progress' || r.status === 'done'
     ? t('intent.delete.confirmWithArtifacts', { title: r.title })
     : t('intent.delete.confirm', { title: r.title })
 })
@@ -983,7 +984,6 @@ defineExpose({
                 {{ intent.automate ? '⚙' : '🖱' }}
               </button>
               <button
-                v-if="intent.status !== 'done'"
                 type="button"
                 class="req-btn danger"
                 data-testid="intent-detail-delete"

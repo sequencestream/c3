@@ -280,9 +280,9 @@ stateDiagram-v2
 它以一次已完成讨论的 `conclusion`(而非一条既有意图的内容)为种子播种沟通会话,然后汇入同一个
 `save_intents` 流程(RM-R7)。保存路径不变。
 
-`delete_intent { workspaceId, intentId }` 永久回收意图。详情标题栏只为非 `done` 意图展示
+`delete_intent { workspaceId, intentId }` 永久回收意图。详情标题栏为所有状态(含 `done`)展示
 danger 二次确认,列表不展示入口；确认文案明确本地 worktree、本地分支与不可逆性,
-`in_progress` 额外提示工作产物。服务端以意图快照和已注册工作区为准,停止并删除沟通、spec
+`in_progress` 与 `done` 额外提示工作产物(这两类状态正是 worktree/本地分支残留的主要来源)。服务端以意图快照和已注册工作区为准,停止并删除沟通、spec
 及全部工作会话,精确强制清理确定性的 c3 worktree 与记录的 `intent/` 本地分支,再在一个事务中
 删除双向依赖、工作会话审计、生命周期日志和主记录。缺失的意图、worktree 或本地分支视为已清理；
 真实清理失败保留主记录供重试。远端引用、PR 与集中式 spec 文件不属于删除对象。

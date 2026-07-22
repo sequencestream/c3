@@ -3,6 +3,24 @@
 All notable changes to `c3` (Code Creative Center). The version source-of-truth is the git
 tag (`git describe --tags`); `package.json` is the fallback baseline.
 
+## v0.9.10
+
+### New Features
+
+- intent detail: an engineering progress bar under the title (Intent — Spec — Work — PR), with the PR stage derived from creation/merge in worktree mode
+- intents: "Add Intent" creates a blank intent directly; delete intent with a confirmation step that also cleans up the local worktree and branch; done intents keep the delete entry and get a stronger work-artifact prompt
+- worktree mode and SDD are enabled by default (engineering-practice defaults)
+- session page is hidden by default, gated by a system-setting switch, with its entry moved after "Codes"
+- intent page / intent-detail session tabs add a permission-mode selector
+- auto-redirect to the system-settings Agent config page when no agent is configured
+- first-admin creation now redirects to the login page
+
+### Fixes
+
+- create_intent stuck in pending, and delete_intent failing across workspaces
+- streamlined the intent creation flow
+- intent progress bar now loads workspace settings
+
 ## v0.9.9
 
 ### New Features

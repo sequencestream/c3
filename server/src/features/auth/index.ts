@@ -99,6 +99,7 @@ export const setAdminPassword: Handler<'set_admin_password'> = (_ctx, conn, msg)
   if (!requireAdmin(conn)) return
   const settings = loadSettings()
   const existing = settings.auth?.provider.kind === 'basic' ? settings.auth.provider : null
+  const isFirstAdmin = !existing?.adminUsername
 
   const username = msg.username.trim()
   if (!username || msg.password.length < MIN_PASSWORD_LEN) {
@@ -129,6 +130,12 @@ export const setAdminPassword: Handler<'set_admin_password'> = (_ctx, conn, msg)
   persistBasicProvider(settings, { kind: 'basic', accounts, adminUsername })
 
   conn.send({ type: 'admin_password_result', result: { ok: true } })
+  if (isFirstAdmin) {
+    conn.authed = false
+    conn.authToken = null
+    conn.subject = null
+    conn.send({ type: 'unauthenticated', reason: 'missing' })
+  }
 }
 
 export const removeAccount: Handler<'remove_account'> = (_ctx, conn, msg) => {

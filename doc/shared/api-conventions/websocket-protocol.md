@@ -578,7 +578,7 @@
 
 ### `delete_intent`
 
-`delete_intent { intentId }` 仅允许物理删除没有 intent/spec/work/git/PR 下游资产的 `draft`。删除事务同时清除入边、出边和生命周期日志；其他状态或已有资产均拒绝。
+`delete_intent { workspaceId, intentId }` 仅允许物理删除没有 intent/spec/work/git/PR 下游资产的 `draft`。删除前先校验工作区可用且意图归属该工作区（跨工作区 intentId 按 `intent.notFound` 拒绝，杜绝跨工作区删除）；删除事务同时清除入边、出边和生命周期日志；其他状态或已有资产均拒绝。
 
 **字段：** `workspaceId: string`, `items: Intent[]`, `sddEnabled: boolean`
 

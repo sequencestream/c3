@@ -1073,8 +1073,19 @@ export function installMessageHandler(ctx: AppCtx): void {
         // looked like "nothing happened". The seq bump still releases the start-dev
         // in-flight guard. Not added to the chat stream — an action error is not session
         // content.
+        // `create_intent` fails via three codes — workspace.unknown, intent.dbUnavailable,
+        // intent.createFailed. Any of them must release the "增加意图" in-flight guard, or the
+        // button stays disabled until the page state is rebuilt. workspace.unknown is not an
+        // `intent.*` code, so release here (ahead of the intent-only branch) for all three.
+        if (
+          createIntentPending.value &&
+          (msg.error.code === 'workspace.unknown' ||
+            msg.error.code === 'intent.dbUnavailable' ||
+            msg.error.code === 'intent.createFailed')
+        ) {
+          createIntentPending.value = false
+        }
         if (msg.error.code.startsWith('intent.')) {
-          if (msg.error.code === 'intent.createFailed') createIntentPending.value = false
           intentActionErrorSeq.value += 1
           ctx.showIntentActionError(translateUiError(msg.error))
           // A rejected intent action releases any in-flight startup overlay too.

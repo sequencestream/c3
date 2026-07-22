@@ -244,14 +244,31 @@ export const startIntentSession: Handler<'start_intent_session'> = async (ctx, c
 }
 
 export const deleteIntent: Handler<'delete_intent'> = (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj || !hasWorkspace(proj)) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
   const intent = getIntent(msg.intentId)
-  if (!intent) {
+  // The intent must belong to the workspace named in the request. Without this a
+  // connection holding another workspace's intent id could physically delete its
+  // draft cross-workspace. Resolve/verify ownership BEFORE deleting so the later
+  // broadcast reuses the already-validated root instead of a forced non-null on a
+  // root that may fail to resolve only after the row is gone.
+  if (!intent || resolveWorkspaceRoot(intent.workspaceId) !== proj) {
     conn.send({ type: 'error', error: { code: 'intent.notFound' } })
     return
   }
   try {
     deleteEmptyDraftIntent(msg.intentId)
-    ctx.broadcastIntents(resolveWorkspaceRoot(intent.workspaceId)!)
+    ctx.broadcastIntents(proj)
   } catch (err) {
     conn.send({
       type: 'error',

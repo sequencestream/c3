@@ -80,8 +80,30 @@ describe('create_intent', () => {
     const h = harness()
     createIntent(h.ctx, h.conn, { type: 'create_intent', workspaceId })
     const id = listIntents(dir)[0].id
-    deleteIntent(h.ctx, h.conn, { type: 'delete_intent', intentId: id })
+    deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceId, intentId: id })
     expect(getIntent(id)).toBeNull()
     expect(listIntentLogs(id)).toEqual([])
+  })
+
+  it('rejects deleting an intent that belongs to another workspace', () => {
+    const other = mkdtempSync(join(tmpdir(), 'c3-create-intent-other-'))
+    addWorkspace(other, 1)
+    const otherWorkspaceId = pathToId(other)!
+    try {
+      const h = harness()
+      // Create the intent in `dir`, then attempt to delete it while naming a
+      // different (valid) workspace — the ownership guard must refuse.
+      createIntent(h.ctx, h.conn, { type: 'create_intent', workspaceId })
+      const id = listIntents(dir)[0].id
+      deleteIntent(h.ctx, h.conn, {
+        type: 'delete_intent',
+        workspaceId: otherWorkspaceId,
+        intentId: id,
+      })
+      expect(getIntent(id)).not.toBeNull()
+      expect(h.sent.at(-1)).toMatchObject({ type: 'error', error: { code: 'intent.notFound' } })
+    } finally {
+      rmSync(other, { recursive: true, force: true })
+    }
   })
 })

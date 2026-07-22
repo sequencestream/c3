@@ -118,7 +118,11 @@ describe('launchWorkSession', () => {
   })
 
   it('rejects a worktree dependency that is not merged', async () => {
-    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', defaultMainBranch: 'main' })
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'worktree',
+      defaultMainBranch: 'main',
+      sddEnabled: false,
+    })
     const [dep, target] = insertIntents(proj, [
       { title: 'Dep', shortEnTitle: 'dep', content: '', priority: 'P1' },
       { title: 'Target', shortEnTitle: 'target', content: '', priority: 'P1' },
@@ -131,6 +135,7 @@ describe('launchWorkSession', () => {
   })
 
   it('accepts a todo intent and fires launchRun', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: false })
     const [intent] = insertIntents(proj, [
       { title: 'Valid dev', shortEnTitle: 'valid-dev', content: 'do it', priority: 'P2' },
     ])

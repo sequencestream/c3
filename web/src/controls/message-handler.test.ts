@@ -32,6 +32,7 @@ function makeCtx() {
   const toast = ref<string | null>(null)
   const intentActionError = ref<string | null>(null)
   const intentActionErrorSeq = ref(0)
+  const createIntentPending = ref(false)
   const devLaunch = ref({})
   const specLaunch = ref({})
   const closeDevLaunch = vi.fn()
@@ -105,6 +106,7 @@ function makeCtx() {
     toast,
     intentActionError,
     intentActionErrorSeq,
+    createIntentPending,
     devLaunch,
     specLaunch,
     closeDevLaunch,

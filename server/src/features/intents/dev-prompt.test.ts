@@ -112,7 +112,11 @@ describe('start_development SDD forced gate', () => {
     addWorkspace(dir, 1)
     workspaceId = pathToId(dir)!
     proj = resolveWorkspaceRoot(workspaceId)!
-    saveWorkspaceSetting(proj, { ...loadWorkspaceSetting(proj), sddEnabled: true })
+    saveWorkspaceSetting(proj, {
+      ...loadWorkspaceSetting(proj),
+      sddEnabled: true,
+      gitBranchMode: 'current-branch',
+    })
   })
 
   afterEach(() => {

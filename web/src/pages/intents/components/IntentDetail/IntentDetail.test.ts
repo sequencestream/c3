@@ -159,6 +159,26 @@ describe('IntentDetail.vue — engineering progress', () => {
     ).toEqual(['intent', 'work'])
   })
 
+  it('renders the PR label and closed state in worktree mode', () => {
+    const w = mountDetail(intent({ id: 'i1', status: 'done', prId: '42', prStatus: 'closed' }), {
+      sddEnabled: true,
+      workspaceGitBranchMode: 'worktree',
+    })
+    const stages = w.findAll('[data-testid="intent-engineering-progress"] [data-stage]')
+    const pr = stages.at(-1)
+
+    expect(stages.map((stage) => stage.attributes('data-stage'))).toEqual([
+      'intent',
+      'spec',
+      'work',
+      'pr',
+    ])
+    expect(pr?.attributes('data-state')).toBe('closed')
+    expect(pr?.classes()).toContain('is-closed')
+    expect(pr?.find('.intent-engineering-progress-name').text()).toBe('PR')
+    expect(pr?.find('.intent-engineering-progress-state').text()).toBe('Closed / failed')
+  })
+
   it('reacts when intent fields are backfilled', async () => {
     const item = intent({ id: 'i1', status: 'draft' })
     const w = mountDetail(item, { sddEnabled: true })

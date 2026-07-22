@@ -895,12 +895,14 @@
       "stage": {
         "intent": "Намерение",
         "spec": "Спецификация",
-        "work": "Работа"
+        "work": "Работа",
+        "pr": "PR"
       },
       "state": {
         "notStarted": "Не начато",
         "inProgress": "В процессе",
-        "completed": "Завершено"
+        "completed": "Завершено",
+        "closed": "Закрыто / ошибка"
       }
     },
     "spec": {

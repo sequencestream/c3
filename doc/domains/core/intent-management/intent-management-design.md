@@ -729,6 +729,11 @@ handler 用假实现做单元测试(无需实时 DB 或总线)。
   由 `intents` 消息刷新;以及按工作区路径为键的自动化状态,
   由 `automation_status` 消息刷新;意图列表以 prop 形式接收当前项目的
   状态。
+- **工程进度:** 意图详情头部按意图字段派生只读进度。意图、规范、工作依次展示,
+  SDD 关闭时省略规范；仅 worktree 工作区在末尾展示 PR。工作是否完成只取决于
+  `intent.status === 'done'`,与 PR 独立。PR 无 `prId` 为未开始；有 `prId` 时,
+  `merged` 为已完成,`rejected`/`failed`/`closed` 为已关闭/失败,
+  `reviewing`、空状态及未知状态为进行中。进度条在窄屏横向滚动。
 
 ## 依赖
 

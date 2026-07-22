@@ -895,12 +895,14 @@
       "stage": {
         "intent": "意図",
         "spec": "仕様",
-        "work": "作業"
+        "work": "作業",
+        "pr": "PR"
       },
       "state": {
         "notStarted": "未開始",
         "inProgress": "進行中",
-        "completed": "完了"
+        "completed": "完了",
+        "closed": "クローズ / 失敗"
       }
     },
     "spec": {

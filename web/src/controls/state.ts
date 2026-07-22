@@ -333,21 +333,30 @@ export function createState(deps: StateDeps) {
   // ---- View mode (workspace / workcenter) ----
   const viewMode = ref<'workspace' | 'workcenter'>('workspace')
   // 切到 workcenter 前记住的标签页,切回 workspace 时恢复。
-  const savedTab = ref<TabKey>('console')
+  const savedTab = ref<TabKey>('intents')
+
+  // Null means the authoritative server settings have not arrived yet. Navigation
+  // treats that state as safely hidden and only restores console after the reply.
+  const serverSettings = ref<SystemSettings | null>(null)
 
   // ---- Top-bar tabs ----
-  const HEADER_TABS = computed<{ key: TabKey; label: string; badgeCount?: number }[]>(() => [
-    {
-      key: 'console',
-      label: t('nav.tab.console.label'),
-      badgeCount: sumSessionCounts(sessionCounts.value),
-    },
-    { key: 'intents', label: t('nav.tab.intents.label') },
-    { key: 'discussion', label: t('nav.tab.discussion.label') },
-    { key: 'automations', label: t('nav.tab.automations.label') },
-    { key: 'codes', label: t('nav.tab.codes.label') },
-  ])
-  const activeTab = ref<TabKey>('console')
+  const HEADER_TABS = computed<{ key: TabKey; label: string; badgeCount?: number }[]>(() => {
+    const tabs: { key: TabKey; label: string; badgeCount?: number }[] = [
+      { key: 'intents', label: t('nav.tab.intents.label') },
+      { key: 'discussion', label: t('nav.tab.discussion.label') },
+      { key: 'automations', label: t('nav.tab.automations.label') },
+      { key: 'codes', label: t('nav.tab.codes.label') },
+    ]
+    if (serverSettings.value?.showSessionsPage === true) {
+      tabs.push({
+        key: 'console',
+        label: t('nav.tab.console.label'),
+        badgeCount: sumSessionCounts(sessionCounts.value),
+      })
+    }
+    return tabs
+  })
+  const activeTab = ref<TabKey>('intents')
   const intentsProject = ref<string | null>(null)
   const intents = ref<Record<string, Intent[]>>({})
 
@@ -532,7 +541,6 @@ export function createState(deps: StateDeps) {
 
   // ---- System settings (agent config) ----
   const settingsOpen = ref(false)
-  const serverSettings = ref<SystemSettings | null>(null)
   const hostStatus = ref<VendorHostStatus[]>([])
   const sandboxStatus = ref<SandboxHostStatus | null>(null)
   const bindingStats = ref<SessionBindingStats | null>(null)

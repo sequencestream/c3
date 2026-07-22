@@ -139,8 +139,13 @@ export function installSettingsActions(ctx: AppCtx): void {
     } else {
       viewMode.value = 'workspace'
       // 恢复之前标签页
-      activeTab.value = savedTab.value
-      ctx.persistViewMode()
+      if (savedTab.value === 'console' && serverSettings.value?.showSessionsPage !== true) {
+        savedTab.value = 'intents'
+        ctx.onSelectTab('intents')
+      } else {
+        activeTab.value = savedTab.value
+        ctx.persistViewMode()
+      }
     }
   }
 

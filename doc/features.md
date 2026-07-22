@@ -131,7 +131,8 @@ c3
 │   ├── system-setting 系统设置                   # 管理员全局配置；运行时页展示 vendor CLI 与 sandbox(arapuca)驱动状态/绝对路径
 │   │   ├── 显示与本地化                          # uiLang 界面语言 / voiceLang 语音输入语言 / timezone 系统时区(驱动 cron 解释)
 │   │   ├── 公开访问地址                          # baseUrl 部署对外基址,用于拼分享深链
-│   │   ├── 工具会话显示                          # showToolSessions 开关,决定工具类会话是否进侧栏
+│   │   ├── 会话页显示                            # showSessionsPage 开关,决定主导航是否在代码后显示会话页
+│   │   ├── 工具会话显示                          # showToolSessions 独立开关,决定工具类会话是否进聚合页侧栏
 │   │   ├── vendor CLI 多版本生效选择             # 下载目标恒取最新兼容版,生效版可从已安装历史版单选;env override 仍最高优先,host PATH 仅降级回退
 │   │   ├── 子进程代理                            # proxy 开关 + HTTP/HTTPS 地址,注入新会话子进程环境(不改服务端自身出网)
 │   │   ├── 鉴权配置                              # auth:basic 多账号/唯一管理员、会话 token TTL、bind 地址暴露意图

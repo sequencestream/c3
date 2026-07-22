@@ -36,7 +36,7 @@ describe('sumSessionCounts — 顶部「会话」tab 角标数值(六类求和)'
 
 // HEADER_TABS computed 与 sessionCounts 同源:console 项 badgeCount 即六类之和,
 // 随 sessionCounts 响应式刷新;非 console 项无 badgeCount。
-describe('createState — HEADER_TABS console 角标', () => {
+describe('createState — HEADER_TABS sessions visibility', () => {
   function makeState() {
     const deps = {
       t: (key: string) => key,
@@ -46,8 +46,29 @@ describe('createState — HEADER_TABS console 角标', () => {
     return createState(deps)
   }
 
-  it('console 项 badgeCount === sessionCounts 六类之和,且随推送刷新', () => {
+  it('unknown and false omit console; true appends it after codes', () => {
     const s = makeState()
+    expect(s.HEADER_TABS.value.map((tab) => tab.key)).toEqual([
+      'intents',
+      'discussion',
+      'automations',
+      'codes',
+    ])
+    s.serverSettings.value = { showSessionsPage: false } as never
+    expect(s.HEADER_TABS.value.some((tab) => tab.key === 'console')).toBe(false)
+    s.serverSettings.value = { showSessionsPage: true } as never
+    expect(s.HEADER_TABS.value.map((tab) => tab.key)).toEqual([
+      'intents',
+      'discussion',
+      'automations',
+      'codes',
+      'console',
+    ])
+  })
+
+  it('visible console badgeCount follows the six session counts', () => {
+    const s = makeState()
+    s.serverSettings.value = { showSessionsPage: true } as never
     const consoleTab = () => s.HEADER_TABS.value.find((tab) => tab.key === 'console')
 
     expect(consoleTab()?.badgeCount).toBe(0)

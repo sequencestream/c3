@@ -54,6 +54,7 @@ function makeCtx() {
   const resolvedSpecRoot = ref<string | null>(null)
   const sysExtraMounts = ref<import('@ccc/shared/protocol').SysExtraMount[]>([])
   const activeTab = ref<string>('console')
+  const savedTab = ref<string>('console')
   const selectedAutomationId = ref<string | null>(null)
   // Discussion / research refs touched by discussion_detail + research_message.
   const serverSettings = ref(null)
@@ -64,6 +65,14 @@ function makeCtx() {
   const researchMessages = ref<ChatMsg[]>([])
   const researchMaxSeq = ref(0)
   const persistViewMode = vi.fn()
+  const onSelectTab = vi.fn((key: string) => {
+    activeTab.value = key
+    persistViewMode()
+  })
+  const switchToConsoleTab = vi.fn(() => {
+    activeTab.value = 'console'
+    persistViewMode()
+  })
   // Deep-link refs (destructured by installMessageHandler's ready/session_selected/discussion_detail
   // branches; in tests where they aren't asserted, just prevent TypeError from undefined access).
   const pendingDeepLink = ref<import('@/lib/deep-link').DeepLinkTarget | null>(null)
@@ -114,6 +123,7 @@ function makeCtx() {
     resolvedSpecRoot,
     sysExtraMounts,
     activeTab,
+    savedTab,
     selectedAutomationId,
     serverSettings,
     activeDiscussion,
@@ -123,6 +133,8 @@ function makeCtx() {
     researchMessages,
     researchMaxSeq,
     persistViewMode,
+    onSelectTab,
+    switchToConsoleTab,
     pendingDeepLink,
     deepLinkFulfilled,
     deepLinkTimers,
@@ -154,6 +166,11 @@ function makeCtx() {
     researchMessages,
     researchMaxSeq,
     settingsOpen,
+    activeTab,
+    savedTab,
+    persistViewMode,
+    onSelectTab,
+    switchToConsoleTab,
   }
 }
 
@@ -609,7 +626,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     const deepLinkFulfilled = ref<Set<string>>(new Set())
     const deepLinkTimers = { timeout: null as ReturnType<typeof setTimeout> | null }
     const currentWorkspace = ref<string | null>(null)
-    const activeTab = ref<string>('console')
+    const activeTab = ref<string>('intents')
     const sessionStatus = ref<Record<string, import('@ccc/shared/protocol').SessionStatus>>({})
     const specLaunch = ref<import('@/lib/spec-launch-view').SpecLaunchModel | null>(null)
     const workspaces = ref<import('@ccc/shared/protocol').WorkspaceInfo[]>([])
@@ -1028,6 +1045,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     expect(r.maybeRestoreDiscussions).toHaveBeenCalled()
     expect(r.maybeRestoreAutomations).toHaveBeenCalled()
     expect(r.maybeRestoreCodes).toHaveBeenCalled()
+    expect(r.openIntents).toHaveBeenCalledWith('ws1')
     expect(r.selectSession).not.toHaveBeenCalled()
     expect(r.showToast).not.toHaveBeenCalled()
   })
@@ -1146,5 +1164,41 @@ describe('auto-open settings when no agent is configured', () => {
     r.ctx.handleMessage(settingsMsg(['agent-1']))
     r.ctx.handleMessage(settingsMsg([]))
     expect(r.settingsOpen.value).toBe(false)
+  })
+})
+
+describe('sessions page setting navigation normalization', () => {
+  function installStorage() {
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    })
+  }
+
+  it('restores a persisted console only after an enabled authoritative reply', () => {
+    installStorage()
+    localStorage.setItem('c3.viewMode', 'console')
+    const r = makeCtx()
+    r.activeTab.value = 'intents'
+    r.ctx.handleMessage({
+      ...settingsMsg(['agent-1']),
+      settings: { showSessionsPage: true, agents: [] },
+    } as unknown as ServerToClient)
+    expect(r.switchToConsoleTab).toHaveBeenCalledOnce()
+  })
+
+  it('disabled reply falls current, persisted, and workcenter-saved console back to intents', () => {
+    installStorage()
+    localStorage.setItem('c3.viewMode', 'console')
+    const r = makeCtx()
+    r.ctx.handleMessage({
+      ...settingsMsg(['agent-1']),
+      settings: { showSessionsPage: false, agents: [] },
+    } as unknown as ServerToClient)
+    expect(r.onSelectTab).toHaveBeenCalledWith('intents')
+    expect(r.activeTab.value).toBe('intents')
+    expect(r.savedTab.value).toBe('intents')
+    expect(localStorage.getItem('c3.viewMode')).toBe('intents')
   })
 })

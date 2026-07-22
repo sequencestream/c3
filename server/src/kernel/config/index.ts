@@ -445,6 +445,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // ⇒ omitted (optional semantics — "not configured" ≡ no value).
   const baseUrlRaw = typeof raw?.baseUrl === 'string' ? raw.baseUrl.trim().replace(/\/+$/, '') : ''
   const showToolSessions = raw?.showToolSessions === true
+  const showSessionsPage = raw?.showSessionsPage === true
   const degradationChain = normalizeDegradationChain(raw?.degradationChain, agents)
   const vendorCliVersions = normalizeVendorCliVersions(raw?.vendorCliVersions)
   // Socket-disconnect auto-resume: enabled unless explicitly disabled (default true).
@@ -479,6 +480,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     timezone,
     ...(baseUrlRaw ? { baseUrl: baseUrlRaw } : {}),
     showToolSessions,
+    showSessionsPage,
     degradationChain,
     socketAutoResume,
     proxy: normalizeProxyConfig(raw?.proxy),

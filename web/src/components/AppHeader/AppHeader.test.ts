@@ -30,6 +30,25 @@ afterEach(() => {
 })
 
 describe('AppHeader.vue — top-bar tabs', () => {
+  it('renders the same hidden/visible sessions collections on desktop and mobile', () => {
+    const hidden = [
+      { key: 'intents', label: 'Intents' },
+      { key: 'discussion', label: 'Discussions' },
+      { key: 'automations', label: 'Automations' },
+      { key: 'codes', label: 'Codes' },
+    ]
+    const visible = [...hidden, { key: 'console', label: 'Sessions' }]
+
+    for (const tabs of [hidden, visible]) {
+      const w = mount(AppHeader, { props: { ...baseProps, tabs } })
+      const expected = tabs.map((tab) => tab.label)
+      expect(w.findAll('.desktop-header-row .header-tab').map((tab) => tab.text())).toEqual(
+        expected,
+      )
+      expect(w.findAll('.mobile-bottom-tab').map((tab) => tab.text())).toEqual(expected)
+    }
+  })
+
   it('按 tabs 数据渲染全部 tab,标记当前 tab', () => {
     const w = mount(AppHeader, { props: baseProps })
     const tabs = w.findAll('.header-tab')

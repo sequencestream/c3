@@ -72,6 +72,7 @@ const SETTINGS_PATH = join(STATE_DIR, 'settings.json')
 
 // Each test: name, script file, and whether a non-(0/5) exit fails the suite.
 const TESTS = [
+  { name: 'sessions page setting (hidden / visible)', file: 'e2e-sessions-page-setting-test.mjs' },
   { name: 'smoke (permission flow)', file: 'e2e-ws-test.mjs' },
   { name: 'pending-queue flush race', file: 'e2e-pending-flush-test.mjs' },
   { name: 'intent (save flow)', file: 'e2e-intent-test.mjs' },

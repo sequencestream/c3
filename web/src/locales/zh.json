@@ -473,6 +473,10 @@
       },
       "showToolSessions": {
         "label": "显示工具会话"
+      },
+      "showSessionsPage": {
+        "label": "显示会话页",
+        "hint": "在主导航中显示会话聚合页；隐藏时不影响各功能内的会话入口。"
       }
     },
     "proxy": {

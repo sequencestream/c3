@@ -34,7 +34,7 @@ describe('normalizeSandboxConfig invariants (via normalizeWorkspaceSetting)', ()
     expect(result.sandbox).toMatchObject({ enabled: true })
   })
 
-  it('keeps sandbox when gitBranchMode is absent (defaults to current-branch)', () => {
+  it('keeps sandbox when gitBranchMode is absent (defaults to worktree)', () => {
     const result = normalizeWorkspaceSetting({ sandbox: { enabled: true } }, [])
     expect(result.sandbox).toMatchObject({ enabled: true })
   })

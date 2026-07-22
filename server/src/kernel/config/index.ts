@@ -562,10 +562,10 @@ function normalizeConsensusConfig(raw: unknown, agents: readonly AgentConfig[]):
  * - `maxSpeechChars` is floored and clamped to ≥ `MIN_SPEECH_CHARS`.
  * - `skillRepos` is a fail-soft passthrough (array shape preserved); the deep
  *   fail-HARD validation lives in `validateSkillRepos()` / `getSkillRepos()`.
- * - `gitBranchMode` falls back to `current-branch` for any absent/unknown value;
+ * - `gitBranchMode` falls back to `worktree` for any absent/unknown value;
  *   the legacy on-disk key `gitCommitMode` is read as a fallback when absent.
  * - `defaultMainBranch` is trimmed; empty ⇒ omitted.
- * - `sddEnabled` defaults to `false` (only an explicit boolean `true` enables SDD).
+ * - `sddEnabled` defaults to `true` (only an explicit boolean `false` disables SDD).
  *   The SDD spec root is a FIXED, centralized, non-configurable location
  *   (`~/.c3/specs/<project-path-segment>`, see `features/intents/specs-root.ts`),
  *   so there is no `specPath` config field — any such input is ignored here.
@@ -621,12 +621,11 @@ function normalizeWorkspaceForge(raw: unknown): 'auto' | 'github' | 'gitlab' {
 }
 
 /**
- * Normalize the SDD master switch — only an explicit boolean `true` enables it;
- * any other value (absent, non-boolean, the string "true") falls back to
- * `false`. This keeps SDD opt-in and rejects illegal types by defaulting off.
+ * Normalize the SDD master switch — only an explicit boolean `false` disables it;
+ * any other value (absent or non-boolean) falls back to `true`.
  */
 function normalizeSddEnabled(raw: unknown): boolean {
-  return raw === true
+  return raw !== false
 }
 
 /**
@@ -641,12 +640,11 @@ function normalizeAutomationEnabled(raw: unknown): boolean {
 }
 
 /**
- * Normalize the git branch mode — any value other than the explicit `worktree`
- * (including absent / unknown) falls back to `current-branch`. This keeps
- * pre-2026-06-10 configs (no field) on the backward-compatible in-place path.
+ * Normalize the git branch mode — preserve both explicit modes and fall back to
+ * `worktree` for absent or unknown values.
  */
 function normalizeGitBranchMode(raw: unknown): GitBranchMode {
-  return raw === 'worktree' ? 'worktree' : 'current-branch'
+  return raw === 'current-branch' ? 'current-branch' : 'worktree'
 }
 
 /** Normalize the default main branch — trims; absent / blank ⇒ `undefined`. */
@@ -1312,7 +1310,7 @@ export function getDevSkill(workspacePath: string): string {
   return normalizeDevSkill(loadWorkspaceSetting(workspacePath).devSkill)
 }
 
-/** Whether spec-driven development is enabled for the workspace (default false). */
+/** Whether spec-driven development is enabled for the workspace (default true). */
 export function getSddEnabled(workspacePath: string): boolean {
   return normalizeSddEnabled(loadWorkspaceSetting(workspacePath).sddEnabled)
 }
@@ -1329,7 +1327,7 @@ export function getAutomationEnabled(workspacePath: string): boolean {
 
 /**
  * The workspace's git branch mode for `start_development`. Absent/unknown ⇒
- * `current-branch` (the backward-compatible in-place path).
+ * `worktree` (the isolated development path).
  */
 export function getGitBranchMode(workspacePath: string): GitBranchMode {
   return normalizeGitBranchMode(loadWorkspaceSetting(workspacePath).gitBranchMode)

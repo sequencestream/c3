@@ -202,10 +202,10 @@ function buildSeed(
       agentIds: config?.consensus?.agentIds ? [...config.consensus.agentIds] : [],
     },
     skillRepos: config?.skillRepos ? config.skillRepos.map((r) => ({ ...r })) : [],
-    gitBranchMode: config?.gitBranchMode ?? 'current-branch',
+    gitBranchMode: config?.gitBranchMode ?? 'worktree',
     // Pre-fill from the saved value, else the server-probed default branch.
     defaultMainBranch: config?.defaultMainBranch ?? detected ?? '',
-    sddEnabled: config?.sddEnabled ?? false,
+    sddEnabled: config?.sddEnabled ?? true,
     // sandbox left RAW from `full` (may be undefined) — synthesized into the draft.
   }
 }

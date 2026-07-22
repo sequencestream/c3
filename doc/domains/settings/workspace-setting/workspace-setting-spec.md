@@ -30,7 +30,7 @@
 
 ## Git 分支策略
 
-- **`gitBranchMode`** — `start_development` 的分支策略:`current-branch`(缺省)或 `worktree`。缺省与旧配置向后兼容,读时规范化。
+- **`gitBranchMode`** — `start_development` 的分支策略:`current-branch` 或 `worktree`(缺省)。缺失/非法值读时归一为 `worktree`;显式合法值保持不变,新键缺失时仍兼容旧磁盘键 `gitCommitMode`。
 - **`defaultMainBranch`** — `worktree` 模式下新 worktree 的基线/合并目标分支;缺省 ⇒ 从当前 HEAD 分叉。设置面板打开时自动探测(origin/HEAD → 当前 HEAD)。
 
 ## 工作区沙箱 `sandbox`
@@ -43,7 +43,7 @@
 
 ## 规格驱动开发 `sddEnabled`
 
-- **`sddEnabled`** — 本工作区规格驱动开发(SDD)总开关,缺省关。开启时,SDD 规格质量门与人工批准检查点在开发编码前生效。仅显式布尔 `true` 启用;缺失/非布尔规范化为 `false`。
+- **`sddEnabled`** — 本工作区规格驱动开发(SDD)总开关,缺省开。开启时,SDD 规格质量门与人工批准检查点在开发编码前生效。仅显式布尔 `false` 关闭;缺失/非布尔规范化为 `true`。
 - **Spec 目录(只读、集中、固定)** — SDD 规范文档根目录**不是可配置项**,被**固定**为按项目隔离的集中位置 `<c3 home>/doc/<项目路径段>`(命名范式与 worktree 集中目录同源),由服务端从**归属工作区路径**确定性解析,故同一项目的所有 worktree 共享同一份规范集合。工作区配置**仅只读展示**该解析目录(随工作区设置回复下发),界面与协议均**无法修改**:任何客户端提交的规范目录入参都被忽略,不写入、不改变解析结果(「服务端为准」)。规范文档**不提交 Git**,依赖本机 `<c3 home>`。
   > 边界:不迁移、不读取、不识别历史的工作区内 `.doc` 规范文档(集中目录仅承载启用后的新规范)。
 

@@ -120,7 +120,7 @@ flowchart TD
    创建/复用一个隔离的按意图划分的 worktree,从最新拉取的远程
    `defaultMainBranch` 尖端分支出去(若可用),在没有远程、远程分支不可用
    或拉取失败时尽力回退到本地 `defaultMainBranch`;
-   `current-branch`(默认)⇒ 原地开发。worktree 启动永不自动合并/变基
+   `current-branch` ⇒ 原地开发。缺省或非法模式归一为 `worktree`;worktree 启动永不自动合并/变基
    用户本地的 main 检出,本地 main 分支的陈旧/分叉/非当前状态
    不会影响新 worktree 基点的选择。工作会话的有效工作目录
    会相应设置(`RM-R8`)。

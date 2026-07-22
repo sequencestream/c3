@@ -42,6 +42,9 @@ import {
 } from './works/index.js'
 import {
   deleteIntentSession,
+  createIntent,
+  startIntentSession,
+  deleteIntent,
   discussionToIntent,
   listIntentLogsHandler,
   listIntentSessions,
@@ -150,6 +153,8 @@ export const handlerMap: HandlerMap = {
   user_prompt: userPrompt,
   // intents
   list_intents: listIntentsHandler,
+  create_intent: createIntent,
+  start_intent_session: startIntentSession,
   open_intent_session: openIntentSession,
   new_intent_session: newIntentSession,
   refine_intent: refineIntent,
@@ -167,6 +172,7 @@ export const handlerMap: HandlerMap = {
   read_spec: readSpecHandler,
   update_spec_content: updateSpecContentHandler,
   update_intent_content: updateIntentContent,
+  delete_intent: deleteIntent,
   update_intent_status: updateIntentStatus,
   set_intent_automate: setIntentAutomate,
   set_intent_git_info: setIntentGitInfo,

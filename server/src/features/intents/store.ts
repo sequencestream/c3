@@ -778,6 +778,78 @@ export function upsertIntents(
   return hydrate(d, rows)
 }
 
+/** Create the lightweight, human-registered placeholder intent in one transaction. */
+export function createEmptyIntent(workspacePath: string, actor?: string | null): Intent {
+  const d = requireDb()
+  const id = randomUUID()
+  const proj = resolve(workspacePath)
+  const now = Date.now()
+  tx(d, () => {
+    d.run(
+      `INSERT INTO intents
+         (id, workspace_path, title, short_en_title, content, priority, status, module,
+          last_work_session_id, automate, branch_name, latest_commit_hash, pr_id, pr_status,
+          spec_path, spec_approved, spec_approve_user, spec_session_id, intent_session_id,
+          created_at, updated_at, completed_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      id,
+      proj,
+      'new intent',
+      null,
+      '',
+      'P2',
+      'draft',
+      '',
+      null,
+      0,
+      null,
+      null,
+      null,
+      null,
+      null,
+      0,
+      null,
+      null,
+      null,
+      now,
+      now,
+      null,
+    )
+    d.run(
+      'INSERT INTO intent_logs (id, intent_id, operation_type, summary, actor, created_at) VALUES (?,?,?,?,?,?)',
+      randomUUID(),
+      id,
+      'intent_created',
+      '创建意图: new intent',
+      actor ?? 'system',
+      now,
+    )
+  })
+  return getIntent(id)!
+}
+
+/** Delete only a draft that has no session/spec/work/git/PR downstream assets. */
+export function deleteEmptyDraftIntent(id: string): void {
+  const d = requireDb()
+  const row = d.get<Row>('SELECT * FROM intents WHERE id=?', id)
+  if (!row) throw new Error('intent not found')
+  const guarded =
+    row.status === 'draft' &&
+    row.intent_session_id === null &&
+    row.spec_session_id === null &&
+    row.spec_path === null &&
+    row.last_work_session_id === null &&
+    row.branch_name === null &&
+    row.latest_commit_hash === null &&
+    row.pr_id === null
+  if (!guarded) throw new Error('intent has downstream assets')
+  tx(d, () => {
+    d.run('DELETE FROM intent_deps WHERE intent_id=? OR depends_on_id=?', id, id)
+    d.run('DELETE FROM intent_logs WHERE intent_id=?', id)
+    d.run('DELETE FROM intents WHERE id=?', id)
+  })
+}
+
 /**
  * Guard: is the `from → to` status transition legal?
  *
@@ -933,7 +1005,7 @@ export function setSpecSessionId(id: string, sessionId: string): void {
 }
 
 /** Set the refine / communication session id (c3SessionId) for an intent. */
-export function setIntentSessionId(id: string, sessionId: string): void {
+export function setIntentSessionId(id: string, sessionId: string | null): void {
   const d = requireDb()
   d.run(
     'UPDATE intents SET intent_session_id=?, updated_at=? WHERE id=?',

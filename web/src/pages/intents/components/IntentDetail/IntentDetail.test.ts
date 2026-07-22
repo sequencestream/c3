@@ -822,10 +822,10 @@ describe('IntentDetail.vue — tabs', () => {
     expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
   })
 
-  it('intent session tab: empty state when no intent session, no open emit', async () => {
+  it('intent session tab: offers first-message input when no session, without opening one', async () => {
     const w = mountDetail(intent({ id: 'i1', intentSessionId: null }))
     await w.find('.intent-detail-tab[data-tab="intentSession"]').trigger('click')
-    expect(w.find('[data-testid="intent-detail-intent-session-empty"]').exists()).toBe(true)
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(true)
     expect(w.emitted('open-intent-session')).toBeUndefined()
   })
 

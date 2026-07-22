@@ -649,6 +649,7 @@
     }
   },
   "intent": {
+    "create": { "label": "增加意图" },
     "startDev": {
       "confirmUnfinishedDeps": "该意图存在未完成的依赖。仍要开始工作吗?"
     },
@@ -1792,6 +1793,10 @@
       "chatSessionNotFound": "意图会话不存在: {sessionId}。",
       "renameChatSessionFailed": "重命名意图会话失败: {detail}。",
       "deleteChatSessionFailed": "删除意图会话失败: {detail}。",
+      "createFailed": "创建意图失败: {detail}。",
+      "startSessionFailed": "启动意图会话失败: {detail}。",
+      "sessionAlreadyBound": "该意图已绑定会话,请刷新后打开。",
+      "deleteForbidden": "无法删除该草稿意图: {detail}。",
       "cannotStartDev": "当前状态({status})不可开始工作。",
       "contentEditForbidden": "当前状态({status})不可编辑意图正文。",
       "specEditForbidden": "开发已启动(状态 {status}),不可直接编辑 spec。",

@@ -650,6 +650,7 @@
     }
   },
   "intent": {
+    "create": { "label": "Add intent" },
     "startDev": {
       "confirmUnfinishedDeps": "この意図には未完了の依存があります。それでも作業を開始しますか?"
     },
@@ -1799,6 +1800,10 @@
       "chatSessionNotFound": "Intent session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
+      "createFailed": "Failed to create intent: {detail}.",
+      "startSessionFailed": "Failed to start intent session: {detail}.",
+      "sessionAlreadyBound": "This intent already has a session. Refresh and open it.",
+      "deleteForbidden": "This draft cannot be deleted: {detail}.",
       "prCreateFailed": "PRの作成に失敗しました: {detail}。",
       "prCreateNotWorktree": "PRを作成できるのはworktreeモードのみです。先にワークスペースをworktreeモードに切り替えてください。",
       "prCreateNoBranch": "このインテントにはまだブランチがありません。PRを作成する前に開発を開始してブランチを作成してください。",

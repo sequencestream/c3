@@ -31,6 +31,7 @@ const props = defineProps<{
   sddEnabled?: boolean
   workspaceMainBranch?: string | null
   workspaceGitBranchMode?: 'worktree' | 'current-branch'
+  createIntentPending?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -43,6 +44,7 @@ const emit = defineEmits<{
   'set-automate': [intentId: string, automate: boolean]
   refine: [intentId: string]
   'new-intent-session': []
+  'new-intent': []
 }>()
 
 const mobileActionsOpen = ref(false)
@@ -122,6 +124,17 @@ function setFilterFromMenu(value: string): void {
   <section class="req-list merged-list" :class="{ collapsed }">
     <div class="merged-list-head">
       <div class="merged-list-head-left">
+        <button
+          type="button"
+          class="req-new-btn"
+          :aria-label="t('intent.create.label')"
+          :title="t('intent.create.label')"
+          data-testid="intent-list-create-intent"
+          :disabled="createIntentPending"
+          @click="emit('new-intent')"
+        >
+          {{ t('intent.create.label') }}
+        </button>
         <button
           type="button"
           class="req-collapse-btn"

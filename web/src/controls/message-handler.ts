@@ -106,6 +106,9 @@ export function installMessageHandler(ctx: AppCtx): void {
     intentLogsById,
     intentLogsLoading,
     intentsProject,
+    requestedIntentId,
+    requestedIntentSubTab,
+    createIntentPending,
     automation,
     discussions,
     discussionRunState,
@@ -681,6 +684,13 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       }
+      case 'create_intent_result':
+        createIntentPending.value = false
+        if (msg.workspaceId === intentsProject.value) {
+          requestedIntentId.value = msg.intent.id
+          requestedIntentSubTab.value = 'intentSession'
+        }
+        break
       case 'dev_launch_progress':
         // Advance the overlay's coarse phase; a `failed` stage closes it with an
         // error toast (the reducer + dispatch handle the side-effects).
@@ -1035,6 +1045,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         // in-flight guard. Not added to the chat stream — an action error is not session
         // content.
         if (msg.error.code.startsWith('intent.')) {
+          if (msg.error.code === 'intent.createFailed') createIntentPending.value = false
           intentActionErrorSeq.value += 1
           ctx.showIntentActionError(translateUiError(msg.error))
           // A rejected intent action releases any in-flight startup overlay too.

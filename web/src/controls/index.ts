@@ -87,6 +87,7 @@ export function useAppController(): AppCtx {
       onReopen: () => {
         // In the intent view, resume the comm session; otherwise re-select normally.
         if (ctx.activeTab.value === 'intents' && ctx.intentsProject.value) {
+          ctx.send({ type: 'load_workspace_setting', workspaceId: ctx.intentsProject.value })
           ctx.send({ type: 'open_intent_session', workspaceId: ctx.intentsProject.value })
           ctx.send({ type: 'list_intent_sessions', workspaceId: ctx.intentsProject.value })
         } else if (ctx.activeTab.value === 'discussion' && ctx.discussionsProject.value) {

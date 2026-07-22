@@ -50,6 +50,8 @@ enabled:false`,在规范化阶段强制执行(过期的 `enabled:true` 会被重
   WS 通道共同复用。`set_admin_password { username, password, currentPassword? }` **upsert**
   某个账户的密码——用户名是新的则新增账户(第一个成为管理员),已存在则更改
   (`admin_password_result`:`ok` | `{ code: 'not_authenticated' | 'invalid' }`)。
+  首个管理员保存成功时,服务器在成功结果后向当前连接发送
+  `unauthenticated { reason: 'missing' }`,要求使用新凭据登录；后续账号变更不触发此流程。
   `remove_account { username }` / `set_admin_account { username }` 管理账户集合 + 管理员指定
   (`account_op_result`:`ok` | `{ code: 'not_found' | 'admin_must_reassign' | 'invalid' }`)。
   `unauthenticated` 是 HTTP 401 的 WS 对应物。

@@ -486,12 +486,17 @@ async function fetchLatestRelease(
  * avoids the unauthenticated `api.github.com` rate limit (60/h/IP) that shared-exit
  * users hit. Returns null on any unusable outcome (fetch error, no `Location`, or a
  * `Location` that does not name a tag) so the caller can fall back to the JSON API.
+ * Shared with the background update checker, which needs the same rate-limit-free path.
  */
-async function resolveTagViaRedirect(repo: string, fetchFn: typeof fetch): Promise<string | null> {
+export async function resolveTagViaRedirect(
+  repo: string,
+  fetchFn: typeof fetch,
+  userAgent = 'c3-upgrade',
+): Promise<string | null> {
   const url = `https://github.com/${repo}/releases/latest`
   let res: Response
   try {
-    res = await fetchFn(url, { redirect: 'manual', headers: { 'User-Agent': 'c3-upgrade' } })
+    res = await fetchFn(url, { redirect: 'manual', headers: { 'User-Agent': userAgent } })
   } catch {
     return null
   }

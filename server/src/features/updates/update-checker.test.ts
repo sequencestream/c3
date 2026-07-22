@@ -140,6 +140,63 @@ describe('runUpdateCheckOnce — fail-soft', () => {
   })
 })
 
+describe('runUpdateCheckOnce — default path avoids the rate-limited JSON API', () => {
+  beforeEach(() => resetUpdateStatusForTests())
+
+  /** A manual-redirect response from `github.com/<repo>/releases/latest` → tag page. */
+  function redirectTo(tag: string): Partial<Response> {
+    return {
+      status: 302,
+      headers: new Headers({ location: `https://github.com/o/r/releases/tag/${tag}` }),
+    }
+  }
+
+  it('no override → resolves the tag from the releases redirect, never touching api.github.com', async () => {
+    const fetchImpl = vi.fn(
+      async () => redirectTo(`v${HIGHER}`) as unknown as Response,
+    ) as unknown as typeof fetch
+    const snap = await runUpdateCheckOnce({ fetchImpl, now: 7 })
+    expect(snap).toEqual({ available: true, latestVersion: HIGHER, checkedAt: 7 })
+    const urls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.map(([u]) =>
+      String(u),
+    )
+    expect(urls.every((u) => !u.includes('api.github.com'))).toBe(true)
+  })
+
+  it('redirect without a usable tag → falls back to the JSON API', async () => {
+    const fetchImpl = vi.fn(async (url: unknown) =>
+      String(url).includes('api.github.com')
+        ? (okJson({ tag_name: `v${HIGHER}` }) as unknown as Response)
+        : ({ status: 200, headers: new Headers() } as unknown as Response),
+    ) as unknown as typeof fetch
+    const snap = await runUpdateCheckOnce({ fetchImpl, now: 8 })
+    expect(snap).toEqual({ available: true, latestVersion: HIGHER, checkedAt: 8 })
+    const urls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls.map(([u]) =>
+      String(u),
+    )
+    expect(urls.some((u) => u.includes('api.github.com'))).toBe(true)
+  })
+
+  it('rate-limited API fallback (403) → fail-soft, keeps the last snapshot', async () => {
+    await runUpdateCheckOnce({
+      url: BASE,
+      fetchImpl: fetchReturning(okJson({ version: `v${HIGHER}` })),
+      now: 100,
+    })
+    const fetchImpl = vi.fn(async (url: unknown) =>
+      String(url).includes('api.github.com')
+        ? ({
+            ok: false,
+            status: 403,
+            headers: new Headers({ 'x-ratelimit-remaining': '0' }),
+          } as unknown as Response)
+        : ({ status: 200, headers: new Headers() } as unknown as Response),
+    ) as unknown as typeof fetch
+    const snap = await runUpdateCheckOnce({ fetchImpl })
+    expect(snap).toEqual({ available: true, latestVersion: HIGHER, checkedAt: 100 })
+  })
+})
+
 describe('startUpdateCheckScheduler — timer loop', () => {
   beforeEach(() => {
     vi.useFakeTimers()

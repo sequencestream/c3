@@ -473,6 +473,10 @@
       },
       "showToolSessions": {
         "label": "Show tool sessions"
+      },
+      "showSessionsPage": {
+        "label": "Show sessions page",
+        "hint": "Show the sessions aggregation page in primary navigation. In-context sessions remain available when hidden."
       }
     },
     "proxy": {

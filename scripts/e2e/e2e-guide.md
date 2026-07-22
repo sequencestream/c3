@@ -25,6 +25,11 @@ non-zero if any test FAILs. The one-off SDK spike below is excluded (it runs no
 server). The individual tests can still be run by hand as documented in each
 section.
 
+The sessions-page setting test runs first against that isolated settings file. It
+persists both `showSessionsPage: false` and `true`, verifies each authoritative
+`settings` echo, then restores the original snapshot. Frontend navigation tests
+pair this wire/disk e2e with desktop/mobile rendering and ordering assertions.
+
 ## Smoke test (permission flow)
 
 - `pnpm start --port 13000`

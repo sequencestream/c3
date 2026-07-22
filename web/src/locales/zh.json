@@ -884,6 +884,19 @@
         "label": "变更日志"
       }
     },
+    "engineeringProgress": {
+      "ariaLabel": "工程进度",
+      "stage": {
+        "intent": "意图",
+        "spec": "规范",
+        "work": "工作"
+      },
+      "state": {
+        "notStarted": "未开始",
+        "inProgress": "进行中",
+        "completed": "已完成"
+      }
+    },
     "spec": {
       "empty": "该意图尚未编写规范。",
       "loading": "加载规范中…"

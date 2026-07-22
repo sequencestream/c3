@@ -884,6 +884,19 @@
         "label": "Changelog"
       }
     },
+    "engineeringProgress": {
+      "ariaLabel": "Engineering progress",
+      "stage": {
+        "intent": "Intent",
+        "spec": "Spec",
+        "work": "Work"
+      },
+      "state": {
+        "notStarted": "Not started",
+        "inProgress": "In progress",
+        "completed": "Completed"
+      }
+    },
     "spec": {
       "empty": "No spec has been written for this intent yet.",
       "loading": "Loading spec…"

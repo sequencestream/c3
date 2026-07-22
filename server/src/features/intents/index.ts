@@ -34,14 +34,16 @@ import {
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
-import { loadHistory, loadLastAssistantMessages } from '../../sessions.js'
+import { loadHistory, loadLastAssistantMessages, removeSession } from '../../sessions.js'
 import {
   canTransition,
   getChatSession,
   getIntent,
+  deleteIntentRecords,
   isStoreAvailable,
   listChatSessions,
   listIntentLogs,
+  listIntentSessions as listIntentWorkSessions,
   listIntents,
   renameChatSession,
   deleteChatSession,
@@ -74,7 +76,7 @@ import { getWorkflowHooks, getWorkflowStatus, startWorkflow, stopWorkflow } from
 import { getDiscussion } from '../discussions/store.js'
 import { closeForgePr, commitAndPush, createGhPr, hasDiffAgainstMain } from '../../git.js'
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
-import { getWorktreePath } from './worktree.js'
+import { getWorktreePath, removeIntentGitResources } from './worktree.js'
 import { resolveSpecFileAbs } from './specs-root.js'
 import {
   deleteByVendorId,
@@ -697,6 +699,63 @@ export const deleteIntentSession: Handler<'delete_intent_session'> = (ctx, conn,
     conn.send({
       type: 'error',
       error: { code: 'intent.deleteChatSessionFailed', params: { detail: String(err) } },
+    })
+  }
+}
+
+export const deleteIntent: Handler<'delete_intent'> = async (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const intent = getIntent(msg.intentId)
+  if (!intent) {
+    ctx.broadcastIntents(proj)
+    ctx.broadcastIntentSessions(proj)
+    ctx.broadcastStatuses()
+    return
+  }
+  if (intent.workspaceId !== pathToId(proj)) {
+    conn.send({
+      type: 'error',
+      error: {
+        code: 'intent.deleteFailed',
+        params: { detail: 'intent does not belong to workspace' },
+      },
+    })
+    return
+  }
+
+  const sessionIds = new Set<string>()
+  if (intent.intentSessionId) sessionIds.add(intent.intentSessionId)
+  if (intent.specSessionId) sessionIds.add(intent.specSessionId)
+  for (const session of listIntentWorkSessions(intent.id)) sessionIds.add(session.sessionId)
+
+  try {
+    for (const sessionId of sessionIds) {
+      removeRuntime(sessionId)
+      await removeSession(proj, sessionId)
+      deleteChatSession(proj, sessionId)
+      deleteByVendorId(resolveSessionVendor(sessionId), sessionId)
+      if (conn.viewing === sessionId) conn.viewing = null
+    }
+    removeIntentGitResources(proj, intent.id, intent.branchName)
+    deleteIntentRecords(intent.id)
+    ctx.broadcastIntents(proj)
+    ctx.broadcastIntentSessions(proj)
+    ctx.broadcastStatuses()
+  } catch (err) {
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.deleteFailed', params: { detail: String(err) } },
     })
   }
 }

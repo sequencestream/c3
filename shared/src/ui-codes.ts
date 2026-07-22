@@ -64,6 +64,7 @@ export const UI_ERROR_CODES = {
     key: 'error.intent.deleteChatSessionFailed',
     params: ['detail'],
   },
+  'intent.deleteFailed': { key: 'error.intent.deleteFailed', params: ['detail'] },
   'intent.cannotStartDev': { key: 'error.intent.cannotStartDev', params: ['status'] },
   'intent.contentEditForbidden': { key: 'error.intent.contentEditForbidden', params: ['status'] },
   'intent.devStartInFlight': { key: 'error.intent.devStartInFlight' },

@@ -458,6 +458,17 @@ export function getIntent(id: string): Intent | null {
   return row ? hydrate(d, [row])[0] : null
 }
 
+/** Delete an intent and every ledger row owned by or pointing at it atomically. */
+export function deleteIntentRecords(intentId: string): void {
+  const d = requireDb()
+  tx(d, () => {
+    d.run('DELETE FROM intent_deps WHERE intent_id=? OR depends_on_id=?', intentId, intentId)
+    d.run('DELETE FROM intent_sessions WHERE intent_id=?', intentId)
+    d.run('DELETE FROM intent_logs WHERE intent_id=?', intentId)
+    d.run('DELETE FROM intents WHERE id=?', intentId)
+  })
+}
+
 /** Escape LIKE wildcards so a keyword matches literally (paired with `ESCAPE '\'`). */
 function escapeLike(s: string): string {
   return s.replace(/[\\%_]/g, (c) => `\\${c}`)

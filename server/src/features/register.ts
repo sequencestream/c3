@@ -41,6 +41,7 @@ import {
   userPrompt,
 } from './works/index.js'
 import {
+  deleteIntent,
   deleteIntentSession,
   discussionToIntent,
   listIntentLogsHandler,
@@ -158,6 +159,7 @@ export const handlerMap: HandlerMap = {
   list_intent_logs: listIntentLogsHandler,
   rename_intent_session: renameIntentSession,
   delete_intent_session: deleteIntentSession,
+  delete_intent: deleteIntent,
   start_development: startDevelopment,
   write_spec: writeSpecHandler,
   approve_spec: approveSpecHandler,

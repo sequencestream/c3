@@ -280,6 +280,11 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'update_intent_status', intentId, status })
   }
 
+  ctx.deleteIntent = (intentId: string): void => {
+    if (!intentsProject.value) return
+    send({ type: 'delete_intent', workspaceId: intentsProject.value, intentId })
+  }
+
   // Directly edit an intent's markdown body. The server gates on status
   // (draft / todo only), updates content, appends an `intent_updated` log, and
   // re-broadcasts the intents list (which IntentDetail uses to leave edit mode).

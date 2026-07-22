@@ -270,7 +270,7 @@ stateDiagram-v2
 
 消费(新增):`list_intents`、`open_intent_chat`、`new_intent_chat`、
 `refine_intent`、`discussion_to_intent`、`list_intent_sessions`、
-`rename_intent_session`、`delete_intent_session`、`start_development`、
+`rename_intent_session`、`delete_intent_session`、`delete_intent`、`start_development`、
 `update_intent_content`、`update_spec_content`、`update_intent_status`、`set_intent_automate`、
 `start_automation`、`stop_automation`。发出(新增):`intents`、`intent_sessions`、
 `automation_status`。
@@ -279,6 +279,13 @@ stateDiagram-v2
 [discussion 领域](../discussion/discussion-overview.md)触发器持有的 `refine_intent` 变体:
 它以一次已完成讨论的 `conclusion`(而非一条既有意图的内容)为种子播种沟通会话,然后汇入同一个
 `save_intents` 流程(RM-R7)。保存路径不变。
+
+`delete_intent { workspaceId, intentId }` 永久回收意图。详情标题栏只为非 `done` 意图展示
+danger 二次确认,列表不展示入口；确认文案明确本地 worktree、本地分支与不可逆性,
+`in_progress` 额外提示工作产物。服务端以意图快照和已注册工作区为准,停止并删除沟通、spec
+及全部工作会话,精确强制清理确定性的 c3 worktree 与记录的 `intent/` 本地分支,再在一个事务中
+删除双向依赖、工作会话审计、生命周期日志和主记录。缺失的意图、worktree 或本地分支视为已清理；
+真实清理失败保留主记录供重试。远端引用、PR 与集中式 spec 文件不属于删除对象。
 
 复用(既有):聊天 I/O 是 `user_prompt`(路由到沟通运行时)加上
 `session_selected` / `user_text` / `assistant_text` / `tool_use` / `tool_result` / `turn_end`;

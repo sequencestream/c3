@@ -25,6 +25,7 @@ import {
   rebindChatSession,
   renameChatSession,
   deleteChatSession,
+  deleteIntentRecords,
   resetStoreForTests,
   resolveBatchDependencies,
   setBranchName,
@@ -60,6 +61,40 @@ afterEach(() => {
 })
 
 describe('intents CRUD', () => {
+  it('transactionally deletes the intent, both dependency directions, sessions and logs', () => {
+    const [target, other] = insertIntents(proj, [
+      { title: 'Target', shortEnTitle: 'target', content: '', priority: 'P0' },
+      { title: 'Other', shortEnTitle: 'other', content: '', priority: 'P1' },
+    ])
+    const raw = getDb()!
+    raw.run('INSERT INTO intent_deps VALUES (?,?,?,?)', target.id, other.id, 'blocks', 1)
+    raw.run('INSERT INTO intent_deps VALUES (?,?,?,?)', other.id, target.id, 'blocks', 2)
+    insertIntentSession(target.id, 'work-1', 'claude')
+    raw.run(
+      'INSERT INTO intent_logs VALUES (?,?,?,?,?,?)',
+      'log-1',
+      target.id,
+      'intent_updated',
+      'x',
+      'user',
+      1,
+    )
+
+    deleteIntentRecords(target.id)
+
+    expect(getIntent(target.id)).toBeNull()
+    expect(getIntent(other.id)).not.toBeNull()
+    expect(
+      raw.get(
+        'SELECT 1 FROM intent_deps WHERE intent_id=? OR depends_on_id=?',
+        target.id,
+        target.id,
+      ),
+    ).toBeUndefined()
+    expect(listIntentSessions(target.id)).toEqual([])
+    expect(raw.get('SELECT 1 FROM intent_logs WHERE intent_id=?', target.id)).toBeUndefined()
+  })
+
   it('inserts a batch as todo and lists with dependsOn, in insertion order', () => {
     expect(isStoreAvailable()).toBe(true)
     const saved = insertIntents(proj, [

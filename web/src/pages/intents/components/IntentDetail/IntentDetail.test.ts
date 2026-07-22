@@ -172,6 +172,33 @@ describe('IntentDetail.vue — engineering progress', () => {
 })
 
 describe('IntentDetail.vue — persistent header', () => {
+  it('shows delete last for non-done intents and confirms exactly once through danger dialog', async () => {
+    const item = intent({ id: 'i1', title: 'Danger', status: 'in_progress' })
+    const w = mountDetail(item)
+    const actions = w.find('[data-testid="intent-detail-actions"]')
+    expect(actions.findAll('button').at(-1)?.attributes('data-testid')).toBe('intent-detail-delete')
+
+    await w.find('[data-testid="intent-detail-delete"]').trigger('click')
+    expect(w.find('[role="alertdialog"]').exists()).toBe(true)
+    expect(w.find('[data-testid="confirm-accept"]').classes()).toContain('danger')
+    expect(w.find('.cd-message').text()).toContain('worktree')
+    expect(w.find('.cd-message').text()).toContain('local branch')
+    expect(w.find('.cd-message').text()).toContain('work products')
+    const accept = w.find('[data-testid="confirm-accept"]')
+    await Promise.all([accept.trigger('click'), accept.trigger('click')])
+    expect(w.emitted('delete')).toEqual([['i1']])
+  })
+
+  it('does not emit on cancel and hides delete for done intents', async () => {
+    const w = mountDetail(intent({ id: 'i1', status: 'todo' }))
+    await w.find('[data-testid="intent-detail-delete"]').trigger('click')
+    await w.find('[data-testid="confirm-cancel"]').trigger('click')
+    expect(w.emitted('delete')).toBeUndefined()
+
+    await w.setProps({ intent: intent({ id: 'i1', status: 'done' }) })
+    expect(w.find('[data-testid="intent-detail-delete"]').exists()).toBe(false)
+  })
+
   it('shows title metadata and right-side actions on every tab', async () => {
     const item = intent({
       id: 'i1',

@@ -654,6 +654,11 @@
     }
   },
   "intent": {
+    "delete": {
+      "title": "Delete intent?",
+      "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
+      "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
+    },
     "startDev": {
       "confirmUnfinishedDeps": "이 의도에는 완료되지 않은 의존성이 있습니다. 그래도 작업을 시작할까요?"
     },
@@ -1803,6 +1808,7 @@
       "chatSessionNotFound": "Intent session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
+      "deleteFailed": "Failed to delete intent: {detail}.",
       "prCreateFailed": "PR 생성에 실패했습니다: {detail}。",
       "prCreateNotWorktree": "PR은 worktree 모드에서만 생성할 수 있습니다. 먼저 워크스페이스를 worktree 모드로 전환하세요.",
       "prCreateNoBranch": "이 인텐트에는 아직 브랜치가 없습니다. PR을 생성하기 전에 작업을 시작하여 브랜치를 만드세요.",

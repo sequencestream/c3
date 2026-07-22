@@ -3086,6 +3086,8 @@ export type ClientToServer =
    * the new default. Error if the session does not exist.
    */
   | { type: 'delete_intent_session'; workspaceId: string; sessionId: string }
+  /** Permanently delete one intent and its c3-managed local resources. */
+  | { type: 'delete_intent'; workspaceId: string; intentId: string }
   /**
    * Start a brand-new communication session for a project: resets the previous
    * `is_current` comm session to 0, creates a fresh one marked current, and

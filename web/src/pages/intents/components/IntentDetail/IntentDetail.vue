@@ -183,19 +183,27 @@ const emit = defineEmits<{
 }>()
 
 const engineeringProgress = computed(() =>
-  props.intent ? deriveIntentEngineeringProgress(props.intent, props.sddEnabled === true) : [],
+  props.intent
+    ? deriveIntentEngineeringProgress(
+        props.intent,
+        props.sddEnabled === true,
+        props.workspaceGitBranchMode,
+      )
+    : [],
 )
 
 function progressStageLabel(stage: EngineeringProgressStage): string {
   if (stage === 'intent') return t('intent.engineeringProgress.stage.intent')
   if (stage === 'spec') return t('intent.engineeringProgress.stage.spec')
-  return t('intent.engineeringProgress.stage.work')
+  if (stage === 'work') return t('intent.engineeringProgress.stage.work')
+  return t('intent.engineeringProgress.stage.pr')
 }
 
 function progressStateLabel(state: EngineeringProgressState): string {
   if (state === 'not_started') return t('intent.engineeringProgress.state.notStarted')
   if (state === 'in_progress') return t('intent.engineeringProgress.state.inProgress')
-  return t('intent.engineeringProgress.state.completed')
+  if (state === 'completed') return t('intent.engineeringProgress.state.completed')
+  return t('intent.engineeringProgress.state.closed')
 }
 
 function copyPrId(prId: string): void {
@@ -1523,6 +1531,10 @@ defineExpose({
 .intent-engineering-progress-stage.is-completed .intent-engineering-progress-marker {
   border-color: var(--c-success);
   background: var(--c-success);
+}
+.intent-engineering-progress-stage.is-closed .intent-engineering-progress-marker {
+  border-color: var(--c-error);
+  background: var(--c-error);
 }
 .intent-detail-tabs {
   flex-shrink: 0;

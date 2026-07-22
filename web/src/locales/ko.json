@@ -895,12 +895,14 @@
       "stage": {
         "intent": "의도",
         "spec": "사양",
-        "work": "작업"
+        "work": "작업",
+        "pr": "PR"
       },
       "state": {
         "notStarted": "시작 전",
         "inProgress": "진행 중",
-        "completed": "완료"
+        "completed": "완료",
+        "closed": "종료 / 실패"
       }
     },
     "spec": {

@@ -894,12 +894,14 @@
       "stage": {
         "intent": "意图",
         "spec": "规范",
-        "work": "工作"
+        "work": "工作",
+        "pr": "PR"
       },
       "state": {
         "notStarted": "未开始",
         "inProgress": "进行中",
-        "completed": "已完成"
+        "completed": "已完成",
+        "closed": "已关闭/失败"
       }
     },
     "spec": {

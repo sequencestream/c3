@@ -1,7 +1,7 @@
-import type { IntentStatus } from '@ccc/shared/protocol'
+import type { IntentPrStatus, IntentStatus } from '@ccc/shared/protocol'
 
-export type EngineeringProgressState = 'not_started' | 'in_progress' | 'completed'
-export type EngineeringProgressStage = 'intent' | 'spec' | 'work'
+export type EngineeringProgressState = 'not_started' | 'in_progress' | 'completed' | 'closed'
+export type EngineeringProgressStage = 'intent' | 'spec' | 'work' | 'pr'
 
 export interface EngineeringProgressInput {
   status: IntentStatus
@@ -10,6 +10,7 @@ export interface EngineeringProgressInput {
   specSessionId?: string | null
   lastWorkSessionId?: string | null
   prId?: string | null
+  prStatus?: IntentPrStatus | null
 }
 
 export interface EngineeringProgressItem {
@@ -24,6 +25,7 @@ function hasValue(value: string | null | undefined): boolean {
 export function deriveIntentEngineeringProgress(
   intent: EngineeringProgressInput,
   sddEnabled: boolean,
+  workspaceGitBranchMode?: 'worktree' | 'current-branch',
 ): EngineeringProgressItem[] {
   const progress: EngineeringProgressItem[] = [
     {
@@ -57,6 +59,16 @@ export function deriveIntentEngineeringProgress(
           ? 'in_progress'
           : 'not_started',
   })
+
+  if (workspaceGitBranchMode === 'worktree') {
+    let state: EngineeringProgressState = 'not_started'
+    if (hasValue(intent.prId)) {
+      if (intent.prStatus === 'merged') state = 'completed'
+      else if (['rejected', 'failed', 'closed'].includes(intent.prStatus ?? '')) state = 'closed'
+      else state = 'in_progress'
+    }
+    progress.push({ stage: 'pr', state })
+  }
 
   return progress
 }

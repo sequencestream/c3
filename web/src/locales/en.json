@@ -894,12 +894,14 @@
       "stage": {
         "intent": "Intent",
         "spec": "Spec",
-        "work": "Work"
+        "work": "Work",
+        "pr": "PR"
       },
       "state": {
         "notStarted": "Not started",
         "inProgress": "In progress",
-        "completed": "Completed"
+        "completed": "Completed",
+        "closed": "Closed / failed"
       }
     },
     "spec": {

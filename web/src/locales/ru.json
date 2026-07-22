@@ -654,6 +654,7 @@
     }
   },
   "intent": {
+    "create": { "label": "Add intent" },
     "startDev": {
       "confirmUnfinishedDeps": "У этого намерения есть незавершённые зависимости. Всё равно начать работу?"
     },
@@ -1803,6 +1804,10 @@
       "chatSessionNotFound": "Intent session not found: {sessionId}.",
       "renameChatSessionFailed": "Failed to rename intent session: {detail}.",
       "deleteChatSessionFailed": "Failed to delete intent session: {detail}.",
+      "createFailed": "Failed to create intent: {detail}.",
+      "startSessionFailed": "Failed to start intent session: {detail}.",
+      "sessionAlreadyBound": "This intent already has a session. Refresh and open it.",
+      "deleteForbidden": "This draft cannot be deleted: {detail}.",
       "prCreateFailed": "Не удалось создать PR: {detail}.",
       "prCreateNotWorktree": "Создать PR можно только в режиме worktree. Сначала переключите рабочее пространство в режим worktree.",
       "prCreateNoBranch": "У этого замысла ещё нет ветки. Начните разработку, чтобы создать её, прежде чем открывать PR.",

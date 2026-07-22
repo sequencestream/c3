@@ -163,6 +163,7 @@ const emit = defineEmits<{
   // ── 会话重置(带新输入,拼接意图/spec 内容新起会话) ──
   'reset-intent-session': [intentId: string, userInput: string]
   'reset-spec-session': [intentId: string, userInput: string]
+  'start-intent-session': [intentId: string, text: string, images: PromptImage[]]
   // ── chat column passthrough ──
   'set-mode': [mode: ModeToken]
   'set-codex-policy': [policy: CodexPolicy]
@@ -756,6 +757,14 @@ const expectedSessionId = computed<string | null>(() => {
 const chatReady = computed<boolean>(
   () => expectedSessionId.value !== null && props.activeSession === expectedSessionId.value,
 )
+const firstIntentTurn = computed<boolean>(
+  () => activeTab.value === 'intentSession' && expectedSessionId.value === null,
+)
+function submitChat(text: string, images: PromptImage[]): void {
+  const intent = props.intent
+  if (firstIntentTurn.value && intent) emit('start-intent-session', intent.id, text, images)
+  else emit('submit', text, images)
+}
 
 // 意图会话 / spec 会话的权限模式由服务端钉死为默认(权限网关必须触发),标题栏
 // 仍展示当前生效值但只读;只有工作会话 tab 的模式可切换。
@@ -1275,32 +1284,28 @@ defineExpose({
       <!-- intent session / spec session / work session tab:复用聊天列 -->
       <template v-else>
         <p
-          v-if="!expectedSessionId"
+          v-if="!expectedSessionId && activeTab !== 'intentSession'"
           class="intent-detail-empty"
           :data-testid="
-            activeTab === 'intentSession'
-              ? 'intent-detail-intent-session-empty'
-              : activeTab === 'workSession'
-                ? 'intent-detail-work-session-empty'
-                : 'intent-detail-spec-session-empty'
+            activeTab === 'workSession'
+              ? 'intent-detail-work-session-empty'
+              : 'intent-detail-spec-session-empty'
           "
         >
           {{
-            activeTab === 'intentSession'
-              ? t('intent.intentSession.empty')
-              : activeTab === 'workSession'
-                ? t('intent.workSession.empty')
-                : t('intent.specSession.empty')
+            activeTab === 'workSession'
+              ? t('intent.workSession.empty')
+              : t('intent.specSession.empty')
           }}
         </p>
-        <p v-else-if="!chatReady" class="intent-detail-empty">
+        <p v-else-if="!chatReady && !firstIntentTurn" class="intent-detail-empty">
           {{ t('intent.chat.loading') }}
         </p>
         <ChatColumn
           v-else
           ref="chatColumn"
           data-testid="intent-detail-chat"
-          :active-title="activeTitle"
+          :active-title="firstIntentTurn ? (intent?.title ?? '') : activeTitle"
           :vendor="vendor"
           :agent-switch="agentSwitch"
           :show-mode="true"
@@ -1309,19 +1314,19 @@ defineExpose({
           :mode-options="modeOptions"
           :mode-disabled="modeLocked"
           :always-title="true"
-          :has-active-session="hasActiveSession"
-          :messages="messages"
+          :has-active-session="firstIntentTurn ? true : hasActiveSession"
+          :messages="firstIntentTurn ? [] : messages"
           :actionable-permission-id="actionablePermissionId"
           :task-model="taskModel"
           :has-task-store="hasTaskStore"
-          :running="running"
-          :team-active="teamActive"
+          :running="firstIntentTurn ? false : running"
+          :team-active="firstIntentTurn ? false : teamActive"
           :connection="connection"
           :activity="activity"
           :current-agent-name="currentAgentName"
           :reconnecting="reconnecting"
           :side-effect-pending="sideEffectPending"
-          :queue="queue"
+          :queue="firstIntentTurn ? [] : queue"
           :available-commands="availableCommands"
           :voice-lang="voiceLang"
           @set-mode="(m: ModeToken) => emit('set-mode', m)"
@@ -1332,7 +1337,7 @@ defineExpose({
           @refresh="emit('refresh')"
           @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
           @delete-queued="(id: number) => emit('delete-queued', id)"
-          @submit="(text: string, imgs: PromptImage[]) => emit('submit', text, imgs)"
+          @submit="submitChat"
           @enqueue="(text: string, imgs: PromptImage[]) => emit('enqueue', text, imgs)"
           @stop="emit('stop')"
           @continue="emit('continue')"

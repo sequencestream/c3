@@ -59,6 +59,14 @@ describe('IntentMergedList.vue — header', () => {
     expect(w.emitted('new-intent-session')).toHaveLength(1)
   })
 
+  it('renders a distinct add-intent entry', async () => {
+    const w = mountMerged()
+    const btn = w.find('[data-testid="intent-list-create-intent"]')
+    expect(btn.attributes('aria-label')).toBe('Add intent')
+    await btn.trigger('click')
+    expect(w.emitted('new-intent')).toHaveLength(1)
+  })
+
   it('shows the automation button and status filter on desktop', () => {
     const w = mountMerged()
     expect(w.find('.auto-btn').attributes('style')).toBeUndefined()

@@ -1006,6 +1006,9 @@ export interface SystemSettings {
   /** When true, tool-created sessions (completion judge, consensus advisor) appear
    * in the sidebar session list. Default is false (hidden). */
   showToolSessions?: boolean
+  /** When true, the sessions aggregation page appears in primary navigation.
+   * Default is false (hidden); this does not affect in-context session entry points. */
+  showSessionsPage?: boolean
   /**
    * @deprecated 2026-06-07 — moved to per-project {@link WorkspaceSetting}. The server
    * no longer writes this field; kept for backward-compatible typecheck of the web

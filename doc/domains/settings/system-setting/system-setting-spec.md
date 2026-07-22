@@ -51,5 +51,6 @@
 ## 其他系统级开关
 
 - **`showToolSessions`** — 工具类会话(完成判定、共识顾问)是否进侧栏会话列表,缺省 `false`(隐藏)。
+- **`showSessionsPage`** — 会话聚合页是否出现在桌面顶栏与移动端底栏,缺省 `false`(隐藏)。开启后入口位于「代码」之后;关闭只影响主导航及普通启动恢复,不删除 Works 页、会话同步、角标或意图/讨论/自动化/代码等功能内的会话入口。该开关与 `showToolSessions` 独立:前者控制聚合页入口,后者控制聚合页内是否列出工具类会话。
 - **`socketAutoResume`** — socket 断连后的单次自动 `resume` 开关。缺省开:普通会话遇 `socket connection was closed unexpectedly` 且工具副作用门清空时,同 `runId` 自动续跑一次。设为 false 则每次断连以 `turn_end{reason:'error'}` 收尾,由用户手动继续。
 - **环境诊断** — runtime 页只读展示各 vendor 的 host CLI 探测结果(是否存在、令牌是否就绪),不落库、不可编辑。

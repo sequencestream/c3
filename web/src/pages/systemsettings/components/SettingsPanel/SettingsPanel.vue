@@ -108,7 +108,7 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
   ],
   runtime: ['vendorCliVersions', 'proxy'],
   security: ['auth'],
-  general: ['uiLang', 'voiceLang', 'timezone', 'baseUrl', 'showToolSessions'],
+  general: ['uiLang', 'voiceLang', 'timezone', 'baseUrl', 'showToolSessions', 'showSessionsPage'],
 }
 function tabLabel(tab: SettingsTab): string {
   return t(`settings.tabs.${tab}.label` as 'settings.tabs.agent.label')
@@ -194,6 +194,7 @@ function emptySettings(): SystemSettings {
     timezone: BROWSER_TZ,
     baseUrl: '',
     showToolSessions: false,
+    showSessionsPage: false,
     proxy: { enabled: false, httpProxy: '', httpsProxy: '' },
     vendorCliVersions: {},
   }
@@ -315,6 +316,7 @@ function buildSeed(settings: SystemSettings): SystemSettings {
     timezone: settings.timezone ?? BROWSER_TZ,
     baseUrl: settings.baseUrl ?? '',
     showToolSessions: settings.showToolSessions ?? false,
+    showSessionsPage: settings.showSessionsPage === true,
     proxy: settings.proxy ?? { enabled: false, httpProxy: '', httpsProxy: '' },
     // Effective vendor CLI version selection per vendor (empty object ⇒ auto latest
     // for both). Carried explicitly so the radios bind to the draft.
@@ -644,6 +646,7 @@ function buildTabPayload(
       payload.timezone = src.timezone
       payload.baseUrl = src.baseUrl
       payload.showToolSessions = src.showToolSessions
+      payload.showSessionsPage = src.showSessionsPage
       break
     }
   }
@@ -1617,9 +1620,25 @@ function selectAdmin(username: string) {
         <section class="settings-section">
           <p class="settings-section-title">{{ t('settings.display.title.label') }}</p>
           <label class="consensus-toggle">
-            <input v-model="draft.showToolSessions" type="checkbox" />
+            <input
+              v-model="draft.showToolSessions"
+              type="checkbox"
+              role="switch"
+              :disabled="!isAdmin"
+            />
             {{ t('settings.display.showToolSessions.label') }}
           </label>
+          <label class="consensus-toggle">
+            <input
+              v-model="draft.showSessionsPage"
+              type="checkbox"
+              role="switch"
+              :disabled="!isAdmin"
+              data-testid="settings-show-sessions-page"
+            />
+            {{ t('settings.display.showSessionsPage.label') }}
+          </label>
+          <p class="settings-hint">{{ t('settings.display.showSessionsPage.hint') }}</p>
         </section>
       </div>
     </div>

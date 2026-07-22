@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /*
- * AppHeader.vue — 应用导航壳:桌面顶部栏;移动端顶部精简栏 + 底部 5 个工作区子 tab。
+ * AppHeader.vue — 应用导航壳:桌面顶部栏;移动端顶部精简栏 + 数据驱动的工作区子 tab。
  * 会话标题与权限模式已下移到聊天列顶部的 SessionTitleBar(WC-R9)。
  *
  * viewMode(工作区/工作台)切换器位于顶栏最左侧,为两个显示器图标按钮(工作区=屏内
@@ -8,7 +8,7 @@
  * - workspace 模式:左侧切换器 + WS switcher + 项目配置,中间标签页,右侧设置/账户/状态/许可
  * - workcenter 模式:左侧切换器 + 工作台页面入口(总览 / 用户通知,tab 语义),中间区域隐藏,右侧同上
  *   工作台页面入口占据原「工作台」标题位置;待处理事件角标(workcenterBadgeCount)挂在「用户通知」入口上。
- * 移动端底部 tab 仅含 5 个工作区子视图(工作台入口已上移到顶部切换器,不再在底部 tab)。
+ * 移动端底部 tab 与桌面共用 tabs 数据(工作台入口已上移到顶部切换器)。
  */
 import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
 import type { UpdateStatus, WorkspaceInfo } from '@ccc/shared/protocol'

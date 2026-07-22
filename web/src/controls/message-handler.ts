@@ -24,7 +24,7 @@ import { applyLocale, setStoredLocale, i18n } from '@/i18n'
 import { translateUiError } from '@/i18n/errors'
 import { transcriptToChat } from './transcript'
 import type { AppCtx } from './types'
-import { sessionCacheKey, type SessionPageKind } from './state'
+import { sessionCacheKey, VIEW_MODE_KEY, type SessionPageKind } from './state'
 import { resolveSessionSourceAction } from '@/lib/session-jump'
 
 /** 深链兑现超时:10 秒,足够服务端回包,但不至于在慢网下过多等待。 */
@@ -363,6 +363,15 @@ export function installMessageHandler(ctx: AppCtx): void {
           ctx.maybeRestoreDiscussions(msg.workspaces)
           ctx.maybeRestoreAutomations(msg.workspaces)
           ctx.maybeRestoreCodes(msg.workspaces)
+          // No persisted restorable page: enter the safe default through the
+          // normal action so project selection, requests, and persistence align.
+          if (
+            activeTab.value === 'intents' &&
+            !ctx.intentsProject.value &&
+            currentWorkspace.value
+          ) {
+            ctx.openIntents(currentWorkspace.value)
+          }
         }
         break
       case 'workspaces': {
@@ -623,7 +632,27 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'settings':
+        var firstSettingsReply = serverSettings.value === null // eslint-disable-line no-var
         serverSettings.value = msg.settings
+        if (msg.settings.showSessionsPage === true) {
+          if (firstSettingsReply) {
+            try {
+              if (localStorage.getItem(VIEW_MODE_KEY) === 'console') ctx.switchToConsoleTab()
+            } catch {
+              /* localStorage unavailable — retain the safe intents default */
+            }
+          }
+        } else if (!(firstSettingsReply && pendingDeepLink.value?.kind === 'session')) {
+          if (ctx.savedTab.value === 'console') ctx.savedTab.value = 'intents'
+          if (activeTab.value === 'console') ctx.onSelectTab('intents')
+          try {
+            if (localStorage.getItem(VIEW_MODE_KEY) === 'console') {
+              localStorage.setItem(VIEW_MODE_KEY, 'intents')
+            }
+          } catch {
+            /* localStorage unavailable — in-memory normalization still applies */
+          }
+        }
         hostStatus.value = msg.hostStatus
         sandboxStatus.value = msg.sandboxStatus ?? null
         bindingStats.value = msg.bindingStats

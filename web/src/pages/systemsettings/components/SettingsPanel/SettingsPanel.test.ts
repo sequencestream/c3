@@ -32,6 +32,7 @@ const baseSettings: SystemSettings = {
   voiceLang: 'zh-CN',
   uiLang: 'zh',
   showToolSessions: false,
+  showSessionsPage: false,
   devSkill: '',
   maxRoundsPerStage: 14,
   maxSpeechChars: 400,
@@ -47,6 +48,37 @@ const SAVE = {
   security: '[data-testid="settings-save-security"]',
   general: '[data-testid="settings-save-general"]',
 } as const
+
+describe('SettingsPanel.vue — sessions page switch', () => {
+  afterEach(() => useAuth().setIsAdmin(true))
+
+  it('renders the accessible switch and saves the dirty General field', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const toggle = w.find('[data-testid="settings-show-sessions-page"]')
+    expect(toggle.attributes('role')).toBe('switch')
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    expect(w.text()).toContain('Show sessions page')
+
+    await toggle.setValue(true)
+    expect(w.find('[data-testid="settings-tab-dirty-general"]').exists()).toBe(true)
+    await w.find(SAVE.general).trigger('click')
+    const emitted = w.emitted('save') as [SystemSettings][]
+    expect(emitted[0][0].showSessionsPage).toBe(true)
+  })
+
+  it('ships matching English and Chinese copy and disables the switch for non-admins', () => {
+    const en = JSON.parse(readFileSync(resolve(__dirname, '../../../../locales/en.json'), 'utf8'))
+    const zh = JSON.parse(readFileSync(resolve(__dirname, '../../../../locales/zh.json'), 'utf8'))
+    expect(en.settings.display.showSessionsPage.label).toBe('Show sessions page')
+    expect(zh.settings.display.showSessionsPage.label).toBe('显示会话页')
+    useAuth().setIsAdmin(false)
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: { ...baseSettings, uiLang: 'en' } },
+    })
+    const toggle = w.find('[data-testid="settings-show-sessions-page"]')
+    expect(toggle.attributes()).toHaveProperty('disabled')
+  })
+})
 
 // `@vue/test-utils` `isVisible()` is unreliable for nested v-show in this env, but
 // v-show writes `display: none` inline — read that directly to check tab visibility.

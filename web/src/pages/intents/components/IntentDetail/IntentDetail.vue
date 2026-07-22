@@ -66,6 +66,11 @@ import {
   normalizeBranchName,
   statusLabel,
 } from '../../../../lib/intent-list-view'
+import {
+  deriveIntentEngineeringProgress,
+  type EngineeringProgressStage,
+  type EngineeringProgressState,
+} from '../../../../lib/intent-engineering-progress'
 
 const { t, locale } = useTypedI18n()
 
@@ -175,6 +180,22 @@ const emit = defineEmits<{
   // ── 外部子 tab 请求消耗 ──
   'requested-subtab-consumed': []
 }>()
+
+const engineeringProgress = computed(() =>
+  props.intent ? deriveIntentEngineeringProgress(props.intent, props.sddEnabled === true) : [],
+)
+
+function progressStageLabel(stage: EngineeringProgressStage): string {
+  if (stage === 'intent') return t('intent.engineeringProgress.stage.intent')
+  if (stage === 'spec') return t('intent.engineeringProgress.stage.spec')
+  return t('intent.engineeringProgress.stage.work')
+}
+
+function progressStateLabel(state: EngineeringProgressState): string {
+  if (state === 'not_started') return t('intent.engineeringProgress.state.notStarted')
+  if (state === 'in_progress') return t('intent.engineeringProgress.state.inProgress')
+  return t('intent.engineeringProgress.state.completed')
+}
 
 function copyPrId(prId: string): void {
   void navigator.clipboard.writeText(prId)
@@ -939,6 +960,28 @@ defineExpose({
             </div>
           </div>
         </div>
+        <ol
+          class="intent-engineering-progress"
+          data-testid="intent-engineering-progress"
+          :aria-label="t('intent.engineeringProgress.ariaLabel')"
+        >
+          <li
+            v-for="item in engineeringProgress"
+            :key="item.stage"
+            class="intent-engineering-progress-stage"
+            :class="`is-${item.state}`"
+            :data-stage="item.stage"
+            :data-state="item.state"
+          >
+            <span class="intent-engineering-progress-marker" aria-hidden="true"></span>
+            <span class="intent-engineering-progress-name">{{
+              progressStageLabel(item.stage)
+            }}</span>
+            <span class="intent-engineering-progress-state">{{
+              progressStateLabel(item.state)
+            }}</span>
+          </li>
+        </ol>
       </header>
 
       <!-- Tab 条 -->
@@ -1420,6 +1463,61 @@ defineExpose({
 .intent-detail-actions .req-share {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+.intent-engineering-progress {
+  width: min(100%, 560px);
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  display: flex;
+  list-style: none;
+  overflow-x: auto;
+}
+.intent-engineering-progress-stage {
+  position: relative;
+  min-width: 112px;
+  flex: 1 0 112px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: var(--sp-2);
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+}
+.intent-engineering-progress-stage:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 16px;
+  right: 0;
+  height: 2px;
+  background: var(--c-border);
+}
+.intent-engineering-progress-marker {
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  margin-top: 1px;
+  border: 2px solid var(--c-border);
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: var(--c-bg);
+}
+.intent-engineering-progress-name {
+  color: var(--c-text);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.intent-engineering-progress-state {
+  grid-column: 2;
+  white-space: nowrap;
+}
+.intent-engineering-progress-stage.is-in_progress .intent-engineering-progress-marker {
+  border-color: var(--c-accent, var(--c-text));
+  box-shadow: inset 0 0 0 2px var(--c-bg);
+  background: var(--c-accent, var(--c-text));
+}
+.intent-engineering-progress-stage.is-completed .intent-engineering-progress-marker {
+  border-color: var(--c-success);
+  background: var(--c-success);
 }
 .intent-detail-tabs {
   flex-shrink: 0;

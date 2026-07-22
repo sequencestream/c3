@@ -885,6 +885,19 @@
         "label": "변경 이력"
       }
     },
+    "engineeringProgress": {
+      "ariaLabel": "엔지니어링 진행 상황",
+      "stage": {
+        "intent": "의도",
+        "spec": "사양",
+        "work": "작업"
+      },
+      "state": {
+        "notStarted": "시작 전",
+        "inProgress": "진행 중",
+        "completed": "완료"
+      }
+    },
     "spec": {
       "empty": "이 의도에는 아직 사양이 작성되지 않았습니다.",
       "loading": "사양 불러오는 중…"

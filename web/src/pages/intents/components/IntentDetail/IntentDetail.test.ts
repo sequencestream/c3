@@ -107,6 +107,67 @@ describe('IntentDetail.vue — empty state', () => {
   it('renders the empty placeholder when no intent is selected', () => {
     const w = mountDetail(null)
     expect(w.find('[data-testid="intent-detail-empty"]').exists()).toBe(true)
+    expect(w.find('[data-testid="intent-engineering-progress"]').exists()).toBe(false)
+  })
+})
+
+describe('IntentDetail.vue — engineering progress', () => {
+  it('renders three accessible text-labelled stages below the title when SDD is enabled', () => {
+    const w = mountDetail(intent({ id: 'i1' }), { sddEnabled: true })
+    const progress = w.find('[data-testid="intent-engineering-progress"]')
+    const stages = progress.findAll('[data-stage]')
+
+    expect(progress.attributes('aria-label')).toBeTruthy()
+    const header = w.find('.intent-detail-head')
+    expect(header.element.contains(progress.element)).toBe(true)
+    expect(w.find('.intent-detail-titlebar').element.nextElementSibling).toBe(progress.element)
+    expect(header.element.nextElementSibling).toBe(w.find('.intent-detail-tabs').element)
+    expect(stages.map((stage) => stage.attributes('data-stage'))).toEqual([
+      'intent',
+      'spec',
+      'work',
+    ])
+    expect(stages.map((stage) => stage.attributes('data-state'))).toEqual([
+      'completed',
+      'not_started',
+      'not_started',
+    ])
+    expect(stages.every((stage) => stage.find('.intent-engineering-progress-state').text())).toBe(
+      true,
+    )
+  })
+
+  it('omits the spec stage with SDD disabled even when historical spec data exists', () => {
+    const w = mountDetail(
+      intent({ id: 'i1', specPath: 'spec.md', specSessionId: 'spec-session' }),
+      { sddEnabled: false },
+    )
+    expect(
+      w
+        .findAll('[data-testid="intent-engineering-progress"] [data-stage]')
+        .map((stage) => stage.attributes('data-stage')),
+    ).toEqual(['intent', 'work'])
+  })
+
+  it('reacts when intent fields are backfilled', async () => {
+    const item = intent({ id: 'i1', status: 'draft' })
+    const w = mountDetail(item, { sddEnabled: true })
+
+    await w.setProps({
+      intent: {
+        ...item,
+        status: 'in_progress',
+        specPath: 'spec.md',
+        specApproved: true,
+        lastWorkSessionId: 'work-session',
+      },
+    })
+
+    expect(
+      w
+        .findAll('[data-testid="intent-engineering-progress"] [data-stage]')
+        .map((stage) => stage.attributes('data-state')),
+    ).toEqual(['completed', 'completed', 'in_progress'])
   })
 })
 

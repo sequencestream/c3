@@ -1218,6 +1218,63 @@ describe('IntentDetail.vue — spec/spec-session tab visibility by SDD', () => {
   })
 })
 
+describe('IntentDetail.vue — default tab on intent switch', () => {
+  function activeTab(w: ReturnType<typeof mountDetail>): string {
+    return w.find('.intent-detail-tab.active').attributes('data-tab') ?? ''
+  }
+
+  it('switching to an intent with empty content lands on the intent session tab', async () => {
+    const a = intent({ id: 'a', content: 'A body' })
+    const b = intent({ id: 'b', content: '' })
+    const w = mountDetail(a, { intents: [a, b] })
+
+    await w.setProps({ intent: b })
+    expect(activeTab(w)).toBe('intentSession')
+  })
+
+  it('whitespace-only content counts as empty', async () => {
+    const a = intent({ id: 'a', content: 'A body' })
+    const b = intent({ id: 'b', content: '  \n\t ' })
+    const w = mountDetail(a, { intents: [a, b] })
+
+    await w.setProps({ intent: b })
+    expect(activeTab(w)).toBe('intentSession')
+  })
+
+  it('switching to an intent with content lands on the intent tab', async () => {
+    const a = intent({ id: 'a', content: '' })
+    const b = intent({ id: 'b', content: 'B body' })
+    const w = mountDetail(a, { intents: [a, b] })
+
+    // 先切走,确认复位确实发生而非停留。
+    await w.find('.intent-detail-tab[data-tab="changelog"]').trigger('click')
+    expect(activeTab(w)).toBe('changelog')
+
+    await w.setProps({ intent: b })
+    expect(activeTab(w)).toBe('intent')
+    expect(w.find('[data-testid="tab-intent"]').exists()).toBe(true)
+  })
+
+  it('clearing content on the same intent does not preempt the current tab', async () => {
+    const item = intent({ id: 'i1', content: 'body' })
+    const w = mountDetail(item)
+
+    await w.find('.intent-detail-tab[data-tab="changelog"]').trigger('click')
+    await w.setProps({ intent: { ...item, content: '', updatedAt: 2 } })
+    expect(activeTab(w)).toBe('changelog')
+  })
+
+  it('requestedSubTab still overrides the content-based default', async () => {
+    const a = intent({ id: 'a', content: 'A body' })
+    const b = intent({ id: 'b', content: '' })
+    const w = mountDetail(a, { intents: [a, b], sddEnabled: true })
+
+    await w.setProps({ intent: b, requestedSubTab: 'specSession' })
+    expect(activeTab(w)).toBe('specSession')
+    expect(w.emitted('requested-subtab-consumed')).toEqual([[]])
+  })
+})
+
 describe('IntentDetail.vue — spec tab approval actions', () => {
   it('spec tab approve emits approve-spec from the dedicated action', async () => {
     const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specApproved: false })

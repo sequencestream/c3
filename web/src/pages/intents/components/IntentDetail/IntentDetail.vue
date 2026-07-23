@@ -674,11 +674,13 @@ function opLabel(op: IntentLogOperation): string {
 // 用于判定"是否换了新会话"。提交失败/未创建时 specSessionId 不变,该状态不触发切换。
 const pendingSpecSwitch = ref<{ intentId: string; oldSpecSessionId: string | null } | null>(null)
 
-// 选中意图切换:复位到 intent tab 与 in-flight 守卫(不自动打开其他意图的会话)。
+// 选中意图切换:复位默认 tab 与 in-flight 守卫(不自动打开其他意图的会话)。
+// 默认 tab 按新意图正文取舍:正文为空(含仅空白)时无内容可看,直接落到意图会话方便开始对话;
+// 正文非空仍落到 intent tab 先看内容。只在 id 变化时判定,同一意图的正文增删不抢占用户当前 tab。
 watch(
   () => props.intent?.id,
   () => {
-    activeTab.value = 'intent'
+    activeTab.value = (props.intent?.content ?? '').trim() === '' ? 'intentSession' : 'intent'
     startDevInFlight.value = false
     // 切走意图:丢弃未保存的正文/spec 草稿并退出编辑态,避免草稿串到别的意图。
     editingContent.value = false

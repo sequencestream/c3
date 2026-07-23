@@ -34,8 +34,9 @@ export interface RunInject {
   userTurnPrefix?: string
   /**
    * Skip the arapuca sandbox for this run even when the project/session would
-   * otherwise sandbox. Set when the user answers a `sandbox_conflict_request` with
-   * `bypass` (run the system-auth agent on the host this turn). Default false.
+   * otherwise sandbox. No longer set by the sandbox-conflict path (a system-auth
+   * agent now authenticates inside the sandbox via `--allow-keychain`); kept as the
+   * per-turn opt-out an internal caller can pass. Default false.
    */
   bypassSandbox?: boolean
 }

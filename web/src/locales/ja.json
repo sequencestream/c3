@@ -356,37 +356,37 @@
       },
       "sandboxRoles": {
         "head": "サンドボックスモード",
-        "hint": "サンドボックス内での実行にはこれらのエージェントを使用します。system 認証のエージェントはサンドボックス内でログインできないため、custom エージェントのみ選択できます。",
+        "hint": "サンドボックス内での実行にはこれらのエージェントを使用します。有効なエージェントであればいずれも選択でき、サブスクリプション(system 認証)のエージェントはサンドボックスラッパー経由でホストの keychain にアクセスします。",
         "followSandboxDefault": "サンドボックス既定に従う",
-        "empty": "有効な custom エージェントがありません — 上で追加してください"
+        "empty": "有効なエージェントがありません — 上で追加してください"
       },
       "sandboxDefault": {
-        "tooltip": "サンドボックス実行の既定エージェント(custom エージェントである必要があります)。空 ⇒ 最初の有効な custom エージェント。"
+        "tooltip": "サンドボックス実行の既定エージェント。空 ⇒ 最初の有効なエージェント。"
       },
       "sandboxDefaultPicker": {
         "label": "サンドボックス既定エージェント",
-        "auto": "自動(最初の custom エージェント)"
+        "auto": "自動(最初の有効なエージェント)"
       },
       "sandboxTool": {
-        "tooltip": "サンドボックス内のバックグラウンドツールセッション用の custom エージェント"
+        "tooltip": "サンドボックス内のバックグラウンドツールセッション用のエージェント"
       },
       "sandboxToolPicker": {
         "label": "サンドボックスツールエージェント"
       },
       "sandboxIntent": {
-        "tooltip": "サンドボックス内の意図コミュニケーションセッション用の custom エージェント"
+        "tooltip": "サンドボックス内の意図コミュニケーションセッション用のエージェント"
       },
       "sandboxIntentPicker": {
         "label": "サンドボックス意図エージェント"
       },
       "sandboxSpec": {
-        "tooltip": "サンドボックス内の仕様作成セッション用の custom エージェント"
+        "tooltip": "サンドボックス内の仕様作成セッション用のエージェント"
       },
       "sandboxSpecPicker": {
         "label": "サンドボックス仕様エージェント"
       },
       "sandboxAutomation": {
-        "tooltip": "サンドボックス内の自動化開発実行用の custom エージェント"
+        "tooltip": "サンドボックス内の自動化開発実行用のエージェント"
       },
       "sandboxAutomationPicker": {
         "label": "サンドボックス自動化エージェント"

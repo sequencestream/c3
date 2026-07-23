@@ -141,38 +141,39 @@ export function defaultSettings(): SystemSettings {
 }
 
 /**
- * Normalize one `sandbox*AgentId` on store: a sandbox-role agent MUST be an
- * enabled `configMode: 'custom'` agent (a `system`-mode agent cannot authenticate
- * inside the sandbox, so it is never a valid sandbox role). An empty string
- * ("follow the sandbox default") is kept empty; anything pointing at a
- * missing/disabled/`system` agent is reset to empty (never auto-filled), so the
- * runtime falls through `sandboxDefaultAgentId → first enabled custom agent`.
+ * Normalize one `sandbox*AgentId` on store: a sandbox-role agent must be an
+ * *enabled* agent — of either auth mode. A `system`-mode (subscription) agent is
+ * valid since the sandbox wrapper can open the host keychain for it (arapuca
+ * `--allow-keychain`). An empty string ("follow the sandbox default") is kept
+ * empty; anything pointing at a missing/disabled agent is reset to empty (never
+ * auto-filled), so the runtime falls through `sandboxDefaultAgentId → first
+ * enabled agent`.
  */
 export function normalizeSandboxRoleId(raw: unknown, agents: AgentConfig[]): string {
   if (typeof raw !== 'string' || !raw) return ''
   const a = agents.find((x) => x.id === raw)
-  if (!a || a.enabled === false || a.configMode !== 'custom') return ''
+  if (!a || a.enabled === false) return ''
   return raw
 }
 
 /**
- * The first enabled `configMode: 'custom'` agent, in `order_seq` order (the input
- * `agents` is already canonicalized). When `vendor` is given, prefer a same-vendor
- * custom agent (so a sandbox substitute can re-bind a vendor-frozen session), then
- * fall back to any enabled custom agent. Returns undefined when no custom agent is
- * enabled — the caller surfaces "configure a sandbox custom agent" rather than
- * silently falling to a `system` agent that would fail auth inside the sandbox.
+ * The first enabled agent usable as a sandbox agent, in `order_seq` order (the
+ * input `agents` is already canonicalized). When `vendor` is given, prefer a
+ * same-vendor agent (so a sandbox substitute can re-bind a vendor-frozen session),
+ * then fall back to any enabled agent. Auth mode is not a filter: a `system` agent
+ * authenticates through the host keychain the wrapper opens for it. Returns
+ * undefined only when no agent is enabled at all.
  */
-export function firstEnabledCustomAgent(
+export function firstEnabledSandboxAgent(
   agents: AgentConfig[],
   vendor?: VendorId,
 ): AgentConfig | undefined {
-  const isCustom = (a: AgentConfig): boolean => a.enabled !== false && a.configMode === 'custom'
+  const isUsable = (a: AgentConfig): boolean => a.enabled !== false
   if (vendor) {
-    const sameVendor = agents.find((a) => isCustom(a) && a.vendor === vendor)
+    const sameVendor = agents.find((a) => isUsable(a) && a.vendor === vendor)
     if (sameVendor) return sameVendor
   }
-  return agents.find(isCustom)
+  return agents.find(isUsable)
 }
 
 /**

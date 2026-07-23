@@ -6,8 +6,9 @@
  * and the in-flight map that enforces serial execution per automation (SCH-R7).
  * Each execution publishes run lifecycle events (`run:started` / `run:bound` /
  * `run:settled`) with `sessionKind='automation'` on the kernel event bus. The
- * resident automation subscription in `run-domain-subscriptions.ts` reacts to
- * `run:settled` to broadcast the refreshed automation list.
+ * resident automation subscriptions in `run-domain-subscriptions.ts` react to
+ * `run:started` and `run:settled` to broadcast the refreshed automation list;
+ * this module adds one more broadcast when the real agent session id is bound.
  */
 
 import type { Automation, RunEndReason } from '@ccc/shared/protocol'
@@ -38,7 +39,11 @@ export type ExecutionStore = {
     error: string | null
   }) => { id: string }
   updateExecutionLog: (id: string, patch: Record<string, unknown>) => void
-  /** Optional: called after an execution completes to notify subscribers. */
+  /**
+   * Optional: push the refreshed automation list to subscribers. Called when an
+   * execution binds its real agent session id (the lifecycle events cover start
+   * and settle).
+   */
   broadcast?: (workspacePath: string) => void
 }
 
@@ -169,9 +174,19 @@ export function dispatchAndTrack(automation: Automation, triggerEvent?: GenericE
   // Track execution outcome via the updateLog wrapper so we can set the
   // correct settled reason (complete vs error).
   let success = true
+  // The real agent session id is bound a moment AFTER `run:started` (the dispatcher
+  // writes it to the log on the first vendor message carrying it). The started
+  // broadcast above therefore cannot show it, so re-broadcast the list the first
+  // time a non-empty id is persisted — that is what lights up the list's live-session
+  // indicator (`Automation.runningSessionId`).
+  let sessionIdBroadcast = false
   const trackingUpdateLog: UpdateLogFn = (id, patch) => {
     if (patch.status === 'failed' || patch.status === 'cancelled') success = false
     updateLog(id, patch)
+    if (!sessionIdBroadcast && typeof patch.sessionId === 'string' && patch.sessionId) {
+      sessionIdBroadcast = true
+      activeStore.broadcast?.(resolveWorkspaceRoot(automation.workspaceId)!)
+    }
   }
 
   const exec = execute(automation, logId, trackingUpdateLog, triggerEvent)

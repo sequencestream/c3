@@ -2,10 +2,12 @@
  * Tests for resident domain subscriptions — discussion and automation lifecycle
  * events that arrived in 2026-06-08-010 (discussion / automation run bus).
  *
- * Three subscriptions to cover:
+ * Subscriptions to cover:
  *  1. `run:settled` + sessionKind=discussion → broadcastDiscussions
  *  2. `run:settled` + sessionKind=automation   → broadcastAutomations
- *  3. Cross-sessionKind isolation (session/discussion/automation don't leak into each
+ *  3. `run:started` + sessionKind=automation   → broadcastAutomations (so the
+ *     list's live-session indicator lights up without polling)
+ *  4. Cross-sessionKind isolation (session/discussion/automation don't leak into each
  *     other's handlers, and the existing subscription handlers are untouched)
  *
  * The existing session/intent subscriptions are tested by their own
@@ -260,7 +262,7 @@ describe('resident domain subscriptions — discussion + automation', () => {
 
   // ── run:started isolation ────────────────────────────────────────────
 
-  it('run:started never triggers discussion or automation settled-subscriptions', () => {
+  it('run:started never triggers the discussion subscription', () => {
     install()
     eb.publish('run:started', {
       sessionId: 'x',
@@ -268,13 +270,32 @@ describe('resident domain subscriptions — discussion + automation', () => {
       sessionKind: 'discussion',
       runKind: 'internal',
     })
+    expect(mockBroadcastDiscussions).not.toHaveBeenCalled()
+  })
+
+  it('automation sub: run:started with sessionKind=automation fires broadcastAutomations', () => {
+    install()
     eb.publish('run:started', {
-      sessionId: 'y',
+      sessionId: 'log-1',
       workspacePath: '/ws-a',
       sessionKind: 'automation',
       runKind: 'headless',
     })
+    expect(mockBroadcastAutomations).toHaveBeenCalledWith('/ws-a')
+    expect(mockBroadcastAutomations).toHaveBeenCalledTimes(1)
     expect(mockBroadcastDiscussions).not.toHaveBeenCalled()
+  })
+
+  it('automation sub: run:started of another sessionKind does NOT fire broadcastAutomations', () => {
+    install()
+    for (const sessionKind of ['work', 'discussion', 'intent', 'spec'] as const) {
+      eb.publish('run:started', {
+        sessionId: `s-${sessionKind}`,
+        workspacePath: '/proj',
+        sessionKind,
+        runKind: 'interactive',
+      })
+    }
     expect(mockBroadcastAutomations).not.toHaveBeenCalled()
   })
 

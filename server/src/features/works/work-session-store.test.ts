@@ -335,6 +335,7 @@ describe('automation execution projection rows', () => {
         cronExpression: '0 1 * * *',
         nextRunAt: null,
         eventFilters: null,
+        runningSessionId: null,
         status: 'active',
         mode: 'default',
         toolAllowlist: [],

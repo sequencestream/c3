@@ -2462,6 +2462,24 @@ export interface Automation {
    * because it applies only to the run-lifecycle event types.
    */
   eventSessionKindFilter?: SessionKind[] | null
+  /**
+   * Server-derived, client-read-only: the agent session id of the run currently
+   * executing this automation, or `null` when none is. Not a stored column —
+   * computed on every read by joining `automation_execution_logs`, so it is
+   * consistent across `listAutomations` / `getAutomation` and the `automations` /
+   * `automation_detail` messages built from them.
+   *
+   * Non-null ONLY when the automation is `type='llm'` AND it has a log row with
+   * `status='running'` AND a non-empty `session_id` (the real agent session, bound
+   * shortly after the run starts). A command run, a run whose session id is not
+   * bound yet, and any terminal log all yield `null`. When several candidate rows
+   * exist (abnormal data), the one with the newest `started_at` wins, ties broken
+   * by log id so the choice is deterministic.
+   *
+   * Liveness is not inferred: a `running` log left behind by a crashed process
+   * keeps reporting its session id until the log is settled.
+   */
+  runningSessionId: string | null
   status: AutomationStatus
   mode: ModeToken | CodexPolicy
   toolAllowlist: string[]

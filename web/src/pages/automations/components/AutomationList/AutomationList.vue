@@ -7,6 +7,8 @@
  * 状态;run-now / edit / delete / enable-disable 等操作已迁移至右栏标题栏。
  * 标题右侧「+」上抛 `new-automation`,由 App 打开创建表单;「⇤/⇥」折叠面板宽度。
  * 首次挂载后每 30s 更新下次执行倒计时。
+ * 行内 `runningSessionId` 非空时额外渲染一个脉冲绿点(服务端派生的「会话运行中」),
+ * 由列表广播推送刷新,不轮询。
  */
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import type { Automation } from '@ccc/shared/protocol'
@@ -229,6 +231,16 @@ function selectTemplate(templateId: string): void {
       >
         <div class="sched-item-head">
           <span class="sched-label">{{ automationLabel(s) }}</span>
+          <!-- 会话运行中指示点:复用全局 .session-status.running 的脉冲绿点,
+               与右侧调度状态徽标并列,二者含义不同、互不替代。 -->
+          <span
+            v-if="s.runningSessionId"
+            class="session-status running"
+            role="img"
+            :aria-label="t('automation.list.running.label')"
+            :title="t('automation.list.running.label')"
+            data-testid="automation-running-session"
+          ></span>
           <span class="sched-countdown">{{ timeLeft(s.nextRunAt) }}</span>
           <span class="sched-status" :class="s.status">{{ s.status }}</span>
         </div>

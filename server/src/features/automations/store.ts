@@ -251,7 +251,45 @@ function serializeEventFilters(filters: GenericEventFilter[] | null | undefined)
   return normalized ? JSON.stringify(normalized) : null
 }
 
-function toAutomation(r: AutomationRow): Automation {
+/**
+ * Map `automation_id → running session id` for the given automations, per the
+ * `Automation.runningSessionId` contract: LLM automations only, `running` logs
+ * only, non-empty `session_id` only. Ids absent from the map have no live
+ * session. Ordering makes the pick deterministic when abnormal data leaves more
+ * than one candidate row (newest start wins, log id breaks ties).
+ */
+function runningSessionIdMap(d: Db, automationIds: string[]): Map<string, string> {
+  const map = new Map<string, string>()
+  if (automationIds.length === 0) return map
+  const placeholders = automationIds.map(() => '?').join(',')
+  const rows = d.all<{ automation_id: string; session_id: string }>(
+    `SELECT l.automation_id AS automation_id, l.session_id AS session_id
+       FROM automation_execution_logs l
+       JOIN automations s ON s.id = l.automation_id
+      WHERE l.automation_id IN (${placeholders})
+        AND s.type = 'llm'
+        AND l.status = 'running'
+        AND l.session_id IS NOT NULL
+        AND l.session_id <> ''
+      ORDER BY l.started_at DESC, l.id DESC`,
+    ...automationIds,
+  )
+  for (const r of rows) {
+    if (!map.has(r.automation_id)) map.set(r.automation_id, r.session_id)
+  }
+  return map
+}
+
+/** Hydrate rows into automations, resolving `runningSessionId` in one extra query. */
+function toAutomations(d: Db, rows: AutomationRow[]): Automation[] {
+  const running = runningSessionIdMap(
+    d,
+    rows.map((r) => r.id),
+  )
+  return rows.map((r) => toAutomation(r, running.get(r.id) ?? null))
+}
+
+function toAutomation(r: AutomationRow, runningSessionId: string | null): Automation {
   let config: unknown = {}
   try {
     config = JSON.parse(r.config)
@@ -271,6 +309,7 @@ function toAutomation(r: AutomationRow): Automation {
     nextRunAt: r.next_run_at,
     eventFilters: parseEventFilters(r.event_filters),
     eventSessionKindFilter: parseSessionKindFilter(r.event_session_kind_filter),
+    runningSessionId,
     metadata: parseMetadata(r.metadata),
     status: r.status as AutomationStatus,
     mode: parseMode(r.mode),
@@ -325,12 +364,13 @@ export function listAutomations(workspacePath: string): Automation[] {
   const d = db()
   if (!d) return []
   const proj = resolve(workspacePath)
-  return d
-    .all<AutomationRow>(
+  return toAutomations(
+    d,
+    d.all<AutomationRow>(
       'SELECT * FROM automations WHERE workspace_path=? ORDER BY updated_at DESC',
       proj,
-    )
-    .map(toAutomation)
+    ),
+  )
 }
 
 /** Count enabled automations across the installation. */
@@ -345,7 +385,7 @@ export function getAutomation(id: string): Automation | null {
   const d = db()
   if (!d) return null
   const row = d.get<AutomationRow>('SELECT * FROM automations WHERE id=?', id)
-  return row ? toAutomation(row) : null
+  return row ? (toAutomations(d, [row])[0] ?? null) : null
 }
 
 /**
@@ -734,13 +774,14 @@ export function getAutomationDetail(id: string): {
 export function getDueAutomations(now: number): Automation[] {
   const d = db()
   if (!d) return []
-  return d
-    .all<AutomationRow>(
+  return toAutomations(
+    d,
+    d.all<AutomationRow>(
       'SELECT * FROM automations WHERE status = ? AND next_run_at IS NOT NULL AND next_run_at <= ? ORDER BY next_run_at ASC',
       'active',
       now,
-    )
-    .map(toAutomation)
+    ),
+  )
 }
 
 /**
@@ -754,10 +795,12 @@ export function getDueAutomations(now: number): Automation[] {
 export function getEventAutomations(type: string): Automation[] {
   const d = db()
   if (!d) return []
-  return d
-    .all<AutomationRow>("SELECT * FROM automations WHERE status='active' AND trigger_type='event'")
-    .map(toAutomation)
-    .filter((a) => a.eventFilters?.some((f) => eventTypeMatches(f.type, type)))
+  return toAutomations(
+    d,
+    d.all<AutomationRow>(
+      "SELECT * FROM automations WHERE status='active' AND trigger_type='event'",
+    ),
+  ).filter((a) => a.eventFilters?.some((f) => eventTypeMatches(f.type, type)))
 }
 
 /** Update a automation's next_run_at after a successful execution. */

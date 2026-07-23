@@ -1186,6 +1186,9 @@
         }
       },
       "empty": "还没有自动化。",
+      "running": {
+        "label": "会话运行中"
+      },
       "expand": {
         "tooltip": "展开面板"
       },

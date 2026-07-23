@@ -14,6 +14,7 @@ function sched(over: Partial<Automation> = {}): Automation {
     cronExpression: '0 8 * * *',
     nextRunAt: null,
     eventFilters: null,
+    runningSessionId: null,
     status: 'active',
     mode: 'sandboxed',
     toolAllowlist: [],
@@ -142,6 +143,38 @@ describe('AutomationList.vue — 左栏纯选择列表', () => {
     const badge = w.find('.sched-status')
     expect(badge.exists()).toBe(true)
     expect(badge.classes()).toContain('paused')
+  })
+})
+
+describe('AutomationList.vue — 会话运行中指示点', () => {
+  it('runningSessionId 非空:渲染脉冲绿点,带无障碍名与 tooltip,调度状态徽标保留', () => {
+    const w = mountList([sched({ id: 'a', type: 'llm', runningSessionId: 'sess-1' })])
+    const dot = w.find('[data-testid="automation-running-session"]')
+    expect(dot.exists()).toBe(true)
+    // 复用全局 .session-status.running 的脉冲绿点视觉。
+    expect(dot.classes()).toContain('session-status')
+    expect(dot.classes()).toContain('running')
+    // 纯装饰元素靠 aria-label / title 表达语义(走 i18n)。
+    expect(dot.attributes('aria-label')).toBe('Session running')
+    expect(dot.attributes('title')).toBe('Session running')
+    // 与调度状态徽标并存,含义不同、互不替代。
+    expect(w.find('.sched-status').exists()).toBe(true)
+  })
+
+  it('runningSessionId 为 null:不渲染指示点,调度状态徽标照常显示', () => {
+    const w = mountList([sched({ id: 'a', type: 'llm', runningSessionId: null })])
+    expect(w.find('[data-testid="automation-running-session"]').exists()).toBe(false)
+    expect(w.find('.sched-status').exists()).toBe(true)
+  })
+
+  it('只点亮进行中的那一行', () => {
+    const w = mountList([
+      sched({ id: 'a', runningSessionId: null }),
+      sched({ id: 'b', type: 'llm', runningSessionId: 'sess-1' }),
+    ])
+    const items = w.findAll('.sched-item')
+    expect(items[0].find('[data-testid="automation-running-session"]').exists()).toBe(false)
+    expect(items[1].find('[data-testid="automation-running-session"]').exists()).toBe(true)
   })
 })
 

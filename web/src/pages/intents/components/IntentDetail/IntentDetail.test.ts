@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import type { Intent, IntentLog } from '@ccc/shared/protocol'
+import type { Intent, IntentLog, SessionStatus } from '@ccc/shared/protocol'
 import IntentDetail, { __resetWriteSpecGuards } from './IntentDetail.vue'
 
 // 模块级防误审门状态在用例间共享 → 每个用例前清空,避免相互污染。
@@ -55,6 +55,8 @@ function mountDetail(
     intentSpecContent?: string | null
     intentSpecLoading?: boolean
     specSessionRunning?: boolean
+    workSessionStatus?: SessionStatus | null
+    intentSessionStatus?: SessionStatus | null
     intentLogs?: IntentLog[]
   } = {},
 ) {
@@ -86,6 +88,8 @@ function mountDetail(
       intentSpecContent: opts.intentSpecContent ?? null,
       intentSpecLoading: opts.intentSpecLoading ?? false,
       specSessionRunning: opts.specSessionRunning ?? false,
+      workSessionStatus: opts.workSessionStatus ?? null,
+      intentSessionStatus: opts.intentSessionStatus ?? null,
       intentLogs: opts.intentLogs ?? [],
       intentLogsLoading: false,
     },
@@ -1521,5 +1525,42 @@ describe('IntentDetail.vue — inline spec edit', () => {
 
     await w.find(EDIT).trigger('click')
     expect(w.find(APPROVE).exists()).toBe(false)
+  })
+})
+
+describe('IntentDetail.vue — 会话 tab 标签状态点', () => {
+  const INTENT_DOT = '[data-testid="intent-detail-intent-session-status"]'
+  const WORK_DOT = '[data-testid="intent-detail-work-session-status"]'
+
+  it.each<SessionStatus>(['running', 'awaiting_permission', 'team', 'reconnecting'])(
+    'renders the intent session dot with the %s class',
+    (status) => {
+      const w = mountDetail(intent({ id: 'i1', intentSessionId: 's-intent' }), {
+        intentSessionStatus: status,
+      })
+      const dot = w.find(INTENT_DOT)
+      expect(dot.exists()).toBe(true)
+      expect(dot.classes()).toContain(status)
+    },
+  )
+
+  it('hides the intent session dot when the session is idle', () => {
+    const w = mountDetail(intent({ id: 'i1', intentSessionId: 's-intent' }), {
+      intentSessionStatus: 'idle',
+    })
+    expect(w.find(INTENT_DOT).exists()).toBe(false)
+  })
+
+  it('hides the intent session dot when the status is unknown (no session id)', () => {
+    const w = mountDetail(intent({ id: 'i1', intentSessionId: null }))
+    expect(w.find(INTENT_DOT).exists()).toBe(false)
+  })
+
+  it('keeps the work session dot independent of the intent session status', () => {
+    const item = intent({ id: 'i1', intentSessionId: 's-intent', lastWorkSessionId: 's-work' })
+    const w = mountDetail(item, { workSessionStatus: 'running', intentSessionStatus: 'idle' })
+
+    expect(w.find(WORK_DOT).classes()).toContain('running')
+    expect(w.find(INTENT_DOT).exists()).toBe(false)
   })
 })

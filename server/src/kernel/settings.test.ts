@@ -119,11 +119,6 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
       intentAgentId: '',
       specAgentId: '',
       automationAgentId: '',
-      sandboxDefaultAgentId: '',
-      sandboxToolAgentId: '',
-      sandboxIntentAgentId: '',
-      sandboxSpecAgentId: '',
-      sandboxAutomationAgentId: '',
     } as SystemSettings)
     expect(loadSettings().projectConfigs?.['/proj/a']).toBeTruthy()
     expect(getDevSkill('/proj/a')).toBe('/a')
@@ -412,11 +407,6 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
       agents: [agent('a1', 0), agent('a2', 1)],
       defaultAgentId: 'a1',
       automationAgentId: '',
-      sandboxDefaultAgentId: '',
-      sandboxToolAgentId: '',
-      sandboxIntentAgentId: '',
-      sandboxSpecAgentId: '',
-      sandboxAutomationAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().automationAgentId).toBe('')
   })
@@ -434,11 +424,6 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
       agents: [agent('a1', 0), agent('a2', 1), agent('a3', 2)],
       defaultAgentId: 'a1',
       automationAgentId: 'a2',
-      sandboxDefaultAgentId: '',
-      sandboxToolAgentId: '',
-      sandboxIntentAgentId: '',
-      sandboxSpecAgentId: '',
-      sandboxAutomationAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().automationAgentId).toBe('a2')
   })
@@ -448,11 +433,6 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
       agents: [agent('a1', 0), agent('a2', 1, false), agent('a3', 2)],
       defaultAgentId: 'a1',
       automationAgentId: 'a2',
-      sandboxDefaultAgentId: '',
-      sandboxToolAgentId: '',
-      sandboxIntentAgentId: '',
-      sandboxSpecAgentId: '',
-      sandboxAutomationAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().automationAgentId).toBe('a3')
   })
@@ -462,11 +442,6 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
       agents: [agent('a1', 0), agent('a3', 2)],
       defaultAgentId: 'a1',
       automationAgentId: 'gone',
-      sandboxDefaultAgentId: '',
-      sandboxToolAgentId: '',
-      sandboxIntentAgentId: '',
-      sandboxSpecAgentId: '',
-      sandboxAutomationAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().automationAgentId).toBe('a1')
   })
@@ -476,11 +451,6 @@ describe('automationAgentId rewrite-on-store — empty=follow-default, set=fall-
       agents: [agent('a1', 0, false), agent('a2', 1, false)],
       defaultAgentId: 'a1',
       automationAgentId: 'a1',
-      sandboxDefaultAgentId: '',
-      sandboxToolAgentId: '',
-      sandboxIntentAgentId: '',
-      sandboxSpecAgentId: '',
-      sandboxAutomationAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().automationAgentId).toBe(SYSTEM_AGENT_ID)
   })
@@ -495,11 +465,6 @@ describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
       intentAgentId: '',
       specAgentId: '',
       automationAgentId: '',
-      sandboxDefaultAgentId: '',
-      sandboxToolAgentId: '',
-      sandboxIntentAgentId: '',
-      sandboxSpecAgentId: '',
-      sandboxAutomationAgentId: '',
       socketAutoResume,
     } as SystemSettings)
   }
@@ -1129,11 +1094,6 @@ function saveWithUiLang(uiLang: unknown): void {
     intentAgentId: '',
     specAgentId: '',
     automationAgentId: '',
-    sandboxDefaultAgentId: '',
-    sandboxToolAgentId: '',
-    sandboxIntentAgentId: '',
-    sandboxSpecAgentId: '',
-    sandboxAutomationAgentId: '',
     uiLang,
   } as SystemSettings)
 }
@@ -1168,11 +1128,6 @@ describe('getUiLang normalization', () => {
       intentAgentId: '',
       specAgentId: '',
       automationAgentId: '',
-      sandboxDefaultAgentId: '',
-      sandboxToolAgentId: '',
-      sandboxIntentAgentId: '',
-      sandboxSpecAgentId: '',
-      sandboxAutomationAgentId: '',
       uiLang: 'zh',
       voiceLang: 'en-US',
     } as SystemSettings)
@@ -1217,11 +1172,6 @@ function saveWithTimezone(timezone: unknown): void {
     intentAgentId: '',
     specAgentId: '',
     automationAgentId: '',
-    sandboxDefaultAgentId: '',
-    sandboxToolAgentId: '',
-    sandboxIntentAgentId: '',
-    sandboxSpecAgentId: '',
-    sandboxAutomationAgentId: '',
     timezone,
   } as SystemSettings)
 }
@@ -2024,5 +1974,87 @@ describe('session process proxy config — normalizeProxyConfig + getProxyConfig
     expect(env['http_proxy']).toBeUndefined()
     expect(env['HTTPS_PROXY']).toBeUndefined()
     expect(env['https_proxy']).toBeUndefined()
+  })
+})
+
+describe('legacy sandbox-only role keys are dropped on load and save', () => {
+  /** A disk sample written by an older build: the five removed `sandbox*AgentId`
+   *  keys alongside the unified roles and the protected merge fields. */
+  function writeLegacyDisk(): void {
+    writeAtomic(settingsPath(), {
+      agents: [
+        {
+          id: 'a1',
+          vendor: 'claude',
+          configMode: 'custom',
+          displayName: 'A1',
+          order_seq: 0,
+          config: { baseUrl: 'https://a1', apiKey: 'k', model: '' },
+        },
+        {
+          id: 'a2',
+          vendor: 'claude',
+          configMode: 'custom',
+          displayName: 'A2',
+          order_seq: 1,
+          config: { baseUrl: 'https://a2', apiKey: 'k', model: '' },
+        },
+      ],
+      defaultAgentId: 'a1',
+      toolAgentId: 'a2',
+      intentAgentId: '',
+      specAgentId: 'a2',
+      automationAgentId: '',
+      sandboxDefaultAgentId: 'a2',
+      sandboxToolAgentId: 'a1',
+      sandboxIntentAgentId: 'a2',
+      sandboxSpecAgentId: 'a1',
+      sandboxAutomationAgentId: 'a2',
+      proxy: { enabled: true, httpProxy: 'http://p:3128', httpsProxy: '' },
+      projectConfigs: { '/proj/a': { devSkill: '/a' } },
+      degradationChain: ['a2'],
+    })
+    resetSettingsCacheForTests()
+  }
+
+  it('loads without error, keeps the unified roles and exposes no legacy key', () => {
+    writeLegacyDisk()
+    const loaded = loadSettings() as unknown as Record<string, unknown>
+    expect(loaded.defaultAgentId).toBe('a1')
+    expect(loaded.toolAgentId).toBe('a2')
+    expect(loaded.intentAgentId).toBe('')
+    expect(loaded.specAgentId).toBe('a2')
+    expect(loaded.automationAgentId).toBe('')
+    for (const key of [
+      'sandboxDefaultAgentId',
+      'sandboxToolAgentId',
+      'sandboxIntentAgentId',
+      'sandboxSpecAgentId',
+      'sandboxAutomationAgentId',
+    ]) {
+      expect(loaded[key]).toBeUndefined()
+    }
+  })
+
+  it('removes the legacy keys from disk on the next save without losing other fields', () => {
+    writeLegacyDisk()
+    const loaded = loadSettings()
+    saveSettings({ ...loaded, toolAgentId: 'a1' })
+    const onDisk = readJsonFile<Record<string, unknown>>(settingsPath()) ?? {}
+    for (const key of [
+      'sandboxDefaultAgentId',
+      'sandboxToolAgentId',
+      'sandboxIntentAgentId',
+      'sandboxSpecAgentId',
+      'sandboxAutomationAgentId',
+    ]) {
+      expect(onDisk[key]).toBeUndefined()
+    }
+    expect(onDisk.toolAgentId).toBe('a1')
+    expect(onDisk.specAgentId).toBe('a2')
+    // The anti-clobber merge fields survive the rewrite.
+    expect(onDisk.proxy).toMatchObject({ enabled: true, httpProxy: 'http://p:3128' })
+    expect(onDisk.projectConfigs).toMatchObject({ '/proj/a': { devSkill: '/a' } })
+    expect(onDisk.degradationChain).toEqual(['a2'])
   })
 })

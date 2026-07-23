@@ -100,11 +100,6 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
     'intentAgentId',
     'specAgentId',
     'automationAgentId',
-    'sandboxDefaultAgentId',
-    'sandboxToolAgentId',
-    'sandboxIntentAgentId',
-    'sandboxSpecAgentId',
-    'sandboxAutomationAgentId',
   ],
   runtime: ['vendorCliVersions', 'proxy'],
   security: ['auth'],
@@ -183,12 +178,6 @@ function emptySettings(): SystemSettings {
     specAgentId: '',
     // '' ⇒ the new-automation form pre-fills with the default agent.
     automationAgentId: '',
-    // Sandbox-mode role profile. '' ⇒ follow the sandbox default.
-    sandboxDefaultAgentId: '',
-    sandboxToolAgentId: '',
-    sandboxIntentAgentId: '',
-    sandboxSpecAgentId: '',
-    sandboxAutomationAgentId: '',
     voiceLang: 'zh-CN',
     uiLang: 'en',
     timezone: BROWSER_TZ,
@@ -305,12 +294,6 @@ function buildSeed(settings: SystemSettings): SystemSettings {
     specAgentId: settings.specAgentId ?? '',
     // '' ⇒ the new-automation form pre-fills with the default agent (AC-R25).
     automationAgentId: settings.automationAgentId ?? '',
-    // Sandbox-mode role profile. '' ⇒ follow the sandbox default.
-    sandboxDefaultAgentId: settings.sandboxDefaultAgentId ?? '',
-    sandboxToolAgentId: settings.sandboxToolAgentId ?? '',
-    sandboxIntentAgentId: settings.sandboxIntentAgentId ?? '',
-    sandboxSpecAgentId: settings.sandboxSpecAgentId ?? '',
-    sandboxAutomationAgentId: settings.sandboxAutomationAgentId ?? '',
     voiceLang: settings.voiceLang ?? 'zh-CN',
     uiLang: settings.uiLang ?? 'en',
     timezone: settings.timezone ?? BROWSER_TZ,
@@ -448,25 +431,6 @@ function isEnabled(a: AgentConfig): boolean {
 // order (= the visual order_seq order before Save stamps it).
 const defaultPickerAgents = computed<AgentConfig[]>(() => draft.value.agents.filter(isEnabled))
 
-// The sandbox-role dropdowns offer every enabled agent, of either auth mode: a
-// `system`-mode (subscription) agent authenticates inside the arapuca sandbox
-// through the host keychain the wrapper opens for it (the server's
-// `normalizeSandboxRoleId` enforces the same rule).
-const sandboxPickerAgents = computed<AgentConfig[]>(() => draft.value.agents.filter(isEnabled))
-
-// Reset a sandbox role id to '' ("follow the sandbox default") when it no longer
-// points at an enabled agent — keeps the draft consistent after an agent is
-// disabled or removed (mirrors the server reset-on-store).
-function pruneSandboxRoles(): void {
-  const valid = new Set(sandboxPickerAgents.value.map((a) => a.id))
-  const keep = (id: string): string => (id && valid.has(id) ? id : '')
-  draft.value.sandboxDefaultAgentId = keep(draft.value.sandboxDefaultAgentId)
-  draft.value.sandboxToolAgentId = keep(draft.value.sandboxToolAgentId)
-  draft.value.sandboxIntentAgentId = keep(draft.value.sandboxIntentAgentId)
-  draft.value.sandboxSpecAgentId = keep(draft.value.sandboxSpecAgentId)
-  draft.value.sandboxAutomationAgentId = keep(draft.value.sandboxAutomationAgentId)
-}
-
 // Virtual group agents (`_c3_<group>`, ADR-0029) offered alongside real agents in
 // every agent picker; selecting one binds the session/role to the group (relay
 // failover across its members). Derived client-side from the draft's `group` fields.
@@ -497,8 +461,6 @@ function onToggleEnabled(a: AgentConfig, checked: boolean): void {
       draft.value.automationAgentId,
     )
   }
-  // Sandbox roles must stay on enabled agents — drop any a disable just invalidated.
-  pruneSandboxRoles()
 }
 
 // Provider connection fields (baseUrl/apiKey) are only meaningful in `custom`
@@ -546,8 +508,6 @@ function removeAgent(id: string) {
     )
   }
   draft.value.defaultAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.defaultAgentId)
-  // A removed agent may have been a sandbox role — drop any now-dangling reference.
-  pruneSandboxRoles()
 }
 
 /** Deep-copy an agent, append "-copy" to its displayName, and insert the copy
@@ -618,11 +578,6 @@ function buildTabPayload(
       payload.intentAgentId = src.intentAgentId
       payload.specAgentId = src.specAgentId
       payload.automationAgentId = src.automationAgentId
-      payload.sandboxDefaultAgentId = src.sandboxDefaultAgentId
-      payload.sandboxToolAgentId = src.sandboxToolAgentId
-      payload.sandboxIntentAgentId = src.sandboxIntentAgentId
-      payload.sandboxSpecAgentId = src.sandboxSpecAgentId
-      payload.sandboxAutomationAgentId = src.sandboxAutomationAgentId
       break
     }
     case 'runtime': {
@@ -946,7 +901,6 @@ function selectAdmin(username: string) {
                 class="agent-field agent-configmode"
                 :title="t('settings.agents.configMode.tooltip')"
                 data-testid="agent-configmode"
-                @change="pruneSandboxRoles"
               >
                 <option v-for="m in CONFIG_MODES" :key="m" :value="m">
                   {{ configModeLabel(m) }}
@@ -1140,102 +1094,6 @@ function selectAdmin(username: string) {
                   {{ g.id }}
                 </option>
               </optgroup>
-            </select>
-          </div>
-          <!-- Sandbox-mode role profile: which agent a sandboxed run of each kind
-               uses. Both auth modes are valid (a subscription agent reaches the host
-               keychain via the wrapper). Empty ⇒ follow the sandbox default ⇒ the
-               first enabled agent. -->
-          <p class="settings-subhead" data-testid="sandbox-roles-head">
-            {{ t('settings.agents.sandboxRoles.head') }}
-          </p>
-          <p class="settings-hint">{{ t('settings.agents.sandboxRoles.hint') }}</p>
-          <div class="agent-default-picker">
-            <label class="agent-default-label" for="sandbox-default-agent-select">
-              {{ t('settings.agents.sandboxDefaultPicker.label') }}
-            </label>
-            <select
-              id="sandbox-default-agent-select"
-              v-model="draft.sandboxDefaultAgentId"
-              class="agent-field"
-              data-testid="sandbox-default-agent-select"
-              :title="t('settings.agents.sandboxDefault.tooltip')"
-            >
-              <option value="">{{ t('settings.agents.sandboxDefaultPicker.auto') }}</option>
-              <option v-for="a in sandboxPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
-              <option v-if="sandboxPickerAgents.length === 0" value="" disabled>
-                {{ t('settings.agents.sandboxRoles.empty') }}
-              </option>
-            </select>
-          </div>
-          <div class="agent-default-picker">
-            <label class="agent-default-label" for="sandbox-tool-agent-select">
-              {{ t('settings.agents.sandboxToolPicker.label') }}
-            </label>
-            <select
-              id="sandbox-tool-agent-select"
-              v-model="draft.sandboxToolAgentId"
-              class="agent-field"
-              data-testid="sandbox-tool-agent-select"
-              :title="t('settings.agents.sandboxTool.tooltip')"
-            >
-              <option value="">{{ t('settings.agents.sandboxRoles.followSandboxDefault') }}</option>
-              <option v-for="a in sandboxPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
-            </select>
-          </div>
-          <div class="agent-default-picker">
-            <label class="agent-default-label" for="sandbox-intent-agent-select">
-              {{ t('settings.agents.sandboxIntentPicker.label') }}
-            </label>
-            <select
-              id="sandbox-intent-agent-select"
-              v-model="draft.sandboxIntentAgentId"
-              class="agent-field"
-              data-testid="sandbox-intent-agent-select"
-              :title="t('settings.agents.sandboxIntent.tooltip')"
-            >
-              <option value="">{{ t('settings.agents.sandboxRoles.followSandboxDefault') }}</option>
-              <option v-for="a in sandboxPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
-            </select>
-          </div>
-          <div class="agent-default-picker">
-            <label class="agent-default-label" for="sandbox-spec-agent-select">
-              {{ t('settings.agents.sandboxSpecPicker.label') }}
-            </label>
-            <select
-              id="sandbox-spec-agent-select"
-              v-model="draft.sandboxSpecAgentId"
-              class="agent-field"
-              data-testid="sandbox-spec-agent-select"
-              :title="t('settings.agents.sandboxSpec.tooltip')"
-            >
-              <option value="">{{ t('settings.agents.sandboxRoles.followSandboxDefault') }}</option>
-              <option v-for="a in sandboxPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
-            </select>
-          </div>
-          <div class="agent-default-picker">
-            <label class="agent-default-label" for="sandbox-automation-agent-select">
-              {{ t('settings.agents.sandboxAutomationPicker.label') }}
-            </label>
-            <select
-              id="sandbox-automation-agent-select"
-              v-model="draft.sandboxAutomationAgentId"
-              class="agent-field"
-              data-testid="sandbox-automation-agent-select"
-              :title="t('settings.agents.sandboxAutomation.tooltip')"
-            >
-              <option value="">{{ t('settings.agents.sandboxRoles.followSandboxDefault') }}</option>
-              <option v-for="a in sandboxPickerAgents" :key="a.id" :value="a.id">
-                {{ a.displayName || a.id }}
-              </option>
             </select>
           </div>
           <p v-if="bindingStats" class="settings-hint" data-testid="settings-default-note">

@@ -55,7 +55,7 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 1. sandbox 的适用条件为工作区 `enabled` + 该 run 的 `sessionKind` 命中 `sandboxSessionKinds`,不再以 worktree、来源或分支模式为前提。
 2. sandbox 配置按 workspace 解析;实际参与隔离的代码目录是该 run 的执行根(`rt.effectiveCwd ?? workspacePath`——worktree 或源工作区)。
 3. sandbox 启用后失败路径 hard-fail,不降级 host 裸跑。arapuca 的 fail-closed 与此一致。
-4. run 保留其正常解析出的 agent(system / custom 皆可),其 vendor 决定沙箱内启动哪个 CLI;仅「未显式绑定 + 默认解析为 system」时按工作区 sandbox 角色配置换绑。
+4. run 始终保留其正常解析出的 agent(system / custom 皆可),其 vendor 决定沙箱内启动哪个 CLI;沙箱不参与 agent 选择,无专属角色配置与换绑分支。
 
 ## 5. 目标能力与非目标
 

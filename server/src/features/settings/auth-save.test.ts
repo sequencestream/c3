@@ -22,11 +22,6 @@ const base = {
   intentAgentId: '',
   specAgentId: '',
   automationAgentId: '',
-  sandboxDefaultAgentId: '',
-  sandboxToolAgentId: '',
-  sandboxIntentAgentId: '',
-  sandboxSpecAgentId: '',
-  sandboxAutomationAgentId: '',
 } as SystemSettings
 
 beforeEach(() => {

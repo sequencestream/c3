@@ -6,6 +6,7 @@ import type {
   AuthProvider,
   ClientToServer,
   ServerToClient,
+  SystemSettings,
 } from './protocol.js'
 
 /**
@@ -164,11 +165,6 @@ describe('protocol wire format', () => {
         intentAgentId: '',
         specAgentId: '',
         automationAgentId: '',
-        sandboxDefaultAgentId: '',
-        sandboxToolAgentId: '',
-        sandboxIntentAgentId: '',
-        sandboxSpecAgentId: '',
-        sandboxAutomationAgentId: '',
       },
       hostStatus: [
         {
@@ -283,5 +279,24 @@ describe('auth provider kinds (ADR-0023)', () => {
       session: { ttlSeconds: 900, signingKeyRef: 'C3_AUTH_KEY' },
     }
     expect(JSON.parse(JSON.stringify(auth))).toEqual(auth)
+  })
+})
+
+describe('sandbox runs share the unified agent configuration', () => {
+  // Compile-time guards: `vue-tsc` fails these assignments if a sandbox-only role
+  // field or a sandbox-conflict frame is ever reintroduced.
+  it('exposes no sandbox-only role field on SystemSettings', () => {
+    type SandboxRoleKey = Extract<keyof SystemSettings, `sandbox${string}AgentId`>
+    const noSandboxRoles: [SandboxRoleKey] extends [never] ? true : false = true
+    expect(noSandboxRoles).toBe(true)
+  })
+
+  it('carries no sandbox-conflict message in either direction', () => {
+    type ConflictFrame = Extract<
+      ClientToServer | ServerToClient,
+      { type: `sandbox_conflict${string}` }
+    >
+    const noConflictFrames: [ConflictFrame] extends [never] ? true : false = true
+    expect(noConflictFrames).toBe(true)
   })
 })

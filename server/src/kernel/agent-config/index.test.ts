@@ -45,11 +45,6 @@ const mockSettings: SystemSettings = {
   // '' ⇒ spec sessions follow the default agent; tests mutate this per-case.
   specAgentId: '',
   automationAgentId: '',
-  sandboxDefaultAgentId: '',
-  sandboxToolAgentId: '',
-  sandboxIntentAgentId: '',
-  sandboxSpecAgentId: '',
-  sandboxAutomationAgentId: '',
   degradationChain: [],
 }
 

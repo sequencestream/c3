@@ -22,11 +22,6 @@ const baseSettings: SystemSettings = {
   intentAgentId: '',
   specAgentId: '',
   automationAgentId: '',
-  sandboxDefaultAgentId: '',
-  sandboxToolAgentId: '',
-  sandboxIntentAgentId: '',
-  sandboxSpecAgentId: '',
-  sandboxAutomationAgentId: '',
   defaultMode: 'default',
   consensus: { enabled: false },
   voiceLang: 'zh-CN',
@@ -426,6 +421,28 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
     await w.find(SAVE.agent).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
     expect(emitted[0][0].automationAgentId).toBe('')
+  })
+
+  it('renders no sandbox-role block — sandbox runs share the unified role config', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
+    expect(w.find('[data-testid="sandbox-roles-head"]').exists()).toBe(false)
+    for (const role of ['default', 'tool', 'intent', 'spec', 'automation']) {
+      expect(w.find(`[data-testid="sandbox-${role}-agent-select"]`).exists()).toBe(false)
+    }
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0] as unknown as Record<
+      string,
+      unknown
+    >
+    for (const key of [
+      'sandboxDefaultAgentId',
+      'sandboxToolAgentId',
+      'sandboxIntentAgentId',
+      'sandboxSpecAgentId',
+      'sandboxAutomationAgentId',
+    ]) {
+      expect(saved[key]).toBeUndefined()
+    }
   })
 
   it('rewrites a non-empty automationAgentId to the next enabled agent when disabled', async () => {

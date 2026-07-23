@@ -945,7 +945,7 @@ describe('automation controller — branch-mode git alignment', () => {
       undefined,
       undefined,
     )
-    expect(setPrInfo).toHaveBeenCalledWith('Z', '77', 'reviewing')
+    expect(setPrInfo).toHaveBeenCalledWith('Z', '77', 'reviewing', 'http://x/pull/77')
     expect(updateStatus).toHaveBeenCalledWith('Z', 'done')
   })
 
@@ -991,7 +991,12 @@ describe('automation controller — branch-mode git alignment', () => {
       undefined,
       'gitlab',
     )
-    expect(setPrInfo).toHaveBeenCalledWith('GL', '19', 'reviewing')
+    expect(setPrInfo).toHaveBeenCalledWith(
+      'GL',
+      '19',
+      'reviewing',
+      'https://gitlab.example/group/project/-/merge_requests/19',
+    )
   })
 
   it('current-branch: 端到端 commit 用 workspacePath 且不建 worktree、不建 PR', async () => {

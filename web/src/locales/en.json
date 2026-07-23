@@ -1186,6 +1186,9 @@
         }
       },
       "empty": "No automations yet.",
+      "running": {
+        "label": "Session running"
+      },
       "expand": {
         "tooltip": "Expand panel"
       },

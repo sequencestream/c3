@@ -24,6 +24,7 @@ function makeAutomation(over: Partial<Automation> = {}): Automation {
     eventFilters: null,
     eventSessionKindFilter: null,
     metadata: {},
+    runningSessionId: null,
     status: 'active',
     mode: 'read-only',
     toolAllowlist: [],

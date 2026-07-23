@@ -15,6 +15,8 @@ import {
   createAutomation,
   updateAutomation,
   getAutomation,
+  getAutomationDetail,
+  listAutomations,
   getDueAutomations,
   getEventAutomations,
   getWorkspaceMcpConfig,
@@ -636,5 +638,87 @@ describe('embedEventContext save boundary', () => {
       cronExpression: '0 8 * * *',
     })
     expect(readEmbed(s.id)).toBeUndefined()
+  })
+})
+
+describe('runningSessionId derivation', () => {
+  function makeAutomation(type: 'llm' | 'command') {
+    return createAutomation({
+      type,
+      config: type === 'llm' ? { prompt: 'review' } : { command: 'echo hi' },
+      workspaceId: proj,
+      cronExpression: '*/5 * * * *',
+      mode: 'read-only',
+      vendor: 'claude',
+      ...(type === 'llm' ? { agentId: 'agent-1' } : {}),
+    })
+  }
+
+  function log(
+    automationId: string,
+    over: { startedAt?: number; status?: string; sessionId?: string | null; finishedAt?: number },
+  ) {
+    return appendExecutionLog({
+      automationId,
+      startedAt: over.startedAt ?? 1_000,
+      finishedAt: over.finishedAt ?? null,
+      exitCode: null,
+      output: '',
+      error: null,
+      status: over.status ?? 'running',
+      sessionId: over.sessionId ?? null,
+    })
+  }
+
+  it('an LLM automation with a running log carrying a session id reports that id', () => {
+    const s = makeAutomation('llm')
+    log(s.id, { sessionId: 'sess-live' })
+    expect(getAutomation(s.id)!.runningSessionId).toBe('sess-live')
+    expect(listAutomations(proj)[0].runningSessionId).toBe('sess-live')
+    expect(getAutomationDetail(s.id).automation!.runningSessionId).toBe('sess-live')
+  })
+
+  it('no running log at all → null', () => {
+    const s = makeAutomation('llm')
+    expect(getAutomation(s.id)!.runningSessionId).toBeNull()
+    expect(listAutomations(proj)[0].runningSessionId).toBeNull()
+  })
+
+  it('a running log without a bound session id → null (empty string included)', () => {
+    const s = makeAutomation('llm')
+    log(s.id, { sessionId: null })
+    log(s.id, { startedAt: 2_000, sessionId: '' })
+    expect(getAutomation(s.id)!.runningSessionId).toBeNull()
+  })
+
+  it('a terminal log keeps the indicator dark even though it has a session id', () => {
+    const s = makeAutomation('llm')
+    log(s.id, { status: 'success', finishedAt: 1_500, sessionId: 'sess-done' })
+    expect(getAutomation(s.id)!.runningSessionId).toBeNull()
+  })
+
+  it('a command automation never reports a session — only LLM tasks do', () => {
+    const s = makeAutomation('command')
+    log(s.id, { sessionId: 'sess-cmd' })
+    expect(getAutomation(s.id)!.runningSessionId).toBeNull()
+    expect(listAutomations(proj)[0].runningSessionId).toBeNull()
+  })
+
+  it('several running logs → the newest started_at wins, deterministically', () => {
+    const s = makeAutomation('llm')
+    log(s.id, { startedAt: 1_000, sessionId: 'sess-old' })
+    log(s.id, { startedAt: 3_000, sessionId: 'sess-new' })
+    log(s.id, { startedAt: 2_000, sessionId: 'sess-mid' })
+    expect(getAutomation(s.id)!.runningSessionId).toBe('sess-new')
+    expect(listAutomations(proj)[0].runningSessionId).toBe('sess-new')
+  })
+
+  it('the running session of one automation never leaks into a sibling row', () => {
+    const running = makeAutomation('llm')
+    const idle = makeAutomation('llm')
+    log(running.id, { sessionId: 'sess-live' })
+    const byId = new Map(listAutomations(proj).map((a) => [a.id, a.runningSessionId]))
+    expect(byId.get(running.id)).toBe('sess-live')
+    expect(byId.get(idle.id)).toBeNull()
   })
 })

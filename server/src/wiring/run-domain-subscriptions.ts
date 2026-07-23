@@ -36,11 +36,12 @@
  *  `run:settled` with sessionKind='discussion'; this subscription handles the
  *  domain broadcast so each starter's `.finally()` does not need to.
  *
- * ── Automation domain (`run:settled`, sessionKind=『automation』) ──────────────
- *  Broadcast the refreshed automation list on settle. The automation engine
- *  (`scheduler.ts`) publishes `run:started`/`run:bound`/`run:settled` with
- *  sessionKind='automation'; this subscription replaces the old `store.broadcast`
- *  call for the automation list refresh.
+ * ── Automation domain (`run:started`/`run:settled`, sessionKind=『automation』) ─
+ *  Broadcast the refreshed automation list on start AND on settle, so the list's
+ *  live-session indicator lights up and goes dark without client polling. The
+ *  automation engine (`scheduler.ts`) publishes `run:started`/`run:bound`/
+ *  `run:settled` with sessionKind='automation'; these subscriptions replace the
+ *  old `store.broadcast` call for the automation list refresh.
  *
  * ── Automation trigger (unchanged) ─────────────────────────────────────
  *  The existing `dispatchEventTriggers` subscription in
@@ -390,6 +391,17 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   eventBus.subscribe('run:settled', ({ workspacePath, sessionKind }) => {
     if (sessionKind !== 'discussion') return
     broadcastDiscussions(workspacePath)
+  })
+
+  // ── run:started (sessionKind=automation) — automation domain ──────────────────
+  // Push the refreshed automation list at the START of a scheduled execution so
+  // the list's live-session indicator (`Automation.runningSessionId`) can light up
+  // without any client polling. The snapshot taken here does not yet carry the
+  // real agent session id (it is bound a moment later inside the dispatcher, which
+  // broadcasts again); this event is what flips the run into existence.
+  eventBus.subscribe('run:started', ({ workspacePath, sessionKind }) => {
+    if (sessionKind !== 'automation') return
+    broadcastAutomations(workspacePath)
   })
 
   // ── run:settled (sessionKind=automation) — automation domain ──────────────────

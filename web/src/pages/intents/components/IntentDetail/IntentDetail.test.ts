@@ -1475,7 +1475,7 @@ describe('IntentDetail.vue — 会话 tab 标签状态点', () => {
   const INTENT_DOT = '[data-testid="intent-detail-intent-session-status"]'
   const WORK_DOT = '[data-testid="intent-detail-work-session-status"]'
 
-  it.each<SessionStatus>(['running', 'awaiting_permission', 'team'])(
+  it.each<SessionStatus>(['running', 'awaiting_permission', 'team', 'reconnecting'])(
     'renders the intent session dot with the %s class',
     (status) => {
       const w = mountDetail(intent({ id: 'i1', intentSessionId: 's-intent' }), {

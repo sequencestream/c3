@@ -130,8 +130,8 @@ const props = defineProps<{
   workSessionStatus?: SessionStatus | null
   /**
    * 意图会话(intentSessionId)的运行状态,用于意图会话 tab 标签的运行中状态点。
-   * 活跃态(running / awaiting_permission / team)时显示状态点;idle / 未知(null)
-   * 时不显示。由容器从 sessionStatus 派生透传。
+   * 非 idle(running / awaiting_permission / team / reconnecting)时显示状态点;
+   * idle / 未知(null)时不显示。由容器从 sessionStatus 派生透传。
    */
   intentSessionStatus?: SessionStatus | null
   // ── 变更日志(changelog tab)──
@@ -650,11 +650,11 @@ const workSessionStatusDot = computed<SessionStatus | null>(() => {
   return st && st !== 'idle' ? st : null
 })
 
-// 意图会话 tab 标签的运行中状态点:仅活跃态才显示,值即 .session-status 的类。
-const ACTIVE_SESSION_STATUSES: SessionStatus[] = ['running', 'awaiting_permission', 'team']
+// 意图会话 tab 标签的运行中状态点:与工作会话一致,非 idle/未知(null)才显示,
+// 值即 .session-status 的类。reconnecting 是退避重连的活跃中间态,同样显示。
 const intentSessionStatusDot = computed<SessionStatus | null>(() => {
   const st = props.intentSessionStatus
-  return st && ACTIVE_SESSION_STATUSES.includes(st) ? st : null
+  return st && st !== 'idle' ? st : null
 })
 
 // props 变化(SDD 开关切换 / 意图 spec 字段变化)导致当前激活 tab 不再可见时回退到 intent。

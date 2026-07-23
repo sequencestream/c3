@@ -109,7 +109,8 @@ c3
 │   │   ├── 补充放行                              # extraMounts 逐项 {path, ro/rw},保留路径不可覆盖、canonicalize 拒软链逃逸
 │   │   ├── 会话种类过滤                          # sandboxSessionKinds 决定哪些 SessionKind 进沙箱(缺省 ['work'])
 │   │   ├── system agent 冲突                     # 沙箱 run 绑定 system agent(沙箱内无法登录)时:显式绑定→弹窗让用户选「不走沙箱」(bypass)或「换同 vendor custom agent」(switch);Auto/默认→静默替换为沙箱角色 custom agent
-│   │   └── 硬失败                                # arapuca 缺失/平台不支持/放行路径非法即 hard-fail,绝不回落宿主裸跑
+│   │   ├── arapuca 版本关联                      # c3 关联并异步自动安装经校验的 arapuca 到 ~/.c3/sandbox/arapuca(SHA-256 + 原子激活),缺失时回退宿主 PATH、不阻塞当次 run
+│   │   └── 硬失败                                # arapuca 两条链皆无/平台不支持/放行路径非法即 hard-fail,绝不回落宿主裸跑
 │   │
 │   └── auth 鉴权                                 # 每条连接过身份门,每次改全局配置过管理员门
 │       ├── 登录                                  # basic 用户名/密码校验,签发 session token

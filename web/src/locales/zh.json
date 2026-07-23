@@ -2268,7 +2268,7 @@
       "title": {
         "label": "沙箱"
       },
-      "hint": "为本项目的开发 agent 启用 arapuca 进程级隔离:vendor CLI 作为宿主进程运行,由内核 MAC 收窄目录读写。本次 run 的执行目录与 specs 可读写;worktree 模式下源项目目录保持只读,current-branch 模式下 run 直接写源工作区。其余目录默认不可见。需要宿主 PATH 中已安装 arapuca 二进制。",
+      "hint": "为本项目的开发 agent 启用 arapuca 进程级隔离:vendor CLI 作为宿主进程运行,由内核 MAC 收窄目录读写。本次 run 的执行目录与 specs 可读写;worktree 模式下源项目目录保持只读,current-branch 模式下 run 直接写源工作区。其余目录默认不可见。c3 会自动安装并关联 arapuca 二进制版本,不可用时回退宿主 PATH 中已安装的二进制。",
       "enable": {
         "label": "启用沙箱"
       },

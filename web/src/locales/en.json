@@ -2268,7 +2268,7 @@
       "title": {
         "label": "Sandbox"
       },
-      "hint": "Run this project's dev agents under arapuca process-level isolation: the vendor CLI runs as a host process with directory read/write narrowed by a kernel MAC. The run's execution directory and specs are read-write; under worktree mode the source project directory stays read-only, while under current-branch mode the run writes the workspace directly. Everything else is hidden by default. Requires the arapuca binary on the host PATH.",
+      "hint": "Run this project's dev agents under arapuca process-level isolation: the vendor CLI runs as a host process with directory read/write narrowed by a kernel MAC. The run's execution directory and specs are read-write; under worktree mode the source project directory stays read-only, while under current-branch mode the run writes the workspace directly. Everything else is hidden by default. c3 installs and version-pins the arapuca binary itself, falling back to one on the host PATH.",
       "enable": {
         "label": "Enable sandbox"
       },

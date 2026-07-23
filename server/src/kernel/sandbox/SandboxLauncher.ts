@@ -7,13 +7,16 @@
  * process transparently.
  *
  * ## Flow
- * 1. `probeArapuca()` — confirms the arapuca binary + platform capability. A
- *    failure hard-fails a sandbox-enabled run (never a silent host fallback).
+ * 1. `probeArapuca()` — confirms the arapuca binary + platform capability. The
+ *    binary is resolved as c3-managed install first (see `arapuca-dist.ts`),
+ *    host PATH second; a missing managed install triggers a background download
+ *    that never delays this run. A failure hard-fails a sandbox-enabled run
+ *    (never a silent host fallback).
  * 2. `launchSandbox(workspaceRoot, worktree)` — resolves the allowed path set
  *    (workspace root ro, worktree rw, specsBase rw, extraMounts) and mints a
  *    per-run temp dir. Returns paths + tmpDir + a `cleanup()`.
  * 3. `createSandboxWrapper(paths, entryCommand, tmpDir)` — writes a POSIX shell
- *    script that `exec`s `arapuca run -v …:ro -v …:rw -- <cli> "$@"`. The path
+ *    script that `exec`s `<arapucaBin> run -v …:ro -v …:rw -- <cli> "$@"`. The path
  *    is passed to the vendor SDK as `pathToClaudeCodeExecutable` /
  *    `codexPathOverride`. The SDK spawns it as a normal subprocess; the child
  *    inherits the SDK-provided env (arapuca strips only LD_/DYLD_/ARAPUCA_
@@ -42,6 +45,7 @@ import {
 import { homedir } from 'node:os'
 import { join, delimiter, sep } from 'node:path'
 import { getProjectSandbox } from '../../kernel/config/index.js'
+import { ensureManagedArapuca, resolveManagedArapuca } from './arapuca-dist.js'
 import {
   getSpecsBase,
   getSandboxCodexHome,
@@ -125,7 +129,11 @@ export class SandboxLaunchError extends Error {
 
 // ─── arapuca Probe ───────────────────────────────────────────────────────────
 
-/** Cached probe result — arapuca availability does not change within a process. */
+/**
+ * Cached probe result. arapuca availability is stable within a process with ONE
+ * exception: a background managed install can complete and switch `current`
+ * mid-process, which invalidates a cache that had settled on the host PATH.
+ */
 let probeCache: ArapucaProbeResult | undefined
 
 /** Binary name looked up on the host PATH. */
@@ -151,13 +159,24 @@ function findOnPath(bin: string): string | null {
 }
 
 /**
- * Probe the host for arapuca + platform capability. Cached.
+ * Probe for arapuca + platform capability. Cached.
+ *
+ * Binary resolution is a two-link chain, tried in order:
+ * 1. **c3-managed** — the checksum-verified install under `~/.c3/sandbox/arapuca/`
+ *    pinned to the version this c3 build was validated against.
+ * 2. **host PATH** — the user's own arapuca, whatever version that is.
+ *
+ * When the managed install is missing or untrustworthy, a background download is
+ * kicked off (single-flight) and this call **immediately** continues to the PATH
+ * scan: the current run is never delayed by, and never waits for, an install. If
+ * that install later succeeds it invalidates this cache, so the NEXT probe picks
+ * the managed binary while runs already launched keep the path they were given.
  *
  * Current scope is directory ro/rw MAC, which all three platforms support
  * (Linux Landlock / macOS Seatbelt / Windows AppContainer), so the platform
- * gate only rejects unknown platforms. A missing binary yields
- * `arapuca-missing`; the UI turns the code into a localized "install arapuca"
- * hint.
+ * gate only rejects unknown platforms. Neither link yielding a binary is still
+ * `arapuca-missing` — a hard fail, never a host-native fallback; the UI turns
+ * the code into a localized "install arapuca" hint.
  */
 export function probeArapuca(): ArapucaProbeResult {
   if (probeCache) return probeCache
@@ -178,12 +197,34 @@ export function probeArapuca(): ArapucaProbeResult {
     probeCache = { ok: false, uiCode: 'nested-sandbox-unsupported' }
     return probeCache
   }
+  // 1. The c3-managed, checksum-verified install wins when it is intact.
+  const managed = resolveManagedArapuca()
+  if (managed) {
+    probeCache = { ok: true, path: managed, source: 'managed' }
+    return probeCache
+  }
+  // Missing / broken / wrong-version managed install: repair it in the
+  // background and fall through to PATH for THIS probe. A success invalidates
+  // the cache below so the next probe upgrades to the managed binary.
+  ensureManagedArapuca({ onInstalled: invalidateArapucaProbe })
+  // 2. The host's own arapuca.
   const bin = findOnPath(ARAPUCA_BIN)
-  probeCache = bin ? { ok: true, path: bin } : { ok: false, uiCode: 'arapuca-missing' }
+  probeCache = bin
+    ? { ok: true, path: bin, source: 'host-path' }
+    : { ok: false, uiCode: 'arapuca-missing' }
   return probeCache
 }
 
-/** Test-only: drop the cached probe so the next call re-scans PATH. */
+/**
+ * Drop the cached probe so the next call re-resolves. Called when a background
+ * managed install completes — the cache may hold a host-PATH result that the
+ * freshly installed, version-pinned binary should now supersede.
+ */
+export function invalidateArapucaProbe(): void {
+  probeCache = undefined
+}
+
+/** Test-only: drop the cached probe so the next call re-resolves. */
 export function resetArapucaProbeForTests(): void {
   probeCache = undefined
 }
@@ -245,12 +286,18 @@ function canonicalize(path: string, label: string): string {
  * direction) and the denylist, and dropped when they point at a non-existent
  * path (skipped, not fatal — unlike a security violation, which throws).
  *
+ * `arapucaBin` is the absolute binary the wrapper will `exec`; it is threaded in
+ * from the probe (managed install or host PATH) rather than re-resolved here,
+ * and defaults to the bare name only for callers that resolve paths outside a
+ * launch (tests, UI previews).
+ *
  * @throws {@link SandboxLaunchError} on reserved-path overlap or denylist hit.
  */
 export function resolvePaths(
   workspaceRoot: string,
   executionRoot: string,
   extraMounts: readonly { path: string; readonly?: boolean }[] = [],
+  arapucaBin: string = ARAPUCA_BIN,
 ): ResolvedSandboxPaths {
   const canonExecutionRoot = canonicalize(executionRoot, 'executionRoot')
   // Workspace-scoped fixed allowances from the single source of truth. A rw
@@ -352,6 +399,7 @@ export function resolvePaths(
     codexHome: canonCodexHome,
     claudeConfigDir: canonClaudeConfigDir,
     extra,
+    arapucaBin,
   }
 }
 
@@ -388,12 +436,15 @@ export function launchSandbox(workspaceRoot: string, executionRoot: string): San
         ? `sandbox is unsupported on this platform (${process.platform})`
         : probe.uiCode === 'nested-sandbox-unsupported'
           ? 'nested macOS sandbox is unsupported (start c3 outside the parent sandbox)'
-          : 'arapuca binary not found on PATH (install it to use the sandbox)',
+          : 'no arapuca binary available (c3-managed install not ready and none on PATH)',
     )
   }
 
   const sbCfg = getProjectSandbox(workspaceRoot)
-  const paths = resolvePaths(workspaceRoot, executionRoot, sbCfg?.extraMounts ?? [])
+  // Freeze the probed binary into this launch: the run executes the exact
+  // arapuca the probe verified, even if a background install switches `current`
+  // while the run is alive.
+  const paths = resolvePaths(workspaceRoot, executionRoot, sbCfg?.extraMounts ?? [], probe.path)
   // The per-run temp dir holds ONLY the wrapper script — it is deleted on cleanup.
   // Codex process state (CODEX_HOME) lives in the persistent per-workspace home
   // (`paths.codexHome`, ensured by resolvePaths), NOT here, so thread rollouts
@@ -401,7 +452,8 @@ export function launchSandbox(workspaceRoot: string, executionRoot: string): San
   const tmpDir = mkdtempSync(join(paths.executionRoot, '.c3-sb-'))
 
   console.log(
-    `[sandbox] arapuca wrapper prepared: exec(rw)=${paths.executionRoot} ` +
+    `[sandbox] arapuca wrapper prepared: bin=${paths.arapucaBin} (${probe.source}) ` +
+      `exec(rw)=${paths.executionRoot} ` +
       `root(ro)=${paths.workspaceRoot ?? '(merged into exec)'} ` +
       `specs(rw)=${paths.specsBase} codexHome(rw)=${paths.codexHome} extra=${paths.extra.length}`,
   )
@@ -430,7 +482,7 @@ function shQuote(value: string): string {
  * Create a wrapper script that runs `entryCommand` inside an arapuca-narrowed
  * process with the resolved allow set.
  *
- * The wrapper `exec`s `arapuca run -v <path>:ro|rw … -- <entryCommand> "$@"`.
+ * The wrapper `exec`s `<paths.arapucaBin> run -v <path>:ro|rw … -- <entryCommand> "$@"`.
  * The vendor SDK spawns this script as if it were the local CLI; the child
  * process inherits the SDK-provided env (arapuca strips only `LD_*` / `DYLD_*`
  * / `ARAPUCA_*` prefixes), so no env-file is written or needed.
@@ -518,9 +570,12 @@ export function createSandboxWrapper(
   // "fully open" for now; strict — the arapuca default — blocks all network and
   // would fail the vendor CLI's provider calls). macOS has no per-host filter;
   // Linux can later narrow via `--allow-host`.
+  // `exec` the ABSOLUTE binary the probe selected (c3-managed install or host
+  // PATH hit) — never a bare `arapuca`, whose runtime PATH lookup could resolve
+  // to a different, unverified binary than the one the probe validated.
   const script = `#!/bin/sh
 # c3 sandbox wrapper — runs the vendor CLI inside an arapuca-narrowed process
-${runtimeMkdirLine}exec arapuca run \\
+${runtimeMkdirLine}exec ${shQuote(paths.arapucaBin)} run \\
   --seccomp baseline \\
   --cwd ${shQuote(paths.executionRoot)} \\
 ${dataRootEnvLine}${credentialEnvBlock}${mountFlags}

@@ -2,7 +2,7 @@
 
 ## 1. 定位
 
-sandbox 领域为 agent 执行提供**进程级轻量隔离**。c3 不再让 vendor CLI 直接在宿主工作区里裸跑，而是在**工作区启用且 SessionKind 入选**的 run 中，用 [arapuca](https://github.com/sergio-correia/arapuca) 把 Claude Code / Codex CLI 进程包裹起来：进程仍在宿主同一文件系统内、以当前宿主用户身份、在宿主原路径上运行，由内核 MAC（Linux Landlock / macOS Seatbelt / Windows AppContainer）收窄它能读写哪些目录。不使用容器、镜像、bind mount、独立 rootfs。是否进沙箱只取决于工作区 `enabled` 主开关与该 run 的 `sessionKind` 是否命中 `sandboxSessionKinds`，与 run 来源（Intent / spec / 普通）、是否使用 worktree、`gitBranchMode` 均无关。vendor CLI（claude / codex）由使用方在宿主预装；c3 不下载、不版本化 vendor CLI，也不捆绑分发 arapuca。
+sandbox 领域为 agent 执行提供**进程级轻量隔离**。c3 不再让 vendor CLI 直接在宿主工作区里裸跑，而是在**工作区启用且 SessionKind 入选**的 run 中，用 [arapuca](https://github.com/sergio-correia/arapuca) 把 Claude Code / Codex CLI 进程包裹起来：进程仍在宿主同一文件系统内、以当前宿主用户身份、在宿主原路径上运行，由内核 MAC（Linux Landlock / macOS Seatbelt / Windows AppContainer）收窄它能读写哪些目录。不使用容器、镜像、bind mount、独立 rootfs。是否进沙箱只取决于工作区 `enabled` 主开关与该 run 的 `sessionKind` 是否命中 `sandboxSessionKinds`，与 run 来源（Intent / spec / 普通）、是否使用 worktree、`gitBranchMode` 均无关。vendor CLI（claude / codex）由使用方在宿主预装；c3 不下载、不版本化 vendor CLI。arapuca 是例外：c3 关联并自动安装一个经过验证的版本（见 §2、§14）。
 
 本文负责实现细节：配置模型、路径放行解析、arapuca wrapper 生成、run lifecycle 接线、文件系统策略、网络策略、运行期环境卫生、启动前探测。大方向架构（为什么用进程级 arapuca、平台能力面、演进方向）见 `doc/architecture/sandbox-architecture.md`。
 
@@ -16,6 +16,7 @@ sandbox 是内核基础设施领域，属于内层能力（受单向依赖边界
 - workspace sandbox config 的 normalize 规则。
 - 路径放行解析：执行根 rw、源工作区 ro（同路径时并入执行根 rw）、specsBase rw、`extraMounts` 逐项 ro/rw。
 - arapuca wrapper 生成与临时目录清理。
+- arapuca 版本关联与自动安装：下载、SHA-256 校验、落盘、`current` 指向切换。
 - 启动前探测 arapuca 二进制与平台能力。
 - run lifecycle 接线：随机选取 sandbox agent、包裹 vendor CLI 启动、run 结束清理。
 
@@ -25,7 +26,8 @@ sandbox 是内核基础设施领域，属于内层能力（受单向依赖边界
 - sandbox 领域不理解业务 session、intent、automation 的语义。
 - sandbox 领域不实现远程 / 云端 sandbox。
 - sandbox 领域不下载、不版本化、不验证 vendor CLI；工具由使用方在宿主预装。
-- sandbox 领域不捆绑、不分发 arapuca；只探测其存在与平台能力。
+- arapuca 分发只维护单一「当前版本」指向：不做多版本共存、历史版本、回滚 UI，也不复用 vendor CLI 的多版本选择与远端同步模型。
+- 不追踪上游 `latest`、不支持用户配置下载源 / 镜像、不做源码构建；无制品映射的平台一律 `platform-unsupported`。
 - sandbox 领域当前不施加网络约束（网络全开），网络收窄是后续阶段。
 
 ## 3. 模块结构
@@ -35,6 +37,7 @@ sandbox 是内核基础设施领域，属于内层能力（受单向依赖边界
 | `server/src/kernel/sandbox/`          | sandbox 类型定义：workspace config、resolved 路径集、放行项权限、启动 options。                                                         |
 | workspace sandbox 配置校验            | 校验并 normalize `WorkspaceSandboxConfig`（`enabled` + `extraMounts` + `sandboxSessionKinds` + `sessionRetentionDays`）。               |
 | `SandboxLauncher`                     | run lifecycle 与 sandbox 的集成层：读取 workspace 配置、探测 arapuca、`resolvePaths()`（含持久 codexHome）、生成 wrapper、清理 tmpDir。 |
+| `kernel/sandbox/arapuca-dist.ts`      | arapuca 分发管理器：关联版本与各平台制品元数据、下载 + SHA-256 校验 + 解包 + 原子激活、后台 single-flight 安装（见 §14）。              |
 | `features/sandbox/rollout-janitor.ts` | 每日定时任务:清理持久 CODEX_HOME 内超过工作区保留天数的 codex rollout(见 §9)。                                                          |
 | ProcessSandbox 层（arapuca）          | 把 resolved 路径集映射为 arapuca `run` 参数；把 vendor CLI 包成 `arapuca run … -- <cli> "$@"` 形态的 wrapper。                          |
 | `kernel/run/sandbox-agent.ts`         | sandbox 启用时从 workspace agent pool 随机选一个可沙箱化 agent，其 vendor 决定入口命令。                                                |
@@ -90,7 +93,7 @@ interface WorkspaceSandboxConfig {
 10. 网络当前全开，不施加网络约束。网络禁用 / 出站白名单 / 代理列为后续阶段。
 11. sandbox 启用时，从 normalized custom agent pool 随机选一个 agent 并 pin 到 pending run；被选 agent 的 vendor 决定入口命令（宿主 PATH 中的 CLI）与 provider 接线。
 12. 启用即硬隔离：arapuca fail-closed（任一隔离层失效即非零退出），与 deny-by-default 一致；探测缺失 / 平台不支持 / 放行路径非法 / 启动失败时该 run 硬失败，绝不回落宿主裸跑。
-13. arapuca 二进制走宿主预装 + 探测：c3 不捆绑；启动前探测二进制存在与平台能力，缺失 / 不支持 hard-fail 并给出明确 `UiCode`。
+13. arapuca 二进制解析链为「c3 管理版本 → 宿主 PATH」：管理版本缺失时异步后台安装、当次不阻塞，两者皆无则 hard-fail 并给出明确 `UiCode`（见 §14）。
 14. 宿主 spawn wrapper 的 cwd 是执行根（worktree 或源工作区）；进程同路径运行，cwd 语义天然一致，无需任何容器内 cwd 设置。
 15. 无长驻容器：run 结束只需清理临时 wrapper 文件，不存在 start/stop 容器。
 
@@ -99,7 +102,7 @@ interface WorkspaceSandboxConfig {
 `SandboxLauncher` 是 run lifecycle 与 arapuca 之间唯一的集成点，职责：
 
 - 读取并 normalize workspace sandbox config，判断本次 run 是否进沙箱。
-- 探测 arapuca 二进制与平台能力，缺失 / 不支持 hard-fail。
+- 探测 arapuca 平台能力与二进制（管理版本优先、PATH 兜底），两者皆无则 hard-fail。
 - `resolvePaths()`：把固定放行（执行根 rw、源工作区 ro——同路径时并入执行根 rw、specsBase rw）与 `extraMounts`（逐项 ro/rw）解析成一个 canonicalize + 校验过的放行路径集。
 - `createSandboxWrapper()`：把入口命令、放行路径集、cwd 生成为 arapuca wrapper 脚本。
 - run 结束后清理 wrapper 临时目录。
@@ -159,13 +162,13 @@ run 启动（任意来源 / 分支模式）
 
 ## 9. Wrapper 机制
 
-`createSandboxWrapper()` 在宿主临时目录写一个可执行 wrapper 脚本，把这次 vendor CLI 启动包进 arapuca：
+`createSandboxWrapper()` 在宿主临时目录写一个可执行 wrapper 脚本，把这次 vendor CLI 启动包进 arapuca。脚本 `exec` 探测选中的 arapuca **绝对路径**（管理版本或 PATH 命中，见 §14），不写裸名，避免运行期 PATH 查找到另一个未经校验的二进制：
 
 数据根 env 与挂载**按 vendor 分流**(codex → `CODEX_HOME`,claude → `CLAUDE_CONFIG_DIR`),互不泄漏。codex 分支:
 
 ```sh
 #!/bin/sh
-exec arapuca run \
+exec "<arapuca 绝对路径>" run \
   --seccomp baseline \
   --cwd "<executionRoot>" \
   --env "CODEX_HOME=<持久 per-workspace codexHome>" \   # ~/.c3/sandbox-home/<project>/.codex,跨 run 存活
@@ -183,7 +186,7 @@ claude 分支(改设 `CLAUDE_CONFIG_DIR`、挂宿主 claude config dir 与 `/tmp
 ```sh
 #!/bin/sh
 mkdir -p "/tmp/claude-<uid>" 2>/dev/null || true
-exec arapuca run \
+exec "<arapuca 绝对路径>" run \
   --seccomp baseline \
   --cwd "<executionRoot>" \
   --env "CLAUDE_CONFIG_DIR=<宿主 claude config dir>" \   # 与 server 读取端同一目录,transcript 天然可读
@@ -279,16 +282,57 @@ c3 MCP 接入天然成立：沙箱内 vendor agent 需要调用 c3 自身的 MCP
 
 arapuca 环境变量为 **deny-by-default**:除自身管理的 `HOME` / `PATH` 外**不继承父进程 env**,只有显式 `--env KEY=VALUE` 传入的才进沙箱(裸名 `--env KEY` 被拒:`invalid --env, expected KEY=VALUE`)。因此 c3 wrapper 必须把 codex/claude 所需的每个变量(CODEX*HOME、provider 凭证等)逐个 `--env` 显式透传,不能依赖继承。（早期文档误称"arapuca 保留普通 env、仅剥 `LD*\_`/`DYLD\_\_`/`ARAPUCA\_\*`",与实测 0.2.4/darwin 不符,已更正。）
 
-## 14. arapuca 探测
+## 14. arapuca 版本关联与探测
 
-启动前探测替代原 Docker 健康检查：
+探测是第一道能力关卡，替代原 Docker 健康检查。顺序固定：先平台门禁，再二进制解析。
 
-- 探测 arapuca 二进制是否存在于宿主 PATH。
-- 探测宿主平台是否支持当前策略所需能力（当前范围为文件系统 ro/rw MAC；三平台均支持）。
-- 缺失或平台不支持时返回明确错误，sandbox enabled 的 run hard-fail 并向 UI 暴露原因（明确 `UiCode`，不硬编码英文文案），不静默降级。
-- 探测结果可缓存于 host 能力状态，供 UI 展示"沙箱是否可用"。
+### 14.1 平台门禁
 
-c3 不捆绑 arapuca；使用方在宿主自行安装（musl 静态二进制或 `cargo install`）。探测是第一道能力关卡，类比宿主二进制探测。
+- 未知平台 → `platform-unsupported`。
+- macOS 嵌套 Seatbelt（`CODEX_SANDBOX` / `APP_SANDBOX_CONTAINER_ID` 存在）→ `nested-sandbox-unsupported`；此时 arapuca 二进制探测即便成功，`sandbox-exec` 子进程也必然 EPERM。
+- 当前策略只需文件系统 ro/rw MAC，三平台均支持。
+
+### 14.2 二进制解析链
+
+1. **c3 管理版本**：`~/.c3/sandbox/arapuca/current` 指向的版本目录内的可执行文件。
+2. **宿主 PATH**：使用方自己安装的 arapuca，版本不受 c3 控制。
+
+两者皆无 → `arapuca-missing`。sandbox enabled 的 run 一律 hard-fail 并向 UI 暴露 `UiCode`（不硬编码英文文案），绝不静默降级为宿主裸跑。
+
+探测结果携带选中的**绝对路径**与来源（`managed` / `host-path`）。该绝对路径随本次 launch 结果传给 wrapper，wrapper `exec` 它而非裸名 `arapuca`——运行期 PATH 查找可能命中另一个未经校验的二进制。
+
+### 14.3 管理版本
+
+c3 版本显式关联一个经过验证的 arapuca 版本，以及各受支持平台的制品元数据（下载地址、SHA-256、归档内可执行文件路径）。关联版本必须满足 c3 依赖的能力门槛（macOS 挂载点祖先目录遍历、`/tmp` symlink 解析）；升级关联版本要重跑 `e2e-arapuca-capability-test.mjs` 并同步校验值。
+
+目录布局：
+
+```
+~/.c3/sandbox/arapuca/
+  <version>/arapuca-<version>/arapuca   # 完整制品
+  current -> <version>                  # 全部校验通过后才切换
+```
+
+`current` 仅在下载、SHA-256 校验、解包、可执行性检查**全部成功**后原子切换（同目录临时 symlink + `rename`）。下载与解包在同根临时目录内进行，失败即清理临时产物，既不激活也不触碰既有 `current`。
+
+信任规则——仅凭名称存在不算数，以下一律视为「管理版本不可用」，走异步修复 + PATH 兜底：
+
+- `current` 断链、指向管理根之外、指向非关联版本。
+- 目标可执行文件缺失或无执行权限。
+
+SHA-256 不匹配时禁止解包，因此不完整或被篡改的目录永远不可能被探测命中。切换失败时保留上一条有效关联。
+
+### 14.4 异步安装
+
+管理版本缺失或无效时，探测启动后台安装任务并**立即继续** PATH 探测：
+
+- 进程内 single-flight——启动探测、设置页探测与多个 run 复用同一任务，一个版本每进程最多下载一次。
+- 本次 run 的时序与判定完全不受影响：已选 PATH 就用该绝对路径；PATH 也缺失则立即 `arapuca-missing`，不等待下载。
+- 后台失败只记可诊断日志，不改写本次探测结果，不产生未处理的 Promise rejection；同进程后续探测可重试。
+- 安装成功切换 `current` 后使探测缓存失效，后续探测/run 升级到管理版本；已启动的 run 保持原选择。
+- 自动安装由组合根（server 启动）显式开启，内核被单独引用时不会隐式联网。
+
+设置页的 sandbox host status 表达「当前实际可用性」，不额外呈现下载进度或版本管理 UI。
 
 ## 15. 写操作预审 / checkpoint
 
@@ -316,7 +360,7 @@ worktree 直接位于宿主同路径，agent 的写入实时落在宿主 worktre
 
 | 阶段    | 范围                                                                                                                                                                                                          | 状态 |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
-| Phase A | 文档与配置类型：`WorkspaceSandboxConfig` 收敛为 `enabled` + `extraMounts` + `sandboxSessionKinds`；移除容器 / 网络字段与供应链协议。                                                                          | 当前 |
-| Phase B | arapuca wrapper 与路径放行：`resolvePaths()`（执行根 rw + 源工作区 ro[同路径并入执行根] + specsBase rw + extraMounts）、保留路径校验 + canonicalize + allowlist、生成 `arapuca run … -- <cli> "$@"` wrapper。 | 规划 |
-| Phase C | 探测与硬失败：启动前探测 arapuca 二进制 + 平台能力，缺失 / 不支持 hard-fail 并 UI 提示安装；所有失败路径保持 hard-fail，不回落宿主裸跑。                                                                      | 规划 |
+| Phase A | 文档与配置类型：`WorkspaceSandboxConfig` 收敛为 `enabled` + `extraMounts` + `sandboxSessionKinds`；移除容器 / 网络字段与供应链协议。                                                                          | 完成 |
+| Phase B | arapuca wrapper 与路径放行：`resolvePaths()`（执行根 rw + 源工作区 ro[同路径并入执行根] + specsBase rw + extraMounts）、保留路径校验 + canonicalize + allowlist、生成 `arapuca run … -- <cli> "$@"` wrapper。 | 完成 |
+| Phase C | 探测、自动安装与硬失败：平台能力门禁 + 「管理版本 → PATH」二进制解析链 + 异步安装关联版本；所有失败路径保持 hard-fail，不回落宿主裸跑。                                                                       | 完成 |
 | Phase D | 网络收窄（后续阶段）：按平台引入网络禁用 / 出站白名单 / 代理与对应 workspace 开关，保证回环 c3 MCP 端点收窄后仍可达。                                                                                         | 未来 |

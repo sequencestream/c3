@@ -65,6 +65,15 @@ export interface SessionRunStatus {
   status: SessionStatus
 }
 
+/**
+ * The business entities a session can belong to. A session's `(ownerKind,
+ * ownerId)` pair is the identity the top-nav badges deduplicate by, so one
+ * intent / discussion / automation counts once no matter how many of its
+ * sessions run at the same time.
+ */
+export const SESSION_OWNER_KINDS = ['intent', 'discussion', 'automation'] as const
+export type SessionOwnerKind = (typeof SESSION_OWNER_KINDS)[number]
+
 /** A session inside a workspace, as surfaced to the sidebar. */
 export interface SessionInfo {
   /**
@@ -109,7 +118,7 @@ export interface SessionInfo {
   /** Business classification carried by the unified `session_metadata` projection. */
   sessionKind?: SessionKind
   /** Owning entity kind used by the frontend jump-back resolver. */
-  ownerKind?: 'intent' | 'discussion' | 'automation' | null
+  ownerKind?: SessionOwnerKind | null
   /** Owning entity id used by the frontend jump-back resolver. */
   ownerId?: string | null
   /** `false` only for work pending-bind placeholders; listed rows are normally true. */
@@ -3480,6 +3489,14 @@ export type ServerToClient =
       type: 'session_counts'
       workspaceId: string
       counts: Record<'work' | 'intent' | 'spec' | 'discussion' | 'automation' | 'tool', number>
+      /**
+       * Running **business item** counts of the same workspace, deduplicated by
+       * owner: an intent / discussion / automation counts once as long as ANY of
+       * its sessions is running. A different notion from `counts` (running
+       * *sessions* per kind) — the two never replace each other. Drives the top
+       * nav's per-tab badges.
+       */
+      ownerCounts: Record<SessionOwnerKind, number>
     }
   /** Directory listing for one workspace-relative path. */
   | { type: 'dir_listed'; workspaceId: string; rel: string; entries: CodeDirEntry[] }

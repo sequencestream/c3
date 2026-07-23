@@ -24,7 +24,13 @@ import { applyLocale, setStoredLocale, i18n } from '@/i18n'
 import { translateUiError } from '@/i18n/errors'
 import { transcriptToChat } from './transcript'
 import type { AppCtx } from './types'
-import { sessionCacheKey, VIEW_MODE_KEY, type SessionPageKind } from './state'
+import {
+  runningSessionsFingerprint,
+  runningSessionsFingerprintOf,
+  sessionCacheKey,
+  VIEW_MODE_KEY,
+  type SessionPageKind,
+} from './state'
 import { resolveSessionSourceAction } from '@/lib/session-jump'
 
 /** 深链兑现超时:10 秒,足够服务端回包,但不至于在慢网下过多等待。 */
@@ -67,6 +73,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     sessionsByWorkspace,
     sessionPagingByWorkspace,
     sessionCounts,
+    ownerRunningCounts,
     activeWorkspace,
     activeSession,
     activeTitle,
@@ -385,9 +392,18 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       }
-      case 'session_status':
+      case 'session_status': {
+        // 运行集合真的变了(有会话开始/结束执行)才回一次权威计数,顶部三个条目角标
+        // 与「会话」角标据此无刷新收敛;纯重播同一快照不触发请求。
+        const changed =
+          runningSessionsFingerprintOf(msg.statuses) !==
+          runningSessionsFingerprint(sessionStatus.value)
         ctx.applyStatuses(msg.statuses)
+        if (changed && currentWorkspace.value) {
+          send({ type: 'get_session_counts', workspaceId: currentWorkspace.value })
+        }
         break
+      }
       case 'sessions': {
         const path = msg.workspaceId
         const sessionKind = (msg.sessionKind ?? 'work') as SessionPageKind
@@ -457,7 +473,11 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       }
       case 'session_counts':
+        // 切换 workspace 后到达的旧响应会带着上一个工作区的数字,直接丢弃 —— 角标只反映
+        // 当前工作区。旧服务端不带 ownerCounts 时保留上一次快照,不从前端列表推算。
+        if (msg.workspaceId !== currentWorkspace.value) break
         sessionCounts.value = { ...sessionCounts.value, ...msg.counts }
+        if (msg.ownerCounts) ownerRunningCounts.value = { ...msg.ownerCounts }
         break
       case 'session_selected':
         if (specLaunch.value) {

@@ -13,6 +13,7 @@ export {
   LAZY_VALIDATE_MS,
   listAll,
   listForWorkspace,
+  listOwnedForWorkspace,
   rebuildOne,
   resetStoreForTests,
   setNow,

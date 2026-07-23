@@ -40,13 +40,16 @@
         "ariaLabel": "セッション({count} 件実行中)"
       },
       "intents": {
-        "label": "意図"
+        "label": "意図",
+        "ariaLabel": "意図({count} 件実行中)"
       },
       "discussion": {
-        "label": "ディスカッション"
+        "label": "ディスカッション",
+        "ariaLabel": "ディスカッション({count} 件実行中)"
       },
       "automations": {
-        "label": "自動化"
+        "label": "自動化",
+        "ariaLabel": "自動化({count} 件実行中)"
       },
       "workcenter": {
         "label": "ワークセンター"

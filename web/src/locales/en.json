@@ -39,13 +39,16 @@
         "ariaLabel": "Sessions ({count} running)"
       },
       "intents": {
-        "label": "Intents"
+        "label": "Intents",
+        "ariaLabel": "Intents ({count} running)"
       },
       "discussion": {
-        "label": "Discussions"
+        "label": "Discussions",
+        "ariaLabel": "Discussions ({count} running)"
       },
       "automations": {
-        "label": "Automations"
+        "label": "Automations",
+        "ariaLabel": "Automations ({count} running)"
       },
       "codes": {
         "label": "Codes"

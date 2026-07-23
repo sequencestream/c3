@@ -56,16 +56,20 @@ import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { MODE_CATALOGS, isKnownToken } from '../../kernel/agent/adapters/index.js'
 import { CodexSessionStore } from '../../kernel/agent/adapters/codex/index.js'
 import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
-import type { SessionAgentSwitch, VendorId } from '@ccc/shared/protocol'
+import type { SessionAgentSwitch, SessionOwnerKind, VendorId } from '@ccc/shared/protocol'
 import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
 import {
   getByC3Id,
   listForWorkspace,
+  listOwnedForWorkspace,
   upsertPendingRow,
 } from '../sessions/session-metadata-store.js'
 import { findIntentIdBySessionId } from '../intents/store.js'
-import { countRunningAutomationSessions } from '../automations/store.js'
+import {
+  countRunningAutomationSessions,
+  runningAutomationIdsForWorkspace,
+} from '../automations/store.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
@@ -191,6 +195,38 @@ const SESSION_PAGE_KINDS: readonly Exclude<SessionKind, 'consensus'>[] = [
   'tool',
 ]
 
+/**
+ * Running **business item** counts of a workspace, deduplicated by owner: an
+ * intent / discussion / automation is counted once as long as ANY of its
+ * sessions is running. Covers every session kind (including hidden tool
+ * sessions, whose owner still makes its item "in progress") and is independent
+ * of the `showToolSessions` display switch — this is an item-level notion, not
+ * the per-kind session counts next to it.
+ *
+ * Rows without a valid `(ownerKind, ownerId)` pair are not attributable to an
+ * item and are skipped. Automations additionally union the ids whose execution
+ * log is `running`, so the badge never diverges from the automation pages'
+ * own run state.
+ */
+export function countRunningOwners(workspacePath: string): Record<SessionOwnerKind, number> {
+  const owners: Record<SessionOwnerKind, Set<string>> = {
+    intent: new Set(),
+    discussion: new Set(),
+    automation: new Set(),
+  }
+  for (const row of listOwnedForWorkspace(workspacePath)) {
+    if (!row.ownerKind || !row.ownerId) continue
+    if (!isRunning(row.vendorSessionId ?? row.c3Id)) continue
+    owners[row.ownerKind].add(row.ownerId)
+  }
+  for (const id of runningAutomationIdsForWorkspace(workspacePath)) owners.automation.add(id)
+  return {
+    intent: owners.intent.size,
+    discussion: owners.discussion.size,
+    automation: owners.automation.size,
+  }
+}
+
 export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg) => {
   const abs = resolveWorkspaceRoot(msg.workspaceId)
   if (!abs) {
@@ -216,7 +252,12 @@ export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg)
         : listForWorkspace(abs, kind).filter((row) => isRunning(row.vendorSessionId ?? row.c3Id))
             .length
   }
-  conn.send({ type: 'session_counts', workspaceId: pathToId(abs)!, counts })
+  conn.send({
+    type: 'session_counts',
+    workspaceId: pathToId(abs)!,
+    counts,
+    ownerCounts: countRunningOwners(abs),
+  })
 }
 
 export const listCommandsHandler: Handler<'list_commands'> = async (_ctx, conn) => {

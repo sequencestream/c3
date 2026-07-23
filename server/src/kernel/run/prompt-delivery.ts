@@ -32,13 +32,6 @@ export interface RunInject {
    * command must lead the user turn to expand); never echoed.
    */
   userTurnPrefix?: string
-  /**
-   * Skip the arapuca sandbox for this run even when the project/session would
-   * otherwise sandbox. No longer set by the sandbox-conflict path (a system-auth
-   * agent now authenticates inside the sandbox via `--allow-keychain`); kept as the
-   * per-turn opt-out an internal caller can pass. Default false.
-   */
-  bypassSandbox?: boolean
 }
 
 /**

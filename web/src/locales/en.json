@@ -271,43 +271,6 @@
         "label": "Automation agent",
         "followDefault": "Follow default agent"
       },
-      "sandboxRoles": {
-        "head": "Sandbox mode",
-        "hint": "Runs inside the sandbox use these agents instead. Any enabled agent is eligible — a subscription (system-auth) agent reaches the host keychain through the sandbox wrapper.",
-        "followSandboxDefault": "Follow sandbox default",
-        "empty": "No enabled agent — add one above"
-      },
-      "sandboxDefault": {
-        "tooltip": "Default agent for sandbox runs. Empty ⇒ the first enabled agent."
-      },
-      "sandboxDefaultPicker": {
-        "label": "Sandbox default agent",
-        "auto": "Auto (first enabled agent)"
-      },
-      "sandboxTool": {
-        "tooltip": "Agent for background tool sessions running in the sandbox"
-      },
-      "sandboxToolPicker": {
-        "label": "Sandbox tool agent"
-      },
-      "sandboxIntent": {
-        "tooltip": "Agent for intent-communication sessions running in the sandbox"
-      },
-      "sandboxIntentPicker": {
-        "label": "Sandbox intent agent"
-      },
-      "sandboxSpec": {
-        "tooltip": "Agent for spec-authoring sessions running in the sandbox"
-      },
-      "sandboxSpecPicker": {
-        "label": "Sandbox spec agent"
-      },
-      "sandboxAutomation": {
-        "tooltip": "Agent for automation dev runs in the sandbox"
-      },
-      "sandboxAutomationPicker": {
-        "label": "Sandbox automation agent"
-      },
       "remove": {
         "tooltip": "Remove agent"
       },
@@ -2045,21 +2008,6 @@
     },
     "research": {
       "toolActivity": "🔍 Researching with {tool}…"
-    }
-  },
-  "sandboxConflict": {
-    "title": "This agent can't run in the sandbox",
-    "body": "The session's agent \"{agent}\" uses system authentication, which can't log in inside the sandbox. Run this turn without the sandbox, or switch to a custom agent and keep it.",
-    "noCustom": "No same-vendor custom agent is configured. Add one in system settings, or run without the sandbox.",
-    "bypass": {
-      "label": "Run without sandbox"
-    },
-    "switch": {
-      "label": "Switch to custom agent",
-      "action": "Switch & keep sandbox"
-    },
-    "cancel": {
-      "label": "Cancel"
     }
   },
   "skillApproval": {

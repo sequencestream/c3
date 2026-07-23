@@ -46,11 +46,6 @@ beforeEach(() => {
     intentAgentId: '',
     specAgentId: '',
     automationAgentId: '',
-    sandboxDefaultAgentId: '',
-    sandboxToolAgentId: '',
-    sandboxIntentAgentId: '',
-    sandboxSpecAgentId: '',
-    sandboxAutomationAgentId: '',
   } as SystemSettings
 })
 

@@ -35,16 +35,13 @@ import {
   getDegradationChain,
   resolveSessionLaunch,
   resolveAgent,
-  resolveSandboxAgent,
-  setSessionAgent,
   launchForAgent,
   freezeSessionAgent,
   bindClaudeRelay,
   unbindRelay,
 } from '../agent-config/index.js'
-import { getSocketAutoResume, getProjectSandbox, getSessionAgentId } from '../config/index.js'
+import { getSocketAutoResume, getProjectSandbox } from '../config/index.js'
 import { launchSandbox, sandboxEligible, SandboxLaunchError } from '../sandbox/SandboxLauncher.js'
-import type { SandboxConflictCtx } from '../sandbox/conflict-registry.js'
 import {
   bindPending,
   clearPending,
@@ -165,14 +162,6 @@ export interface LaunchRunDeps {
   sandboxEnabled?: boolean
   /** Runtime policy hook from the composition root; false suppresses sandbox launch. */
   sandboxAllowed?: () => boolean
-  /**
-   * Optional callback that raises the sandbox-conflict console modal (broadcasts a
-   * `sandbox_conflict_request`). Wired at the composition root (`server.ts`), but
-   * NO LONGER triggered: a `system`-mode agent is not a sandbox conflict since the
-   * wrapper can open the host keychain for it (arapuca `--allow-keychain`). Kept as
-   * a hook for a future conflict class rather than removed with the wire frame.
-   */
-  onSandboxConflict?: (ctx: SandboxConflictCtx) => void
 }
 
 /**
@@ -279,12 +268,15 @@ export async function launchRun(
   // HARD isolation (deny-by-default): a missing arapuca binary, an unsupported
   // platform, or an illegal allow path settles the run as an error — never a
   // bare host run. The sandbox outlives socket disconnects (ADR-0006); its temp
-  // dir is removed by `finalizeRun` / `removeRuntime` via `rt.sandboxStop`. The
-  // run keeps its normally-resolved agent — the sandbox only wraps that vendor's
-  // CLI in arapuca. The single exception is the sandbox-role profile below, which
-  // applies only to an UNBOUND run whose default resolves to a system agent.
-  const bypassSandbox = inject?.bypassSandbox ?? false
-  if (!bypassSandbox) {
+  // dir is removed by `finalizeRun` / `removeRuntime` via `rt.sandboxStop`.
+  //
+  // The sandbox NEVER changes the run's agent: whatever the normal resolution
+  // produced (session binding, else the role entry for this session kind) is what
+  // runs, sandboxed or not. A `system`-mode (subscription) agent is fine inside —
+  // the wrapper opens the host keychain for it (`--allow-keychain`, arapuca ≥ 0.2.5),
+  // so the vendor CLI's own login works. Sandboxing only decides whether that
+  // agent's vendor CLI is wrapped.
+  {
     const sbCfg = getProjectSandbox(workspacePath)
     const sandboxOn = sandboxEligible({
       sandboxEnabled: deps.sandboxEnabled ?? true,
@@ -295,9 +287,16 @@ export async function launchRun(
     if (sandboxOn) {
       // The run's actual code execution directory (worktree, or the source workspace).
       const executionRoot = rt.effectiveCwd ?? workspacePath
-      // Hard-isolation failure: settle the run as an error and stop. Mirrors the
-      // vendor-unavailable early return below so the started→settled invariant holds.
-      const failHard = (error: string): void => {
+      try {
+        const sandbox = launchSandbox(workspacePath, executionRoot)
+        rt.sandboxPaths = sandbox.paths
+        rt.sandboxTmpDir = sandbox.tmpDir
+        rt.sandboxStop = async () => sandbox.cleanup()
+      } catch (err) {
+        // Hard-isolation failure: settle the run as an error and stop. Mirrors the
+        // vendor-unavailable early return below so the started→settled invariant holds.
+        const uiCode = err instanceof SandboxLaunchError ? err.uiCode : 'launch-failed'
+        const error = `[c3] sandbox launch failed (${uiCode}): ${errMsg(err)}`
         console.warn(`[sandbox] run hard-failed: ${error}`)
         emit(runId, { type: 'user_text', text: prompt })
         emit(runId, { type: 'turn_end', reason: 'error', error })
@@ -309,41 +308,6 @@ export async function launchRun(
           sessionKind: rt.sessionKind,
           runKind: rt.runKind,
         })
-      }
-
-      // A `system`-mode (subscription) agent is NO LONGER a sandbox conflict: the
-      // wrapper opens the host keychain for it (`--allow-keychain`, arapuca ≥ 0.2.5),
-      // so the vendor CLI's own login works inside the sandbox. An explicitly bound
-      // agent — system or custom — therefore enters the sandbox as-is: no conflict
-      // prompt, no forced swap to a custom agent, no hard-fail for lacking one.
-      //
-      // The sandbox-role profile still applies to an UNBOUND run whose default
-      // resolution lands on a system agent: `sandbox<role>Id → sandboxDefaultAgentId
-      // → first enabled same-vendor agent` lets a workspace steer sandbox runs onto a
-      // dedicated agent. That resolution may now legitimately return a system agent,
-      // and returning nothing is no longer fatal — the run simply keeps its default
-      // agent and enters the sandbox.
-      const boundRef = getSessionAgentId(runId)
-      const boundAgent = resolveAgent(boundRef)
-      if (!boundRef && boundAgent.configMode === 'system') {
-        const sub = resolveSandboxAgent(rt.sessionKind, boundAgent.vendor)
-        if (sub && sub.id !== boundAgent.id && !setSessionAgent(runId, sub.id).ok) {
-          failHard(
-            `[c3] sandbox: cannot bind sandbox agent "${sub.id}" — its vendor differs from ` +
-              `the session's frozen vendor.`,
-          )
-          return
-        }
-      }
-
-      try {
-        const sandbox = launchSandbox(workspacePath, executionRoot)
-        rt.sandboxPaths = sandbox.paths
-        rt.sandboxTmpDir = sandbox.tmpDir
-        rt.sandboxStop = async () => sandbox.cleanup()
-      } catch (err) {
-        const uiCode = err instanceof SandboxLaunchError ? err.uiCode : 'launch-failed'
-        failHard(`[c3] sandbox launch failed (${uiCode}): ${errMsg(err)}`)
         return
       }
     }

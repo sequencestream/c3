@@ -50,7 +50,6 @@ import {
   guardReservedAgentIds,
   normalizeDegradationChain,
   normalizeIcon,
-  normalizeSandboxRoleId,
   systemAgent,
 } from '../agent-config/normalize.js'
 import type { AgentOrderEntry } from '../agent-config/normalize.js'
@@ -415,17 +414,10 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const wantedAutomation = typeof raw?.automationAgentId === 'string' ? raw.automationAgentId : ''
   const automationAgentId =
     wantedAutomation === '' ? '' : resolveDefaultAgentId(agents, wantedAutomation)
-  // sandbox*AgentId: the sandbox-mode role profile. UNLIKE the five above it is
-  // never auto-filled: `normalizeSandboxRoleId` keeps "" ("follow the sandbox
-  // default") empty and resets a missing/disabled reference to "", so the runtime
-  // falls through `sandboxDefaultAgentId → first enabled agent`. Both auth modes
-  // are accepted — a `system` (subscription) agent authenticates inside the
-  // sandbox through the host keychain the arapuca wrapper opens for it.
-  const sandboxDefaultAgentId = normalizeSandboxRoleId(raw?.sandboxDefaultAgentId, agents)
-  const sandboxToolAgentId = normalizeSandboxRoleId(raw?.sandboxToolAgentId, agents)
-  const sandboxIntentAgentId = normalizeSandboxRoleId(raw?.sandboxIntentAgentId, agents)
-  const sandboxSpecAgentId = normalizeSandboxRoleId(raw?.sandboxSpecAgentId, agents)
-  const sandboxAutomationAgentId = normalizeSandboxRoleId(raw?.sandboxAutomationAgentId, agents)
+  // Legacy `sandbox*AgentId` keys (the removed sandbox-only role profile) are read
+  // as unknown fields: ignored here and absent from the returned object, so they
+  // disappear from disk on the next save. A sandbox run reuses the agent this same
+  // chain resolved for it — there is no sandbox-specific selection any more.
   // ---- Legacy migration (one-shot): capture old global top-level fields ----
   // The 5 workspace-level knobs used to live at the SystemSettings top level.
   // Capture them once for the project-level migration; they no longer survive in
@@ -470,11 +462,6 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     intentAgentId,
     specAgentId,
     automationAgentId,
-    sandboxDefaultAgentId,
-    sandboxToolAgentId,
-    sandboxIntentAgentId,
-    sandboxSpecAgentId,
-    sandboxAutomationAgentId,
     voiceLang,
     uiLang,
     timezone,

@@ -17,7 +17,6 @@ import {
 import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
 import { probeArapuca } from './kernel/sandbox/SandboxLauncher.js'
 import { enableArapucaAutoInstall } from './kernel/sandbox/arapuca-dist.js'
-import type { SandboxConflictCtx } from './kernel/sandbox/conflict-registry.js'
 import { initLogging, shutdownLogging } from './kernel/infra/logger.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
 import { listWorkspaces, resolveWorkspaceRoot } from './state.js'
@@ -339,21 +338,6 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // WaitUserInvolveEvent whenever the gateway auto-decides via multi-agent consensus
   // (no human prompt), so automatic decisions stay traceable in WorkCenter.
   const onConsensusResolved = createConsensusAutoHandler()
-  // Sandbox-conflict hook: broadcast the `sandbox_conflict_request` frame so the
-  // console raises the "system agent can't run in the sandbox" modal. `launchRun`
-  // then blocks on `waitForSandboxDecision` until the user answers (bypass / switch).
-  const onSandboxConflict = (ctx: SandboxConflictCtx): void => {
-    broadcaster.toAll({
-      type: 'sandbox_conflict_request',
-      requestId: ctx.requestId,
-      sessionId: ctx.sessionId,
-      agentId: ctx.agentId,
-      agentName: ctx.agentName,
-      vendor: ctx.vendor as VendorId,
-      choices: ctx.choices,
-    })
-  }
-
   // Intent tools over the loopback HTTP MCP route — the SINGLE transport both
   // Claude and Codex now consume for the comm-agent's find/view/save. find/view are
   // read-only; `save` runs ONE confirmation gate (`gatedSave`) shared by both
@@ -564,8 +548,6 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     onPermissionRequest,
     // Consensus auto-decision audit hook (non-blocking 'auto' WorkCenter record).
     onConsensusResolved,
-    // Sandbox-conflict modal hook: a system-auth agent bound to a sandbox run.
-    onSandboxConflict,
   }
   const runDevTurn = makeRunDevTurn({ launchDeps })
   // Feature-private: NOT on the kernel context (ADR-0009 R1).

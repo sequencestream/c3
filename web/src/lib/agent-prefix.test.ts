@@ -22,11 +22,6 @@ function settings(over: Partial<SystemSettings> = {}): SystemSettings {
     intentAgentId: '',
     specAgentId: '',
     automationAgentId: '',
-    sandboxDefaultAgentId: '',
-    sandboxToolAgentId: '',
-    sandboxIntentAgentId: '',
-    sandboxSpecAgentId: '',
-    sandboxAutomationAgentId: '',
     ...over,
   }
 }

@@ -18,7 +18,6 @@ import type {
   AgentConfig,
   ConsensusConfig,
   SessionAgentSwitch,
-  SessionKind,
   StoreScope,
   SystemSettings,
   VendorId,
@@ -61,7 +60,7 @@ import {
   setPendingIntent,
 } from '../config/index.js'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import { firstEnabledSandboxAgent, systemAgent } from './normalize.js'
+import { systemAgent } from './normalize.js'
 
 export {
   AGENT_ICON_MAX_CHARS,
@@ -208,63 +207,6 @@ export function resolveIntentAgent(): AgentConfig {
  */
 export function resolveSpecAgent(): AgentConfig {
   return resolveAgent(loadSettings().specAgentId)
-}
-
-/** The sandbox-role id configured for a session kind (the `sandbox*AgentId` field
- *  matching the kind); "" ("follow the sandbox default") for kinds without a
- *  dedicated field. Custom-validated on store — see {@link normalizeSandboxRoleId}. */
-function sandboxRoleIdForKind(settings: SystemSettings, kind: SessionKind): string {
-  switch (kind) {
-    case 'intent':
-      return settings.sandboxIntentAgentId
-    case 'spec':
-      return settings.sandboxSpecAgentId
-    case 'tool':
-      return settings.sandboxToolAgentId
-    case 'automation':
-      return settings.sandboxAutomationAgentId
-    default:
-      return '' // work / discussion / consensus ⇒ the sandbox default
-  }
-}
-
-/**
- * The agent a sandboxed run of `kind` should use, in the unchanged order:
- *   sandbox<role>Id → sandboxDefaultAgentId → first enabled agent (same `vendor`
- *   preferred, then any).
- * Candidate admission is `enabled` only — a `system`-mode (subscription) agent is
- * now a legal sandbox agent, because the arapuca wrapper opens the host keychain
- * for it (`--allow-keychain`, arapuca ≥ 0.2.5). Whether that authentication then
- * succeeds is arapuca's and the vendor CLI's business on the given platform; c3 no
- * longer filters by auth mode or by `process.platform`.
- *
- * `vendor` is the bound agent's vendor, preferred so the substitute can re-bind a
- * vendor-frozen session (a real session rejects a cross-vendor swap). Returns null
- * when no enabled agent exists at all — the caller then simply keeps the run's
- * normally-resolved agent (this is no longer a launch blocker).
- */
-export function resolveSandboxAgent(kind: SessionKind, vendor: VendorId): AgentConfig | null {
-  const settings = loadSettings()
-  const usable = (id: string): AgentConfig | undefined => {
-    if (!id) return undefined
-    const a = settings.agents.find((x) => x.id === id)
-    return a && a.enabled !== false ? a : undefined
-  }
-  return (
-    usable(sandboxRoleIdForKind(settings, kind)) ??
-    usable(settings.sandboxDefaultAgentId) ??
-    firstEnabledSandboxAgent(settings.agents, vendor) ??
-    null
-  )
-}
-
-/** Enabled `custom` agents of one vendor, `order_seq` order — the same-vendor
- *  switch targets offered in the sandbox-conflict dialog (a session's agent swap is
- *  vendor-frozen, so a cross-vendor target would be rejected). */
-export function enabledCustomAgentsOfVendor(vendor: VendorId): AgentConfig[] {
-  return loadSettings().agents.filter(
-    (a) => a.enabled !== false && a.configMode === 'custom' && a.vendor === vendor,
-  )
 }
 
 /**

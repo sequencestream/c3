@@ -1,36 +1,32 @@
 /**
- * `launchRun` sandbox regression — a `system`-mode (subscription) agent is no
- * longer a sandbox conflict.
+ * `launchRun` sandbox regression — the sandbox never changes a run's agent.
  *
- * arapuca ≥ 0.2.5 lets the wrapper open the host keychain (`--allow-keychain`),
- * so subscription auth works inside the sandbox. This pins the lifecycle rules
- * that follow from that:
- *  - an EXPLICITLY bound system agent enters the sandbox as-is — no
- *    `sandbox_conflict_request`, no forced swap to a custom agent, no cancel;
- *  - an UNBOUND run whose default resolves to a system agent still honours the
- *    sandbox-role profile (which may itself be a system agent), and no longer
- *    hard-fails when no custom agent exists;
- *  - the wrapper decision (`sandboxAllowKeychain`) is derived from the agent the
- *    attempt actually runs on;
- *  - a sandbox launch failure still settles the run as an error and never falls
- *    back to a bare host run.
+ * Sandboxing only decides whether the vendor CLI is wrapped in arapuca; the agent
+ * is whatever the normal resolution chain produced (explicit session binding, else
+ * the role entry for this session kind). This pins:
+ *  - host and sandbox runs launch on the SAME agent, for every session kind and for
+ *    an explicitly bound session — no sandbox-specific selection, no re-bind;
+ *  - a `system`-mode (subscription) agent enters the sandbox as-is (arapuca ≥ 0.2.5
+ *    opens the host keychain for it) and gets `sandboxAllowKeychain`;
+ *  - a `custom` agent keeps its relay/env wiring and no keychain grant;
+ *  - a sandbox launch failure still settles the run as an error — never a bare host run.
  *
  * @module
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import type { AgentConfig, ServerToClient } from '@ccc/shared/protocol'
+import type { AgentConfig, ServerToClient, SessionKind } from '@ccc/shared/protocol'
 import type { SessionRuntime } from '../../runs.js'
 import type { LaunchRunDeps } from './run-lifecycle.js'
 
 // ─── Programmable fixtures shared with the hoisted mock factories ────────────
 
 const fx = vi.hoisted(() => ({
-  /** Explicit session→agent binding ('' ⇒ unbound / Auto). */
-  boundRef: '' as string,
+  /** The agent id the normal resolution chain produces for this run. */
+  resolvedAgentId: '' as string,
   /** Registry the fake `resolveAgent` reads. */
   agents: [] as AgentConfig[],
-  /** What `resolveSandboxAgent` returns (null ⇒ nothing configured/available). */
-  sandboxAgent: null as AgentConfig | null,
+  /** Whether this run is sandbox-eligible. */
+  sandboxOn: true,
   /** Set to throw from `launchSandbox` (hard-isolation failure). */
   launchThrows: null as Error | null,
   /** Captured `runClaude` option objects, one per attempt. */
@@ -53,7 +49,6 @@ function agent(over: Partial<AgentConfig> & Pick<AgentConfig, 'id'>): AgentConfi
 }
 
 const SYS = agent({ id: 'sys' })
-const SYS_ROLE = agent({ id: 'sys-role' })
 const CUSTOM = agent({
   id: 'custom-claude',
   configMode: 'custom',
@@ -68,22 +63,22 @@ vi.mock('../agent/index.js', () => ({
 
 vi.mock('../config/index.js', () => ({
   getSocketAutoResume: vi.fn(() => false),
-  getProjectSandbox: vi.fn(() => ({ enabled: true, sandboxSessionKinds: ['work'] })),
-  getSessionAgentId: vi.fn(() => fx.boundRef || null),
+  getProjectSandbox: vi.fn(() => ({
+    enabled: true,
+    sandboxSessionKinds: ['work', 'tool', 'intent', 'spec'],
+  })),
 }))
 
 vi.mock('../agent-config/index.js', () => ({
   getDegradationChain: vi.fn(() => undefined),
-  resolveSessionLaunch: vi.fn(() => ({
-    agentId: fx.boundRef || (fx.agents[0]?.id ?? SYS.id),
-  })),
+  // The unified resolution chain: the same answer whether or not this run is
+  // sandboxed (the lifecycle has no sandbox-specific branch to feed it).
+  resolveSessionLaunch: vi.fn(() => ({ agentId: fx.resolvedAgentId })),
   resolveAgent: vi.fn(
     (id: string | null) => fx.agents.find((a) => a.id === id) ?? fx.agents[0] ?? SYS,
   ),
-  resolveSandboxAgent: vi.fn(() => fx.sandboxAgent),
-  setSessionAgent: vi.fn((sessionId: string, agentId: string) => {
+  setSessionAgent: vi.fn((_sessionId: string, agentId: string) => {
     fx.rebinds.push(agentId)
-    fx.boundRef = agentId
     return { ok: true }
   }),
   launchForAgent: vi.fn((a: AgentConfig) => ({ model: a.config.model || undefined })),
@@ -108,7 +103,7 @@ vi.mock('../sandbox/SandboxLauncher.js', async () => {
   )
   return {
     ...actual,
-    sandboxEligible: vi.fn(() => true),
+    sandboxEligible: vi.fn(() => fx.sandboxOn),
     launchSandbox: vi.fn(() => {
       if (fx.launchThrows) throw fx.launchThrows
       return {
@@ -131,91 +126,103 @@ import { SandboxLaunchError } from '../sandbox/SandboxLauncher.js'
 
 // ─── Harness ─────────────────────────────────────────────────────────────────
 
-function runtime(): SessionRuntime {
+function runtime(sessionKind: SessionKind = 'work'): SessionRuntime {
   return {
     sessionId: 'sess-1',
     workspacePath: '/ws',
-    sessionKind: 'work',
+    sessionKind,
     mode: 'default',
     lastActivityAt: 0,
   } as unknown as SessionRuntime
 }
 
-function deps(onSandboxConflict?: LaunchRunDeps['onSandboxConflict']): LaunchRunDeps {
+function deps(): LaunchRunDeps {
   return {
     broadcastStatuses: vi.fn(),
     broadcastIntents: vi.fn(),
     eventBus: { publish: vi.fn(), subscribe: vi.fn() } as unknown as LaunchRunDeps['eventBus'],
-    ...(onSandboxConflict ? { onSandboxConflict } : {}),
+    // Intent/spec runtimes must carry their injected profiles (composition-root wiring).
+    intentProfile: vi.fn(() => ({})) as unknown as LaunchRunDeps['intentProfile'],
+    specProfile: vi.fn(() => ({})) as unknown as LaunchRunDeps['specProfile'],
   }
 }
 
 beforeEach(() => {
-  fx.boundRef = ''
-  fx.agents = [SYS, SYS_ROLE, CUSTOM]
-  fx.sandboxAgent = null
+  fx.resolvedAgentId = SYS.id
+  fx.agents = [SYS, CUSTOM]
+  fx.sandboxOn = true
   fx.launchThrows = null
   fx.claudeCalls = []
   fx.rebinds = []
   fx.events = []
 })
 
+/** Run one turn and report the agent it launched on + whether it was sandboxed. */
+async function launchOnce(
+  sessionKind: SessionKind,
+  sandboxOn: boolean,
+): Promise<{ agentId: unknown; sandboxed: boolean }> {
+  fx.sandboxOn = sandboxOn
+  fx.claudeCalls = []
+  const rt = runtime(sessionKind)
+  await launchRun(rt, 'do the thing', deps())
+  expect(fx.claudeCalls).toHaveLength(1)
+  return {
+    agentId: fx.claudeCalls[0].currentAgentId,
+    sandboxed: rt.sandboxPaths !== undefined,
+  }
+}
+
 // ─── Cases ───────────────────────────────────────────────────────────────────
 
-describe('launchRun — sandbox with a system-mode agent', () => {
-  it('launches an explicitly bound system agent straight into the sandbox (no conflict, no swap)', async () => {
-    fx.boundRef = SYS.id
-    const onSandboxConflict = vi.fn()
-    const rt = runtime()
+describe('launchRun — the sandbox does not change the resolved agent', () => {
+  const KINDS: SessionKind[] = ['work', 'tool', 'intent', 'spec']
 
-    await launchRun(rt, 'do the thing', deps(onSandboxConflict))
+  for (const kind of KINDS) {
+    it(`resolves the same agent for a ${kind} session on the host and in the sandbox`, async () => {
+      const host = await launchOnce(kind, false)
+      const sandboxed = await launchOnce(kind, true)
 
-    expect(onSandboxConflict).not.toHaveBeenCalled()
+      expect(host.sandboxed).toBe(false)
+      expect(sandboxed.sandboxed).toBe(true)
+      expect(sandboxed.agentId).toBe(host.agentId)
+      expect(sandboxed.agentId).toBe(SYS.id)
+      // No sandbox-specific re-bind on either path.
+      expect(fx.rebinds).toEqual([])
+    })
+  }
+
+  it('keeps an explicitly bound agent when the run enters the sandbox', async () => {
+    fx.resolvedAgentId = CUSTOM.id
+
+    const host = await launchOnce('work', false)
+    const sandboxed = await launchOnce('work', true)
+
+    expect(host.agentId).toBe(CUSTOM.id)
+    expect(sandboxed.agentId).toBe(CUSTOM.id)
     expect(fx.rebinds).toEqual([])
-    expect(rt.sandboxPaths).toBeDefined()
-    expect(fx.claudeCalls).toHaveLength(1)
-    // The wrapper opens the host keychain for this subscription agent.
-    expect(fx.claudeCalls[0].sandboxAllowKeychain).toBe(true)
-    expect(fx.claudeCalls[0].sandboxPaths).toBeDefined()
   })
 
-  it('does not hard-fail an unbound system default when no sandbox agent is configured', async () => {
-    fx.boundRef = ''
-    fx.sandboxAgent = null
-    const rt = runtime()
+  it('grants the host keychain to a system agent inside the sandbox', async () => {
+    fx.resolvedAgentId = SYS.id
 
-    await launchRun(rt, 'do the thing', deps())
+    await launchOnce('work', true)
 
-    expect(fx.rebinds).toEqual([])
-    expect(rt.sandboxPaths).toBeDefined()
-    expect(fx.claudeCalls).toHaveLength(1)
+    expect(fx.claudeCalls[0].sandboxPaths).toBeDefined()
     expect(fx.claudeCalls[0].sandboxAllowKeychain).toBe(true)
     expect(fx.events.some((e) => e.type === 'turn_end' && e.reason === 'error')).toBe(false)
   })
 
-  it('honours a configured sandbox role that is itself a system agent', async () => {
-    fx.boundRef = ''
-    fx.sandboxAgent = SYS_ROLE
-    const rt = runtime()
-
-    await launchRun(rt, 'do the thing', deps())
-
-    expect(fx.rebinds).toEqual([SYS_ROLE.id])
-    expect(fx.claudeCalls[0].sandboxAllowKeychain).toBe(true)
-  })
-
   it('omits the keychain grant when the attempt runs on a custom agent', async () => {
-    fx.boundRef = CUSTOM.id
-    const rt = runtime()
+    fx.resolvedAgentId = CUSTOM.id
 
-    await launchRun(rt, 'do the thing', deps())
+    await launchOnce('work', true)
 
-    expect(fx.claudeCalls).toHaveLength(1)
     expect(fx.claudeCalls[0].sandboxAllowKeychain).toBe(false)
   })
 
   it('still settles as an error on a sandbox launch failure — never a bare host run', async () => {
-    fx.boundRef = SYS.id
+    fx.resolvedAgentId = SYS.id
     fx.launchThrows = new SandboxLaunchError('arapuca-missing', 'arapuca binary not found on PATH')
     const rt = runtime()
 

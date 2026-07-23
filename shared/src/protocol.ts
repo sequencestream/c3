@@ -574,9 +574,12 @@ export interface SysExtraMount {
  *   preserved under both `gitBranchMode` values — switching modes never drops a
  *   saved config. Which directories are read-write is resolved per run from its
  *   execution root (worktree rw + workspace ro, or workspace rw for current-branch).
- * - **agent selection is NOT overridden**: the run uses its normally-resolved
- *   agent (the default selection logic); the sandbox only wraps that agent's
- *   vendor CLI in arapuca. There is no sandbox-specific agent pool.
+ * - **agent selection is NOT overridden**: the run reuses the agent its normal
+ *   resolution chain produced (session binding, else the `default`/`tool`/
+ *   `intent`/`spec` role entry through `resolveAgent`); the sandbox only wraps
+ *   that agent's vendor CLI in arapuca. There is no sandbox-specific agent
+ *   selection — a `system`-mode agent authenticates inside the sandbox through
+ *   the host keychain the wrapper opens for it (`--allow-keychain`).
  */
 export interface WorkspaceSandboxConfig {
   /** Master switch — sandboxing is off by default (absent or false ⇔ disabled). */
@@ -960,35 +963,6 @@ export interface SystemSettings {
    * existing automation and its saved snapshot are unaffected.
    */
   automationAgentId: string
-  /**
-   * Sandbox-mode counterpart of {@link defaultAgentId}: the agent a session falls
-   * back to when its run is wrapped in the arapuca sandbox and its normally-resolved
-   * agent is a `system`-mode agent (which cannot authenticate inside the sandbox —
-   * its login/keychain is not reachable). The five `sandbox*AgentId` fields form a
-   * parallel profile consulted only in sandbox context, and each **must reference an
-   * enabled `configMode: 'custom'` agent** (a relay-backed provider whose key is
-   * injected into the sandbox env). On store, a value pointing at a removed/disabled/
-   * `system` agent is reset to empty. An **empty string is "follow the sandbox
-   * default"**: the runtime resolves `sandboxDefaultAgentId → first enabled custom
-   * agent`, never landing on a `system` agent.
-   */
-  sandboxDefaultAgentId: string
-  /** Sandbox-mode counterpart of {@link toolAgentId}. Empty ⇒ follow
-   * `sandboxDefaultAgentId → first enabled custom agent`. Custom-only (see
-   * {@link sandboxDefaultAgentId}). */
-  sandboxToolAgentId: string
-  /** Sandbox-mode counterpart of {@link intentAgentId}. Empty ⇒ follow
-   * `sandboxDefaultAgentId → first enabled custom agent`. Custom-only (see
-   * {@link sandboxDefaultAgentId}). */
-  sandboxIntentAgentId: string
-  /** Sandbox-mode counterpart of {@link specAgentId}. Empty ⇒ follow
-   * `sandboxDefaultAgentId → first enabled custom agent`. Custom-only (see
-   * {@link sandboxDefaultAgentId}). */
-  sandboxSpecAgentId: string
-  /** Sandbox-mode counterpart of {@link automationAgentId}. Empty ⇒ follow
-   * `sandboxDefaultAgentId → first enabled custom agent`. Custom-only (see
-   * {@link sandboxDefaultAgentId}). */
-  sandboxAutomationAgentId: string
   /** BCP-47 language tag for browser voice input (e.g. `zh-CN`). `zh-CN` when unset. */
   voiceLang?: string
   /** UI display language for the web console. `en` when unset. Decoupled from
@@ -2929,20 +2903,6 @@ export type ClientToServer =
    * is a defensive guard, not an expected path.
    */
   | { type: 'set_session_agent'; sessionId: string; agentId: string }
-  /**
-   * Answer a pending {@link ServerToClient} `sandbox_conflict_request`: a
-   * sandbox run whose bound agent is `system`-mode (unusable inside the sandbox).
-   * `bypass` = run this turn WITHOUT the sandbox (keep the system agent on the
-   * host); `switch` = re-bind the session to the chosen same-vendor custom
-   * `agentId` and keep the sandbox; `cancel` = abandon the run. Blocks the run
-   * until answered, like a permission prompt.
-   */
-  | {
-      type: 'sandbox_conflict_response'
-      requestId: string
-      choice: 'bypass' | 'switch' | 'cancel'
-      agentId?: string
-    }
   /** Register a project directory as a workspace. */
   | { type: 'add_workspace'; path: string }
   /**
@@ -3937,23 +3897,6 @@ export type ServerToClient =
    * the opinions so the console can show how it was decided.
    */
   | { type: 'consensus_auto'; toolName: string; input: unknown; outcome: AnyConsensusOutcome }
-  /**
-   * A sandbox run is blocked because its bound agent is `system`-mode, which
-   * cannot authenticate inside the arapuca sandbox (its login/keychain is not
-   * reachable). The console shows a modal offering: run without the sandbox
-   * (`bypass`), or switch to one of `choices` (the same-vendor enabled custom
-   * agents) and keep the sandbox. Answered by `sandbox_conflict_response`.
-   */
-  | {
-      type: 'sandbox_conflict_request'
-      requestId: string
-      sessionId: string
-      agentId: string
-      agentName: string
-      vendor: VendorId
-      /** Same-vendor enabled custom agents offered as the "switch" targets. */
-      choices: Array<{ id: string; displayName: string }>
-    }
   /**
    * One prompt→result turn finished. `complete` = the run ended normally;
    * `error` = it failed. This NEVER means the session ended — the session stays

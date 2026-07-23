@@ -183,6 +183,51 @@ describe('IntentDetail.vue — engineering progress', () => {
     expect(pr?.find('.intent-engineering-progress-state').text()).toBe('Closed / failed')
   })
 
+  // The workspace branch mode arrives asynchronously after the detail mounts, so
+  // the already-rendered progress bar must append the PR stage without a remount.
+  it.each([
+    ['reviewing', 'in_progress'],
+    ['merged', 'completed'],
+    ['closed', 'closed'],
+    ['failed', 'closed'],
+  ] as const)(
+    'appends the PR stage when the branch mode resolves to worktree (%s → %s)',
+    async (prStatus, expected) => {
+      const item = intent({ id: 'i1', status: 'in_progress', prId: '42', prStatus })
+      const w = mountDetail(item, { sddEnabled: true })
+
+      expect(
+        w
+          .findAll('[data-testid="intent-engineering-progress"] [data-stage]')
+          .map((stage) => stage.attributes('data-stage')),
+      ).toEqual(['intent', 'spec', 'work'])
+
+      await w.setProps({ workspaceGitBranchMode: 'worktree' })
+
+      const stages = w.findAll('[data-testid="intent-engineering-progress"] [data-stage]')
+      expect(stages.map((stage) => stage.attributes('data-stage'))).toEqual([
+        'intent',
+        'spec',
+        'work',
+        'pr',
+      ])
+      expect(stages.at(-1)?.attributes('data-state')).toBe(expected)
+    },
+  )
+
+  it('keeps the PR stage hidden when the branch mode resolves to current-branch', async () => {
+    const item = intent({ id: 'i1', status: 'in_progress', prId: '42', prStatus: 'reviewing' })
+    const w = mountDetail(item, { sddEnabled: true })
+
+    await w.setProps({ workspaceGitBranchMode: 'current-branch' })
+
+    expect(
+      w
+        .findAll('[data-testid="intent-engineering-progress"] [data-stage]')
+        .map((stage) => stage.attributes('data-stage')),
+    ).toEqual(['intent', 'spec', 'work'])
+  })
+
   it('reacts when intent fields are backfilled', async () => {
     const item = intent({ id: 'i1', status: 'draft' })
     const w = mountDetail(item, { sddEnabled: true })

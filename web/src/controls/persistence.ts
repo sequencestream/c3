@@ -106,6 +106,10 @@ export function installPersistence(ctx: AppCtx): void {
     if (saved.mode === 'intents' && saved.proj && list.some((w) => w.id === saved.proj)) {
       activeTab.value = 'intents'
       intentsProject.value = saved.proj
+      // Same contract as the regular intent entry: the detail progress and PR
+      // actions depend on the normalized workspace branch mode, so the restore
+      // path must request it too instead of sitting on the default mode.
+      send({ type: 'load_workspace_setting', workspaceId: saved.proj })
       send({ type: 'open_intent_session', workspaceId: saved.proj })
       send({ type: 'list_intent_sessions', workspaceId: saved.proj })
     }

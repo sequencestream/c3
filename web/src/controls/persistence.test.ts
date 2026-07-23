@@ -1,7 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
+import type { WorkspaceInfo } from '@ccc/shared/protocol'
 import { installPersistence } from './persistence'
-import { WORK_SESSION_QUERY_START_TIME_KEY, type TabKey } from './state'
+import {
+  REQ_PROJECT_KEY,
+  VIEW_MODE_KEY,
+  WORK_SESSION_QUERY_START_TIME_KEY,
+  type TabKey,
+} from './state'
 import type { AppCtx } from './types'
 
 const stored = new Map<string, string>()
@@ -52,6 +58,53 @@ describe('work-session query cache', () => {
     ctx.activeTab.value = 'console'
 
     expect(storage.getItem(WORK_SESSION_QUERY_START_TIME_KEY)).toBe('1718800000000')
+  })
+})
+
+describe('intent view restore after a hard refresh', () => {
+  const WS = '/ws'
+
+  function makeIntentCtx(): AppCtx {
+    return {
+      activeTab: ref('console' as TabKey),
+      intentsProject: ref<string | null>(null),
+      send: vi.fn(),
+    } as unknown as AppCtx
+  }
+
+  beforeEach(() => {
+    stored.clear()
+    originalStorage = globalWithStorage.localStorage
+    globalWithStorage.localStorage = storage
+    storage.setItem(VIEW_MODE_KEY, 'intents')
+    storage.setItem(REQ_PROJECT_KEY, WS)
+  })
+
+  afterEach(() => {
+    globalWithStorage.localStorage = originalStorage
+  })
+
+  // The detail progress bar only appends the PR stage once the workspace branch
+  // mode is known, so the restore entry must load it like `openIntents` does.
+  it('loads the workspace setting for the restored workspace alongside the intent sessions', () => {
+    const ctx = makeIntentCtx()
+    installPersistence(ctx)
+
+    ctx.maybeRestoreIntents([{ id: WS } as WorkspaceInfo])
+
+    expect(ctx.intentsProject.value).toBe(WS)
+    expect(ctx.send).toHaveBeenCalledWith({ type: 'load_workspace_setting', workspaceId: WS })
+    expect(ctx.send).toHaveBeenCalledWith({ type: 'open_intent_session', workspaceId: WS })
+    expect(ctx.send).toHaveBeenCalledWith({ type: 'list_intent_sessions', workspaceId: WS })
+  })
+
+  it('does not load any workspace setting when the persisted workspace is gone', () => {
+    const ctx = makeIntentCtx()
+    installPersistence(ctx)
+
+    ctx.maybeRestoreIntents([{ id: '/other' } as WorkspaceInfo])
+
+    expect(ctx.send).not.toHaveBeenCalled()
   })
 })
 

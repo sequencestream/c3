@@ -739,6 +739,10 @@ Git 资源 → 数据库事务 → 广播”。Git 清理只接受确定性 work
   `intent.status === 'done'`,与 PR 独立。PR 无 `prId` 为未开始；有 `prId` 时,
   `merged` 为已完成,`rejected`/`failed`/`closed` 为已关闭/失败,
   `reviewing`、空状态及未知状态为进行中。进度条在窄屏横向滚动。
+  分支模式来自工作区配置的异步回复,因此意图页的**每个**入口(常规进入与刷新后的
+  视图恢复)都会为所选工作区发送一次 `load_workspace_setting`;配置到达前先按无 PR
+  渲染,回复把模式更新为 `worktree` 后进度在原挂载实例上重算并追加 PR 阶段,
+  不依赖重挂载或切换顶层 Tab。
 
 ## 依赖
 

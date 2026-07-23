@@ -108,19 +108,34 @@ export interface ResolvedSandboxPaths {
   readonly claudeConfigDir: string
   /** Supplementary allowed directories, each ro/rw as declared. */
   readonly extra: readonly ResolvedMount[]
+  /**
+   * Absolute path of the arapuca binary this launch selected — the c3-managed
+   * install when available, otherwise the host-PATH hit. The wrapper `exec`s
+   * THIS path rather than resolving `arapuca` from the runtime PATH again, so
+   * the binary the probe verified is provably the one that runs.
+   */
+  readonly arapucaBin: string
 }
 
 // ─── Probe Types ─────────────────────────────────────────────────────────────
 
 /**
- * Result of probing the host for arapuca availability + platform capability.
+ * Where a resolved arapuca binary came from. `managed` is the c3-downloaded,
+ * checksum-verified install under `~/.c3/sandbox/arapuca/`; `host-path` is the
+ * user's own binary found on PATH (the fallback while — or because — the
+ * managed install is unavailable).
+ */
+export type ArapucaSource = 'managed' | 'host-path'
+
+/**
+ * Result of probing for arapuca availability + platform capability.
  *
  * On failure carries a {@link uiCode} the UI turns into a localized message
  * (no hardcoded English). A failed probe hard-fails a sandbox-enabled run —
  * never a silent host fallback.
  */
 export type ArapucaProbeResult =
-  | { readonly ok: true; readonly path: string }
+  | { readonly ok: true; readonly path: string; readonly source: ArapucaSource }
   | { readonly ok: false; readonly uiCode: SandboxUiCode }
 
 /** Structured error codes for sandbox launch failures (UI localizes these). */

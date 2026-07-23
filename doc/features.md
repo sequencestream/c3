@@ -110,7 +110,8 @@ c3
 │   │   ├── 代理透传                              # 宿主设有 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY(含小写)任一非空键时 wrapper 追加 --allow-proxy-env,由 arapuca 转发;零配置、无工作区开关
 │   │   ├── 会话种类过滤                          # sandboxSessionKinds 决定哪些 SessionKind 进沙箱(缺省 ['work'])
 │   │   ├── 订阅态认证透传                        # 本次 agent 为 system(订阅态)时 wrapper 追加 --allow-keychain 打开宿主 keychain;system agent 不再是沙箱冲突,显式绑定直接进沙箱、不弹窗不换绑
-│   │   └── 硬失败                                # arapuca 缺失/平台不支持/放行路径非法即 hard-fail,绝不回落宿主裸跑
+│   │   ├── arapuca 版本关联                      # c3 关联并异步自动安装经校验的 arapuca 到 ~/.c3/sandbox/arapuca(SHA-256 + 原子激活),缺失时回退宿主 PATH、不阻塞当次 run
+│   │   └── 硬失败                                # arapuca 两条链皆无/平台不支持/放行路径非法即 hard-fail,绝不回落宿主裸跑
 │   │
 │   └── auth 鉴权                                 # 每条连接过身份门,每次改全局配置过管理员门
 │       ├── 登录                                  # basic 用户名/密码校验,签发 session token

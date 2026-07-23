@@ -36,12 +36,32 @@ vi.mock('../../kernel/config/index.js', () => ({
   c3HomeDir: vi.fn(() => stub.home),
 }))
 
+// The distribution manager is stubbed so probe tests drive the "is a c3-managed
+// arapuca installed?" answer directly and NO test can reach the network. Its own
+// download/verify/activate behaviour is covered in `arapuca-dist.test.ts`.
+const dist = vi.hoisted(() => ({
+  /** What `resolveManagedArapuca` currently reports (null ⇒ not installed). */
+  managed: null as string | null,
+  /** How many times a background install was requested. */
+  ensureCalls: 0,
+  /** The probe-cache invalidator the launcher handed to the background task. */
+  onInstalled: undefined as (() => void) | undefined,
+}))
+vi.mock('./arapuca-dist.js', () => ({
+  resolveManagedArapuca: () => dist.managed,
+  ensureManagedArapuca: (opts?: { onInstalled?: () => void }) => {
+    dist.ensureCalls++
+    dist.onInstalled = opts?.onInstalled
+  },
+}))
+
 import {
   resolvePaths,
   probeArapuca,
   launchSandbox,
   createSandboxWrapper,
   resetArapucaProbeForTests,
+  binaryCandidates,
   SandboxLaunchError,
 } from './SandboxLauncher.js'
 
@@ -76,6 +96,9 @@ beforeEach(() => {
   worktree = join(root, 'worktree')
   mkdirSync(workspaceRoot, { recursive: true })
   mkdirSync(worktree, { recursive: true })
+  dist.managed = null
+  dist.ensureCalls = 0
+  dist.onInstalled = undefined
   resetArapucaProbeForTests()
   // Proxy passthrough reads the HOST env: clear it so a developer machine behind a
   // corporate proxy does not change these assertions. Each proxy test sets its own.
@@ -169,6 +192,34 @@ describe('resolvePaths', () => {
   })
 })
 
+// ─── binaryCandidates (host PATH name resolution) ────────────────────────────
+
+describe('binaryCandidates', () => {
+  it('uses the bare name on POSIX', () => {
+    expect(binaryCandidates('arapuca', 'darwin', '.COM;.EXE')).toEqual(['arapuca'])
+    expect(binaryCandidates('arapuca', 'linux', undefined)).toEqual(['arapuca'])
+  })
+
+  it('tries arapuca.exe first on Windows — a host install is arapuca.exe, not arapuca', () => {
+    const names = binaryCandidates('arapuca', 'win32', undefined)
+    expect(names[0]).toBe('arapuca.com')
+    expect(names).toContain('arapuca.exe')
+    // The bare name stays reachable as the last resort.
+    expect(names[names.length - 1]).toBe('arapuca')
+  })
+
+  it('honours PATHEXT on Windows, ignoring a blank value', () => {
+    expect(binaryCandidates('arapuca', 'win32', '.EXE;.CMD')).toEqual([
+      'arapuca.exe',
+      'arapuca.cmd',
+      'arapuca',
+    ])
+    // Blank/whitespace PATHEXT falls back to the built-in default rather than
+    // degrading to the bare name (which Windows would never find).
+    expect(binaryCandidates('arapuca', 'win32', '  ')).toContain('arapuca.exe')
+  })
+})
+
 // ─── probeArapuca ────────────────────────────────────────────────────────────
 
 describe('probeArapuca', () => {
@@ -185,14 +236,110 @@ describe('probeArapuca', () => {
     resetArapucaProbeForTests()
   })
 
-  it('reports arapuca-missing when the binary is not on PATH', () => {
+  /** Write an executable stub named `arapuca` into `dir` and return its path. */
+  function stubBinary(dir: string, name = 'arapuca'): string {
+    mkdirSync(dir, { recursive: true })
+    const bin = join(dir, name)
+    writeFileSync(bin, '#!/bin/sh\nexit 0\n', 'utf-8')
+    chmodSync(bin, 0o755)
+    return bin
+  }
+
+  it('reports arapuca-missing — immediately, without waiting for a download — when neither source has a binary', () => {
     delete process.env.CODEX_SANDBOX
     delete process.env.APP_SANDBOX_CONTAINER_ID
     process.env.PATH = ''
     resetArapucaProbeForTests()
     const result = probeArapuca()
-    // On a supported platform an empty PATH yields a missing-binary hard-fail.
+    // No managed install, nothing on PATH: a hard-fail settled on the spot. The
+    // background install was requested but is explicitly NOT waited for.
     expect(result.ok ? 'ok' : result.uiCode).toBe('arapuca-missing')
+    expect(dist.ensureCalls).toBe(1)
+  })
+
+  it('prefers the c3-managed install over the host PATH and does not start a download', () => {
+    if (process.platform === 'win32') return
+    delete process.env.CODEX_SANDBOX
+    delete process.env.APP_SANDBOX_CONTAINER_ID
+    const hostBin = stubBinary(join(root, 'bin'))
+    const managedBin = stubBinary(join(root, 'managed'))
+    process.env.PATH = join(root, 'bin')
+    dist.managed = managedBin
+    resetArapucaProbeForTests()
+    expect(probeArapuca()).toEqual({ ok: true, path: managedBin, source: 'managed' })
+    expect(probeArapuca().ok && probeArapuca().ok).toBe(true)
+    expect(managedBin).not.toBe(hostBin)
+    // An intact managed install needs no repair task.
+    expect(dist.ensureCalls).toBe(0)
+    // The wrapper execs the managed binary by absolute path, not a bare name.
+    const sandbox = launchSandbox(workspaceRoot, worktree)
+    try {
+      expect(sandbox.paths.arapucaBin).toBe(managedBin)
+      const script = readFileSync(
+        createSandboxWrapper(sandbox.paths, 'claude', sandbox.tmpDir, { allowKeychain: false }),
+        'utf-8',
+      )
+      expect(script).toContain(`exec '${managedBin}' run`)
+    } finally {
+      sandbox.cleanup()
+    }
+  })
+
+  it('falls back to the host PATH while the managed install is missing, and starts it once', () => {
+    if (process.platform === 'win32') return
+    delete process.env.CODEX_SANDBOX
+    delete process.env.APP_SANDBOX_CONTAINER_ID
+    const hostBin = stubBinary(join(root, 'bin'))
+    process.env.PATH = join(root, 'bin')
+    resetArapucaProbeForTests()
+    expect(probeArapuca()).toEqual({ ok: true, path: hostBin, source: 'host-path' })
+    // Concurrent probes reuse the cached result — one repair task, not three.
+    probeArapuca()
+    probeArapuca()
+    expect(dist.ensureCalls).toBe(1)
+  })
+
+  it('keeps the PATH result when the background install fails, and can retry later', () => {
+    if (process.platform === 'win32') return
+    delete process.env.CODEX_SANDBOX
+    delete process.env.APP_SANDBOX_CONTAINER_ID
+    const hostBin = stubBinary(join(root, 'bin'))
+    process.env.PATH = join(root, 'bin')
+    resetArapucaProbeForTests()
+    expect(probeArapuca()).toEqual({ ok: true, path: hostBin, source: 'host-path' })
+    // A rejected install never calls back, so the cache keeps the PATH choice —
+    // and the failure surfaces as neither an exception nor a changed result.
+    expect(dist.onInstalled).toBeTypeOf('function')
+    expect(probeArapuca()).toEqual({ ok: true, path: hostBin, source: 'host-path' })
+    // A fresh probe (new cache) is free to try the install again.
+    resetArapucaProbeForTests()
+    probeArapuca()
+    expect(dist.ensureCalls).toBe(2)
+  })
+
+  it('switches to the managed binary on the next probe once the background install lands', () => {
+    if (process.platform === 'win32') return
+    delete process.env.CODEX_SANDBOX
+    delete process.env.APP_SANDBOX_CONTAINER_ID
+    const hostBin = stubBinary(join(root, 'bin'))
+    process.env.PATH = join(root, 'bin')
+    resetArapucaProbeForTests()
+    expect(probeArapuca().ok && probeArapuca()).toMatchObject({ source: 'host-path' })
+    // A run launched NOW keeps the host binary for its whole lifetime …
+    const sandbox = launchSandbox(workspaceRoot, worktree)
+    try {
+      expect(sandbox.paths.arapucaBin).toBe(hostBin)
+      // … then the background install completes and invalidates the cache.
+      const managedBin = stubBinary(join(root, 'managed'))
+      dist.managed = managedBin
+      dist.onInstalled!()
+      // The already-launched run is unaffected …
+      expect(sandbox.paths.arapucaBin).toBe(hostBin)
+      // … while the next probe (and every run after it) upgrades.
+      expect(probeArapuca()).toEqual({ ok: true, path: managedBin, source: 'managed' })
+    } finally {
+      sandbox.cleanup()
+    }
   })
 
   it('reports ok when an executable arapuca is on PATH', () => {
@@ -206,7 +353,7 @@ describe('probeArapuca', () => {
     chmodSync(bin, 0o755)
     process.env.PATH = binDir
     resetArapucaProbeForTests()
-    expect(probeArapuca()).toEqual({ ok: true, path: bin })
+    expect(probeArapuca()).toEqual({ ok: true, path: bin, source: 'host-path' })
     const sandbox = launchSandbox(workspaceRoot, worktree)
     try {
       expect(sandbox.tmpDir.startsWith(`${realpathSync(worktree)}/.c3-sb-`)).toBe(true)
@@ -240,7 +387,7 @@ describe('createSandboxWrapper', () => {
       expect(existsSync(scriptPath)).toBe(true)
       expect(statSync(scriptPath).mode & 0o111).toBeGreaterThan(0)
       const script = readFileSync(scriptPath, 'utf-8')
-      expect(script).toContain('exec arapuca run')
+      expect(script).toContain(`exec 'arapuca' run`)
       expect(script).toContain(`${paths.workspaceRoot}:ro`)
       expect(script).toContain(`${paths.executionRoot}:rw`)
       expect(script).toContain(`${paths.specsBase}:rw`)

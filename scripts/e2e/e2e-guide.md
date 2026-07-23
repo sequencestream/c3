@@ -140,10 +140,22 @@ on a glibc base (`node:22-bookworm-slim`; NOT alpine — codex ships a native
 
 ## arapuca capability test (host process-sandbox probe)
 
-Standalone, server-free probe of the host `arapuca` binary that c3's process-level
+Standalone, server-free probe of the `arapuca` binary that c3's process-level
 sandbox depends on. Runs a matrix of `arapuca run` invocations directly (argv
 arrays, no shell — dodges the zsh `"$dir:ro"` → `:r` modifier trap) and reports
-each capability:
+each capability.
+
+The binary is resolved through the SAME chain as `SandboxLauncher.probeArapuca`
+and the hit is printed and tagged on the probe row:
+
+- **`managed`** — the c3-installed, version-pinned build under
+  `~/.c3/sandbox/arapuca/current`. This is what a real run uses.
+- **`host-path`** — whatever the user installed on `PATH` / `~/.cargo/bin`; the
+  fallback while the managed install is absent, of an uncontrolled version.
+
+`--source=managed` / `--source=host-path` pins the run to one link so both
+scenarios can be covered separately; the chosen link being unavailable is a SKIP
+(exit 5), not a failure. Passing an explicit path still overrides everything.
 
 - **MUST (rw/ro/deny):** basic process launch, `-v <dir>` read+write, `-v <dir>:ro`
   read + write-denied, and deny-by-default (unmounted path unreadable). Failure of
@@ -153,18 +165,15 @@ each capability:
   canonicalizes `CODEX_HOME` on launch, so if this fails the whole run dies with
   `failed to canonicalize CODEX_HOME … Operation not permitted (os error 1)`.
 
-  Stock macOS arapuca 0.2.4 FAILS this gate: its Seatbelt profile grants only the
-  mount subpath, not traversal (read-metadata) on the mount's _ancestor_
-  directories, so any absolute-path `realpath`/`chdir` resolving from `/` hits an
-  un-granted ancestor (e.g. `/Users/<user>` above a `~/.c3/worktrees/<run>` mount)
-  and returns ENOTDIR/EPERM. Root-caused to an upstream arapuca profile gap (not a
-  c3 mount-flag bug) and fixed there: the profile now emits
-  `(allow file-read-metadata (literal "<ancestor>"))` per mount ancestor —
-  traversal only, so directory contents stay deny-by-default. Rebuild/reinstall
-  arapuca from that branch (`cargo install --path .`) and this gate turns green.
-  The script uses `realpathSync` on its temp mounts to mirror c3's `resolvePaths`
-  (so macOS `/var`→`/private/var` firmlink mismatch — a separate EPERM cause — is
-  excluded).
+  On macOS this needs the Seatbelt profile to grant traversal (read-metadata) on
+  each mount's _ancestor_ directories: without it any absolute-path
+  `realpath`/`chdir` resolving from `/` hits an un-granted ancestor (e.g.
+  `/Users/<user>` above a `~/.c3/worktrees/<run>` mount) and returns
+  ENOTDIR/EPERM. The version c3 pins carries that fix, so `--source=managed`
+  passes this gate; a `host-path` binary older than it does not, which is exactly
+  what the two-source split exists to distinguish. The script uses `realpathSync`
+  on its temp mounts to mirror c3's `resolvePaths` (so macOS `/var`→`/private/var`
+  firmlink mismatch — a separate EPERM cause — is excluded).
 
 - **Vendor launch probe (`claude` / `codex`):** token-free — runs `<bin> --version`
   inside the sandbox from a deep worktree cwd (SKIP when the CLI isn't installed).
@@ -173,22 +182,25 @@ each capability:
   are out of scope.
 - **`/tmp` symlink gate (claude runtime dir):** claude hardcodes its runtime dir at
   `/tmp/claude-<uid>` (shell-snapshots/IPC). `/tmp` is a symlink to `/private/tmp`;
-  stock arapuca's fixed ancestor list (`/opt /etc /Users /private /private/var`)
-  omits `/tmp`, so the symlink entry can't be resolved and `mkdir /tmp/claude-<uid>`
-  fails EPERM even when canonical `/private/tmp` is mounted. arapuca locks `TMPDIR`
-  (`--env cannot override sandbox-managed var`) and claude ignores `TMPDIR`, so it
-  can't be redirected via env. This is a claude-specific startup blocker (same
-  family as the canonicalize gap); codex is unaffected (it uses `CODEX_HOME`).
+  an arapuca whose fixed ancestor list omits `/tmp` can't resolve the symlink entry,
+  so `mkdir /tmp/claude-<uid>` fails EPERM even when canonical `/private/tmp` is
+  mounted. arapuca locks `TMPDIR` (`--env cannot override sandbox-managed var`) and
+  claude ignores `TMPDIR`, so it can't be redirected via env. Same story as the
+  canonicalize gate: the pinned managed version resolves it, an older `host-path`
+  binary may not. codex is unaffected (it uses `CODEX_HOME`).
 
-- `node scripts/e2e/e2e-arapuca-capability-test.mjs [/abs/path/to/arapuca]` →
-  exit 0 when all MUST pass; exit 2 when the binary is missing. The canonicalize
-  gate is reported as `⚠️ LIMIT` and does not fail the MUST tally.
+- `node scripts/e2e/e2e-arapuca-capability-test.mjs [/abs/path/to/arapuca] [--source=managed|host-path]`
+  → exit 0 when all MUST pass; 1 = a MUST failed; 2 = no binary on either link;
+  5 = the requested source is unavailable (SKIP). The canonicalize and `/tmp`
+  gates are reported as `⚠️ LIMIT` and do not fail the MUST tally.
+  A missing managed install just means c3 has not finished (or has not been
+  started to trigger) its background download yet.
 
 ## Sandbox vendor token test (real request through arapuca)
 
 Complements the token-free capability probe: uses a real agent from
 `~/.c3/settings.json` (default `claude-deepseek` / `codex-deepseek`) to send an
-actual token-billed request from inside a patched-arapuca sandbox, mirroring the
+actual token-billed request from inside an arapuca sandbox, mirroring the
 arapuca command shape `SandboxLauncher.createSandboxWrapper` emits (`--seccomp
 baseline` for network, `/tmp/claude-<uid>` runtime dir allowed, `CODEX_HOME`
 isolated). Auth is env-only (the agent's `baseUrl` + its `apiKey`, decrypted
@@ -206,7 +218,8 @@ in-process via the same AES-GCM scheme as `config/encryption.ts`) — subscripti
 
 - `node scripts/e2e/e2e-sandbox-vendor-token-test.mjs [claude-agent] [codex-agent]`
   → exit 0 when claude's real request succeeds; 5 = SKIP (agent/binary missing);
-  1 = FAIL. Requires the patched arapuca (mount-ancestor + `/tmp` fixes) on PATH.
+  1 = FAIL. Requires an arapuca carrying the mount-ancestor + `/tmp` fixes — the
+  c3-managed install satisfies this; a host-PATH binary must be new enough.
 
 ## Relay real turn test (vendor-neutral relay, ADR-0029)
 

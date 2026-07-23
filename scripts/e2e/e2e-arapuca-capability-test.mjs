@@ -5,7 +5,8 @@
  * 直接对宿主上的 `arapuca run` 做一组能力探测,验证 c3 sandbox 依赖的
  * 进程级隔离语义是否在当前平台成立:
  *
- *   1. probe        arapuca 二进制存在且可执行(镜像 SandboxLauncher.probeArapuca)。
+ *   1. probe        arapuca 二进制存在且可执行(镜像 SandboxLauncher.probeArapuca
+ *                   的「c3 管理版本 → 宿主 PATH」解析链,并报告命中来源)。
  *   2. basic        能在沙箱内起进程。
  *   3. rw           `-v <dir>` 可读可写。
  *   4. ro-read      `-v <dir>:ro` 可读。
@@ -21,11 +22,19 @@
  *   - 沙箱内程序的产出一律写进已放行的 rw 挂载文件、再由宿主读取,而非依赖
  *     子进程 stdout(macOS Seatbelt 下部分工具写继承 stdout 会 EPERM)。
  *
+ * 二进制来源镜像 SandboxLauncher 的解析链:
+ *   managed    ~/.c3/sandbox/arapuca/current 指向的 c3 管理版本(优先)。
+ *   host-path  宿主 PATH / ~/.cargo/bin 上使用方自装的二进制(兜底)。
+ * 显式传入路径时来源记为 explicit。`--source=managed|host-path` 可强制只验证
+ * 某一条链,该链不可用时以 SKIP(退出码 5)结束,便于 CI 分别覆盖两种场景。
+ *
  * 用法:
  *   node scripts/e2e/e2e-arapuca-capability-test.mjs [/abs/path/to/arapuca]
+ *   node scripts/e2e/e2e-arapuca-capability-test.mjs --source=managed
+ *   node scripts/e2e/e2e-arapuca-capability-test.mjs --source=host-path
  *
- * 退出码:所有 MUST 项通过则 0;任一 MUST 失败则 1。canonicalize 项作为
- * 平台能力门禁单独标注(在 macOS arapuca 0.2.4 上为已知 BLOCKER)。
+ * 退出码:所有 MUST 项通过则 0;任一 MUST 失败则 1;二进制缺失 2;
+ * 指定来源不可用 5(SKIP)。canonicalize 与 /tmp 两项作为平台能力门禁单独标注。
  */
 import { spawnSync } from 'node:child_process'
 import {
@@ -36,26 +45,57 @@ import {
   existsSync,
   realpathSync,
   rmSync,
+  readdirSync,
   accessSync,
   constants as fsConstants,
 } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join, delimiter } from 'node:path'
 
-// ─── arapuca 定位(镜像 SandboxLauncher.findOnPath)──────────────────────────
+// ─── arapuca 定位(镜像 SandboxLauncher 的解析链)────────────────────────────
 
-function findArapuca() {
-  const explicit = process.argv[2]
-  if (explicit) {
+/** c3 管理版本:~/.c3/sandbox/arapuca/current 指向的目录内的可执行文件。 */
+function findManagedArapuca() {
+  const root = join(homedir(), '.c3', 'sandbox', 'arapuca')
+  let target
+  try {
+    target = realpathSync(join(root, 'current'))
+  } catch {
+    return null // 未安装或断链
+  }
+  // 归档内层目录名随版本变化,不硬编码版本号:取 current 下唯一的 arapuca[.exe]。
+  const exe = process.platform === 'win32' ? 'arapuca.exe' : 'arapuca'
+  for (const rel of [exe, join(`arapuca-${target.split(/[\\/]/).pop()}`, exe)]) {
+    const candidate = join(target, rel)
     try {
-      accessSync(explicit, fsConstants.X_OK)
-      return explicit
+      accessSync(candidate, fsConstants.X_OK)
+      return candidate
     } catch {
-      fail(`指定的 arapuca 不可执行: ${explicit}`)
+      // 继续尝试下一种布局
     }
   }
-  const pathEnv = process.env.PATH ?? ''
-  const dirs = pathEnv.split(delimiter)
+  // 兜底:扫一层子目录(上游归档统一形如 arapuca-<version>/arapuca)。
+  let entries
+  try {
+    entries = readdirSync(target)
+  } catch {
+    return null // current 指向的不是目录
+  }
+  for (const entry of entries) {
+    const candidate = join(target, entry, exe)
+    try {
+      accessSync(candidate, fsConstants.X_OK)
+      return candidate
+    } catch {
+      // keep scanning
+    }
+  }
+  return null
+}
+
+/** 宿主 PATH(外加 cargo 默认安装位置)上的 arapuca。 */
+function findHostPathArapuca() {
+  const dirs = (process.env.PATH ?? '').split(delimiter)
   // c3 server 常从登录 shell 继承更全的 PATH;补上 cargo 默认安装位置。
   dirs.push(join(homedir(), '.cargo', 'bin'))
   for (const dir of dirs) {
@@ -69,6 +109,36 @@ function findArapuca() {
     }
   }
   return null
+}
+
+/** 解析要验证的二进制及其来源,顺序与 SandboxLauncher.probeArapuca 一致。 */
+function findArapuca() {
+  const explicit = process.argv.slice(2).find((a) => !a.startsWith('--'))
+  if (explicit) {
+    try {
+      accessSync(explicit, fsConstants.X_OK)
+      return { bin: explicit, source: 'explicit' }
+    } catch {
+      fail(`指定的 arapuca 不可执行: ${explicit}`)
+    }
+  }
+  const wanted = (process.argv.find((a) => a.startsWith('--source=')) ?? '').split('=')[1]
+  const managed = findManagedArapuca()
+  const hostPath = findHostPathArapuca()
+  if (wanted === 'managed') {
+    if (!managed)
+      skip('未找到 c3 管理版本(~/.c3/sandbox/arapuca/current);启动 c3 让其后台安装后重试。')
+    return { bin: managed, source: 'managed' }
+  }
+  if (wanted === 'host-path') {
+    if (!hostPath) skip('宿主 PATH / ~/.cargo/bin 上没有 arapuca。')
+    return { bin: hostPath, source: 'host-path' }
+  }
+  if (wanted) fail(`未知 --source=${wanted}(可选 managed | host-path)`)
+  // 默认:与 probeArapuca 同序——管理版本优先,PATH 兜底。
+  if (managed) return { bin: managed, source: 'managed' }
+  if (hostPath) return { bin: hostPath, source: 'host-path' }
+  return { bin: null, source: null }
 }
 
 // ─── 运行器 ────────────────────────────────────────────────────────────────
@@ -117,22 +187,37 @@ function fail(msg) {
   console.error(`\n[fatal] ${msg}`)
   process.exit(2)
 }
+/** 前置条件不满足(如指定来源不存在):不是失败,按 e2e 约定退出 5。 */
+function skip(msg) {
+  console.log(`\n[skip] ${msg}`)
+  process.exit(5)
+}
 
 // ─── 主流程 ────────────────────────────────────────────────────────────────
 
 console.log('=== arapuca 能力端到端验证 ===\n')
 
-ARAPUCA = findArapuca()
+const located = findArapuca()
+ARAPUCA = located.bin
 if (!ARAPUCA) {
-  fail('未在 PATH / ~/.cargo/bin 找到 arapuca;安装后重试(cargo install arapuca)。')
+  fail(
+    '两条解析链都没有 arapuca:既无 c3 管理版本(~/.c3/sandbox/arapuca/current),' +
+      '宿主 PATH / ~/.cargo/bin 上也没有。启动 c3 触发后台安装,或自行安装后重试。',
+  )
 }
 // `arapuca --version` 以非零码退出但会把版本打到 stdout;直接读输出,不看退出码。
 const verProc = spawnSync(ARAPUCA, ['--version'], { encoding: 'utf-8' })
 const version = ((verProc.stdout || '') + (verProc.stderr || '')).trim().split('\n')[0]
 console.log(`arapuca 二进制: ${ARAPUCA}`)
+console.log(`来源: ${located.source}`)
 console.log(`版本: ${version}`)
 console.log(`平台: ${process.platform}\n`)
-record('probe: 二进制可执行 + --version', true, /arapuca\s+\d/.test(version), version)
+record(
+  `probe: 二进制可执行 + --version (来源 ${located.source})`,
+  true,
+  /arapuca\s+\d/.test(version),
+  version,
+)
 
 // 工作区:一个 rw 挂载(worktree 代理)、一个 ro 挂载(项目原目录代理)、
 // 一个未放行的 secret(deny-by-default 代理)。

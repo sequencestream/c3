@@ -53,7 +53,7 @@
 
 6. **启用即硬隔离(沿用 ADR-0024)**:arapuca fail-closed(任一层失效即非零退出),与 deny-by-default 一致;探测缺失/启动失败该 run 硬失败,绝不宿主裸跑。
 
-7. **二进制走宿主预装 + 探测(类比 ADR-0012)**:c3 不捆绑 arapuca;使用方在宿主自装。启动前探测二进制存在与平台能力,缺失/不支持 hard-fail 并给出明确 UiCode。
+7. **c3 关联版本 + 探测兜底(类比 ADR-0012)**:c3 显式关联一个经过验证的 arapuca 版本并异步自动安装到 `~/.c3/sandbox/arapuca/`(下载 + SHA-256 校验 + 原子激活),探测顺序为「管理版本 → 宿主 PATH」。沙箱能否成立直接取决于 arapuca 版本,故它不适用「vendor CLI 由使用方预装」的规则。安装异步、绝不阻塞当次 run;两条链皆无或平台不支持时 hard-fail 并给出明确 UiCode。
 
 ## Consequences
 
@@ -67,7 +67,7 @@
 
 - 进程级隔离弱于容器(内核漏洞/逃逸面更大),不适合完全不可信代码;若未来出现强隔离需求需另引 backend。
 - 跨平台能力不一致:macOS 缺 per-host 网络白名单、Seatbelt deprecated;Windows 未验证。
-- 引入 arapuca 宿主二进制依赖(Rust musl 静态二进制),需宿主预装 + 探测。
+- 引入 arapuca 二进制依赖(Rust 静态二进制)与随之而来的分发责任:关联版本、校验值与平台制品表随 c3 版本维护,升级需重跑能力 e2e。
 - 当前网络全开,出站不受控——已知取舍,网络收窄留待后续阶段。
 
 **Supersession**

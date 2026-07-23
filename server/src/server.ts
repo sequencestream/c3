@@ -16,6 +16,7 @@ import {
 } from './kernel/permission/index.js'
 import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
 import { probeArapuca } from './kernel/sandbox/SandboxLauncher.js'
+import { enableArapucaAutoInstall } from './kernel/sandbox/arapuca-dist.js'
 import type { SandboxConflictCtx } from './kernel/sandbox/conflict-registry.js'
 import { initLogging, shutdownLogging } from './kernel/infra/logger.js'
 import { setOnAgentSwap, setOnBind, resolveSessionVendor } from './kernel/agent-config/index.js'
@@ -490,11 +491,17 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // the run-lifecycle gate only fires when a project actually enables sandbox, and
   // re-probes with a hard-fail there). Wiring is unconditional and harmless for
   // non-sandbox users — no container daemon to reach.
+  // Auto-install is wired ON here (and only here): a long-lived server may fetch
+  // the version-pinned arapuca in the background, while unit tests and embedders
+  // that merely import the kernel never reach the network. The very next probe
+  // starts that download if the managed install is absent — without blocking.
+  enableArapucaAutoInstall()
   const arapucaProbe = probeArapuca()
   console.log(
     arapucaProbe.ok
-      ? '[sandbox] arapuca available (process-level isolation ready)'
-      : `[sandbox] arapuca unavailable (${arapucaProbe.uiCode}) — sandbox-enabled runs will hard-fail`,
+      ? `[sandbox] arapuca available via ${arapucaProbe.source} (process-level isolation ready)`
+      : `[sandbox] arapuca unavailable (${arapucaProbe.uiCode}) — sandbox-enabled runs will hard-fail ` +
+          'until the c3-managed install finishes or one is on PATH',
   )
 
   const launchDeps: LaunchRunDeps = {

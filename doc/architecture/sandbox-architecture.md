@@ -87,7 +87,7 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 ├─ ProcessSandbox(arapuca wrapper) ──────────────────────────────┤
 │  wrapper = arapuca run -v …:ro -v …:rw -- <entryCommand> "$@"   │
 │  vendor adapter spawn wrapper（SDK 以为 spawn 的是本地 CLI）     │
-├─ arapuca（宿主二进制，使用方预装） ─────────────────────────────┤
+├─ arapuca（c3 管理版本，缺失时回退宿主 PATH） ───────────────────┤
 │  内核 MAC 施加 ro/rw；fail-closed；网络当前全开                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -98,7 +98,7 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 | ----------------- | ------------------------------------------------------------------------------------------------------ |
 | `SandboxLauncher` | 解析 workspace sandbox config、探测 arapuca、`resolvePaths()`、生成 wrapper。                          |
 | ProcessSandbox 层 | 把 resolved 路径集映射为 arapuca `run` 参数;把 vendor CLI 包成 `arapuca run -- <cli>` 形态的 wrapper。 |
-| arapuca 二进制    | 由使用方在宿主预装;c3 只探测其存在与平台能力,不捆绑分发。                                              |
+| arapuca 二进制    | c3 关联并自动安装一个经过验证的版本;管理版本不可用时回退宿主 PATH 上使用方自装的二进制。               |
 
 > 与容器方案的差异:不再有 `DockerDriver` / 镜像 / bind mount / env-file 注入 / 转发 sidecar / 自定义网络。原容器供应链、网络分段章节整体移除。
 
@@ -242,10 +242,12 @@ janitor 用 `projectDirName` 把每个磁盘目录映射回工作区取其窗口
 
 ## 13. arapuca 二进制依赖与探测
 
-- c3 **不捆绑** arapuca;使用方在宿主自行安装(musl 静态二进制或 `cargo install`)。
-- 启动前探测:arapuca 二进制存在 + 平台能力满足当前策略。类比宿主二进制探测作为第一道能力关卡。
-- 缺失或平台不支持所需能力时 hard-fail,给出明确 UiCode,不静默降级。
-- 探测结果可缓存于 host 能力状态,供 UI 展示"沙箱是否可用"。
+- c3 显式关联一个经过验证的 arapuca 版本并自动安装到 `~/.c3/sandbox/arapuca/`,校验通过后才激活——vendor CLI(claude/codex)仍由使用方预装,arapuca 是唯一例外,因为沙箱能否成立直接取决于它的版本。
+- 二进制解析链:c3 管理版本优先,宿主 PATH 兜底。管理版本缺失时后台异步安装,当次 run 不等待、按 PATH 结果判定。
+- 启动前探测:平台能力满足当前策略 + 至少一条链解析出可执行文件。类比宿主二进制探测作为第一道能力关卡。
+- 两条链皆无或平台不支持时 hard-fail,给出明确 UiCode,不静默降级。
+- 探测结果可缓存于 host 能力状态,供 UI 展示"沙箱是否可用";后台安装成功会使缓存失效。
+- 实现细节(目录布局、校验与原子激活、single-flight)见 `doc/domains/core/sandbox/sandbox-design.md` §14。
 
 ## 14. 事件与 UI
 
@@ -307,9 +309,9 @@ interface WorkspaceSandboxConfig {
 - 保留路径校验、canonicalize、allowlist。
 - 生成 `arapuca run -v … -- <cli> "$@"` wrapper,替换原 `docker exec` wrapper。
 
-### Phase C：探测与硬失败
+### Phase C：探测、自动安装与硬失败
 
-- 启动前探测 arapuca 二进制 + 平台能力;缺失/不支持 hard-fail,UI 提示安装。
+- 平台能力门禁 + 「c3 管理版本 → 宿主 PATH」二进制解析链;管理版本缺失时异步安装,不阻塞当次 run。
 - 所有失败路径保持 sandbox hard-fail,不回落 host 裸跑。
 
 ### Phase D：网络收窄(后续阶段)

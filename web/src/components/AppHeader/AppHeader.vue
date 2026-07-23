@@ -9,6 +9,11 @@
  * - workcenter 模式:左侧切换器 + 工作台页面入口(总览 / 用户通知,tab 语义),中间区域隐藏,右侧同上
  *   工作台页面入口占据原「工作台」标题位置;待处理事件角标(workcenterBadgeCount)挂在「用户通知」入口上。
  * 移动端底部 tab 与桌面共用 tabs 数据(工作台入口已上移到顶部切换器)。
+ *
+ * tab 角标:数值由上层(HEADER_TABS)给定,本组件只负责渲染 —— badgeCount 为 0/缺省时
+ * 桌面与移动端均不渲染;角标不绑定任何事件,点击只沿用所在 tab 的导航行为。「会话」tab
+ * 的数字是进行中会话数,「意图/讨论/自动化」是进行中条目数(按 owner 去重),两者口径不同,
+ * 故无障碍文案取各 tab 自带的 badgeAriaLabel。
  */
 import WorkspaceSwitcher from '../WorkspaceSwitcher/WorkspaceSwitcher.vue'
 import type { UpdateStatus, WorkspaceInfo } from '@ccc/shared/protocol'
@@ -74,7 +79,10 @@ function chooseLogout(): void {
 interface HeaderTab {
   key: string
   label: string
+  /** 进行中数量;0 / 缺省时不渲染角标。 */
   badgeCount?: number
+  /** 该 tab 角标的无障碍文案(由上层按 tab 语义生成)。缺省时退回「会话」文案。 */
+  badgeAriaLabel?: string
 }
 
 const props = defineProps<{
@@ -144,6 +152,12 @@ const WORKCENTER_PAGES: ReadonlyArray<{
 // 底部 tab 仅承载工作区子视图(工作台入口已上移到顶部图标切换器);故无 workcenter 分支。
 function isTabActive(tab: HeaderTab): boolean {
   return props.viewMode === 'workspace' && tab.key === props.activeTab
+}
+
+// 角标无障碍文案:优先用该 tab 自带的文案(意图/讨论/自动化各自的「进行中」语义),
+// 上层未提供时退回「会话」文案,桌面与移动端共用同一取值。
+function badgeAriaLabel(tab: HeaderTab): string {
+  return tab.badgeAriaLabel ?? t('nav.tab.console.ariaLabel', { count: tab.badgeCount ?? 0 })
 }
 
 function selectTab(tab: HeaderTab): void {
@@ -283,12 +297,9 @@ function selectTab(tab: HeaderTab): void {
         >
           <span class="tab-label">
             {{ tab.label }}
-            <span
-              v-if="tab.badgeCount"
-              class="tab-badge"
-              :aria-label="t('nav.tab.console.ariaLabel', { count: tab.badgeCount })"
-              >{{ tab.badgeCount }}</span
-            >
+            <span v-if="tab.badgeCount" class="tab-badge" :aria-label="badgeAriaLabel(tab)">{{
+              tab.badgeCount
+            }}</span>
           </span>
         </button>
       </nav>
@@ -502,12 +513,9 @@ function selectTab(tab: HeaderTab): void {
       >
         <span class="mobile-tab-content">
           <span class="mobile-tab-label">{{ tab.label }}</span>
-          <span
-            v-if="tab.badgeCount"
-            class="tab-badge"
-            :aria-label="t('nav.tab.console.ariaLabel', { count: tab.badgeCount })"
-            >{{ tab.badgeCount }}</span
-          >
+          <span v-if="tab.badgeCount" class="tab-badge" :aria-label="badgeAriaLabel(tab)">{{
+            tab.badgeCount
+          }}</span>
         </span>
       </button>
     </nav>

@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { ref } from 'vue'
-import { createState, sumSessionCounts, type StateDeps } from './state'
+import {
+  createState,
+  emptyOwnerCounts,
+  runningSessionsFingerprint,
+  runningSessionsFingerprintOf,
+  sumSessionCounts,
+  type StateDeps,
+} from './state'
 import type { SessionPageKind } from './state'
 
 function counts(
@@ -81,11 +88,98 @@ describe('createState — HEADER_TABS sessions visibility', () => {
     expect(consoleTab()?.badgeCount).toBe(7)
   })
 
-  it('其余 tab 无 badgeCount', () => {
+  it('「代码」tab 无 badgeCount;会话计数不外溢到条目角标', () => {
     const s = makeState()
     s.sessionCounts.value = counts({ work: 5 })
-    for (const tab of s.HEADER_TABS.value) {
-      if (tab.key !== 'console') expect(tab.badgeCount).toBeUndefined()
+    expect(s.HEADER_TABS.value.find((tab) => tab.key === 'codes')?.badgeCount).toBeUndefined()
+    for (const key of ['intents', 'discussion', 'automations'] as const) {
+      expect(s.HEADER_TABS.value.find((tab) => tab.key === key)?.badgeCount).toBe(0)
     }
+  })
+})
+
+// 顶部「意图/讨论/自动化」角标:各自独立读 ownerRunningCounts(服务端按 owner 去重后的
+// 条目数),0 时上层 `v-if="tab.badgeCount"` 不渲染;无障碍文案按 tab 生成而非共用会话文案。
+describe('createState — HEADER_TABS 进行中条目角标', () => {
+  function makeState() {
+    const deps = {
+      t: (key: string, params?: Record<string, unknown>) =>
+        params ? `${key}:${JSON.stringify(params)}` : key,
+      modeLabel: (code: string) => code,
+      auth: { status: ref('unknown') },
+    } as unknown as StateDeps
+    return createState(deps)
+  }
+
+  function badgeOf(s: ReturnType<typeof makeState>, key: string): number | undefined {
+    return s.HEADER_TABS.value.find((tab) => tab.key === key)?.badgeCount
+  }
+
+  it('三个 tab 各自读自己的计数,互不串位', () => {
+    const s = makeState()
+    s.ownerRunningCounts.value = { intent: 2, discussion: 1, automation: 3 }
+    expect(badgeOf(s, 'intents')).toBe(2)
+    expect(badgeOf(s, 'discussion')).toBe(1)
+    expect(badgeOf(s, 'automations')).toBe(3)
+  })
+
+  it('计数更新后角标响应式跟随(无需重建状态)', () => {
+    const s = makeState()
+    expect(badgeOf(s, 'intents')).toBe(0)
+    s.ownerRunningCounts.value = { ...emptyOwnerCounts(), intent: 1 }
+    expect(badgeOf(s, 'intents')).toBe(1)
+    s.ownerRunningCounts.value = emptyOwnerCounts()
+    expect(badgeOf(s, 'intents')).toBe(0)
+  })
+
+  it('角标无障碍文案按 tab 取,不共用「会话」文案', () => {
+    const s = makeState()
+    s.ownerRunningCounts.value = { intent: 2, discussion: 1, automation: 3 }
+    const aria = (key: string): string | undefined =>
+      s.HEADER_TABS.value.find((tab) => tab.key === key)?.badgeAriaLabel
+    expect(aria('intents')).toBe('nav.tab.intents.ariaLabel:{"count":2}')
+    expect(aria('discussion')).toBe('nav.tab.discussion.ariaLabel:{"count":1}')
+    expect(aria('automations')).toBe('nav.tab.automations.ariaLabel:{"count":3}')
+  })
+
+  it('「会话」tab 角标仍是六类会话求和,与条目计数互不影响', () => {
+    const s = makeState()
+    s.serverSettings.value = { showSessionsPage: true } as never
+    s.ownerRunningCounts.value = { intent: 1, discussion: 0, automation: 0 }
+    s.sessionCounts.value = counts({ work: 2, spec: 1 })
+    expect(badgeOf(s, 'console')).toBe(3)
+    expect(badgeOf(s, 'intents')).toBe(1)
+  })
+})
+
+// 运行集合指纹:session_status 是全量快照,指纹变化才代表「有会话开始/结束执行」,
+// 是顶部角标向服务端重取权威计数的触发条件。
+describe('runningSessionsFingerprint — 运行集合变化判定', () => {
+  it('idle 会话不进指纹,顺序不同视为同一集合', () => {
+    expect(runningSessionsFingerprint({ a: 'running', b: 'idle', c: 'team' })).toBe('a,c')
+    expect(
+      runningSessionsFingerprintOf([
+        { sessionId: 'c', status: 'team' },
+        { sessionId: 'b', status: 'idle' },
+        { sessionId: 'a', status: 'running' },
+      ]),
+    ).toBe('a,c')
+  })
+
+  it('idle → running → idle 两次跃迁都改变指纹', () => {
+    const idle = runningSessionsFingerprintOf([{ sessionId: 'a', status: 'idle' }])
+    const running = runningSessionsFingerprintOf([{ sessionId: 'a', status: 'running' }])
+    expect(running).not.toBe(idle)
+    expect(runningSessionsFingerprintOf([{ sessionId: 'a', status: 'idle' }])).toBe(idle)
+  })
+
+  it('同一快照重播指纹不变(不触发重复请求)', () => {
+    const statuses = [
+      { sessionId: 'a', status: 'running' as const },
+      { sessionId: 'b', status: 'awaiting_permission' as const },
+    ]
+    expect(runningSessionsFingerprintOf(statuses)).toBe(
+      runningSessionsFingerprint({ a: 'running', b: 'awaiting_permission' }),
+    )
   })
 })

@@ -40,13 +40,16 @@
         "ariaLabel": "세션({count}개 실행 중)"
       },
       "intents": {
-        "label": "의도"
+        "label": "의도",
+        "ariaLabel": "의도({count}개 실행 중)"
       },
       "discussion": {
-        "label": "토론"
+        "label": "토론",
+        "ariaLabel": "토론({count}개 실행 중)"
       },
       "automations": {
-        "label": "자동화"
+        "label": "자동화",
+        "ariaLabel": "자동화({count}개 실행 중)"
       },
       "workcenter": {
         "label": "워크센터"

@@ -40,13 +40,16 @@
         "ariaLabel": "Сеансы (выполняется: {count})"
       },
       "intents": {
-        "label": "Намерения"
+        "label": "Намерения",
+        "ariaLabel": "Намерения (выполняется: {count})"
       },
       "discussion": {
-        "label": "Обсуждения"
+        "label": "Обсуждения",
+        "ariaLabel": "Обсуждения (выполняется: {count})"
       },
       "automations": {
-        "label": "Автоматизации"
+        "label": "Автоматизации",
+        "ariaLabel": "Автоматизации (выполняется: {count})"
       },
       "workcenter": {
         "label": "Верстак"

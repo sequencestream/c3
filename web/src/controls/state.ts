@@ -43,6 +43,8 @@ import type {
   SandboxHostStatus,
   SessionInfo,
   SessionKind,
+  SessionOwnerKind,
+  SessionRunStatus,
   SessionStatus,
   SkillLinkStatus,
   SkillSupportState,
@@ -130,6 +132,30 @@ export function sumSessionCounts(counts: Record<SessionPageKind, number>): numbe
   return SESSION_PAGE_KINDS.reduce((sum, kind) => sum + (counts[kind] ?? 0), 0)
 }
 
+// 顶部「意图/讨论/自动化」tab 角标的初值:三类进行中条目数均为 0(0 时上层不渲染)。
+export function emptyOwnerCounts(): Record<SessionOwnerKind, number> {
+  return { intent: 0, discussion: 0, automation: 0 }
+}
+
+// 「哪些会话正在跑」的指纹:非 idle 会话 id 的有序串。session_status 是全量快照,
+// 逐条比较指纹即可判断运行集合是否真的变化 —— 变了才向服务端重新要一次权威计数,
+// 避免对无关状态重播产生请求风暴。
+export function runningSessionsFingerprint(statuses: Record<string, SessionStatus>): string {
+  return Object.keys(statuses)
+    .filter((id) => statuses[id] !== 'idle')
+    .sort()
+    .join(',')
+}
+
+// session_status 帧(数组形态)的同一指纹,用于与当前状态映射比较。
+export function runningSessionsFingerprintOf(statuses: SessionRunStatus[]): string {
+  return statuses
+    .filter((s) => s.status !== 'idle')
+    .map((s) => s.sessionId)
+    .sort()
+    .join(',')
+}
+
 /**
  * Create the full reactive state surface of the app controller: every ref,
  * computed, and pure (state-only) helper used by App.vue and the action
@@ -176,6 +202,10 @@ export function createState(deps: StateDeps) {
     automation: 0,
     tool: 0,
   })
+  // 当前工作区「进行中条目数」(按 owner 去重,服务端权威)。与 sessionCounts 同一帧
+  // 送达,但语义是条目而非会话:一个意图/讨论/自动化只要有任一会话在跑就计 1。
+  // 驱动顶部「意图/讨论/自动化」三个 tab 的角标。
+  const ownerRunningCounts = ref<Record<SessionOwnerKind, number>>(emptyOwnerCounts())
   // Per-workspace cursor-pagination state (SR-R14), parallel to the session
   // arrays above. `hasMore` drives the "load more" button; `exhausted` flips it
   // to a "Fully loaded" hint; `loadingMore` guards a double click;
@@ -340,18 +370,41 @@ export function createState(deps: StateDeps) {
   const serverSettings = ref<SystemSettings | null>(null)
 
   // ---- Top-bar tabs ----
-  const HEADER_TABS = computed<{ key: TabKey; label: string; badgeCount?: number }[]>(() => {
-    const tabs: { key: TabKey; label: string; badgeCount?: number }[] = [
-      { key: 'intents', label: t('nav.tab.intents.label') },
-      { key: 'discussion', label: t('nav.tab.discussion.label') },
-      { key: 'automations', label: t('nav.tab.automations.label') },
+  // 顶部 tab 数据源。意图/讨论/自动化 三个 tab 的角标是「进行中条目数」(owner 去重),
+  // 「会话」tab 的角标是六类进行中会话数之和 —— 两套口径并存,互不替代。角标的无障碍
+  // 文案按 tab 各自的 key 取,不再共用「会话」文案。
+  const HEADER_TABS = computed<
+    { key: TabKey; label: string; badgeCount?: number; badgeAriaLabel?: string }[]
+  >(() => {
+    const owners = ownerRunningCounts.value
+    const tabs: { key: TabKey; label: string; badgeCount?: number; badgeAriaLabel?: string }[] = [
+      {
+        key: 'intents',
+        label: t('nav.tab.intents.label'),
+        badgeCount: owners.intent,
+        badgeAriaLabel: t('nav.tab.intents.ariaLabel', { count: owners.intent }),
+      },
+      {
+        key: 'discussion',
+        label: t('nav.tab.discussion.label'),
+        badgeCount: owners.discussion,
+        badgeAriaLabel: t('nav.tab.discussion.ariaLabel', { count: owners.discussion }),
+      },
+      {
+        key: 'automations',
+        label: t('nav.tab.automations.label'),
+        badgeCount: owners.automation,
+        badgeAriaLabel: t('nav.tab.automations.ariaLabel', { count: owners.automation }),
+      },
       { key: 'codes', label: t('nav.tab.codes.label') },
     ]
     if (serverSettings.value?.showSessionsPage === true) {
+      const running = sumSessionCounts(sessionCounts.value)
       tabs.push({
         key: 'console',
         label: t('nav.tab.console.label'),
-        badgeCount: sumSessionCounts(sessionCounts.value),
+        badgeCount: running,
+        badgeAriaLabel: t('nav.tab.console.ariaLabel', { count: running }),
       })
     }
     return tabs
@@ -866,6 +919,7 @@ export function createState(deps: StateDeps) {
     currentSessions,
     activeSessionKind,
     sessionCounts,
+    ownerRunningCounts,
     currentSessionPaging,
     running,
     reconnecting,

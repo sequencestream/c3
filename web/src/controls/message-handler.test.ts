@@ -1204,3 +1204,111 @@ describe('sessions page setting navigation normalization', () => {
     expect(localStorage.getItem('c3.viewMode')).toBe('intents')
   })
 })
+
+// 顶部「意图/讨论/自动化」条目角标的入站路径:session_counts 写入响应式状态(带
+// workspace 校验),session_status 的运行集合变化触发一次权威计数重取。
+describe('session_counts / session_status — 顶部条目角标计数', () => {
+  const WS_A = 'ws-a'
+  const WS_B = 'ws-b'
+
+  function makeCountsCtx() {
+    const currentWorkspace = ref<string | null>(WS_A)
+    const sessionCounts = ref<Record<string, number>>({
+      work: 0,
+      intent: 0,
+      spec: 0,
+      discussion: 0,
+      automation: 0,
+      tool: 0,
+    })
+    const ownerRunningCounts = ref({ intent: 0, discussion: 0, automation: 0 })
+    const sessionStatus = ref<Record<string, import('@ccc/shared/protocol').SessionStatus>>({})
+    const send = vi.fn()
+    const ctx = {
+      t: (key: string) => key,
+      add: vi.fn(),
+      send,
+      currentWorkspace,
+      sessionCounts,
+      ownerRunningCounts,
+      sessionStatus,
+      activeSession: ref<string | null>(null),
+      teamSessions: ref<Set<string>>(new Set()),
+      flushIfReady: vi.fn(),
+      notifyAwaitingPermission: vi.fn(),
+      maybeRefreshDashboard: vi.fn(),
+    } as unknown as AppCtx
+    installMessageHandler(ctx)
+    return { ctx, currentWorkspace, sessionCounts, ownerRunningCounts, send }
+  }
+
+  function countsMsg(workspaceId: string, owner: Record<string, number>): ServerToClient {
+    return {
+      type: 'session_counts',
+      workspaceId,
+      counts: { work: 1, intent: 0, spec: 0, discussion: 0, automation: 0, tool: 0 },
+      ownerCounts: owner,
+    } as unknown as ServerToClient
+  }
+
+  it('当前 workspace 的响应写入三类条目计数', () => {
+    const r = makeCountsCtx()
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 2, discussion: 1, automation: 3 }))
+    expect(r.ownerRunningCounts.value).toEqual({ intent: 2, discussion: 1, automation: 3 })
+    expect(r.sessionCounts.value.work).toBe(1)
+  })
+
+  it('切换 workspace 后到达的旧响应被忽略(计数只反映当前 workspace)', () => {
+    const r = makeCountsCtx()
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 2, discussion: 1, automation: 3 }))
+    r.currentWorkspace.value = WS_B
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 9, discussion: 9, automation: 9 }))
+    expect(r.ownerRunningCounts.value).toEqual({ intent: 2, discussion: 1, automation: 3 })
+  })
+
+  it('运行集合从 idle 到 running、再回到 idle 都会重取当前 workspace 的计数', () => {
+    const r = makeCountsCtx()
+    r.ctx.handleMessage({
+      type: 'session_status',
+      statuses: [{ sessionId: 's1', status: 'running' }],
+    } as unknown as ServerToClient)
+    expect(r.send).toHaveBeenCalledWith({ type: 'get_session_counts', workspaceId: WS_A })
+
+    r.send.mockClear()
+    r.ctx.handleMessage({
+      type: 'session_status',
+      statuses: [{ sessionId: 's1', status: 'idle' }],
+    } as unknown as ServerToClient)
+    expect(r.send).toHaveBeenCalledWith({ type: 'get_session_counts', workspaceId: WS_A })
+  })
+
+  it('同一运行快照重播不重复请求;无当前 workspace 时不请求', () => {
+    const r = makeCountsCtx()
+    const frame = {
+      type: 'session_status',
+      statuses: [{ sessionId: 's1', status: 'running' }],
+    } as unknown as ServerToClient
+    r.ctx.handleMessage(frame)
+    r.send.mockClear()
+    r.ctx.handleMessage(frame)
+    expect(r.send).not.toHaveBeenCalled()
+
+    r.currentWorkspace.value = null
+    r.ctx.handleMessage({
+      type: 'session_status',
+      statuses: [{ sessionId: 's2', status: 'running' }],
+    } as unknown as ServerToClient)
+    expect(r.send).not.toHaveBeenCalled()
+  })
+
+  it('刷新回包落地后角标数字随之更新(无需刷新页面)', () => {
+    const r = makeCountsCtx()
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 0, discussion: 0, automation: 0 }))
+    r.ctx.handleMessage({
+      type: 'session_status',
+      statuses: [{ sessionId: 's1', status: 'running' }],
+    } as unknown as ServerToClient)
+    r.ctx.handleMessage(countsMsg(WS_A, { intent: 1, discussion: 0, automation: 0 }))
+    expect(r.ownerRunningCounts.value.intent).toBe(1)
+  })
+})

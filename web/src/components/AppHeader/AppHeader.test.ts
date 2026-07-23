@@ -163,6 +163,69 @@ describe('AppHeader.vue — 「会话」tab 进行中会话数角标', () => {
   })
 })
 
+describe('AppHeader.vue — 「意图/讨论/自动化」tab 进行中条目数角标', () => {
+  // 三个 tab 各自带自己的计数与无障碍文案(由 state.HEADER_TABS 注入),会话 tab 无计数。
+  const itemTabs = [
+    { key: 'console', label: 'Sessions' },
+    { key: 'intents', label: 'Intents', badgeCount: 2, badgeAriaLabel: 'Intents (2 running)' },
+    {
+      key: 'discussion',
+      label: 'Discussions',
+      badgeCount: 1,
+      badgeAriaLabel: 'Discussions (1 running)',
+    },
+    {
+      key: 'automations',
+      label: 'Automations',
+      badgeCount: 3,
+      badgeAriaLabel: 'Automations (3 running)',
+    },
+  ]
+
+  function badgeTexts(w: ReturnType<typeof mount>, selector: string): (string | null)[] {
+    return w.findAll(selector).map((el) => {
+      const badge = el.find('.tab-badge')
+      return badge.exists() ? badge.text() : null
+    })
+  }
+
+  it('三个 tab 各显示自己的数字(桌面 + 移动端一致)', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, tabs: itemTabs } })
+    expect(badgeTexts(w, '.desktop-header-row .header-tab')).toEqual([null, '2', '1', '3'])
+    expect(badgeTexts(w, '.mobile-bottom-tab')).toEqual([null, '2', '1', '3'])
+  })
+
+  it('角标 aria-label 用对应 tab 的文案,而非「会话」文案', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, tabs: itemTabs } })
+    const desktop = w.findAll('.desktop-header-row .header-tab')
+    expect(desktop[1].find('.tab-badge').attributes('aria-label')).toBe('Intents (2 running)')
+    expect(desktop[3].find('.tab-badge').attributes('aria-label')).toBe('Automations (3 running)')
+    const mobile = w.findAll('.mobile-bottom-tab')
+    expect(mobile[2].find('.tab-badge').attributes('aria-label')).toBe('Discussions (1 running)')
+  })
+
+  it('计数为 0 的 tab 桌面/移动端均不渲染角标', () => {
+    const tabs = itemTabs.map((tab) => ({ ...tab, badgeCount: 0 }))
+    const w = mount(AppHeader, { props: { ...baseProps, tabs } })
+    expect(w.find('.desktop-header-row .header-tab .tab-badge').exists()).toBe(false)
+    expect(w.find('.mobile-bottom-tab .tab-badge').exists()).toBe(false)
+  })
+
+  it('计数变化后角标无需重挂载即更新', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, tabs: itemTabs } })
+    await w.setProps({ tabs: itemTabs.map((tab) => ({ ...tab, badgeCount: 5 })) })
+    expect(badgeTexts(w, '.desktop-header-row .header-tab')).toEqual(['5', '5', '5', '5'])
+  })
+
+  it('角标为纯展示:点击带角标的 tab 只产生原有导航事件', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, tabs: itemTabs } })
+    await w.findAll('.desktop-header-row .header-tab')[1].find('.tab-badge').trigger('click')
+    // 角标自身不绑定事件:点击冒泡到 tab 按钮,只得到一次导航,没有额外的筛选/跳转事件。
+    expect(w.emitted('select-tab')).toEqual([['intents']])
+    expect(Object.keys(w.emitted()).filter((name) => name !== 'click')).toEqual(['select-tab'])
+  })
+})
+
 describe('i18n — nav.tab.console.ariaLabel 插值', () => {
   it('en 下正确插值 count', () => {
     expect(i18n.global.t('nav.tab.console.ariaLabel', { count: 3 })).toBe('Sessions (3 running)')

@@ -39,13 +39,16 @@
         "ariaLabel": "会话({count} 个进行中)"
       },
       "intents": {
-        "label": "意图"
+        "label": "意图",
+        "ariaLabel": "意图({count} 个进行中)"
       },
       "discussion": {
-        "label": "讨论"
+        "label": "讨论",
+        "ariaLabel": "讨论({count} 个进行中)"
       },
       "automations": {
-        "label": "自动化"
+        "label": "自动化",
+        "ariaLabel": "自动化({count} 个进行中)"
       },
       "workcenter": {
         "label": "工作台"

@@ -402,6 +402,27 @@ export function countRunningAutomationSessions(workspacePath: string): number {
 }
 
 /**
+ * The ids of a workspace's automations that currently have a live
+ * (`status='running'`) execution log — the id-level form of
+ * `countRunningAutomations`, so a caller can union them with other running
+ * sources (e.g. live runtimes) before taking a set size. Empty when the db is
+ * unavailable.
+ */
+export function runningAutomationIdsForWorkspace(workspacePath: string): string[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<{ id: string }>(
+      `SELECT DISTINCT s.id AS id
+         FROM automations s
+         JOIN automation_execution_logs l ON l.automation_id = s.id
+        WHERE s.workspace_path=? AND l.status='running'`,
+      resolve(workspacePath),
+    )
+    .map((r) => r.id)
+}
+
+/**
  * The distinct agent session ids of a workspace's automation sessions that
  * currently have a running (`status='running'`) execution log — a live "now"
  * notion, independent of any time range. The Workcenter Dashboard unions these

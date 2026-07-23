@@ -771,6 +771,26 @@ export function listForWorkspace(
 }
 
 /**
+ * Every bound row of a workspace that belongs to a business entity (non-null
+ * `owner_kind` + `owner_id`), across ALL session kinds — the read path behind
+ * the top nav's per-owner running counts. Unlike `listForWorkspace` it is not
+ * partitioned by `session_kind`, so a hidden tool session still surfaces its
+ * owner; ordering is irrelevant to the caller (it aggregates into sets).
+ */
+export function listOwnedForWorkspace(workspacePath: string): SessionMetadataRow[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<RawRow>(
+      `SELECT * FROM session_metadata
+         WHERE workspace_path=? AND bound=1
+           AND owner_kind IS NOT NULL AND owner_id IS NOT NULL`,
+      workspacePath,
+    )
+    .map(toRow)
+}
+
+/**
  * Count a workspace's real (post-bind) session projection rows, optionally
  * restricted to rows whose `last_modified` falls in `[startTime, endTime]`
  * (ms epoch; either bound may be omitted). When a bound is given, rows with a

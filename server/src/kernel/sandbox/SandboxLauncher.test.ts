@@ -59,6 +59,7 @@ import {
   launchSandbox,
   createSandboxWrapper,
   resetArapucaProbeForTests,
+  binaryCandidates,
   SandboxLaunchError,
 } from './SandboxLauncher.js'
 
@@ -157,6 +158,34 @@ describe('resolvePaths', () => {
     const missing = join(root, 'nope')
     const paths = resolvePaths(workspaceRoot, worktree, [{ path: missing }])
     expect(paths.extra).toEqual([])
+  })
+})
+
+// ─── binaryCandidates (host PATH name resolution) ────────────────────────────
+
+describe('binaryCandidates', () => {
+  it('uses the bare name on POSIX', () => {
+    expect(binaryCandidates('arapuca', 'darwin', '.COM;.EXE')).toEqual(['arapuca'])
+    expect(binaryCandidates('arapuca', 'linux', undefined)).toEqual(['arapuca'])
+  })
+
+  it('tries arapuca.exe first on Windows — a host install is arapuca.exe, not arapuca', () => {
+    const names = binaryCandidates('arapuca', 'win32', undefined)
+    expect(names[0]).toBe('arapuca.com')
+    expect(names).toContain('arapuca.exe')
+    // The bare name stays reachable as the last resort.
+    expect(names[names.length - 1]).toBe('arapuca')
+  })
+
+  it('honours PATHEXT on Windows, ignoring a blank value', () => {
+    expect(binaryCandidates('arapuca', 'win32', '.EXE;.CMD')).toEqual([
+      'arapuca.exe',
+      'arapuca.cmd',
+      'arapuca',
+    ])
+    // Blank/whitespace PATHEXT falls back to the built-in default rather than
+    // degrading to the bare name (which Windows would never find).
+    expect(binaryCandidates('arapuca', 'win32', '  ')).toContain('arapuca.exe')
   })
 })
 

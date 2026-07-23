@@ -139,20 +139,47 @@ let probeCache: ArapucaProbeResult | undefined
 /** Binary name looked up on the host PATH. */
 const ARAPUCA_BIN = 'arapuca'
 
+/** Suffixes treated as executable on Windows when PATHEXT is unset. */
+const DEFAULT_PATHEXT = '.COM;.EXE;.BAT;.CMD'
+
+/**
+ * File names to try for `bin` in each PATH directory. POSIX installs the bare
+ * name; a Windows install ships `arapuca.exe` (the same file name the managed
+ * artifact uses), and PATHEXT decides which suffixes count as executable there.
+ * Exported for tests, which must cover Windows resolution from any host.
+ */
+export function binaryCandidates(
+  bin: string,
+  plat: NodeJS.Platform = process.platform,
+  pathExt: string | undefined = process.env.PATHEXT,
+): string[] {
+  if (plat !== 'win32') return [bin]
+  const exts = (pathExt?.trim() ? pathExt : DEFAULT_PATHEXT)
+    .split(';')
+    .map((ext) => ext.trim())
+    .filter(Boolean)
+  // The bare name stays last: an extension-less file is still spawnable when it
+  // is what the user actually installed.
+  return [...exts.map((ext) => `${bin}${ext.toLowerCase()}`), bin]
+}
+
 /**
  * Find an executable named `bin` on the host PATH. Returns the absolute path or
  * null when not found / not executable.
  */
 function findOnPath(bin: string): string | null {
   const pathEnv = process.env.PATH ?? ''
+  const names = binaryCandidates(bin)
   for (const dir of pathEnv.split(delimiter)) {
     if (!dir) continue
-    const candidate = join(dir, bin)
-    try {
-      accessSync(candidate, fsConstants.X_OK)
-      return candidate
-    } catch {
-      // not here — keep scanning
+    for (const name of names) {
+      const candidate = join(dir, name)
+      try {
+        accessSync(candidate, fsConstants.X_OK)
+        return candidate
+      } catch {
+        // not here — keep scanning
+      }
     }
   }
   return null

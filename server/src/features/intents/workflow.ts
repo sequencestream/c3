@@ -892,7 +892,9 @@ class WorkflowController {
       return null
     })
     if (prResult?.ok) {
-      setPrInfo(req.id, prResult.prId, 'reviewing')
+      // Persist the forge URL alongside the id so the detail page renders a
+      // clickable PR link (empty URL degrades to null, same as manual paths).
+      setPrInfo(req.id, prResult.prId, 'reviewing', prResult.prUrl || null)
       console.log(`[c3:automation]「${req.title}」PR #${prResult.prId} 已创建`)
 
       // Publish a pr:create event so event-triggered automations can react.

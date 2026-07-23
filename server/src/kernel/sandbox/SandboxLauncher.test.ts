@@ -5,7 +5,9 @@
  * - resolvePaths: fixed allowances, extraMounts ro/rw, reserved-path overlap,
  *   denylist, non-existent skip
  * - probeArapuca: missing binary → hard-fail; present binary → ok
- * - createSandboxWrapper: writes an executable `arapuca run -v … -- <cli>` script
+ * - createSandboxWrapper: writes an executable `arapuca run -v … -- <cli>` script,
+ *   plus the two host-capability flags — `--allow-proxy-env` (host proxy vars
+ *   present) and `--allow-keychain` (a subscription/`system`-mode agent)
  *
  * @module
  */
@@ -69,6 +71,24 @@ let root: string
 let workspaceRoot: string
 let worktree: string
 
+/** The proxy env names whose presence turns on `--allow-proxy-env`. */
+const PROXY_ENV_NAMES = [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'all_proxy',
+  'no_proxy',
+] as const
+
+/** Snapshot of the host proxy env, restored after each test. */
+let proxyEnvBackup: Record<string, string | undefined> = {}
+
+/** Wrapper opts for a custom (API-key) agent — the default in most cases. */
+const CUSTOM = { allowKeychain: false }
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'c3-sb-test-'))
   stub.home = join(root, '.c3')
@@ -80,11 +100,22 @@ beforeEach(() => {
   dist.ensureCalls = 0
   dist.onInstalled = undefined
   resetArapucaProbeForTests()
+  // Proxy passthrough reads the HOST env: clear it so a developer machine behind a
+  // corporate proxy does not change these assertions. Each proxy test sets its own.
+  proxyEnvBackup = {}
+  for (const name of PROXY_ENV_NAMES) {
+    proxyEnvBackup[name] = process.env[name]
+    delete process.env[name]
+  }
 })
 
 afterEach(() => {
   rmSync(root, { recursive: true, force: true })
   resetArapucaProbeForTests()
+  for (const name of PROXY_ENV_NAMES) {
+    if (proxyEnvBackup[name] === undefined) delete process.env[name]
+    else process.env[name] = proxyEnvBackup[name]
+  }
 })
 
 // ─── resolvePaths ────────────────────────────────────────────────────────────
@@ -245,7 +276,7 @@ describe('probeArapuca', () => {
     try {
       expect(sandbox.paths.arapucaBin).toBe(managedBin)
       const script = readFileSync(
-        createSandboxWrapper(sandbox.paths, 'claude', sandbox.tmpDir),
+        createSandboxWrapper(sandbox.paths, 'claude', sandbox.tmpDir, { allowKeychain: false }),
         'utf-8',
       )
       expect(script).toContain(`exec '${managedBin}' run`)
@@ -352,7 +383,7 @@ describe('createSandboxWrapper', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
     try {
       const paths = resolvePaths(workspaceRoot, worktree)
-      const scriptPath = createSandboxWrapper(paths, 'claude', tmp)
+      const scriptPath = createSandboxWrapper(paths, 'claude', tmp, CUSTOM)
       expect(existsSync(scriptPath)).toBe(true)
       expect(statSync(scriptPath).mode & 0o111).toBeGreaterThan(0)
       const script = readFileSync(scriptPath, 'utf-8')
@@ -393,7 +424,7 @@ describe('createSandboxWrapper', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
     try {
       const paths = resolvePaths(workspaceRoot, worktree)
-      const script = readFileSync(createSandboxWrapper(paths, 'codex', tmp), 'utf-8')
+      const script = readFileSync(createSandboxWrapper(paths, 'codex', tmp, CUSTOM), 'utf-8')
       // `--env "KEY=$KEY"`: /bin/sh expands $CODEX_API_KEY from the wrapper env at
       // run time; the script text holds only the `$`-reference, never a value.
       expect(script).toContain(`--env "CODEX_API_KEY=$CODEX_API_KEY"`)
@@ -417,12 +448,113 @@ describe('createSandboxWrapper', () => {
     try {
       const paths = resolvePaths(workspaceRoot, workspaceRoot)
       const canonRoot = realpathSync(workspaceRoot)
-      const script = readFileSync(createSandboxWrapper(paths, 'claude', tmp), 'utf-8')
+      const script = readFileSync(createSandboxWrapper(paths, 'claude', tmp, CUSTOM), 'utf-8')
       // The source workspace is read-write (it is the execution root) …
       expect(script).toContain(`-v '${canonRoot}:rw'`)
       // … and there is no conflicting read-only grant for the same path.
       expect(script).not.toContain(`${canonRoot}:ro`)
       expect(script).toContain(`--cwd '${canonRoot}'`)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+})
+
+// ─── createSandboxWrapper: host proxy passthrough ────────────────────────────
+
+describe('createSandboxWrapper — proxy passthrough', () => {
+  /** Build a wrapper script for `vendor`, returning its text. */
+  function wrapperScript(vendor: string, allowKeychain = false): string {
+    const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
+    try {
+      const paths = resolvePaths(workspaceRoot, worktree)
+      return readFileSync(createSandboxWrapper(paths, vendor, tmp, { allowKeychain }), 'utf-8')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  }
+
+  it('omits --allow-proxy-env when the host carries no proxy variables', () => {
+    // beforeEach already cleared all eight names.
+    expect(wrapperScript('claude')).not.toContain('--allow-proxy-env')
+    expect(wrapperScript('codex')).not.toContain('--allow-proxy-env')
+  })
+
+  it('appends --allow-proxy-env exactly once for an uppercase host proxy variable (both vendors)', () => {
+    process.env.HTTPS_PROXY = 'http://proxy.corp:3128'
+    for (const vendor of ['claude', 'codex']) {
+      const script = wrapperScript(vendor)
+      expect(script.match(/--allow-proxy-env/g)).toHaveLength(1)
+      // The flag belongs to arapuca, not to the vendor CLI: it must appear before
+      // the `-- <cli>` separator.
+      expect(script.indexOf('--allow-proxy-env')).toBeLessThan(script.indexOf(`-- '${vendor}'`))
+    }
+  })
+
+  it('appends --allow-proxy-env for a lowercase host proxy variable', () => {
+    process.env.all_proxy = 'socks5://127.0.0.1:1080'
+    const script = wrapperScript('codex')
+    expect(script.match(/--allow-proxy-env/g)).toHaveLength(1)
+  })
+
+  it('still appends the flag only once when several proxy variables are set', () => {
+    process.env.HTTP_PROXY = 'http://proxy.corp:3128'
+    process.env.http_proxy = 'http://proxy.corp:3128'
+    process.env.NO_PROXY = 'localhost'
+    expect(wrapperScript('claude').match(/--allow-proxy-env/g)).toHaveLength(1)
+  })
+
+  it('treats an empty proxy value as absent (grants nothing, so widens nothing)', () => {
+    process.env.NO_PROXY = ''
+    expect(wrapperScript('claude')).not.toContain('--allow-proxy-env')
+  })
+})
+
+// ─── createSandboxWrapper: subscription (keychain) passthrough ───────────────
+
+describe('createSandboxWrapper — keychain passthrough', () => {
+  function wrapperScript(vendor: string, allowKeychain: boolean): string {
+    const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
+    try {
+      const paths = resolvePaths(workspaceRoot, worktree)
+      return readFileSync(createSandboxWrapper(paths, vendor, tmp, { allowKeychain }), 'utf-8')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  }
+
+  it('omits --allow-keychain for a custom (API-key) agent, keeping its env-injected credential', () => {
+    const script = wrapperScript('claude', false)
+    expect(script).not.toContain('--allow-keychain')
+    // The custom agent's credential path is unchanged.
+    expect(script).toContain(`--env "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"`)
+  })
+
+  it('appends --allow-keychain once for a system-mode agent, before the -- separator', () => {
+    for (const vendor of ['claude', 'codex']) {
+      const script = wrapperScript(vendor, true)
+      expect(script.match(/--allow-keychain/g)).toHaveLength(1)
+      expect(script.indexOf('--allow-keychain')).toBeLessThan(script.indexOf(`-- '${vendor}'`))
+    }
+  })
+
+  it('keeps the vendor isolation, data root and network model intact in system mode', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
+    try {
+      const paths = resolvePaths(workspaceRoot, worktree)
+      const script = readFileSync(
+        createSandboxWrapper(paths, 'codex', tmp, { allowKeychain: true }),
+        'utf-8',
+      )
+      expect(script).toContain('--seccomp baseline')
+      expect(script).toContain(`--env 'CODEX_HOME=${paths.codexHome}'`)
+      expect(script).toContain(`-v '${paths.codexHome}:rw'`)
+      expect(script).toContain(`-v '${paths.executionRoot}:rw'`)
+      expect(script).toContain(`-v '${paths.workspaceRoot}:ro'`)
+      expect(script).toContain(`-v '${paths.specsBase}:rw'`)
+      // Vendor credential isolation is unaffected by the keychain flag.
+      expect(script).toContain(`--env "CODEX_API_KEY=$CODEX_API_KEY"`)
+      expect(script).not.toContain('ANTHROPIC_')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }

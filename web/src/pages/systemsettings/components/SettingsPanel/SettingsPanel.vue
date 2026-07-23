@@ -183,7 +183,7 @@ function emptySettings(): SystemSettings {
     specAgentId: '',
     // '' ⇒ the new-automation form pre-fills with the default agent.
     automationAgentId: '',
-    // Sandbox-mode role profile (custom-only). '' ⇒ follow the sandbox default.
+    // Sandbox-mode role profile. '' ⇒ follow the sandbox default.
     sandboxDefaultAgentId: '',
     sandboxToolAgentId: '',
     sandboxIntentAgentId: '',
@@ -305,7 +305,7 @@ function buildSeed(settings: SystemSettings): SystemSettings {
     specAgentId: settings.specAgentId ?? '',
     // '' ⇒ the new-automation form pre-fills with the default agent (AC-R25).
     automationAgentId: settings.automationAgentId ?? '',
-    // Sandbox-mode role profile (custom-only). '' ⇒ follow the sandbox default.
+    // Sandbox-mode role profile. '' ⇒ follow the sandbox default.
     sandboxDefaultAgentId: settings.sandboxDefaultAgentId ?? '',
     sandboxToolAgentId: settings.sandboxToolAgentId ?? '',
     sandboxIntentAgentId: settings.sandboxIntentAgentId ?? '',
@@ -448,18 +448,17 @@ function isEnabled(a: AgentConfig): boolean {
 // order (= the visual order_seq order before Save stamps it).
 const defaultPickerAgents = computed<AgentConfig[]>(() => draft.value.agents.filter(isEnabled))
 
-// The sandbox-role dropdowns only offer enabled `custom` agents: a `system`-mode
-// agent cannot authenticate inside the arapuca sandbox, so it is never a valid
-// sandbox role (the server's `normalizeSandboxRoleId` enforces the same rule).
-const customPickerAgents = computed<AgentConfig[]>(() =>
-  draft.value.agents.filter((a) => isEnabled(a) && a.configMode === 'custom'),
-)
+// The sandbox-role dropdowns offer every enabled agent, of either auth mode: a
+// `system`-mode (subscription) agent authenticates inside the arapuca sandbox
+// through the host keychain the wrapper opens for it (the server's
+// `normalizeSandboxRoleId` enforces the same rule).
+const sandboxPickerAgents = computed<AgentConfig[]>(() => draft.value.agents.filter(isEnabled))
 
 // Reset a sandbox role id to '' ("follow the sandbox default") when it no longer
-// points at an enabled custom agent — keeps the draft consistent after an agent is
-// disabled or flipped to system mode (mirrors the server reset-on-store).
+// points at an enabled agent — keeps the draft consistent after an agent is
+// disabled or removed (mirrors the server reset-on-store).
 function pruneSandboxRoles(): void {
-  const valid = new Set(customPickerAgents.value.map((a) => a.id))
+  const valid = new Set(sandboxPickerAgents.value.map((a) => a.id))
   const keep = (id: string): string => (id && valid.has(id) ? id : '')
   draft.value.sandboxDefaultAgentId = keep(draft.value.sandboxDefaultAgentId)
   draft.value.sandboxToolAgentId = keep(draft.value.sandboxToolAgentId)
@@ -498,7 +497,7 @@ function onToggleEnabled(a: AgentConfig, checked: boolean): void {
       draft.value.automationAgentId,
     )
   }
-  // Sandbox roles are custom-only — drop any that a disable just invalidated.
+  // Sandbox roles must stay on enabled agents — drop any a disable just invalidated.
   pruneSandboxRoles()
 }
 
@@ -1143,9 +1142,10 @@ function selectAdmin(username: string) {
               </optgroup>
             </select>
           </div>
-          <!-- Sandbox-mode role profile (custom-only): a system-auth agent cannot
-               authenticate inside the arapuca sandbox, so sandbox runs pick from
-               these instead. Empty ⇒ follow the sandbox default ⇒ first custom. -->
+          <!-- Sandbox-mode role profile: which agent a sandboxed run of each kind
+               uses. Both auth modes are valid (a subscription agent reaches the host
+               keychain via the wrapper). Empty ⇒ follow the sandbox default ⇒ the
+               first enabled agent. -->
           <p class="settings-subhead" data-testid="sandbox-roles-head">
             {{ t('settings.agents.sandboxRoles.head') }}
           </p>
@@ -1162,10 +1162,10 @@ function selectAdmin(username: string) {
               :title="t('settings.agents.sandboxDefault.tooltip')"
             >
               <option value="">{{ t('settings.agents.sandboxDefaultPicker.auto') }}</option>
-              <option v-for="a in customPickerAgents" :key="a.id" :value="a.id">
+              <option v-for="a in sandboxPickerAgents" :key="a.id" :value="a.id">
                 {{ a.displayName || a.id }}
               </option>
-              <option v-if="customPickerAgents.length === 0" value="" disabled>
+              <option v-if="sandboxPickerAgents.length === 0" value="" disabled>
                 {{ t('settings.agents.sandboxRoles.empty') }}
               </option>
             </select>
@@ -1182,7 +1182,7 @@ function selectAdmin(username: string) {
               :title="t('settings.agents.sandboxTool.tooltip')"
             >
               <option value="">{{ t('settings.agents.sandboxRoles.followSandboxDefault') }}</option>
-              <option v-for="a in customPickerAgents" :key="a.id" :value="a.id">
+              <option v-for="a in sandboxPickerAgents" :key="a.id" :value="a.id">
                 {{ a.displayName || a.id }}
               </option>
             </select>
@@ -1199,7 +1199,7 @@ function selectAdmin(username: string) {
               :title="t('settings.agents.sandboxIntent.tooltip')"
             >
               <option value="">{{ t('settings.agents.sandboxRoles.followSandboxDefault') }}</option>
-              <option v-for="a in customPickerAgents" :key="a.id" :value="a.id">
+              <option v-for="a in sandboxPickerAgents" :key="a.id" :value="a.id">
                 {{ a.displayName || a.id }}
               </option>
             </select>
@@ -1216,7 +1216,7 @@ function selectAdmin(username: string) {
               :title="t('settings.agents.sandboxSpec.tooltip')"
             >
               <option value="">{{ t('settings.agents.sandboxRoles.followSandboxDefault') }}</option>
-              <option v-for="a in customPickerAgents" :key="a.id" :value="a.id">
+              <option v-for="a in sandboxPickerAgents" :key="a.id" :value="a.id">
                 {{ a.displayName || a.id }}
               </option>
             </select>
@@ -1233,7 +1233,7 @@ function selectAdmin(username: string) {
               :title="t('settings.agents.sandboxAutomation.tooltip')"
             >
               <option value="">{{ t('settings.agents.sandboxRoles.followSandboxDefault') }}</option>
-              <option v-for="a in customPickerAgents" :key="a.id" :value="a.id">
+              <option v-for="a in sandboxPickerAgents" :key="a.id" :value="a.id">
                 {{ a.displayName || a.id }}
               </option>
             </select>

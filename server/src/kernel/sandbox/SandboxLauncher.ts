@@ -15,12 +15,17 @@
  * 2. `launchSandbox(workspaceRoot, worktree)` — resolves the allowed path set
  *    (workspace root ro, worktree rw, specsBase rw, extraMounts) and mints a
  *    per-run temp dir. Returns paths + tmpDir + a `cleanup()`.
- * 3. `createSandboxWrapper(paths, entryCommand, tmpDir)` — writes a POSIX shell
- *    script that `exec`s `<arapucaBin> run -v …:ro -v …:rw -- <cli> "$@"`. The path
- *    is passed to the vendor SDK as `pathToClaudeCodeExecutable` /
+ * 3. `createSandboxWrapper(paths, entryCommand, tmpDir, opts)` — writes a POSIX
+ *    shell script that `exec`s `<arapucaBin> run -v …:ro -v …:rw -- <cli> "$@"`. The
+ *    path is passed to the vendor SDK as `pathToClaudeCodeExecutable` /
  *    `codexPathOverride`. The SDK spawns it as a normal subprocess; the child
  *    inherits the SDK-provided env (arapuca strips only LD_/DYLD_/ARAPUCA_
- *    prefixes) — so no env-file is needed.
+ *    prefixes) — so no env-file is needed. `opts.allowKeychain` carries the
+ *    resolved agent's auth mode; host proxy variables are detected here.
+ *
+ * Host prerequisite: arapuca ≥ 0.2.5 (`--allow-proxy-env` / `--allow-keychain`).
+ * c3 does no version negotiation — an older binary rejects the unknown flag and
+ * the run fails closed, as every other sandbox launch failure does.
  *
  * Same-path principle: a host `/abs/path` is the same `/abs/path` the process
  * sees; the wrapper only tags paths ro/rw. There is no container, no bind
@@ -506,6 +511,50 @@ function shQuote(value: string): string {
 }
 
 /**
+ * The standard outbound-proxy env names (uppercase + lowercase variants) whose
+ * presence on the HOST process env turns on arapuca's `--allow-proxy-env`.
+ * Deliberately a fixed list of the conventional names — c3 neither parses the
+ * URLs nor forwards arbitrary variables.
+ */
+const PROXY_ENV_NAMES = [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'all_proxy',
+  'no_proxy',
+] as const
+
+/**
+ * Whether the host runs behind a proxy, i.e. any {@link PROXY_ENV_NAMES} key
+ * carries a non-empty value. arapuca is env deny-by-default and would otherwise
+ * drop these, leaving the vendor CLI unable to reach its provider on a host that
+ * itself only connects through the corporate proxy. Zero-config: no workspace
+ * switch, no per-variable allowlist, no value redaction — arapuca forwards the
+ * standard set itself once `--allow-proxy-env` is passed.
+ *
+ * An empty value is treated as absent: it grants nothing, and a bare `NO_PROXY=`
+ * left over in a shell should not silently widen the sandbox env surface.
+ */
+function hostHasProxyEnv(): boolean {
+  return PROXY_ENV_NAMES.some((name) => (process.env[name] ?? '').trim() !== '')
+}
+
+/** Explicit wrapper-generation decisions the caller (the run's launch path) owns. */
+export interface SandboxWrapperOptions {
+  /**
+   * Append `--allow-keychain` so the vendor CLI may reach the host keychain /
+   * subscription credential store. MUST be derived from the authentication mode
+   * of the agent this run actually resolved and bound (`configMode === 'system'`),
+   * never from the CLI name, the platform, or the global default agent — a session
+   * agent swap, a role agent, or the vendor fork would otherwise mismatch it.
+   */
+  readonly allowKeychain: boolean
+}
+
+/**
  * Create a wrapper script that runs `entryCommand` inside an arapuca-narrowed
  * process with the resolved allow set.
  *
@@ -514,15 +563,27 @@ function shQuote(value: string): string {
  * process inherits the SDK-provided env (arapuca strips only `LD_*` / `DYLD_*`
  * / `ARAPUCA_*` prefixes), so no env-file is written or needed.
  *
+ * Two arapuca capability flags ride on top of the allow set (both require arapuca
+ * ≥ 0.2.5, the run prerequisite; an older binary fails the run closed rather than
+ * falling back to a bare host run):
+ *  - `--allow-proxy-env` whenever the HOST carries standard proxy variables
+ *    ({@link hostHasProxyEnv}) — same rule for every vendor branch.
+ *  - `--allow-keychain` only for a `system`-mode (subscription-auth) agent, per
+ *    the caller's explicit {@link SandboxWrapperOptions.allowKeychain}.
+ * Both live in the arapuca argument section (before `--`), never in the vendor
+ * CLI's `"$@"`.
+ *
  * @param paths        The resolved allow set from {@link launchSandbox}.
  * @param entryCommand The host PATH vendor CLI name (`claude` / `codex`).
  * @param tmpDir       The per-run temp dir from {@link launchSandbox}.
+ * @param opts         Explicit per-run wrapper decisions (see {@link SandboxWrapperOptions}).
  * @returns Absolute path to the executable wrapper script.
  */
 export function createSandboxWrapper(
   paths: ResolvedSandboxPaths,
   entryCommand: string,
   tmpDir: string,
+  opts: SandboxWrapperOptions,
 ): string {
   const isCodex = entryCommand === 'codex'
   const isClaude = entryCommand === 'claude'
@@ -592,11 +653,25 @@ export function createSandboxWrapper(
     ? `mkdir -p ${shQuote(claudeRuntimeHost)} 2>/dev/null || true\n`
     : ''
 
+  // Host proxy passthrough (arapuca ≥ 0.2.5): env is deny-by-default, so on a host
+  // that only reaches the provider through a corporate proxy the vendor CLI would
+  // fail to connect. One flag hands the standard proxy variables to arapuca, which
+  // forwards them itself — c3 emits no per-variable `--env`. Same rule for codex
+  // and claude; absent on a host with no proxy configured (behaviour unchanged).
+  const proxyLine = hostHasProxyEnv() ? '  --allow-proxy-env \\\n' : ''
+  // Subscription (`system`-mode) auth passthrough (arapuca ≥ 0.2.5): the vendor
+  // CLI's own login lives in the host keychain / credential store, unreachable
+  // under deny-by-default isolation. Strictly bound to the caller's resolved agent
+  // mode — a custom (API-key) agent never widens this surface; its credential keeps
+  // riding the `--env` block above.
+  const keychainLine = opts.allowKeychain ? '  --allow-keychain \\\n' : ''
+
   const scriptPath = join(tmpDir, 'wrapper.sh')
   // `--seccomp baseline` opens outbound network (sandbox network model is
   // "fully open" for now; strict — the arapuca default — blocks all network and
   // would fail the vendor CLI's provider calls). macOS has no per-host filter;
-  // Linux can later narrow via `--allow-host`.
+  // Linux can later narrow via `--allow-host`. Proxy passthrough does not change
+  // that model — it only makes the host's proxy endpoint visible to the CLI.
   // `exec` the ABSOLUTE binary the probe selected (c3-managed install or host
   // PATH hit) — never a bare `arapuca`, whose runtime PATH lookup could resolve
   // to a different, unverified binary than the one the probe validated.
@@ -604,7 +679,7 @@ export function createSandboxWrapper(
 # c3 sandbox wrapper — runs the vendor CLI inside an arapuca-narrowed process
 ${runtimeMkdirLine}exec ${shQuote(paths.arapucaBin)} run \\
   --seccomp baseline \\
-  --cwd ${shQuote(paths.executionRoot)} \\
+${proxyLine}${keychainLine}  --cwd ${shQuote(paths.executionRoot)} \\
 ${dataRootEnvLine}${credentialEnvBlock}${mountFlags}
   -- ${shQuote(entryCommand)} "$@"
 `

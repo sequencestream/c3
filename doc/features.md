@@ -107,8 +107,9 @@ c3
 │   │   ├── 进程级隔离                            # arapuca 内核 MAC 限制目录 ro/rw,宿主同路径无映射、无凭证注入、无容器
 │   │   ├── 固定放行                              # 执行根 rw(worktree 或源工作区)/ 源工作区 ro(仅执行根为 worktree 时,同路径并入 rw)/ specsBase rw,其余 deny-by-default 不可见
 │   │   ├── 补充放行                              # extraMounts 逐项 {path, ro/rw},保留路径不可覆盖、canonicalize 拒软链逃逸
+│   │   ├── 代理透传                              # 宿主设有 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY(含小写)任一非空键时 wrapper 追加 --allow-proxy-env,由 arapuca 转发;零配置、无工作区开关
 │   │   ├── 会话种类过滤                          # sandboxSessionKinds 决定哪些 SessionKind 进沙箱(缺省 ['work'])
-│   │   ├── system agent 冲突                     # 沙箱 run 绑定 system agent(沙箱内无法登录)时:显式绑定→弹窗让用户选「不走沙箱」(bypass)或「换同 vendor custom agent」(switch);Auto/默认→静默替换为沙箱角色 custom agent
+│   │   ├── 订阅态认证透传                        # 本次 agent 为 system(订阅态)时 wrapper 追加 --allow-keychain 打开宿主 keychain;system agent 不再是沙箱冲突,显式绑定直接进沙箱、不弹窗不换绑
 │   │   ├── arapuca 版本关联                      # c3 关联并异步自动安装经校验的 arapuca 到 ~/.c3/sandbox/arapuca(SHA-256 + 原子激活),缺失时回退宿主 PATH、不阻塞当次 run
 │   │   └── 硬失败                                # arapuca 两条链皆无/平台不支持/放行路径非法即 hard-fail,绝不回落宿主裸跑
 │   │
@@ -125,7 +126,7 @@ c3
 │   │   ├── agent 档案                            # 持久化档案(vendor/url/key/model/name),可增删/排序/启停/复制
 │   │   ├── 默认 agent                            # 未指定时使用的默认 agent(defaultAgentId)
 │   │   ├── 专用 agent 路由                       # 工具/意图/规格/自动化会话可各指定 agent,空串「跟随默认」(tool/intent/spec/automationAgentId)
-│   │   ├── 沙箱模式角色                          # 沙箱运行改用 sandboxDefault/tool/intent/spec/automationAgentId(仅 custom agent——system agent 沙箱内无法登录);空串按 sandboxDefault→第一个启用 custom 顺延,绝不落到 system
+│   │   ├── 沙箱模式角色                          # 未显式绑定且默认解析为 system 时改用 sandboxDefault/tool/intent/spec/automationAgentId(custom/system 皆可选);空串按 sandboxDefault→第一个启用 agent(同 vendor 优先)顺延,解析不到则保留默认 agent
 │   │   ├── 每会话绑定                            # 记住每个会话用哪个 agent
 │   │   └── 降级链                                # 某 agent 不可用时按 degradationChain 顺序回退
 │   │

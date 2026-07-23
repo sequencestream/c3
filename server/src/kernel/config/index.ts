@@ -415,12 +415,12 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   const wantedAutomation = typeof raw?.automationAgentId === 'string' ? raw.automationAgentId : ''
   const automationAgentId =
     wantedAutomation === '' ? '' : resolveDefaultAgentId(agents, wantedAutomation)
-  // sandbox*AgentId: the sandbox-mode role profile. UNLIKE the five above, a
-  // sandbox role MUST reference an enabled `configMode: 'custom'` agent — a
-  // `system` agent cannot authenticate inside the arapuca sandbox. `normalizeSandboxRoleId`
-  // keeps "" ("follow the sandbox default") empty and resets any missing/disabled/
-  // `system` reference to "" (never auto-filled), so the runtime falls through
-  // `sandboxDefaultAgentId → first enabled custom agent`.
+  // sandbox*AgentId: the sandbox-mode role profile. UNLIKE the five above it is
+  // never auto-filled: `normalizeSandboxRoleId` keeps "" ("follow the sandbox
+  // default") empty and resets a missing/disabled reference to "", so the runtime
+  // falls through `sandboxDefaultAgentId → first enabled agent`. Both auth modes
+  // are accepted — a `system` (subscription) agent authenticates inside the
+  // sandbox through the host keychain the arapuca wrapper opens for it.
   const sandboxDefaultAgentId = normalizeSandboxRoleId(raw?.sandboxDefaultAgentId, agents)
   const sandboxToolAgentId = normalizeSandboxRoleId(raw?.sandboxToolAgentId, agents)
   const sandboxIntentAgentId = normalizeSandboxRoleId(raw?.sandboxIntentAgentId, agents)

@@ -250,6 +250,13 @@ export interface RunOptions {
    * script. Set alongside `sandboxPaths`.
    */
   sandboxTmpDir?: string
+  /**
+   * Whether the arapuca wrapper may reach the host keychain (`--allow-keychain`).
+   * Decided by the caller from the auth mode of the agent THIS attempt runs on
+   * (`configMode === 'system'` ⇒ subscription login, which lives in the host
+   * credential store). Set alongside `sandboxPaths`; absent ⇒ no keychain access.
+   */
+  sandboxAllowKeychain?: boolean
   send: (msg: ServerToClient) => void
   /** Called once the query is created so the caller can drive it mid-run. */
   onStart?: (handle: RunHandle) => void
@@ -614,7 +621,9 @@ export async function runClaude(opts: RunOptions): Promise<void> {
   // carries no env — the SDK's `env` (buildChildEnv) is set on the wrapper
   // process below and inherited by the arapuca child.
   const claudePath = opts.sandboxPaths
-    ? createSandboxWrapper(opts.sandboxPaths, 'claude', opts.sandboxTmpDir!)
+    ? createSandboxWrapper(opts.sandboxPaths, 'claude', opts.sandboxTmpDir!, {
+        allowKeychain: opts.sandboxAllowKeychain === true,
+      })
     : findClaudeExecutable()
   // The SDK spawns the wrapper ON THE HOST. Same-path principle: `cwd` is the
   // run's worktree (`effectiveCwd`), the same absolute path the arapuca child

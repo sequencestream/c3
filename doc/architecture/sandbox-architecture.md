@@ -55,7 +55,7 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 1. sandbox 的适用条件为工作区 `enabled` + 该 run 的 `sessionKind` 命中 `sandboxSessionKinds`,不再以 worktree、来源或分支模式为前提。
 2. sandbox 配置按 workspace 解析;实际参与隔离的代码目录是该 run 的执行根(`rt.effectiveCwd ?? workspacePath`——worktree 或源工作区)。
 3. sandbox 启用后失败路径 hard-fail,不降级 host 裸跑。arapuca 的 fail-closed 与此一致。
-4. run 时随机从有效 agent 池选一个 custom agent 定 vendor,决定沙箱内启动哪个 CLI。
+4. run 保留其正常解析出的 agent(system / custom 皆可),其 vendor 决定沙箱内启动哪个 CLI;仅「未显式绑定 + 默认解析为 system」时按工作区 sandbox 角色配置换绑。
 
 ## 5. 目标能力与非目标
 
@@ -65,7 +65,7 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 - 文件系统 deny-by-default:执行根 rw、源工作区 ro(执行根为 worktree 时;current-branch 下二者同路径合并为单条 rw)、specsBase rw;补充目录(`extraMounts`)默认 ro、可逐项声明 rw。
 - 同路径:宿主 `/abs/path` 就是进程看到的 `/abs/path`,不存在路径改写。
 - 敏感目录(其它项目、`~/.ssh`、`~/.aws` 等)不在放行集内即不可见。
-- **网络全开**:当前不施加网络约束。
+- **网络全开**:当前不施加网络约束;宿主设有标准代理变量时经 `--allow-proxy-env` 让沙箱内 CLI 看得见宿主代理端点(arapuca ≥ 0.2.5)。
 - 启动前探测 arapuca 二进制与平台可用性;缺失即 hard-fail。
 
 ### 5.2 非目标(当前阶段)

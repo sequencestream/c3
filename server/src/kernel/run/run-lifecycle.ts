@@ -31,13 +31,11 @@ import { buildAgentsToTry } from './build-chain.js'
 import { agentErrorEvent, agentFallbackEvent, agentAllFailedEvent } from './agent-events.js'
 import type { EventBus, EventBusEvents } from '../events/event-bus.js'
 import type { ConsensusAutoCtx, PermissionRequestCtx } from '../permission/index.js'
-import { randomUUID } from 'node:crypto'
 import {
   getDegradationChain,
   resolveSessionLaunch,
   resolveAgent,
   resolveSandboxAgent,
-  enabledCustomAgentsOfVendor,
   setSessionAgent,
   launchForAgent,
   freezeSessionAgent,
@@ -46,7 +44,7 @@ import {
 } from '../agent-config/index.js'
 import { getSocketAutoResume, getProjectSandbox, getSessionAgentId } from '../config/index.js'
 import { launchSandbox, sandboxEligible, SandboxLaunchError } from '../sandbox/SandboxLauncher.js'
-import { waitForSandboxDecision, type SandboxConflictCtx } from '../sandbox/conflict-registry.js'
+import type { SandboxConflictCtx } from '../sandbox/conflict-registry.js'
 import {
   bindPending,
   clearPending,
@@ -169,10 +167,10 @@ export interface LaunchRunDeps {
   sandboxAllowed?: () => boolean
   /**
    * Optional callback that raises the sandbox-conflict console modal (broadcasts a
-   * `sandbox_conflict_request`) when a sandbox run's bound agent is `system`-mode.
-   * `launchRun` then awaits {@link waitForSandboxDecision}. Wired at the composition
-   * root (`server.ts`); absent ⇒ the run cancels rather than launching a doomed
-   * system agent inside the sandbox.
+   * `sandbox_conflict_request`). Wired at the composition root (`server.ts`), but
+   * NO LONGER triggered: a `system`-mode agent is not a sandbox conflict since the
+   * wrapper can open the host keychain for it (arapuca `--allow-keychain`). Kept as
+   * a hook for a future conflict class rather than removed with the wire frame.
    */
   onSandboxConflict?: (ctx: SandboxConflictCtx) => void
 }
@@ -283,8 +281,9 @@ export async function launchRun(
   // bare host run. The sandbox outlives socket disconnects (ADR-0006); its temp
   // dir is removed by `finalizeRun` / `removeRuntime` via `rt.sandboxStop`. The
   // run keeps its normally-resolved agent — the sandbox only wraps that vendor's
-  // CLI in arapuca; there is no sandbox-specific agent selection.
-  let bypassSandbox = inject?.bypassSandbox ?? false
+  // CLI in arapuca. The single exception is the sandbox-role profile below, which
+  // applies only to an UNBOUND run whose default resolves to a system agent.
+  const bypassSandbox = inject?.bypassSandbox ?? false
   if (!bypassSandbox) {
     const sbCfg = getProjectSandbox(workspacePath)
     const sandboxOn = sandboxEligible({
@@ -312,81 +311,40 @@ export async function launchRun(
         })
       }
 
-      // System-agent auth cannot survive the sandbox: the vendor CLI's own login /
-      // keychain is not reachable inside arapuca (deny-by-default HOME isolation), so
-      // a `system`-mode agent hits "Not logged in". Resolve that BEFORE launching the
-      // sandbox — either swap to a configured custom agent (relay-backed, key injected
-      // into the sandbox env) or bypass the sandbox for this run.
+      // A `system`-mode (subscription) agent is NO LONGER a sandbox conflict: the
+      // wrapper opens the host keychain for it (`--allow-keychain`, arapuca ≥ 0.2.5),
+      // so the vendor CLI's own login works inside the sandbox. An explicitly bound
+      // agent — system or custom — therefore enters the sandbox as-is: no conflict
+      // prompt, no forced swap to a custom agent, no hard-fail for lacking one.
+      //
+      // The sandbox-role profile still applies to an UNBOUND run whose default
+      // resolution lands on a system agent: `sandbox<role>Id → sandboxDefaultAgentId
+      // → first enabled same-vendor agent` lets a workspace steer sandbox runs onto a
+      // dedicated agent. That resolution may now legitimately return a system agent,
+      // and returning nothing is no longer fatal — the run simply keeps its default
+      // agent and enters the sandbox.
       const boundRef = getSessionAgentId(runId)
       const boundAgent = resolveAgent(boundRef)
-      if (boundAgent.configMode === 'system') {
-        if (boundRef) {
-          // The user explicitly bound this system agent ⇒ ask (bypass vs switch).
-          const choices = enabledCustomAgentsOfVendor(boundAgent.vendor).map((a) => ({
-            id: a.id,
-            displayName: a.displayName,
-          }))
-          const requestId = randomUUID()
-          const decision = deps.onSandboxConflict
-            ? (deps.onSandboxConflict({
-                requestId,
-                sessionId: runId,
-                agentId: boundAgent.id,
-                agentName: boundAgent.displayName,
-                vendor: boundAgent.vendor,
-                choices,
-              }),
-              await waitForSandboxDecision(requestId))
-            : ({ choice: 'cancel' } as const)
-          if (decision.choice === 'bypass') {
-            bypassSandbox = true
-          } else if (decision.choice === 'switch' && decision.agentId) {
-            if (!setSessionAgent(runId, decision.agentId).ok) {
-              failHard(
-                `[c3] sandbox: cannot switch to agent "${decision.agentId}" — its vendor ` +
-                  `differs from the session's frozen vendor.`,
-              )
-              return
-            }
-          } else {
-            failHard(
-              '[c3] sandbox run canceled: the bound agent uses system auth, which cannot ' +
-                'authenticate inside the sandbox.',
-            )
-            return
-          }
-        } else {
-          // Auto / default resolved to a system agent ⇒ silently substitute the
-          // configured sandbox custom agent (role → sandbox default → first custom).
-          const sub = resolveSandboxAgent(rt.sessionKind, boundAgent.vendor)
-          if (!sub) {
-            failHard(
-              '[c3] sandbox: no enabled custom agent is configured. Set a sandbox default ' +
-                'agent in system settings (system-auth agents cannot run inside the sandbox).',
-            )
-            return
-          }
-          if (!setSessionAgent(runId, sub.id).ok) {
-            failHard(
-              `[c3] sandbox: cannot bind custom agent "${sub.id}" — its vendor differs from ` +
-                `the session's frozen vendor.`,
-            )
-            return
-          }
+      if (!boundRef && boundAgent.configMode === 'system') {
+        const sub = resolveSandboxAgent(rt.sessionKind, boundAgent.vendor)
+        if (sub && sub.id !== boundAgent.id && !setSessionAgent(runId, sub.id).ok) {
+          failHard(
+            `[c3] sandbox: cannot bind sandbox agent "${sub.id}" — its vendor differs from ` +
+              `the session's frozen vendor.`,
+          )
+          return
         }
       }
 
-      if (!bypassSandbox) {
-        try {
-          const sandbox = launchSandbox(workspacePath, executionRoot)
-          rt.sandboxPaths = sandbox.paths
-          rt.sandboxTmpDir = sandbox.tmpDir
-          rt.sandboxStop = async () => sandbox.cleanup()
-        } catch (err) {
-          const uiCode = err instanceof SandboxLaunchError ? err.uiCode : 'launch-failed'
-          failHard(`[c3] sandbox launch failed (${uiCode}): ${errMsg(err)}`)
-          return
-        }
+      try {
+        const sandbox = launchSandbox(workspacePath, executionRoot)
+        rt.sandboxPaths = sandbox.paths
+        rt.sandboxTmpDir = sandbox.tmpDir
+        rt.sandboxStop = async () => sandbox.cleanup()
+      } catch (err) {
+        const uiCode = err instanceof SandboxLaunchError ? err.uiCode : 'launch-failed'
+        failHard(`[c3] sandbox launch failed (${uiCode}): ${errMsg(err)}`)
+        return
       }
     }
   }
@@ -561,9 +519,16 @@ export async function launchRun(
             : agentCfg.envOverrides,
           model: agentCfg.model,
           currentAgentId: agentCfg.agentId,
-          // Forward the arapuca allow set so the claude path wraps the CLI in arapuca
+          // Forward the arapuca allow set so the claude path wraps the CLI in arapuca.
+          // `sandboxAllowKeychain` is derived from THIS attempt's agent (degradation
+          // may land on a different one): only a subscription (`system`-mode) agent
+          // needs the host keychain opened inside the sandbox.
           ...(rt.sandboxPaths
-            ? { sandboxPaths: rt.sandboxPaths, sandboxTmpDir: rt.sandboxTmpDir }
+            ? {
+                sandboxPaths: rt.sandboxPaths,
+                sandboxTmpDir: rt.sandboxTmpDir,
+                sandboxAllowKeychain: resolveAgent(agentCfg.agentId).configMode === 'system',
+              }
             : {}),
           ...(isIntent
             ? // The intent read-only profile (gate + disallowed-tools lock +

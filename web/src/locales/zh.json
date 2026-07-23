@@ -270,37 +270,37 @@
       },
       "sandboxRoles": {
         "head": "沙箱模式",
-        "hint": "在沙箱内运行时改用这些智能体。仅可选 custom 智能体——system 认证的智能体在沙箱内无法登录。",
+        "hint": "在沙箱内运行时改用这些智能体。任意启用的智能体均可选——订阅态(system 认证)智能体通过沙箱包装器访问宿主 keychain。",
         "followSandboxDefault": "跟随沙箱默认",
-        "empty": "无可用 custom 智能体——请先在上方新增"
+        "empty": "无启用的智能体——请先在上方新增"
       },
       "sandboxDefault": {
-        "tooltip": "沙箱运行的默认智能体(须为 custom 智能体)。留空 ⇒ 第一个启用的 custom 智能体。"
+        "tooltip": "沙箱运行的默认智能体。留空 ⇒ 第一个启用的智能体。"
       },
       "sandboxDefaultPicker": {
         "label": "沙箱默认智能体",
-        "auto": "自动(第一个 custom 智能体)"
+        "auto": "自动(第一个启用的智能体)"
       },
       "sandboxTool": {
-        "tooltip": "沙箱内后台工具会话使用的 custom 智能体"
+        "tooltip": "沙箱内后台工具会话使用的智能体"
       },
       "sandboxToolPicker": {
         "label": "沙箱工具智能体"
       },
       "sandboxIntent": {
-        "tooltip": "沙箱内意图沟通会话使用的 custom 智能体"
+        "tooltip": "沙箱内意图沟通会话使用的智能体"
       },
       "sandboxIntentPicker": {
         "label": "沙箱意图智能体"
       },
       "sandboxSpec": {
-        "tooltip": "沙箱内规格撰写会话使用的 custom 智能体"
+        "tooltip": "沙箱内规格撰写会话使用的智能体"
       },
       "sandboxSpecPicker": {
         "label": "沙箱规格智能体"
       },
       "sandboxAutomation": {
-        "tooltip": "沙箱内自动化开发运行使用的 custom 智能体"
+        "tooltip": "沙箱内自动化开发运行使用的智能体"
       },
       "sandboxAutomationPicker": {
         "label": "沙箱自动化智能体"

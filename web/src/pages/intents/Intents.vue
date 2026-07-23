@@ -207,6 +207,14 @@ const selectedWorkSessionStatus = computed<SessionStatus | null>(() => {
   return props.sessionStatus?.[id] ?? null
 })
 
+// 选中意图的意图会话(intentSessionId)运行状态,派生给 IntentDetail 的意图会话 tab
+// 标签状态点。无 intentSessionId 或状态未知时为 null(不显示状态点)。
+const selectedIntentSessionStatus = computed<SessionStatus | null>(() => {
+  const id = selectedIntent.value?.intentSessionId
+  if (!id) return null
+  return props.sessionStatus?.[id] ?? null
+})
+
 // External one-shot select request (work session title-bar jump button): when the
 // requested intent is present in the loaded list, select it (winning over the
 // default-first-row logic via userSelectedIntent=true) and signal the parent to
@@ -360,6 +368,7 @@ defineExpose({
         :intent-spec-loading="intentSpecLoading"
         :spec-session-running="selectedSpecSessionRunning"
         :work-session-status="selectedWorkSessionStatus"
+        :intent-session-status="selectedIntentSessionStatus"
         :intent-logs="selectedIntentLogs"
         :intent-logs-loading="intentLogsLoading"
         @refine="(id: string) => emit('refine', id)"

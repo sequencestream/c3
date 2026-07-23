@@ -23,7 +23,8 @@ export function __resetWriteSpecGuards(): void {
  * (四态主按钮 + refine / mark done / cancel / create PR / copy PR / automate 切换)
  * ——无论在哪个 tab 都可见。其下为 tab 条 + tab 内容:
  *   - intent       意图正文 markdown + Git/PR 元信息 + 依赖编辑器
- *   - intent session 该意图的 refine/沟通会话(intentSessionId),复用 ChatColumn
+ *   - intent session 该意图的 refine/沟通会话(intentSessionId),复用 ChatColumn;
+ *                  tab 标签带运行中状态点(对齐 WorkSessionList 的 .session-status 点)
  *   - spec         渲染 specPath 指向的 spec.md(经 read-spec 拉取)
  *   - spec session 写 spec 会话(specSessionId),复用 ChatColumn
  *   - work session 最新工作会话(lastWorkSessionId),仅当其存在时可见,复用 ChatColumn;
@@ -127,6 +128,12 @@ const props = defineProps<{
    * idle / 未知(null)时不显示。由容器从 sessionStatus 派生透传。
    */
   workSessionStatus?: SessionStatus | null
+  /**
+   * 意图会话(intentSessionId)的运行状态,用于意图会话 tab 标签的运行中状态点。
+   * 活跃态(running / awaiting_permission / team)时显示状态点;idle / 未知(null)
+   * 时不显示。由容器从 sessionStatus 派生透传。
+   */
+  intentSessionStatus?: SessionStatus | null
   // ── 变更日志(changelog tab)──
   /** 选中意图的生命周期变更日志(倒序);切到 changelog tab 时懒加载。 */
   intentLogs: IntentLog[]
@@ -643,6 +650,13 @@ const workSessionStatusDot = computed<SessionStatus | null>(() => {
   return st && st !== 'idle' ? st : null
 })
 
+// 意图会话 tab 标签的运行中状态点:仅活跃态才显示,值即 .session-status 的类。
+const ACTIVE_SESSION_STATUSES: SessionStatus[] = ['running', 'awaiting_permission', 'team']
+const intentSessionStatusDot = computed<SessionStatus | null>(() => {
+  const st = props.intentSessionStatus
+  return st && ACTIVE_SESSION_STATUSES.includes(st) ? st : null
+})
+
 // props 变化(SDD 开关切换 / 意图 spec 字段变化)导致当前激活 tab 不再可见时回退到 intent。
 // 意图切换时的复位由下方 intent.id watch 负责,intent tab 恒可见故与本 watch 不冲突。
 watch(visibleTabs, () => {
@@ -1053,6 +1067,13 @@ defineExpose({
               :class="workSessionStatusDot"
               :title="workSessionStatusDot"
               data-testid="intent-detail-work-session-status"
+            ></span>
+            <span
+              v-if="tab.key === 'intentSession' && intentSessionStatusDot"
+              class="session-status"
+              :class="intentSessionStatusDot"
+              :title="intentSessionStatusDot"
+              data-testid="intent-detail-intent-session-status"
             ></span>
           </button>
         </div>

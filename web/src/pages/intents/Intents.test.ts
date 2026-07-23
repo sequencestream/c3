@@ -4,7 +4,7 @@
 import { mount } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
-import type { Intent } from '@ccc/shared/protocol'
+import type { Intent, SessionStatus } from '@ccc/shared/protocol'
 import Intents from './Intents.vue'
 
 function intent(overrides: Partial<Intent> & { id: string }): Intent {
@@ -49,6 +49,7 @@ const IntentDetailStub = defineComponent({
   props: {
     intent: { type: Object, default: null },
     requestedSubTab: { type: String, default: null },
+    intentSessionStatus: { type: String, default: null },
   },
   template: '<div data-testid="intent-detail">{{ intent?.id ?? "" }}</div>',
 })
@@ -58,11 +59,12 @@ const ChatColumnStub = defineComponent({
   template: '<div data-testid="standalone-chat" />',
 })
 
-function mountIntents(intents: Intent[]) {
+function mountIntents(intents: Intent[], sessionStatus?: Record<string, SessionStatus>) {
   return mount(Intents, {
     props: {
       project: '/proj',
       intents,
+      sessionStatus,
       automation: null,
       intentSpecContent: null,
       intentSpecLoading: false,
@@ -255,5 +257,41 @@ describe('Intents.vue — right column', () => {
 
     expect(wrapper.find('[data-testid="intent-detail"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="standalone-chat"]').exists()).toBe(false)
+  })
+})
+
+describe('Intents.vue — 意图会话状态透传', () => {
+  it('maps each selected intent to its own intentSessionId status', async () => {
+    const wrapper = mountIntents(
+      [
+        intent({ id: 'todo-a', status: 'todo', priority: 'P1', intentSessionId: 's-a' }),
+        intent({ id: 'todo-b', status: 'todo', priority: 'P2', intentSessionId: 's-b' }),
+      ],
+      { 's-a': 'running', 's-b': 'idle' },
+    )
+    await nextTick()
+
+    const detail = wrapper.findComponent(IntentDetailStub)
+    expect(detail.props('intentSessionStatus')).toBe('running')
+
+    await wrapper.findAll('.req-item-main')[1].trigger('click')
+    expect(detail.props('intentSessionStatus')).toBe('idle')
+  })
+
+  it('passes null when the intent has no session id or no status snapshot', async () => {
+    const wrapper = mountIntents(
+      [
+        intent({ id: 'no-session', status: 'todo', priority: 'P1', intentSessionId: null }),
+        intent({ id: 'unknown', status: 'todo', priority: 'P2', intentSessionId: 's-missing' }),
+      ],
+      { 's-other': 'running' },
+    )
+    await nextTick()
+
+    const detail = wrapper.findComponent(IntentDetailStub)
+    expect(detail.props('intentSessionStatus')).toBeNull()
+
+    await wrapper.findAll('.req-item-main')[1].trigger('click')
+    expect(detail.props('intentSessionStatus')).toBeNull()
   })
 })

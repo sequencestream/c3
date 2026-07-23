@@ -61,7 +61,7 @@ import {
   setPendingIntent,
 } from '../config/index.js'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import { firstEnabledCustomAgent, systemAgent } from './normalize.js'
+import { firstEnabledSandboxAgent, systemAgent } from './normalize.js'
 
 export {
   AGENT_ICON_MAX_CHARS,
@@ -229,27 +229,31 @@ function sandboxRoleIdForKind(settings: SystemSettings, kind: SessionKind): stri
 }
 
 /**
- * The custom agent a sandboxed run of `kind` should use when its normally-resolved
- * agent is `system`-mode (which cannot authenticate inside the arapuca sandbox).
- * Resolution never lands on a `system` agent:
- *   sandbox<role>Id → sandboxDefaultAgentId → first enabled custom agent (same
- *   `vendor` preferred, then any).
+ * The agent a sandboxed run of `kind` should use, in the unchanged order:
+ *   sandbox<role>Id → sandboxDefaultAgentId → first enabled agent (same `vendor`
+ *   preferred, then any).
+ * Candidate admission is `enabled` only — a `system`-mode (subscription) agent is
+ * now a legal sandbox agent, because the arapuca wrapper opens the host keychain
+ * for it (`--allow-keychain`, arapuca ≥ 0.2.5). Whether that authentication then
+ * succeeds is arapuca's and the vendor CLI's business on the given platform; c3 no
+ * longer filters by auth mode or by `process.platform`.
+ *
  * `vendor` is the bound agent's vendor, preferred so the substitute can re-bind a
  * vendor-frozen session (a real session rejects a cross-vendor swap). Returns null
- * only when NO enabled custom agent exists — the caller then surfaces "configure a
- * sandbox custom agent" instead of silently launching a doomed `system` agent.
+ * when no enabled agent exists at all — the caller then simply keeps the run's
+ * normally-resolved agent (this is no longer a launch blocker).
  */
 export function resolveSandboxAgent(kind: SessionKind, vendor: VendorId): AgentConfig | null {
   const settings = loadSettings()
-  const isUsableCustom = (id: string): AgentConfig | undefined => {
+  const usable = (id: string): AgentConfig | undefined => {
     if (!id) return undefined
     const a = settings.agents.find((x) => x.id === id)
-    return a && a.enabled !== false && a.configMode === 'custom' ? a : undefined
+    return a && a.enabled !== false ? a : undefined
   }
   return (
-    isUsableCustom(sandboxRoleIdForKind(settings, kind)) ??
-    isUsableCustom(settings.sandboxDefaultAgentId) ??
-    firstEnabledCustomAgent(settings.agents, vendor) ??
+    usable(sandboxRoleIdForKind(settings, kind)) ??
+    usable(settings.sandboxDefaultAgentId) ??
+    firstEnabledSandboxAgent(settings.agents, vendor) ??
     null
   )
 }

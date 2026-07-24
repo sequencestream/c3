@@ -4,7 +4,7 @@
 > 是什么、其架构与 Claude Agent SDK 的关键差异、数据存在哪里、如何读取 Skill，
 > 以及 c3 如何在 Adapter 层封装它。
 >
-> - **适用版本**：`@openai/codex-sdk@0.144.6`（在 c3 依赖清单中精确锁定）。
+> - **适用版本**：`@openai/codex-sdk@0.145.0`（在 c3 依赖清单中精确锁定）。
 > - **官方文档**：<https://developers.openai.com/codex/sdk>
 > - **源码仓库**：<https://github.com/openai/codex/tree/main/sdk/typescript>
 > - **Python 对应**：`pip install openai-codex`，控制 app-server 二进制；本文档仅覆盖 TypeScript SDK。

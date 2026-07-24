@@ -26,6 +26,9 @@ import {
   updateExecutionLog,
   getExecutionLog,
   deleteAutomation,
+  runningAutomationIdsForWorkspace,
+  reconcileStuckRunningExecutions,
+  RESTART_INTERRUPTED_ERROR,
 } from './store.js'
 
 let dir: string
@@ -720,5 +723,159 @@ describe('runningSessionId derivation', () => {
     const byId = new Map(listAutomations(proj).map((a) => [a.id, a.runningSessionId]))
     expect(byId.get(running.id)).toBe('sess-live')
     expect(byId.get(idle.id)).toBeNull()
+  })
+})
+
+// 列表绿点(runningSessionId)与顶部角标(runningAutomationIdsForWorkspace)必须
+// 从同一份数据库快照派生同一批「进行中」自动化 —— 逐场景断言两者严格一致。
+describe('runningAutomationIdsForWorkspace mirrors runningSessionId', () => {
+  function makeAutomation(type: 'llm' | 'command', workspaceId = proj) {
+    return createAutomation({
+      type,
+      config: type === 'llm' ? { prompt: 'review' } : { command: 'echo hi' },
+      workspaceId,
+      cronExpression: '*/5 * * * *',
+      mode: 'read-only',
+      vendor: 'claude',
+      ...(type === 'llm' ? { agentId: 'agent-1' } : {}),
+    })
+  }
+
+  function log(
+    automationId: string,
+    over: { startedAt?: number; status?: string; sessionId?: string | null; finishedAt?: number },
+  ) {
+    return appendExecutionLog({
+      automationId,
+      startedAt: over.startedAt ?? 1_000,
+      finishedAt: over.finishedAt ?? null,
+      exitCode: null,
+      output: '',
+      error: null,
+      status: over.status ?? 'running',
+      sessionId: over.sessionId ?? null,
+    })
+  }
+
+  it('两处口径对同一批数据逐条一致(llm/command/未绑定/终态/跨 workspace)', () => {
+    const other = '/abs/workspace-b'
+    const llmRunning = makeAutomation('llm')
+    const cmdRunning = makeAutomation('command')
+    const llmUnbound = makeAutomation('llm')
+    const llmTerminal = makeAutomation('llm')
+    const llmOtherWs = makeAutomation('llm', other)
+
+    log(llmRunning.id, { sessionId: 'sess-live' })
+    log(cmdRunning.id, { sessionId: 'sess-cmd' }) // command → 不亮
+    log(llmUnbound.id, { sessionId: '' }) // 未绑定 session → 不亮
+    log(llmTerminal.id, { status: 'success', finishedAt: 1_500, sessionId: 'sess-done' })
+    log(llmOtherWs.id, { sessionId: 'sess-other' })
+
+    // 唯一「进行中」自动化:proj 下的 llmRunning。
+    expect(runningAutomationIdsForWorkspace(proj)).toEqual([llmRunning.id])
+
+    // 对每个 automation,「角标包含它」严格等价于「它的 runningSessionId 非空」。
+    const badge = new Set(runningAutomationIdsForWorkspace(proj))
+    for (const a of listAutomations(proj)) {
+      expect(badge.has(a.id)).toBe(a.runningSessionId !== null)
+    }
+    // 跨 workspace 不串位:other 的角标里是 llmOtherWs。
+    expect(runningAutomationIdsForWorkspace(other)).toEqual([llmOtherWs.id])
+  })
+
+  it('去重:同一 llm 自动化的多条 running 日志仅计一次', () => {
+    const s = makeAutomation('llm')
+    log(s.id, { startedAt: 1_000, sessionId: 'sess-a' })
+    log(s.id, { startedAt: 2_000, sessionId: 'sess-b' })
+    expect(runningAutomationIdsForWorkspace(proj)).toEqual([s.id])
+  })
+})
+
+// 崩溃/重启后遗留的 running 执行必须被幂等收尾为 failed,不再无限期卡在「进行中」。
+describe('reconcileStuckRunningExecutions', () => {
+  function makeAutomation() {
+    return createAutomation({
+      type: 'llm',
+      config: { prompt: 'review' },
+      workspaceId: proj,
+      cronExpression: '*/5 * * * *',
+      mode: 'read-only',
+      vendor: 'claude',
+      agentId: 'agent-1',
+    })
+  }
+
+  it('仅遗留 running 行转 failed 并写入 finished_at + 重启标识,终态行不动,第二次调用幂等', () => {
+    const s = makeAutomation()
+    const stuck = appendExecutionLog({
+      automationId: s.id,
+      startedAt: 1_000,
+      finishedAt: null,
+      exitCode: null,
+      output: 'partial output',
+      error: null,
+      status: 'running',
+      sessionId: 'sess-live',
+    })
+    const done = appendExecutionLog({
+      automationId: s.id,
+      startedAt: 2_000,
+      finishedAt: 2_500,
+      exitCode: 0,
+      output: 'ok',
+      error: null,
+      status: 'success',
+      sessionId: 'sess-done',
+    })
+    const alreadyFailed = appendExecutionLog({
+      automationId: s.id,
+      startedAt: 3_000,
+      finishedAt: 3_500,
+      exitCode: 1,
+      output: 'boom',
+      error: 'real failure',
+      status: 'failed',
+      sessionId: 'sess-fail',
+    })
+
+    const startTime = 9_999
+    expect(reconcileStuckRunningExecutions(startTime)).toBe(1)
+
+    const reconciled = getExecutionLog(stuck.id)!
+    expect(reconciled.status).toBe('failed')
+    expect(reconciled.finishedAt).toBe(startTime)
+    expect(reconciled.error).toBe(RESTART_INTERRUPTED_ERROR)
+    // 输出与会话 id 不改写。
+    expect(reconciled.output).toBe('partial output')
+    expect(reconciled.sessionId).toBe('sess-live')
+
+    // 已终态记录及其字段原样保留。
+    const doneAfter = getExecutionLog(done.id)!
+    expect(doneAfter.status).toBe('success')
+    expect(doneAfter.finishedAt).toBe(2_500)
+    expect(doneAfter.exitCode).toBe(0)
+    const failedAfter = getExecutionLog(alreadyFailed.id)!
+    expect(failedAfter.status).toBe('failed')
+    expect(failedAfter.error).toBe('real failure')
+    expect(failedAfter.finishedAt).toBe(3_500)
+
+    // 第二次调用不再改动任何行。
+    expect(reconcileStuckRunningExecutions(startTime + 1)).toBe(0)
+    expect(getExecutionLog(stuck.id)!.finishedAt).toBe(startTime)
+  })
+
+  it('无遗留 running 行时返回 0', () => {
+    const s = makeAutomation()
+    appendExecutionLog({
+      automationId: s.id,
+      startedAt: 1_000,
+      finishedAt: 1_500,
+      exitCode: 0,
+      output: 'ok',
+      error: null,
+      status: 'success',
+      sessionId: 'sess-done',
+    })
+    expect(reconcileStuckRunningExecutions(9_999)).toBe(0)
   })
 })

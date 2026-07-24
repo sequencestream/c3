@@ -118,11 +118,22 @@ transcript)与此正交,不受影响。
 - 执行日志一旦设置了 `startedAt` 便**只追加**,依次推进 `pending → running →
 success | failed | cancelled`(`SCH-R10`)。完成时的一次 `automations` 广播会重新拉取
   当前所选自动化的历史记录,使已完成的运行无需手动刷新即可出现。
-- **列表的会话运行中指示。** `Automation.runningSessionId` 由读取时关联执行日志派生(见
-  `websocket-protocol.md`),自动化列表据此渲染脉冲绿点。一次 llm 执行沿链路推送三次列表快照:
-  `run:started`(日志已建但真实会话 id 未绑,指示点仍暗)、真实 `sessionId` 首次写回日志时补发的
-  一次广播(点亮)、`run:settled`(日志已先落终态,熄灭)。全程事件驱动,客户端不轮询。若进程崩溃
-  导致日志停留在 `running`,绿点会常亮——这是既有执行日志收尾机制的已知局限。
+- **列表绿点与顶部角标共用同一「进行中」口径。** 「可展示进行中自动化」只有一条资格规则:所属
+  自动化 `type='llm'`、执行日志 `status='running'`、且日志已绑定非空 `session_id`。列表的脉冲绿点由
+  `Automation.runningSessionId`(读取时关联执行日志派生,见 `websocket-protocol.md`)驱动;顶部导航
+  「自动化」角标(`session_counts.ownerCounts.automation`)由 `runningAutomationIdsForWorkspace` 按
+  automation id 去重派生。两者建立在同一份资格规则、同一数据库快照之上,因此对同一批数据严格一致——
+  `command` 类型、未绑定真实会话、终态日志两处都不点亮/计数。角标不再叠加进程内 `session_status`
+  行判定;仅有运行中的 automation 会话而无合格执行日志时,两处均不亮。
+- **指示的推送时序。** 一次 llm 执行沿链路推送三次列表快照:`run:started`(日志已建但真实会话 id
+  未绑,绿点与角标皆暗)、真实 `sessionId` 首次写回日志时补发的一次广播(同时点亮/计数)、
+  `run:settled`(日志已先落终态,同时熄灭)。全程事件驱动,客户端不轮询。
+- **崩溃/重启收尾。** 若进程崩溃导致日志停留在 `running`,该行原本会被误判为「进行中」而常亮。
+  服务启动时在数据库可用后、调度器接受新执行前,会做一次幂等启动收尾:同一事务内把全部遗留
+  `status='running'` 的执行改写为 `failed`,填入本次启动时间作为 `finished_at` 并写入「服务重启中断」
+  错误标识,从而最终熄灭。已有终态记录及其输出、退出码、会话 id 不改写;收尾仅处理启动前已存在的
+  running 行,不做进程存活探测或周期清理。启动收尾数据库操作失败时,自动化调度不启动,以免旧 running
+  与新执行并存持续误报。
 - 三栏视图(自动化列表 → 执行历史列表 → 执行详情)展示配置、日志行和一个带标签页的详情面板。
   **Session** 标签页(仅 llm)通过共享的聊天消息渲染器,以只读方式经 `get_execution_transcript`
   回放该次执行的 transcript(`SCH-R16`);没有会话/命令类型的执行不会显示 Session 标签页,

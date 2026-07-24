@@ -252,11 +252,29 @@ function serializeEventFilters(filters: GenericEventFilter[] | null | undefined)
 }
 
 /**
+ * The single eligibility predicate for a "displayable running" automation
+ * execution, written over aliases `s` (automations) and `l`
+ * (automation_execution_logs): an `llm` automation, a `running` log, bound to a
+ * non-empty real `session_id`. `status` is the sole run-state signal; `type`
+ * scopes what may show and `session_id` scopes to a real, associable session.
+ *
+ * Both the list green dot (`runningSessionIdMap` → `Automation.runningSessionId`)
+ * and the top badge (`runningAutomationIdsForWorkspace`) build on this ONE rule,
+ * so both indicators derive from the identical database snapshot — including
+ * staying dark together in the brief window between an LLM log being created and
+ * its real session binding.
+ */
+const RUNNING_ELIGIBILITY_SQL = `s.type = 'llm'
+        AND l.status = 'running'
+        AND l.session_id IS NOT NULL
+        AND l.session_id <> ''`
+
+/**
  * Map `automation_id → running session id` for the given automations, per the
- * `Automation.runningSessionId` contract: LLM automations only, `running` logs
- * only, non-empty `session_id` only. Ids absent from the map have no live
- * session. Ordering makes the pick deterministic when abnormal data leaves more
- * than one candidate row (newest start wins, log id breaks ties).
+ * `Automation.runningSessionId` contract via {@link RUNNING_ELIGIBILITY_SQL}.
+ * Ids absent from the map have no live session. Ordering makes the pick
+ * deterministic when abnormal data leaves more than one candidate row (newest
+ * start wins, log id breaks ties).
  */
 function runningSessionIdMap(d: Db, automationIds: string[]): Map<string, string> {
   const map = new Map<string, string>()
@@ -267,10 +285,7 @@ function runningSessionIdMap(d: Db, automationIds: string[]): Map<string, string
        FROM automation_execution_logs l
        JOIN automations s ON s.id = l.automation_id
       WHERE l.automation_id IN (${placeholders})
-        AND s.type = 'llm'
-        AND l.status = 'running'
-        AND l.session_id IS NOT NULL
-        AND l.session_id <> ''
+        AND ${RUNNING_ELIGIBILITY_SQL}
       ORDER BY l.started_at DESC, l.id DESC`,
     ...automationIds,
   )
@@ -442,11 +457,10 @@ export function countRunningAutomationSessions(workspacePath: string): number {
 }
 
 /**
- * The ids of a workspace's automations that currently have a live
- * (`status='running'`) execution log — the id-level form of
- * `countRunningAutomations`, so a caller can union them with other running
- * sources (e.g. live runtimes) before taking a set size. Empty when the db is
- * unavailable.
+ * The ids of a workspace's automations that are currently "displayable running"
+ * per {@link RUNNING_ELIGIBILITY_SQL} — the id-level, badge-facing form that is
+ * strictly consistent with the list green dot (`runningSessionId`). Deduplicated
+ * by automation id. Empty when the db is unavailable.
  */
 export function runningAutomationIdsForWorkspace(workspacePath: string): string[] {
   const d = db()
@@ -456,7 +470,8 @@ export function runningAutomationIdsForWorkspace(workspacePath: string): string[
       `SELECT DISTINCT s.id AS id
          FROM automations s
          JOIN automation_execution_logs l ON l.automation_id = s.id
-        WHERE s.workspace_path=? AND l.status='running'`,
+        WHERE s.workspace_path=?
+          AND ${RUNNING_ELIGIBILITY_SQL}`,
       resolve(workspacePath),
     )
     .map((r) => r.id)
@@ -872,6 +887,43 @@ export function updateExecutionLog(
   if (sets.length === 0) return
   params.push(id)
   d.run(`UPDATE automation_execution_logs SET ${sets.join(', ')} WHERE id=?`, ...params)
+}
+
+/**
+ * The `error` marker written onto executions reconciled at startup, so a
+ * restart-interrupted run is distinguishable from a normally-failed one.
+ */
+export const RESTART_INTERRUPTED_ERROR = 'server_restart_interrupted'
+
+/**
+ * Idempotent startup reconciliation for executions a prior process left stuck in
+ * `status='running'` (it crashed before writing a terminal state). In one
+ * transaction every such row is forced to `failed`, stamped with
+ * `finished_at=interruptedAt` and the {@link RESTART_INTERRUPTED_ERROR} marker;
+ * its existing output, exit_code and session_id are left intact. Already-terminal
+ * rows are never touched, so a second call is a no-op. Returns the number of rows
+ * reconciled.
+ *
+ * Throws when the db is unavailable or the write fails — the caller MUST NOT
+ * start the scheduler on failure, or stale `running` rows and new executions
+ * would coexist and keep misreporting "in progress".
+ */
+export function reconcileStuckRunningExecutions(interruptedAt: number): number {
+  const d = requireDb()
+  return tx(d, () => {
+    const stuck = d.all<{ id: string }>(
+      `SELECT id FROM automation_execution_logs WHERE status='running'`,
+    )
+    if (stuck.length === 0) return 0
+    d.run(
+      `UPDATE automation_execution_logs
+          SET status='failed', finished_at=?, error=?
+        WHERE status='running'`,
+      interruptedAt,
+      RESTART_INTERRUPTED_ERROR,
+    )
+    return stuck.length
+  })
 }
 
 // ---- Execution logs ----

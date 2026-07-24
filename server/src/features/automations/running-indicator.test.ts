@@ -55,6 +55,7 @@ import {
   getEventAutomations,
   listAutomations,
   resetStoreForTests,
+  runningAutomationIdsForWorkspace,
   updateAutomation,
   updateExecutionLog,
   updateNextRunAt,
@@ -89,11 +90,14 @@ describe('automation list live-session indicator — one execution end to end', 
       agentId: 'agent-1',
     })
 
-    // Every push records the indicator value the refreshed list would carry.
-    const snapshots: { at: string; runningSessionId: string | null }[] = []
+    // Every push records BOTH indicators the refreshed views would carry: the
+    // list green dot (`runningSessionId`) and the top badge membership
+    // (`runningAutomationIdsForWorkspace`). They must light and darken together.
+    const snapshots: { at: string; runningSessionId: string | null; inBadge: boolean }[] = []
     const snap = (at: string): void => {
       const row = listAutomations(proj).find((a) => a.id === automation.id)!
-      snapshots.push({ at, runningSessionId: row.runningSessionId })
+      const inBadge = runningAutomationIdsForWorkspace(proj).includes(automation.id)
+      snapshots.push({ at, runningSessionId: row.runningSessionId, inBadge })
     }
 
     const eventBus = new EventBus<EventBusEvents>()
@@ -128,12 +132,12 @@ describe('automation list live-session indicator — one execution end to end', 
     await vi.waitFor(() => expect(snapshots.map((s) => s.at)).toContain('run:settled'))
 
     expect(snapshots).toEqual([
-      // Started: the log exists but has no real session id yet.
-      { at: 'run:started', runningSessionId: null },
-      // Bound: this extra broadcast is what actually lights the indicator up.
-      { at: 'session-bound', runningSessionId: 'sess-live' },
-      // Settled: the log reached its terminal status BEFORE the event fired.
-      { at: 'run:settled', runningSessionId: null },
+      // Started: the log exists but has no real session id yet — both dark.
+      { at: 'run:started', runningSessionId: null, inBadge: false },
+      // Bound: the extra broadcast lights the dot AND the badge together.
+      { at: 'session-bound', runningSessionId: 'sess-live', inBadge: true },
+      // Settled: the log reached its terminal status — both dark again.
+      { at: 'run:settled', runningSessionId: null, inBadge: false },
     ])
   })
 

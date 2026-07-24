@@ -18,6 +18,7 @@ import {
   getEventAutomations,
   getAutomation,
   isStoreAvailable as isAutomationStoreAvailable,
+  reconcileStuckRunningExecutions,
   updateNextRunAt,
   updateAutomation as updateAutomationStore,
   updateExecutionLog,
@@ -36,6 +37,22 @@ export function startSchedulerWiring(deps: {
   const { broadcasts, eventBus } = deps
   registerAgentQuotaRecovery({ eventBus })
   if (!isAutomationStoreAvailable()) return
+
+  // Startup reconciliation MUST run before any cron/event scheduling is wired, so
+  // executions this new process creates are never mistaken for stale ones. A prior
+  // process that crashed leaves executions stuck in `running`; force them to a
+  // terminal state now. On failure we must NOT start the scheduler — stale running
+  // rows plus fresh executions would keep misreporting "in progress" — but the rest
+  // of the server can keep running under its existing db-degradation policy.
+  try {
+    const reconciled = reconcileStuckRunningExecutions(Date.now())
+    if (reconciled > 0) {
+      console.log('[scheduler] reconciled %d stuck running execution(s) at startup', reconciled)
+    }
+  } catch (err) {
+    console.error('[scheduler] startup reconciliation failed; scheduler not started:', err)
+    return
+  }
 
   // Wire the kernel event bus for scheduling run lifecycle events (2026-06-08-010).
   setEventBus(eventBus)

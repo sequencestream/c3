@@ -471,9 +471,14 @@
 
 ### `session_counts`
 
-一个工作区六类会话的运行中计数。
+一个工作区六类会话的运行中计数,以及按业务条目去重的「进行中」条目数。
 
-**字段：** `workspaceId: string`, `counts: Record<'work' | 'intent' | 'spec' | 'discussion' | 'automation' | 'tool', number>`
+**字段：** `workspaceId: string`, `counts: Record<'work' | 'intent' | 'spec' | 'discussion' | 'automation' | 'tool', number>`, `ownerCounts: Record<'intent' | 'discussion' | 'automation', number>`
+
+`ownerCounts` 是顶部导航角标的权威口径:`intent`、`discussion` 由进程内会话状态(`session_status`)按
+owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一执行日志资格规则派生(所属自动化
+`type='llm'`、执行日志 `status='running'`、且已绑定非空 `session_id`,按 automation id 去重),与列表绿点
+(`Automation.runningSessionId`)严格一致。`command` 类型、未绑定真实会话、终态日志均不计入。
 
 ### `dir_listed`
 

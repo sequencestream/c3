@@ -118,6 +118,11 @@ transcript)与此正交,不受影响。
 - 执行日志一旦设置了 `startedAt` 便**只追加**,依次推进 `pending → running →
 success | failed | cancelled`(`SCH-R10`)。完成时的一次 `automations` 广播会重新拉取
   当前所选自动化的历史记录,使已完成的运行无需手动刷新即可出现。
+- **列表的会话运行中指示。** `Automation.runningSessionId` 由读取时关联执行日志派生(见
+  `websocket-protocol.md`),自动化列表据此渲染脉冲绿点。一次 llm 执行沿链路推送三次列表快照:
+  `run:started`(日志已建但真实会话 id 未绑,指示点仍暗)、真实 `sessionId` 首次写回日志时补发的
+  一次广播(点亮)、`run:settled`(日志已先落终态,熄灭)。全程事件驱动,客户端不轮询。若进程崩溃
+  导致日志停留在 `running`,绿点会常亮——这是既有执行日志收尾机制的已知局限。
 - 三栏视图(自动化列表 → 执行历史列表 → 执行详情)展示配置、日志行和一个带标签页的详情面板。
   **Session** 标签页(仅 llm)通过共享的聊天消息渲染器,以只读方式经 `get_execution_transcript`
   回放该次执行的 transcript(`SCH-R16`);没有会话/命令类型的执行不会显示 Session 标签页,

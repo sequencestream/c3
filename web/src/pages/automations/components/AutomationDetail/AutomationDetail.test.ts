@@ -15,6 +15,7 @@ function sched(over: Partial<Automation> = {}): Automation {
     cronExpression: '0 8 * * *',
     nextRunAt: null,
     eventFilters: null,
+    runningSessionId: null,
     status: 'active',
     mode: 'sandboxed',
     toolAllowlist: [],

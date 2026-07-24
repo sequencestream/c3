@@ -924,7 +924,7 @@ automation 的执行日志。
 - **`RunKind`** — `'interactive' | 'background' | 'headless' | 'internal'`。运行的**执行形态**分类（执行机制判断走它），与 `SessionKind` 正交。2026-06-26 收窄而来，目前仅作记录/审计字段。未被任何线协议消息引用。
 - **`AutomationStatus`** — `'active' | 'paused' | 'error'`。
 - **`McpMode`** — `'read-only' | 'sandboxed' | 'full-access'`。
-- **`Automation`** — `{ id, type, config, maxWallClockMs, workspacePath, vendor, triggerType, cronExpression, nextRunAt, eventFilter, eventSessionKindFilter, status, mode, toolAllowlist, toolDenylist, createdAt, updatedAt }`。`maxWallClockMs` 为单次执行的最大墙钟时间（毫秒）；null 使用任务类型默认值。`mode` 是 `ModeToken | CodexPolicy`。
+- **`Automation`** — `{ id, type, config, maxWallClockMs, workspacePath, vendor, triggerType, cronExpression, nextRunAt, eventFilter, eventSessionKindFilter, runningSessionId, status, mode, toolAllowlist, toolDenylist, createdAt, updatedAt }`。`maxWallClockMs` 为单次执行的最大墙钟时间（毫秒）；null 使用任务类型默认值。`mode` 是 `ModeToken | CodexPolicy`。`runningSessionId` 是服务端派生、客户端只读的字段（不落库，读时关联 `automation_execution_logs` 计算）：仅当 `type='llm'` 且存在 `status='running'` 且 `session_id` 非空的执行日志时为该会话 id，否则为 `null`；多条候选时取 `started_at` 最新的一条（同刻按日志 id 定序）。command 执行、尚未绑定真实会话 id 的 LLM 执行以及终态日志均为 `null`；不推断进程存活性。
 - **`AutomationExecutionLog`** — `{ id, automationId, startedAt, finishedAt, exitCode, output, error, status, sessionId }`。
 - **`PendingWriteApproval`** — `{ id, automationId, workspacePath, toolName, toolInput, diffPreview, createdAt, expiresAt, status, resolvedBy, resolvedAt }`。沙箱化 automation 执行的待处理写操作审批。
 - **`ToolManifestEntry`** — `{ name, isWrite }`。供应商工具清单中的条目。

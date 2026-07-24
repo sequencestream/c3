@@ -306,12 +306,65 @@ describe('countRunningOwners', () => {
     ownedRow({ sessionId: 'x1', sessionKind: 'intent', ownerKind: 'intent', ownerId: 'i1' })
     ownedRow({ sessionId: 'x2', sessionKind: 'intent', ownerKind: 'intent', ownerId: 'i2' })
     ownedRow({ sessionId: 'x3', sessionKind: 'discussion', ownerKind: 'discussion', ownerId: 'd1' })
-    ownedRow({ sessionId: 'x4', sessionKind: 'automation', ownerKind: 'automation', ownerId: 'a1' })
+    const automation = createAutomation({
+      type: 'llm',
+      config: { prompt: 'run' },
+      workspaceId,
+      vendor: 'claude',
+      agentId: 'agent',
+      triggerType: 'cron',
+      cronExpression: '0 1 * * *',
+      mode: 'default',
+    })
     startRun('x1', proj, 'intent')
     startRun('x2', proj, 'intent')
     startRun('x3', proj, 'discussion')
-    startRun('x4', proj, 'automation')
+    // Automation "in progress" is the execution log's job, not a running runtime.
+    appendExecutionLog({
+      automationId: automation.id,
+      startedAt: Date.now(),
+      finishedAt: null,
+      exitCode: null,
+      output: '',
+      error: null,
+      status: 'running',
+      sessionId: 'x4',
+    })
     expect(countRunningOwners(proj)).toEqual({ intent: 2, discussion: 1, automation: 1 })
+  })
+
+  it('仅有 automation 会话在运行(无 running 执行日志)不计入角标', () => {
+    ownedRow({
+      sessionId: 'auto-sess',
+      sessionKind: 'automation',
+      ownerKind: 'automation',
+      ownerId: 'a-no-log',
+    })
+    startRun('auto-sess', proj, 'automation')
+    expect(countRunningOwners(proj).automation).toBe(0)
+  })
+
+  it('command 类型自动化执行中不计入角标(与列表绿点一致)', () => {
+    const automation = createAutomation({
+      type: 'command',
+      config: { command: 'echo hi' },
+      workspaceId,
+      vendor: 'claude',
+      triggerType: 'cron',
+      cronExpression: '0 1 * * *',
+      mode: 'default',
+    })
+    appendExecutionLog({
+      automationId: automation.id,
+      startedAt: Date.now(),
+      finishedAt: null,
+      exitCode: null,
+      output: '',
+      error: null,
+      status: 'running',
+      sessionId: 'cmd-sess',
+    })
+    expect(countRunningOwners(proj).automation).toBe(0)
   })
 
   it('无 owner 的运行会话不计入任何条目桶', () => {

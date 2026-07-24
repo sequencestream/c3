@@ -204,9 +204,10 @@ const SESSION_PAGE_KINDS: readonly Exclude<SessionKind, 'consensus'>[] = [
  * the per-kind session counts next to it.
  *
  * Rows without a valid `(ownerKind, ownerId)` pair are not attributable to an
- * item and are skipped. Automations additionally union the ids whose execution
- * log is `running`, so the badge never diverges from the automation pages'
- * own run state.
+ * item and are skipped. Intent and discussion owners come from in-process session
+ * status; automation owners come SOLELY from the unified execution-log query
+ * (`runningAutomationIdsForWorkspace`) — never from session status — so the badge
+ * cannot diverge from the automation list's own green dot.
  */
 export function countRunningOwners(workspacePath: string): Record<SessionOwnerKind, number> {
   const owners: Record<SessionOwnerKind, Set<string>> = {
@@ -216,6 +217,9 @@ export function countRunningOwners(workspacePath: string): Record<SessionOwnerKi
   }
   for (const row of listOwnedForWorkspace(workspacePath)) {
     if (!row.ownerKind || !row.ownerId) continue
+    // Automation owners are the single execution-log query's job; a running
+    // automation session on its own must never light the badge.
+    if (row.ownerKind === 'automation') continue
     if (!isRunning(row.vendorSessionId ?? row.c3Id)) continue
     owners[row.ownerKind].add(row.ownerId)
   }

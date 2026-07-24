@@ -768,6 +768,9 @@
         "toast": "Only todo intents can switch auto/manual mode"
       }
     },
+    "sessionActive": {
+      "tooltip": "A session is running for this intent"
+    },
     "meta": {
       "created": {
         "label": "Created:"

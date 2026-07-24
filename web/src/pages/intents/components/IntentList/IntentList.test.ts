@@ -55,6 +55,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     specApproveUser: null,
     specSessionId: null,
     intentSessionId: null,
+    sessionActive: false,
     ...overrides,
     id: overrides.id,
   }
@@ -270,5 +271,47 @@ describe('IntentList.vue — responsive header actions', () => {
     await w.vm.$nextTick()
 
     expect(w.find('.req-menu').exists()).toBe(false)
+  })
+})
+
+describe('IntentList.vue — active-session pulsing dot', () => {
+  it('renders the dot for a draft intent when sessionActive is true', () => {
+    const w = mountList([intent({ id: 'd', status: 'draft', sessionActive: true })])
+    expect(w.find('.req-session-active').exists()).toBe(true)
+  })
+
+  it('renders the dot for a todo intent when sessionActive is true', () => {
+    const w = mountList([intent({ id: 't', status: 'todo', sessionActive: true })])
+    expect(w.find('.req-session-active').exists()).toBe(true)
+  })
+
+  it('hides the dot when sessionActive is false (todo)', () => {
+    const w = mountList([intent({ id: 't', status: 'todo', sessionActive: false })])
+    expect(w.find('.req-session-active').exists()).toBe(false)
+  })
+
+  it('shows the dot alongside the status badge and the running dev label (in_progress)', () => {
+    const w = mountList([
+      intent({ id: 'ip', status: 'in_progress', runStatus: 'running', sessionActive: true }),
+    ])
+    expect(w.find('.req-session-active').exists()).toBe(true)
+    expect(w.find('.req-status').exists()).toBe(true)
+    expect(w.find('.req-run-status.running').exists()).toBe(true)
+  })
+
+  it('co-exists with a dangling dev label (in_progress, spec/intent session running)', () => {
+    const w = mountList([
+      intent({ id: 'ip', status: 'in_progress', runStatus: 'dangling', sessionActive: true }),
+    ])
+    expect(w.find('.req-session-active').exists()).toBe(true)
+    expect(w.find('.req-run-status.dangling').exists()).toBe(true)
+  })
+
+  it('shows the status badge but no dot when sessionActive is false (in_progress dangling)', () => {
+    const w = mountList([
+      intent({ id: 'ip', status: 'in_progress', runStatus: 'dangling', sessionActive: false }),
+    ])
+    expect(w.find('.req-session-active').exists()).toBe(false)
+    expect(w.find('.req-run-status.dangling').exists()).toBe(true)
   })
 })

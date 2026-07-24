@@ -36,6 +36,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     specApproveUser: null,
     specSessionId: null,
     intentSessionId: null,
+    sessionActive: false,
     ...overrides,
     id: overrides.id,
   }

@@ -40,6 +40,7 @@ function makeReq(overrides: Partial<Intent> = {}): Intent {
     updatedAt: 2000,
     completedAt: null,
     runStatus: 'idle',
+    sessionActive: false,
     ...overrides,
   }
 }

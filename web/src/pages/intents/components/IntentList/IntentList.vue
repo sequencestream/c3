@@ -19,6 +19,7 @@ import {
   reqRunStatusLabel,
   rowVisibility,
   showRunStatus,
+  showSessionActive,
   sliceTerminated,
   statusLabel,
   TERMINAL_PAGE_SIZE,
@@ -357,6 +358,13 @@ function automateToneClass(r: Intent): string {
             <span v-if="showRunStatus(r.runStatus)" class="req-run-status" :class="r.runStatus">{{
               reqRunStatusLabel(r.runStatus)
             }}</span>
+            <span
+              v-if="showSessionActive(r.sessionActive)"
+              class="req-session-active"
+              :title="t('intent.sessionActive.tooltip')"
+              :aria-label="t('intent.sessionActive.tooltip')"
+              role="img"
+            ></span>
             <button
               type="button"
               class="req-automate"

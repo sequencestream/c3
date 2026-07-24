@@ -30,6 +30,7 @@ function dep(overrides: Partial<Intent> = {}): Intent {
     specApproveUser: null,
     specSessionId: null,
     intentSessionId: null,
+    sessionActive: false,
     ...overrides,
   }
 }

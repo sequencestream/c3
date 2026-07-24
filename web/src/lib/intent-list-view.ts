@@ -52,6 +52,16 @@ export function showRunStatus(s: IntentRunStatus): boolean {
   return s === 'running' || s === 'dangling'
 }
 
+/**
+ * 「关联会话进行中」绿点的显隐,只读取服务端派生的 `sessionActive`,
+ * 不附加 `status` 或 `runStatus` 条件——绿点是「意图会话/Spec 会话/开发会话
+ * 三者任一此刻有 turn 在跑」的独立叠加信号,可与状态徽标及 `.req-run-status`
+ * 的 running/dangling 标签并存。
+ */
+export function showSessionActive(active: boolean): boolean {
+  return active
+}
+
 /** 标题栏切换按钮的文案与 title,反映「点击后将切换到的」目标态。 */
 export interface ToggleLabel {
   icon: string

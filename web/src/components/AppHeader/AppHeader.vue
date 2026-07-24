@@ -6,8 +6,11 @@
  * viewMode(工作区/工作台)切换器位于顶栏最左侧,为两个显示器图标按钮(工作区=屏内
  * 三横条;工作台=屏内会话气泡),生效模式蓝、另一个灰;桌面与移动端共用同一份图标标记。
  * - workspace 模式:左侧切换器 + WS switcher + 项目配置,中间标签页,右侧设置/账户/状态/许可
+ *   工作台图标(切换器右侧)在 workcenterBadgeCount>0 时挂待处理角标,让用户不进工作台也能感知。
  * - workcenter 模式:左侧切换器 + 工作台页面入口(总览 / 用户通知,tab 语义),中间区域隐藏,右侧同上
  *   工作台页面入口占据原「工作台」标题位置;待处理事件角标(workcenterBadgeCount)挂在「用户通知」入口上。
+ *   此模式下工作台切换图标不再挂角标(改由「用户通知」入口承载),避免同页重复。
+ * 待处理角标全部同源 workcenterBadgeCount(与「用户通知」入口共用),0/缺省不渲染,桌面 + 移动端同步。
  * 移动端底部 tab 与桌面共用 tabs 数据(工作台入口已上移到顶部切换器)。
  *
  * tab 角标:数值由上层(HEADER_TABS)给定,本组件只负责渲染 —— badgeCount 为 0/缺省时
@@ -224,6 +227,20 @@ function selectTab(tab: HeaderTab): void {
               d="M7.5 7.5h9a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1h-4.5l-2.5 2v-2H7.5a1 1 0 0 1-1-1V8.5a1 1 0 0 1 1-1Z"
             />
           </svg>
+          <!-- 工作台图标待处理角标:仅 workspace 模式的 workcenter 图标承载,让用户不进
+               工作台也能感知待处理数;与「用户通知」入口同源(workcenterBadgeCount),0/缺省不渲染 -->
+          <span
+            v-if="
+              mode.key === 'workcenter' &&
+              viewMode === 'workspace' &&
+              (workcenterBadgeCount ?? 0) > 0
+            "
+            class="tab-badge"
+            :aria-label="
+              t('dashboard.nav.notificationsBadgeAriaLabel', { count: workcenterBadgeCount ?? 0 })
+            "
+            >{{ workcenterBadgeCount }}</span
+          >
         </button>
       </div>
 
@@ -417,6 +434,19 @@ function selectTab(tab: HeaderTab): void {
               d="M7.5 7.5h9a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1h-4.5l-2.5 2v-2H7.5a1 1 0 0 1-1-1V8.5a1 1 0 0 1 1-1Z"
             />
           </svg>
+          <!-- 工作台图标待处理角标(移动端顶栏):与桌面同源、同条件,0/缺省不渲染 -->
+          <span
+            v-if="
+              mode.key === 'workcenter' &&
+              viewMode === 'workspace' &&
+              (workcenterBadgeCount ?? 0) > 0
+            "
+            class="tab-badge"
+            :aria-label="
+              t('dashboard.nav.notificationsBadgeAriaLabel', { count: workcenterBadgeCount ?? 0 })
+            "
+            >{{ workcenterBadgeCount }}</span
+          >
         </button>
       </div>
 
@@ -566,6 +596,27 @@ function selectTab(tab: HeaderTab): void {
 }
 .vm-icon {
   display: block;
+}
+
+/* 工作台切换图标待处理角标:锚定图标按钮右上角(.vm-toggle-btn 自带 position:relative)。
+   图标无 .tab-label 文本包装,不适用全局 .header-tab .tab-badge 定位,故此处自包含定位;
+   红底白字/尺寸/圆角与顶栏其它 .tab-badge 视觉统一。 */
+.vm-toggle-btn .tab-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1;
+  color: #fff;
+  background: var(--c-danger, #e53e3e);
+  border-radius: 50%;
 }
 
 /* 工作台页面入口(总览 / 用户通知):复用 .header-tabs/.header-tab 视觉,与工作区

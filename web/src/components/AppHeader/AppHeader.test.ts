@@ -296,13 +296,85 @@ describe('AppHeader.vue — 顶部 viewMode 图标切换器', () => {
     expect(w.emitted('update:viewMode')).toEqual([['workspace']])
   })
 
-  it('viewMode 图标不再承载工作台待处理徽标(已迁移到「用户通知」入口)', () => {
+  it('不再使用旧版 .vm-badge 实现(角标改用 .tab-badge,见工作台切换图标角标 describe)', () => {
     const w = mount(AppHeader, { props: baseProps })
     expect(w.find('.vm-badge').exists()).toBe(false)
     const wc = mount(AppHeader, {
       props: { ...baseProps, viewMode: 'workcenter', workcenterPage: 'dashboard' },
     })
     expect(wc.find('.vm-badge').exists()).toBe(false)
+  })
+})
+
+describe('AppHeader.vue — 工作台切换图标待处理角标', () => {
+  // workspace 模式下,workcenter 切换图标(vm-toggle-btn[1])承载 workcenterBadgeCount 角标,
+  // 让用户不进工作台也能感知待处理数;workcenter 模式改由「用户通知」入口承载,图标不重复挂。
+  function toggleBadge(w: ReturnType<typeof mount>, rowSelector: string) {
+    // 切换器两枚按钮:索引 0 = 工作区,索引 1 = 工作台(workcenter)。
+    return w.findAll(`${rowSelector} .vm-toggle-btn`)[1].find('.tab-badge')
+  }
+
+  it('workspace 模式 badgeCount>0 → 桌面工作台图标渲染角标,文本正确', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 4 } })
+    const badge = toggleBadge(w, '.desktop-header-row')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toBe('4')
+  })
+
+  it('workspace 模式 badgeCount>0 → 移动端顶栏工作台图标渲染角标,文本正确', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 4 } })
+    const badge = toggleBadge(w, '.mobile-header-row')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toBe('4')
+  })
+
+  it('工作区图标(索引 0)始终不挂角标', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 4 } })
+    expect(w.findAll('.desktop-header-row .vm-toggle-btn')[0].find('.tab-badge').exists()).toBe(
+      false,
+    )
+    expect(w.findAll('.mobile-header-row .vm-toggle-btn')[0].find('.tab-badge').exists()).toBe(
+      false,
+    )
+  })
+
+  it('角标带 i18n aria-label,含待处理计数', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 4 } })
+    const aria = toggleBadge(w, '.desktop-header-row').attributes('aria-label')
+    expect(aria).toBeDefined()
+    expect(aria).toContain('4')
+  })
+
+  it('badgeCount 为 0 → 桌面/移动端工作台图标均不渲染角标', () => {
+    const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 0 } })
+    expect(toggleBadge(w, '.desktop-header-row').exists()).toBe(false)
+    expect(toggleBadge(w, '.mobile-header-row').exists()).toBe(false)
+  })
+
+  it('badgeCount 缺省(undefined)→ 均不渲染角标', () => {
+    const { workcenterBadgeCount: _omit, ...rest } = baseProps
+    const w = mount(AppHeader, { props: rest })
+    expect(toggleBadge(w, '.desktop-header-row').exists()).toBe(false)
+    expect(toggleBadge(w, '.mobile-header-row').exists()).toBe(false)
+  })
+
+  it('workcenter 模式下工作台图标不挂角标(改由「用户通知」入口承载,避免重复)', () => {
+    const w = mount(AppHeader, {
+      props: {
+        ...baseProps,
+        viewMode: 'workcenter' as const,
+        workcenterPage: 'dashboard' as const,
+        workcenterBadgeCount: 4,
+      },
+    })
+    expect(toggleBadge(w, '.desktop-header-row').exists()).toBe(false)
+    expect(toggleBadge(w, '.mobile-header-row').exists()).toBe(false)
+  })
+
+  it('计数变化后角标无需重挂载即更新', async () => {
+    const w = mount(AppHeader, { props: { ...baseProps, workcenterBadgeCount: 4 } })
+    await w.setProps({ workcenterBadgeCount: 7 })
+    expect(toggleBadge(w, '.desktop-header-row').text()).toBe('7')
   })
 })
 

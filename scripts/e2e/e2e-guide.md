@@ -229,6 +229,33 @@ no `Claude Code-credentials` item in the login Keychain.
   and replied; 1 = still not logged in / no reply / structure guard failed; 5 =
   a precondition was unmet (SKIP). Override the model with `C3_E2E_MODEL`.
 
+## Sandbox codex subscription (DIRECT) login test (macOS)
+
+The codex sibling of the claude keychain test. A subscription (`system`-mode)
+codex runs in DIRECT mode and authenticates from `$CODEX_HOME/auth.json` (the
+ChatGPT OAuth token) — but the sandbox's isolated per-workspace CODEX_HOME has
+none, so codex hit `wss://api.openai.com/v1/responses` with no bearer and failed
+`401 Missing bearer or basic authentication`. The fix points CODEX_HOME at the
+HOST `~/.codex` (which holds auth.json), mounts it, and freezes the session's
+store scope to `host` so rollouts/resume/transcript reads all resolve there.
+
+Generated through the REAL `createSandboxWrapper` (via `tsx`, `allowKeychain: true`):
+
+- **Structure guard:** `--env 'CODEX_HOME=<host ~/.codex>'` + `-v '<host ~/.codex>:rw'`,
+  and NO isolated `sandbox-home` mount.
+- **Behaviour guard:** the real `codex exec` run must reply (`PONG`) and must NOT
+  print `401` / `Missing bearer`.
+
+Needs a real subscription login (`~/.codex/auth.json`) + outbound network, so it
+is NOT CI-safe and NOT in the `pnpm e2e` suite. Preconditions unmet → SKIP (exit
+5): non-macOS, no `codex` CLI, no arapuca, or no `~/.codex/auth.json`. OpenAI's
+transient geo-block of a proxy exit IP (`Unable to load site`) is retried once and,
+if it persists, reported as SKIP (auth already proven, block is environmental).
+
+- `node scripts/e2e/e2e-sandbox-codex-subscription-test.mjs` → exit 0 when logged
+  in and replied; 1 = still 401 / no reply / structure guard failed; 5 = a
+  precondition unmet or an OpenAI geo-block (SKIP).
+
 ## Sandbox vendor token test (real request through arapuca)
 
 Complements the token-free capability probe: uses a real agent from

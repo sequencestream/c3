@@ -517,8 +517,19 @@ export async function runViaDriver(
       bindPending(prev, sid)
       // Freeze the session→agent fact onto the agent that ran, pinning its vendor
       // AND transcript store scope for the session's life (ADR-0015). A sandbox
-      // run wrote into the sandbox vendor data root, so freeze `sandbox`.
-      freezeSessionAgent(prev, sid, agentId, workspacePath, rt.sandboxPaths ? 'sandbox' : 'host')
+      // run wrote into the sandbox vendor data root, so freeze `sandbox` — EXCEPT a
+      // system-mode codex, whose sandbox run authenticates from and writes into the
+      // HOST ~/.codex (see `codexSystemMode` in createSandboxWrapper), so its store
+      // is `host` even under the sandbox.
+      const codexSystemRun =
+        adapter.vendor === 'codex' && resolveAgent(agentId).configMode === 'system'
+      freezeSessionAgent(
+        prev,
+        sid,
+        agentId,
+        workspacePath,
+        rt.sandboxPaths && !codexSystemRun ? 'sandbox' : 'host',
+      )
       runId = sid
       eventBus.publish('run:bound', { prevId: prev, realId: sid, workspacePath })
     }

@@ -540,13 +540,19 @@ export async function launchRun(
                 // Freeze the session→agent fact onto the agent that actually ran,
                 // pinning its vendor AND transcript store scope for the session's
                 // life (ADR-0015). `rt.sandboxPaths` set ⇒ this run wrote into the
-                // sandbox vendor data root, so the transcript lives there.
+                // sandbox vendor data root, so the transcript lives there — EXCEPT a
+                // system-mode codex, whose sandbox run authenticates from and writes
+                // into the HOST ~/.codex (see `codexSystemMode` in
+                // createSandboxWrapper), so its store is `host` even under sandbox.
+                const codexSystemRun =
+                  resolveAgent(agentCfg.agentId).vendor === 'codex' &&
+                  resolveAgent(agentCfg.agentId).configMode === 'system'
                 freezeSessionAgent(
                   prev,
                   sid,
                   agentCfg.agentId,
                   workspacePath,
-                  rt.sandboxPaths ? 'sandbox' : 'host',
+                  rt.sandboxPaths && !codexSystemRun ? 'sandbox' : 'host',
                 )
                 runId = sid
                 if (!hasBound) {

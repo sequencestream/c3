@@ -396,6 +396,8 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     updatedAt: r.updated_at,
     completedAt: r.completed_at,
     runStatus: 'idle' as IntentRunStatus,
+    // Derived at send-time by enrichRunStatus from the live run registry.
+    sessionActive: false,
   }))
 }
 

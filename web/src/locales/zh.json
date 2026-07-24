@@ -768,6 +768,9 @@
         "toast": "仅待办状态的意图可切换自动/手动模式"
       }
     },
+    "sessionActive": {
+      "tooltip": "该意图有会话正在进行"
+    },
     "meta": {
       "created": {
         "label": "已创建:"

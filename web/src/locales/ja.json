@@ -769,6 +769,9 @@
         "toast": "ToDo状態の意図のみ自動/手動モードを切り替えられます"
       }
     },
+    "sessionActive": {
+      "tooltip": "この意図でセッションが実行中です"
+    },
     "meta": {
       "created": {
         "label": "作成:"

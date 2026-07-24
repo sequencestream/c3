@@ -203,7 +203,10 @@ stateDiagram-v2
   沟通会话(回放历史 + 恢复实时流)—— 包括在 WS 重连和整页刷新之后(RM-R4)。进入时服务端会
   **协调**每一条 `in_progress` 意图:检查工作会话的存活状态,对进程已死、且判定器根据最后 3 条
   消息确认为 `done` 的自动完成,并把剩余的标记为 `dangling`(RM-R18)。列表中的每条意图都携带一个
-  `runStatus` 字段,UI 可能将其渲染为一个徽标(running/dangling/idle)。
+  `runStatus` 字段,UI 可能将其渲染为一个徽标(running/dangling/idle)。此外每条意图还携带一个
+  发送时派生的 `sessionActive` 布尔:`intentSessionId`、`specSessionId`、`lastWorkSessionId` 三者任一
+  非空且被运行注册表 `isRunning` 判活即为真,覆盖三类会话、不受意图 `status` 限制(draft/todo 亦可为真),
+  与 `runStatus` 相互独立;UI 据此在行头渲染一个独立的闪动绿点,可与状态徽标及 running/dangling 标签共存。
 - **US-2 列表与筛选。** 列表展示每条意图(标题/摘要、P0–P3 徽标、状态、依赖提示),带一个状态
   过滤器(全部 + 每个状态);它会在保存/状态变化时实时刷新(RM-R6)。
 - **US-3 只读的细化聊天。** 右侧面板是一个独立的、带有自己系统 prompt 的智能体会话;它读取项目

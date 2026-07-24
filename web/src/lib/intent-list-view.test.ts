@@ -13,6 +13,7 @@ import {
   reqRunStatusLabel,
   rowVisibility,
   showRunStatus,
+  showSessionActive,
   sliceTerminated,
   statusLabel,
   TERMINAL_PAGE_SIZE,
@@ -46,6 +47,7 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     specApproveUser: null,
     specSessionId: null,
     intentSessionId: null,
+    sessionActive: false,
     ...overrides,
   }
 }
@@ -116,6 +118,16 @@ describe('showRunStatus', () => {
 
   it('idle 不应显示', () => {
     expect(showRunStatus('idle')).toBe(false)
+  })
+})
+
+describe('showSessionActive', () => {
+  it('sessionActive=true 时显示绿点', () => {
+    expect(showSessionActive(true)).toBe(true)
+  })
+
+  it('sessionActive=false 时不显示', () => {
+    expect(showSessionActive(false)).toBe(false)
   })
 })
 
@@ -535,6 +547,7 @@ describe('formatDependsOn', () => {
       updatedAt: 0,
       completedAt: null,
       runStatus: 'idle',
+      sessionActive: false,
       ...overrides,
     }
   }

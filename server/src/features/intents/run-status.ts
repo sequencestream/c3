@@ -58,22 +58,42 @@ export function clearJudgedSession(id: string): void {
 }
 
 /**
- * Enrich a intents list with the correct (derived) runStatus for each
- * in_progress item. Priority order:
- * 1. Process still running in the runtime registry → `running`.
- * 2. Cached from the most recent reconcile → `dangling` (or `idle` for
- *    auto-completed items whose status hasn't been re-read yet).
- * 3. Fallback → `idle` (no reconcile data — first entry or status changed).
+ * True when any of the intent's three session ids (intent / spec / work) is a
+ * non-null id the run registry reports as running. Short-circuit OR; missing,
+ * unknown, and stopped ids all count as inactive. Covers all statuses — unlike
+ * `runStatus`, it is not gated on `in_progress`.
+ */
+function deriveSessionActive(r: Intent): boolean {
+  return (
+    (!!r.intentSessionId && isRunning(r.intentSessionId)) ||
+    (!!r.specSessionId && isRunning(r.specSessionId)) ||
+    (!!r.lastWorkSessionId && isRunning(r.lastWorkSessionId))
+  )
+}
+
+/**
+ * Enrich a intents list at the send boundary (list / refresh / `intents`
+ * broadcast) so every send path derives identical fields:
+ *
+ * - `sessionActive` — always recomputed from the live registry for EVERY item
+ *   regardless of status (see {@link deriveSessionActive}). A transient liveness
+ *   signal, never stored or cached.
+ * - `runStatus` — only in_progress items are reconciled. Priority order:
+ *   1. Work-session process still running → `running`.
+ *   2. Cached from the most recent reconcile → `dangling` (or `idle` for
+ *      auto-completed items whose status hasn't been re-read yet).
+ *   3. Fallback → keep the item's own value (no reconcile data yet).
  *
  * Pure (ADR-0009 R4): read-only over its input, never writes the cache.
  */
 export function enrichRunStatus(items: Intent[]): Intent[] {
   return items.map((r) => {
-    if (r.status !== 'in_progress') return r
+    const sessionActive = deriveSessionActive(r)
+    if (r.status !== 'in_progress') return { ...r, sessionActive }
     if (r.lastWorkSessionId && isRunning(r.lastWorkSessionId))
-      return { ...r, runStatus: 'running' as const }
+      return { ...r, sessionActive, runStatus: 'running' as const }
     const cached = runStatusCache.get(r.id)
-    if (cached) return { ...r, runStatus: cached }
-    return r
+    if (cached) return { ...r, sessionActive, runStatus: cached }
+    return { ...r, sessionActive }
   })
 }

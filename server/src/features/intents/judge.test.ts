@@ -69,6 +69,7 @@ const req: Intent = {
   updatedAt: 1,
   completedAt: 0,
   runStatus: 'idle',
+  sessionActive: false,
 }
 
 function judge(lastMessage: string) {

@@ -26,7 +26,7 @@ web/src/
 │   └── share-actions.ts                            # installShareActions():三处标题栏「分享」按钮的统一动作(shareLink({kind,workspaceId,id,title,typeLabel}))——读 serverSettings.baseUrl、经 lib/share-link.buildShareText 拼「[类型] 标题\n<baseUrl>/#/<kind>/<workspaceId>/<id>」、写剪贴板、成功 toast;baseUrl 未配置改弹「去系统设置填写」提示且不写剪贴板
 │
 ├── components/                                      # 跨页面通用组件
-│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏与移动端底栏共用 HEADER_TABS;基础顺序=需求/讨论/自动化/代码,服务端 showSessionsPage=true 时才在代码后追加会话(含六类运行中数角标),未知/关闭时两端均不渲染会话入口。意图/讨论/自动化三个 tab 各带「进行中条目数」角标(按 owner 去重,0 不渲染,纯展示无点击交互,aria-label 取该 tab 的 badgeAriaLabel、缺省退回会话文案)。整行最左为 viewMode 工作区/工作台两图标切换器;工作台模式显示总览/用户通知入口及待处理角标;右侧保留项目配置/系统设置/账户/连接状态、升级提示与许可状态菜单;移动顶部使用同一模式切换和工作区/工作台入口
+│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏与移动端底栏共用 HEADER_TABS;基础顺序=需求/讨论/自动化/代码,服务端 showSessionsPage=true 时才在代码后追加会话(含六类运行中数角标),未知/关闭时两端均不渲染会话入口。意图/讨论/自动化三个 tab 各带「进行中条目数」角标(按 owner 去重,0 不渲染,纯展示无点击交互,aria-label 取该 tab 的 badgeAriaLabel、缺省退回会话文案)。整行最左为 viewMode 工作区/工作台两图标切换器;工作台模式显示用户通知/总览入口(用户通知在前,为默认页)及待处理角标;右侧保留项目配置/系统设置/账户/连接状态、升级提示与许可状态菜单;移动顶部使用同一模式切换和工作区/工作台入口
 │   ├── BaseDropdown/BaseDropdown.vue                # 标准下拉框:替代原生 select,支持键盘导航、多选高亮、点击外部关闭
 │   ├── ChoiceInput/ChoiceInput.vue                 # 横向选项 + 「其他」手动输入:已知取值列为可点击的横向分段按钮(本地化 label,hover 显示原始 value),末尾「其他」按钮仅在被选中(或当前值不在已知列表内)时展开手动输入框;用于 Automation 表单的事件类型/状态/元数据条件取值等「已知值仅作建议、允许任意自定义值」场景
 │   ├── ChatColumn/ChatColumn.vue                   # 复用聊天列:五区块(标题栏/消息/输入框/状态栏/task 面板)按 showTitleBar/showMessages/showInput/showStatusBar/showTaskPanel props 可显隐,供会话页/意图会话 tab/意图详情两会话 tab 三处复用;不持有会话状态(绑定哪个会话由控制层单一活动会话决定);show-mode 控模式下拉、always-title 控无会话时是否仍渲染标题栏;sourceLabel 透传给标题栏溯源按钮(仅会话页传,意图侧复用不传)、open-source 上抛;showShare 透传给标题栏分享按钮(仅会话页 Works 传 true)、share 上抛;title-action 具名槽转发到 SessionTitleBar 的 action 槽(Codes 内嵌会话用它渲染「+ 新建」/「↻ 重置」按钮);prefill 经 defineExpose 透传
@@ -52,7 +52,7 @@ web/src/
 │   └── WorkspaceSwitcher/WorkspaceSwitcher.vue     # 顶部栏最左工作区切换器:触发区仅显示当前工作区名称;下拉每行名称下方以小号次级字显示完整绝对路径(仅展示、用于区分同名工作区,身份仍是服务端不透明 workspaceId),面板宽度加倍;支持新增(InputDialog 输入路径)/选择/移除(ConfirmDialog danger 二次确认),内含 popover;增删入口受 isAdmin 门控;「新增」是唯一让绝对路径进入系统作身份的入口
 │
 ├── pages/                                           # 各功能页面(容器页 + 页内子组件)
-│   ├── workcenter/                                  # 工作台页(顶层 view-mode;总览 / 用户通知 页面入口已上移到 AppHeader 顶栏,App.vue 持有 workcenterPage 态并据此仅渲染对应页面,内容区不再有页内二级导航)
+│   ├── workcenter/                                  # 工作台页(顶层 view-mode;用户通知 / 总览 页面入口已上移到 AppHeader 顶栏,用户通知在前且为默认页,App.vue 持有 workcenterPage 态并据此仅渲染对应页面,内容区不再有页内二级导航)
 │   │   ├── WorkCenter.vue                           # 「用户通知」页:左栏“用户通知消息”标题 + 状态下拉(all/todo/done/canceled/auto,默认 all)/列表 + 详情两栏,切换筛选重置 20 条分页并按最后一行时间游标加载更多,查看纯通知 todo 自动完成;移动端经 MobileStack 退化为 列表→详情 两级 drill-down(点事件行整屏切详情、顶部工具栏返回回列表,返回保留选中高亮/筛选值;mobileActiveKey 显式态,select 置 detail、back/筛选变更置 list,active-token 用事件 id)
 │   │   └── components/
 │   │       ├── EventList.vue                        # 事件列表:右侧状态徽标(含 auto)和 todo 标记完成、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、会话类型图标、时间、选中态与加载更多

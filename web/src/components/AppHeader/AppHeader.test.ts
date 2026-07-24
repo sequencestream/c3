@@ -318,7 +318,7 @@ describe('AppHeader.vue — 工作台页面入口(总览 / 用户通知)', () =>
   it('工作台模式:桌面顶栏渲染两个页面入口且不出现「工作台」文字标题', () => {
     const w = mount(AppHeader, { props: wcProps })
     const tabs = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
-    expect(tabs.map((t) => t.text())).toEqual(['Dashboard', 'Notifications'])
+    expect(tabs.map((t) => t.text())).toEqual(['Notifications', 'Dashboard'])
     expect(w.text()).not.toContain('Workcenter')
   })
 
@@ -333,34 +333,36 @@ describe('AppHeader.vue — 工作台页面入口(总览 / 用户通知)', () =>
     expect(nav.attributes('role')).toBe('tablist')
     expect(nav.attributes('aria-label')).toBe('Workcenter pages')
     const tabs = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
-    expect(tabs[0].classes()).toContain('active')
-    expect(tabs[0].attributes('aria-selected')).toBe('true')
-    expect(tabs[1].attributes('aria-selected')).toBe('false')
+    // 页签顺序为 Notifications(0)、Dashboard(1);wcProps 当前页为 dashboard → 选中项为索引 1。
+    expect(tabs[1].classes()).toContain('active')
+    expect(tabs[1].attributes('aria-selected')).toBe('true')
+    expect(tabs[0].attributes('aria-selected')).toBe('false')
   })
 
   it('当前页跟随 workcenterPage(notifications)', () => {
     const w = mount(AppHeader, { props: { ...wcProps, workcenterPage: 'notifications' } })
     const tabs = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
-    expect(tabs[0].attributes('aria-selected')).toBe('false')
-    expect(tabs[1].classes()).toContain('active')
-    expect(tabs[1].attributes('aria-selected')).toBe('true')
+    // Notifications 为索引 0,当前页为 notifications → 选中项为索引 0。
+    expect(tabs[1].attributes('aria-selected')).toBe('false')
+    expect(tabs[0].classes()).toContain('active')
+    expect(tabs[0].attributes('aria-selected')).toBe('true')
   })
 
   it('点击入口 → emit select-workcenter-page(key)', async () => {
     const w = mount(AppHeader, { props: wcProps })
-    await w.findAll('.desktop-header-row .wc-page-nav .header-tab')[1].trigger('click')
+    await w.findAll('.desktop-header-row .wc-page-nav .header-tab')[0].trigger('click')
     expect(w.emitted('select-workcenter-page')).toEqual([['notifications']])
   })
 
   it('移动端顶栏同样渲染两个页面入口', () => {
     const w = mount(AppHeader, { props: wcProps })
     const tabs = w.findAll('.mobile-header-row .wc-page-nav .header-tab')
-    expect(tabs.map((t) => t.text())).toEqual(['Dashboard', 'Notifications'])
+    expect(tabs.map((t) => t.text())).toEqual(['Notifications', 'Dashboard'])
   })
 
   it('移动端点击入口 → emit select-workcenter-page(key)', async () => {
     const w = mount(AppHeader, { props: wcProps })
-    await w.findAll('.mobile-header-row .wc-page-nav .header-tab')[1].trigger('click')
+    await w.findAll('.mobile-header-row .wc-page-nav .header-tab')[0].trigger('click')
     expect(w.emitted('select-workcenter-page')).toEqual([['notifications']])
   })
 })
@@ -375,10 +377,11 @@ describe('AppHeader.vue — 「用户通知」入口待处理数角标', () => {
   it('badgeCount>0 → 「用户通知」入口渲染角标(桌面 + 移动端),文本正确', () => {
     const w = mount(AppHeader, { props: { ...wcProps, workcenterBadgeCount: 2 } })
     const desktop = w.findAll('.desktop-header-row .wc-page-nav .header-tab')
-    expect(desktop[0].find('.tab-badge').exists()).toBe(false)
-    expect(desktop[1].find('.tab-badge').text()).toBe('2')
+    // Notifications 为索引 0 携带角标,Dashboard 为索引 1 无角标。
+    expect(desktop[1].find('.tab-badge').exists()).toBe(false)
+    expect(desktop[0].find('.tab-badge').text()).toBe('2')
     const mobile = w.findAll('.mobile-header-row .wc-page-nav .header-tab')
-    expect(mobile[1].find('.tab-badge').text()).toBe('2')
+    expect(mobile[0].find('.tab-badge').text()).toBe('2')
   })
 
   it('角标带 i18n aria-label,含待处理计数', () => {

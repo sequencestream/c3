@@ -98,6 +98,23 @@ describe('createState — HEADER_TABS sessions visibility', () => {
   })
 })
 
+// 工作台首个前端状态的默认活动页:待办性质的「用户通知」优先,免去进入后再点一次。
+describe('createState — workcenterPage 初始值', () => {
+  function makeState() {
+    const deps = {
+      t: (key: string) => key,
+      modeLabel: (code: string) => code,
+      auth: { status: ref('unknown') },
+    } as unknown as StateDeps
+    return createState(deps)
+  }
+
+  it('新建状态默认停在「用户通知」而非「总览」', () => {
+    const s = makeState()
+    expect(s.workcenterPage.value).toBe('notifications')
+  })
+})
+
 // 顶部「意图/讨论/自动化」角标:各自独立读 ownerRunningCounts(服务端按 owner 去重后的
 // 条目数),0 时上层 `v-if="tab.badgeCount"` 不渲染;无障碍文案按 tab 生成而非共用会话文案。
 describe('createState — HEADER_TABS 进行中条目角标', () => {

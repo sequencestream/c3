@@ -33,6 +33,12 @@ export function getSpecsBase(workspacePath: string): string {
  * It is NOT the host `~/.codex`: kept isolated under c3 home to preserve
  * deny-by-default (never exposes host credentials to the sandbox). A daily
  * janitor prunes rollouts older than the workspace's retention window.
+ *
+ * This isolated home is for CUSTOM (relay) codex only. A subscription
+ * (`system`-mode) codex authenticates in DIRECT mode from `$CODEX_HOME/auth.json`,
+ * which this dir lacks — so the sandbox wrapper points its CODEX_HOME at the HOST
+ * `~/.codex` instead (see `codexSystemMode` in createSandboxWrapper), and those
+ * sessions freeze their store scope to `host`, never reaching here.
  */
 export function getSandboxCodexHome(workspacePath: string): string {
   return join(c3HomeDir(), 'sandbox-home', projectDirName(workspacePath), '.codex')

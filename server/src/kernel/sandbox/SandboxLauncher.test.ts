@@ -15,6 +15,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { join } from 'node:path'
 import { tmpdir, userInfo } from 'node:os'
+import { hostCodexHome } from '../config/workspace-path.js'
 import {
   existsSync,
   rmSync,
@@ -538,7 +539,27 @@ describe('createSandboxWrapper — keychain passthrough', () => {
     }
   })
 
-  it('keeps the vendor isolation, data root and network model intact in system mode', () => {
+  it('keeps a custom (relay) codex on the isolated sandbox home + relay-token credential', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
+    try {
+      const paths = resolvePaths(workspaceRoot, worktree)
+      const script = readFileSync(createSandboxWrapper(paths, 'codex', tmp, CUSTOM), 'utf-8')
+      expect(script).toContain('--seccomp baseline')
+      // Custom codex authenticates via the relay token; its store stays isolated.
+      expect(script).toContain(`--env 'CODEX_HOME=${paths.codexHome}'`)
+      expect(script).toContain(`-v '${paths.codexHome}:rw'`)
+      expect(script).not.toContain(`CODEX_HOME=${hostCodexHome()}`)
+      expect(script).toContain(`--env "CODEX_API_KEY=$CODEX_API_KEY"`)
+      expect(script).not.toContain('ANTHROPIC_')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  // System (subscription) codex authenticates in DIRECT mode from
+  // `$CODEX_HOME/auth.json`; the isolated sandbox home has none (401), so it must
+  // point CODEX_HOME at the HOST ~/.codex and mount it — never the sandbox home.
+  it('points a system-mode codex at the HOST ~/.codex (auth.json lives there)', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
     try {
       const paths = resolvePaths(workspaceRoot, worktree)
@@ -547,13 +568,12 @@ describe('createSandboxWrapper — keychain passthrough', () => {
         'utf-8',
       )
       expect(script).toContain('--seccomp baseline')
-      expect(script).toContain(`--env 'CODEX_HOME=${paths.codexHome}'`)
-      expect(script).toContain(`-v '${paths.codexHome}:rw'`)
+      expect(script).toContain(`--env 'CODEX_HOME=${hostCodexHome()}'`)
+      expect(script).toContain(`-v '${hostCodexHome()}:rw'`)
+      // The isolated per-workspace sandbox home is NOT used for system-mode codex.
+      expect(script).not.toContain(`${paths.codexHome}`)
       expect(script).toContain(`-v '${paths.executionRoot}:rw'`)
-      expect(script).toContain(`-v '${paths.workspaceRoot}:ro'`)
       expect(script).toContain(`-v '${paths.specsBase}:rw'`)
-      // Vendor credential isolation is unaffected by the keychain flag.
-      expect(script).toContain(`--env "CODEX_API_KEY=$CODEX_API_KEY"`)
       expect(script).not.toContain('ANTHROPIC_')
     } finally {
       rmSync(tmp, { recursive: true, force: true })

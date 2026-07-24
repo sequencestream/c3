@@ -58,6 +58,7 @@ import {
   getSpecsBase,
   getSandboxCodexHome,
   getSandboxClaudeConfigDir,
+  hostCodexHome,
 } from '../../kernel/config/workspace-path.js'
 import type { SysExtraMount, SessionKind } from '@ccc/shared/protocol'
 import type {
@@ -614,13 +615,33 @@ export function createSandboxWrapper(
   // inside the mounted dir.
   const claudeGlobalConfig = join(homedir(), '.claude.json')
   const mountClaudeGlobalConfig = claudeKeychainMode && existsSync(claudeGlobalConfig)
+  // Codex's mirror of the keychain problem. A subscription (`system`-mode) codex
+  // authenticates in DIRECT mode from `$CODEX_HOME/auth.json` (the ChatGPT OAuth
+  // token) — but the sandbox's isolated per-workspace CODEX_HOME (built for
+  // deny-by-default + rollout persistence) has no auth.json, so codex hits
+  // `wss://api.openai.com/v1/responses` with no bearer and fails 401. Unlike
+  // claude there is no keychain and no env flip: codex reads auth straight from
+  // `$CODEX_HOME`, so the fix is to point CODEX_HOME at the HOST `~/.codex` (which
+  // holds auth.json) and mount it — the session's store scope is frozen `host` to
+  // match, so rollouts + resume + transcript reads all resolve there. A custom
+  // (relay) codex keeps the isolated sandbox home + relay-token `CODEX_API_KEY`,
+  // never exposing the host codex store.
+  const codexSystemMode = isCodex && opts.allowKeychain
   // The vendor transcript/config data root (resolved + ensured by resolvePaths),
   // exported so the CLI writes/reads its native store there and mounted rw since
   // it lives outside the execution root's grant. codex → persistent per-workspace
   // CODEX_HOME (thread rollouts survive cleanup for the next turn's `resume`);
   // claude → the HOST CLAUDE_CONFIG_DIR (transcript stays host-readable). Scoped
   // per vendor so a codex run never mounts the claude dir and vice-versa.
-  const dataRoot = isCodex ? paths.codexHome : isClaude ? paths.claudeConfigDir : null
+  // System-mode codex uses the HOST ~/.codex (auth.json lives there); custom codex
+  // keeps the isolated per-workspace sandbox home.
+  const dataRoot = isCodex
+    ? codexSystemMode
+      ? hostCodexHome()
+      : paths.codexHome
+    : isClaude
+      ? paths.claudeConfigDir
+      : null
   const dataRootEnvVar = isCodex ? 'CODEX_HOME' : isClaude ? 'CLAUDE_CONFIG_DIR' : null
   // Claude Code hardcodes its per-user runtime dir at /tmp/claude-<uid>
   // (shell-snapshots / IPC). It ignores TMPDIR and arapuca locks TMPDIR, so the

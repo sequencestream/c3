@@ -117,8 +117,12 @@ class InputStream {
  * mode, and a background `Agent` (`run_in_background: true`) is a detached
  * teammate that reports back asynchronously. A plain (foreground) `Agent`
  * completes within the turn and does NOT keep the session alive.
+ *
+ * Detection is driven solely by TOP-LEVEL session tool use, so it is unaffected by
+ * the SDK 0.3.217 default subagent-spawn depth cut (5 → 1): c3 never relied on a
+ * subagent spawning a grandchild to form a team.
  */
-function isTeamTool(name: string, input: unknown): boolean {
+export function isTeamTool(name: string, input: unknown): boolean {
   if (name === 'TeamCreate' || name === 'SendMessage') return true
   if (name === 'Agent') {
     return (input as { run_in_background?: unknown } | null)?.run_in_background === true

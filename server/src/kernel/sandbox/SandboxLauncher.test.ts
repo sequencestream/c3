@@ -14,7 +14,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { tmpdir, userInfo } from 'node:os'
 import {
   existsSync,
   rmSync,
@@ -555,6 +555,49 @@ describe('createSandboxWrapper — keychain passthrough', () => {
       // Vendor credential isolation is unaffected by the keychain flag.
       expect(script).toContain(`--env "CODEX_API_KEY=$CODEX_API_KEY"`)
       expect(script).not.toContain('ANTHROPIC_')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  // macOS keychain path: setting CLAUDE_CONFIG_DIR would flip Claude Code off the
+  // Keychain to a file store that does not exist, so a system-mode claude run on
+  // macOS must NOT pin it, and must forward the login name the keychain lookup is
+  // keyed by (arapuca strips USER/LOGNAME to empty).
+  it('drops CLAUDE_CONFIG_DIR and forwards USER/LOGNAME for a macOS system-mode claude run', () => {
+    if (process.platform !== 'darwin') return
+    const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
+    try {
+      const paths = resolvePaths(workspaceRoot, worktree)
+      const script = readFileSync(
+        createSandboxWrapper(paths, 'claude', tmp, { allowKeychain: true }),
+        'utf-8',
+      )
+      // CLAUDE_CONFIG_DIR must be absent — its presence is exactly what breaks
+      // keychain auth — but the config dir is still mounted rw for transcripts.
+      expect(script).not.toContain('CLAUDE_CONFIG_DIR')
+      expect(script).toContain(`-v '${paths.claudeConfigDir}:rw'`)
+      // The login name (not a secret) is inlined so the keychain lookup resolves.
+      const name = process.env.USER || process.env.LOGNAME || userInfo().username
+      expect(script).toContain(`--env 'USER=${name}'`)
+      expect(script).toContain(`--env 'LOGNAME=${name}'`)
+      expect(script).toContain('--allow-keychain')
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps CLAUDE_CONFIG_DIR and injects no USER/LOGNAME for a custom (API-key) claude run', () => {
+    if (process.platform !== 'darwin') return
+    const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
+    try {
+      const paths = resolvePaths(workspaceRoot, worktree)
+      const script = readFileSync(createSandboxWrapper(paths, 'claude', tmp, CUSTOM), 'utf-8')
+      // A custom agent's HOME is a throwaway temp dir, so it genuinely needs the
+      // explicit CLAUDE_CONFIG_DIR; keychain-only forwarding stays off.
+      expect(script).toContain(`--env 'CLAUDE_CONFIG_DIR=${paths.claudeConfigDir}'`)
+      expect(script).not.toContain("--env 'USER=")
+      expect(script).not.toContain('LOGNAME=')
     } finally {
       rmSync(tmp, { recursive: true, force: true })
     }

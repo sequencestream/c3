@@ -18,10 +18,12 @@
  * 3. `createSandboxWrapper(paths, entryCommand, tmpDir, opts)` — writes a POSIX
  *    shell script that `exec`s `<arapucaBin> run -v …:ro -v …:rw -- <cli> "$@"`. The
  *    path is passed to the vendor SDK as `pathToClaudeCodeExecutable` /
- *    `codexPathOverride`. The SDK spawns it as a normal subprocess; the child
- *    inherits the SDK-provided env (arapuca strips only LD_/DYLD_/ARAPUCA_
- *    prefixes) — so no env-file is needed. `opts.allowKeychain` carries the
- *    resolved agent's auth mode; host proxy variables are detected here.
+ *    `codexPathOverride`. The SDK spawns it as a normal subprocess. arapuca is env
+ *    deny-by-default: it drops the parent env (keeping only the vars it manages,
+ *    HOME/PATH) and forwards ONLY what the wrapper passes as `--env KEY=VALUE`, so
+ *    the run's provider credential, the vendor data-root, and (for the macOS
+ *    keychain path) the login name are each forwarded explicitly. `opts.allowKeychain`
+ *    carries the resolved agent's auth mode; host proxy variables are detected here.
  *
  * Host prerequisite: arapuca ≥ 0.2.5 (`--allow-proxy-env` / `--allow-keychain`).
  * c3 does no version negotiation — an older binary rejects the unknown flag and
@@ -45,9 +47,10 @@ import {
   rmSync,
   realpathSync,
   accessSync,
+  existsSync,
   constants as fsConstants,
 } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, userInfo } from 'node:os'
 import { join, delimiter, sep } from 'node:path'
 import { getProjectSandbox } from '../../kernel/config/index.js'
 import { ensureManagedArapuca, resolveManagedArapuca } from './arapuca-dist.js'
@@ -587,6 +590,30 @@ export function createSandboxWrapper(
 ): string {
   const isCodex = entryCommand === 'codex'
   const isClaude = entryCommand === 'claude'
+  // macOS subscription (keychain) claude has a hard constraint the other paths
+  // don't: Claude Code stores its OAuth token in the login Keychain ONLY in its
+  // default profile. The moment CLAUDE_CONFIG_DIR is set it flips to a file-backed
+  // credential store (`$CLAUDE_CONFIG_DIR/.credentials.json`) that does not exist
+  // here — so pinning CLAUDE_CONFIG_DIR (the other branches do, to keep transcripts
+  // host-readable) makes claude report "Not logged in" even with the keychain wide
+  // open. In this mode arapuca's `--allow-keychain` already sets HOME to the real
+  // home, so claude finds ~/.claude (transcripts land there, host-readable) and the
+  // keychain token on its own — we must NOT set CLAUDE_CONFIG_DIR. The keychain
+  // lookup is ALSO keyed by the login name, and arapuca strips `USER`/`LOGNAME` to
+  // empty (env deny-by-default); those two must be forwarded or the lookup misses.
+  // Other paths are unaffected: a custom (API-key) agent authenticates via the
+  // ANTHROPIC_* env below (and its HOME is a throwaway temp dir, so it genuinely
+  // needs the explicit CLAUDE_CONFIG_DIR), and non-macOS claude uses a file store
+  // inside ~/.claude that the pinned dir already mounts.
+  const claudeKeychainMode = isClaude && opts.allowKeychain && process.platform === 'darwin'
+  // The claude global config file (`oauthAccount`, project registry) — a *sibling*
+  // of the config dir, so the ~/.claude mount does not cover it. Mounted rw for the
+  // keychain path so claude reads/updates it exactly as a host run would; only when
+  // it already exists (a fresh install has none, and mounting a missing path aborts
+  // the run). Not needed by the CLAUDE_CONFIG_DIR paths, which read config from
+  // inside the mounted dir.
+  const claudeGlobalConfig = join(homedir(), '.claude.json')
+  const mountClaudeGlobalConfig = claudeKeychainMode && existsSync(claudeGlobalConfig)
   // The vendor transcript/config data root (resolved + ensured by resolvePaths),
   // exported so the CLI writes/reads its native store there and mounted rw since
   // it lives outside the execution root's grant. codex → persistent per-workspace
@@ -613,6 +640,8 @@ export function createSandboxWrapper(
     // The vendor data root (rw), and — for claude only — its /tmp runtime dir.
     ...(dataRoot ? [{ path: dataRoot, readonly: false }] : []),
     ...(isClaude ? [{ path: claudeRuntimeCanon, readonly: false }] : []),
+    // The claude global config sibling (keychain path only; see above).
+    ...(mountClaudeGlobalConfig ? [{ path: claudeGlobalConfig, readonly: false }] : []),
     ...paths.extra,
   ]
   const mountFlags = mounts
@@ -645,8 +674,26 @@ export function createSandboxWrapper(
 
   // The vendor data-root env line (`CODEX_HOME=…` / `CLAUDE_CONFIG_DIR=…`), or
   // empty for an unknown vendor. Its VALUE is a fixed host path, safe to inline.
+  // Suppressed for the macOS keychain path: setting CLAUDE_CONFIG_DIR there flips
+  // claude off the keychain (see `claudeKeychainMode`), so it is deliberately left
+  // unset and claude resolves ~/.claude from the real HOME instead.
   const dataRootEnvLine =
-    dataRootEnvVar && dataRoot ? `  --env ${shQuote(`${dataRootEnvVar}=${dataRoot}`)} \\\n` : ''
+    dataRootEnvVar && dataRoot && !claudeKeychainMode
+      ? `  --env ${shQuote(`${dataRootEnvVar}=${dataRoot}`)} \\\n`
+      : ''
+  // Login identity (`USER`/`LOGNAME`) for the macOS keychain path. arapuca is env
+  // deny-by-default and strips both to empty, but Claude Code keys its keychain
+  // credential lookup by the login name — without it the token is never found and
+  // claude reports "Not logged in". The value is the host login name (not a secret),
+  // inlined so it is deterministic even if the wrapper process env lacks USER.
+  const loginNameEnvBlock = claudeKeychainMode
+    ? (() => {
+        const name = process.env.USER || process.env.LOGNAME || userInfo().username
+        return (
+          `  --env ${shQuote(`USER=${name}`)} \\\n` + `  --env ${shQuote(`LOGNAME=${name}`)} \\\n`
+        )
+      })()
+    : ''
   // Pre-create claude's /tmp runtime dir (mounted above) before arapuca starts;
   // codex needs no such line.
   const runtimeMkdirLine = isClaude
@@ -680,7 +727,7 @@ export function createSandboxWrapper(
 ${runtimeMkdirLine}exec ${shQuote(paths.arapucaBin)} run \\
   --seccomp baseline \\
 ${proxyLine}${keychainLine}  --cwd ${shQuote(paths.executionRoot)} \\
-${dataRootEnvLine}${credentialEnvBlock}${mountFlags}
+${dataRootEnvLine}${loginNameEnvBlock}${credentialEnvBlock}${mountFlags}
   -- ${shQuote(entryCommand)} "$@"
 `
   writeFileSync(scriptPath, script, 'utf-8')

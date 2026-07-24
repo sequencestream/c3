@@ -196,6 +196,39 @@ scenarios can be covered separately; the chosen link being unavailable is a SKIP
   A missing managed install just means c3 has not finished (or has not been
   started to trigger) its background download yet.
 
+## Sandbox claude subscription (keychain) login test (macOS)
+
+Standalone, server-free re-verification of the macOS path where a `system`-mode
+(subscription) claude runs inside the arapuca sandbox — the scenario that
+regressed to `Not logged in · Please run /login`. It generates a wrapper through
+the REAL `createSandboxWrapper` (imported via `tsx`, so it covers the shipped
+code, not a hand-copied flag layout) with `allowKeychain: true`, then runs
+`claude -p` through it.
+
+The failure it guards against had two independent causes, both asserted here:
+
+- **Login name stripped.** arapuca is env deny-by-default and blanks
+  `USER`/`LOGNAME`, but Claude Code keys its Keychain credential lookup by the
+  login name — without it the token is never found. The wrapper must forward both.
+- **`CLAUDE_CONFIG_DIR` flips off the Keychain.** Setting it makes Claude Code use
+  a file store (`$CLAUDE_CONFIG_DIR/.credentials.json`) that does not exist, so the
+  keychain path must leave it unset (arapuca's `--allow-keychain` already points
+  HOME at the real home, so `~/.claude` resolves without it).
+
+- **Structure guard:** the generated script must NOT contain `CLAUDE_CONFIG_DIR`
+  and MUST forward `--env 'USER=…'` / `--env 'LOGNAME=…'`.
+- **Behaviour guard:** the real `claude -p` run must reply (`PONG`) and must NOT
+  print `Not logged in`.
+
+Needs a real subscription login + outbound network (claude uses the host proxy),
+so it is NOT CI-safe and is NOT in the `pnpm e2e` suite. Every unmet precondition
+is a SKIP (exit 5): non-macOS host, no `claude` CLI, no arapuca on either link, or
+no `Claude Code-credentials` item in the login Keychain.
+
+- `node scripts/e2e/e2e-sandbox-claude-keychain-test.mjs` → exit 0 when logged in
+  and replied; 1 = still not logged in / no reply / structure guard failed; 5 =
+  a precondition was unmet (SKIP). Override the model with `C3_E2E_MODEL`.
+
 ## Sandbox vendor token test (real request through arapuca)
 
 Complements the token-free capability probe: uses a real agent from

@@ -68,9 +68,15 @@ export function hostClaudeConfigDir(): string {
  * `CLAUDE_CONFIG_DIR` — a value the multi-workspace server cannot repoint per
  * call. A per-workspace isolated claude dir would therefore be unreadable from
  * the host. The sandbox instead reuses the HOST claude config dir so transcripts
- * land exactly where the server reads them. This is safe: claude credentials are
- * env/keychain-based, never stored under the config dir (`~/.claude.json` — the
- * only credentialed file — is a *sibling* of `~/.claude`, not inside it).
+ * land exactly where the server reads them.
+ *
+ * This is only where transcripts LAND — it does not follow that the wrapper should
+ * pin `CLAUDE_CONFIG_DIR` to it. On macOS a subscription login lives in the
+ * Keychain, which Claude Code consults ONLY in its default profile; setting
+ * `CLAUDE_CONFIG_DIR` flips it to a non-existent file store and it reports "Not
+ * logged in". The wrapper (`createSandboxWrapper`) therefore leaves the env unset
+ * for the keychain path and lets claude resolve this same dir from HOME — see
+ * `claudeKeychainMode` there.
  */
 export function getSandboxClaudeConfigDir(_workspacePath: string): string {
   return hostClaudeConfigDir()

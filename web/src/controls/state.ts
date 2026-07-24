@@ -222,7 +222,7 @@ export function createState(deps: StateDeps) {
   )
 
   // Workcenter page-internal nav: which page the workcenter view is showing.
-  const workcenterPage = ref<'dashboard' | 'notifications'>('dashboard')
+  const workcenterPage = ref<'dashboard' | 'notifications'>('notifications')
 
   // Workcenter Dashboard: the cross-workspace snapshot + its per-row gate feedback.
   const dashboardRows = ref<WorkspaceDashboardRow[]>([])

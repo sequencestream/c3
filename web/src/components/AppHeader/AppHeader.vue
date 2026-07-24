@@ -145,8 +145,8 @@ const WORKCENTER_PAGES: ReadonlyArray<{
   labelKey: LocaleKey
   badge?: boolean
 }> = [
-  { key: 'dashboard', labelKey: 'dashboard.nav.dashboard' as LocaleKey },
   { key: 'notifications', labelKey: 'dashboard.nav.notifications' as LocaleKey, badge: true },
+  { key: 'dashboard', labelKey: 'dashboard.nav.dashboard' as LocaleKey },
 ]
 
 // 底部 tab 仅承载工作区子视图(工作台入口已上移到顶部图标切换器);故无 workcenter 分支。

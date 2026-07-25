@@ -1,5 +1,5 @@
 /**
- * `delete_intent` session cleanup — vendor dispatch + per-session fencing.
+ * `delete_intent` session cleanup — vendor dispatch + per-step fencing.
  *
  * An intent may hold sessions from more than one vendor. Only a vendor whose
  * session store can delete (Claude) may hand its id to the SDK transcript
@@ -7,8 +7,9 @@
  * delete, stranding the intent's db records and git resources. These tests pin:
  * Codex sessions skip the transcript remover but still lose every c3-side
  * reference; a Claude session still deletes its transcript (and a duplicated id
- * is handled once); and a failure anywhere in one session's cleanup never stops
- * the remaining sessions, `removeIntentGitResources` or `deleteIntentRecords`.
+ * is handled once); and a failing cleanup step never stops the steps behind it,
+ * the remaining sessions, `removeIntentGitResources` or `deleteIntentRecords` —
+ * the intent row goes away regardless, so a stranded session row is an orphan.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -18,7 +19,10 @@ import type { AgentConfig, ServerToClient, SystemSettings } from '@ccc/shared/pr
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 
-const hoisted = vi.hoisted(() => ({ runtimeFailureSessionId: null as string | null }))
+const hoisted = vi.hoisted(() => ({
+  runtimeFailureSessionId: null as string | null,
+  chatFailureSessionId: null as string | null,
+}))
 
 vi.mock('../../sessions.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../sessions.js')>()
@@ -32,6 +36,17 @@ vi.mock('../../runs.js', async (importOriginal) => {
       // Stand-in for any per-session step blowing up mid-cleanup.
       if (sessionId === hoisted.runtimeFailureSessionId) throw new Error('runtime abort failed')
       return actual.removeRuntime(sessionId)
+    }),
+  }
+})
+vi.mock('./store.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./store.js')>()
+  return {
+    ...actual,
+    deleteChatSession: vi.fn((workspacePath: string, sessionId: string) => {
+      // Stand-in for a mid-cleanup step failing after the earlier ones ran.
+      if (sessionId === hoisted.chatFailureSessionId) throw new Error('chat row delete failed')
+      return actual.deleteChatSession(workspacePath, sessionId)
     }),
   }
 })
@@ -94,6 +109,7 @@ beforeEach(() => {
   workspaceId = pathToId(dir)!
   proj = resolveWorkspaceRoot(workspaceId)!
   hoisted.runtimeFailureSessionId = null
+  hoisted.chatFailureSessionId = null
   configureAgents()
   vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
@@ -231,23 +247,42 @@ describe('deleteIntent — vendor-dispatched session cleanup', () => {
     expect(h.sent.some((m) => m.type === 'error')).toBe(false)
   })
 
-  it('keeps cleaning the remaining sessions and the intent resources when one session fails', async () => {
+  it('drops the failing session’s own c3 rows too, plus the remaining sessions and intent resources', async () => {
     const id = newIntent('partial failure')
     seedSession('boom', CLAUDE_AGENT, 'claude')
     seedSession('codex-work', CODEX_AGENT, 'codex')
     setIntentSessionId(id, 'boom')
     insertIntentSession(id, 'codex-work', 'codex', CODEX_AGENT)
+    // An early step (runtime teardown) blows up — the steps behind it must run
+    // anyway, or `boom` keeps rows pointing at an intent deleted just below.
     hoisted.runtimeFailureSessionId = 'boom'
 
     const h = harness()
     await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceId, intentId: id })
 
-    // The failing session keeps its rows; every other cleanup still ran.
-    expect(listChatSessions(proj).map((s) => s.sessionId)).toEqual(['boom'])
-    expect(listMetadataRows().map((r) => r.vendorSessionId)).toEqual(['boom'])
+    expect(listChatSessions(proj)).toEqual([])
+    expect(listMetadataRows()).toEqual([])
     expect(removeIntentGitResources).toHaveBeenCalledOnce()
     expect(getIntent(id)).toBeNull()
     expect(h.sent.some((m) => m.type === 'error')).toBe(false)
     expect(h.ctx.broadcastIntents).toHaveBeenCalledWith(proj)
+  })
+
+  it('still deletes the session projection when the chat-row delete throws', async () => {
+    const id = newIntent('chat row fails')
+    seedSession('chat-boom', CODEX_AGENT, 'codex')
+    setIntentSessionId(id, 'chat-boom')
+    hoisted.chatFailureSessionId = 'chat-boom'
+
+    const h = harness()
+    await deleteIntent(h.ctx, h.conn, { type: 'delete_intent', workspaceId, intentId: id })
+
+    // The chat row survives (its own delete threw) — proof the step really
+    // failed — yet the projection delete behind it still ran.
+    expect(listChatSessions(proj).map((s) => s.sessionId)).toEqual(['chat-boom'])
+    expect(listMetadataRows()).toEqual([])
+    expect(getIntent(id)).toBeNull()
+    expect(removeIntentGitResources).toHaveBeenCalledOnce()
+    expect(h.sent.some((m) => m.type === 'error')).toBe(false)
   })
 })

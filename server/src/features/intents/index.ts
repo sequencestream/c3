@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { dirname } from 'node:path'
 import {
   PENDING_SESSION_PREFIX,
+  VENDOR_IDS,
   type DevLaunchStage,
   type Intent,
   type SessionAgentSwitch,
@@ -813,9 +814,29 @@ async function removeSessionTranscript(
     // store's implementation. A future delete-capable vendor dispatches here.
     if (vendor === 'claude') await removeSession(workspacePath, sessionId)
   } catch (err) {
-    console.warn(
-      `[c3:intent] transcript 删除失败，仅清理 c3 侧记录: ${sessionId} — ${err instanceof Error ? err.message : String(err)}`,
-    )
+    warnSessionCleanup(sessionId, 'transcript 删除', err)
+  }
+}
+
+/** One line per swallowed cleanup failure, naming the step that gave up. */
+function warnSessionCleanup(sessionId: string, step: string, err: unknown): void {
+  console.warn(
+    `[c3:intent] 会话清理步骤失败，继续后续清理: ${step} ${sessionId} — ${err instanceof Error ? err.message : String(err)}`,
+  )
+}
+
+/**
+ * Run one step of a session's teardown behind its own fence. Each step is
+ * independent because the intent's own records are deleted unconditionally
+ * afterwards: a step that throws must not skip the steps behind it, or c3 keeps
+ * session rows pointing at an intent that no longer exists — orphans the user
+ * can neither see nor clean up.
+ */
+function fenceSessionCleanup(sessionId: string, step: string, run: () => void): void {
+  try {
+    run()
+  } catch (err) {
+    warnSessionCleanup(sessionId, step, err)
   }
 }
 
@@ -844,22 +865,25 @@ export const deleteIntent: Handler<'delete_intent'> = async (ctx, conn, msg) => 
   for (const session of listIntentWorkSessions(intent.id)) sessionIds.add(session.sessionId)
 
   for (const sessionId of sessionIds) {
-    // Per-session cleanup is best-effort and independently fenced: one session
-    // that refuses to clean up must never strand the intent's db records or git
-    // resources (the human would be stuck retrying a delete that always fails).
+    // Cleanup is best-effort and fenced step by step, not per session: one step
+    // that refuses to run must strand neither the session's own c3 rows nor the
+    // intent's db records and git resources (the human would be stuck retrying a
+    // delete that always fails, or left with rows pointing at a deleted intent).
+    let vendor: VendorId | null = null
     try {
-      const vendor = resolveSessionVendor(sessionId)
-      // Remove runtime (abort + drop) BEFORE the db row so no stale runtime lingers.
-      removeRuntime(sessionId)
-      await removeSessionTranscript(vendor, proj, sessionId)
-      deleteChatSession(proj, sessionId)
-      deleteByVendorId(vendor, sessionId)
-      if (conn.viewing === sessionId) conn.viewing = null
+      vendor = resolveSessionVendor(sessionId)
     } catch (err) {
-      console.warn(
-        `[c3:intent] 会话清理失败，继续删除意图: ${sessionId} — ${err instanceof Error ? err.message : String(err)}`,
-      )
+      warnSessionCleanup(sessionId, '供应商解析', err)
     }
+    // Remove runtime (abort + drop) BEFORE the db row so no stale runtime lingers.
+    fenceSessionCleanup(sessionId, '运行时移除', () => removeRuntime(sessionId))
+    if (vendor) await removeSessionTranscript(vendor, proj, sessionId)
+    fenceSessionCleanup(sessionId, '沟通会话行删除', () => deleteChatSession(proj, sessionId))
+    // Vendor unresolved: sweep every vendor's projection key, since the row is
+    // keyed by (vendor, sessionId) and must not outlive the intent either way.
+    for (const v of vendor ? [vendor] : VENDOR_IDS)
+      fenceSessionCleanup(sessionId, '会话投影删除', () => deleteByVendorId(v, sessionId))
+    if (conn.viewing === sessionId) conn.viewing = null
   }
 
   try {

@@ -183,6 +183,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     setBranchName,
     setLatestCommitHash,
     setPrInfo,
+    safeInsertIntentLog,
     cancelEventsForIntent: (intentId) => {
       if (isWaitUserEventsStoreAvailable()) cancelBySessionId(intentId)
     },

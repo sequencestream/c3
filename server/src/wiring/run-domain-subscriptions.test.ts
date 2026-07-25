@@ -31,6 +31,7 @@ vi.mock('../features/intents/store.js', () => ({
   getIntentSessionBySessionId: vi.fn(() => null),
   insertIntentSession: vi.fn(),
   rebindChatSession: vi.fn(),
+  safeInsertIntentLog: vi.fn(),
   setBranchName: vi.fn(),
   setIntentSessionId: vi.fn(),
   setLastWorkSession: vi.fn(),

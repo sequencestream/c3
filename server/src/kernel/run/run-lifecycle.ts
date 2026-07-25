@@ -484,14 +484,16 @@ export async function launchRun(
           model: agentCfg.model,
           currentAgentId: agentCfg.agentId,
           // Forward the arapuca allow set so the claude path wraps the CLI in arapuca.
-          // `sandboxAllowKeychain` is derived from THIS attempt's agent (degradation
-          // may land on a different one): only a subscription (`system`-mode) agent
-          // needs the host keychain opened inside the sandbox.
+          // `sandboxSystemAuth` is derived from THIS attempt's agent (degradation
+          // may land on a different one): a subscription (`system`-mode) agent needs
+          // the vendor's own login opened inside the sandbox. It is only an input —
+          // the wrapper ORs it with the vendor-neutral gh trigger to decide
+          // `--allow-keychain`, so a custom agent can still get gh's credentials.
           ...(rt.sandboxPaths
             ? {
                 sandboxPaths: rt.sandboxPaths,
                 sandboxTmpDir: rt.sandboxTmpDir,
-                sandboxAllowKeychain: resolveAgent(agentCfg.agentId).configMode === 'system',
+                sandboxSystemAuth: resolveAgent(agentCfg.agentId).configMode === 'system',
               }
             : {}),
           ...(isIntent

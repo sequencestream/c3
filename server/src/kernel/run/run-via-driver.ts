@@ -430,13 +430,14 @@ export async function runViaDriver(
   // wrapper with a full env (codexExecEnv — process.env + overrides + CODEX_API_KEY
   // from apiKey), which the arapuca child inherits. baseUrl/model ride the
   // wrapper's "$@" argv; the codex RELAY token flows in as CODEX_API_KEY too.
-  // `allowKeychain` comes from THIS run's actually-bound agent (`agentId` above):
-  // a subscription (`system`-mode) agent authenticates through the host keychain,
-  // which arapuca only exposes when explicitly allowed; a custom agent keeps the
-  // env-injected credential and no keychain access.
+  // `systemAuth` comes from THIS run's actually-bound agent (`agentId` above):
+  // a subscription (`system`-mode) agent authenticates through the vendor's own
+  // login, which arapuca only exposes when explicitly allowed; a custom agent
+  // keeps the env-injected credential. It is an input to `--allow-keychain`, not
+  // the verdict — the wrapper ORs it with the vendor-neutral gh trigger.
   const sandboxWrapperPath = rt.sandboxPaths
     ? createSandboxWrapper(rt.sandboxPaths, adapter.vendor, rt.sandboxTmpDir ?? '', {
-        allowKeychain: resolveAgent(agentId).configMode === 'system',
+        systemAuth: resolveAgent(agentId).configMode === 'system',
       })
     : undefined
   // Override cwd: Codex spec sessions (specs root write boundary), effectiveCwd

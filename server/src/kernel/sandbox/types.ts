@@ -101,6 +101,17 @@ export interface ResolvedSandboxPaths {
    * `CLAUDE_CONFIG_DIR` only for a claude run.
    */
   readonly claudeConfigDir: string
+  /**
+   * The host `gh` CLI config dir, canonicalized — read-only, same host absolute
+   * path. Vendor-NEUTRAL: `gh` is an external tool the agent calls from inside
+   * its session, not a vendor CLI, so this is a fixed system allowance rather
+   * than a per-vendor profile mount.
+   *
+   * Absent when the host has no such dir (or the platform is Windows, whose gh
+   * path rules are out of scope): gh support is an optional capability, so a
+   * missing dir produces no mount and never fails the launch.
+   */
+  readonly ghConfigDir?: string
   /** Supplementary allowed directories, each ro/rw as declared. */
   readonly extra: readonly ResolvedMount[]
   /**

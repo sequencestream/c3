@@ -24,8 +24,9 @@
  *    WHICH variables, data root and extra mounts a vendor needs is not decided
  *    here — it comes from the per-vendor strategy in `vendor-auth.ts`; this module
  *    only merges that profile with the common allow set and renders the arapuca
- *    command. `opts.allowKeychain` carries the resolved agent's auth mode into the
- *    strategy; host proxy variables are detected here (vendor-neutral).
+ *    command. `opts.systemAuth` carries the resolved agent's auth mode into the
+ *    strategy; host proxy variables and the gh config dir are detected here
+ *    (vendor-neutral).
  *
  * Host prerequisite: arapuca ≥ 0.2.5 (`--allow-proxy-env` / `--allow-keychain`).
  * c3 does no version negotiation — an older binary rejects the unknown flag and
@@ -48,11 +49,12 @@ import {
   writeFileSync,
   rmSync,
   realpathSync,
+  statSync,
   accessSync,
   constants as fsConstants,
 } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, delimiter, sep } from 'node:path'
+import { join, delimiter, sep, isAbsolute } from 'node:path'
 import { getProjectSandbox } from '../../kernel/config/index.js'
 import { ensureManagedArapuca, resolveManagedArapuca } from './arapuca-dist.js'
 import {
@@ -302,6 +304,65 @@ function canonicalize(path: string, label: string): string {
   }
 }
 
+// ─── gh CLI config dir (vendor-neutral system allowance) ─────────────────────
+
+/**
+ * The host `gh` CLI config dir candidate, following gh's OWN precedence:
+ * `GH_CONFIG_DIR` → `$XDG_CONFIG_HOME/gh` → `<home>/.config/gh`. The first
+ * applicable entry is the single candidate — there is no fallback scan, so the
+ * sandbox allows exactly the dir gh itself would read.
+ *
+ * An empty or relative environment value counts as unset and falls through to
+ * the next tier: gh resolves its config against its own process cwd, which is
+ * not c3's, so a relative value cannot be turned into a trustworthy mount.
+ *
+ * Windows yields nothing: gh's config location differs there (`%AppData%`), and
+ * defining it is explicitly out of scope — a Windows host simply gets no gh
+ * allowance rather than a guessed one.
+ *
+ * Returns the RAW candidate (not canonicalized, existence not checked); the
+ * caller decides whether it can become a mount. Exported for table tests.
+ */
+export function resolveGhConfigDir(
+  env: NodeJS.ProcessEnv = process.env,
+  home: string = homedir(),
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
+  if (platform === 'win32') return undefined
+  const usable = (value: string | undefined): string | undefined => {
+    const trimmed = value?.trim()
+    return trimmed && isAbsolute(trimmed) ? trimmed : undefined
+  }
+  const explicit = usable(env.GH_CONFIG_DIR)
+  if (explicit) return explicit
+  const xdg = usable(env.XDG_CONFIG_HOME)
+  if (xdg) return join(xdg, 'gh')
+  return join(home, '.config', 'gh')
+}
+
+/**
+ * The gh config dir this run may mount, canonicalized — or undefined when there
+ * is nothing to mount.
+ *
+ * Unlike the fixed workspace allowances this NEVER creates the directory and
+ * never fails the launch: a host without gh configured is a host without the gh
+ * capability, not a broken sandbox. A candidate that is not a directory (a
+ * stray file at that path) is likewise ignored rather than mounted.
+ *
+ * Canonicalize is also the symlink-escape guard — the mount authorizes the
+ * resolved target, never the link's parent.
+ */
+function resolveGhConfigMount(): string | undefined {
+  const candidate = resolveGhConfigDir()
+  if (!candidate) return undefined
+  try {
+    const canon = realpathSync(candidate)
+    return statSync(canon).isDirectory() ? canon : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Resolve the full allowed path set for a run.
  *
@@ -314,6 +375,12 @@ function canonicalize(path: string, label: string): string {
  * canonicalized, checked against the reserved paths (no overlap either
  * direction) and the denylist, and dropped when they point at a non-existent
  * path (skipped, not fatal — unlike a security violation, which throws).
+ *
+ * The host gh config dir is resolved here too, as a vendor-neutral optional
+ * allowance ({@link resolveGhConfigMount}): present when the host actually has
+ * one, absent otherwise. It is a SYSTEM grant, so it does not pass through the
+ * user-facing `extraMounts` denylist — but it also authorizes nothing beyond the
+ * one canonicalized directory it resolved.
  *
  * `arapucaBin` is the absolute binary the wrapper will `exec`; it is threaded in
  * from the probe (managed install or host PATH) rather than re-resolved here,
@@ -369,6 +436,10 @@ export function resolvePaths(
     // best-effort; canonicalize below will surface a real failure
   }
   const canonClaudeConfigDir = canonicalize(sandboxClaudeConfigDir, 'claudeConfigDir')
+  // The host gh config dir (ro) — vendor-neutral, optional. Resolved with gh's own
+  // precedence and skipped silently when the host has none: `gh` is a tool the
+  // agent may call, not a run prerequisite.
+  const canonGhConfigDir = resolveGhConfigMount()
   // Current-branch (and no-isolated-cwd) runs execute in the workspace itself:
   // the ro workspace-root allowance is merged into the rw execution-root grant.
   const sameRoot = canonWorkspaceRoot === canonExecutionRoot
@@ -427,6 +498,9 @@ export function resolvePaths(
     specsBase: canonSpecsBase,
     codexHome: canonCodexHome,
     claudeConfigDir: canonClaudeConfigDir,
+    // Omitted entirely when the host has no gh config dir — the wrapper keys the
+    // mount AND the gh keychain trigger off this field's presence.
+    ...(canonGhConfigDir ? { ghConfigDir: canonGhConfigDir } : {}),
     extra,
     arapucaBin,
   }
@@ -484,7 +558,8 @@ export function launchSandbox(workspaceRoot: string, executionRoot: string): San
     `[sandbox] arapuca wrapper prepared: bin=${paths.arapucaBin} (${probe.source}) ` +
       `exec(rw)=${paths.executionRoot} ` +
       `root(ro)=${paths.workspaceRoot ?? '(merged into exec)'} ` +
-      `specs(rw)=${paths.specsBase} codexHome(rw)=${paths.codexHome} extra=${paths.extra.length}`,
+      `specs(rw)=${paths.specsBase} codexHome(rw)=${paths.codexHome} ` +
+      `gh(ro)=${paths.ghConfigDir ?? '(none)'} extra=${paths.extra.length}`,
   )
 
   return {
@@ -549,8 +624,12 @@ export interface SandboxWrapperOptions {
    * role agent, or the vendor fork would otherwise mismatch it. What the mode
    * implies (host keychain access, which data root, which variables) is the
    * per-vendor strategy's call, not this module's.
+   *
+   * Deliberately NOT named `allowKeychain`: it is one of the two INPUTS to that
+   * decision, not the decision. A caller that pre-merged the policy here would
+   * hide the second input (the vendor-neutral gh trigger) from the wrapper.
    */
-  readonly allowKeychain: boolean
+  readonly systemAuth: boolean
 }
 
 /**
@@ -575,8 +654,10 @@ export interface SandboxWrapperOptions {
  * falling back to a bare host run):
  *  - `--allow-proxy-env` whenever the HOST carries standard proxy variables
  *    ({@link hostHasProxyEnv}) — a host fact, identical for every vendor.
- *  - `--allow-keychain` when the resolved profile asks for it (a subscription
- *    login the vendor cannot read from an environment variable).
+ *  - `--allow-keychain` when EITHER the resolved profile asks for it (a
+ *    subscription login the vendor cannot read from an environment variable) OR
+ *    the run resolved a gh config dir (gh's own login lives in the host
+ *    credential store). One OR, one flag.
  * Both live in the arapuca argument section (before `--`), never in the vendor
  * CLI's `"$@"`.
  *
@@ -595,7 +676,7 @@ export function createSandboxWrapper(
 ): string {
   const profile = resolveSandboxAuthProfile(vendor, {
     paths,
-    systemAuth: opts.allowKeychain,
+    systemAuth: opts.systemAuth,
     host: readHostFacts(),
   })
   return writeWrapperScript(paths, profile, tmpDir)
@@ -617,6 +698,11 @@ function writeWrapperScript(
   // The common allow set, then the vendor's own paths, then the user's extras.
   // De-duplicated by path (first grant wins) so a profile that names a path the
   // common set already covers cannot emit a conflicting second `-v`.
+  //
+  // The gh config dir sits AFTER the profile mounts on purpose: it is the only
+  // read-only system grant, so letting every stronger rw grant (common set or
+  // vendor data root) claim the path first keeps a coincidental overlap from
+  // silently downgrading a vendor's own store to ro.
   const mounts: ResolvedMount[] = []
   const seen = new Set<string>()
   for (const mount of [
@@ -626,6 +712,7 @@ function writeWrapperScript(
     ...(paths.workspaceRoot ? [{ path: paths.workspaceRoot, readonly: true }] : []),
     { path: paths.specsBase, readonly: false },
     ...profile.mounts,
+    ...(paths.ghConfigDir ? [{ path: paths.ghConfigDir, readonly: true }] : []),
     ...paths.extra,
   ]) {
     if (seen.has(mount.path)) continue
@@ -667,11 +754,19 @@ function writeWrapperScript(
   // forwards them itself — c3 emits no per-variable `--env`. A host fact, so the
   // same rule for every vendor; absent on a host with no proxy configured.
   const proxyLine = hostHasProxyEnv() ? '  --allow-proxy-env \\\n' : ''
-  // Subscription auth passthrough (arapuca ≥ 0.2.5): the vendor CLI's own login
-  // lives in the host keychain / credential store, unreachable under
-  // deny-by-default isolation. The profile decides — a credential that rides an
-  // environment variable never widens this surface.
-  const keychainLine = profile.allowKeychain ? '  --allow-keychain \\\n' : ''
+  // Host credential-store passthrough (arapuca ≥ 0.2.5). TWO independent facts
+  // can require it, and the flag is rendered ONCE for their OR:
+  //  - the vendor profile — a subscription login the CLI cannot read from an
+  //    environment variable (a credential that rides env never widens this);
+  //  - gh — the external tool the agent calls inside its session keeps its login
+  //    token in the host credential store, so a readable config dir alone is not
+  //    enough to make `gh auth status` work.
+  // The gh trigger is deliberately independent of the agent's `configMode`, the
+  // vendor, `GH_TOKEN`, and the contents of `hosts.yml`: keying it off any of
+  // those would mean reading credential files, or building an implicit exclusion
+  // between the env-token bridge and the keychain (they are complementary).
+  const ghKeychainRequired = paths.ghConfigDir !== undefined
+  const keychainLine = profile.allowKeychain || ghKeychainRequired ? '  --allow-keychain \\\n' : ''
 
   const scriptPath = join(tmpDir, 'wrapper.sh')
   // `--seccomp baseline` opens outbound network (sandbox network model is

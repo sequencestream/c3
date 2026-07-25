@@ -37,7 +37,12 @@ import {
 } from '../../kernel/agent-config/index.js'
 import { getRelay } from '../../kernel/relay/runtime.js'
 import { buildChildEnv, findClaudeExecutable } from '../../kernel/infra/child-env.js'
-import { loadSettings } from '../../kernel/config/index.js'
+import { getProjectSandbox, loadSettings } from '../../kernel/config/index.js'
+import {
+  createSandboxWrapper,
+  launchSandbox,
+  sandboxEligible,
+} from '../../kernel/sandbox/SandboxLauncher.js'
 import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
 import { codexPolicyToGrid } from '../../kernel/agent/adapters/codex/driver.js'
 import { resolveCodexGhTokenEnv } from '../../kernel/agent/adapters/codex/gh-token.js'
@@ -811,6 +816,7 @@ async function executeCodexLlmPrompt(
           approvalPolicy: 'never',
         }
   const { actionMode, toolGate } = codexPolicyToGrid(policy)
+  const workspaceRoot = resolveWorkspaceRoot(automation.workspaceId)!
   const { model, relayCandidates, envOverrides } = launchForAgent(agent)
   // Bridge the host `gh` keyring credential into the codex sandbox as `GH_TOKEN`
   // so PR review/comment/merge shell commands authenticate; network access stays
@@ -839,6 +845,22 @@ async function executeCodexLlmPrompt(
           metadata: automation.metadata,
         })
       : null
+  // arapuca isolation for a scheduled codex execution. Gated by the SAME workspace
+  // eligibility rule as an interactive run — the workspace must enable the sandbox
+  // AND list `automation` in `sandboxSessionKinds` — so wrapping every automation
+  // can never bypass that configuration. When it applies, the workspace root is the
+  // execution root (a scheduled execution has no isolated worktree) and the wrapper
+  // becomes codex's executable; that is also what carries the vendor-neutral gh
+  // allow set and `--allow-keychain` into this path.
+  const sandboxOn = sandboxEligible({
+    sandboxEnabled: true,
+    sandboxAllowed: true,
+    config: getProjectSandbox(workspaceRoot),
+    sessionKind: 'automation',
+  })
+  // Per-execution wrapper temp dir; removed on EVERY terminal path (success,
+  // driver error, user stop, wall-clock timeout) by the `finally` below.
+  let sandboxCleanup: (() => void) | undefined
   // Bound once the driver reports the real session id; used by `finally` to settle
   // the runtime to idle. Null until bound.
   let runningSessionId: string | null = null

@@ -370,16 +370,21 @@ worktree、本地分支与不可逆性,`in_progress` 额外提示工作产物(�
 `operation_type`、`summary`、`actor`、`created_at`。
 
 - **操作类型** (`IntentLogOperation`，协议侧字符串联合): `intent_created` / `intent_updated` /
-  `status_changed` / `spec_created` / `spec_approved` / `spec_unapproved`(保留值，本期无写入方) /
+  `status_changed` / `spec_created` / `spec_updated` / `spec_approved` / `spec_unapproved` /
   `pr_created` / `pr_merged` / `pr_closed` / `pr_updated`(PR 被打回后修改重提,`prStatus` 复位为
   `reviewing`，RM-R29)。
-- **写入点**: `upsertIntents` (创建/更新分支)、`updateStatus` (状态真实变化才写，同状态不写；
-  reconcile / 自动化编排 / PR 回填工具等无 conn 上下文的调用统一落 `'automation'`)、
-  `write_spec` / `approve_spec` / `create_pr` handler (actor 取登录 subject，缺省 `'system'`)、
-  `syncIntentPrStatus` 检测到 merged / closed (actor 固定 `'automation'`)、
-  `pr:operation` update 消费者复位 `prStatus` 为 `reviewing` 时写 `pr_updated` (actor 固定
-  `'automation'`，RM-R29)。所有写入经
-  `safeInsertIntentLog` 隔离——日志失败仅 warn，不影响业务主路径。
+- **意图与 spec 写入点**: `upsertIntents` (创建/更新分支)、`updateStatus` (状态真实变化才写，同状态
+  不写；reconcile / 自动化编排 / PR 回填工具等无 conn 上下文的调用统一落 `'automation'`)、
+  `write_spec` / `approve_spec` handler、直接编辑 spec 正文 (`spec_updated`，若同时撤销审批则先写
+  一条 `spec_unapproved`)——handler 路径的 actor 一律取登录 subject，缺省 `'system'`。
+- **PR 写入点**: `pr_created` 覆盖**每一条**首次建立 PR 关联的路径，摘要统一为 `创建 PR #<id>`：
+  `create_pr` handler 与 `set_intent_git_info` 手动录入 (actor 取登录 subject，缺省 `'system'`)、
+  自动化编排 (RM-A5) 与手动会话结束清理 (RM-R26，经依赖注入接入，actor 固定 `'automation'`)。
+  判定基准是**写入前**的意图：只有原 `prId` 为空且本次写入了非空 `prId` 才记录，覆盖既有 `prId`
+  或只改 `prStatus` 都不记录，一次成功创建只产生一行。`syncIntentPrStatus` 检测到 merged / closed
+  写 `pr_merged` / `pr_closed`，`pr:operation` update 消费者复位 `prStatus` 为 `reviewing` 时写
+  `pr_updated` (RM-R29)——两者 actor 固定 `'automation'`。
+- 所有写入经 `safeInsertIntentLog` 隔离——日志失败仅 warn，不影响业务主路径。
 - **API**: 客户端 `list_intent_logs`(intentId) → 服务端 `intent_logs_list`(倒序全量)；
   前端 IntentDetail 的「变更日志」tab 切入时懒加载，按 intent id 缓存。
 - **非目标**: 不记录内容 diff (只记简单摘要)、不覆盖依赖关系变更 (`intent_deps` 自身即记录)、

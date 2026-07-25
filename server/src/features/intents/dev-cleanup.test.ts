@@ -66,6 +66,7 @@ interface Harness {
     setBranchName: ReturnType<typeof vi.fn>
     setLatestCommitHash: ReturnType<typeof vi.fn>
     setPrInfo: ReturnType<typeof vi.fn>
+    safeInsertIntentLog: ReturnType<typeof vi.fn>
     cancelEventsForIntent: ReturnType<typeof vi.fn>
     pushFailureEvent: ReturnType<typeof vi.fn>
     broadcastIntents: ReturnType<typeof vi.fn>
@@ -93,6 +94,7 @@ function harness(
     setBranchName: vi.fn(),
     setLatestCommitHash: vi.fn(),
     setPrInfo: vi.fn(),
+    safeInsertIntentLog: vi.fn(),
     cancelEventsForIntent: vi.fn(),
     pushFailureEvent: vi.fn(),
     broadcastIntents: vi.fn(),
@@ -113,6 +115,7 @@ function harness(
     setBranchName: mocks.setBranchName,
     setLatestCommitHash: mocks.setLatestCommitHash,
     setPrInfo: mocks.setPrInfo,
+    safeInsertIntentLog: mocks.safeInsertIntentLog,
     cancelEventsForIntent: mocks.cancelEventsForIntent,
     pushFailureEvent: mocks.pushFailureEvent,
     broadcastIntents: mocks.broadcastIntents,
@@ -135,6 +138,10 @@ describe('runManualDevCleanup', () => {
     expect(h.mocks.setLatestCommitHash).toHaveBeenCalledWith('I1', 'deadbeef')
     expect(h.mocks.setPrInfo).toHaveBeenCalledWith('I1', '42', 'reviewing', 'https://h/pull/42')
     expect(h.mocks.pushFailureEvent).not.toHaveBeenCalled()
+    // The changelog records the first PR association exactly once, actor `automation`.
+    expect(h.mocks.safeInsertIntentLog.mock.calls).toEqual([
+      ['I1', 'pr_created', '创建 PR #42', 'automation'],
+    ])
   })
 
   it('explicit GitLab override creates an MR through the forge dispatcher and writes its fields', async () => {
@@ -184,6 +191,7 @@ describe('runManualDevCleanup', () => {
     expect(h.mocks.createForgePr).not.toHaveBeenCalled()
     expect(h.mocks.setPrInfo).not.toHaveBeenCalled()
     expect(h.mocks.pushFailureEvent).not.toHaveBeenCalled()
+    expect(h.mocks.safeInsertIntentLog).not.toHaveBeenCalled()
   })
 
   // ── MSC-R4 ①: no changes → explicit failure, not a silent skip ──
@@ -249,6 +257,7 @@ describe('runManualDevCleanup', () => {
     )
     expect(h.mocks.setLatestCommitHash).toHaveBeenCalledWith('I1', 'deadbeef')
     expect(h.mocks.setPrInfo).not.toHaveBeenCalled()
+    expect(h.mocks.safeInsertIntentLog).not.toHaveBeenCalled()
   })
 
   // ── MSC-R6: idempotent re-cleanup when a PR already exists ──
@@ -264,6 +273,7 @@ describe('runManualDevCleanup', () => {
     expect(h.mocks.setLatestCommitHash).toHaveBeenCalledWith('I1', 'deadbeef')
     expect(h.mocks.createForgePr).not.toHaveBeenCalled()
     expect(h.mocks.setPrInfo).not.toHaveBeenCalled()
+    expect(h.mocks.safeInsertIntentLog).not.toHaveBeenCalled()
   })
 
   // Clears stale cleanup todos before each real attempt (self-heal on re-run).

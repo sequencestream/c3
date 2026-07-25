@@ -38,6 +38,7 @@ import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import {
   getIntent,
   listIntents,
+  safeInsertIntentLog,
   setBranchName,
   setLastWorkSession,
   setPrInfo,
@@ -895,6 +896,10 @@ class WorkflowController {
       // Persist the forge URL alongside the id so the detail page renders a
       // clickable PR link (empty URL degrades to null, same as manual paths).
       setPrInfo(req.id, prResult.prId, 'reviewing', prResult.prUrl || null)
+      // Same lifecycle-log point as the manual create-PR path, so the changelog
+      // tab records WHEN the PR appeared no matter who opened it. The
+      // orchestrator has no connection subject ⇒ the actor is `automation`.
+      safeInsertIntentLog(req.id, 'pr_created', `创建 PR #${prResult.prId}`, 'automation')
       console.log(`[c3:automation]「${req.title}」PR #${prResult.prId} 已创建`)
 
       // Publish a pr:create event so event-triggered automations can react.

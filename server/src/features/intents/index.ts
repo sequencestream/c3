@@ -1067,7 +1067,19 @@ export const setIntentGitInfo: Handler<'set_intent_git_info'> = (ctx, conn, msg)
   if (msg.branchName !== undefined) setBranchName(msg.intentId, msg.branchName)
   if (msg.latestCommitHash !== undefined) setLatestCommitHash(msg.intentId, msg.latestCommitHash)
   if (msg.prId !== undefined && msg.prStatus !== undefined) {
+    // Judged against the PRE-update intent: only a first-time association logs.
+    // Overwriting an existing prId, or a status-only update, records nothing —
+    // the changelog tracks when the PR appeared, not every later edit.
+    const firstAssociation = !req.prId && !!msg.prId
     setPrInfo(msg.intentId, msg.prId, msg.prStatus)
+    if (firstAssociation) {
+      safeInsertIntentLog(
+        msg.intentId,
+        'pr_created',
+        `创建 PR #${msg.prId}`,
+        conn.subject ?? 'system',
+      )
+    }
   }
   ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
 }

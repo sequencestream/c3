@@ -7,6 +7,8 @@
  *  - `writeSpecHandler` → `spec_created`, `approveSpecHandler` → `spec_approved`
  *  - `createPrHandler` → `pr_created`; `syncIntentPrStatus` merged/closed → one row,
  *    unchanged / failed sync → none
+ *  - `setIntentGitInfo` → `pr_created` only on a FIRST prId association (overwrite,
+ *    status-only and empty-prId updates log nothing)
  *  - a dropped `intent_logs` table only warns; the decorated operation still succeeds
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -50,7 +52,7 @@ import {
   upsertIntents,
 } from './store.js'
 import { runSaveConfirmed } from './tool-defs.js'
-import { createPrHandler, updateIntentStatus } from './index.js'
+import { createPrHandler, setIntentGitInfo, updateIntentStatus } from './index.js'
 import { approveSpecHandler, writeSpecHandler } from './spec.js'
 import { syncIntentPrStatus } from './pr-status-sync.js'
 import { resetStoreForTests as resetSessionMetadataStoreForTests } from '../sessions/session-metadata-store.js'
@@ -285,6 +287,89 @@ describe('PR instrumentation', () => {
   })
 })
 
+describe('set_intent_git_info PR association instrumentation', () => {
+  function gitInfoIntent(title: string) {
+    const [r] = insertIntents(proj, [
+      { title, shortEnTitle: title.toLowerCase(), content: '', priority: 'P1' },
+    ])
+    return r
+  }
+
+  it('logs pr_created once when a PR id is associated for the first time', () => {
+    const r = gitInfoIntent('Assoc')
+    const { conn } = fakeConn({ subject: 'frank' })
+    setIntentGitInfo(fakeCtx(), conn, {
+      type: 'set_intent_git_info',
+      intentId: r.id,
+      prId: '55',
+      prStatus: 'reviewing',
+    })
+
+    expect(getIntent(r.id)).toMatchObject({ prId: '55', prStatus: 'reviewing' })
+    expect(logsOf(r.id, 'pr_created')).toMatchObject([{ summary: '创建 PR #55', actor: 'frank' }])
+  })
+
+  it("falls back to 'system' when the connection has no subject", () => {
+    const r = gitInfoIntent('NoSubject')
+    const { conn } = fakeConn({ subject: null })
+    setIntentGitInfo(fakeCtx(), conn, {
+      type: 'set_intent_git_info',
+      intentId: r.id,
+      prId: '56',
+      prStatus: 'reviewing',
+    })
+
+    expect(logsOf(r.id, 'pr_created')[0].actor).toBe('system')
+  })
+
+  it('does not log again when a PR id already exists (overwrite or status-only update)', () => {
+    const r = gitInfoIntent('Existing')
+    setPrInfo(r.id, '60', 'reviewing')
+    const { conn } = fakeConn({ subject: 'grace' })
+
+    // Status-only update: same id, new status.
+    setIntentGitInfo(fakeCtx(), conn, {
+      type: 'set_intent_git_info',
+      intentId: r.id,
+      prId: '60',
+      prStatus: 'merged',
+    })
+    // Overwrite with a different id — still not a FIRST association.
+    setIntentGitInfo(fakeCtx(), conn, {
+      type: 'set_intent_git_info',
+      intentId: r.id,
+      prId: '61',
+      prStatus: 'reviewing',
+    })
+
+    expect(getIntent(r.id)).toMatchObject({ prId: '61', prStatus: 'reviewing' })
+    expect(logsOf(r.id, 'pr_created')).toHaveLength(0)
+  })
+
+  it('logs nothing when the message carries no usable PR association', () => {
+    const r = gitInfoIntent('NoPr')
+    const { conn } = fakeConn({ subject: 'heidi' })
+
+    // prStatus without prId ⇒ no PR write at all.
+    setIntentGitInfo(fakeCtx(), conn, {
+      type: 'set_intent_git_info',
+      intentId: r.id,
+      prStatus: 'reviewing',
+      branchName: 'intent/no-pr',
+    })
+    // An empty prId is not an association.
+    setIntentGitInfo(fakeCtx(), conn, {
+      type: 'set_intent_git_info',
+      intentId: r.id,
+      prId: '',
+      prStatus: 'reviewing',
+    })
+
+    expect(getIntent(r.id)?.branchName).toBe('intent/no-pr')
+    expect(logsOf(r.id, 'pr_created')).toHaveLength(0)
+  })
+})
+
 describe('failure isolation', () => {
   it('a broken intent_logs table only warns; the business write still lands', () => {
     const [r] = insertIntents(proj, [
@@ -294,6 +379,30 @@ describe('failure isolation', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     expect(() => updateStatus(r.id, 'in_progress')).not.toThrow()
     expect(getIntent(r.id)?.status).toBe('in_progress')
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
+  it('a broken intent_logs table does not stop set_intent_git_info from associating the PR', () => {
+    const r = insertIntents(proj, [
+      { title: 'IsoPr', shortEnTitle: 'iso-pr', content: '', priority: 'P1' },
+    ])[0]
+    getDb()!.exec('DROP TABLE intent_logs')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { conn } = fakeConn({ subject: 'ivan' })
+    const ctx = fakeCtx()
+
+    expect(() =>
+      setIntentGitInfo(ctx, conn, {
+        type: 'set_intent_git_info',
+        intentId: r.id,
+        prId: '99',
+        prStatus: 'reviewing',
+      }),
+    ).not.toThrow()
+
+    expect(getIntent(r.id)).toMatchObject({ prId: '99', prStatus: 'reviewing' })
+    expect(ctx.broadcastIntents).toHaveBeenCalled()
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })

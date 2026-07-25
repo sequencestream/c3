@@ -69,6 +69,13 @@ export interface DevCleanupDeps {
   setBranchName: (id: string, branchName: string) => void
   setLatestCommitHash: (id: string, commitHash: string) => void
   setPrInfo: (id: string, prId: string, prStatus: IntentPrStatus, prUrl: string | null) => void
+  /** Best-effort lifecycle log write (never throws). */
+  safeInsertIntentLog: (
+    intentId: string,
+    operationType: 'pr_created',
+    summary: string,
+    actor?: string | null,
+  ) => void
   /** Cancel prior cleanup todos for this intent (self-healing on re-run). */
   cancelEventsForIntent: (intentId: string) => void
   /** Push a workbench todo carrying a UiError describing the failure. */
@@ -203,6 +210,10 @@ export async function runManualDevCleanup(
   }
 
   deps.setPrInfo(intentId, pr.prId, 'reviewing', pr.prUrl ?? null)
+  // Same lifecycle-log point as the manual create-PR path. A session-end cleanup
+  // has no connection subject ⇒ the actor is `automation`. Only the FIRST
+  // association logs: the idempotent re-cleanup above returns before this line.
+  deps.safeInsertIntentLog(intentId, 'pr_created', `创建 PR #${pr.prId}`, 'automation')
   deps.broadcastIntents(workspacePath)
 
   // Publish a pr:create event so event-triggered automations can react.

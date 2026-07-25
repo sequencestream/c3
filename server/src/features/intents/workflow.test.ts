@@ -15,6 +15,7 @@ vi.mock('./store.js', () => ({
   getIntent: vi.fn(),
   isStoreAvailable: vi.fn(() => true),
   listIntents: vi.fn(),
+  safeInsertIntentLog: vi.fn(),
   setBranchName: vi.fn(),
   setLastWorkSession: vi.fn(),
   setPrInfo: vi.fn(),
@@ -104,7 +105,14 @@ import { startDevelopment } from './index.js'
 
 const workflowPrRegistry = new EventNormalizerRegistry()
 workflowPrRegistry.register(PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent)
-import { listIntents, getIntent, setBranchName, setPrInfo, updateStatus } from './store.js'
+import {
+  listIntents,
+  getIntent,
+  safeInsertIntentLog,
+  setBranchName,
+  setPrInfo,
+  updateStatus,
+} from './store.js'
 import {
   getDevSkill,
   getGitBranchMode,
@@ -948,6 +956,9 @@ describe('automation controller — branch-mode git alignment', () => {
     )
     expect(setPrInfo).toHaveBeenCalledWith('Z', '77', 'reviewing', 'http://x/pull/77')
     expect(updateStatus).toHaveBeenCalledWith('Z', 'done')
+    // The changelog records the automated PR creation exactly once, actor `automation`.
+    const prLogs = vi.mocked(safeInsertIntentLog).mock.calls.filter(([, op]) => op === 'pr_created')
+    expect(prLogs).toEqual([['Z', 'pr_created', '创建 PR #77', 'automation']])
   })
 
   it('worktree: explicit GitLab override uses the forge dispatcher and writes MR fields', async () => {
@@ -1029,6 +1040,41 @@ describe('automation controller — branch-mode git alignment', () => {
     expect(createForgePr).not.toHaveBeenCalled()
     expect(setPrInfo).not.toHaveBeenCalled()
     expect(updateStatus).toHaveBeenCalledWith('W', 'done')
+    expect(vi.mocked(safeInsertIntentLog).mock.calls.some(([, op]) => op === 'pr_created')).toBe(
+      false,
+    )
+  })
+
+  it('worktree: PR 创建失败不写 PR 字段也不记 pr_created 日志', async () => {
+    const proj = '/test/wt-pr-fail'
+    const intent = makeIntent({ id: 'F', status: 'todo', branchName: 'intent/F' })
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(createWorktree).mockReturnValue({ worktreePath: '/tmp/wt-F', branchName: 'intent/F' })
+    vi.mocked(getWorktreePath).mockReturnValue('/tmp/wt-F')
+    vi.mocked(updateStatus).mockImplementation((_id, status) => {
+      intent.status = status
+    })
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'done', reason: 'ok' })
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: false, error: 'gh 未登录' })
+    vi.mocked(gitDiffStat).mockResolvedValue('')
+    vi.mocked(gitRecentLog).mockResolvedValue('')
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+
+    const { hooks, runDevTurn } = makeHooks()
+    startWorkflow(proj, hooks, 1)
+    await flush()
+    const launchedId = runDevTurn.mock.calls[0][0].sessionId as string
+
+    await notifyTurnSettled(proj, launchedId, 'complete', 'F')
+
+    expect(setPrInfo).not.toHaveBeenCalled()
+    expect(vi.mocked(safeInsertIntentLog).mock.calls.some(([, op]) => op === 'pr_created')).toBe(
+      false,
+    )
   })
 
   // MSC-R1: the manual-vs-automation discriminator the session-end cleanup uses.

@@ -3,6 +3,37 @@
 All notable changes to `c3` (Code Creative Center). The version source-of-truth is the git
 tag (`git describe --tags`); `package.json` is the fallback baseline.
 
+## v1.0.0
+
+### New Features
+
+- sandbox: upgraded to arapuca v0.2.5 capabilities — proxy passthrough (`--allow-proxy-env`) and subscription-based agent auth (`--allow-keychain`); c3 now manages the arapuca install itself with a host-PATH fallback
+- sandbox: dropped the dedicated sandbox agent config tree — sandbox and host runs share the same default/tool/intent/spec agent configuration
+- sandbox: `createSandboxWrapper` vendor-specific auth branches refactored into per-vendor auth strategies, restoring vendor neutrality
+- session cleanup: retention/cleanup config moved out of the sandbox block into a standalone `sessionCleanup` block, and cleanup became a global vendor-neutral capability; relay codex home converged to a single global directory
+- workcenter: "User Notifications" is the default landing page and the first menu item; the workcenter switch icon carries the same pending badge as the notification page
+- running-state indicators: in-progress count badges on the top nav (Intents / Discussions / Automations), a running green dot on intent list rows (intent / spec / work sessions) and on automation list rows, plus running dots on intent-detail session tabs
+- intent detail: split the oversized `IntentDetail.vue` into tab orchestration / engineering-progress / PR-and-delete subcomponents and a composable; the tab defaults to "Intent Session" when the intent body is empty; done intents hide the delete button
+- automations: unified the "in progress" definition between the top badge and the list dot; PR URLs created by the automation queue are persisted so the detail page can link to the PR number
+
+### Fixes
+
+- sandbox: system-mode claude reporting "not logged in" inside the sandbox
+- sandbox: system-mode codex subscription auth returning 401 inside the sandbox
+- sandbox: arapuca resolution on Windows PATH now honours `PATHEXT`
+- automations: a crash could leave a run stuck in `running`
+- intent detail: the PR stage of the progress bar was blank on first entry (only refreshed after switching tabs)
+- intent detail: delete-button race on done intents — the confirmation dialog is now dismissed when the intent turns done, with a guard in `confirmDelete`
+
+### Docs
+
+- handbook: full English edition alongside the Chinese one, with navigation and README references
+
+### Dependencies
+
+- Claude Agent SDK 0.3.215 → 0.3.218
+- Codex SDK 0.144.6 → 0.145.0
+
 ## v0.9.10
 
 ### New Features

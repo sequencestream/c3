@@ -38,7 +38,8 @@ sandbox 是内核基础设施领域，属于内层能力（受单向依赖边界
 | workspace sandbox 配置校验            | 校验并 normalize `WorkspaceSandboxConfig`（`enabled` + `extraMounts` + `sandboxSessionKinds` + `sessionRetentionDays`）。               |
 | `SandboxLauncher`                     | run lifecycle 与 sandbox 的集成层：读取 workspace 配置、探测 arapuca、`resolvePaths()`（含持久 codexHome）、生成 wrapper、清理 tmpDir。 |
 | `kernel/sandbox/arapuca-dist.ts`      | arapuca 分发管理器：关联版本与各平台制品元数据、下载 + SHA-256 校验 + 解包 + 原子激活、后台 single-flight 安装（见 §14）。              |
-| `features/sandbox/rollout-janitor.ts` | 每日定时任务:清理持久 CODEX_HOME 内超过工作区保留天数的 codex rollout(见 §9)。                                                          |
+| `kernel/sandbox/vendor-auth.ts`       | per-vendor 认证策略注册表:把 vendor + agent 认证模式 + 宿主事实解析成数据形态的 profile(见 §9.1)。                                      |
+| `features/sandbox/rollout-janitor.ts` | 每日定时任务:清理持久 CODEX_HOME 内超过工作区保留天数的 codex rollout(见 §9.1)。                                                        |
 | ProcessSandbox 层（arapuca）          | 把 resolved 路径集映射为 arapuca `run` 参数；把 vendor CLI 包成 `arapuca run … -- <cli> "$@"` 形态的 wrapper。                          |
 
 > 与容器方案的差异：不再有 `DockerDriver`、镜像 / registry、seccomp profile 加载、bind mount、forwarder sidecar、内部网络。原容器 runtime、容器供应链、网络分段相关模块整体移除。既有"沙箱 backend 作为独立内核模块""系统 + 项目双层配置"的抽象概念保留，但不再承载镜像 / 资源 / 网络等容器字段；当前范围内所有隔离参数由 workspace 配置与该 run 的执行根（worktree 或源工作区）直接驱动。具体文件切分由实现阶段确定。
@@ -65,7 +66,7 @@ interface WorkspaceSandboxConfig {
 - `enabled` 为真时，`sessionKind` 命中 `sandboxSessionKinds` 的 run 即进入沙箱，不再要求隔离 worktree 或特定来源。
 - `extraMounts` 是补充放行目录，每项按宿主绝对路径同路径放行，默认只读，可逐项声明 rw。用于把额外依赖目录、共享缓存、参考仓库带进放行集。
 - `sandboxSessionKinds` 决定哪些 `SessionKind` 的 run 进沙箱，缺省 `['work']`。
-- `sessionRetentionDays` 决定持久 CODEX_HOME 内 codex rollout 的保留天数,每日 janitor 据此清理超期文件(见 §9 CODEX_HOME 项)。缺省 30、最小 1。
+- `sessionRetentionDays` 决定持久 CODEX_HOME 内 codex rollout 的保留天数,每日 janitor 据此清理超期文件(见 §9.1 codex 策略)。缺省 30、最小 1。
 
 移除的容器 / 网络字段（不在当前模型中）：镜像名 / `imageOverride`、`readonlyRootfs`、`networkDisabled`、`allowExternalNetwork`、`memoryLimit` / `cpuLimit` / `resourceLimits`、`envVarsOverride`、`networkAllowlist`、`seccomp`、`sandbox`（system definition 引用名）、`agentIds` 之外的容器专属项等。网络收窄阶段再按需引入网络字段。
 
@@ -88,7 +89,7 @@ interface WorkspaceSandboxConfig {
 6. 固定放行：执行根始终读写，workspace specs root 以宿主相同绝对路径读写；当执行根**不同于**源工作区时（worktree run），源工作区只读；当执行根**就是**源工作区时（current-branch），二者规范化后同路径，只保留一条读写授权，不产生互相冲突的 ro/rw 挂载。其中**工作区可派生**的两项（项目原目录 ro、specs root rw）由单一来源 `sysExtraMounts(workspace)` 产出——**同一函数**既在 sandbox 启动时被 `resolvePaths()` 取用并入放行集（同路径时把项目原目录 ro 合并入执行根 rw），又随工作区设置回复下发前端。执行根为**逐 run** 放行（无法仅由工作区路径派生），不在 `sysExtraMounts` 内，由 `resolvePaths()` 单独加入。这些固定放行在 workspace 设置的「补充放行目录」区域**只读列出（默认嵌入目录列表）**，供用户了解始终生效的放行集：不可修改、不可删除；逐 run 的执行根按当前分支模式展示为源工作区读写或独立 worktree 读写，界面文案不承诺源工作区恒为只读。
 7. 补充放行：workspace 可配置 `extraMounts`，每项同路径放行、默认只读、可逐项声明 rw；补充目录不得覆盖执行根、项目原目录、specsBase 等保留路径，放行前须 canonicalize 并做 allowlist / denylist 校验，拒绝软链逃逸；独立 worktree 的源工作区只读是强制边界，不得通过父子路径重叠把它提升为读写。
 8. deny-by-default 是安全底座：未显式放行的目录（其它项目、`~/.ssh`、`~/.aws` 等 home 内敏感目录）一律不可见，无需额外配置即隔离凭证与无关代码。
-9. 认证按 agent 的 `configMode` 分流：custom agent 的 provider 凭证由 driver 经子进程 env 显式注入（wrapper 逐项 `--env "KEY=$KEY"` 透传），不触碰宿主 keychain；system agent（订阅态，如 Claude Pro/Max、ChatGPT 登录）走 vendor CLI 自身登录，wrapper 为其追加 `--allow-keychain`（arapuca ≥ 0.2.5）打开宿主凭证访问面。除此之外仍无凭证注入，home 内其它敏感目录不放行。
+9. 认证按 agent 的 `configMode` 分流：custom agent 的 provider 凭证由 driver 经子进程 env 显式注入（wrapper 逐项 `--env "KEY=$KEY"` 透传），不触碰宿主 keychain；system agent（订阅态，如 Claude Pro/Max、ChatGPT 登录）走 vendor CLI 自身登录，wrapper 为其追加 `--allow-keychain`（arapuca ≥ 0.2.5）打开宿主凭证访问面。除此之外仍无凭证注入，home 内其它敏感目录不放行。各 vendor 的具体分流规则集中在一份 per-vendor 认证策略里（§9.1），wrapper 生成逻辑本身不含 vendor 分支——新增一个 vendor 只新增一条策略。
 10. 网络当前全开，不施加网络约束。宿主若设有标准代理变量，wrapper 追加 `--allow-proxy-env` 让 arapuca 转发该组变量（网络模型不变，只是让沙箱内 CLI 看得见宿主代理端点）。网络禁用 / 出站白名单列为后续阶段。
 11. sandbox 启用时 run **始终**保留其正常解析出的 agent：沙箱不参与 agent 选择，没有 sandbox 专属角色配置，也没有换绑分支。该 agent 的 vendor 决定入口命令（宿主 PATH 中的 CLI）与 provider 接线。system agent 不构成 sandbox 冲突。
 12. 启用即硬隔离：arapuca fail-closed（任一隔离层失效即非零退出），与 deny-by-default 一致；探测缺失 / 平台不支持 / 放行路径非法 / 启动失败时该 run 硬失败，绝不回落宿主裸跑。
@@ -103,14 +104,14 @@ interface WorkspaceSandboxConfig {
 - 读取并 normalize workspace sandbox config，判断本次 run 是否进沙箱。
 - 探测 arapuca 平台能力与二进制（管理版本优先、PATH 兜底），两者皆无则 hard-fail。
 - `resolvePaths()`：把固定放行（执行根 rw、源工作区 ro——同路径时并入执行根 rw、specsBase rw）与 `extraMounts`（逐项 ro/rw）解析成一个 canonicalize + 校验过的放行路径集。
-- `createSandboxWrapper()`：把入口命令、放行路径集、cwd 生成为 arapuca wrapper 脚本。
+- `createSandboxWrapper()`：解析本次 vendor 的认证策略（§9.1），把策略、放行路径集与 cwd 渲染为 arapuca wrapper 脚本。
 - run 结束后清理 wrapper 临时目录。
 
 上层不直接依赖 arapuca 的调用细节；`SandboxLauncher` 之下的 ProcessSandbox 层负责把放行路径集翻译为 arapuca `run` 参数。
 
 ## 7. arapuca 参数映射
 
-`resolvePaths()` 产出的放行路径集映射为 arapuca `run` 的挂载标志：
+`resolvePaths()` 产出的放行路径集与 per-vendor 认证策略（§9.1）映射为 arapuca `run` 参数：
 
 | c3 概念                         | arapuca 参数                                  |
 | ------------------------------- | --------------------------------------------- |
@@ -119,18 +120,18 @@ interface WorkspaceSandboxConfig {
 | specsBase                       | `-v <specsBase>:rw`                           |
 | `extraMounts[i]`（默认 ro）     | `-v <path>:ro`                                |
 | `extraMounts[i]`（声明 rw）     | `-v <path>:rw`                                |
-| vendor CLI 自身最小配置目录     | `-v <configDir>:ro`（最小放行）               |
-| 入口命令 + 参数                 | `-- <entryCommand> "$@"`                      |
+| 策略挂载（数据根 / 运行时目录） | `-v <path>:rw`                                |
+| 策略入口命令 + 参数             | `-- <entryCommand> "$@"`                      |
 | 网络（当前全开）                | `--seccomp baseline`（开网；strict 默认全断） |
 | 宿主存在标准代理变量            | `--allow-proxy-env`（arapuca ≥ 0.2.5）        |
-| 本次 agent 为 system（订阅态）  | `--allow-keychain`（arapuca ≥ 0.2.5）         |
+| 策略要求宿主凭证库（订阅态）    | `--allow-keychain`（arapuca ≥ 0.2.5）         |
 
 约束：
 
 - 所有放行路径先 canonicalize，再对照 allowlist / denylist；拒绝放行敏感系统目录、拒绝软链逃逸。
 - 保留路径（执行根 / 源工作区 / specsBase）不可被 `extraMounts` 覆盖或被其覆盖。
 - deny-by-default：未列入放行集的目录一律不可见，无需显式禁止。
-- vendor CLI 运行自身所需的最小集（可执行文件、运行库、其自身 home / 配置目录）由 wrapper 生成逻辑纳入放行，最小化暴露，不牵连 home 其它敏感目录。具体放行哪些目录由实现阶段结合各 vendor CLI 的配置布局确定。
+- vendor CLI 运行自身所需的目录（其数据根、运行时目录、配置兄弟文件）只由该 vendor 的策略声明，且只放行该条路径实际需要的部分，不牵连 home 其它敏感目录，也不跨 vendor 出现。
 - `--allow-proxy-env` / `--allow-keychain` 两个能力参数一律落在 arapuca 参数区（`--` 之前），绝不进入 vendor CLI 的 `"$@"`。二者要求宿主 arapuca ≥ 0.2.5；c3 不做版本协商与降级分支，旧版因未知参数启动失败时沿用 sandbox fail-closed，不回退宿主裸跑。
 
 ## 8. Sandbox 启动流程
@@ -166,74 +167,78 @@ run 启动（任意来源 / 分支模式）
 
 `createSandboxWrapper()` 在宿主临时目录写一个可执行 wrapper 脚本，把这次 vendor CLI 启动包进 arapuca。脚本 `exec` 探测选中的 arapuca **绝对路径**（管理版本或 PATH 命中，见 §14），不写裸名，避免运行期 PATH 查找到另一个未经校验的二进制：
 
-数据根 env 与挂载**按 vendor 分流**(codex → `CODEX_HOME`,claude → `CLAUDE_CONFIG_DIR`),互不泄漏。codex 分支:
+脚本骨架对所有 vendor 相同。vendor 差异——入口命令、数据根及其变量、凭据变量、额外挂载、身份变量、是否开放宿主凭证库、启动前目录——全部来自一份 per-vendor 认证策略(§9.1);wrapper 只做通用挂载合并、shell quoting、去重与参数排序,不识别 vendor 名、不从入口命令反推 vendor、不判断认证模式:
 
 ```sh
 #!/bin/sh
+[ mkdir -p "<策略声明的启动前目录>" 2>/dev/null || true ]     # 逐条;策略未声明则整行不出现
 exec "<arapuca 绝对路径>" run \
   --seccomp baseline \
   [ --allow-proxy-env ]   # 仅当宿主设有标准代理变量 \
-  [ --allow-keychain ]    # 仅当本次 agent 为 system(订阅态) \
+  [ --allow-keychain ]    # 仅当策略要求打开宿主凭证库 \
   --cwd "<executionRoot>" \
-  --env "CODEX_HOME=<持久 per-workspace codexHome>" \   # ~/.c3/sandbox-home/<project>/.codex,跨 run 存活
-  --env "CODEX_API_KEY=$CODEX_API_KEY" \
-  -v "<持久 per-workspace codexHome>":rw \
+  [ --env "<策略字面量变量>=<值>" ... ]       # 数据根、登录身份等非机密宿主事实,内联 \
+  [ --env "<策略凭据变量>=$<同名变量>" ... ]   # /bin/sh 运行期展开,值不落盘 \
   -v "<executionRoot>":rw \
   [ -v "<workspaceRoot>":ro ]   # 仅当 workspaceRoot ≠ executionRoot \
   -v "<specsBase>":rw \
+  [ -v "<策略挂载>":ro|rw ... ] \
   [ -v "<extraMount>":ro|rw ... ] \
-  -- "codex" "$@"
+  -- "<策略入口命令>" "$@"
 ```
 
-claude 分支(改设 `CLAUDE_CONFIG_DIR`、挂宿主 claude config dir 与 `/tmp/claude-<uid>` 运行时目录,透传 `ANTHROPIC_*`):
+挂载按「通用固定放行 → 策略挂载 → 用户补充放行」拼接后按路径去重,首条授权生效,同一路径不会出现互相冲突的两条 `-v`。
 
-```sh
-#!/bin/sh
-mkdir -p "/tmp/claude-<uid>" 2>/dev/null || true
-exec "<arapuca 绝对路径>" run \
-  --seccomp baseline \
-  [ --allow-proxy-env ]   # 仅当宿主设有标准代理变量 \
-  [ --allow-keychain ]    # 仅当本次 agent 为 system(订阅态) \
-  --cwd "<executionRoot>" \
-  --env "CLAUDE_CONFIG_DIR=<宿主 claude config dir>" \   # 与 server 读取端同一目录,transcript 天然可读
-  --env "ANTHROPIC_BASE_URL=$ANTHROPIC_BASE_URL" \
-  --env "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
-  --env "ANTHROPIC_AUTH_TOKEN=$ANTHROPIC_AUTH_TOKEN" \
-  -v "<宿主 claude config dir>":rw \
-  -v "<canonical /tmp>/claude-<uid>":rw \
-  -v "<executionRoot>":rw \
-  [ -v "<workspaceRoot>":ro ]   # 仅当 workspaceRoot ≠ executionRoot \
-  -v "<specsBase>":rw \
-  [ -v "<extraMount>":ro|rw ... ] \
-  -- "claude" "$@"
-```
-
-vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这次 spawn 被 wrapper 包进 arapuca 受限进程。这与容器方案里"wrapper 替换二进制"的 per-run 隔离模型一致，只是包裹形态从 `docker exec … -- <cli> "$@"` 换成 `arapuca run … -- <cli> "$@"`。
+vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这次 spawn 被 wrapper 包进 arapuca 受限进程。
 
 关键要求：
 
 - `--seccomp baseline` 打开出站网络（当前网络全开）。arapuca 默认 `strict` 全断网络，vendor CLI 的 provider 调用会 `ConnectionRefused`，故必须显式开网。macOS 无 per-host 白名单；Linux 后续可 `--allow-host` 收窄到 provider 域名。
 - `--cwd` 显式设为执行根（worktree 或源工作区）；进程同路径运行，cwd 天然一致。
-- `<entryCommand>` 是宿主 PATH 中的 vendor CLI 名（如 `claude`、`codex`），不是任何容器内安装路径。
+- 入口命令是宿主 PATH 中的 vendor CLI 名（如 `claude`、`codex`），不是任何容器内安装路径。
 - wrapper 需要能在宿主 PATH 中找到 arapuca 可执行文件（该 arapuca 须含 macOS profile 的 mount-ancestor 遍历与 `/tmp` symlink 放行两处修复，否则 codex `canonicalize(CODEX_HOME)` / claude `mkdir /tmp/claude-<uid>` 会 EPERM）。
-- **CODEX_HOME（codex,持久化以支持 resume）**：指向 **per-workspace 持久目录** `~/.c3/sandbox-home/<project>/.codex`（`getSandboxCodexHome(workspace)`），位于执行根**之外**、作为独立 rw volume 传入,满足 macOS profile 对启动期 canonicalize 的授权,并避免 arapuca 默认临时 HOME 被 codex 拒绝创建 PATH helper。**为何持久而非逐 run**:codex 第二轮 `thread/resume` 需要第一轮 `startThread` 写在 `CODEX_HOME/sessions/` 的 rollout;若随 run 清理则下轮空目录 → `no rollout found`。持久目录让同工作区所有 session 共用一个 home、每个 thread 的 rollout(以 thread id 命名)跨 run 存活。**不挂宿主 `~/.codex`**(保持 deny-by-default;rollout 本就不写宿主 home)。逐 run tmpDir 现仅放 wrapper 脚本并随 run 清理;持久 codexHome 不逐 run 删,由每日 janitor 按工作区 `sessionRetentionDays`(默认 30、最小 1)清理超期 rollout(`features/sandbox/rollout-janitor.ts`)。
-- **CLAUDE_CONFIG_DIR（claude,持久化以支持 resume + 查看）**：指向**宿主 claude config dir**（`getSandboxClaudeConfigDir(workspace)` = `hostClaudeConfigDir()`，即 `CLAUDE_CONFIG_DIR` 或 `~/.claude`），作为独立 rw volume 传入。**与 codex 的隔离目录策略不同**:claude transcript 由 server 经 SDK `getSessionMessages` 读取,其 projects 根恒取 **server 进程的** `CLAUDE_CONFIG_DIR`(多工作区 server 无法按调用改写);若给 claude 每工作区隔离目录,宿主侧将读不到。故 sandbox 复用宿主 config dir,transcript 落在 server 读取端同一处,**查看零改动即生效**。安全:claude 凭证走 env/keychain,不落在 config dir 内(唯一带凭证的 `~/.claude.json` 是 `~/.claude` 的**兄弟**,不在其内)。
-- **claude 运行时目录**：Claude Code 硬编码 `/tmp/claude-<uid>`（shell-snapshot / IPC），不尊重 TMPDIR 且 arapuca 锁定 TMPDIR，故 wrapper 预建该宿主目录并按 canonical 路径放行；逐用户共享（非逐 run），放行但不清理，codex 不使用（仅 claude 分支挂载）。
-- **认证按 agent 模式分流（custom → env 注入；system → `--allow-keychain`）**：arapuca env **deny-by-default**（除自身管理的 `HOME` / `PATH` 外不继承父进程 env，裸名 `--env KEY` 被拒），故 custom agent 的 provider 凭证须按 vendor 用 `--env "KEY=$KEY"` 显式透传——`$KEY` 由 `/bin/sh` 运行时从 wrapper 进程 env 展开，token 值不落盘；未设变量展开为 `KEY=`，arapuca 视为未设。凭证按 vendor 分离（codex run 不透传 `ANTHROPIC_*`，反之亦然）。**system agent（订阅态：Claude Pro/Max、ChatGPT 登录等）**的认证不在 env 里，而在宿主 keychain / vendor CLI 自身登录态中，deny-by-default 下不可见，故 wrapper 为其追加一次 `--allow-keychain`（arapuca ≥ 0.2.5）。该参数**严格绑定** `configMode === 'system'`：不是所有 sandbox run 的固定参数，且必须取自**本次实际解析并绑定的 agent**（两条启动入口——通用 driver 路径与 claude 直接 query 路径——都显式传入 `allowKeychain`），不得由 CLI 名称、平台或全局默认 agent 推断，否则 session agent 切换、角色 agent、vendor 分支会产生错配。custom agent 不因此获得 keychain 放行。
-- **代理透传（`--allow-proxy-env`）**：宿主 `process.env` 中 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` 及四个小写变体中**任一存在且非空**，wrapper 即追加一次 `--allow-proxy-env`（arapuca ≥ 0.2.5），由 arapuca 负责转发这组标准变量，c3 不再逐项生成 `--env`。codex / claude 同一逻辑，零配置、不新增工作区开关。只看键的存在性：不解析 URL、不复制任意环境变量、不脱敏值；空值视为未设（它本就不授予任何东西）。宿主未设代理时行为与此前完全一致。
-- **平台能力边界**：「全平台放开」只表示 c3 不按 `process.platform` 拦截或过滤 system agent；认证最终是否成功取决于 arapuca 与 vendor CLI 在该平台的 keychain 实现，不构成跨平台成功保证。system agent 的认证失败按普通 vendor / arapuca 运行失败上报，不再解释为"必须配置 custom agent"，也不自动绕过 sandbox。
+- **凭据不落盘**：arapuca env **deny-by-default**（除自身管理的 `HOME` / `PATH` 外不继承父进程 env，裸名 `--env KEY` 被拒），故策略声明的凭据变量以 `--env "KEY=$KEY"` 透传——`$KEY` 由 `/bin/sh` 运行时从 wrapper 进程 env 展开，token 值不进脚本文本；未设变量展开为 `KEY=`，arapuca 视为未设。策略对象本身只带变量名，不带值。
+- **代理透传（`--allow-proxy-env`）**：宿主 `process.env` 中 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` / `NO_PROXY` 及四个小写变体中**任一存在且非空**，wrapper 即追加一次 `--allow-proxy-env`（arapuca ≥ 0.2.5），由 arapuca 负责转发这组标准变量，c3 不逐项生成 `--env`。这是宿主事实而非 vendor 差异，不进 per-vendor 策略：所有 vendor 同一逻辑，零配置、不新增工作区开关。只看键的存在性：不解析 URL、不复制任意环境变量、不脱敏值；空值视为未设（它本就不授予任何东西）。
+- **平台能力边界**：「全平台放开」只表示 c3 不按 `process.platform` 拦截或过滤 system agent；认证最终是否成功取决于 arapuca 与 vendor CLI 在该平台的 keychain 实现，不构成跨平台成功保证。system agent 的认证失败按普通 vendor / arapuca 运行失败上报，不解释为"必须配置 custom agent"，也不自动绕过 sandbox。
 
-### 9.1 transcript store 定位:冻结 storeScope + vendor 中立数据根(已实现)
+### 9.1 per-vendor 认证策略
 
-历史 session 展示会话记录一律从 vendor native store 读(c3 不另存):`select_session` → `works/index.ts` `loadHistoryForVendor` → codex 走 `CodexSessionStore.read`、claude 走 `loadHistory`。sandbox 与宿主的 vendor 数据根不同(codex `CODEX_HOME`、claude `CLAUDE_CONFIG_DIR`),故 transcript 物理落在两地之一。以下三层已落地(ADR-0015 / ADR-0030):
+一个 vendor 在沙箱内**怎样认证、把状态写到哪里**，集中在一份按 vendor 注册的策略里（`kernel/sandbox/vendor-auth.ts`）。解析输入是：vendor、**本次实际解析并绑定的 agent 是否订阅态**（`configMode === 'system'`）、宿主事实（平台、home、登录名、uid、路径是否存在）、已解析的放行路径集。输出是纯数据的 profile，不含任何 shell 片段：
+
+- `entryCommand`：`--` 之后 exec 的宿主 CLI 名。
+- `literalEnv`：内联的非机密变量（数据根、登录身份），值是固定宿主事实。
+- `forwardEnv`：只声明**变量名**的凭据通道，值由 `/bin/sh` 运行期展开。
+- `mounts`：该 vendor 自身需要的放行路径（数据根、运行时目录、配置兄弟文件）。
+- `preRunDirs`：arapuca 收窄前需 `mkdir -p` 的宿主目录。
+- `allowKeychain`：是否追加 `--allow-keychain`。
+
+注册表以受限的 vendor 类型为键：**新增一个 vendor 等于新增一条策略**，wrapper 主体不动；未注册的 vendor 在生成 wrapper 前即以 `SandboxLaunchError` 硬失败，绝不退化成没有数据根、没有凭据通道的"通用"脚本。策略之间互不交叉——一个 vendor 的凭据变量、数据根与运行目录不出现在另一个 vendor 的 wrapper 里；宿主 keychain 只对实际绑定的订阅态 agent 打开。
+
+订阅态（`system`）与自备凭证（`custom`）的分流由策略自己完成：custom agent 的 provider 凭证经 `forwardEnv` 注入，不触碰宿主凭证库；system agent 的认证在宿主 keychain / vendor CLI 自身登录态里，deny-by-default 下不可见，故策略要求 `--allow-keychain`（arapuca ≥ 0.2.5）。该模式必须取自本次实际绑定的 agent（两条启动入口——通用 driver 路径与 claude 直接 query 路径——都显式传入），不得由 CLI 名称、平台或全局默认 agent 推断，否则 session agent 切换、角色 agent、vendor 分支会产生错配。
+
+**claude 策略**：数据根是**宿主 claude config dir**（`getSandboxClaudeConfigDir(workspace)` = `hostClaudeConfigDir()`，即 `CLAUDE_CONFIG_DIR` 或 `~/.claude`），恒以独立 rw volume 传入。**与 codex 的隔离目录策略不同**：claude transcript 由 server 经 SDK `getSessionMessages` 读取，其 projects 根恒取 **server 进程的** `CLAUDE_CONFIG_DIR`（多工作区 server 无法按调用改写）；若给 claude 每工作区隔离目录，宿主侧将读不到。故 sandbox 复用宿主 config dir，transcript 落在 server 读取端同一处，查看零改动即生效。安全：claude 凭证走 env/keychain，不落在 config dir 内（唯一带凭证的 `~/.claude.json` 是 `~/.claude` 的**兄弟**，不在其内）。
+
+- custom：固定 `CLAUDE_CONFIG_DIR` 指向该目录，透传 `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`。
+- system（macOS）：**不设** `CLAUDE_CONFIG_DIR`。Claude Code 只在默认 profile 下读登录 Keychain，一旦该变量存在就切到并不存在的文件型凭证 `$CLAUDE_CONFIG_DIR/.credentials.json` 并判定未登录；`--allow-keychain` 已把 HOME 指回真实 home，claude 自行解析到同一个 `~/.claude`。Keychain 查找按登录名索引而 arapuca 把 `USER`/`LOGNAME` 抹空，故这两个变量由策略内联透传（登录名非机密）。`~/.claude.json` 仅在**已存在**时 rw 挂载（挂不存在的路径会让 run 失败）。
+- system（非 macOS）：文件型凭证就在 `~/.claude` 内，行为与 custom 一致地固定 `CLAUDE_CONFIG_DIR`。
+- 运行时目录：Claude Code 硬编码 `/tmp/claude-<uid>`（shell-snapshot / IPC），不尊重 TMPDIR 且 arapuca 锁定 TMPDIR，故策略把宿主路径列为 `preRunDirs`、canonical 路径列为挂载；逐用户共享（非逐 run），放行但不清理。codex 不使用。
+
+**codex 策略**：codex 直接从 `$CODEX_HOME` 读认证，没有 keychain 也没有 env 切换，故数据根按认证模式分流。
+
+- custom（relay）：`CODEX_HOME` 指向 **per-workspace 持久目录** `~/.c3/sandbox-home/<project>/.codex`（`getSandboxCodexHome(workspace)`），位于执行根**之外**、独立 rw volume 传入，满足 macOS profile 对启动期 canonicalize 的授权，并避免 arapuca 默认临时 HOME 被 codex 拒绝创建 PATH helper；凭据是 relay token `CODEX_API_KEY`，**不挂宿主 `~/.codex`**。**为何持久而非逐 run**：codex 第二轮 `thread/resume` 需要第一轮 `startThread` 写在 `CODEX_HOME/sessions/` 的 rollout，若随 run 清理则下轮空目录 → `no rollout found`。持久目录让同工作区所有 session 共用一个 home、每个 thread 的 rollout（以 thread id 命名）跨 run 存活。逐 run tmpDir 仅放 wrapper 脚本并随 run 清理；持久 codexHome 由每日 janitor 按工作区 `sessionRetentionDays`（默认 30、最小 1）清理超期 rollout（`features/sandbox/rollout-janitor.ts`）。
+- system（订阅态）：认证在 `$CODEX_HOME/auth.json`（ChatGPT OAuth token），隔离目录没有它就会以空 bearer 直连并 401，故 `CODEX_HOME` 指向**宿主 `~/.codex`** 并 rw 挂载；该 session 的 `storeScope` 相应冻结为 `host`（§9.2），rollout / resume / transcript 读取全部落在同一处。
+
+### 9.2 transcript store 定位:冻结 storeScope + vendor 中立数据根
+
+历史 session 展示会话记录一律从 vendor native store 读(c3 不另存):`select_session` → `works/index.ts` `loadHistoryForVendor` → codex 走 `CodexSessionStore.read`、claude 走 `loadHistory`。sandbox 与宿主的 vendor 数据根不同(codex `CODEX_HOME`、claude `CLAUDE_CONFIG_DIR`),故 transcript 物理落在两地之一。三层机制:
 
 **① 读取端两处扫(dual-scan,兜底)**:`CodexSessionStore.list/read` 不再硬编码宿主 `~/.codex`,而按 `storeRoots` 扫描多个 CODEX_HOME 根;缺省即扫**宿主 `~/.codex` + 本工作区 sandbox home 两处**(`codexStoreRoots`),命中即算——按 `session id + cwd` 精确匹配,thread id 唯一不冲突。侧栏冷枚举/回填与存量 session 天然鲁棒。
 
 **② 冻结 `storeScope: 'host' | 'sandbox'`(治本,精确定位)**:session fact 在首次 bind 时冻结 `storeScope`(类比已冻结的 `vendor`),取值由该 run 是否 sandbox(`rt.sandboxPaths`)决定,写入 `SessionAgentFact`(state.json)。读取端 `loadHistoryForVendor` 按冻结 scope 取 `codexStoreRoots(cwd, scope)`——冻结根优先、另一根兜底。续接端(`run-via-driver`):**非 sandbox run 续接一个冻结为 sandbox 的 codex session** 时,把 `CODEX_HOME` 指向 sandbox home,使宿主进程也能找到 rollout(反向——host-frozen 在 sandbox 内续接——保持 wrapper 的 sandbox home,为可接受的取舍)。
 
-**③ vendor 中立"每 vendor sandbox 数据根"**:`resolveVendorStoreDir(vendor, workspace, scope)` 收敛两 vendor 的数据根解析(`workspace-path.ts`)。codex → `host` 用 `~/.codex`、`sandbox` 用隔离的 `getSandboxCodexHome`;claude → 两 scope 均为宿主 `hostClaudeConfigDir()`。`ResolvedSandboxPaths` 增 `claudeConfigDir`,wrapper 按 vendor 挂载对应根(见 §9)。
+**③ vendor 中立"每 vendor sandbox 数据根"**:`resolveVendorStoreDir(vendor, workspace, scope)` 收敛两 vendor 的数据根解析(`workspace-path.ts`)。codex → `host` 用 `~/.codex`、`sandbox` 用隔离的 `getSandboxCodexHome`;claude → 两 scope 均为宿主 `hostClaudeConfigDir()`。`ResolvedSandboxPaths` 增 `claudeConfigDir`,wrapper 按策略挂载对应根(见 §9.1)。
 
-**为何 claude 不需要按 scope 分支读取**:claude sandbox 复用宿主 config dir(见 §9 CLAUDE_CONFIG_DIR 项),sandbox 写入即落在 server 读取端同一处,查看零改动即成立;故 `storeScope` 的读取分支实际只对 codex 生效,但模型保持 vendor 中立。
+**为何 claude 不需要按 scope 分支读取**:claude sandbox 复用宿主 config dir(见 §9.1 claude 策略),sandbox 写入即落在 server 读取端同一处,查看零改动即成立;故 `storeScope` 的读取分支实际只对 codex 生效,但模型保持 vendor 中立。
 
 ## 10. Agent 选择与 provider 接线
 

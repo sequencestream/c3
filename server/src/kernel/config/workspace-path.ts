@@ -36,9 +36,9 @@ export function getSpecsBase(workspacePath: string): string {
  *
  * This isolated home is for CUSTOM (relay) codex only. A subscription
  * (`system`-mode) codex authenticates in DIRECT mode from `$CODEX_HOME/auth.json`,
- * which this dir lacks — so the sandbox wrapper points its CODEX_HOME at the HOST
- * `~/.codex` instead (see `codexSystemMode` in createSandboxWrapper), and those
- * sessions freeze their store scope to `host`, never reaching here.
+ * which this dir lacks — so the codex sandbox auth profile points its CODEX_HOME
+ * at the HOST `~/.codex` instead, and those sessions freeze their store scope to
+ * `host`, never reaching here.
  */
 export function getSandboxCodexHome(workspacePath: string): string {
   return join(c3HomeDir(), 'sandbox-home', projectDirName(workspacePath), '.codex')
@@ -80,9 +80,8 @@ export function hostClaudeConfigDir(): string {
  * pin `CLAUDE_CONFIG_DIR` to it. On macOS a subscription login lives in the
  * Keychain, which Claude Code consults ONLY in its default profile; setting
  * `CLAUDE_CONFIG_DIR` flips it to a non-existent file store and it reports "Not
- * logged in". The wrapper (`createSandboxWrapper`) therefore leaves the env unset
- * for the keychain path and lets claude resolve this same dir from HOME — see
- * `claudeKeychainMode` there.
+ * logged in". The claude sandbox auth profile therefore leaves the env unset for
+ * the keychain path and lets claude resolve this same dir from HOME.
  */
 export function getSandboxClaudeConfigDir(_workspacePath: string): string {
   return hostClaudeConfigDir()

@@ -9,8 +9,8 @@
  * `wss://api.openai.com/v1/responses` → `401 Missing bearer or basic authentication`。
  *
  * 修复:system 模式 codex 的 CODEX_HOME 指向 HOST `~/.codex`(auth.json 在此)并挂载,
- * 会话 store scope 冻结 `host` 以对齐 rollout/resume/transcript(见 createSandboxWrapper
- * 的 codexSystemMode)。custom(relay)codex 仍用隔离 home + relay-token,不动。
+ * 会话 store scope 冻结 `host` 以对齐 rollout/resume/transcript(见 vendor-auth.ts 的
+ * codex 认证策略)。custom(relay)codex 仍用隔离 home + relay-token,不动。
  *
  * 本测试用【真实的 createSandboxWrapper】(经 tsx 导入 server 源码)生成一个
  * system 模式(allowKeychain:true)codex wrapper,再实跑 `codex exec`,断言:

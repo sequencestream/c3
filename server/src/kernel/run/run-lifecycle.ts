@@ -542,8 +542,8 @@ export async function launchRun(
                 // life (ADR-0015). `rt.sandboxPaths` set ⇒ this run wrote into the
                 // sandbox vendor data root, so the transcript lives there — EXCEPT a
                 // system-mode codex, whose sandbox run authenticates from and writes
-                // into the HOST ~/.codex (see `codexSystemMode` in
-                // createSandboxWrapper), so its store is `host` even under sandbox.
+                // into the HOST ~/.codex (see the codex sandbox auth profile), so
+                // its store is `host` even under sandbox.
                 const codexSystemRun =
                   resolveAgent(agentCfg.agentId).vendor === 'codex' &&
                   resolveAgent(agentCfg.agentId).configMode === 'system'

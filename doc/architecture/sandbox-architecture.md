@@ -83,7 +83,10 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 │  resolve workspace sandbox config(启用? + extraMounts)         │
 │  probe arapuca 二进制 + 平台能力 → 缺失 hard-fail               │
 │  resolvePaths()：项目原目录 ro + worktree rw + specs rw + 补充   │
-│  createSandboxWrapper(entryCommand, paths, cwd=worktree)        │
+│  createSandboxWrapper(vendor, paths, cwd=worktree, 认证模式)    │
+├─ per-vendor 认证策略(vendor-auth) ─────────────────────────────┤
+│  vendor + agent 认证模式 + 宿主事实 → profile(数据,非脚本)      │
+│  未注册 vendor 在生成 wrapper 前 hard-fail                      │
 ├─ ProcessSandbox(arapuca wrapper) ──────────────────────────────┤
 │  wrapper = arapuca run -v …:ro -v …:rw -- <entryCommand> "$@"   │
 │  vendor adapter spawn wrapper（SDK 以为 spawn 的是本地 CLI）     │
@@ -94,11 +97,12 @@ arapuca:Rust,Apache-2.0,"Process sandbox for Linux, macOS, and Windows providing
 
 职责边界:
 
-| 模块              | 职责                                                                                                   |
-| ----------------- | ------------------------------------------------------------------------------------------------------ |
-| `SandboxLauncher` | 解析 workspace sandbox config、探测 arapuca、`resolvePaths()`、生成 wrapper。                          |
-| ProcessSandbox 层 | 把 resolved 路径集映射为 arapuca `run` 参数;把 vendor CLI 包成 `arapuca run -- <cli>` 形态的 wrapper。 |
-| arapuca 二进制    | c3 关联并自动安装一个经过验证的版本;管理版本不可用时回退宿主 PATH 上使用方自装的二进制。               |
+| 模块                | 职责                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------ |
+| `SandboxLauncher`   | 解析 workspace sandbox config、探测 arapuca、`resolvePaths()`、生成 wrapper。                          |
+| per-vendor 认证策略 | 按 vendor 注册:该 vendor 的入口命令、数据根、凭据变量、额外挂载、身份变量、keychain 开关、启动前目录。 |
+| ProcessSandbox 层   | 把 resolved 路径集映射为 arapuca `run` 参数;把 vendor CLI 包成 `arapuca run -- <cli>` 形态的 wrapper。 |
+| arapuca 二进制      | c3 关联并自动安装一个经过验证的版本;管理版本不可用时回退宿主 PATH 上使用方自装的二进制。               |
 
 > 与容器方案的差异:不再有 `DockerDriver` / 镜像 / bind mount / env-file 注入 / 转发 sidecar / 自定义网络。原容器供应链、网络分段章节整体移除。
 
@@ -159,37 +163,39 @@ run 启动（任意来源 / 分支模式）
        extraMounts[i]:(ro|rw)
        codexHome:rw（`~/.c3/sandbox-home/<project>/.codex`，持久，跨 run 存活）
   → 在执行根内创建逐 run tmpDir（仅放 wrapper 脚本）
-  → createSandboxWrapper(entryCommand, paths, cwd=executionRoot, env)
+  → 解析该 vendor 的认证策略(数据根 / 凭据变量 / 额外挂载 / keychain / 启动前目录)
+  → createSandboxWrapper(vendor, paths, cwd=executionRoot, 本次 agent 的认证模式)
   → vendor adapter spawn wrapper
   → run 完成后清理 wrapper tmpDir（无容器需停止；持久 codexHome 不清理）
 ```
 
-wrapper 形态(进程包裹,非 `docker exec`):
+wrapper 形态(进程包裹,非 `docker exec`)。骨架与 vendor 无关,`--env` 与策略挂载由该 vendor 的认证策略填充:
 
 ```sh
 #!/bin/sh
-mkdir -p "/tmp/claude-<uid>" 2>/dev/null || true
-exec arapuca run \
+[ mkdir -p "<策略声明的启动前目录>" 2>/dev/null || true ]
+exec "<arapuca 绝对路径>" run \
   --seccomp baseline \
+  [ --allow-proxy-env ]   # 仅当宿主设有标准代理变量 \
+  [ --allow-keychain ]    # 仅当策略要求打开宿主凭证库 \
   --cwd "<executionRoot>" \
-  --env "CODEX_HOME=<持久 per-workspace codexHome>" \   # ~/.c3/sandbox-home/<project>/.codex，跨 run 存活
-  --env "CODEX_API_KEY=$CODEX_API_KEY" \   # codex 分支:relay token,运行时展开,值不落盘
-  # claude 分支改为:--env "ANTHROPIC_BASE_URL=$ANTHROPIC_BASE_URL" --env "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" --env "ANTHROPIC_AUTH_TOKEN=$ANTHROPIC_AUTH_TOKEN" \
-  -v "<持久 per-workspace codexHome>:rw" \
-  -v "<canonical /tmp>/claude-<uid>:rw" \
+  [ --env "<策略字面量变量>=<值>" ... ]       # 数据根、登录身份等非机密宿主事实 \
+  [ --env "<策略凭据变量>=$<同名变量>" ... ]   # 运行期展开,值不落盘 \
   -v "<executionRoot>":rw \
   [ -v "<workspaceRoot>":ro ]   # 仅当 workspaceRoot ≠ executionRoot \
   -v "<specsBase>":rw \
+  [ -v "<策略挂载>":ro|rw ... ] \
   [ -v "<extraMount>":ro|rw ... ] \
-  -- "<entryCommand>" "$@"
+  -- "<策略入口命令>" "$@"
 ```
 
-- `<entryCommand>` 是宿主 PATH 中的 vendor CLI 名(`claude` / `codex`)。
+- 入口命令是宿主 PATH 中的 vendor CLI 名(`claude` / `codex`)。
 - vendor SDK/driver 仍以为自己 spawn 的是本地 CLI;wrapper 只是把这次 spawn 包进 arapuca。
-  provider 认证由 driver 经子进程 env 注入(claude 的 `ANTHROPIC_*`、codex 的 relay token `CODEX_API_KEY`),
-  但 arapuca env deny-by-default 不继承父 env,故 wrapper 须按 vendor 用 `--env "KEY=$KEY"` 显式透传
-  ——`$KEY` 由 `/bin/sh` 在运行时从 wrapper 进程 env 展开,token **值不落盘**到脚本文本;未设的变量展开为
-  `KEY=`,arapuca 视为未设(安全 no-op)。wrapper 仍不挂订阅 / keychain。
+  provider 认证由 driver 经子进程 env 注入,但 arapuca env deny-by-default 不继承父 env,故策略声明的凭据
+  变量须以 `--env "KEY=$KEY"` 显式透传——`$KEY` 由 `/bin/sh` 在运行时从 wrapper 进程 env 展开,token
+  **值不落盘**到脚本文本;未设的变量展开为 `KEY=`,arapuca 视为未设(安全 no-op)。订阅态 agent 的登录不在
+  env 里,由策略要求 `--allow-keychain` 打开宿主凭证库。各 vendor 的具体取值见
+  `doc/domains/core/sandbox/sandbox-design.md` §9.1。
 - `--seccomp baseline` 打开出站网络(当前网络模型"全开",见 §8);arapuca 默认 `strict` 会
   全断网络,导致 vendor CLI 的 provider 调用 `ConnectionRefused`。macOS 无 per-host 白名单;
   Linux 后续可用 `--allow-host` 收窄到 provider 域名。

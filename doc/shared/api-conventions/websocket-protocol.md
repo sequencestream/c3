@@ -817,8 +817,8 @@ automation 的执行日志。
 
 - `workspaceId`：不透明工作区 id（不是路径）。store 持久化绝对 `workspace_path`，读出时经 `pathToId` 映射为 id，因此与 `currentWorkspace` 及各跳转入口（`select_session` / `open_intent_chat` / `open_spec_session` / 讨论 / 计划）期望的 id 一致。工作区已注销的行在读出时被丢弃，绝不下发破损 id。
 - `sessionKind`：产生事件的运行的完整 `SessionKind`（`work | intent | discussion | automation | consensus | tool | spec`），由调用方原样写入（不再折叠为可跳转子集）；driver 路径取运行的 `sessionKind`、agent 网控路径取 gate 派生。协议层类型为 `string`，前端 `jumpToSource` 据此 switch 路由，未识别取值兜底进控制台。
-- `sessionId`：产生事件的真实会话 id（work/intent/spec 会话 id、discussion id、automation id），溯源跳转直接据 `sessionKind + sessionId` 路由。为 `null` 时降级到对应列表页且不选中。历史行可能携带意图对象 id（非会话 id），这类行反查不到意图、跳转降级，不回填。
-- `intentId` / `intentTitle`：**读时派生、不落库**。服务端按 `sessionId` 反查所属意图（`intent_sessions` 绑定 + `intents.intent_session_id` comm 会话 + `intents.last_work_session_id`)，命中则填意图 id 与当前标题（意图改名即时反映），无归属或反查不到为 `null`。`createEvent` 不接受这两个字段。
+- `sessionId`：产生事件的真实会话 id（work/intent/spec 会话 id、discussion id、automation id）。无归属事件的溯源跳转据 `sessionKind + sessionId` 路由；为 `null` 时降级到对应列表页且不选中。历史行可能携带意图对象 id（非会话 id），这类行反查不到意图、跳转降级，不回填。
+- `intentId` / `intentTitle`：**读时派生、不落库**。服务端按 `sessionId` 反查所属意图（`intent_sessions` 绑定 + `intents.intent_session_id` comm 会话 + `intents.last_work_session_id`)，命中则填意图 id 与当前标题（意图改名即时反映），无归属或反查不到为 `null`。`createEvent` 不接受这两个字段。`intentId` 非空即为溯源跳转的分流条件（与 `intentLevel` 无关）：跳意图页并选中该意图，`sessionKind` 只决定意图详情子页签（`spec`→编写规范、`intent`→意图会话、`work`/`tool`→默认页签）。
 
 ### `skill_load_approval_request`
 

@@ -47,11 +47,6 @@ export interface WorkspaceSandboxConfig {
   readonly extraMounts?: readonly SandboxExtraMount[]
   /** Session kinds that run inside the sandbox when enabled. Absent ⇒ `['work']`. */
   readonly sandboxSessionKinds?: readonly SessionKind[]
-  /**
-   * Retention window (days) for the persistent sandbox CODEX_HOME rollouts. The
-   * daily janitor prunes rollout files older than this. Absent ⇒ 30 days.
-   */
-  readonly sessionRetentionDays?: number
 }
 
 // ─── Resolved Path Model ─────────────────────────────────────────────────────

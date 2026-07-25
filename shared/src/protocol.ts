@@ -599,16 +599,30 @@ export interface WorkspaceSandboxConfig {
    * {@link SESSION_KINDS}; an empty set after normalize falls back to `['work']`.
    */
   sandboxSessionKinds?: SessionKind[]
+}
+
+/**
+ * Workspace-level session-store cleanup configuration.
+ *
+ * Governs retention of a workspace's persisted session artifacts — currently the
+ * codex thread rollouts under the persistent per-workspace CODEX_HOME, which is
+ * never pruned per run so a thread stays resumable. Independent of
+ * {@link WorkspaceSandboxConfig}: cleanup is configured and gated on its own, and
+ * a workspace that never enables process isolation can still govern its store.
+ *
+ * The server keeps a kernel copy of this shape; the Zod schema and its
+ * compile-time pin (`server/src/kernel/config/session-cleanup.ts`) enforce that
+ * all three stay identical.
+ */
+export interface WorkspaceSessionCleanupConfig {
+  /** Master switch — cleanup is off by default (absent or false ⇔ never prunes). */
+  enabled?: boolean
   /**
-   * Retention window (days) for the persistent sandbox CODEX_HOME rollouts.
-   *
-   * The sandbox anchors codex's CODEX_HOME at a fixed per-workspace path so a
-   * thread's rollout survives across runs for the next turn's `resume` (host
-   * `~/.codex` is never exposed — deny-by-default). A daily janitor prunes
-   * rollout files whose mtime is older than this window. Absent ⇒ 30 days;
-   * server normalize floors to a minimum and rejects non-finite values.
+   * Retention window in days: a session artifact whose mtime is older is pruned.
+   * Absent ⇒ 30 days; server normalize floors to a whole day, clamps up to a
+   * minimum of 1, and drops non-finite or non-positive values.
    */
-  sessionRetentionDays?: number
+  retentionDays?: number
 }
 
 /**
@@ -669,6 +683,10 @@ export interface WorkspaceSetting {
   /** Project-level sandbox configuration (arapuca process-level isolation).
    * Absent or undefined ⇒ sandboxing is not configured (equivalent to disabled). */
   sandbox?: WorkspaceSandboxConfig
+  /** Project-level session-store cleanup configuration — a sibling of
+   * {@link sandbox}, not part of it. Absent or undefined ⇒ cleanup is not
+   * configured (equivalent to disabled). */
+  sessionCleanup?: WorkspaceSessionCleanupConfig
   /**
    * Git branch strategy for `start_development` (2026-06-10). See
    * {@link GitBranchMode}. Absent or invalid ⇒ `worktree` (normalized on read).

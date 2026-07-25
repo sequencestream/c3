@@ -35,6 +35,7 @@ import type {
   ModeToken,
   WorkspaceSetting,
   WorkspaceSandboxConfig,
+  WorkspaceSessionCleanupConfig,
   SkillRepoConfig,
   StoreScope,
   SystemSettings,
@@ -55,6 +56,10 @@ import {
 import type { AgentOrderEntry } from '../agent-config/normalize.js'
 import { parseAgentConfig } from '../agent-config/schema.js'
 import { normalizeAuth, migrateLegacySessionTtl } from './auth-schema.js'
+import {
+  DEFAULT_SESSION_RETENTION_DAYS,
+  MIN_SESSION_RETENTION_DAYS,
+} from './session-cleanup.js'
 import { encryptAgentApiKeys, decryptAgentApiKeys } from './encryption.js'
 
 /**
@@ -178,11 +183,6 @@ export const DEFAULT_SPEECH_CHARS = 300
 /** TTL for a `pendingIntent` the janitor reaps — a pending session that never ran
  * for 7 days is presumed abandoned (ADR-0015). */
 export const PENDING_INTENT_TTL_MS = 7 * 24 * 60 * 60 * 1000
-
-/** Default retention window (days) for persistent sandbox CODEX_HOME rollouts. */
-export const DEFAULT_SANDBOX_RETENTION_DAYS = 30
-/** Hard floor for the sandbox rollout retention window; lower values clamp up. */
-export const MIN_SANDBOX_RETENTION_DAYS = 1
 
 /**
  * A *fact* in the {@link SessionAgentState.sessionAgents} map: the agent a real
@@ -581,6 +581,9 @@ export function normalizeWorkspaceSetting(
   // Sandbox config is independent of the branch mode — switching modes must not
   // silently drop a saved sandbox config.
   const sandbox = normalizeSandboxConfig(rec.sandbox)
+  // Session cleanup is its own block: normalized independently of sandbox, so
+  // neither one's presence or absence changes the other.
+  const sessionCleanup = normalizeSessionCleanupConfig(rec.sessionCleanup)
   const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
   const sddEnabled = normalizeSddEnabled(rec.sddEnabled)
   const automationEnabled = normalizeAutomationEnabled(rec.automationEnabled)
@@ -598,6 +601,7 @@ export function normalizeWorkspaceSetting(
     ...(defaultMainBranch ? { defaultMainBranch } : {}),
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
+    ...(sessionCleanup !== undefined ? { sessionCleanup } : {}),
   }
 }
 
@@ -691,18 +695,39 @@ function normalizeSandboxConfig(raw: unknown): WorkspaceSandboxConfig | undefine
     }
     sb.sandboxSessionKinds = kinds.length > 0 ? kinds : ['work']
   }
-  // Retention window (days) for persistent CODEX_HOME rollouts: a finite positive
-  // number is floored and clamped up to the minimum; anything else (absent,
-  // non-finite, ≤ 0) is left unset so the default applies at read time. Only
-  // persist an explicit non-default value to keep old configs clean.
-  const rawRetention = typeof rec.sessionRetentionDays === 'number' ? rec.sessionRetentionDays : NaN
-  if (Number.isFinite(rawRetention) && rawRetention > 0) {
-    const days = Math.max(MIN_SANDBOX_RETENTION_DAYS, Math.floor(rawRetention))
-    if (days !== DEFAULT_SANDBOX_RETENTION_DAYS) sb.sessionRetentionDays = days
-  }
   // Return undefined when nothing meaningful was set (keeps old configs clean).
   if (Object.keys(sb).length === 0) return undefined
   return sb
+}
+
+/**
+ * Normalize the workspace session-cleanup config — a sibling of the sandbox
+ * config, never derived from it.
+ *
+ * - `enabled` is opt-in: only an explicit `true` persists, so a workspace that
+ *   never asked for cleanup keeps every session artifact.
+ * - `retentionDays` accepts a finite positive number, floored to a whole day and
+ *   clamped up to {@link MIN_SESSION_RETENTION_DAYS}; anything else (absent,
+ *   non-finite, ≤ 0) is left unset so the default applies at read time. Only an
+ *   explicit non-default value is persisted, keeping configs clean. The window
+ *   can be saved while cleanup is off — it simply does not run.
+ *
+ * Returns `undefined` when neither field is meaningful, so the whole block is
+ * omitted. Any other key (including a legacy `sandbox.sessionRetentionDays`,
+ * which lives under a different block entirely) is unknown here and dropped.
+ */
+function normalizeSessionCleanupConfig(raw: unknown): WorkspaceSessionCleanupConfig | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const rec = raw as Record<string, unknown>
+  const out: WorkspaceSessionCleanupConfig = {}
+  if (rec.enabled === true) out.enabled = true
+  const rawDays = typeof rec.retentionDays === 'number' ? rec.retentionDays : NaN
+  if (Number.isFinite(rawDays) && rawDays > 0) {
+    const days = Math.max(MIN_SESSION_RETENTION_DAYS, Math.floor(rawDays))
+    if (days !== DEFAULT_SESSION_RETENTION_DAYS) out.retentionDays = days
+  }
+  if (Object.keys(out).length === 0) return undefined
+  return out
 }
 
 /**
@@ -1472,19 +1497,27 @@ export function getProjectSandbox(workspacePath: string): WorkspaceSandboxConfig
 }
 
 /**
- * Retention window (days) for a workspace's persistent sandbox CODEX_HOME
- * rollouts. Reads the normalized per-project value; falls back to
- * {@link DEFAULT_SANDBOX_RETENTION_DAYS} when unset (normalize only persists a
- * non-default value).
+ * A workspace's session-cleanup decision: whether cleanup runs at all, and the
+ * effective retention window in days. Cleanup is opt-in — an unconfigured
+ * workspace reports `enabled: false` and is never pruned. The window falls back
+ * to {@link DEFAULT_SESSION_RETENTION_DAYS} when unset (normalize only persists
+ * a non-default value).
  */
-export function getSandboxRetentionDays(workspacePath: string): number {
-  return getProjectSandbox(workspacePath)?.sessionRetentionDays ?? DEFAULT_SANDBOX_RETENTION_DAYS
+export function getSessionCleanup(workspacePath: string): {
+  enabled: boolean
+  retentionDays: number
+} {
+  const cfg = loadWorkspaceSetting(workspacePath).sessionCleanup
+  return {
+    enabled: cfg?.enabled === true,
+    retentionDays: cfg?.retentionDays ?? DEFAULT_SESSION_RETENTION_DAYS,
+  }
 }
 
 /**
  * All workspace paths that carry a persisted per-project config. Used by the
- * sandbox rollout janitor to map each on-disk `sandbox-home` directory back to
- * its workspace retention window.
+ * session-cleanup janitor to map each on-disk session-store directory back to
+ * its workspace's cleanup decision.
  */
 export function listConfiguredWorkspacePaths(): string[] {
   return Object.keys(loadSettings().projectConfigs ?? {})

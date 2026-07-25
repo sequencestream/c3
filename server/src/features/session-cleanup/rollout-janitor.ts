@@ -1,12 +1,16 @@
-// Sandbox rollout janitor: a process-local daily scheduler that prunes stale
-// codex thread rollouts from the persistent per-workspace sandbox CODEX_HOME.
+// Session-cleanup rollout janitor: a process-local daily scheduler that prunes
+// stale codex thread rollouts from the persistent per-workspace CODEX_HOME.
 //
-// The sandbox anchors codex's CODEX_HOME at a fixed per-workspace path
+// A sandboxed codex run anchors CODEX_HOME at a fixed per-workspace path
 // (`~/.c3/sandbox-home/<project>/.codex`) so a thread's rollout survives across
 // runs for the next turn's `resume`. Because that dir is never cleaned per-run,
-// rollouts would otherwise accumulate forever. This janitor deletes rollout
-// files whose mtime is older than the workspace's retention window (default 30
-// days), keeping the store bounded without touching still-resumable sessions.
+// rollouts would otherwise accumulate forever. Cleanup is a store-governance
+// decision, not an isolation one: it is driven solely by the workspace's
+// `sessionCleanup` config and never consults the sandbox config.
+//
+// Cleanup is opt-in. Only workspaces with `sessionCleanup.enabled === true` are
+// swept; unconfigured workspaces and orphan directories (a removed workspace)
+// are left alone rather than falling back to a default window.
 //
 // A single module-level timer, a delayed first sweep on boot, then a fixed 24h
 // cadence. Fully fail-soft: any fs error on one file/dir is logged and skipped —
@@ -15,14 +19,13 @@ import { readdirSync, statSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   c3HomeDir,
-  getSandboxRetentionDays,
+  getSessionCleanup,
   listConfiguredWorkspacePaths,
-  DEFAULT_SANDBOX_RETENTION_DAYS,
 } from '../../kernel/config/index.js'
 import { projectDirName } from '../../kernel/config/workspace-path.js'
 
-/** Root holding every workspace's persistent sandbox home. */
-function sandboxHomeRoot(): string {
+/** Root holding every workspace's persistent session store (sandbox CODEX_HOME). */
+function sessionStoreRoot(): string {
   return join(c3HomeDir(), 'sandbox-home')
 }
 
@@ -59,42 +62,45 @@ function pruneStaleFiles(dir: string, cutoff: number): number {
         }
       }
     } catch (err) {
-      console.log(`[c3:sandbox] rollout prune skipped ${full}: ${(err as Error).message}`)
+      console.log(`[c3:session-cleanup] rollout prune skipped ${full}: ${(err as Error).message}`)
     }
   }
   return removed
 }
 
 /**
- * Run one prune sweep across every on-disk sandbox home. Never throws.
+ * Run one prune sweep across the workspaces that opted into cleanup. Never throws.
  *
- * Retention is per workspace: build a `projectDirName → days` map from the
- * configured workspaces, then for each `sandbox-home/<dir>` apply its window
- * (default when the dir has no matching config, e.g. a removed workspace).
- * Prunes rollout files under `<dir>/.codex/sessions/` older than the window.
+ * Builds a `projectDirName → retention days` map from the configured workspaces
+ * whose `sessionCleanup` is enabled, then prunes rollout files under
+ * `<store root>/<dir>/.codex/sessions/` for exactly those dirs. A directory with
+ * no enabled workspace behind it is skipped entirely.
  */
 export function runRolloutPruneOnce(opts: { now?: number } = {}): number {
   const now = opts.now ?? Date.now()
-  const root = sandboxHomeRoot()
-  // Map each configured workspace's on-disk dir segment to its retention window.
+  // Map each opted-in workspace's on-disk dir segment to its retention window.
   const retentionByDir = new Map<string, number>()
   for (const ws of listConfiguredWorkspacePaths()) {
-    retentionByDir.set(projectDirName(ws), getSandboxRetentionDays(ws))
+    const cleanup = getSessionCleanup(ws)
+    if (!cleanup.enabled) continue
+    retentionByDir.set(projectDirName(ws), cleanup.retentionDays)
   }
+  if (retentionByDir.size === 0) return 0 // nobody opted in — nothing to sweep
+  const root = sessionStoreRoot()
   let dirs: string[]
   try {
     dirs = readdirSync(root)
   } catch {
-    return 0 // no sandbox homes yet — nothing to do
+    return 0 // no session stores yet — nothing to do
   }
   let removed = 0
   for (const dir of dirs) {
-    const days = retentionByDir.get(dir) ?? DEFAULT_SANDBOX_RETENTION_DAYS
+    const days = retentionByDir.get(dir)
+    if (days === undefined) continue // not an opted-in workspace — leave it untouched
     const cutoff = now - days * DAY_MS
-    const sessionsDir = join(root, dir, '.codex', 'sessions')
-    removed += pruneStaleFiles(sessionsDir, cutoff)
+    removed += pruneStaleFiles(join(root, dir, '.codex', 'sessions'), cutoff)
   }
-  if (removed > 0) console.log(`[c3:sandbox] pruned ${removed} stale codex rollout file(s)`)
+  if (removed > 0) console.log(`[c3:session-cleanup] pruned ${removed} stale codex rollout file(s)`)
   return removed
 }
 

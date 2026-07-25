@@ -1202,6 +1202,18 @@
         "worktreeCleanup": {
           "title": "清除过期worktree",
           "description": "매주 일요일 03:00에 7일 넘게 변경이 없는 c3 관리 worktree를 미커밋 변경, 의도 상태, 브랜치 안전 조건을 통과할 때만 삭제합니다."
+        },
+        "prReviewRunner": {
+          "title": "PR 리뷰 실행기",
+          "description": "PR 생성 또는 업데이트를 구독하고 AI가 PR을 검토한 후 pr:review 이벤트를 게시합니다."
+        },
+        "prReviewFix": {
+          "title": "PR 리뷰 실패 수정",
+          "description": "PR 리뷰가 실패를 보고하면 문제를 진단 및 수정하고 완료 후 pr:update 이벤트를 게시합니다."
+        },
+        "customEventEcho": {
+          "title": "사용자 정의 이벤트 echo",
+          "description": "my:create-event를 구독하고 echo hello를 실행합니다."
         }
       },
       "empty": "아직 자동화가 없습니다.",

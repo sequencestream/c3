@@ -4,7 +4,8 @@
  *   values (switching modes never drops a saved sandbox config)
  * - extraMounts: same-path passthrough, read-only by default, absolute paths only
  * - sandboxSessionKinds: dedupe, drop unknown, empty → ['work']
- * - legacy container keys are read and dropped (no semantic carry-over)
+ * - legacy container keys are read and dropped (no semantic carry-over), incl.
+ *   the retention key that now lives under `sessionCleanup`
  *
  * Exercised through the public `normalizeWorkspaceSetting(raw, agents)`.
  */
@@ -156,36 +157,13 @@ describe('normalizeSandboxConfig invariants (via normalizeWorkspaceSetting)', ()
     expect(result.sandbox).toBeUndefined()
   })
 
-  it('keeps an explicit non-default sessionRetentionDays (floored, clamped up)', () => {
+  it('drops a legacy sessionRetentionDays (retention is no longer workspace-scoped)', () => {
     const result = normalizeWorkspaceSetting(
-      { sandbox: { enabled: true, sessionRetentionDays: 7.9 } },
+      { sandbox: { enabled: true, sessionRetentionDays: 7 } },
       [],
     )
-    expect(result.sandbox).toMatchObject({ enabled: true, sessionRetentionDays: 7 })
-  })
-
-  it('clamps a below-floor sessionRetentionDays up to the minimum', () => {
-    const result = normalizeWorkspaceSetting(
-      { sandbox: { enabled: true, sessionRetentionDays: 0 } },
-      [],
-    )
-    // 0 is not finite-positive after clamp semantics → treated as absent (default applies).
-    expect(result.sandbox?.sessionRetentionDays).toBeUndefined()
-  })
-
-  it('omits sessionRetentionDays when it equals the default (keeps config clean)', () => {
-    const result = normalizeWorkspaceSetting(
-      { sandbox: { enabled: true, sessionRetentionDays: 30 } },
-      [],
-    )
+    // Retention moved to the system-wide sessionCleanup block: the old key is
+    // unknown here and dropped, with no implicit opt-in carried over on upgrade.
     expect(result.sandbox).toEqual({ enabled: true })
-  })
-
-  it('drops a non-finite sessionRetentionDays', () => {
-    const result = normalizeWorkspaceSetting(
-      { sandbox: { enabled: true, sessionRetentionDays: 'lots' } },
-      [],
-    )
-    expect(result.sandbox?.sessionRetentionDays).toBeUndefined()
   })
 })

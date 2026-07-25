@@ -19,6 +19,7 @@
 | [codes](codes/codes-overview.md)                                        | 只读工作区代码浏览与有界搜索,仅根植于已注册的工作区 id                                                         | WebSocket `/ws`(见 shared protocol) | active        |
 | [discussion](discussion/discussion-overview.md)                         | 项目级讨论存储(SQLite):讨论 + 有序消息,带状态生命周期与结论。持久化基础;智能体/编排/UI 尚未构建                | 内部(尚无公开 API)                  | partial       |
 | [automations](automations/automations-overview.md)                      | 跨工作区的基于时间的命令与 LLM prompt 执行;执行日志记录与查看                                                  | WebSocket `/ws`(见 shared protocol) | planned       |
+| [session-cleanup](session-cleanup/session-cleanup-design.md)            | 按保留期删除各 vendor 会话存储中过期的会话记录(系统级开关,vendor 中立,每日执行)                                | 内部(无对外公开 API)                | active        |
 | [auth](auth/auth-overview.md)                                           | 认证抽象:可扩展的提供方联合类型(`basic` 优先)、会话令牌模型、login/logout/401 消息——面向网络暴露场景的可选能力 | WebSocket `/ws`(见 shared protocol) | contract-only |
 
 ## Shared context

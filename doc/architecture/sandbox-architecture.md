@@ -161,7 +161,7 @@ run 启动（任意来源 / 分支模式）
        workspace root:ro（仅当 ≠ executionRoot；同路径并入 executionRoot rw）
        specsBase:rw
        extraMounts[i]:(ro|rw)
-       codexHome:rw（`~/.c3/sandbox-home/<project>/.codex`，持久，跨 run 存活）
+       codexHome:rw（`~/.c3/relay/codex`，全局持久，跨 run 存活）
   → 在执行根内创建逐 run tmpDir（仅放 wrapper 脚本）
   → 解析该 vendor 的认证策略(数据根 / 凭据变量 / 额外挂载 / keychain / 启动前目录)
   → createSandboxWrapper(vendor, paths, cwd=executionRoot, 本次 agent 的认证模式)
@@ -199,15 +199,16 @@ exec "<arapuca 绝对路径>" run \
 - `--seccomp baseline` 打开出站网络(当前网络模型"全开",见 §8);arapuca 默认 `strict` 会
   全断网络,导致 vendor CLI 的 provider 调用 `ConnectionRefused`。macOS 无 per-host 白名单;
   Linux 后续可用 `--allow-host` 收窄到 provider 域名。
-- **CODEX_HOME 持久化(codex resume)**:CODEX_HOME 指向 **per-workspace 持久目录**
-  `~/.c3/sandbox-home/<project>/.codex`(`getSandboxCodexHome(workspace)`),位于执行根**之外**、
+- **CODEX_HOME 持久化(codex resume)**:CODEX_HOME 指向**全局持久目录**
+  `~/.c3/relay/codex`(`relayCodexHome()`),位于执行根**之外**、
   独立 rw volume 挂载。arapuca 管理 HOME/TMPDIR 且禁止覆盖,故通过 Codex 支持的 CODEX_HOME
   避免默认临时 HOME 被 Codex 拒绝创建 PATH helper。**为何持久而非逐 run**:codex 多轮对话第二轮
   `thread/resume` 需要第一轮 `startThread` 写在 `CODEX_HOME/sessions/` 的 rollout 文件;若 CODEX_HOME
-  随 run 清理,下一轮拿到空目录 → `no rollout found`。持久目录让同工作区所有 session 共用一个 home、
-  每个 thread 的 rollout(以 thread id 命名)跨 run 存活以供续接。**不挂宿主 `~/.codex`**:rollout 本就
+  随 run 清理,下一轮拿到空目录 → `no rollout found`。持久目录让所有 relay session 共用一个 home、
+  每个 thread 的 rollout(以 thread id 命名)跨 run 存活以供续接;**为何全局而非按工作区**:单一目录便于
+  统一查看、备份与删除,而 rollout 按 thread id + cwd 寻址,跨工作区共用不改变 resume 找到哪个文件。**不挂宿主 `~/.codex`**:rollout 本就
   写在持久目录而非宿主 `~/.codex`,且挂宿主 `auth.json` 会破坏 deny-by-default。逐 run tmpDir 现仅放
-  wrapper 脚本并随 run 清理;持久 codexHome 由每日 janitor 按工作区保留天数清理(见 §10.1)。
+  wrapper 脚本并随 run 清理;持久 codexHome 的清理见 §10.1。
 - Claude Code 把逐用户运行时目录硬编码在 `/tmp/claude-<uid>`(shell-snapshot / IPC),不尊重
   TMPDIR 且 arapuca 锁定 TMPDIR 无法重定向,故 wrapper 预建该宿主目录并按 canonical 路径放行。
   它是逐用户共享目录(非逐 run),放行但不清理;codex 不使用它。
@@ -223,13 +224,10 @@ exec "<arapuca 绝对路径>" run \
 > arapuca。验证见 `scripts/e2e/e2e-arapuca-capability-test.mjs` 与
 > `scripts/e2e/e2e-sandbox-vendor-token-test.mjs`。
 
-### 10.1 rollout 保留与每日清理(janitor)
+### 10.1 rollout 的累积与清理
 
-持久 CODEX_HOME 不逐 run 清理,rollout 会无限累积。**每日 janitor**(`features/sandbox/rollout-janitor.ts`,
-随服务启动、开机延迟首跑后固定 24h 周期,`setTimeout().unref()`,fail-soft)扫描
-`~/.c3/sandbox-home/*/.codex/sessions/`,删除 mtime 超过该工作区**保留天数**的 rollout 文件。
-保留天数为 per-workspace 配置 `WorkspaceSandboxConfig.sessionRetentionDays`(默认 30,最小 1;见 §15),
-janitor 用 `projectDirName` 把每个磁盘目录映射回工作区取其窗口,无匹配配置的孤儿目录(如已删除工作区)按默认窗口清理。仅删文件、不删空目录树,单文件出错记录后跳过不中断整轮。
+持久 CODEX_HOME 不逐 run 清理,rollout 只增不减——这是 resume 能续接的前提。按保留期删除过期会话记录是独立的系统级能力,与沙箱配置无关,
+见 `doc/domains/core/session-cleanup/session-cleanup-design.md`。
 
 ## 11. c3 MCP 接入
 
@@ -278,12 +276,9 @@ interface WorkspaceSandboxConfig {
     readonly?: boolean // 默认 true;缺省即 ro,可逐项显式设为 false 放开 rw
   }[]
   sandboxSessionKinds?: SessionKind[] // 哪些 SessionKind 进沙箱,缺省 ['work']
-  sessionRetentionDays?: number // 持久 CODEX_HOME rollout 保留天数,缺省 30、最小 1(见 §10.1)
   // 网络开关留待网络阶段引入;当前网络全开,无对应字段。
 }
 ```
-
-- `sessionRetentionDays`:normalize 对有限正数向下取整并 clamp 到最小 1;非有限 / ≤ 0 / 缺省视为未设(读取时回落默认 30)。仅当值 ≠ 默认才落盘,保持旧配置整洁。
 
 - 移除容器相关配置:镜像名 / `imageOverride` / `readonlyRootfs` / `networkDisabled` / `allowExternalNetwork` 等一律不在当前模型中。网络收窄阶段再按需引入网络字段。
 - 移除容器供应链协议:`RuntimeVendorConfig`、`VendorInstallManifest`、`FetchPlan` 等一律不引入。

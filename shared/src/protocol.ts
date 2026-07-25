@@ -599,16 +599,31 @@ export interface WorkspaceSandboxConfig {
    * {@link SESSION_KINDS}; an empty set after normalize falls back to `['work']`.
    */
   sandboxSessionKinds?: SessionKind[]
+}
+
+/**
+ * System-wide session-store cleanup configuration.
+ *
+ * Governs retention of the session transcripts every vendor writes to disk, and
+ * is deliberately **global and vendor-neutral**: the stores it prunes are shared
+ * homes, not per-workspace ones (a vendor's host home holds every workspace's
+ * sessions), so a per-workspace switch could not describe them. It is unrelated
+ * to {@link WorkspaceSandboxConfig} — the sandbox merely decides *which* home a
+ * run writes into, never whether old sessions are kept.
+ *
+ * The server keeps a kernel copy of this shape; the Zod schema and its
+ * compile-time pin (`server/src/kernel/config/session-cleanup.ts`) enforce that
+ * all three stay identical.
+ */
+export interface SessionCleanupConfig {
+  /** Master switch — cleanup is off by default (absent or false ⇔ never prunes). */
+  enabled?: boolean
   /**
-   * Retention window (days) for the persistent sandbox CODEX_HOME rollouts.
-   *
-   * The sandbox anchors codex's CODEX_HOME at a fixed per-workspace path so a
-   * thread's rollout survives across runs for the next turn's `resume` (host
-   * `~/.codex` is never exposed — deny-by-default). A daily janitor prunes
-   * rollout files whose mtime is older than this window. Absent ⇒ 30 days;
-   * server normalize floors to a minimum and rejects non-finite values.
+   * Retention window in days: a session transcript whose mtime is older is
+   * pruned. Absent ⇒ 30 days; server normalize floors to a whole day, clamps up
+   * to a minimum of 1, and drops non-finite or non-positive values.
    */
-  sessionRetentionDays?: number
+  retentionDays?: number
 }
 
 /**
@@ -1069,6 +1084,13 @@ export interface SystemSettings {
     httpProxy?: string
     httpsProxy?: string
   }
+  /**
+   * System-wide session-store cleanup ({@link SessionCleanupConfig}). Absent or
+   * undefined ⇒ cleanup is not configured (equivalent to disabled — nothing is
+   * ever pruned). Global rather than per-workspace because the stores it prunes
+   * are shared vendor homes.
+   */
+  sessionCleanup?: SessionCleanupConfig
   /**
    * Effective (active) vendor CLI version selection per vendor. This selects
    * which already-installed managed version c3 resolves at runtime — it does NOT

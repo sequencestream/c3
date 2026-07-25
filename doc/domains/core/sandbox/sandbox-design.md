@@ -32,15 +32,14 @@ sandbox 是内核基础设施领域，属于内层能力（受单向依赖边界
 
 ## 3. 模块结构
 
-| 模块                                  | 职责                                                                                                                                    |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `server/src/kernel/sandbox/`          | sandbox 类型定义：workspace config、resolved 路径集、放行项权限、启动 options。                                                         |
-| workspace sandbox 配置校验            | 校验并 normalize `WorkspaceSandboxConfig`（`enabled` + `extraMounts` + `sandboxSessionKinds` + `sessionRetentionDays`）。               |
-| `SandboxLauncher`                     | run lifecycle 与 sandbox 的集成层：读取 workspace 配置、探测 arapuca、`resolvePaths()`（含持久 codexHome）、生成 wrapper、清理 tmpDir。 |
-| `kernel/sandbox/arapuca-dist.ts`      | arapuca 分发管理器：关联版本与各平台制品元数据、下载 + SHA-256 校验 + 解包 + 原子激活、后台 single-flight 安装（见 §14）。              |
-| `kernel/sandbox/vendor-auth.ts`       | per-vendor 认证策略注册表:把 vendor + agent 认证模式 + 宿主事实解析成数据形态的 profile(见 §9.1)。                                      |
-| `features/sandbox/rollout-janitor.ts` | 每日定时任务:清理持久 CODEX_HOME 内超过工作区保留天数的 codex rollout(见 §9.1)。                                                        |
-| ProcessSandbox 层（arapuca）          | 把 resolved 路径集映射为 arapuca `run` 参数；把 vendor CLI 包成 `arapuca run … -- <cli> "$@"` 形态的 wrapper。                          |
+| 模块                             | 职责                                                                                                                                    |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/src/kernel/sandbox/`     | sandbox 类型定义：workspace config、resolved 路径集、放行项权限、启动 options。                                                         |
+| workspace sandbox 配置校验       | 校验并 normalize `WorkspaceSandboxConfig`（`enabled` + `extraMounts` + `sandboxSessionKinds`）。                                        |
+| `SandboxLauncher`                | run lifecycle 与 sandbox 的集成层：读取 workspace 配置、探测 arapuca、`resolvePaths()`（含持久 codexHome）、生成 wrapper、清理 tmpDir。 |
+| `kernel/sandbox/arapuca-dist.ts` | arapuca 分发管理器：关联版本与各平台制品元数据、下载 + SHA-256 校验 + 解包 + 原子激活、后台 single-flight 安装（见 §14）。              |
+| `kernel/sandbox/vendor-auth.ts`  | per-vendor 认证策略注册表:把 vendor + agent 认证模式 + 宿主事实解析成数据形态的 profile(见 §9.1)。                                      |
+| ProcessSandbox 层（arapuca）     | 把 resolved 路径集映射为 arapuca `run` 参数；把 vendor CLI 包成 `arapuca run … -- <cli> "$@"` 形态的 wrapper。                          |
 
 > 与容器方案的差异：不再有 `DockerDriver`、镜像 / registry、seccomp profile 加载、bind mount、forwarder sidecar、内部网络。原容器 runtime、容器供应链、网络分段相关模块整体移除。既有"沙箱 backend 作为独立内核模块""系统 + 项目双层配置"的抽象概念保留，但不再承载镜像 / 资源 / 网络等容器字段；当前范围内所有隔离参数由 workspace 配置与该 run 的执行根（worktree 或源工作区）直接驱动。具体文件切分由实现阶段确定。
 
@@ -58,7 +57,6 @@ interface WorkspaceSandboxConfig {
     readonly?: boolean // 默认 true；缺省即 ro，可逐项显式设为 false 放开 rw
   }[]
   sandboxSessionKinds?: SessionKind[] // 哪些 SessionKind 进沙箱，缺省 ['work']
-  sessionRetentionDays?: number // 持久 CODEX_HOME rollout 保留天数，缺省 30、最小 1
   // 网络开关留待网络阶段引入；当前网络全开，无对应字段。
 }
 ```
@@ -66,7 +64,6 @@ interface WorkspaceSandboxConfig {
 - `enabled` 为真时，`sessionKind` 命中 `sandboxSessionKinds` 的 run 即进入沙箱，不再要求隔离 worktree 或特定来源。
 - `extraMounts` 是补充放行目录，每项按宿主绝对路径同路径放行，默认只读，可逐项声明 rw。用于把额外依赖目录、共享缓存、参考仓库带进放行集。
 - `sandboxSessionKinds` 决定哪些 `SessionKind` 的 run 进沙箱，缺省 `['work']`。
-- `sessionRetentionDays` 决定持久 CODEX_HOME 内 codex rollout 的保留天数,每日 janitor 据此清理超期文件(见 §9.1 codex 策略)。缺省 30、最小 1。
 
 移除的容器 / 网络字段（不在当前模型中）：镜像名 / `imageOverride`、`readonlyRootfs`、`networkDisabled`、`allowExternalNetwork`、`memoryLimit` / `cpuLimit` / `resourceLimits`、`envVarsOverride`、`networkAllowlist`、`seccomp`、`sandbox`（system definition 引用名）、`agentIds` 之外的容器专属项等。网络收窄阶段再按需引入网络字段。
 
@@ -76,7 +73,6 @@ interface WorkspaceSandboxConfig {
 
 - `sandboxSessionKinds` 缺省 `['work']`；normalize 去重、丢弃合法集合之外的值，归一化后为空则回退 `['work']`。
 - `extraMounts` 每项 `readonly` 缺省视为 `true`。
-- `sessionRetentionDays`:有限正数向下取整并 clamp 到最小 1;非有限 / ≤ 0 / 缺省视为未设(读取回落默认 30)。仅当值 ≠ 默认才落盘。
 - 遗留磁盘上的容器字段（如旧 `networkDisabled` / `readonlyRootfs` / 镜像相关键）在读取时直接丢弃，不迁移为新字段——当前范围没有对应语义承接。具体的旧键兼容处理由实现阶段确定。
 
 ## 5. 业务规则
@@ -225,7 +221,7 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 
 **codex 策略**：codex 直接从 `$CODEX_HOME` 读认证，没有 keychain 也没有 env 切换，故数据根按认证模式分流。
 
-- custom（relay）：`CODEX_HOME` 指向 **per-workspace 持久目录** `~/.c3/sandbox-home/<project>/.codex`（`getSandboxCodexHome(workspace)`），位于执行根**之外**、独立 rw volume 传入，满足 macOS profile 对启动期 canonicalize 的授权，并避免 arapuca 默认临时 HOME 被 codex 拒绝创建 PATH helper；凭据是 relay token `CODEX_API_KEY`，**不挂宿主 `~/.codex`**。**为何持久而非逐 run**：codex 第二轮 `thread/resume` 需要第一轮 `startThread` 写在 `CODEX_HOME/sessions/` 的 rollout，若随 run 清理则下轮空目录 → `no rollout found`。持久目录让同工作区所有 session 共用一个 home、每个 thread 的 rollout（以 thread id 命名）跨 run 存活。逐 run tmpDir 仅放 wrapper 脚本并随 run 清理；持久 codexHome 由每日 janitor 按工作区 `sessionRetentionDays`（默认 30、最小 1）清理超期 rollout（`features/sandbox/rollout-janitor.ts`）。
+- custom（relay）：`CODEX_HOME` 指向**全局持久目录** `~/.c3/relay/codex`（`relayCodexHome()`），位于执行根**之外**、独立 rw volume 传入，满足 macOS profile 对启动期 canonicalize 的授权，并避免 arapuca 默认临时 HOME 被 codex 拒绝创建 PATH helper；凭据是 relay token `CODEX_API_KEY`，**不挂宿主 `~/.codex`**。**为何持久而非逐 run**：codex 第二轮 `thread/resume` 需要第一轮 `startThread` 写在 `CODEX_HOME/sessions/` 的 rollout，若随 run 清理则下轮空目录 → `no rollout found`。持久目录让所有 relay session 共用一个 home、每个 thread 的 rollout（以 thread id 命名）跨 run 存活；单一目录也让 relay 状态便于统一查看与清理。逐 run tmpDir 仅放 wrapper 脚本并随 run 清理；持久 codexHome 的 rollout 只增不减，其按保留期的清理由独立的 session-cleanup 能力承担（见 `doc/domains/core/session-cleanup/session-cleanup-design.md`），sandbox 不参与该决策。
 - system（订阅态）：认证在 `$CODEX_HOME/auth.json`（ChatGPT OAuth token），隔离目录没有它就会以空 bearer 直连并 401，故 `CODEX_HOME` 指向**宿主 `~/.codex`** 并 rw 挂载；该 session 的 `storeScope` 相应冻结为 `host`（§9.2），rollout / resume / transcript 读取全部落在同一处。
 
 ### 9.2 transcript store 定位:冻结 storeScope + vendor 中立数据根
@@ -236,7 +232,7 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 
 **② 冻结 `storeScope: 'host' | 'sandbox'`(治本,精确定位)**:session fact 在首次 bind 时冻结 `storeScope`(类比已冻结的 `vendor`),取值由该 run 是否 sandbox(`rt.sandboxPaths`)决定,写入 `SessionAgentFact`(state.json)。读取端 `loadHistoryForVendor` 按冻结 scope 取 `codexStoreRoots(cwd, scope)`——冻结根优先、另一根兜底。续接端(`run-via-driver`):**非 sandbox run 续接一个冻结为 sandbox 的 codex session** 时,把 `CODEX_HOME` 指向 sandbox home,使宿主进程也能找到 rollout(反向——host-frozen 在 sandbox 内续接——保持 wrapper 的 sandbox home,为可接受的取舍)。
 
-**③ vendor 中立"每 vendor sandbox 数据根"**:`resolveVendorStoreDir(vendor, workspace, scope)` 收敛两 vendor 的数据根解析(`workspace-path.ts`)。codex → `host` 用 `~/.codex`、`sandbox` 用隔离的 `getSandboxCodexHome`;claude → 两 scope 均为宿主 `hostClaudeConfigDir()`。`ResolvedSandboxPaths` 增 `claudeConfigDir`,wrapper 按策略挂载对应根(见 §9.1)。
+**③ vendor 中立"每 vendor sandbox 数据根"**:`resolveVendorStoreDir(vendor, workspace, scope)` 收敛两 vendor 的数据根解析(`workspace-path.ts`)。codex → `host` 用 `~/.codex`、`sandbox` 用隔离的 `relayCodexHome()`;claude → 两 scope 均为宿主 `hostClaudeConfigDir()`。`ResolvedSandboxPaths` 增 `claudeConfigDir`,wrapper 按策略挂载对应根(见 §9.1)。
 
 **为何 claude 不需要按 scope 分支读取**:claude sandbox 复用宿主 config dir(见 §9.1 claude 策略),sandbox 写入即落在 server 读取端同一处,查看零改动即成立;故 `storeScope` 的读取分支实际只对 codex 生效,但模型保持 vendor 中立。
 

@@ -1,7 +1,7 @@
 /**
  * Vendor-neutral sandbox data-root resolution (ADR-0015 store scope). Covers the
- * host defaults (CODEX_HOME / CLAUDE_CONFIG_DIR honoured), the isolated codex
- * sandbox home vs the shared claude config dir, and the scope-ordered root list
+ * host defaults (CODEX_HOME / CLAUDE_CONFIG_DIR honoured), the global relay codex
+ * home vs the shared claude config dir, and the scope-ordered root list
  * the codex read/list path scans.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,7 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import {
   getSandboxClaudeConfigDir,
-  getSandboxCodexHome,
+  relayCodexHome,
   hostClaudeConfigDir,
   hostCodexHome,
   resolveVendorStoreDir,
@@ -39,10 +39,9 @@ describe('host data roots', () => {
 })
 
 describe('sandbox data roots', () => {
-  it('codex sandbox home is an isolated per-workspace dir under c3 home', () => {
-    const home = getSandboxCodexHome('/abs/my/proj')
-    // Isolated (not the host ~/.codex) and workspace-scoped.
-    expect(home).toContain(path.join('sandbox-home', 'abs-my-proj', '.codex'))
+  it('relay codex home is one global dir under c3 home, isolated from the host', () => {
+    const home = relayCodexHome()
+    expect(home).toContain(path.join('relay', 'codex'))
     expect(home).not.toBe(hostCodexHome())
   })
 
@@ -54,11 +53,9 @@ describe('sandbox data roots', () => {
 })
 
 describe('resolveVendorStoreDir', () => {
-  it('routes codex by scope: host → ~/.codex, sandbox → isolated home', () => {
+  it('routes codex by scope: host → ~/.codex, sandbox → relay home', () => {
     expect(resolveVendorStoreDir('codex', '/abs/proj', 'host')).toBe(hostCodexHome())
-    expect(resolveVendorStoreDir('codex', '/abs/proj', 'sandbox')).toBe(
-      getSandboxCodexHome('/abs/proj'),
-    )
+    expect(resolveVendorStoreDir('codex', '/abs/proj', 'sandbox')).toBe(relayCodexHome())
   })
 
   it('routes claude to the host config dir for both scopes', () => {
@@ -68,17 +65,11 @@ describe('resolveVendorStoreDir', () => {
 })
 
 describe('codexStoreRoots (scan order = frozen scope first, other as fallback)', () => {
-  it('sandbox scope scans the sandbox home first', () => {
-    expect(codexStoreRoots('/abs/proj', 'sandbox')).toEqual([
-      getSandboxCodexHome('/abs/proj'),
-      hostCodexHome(),
-    ])
+  it('sandbox scope scans the relay home first', () => {
+    expect(codexStoreRoots('/abs/proj', 'sandbox')).toEqual([relayCodexHome(), hostCodexHome()])
   })
 
   it('host scope scans host first, sandbox as dual-scan fallback', () => {
-    expect(codexStoreRoots('/abs/proj', 'host')).toEqual([
-      hostCodexHome(),
-      getSandboxCodexHome('/abs/proj'),
-    ])
+    expect(codexStoreRoots('/abs/proj', 'host')).toEqual([hostCodexHome(), relayCodexHome()])
   })
 })

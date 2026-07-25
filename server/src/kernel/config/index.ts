@@ -35,6 +35,7 @@ import type {
   ModeToken,
   WorkspaceSetting,
   WorkspaceSandboxConfig,
+  SessionCleanupConfig,
   SkillRepoConfig,
   StoreScope,
   SystemSettings,
@@ -55,6 +56,7 @@ import {
 import type { AgentOrderEntry } from '../agent-config/normalize.js'
 import { parseAgentConfig } from '../agent-config/schema.js'
 import { normalizeAuth, migrateLegacySessionTtl } from './auth-schema.js'
+import { DEFAULT_SESSION_RETENTION_DAYS, MIN_SESSION_RETENTION_DAYS } from './session-cleanup.js'
 import { encryptAgentApiKeys, decryptAgentApiKeys } from './encryption.js'
 
 /**
@@ -146,6 +148,51 @@ function normalizeProxyConfig(raw: unknown): {
 }
 
 /**
+ * Normalize the system-wide session-cleanup config.
+ *
+ * - `enabled` is opt-in: only an explicit `true` persists, so an installation
+ *   that never asked for cleanup keeps every session transcript.
+ * - `retentionDays` accepts a finite positive number, floored to a whole day and
+ *   clamped up to {@link MIN_SESSION_RETENTION_DAYS}; anything else (absent,
+ *   non-finite, ≤ 0) is left unset so the default applies at read time. Only an
+ *   explicit non-default value is persisted, keeping configs clean. The window
+ *   can be saved while cleanup is off — it simply does not run.
+ *
+ * Returns `undefined` when neither field is meaningful, so the whole block is
+ * omitted. A legacy per-workspace `sandbox.sessionRetentionDays` lives under a
+ * different object entirely: it is unknown to both normalizers and dropped, and
+ * it never back-fills this block (no implicit opt-in on upgrade).
+ */
+function normalizeSessionCleanupConfig(raw: unknown): SessionCleanupConfig | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const rec = raw as Record<string, unknown>
+  const out: { enabled?: boolean; retentionDays?: number } = {}
+  if (rec.enabled === true) out.enabled = true
+  const rawDays = typeof rec.retentionDays === 'number' ? rec.retentionDays : NaN
+  if (Number.isFinite(rawDays) && rawDays > 0) {
+    const days = Math.max(MIN_SESSION_RETENTION_DAYS, Math.floor(rawDays))
+    if (days !== DEFAULT_SESSION_RETENTION_DAYS) out.retentionDays = days
+  }
+  if (Object.keys(out).length === 0) return undefined
+  return out
+}
+
+/**
+ * The session-cleanup decision: whether cleanup runs at all, and the effective
+ * retention window in days. Cleanup is opt-in — an unconfigured installation
+ * reports `enabled: false` and nothing is ever pruned. The window falls back to
+ * {@link DEFAULT_SESSION_RETENTION_DAYS} when unset (normalize only persists a
+ * non-default value).
+ */
+export function getSessionCleanup(): { enabled: boolean; retentionDays: number } {
+  const cfg = loadSettings().sessionCleanup
+  return {
+    enabled: cfg?.enabled === true,
+    retentionDays: cfg?.retentionDays ?? DEFAULT_SESSION_RETENTION_DAYS,
+  }
+}
+
+/**
  * The session subprocess proxy configuration — the single source of truth for
  * proxy env‑var injection. Callers (e.g. `launchForAgent`) must read from here
  * rather than parsing settings directly.
@@ -178,11 +225,6 @@ export const DEFAULT_SPEECH_CHARS = 300
 /** TTL for a `pendingIntent` the janitor reaps — a pending session that never ran
  * for 7 days is presumed abandoned (ADR-0015). */
 export const PENDING_INTENT_TTL_MS = 7 * 24 * 60 * 60 * 1000
-
-/** Default retention window (days) for persistent sandbox CODEX_HOME rollouts. */
-export const DEFAULT_SANDBOX_RETENTION_DAYS = 30
-/** Hard floor for the sandbox rollout retention window; lower values clamp up. */
-export const MIN_SANDBOX_RETENTION_DAYS = 1
 
 /**
  * A *fact* in the {@link SessionAgentState.sessionAgents} map: the agent a real
@@ -455,6 +497,8 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // 30-day default so existing installs stop re-prompting hourly.
   const parsedAuth = normalizeAuth(raw?.auth)
   const auth = parsedAuth ? migrateLegacySessionTtl(parsedAuth) : undefined
+  // Session-store cleanup: system-wide and opt-in (see normalizeSessionCleanupConfig).
+  const sessionCleanup = normalizeSessionCleanupConfig(raw?.sessionCleanup)
   return {
     agents,
     defaultAgentId,
@@ -471,6 +515,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     degradationChain,
     socketAutoResume,
     proxy: normalizeProxyConfig(raw?.proxy),
+    ...(sessionCleanup !== undefined ? { sessionCleanup } : {}),
     // skillRepos intentionally omitted — deprecated, migrated to WorkspaceSetting
     ...(auth !== undefined ? { auth } : {}),
     ...(projectConfigs ? { projectConfigs } : {}),
@@ -690,15 +735,6 @@ function normalizeSandboxConfig(raw: unknown): WorkspaceSandboxConfig | undefine
       kinds.push(k as SessionKind)
     }
     sb.sandboxSessionKinds = kinds.length > 0 ? kinds : ['work']
-  }
-  // Retention window (days) for persistent CODEX_HOME rollouts: a finite positive
-  // number is floored and clamped up to the minimum; anything else (absent,
-  // non-finite, ≤ 0) is left unset so the default applies at read time. Only
-  // persist an explicit non-default value to keep old configs clean.
-  const rawRetention = typeof rec.sessionRetentionDays === 'number' ? rec.sessionRetentionDays : NaN
-  if (Number.isFinite(rawRetention) && rawRetention > 0) {
-    const days = Math.max(MIN_SANDBOX_RETENTION_DAYS, Math.floor(rawRetention))
-    if (days !== DEFAULT_SANDBOX_RETENTION_DAYS) sb.sessionRetentionDays = days
   }
   // Return undefined when nothing meaningful was set (keeps old configs clean).
   if (Object.keys(sb).length === 0) return undefined
@@ -1469,25 +1505,6 @@ export function getProjectSandbox(workspacePath: string): WorkspaceSandboxConfig
   // Already normalized (branch-independent sandbox content) by
   // loadWorkspaceSetting → normalizeWorkspaceSetting → normalizeSandboxConfig.
   return loadWorkspaceSetting(workspacePath).sandbox
-}
-
-/**
- * Retention window (days) for a workspace's persistent sandbox CODEX_HOME
- * rollouts. Reads the normalized per-project value; falls back to
- * {@link DEFAULT_SANDBOX_RETENTION_DAYS} when unset (normalize only persists a
- * non-default value).
- */
-export function getSandboxRetentionDays(workspacePath: string): number {
-  return getProjectSandbox(workspacePath)?.sessionRetentionDays ?? DEFAULT_SANDBOX_RETENTION_DAYS
-}
-
-/**
- * All workspace paths that carry a persisted per-project config. Used by the
- * sandbox rollout janitor to map each on-disk `sandbox-home` directory back to
- * its workspace retention window.
- */
-export function listConfiguredWorkspacePaths(): string[] {
-  return Object.keys(loadSettings().projectConfigs ?? {})
 }
 
 /** Test-only: drop the in-memory caches so the next call re-reads from disk. */

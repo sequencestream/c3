@@ -35,7 +35,7 @@ import type { PermissionRequestCtx } from '../permission/gateway.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
 import { codexPolicyToGrid } from '../agent/adapters/codex/driver.js'
 import { resolveCodexGhTokenEnv } from '../agent/adapters/codex/gh-token.js'
-import { getSpecsBase, getSandboxCodexHome } from '../config/workspace-path.js'
+import { getSpecsBase, relayCodexHome } from '../config/workspace-path.js'
 import {
   freezeSessionAgent,
   isDegradableError,
@@ -418,7 +418,7 @@ export async function runViaDriver(
   // resumed under sandbox) keeps the wrapper's sandbox home — an accepted limit.
   const crossModeCodexHome =
     adapter.vendor === 'codex' && !rt.sandboxPaths && resolveSessionStoreScope(runId) === 'sandbox'
-      ? getSandboxCodexHome(workspacePath)
+      ? relayCodexHome()
       : undefined
   const driverEnvOverrides = crossModeCodexHome
     ? { ...(ghBridgedEnv ?? {}), CODEX_HOME: crossModeCodexHome }

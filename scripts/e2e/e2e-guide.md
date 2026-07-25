@@ -242,7 +242,7 @@ store scope to `host` so rollouts/resume/transcript reads all resolve there.
 Generated through the REAL `createSandboxWrapper` (via `tsx`, `allowKeychain: true`):
 
 - **Structure guard:** `--env 'CODEX_HOME=<host ~/.codex>'` + `-v '<host ~/.codex>:rw'`,
-  and NO isolated `sandbox-home` mount.
+  and NO isolated relay codex home mount.
 - **Behaviour guard:** the real `codex exec` run must reply (`PONG`) and must NOT
   print `401` / `Missing bearer`.
 

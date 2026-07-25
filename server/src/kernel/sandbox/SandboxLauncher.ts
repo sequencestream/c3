@@ -57,7 +57,7 @@ import { getProjectSandbox } from '../../kernel/config/index.js'
 import { ensureManagedArapuca, resolveManagedArapuca } from './arapuca-dist.js'
 import {
   getSpecsBase,
-  getSandboxCodexHome,
+  relayCodexHome,
   getSandboxClaudeConfigDir,
 } from '../../kernel/config/workspace-path.js'
 import { SandboxLaunchError } from './errors.js'
@@ -345,12 +345,12 @@ export function resolvePaths(
   const canonSys = new Map(sys.map((m) => [m.key, canonicalize(m.path, m.key)]))
   const canonWorkspaceRoot = canonSys.get('workspaceRoot')!
   const canonSpecsBase = canonSys.get('specs')!
-  // Persistent per-workspace sandbox CODEX_HOME (rw). It lives OUTSIDE the
-  // execution root (under c3 home), so unlike the per-run temp dir it survives
-  // cleanup — codex thread rollouts persist here for the next turn's `resume`.
-  // Ensure it exists so it can be canonicalized and written, then treat it as a
-  // reserved allowance (extraMounts must not overlap it).
-  const sandboxCodexHome = getSandboxCodexHome(workspaceRoot)
+  // The global relay CODEX_HOME (rw). It lives OUTSIDE the execution root (under
+  // c3 home), so unlike the per-run temp dir it survives cleanup — codex thread
+  // rollouts persist here for the next turn's `resume`. Ensure it exists so it can
+  // be canonicalized and written, then treat it as a reserved allowance
+  // (extraMounts must not overlap it).
+  const sandboxCodexHome = relayCodexHome()
   try {
     mkdirSync(sandboxCodexHome, { recursive: true })
   } catch {

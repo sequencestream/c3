@@ -460,6 +460,19 @@
         "label": "HTTPS proxy URL"
       }
     },
+    "sessionCleanup": {
+      "title": {
+        "label": "Session cleanup"
+      },
+      "toggle": {
+        "label": "Automatically delete old session transcripts"
+      },
+      "hint": "Off by default. When enabled, a daily task deletes session transcripts older than the retention window from every agent session store on this machine — both the per-workspace sandbox homes and the host agent homes. Deleted sessions can no longer be resumed or viewed. Configuration, credential and skill files are never touched.",
+      "retentionDays": {
+        "label": "Retention (days)",
+        "hint": "A session transcript is deleted once it has not been modified for this many days. Defaults to 30; minimum 1."
+      }
+    },
     "diagnostics": {
       "title": {
         "label": "Runtime drivers"
@@ -2261,10 +2274,6 @@
       "sessionKinds": {
         "label": "Sandboxed session kinds",
         "hint": "Which session kinds enter the sandbox when enabled. Defaults to work; every selected kind is sandboxed regardless of its git branch mode or source."
-      },
-      "retention": {
-        "label": "Session retention (days)",
-        "hint": "How long codex thread rollouts in the persistent sandbox home are kept for resume before a daily cleanup prunes them. Defaults to 30 days; minimum 1."
       }
     }
   },

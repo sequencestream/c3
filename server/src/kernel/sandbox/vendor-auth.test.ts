@@ -44,7 +44,7 @@ const PATHS: ResolvedSandboxPaths = {
   executionRoot: '/work/tree',
   workspaceRoot: '/work/src',
   specsBase: '/c3home/specs/work-src',
-  codexHome: '/c3home/sandbox-home/work-src/.codex',
+  codexHome: '/c3home/relay/codex',
   claudeConfigDir: '/home/dev/.claude',
   extra: [],
   arapucaBin: '/usr/local/bin/arapuca',

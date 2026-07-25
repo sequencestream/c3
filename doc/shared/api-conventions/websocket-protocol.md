@@ -583,7 +583,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `delete_intent`
 
-`delete_intent { workspaceId, intentId }` 永久删除意图及其 c3 管理的本地资源。删除前先校验工作区可用且意图归属该工作区（跨工作区 intentId 按 `intent.notFound` 拒绝）；随后停止并删除关联会话、删除确定性的本地 worktree 与已记录的 `intent/` 本地分支，并在事务中清除依赖边、会话关联、生命周期日志和意图记录。远端分支和 PR 不受影响。
+`delete_intent { workspaceId, intentId }` 永久删除意图及其 c3 管理的本地资源。删除前先校验工作区可用且意图归属该工作区（跨工作区 intentId 按 `intent.notFound` 拒绝）；随后停止并删除关联会话、删除确定性的本地 worktree 与已记录的 `intent/` 本地分支，并在事务中清除依赖边、会话关联、生命周期日志和意图记录。会话清理按会话真实供应商分派：只有会话存储支持删除的供应商（当前为 claude）才删除其 native transcript，codex 等仅回收 c3 侧引用；清理的异常边界落在每一步上，单步失败只记录告警，不跳过其后的步骤，也不阻断其余会话与本地资源、意图记录的清理。远端分支和 PR 不受影响。
 
 **字段：** `workspaceId: string`, `items: Intent[]`, `sddEnabled: boolean`
 

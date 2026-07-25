@@ -31,3 +31,16 @@ export const VENDOR_CAPABILITIES: Record<VendorId, AdapterCapabilities> = {
 export function canFormTeam(vendor: VendorId): boolean {
   return VENDOR_CAPABILITIES[vendor].streamingPush
 }
+
+/**
+ * Whether a vendor's session store can delete a session's native transcript.
+ * Claude reports `full` (the SDK removes the JSONL under `~/.claude/projects/`);
+ * Codex reports `none` — it exposes no delete operation, so its transcript under
+ * `~/.codex/sessions/` outlives c3's own references. Callers that clean up a
+ * session must ask here before reaching for a vendor's remover: handing a Codex
+ * session id to the Claude SDK raises "Session not found" and strands the rest
+ * of the cleanup.
+ */
+export function canDeleteSession(vendor: VendorId): boolean {
+  return VENDOR_CAPABILITIES[vendor].sessions.delete !== 'none'
+}

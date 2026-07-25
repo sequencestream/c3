@@ -32,13 +32,13 @@ An agent discussion has multiple AI agents hold a multi-round round-table on the
 
 Agent discussions suit questions where the direction is still unclear and multiple perspectives need to collide, matching the five discussion types built into c3:
 
-| Scenario                | Discussion type | Typical question                                                                                                    |
-| ----------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **Brainstorming**       | Brainstorm      | "What are the feasible evolution directions for the caching layer?" — diverge broadly to generate ideas, then converge on the valuable few |
-| **Deciding an approach**| Decision        | "Kafka or NATS for the message queue?" — compare candidates against criteria, pick one, and explain why             |
-| **Review and gating**   | Review          | "What is wrong with this API design draft?" — examine a proposal from multiple angles, exposing risks and open items |
-| **Planning breakdown**  | Planning        | "How should we sequence next quarter's refactor?" — break a big goal into an ordered execution plan                 |
-| **Retrospective**       | Retro           | "What did this production incident expose?" — sort out what happened, why, and what changes next time               |
+| Scenario                 | Discussion type | Typical question                                                                                                                           |
+| ------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Brainstorming**        | Brainstorm      | "What are the feasible evolution directions for the caching layer?" — diverge broadly to generate ideas, then converge on the valuable few |
+| **Deciding an approach** | Decision        | "Kafka or NATS for the message queue?" — compare candidates against criteria, pick one, and explain why                                    |
+| **Review and gating**    | Review          | "What is wrong with this API design draft?" — examine a proposal from multiple angles, exposing risks and open items                       |
+| **Planning breakdown**   | Planning        | "How should we sequence next quarter's refactor?" — break a big goal into an ordered execution plan                                        |
+| **Retrospective**        | Retro           | "What did this production incident expose?" — sort out what happened, why, and what changes next time                                      |
 
 Conversely, work whose goal is already clear and only needs implementing does not need a discussion — just create an intent or start working in a session. If you can state "what to build and what counts as done" in one sentence, skip the discussion; if what comes out of your mouth is "I'm not sure…" or "is there a better…", that is where discussions shine.
 
@@ -60,17 +60,17 @@ c3 (Code Creative Center) provides multi-agent round-table deliberation through 
 
 In c3, a discussion is a structured record within a workspace with the following main fields:
 
-| Component            | Description                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------------- |
-| **type**             | One of Brainstorm / Decision / Review / Planning / Retro, which determines how each phase is guided     |
-| **goal**             | The question this discussion must answer or the purpose it must achieve; the title is derived from it   |
-| **context**          | The background you provide, kept permanently as your original input and never overwritten              |
-| **researchResult**   | The current-state research produced by the read-only research agent before the discussion starts, stored separately from the context |
-| **organizer**        | The organizing agent designated at creation, responsible for running the discussion and writing the conclusion |
-| **participants**     | The set of agents selected at creation, which may mix models from different vendors                     |
-| **agenda**           | The ordered list of sub-topics the organizer derives from the goal; the discussion advances along it     |
-| **conclusion**       | The final output of the discussion, convertible into an intent                                          |
-| **status**           | The `draft` → `in_progress` → `completed` / `cancelled` state machine                                   |
+| Component          | Description                                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **type**           | One of Brainstorm / Decision / Review / Planning / Retro, which determines how each phase is guided                                  |
+| **goal**           | The question this discussion must answer or the purpose it must achieve; the title is derived from it                                |
+| **context**        | The background you provide, kept permanently as your original input and never overwritten                                            |
+| **researchResult** | The current-state research produced by the read-only research agent before the discussion starts, stored separately from the context |
+| **organizer**      | The organizing agent designated at creation, responsible for running the discussion and writing the conclusion                       |
+| **participants**   | The set of agents selected at creation, which may mix models from different vendors                                                  |
+| **agenda**         | The ordered list of sub-topics the organizer derives from the goal; the discussion advances along it                                 |
+| **conclusion**     | The final output of the discussion, convertible into an intent                                                                       |
+| **status**         | The `draft` → `in_progress` → `completed` / `cancelled` state machine                                                                |
 
 ### The three roles in a discussion
 
@@ -114,11 +114,11 @@ created (draft) → read-only research (survey the current state) → discussion
 
 ### The three ways a human intervenes
 
-| Action                    | When available            | Effect                                                                                                       |
-| ------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| **Pause / Resume**        | While the discussion runs | Suspends the discussion at a round boundary (the remark being generated finishes first), and resumes in place |
-| **Speak**                 | While the discussion runs | Interject in the input box; your words enter the discussion record and the organizer reads them next round and adjusts direction |
-| **Continue**              | Discussion completed      | When unsatisfied with the conclusion or you have follow-ups, enter a new question; the discussion returns to in progress, continues on top of the full record, and produces a new conclusion |
+| Action             | When available            | Effect                                                                                                                                                                                       |
+| ------------------ | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pause / Resume** | While the discussion runs | Suspends the discussion at a round boundary (the remark being generated finishes first), and resumes in place                                                                                |
+| **Speak**          | While the discussion runs | Interject in the input box; your words enter the discussion record and the organizer reads them next round and adjusts direction                                                             |
+| **Continue**       | Discussion completed      | When unsatisfied with the conclusion or you have follow-ups, enter a new question; the discussion returns to in progress, continues on top of the full record, and produces a new conclusion |
 
 > Tip: you do not have to watch a discussion throughout. Start it, go do something else, and read the conclusion when you come back; if you feel it drifted, use "Continue" for one more round of follow-up — often less work than intervening mid-way.
 

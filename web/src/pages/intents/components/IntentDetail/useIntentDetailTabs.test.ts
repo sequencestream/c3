@@ -66,6 +66,7 @@ function mountHost(props: Record<string, unknown>) {
       intentLogsLength: { type: Number, default: 0 },
       workSessionStatus: { type: String as () => SessionStatus | null, default: null },
       intentSessionStatus: { type: String as () => SessionStatus | null, default: null },
+      specSessionStatus: { type: String as () => SessionStatus | null, default: null },
     },
     setup(hostProps) {
       const tabs = useIntentDetailTabs({
@@ -76,6 +77,7 @@ function mountHost(props: Record<string, unknown>) {
         intentLogsLength: () => hostProps.intentLogsLength,
         workSessionStatus: () => hostProps.workSessionStatus,
         intentSessionStatus: () => hostProps.intentSessionStatus,
+        specSessionStatus: () => hostProps.specSessionStatus,
         onReadSpec: (id, p) => calls.readSpec.push([id, p]),
         onListIntentLogs: (id) => calls.listLogs.push(id),
         onOpenIntentSession: (s) => calls.openIntent.push(s),
@@ -208,6 +210,42 @@ describe('useIntentDetailTabs', () => {
     await select('workSession')
     expect(tabs().modeLocked.value).toBe(false)
     void w
+  })
+
+  it.each<SessionStatus>(['running', 'awaiting_permission', 'team', 'reconnecting'])(
+    'exposes the spec session dot for the non-idle status %s',
+    async (status) => {
+      const { w, tabs } = mountHost({
+        intent: intent({ id: 'i1', specSessionId: 's-spec' }),
+        sddEnabled: true,
+        specSessionStatus: status,
+      })
+      expect(tabs().specSessionStatusDot.value).toBe(status)
+
+      // idle / 未知(null)均不产出状态点。
+      await w.setProps({ specSessionStatus: 'idle' })
+      expect(tabs().specSessionStatusDot.value).toBe(null)
+      await w.setProps({ specSessionStatus: null })
+      expect(tabs().specSessionStatusDot.value).toBe(null)
+    },
+  )
+
+  it('keeps the spec session dot independent of the other two session dots', () => {
+    const { tabs } = mountHost({
+      intent: intent({
+        id: 'i1',
+        intentSessionId: 's-intent',
+        specSessionId: 's-spec',
+        lastWorkSessionId: 's-work',
+      }),
+      sddEnabled: true,
+      specSessionStatus: 'running',
+      intentSessionStatus: 'idle',
+      workSessionStatus: 'idle',
+    })
+    expect(tabs().specSessionStatusDot.value).toBe('running')
+    expect(tabs().intentSessionStatusDot.value).toBe(null)
+    expect(tabs().workSessionStatusDot.value).toBe(null)
   })
 
   it('auto-switches to spec session after a marked pending switch backfills a new id', async () => {

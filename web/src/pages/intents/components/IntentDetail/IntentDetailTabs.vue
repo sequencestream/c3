@@ -2,7 +2,7 @@
 /*
  * IntentDetailTabs.vue — 意图详情页的 Tab 导航条。
  *
- * 纯呈现:渲染可见 Tab 列表、高亮当前激活项,并在意图/工作会话 Tab 标签内联运行中状态点
+ * 纯呈现:渲染可见 Tab 列表、高亮当前激活项,并在意图/规范/工作会话 Tab 标签内联运行中状态点
  * (复用全局 .session-status 视觉)。选择动作以 select 事件上抛,可见性/激活/状态点均由容器
  * (Tab 状态机 composable)决定。
  */
@@ -14,6 +14,7 @@ defineProps<{
   activeTab: DetailTab
   workSessionStatusDot: SessionStatus | null
   intentSessionStatusDot: SessionStatus | null
+  specSessionStatusDot: SessionStatus | null
 }>()
 
 const emit = defineEmits<{ select: [tab: DetailTab] }>()
@@ -44,6 +45,13 @@ const emit = defineEmits<{ select: [tab: DetailTab] }>()
           :class="intentSessionStatusDot"
           :title="intentSessionStatusDot"
           data-testid="intent-detail-intent-session-status"
+        ></span>
+        <span
+          v-if="tab.key === 'specSession' && specSessionStatusDot"
+          class="session-status"
+          :class="specSessionStatusDot"
+          :title="specSessionStatusDot"
+          data-testid="intent-detail-spec-session-status"
         ></span>
       </button>
     </div>
@@ -85,7 +93,7 @@ const emit = defineEmits<{ select: [tab: DetailTab] }>()
   border-bottom-color: var(--c-accent, var(--c-text));
   font-weight: 600;
 }
-/* 工作/意图会话 tab 标签内联运行中状态点(复用全局 .session-status 视觉,inline 对齐文字)。 */
+/* 工作/意图/规范会话 tab 标签内联运行中状态点(复用全局 .session-status 视觉,inline 对齐文字)。 */
 .intent-detail-tab .session-status {
   display: inline-block;
   margin-left: var(--sp-1);

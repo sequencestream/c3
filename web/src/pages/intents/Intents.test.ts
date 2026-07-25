@@ -51,6 +51,8 @@ const IntentDetailStub = defineComponent({
     intent: { type: Object, default: null },
     requestedSubTab: { type: String, default: null },
     intentSessionStatus: { type: String, default: null },
+    specSessionStatus: { type: String, default: null },
+    specSessionRunning: { type: Boolean, default: false },
   },
   template: '<div data-testid="intent-detail">{{ intent?.id ?? "" }}</div>',
 })
@@ -294,5 +296,61 @@ describe('Intents.vue — 意图会话状态透传', () => {
 
     await wrapper.findAll('.req-item-main')[1].trigger('click')
     expect(detail.props('intentSessionStatus')).toBeNull()
+  })
+})
+
+describe('Intents.vue — spec 会话状态透传', () => {
+  it('maps each selected intent to its own specSessionId status', async () => {
+    const wrapper = mountIntents(
+      [
+        intent({ id: 'todo-a', status: 'todo', priority: 'P1', specSessionId: 'sp-a' }),
+        intent({ id: 'todo-b', status: 'todo', priority: 'P2', specSessionId: 'sp-b' }),
+      ],
+      { 'sp-a': 'running', 'sp-b': 'idle' },
+    )
+    await nextTick()
+
+    const detail = wrapper.findComponent(IntentDetailStub)
+    expect(detail.props('specSessionStatus')).toBe('running')
+
+    await wrapper.findAll('.req-item-main')[1].trigger('click')
+    expect(detail.props('specSessionStatus')).toBe('idle')
+  })
+
+  it('passes null when the intent has no spec session id or no status snapshot', async () => {
+    const wrapper = mountIntents(
+      [
+        intent({ id: 'no-session', status: 'todo', priority: 'P1', specSessionId: null }),
+        intent({ id: 'unknown', status: 'todo', priority: 'P2', specSessionId: 'sp-missing' }),
+      ],
+      { 'sp-other': 'running' },
+    )
+    await nextTick()
+
+    const detail = wrapper.findComponent(IntentDetailStub)
+    expect(detail.props('specSessionStatus')).toBeNull()
+
+    await wrapper.findAll('.req-item-main')[1].trigger('click')
+    expect(detail.props('specSessionStatus')).toBeNull()
+  })
+
+  it('leaves the specSessionRunning edit gate on active statuses only, independent of the dot', async () => {
+    const wrapper = mountIntents(
+      [
+        intent({ id: 'a', status: 'todo', priority: 'P1', specSessionId: 'sp-a' }),
+        intent({ id: 'b', status: 'todo', priority: 'P2', specSessionId: 'sp-b' }),
+      ],
+      // reconnecting 显示状态点但不属于门禁的活跃态;running 两者都成立。
+      { 'sp-a': 'reconnecting', 'sp-b': 'running' },
+    )
+    await nextTick()
+
+    const detail = wrapper.findComponent(IntentDetailStub)
+    expect(detail.props('specSessionStatus')).toBe('reconnecting')
+    expect(detail.props('specSessionRunning')).toBe(false)
+
+    await wrapper.findAll('.req-item-main')[1].trigger('click')
+    expect(detail.props('specSessionStatus')).toBe('running')
+    expect(detail.props('specSessionRunning')).toBe(true)
   })
 })

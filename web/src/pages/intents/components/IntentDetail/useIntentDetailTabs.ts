@@ -26,6 +26,7 @@ export function useIntentDetailTabs(opts: {
   intentLogsLength: () => number
   workSessionStatus: () => SessionStatus | null | undefined
   intentSessionStatus: () => SessionStatus | null | undefined
+  specSessionStatus: () => SessionStatus | null | undefined
   onReadSpec: (intentId: string, specPath: string) => void
   onListIntentLogs: (intentId: string) => void
   onOpenIntentSession: (sessionId: string) => void
@@ -41,6 +42,7 @@ export function useIntentDetailTabs(opts: {
     intentLogsLength,
     workSessionStatus,
     intentSessionStatus,
+    specSessionStatus,
     onReadSpec,
     onListIntentLogs,
     onOpenIntentSession,
@@ -92,6 +94,12 @@ export function useIntentDetailTabs(opts: {
   // reconnecting 是退避重连的活跃中间态,同样显示。
   const intentSessionStatusDot = computed<SessionStatus | null>(() => {
     const st = intentSessionStatus()
+    return st && st !== 'idle' ? st : null
+  })
+  // 编写规范(spec 会话)tab 标签的运行中状态点:与上面两类会话同构,非 idle/未知(null)
+  // 才显示。仅供标签呈现,不参与直接编辑 spec 的门禁判定。
+  const specSessionStatusDot = computed<SessionStatus | null>(() => {
+    const st = specSessionStatus()
     return st && st !== 'idle' ? st : null
   })
 
@@ -233,6 +241,7 @@ export function useIntentDetailTabs(opts: {
     isTabVisible,
     workSessionStatusDot,
     intentSessionStatusDot,
+    specSessionStatusDot,
     expectedSessionId,
     chatReady,
     firstIntentTurn,

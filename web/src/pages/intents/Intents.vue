@@ -215,6 +215,15 @@ const selectedIntentSessionStatus = computed<SessionStatus | null>(() => {
   return props.sessionStatus?.[id] ?? null
 })
 
+// 选中意图的 spec 会话(specSessionId)运行状态,派生给 IntentDetail 的编写规范 tab
+// 标签状态点。无 specSessionId 或状态未知时为 null(不显示状态点)。纯展示用,与上方
+// 直接编辑 spec 门禁的 selectedSpecSessionRunning 相互独立。
+const selectedSpecSessionStatus = computed<SessionStatus | null>(() => {
+  const id = selectedIntent.value?.specSessionId
+  if (!id) return null
+  return props.sessionStatus?.[id] ?? null
+})
+
 // External one-shot select request (work session title-bar jump button): when the
 // requested intent is present in the loaded list, select it (winning over the
 // default-first-row logic via userSelectedIntent=true) and signal the parent to
@@ -369,6 +378,7 @@ defineExpose({
         :spec-session-running="selectedSpecSessionRunning"
         :work-session-status="selectedWorkSessionStatus"
         :intent-session-status="selectedIntentSessionStatus"
+        :spec-session-status="selectedSpecSessionStatus"
         :intent-logs="selectedIntentLogs"
         :intent-logs-loading="intentLogsLoading"
         @refine="(id: string) => emit('refine', id)"

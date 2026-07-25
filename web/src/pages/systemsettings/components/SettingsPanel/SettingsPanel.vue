@@ -40,6 +40,9 @@ const { isAdmin } = useAuth()
 // 浏览器本地时区，作为 timezone 草稿的默认值与 timezone 列表不可用时的兜底项。
 const BROWSER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
 
+// 会话清理的默认保留天数，与服务端 DEFAULT_SESSION_RETENTION_DAYS 保持一致。
+const DEFAULT_SESSION_RETENTION_DAYS = 30
+
 // 浏览器语音输入的可选识别语言（BCP-47）。与 UI 语言（UI_LANGS）彻底解耦。
 const VOICE_LANGS = computed<{ value: string; label: string }[]>(() => [
   { value: 'zh-CN', label: t('settings.voiceLang.zhCN.label') },
@@ -101,7 +104,7 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
     'specAgentId',
     'automationAgentId',
   ],
-  runtime: ['vendorCliVersions', 'proxy'],
+  runtime: ['vendorCliVersions', 'proxy', 'sessionCleanup'],
   security: ['auth'],
   general: ['uiLang', 'voiceLang', 'timezone', 'baseUrl', 'showToolSessions', 'showSessionsPage'],
 }
@@ -185,6 +188,7 @@ function emptySettings(): SystemSettings {
     showToolSessions: false,
     showSessionsPage: false,
     proxy: { enabled: false, httpProxy: '', httpsProxy: '' },
+    sessionCleanup: { enabled: false, retentionDays: DEFAULT_SESSION_RETENTION_DAYS },
     vendorCliVersions: {},
   }
 }
@@ -270,6 +274,45 @@ function syncProxyRef(): void {
     : { enabled: false, httpProxy: '', httpsProxy: '' }
 }
 
+/**
+ * Session-store cleanup (system-wide). Same pattern as `proxyCfg`: the block is
+ * optional on `SystemSettings`, so the form binds a concrete mirror ref and a
+ * watcher writes it back into the draft for dirty detection and the Save payload.
+ * Both fields are always present here — "off" and the default window are what an
+ * unconfigured server means.
+ */
+const cleanupCfg = ref<{ enabled: boolean; retentionDays: number }>({
+  enabled: false,
+  retentionDays: DEFAULT_SESSION_RETENTION_DAYS,
+})
+watch(
+  cleanupCfg,
+  (c) => {
+    draft.value.sessionCleanup = { ...c }
+  },
+  { deep: true },
+)
+// Seed cleanupCfg from the current draft (used after a full seed / a resync).
+function syncCleanupRef(): void {
+  const c = draft.value.sessionCleanup
+  cleanupCfg.value = {
+    enabled: c?.enabled === true,
+    retentionDays: c?.retentionDays ?? DEFAULT_SESSION_RETENTION_DAYS,
+  }
+}
+
+/**
+ * The retention window bound to the number input. Mirrors the server normalize
+ * (floor, minimum 1) so the field never holds a value the server would reject.
+ */
+const retentionDays = computed<number>({
+  get: () => cleanupCfg.value.retentionDays,
+  set: (val: number) => {
+    const days = Number.isFinite(val) && val > 0 ? Math.max(1, Math.floor(val)) : 1
+    cleanupCfg.value = { ...cleanupCfg.value, retentionDays: days }
+  },
+})
+
 // Build the normalized full-settings seed from a raw server payload. Starts from a
 // deep copy of EVERY server field so pass-through fields this panel does not edit
 // — `projectConfigs` / `degradationChain` / `socketAutoResume` — survive a Save
@@ -301,6 +344,12 @@ function buildSeed(settings: SystemSettings): SystemSettings {
     showToolSessions: settings.showToolSessions ?? false,
     showSessionsPage: settings.showSessionsPage === true,
     proxy: settings.proxy ?? { enabled: false, httpProxy: '', httpsProxy: '' },
+    // Cleanup is opt-in: an absent block seeds as off with the default window, so
+    // draft and committed share one shape and the tab isn't spuriously dirty.
+    sessionCleanup: {
+      enabled: settings.sessionCleanup?.enabled === true,
+      retentionDays: settings.sessionCleanup?.retentionDays ?? DEFAULT_SESSION_RETENTION_DAYS,
+    },
     // Effective vendor CLI version selection per vendor (empty object ⇒ auto latest
     // for both). Carried explicitly so the radios bind to the draft.
     vendorCliVersions: { ...(settings.vendorCliVersions ?? {}) },
@@ -336,6 +385,7 @@ watch(
     if (!prevOpen) seedAll(seed)
     else reconcile(seed)
     syncProxyRef()
+    syncCleanupRef()
   },
   { immediate: true },
 )
@@ -583,6 +633,9 @@ function buildTabPayload(
     case 'runtime': {
       payload.vendorCliVersions = { ...(src.vendorCliVersions ?? {}) }
       payload.proxy = { ...proxyCfg.value }
+      // The server drops an off switch and a default window, so a untouched
+      // section round-trips to "not configured" rather than persisting noise.
+      payload.sessionCleanup = { ...cleanupCfg.value }
       break
     }
     case 'security': {
@@ -1283,6 +1336,34 @@ function selectAdmin(username: string) {
               data-testid="settings-proxy-https"
             />
           </label>
+        </section>
+
+        <!-- Session-store cleanup: system-wide, vendor-neutral, opt-in. -->
+        <section class="settings-section" data-testid="settings-session-cleanup">
+          <p class="settings-section-title">{{ t('settings.sessionCleanup.title.label') }}</p>
+          <label class="consensus-toggle">
+            <input
+              v-model="cleanupCfg.enabled"
+              type="checkbox"
+              role="switch"
+              data-testid="settings-session-cleanup-enabled"
+            />
+            {{ t('settings.sessionCleanup.toggle.label') }}
+          </label>
+          <p class="settings-hint">{{ t('settings.sessionCleanup.hint') }}</p>
+          <label class="auth-field">
+            <span class="auth-label">{{ t('settings.sessionCleanup.retentionDays.label') }}</span>
+            <input
+              v-model.number="retentionDays"
+              class="agent-field"
+              type="number"
+              min="1"
+              step="1"
+              :disabled="!cleanupCfg.enabled"
+              data-testid="settings-session-cleanup-retention"
+            />
+          </label>
+          <p class="settings-hint">{{ t('settings.sessionCleanup.retentionDays.hint') }}</p>
         </section>
       </div>
 

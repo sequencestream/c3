@@ -461,6 +461,19 @@
         "label": "HTTPS proxy URL"
       }
     },
+    "sessionCleanup": {
+      "title": {
+        "label": "セッションのクリーンアップ"
+      },
+      "toggle": {
+        "label": "古いセッション記録を自動削除する"
+      },
+      "hint": "既定はオフ。有効にすると、毎日のタスクがこのマシン上のすべてのエージェントセッションストア（ワークスペースごとのサンドボックスホームとホストのエージェントホームの両方）から、保持期間を過ぎたセッション記録を削除します。削除されたセッションは再開も閲覧もできません。設定・認証情報・スキルのファイルには一切触れません。",
+      "retentionDays": {
+        "label": "保持日数",
+        "hint": "セッション記録はこの日数のあいだ更新がなければ削除されます。既定は 30 日、最小 1 日。"
+      }
+    },
     "diagnostics": {
       "title": {
         "label": "ランタイムドライバー"
@@ -625,7 +638,9 @@
       "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
       "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
     },
-    "create": { "label": "Add intent" },
+    "create": {
+      "label": "Add intent"
+    },
     "startDev": {
       "confirmUnfinishedDeps": "この意図には未完了の依存があります。それでも作業を開始しますか?"
     },
@@ -2262,10 +2277,6 @@
       "sessionKinds": {
         "label": "サンドボックス対象のセッション種別",
         "hint": "有効時にどのセッション種別をサンドボックスに入れるか。既定は work。選択した種別は git ブランチモードや発生元に関係なくすべてサンドボックス化されます。"
-      },
-      "retention": {
-        "label": "セッション保持日数",
-        "hint": "永続サンドボックスホーム内の codex スレッド rollout を再開用に保持する日数。期限切れは毎日のクリーンアップで削除されます。既定は 30 日、最小 1 日。"
       }
     }
   },

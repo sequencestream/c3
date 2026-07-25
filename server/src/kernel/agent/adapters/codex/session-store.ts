@@ -19,7 +19,7 @@ import type {
   SessionSummary,
 } from '../types.js'
 import type { CanonicalRole, StoreScope } from '@ccc/shared/protocol'
-import { getSandboxCodexHome, hostCodexHome } from '../../../config/workspace-path.js'
+import { relayCodexHome, hostCodexHome } from '../../../config/workspace-path.js'
 
 /**
  * The ordered CODEX_HOME roots to scan when reading/listing a codex session for a
@@ -30,7 +30,7 @@ import { getSandboxCodexHome, hostCodexHome } from '../../../config/workspace-pa
  */
 export function codexStoreRoots(workspacePath: string, scope: StoreScope): string[] {
   const host = hostCodexHome()
-  const sandbox = getSandboxCodexHome(workspacePath)
+  const sandbox = relayCodexHome()
   return scope === 'sandbox' ? [sandbox, host] : [host, sandbox]
 }
 

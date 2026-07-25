@@ -21,27 +21,32 @@ export function getSpecsBase(workspacePath: string): string {
 }
 
 /**
- * The persistent per-workspace sandbox CODEX_HOME.
+ * The relay CODEX_HOME — one global directory for every relay (custom-mode)
+ * codex run, sandboxed or not.
  *
  * Codex thread `resume` needs the rollout file its `startThread` wrote (under
  * `CODEX_HOME/sessions/`) to survive across runs — but the sandbox's per-run
  * temp dir is deleted on cleanup, so a rollout written into it is gone before the
- * next turn resumes. This anchors CODEX_HOME at a fixed, workspace-scoped path
- * that outlives any single run, so all sessions in a workspace share one home and
- * each thread's rollout (named by thread id) persists for the follow-up resume.
+ * next turn resumes. This anchors CODEX_HOME at a fixed path that outlives any
+ * single run, so each thread's rollout (named by thread id) persists for the
+ * follow-up resume.
+ *
+ * It is global rather than per-workspace: one directory keeps relay state
+ * administrable — inspected, backed up or deleted in one place — and the store is
+ * addressed by thread id + cwd, so sharing it across workspaces changes nothing
+ * about which rollout a resume finds.
  *
  * It is NOT the host `~/.codex`: kept isolated under c3 home to preserve
- * deny-by-default (never exposes host credentials to the sandbox). A daily
- * janitor prunes rollouts older than the workspace's retention window.
+ * deny-by-default (never exposes host credentials to the sandbox).
  *
- * This isolated home is for CUSTOM (relay) codex only. A subscription
- * (`system`-mode) codex authenticates in DIRECT mode from `$CODEX_HOME/auth.json`,
- * which this dir lacks — so the codex sandbox auth profile points its CODEX_HOME
- * at the HOST `~/.codex` instead, and those sessions freeze their store scope to
- * `host`, never reaching here.
+ * This home is for CUSTOM (relay) codex only. A subscription (`system`-mode)
+ * codex authenticates in DIRECT mode from `$CODEX_HOME/auth.json`, which this dir
+ * lacks — so the codex sandbox auth profile points its CODEX_HOME at the HOST
+ * `~/.codex` instead, and those sessions freeze their store scope to `host`,
+ * never reaching here.
  */
-export function getSandboxCodexHome(workspacePath: string): string {
-  return join(c3HomeDir(), 'sandbox-home', projectDirName(workspacePath), '.codex')
+export function relayCodexHome(): string {
+  return join(c3HomeDir(), 'relay', 'codex')
 }
 
 /**
@@ -92,7 +97,7 @@ export function getSandboxClaudeConfigDir(_workspacePath: string): string {
  * given its frozen {@link StoreScope} (ADR-0015). This is the single seam the
  * read/resume path consults so it never hard-codes a host path:
  *
- * - codex → `host` = {@link hostCodexHome}; `sandbox` = {@link getSandboxCodexHome}.
+ * - codex → `host` = {@link hostCodexHome}; `sandbox` = {@link relayCodexHome}.
  * - claude → both scopes resolve to {@link hostClaudeConfigDir} (the sandbox run
  *   writes there too), so claude transcripts are always host-readable.
  *
@@ -106,7 +111,7 @@ export function resolveVendorStoreDir(
   scope: StoreScope,
 ): string {
   if (vendor === 'codex') {
-    return scope === 'sandbox' ? getSandboxCodexHome(workspacePath) : hostCodexHome()
+    return scope === 'sandbox' ? relayCodexHome() : hostCodexHome()
   }
   return getSandboxClaudeConfigDir(workspacePath)
 }

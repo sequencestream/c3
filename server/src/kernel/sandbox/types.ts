@@ -89,7 +89,7 @@ export interface ResolvedSandboxPaths {
   /**
    * Persistent per-workspace sandbox CODEX_HOME — read-write, same host absolute
    * path. Outlives the per-run temp dir so codex thread rollouts survive for the
-   * next turn's `resume` (see `getSandboxCodexHome`). Mounted + exported as
+   * next turn's `resume` (see `relayCodexHome`). Mounted + exported as
    * `CODEX_HOME` only for a codex run.
    */
   readonly codexHome: string

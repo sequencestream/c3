@@ -5,7 +5,7 @@
  * 复核「配置了 sandbox 的 system 模式 codex 能否登录」这条链路。回归的 bug:
  * 订阅(system)模式 codex 走 DIRECT 路由,凭证在 `$CODEX_HOME/auth.json`(ChatGPT
  * OAuth token)。但 c3 sandbox 把 CODEX_HOME 指到隔离的
- * `~/.c3/sandbox-home/<ws>/.codex`(无 auth.json)→ codex 以空 bearer 直连
+ * `~/.c3/relay/codex`(无 auth.json)→ codex 以空 bearer 直连
  * `wss://api.openai.com/v1/responses` → `401 Missing bearer or basic authentication`。
  *
  * 修复:system 模式 codex 的 CODEX_HOME 指向 HOST `~/.codex`(auth.json 在此)并挂载,
@@ -14,7 +14,7 @@
  *
  * 本测试用【真实的 createSandboxWrapper】(经 tsx 导入 server 源码)生成一个
  * system 模式(allowKeychain:true)codex wrapper,再实跑 `codex exec`,断言:
- *   - 生成脚本把 CODEX_HOME 指向 HOST ~/.codex 且挂载它、不含隔离 sandbox-home(结构守卫);
+ *   - 生成脚本把 CODEX_HOME 指向 HOST ~/.codex 且挂载它、不含隔离 relay home(结构守卫);
  *   - codex 真正登录并回复,而非 401 Missing bearer(行为守卫)。
  *
  * 需要真实订阅登录(~/.codex/auth.json)+ 出网(codex 走宿主 proxy),因此非 CI 安全 ——
@@ -146,7 +146,7 @@ try {
   const wrapperPath = gen.stdout.trim()
   const wrapperText = readFileSync(wrapperPath, 'utf-8')
 
-  // 结构守卫:CODEX_HOME 指向 HOST ~/.codex 并挂载它,且不含隔离 sandbox-home。
+  // 结构守卫:CODEX_HOME 指向 HOST ~/.codex 并挂载它,且不含隔离 relay home。
   if (
     wrapperText.includes(`--env 'CODEX_HOME=${hostCodex}'`) &&
     wrapperText.includes(`-v '${hostCodex}:rw'`)
@@ -156,11 +156,11 @@ try {
     fail('CODEX_HOME 未指向 HOST ~/.codex —— auth.json 不可达')
     failed = true
   }
-  if (/sandbox-home/.test(wrapperText)) {
-    fail('生成脚本仍挂载隔离的 sandbox-home(system codex 不应使用它)')
+  if (/relay[/\\]codex/.test(wrapperText)) {
+    fail('生成脚本仍挂载隔离的 relay codex home(system codex 不应使用它)')
     failed = true
   } else {
-    pass('未使用隔离 sandbox-home')
+    pass('未使用隔离 relay codex home')
   }
 
   // 行为守卫:实跑 codex,必须真正登录(无 401 Missing bearer);OpenAI 地域拦截时重试一次。

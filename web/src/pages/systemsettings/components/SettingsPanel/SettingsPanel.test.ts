@@ -1083,6 +1083,7 @@ describe('SettingsPanel.vue — Tab grouping (2026-07-11-001)', () => {
       'settings-diagnostics': 'settings-tab-runtime',
       'settings-vendor-cli': 'settings-tab-runtime',
       'settings-proxy': 'settings-tab-runtime',
+      'settings-session-cleanup': 'settings-tab-runtime',
       'settings-auth': 'settings-tab-security',
       'settings-ui-lang': 'settings-tab-general',
       'settings-timezone': 'settings-tab-general',
@@ -1143,6 +1144,75 @@ describe('SettingsPanel.vue — per-tab dirty state (2026-07-11-001)', () => {
     expect(w.find('[data-testid="settings-tab-dirty-runtime"]').exists()).toBe(false)
     await w.find('[data-testid="settings-proxy-enabled"]').setValue(true)
     expect(w.find('[data-testid="settings-tab-dirty-runtime"]').exists()).toBe(true)
+  })
+})
+
+describe('SettingsPanel.vue — session cleanup (system-wide)', () => {
+  const CLEANUP = '[data-testid="settings-session-cleanup-enabled"]'
+  const RETENTION = '[data-testid="settings-session-cleanup-retention"]'
+
+  it('renders off with the default window when the server has no cleanup config', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    const toggle = w.find(CLEANUP)
+    expect(toggle.attributes('role')).toBe('switch')
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    expect((w.find(RETENTION).element as HTMLInputElement).value).toBe('30')
+    // The window is not editable until cleanup is switched on.
+    expect(w.find(RETENTION).attributes('disabled')).toBeDefined()
+  })
+
+  it('round-trips a persisted switch and window', () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: { ...baseSettings, sessionCleanup: { enabled: true, retentionDays: 14 } },
+      },
+    })
+    expect((w.find(CLEANUP).element as HTMLInputElement).checked).toBe(true)
+    expect((w.find(RETENTION).element as HTMLInputElement).value).toBe('14')
+    expect(w.find(RETENTION).attributes('disabled')).toBeUndefined()
+  })
+
+  it('marks the Runtime tab dirty and saves the enabled switch', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    expect(w.find('[data-testid="settings-tab-dirty-runtime"]').exists()).toBe(false)
+    await w.find(CLEANUP).setValue(true)
+    expect(w.find('[data-testid="settings-tab-dirty-runtime"]').exists()).toBe(true)
+
+    await w.find(SAVE.runtime).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.sessionCleanup).toEqual({ enabled: true, retentionDays: 30 })
+  })
+
+  it('saves an edited retention window, flooring sub-day input up to 1', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find(CLEANUP).setValue(true)
+    await w.find(RETENTION).setValue('7')
+    await w.find(SAVE.runtime).trigger('click')
+    expect((w.emitted('save') as [SystemSettings][])[0][0].sessionCleanup).toEqual({
+      enabled: true,
+      retentionDays: 7,
+    })
+
+    await w.find(RETENTION).setValue('0')
+    await w.find(SAVE.runtime).trigger('click')
+    expect((w.emitted('save') as [SystemSettings][])[1][0].sessionCleanup).toEqual({
+      enabled: true,
+      retentionDays: 1,
+    })
+  })
+
+  it('carries cleanup untouched when another tab saves', async () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: { ...baseSettings, sessionCleanup: { enabled: true, retentionDays: 14 } },
+      },
+    })
+    await w.find('[data-testid="settings-timezone"]').setValue('America/New_York')
+    await w.find(SAVE.general).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.sessionCleanup).toEqual({ enabled: true, retentionDays: 14 })
   })
 })
 

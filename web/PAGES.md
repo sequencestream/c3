@@ -120,7 +120,7 @@ web/src/
 │   └── systemsettings/                              # 系统设置页
 │       ├── SystemSettings.vue                       # 系统设置容器(弹窗):封装 SettingsPanel
 │       └── components/SettingsPanel/
-│           ├── SettingsPanel.vue                    # 系统设置面板(弹窗):Agent/Runtime/Security/General 四 Tab,共享 useTabbedDraftSave 管理字段白名单、草稿/已提交基线、脏状态、分组保存与切换确认;General 包含 uiLang/voiceLang/timezone/baseUrl/showToolSessions/showSessionsPage,后二者职责独立。showSessionsPage 使用无障碍 switch,非管理员只读,仅服务端确认回推改变全局导航
+│           ├── SettingsPanel.vue                    # 系统设置面板(弹窗):Agent/Runtime/Security/General 四 Tab,共享 useTabbedDraftSave 管理字段白名单、草稿/已提交基线、脏状态、分组保存与切换确认;General 包含 uiLang/voiceLang/timezone/baseUrl/showToolSessions/showSessionsPage,后二者职责独立;Runtime 含 vendor CLI 生效版本、子进程代理与会话清理(sessionCleanup:开关 + 保留天数,关闭时天数输入禁用,与 sandbox 无关、不在工作区设置中)。showSessionsPage 使用无障碍 switch,非管理员只读,仅服务端确认回推改变全局导航
 │           ├── EmojiPicker.vue                      # emoji 选择器:零依赖,支持搜索、分类导航、自定义输入(最长 16 字符)
 │           └── emoji-data.ts                        # emoji 数据集:分类 emoji 列表与搜索关键词
 │

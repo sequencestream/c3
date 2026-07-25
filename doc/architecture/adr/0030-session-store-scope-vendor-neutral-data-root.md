@@ -9,7 +9,7 @@ ADR-0028 把 sandbox 落为进程级 arapuca 隔离,ADR-0015 把"会话的 vendo
 不变量——因为一个会话的 transcript **只**存在于它所属 vendor 的原生 store 里,c3 从不另存会话内容。
 
 sandbox 落地后出现第二维不变量的缺口:同一 vendor 的数据根在**宿主 run** 与 **sandbox run** 下并不相同
-(codex `CODEX_HOME`:宿主 `~/.codex` vs 持久 `~/.c3/sandbox-home/<project>/.codex`;claude
+(codex `CODEX_HOME`:宿主 `~/.codex` vs 持久 `~/.c3/relay/codex`;claude
 `CLAUDE_CONFIG_DIR`:宿主 `~/.claude` vs 若隔离则另一处)。于是一个会话的 transcript 物理落在两地之一。
 而读取端(`CodexSessionStore` 曾把 sessions 根硬编码为宿主 `~/.codex`)不看这个区别,导致:
 

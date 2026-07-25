@@ -710,27 +710,9 @@ describe('WorkspaceSetting.vue — arapuca sandbox (both branch modes) + extraMo
     expect(payload.sandbox?.sandboxSessionKinds).toEqual(['work', 'intent'])
   })
 
-  it('emits sessionRetentionDays only when it differs from the default (30)', async () => {
+  it('offers no session-retention control — cleanup is a system-wide setting now', () => {
     const w = mountSandbox({ gitBranchMode: 'worktree', sandbox: { enabled: true } })
-    // Default 30 is not persisted …
-    await w.find(SAVE.gitSandbox).trigger('click')
-    let payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
-    expect(payload.sandbox?.sessionRetentionDays).toBeUndefined()
-    // … but an explicit non-default value is.
-    await w.find('[data-testid="project-config-sandbox-retention"]').setValue('7')
-    await w.find(SAVE.gitSandbox).trigger('click')
-    payload = (w.emitted('save') as [WorkspaceSettingType][])[1][0]
-    expect(payload.sandbox?.sessionRetentionDays).toBe(7)
-  })
-
-  it('round-trips a seeded non-default sessionRetentionDays', () => {
-    const w = mountSandbox({
-      gitBranchMode: 'worktree',
-      sandbox: { enabled: true, sessionRetentionDays: 14 },
-    })
-    const input = w.find('[data-testid="project-config-sandbox-retention"]')
-      .element as HTMLInputElement
-    expect(input.value).toBe('14')
+    expect(w.find('[data-testid="project-config-sandbox-retention"]').exists()).toBe(false)
   })
 
   it('preserves the enabled sandbox in the save payload when switching to current-branch', async () => {

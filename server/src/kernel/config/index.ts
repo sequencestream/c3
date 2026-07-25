@@ -35,7 +35,7 @@ import type {
   ModeToken,
   WorkspaceSetting,
   WorkspaceSandboxConfig,
-  WorkspaceSessionCleanupConfig,
+  SessionCleanupConfig,
   SkillRepoConfig,
   StoreScope,
   SystemSettings,
@@ -56,10 +56,7 @@ import {
 import type { AgentOrderEntry } from '../agent-config/normalize.js'
 import { parseAgentConfig } from '../agent-config/schema.js'
 import { normalizeAuth, migrateLegacySessionTtl } from './auth-schema.js'
-import {
-  DEFAULT_SESSION_RETENTION_DAYS,
-  MIN_SESSION_RETENTION_DAYS,
-} from './session-cleanup.js'
+import { DEFAULT_SESSION_RETENTION_DAYS, MIN_SESSION_RETENTION_DAYS } from './session-cleanup.js'
 import { encryptAgentApiKeys, decryptAgentApiKeys } from './encryption.js'
 
 /**
@@ -148,6 +145,51 @@ function normalizeProxyConfig(raw: unknown): {
   const httpProxy = sanitizeProxyUrl(obj.httpProxy)
   const httpsProxy = sanitizeProxyUrl(obj.httpsProxy)
   return { enabled, httpProxy, httpsProxy }
+}
+
+/**
+ * Normalize the system-wide session-cleanup config.
+ *
+ * - `enabled` is opt-in: only an explicit `true` persists, so an installation
+ *   that never asked for cleanup keeps every session transcript.
+ * - `retentionDays` accepts a finite positive number, floored to a whole day and
+ *   clamped up to {@link MIN_SESSION_RETENTION_DAYS}; anything else (absent,
+ *   non-finite, ≤ 0) is left unset so the default applies at read time. Only an
+ *   explicit non-default value is persisted, keeping configs clean. The window
+ *   can be saved while cleanup is off — it simply does not run.
+ *
+ * Returns `undefined` when neither field is meaningful, so the whole block is
+ * omitted. A legacy per-workspace `sandbox.sessionRetentionDays` lives under a
+ * different object entirely: it is unknown to both normalizers and dropped, and
+ * it never back-fills this block (no implicit opt-in on upgrade).
+ */
+function normalizeSessionCleanupConfig(raw: unknown): SessionCleanupConfig | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const rec = raw as Record<string, unknown>
+  const out: { enabled?: boolean; retentionDays?: number } = {}
+  if (rec.enabled === true) out.enabled = true
+  const rawDays = typeof rec.retentionDays === 'number' ? rec.retentionDays : NaN
+  if (Number.isFinite(rawDays) && rawDays > 0) {
+    const days = Math.max(MIN_SESSION_RETENTION_DAYS, Math.floor(rawDays))
+    if (days !== DEFAULT_SESSION_RETENTION_DAYS) out.retentionDays = days
+  }
+  if (Object.keys(out).length === 0) return undefined
+  return out
+}
+
+/**
+ * The session-cleanup decision: whether cleanup runs at all, and the effective
+ * retention window in days. Cleanup is opt-in — an unconfigured installation
+ * reports `enabled: false` and nothing is ever pruned. The window falls back to
+ * {@link DEFAULT_SESSION_RETENTION_DAYS} when unset (normalize only persists a
+ * non-default value).
+ */
+export function getSessionCleanup(): { enabled: boolean; retentionDays: number } {
+  const cfg = loadSettings().sessionCleanup
+  return {
+    enabled: cfg?.enabled === true,
+    retentionDays: cfg?.retentionDays ?? DEFAULT_SESSION_RETENTION_DAYS,
+  }
 }
 
 /**
@@ -455,6 +497,8 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // 30-day default so existing installs stop re-prompting hourly.
   const parsedAuth = normalizeAuth(raw?.auth)
   const auth = parsedAuth ? migrateLegacySessionTtl(parsedAuth) : undefined
+  // Session-store cleanup: system-wide and opt-in (see normalizeSessionCleanupConfig).
+  const sessionCleanup = normalizeSessionCleanupConfig(raw?.sessionCleanup)
   return {
     agents,
     defaultAgentId,
@@ -471,6 +515,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     degradationChain,
     socketAutoResume,
     proxy: normalizeProxyConfig(raw?.proxy),
+    ...(sessionCleanup !== undefined ? { sessionCleanup } : {}),
     // skillRepos intentionally omitted — deprecated, migrated to WorkspaceSetting
     ...(auth !== undefined ? { auth } : {}),
     ...(projectConfigs ? { projectConfigs } : {}),
@@ -581,9 +626,6 @@ export function normalizeWorkspaceSetting(
   // Sandbox config is independent of the branch mode — switching modes must not
   // silently drop a saved sandbox config.
   const sandbox = normalizeSandboxConfig(rec.sandbox)
-  // Session cleanup is its own block: normalized independently of sandbox, so
-  // neither one's presence or absence changes the other.
-  const sessionCleanup = normalizeSessionCleanupConfig(rec.sessionCleanup)
   const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
   const sddEnabled = normalizeSddEnabled(rec.sddEnabled)
   const automationEnabled = normalizeAutomationEnabled(rec.automationEnabled)
@@ -601,7 +643,6 @@ export function normalizeWorkspaceSetting(
     ...(defaultMainBranch ? { defaultMainBranch } : {}),
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
-    ...(sessionCleanup !== undefined ? { sessionCleanup } : {}),
   }
 }
 
@@ -698,36 +739,6 @@ function normalizeSandboxConfig(raw: unknown): WorkspaceSandboxConfig | undefine
   // Return undefined when nothing meaningful was set (keeps old configs clean).
   if (Object.keys(sb).length === 0) return undefined
   return sb
-}
-
-/**
- * Normalize the workspace session-cleanup config — a sibling of the sandbox
- * config, never derived from it.
- *
- * - `enabled` is opt-in: only an explicit `true` persists, so a workspace that
- *   never asked for cleanup keeps every session artifact.
- * - `retentionDays` accepts a finite positive number, floored to a whole day and
- *   clamped up to {@link MIN_SESSION_RETENTION_DAYS}; anything else (absent,
- *   non-finite, ≤ 0) is left unset so the default applies at read time. Only an
- *   explicit non-default value is persisted, keeping configs clean. The window
- *   can be saved while cleanup is off — it simply does not run.
- *
- * Returns `undefined` when neither field is meaningful, so the whole block is
- * omitted. Any other key (including a legacy `sandbox.sessionRetentionDays`,
- * which lives under a different block entirely) is unknown here and dropped.
- */
-function normalizeSessionCleanupConfig(raw: unknown): WorkspaceSessionCleanupConfig | undefined {
-  if (!raw || typeof raw !== 'object') return undefined
-  const rec = raw as Record<string, unknown>
-  const out: WorkspaceSessionCleanupConfig = {}
-  if (rec.enabled === true) out.enabled = true
-  const rawDays = typeof rec.retentionDays === 'number' ? rec.retentionDays : NaN
-  if (Number.isFinite(rawDays) && rawDays > 0) {
-    const days = Math.max(MIN_SESSION_RETENTION_DAYS, Math.floor(rawDays))
-    if (days !== DEFAULT_SESSION_RETENTION_DAYS) out.retentionDays = days
-  }
-  if (Object.keys(out).length === 0) return undefined
-  return out
 }
 
 /**
@@ -1494,33 +1505,6 @@ export function getProjectSandbox(workspacePath: string): WorkspaceSandboxConfig
   // Already normalized (branch-independent sandbox content) by
   // loadWorkspaceSetting → normalizeWorkspaceSetting → normalizeSandboxConfig.
   return loadWorkspaceSetting(workspacePath).sandbox
-}
-
-/**
- * A workspace's session-cleanup decision: whether cleanup runs at all, and the
- * effective retention window in days. Cleanup is opt-in — an unconfigured
- * workspace reports `enabled: false` and is never pruned. The window falls back
- * to {@link DEFAULT_SESSION_RETENTION_DAYS} when unset (normalize only persists
- * a non-default value).
- */
-export function getSessionCleanup(workspacePath: string): {
-  enabled: boolean
-  retentionDays: number
-} {
-  const cfg = loadWorkspaceSetting(workspacePath).sessionCleanup
-  return {
-    enabled: cfg?.enabled === true,
-    retentionDays: cfg?.retentionDays ?? DEFAULT_SESSION_RETENTION_DAYS,
-  }
-}
-
-/**
- * All workspace paths that carry a persisted per-project config. Used by the
- * session-cleanup janitor to map each on-disk session-store directory back to
- * its workspace's cleanup decision.
- */
-export function listConfiguredWorkspacePaths(): string[] {
-  return Object.keys(loadSettings().projectConfigs ?? {})
 }
 
 /** Test-only: drop the in-memory caches so the next call re-reads from disk. */

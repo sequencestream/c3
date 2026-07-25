@@ -461,6 +461,19 @@
         "label": "HTTPS proxy URL"
       }
     },
+    "sessionCleanup": {
+      "title": {
+        "label": "Очистка сессий"
+      },
+      "toggle": {
+        "label": "Автоматически удалять старые записи сессий"
+      },
+      "hint": "По умолчанию выключено. Если включить, ежедневная задача удаляет записи сессий старше срока хранения из всех хранилищ сессий агентов на этой машине — как из песочниц отдельных рабочих областей, так и из домашних каталогов агентов на хосте. Удалённые сессии нельзя возобновить или просмотреть. Файлы конфигурации, учётных данных и навыков не затрагиваются.",
+      "retentionDays": {
+        "label": "Хранение (дни)",
+        "hint": "Запись сессии удаляется, если её не изменяли столько дней. По умолчанию 30; минимум 1."
+      }
+    },
     "diagnostics": {
       "title": {
         "label": "Драйверы среды выполнения"
@@ -625,7 +638,9 @@
       "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
       "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
     },
-    "create": { "label": "Add intent" },
+    "create": {
+      "label": "Add intent"
+    },
     "startDev": {
       "confirmUnfinishedDeps": "У этого намерения есть незавершённые зависимости. Всё равно начать работу?"
     },
@@ -2262,10 +2277,6 @@
       "sessionKinds": {
         "label": "Виды сессий в песочнице",
         "hint": "Какие виды сессий попадают в песочницу при включении. По умолчанию work; каждый выбранный вид изолируется независимо от режима git-ветки или источника."
-      },
-      "retention": {
-        "label": "Хранение сессий (дни)",
-        "hint": "Сколько дней rollout-файлы потоков codex в постоянном каталоге песочницы хранятся для возобновления, прежде чем их удалит ежедневная очистка. По умолчанию 30 дней; минимум 1."
       }
     }
   },

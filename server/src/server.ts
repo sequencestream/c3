@@ -65,9 +65,9 @@ import {
   stopUpdateCheckScheduler,
 } from './features/updates/update-checker.js'
 import {
-  startRolloutJanitor,
-  stopRolloutJanitor,
-} from './features/session-cleanup/rollout-janitor.js'
+  startSessionJanitor,
+  stopSessionJanitor,
+} from './features/session-cleanup/session-janitor.js'
 import { EventBus } from './kernel/events/event-bus.js'
 import { EventNormalizerRegistry } from './kernel/events/generic-event.js'
 import { type KernelContext, assertNoTransportFields } from './kernel/types.js'
@@ -693,16 +693,16 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Fail-soft; drives the header's "new version available" hint.
   startUpdateCheckScheduler({ onChange: broadcasts.broadcastUpdateStatus })
 
-  // Start the session-cleanup rollout janitor: for each workspace that enabled
-  // cleanup, prune codex thread rollouts older than its retention window from the
-  // persistent per-workspace CODEX_HOME. Fail-soft, daily cadence.
-  startRolloutJanitor()
+  // Start the session janitor: when cleanup is switched on system-wide, prune
+  // session transcripts older than the retention window from every reachable
+  // vendor session store. Fail-soft, daily cadence.
+  startSessionJanitor()
 
   // Graceful shutdown: stop the scheduler on process termination.
   const shutdown = async (): Promise<void> => {
     console.log('[c3] shutting down...')
     stopUpdateCheckScheduler()
-    stopRolloutJanitor()
+    stopSessionJanitor()
     await stopSchedulerWiring(30_000)
     server.close()
     shutdownLogging()

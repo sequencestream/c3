@@ -49,7 +49,7 @@ vi.mock('../../sessions.js', () => ({
 }))
 vi.mock('../../kernel/config/index.js', () => ({
   getDefaultMode: vi.fn((_path?: string, _vendor?: string) => 'default'),
-  // Consumed transitively by `codexStoreRoots → getSandboxCodexHome` when the
+  // Consumed transitively by `codexStoreRoots → relayCodexHome` when the
   // read path resolves a codex session's data roots.
   c3HomeDir: vi.fn(() => '/tmp/c3-test-home'),
 }))

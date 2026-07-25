@@ -461,6 +461,19 @@
         "label": "HTTPS proxy URL"
       }
     },
+    "sessionCleanup": {
+      "title": {
+        "label": "세션 정리"
+      },
+      "toggle": {
+        "label": "오래된 세션 기록 자동 삭제"
+      },
+      "hint": "기본값은 꺼짐입니다. 켜면 매일 실행되는 작업이 이 머신의 모든 에이전트 세션 저장소(워크스페이스별 샌드박스 홈과 호스트 에이전트 홈 모두)에서 보존 기간이 지난 세션 기록을 삭제합니다. 삭제된 세션은 재개하거나 열어볼 수 없습니다. 설정·자격 증명·스킬 파일은 건드리지 않습니다.",
+      "retentionDays": {
+        "label": "보존 일수",
+        "hint": "세션 기록이 이 일수 동안 수정되지 않으면 삭제됩니다. 기본값 30일, 최소 1일."
+      }
+    },
     "diagnostics": {
       "title": {
         "label": "런타임 드라이버"
@@ -625,7 +638,9 @@
       "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
       "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
     },
-    "create": { "label": "Add intent" },
+    "create": {
+      "label": "Add intent"
+    },
     "startDev": {
       "confirmUnfinishedDeps": "이 의도에는 완료되지 않은 의존성이 있습니다. 그래도 작업을 시작할까요?"
     },
@@ -2262,10 +2277,6 @@
       "sessionKinds": {
         "label": "샌드박스 대상 세션 종류",
         "hint": "활성화 시 어떤 세션 종류를 샌드박스에 넣을지. 기본값은 work이며, 선택한 종류는 git 브랜치 모드나 출처와 무관하게 모두 샌드박스화됩니다."
-      },
-      "retention": {
-        "label": "세션 보존 일수",
-        "hint": "영구 샌드박스 홈의 codex 스레드 rollout을 재개용으로 보관하는 일수. 만료된 항목은 매일 정리 작업이 삭제합니다. 기본값 30일, 최소 1일."
       }
     }
   },

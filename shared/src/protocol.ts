@@ -602,25 +602,26 @@ export interface WorkspaceSandboxConfig {
 }
 
 /**
- * Workspace-level session-store cleanup configuration.
+ * System-wide session-store cleanup configuration.
  *
- * Governs retention of a workspace's persisted session artifacts — currently the
- * codex thread rollouts under the persistent per-workspace CODEX_HOME, which is
- * never pruned per run so a thread stays resumable. Independent of
- * {@link WorkspaceSandboxConfig}: cleanup is configured and gated on its own, and
- * a workspace that never enables process isolation can still govern its store.
+ * Governs retention of the session transcripts every vendor writes to disk, and
+ * is deliberately **global and vendor-neutral**: the stores it prunes are shared
+ * homes, not per-workspace ones (a vendor's host home holds every workspace's
+ * sessions), so a per-workspace switch could not describe them. It is unrelated
+ * to {@link WorkspaceSandboxConfig} — the sandbox merely decides *which* home a
+ * run writes into, never whether old sessions are kept.
  *
  * The server keeps a kernel copy of this shape; the Zod schema and its
  * compile-time pin (`server/src/kernel/config/session-cleanup.ts`) enforce that
  * all three stay identical.
  */
-export interface WorkspaceSessionCleanupConfig {
+export interface SessionCleanupConfig {
   /** Master switch — cleanup is off by default (absent or false ⇔ never prunes). */
   enabled?: boolean
   /**
-   * Retention window in days: a session artifact whose mtime is older is pruned.
-   * Absent ⇒ 30 days; server normalize floors to a whole day, clamps up to a
-   * minimum of 1, and drops non-finite or non-positive values.
+   * Retention window in days: a session transcript whose mtime is older is
+   * pruned. Absent ⇒ 30 days; server normalize floors to a whole day, clamps up
+   * to a minimum of 1, and drops non-finite or non-positive values.
    */
   retentionDays?: number
 }
@@ -683,10 +684,6 @@ export interface WorkspaceSetting {
   /** Project-level sandbox configuration (arapuca process-level isolation).
    * Absent or undefined ⇒ sandboxing is not configured (equivalent to disabled). */
   sandbox?: WorkspaceSandboxConfig
-  /** Project-level session-store cleanup configuration — a sibling of
-   * {@link sandbox}, not part of it. Absent or undefined ⇒ cleanup is not
-   * configured (equivalent to disabled). */
-  sessionCleanup?: WorkspaceSessionCleanupConfig
   /**
    * Git branch strategy for `start_development` (2026-06-10). See
    * {@link GitBranchMode}. Absent or invalid ⇒ `worktree` (normalized on read).
@@ -1087,6 +1084,13 @@ export interface SystemSettings {
     httpProxy?: string
     httpsProxy?: string
   }
+  /**
+   * System-wide session-store cleanup ({@link SessionCleanupConfig}). Absent or
+   * undefined ⇒ cleanup is not configured (equivalent to disabled — nothing is
+   * ever pruned). Global rather than per-workspace because the stores it prunes
+   * are shared vendor homes.
+   */
+  sessionCleanup?: SessionCleanupConfig
   /**
    * Effective (active) vendor CLI version selection per vendor. This selects
    * which already-installed managed version c3 resolves at runtime — it does NOT

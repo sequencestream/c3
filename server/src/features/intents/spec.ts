@@ -136,9 +136,9 @@ created: ${nowIso}
 # Spec: ${intent.title}
 
 > The single source of truth for this change, derived from intent \`${intent.id}\`.
-> Written for the user to review first and the development agent second. The intent already carries
-> the requirements (Why / What / Acceptance / Non-goals); this spec explains only the grounded
-> change, impact, and verification needed for this codebase.
+> Written for the user to review first and the development agent second. It must be self-contained:
+> the distilled motivation, change, boundaries and acceptance conditions of the intent, plus the
+> codebase-grounded approach, impact and verification — reviewable without opening the intent.
 
 _(to be authored)_
 `
@@ -146,7 +146,7 @@ _(to be authored)_
 
 /**
  * The per-run VISIBLE prompt that kicks off the spec session — intent body +
- * deliverable file only. The spec-authoring contract (don't restate the intent,
+ * deliverable file only. The spec-authoring contract (keep the spec self-contained,
  * ground the solution against the codebase, the self-check, the write-confinement,
  * ask-via-tool) is an internal system instruction delivered via the spec agent's
  * system prompt (`buildSpecAgentPrompt`),

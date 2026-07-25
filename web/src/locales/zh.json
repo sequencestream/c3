@@ -1199,6 +1199,18 @@
         "worktreeCleanup": {
           "title": "清除过期worktree",
           "description": "每周日 03:00 清理超过 7 天未变化的 c3 托管 worktree,仅在无未提交改动、意图状态和分支安全检查通过时删除。"
+        },
+        "prReviewRunner": {
+          "title": "PR 评审接力",
+          "description": "订阅 PR 创建或更新，AI 评审 PR 改动后发布 pr:review 事件。"
+        },
+        "prReviewFix": {
+          "title": "PR 评审失败修复",
+          "description": "当 PR 评审报告失败时，定位并修复问题，完成后发布 pr:update 事件。"
+        },
+        "customEventEcho": {
+          "title": "自定义事件 echo",
+          "description": "订阅 my:create-event 并执行 echo hello。"
         }
       },
       "empty": "还没有自动化。",

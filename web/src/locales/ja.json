@@ -1202,6 +1202,18 @@
         "worktreeCleanup": {
           "title": "清除过期worktree",
           "description": "毎週日曜 03:00 に、7 日を超えて変更のない c3 管理 worktree を、未コミット変更・意図状態・ブランチ安全ゲート通過時のみ削除します。"
+        },
+        "prReviewRunner": {
+          "title": "PR レビューランナー",
+          "description": "PR の作成または更新を購読し、AI が PR をレビューして pr:review イベントを公開します。"
+        },
+        "prReviewFix": {
+          "title": "PR レビュー失敗修正",
+          "description": "PR レビューが失敗を報告した際に問題を診断して修正し、完了後に pr:update イベントを公開します。"
+        },
+        "customEventEcho": {
+          "title": "カスタムイベント echo",
+          "description": "my:create-event を購読して echo hello を実行します。"
         }
       },
       "empty": "まだ自動化がありません。",

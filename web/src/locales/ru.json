@@ -1202,6 +1202,18 @@
         "worktreeCleanup": {
           "title": "清除过期worktree",
           "description": "Каждое воскресенье в 03:00 удаляет c3-managed worktree без изменений старше 7 дней только после проверок грязного состояния, статуса намерения и ветки."
+        },
+        "prReviewRunner": {
+          "title": "PR-ревью раннер",
+          "description": "Подписывается на pr:create и pr:update, ревьюит PR и публикует pr:review."
+        },
+        "prReviewFix": {
+          "title": "Исправление после ревью PR",
+          "description": "При провале ревью PR диагностирует и исправляет проблемы, публикует pr:update."
+        },
+        "customEventEcho": {
+          "title": "Пользовательский эхо-ивент",
+          "description": "Подписывается на my:create-event и выполняет echo hello."
         }
       },
       "empty": "Пока нет автоматизаций.",

@@ -1199,6 +1199,18 @@
         "worktreeCleanup": {
           "title": "清除过期worktree",
           "description": "Every Sunday at 03:00, remove stale c3-managed worktrees older than 7 days only when dirty, intent and branch safety gates pass."
+        },
+        "prReviewRunner": {
+          "title": "PR review runner",
+          "description": "Review PR changes on creation or update, then publish a pr:review event."
+        },
+        "prReviewFix": {
+          "title": "PR review fix",
+          "description": "When a PR review reports failure, diagnose and fix the issues, then publish a pr:update event."
+        },
+        "customEventEcho": {
+          "title": "Custom event echo",
+          "description": "Subscribe to my:create-event and run echo hello."
         }
       },
       "empty": "No automations yet.",

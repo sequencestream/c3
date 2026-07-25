@@ -81,13 +81,13 @@ Acceptance is the most critical dimension for the "AI executes, humans gate" spl
 
 #### The five dimensions in summary
 
-| Dimension      | Question it answers                    | Consequence if missing                                                          |
-| -------------- | -------------------------------------- | ------------------------------------------------------------------------------- |
-| **Why**        | Why we are doing it                    | The agent guesses blindly at every trade-off fork                               |
-| **What**       | What we do and do not do               | Scope creep, or delivering the wrong thing                                      |
-| **Trade-offs** | Why we do it this way                  | Rejected alternatives get reinvented                                            |
-| **When**       | Which external timing constrains it    | Missed deadlines, or wasted work before external conditions are ready           |
-| **Acceptance** | What counts as done                    | Completion cannot be judged; acceptance means a human reading code              |
+| Dimension      | Question it answers                 | Consequence if missing                                                |
+| -------------- | ----------------------------------- | --------------------------------------------------------------------- |
+| **Why**        | Why we are doing it                 | The agent guesses blindly at every trade-off fork                     |
+| **What**       | What we do and do not do            | Scope creep, or delivering the wrong thing                            |
+| **Trade-offs** | Why we do it this way               | Rejected alternatives get reinvented                                  |
+| **When**       | Which external timing constrains it | Missed deadlines, or wasted work before external conditions are ready |
+| **Acceptance** | What counts as done                 | Completion cannot be judged; acceptance means a human reading code    |
 
 > Tip: you do not need to write all five dimensions upfront — state your idea in a sentence or two, and the AI will ask questions grounded in the project code, fill in the gaps, and finally produce an intent covering all five dimensions for you to confirm.
 
@@ -117,16 +117,16 @@ c3 (Code Creative Center) is a coding platform that fuses harness design, loop e
 
 In c3, an intent lands as one structured project-level record with the following main fields:
 
-| Component                    | Description                                                                                            |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **title**                    | One sentence stating what this intent is meant to achieve                                              |
-| **shortEnTitle**             | A short ASCII title, used to derive the Git branch name / worktree directory name                      |
-| **content**                  | The full description of the intent, covering the five dimensions from Part 1: **Why / What / Trade-offs / When / Acceptance** |
-| **priority**                 | `P0`–`P3`, with P0 highest; determines execution order in automated development                        |
-| **module**                   | The module the intent belongs to, inferred by the communication agent from the title/content           |
-| **status**                   | The `draft` → `todo` → `in_progress` → `done` / `cancelled` state machine                              |
-| **dependsOn**                | Other intents in the same project that this one depends on, forming a directed dependency graph that determines development order |
-| **automate**                 | Whether the automation orchestrator may develop this intent autonomously; off by default               |
+| Component        | Description                                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **title**        | One sentence stating what this intent is meant to achieve                                                                         |
+| **shortEnTitle** | A short ASCII title, used to derive the Git branch name / worktree directory name                                                 |
+| **content**      | The full description of the intent, covering the five dimensions from Part 1: **Why / What / Trade-offs / When / Acceptance**     |
+| **priority**     | `P0`–`P3`, with P0 highest; determines execution order in automated development                                                   |
+| **module**       | The module the intent belongs to, inferred by the communication agent from the title/content                                      |
+| **status**       | The `draft` → `todo` → `in_progress` → `done` / `cancelled` state machine                                                         |
+| **dependsOn**    | Other intents in the same project that this one depends on, forming a directed dependency graph that determines development order |
+| **automate**     | Whether the automation orchestrator may develop this intent autonomously; off by default                                          |
 
 ### Prerequisites
 

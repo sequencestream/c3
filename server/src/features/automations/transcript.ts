@@ -3,15 +3,16 @@
  *
  * Only `llm`-type executions record a `sessionId` (set by the dispatcher from the
  * first SDK event). Given an execution log id, this resolves the owning automation's
- * workspace and replays the SDK transcript via the shared {@link loadHistory},
- * yielding the same `TranscriptItem[]` the live chat view renders.
+ * workspace and vendor, then replays the transcript via the shared
+ * {@link loadHistoryForVendor} — the same vendor-aware reader the interactive
+ * session view uses — yielding the `TranscriptItem[]` the live chat view renders.
  *
  * Read-only: it loads what is already persisted on disk; it does not stream.
  */
 import type { TranscriptItem } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { getExecutionLog, getAutomation } from './store.js'
-import { loadHistory } from '../../sessions.js'
+import { loadHistoryForVendor } from '../sessions/history.js'
 
 export interface ExecutionTranscript {
   sessionId: string | null
@@ -26,6 +27,10 @@ export interface ExecutionTranscript {
  *   executions (nothing to replay).
  * - Returns `{ sessionId, items }` otherwise; `items` is empty if the owning
  *   automation was deleted (no workspace to resolve) or the transcript is gone.
+ *
+ * The transcript is read from the automation's own vendor store: a codex
+ * automation is read back from the codex session store (frozen store scope root
+ * first, the other as fallback), never through the claude-only reader.
  */
 export async function readExecutionTranscript(
   executionId: string,
@@ -39,8 +44,11 @@ export async function readExecutionTranscript(
   const automation = getAutomation(log.automationId)
   if (!automation) return { sessionId, items: [] }
 
+  const workspacePath = resolveWorkspaceRoot(automation.workspaceId)
+  if (!workspacePath) return { sessionId, items: [] }
+
   try {
-    const items = await loadHistory(resolveWorkspaceRoot(automation.workspaceId)!, sessionId)
+    const items = await loadHistoryForVendor(automation.vendor, workspacePath, sessionId)
     return { sessionId, items }
   } catch {
     // Transcript missing / unreadable on disk — degrade to an empty replay

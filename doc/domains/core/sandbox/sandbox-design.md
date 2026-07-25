@@ -226,7 +226,7 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 
 ### 9.2 transcript store 定位:冻结 storeScope + vendor 中立数据根
 
-历史 session 展示会话记录一律从 vendor native store 读(c3 不另存):`select_session` → `works/index.ts` `loadHistoryForVendor` → codex 走 `CodexSessionStore.read`、claude 走 `loadHistory`。sandbox 与宿主的 vendor 数据根不同(codex `CODEX_HOME`、claude `CLAUDE_CONFIG_DIR`),故 transcript 物理落在两地之一。三层机制:
+历史 session 展示会话记录一律从 vendor native store 读(c3 不另存):`features/sessions/history.ts` `loadHistoryForVendor` → codex 走 `CodexSessionStore.read`、claude 走 `loadHistory`。所有已持久化 transcript 的读取方共用它——交互式 `select_session` 与自动化执行详情(`get_execution_transcript`,按自动化冻结的 `vendor` 分派)——两条读路径不会对"会话在哪"产生分歧。sandbox 与宿主的 vendor 数据根不同(codex `CODEX_HOME`、claude `CLAUDE_CONFIG_DIR`),故 transcript 物理落在两地之一。三层机制:
 
 **① 读取端两处扫(dual-scan,兜底)**:`CodexSessionStore.list/read` 不再硬编码宿主 `~/.codex`,而按 `storeRoots` 扫描多个 CODEX_HOME 根;缺省即扫**宿主 `~/.codex` + 本工作区 sandbox home 两处**(`codexStoreRoots`),命中即算——按 `session id + cwd` 精确匹配,thread id 唯一不冲突。侧栏冷枚举/回填与存量 session 天然鲁棒。
 

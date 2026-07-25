@@ -101,7 +101,7 @@ c3
 │   │   ├── 权限响应/作答                         # 在工作台直接 Allow/Deny、AskUserQuestion 作答
 │   │   ├── 状态筛选分页                          # all/todo/done/canceled/auto 筛选 + 20 条游标分页
 │   │   ├── 共识留痕                              # auto 记录的投票/裁决只读回看
-│   │   └── 溯源跳转                              # 按 sessionKind+sessionId 跳回来源页(会话/需求/讨论/自动化)
+│   │   └── 溯源跳转                              # 有 intentId 的进意图页选中该意图,sessionKind 只定子页签(spec→编写规范/intent→意图会话/其余默认);无归属的按 sessionKind+sessionId 进会话页
 │   │
 │   ├── sandbox 沙箱                              # 工作区启用且 SessionKind 入选的 run 进 arapuca 进程级隔离(不限来源/分支模式),网络当前全开
 │   │   ├── 进程级隔离                            # arapuca 内核 MAC 限制目录 ro/rw,宿主同路径无映射、无凭证注入、无容器

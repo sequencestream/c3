@@ -1,4 +1,5 @@
 import type { WaitUserInvolveEvent, WaitUserInvolveStatus } from '@ccc/shared/protocol'
+import { resolveSessionJumpTarget } from '@/lib/session-jump'
 import type { AppCtx } from './types'
 
 // Install WorkCenter event actions (resolve permission + jump-to-source) onto the ctx.
@@ -63,20 +64,30 @@ export function installWorkcenterActions(ctx: AppCtx): void {
     if (event) event.status = 'done'
   }
 
-  // Jump from a WorkCenter event to its source tab + item, routed off the producing
-  // run's `sessionKind` + real `sessionId`. Intent-level events (no real session)
-  // route to the intent detail page; all other events land in the unified session
-  // page where `sessionKind` only chooses the left-list kind.
+  // Jump from a WorkCenter event to its source. Routing is decided by `intentId`
+  // alone: any event whose session resolved an owning intent (including
+  // intent-level events, which have no real session) lands on that intent's
+  // detail page, with `sessionKind` only choosing the sub-tab through the shared
+  // session-jump mapping. Events with no owning intent (discussion, automation,
+  // standalone sessions) keep landing in the unified session page, where
+  // `sessionKind` only chooses the left-list kind.
   // `event.workspaceId` is an opaque id (the store maps the path through
   // `pathToId`), so it is interchangeable with `currentWorkspace`.
   ctx.jumpToSource = (event: WaitUserInvolveEvent): void => {
     const workspace = event.workspaceId || currentWorkspace.value
     if (!workspace || !ctx.client) return
     ctx.setViewMode('workspace')
-    // Intent-level events: no real session exists, jump to the intent detail page.
-    if (event.intentLevel && event.intentId) {
+    if (event.intentId) {
+      // spec → 编写规范, intent → 意图会话, work/tool → detail default tab.
+      const target = resolveSessionJumpTarget({
+        sessionKind: event.sessionKind,
+        ownerKind: 'intent',
+        ownerId: event.intentId,
+      })
       ctx.openIntents(workspace)
       ctx.requestedIntentId.value = event.intentId
+      ctx.requestedIntentSubTab.value =
+        target?.kind === 'intentDetail' ? (target.tab ?? null) : null
       return
     }
     ctx.openWorkcenterSession({

@@ -1,4 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import type {
+  GenericEvent,
+  PrBranchRef,
+  PrEventAssociation,
+  PrRef,
+  PrRepo,
+} from '@ccc/shared/event-model'
 import type { AutomationTemplateBuildArgs } from './index'
 import {
   ARCH_REVIEW_PROMPT,
@@ -301,6 +308,98 @@ describe('PR review fix automation template', () => {
     // Fix prompt must allow editing unlike the runner.
     expect(PR_REVIEW_FIX_PROMPT).toContain('editing files')
     expect(PR_REVIEW_FIX_PROMPT).not.toContain('Do not modify any files')
+  })
+})
+
+/**
+ * The two PR templates embed their triggering event verbatim, so their prompts
+ * must describe the real `pr:*` payload: `data` carries `{ pr, repo, ref,
+ * association }` — the number is `data.pr.number`, the repository is
+ * `data.repo.owner` / `data.repo.name`, and `association` holds intent linkage
+ * only. Typing the fixture with the shared interfaces turns a schema change into
+ * a compile error instead of a silently stale prompt.
+ */
+const PR_EVENT_DATA: {
+  pr: PrRef
+  repo: PrRepo
+  ref: PrBranchRef
+  association: PrEventAssociation
+} = {
+  pr: {
+    number: 231,
+    id: 'PR_kwABC',
+    url: 'https://github.com/acme/demo/pull/231',
+    title: 'feat: x',
+    state: 'OPEN',
+  },
+  repo: { provider: 'github', host: 'github.com', owner: 'acme', name: 'demo' },
+  ref: { head: 'feat/x', base: 'main' },
+  association: { intentId: 'i-1', intentTitle: 'An intent' },
+}
+
+/**
+ * What a SERVER-published `pr:create` actually looks like: only `pr.url`, `ref`
+ * and `association.intentId` are filled in — no `pr.number` and no `repo` — so a
+ * prompt that reads the number/repo directly must offer a recovery path.
+ */
+const SERVER_PR_CREATE_EVENT: GenericEvent = {
+  type: 'pr:create',
+  status: 'success',
+  metadata: { operation: 'create' },
+  data: {
+    pr: { url: PR_EVENT_DATA.pr.url! },
+    ref: { head: 'intent/abc-1', base: 'main' },
+    association: { intentId: 'i-1' },
+  },
+}
+
+/** Every `data.<container>.<field>` path the real event can carry. */
+const VALID_EVENT_DATA_PATHS = new Set(
+  Object.entries(PR_EVENT_DATA).flatMap(([container, fields]) =>
+    Object.keys(fields).map((field) => `${container}.${field}`),
+  ),
+)
+
+/** The `data.<container>.<field>` paths a prompt tells the agent to read. */
+function referencedEventDataPaths(prompt: string): string[] {
+  return [...prompt.matchAll(/\bdata\.([A-Za-z]+)\.([A-Za-z]+)\b/g)].map(
+    (match) => `${match[1]}.${match[2]}`,
+  )
+}
+
+describe('PR template prompts match the real pr:* event shape', () => {
+  const prompts = [
+    ['pr-review-runner', PR_REVIEW_RUNNER_PROMPT],
+    ['pr-review-fix', PR_REVIEW_FIX_PROMPT],
+  ] as const
+
+  it.each(prompts)('%s only references event data paths that exist', (_id, prompt) => {
+    const referenced = referencedEventDataPaths(prompt)
+    expect(referenced.length).toBeGreaterThan(0)
+    for (const path of referenced) expect(VALID_EVENT_DATA_PATHS).toContain(path)
+  })
+
+  it.each(prompts)('%s reads number and repo from the right containers', (_id, prompt) => {
+    expect(prompt).toContain('data.pr.number')
+    expect(prompt).toContain('data.repo.owner')
+    expect(prompt).toContain('data.repo.name')
+    // The association carries intent linkage only — never the PR number or repo.
+    expect(prompt).not.toMatch(/\bpr\.owner\b/)
+    expect(prompt).not.toMatch(/\bpr\.repo\b/)
+    expect(prompt).not.toMatch(/association\.(number|owner|repo|name)\b/)
+    expect(prompt).toContain('intentId')
+  })
+
+  it.each(prompts)('%s recovers the fields a server-published event omits', (_id, prompt) => {
+    const data = SERVER_PR_CREATE_EVENT.data as Record<string, Record<string, unknown>>
+    // Guard the premise: the server-side create path fills neither of these.
+    expect(data.pr.number).toBeUndefined()
+    expect(data.repo).toBeUndefined()
+    // So the prompt must fall back to the URL, the local remote and a head-branch lookup.
+    expect(prompt).toContain('data.pr.url')
+    expect(prompt).toContain('gh repo view --json owner,name')
+    expect(prompt).toContain('gh pr list --head')
+    expect(prompt).toContain('data.ref.head')
   })
 })
 

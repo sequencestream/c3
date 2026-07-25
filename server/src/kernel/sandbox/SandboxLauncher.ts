@@ -15,15 +15,17 @@
  * 2. `launchSandbox(workspaceRoot, worktree)` — resolves the allowed path set
  *    (workspace root ro, worktree rw, specsBase rw, extraMounts) and mints a
  *    per-run temp dir. Returns paths + tmpDir + a `cleanup()`.
- * 3. `createSandboxWrapper(paths, entryCommand, tmpDir, opts)` — writes a POSIX
+ * 3. `createSandboxWrapper(paths, vendor, tmpDir, opts)` — writes a POSIX
  *    shell script that `exec`s `<arapucaBin> run -v …:ro -v …:rw -- <cli> "$@"`. The
  *    path is passed to the vendor SDK as `pathToClaudeCodeExecutable` /
  *    `codexPathOverride`. The SDK spawns it as a normal subprocess. arapuca is env
  *    deny-by-default: it drops the parent env (keeping only the vars it manages,
- *    HOME/PATH) and forwards ONLY what the wrapper passes as `--env KEY=VALUE`, so
- *    the run's provider credential, the vendor data-root, and (for the macOS
- *    keychain path) the login name are each forwarded explicitly. `opts.allowKeychain`
- *    carries the resolved agent's auth mode; host proxy variables are detected here.
+ *    HOME/PATH) and forwards ONLY what the wrapper passes as `--env KEY=VALUE`.
+ *    WHICH variables, data root and extra mounts a vendor needs is not decided
+ *    here — it comes from the per-vendor strategy in `vendor-auth.ts`; this module
+ *    only merges that profile with the common allow set and renders the arapuca
+ *    command. `opts.allowKeychain` carries the resolved agent's auth mode into the
+ *    strategy; host proxy variables are detected here (vendor-neutral).
  *
  * Host prerequisite: arapuca ≥ 0.2.5 (`--allow-proxy-env` / `--allow-keychain`).
  * c3 does no version negotiation — an older binary rejects the unknown flag and
@@ -47,10 +49,9 @@ import {
   rmSync,
   realpathSync,
   accessSync,
-  existsSync,
   constants as fsConstants,
 } from 'node:fs'
-import { homedir, userInfo } from 'node:os'
+import { homedir } from 'node:os'
 import { join, delimiter, sep } from 'node:path'
 import { getProjectSandbox } from '../../kernel/config/index.js'
 import { ensureManagedArapuca, resolveManagedArapuca } from './arapuca-dist.js'
@@ -58,14 +59,15 @@ import {
   getSpecsBase,
   getSandboxCodexHome,
   getSandboxClaudeConfigDir,
-  hostCodexHome,
 } from '../../kernel/config/workspace-path.js'
-import type { SysExtraMount, SessionKind } from '@ccc/shared/protocol'
+import { SandboxLaunchError } from './errors.js'
+import { readHostFacts, resolveSandboxAuthProfile } from './vendor-auth.js'
+import type { SandboxAuthProfile } from './vendor-auth.js'
+import type { SysExtraMount, SessionKind, VendorId } from '@ccc/shared/protocol'
 import type {
   ResolvedMount,
   ResolvedSandboxPaths,
   ArapucaProbeResult,
-  SandboxUiCode,
   WorkspaceSandboxConfig,
 } from './types.js'
 
@@ -122,19 +124,10 @@ export function sandboxEligible(params: {
 
 // ─── Typed Errors ────────────────────────────────────────────────────────────
 
-/**
- * A sandbox launch failure carrying a stable {@link SandboxUiCode}. Thrown by
- * path resolution (illegal / escaping path) and surfaced by the run lifecycle
- * as a hard-fail — never a silent host fallback.
- */
-export class SandboxLaunchError extends Error {
-  readonly uiCode: SandboxUiCode
-  constructor(uiCode: SandboxUiCode, message: string) {
-    super(message)
-    this.name = 'SandboxLaunchError'
-    this.uiCode = uiCode
-  }
-}
+// The typed launch failure lives in `errors.ts` so the auth-strategy registry can
+// throw it too without a module cycle; re-exported here, the historical entry
+// point for every importer.
+export { SandboxLaunchError } from './errors.js'
 
 // ─── arapuca Probe ───────────────────────────────────────────────────────────
 
@@ -549,190 +542,136 @@ function hostHasProxyEnv(): boolean {
 /** Explicit wrapper-generation decisions the caller (the run's launch path) owns. */
 export interface SandboxWrapperOptions {
   /**
-   * Append `--allow-keychain` so the vendor CLI may reach the host keychain /
-   * subscription credential store. MUST be derived from the authentication mode
-   * of the agent this run actually resolved and bound (`configMode === 'system'`),
-   * never from the CLI name, the platform, or the global default agent — a session
-   * agent swap, a role agent, or the vendor fork would otherwise mismatch it.
+   * Whether the agent this run actually resolved and bound authenticates through
+   * the vendor's own subscription login (`configMode === 'system'`) rather than
+   * an injected credential. MUST come from that bound agent, never from the CLI
+   * name, the platform, or the global default agent — a session agent swap, a
+   * role agent, or the vendor fork would otherwise mismatch it. What the mode
+   * implies (host keychain access, which data root, which variables) is the
+   * per-vendor strategy's call, not this module's.
    */
   readonly allowKeychain: boolean
 }
 
 /**
- * Create a wrapper script that runs `entryCommand` inside an arapuca-narrowed
+ * Create a wrapper script that runs `vendor`'s CLI inside an arapuca-narrowed
  * process with the resolved allow set.
  *
- * The wrapper `exec`s `<paths.arapucaBin> run -v <path>:ro|rw … -- <entryCommand> "$@"`.
+ * The wrapper `exec`s `<paths.arapucaBin> run -v <path>:ro|rw … -- <cli> "$@"`.
  * The vendor SDK spawns this script as if it were the local CLI; the child
  * process inherits the SDK-provided env (arapuca strips only `LD_*` / `DYLD_*`
  * / `ARAPUCA_*` prefixes), so no env-file is written or needed.
+ *
+ * This function is vendor-neutral by construction: everything a vendor needs to
+ * authenticate and store its state — entry command, data root and its variable,
+ * credential variable names, extra mounts, identity variables, keychain access,
+ * pre-run dirs — arrives as a resolved {@link SandboxAuthProfile} from the
+ * per-vendor strategy registry. What stays here is the part that is the same for
+ * every vendor: the common allow set, shell quoting, mount de-duplication and
+ * arapuca argument ordering.
  *
  * Two arapuca capability flags ride on top of the allow set (both require arapuca
  * ≥ 0.2.5, the run prerequisite; an older binary fails the run closed rather than
  * falling back to a bare host run):
  *  - `--allow-proxy-env` whenever the HOST carries standard proxy variables
- *    ({@link hostHasProxyEnv}) — same rule for every vendor branch.
- *  - `--allow-keychain` only for a `system`-mode (subscription-auth) agent, per
- *    the caller's explicit {@link SandboxWrapperOptions.allowKeychain}.
+ *    ({@link hostHasProxyEnv}) — a host fact, identical for every vendor.
+ *  - `--allow-keychain` when the resolved profile asks for it (a subscription
+ *    login the vendor cannot read from an environment variable).
  * Both live in the arapuca argument section (before `--`), never in the vendor
  * CLI's `"$@"`.
  *
- * @param paths        The resolved allow set from {@link launchSandbox}.
- * @param entryCommand The host PATH vendor CLI name (`claude` / `codex`).
- * @param tmpDir       The per-run temp dir from {@link launchSandbox}.
- * @param opts         Explicit per-run wrapper decisions (see {@link SandboxWrapperOptions}).
+ * @param paths  The resolved allow set from {@link launchSandbox}.
+ * @param vendor The run's vendor — the strategy registry key, NOT a CLI name.
+ * @param tmpDir The per-run temp dir from {@link launchSandbox}.
+ * @param opts   Explicit per-run wrapper decisions (see {@link SandboxWrapperOptions}).
  * @returns Absolute path to the executable wrapper script.
+ * @throws {@link SandboxLaunchError} when the vendor has no registered auth profile.
  */
 export function createSandboxWrapper(
   paths: ResolvedSandboxPaths,
-  entryCommand: string,
+  vendor: VendorId,
   tmpDir: string,
   opts: SandboxWrapperOptions,
 ): string {
-  const isCodex = entryCommand === 'codex'
-  const isClaude = entryCommand === 'claude'
-  // macOS subscription (keychain) claude has a hard constraint the other paths
-  // don't: Claude Code stores its OAuth token in the login Keychain ONLY in its
-  // default profile. The moment CLAUDE_CONFIG_DIR is set it flips to a file-backed
-  // credential store (`$CLAUDE_CONFIG_DIR/.credentials.json`) that does not exist
-  // here — so pinning CLAUDE_CONFIG_DIR (the other branches do, to keep transcripts
-  // host-readable) makes claude report "Not logged in" even with the keychain wide
-  // open. In this mode arapuca's `--allow-keychain` already sets HOME to the real
-  // home, so claude finds ~/.claude (transcripts land there, host-readable) and the
-  // keychain token on its own — we must NOT set CLAUDE_CONFIG_DIR. The keychain
-  // lookup is ALSO keyed by the login name, and arapuca strips `USER`/`LOGNAME` to
-  // empty (env deny-by-default); those two must be forwarded or the lookup misses.
-  // Other paths are unaffected: a custom (API-key) agent authenticates via the
-  // ANTHROPIC_* env below (and its HOME is a throwaway temp dir, so it genuinely
-  // needs the explicit CLAUDE_CONFIG_DIR), and non-macOS claude uses a file store
-  // inside ~/.claude that the pinned dir already mounts.
-  const claudeKeychainMode = isClaude && opts.allowKeychain && process.platform === 'darwin'
-  // The claude global config file (`oauthAccount`, project registry) — a *sibling*
-  // of the config dir, so the ~/.claude mount does not cover it. Mounted rw for the
-  // keychain path so claude reads/updates it exactly as a host run would; only when
-  // it already exists (a fresh install has none, and mounting a missing path aborts
-  // the run). Not needed by the CLAUDE_CONFIG_DIR paths, which read config from
-  // inside the mounted dir.
-  const claudeGlobalConfig = join(homedir(), '.claude.json')
-  const mountClaudeGlobalConfig = claudeKeychainMode && existsSync(claudeGlobalConfig)
-  // Codex's mirror of the keychain problem. A subscription (`system`-mode) codex
-  // authenticates in DIRECT mode from `$CODEX_HOME/auth.json` (the ChatGPT OAuth
-  // token) — but the sandbox's isolated per-workspace CODEX_HOME (built for
-  // deny-by-default + rollout persistence) has no auth.json, so codex hits
-  // `wss://api.openai.com/v1/responses` with no bearer and fails 401. Unlike
-  // claude there is no keychain and no env flip: codex reads auth straight from
-  // `$CODEX_HOME`, so the fix is to point CODEX_HOME at the HOST `~/.codex` (which
-  // holds auth.json) and mount it — the session's store scope is frozen `host` to
-  // match, so rollouts + resume + transcript reads all resolve there. A custom
-  // (relay) codex keeps the isolated sandbox home + relay-token `CODEX_API_KEY`,
-  // never exposing the host codex store.
-  const codexSystemMode = isCodex && opts.allowKeychain
-  // The vendor transcript/config data root (resolved + ensured by resolvePaths),
-  // exported so the CLI writes/reads its native store there and mounted rw since
-  // it lives outside the execution root's grant. codex → persistent per-workspace
-  // CODEX_HOME (thread rollouts survive cleanup for the next turn's `resume`);
-  // claude → the HOST CLAUDE_CONFIG_DIR (transcript stays host-readable). Scoped
-  // per vendor so a codex run never mounts the claude dir and vice-versa.
-  // System-mode codex uses the HOST ~/.codex (auth.json lives there); custom codex
-  // keeps the isolated per-workspace sandbox home.
-  const dataRoot = isCodex
-    ? codexSystemMode
-      ? hostCodexHome()
-      : paths.codexHome
-    : isClaude
-      ? paths.claudeConfigDir
-      : null
-  const dataRootEnvVar = isCodex ? 'CODEX_HOME' : isClaude ? 'CLAUDE_CONFIG_DIR' : null
-  // Claude Code hardcodes its per-user runtime dir at /tmp/claude-<uid>
-  // (shell-snapshots / IPC). It ignores TMPDIR and arapuca locks TMPDIR, so the
-  // dir cannot be redirected — it must be allowed. The host path (`/tmp/...`) is
-  // created by the wrapper; the canonical path (macOS `/private/tmp/...`) is the
-  // one arapuca matches. It is a shared, per-user dir (not per-run) — allow it,
-  // do not clean it. codex never touches it, so it is mounted for claude only.
-  const uid = typeof process.getuid === 'function' ? process.getuid() : 0
-  const claudeRuntimeHost = `/tmp/claude-${uid}`
-  const claudeRuntimeCanon = `${realpathSync('/tmp')}/claude-${uid}`
-  const mounts: ResolvedMount[] = [
+  const profile = resolveSandboxAuthProfile(vendor, {
+    paths,
+    systemAuth: opts.allowKeychain,
+    host: readHostFacts(),
+  })
+  return writeWrapperScript(paths, profile, tmpDir)
+}
+
+/**
+ * Render a resolved auth profile plus the common allow set into the wrapper
+ * script, and write it executable.
+ *
+ * Split from {@link createSandboxWrapper} so the two responsibilities stay
+ * visibly separate: that one resolves WHICH profile applies, this one renders
+ * whatever profile it is handed. Nothing below reads the vendor id.
+ */
+function writeWrapperScript(
+  paths: ResolvedSandboxPaths,
+  profile: SandboxAuthProfile,
+  tmpDir: string,
+): string {
+  // The common allow set, then the vendor's own paths, then the user's extras.
+  // De-duplicated by path (first grant wins) so a profile that names a path the
+  // common set already covers cannot emit a conflicting second `-v`.
+  const mounts: ResolvedMount[] = []
+  const seen = new Set<string>()
+  for (const mount of [
     { path: paths.executionRoot, readonly: false },
     // Present only when distinct from the execution root (worktree runs); a
     // current-branch run merges it into the single rw execution-root grant.
     ...(paths.workspaceRoot ? [{ path: paths.workspaceRoot, readonly: true }] : []),
     { path: paths.specsBase, readonly: false },
-    // The vendor data root (rw), and — for claude only — its /tmp runtime dir.
-    ...(dataRoot ? [{ path: dataRoot, readonly: false }] : []),
-    ...(isClaude ? [{ path: claudeRuntimeCanon, readonly: false }] : []),
-    // The claude global config sibling (keychain path only; see above).
-    ...(mountClaudeGlobalConfig ? [{ path: claudeGlobalConfig, readonly: false }] : []),
+    ...profile.mounts,
     ...paths.extra,
-  ]
+  ]) {
+    if (seen.has(mount.path)) continue
+    seen.add(mount.path)
+    mounts.push(mount)
+  }
   const mountFlags = mounts
     .map((m) => `  -v ${shQuote(`${m.path}:${m.readonly ? 'ro' : 'rw'}`)} \\`)
     .join('\n')
 
+  // Fixed, non-secret values (data roots, login identity) are inlined. Their
+  // VALUES are host paths / names, safe to write into the script.
+  const literalEnvBlock = profile.literalEnv
+    .map(({ name, value }) => `  --env ${shQuote(`${name}=${value}`)} \\\n`)
+    .join('')
   // arapuca is env deny-by-default: it drops the parent process env (except the
   // vars it manages itself, HOME/PATH) and forwards ONLY variables passed as
   // `--env KEY=VALUE` (a bare `--env KEY` is rejected as invalid). The driver
-  // already places the run's provider credential on the wrapper process env
-  // (codexExecEnv sets CODEX_API_KEY from the relay token; the claude launch env
-  // carries ANTHROPIC_*). Forward each as `--env "KEY=$KEY"` where `$KEY` is
-  // expanded by /bin/sh AT RUN TIME from the wrapper's own env — so the token
-  // VALUE never lands in this script's text on disk, only the variable name and
-  // a `$`-reference do. An unset var expands to `KEY=`, which arapuca drops
-  // (leaves it unset in the sandbox) rather than erroring — a safe no-op. Scope
-  // the list per vendor so a codex run never leaks ANTHROPIC_* into its sandbox
-  // and vice-versa.
-  const credentialEnvNames =
-    entryCommand === 'codex'
-      ? ['CODEX_API_KEY']
-      : entryCommand === 'claude'
-        ? ['ANTHROPIC_BASE_URL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN']
-        : []
-  // Emit unquoted `$NAME` so /bin/sh expands it at run time; the whole KEY=VALUE
-  // is double-quoted so a value with spaces stays one argv token.
-  const credentialEnvBlock = credentialEnvNames
+  // already places the run's provider credential on the wrapper process env.
+  // Forward each as `--env "KEY=$KEY"` where `$KEY` is expanded by /bin/sh AT RUN
+  // TIME from the wrapper's own env — so the token VALUE never lands in this
+  // script's text on disk, only the variable name and a `$`-reference do. An
+  // unset var expands to `KEY=`, which arapuca drops (leaves it unset in the
+  // sandbox) rather than erroring — a safe no-op. Emit unquoted `$NAME` so /bin/sh
+  // expands it; the whole KEY=VALUE is double-quoted so a value with spaces stays
+  // one argv token.
+  const forwardEnvBlock = profile.forwardEnv
     .map((name) => `  --env "${name}=$${name}" \\\n`)
     .join('')
-
-  // The vendor data-root env line (`CODEX_HOME=…` / `CLAUDE_CONFIG_DIR=…`), or
-  // empty for an unknown vendor. Its VALUE is a fixed host path, safe to inline.
-  // Suppressed for the macOS keychain path: setting CLAUDE_CONFIG_DIR there flips
-  // claude off the keychain (see `claudeKeychainMode`), so it is deliberately left
-  // unset and claude resolves ~/.claude from the real HOME instead.
-  const dataRootEnvLine =
-    dataRootEnvVar && dataRoot && !claudeKeychainMode
-      ? `  --env ${shQuote(`${dataRootEnvVar}=${dataRoot}`)} \\\n`
-      : ''
-  // Login identity (`USER`/`LOGNAME`) for the macOS keychain path. arapuca is env
-  // deny-by-default and strips both to empty, but Claude Code keys its keychain
-  // credential lookup by the login name — without it the token is never found and
-  // claude reports "Not logged in". The value is the host login name (not a secret),
-  // inlined so it is deterministic even if the wrapper process env lacks USER.
-  const loginNameEnvBlock = claudeKeychainMode
-    ? (() => {
-        const name = process.env.USER || process.env.LOGNAME || userInfo().username
-        return (
-          `  --env ${shQuote(`USER=${name}`)} \\\n` + `  --env ${shQuote(`LOGNAME=${name}`)} \\\n`
-        )
-      })()
-    : ''
-  // Pre-create claude's /tmp runtime dir (mounted above) before arapuca starts;
-  // codex needs no such line.
-  const runtimeMkdirLine = isClaude
-    ? `mkdir -p ${shQuote(claudeRuntimeHost)} 2>/dev/null || true\n`
-    : ''
+  // Host dirs the vendor CLI expects but cannot create under isolation, made
+  // before arapuca narrows the process.
+  const preRunLines = profile.preRunDirs
+    .map((dir) => `mkdir -p ${shQuote(dir)} 2>/dev/null || true\n`)
+    .join('')
 
   // Host proxy passthrough (arapuca ≥ 0.2.5): env is deny-by-default, so on a host
   // that only reaches the provider through a corporate proxy the vendor CLI would
   // fail to connect. One flag hands the standard proxy variables to arapuca, which
-  // forwards them itself — c3 emits no per-variable `--env`. Same rule for codex
-  // and claude; absent on a host with no proxy configured (behaviour unchanged).
+  // forwards them itself — c3 emits no per-variable `--env`. A host fact, so the
+  // same rule for every vendor; absent on a host with no proxy configured.
   const proxyLine = hostHasProxyEnv() ? '  --allow-proxy-env \\\n' : ''
-  // Subscription (`system`-mode) auth passthrough (arapuca ≥ 0.2.5): the vendor
-  // CLI's own login lives in the host keychain / credential store, unreachable
-  // under deny-by-default isolation. Strictly bound to the caller's resolved agent
-  // mode — a custom (API-key) agent never widens this surface; its credential keeps
-  // riding the `--env` block above.
-  const keychainLine = opts.allowKeychain ? '  --allow-keychain \\\n' : ''
+  // Subscription auth passthrough (arapuca ≥ 0.2.5): the vendor CLI's own login
+  // lives in the host keychain / credential store, unreachable under
+  // deny-by-default isolation. The profile decides — a credential that rides an
+  // environment variable never widens this surface.
+  const keychainLine = profile.allowKeychain ? '  --allow-keychain \\\n' : ''
 
   const scriptPath = join(tmpDir, 'wrapper.sh')
   // `--seccomp baseline` opens outbound network (sandbox network model is
@@ -745,11 +684,11 @@ export function createSandboxWrapper(
   // to a different, unverified binary than the one the probe validated.
   const script = `#!/bin/sh
 # c3 sandbox wrapper — runs the vendor CLI inside an arapuca-narrowed process
-${runtimeMkdirLine}exec ${shQuote(paths.arapucaBin)} run \\
+${preRunLines}exec ${shQuote(paths.arapucaBin)} run \\
   --seccomp baseline \\
 ${proxyLine}${keychainLine}  --cwd ${shQuote(paths.executionRoot)} \\
-${dataRootEnvLine}${loginNameEnvBlock}${credentialEnvBlock}${mountFlags}
-  -- ${shQuote(entryCommand)} "$@"
+${literalEnvBlock}${forwardEnvBlock}${mountFlags}
+  -- ${shQuote(profile.entryCommand)} "$@"
 `
   writeFileSync(scriptPath, script, 'utf-8')
   chmodSync(scriptPath, 0o755)

@@ -65,6 +65,8 @@ import {
   binaryCandidates,
   SandboxLaunchError,
 } from './SandboxLauncher.js'
+import { VENDOR_AUTH_PROFILES, type SandboxAuthResolver } from './vendor-auth.js'
+import type { VendorId } from '@ccc/shared/protocol'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -465,7 +467,7 @@ describe('createSandboxWrapper', () => {
 
 describe('createSandboxWrapper — proxy passthrough', () => {
   /** Build a wrapper script for `vendor`, returning its text. */
-  function wrapperScript(vendor: string, allowKeychain = false): string {
+  function wrapperScript(vendor: VendorId, allowKeychain = false): string {
     const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
     try {
       const paths = resolvePaths(workspaceRoot, worktree)
@@ -483,7 +485,7 @@ describe('createSandboxWrapper — proxy passthrough', () => {
 
   it('appends --allow-proxy-env exactly once for an uppercase host proxy variable (both vendors)', () => {
     process.env.HTTPS_PROXY = 'http://proxy.corp:3128'
-    for (const vendor of ['claude', 'codex']) {
+    for (const vendor of ['claude', 'codex'] as const) {
       const script = wrapperScript(vendor)
       expect(script.match(/--allow-proxy-env/g)).toHaveLength(1)
       // The flag belongs to arapuca, not to the vendor CLI: it must appear before
@@ -514,7 +516,7 @@ describe('createSandboxWrapper — proxy passthrough', () => {
 // ─── createSandboxWrapper: subscription (keychain) passthrough ───────────────
 
 describe('createSandboxWrapper — keychain passthrough', () => {
-  function wrapperScript(vendor: string, allowKeychain: boolean): string {
+  function wrapperScript(vendor: VendorId, allowKeychain: boolean): string {
     const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
     try {
       const paths = resolvePaths(workspaceRoot, worktree)
@@ -532,7 +534,7 @@ describe('createSandboxWrapper — keychain passthrough', () => {
   })
 
   it('appends --allow-keychain once for a system-mode agent, before the -- separator', () => {
-    for (const vendor of ['claude', 'codex']) {
+    for (const vendor of ['claude', 'codex'] as const) {
       const script = wrapperScript(vendor, true)
       expect(script.match(/--allow-keychain/g)).toHaveLength(1)
       expect(script.indexOf('--allow-keychain')).toBeLessThan(script.indexOf(`-- '${vendor}'`))
@@ -607,6 +609,17 @@ describe('createSandboxWrapper — keychain passthrough', () => {
     }
   })
 
+  it('emits the arapuca capability flags before the -- separator for both vendors', () => {
+    process.env.HTTPS_PROXY = 'http://proxy.corp:3128'
+    for (const vendor of ['claude', 'codex'] as const) {
+      const script = wrapperScript(vendor, true)
+      const separator = script.indexOf(`-- '${vendor}'`)
+      expect(script.indexOf('--allow-proxy-env')).toBeLessThan(separator)
+      expect(script.indexOf('--allow-keychain')).toBeLessThan(separator)
+      expect(script.indexOf('--seccomp baseline')).toBeLessThan(separator)
+    }
+  })
+
   it('keeps CLAUDE_CONFIG_DIR and injects no USER/LOGNAME for a custom (API-key) claude run', () => {
     if (process.platform !== 'darwin') return
     const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
@@ -619,6 +632,98 @@ describe('createSandboxWrapper — keychain passthrough', () => {
       expect(script).not.toContain("--env 'USER=")
       expect(script).not.toContain('LOGNAME=')
     } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+})
+
+// ─── createSandboxWrapper: vendor neutrality ─────────────────────────────────
+
+describe('createSandboxWrapper — vendor neutrality', () => {
+  it('renders a brand-new vendor from a single registry entry, with no launcher change', () => {
+    // The whole integration surface for a hypothetical vendor: one auth strategy,
+    // registered. `createSandboxWrapper` below is the shipped function — it is not
+    // adapted, extended or branched for this vendor in any way.
+    const acmeHome = join(tmpdir(), 'c3-acme-home')
+    mkdirSync(acmeHome, { recursive: true })
+    const acme: SandboxAuthResolver = () => ({
+      entryCommand: 'acme-cli',
+      allowKeychain: true,
+      literalEnv: [{ name: 'ACME_HOME', value: acmeHome }],
+      forwardEnv: ['ACME_TOKEN'],
+      mounts: [{ path: acmeHome, readonly: false }],
+      preRunDirs: [join(acmeHome, 'run')],
+    })
+    const registry = VENDOR_AUTH_PROFILES as Record<string, SandboxAuthResolver>
+    registry.acme = acme
+    const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
+    try {
+      const paths = resolvePaths(workspaceRoot, worktree)
+      const script = readFileSync(
+        createSandboxWrapper(paths, 'acme' as VendorId, tmp, { allowKeychain: true }),
+        'utf-8',
+      )
+      // Its own entry command, data root, credential channel, mount and pre-run dir …
+      expect(script).toContain(`-- 'acme-cli' "$@"`)
+      expect(script).toContain(`--env 'ACME_HOME=${acmeHome}'`)
+      expect(script).toContain(`--env "ACME_TOKEN=$ACME_TOKEN"`)
+      expect(script).toContain(`-v '${acmeHome}:rw'`)
+      expect(script).toContain(`mkdir -p '${join(acmeHome, 'run')}'`)
+      expect(script).toContain('--allow-keychain')
+      // … the common allow set unchanged, and nothing from the other vendors.
+      expect(script).toContain(`-v '${paths.executionRoot}:rw'`)
+      expect(script).toContain(`-v '${paths.specsBase}:rw'`)
+      expect(script).toContain('--seccomp baseline')
+      expect(script).not.toContain('ANTHROPIC_')
+      expect(script).not.toContain('CODEX_')
+      expect(script).not.toContain('CLAUDE_CONFIG_DIR')
+    } finally {
+      delete registry.acme
+      rmSync(tmp, { recursive: true, force: true })
+      rmSync(acmeHome, { recursive: true, force: true })
+    }
+  })
+
+  it('fails closed for a vendor with no registered auth strategy', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
+    try {
+      const paths = resolvePaths(workspaceRoot, worktree)
+      // No silent "generic" wrapper: one with no data root and no credential
+      // channel would run unauthenticated and store its state loose.
+      expect(() => createSandboxWrapper(paths, 'nosuchvendor' as VendorId, tmp, CUSTOM)).toThrow(
+        SandboxLaunchError,
+      )
+      expect(existsSync(join(tmp, 'wrapper.sh'))).toBe(false)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('de-duplicates a profile mount that the common allow set already grants', () => {
+    // A profile is free to name a path the common set covers; the first (common)
+    // grant wins so arapuca never receives a conflicting second -v for one path.
+    const dup: SandboxAuthResolver = ({ paths }) => ({
+      entryCommand: 'dup-cli',
+      allowKeychain: false,
+      literalEnv: [],
+      forwardEnv: [],
+      mounts: [{ path: paths.specsBase, readonly: true }],
+      preRunDirs: [],
+    })
+    const registry = VENDOR_AUTH_PROFILES as Record<string, SandboxAuthResolver>
+    registry.dup = dup
+    const tmp = mkdtempSync(join(tmpdir(), 'c3-sb-wrap-'))
+    try {
+      const paths = resolvePaths(workspaceRoot, worktree)
+      const script = readFileSync(
+        createSandboxWrapper(paths, 'dup' as VendorId, tmp, CUSTOM),
+        'utf-8',
+      )
+      expect(script.match(new RegExp(`-v '${paths.specsBase}:`, 'g'))).toHaveLength(1)
+      expect(script).toContain(`-v '${paths.specsBase}:rw'`)
+      expect(script).not.toContain(`-v '${paths.specsBase}:ro'`)
+    } finally {
+      delete registry.dup
       rmSync(tmp, { recursive: true, force: true })
     }
   })

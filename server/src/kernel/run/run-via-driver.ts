@@ -519,8 +519,8 @@ export async function runViaDriver(
       // AND transcript store scope for the session's life (ADR-0015). A sandbox
       // run wrote into the sandbox vendor data root, so freeze `sandbox` — EXCEPT a
       // system-mode codex, whose sandbox run authenticates from and writes into the
-      // HOST ~/.codex (see `codexSystemMode` in createSandboxWrapper), so its store
-      // is `host` even under the sandbox.
+      // HOST ~/.codex (see the codex sandbox auth profile), so its store is `host`
+      // even under the sandbox.
       const codexSystemRun =
         adapter.vendor === 'codex' && resolveAgent(agentId).configMode === 'system'
       freezeSessionAgent(

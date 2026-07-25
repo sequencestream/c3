@@ -6,14 +6,7 @@
  * + delivery live on `conn`, shared services on `ctx`.
  */
 import { randomUUID } from 'node:crypto'
-import type {
-  CanonicalMessage,
-  CodexPolicy,
-  ModeToken,
-  PermissionMode,
-  SessionKind,
-  TranscriptItem,
-} from '@ccc/shared/protocol'
+import type { CodexPolicy, ModeToken, PermissionMode, SessionKind } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { isImageMediaType } from '@ccc/shared'
 import {
@@ -47,18 +40,16 @@ import {
 import {
   resolveAgent,
   resolveSessionAgentSwitch,
-  resolveSessionStoreScope,
   resolveSessionVendor,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
-import { codexStoreRoots } from '../../kernel/agent/adapters/codex/index.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { MODE_CATALOGS, isKnownToken } from '../../kernel/agent/adapters/index.js'
-import { CodexSessionStore } from '../../kernel/agent/adapters/codex/index.js'
 import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
 import type { SessionAgentSwitch, SessionOwnerKind, VendorId } from '@ccc/shared/protocol'
-import { loadHistory, removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
+import { removeSession, renameWorkspaceSession, sessionTitle } from '../../sessions.js'
 import { listCommands } from '../../commands.js'
+import { loadHistoryForVendor } from '../sessions/history.js'
 import {
   getByC3Id,
   listForWorkspace,
@@ -113,58 +104,6 @@ function projectionSelectionTitle(vendor: VendorId, sessionId: string): string |
 
 function projectionRowForSelection(vendor: VendorId, sessionId: string) {
   return getByC3Id(mintC3SessionId({ vendor, vendorSessionId: sessionId })) ?? getByC3Id(sessionId)
-}
-
-const codexHistoryStore = new CodexSessionStore()
-
-async function loadHistoryForVendor(
-  vendor: VendorId,
-  workspacePath: string,
-  sessionId: string,
-): Promise<TranscriptItem[]> {
-  if (vendor === 'codex') {
-    // Read from the session's frozen store scope's CODEX_HOME first, with the
-    // other root as a fallback (ADR-0015) — so a session that ran in the sandbox
-    // is read back from the persistent sandbox home, not host `~/.codex`.
-    const storeRoots = codexStoreRoots(workspacePath, resolveSessionStoreScope(sessionId))
-    return canonicalToTranscript(
-      await codexHistoryStore.read(sessionId, { cwd: workspacePath, storeRoots }),
-    )
-  }
-  // Claude transcripts are read via the SDK, which keys its projects root off the
-  // server process's CLAUDE_CONFIG_DIR. The sandbox writes claude transcripts into
-  // that same host config dir (getSandboxClaudeConfigDir), so no scope branch is
-  // needed here — a sandboxed claude session is already host-readable.
-  return loadHistory(workspacePath, sessionId)
-}
-
-function canonicalToTranscript(messages: readonly CanonicalMessage[]): TranscriptItem[] {
-  const out: TranscriptItem[] = []
-  for (const msg of messages) {
-    for (const block of msg.blocks) {
-      if (block.type === 'text') {
-        const text = block.text.trim()
-        if (!text) continue
-        out.push(msg.role === 'user' ? { kind: 'user', text } : { kind: 'assistant', text })
-      } else if (block.type === 'tool_use') {
-        out.push({
-          kind: 'tool_use',
-          toolUseId: block.id,
-          toolName: block.name,
-          input: block.input,
-        })
-        if (block.result) {
-          out.push({
-            kind: 'tool_result',
-            toolUseId: block.id,
-            content: block.result.content,
-            isError: block.result.isError,
-          })
-        }
-      }
-    }
-  }
-  return out
 }
 
 export const listSessions: Handler<'list_sessions'> = async (_ctx, conn, msg) => {

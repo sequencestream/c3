@@ -55,7 +55,7 @@ automations 领域为 c3 增加了**任务执行**能力。一个**自动化(Aut
 - **SCH-R13** — 一个 `llm_prompt` 类型自动化的执行会以工作区上下文启动一个智能体会话(通过 `agent-session`)。该 prompt 作为第一个用户回合提交。运行过程中的 `assistant_text` 与 `tool_use`/`tool_result` 会被记录进日志。执行的智能体 `sessionId` 从第一个 SDK 事件中捕获,并立即持久化到执行日志上(这样即使运行之后超时或失败,transcript 仍然可达)。运行期间的权限提示会根据执行身份自动解决(见 § 执行身份模型)。运行的终止状态(`complete` / `error`)会映射为日志中的 `success` / `failed`。
 - **SCH-R14** — `archive` 与 `delete` 是终态操作。一个已归档的自动化只能被删除;它不能变回 `paused` 或 `active`。删除一个自动化也会级联删除其**执行日志**。这是一次硬删除——日志被永久移除。
 - **SCH-R15** — 写入确认队列是**按用户**(按 WebSocket 连接)划分的,而不是按工作区划分的。未确认的变更只对创建它们的用户可见,并且在确认之前保持可编辑(可被替换或丢弃)。确认操作会原子性地提交该用户的全部待处理变更——在自动化层面没有部分确认(SCH-R6 的例外:archive/delete)。
-- **SCH-R16** — 每个 `llm_prompt` 类型执行的智能体会话 transcript 都可以从其历史记录行按需查看(对 `assistant_text` / `tool_use` / `tool_result` 的只读回放)。`command` 类型的执行没有智能体会话,也不暴露任何 transcript 条目。transcript 通过记录下来的 `sessionId` 经由 `agent-session` 加载;一个无会话或已被删除的会话会产生一个空回放,而不是错误。
+- **SCH-R16** — 每个 `llm_prompt` 类型执行的智能体会话 transcript 都可以从其历史记录行按需查看(对 `assistant_text` / `tool_use` / `tool_result` 的只读回放)。`command` 类型的执行没有智能体会话,也不暴露任何 transcript 条目。transcript 按该自动化的 `vendor` 从对应 vendor 的原生 session store 读取(与交互式会话查看共用同一读取路径,codex 的 store scope 定位见 [ADR-0030](../../../architecture/adr/0030-session-store-scope-vendor-neutral-data-root.md));一个无会话、工作区已注销或已被删除的会话会产生一个空回放,而不是错误。
 - **SCH-R17** — 自动化的**触发器**是 `cron`(基于时间;默认方式,也是该字段引入之前迁移的旧行的唯一模式)或 `event` 之一。`event` 触发器声明一个 **`eventFilter`**(`GenericEventFilter { type, statuses?, metadata? }`,2026-07-13,取代了每 topic 一个专属过滤器字段的旧模型):`type` 是订阅的事件类型(开放字符串——运行生命周期 `run:started`/`run:settled`、模型/服务端发布的 `pr:operation`、`intent:lifecycle`,以及任何未来注册的通用事件),在内核事件总线(ADR-0018)上发布匹配事件时触发其执行——复用与 cron 运行**相同**的分发路径、三层 MCP 安全模型与写入审批队列。纯匹配器只读取可信最小视图 `{ workspacePath, event }`(`GenericEventEnvelope` 直接满足),按 workspace → `event.type === filter.type` → status → metadata 顺序判断(见 SCH-R18/R22)。事件类自动化不携带 `cronExpression` / `nextRunAt`,并且**永远不会**被 tick 循环评估。创建/更新一个 `eventFilter` 缺少合法 `type` 的 `event` 自动化会被拒绝(`automation.invalidEventTrigger`)——不能保存为"匹配全部类型"。
 - **SCH-R18** — `eventFilter` 的通用匹配语义:事件的 `workspacePath` 等于该自动化的工作区;`event.type === eventFilter.type`;`eventFilter.statuses` 缺省/空 = 任意 status,非空时 `event.status` 必须**精确、区分大小写**地属于其中(事件无 status 则不命中);`eventFilter.metadata` 缺省 = 不过滤,否则键值精确区分大小写,`AND` 要求每个条件都等于 `event.metadata[key]`、`OR` 至少一个满足(见 SCH-R25)。**额外**地,对于**运行生命周期**类型(`eventFilter.type` = `run:started` / `run:settled`),`eventSessionKindFilter` 是**可选**的会话类型过滤维度:缺失、`null` 和 `[]` 语义等价,均表示**不按会话类型过滤**(跳过该维度,覆盖当前及未来所有 `SessionKind`,含无会话来源的事件);当其**非空**时,在通用匹配之前先执行 `sessionKind` 白名单——事件的 `sessionKind` 必须属于该集合才命中,无会话来源的事件不匹配非空过滤器。可空语义在服务端持久化时统一规范化为数据库 `NULL`,读回后 `null` 与空数组行为一致。创建/更新缺失或为空的过滤器**被接受**(不再返回 `automation.missingSessionKindFilter`,前端也不再强制至少选一项)。旧的运行生命周期行迁移为显式 `['work']`,继续精确保留其原有行为(**不会**被通用 metadata 过滤放宽到其他来源)。由于 `sessionKind='automation'` 可被选中,一个自动化的完成**可以**触发另一个——流水线链的探测器。事件风暴节流复用 SCH-R7 的串行执行:自动化已有一次在途执行时,到来事件被**跳过**而非排队。**没有**环检测或链深度限制(见 § v1 排除清单)。单条候选过滤器评估失败时 fail closed 并记录 automation id,不影响同事件其他候选。
 - **SCH-R25** — **自动化 metadata + metadata 条件过滤器**(2026-07-04)。每个自动化都携带一个自由形式的 **`metadata`** map(`Record<string,string>`,无预设 key,无 schema——只做长度/字符集卫生检查:去除首尾空白、丢弃空 key/value、上限 32 项、key ≤64 / value ≤256 字符)。只有调度器**自身**为该自动化发布的 `run:started` / `run:settled` 会把其 `metadata` 印到事件负载上;其他一切发布点(手动 work 运行、intent 交接、discussion)都让负载的可选 `metadata` 保持 `undefined`,因此现有运行不会被隐式打标签。任意 `event` 触发器都可以在其 `eventFilter` 上声明 **`metadata`**(即 `eventFilter.metadata`)= `{ conditions: {key,value}[]; combinator: 'AND'| 'OR' }`:`null`/空条件匹配任意事件;`AND`要求**每一个**条件都精确等于事件的`metadata[key]`,`OR` 要求**至少一个**匹配(精确字符串相等——不做大小写折叠、正则或子串匹配)。一个没有 metadata 的事件永远不满足非空过滤器。自动化自身的 **`metadata`** 标注 map 仍只由调度器的运行生命周期事件写入;而 `eventFilter.metadata`过滤器现在适用于**所有**事件类型(不再限于运行生命周期)——PR 的 operation 多选就是用`metadata.operation`的`OR` 条件表达的。`cron`触发器没有`eventFilter`。
@@ -172,11 +172,14 @@ markdown 渲染、工具调用批次折叠与消息分组。该视图是纯历�
 Session 标签页(因为不会产生智能体会话)。
 
 当用户切换到 Session 标签页时,如果尚未缓存,客户端会通过
-`get_execution_transcript` 自动拉取 transcript。服务端解析该执行日志记录的会话 id,
-经由 agent-session 回放存储的 transcript,并以 `execution_transcript` 回复,携带
+`get_execution_transcript` 自动拉取 transcript。服务端解析该执行日志记录的会话 id
+与所属自动化的工作区、`vendor`,用与交互式会话查看**同一个** vendor 感知读取器回放
+已持久化的 transcript——claude 走 SDK transcript,codex 走 codex session store(按会话
+冻结的 store scope 优先定位,另一根兜底)——并以 `execution_transcript` 回复,携带
 执行 id、会话 id,以及一个展平的 transcript 条目列表(assistant / user / tool-use /
 tool-result / notice),与实时聊天回放完全一致。一个 `command` 类型或无会话的执行会
-返回一个 null 会话 id 与一个空的条目列表;一个未知的执行 id 会返回一个错误。对于一次
+返回一个 null 会话 id 与一个空的条目列表;磁盘上不存在或不可读的会话返回空条目列表
+(而非错误);一个未知的执行 id 会返回一个错误。对于一次
 已完成的执行,transcript 只拉取一次,并按执行在客户端缓存;对于一次
 **运行中**的选中执行,它会被实时刷新轮询(SCH-R22)重新拉取,以使进行中的
 内容持续增长,并在完成时做最后一次拉取。每次回复都会覆盖该执行的缓存条目,

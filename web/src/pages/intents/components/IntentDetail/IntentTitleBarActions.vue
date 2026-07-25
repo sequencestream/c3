@@ -10,7 +10,7 @@
  * 强化提示归本组件所有,并保留防双发。
  * 其余业务动作继续以原事件名和参数上抛,不在此新增门禁。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Intent, IntentStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
@@ -97,11 +97,20 @@ function openDeleteDialog(): void {
 }
 
 function confirmDelete(): void {
-  if (deleteSent.value) return
+  // done 无删除入口:即便确认框在状态切换前已打开,也不得放行删除,兜住「先开框再转 done」的竞态。
+  if (deleteSent.value || props.intent.status === 'done') return
   deleteSent.value = true
   deleteDialogOpen.value = false
   emit('delete', props.intent.id)
 }
+
+// 意图在确认框敞开期间转入 done 时主动收起弹框,与删除按钮的 v-if 一并撤销可达路径。
+watch(
+  () => props.intent.status,
+  (status) => {
+    if (status === 'done') deleteDialogOpen.value = false
+  },
+)
 </script>
 
 <template>

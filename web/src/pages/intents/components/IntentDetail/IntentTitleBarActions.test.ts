@@ -91,6 +91,44 @@ describe('IntentTitleBarActions.vue', () => {
     expect(w.emitted('delete')).toBeUndefined()
   })
 
+  it('hides delete for done and keeps it for every other status', () => {
+    expect(
+      mountActions(intent({ id: 'i1', status: 'done' }))
+        .find('[data-testid="intent-detail-delete"]')
+        .exists(),
+    ).toBe(false)
+
+    for (const status of ['draft', 'todo', 'in_progress', 'cancelled'] as const) {
+      expect(
+        mountActions(intent({ id: 'i1', status }))
+          .find('[data-testid="intent-detail-delete"]')
+          .exists(),
+      ).toBe(true)
+    }
+  })
+
+  it('drops the delete entry as soon as the intent turns done', async () => {
+    const w = mountActions(intent({ id: 'i1', status: 'in_progress' }))
+    expect(w.find('[data-testid="intent-detail-delete"]').exists()).toBe(true)
+
+    await w.setProps({ intent: intent({ id: 'i1', status: 'done' }) })
+    expect(w.find('[data-testid="intent-detail-delete"]').exists()).toBe(false)
+    expect(w.find('[role="alertdialog"]').exists()).toBe(false)
+    expect(w.emitted('delete')).toBeUndefined()
+  })
+
+  it('closes an open confirm dialog and refuses delete when the intent turns done mid-confirm', async () => {
+    const w = mountActions(intent({ id: 'i1', status: 'in_progress' }))
+    await w.find('[data-testid="intent-detail-delete"]').trigger('click')
+    expect(w.find('[role="alertdialog"]').exists()).toBe(true)
+
+    // 状态在确认框敞开时转 done:弹框应被主动收起,确认动作不得放行删除。
+    await w.setProps({ intent: intent({ id: 'i1', status: 'done' }) })
+    expect(w.find('[role="alertdialog"]').exists()).toBe(false)
+    expect(w.find('[data-testid="confirm-accept"]').exists()).toBe(false)
+    expect(w.emitted('delete')).toBeUndefined()
+  })
+
   it('emits main-action on the primary button click without deciding the action itself', async () => {
     const w = mountActions(intent({ id: 'i1', status: 'todo' }))
     await w.find('.req-btn.primary').trigger('click')

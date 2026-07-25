@@ -33,6 +33,7 @@ import {
   resolveSpecAgent,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
+import { canDeleteSession } from '../../kernel/agent/adapters/capabilities.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { loadHistory, loadLastAssistantMessages, removeSession } from '../../sessions.js'
 import {
@@ -789,6 +790,35 @@ export const deleteIntentSession: Handler<'delete_intent_session'> = (ctx, conn,
   }
 }
 
+/**
+ * Delete one session's native transcript, dispatched on the session's REAL
+ * vendor. Only a vendor whose session store reports a delete ability owns a
+ * transcript c3 may remove; Codex reports `none`, so its JSONL under
+ * `~/.codex/sessions/` stays on disk and c3 drops just its own references.
+ * Handing a Codex session id to the Claude SDK is what raised
+ * "Session not found" and aborted the whole intent delete.
+ *
+ * Failures are swallowed (logged): a transcript that is already gone — or any
+ * other vendor-store hiccup — must not stop c3 from dropping the session's own
+ * records.
+ */
+async function removeSessionTranscript(
+  vendor: VendorId,
+  workspacePath: string,
+  sessionId: string,
+): Promise<void> {
+  if (!canDeleteSession(vendor)) return
+  try {
+    // Claude is the only delete-capable vendor today; `removeSession` is its
+    // store's implementation. A future delete-capable vendor dispatches here.
+    if (vendor === 'claude') await removeSession(workspacePath, sessionId)
+  } catch (err) {
+    console.warn(
+      `[c3:intent] transcript 删除失败，仅清理 c3 侧记录: ${sessionId} — ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+}
+
 export const deleteIntent: Handler<'delete_intent'> = async (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
   if (!proj) {
@@ -813,14 +843,26 @@ export const deleteIntent: Handler<'delete_intent'> = async (ctx, conn, msg) => 
   if (intent.specSessionId) sessionIds.add(intent.specSessionId)
   for (const session of listIntentWorkSessions(intent.id)) sessionIds.add(session.sessionId)
 
-  try {
-    for (const sessionId of sessionIds) {
+  for (const sessionId of sessionIds) {
+    // Per-session cleanup is best-effort and independently fenced: one session
+    // that refuses to clean up must never strand the intent's db records or git
+    // resources (the human would be stuck retrying a delete that always fails).
+    try {
+      const vendor = resolveSessionVendor(sessionId)
+      // Remove runtime (abort + drop) BEFORE the db row so no stale runtime lingers.
       removeRuntime(sessionId)
-      await removeSession(proj, sessionId)
+      await removeSessionTranscript(vendor, proj, sessionId)
       deleteChatSession(proj, sessionId)
-      deleteByVendorId(resolveSessionVendor(sessionId), sessionId)
+      deleteByVendorId(vendor, sessionId)
       if (conn.viewing === sessionId) conn.viewing = null
+    } catch (err) {
+      console.warn(
+        `[c3:intent] 会话清理失败，继续删除意图: ${sessionId} — ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
+  }
+
+  try {
     removeIntentGitResources(proj, intent.id, intent.branchName)
     deleteIntentRecords(intent.id)
     ctx.broadcastIntents(proj)

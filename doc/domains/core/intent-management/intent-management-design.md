@@ -616,6 +616,15 @@ Git 资源 → 数据库事务 → 广播”。Git 清理只接受确定性 work
 本地分支,不执行 fetch、push 或 forge 操作。外部步骤失败时主记录保留,已完成步骤可在重试时
 幂等跳过；事务删除双向依赖、全部工作会话审计、生命周期日志与主记录。
 
+会话清理按每个会话的**真实供应商**分派:transcript 删除只交给会话能力账本里
+`sessions.delete` 非 `none` 的供应商(当前只有 claude,由其 SDK 删除
+`~/.claude/projects/` 下的 transcript);codex 自报 `none`,其
+`~/.codex/sessions/` 下的 JSONL 保留在磁盘上,c3 只回收自己持有的引用。把 codex 的会话 id
+交给 claude SDK 会抛出 “Session not found”,正是这类异常曾中断整轮删除。
+每个会话的清理都有独立异常边界:transcript 删除失败(例如 transcript 已缺失)仍继续删除该会话的
+c3 侧记录(运行时、沟通会话行、会话投影),任一会话整体清理失败也只记录告警,不阻断其余会话
+以及随后的 Git 资源与数据库记录清理——因此意图记录不会被一个清不掉的会话永久卡住。
+
 三个新的 WS handler 补齐了会话集合的 CRUD:
 
 - **`list_intent_sessions`**:读取会话列表,派生一份运行状态快照

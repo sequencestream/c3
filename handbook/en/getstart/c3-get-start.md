@@ -93,11 +93,11 @@ c3 --port 9000
 
 Open http://localhost:9000 in your browser.
 
-| Scenario                      | Command                         |
-| ----------------------------- | ------------------------------- |
-| Run in the background         | `c3 --port 9000 --daemon`       |
-| OS service (start at boot)    | `c3 install --port 9000`        |
-| Show help                     | `c3 --help` / `c3 start --help` |
+| Scenario                   | Command                         |
+| -------------------------- | ------------------------------- |
+| Run in the background      | `c3 --port 9000 --daemon`       |
+| OS service (start at boot) | `c3 install --port 9000`        |
+| Show help                  | `c3 --help` / `c3 start --help` |
 
 `c3 --port 9000` is shorthand for `c3 start --port 9000`.
 
@@ -117,14 +117,14 @@ c3 drives coding work through agents. On first launch, c3 automatically creates 
 
 On the Settings page you can add more agents, for example to point at a different model or API endpoint:
 
-| Field       | Description                                                       |
-| ----------- | ----------------------------------------------------------------- |
-| Name        | Display name, e.g. "Claude Sonnet"                                |
-| Vendor      | `claude` (uses Claude Code) or `codex`                            |
+| Field       | Description                                                         |
+| ----------- | ------------------------------------------------------------------- |
+| Name        | Display name, e.g. "Claude Sonnet"                                  |
+| Vendor      | `claude` (uses Claude Code) or `codex`                              |
 | Config mode | `system` (use the local CLI configuration) or `custom` (custom API) |
-| Base URL    | Custom API endpoint (custom mode only)                            |
-| API Key     | API key (custom mode only)                                        |
-| Model       | Model name (custom mode only)                                    |
+| Base URL    | Custom API endpoint (custom mode only)                              |
+| API Key     | API key (custom mode only)                                          |
+| Model       | Model name (custom mode only)                                       |
 
 If you only use your local Claude Code default configuration, you do not need to add an agent — the default one created automatically works out of the box.
 

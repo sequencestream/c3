@@ -78,13 +78,13 @@ Open **Automations** from the left navigation. The page has an automation list o
 
 ![c3 automations page](../../zh-cn/getstart/images/c3-automation-list.png)
 
-| Section | Configuration |
-| --- | --- |
-| **Basic information** | Title (generated when left blank), task type (command or LLM prompt), command or prompt body, and execution timeout |
-| **Trigger** | Schedule or run event, with its schedule or event subscription conditions |
-| **Labels** | Free-form key-value metadata used to label the automation |
-| **Execution identity and permissions** | Vendor, agent, and permission mode |
-| **Tool permissions** | Tools allowed for the run, divided into read-only and write groups, with select-all and clear-all actions |
+| Section                                | Configuration                                                                                                       |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Basic information**                  | Title (generated when left blank), task type (command or LLM prompt), command or prompt body, and execution timeout |
+| **Trigger**                            | Schedule or run event, with its schedule or event subscription conditions                                           |
+| **Labels**                             | Free-form key-value metadata used to label the automation                                                           |
+| **Execution identity and permissions** | Vendor, agent, and permission mode                                                                                  |
+| **Tool permissions**                   | Tools allowed for the run, divided into read-only and write groups, with select-all and clear-all actions           |
 
 Several fields deserve special attention:
 
@@ -162,31 +162,31 @@ With the event foundation in place, a workflow is simply "upstream publishes, do
 
 #### Example 1: completed development session → automatic code review
 
-| Setting | Value |
-| --- | --- |
-| Trigger | Run event |
-| Event type | `run:settled` |
-| Status | Completed, avoiding meaningless reviews for errored or aborted runs |
-| Session type | Work |
-| Task type | LLM prompt |
-| Prompt | Review the changes produced by this work session and list issues and suggestions... |
-| Tool permissions | Read-only tools only |
+| Setting          | Value                                                                               |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| Trigger          | Run event                                                                           |
+| Event type       | `run:settled`                                                                       |
+| Status           | Completed, avoiding meaningless reviews for errored or aborted runs                 |
+| Session type     | Work                                                                                |
+| Task type        | LLM prompt                                                                          |
+| Prompt           | Review the changes produced by this work session and list issues and suggestions... |
+| Tool permissions | Read-only tools only                                                                |
 
 #### Example 2: PR created successfully → automatic review
 
-| Setting | Value |
-| --- | --- |
-| Event type | `pr:create` |
-| Status | Success |
-| Task type | LLM prompt |
-| Prompt | Review this PR and provide a verdict; publish a PR review event when finished... |
+| Setting    | Value                                                                            |
+| ---------- | -------------------------------------------------------------------------------- |
+| Event type | `pr:create`                                                                      |
+| Status     | Success                                                                          |
+| Task type  | LLM prompt                                                                       |
+| Prompt     | Review this PR and provide a verdict; publish a PR review event when finished... |
 
 #### Example 3: intent completed → synchronize documentation
 
-| Setting | Value |
-| --- | --- |
-| Event type | `intent:done` |
-| Prompt | Review and update the documentation affected by this intent, keeping it synchronized with the code... |
+| Setting    | Value                                                                                                 |
+| ---------- | ----------------------------------------------------------------------------------------------------- |
+| Event type | `intent:done`                                                                                         |
+| Prompt     | Review and update the documentation affected by this intent, keeping it synchronized with the code... |
 
 #### Give the downstream agent the triggering event
 

@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import type { CapabilityState, SessionCapabilities, VendorId } from '@ccc/shared/protocol'
-import { VENDOR_CAPABILITIES, canFormTeam } from './capabilities.js'
+import { VENDOR_CAPABILITIES, canDeleteSession, canFormTeam } from './capabilities.js'
 
 describe('canFormTeam — agent-teams are Claude-locked (streamingPush)', () => {
   it('is true only for Claude', () => {
@@ -29,6 +29,20 @@ describe('canFormTeam — agent-teams are Claude-locked (streamingPush)', () => 
     // The map is total over the implemented vendors, so the gate never throws on a
     // resolvable vendor.
     expect(Object.keys(VENDOR_CAPABILITIES).sort()).toEqual(['claude', 'codex'])
+  })
+})
+
+describe('canDeleteSession — transcript deletion follows the session ledger', () => {
+  it('is true only for the vendors whose store can delete', () => {
+    expect(canDeleteSession('claude')).toBe(true)
+    // Codex exposes no delete op — its transcript outlives c3's references.
+    expect(canDeleteSession('codex')).toBe(false)
+  })
+
+  it('tracks the sessions.delete state exactly (not a hard-coded vendor list)', () => {
+    for (const vendor of Object.keys(VENDOR_CAPABILITIES) as VendorId[]) {
+      expect(canDeleteSession(vendor)).toBe(VENDOR_CAPABILITIES[vendor].sessions.delete !== 'none')
+    }
   })
 })
 

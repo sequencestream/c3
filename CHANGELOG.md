@@ -3,7 +3,7 @@
 All notable changes to `c3` (Code Creative Center). The version source-of-truth is the git
 tag (`git describe --tags`); `package.json` is the fallback baseline.
 
-## v1.0.0
+## v0.9.11
 
 ### New Features
 

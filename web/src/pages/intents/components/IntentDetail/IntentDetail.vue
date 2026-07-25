@@ -96,6 +96,9 @@ const props = defineProps<{
   workSessionStatus?: SessionStatus | null
   /** 意图会话(intentSessionId)运行状态,用于意图会话 tab 标签的运行中状态点。 */
   intentSessionStatus?: SessionStatus | null
+  /** spec 会话(specSessionId)运行状态,用于编写规范 tab 标签的运行中状态点;
+   * 与门禁用的 specSessionRunning 相互独立,只服务标签呈现。 */
+  specSessionStatus?: SessionStatus | null
   // ── 变更日志(changelog tab)──
   /** 选中意图的生命周期变更日志(倒序);切到 changelog tab 时懒加载。 */
   intentLogs: IntentLog[]
@@ -238,6 +241,7 @@ const {
   visibleTabs,
   workSessionStatusDot,
   intentSessionStatusDot,
+  specSessionStatusDot,
   expectedSessionId,
   chatReady,
   firstIntentTurn,
@@ -252,6 +256,7 @@ const {
   intentLogsLength: () => props.intentLogs.length,
   workSessionStatus: () => props.workSessionStatus,
   intentSessionStatus: () => props.intentSessionStatus,
+  specSessionStatus: () => props.specSessionStatus,
   onReadSpec: (id, specPath) => emit('read-spec', id, specPath),
   onListIntentLogs: (id) => emit('list-intent-logs', id),
   onOpenIntentSession: (sessionId) => emit('open-intent-session', sessionId),
@@ -396,6 +401,7 @@ function submitChat(text: string, images: PromptImage[]): void {
         :active-tab="activeTab"
         :work-session-status-dot="workSessionStatusDot"
         :intent-session-status-dot="intentSessionStatusDot"
+        :spec-session-status-dot="specSessionStatusDot"
         @select="selectTab"
       />
 

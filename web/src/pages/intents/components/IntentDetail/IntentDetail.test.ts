@@ -58,6 +58,7 @@ function mountDetail(
     specSessionRunning?: boolean
     workSessionStatus?: SessionStatus | null
     intentSessionStatus?: SessionStatus | null
+    specSessionStatus?: SessionStatus | null
     intentLogs?: IntentLog[]
   } = {},
 ) {
@@ -91,6 +92,7 @@ function mountDetail(
       specSessionRunning: opts.specSessionRunning ?? false,
       workSessionStatus: opts.workSessionStatus ?? null,
       intentSessionStatus: opts.intentSessionStatus ?? null,
+      specSessionStatus: opts.specSessionStatus ?? null,
       intentLogs: opts.intentLogs ?? [],
       intentLogsLoading: false,
     },
@@ -1581,6 +1583,7 @@ describe('IntentDetail.vue — inline spec edit', () => {
 describe('IntentDetail.vue — 会话 tab 标签状态点', () => {
   const INTENT_DOT = '[data-testid="intent-detail-intent-session-status"]'
   const WORK_DOT = '[data-testid="intent-detail-work-session-status"]'
+  const SPEC_DOT = '[data-testid="intent-detail-spec-session-status"]'
 
   it.each<SessionStatus>(['running', 'awaiting_permission', 'team', 'reconnecting'])(
     'renders the intent session dot with the %s class',
@@ -1612,5 +1615,62 @@ describe('IntentDetail.vue — 会话 tab 标签状态点', () => {
 
     expect(w.find(WORK_DOT).classes()).toContain('running')
     expect(w.find(INTENT_DOT).exists()).toBe(false)
+  })
+
+  it.each<SessionStatus>(['running', 'awaiting_permission', 'team', 'reconnecting'])(
+    'renders the spec session dot with the %s class',
+    (status) => {
+      const w = mountDetail(intent({ id: 'i1', specSessionId: 's-spec' }), {
+        sddEnabled: true,
+        specSessionStatus: status,
+      })
+      const dot = w.find(SPEC_DOT)
+      expect(dot.exists()).toBe(true)
+      expect(dot.classes()).toContain(status)
+    },
+  )
+
+  it('hides the spec session dot when the spec session is idle', () => {
+    const w = mountDetail(intent({ id: 'i1', specSessionId: 's-spec' }), {
+      sddEnabled: true,
+      specSessionStatus: 'idle',
+    })
+    expect(w.find(SPEC_DOT).exists()).toBe(false)
+  })
+
+  it('hides the spec session dot when the status is unknown (no spec session id)', () => {
+    const w = mountDetail(intent({ id: 'i1', specSessionId: null }), { sddEnabled: true })
+    expect(w.find(SPEC_DOT).exists()).toBe(false)
+  })
+
+  it('keeps the spec session dot independent of the other two session dots', () => {
+    const item = intent({
+      id: 'i1',
+      intentSessionId: 's-intent',
+      specSessionId: 's-spec',
+      lastWorkSessionId: 's-work',
+    })
+    const w = mountDetail(item, {
+      sddEnabled: true,
+      intentSessionStatus: 'idle',
+      workSessionStatus: 'idle',
+      specSessionStatus: 'running',
+    })
+
+    expect(w.find(SPEC_DOT).classes()).toContain('running')
+    expect(w.find(INTENT_DOT).exists()).toBe(false)
+    expect(w.find(WORK_DOT).exists()).toBe(false)
+  })
+
+  it('shows the spec session dot while another tab is active, without touching the edit gate', async () => {
+    const item = intent({ id: 'i1', specPath: '.c3/spec.md', specSessionId: 's-spec' })
+    const w = mountDetail(item, { sddEnabled: true, specSessionStatus: 'running' })
+
+    // 默认停留在 intent tab:状态点仍可见(不依赖激活 tab)。
+    expect(w.find(SPEC_DOT).exists()).toBe(true)
+    await w.find('.intent-detail-tab[data-tab="spec"]').trigger('click')
+    expect(w.find(SPEC_DOT).exists()).toBe(true)
+    // 展示用状态不参与门禁:specSessionRunning 为 false 时「我要修改」入口照常可见。
+    expect(w.find('[data-testid="intent-detail-spec-edit"]').exists()).toBe(true)
   })
 })

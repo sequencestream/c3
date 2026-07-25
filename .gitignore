@@ -20,3 +20,5 @@ _zt_tmp
 tsconfig.tsbuildinfo
 .DS_Store
 
+# 每 run 沙箱 wrapper 临时目录(launchSandbox 在执行根内创建,run 结束清理)
+.c3-sb-*/

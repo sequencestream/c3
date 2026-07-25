@@ -269,20 +269,24 @@ describe('IntentDetail.vue — persistent header', () => {
     expect(w.emitted('delete')).toEqual([['i1']])
   })
 
-  it('does not emit on cancel and keeps delete available for done intents', async () => {
+  it('does not emit on cancel and withdraws delete once the intent is done', async () => {
     const w = mountDetail(intent({ id: 'i1', status: 'todo' }))
     await w.find('[data-testid="intent-detail-delete"]').trigger('click')
     expect(w.find('.cd-message').text()).not.toContain('work products')
     await w.find('[data-testid="confirm-cancel"]').trigger('click')
     expect(w.emitted('delete')).toBeUndefined()
 
-    // done 意图正是 worktree/分支残留的主要来源,必须保留删除入口并强化工作产物提示。
+    // done 意图通常已合并 PR 并沉淀完整产出,详情页不再提供删除入口。
     await w.setProps({ intent: intent({ id: 'i1', status: 'done' }) })
-    expect(w.find('[data-testid="intent-detail-delete"]').exists()).toBe(true)
-    await w.find('[data-testid="intent-detail-delete"]').trigger('click')
-    expect(w.find('.cd-message').text()).toContain('work products')
-    await w.find('[data-testid="confirm-accept"]').trigger('click')
-    expect(w.emitted('delete')).toEqual([['i1']])
+    expect(w.find('[data-testid="intent-detail-delete"]').exists()).toBe(false)
+    expect(w.emitted('delete')).toBeUndefined()
+  })
+
+  it('keeps the delete entry for every non-done status', () => {
+    for (const status of ['draft', 'todo', 'in_progress', 'cancelled'] as const) {
+      const w = mountDetail(intent({ id: 'i1', status }))
+      expect(w.find('[data-testid="intent-detail-delete"]').exists()).toBe(true)
+    }
   })
 
   it('shows title metadata and right-side actions on every tab', async () => {

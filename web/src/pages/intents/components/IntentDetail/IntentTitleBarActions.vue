@@ -5,7 +5,9 @@
  * 承接:状态切换(markTodo/backToDraft/markDone/cancel)、四态主按钮、修改会话入口、PR 创建/
  * 打开(有 prUrl 为跳转锚点,否则回退复制 prId)/同步、分享、自动化切换与删除入口。四态主按钮的
  * 语义与禁用/标题由容器计算后以 props 输入;点击以 main-action 上抛交回容器编排(编写 Spec 门 /
- * 延迟切 Tab)。删除二次确认弹框及「可能存在工作产物」的强化提示归本组件所有,并保留防双发。
+ * 延迟切 Tab)。删除入口只在非终态 done 时渲染:done 通常已合并 PR 并沉淀完整产出,收紧界面可达
+ * 路径以免误删可追溯记录(协议与服务端删除能力不变)。删除二次确认弹框及「可能存在工作产物」的
+ * 强化提示归本组件所有,并保留防双发。
  * 其余业务动作继续以原事件名和参数上抛,不在此新增门禁。
  */
 import { computed, ref } from 'vue'
@@ -82,7 +84,8 @@ const deleteDialogOpen = ref(false)
 const deleteSent = ref(false)
 const deleteMessage = computed<string>(() => {
   const r = props.intent
-  // in_progress / done 都可能留下工作产物(worktree 改动、本地分支提交),文案额外强化提示。
+  // 留有工作产物(worktree 改动、本地分支提交)的状态额外强化提示;done 已无删除入口,该分支仅为
+  // 状态回退等边界留的防御。
   return r.status === 'in_progress' || r.status === 'done'
     ? t('intent.delete.confirmWithArtifacts', { title: r.title })
     : t('intent.delete.confirm', { title: r.title })
@@ -217,6 +220,7 @@ function confirmDelete(): void {
       {{ intent.automate ? '⚙' : '🖱' }}
     </button>
     <button
+      v-if="intent.status !== 'done'"
       type="button"
       class="req-btn danger"
       data-testid="intent-detail-delete"

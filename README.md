@@ -63,8 +63,9 @@ c3 uninstall # removes the current platform's registration and is idempotent. It
 
 ## Documentation
 
-- **[Handbook](handbook/README.md)** — 中文上手教程(get-start、discussion、
-  multi-agent consensus、requirement-to-intent、SDD)。
+- **Handbook:** [English](handbook/README.md#english) |
+  [简体中文](handbook/README.md#简体中文) — getting started guides for c3,
+  discussions, multi-agent consensus, intents, SDD, and automation engineering.
 - **[Development guide](develop.md)** — build from source, single binary, release
   pipeline, end-to-end tests, WebSocket protocol, and how permission interception works.
 - **[`doc/`](doc/)** — architecture spec, ADRs, domain specs, and flows (the source of

@@ -38,7 +38,8 @@ create-if-not-exists）：
   已完成的输出，与 `context` 分开存储；在调研得出非空结果之前为空）、
   `status`、`agenda`（text，非空，默认一个空 JSON 数组 —— 组织者的有序子话题）、
   `agenda_index`（integer，非空，默认 0 —— 从 0 开始的当前子话题；等于议程长度
-  ⇒ 全部完成）、`conclusion`（可空）、`created_at`、`updated_at`、`completed_at`（可空）。按
+  ⇒ 全部完成）、`conclusion`（可空）、`metadata`（text，非空，默认一个空 JSON 对象 ——
+  调用方的扁平业务标注）、`created_at`、`updated_at`、`completed_at`（可空）。按
   `(workspace_path, status)` 建索引。
 - discussion messages —— `id`（PK）、`discussion_id`、`seq`、`speaker_kind`、`speaker_agent_id`
   （可空）、`speaker_name`（可空）、`content`、`created_at`。按 `(discussion_id, seq)` 建索引——
@@ -49,8 +50,9 @@ create-if-not-exists）：
   这张表；生命周期钩子会把当前行镜像到 `session_metadata` 中，带
   `session_kind='discussion'` / `owner_kind='discussion'` / `owner_id=<discussion.id>`。
 
-**Schema 版本（当前：v4）**，通过数据库版本计数器写入。v2→v3
-新增了 `participant_agent_ids`；**v3→v4 原地将工作区键列 `project_path` 重命名为
+**Schema 版本（当前：v6）**，通过数据库版本计数器写入。v2→v3
+新增了 `participant_agent_ids`；v4→v5 新增了 `organizer_agent_id`；v5→v6 新增了
+`metadata`（历史行经列默认值回填为空对象）；**v3→v4 原地将工作区键列 `project_path` 重命名为
 `workspace_path`**（复合索引重建），在 schema-ensure 步骤之前运行——
 幂等，从不删表。这**有意地**与向后兼容的 `projectConfigs`
 settings.json 键不同步（见 `database/migrate/2026/06/14/012`）。这个单一的共享版本计数器
@@ -60,7 +62,7 @@ settings.json 键不同步（见 `database/migrate/2026/06/14/012`）。这个�
 
 **幂等的增量迁移。** 在 schema-ensure 步骤之后、写入版本
 计数器之前，store 会回填可选/可空的列（`goal`、`context`、`research_result`、
-`agenda`、`agenda_index`、`conclusion`、`completed_at`）：每一列都会检查表的列集合，仅在
+`agenda`、`agenda_index`、`conclusion`、`metadata`、`completed_at`）：每一列都会检查表的列集合，仅在
 该列缺失时才添加。这是一种**防御性的前向兼容回填**——一张由早期开发中构建版本
 （早于这些列存在）创建的 discussions 表会被原地升级；对于
 全新 schema，每次调用都是空操作，整个序列在多次运行间都是幂等的。与
@@ -88,6 +90,10 @@ store 的降级契约一致。
 - **设置上下文** —— 替换用户提供的 `context` + 更新 `updated_at`。
 - **设置调研结果** —— 将调研智能体已完成的输出存入 research-result 列
   （与 `context` 分开保存）+ 更新 `updated_at`。
+- **设置业务 metadata** —— 以**整体替换**（不是合并）的方式写入扁平
+  `string→string` 标注（序列化为 JSON 对象）+ 更新 `updated_at`。唯一调用方是 MCP
+  `start_discussion`，它先按 automation metadata 的容量/长度上限校验；读取时对
+  缺失/空白/损坏/非对象/非字符串值一律降级为 `{}`。
 - **设置议程** —— 持久化议程（一个 JSON 数组）和从 0 开始的当前索引（等于
   议程长度 ⇒ 所有子话题已完成）+ 更新 `updated_at`。读取时将议程解析回字符串
   数组（null/空白/损坏的 JSON → 空数组）。
@@ -205,7 +211,18 @@ action / speaker / subtopics / index / note / conclusion 的 JSON 对象，其�
 兜底），但从不改变阶段。读取路径（get / list / `discussion_detail`）免费携带
 议程 + 索引。
 
-**状态机。**
+**编排生命周期事件。** 启动一次正式编排的入口有三个——MCP `start_discussion`、
+Web UI 的启动，以及 `continue_discussion`（对已结束讨论开启新一轮，或恢复
+`in_progress` 的悬挂态）——但它们都汇入**同一个**运行启动器。因此生命周期事件只在这唯一
+边界上发布，不按入口各自实现：启动器在把该运行登记为存活时发布一次
+`discussion:start`，在其统一的异步收尾路径上发布一次 `discussion:end`（原因为
+`complete` / `error` / `aborted`，中止优先于此前记录的错误）。两者与该运行既有的
+`run:started` / `run:settled`（`sessionKind='discussion'`）**并存**，不合并也不互相抑制。
+
+事件携带工作区、讨论 id、标题、讨论类型，以及该边界时刻**已持久化**的业务
+`metadata`——结束边界重新读取当前讨论记录，因此报告的是结算时的快照；读取或事件
+组装失败时退回本次启动的快照，绝不因此中断运行清理与结束广播。**调研运行不是正式
+编排**：它自身不发布这对事件；只有调研成功后自动进入的编排才从那一刻起发布。
 
 `start_discussion` 也会在 `create_discussion` 的后台调研成功后被**自动**调用：
 服务端通过一个纯粹的自动启动守卫，基于最新记录重新校验（状态仍为

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { startSchedulerWiring } from './scheduler-startup.js'
-import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
+import { EventBus, type EventBusEvents } from '../kernel/events/event-bus.js'
 
 // Records the relative order of the two lifecycle-critical calls so the tests can
 // assert startup reconciliation always precedes scheduler start.
@@ -44,6 +44,7 @@ vi.mock('../features/agent-quota-recovery.js', () => ({
 
 import { isStoreAvailable, reconcileStuckRunningExecutions } from '../features/automations/store.js'
 import { startScheduler } from '../features/schedules/index.js'
+import { dispatchEventTriggers } from '../features/triggers/index.js'
 
 function makeDeps() {
   const eventBus = { subscribe: vi.fn() } as unknown as EventBus<EventBusEvents>
@@ -89,5 +90,97 @@ describe('startSchedulerWiring startup order', () => {
     startSchedulerWiring(makeDeps())
     expect(reconcileStuckRunningExecutions).not.toHaveBeenCalled()
     expect(startScheduler).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * The `discussion:lifecycle` bridge: the phase becomes the action of the
+ * `<category>:<action>` type, `end` maps its terminal reason to `status`, and the
+ * discussion identity + the caller's business metadata land in a flat
+ * `event.metadata`. Driven through a REAL bus so the subscription itself is
+ * covered, with `dispatchEventTriggers` mocked to capture the projected view.
+ */
+describe('startSchedulerWiring — discussion lifecycle bridge', () => {
+  let eventBus: EventBus<EventBusEvents>
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(isStoreAvailable).mockReturnValue(true)
+    vi.mocked(reconcileStuckRunningExecutions).mockReturnValue(0)
+    eventBus = new EventBus<EventBusEvents>()
+    startSchedulerWiring({ broadcasts: { broadcastAutomations: vi.fn() }, eventBus })
+  })
+
+  it('start → type=discussion:start, no status, identity + business metadata', () => {
+    eventBus.publish('discussion:lifecycle', {
+      workspacePath: '/proj',
+      phase: 'start',
+      discussionId: 'd1',
+      title: 'Cache TTL',
+      discussionType: 'design',
+      metadata: { team: 'infra' },
+    })
+    expect(dispatchEventTriggers).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(dispatchEventTriggers).mock.calls[0]![0]).toEqual({
+      workspacePath: '/proj',
+      event: {
+        type: 'discussion:start',
+        metadata: {
+          team: 'infra',
+          discussionId: 'd1',
+          title: 'Cache TTL',
+          discussionType: 'design',
+        },
+      },
+    })
+  })
+
+  it('end → type=discussion:end with the terminal reason as status', () => {
+    eventBus.publish('discussion:lifecycle', {
+      workspacePath: '/proj',
+      phase: 'end',
+      discussionId: 'd1',
+      title: 'Cache TTL',
+      discussionType: 'design',
+      metadata: {},
+      reason: 'error',
+    })
+    expect(vi.mocked(dispatchEventTriggers).mock.calls[0]![0]).toEqual({
+      workspacePath: '/proj',
+      event: {
+        type: 'discussion:end',
+        status: 'error',
+        metadata: { discussionId: 'd1', title: 'Cache TTL', discussionType: 'design' },
+      },
+    })
+  })
+
+  it('caller metadata can NOT forge the reserved identity keys', () => {
+    eventBus.publish('discussion:lifecycle', {
+      workspacePath: '/proj',
+      phase: 'start',
+      discussionId: 'real',
+      title: 'Real title',
+      discussionType: 'design',
+      metadata: { discussionId: 'forged', title: 'Forged', discussionType: 'forged' },
+    })
+    const view = vi.mocked(dispatchEventTriggers).mock.calls[0]![0]
+    expect(view.event.metadata).toEqual({
+      discussionId: 'real',
+      title: 'Real title',
+      discussionType: 'design',
+    })
+  })
+
+  it('carries no sessionKind — the sessionKind boundary is run-lifecycle only', () => {
+    eventBus.publish('discussion:lifecycle', {
+      workspacePath: '/proj',
+      phase: 'start',
+      discussionId: 'd1',
+      title: 'T',
+      discussionType: 'design',
+      metadata: {},
+    })
+    expect(vi.mocked(dispatchEventTriggers).mock.calls[0]![0].sessionKind).toBeUndefined()
   })
 })

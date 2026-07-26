@@ -31,6 +31,7 @@ function disc(id: string, title: string, over: Partial<Discussion> = {}): Discus
     participantAgentIds: [],
     organizerAgentId: null,
     conclusion: null,
+    metadata: {},
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_000_000,
     completedAt: null,

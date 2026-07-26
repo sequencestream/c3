@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS discussions (
   participant_agent_ids TEXT NOT NULL DEFAULT '[]',  -- JSON 数组, 创建时选定的参与 agent id 集合; '[]'=未设置→编排时回退全员 (organizer 恒并入)
   organizer_agent_id TEXT,                           -- 指定的组织者 agent id; NULL=使用全局默认; 覆盖 defaultAgentId
   conclusion      TEXT,                              -- 讨论结论文本
+  metadata        TEXT NOT NULL DEFAULT '{}',        -- JSON 对象, 扁平 string→string 业务 metadata; 仅由 MCP start_discussion 写入; 随 discussion:start/end 事件发出; 损坏值读取降级为 {}
   created_at      INTEGER NOT NULL,                  -- 创建时间 (epoch ms)
   updated_at      INTEGER NOT NULL,                  -- 最后更新时间 (epoch ms)
   completed_at    INTEGER                            -- 完成时间 (epoch ms), status='completed' 时打戳

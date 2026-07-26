@@ -2209,6 +2209,14 @@ export interface Discussion {
   organizerAgentId: string | null
   /** The concluded outcome; `null` until set. */
   conclusion: string | null
+  /**
+   * Free-form business annotations the MCP `start_discussion` caller attached to
+   * this discussion (flat `string → string`, same hygiene bounds as automation
+   * metadata). `{}` when never supplied — including every legacy row and every
+   * Web-UI-started discussion. Carried on the discussion lifecycle events so an
+   * automation can filter on the caller's own context.
+   */
+  metadata: Record<string, string>
   createdAt: number
   updatedAt: number
   /** When the discussion entered `completed`; `null` otherwise. */

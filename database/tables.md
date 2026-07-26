@@ -39,9 +39,9 @@ Schema 版本: 16。v5→v6 完成了 `requirements*` → `intents*` 的就地�
 
 ### discussions
 
-多 agent 结构化讨论域。`discussions` 记录讨论线程的元数据 (类型、目标、议程、参与者、结论)；`discussion_messages` 按 seq 序号存储发言；`discussion_agent_sessions` 记录每个讨论内 agent 与 vendor session 的绑定关系 (支持 resume)，并作为讨论 agent session 归属事实源。会话页展示不读取本表，而是由生命周期同步写入 `session_metadata(session_kind='discussion', owner_kind='discussion', owner_id=<discussion.id>)` 的可重建投影。
+多 agent 结构化讨论域。`discussions` 记录讨论线程的元数据 (类型、目标、议程、参与者、结论、业务 metadata)；`discussion_messages` 按 seq 序号存储发言；`discussion_agent_sessions` 记录每个讨论内 agent 与 vendor session 的绑定关系 (支持 resume)，并作为讨论 agent session 归属事实源。会话页展示不读取本表，而是由生命周期同步写入 `session_metadata(session_kind='discussion', owner_kind='discussion', owner_id=<discussion.id>)` 的可重建投影。
 
-Schema 版本: 5。v2→v3 新增 `discussions.participant_agent_ids` (创建时选定的参与 agent 集合; `'[]'`=未设置→编排时回退全员, organizer 恒并入)。v3→v4 把工作区主键列 `project_path` 就地改名为 `workspace_path`，复合索引 `idx_disc_project_status` → `idx_disc_workspace_status` (详见迁移记录 `migrate/2026/06/14/012`)。v4→v5 新增 `discussions.organizer_agent_id` (指定组织者 agent id; NULL=使用全局默认)。
+Schema 版本: 6。v2→v3 新增 `discussions.participant_agent_ids` (创建时选定的参与 agent 集合; `'[]'`=未设置→编排时回退全员, organizer 恒并入)。v3→v4 把工作区主键列 `project_path` 就地改名为 `workspace_path`，复合索引 `idx_disc_project_status` → `idx_disc_workspace_status` (详见迁移记录 `migrate/2026/06/14/012`)。v4→v5 新增 `discussions.organizer_agent_id` (指定组织者 agent id; NULL=使用全局默认)。v5→v6 新增 `discussions.metadata` (JSON 对象，扁平 `string→string` 业务 metadata，默认 `'{}'`；唯一写入方是 MCP `start_discussion`，上限复用 automation metadata 卫生规则；随 `discussion:start`/`discussion:end` 生命周期事件发出；历史行回填空对象，读取端对缺失/损坏值降级为 `{}`；详见迁移记录 `migrate/2026/07/26/025`)。
 
 ### automations
 

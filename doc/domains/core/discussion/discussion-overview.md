@@ -133,6 +133,16 @@ discussion/intent 数据库中。
   在列表上**不做**快照：它通过 `cleared`/`failed`/回复消息/运行
   `ended`/切换讨论来自愈，因此刷新/重连不会留下卡住的待处理项。
 
+- **业务 metadata + 编排生命周期事件**：MCP `start_discussion` 可携带一份可选的扁平
+  `string→string` **metadata**，在启动编排**之前**整体写入讨论记录（校验复用 automation
+  metadata 的上限；非法输入使工具报错且不写库、不启动）。它是 metadata 的唯一写入入口——
+  Web UI 启动与 `continue_discussion` 都保留原值。每一次正式编排在其唯一入口发出一个
+  `discussion:start`、在其唯一收尾路径发出一个 `discussion:end`（`complete`/`error`/`aborted`），
+  携带讨论 id / 标题 / 类型与该时刻已持久化的 metadata，供自动化按业务上下文精确订阅
+  （见 [automations-spec SCH-R30](../automations/automations-spec.md)、
+  [事件机制](../../../architecture/event-mechanism.md)）。它们与该运行既有的
+  `run:started`/`run:settled` 并存；调研阶段不发布这对事件。
+
 - **结论 → intent 桥接**（`discussion_to_intent`）：一个已完成讨论的
   标题栏 **Convert to Intent** 按钮会为 intent 领域播种。服务端从讨论解析出
   工作区，将 intent 领域的沟通会话作为全新会话重启（一个

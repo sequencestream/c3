@@ -1686,6 +1686,14 @@
             "label": "Spec 审批通过"
           }
         },
+        "discussion": {
+          "start": {
+            "label": "讨论开始"
+          },
+          "end": {
+            "label": "讨论结束"
+          }
+        },
         "sessionKind": {
           "label": "在以下会话类型时触发",
           "hint": "可选——选择哪些运行来源可以触发本自动化;留空表示所有会话类型。",
@@ -1732,6 +1740,9 @@
           },
           "intent": {
             "label": "意图"
+          },
+          "discussion": {
+            "label": "讨论"
           }
         },
         "action": {

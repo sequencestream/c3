@@ -1059,6 +1059,153 @@ describe('scheduler — dispatchEventTriggers (intent:<phase>)', () => {
 })
 
 // ---------------------------------------------------------------------------
+// scheduler: dispatchEventTriggers — discussion:<phase> (no session origin).
+// `end` carries the terminal reason as its status; both phases carry the
+// discussion identity plus the `start_discussion` caller's business metadata.
+// ---------------------------------------------------------------------------
+describe('scheduler — dispatchEventTriggers (discussion:<phase>)', () => {
+  let appendLog: ReturnType<typeof vi.fn>
+
+  function discSched(over: Partial<Automation> = {}): Automation {
+    return {
+      id: 'd1',
+      type: 'command',
+      config: { command: 'echo hi', name: 'x' },
+      maxWallClockMs: null,
+      workspaceId: '/abs/ws-a',
+      triggerType: 'event',
+      cronExpression: '',
+      nextRunAt: null,
+      eventFilters: [{ type: 'discussion:start' }],
+      runningSessionId: null,
+      status: 'active',
+      mode: 'sandboxed',
+      toolAllowlist: [],
+      toolDenylist: [],
+      vendor: 'claude',
+      createdAt: 1,
+      updatedAt: 1,
+      ...over,
+    }
+  }
+
+  const install = makeInstall(() => appendLog)
+
+  beforeEach(() => {
+    vi.mocked(execute).mockReset()
+    vi.mocked(execute).mockResolvedValue(undefined)
+    appendLog = vi.fn(() => ({ id: 'log1' }))
+  })
+
+  /** What the `discussion:lifecycle` bridge in `wiring/scheduler-startup.ts` projects. */
+  const discView = (
+    phase: 'start' | 'end',
+    over: { reason?: string; metadata?: Record<string, string> } = {},
+  ) => ({
+    workspacePath: '/abs/ws-a',
+    event: {
+      type: `discussion:${phase}`,
+      ...(over.reason ? { status: over.reason } : {}),
+      metadata: {
+        ...(over.metadata ?? { team: 'infra' }),
+        discussionId: 'd-1',
+        title: 'Cache TTL',
+        discussionType: 'design',
+      },
+    },
+  })
+
+  it('fires on discussion:start (no status, no sessionKind supplied)', () => {
+    install([discSched({ id: 'dl-hit' })])
+    dispatchEventTriggers(discView('start'))
+    expect(appendLog).toHaveBeenCalledTimes(1)
+    cancelInFlight('dl-hit')
+  })
+
+  it('does not fire a start automation on an end event (phase is the type)', () => {
+    install([discSched({ id: 'dl-phase' })])
+    dispatchEventTriggers(discView('end', { reason: 'complete' }))
+    expect(appendLog).not.toHaveBeenCalled()
+  })
+
+  it('discussion:end honours the terminal reason as its status', () => {
+    install([
+      discSched({
+        id: 'dl-reason',
+        eventFilters: [{ type: 'discussion:end', statuses: ['error'] }],
+      }),
+    ])
+    dispatchEventTriggers(discView('end', { reason: 'complete' }))
+    expect(appendLog).not.toHaveBeenCalled()
+    dispatchEventTriggers(discView('end', { reason: 'error' }))
+    expect(appendLog).toHaveBeenCalledTimes(1)
+    cancelInFlight('dl-reason')
+  })
+
+  it('a discussion:* wildcard row fires on both phases', () => {
+    install([discSched({ id: 'dl-wild', eventFilters: [{ type: 'discussion:*' }] })])
+    dispatchEventTriggers(discView('start'))
+    expect(appendLog).toHaveBeenCalledTimes(1)
+    cancelInFlight('dl-wild')
+    dispatchEventTriggers(discView('end', { reason: 'aborted' }))
+    expect(appendLog).toHaveBeenCalledTimes(2)
+    cancelInFlight('dl-wild')
+  })
+
+  it('a business-metadata condition fires only on an exact, case-sensitive match', () => {
+    const filters = [
+      {
+        type: 'discussion:start',
+        metadata: { conditions: [{ key: 'team', value: 'infra' }], combinator: 'AND' as const },
+      },
+    ]
+    install([discSched({ id: 'dl-meta', eventFilters: filters })])
+    // Missing key → no fire.
+    dispatchEventTriggers(discView('start', { metadata: {} }))
+    expect(appendLog).not.toHaveBeenCalled()
+    // Different value → no fire.
+    dispatchEventTriggers(discView('start', { metadata: { team: 'core' } }))
+    expect(appendLog).not.toHaveBeenCalled()
+    // Case difference → no fire (exact string equality).
+    dispatchEventTriggers(discView('start', { metadata: { team: 'Infra' } }))
+    expect(appendLog).not.toHaveBeenCalled()
+    // Exact match → fires.
+    dispatchEventTriggers(discView('start', { metadata: { team: 'infra' } }))
+    expect(appendLog).toHaveBeenCalledTimes(1)
+    cancelInFlight('dl-meta')
+  })
+
+  it('a condition on a reserved identity key matches the real discussion', () => {
+    install([
+      discSched({
+        id: 'dl-id',
+        eventFilters: [
+          {
+            type: 'discussion:start',
+            metadata: { conditions: [{ key: 'discussionId', value: 'd-1' }], combinator: 'AND' },
+          },
+        ],
+      }),
+    ])
+    dispatchEventTriggers(discView('start'))
+    expect(appendLog).toHaveBeenCalledTimes(1)
+    cancelInFlight('dl-id')
+  })
+
+  it('does not fire a run:* automation on a discussion:<phase> event (type isolation)', () => {
+    install([
+      discSched({
+        id: 'dl-run',
+        eventFilters: [{ type: 'run:*' }],
+        eventSessionKindFilter: ['discussion'],
+      }),
+    ])
+    dispatchEventTriggers(discView('start'))
+    expect(appendLog).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
 // scheduler: dispatchEventTriggers — an unregistered custom event type. Proves a
 // new type triggers automations with only string filter values — no protocol enum,
 // dispatch branch, or form panel change.

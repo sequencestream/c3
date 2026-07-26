@@ -2,6 +2,13 @@
  * Automation hygiene rules shared by the server save boundary and the web
  * console (form + import/export): the execution wall-clock guard and the
  * free-form metadata sanitizer. Bounds and types stay in the wire contract.
+ *
+ * The same metadata bounds are reused by every other flat `string → string`
+ * annotation map in c3 (e.g. the MCP `start_discussion` metadata) — either
+ * through the lenient {@link normalizeAutomationMetadata} (drop-and-continue, for
+ * a save boundary that must never fail) or through the strict
+ * {@link validateFlatMetadata} (reject-the-whole-input, for a tool call that must
+ * tell its caller the input was refused).
  */
 import {
   MAX_AUTOMATION_MAX_WALL_CLOCK_MS,
@@ -41,4 +48,66 @@ export function normalizeAutomationMetadata(input: unknown): Record<string, stri
     out[key] = value
   }
   return out
+}
+
+/** Why a flat metadata input was refused (the caller renders the message). */
+export type FlatMetadataRejection =
+  | { code: 'notObject' }
+  | { code: 'tooManyEntries'; limit: number }
+  | { code: 'keyTooLong'; key: string; limit: number }
+  | { code: 'valueNotString'; key: string }
+  | { code: 'valueTooLong'; key: string; limit: number }
+
+/** Outcome of {@link validateFlatMetadata}: the clean map, or the refusal reason. */
+export type FlatMetadataValidation =
+  { ok: true; value: Record<string, string> } | { ok: false; error: FlatMetadataRejection }
+
+/**
+ * Strictly validate a caller-supplied flat metadata map against the automation
+ * metadata bounds. Unlike {@link normalizeAutomationMetadata} this REJECTS the
+ * whole input rather than silently dropping offending entries: an over-capacity
+ * map, an over-long key/value, or a nested / non-string value (which is what a
+ * nested object looks like here) returns `{ ok: false }`. Only the two hygiene
+ * rules that cannot lose caller intent are applied silently — keys and values are
+ * trimmed, and an entry that trims to an empty key or value is dropped.
+ *
+ * Used by tool surfaces (MCP `start_discussion`) where a bad input must surface
+ * as an error to the caller instead of being partially honoured.
+ */
+export function validateFlatMetadata(input: unknown): FlatMetadataValidation {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return { ok: false, error: { code: 'notObject' } }
+  }
+  const entries = Object.entries(input as Record<string, unknown>)
+  if (entries.length > MAX_AUTOMATION_METADATA_ENTRIES) {
+    return {
+      ok: false,
+      error: { code: 'tooManyEntries', limit: MAX_AUTOMATION_METADATA_ENTRIES },
+    }
+  }
+  const out: Record<string, string> = {}
+  for (const [rawKey, rawValue] of entries) {
+    const key = rawKey.trim()
+    if (key.length > MAX_AUTOMATION_METADATA_KEY_LEN) {
+      return {
+        ok: false,
+        error: { code: 'keyTooLong', key, limit: MAX_AUTOMATION_METADATA_KEY_LEN },
+      }
+    }
+    if (typeof rawValue !== 'string') {
+      return { ok: false, error: { code: 'valueNotString', key } }
+    }
+    const value = rawValue.trim()
+    if (value.length > MAX_AUTOMATION_METADATA_VALUE_LEN) {
+      return {
+        ok: false,
+        error: { code: 'valueTooLong', key, limit: MAX_AUTOMATION_METADATA_VALUE_LEN },
+      }
+    }
+    // Hygiene (never a rejection): a key/value that trims to empty carries no
+    // context, so it does not enter the persisted result.
+    if (!key || !value) continue
+    out[key] = value
+  }
+  return { ok: true, value: out }
 }

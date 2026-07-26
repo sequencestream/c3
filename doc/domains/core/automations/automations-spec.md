@@ -239,10 +239,19 @@ discussions 所用的那个——把一个 transcript 条目转换为一条聊�
 `sessionKind='discussion'` 的 `run:started` 与 `run:settled`,其终止 reason 把
 「discussion 已开始 / 已失败 / 已结束」映射为 `complete` / `error` / `aborted`。一个在
 `eventSessionKindFilter` 中选中 `discussion` 的运行生命周期 `event` 触发器自动化(可选地
-再过滤 `reason`)已经覆盖了「一个 discussion 开始了 / 出错了 / 结束了」——因此 discussion 的 c3
-MCP 工具刻意**不**新增一个单独的 discussion 生命周期事件主题;对错误后悬空状态
+再过滤 `reason`)覆盖的是**通用运行**层面的「开始 / 出错 / 结束」;对错误后悬空状态
 (`reason='error'`,随后 `in_progress` 且没有存活运行)的可观测性,搭在这些既有事件加上
 discussion 列表刷新之上,而恢复手段是 `continue_discussion` 工具。
+
+**SCH-R30 — discussion 领域生命周期事件**(2026-07-26)。在上述通用运行事件**之外**,
+同一个 `startDiscussionRun` 边界还发布 `discussion:start` / `discussion:end` 两个领域事件
+(`end` 的 status 复用 `complete` / `error` / `aborted`,与 `run:settled` 判定一致)。二者**并存、
+不合并、不去重**:同时订阅两类事件的订阅者会分别收到。它们相对通用运行事件的增量是
+**领域可识别性**——无需 `sessionKind` 边界即可精确订阅讨论,且事件自带 `discussionId`、
+`title`、`discussionType` 以及调用方经 MCP `start_discussion` 的 `metadata` 入参持久化在讨论
+记录上的业务标注(卫生规则复用 SCH-R25 的上限:最多 32 项、key ≤64、value ≤256;非法输入
+使工具返回错误且**不写库、不启动**)。投影为通用事件时,保留身份键写在业务 metadata 之后,
+调用方无法用自己的 metadata 伪造事件身份。预研(research)运行不是正式编排,不发布这对事件。
 
 ### 过滤与节流
 

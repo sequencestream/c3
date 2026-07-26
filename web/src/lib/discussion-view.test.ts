@@ -43,6 +43,7 @@ function disc(over: Partial<Discussion> = {}): Discussion {
     participantAgentIds: [],
     organizerAgentId: null,
     conclusion: null,
+    metadata: {},
     createdAt: 0,
     updatedAt: 0,
     completedAt: null,

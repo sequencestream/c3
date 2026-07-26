@@ -138,6 +138,7 @@ const CATEGORY_LABELS = computed<Record<string, string>>(() => ({
   run: t('automation.form.event.cat.run.label'),
   pr: t('automation.form.event.cat.pr.label'),
   intent: t('automation.form.event.cat.intent.label'),
+  discussion: t('automation.form.event.cat.discussion.label'),
 }))
 
 // Literal i18n keys per known `<category>:<action>` (the typed `t` rejects
@@ -157,6 +158,8 @@ const ACTION_LABELS = computed<Record<string, string>>(() => ({
   'intent:failed': t('automation.form.event.intent.failed.label'),
   'intent:cancelled': t('automation.form.event.intent.cancelled.label'),
   'intent:spec_approve': t('automation.form.event.intent.specApprove.label'),
+  'discussion:start': t('automation.form.event.discussion.start.label'),
+  'discussion:end': t('automation.form.event.discussion.end.label'),
 }))
 
 // Status labels keyed `<category>|<status>` — the same raw value can label
@@ -168,6 +171,10 @@ const STATUS_LABELS = computed<Record<string, string>>(() => ({
   'pr|success': t('automation.form.event.pr.result.success.label'),
   'pr|failure': t('automation.form.event.pr.result.failure.label'),
   'pr|error': t('automation.form.event.pr.result.error.label'),
+  // `discussion:end` reuses the run terminal reasons verbatim.
+  'discussion|complete': t('automation.form.event.reason.complete.label'),
+  'discussion|error': t('automation.form.event.reason.error.label'),
+  'discussion|aborted': t('automation.form.event.reason.aborted.label'),
 }))
 
 const CATEGORY_OPTIONS = computed<DropdownOption<string>[]>(() => [

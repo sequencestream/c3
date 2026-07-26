@@ -28,7 +28,7 @@ import { pathToId } from '../../state.js'
  * value is informational only: migrations key off `PRAGMA table_info` /
  * `CREATE TABLE IF NOT EXISTS`, never off the version number.
  */
-const SCHEMA_VERSION = 5
+const SCHEMA_VERSION = 6
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS discussions (
@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS discussions (
   participant_agent_ids TEXT NOT NULL DEFAULT '[]',
   organizer_agent_id TEXT,
   conclusion    TEXT,
+  metadata      TEXT NOT NULL DEFAULT '{}',
   created_at    INTEGER NOT NULL,
   updated_at    INTEGER NOT NULL,
   completed_at  INTEGER
@@ -140,6 +141,9 @@ function db(): Db | null {
     ensureColumn(d, 'discussions', 'conclusion', 'TEXT')
     ensureColumn(d, 'discussions', 'completed_at', 'INTEGER')
     ensureColumn(d, 'discussions', 'organizer_agent_id', 'TEXT')
+    // v5 → v6: free-form business metadata written by MCP `start_discussion`.
+    // Historic rows backfill to the empty object via the column default.
+    ensureColumn(d, 'discussions', 'metadata', "TEXT NOT NULL DEFAULT '{}'")
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -194,6 +198,7 @@ interface DiscussionRow {
   participant_agent_ids: string | null
   organizer_agent_id: string | null
   conclusion: string | null
+  metadata: string | null
   created_at: number
   updated_at: number
   completed_at: number | null
@@ -213,6 +218,26 @@ function parseStringList(raw: string | null): string[] {
   }
 }
 
+/**
+ * Parse the persisted metadata column to a flat `string → string` map; a missing,
+ * blank, corrupt, non-object or non-string-valued payload degrades to `{}` so a
+ * damaged historic value never breaks a discussion read.
+ */
+function parseStringMap(raw: string | null): Record<string, string> {
+  if (!raw) return {}
+  try {
+    const v: unknown = JSON.parse(raw)
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+    const out: Record<string, string> = {}
+    for (const [key, value] of Object.entries(v as Record<string, unknown>)) {
+      if (typeof value === 'string') out[key] = value
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
 function toDiscussion(r: DiscussionRow): Discussion {
   return {
     id: r.id,
@@ -228,6 +253,7 @@ function toDiscussion(r: DiscussionRow): Discussion {
     participantAgentIds: parseStringList(r.participant_agent_ids),
     organizerAgentId: r.organizer_agent_id ?? null,
     conclusion: r.conclusion,
+    metadata: parseStringMap(r.metadata),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     completedAt: r.completed_at,
@@ -389,6 +415,22 @@ export function setDiscussionResearchResult(id: string, researchResult: string):
   d.run(
     'UPDATE discussions SET research_result=?, updated_at=? WHERE id=?',
     researchResult,
+    Date.now(),
+    id,
+  )
+}
+
+/**
+ * Replace the discussion's free-form business metadata (whole-map replace, not a
+ * merge) + bump `updated_at`. The ONLY writer is the MCP `start_discussion` tool,
+ * which validates the map against the automation metadata bounds first; the Web
+ * UI start and `continue_discussion` never touch it.
+ */
+export function setDiscussionMetadata(id: string, metadata: Record<string, string>): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE discussions SET metadata=?, updated_at=? WHERE id=?',
+    JSON.stringify(metadata),
     Date.now(),
     id,
   )

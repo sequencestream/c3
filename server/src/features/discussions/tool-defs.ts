@@ -23,6 +23,13 @@
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import type { Discussion, DiscussionMessage, DiscussionStatus } from '@ccc/shared/protocol'
+import {
+  MAX_AUTOMATION_METADATA_ENTRIES,
+  MAX_AUTOMATION_METADATA_KEY_LEN,
+  MAX_AUTOMATION_METADATA_VALUE_LEN,
+  validateFlatMetadata,
+  type FlatMetadataRejection,
+} from '@ccc/shared'
 import { resolveWorkspaceRoot } from '../../state.js'
 import {
   appendMessage,
@@ -30,6 +37,7 @@ import {
   isStoreAvailable,
   listDiscussions,
   listMessages,
+  setDiscussionMetadata,
   updateDiscussionStatus,
 } from './store.js'
 
@@ -77,7 +85,18 @@ export const findDiscussionsSchema = {
 
 export const viewDiscussionSchema = { discussionId: z.string().describe('讨论 id') }
 
-export const startDiscussionSchema = { discussionId: z.string().describe('要启动的 draft 讨论 id') }
+export const startDiscussionSchema = {
+  discussionId: z.string().describe('要启动的 draft 讨论 id'),
+  metadata: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe(
+      '可选的扁平业务 metadata(string→string,不接受嵌套):启动前整体写入该讨论记录,' +
+        `供后续查询与订阅 discussion:start / discussion:end 的自动化按条件过滤。` +
+        `上限 ${MAX_AUTOMATION_METADATA_ENTRIES} 项、key ≤${MAX_AUTOMATION_METADATA_KEY_LEN} 字符、` +
+        `value ≤${MAX_AUTOMATION_METADATA_VALUE_LEN} 字符;超限或含非字符串值直接报错,不会被截断或丢弃。`,
+    ),
+}
 
 export const continueDiscussionSchema = {
   discussionId: z.string().describe('要继续或恢复的讨论 id'),
@@ -92,7 +111,7 @@ export const continueDiscussionSchema = {
 
 export type FindDiscussionsArgs = { status?: DiscussionStatus }
 export type ViewDiscussionArgs = { discussionId: string }
-export type StartDiscussionArgs = { discussionId: string }
+export type StartDiscussionArgs = { discussionId: string; metadata?: Record<string, string> }
 export type ContinueDiscussionArgs = { discussionId: string; text?: string }
 
 // ---- Description strings (advertised in the system prompt) ----
@@ -100,7 +119,7 @@ export type ContinueDiscussionArgs = { discussionId: string; text?: string }
 export const findDiscussionsDesc =
   '检索本项目已有讨论(只读)。用于感知当前项目里有哪些讨论、该继续/恢复哪一个,避免重复发起。' +
   '可按 status 过滤(可选,留空返回全部);返回精简列表(id、title、type、status、agendaIndex、' +
-  'agendaCount、hasConclusion、updatedAt),不含完整消息体。'
+  'agendaCount、hasConclusion、updatedAt,以及非空时的业务 metadata),不含完整消息体。'
 
 export const viewDiscussionDesc =
   '按 id 查看本项目单条讨论的完整详情(只读):含讨论记录本体与按 seq 排序的消息列表。' +
@@ -108,7 +127,9 @@ export const viewDiscussionDesc =
 
 export const startDiscussionDesc =
   '对一个已存在的 draft 讨论触发启动(复用现有 orchestrator,不新建讨论、不跑 research 阶段)。' +
-  '仅当目标是 draft 且当前无存活运行时成功;跨 workspace、非 draft、已有存活运行或库不可用返回错误。'
+  '仅当目标是 draft 且当前无存活运行时成功;跨 workspace、非 draft、已有存活运行或库不可用返回错误。' +
+  '可选 metadata(扁平 string→string)会在启动前整体写入该讨论并随 discussion:start / ' +
+  'discussion:end 生命周期事件发出,便于自动化按业务上下文订阅;metadata 非法时报错且不启动。'
 
 export const continueDiscussionDesc =
   '继续或恢复本项目一个已存在的讨论(双语义,均要求当前无存活运行):' +
@@ -134,6 +155,9 @@ export function runFindDiscussions(
     agendaIndex: r.agendaIndex,
     agendaCount: r.agenda.length,
     hasConclusion: !!r.conclusion,
+    // The caller's own business annotations, so a list read confirms what
+    // `start_discussion` persisted. Omitted when empty to keep the row compact.
+    ...(Object.keys(r.metadata).length ? { metadata: r.metadata } : {}),
     updatedAt: r.updatedAt,
   }))
   return ok(
@@ -165,10 +189,33 @@ export function runViewDiscussion(
   return ok(JSON.stringify({ discussion, messages: listMessages(discussion.id) }, null, 2))
 }
 
+/** Render a metadata rejection as the tool's Chinese error text. */
+function metadataErrorText(error: FlatMetadataRejection): string {
+  switch (error.code) {
+    case 'notObject':
+      return 'metadata 必须是扁平的 string→string 对象。'
+    case 'tooManyEntries':
+      return `metadata 最多 ${error.limit} 项。`
+    case 'keyTooLong':
+      return `metadata key "${error.key}" 超过 ${error.limit} 字符上限。`
+    case 'valueNotString':
+      return `metadata key "${error.key}" 的值必须是字符串(不接受嵌套对象/数组/数字等)。`
+    case 'valueTooLong':
+      return `metadata key "${error.key}" 的值超过 ${error.limit} 字符上限。`
+  }
+}
+
 /**
  * Start a pre-existing `draft` discussion via the injected `startDiscussionRun`.
  * Only a `draft` with no live run starts; not-found/cross-workspace, non-draft,
  * or an already-live run return isError (never a silent success).
+ *
+ * An optional `metadata` map is validated FIRST (before any lookup, write or
+ * start) and, when supplied, replaces the discussion's persisted metadata wholesale
+ * before the orchestration starts — so the `discussion:start` event the run
+ * publishes already carries it. A validation or persistence failure returns isError
+ * WITHOUT starting: there is no "started but context lost" partial success.
+ * Omitting `metadata` leaves the discussion's current value untouched.
  */
 export function runStartDiscussion(
   workspacePath: string,
@@ -176,6 +223,12 @@ export function runStartDiscussion(
   deps: DiscussionRunStarter,
 ): DiscussionToolResult {
   if (!isStoreAvailable()) return fail('讨论库不可用,无法启动。')
+  let metadata: Record<string, string> | null = null
+  if (args.metadata !== undefined) {
+    const validated = validateFlatMetadata(args.metadata)
+    if (!validated.ok) return fail(`metadata 非法,讨论未启动:${metadataErrorText(validated.error)}`)
+    metadata = validated.value
+  }
   const discussion = getDiscussion(args.discussionId)
   if (!discussion || !belongsToWorkspace(discussion, workspacePath)) {
     return fail(`未找到 id 为 ${args.discussionId} 的讨论(本项目)。`)
@@ -186,7 +239,17 @@ export function runStartDiscussion(
   if (discussion.status !== 'draft') {
     return fail(`只能启动 draft 讨论;讨论 ${discussion.id} 当前状态为 ${discussion.status}。`)
   }
-  deps.startDiscussionRun(discussion)
+  let started = discussion
+  if (metadata) {
+    try {
+      setDiscussionMetadata(discussion.id, metadata)
+    } catch (err) {
+      return fail(`metadata 持久化失败,讨论未启动:${err instanceof Error ? err.message : err}`)
+    }
+    // Re-read so the run (and its lifecycle events) sees exactly what was stored.
+    started = getDiscussion(discussion.id) ?? { ...discussion, metadata }
+  }
+  deps.startDiscussionRun(started)
   return ok(`已启动 draft 讨论 ${discussion.id}。`)
 }
 

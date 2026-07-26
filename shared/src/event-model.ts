@@ -7,7 +7,7 @@
  * the console. Trigger filters live in `event-filter-model.ts`, the known
  * category/action suggestions in `event-catalog.ts`.
  */
-import type { IntentStatus, RunLifecycleTopic } from './protocol.js'
+import type { IntentStatus, RunEndReason, RunLifecycleTopic } from './protocol.js'
 
 // ---- Generic event contract (vendor-neutral) -------------------------------
 //
@@ -146,6 +146,34 @@ export interface IntentLifecycleEvent {
   title: string
   module: string | null
   toStatus: IntentStatus
+}
+
+// ---- Discussion lifecycle events (2026-07-26) ------------------------------
+//
+// The formal discussion orchestration boundary, published alongside (never
+// instead of) the generic `run:started` / `run:settled` pair a discussion run
+// already emits. The research pass is NOT an orchestration and publishes none of
+// these. Each boundary carries the discussion identity plus the business
+// metadata the MCP `start_discussion` caller persisted on the record.
+
+/** Discussion orchestration boundaries an automation may subscribe to. */
+export const DISCUSSION_LIFECYCLE_PHASES = ['start', 'end'] as const
+export type DiscussionLifecyclePhase = (typeof DISCUSSION_LIFECYCLE_PHASES)[number]
+
+/**
+ * Safe, stable context emitted at a discussion orchestration boundary. `metadata`
+ * is the discussion's persisted business annotations at that boundary (`{}` when
+ * none). `reason` is present only for `phase === 'end'` and reuses the run
+ * terminal reasons (`complete` / `error` / `aborted`).
+ */
+export interface DiscussionLifecycleEvent {
+  phase: DiscussionLifecyclePhase
+  discussionId: string
+  title: string
+  /** The discussion's free-form type/category (e.g. `design`). */
+  discussionType: string
+  metadata: Record<string, string>
+  reason?: RunEndReason
 }
 
 /**

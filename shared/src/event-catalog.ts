@@ -45,4 +45,11 @@ export const EVENT_CATALOG: Readonly<Record<string, EventCatalogCategory>> = {
       { spec_approve: { statuses: [] as const } },
     ),
   },
+  discussion: {
+    actions: {
+      start: { statuses: [] },
+      // The orchestration's terminal reason — same value list as `run:settled`.
+      end: { statuses: RUN_END_REASONS },
+    },
+  },
 }

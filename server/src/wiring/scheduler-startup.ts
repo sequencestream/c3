@@ -143,6 +143,27 @@ export function startSchedulerWiring(deps: {
       },
     }),
   )
+  // Discussion lifecycle: the phase IS the action — `type=discussion:<phase>`;
+  // `end` maps its terminal reason to `status` (same value list as `run:settled`),
+  // `start` has none. The caller's business metadata rides along, with the
+  // reserved identity keys spread LAST so a caller-supplied `discussionId` /
+  // `title` / `discussionType` can never forge the event's identity. No session
+  // origin (the sessionKind boundary is run-lifecycle only).
+  eventBus.subscribe('discussion:lifecycle', (e) =>
+    dispatchEventTriggers({
+      workspacePath: e.workspacePath,
+      event: {
+        type: `discussion:${e.phase}`,
+        ...(e.reason ? { status: e.reason } : {}),
+        metadata: {
+          ...e.metadata,
+          discussionId: e.discussionId,
+          title: e.title,
+          discussionType: e.discussionType,
+        },
+      },
+    }),
+  )
   startScheduler()
 }
 

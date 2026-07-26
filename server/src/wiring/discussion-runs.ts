@@ -17,12 +17,20 @@
  * refreshed discussion list — the explicit `broadcastDiscussions` calls in
  * the `.finally()` cleanup are replaced by this subscription.
  *
+ * `startDiscussionRun` additionally publishes the DOMAIN lifecycle pair
+ * `discussion:lifecycle` (`phase='start'` / `'end'` + terminal reason). It is the
+ * single boundary all three start entries share — MCP `start_discussion`, the Web
+ * UI start, and `continue_discussion`'s new round / dangling recovery — so the
+ * pair is emitted once per orchestration attempt without any per-entry code.
+ * `startResearchRun` is a separate preparation stage and publishes NEITHER.
+ *
  * IMPORTANT (kernel boundary, ADR-0009 R1/R2/R6):
  * - This module lives in `wiring/`. It imports features (engine + store +
  *   run-controls) and the broadcast bag. It does NOT import ws/HTTP semantics
  *   and does NOT touch the kernel registry directly.
  */
 import type { Discussion, RunEndReason, VendorId } from '@ccc/shared/protocol'
+import type { DiscussionLifecyclePhase } from '@ccc/shared'
 import { resolveWorkspaceRoot } from '../state.js'
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import type { VendorAdapter } from '../kernel/agent/adapters/types.js'
@@ -125,6 +133,47 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     broadcastResearchRunStatus,
   } = deps.broadcasts
 
+  /**
+   * The freshest persisted record for a discussion, falling back to the snapshot
+   * this run started from when the store is unavailable, the row is gone, or the
+   * read throws. Used at the settle boundary so `discussion:end` reports the
+   * metadata/title as persisted at settle time.
+   */
+  const latestDiscussion = (snapshot: Discussion): Discussion => {
+    try {
+      return getDiscussion(snapshot.id) ?? snapshot
+    } catch {
+      return snapshot
+    }
+  }
+
+  /**
+   * Publish one discussion orchestration boundary. Assembling or publishing it
+   * must never affect the orchestration outcome or the run cleanup, so the whole
+   * body is guarded (the bus itself already isolates subscriber errors).
+   */
+  const publishDiscussionLifecycle = (
+    discussion: Discussion,
+    phase: DiscussionLifecyclePhase,
+    reason?: RunEndReason,
+  ): void => {
+    try {
+      const workspacePath = resolveWorkspaceRoot(discussion.workspaceId)
+      if (!workspacePath) return
+      eventBus.publish('discussion:lifecycle', {
+        workspacePath,
+        phase,
+        discussionId: discussion.id,
+        title: discussion.title,
+        discussionType: discussion.type,
+        metadata: discussion.metadata ?? {},
+        ...(reason ? { reason } : {}),
+      })
+    } catch (err) {
+      console.warn(`[c3] discussion lifecycle publish failed: ${errMsg(err)}`)
+    }
+  }
+
   // Start a background orchestration run for a discussion (shared by
   // `start_discussion` and `continue_discussion`). The caller has already gated
   // re-entry and set the discussion's status; here we register the run
@@ -152,6 +201,10 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
       realId: discussion.id,
       workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
     })
+    // The domain boundary all three entries (MCP start, Web UI start, continue's
+    // new round / dangling recovery) funnel through — one `discussion:start` per
+    // orchestration attempt, alongside (never instead of) the generic run events.
+    publishDiscussionLifecycle(discussion, 'start')
 
     const sessionManager = new AgentSessionManager({
       getAdapter: deps.getAdapter,
@@ -209,6 +262,10 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
           sessionKind: 'discussion',
           runKind: 'internal',
         })
+        // Exactly one `discussion:end` on the single settle path, whatever the
+        // terminal reason. It must never break the run cleanup below, so the
+        // record re-read and the publish are both fault-tolerant.
+        publishDiscussionLifecycle(latestDiscussion(discussion), 'end', settledReason)
         deleteDiscussionRun(discussion.id)
         broadcastDiscussionRunStatus(discussion.id, 'ended')
       })

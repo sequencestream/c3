@@ -19,10 +19,16 @@ vi.mock('../../state.js', async (importOriginal) => ({
   pathToId: (p: string) => p,
 }))
 import type { Discussion } from '@ccc/shared/protocol'
+import {
+  MAX_AUTOMATION_METADATA_ENTRIES,
+  MAX_AUTOMATION_METADATA_KEY_LEN,
+  MAX_AUTOMATION_METADATA_VALUE_LEN,
+} from '@ccc/shared'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import {
   appendMessage,
   createDiscussion,
+  getDiscussion,
   listMessages,
   resetStoreForTests,
   setAgenda,
@@ -35,6 +41,7 @@ import {
   runViewDiscussion,
   type ContinueDiscussionDeps,
   type DiscussionRunStarter,
+  type StartDiscussionArgs,
 } from './tool-defs.js'
 
 const proj = '/abs/disc-tool-proj'
@@ -188,6 +195,118 @@ describe('runStartDiscussion', () => {
     const res = runStartDiscussion(proj, { discussionId: d.id }, deps)
     expect(res.isError).toBe(true)
     expect(deps.started).toHaveLength(0)
+  })
+})
+
+describe('runStartDiscussion — metadata', () => {
+  /** The discussion's persisted metadata, read straight back out of the store. */
+  const persisted = (id: string): Record<string, string> => getDiscussion(id)!.metadata
+
+  it('omitted metadata leaves the discussion at its default empty map', () => {
+    const d = seed(proj, 'No metadata')
+    const deps = makeRunStarter()
+    expect(runStartDiscussion(proj, { discussionId: d.id }, deps).isError).toBeFalsy()
+    expect(persisted(d.id)).toEqual({})
+    expect(deps.started[0].metadata).toEqual({})
+  })
+
+  it('persists a valid map before starting, and the started snapshot carries it', () => {
+    const d = seed(proj, 'With metadata')
+    const deps = makeRunStarter()
+    const res = runStartDiscussion(
+      proj,
+      { discussionId: d.id, metadata: { team: 'infra', ticket: 'C3-42' } },
+      deps,
+    )
+    expect(res.isError).toBeFalsy()
+    expect(persisted(d.id)).toEqual({ team: 'infra', ticket: 'C3-42' })
+    expect(deps.started[0].metadata).toEqual({ team: 'infra', ticket: 'C3-42' })
+  })
+
+  it('is readable back through view_discussion', () => {
+    const d = seed(proj, 'Readable')
+    runStartDiscussion(proj, { discussionId: d.id, metadata: { team: 'infra' } }, makeRunStarter())
+    const view = runViewDiscussion(proj, { discussionId: d.id })
+    expect(view.isError).toBeFalsy()
+    const parsed = JSON.parse(view.content[0].text) as { discussion: Discussion }
+    expect(parsed.discussion.metadata).toEqual({ team: 'infra' })
+  })
+
+  it('accepts the exact capacity / length boundaries', () => {
+    const d = seed(proj, 'Boundary')
+    const metadata: Record<string, string> = {}
+    for (let i = 0; i < MAX_AUTOMATION_METADATA_ENTRIES; i++) metadata[`k${i}`] = 'v'
+    metadata.k0 = 'x'.repeat(MAX_AUTOMATION_METADATA_VALUE_LEN)
+    const longKey = 'k'.repeat(MAX_AUTOMATION_METADATA_KEY_LEN)
+    delete metadata[`k${MAX_AUTOMATION_METADATA_ENTRIES - 1}`]
+    metadata[longKey] = 'v'
+    const deps = makeRunStarter()
+    expect(
+      runStartDiscussion(proj, { discussionId: d.id, metadata }, deps).isError,
+    ).toBeFalsy()
+    expect(Object.keys(persisted(d.id))).toHaveLength(MAX_AUTOMATION_METADATA_ENTRIES)
+    expect(persisted(d.id)[longKey]).toBe('v')
+  })
+
+  it('trims keys/values and drops entries that trim to empty (hygiene, not an error)', () => {
+    const d = seed(proj, 'Hygiene')
+    const deps = makeRunStarter()
+    const res = runStartDiscussion(
+      proj,
+      { discussionId: d.id, metadata: { '  team  ': '  infra  ', blank: '   ', '  ': 'v' } },
+      deps,
+    )
+    expect(res.isError).toBeFalsy()
+    expect(persisted(d.id)).toEqual({ team: 'infra' })
+  })
+
+  /** Every rejection must leave the record untouched AND never call the starter. */
+  const rejects = (label: string, metadata: unknown): void => {
+    it(`rejects ${label} — isError, nothing written, nothing started`, () => {
+      const d = seed(proj, `Reject ${label}`)
+      const deps = makeRunStarter()
+      const res = runStartDiscussion(
+        proj,
+        { discussionId: d.id, metadata } as StartDiscussionArgs,
+        deps,
+      )
+      expect(res.isError).toBe(true)
+      expect(persisted(d.id)).toEqual({})
+      expect(deps.started).toHaveLength(0)
+    })
+  }
+
+  const overCapacity: Record<string, string> = {}
+  for (let i = 0; i <= MAX_AUTOMATION_METADATA_ENTRIES; i++) overCapacity[`k${i}`] = 'v'
+
+  rejects('an over-capacity map', overCapacity)
+  rejects('an over-long key', { ['k'.repeat(MAX_AUTOMATION_METADATA_KEY_LEN + 1)]: 'v' })
+  rejects('an over-long value', { k: 'x'.repeat(MAX_AUTOMATION_METADATA_VALUE_LEN + 1) })
+  rejects('a nested object value', { k: { nested: 'v' } })
+  rejects('a non-string (number) value', { k: 1 })
+  rejects('an array input', ['a', 'b'])
+
+  it('validates BEFORE the discussion lookup — a bad map on an unknown id still errors', () => {
+    const deps = makeRunStarter()
+    const res = runStartDiscussion(
+      proj,
+      { discussionId: 'nope', metadata: { k: 1 } } as unknown as StartDiscussionArgs,
+      deps,
+    )
+    expect(res.isError).toBe(true)
+    expect(deps.started).toHaveLength(0)
+  })
+
+  it('continue_discussion never rewrites the persisted metadata', () => {
+    const d = seed(proj, 'Continued')
+    runStartDiscussion(proj, { discussionId: d.id, metadata: { team: 'infra' } }, makeRunStarter())
+    updateDiscussionStatus(d.id, 'completed')
+    const deps = makeContinueDeps()
+    expect(
+      runContinueDiscussion(proj, { discussionId: d.id, text: '再来一轮' }, deps).isError,
+    ).toBeFalsy()
+    expect(persisted(d.id)).toEqual({ team: 'infra' })
+    expect(deps.started[0].metadata).toEqual({ team: 'infra' })
   })
 })
 

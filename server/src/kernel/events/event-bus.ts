@@ -35,7 +35,11 @@ import type {
   SessionKind,
   VendorId,
 } from '@ccc/shared/protocol'
-import type { GenericEventEnvelope, IntentLifecycleEvent } from '@ccc/shared'
+import type {
+  DiscussionLifecycleEvent,
+  GenericEventEnvelope,
+  IntentLifecycleEvent,
+} from '@ccc/shared'
 
 /** Default event map for c3 kernel events. Extend this interface to add new topics. */
 export interface EventBusEvents {
@@ -149,6 +153,16 @@ export interface EventBusEvents {
    * one-to-one status transition.
    */
   'intent:lifecycle': { workspacePath: string } & IntentLifecycleEvent
+  /**
+   * A formal discussion orchestration boundary (`start` when the run is
+   * registered as live, `end` at its single settle path). Published ONLY by
+   * `startDiscussionRun` — the research pass is a separate preparation stage and
+   * publishes nothing here. It coexists with the generic `run:started` /
+   * `run:settled` pair the same run emits (neither is merged or suppressed), and
+   * carries the discussion's persisted business metadata so an automation can
+   * filter on the `start_discussion` caller's own context.
+   */
+  'discussion:lifecycle': { workspacePath: string } & DiscussionLifecycleEvent
   /**
    * The single topic for model-publishable events (the `publish_event` MCP tool)
    * and the server-side PR-create paths. The handler hands the validated,

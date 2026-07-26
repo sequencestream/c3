@@ -29,6 +29,7 @@ import {
   setAgentSession,
   setAgenda,
   setConclusion,
+  setDiscussionMetadata,
   setDiscussionResearchResult,
   updateDiscussionStatus,
 } from './store.js'
@@ -67,11 +68,13 @@ describe('schema', () => {
     expect(indexes).toContain('idx_disc_workspace_status')
     expect(indexes).toContain('idx_disc_msg_discussion')
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(5)
-    // v3 added the participant selection column; v5 added the organizer column.
+    expect(version?.user_version).toBe(6)
+    // v3 added the participant selection column; v5 the organizer column;
+    // v6 the free-form business metadata column.
     const cols = raw.all<{ name: string }>('PRAGMA table_info(discussions)').map((r) => r.name)
     expect(cols).toContain('participant_agent_ids')
     expect(cols).toContain('organizer_agent_id')
+    expect(cols).toContain('metadata')
   })
 })
 
@@ -370,6 +373,7 @@ describe('migration', () => {
     expect(got?.agenda).toEqual([]) // backfilled default '[]' → parsed to empty list
     expect(got?.agendaIndex).toBe(0) // backfilled default 0
     expect(got?.participantAgentIds).toEqual([]) // backfilled default '[]' → fallback all
+    expect(got?.metadata).toEqual({}) // backfilled default '{}' → parsed to empty map
 
     const cols = raw.all<{ name: string }>('PRAGMA table_info(discussions)').map((c) => c.name)
     expect(cols).toEqual(
@@ -381,6 +385,7 @@ describe('migration', () => {
         'agenda_index',
         'participant_agent_ids',
         'conclusion',
+        'metadata',
         'completed_at',
       ]),
     )
@@ -389,6 +394,44 @@ describe('migration', () => {
     resetStoreForTests()
     expect(() => listDiscussions(proj)).not.toThrow()
     expect(getDiscussion('old-1')?.goal).toBe('')
+    expect(getDiscussion('old-1')?.metadata).toEqual({})
+  })
+})
+
+describe('discussion metadata', () => {
+  it('defaults to an empty map on a freshly created discussion', () => {
+    const d = createDiscussion({ workspacePath: proj, title: 'T', type: 'design' })
+    expect(d.metadata).toEqual({})
+    expect(getDiscussion(d.id)?.metadata).toEqual({})
+  })
+
+  it('round-trips a flat map and replaces it wholesale on the next write', () => {
+    const d = createDiscussion({ workspacePath: proj, title: 'T', type: 'design' })
+    setDiscussionMetadata(d.id, { team: 'infra', ticket: 'C3-42' })
+    expect(getDiscussion(d.id)?.metadata).toEqual({ team: 'infra', ticket: 'C3-42' })
+    setDiscussionMetadata(d.id, { team: 'core' })
+    expect(getDiscussion(d.id)?.metadata).toEqual({ team: 'core' })
+  })
+
+  it('bumps updated_at', () => {
+    const d = createDiscussion({ workspacePath: proj, title: 'T', type: 'design' })
+    const raw = getDb()!
+    raw.run('UPDATE discussions SET updated_at=? WHERE id=?', 1, d.id)
+    setDiscussionMetadata(d.id, { k: 'v' })
+    expect(getDiscussion(d.id)!.updatedAt).toBeGreaterThan(1)
+  })
+
+  it('degrades a corrupt / non-object / non-string-valued persisted value to {}', () => {
+    const raw = getDb()!
+    for (const stored of ['not json', '[1,2]', 'null', '"str"', '']) {
+      const d = createDiscussion({ workspacePath: proj, title: 'T', type: 'design' })
+      raw.run('UPDATE discussions SET metadata=? WHERE id=?', stored, d.id)
+      expect(getDiscussion(d.id)?.metadata).toEqual({})
+    }
+    // A partially-valid object keeps only its string-valued entries.
+    const mixed = createDiscussion({ workspacePath: proj, title: 'T', type: 'design' })
+    raw.run('UPDATE discussions SET metadata=? WHERE id=?', '{"a":"1","b":2,"c":null}', mixed.id)
+    expect(getDiscussion(mixed.id)?.metadata).toEqual({ a: '1' })
   })
 })
 

@@ -1689,6 +1689,14 @@
             "label": "Spec 승인됨"
           }
         },
+        "discussion": {
+          "start": {
+            "label": "토론 시작"
+          },
+          "end": {
+            "label": "토론 종료"
+          }
+        },
         "hint": "이 작업 공간의 실행이 선택한 이벤트에 도달하면 실행됩니다.",
         "sessionKind": {
           "label": "세션 종류에서 실행",
@@ -1735,6 +1743,9 @@
           },
           "intent": {
             "label": "의도"
+          },
+          "discussion": {
+            "label": "토론"
           }
         },
         "action": {

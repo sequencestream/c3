@@ -60,8 +60,7 @@ export type FlatMetadataRejection =
 
 /** Outcome of {@link validateFlatMetadata}: the clean map, or the refusal reason. */
 export type FlatMetadataValidation =
-  | { ok: true; value: Record<string, string> }
-  | { ok: false; error: FlatMetadataRejection }
+  { ok: true; value: Record<string, string> } | { ok: false; error: FlatMetadataRejection }
 
 /**
  * Strictly validate a caller-supplied flat metadata map against the automation

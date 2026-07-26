@@ -68,7 +68,8 @@ c3
 │   │   ├── 人类参与                              # 人可发言进入讨论、暂停/恢复
 │   │   ├── 参与者定向                            # 创建时勾选参与 agent,空集回退全员,组织者恒并入
 │   │   ├── 讨论转意图                            # 把讨论结论转化为意图
-│   │   └── 讨论 MCP 工具                         # automation LLM 可 find/view/start/continue 讨论,含 in_progress 无存活run 的错误恢复
+│   │   ├── 讨论 MCP 工具                         # automation LLM 可 find/view/start/continue 讨论,含 in_progress 无存活run 的错误恢复
+│   │   └── 讨论生命周期事件                      # start_discussion 可带业务 metadata 持久化;编排唯一入口/收尾各发一次 discussion:start / discussion:end(complete/error/aborted),供自动化按 metadata 订阅
 │   │
 │   ├── automations 自动化                        # 按计划或响应事件跑智能体工作,无需每次人工输入
 │   │   ├── 自动化注册                            # 按工作区持久化(触发器 + 智能体任务 + 工具策略)

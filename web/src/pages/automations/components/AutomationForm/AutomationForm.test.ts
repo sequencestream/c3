@@ -481,6 +481,68 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(w.findAll('.sf-section[data-testid="section-trigger"] .sf-days').length).toBe(0)
   })
 
+  // ---- Discussion lifecycle subscription (catalog-driven, no bespoke panel) --
+
+  it('edit(event/discussion:start):回读为级联行,保存后原样产出 GenericEventFilter', async () => {
+    const w = mountForm({
+      automation: sched({
+        triggerType: 'event',
+        cronExpression: '',
+        eventFilters: [{ type: 'discussion:start' }],
+      }),
+    })
+    const row = w.find('[data-testid="event-filter-row"]')
+    expect(row.exists()).toBe(true)
+    // start 无状态维度 → 该行不渲染任何状态 chip。
+    expect(row.findAll('.sf-day')).toHaveLength(0)
+    await w.find('.sf-btn.primary').trigger('click')
+    const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
+    expect(input.eventFilters).toEqual([{ type: 'discussion:start' }])
+    // 非 run 生命周期 → 无 sessionKind 安全边界。
+    expect(input.eventSessionKindFilter).toBeNull()
+  })
+
+  it('edit(event/discussion:end):三个终态可选、已选态回读,保存后携带 statuses', async () => {
+    const w = mountForm({
+      automation: sched({
+        triggerType: 'event',
+        cronExpression: '',
+        eventFilters: [{ type: 'discussion:end', statuses: ['error'] }],
+      }),
+    })
+    const row = w.find('[data-testid="event-filter-row"]')
+    const chips = row.findAll('.sf-day').map((c) => c.text().trim())
+    // complete / error / aborted(复用 run 终态文案)+ 末尾的「其他」自由输入入口。
+    expect(chips).toEqual(['Completed', 'Error', 'Stopped', 'Other'])
+    const active = row
+      .findAll('.sf-day')
+      .filter((c) => c.classes().includes('active'))
+      .map((c) => c.text().trim())
+    expect(active).toEqual(['Error'])
+
+    // 追加 aborted 后保存 → 两个状态都进入过滤器。
+    await clickStatusChip(w, 0, 'Stopped')
+    await w.find('.sf-btn.primary').trigger('click')
+    const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
+    expect(input.eventFilters).toEqual([{ type: 'discussion:end', statuses: ['error', 'aborted'] }])
+  })
+
+  it('edit(event/discussion:end):附加 metadata 条件一并回读与产出', async () => {
+    const filter = {
+      type: 'discussion:end',
+      statuses: ['complete'],
+      metadata: { conditions: [{ key: 'team', value: 'infra' }], combinator: 'AND' as const },
+    }
+    const w = mountForm({
+      automation: sched({ triggerType: 'event', cronExpression: '', eventFilters: [filter] }),
+    })
+    const cond = w.find('[data-testid="metadata-condition-row"]')
+    expect((cond.findAll('input')[0].element as HTMLInputElement).value).toBe('team')
+    await w.find('.sf-btn.primary').trigger('click')
+    const [, input] = w.emitted('update')![0] as [string, Record<string, unknown>]
+    expect(input.eventFilters).toEqual([filter])
+  })
+
   // ---- Sectioned layout ----------------------------------------------------
 
   it('表单渲染为 5 个带标题的卡片区块', () => {

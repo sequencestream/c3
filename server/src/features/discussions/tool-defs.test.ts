@@ -223,6 +223,23 @@ describe('runStartDiscussion — metadata', () => {
     expect(deps.started[0].metadata).toEqual({ team: 'infra', ticket: 'C3-42' })
   })
 
+  it('is readable back through find_discussions (only when non-empty)', () => {
+    const withMeta = seed(proj, 'Annotated')
+    const without = seed(proj, 'Plain')
+    runStartDiscussion(
+      proj,
+      { discussionId: withMeta.id, metadata: { team: 'infra' } },
+      makeRunStarter(),
+    )
+    const list = runFindDiscussions(proj, {})
+    const rows = JSON.parse(list.content[0].text.split('\n').slice(1).join('\n')) as Array<{
+      id: string
+      metadata?: Record<string, string>
+    }>
+    expect(rows.find((r) => r.id === withMeta.id)?.metadata).toEqual({ team: 'infra' })
+    expect(rows.find((r) => r.id === without.id)).not.toHaveProperty('metadata')
+  })
+
   it('is readable back through view_discussion', () => {
     const d = seed(proj, 'Readable')
     runStartDiscussion(proj, { discussionId: d.id, metadata: { team: 'infra' } }, makeRunStarter())
@@ -241,9 +258,7 @@ describe('runStartDiscussion — metadata', () => {
     delete metadata[`k${MAX_AUTOMATION_METADATA_ENTRIES - 1}`]
     metadata[longKey] = 'v'
     const deps = makeRunStarter()
-    expect(
-      runStartDiscussion(proj, { discussionId: d.id, metadata }, deps).isError,
-    ).toBeFalsy()
+    expect(runStartDiscussion(proj, { discussionId: d.id, metadata }, deps).isError).toBeFalsy()
     expect(Object.keys(persisted(d.id))).toHaveLength(MAX_AUTOMATION_METADATA_ENTRIES)
     expect(persisted(d.id)[longKey]).toBe('v')
   })

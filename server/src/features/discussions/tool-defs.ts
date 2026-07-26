@@ -119,7 +119,7 @@ export type ContinueDiscussionArgs = { discussionId: string; text?: string }
 export const findDiscussionsDesc =
   '检索本项目已有讨论(只读)。用于感知当前项目里有哪些讨论、该继续/恢复哪一个,避免重复发起。' +
   '可按 status 过滤(可选,留空返回全部);返回精简列表(id、title、type、status、agendaIndex、' +
-  'agendaCount、hasConclusion、updatedAt),不含完整消息体。'
+  'agendaCount、hasConclusion、updatedAt,以及非空时的业务 metadata),不含完整消息体。'
 
 export const viewDiscussionDesc =
   '按 id 查看本项目单条讨论的完整详情(只读):含讨论记录本体与按 seq 排序的消息列表。' +
@@ -155,6 +155,9 @@ export function runFindDiscussions(
     agendaIndex: r.agendaIndex,
     agendaCount: r.agenda.length,
     hasConclusion: !!r.conclusion,
+    // The caller's own business annotations, so a list read confirms what
+    // `start_discussion` persisted. Omitted when empty to keep the row compact.
+    ...(Object.keys(r.metadata).length ? { metadata: r.metadata } : {}),
     updatedAt: r.updatedAt,
   }))
   return ok(

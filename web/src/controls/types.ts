@@ -173,6 +173,8 @@ export interface AppMethods {
   resumeDiscussion(): void
   convertDiscussionToIntent(): void
   submitDiscussionInput(): void
+  /** Bind the global active session to a discussion's research session (研究会话 tab). */
+  openResearchSession(sessionId: string): void
 
   // automations
   openAutomations(path: string): void

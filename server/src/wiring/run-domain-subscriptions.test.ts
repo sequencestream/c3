@@ -107,6 +107,7 @@ describe('resident domain subscriptions — discussion + automation', () => {
   const mockBroadcastIntentSessions = vi.fn()
   const mockBroadcastWaitUserEvents = vi.fn()
   const mockPublishEvent = vi.fn()
+  const mockSettleResearchTurn = vi.fn()
 
   function install(): void {
     const deps: DomainSubDeps = {
@@ -122,6 +123,7 @@ describe('resident domain subscriptions — discussion + automation', () => {
       broadcastWaitUserEvents: mockBroadcastWaitUserEvents,
       normalizeEvent: () => ({ ok: false, reason: 'not wired in this test' }),
       publishEvent: mockPublishEvent,
+      settleResearchTurn: mockSettleResearchTurn,
     }
     registerRunDomainSubscriptions(deps)
   }

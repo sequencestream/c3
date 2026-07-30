@@ -37,6 +37,7 @@ import type { VendorAdapter } from '../kernel/agent/adapters/types.js'
 import {
   canAutoStartDiscussion,
   researchDiscussionContext,
+  resolveResearchAgent,
 } from '../features/discussions/research.js'
 import { defaultDiscussionDeps, runDiscussion } from '../features/discussions/orchestrator.js'
 import { AgentSessionManager } from '../features/discussions/agent-session-manager.js'
@@ -57,7 +58,10 @@ import {
   deleteAllByDiscussion as storeDeleteAllByDiscussion,
   getDiscussion,
   setDiscussionResearchResult,
+  setDiscussionResearchSessionId,
 } from '../features/discussions/store.js'
+import { emit, ensureRuntime, finalizeRun, getRuntime, setStatus } from '../runs.js'
+import { freezeSessionAgent } from '../kernel/agent-config/index.js'
 import {
   deleteByVendorId,
   touchByOwner,
@@ -95,6 +99,16 @@ function discussionSessionTitle(discussionTitle: string, agentName: string): str
 }
 
 /**
+ * Projection title for a discussion's research session. Same `<discussion> · <role>`
+ * shape as the per-agent sessions above, so the sessions page's 「讨论」 category
+ * reads consistently; the role segment is the fixed researcher marker rather than an
+ * agent display name (research is not any participant's session).
+ */
+function researchSessionTitle(discussionTitle: string): string {
+  return `${discussionTitle} · Research`
+}
+
+/**
  * The pause gate handed to the engine: resolves at once unless paused, else
  * blocks until resume() wakes the waiters or the run is aborted. Pure factory
  * — caller passes the per-run control, gets back the gate closure.
@@ -110,10 +124,35 @@ const makeDiscussionGate =
     })
   }
 
-/** The two run starters the long-lived `KernelContext` exposes. */
+/** The two run starters the long-lived `KernelContext` exposes, plus the research settle rule. */
 export interface DiscussionRuns {
   startDiscussionRun: (discussion: Discussion) => void
   startResearchRun: (discussion: Discussion) => void
+  /**
+   * The single settle rule for a research session's turn — applied identically to
+   * the first, unattended pass and to every user follow-up. See
+   * {@link createDiscussionRuns} for the semantics.
+   */
+  settleResearchTurn: (discussionId: string, researchResult: string, ok: boolean) => void
+}
+
+/**
+ * The final assistant text of a session's LAST turn, read back from its runtime
+ * buffer — the research write-back's text source for a follow-up turn (the first
+ * pass captures the same value inline as it streams). Turn-scoped: a `user_text`
+ * event resets the accumulator, so an earlier turn's findings never leak into a
+ * later, empty one. The claude path emits one `assistant_text` per whole assistant
+ * message, so "last one wins" is the same rule the unattended pass applies.
+ */
+function finalAssistantText(sessionId: string): string {
+  const rt = getRuntime(sessionId)
+  if (!rt) return ''
+  let text = ''
+  for (const ev of rt.buffer) {
+    if (ev.type === 'user_text') text = ''
+    else if (ev.type === 'assistant_text') text = ev.text
+  }
+  return text.trim()
 }
 
 /**
@@ -271,17 +310,60 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
       })
   }
 
+  /**
+   * The ONE settle rule for a research session's turn — the first unattended pass
+   * and every user follow-up go through this and nothing else:
+   *
+   *  1. A non-empty final text REPLACES `researchResult`; an empty or failed turn
+   *     leaves the previous value untouched (a bad follow-up can never clobber good
+   *     findings).
+   *  2. The refreshed discussion list is pushed, so the 「研究」 markdown tab updates
+   *     in place with no manual refresh.
+   *  3. The auto-start guard is re-evaluated on the FRESHEST record — a still-draft
+   *     discussion with no live run starts its orchestration. That keeps the initial
+   *     auto-start, lets a follow-up rescue a research that failed first time round,
+   *     and cannot re-trigger on an already-running or finished discussion.
+   *
+   * `ok=false` (the turn threw / was aborted) skips only step 3: a failed research
+   * never auto-starts, leaving the draft for the manual Start fallback.
+   */
+  const settleResearchTurn = (discussionId: string, researchResult: string, ok: boolean): void => {
+    const text = researchResult.trim()
+    if (text) {
+      try {
+        setDiscussionResearchResult(discussionId, text)
+      } catch (err) {
+        console.warn(`[c3] discussion research write-back failed: ${errMsg(err)}`)
+      }
+    }
+    const latest = getDiscussion(discussionId)
+    if (!latest) return
+    broadcastDiscussions(resolveWorkspaceRoot(latest.workspaceId)!)
+    if (!ok) return
+    if (canAutoStartDiscussion(latest, hasDiscussionRun(discussionId))) {
+      startDiscussionRun(latest)
+    }
+  }
+
   // Start the read-only research run for a freshly-created discussion as an
   // observable run (mirrors `startDiscussionRun`): register liveness, broadcast
-  // `running`, stream each turn, and on settle persist the result, broadcast
-  // `ended`, then auto-start the orchestration on success. Fire-and-forget —
-  // research never blocks creation.
+  // `running`, stream each turn, and on settle apply the shared research settle
+  // rule. Fire-and-forget — research never blocks creation.
+  //
+  // The run is ALSO a first-class session: as soon as the vendor reports its
+  // session id we persist it on the discussion, freeze the session→agent fact,
+  // register a `SessionRuntime` under it (so the 「研究会话」 tab shows the
+  // unattended run live, with a working Stop) and project a session-metadata row
+  // (so it is listed under the sessions page's 「讨论」 category). The runtime-only
+  // research stream + liveness broadcasts are kept untouched alongside it, so
+  // 「过程会话」 renders exactly as before.
   //
   // Publishes `run:started`/`run:bound`/`run:settled` with sessionKind='discussion'
   // on the kernel event bus. The `ended`-before-auto-start order means the
   // right pane switches research → discussion in one batch; a failed research
   // broadcasts `ended` without auto-start, surfacing the manual Start fallback.
   const startResearchRun = (discussion: Discussion): void => {
+    const workspacePath = resolveWorkspaceRoot(discussion.workspaceId)!
     const abort = new AbortController()
     // Fresh runtime transcript for this run (clears any stale buffer from a prior
     // aborted run on the same discussion id).
@@ -292,17 +374,79 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
     // Publish research run lifecycle events (2026-06-08-010).
     eventBus.publish('run:started', {
       sessionId: discussion.id,
-      workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
+      workspacePath,
       sessionKind: 'discussion',
       runKind: 'internal',
     })
     eventBus.publish('run:bound', {
       prevId: discussion.id,
       realId: discussion.id,
-      workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
+      workspacePath,
     })
 
+    // Session identity for this run, bound the moment the vendor reports it. Wire
+    // events emitted before that point (there are normally none) are held and
+    // flushed on bind, so the runtime's buffer is the complete run.
+    let researchSessionId: string | null = null
+    const beforeBind: Parameters<typeof emit>[1][] = []
+    const bindResearchSession = (sessionId: string): void => {
+      if (researchSessionId) return
+      researchSessionId = sessionId
+      try {
+        setDiscussionResearchSessionId(discussion.id, sessionId)
+        // Freeze the session→agent fact so a follow-up resolves the SAME claude
+        // agent (and its store scope) and can actually resume this vendor session.
+        freezeSessionAgent(sessionId, sessionId, resolveResearchAgent().id, workspacePath, 'host')
+        const rt = ensureRuntime(
+          sessionId,
+          workspacePath,
+          'default',
+          [],
+          'discussion',
+          undefined,
+          'internal',
+        )
+        // The research marker (see `SessionRuntime.researchDiscussionId`): what makes
+        // the read-only research profile apply to this session's follow-up turns.
+        rt.researchDiscussionId = discussion.id
+        rt.run = { abort, handle: null }
+        setStatus(sessionId, 'running')
+        upsertBoundRow({
+          sessionId,
+          workspacePath,
+          vendor: 'claude',
+          agentId: resolveResearchAgent().id,
+          title: researchSessionTitle(getDiscussion(discussion.id)?.title ?? discussion.title),
+          sessionKind: 'discussion',
+          ownerKind: 'discussion',
+          ownerId: discussion.id,
+        })
+        for (const ev of beforeBind) emit(sessionId, ev)
+        beforeBind.length = 0
+        // Push the list so the open discussion learns its `researchSessionId` and
+        // can render (and select) the 「研究会话」 tab while the run is still live.
+        broadcastDiscussions(workspacePath)
+      } catch (err) {
+        console.warn(`[c3] discussion research session bind failed: ${errMsg(err)}`)
+      }
+    }
+    // Tear the runtime's in-flight run down (idempotent). Keeps the runtime itself
+    // so a viewer's replay survives; the session is reopened from the vendor's own
+    // transcript once the runtime is eventually dropped.
+    const releaseResearchSession = (): void => {
+      if (!researchSessionId) return
+      const rt = getRuntime(researchSessionId)
+      if (rt) rt.run = null
+      finalizeRun(researchSessionId)
+    }
+
     void researchDiscussionContext(discussion, {
+      signal: abort.signal,
+      onSessionId: bindResearchSession,
+      onWire: (ev) => {
+        if (researchSessionId) emit(researchSessionId, ev)
+        else beforeBind.push(ev)
+      },
       onMessage: (item) => {
         // Keep a runtime copy for mid-research reconnect (replayed on the
         // `discussion_detail` snapshot) before fanning the live item out.
@@ -316,41 +460,34 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         const reason: RunEndReason = abort.signal.aborted ? 'aborted' : ok ? 'complete' : 'error'
         eventBus.publish('run:settled', {
           sessionId: discussion.id,
-          workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
+          workspacePath,
           reason,
           sessionKind: 'discussion',
           runKind: 'internal',
         })
 
-        // Store the research output in its own field; the user's original `context`
-        // is never overwritten. Empty output leaves it as ''.
-        if (researchResult) {
-          setDiscussionResearchResult(discussion.id, researchResult)
-        }
+        releaseResearchSession()
         deleteResearchRun(discussion.id)
         // Research ended → the right pane leaves the research phase, so the runtime
         // transcript is no longer needed (and `researchStates` no longer lists it).
         clearResearchTranscript(discussion.id)
         broadcastResearchRunStatus(discussion.id, 'ended')
-        // Research failed → leave it a draft for a manual Start. On success,
-        // re-validate on the freshest record (it may have been manually Started
-        // or cancelled mid-research) before auto-starting the orchestration.
-        if (!ok) return
-        const latest = getDiscussion(discussion.id)
-        if (canAutoStartDiscussion(latest, hasDiscussionRun(discussion.id))) {
-          startDiscussionRun(latest as Discussion)
-        }
+        // One rule for both lifecycles: write back the findings, push the list, and
+        // re-evaluate auto-start. An aborted run counts as failed — it never
+        // auto-starts, leaving the draft for the manual Start fallback.
+        settleResearchTurn(discussion.id, researchResult, reason === 'complete')
       })
       .catch((err) => {
         // Defensive: research itself swallows its run error (returns ok=false),
         // so this only fires on a wiring fault. Ensure settled fires for liveness.
         eventBus.publish('run:settled', {
           sessionId: discussion.id,
-          workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
+          workspacePath,
           reason: 'error',
           sessionKind: 'discussion',
           runKind: 'internal',
         })
+        releaseResearchSession()
         deleteResearchRun(discussion.id)
         clearResearchTranscript(discussion.id)
         broadcastResearchRunStatus(discussion.id, 'ended')
@@ -358,5 +495,20 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
       })
   }
 
-  return { startDiscussionRun, startResearchRun }
+  return { startDiscussionRun, startResearchRun, settleResearchTurn }
+}
+
+/**
+ * Read a research session's final text off its runtime and apply the shared settle
+ * rule. This is the FOLLOW-UP half of the research write-back: the turn ran through
+ * the generic session path, so the only thing the discussion domain has to add is
+ * "take what the researcher just said and make it the findings".
+ */
+export function settleResearchSessionRun(
+  runs: Pick<DiscussionRuns, 'settleResearchTurn'>,
+  discussionId: string,
+  sessionId: string,
+  reason: RunEndReason,
+): void {
+  runs.settleResearchTurn(discussionId, finalAssistantText(sessionId), reason === 'complete')
 }

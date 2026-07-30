@@ -106,6 +106,16 @@ export function installDiscussionActions(ctx: AppCtx): void {
     discussionInput.value = ''
   }
 
+  // The 「研究会话」 tab asks for its session to become the globally active one, so the
+  // embedded chat column binds. Same shape as `selectWorkSession` on the intents side:
+  // fill the active session but stay on the discussion page — no console jump, no
+  // console-session pin. Follow-up prompts and Stop then ride the ordinary session
+  // channel from there.
+  ctx.openResearchSession = (sessionId: string): void => {
+    if (!discussionsProject.value || !sessionId) return
+    send({ type: 'select_session', workspaceId: discussionsProject.value, sessionId })
+  }
+
   // "Convert to Intent" in a completed discussion's title bar.
   ctx.convertDiscussionToIntent = (): void => {
     const d = activeDiscussion.value

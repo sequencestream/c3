@@ -113,6 +113,25 @@ export interface SpecProfile {
 }
 
 /**
+ * The discussion-research launch profile (read-only `discussion-research` gate +
+ * disallowed-tools lock + the research system prompt), resolved before the vendor
+ * fork in `launchRun`. Present ONLY for a runtime carrying the research marker
+ * (`rt.researchDiscussionId`) — NOT for every `sessionKind === 'discussion'`
+ * runtime, since the orchestrator's per-agent sessions wear that kind too.
+ *
+ * The first (unattended) research pass applies this profile itself; this type
+ * exists so a follow-up turn on the same session — which flows through the generic
+ * launch path — re-applies the identical lock instead of inheriting a work run's
+ * write-capable surface. The research agent has no MCP tools, so unlike
+ * intent/spec there is no `bindMcp`.
+ */
+export interface ResearchProfile {
+  appendSystemPrompt: string
+  disallowedTools: string[]
+  gate: 'discussion-research'
+}
+
+/**
  * The base launch profile bound to EVERY ordinary work session (`rt.sessionKind ===
  * 'work'`), resolved before the vendor fork in `launchRun` (2026-06-20). It
  * carries ONLY the `publish_event` MCP tool — no gate override, no

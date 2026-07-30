@@ -645,7 +645,9 @@
       "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
       "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
     },
-    "create": { "label": "Add intent" },
+    "create": {
+      "label": "Add intent"
+    },
     "startDev": {
       "confirmUnfinishedDeps": "This intent has unfinished dependencies. Start work anyway?"
     },
@@ -2018,8 +2020,11 @@
       "conclusion": {
         "label": "Conclusion"
       },
+      "researchSession": {
+        "label": "Research session"
+      },
       "process": {
-        "label": "Process"
+        "label": "Process session"
       },
       "details": {
         "label": "Details"

@@ -930,7 +930,7 @@ automation 的执行日志。
 
 - **`DiscussionStatus`** — `'draft' | 'in_progress' | 'completed' | 'cancelled'`。
 - **`DiscussionSpeakerKind`** — `'organizer' | 'agent' | 'human'`。消息作者类别。
-- **`Discussion`** — `{ id, workspacePath, title, type, goal, context, researchResult, status, agenda, agendaIndex, conclusion, createdAt, updatedAt, completedAt }`。项目范围 discussion。`context` 是用户的原始输入，永不覆写。`researchResult` 是只读研究 agent 的完成输出，独立于 `context`。`agenda` 是 organizer 的有序子主题（`[]` 表示未设置）；`agendaIndex` 是当前子主题的 0 基索引。
+- **`Discussion`** — `{ id, workspacePath, title, type, goal, context, researchResult, researchSessionId?, status, agenda, agendaIndex, conclusion, createdAt, updatedAt, completedAt }`。项目范围 discussion。`context` 是用户的原始输入，永不覆写。`researchResult` 是只读研究 agent 的完成输出，独立于 `context`。`researchSessionId` 是研究 run 自身的 vendor session id：研究不是一次性调用而是**正式会话**（transcript 由 vendor 落盘、结束后仍可 resume、在会话页归入既有的 `discussion` 类）。研究上报 session id 时写入；本次改动之前创建的 discussion，以及在上报 id 之前就失败的 run，该字段**缺省**（忽略它的客户端行为与改动前完全一致）。研究会话的追问与停止**复用既有会话通道**（`select_session` / `user_prompt` / `stop_run`），不新增任何 client→server 消息类型；一轮结算时其最后一条助手文本会替换 `researchResult` 并推送刷新后的 `discussions`。`agenda` 是 organizer 的有序子主题（`[]` 表示未设置）；`agendaIndex` 是当前子主题的 0 基索引。
 - **`DiscussionMessage`** — `{ id, discussionId, seq, speakerKind, speakerAgentId, speakerName, content, createdAt }`。一条消息，按每个 discussion 单调递增的 `seq`（从 1 开始）排序。
 - **`ResearchMessage`** — `{ discussionId, seq, createdAt } & ({ kind: 'text', text } | { kind: 'tool_use', toolUseId, toolName, input } | { kind: 'tool_result', toolUseId, content, isError })`。研究 run 的流式项,变体镜像 agent 流以渲染标准转录(文本气泡 + 可折叠工具块)。仅运行时——不持久化到 DB,但服务器保留有界运行时副本经 `discussion_detail` 重放。
 

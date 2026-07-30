@@ -36,6 +36,14 @@ vi.mock('../features/discussions/orchestrator.js', () => ({
 vi.mock('../features/discussions/research.js', () => ({
   canAutoStartDiscussion: vi.fn(() => false),
   researchDiscussionContext: vi.fn(async () => ({ ok: true, researchResult: 'R' })),
+  resolveResearchAgent: vi.fn(() => ({ id: 'system', vendor: 'claude' })),
+}))
+
+// The session→agent fact store writes to the real settings file; the binding itself
+// is asserted through this spy rather than by reading config from disk.
+vi.mock('../kernel/agent-config/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../kernel/agent-config/index.js')>()),
+  freezeSessionAgent: vi.fn(),
 }))
 
 vi.mock('../features/discussions/agent-session-manager.js', () => ({
@@ -48,7 +56,7 @@ vi.mock('../features/works/work-session-store.js', () => ({
   upsertBoundRow: vi.fn(),
 }))
 
-import type { Discussion } from '@ccc/shared/protocol'
+import type { Discussion, ServerToClient } from '@ccc/shared/protocol'
 import type { DiscussionLifecycleEvent } from '@ccc/shared'
 import { EventBus, type EventBusEvents } from '../kernel/events/event-bus.js'
 import type { VendorAdapter } from '../kernel/agent/adapters/types.js'
@@ -68,7 +76,10 @@ import {
   canAutoStartDiscussion,
   researchDiscussionContext,
 } from '../features/discussions/research.js'
-import { createDiscussionRuns } from './discussion-runs.js'
+import { createDiscussionRuns, settleResearchSessionRun } from './discussion-runs.js'
+import { ensureRuntime, getRuntime, removeRuntime } from '../runs.js'
+import { freezeSessionAgent } from '../kernel/agent-config/index.js'
+import { upsertBoundRow } from '../features/works/work-session-store.js'
 import type { KernelContext } from '../kernel/types.js'
 import type { Conn } from '../transport/handler-registry.js'
 
@@ -123,6 +134,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  // The runtime registry is module-global; drop the sessions this file registered so
+  // one test's buffer can never leak into the next.
+  for (const id of ['vsess-1', 'vsess-stop', 'vsess-fu', 'vsess-mute']) removeRuntime(id)
   resetDbForTests()
   delete process.env.C3_DB_PATH
   rmSync(dir, { recursive: true, force: true })
@@ -297,5 +311,158 @@ describe('startResearchRun — not an orchestration', () => {
     await flush()
     expect(phases()).toEqual(['start', 'end'])
     expect(events[0].metadata).toEqual({ team: 'infra' })
+  })
+})
+
+describe('startResearchRun — the research run is a first-class session', () => {
+  /** Drive the mocked research routine: report a session id, stream, then resolve. */
+  function research(
+    sessionId: string | null,
+    wire: ServerToClient[] = [],
+    result = { ok: true, researchResult: 'R' },
+  ): void {
+    vi.mocked(researchDiscussionContext).mockImplementation(async (_d, opts = {}) => {
+      if (sessionId) opts.onSessionId?.(sessionId)
+      for (const ev of wire) opts.onWire?.(ev)
+      return result
+    })
+  }
+
+  it('persists the captured session id, registers a running runtime and projects a session row', async () => {
+    research('vsess-1', [{ type: 'assistant_text', text: 'partial' }])
+    const d = seed()
+    let liveStatus: string | undefined
+    vi.mocked(researchDiscussionContext).mockImplementation(async (_d, opts = {}) => {
+      opts.onSessionId?.('vsess-1')
+      opts.onWire?.({ type: 'assistant_text', text: 'partial' })
+      // Observed from INSIDE the run — the session must read as running while alive.
+      liveStatus = getRuntime('vsess-1')?.status
+      return { ok: true, researchResult: 'FINDINGS' }
+    })
+
+    runs.startResearchRun(d)
+    await flush()
+
+    expect(getDiscussion(d.id)?.researchSessionId).toBe('vsess-1')
+    expect(liveStatus).toBe('running')
+    // The research marker is what makes the read-only profile apply to follow-ups.
+    expect(getRuntime('vsess-1')?.researchDiscussionId).toBe(d.id)
+    expect(getRuntime('vsess-1')?.sessionKind).toBe('discussion')
+    // Wire events land in the runtime buffer, so a viewer sees the unattended run.
+    expect(getRuntime('vsess-1')?.buffer).toContainEqual({
+      type: 'assistant_text',
+      text: 'partial',
+    })
+    // Bound to the claude research agent so a follow-up can actually resume it.
+    expect(vi.mocked(freezeSessionAgent)).toHaveBeenCalledWith(
+      'vsess-1',
+      'vsess-1',
+      'system',
+      proj,
+      'host',
+    )
+    // Listed on the sessions page under the existing discussion category.
+    expect(vi.mocked(upsertBoundRow)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'vsess-1',
+        sessionKind: 'discussion',
+        ownerKind: 'discussion',
+        ownerId: d.id,
+      }),
+    )
+    // The turn is over: no in-flight run left on the runtime.
+    expect(getRuntime('vsess-1')?.run).toBeNull()
+  })
+
+  it('Stop on the research session aborts the run through the runtime', async () => {
+    let aborted = false
+    vi.mocked(researchDiscussionContext).mockImplementation(async (_d, opts = {}) => {
+      opts.onSessionId?.('vsess-stop')
+      // The status bar's Stop aborts `rt.run.abort` — the research run must see it.
+      getRuntime('vsess-stop')!.run!.abort.abort()
+      aborted = opts.signal?.aborted ?? false
+      return { ok: false, researchResult: '' }
+    })
+    runs.startResearchRun(seed())
+    await flush()
+    expect(aborted).toBe(true)
+  })
+
+  it('a run that dies before the vendor reports an id leaves the discussion without a session', async () => {
+    research(null, [], { ok: false, researchResult: '' })
+    const d = seed()
+    runs.startResearchRun(d)
+    await flush()
+    expect(getDiscussion(d.id)?.researchSessionId).toBeUndefined()
+    expect(vi.mocked(upsertBoundRow)).not.toHaveBeenCalled()
+  })
+})
+
+describe('settleResearchTurn — one write-back rule for both lifecycles', () => {
+  it('a non-empty result replaces researchResult', () => {
+    const d = seed()
+    runs.settleResearchTurn(d.id, '  NEW FINDINGS  ', true)
+    expect(getDiscussion(d.id)?.researchResult).toBe('NEW FINDINGS')
+  })
+
+  it('an empty or blank result leaves the previous findings untouched', () => {
+    const d = seed()
+    runs.settleResearchTurn(d.id, 'FIRST PASS', true)
+    runs.settleResearchTurn(d.id, '   \n ', true)
+    expect(getDiscussion(d.id)?.researchResult).toBe('FIRST PASS')
+  })
+
+  it('a failed turn keeps the previous findings AND never auto-starts', () => {
+    vi.mocked(canAutoStartDiscussion).mockReturnValue(true)
+    const d = seed()
+    runs.settleResearchTurn(d.id, 'FIRST PASS', true)
+    events.length = 0
+    runs.settleResearchTurn(d.id, '', false)
+    expect(getDiscussion(d.id)?.researchResult).toBe('FIRST PASS')
+    expect(events).toEqual([])
+  })
+
+  it('a successful turn on a still-draft discussion auto-starts the orchestration', async () => {
+    vi.mocked(canAutoStartDiscussion).mockReturnValue(true)
+    const d = seed()
+    runs.settleResearchTurn(d.id, 'FINDINGS', true)
+    await flush()
+    expect(phases()).toEqual(['start', 'end'])
+  })
+
+  it('the first research pass writes back through the same rule', async () => {
+    vi.mocked(researchDiscussionContext).mockResolvedValue({
+      ok: true,
+      researchResult: 'FIRST PASS',
+    })
+    const d = seed()
+    runs.startResearchRun(d)
+    await flush()
+    expect(getDiscussion(d.id)?.researchResult).toBe('FIRST PASS')
+  })
+})
+
+describe('settleResearchSessionRun — the follow-up half', () => {
+  it('takes the LAST assistant text of the last turn off the runtime and writes it back', () => {
+    const d = seed()
+    const rt = ensureRuntime('vsess-fu', proj, 'default', [], 'discussion', undefined, 'internal')
+    rt.buffer.push(
+      { type: 'user_text', text: 'first research prompt' },
+      { type: 'assistant_text', text: 'OLD FINDINGS' },
+      { type: 'user_text', text: 'please re-check the cache layer' },
+      { type: 'assistant_text', text: 'interim note' },
+      { type: 'assistant_text', text: 'CORRECTED FINDINGS' },
+    )
+    settleResearchSessionRun(runs, d.id, 'vsess-fu', 'complete')
+    expect(getDiscussion(d.id)?.researchResult).toBe('CORRECTED FINDINGS')
+  })
+
+  it('a turn that produced no assistant text leaves the previous findings alone', () => {
+    const d = seed()
+    runs.settleResearchTurn(d.id, 'FIRST PASS', true)
+    const rt = ensureRuntime('vsess-mute', proj, 'default', [], 'discussion', undefined, 'internal')
+    rt.buffer.push({ type: 'user_text', text: 'a question' })
+    settleResearchSessionRun(runs, d.id, 'vsess-mute', 'complete')
+    expect(getDiscussion(d.id)?.researchResult).toBe('FIRST PASS')
   })
 })

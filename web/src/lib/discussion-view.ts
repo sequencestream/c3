@@ -349,10 +349,12 @@ export function clearDispatchAgent(
  *
  * The markdown tabs — goal / context / research / conclusion — render their text
  * via MarkdownText (:markdown) and appear only when the matching field is non-empty
- * after trim. Two tabs are always present: `process` (the live research / discussion
- * stream, agenda, dispatch and composer) and `details` (structured meta the component
- * renders itself, not as Markdown). The stable order is goal, context, research,
- * conclusion, process, details.
+ * after trim. `researchSession` is the discussion's research session rendered as a
+ * real chat column (transcript + status bar + composer); it appears only once the
+ * discussion has a `researchSessionId`. Two tabs are always present: `process` (the
+ * live research / discussion stream, agenda, dispatch and composer) and `details`
+ * (structured meta the component renders itself, not as Markdown). The stable order
+ * is goal, context, research, conclusion, researchSession, process, details.
  *
  * Because `process` and `details` always exist the list is never empty, so a default
  * tab is always resolvable. All tab copy flows through the typed `t` so no English
@@ -360,12 +362,15 @@ export function clearDispatchAgent(
  * order, picks the default and corrects the active tab when it goes out of view.
  */
 export type DiscussionTabKind =
-  'goal' | 'context' | 'research' | 'conclusion' | 'process' | 'details'
+  'goal' | 'context' | 'research' | 'conclusion' | 'researchSession' | 'process' | 'details'
 
 export interface DiscussionTab {
   kind: DiscussionTabKind
   label: string
-  /** Markdown body for goal/context/research/conclusion; `null` for `process` / `details`. */
+  /**
+   * Markdown body for goal/context/research/conclusion; `null` for the three
+   * component-rendered tabs (`researchSession` / `process` / `details`).
+   */
   body: string | null
 }
 
@@ -375,6 +380,7 @@ export type DiscussionDetailTabI18nKey =
   | 'discussion.tabs.context.label'
   | 'discussion.tabs.research.label'
   | 'discussion.tabs.conclusion.label'
+  | 'discussion.tabs.researchSession.label'
   | 'discussion.tabs.process.label'
   | 'discussion.tabs.details.label'
 
@@ -405,6 +411,13 @@ export function discussionDetailTabs(
       body: d.conclusion,
     })
   }
+  if (d.researchSessionId?.trim()) {
+    tabs.push({
+      kind: 'researchSession',
+      label: t('discussion.tabs.researchSession.label'),
+      body: null,
+    })
+  }
   tabs.push({ kind: 'process', label: t('discussion.tabs.process.label'), body: null })
   tabs.push({ kind: 'details', label: t('discussion.tabs.details.label'), body: null })
   return tabs
@@ -423,9 +436,20 @@ const DEFAULT_TAB_PRIORITY: readonly DiscussionTabKind[] = [
   'goal',
 ]
 
-/** First visible tab along the priority chain; falls back to the first tab, then `process`. */
-export function defaultDiscussionTab(tabs: DiscussionTab[]): DiscussionTabKind {
+/**
+ * First visible tab along the priority chain; falls back to the first tab, then `process`.
+ *
+ * `researchLive` short-circuits the chain: while the research run is in flight, opening
+ * the discussion lands on 「研究会话」 — that is where the run can be watched, stopped and
+ * steered. It is deliberately NOT in the static chain, so once research has settled the
+ * default goes back to conclusion → process → research → goal.
+ */
+export function defaultDiscussionTab(
+  tabs: DiscussionTab[],
+  researchLive = false,
+): DiscussionTabKind {
   const present = new Set(tabs.map((tb) => tb.kind))
+  if (researchLive && present.has('researchSession')) return 'researchSession'
   for (const kind of DEFAULT_TAB_PRIORITY) {
     if (present.has(kind)) return kind
   }
@@ -440,8 +464,9 @@ export function defaultDiscussionTab(tabs: DiscussionTab[]): DiscussionTabKind {
 export function correctActiveTab(
   tabs: DiscussionTab[],
   current: DiscussionTabKind,
+  researchLive = false,
 ): DiscussionTabKind {
-  return tabs.some((tb) => tb.kind === current) ? current : defaultDiscussionTab(tabs)
+  return tabs.some((tb) => tb.kind === current) ? current : defaultDiscussionTab(tabs, researchLive)
 }
 
 /** Header toggle button copy + title, reflecting the state it switches *to* on click. */

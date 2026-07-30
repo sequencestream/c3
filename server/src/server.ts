@@ -36,6 +36,7 @@ import { setWorkflowHooks } from './features/intents/workflow.js'
 import { setIntentLifecycleEventBus } from './features/intents/lifecycle-events.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { buildSpecAgentPrompt } from './features/intents/spec-prompt.js'
+import { DISCUSSION_RESEARCH_PROMPT } from './features/discussions/research.js'
 import { runFind, runView } from './features/intents/tool-defs.js'
 import { gatedSave } from './features/intents/save-gate.js'
 import { normalizeGenericEventDefault } from './features/events/default-normalizer.js'
@@ -528,6 +529,17 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       bindMcp: (binding) => specQueryMcp.bind(binding),
       gate: 'spec' as const,
     }),
+    // Discussion-research profile (read-only gate + disallowed-tools lock + the
+    // research system prompt). The first, unattended research pass applies this
+    // itself; this wiring is what re-applies it to a FOLLOW-UP turn on the same
+    // session, which flows through the generic launch path. Selected by the
+    // runtime's research marker, never by `sessionKind` alone — the orchestrator's
+    // per-agent discussion sessions must not inherit the research role.
+    researchProfile: () => ({
+      appendSystemPrompt: DISCUSSION_RESEARCH_PROMPT,
+      disallowedTools: INTENT_DISALLOWED_TOOLS,
+      gate: 'discussion-research' as const,
+    }),
     // Work-session base MCP profile: every new and resumed work session gets
     // `publish_event` so the model can publish a vendor-neutral generic event
     // after acting with its own tools. No gate override, no disallowed-tools lock
@@ -639,6 +651,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastWaitUserEvents: broadcasts.broadcastWaitUserEvents,
     normalizeEvent,
     publishEvent,
+    settleResearchTurn: discussionRuns.settleResearchTurn,
   })
 
   // 40+ case switch collapsed to a single registry dispatch (ADR-0009).

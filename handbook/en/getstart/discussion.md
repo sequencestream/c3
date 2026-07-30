@@ -60,17 +60,18 @@ c3 (Code Creative Center) provides multi-agent round-table deliberation through 
 
 In c3, a discussion is a structured record within a workspace with the following main fields:
 
-| Component          | Description                                                                                                                          |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **type**           | One of Brainstorm / Decision / Review / Planning / Retro, which determines how each phase is guided                                  |
-| **goal**           | The question this discussion must answer or the purpose it must achieve; the title is derived from it                                |
-| **context**        | The background you provide, kept permanently as your original input and never overwritten                                            |
-| **researchResult** | The current-state research produced by the read-only research agent before the discussion starts, stored separately from the context |
-| **organizer**      | The organizing agent designated at creation, responsible for running the discussion and writing the conclusion                       |
-| **participants**   | The set of agents selected at creation, which may mix models from different vendors                                                  |
-| **agenda**         | The ordered list of sub-topics the organizer derives from the goal; the discussion advances along it                                 |
-| **conclusion**     | The final output of the discussion, convertible into an intent                                                                       |
-| **status**         | The `draft` → `in_progress` → `completed` / `cancelled` state machine                                                                |
+| Component           | Description                                                                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **type**            | One of Brainstorm / Decision / Review / Planning / Retro, which determines how each phase is guided                                                         |
+| **goal**            | The question this discussion must answer or the purpose it must achieve; the title is derived from it                                                       |
+| **context**         | The background you provide, kept permanently as your original input and never overwritten                                                                   |
+| **researchResult**  | The current-state research produced by the read-only research agent before the discussion starts, stored separately from the context                        |
+| **researchSession** | The research run's own session. Research is not a one-shot call: the process stays viewable, and a follow-up after it finishes rewrites the research result |
+| **organizer**       | The organizing agent designated at creation, responsible for running the discussion and writing the conclusion                                              |
+| **participants**    | The set of agents selected at creation, which may mix models from different vendors                                                                         |
+| **agenda**          | The ordered list of sub-topics the organizer derives from the goal; the discussion advances along it                                                        |
+| **conclusion**      | The final output of the discussion, convertible into an intent                                                                                              |
+| **status**          | The `draft` → `in_progress` → `completed` / `cancelled` state machine                                                                                       |
 
 ### The three roles in a discussion
 
@@ -108,6 +109,7 @@ created (draft) → read-only research (survey the current state) → discussion
 ```
 
 - **Read-only research comes first.** After creation, c3 first dispatches a read-only research agent: it can read project code and search the web, but cannot modify files or run commands. Its output is strictly limited to facts, current state, constraints, and open questions — deliberately no approaches or recommendations, so a presupposed answer does not pollute the discussion that follows. On success the discussion starts automatically; on failure the draft is kept and you can click Start manually.
+- **The research process is reviewable and correctable.** That research run is a real session: which files it read and what it searched for all stay in the 「Research session」 tab, and remain there long after the discussion is over. While the run is live the tab shows its run state and a working Stop; once it has finished you can keep asking there (e.g. "the caching part is too shallow — please also map out the invalidation strategy"), and c3 resumes the same session and replaces the 「Research」 tab's content with the new findings. A follow-up turn is just as read-only as the first one — still no file edits, still no commands.
 - **Four phases, advancing one way only.** Whatever the discussion type, it goes through "discuss → summarize → confirm → conclude", with only the guidance prompts of each phase differing by type. Phases can only advance, never go back, which guarantees the discussion converges.
 - **Diverge by broadcast, converge by nomination.** In the discuss phase the organizer splits the goal into ordered sub-topics and broadcasts the same sub-question to multiple participants in parallel for independent answers; everyone sees the same snapshot of the discussion record and does not interfere with the others. In the summarize and confirm phases it switches to nominating speakers one at a time, polishing serially.
 - **It will definitely end.** Each phase has a round cap (12 rounds per phase by default, configurable per workspace) and the whole discussion has a hard total cap (40 rounds by default), so even a deadlocked discussion writes a fallback conclusion at the cap instead of burning money forever.
@@ -124,7 +126,7 @@ created (draft) → read-only research (survey the current state) → discussion
 
 ### Reviewing the output and converting to an intent
 
-The right column of the discussion detail presents tabs: goal, context, research, conclusion (Markdown-rendered), process (the full record of remarks), and details. Every agent remark carries a vendor tag, so who said it and on which model is obvious at a glance.
+The right column of the discussion detail presents tabs: goal, context, research, conclusion (Markdown-rendered), research session (the research run's full process — stoppable, and open to follow-ups), process session (the full record of remarks), and details. Every agent remark carries a vendor tag, so who said it and on which model is obvious at a glance. The research session is also listed on the sessions page under 「Discussion」, from where it jumps back to this discussion.
 
 When the discussion is completed and the conclusion is non-empty, a Convert to Intent button appears in the title bar. Clicking it makes c3 open the project's intent communication session carrying the discussion title and conclusion, and the intent communication agent breaks the conclusion into one or more intent items covering the five dimensions Why / What / Trade-offs / When / Acceptance — exactly the same flow as creating an intent directly, and likewise nothing lands in the store until you click Allow in the confirmation panel. From there it joins the "intent → development" path described in [From Requirement to Intent](./requirement-to-intent.md).
 

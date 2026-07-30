@@ -28,7 +28,7 @@ import { pathToId } from '../../state.js'
  * value is informational only: migrations key off `PRAGMA table_info` /
  * `CREATE TABLE IF NOT EXISTS`, never off the version number.
  */
-const SCHEMA_VERSION = 6
+const SCHEMA_VERSION = 7
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS discussions (
@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS discussions (
   goal          TEXT NOT NULL DEFAULT '',
   context       TEXT NOT NULL DEFAULT '',
   research_result TEXT NOT NULL DEFAULT '',
+  research_session_id TEXT,
   status        TEXT NOT NULL,
   agenda        TEXT NOT NULL DEFAULT '[]',
   agenda_index  INTEGER NOT NULL DEFAULT 0,
@@ -144,6 +145,9 @@ function db(): Db | null {
     // v5 → v6: free-form business metadata written by MCP `start_discussion`.
     // Historic rows backfill to the empty object via the column default.
     ensureColumn(d, 'discussions', 'metadata', "TEXT NOT NULL DEFAULT '{}'")
+    // v6 → v7: the research run's own vendor session id. Nullable — every historic
+    // row (and any run that died before binding an id) simply has no research session.
+    ensureColumn(d, 'discussions', 'research_session_id', 'TEXT')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -192,6 +196,7 @@ interface DiscussionRow {
   goal: string
   context: string
   research_result: string
+  research_session_id: string | null
   status: string
   agenda: string | null
   agenda_index: number | null
@@ -247,6 +252,9 @@ function toDiscussion(r: DiscussionRow): Discussion {
     goal: r.goal,
     context: r.context,
     researchResult: r.research_result ?? '',
+    // Absent / blank ⇒ the field is omitted entirely, so a pre-existing discussion
+    // stays wire-identical to before this column existed.
+    ...(r.research_session_id ? { researchSessionId: r.research_session_id } : {}),
     status: r.status as DiscussionStatus,
     agenda: parseStringList(r.agenda),
     agendaIndex: r.agenda_index ?? 0,
@@ -418,6 +426,35 @@ export function setDiscussionResearchResult(id: string, researchResult: string):
     Date.now(),
     id,
   )
+}
+
+/**
+ * Bind the discussion to its research session (the vendor session id the research
+ * run captured). Written once per run, as soon as the vendor reports the id; a
+ * re-run overwrites the pointer so the discussion always names its latest research
+ * session. Does NOT bump `updated_at` — binding an id is not a content change, and
+ * the ordering of the discussion list must not jump for it.
+ */
+export function setDiscussionResearchSessionId(id: string, sessionId: string): void {
+  const d = requireDb()
+  d.run('UPDATE discussions SET research_session_id=? WHERE id=?', sessionId, id)
+}
+
+/**
+ * The discussion whose research session is `sessionId`, or `null`. This is the
+ * "is this a research session?" oracle for the launch profile + cold-start runtime
+ * restore, so it must stay cheap and never throw: an unavailable store degrades to
+ * `null` (no research profile ⇒ the session simply cannot be launched as one).
+ */
+export function findDiscussionByResearchSessionId(sessionId: string): Discussion | null {
+  if (!sessionId) return null
+  const d = db()
+  if (!d) return null
+  const row = d.get<DiscussionRow>(
+    'SELECT * FROM discussions WHERE research_session_id=?',
+    sessionId,
+  )
+  return row ? toDiscussion(row) : null
 }
 
 /**

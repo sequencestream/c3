@@ -86,8 +86,8 @@ import {
 import { cleanupStalePendingIntents, PENDING_INTENT_TTL_MS } from './kernel/config/index.js'
 import { logVendorCliHealth } from './kernel/agent/adapters/registry.js'
 import {
+  refreshManagedVendorClisInBackground,
   resolve as resolveVendorCli,
-  syncManagedVendorClis,
 } from './kernel/agent/process/launcher.js'
 import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
 import { createClaudeAdapter } from './kernel/agent/adapters/claude/index.js'
@@ -269,11 +269,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
   // Probe vendor CLIs up front. The default source is c3's managed vendor dir;
   // env overrides remain explicit, and host PATH is only a degraded fallback.
-  // First install/download managed CLIs, THEN probe health — on first start this
-  // ensures c3 uses its own managed CLI rather than falling back to the host PATH.
-  // Subsequent starts skip the npm fetch (24h remote-check cooldown) and probe the
-  // already-installed binary directly.
-  await syncManagedVendorClis()
+  // The remote side of that sync (npm packument fetch, tarball download, integrity
+  // check, npm install) runs in the BACKGROUND: a slow or unreachable registry must
+  // never delay port binding and readiness. Each vendor keeps its own 24h
+  // remote-check cooldown, so most starts trigger no network work at all. The health
+  // log right below is therefore the snapshot resolvable NOW — not the outcome of
+  // the refresh just triggered; a vendor may still read as missing until the
+  // background install lands.
+  refreshManagedVendorClisInBackground()
   logVendorCliHealth()
 
   // Codex lifecycle (2026-06-06-007): Codex spawns its CLI per run

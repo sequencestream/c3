@@ -57,6 +57,7 @@ import {
   upsertPendingRow,
 } from '../sessions/session-metadata-store.js'
 import { findIntentIdBySessionId } from '../intents/store.js'
+import { findDiscussionByResearchSessionId } from '../discussions/store.js'
 import {
   countRunningAutomationSessions,
   runningAutomationIdsForWorkspace,
@@ -304,6 +305,12 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
     // reuse its in-memory runtime (baseline + live buffer). After this
     // point there is no `await`, so the replay below is atomic w.r.t.
     // concurrent `emit`s.
+    // A discussion's research session must be rehydrated as what it is, not as a
+    // default work session: the read-only `discussion-research` gate is selected by
+    // the runtime's research marker, so a cold restore without it would let the next
+    // follow-up turn run write-capable. Keyed on the id match alone, so no other
+    // session kind's restore semantics change.
+    const researchOwner = findDiscussionByResearchSessionId(msg.sessionId)
     const rt = existing
       ? existing
       : ensureRuntime(
@@ -311,7 +318,9 @@ export const selectSession: Handler<'select_session'> = async (_ctx, conn, msg) 
           abs,
           getSessionMode(msg.sessionId, getDefaultMode(abs, effectiveVendor)),
           await loadHistoryForVendor(effectiveVendor, abs, msg.sessionId),
+          researchOwner ? 'discussion' : 'work',
         )
+    if (researchOwner) rt.researchDiscussionId = researchOwner.id
     conn.viewing = msg.sessionId
     touchWorkspace(abs, Date.now())
     setActiveSessionId(msg.sessionId)

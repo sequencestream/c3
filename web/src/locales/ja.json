@@ -2012,8 +2012,11 @@
       "conclusion": {
         "label": "結論"
       },
+      "researchSession": {
+        "label": "リサーチセッション"
+      },
       "process": {
-        "label": "プロセス"
+        "label": "プロセスセッション"
       },
       "details": {
         "label": "詳細"

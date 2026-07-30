@@ -96,7 +96,8 @@ const TAB_LABELS: Record<DiscussionDetailTabI18nKey, string> = {
   'discussion.tabs.context.label': 'Context',
   'discussion.tabs.research.label': 'Research',
   'discussion.tabs.conclusion.label': 'Conclusion',
-  'discussion.tabs.process.label': 'Process',
+  'discussion.tabs.researchSession.label': 'Research session',
+  'discussion.tabs.process.label': 'Process session',
   'discussion.tabs.details.label': 'Details',
 }
 const TABS_T = (k: DiscussionDetailTabI18nKey): string => TAB_LABELS[k]
@@ -424,7 +425,7 @@ describe('discussion-view — discussionDetailTabs(右栏详情 Tab)', () => {
       'Context',
       'Research',
       'Conclusion',
-      'Process',
+      'Process session',
       'Details',
     ])
     expect(tabs[0].body).toBe('G')
@@ -480,6 +481,33 @@ describe('discussion-view — discussionDetailTabs(右栏详情 Tab)', () => {
     expect(tabs[0].label).toBe('Research')
     expect(tabs[0].body).toBe('R')
   })
+
+  it('researchSession 仅在讨论已绑定研究会话时出现,位置在 conclusion 与 process 之间', () => {
+    // 无 researchSessionId(历史讨论 / 研究在绑定前失败)→ 该 tab 缺席
+    expect(discussionDetailTabs(disc({}), TABS_T).map((t) => t.kind)).toEqual([
+      'process',
+      'details',
+    ])
+    const tabs = discussionDetailTabs(
+      disc({ goal: 'G', conclusion: 'X', researchSessionId: 's-res' }),
+      TABS_T,
+    )
+    expect(tabs.map((t) => t.kind)).toEqual([
+      'goal',
+      'conclusion',
+      'researchSession',
+      'process',
+      'details',
+    ])
+    // 会话 tab 由组件自渲染,不是 markdown 区
+    expect(tabs.find((t) => t.kind === 'researchSession')?.body).toBeNull()
+    expect(tabs.find((t) => t.kind === 'researchSession')?.label).toBe('Research session')
+  })
+
+  it('空白 researchSessionId 视同未绑定', () => {
+    const tabs = discussionDetailTabs(disc({ researchSessionId: '   ' }), TABS_T)
+    expect(tabs.map((t) => t.kind)).toEqual(['process', 'details'])
+  })
 })
 
 describe('discussion-view — defaultDiscussionTab(默认 tab 链 conclusion>process>research>goal)', () => {
@@ -509,6 +537,18 @@ describe('discussion-view — defaultDiscussionTab(默认 tab 链 conclusion>pro
     // 空列表 → 兜底 process
     expect(defaultDiscussionTab([])).toBe('process')
   })
+
+  it('研究运行中:默认落 researchSession(短路整条链,即使已有结论)', () => {
+    const tabs = discussionDetailTabs(disc({ conclusion: 'X', researchSessionId: 's-res' }), TABS_T)
+    expect(defaultDiscussionTab(tabs, true)).toBe('researchSession')
+    // 研究已结束 → 回到 conclusion → process → research → goal 链
+    expect(defaultDiscussionTab(tabs, false)).toBe('conclusion')
+  })
+
+  it('研究运行中但讨论尚未绑定研究会话:该 tab 不存在,链照常生效', () => {
+    const tabs = discussionDetailTabs(disc({ goal: 'G' }), TABS_T)
+    expect(defaultDiscussionTab(tabs, true)).toBe('process')
+  })
 })
 
 describe('discussion-view — correctActiveTab(当前 tab 不可见时回落)', () => {
@@ -525,6 +565,16 @@ describe('discussion-view — correctActiveTab(当前 tab 不可见时回落)', 
     // 选中 goal 后 goal 也消失 → 回落到 process
     const onlyProcess = discussionDetailTabs(disc({}), TABS_T)
     expect(correctActiveTab(onlyProcess, 'goal')).toBe('process')
+  })
+
+  it('researchSession 已绑定则保留;未绑定时回落,研究运行中的回落仍尊重 researchLive', () => {
+    const bound = discussionDetailTabs(disc({ researchSessionId: 's-res' }), TABS_T)
+    expect(correctActiveTab(bound, 'researchSession')).toBe('researchSession')
+    // 切到一个没有研究会话的讨论 → 该 tab 消失,按链回落
+    const unbound = discussionDetailTabs(disc({ conclusion: 'X' }), TABS_T)
+    expect(correctActiveTab(unbound, 'researchSession')).toBe('conclusion')
+    // 回落时研究在跑但目标讨论无会话 → 依旧走静态链,不会指向不存在的 tab
+    expect(correctActiveTab(unbound, 'researchSession', true)).toBe('conclusion')
   })
 })
 

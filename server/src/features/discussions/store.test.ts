@@ -19,6 +19,7 @@ import {
   createDiscussion,
   deleteAgentSession,
   deleteAllByDiscussion,
+  findDiscussionByResearchSessionId,
   getAgentSession,
   getDiscussion,
   isStoreAvailable,
@@ -31,6 +32,7 @@ import {
   setConclusion,
   setDiscussionMetadata,
   setDiscussionResearchResult,
+  setDiscussionResearchSessionId,
   updateDiscussionStatus,
 } from './store.js'
 
@@ -68,13 +70,14 @@ describe('schema', () => {
     expect(indexes).toContain('idx_disc_workspace_status')
     expect(indexes).toContain('idx_disc_msg_discussion')
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(6)
+    expect(version?.user_version).toBe(7)
     // v3 added the participant selection column; v5 the organizer column;
-    // v6 the free-form business metadata column.
+    // v6 the free-form business metadata column; v7 the research session pointer.
     const cols = raw.all<{ name: string }>('PRAGMA table_info(discussions)').map((r) => r.name)
     expect(cols).toContain('participant_agent_ids')
     expect(cols).toContain('organizer_agent_id')
     expect(cols).toContain('metadata')
+    expect(cols).toContain('research_session_id')
   })
 })
 
@@ -374,6 +377,9 @@ describe('migration', () => {
     expect(got?.agendaIndex).toBe(0) // backfilled default 0
     expect(got?.participantAgentIds).toEqual([]) // backfilled default '[]' → fallback all
     expect(got?.metadata).toEqual({}) // backfilled default '{}' → parsed to empty map
+    // A historic discussion has no research session — the field stays absent, so an
+    // old row is wire-identical to what it was before the column existed.
+    expect(got?.researchSessionId).toBeUndefined()
 
     const cols = raw.all<{ name: string }>('PRAGMA table_info(discussions)').map((c) => c.name)
     expect(cols).toEqual(
@@ -381,6 +387,7 @@ describe('migration', () => {
         'goal',
         'context',
         'research_result',
+        'research_session_id',
         'agenda',
         'agenda_index',
         'participant_agent_ids',
@@ -395,6 +402,30 @@ describe('migration', () => {
     expect(() => listDiscussions(proj)).not.toThrow()
     expect(getDiscussion('old-1')?.goal).toBe('')
     expect(getDiscussion('old-1')?.metadata).toEqual({})
+    expect(getDiscussion('old-1')?.researchSessionId).toBeUndefined()
+  })
+})
+
+describe('research session binding', () => {
+  it('binds the research session id, reads it back, and finds the discussion by it', () => {
+    const d = createDiscussion({ workspacePath: proj, title: 'T', type: 'design' })
+    expect(getDiscussion(d.id)?.researchSessionId).toBeUndefined()
+    expect(findDiscussionByResearchSessionId('sess-1')).toBeNull()
+
+    setDiscussionResearchSessionId(d.id, 'sess-1')
+    expect(getDiscussion(d.id)?.researchSessionId).toBe('sess-1')
+    expect(findDiscussionByResearchSessionId('sess-1')?.id).toBe(d.id)
+    // An empty id can never match a discussion (the "no research session" case).
+    expect(findDiscussionByResearchSessionId('')).toBeNull()
+  })
+
+  it('re-binding points the discussion at its latest research session', () => {
+    const d = createDiscussion({ workspacePath: proj, title: 'T', type: 'design' })
+    setDiscussionResearchSessionId(d.id, 'sess-1')
+    setDiscussionResearchSessionId(d.id, 'sess-2')
+    expect(getDiscussion(d.id)?.researchSessionId).toBe('sess-2')
+    expect(findDiscussionByResearchSessionId('sess-1')).toBeNull()
+    expect(findDiscussionByResearchSessionId('sess-2')?.id).toBe(d.id)
   })
 })
 

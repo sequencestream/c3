@@ -146,6 +146,17 @@ export interface SessionRuntime {
    * read-only). Set by the `write_spec` handler after computing the layout.
    */
   specDir?: string
+  /**
+   * The research marker: set ONLY on a discussion's research session, to the owning
+   * discussion's id. `sessionKind === 'discussion'` alone cannot select the research
+   * launch profile — the orchestrator's per-agent sessions wear the same kind and
+   * must never pick up the research prompt — so the read-only research profile is
+   * keyed on this marker instead. It is part of the security contract: a runtime
+   * carrying it MUST be launched with the research profile (the launcher throws
+   * rather than degrading into a write-capable run), and a cold restore of such a
+   * session must re-apply it before any turn can start.
+   */
+  researchDiscussionId?: string
   viewers: Set<Viewer>
 }
 

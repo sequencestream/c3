@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS discussions (
   goal            TEXT NOT NULL DEFAULT '',          -- 讨论目标描述
   context         TEXT NOT NULL DEFAULT '',          -- 用户提供的背景上下文
   research_result TEXT NOT NULL DEFAULT '',          -- 只读研究 agent 的调查结果
+  research_session_id TEXT,                          -- 研究会话的 vendor session id; NULL/''=该讨论没有研究会话 (历史行 / 研究在绑定前失败)
   status          TEXT NOT NULL,                     -- 状态: 'draft' | 'active' | 'paused' | 'completed'
   agenda          TEXT NOT NULL DEFAULT '[]',        -- JSON 数组, 有序子议题列表
   agenda_index    INTEGER NOT NULL DEFAULT 0,        -- 当前正在进行的议题 0-based 下标

@@ -3,8 +3,12 @@ import { mount } from '@vue/test-utils'
 import type { Discussion } from '@ccc/shared/protocol'
 import Discussions from './Discussions.vue'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
+import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
+import SessionStatusBar from '../../components/SessionStatusBar/SessionStatusBar.vue'
+import MessageInput from '../../components/MessageInput/MessageInput.vue'
 import type { DispatchView, DiscussionPhase } from '../../lib/discussion-view'
-import type { ChatMsg } from '../../lib/chat-types'
+import type { ChatMsg, RunActivity } from '../../lib/chat-types'
+import type { TaskListModel } from '../../lib/task-list'
 
 function disc(over: Partial<Discussion> = {}): Discussion {
   return {
@@ -39,6 +43,10 @@ function mountDiscussions(
     showStart?: boolean
     researchMessages?: ChatMsg[]
     activeRunState?: 'running' | 'paused' | undefined
+    /** The globally active session — the research-session tab renders only on a match. */
+    activeSession?: string | null
+    sessionMessages?: ChatMsg[]
+    running?: boolean
   } = {},
 ) {
   return mount(Discussions, {
@@ -58,6 +66,20 @@ function mountDiscussions(
       input: '',
       agents: [],
       defaultAgentId: null,
+      // ---- research session chat column ----
+      activeSession: over.activeSession ?? null,
+      sessionTitle: 'Research',
+      sessionHasActive: true,
+      sessionMessages: over.sessionMessages ?? [],
+      actionablePermissionId: null,
+      taskModel: { tasks: [], collapsed: false } as unknown as TaskListModel,
+      running: over.running ?? false,
+      teamActive: false,
+      connection: 'open' as const,
+      activity: { kind: 'idle' } as unknown as RunActivity,
+      queue: [],
+      availableCommands: [],
+      voiceLang: 'zh-CN',
     },
     global: {
       stubs: {
@@ -195,6 +217,19 @@ describe('Discussions.vue — right-pane title bar + tabs', () => {
     expect(kinds).toEqual(['goal', 'process', 'details'])
   })
 
+  it('the research-session tab appears only once the discussion has a research session', () => {
+    const without = mountDiscussions(empty, disc({ status: 'in_progress' }))
+    expect(without.find('[data-testid="discussion-pane-tab-researchSession"]').exists()).toBe(false)
+    const withSession = mountDiscussions(
+      empty,
+      disc({ status: 'in_progress', researchSessionId: 's-res' }),
+    )
+    const kinds = withSession
+      .findAll('[data-testid^="discussion-pane-tab-"]')
+      .map((b) => b.attributes('data-tab'))
+    expect(kinds).toEqual(['researchSession', 'process', 'details'])
+  })
+
   it('the title bar and its actions stay constant across tab switches', async () => {
     const w = mountDiscussions(empty, disc({ status: 'completed', goal: 'G', conclusion: 'C' }))
     // Completed → Convert action + title bar present on the default (conclusion) tab.
@@ -255,5 +290,66 @@ describe('Discussions.vue — right-pane title bar + tabs', () => {
     // MobileStack's back is forwarded up as `mobile-back` so the parent returns to the list.
     stack.vm.$emit('back', 'discussions')
     expect(w.emitted('mobile-back')).toEqual([['discussions']])
+  })
+})
+
+describe('Discussions.vue — 研究会话 tab', () => {
+  const empty: DispatchView = { pending: [], errors: [] }
+  const withResearch = (over: Partial<Discussion> = {}): Discussion =>
+    disc({ status: 'in_progress', researchSessionId: 's-res', ...over })
+
+  it('asks the control layer to select the research session when the tab is opened', async () => {
+    const w = mountDiscussions(empty, withResearch(), { activeSession: null })
+    await w.find('[data-testid="discussion-pane-tab-researchSession"]').trigger('click')
+    expect(w.emitted('open-research-session')).toEqual([['s-res']])
+  })
+
+  it('renders the placeholder (not the chat column) until the active session aligns', async () => {
+    const w = mountDiscussions(empty, withResearch(), { activeSession: 'some-other-session' })
+    await w.find('[data-testid="discussion-pane-tab-researchSession"]').trigger('click')
+    expect(w.find('[data-testid="discussion-research-session"]').exists()).toBe(true)
+    expect(w.findComponent(ChatColumn).exists()).toBe(false)
+  })
+
+  it('mounts the chat column (status bar + composer) once the active session matches', async () => {
+    const w = mountDiscussions(empty, withResearch(), { activeSession: 's-res' })
+    await w.find('[data-testid="discussion-pane-tab-researchSession"]').trigger('click')
+    const chat = w.findComponent(ChatColumn)
+    expect(chat.exists()).toBe(true)
+    // The status bar and the composer are what make this a session rather than a log.
+    expect(chat.findComponent(SessionStatusBar).exists()).toBe(true)
+    expect(chat.findComponent(MessageInput).exists()).toBe(true)
+    // No second title bar — the discussion's own one already sits above the tab strip.
+    expect(chat.find('.session-title-bar').exists()).toBe(false)
+  })
+
+  it('forwards Stop and a follow-up submit onto the ordinary session channel', async () => {
+    const w = mountDiscussions(empty, withResearch(), { activeSession: 's-res', running: true })
+    await w.find('[data-testid="discussion-pane-tab-researchSession"]').trigger('click')
+    const chat = w.findComponent(ChatColumn)
+    chat.vm.$emit('stop')
+    chat.vm.$emit('submit', 'please re-check the cache layer', [])
+    expect(w.emitted('stop')).toBeTruthy()
+    expect(w.emitted('session-submit')).toEqual([['please re-check the cache layer', []]])
+  })
+
+  it('opens on the research-session tab while the research run is live', () => {
+    const w = mountDiscussions(empty, withResearch({ status: 'draft' }), {
+      phase: 'research',
+      activeSession: 's-res',
+    })
+    expect(w.find('[data-testid="discussion-research-session"]').exists()).toBe(true)
+    // …and back to the ordinary chain once research has settled.
+    const settled = mountDiscussions(empty, withResearch(), { phase: 'discussion' })
+    expect(settled.find('[data-testid="discussion-research-session"]').exists()).toBe(false)
+    expect(settled.find('[data-testid="discussion-stream"]').exists()).toBe(true)
+  })
+
+  it('keeps the process tab reachable and unchanged alongside the new tab', async () => {
+    const w = mountDiscussions(empty, withResearch(), { activeSession: 's-res' })
+    await w.find('[data-testid="discussion-pane-tab-process"]').trigger('click')
+    expect(w.find('[data-testid="discussion-stream"]').exists()).toBe(true)
+    expect(w.find('.disc-composer').exists()).toBe(true)
+    expect(w.find('[data-testid="discussion-research-session"]').exists()).toBe(false)
   })
 })

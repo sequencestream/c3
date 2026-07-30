@@ -2012,8 +2012,11 @@
       "conclusion": {
         "label": "결론"
       },
+      "researchSession": {
+        "label": "리서치 세션"
+      },
       "process": {
-        "label": "진행"
+        "label": "진행 세션"
       },
       "details": {
         "label": "세부 정보"

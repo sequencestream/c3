@@ -165,6 +165,7 @@ const {
   resumeDiscussion,
   convertDiscussionToIntent,
   submitDiscussionInput,
+  openResearchSession,
   onDiscussionMobileBack,
   // ---- automations ----
   currentAutomations,
@@ -555,6 +556,25 @@ function onCodesChatWidth(px: number): void {
           :input="discussionInput"
           :agents="serverSettings?.agents ?? []"
           :default-agent-id="serverSettings?.defaultAgentId ?? null"
+          :active-session="activeSession"
+          :session-title="activeTitle"
+          :session-has-active="hasActiveSession"
+          :session-messages="messages"
+          :actionable-permission-id="actionablePermId"
+          :task-model="taskModel"
+          :has-task-store="taskStoreAvailable"
+          :running="running"
+          :team-active="activeIsTeam"
+          :connection="status"
+          :activity="activity"
+          :current-agent-name="currentAgentName"
+          :reconnecting="reconnecting"
+          :side-effect-pending="sideEffectPending"
+          :queue="currentQueue"
+          :available-commands="availableCommands"
+          :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
+          :vendor="activeVendor"
+          :agent-switch="activeAgentSwitch"
           @open="openDiscussion"
           @create="createDiscussion"
           @start="startDiscussion"
@@ -565,6 +585,17 @@ function onCodesChatWidth(px: number): void {
           @update:input="discussionInput = $event"
           @submit-input="submitDiscussionInput"
           @mobile-back="onDiscussionMobileBack"
+          @open-research-session="openResearchSession"
+          @respond="respond"
+          @submit-ask="submitAsk"
+          @refresh="refreshStatus"
+          @edit-queued="onEditQueued"
+          @delete-queued="onDeleteQueued"
+          @session-submit="onSubmit"
+          @session-enqueue="onEnqueue"
+          @stop="stopRun"
+          @continue="onContinue"
+          @list-commands="listCommands"
         />
 
         <Automations

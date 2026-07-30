@@ -5,12 +5,34 @@
  * shells, or spawn sub-agents. There is no save tool — the server captures the
  * agent's final text and writes it back to the discussion's `researchResult` field
  * (the user's original `context` is left untouched).
+ *
+ * The run is a FIRST-CLASS SESSION: it reports its vendor session id
+ * ({@link ResearchRunOptions.onSessionId}) and streams its raw wire events
+ * ({@link ResearchRunOptions.onWire}) so the caller can bind a `SessionRuntime` to
+ * it. Everything that makes a session a session then follows for free — the vendor
+ * writes the transcript, c3's ordinary session-open path replays it, and a
+ * follow-up prompt resumes it through the generic launch path (which re-applies
+ * this module's read-only profile via the runtime's research marker).
  */
-import type { Discussion, ResearchMessageBody, SessionKind } from '@ccc/shared/protocol'
+import type {
+  AgentConfig,
+  Discussion,
+  ResearchMessageBody,
+  ServerToClient,
+  SessionKind,
+} from '@ccc/shared/protocol'
+import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { getDiscussionType, type DiscussionTypeDef } from '@ccc/shared/discussion-types'
 import { runClaude } from '../../kernel/agent/index.js'
 import { INTENT_DISALLOWED_TOOLS } from '../../kernel/permission/index.js'
+import {
+  bindClaudeRelay,
+  launchForAgent,
+  resolveAgent,
+  resolveFirstAgentOfVendor,
+  unbindRelay,
+} from '../../kernel/agent-config/index.js'
 import { getUiLangName } from '../../kernel/config/index.js'
 
 /**
@@ -20,6 +42,20 @@ import { getUiLangName } from '../../kernel/config/index.js'
  * discussion flow, same business origin as the orchestrator.
  */
 const SESSION_KIND: SessionKind = 'discussion'
+
+/**
+ * The agent the research pass runs on. The research loop is claude-hardwired
+ * ({@link runClaude}), so it must resolve to a CLAUDE agent even when the project's
+ * default agent is another vendor — the session is bound to this agent, and a
+ * cross-vendor binding could never resume it on the follow-up turn.
+ * `resolveFirstAgentOfVendor` falls back to the default agent when no claude agent
+ * is enabled; that fallback is replaced here by the built-in system agent, which is
+ * always claude with no overrides (i.e. the vendor CLI's own login).
+ */
+export function resolveResearchAgent(): AgentConfig {
+  const agent = resolveFirstAgentOfVendor('claude')
+  return agent.vendor === 'claude' ? agent : resolveAgent(SYSTEM_AGENT_ID)
+}
 
 /** System-prompt append that frames the unattended, read-only research run. */
 export const DISCUSSION_RESEARCH_PROMPT = `You are the discussion's "context researcher". Your sole task: research and gather the background facts for an upcoming discussion.
@@ -88,6 +124,26 @@ export interface ResearchRunOptions {
    * share one ordering.
    */
   onMessage?: (item: ResearchStreamItem) => void
+  /**
+   * The vendor session id, reported once as soon as the vendor knows it. This is
+   * what promotes the run to a real session: the caller persists it on the
+   * discussion, registers a `SessionRuntime` under it and projects a session row.
+   * Never called when the run fails before the vendor reports an id.
+   */
+  onSessionId?: (sessionId: string) => void
+  /**
+   * Every raw wire event this run emits, in order, so the caller can fan it into
+   * the session runtime (`emit`) and any viewer of the research session sees the
+   * unattended run live. Distinct from {@link onMessage}, which is the narrower,
+   * runtime-only research-stream projection the 「过程会话」 tab keeps rendering.
+   */
+  onWire?: (event: ServerToClient) => void
+  /**
+   * External stop control. The Stop button on the research session's status bar
+   * aborts the run through the runtime's abort controller, which is this signal.
+   * Omitted ⇒ the run owns a private controller and can only end on its own.
+   */
+  signal?: AbortSignal
 }
 
 /**
@@ -128,6 +184,16 @@ export async function researchDiscussionContext(
     getUiLangName(),
   )
   const abort = new AbortController()
+  const signal = opts.signal ?? abort.signal
+  // Route a custom provider through the loopback relay (ADR-0029), exactly as the
+  // generic launch path does — the follow-up turns run through that path on this
+  // same agent, so the first (unattended) turn must connect the same way.
+  const agent = resolveResearchAgent()
+  const launch = launchForAgent(agent)
+  const claudeRelay = bindClaudeRelay(launch.relayCandidates)
+  const envOverrides = claudeRelay
+    ? { ...launch.envOverrides, ...claudeRelay.envOverrides }
+    : launch.envOverrides
   let captured = ''
   let seq = 0
   let ok = true
@@ -138,13 +204,20 @@ export async function researchDiscussionContext(
       // effective cwd and the config/audit root are the same path.
       cwd: resolveWorkspaceRoot(discussion.workspaceId)!,
       workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
-      signal: abort.signal,
+      signal,
       // Pinned to `default` so the gateway's canUseTool always fires.
       permissionMode: 'default',
       appendSystemPrompt: DISCUSSION_RESEARCH_PROMPT,
       disallowedTools: INTENT_DISALLOWED_TOOLS,
       gate: 'discussion-research',
+      currentAgentId: agent.id,
+      ...(launch.model ? { model: launch.model } : {}),
+      ...(envOverrides ? { envOverrides } : {}),
+      onSessionId: (sid) => opts.onSessionId?.(sid),
       send: (m) => {
+        // Fan the raw event into the run's session runtime first, so a viewer of
+        // the research session sees the unattended run exactly as it happens.
+        opts.onWire?.(m)
         // The agent's last assistant turn is the completed context; every assistant
         // turn, tool call, and tool result is also streamed out so the right pane
         // renders the run as a standard transcript with collapsible tool blocks
@@ -178,6 +251,8 @@ export async function researchDiscussionContext(
         err instanceof Error ? err.message : String(err)
       }`,
     )
+  } finally {
+    if (claudeRelay) unbindRelay(claudeRelay.token)
   }
   const out = captured.trim()
   return { ok, researchResult: out }

@@ -2012,8 +2012,11 @@
       "conclusion": {
         "label": "Заключение"
       },
+      "researchSession": {
+        "label": "Сессия исследования"
+      },
       "process": {
-        "label": "Процесс"
+        "label": "Сессия процесса"
       },
       "details": {
         "label": "Детали"

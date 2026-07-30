@@ -2182,6 +2182,15 @@ export interface Discussion {
    * (or when research is skipped/fails).
    */
   researchResult: string
+  /**
+   * The research run's own vendor session id — the research pass is a first-class
+   * session, not a one-shot: its transcript lives in the vendor store, it is listed
+   * on the sessions page under the `discussion` category, and a follow-up prompt on
+   * it resumes the research and rewrites {@link researchResult}. Absent for every
+   * discussion created before the research run owned a session identity, and for a
+   * run that died before the vendor reported an id.
+   */
+  researchSessionId?: string
   status: DiscussionStatus
   /**
    * Ordered subtopics the organizer decomposed `goal` into (the explicit agenda).

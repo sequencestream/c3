@@ -13,10 +13,25 @@ type SendMsg = {
   input?: unknown
   content?: string
   isError?: boolean
+  reason?: string
 }
-let runClaudeImpl: (opts: { send: (m: SendMsg) => void }) => Promise<void>
+interface RunClaudeOpts {
+  send: (m: SendMsg) => void
+  onSessionId?: (sessionId: string) => void
+  signal?: AbortSignal
+  currentAgentId?: string
+  gate?: string
+  disallowedTools?: string[]
+  appendSystemPrompt?: string
+}
+let runClaudeImpl: (opts: RunClaudeOpts) => Promise<void>
+/** The options the last `runClaude` call received, for launch-profile assertions. */
+let lastRunClaudeOpts: RunClaudeOpts | null = null
 vi.mock('../../kernel/agent/index.js', () => ({
-  runClaude: (opts: { send: (m: SendMsg) => void }) => runClaudeImpl(opts),
+  runClaude: (opts: RunClaudeOpts) => {
+    lastRunClaudeOpts = opts
+    return runClaudeImpl(opts)
+  },
 }))
 
 const {
@@ -24,6 +39,7 @@ const {
   canAutoStartDiscussion,
   DISCUSSION_RESEARCH_PROMPT,
   researchDiscussionContext,
+  resolveResearchAgent,
 } = await import('./research.js')
 
 describe('buildResearchPrompt', () => {
@@ -192,5 +208,88 @@ describe('researchDiscussionContext', () => {
     }
     const res = await researchDiscussionContext(disc)
     expect(res).toEqual({ ok: true, researchResult: 'X' })
+  })
+})
+
+describe('researchDiscussionContext — the run is a first-class session', () => {
+  const disc: Discussion = {
+    id: 'd1',
+    workspaceId: '/p',
+    title: 'T',
+    type: 'decision',
+    goal: 'g',
+    context: 'c',
+    researchResult: '',
+    status: 'draft',
+    agenda: [],
+    agendaIndex: 0,
+    participantAgentIds: [],
+    organizerAgentId: null,
+    conclusion: null,
+    metadata: {},
+    createdAt: 1,
+    updatedAt: 1,
+    completedAt: null,
+  }
+
+  it('reports the vendor session id so the caller can bind the run to a session', async () => {
+    runClaudeImpl = async ({ send, onSessionId }) => {
+      onSessionId?.('vsess-1')
+      send({ type: 'assistant_text', text: 'FACTS' })
+    }
+    const seen: string[] = []
+    const res = await researchDiscussionContext(disc, { onSessionId: (id) => seen.push(id) })
+    expect(seen).toEqual(['vsess-1'])
+    expect(res.researchResult).toBe('FACTS')
+  })
+
+  it('fans EVERY raw wire event out in order, alongside the narrower research stream', async () => {
+    runClaudeImpl = async ({ send }) => {
+      send({ type: 'assistant_text', text: 'looking…' })
+      send({ type: 'tool_use', toolUseId: 'u1', toolName: 'Read', input: { path: 'a.ts' } })
+      send({ type: 'tool_result', toolUseId: 'u1', content: 'body', isError: false })
+      send({ type: 'turn_end', reason: 'complete' })
+    }
+    const wire: SendMsg[] = []
+    const stream: ResearchStreamItem[] = []
+    await researchDiscussionContext(disc, {
+      onWire: (m) => wire.push(m as SendMsg),
+      onMessage: (m) => stream.push(m),
+    })
+    // The wire channel is the complete run (turn_end included) — it feeds the runtime.
+    expect(wire.map((m) => m.type)).toEqual([
+      'assistant_text',
+      'tool_use',
+      'tool_result',
+      'turn_end',
+    ])
+    // The research-stream projection stays as it was: only the three observable kinds.
+    expect(stream.map((m) => m.kind)).toEqual(['text', 'tool_use', 'tool_result'])
+  })
+
+  it('runs under the caller-supplied signal, so the session status bar Stop reaches it', async () => {
+    const abort = new AbortController()
+    let sawSignal: AbortSignal | undefined
+    runClaudeImpl = async ({ signal }) => {
+      sawSignal = signal
+      abort.abort()
+    }
+    await researchDiscussionContext(disc, { signal: abort.signal })
+    expect(sawSignal).toBe(abort.signal)
+    expect(sawSignal?.aborted).toBe(true)
+  })
+
+  it('keeps the read-only launch profile and runs on a claude agent (so a follow-up can resume)', async () => {
+    runClaudeImpl = async ({ send }) => {
+      send({ type: 'assistant_text', text: 'X' })
+    }
+    await researchDiscussionContext(disc)
+    expect(lastRunClaudeOpts?.gate).toBe('discussion-research')
+    expect(lastRunClaudeOpts?.appendSystemPrompt).toBe(DISCUSSION_RESEARCH_PROMPT)
+    expect(lastRunClaudeOpts?.disallowedTools?.length).toBeGreaterThan(0)
+    // The bound agent is what the follow-up turn resolves; it must be a claude one.
+    const agent = resolveResearchAgent()
+    expect(agent.vendor).toBe('claude')
+    expect(lastRunClaudeOpts?.currentAgentId).toBe(agent.id)
   })
 })

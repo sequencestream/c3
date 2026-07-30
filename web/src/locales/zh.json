@@ -637,7 +637,9 @@
       "confirm": "永久删除“{title}”?其本地 Git worktree 与本地分支也会一并删除。远端分支和 PR 不受影响。",
       "confirmWithArtifacts": "永久删除“{title}”?已有工作产物、本地 Git worktree 与本地分支也会一并删除。远端分支和 PR 不受影响。"
     },
-    "create": { "label": "增加意图" },
+    "create": {
+      "label": "增加意图"
+    },
     "startDev": {
       "confirmUnfinishedDeps": "该意图存在未完成的依赖。仍要开始工作吗?"
     },
@@ -2009,8 +2011,11 @@
       "conclusion": {
         "label": "结论"
       },
+      "researchSession": {
+        "label": "研究会话"
+      },
       "process": {
-        "label": "过程"
+        "label": "过程会话"
       },
       "details": {
         "label": "详情"

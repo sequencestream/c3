@@ -780,30 +780,37 @@ export async function syncManagedVendorCli(
   }
 }
 
-export async function syncManagedVendorClis(deps?: VendorInstallerDeps): Promise<VendorProbe[]> {
-  const out: VendorProbe[] = []
-  for (const vendor of Object.keys(HOST_BINARIES) as VendorId[]) {
-    if (!shouldCheckRemote(vendor, deps?.now?.().getTime())) {
-      console.log(`[c3] vendor check-skip: ${vendor} (checked recently)`)
-      continue
-    }
-    console.log(`[c3] vendor check: ${vendor} ...`)
-    out.push(await syncManagedVendorCli(vendor, deps))
-  }
-  return out
-}
-
 export function shouldCheckRemote(vendor: VendorId, now = Date.now()): boolean {
   const last = readState().vendors[vendor]?.lastRemoteCheckAt
   if (!last) return true
   return now - Date.parse(last) >= REMOTE_CHECK_INTERVAL_MS
 }
 
+/**
+ * Trigger the managed-CLI remote sync for every vendor whose 24h cooldown has
+ * expired, and return immediately. This is the ONLY startup entry point: the
+ * registry fetch, tarball download and npm install can take tens of seconds on a
+ * slow network, and the server must bind its port and reach readiness regardless.
+ * Each vendor runs on its own promise chain and swallows its failure into the
+ * manifest, so a background error never becomes an unhandled rejection nor changes
+ * the startup result. The current process keeps using the pre-refresh probe until
+ * a later resolve picks the new binary up.
+ */
 export function refreshManagedVendorClisInBackground(deps?: VendorInstallerDeps): void {
   for (const vendor of Object.keys(HOST_BINARIES) as VendorId[]) {
-    if (!shouldCheckRemote(vendor, deps?.now?.().getTime())) continue
+    if (!shouldCheckRemote(vendor, deps?.now?.().getTime())) {
+      console.log(`[c3] vendor check-skip: ${vendor} (checked recently)`)
+      continue
+    }
+    console.log(`[c3] vendor check: ${vendor} (background) ...`)
     void syncManagedVendorCli(vendor, deps).catch((err: unknown) => {
-      recordState(vendor, { source: 'install-failed', lastError: (err as Error).message }, deps)
+      const msg = err instanceof Error ? err.message : String(err)
+      console.warn(`[c3] vendor check-failed: ${vendor} (${msg})`)
+      try {
+        recordState(vendor, { source: 'install-failed', lastError: msg }, deps)
+      } catch {
+        // The manifest write is best-effort; a background failure must not escalate.
+      }
     })
   }
 }

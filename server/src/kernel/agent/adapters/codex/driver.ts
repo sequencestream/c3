@@ -40,6 +40,7 @@ import { itemToCanonical } from './translate.js'
 import { CODEX_RELAY_PROVIDER, type Relay } from '../../../relay/contract.js'
 import { writeImageTempFiles, cleanupImageTempFiles, type ImageTempFiles } from './image-files.js'
 import { resolve } from '../../process/launcher.js'
+import { withLoopbackNoProxy } from '../../../infra/no-proxy.js'
 
 const INTENT_MCP_TOOL_NAMES = ['find_intents', 'view_intent', 'save_intents'] as const
 
@@ -788,8 +789,8 @@ export class CodexDriver implements AgentDriver {
 function relayEnv(extra?: Record<string, string>): Record<string, string> {
   const env = inheritedEnv()
   if (extra) Object.assign(env, extra)
-  env.NO_PROXY = withLoopback(env.NO_PROXY)
-  env.no_proxy = withLoopback(env.no_proxy)
+  env.NO_PROXY = withLoopbackNoProxy(env.NO_PROXY)
+  env.no_proxy = withLoopbackNoProxy(env.no_proxy)
   return env
 }
 
@@ -798,16 +799,4 @@ function inheritedEnv(): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v
   return env
-}
-
-/** Add the loopback hosts to a comma-separated NO_PROXY list (idempotent). */
-function withLoopback(value?: string): string {
-  const parts = (value ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  for (const host of ['127.0.0.1', 'localhost', '::1']) {
-    if (!parts.includes(host)) parts.push(host)
-  }
-  return parts.join(',')
 }

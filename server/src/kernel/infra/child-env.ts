@@ -11,6 +11,7 @@
  * `CLAUDE_PATH` override, and the exact behavior the 4 runtime call sites rely on.
  */
 import { lookupCommand, resolve as resolveHostBinary } from '../agent/process/launcher.js'
+import { withLoopbackNoProxy } from './no-proxy.js'
 
 /**
  * The platform-correct "find `claude` on PATH" command. Thin Claude-pinned wrapper
@@ -57,11 +58,25 @@ export const KEEPALIVE_ENV_DEFAULTS: Record<string, string> = {
  * So keepalive vars are always present yet never clobber a value the user/agent set
  * explicitly (user priority). `env` must carry the *full* environment, so we merge
  * over `process.env` rather than replace it.
+ *
+ * `NO_PROXY` is the ONE deliberate exception to that precedence: it is computed LAST
+ * from whatever the host (or an agent override) set, with c3's loopback hosts
+ * appended. Every c3 tool the child consumes — the intent / spec-query / work-event
+ * MCP routes and the provider relay — is served on c3's own localhost origin, and a
+ * host that exports `HTTP(S)_PROXY` without a bypass list makes the CLI send those
+ * loopback requests to the proxy, which 502s. The MCP server then never connects and
+ * its tools are silently ABSENT from the model's tool set (the model sees no
+ * `mcp__c3__*` tool at all and can only guess names). Appending never narrows a
+ * bypass list the user configured — see {@link withLoopbackNoProxy}. This mirrors
+ * the codex driver, which already does the same for its own spawns.
  */
 export function buildChildEnv(envOverrides?: Record<string, string>): Record<string, string> {
-  return {
+  const merged: Record<string, string> = {
     ...KEEPALIVE_ENV_DEFAULTS,
     ...(process.env as Record<string, string>),
     ...(envOverrides ?? {}),
   }
+  merged.NO_PROXY = withLoopbackNoProxy(merged.NO_PROXY)
+  merged.no_proxy = withLoopbackNoProxy(merged.no_proxy)
+  return merged
 }

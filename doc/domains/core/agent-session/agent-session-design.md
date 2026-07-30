@@ -8,19 +8,19 @@
 
 运行调用 SDK 的 `query()`,参数如下:
 
-| Option                            | Value                                       | Why                                                                                                                                                     |
-| --------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `prompt`                          | 流式输入的 async-iterable                   | 流式输入模式(AS-R13, ADR 0008):用户的第一个 turn 被推入;保持 SDK 控制通道存活,让 team lead 能比一次 `result` 存活得更久。不是一次性字符串。             |
-| `cwd`                             | 会话的工作区路径                            | Claude 读写的位置(AS-R1)                                                                                                                                |
-| `resume`                          | session id \| omit                          | 继续一个已有会话;pending 会话的首次运行时省略(AS-R10)                                                                                                   |
-| `settingSources`                  | `['user', 'project']`                       | 继承用户/项目设置、hook、allow 规则、Skills — ADR 0005 / C-SEC-1                                                                                        |
-| `systemPrompt`                    | `{ type: 'preset', preset: 'claude_code' }` | 使用 Claude Code 的完整 system prompt,包括动态部分(工作目录、git 状态、CLAUDE.md/memory);没有它 SDK 0.3.x 的默认值会省略环境上下文,模型永远学不到 `cwd` |
-| `permissionMode`                  | 会话的模式(来自其 runtime)                  | 起始策略(AS-R3)                                                                                                                                         |
-| `allowDangerouslySkipPermissions` | `true`                                      | 允许随时切换到 `bypassPermissions`;c3 仍是 UI(C-SEC)                                                                                                    |
-| `pathToClaudeCodeExecutable`      | 解析出的 `claude` 路径                      | 仅在找到时设置(ADR 0003)                                                                                                                                |
-| `env`                             | `{ ...process.env, ...overrides }` \| omit  | 活跃 agent 的 `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`;系统 agent 时省略(agent-config AC-R4/R5)                                  |
-| `model`                           | 活跃 agent 的模型 \| omit                   | 来自活跃 agent 的模型覆盖;省略 ⇒ SDK 默认(agent-config AC-R5)                                                                                           |
-| `canUseTool`                      | gateway 回调                                | 门控敏感工具(AS-R5)                                                                                                                                     |
+| Option                            | Value                                       | Why                                                                                                                                                                               |
+| --------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prompt`                          | 流式输入的 async-iterable                   | 流式输入模式(AS-R13, ADR 0008):用户的第一个 turn 被推入;保持 SDK 控制通道存活,让 team lead 能比一次 `result` 存活得更久。不是一次性字符串。                                       |
+| `cwd`                             | 会话的工作区路径                            | Claude 读写的位置(AS-R1)                                                                                                                                                          |
+| `resume`                          | session id \| omit                          | 继续一个已有会话;pending 会话的首次运行时省略(AS-R10)                                                                                                                             |
+| `settingSources`                  | `['user', 'project']`                       | 继承用户/项目设置、hook、allow 规则、Skills — ADR 0005 / C-SEC-1                                                                                                                  |
+| `systemPrompt`                    | `{ type: 'preset', preset: 'claude_code' }` | 使用 Claude Code 的完整 system prompt,包括动态部分(工作目录、git 状态、CLAUDE.md/memory);没有它 SDK 0.3.x 的默认值会省略环境上下文,模型永远学不到 `cwd`                           |
+| `permissionMode`                  | 会话的模式(来自其 runtime)                  | 起始策略(AS-R3)                                                                                                                                                                   |
+| `allowDangerouslySkipPermissions` | `true`                                      | 允许随时切换到 `bypassPermissions`;c3 仍是 UI(C-SEC)                                                                                                                              |
+| `pathToClaudeCodeExecutable`      | 解析出的 `claude` 路径                      | 仅在找到时设置(ADR 0003)                                                                                                                                                          |
+| `env`                             | `buildChildEnv(overrides)`                  | 始终设置的完整子进程环境:keepalive 默认值 < 宿主 shell < 活跃 agent 覆盖(`ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`);`NO_PROXY` 见 § 远程 MCP 的回环代理旁路 |
+| `model`                           | 活跃 agent 的模型 \| omit                   | 来自活跃 agent 的模型覆盖;省略 ⇒ SDK 默认(agent-config AC-R5)                                                                                                                     |
+| `canUseTool`                      | gateway 回调                                | 门控敏感工具(AS-R5)                                                                                                                                                               |
 
 一个 start callback 会把 **Run Handle**(设置权限模式、推入输入)回传,以便运行中的
 `set_mode` 能对实时 query 应用新模式(AS-R4),team 会话的下一个 turn 能推入
@@ -48,6 +48,14 @@ token 守卫(未知/已释放 404)保护,并在每一条终止路径的 `finally
 Codex 是由 c3 自身极简的 `codex exec --experimental-json` 包装器启动的,而非
 `@openai/codex-sdk` 运行时包装器;该 SDK 包在 Codex adapter 内部仅作为
 事件/类型参考保留。
+
+**回环代理旁路(两个厂商)。** 每个 vendor 子进程的环境都以 `NO_PROXY` / `no_proxy`
+追加 `127.0.0.1,localhost,::1` 收尾——claude 路径在 `buildChildEnv` 中,codex 路径在其
+driver 的 env 构造中,两者共用同一个幂等的追加函数,宿主已配置的旁路条目只增不减。
+c3 提供给子进程的一切(四条 MCP 路由与 provider relay)都在 c3 自己的回环 origin 上,
+而宿主导出 `HTTP(S)_PROXY` 却未设旁路时,vendor CLI 会把这些回环请求发给代理并收到
+502/空响应。**其失败模式是静默的**:MCP 服务器连接不上,该服务器的工具就整体缺席于
+模型的工具集(既无 `mcp__c3__*` 可用,也无报错),模型只能猜裸工具名并得到「工具不存在」。
 
 ### Codex GitHub CLI 凭据注入
 

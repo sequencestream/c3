@@ -25,18 +25,10 @@ export function getRelay(): Relay | null {
 }
 
 /**
- * Add the loopback hosts to a comma-separated `NO_PROXY` value (idempotent). The
- * relay lives on c3's own loopback, so the vendor CLI must bypass any configured
- * HTTP(S) proxy for `127.0.0.1` — otherwise the loopback hop is routed through the
- * proxy and fails. Mirrors the codex driver's own `NO_PROXY` handling.
+ * Loopback proxy-bypass helper, re-exported for the relay's own callers. The relay
+ * lives on c3's loopback, so a vendor CLI must bypass any configured HTTP(S) proxy
+ * for `127.0.0.1` — otherwise the loopback hop is routed through the proxy and
+ * fails. The single implementation is the vendor-neutral infra leaf, shared with the
+ * claude child env and the codex driver env.
  */
-export function withLoopbackNoProxy(value?: string): string {
-  const parts = (value ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  for (const host of ['127.0.0.1', 'localhost', '::1']) {
-    if (!parts.includes(host)) parts.push(host)
-  }
-  return parts.join(',')
-}
+export { withLoopbackNoProxy } from '../infra/no-proxy.js'

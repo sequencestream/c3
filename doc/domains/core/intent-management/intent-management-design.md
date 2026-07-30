@@ -383,7 +383,9 @@ codex driver 转译成其原生的 streamable-HTTP 服务器条目。
   handler 闭包捕获该次运行的项目。token 随 URL query 传递;项目绑定存在于闭包中,
   因此智能体既不能读也不能写另一个项目的账本。该绑定在运行结束时(`finally`)被驱逐。
 - **仅限回环。** intent MCP 路由自身只监听本地回环:一道纵深防御守卫拒绝非回环对端(403);
-  未知/过期的 token 返回 404(默认拒绝原则)。
+  未知/过期的 token 返回 404(默认拒绝原则)。两个厂商的子进程环境都以回环 `NO_PROXY`
+  旁路收尾,否则宿主代理会吞掉这一跳并让三个工具静默缺席(见
+  [agent-session design § 远程 MCP](../agent-session/agent-session-design.md))。
 - **保存网关(两个厂商共享)。** 保存确认存在于**保存 handler 内部**,是两个厂商
   共用的同一道网关:它发出相同的 `permission_request` 帧(`save_intents` 工具
   名加上拟保存的意图),阻塞等待决定,仅在 `allow` 时才持久化。

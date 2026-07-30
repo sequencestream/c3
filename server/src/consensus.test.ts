@@ -64,7 +64,7 @@ vi.mock('./kernel/config/index.js', () => ({
   isConsensusMajorityEnabled: (_workspacePath?: string) => settings.majority,
   // Summary language name injected into the decider prompt; fixed here since the
   // prompt's language wiring is asserted in consensus-tally.test.ts.
-  getUiLangName: () => 'English',
+  getAgentLangName: () => 'English',
 }))
 
 import { runAskConsensus, runConsensusVote } from './consensus.js'

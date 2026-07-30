@@ -1,13 +1,12 @@
 # system-setting 系统设置
 
-`system-setting` 域承载 `SystemSettings`(见 [`shared/src/protocol.ts`](../../../../shared/src/protocol.ts))中管理员级的**全局**配置——既非按会话、也非按工作区。所有改动过管理员门(见 [auth](../../core/auth/auth-overview.md))。系统设置面板分 agent / runtime / security / general 四页;其中 agent 页属 [agent-config](../agent-config/agent-config-overview.md) 域,不在本域范围。
+`system-setting` 域承载 `SystemSettings`(见 [`shared/src/protocol.ts`](../../../../shared/src/protocol.ts))中管理员级的**全局**配置——既非按会话、按工作区,也非按人。所有改动过管理员门(见 [auth](../../core/auth/auth-overview.md))。系统设置面板分 agent / runtime / security / general 四页;其中 agent 页属 [agent-config](../agent-config/agent-config-overview.md) 域,不在本域范围。因人而异的偏好(如界面语言)属 [personalized-setting](../personalized-setting/personalized-setting-spec.md) 域,不在本域,也不过管理员门。
 
 配置持久化路径、单一写入路径、`projectConfigs` 分层等**组级共享上下文**见 [settings 组概览](../settings-overview.md)。
 
 ## 显示与本地化
 
-- **`uiLang`** — Web 控制台界面语言,缺省 `en`。与 `voiceLang` 解耦。
-- **`voiceLang`** — 浏览器语音输入的 BCP-47 语言标签(如 `zh-CN`),缺省 `zh-CN`。
+- **`voiceLang`** — 浏览器语音输入的 BCP-47 语言标签(如 `zh-CN`),缺省 `zh-CN`。与界面语言解耦(后者是个人化偏好)。
 - **`timezone`** — 系统级 IANA 时区(如 `Asia/Shanghai`),用于解释**每个自动化 cron 字段**并计算 `next_run_at`(DST 感知)。缺省/非法回退服务端本地时区。修改会平移既有自动化的实际触发时刻。
 
 ## 公开访问地址 `baseUrl`

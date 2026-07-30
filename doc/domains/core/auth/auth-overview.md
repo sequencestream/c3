@@ -118,6 +118,11 @@ enabled:false`,在规范化阶段强制执行(过期的 `enabled:true` 会被重
   唯一防线**——它与握手/分发认证关卡组合作用(当认证启用时,未认证连接
   无法到达这些处理器)。服务端的强制执行与客户端无关:控制台还会为非管理员
   额外隐藏/禁用相关控件(由 `ready.isAdmin` 驱动),但那只是 UX——绝非权威来源。
+  **个人化设置不在该关卡范围内**:`get_personalized_settings` /
+  `save_personalized_settings` 写的是**按人**偏好而非系统配置,任何已认证账户都可
+  改自己那一份。账户键只取连接已验证的 subject(客户端无法指定),故账户之间彼此
+  不可见;连接级认证关卡照旧生效。见
+  [personalized-setting](../../settings/personalized-setting/personalized-setting-spec.md)。
 
 ## Roadmap(延后到之后的任务)
 

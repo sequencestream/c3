@@ -3,16 +3,19 @@ import type {
   UiLang,
   WorkspaceSetting as WorkspaceSettingType,
 } from '@ccc/shared/protocol'
-import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
-import { applyLocale, setStoredLocale, i18n, type Locale } from '@/i18n'
+import { applyLocale, i18n, type Locale } from '@/i18n'
+import { readLocalPersonalized, writeLocalPersonalized } from '@/lib/personalized-settings'
 import type { AppCtx } from './types'
 
-// Install system/workspace settings, skill-install, locale, and view-mode actions.
+// Install system/workspace/personalized settings, skill-install, locale, and
+// view-mode actions.
 export function installSettingsActions(ctx: AppCtx): void {
   const send = ctx.send
   const t = ctx.t
   const {
     settingsOpen,
+    personalizedSettingOpen,
+    personalizedSettings,
     workspaceSettingOpen,
     currentWorkspace,
     installingSkillIds,
@@ -27,6 +30,28 @@ export function installSettingsActions(ctx: AppCtx): void {
   ctx.openSettings = (): void => {
     settingsOpen.value = true
     send({ type: 'get_settings' })
+  }
+
+  // Personalized settings are already in memory (browser seed + server echo), so
+  // opening the page needs no fetch; refresh anyway so a page left open picks up an
+  // account record created on another device.
+  ctx.openPersonalizedSetting = (): void => {
+    personalizedSettingOpen.value = true
+    ctx.fetchPersonalizedSettings()
+  }
+
+  /**
+   * Ask the server for this connection's personalized settings, offering this
+   * browser's own record as the seed for a not-yet-existing account record. Sent on
+   * every handshake, so a login (which reconnects) adopts the account value and a
+   * logout falls back to the browser's.
+   */
+  ctx.fetchPersonalizedSettings = (): void => {
+    const localFallback = readLocalPersonalized()
+    send({
+      type: 'get_personalized_settings',
+      ...(localFallback.uiLang !== undefined ? { localFallback } : {}),
+    })
   }
 
   ctx.openWorkspaceSetting = (): void => {
@@ -89,32 +114,27 @@ export function installSettingsActions(ctx: AppCtx): void {
   }
 
   /**
-   * Switch the UI language at runtime (no page reload): flip vue-i18n locale +
-   * <html lang>, persist to localStorage, then push the change to the server.
-   * If the WS send fails, roll the UI back and toast.
+   * Switch the display language at runtime (no page reload): flip vue-i18n locale +
+   * `<html lang>`, record it in this browser, then persist it for the current
+   * identity. The browser copy is written even when an account backs the value, so
+   * this browser keeps the latest choice for its signed-out state.
+   * If the WS send fails, roll the UI back and toast — the stored value is untouched.
    */
   ctx.setLocale = (next: UiLang): void => {
     const prev = i18n.global.locale.value as Locale
     if (next === prev) return
     applyLocale(next)
-    setStoredLocale(next)
+    writeLocalPersonalized({ uiLang: next })
+    const previousSettings = personalizedSettings.value
+    personalizedSettings.value = { ...previousSettings, uiLang: next }
     try {
       if (!ctx.client) throw new Error('no connection')
-      const base: SystemSettings = serverSettings.value ?? {
-        agents: [],
-        defaultAgentId: SYSTEM_AGENT_ID,
-        toolAgentId: '',
-        intentAgentId: '',
-        specAgentId: '',
-        automationAgentId: '',
-      }
-      const settings: SystemSettings = { ...base, uiLang: next }
-      send({ type: 'save_settings', settings })
-      serverSettings.value = settings
+      send({ type: 'save_personalized_settings', settings: personalizedSettings.value })
     } catch {
       applyLocale(prev)
-      setStoredLocale(prev)
-      ctx.showToast(t('error.uiLang.saveFailed'))
+      writeLocalPersonalized({ uiLang: prev })
+      personalizedSettings.value = previousSettings
+      ctx.showToast(t('error.personalizedSetting.saveFailed'))
     }
   }
 

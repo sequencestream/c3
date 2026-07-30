@@ -16,6 +16,7 @@ import { type PendingWorkSessionSelectRequest } from '@/lib/work-session-jump'
 import type { CodeTab, CodesSearchResultView } from '@/lib/codes-view'
 import type { ChatBody, ChatMsg, RunActivity } from '@/lib/chat-types'
 import { agentNameAt } from '@/lib/agent-prefix'
+import { normalizePersonalized, readLocalPersonalized } from '@/lib/personalized-settings'
 import type { DeepLinkTarget } from '@/lib/deep-link'
 import type {
   WorkflowStatus,
@@ -32,6 +33,7 @@ import type {
   IntentSessionInfo,
   UpdateStatus,
   PromptImage,
+  PersonalizedSettings,
   WorkspaceSetting as WorkspaceSettingType,
   Automation,
   AutomationExecutionLog,
@@ -593,6 +595,16 @@ export function createState(deps: StateDeps) {
   const skillLinkStatuses = ref<SkillLinkStatus[]>([])
   const installingSkillIds = ref<string[]>([])
 
+  // ---- Personalized setting ----
+  // The third settings class: per-person preferences, reachable by every account
+  // (no admin gate). Seeded from this browser's own record so the first paint and a
+  // no-account session already show the right language; replaced by the server echo
+  // once an account answers.
+  const personalizedSettingOpen = ref(false)
+  const personalizedSettings = ref<PersonalizedSettings>(
+    normalizePersonalized(readLocalPersonalized()),
+  )
+
   // ---- Workspace setting ----
   const workspaceSettingOpen = ref(false)
   const currentWorkspaceSetting = ref<WorkspaceSettingType | null>(null)
@@ -869,6 +881,8 @@ export function createState(deps: StateDeps) {
     skillApprovalRequest,
     skillLinkStatuses,
     installingSkillIds,
+    personalizedSettingOpen,
+    personalizedSettings,
     workspaceSettingOpen,
     currentWorkspaceSetting,
     detectedMainBranch,

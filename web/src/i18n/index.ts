@@ -1,6 +1,7 @@
 import { createI18n } from 'vue-i18n'
 import { useI18n } from 'vue-i18n'
 import { DATE_FORMATS, NUMBER_FORMATS } from '../lib/datetime-formats'
+import { readLocalPersonalized } from '../lib/personalized-settings'
 import en from '../locales/en.json'
 import zh from '../locales/zh.json'
 import ja from '../locales/ja.json'
@@ -102,9 +103,6 @@ function russianPluralIndex(choice: number, choicesLength: number): number {
   return Math.min(idx, choicesLength - 1)
 }
 
-/** localStorage 里持久化用户显式选择的 UI 语言的 key。 */
-const LOCALE_KEY = 'c3.uiLang'
-
 function isSupported(v: unknown): v is Locale {
   return typeof v === 'string' && (SUPPORTED_LOCALES as readonly string[]).includes(v)
 }
@@ -165,42 +163,15 @@ export function isLocaleEnabled(locale: Locale): boolean {
   return ENABLED_LOCALES.has(locale)
 }
 
-/** 读取持久化的 UI 语言;不存在/不合法/不可用时返回 null。 */
-export function readStoredLocale(): Locale | null {
-  try {
-    const v = localStorage.getItem(LOCALE_KEY)
-    return isSupported(v) ? v : null
-  } catch {
-    return null
-  }
-}
-
-/** 持久化用户显式选择的 UI 语言(localStorage 不可用时静默忽略)。 */
-export function setStoredLocale(locale: Locale): void {
-  try {
-    localStorage.setItem(LOCALE_KEY, locale)
-  } catch {
-    /* localStorage unavailable — non-fatal */
-  }
-}
-
 /**
- * 首屏初值解析(在 createI18n 之前同步执行,零 FOUC):
- *   1. localStorage(用户显式设置,主)
- *   2. navigator.language 前缀匹配(仅首次探测一次,不写回 localStorage —— 浏览器
- *      偏好不算「显式设置」)
- *   3. en(兜底)
+ * 首屏初值解析(在 createI18n 之前同步执行,零 FOUC):取本浏览器记录的个人化语言,
+ * 无记录则 `en`。不看 `navigator.language` —— 浏览器偏好不是用户对 c3 的显式选择,
+ * 把它当隐式偏好会让「无记录」看起来像已设置过。已登录账户的语言随后由服务端个人化
+ * 设置回显覆盖。
  */
 function resolveInitialLocale(): Locale {
-  const stored = readStoredLocale()
-  if (stored) return stored
-  try {
-    const prefix = navigator.language?.split('-')[0]?.toLowerCase()
-    if (isSupported(prefix)) return prefix
-  } catch {
-    /* navigator unavailable — fall through to default */
-  }
-  return DEFAULT_LOCALE
+  const stored = readLocalPersonalized().uiLang
+  return isSupported(stored) ? stored : DEFAULT_LOCALE
 }
 
 // 第三泛型 `false` = composition 模式(与运行时 `legacy: false` 对齐),这样
@@ -238,8 +209,8 @@ export const i18n = createI18n<[MessageSchema], Locale, false>({
 
 /**
  * 切换运行时语言的唯一出口:改 vue-i18n locale + 同步 <html lang>。
- * 不写 localStorage、不发 WS —— 那些副作用由调用方(App.setLocale / settings
- * reconcile)按各自语义决定,保持本函数纯粹。
+ * 不写 localStorage、不发 WS —— 那些副作用由调用方(个人化设置的保存与服务端回显)
+ * 按各自语义决定,保持本函数纯粹。
  */
 export function applyLocale(locale: Locale): void {
   i18n.global.locale.value = locale

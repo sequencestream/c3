@@ -12,7 +12,7 @@ describe('buildIntentAgentPrompt', () => {
     expect(prompt).toContain('only read')
   })
 
-  it('injects the matching language name in the closing instruction per uiLang', () => {
+  it('injects the matching language name in the closing instruction per language', () => {
     const langs: UiLang[] = ['en', 'zh', 'ja', 'ko', 'ru']
     for (const lang of langs) {
       const prompt = buildIntentAgentPrompt(lang, SID)

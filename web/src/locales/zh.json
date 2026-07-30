@@ -89,6 +89,9 @@
     "settings": {
       "tooltip": "系统设置"
     },
+    "personalizedSetting": {
+      "tooltip": "个人化设置"
+    },
     "workspace": {
       "trigger": {
         "empty": {
@@ -382,12 +385,6 @@
       },
       "hint": "参与者在其提示指引中看到的每轮发言字数预算。参与者被要求将回复控制在此上限内,但超长回复会被原样接受(不做硬截断)。最小值为 {min}(保存时低于此值会被上调钳制)。"
     },
-    "displayLang": {
-      "title": {
-        "label": "显示语言"
-      },
-      "hint": "c3 网页控制台界面的语言。更改无需刷新立即生效,并会保存到服务器。与下方的语音输入语言相互独立。"
-    },
     "voiceLang": {
       "title": {
         "label": "语音输入语言"
@@ -629,6 +626,17 @@
       },
       "hint": "此 c3 部署的对外基地址，用于拼接可分享的链接。例如 http://192.168.10.10:9000。明文存储（非敏感信息）。",
       "placeholder": "http://192.168.10.10:9000"
+    }
+  },
+  "personalizedSetting": {
+    "title": {
+      "label": "个人化设置"
+    },
+    "displayLang": {
+      "title": {
+        "label": "显示语言"
+      },
+      "hint": "c3 网页控制台界面的语言。更改无需刷新立即生效。已登录时保存到你的账户,否则保存在本浏览器中。"
     }
   },
   "intent": {
@@ -1774,8 +1782,9 @@
     "intentAction": {
       "title": "操作失败"
     },
-    "uiLang": {
-      "saveFailed": "保存语言设置失败。已还原。"
+    "personalizedSetting": {
+      "loadFailed": "加载个人化设置失败。保持当前值。",
+      "saveFailed": "保存个人化设置失败。已还原。"
     },
     "workspace": {
       "unknown": "未知工作区:{path}"

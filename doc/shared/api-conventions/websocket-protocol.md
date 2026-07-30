@@ -157,6 +157,18 @@
 
 **字段：** `settings: SystemSettings`
 
+### `get_personalized_settings`
+
+获取本连接的个人化设置。服务器回复 `personalized_settings`。不需要管理员权限。`localFallback` 是浏览器自己当前的值，仅作为该账户**首次**建档的种子：账户已有记录时以账户为准，客户端也无法指定读取哪个账户（服务端只用已验证的连接身份）。
+
+**字段：** `localFallback?: PersonalizedSettings`
+
+### `save_personalized_settings`
+
+保存本连接的个人化设置；服务器标准化并回显 `personalized_settings`。存在 subject 时写入该账户记录——客户端无法指定写入哪个账户。不需要管理员权限。
+
+**字段：** `settings: PersonalizedSettings`
+
 ### `load_workspace_setting`
 
 加载工作区设置。服务器回复 `workspace_setting`。
@@ -563,6 +575,12 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 **字段：** `settings: SystemSettings`, `hostStatus: VendorHostStatus[]`, `bindingStats: SessionBindingStats`, `sessionCapabilities: Record<VendorId, SessionCapabilities>`, `vendorCapabilities?: Record<VendorId, Record<AdapterCapability, boolean>>`, `skillSupport?: Record<VendorId, SkillSupportState>`, `vendorModes?: Record<VendorId, VendorModeCatalog>`
 
+### `personalized_settings`
+
+本连接的标准化个人化设置，回复 `get_personalized_settings` / `save_personalized_settings`。这个回显决定控制台当前的界面语言。`scope` 说明是哪个存储作答：`account` ⇒ 连接已验证 subject 的服务端记录；`local` ⇒ 无账户适用，浏览器自身权威，服务端未落任何账户记录。读写失败不发此帧，而是回 `personalizedSetting.loadFailed` / `personalizedSetting.saveFailed` 错误码。
+
+**字段：** `settings: PersonalizedSettings`, `scope: 'account' | 'local'`
+
 ### `workspace_setting`
 
 工作区的标准化设置（回复 `load_workspace_setting` 或 `save_workspace_setting`）。`config` 含两个 git 分支模式字段：`gitBranchMode: 'current-branch' | 'worktree'`（缺省/未知值归一为 `worktree`）与 `defaultMainBranch?: string`（`worktree` 模式下新 worktree 的基准分支），并含 `sddEnabled?: boolean`（缺失/非布尔归一为 `true`，显式 `false` 保持关闭）。`detectedMainBranch?` 是服务端探测到的仓库默认分支（`origin/HEAD` → 当前 HEAD），仅在 `load` 回复时下发，表单用它预填 `defaultMainBranch`（已保存值优先于探测值）。
@@ -864,7 +882,8 @@ automation 的执行日志。
 
 ## 系统配置类型
 
-- **`SystemSettings`** — `{ agents, defaultAgentId, voiceLang?, uiLang?, timezone?, showToolSessions?, degradationChain?, socketAutoResume?, sandboxes?, projectConfigs? }`。持久化为系统级配置。曾有的顶级 `defaultMode`、`consensus`、`devSkill`、`maxRoundsPerStage`、`maxSpeechChars`、`skillRepos` 字段已**废弃**（2026-06-07），移至 `WorkspaceSetting`。`settings` 回包另带只读运行时伴随数据 `hostStatus` 与 `sandboxStatus?`；后者为 `{ present, binary:'arapuca', path, error? }`，供系统设置展示 sandbox 驱动状态及解析后的绝对路径，不写入配置。
+- **`SystemSettings`** — `{ agents, defaultAgentId, voiceLang?, timezone?, showToolSessions?, degradationChain?, socketAutoResume?, sandboxes?, projectConfigs? }`。持久化为系统级配置。曾有的顶级 `defaultMode`、`consensus`、`devSkill`、`maxRoundsPerStage`、`maxSpeechChars`、`skillRepos` 字段已**废弃**（2026-06-07），移至 `WorkspaceSetting`；界面语言 `uiLang` 属 `PersonalizedSettings`（按人偏好），磁盘上的旧顶级 `uiLang` 读时忽略、写时清理。`settings` 回包另带只读运行时伴随数据 `hostStatus` 与 `sandboxStatus?`；后者为 `{ present, binary:'arapuca', path, error? }`，供系统设置展示 sandbox 驱动状态及解析后的绝对路径，不写入配置。
+- **`PersonalizedSettings`** — `{ uiLang? }`。按人偏好，与 `SystemSettings`（系统级）、`WorkspaceSetting`（工作区级）并列的第三类设置，**不过管理员门**。缺失或未知语言归一为 `en`。读写走 `get_personalized_settings` / `save_personalized_settings`，服务端回 `personalized_settings`（带 `scope: 'account' | 'local'`，说明是账户记录还是仅把浏览器上报值归一后回显）。账户键取服务端已验证的连接 `subject`，客户端无法指定；无 subject 时不建共享记录，浏览器 `localStorage` 即存储。`get` 可携带 `localFallback` 作为该账户**首次**建档的种子——账户已有记录时它既不覆盖也不合并。
 - **`WorkspaceSetting`** — `{ defaultMode?, consensus?, devSkill?, maxRoundsPerStage?, maxSpeechChars?, skillRepos?, gitBranchMode?, defaultMainBranch?, sandbox?, sddEnabled? }`。工作区级设置，键控于 `SystemSettings.projectConfigs`（on-disk 键名仍为 `projectConfigs`，兼容旧数据）。`defaultMode` 是 `Record<VendorId, ModeToken | CodexPolicy>`（每个供应商独立的默认权限模式）。`gitBranchMode: 'current-branch' | 'worktree'`（缺省/未知值归一为 `worktree`，并兼容回读旧磁盘键 `gitCommitMode`）决定开始工作时的 git 分支策略；`defaultMainBranch?` 为 `worktree` 模式下新 worktree 的基准分支（缺省则从当前 HEAD 切）。`sddEnabled` 缺失或非布尔时归一为 `true`，显式 `false` 保持关闭。
 - **`ConsensusConfig`** — `{ enabled, majority?, mode?, agentIds? }`。多方代理共识投票配置。`majority` 可选；`false`/缺失 ⇒ 仅一致同意才自动解决；`true` ⇒ 多数裁决。`mode: 'all' | 'custom'`（缺省视作 `all`）选择投票者集合，**vendor 中立**（不按 vendor 分组）：`all` ⇒ 全部「已启用非自身」agent（跨 vendor）；`custom` ⇒ 该集合与 `agentIds` 白名单的交集（白名单只按 id 收窄，可含任意 vendor）。`agentIds?: string[]` 仅 `custom` 模式有意义；normalize 清洗掉不存在/已禁用的 id，运行时再次过滤已禁用项（双重静默过滤），空集 ⇒ 无投票者 ⇒ 退回人工。
 - **`NormalizedToolRisk`** — `{ operationIntent, resourceScope: { kind, targets }, risks: { read, write, execute, network, tags? }, normalizationVersion }`。工具权限请求经服务端确定性归一化后的 vendor 中立载荷（投票前生成），跨 vendor 投票者只看到它，不接触原生工具名/输入。`operationIntent` 稳定的中立操作类别+简述；`resourceScope` 结构化提取的资源种类与目标（路径/命令目标/远端 host 或 URL）；`risks` 四类基础风险布尔+可选标签；`normalizationVersion` 归一化规则版本。
@@ -875,7 +894,7 @@ automation 的执行日志。
 - **`ModeToken`** — `string`。供应商原生权限模式 token。`PermissionMode`（`'default' | 'auto' | 'plan' | 'acceptEdits' | 'bypassPermissions'`）现在是 Claude 独有的 token 集合。
 - **`CodexPolicy`** — `{ sandboxMode: CodexSandboxMode, approvalPolicy: CodexApprovalPolicy }`。Codex 双策略配置（2026-06-08），替换 `codex` 供应商的单一 `ModeToken`。
 
-参见 [settings 规范](../../domains/settings/agent-config/agent-config-spec.md)。
+参见 [settings 规范](../../domains/settings/agent-config/agent-config-spec.md)与 [personalized-setting 规范](../../domains/settings/personalized-setting/personalized-setting-spec.md)。
 
 ## 规范代理消息模型（供应商中立）——ADR-0013
 

@@ -11,7 +11,7 @@ import { resolveWorkspaceRoot } from '../../state.js'
 import { getDiscussionType, type DiscussionTypeDef } from '@ccc/shared/discussion-types'
 import { runClaude } from '../../kernel/agent/index.js'
 import { INTENT_DISALLOWED_TOOLS } from '../../kernel/permission/index.js'
-import { getUiLangName } from '../../kernel/config/index.js'
+import { getAgentLangName } from '../../kernel/config/index.js'
 
 /**
  * This step's SessionKind: the research pass calls {@link runClaude} directly
@@ -125,7 +125,7 @@ export async function researchDiscussionContext(
       workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
     },
     def,
-    getUiLangName(),
+    getAgentLangName(),
   )
   const abort = new AbortController()
   let captured = ''

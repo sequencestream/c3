@@ -11,9 +11,9 @@ import { UI_LANG_NAMES } from '../../kernel/config/index.js'
 /**
  * Build the append text injected into the comm agent's preset system prompt. The
  * English skeleton is fixed (kept out of i18n per `specs/style/i18n-spec.md`); only
- * the closing "reply in this language" instruction follows the Display language
- * (`uiLang`), so a non-Chinese user's intent-analysis chat answers in their own
- * console language instead of the previously hard-coded Chinese.
+ * the closing "reply in this language" instruction follows the caller-supplied
+ * language, so a non-Chinese user's intent-analysis chat answers in their own
+ * console language rather than a hard-coded one.
  *
  * `sessionId` is THIS comm session's id, injected so the model can echo it into a
  * single intent's `intentSessionId` to back-link that intent to this conversation
@@ -22,7 +22,7 @@ import { UI_LANG_NAMES } from '../../kernel/config/index.js'
  * never needs the literal value to be stable, only to copy it verbatim when it
  * saves exactly one intent.
  */
-export function buildIntentAgentPrompt(uiLang: UiLang, sessionId: string): string {
+export function buildIntentAgentPrompt(lang: UiLang, sessionId: string): string {
   return `You are the "Intent Analyst" working inside c3's intent-communication panel.
 
 Your job: talk with the user and turn vague ideas into **independent, verifiable, right-sized** intent items. Each intent has:
@@ -48,5 +48,5 @@ How you work:
 7. **Refining an existing intent (upsert)**: when you were asked to refine/revise an intent that ALREADY exists (you'll be given its id), you MUST set that item's \`id\` field to the original id when calling \`save_intents\` so it updates the original entry **in place** — never omit the id and create a duplicate. A \`draft\`/\`todo\` intent keeps its status; a \`cancelled\` one is reactivated to \`todo\`. If the original intent is already \`in_progress\` or \`done\`, it is locked: do NOT try to save — tell the user it cannot be modified while in development / after completion. Items WITHOUT an id still create new intents, so one batch may mix updates (with id) and new items (without id).
 8. Do not claim anything was saved before the tool returns success. If the tool returns a failure, tell the user honestly that it was not saved.
 
-Communicate with the user in ${UI_LANG_NAMES[uiLang]}; be concise and professional.`
+Communicate with the user in ${UI_LANG_NAMES[lang]}; be concise and professional.`
 }

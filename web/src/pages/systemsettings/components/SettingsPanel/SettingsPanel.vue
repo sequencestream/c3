@@ -5,7 +5,7 @@
  * 每个 Tab 维护独立草稿与脏状态,并提供独立保存按钮:保存时只用当前 Tab 白名单字段覆盖
  * 「最新已提交快照」构造完整 SystemSettings 发送,不携带其他 Tab 草稿(见 TAB_FIELDS)。
  * 面板打开期间的设置回推按字段归属合并,只有首次打开整体播种;即时持久化字段
- * (uiLang、账号列表/管理员)总是同步,脏 Tab 的其余字段草稿受保护。保存后面板保持打开。
+ * (账号列表/管理员)总是同步,脏 Tab 的其余字段草稿受保护。保存后面板保持打开。
  * 切换存在未保存修改的 Tab 时二次确认,确认后仅切换、不保存也不丢弃草稿。
  */
 import { computed, ref, toRaw, watch } from 'vue'
@@ -17,11 +17,10 @@ import type {
   SessionBindingStats,
   SandboxHostStatus,
   SystemSettings,
-  UiLang,
   VendorHostStatus,
   VendorId,
 } from '@ccc/shared/protocol'
-import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
+import { useTypedI18n } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 import { listGroupAgents } from '@/lib/group-agents'
 import { useAuth } from '@/composables/useAuth'
@@ -50,27 +49,6 @@ const VOICE_LANGS = computed<{ value: string; label: string }[]>(() => [
   { value: 'zh-TW', label: t('settings.voiceLang.zhTW.label') },
   { value: 'zh-HK', label: t('settings.voiceLang.zhHK.label') },
 ])
-
-// UI 显示语言。下放开关 = `web/src/i18n/index.ts` 的 `ENABLED_LOCALES`,由各 locale
-// 的 `__humanReviewed__` 派生(en/zh 无条件基线;其余语种须人在 JSON 翻 `__humanReviewed__:
-// true` 后才进集合,模型不写此字段)。此处全表声明,渲染时再按 `isLocaleEnabled` 过滤,
-// 避免模型/人类各自维护一份注释掉的 ja/ko,容易漂移。
-//
-// 标签是「语言原生名」——BCP-47 惯例,语言名 = 语言本身的标识符。把 "日本語"
-// 翻成 "Japanese" 等于把下拉项变成翻译,违背语言切换的语义。豁免于
-// web/CLAUDE.md 的 no-raw-text 规则,作用域仅限此 UI_LANG_LABELS 注册表。
-const UI_LANG_LABELS: Record<Locale, string> = {
-  en: 'English',
-  zh: '简体中文',
-  ja: '日本語',
-  ko: '한국어',
-  ru: 'Русский',
-}
-const UI_LANGS = computed<{ value: UiLang; label: string }[]>(() =>
-  (['en', 'zh', 'ja', 'ko', 'ru'] as const)
-    .filter((l): l is Locale => isLocaleEnabled(l))
-    .map((l) => ({ value: l, label: UI_LANG_LABELS[l] })),
-)
 
 const props = withDefaults(
   defineProps<{
@@ -106,7 +84,7 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
   ],
   runtime: ['vendorCliVersions', 'proxy', 'sessionCleanup'],
   security: ['auth'],
-  general: ['uiLang', 'voiceLang', 'timezone', 'baseUrl', 'showToolSessions', 'showSessionsPage'],
+  general: ['voiceLang', 'timezone', 'baseUrl', 'showToolSessions', 'showSessionsPage'],
 }
 function tabLabel(tab: SettingsTab): string {
   return t(`settings.tabs.${tab}.label` as 'settings.tabs.agent.label')
@@ -154,8 +132,6 @@ function vendorLabel(v: VendorId): string {
 const emit = defineEmits<{
   close: []
   save: [settings: SystemSettings]
-  // Live, no-reload UI-language switch (fires on select change, before Save).
-  'set-ui-lang': [lang: UiLang]
   // Upsert a basic account's password (ADR-0023). The plaintext is sent to the
   // server which hashes it; the panel never computes or persists a hash. A new
   // username adds an account (no currentPassword); an existing one changes it
@@ -182,7 +158,6 @@ function emptySettings(): SystemSettings {
     // '' ⇒ the new-automation form pre-fills with the default agent.
     automationAgentId: '',
     voiceLang: 'zh-CN',
-    uiLang: 'en',
     timezone: BROWSER_TZ,
     baseUrl: '',
     showToolSessions: false,
@@ -201,7 +176,6 @@ function emptySettings(): SystemSettings {
 // immediate-persist sync for a protected dirty tab.
 const {
   draft,
-  committed,
   activeTab,
   pendingTabSwitch,
   tabDirtyMap,
@@ -338,7 +312,6 @@ function buildSeed(settings: SystemSettings): SystemSettings {
     // '' ⇒ the new-automation form pre-fills with the default agent (AC-R25).
     automationAgentId: settings.automationAgentId ?? '',
     voiceLang: settings.voiceLang ?? 'zh-CN',
-    uiLang: settings.uiLang ?? 'en',
     timezone: settings.timezone ?? BROWSER_TZ,
     baseUrl: settings.baseUrl ?? '',
     showToolSessions: settings.showToolSessions ?? false,
@@ -357,13 +330,11 @@ function buildSeed(settings: SystemSettings): SystemSettings {
 }
 
 // Sync only the immediate-persist sub-fields of a (dirty, protected) tab from
-// `seed`: the UI language (General) and the basic-account list + admin designation
-// (Security). These are persisted by dedicated paths that do not wait for a tab's
-// Save, so they must reflect the server even while the rest of the tab stays dirty.
+// `seed`: the basic-account list + admin designation (Security). These are persisted
+// by dedicated paths that do not wait for a tab's Save, so they must reflect the
+// server even while the rest of the tab stays dirty.
 function syncImmediateFields(tab: SettingsTab, target: SystemSettings, src: SystemSettings): void {
-  if (tab === 'general') {
-    target.uiLang = src.uiLang
-  } else if (tab === 'security') {
+  if (tab === 'security') {
     if (target.auth?.provider.kind === 'basic' && src.auth?.provider.kind === 'basic') {
       target.auth.provider.accounts = src.auth.provider.accounts.map((a) => ({ ...a }))
       target.auth.provider.adminUsername = src.auth.provider.adminUsername
@@ -648,7 +619,6 @@ function buildTabPayload(
       break
     }
     case 'general': {
-      payload.uiLang = src.uiLang
       payload.voiceLang = src.voiceLang
       payload.timezone = src.timezone
       payload.baseUrl = src.baseUrl
@@ -658,17 +628,6 @@ function buildTabPayload(
     }
   }
   return payload
-}
-
-// Live-switch the UI language on select change (App applies + persists + pushes
-// to server). Update the draft so a later General Save carries the same value, and
-// optimistically advance the committed baseline too — the language is persisted
-// immediately, so it must not linger as an unsaved General diff.
-function onUiLangChange(e: Event) {
-  const lang = (e.target as HTMLSelectElement).value as UiLang
-  draft.value.uiLang = lang
-  committed.value.uiLang = lang
-  emit('set-ui-lang', lang)
 }
 
 // ---- Authentication (ADR-0023) ------------------------------------------
@@ -1516,22 +1475,9 @@ function selectAdmin(username: string) {
         data-testid="settings-tab-general"
       >
         <section class="settings-section">
-          <p class="settings-section-title">{{ t('settings.displayLang.title.label') }}</p>
-          <p class="settings-hint">{{ t('settings.displayLang.hint') }}</p>
-          <select
-            v-model="draft.uiLang"
-            class="lang-select mode-select"
-            data-testid="settings-ui-lang"
-            @change="onUiLangChange"
-          >
-            <option v-for="l in UI_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
-          </select>
-        </section>
-
-        <section class="settings-section">
           <p class="settings-section-title">{{ t('settings.voiceLang.title.label') }}</p>
           <p class="settings-hint">{{ t('settings.voiceLang.hint') }}</p>
-          <select v-model="draft.voiceLang" class="mode-select">
+          <select v-model="draft.voiceLang" class="mode-select" data-testid="settings-voice-lang">
             <option v-for="l in VOICE_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
           </select>
         </section>

@@ -398,7 +398,7 @@ export function tallyQuestion(
  * adjudicate ONLY the split questions and must answer with exact option labels.
  * `langName` (the Display-language name, injected by the caller) sets the language
  * of the human-facing summary sentence; it defaults to `English` so this pure
- * function needs no settings access (the caller passes `getUiLangName()`).
+ * function needs no settings access (the caller passes `getAgentLangName()`).
  */
 export function deciderAskPrompt(
   perQuestion: QuestionConsensus[],

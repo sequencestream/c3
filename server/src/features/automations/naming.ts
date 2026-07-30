@@ -17,7 +17,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { CreateAutomationInput, AutomationType, SessionKind } from '@ccc/shared/protocol'
 import { findClaudeExecutable } from '../../kernel/infra/child-env.js'
-import { getUiLangName } from '../../kernel/config/index.js'
+import { getAgentLangName } from '../../kernel/config/index.js'
 import { resolveToolSessionLaunch } from '../../kernel/agent-config/index.js'
 import { addToolSession } from '../../sessions.js'
 
@@ -155,10 +155,10 @@ function buildNamingPrompt(type: AutomationType, config: unknown): string {
       : `LLM prompt:\n${readStringField(config, 'prompt')}`
   return [
     'Generate a concise, human-readable title for the scheduled task below.',
-    // Title language follows the Display language (`uiLang`) so a non-English user
+    // Title language follows the agent-output language so a non-English user
     // sees a console-consistent title; "at most 6 words" stays as a loose length
     // hint (CJK has no "word" notion, but the model adapts).
-    `Rules: at most 6 words, in ${getUiLangName()}, no surrounding quotes, no trailing punctuation.`,
+    `Rules: at most 6 words, in ${getAgentLangName()}, no surrounding quotes, no trailing punctuation.`,
     'Reply with the title only — nothing else.',
     '',
     body,

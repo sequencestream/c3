@@ -6,6 +6,7 @@
  * viewMode(工作区/工作台)切换器位于顶栏最左侧,为两个显示器图标按钮(工作区=屏内
  * 三横条;工作台=屏内会话气泡),生效模式蓝、另一个灰;桌面与移动端共用同一份图标标记。
  * - workspace 模式:左侧切换器 + WS switcher + 项目配置,中间标签页,右侧设置/账户/状态/许可
+ *   右侧两个设置入口:个人化设置(人形齿轮,任何账户可见)与系统设置(齿轮,仅管理员可见)。
  *   工作台图标(切换器右侧)在 workcenterBadgeCount>0 时挂待处理角标,让用户不进工作台也能感知。
  * - workcenter 模式:左侧切换器 + 工作台页面入口(总览 / 用户通知,tab 语义),中间区域隐藏,右侧同上
  *   工作台页面入口占据原「工作台」标题位置;待处理事件角标(workcenterBadgeCount)挂在「用户通知」入口上。
@@ -73,6 +74,10 @@ function chooseSettings(): void {
   closeActions()
   emit('open-settings')
 }
+function choosePersonalizedSetting(): void {
+  closeActions()
+  emit('open-personalized-setting')
+}
 function chooseLogout(): void {
   closeActions()
   closeAccount()
@@ -114,6 +119,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'select-tab': [key: string]
   'open-settings': []
+  'open-personalized-setting': []
   'open-workspace-setting': []
   'add-workspace': [path: string]
   'select-workspace': [path: string]
@@ -333,6 +339,32 @@ function selectTab(tab: HeaderTab): void {
           :title="updateText"
           >{{ updateText }}</a
         >
+        <!-- 个人化设置入口:不受 isAdmin 约束,任何账户恒可达(该域无管理员门禁)。 -->
+        <button
+          class="icon-btn personalized-setting-btn"
+          :title="t('nav.personalizedSetting.tooltip')"
+          :aria-label="t('nav.personalizedSetting.tooltip')"
+          data-testid="nav-personalized-setting"
+          @click="emit('open-personalized-setting')"
+        >
+          <svg
+            class="personalized-icon"
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              fill="currentColor"
+              d="M10 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.42 0-8 2.69-8 6v2h11.3a6.5 6.5 0 0 1-.3-2c0-2.3 1.2-4.3 3-5.5A14 14 0 0 0 10 14Z"
+            />
+            <path
+              fill="currentColor"
+              d="M18.5 14.2l1.1.6-.5 1.4-1.2-.2a3 3 0 0 1-.8.8l.2 1.2-1.4.5-.6-1.1a3 3 0 0 1-1.1 0l-.6 1.1-1.4-.5.2-1.2a3 3 0 0 1-.8-.8l-1.2.2-.5-1.4 1.1-.6a3 3 0 0 1 0-1.1l-1.1-.6.5-1.4 1.2.2a3 3 0 0 1 .8-.8l-.2-1.2 1.4-.5.6 1.1a3 3 0 0 1 1.1 0l.6-1.1 1.4.5-.2 1.2a3 3 0 0 1 .8.8l1.2-.2.5 1.4-1.1.6a3 3 0 0 1 0 1.1Zm-3.3 1.4a1.9 1.9 0 1 0 0-3.8 1.9 1.9 0 0 0 0 3.8Z"
+            />
+          </svg>
+        </button>
         <button
           v-if="isAdmin"
           class="icon-btn settings-btn"
@@ -513,6 +545,13 @@ function selectTab(tab: HeaderTab): void {
           >
             {{ t('workspaceSetting.entry.tooltip') }}
           </button>
+          <button
+            class="mobile-action-item"
+            data-testid="nav-personalized-setting-mobile"
+            @click="choosePersonalizedSetting"
+          >
+            {{ t('nav.personalizedSetting.tooltip') }}
+          </button>
           <button v-if="isAdmin" class="mobile-action-item" @click="chooseSettings">
             {{ t('nav.settings.tooltip') }}
           </button>
@@ -645,6 +684,11 @@ function selectTab(tab: HeaderTab): void {
 }
 .update-hint:hover {
   opacity: 0.85;
+}
+
+/* 个人化设置入口图标:与账户人形图标同尺寸,currentColor 着色随按钮态 */
+.personalized-icon {
+  display: block;
 }
 
 /* 账户菜单(ADR-0023):受控 <details> 下拉,人形图标触发 */

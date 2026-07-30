@@ -25,7 +25,6 @@ const baseSettings: SystemSettings = {
   defaultMode: 'default',
   consensus: { enabled: false },
   voiceLang: 'zh-CN',
-  uiLang: 'zh',
   showToolSessions: false,
   showSessionsPage: false,
   devSkill: '',
@@ -67,9 +66,7 @@ describe('SettingsPanel.vue — sessions page switch', () => {
     expect(en.settings.display.showSessionsPage.label).toBe('Show sessions page')
     expect(zh.settings.display.showSessionsPage.label).toBe('显示会话页')
     useAuth().setIsAdmin(false)
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...baseSettings, uiLang: 'en' } },
-    })
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
     const toggle = w.find('[data-testid="settings-show-sessions-page"]')
     expect(toggle.attributes()).toHaveProperty('disabled')
   })
@@ -460,51 +457,22 @@ describe('SettingsPanel.vue — intent-agent dropdown + fall-through (AC-R23)', 
   })
 })
 
-describe('SettingsPanel.vue — UI display language', () => {
-  it('seeds the language select from server settings', () => {
+describe('SettingsPanel.vue — display language moved out of system settings', () => {
+  it('does not render a display-language control on any tab', () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    const select = w.find('[data-testid="settings-ui-lang"]')
-    expect(select.exists()).toBe(true)
-    expect((select.element as HTMLSelectElement).value).toBe('zh')
+    expect(w.find('[data-testid="settings-ui-lang"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('Display language')
   })
 
-  it('defaults the language select to en when settings omit uiLang', () => {
-    const w = mount(SettingsPanel, {
-      props: { open: true, settings: { ...baseSettings, uiLang: undefined } },
-    })
-    const select = w.find('[data-testid="settings-ui-lang"]')
-    expect((select.element as HTMLSelectElement).value).toBe('en')
-  })
-
-  it('offers en + zh + ja + ko + ru (all human-reviewed)', () => {
+  it('keeps the other General fields loading and saving', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    const values = w
-      .findAll('[data-testid="settings-ui-lang"] option')
-      .map((o) => (o.element as HTMLOptionElement).value)
-    expect(values).toEqual(['en', 'zh', 'ja', 'ko', 'ru'])
-  })
-
-  it('emits set-ui-lang immediately on select change (no Save needed)', async () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    await w.find('[data-testid="settings-ui-lang"]').setValue('en')
-    const emitted = w.emitted('set-ui-lang') as [string][]
-    expect(emitted).toBeTruthy()
-    expect(emitted[0][0]).toBe('en')
-  })
-
-  it('the immediate UI-language switch does not mark the General tab dirty', async () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    await w.find('[data-testid="settings-ui-lang"]').setValue('en')
-    // uiLang is persisted immediately; it must not linger as an unsaved General diff.
-    expect(w.find('[data-testid="settings-tab-dirty-general"]').exists()).toBe(false)
-  })
-
-  it('carries the selected language into the General Save payload', async () => {
-    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
-    await w.find('[data-testid="settings-ui-lang"]').setValue('en')
+    const voice = w.find<HTMLSelectElement>('[data-testid="settings-voice-lang"]')
+    expect(voice.element.value).toBe('zh-CN')
+    await voice.setValue('en-US')
     await w.find(SAVE.general).trigger('click')
     const emitted = w.emitted('save') as [SystemSettings][]
-    expect(emitted[0][0].uiLang).toBe('en')
+    expect(emitted[0][0].voiceLang).toBe('en-US')
+    expect(emitted[0][0].timezone).toBeTruthy()
   })
 })
 
@@ -1085,7 +1053,7 @@ describe('SettingsPanel.vue — Tab grouping (2026-07-11-001)', () => {
       'settings-proxy': 'settings-tab-runtime',
       'settings-session-cleanup': 'settings-tab-runtime',
       'settings-auth': 'settings-tab-security',
-      'settings-ui-lang': 'settings-tab-general',
+      'settings-voice-lang': 'settings-tab-general',
       'settings-timezone': 'settings-tab-general',
       'settings-base-url': 'settings-tab-general',
     }

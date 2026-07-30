@@ -22,10 +22,14 @@
  */
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { homedir } from 'node:os'
-import { join, dirname, resolve } from 'node:path'
 import { z } from 'zod'
 import { readJsonFile, withFileLock, writeAtomic } from './store.js'
+import {
+  c3HomeDir,
+  setSettingsPath as setSettingsPathOverride,
+  settingsFile,
+  stateFile,
+} from './paths.js'
 import type {
   AgentConfig,
   ClaudeAgentConfig,
@@ -58,6 +62,14 @@ import { parseAgentConfig } from '../agent-config/schema.js'
 import { normalizeAuth, migrateLegacySessionTtl } from './auth-schema.js'
 import { DEFAULT_SESSION_RETENTION_DAYS, MIN_SESSION_RETENTION_DAYS } from './session-cleanup.js'
 import { encryptAgentApiKeys, decryptAgentApiKeys } from './encryption.js'
+import {
+  DEFAULT_UI_LANG,
+  getAgentLang,
+  personalizedFileKeys,
+  resetPersonalizedCache,
+} from './personalized.js'
+
+export { c3HomeDir, DEFAULT_UI_LANG, getAgentLang }
 
 /**
  * Per-vendor default mode tokens (2026-06-07-017). Each vendor's fallback when
@@ -70,18 +82,12 @@ const DEFAULT_MODE_MAP: Record<VendorId, ModeToken> = {
   codex: 'auto',
 }
 
-/** UI display languages. Only `en`/`zh` ship translations today; the rest are
- * reserved for the i18n rollout (fall back to `en` messages until translated). */
-const UI_LANGS: readonly UiLang[] = ['en', 'zh', 'ja', 'ko', 'ru']
-/** UI language when unset/invalid. Decoupled from {@link voiceLang}. */
-export const DEFAULT_UI_LANG: UiLang = 'en'
-
 /**
  * Human-readable language names per {@link UiLang}, each carrying its native
  * endonym in parentheses (e.g. `Chinese (简体中文)`). Used to instruct agents to
- * reply in the user's chosen display language. The English skeleton of a prompt
- * stays English and out of i18n (see `specs/style/i18n-spec.md`); only this name
- * is interpolated so the agent's *output* follows the setting.
+ * reply in the language the console is being used in. The English skeleton of a
+ * prompt stays English and out of i18n (see `specs/style/i18n-spec.md`); only this
+ * name is interpolated so the agent's *output* follows the setting.
  */
 export const UI_LANG_NAMES: Record<UiLang, string> = {
   en: 'English',
@@ -266,46 +272,14 @@ interface SessionAgentState {
 }
 
 /**
- * Explicit settings-file path override (CLI `--settings <path>`), set once at
- * startup before any load. When set, it is the exact settings.json path and its
- * directory also holds `state.json` — so the whole c3 config dir is relocated.
- * Lets an isolated launch (e.g. e2e) point at its own auth-free settings without
- * touching the real `~/.c3`. Mirrors the `C3_DIR` override already honored by
- * the db layer (kernel/infra/db.ts).
- */
-let settingsPathOverride: string | null = null
-
-/**
- * Set the settings.json path used for all subsequent loads/saves. Must be called
- * before the first {@link loadSettings} (the cli's `start` action does this).
+ * Point every subsequent load/save at another settings.json (CLI `--settings
+ * <path>`; the cli's `start` action calls this). Every cache keyed to the old path
+ * is dropped, so a relocation mid-process cannot serve stale values.
  */
 export function setSettingsPath(path: string): void {
-  settingsPathOverride = resolve(path)
-}
-
-function c3Dir(): string {
-  if (settingsPathOverride) return dirname(settingsPathOverride)
-  if (process.env.C3_DIR) return resolve(process.env.C3_DIR)
-  return join(homedir(), '.c3')
-}
-
-/**
- * The resolved c3 home directory (honoring `--settings` / `C3_DIR` / default
- * `~/.c3`). Exposed so other domains anchor their on-disk data under the same
- * dir — notably intent worktrees, which must live somewhere the Docker daemon
- * can bind-mount (on macOS Docker Desktop that excludes `$TMPDIR`/`/var/folders`
- * but always includes the user's HOME). See features/intents/worktree.ts.
- */
-export function c3HomeDir(): string {
-  return c3Dir()
-}
-
-function settingsFile(): string {
-  return settingsPathOverride ?? join(c3Dir(), 'settings.json')
-}
-
-function stateFile(): string {
-  return join(c3Dir(), 'state.json')
+  setSettingsPathOverride(path)
+  settingsCache = null
+  resetPersonalizedCache()
 }
 
 // ---- Settings (agent registry) ----
@@ -467,11 +441,11 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   captureLegacyProjectSeed(raw)
   const voiceLang =
     typeof raw?.voiceLang === 'string' && raw.voiceLang.trim() ? raw.voiceLang.trim() : 'zh-CN'
-  // UI display language: a known code is kept; anything else falls back to `en`.
-  // Deliberately independent from `voiceLang`.
-  const uiLang = UI_LANGS.includes(raw?.uiLang as UiLang)
-    ? (raw!.uiLang as UiLang)
-    : DEFAULT_UI_LANG
+  // A legacy top-level `uiLang` on disk is read as an unknown field: the display
+  // language is a personalized preference (see config/personalized.ts), so it is
+  // absent from the returned object and disappears from disk on the next save. It is
+  // deliberately NOT carried into any account record — that would keep propagating
+  // one person's choice to everyone.
   // System time zone: a valid IANA name is kept; anything else falls back to the
   // server's own zone (so a fresh install automations in local time out of the box).
   const timezone = isValidTimeZone(raw?.timezone) ? raw!.timezone! : getServerTimezone()
@@ -507,7 +481,6 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     specAgentId,
     automationAgentId,
     voiceLang,
-    uiLang,
     timezone,
     ...(baseUrlRaw ? { baseUrl: baseUrlRaw } : {}),
     showToolSessions,
@@ -942,12 +915,19 @@ function mergeSettingsOverDisk(
  */
 export function saveSettings(next: SystemSettings): SystemSettings {
   return withFileLock(settingsFile(), () => {
-    const merged = mergeSettingsOverDisk(readSettingsFromDisk(), next)
+    const disk = readSettingsFromDisk()
+    const merged = mergeSettingsOverDisk(disk, next)
     const normalized = normalize(merged)
     try {
       // Encrypt apiKeys for disk only; the cache keeps the plaintext `normalized`
       // so the runtime (launchForAgent env injection) always reads the real key.
-      writeAtomic(settingsFile(), encryptAgentApiKeys(normalized))
+      // The personalized-settings keys are siblings of SystemSettings and never
+      // travel in a system-settings snapshot, so re-attach the disk copy — a
+      // whole-object save must not wipe another settings class.
+      writeAtomic(settingsFile(), {
+        ...encryptAgentApiKeys(normalized),
+        ...personalizedFileKeys(disk),
+      })
       settingsCache = normalized
     } catch (err) {
       console.error('[c3] failed to persist settings:', err)
@@ -1304,20 +1284,15 @@ export function getShowToolSessions(): boolean {
   return loadSettings().showToolSessions === true
 }
 
-/** The UI display language (normalized; always a known {@link UiLang}, `en` by default). */
-export function getUiLang(): UiLang {
-  return loadSettings().uiLang ?? DEFAULT_UI_LANG
-}
-
 /**
- * The human-readable name (with native endonym) of the current UI display
- * language — e.g. `Chinese (简体中文)` when `uiLang` is `zh`. Drives the
- * "reply in this language" instruction appended to agent prompts so their output
- * follows the Display language setting. Falls back to the {@link DEFAULT_UI_LANG}
- * name when unset/invalid (via {@link getUiLang}).
+ * The human-readable name (with native endonym) of the language server-side agent
+ * prompts are written in — e.g. `Chinese (简体中文)`. Drives the "reply in this
+ * language" instruction appended to agent prompts so their output follows the
+ * language the console is actually being used in. See `config/personalized.ts` for
+ * how that language is tracked; `en` when nothing has been reported yet.
  */
-export function getUiLangName(): string {
-  return UI_LANG_NAMES[getUiLang()]
+export function getAgentLangName(): string {
+  return UI_LANG_NAMES[getAgentLang()]
 }
 
 /**
@@ -1511,4 +1486,5 @@ export function getProjectSandbox(workspacePath: string): WorkspaceSandboxConfig
 export function resetSettingsCacheForTests(): void {
   settingsCache = null
   stateCache = null
+  resetPersonalizedCache()
 }

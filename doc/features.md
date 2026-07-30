@@ -122,7 +122,7 @@ c3
 │       ├── 管理员门                              # 仅管理员可改全局配置(agents/workspaces/settings)
 │       └── 多账号                                # 多账号目录,首个创建者为唯一管理员
 │
-├── settings — 塑造智能体循环行为的用户配置(控制面板)
+├── settings — 塑造智能体循环行为的用户配置(控制面板);作用域分系统级 / 工作区级 / 个人级三类
 │   │
 │   ├── agent-config 智能体配置                   # agent 档案目录与会话用哪个 agent 的规则(系统设置·agent 页)
 │   │   ├── agent 档案                            # 持久化档案(vendor/url/key/model/name),可增删/排序/启停/复制
@@ -133,7 +133,7 @@ c3
 │   │   └── 降级链                                # 某 agent 不可用时按 degradationChain 顺序回退
 │   │
 │   ├── system-setting 系统设置                   # 管理员全局配置；运行时页展示 vendor CLI 与 sandbox(arapuca)驱动状态/绝对路径
-│   │   ├── 显示与本地化                          # uiLang 界面语言 / voiceLang 语音输入语言 / timezone 系统时区(驱动 cron 解释)
+│   │   ├── 显示与本地化                          # voiceLang 语音输入语言 / timezone 系统时区(驱动 cron 解释);界面语言属个人化设置
 │   │   ├── 公开访问地址                          # baseUrl 部署对外基址,用于拼分享深链
 │   │   ├── 会话页显示                            # showSessionsPage 开关,决定主导航是否在代码后显示会话页
 │   │   ├── 工具会话显示                          # showToolSessions 独立开关,决定工具类会话是否进聚合页侧栏
@@ -143,6 +143,12 @@ c3
 │   │   ├── 鉴权配置                              # auth:basic 多账号/唯一管理员、会话 token TTL、bind 地址暴露意图
 │   │   ├── socket 自动续跑                        # socketAutoResume 开关,断连后单次自动 resume(默认开)
 │   │   └── 环境诊断                              # 只读展示各 vendor host CLI/令牌探测结果
+│   │
+│   ├── personalized-setting 个人化设置           # 按人偏好(PersonalizedSettings),独立入口页,不过管理员门,普通账户可改
+│   │   ├── 显示语言                              # uiLang 界面语言,选中即切 vue-i18n + <html lang> 并按当前身份保存
+│   │   ├── 按身份存储                            # 已认证存服务端 personalizedSettings[subject];无身份存浏览器 localStorage,不跨设备同步
+│   │   ├── 首次登录播种                          # 账户无记录时以本浏览器合法值锁内建档一次;账户记录一旦存在即权威,不被本地值覆盖
+│   │   └── agent 输出语言                        # 顶层 agentLang 跟随最近一次上报,供无连接上下文的服务端提示词(意图/规格/标题/总结)使用
 │   │
 │   └── workspace-setting 工作区设置              # 按工作区独立配置(WorkspaceSetting,projectConfigs 按路径存,工作区设置面板)
 │       ├── 默认权限模式                          # defaultMode 按 vendor 分组(claude=ModeToken / codex=CodexPolicy)

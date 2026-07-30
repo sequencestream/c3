@@ -31,7 +31,7 @@ import {
   emit,
 } from './runs.js'
 import { observeTaskWire } from './kernel/agent/task-tracker.js'
-import { getSessionAgentId, getUiLang, setOnPendingIntentLookup } from './kernel/config/index.js'
+import { getSessionAgentId, getAgentLang, setOnPendingIntentLookup } from './kernel/config/index.js'
 import { setWorkflowHooks } from './features/intents/workflow.js'
 import { setIntentLifecycleEventBus } from './features/intents/lifecycle-events.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
@@ -497,11 +497,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastStatuses: broadcasts.broadcastStatuses,
     broadcastIntents: broadcasts.broadcastIntents,
     intentProfile: (workspacePath, sessionId) => ({
-      // Read the live Display language (uiLang) at run start so the analyst replies
-      // in the user's console language, not a hard-coded one (2026-06-08-005).
+      // Read the live agent-output language at run start so the analyst replies
+      // in the language the console is being used in, not a hard-coded one.
       // `sessionId` (the run's id at launch, possibly pending) is injected so the
       // model can back-link a single saved intent to this comm session.
-      appendSystemPrompt: buildIntentAgentPrompt(getUiLang(), sessionId),
+      appendSystemPrompt: buildIntentAgentPrompt(getAgentLang(), sessionId),
       disallowedTools: INTENT_DISALLOWED_TOOLS,
       // The three intent tools over c3's loopback HTTP MCP route — the SINGLE
       // transport both Claude and Codex consume. Bound per-run (the run path
@@ -520,7 +520,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     // never write the ledger. The same path runs on reset_spec_session, so a reset
     // session gets the tools too.
     specProfile: () => ({
-      appendSystemPrompt: buildSpecAgentPrompt(getUiLang()),
+      appendSystemPrompt: buildSpecAgentPrompt(getAgentLang()),
       disallowedTools: SPEC_DISALLOWED_TOOLS,
       bindMcp: (binding) => specQueryMcp.bind(binding),
       gate: 'spec' as const,

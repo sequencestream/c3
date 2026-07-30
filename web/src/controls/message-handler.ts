@@ -20,7 +20,8 @@ import { applyTaskEvent, emptyTaskModel } from '@/lib/task-list'
 import { advanceOnFailure, resolveAgentIndex } from '@/lib/agent-prefix'
 import { activeSessionTitleFromSessions } from '@/lib/session-title-sync'
 import { mergeSessionPage, type SessionWindow } from '@/lib/session-page'
-import { applyLocale, setStoredLocale, i18n } from '@/i18n'
+import { applyLocale, i18n } from '@/i18n'
+import { normalizePersonalized, writeLocalPersonalized } from '@/lib/personalized-settings'
 import { translateUiError } from '@/i18n/errors'
 import { transcriptToChat } from './transcript'
 import type { AppCtx } from './types'
@@ -93,6 +94,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     selectedIntentSessionId,
     teamSessions,
     serverSettings,
+    personalizedSettings,
     hostStatus,
     sandboxStatus,
     bindingStats,
@@ -289,6 +291,10 @@ export function installMessageHandler(ctx: AppCtx): void {
         auth.setIsAdmin(msg.isAdmin)
         // The signed-in subject for the top-bar account menu (null = no one signed in).
         auth.setSubject(msg.subject)
+        // Resolve the display language for THIS identity. A login reconnects, so this
+        // is also where an account adopts its stored language — and where an account
+        // without a record yet gets seeded from this browser's value.
+        ctx.fetchPersonalizedSettings()
         // Seed the header upgrade hint from the handshake snapshot (refreshed later
         // by `update_status`).
         ctx.updateStatus.value = msg.updateStatus
@@ -680,12 +686,6 @@ export function installMessageHandler(ctx: AppCtx): void {
         vendorCapabilities.value = msg.vendorCapabilities ?? null
         vendorModes.value = msg.vendorModes ?? null
         skillSupport.value = msg.skillSupport ?? null
-        // Server is the single source of truth for UI language. Reconcile exactly
-        // once and only when it disagrees with the live locale.
-        if (msg.settings.uiLang && msg.settings.uiLang !== i18n.global.locale.value) {
-          applyLocale(msg.settings.uiLang)
-          setStoredLocale(msg.settings.uiLang)
-        }
         // 冷启动引导:首个快照里若没有任何真实(非 system 回退)agent,直接打开
         // 系统设置 —— SettingsPanel 自身默认落在 Agent Tab,这里不引入额外的 Tab 状态。
         if (!firstSettingsEvaluated) {
@@ -694,6 +694,17 @@ export function installMessageHandler(ctx: AppCtx): void {
           if (!configured) settingsOpen.value = true
         }
         break
+      case 'personalized_settings': {
+        // The echo is authoritative for this identity: an account record beats what
+        // this browser held, and a `local` scope reply is just our own value
+        // normalized. Mirror it into the browser copy so the signed-out state keeps
+        // the account's latest choice, then apply the language live.
+        const next = normalizePersonalized(msg.settings)
+        personalizedSettings.value = next
+        writeLocalPersonalized(next)
+        if (next.uiLang && next.uiLang !== i18n.global.locale.value) applyLocale(next.uiLang)
+        break
+      }
       case 'skill_link_status':
         // Only adopt statuses for the workspace currently being edited.
         if (msg.workspaceId === currentWorkspace.value) {

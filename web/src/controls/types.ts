@@ -232,6 +232,7 @@ export interface AppMethods {
 
   // settings / skills / view mode
   openSettings(): void
+  openPersonalizedSetting(): void
   openWorkspaceSetting(): void
   saveWorkspaceSetting(config: WorkspaceSettingType): void
   querySkillLinkStatus(): void
@@ -240,6 +241,7 @@ export interface AppMethods {
   setAdminPassword(payload: { username: string; password: string; currentPassword?: string }): void
   removeAccount(payload: { username: string }): void
   setAdminAccount(payload: { username: string }): void
+  fetchPersonalizedSettings(): void
   setLocale(next: UiLang): void
   setViewMode(mode: 'workspace' | 'workcenter'): void
   approveSkillLoad(requestId: string): void

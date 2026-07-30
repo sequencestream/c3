@@ -30,7 +30,7 @@ import { resolveAgent, selectConsensusVoters } from './kernel/agent-config/index
 import { normalizeToolRequest } from './kernel/permission/risk.js'
 import {
   getConsensusConfig,
-  getUiLangName,
+  getAgentLangName,
   isConsensusEnabled,
   isConsensusMajorityEnabled,
 } from './kernel/config/index.js'
@@ -104,7 +104,7 @@ async function summarize(
     // system: the stable summariser role + output instruction; user: the votes cast.
     const system = [
       'You summarize how several advisor agents voted on whether to allow an operation an AI agent wants to perform.',
-      `Write ONE short sentence in ${getUiLangName()} summarizing their collective opinion for a human who must make the final call. Output only that sentence, no preamble.`,
+      `Write ONE short sentence in ${getAgentLangName()} summarizing their collective opinion for a human who must make the final call. Output only that sentence, no preamble.`,
     ].join('\n')
     const user = [
       `Votes on the operation "${operationLabel}":`,
@@ -238,7 +238,7 @@ async function decideAndSummarizeAsk(
     const { system, user } = deciderAskPrompt(
       perQuestion,
       shuffleOptions(questions),
-      getUiLangName(),
+      getAgentLangName(),
     )
     const text = await askAgentOnce(decider, user, cwd, signal, null, system)
     const { summary, overrides } = parseDeciderAsk(text, questions)

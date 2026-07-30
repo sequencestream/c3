@@ -106,6 +106,23 @@ describe('AppHeader.vue — top-bar tabs', () => {
     expect(w.find('.settings-btn').exists()).toBe(false)
   })
 
+  it('个人化设置入口在桌面与移动端并列于系统设置之外,非管理员同样可达', async () => {
+    for (const admin of [true, false]) {
+      useAuth().setIsAdmin(admin)
+      const w = mount(AppHeader, { props: baseProps })
+      const desktop = w.find('[data-testid="nav-personalized-setting"]')
+      const mobile = w.find('[data-testid="nav-personalized-setting-mobile"]')
+      expect(desktop.exists()).toBe(true)
+      expect(mobile.exists()).toBe(true)
+      await desktop.trigger('click')
+      await mobile.trigger('click')
+      expect(w.emitted('open-personalized-setting')).toHaveLength(2)
+      // 三类设置各自独立入口:个人化不复用系统设置/工作区设置的事件。
+      expect(w.emitted('open-settings')).toBeUndefined()
+      expect(w.emitted('open-workspace-setting')).toBeUndefined()
+    }
+  })
+
   it('无当前工作区(tabsEnabled=false)→ 移动端底部工作区 tab 全部禁用且点击不 emit', async () => {
     const w = mount(AppHeader, {
       props: { ...baseProps, currentWorkspace: null, tabsEnabled: false },

@@ -155,6 +155,11 @@ export const UI_ERROR_CODES = {
     key: 'error.workspaceSetting.invalidDefaultMode',
     params: ['vendor', 'mode'],
   },
+  // personalized setting
+  // Reading or writing the personalized-settings store failed; the client keeps the
+  // value it already has (no pseudo-success snapshot, no local fallback wipe).
+  'personalizedSetting.loadFailed': { key: 'error.personalizedSetting.loadFailed' },
+  'personalizedSetting.saveFailed': { key: 'error.personalizedSetting.saveFailed' },
   // auth (ADR-0023)
   // Rejected a system-config mutation from a non-admin connection (ADR-0023 authz).
   'auth.adminOnly': { key: 'error.auth.adminOnly' },

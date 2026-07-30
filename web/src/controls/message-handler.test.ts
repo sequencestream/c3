@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref, computed } from 'vue'
 import {
   PENDING_SESSION_PREFIX,
@@ -12,6 +12,7 @@ import { installMessageHandler } from './message-handler'
 import type { ChatMsg } from '@/lib/chat-types'
 import type { AppCtx } from './types'
 import { sessionCacheKey, type SessionPageKind } from './state'
+import { applyLocale, i18n } from '@/i18n'
 
 function s(id: string, lastModified: number): SessionInfo {
   return {
@@ -146,6 +147,10 @@ function makeCtx() {
     add: vi.fn(),
     // Post-switch Dashboard refresh hook — a no-op in these session/intent tests.
     maybeRefreshDashboard: vi.fn(),
+    personalizedSettings: ref<import('@ccc/shared/protocol').PersonalizedSettings>({
+      uiLang: 'en',
+    }),
+    fetchPersonalizedSettings: vi.fn(),
   } as unknown as AppCtx
   installMessageHandler(ctx)
   return {
@@ -175,6 +180,63 @@ function makeCtx() {
     switchToConsoleTab,
   }
 }
+
+describe('personalized settings echo', () => {
+  /** Fake browser store so the mirror-to-local step is observable. */
+  function installStorage(): Map<string, string> {
+    const map = new Map<string, string>()
+    ;(globalThis as unknown as { localStorage: unknown }).localStorage = {
+      getItem: (k: string) => (map.has(k) ? map.get(k)! : null),
+      setItem: (k: string, v: string) => void map.set(k, v),
+    }
+    return map
+  }
+
+  afterEach(() => {
+    delete (globalThis as unknown as { localStorage?: unknown }).localStorage
+    applyLocale('en')
+  })
+
+  it('adopts an account echo as the live language and mirrors it into this browser', () => {
+    const storage = installStorage()
+    const r = makeCtx()
+    r.ctx.handleMessage({
+      type: 'personalized_settings',
+      settings: { uiLang: 'zh' },
+      scope: 'account',
+    } as ServerToClient)
+    expect(i18n.global.locale.value).toBe('zh')
+    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'zh' })
+    // Mirrored so the signed-out state keeps the account's latest choice.
+    expect(storage.get('c3.uiLang')).toBe('zh')
+  })
+
+  it('normalizes an unknown language in the echo to en', () => {
+    installStorage()
+    const r = makeCtx()
+    r.ctx.handleMessage({
+      type: 'personalized_settings',
+      settings: { uiLang: 'klingon' },
+      scope: 'local',
+    } as unknown as ServerToClient)
+    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'en' })
+    expect(i18n.global.locale.value).toBe('en')
+  })
+
+  it('never lets a system-settings snapshot change the display language', () => {
+    installStorage()
+    const r = makeCtx()
+    r.ctx.handleMessage({
+      type: 'settings',
+      // A settings.json written by an older c3 can still carry the removed field.
+      settings: { agents: [], defaultAgentId: SYSTEM_AGENT_ID, uiLang: 'zh' },
+      hostStatus: [],
+      bindingStats: {},
+      sessionCapabilities: {},
+    } as unknown as ServerToClient)
+    expect(i18n.global.locale.value).toBe('en')
+  })
+})
 
 describe('intent action errors', () => {
   it('uses persistent error-dialog state instead of the toast and releases in-flight UI', () => {
@@ -344,6 +406,10 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
       clearViewedSession,
       consumePendingWorkSessionSelect,
       maybeRefreshDashboard: vi.fn(),
+      personalizedSettings: ref<import('@ccc/shared/protocol').PersonalizedSettings>({
+        uiLang: 'en',
+      }),
+      fetchPersonalizedSettings: vi.fn(),
     } as unknown as AppCtx
     installMessageHandler(ctx)
     return {
@@ -873,6 +939,10 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       toast: ref<string | null>(null),
       intentActionError: ref<string | null>(null),
       maybeRefreshDashboard: vi.fn(),
+      personalizedSettings: ref<import('@ccc/shared/protocol').PersonalizedSettings>({
+        uiLang: 'en',
+      }),
+      fetchPersonalizedSettings: vi.fn(),
     } as unknown as AppCtx
     installMessageHandler(ctx)
     return {
@@ -912,6 +982,20 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       latestVersion: '3.1.4',
       checkedAt: 99,
     })
+  })
+
+  it('resolves personalized settings for the handshake identity (login seeding path)', () => {
+    const r = makeDeepLinkCtx()
+    r.ctx.handleMessage({
+      type: 'ready',
+      workspaces: [] as import('@ccc/shared/protocol').WorkspaceInfo[],
+      isAdmin: false,
+      subject: 'alice',
+      statuses: [],
+      updateStatus: { available: false, latestVersion: null, checkedAt: null },
+    } as unknown as ServerToClient)
+    // A login reconnects, so this is where the account adopts (or seeds) its language.
+    expect(r.ctx.fetchPersonalizedSettings).toHaveBeenCalledOnce()
   })
 
   it('consumes a session deep link with valid workspace → dispatches selectSession + skips maybeRestore*', () => {
@@ -1237,6 +1321,10 @@ describe('session_counts / session_status — 顶部条目角标计数', () => {
       flushIfReady: vi.fn(),
       notifyAwaitingPermission: vi.fn(),
       maybeRefreshDashboard: vi.fn(),
+      personalizedSettings: ref<import('@ccc/shared/protocol').PersonalizedSettings>({
+        uiLang: 'en',
+      }),
+      fetchPersonalizedSettings: vi.fn(),
     } as unknown as AppCtx
     installMessageHandler(ctx)
     return { ctx, currentWorkspace, sessionCounts, ownerRunningCounts, send }

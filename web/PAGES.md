@@ -26,7 +26,7 @@ web/src/
 │   └── share-actions.ts                            # installShareActions():三处标题栏「分享」按钮的统一动作(shareLink({kind,workspaceId,id,title,typeLabel}))——读 serverSettings.baseUrl、经 lib/share-link.buildShareText 拼「[类型] 标题\n<baseUrl>/#/<kind>/<workspaceId>/<id>」、写剪贴板、成功 toast;baseUrl 未配置改弹「去系统设置填写」提示且不写剪贴板
 │
 ├── components/                                      # 跨页面通用组件
-│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏与移动端底栏共用 HEADER_TABS;基础顺序=需求/讨论/自动化/代码,服务端 showSessionsPage=true 时才在代码后追加会话(含六类运行中数角标),未知/关闭时两端均不渲染会话入口。意图/讨论/自动化三个 tab 各带「进行中条目数」角标(按 owner 去重,0 不渲染,纯展示无点击交互,aria-label 取该 tab 的 badgeAriaLabel、缺省退回会话文案)。整行最左为 viewMode 工作区/工作台两图标切换器;工作台模式显示用户通知/总览入口(用户通知在前,为默认页)及待处理角标;右侧保留项目配置/系统设置/账户/连接状态、升级提示与许可状态菜单;移动顶部使用同一模式切换和工作区/工作台入口
+│   ├── AppHeader/AppHeader.vue                      # 应用导航壳:桌面顶部栏与移动端底栏共用 HEADER_TABS;基础顺序=需求/讨论/自动化/代码,服务端 showSessionsPage=true 时才在代码后追加会话(含六类运行中数角标),未知/关闭时两端均不渲染会话入口。意图/讨论/自动化三个 tab 各带「进行中条目数」角标(按 owner 去重,0 不渲染,纯展示无点击交互,aria-label 取该 tab 的 badgeAriaLabel、缺省退回会话文案)。整行最左为 viewMode 工作区/工作台两图标切换器;工作台模式显示用户通知/总览入口(用户通知在前,为默认页)及待处理角标;右侧保留项目配置/个人化设置/系统设置/账户/连接状态、升级提示与许可状态菜单——个人化设置(人形齿轮图标)恒定可见、不受 isAdmin 约束,系统设置(⚙)仅管理员可见;移动顶部使用同一模式切换和工作区/工作台入口,「⋯」操作菜单同样并列三个设置入口
 │   ├── BaseDropdown/BaseDropdown.vue                # 标准下拉框:替代原生 select,支持键盘导航、多选高亮、点击外部关闭
 │   ├── ChoiceInput/ChoiceInput.vue                 # 横向选项 + 「其他」手动输入:已知取值列为可点击的横向分段按钮(本地化 label,hover 显示原始 value),末尾「其他」按钮仅在被选中(或当前值不在已知列表内)时展开手动输入框;用于 Automation 表单的事件类型/状态/元数据条件取值等「已知值仅作建议、允许任意自定义值」场景
 │   ├── ChatColumn/ChatColumn.vue                   # 复用聊天列:五区块(标题栏/消息/输入框/状态栏/task 面板)按 showTitleBar/showMessages/showInput/showStatusBar/showTaskPanel props 可显隐,供会话页/意图会话 tab/意图详情两会话 tab 三处复用;不持有会话状态(绑定哪个会话由控制层单一活动会话决定);show-mode 控模式下拉、always-title 控无会话时是否仍渲染标题栏;sourceLabel 透传给标题栏溯源按钮(仅会话页传,意图侧复用不传)、open-source 上抛;showShare 透传给标题栏分享按钮(仅会话页 Works 传 true)、share 上抛;title-action 具名槽转发到 SessionTitleBar 的 action 槽(Codes 内嵌会话用它渲染「+ 新建」/「↻ 重置」按钮);prefill 经 defineExpose 透传
@@ -114,27 +114,31 @@ web/src/
 │   ├── login/                                       # 登录页
 │   │   └── Login.vue                                # 全屏登录门(ADR-0023):账号+密码表单,提交走 WS login 消息,pending/错误码经 useAuth 回流
 │   │
+│   ├── personalizedsetting/                         # 个人化设置页
+│   │   └── PersonalizedSetting.vue                  # 个人化设置(全屏浮层),与系统设置、工作区设置三者并列:承载「因人而异」的偏好项,不经管理员门禁——不读 isAdmin、无只读提示、无 Save 按钮。每项即时生效 + 即时持久化(选中即抛 set-ui-lang,由控制层应用语言并按当前身份保存),故无草稿/脏状态机,不复用 useTabbedDraftSave。当前含显示语言(uiLang,选项按 isLocaleEnabled 过滤 UI_LANGS 全表,标签为语言原生名);缺省 en。存储位置由身份决定(账户级 / 浏览器本地),页面本身不关心
+│   │
 │   ├── workspacesetting/                         # 工作区配置页
 │   │   └── WorkspaceSetting.vue                  # 工作区级配置编辑(全屏浮层):配置按 默认模式/Git 与沙箱/协作/技能仓库 四个 Tab 分组,Tab 导航复用共享 TabNav(prefix=project-config,移动端横向滚动)。Tab 草稿/已提交快照/脏状态/切换确认/分 Tab 保存时序统一由共享 composables/useTabbedDraftSave 承载(与系统设置页同一实现),本页只提供领域部分:字段白名单、canonical seed(buildSeed,forge 等非页面字段原样透传)、各 Tab payload 转换(默认模式组装 Codex 双策略、Git 与沙箱裁剪空白主分支并按启用保留或移除 sandbox,分支模式不影响 sandbox 去留)、gitSandbox 的合成草稿(reseedTab→seedSandbox)与有效形态脏比较(dirtySlice→gitSandboxCmp,按 enabled 判定,独立于分支模式)。保存仅携带该 Tab 字段、保存后保持打开并把该切片乐观合入快照(连续保存不回退);workspace_setting 回推按字段归属合并(首次整体播种,之后仅刚保存 Tab 与干净 Tab 重播种,脏 Tab 保留草稿);技能安装/链接状态走独立事件不重播种。切换存在未保存修改的 Tab 时 ConfirmDialog 二次确认,确认后仅切换、不保存不丢弃草稿。字段归属:默认模式(per-vendor 默认模式、devSkill)/Git 与沙箱(分支模式+默认主分支[打开时服务端探测预填]、sandbox 区块两种分支模式均显示:启用开关+extraMounts 放行目录列表[path+ro/rw,可增删]+sandboxSessionKinds 会话种类勾选;默认嵌入目录随分支模式展示执行根读写[worktree 时另列源工作区只读])/协作(讨论轮数上限、演讲字符限制、共识、SDD 开关+只读 spec root)/技能仓库(external skill repos);移动端全屏 sheet 安全区适配且紧凑表单单列堆叠
 │   │
 │   └── systemsettings/                              # 系统设置页
 │       ├── SystemSettings.vue                       # 系统设置容器(弹窗):封装 SettingsPanel
 │       └── components/SettingsPanel/
-│           ├── SettingsPanel.vue                    # 系统设置面板(弹窗):Agent/Runtime/Security/General 四 Tab,共享 useTabbedDraftSave 管理字段白名单、草稿/已提交基线、脏状态、分组保存与切换确认;General 包含 uiLang/voiceLang/timezone/baseUrl/showToolSessions/showSessionsPage,后二者职责独立;Runtime 含 vendor CLI 生效版本、子进程代理与会话清理(sessionCleanup:开关 + 保留天数,关闭时天数输入禁用,与 sandbox 无关、不在工作区设置中)。showSessionsPage 使用无障碍 switch,非管理员只读,仅服务端确认回推改变全局导航
+│           ├── SettingsPanel.vue                    # 系统设置面板(弹窗):Agent/Runtime/Security/General 四 Tab,共享 useTabbedDraftSave 管理字段白名单、草稿/已提交基线、脏状态、分组保存与切换确认;General 包含 voiceLang/timezone/baseUrl/showToolSessions/showSessionsPage,后二者职责独立(界面语言属个人化设置页,不在此);Runtime 含 vendor CLI 生效版本、子进程代理与会话清理(sessionCleanup:开关 + 保留天数,关闭时天数输入禁用,与 sandbox 无关、不在工作区设置中)。showSessionsPage 使用无障碍 switch,非管理员只读,仅服务端确认回推改变全局导航
 │           ├── EmojiPicker.vue                      # emoji 选择器:零依赖,支持搜索、分类导航、自定义输入(最长 16 字符)
 │           └── emoji-data.ts                        # emoji 数据集:分类 emoji 列表与搜索关键词
 │
 ├── composables/                                     # 可复用组合式逻辑
-│   ├── useAuth.ts                                    # 认证状态 reactive 单例(ADR-0023):status(unknown/authenticated/login-required)、submitLogin/logout、login_result/unauthenticated 回流、token 持久化,纯响应服务端;isAdmin(←ready.isAdmin,默认 true)驱动 SettingsPanel 只读门(AUTH-R10)
+│   ├── useAuth.ts                                    # 认证状态 reactive 单例(ADR-0023):status(unknown/authenticated/login-required)、submitLogin/logout、login_result/unauthenticated 回流、token 持久化,纯响应服务端;isAdmin(←ready.isAdmin,默认 true)驱动 SettingsPanel 只读门(AUTH-R10),个人化设置页不受其约束
 │   ├── useBreakpoint.ts                              # 响应式媒体查询断点:提供 useBreakpoint/useIsMobile,统一移动端判断与 matchMedia 变更监听
 │   ├── usePersistentToggle.ts                       # localStorage 绑定的布尔 ref:记住列表面板收缩/展开态,跨刷新保留
 │   ├── useSpeechRecognition.ts                      # Web Speech API 轻封装:浏览器语音转文字,持续聆听、自动重启、final/interim 回调
-│   └── useTabbedDraftSave.ts                        # 设置页「Tab 分组草稿 + 分 Tab 保存」状态机(系统设置/工作区设置共用,泛型无领域依赖):持有 draft/committed/activeTab/pendingSaveTab/pendingTabSwitch 与派生 tabDirtyMap;按 tabFields 白名单切片做深层脏比较;seedAll(首次打开整体播种)/reconcile(打开期间回推按字段归属合并——以旧 committed 判定原脏态,仅刚保存 Tab 与干净 Tab 重播种,脏 Tab 保留草稿并经 syncProtectedTab 同步即时持久化子字段);saveTab 以最新 committed 深拷贝为底交页面 buildPayload 构造完整对象→canSave 门控→emit→把 payload 该 Tab 切片乐观合入 committed(未收回推前连续保存不回退,脏标即时清除);requestTab/confirm/cancelTabSwitch 实现脏 Tab 切换二次确认(仅切换,不保存不丢弃)。页面特有语义经 reseedTab(合成草稿,如工作区 sandbox)/dirtySlice(按有效保存形态比较,如 gitSandbox)/syncProtectedTab(如系统设置 uiLang、账号列表)钩子接入,不上浮为对方概念;另导出 deepCopy/deepEqual/applyTabFields
+│   └── useTabbedDraftSave.ts                        # 设置页「Tab 分组草稿 + 分 Tab 保存」状态机(系统设置/工作区设置共用,泛型无领域依赖):持有 draft/committed/activeTab/pendingSaveTab/pendingTabSwitch 与派生 tabDirtyMap;按 tabFields 白名单切片做深层脏比较;seedAll(首次打开整体播种)/reconcile(打开期间回推按字段归属合并——以旧 committed 判定原脏态,仅刚保存 Tab 与干净 Tab 重播种,脏 Tab 保留草稿并经 syncProtectedTab 同步即时持久化子字段);saveTab 以最新 committed 深拷贝为底交页面 buildPayload 构造完整对象→canSave 门控→emit→把 payload 该 Tab 切片乐观合入 committed(未收回推前连续保存不回退,脏标即时清除);requestTab/confirm/cancelTabSwitch 实现脏 Tab 切换二次确认(仅切换,不保存不丢弃)。页面特有语义经 reseedTab(合成草稿,如工作区 sandbox)/dirtySlice(按有效保存形态比较,如 gitSandbox)/syncProtectedTab(如系统设置的账号列表/管理员)钩子接入,不上浮为对方概念;另导出 deepCopy/deepEqual/applyTabFields
 │
 ├── lib/                                             # 纯逻辑工具模块(无 DOM/框架依赖优先)
 │   ├── agent-prefix.ts                              # 客户端推断当前 session 运行的 agent 展示名:本地复刻服务端降级链;识别 `_c3_<group>` 虚拟 group agent(ADR-0029)展示组名
 │   ├── group-agents.ts                              # 客户端派生虚拟 group agent(ADR-0029):listGroupAgents/groupAgentsOfVendor 本地复刻服务端枚举(每个 (vendor,group) 一项,不同 vendor 可同名),agentRefDisplayName 把 `_c3_<vendor>_<group>` ref 原样带前缀展示;供各 agent 选择器以 `_c3_<vendor>_<组名>` 列出 group 选项
 │   ├── authToken.ts                                 # 会话 token 持久化(localStorage,guard 无 DOM 环境):get/set/clear,供 ws.ts 握手 ?token= 复用
+│   ├── personalized-settings.ts                     # 个人化设置的浏览器侧仓储:read/write/hasLocalPersonalized 按字段键读写 localStorage(显示语言沿用 `c3.uiLang`,故已有语言选择天然可用、无需迁移),normalizePersonalized 归一(缺失/非法/存储不可用一律回落 en),UI_LANGS 全表(与 UiLang 并集编译期对齐)。纯逻辑不联网,WS 往返在 controls 层;i18n 首屏解析亦读它
 │   ├── ask.ts                                       # AskUserQuestion 辅助:提取问题列表、共识意见、选项/自定义答案聚合
 │   ├── chat-types.ts                                # 聊天消息数据模型:ChatBody/ChatMsg/PermissionMsg/RunActivity/Block 类型(含 standalone 块)、多说话人 SpeakerView
 │   ├── codes-view.ts                                # Codes 页纯逻辑/类型:CodeTab/搜索结果视图、关闭 tab 后聚焦相邻(closeTab)、后缀→Shiki 语言推断(langFromPath)、basename、字节人类可读化、CodeViewMode(原文/预览)+ isMarkdownPath(.md 判定)

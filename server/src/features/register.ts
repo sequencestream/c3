@@ -22,6 +22,10 @@ import {
   saveSettingsHandler,
   saveWorkspaceSettingHandler,
 } from './settings/index.js'
+import {
+  getPersonalizedSettings,
+  savePersonalizedSettingsHandler,
+} from './settings/personalized.js'
 import { permissionResponse } from './permissions/index.js'
 import { addWorkspaceHandler, removeWorkspaceHandler } from './workspaces/index.js'
 import {
@@ -123,6 +127,8 @@ export const handlerMap: HandlerMap = {
   // settings
   get_settings: getSettings,
   save_settings: saveSettingsHandler,
+  get_personalized_settings: getPersonalizedSettings,
+  save_personalized_settings: savePersonalizedSettingsHandler,
   load_workspace_setting: loadWorkspaceSettingHandler,
   save_workspace_setting: saveWorkspaceSettingHandler,
   // permissions

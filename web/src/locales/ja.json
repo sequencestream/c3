@@ -90,6 +90,9 @@
     "settings": {
       "tooltip": "システム設定"
     },
+    "personalizedSetting": {
+      "tooltip": "個人設定"
+    },
     "workspace": {
       "trigger": {
         "empty": {
@@ -383,12 +386,6 @@
       },
       "hint": "参加者がプロンプトのガイダンスで目にする 1 ターンあたりの文字数の目安です。参加者にはこの上限内に返信を収めるよう求めますが、超過した返信もそのまま受け入れられます(強制的な切り詰めはありません)。最小値は {min}(これより小さい値は保存時に切り上げられます)。"
     },
-    "displayLang": {
-      "title": {
-        "label": "表示言語"
-      },
-      "hint": "c3 Web コンソール UI の言語です。変更は再読み込みなしで即座に適用され、サーバーに保存されます。下記の音声入力言語とは独立しています。"
-    },
     "voiceLang": {
       "title": {
         "label": "音声入力言語"
@@ -630,6 +627,17 @@
       },
       "hint": "The public-facing base URL for this c3 deployment, used to construct shareable links. For example, http://192.168.10.10:9000. Stored in plaintext (not sensitive).",
       "placeholder": "http://192.168.10.10:9000"
+    }
+  },
+  "personalizedSetting": {
+    "title": {
+      "label": "個人設定"
+    },
+    "displayLang": {
+      "title": {
+        "label": "表示言語"
+      },
+      "hint": "c3 Web コンソール UI の言語です。変更は再読み込みなしで即座に適用されます。サインイン中はアカウントに保存され、そうでない場合はこのブラウザーに保存されます。"
     }
   },
   "intent": {
@@ -1777,8 +1785,9 @@
     "intentAction": {
       "title": "操作に失敗しました"
     },
-    "uiLang": {
-      "saveFailed": "言語設定の保存に失敗しました。元に戻しました。"
+    "personalizedSetting": {
+      "loadFailed": "個人設定の読み込みに失敗しました。現在の値を維持します。",
+      "saveFailed": "個人設定の保存に失敗しました。元に戻しました。"
     },
     "workspace": {
       "unknown": "不明なワークスペース: {path}"

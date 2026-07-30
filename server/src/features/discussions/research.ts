@@ -33,7 +33,7 @@ import {
   resolveFirstAgentOfVendor,
   unbindRelay,
 } from '../../kernel/agent-config/index.js'
-import { getUiLangName } from '../../kernel/config/index.js'
+import { getAgentLangName } from '../../kernel/config/index.js'
 
 /**
  * This step's SessionKind: the research pass calls {@link runClaude} directly
@@ -181,7 +181,7 @@ export async function researchDiscussionContext(
       workspacePath: resolveWorkspaceRoot(discussion.workspaceId)!,
     },
     def,
-    getUiLangName(),
+    getAgentLangName(),
   )
   const abort = new AbortController()
   const signal = opts.signal ?? abort.signal

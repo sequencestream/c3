@@ -42,8 +42,8 @@ import { enabledAgents, resolveAgent } from '../../kernel/agent-config/index.js'
 import {
   getMaxRoundsPerStage,
   getMaxSpeechChars,
-  getUiLang,
-  getUiLangName,
+  getAgentLang,
+  getAgentLangName,
 } from '../../kernel/config/index.js'
 import {
   appendMessage as storeAppendMessage,
@@ -100,7 +100,7 @@ const L10N: Record<string, Record<string, string>> = {
 }
 
 const uiL10n = (key: string): string => {
-  const lang = getUiLang()
+  const lang = getAgentLang()
   return L10N[key]?.[lang] ?? L10N[key]?.en ?? ''
 }
 
@@ -347,7 +347,7 @@ export async function runDiscussion(
               newMessages: allMessages.filter((m) => m.seq > lastSeq),
               participants,
               agenda: { items: agenda, index: agendaIndex },
-              langName: getUiLangName(),
+              langName: getAgentLangName(),
             })
           : buildOrganizerPrompt({
               discussion: current,
@@ -356,7 +356,7 @@ export async function runDiscussion(
               messages: allMessages,
               participants,
               agenda: { items: agenda, index: agendaIndex },
-              langName: getUiLangName(),
+              langName: getAgentLangName(),
             })
       decisionText = await ask(id, organizerCfg, prompt, cwd, signal)
     } catch {
@@ -457,7 +457,7 @@ export async function runDiscussion(
         .filter(
           (b): b is { cfg: AgentConfig; speaker: DiscussionParticipant } => !!b.cfg && !!b.speaker,
         )
-      const langName = getUiLangName()
+      const langName = getAgentLangName()
       // For each participant, determine whether to use a delta prompt (resume)
       // or the full prompt (first call / resume unavailable). The snapshot is
       // the same for all participants in this batch.
@@ -562,7 +562,7 @@ export async function runDiscussion(
                 organizerNote: step.organizerNote,
                 subtopic: agenda[agendaIndex],
                 maxSpeechChars: speechBudget,
-                langName: getUiLangName(),
+                langName: getAgentLangName(),
               })
             : buildParticipantPrompt({
                 discussion: store.getDiscussion(id) ?? initial,
@@ -573,7 +573,7 @@ export async function runDiscussion(
                 organizerNote: step.organizerNote,
                 subtopic: agenda[agendaIndex],
                 maxSpeechChars: speechBudget,
-                langName: getUiLangName(),
+                langName: getAgentLangName(),
               })
         speechText = await ask(id, speakerCfg, prompt, cwd, signal)
       } catch (err) {

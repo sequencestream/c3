@@ -28,7 +28,7 @@ vi.mock('../../kernel/agent-config/index.js', () => ({
 }))
 
 import { fallbackName, generateAutomationName } from './naming.js'
-import { getUiLangName } from '../../kernel/config/index.js'
+import { getAgentLangName } from '../../kernel/config/index.js'
 
 describe('fallbackName', () => {
   it('truncates the command for command automations', () => {
@@ -109,7 +109,7 @@ describe('generateAutomationName', () => {
         },
       },
     )
-    expect(captured).toContain(getUiLangName())
+    expect(captured).toContain(getAgentLangName())
   })
 
   it('falls back to a default name when there is no content and the LLM fails', async () => {

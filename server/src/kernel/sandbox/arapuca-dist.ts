@@ -12,6 +12,7 @@
  * ~/.c3/sandbox/arapuca/
  *   <version>/arapuca-<version>/arapuca      ← the extracted archive
  *   current -> <version>                     ← switched only after full verify
+ *   install-state.json                       ← last install ATTEMPT time (cooldown)
  *   .install-XXXX/                           ← staging, removed on success/failure
  * ```
  *
@@ -25,6 +26,12 @@
  * - **Never blocks a run.** {@link ensureManagedArapuca} is fire-and-forget and
  *   single-flight per process; failures are logged, never thrown, and never
  *   surface as an unhandled rejection.
+ * - **One attempt per 24h.** Every attempt — successful or not — stamps
+ *   `install-state.json` BEFORE downloading, and the next attempt is suppressed
+ *   until that stamp is 24h old. The in-process single-flight alone would let an
+ *   unreachable network re-trigger a download on every probe (and every restart);
+ *   the persisted stamp makes the cooldown survive both. Probing itself is
+ *   untouched: a cooldown skip still falls back to the host PATH.
  * - **Off unless wired.** Auto-install stays inert until the composition root
  *   calls {@link enableArapucaAutoInstall}, so unit tests and library consumers
  *   never reach the network implicitly.
@@ -51,6 +58,7 @@ import {
 } from 'node:fs'
 import { dirname, join, sep } from 'node:path'
 import { c3HomeDir } from '../config/index.js'
+import { readJsonFile, writeAtomic } from '../config/store.js'
 
 // ─── Pinned Artifact Table ───────────────────────────────────────────────────
 
@@ -377,6 +385,83 @@ export async function installArapuca(opts: {
   }
 }
 
+// ─── Install Attempt Cooldown ────────────────────────────────────────────────
+
+/**
+ * How long one install attempt suppresses the next one.
+ *
+ * The same fixed 24h the vendor CLI remote check uses, deliberately: a user who
+ * hits a broken network should meet ONE consistent retry rhythm across c3's
+ * self-managed toolchains, not a per-component one they have to learn. It is not
+ * configurable for the same reason.
+ */
+export const ARAPUCA_INSTALL_RETRY_INTERVAL_MS = 24 * 60 * 60 * 1000
+
+/** The persisted attempt record. Internal state — not a public API or a setting. */
+interface ArapucaInstallState {
+  version: 1
+  /** ISO time an install task was last GRANTED (not: last succeeded). */
+  lastInstallAttemptAt?: string
+}
+
+/** The cooldown state file inside a managed root. */
+function installStatePath(root: string): string {
+  return join(root, 'install-state.json')
+}
+
+/**
+ * The last attempt time in epoch ms, or null when there is no usable record.
+ *
+ * Missing, unparseable and non-finite all collapse to null — i.e. "attempt
+ * allowed". A corrupted state file must never be able to disable auto-install
+ * permanently; the worst case is one extra attempt, which then rewrites it.
+ */
+function lastInstallAttemptAt(root: string): number | null {
+  const at = readJsonFile<ArapucaInstallState>(installStatePath(root))?.lastInstallAttemptAt
+  // The type check is not ceremony: `Date.parse` coerces, so a bare `42` left by
+  // a corrupted write would parse as the year 2042 and freeze installs forever.
+  if (typeof at !== 'string') return null
+  const ms = Date.parse(at)
+  return Number.isFinite(ms) ? ms : null
+}
+
+/**
+ * Whether a new managed-install attempt is allowed for `root` right now.
+ *
+ * Exported for tests and callers that want to explain the skip; the decision
+ * itself is made inside {@link ensureManagedArapuca}.
+ */
+export function shouldAttemptArapucaInstall(root: string, now = Date.now()): boolean {
+  const last = lastInstallAttemptAt(root)
+  if (last === null) return true
+  return now - last >= ARAPUCA_INSTALL_RETRY_INTERVAL_MS
+}
+
+/**
+ * Stamp `now` as the attempt time.
+ *
+ * Written BEFORE the download starts so success and failure share one cooldown
+ * baseline and a crash mid-download cannot escape the window. A write failure is
+ * warned about once and otherwise ignored: losing the cooldown is far better
+ * than letting a read-only or full state dir block the install (and with it the
+ * probe, and with it the run).
+ */
+function recordArapucaInstallAttempt(root: string, now: number): void {
+  const state: ArapucaInstallState = {
+    version: 1,
+    lastInstallAttemptAt: new Date(now).toISOString(),
+  }
+  try {
+    writeAtomic(installStatePath(root), state)
+  } catch (err) {
+    console.warn(
+      `[sandbox] could not persist the arapuca install attempt time ` +
+        `(${err instanceof Error ? err.message : String(err)}) — the 24h retry cooldown ` +
+        `will not hold across probes`,
+    )
+  }
+}
+
 // ─── Background Single-Flight ────────────────────────────────────────────────
 
 /**
@@ -402,25 +487,45 @@ export function enableArapucaAutoInstall(): void {
  * probe, settings panel, several runs) share one task, so a version is
  * downloaded at most once per process. Failures are logged and swallowed —
  * never thrown, never an unhandled rejection — and clear the in-flight slot so
- * a later probe in the same process can retry.
+ * a later probe in the same process can retry — subject to the cooldown below.
+ *
+ * Retries are rate-limited to one attempt per
+ * {@link ARAPUCA_INSTALL_RETRY_INTERVAL_MS}, persisted in the managed root. An
+ * unreachable network would otherwise have every probe (each run, each cache
+ * miss, each restart) re-download, burning bandwidth, risking GitHub rate limits
+ * and burying the real failure in repeated logs. A skipped attempt is silent and
+ * changes nothing else: the caller still falls back to the host PATH exactly as
+ * it would while an install is running.
  *
  * @param opts.onInstalled Invoked after `current` is switched, so the caller can
  *   invalidate a probe cache that had settled on the host PATH.
  * @param opts.download Overrides the transport, @param opts.extract the
  *   unpacker (tests inject stubs so no unit test ever reaches the network).
+ * @param opts.now Overrides the clock used for the cooldown (tests only).
+ * @param opts.artifact Overrides the pinned artifact (tests only — a fixture
+ *   whose checksum matches the injected transport; production always resolves
+ *   the host's own pinned entry).
  */
 export function ensureManagedArapuca(
   opts: {
     onInstalled?: () => void
     download?: ArapucaDownloader
     extract?: ArapucaExtractor
+    now?: () => number
+    artifact?: ArapucaArtifact
   } = {},
 ): void {
   if (!autoInstallEnabled || inflight) return
-  const art = artifactForHost()
+  const art = opts.artifact ?? artifactForHost()
   // Unmapped platform: no artifact, no guessing — the host PATH is the only path.
   if (!art) return
   const root = managedRootDir()
+  const now = opts.now?.() ?? Date.now()
+  // Still cooling down from the previous attempt (which may have been days of
+  // process-lifetimes ago) — stay quiet, let the caller use the host PATH.
+  if (!shouldAttemptArapucaInstall(root, now)) return
+  // Stamped before the first byte moves, so failure and success cool down alike.
+  recordArapucaInstallAttempt(root, now)
   console.log(`[sandbox] installing c3-managed arapuca ${art.version} in the background`)
   inflight = installArapuca({
     root,

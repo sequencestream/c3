@@ -89,6 +89,9 @@
     "settings": {
       "tooltip": "System settings"
     },
+    "personalizedSetting": {
+      "tooltip": "Personalized settings"
+    },
     "workspace": {
       "trigger": {
         "empty": {
@@ -382,12 +385,6 @@
       },
       "hint": "The per-turn character budget participants see in their prompt guidance. Participants are asked to keep replies within this limit, but over-long replies are accepted verbatim (no hard truncation). Minimum {min} (lower values are clamped up on save)."
     },
-    "displayLang": {
-      "title": {
-        "label": "Display language"
-      },
-      "hint": "The language of the c3 web console UI. Changes apply immediately without a reload and are saved to the server. Independent from the voice input language below."
-    },
     "voiceLang": {
       "title": {
         "label": "Voice input language"
@@ -629,6 +626,17 @@
       },
       "hint": "The public-facing base URL for this c3 deployment, used to construct shareable links. For example, http://192.168.10.10:9000. Stored in plaintext (not sensitive).",
       "placeholder": "http://192.168.10.10:9000"
+    }
+  },
+  "personalizedSetting": {
+    "title": {
+      "label": "Personalized settings"
+    },
+    "displayLang": {
+      "title": {
+        "label": "Display language"
+      },
+      "hint": "The language of the c3 web console UI. Changes apply immediately without a reload. When you are signed in the choice is saved to your account; otherwise it is kept in this browser."
     }
   },
   "intent": {
@@ -1776,8 +1784,9 @@
     "intentAction": {
       "title": "Action failed"
     },
-    "uiLang": {
-      "saveFailed": "Failed to save language setting. Reverted."
+    "personalizedSetting": {
+      "loadFailed": "Failed to load personalized settings. Keeping the current values.",
+      "saveFailed": "Failed to save personalized settings. Reverted."
     },
     "workspace": {
       "unknown": "Unknown workspace: {path}"

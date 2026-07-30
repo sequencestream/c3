@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
-import type { WorkspaceSetting, SystemSettings } from '@ccc/shared/protocol'
+import type { PersonalizedSettings, WorkspaceSetting, SystemSettings } from '@ccc/shared/protocol'
 import {
   AGENT_ICON_MAX_CHARS,
   enabledAgents,
@@ -26,8 +26,8 @@ import {
   getSkillRepos,
   getSocketAutoResume,
   getTimezone,
-  getUiLang,
-  getUiLangName,
+  getAgentLang,
+  getAgentLangName,
   UI_LANG_NAMES,
   getConsensusConfig,
   isConsensusEnabled,
@@ -45,6 +45,7 @@ import {
   DEFAULT_SPEECH_CHARS,
   MIN_SPEECH_CHARS,
 } from './config/index.js'
+import { savePersonalizedFor } from './config/personalized.js'
 import { readJsonFile, writeAtomic } from './config/store.js'
 
 // Redirect `~/.c3` to a throwaway dir (os.homedir() honours $HOME on POSIX) so
@@ -1085,42 +1086,47 @@ describe('skillRepos migration from SystemSettings to WorkspaceSetting', () => {
   })
 })
 
-/** Persist just a `uiLang` value (with the required baseline fields). */
-function saveWithUiLang(uiLang: unknown): void {
-  saveSettings({
-    agents: [],
-    defaultAgentId: SYSTEM_AGENT_ID,
-    toolAgentId: '',
-    intentAgentId: '',
-    specAgentId: '',
-    automationAgentId: '',
-    uiLang,
-  } as SystemSettings)
+/** Report a personalized display language the way a client does (no account subject). */
+function reportUiLang(uiLang: unknown): void {
+  savePersonalizedFor(null, { uiLang } as PersonalizedSettings)
 }
 
-describe('getUiLang normalization', () => {
-  it('defaults to en when unset', () => {
-    saveWithUiLang(undefined)
-    expect(getUiLang()).toBe(DEFAULT_UI_LANG)
-    expect(getUiLang()).toBe('en')
+describe('agent-output language tracking', () => {
+  it('defaults to en before anything is reported', () => {
+    expect(getAgentLang()).toBe(DEFAULT_UI_LANG)
+    expect(getAgentLang()).toBe('en')
   })
 
-  it('keeps a known language code', () => {
-    saveWithUiLang('zh')
-    expect(getUiLang()).toBe('zh')
+  it('follows the most recently reported language', () => {
+    reportUiLang('zh')
+    expect(getAgentLang()).toBe('zh')
+    reportUiLang('ja')
+    expect(getAgentLang()).toBe('ja')
   })
 
-  it('falls back to en for an unknown code', () => {
-    saveWithUiLang('xx')
-    expect(getUiLang()).toBe('en')
-  })
-
-  it('falls back to en for a non-string value', () => {
-    saveWithUiLang(42)
-    expect(getUiLang()).toBe('en')
+  it('falls back to en for an unknown code or a non-string value', () => {
+    reportUiLang('xx')
+    expect(getAgentLang()).toBe('en')
+    reportUiLang(42)
+    expect(getAgentLang()).toBe('en')
   })
 
   it('is independent from voiceLang (decoupled)', () => {
+    reportUiLang('zh')
+    saveSettings({
+      agents: [],
+      defaultAgentId: SYSTEM_AGENT_ID,
+      toolAgentId: '',
+      intentAgentId: '',
+      specAgentId: '',
+      automationAgentId: '',
+      voiceLang: 'en-US',
+    } as SystemSettings)
+    expect(getAgentLang()).toBe('zh')
+    expect(loadSettings().voiceLang).toBe('en-US')
+  })
+
+  it('is not fed by a legacy system-wide uiLang left on disk', () => {
     saveSettings({
       agents: [],
       defaultAgentId: SYSTEM_AGENT_ID,
@@ -1129,17 +1135,16 @@ describe('getUiLang normalization', () => {
       specAgentId: '',
       automationAgentId: '',
       uiLang: 'zh',
-      voiceLang: 'en-US',
-    } as SystemSettings)
-    expect(getUiLang()).toBe('zh')
-    expect(loadSettings().voiceLang).toBe('en-US')
+    } as unknown as SystemSettings)
+    expect(getAgentLang()).toBe('en')
+    expect((loadSettings() as unknown as Record<string, unknown>).uiLang).toBeUndefined()
   })
 })
 
-describe('getUiLangName', () => {
-  it('returns the name (with native endonym) of the current uiLang', () => {
-    saveWithUiLang('zh')
-    expect(getUiLangName()).toBe('Chinese (简体中文)')
+describe('getAgentLangName', () => {
+  it('returns the name (with native endonym) of the tracked language', () => {
+    reportUiLang('zh')
+    expect(getAgentLangName()).toBe('Chinese (简体中文)')
   })
 
   it('covers all five known languages', () => {
@@ -1151,15 +1156,14 @@ describe('getUiLangName', () => {
       ru: 'Russian (Русский)',
     }
     for (const [lang, name] of Object.entries(expected)) {
-      saveWithUiLang(lang)
-      expect(getUiLangName()).toBe(name)
+      reportUiLang(lang)
+      expect(getAgentLangName()).toBe(name)
       expect(UI_LANG_NAMES[lang as keyof typeof UI_LANG_NAMES]).toBe(name)
     }
   })
 
-  it('falls back to the en name when uiLang is unset', () => {
-    saveWithUiLang(undefined)
-    expect(getUiLangName()).toBe('English')
+  it('falls back to the en name when nothing has been reported', () => {
+    expect(getAgentLangName()).toBe('English')
   })
 })
 

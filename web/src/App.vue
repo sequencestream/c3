@@ -14,6 +14,7 @@ import WorkCenter from './pages/workcenter/WorkCenter.vue'
 import Dashboard from './pages/workcenter/components/WorkspaceDashboard.vue'
 import SystemSettingsPage from './pages/systemsettings/SystemSettings.vue'
 import WorkspaceSettingPage from './pages/workspacesetting/WorkspaceSetting.vue'
+import PersonalizedSettingPage from './pages/personalizedsetting/PersonalizedSetting.vue'
 import Login from './pages/login/Login.vue'
 import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalModal.vue'
 import NewSessionModal from './pages/works/components/NewSessionModal/NewSessionModal.vue'
@@ -43,6 +44,7 @@ const {
   onSelectTab,
   setViewMode,
   openSettings,
+  openPersonalizedSetting,
   openWorkspaceSetting,
   addWorkspace,
   selectWorkspace,
@@ -256,6 +258,8 @@ const {
   bindingStats,
   saveSettings,
   setLocale,
+  personalizedSettingOpen,
+  personalizedSettings,
   setAdminPassword,
   removeAccount,
   setAdminAccount,
@@ -372,6 +376,7 @@ function onCodesChatWidth(px: number): void {
       @update:view-mode="setViewMode"
       @select-workcenter-page="setWorkcenterPage"
       @open-settings="openSettings"
+      @open-personalized-setting="openPersonalizedSetting"
       @open-workspace-setting="openWorkspaceSetting"
       @add-workspace="addWorkspace"
       @select-workspace="selectWorkspace"
@@ -754,10 +759,16 @@ function onCodesChatWidth(px: number): void {
       :binding-stats="bindingStats"
       @close="settingsOpen = false"
       @save="saveSettings"
-      @set-ui-lang="setLocale"
       @set-password="setAdminPassword"
       @remove-account="removeAccount"
       @set-admin-account="setAdminAccount"
+    />
+
+    <PersonalizedSettingPage
+      :open="personalizedSettingOpen"
+      :settings="personalizedSettings"
+      @close="personalizedSettingOpen = false"
+      @set-ui-lang="setLocale"
     />
 
     <WorkspaceSettingPage

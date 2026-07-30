@@ -450,8 +450,46 @@ export interface ConsensusConfig {
  * recognition): the two never read or default off each other. Unset ⇒ `en`.
  * Only `en`/`zh` ship translations today; `ja`/`ko`/`ru` are reserved for the
  * i18n rollout and fall back to `en` messages until translated.
+ *
+ * Lives in {@link PersonalizedSettings} — a per-person preference, not a
+ * system-wide knob.
  */
 export type UiLang = 'en' | 'zh' | 'ja' | 'ko' | 'ru'
+
+/**
+ * Personalized settings — the third settings class, beside {@link SystemSettings}
+ * (administrator-level, system-wide) and {@link WorkspaceSetting} (per workspace).
+ * It holds the preferences that legitimately differ **per person**, so changing one
+ * never forces the choice onto anyone else and needs no administrator authority
+ * (the admin gate does not apply to this class).
+ *
+ * Scope resolution is by identity, not by deployment: an authenticated connection's
+ * settings are stored server-side under its verified subject; without a subject the
+ * browser itself is the store. Every field is optional and normalizes to its own
+ * default, so a record written by an older client stays readable.
+ */
+export interface PersonalizedSettings {
+  /** Web-console display language. Missing/unknown ⇒ `en`. See {@link UiLang}. */
+  uiLang?: UiLang
+}
+
+/**
+ * The per-account personalized-settings store: verified subject → that account's
+ * {@link PersonalizedSettings}. Persisted as a **sibling of** `SystemSettings` in
+ * `settings.json`, never inside it — so it is absent from every system-settings
+ * snapshot and a whole-object system-settings save cannot touch it. Subjects are
+ * case-sensitive and taken only from the server-verified connection identity; a
+ * client can neither read nor address another subject's record.
+ */
+export type PersonalizedSettingsBySubject = Record<string, PersonalizedSettings>
+
+/**
+ * Which store answered a {@link PersonalizedSettings} read/write: `account` ⇒ the
+ * server-side record for the connection's verified subject; `local` ⇒ no subject
+ * applies, so the browser's own storage is authoritative and the server persisted
+ * no account record.
+ */
+export type PersonalizedSettingsScope = 'account' | 'local'
 
 // ---- External skill git mount (ADR-0016) ----
 
@@ -980,9 +1018,6 @@ export interface SystemSettings {
   automationAgentId: string
   /** BCP-47 language tag for browser voice input (e.g. `zh-CN`). `zh-CN` when unset. */
   voiceLang?: string
-  /** UI display language for the web console. `en` when unset. Decoupled from
-   * {@link voiceLang}. See {@link UiLang}. */
-  uiLang?: UiLang
   /**
    * System-wide IANA time zone (e.g. `Asia/Shanghai`, `America/New_York`) used
    * to interpret every automation's cron fields when computing `next_run_at`. The
@@ -3050,6 +3085,22 @@ export type ClientToServer =
   /** Replace the system configuration; server normalizes and echoes `settings`. */
   | { type: 'save_settings'; settings: SystemSettings }
   /**
+   * Fetch this connection's {@link PersonalizedSettings} (reply:
+   * `personalized_settings`). `localFallback` carries the browser's own current
+   * values so the server can seed a brand-new account record from them; it is a
+   * *seed*, never an override — an existing account record always wins, and the
+   * client cannot influence which subject is read (the server uses the verified
+   * connection identity). Needs no administrator authority.
+   */
+  | { type: 'get_personalized_settings'; localFallback?: PersonalizedSettings }
+  /**
+   * Persist this connection's {@link PersonalizedSettings}; server normalizes and
+   * echoes `personalized_settings`. Stored under the verified subject when one
+   * applies — a client cannot name the account it writes to. Needs no administrator
+   * authority.
+   */
+  | { type: 'save_personalized_settings'; settings: PersonalizedSettings }
+  /**
    * Authenticate this connection (ADR-0023). Carries an {@link AuthLoginRequest}
    * (plaintext password in transit only). Server replies with `login_result`.
    * Provider-neutral: the same message logs in under any future provider.
@@ -3669,6 +3720,18 @@ export type ServerToClient =
        * older servers, the UI then falls back to the built-in Claude mode list.
        */
       vendorModes?: Record<VendorId, VendorModeCatalog>
+    }
+  /**
+   * The normalized {@link PersonalizedSettings} for this connection, in reply to
+   * `get_personalized_settings` / `save_personalized_settings`. This echo decides
+   * the console's live display language. `scope` tells the client which store
+   * answered, so it knows whether the value it just received is account-backed
+   * (`account`) or merely its own browser value normalized (`local`).
+   */
+  | {
+      type: 'personalized_settings'
+      settings: PersonalizedSettings
+      scope: PersonalizedSettingsScope
     }
   /**
    * The normalized workspace setting (reply to `load_workspace_setting` or

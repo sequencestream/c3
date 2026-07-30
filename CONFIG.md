@@ -25,12 +25,21 @@ The top-level keys in `~/.c3/settings.json`. Mapped to `SystemSettings` in
 | ------------------ | ------------------------------- | ------------ | -------------------------------------------- |
 | `agents`           | `AgentConfig[]`                 | —            | Agent profiles (url/key/model/name)          |
 | `defaultAgentId`   | `string`                        | —            | Agent id for new/unassigned sessions         |
-| `uiLang`           | `UiLang`                        | `"en"`       | UI display language (en/zh/ja/ko/ru)         |
 | `timezone`         | `string`                        | Server local | IANA time zone for schedule cron evaluation  |
 | `showToolSessions` | `boolean`                       | `false`      | Show tool-created sessions in sidebar        |
 | `sandboxes`        | `SystemSandboxDef[]`            | `[]`         | System-level sandbox definitions (see below) |
 | `projectConfigs`   | `Record<string, ProjectConfig>` | `{}`         | Per-project (workspace) configuration        |
 | `socketAutoResume` | `boolean`                       | `false`      | Auto-resume sessions on socket reconnect     |
+
+Two more top-level keys are **siblings of** `SystemSettings` rather than fields of
+it, so they never appear in a system-settings snapshot and a whole-object settings
+save preserves them (see
+[personalized-setting](doc/domains/settings/personalized-setting/personalized-setting-spec.md)):
+
+| Key                    | Type                                   | Default | Description                                             |
+| ---------------------- | -------------------------------------- | ------- | ------------------------------------------------------- |
+| `personalizedSettings` | `Record<string, PersonalizedSettings>` | `{}`    | Per-account personal preferences, keyed by auth subject |
+| `agentLang`            | `UiLang`                               | `"en"`  | Language server-side agent prompts are written in       |
 
 ---
 

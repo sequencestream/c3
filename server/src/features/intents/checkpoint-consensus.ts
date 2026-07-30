@@ -54,7 +54,7 @@ import { askAgentOnce } from '../../agent-once.js'
 import { selectConsensusVoters } from '../../kernel/agent-config/index.js'
 import {
   getConsensusConfig,
-  getUiLangName,
+  getAgentLangName,
   isConsensusEnabled,
   isConsensusMajorityEnabled,
 } from '../../kernel/config/index.js'
@@ -241,7 +241,7 @@ async function summarize(
     // system: the stable summariser role + output instruction; user: the votes cast.
     const system = [
       'Several advisor agents voted on whether an automated development process should continue past a checkpoint that needs human approval.',
-      `Write ONE short sentence in ${getUiLangName()} summarizing their collective opinion for the automation orchestrator. Output only that sentence, no preamble.`,
+      `Write ONE short sentence in ${getAgentLangName()} summarizing their collective opinion for the automation orchestrator. Output only that sentence, no preamble.`,
     ].join('\n')
     const user = [
       'Their votes:',

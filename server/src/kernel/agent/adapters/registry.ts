@@ -75,9 +75,14 @@ export function resolveAvailableAdapters(
  * are unavailable because their host CLI is missing — the latter is a **product
  * convention, not an error**, so it prints actionable install guidance rather than
  * failing. c3 still starts; only the affected vendor's agent type is unavailable.
+ *
+ * This reports the CLI state resolvable at call time. The managed-CLI remote sync
+ * runs in the background, so at boot these lines are a pre-refresh snapshot, never
+ * the result of a completed check — hence the explicit header.
  */
 export function logVendorCliHealth(): void {
   const { available, missing } = resolveAvailableAdapters()
+  console.log('[c3] vendor CLI snapshot (background refresh may still be in flight):')
   for (const adapter of available) {
     const p = resolveExecutable(adapter.vendor)
     const detail = p.version ? ` ${p.version}` : ''

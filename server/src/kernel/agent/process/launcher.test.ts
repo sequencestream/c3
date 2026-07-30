@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,10 +13,12 @@ import {
   parseVendorVersion,
   probeAll,
   readVendorCliStatus,
+  refreshManagedVendorClisInBackground,
   resetProbeCache,
   resolveExecutable,
   satisfiesRange,
   selectNpmVersion,
+  shouldCheckRemote,
   syncManagedVendorCli,
   vendorManifestPath,
 } from './launcher.js'
@@ -239,6 +241,100 @@ describe('syncManagedVendorCli failure recovery', () => {
     expect(result.source).toBe('managed')
     expect(result.path).toBe(old)
     expect(result.managedError).toContain('packument fetch failed')
+  })
+})
+
+describe('refreshManagedVendorClisInBackground', () => {
+  function manifestEntry(vendor: VendorId): Record<string, unknown> {
+    try {
+      const state = JSON.parse(readFileSync(vendorManifestPath(dir), 'utf-8')) as {
+        vendors: Partial<Record<VendorId, Record<string, unknown>>>
+      }
+      return state.vendors[vendor] ?? {}
+    } catch {
+      return {}
+    }
+  }
+
+  function writeLastCheck(at: string): void {
+    const entry = (vendor: VendorId) => ({
+      vendor,
+      source: 'managed',
+      lastRemoteCheckAt: at,
+      compatibleRange: HOST_BINARIES[vendor].compatibleRange,
+      versionHistory: [],
+    })
+    writeManifest({
+      version: 1,
+      vendors: { claude: entry('claude'), codex: entry('codex') },
+    })
+  }
+
+  it('returns while the remote check is still pending, so startup never waits', async () => {
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let settled = false
+    const fetchMock = vi.fn(async () => {
+      await pending
+      settled = true
+      return { ok: false, status: 503 } as Response
+    })
+
+    refreshManagedVendorClisInBackground({ fetch: fetchMock as unknown as typeof fetch })
+
+    // The trigger already returned with the registry request unresolved, so the
+    // rest of the startup sequence (here: the health-log probe) proceeds now.
+    expect(fetchMock).toHaveBeenCalled()
+    expect(settled).toBe(false)
+    expect(resolveExecutable('claude').source).toBeTruthy()
+
+    release()
+    await vi.waitFor(() => {
+      expect(manifestEntry('claude').lastError).toContain('packument fetch failed')
+    })
+  })
+
+  it('skips a vendor inside the 24h remote-check cooldown', () => {
+    const now = new Date('2026-07-30T12:00:00.000Z')
+    writeLastCheck('2026-07-30T00:00:00.000Z')
+    const fetchMock = vi.fn()
+
+    refreshManagedVendorClisInBackground({
+      fetch: fetchMock as unknown as typeof fetch,
+      now: () => now,
+    })
+
+    expect(shouldCheckRemote('claude', now.getTime())).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('checks again once the cooldown expired, and swallows the failure', async () => {
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason)
+    }
+    process.on('unhandledRejection', onUnhandled)
+    const now = new Date('2026-07-30T12:00:00.000Z')
+    writeLastCheck('2026-07-29T10:00:00.000Z')
+    // An empty packument makes the version selection throw, i.e. the sync promise
+    // REJECTS instead of degrading internally — the path the background catch owns.
+    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+
+    refreshManagedVendorClisInBackground({
+      fetch: fetchMock as unknown as typeof fetch,
+      now: () => now,
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => {
+      expect(manifestEntry('claude').source).toBe('install-failed')
+    })
+    expect(manifestEntry('claude').lastError).toContain('no claude npm version satisfies')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(unhandled).toEqual([])
+    process.off('unhandledRejection', onUnhandled)
   })
 })
 

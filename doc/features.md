@@ -112,7 +112,7 @@ c3
 │   │   ├── 会话种类过滤                          # sandboxSessionKinds 决定哪些 SessionKind 进沙箱(缺省 ['work'])
 │   │   ├── 订阅态认证透传                        # 本次 agent 为 system(订阅态)时 wrapper 追加 --allow-keychain 打开宿主 keychain;沙箱不参与 agent 选择,run 保留正常解析出的 agent,无专属角色配置、不弹窗不换绑
 │   │   ├── per-vendor 认证策略                   # 入口命令/数据根/凭据变量/额外挂载/身份变量/keychain/启动前目录按 vendor 注册,wrapper 生成不含 vendor 分支;未注册 vendor 生成前 hard-fail
-│   │   ├── arapuca 版本关联                      # c3 关联并异步自动安装经校验的 arapuca 到 ~/.c3/sandbox/arapuca(SHA-256 + 原子激活),缺失时回退宿主 PATH、不阻塞当次 run
+│   │   ├── arapuca 版本关联                      # c3 关联并异步自动安装经校验的 arapuca 到 ~/.c3/sandbox/arapuca(SHA-256 + 原子激活),缺失时回退宿主 PATH、不阻塞当次 run;安装尝试无论成败冷却 24 小时(跨进程持久化)
 │   │   └── 硬失败                                # arapuca 两条链皆无/平台不支持/放行路径非法即 hard-fail,绝不回落宿主裸跑
 │   │
 │   └── auth 鉴权                                 # 每条连接过身份门,每次改全局配置过管理员门

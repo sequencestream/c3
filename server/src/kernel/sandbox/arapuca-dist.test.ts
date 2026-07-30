@@ -39,6 +39,7 @@ vi.mock('../config/index.js', () => ({ c3HomeDir: () => stub.home }))
 
 import {
   managedRootDir,
+  ARAPUCA_INSTALL_RETRY_INTERVAL_MS,
   ARAPUCA_VERSION,
   ArapucaInstallError,
   artifactForHost,
@@ -48,6 +49,7 @@ import {
   pendingArapucaInstallForTests,
   resetArapucaDistForTests,
   resolveManagedArapuca,
+  shouldAttemptArapucaInstall,
   type ArapucaArtifact,
 } from './arapuca-dist.js'
 
@@ -61,6 +63,23 @@ const PAYLOAD_SHA = createHash('sha256').update(Buffer.from(PAYLOAD)).digest('he
 let c3Home: string
 let root: string
 let art: ArapucaArtifact
+
+/** The persisted attempt stamp (epoch ms), or null when there is no usable one. */
+const attemptStamp = (): number | null => {
+  try {
+    const raw = readFileSync(join(root, 'install-state.json'), 'utf-8')
+    const at = (JSON.parse(raw) as { lastInstallAttemptAt?: string }).lastInstallAttemptAt
+    return at ? Date.parse(at) : null
+  } catch {
+    return null
+  }
+}
+
+/** Write a raw cooldown state file (valid or deliberately corrupt). */
+const writeAttemptState = (body: string): void => {
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, 'install-state.json'), body)
+}
 
 /** A downloader that writes the fixed payload (no network). */
 const okDownload = async (_url: string, dest: string) => {
@@ -345,5 +364,185 @@ describe('ensureManagedArapuca', () => {
     expect(onInstalled).not.toHaveBeenCalled()
     expect(resolveManagedArapuca()).toBeNull()
     expect(warn.mock.calls.join(' ')).toContain('checksum-mismatch')
+  })
+})
+
+// ─── 24h install-attempt cooldown ────────────────────────────────────────────
+
+describe('shouldAttemptArapucaInstall', () => {
+  const T0 = Date.parse('2026-07-30T00:00:00.000Z')
+
+  it('allows an attempt when nothing was ever recorded', () => {
+    expect(shouldAttemptArapucaInstall(root, T0)).toBe(true)
+  })
+
+  it('suppresses an attempt inside the window and allows it once the window closes', () => {
+    writeAttemptState(`{"version":1,"lastInstallAttemptAt":"${new Date(T0).toISOString()}"}`)
+    expect(shouldAttemptArapucaInstall(root, T0)).toBe(false)
+    expect(shouldAttemptArapucaInstall(root, T0 + ARAPUCA_INSTALL_RETRY_INTERVAL_MS - 1)).toBe(
+      false,
+    )
+    // The boundary itself is inclusive — exactly 24h old is retryable.
+    expect(shouldAttemptArapucaInstall(root, T0 + ARAPUCA_INSTALL_RETRY_INTERVAL_MS)).toBe(true)
+    expect(shouldAttemptArapucaInstall(root, T0 + 5 * ARAPUCA_INSTALL_RETRY_INTERVAL_MS)).toBe(true)
+  })
+
+  it('treats a corrupt or unusable record as "no record" rather than a permanent block', () => {
+    for (const body of [
+      'not json at all',
+      '{"version":1}',
+      '{"version":1,"lastInstallAttemptAt":"never"}',
+      // A bare number would `Date.parse` as the year 2042 if it were trusted.
+      '{"version":1,"lastInstallAttemptAt":42}',
+    ]) {
+      writeAttemptState(body)
+      expect(shouldAttemptArapucaInstall(root, T0), body).toBe(true)
+    }
+  })
+})
+
+describe('ensureManagedArapuca — install cooldown', () => {
+  const T0 = Date.parse('2026-07-30T00:00:00.000Z')
+
+  /** Silence the module's own logging and hand back the spies for assertions. */
+  const quiet = () => ({
+    log: vi.spyOn(console, 'log').mockImplementation(() => {}),
+    warn: vi.spyOn(console, 'warn').mockImplementation(() => {}),
+  })
+
+  it('stamps the attempt before downloading, on the success path', async () => {
+    quiet()
+    enableArapucaAutoInstall()
+    const onInstalled = vi.fn()
+    const download = vi.fn(async (_url: string, dest: string) => {
+      // The stamp is already on disk while the bytes are still moving, so a
+      // crash mid-download cannot escape the cooldown.
+      expect(attemptStamp()).toBe(T0)
+      writeFileSync(dest, PAYLOAD)
+    })
+    // The fixture artifact makes a REAL success reachable offline (the pinned
+    // host artifact's checksum could never match the fake payload).
+    ensureManagedArapuca({
+      artifact: art,
+      onInstalled,
+      download,
+      extract: okExtract,
+      now: () => T0,
+    })
+    await pendingArapucaInstallForTests()
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(onInstalled).toHaveBeenCalledTimes(1)
+    expect(resolveManagedArapuca({ root, artifact: art })).not.toBeNull()
+    // Success does not re-stamp: the baseline stays the task's start time.
+    expect(attemptStamp()).toBe(T0)
+    // …and the fresh window suppresses the next attempt.
+    ensureManagedArapuca({ artifact: art, download, extract: okExtract, now: () => T0 + 60_000 })
+    expect(download).toHaveBeenCalledTimes(1)
+  })
+
+  it('stamps the attempt on the failure path too', async () => {
+    quiet()
+    enableArapucaAutoInstall()
+    const download = vi.fn(async () => {
+      throw new Error('offline')
+    })
+    ensureManagedArapuca({ artifact: art, download, now: () => T0 })
+    await pendingArapucaInstallForTests()
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(resolveManagedArapuca()).toBeNull()
+    expect(attemptStamp()).toBe(T0)
+  })
+
+  it('skips the install — silently — while the window is open', async () => {
+    const { log, warn } = quiet()
+    enableArapucaAutoInstall()
+    const download = vi.fn(async () => {
+      throw new Error('offline')
+    })
+    ensureManagedArapuca({ artifact: art, download, now: () => T0 })
+    await pendingArapucaInstallForTests()
+    log.mockClear()
+    warn.mockClear()
+    // A later probe, still inside the window: no task, no download, no log noise.
+    ensureManagedArapuca({ artifact: art, download, now: () => T0 + 60_000 })
+    ensureManagedArapuca({
+      artifact: art,
+      download,
+      now: () => T0 + ARAPUCA_INSTALL_RETRY_INTERVAL_MS - 1,
+    })
+    expect(pendingArapucaInstallForTests()).toBeNull()
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(log).not.toHaveBeenCalled()
+    expect(warn).not.toHaveBeenCalled()
+    // …and the skip did not move the baseline forward.
+    expect(attemptStamp()).toBe(T0)
+  })
+
+  it('retries once the window has closed, and re-arms the cooldown', async () => {
+    quiet()
+    enableArapucaAutoInstall()
+    const download = vi.fn(async () => {
+      throw new Error('offline')
+    })
+    ensureManagedArapuca({ artifact: art, download, now: () => T0 })
+    await pendingArapucaInstallForTests()
+    const T1 = T0 + ARAPUCA_INSTALL_RETRY_INTERVAL_MS
+    ensureManagedArapuca({ artifact: art, download, now: () => T1 })
+    await pendingArapucaInstallForTests()
+    expect(download).toHaveBeenCalledTimes(2)
+    expect(attemptStamp()).toBe(T1)
+    // The second attempt started its own 24h window.
+    ensureManagedArapuca({ artifact: art, download, now: () => T1 + 60_000 })
+    expect(download).toHaveBeenCalledTimes(2)
+  })
+
+  it('holds the cooldown across a process restart', async () => {
+    quiet()
+    enableArapucaAutoInstall()
+    const download = vi.fn(async () => {
+      throw new Error('offline')
+    })
+    ensureManagedArapuca({ artifact: art, download, now: () => T0 })
+    await pendingArapucaInstallForTests()
+    // Drop ALL in-memory state — the same starting point a fresh process has.
+    resetArapucaDistForTests()
+    enableArapucaAutoInstall()
+    ensureManagedArapuca({ artifact: art, download, now: () => T0 + 12 * 60 * 60 * 1000 })
+    expect(pendingArapucaInstallForTests()).toBeNull()
+    expect(download).toHaveBeenCalledTimes(1)
+  })
+
+  it('stamps once for concurrent callers sharing the single-flight task', async () => {
+    quiet()
+    enableArapucaAutoInstall()
+    const download = vi.fn(async () => {
+      throw new Error('offline')
+    })
+    ensureManagedArapuca({ artifact: art, download, now: () => T0 })
+    // Callers that arrive while the task runs are absorbed by the single-flight
+    // slot and must not push the baseline forward with their own clock.
+    ensureManagedArapuca({ artifact: art, download, now: () => T0 + 1_000 })
+    ensureManagedArapuca({ artifact: art, download, now: () => T0 + 2_000 })
+    await pendingArapucaInstallForTests()
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(attemptStamp()).toBe(T0)
+  })
+
+  it('warns but still installs when the attempt stamp cannot be persisted', async () => {
+    if (process.platform === 'win32') return // rename-over-directory semantics differ
+    const { warn } = quiet()
+    enableArapucaAutoInstall()
+    // A directory where the state file belongs: the atomic write's final rename
+    // fails, and reading it back yields nothing usable.
+    mkdirSync(join(root, 'install-state.json', 'blocker'), { recursive: true })
+    const download = vi.fn(okDownload)
+    ensureManagedArapuca({ artifact: art, download, extract: okExtract, now: () => T0 })
+    await pendingArapucaInstallForTests()
+    // The run is never blocked: the install proceeded and the binary landed.
+    expect(download).toHaveBeenCalledTimes(1)
+    expect(resolveManagedArapuca({ root, artifact: art })).not.toBeNull()
+    expect(warn.mock.calls.join(' ')).toContain('24h retry cooldown')
+    // Cooldown is genuinely lost (not silently faked) — a later probe retries.
+    expect(shouldAttemptArapucaInstall(root, T0 + 60_000)).toBe(true)
   })
 })

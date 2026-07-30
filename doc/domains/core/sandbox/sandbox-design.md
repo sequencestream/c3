@@ -16,7 +16,7 @@ sandbox 是内核基础设施领域，属于内层能力（受单向依赖边界
 - workspace sandbox config 的 normalize 规则。
 - 路径放行解析：执行根 rw、源工作区 ro（同路径时并入执行根 rw）、specsBase rw、`extraMounts` 逐项 ro/rw。
 - arapuca wrapper 生成与临时目录清理。
-- arapuca 版本关联与自动安装：下载、SHA-256 校验、落盘、`current` 指向切换。
+- arapuca 版本关联与自动安装：下载、SHA-256 校验、落盘、`current` 指向切换、安装尝试的 24 小时冷却。
 - 启动前探测 arapuca 二进制与平台能力。
 - run lifecycle 接线：解析本次 run 的 sandbox agent、包裹 vendor CLI 启动、run 结束清理。
 
@@ -32,14 +32,14 @@ sandbox 是内核基础设施领域，属于内层能力（受单向依赖边界
 
 ## 3. 模块结构
 
-| 模块                             | 职责                                                                                                                                    |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `server/src/kernel/sandbox/`     | sandbox 类型定义：workspace config、resolved 路径集、放行项权限、启动 options。                                                         |
-| workspace sandbox 配置校验       | 校验并 normalize `WorkspaceSandboxConfig`（`enabled` + `extraMounts` + `sandboxSessionKinds`）。                                        |
-| `SandboxLauncher`                | run lifecycle 与 sandbox 的集成层：读取 workspace 配置、探测 arapuca、`resolvePaths()`（含持久 codexHome）、生成 wrapper、清理 tmpDir。 |
-| `kernel/sandbox/arapuca-dist.ts` | arapuca 分发管理器：关联版本与各平台制品元数据、下载 + SHA-256 校验 + 解包 + 原子激活、后台 single-flight 安装（见 §14）。              |
-| `kernel/sandbox/vendor-auth.ts`  | per-vendor 认证策略注册表:把 vendor + agent 认证模式 + 宿主事实解析成数据形态的 profile(见 §9.1)。                                      |
-| ProcessSandbox 层（arapuca）     | 把 resolved 路径集映射为 arapuca `run` 参数；把 vendor CLI 包成 `arapuca run … -- <cli> "$@"` 形态的 wrapper。                          |
+| 模块                             | 职责                                                                                                                                          |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/src/kernel/sandbox/`     | sandbox 类型定义：workspace config、resolved 路径集、放行项权限、启动 options。                                                               |
+| workspace sandbox 配置校验       | 校验并 normalize `WorkspaceSandboxConfig`（`enabled` + `extraMounts` + `sandboxSessionKinds`）。                                              |
+| `SandboxLauncher`                | run lifecycle 与 sandbox 的集成层：读取 workspace 配置、探测 arapuca、`resolvePaths()`（含持久 codexHome）、生成 wrapper、清理 tmpDir。       |
+| `kernel/sandbox/arapuca-dist.ts` | arapuca 分发管理器：关联版本与各平台制品元数据、下载 + SHA-256 校验 + 解包 + 原子激活、后台 single-flight 安装 + 24h 安装尝试冷却（见 §14）。 |
+| `kernel/sandbox/vendor-auth.ts`  | per-vendor 认证策略注册表:把 vendor + agent 认证模式 + 宿主事实解析成数据形态的 profile(见 §9.1)。                                            |
+| ProcessSandbox 层（arapuca）     | 把 resolved 路径集映射为 arapuca `run` 参数；把 vendor CLI 包成 `arapuca run … -- <cli> "$@"` 形态的 wrapper。                                |
 
 > 与容器方案的差异：不再有 `DockerDriver`、镜像 / registry、seccomp profile 加载、bind mount、forwarder sidecar、内部网络。原容器 runtime、容器供应链、网络分段相关模块整体移除。既有"沙箱 backend 作为独立内核模块""系统 + 项目双层配置"的抽象概念保留，但不再承载镜像 / 资源 / 网络等容器字段；当前范围内所有隔离参数由 workspace 配置与该 run 的执行根（worktree 或源工作区）直接驱动。具体文件切分由实现阶段确定。
 
@@ -324,6 +324,7 @@ c3 版本显式关联一个经过验证的 arapuca 版本，以及各受支持�
 ~/.c3/sandbox/arapuca/
   <version>/arapuca-<version>/arapuca   # 完整制品
   current -> <version>                  # 全部校验通过后才切换
+  install-state.json                    # 上次安装「尝试」时间（24h 冷却，见 §14.5）
 ```
 
 `current` 仅在下载、SHA-256 校验、解包、可执行性检查**全部成功**后原子切换（同目录临时 symlink + `rename`）。下载与解包在同根临时目录内进行，失败即清理临时产物，既不激活也不触碰既有 `current`。
@@ -344,8 +345,20 @@ SHA-256 不匹配时禁止解包，因此不完整或被篡改的目录永远不
 - 后台失败只记可诊断日志，不改写本次探测结果，不产生未处理的 Promise rejection；同进程后续探测可重试。
 - 安装成功切换 `current` 后使探测缓存失效，后续探测/run 升级到管理版本；已启动的 run 保持原选择。
 - 自动安装由组合根（server 启动）显式开启，内核被单独引用时不会隐式联网。
+- 重试受 §14.5 的 24 小时冷却约束。
 
 设置页的 sandbox host status 表达「当前实际可用性」，不额外呈现下载进度或版本管理 UI。
+
+### 14.5 安装尝试冷却（24 小时）
+
+single-flight 只覆盖同一进程内的并发，无法阻止「网络长期不可达 → 每次 run / 每次探测缓存失效 / 每次重启都重新下载」。因此安装尝试再叠加一层跨进程的固定 24 小时冷却：
+
+- 时间戳写在管理根的 `install-state.json`，与 vendor CLI manifest 相互隔离；冷却时长复用 vendor CLI 远端检查的同一固定 24h，不提供配置项。
+- 时间戳在**安装任务获准启动、下载发起之前**落盘，因此下载/校验/解包/激活无论成功还是失败都共用同一冷却基准，中途崩溃或进程退出也无法绕开窗口。
+- 冷却窗口内直接返回，不启动任务、不打印安装开始/失败日志；探测语义完全不变——调用方照常回退宿主 PATH，缓存、`UiCode` 与 fail-closed 契约均不受影响。
+- 并发调用仍先被 single-flight 吸收，因此一次窗口内只写一次时间戳。
+- 时间戳缺失、不可解析或类型不合法一律按「无冷却记录」处理并放行，避免损坏的状态文件永久关闭自动安装；写盘失败只记一次可诊断告警，不阻塞探测与 run（代价是该次冷却不生效）。
+- 明确取舍：用户即使已修复网络，也需等窗口结束才会自动重试，重启进程不清除冷却——与 vendor CLI 现状一致。
 
 ## 15. 写操作预审 / checkpoint
 

@@ -26,10 +26,17 @@ An **AI workbench** that centrally manages and drives the work of multiple AI co
 
 ## Features
 
-- **Browser-mediated permission gateway** — every sensitive tool-use request is approved/denied in the browser, not the terminal; inherited `~/.claude` / project `.claude` allow-deny rules apply first.
-- **Multi-vendor agents** — managed Claude Code / Codex CLIs, resolved and updated automatically under `~/.c3/vendor` (host PATH is only a fallback).
-- **Intents, discussions & automations** — turn a prompt into a tracked intent, run multi-agent discussions/consensus, and schedule recurring automations.
-- **Sandboxed runs** — optional Docker-backed sandbox with resource limits.
+- **Browser-mediated permission gateway** — approve/deny every sensitive tool use in the browser, not the terminal; optional multi-agent consensus voting.
+- **Multi-vendor agents** — managed Claude Code / Codex CLIs under `~/.c3/vendor`, with per-role routing and a fallback chain.
+- **Intents** — turn a prompt into a tracked intent with a dependency graph, its own sessions, and branch / commit / PR state.
+- **Spec-driven development** — write spec → read-only review → human approval before any code; editing a spec invalidates its verdict.
+- **Intent queue** — mark intents `automate` and a deterministic scheduler runs them in dependency order, backing off and parking on failure.
+- **Worktree isolation** — each intent develops in its own Git worktree, so parallel work never fights over one checkout.
+- **Multi-agent discussions** — several agents (and you) round-table a topic, then turn the conclusion into an intent.
+- **Automations** — run agent work on a cron or on system events, chained, each in its own session.
+- **Sandboxed runs** — opt-in process-level isolation via [arapuca](https://github.com/sergio-correia/arapuca): kernel MAC, deny-by-default paths, no containers.
+- **Code browsing** — read-only branches, commits, diffs and Git status in the browser, with an embedded session to ask about the code.
+- **Workcenter** — cross-workspace dashboard plus a notification inbox for answering permission prompts in one place.
 - **Optional account auth** — username/password accounts with an admin gate (off by default; loopback-only otherwise).
 - **Single self-contained binary** — one native executable per platform, with a`c3 upgrade` self-update from GitHub Releases.
 

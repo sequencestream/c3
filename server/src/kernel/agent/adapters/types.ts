@@ -159,10 +159,10 @@ export interface AdapterCapabilities {
    * over the blocking `canUseTool` write-back). **Claude = true; Codex = false**
    * (008 NO-GO: `codex exec` closes stdin after dispatch — no event ever requests
    * input, no channel writes one back). When false, c3 cannot intercept a native
-   * prompt; user-input intents (e.g. `save_intents`) instead route through the
-   * c3-controlled HTTP-MCP gate, which raises a normal WorkCenter `permission_request`
-   * the human answers (the visible degradation path). Surfaced to the console via
-   * `settings.vendorCapabilities` so a Codex session can label the gap honestly.
+   * prompt, so a vendor without it can only involve the human through c3's own
+   * flows (the WorkCenter `permission_request` a driver-path tool approval raises).
+   * Surfaced to the console via `settings.vendorCapabilities` so a Codex session
+   * can label the gap honestly.
    */
   readonly nativeUserInput: boolean
   /**

@@ -9,11 +9,7 @@
 import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
-import {
-  INTENT_DISALLOWED_TOOLS,
-  SPEC_DISALLOWED_TOOLS,
-  waitForDecision,
-} from './kernel/permission/index.js'
+import { INTENT_DISALLOWED_TOOLS, SPEC_DISALLOWED_TOOLS } from './kernel/permission/index.js'
 import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
 import { probeArapuca } from './kernel/sandbox/SandboxLauncher.js'
 import { enableArapucaAutoInstall } from './kernel/sandbox/arapuca-dist.js'
@@ -29,7 +25,6 @@ import {
   setOnRunEnd,
   setOnEmit,
   setTaskObserver,
-  emit,
 } from './runs.js'
 import { observeTaskWire } from './kernel/agent/task-tracker.js'
 import { getSessionAgentId, getAgentLang, setOnPendingIntentLookup } from './kernel/config/index.js'
@@ -44,7 +39,7 @@ import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { buildSpecAgentPrompt } from './features/intents/spec-prompt.js'
 import { DISCUSSION_RESEARCH_PROMPT } from './features/discussions/research.js'
 import { runFind, runView } from './features/intents/tool-defs.js'
-import { gatedSave } from './features/intents/save-gate.js'
+import { runCommSave } from './features/intents/save-comm.js'
 import { normalizeGenericEventDefault } from './features/events/default-normalizer.js'
 import {
   normalizePrGenericEvent,
@@ -344,9 +339,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   setOnStatusChange(broadcasts.broadcastStatuses)
 
   // WorkCenter event hook (createEvent + broadcast before each human permission
-  // prompt). ONE instance shared by every permission_request exit — the claude/driver
-  // run paths (via launchDeps.onPermissionRequest) AND the codex intent save gate
-  // (via gatedSave below) — so multi-vendor prompts all land in the pending-items panel.
+  // prompt). ONE instance shared by every permission_request exit (the claude/driver
+  // run paths, via launchDeps.onPermissionRequest) — so multi-vendor prompts all
+  // land in the pending-items panel.
   const onPermissionRequest = createPermissionRequestHandler({ broadcaster })
   // Consensus auto-resolution audit hook: records a non-blocking `status: 'auto'`
   // WaitUserInvolveEvent whenever the gateway auto-decides via multi-agent consensus
@@ -354,25 +349,16 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const onConsensusResolved = createConsensusAutoHandler()
   // Intent tools over the loopback HTTP MCP route — the SINGLE transport both
   // Claude and Codex now consume for the comm-agent's find/view/save. find/view are
-  // read-only; `save` runs ONE confirmation gate (`gatedSave`) shared by both
-  // vendors — a `permission_request` frame on the bound run + `waitForDecision` — so
-  // a save still needs the user's OK in c3 UI, and a deny never reaches the store.
+  // read-only; `save` runs the ONE comm-save handler (`runCommSave`) shared by both
+  // vendors: the user already confirmed the listed intents in the conversation, so
+  // it persists straight away without any browser round-trip.
   // The route is mounted below (before the SPA catch-all) and bound per-run via
   // `intentProfile.bindMcp`.
   const intentMcpTools: IntentMcpTools = {
     find: (workspacePath, args) => runFind(workspacePath, args),
     view: (workspacePath, args) => runView(workspacePath, args),
     save: (binding, args) =>
-      gatedSave(
-        {
-          emit,
-          waitForDecision,
-          broadcastIntents: broadcasts.broadcastIntents,
-          onPermissionRequest,
-        },
-        binding,
-        args,
-      ),
+      runCommSave({ broadcastIntents: broadcasts.broadcastIntents }, binding, args),
   }
   const intentMcp = createIntentMcp(`http://127.0.0.1:${opts.port}`, intentMcpTools)
   // Wire the skill-load approval egress (mount layer 2/3, ADR-0017). Without this
@@ -516,10 +502,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       disallowedTools: INTENT_DISALLOWED_TOOLS,
       // The three intent tools over c3's loopback HTTP MCP route — the SINGLE
       // transport both Claude and Codex consume. Bound per-run (the run path
-      // supplies workspace + live run id + signal); `save_intents`'s confirmation
-      // lives in the shared handler (`gatedSave`, wired into `intentMcpTools`
-      // above), so a vendor allow-rule that skips `canUseTool` still raises a human
-      // prompt — claude/codex share one gate.
+      // supplies workspace + live run id + signal); `save_intents` lands in the
+      // shared comm handler (`runCommSave`, wired into `intentMcpTools` above),
+      // so claude/codex persist through one identical path.
       bindMcp: (binding) => intentMcp.bind(binding),
       gate: 'intent' as const,
     }),

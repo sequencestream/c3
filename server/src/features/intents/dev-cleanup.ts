@@ -26,7 +26,7 @@
  * and refresh `latestCommitHash` but do NOT create a second PR; the existing PR
  * fields are preserved.
  *
- * Dependency-injected (mirrors `save-gate.ts`) so the whole flow is unit-testable
+ * Dependency-injected (mirrors `save-comm.ts`) so the whole flow is unit-testable
  * without a live git tree, the wire, or the db.
  */
 import type { GitBranchMode, Intent, IntentPrStatus } from '@ccc/shared/protocol'

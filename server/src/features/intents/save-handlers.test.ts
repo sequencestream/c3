@@ -5,14 +5,14 @@
  *    resolves intra-batch dependsOnIndexes, rejects (isError, atomic) on a cycle /
  *    an in_progress-locked or cross-project id / a store-down db, stays bound to
  *    the closure project, and fires `onSaved` so the caller can broadcast.
- *  - the single-intent comm back-link normalization the gate applies: driven
- *    through `gatedSave` with an auto-allow decision, it overwrites a single
- *    intent's `intentSessionId` with the bound run id and never back-links a
- *    multi-item batch.
+ *  - the single-intent comm back-link normalization `runCommSave` applies: it
+ *    overwrites a single intent's `intentSessionId` with the bound run id and
+ *    never back-links a multi-item batch.
  * Plus the zod input-shape validation for `saveSchema` / `saveIntentDirectlySchema`.
  *
- * The gate's allow/deny/ordering/live-run-id semantics live in save-gate.test.ts;
- * this file only covers the persist handler + the back-link normalization.
+ * The comm handler's batch constraint / live-run-id semantics live in
+ * save-comm.test.ts; this file only covers the persist handler + the back-link
+ * normalization.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -28,7 +28,7 @@ vi.mock('../../state.js', async (importOriginal) => ({
 import { z } from 'zod'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { runSaveConfirmed, saveIntentDirectlySchema, saveSchema } from './tool-defs.js'
-import { gatedSave, type SaveGateBinding, type SaveGateDeps } from './save-gate.js'
+import { runCommSave, type CommSaveBinding } from './save-comm.js'
 import { getIntent, insertIntents, listIntents, resetStoreForTests, updateStatus } from './store.js'
 
 const proj = '/abs/save-handlers-proj'
@@ -268,25 +268,15 @@ describe('runSaveConfirmed — post-confirmation persist', () => {
   })
 })
 
-describe('save_intents single-intent session back-link (gate normalization)', () => {
-  /** An auto-allow gate so the persist runs; the gate applies the back-link normalization. */
-  function autoAllowGate(): SaveGateDeps {
-    return {
-      emit: () => {},
-      waitForDecision: async () => ({ decision: 'allow' }),
-      broadcastIntents: () => {},
-    }
-  }
-  const binding: SaveGateBinding = {
-    workspacePath: proj,
-    getRunId: () => 'run-1',
-    signal: new AbortController().signal,
-  }
+describe('save_intents single-intent session back-link (comm-handler normalization)', () => {
+  const deps = { broadcastIntents: () => {} }
+  const binding: CommSaveBinding = { workspacePath: proj, getRunId: () => 'run-1' }
 
-  it('normalizes a single intent intentSessionId to the bound run id', async () => {
-    // The model echoes the injected (pending) session id; the gate overwrites it with
-    // binding.getRunId() (here 'run-1') so the persisted value matches the bound session.
-    const res = await gatedSave(autoAllowGate(), binding, {
+  it('normalizes a single intent intentSessionId to the bound run id', () => {
+    // The model echoes the injected (pending) session id; the handler overwrites it
+    // with binding.getRunId() (here 'run-1') so the persisted value matches the
+    // bound session.
+    const res = runCommSave(deps, binding, {
       intents: [
         {
           title: 'Solo',
@@ -302,8 +292,8 @@ describe('save_intents single-intent session back-link (gate normalization)', ()
     expect(getIntent(saved.id)?.intentSessionId).toBe('run-1')
   })
 
-  it('does NOT back-link any row when more than one intent is saved (batch ignored)', async () => {
-    const res = await gatedSave(autoAllowGate(), binding, {
+  it('does NOT back-link any row when more than one intent is saved (batch ignored)', () => {
+    const res = runCommSave(deps, binding, {
       intents: [
         {
           title: 'A',
@@ -325,8 +315,8 @@ describe('save_intents single-intent session back-link (gate normalization)', ()
     for (const r of listIntents(proj)) expect(getIntent(r.id)?.intentSessionId).toBeNull()
   })
 
-  it('leaves intent_session_id null when a single intent omits the field', async () => {
-    await gatedSave(autoAllowGate(), binding, {
+  it('leaves intent_session_id null when a single intent omits the field', () => {
+    runCommSave(deps, binding, {
       intents: [{ title: 'Solo', shortEnTitle: 'solo', content: '', priority: 'P0' }],
     })
     const [saved] = listIntents(proj)

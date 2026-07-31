@@ -435,13 +435,12 @@ c3 提供的 MCP 能力也作为显式的 Claude 自动化允许列表选项出�
 `spec` 或 `work` 会话,复用与手动操作相同的校验门禁,不突破任何安全边界。
 
 `save_intent_directly` 是一个**仅限自动化**的工具:它直接把一批 NEW 状态的 intent 落地为
-`draft`,**绕过** `save_intents` 的确认门。自动化没有浏览器决策队列,
-所以它不是对保存操作设门,而是依赖 `draft` 生命周期——人类之后通过
-在 intent 列表中审阅/激活该 draft 来确认。它是**仅创建**的(永远不会更新一个已有的
-intent;去重是调用者通过 `find_intents` 自己的职责),并且**只**注册在
-自动化的 c3 MCP 服务器上,永远不会注册在交互式的 intent MCP 服务器上——因此这个
-绕过门控的写操作被钉死在无人值守的自动化执行上。有确认门控的 `mcp__c3__save_intents`
-刻意**不**提供给自动化。
+`draft`。自动化没有对话方,拿不到 `save_intents` 所依赖的人工文字确认,所以它把人工确认
+后移到 `draft` 生命周期——人类之后通过在 intent 列表中审阅/激活该 draft 来确认。它是
+**仅创建**的(永远不会更新一个已有的 intent;去重是调用者通过 `find_intents` 自己的职责),
+并且**只**注册在自动化的 c3 MCP 服务器上,永远不会注册在交互式的 intent MCP 服务器上——
+因此这条无确认写入被钉死在无人值守的自动化执行上。可更新既有 intent 的
+`mcp__c3__save_intents` 刻意**不**提供给自动化。
 
 ### 网络访问伪条目(`network-access`,仅 codex)
 
@@ -693,8 +692,8 @@ intent 供人工审阅——它永远不修改代码。该 prompt 内嵌了完�
 
 它的 toolAllowlist 是 `Read` / `Grep` / `Glob` / `Bash`(读取约束文档 + 运行 git)加上
 `mcp__c3__find_intents` / `mcp__c3__view_intent` / `mcp__c3__save_intent_directly`。它使用
-`save_intent_directly`(而不是有确认门控的 `save_intents`),正是因为一个无人值守的
-自动化没有确认弹窗——人工确认门就是 intent 列表中的 `draft` 审阅。
+`save_intent_directly`(而不是需要对话确认的 `save_intents`),正是因为一个无人值守的
+自动化没有对话方可确认——人工确认门就是 intent 列表中的 `draft` 审阅。
 
 **每周漏洞分析**(`weekly-vuln-analysis`)在每周一 09:00 运行 Claude
 (cron `0 9 * * 1`,`mode: bypassPermissions`;周一时段与周五的架构评审错开,使得
@@ -719,8 +718,8 @@ intent 供人工审阅——它永远不修改代码。该 prompt 内嵌了完�
 
 它的 toolAllowlist 与架构评审一致:`Read` / `Grep` / `Glob` / `Bash` 加上
 `mcp__c3__find_intents` / `mcp__c3__view_intent` / `mcp__c3__save_intent_directly`。与架构
-评审一样,它使用 `save_intent_directly`(而不是有确认门控的 `save_intents`),因为一个无人值守的
-自动化没有确认弹窗——人工确认门就是 intent 列表中的 `draft` 审阅。
+评审一样,它使用 `save_intent_directly`(而不是需要对话确认的 `save_intents`),因为一个无人值守的
+自动化没有对话方可确认——人工确认门就是 intent 列表中的 `draft` 审阅。
 
 **清除过期worktree**(`weekly-worktree-cleanup`)每周日 03:00 运行 Claude
 (cron `0 3 * * 0`, `mode: bypassPermissions`), 用于清理 c3 托管的过期 worktree。模板只扫描

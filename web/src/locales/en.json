@@ -119,7 +119,6 @@
   "permission": {
     "history": {
       "askQuestion": "🙋 Asked to answer one question · AskUserQuestion | 🙋 Asked to answer {count} questions · AskUserQuestion",
-      "saveIntents": "💾 Asked to save one intent | 💾 Asked to save {count} intents",
       "useTool": "🔧 Asked to use tool {toolName}"
     },
     "ask": {
@@ -140,12 +139,6 @@
         "label": "Submit answers"
       }
     },
-    "save": {
-      "label": "💾 Save intents ·",
-      "shortTitle": "Short title:",
-      "dependsOn": "Depends on:",
-      "dependsOnBatch": "Depends on (this batch):"
-    },
     "tool": {
       "allow": {
         "label": "Allow tool:"
@@ -160,9 +153,7 @@
       "answered": "answered",
       "denied": "denied",
       "allowed": "allowed",
-      "c3Gateway": "c3 allowed",
-      "saved": "Saved",
-      "cancelled": "Cancelled"
+      "c3Gateway": "c3 allowed"
     },
     "notification": {
       "title": "c3 — permission needed",

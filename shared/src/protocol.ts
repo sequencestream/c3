@@ -2215,8 +2215,9 @@ export type QueueControlAction =
 
 /**
  * One intent proposed by the intent-communication agent via the
- * `save_intents` tool. Rendered in the confirmation prompt; persisted with
- * status `todo` once the user allows.
+ * `save_intents` tool. The agent lists it in full in the conversation and waits
+ * for the user's textual confirmation; the confirmed call persists it with
+ * status `todo`.
  */
 export interface ProposedIntent {
   /**

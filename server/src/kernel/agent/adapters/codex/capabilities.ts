@@ -47,8 +47,8 @@ export const codexCapabilities: AdapterCapabilities = {
   perToolApproval: false,
   taskStore: true,
   // No native in-run user input: codex exec is single-directional (008 NO-GO).
-  // User-input intents degrade to the c3-controlled HTTP-MCP gate (gatedSave →
-  // WorkCenter permission_request), the visible fallback the console labels.
+  // Human involvement degrades to c3's own flows (the WorkCenter
+  // permission_request), the visible fallback the console labels.
   nativeUserInput: false,
   sessions: {
     list: 'full',

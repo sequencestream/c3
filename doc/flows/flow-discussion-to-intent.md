@@ -22,7 +22,7 @@ flowchart TD
     MAN --> ORG
     ORG --> CONC[(conclusion · completed)]
     CONC --> CONV[discussion_to_intent]
-    CONV --> SAVE[unchanged save_intents flow]
+    CONV --> SAVE[save_intents:对话确认即落库]
     ORG -. human-in-the-loop .-> HIL[pause / speak / continue]
 ```
 
@@ -85,7 +85,8 @@ flowchart TD
    与刷新后的 `intents`。会话标题仍用讨论标题(仅显示用)。
 2. **不变的保存路径。** 沟通智能体通过**不变的** `save_intents` 流程(`RM-R7`)
    把结论拆分为可验证条目,并在其中恰好一项上回填该意图 id 以原地更新 — 见
-   [intent → development](flow-intent-to-development.md)。除非讨论是
+   [intent → development](flow-intent-to-development.md)。保存的人工授权与其他沟通会话一致:
+   智能体在对话里列全本轮所有条目、用户文字确认后调用工具即落库,没有确认弹框。除非讨论是
    `completed` 且 `conclusion` 非空,否则拒绝。
 3. **前端落点。** 转换后控制台选中这条新意图并停在其**意图会话** Tab —— 与手动
    「增加意图」后的落点一致(复用 `create_intent_result` 的既有反应)。离开页面后

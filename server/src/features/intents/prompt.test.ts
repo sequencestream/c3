@@ -34,6 +34,25 @@ describe('buildIntentAgentPrompt', () => {
     expect(prompt).toContain('exactly ONE')
   })
 
+  it('makes the chat confirmation the save authorization, with no dialog promised', () => {
+    const prompt = buildIntentAgentPrompt('en', SID)
+    // The authorization is textual, and the model must know no dialog will catch it.
+    expect(prompt).toContain('confirmation IS the save authorization')
+    expect(prompt).toContain('there is no confirmation dialog anywhere')
+    expect(prompt).not.toContain('clicks "Save"')
+    // Every save is preceded by a FULL listing of every item's savable fields.
+    expect(prompt).toContain('list the FULL content of EVERY intent in this round')
+    for (const field of ['title', 'priority', 'module', 'dependencies']) {
+      expect(prompt).toContain(field)
+    }
+    // A revision restarts the confirmation: re-list everything, wait again.
+    expect(prompt).toContain('objection / change request is NOT a confirmation')
+    expect(prompt).toContain('re-list ALL items in full again')
+    expect(prompt).toContain('never call `save_intents` before the user has explicitly confirmed')
+    // Confirmed ⇒ save immediately.
+    expect(prompt).toContain('Once the user explicitly confirms, call the `save_intents` tool')
+  })
+
   it('keeps one business goal together across technical layers', () => {
     const prompt = buildIntentAgentPrompt('en', SID)
     expect(prompt).toContain(

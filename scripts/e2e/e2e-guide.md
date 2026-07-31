@@ -88,10 +88,12 @@ Spends **no** agent tokens and needs the intent db (`c3.db`).
 
 Exercises the intent-management feature end-to-end: register a throwaway
 project, enter its intent view (`open_intent_chat` → read-only comm
-session + `intents` list), ask the comm agent to call `save_intents`,
-approve the gated `permission_request` (`mcp__c3__save_intents`), and
-confirm the row persists as `todo` and broadcasts. Then flips it to `done` via
-`update_intent_status` and checks the re-broadcast.
+session + `intents` list), then run the two-turn confirmation flow — turn 1
+proposes and must save nothing, turn 2 replies with an explicit textual
+confirmation and the agent's `save_intents` call must persist at once with NO
+`permission_request` for the save. Confirms the row persists as `todo` and
+broadcasts. Then flips it to `done` via `update_intent_status` and checks the
+re-broadcast.
 
 A second turn then covers the intent gate's **AskUserQuestion** runtime path
 — the one the unit test (`server/src/intent-gate.test.ts`) can't reach

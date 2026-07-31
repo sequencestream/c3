@@ -1488,7 +1488,7 @@ export function findIntentIdBySessionId(sessionId: string): string | null {
  * {@link findIntentIdBySessionId} (which only matches Start-work work sessions, on
  * purpose, for the title-bar jump button). Probes three bindings, most-specific first:
  *  1. `intent_sessions.session_id` — an intent work-session record (Start-work runs).
- *  2. `intents.intent_session_id`  — the comm session the save-gate links back (codex
+ *  2. `intents.intent_session_id`  — the comm session the comm save links back (codex
  *     `save_intents`).
  *  3. `intents.last_work_session_id` — the latest work session bound to the intent.
  *  4. `intents.id` — the intent's own id, for events written by `pushFailureEvent`

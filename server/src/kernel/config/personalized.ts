@@ -27,6 +27,7 @@ import type {
   PersonalizedSettings,
   PersonalizedSettingsBySubject,
   UiLang,
+  UiTheme,
 } from '@ccc/shared/protocol'
 import { readJsonFile, withFileLock, writeAtomic } from './store.js'
 import { settingsFile } from './paths.js'
@@ -36,6 +37,16 @@ export const UI_LANGS: readonly UiLang[] = ['en', 'zh', 'ja', 'ko', 'ru']
 
 /** The display language when a record is missing, malformed, or names an unknown language. */
 export const DEFAULT_UI_LANG: UiLang = 'en'
+
+/**
+ * Web-console display themes. The console owns the theme registry (names, palette,
+ * how a theme reaches the DOM); the server only needs the set of ids it will accept
+ * into a stored record, so a corrupt or made-up value never survives a round trip.
+ */
+export const UI_THEMES: readonly UiTheme[] = ['dark', 'light']
+
+/** The theme when a record is missing, malformed, or names an unknown theme. */
+export const DEFAULT_THEME: UiTheme = 'dark'
 
 /**
  * The raw settings-file shape as far as this module cares: the two keys it owns,
@@ -60,14 +71,22 @@ function isUiLang(v: unknown): v is UiLang {
   return typeof v === 'string' && UI_LANGS.includes(v as UiLang)
 }
 
+function isUiTheme(v: unknown): v is UiTheme {
+  return typeof v === 'string' && UI_THEMES.includes(v as UiTheme)
+}
+
 /**
  * Force a raw record into a valid {@link PersonalizedSettings}. Every field
  * normalizes to its own default, so a record written by an older or newer client is
- * always readable and a corrupt value never propagates.
+ * always readable and a corrupt value never propagates — in particular a theme this
+ * server does not know falls back to dark without disturbing the stored language.
  */
 export function normalizePersonalized(raw: unknown): PersonalizedSettings {
   const rec = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-  return { uiLang: isUiLang(rec.uiLang) ? rec.uiLang : DEFAULT_UI_LANG }
+  return {
+    uiLang: isUiLang(rec.uiLang) ? rec.uiLang : DEFAULT_UI_LANG,
+    theme: isUiTheme(rec.theme) ? rec.theme : DEFAULT_THEME,
+  }
 }
 
 /** Normalize the subject → settings map, dropping non-object entries and empty keys. */

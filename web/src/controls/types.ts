@@ -16,6 +16,7 @@ import type {
   SessionInfo,
   SystemSettings,
   UiLang,
+  UiTheme,
   UpdateAutomationInput,
   WaitUserInvolveEvent,
   WaitUserInvolveStatus,
@@ -252,6 +253,7 @@ export interface AppMethods {
   setAdminAccount(payload: { username: string }): void
   fetchPersonalizedSettings(): void
   setLocale(next: UiLang): void
+  setTheme(next: UiTheme): void
   setViewMode(mode: 'workspace' | 'workcenter'): void
   approveSkillLoad(requestId: string): void
   cancelSkillLoad(requestId: string): void

@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import {
+  applyStoredTheme,
   DEFAULT_PERSONALIZED,
   hasLocalPersonalized,
   isUiLang,
@@ -29,8 +30,16 @@ function installStorage(): FakeStore {
   return state
 }
 
+/** Minimal fake root element so the cold-start apply is observable in the Node env. */
+function installDocument(): { dataset: Record<string, string>; style: Record<string, string> } {
+  const root = { dataset: {} as Record<string, string>, style: {} as Record<string, string> }
+  ;(globalThis as unknown as { document: unknown }).document = { documentElement: root }
+  return root
+}
+
 afterEach(() => {
   delete (globalThis as unknown as { localStorage?: unknown }).localStorage
+  delete (globalThis as unknown as { document?: unknown }).document
 })
 
 describe('isUiLang', () => {
@@ -44,15 +53,31 @@ describe('isUiLang', () => {
 
 describe('normalizePersonalized', () => {
   it('fills en for a missing, unknown, or non-object value', () => {
-    expect(normalizePersonalized(undefined)).toEqual({ uiLang: 'en' })
-    expect(normalizePersonalized({})).toEqual({ uiLang: 'en' })
-    expect(normalizePersonalized({ uiLang: 'xx' })).toEqual({ uiLang: 'en' })
-    expect(normalizePersonalized('zh')).toEqual({ uiLang: 'en' })
-    expect(normalizePersonalized(DEFAULT_PERSONALIZED)).toEqual({ uiLang: 'en' })
+    expect(normalizePersonalized(undefined)).toEqual({ uiLang: 'en', theme: 'dark' })
+    expect(normalizePersonalized({})).toEqual({ uiLang: 'en', theme: 'dark' })
+    expect(normalizePersonalized({ uiLang: 'xx' })).toEqual({ uiLang: 'en', theme: 'dark' })
+    expect(normalizePersonalized('zh')).toEqual({ uiLang: 'en', theme: 'dark' })
+    expect(normalizePersonalized(DEFAULT_PERSONALIZED)).toEqual({ uiLang: 'en', theme: 'dark' })
   })
 
   it('keeps a known language', () => {
-    expect(normalizePersonalized({ uiLang: 'zh' })).toEqual({ uiLang: 'zh' })
+    expect(normalizePersonalized({ uiLang: 'zh' })).toEqual({ uiLang: 'zh', theme: 'dark' })
+  })
+
+  it('keeps a known theme and defaults an unknown one to dark', () => {
+    expect(normalizePersonalized({ theme: 'light' })).toEqual({ uiLang: 'en', theme: 'light' })
+    expect(normalizePersonalized({ theme: 'solarized' })).toEqual({ uiLang: 'en', theme: 'dark' })
+  })
+
+  it('normalizes each field on its own, so one corrupt value cannot cost the other', () => {
+    expect(normalizePersonalized({ uiLang: 'zh', theme: 'solarized' })).toEqual({
+      uiLang: 'zh',
+      theme: 'dark',
+    })
+    expect(normalizePersonalized({ uiLang: 'klingon', theme: 'light' })).toEqual({
+      uiLang: 'en',
+      theme: 'light',
+    })
   })
 })
 
@@ -64,18 +89,34 @@ describe('browser store', () => {
     expect(hasLocalPersonalized()).toBe(true)
   })
 
+  it('round-trips a recorded theme independently of the language', () => {
+    installStorage()
+    writeLocalPersonalized({ theme: 'light' })
+    expect(readLocalPersonalized()).toEqual({ theme: 'light' })
+    expect(hasLocalPersonalized()).toBe(true)
+    writeLocalPersonalized({ uiLang: 'ja' })
+    expect(readLocalPersonalized()).toEqual({ uiLang: 'ja', theme: 'light' })
+  })
+
   it('reports nothing recorded before any write, so a seed cannot be invented', () => {
     installStorage()
     expect(readLocalPersonalized()).toEqual({})
     expect(hasLocalPersonalized()).toBe(false)
-    expect(normalizePersonalized(readLocalPersonalized())).toEqual({ uiLang: 'en' })
+    expect(normalizePersonalized(readLocalPersonalized())).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+    })
   })
 
   it('treats a corrupt stored value as nothing recorded', () => {
     const state = installStorage()
     state.map.set('c3.uiLang', 'klingon')
+    state.map.set('c3.theme', 'solarized')
     expect(readLocalPersonalized()).toEqual({})
-    expect(normalizePersonalized(readLocalPersonalized())).toEqual({ uiLang: 'en' })
+    expect(normalizePersonalized(readLocalPersonalized())).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+    })
   })
 
   it('reads the language the console has always stored (no migration needed)', () => {
@@ -89,8 +130,11 @@ describe('browser store', () => {
     state.failing = true
     expect(readLocalPersonalized()).toEqual({})
     expect(hasLocalPersonalized()).toBe(false)
-    expect(() => writeLocalPersonalized({ uiLang: 'zh' })).not.toThrow()
-    expect(normalizePersonalized(readLocalPersonalized())).toEqual({ uiLang: 'en' })
+    expect(() => writeLocalPersonalized({ uiLang: 'zh', theme: 'light' })).not.toThrow()
+    expect(normalizePersonalized(readLocalPersonalized())).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+    })
   })
 
   it('falls back to en when there is no storage global at all', () => {
@@ -101,7 +145,36 @@ describe('browser store', () => {
   it('leaves the store untouched for a settings object carrying no language', () => {
     const state = installStorage()
     state.map.set('c3.uiLang', 'zh')
+    state.map.set('c3.theme', 'light')
     writeLocalPersonalized({})
     expect(state.map.get('c3.uiLang')).toBe('zh')
+    expect(state.map.get('c3.theme')).toBe('light')
+  })
+})
+
+describe('applyStoredTheme (cold start)', () => {
+  it('applies the theme this browser recorded', () => {
+    const state = installStorage()
+    state.map.set('c3.theme', 'light')
+    const root = installDocument()
+    expect(applyStoredTheme()).toBe('light')
+    expect(root.dataset.theme).toBe('light')
+  })
+
+  it('shows the dark console when this browser has recorded nothing', () => {
+    installStorage()
+    const root = installDocument()
+    expect(applyStoredTheme()).toBe('dark')
+    expect(root.dataset.theme).toBe('dark')
+  })
+
+  it('shows the dark console when the record is corrupt or storage is unusable', () => {
+    const state = installStorage()
+    state.map.set('c3.theme', 'solarized')
+    const root = installDocument()
+    expect(applyStoredTheme()).toBe('dark')
+    state.failing = true
+    expect(applyStoredTheme()).toBe('dark')
+    expect(root.dataset.theme).toBe('dark')
   })
 })

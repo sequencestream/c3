@@ -22,6 +22,7 @@ import { activeSessionTitleFromSessions } from '@/lib/session-title-sync'
 import { mergeSessionPage, type SessionWindow } from '@/lib/session-page'
 import { applyLocale, i18n } from '@/i18n'
 import { normalizePersonalized, writeLocalPersonalized } from '@/lib/personalized-settings'
+import { applyTheme } from '@/lib/theme'
 import { translateUiError } from '@/i18n/errors'
 import { transcriptToChat } from './transcript'
 import type { AppCtx } from './types'
@@ -699,11 +700,14 @@ export function installMessageHandler(ctx: AppCtx): void {
         // The echo is authoritative for this identity: an account record beats what
         // this browser held, and a `local` scope reply is just our own value
         // normalized. Mirror it into the browser copy so the signed-out state keeps
-        // the account's latest choice, then apply the language live.
+        // the account's latest choice, then apply the language and theme live.
         const next = normalizePersonalized(msg.settings)
         personalizedSettings.value = next
         writeLocalPersonalized(next)
         if (next.uiLang && next.uiLang !== i18n.global.locale.value) applyLocale(next.uiLang)
+        // Unconditional: cold start applied this browser's theme, so a login, logout
+        // or reconnect must be able to correct it back to the account's value.
+        applyTheme(next.theme)
         break
       }
       case 'skill_link_status':

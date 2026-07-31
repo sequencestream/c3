@@ -10,9 +10,10 @@
  * 桌面与移动端共用同一版面(单列卡片),入口见 AppHeader。
  */
 import { computed } from 'vue'
-import type { PersonalizedSettings, UiLang } from '@ccc/shared/protocol'
+import type { PersonalizedSettings, UiLang, UiTheme } from '@ccc/shared/protocol'
 import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
 import { UI_LANGS as ALL_UI_LANGS } from '@/lib/personalized-settings'
+import { DEFAULT_THEME, THEMES } from '@/lib/theme'
 
 const { t } = useTypedI18n()
 
@@ -25,6 +26,8 @@ const emit = defineEmits<{
   close: []
   // 即时生效的显示语言切换(选中即抛,无 Save)。
   'set-ui-lang': [lang: UiLang]
+  // 即时生效的显示样式切换(同上)。
+  'set-theme': [theme: UiTheme]
 }>()
 
 // 可选显示语言。下放开关 = `web/src/i18n/index.ts` 的 `ENABLED_LOCALES`,由各 locale
@@ -55,6 +58,20 @@ const uiLang = computed<UiLang>(() => props.settings.uiLang ?? 'en')
 function onUiLangChange(e: Event): void {
   emit('set-ui-lang', (e.target as HTMLSelectElement).value as UiLang)
 }
+
+// 显示样式选项直接由主题注册表(`lib/theme.ts`)生成,本页不另存一份主题清单:注册表新增
+// 一项(配套一组 CSS 变量)即自动出现在下拉里。标签走 i18n —— 主题名是普通 UI 文案,不像
+// 语言名那样必须用母语写。
+const THEME_OPTIONS = computed<{ value: UiTheme; label: string }[]>(() =>
+  THEMES.map((theme) => ({ value: theme.id, label: t(theme.labelKey) })),
+)
+
+// 缺省 dark:与「无账户记录、无本地记录」时的内置默认一致,故下拉永远有选中项。
+const theme = computed<UiTheme>(() => props.settings.theme ?? DEFAULT_THEME)
+
+function onThemeChange(e: Event): void {
+  emit('set-theme', (e.target as HTMLSelectElement).value as UiTheme)
+}
 </script>
 
 <template>
@@ -77,6 +94,21 @@ function onUiLangChange(e: Event): void {
           @change="onUiLangChange"
         >
           <option v-for="l in UI_LANGS" :key="l.value" :value="l.value">{{ l.label }}</option>
+        </select>
+      </section>
+
+      <section class="settings-section">
+        <p class="settings-section-title">{{ t('personalizedSetting.theme.title.label') }}</p>
+        <p class="settings-hint">{{ t('personalizedSetting.theme.hint') }}</p>
+        <select
+          :value="theme"
+          class="lang-select mode-select"
+          data-testid="personalized-theme"
+          @change="onThemeChange"
+        >
+          <option v-for="opt in THEME_OPTIONS" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
         </select>
       </section>
     </div>

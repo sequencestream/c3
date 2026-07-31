@@ -1,10 +1,16 @@
 import type {
   SystemSettings,
   UiLang,
+  UiTheme,
   WorkspaceSetting as WorkspaceSettingType,
 } from '@ccc/shared/protocol'
 import { applyLocale, i18n, type Locale } from '@/i18n'
-import { readLocalPersonalized, writeLocalPersonalized } from '@/lib/personalized-settings'
+import {
+  hasLocalPersonalized,
+  readLocalPersonalized,
+  writeLocalPersonalized,
+} from '@/lib/personalized-settings'
+import { applyTheme, DEFAULT_THEME } from '@/lib/theme'
 import type { AppCtx } from './types'
 
 // Install system/workspace/personalized settings, skill-install, locale, and
@@ -48,9 +54,11 @@ export function installSettingsActions(ctx: AppCtx): void {
    */
   ctx.fetchPersonalizedSettings = (): void => {
     const localFallback = readLocalPersonalized()
+    // Only a browser that actually recorded something offers a seed: an absent field
+    // must stay absent so it is not mistaken for a deliberate choice.
     send({
       type: 'get_personalized_settings',
-      ...(localFallback.uiLang !== undefined ? { localFallback } : {}),
+      ...(hasLocalPersonalized() ? { localFallback } : {}),
     })
   }
 
@@ -133,6 +141,33 @@ export function installSettingsActions(ctx: AppCtx): void {
     } catch {
       applyLocale(prev)
       writeLocalPersonalized({ uiLang: prev })
+      personalizedSettings.value = previousSettings
+      ctx.showToast(t('error.personalizedSetting.saveFailed'))
+    }
+  }
+
+  /**
+   * Switch the display theme at runtime (no page reload): swap the root element's
+   * `data-theme`, record it in this browser, then persist it for the current
+   * identity — the same immediate-apply, immediate-save shape the language uses.
+   * The saved payload is the whole settings object, so a theme change never drops
+   * the language (and vice versa).
+   * If the WS send fails, roll the theme, the browser record and the in-memory
+   * snapshot all the way back and toast, so what is on screen is what is stored.
+   */
+  ctx.setTheme = (next: UiTheme): void => {
+    const previousSettings = personalizedSettings.value
+    const prev = previousSettings.theme ?? DEFAULT_THEME
+    if (next === prev) return
+    applyTheme(next)
+    writeLocalPersonalized({ theme: next })
+    personalizedSettings.value = { ...previousSettings, theme: next }
+    try {
+      if (!ctx.client) throw new Error('no connection')
+      send({ type: 'save_personalized_settings', settings: personalizedSettings.value })
+    } catch {
+      applyTheme(prev)
+      writeLocalPersonalized({ theme: prev })
       personalizedSettings.value = previousSettings
       ctx.showToast(t('error.personalizedSetting.saveFailed'))
     }

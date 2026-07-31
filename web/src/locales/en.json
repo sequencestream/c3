@@ -637,6 +637,18 @@
         "label": "Display language"
       },
       "hint": "The language of the c3 web console UI. Changes apply immediately without a reload. When you are signed in the choice is saved to your account; otherwise it is kept in this browser."
+    },
+    "theme": {
+      "title": {
+        "label": "Display style"
+      },
+      "hint": "The colour theme of the c3 web console. Changes apply immediately without a reload. When you are signed in the choice is saved to your account; otherwise it is kept in this browser.",
+      "dark": {
+        "label": "Dark"
+      },
+      "light": {
+        "label": "Light"
+      }
     }
   },
   "intent": {

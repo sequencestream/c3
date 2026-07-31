@@ -457,6 +457,21 @@ export interface ConsensusConfig {
 export type UiLang = 'en' | 'zh' | 'ja' | 'ko' | 'ru'
 
 /**
+ * The web console's display theme. A stable id, not a colour value: the console
+ * keeps one registry entry per theme (id + display name + colour scheme) and the
+ * runtime only maps the id onto the root element's `data-theme`, so the palette
+ * itself stays entirely in CSS. Unset ⇒ `dark`, which is the console's built-in
+ * look; `light` activates the already-defined light token overrides.
+ *
+ * Adding a preset means adding a registry entry plus its CSS variable block —
+ * nothing here or in the settings page enumerates themes by hand.
+ *
+ * Lives in {@link PersonalizedSettings}: a per-person display preference that
+ * never leaves the web console (no server-side rendering decision reads it).
+ */
+export type UiTheme = 'dark' | 'light'
+
+/**
  * Personalized settings — the third settings class, beside {@link SystemSettings}
  * (administrator-level, system-wide) and {@link WorkspaceSetting} (per workspace).
  * It holds the preferences that legitimately differ **per person**, so changing one
@@ -471,6 +486,11 @@ export type UiLang = 'en' | 'zh' | 'ja' | 'ko' | 'ru'
 export interface PersonalizedSettings {
   /** Web-console display language. Missing/unknown ⇒ `en`. See {@link UiLang}. */
   uiLang?: UiLang
+  /**
+   * Web-console display theme. Missing/unknown ⇒ `dark`. See {@link UiTheme}.
+   * Normalized on its own, so a corrupt theme never disturbs {@link uiLang}.
+   */
+  theme?: UiTheme
 }
 
 /**

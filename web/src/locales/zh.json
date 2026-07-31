@@ -1841,6 +1841,8 @@
       "sessionAlreadyBound": "该意图已绑定会话,请刷新后打开。",
       "deleteForbidden": "无法删除该草稿意图: {detail}。",
       "cannotStartDev": "当前状态({status})不可开始工作。",
+      "concurrencyGate": "当前工作区已有意图「{title}」的工作会话在运行,暂不可启动新的工作会话。",
+      "pendingQuestionUnanswered": "该工作会话存在未作答的提问,请先作答再继续。",
       "contentEditForbidden": "当前状态({status})不可编辑意图正文。",
       "specEditForbidden": "开发已启动(状态 {status}),不可直接编辑 spec。",
       "specSessionRunning": "spec 会话运行中,暂不可直接编辑 spec。",

@@ -1841,6 +1841,8 @@
       "sessionAlreadyBound": "This intent already has a session. Refresh and open it.",
       "deleteForbidden": "This draft cannot be deleted: {detail}.",
       "cannotStartDev": "Cannot start work from status \"{status}\".",
+      "concurrencyGate": "Another intent (\"{title}\") already has a running work session in this workspace.",
+      "pendingQuestionUnanswered": "This work session has an unanswered question; answer it before continuing.",
       "contentEditForbidden": "Cannot edit the body of an intent in status \"{status}\".",
       "specEditForbidden": "Cannot directly edit the spec once development has started (status \"{status}\").",
       "specSessionRunning": "Cannot edit the spec while a spec session is running.",

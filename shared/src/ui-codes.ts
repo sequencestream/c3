@@ -70,6 +70,12 @@ export const UI_ERROR_CODES = {
   'intent.sessionAlreadyBound': { key: 'error.intent.sessionAlreadyBound' },
   'intent.deleteForbidden': { key: 'error.intent.deleteForbidden', params: ['detail'] },
   'intent.cannotStartDev': { key: 'error.intent.cannotStartDev', params: ['status'] },
+  // Workspace-global concurrency gate (RM-A12), enforced inside the shared work
+  // session launcher so the manual button and the MCP tool share ONE gate.
+  'intent.concurrencyGate': { key: 'error.intent.concurrencyGate', params: ['title'] },
+  // A work session paused on an unanswered AskUserQuestion is never continued
+  // over: the continuation prompt must not stand in for the user's answer.
+  'intent.pendingQuestionUnanswered': { key: 'error.intent.pendingQuestionUnanswered' },
   'intent.contentEditForbidden': { key: 'error.intent.contentEditForbidden', params: ['status'] },
   'intent.devStartInFlight': { key: 'error.intent.devStartInFlight' },
   'intent.illegalStatusTransition': {

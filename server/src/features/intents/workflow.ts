@@ -30,9 +30,10 @@
  * itself stays with the human forever (C-SEC-3).
  */
 import { randomUUID } from 'node:crypto'
-import type { WorkflowStatus, Intent, RunEndReason, ServerToClient } from '@ccc/shared/protocol'
+import type { WorkflowStatus, Intent, RunEndReason } from '@ccc/shared/protocol'
 import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
+import { MAX_CONTINUATIONS, hasPendingQuestion } from './turn-guards.js'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import type {
   QueueAction,
@@ -180,28 +181,8 @@ export function getWorkflowHooks(): WorkflowHooks {
 }
 
 // ---------------------------------------------------------------------------
-// Pending-question detection (unchanged)
-// ---------------------------------------------------------------------------
-
-export function hasPendingQuestion(buffer: readonly ServerToClient[]): boolean {
-  const answered = new Set<string>()
-  for (const e of buffer) {
-    if (e.type === 'tool_result') answered.add(e.toolUseId)
-  }
-  for (const e of buffer) {
-    if (e.type === 'tool_use' && e.toolName === 'AskUserQuestion' && !answered.has(e.toolUseId)) {
-      return true
-    }
-  }
-  return false
-}
-
-// ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
-
-/** Continuation budget per intent — unchanged, still a hard gate. */
-const MAX_CONTINUATIONS = 10
 
 function idleStatus(workspacePath: string): WorkflowStatus {
   return {

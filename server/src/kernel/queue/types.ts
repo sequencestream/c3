@@ -158,6 +158,7 @@ export type QueueReasonCode =
   | 'blocked_parked'
   | 'blocked_cooldown'
   | 'blocked_force_skipped'
+  | 'blocked_chain_depth'
   // terminal / human
   | 'launch_failed'
   | 'needs_human_decision'

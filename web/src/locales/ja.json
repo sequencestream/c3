@@ -1834,6 +1834,8 @@
       "dbUnavailable": "意図機能は利用できません(c3.db)。",
       "chatOpenFailed": "意図セッションを開けませんでした。",
       "cannotStartDev": "ステータス \"{status}\" からは作業を開始できません。",
+      "concurrencyGate": "このワークスペースでは意図「{title}」の作業セッションが実行中です。",
+      "pendingQuestionUnanswered": "この作業セッションには未回答の質問があります。先に回答してください。",
       "contentEditForbidden": "ステータス \"{status}\" の意図の本文は編集できません。",
       "specEditForbidden": "開発が開始された後(ステータス \"{status}\")は spec を直接編集できません。",
       "specSessionRunning": "spec セッションの実行中は spec を編集できません。",

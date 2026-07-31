@@ -79,6 +79,15 @@ flowchart TD
 3. **Fresh(全新)**——否则,一个 `todo` 或**悬空**的意图会启动一个全新的工作会话(可配置技能),
    与手动启动相同的悬空规则(`RM-R8`)。
 
+这三态**不再只属于队列内核**:同一次解析下沉进了共享的 `launchWorkSession`,因此手动
+「开始开发」按钮与 MCP `start_session_for_intent` 走同一条路径,对同一组事实产生同一结果。
+`RM-A12` 的全局并发闸门也随之下沉到该函数内——它在**发起或恢复任何新 turn 之前**求值,
+**对人工入口同样成立**(此前只有队列调度循环受约束,`start_session_for_intent` 完全不受约束):
+同工作区若有**其它**意图的工作会话正在运行,fresh 与 resume 都被拒(`intent.concurrencyGate`);
+attach 到意图**自己**正在跑的会话不构成第二个并发 turn,不受该闸门约束;悬空会话从不阻塞。
+底层存在**未作答**的 `AskUserQuestion` 时不得 resume——续跑提示绝不代替用户的答案
+(`intent.pendingQuestionUnanswered`,`RM-A11`/`C-SEC-3`)。
+
 开发轮次运行标准的受门控循环。**权限一致性**(`RM-A9`):该轮次中出现的一次 prompt 行为与手动
 会话完全一致——该次运行**不会**被中止;它停在 `awaiting_permission`,该 prompt 呈现给浏览器,
 一位正在盯着的人类回答后,该轮次继续。与此同时状态会显示一个“等待授权”的提示。
@@ -124,21 +133,75 @@ flowchart TD
 自动化执行环境(每个 `llm_prompt` 类型的自动化运行)绑定一个受限的 c3 MCP 服务,暴露以下
 工具(与手动 WebSocket 路径相同的行为,但以 MCP 返回值表达结果):
 
-| 工具名                     | 类型 | 说明                                                                                                                                                                                                                                                                                 |
-| -------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `find_intents`             | 只读 | 按 status/module/keyword 检索项目意图列表                                                                                                                                                                                                                                            |
-| `view_intent`              | 只读 | 按 id 查看单条意图完整详情                                                                                                                                                                                                                                                           |
-| `save_intent_pr_info`      | 写   | 回填意图的 PR 状态(由 PR 对账自动化使用)                                                                                                                                                                                                                                             |
-| `save_intent_directly`     | 写   | 直接落库新建草稿意图(绕过人工确认,仅限自动化)                                                                                                                                                                                                                                        |
-| `publish_pr_event`         | 写   | 发布 PR 操作事件(触发其他自动化)                                                                                                                                                                                                                                                     |
-| `find_discussions`         | 只读 | 检索项目讨论列表                                                                                                                                                                                                                                                                     |
-| `view_discussion`          | 只读 | 查看单条讨论详情及消息                                                                                                                                                                                                                                                               |
-| `start_discussion`         | 写   | 启动一个 draft 讨论                                                                                                                                                                                                                                                                  |
-| `continue_discussion`      | 写   | 继续或恢复一个讨论                                                                                                                                                                                                                                                                   |
-| `start_session_for_intent` | 写   | **按意图启动 spec 或 work 会话**。接受 `intentId` + `sessionType`(`'spec'` / `'work'`),复用与手动操作一致的校验门禁(状态、SDD 审批、依赖阻塞、Git 分支策略)。成功返回 JSON `{sessionId, sessionType}`,失败返回 JSON `{code, params}` 且 `isError: true`。不发送 WebSocket 进度事件。 |
+| 工具名                     | 类型 | 说明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `find_intents`             | 只读 | 按 status/module/keyword 检索项目意图列表                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `view_intent`              | 只读 | 按 id 查看单条意图完整详情                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `save_intent_pr_info`      | 写   | 回填意图的 PR 状态(由 PR 对账自动化使用)                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `save_intent_directly`     | 写   | 直接落库新建草稿意图(绕过人工确认,仅限自动化)                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `publish_pr_event`         | 写   | 发布 PR 操作事件(触发其他自动化)                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `find_discussions`         | 只读 | 检索项目讨论列表                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `view_discussion`          | 只读 | 查看单条讨论详情及消息                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `start_discussion`         | 写   | 启动一个 draft 讨论                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `continue_discussion`      | 写   | 继续或恢复一个讨论                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `start_session_for_intent` | 写   | **按意图启动 spec 或 work 会话**。接受 `intentId` + `sessionType`(`'spec'` / `'work'`),复用与手动操作一致的校验门禁(状态、SDD 审批、依赖阻塞、Git 分支策略)。`work` 分支按 `lastWorkSessionId` 三态解析:运行中 **attach**(返回原 id,不发新 turn)、空闲 **resume**(原 id 上续跑)、无会话才 **fresh**;发起任何新 turn 前还要过下沉到 `launchWorkSession` 内的 RM-A12 并发闸门。成功返回 JSON `{sessionId, sessionType, mode}`,失败返回 JSON `{code, params}` 且 `isError: true`。不发送 WebSocket 进度事件。 |
 
 工具列表源是 `AUTOMATION_C3_TOOL_NAMES`——所有表面(Claude SDK、Codex HTTP)自动同步,
 无需维护第二份名单。
+
+## 顾问 Agent 的专属工具组(propose-then-validate)
+
+确定性内核只处理「知道怎么办」的情形。遇到需要判断的节点(从 transcript 根因分析一个死掉的
+run、该 retry 还是 reset/skip/escalate),内核可**按需唤起**一个顾问 Agent:它**不常驻、不握
+方向盘**,只**提出**一个结构化动作,由内核校验后执行。
+
+> **本条只交付工具面 + 双保险校验。** 内核**何时/如何**唤起顾问(park 触发时机、会话类型、
+> transcript 上下文注入、续跑预算定义)尚未立项。没有触发面,顾问不会自动被唤起——不应期待
+> 「park 后自动打开顾问会话」这类端到端行为。
+
+**这不是普通 automation 的能力。** 该组有自己的注册表(`ADVISOR_C3_TOOL_NAMES`)和自己的
+loopback 路由(`transport/advisor-mcp`),**不并入** `AUTOMATION_C3_TOOL_NAMES`;上面那张自动化
+工具表因此一条未增。作用域(工作区 + 目标意图)由**闭包**绑定,任何工具都不接受
+`workspacePath` / `intentId` 参数——提案携带 `workspacePath` 本身就是一次越权尝试,直接被拒。
+
+| 工具                                          | 读/写 | 服务端重校验                       | 确认队列   |
+| --------------------------------------------- | ----- | ---------------------------------- | ---------- |
+| `read_session_transcript`                     | 读    | 会话归属;先脱敏后尾部截断          | 免         |
+| `get_run_status` / `list_sessions`            | 读    | 会话/意图归属                      | 免         |
+| `stop_run`                                    | 写    | 会话归属                           | 免         |
+| `reset_intent_session` / `reset_spec_session` | 写    | 会话归属(破坏性上下文替换)         | **需确认** |
+| `update_intent_status`                        | 写    | **仅允许非 `done` 的合法流转**     | **需确认** |
+| `create_pr` / `sync_intent_pr_status`         | 写    | 复用人工 Git/PR 路径的全部前置校验 | **需确认** |
+| `raise_user_todo`                             | 写    | 去重的 `wait-user-involve` 待办    | 免         |
+
+**`approve_spec` 不注册、不接受提案、不提供任何别名或等价动作**;顾问也**不能**把意图标记为
+`done`——`RM-R9` 的自动完成例外仍然只属于队列自身的「评判 → 提交 → 推送」路径,不写第三条例外。
+
+**双保险。** 两层之间是 gate-in-the-tool + propose-then-validate:
+
+1. **纯函数校验器**先对提案给出接受 / **结构化拒绝**——稳定原因码、可展示 detail、
+   **是否可重试**、以及决定该结论的约束值。拒绝理由**回喂给 Agent**,它因此能学会「为什么不
+   行」,而不是盲目重试。
+2. **每个写工具在服务端重新校验**:副作用发生前重新读取权威事实,再查一遍归属、状态与硬闸门。
+   **绕过校验器直接调用工具仍会被拒**,拒绝不产生任何部分写入;两次检查之间事实发生变化时,
+   **以工具执行时的事实为准**。
+
+需确认的动作进入**既有**写入审批队列(与 `save_intents` 同一套 `permission_request` +
+`waitForDecision` 闸门,落同一个 WorkCenter 待办面板)。**审批不放宽任何闸门**:批准后仍然重校验。
+
+**人机对等。** 顾问能做的每个动作,人都能通过既有入口做到(`stop_run`、`reset_intent_session`、
+`reset_spec_session`、`update_intent_status`、`create_pr`、`sync_intent_pr_status`、
+wait-user-involve 待办),且成功结果与结构化拒绝对人和对 Agent 一致呈现。既有人工能力中不存在
+等价动作的,不得只在 MCP 侧开放。
+
+**自激环防护。** origin tag 与 per-intent 冷却窗口限制的是「多频繁」,**链深度**限制的是「多深」:
+超过上限时,在唤起 Agent 与任何工具副作用**之前**拒绝,并向 `queue_decision_log` 落一条
+`blocked_chain_depth` 记录。日志写入失败**不放宽**深度限制。
+
+**环境坑(已回归覆盖)。** ① 宿主 `HTTP_PROXY` 未配 `NO_PROXY` 会让回环 MCP 502,且工具**静默
+全缺席**——由 `withLoopbackNoProxy` 同时补齐 `NO_PROXY` 与 `no_proxy`;② codex 遇未知/别名 model
+会回退到默认能力元数据、把 MCP 调用拉进代码执行沙箱,导致所有 c3 工具报 unsupported call——
+该组与意图组一样被识别为「必须走直接工具调用路径」,对应关闭 `js_repl`。
 
 ## 分支与异常(反面场景)
 

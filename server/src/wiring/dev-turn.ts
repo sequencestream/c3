@@ -40,11 +40,8 @@ import {
   emit,
   type Viewer,
 } from '../runs.js'
-import {
-  hasPendingQuestion,
-  type DevTurnResult,
-  type RunDevTurnInput,
-} from '../features/intents/workflow.js'
+import { type DevTurnResult, type RunDevTurnInput } from '../features/intents/workflow.js'
+import { hasPendingQuestion } from '../features/intents/turn-guards.js'
 
 /** Deps the dev-turn factory reads. `launchDeps` matches what `launchRun` needs. */
 export interface DevTurnDeps {

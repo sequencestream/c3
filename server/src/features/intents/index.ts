@@ -38,7 +38,6 @@ import { canDeleteSession } from '../../kernel/agent/adapters/capabilities.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { loadHistory, loadLastAssistantMessages, removeSession } from '../../sessions.js'
 import {
-  canTransition,
   getChatSession,
   getIntent,
   deleteIntentRecords,
@@ -63,15 +62,12 @@ import {
   updateStatus,
 } from './store.js'
 import { clearPendingIntentLink, registerPendingIntentLink } from './intent-link.js'
+import { buildResetIntentPrompt } from './reset-prompts.js'
 import { reconcileInProgress } from './reconcile.js'
-import { publishIntentStatusTransition } from './lifecycle-events.js'
-import { normalizeBranchName } from './dependency-gate.js'
 import { syncIntentPrStatus } from './pr-status-sync.js'
 import { judgeCompletion } from './judge.js'
 import {
   cacheRunStatus,
-  clearJudgedSession,
-  clearRunStatus,
   enrichRunStatus,
   getJudgedSession,
   setJudgedSession,
@@ -89,8 +85,7 @@ import {
   unparkIntent,
 } from './workflow.js'
 import { getDiscussion } from '../discussions/store.js'
-import { closeForgePr, commitAndPush, createGhPr, hasDiffAgainstMain } from '../../git.js'
-import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
+import { commitAndPush } from '../../git.js'
 import { getWorktreePath, removeIntentGitResources } from './worktree.js'
 import { resolveSpecFileAbs } from './specs-root.js'
 import {
@@ -103,6 +98,9 @@ import type { PromptImage, ServerToClient } from '@ccc/shared/protocol'
 import type { KernelContext } from '../../kernel/types.js'
 import type { Conn, Handler } from '../../transport/handler-registry.js'
 import { launchWorkSession } from './session-launcher.js'
+import { applyIntentStatusChange, createPrForIntent } from './write-cores.js'
+
+export { buildResetIntentPrompt }
 
 // ---- Local helpers (agent binding for intent comm sessions) ----
 
@@ -633,18 +631,6 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
 }
 
 /**
- * Build the first prompt for a RESET intent (refine/comm) session — a fresh
- * session seeded with the user's new steering input concatenated with the
- * intent's current content. Pure (no I/O) so the concatenation is unit-testable.
- * Chinese skeleton, mirroring {@link refineIntent}'s seed.
- */
-export function buildResetIntentPrompt(intent: Intent, userInput: string): string {
-  const steer = userInput.trim()
-  const steerBlock = steer ? `我的新输入:\n${steer}\n\n` : ''
-  return `继续完善已存在意图 ${intent.id}(当前状态:${intent.status})。\n\n${steerBlock}意图标题:${intent.title}\n当前意图内容:\n${intent.content}\n\n请结合上面的新输入与意图内容,与我确认拆解/补充,定稿后调用 save_intents 并在该条目上回填 id="${intent.id}" 以原地更新原意图(切勿新建重复项)。若该意图已处于 in_progress 或 done 则无法修改,请告知我。`
-}
-
-/**
  * `reset_intent_session` handler — start a FRESH comm/refine session seeded with
  * the user's new input + the intent's current content, replacing the prior
  * `intent_session_id` (re-linked on first bind via the resident `run:bound`
@@ -1004,71 +990,28 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
 }
 
 export const updateIntentStatus: Handler<'update_intent_status'> = async (ctx, conn, msg) => {
-  if (!isStoreAvailable()) {
-    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
-    return
-  }
-  const req = getIntent(msg.intentId)
-  if (!req) {
-    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
-    return
-  }
-  // Guard: reject illegal status transitions.
-  if (!canTransition(req.status, msg.status)) {
+  const proj = resolveWorkspaceRoot(getIntent(msg.intentId)?.workspaceId ?? '')
+  if (!isStoreAvailable() || !proj) {
     conn.send({
       type: 'error',
-      error: {
-        code: 'intent.illegalStatusTransition',
-        params: { from: req.status, to: msg.status },
-      },
+      error: { code: isStoreAvailable() ? 'intent.notFound' : 'intent.dbUnavailable' },
     })
     return
   }
-  // Cancelling an intent that owns a PR closes the remote PR first. This runs
-  // synchronously ahead of the status flip: a close failure (CLI missing, auth,
-  // or a PR already closed externally) blocks the cancellation entirely — the
-  // intent keeps its status and the user handles it on the forge before retrying.
-  if (msg.status === 'cancelled' && req.prId) {
-    const proj = resolveWorkspaceRoot(req.workspaceId)!
-    const close = await closeForgePr(proj, req.prId)
-    if (!close.ok) {
-      conn.send({
-        type: 'error',
-        error: { code: 'intent.prCloseFailed', params: { detail: close.error ?? '未知错误' } },
-      })
-      return
-    }
-  }
-  const prevStatus = req.status
-  // UI-initiated transition: the lifecycle log's actor is the login subject.
-  updateStatus(msg.intentId, msg.status, conn.subject ?? 'system')
-  // PR closed alongside the cancellation: flip its lifecycle status to `closed`
-  // (keeping the existing pr_url) and record the audit log. `updateStatus` already
-  // wrote the `status_changed` entry, so this only adds the `pr_closed` entry.
-  if (msg.status === 'cancelled' && req.prId) {
-    setPrInfo(msg.intentId, req.prId, 'closed', req.prUrl ?? null)
-    safeInsertIntentLog(
-      msg.intentId,
-      'pr_closed',
-      `PR #${req.prId} 已随意图取消`,
-      conn.subject ?? 'system',
-    )
-  }
-  // If the intent leaves in_progress, clear its cache entry so a future
-  // restart doesn't show a stale dangling/running label.
-  if (req.status === 'in_progress' && msg.status !== 'in_progress') {
-    clearRunStatus(msg.intentId)
-    clearJudgedSession(msg.intentId)
-  }
-  // Publish domain event for cross-feature subscribers (ADR-0018).
-  ctx.eventBus.publish('intent:status_changed', {
-    intentId: msg.intentId,
-    workspacePath: resolveWorkspaceRoot(req.workspaceId)!,
-    fromStatus: prevStatus,
-    toStatus: msg.status,
+  const result = await applyIntentStatusChange(proj, msg.intentId, msg.status, {
+    broadcastIntents: ctx.broadcastIntents,
+    publishStatusChanged: (input) => ctx.eventBus.publish('intent:status_changed', input),
+    actor: conn.subject,
   })
-  publishIntentStatusTransition(resolveWorkspaceRoot(req.workspaceId)!, req, prevStatus, msg.status)
-  ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
+  if (!result.success) {
+    conn.send({
+      type: 'error',
+      error: {
+        code: result.code as UiErrorCode,
+        ...(result.params ? { params: result.params } : {}),
+      },
+    })
+  }
 }
 
 /**
@@ -1316,108 +1259,24 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
     })
     return
   }
-  if (!isStoreAvailable()) {
-    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
-    return
-  }
-  const req = getIntent(msg.intentId)
-  if (!req) {
-    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
-    return
-  }
-  // Idempotent guard first: an intent that already has a PR is never re-created —
-  // no Git checks, no commit, no push. Independent of intent status.
-  if (req.prId) {
+  const result = await createPrForIntent(proj, msg.intentId, {
+    broadcastIntents: ctx.broadcastIntents,
+    normalizeEvent: ctx.normalizeEvent,
+    publishEvent: (workspacePath, sessionId, event) =>
+      ctx.eventBus.publish('event', { workspacePath, sessionId, event }),
+    actor: conn.subject,
+  })
+  if (!result.success) {
     conn.send({
       type: 'error',
       error: {
-        code: 'intent.prCreateFailed',
-        params: { detail: `intent 已有 PR #${req.prId}` },
+        code: result.code as UiErrorCode,
+        ...(result.params ? { params: result.params } : {}),
       },
     })
     return
   }
-  // Manual PR creation no longer reads intent status; it serves the isolated
-  // worktree only, and requires a branch plus committable changes. Fixed order:
-  // worktree mode → non-empty branch → worktree differs from main.
-  if (getGitBranchMode(proj) !== 'worktree') {
-    conn.send({ type: 'error', error: { code: 'intent.prCreateNotWorktree' } })
-    return
-  }
-  if (normalizeBranchName(req.branchName) === null) {
-    conn.send({ type: 'error', error: { code: 'intent.prCreateNoBranch' } })
-    return
-  }
-  const worktreePath = getWorktreePath(proj, msg.intentId)
-  if (!(await hasDiffAgainstMain(worktreePath))) {
-    conn.send({ type: 'error', error: { code: 'intent.prCreateNoChanges' } })
-    return
-  }
-
-  // Reuse the same PR creation logic as the orchestrator.
-  const headBranch = req.branchName ?? undefined
-  const bodyParts: string[] = [req.content]
-  if (req.dependsOn.length > 0) {
-    bodyParts.push('', '## 依赖需求')
-    for (const depId of req.dependsOn) {
-      const dep = getIntent(depId)
-      const status = dep?.status ?? 'unknown'
-      bodyParts.push(`- ${dep?.title ?? depId} (${status})`)
-    }
-  }
-  const body = bodyParts.join('\n')
-  const title = `feat: ${req.title}`
-
-  try {
-    // Commit and push the worktree's changes first (same helper the orchestrator
-    // uses); only create the PR when the commit/push succeeded.
-    const commit = await commitAndPush(worktreePath, title)
-    if (!commit.ok) {
-      conn.send({
-        type: 'error',
-        error: { code: 'intent.prCreateFailed', params: { detail: commit.error ?? '提交失败' } },
-      })
-      return
-    }
-    const pr = await createGhPr(worktreePath, title, body, headBranch)
-    if (pr.ok && pr.prId) {
-      setPrInfo(msg.intentId, pr.prId, 'reviewing', pr.prUrl ?? null)
-      safeInsertIntentLog(msg.intentId, 'pr_created', `创建 PR #${pr.prId}`, conn.subject)
-      ctx.broadcastIntents(resolveWorkspaceRoot(req.workspaceId)!)
-      conn.send({ type: 'create_pr_response', prId: pr.prId, prUrl: pr.prUrl ?? pr.prId })
-
-      // Publish a pr:create event so event-triggered automations can react.
-      runServerSidePrCreate(
-        {
-          prId: pr.prId,
-          prUrl: pr.prUrl ?? null,
-          headBranch,
-          baseBranch: undefined,
-          intentId: msg.intentId,
-        },
-        ctx.normalizeEvent,
-        (event) =>
-          ctx.eventBus.publish('event', {
-            workspacePath: proj,
-            sessionId: msg.intentId,
-            event,
-          }),
-      )
-    } else {
-      conn.send({
-        type: 'error',
-        error: { code: 'intent.prCreateFailed', params: { detail: pr.error ?? '未知错误' } },
-      })
-    }
-  } catch (err) {
-    conn.send({
-      type: 'error',
-      error: {
-        code: 'intent.prCreateFailed',
-        params: { detail: err instanceof Error ? err.message : String(err) },
-      },
-    })
-  }
+  conn.send({ type: 'create_pr_response', prId: result.prId, prUrl: result.prUrl })
 }
 
 /**

@@ -418,23 +418,44 @@ export function mcpServersToCodexConfig(
 }
 
 /**
- * Does an attached MCP set expose `save_intents`? That tool is the intent
- * comm-agent's write capability and is unique to the intent profile — the spec
- * profile carries only `find_intents`/`view_intent`, the work profile only
- * `publish_event`. So a run whose MCP `enabledTools` includes `save_intents`
- * IS an intent-communication run, and only those runs get the code-execution /
- * web-search shutdown (see {@link CodexDriver.start}). The `?? INTENT_MCP_TOOL_NAMES`
- * fallback mirrors {@link mcpServersToCodexConfig}: a descriptor that omits
- * `enabledTools` defaults to the three intent tools, so an old-style intent
- * binding (no explicit allowlist) is still recognised.
+ * Tools whose call MUST reach c3 through the ordinary MCP tool-call path, never
+ * through codex's code-execution sandbox (`js_repl`).
+ *
+ * Two distinct failure modes make this necessary, and both surface as the model
+ * reporting an "unsupported call":
+ *
+ *  1. `save_intents` blocks on a human clicking Save in the c3 UI — longer than
+ *     the js_repl sandbox's time budget, so the sandbox aborts and the gate
+ *     degrades to a deny.
+ *  2. An unknown / aliased model makes codex fall back to default capability
+ *     metadata that pulls the code-execution surface up, and every c3 MCP tool
+ *     the run was given becomes uncallable. The ADVISOR group is exposed to this
+ *     the same way the intent group is, so it is listed here too.
+ *
+ * `reset_intent_session` names the advisor group because it belongs to no other
+ * profile: automations do not have it, and neither the intent nor the spec
+ * profile carries it.
+ */
+const DIRECT_CALL_ONLY_TOOLS = ['save_intents', 'reset_intent_session'] as const
+
+/**
+ * Whether an attached MCP set carries any tool that must bypass code execution.
+ * Recognises the intent comm-agent profile (`save_intents`) and the queue
+ * advisor group (`reset_intent_session`); the spec profile carries only
+ * `find_intents`/`view_intent` and the work profile only `publish_event`, so
+ * neither matches. The `?? INTENT_MCP_TOOL_NAMES` fallback mirrors
+ * {@link mcpServersToCodexConfig}: a descriptor that omits `enabledTools`
+ * defaults to the three intent tools, so an old-style intent binding (no
+ * explicit allowlist) is still recognised.
  */
 export function mcpServersEnableSaveIntents(
   servers: Record<string, RemoteMcpServer> | undefined,
 ): boolean {
   if (!servers) return false
-  return Object.values(servers).some((s) =>
-    ((s.enabledTools ?? INTENT_MCP_TOOL_NAMES) as readonly string[]).includes('save_intents'),
-  )
+  return Object.values(servers).some((s) => {
+    const enabled = (s.enabledTools ?? INTENT_MCP_TOOL_NAMES) as readonly string[]
+    return DIRECT_CALL_ONLY_TOOLS.some((t) => enabled.includes(t))
+  })
 }
 
 /**
@@ -609,13 +630,14 @@ export class CodexDriver implements AgentDriver {
     // (no sandbox budget) by turning code execution OFF for intent runs, so the gate
     // can block as long as it needs. Web search is closed alongside (the intent role
     // never uses it, and `web_search="live"` may pull the js_repl surface up). Only
-    // intent runs — identified by `save_intents` in the MCP allowlist — are touched;
-    // work/spec/discussion codex runs keep their tool surface. Three keys ship at once
+    // runs carrying a direct-call-only tool (the intent comm profile's
+    // `save_intents`, or the queue advisor group) are touched; work/spec/discussion
+    // codex runs keep their tool surface. Three keys ship at once
     // to span codex config-format evolution; an older codex silently ignores keys it
     // does not know (verified on 0.142.4). The `web_search="live"` opts.webSearch sends
     // is overridden to `disabled` in threadOptions below.
-    const intentRun = mcpServersEnableSaveIntents(opts.mcpServers)
-    if (intentRun) {
+    const directCallRun = mcpServersEnableSaveIntents(opts.mcpServers)
+    if (directCallRun) {
       codexOptions.config = {
         ...(codexOptions.config ?? {}),
         // `features.js_repl=false` is the root switch: no code-execution sandbox for
@@ -664,11 +686,11 @@ export class CodexDriver implements AgentDriver {
       // raw socket access for sandboxed shell commands; `webSearch` enables codex's
       // first-party web-search tool. Both omitted ⇒ codex defaults (denied) stand.
       ...(opts.networkAccess !== undefined ? { networkAccessEnabled: opts.networkAccess } : {}),
-      // Intent runs force web search OFF (see the shutdown block above) even though
+      // Direct-call runs force web search OFF (see the shutdown block above) even though
       // run-via-driver passes `webSearch: true` for every interactive run — this
       // emits the old-format `web_search="disabled"` and overrides the `"live"` the
-      // flag would otherwise produce. Non-intent runs keep the live web-search tool.
-      ...(intentRun
+      // flag would otherwise produce. Other runs keep the live web-search tool.
+      ...(directCallRun
         ? { webSearchEnabled: false }
         : opts.webSearch
           ? { webSearchEnabled: true, webSearchMode: 'live' as const }

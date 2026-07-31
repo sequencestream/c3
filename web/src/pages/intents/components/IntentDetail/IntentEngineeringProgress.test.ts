@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
 import type { EngineeringProgressInput } from '../../../../lib/intent-engineering-progress'
 import IntentEngineeringProgress from './IntentEngineeringProgress.vue'
@@ -113,5 +115,44 @@ describe('IntentEngineeringProgress.vue', () => {
       'completed',
       'in_progress',
     ])
+  })
+})
+
+// ---- 已完成节点强调色样式契约 -------------------------------------------
+
+// happy-dom 不计算布局,样式契约直接对组件源码里的 CSS 规则做断言。
+const componentSrc = readFileSync(
+  resolve(
+    process.cwd(),
+    'web/src/pages/intents/components/IntentDetail/IntentEngineeringProgress.vue',
+  ),
+  'utf8',
+)
+
+function ruleBody(css: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+}
+
+describe('IntentEngineeringProgress.vue — 已完成节点强调色样式契约', () => {
+  it('已完成 marker 的边框色与背景色直接使用 var(--c-primary)', () => {
+    const marker = ruleBody(
+      componentSrc,
+      '.intent-engineering-progress-stage.is-completed .intent-engineering-progress-marker',
+    )
+    expect(marker).toMatch(/border-color:\s*var\(--c-primary\)/)
+    expect(marker).toMatch(/background:\s*var\(--c-primary\)/)
+  })
+
+  it('已完成状态标签文字颜色直接使用 var(--c-primary)', () => {
+    const state = ruleBody(
+      componentSrc,
+      '.intent-engineering-progress-stage.is-completed .intent-engineering-progress-state',
+    )
+    expect(state).toMatch(/color:\s*var\(--c-primary\)/)
+  })
+
+  it('组件不再引用未定义的 --c-accent', () => {
+    expect(componentSrc).not.toMatch(/--c-accent/)
   })
 })

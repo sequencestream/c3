@@ -1887,6 +1887,11 @@
       "loadFailed": "加载工作区总览失败。",
       "workspaceMissing": "工作区已不存在。",
       "gateSaveFailed": "保存自动化总闸失败。"
+    },
+    "queue": {
+      "intentRequired": "该队列操作需要指定意图。",
+      "notParked": "该意图当前未处于 park 状态。",
+      "overrideNotApplicable": "该意图当前没有可覆盖的自动判定。"
     }
   },
   "statusIndicator": {
@@ -2578,6 +2583,87 @@
       "discussion": {
         "label": "讨论"
       }
+    }
+  },
+  "queue": {
+    "open": {
+      "label": "队列",
+      "tooltip": "打开自动化队列页:逐条意图的阻塞原因、下次唤醒时间与最近一次决策"
+    },
+    "back": "返回意图列表",
+    "title": "自动化队列",
+    "refresh": "刷新",
+    "empty": "没有自动化候选意图。在意图上打开自动化开关即可入队。",
+    "note": "队列按固定 tick 对账。这里的每个人工动作都只对应一个内核动作,且仍要通过全部硬闸门——权限、spec 批准、依赖、并发、续跑预算与提交推送成功。",
+    "state": {
+      "idle": "已停止",
+      "running": "运行中",
+      "paused": "已暂停",
+      "awaiting_gate": "等待并发闸门",
+      "developing": "开发中",
+      "fixing": "修复 lint 中",
+      "done": "已完成",
+      "error": "出错"
+    },
+    "nextWakeup": {
+      "label": "下次唤醒",
+      "nextTick": "下一次 tick"
+    },
+    "badge": {
+      "parked": "已 park",
+      "skipped": "已跳过"
+    },
+    "field": {
+      "blocked": "阻塞原因",
+      "nextWakeup": "下次唤醒",
+      "lastDecision": "最近一次决策",
+      "attempts": "尝试次数",
+      "attemptsValue": "失败 {attempts} 次 / 退避 {backoffs} 次",
+      "parkReason": "park 原因"
+    },
+    "control": {
+      "pause": "暂停",
+      "resume": "恢复",
+      "unpark": "解除 park",
+      "forceSkip": "强制跳过",
+      "unskip": "取消跳过",
+      "overrideContinue": "覆盖结论:继续",
+      "overrideBlock": "覆盖结论:停止"
+    },
+    "action": {
+      "launch": "已启动",
+      "resume": "已恢复",
+      "attach": "已挂接",
+      "wait": "等待中",
+      "park": "已 park",
+      "block": "被阻塞",
+      "skip": "已跳过"
+    },
+    "reason": {
+      "none": "无",
+      "selected": "本轮选中",
+      "attached_running": "挂接到仍在运行的会话",
+      "resumed": "恢复既有会话",
+      "running": "内核 run 进行中",
+      "queue_idle": "队列已停止",
+      "queue_paused": "队列已暂停",
+      "snapshot_unavailable": "意图快照不可读,本轮不做任何启动",
+      "blocked_concurrency_gate": "全局并发闸门",
+      "blocked_dependency": "依赖未完成",
+      "blocked_dependency_pr_unmerged": "依赖的 PR 未确认合并",
+      "blocked_spec_not_approved": "spec 未批准",
+      "blocked_backoff": "失败后退避中",
+      "blocked_parked": "已 park",
+      "blocked_cooldown": "内核 run 冷却中",
+      "blocked_force_skipped": "被你强制跳过",
+      "launch_failed": "启动失败",
+      "needs_human_decision": "需要人工决策",
+      "permission_wait_timeout": "权限提示长时间无人应答",
+      "max_attempts_reached": "连续失败次数过多",
+      "budget_exhausted": "超过续跑预算",
+      "commit_failed": "提交/推送失败",
+      "turn_error": "开发 turn 出错",
+      "judge_stuck": "判定未真实完成"
     }
   }
 }

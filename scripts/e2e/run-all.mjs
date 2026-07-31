@@ -76,6 +76,7 @@ const TESTS = [
   { name: 'smoke (permission flow)', file: 'e2e-ws-test.mjs' },
   { name: 'pending-queue flush race', file: 'e2e-pending-flush-test.mjs' },
   { name: 'intent (save flow)', file: 'e2e-intent-test.mjs' },
+  { name: 'automation queue (park isolation + manual control)', file: 'e2e-queue-test.mjs' },
   { name: 'consensus (voting)', file: 'e2e-consensus-test.mjs' },
   { name: 'ask-consensus (per-question)', file: 'e2e-ask-consensus-test.mjs' },
   { name: 'sandbox (backward compat)', file: 'e2e-sandbox-test.mjs' },

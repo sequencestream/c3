@@ -60,6 +60,15 @@ c3
 │   │   ├── PR 更新复位                           # 模型发 pr:operation update/success 时把 rejected/failed/closed 意图 prStatus 复位为 reviewing
 │   │   ├── 意图依赖                              # intent_deps 依赖图(blocks/informs/soft_after),依赖门控启动
 │   │   ├── 沟通会话                              # 意图右栏 intent session 多会话(新建/选择/改名/删除)
+│   │   ├── 自动化队列                            # 勾选 automate 的意图按优先级+依赖逐条自动开发、判定完成、提交/推送(唯一自动 done 路径之一)
+│   │   │   ├── 确定性调度内核                    # 10s tick 全量对账:从意图账本+run 存活探测+少量调度元数据重推导动作;纯逻辑在 kernel/queue,不 import features/transport
+│   │   │   ├── 事件合并标脏                      # 生命周期事件只标记「需重查」并合并去重,不携带决策依据/不重放;丢事件只延迟一轮,不再卡死
+│   │   │   ├── 单意图失败隔离                    # 失败只计该意图:指数退避(30s 起翻倍,上限 15min),连续 3 次 park;队列继续跑无依赖关系的其他意图
+│   │   │   ├── park 与下游阻塞                   # park 非 done:依赖被 park 意图的下游继续被依赖闸门挡住,既不跳过也不放行
+│   │   │   ├── 权限等待交回人工                  # 权限提示超队列等待窗口只 park+推 wait-user-involve 待办,运行不中止、决定不代答(C-SEC-3)
+│   │   │   ├── 启动对账与恢复                    # 启停意愿持久化;服务启动先全工作区对账,从持久事实恢复,db 不可用时不凭空恢复也不清空
+│   │   │   ├── 决策日志                          # queue_decision_log 按 tick/intent 记动作/闸门/理由/尝试退避计数/下次唤醒,不记 prompt/凭据/权限正文
+│   │   │   └── 队列页面与人工夺回                # 逐条展示阻塞原因/下次唤醒/最近决策;pause·force-skip·unpark·覆盖结论各对应一个内核动作,均不得绕过硬闸门
 │   │   └── Git/PR 收尾                           # 手动 Start Dev 结束时经 gh 建 PR、回填 commit/PR 状态
 │   │
 │   ├── discussion 多智能体讨论                   # 多个 agent(与人)围绕主题圆桌讨论,可转为意图

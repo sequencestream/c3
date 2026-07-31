@@ -17,11 +17,14 @@
  * NOTE (2026-06-08): the per-launch `run:bound` / `run:settled` subscriptions
  * that used to live here have been moved to the resident domain subscription
  * module (`wiring/run-domain-subscriptions.ts`). The internal Viewer is id-
- * scoped and correct — it stays for the DevTurnResult contract (permission
- * tracking, assistant_text capture, turn_end detection). The Promise it
- * resolves is no longer awaited by the automation orchestrator (which now
- * drives from the bus `run:settled` event), but the Viewer is still needed
- * for `onAwaitingPermission` callbacks and `isRunning` fallback detection.
+ * scoped and correct — it carries the DevTurnResult contract (permission
+ * tracking, assistant_text capture, turn_end detection).
+ *
+ * The returned Promise IS awaited: the queue kernel drives every run it starts
+ * through it. That makes the launch itself failable — if `launchRun` throws, the
+ * Promise REJECTS instead of dropping the error on the floor, so the queue can
+ * count one failed attempt for that intent and keep going. An unobserved launch
+ * error used to mean the turn never settled and the queue waited forever.
  */
 import { randomUUID } from 'node:crypto'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
@@ -58,7 +61,7 @@ export function makeRunDevTurn(
 ): (input: RunDevTurnInput) => Promise<DevTurnResult> {
   const { launchDeps } = deps
   return (input: RunDevTurnInput): Promise<DevTurnResult> =>
-    new Promise<DevTurnResult>((resolveTurn) => {
+    new Promise<DevTurnResult>((resolveTurn, rejectTurn) => {
       const id = input.sessionId ?? `${PENDING_SESSION_PREFIX}${randomUUID()}`
       // The automation dev-turn is a `work` scenario executed with no socket on
       // the run bus — `background`. (Idempotent: automation pre-creates the
@@ -86,6 +89,15 @@ export function makeRunDevTurn(
         settled = true
         removeViewer(rt.sessionId, viewer)
         resolveTurn(r)
+      }
+      // A launch that never produced a turn is a FAILURE, not a turn that will
+      // settle later. Surfacing it as a rejection is what lets the caller record
+      // one failed attempt instead of waiting for a `turn_end` that can't come.
+      const fail = (err: unknown): void => {
+        if (settled) return
+        settled = true
+        removeViewer(rt.sessionId, viewer)
+        rejectTurn(err instanceof Error ? err : new Error(String(err)))
       }
       const viewer: Viewer = (e) => {
         if (e.type === 'assistant_text') {
@@ -176,18 +188,28 @@ export function makeRunDevTurn(
         // the push carries the visible user turn alone.
         rt.run.handle.pushInput(input.prompt)
       } else {
-        void launchRun(
-          rt,
-          input.prompt,
-          launchDeps,
-          undefined,
-          input.userTurnPrefix || input.systemInstruction
-            ? {
-                ...(input.userTurnPrefix ? { userTurnPrefix: input.userTurnPrefix } : {}),
-                ...(input.systemInstruction ? { systemInstruction: input.systemInstruction } : {}),
-              }
-            : undefined,
-        )
+        // Defensive: a launcher that throws synchronously, or one stubbed to
+        // return nothing, must still land on `fail` rather than escape as an
+        // unhandled rejection — the whole point of failing the launch loudly.
+        try {
+          const launched = launchRun(
+            rt,
+            input.prompt,
+            launchDeps,
+            undefined,
+            input.userTurnPrefix || input.systemInstruction
+              ? {
+                  ...(input.userTurnPrefix ? { userTurnPrefix: input.userTurnPrefix } : {}),
+                  ...(input.systemInstruction
+                    ? { systemInstruction: input.systemInstruction }
+                    : {}),
+                }
+              : undefined,
+          )
+          if (launched && typeof launched.catch === 'function') launched.catch(fail)
+        } catch (err) {
+          fail(err)
+        }
       }
     })
 }

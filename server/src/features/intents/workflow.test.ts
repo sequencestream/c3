@@ -22,6 +22,71 @@ vi.mock('./store.js', () => ({
   updateStatus: vi.fn(),
 }))
 
+/**
+ * In-memory queue persistence. The driver treats the store as durable state, so
+ * the fake keeps the same read-your-writes semantics without touching sqlite.
+ */
+vi.mock('./queue-store.js', () => {
+  const controls = new Map<
+    string,
+    { state: string; startedAt: number | null; forceSkipped: string[] }
+  >()
+  const metas = new Map<string, Record<string, unknown>>()
+  const decisions: Record<string, unknown>[] = []
+  const empty = (intentId: string): Record<string, unknown> => ({
+    intentId,
+    failureCount: 0,
+    backoffCount: 0,
+    backoffUntil: null,
+    parked: false,
+    parkReason: null,
+    parkDetail: null,
+    cooldownUntil: null,
+    updatedAt: 0,
+  })
+  return {
+    __queueState: { controls, metas, decisions },
+    isQueueStoreAvailable: () => true,
+    resetQueueStoreForTests: () => {
+      controls.clear()
+      metas.clear()
+      decisions.length = 0
+    },
+    getQueueControl: (w: string) =>
+      controls.get(w) ?? { state: 'idle', startedAt: null, forceSkipped: [] },
+    setQueueControl: (
+      w: string,
+      next: { state: string; startedAt: number | null; forceSkipped: string[] },
+    ) => {
+      controls.set(w, { ...next, forceSkipped: [...next.forceSkipped] })
+      return true
+    },
+    listActiveQueueWorkspaces: () =>
+      [...controls.entries()].filter(([, c]) => c.state !== 'idle').map(([w]) => w),
+    getQueueIntentMeta: (w: string) => {
+      const out: Record<string, unknown> = {}
+      for (const [id, m] of metas) if ((m as { _w?: string })._w === w) out[id] = m
+      return out
+    },
+    getQueueIntentMetaById: (id: string) => metas.get(id) ?? empty(id),
+    putQueueIntentMeta: (w: string, m: Record<string, unknown>) => {
+      metas.set(m.intentId as string, { ...m, _w: w })
+      return true
+    },
+    deleteQueueIntentMeta: (id: string) => {
+      metas.delete(id)
+    },
+    appendQueueDecisions: (rows: Record<string, unknown>[]) => {
+      decisions.push(...rows)
+      return true
+    },
+    listQueueDecisions: () => [...decisions].reverse(),
+    latestQueueDecisionByIntent: () => ({}),
+    listQueueDecisionsForIntent: (id: string) =>
+      decisions.filter((d) => d.intentId === id).reverse(),
+  }
+})
+
 vi.mock('../../kernel/config/index.js', () => ({
   getDefaultMainBranch: vi.fn(() => 'main'),
   getForgeOverride: vi.fn(),
@@ -97,7 +162,21 @@ vi.mock('./checkpoint-consensus.js', () => ({
 
 // ---- Imports ----
 
-import { pickNext, startWorkflow, notifyTurnSettled, isIntentDrivenByWorkflow } from './workflow.js'
+import {
+  pickNext,
+  startWorkflow,
+  stopWorkflow,
+  pauseWorkflow,
+  unparkIntent,
+  forceSkipIntent,
+  getQueueDetail,
+  getWorkflowStatus,
+  notifyTurnSettled,
+  markQueueDirty,
+  isIntentDrivenByWorkflow,
+  settleQueueForTests,
+  resetWorkflowForTests,
+} from './workflow.js'
 import type { WorkflowHooks, DevTurnResult, RunDevTurnInput } from './workflow.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
 import { PR_LEGACY_EVENT_TYPE, normalizePrGenericEvent } from '../pr-events/tool-defs.js'
@@ -124,11 +203,17 @@ import { getDefaultAgentId, resolveSessionVendor } from '../../kernel/agent-conf
 import { createWorktree, fetchRemoteBase, getWorktreePath, readBranch } from './worktree.js'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
 import { judgeCompletion } from './judge.js'
+import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
 import { hasWorkspace } from '../../state.js'
 import { releaseDevLaunch, resetForTests as resetDevLinksForTests } from './dev-link.js'
 import { buildDevSpecNote, SDD_WORK_SESSION_INSTRUCT } from './dev-prompt.js'
 import { upsertPendingRow } from '../sessions/session-metadata-store.js'
+import {
+  getQueueIntentMetaById,
+  listQueueDecisionsForIntent,
+  resetQueueStoreForTests,
+} from './queue-store.js'
 
 // ---- Test-only types (mirrors the Handler shape without importing transport) ----
 
@@ -762,6 +847,8 @@ describe('startDevelopment — startup progress events', () => {
 describe('automation controller — branch-mode git alignment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetWorkflowForTests()
+    resetQueueStoreForTests()
     vi.mocked(getDevSkill).mockReturnValue('')
     vi.mocked(getSddEnabled).mockReturnValue(false)
     vi.mocked(createWorktree).mockImplementation(() => ({
@@ -770,10 +857,16 @@ describe('automation controller — branch-mode git alignment', () => {
     }))
     vi.mocked(readBranch).mockReturnValue('main')
     vi.mocked(getSddEnabled).mockReturnValue(false)
+    vi.mocked(gitDiffStat).mockResolvedValue('')
+    vi.mocked(gitRecentLog).mockResolvedValue('')
+    // Default verdict ends the develop loop after exactly one turn, so a test
+    // that only asserts on the LAUNCH is not dragged through continuations.
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'stuck', reason: 'test-default' })
+    vi.mocked(runCheckpointConsensus).mockResolvedValue(null)
   })
 
-  /** Flush microtasks + the fire-and-forget launch chain. */
-  const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0))
+  /** Run one reconcile pass and let every run it starts settle. */
+  const flush = (proj: string): Promise<void> => settleQueueForTests(proj)
 
   /** Build a hooks bag whose runDevTurn records its launch input. */
   function makeHooks(): { hooks: WorkflowHooks; runDevTurn: ReturnType<typeof vi.fn> } {
@@ -786,8 +879,11 @@ describe('automation controller — branch-mode git alignment', () => {
       emitStatus: vi.fn(),
       sessionExists: vi.fn(() => Promise.resolve(false)),
       isRunning: vi.fn(() => false),
+      sessionStatus: vi.fn(() => null),
       normalizeEvent: (core) => workflowPrRegistry.normalize(core),
       publishEvent: vi.fn(),
+      createUserTodo: vi.fn(),
+      broadcastQueueDetail: vi.fn(),
     }
     return { hooks, runDevTurn }
   }
@@ -802,7 +898,7 @@ describe('automation controller — branch-mode git alignment', () => {
 
     const { hooks, runDevTurn } = makeHooks()
     startWorkflow(proj, hooks, 1)
-    await flush()
+    await flush(proj)
 
     expect(createWorktree).not.toHaveBeenCalled()
     expect(setBranchName).toHaveBeenCalledWith('X', 'feature/x')
@@ -824,7 +920,7 @@ describe('automation controller — branch-mode git alignment', () => {
 
     const { hooks, runDevTurn } = makeHooks()
     startWorkflow(proj, hooks, 1)
-    await flush()
+    await flush(proj)
 
     expect(createWorktree).toHaveBeenCalledWith(proj, 'Y', 'Test', 'main')
     expect(readBranch).not.toHaveBeenCalled()
@@ -852,7 +948,7 @@ describe('automation controller — branch-mode git alignment', () => {
 
     const { hooks, runDevTurn } = makeHooks()
     startWorkflow(proj, hooks, 1)
-    await flush()
+    await flush(proj)
 
     const input = runDevTurn.mock.calls[0][0] as RunDevTurnInput
     expect(input.prompt).toBe(`Test\n\nBody\n\n依赖需求:DEP-1\n\n${buildDevSpecNote(specPath)}`)
@@ -879,7 +975,7 @@ describe('automation controller — branch-mode git alignment', () => {
 
     const { hooks, runDevTurn } = makeHooks()
     startWorkflow(proj, hooks, 1)
-    await flush()
+    await flush(proj)
 
     const input = runDevTurn.mock.calls[0][0] as RunDevTurnInput
     expect(input.prompt).toBe(`Test\n\nBody\n\n${buildDevSpecNote(specPath)}`)
@@ -906,7 +1002,7 @@ describe('automation controller — branch-mode git alignment', () => {
 
     const { hooks, runDevTurn } = makeHooks()
     startWorkflow(proj, hooks, 1)
-    await flush()
+    await flush(proj)
 
     const input = runDevTurn.mock.calls[0][0] as RunDevTurnInput
     expect(input.prompt).toBe('Test\n\nBody\n\n依赖需求:DEP-1')
@@ -937,7 +1033,7 @@ describe('automation controller — branch-mode git alignment', () => {
 
     const { hooks, runDevTurn } = makeHooks()
     startWorkflow(proj, hooks, 1)
-    await flush()
+    await flush(proj)
     const launchedId = runDevTurn.mock.calls[0][0].sessionId as string
 
     await notifyTurnSettled(proj, launchedId, 'complete', 'Z')
@@ -990,7 +1086,7 @@ describe('automation controller — branch-mode git alignment', () => {
 
     const { hooks, runDevTurn } = makeHooks()
     startWorkflow(proj, hooks, 1)
-    await flush()
+    await flush(proj)
     const launchedId = runDevTurn.mock.calls[0][0].sessionId as string
 
     await notifyTurnSettled(proj, launchedId, 'complete', 'GL')
@@ -1029,7 +1125,7 @@ describe('automation controller — branch-mode git alignment', () => {
 
     const { hooks, runDevTurn } = makeHooks()
     startWorkflow(proj, hooks, 1)
-    await flush()
+    await flush(proj)
     const launchedId = runDevTurn.mock.calls[0][0].sessionId as string
 
     await notifyTurnSettled(proj, launchedId, 'complete', 'W')
@@ -1066,7 +1162,7 @@ describe('automation controller — branch-mode git alignment', () => {
 
     const { hooks, runDevTurn } = makeHooks()
     startWorkflow(proj, hooks, 1)
-    await flush()
+    await flush(proj)
     const launchedId = runDevTurn.mock.calls[0][0].sessionId as string
 
     await notifyTurnSettled(proj, launchedId, 'complete', 'F')
@@ -1078,7 +1174,9 @@ describe('automation controller — branch-mode git alignment', () => {
   })
 
   // MSC-R1: the manual-vs-automation discriminator the session-end cleanup uses.
-  it('isIntentDrivenByWorkflow: true only for the controller’s current intent', async () => {
+  // It now means "the kernel holds an in-flight run for this intent" — the only
+  // window in which the queue, not the manual path, owns the session's cleanup.
+  it('isIntentDrivenByWorkflow: true only while the kernel holds the run', async () => {
     const proj = '/test/disc'
     const intent = makeIntent({ id: 'D', status: 'todo', branchName: 'intent/D' })
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
@@ -1088,14 +1186,292 @@ describe('automation controller — branch-mode git alignment', () => {
     vi.mocked(getIntent).mockReturnValue(intent)
     vi.mocked(getRuntime).mockReturnValue(undefined)
 
-    const { hooks } = makeHooks()
-    startWorkflow(proj, hooks, 1)
-    await flush()
+    const { hooks, runDevTurn } = makeHooks()
+    // Hold the dev turn open so the assertion lands mid-run.
+    let releaseTurn: (() => void) | null = null
+    runDevTurn.mockImplementation(
+      () =>
+        new Promise<DevTurnResult>((resolve) => {
+          releaseTurn = () => resolve({ outcome: 'complete', sessionId: 'real-D', lastMessage: '' })
+        }),
+    )
 
-    // While automation drives 'D', the settled 'D' session is automation-owned…
+    startWorkflow(proj, hooks, 1)
+    // Await only the reconcile PASS — not the run it starts, which is held open.
+    await markQueueDirty(proj)
+
     expect(isIntentDrivenByWorkflow(proj, 'D')).toBe(true)
     // …but any other intent, or a workspace with no controller, is "manual".
     expect(isIntentDrivenByWorkflow(proj, 'other')).toBe(false)
     expect(isIntentDrivenByWorkflow('/no/controller', 'D')).toBe(false)
+
+    releaseTurn!()
+    await flush(proj)
+    // Once the run is over the queue no longer owns it.
+    expect(isIntentDrivenByWorkflow(proj, 'D')).toBe(false)
+  })
+})
+
+// =============================================================================
+// Queue driver — failure isolation, parking and manual control
+// =============================================================================
+
+describe('queue driver — failure isolation', () => {
+  const proj = '/test/queue-driver'
+
+  /** Two independent intents plus one that depends on the first. */
+  function ledger(): Intent[] {
+    return [
+      makeIntent({ id: 'broken', title: 'Broken', priority: 'P0', createdAt: 1 }),
+      makeIntent({ id: 'healthy', title: 'Healthy', priority: 'P1', createdAt: 2 }),
+      makeIntent({
+        id: 'downstream',
+        title: 'Downstream',
+        priority: 'P1',
+        createdAt: 3,
+        dependsOn: ['broken'],
+      }),
+    ]
+  }
+
+  function hooksBag(): { hooks: WorkflowHooks; runDevTurn: ReturnType<typeof vi.fn> } {
+    const runDevTurn = vi.fn((_input: RunDevTurnInput): Promise<DevTurnResult> =>
+      Promise.resolve({ outcome: 'complete', sessionId: 'real', lastMessage: 'ok' }),
+    )
+    const hooks: WorkflowHooks = {
+      runDevTurn,
+      broadcastIntents: vi.fn(),
+      emitStatus: vi.fn(),
+      sessionExists: vi.fn(() => Promise.resolve(false)),
+      isRunning: vi.fn(() => false),
+      sessionStatus: vi.fn(() => null),
+      normalizeEvent: (core) => workflowPrRegistry.normalize(core),
+      publishEvent: vi.fn(),
+      createUserTodo: vi.fn(),
+      broadcastQueueDetail: vi.fn(),
+    }
+    return { hooks, runDevTurn }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetWorkflowForTests()
+    resetQueueStoreForTests()
+    const rows = ledger()
+    vi.mocked(listIntents).mockReturnValue(rows)
+    vi.mocked(getIntent).mockImplementation((id: string) => rows.find((r) => r.id === id) ?? null)
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
+    vi.mocked(getDevSkill).mockReturnValue('')
+    vi.mocked(readBranch).mockReturnValue('main')
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+    vi.mocked(gitDiffStat).mockResolvedValue('')
+    vi.mocked(gitRecentLog).mockResolvedValue('')
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'done', reason: 'ok' })
+    vi.mocked(runCheckpointConsensus).mockResolvedValue(null)
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+  })
+
+  it('a launch that throws costs ONE attempt and never stalls the queue', async () => {
+    const { hooks, runDevTurn } = hooksBag()
+    runDevTurn.mockImplementation((input: RunDevTurnInput) => {
+      if (input.intentId === 'broken') return Promise.reject(new Error('spawn failed'))
+      return Promise.resolve({ outcome: 'complete', sessionId: 'real', lastMessage: 'ok' })
+    })
+
+    startWorkflow(proj, hooks, 1)
+    await settleQueueForTests(proj)
+
+    const meta = getQueueIntentMetaById('broken')
+    expect(meta.failureCount).toBe(1)
+    expect(meta.parked).toBe(false)
+    expect(meta.backoffUntil).not.toBeNull()
+    // The queue kept going: the unrelated intent was developed to completion.
+    expect(vi.mocked(updateStatus).mock.calls).toContainEqual(['healthy', 'done'])
+    // The dependent intent was NOT started — a failed upstream is not a done one.
+    expect(runDevTurn.mock.calls.some(([i]) => i.intentId === 'downstream')).toBe(false)
+  })
+
+  it('parks on the third consecutive failure and keeps the downstream blocked', async () => {
+    const { hooks, runDevTurn } = hooksBag()
+    runDevTurn.mockImplementation((input: RunDevTurnInput) => {
+      if (input.intentId === 'broken') return Promise.reject(new Error('spawn failed'))
+      return Promise.resolve({ outcome: 'complete', sessionId: 'real', lastMessage: 'ok' })
+    })
+    startWorkflow(proj, hooks, 1)
+
+    // Three attempts, each after its backoff window has lapsed.
+    for (let i = 0; i < 3; i++) {
+      const meta = getQueueIntentMetaById('broken')
+      if (meta.backoffUntil) {
+        // Expire the backoff deterministically instead of waiting on wall time.
+        vi.mocked(getIntent) // no-op keeps the mocked ledger intact
+        const store = await import('./queue-store.js')
+        store.putQueueIntentMeta(proj, {
+          ...meta,
+          backoffUntil: Date.now() - 1,
+          cooldownUntil: null,
+        })
+      }
+      await settleQueueForTests(proj)
+    }
+
+    const parked = getQueueIntentMetaById('broken')
+    expect(parked.failureCount).toBeGreaterThanOrEqual(3)
+    expect(parked.parked).toBe(true)
+    expect(parked.parkReason).toBe('launch_failed')
+
+    // Downstream of a parked intent stays blocked; it must never be launched.
+    expect(runDevTurn.mock.calls.some(([i]) => i.intentId === 'downstream')).toBe(false)
+    const detail = getQueueDetail(proj)
+    expect(detail.items.find((r) => r.intentId === 'downstream')?.blockedReason).toBe(
+      'blocked_dependency',
+    )
+    expect(detail.state).not.toBe('done')
+  })
+
+  it('an unanswered question parks the intent, raises one todo and never answers it', async () => {
+    const { hooks, runDevTurn } = hooksBag()
+    runDevTurn.mockImplementation((input: RunDevTurnInput) =>
+      Promise.resolve({
+        outcome: 'complete',
+        sessionId: 'real',
+        lastMessage: 'need a decision',
+        pendingQuestion: input.intentId === 'broken',
+      }),
+    )
+
+    startWorkflow(proj, hooks, 1)
+    await settleQueueForTests(proj)
+
+    expect(getQueueIntentMetaById('broken')).toMatchObject({
+      parked: true,
+      parkReason: 'needs_human_decision',
+    })
+    expect(hooks.createUserTodo).toHaveBeenCalledTimes(1)
+    // The queue continued with the unrelated intent rather than stopping.
+    expect(vi.mocked(updateStatus).mock.calls).toContainEqual(['healthy', 'done'])
+  })
+
+  it('records a decision row explaining every park', async () => {
+    const { hooks, runDevTurn } = hooksBag()
+    runDevTurn.mockImplementation((input: RunDevTurnInput) =>
+      input.intentId === 'broken'
+        ? Promise.reject(new Error('spawn failed'))
+        : Promise.resolve({ outcome: 'complete', sessionId: 'real', lastMessage: 'ok' }),
+    )
+    startWorkflow(proj, hooks, 1)
+    await settleQueueForTests(proj)
+
+    const rows = listQueueDecisionsForIntent('broken')
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows[0]).toMatchObject({ intentId: 'broken', rejectReason: expect.any(String) })
+  })
+})
+
+describe('queue driver — manual control', () => {
+  const proj = '/test/queue-control'
+
+  function hooksBag(): WorkflowHooks {
+    return {
+      runDevTurn: vi.fn((_input: RunDevTurnInput): Promise<DevTurnResult> =>
+        Promise.resolve({ outcome: 'complete', sessionId: 'real', lastMessage: 'ok' }),
+      ),
+      broadcastIntents: vi.fn(),
+      emitStatus: vi.fn(),
+      sessionExists: vi.fn(() => Promise.resolve(false)),
+      isRunning: vi.fn(() => false),
+      sessionStatus: vi.fn(() => null),
+      normalizeEvent: (core) => workflowPrRegistry.normalize(core),
+      publishEvent: vi.fn(),
+      createUserTodo: vi.fn(),
+      broadcastQueueDetail: vi.fn(),
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetWorkflowForTests()
+    resetQueueStoreForTests()
+    const rows = [makeIntent({ id: 'A', title: 'A' })]
+    vi.mocked(listIntents).mockReturnValue(rows)
+    vi.mocked(getIntent).mockImplementation((id: string) => rows.find((r) => r.id === id) ?? null)
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+    vi.mocked(gitDiffStat).mockResolvedValue('')
+    vi.mocked(gitRecentLog).mockResolvedValue('')
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'stuck', reason: 'x' })
+    vi.mocked(runCheckpointConsensus).mockResolvedValue(null)
+  })
+
+  it('pause launches nothing and preserves scheduling metadata', async () => {
+    const hooks = hooksBag()
+    startWorkflow(proj, hooks, 1)
+    pauseWorkflow(proj)
+    vi.mocked(hooks.runDevTurn).mockClear()
+    await settleQueueForTests(proj)
+
+    expect(hooks.runDevTurn).not.toHaveBeenCalled()
+    expect(getWorkflowStatus(proj).state).toBe('paused')
+  })
+
+  it('force-skip removes an intent from selection without completing it', async () => {
+    const hooks = hooksBag()
+    startWorkflow(proj, hooks, 1)
+    forceSkipIntent(proj, 'A', true)
+    vi.mocked(hooks.runDevTurn).mockClear()
+    await settleQueueForTests(proj)
+
+    expect(hooks.runDevTurn).not.toHaveBeenCalled()
+    // Never marked done — skipping is not completing.
+    expect(vi.mocked(updateStatus).mock.calls.some(([, st]) => st === 'done')).toBe(false)
+    expect(getQueueDetail(proj).items[0]).toMatchObject({
+      forceSkipped: true,
+      blockedReason: 'blocked_force_skipped',
+    })
+  })
+
+  it('unpark clears the park and lets the next pass re-evaluate every gate', async () => {
+    const hooks = hooksBag()
+    startWorkflow(proj, hooks, 1)
+    await settleQueueForTests(proj) // one stuck verdict → one failure
+
+    const store = await import('./queue-store.js')
+    store.putQueueIntentMeta(proj, {
+      ...getQueueIntentMetaById('A'),
+      parked: true,
+      parkReason: 'judge_stuck',
+      parkDetail: 'stuck',
+    })
+    expect(unparkIntent(proj, 'A')).toBe(true)
+    expect(getQueueIntentMetaById('A')).toMatchObject({
+      parked: false,
+      parkReason: null,
+      failureCount: 0,
+    })
+    // Unparking something that is not parked is reported, not silently accepted.
+    expect(unparkIntent(proj, 'A')).toBe(false)
+  })
+
+  it('stop returns the queue to idle and a later start resumes from persisted facts', async () => {
+    const hooks = hooksBag()
+    startWorkflow(proj, hooks, 1)
+    await settleQueueForTests(proj)
+    stopWorkflow(proj)
+    expect(getWorkflowStatus(proj).state).toBe('idle')
+
+    startWorkflow(proj, hooks, 2)
+    expect(getWorkflowStatus(proj).state).not.toBe('idle')
+  })
+
+  it('a lost settle event is recovered by the next pass', async () => {
+    const hooks = hooksBag()
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'done', reason: 'ok' })
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    startWorkflow(proj, hooks, 1)
+    // No `notifyTurnSettled` is ever delivered — the pass alone must drive it.
+    await settleQueueForTests(proj)
+    expect(vi.mocked(updateStatus).mock.calls).toContainEqual(['A', 'done'])
   })
 })

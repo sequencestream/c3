@@ -7,6 +7,7 @@
 import AppHeader from './components/AppHeader/AppHeader.vue'
 import Works from './pages/works/Works.vue'
 import Intents from './pages/intents/Intents.vue'
+import Queue from './pages/queue/Queue.vue'
 import Discussions from './pages/discussions/Discussions.vue'
 import Automations from './pages/automations/Automations.vue'
 import Codes from './pages/codes/Codes.vue'
@@ -144,6 +145,13 @@ const {
   syncIntentPrStatus,
   startWorkflow,
   stopWorkflow,
+  // ---- automation queue page ----
+  queuePageOpen,
+  currentQueueDetail,
+  openQueuePage,
+  closeQueuePage,
+  refreshQueueDetail,
+  queueControl,
   selectIntentSession,
   createIntent,
   startIntentSession,
@@ -343,6 +351,12 @@ function onRequestedIntentConsumed(): void {
   requestedIntentId.value = null
 }
 
+/** 队列页点击某条意图:关闭队列页并在意图页选中它(队列页是意图页的兄弟视图)。 */
+function onQueueSelectIntent(intentId: string): void {
+  closeQueuePage()
+  requestedIntentId.value = intentId
+}
+
 /** Codes 内嵌 ChatColumn 的分隔条宽度(像素,per-workspace,仅 localStorage)。切换
  *  workspace 时从持久化读回;拖拽/键盘调节后写回。仅本地,不进服务端配置。 */
 const codesChatWidth = ref(CODES_CHAT_WIDTH_DEFAULT)
@@ -455,6 +469,15 @@ function onCodesChatWidth(px: number): void {
           @mobile-back="clearViewedSession"
         />
 
+        <Queue
+          v-else-if="activeTab === 'intents' && intentsProject && queuePageOpen"
+          :detail="currentQueueDetail"
+          @control="queueControl"
+          @refresh="refreshQueueDetail"
+          @close="closeQueuePage"
+          @select-intent="onQueueSelectIntent"
+        />
+
         <Intents
           v-else-if="activeTab === 'intents' && intentsProject"
           ref="composer"
@@ -537,6 +560,7 @@ function onCodesChatWidth(px: number): void {
           @share="shareIntent"
           @start-automation="startWorkflow"
           @stop-automation="stopWorkflow"
+          @open-queue="openQueuePage"
           @new-intent="createIntent"
           @start-intent-session="startIntentSession"
           @set-session-agent="onSetSessionAgent"

@@ -26,6 +26,7 @@ import { paginateSessions } from '../kernel/agent/session/paginate-sessions.js'
 import { isRunning, listStatuses } from '../runs.js'
 import { isStoreAvailable, listChatSessions, listIntents } from '../features/intents/store.js'
 import { enrichRunStatus } from '../features/intents/run-status.js'
+import { getQueueDetail } from '../features/intents/workflow.js'
 import {
   isStoreAvailable as isDiscussionStoreAvailable,
   listDiscussions,
@@ -83,6 +84,8 @@ export interface Broadcasts {
   broadcastAutomations: (workspacePath: string) => void
   /** Push an automation-orchestrator status to every connection. */
   broadcastWorkflow: (status: WorkflowStatus) => void
+  /** Push a workspace queue's per-intent detail projection. */
+  broadcastQueueDetail: (workspacePath: string) => void
   /** Stream one freshly-appended discussion message. */
   broadcastDiscussionMessage: (discussionId: string, message: DiscussionMessage) => void
   /** Broadcast the transient in-flight/failed status of dispatched participants. */
@@ -272,6 +275,35 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcaster.toAll({ type: 'workflow_status', status })
   }
 
+  // Push a project's queue detail projection (per-intent blocking reason, next
+  // wake-up, latest decision). Kept separate from `workflow_status`, which stays
+  // a compact list/button summary and never carries per-tick logs.
+  const broadcastQueueDetail = (workspacePath: string): void => {
+    if (!isStoreAvailable()) return
+    const proj = resolve(workspacePath)
+    const workspaceId = pathToId(proj)
+    if (!workspaceId) return
+    const detail = getQueueDetail(proj)
+    const byId = new Map(listIntents(proj).map((r) => [r.id, r]))
+    broadcaster.toAll({
+      type: 'queue_detail',
+      detail: {
+        workspaceId,
+        state: detail.state,
+        tickId: detail.tickId,
+        nextWakeupAt: detail.nextWakeupAt,
+        items: detail.items.map((item) => {
+          const req = byId.get(item.intentId)
+          return {
+            ...item,
+            status: req?.status ?? 'todo',
+            priority: req?.priority ?? 'P2',
+          }
+        }),
+      },
+    })
+  }
+
   // Push a project's refreshed wait-user-involve event list. Only 'todo'
   // events are broadcast — the frontend's pending-items badge count uses them.
   // 'done' / 'canceled' events are still queryable via list_wait_user_events
@@ -298,6 +330,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcastDiscussions,
     broadcastAutomations,
     broadcastWorkflow,
+    broadcastQueueDetail,
     broadcastDiscussionMessage,
     broadcastDiscussionDispatchStatus,
     broadcastDiscussionRunStatus,

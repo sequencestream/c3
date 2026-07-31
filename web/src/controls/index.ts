@@ -10,6 +10,7 @@ import { installPersistence } from './persistence'
 import { installMessageHandler } from './message-handler'
 import { installSessionActions } from './session-actions'
 import { installIntentActions } from './intent-actions'
+import { installQueueActions } from './queue-actions'
 import { installDiscussionActions } from './discussion-actions'
 import { installAutomationActions } from './automation-actions'
 import { installCodesActions } from './codes-actions'
@@ -56,6 +57,7 @@ export function useAppController(): AppCtx {
   installMessageHandler(ctx)
   installSessionActions(ctx)
   installIntentActions(ctx)
+  installQueueActions(ctx)
   installDiscussionActions(ctx)
   installAutomationActions(ctx)
   installCodesActions(ctx)

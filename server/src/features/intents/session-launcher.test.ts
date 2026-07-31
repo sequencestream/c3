@@ -304,6 +304,116 @@ describe('launchWorkSession — attach / resume / fresh', () => {
   })
 })
 
+// ── launchWorkSession: RM-A12 follows the git branch mode ──
+//
+// The gate keeps two work sessions off the same files. Under `current-branch`
+// every intent edits the one shared checkout (cases above); under `worktree`
+// each intent has its own directory, so another intent's live session is not a
+// file conflict and must not block a launch. Every OTHER gate is unchanged.
+
+describe('launchWorkSession — RM-A12 under worktree isolation', () => {
+  beforeEach(() => {
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'worktree',
+      defaultMainBranch: '',
+      sddEnabled: false,
+    })
+  })
+
+  /** An `in_progress` intent bound to a live runtime for `sessionId`. */
+  function inProgressWithSession(title: string, sessionId: string): string {
+    const [intent] = insertIntents(proj, [
+      { title, shortEnTitle: title.toLowerCase(), content: '', priority: 'P1' },
+    ])
+    updateStatus(intent.id, 'in_progress', 'test')
+    setLastWorkSession(intent.id, sessionId)
+    ensureRuntime(sessionId, proj, 'default', [], 'work')
+    return intent.id
+  }
+
+  it('a FRESH launch is no longer rejected while another intent runs', async () => {
+    inProgressWithSession('Blocker', 'sess-blocker')
+    markRunning('sess-blocker')
+    const [target] = insertIntents(proj, [
+      { title: 'Target', shortEnTitle: 'target', content: '', priority: 'P1' },
+    ])
+    const r = asError(await launchWorkSession(proj, target.id, mockDeps()))
+    // The gate is passed: the launch reaches the git stage and only fails there,
+    // because this temp workspace is not a git repository.
+    expect(r.code).not.toBe('intent.concurrencyGate')
+    expect(r.code).toBe('intent.worktreeCreateFailed')
+  })
+
+  it('a RESUME is no longer rejected while another intent runs', async () => {
+    inProgressWithSession('Blocker', 'sess-blocker')
+    markRunning('sess-blocker')
+    const id = inProgressWithSession('Idle target', 'sess-idle-target')
+    const deps = mockDeps()
+    const r = asSuccess(await launchWorkSession(proj, id, deps))
+    expect(r.sessionId).toBe('sess-idle-target')
+    expect(r.mode).toBe('resume')
+    expect(deps.launchRun).toHaveBeenCalledTimes(1)
+  })
+
+  it('the intent OWN running session is still only attached to — never a 2nd turn', async () => {
+    inProgressWithSession('Blocker', 'sess-blocker')
+    markRunning('sess-blocker')
+    const id = inProgressWithSession('Self', 'sess-self')
+    markRunning('sess-self')
+    const deps = mockDeps()
+    const r = asSuccess(await launchWorkSession(proj, id, deps))
+    expect(r.mode).toBe('attach')
+    expect(deps.launchRun).not.toHaveBeenCalled()
+  })
+
+  it('a DANGLING session of another intent blocks nothing here either', async () => {
+    inProgressWithSession('Dangling blocker', 'sess-dead')
+    const id = inProgressWithSession('Idle target', 'sess-idle-target')
+    const r = asSuccess(await launchWorkSession(proj, id, mockDeps()))
+    expect(r.mode).toBe('resume')
+  })
+
+  it('the OTHER hard gates are untouched: an unanswered question still stops a resume', async () => {
+    inProgressWithSession('Blocker', 'sess-blocker')
+    markRunning('sess-blocker')
+    const id = inProgressWithSession('Asking', 'sess-asking')
+    getRuntime('sess-asking')!.buffer.push({
+      type: 'tool_use',
+      sessionId: 'sess-asking',
+      toolUseId: 'tu-1',
+      toolName: 'AskUserQuestion',
+      input: {},
+    } as ServerToClient)
+    const deps = mockDeps()
+    const r = asError(await launchWorkSession(proj, id, deps))
+    expect(r.code).toBe('intent.pendingQuestionUnanswered')
+    expect(deps.launchRun).not.toHaveBeenCalled()
+  })
+
+  it('the OTHER hard gates are untouched: SDD still requires an approved spec', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', sddEnabled: true })
+    inProgressWithSession('Blocker', 'sess-blocker')
+    markRunning('sess-blocker')
+    const [target] = insertIntents(proj, [
+      { title: 'Target', shortEnTitle: 'target', content: '', priority: 'P1' },
+    ])
+    const r = asError(await launchWorkSession(proj, target.id, mockDeps()))
+    expect(r.code).toBe('intent.specNotApproved')
+  })
+
+  it('the manual entry and the MCP entry stay in step under worktree too', async () => {
+    inProgressWithSession('Blocker', 'sess-blocker')
+    markRunning('sess-blocker')
+    const [target] = insertIntents(proj, [
+      { title: 'Target', shortEnTitle: 'target', content: '', priority: 'P1' },
+    ])
+    const viaManual = await launchWorkSession(proj, target.id, mockDeps(), () => {}, 'human')
+    const viaMcp = await launchWorkSession(proj, target.id, mockDeps())
+    expect(viaManual).toEqual(viaMcp)
+    expect(asError(viaManual).code).not.toBe('intent.concurrencyGate')
+  })
+})
+
 // ── launchSpecSession ──
 
 describe('launchSpecSession', () => {

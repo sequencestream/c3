@@ -90,9 +90,18 @@ launch、重复失败计数或重复人工待办。防自激:内核发起的 run
 
 ## 明确未改变的东西(硬闸门)
 
-RM-A12 全局并发闸门、依赖闸门 + worktree 模式下「依赖 PR 已 merged」、SDD `specApproved` 闸门、
+依赖闸门 + worktree 模式下「依赖 PR 已 merged」、SDD `specApproved` 闸门、
 `AskUserQuestion` / pendingQuestion 守卫(RM-A11)、续跑预算、workspacePath 工具闭包绑定 ——
 **一律未放宽**。
+
+RM-A12 并发闸门是唯一按工作区形态取范围的闸门,理由是它保护的东西就是文件:
+
+- `current-branch` 模式下所有意图共用一份检出,闸门保持工作区级硬互斥;
+- `worktree` 模式下每条意图有独立目录,别的意图的运行中会话不构成文件冲突,闸门只对意图自身生效,
+  多条意图可并行开发。
+
+这一范围由共享的 `launchWorkSession` 与对账内核以同一条规则求值,不存在手动 / MCP / 队列三者不
+对称的可能。代价是并行带来的 AI 供应商速率、成本与人工关注压力 —— 这些不在闸门里治理。
 
 **未新增任何自动标 `done` 的路径**(RM-R9 例外范围不扩大)。
 

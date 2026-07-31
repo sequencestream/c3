@@ -344,6 +344,184 @@ describe('reconcileQueue — run liveness', () => {
   })
 })
 
+// The concurrency gate is the one rule whose SCOPE depends on the workspace:
+// `current-branch` shares one checkout (global mutex), `worktree` gives every
+// intent its own directory (no cross-intent block). Each case below asserts the
+// SAME facts under both modes, so the two can never drift apart silently.
+describe('reconcileQueue — concurrency gate by git branch mode', () => {
+  /** One live automated intent + one plain eligible candidate. */
+  const twoIntents = {
+    intents: [
+      intent({ id: 'live', status: 'in_progress', lastWorkSessionId: 's1', createdAt: 1 }),
+      intent({ id: 'other', createdAt: 5 }),
+    ],
+    runs: [{ sessionId: 's1', alive: true, awaitingPermissionSince: null }],
+  }
+
+  it('worktree: the live intent is attached to AND another eligible intent starts', () => {
+    const out = reconcileQueue(input({ ...twoIntents, gitBranchMode: 'worktree' }))
+    expect(out.actions).toContainEqual({
+      kind: 'attach',
+      intentId: 'live',
+      sessionId: 's1',
+      origin: 'queue-kernel',
+    })
+    expect(launched(out)).toBe('other')
+    expect(decisionFor(out, 'live')).toMatchObject({ action: 'attach', reason: 'attached_running' })
+    expect(decisionFor(out, 'other')).toMatchObject({ action: 'launch', reason: 'selected' })
+    expect(out.state).toBe('developing')
+    // The attached intent is never driven twice in the same pass.
+    expect(out.actions.filter((a) => 'intentId' in a && a.intentId === 'live')).toHaveLength(1)
+  })
+
+  it('current-branch: the same facts still hold the gate shut for everyone else', () => {
+    const out = reconcileQueue(input({ ...twoIntents, gitBranchMode: 'current-branch' }))
+    expect(out.actions).toContainEqual({
+      kind: 'attach',
+      intentId: 'live',
+      sessionId: 's1',
+      origin: 'queue-kernel',
+    })
+    expect(launched(out)).toBeNull()
+    expect(decisionFor(out, 'other')).toMatchObject({ reason: 'blocked_concurrency_gate' })
+  })
+
+  it('worktree: a live MANUAL session no longer blocks the queue', () => {
+    const facts = {
+      intents: [
+        intent({ id: 'manual', automate: false, status: 'in_progress', lastWorkSessionId: 'm1' }),
+        intent({ id: 'queued' }),
+      ],
+      runs: [{ sessionId: 'm1', alive: true, awaitingPermissionSince: null }],
+    }
+    const worktree = reconcileQueue(input({ ...facts, gitBranchMode: 'worktree' }))
+    expect(launched(worktree)).toBe('queued')
+    expect(worktree.state).toBe('developing')
+
+    const inPlace = reconcileQueue(input({ ...facts, gitBranchMode: 'current-branch' }))
+    expect(launched(inPlace)).toBeNull()
+    expect(inPlace.state).toBe('awaiting_gate')
+  })
+
+  it('worktree: an intent the kernel drives is observed while another one starts', () => {
+    const facts = {
+      intents: [intent({ id: 'A', status: 'in_progress' }), intent({ id: 'B', createdAt: 5 })],
+      inFlight: ['A'],
+    }
+    const worktree = reconcileQueue(input({ ...facts, gitBranchMode: 'worktree' }))
+    expect(decisionFor(worktree, 'A')).toMatchObject({ action: 'wait', reason: 'running' })
+    expect(launched(worktree)).toBe('B')
+    // In-flight de-duplication is untouched: A is never launched a second time.
+    expect(worktree.actions.some((a) => 'intentId' in a && a.intentId === 'A')).toBe(false)
+
+    const inPlace = reconcileQueue(input({ ...facts, gitBranchMode: 'current-branch' }))
+    expect(inPlace.actions).toHaveLength(0)
+    expect(decisionFor(inPlace, 'B')).toMatchObject({ reason: 'blocked_concurrency_gate' })
+  })
+
+  it('worktree: an idle session of another intent is resumed, not re-launched', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        intents: [
+          intent({ id: 'live', status: 'in_progress', lastWorkSessionId: 's1', createdAt: 1 }),
+          intent({ id: 'idle', status: 'in_progress', lastWorkSessionId: 's2', createdAt: 5 }),
+        ],
+        runs: [
+          { sessionId: 's1', alive: true, awaitingPermissionSince: null },
+          { sessionId: 's2', alive: false, awaitingPermissionSince: null },
+        ],
+      }),
+    )
+    expect(out.actions).toContainEqual({
+      kind: 'resume',
+      intentId: 'idle',
+      sessionId: 's2',
+      origin: 'queue-kernel',
+    })
+    expect(decisionFor(out, 'live')).toMatchObject({ reason: 'attached_running' })
+  })
+
+  it('worktree: still at most ONE new work action per pass', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        intents: [
+          intent({ id: 'live', status: 'in_progress', lastWorkSessionId: 's1', createdAt: 1 }),
+          intent({ id: 'first', createdAt: 5 }),
+          intent({ id: 'second', createdAt: 6 }),
+        ],
+        runs: [{ sessionId: 's1', alive: true, awaitingPermissionSince: null }],
+      }),
+    )
+    expect(out.actions.filter((a) => a.kind === 'launch' || a.kind === 'resume')).toHaveLength(1)
+    expect(launched(out)).toBe('first')
+    // The runner-up waits for the next tick — parallelism grows one intent at a time.
+    expect(decisionFor(out, 'second')).toMatchObject({
+      action: 'wait',
+      reason: 'blocked_concurrency_gate',
+    })
+  })
+
+  it('worktree: the other hard gates keep their verdicts while a session is live', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        sddEnabled: true,
+        intents: [
+          intent({
+            id: 'live',
+            status: 'in_progress',
+            lastWorkSessionId: 's1',
+            specApproved: true,
+            createdAt: 1,
+          }),
+          intent({ id: 'unapproved', specApproved: false, specPath: null, createdAt: 5 }),
+          intent({ id: 'backing-off', specApproved: true, createdAt: 6 }),
+          intent({ id: 'parked-one', specApproved: true, createdAt: 7 }),
+        ],
+        runs: [{ sessionId: 's1', alive: true, awaitingPermissionSince: null }],
+        meta: {
+          'backing-off': meta('backing-off', { failureCount: 1, backoffUntil: NOW + 5_000 }),
+          'parked-one': meta('parked-one', { parked: true, parkReason: 'judge_stuck' }),
+        },
+      }),
+    )
+    expect(launched(out)).toBeNull()
+    expect(decisionFor(out, 'unapproved')).toMatchObject({ reason: 'spec_authoring' })
+    expect(decisionFor(out, 'backing-off')).toMatchObject({ reason: 'blocked_backoff' })
+    expect(decisionFor(out, 'parked-one')).toMatchObject({ reason: 'blocked_parked' })
+  })
+
+  it('worktree: a permission wait still parks and raises exactly one todo', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        intents: [
+          intent({ id: 'waiting', status: 'in_progress', lastWorkSessionId: 's1', createdAt: 1 }),
+          intent({ id: 'other', createdAt: 5 }),
+        ],
+        runs: [
+          {
+            sessionId: 's1',
+            alive: true,
+            awaitingPermissionSince: NOW - QUEUE_PERMISSION_WAIT_MS - 1,
+          },
+        ],
+      }),
+    )
+    expect(out.actions.filter((a) => a.kind === 'wait_user_involve')).toHaveLength(1)
+    expect(decisionFor(out, 'waiting')).toMatchObject({
+      action: 'park',
+      reason: 'permission_wait_timeout',
+    })
+    // The parked intent is not attached to, and its worktree neighbour still runs.
+    expect(out.actions.some((a) => a.kind === 'attach')).toBe(false)
+    expect(launched(out)).toBe('other')
+    expect(out.awaitingPermission).toBe(true)
+  })
+})
+
 describe('reconcileQueue — human decisions', () => {
   it('a permission wait past the window parks and raises ONE todo, never an answer', () => {
     const out = reconcileQueue(

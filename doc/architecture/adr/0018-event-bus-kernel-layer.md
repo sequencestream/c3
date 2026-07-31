@@ -168,7 +168,7 @@ run-started/run-settled 携带(并贯穿会话运行时)的 kind,被拆分为两
 - 一个 fix-turn-settled 处理器——在 lint-fix agent 轮次结算后重试提交。
 - 一个开发启动器——为每个 intent 决定 fresh/resume/attach 策略。
 - 一个下一 intent 选择器——挑选下一个符合条件的 intent(若并发闸门处于激活状态则延后)。
-- 一个阻塞 intent 查找器——即 RM-A12 闸门:检查是否有任何非自动化 intent 的开发会话真正在运行;若是,则延后新 intent,直到阻塞会话结算(是旧 await-project-running 闸门的事件驱动版本)。
+- 一个阻塞 intent 查找器——即 RM-A12 闸门(判定与作用范围以 ADR-0031 及 `intent-management-spec.md` 的 RM-A12 为准):闸门激活时延后新 intent,直到阻塞会话结算(是旧 await-project-running 闸门的事件驱动版本)。
 
 并发闸门、延续上限(10)、lint 修复重试和提交排序均被保留——只是驱动机制变了(事件 → 异步链,而非循环 → await)。
 

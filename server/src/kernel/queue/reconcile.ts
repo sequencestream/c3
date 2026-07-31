@@ -15,9 +15,14 @@
  *
  * Gate order is fixed and never relaxed: park → force-skip → spec approval →
  * dependencies (including worktree-mode "dependency PR merged") → backoff →
- * cooldown, then the workspace-global concurrency gate. A parked intent is not
- * `done`, so its downstream stays blocked by the dependency gate exactly as
- * before — parking isolates a failure, it never opens a path around one.
+ * cooldown, then the concurrency gate. A parked intent is not `done`, so its
+ * downstream stays blocked by the dependency gate exactly as before — parking
+ * isolates a failure, it never opens a path around one.
+ *
+ * The concurrency gate is the one rule whose SCOPE depends on the workspace: it
+ * exists to keep two work sessions off the same files, so it is workspace-global
+ * under `current-branch` (one shared checkout) and per-intent under `worktree`
+ * (a directory each). Everything else is identical in both modes.
  */
 import type {
   QueueAction,
@@ -148,8 +153,8 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   }
 
   // ── Run liveness view ─────────────────────────────────────────────────────
-  // RM-A12 reads EVERY in_progress intent, automated or not: a manual work
-  // session still owns the workspace.
+  // RM-A12 reads EVERY in_progress intent, automated or not: under a shared
+  // checkout a manual work session still owns the workspace.
   const liveIntents = intents.filter(
     (r) =>
       r.status === 'in_progress' &&
@@ -361,9 +366,17 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     )
   }
 
+  // ── How far a running work session reaches (RM-A12) ───────────────────────
+  // Under `current-branch` every intent edits the SAME checkout, so one live
+  // work session holds the gate shut for the whole workspace. Under `worktree`
+  // each intent has its own directory: a live session then speaks only for its
+  // own intent — it is still observed and never re-launched, but it no longer
+  // stops another eligible intent from starting.
+  const sharedCheckout = gitBranchMode !== 'worktree'
+
   // ── Something the kernel already drives → observe, never re-launch ────────
   const owned = candidates.find((r) => inFlight.has(r.id))
-  if (owned) {
+  if (owned && sharedCheckout) {
     pushDecision(owned, 'wait', 'running', '内核 run 进行中')
     for (const intent of candidates) {
       if (intent.id === owned.id || parkedThisPass.has(intent.id)) continue
@@ -378,10 +391,10 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
 
   // ── A live session the kernel does NOT own ────────────────────────────────
   // An eligible candidate whose own session is still running is attached to
-  // (a run outlives its turn — never start a second one). Anything else that is
-  // alive holds the workspace-global concurrency gate shut.
+  // (a run outlives its turn — never start a second one). Under a shared
+  // checkout anything else that is alive holds the concurrency gate shut.
   const blocking = liveIntents[0]
-  if (blocking) {
+  if (blocking && sharedCheckout) {
     const attachable =
       blocking.automate &&
       gateOf.get(blocking.id)?.eligible === true &&
@@ -422,8 +435,48 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     })
   }
 
+  // ── worktree mode: observe what already runs, then keep selecting ─────────
+  // Each of these intents is being worked on in its OWN directory. They are
+  // observed exactly as under a shared checkout — an in-flight kernel run is
+  // waited on and a live session is attached to, never launched twice — but they
+  // do not close the gate for anyone else.
+  //
+  // `busy` is this pass's anti-double-drive set: an intent in it is never picked.
+  // `observed` is bookkeeping — it already holds a decision row for this pass.
+  const busy = new Set<string>()
+  const observed = new Set<string>()
+  /** The intent this pass reports as the one the queue is currently driving. */
+  let driving: QueueIntentFact | null = null
+  if (!sharedCheckout) {
+    for (const intent of candidates) {
+      if (!inFlight.has(intent.id)) continue
+      busy.add(intent.id)
+      observed.add(intent.id)
+      pushDecision(intent, 'wait', 'running', '内核 run 进行中')
+      driving ??= intent
+    }
+    for (const live of liveIntents) {
+      if (busy.has(live.id)) continue
+      busy.add(live.id)
+      const attachable =
+        live.automate && gateOf.get(live.id)?.eligible === true && !parkedThisPass.has(live.id)
+      if (!attachable || !live.lastWorkSessionId) continue
+      actions.push({
+        kind: 'attach',
+        intentId: live.id,
+        sessionId: live.lastWorkSessionId,
+        origin: QUEUE_RUN_ORIGIN,
+      })
+      pushDecision(live, 'attach', 'attached_running', '会话仍在运行,挂接观察而非重复启动')
+      observed.add(live.id)
+      driving ??= live
+    }
+  }
+
   // ── Gate clear → select at most one intent ────────────────────────────────
-  const picked = eligible[0] ?? null
+  // Still ONE new work action per pass in either mode: worktree parallelism is
+  // raised one intent per tick, not fanned out all at once.
+  const picked = eligible.find((r) => !busy.has(r.id)) ?? null
   if (picked) {
     // `in_progress` with a session that is NOT alive: resume the existing
     // context. A dead blocking session releases `awaiting_gate` by construction —
@@ -445,7 +498,14 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   for (const intent of candidates) {
     if (picked && intent.id === picked.id) continue
     if (parkedThisPass.has(intent.id)) continue
-    pushGateOrSpec(intent, gateOf.get(intent.id)!, '队列串行执行,等待前序意图结束')
+    if (observed.has(intent.id)) continue
+    pushGateOrSpec(
+      intent,
+      gateOf.get(intent.id)!,
+      sharedCheckout
+        ? '队列串行执行,等待前序意图结束'
+        : '每轮最多发起一个新的工作动作,下一轮继续挑选',
+    )
   }
 
   // Nothing runnable purely because dependency PR states are stale → refresh.
@@ -457,6 +517,16 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     return finish('developing', actions, decisions, {
       intentId: picked.id,
       sessionId: picked.lastWorkSessionId,
+      awaitingPermission,
+    })
+  }
+
+  // Nothing new this pass, but work the queue drives is still running in its own
+  // worktree — that is `developing`, not a gate the queue is waiting on.
+  if (driving) {
+    return finish('developing', actions, decisions, {
+      intentId: driving.id,
+      sessionId: driving.lastWorkSessionId,
       awaitingPermission,
     })
   }

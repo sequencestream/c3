@@ -133,7 +133,13 @@ export interface AdvisorFacts {
   intent: { id: string; status: IntentStatus } | null
   /** Session ids the bound intent owns (work / spec / intent-comm). */
   ownedSessionIds: readonly string[]
-  /** Titles of OTHER intents in the workspace with a live work session (RM-A12). */
+  /**
+   * Titles of OTHER intents whose live work session would CONFLICT with this one
+   * (RM-A12). The caller collects them, so it also owns the gate's scope: under
+   * `current-branch` every live work session in the workspace belongs here,
+   * while under `worktree` each intent has its own directory and none does — the
+   * list is then empty and this validator rejects nothing on its account.
+   */
   blockingIntentTitles: readonly string[]
   /** The bound intent's work session holds an unanswered `AskUserQuestion`. */
   pendingQuestion: boolean
@@ -288,7 +294,8 @@ export function validateAdvisorProposal(
   }
 
   if (action === 'resume_work_session') {
-    // RM-A12 — a second concurrent work session is never opened, by anyone.
+    // RM-A12 — a conflicting concurrent work session is never opened, by anyone.
+    // Which sessions conflict is decided by the caller's facts, not here.
     const blocking = facts.blockingIntentTitles[0]
     if (blocking !== undefined) {
       return reject('concurrency_gate', `工作区已有「${blocking}」的工作会话在运行`, true, {

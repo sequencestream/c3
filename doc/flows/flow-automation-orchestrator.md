@@ -51,11 +51,13 @@ flowchart TD
 1. **web-console → intent-management。** `start_workflow`。每个工作区最多一个队列;第二次启动
    是空操作,只会返回当前状态(`RM-A2`)。**启停意愿被持久化**:服务重启后,启动时的全工作区
    对账会从持久事实恢复队列,而不是静默变回 `idle`(`RM-A20`)。
-2. **全局并发闸门(语义不变)。** 在挑选下一个意图之前,若该工作区中**任何**一个 `in_progress`
-   的意图(包括手动启动的)有一个**真正在运行**的工作会话,队列不 launch 新意图,状态为
-   `awaiting_gate`(`RM-A12`)。一个**悬空(dangling)**的会话不会阻塞 —— 而现在这一点是由每轮
-   的**存活探测**保证的:一个已死的阻塞会话不再出现在存活集合中,闸门随即释放,不必等一个
-   永远不会到来的 settle(`RM-A10`)。
+2. **并发闸门(`RM-A12`)。** 闸门要挡的是两个工作会话改同一份文件,作用范围随 Git 分支模式:
+   `current-branch` 下所有意图共用一份检出,该工作区中**任何**一个 `in_progress` 意图(包括手动
+   启动的)有**真正在运行**的工作会话时,队列不 launch 新意图,状态为 `awaiting_gate`;
+   `worktree` 下每条意图各有独立目录,运行中的会话只代表它自己,队列在观察它的同时可另选一个
+   合格意图,多条意图并行开发(每轮仍最多一个新的工作动作)。一个**悬空(dangling)**的会话两种
+   模式下都不阻塞 —— 这由每轮的**存活探测**保证:已死的阻塞会话不再出现在存活集合中,闸门随即
+   释放,不必等一个永远不会到来的 settle(`RM-A10`)。
 3. **挑选。** 符合资格的条件是:`automate` 为真,且 `status ∈ {todo, in_progress}`,且所有已知的
    `dependsOn` 都是 `done`;在 worktree 模式下,若某个 `done` 依赖的 PR/MR 尚未确认为
    `merged`,则依然会阻塞,因为其代码是否已进入主干尚不确定。当工作区启用了 SDD
@@ -79,12 +81,12 @@ flowchart TD
 3. **Fresh(全新)**——否则,一个 `todo` 或**悬空**的意图会启动一个全新的工作会话(可配置技能),
    与手动启动相同的悬空规则(`RM-R8`)。
 
-这三态**不再只属于队列内核**:同一次解析下沉进了共享的 `launchWorkSession`,因此手动
-「开始开发」按钮与 MCP `start_session_for_intent` 走同一条路径,对同一组事实产生同一结果。
-`RM-A12` 的全局并发闸门也随之下沉到该函数内——它在**发起或恢复任何新 turn 之前**求值,
-**对人工入口同样成立**(此前只有队列调度循环受约束,`start_session_for_intent` 完全不受约束):
-同工作区若有**其它**意图的工作会话正在运行,fresh 与 resume 都被拒(`intent.concurrencyGate`);
-attach 到意图**自己**正在跑的会话不构成第二个并发 turn,不受该闸门约束;悬空会话从不阻塞。
+这三态属于共享的 `launchWorkSession`,而非队列内核独有:手动「开始开发」按钮与 MCP
+`start_session_for_intent` 走同一条路径,对同一组事实产生同一结果。`RM-A12` 的并发闸门也在该
+函数内、在**发起或恢复任何新 turn 之前**求值,对人工入口与 MCP 入口同样成立:`current-branch`
+下同工作区若有**其它**意图的工作会话正在运行,fresh 与 resume 都被拒
+(`intent.concurrencyGate`),`worktree` 下则放行。attach 到意图**自己**正在跑的会话不构成第二个
+并发 turn,不受该闸门约束;悬空会话从不阻塞。
 底层存在**未作答**的 `AskUserQuestion` 时不得 resume——续跑提示绝不代替用户的答案
 (`intent.pendingQuestionUnanswered`,`RM-A11`/`C-SEC-3`)。
 

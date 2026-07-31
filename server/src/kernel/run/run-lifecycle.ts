@@ -22,6 +22,7 @@ import { canFormTeam } from '../agent/adapters/capabilities.js'
 import {
   runViaDriver,
   type IntentProfile,
+  type ResearchProfile,
   type SessionMcpProfile,
   type SpecProfile,
 } from './run-via-driver.js'
@@ -112,6 +113,16 @@ export interface LaunchRunDeps {
    */
   specProfile?: (workspacePath: string) => SpecProfile
   /**
+   * Discussion-research launch profile (read-only `discussion-research` gate +
+   * disallowed-tools lock + research system prompt), injected at the composition
+   * root so the kernel launcher never imports `features/` (ADR-0009 R1). Consulted
+   * ONLY for a runtime carrying the research marker (`rt.researchDiscussionId`) —
+   * never for the orchestrator's per-agent discussion sessions. A research-marked
+   * runtime launched without it throws: a missing wiring is a bug, never a silent
+   * downgrade of a read-only follow-up into a write-capable run.
+   */
+  researchProfile?: (workspacePath: string) => ResearchProfile
+  /**
    * Work-session base MCP profile (`publish_event`), injected at the
    * composition root so the kernel launcher never imports `features/` (ADR-0009
    * R1). Consulted ONLY for `rt.sessionKind === 'work'` runs — every new and resumed
@@ -198,6 +209,9 @@ export async function launchRun(
   let runId = rt.sessionId
   const isIntent = rt.sessionKind === 'intent'
   const isSpec = rt.sessionKind === 'spec'
+  // The research marker, NOT `sessionKind === 'discussion'`: the orchestrator's
+  // per-agent sessions share that kind and must never pick up the research profile.
+  const isResearch = !!rt.researchDiscussionId
   // The model's user turn: a slash-command dev-skill prefix (when present) + the
   // visible body. The system instruction is delivered separately (claude's preset
   // system append for work runs), so it never appears in the user turn. The client
@@ -217,6 +231,14 @@ export async function launchRun(
   if (isSpec && !deps.specProfile) {
     throw new Error(
       '[c3] launchRun: a spec runtime requires deps.specProfile (composition-root wiring missing)',
+    )
+  }
+  // Same loud-throw for a research-marked runtime: a follow-up turn on a discussion's
+  // research session MUST carry the read-only gate + disallowed-tools lock. Never
+  // launch it as an ordinary (write-capable) run because the wiring is missing (C-SEC).
+  if (isResearch && !deps.researchProfile) {
+    throw new Error(
+      '[c3] launchRun: a research runtime requires deps.researchProfile (composition-root wiring missing)',
     )
   }
 
@@ -252,11 +274,15 @@ export async function launchRun(
     isIntent && deps.intentProfile ? deps.intentProfile(workspacePath, runId) : undefined
   const resolvedSpecProfile =
     isSpec && deps.specProfile ? deps.specProfile(workspacePath) : undefined
+  const resolvedResearchProfile =
+    isResearch && deps.researchProfile ? deps.researchProfile(workspacePath) : undefined
   // Resolve the work-session base MCP profile once (publish_event), for plain
-  // work sessions only — never for intent/spec runs (those carry their own
+  // work sessions only — never for intent/spec/research runs (those carry their own
   // profiles). Both the claude path and the driver path consume it (2026-06-20).
   const resolvedSessionProfile =
-    !isIntent && !isSpec && deps.sessionProfile ? deps.sessionProfile(workspacePath) : undefined
+    !isIntent && !isSpec && !isResearch && deps.sessionProfile
+      ? deps.sessionProfile(workspacePath)
+      : undefined
 
   // Sandbox launch (arapuca process-level isolation): the entry condition is the
   // workspace's `enabled` master switch AND this run's `sessionKind` being in
@@ -320,6 +346,26 @@ export async function launchRun(
   // `system`/`claude` vendors fall through to the claude path.
   {
     const vendor = resolveAgent(resolveSessionLaunch(runId).agentId).vendor
+    // A research session is always bound to a claude agent (the research pass is
+    // claude-hardwired), so this can only be reached if that binding was lost. The
+    // driver path has no `discussion-research` gate, so running there would silently
+    // trade the read-only lock for the vendor's own policy — refuse instead (C-SEC).
+    if (vendor === 'codex' && isResearch) {
+      const error =
+        '[c3] research session resolved to a non-claude agent — refusing to run without the read-only research gate.'
+      console.warn(error)
+      emit(runId, { type: 'user_text', text: prompt })
+      emit(runId, { type: 'turn_end', reason: 'error', error })
+      finalizeRun(runId)
+      deps.eventBus.publish('run:settled', {
+        sessionId: runId,
+        workspacePath,
+        reason: 'error',
+        sessionKind: rt.sessionKind,
+        runKind: rt.runKind,
+      })
+      return
+    }
     if (vendor === 'codex') {
       const adapter = deps.getCodexAdapter?.()
       if (adapter)
@@ -462,11 +508,12 @@ export async function launchRun(
           // WorkCenter events off this, NOT the effective worktree cwd above.
           workspacePath,
           signal: attemptAbort.signal,
-          // Intent chats (and spec sessions) are pinned to `default` so the
-          // gateway always runs. This is the claude-hardwired path (vendor ===
-          // 'claude'), so the session's ModeToken is always a Claude
+          // Intent chats, spec sessions and research sessions are pinned to
+          // `default` so the gateway always runs. This is the claude-hardwired path
+          // (vendor === 'claude'), so the session's ModeToken is always a Claude
           // `PermissionMode` (2026-06-07-012).
-          permissionMode: isIntent || isSpec ? 'default' : (rt.mode as PermissionMode),
+          permissionMode:
+            isIntent || isSpec || isResearch ? 'default' : (rt.mode as PermissionMode),
           // Reconnect forces `resume: runId` (same SDK session, full context —
           // AS-R18). First attempt resumes an existing session; degradation
           // retries never resume (each gets a fresh SDK session).
@@ -504,21 +551,26 @@ export async function launchRun(
                 // spec prompt); `specDir` rides on the runtime (per-run). Like
                 // intent, excluded from socket auto-resume (one-shot lifecycle).
                 { ...deps.specProfile!(workspacePath), specDir: rt.specDir }
-              : // Socket auto-resume is for ordinary user sessions only — the
-                // intent comm agent is excluded (different lifecycle). A work run's
-                // internal instruction (SDD work contract) rides claude's preset
-                // system append here, so it reaches the model without being echoed.
-                // Work sessions also get the base MCP profile (publish_event)
-                // over the loopback HTTP MCP route; the gate stays 'standard'.
-                {
-                  ...(inject?.systemInstruction
-                    ? { appendSystemPrompt: inject.systemInstruction }
-                    : {}),
-                  ...(resolvedSessionProfile ? { bindMcp: resolvedSessionProfile.bindMcp } : {}),
-                  onSocketDisconnect: (info) => {
-                    socketInfo = info
-                  },
-                }),
+              : isResearch
+                ? // The discussion-research read-only profile (gate + disallowed-tools
+                  // lock + research prompt), re-applied on every follow-up turn so a
+                  // resumed research session can still only read.
+                  resolvedResearchProfile!
+                : // Socket auto-resume is for ordinary user sessions only — the
+                  // intent comm agent is excluded (different lifecycle). A work run's
+                  // internal instruction (SDD work contract) rides claude's preset
+                  // system append here, so it reaches the model without being echoed.
+                  // Work sessions also get the base MCP profile (publish_event)
+                  // over the loopback HTTP MCP route; the gate stays 'standard'.
+                  {
+                    ...(inject?.systemInstruction
+                      ? { appendSystemPrompt: inject.systemInstruction }
+                      : {}),
+                    ...(resolvedSessionProfile ? { bindMcp: resolvedSessionProfile.bindMcp } : {}),
+                    onSocketDisconnect: (info) => {
+                      socketInfo = info
+                    },
+                  }),
           send: (m) => emit(runId, m),
           // Permission-event hook: the session id is a getter because `runId`
           // changes on pending→real bind (onSessionId reassigns it).

@@ -2025,8 +2025,11 @@
       "conclusion": {
         "label": "Conclusion"
       },
+      "researchSession": {
+        "label": "Research session"
+      },
       "process": {
-        "label": "Process"
+        "label": "Process session"
       },
       "details": {
         "label": "Details"

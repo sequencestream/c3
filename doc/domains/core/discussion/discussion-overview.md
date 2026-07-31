@@ -43,6 +43,25 @@ discussion/intent 数据库中。
   运行 —— 若人类在调研期间已手动 Start/取消则跳过）。调研例程返回其是否
   成功以及调研结果（输出为空则结果为空 —— 绝不返回用户的上下文）；一次
   **调研失败**会让讨论保持 `draft` 状态，回退到手动 **Start**，且不会自动启动。
+- **调研运行是一个正式会话（2026-07-30）**：调研跑批不再是一次性的黑盒调用。厂商一报出
+  session id，服务端就把它持久化到讨论的 `researchSessionId`、冻结 session→agent 事实
+  （固定为 claude 智能体，否则后续追问无法 resume）、以该 id 注册一个 `SessionRuntime`
+  并把整条线材事件流灌进去，同时写一行
+  `session_metadata(session_kind='discussion', owner_kind='discussion', owner_id=<讨论 id>)`
+  投影 —— 于是 transcript 由厂商自己落盘、结束后仍可 resume、在 Sessions 页归入既有的
+  「讨论」类别，无需为每条消息新增任何持久化。**追问走既有会话通道**：在「研究会话」标签里
+  发言就是对该会话的一次普通 prompt，停止就是普通的 Stop，不新增任何讨论专用的
+  speak/stop 链路。**只读闸在每一轮都成立**：调研的启动画像（调研系统提示 + 禁用工具锁 +
+  `discussion-research` 闸）由**运行时上的调研标记**（所属讨论 id）选择，而不是仅凭
+  `sessionKind`（编排器的每-智能体会话同样是 `discussion`，绝不能沾上调研角色）；
+  冷启动打开一个 id 命中某讨论 `researchSessionId` 的会话时，运行时会以讨论 kind +
+  调研标记重建，缺少画像接线时**大声抛错而非降级成可写运行**。**结果回写只有一条规则**，
+  首轮与每一次追问共用：一轮结算时取该会话最后一条助手文本，非空则整体替换
+  `researchResult` 并推送刷新后的讨论列表（空/失败的一轮保留原值），随后在最新记录上
+  重新评估自动启动守卫 —— 首轮照常自动启动、追问无法在已运行/已结束的讨论上重复触发，
+  而一次挽救了失败首轮的追问仍然可以启动编排。运行时的调研流
+  （`research_message` / `research_run_status` / 快照重放）**原样保留**，因此「过程会话」
+  的渲染完全不变；调研进行中同一份内容会同时出现在两个标签里，本轮接受这一冗余。
 - 前端：discussion-view 的“+”打开一个内联创建表单（类型下拉 / goal / context）；
   提交后右侧面板会**自动打开新讨论**（服务端 `discussion_detail` 回复）。
   右侧面板是**两阶段**的：当调研运行处于存活状态时（research-states / `research_run_status`

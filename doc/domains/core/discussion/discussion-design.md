@@ -39,7 +39,8 @@ create-if-not-exists）：
   `status`、`agenda`（text，非空，默认一个空 JSON 数组 —— 组织者的有序子话题）、
   `agenda_index`（integer，非空，默认 0 —— 从 0 开始的当前子话题；等于议程长度
   ⇒ 全部完成）、`conclusion`（可空）、`metadata`（text，非空，默认一个空 JSON 对象 ——
-  调用方的扁平业务标注）、`created_at`、`updated_at`、`completed_at`（可空）。按
+  调用方的扁平业务标注）、`research_session_id`（可空 —— 调研跑批自身的厂商 session id；
+  NULL/`''` 表示该讨论没有调研会话）、`created_at`、`updated_at`、`completed_at`（可空）。按
   `(workspace_path, status)` 建索引。
 - discussion messages —— `id`（PK）、`discussion_id`、`seq`、`speaker_kind`、`speaker_agent_id`
   （可空）、`speaker_name`（可空）、`content`、`created_at`。按 `(discussion_id, seq)` 建索引——
@@ -49,10 +50,13 @@ create-if-not-exists）：
   可恢复轮次的当前厂商转录的唯一事实来源（SoT）。统一的 Sessions 页不直接读取
   这张表；生命周期钩子会把当前行镜像到 `session_metadata` 中，带
   `session_kind='discussion'` / `owner_kind='discussion'` / `owner_id=<discussion.id>`。
+  **调研会话不进这张表**（它按参与智能体建键，调研不属于任何参与者），而是记在
+  `discussions.research_session_id` 上，并写同样形状的 `session_metadata` 投影行。
 
-**Schema 版本（当前：v6）**，通过数据库版本计数器写入。v2→v3
+**Schema 版本（当前：v7）**，通过数据库版本计数器写入。v2→v3
 新增了 `participant_agent_ids`；v4→v5 新增了 `organizer_agent_id`；v5→v6 新增了
-`metadata`（历史行经列默认值回填为空对象）；**v3→v4 原地将工作区键列 `project_path` 重命名为
+`metadata`（历史行经列默认值回填为空对象）；v6→v7 新增了 `research_session_id`
+（可空，历史行保持 NULL —— 历史调研跑批没有留下任何厂商会话，无从回填）；**v3→v4 原地将工作区键列 `project_path` 重命名为
 `workspace_path`**（复合索引重建），在 schema-ensure 步骤之前运行——
 幂等，从不删表。这**有意地**与向后兼容的 `projectConfigs`
 settings.json 键不同步（见 `database/migrate/2026/06/14/012`）。这个单一的共享版本计数器
@@ -62,7 +66,7 @@ settings.json 键不同步（见 `database/migrate/2026/06/14/012`）。这个�
 
 **幂等的增量迁移。** 在 schema-ensure 步骤之后、写入版本
 计数器之前，store 会回填可选/可空的列（`goal`、`context`、`research_result`、
-`agenda`、`agenda_index`、`conclusion`、`metadata`、`completed_at`）：每一列都会检查表的列集合，仅在
+`research_session_id`、`agenda`、`agenda_index`、`conclusion`、`metadata`、`completed_at`）：每一列都会检查表的列集合，仅在
 该列缺失时才添加。这是一种**防御性的前向兼容回填**——一张由早期开发中构建版本
 （早于这些列存在）创建的 discussions 表会被原地升级；对于
 全新 schema，每次调用都是空操作，整个序列在多次运行间都是幂等的。与
@@ -90,6 +94,11 @@ store 的降级契约一致。
 - **设置上下文** —— 替换用户提供的 `context` + 更新 `updated_at`。
 - **设置调研结果** —— 将调研智能体已完成的输出存入 research-result 列
   （与 `context` 分开保存）+ 更新 `updated_at`。
+- **绑定调研会话 / 按调研会话反查讨论** —— 把调研跑批捕获到的厂商 session id 写入
+  `research_session_id`（每次跑批写一次，重跑覆盖，使指针始终指向最新的一次调研；
+  **不**更新 `updated_at` —— 绑定一个 id 不是内容变更，不应让讨论列表的排序跳动），
+  以及按该 id 反查所属讨论。后者是「这是不是一个调研会话？」的判据，供启动画像与
+  冷启动运行时重建使用，因此保持廉价且绝不抛错：数据库不可用时降级为 null。
 - **设置业务 metadata** —— 以**整体替换**（不是合并）的方式写入扁平
   `string→string` 标注（序列化为 JSON 对象）+ 更新 `updated_at`。唯一调用方是 MCP
   `start_discussion`，它先按 automation metadata 的容量/长度上限校验；读取时对
@@ -249,6 +258,36 @@ Web UI 的启动，以及 `continue_discussion`（对已结束讨论开启新一
 调研智能体的输出写入 research-result 列（仅在非空时写入）；用户
 原始的 `context` **绝不**被覆盖。组织者引擎的提示语背景来源在
 调研结果存在时取自它，否则回退到用户的原始上下文。
+
+**调研作为一个正式会话（2026-07-30）。** 上面的运行时调研流原样保留；在它之上，调研
+跑批还拥有一个**会话身份**：
+
+- **绑定。** 调研例程新增三个观测点 —— 上报厂商 session id、把每条**原始线材事件**外发、
+  接受一个外部 abort 信号；并且它现在解析一个 **claude 智能体**（跑批本身是 claude 硬编码
+  路径，选到别的厂商会让后续追问无法 resume）并按通用启动路径的方式接上 relay/model/env。
+  wiring 一拿到 id 就：写入 `research_session_id` → 冻结 session→agent 事实 → 以该 id
+  `ensureRuntime`（`sessionKind='discussion'`、`runKind='internal'`、`rt.run` 指向调研的
+  abort controller、状态置 `running`）并打上**调研标记** `rt.researchDiscussionId` →
+  写 `session_metadata` 投影行 → 冲刷绑定前缓存的线材事件 → 推送讨论列表（让已打开的
+  讨论立刻拿到 `researchSessionId`）。绑定前的事件先缓存后冲刷，因此运行时缓冲区始终是
+  完整的一次运行。结算时只解除 `rt.run` 并 `finalizeRun`，**保留运行时**，观察者的重放
+  不受影响。
+- **追问与停止走既有通道。** `user_prompt` / `stop_run` 本就是按当前查看的运行时分发的，
+  无需任何讨论专用的新消息类型。
+- **启动画像 + 冷启动重建（安全关键的一对，必须同时成立）。** 通用启动路径按
+  `rt.researchDiscussionId` 选择调研画像（调研系统提示 + 禁用工具锁 +
+  `discussion-research` 闸 + 钉死 `permissionMode='default'`），**不**按 `sessionKind`
+  ——编排器的每-智能体会话同样是 `discussion`。缺少画像接线时抛错；调研会话若解析到
+  非 claude 智能体（driver 路径没有这个闸），直接以 error 结算而非降级成可写运行。
+  `select_session` 冷启动时按 `research_session_id` 反查，命中则以讨论 kind + 调研标记
+  重建运行时；未命中的会话语义完全不变。
+- **结果回写只有一条规则**，首轮与追问共用：非空的最后一条助手文本整体替换
+  `researchResult`（空/失败的一轮保留原值）→ 推送刷新后的讨论列表 → 在**最新**记录上
+  重新评估自动启动守卫（失败的一轮跳过这一步）。首轮在自身的 `.then()` 里直接调用它；
+  追问由 `run:settled`（`sessionKind='discussion'`）的常驻订阅按 `research_session_id`
+  反查后调用，文本取自该会话运行时缓冲区中**本轮**的最后一条 `assistant_text`
+  （`user_text` 重置累加器，因此上一轮的结论不会漏进空的一轮）。首轮的 `run:settled`
+  以**讨论 id** 结算，反查不命中，因此两条路径不会重复触发。
 
 ```
 draft ──start_discussion / 调研后自动启动──▶ in_progress ──(走完工作流各阶段)──▶ completed（结论已写入）

@@ -2025,8 +2025,11 @@
       "conclusion": {
         "label": "结论"
       },
+      "researchSession": {
+        "label": "研究会话"
+      },
       "process": {
-        "label": "过程"
+        "label": "过程会话"
       },
       "details": {
         "label": "详情"

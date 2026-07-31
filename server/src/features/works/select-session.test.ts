@@ -62,12 +62,17 @@ vi.mock('../../kernel/agent-config/index.js', () => ({
 }))
 vi.mock('../../kernel/agent/process/launcher.js', () => ({ probeAll: vi.fn(() => []) }))
 vi.mock('../intents/store.js', () => ({ findIntentIdBySessionId: vi.fn(() => null) }))
+vi.mock('../discussions/store.js', () => ({
+  findDiscussionByResearchSessionId: vi.fn(() => null),
+}))
 
 import { selectSession } from './index.js'
 import { loadHistory, sessionTitle } from '../../sessions.js'
 import { resolveSessionVendor } from '../../kernel/agent-config/index.js'
 import { getByC3Id } from '../sessions/session-metadata-store.js'
 import { findIntentIdBySessionId } from '../intents/store.js'
+import { findDiscussionByResearchSessionId } from '../discussions/store.js'
+import { ensureRuntime } from '../../runs.js'
 import { CodexSessionStore } from '../../kernel/agent/adapters/codex/index.js'
 
 afterEach(() => vi.clearAllMocks())
@@ -224,5 +229,43 @@ describe('select_session', () => {
     expect(sel?.sessionKind).toBe('automation')
     expect(sel?.ownerKind).toBe('automation')
     expect(sel?.ownerId).toBe('automation-1')
+  })
+})
+
+describe('select_session — cold restore of a discussion research session', () => {
+  it('rehydrates it as a discussion runtime carrying the research marker', async () => {
+    // The security half of the profile pair: without the marker the next follow-up
+    // turn would launch as an ordinary, write-capable work run.
+    vi.mocked(findDiscussionByResearchSessionId).mockReturnValue({ id: 'disc-1' } as never)
+    const conn = fakeConn()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspaceId: '/abs/proj',
+      sessionId: 'vsess-research',
+    })
+    expect(ensureRuntime).toHaveBeenCalledWith(
+      'vsess-research',
+      '/abs/proj',
+      'default',
+      [],
+      'discussion',
+    )
+    const rt = vi.mocked(ensureRuntime).mock.results[0].value as { researchDiscussionId?: string }
+    expect(rt.researchDiscussionId).toBe('disc-1')
+  })
+
+  it('an ordinary session keeps the default work kind and carries no marker', async () => {
+    vi.mocked(findDiscussionByResearchSessionId).mockReturnValue(null)
+    const conn = fakeConn()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await selectSession({} as any, conn as any, {
+      type: 'select_session',
+      workspaceId: '/abs/proj',
+      sessionId: 'plain-2',
+    })
+    expect(ensureRuntime).toHaveBeenCalledWith('plain-2', '/abs/proj', 'default', [], 'work')
+    const rt = vi.mocked(ensureRuntime).mock.results[0].value as { researchDiscussionId?: string }
+    expect(rt.researchDiscussionId).toBeUndefined()
   })
 })

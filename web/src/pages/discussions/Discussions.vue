@@ -6,10 +6,16 @@
  * (讨论标题 + Start/Pause/Resume/Convert 动作 + 运行状态)跨 tab 不变;其下 Tab 栏
  * 切换互斥内容区:
  *  - 目标 / 上下文 / 研究 / 结论:markdown 字段(空则该 tab 不渲染),经 MarkdownText 渲染;
- *  - 过程:现有右栏过程内容 —— research 阶段研究流 / discussion 阶段 AgendaProgress +
+ *  - 研究会话:讨论的研究跑批本身就是一个正式会话,此 tab 以复用的 ChatColumn 渲染其完整
+ *    transcript(含工具块)+ 状态栏(运行态/停止)+ 输入框;沿用意图详情会话 tab 的「单一
+ *    活动会话」对齐规则(仅当全局活动会话 === 期望的 researchSessionId 才渲染,避免串台),
+ *    未对齐时由本组件补发 open-research-session 交回控制层。仅在讨论已有 researchSessionId
+ *    时出现;在此追问会 resume 该会话并改写「研究」tab 的内容;
+ *  - 过程会话:现有右栏过程内容 —— research 阶段研究流 / discussion 阶段 AgendaProgress +
  *    讨论流 transcript + dispatch 在途/失败状态 + composer 输入框,逻辑整体归位于此;
  *  - 详情:结构化元信息(类型/状态/创建/完成时间)。
- * 过程 / 详情恒存在;默认 tab 按 conclusion → process → research → goal 取首个可见项。
+ * 过程会话 / 详情恒存在;研究运行中默认落「研究会话」,否则按 conclusion → process →
+ * research → goal 取首个可见项。
  *
  * 所有数据与运行态由 App.vue 持有,经 props 注入;用户动作(打开/创建/开始/暂停/恢复/
  * 转需求/发言)经 emit 上抛。tab 选中态是页面内部展示状态,不写回 App 或协议。
@@ -22,6 +28,7 @@ import DiscussionList from './components/DiscussionList/DiscussionList.vue'
 import AgendaProgress from './components/AgendaProgress/AgendaProgress.vue'
 import SessionTitleBar from '../../components/SessionTitleBar/SessionTitleBar.vue'
 import ChatMessages from '../../components/ChatMessages/ChatMessages.vue'
+import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
 import MarkdownText from '../../components/MarkdownText/MarkdownText.vue'
 import {
   correctActiveTab,
@@ -36,8 +43,17 @@ import {
 import { formatDate } from '../../lib/intent-list-view'
 import { listDiscussionTypes } from '@ccc/shared/discussion-types'
 import { useTypedI18n } from '@/i18n'
-import type { AgentConfig, Discussion } from '@ccc/shared/protocol'
-import type { ChatMsg } from '../../lib/chat-types'
+import type {
+  AgentConfig,
+  Discussion,
+  PromptImage,
+  SessionAgentSwitch,
+  SlashCommandInfo,
+  VendorId,
+} from '@ccc/shared/protocol'
+import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
+import type { PendingItem } from '../../lib/pending-queue'
+import type { TaskListModel } from '../../lib/task-list'
 
 const { t, locale } = useTypedI18n()
 
@@ -66,6 +82,28 @@ const props = defineProps<{
   agents: AgentConfig[]
   // The organizer (default agent) id — its participant row is locked on.
   defaultAgentId: string | null
+  // ---- Research session tab (the shared chat column) ----
+  // The globally active session id. The research chat renders only once it matches
+  // the open discussion's `researchSessionId` (single-active-session alignment).
+  activeSession: string | null
+  sessionTitle: string
+  sessionHasActive: boolean
+  sessionMessages: ChatMsg[]
+  actionablePermissionId: string | null
+  taskModel: TaskListModel
+  hasTaskStore?: boolean
+  running: boolean
+  teamActive: boolean
+  connection: 'connecting' | 'open' | 'closed'
+  activity: RunActivity
+  currentAgentName?: string
+  reconnecting?: boolean
+  sideEffectPending?: boolean
+  queue: PendingItem[]
+  availableCommands: SlashCommandInfo[]
+  voiceLang: string
+  vendor?: VendorId | null
+  agentSwitch?: SessionAgentSwitch | null
 }>()
 
 const emit = defineEmits<{
@@ -89,6 +127,19 @@ const emit = defineEmits<{
   'submit-input': []
   // mobile drill-down: back to a previous pane
   'mobile-back': [targetKey: string]
+  // ---- Research session tab → the existing session channel ----
+  // Bind the global active session to the open discussion's research session.
+  'open-research-session': [sessionId: string]
+  respond: [m: PermissionMsg, decision: 'allow' | 'deny']
+  'submit-ask': [m: PermissionMsg, answers: Record<string, string>]
+  refresh: []
+  'edit-queued': [item: PendingItem]
+  'delete-queued': [id: number]
+  'session-submit': [text: string, images: PromptImage[]]
+  'session-enqueue': [text: string, images: PromptImage[]]
+  stop: []
+  continue: []
+  'list-commands': []
 }>()
 
 // ---- Mobile drill-down state ----
@@ -123,20 +174,52 @@ const tabs = computed(() =>
 )
 const activeTab = ref<DiscussionTabKind>('process')
 
-// On discussion switch, land on the default tab (conclusion → process → research → goal):
-// a finished discussion opens on its conclusion, an in-progress one on the live process.
+// Research liveness — the parent's right-pane phase is exactly「研究跑批在跑吗」.
+const researchLive = computed(() => props.phase === 'research')
+
+// On discussion switch, land on the default tab: research running ⇒ 研究会话 (watch and
+// steer the run), else conclusion → process → research → goal — a finished discussion
+// opens on its conclusion, an in-progress one on the live process.
 watch(
   () => props.activeDiscussion?.id,
   () => {
-    activeTab.value = defaultDiscussionTab(tabs.value)
+    activeTab.value = defaultDiscussionTab(tabs.value, researchLive.value)
   },
   { immediate: true },
 )
 // On live field changes within the same discussion (a markdown tab appears/disappears),
 // keep the current tab if still visible, else fall back to the default chain.
 watch(tabs, (next) => {
-  activeTab.value = correctActiveTab(next, activeTab.value)
+  activeTab.value = correctActiveTab(next, activeTab.value, researchLive.value)
 })
+
+// ---- Research session chat column ----
+// The session this tab expects to render, and whether the global active session has
+// caught up with it. Rendering only on alignment is what keeps a fast discussion
+// switch from cross-wiring two transcripts (same rule as the intent detail's tabs).
+const expectedResearchSessionId = computed<string | null>(
+  () => props.activeDiscussion?.researchSessionId ?? null,
+)
+const researchChatReady = computed<boolean>(
+  () =>
+    expectedResearchSessionId.value !== null &&
+    props.activeSession === expectedResearchSessionId.value,
+)
+// While the research-session tab is open, ask the control layer to select that session
+// whenever it is not the active one — including when the id only arrives later (the
+// research run binds it mid-flight). Already aligned ⇒ no re-send.
+watch(
+  () => [activeTab.value, expectedResearchSessionId.value, props.activeSession] as const,
+  () => {
+    const expected = expectedResearchSessionId.value
+    if (activeTab.value !== 'researchSession' || !expected) return
+    if (props.activeSession !== expected) emit('open-research-session', expected)
+  },
+  // `immediate` covers the case where the tab is already the default at mount
+  // (research running when the discussion opens) — the id watch above runs during
+  // setup, so a lazy watcher would never see that first value.
+  { immediate: true, flush: 'sync' },
+)
 
 // Readable discussion-type label for the details tab; unknown type falls back to its id.
 const TYPE_LABEL = new Map(listDiscussionTypes().map((ty) => [ty.id, ty.label]))
@@ -221,7 +304,8 @@ function typeLabel(d: Discussion): string {
           </SessionTitleBar>
 
           <!-- Tab bar under the title bar: goal / context / research / conclusion (only
-           when non-empty) + process + details. -->
+           when non-empty) + research session (only with a bound session) + process
+           session + details. -->
           <nav class="disc-pane-tabs" data-testid="discussion-pane-tabs">
             <button
               v-for="tab in tabs"
@@ -238,12 +322,62 @@ function typeLabel(d: Discussion): string {
             </button>
           </nav>
 
+          <!-- Research session tab: the discussion's research run rendered as a real
+           session — full transcript with tool blocks, status bar (live state + Stop)
+           and a composer whose follow-up resumes the research and rewrites the
+           「研究」 tab. Only rendered once the global active session matches this
+           discussion's research session, so a rapid discussion switch cannot show
+           another discussion's transcript here. -->
+          <div
+            v-if="activeTab === 'researchSession'"
+            class="disc-pane-process"
+            data-testid="discussion-research-session"
+          >
+            <p v-if="!researchChatReady" class="disc-research-loading">
+              {{ t('intent.chat.loading') }}
+            </p>
+            <ChatColumn
+              v-else
+              :active-title="sessionTitle"
+              :vendor="vendor"
+              :agent-switch="agentSwitch"
+              :show-title-bar="false"
+              :has-active-session="sessionHasActive"
+              :messages="sessionMessages"
+              :actionable-permission-id="actionablePermissionId"
+              :task-model="taskModel"
+              :has-task-store="hasTaskStore"
+              :running="running"
+              :team-active="teamActive"
+              :connection="connection"
+              :activity="activity"
+              :current-agent-name="currentAgentName"
+              :reconnecting="reconnecting"
+              :side-effect-pending="sideEffectPending"
+              :queue="queue"
+              :available-commands="availableCommands"
+              :voice-lang="voiceLang"
+              @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
+              @submit-ask="
+                (m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)
+              "
+              @refresh="emit('refresh')"
+              @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
+              @delete-queued="(id: number) => emit('delete-queued', id)"
+              @submit="(text: string, imgs: PromptImage[]) => emit('session-submit', text, imgs)"
+              @enqueue="(text: string, imgs: PromptImage[]) => emit('session-enqueue', text, imgs)"
+              @stop="emit('stop')"
+              @continue="emit('continue')"
+              @list-commands="emit('list-commands')"
+            />
+          </div>
+
           <!-- Process tab: the existing right-pane process content, kept in one flex
            column so ChatMessages still fills and scrolls. A real <div> (not a <template>)
            anchors the v-if chain so happy-dom can unmount it cleanly on tab switch.
            Research phase shows the live research stream; discussion phase shows agenda +
            transcript + dispatch + composer. -->
-          <div v-if="activeTab === 'process'" class="disc-pane-process">
+          <div v-else-if="activeTab === 'process'" class="disc-pane-process">
             <div
               v-if="phase === 'research'"
               class="disc-research-stream"
@@ -420,6 +554,13 @@ function typeLabel(d: Discussion): string {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+/* Research session tab, before the active session has caught up with the tab. */
+.disc-research-loading {
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-body);
+  color: var(--c-text-muted);
 }
 
 /* Markdown tab content: scrollable, comfortable reading width. */

@@ -111,6 +111,8 @@ import {
   isStoreAvailable as isWaitUserEventsStoreAvailable,
 } from '../features/user-involve/store.js'
 import { agentSwitchFor } from '../features/works/index.js'
+import { findDiscussionByResearchSessionId } from '../features/discussions/store.js'
+import { settleResearchSessionRun } from './discussion-runs.js'
 import { resolveSessionVendor } from '../kernel/agent-config/index.js'
 import {
   commitAndPush,
@@ -134,6 +136,13 @@ export interface DomainSubDeps {
   broadcastIntentSessions: (workspacePath: string) => void
   /** Fan the discussion list for a project to every connection (2026-06-08-010). */
   broadcastDiscussions: (workspacePath: string) => void
+  /**
+   * The discussion-research settle rule (`createDiscussionRuns().settleResearchTurn`).
+   * Applied here for the FOLLOW-UP half: a turn a user ran inside the 「研究会话」 tab
+   * settles on the generic session path, and its final text becomes the discussion's
+   * new `researchResult`.
+   */
+  settleResearchTurn: (discussionId: string, researchResult: string, ok: boolean) => void
   /** Fan the automation list for a workspace to every connection (2026-06-08-010). */
   broadcastAutomations: (workspacePath: string) => void
   /** Fan the wait-user-involve event (todo) list for a project to every connection. */
@@ -163,6 +172,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastWaitUserEvents,
     normalizeEvent,
     publishEvent,
+    settleResearchTurn,
   } = deps
 
   // Manual Start-Work session-end Git/PR cleanup deps (MSC-R1…R6). Stateless
@@ -389,9 +399,17 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   // `discussion-runs.ts` publish `run:started`/`run:bound` on start and
   // `run:settled` on finish/abort/error; this subscription reacts to the
   // latter to refresh the domain list.
-  eventBus.subscribe('run:settled', ({ workspacePath, sessionKind }) => {
+  eventBus.subscribe('run:settled', ({ workspacePath, sessionId, sessionKind, reason }) => {
     if (sessionKind !== 'discussion') return
     broadcastDiscussions(workspacePath)
+    // A settled turn on a discussion's RESEARCH session is a research turn: apply
+    // the shared settle rule so the follow-up's findings replace `researchResult`.
+    // The unattended first pass settles under the DISCUSSION id, so it never
+    // matches here — it applies the same rule inline in its own starter.
+    const researchOwner = findDiscussionByResearchSessionId(sessionId)
+    if (researchOwner) {
+      settleResearchSessionRun({ settleResearchTurn }, researchOwner.id, sessionId, reason)
+    }
   })
 
   // ── run:started (sessionKind=automation) — automation domain ──────────────────

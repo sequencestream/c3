@@ -1983,13 +1983,48 @@ export interface Intent {
    * Persisted so the quality-gate state survives reconnect / refresh.
    */
   specApproved: boolean
-  /** Who approved the spec (the approving user's id/handle); `null` until approved. */
+  /**
+   * Who approved the spec; `null` until approved. Either the approving user's
+   * id/handle, or the reserved {@link MACHINE_SPEC_APPROVER} constant when the
+   * queue approved it under the workspace's machine-approval opt-in. The constant
+   * never impersonates a login subject, so the UI can always tell the two apart.
+   */
   specApproveUser: string | null
   /**
    * The c3SessionId of the session that authored / refined the spec; `null` when
    * none. Distinct from `lastWorkSessionId` (the work session).
    */
   specSessionId: string | null
+  /**
+   * The c3SessionId of the read-only session that last reviewed the spec; `null`
+   * when the spec was never reviewed. Distinct from {@link specSessionId} — the
+   * author and the reviewer are separate sessions with separate permissions.
+   */
+  specReviewSessionId: string | null
+  /** The current review conclusion; `null` when no valid conclusion exists. */
+  specReviewVerdict: SpecReviewVerdict | null
+  /** The reviewer's rationale for {@link specReviewVerdict}; `null` when none. */
+  specReviewReason: string | null
+  /** When the current conclusion was produced (epoch ms); `null` when none. */
+  specReviewAt: number | null
+  /**
+   * The spec-content fingerprint the current conclusion was produced against. A
+   * conclusion is only valid while this equals the spec file's live fingerprint —
+   * editing the spec invalidates it and the flow reviews the new content.
+   */
+  specReviewFingerprint: string | null
+  /**
+   * How many rework rounds this intent's spec has been through (a
+   * `changes_requested` conclusion that sent the author back). `0` for historic
+   * rows; capped by {@link MAX_SPEC_REVIEW_REWORK_ROUNDS}.
+   */
+  specReviewReworkRounds: number
+  /**
+   * `true` when a human revoked an approval while this exact conclusion stood, so
+   * the queue must not machine-approve the SAME conclusion again on the next tick.
+   * Only a fresh valid conclusion or a human approval clears it.
+   */
+  specReviewMachineApprovalBlocked: boolean
   /**
    * The c3SessionId of the intent's refine / communication session; `null` when
    * none. Distinct from `lastWorkSessionId` (the work session) — this is the
@@ -2529,13 +2564,25 @@ export const MAX_EVENT_FILTERS = 16
  *   derivation.
  * - `spec`        — a spec-authoring session: writes confined to the intent's
  *   spec directory (path-level write gate), the project read-only elsewhere.
+ * - `spec_review` — a spec-REVIEW session: strictly read-only. It reads the spec,
+ *   the repository source and this project's intents, and reports its verdict
+ *   through one narrow submit tool. It deliberately does NOT reuse `spec`, which
+ *   would silently grant the spec directory's write permission — a reviewer never
+ *   edits the document it reviews.
  *
  * Migration (2026-06-26): split out of the old `RunKind`, whose 7 business values
  * moved here verbatim with `'session' → 'work'`. Business-source judgements (which
  * scenario may trigger a automation, which security gate applies) read `sessionKind`.
  */
 export type SessionKind =
-  'work' | 'intent' | 'discussion' | 'automation' | 'consensus' | 'tool' | 'spec'
+  | 'work'
+  | 'intent'
+  | 'discussion'
+  | 'automation'
+  | 'consensus'
+  | 'tool'
+  | 'spec'
+  | 'spec_review'
 
 /**
  * All {@link SessionKind} values, for runtime validation and UI iteration (kept in
@@ -2550,6 +2597,7 @@ export const SESSION_KINDS = [
   'consensus',
   'tool',
   'spec',
+  'spec_review',
 ] as const satisfies readonly SessionKind[]
 
 /**

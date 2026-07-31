@@ -131,7 +131,7 @@ const steps = computed<{ key: DevLaunchStep; label: string; status: StepStatus }
   justify-content: center;
 }
 .dso-check {
-  color: var(--c-success, #2e9e44);
+  color: var(--c-success-text);
   font-size: 14px;
   line-height: 1;
 }

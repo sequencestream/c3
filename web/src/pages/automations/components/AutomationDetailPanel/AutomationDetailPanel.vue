@@ -424,15 +424,15 @@ watch(
   background: var(--c-hover);
 }
 .sp-action--run:hover:not(:disabled) {
-  color: var(--c-success);
+  color: var(--c-success-text);
   border-color: var(--c-success);
 }
 .sp-action--edit:hover:not(:disabled) {
-  color: var(--c-primary);
+  color: var(--c-primary-text);
   border-color: var(--c-primary);
 }
 .sp-action--delete:hover:not(:disabled) {
-  color: var(--c-error);
+  color: var(--c-error-text);
   border-color: var(--c-error);
 }
 .sp-action:disabled {
@@ -498,7 +498,7 @@ watch(
   color: var(--c-text);
 }
 .sched-panel-tab.active {
-  color: var(--c-primary);
+  color: var(--c-primary-text);
   border-bottom-color: var(--c-primary);
 }
 

@@ -535,7 +535,7 @@ function typeLabel(d: Discussion): string {
   color: var(--c-text);
 }
 .disc-pane-tab.active {
-  color: var(--c-primary);
+  color: var(--c-primary-text);
   border-bottom-color: var(--c-primary);
 }
 

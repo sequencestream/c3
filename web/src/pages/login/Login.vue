@@ -127,18 +127,18 @@ function onSubmit(): void {
   padding: 8px 10px;
   font-size: 14px;
   color: var(--c-text);
-  background: var(--c-bg, #111);
+  background: var(--c-bg);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
   outline: none;
 }
 .field input:focus {
-  border-color: var(--c-accent, #4a90d9);
+  border-color: var(--c-primary);
 }
 .login-error {
   margin: 0;
   font-size: 12px;
-  color: #ff6b6b;
+  color: var(--c-error-text);
 }
 .login-submit {
   margin-top: 4px;
@@ -146,7 +146,7 @@ function onSubmit(): void {
   font-size: 14px;
   font-weight: 600;
   color: #fff;
-  background: var(--c-accent, #4a90d9);
+  background: var(--c-primary);
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;

@@ -210,7 +210,7 @@ function timeLabel(at: number | null): string {
 .queue-back {
   background: none;
   border: none;
-  color: var(--accent);
+  color: var(--c-primary-text);
   cursor: pointer;
   font-size: 14px;
   padding: 0;
@@ -224,20 +224,20 @@ function timeLabel(at: number | null): string {
   font-size: 12px;
   padding: 2px 8px;
   border-radius: 10px;
-  background: var(--bg-subtle);
-  color: var(--text-secondary);
+  background: var(--c-hover-strong);
+  color: var(--c-text-muted);
 }
 .queue-state-developing,
 .queue-state-running {
-  color: var(--success);
+  color: var(--c-success-text);
 }
 .queue-state-paused,
 .queue-state-awaiting_gate {
-  color: var(--warning);
+  color: var(--c-warning-text);
 }
 .queue-wake {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--c-text-muted);
 }
 .queue-head-actions {
   margin-left: auto;
@@ -247,7 +247,7 @@ function timeLabel(at: number | null): string {
 .queue-hint,
 .queue-note {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--c-text-muted);
 }
 .queue-list {
   list-style: none;
@@ -258,7 +258,7 @@ function timeLabel(at: number | null): string {
   gap: 10px;
 }
 .queue-row {
-  border: 1px solid var(--border);
+  border: 1px solid var(--c-border);
   border-radius: 8px;
   padding: 12px;
   display: flex;
@@ -277,7 +277,7 @@ function timeLabel(at: number | null): string {
   padding: 0;
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--c-text);
   cursor: pointer;
   text-align: left;
 }
@@ -285,14 +285,14 @@ function timeLabel(at: number | null): string {
   font-size: 11px;
   padding: 1px 6px;
   border-radius: 8px;
-  background: var(--bg-subtle);
-  color: var(--text-secondary);
+  background: var(--c-hover-strong);
+  color: var(--c-text-muted);
 }
 .queue-badge-parked {
-  color: var(--danger);
+  color: var(--c-error-text);
 }
 .queue-badge-skipped {
-  color: var(--warning);
+  color: var(--c-warning-text);
 }
 .queue-facts {
   display: grid;
@@ -306,15 +306,15 @@ function timeLabel(at: number | null): string {
   font-size: 12px;
 }
 .queue-fact dt {
-  color: var(--text-secondary);
+  color: var(--c-text-muted);
   white-space: nowrap;
 }
 .queue-fact dd {
   margin: 0;
-  color: var(--text-primary);
+  color: var(--c-text);
 }
 .queue-detail {
-  color: var(--text-secondary);
+  color: var(--c-text-muted);
 }
 .queue-row-actions {
   display: flex;
@@ -324,18 +324,18 @@ function timeLabel(at: number | null): string {
 .queue-btn {
   font-size: 12px;
   padding: 3px 10px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--c-border);
   border-radius: 6px;
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+  background: var(--c-card);
+  color: var(--c-text);
   cursor: pointer;
 }
 .queue-btn:hover {
-  border-color: var(--accent);
+  border-color: var(--c-primary);
 }
 .queue-btn-danger:hover {
-  border-color: var(--danger);
-  color: var(--danger);
+  border-color: var(--c-error);
+  color: var(--c-error-text);
 }
 @media (max-width: 720px) {
   .queue-head-actions {

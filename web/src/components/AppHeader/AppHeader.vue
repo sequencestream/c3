@@ -631,7 +631,7 @@ function selectTab(tab: HeaderTab): void {
   background: var(--c-card);
 }
 .vm-toggle-btn.active {
-  color: var(--c-primary);
+  color: var(--c-primary-text);
 }
 .vm-icon {
   display: block;
@@ -905,7 +905,7 @@ function selectTab(tab: HeaderTab): void {
   /* 移动操作菜单内的新版本提示项:蓝色强调,与其它项区分 */
   .mobile-action-item.update-hint-mobile {
     display: block;
-    color: var(--c-primary);
+    color: var(--c-primary-text);
     font-weight: 600;
     text-decoration: none;
   }

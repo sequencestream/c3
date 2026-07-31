@@ -119,8 +119,8 @@ watch(
 }
 /* 确认:默认主色;danger=true 时填充危险色,强调不可逆。 */
 .cd-confirm.danger {
-  background: var(--c-error);
-  border: 1px solid var(--c-error);
+  background: var(--c-error-text);
+  border: 1px solid var(--c-error-text);
   color: #fff;
 }
 

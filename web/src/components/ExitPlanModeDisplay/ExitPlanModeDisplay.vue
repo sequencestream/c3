@@ -134,7 +134,7 @@ function planSteps(): string[] {
   border-radius: 999px;
   font-size: var(--fs-caption);
   font-weight: 700;
-  color: var(--c-primary, #5b9aff);
+  color: var(--c-primary-text);
   background: var(--c-primary-soft, rgba(91, 154, 255, 0.12));
 }
 

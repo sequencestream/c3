@@ -225,6 +225,7 @@ describe('getSessionCounts', () => {
           work: 1,
           intent: 1,
           spec: 1,
+          spec_review: 0,
           discussion: 1,
           automation: 1,
           tool: 0,
@@ -241,6 +242,7 @@ describe('getSessionCounts', () => {
       toolAgentId: '',
       intentAgentId: '',
       specAgentId: '',
+      specReviewAgentId: '',
       automationAgentId: '',
       showToolSessions: true,
     })

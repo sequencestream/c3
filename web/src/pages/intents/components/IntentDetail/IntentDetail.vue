@@ -115,6 +115,7 @@ const emit = defineEmits<{
   'save-intent-content': [intentId: string, content: string]
   'write-spec': [intentId: string]
   'approve-spec': [intentId: string]
+  'revoke-spec-approval': [intentId: string]
   'start-dev': [intentId: string, hasUnfinishedDeps: boolean]
   // 内嵌工作会话 tab 激活:请求控制层把 lastWorkSessionId 选为全局活动会话(不进会话页)。
   'open-work-session': [sessionId: string]
@@ -431,6 +432,7 @@ function submitChat(text: string, images: PromptImage[]): void {
         :show-modify="showSpecModify"
         :modify-disabled="specDependencyBlocked"
         @approve-spec="(id: string) => emit('approve-spec', id)"
+        @revoke-spec-approval="(id: string) => emit('revoke-spec-approval', id)"
         @save-spec-content="(id: string, c: string) => emit('save-spec-content', id, c)"
         @read-spec="(id: string, p: string) => emit('read-spec', id, p)"
         @modify="openResetDialog('specSession')"

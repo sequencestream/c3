@@ -10,7 +10,9 @@ import type {
   IntentPrStatus,
   IntentPriority,
   IntentStatus,
+  SpecReviewVerdict,
 } from '@ccc/shared/protocol'
+import { MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
 
 // ---------------------------------------------------------------------------
 // Tunables
@@ -45,6 +47,13 @@ export const QUEUE_PERMISSION_WAIT_MS = 30 * 60_000
 /** Stable tag stamped on every run the queue kernel itself starts. */
 export const QUEUE_RUN_ORIGIN = 'queue-kernel'
 
+/**
+ * Hard ceiling on spec rework rounds before the queue stops re-launching the
+ * author and escalates to a human todo. Mirrors the protocol constant; the kernel
+ * keeps its own name so a reader of `reconcile.ts` sees the bound locally.
+ */
+export const QUEUE_MAX_SPEC_REWORK = MAX_SPEC_REVIEW_REWORK_ROUNDS
+
 /** Exponential backoff for the n-th consecutive failure (n ≥ 1). */
 export function backoffDelayMs(failureCount: number): number {
   if (failureCount <= 0) return 0
@@ -68,6 +77,26 @@ export interface QueueIntentFact {
   prStatus: IntentPrStatus | null
   lastWorkSessionId: string | null
   createdAt: number
+  // ── Spec-phase facts (SDD workspaces only) ──
+  /** `null` when no spec has been authored yet. */
+  specPath: string | null
+  /** The spec-authoring session, when one exists. */
+  specSessionId: string | null
+  /** The most recent review session, when one exists. */
+  specReviewSessionId: string | null
+  /**
+   * The spec file's fingerprint as the assembly layer just read it. `null` means
+   * "no spec, or unreadable right now" — the kernel treats that as "cannot
+   * review", never as changed content.
+   */
+  specFingerprint: string | null
+  /** The stored conclusion, and the fingerprint it was produced against. */
+  specReviewVerdict: SpecReviewVerdict | null
+  specReviewFingerprint: string | null
+  /** Rework rounds already spent; compared against {@link QUEUE_MAX_SPEC_REWORK}. */
+  specReviewReworkRounds: number
+  /** A human revoked an approval while THIS conclusion stood — do not re-approve it. */
+  specReviewMachineApprovalBlocked: boolean
 }
 
 /** Liveness of one work session, probed against the run registry. */
@@ -154,6 +183,16 @@ export type QueueReasonCode =
   | 'blocked_dependency'
   | 'blocked_dependency_pr_unmerged'
   | 'blocked_spec_not_approved'
+  // spec phase (SDD): the sub-states `blocked_spec_not_approved` decomposes into
+  // once the queue drives authoring → review → rework itself.
+  | 'spec_authoring'
+  | 'spec_reviewing'
+  | 'spec_rework'
+  | 'spec_review_running'
+  | 'spec_awaiting_approval'
+  | 'spec_machine_approved'
+  | 'spec_rework_exhausted'
+  | 'spec_unreadable'
   | 'blocked_backoff'
   | 'blocked_parked'
   | 'blocked_cooldown'
@@ -171,7 +210,19 @@ export type QueueReasonCode =
 
 /** What the kernel chose to do with one intent this pass. */
 export type QueueDecisionAction =
-  'launch' | 'resume' | 'attach' | 'wait' | 'park' | 'block' | 'skip'
+  | 'launch'
+  | 'resume'
+  | 'attach'
+  | 'wait'
+  | 'park'
+  | 'block'
+  | 'skip'
+  // Spec-phase actions. Kept distinct from `launch`/`resume` (the work-session
+  // verbs) so a decision log never conflates "started writing a spec" with
+  // "started developing".
+  | 'launch_spec'
+  | 'launch_spec_review'
+  | 'approve_spec'
 
 export interface QueueDecision {
   intentId: string
@@ -193,6 +244,28 @@ export type QueueAction =
   | { kind: 'park'; intentId: string; reason: QueueReasonCode; detail: string }
   | { kind: 'wait_user_involve'; intentId: string; reason: QueueReasonCode; detail: string }
   | { kind: 'sync_dependency_prs'; intentIds: string[] }
+  /**
+   * Start or resume the spec-AUTHORING session. `rework` is set after a
+   * `changes_requested` conclusion: the assembly layer then hands the author the
+   * reviewer's findings instead of a plain "continue".
+   */
+  | {
+      kind: 'launch_spec'
+      intentId: string
+      origin: string
+      rework: boolean
+      /** Which rework round this is (1-based); `0` for a first authoring pass. */
+      reworkRound: number
+    }
+  /** Start a read-only review of the spec content identified by `fingerprint`. */
+  | { kind: 'launch_spec_review'; intentId: string; origin: string; fingerprint: string }
+  /**
+   * Approve the spec on the machine's behalf. Only ever emitted when the
+   * workspace opt-in is ON and the conclusion is a `pass` bound to `fingerprint`;
+   * the assembly layer re-checks every one of those facts transactionally before
+   * writing, so a spec edited or an approval revoked in between approves nothing.
+   */
+  | { kind: 'machine_approve_spec'; intentId: string; fingerprint: string }
 
 // ---------------------------------------------------------------------------
 // Reconcile I/O
@@ -216,6 +289,27 @@ export interface QueueReconcileInput {
   inFlight: readonly string[]
   gitBranchMode: GitBranchMode
   sddEnabled: boolean
+  /**
+   * The workspace's explicit machine-approval opt-in. `false` by default and for
+   * every migrated workspace: with it off, a `pass` conclusion still stops at the
+   * human approval checkpoint and no `machine_approve_spec` action is ever
+   * produced — the kernel does not merely skip executing one, it never emits one.
+   */
+  machineApprovalEnabled: boolean
+  /**
+   * Liveness of the spec-authoring / spec-review sessions, probed the same way as
+   * {@link runs}. An intent with a live spec-phase run is waited on, never
+   * re-launched.
+   */
+  specRuns: readonly QueueSpecRunFact[]
+  /** Intents the kernel currently holds an in-flight SPEC-PHASE run for. */
+  specInFlight: readonly string[]
+}
+
+/** Liveness of one spec-phase session (authoring or review). */
+export interface QueueSpecRunFact {
+  sessionId: string
+  alive: boolean
 }
 
 /** Coarse queue state projected onto `WorkflowStatus.state`. */

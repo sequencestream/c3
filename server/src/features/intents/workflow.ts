@@ -32,7 +32,8 @@
 import { randomUUID } from 'node:crypto'
 import type { WorkflowStatus, Intent, RunEndReason } from '@ccc/shared/protocol'
 import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
-import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
+import { MACHINE_SPEC_APPROVER, PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
+import type { SessionRuntime } from '../../runs.js'
 import { MAX_CONTINUATIONS, hasPendingQuestion } from './turn-guards.js'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import type {
@@ -42,6 +43,7 @@ import type {
   QueueReasonCode,
   QueueReconcileOutput,
   QueueRunFact,
+  QueueSpecRunFact,
 } from '../../kernel/queue/index.js'
 import {
   CoalescingRunner,
@@ -56,12 +58,16 @@ import {
   getIntent,
   isStoreAvailable,
   listIntents,
+  machineApproveSpec,
   safeInsertIntentLog,
   setBranchName,
   setLastWorkSession,
   setPrInfo,
   updateStatus,
 } from './store.js'
+import { launchSpecReviewSession, launchSpecSession } from './session-launcher.js'
+import { readSpecFingerprint } from './spec-review.js'
+import { applySpecApproval } from './spec.js'
 import {
   getQueueControl,
   getQueueIntentMeta,
@@ -89,6 +95,7 @@ import {
   getForgeOverride,
   getGitBranchMode,
   getSddEnabled,
+  getSpecMachineApprovalEnabled,
 } from '../../kernel/config/index.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
 import {
@@ -146,6 +153,14 @@ export interface QueueUserTodoInput {
 
 export interface WorkflowHooks {
   runDevTurn(input: RunDevTurnInput): Promise<DevTurnResult>
+  /**
+   * Launch one turn on a spec-phase runtime (authoring or review). The queue
+   * hands this straight to the shared session launchers, so a spec session the
+   * queue starts is byte-for-byte the same launch a human button produces —
+   * including the read-only / write-confined profile locks. Injected rather than
+   * imported so this module keeps no `kernel/run` dependency (ADR-0009 R1).
+   */
+  launchSpecRun(rt: SessionRuntime, prompt: string): Promise<void>
   broadcastIntents(workspacePath: string): void
   emitStatus(status: WorkflowStatus): void
   sessionExists(workspacePath: string, sessionId: string): Promise<boolean>
@@ -184,6 +199,14 @@ export function getWorkflowHooks(): WorkflowHooks {
 // Constants
 // ---------------------------------------------------------------------------
 
+/**
+ * The actor recorded for spec sessions the QUEUE starts. Distinct from the
+ * machine APPROVER identity: this only says "the automation started this
+ * session", which carries no authority, whereas `MACHINE_SPEC_APPROVER` records
+ * who cleared a human gate.
+ */
+const QUEUE_ACTOR = 'automation'
+
 function idleStatus(workspacePath: string): WorkflowStatus {
   return {
     workspaceId: pathToId(workspacePath)!,
@@ -206,26 +229,41 @@ function idleStatus(workspacePath: string): WorkflowStatus {
 export function pickNext(workspacePath: string): Intent | null {
   if (!isStoreAvailable()) return null
   const intents = listIntents(workspacePath)
+  const sddEnabled = getSddEnabled(workspacePath)
   const out = reconcileQueue({
     now: Date.now(),
     tickId: 'probe',
     workspacePath,
     control: { state: 'running', startedAt: null, forceSkipped: [] },
     snapshotOk: true,
-    intents: intents.map(toFact),
+    intents: intents.map((r) => toFact(r, workspacePath, sddEnabled)),
     runs: [],
     meta: getQueueIntentMeta(workspacePath),
     inFlight: [],
     gitBranchMode: getGitBranchMode(workspacePath),
-    sddEnabled: getSddEnabled(workspacePath),
+    sddEnabled,
+    // A probe answers "which intent would be DEVELOPED next", so it deliberately
+    // reports the world as if no spec phase were running: it reads no spec
+    // liveness and never lets the machine-approval path colour the answer.
+    machineApprovalEnabled: false,
+    specRuns: [],
+    specInFlight: [],
   })
   const chosen = out.actions.find((a) => a.kind === 'launch' || a.kind === 'resume')
   if (!chosen) return null
   return intents.find((r) => r.id === chosen.intentId) ?? null
 }
 
-/** Project one ledger row onto the kernel's fact shape. */
-function toFact(r: Intent): QueueIntentFact {
+/**
+ * Project one ledger row onto the kernel's fact shape.
+ *
+ * `specFingerprint` is read from disk HERE rather than in the kernel, which must
+ * stay pure. Reading it every pass is what makes an edited spec invalidate its
+ * conclusion by itself: the kernel just compares two strings, so there is no
+ * invalidation pass to forget to run. An unreadable spec yields `null`, which the
+ * kernel treats as "cannot review", never as changed content.
+ */
+function toFact(r: Intent, workspacePath: string, sddEnabled: boolean): QueueIntentFact {
   return {
     id: r.id,
     title: r.title,
@@ -237,6 +275,16 @@ function toFact(r: Intent): QueueIntentFact {
     prStatus: r.prStatus,
     lastWorkSessionId: r.lastWorkSessionId,
     createdAt: r.createdAt,
+    specPath: r.specPath,
+    specSessionId: r.specSessionId,
+    specReviewSessionId: r.specReviewSessionId,
+    // Only SDD workspaces run the spec phase, so a non-SDD workspace never pays
+    // the per-intent file read.
+    specFingerprint: sddEnabled ? readSpecFingerprint(workspacePath, r.specPath) : null,
+    specReviewVerdict: r.specReviewVerdict,
+    specReviewFingerprint: r.specReviewFingerprint,
+    specReviewReworkRounds: r.specReviewReworkRounds,
+    specReviewMachineApprovalBlocked: r.specReviewMachineApprovalBlocked,
   }
 }
 
@@ -258,6 +306,13 @@ class QueueController {
   private abort = new AbortController()
   private readonly runner: CoalescingRunner
   private readonly inFlight = new Map<string, InFlightRun>()
+  /**
+   * Spec-phase runs in flight, keyed by intent id. Deliberately NOT merged into
+   * {@link inFlight}: that map answers "is the kernel developing this intent",
+   * which the concurrency gate and the manual-cleanup skip both read. A spec
+   * session appearing there would read as development that never happened.
+   */
+  private readonly specInFlight = new Map<string, Promise<void>>()
   /** sessionId → when this queue FIRST observed the run waiting on a human. */
   private readonly awaitingSince = new Map<string, number>()
   private decisions: QueueDecision[] = []
@@ -302,6 +357,7 @@ class QueueController {
     this.abort.abort()
     this.abort = new AbortController()
     this.inFlight.clear()
+    this.specInFlight.clear()
     this.awaitingSince.clear()
     this.decisions = []
     this.nextWakeupAt = null
@@ -341,18 +397,24 @@ class QueueController {
     }
     const snapshotOk = intents !== null
 
+    const sddEnabled = getSddEnabled(this.workspacePath)
     const output = reconcileQueue({
       now,
       tickId,
       workspacePath: this.workspacePath,
       control,
       snapshotOk,
-      intents: (intents ?? []).map(toFact),
+      intents: (intents ?? []).map((r) => toFact(r, this.workspacePath, sddEnabled)),
       runs: this.buildRunFacts(intents ?? [], now),
       meta: getQueueIntentMeta(this.workspacePath),
       inFlight: this.inFlightIntentIds,
       gitBranchMode: getGitBranchMode(this.workspacePath),
-      sddEnabled: getSddEnabled(this.workspacePath),
+      sddEnabled,
+      // Read fresh every pass: turning the opt-in off must take effect on the very
+      // next tick, without restarting the queue.
+      machineApprovalEnabled: getSpecMachineApprovalEnabled(this.workspacePath),
+      specRuns: this.buildSpecRunFacts(intents ?? []),
+      specInFlight: [...this.specInFlight.keys()],
     })
 
     this.decisions = output.decisions
@@ -388,6 +450,26 @@ class QueueController {
         alive: true,
         awaitingPermissionSince: waiting ? (this.awaitingSince.get(sid) ?? now) : null,
       })
+    }
+    return facts
+  }
+
+  /**
+   * Probe the spec-authoring and spec-review sessions the ledger points at. Kept
+   * separate from {@link buildRunFacts} on purpose: a spec session is not a work
+   * session, so it must never enter the work-liveness set — that set drives the
+   * workspace-global concurrency gate, and a spec session running there would
+   * wedge the whole development queue behind a document being written.
+   */
+  private buildSpecRunFacts(intents: readonly Intent[]): QueueSpecRunFact[] {
+    const facts: QueueSpecRunFact[] = []
+    const seen = new Set<string>()
+    for (const r of intents) {
+      for (const sid of [r.specSessionId, r.specReviewSessionId]) {
+        if (!sid || seen.has(sid)) continue
+        seen.add(sid)
+        facts.push({ sessionId: sid, alive: this.hooks.isRunning(sid) })
+      }
     }
     return facts
   }
@@ -463,8 +545,130 @@ class QueueController {
         case 'attach':
           this.startRun(action, now)
           break
+        case 'launch_spec':
+        case 'launch_spec_review':
+          this.startSpecRun(action, now)
+          break
+        case 'machine_approve_spec':
+          this.machineApprove(action.intentId, action.fingerprint)
+          break
       }
     }
+  }
+
+  /**
+   * Start ONE spec-phase run (authoring or review) for an intent.
+   *
+   * Tracked in its own in-flight map, separate from work runs: the two are
+   * different lifecycles on the same intent, and sharing a map would let a spec
+   * session masquerade as a development run to the concurrency gate. The cooldown
+   * IS shared — it is a per-intent self-excitation guard, and while an intent is
+   * in its spec phase it is blocked from development anyway.
+   *
+   * A failure here counts against this intent through the SAME backoff → park
+   * ladder work runs use, so a spec that cannot be authored isolates itself
+   * instead of retrying forever at tick speed.
+   */
+  private startSpecRun(
+    action: Extract<QueueAction, { kind: 'launch_spec' | 'launch_spec_review' }>,
+    now: number,
+  ): void {
+    const intentId = action.intentId
+    if (this.specInFlight.has(intentId)) return
+    const req = getIntent(intentId)
+    if (!req) return
+
+    const meta = getQueueIntentMetaById(intentId)
+    putQueueIntentMeta(this.workspacePath, {
+      ...meta,
+      intentId,
+      cooldownUntil: now + QUEUE_COOLDOWN_MS,
+      updatedAt: now,
+    })
+
+    const settled = this.runSpecPhase(action, req)
+      .catch((err) => {
+        console.error(`[c3:queue]「${req.title}」规格阶段 run 异常:`, err)
+        this.recordFailure(intentId, 'launch_failed', errText(err))
+      })
+      .finally(() => {
+        this.specInFlight.delete(intentId)
+        void this.request()
+      })
+    this.specInFlight.set(intentId, settled)
+  }
+
+  private async runSpecPhase(
+    action: Extract<QueueAction, { kind: 'launch_spec' | 'launch_spec_review' }>,
+    req: Intent,
+  ): Promise<void> {
+    const deps = {
+      launchRun: this.hooks.launchSpecRun,
+      broadcastIntents: this.hooks.broadcastIntents,
+    }
+    const result =
+      action.kind === 'launch_spec'
+        ? await launchSpecSession(this.workspacePath, req.id, deps, undefined, QUEUE_ACTOR, {
+            ...(action.rework
+              ? {
+                  reworkReason: req.specReviewReason ?? '(审核未给出理由)',
+                  reworkRound: action.reworkRound,
+                }
+              : {}),
+          })
+        : await launchSpecReviewSession(this.workspacePath, req.id, deps, undefined, QUEUE_ACTOR)
+
+    if (!result.success) {
+      // A refused launch is a failed attempt for THIS intent only: it backs off
+      // and eventually parks, exactly like a failed dev turn, so a permanently
+      // un-authorable spec can never spin the queue.
+      this.recordFailure(
+        req.id,
+        'launch_failed',
+        `${action.kind === 'launch_spec' ? 'spec 撰写' : 'spec 审核'}会话启动被拒绝(${result.code})`,
+      )
+      return
+    }
+    this.recordSuccess(req.id)
+    this.hooks.broadcastIntents(this.workspacePath)
+  }
+
+  /**
+   * Execute a machine approval. The kernel decided on a snapshot; this re-checks
+   * every fact transactionally at write time (`machineApproveSpec`), including a
+   * fresh read of the spec file itself — the snapshot fingerprint alone would
+   * agree with the equally old stored conclusion and approve a document edited
+   * since. So a spec edited or an approval revoked in the meantime approves
+   * nothing and the next reconcile simply re-derives. A rejected write is NOT a
+   * failure — it is the guard doing its job — so it never counts against the
+   * intent.
+   */
+  private machineApprove(intentId: string, fingerprint: string): void {
+    const req = getIntent(intentId)
+    if (!req) return
+    const readLive = (specPath: string): string | null =>
+      readSpecFingerprint(this.workspacePath, specPath)
+    if (!machineApproveSpec(intentId, fingerprint, MACHINE_SPEC_APPROVER, readLive)) {
+      console.log(`[c3:queue]「${req.title}」机器批准的前置事实已变化,本轮不批准`)
+      void this.request()
+      return
+    }
+    applySpecApproval({
+      workspacePath: this.workspacePath,
+      intent: req,
+      approver: MACHINE_SPEC_APPROVER,
+      broadcastIntents: this.hooks.broadcastIntents,
+      publishEvent: (payload) =>
+        this.hooks.publishEvent({
+          workspacePath: payload.workspacePath,
+          sessionId: payload.sessionId,
+          event: payload.event as GenericEvent,
+        }),
+      // The approval flag itself was already written by the transactional guard
+      // above; this pass only lands the audit log, the event and the broadcast.
+      alreadyPersisted: true,
+    })
+    console.log(`[c3:queue]「${req.title}」审核通过且机器批准已开启 → spec 自动批准`)
   }
 
   /**
@@ -513,11 +717,14 @@ class QueueController {
       })
   }
 
-  /** Await every in-flight kernel run (tests sequence assertions on this). */
+  /** Await every in-flight kernel run — work AND spec phase (tests sequence on this). */
   async settleRuns(): Promise<void> {
     // A run that finishes may start another (the queue moves on), so drain.
-    for (let i = 0; i < 50 && this.inFlight.size > 0; i++) {
-      await Promise.allSettled([...this.inFlight.values()].map((r) => r.settled))
+    for (let i = 0; i < 50 && (this.inFlight.size > 0 || this.specInFlight.size > 0); i++) {
+      await Promise.allSettled([
+        ...[...this.inFlight.values()].map((r) => r.settled),
+        ...this.specInFlight.values(),
+      ])
     }
   }
 

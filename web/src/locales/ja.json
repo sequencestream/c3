@@ -255,8 +255,15 @@
       "spec": {
         "tooltip": "仕様作成セッション(プロジェクト仕様の作成)を実行するエージェント"
       },
+      "specReview": {
+        "tooltip": "仕様レビューセッション(作成済み仕様の読み取り専用レビュー)を実行するエージェント"
+      },
       "specPicker": {
         "label": "仕様エージェント",
+        "followDefault": "デフォルトエージェントに従う"
+      },
+      "specReviewPicker": {
+        "label": "仕様レビューエージェント",
         "followDefault": "デフォルトエージェントに従う"
       },
       "automation": {
@@ -774,6 +781,9 @@
         "label": "仕様を承認",
         "confirmLabel": "承認"
       },
+      "revokeSpecApproval": {
+        "label": "承認を取り消す"
+      },
       "modifySession": {
         "label": "修正したい"
       },
@@ -917,7 +927,16 @@
     },
     "spec": {
       "empty": "この意図にはまだ仕様が作成されていません。",
-      "loading": "仕様を読み込み中…"
+      "loading": "仕様を読み込み中…",
+      "review": {
+        "verdict": {
+          "pass": "レビュー通過",
+          "changesRequested": "要修正"
+        },
+        "reworkRounds": "手戻り {rounds} / {max} 回目",
+        "approvedBy": "{user} が承認",
+        "approvedByMachine": "自動承認(機械)"
+      }
     },
     "changelog": {
       "empty": "このインテントにはまだ変更履歴がありません。",
@@ -928,6 +947,7 @@
         "statusChanged": "ステータス変更",
         "specCreated": "スペック作成",
         "specUpdated": "スペック編集",
+        "specReviewed": "仕様レビュー",
         "specApproved": "スペック承認",
         "specUnapproved": "承認取消",
         "prCreated": "PR 作成",
@@ -1743,6 +1763,9 @@
           },
           "spec": {
             "label": "仕様"
+          },
+          "specReview": {
+            "label": "仕様レビュー"
           }
         },
         "metadataFilter": {
@@ -2206,6 +2229,12 @@
           "label": "仕様ディレクトリ"
         },
         "hint": "このプロジェクトの仕様ファイルを格納する固定の集中管理先(~/.c3/specs/<プロジェクト>)。プロジェクトのすべての worktree で共有され、読み取り専用です——ここからも API からも変更できません。Git にはコミットされません。"
+      },
+      "machineApproval": {
+        "toggle": {
+          "label": "レビュー通過時の機械承認を許可する"
+        },
+        "hint": "既定はオフ。オンにすると、読み取り専用レビューが「通過」と判定した仕様は c3 自身が承認し、ユーザーを詐称しない機械 ID で記録され、人手のクリックなしに開発を開始できます。承認は取り消し可能で、取り消すと仕様は「承認待ち」に戻り、同じレビュー結論での再承認は行われません。オフに戻しても、すでに承認済みの仕様は取り消されません。"
       }
     },
     "consensus": {

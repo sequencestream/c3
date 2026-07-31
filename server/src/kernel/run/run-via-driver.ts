@@ -112,6 +112,28 @@ export interface SpecProfile {
 }
 
 /**
+ * The spec-REVIEW launch profile (strictly read-only gate + disallowed-tools lock
+ * + review system prompt + the reviewer's MCP tools), resolved before the vendor
+ * fork in `launchRun`. Present only for `rt.sessionKind === 'spec_review'` runs.
+ *
+ * Unlike {@link SpecProfile} there is no `specDir` and no path check, because
+ * there is no writable location at all — that difference is the whole reason
+ * review is its own kind rather than a flavour of spec authoring. The reviewed
+ * intent and the judged fingerprint are baked into the profile by the composition
+ * root (read off the runtime), so {@link bindMcp} keeps the same uniform binding
+ * shape every other profile uses.
+ */
+export interface SpecReviewProfile {
+  appendSystemPrompt: string
+  disallowedTools: string[]
+  gate: 'spec_review'
+  bindMcp: (binding: { workspacePath: string; getRunId: () => string; signal: AbortSignal }) => {
+    servers: Record<string, RemoteMcpServer>
+    dispose: () => void
+  }
+}
+
+/**
  * The discussion-research launch profile (read-only `discussion-research` gate +
  * disallowed-tools lock + the research system prompt), resolved before the vendor
  * fork in `launchRun`. Present ONLY for a runtime carrying the research marker
@@ -343,6 +365,11 @@ export async function runViaDriver(
    * Mutually exclusive with intent/session profiles.
    */
   specProfile?: SpecProfile,
+  /**
+   * The spec-REVIEW profile, present for `rt.sessionKind === 'spec_review'` runs.
+   * Mutually exclusive with every other profile.
+   */
+  specReviewProfile?: SpecReviewProfile,
 ): Promise<void> {
   const workspacePath = rt.workspacePath
   let runId = rt.sessionId
@@ -356,6 +383,7 @@ export async function runViaDriver(
   const systemInstruction =
     intentProfile?.appendSystemPrompt ??
     specProfile?.appendSystemPrompt ??
+    specReviewProfile?.appendSystemPrompt ??
     inject?.systemInstruction
   const userTurn = modelUserTurn(prompt, inject)
 
@@ -404,13 +432,16 @@ export async function runViaDriver(
   const mode: {
     actionMode: import('@ccc/shared/protocol').ActionMode
     toolGate: import('@ccc/shared/protocol').ToolGate
-  } = intentProfile
-    ? intentDriverModeForVendor(adapter.vendor)
-    : specProfile
-      ? specDriverModeForVendor(adapter.vendor)
-      : adapter.vendor === 'codex' && rt.codexPolicy
-        ? codexPolicyToGrid(rt.codexPolicy)
-        : tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)
+    // A review run is read-only, so it takes the intent gate's read-only driver
+    // grid — NOT the spec author's workspace-write one.
+  } =
+    intentProfile || specReviewProfile
+      ? intentDriverModeForVendor(adapter.vendor)
+      : specProfile
+        ? specDriverModeForVendor(adapter.vendor)
+        : adapter.vendor === 'codex' && rt.codexPolicy
+          ? codexPolicyToGrid(rt.codexPolicy)
+          : tokenToGrid(MODE_CATALOGS[adapter.vendor], rt.mode)
   const { actionMode, toolGate } = mode
 
   // Resolve the session agent's launch overrides (provider connection only). The
@@ -484,7 +515,11 @@ export async function runViaDriver(
   // A run is exactly one of intent / session / spec, so at most one binder fires.
   let disposeDriverMcp: () => void = () => {}
   let driverMcpServers: Record<string, RemoteMcpServer> | undefined
-  const activeMcpBinder = intentProfile?.bindMcp ?? sessionProfile?.bindMcp ?? specProfile?.bindMcp
+  const activeMcpBinder =
+    intentProfile?.bindMcp ??
+    sessionProfile?.bindMcp ??
+    specProfile?.bindMcp ??
+    specReviewProfile?.bindMcp
   if (activeMcpBinder) {
     const bound = activeMcpBinder({
       workspacePath: workspacePath,

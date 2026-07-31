@@ -13,7 +13,16 @@ import type { SessionPageKind } from './state'
 function counts(
   partial: Partial<Record<SessionPageKind, number>>,
 ): Record<SessionPageKind, number> {
-  return { work: 0, intent: 0, spec: 0, discussion: 0, automation: 0, tool: 0, ...partial }
+  return {
+    work: 0,
+    intent: 0,
+    spec: 0,
+    spec_review: 0,
+    discussion: 0,
+    automation: 0,
+    tool: 0,
+    ...partial,
+  }
 }
 
 describe('sumSessionCounts — 顶部「会话」tab 角标数值(六类求和)', () => {

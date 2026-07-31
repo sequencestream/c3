@@ -115,6 +115,7 @@ function configureCodexSpecAgent(): void {
     toolAgentId: '',
     intentAgentId: '',
     specAgentId: 'codex-spec',
+    specReviewAgentId: '',
   } as SystemSettings)
 }
 

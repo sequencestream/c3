@@ -11,6 +11,7 @@ import {
   QUEUE_BACKOFF_BASE_MS,
   QUEUE_COOLDOWN_MS,
   QUEUE_MAX_ATTEMPTS,
+  QUEUE_MAX_SPEC_REWORK,
   QUEUE_PERMISSION_WAIT_MS,
   backoffDelayMs,
   emptyQueueIntentMeta,
@@ -32,6 +33,14 @@ function intent(over: Partial<QueueIntentFact> & { id: string }): QueueIntentFac
     prStatus: null,
     lastWorkSessionId: null,
     createdAt: 1,
+    specPath: null,
+    specSessionId: null,
+    specReviewSessionId: null,
+    specFingerprint: null,
+    specReviewVerdict: null,
+    specReviewFingerprint: null,
+    specReviewReworkRounds: 0,
+    specReviewMachineApprovalBlocked: false,
     ...over,
   }
 }
@@ -53,6 +62,9 @@ function input(over: Partial<QueueReconcileInput> = {}): QueueReconcileInput {
     inFlight: [],
     gitBranchMode: 'current-branch',
     sddEnabled: false,
+    machineApprovalEnabled: false,
+    specRuns: [],
+    specInFlight: [],
     ...over,
   }
 }
@@ -120,17 +132,31 @@ describe('reconcileQueue — selection', () => {
 })
 
 describe('reconcileQueue — gates', () => {
-  it('SDD on without approval yields blocked_spec_not_approved, never a silent skip', () => {
+  it('SDD on without approval never DEVELOPS, and never silently skips', () => {
     const out = reconcileQueue(
       input({ sddEnabled: true, intents: [intent({ id: 'A', specApproved: false })] }),
     )
+    // The development gate is what this asserts: an unapproved spec is never
+    // developed, whatever the spec phase decides to do about authoring it.
     expect(launched(out)).toBeNull()
-    expect(decisionFor(out, 'A')).toMatchObject({
-      action: 'block',
-      reason: 'blocked_spec_not_approved',
-    })
+    expect(decisionFor(out, 'A')).toBeDefined()
     // A blocked candidate is NOT a finished queue.
     expect(out.state).toBe('running')
+  })
+
+  it('leaves the spec gate fully closed when SDD is off — no spec phase at all', () => {
+    const out = reconcileQueue(
+      input({
+        sddEnabled: false,
+        machineApprovalEnabled: true,
+        intents: [intent({ id: 'A', specApproved: false })],
+      }),
+    )
+    // Without SDD the spec gate does not apply, so A is developed directly and
+    // no spec-phase action is produced even with machine approval switched on.
+    expect(launched(out)).toBe('A')
+    expect(out.actions.some((a) => a.kind.startsWith('launch_spec'))).toBe(false)
+    expect(out.actions.some((a) => a.kind === 'machine_approve_spec')).toBe(false)
   })
 
   it('an unfinished dependency blocks; an unknown dependency does not', () => {
@@ -457,5 +483,298 @@ describe('reconcileQueue — restart recovery', () => {
     const out = reconcileQueue(input({ intents: [intent({ id: 'historic' })], meta: {} }))
     expect(launched(out)).toBe('historic')
     expect(decisionFor(out, 'historic')).toMatchObject({ attemptCount: 0, backoffCount: 0 })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Spec phase (SDD): author → review → rework → approve
+// ---------------------------------------------------------------------------
+
+describe('reconcileQueue — spec phase', () => {
+  /** An SDD workspace with one unapproved automate intent. */
+  function sdd(over: Partial<QueueIntentFact>, rest: Partial<QueueReconcileInput> = {}) {
+    return reconcileQueue(
+      input({
+        sddEnabled: true,
+        intents: [intent({ id: 'A', specApproved: false, ...over })],
+        ...rest,
+      }),
+    )
+  }
+
+  it('authors a spec when the intent has none', () => {
+    const out = sdd({ specPath: null })
+    expect(out.actions).toContainEqual({
+      kind: 'launch_spec',
+      intentId: 'A',
+      origin: 'queue-kernel',
+      rework: false,
+      reworkRound: 0,
+    })
+    expect(decisionFor(out, 'A')).toMatchObject({ action: 'launch_spec', reason: 'spec_authoring' })
+    // Authoring a spec is NOT developing it.
+    expect(launched(out)).toBeNull()
+  })
+
+  it('reviews an authored spec that has no conclusion yet', () => {
+    const out = sdd({ specPath: '/s/spec.md', specFingerprint: 'fp1' })
+    expect(out.actions).toContainEqual({
+      kind: 'launch_spec_review',
+      intentId: 'A',
+      origin: 'queue-kernel',
+      fingerprint: 'fp1',
+    })
+    expect(decisionFor(out, 'A')).toMatchObject({ reason: 'spec_reviewing' })
+  })
+
+  it('re-reviews when the spec changed under an existing conclusion', () => {
+    const out = sdd({
+      specPath: '/s/spec.md',
+      specFingerprint: 'fp2',
+      specReviewVerdict: 'pass',
+      specReviewFingerprint: 'fp1',
+    })
+    // A `pass` bound to content that no longer exists is not a pass.
+    expect(out.actions).toContainEqual({
+      kind: 'launch_spec_review',
+      intentId: 'A',
+      origin: 'queue-kernel',
+      fingerprint: 'fp2',
+    })
+    expect(out.actions.some((a) => a.kind === 'machine_approve_spec')).toBe(false)
+  })
+
+  it('waits instead of re-launching while an authoring or review session is alive', () => {
+    const authoring = sdd(
+      { specPath: '/s/spec.md', specFingerprint: 'fp1', specSessionId: 'spec-1' },
+      { specRuns: [{ sessionId: 'spec-1', alive: true }] },
+    )
+    expect(authoring.actions).toHaveLength(0)
+    expect(decisionFor(authoring, 'A')).toMatchObject({ action: 'wait', reason: 'spec_authoring' })
+
+    const reviewing = sdd(
+      { specPath: '/s/spec.md', specFingerprint: 'fp1', specReviewSessionId: 'rev-1' },
+      { specRuns: [{ sessionId: 'rev-1', alive: true }] },
+    )
+    expect(reviewing.actions).toHaveLength(0)
+    expect(decisionFor(reviewing, 'A')).toMatchObject({
+      action: 'wait',
+      reason: 'spec_review_running',
+    })
+  })
+
+  it('does not start a second spec run for an intent the kernel already drives', () => {
+    const out = sdd({ specPath: null }, { specInFlight: ['A'] })
+    expect(out.actions).toHaveLength(0)
+    expect(decisionFor(out, 'A')).toMatchObject({ action: 'wait', reason: 'running' })
+  })
+
+  it('honours the per-intent cooldown so a tick and an event cannot double-launch', () => {
+    const out = sdd({ specPath: null }, { meta: { A: meta('A', { cooldownUntil: NOW + 3_000 }) } })
+    expect(out.actions).toHaveLength(0)
+    expect(decisionFor(out, 'A')).toMatchObject({ reason: 'blocked_cooldown' })
+    expect(out.nextWakeupAt).toBe(NOW + 3_000)
+  })
+
+  it('refuses to review an unreadable spec rather than treating it as empty', () => {
+    const out = sdd({ specPath: '/s/spec.md', specFingerprint: null })
+    expect(out.actions).toHaveLength(0)
+    expect(decisionFor(out, 'A')).toMatchObject({ action: 'block', reason: 'spec_unreadable' })
+  })
+
+  it('reworks on changes_requested, carrying the round number', () => {
+    const out = sdd({
+      specPath: '/s/spec.md',
+      specFingerprint: 'fp1',
+      specReviewVerdict: 'changes_requested',
+      specReviewFingerprint: 'fp1',
+      specReviewReworkRounds: 2,
+    })
+    expect(out.actions).toContainEqual({
+      kind: 'launch_spec',
+      intentId: 'A',
+      origin: 'queue-kernel',
+      rework: true,
+      reworkRound: 2,
+    })
+    expect(decisionFor(out, 'A')).toMatchObject({ reason: 'spec_rework' })
+  })
+
+  it('reworks on the LAST allowed round, then escalates to a human on the next failure', () => {
+    const last = sdd({
+      specPath: '/s/spec.md',
+      specFingerprint: 'fp1',
+      specReviewVerdict: 'changes_requested',
+      specReviewFingerprint: 'fp1',
+      specReviewReworkRounds: QUEUE_MAX_SPEC_REWORK,
+    })
+    expect(last.actions.some((a) => a.kind === 'launch_spec')).toBe(true)
+
+    const exhausted = sdd({
+      specPath: '/s/spec.md',
+      specFingerprint: 'fp1',
+      specReviewVerdict: 'changes_requested',
+      specReviewFingerprint: 'fp1',
+      specReviewReworkRounds: QUEUE_MAX_SPEC_REWORK + 1,
+    })
+    // No further authoring session; a park plus exactly one human todo instead.
+    expect(exhausted.actions.some((a) => a.kind === 'launch_spec')).toBe(false)
+    expect(exhausted.actions).toContainEqual({
+      kind: 'park',
+      intentId: 'A',
+      reason: 'spec_rework_exhausted',
+      detail: expect.stringContaining(String(QUEUE_MAX_SPEC_REWORK)),
+    })
+    expect(exhausted.actions.filter((a) => a.kind === 'wait_user_involve')).toHaveLength(1)
+    expect(decisionFor(exhausted, 'A')).toMatchObject({
+      action: 'park',
+      reason: 'spec_rework_exhausted',
+    })
+  })
+
+  it('with machine approval OFF, a pass stops at the human checkpoint', () => {
+    const out = sdd({
+      specPath: '/s/spec.md',
+      specFingerprint: 'fp1',
+      specReviewVerdict: 'pass',
+      specReviewFingerprint: 'fp1',
+    })
+    expect(out.actions).toHaveLength(0)
+    expect(decisionFor(out, 'A')).toMatchObject({
+      action: 'block',
+      reason: 'spec_awaiting_approval',
+    })
+    expect(launched(out)).toBeNull()
+  })
+
+  it('with machine approval ON, a pass produces the approval action', () => {
+    const out = sdd(
+      {
+        specPath: '/s/spec.md',
+        specFingerprint: 'fp1',
+        specReviewVerdict: 'pass',
+        specReviewFingerprint: 'fp1',
+      },
+      { machineApprovalEnabled: true },
+    )
+    expect(out.actions).toContainEqual({
+      kind: 'machine_approve_spec',
+      intentId: 'A',
+      fingerprint: 'fp1',
+    })
+    expect(decisionFor(out, 'A')).toMatchObject({
+      action: 'approve_spec',
+      reason: 'spec_machine_approved',
+    })
+  })
+
+  it('never re-approves a conclusion a human revoked, even with the opt-in ON', () => {
+    const out = sdd(
+      {
+        specPath: '/s/spec.md',
+        specFingerprint: 'fp1',
+        specReviewVerdict: 'pass',
+        specReviewFingerprint: 'fp1',
+        specReviewMachineApprovalBlocked: true,
+      },
+      { machineApprovalEnabled: true },
+    )
+    expect(out.actions.some((a) => a.kind === 'machine_approve_spec')).toBe(false)
+    expect(decisionFor(out, 'A')).toMatchObject({ reason: 'spec_awaiting_approval' })
+  })
+
+  it('starts at most ONE spec session per pass; plain writes are not serialized', () => {
+    const out = reconcileQueue(
+      input({
+        sddEnabled: true,
+        machineApprovalEnabled: true,
+        intents: [
+          intent({ id: 'first', priority: 'P0', specApproved: false, specPath: null }),
+          intent({ id: 'second', priority: 'P1', specApproved: false, specPath: null }),
+          intent({
+            id: 'passer',
+            priority: 'P3',
+            specApproved: false,
+            specPath: '/s/spec.md',
+            specFingerprint: 'fp1',
+            specReviewVerdict: 'pass',
+            specReviewFingerprint: 'fp1',
+          }),
+        ],
+      }),
+    )
+    const launches = out.actions.filter(
+      (a) => a.kind === 'launch_spec' || a.kind === 'launch_spec_review',
+    )
+    expect(launches).toHaveLength(1)
+    expect(launches[0]).toMatchObject({ intentId: 'first' })
+    expect(decisionFor(out, 'second')).toMatchObject({
+      action: 'wait',
+      reason: 'blocked_concurrency_gate',
+    })
+    // The approval is a DB write, not an agent run, so it is not held back.
+    expect(out.actions).toContainEqual({
+      kind: 'machine_approve_spec',
+      intentId: 'passer',
+      fingerprint: 'fp1',
+    })
+  })
+
+  it('does not disturb the existing work launch / resume / attach verbs', () => {
+    const out = reconcileQueue(
+      input({
+        sddEnabled: true,
+        machineApprovalEnabled: true,
+        intents: [
+          // Approved and half-done → the ordinary resume path, untouched.
+          intent({
+            id: 'approved',
+            priority: 'P0',
+            specApproved: true,
+            status: 'in_progress',
+            lastWorkSessionId: 'w1',
+          }),
+          intent({ id: 'needs-spec', priority: 'P1', specApproved: false, specPath: null }),
+        ],
+        runs: [{ sessionId: 'w1', alive: false, awaitingPermissionSince: null }],
+      }),
+    )
+    expect(out.actions).toContainEqual({
+      kind: 'resume',
+      intentId: 'approved',
+      sessionId: 'w1',
+      origin: 'queue-kernel',
+    })
+    // The spec phase runs alongside, on a DIFFERENT intent, without contending
+    // for the work queue's single slot.
+    expect(out.actions).toContainEqual({
+      kind: 'launch_spec',
+      intentId: 'needs-spec',
+      origin: 'queue-kernel',
+      rework: false,
+      reworkRound: 0,
+    })
+  })
+
+  it('a parked or force-skipped intent never enters the spec phase', () => {
+    const parked = sdd({ specPath: null }, { meta: { A: meta('A', { parked: true }) } })
+    expect(parked.actions).toHaveLength(0)
+    expect(decisionFor(parked, 'A')).toMatchObject({ reason: 'blocked_parked' })
+
+    const skipped = sdd(
+      { specPath: null },
+      { control: { state: 'running', startedAt: NOW - 1000, forceSkipped: ['A'] } },
+    )
+    expect(skipped.actions).toHaveLength(0)
+    expect(decisionFor(skipped, 'A')).toMatchObject({ reason: 'blocked_force_skipped' })
+  })
+
+  it('a paused queue starts no spec session either', () => {
+    const out = sdd(
+      { specPath: null },
+      { control: { state: 'paused', startedAt: NOW - 1000, forceSkipped: [] } },
+    )
+    expect(out.actions).toHaveLength(0)
+    expect(decisionFor(out, 'A')).toMatchObject({ reason: 'queue_paused' })
   })
 })

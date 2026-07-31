@@ -21,6 +21,7 @@ const baseSettings: SystemSettings = {
   toolAgentId: '',
   intentAgentId: '',
   specAgentId: '',
+  specReviewAgentId: '',
   automationAgentId: '',
   defaultMode: 'default',
   consensus: { enabled: false },

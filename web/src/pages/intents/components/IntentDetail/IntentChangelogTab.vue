@@ -23,6 +23,7 @@ const OP_LABELS: Record<IntentLogOperation, string> = {
   status_changed: t('intent.changelog.operationType.statusChanged'),
   spec_created: t('intent.changelog.operationType.specCreated'),
   spec_updated: t('intent.changelog.operationType.specUpdated'),
+  spec_reviewed: t('intent.changelog.operationType.specReviewed'),
   spec_approved: t('intent.changelog.operationType.specApproved'),
   spec_unapproved: t('intent.changelog.operationType.specUnapproved'),
   pr_created: t('intent.changelog.operationType.prCreated'),

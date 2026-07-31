@@ -31,6 +31,7 @@ import type {
   QueueRunFact,
 } from './types.js'
 import {
+  QUEUE_MAX_SPEC_REWORK,
   QUEUE_PERMISSION_WAIT_MS,
   QUEUE_RUN_ORIGIN,
   QUEUE_TICK_MS,
@@ -45,6 +46,27 @@ interface GateResult {
   reason: QueueReasonCode
   detail: string
   /** When the blocking condition expires by itself (backoff / cooldown). */
+  wakeAt: number | null
+}
+
+/**
+ * What the spec phase decided for one intent that failed the spec-approval gate.
+ * It REPLACES that intent's `blocked_spec_not_approved` verdict for this pass, so
+ * the decision log shows the actual sub-state (authoring / reviewing / reworking /
+ * awaiting approval) instead of one opaque "spec not approved" forever.
+ */
+interface SpecVerdict {
+  action: QueueDecision['action']
+  reason: QueueReasonCode
+  detail: string
+  /** The side effect to perform, when this verdict has one. */
+  actions: QueueAction[]
+  /**
+   * True when the verdict starts an AGENT session and must therefore take the
+   * workspace's single spec-phase slot. A machine approval and a human-todo
+   * escalation are plain writes, so they never queue behind a running session.
+   */
+  needsSlot: boolean
   wakeAt: number | null
 }
 
@@ -268,20 +290,84 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     }
   }
 
+  // ── Spec phase ────────────────────────────────────────────────────────────
+  // Everything blocked purely by `blocked_spec_not_approved` is not "stuck": in
+  // an SDD workspace the queue owns the spec's whole life — author it, review it
+  // read-only, rework it up to the cap, and (only under the workspace's explicit
+  // opt-in) approve it. Each such intent's verdict REPLACES its gate verdict
+  // below, so a decision row says which sub-state it is actually in.
+  //
+  // At most ONE session-starting verdict fires per pass, mirroring the work
+  // queue's serial execution: writing and reviewing specs costs real tokens, and
+  // an SDD workspace that just enabled automation would otherwise fan out a spec
+  // session per pending intent at once. Plain writes (machine approval, the
+  // rework-cap escalation) do not take that slot.
+  const specVerdictOf = new Map<string, SpecVerdict>()
+  if (sddEnabled) {
+    const specAlive = new Map(input.specRuns.map((r) => [r.sessionId, r.alive]))
+    const specInFlight = new Set(input.specInFlight)
+    const specPhase = candidates.filter(
+      (r) => gateOf.get(r.id)?.reason === 'blocked_spec_not_approved',
+    )
+    let slotTaken = false
+    for (const intent of specPhase) {
+      const verdict = evaluateSpecPhase(intent, {
+        now,
+        meta: metaOf(intent.id),
+        alive: (id: string | null) => !!id && specAlive.get(id) === true,
+        inFlight: specInFlight.has(intent.id),
+        machineApprovalEnabled: input.machineApprovalEnabled,
+      })
+      if (verdict.needsSlot && slotTaken) {
+        specVerdictOf.set(intent.id, {
+          action: 'wait',
+          reason: 'blocked_concurrency_gate',
+          detail: '队列串行执行规格阶段,等待前序意图的 spec 会话结束',
+          actions: [],
+          needsSlot: false,
+          wakeAt: null,
+        })
+        continue
+      }
+      if (verdict.needsSlot) slotTaken = true
+      specVerdictOf.set(intent.id, verdict)
+      actions.push(...verdict.actions)
+      noteWake(verdict.wakeAt)
+    }
+  }
+
+  /**
+   * Record one candidate's verdict, preferring its spec-phase sub-state over the
+   * raw gate result. Every place that reports on non-selected candidates goes
+   * through here, so the three branches below cannot disagree about what a
+   * spec-phase intent is doing.
+   */
+  const pushGateOrSpec = (
+    intent: QueueIntentFact,
+    gate: GateResult,
+    eligibleDetail: string,
+  ): void => {
+    const spec = specVerdictOf.get(intent.id)
+    if (spec) {
+      pushDecision(intent, spec.action, spec.reason, spec.detail, spec.wakeAt)
+      return
+    }
+    pushDecision(
+      intent,
+      gate.eligible ? 'wait' : 'block',
+      gate.eligible ? 'blocked_concurrency_gate' : gate.reason,
+      gate.eligible ? eligibleDetail : gate.detail,
+      gate.wakeAt,
+    )
+  }
+
   // ── Something the kernel already drives → observe, never re-launch ────────
   const owned = candidates.find((r) => inFlight.has(r.id))
   if (owned) {
     pushDecision(owned, 'wait', 'running', '内核 run 进行中')
     for (const intent of candidates) {
       if (intent.id === owned.id || parkedThisPass.has(intent.id)) continue
-      const gate = gateOf.get(intent.id)!
-      pushDecision(
-        intent,
-        gate.eligible ? 'wait' : 'block',
-        gate.eligible ? 'blocked_concurrency_gate' : gate.reason,
-        gate.eligible ? '队列串行执行,等待当前意图结束' : gate.detail,
-        gate.wakeAt,
-      )
+      pushGateOrSpec(intent, gateOf.get(intent.id)!, '队列串行执行,等待当前意图结束')
     }
     return finish('developing', actions, decisions, {
       intentId: owned.id,
@@ -311,13 +397,10 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     }
     for (const intent of candidates) {
       if (intent.id === blocking.id || parkedThisPass.has(intent.id)) continue
-      const gate = gateOf.get(intent.id)!
-      pushDecision(
+      pushGateOrSpec(
         intent,
-        gate.eligible ? 'wait' : 'block',
-        gate.eligible ? 'blocked_concurrency_gate' : gate.reason,
-        gate.eligible ? `全局并发闸门:「${blocking.title}」的工作会话仍在运行` : gate.detail,
-        gate.wakeAt,
+        gateOf.get(intent.id)!,
+        `全局并发闸门:「${blocking.title}」的工作会话仍在运行`,
       )
     }
     if (!attachable && !gateOf.has(blocking.id)) {
@@ -362,14 +445,7 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   for (const intent of candidates) {
     if (picked && intent.id === picked.id) continue
     if (parkedThisPass.has(intent.id)) continue
-    const gate = gateOf.get(intent.id)!
-    pushDecision(
-      intent,
-      gate.eligible ? 'wait' : 'block',
-      gate.eligible ? 'blocked_concurrency_gate' : gate.reason,
-      gate.eligible ? '队列串行执行,等待前序意图结束' : gate.detail,
-      gate.wakeAt,
-    )
+    pushGateOrSpec(intent, gateOf.get(intent.id)!, '队列串行执行,等待前序意图结束')
   }
 
   // Nothing runnable purely because dependency PR states are stale → refresh.
@@ -389,4 +465,170 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   // done — `done` means the snapshot holds no pending automation work at all.
   const stillPending = candidates.length > 0
   return finish(stillPending ? 'running' : 'done', actions, decisions, idle)
+}
+
+/**
+ * Decide the spec phase for ONE intent that has not yet passed the spec gate.
+ * Pure, and ordered so that every "something is already happening" case is
+ * answered before anything is started — a live session, an in-flight kernel run
+ * and the self-excitation cooldown all mean "wait", never "launch again".
+ *
+ * The progression, once nothing is in flight:
+ *   no spec               → author it
+ *   spec unreadable       → wait (an unreadable spec is not an empty one)
+ *   no valid conclusion   → review the current content
+ *   changes_requested     → rework, until the cap, then hand it to a human
+ *   pass                  → await human approval, or machine-approve under opt-in
+ *
+ * "Valid conclusion" means the stored verdict was produced against the spec's
+ * CURRENT fingerprint. That single comparison is what makes an edited spec
+ * automatically re-reviewed, and what stops an approval resting on a document
+ * that no longer exists — no invalidation pass, no clean-up job.
+ */
+function evaluateSpecPhase(
+  intent: QueueIntentFact,
+  ctx: {
+    now: number
+    meta: QueueIntentMeta
+    alive: (sessionId: string | null) => boolean
+    inFlight: boolean
+    machineApprovalEnabled: boolean
+  },
+): SpecVerdict {
+  const wait = (
+    reason: QueueReasonCode,
+    detail: string,
+    wakeAt: number | null = null,
+  ): SpecVerdict => ({ action: 'wait', reason, detail, actions: [], needsSlot: false, wakeAt })
+  const block = (
+    reason: QueueReasonCode,
+    detail: string,
+    wakeAt: number | null = null,
+  ): SpecVerdict => ({ action: 'block', reason, detail, actions: [], needsSlot: false, wakeAt })
+
+  // Something the kernel itself is already driving for this intent.
+  if (ctx.inFlight) return wait('running', '规格阶段 run 进行中')
+  if (ctx.alive(intent.specSessionId)) return wait('spec_authoring', '撰写会话运行中,等待其产出')
+  if (ctx.alive(intent.specReviewSessionId)) {
+    return wait('spec_review_running', '审核会话运行中,等待结论')
+  }
+  // The self-excitation guard: a tick and a lifecycle event arriving back-to-back
+  // must not start two spec sessions for the same intent.
+  if (ctx.meta.cooldownUntil !== null && ctx.meta.cooldownUntil > ctx.now) {
+    return block('blocked_cooldown', '刚发起过一次规格阶段 run,冷却中', ctx.meta.cooldownUntil)
+  }
+
+  if (intent.specPath === null) {
+    return {
+      action: 'launch_spec',
+      reason: 'spec_authoring',
+      detail: '尚无 spec,发起撰写会话',
+      actions: [
+        {
+          kind: 'launch_spec',
+          intentId: intent.id,
+          origin: QUEUE_RUN_ORIGIN,
+          rework: false,
+          reworkRound: 0,
+        },
+      ],
+      needsSlot: true,
+      wakeAt: null,
+    }
+  }
+
+  // The ledger says a spec exists but its content could not be read. Fail closed:
+  // reviewing "nothing" would be judging a document we never saw.
+  if (intent.specFingerprint === null) {
+    return block('spec_unreadable', 'spec 文件当前不可读,本轮不做审核')
+  }
+
+  const conclusionValid =
+    intent.specReviewVerdict !== null && intent.specReviewFingerprint === intent.specFingerprint
+
+  if (!conclusionValid) {
+    return {
+      action: 'launch_spec_review',
+      reason: 'spec_reviewing',
+      detail:
+        intent.specReviewVerdict === null
+          ? 'spec 已就绪但尚无审核结论,发起只读审核'
+          : 'spec 内容已变更,旧结论失效,重新审核最新内容',
+      actions: [
+        {
+          kind: 'launch_spec_review',
+          intentId: intent.id,
+          origin: QUEUE_RUN_ORIGIN,
+          fingerprint: intent.specFingerprint,
+        },
+      ],
+      needsSlot: true,
+      wakeAt: null,
+    }
+  }
+
+  if (intent.specReviewVerdict === 'changes_requested') {
+    // `specReviewReworkRounds` counts `changes_requested` conclusions, and each
+    // one launches exactly one rework. Rounds 1..CAP are reworked; the conclusion
+    // AFTER the last allowed rework (round CAP+1) is where a human takes over.
+    if (intent.specReviewReworkRounds > QUEUE_MAX_SPEC_REWORK) {
+      const detail = `spec 已返工 ${QUEUE_MAX_SPEC_REWORK} 轮仍未通过审核,交回人工`
+      return {
+        action: 'park',
+        reason: 'spec_rework_exhausted',
+        detail,
+        actions: [
+          { kind: 'park', intentId: intent.id, reason: 'spec_rework_exhausted', detail },
+          {
+            kind: 'wait_user_involve',
+            intentId: intent.id,
+            reason: 'spec_rework_exhausted',
+            detail,
+          },
+        ],
+        needsSlot: false,
+        wakeAt: null,
+      }
+    }
+    return {
+      action: 'launch_spec',
+      reason: 'spec_rework',
+      detail: `审核结论为需修改,发起第 ${intent.specReviewReworkRounds} 轮返工`,
+      actions: [
+        {
+          kind: 'launch_spec',
+          intentId: intent.id,
+          origin: QUEUE_RUN_ORIGIN,
+          rework: true,
+          reworkRound: intent.specReviewReworkRounds,
+        },
+      ],
+      needsSlot: true,
+      wakeAt: null,
+    }
+  }
+
+  // `pass`. Whether this becomes an approval is decided ONLY by the workspace's
+  // explicit opt-in: with it off, no machine-approval action is produced at all,
+  // so there is no path for one to be executed by mistake.
+  if (!ctx.machineApprovalEnabled) {
+    return block('spec_awaiting_approval', '审核通过,等待人工批准')
+  }
+  if (intent.specReviewMachineApprovalBlocked) {
+    return block('spec_awaiting_approval', '人工已撤销该结论对应的批准,等待人工批准')
+  }
+  return {
+    action: 'approve_spec',
+    reason: 'spec_machine_approved',
+    detail: '审核通过且工作区已开启机器批准,自动批准 spec',
+    actions: [
+      {
+        kind: 'machine_approve_spec',
+        intentId: intent.id,
+        fingerprint: intent.specFingerprint,
+      },
+    ],
+    needsSlot: false,
+    wakeAt: null,
+  }
 }

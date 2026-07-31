@@ -25,6 +25,7 @@ import {
   type ResearchProfile,
   type SessionMcpProfile,
   type SpecProfile,
+  type SpecReviewProfile,
 } from './run-via-driver.js'
 import { modelUserTurn, type RunInject } from './prompt-delivery.js'
 import { decideResume, type RunOutcome } from './decide-resume.js'
@@ -112,6 +113,21 @@ export interface LaunchRunDeps {
    * composition-root wiring is a bug, never a silent drop of the write lock).
    */
   specProfile?: (workspacePath: string) => SpecProfile
+  /**
+   * Spec-REVIEW launch profile (strictly read-only gate + disallowed-tools lock +
+   * review system prompt + the reviewer's MCP tools), injected at the composition
+   * root so the kernel launcher never imports `features/` (ADR-0009 R1). Consulted
+   * ONLY for `rt.sessionKind === 'spec_review'` runtimes. The reviewed intent and
+   * the judged fingerprint come off the runtime and are baked into the profile
+   * here, so the review's submit tool is bound to one intent and one document
+   * version. A review runtime launched without the profile — or without those two
+   * facts — throws: a missing wiring is a bug, never a silently unbound reviewer.
+   */
+  specReviewProfile?: (
+    workspacePath: string,
+    intentId: string,
+    fingerprint: string,
+  ) => SpecReviewProfile
   /**
    * Discussion-research launch profile (read-only `discussion-research` gate +
    * disallowed-tools lock + research system prompt), injected at the composition
@@ -209,6 +225,7 @@ export async function launchRun(
   let runId = rt.sessionId
   const isIntent = rt.sessionKind === 'intent'
   const isSpec = rt.sessionKind === 'spec'
+  const isSpecReview = rt.sessionKind === 'spec_review'
   // The research marker, NOT `sessionKind === 'discussion'`: the orchestrator's
   // per-agent sessions share that kind and must never pick up the research profile.
   const isResearch = !!rt.researchDiscussionId
@@ -231,6 +248,20 @@ export async function launchRun(
   if (isSpec && !deps.specProfile) {
     throw new Error(
       '[c3] launchRun: a spec runtime requires deps.specProfile (composition-root wiring missing)',
+    )
+  }
+  // Same loud-throw for a spec-REVIEW runtime, extended to the two facts that
+  // bind its submit tool. Launching a reviewer without its read-only lock — or
+  // with an unbound submit tool that could conclude about anything — is a
+  // composition-root bug, never something to degrade past (C-SEC).
+  if (isSpecReview && !deps.specReviewProfile) {
+    throw new Error(
+      '[c3] launchRun: a spec_review runtime requires deps.specReviewProfile (composition-root wiring missing)',
+    )
+  }
+  if (isSpecReview && (!rt.specReviewIntentId || !rt.specReviewFingerprint)) {
+    throw new Error(
+      '[c3] launchRun: a spec_review runtime requires rt.specReviewIntentId + rt.specReviewFingerprint',
     )
   }
   // Same loud-throw for a research-marked runtime: a follow-up turn on a discussion's
@@ -274,13 +305,20 @@ export async function launchRun(
     isIntent && deps.intentProfile ? deps.intentProfile(workspacePath, runId) : undefined
   const resolvedSpecProfile =
     isSpec && deps.specProfile ? deps.specProfile(workspacePath) : undefined
+  // The reviewed intent + judged fingerprint are baked in here (both guaranteed
+  // present by the throw above), so the reviewer's submit tool is bound before a
+  // single turn runs.
+  const resolvedSpecReviewProfile =
+    isSpecReview && deps.specReviewProfile
+      ? deps.specReviewProfile(workspacePath, rt.specReviewIntentId!, rt.specReviewFingerprint!)
+      : undefined
   const resolvedResearchProfile =
     isResearch && deps.researchProfile ? deps.researchProfile(workspacePath) : undefined
   // Resolve the work-session base MCP profile once (publish_event), for plain
-  // work sessions only — never for intent/spec/research runs (those carry their own
-  // profiles). Both the claude path and the driver path consume it (2026-06-20).
+  // work sessions only — never for intent/spec/spec_review/research runs (those
+  // carry their own profiles). Both the claude path and the driver path consume it.
   const resolvedSessionProfile =
-    !isIntent && !isSpec && !isResearch && deps.sessionProfile
+    !isIntent && !isSpec && !isSpecReview && !isResearch && deps.sessionProfile
       ? deps.sessionProfile(workspacePath)
       : undefined
 
@@ -380,6 +418,7 @@ export async function launchRun(
           inject,
           resolvedSessionProfile,
           resolvedSpecProfile,
+          resolvedSpecReviewProfile,
         )
       const unavailable =
         'Codex is unavailable (host CLI `codex` missing — install it to use a Codex agent).'
@@ -551,26 +590,33 @@ export async function launchRun(
                 // spec prompt); `specDir` rides on the runtime (per-run). Like
                 // intent, excluded from socket auto-resume (one-shot lifecycle).
                 { ...deps.specProfile!(workspacePath), specDir: rt.specDir }
-              : isResearch
-                ? // The discussion-research read-only profile (gate + disallowed-tools
-                  // lock + research prompt), re-applied on every follow-up turn so a
-                  // resumed research session can still only read.
-                  resolvedResearchProfile!
-                : // Socket auto-resume is for ordinary user sessions only — the
-                  // intent comm agent is excluded (different lifecycle). A work run's
-                  // internal instruction (SDD work contract) rides claude's preset
-                  // system append here, so it reaches the model without being echoed.
-                  // Work sessions also get the base MCP profile (publish_event)
-                  // over the loopback HTTP MCP route; the gate stays 'standard'.
-                  {
-                    ...(inject?.systemInstruction
-                      ? { appendSystemPrompt: inject.systemInstruction }
-                      : {}),
-                    ...(resolvedSessionProfile ? { bindMcp: resolvedSessionProfile.bindMcp } : {}),
-                    onSocketDisconnect: (info) => {
-                      socketInfo = info
-                    },
-                  }),
+              : isSpecReview
+                ? // The spec-review read-only profile (gate + disallowed-tools lock
+                  // + review prompt + the reviewer's bound submit tool). No
+                  // `specDir`: a reviewer has no writable location to confine.
+                  resolvedSpecReviewProfile!
+                : isResearch
+                  ? // The discussion-research read-only profile (gate + disallowed-tools
+                    // lock + research prompt), re-applied on every follow-up turn so a
+                    // resumed research session can still only read.
+                    resolvedResearchProfile!
+                  : // Socket auto-resume is for ordinary user sessions only — the
+                    // intent comm agent is excluded (different lifecycle). A work run's
+                    // internal instruction (SDD work contract) rides claude's preset
+                    // system append here, so it reaches the model without being echoed.
+                    // Work sessions also get the base MCP profile (publish_event)
+                    // over the loopback HTTP MCP route; the gate stays 'standard'.
+                    {
+                      ...(inject?.systemInstruction
+                        ? { appendSystemPrompt: inject.systemInstruction }
+                        : {}),
+                      ...(resolvedSessionProfile
+                        ? { bindMcp: resolvedSessionProfile.bindMcp }
+                        : {}),
+                      onSocketDisconnect: (info) => {
+                        socketInfo = info
+                      },
+                    }),
           send: (m) => emit(runId, m),
           // Permission-event hook: the session id is a getter because `runId`
           // changes on pending→real bind (onSessionId reassigns it).

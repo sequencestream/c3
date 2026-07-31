@@ -254,8 +254,15 @@
       "spec": {
         "tooltip": "执行规范编写会话的智能体(撰写项目规范)"
       },
+      "specReview": {
+        "tooltip": "执行规范审核会话的智能体(对已撰写的规范做只读审核)"
+      },
       "specPicker": {
         "label": "规范智能体",
+        "followDefault": "跟随默认智能体"
+      },
+      "specReviewPicker": {
+        "label": "规范审核智能体",
         "followDefault": "跟随默认智能体"
       },
       "automation": {
@@ -773,6 +780,9 @@
         "label": "批准规范",
         "confirmLabel": "批准"
       },
+      "revokeSpecApproval": {
+        "label": "撤销批准"
+      },
       "modifySession": {
         "label": "我要修改"
       },
@@ -916,7 +926,16 @@
     },
     "spec": {
       "empty": "该意图尚未编写规范。",
-      "loading": "加载规范中…"
+      "loading": "加载规范中…",
+      "review": {
+        "verdict": {
+          "pass": "审核通过",
+          "changesRequested": "需修改"
+        },
+        "reworkRounds": "第 {rounds} / {max} 轮返工",
+        "approvedBy": "{user} 已批准",
+        "approvedByMachine": "已自动批准(机器)"
+      }
     },
     "changelog": {
       "empty": "该意图暂无变更日志。",
@@ -927,6 +946,7 @@
         "statusChanged": "状态变更",
         "specCreated": "编写规范",
         "specUpdated": "编辑规范",
+        "specReviewed": "审核 spec",
         "specApproved": "批准规范",
         "specUnapproved": "取消批准",
         "prCreated": "创建 PR",
@@ -1741,6 +1761,9 @@
           },
           "spec": {
             "label": "规范"
+          },
+          "specReview": {
+            "label": "规范审核"
           }
         },
         "metadataFilter": {
@@ -2205,6 +2228,12 @@
           "label": "规范目录"
         },
         "hint": "本项目规范文件的固定集中存放位置(~/.c3/specs/<项目>)。同一项目的所有 worktree 共享同一份规范,且为只读——无法在此或通过接口修改。不提交到 Git。"
+      },
+      "machineApproval": {
+        "toggle": {
+          "label": "允许审核通过后由机器批准"
+        },
+        "hint": "默认关闭。开启后,只读审核结论为「通过」的规范由 c3 自行批准,批准人记为不冒充任何登录用户的机器身份,开发无需人工点击即可开始。批准仍可撤销——撤销后规范回到「等待批准」,且同一条审核结论不会被再次机器批准。关闭本开关不会撤销任何已批准的规范。"
       }
     },
     "consensus": {

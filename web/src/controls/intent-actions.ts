@@ -223,6 +223,19 @@ export function installIntentActions(ctx: AppCtx): void {
     })
   }
 
+  // Take back an approval — human or machine. The server also vetoes the review
+  // conclusion it rested on, so a machine-approval workspace cannot re-approve
+  // the same conclusion on its next tick; the refreshed `intents` broadcast is
+  // what returns the UI to "awaiting approval".
+  ctx.revokeSpecApproval = (intentId: string): void => {
+    if (!intentsProject.value) return
+    send({
+      type: 'revoke_spec_approval',
+      workspaceId: intentsProject.value,
+      intentId,
+    })
+  }
+
   // Open an intent's spec-authoring session for the detail's `spec session` tab.
   // The server restores the write-confined spec runtime and replies with a
   // session_selected; the chat column rebinds to it like any other session.

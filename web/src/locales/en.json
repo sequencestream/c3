@@ -254,8 +254,15 @@
       "spec": {
         "tooltip": "Agent that runs spec-authoring sessions (writing project specs)"
       },
+      "specReview": {
+        "tooltip": "Agent that runs spec-review sessions (read-only review of an authored spec)"
+      },
       "specPicker": {
         "label": "Spec agent",
+        "followDefault": "Follow default agent"
+      },
+      "specReviewPicker": {
+        "label": "Spec review agent",
         "followDefault": "Follow default agent"
       },
       "automation": {
@@ -773,6 +780,9 @@
         "label": "Approve spec",
         "confirmLabel": "Approve"
       },
+      "revokeSpecApproval": {
+        "label": "Revoke approval"
+      },
       "modifySession": {
         "label": "I want changes"
       },
@@ -916,7 +926,16 @@
     },
     "spec": {
       "empty": "No spec has been written for this intent yet.",
-      "loading": "Loading spec…"
+      "loading": "Loading spec…",
+      "review": {
+        "verdict": {
+          "pass": "Review passed",
+          "changesRequested": "Changes requested"
+        },
+        "reworkRounds": "Rework round {rounds} of {max}",
+        "approvedBy": "Approved by {user}",
+        "approvedByMachine": "Approved automatically (machine)"
+      }
     },
     "changelog": {
       "empty": "No lifecycle changes have been recorded for this intent yet.",
@@ -927,6 +946,7 @@
         "statusChanged": "Status changed",
         "specCreated": "Spec written",
         "specUpdated": "Spec edited",
+        "specReviewed": "Spec reviewed",
         "specApproved": "Spec approved",
         "specUnapproved": "Spec unapproved",
         "prCreated": "PR created",
@@ -1645,6 +1665,9 @@
           },
           "spec": {
             "label": "Spec"
+          },
+          "specReview": {
+            "label": "Spec review"
           }
         },
         "metadataFilter": {
@@ -2205,6 +2228,12 @@
           "label": "Spec directory"
         },
         "hint": "Fixed, centralized location where this project's specs are stored (~/.c3/specs/[project]). Shared by every worktree of the project and read-only — it cannot be changed here or via the API. Not committed to Git."
+      },
+      "machineApproval": {
+        "toggle": {
+          "label": "Allow machine approval of a passing spec review"
+        },
+        "hint": "Off by default. When on, a spec whose read-only review concludes “pass” is approved by c3 itself, recorded under a machine identity that never impersonates a user, and development may start without a human click. The approval stays revocable — revoking returns the spec to “awaiting approval” and prevents the same review conclusion from being re-approved. Turning this off never revokes an already-approved spec."
       }
     },
     "consensus": {

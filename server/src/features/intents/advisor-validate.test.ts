@@ -8,6 +8,10 @@
  * reaching outside the bound intent/session, and overriding `workspacePath`.
  */
 import { describe, expect, it } from 'vitest'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { ADVISOR_C3_TOOL_NAMES } from './advisor-tools.js'
 import {
   ADVISOR_ACTIONS,
   ADVISOR_MAX_CHAIN_DEPTH,
@@ -139,6 +143,39 @@ describe('validateAdvisorProposal — hard gates on a resume', () => {
       action: 'resume_work_session',
       requiresConfirmation: false,
     })
+  })
+})
+
+// The RM-A12 branch above is NOT on a production path: `resume_work_session` has
+// no advisor tool, and nothing outside these tests calls the validator. That is
+// what keeps the gate's real enforcement in exactly two places — the shared
+// `launchWorkSession` and the queue kernel — so relaxing it under `worktree` in
+// those two cannot leave a third, stricter copy behind. These two cases pin the
+// fact down: wiring the advisor up will fail them, and whoever does it must then
+// supply mode-aware `blockingIntentTitles`.
+describe('validateAdvisorProposal — not wired into production', () => {
+  it('resume_work_session is proposable but has no advisor tool of its own', () => {
+    expect(ADVISOR_ACTIONS).toContain('resume_work_session')
+    expect(ADVISOR_C3_TOOL_NAMES).not.toContain('resume_work_session')
+  })
+
+  it('no production module calls the validator', () => {
+    const srcRoot = fileURLToPath(new URL('../../', import.meta.url))
+    const callers: string[] = []
+    const walk = (dir: string): void => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, e.name)
+        if (e.isDirectory()) {
+          walk(full)
+          continue
+        }
+        if (!e.name.endsWith('.ts') || e.name.endsWith('.test.ts')) continue
+        if (full.endsWith(join('intents', 'advisor-validate.ts'))) continue
+        if (readFileSync(full, 'utf8').includes('validateAdvisorProposal')) callers.push(full)
+      }
+    }
+    walk(srcRoot)
+    expect(callers).toEqual([])
   })
 })
 

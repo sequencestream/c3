@@ -110,21 +110,30 @@ function errMsg(err: unknown): string {
 }
 
 /**
- * The workspace-global concurrency gate (RM-A12), evaluated here rather than
- * only inside the queue kernel's scheduling loop. Every caller that starts or
- * continues a work turn goes through this function, so the manual
- * `start_development` button and the automation `start_session_for_intent` tool
- * share ONE gate instead of two — an automation can no longer open a second
- * concurrent work session just because it entered through MCP.
+ * The concurrency gate (RM-A12), evaluated here rather than only inside the
+ * queue kernel's scheduling loop. Every caller that starts or continues a work
+ * turn goes through this function, so the manual `start_development` button and
+ * the automation `start_session_for_intent` tool share ONE gate instead of two —
+ * an automation can no longer open a second concurrent work session just because
+ * it entered through MCP.
  *
- * A DANGLING session (on disk but not running) never blocks, and the target
- * intent's OWN running session is excluded: attaching to it is not a second
- * concurrent turn.
+ * The gate exists to stop two work sessions from editing the same files, so its
+ * scope follows the workspace's git branch mode:
+ *
+ * - `current-branch` — every intent develops in the one shared checkout, so any
+ *   other intent's live work session blocks a new turn.
+ * - `worktree` — each intent develops in its own directory, so another intent's
+ *   live session shares no file with this one and never blocks it.
+ *
+ * A DANGLING session (on disk but not running) never blocks either way, and the
+ * target intent's OWN running session is excluded: attaching to it is not a
+ * second concurrent turn.
  */
 export function findBlockingWorkSession(
   workspacePath: string,
   exceptIntentId: string,
 ): Intent | null {
+  if (getGitBranchMode(workspacePath) === 'worktree') return null
   for (const other of listIntents(workspacePath)) {
     if (other.id === exceptIntentId) continue
     if (other.status !== 'in_progress') continue
@@ -221,10 +230,11 @@ async function attachOrResumeWorkSession(
  *   3. `todo`, or `in_progress` whose session is gone → **fresh** (the historic
  *      status gate, SDD approval gate, dependency gate and git branch strategy).
  *
- * Before any NEW turn — fresh or resumed — the workspace-global concurrency gate
- * (RM-A12) is evaluated here, so the manual entry and the MCP entry share one
- * gate. Returns a structured result — never throws for expected validation
- * failures.
+ * Before any NEW turn — fresh or resumed — the concurrency gate (RM-A12) is
+ * evaluated here, so the manual entry and the MCP entry share one gate. Its
+ * scope follows the git branch mode: shared in `current-branch`, per-intent (and
+ * therefore never cross-blocking) in `worktree`. Returns a structured result —
+ * never throws for expected validation failures.
  */
 export async function launchWorkSession(
   workspacePath: string,
@@ -263,8 +273,8 @@ export async function launchWorkSession(
     return { success: false, code: 'intent.cannotStartDev', params: { status: req.status } }
   }
 
-  // RM-A12 — the workspace-global concurrency gate, applied before a fresh turn
-  // for the same reason it applies before a resumed one.
+  // RM-A12 — the concurrency gate, applied before a fresh turn for the same
+  // reason it applies before a resumed one.
   const blocking = findBlockingWorkSession(workspacePath, req.id)
   if (blocking) {
     releaseClaim()

@@ -1882,6 +1882,14 @@ main {
 .md-body img {
   max-width: 100%;
 }
+/* Mermaid 图表：居中显示、随容器缩放；超宽时由 .md-scroll 提供横向滚动 */
+.md-body .md-mermaid {
+  text-align: center;
+}
+.md-body .md-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
 
 /* ============ 输入区域（规范 3.4 / 3.6） ============ */
 footer {

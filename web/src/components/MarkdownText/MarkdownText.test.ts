@@ -1,7 +1,25 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import MarkdownText from './MarkdownText.vue'
 import type { TextMsg } from '../../lib/chat-types'
+
+// mermaid 真实渲染依赖浏览器排版(getBBox 等),happy-dom 跑不动:mock 掉 mermaid 包本身,
+// 用它验证组件确实把 mermaid 块交给了 mermaid,以及成功/失败两条路径的 DOM 结果。
+const mermaidMock = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  parse: vi.fn(),
+  render: vi.fn(),
+}))
+vi.mock('mermaid', () => ({ default: mermaidMock }))
+
+function fakeSvg(id: string): string {
+  return `<svg id="${id}" class="flowchart" viewBox="0 0 100 50"><g class="node"><rect x="0" y="0" width="40" height="20"></rect><text x="5" y="15">A</text></g></svg>`
+}
+
+// 等待组件内的异步增强(mermaid 渲染 / Shiki 高亮)落到 DOM。
+async function flush(): Promise<void> {
+  for (let i = 0; i < 3; i++) await new Promise((resolve) => setTimeout(resolve, 0))
+}
 
 function mountMd(text: string, kind: TextMsg['kind'] = 'assistant') {
   return mount(MarkdownText, { props: { text, kind } })
@@ -292,5 +310,121 @@ describe('MarkdownText.vue — 代码文件链接检测', () => {
         detail: { path: 'new.ts', line: undefined },
       }),
     )
+  })
+})
+
+describe('MarkdownText.vue — Mermaid 图表渲染', () => {
+  const FLOWCHART = '```mermaid\nflowchart TD\n  A[开始] --> B[结束]\n```'
+  const SEQUENCE = '```mermaid\nsequenceDiagram\n  Web->>Server: 请求\n  Server-->>Web: 响应\n```'
+
+  beforeEach(() => {
+    mermaidMock.initialize.mockClear()
+    mermaidMock.parse.mockReset().mockResolvedValue({ diagramType: 'flowchart' })
+    mermaidMock.render.mockReset().mockImplementation(async (id: string) => ({ svg: fakeSvg(id) }))
+  })
+
+  it('flowchart 围栏块渲染为 SVG 并替换原代码块', async () => {
+    const w = mountMd(FLOWCHART)
+    await flush()
+    expect(mermaidMock.render).toHaveBeenCalledTimes(1)
+    expect(mermaidMock.render.mock.calls[0][1]).toContain('flowchart TD')
+    const body = w.find('.md-body')
+    expect(body.find('.md-mermaid svg').exists()).toBe(true)
+    // 原始 mermaid 代码块已被图表取代
+    expect(body.find('pre > code.language-mermaid').exists()).toBe(false)
+  })
+
+  it('sequenceDiagram 围栏块同样渲染为 SVG', async () => {
+    const w = mountMd(SEQUENCE)
+    await flush()
+    expect(mermaidMock.render.mock.calls[0][1]).toContain('sequenceDiagram')
+    expect(w.find('.md-body .md-mermaid svg').exists()).toBe(true)
+    expect(w.find('.md-body pre > code.language-mermaid').exists()).toBe(false)
+  })
+
+  it('同一文档多个图表各自渲染且 id 互不冲突', async () => {
+    const w = mountMd(`${FLOWCHART}\n\n${SEQUENCE}`)
+    await flush()
+    expect(w.findAll('.md-body .md-mermaid svg')).toHaveLength(2)
+    const ids = mermaidMock.render.mock.calls.map((call) => call[0] as string)
+    expect(ids).toHaveLength(2)
+    expect(new Set(ids).size).toBe(2)
+  })
+
+  it('语法错误(parse 判否)降级为原始代码块,不进入渲染', async () => {
+    mermaidMock.parse.mockResolvedValue(false)
+    const w = mountMd(`# 标题\n\n\`\`\`mermaid\nflowchart TD\n  A --> ((坏语法\n\`\`\`\n\n正文`)
+    await flush()
+    expect(mermaidMock.render).not.toHaveBeenCalled()
+    const body = w.find('.md-body')
+    const code = body.find('pre > code.language-mermaid')
+    expect(code.exists()).toBe(true)
+    expect(code.text()).toContain('((坏语法')
+    expect(body.find('svg').exists()).toBe(false)
+    // 同一文档的其余内容不受影响
+    expect(body.find('h1').text()).toBe('标题')
+    expect(body.text()).toContain('正文')
+  })
+
+  it('渲染抛错时优雅降级,异常被组件内部消化', async () => {
+    mermaidMock.render.mockRejectedValue(new Error('Parse error on line 2'))
+    const w = mountMd(`${FLOWCHART}\n\n后续段落`)
+    await flush()
+    const body = w.find('.md-body')
+    const code = body.find('pre > code.language-mermaid')
+    expect(code.exists()).toBe(true)
+    expect(code.text()).toContain('flowchart TD')
+    expect(body.find('svg').exists()).toBe(false)
+    expect(body.text()).toContain('后续段落')
+  })
+
+  it('渲染结果中的 <script> 被净化剥离', async () => {
+    mermaidMock.render.mockResolvedValue({
+      svg: '<svg id="x"><text>ok</text><script>window.__mermaidPwned = true</script></svg>',
+    })
+    const w = mountMd(FLOWCHART)
+    await flush()
+    const html = w.find('.md-body').html()
+    expect(html).toContain('<svg')
+    expect(html).not.toContain('<script')
+    expect((window as unknown as { __mermaidPwned?: boolean }).__mermaidPwned).toBeUndefined()
+  })
+
+  it('其他语言代码块不走 mermaid,保持既有代码块渲染', async () => {
+    const w = mountMd('```ts\nconst a = 1\n```')
+    await flush()
+    expect(mermaidMock.render).not.toHaveBeenCalled()
+    const code = w.find('.md-body pre code')
+    expect(code.exists()).toBe(true)
+    expect(code.text()).toContain('const a = 1')
+  })
+
+  it('纯文本入口(user)不触发 mermaid 渲染', async () => {
+    const w = mountMd(FLOWCHART, 'user')
+    await flush()
+    expect(mermaidMock.render).not.toHaveBeenCalled()
+    expect(w.find('svg').exists()).toBe(false)
+    expect(w.text()).toContain('flowchart TD')
+  })
+
+  it('text 更新后,上一轮迟到的 SVG 不写入新 DOM', async () => {
+    let resolveRender: (result: { svg: string }) => void = () => {}
+    mermaidMock.render.mockImplementation(
+      () =>
+        new Promise<{ svg: string }>((resolve) => {
+          resolveRender = resolve
+        }),
+    )
+    const w = mountMd(FLOWCHART)
+    await flush()
+    expect(w.find('.md-body svg').exists()).toBe(false) // 仍在渲染中
+    // 旧一轮尚未返回就换了文本
+    await w.setProps({ text: '# 新内容' })
+    await flush()
+    resolveRender({ svg: fakeSvg('c3-mermaid-stale') })
+    await flush()
+    const body = w.find('.md-body')
+    expect(body.find('svg').exists()).toBe(false)
+    expect(body.find('h1').text()).toBe('新内容')
   })
 })

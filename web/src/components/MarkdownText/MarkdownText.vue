@@ -9,12 +9,16 @@
  *
  * 非聊天场景（如需求详情、prompt 预览）可传 `markdown` 强制走同一条安全渲染管线，
  * 无需借 kind="assistant"——此时 kind 可省略，XSS 防护与外链加固一致。
+ *
+ * 渲染后的异步增强分两路互斥的代码块管线：```mermaid 围栏交给 mermaid 出图（失败保留
+ * 原代码块），其余语言交给 Shiki 高亮。
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import type { TextMsg } from '../../lib/chat-types'
 import { highlight, langFromClass } from '../../lib/highlight'
+import { renderMermaid } from '../../lib/mermaid'
 
 const props = defineProps<{
   text: string
@@ -62,6 +66,9 @@ const html = computed(() => {
 // 非流式(整段 push),每条消息只需在挂载 / text 变更后跑一次。
 const root = ref<HTMLElement | null>(null)
 
+// markdown-it 给 ```mermaid 围栏加的 class;图表管线与高亮管线以此互斥。
+const MERMAID_CLASS = 'language-mermaid'
+
 function wrapScrollableTables(): void {
   const el = root.value
   if (!el) return
@@ -75,11 +82,34 @@ function wrapScrollableTables(): void {
   }
 }
 
+// ```mermaid 围栏块渲染为图表:逐块交给 mermaid 出 SVG,成功则以图表容器替换原 <pre>。
+// 单块失败(语法错误/渲染异常)只保留该块的原始代码,不影响同文档其他图表与内容。
+async function renderMermaidBlocks() {
+  const el = root.value
+  if (!el) return
+  const codes = el.querySelectorAll<HTMLElement>(`pre > code.${MERMAID_CLASS}`)
+  for (const code of codes) {
+    const pre = code.parentElement
+    if (!pre) continue
+    const svg = await renderMermaid(code.textContent ?? '')
+    // text 可能已在 await 期间变更(v-html 整体换掉子树):确认该 <pre> 仍属于当前渲染内容
+    // 再替换,避免上一轮迟到的图表写进新 DOM。
+    if (!svg || !root.value?.contains(pre)) continue
+    const figure = document.createElement('div')
+    figure.className = 'md-mermaid md-scroll'
+    // svg 已在 lib/mermaid 内过 DOMPurify(svg profile),此处是受控赋值。
+    figure.innerHTML = svg
+    pre.replaceWith(figure)
+  }
+}
+
 async function highlightBlocks() {
   const el = root.value
   if (!el) return
   const codes = el.querySelectorAll<HTMLElement>('pre > code[class*="language-"]')
   for (const code of codes) {
+    // mermaid 块归图表渲染管线,不进 Shiki。
+    if (code.classList.contains(MERMAID_CLASS)) continue
     const lang = langFromClass(code.className)
     if (!lang) continue
     const pre = code.parentElement
@@ -140,22 +170,21 @@ function enhanceCodeFileLinks(): void {
   }
 }
 
+// 渲染后处理:mermaid 图表先于代码高亮启动(mermaid 块不进 Shiki),两者与表格、链接增强互不阻塞。
+function enhanceRendered(): void {
+  wrapScrollableTables()
+  void renderMermaidBlocks()
+  void highlightBlocks()
+  enhanceCodeFileLinks()
+}
+
 onMounted(() => {
-  if (isMarkdown.value) {
-    wrapScrollableTables()
-    void highlightBlocks()
-    enhanceCodeFileLinks()
-  }
+  if (isMarkdown.value) enhanceRendered()
 })
 watch(
   () => props.text,
   () => {
-    if (isMarkdown.value)
-      void nextTick(() => {
-        wrapScrollableTables()
-        void highlightBlocks()
-        enhanceCodeFileLinks()
-      })
+    if (isMarkdown.value) void nextTick(enhanceRendered)
   },
 )
 </script>

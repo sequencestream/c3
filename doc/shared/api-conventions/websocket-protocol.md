@@ -589,7 +589,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `intents`
 
-项目的 intent 列表，回复 `list_intents` / `open_intent_chat`，或在确认 `save_intents` 后广播（intent-management）。`sddEnabled` 是该 workspace 的 SDD 总开关,随每次列表广播携带,供四态意图操作按钮无需单独拉取设置即可定态（RM-R22）。
+项目的 intent 列表，回复 `list_intents` / `open_intent_chat`，或在 `save_intents` 落库后广播（intent-management）。`sddEnabled` 是该 workspace 的 SDD 总开关,随每次列表广播携带,供四态意图操作按钮无需单独拉取设置即可定态（RM-R22）。
 
 ### `create_intent` / `create_intent_result`
 
@@ -597,7 +597,7 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `start_intent_session`
 
-`start_intent_session { workspaceId, intentId, text, images? }` 为尚无 `intentSessionId` 的指定意图创建 owner 沟通会话并发送首条消息。空文本且无图片不创建；已有绑定返回冲突。成功沿用 `session_selected`、运行事件和 `intents` 快照。owner 会话后续调用 `save_intents` 时，批次必须恰好一项携带 owner intent ID，且在确认和落库前校验；拆分出的其他项省略 ID 并作为 `todo` 新建。
+`start_intent_session { workspaceId, intentId, text, images? }` 为尚无 `intentSessionId` 的指定意图创建 owner 沟通会话并发送首条消息。空文本且无图片不创建；已有绑定返回冲突。成功沿用 `session_selected`、运行事件和 `intents` 快照。owner 会话后续调用 `save_intents` 时，批次必须恰好一项携带 owner intent ID，落库前校验；拆分出的其他项省略 ID 并作为 `todo` 新建。
 
 ### `delete_intent`
 
@@ -902,7 +902,7 @@ automation 的执行日志。
 
 - **`ToolGate`** — `'always-ask' | 'on-sensitive' | 'trusted-prefix' | 'never-ask'`。工具门控的**激进程度**维度，与 `ActionMode` 正交。替换 Claude 的五向 `PermissionMode` 作为内部权限真相。
 - **`NeutralMode`** — `{ actionMode: ActionMode, toolGate: ToolGate }`。一个模式 token 解析到的中立权限网格单元。
-- **`AdapterCapability`** — 八个二进制能力：`'interrupt' | 'setActionMode' | 'streamingPush' | 'inProcessMcp' | 'forkSession' | 'perToolApproval' | 'taskStore' | 'nativeUserInput'`。内核的 `AdapterCapabilities` 布尔账本以此精确键名。其中 `nativeUserInput` = 供应商能否在回合中暂停向用户提问并以其回答续跑（Claude 经阻塞式 `canUseTool` 写回 = `true`；Codex 因 `codex exec` 派发后即关 stdin 无反向通道 = `false`）。`false` 时用户输入类意图（如 `save_intents`）改走 c3 受控的 HTTP-MCP 网关，抬升为常规 `permission_request` 进入 WorkCenter（可见的降级路径）。
+- **`AdapterCapability`** — 八个二进制能力：`'interrupt' | 'setActionMode' | 'streamingPush' | 'inProcessMcp' | 'forkSession' | 'perToolApproval' | 'taskStore' | 'nativeUserInput'`。内核的 `AdapterCapabilities` 布尔账本以此精确键名。其中 `nativeUserInput` = 供应商能否在回合中暂停向用户提问并以其回答续跑（Claude 经阻塞式 `canUseTool` 写回 = `true`；Codex 因 `codex exec` 派发后即关 stdin 无反向通道 = `false`）。`false` 时该供应商只能通过 c3 自己的流程牵涉人类（进入 WorkCenter 的 `permission_request`），这是可见的降级路径。
 - **`SessionCapability`** — 五个会话生命周期操作：`'list' | 'read' | 'resume' | 'rename' | 'delete'`。每个供应商通过 `SessionCapabilities` 按 `CapabilityState`（`'none' | 'partial' | 'full' | 'temporarily-unavailable'`）分级自我报告。
 - **`CanonicalRole`** — `'user' | 'assistant'`。模型承诺的唯一角色。Codex 从项类型合成。
 - **`CanonicalMessage`** — `{ vendor, sessionId, turnId?, role, blocks: CanonicalBlock[], ts, preApproved?, vendorExtra? }`。`vendor`/`sessionId` 是无条件的；`role`/`blocks`/`ts`/`turnId?` 携带折扣（合成/upsert/c3 时间戳/可丢弃）。无法在所有三种供应商中存活的任何内容落在 `vendorExtra` 中，永不放在顶层。
@@ -921,8 +921,6 @@ automation 的执行日志。
 - **`ProposedIntent`** — `{ id?, title, shortEnTitle, content, priority, module?, dependsOn?, dependsOnIndexes?, intentSessionId? }`。`save_intents` 调用中的一个项。`shortEnTitle` 是必填的简短英文 ASCII 标题，用作后续分支/worktree 命名的稳定来源。有 `id` 时 upsert（更新同项目已存在的 intent）；无 `id` 时插入新 `Intent`（状态 `todo`）。`intentSessionId` 是把本条意图回链到产出它的沟通会话的可选字段，**仅当本批只保存 1 条意图时才生效**（批量 >1 条时落库核心一律忽略，不写入任何行）；模型填入提示中注入的当前会话 id，保存处理器再将其归一化为 bind 后的真实会话 id（`open_intent_chat` 可解析）。`save_intent_directly`（automation 路径）的 schema 不含该字段。
 - **`AutomationState`** — `'idle' | 'running' | 'awaiting_gate' | 'developing' | 'fixing' | 'done' | 'error'`。
 - **`AutomationStatus`** — `{ workspacePath, state, currentIntentId, currentSessionId, awaitingPermission, error, completedIds, startedAt }`。每个项目的自动化编排器状态；仅内存，不持久化。
-
-通信 agent 的保存确认复用 `permission_request` / `permission_response`，其中 `toolName === 'mcp__c3__save_intents'`，`input.intents: ProposedIntent[]`。
 
 参见 [intent-management 规范](../../domains/core/intent-management/intent-management-spec.md)。
 

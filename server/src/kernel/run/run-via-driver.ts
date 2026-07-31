@@ -72,10 +72,9 @@ export interface IntentProfile {
    * time, so the composition root returns a binder the run paths call once started:
    * it mints a per-run token, stands up the private MCP server, and returns the
    * neutral {@link RemoteMcpServer} descriptors plus a `dispose` to evict the token
-   * at run end. `getRunId` reads the LIVE run id so a pending→real rebind routes the
-   * save gate's `permission_request` to the bound session. `save_intents`'s
-   * confirmation gate lives in its handler (`gatedSave`), so a vendor allow-rule that
-   * skips `canUseTool` still raises a human prompt — Claude and Codex share one gate.
+   * at run end. `getRunId` reads the LIVE run id so a pending→real rebind resolves
+   * the save's session back-link against the bound session. `save_intents` lands in
+   * the shared comm-save handler — Claude and Codex persist through one path.
    */
   bindMcp: (binding: { workspacePath: string; getRunId: () => string; signal: AbortSignal }) => {
     servers: Record<string, RemoteMcpServer>
@@ -255,7 +254,7 @@ export class WireEmitter {
  *
  * NB: Codex has no per-tool approval point (`perToolApproval: false`), so its
  * registered handler never fires — this path's live registration is exercised by
- * Codex's human-involvement is the `save_intents` gate (see save-gate.ts).
+ * the claude/driver runs.
  */
 export function makeDriverApprovalHandler(deps: {
   getRunId: () => string
@@ -400,8 +399,8 @@ export async function runViaDriver(
   // For intent sessions, the read-only gate overrides the session mode.
   // Codex has no live approval channel, so `always-ask` would ask a question no
   // c3 can answer and can prevent its MCP tools from being used. Keep Codex in a
-  // read-only sandbox, but let it call the c3 MCP tools; `save_intents` still
-  // raises c3's own confirmation inside the MCP handler.
+  // read-only sandbox, but let it call the c3 MCP tools; `save_intents` is
+  // confirmed by the user in the conversation before the agent calls it.
   const mode: {
     actionMode: import('@ccc/shared/protocol').ActionMode
     toolGate: import('@ccc/shared/protocol').ToolGate

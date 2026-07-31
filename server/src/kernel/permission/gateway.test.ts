@@ -72,11 +72,10 @@ describe('intent gate — read-only, deny-by-default', () => {
     expect((out as { message: string }).message).toMatch(/read-only/)
   })
 
-  it('lets save_intents through without a gate prompt (the handler owns the confirmation)', async () => {
-    // The save confirmation is sunk into the save handler (`gatedSave`, codex-parity),
-    // so the gate ALLOWS save through to reach it — emitting NO permission_request of
-    // its own. A vendor allow-rule that bypasses this `canUseTool` therefore still hits
-    // the handler's prompt, and the gate can't double-prompt.
+  it('lets save_intents through without a gate prompt (the user confirmed it in the chat)', async () => {
+    // The save's human authorization is the user's textual confirmation in the
+    // conversation, so the gate ALLOWS save through to its handler and emits NO
+    // permission_request of its own.
     const sent: ServerToClient[] = []
     const gate = createCanUseTool(spec({ send: (m) => sent.push(m) }))
     const out = await gate('mcp__c3__save_intents', { items: [] }, {} as never)
@@ -203,11 +202,11 @@ describe('C-SEC — permission verdicts are NOT persisted (no-persist)', () => {
 describe('onPermissionRequest callback', () => {
   // ── Intent gate tests (no consensus dependency) ──
 
-  it('does NOT call callback on intent-gate save (the handler owns that prompt now)', async () => {
-    // Save's confirmation — and its WorkCenter `onPermissionRequest` registration —
-    // moved into the save handler (`gatedSave`). The gate now allows save straight
-    // through, so it must NOT emit a permission_request or fire the callback here
-    // (doing so would double-register the WaitUserInvolveEvent and double-prompt).
+  it('does NOT call callback on intent-gate save (the chat confirmation is the only one)', async () => {
+    // An interactive save raises no human prompt anywhere: the user confirmed the
+    // listed intents in the conversation. The gate allows save straight through, so
+    // it must NOT emit a permission_request, register a WaitUserInvolveEvent or fire
+    // the callback here.
     const onPermissionRequest = vi.fn()
     const sent: ServerToClient[] = []
     const gate = createCanUseTool(

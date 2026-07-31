@@ -6,7 +6,7 @@
 以及会话列表(隐藏集过滤)。前端新增一个意图视图。
 
 **复用基线。** 几乎所有部分都建立在既有机制之上:运行时注册表、emit/viewer 扇出、以及后台运行;
-聊天流与 `user_prompt`;用于保存确认的权限网关;`select_session` 用于开发回链。真正全新的部分是:
+聊天流与 `user_prompt`;权限网关;`select_session` 用于开发回链。真正全新的部分是:
 **SQLite 层**、**只读沟通运行变体 + `save_intents` 工具**、**意图前端**,以及叠加在同一套
 运行时/启动器/viewer 机制之上的**自动化编排器**(状态机 + 完成判定器 + git 助手)。
 
@@ -17,7 +17,7 @@
 | SQLite 驱动适配器    | 跨运行时共享适配器(Node 与 Bun 内置 SQLite);最小化同步 API(讨论 store 也使用它)                   |
 | 账本操作             | Intent CRUD、依赖聚合、沟通会话映射                                                               |
 | 沟通系统提示词       | 只读分析师提示词,作为追加系统提示词注入                                                           |
-| `c3` MCP 工具        | 暴露 `save_intents`(handler 内网关确认)+ 只读的 `find_intents` / `view_intent`(RM-R19)            |
+| `c3` MCP 工具        | 暴露 `save_intents`(对话确认后落库)+ 只读的 `find_intents` / `view_intent`(RM-R19)                |
 | 运行变体             | 运行循环新增追加系统提示词 / 禁用工具 / MCP 服务器 / 网关等选项;为判定器提供一个无工具的 one-shot |
 | 运行时 kind + 启动器 | 运行时上新增运行 kind(`session` 或 `intent`);一个共享启动器                                       |
 | WS 分支 + 编排       | 八个新消息分支;沟通会话的 viewer 管理;开发轮助手 + 自动化广播                                     |
@@ -167,8 +167,7 @@
   intent kind 无效,视图也不渲染模式选择器。这如今是一道*辅助性*
   约束:它**并不**独立承担静默保存的防御职责。厂商的允许规则可以
   预先批准 `save_intents` 并跳过权限网关(即便处于 `default` 模式下),因此保存
-  确认改为**在保存 handler 内部**强制执行(见下文「handler 内的保存确认」)——
-  免疫于任何预批准途径。
+  保存的人工授权是对话中的文字确认(见下文「对话确认即保存」)。
 - **双重锁定的只读性(RM-R2)。** 硬禁用工具列表拦截
   Write / Edit / MultiEdit / NotebookEdit / Bash / BashOutput / KillShell / Task / SlashCommand。
   Task 与 SlashCommand 是必须拦截的:被派生的子智能体的工具调用会绕过父级
@@ -179,8 +178,8 @@
   (Read / Grep / Glob / LS / NotebookRead / WebFetch / WebSearch / TaskCreate / TaskList / TaskUpdate / TaskGet)**以及**
   两个只读的 c3 查询工具(`find_intents` / `view_intent`,RM-R19)→ `allow`(自动允许,
   不弹窗——它们只读取智能体自己项目的账本);`save_intents` → `allow`**一路放行到
-  其 handler**(handler 自己发起确认——见「handler 内的保存确认」;
-  网关不得为保存弹窗,否则会重复弹窗);`AskUserQuestion` → `ask`。`AskUserQuestion` 是一个**交互性
+  其 handler**(用户已在对话中确认——见「对话确认即保存」;网关再弹窗就是重复确认);
+  `AskUserQuestion` → `ask`。`AskUserQuestion` 是一个**交互性
   (仅用于澄清)工具,而非写入工具**——它没有文件/执行副作用,所以只读
   智能体可以使用它。因此它被**排除在硬禁用列表之外**,并**被允许,但经由
   用户答案注入路由**——发送一个 `permission_request`,等待用户决定,允许时返回
@@ -195,8 +194,14 @@
   驱动路径仍运行 intent profile 并注入本地 HTTP MCP 服务器,但使用
   Codex 的 `plan + never-ask` 网格(映射为 `read-only + never`)而非 `plan + always-ask`。
   Codex 没有实时批准通道,因此 `always-ask` 可能阻塞 MCP 的使用;文件系统仍保持
-  只读,而 `save_intents` 仍由 c3 在任何账本写入之前在 MCP handler 内部
-  网关控制。
+  只读,而 `save_intents` 的人工授权与 claude 一致,来自对话中的文字确认。
+- **Codex 意图会话关闭 code execution 与 web search。** 意图 profile 的 codex 运行显式下发
+  `features.js_repl=false`、`tools.web_search=false` 与旧式 `web_search="disabled"`,使
+  `mcp__c3` 工具一律走标准 MCP tool-call 路径,而不是被包进 code_mode 沙箱的一次代码执行里
+  (沙箱有执行时限,承载不了工具往返)。识别的依据是某个 MCP server 的 `enabledTools` 含
+  `save_intents`(意图 profile 独有),因此只读的 spec / work profile 不受影响。意图智能体的
+  职责是对话澄清 + 读本项目材料 + 查台账,不检索外部网页,关闭 web search 没有能力损失;
+  未知配置键在旧版 codex 上被静默忽略,故新旧两种写法可同时下发。
 - **独立的 viewer 编排。** `open_intent_chat` / `new_intent_chat` /
   `refine_intent` 自行管理
   viewer 切换(移除旧 viewer → 设置被查看的会话 → 添加新 viewer),并且
@@ -288,8 +293,8 @@
 重复,引用正确的既有 id——RM-R19);
 与用户交流,把需求拆分为离散、可验证、大小适中的条目(每项都带
 title/content/priority P0–P3/可选依赖/**推断出的 module 名**);先与用户
-确认列表;获得批准后调用 `save_intents`(系统会弹出确认,真正的
-写入紧随用户的允许而来);绝不假装保存已发生。依赖指引是
+把本轮全部条目的完整内容列出并等待用户明确的文字确认(异议后修改需重新列全再确认);
+确认后立即调用 `save_intents`,调用即落库;绝不假装保存已发生。依赖指引是
 明确的:对已存在的意图用 `dependsOn`(按 id),对
 **同一批次内的同批成员**用 `dependsOnIndexes`(按从 0 开始的数组索引),并且当条目间
 存在先后关系时**必须**声明该批次的顺序——把前置条件放在数组更靠前的位置,
@@ -342,27 +347,21 @@ HTTP MCP 配置 `{ type: 'http', url, alwaysLoad: true }`)。每个工具都被�
 用于填写条目间存在先后关系时的批内依赖);两者都会流经
 upsert,由其针对完整批次解析索引(RM-R17)。该工具顶层的
 描述告诉智能体:用 `id` 做原地精炼,用 `dependsOnIndexes` 表达批内
-顺序,以便编排器正确排序。handler **自行运行确认网关**
-(发出 `permission_request`,阻塞等待决定,仅在 `allow` 时才持久化——见「handler 内的保存确认」);
-允许时,它通过 store 的 upsert 写入(按每项 id 插入或原地更新),
-并广播一次 `intents` 刷新,返回一段说明插入/更新拆分情况的文本结果(或在 db 不可用/
-失败时——包括不可变状态或未知/跨项目的更新 id 会拒绝整个批次——返回一段错误文本,
-让智能体知道自己没有保存成功)。handler 的绑定——项目路径、
-**实时**的 run-id getter、以及 abort signal——是按每次运行提供的(run-id getter 与
-signal 在查询时构造,若存在的话;项目路径闭包捕获自
-运行时已解析的工作区),因此该工具绝不会跨项目,并把确认路由到
-绑定的会话。
+顺序,以便编排器正确排序。handler 先校验当前意图批次约束(会话归属某条意图时,批次必须
+恰好包含它一次)、归一化单条意图的会话回链,再通过 store 的 upsert 写入(按每项 id 插入
+或原地更新),并广播一次 `intents` 刷新,返回一段说明插入/更新拆分情况的文本结果
+(或在 db 不可用/失败时——包括不可变状态或未知/跨项目的更新 id 会拒绝整个批次——返回一段
+错误文本,让智能体知道自己没有保存成功)。handler 的绑定——项目路径、**实时**的 run-id
+getter、以及 abort signal——是按每次运行提供的(run-id getter 与 signal 在查询时构造,
+若存在的话;项目路径闭包捕获自运行时已解析的工作区),因此该工具绝不会跨项目,并把会话
+回链解析到绑定的会话。
 
-**handler 内的保存确认(免疫于厂商预批准)。** 最初 claude 路径
-在 `canUseTool` 中网关保存操作。但厂商的权限规则引擎可以*预先批准*一个工具并完全跳过
-`canUseTool`(用户/项目的允许规则匹配 `mcp__c3__save_intents`,或处于非 `default`
-模式),这会让保存静默持久化。因此确认被**下沉到保存 handler 中**——它的
-唯一执行点,只要工具被调用就会到达,厂商规则无法绕过它(它们只能决定
-*是否*调用它)。这使**两个厂商收敛到同一道网关**上:两个厂商都通过
-同一条回环 HTTP MCP 路由调用工具(在任何 `canUseTool` 之外),因此都在 handler 中
-网关控制。因此 intent 网关直接放行保存(不再有
-`confirm-save` 分支,不会二次弹窗)。在非 `default` 模式/允许规则下 handler 仍会
-弹窗;在拒绝/取消/中止时它返回一个「未落库」结果,绝不触碰 store。
+**对话确认即保存。** 沟通智能体在每次保存前都把本轮全部意图的完整内容(标题、正文、
+优先级、模块、依赖)列在对话里等待用户明确确认;用户提出异议后必须重新列全并再次等待
+确认。这条文字确认就是保存的唯一人工授权,因此 handler 收到调用即持久化:不发
+`permission_request`、不等待权限决定、不登记等待人工介入事件,浏览器端不出现任何确认
+弹框。代价是服务端不再有独立于模型行为的第二道拦截——「未确认不得调用」由提示词约束,
+由单测与端到端观察验证。落库归因没有审批人,`intent_logs.actor` 落为 `system`。
 
 这三个工具的形状、描述与核心逻辑都存在于同一份源代码中,被两个厂商共用同一条
 回环 HTTP MCP 路由(见下文),因此二者绝不会产生分歧。
@@ -374,8 +373,7 @@ signal 在查询时构造,若存在的话;项目路径闭包捕获自
 列表紧凑)或一条「未找到」消息;以及 `view_intent`(`{ id }`)→ store 的 get →
 单个意图的**完整** JSON,并守卫该意图归属于绑定的项目,使
 未知/其他项目的 id 返回一条友好的「未找到」文本(而非错误)。两者都闭包捕获同一个
-工作区(无跨项目读取),保持常驻,并被网关自动允许,不同于
-`save_intents` 需要确认。智能体
+工作区(无跨项目读取),保持常驻,并被网关自动允许。智能体
 被提示在拆分条目或设置 `dependsOn` 之前先查询账本。
 
 ## 跨厂商的意图工具:通过 localhost HTTP MCP(2026-06-12-005)
@@ -394,12 +392,9 @@ codex driver 转译成其原生的 streamable-HTTP 服务器条目。
   未知/过期的 token 返回 404(默认拒绝原则)。两个厂商的子进程环境都以回环 `NO_PROXY`
   旁路收尾,否则宿主代理会吞掉这一跳并让三个工具静默缺席(见
   [agent-session design § 远程 MCP](../agent-session/agent-session-design.md))。
-- **保存网关(两个厂商共享)。** 保存确认存在于**保存 handler 内部**,是两个厂商
-  共用的同一道网关:它发出相同的 `permission_request` 帧(`save_intents` 工具
-  名加上拟保存的意图),阻塞等待决定,仅在 `allow` 时才持久化。
-  `find_intents`/`view_intent` 被自动允许(只读)。被拒绝/中止的运行永远不会到达
-  store。两个厂商都通过这条回环 HTTP MCP 路由在任何 c3 `canUseTool` 之外调用该工具,
-  因此都在此处网关控制,一个跳过 `canUseTool` 的厂商预批准仍会弹窗。
+- **保存路径(两个厂商共享)。** 两个厂商通过这条回环 HTTP MCP 路由调用同一个保存
+  handler,确认语义不因厂商而分叉:用户在对话中确认后调用即落库。
+  `find_intents`/`view_intent` 同样自动允许(只读)。
 - **厂商转译。** 中立的远程 MCP 描述符(type、url、可选的 bearer-token 环境变量)
   被 Claude 边界转译为 Claude SDK 的 HTTP MCP 配置,被 codex 驱动转译为其写入的
   streamable-HTTP MCP 形式;两者指向同一条回环路由。
@@ -748,13 +743,6 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
   右侧**复用**聊天消息 + 会话状态栏 +
   消息输入框,作用于已被查看的沟通会话。自动化图标发出
   一个 set-automate 事件(切换该标志);按钮发出 start/stop-automation。
-- **保存确认:** 权限弹窗为
-  `save_intents` 工具名新增一个分支,把每个拟保存的条目渲染为一张卡片
-  (标题/优先级/依赖),Save/Cancel 分别映射到 allow/deny。依赖分两
-  行渲染:既有 id 的依赖显示为「依赖:…」,批内依赖(`dependsOnIndexes`)显示为
-  「依赖本批:#N「title」」——一个辅助函数把每个从 0 开始的索引解析回
-  同一个拟保存意图数组中同批成员的标题,使用户在允许之前
-  就能看到顺序关系(RM-R17)。
 - **意图数据:** app 保存按工作区路径为键的 intents,
   由 `intents` 消息刷新;以及按工作区路径为键的自动化状态,
   由 `automation_status` 消息刷新;意图列表以 prop 形式接收当前项目的
@@ -774,7 +762,7 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
 - **SQLite** — Node 内置的 SQLite(Node)/ Bun 内置的 SQLite(Bun 单二进制);两者都
   在服务端打包中标记为 external。
 - **agent-session** — intent kind 运行时以及共享启动器。
-- **permission-gateway** — 通过既有权限流程网关控制 `save_intents`。
+- **permission-gateway** — 意图网关放行 `save_intents` 与只读查询工具,默认拒绝其余工具。
 - **session-registry** — 其列表过滤消费本领域的隐藏集。
 - **git(本地 CLI)** — 编排器在验证 `done` 后的提交/推送。
 - **agent-session(one-shot)** — 完成判定器运行一次无工具的 one-shot SDK 查询。

@@ -9,9 +9,9 @@
  * Mirrors the provider relay (`transport/relay`): a kernel-neutral bind/dispose
  * + opaque per-run token, the HTTP `handler` mounted by the composition root, and
  * defence-in-depth (loopback guard ON TOP of c3's localhost-only bind, plus token
- * lookup). The feature logic (store reads, the save confirmation gate) is INJECTED
- * as `tools` from the composition root, so this module stays pure transport
- * plumbing and never reaches into `kernel/permission` or the intent store itself.
+ * lookup). The feature logic (store reads, the comm save) is INJECTED as `tools`
+ * from the composition root, so this module stays pure transport plumbing and
+ * never reaches into `kernel/permission` or the intent store itself.
  *
  * Per-run isolation: each `bind()` mints a token → a private {@link McpServer} +
  * Web-standards streamable HTTP transport whose tool handlers close over the
@@ -44,20 +44,20 @@ export const INTENT_MCP_PATH = '/internal/intent-mcp/v1'
 /** Per-run binding: which project the tools act on, the live run id, and the run's abort signal. */
 export interface IntentMcpBinding {
   workspacePath: string
-  /** Reads the LIVE run id so a pending→real session rebind routes the save gate correctly. */
+  /** Reads the LIVE run id so a pending→real session rebind resolves the save's back-link correctly. */
   getRunId: () => string
   signal: AbortSignal
 }
 
 /**
- * The injected feature behaviors. `find`/`view` are read-only; `save` MUST run the
- * confirmation gate (the user confirms in c3 UI) BEFORE persisting — the composition
- * root wires it to `permission_request`/`waitForDecision` + the intent store.
+ * The injected feature behaviors. `find`/`view` are read-only; `save` persists the
+ * batch the user already confirmed in the conversation — the composition root wires
+ * it to the comm-save handler + the intent store.
  */
 export interface IntentMcpTools {
   find(workspacePath: string, args: FindArgs): IntentToolResult | Promise<IntentToolResult>
   view(workspacePath: string, args: ViewArgs): IntentToolResult | Promise<IntentToolResult>
-  save(binding: IntentMcpBinding, args: SaveArgs): Promise<IntentToolResult>
+  save(binding: IntentMcpBinding, args: SaveArgs): IntentToolResult | Promise<IntentToolResult>
 }
 
 /** The served route: the kernel-facing bind handle plus the HTTP handler the root mounts. */

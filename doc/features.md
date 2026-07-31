@@ -43,7 +43,7 @@ c3
 │   │   ├── 会话控制                              # 会话增/删/改名/选择、工作区切换(增删受管理员门控)
 │   │   ├── 双视图                                # 工作区(workspace)与工作台(workcenter)两大视图切换
 │   │   ├── 移动端                                # MobileStack drill-down 栈式布局、软键盘/安全区避让
-│   │   ├── 富文本渲染                            # Markdown+DOMPurify 双防线、Shiki 代码高亮、宽表横滚
+│   │   ├── 富文本渲染                            # Markdown+DOMPurify 双防线、Shiki 代码高亮、Mermaid 图表渲染(失败降级原代码块)、宽表横滚
 │   │   ├── 分享链接                              # 标题栏「分享」按钮拼 [类型]标题+深链写剪贴板
 │   │   ├── 启动进度遮罩                          # Start Work / Spec 启动的分步进度全屏遮罩
 │   │   ├── 新版本提示                            # update-checker 判定有新版时顶栏蓝色胶囊外链

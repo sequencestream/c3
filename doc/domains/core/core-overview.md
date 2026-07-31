@@ -15,7 +15,7 @@
 | [session-registry](session-registry/session-registry-overview.md)       | 管理工作区与会话;拥有每会话模式、最近访问顺序、历史回放                                                        | WebSocket `/ws`(见 shared protocol) | active        |
 | [codes](codes/codes-overview.md)                                        | 只读工作区代码浏览:在已注册的工作区根目录下列目录、读文本文件、做有界搜索                                      | WebSocket `/ws`(见 shared protocol) | active        |
 | [web-console](web-console/web-console-overview.md)                      | 浏览器 UI:侧边栏、prompt 输入、活动流、权限对话框、模式切换                                                    | 消费 `/ws`                          | active        |
-| [intent-management](intent-management/intent-management-overview.md)    | 项目级意图台账(SQLite);只读意图沟通智能体;`save_intents` 确认;启动可配置的开发技能                             | WebSocket `/ws`(见 shared protocol) | active        |
+| [intent-management](intent-management/intent-management-overview.md)    | 项目级意图台账(SQLite);只读意图沟通智能体;`save_intents` 对话确认后落库;启动可配置的开发技能                   | WebSocket `/ws`(见 shared protocol) | active        |
 | [codes](codes/codes-overview.md)                                        | 只读工作区代码浏览与有界搜索,仅根植于已注册的工作区 id                                                         | WebSocket `/ws`(见 shared protocol) | active        |
 | [discussion](discussion/discussion-overview.md)                         | 项目级讨论存储(SQLite):讨论 + 有序消息,带状态生命周期与结论。持久化基础;智能体/编排/UI 尚未构建                | 内部(尚无公开 API)                  | partial       |
 | [automations](automations/automations-overview.md)                      | 跨工作区的基于时间的命令与 LLM prompt 执行;执行日志记录与查看                                                  | WebSocket `/ws`(见 shared protocol) | planned       |

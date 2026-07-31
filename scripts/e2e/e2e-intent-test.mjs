@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 /**
- * End-to-end test for the INTENT-MANAGEMENT save flow.
+ * End-to-end test for the INTENT-MANAGEMENT save flow (confirmation by chat text).
  *
  * Scenario: register a throwaway project under /tmp, enter its intent view
  * (`open_intent_chat` — opens/resumes the read-only communication session
- * and returns the project's intent list), then ask the comm agent to
- * propose ONE intent and call the `save_intents` tool. The c3
- * intent gate intercepts that call as a `permission_request`
- * (toolName `mcp__c3__save_intents`); we approve it, the tool persists the
- * batch and the server broadcasts the refreshed `intents` list (the new row
- * lands as status `todo`). Finally we flip the saved intent to `done` via
- * `update_intent_status` and confirm the broadcast reflects it.
+ * and returns the project's intent list), then run the two-turn confirmation
+ * flow the comm agent must follow:
+ *   1. propose — the agent lists ONE intent in full and waits; nothing may be
+ *      saved in this turn (no `save_intents` call, no persisted row);
+ *   2. confirm — we reply with an explicit textual confirmation; the agent calls
+ *      `save_intents` and the batch persists IMMEDIATELY, with NO
+ *      `permission_request` anywhere (a save prompt would be a regression).
+ * The server broadcasts the refreshed `intents` list (the new row lands as status
+ * `todo`). Finally we flip the saved intent to `done` via `update_intent_status`
+ * and confirm the broadcast reflects it.
  *
  * After the save flow, a SECOND turn on the same read-only comm session exercises
  * the intent gate's AskUserQuestion handling — the runtime path the unit test
@@ -24,21 +27,21 @@
  * What this verifies (maps to the intent spec):
  * - US-1/US-2: entering the view returns a `session_selected` comm session
  *   (title New Intent) plus the project's `intents` list.
- * - US-3/US-4: the agent's `save_intents` call is gated (human confirm),
- *   and only persists after `allow` — landing as a `todo` row, broadcast live.
+ * - US-3/US-4: nothing is saved before the user's textual confirmation, and the
+ *   confirmed `save_intents` call persists at once — landing as a `todo` row,
+ *   broadcast live — without any `permission_request` for the save.
  * - status machine: `update_intent_status` moves the row and re-broadcasts.
  * - read-only gate / AskUserQuestion (003 follow-up): AskUserQuestion is routed to
  *   the answer panel + answers injected, NOT denied as a non-read-only tool.
- * - deprecated alias soft-landing (PR-2): the save-flow probe accepts EITHER the
- *   new `mcp__c3__save_intents` OR the deprecated `mcp__c3__save_requirements`
- *   wire name as the gated save, so an old caller is proven "兜住" (same
- *   confirm-save path). The deterministic classifier proof lives in
- *   `server/src/intent-gate.test.ts` (the alias block).
+ * - deprecated alias soft-landing (PR-2): the save probe accepts EITHER the new
+ *   `mcp__c3__save_intents` OR the deprecated `mcp__c3__save_requirements` wire
+ *   name, so an old caller is proven "兜住" (same save path). The deterministic
+ *   classifier proof lives in `server/src/intent-gate.test.ts` (the alias block).
  *
  * Unlike the consensus tests this needs no extra agents — only the default agent
- * runs. It spends real tokens (two short comm turns — save, then AskUserQuestion)
- * and needs the intent db (`c3.db`) available; the runner points `C3_DB_PATH`
- * at a throwaway file.
+ * runs. It spends real tokens (three short comm turns — propose, confirm-save,
+ * then AskUserQuestion) and needs the intent db (`c3.db`) available; the runner
+ * points `C3_DB_PATH` at a throwaway file.
  *
  * Usage:
  *   pnpm start --port 13000     # in another terminal
@@ -47,12 +50,12 @@
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 
 const URL = process.argv[2] || 'ws://localhost:13000/ws'
-const TIMEOUT_MS = 240_000 // two live comm turns (save, then AskUserQuestion)
+const TIMEOUT_MS = 360_000 // three live comm turns (propose, confirm-save, AskUserQuestion)
 
 const SAVE_TOOL = 'mcp__c3__save_intents'
 // Deprecated wire-name alias kept callable for one minor version (PR-2 soft-landing).
-// The save-flow probe accepts EITHER name as the gated save, so if anything still
-// reaches for the old name the gate is proven to "兜住" it (same confirm-save path).
+// The save probe accepts EITHER name, so if anything still reaches for the old name
+// it is proven to be "兜住" on the same save path.
 const SAVE_TOOL_DEPRECATED = 'mcp__c3__save_requirements'
 const SAVE_TOOLS = new Set([SAVE_TOOL, SAVE_TOOL_DEPRECATED])
 const ASK_TOOL = 'AskUserQuestion'
@@ -69,11 +72,15 @@ writeFileSync(
 )
 
 const REQ_TITLE = 'E2E 落库验证'
-const PROMPT =
+// Turn 1: propose only. The agent must list the item in full and WAIT — calling
+// save_intents here would be a violation of the confirm-then-save contract.
+const PROPOSE_PROMPT =
   `你是New Intent助手。请不要阅读任何文件、也不要向我提问。` +
-  `直接调用 save_intents 工具,只提交一条意图:` +
+  `拟一条意图并把它的完整内容列给我确认:` +
   `title="${REQ_TITLE}",content="验证 c3 意图落库端到端流程",priority="P2"。` +
-  `提交后用一句话告诉我已提交。`
+  `现在只列出内容等我确认,不要调用任何工具、不要保存。`
+// Turn 2: the explicit textual confirmation. Now — and only now — it may save.
+const CONFIRM_PROMPT = `确认,就按你列出的内容保存。请立即调用 save_intents 工具保存这一条意图。`
 
 // Second turn: force ONE AskUserQuestion call so the read-only gate must route it
 // through the answer panel. Mirror the ask-consensus e2e prompt shape.
@@ -93,13 +100,16 @@ const ws = new WebSocket(URL)
 let workspaceId = null // server-assigned opaque id, captured from `workspaces`
 let workspaceAdded = false
 let chatOpened = false
-let promptSent = false
+let promptSent = false // the propose (turn 1) prompt has been sent
+let confirmSent = false // the textual confirmation (turn 2) has been sent
 let commSessionId = null
 
 let sawCommSession = false // session_selected for the comm session (title New Intent)
 let sawInitialList = false // first `intents` reply (the list on entry)
-let sawSavePermission = false // permission_request for save_intents
-let proposedValid = false // the proposed payload looked well-formed
+let sawSavePermission = false // VIOLATION flag: a permission_request for save_intents
+let savedBeforeConfirm = false // VIOLATION flag: a save happened before our confirmation
+let sawSaveCall = false // tool_use for save_intents (after the confirmation)
+let proposedValid = false // the saved payload looked well-formed
 let savedReqId = null // id of the persisted intent (from the broadcast)
 let sawSaveResult = false // tool_result for the save call (not an error)
 // Track whether we've sent the first (todo→in_progress) status update.
@@ -127,9 +137,10 @@ let sessionSwitched = false // received session_selected for the switched sessio
 let deleteRequested = false // we sent delete_intent_session
 let sessionDeleted = false // confirmed session removed from the list
 
-let saveTurnReason = '' // turn_end reason of the first (save) turn
-let askTurnReason = '' // turn_end reason of the second (AskUserQuestion) turn
-let saveTurnEnded = false // first (save) turn_end seen
+let proposeTurnEnded = false // the propose (turn 1) turn_end seen
+let saveTurnReason = '' // turn_end reason of the confirm-save turn
+let askTurnReason = '' // turn_end reason of the AskUserQuestion turn
+let saveTurnEnded = false // confirm-save turn_end seen
 let commIdle = false // comm session is idle per session_status (run teardown complete)
 let finished = false
 const events = []
@@ -241,9 +252,10 @@ ws.addEventListener('message', (evt) => {
         commIdle = true
         // Mirror the real client (App.vue flushIfReady): only drive the next turn
         // once the session is idle, i.e. the prior run's teardown has completed.
-        // Firing earlier (e.g. off the status-update broadcast) races the save
+        // Firing earlier (e.g. off the status-update broadcast) races the previous
         // turn's SDK winddown and is rejected with `session.turnRunning`.
         if (saveTurnEnded) maybeStartAskTurn()
+        else if (proposeTurnEnded) maybeConfirm()
       } else {
         commIdle = false
       }
@@ -255,11 +267,11 @@ ws.addEventListener('message', (evt) => {
       if (!sawInitialList) {
         sawInitialList = true
         console.log(`[e2e] initial intent list: ${count} item(s)`)
-        // List in hand → drive the comm agent to propose + save.
+        // List in hand → drive the comm agent to propose (turn 1, no save).
         if (!promptSent && commSessionId) {
           promptSent = true
-          console.log('[e2e] sending save prompt to comm agent')
-          send({ type: 'user_prompt', text: PROMPT })
+          console.log('[e2e] sending propose prompt to comm agent (must NOT save yet)')
+          send({ type: 'user_prompt', text: PROPOSE_PROMPT })
         }
         break
       }
@@ -269,6 +281,10 @@ ws.addEventListener('message', (evt) => {
         msg.items.find((r) => r.id === savedReqId) ?? msg.items.find((r) => r.title === REQ_TITLE)
       if (mine && !savedReqId) {
         savedReqId = mine.id
+        if (!confirmSent) {
+          savedBeforeConfirm = true
+          console.log('[e2e] ⚠️ intent persisted BEFORE the user confirmed — contract violated')
+        }
         console.log(
           `[e2e] ✅ intent persisted: id=${mine.id} status=${mine.status} priority=${mine.priority}`,
         )
@@ -339,19 +355,25 @@ ws.addEventListener('message', (evt) => {
 
     case 'tool_use':
       console.log(`[e2e] tool_use: ${msg.toolName}`)
+      if (SAVE_TOOLS.has(msg.toolName)) {
+        sawSaveCall = true
+        if (!confirmSent) {
+          savedBeforeConfirm = true
+          console.log('[e2e] ⚠️ save_intents called BEFORE the user confirmed — contract violated')
+        }
+        const reqs = Array.isArray(msg.input?.intents) ? msg.input.intents : []
+        proposedValid =
+          reqs.length >= 1 && reqs.every((r) => r && r.title && r.content && r.priority)
+        console.log(`[e2e] save call: ${reqs.length} intent(s) (valid=${proposedValid})`)
+      }
       break
 
     case 'permission_request':
       if (SAVE_TOOLS.has(msg.toolName)) {
+        // A save must never raise a browser prompt: the user already confirmed in
+        // the conversation. Allow it so the run can finish, but fail the report.
         sawSavePermission = true
-        const viaAlias = msg.toolName === SAVE_TOOL_DEPRECATED
-        const reqs = msg.input && Array.isArray(msg.input.intents) ? msg.input.intents : []
-        proposedValid =
-          reqs.length >= 1 && reqs.every((r) => r && r.title && r.content && r.priority)
-        console.log(
-          `[e2e] ✅ ${msg.toolName} gated${viaAlias ? ' (deprecated alias 兜住)' : ''}: ` +
-            `${reqs.length} proposed (valid=${proposedValid}) → allow`,
-        )
+        console.log(`[e2e] ⚠️ unexpected save permission_request (${msg.toolName}) → allow + FAIL`)
         send({ type: 'permission_response', requestId: msg.requestId, decision: 'allow' })
       } else if (msg.toolName === ASK_TOOL) {
         // Reaching here AT ALL proves the read-only gate routed AskUserQuestion to
@@ -393,7 +415,18 @@ ws.addEventListener('message', (evt) => {
         maybeStartNewChat()
         break
       }
-      // First (save) turn finished. Drive the status machine; the AskUserQuestion
+      if (!confirmSent) {
+        // The propose turn finished: nothing may have been saved yet. Send the
+        // textual confirmation once the session is idle (teardown complete).
+        proposeTurnEnded = true
+        console.log(
+          `[e2e] ${savedBeforeConfirm ? '⚠️' : '✅'} propose turn ended ` +
+            `(saved_before_confirm=${savedBeforeConfirm})`,
+        )
+        maybeConfirm()
+        break
+      }
+      // The confirm-save turn finished. Drive the status machine; the AskUserQuestion
       // turn fires from the session_status idle handler once teardown completes
       // (bounded fallback below covers a slow/missing idle broadcast).
       saveTurnReason = reason
@@ -433,7 +466,21 @@ ws.addEventListener('close', () => {
   }
 })
 
-// Start the second (AskUserQuestion) turn once the save flow is done. Idempotent:
+// Send the explicit textual confirmation (turn 2) once the propose turn is torn
+// down. Idempotent; the session_status idle handler re-invokes it.
+function maybeConfirm() {
+  if (confirmSent || finished) return
+  if (!commSessionId) {
+    finish(judge())
+    return
+  }
+  if (!commIdle) return
+  confirmSent = true
+  console.log('[e2e] sending textual confirmation → the agent may now save')
+  send({ type: 'user_prompt', text: CONFIRM_PROMPT })
+}
+
+// Start the AskUserQuestion turn once the save flow is done. Idempotent:
 // reachable both from the `done` broadcast and from a bounded turn_end fallback.
 function maybeStartAskTurn() {
   if (askPromptSent || finished) return
@@ -473,7 +520,9 @@ function judge() {
   const checks = {
     comm_session_opened: sawCommSession,
     intent_list_returned: sawInitialList,
-    save_gated: sawSavePermission,
+    no_save_before_confirmation: !savedBeforeConfirm,
+    save_called_after_confirmation: sawSaveCall,
+    no_save_permission_prompt: !sawSavePermission,
     proposed_payload_valid: proposedValid,
     intent_persisted: !!savedReqId,
     save_tool_result_ok: sawSaveResult,

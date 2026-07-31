@@ -178,7 +178,7 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
 | [0004](adr/0004-persist-workspace-session-registry.md)      | 持久化一份 c3 所有的工作区与会话注册表                                                                        |
 | [0005](adr/0005-inherit-user-project-settings.md)           | 继承用户与项目设置；c3 是权限 gateway（`settingSources: ['user', 'project']`）                                |
 | [0006](adr/0006-decouple-runs-from-connections.md)          | 把 agent 运行与 WebSocket 连接解耦；运行存在于模块级注册表中                                                  |
-| [0007](adr/0007-read-only-intent-agent.md)                  | 只读的 intent-communication agent；`save_intents` 经由权限 gateway；跨运行时 SQLite ledger                    |
+| [0007](adr/0007-read-only-intent-agent.md)                  | 只读的 intent-communication agent；`save_intents` 经对话确认后落库；跨运行时 SQLite ledger                    |
 | [0009](adr/0009-unidirectional-boundaries.md)               | 单向边界：kernel → transport/features；SDK 类型永不离开 kernel                                                |
 | [0011](adr/0011-vendor-neutral-agent-abstraction.md)        | Vendor 中性的 Agent 抽象：要求三件套接口 + 探测式能力台账；五档权限模式改为 action-mode × tool-gate 网格      |
 | [0012](adr/0012-host-binary-probe-first-capability-gate.md) | 宿主二进制探测是第一道能力关卡；vendor CLI 缺失 ⇒ agent 类型不可用（按 agent 类型安装，单一二进制并非自包含） |

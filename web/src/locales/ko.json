@@ -120,7 +120,6 @@
   "permission": {
     "history": {
       "askQuestion": "🙋 {count}개 질문에 답변 요청됨 · AskUserQuestion",
-      "saveIntents": "💾 {count}개 의도 저장 요청됨",
       "useTool": "🔧 {toolName} 도구 사용 요청됨"
     },
     "ask": {
@@ -141,12 +140,6 @@
         "label": "답변 제출"
       }
     },
-    "save": {
-      "label": "💾 의도 저장 ·",
-      "shortTitle": "짧은 제목:",
-      "dependsOn": "의존:",
-      "dependsOnBatch": "의존 (이번 배치):"
-    },
     "tool": {
       "allow": {
         "label": "도구 허용:"
@@ -161,9 +154,7 @@
       "answered": "답변됨",
       "denied": "거부됨",
       "allowed": "허용됨",
-      "c3Gateway": "c3 허용",
-      "saved": "저장됨",
-      "cancelled": "취소됨"
+      "c3Gateway": "c3 허용"
     },
     "notification": {
       "title": "c3 — 권한 필요",

@@ -137,9 +137,9 @@ export interface GatewaySpec {
    *
    * Every `send(permission_request)` call site that blocks on a human decision
    * triggers it — the standard split/no-consensus prompt, the standard
-   * AskUserQuestion panel, the skill write-guard, AND both intent-gate prompts
-   * (`save_intents` confirm and AskUserQuestion). Only the full-unanimous
-   * AskUserQuestion auto-answer is excluded (it emits `consensus_auto`, no human).
+   * AskUserQuestion panel, the skill write-guard, AND the intent gate's
+   * AskUserQuestion. Only the full-unanimous AskUserQuestion auto-answer is
+   * excluded (it emits `consensus_auto`, no human).
    */
   onPermissionRequest?: (ctx: PermissionRequestCtx) => void
   /**
@@ -179,8 +179,8 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
   // The `requestId` minted below is a c3-domain id on a DIFFERENT plane — it
   // correlates the BROWSER round-trip (permission_request wire frame ↔ waitForDecision
   // pending map ↔ permission_response ↔ WorkCenter event) and must also span branches
-  // the SDK id can't reach (consensus auto-resolve, AskUserQuestion answer-injection,
-  // the save_intents gate that lives in the MCP handler). A single c3 id already
+  // the SDK id can't reach (consensus auto-resolve, AskUserQuestion
+  // answer-injection). A single c3 id already
   // covers all of them; adopting the SDK id would add a second id with no verifiable
   // gain and risk permanent tool blocking via an accidental `null`. See the
   // 0.3.201 upgrade record for the full ledger.
@@ -199,16 +199,14 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
     }
 
     // Intent (read-only) gate: a separate, simpler policy that never
-    // runs consensus. Read tools pass through; `save_intents` asks the
-    // human; everything else is denied by default (defence-in-depth behind
-    // `disallowedTools`).
+    // runs consensus. Read tools and `save_intents` pass through; everything else
+    // is denied by default (defence-in-depth behind `disallowedTools`).
     if (gate === 'intent') {
       const decisionClass = classifyIntentTool(toolName)
       // Read-class built-ins + read-only c3 query tools (find/view) pass through.
-      // `save_intents` also passes through HERE — its confirmation gate lives in
-      // the save handler (codex-parity), so the handler is the single prompt
-      // point and a vendor allow-rule that bypasses this `canUseTool` still
-      // raises a human confirmation. Prompting here too would double-prompt.
+      // `save_intents` also passes through HERE — the user already confirmed the
+      // listed intents in the conversation, which is the save's single human
+      // authorization; a prompt here would be a second, redundant confirmation.
       if (decisionClass === 'allow') {
         return allow(input)
       }

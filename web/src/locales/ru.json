@@ -120,7 +120,6 @@
   "permission": {
     "history": {
       "askQuestion": "🙋 Запрошен ответ на {count} вопрос · AskUserQuestion | 🙋 Запрошен ответ на {count} вопроса · AskUserQuestion | 🙋 Запрошен ответ на {count} вопросов · AskUserQuestion",
-      "saveIntents": "💾 Запрошено сохранить {count} намерение | 💾 Запрошено сохранить {count} намерения | 💾 Запрошено сохранить {count} намерений",
       "useTool": "🔧 Запрошено использование инструмента {toolName}"
     },
     "ask": {
@@ -141,12 +140,6 @@
         "label": "Отправить ответы"
       }
     },
-    "save": {
-      "label": "💾 Сохранить намерения ·",
-      "shortTitle": "Краткий заголовок:",
-      "dependsOn": "Зависит от:",
-      "dependsOnBatch": "Зависит от (этот пакет):"
-    },
     "tool": {
       "allow": {
         "label": "Разрешить инструмент:"
@@ -161,9 +154,7 @@
       "answered": "отвечено",
       "denied": "запрещено",
       "allowed": "разрешено",
-      "c3Gateway": "c3 разрешил",
-      "saved": "Сохранено",
-      "cancelled": "Отменено"
+      "c3Gateway": "c3 разрешил"
     },
     "notification": {
       "title": "c3 — требуется разрешение",

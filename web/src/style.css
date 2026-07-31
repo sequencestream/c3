@@ -1882,6 +1882,14 @@ main {
 .md-body img {
   max-width: 100%;
 }
+/* Mermaid 图表：居中显示、随容器缩放；超宽时由 .md-scroll 提供横向滚动 */
+.md-body .md-mermaid {
+  text-align: center;
+}
+.md-body .md-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
 
 /* ============ 输入区域（规范 3.4 / 3.6） ============ */
 footer {
@@ -4138,42 +4146,4 @@ button.deny:hover:not(:disabled) {
   background: var(--c-primary);
   border-color: var(--c-primary);
   color: #fff;
-}
-
-/* 落库确认卡片（PermissionPrompt 的 save_requirements 分支） */
-.req-confirm {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  margin: var(--sp-2) 0;
-}
-.req-confirm-card {
-  background: var(--c-code);
-  border: 1px solid var(--c-border);
-  border-radius: var(--radius-sm);
-  padding: var(--sp-2);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.req-confirm-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-.req-confirm-title {
-  font-weight: 600;
-}
-.req-confirm-short {
-  font-size: var(--fs-caption);
-  color: var(--c-text-muted);
-}
-.req-confirm-content {
-  font-size: var(--fs-caption);
-  color: var(--c-text-muted);
-  white-space: pre-wrap;
-}
-.req-confirm-deps {
-  font-size: var(--fs-caption);
-  color: var(--c-text-muted);
 }

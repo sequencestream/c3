@@ -25,8 +25,8 @@ export interface DecisionResult {
   /**
    * The authenticated subject that approved this decision (the responding
    * connection's `conn.subject`), server-authoritative and never sourced from the
-   * client message body. Consumed only by the `save_intents` gate to attribute the
-   * `intent_logs.actor`; `null` / absent falls back to `'system'` downstream.
+   * client message body, so a consumer can attribute the decision to a human;
+   * `null` / absent when unauthenticated or auth is disabled.
    */
   actor?: string | null
 }

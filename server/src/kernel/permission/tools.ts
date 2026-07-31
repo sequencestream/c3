@@ -27,8 +27,7 @@ export const PUBLISH_EVENT_TOOL = 'mcp__c3__publish_event'
 /**
  * The read-only c3 MCP query tools the intent agent may call without a
  * prompt. They only read the project's own ledger (project-bound in the tool
- * closure), so the gate treats them like the read-class built-ins — unlike
- * `save_intents`, which still raises a human confirmation.
+ * closure), so the gate treats them like the read-class built-ins.
  */
 export const INTENT_QUERY_TOOLS = new Set([FIND_INTENTS_TOOL, VIEW_INTENT_TOOL])
 
@@ -76,11 +75,9 @@ export const INTENT_READ_TOOLS = new Set([
  * routing is unit-testable (the live `canUseTool` closure is otherwise only
  * reachable via live-LLM e2e). Deny-by-default:
  *  - `allow` — read-class built-ins + the read-only c3 query tools (no prompt)
- *    AND `save_intents`. Save no longer prompts HERE: its confirmation gate is
- *    sunk into the save handler itself (codex-parity), so the handler is the
- *    single confirmation point and a vendor allow-rule that bypasses
- *    `canUseTool` still raises a human prompt. The gate must therefore let save
- *    through to the handler.
+ *    AND `save_intents`. Save does not prompt: the comm agent lists the intents
+ *    in full and the user confirms in the conversation before it calls the tool,
+ *    so the gate lets it through to the handler, which persists at once.
  *  - `ask` — `AskUserQuestion` (clarifying-only; gate still applies the
  *    `askQuestions` input guard and routes via answer-injection).
  *  - `deny` — everything else.

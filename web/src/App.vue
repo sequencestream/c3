@@ -266,6 +266,7 @@ const {
   bindingStats,
   saveSettings,
   setLocale,
+  setTheme,
   personalizedSettingOpen,
   personalizedSettings,
   setAdminPassword,
@@ -800,6 +801,7 @@ function onCodesChatWidth(px: number): void {
       :settings="personalizedSettings"
       @close="personalizedSettingOpen = false"
       @set-ui-lang="setLocale"
+      @set-theme="setTheme"
     />
 
     <WorkspaceSettingPage

@@ -12,7 +12,8 @@
  * blocking the page. Nothing here talks to the network — the WS round-trip lives in
  * the controls layer.
  */
-import type { PersonalizedSettings, UiLang } from '@ccc/shared/protocol'
+import type { PersonalizedSettings, UiLang, UiTheme } from '@ccc/shared/protocol'
+import { applyTheme, DEFAULT_THEME, isUiTheme } from './theme'
 
 /**
  * Per-field localStorage keys. The display language keeps the key the console has
@@ -20,6 +21,7 @@ import type { PersonalizedSettings, UiLang } from '@ccc/shared/protocol'
  * fallback without any migration step.
  */
 const UI_LANG_KEY = 'c3.uiLang'
+const THEME_KEY = 'c3.theme'
 
 /** UI display languages. Mirrors the `UiLang` union; the assertion below pins them together. */
 export const UI_LANGS = ['en', 'zh', 'ja', 'ko', 'ru'] as const
@@ -31,7 +33,10 @@ void _uiLangsExhaustive
 export const DEFAULT_UI_LANG: UiLang = 'en'
 
 /** The settings a connection with no stored preference at all starts from. */
-export const DEFAULT_PERSONALIZED: PersonalizedSettings = { uiLang: DEFAULT_UI_LANG }
+export const DEFAULT_PERSONALIZED: PersonalizedSettings = {
+  uiLang: DEFAULT_UI_LANG,
+  theme: DEFAULT_THEME,
+}
 
 export function isUiLang(value: unknown): value is UiLang {
   return typeof value === 'string' && (UI_LANGS as readonly string[]).includes(value)
@@ -40,11 +45,15 @@ export function isUiLang(value: unknown): value is UiLang {
 /**
  * Force any input into a complete, valid {@link PersonalizedSettings}. Used on both
  * the local read and the server echo so the rest of the app never handles a partial
- * or unknown value.
+ * or unknown value. Each field falls back on its own, so a corrupt theme cannot cost
+ * the user their language (or the other way round).
  */
 export function normalizePersonalized(raw: unknown): PersonalizedSettings {
   const rec = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
-  return { uiLang: isUiLang(rec.uiLang) ? rec.uiLang : DEFAULT_UI_LANG }
+  return {
+    uiLang: isUiLang(rec.uiLang) ? rec.uiLang : DEFAULT_UI_LANG,
+    theme: isUiTheme(rec.theme) ? rec.theme : DEFAULT_THEME,
+  }
 }
 
 /**
@@ -55,7 +64,11 @@ export function normalizePersonalized(raw: unknown): PersonalizedSettings {
 export function readLocalPersonalized(): PersonalizedSettings {
   try {
     const lang = localStorage.getItem(UI_LANG_KEY)
-    return isUiLang(lang) ? { uiLang: lang } : {}
+    const theme = localStorage.getItem(THEME_KEY)
+    return {
+      ...(isUiLang(lang) ? { uiLang: lang } : {}),
+      ...(isUiTheme(theme) ? { theme } : {}),
+    }
   } catch {
     // Storage disabled/unavailable — behave as "nothing recorded".
     return {}
@@ -76,7 +89,22 @@ export function hasLocalPersonalized(): boolean {
 export function writeLocalPersonalized(settings: PersonalizedSettings): void {
   try {
     if (settings.uiLang !== undefined) localStorage.setItem(UI_LANG_KEY, settings.uiLang)
+    if (settings.theme !== undefined) localStorage.setItem(THEME_KEY, settings.theme)
   } catch {
     /* localStorage unavailable — non-fatal, the value still applies in-page */
   }
+}
+
+/**
+ * Cold start: show the theme this browser recorded before anything renders, so the
+ * console never flashes the wrong palette while the connection is still being made.
+ * With no record (or an unusable store) this applies the built-in dark theme, which
+ * is exactly the console's historical look. The account's authoritative value
+ * arrives later with the server echo and corrects this if they differ.
+ *
+ * Lives here rather than in `theme.ts` to keep that module free of storage
+ * knowledge: the dependency runs one way, repository → theme runtime.
+ */
+export function applyStoredTheme(): UiTheme {
+  return applyTheme(readLocalPersonalized().theme)
 }

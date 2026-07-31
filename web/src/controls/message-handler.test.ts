@@ -192,8 +192,16 @@ describe('personalized settings echo', () => {
     return map
   }
 
+  /** Fake root element so the theme the echo applies is observable. */
+  function installDocument(): { dataset: Record<string, string>; style: Record<string, string> } {
+    const root = { dataset: {} as Record<string, string>, style: {} as Record<string, string> }
+    ;(globalThis as unknown as { document: unknown }).document = { documentElement: root }
+    return root
+  }
+
   afterEach(() => {
     delete (globalThis as unknown as { localStorage?: unknown }).localStorage
+    delete (globalThis as unknown as { document?: unknown }).document
     applyLocale('en')
   })
 
@@ -206,9 +214,40 @@ describe('personalized settings echo', () => {
       scope: 'account',
     } as ServerToClient)
     expect(i18n.global.locale.value).toBe('zh')
-    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'zh' })
+    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'zh', theme: 'dark' })
     // Mirrored so the signed-out state keeps the account's latest choice.
     expect(storage.get('c3.uiLang')).toBe('zh')
+  })
+
+  it('adopts an account theme, mirrors it, and puts it on screen right away', () => {
+    const storage = installStorage()
+    const root = installDocument()
+    const r = makeCtx()
+    r.ctx.handleMessage({
+      type: 'personalized_settings',
+      settings: { uiLang: 'en', theme: 'light' },
+      scope: 'account',
+    } as ServerToClient)
+    expect(root.dataset.theme).toBe('light')
+    expect(root.style.colorScheme).toBe('light')
+    expect(storage.get('c3.theme')).toBe('light')
+    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'en', theme: 'light' })
+  })
+
+  it('corrects a browser cold-start theme back to the account value on reconnect', () => {
+    const storage = installStorage()
+    const root = installDocument()
+    const r = makeCtx()
+    // Cold start showed this browser's light theme; the account says dark.
+    root.dataset.theme = 'light'
+    storage.set('c3.theme', 'light')
+    r.ctx.handleMessage({
+      type: 'personalized_settings',
+      settings: { uiLang: 'en', theme: 'dark' },
+      scope: 'account',
+    } as ServerToClient)
+    expect(root.dataset.theme).toBe('dark')
+    expect(storage.get('c3.theme')).toBe('dark')
   })
 
   it('normalizes an unknown language in the echo to en', () => {
@@ -219,8 +258,22 @@ describe('personalized settings echo', () => {
       settings: { uiLang: 'klingon' },
       scope: 'local',
     } as unknown as ServerToClient)
-    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'en' })
+    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'en', theme: 'dark' })
     expect(i18n.global.locale.value).toBe('en')
+  })
+
+  it('normalizes an unknown theme in the echo to dark without touching the language', () => {
+    installStorage()
+    const root = installDocument()
+    const r = makeCtx()
+    r.ctx.handleMessage({
+      type: 'personalized_settings',
+      settings: { uiLang: 'zh', theme: 'solarized' },
+      scope: 'local',
+    } as unknown as ServerToClient)
+    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'zh', theme: 'dark' })
+    expect(root.dataset.theme).toBe('dark')
+    expect(i18n.global.locale.value).toBe('zh')
   })
 
   it('never lets a system-settings snapshot change the display language', () => {

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
-import type { SystemSettings } from '@ccc/shared/protocol'
+import type { PersonalizedSettings, SystemSettings, UiLang, UiTheme } from '@ccc/shared/protocol'
 import {
   getAgentLang,
   loadPersonalizedFor,
@@ -41,6 +41,14 @@ function diskRaw(): Record<string, unknown> {
   return readJsonFile<Record<string, unknown>>(settingsPath()) ?? {}
 }
 
+/**
+ * A fully normalized record: every field filled with its own default, which is what
+ * every read and echo returns regardless of how sparse the stored value was.
+ */
+function rec(uiLang: UiLang, theme: UiTheme = 'dark'): PersonalizedSettings {
+  return { uiLang, theme }
+}
+
 /** A minimal system-settings object, as the settings panel would submit it. */
 function baseSystemSettings(extra: Partial<SystemSettings> = {}): SystemSettings {
   return {
@@ -56,17 +64,34 @@ function baseSystemSettings(extra: Partial<SystemSettings> = {}): SystemSettings
 
 describe('normalizePersonalized', () => {
   it('fills the default language for a missing, unknown, or non-string value', () => {
-    expect(normalizePersonalized(undefined)).toEqual({ uiLang: 'en' })
-    expect(normalizePersonalized({})).toEqual({ uiLang: 'en' })
-    expect(normalizePersonalized({ uiLang: 'xx' })).toEqual({ uiLang: 'en' })
-    expect(normalizePersonalized({ uiLang: 42 })).toEqual({ uiLang: 'en' })
-    expect(normalizePersonalized('zh')).toEqual({ uiLang: 'en' })
+    expect(normalizePersonalized(undefined)).toEqual(rec('en'))
+    expect(normalizePersonalized({})).toEqual(rec('en'))
+    expect(normalizePersonalized({ uiLang: 'xx' })).toEqual(rec('en'))
+    expect(normalizePersonalized({ uiLang: 42 })).toEqual(rec('en'))
+    expect(normalizePersonalized('zh')).toEqual(rec('en'))
   })
 
   it('keeps every known language', () => {
     for (const lang of ['en', 'zh', 'ja', 'ko', 'ru'] as const) {
-      expect(normalizePersonalized({ uiLang: lang })).toEqual({ uiLang: lang })
+      expect(normalizePersonalized({ uiLang: lang })).toEqual(rec(lang))
     }
+  })
+
+  it('fills the dark theme for a missing, unknown, or non-string value', () => {
+    expect(normalizePersonalized({})).toEqual(rec('en', 'dark'))
+    expect(normalizePersonalized({ theme: 'solarized' })).toEqual(rec('en', 'dark'))
+    expect(normalizePersonalized({ theme: 7 })).toEqual(rec('en', 'dark'))
+  })
+
+  it('keeps every known theme', () => {
+    for (const theme of ['dark', 'light'] as const) {
+      expect(normalizePersonalized({ theme })).toEqual(rec('en', theme))
+    }
+  })
+
+  it('normalizes the two fields independently', () => {
+    expect(normalizePersonalized({ uiLang: 'zh', theme: 'solarized' })).toEqual(rec('zh', 'dark'))
+    expect(normalizePersonalized({ uiLang: 'klingon', theme: 'light' })).toEqual(rec('en', 'light'))
   })
 })
 
@@ -74,8 +99,8 @@ describe('per-account storage', () => {
   it('keeps two subjects isolated', () => {
     savePersonalizedFor('alice', { uiLang: 'zh' })
     savePersonalizedFor('bob', { uiLang: 'ja' })
-    expect(loadPersonalizedFor('alice')).toEqual({ uiLang: 'zh' })
-    expect(loadPersonalizedFor('bob')).toEqual({ uiLang: 'ja' })
+    expect(loadPersonalizedFor('alice')).toEqual(rec('zh'))
+    expect(loadPersonalizedFor('bob')).toEqual(rec('ja'))
   })
 
   it('treats subjects case-sensitively (no identity folding)', () => {
@@ -89,7 +114,7 @@ describe('per-account storage', () => {
 
   it('persists under a top-level map that is not part of SystemSettings', () => {
     savePersonalizedFor('alice', { uiLang: 'zh' })
-    expect(diskRaw().personalizedSettings).toEqual({ alice: { uiLang: 'zh' } })
+    expect(diskRaw().personalizedSettings).toEqual({ alice: rec('zh') })
     expect(
       (loadSettings() as unknown as Record<string, unknown>).personalizedSettings,
     ).toBeUndefined()
@@ -104,26 +129,26 @@ describe('per-account storage', () => {
 
 describe('first-login seeding from the browser fallback', () => {
   it('seeds a brand-new account record from the local fallback', () => {
-    expect(resolvePersonalized('alice', { uiLang: 'zh' })).toEqual({ uiLang: 'zh' })
-    expect(loadPersonalizedFor('alice')).toEqual({ uiLang: 'zh' })
+    expect(resolvePersonalized('alice', { uiLang: 'zh' })).toEqual(rec('zh'))
+    expect(loadPersonalizedFor('alice')).toEqual(rec('zh'))
   })
 
   it('seeds the built-in default when the browser reported nothing', () => {
-    expect(resolvePersonalized('alice', undefined)).toEqual({ uiLang: 'en' })
-    expect(loadPersonalizedFor('alice')).toEqual({ uiLang: 'en' })
+    expect(resolvePersonalized('alice', undefined)).toEqual(rec('en'))
+    expect(loadPersonalizedFor('alice')).toEqual(rec('en'))
   })
 
   it('never overwrites an existing account record with a different local value', () => {
     savePersonalizedFor('alice', { uiLang: 'zh' })
-    expect(resolvePersonalized('alice', { uiLang: 'ru' })).toEqual({ uiLang: 'zh' })
-    expect(loadPersonalizedFor('alice')).toEqual({ uiLang: 'zh' })
+    expect(resolvePersonalized('alice', { uiLang: 'ru' })).toEqual(rec('zh'))
+    expect(loadPersonalizedFor('alice')).toEqual(rec('zh'))
   })
 
   it('seeds at most once across repeated fetches (the first value stays authoritative)', () => {
     resolvePersonalized('alice', { uiLang: 'ja' })
     resolvePersonalized('alice', { uiLang: 'ru' })
     resolvePersonalized('alice', { uiLang: 'ko' })
-    expect(loadPersonalizedFor('alice')).toEqual({ uiLang: 'ja' })
+    expect(loadPersonalizedFor('alice')).toEqual(rec('ja'))
   })
 
   it('lets exactly one concurrent seeder win when two connections race', () => {
@@ -133,17 +158,35 @@ describe('first-login seeding from the browser fallback', () => {
     resetSettingsCacheForTests()
     const first = resolvePersonalized('alice', { uiLang: 'ja' })
     const second = resolvePersonalized('alice', { uiLang: 'ko' })
-    expect(first).toEqual({ uiLang: 'zh' })
-    expect(second).toEqual({ uiLang: 'zh' })
+    expect(first).toEqual(rec('zh'))
+    expect(second).toEqual(rec('zh'))
   })
 
   it('stores nothing per account when there is no subject', () => {
-    expect(resolvePersonalized(null, { uiLang: 'ru' })).toEqual({ uiLang: 'ru' })
+    expect(resolvePersonalized(null, { uiLang: 'ru' })).toEqual(rec('ru'))
     expect(diskRaw().personalizedSettings).toEqual({})
   })
 
   it('falls back to the built-in default with neither subject nor local record', () => {
-    expect(resolvePersonalized(null, undefined)).toEqual({ uiLang: 'en' })
+    expect(resolvePersonalized(null, undefined)).toEqual(rec('en'))
+  })
+
+  it('seeds the theme alongside the language', () => {
+    expect(resolvePersonalized('alice', { uiLang: 'zh', theme: 'light' })).toEqual(
+      rec('zh', 'light'),
+    )
+    expect(loadPersonalizedFor('alice')).toEqual(rec('zh', 'light'))
+  })
+
+  it('seeds the dark theme for a browser that only ever chose a language', () => {
+    expect(resolvePersonalized('alice', { uiLang: 'zh' })).toEqual(rec('zh', 'dark'))
+  })
+
+  it('reads an account record written before themes existed as dark', () => {
+    writeAtomic(settingsPath(), { personalizedSettings: { alice: { uiLang: 'zh' } } })
+    resetSettingsCacheForTests()
+    expect(loadPersonalizedFor('alice')).toEqual(rec('zh', 'dark'))
+    expect(resolvePersonalized('alice', { theme: 'light' })).toEqual(rec('zh', 'dark'))
   })
 })
 
@@ -151,8 +194,8 @@ describe('coexistence with the system settings write path', () => {
   it('survives a whole-object save_settings', () => {
     savePersonalizedFor('alice', { uiLang: 'zh' })
     saveSettings(baseSystemSettings({ voiceLang: 'en-US' }))
-    expect(loadPersonalizedFor('alice')).toEqual({ uiLang: 'zh' })
-    expect(diskRaw().personalizedSettings).toEqual({ alice: { uiLang: 'zh' } })
+    expect(loadPersonalizedFor('alice')).toEqual(rec('zh'))
+    expect(diskRaw().personalizedSettings).toEqual({ alice: rec('zh') })
     expect(loadSettings().voiceLang).toBe('en-US')
   })
 
@@ -168,7 +211,7 @@ describe('coexistence with the system settings write path', () => {
     saveSettings(baseSystemSettings({ uiLang: 'zh' } as Partial<SystemSettings>))
     expect(diskRaw().uiLang).toBeUndefined()
     expect(loadPersonalizedFor('alice')).toBe(null)
-    expect(resolvePersonalized('alice', undefined)).toEqual({ uiLang: 'en' })
+    expect(resolvePersonalized('alice', undefined)).toEqual(rec('en'))
   })
 
   it('drops malformed entries from a hand-edited personalized map', () => {
@@ -184,10 +227,10 @@ describe('coexistence with the system settings write path', () => {
     resetSettingsCacheForTests()
     expect(loadPersonalizedFor('alice')).toBe(null)
     expect(loadPersonalizedFor('')).toBe(null)
-    expect(loadPersonalizedFor('bob')).toEqual({ uiLang: 'ja' })
+    expect(loadPersonalizedFor('bob')).toEqual(rec('ja'))
     // A system-settings save must not resurrect what the read already rejected.
     saveSettings(baseSystemSettings())
-    expect(diskRaw().personalizedSettings).toEqual({ bob: { uiLang: 'ja' } })
+    expect(diskRaw().personalizedSettings).toEqual({ bob: rec('ja') })
   })
 })
 
@@ -211,5 +254,33 @@ describe('agent-output language tracking', () => {
     savePersonalizedFor('bob', { uiLang: 'ja' })
     resolvePersonalized('alice', undefined)
     expect(getAgentLang()).toBe('zh')
+  })
+
+  it('ignores the theme — it is a web display preference, not a language decision', () => {
+    savePersonalizedFor('alice', { uiLang: 'ko', theme: 'light' })
+    expect(getAgentLang()).toBe('ko')
+    savePersonalizedFor('alice', { uiLang: 'ko', theme: 'dark' })
+    expect(getAgentLang()).toBe('ko')
+  })
+})
+
+describe('theme persistence', () => {
+  it('stores the theme per account, independently of the language', () => {
+    savePersonalizedFor('alice', { uiLang: 'zh', theme: 'light' })
+    savePersonalizedFor('bob', { uiLang: 'zh', theme: 'dark' })
+    expect(loadPersonalizedFor('alice')).toEqual(rec('zh', 'light'))
+    expect(loadPersonalizedFor('bob')).toEqual(rec('zh', 'dark'))
+  })
+
+  it('rejects an unknown theme without losing the language that came with it', () => {
+    savePersonalizedFor('alice', { uiLang: 'ja', theme: 'solarized' } as never)
+    expect(loadPersonalizedFor('alice')).toEqual(rec('ja', 'dark'))
+  })
+
+  it('survives a whole-object save_settings like every other personalized field', () => {
+    savePersonalizedFor('alice', { uiLang: 'zh', theme: 'light' })
+    saveSettings(baseSystemSettings({ voiceLang: 'en-US' }))
+    resetSettingsCacheForTests()
+    expect(loadPersonalizedFor('alice')).toEqual(rec('zh', 'light'))
   })
 })

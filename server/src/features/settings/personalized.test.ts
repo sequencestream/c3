@@ -119,6 +119,22 @@ describe('save_personalized_settings', () => {
     ])
   })
 
+  it('carries the whole record, so a save covers language and theme together', () => {
+    const { conn, sent } = makeConn('bob')
+    savePersonalizedSettingsHandler(ctx, conn, {
+      type: 'save_personalized_settings',
+      settings: { uiLang: 'ja', theme: 'light' },
+    })
+    expect(h.saveCalls).toEqual([{ subject: 'bob', settings: { uiLang: 'ja', theme: 'light' } }])
+    expect(sent).toEqual([
+      {
+        type: 'personalized_settings',
+        settings: { uiLang: 'ja', theme: 'light' },
+        scope: 'account',
+      },
+    ])
+  })
+
   it('writes under the connection subject, not one named in the frame', () => {
     const { conn } = makeConn('bob')
     savePersonalizedSettingsHandler(ctx, conn, {

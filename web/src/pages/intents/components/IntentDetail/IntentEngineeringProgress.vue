@@ -120,14 +120,14 @@ function progressStateLabel(state: EngineeringProgressState): string {
   background: var(--c-success);
 }
 .intent-engineering-progress-stage.is-completed .intent-engineering-progress-marker {
-  border-color: var(--c-accent, var(--c-text));
-  background: var(--c-accent, var(--c-text));
+  border-color: var(--c-primary);
+  background: var(--c-primary);
 }
 .intent-engineering-progress-stage.is-in_progress .intent-engineering-progress-state {
   color: var(--c-success-text);
 }
 .intent-engineering-progress-stage.is-completed .intent-engineering-progress-state {
-  color: var(--c-text);
+  color: var(--c-primary);
 }
 .intent-engineering-progress-stage.is-closed .intent-engineering-progress-marker {
   border-color: var(--c-error);

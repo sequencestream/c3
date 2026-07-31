@@ -205,7 +205,7 @@ export function installSessionActions(ctx: AppCtx): void {
     })
   }
 
-  // Switch the global current workspace. The view always lands on the console tab.
+  // Switch the global current workspace. The view always lands on the intents tab.
   ctx.selectWorkspace = (path: string): void => {
     const fx = workspaceSwitchEffects(path, currentWorkspace.value)
     if (fx.noop) return
@@ -218,12 +218,15 @@ export function installSessionActions(ctx: AppCtx): void {
     sysExtraMounts.value = []
     // The console tab's remembered session belonged to the previous workspace —
     // drop it and clear the chat column so it can't keep showing stale content.
-    // The new workspace's first session is bound once its `list_sessions` reply
-    // lands (see `pendingConsoleBind` in the `sessions` handler).
+    // The chat column stays empty while the view sits on the intents tab; the
+    // console binds its session when the user enters that tab (the `sessions`
+    // handler only consumes `pendingConsoleBind` there).
     consoleSession.value = null
     ctx.clearViewedSession()
     ctx.flags.pendingConsoleBind = true
-    if (fx.enterConsole) ctx.enterConsole()
+    // Land on the intents tab through the standard intents entry, so the tab
+    // flip and the target workspace's intent data arrive together.
+    if (fx.enterIntents) ctx.openIntents(path)
     if (fx.refreshSessions) ctx.refreshSessions(path)
   }
 

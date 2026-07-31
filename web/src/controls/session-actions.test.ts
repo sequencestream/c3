@@ -6,6 +6,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { ref } from 'vue'
 import type { ClientToServer, Discussion, Intent, SessionInfo } from '@ccc/shared/protocol'
+import { installIntentActions } from './intent-actions'
 import { installSessionActions } from './session-actions'
 import { resolveSessionSourceAction } from '@/lib/session-jump'
 import type { PendingWorkSessionSelectRequest } from '@/lib/work-session-jump'
@@ -39,6 +40,8 @@ function makeCtx(
     paging?: Record<string, { hasMore: boolean; exhausted: boolean; loadingMore: boolean }>
     intents?: Record<string, Intent[]>
     activeKind?: SessionPageKind
+    /** Install the real intent actions so `openIntents` is the production entry. */
+    wireIntents?: boolean
   } = {},
 ) {
   const send = vi.fn<(msg: ClientToServer) => void>()
@@ -65,6 +68,12 @@ function makeCtx(
   const persistViewMode = vi.fn()
   const persistCurrentWorkspace = vi.fn()
   const currentWorkspace = ref<string | null>(null)
+  const intentsProject = ref<string | null>(null)
+  const workspaceSettingOpen = ref(false)
+  const currentWorkspaceSetting = ref<unknown>(null)
+  const detectedMainBranch = ref<string | null>(null)
+  const resolvedSpecRoot = ref<string | null>(null)
+  const sysExtraMounts = ref<unknown[]>([])
   const flags = { viewModeFirstWorkcenter: true, pendingConsoleBind: false }
   const activeTitle = ref('')
   const activeVendor = ref<string | null>(null)
@@ -110,13 +119,25 @@ function makeCtx(
     persistViewMode,
     persistCurrentWorkspace,
     currentWorkspace,
+    intentsProject,
+    workspaceSettingOpen,
+    currentWorkspaceSetting,
+    detectedMainBranch,
+    resolvedSpecRoot,
+    sysExtraMounts,
     flags,
     currentSessions: ref([]),
   } as unknown as AppCtx
   installSessionActions(ctx)
+  // The workspace switch lands on the intents tab through `openIntents`; wiring
+  // the real intent actions keeps that hand-off under test instead of a stub.
+  if (opts.wireIntents) installIntentActions(ctx)
   return {
     ctx,
     send,
+    intentsProject,
+    workspaceSettingOpen,
+    persistViewMode,
     sessionsByWorkspace,
     activeTab,
     activeSession,
@@ -159,6 +180,67 @@ describe('refreshSessions', () => {
     const msg = send.mock.calls[0][0] as Extract<ClientToServer, { type: 'list_sessions' }>
     expect(msg.since).toBe(200)
     expect(msg.before).toBeUndefined()
+  })
+})
+
+// Switching the current workspace lands on the intents tab: the user picks a
+// work unit first, then decides which intent / session to enter.
+describe('selectWorkspace', () => {
+  const OTHER = '/ws-other'
+
+  it('切到不同工作区 → 落意图 tab、意图指向新工作区、清理会话查看态并强制刷新会话列表', () => {
+    const h = makeCtx({ wireIntents: true, activeKind: 'work' })
+    h.ctx.currentWorkspace.value = WS
+    h.activeTab.value = 'console'
+    h.consoleSession.value = { workspacePath: WS, sessionId: 'work-1' }
+    h.workspaceSettingOpen.value = true
+
+    h.ctx.selectWorkspace(OTHER)
+
+    expect(h.ctx.currentWorkspace.value).toBe(OTHER)
+    expect(h.persistCurrentWorkspace).toHaveBeenCalled()
+    expect(h.activeTab.value).toBe('intents')
+    expect(h.intentsProject.value).toBe(OTHER)
+    expect(h.persistViewMode).toHaveBeenCalled()
+    // Workspace setting overlay + console pointer belong to the old workspace.
+    expect(h.workspaceSettingOpen.value).toBe(false)
+    expect(h.consoleSession.value).toBeNull()
+    expect(h.ctx.flags.pendingConsoleBind).toBe(true)
+    // Intents entry contract + the target workspace's forced session refresh.
+    expect(h.send).toHaveBeenCalledWith({ type: 'open_intent_session', workspaceId: OTHER })
+    expect(h.send).toHaveBeenCalledWith({ type: 'list_intent_sessions', workspaceId: OTHER })
+    expect(h.send).toHaveBeenCalledWith({ type: 'load_workspace_setting', workspaceId: OTHER })
+    expect(h.send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'list_sessions', workspaceId: OTHER }),
+    )
+  })
+
+  it('从无当前工作区切入 → 同样落意图 tab', () => {
+    const h = makeCtx({ wireIntents: true })
+    h.activeTab.value = 'console'
+
+    h.ctx.selectWorkspace(WS)
+
+    expect(h.ctx.currentWorkspace.value).toBe(WS)
+    expect(h.activeTab.value).toBe('intents')
+    expect(h.intentsProject.value).toBe(WS)
+  })
+
+  it('重复选择当前工作区 → no-op:不切 tab、不改指针、不刷新、不持久化', () => {
+    const h = makeCtx({ wireIntents: true })
+    h.ctx.currentWorkspace.value = WS
+    h.activeTab.value = 'console'
+    h.consoleSession.value = { workspacePath: WS, sessionId: 'work-1' }
+
+    h.ctx.selectWorkspace(WS)
+
+    expect(h.activeTab.value).toBe('console')
+    expect(h.intentsProject.value).toBeNull()
+    expect(h.consoleSession.value).toEqual({ workspacePath: WS, sessionId: 'work-1' })
+    expect(h.ctx.flags.pendingConsoleBind).toBe(false)
+    expect(h.persistCurrentWorkspace).not.toHaveBeenCalled()
+    expect(h.persistViewMode).not.toHaveBeenCalled()
+    expect(h.send).not.toHaveBeenCalled()
   })
 })
 

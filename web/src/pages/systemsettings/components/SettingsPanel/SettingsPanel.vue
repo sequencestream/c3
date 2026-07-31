@@ -80,6 +80,7 @@ const TAB_FIELDS: Record<SettingsTab, (keyof SystemSettings)[]> = {
     'toolAgentId',
     'intentAgentId',
     'specAgentId',
+    'specReviewAgentId',
     'automationAgentId',
   ],
   runtime: ['vendorCliVersions', 'proxy', 'sessionCleanup'],
@@ -155,6 +156,8 @@ function emptySettings(): SystemSettings {
     intentAgentId: '',
     // '' ⇒ spec-authoring sessions follow the default agent.
     specAgentId: '',
+    // '' ⇒ spec-review sessions follow the default agent.
+    specReviewAgentId: '',
     // '' ⇒ the new-automation form pre-fills with the default agent.
     automationAgentId: '',
     voiceLang: 'zh-CN',
@@ -309,6 +312,8 @@ function buildSeed(settings: SystemSettings): SystemSettings {
     intentAgentId: settings.intentAgentId ?? '',
     // '' ⇒ spec-authoring sessions follow the default agent (AC-R24).
     specAgentId: settings.specAgentId ?? '',
+    // '' ⇒ spec-review sessions follow the default agent.
+    specReviewAgentId: settings.specReviewAgentId ?? '',
     // '' ⇒ the new-automation form pre-fills with the default agent (AC-R25).
     automationAgentId: settings.automationAgentId ?? '',
     voiceLang: settings.voiceLang ?? 'zh-CN',
@@ -476,6 +481,12 @@ function onToggleEnabled(a: AgentConfig, checked: boolean): void {
   if (draft.value.specAgentId) {
     draft.value.specAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.specAgentId)
   }
+  if (draft.value.specReviewAgentId) {
+    draft.value.specReviewAgentId = resolveDefaultAgentId(
+      draft.value.agents,
+      draft.value.specReviewAgentId,
+    )
+  }
   if (draft.value.automationAgentId) {
     draft.value.automationAgentId = resolveDefaultAgentId(
       draft.value.agents,
@@ -598,6 +609,7 @@ function buildTabPayload(
       payload.toolAgentId = src.toolAgentId
       payload.intentAgentId = src.intentAgentId
       payload.specAgentId = src.specAgentId
+      payload.specReviewAgentId = src.specReviewAgentId
       payload.automationAgentId = src.automationAgentId
       break
     }
@@ -1070,6 +1082,31 @@ function selectAdmin(username: string) {
               :title="t('settings.agents.spec.tooltip')"
             >
               <option value="">{{ t('settings.agents.specPicker.followDefault') }}</option>
+              <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
+                {{ a.displayName || a.id }}
+              </option>
+              <optgroup
+                v-if="pickerGroupAgents.length > 0"
+                :label="t('settings.agents.groupPicker.label')"
+              >
+                <option v-for="g in pickerGroupAgents" :key="g.id" :value="g.id">
+                  {{ g.id }}
+                </option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="agent-default-picker">
+            <label class="agent-default-label" for="spec-review-agent-select">
+              {{ t('settings.agents.specReviewPicker.label') }}
+            </label>
+            <select
+              id="spec-review-agent-select"
+              v-model="draft.specReviewAgentId"
+              class="agent-field"
+              data-testid="spec-review-agent-select"
+              :title="t('settings.agents.specReview.tooltip')"
+            >
+              <option value="">{{ t('settings.agents.specReviewPicker.followDefault') }}</option>
               <option v-for="a in defaultPickerAgents" :key="a.id" :value="a.id">
                 {{ a.displayName || a.id }}
               </option>

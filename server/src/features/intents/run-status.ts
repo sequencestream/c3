@@ -58,15 +58,16 @@ export function clearJudgedSession(id: string): void {
 }
 
 /**
- * True when any of the intent's three session ids (intent / spec / work) is a
- * non-null id the run registry reports as running. Short-circuit OR; missing,
- * unknown, and stopped ids all count as inactive. Covers all statuses — unlike
- * `runStatus`, it is not gated on `in_progress`.
+ * True when any of the intent's four session ids (intent / spec / spec review /
+ * work) is a non-null id the run registry reports as running. Short-circuit OR;
+ * missing, unknown, and stopped ids all count as inactive. Covers all statuses —
+ * unlike `runStatus`, it is not gated on `in_progress`.
  */
 function deriveSessionActive(r: Intent): boolean {
   return (
     (!!r.intentSessionId && isRunning(r.intentSessionId)) ||
     (!!r.specSessionId && isRunning(r.specSessionId)) ||
+    (!!r.specReviewSessionId && isRunning(r.specReviewSessionId)) ||
     (!!r.lastWorkSessionId && isRunning(r.lastWorkSessionId))
   )
 }

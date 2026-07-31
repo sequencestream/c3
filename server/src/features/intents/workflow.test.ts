@@ -94,6 +94,7 @@ vi.mock('../../kernel/config/index.js', () => ({
   getDefaultMode: vi.fn(),
   getGitBranchMode: vi.fn(),
   getSddEnabled: vi.fn(() => false),
+  getSpecMachineApprovalEnabled: vi.fn(() => false),
 }))
 
 vi.mock('./worktree.js', () => ({
@@ -249,6 +250,13 @@ const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
   specApproved: false,
   specApproveUser: null,
   specSessionId: null,
+  specReviewSessionId: null,
+  specReviewVerdict: null,
+  specReviewReason: null,
+  specReviewAt: null,
+  specReviewFingerprint: null,
+  specReviewReworkRounds: 0,
+  specReviewMachineApprovalBlocked: false,
   intentSessionId: null,
   lastWorkSessionId: null,
   sessionActive: false,
@@ -875,6 +883,7 @@ describe('automation controller — branch-mode git alignment', () => {
     )
     const hooks: WorkflowHooks = {
       runDevTurn,
+      launchSpecRun: vi.fn(() => Promise.resolve()),
       broadcastIntents: vi.fn(),
       emitStatus: vi.fn(),
       sessionExists: vi.fn(() => Promise.resolve(false)),
@@ -1240,6 +1249,7 @@ describe('queue driver — failure isolation', () => {
     )
     const hooks: WorkflowHooks = {
       runDevTurn,
+      launchSpecRun: vi.fn(() => Promise.resolve()),
       broadcastIntents: vi.fn(),
       emitStatus: vi.fn(),
       sessionExists: vi.fn(() => Promise.resolve(false)),
@@ -1377,6 +1387,7 @@ describe('queue driver — manual control', () => {
       runDevTurn: vi.fn((_input: RunDevTurnInput): Promise<DevTurnResult> =>
         Promise.resolve({ outcome: 'complete', sessionId: 'real', lastMessage: 'ok' }),
       ),
+      launchSpecRun: vi.fn(() => Promise.resolve()),
       broadcastIntents: vi.fn(),
       emitStatus: vi.fn(),
       sessionExists: vi.fn(() => Promise.resolve(false)),

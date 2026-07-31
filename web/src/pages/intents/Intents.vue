@@ -110,6 +110,7 @@ const emit = defineEmits<{
   'save-spec-content': [intentId: string, content: string]
   'write-spec': [intentId: string]
   'approve-spec': [intentId: string]
+  'revoke-spec-approval': [intentId: string]
   'open-spec-session': [intentId: string]
   'open-intent-session': [sessionId: string]
   'read-spec': [intentId: string, specPath: string]
@@ -391,6 +392,7 @@ defineExpose({
         @list-intent-logs="(id: string) => emit('list-intent-logs', id)"
         @write-spec="(id: string) => emit('write-spec', id)"
         @approve-spec="(id: string) => emit('approve-spec', id)"
+        @revoke-spec-approval="(id: string) => emit('revoke-spec-approval', id)"
         @open-spec-session="(id: string) => emit('open-spec-session', id)"
         @open-intent-session="(sessionId: string) => emit('open-intent-session', sessionId)"
         @read-spec="(id: string, specPath: string) => emit('read-spec', id, specPath)"

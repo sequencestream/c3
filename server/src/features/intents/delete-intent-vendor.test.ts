@@ -147,6 +147,7 @@ function configureAgents(): void {
     toolAgentId: '',
     intentAgentId: '',
     specAgentId: '',
+    specReviewAgentId: '',
   } as SystemSettings)
 }
 

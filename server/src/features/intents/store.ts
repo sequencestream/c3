@@ -25,11 +25,13 @@ import type {
   IntentPrStatus,
   IntentRunStatus,
   IntentStatus,
+  SpecReviewVerdict,
 } from '@ccc/shared/protocol'
+import { SPEC_REVIEW_VERDICTS } from '@ccc/shared/protocol'
 import { pathToId } from '../../state.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 16
+const SCHEMA_VERSION = 17
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -59,6 +61,13 @@ CREATE TABLE IF NOT EXISTS intents (
   spec_approved     INTEGER NOT NULL DEFAULT 0,
   spec_approve_user TEXT,
   spec_session_id   TEXT,
+  spec_review_session_id TEXT,
+  spec_review_verdict    TEXT,
+  spec_review_reason     TEXT,
+  spec_review_at         INTEGER,
+  spec_review_fingerprint TEXT,
+  spec_review_rework_rounds INTEGER NOT NULL DEFAULT 0,
+  spec_review_machine_blocked INTEGER NOT NULL DEFAULT 0,
   intent_session_id TEXT,
   created_at      INTEGER NOT NULL,
   updated_at      INTEGER NOT NULL,
@@ -286,6 +295,17 @@ function db(): Db | null {
     ensureColumn(d, 'intents', 'pr_url', 'TEXT')
     // v14 → v15: latest intent-launched work-session pointer.
     ensureColumn(d, 'intents', 'last_work_session_id', 'TEXT')
+    // v16 → v17: spec-review facts. The conclusion is bound to the spec content
+    // fingerprint it was produced against, so editing the spec invalidates it
+    // without any explicit clean-up pass. Historic rows read as "no conclusion,
+    // 0 rework rounds, machine approval not suppressed" — no backfill needed.
+    ensureColumn(d, 'intents', 'spec_review_session_id', 'TEXT')
+    ensureColumn(d, 'intents', 'spec_review_verdict', 'TEXT')
+    ensureColumn(d, 'intents', 'spec_review_reason', 'TEXT')
+    ensureColumn(d, 'intents', 'spec_review_at', 'INTEGER')
+    ensureColumn(d, 'intents', 'spec_review_fingerprint', 'TEXT')
+    ensureColumn(d, 'intents', 'spec_review_rework_rounds', 'INTEGER NOT NULL DEFAULT 0')
+    ensureColumn(d, 'intents', 'spec_review_machine_blocked', 'INTEGER NOT NULL DEFAULT 0')
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -344,10 +364,28 @@ interface Row {
   spec_approved: number
   spec_approve_user: string | null
   spec_session_id: string | null
+  spec_review_session_id: string | null
+  spec_review_verdict: string | null
+  spec_review_reason: string | null
+  spec_review_at: number | null
+  spec_review_fingerprint: string | null
+  spec_review_rework_rounds: number
+  spec_review_machine_blocked: number
   intent_session_id: string | null
   created_at: number
   updated_at: number
   completed_at: number | null
+}
+
+/**
+ * Narrow a persisted review verdict. An unknown / legacy value reads as "no
+ * conclusion" rather than being surfaced verbatim — a conclusion the code cannot
+ * interpret must never be treated as a pass.
+ */
+function narrowSpecReviewVerdict(v: string | null): SpecReviewVerdict | null {
+  return v !== null && (SPEC_REVIEW_VERDICTS as readonly string[]).includes(v)
+    ? (v as SpecReviewVerdict)
+    : null
 }
 
 /** Attach `dependsOn` and `dependsOnTypes` to a set of rows in one deps query, preserving row order. */
@@ -391,6 +429,13 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     specApproved: r.spec_approved === 1,
     specApproveUser: r.spec_approve_user,
     specSessionId: r.spec_session_id,
+    specReviewSessionId: r.spec_review_session_id,
+    specReviewVerdict: narrowSpecReviewVerdict(r.spec_review_verdict),
+    specReviewReason: r.spec_review_reason,
+    specReviewAt: r.spec_review_at,
+    specReviewFingerprint: r.spec_review_fingerprint,
+    specReviewReworkRounds: r.spec_review_rework_rounds ?? 0,
+    specReviewMachineApprovalBlocked: r.spec_review_machine_blocked === 1,
     intentSessionId: r.intent_session_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -1011,6 +1056,165 @@ export function setSpecApproved(id: string, approved: boolean, approveUser: stri
   )
 }
 
+/**
+ * Outcome of a `spec_review` conclusion submission.
+ * - `applied`   — a NEW conclusion landed (and, for `changes_requested`, the
+ *   rework counter advanced by exactly one).
+ * - `duplicate` — the identical conclusion for the identical spec fingerprint is
+ *   already recorded. A no-op: no second count, no second event, no re-approval.
+ * - `stale`     — the fingerprint does not match the spec's live content, so the
+ *   reviewer judged something that no longer exists. Rejected, never a pass.
+ * - `unknown`   — no such intent.
+ */
+export type SpecReviewSubmitOutcome = 'applied' | 'duplicate' | 'stale' | 'unknown'
+
+/**
+ * Record a review conclusion against the spec fingerprint it was produced for.
+ *
+ * The whole check-and-write runs in ONE transaction so a repeated tick, a retried
+ * event and a duplicate tool call can never double-count a rework round or land
+ * two conclusions. `liveFingerprint` is the spec file's fingerprint as the caller
+ * just read it: a submission whose `fingerprint` disagrees is `stale` and is
+ * dropped rather than interpreted (an out-of-date judgement is not a pass).
+ *
+ * A newly applied conclusion also clears the machine-approval suppression flag —
+ * a human veto binds to the conclusion it was aimed at, not to the intent forever.
+ */
+export function recordSpecReview(input: {
+  intentId: string
+  sessionId: string | null
+  verdict: SpecReviewVerdict
+  reason: string
+  /** The fingerprint the reviewer judged. */
+  fingerprint: string
+  /** The spec's fingerprint right now, as read by the caller. */
+  liveFingerprint: string
+  now?: number
+}): SpecReviewSubmitOutcome {
+  const d = requireDb()
+  const now = input.now ?? Date.now()
+  let outcome: SpecReviewSubmitOutcome = 'unknown'
+  tx(d, () => {
+    const row = d.get<Row>('SELECT * FROM intents WHERE id=?', input.intentId)
+    if (!row) {
+      outcome = 'unknown'
+      return
+    }
+    if (input.fingerprint !== input.liveFingerprint) {
+      outcome = 'stale'
+      return
+    }
+    if (
+      row.spec_review_fingerprint === input.fingerprint &&
+      narrowSpecReviewVerdict(row.spec_review_verdict) === input.verdict
+    ) {
+      outcome = 'duplicate'
+      return
+    }
+    const rounds =
+      input.verdict === 'changes_requested'
+        ? (row.spec_review_rework_rounds ?? 0) + 1
+        : (row.spec_review_rework_rounds ?? 0)
+    d.run(
+      `UPDATE intents SET spec_review_session_id=?, spec_review_verdict=?, spec_review_reason=?,
+         spec_review_at=?, spec_review_fingerprint=?, spec_review_rework_rounds=?,
+         spec_review_machine_blocked=0, updated_at=? WHERE id=?`,
+      input.sessionId,
+      input.verdict,
+      input.reason,
+      now,
+      input.fingerprint,
+      rounds,
+      now,
+      input.intentId,
+    )
+    outcome = 'applied'
+  })
+  return outcome
+}
+
+/**
+ * Approve a spec on behalf of the MACHINE, under a transactional condition check.
+ *
+ * Returns `true` only when every fact still held at write time: not already
+ * approved, a `pass` conclusion, that conclusion bound to `fingerprint`, and no
+ * human veto standing against it. A spec edited or an approval revoked between
+ * the kernel's decision and this write fails the check and approves nothing — the
+ * next reconcile re-derives from the fresh facts.
+ */
+export function machineApproveSpec(
+  intentId: string,
+  fingerprint: string,
+  approver: string,
+): boolean {
+  const d = requireDb()
+  let applied = false
+  tx(d, () => {
+    const row = d.get<Row>('SELECT * FROM intents WHERE id=?', intentId)
+    if (!row) return
+    if (row.spec_approved === 1) return
+    if (row.spec_path === null) return
+    if (narrowSpecReviewVerdict(row.spec_review_verdict) !== 'pass') return
+    if (row.spec_review_fingerprint !== fingerprint) return
+    if (row.spec_review_machine_blocked === 1) return
+    d.run(
+      'UPDATE intents SET spec_approved=1, spec_approve_user=?, updated_at=? WHERE id=?',
+      approver,
+      Date.now(),
+      intentId,
+    )
+    applied = true
+  })
+  return applied
+}
+
+/**
+ * Revoke an approval (human or machine) and veto the conclusion it rested on, so
+ * the next tick cannot machine-approve the same conclusion straight back. Returns
+ * `false` when the intent was not approved — nothing to revoke, nothing written.
+ */
+export function revokeSpecApproval(intentId: string): boolean {
+  const d = requireDb()
+  let revoked = false
+  tx(d, () => {
+    const row = d.get<Row>('SELECT * FROM intents WHERE id=?', intentId)
+    if (!row || row.spec_approved !== 1) return
+    d.run(
+      `UPDATE intents SET spec_approved=0, spec_approve_user=NULL,
+         spec_review_machine_blocked=1, updated_at=? WHERE id=?`,
+      Date.now(),
+      intentId,
+    )
+    revoked = true
+  })
+  return revoked
+}
+
+/**
+ * Lift the machine-approval veto. Called on an explicit HUMAN approval: once a
+ * person has approved this spec, the earlier veto has been answered and must not
+ * keep suppressing a later machine approval of a freshly reviewed spec.
+ */
+export function clearSpecReviewMachineBlock(intentId: string): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE intents SET spec_review_machine_blocked=0, updated_at=? WHERE id=?',
+    Date.now(),
+    intentId,
+  )
+}
+
+/** Set the spec-REVIEW session id (c3SessionId) for an intent. */
+export function setSpecReviewSessionId(id: string, sessionId: string): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE intents SET spec_review_session_id=?, updated_at=? WHERE id=?',
+    sessionId,
+    Date.now(),
+    id,
+  )
+}
+
 /** Set the spec-authoring session id (c3SessionId) for an intent. */
 export function setSpecSessionId(id: string, sessionId: string): void {
   const d = requireDb()
@@ -1221,20 +1425,30 @@ export function listHiddenSessions(workspacePath: string): string[] {
     .map((r) => r.session_id)
 }
 
-/** All spec session ids for a project, for list filtering. Spec sessions are
- * not user work sessions and must not appear in the work-session list. */
+/** All spec authoring + review session ids for a project, for list filtering.
+ * Neither is a user work session, so neither may appear in the work-session list. */
 export function listSpecSessionIds(workspacePath: string): string[] {
   if (!isDbAvailable()) return []
   const d = db()
   if (!d) return []
-  return d
+  const proj = resolve(workspacePath)
+  const authored = d
     .all<{
       spec_session_id: string
     }>(
       'SELECT spec_session_id FROM intents WHERE workspace_path=? AND spec_session_id IS NOT NULL',
-      resolve(workspacePath),
+      proj,
     )
     .map((r) => r.spec_session_id)
+  const reviewed = d
+    .all<{
+      spec_review_session_id: string
+    }>(
+      'SELECT spec_review_session_id FROM intents WHERE workspace_path=? AND spec_review_session_id IS NOT NULL',
+      proj,
+    )
+    .map((r) => r.spec_review_session_id)
+  return [...authored, ...reviewed]
 }
 
 // ---- Communication session CRUD (session-collection upgrade) ----

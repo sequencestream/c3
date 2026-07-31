@@ -268,6 +268,7 @@ const SESSION_KIND_LABEL = computed<Record<SessionKind, string>>(() => ({
   consensus: t('automation.form.event.sessionKind.consensus.label'),
   tool: t('automation.form.event.sessionKind.tool.label'),
   spec: t('automation.form.event.sessionKind.spec.label'),
+  spec_review: t('automation.form.event.sessionKind.specReview.label'),
 }))
 const SESSION_KIND_OPTIONS = computed<{ value: SessionKind; label: string }[]>(() =>
   SESSION_KINDS.map((value) => ({ value, label: SESSION_KIND_LABEL.value[value] })),

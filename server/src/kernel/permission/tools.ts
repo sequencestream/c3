@@ -17,6 +17,14 @@ export const FIND_INTENTS_TOOL = 'mcp__c3__find_intents'
 export const VIEW_INTENT_TOOL = 'mcp__c3__view_intent'
 
 /**
+ * The c3 `submit_spec_review` MCP tool's fully-qualified name — the ONE narrow
+ * write-shaped affordance a `spec_review` session gets. It carries a structured
+ * verdict + reason + the spec fingerprint judged; it touches no file and no other
+ * ledger field, which is exactly why a strictly read-only session may call it.
+ */
+export const SUBMIT_SPEC_REVIEW_TOOL = 'mcp__c3__submit_spec_review'
+
+/**
  * The c3 `publish_event` MCP tool's fully-qualified name (server name `c3`).
  * Bound to every work session. The standard gate auto-allows it with NO human
  * prompt: publishing a vendor-neutral generic event is non-destructive (the
@@ -106,6 +114,26 @@ export const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit'
  * (the spec gate path-checks them); everything dangerous is cut here.
  */
 export const SPEC_DISALLOWED_TOOLS = ['Bash', 'BashOutput', 'KillShell', 'Task', 'SlashCommand']
+
+/**
+ * Tools hard-disabled (SDK level) for the spec-REVIEW agent. Stricter than
+ * {@link SPEC_DISALLOWED_TOOLS} by exactly the write-class tools: a reviewer has
+ * NO writable location at all, so unlike the author there is nothing for a
+ * path-check to decide and the write tools are cut at the SDK level too. The
+ * `spec_review` gate still denies them independently — belt and braces, so a
+ * future wiring slip cannot silently hand the reviewer an editor.
+ */
+export const SPEC_REVIEW_DISALLOWED_TOOLS = [
+  'Write',
+  'Edit',
+  'MultiEdit',
+  'NotebookEdit',
+  'Bash',
+  'BashOutput',
+  'KillShell',
+  'Task',
+  'SlashCommand',
+]
 
 /**
  * Extract the target file path(s) from a write-tool input. The field name

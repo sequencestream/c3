@@ -73,6 +73,7 @@ export function installSessionActions(ctx: AppCtx): void {
       kind === 'work' ||
       kind === 'intent' ||
       kind === 'spec' ||
+      kind === 'spec_review' ||
       kind === 'discussion' ||
       kind === 'automation' ||
       kind === 'tool'
@@ -86,7 +87,7 @@ export function installSessionActions(ctx: AppCtx): void {
   function ownerKindForSessionKind(
     kind: SessionPageKind,
   ): NonNullable<SessionInfo['ownerKind']> | null {
-    if (kind === 'intent' || kind === 'spec') return 'intent'
+    if (kind === 'intent' || kind === 'spec' || kind === 'spec_review') return 'intent'
     if (kind === 'discussion') return 'discussion'
     if (kind === 'automation') return 'automation'
     return null

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { Intent } from '@ccc/shared/protocol'
+import { MACHINE_SPEC_APPROVER } from '@ccc/shared/protocol'
 import IntentSpecTab from './IntentSpecTab.vue'
 
 const SPEC = '/home/u/.c3/specs/proj/2026/07/07/x/spec.md'
@@ -31,6 +32,13 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     specApproved: false,
     specApproveUser: null,
     specSessionId: null,
+    specReviewSessionId: null,
+    specReviewVerdict: null,
+    specReviewReason: null,
+    specReviewAt: null,
+    specReviewFingerprint: null,
+    specReviewReworkRounds: 0,
+    specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
     sessionActive: false,
     ...overrides,
@@ -147,5 +155,87 @@ describe('IntentSpecTab.vue', () => {
     const modify = w.find(MODIFY)
     expect((modify.element as HTMLButtonElement).disabled).toBe(true)
     expect(modify.attributes('title')).toBeTruthy()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Review facts + the revoke channel
+// ---------------------------------------------------------------------------
+
+const REVOKE = '[data-testid="intent-detail-spec-revoke"]'
+const REVIEW = '[data-testid="intent-detail-spec-review"]'
+const VERDICT = '[data-testid="intent-detail-spec-review-verdict"]'
+const APPROVER = '[data-testid="intent-detail-spec-approver"]'
+
+describe('IntentSpecTab — review conclusion + revoke', () => {
+  it('shows nothing review-related when there is no conclusion and no approval', () => {
+    const w = mountSpec(intent({ id: 'i1' }))
+    expect(w.find(REVIEW).exists()).toBe(false)
+    expect(w.find(REVOKE).exists()).toBe(false)
+  })
+
+  it('renders a pass verdict with its reason', () => {
+    const w = mountSpec(
+      intent({ id: 'i1', specReviewVerdict: 'pass', specReviewReason: 'grounded' }),
+    )
+    expect(w.find(VERDICT).classes()).toContain('is-pass')
+    expect(w.find(REVIEW).text()).toContain('grounded')
+  })
+
+  it('renders a changes-requested verdict with the rework round', () => {
+    const w = mountSpec(
+      intent({
+        id: 'i1',
+        specReviewVerdict: 'changes_requested',
+        specReviewReason: 'missing acceptance criteria',
+        specReviewReworkRounds: 2,
+      }),
+    )
+    expect(w.find(VERDICT).classes()).toContain('is-changes')
+    expect(w.find(REVIEW).text()).toContain('2')
+    expect(w.find(REVIEW).text()).toContain('missing acceptance criteria')
+  })
+
+  it('distinguishes a machine approval from a human one', () => {
+    const machine = mountSpec(
+      intent({
+        id: 'i1',
+        specApproved: true,
+        specApproveUser: MACHINE_SPEC_APPROVER,
+        specReviewVerdict: 'pass',
+      }),
+    )
+    const human = mountSpec(
+      intent({ id: 'i2', specApproved: true, specApproveUser: 'alice', specReviewVerdict: 'pass' }),
+    )
+    expect(machine.find(APPROVER).text()).not.toBe(human.find(APPROVER).text())
+    expect(human.find(APPROVER).text()).toContain('alice')
+    // The machine identity constant is never shown raw as if it were a user.
+    expect(machine.find(APPROVER).text()).not.toContain(MACHINE_SPEC_APPROVER)
+  })
+
+  it('offers revoke once approved — for BOTH machine and human approval', () => {
+    for (const approver of [MACHINE_SPEC_APPROVER, 'alice']) {
+      const w = mountSpec(intent({ id: 'i1', specApproved: true, specApproveUser: approver }))
+      expect(w.find(REVOKE).exists()).toBe(true)
+    }
+  })
+
+  it('emits revoke-spec-approval with the intent id', async () => {
+    const w = mountSpec(intent({ id: 'i9', specApproved: true, specApproveUser: 'alice' }))
+    await w.find(REVOKE).trigger('click')
+    expect(w.emitted('revoke-spec-approval')).toEqual([['i9']])
+  })
+
+  it('hides the revoke entry and the review band while editing the spec source', async () => {
+    const w = mountSpec(intent({ id: 'i1', specApproved: true, specReviewVerdict: 'pass' }), {
+      showApprove: false,
+    })
+    expect(w.find(REVOKE).exists()).toBe(true)
+    await w.find(EDIT).trigger('click')
+    // Editing must not race an approval change, and the reviewer's verdict
+    // describes the text being replaced — showing it here would mislead.
+    expect(w.find(REVOKE).exists()).toBe(false)
+    expect(w.find(REVIEW).exists()).toBe(false)
   })
 })

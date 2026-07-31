@@ -44,6 +44,7 @@ const mockSettings: SystemSettings = {
   intentAgentId: '',
   // '' ⇒ spec sessions follow the default agent; tests mutate this per-case.
   specAgentId: '',
+  specReviewAgentId: '',
   automationAgentId: '',
   degradationChain: [],
 }
@@ -67,6 +68,7 @@ import {
   resolveFirstAgentOfVendor,
   resolveIntentAgent,
   resolveSpecAgent,
+  resolveSpecReviewAgent,
   resolveToolAgent,
 } from './index.js'
 import type { AgentConfig } from '@ccc/shared/protocol'
@@ -375,6 +377,39 @@ describe('resolveSpecAgent — specAgentId → defaultAgentId → system fall-th
     // itself does not filter on `enabled`, mirroring resolveAgent (AC-R10).
     mockSettings.specAgentId = 'disabled-claude'
     expect(resolveSpecAgent().id).toBe('disabled-claude')
+  })
+})
+
+describe('resolveSpecReviewAgent — the single reviewer slot, no sandbox variant', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('follows the default agent when specReviewAgentId is empty', () => {
+    mockSettings.specReviewAgentId = ''
+    expect(resolveSpecReviewAgent().id).toBe('claude-pro')
+  })
+
+  it('resolves an explicitly set, enabled reviewer', () => {
+    mockSettings.specReviewAgentId = 'claude-sonnet'
+    expect(resolveSpecReviewAgent().id).toBe('claude-sonnet')
+  })
+
+  it('resolves a cross-vendor reviewer (codex) when set', () => {
+    mockSettings.specReviewAgentId = 'codex-agent'
+    expect(resolveSpecReviewAgent().vendor).toBe('codex')
+  })
+
+  it('falls back to the default agent when the reviewer id is unknown', () => {
+    mockSettings.specReviewAgentId = 'gone'
+    expect(resolveSpecReviewAgent().id).toBe('claude-pro')
+  })
+
+  it('is independent of the spec AUTHOR slot', () => {
+    mockSettings.specAgentId = 'claude-sonnet'
+    mockSettings.specReviewAgentId = 'codex-agent'
+    expect(resolveSpecAgent().id).toBe('claude-sonnet')
+    expect(resolveSpecReviewAgent().id).toBe('codex-agent')
   })
 })
 

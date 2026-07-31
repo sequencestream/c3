@@ -237,7 +237,7 @@ export interface RunOptions {
    * confirmation happens in the conversation), and everything else is denied by
    * default (a second line of defence behind `disallowedTools`).
    */
-  gate?: 'standard' | 'intent' | 'discussion-research' | 'spec'
+  gate?: 'standard' | 'intent' | 'discussion-research' | 'spec' | 'spec_review'
   /**
    * Only with `gate === 'spec'`: the absolute spec directory this run's writes
    * are confined to. Forwarded to {@link createCanUseTool}; write-class tools
@@ -685,17 +685,20 @@ export async function runClaude(opts: RunOptions): Promise<void> {
         specDir,
         // The producing run's SessionKind, mapped from THIS run's gate (the agent path
         // carries the gate, not a SessionKind): intent comm agent → 'intent', spec
-        // write gate → 'spec', discussion-research → 'discussion' (never prompts, so
-        // inert), the standard work session → 'work'. WorkCenter routes its 溯源跳转
-        // off this verbatim, so a spec prompt no longer collapses to a session.
+        // write gate → 'spec', spec review → 'spec_review', discussion-research →
+        // 'discussion' (never prompts, so inert), the standard work session →
+        // 'work'. WorkCenter routes its 溯源跳转 off this verbatim, so a spec
+        // prompt no longer collapses to a session.
         sessionKind:
           gate === 'intent'
             ? 'intent'
             : gate === 'spec'
               ? 'spec'
-              : gate === 'discussion-research'
-                ? 'discussion'
-                : 'work',
+              : gate === 'spec_review'
+                ? 'spec_review'
+                : gate === 'discussion-research'
+                  ? 'discussion'
+                  : 'work',
         send,
         signal,
         currentAgentId: currentAgentId ?? null,

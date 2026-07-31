@@ -255,8 +255,15 @@
       "spec": {
         "tooltip": "사양 작성 세션(프로젝트 사양 작성)을 실행하는 에이전트"
       },
+      "specReview": {
+        "tooltip": "사양 검토 세션(작성된 사양의 읽기 전용 검토)을 실행하는 에이전트"
+      },
       "specPicker": {
         "label": "사양 에이전트",
+        "followDefault": "기본 에이전트 따르기"
+      },
+      "specReviewPicker": {
+        "label": "사양 검토 에이전트",
         "followDefault": "기본 에이전트 따르기"
       },
       "automation": {
@@ -764,6 +771,9 @@
         "label": "사양 승인",
         "confirmLabel": "승인"
       },
+      "revokeSpecApproval": {
+        "label": "승인 철회"
+      },
       "modifySession": {
         "label": "수정하고 싶어요"
       },
@@ -907,7 +917,16 @@
     },
     "spec": {
       "empty": "이 의도에는 아직 사양이 작성되지 않았습니다.",
-      "loading": "사양 불러오는 중…"
+      "loading": "사양 불러오는 중…",
+      "review": {
+        "verdict": {
+          "pass": "검토 통과",
+          "changesRequested": "수정 필요"
+        },
+        "reworkRounds": "재작업 {rounds} / {max} 회차",
+        "approvedBy": "{user} 님이 승인",
+        "approvedByMachine": "자동 승인(기계)"
+      }
     },
     "changelog": {
       "empty": "이 인텐트에는 아직 변경 이력이 없습니다.",
@@ -918,6 +937,7 @@
         "statusChanged": "상태 변경",
         "specCreated": "스펙 작성",
         "specUpdated": "스펙 편집",
+        "specReviewed": "사양 검토",
         "specApproved": "스펙 승인",
         "specUnapproved": "승인 취소",
         "prCreated": "PR 생성",
@@ -1733,6 +1753,9 @@
           },
           "spec": {
             "label": "명세"
+          },
+          "specReview": {
+            "label": "사양 검토"
           }
         },
         "metadataFilter": {
@@ -2196,6 +2219,12 @@
           "label": "사양 디렉터리"
         },
         "hint": "이 프로젝트의 사양 파일이 저장되는 고정·중앙 위치(~/.c3/specs/<프로젝트>). 프로젝트의 모든 worktree가 공유하며 읽기 전용입니다——여기서도 API로도 변경할 수 없습니다. Git에 커밋되지 않습니다."
+      },
+      "machineApproval": {
+        "toggle": {
+          "label": "검토 통과 시 기계 승인 허용"
+        },
+        "hint": "기본값은 꺼짐. 켜면 읽기 전용 검토가 “통과”로 결론 낸 사양을 c3가 직접 승인하며, 사용자를 사칭하지 않는 기계 신원으로 기록되고 사람의 클릭 없이 개발을 시작할 수 있습니다. 승인은 철회할 수 있으며, 철회하면 사양은 “승인 대기”로 돌아가고 동일한 검토 결론으로는 다시 승인되지 않습니다. 이 옵션을 꺼도 이미 승인된 사양은 철회되지 않습니다."
       }
     },
     "consensus": {

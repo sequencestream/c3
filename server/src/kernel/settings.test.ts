@@ -119,6 +119,7 @@ describe('unique write path — anti-clobber + cross-process merge (2026-06-08-0
       toolAgentId: '',
       intentAgentId: '',
       specAgentId: '',
+      specReviewAgentId: '',
       automationAgentId: '',
     } as SystemSettings)
     expect(loadSettings().projectConfigs?.['/proj/a']).toBeTruthy()
@@ -334,6 +335,83 @@ describe('intentAgentId rewrite-on-store — empty=follow-default, set=fall-thro
   })
 })
 
+describe('specReviewAgentId rewrite-on-store — one slot, same semantics as specAgentId', () => {
+  const agent = (id: string, order: number, enabled?: boolean): unknown => ({
+    id,
+    vendor: 'claude',
+    configMode: 'custom',
+    displayName: id,
+    order_seq: order,
+    ...(enabled === undefined ? {} : { enabled }),
+    config: { baseUrl: `https://${id}`, apiKey: 'k', model: '' },
+  })
+
+  it('keeps an empty specReviewAgentId empty — "follow the default" survives a save', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1)],
+      defaultAgentId: 'a1',
+      specReviewAgentId: '',
+    } as unknown as SystemSettings)
+    expect(loadSettings().specReviewAgentId).toBe('')
+  })
+
+  it('defaults a missing specReviewAgentId to empty, never to an agent id', () => {
+    saveSettings({
+      agents: [agent('a1', 0)],
+      defaultAgentId: 'a1',
+    } as unknown as SystemSettings)
+    expect(loadSettings().specReviewAgentId).toBe('')
+  })
+
+  it('keeps an enabled, explicitly-set reviewer untouched', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1), agent('a3', 2)],
+      defaultAgentId: 'a1',
+      specReviewAgentId: 'a2',
+    } as unknown as SystemSettings)
+    expect(loadSettings().specReviewAgentId).toBe('a2')
+  })
+
+  it('rewrites a now-disabled reviewer to the next enabled agent by order_seq', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1, false), agent('a3', 2)],
+      defaultAgentId: 'a1',
+      specReviewAgentId: 'a2',
+    } as unknown as SystemSettings)
+    expect(loadSettings().specReviewAgentId).toBe('a3')
+  })
+
+  it('rewrites a REMOVED reviewer the same way', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a3', 2)],
+      defaultAgentId: 'a1',
+      specReviewAgentId: 'deleted-agent',
+    } as unknown as SystemSettings)
+    expect(loadSettings().specReviewAgentId).toBe('a1')
+  })
+
+  it('falls back to SYSTEM_AGENT_ID when every agent is disabled', () => {
+    saveSettings({
+      agents: [agent('a1', 0, false), agent('a2', 1, false)],
+      defaultAgentId: 'a1',
+      specReviewAgentId: 'a1',
+    } as unknown as SystemSettings)
+    expect(loadSettings().specReviewAgentId).toBe(SYSTEM_AGENT_ID)
+  })
+
+  it('is stored independently of the spec AUTHOR slot', () => {
+    saveSettings({
+      agents: [agent('a1', 0), agent('a2', 1)],
+      defaultAgentId: 'a1',
+      specAgentId: 'a1',
+      specReviewAgentId: 'a2',
+    } as unknown as SystemSettings)
+    const s = loadSettings()
+    expect(s.specAgentId).toBe('a1')
+    expect(s.specReviewAgentId).toBe('a2')
+  })
+})
+
 describe('specAgentId rewrite-on-store — empty=follow-default, set=fall-through (AC-R24)', () => {
   /** A minimal custom-claude agent at an explicit `order_seq`. */
   const agent = (id: string, order: number, enabled?: boolean): unknown => ({
@@ -351,6 +429,7 @@ describe('specAgentId rewrite-on-store — empty=follow-default, set=fall-throug
       agents: [agent('a1', 0), agent('a2', 1)],
       defaultAgentId: 'a1',
       specAgentId: '',
+      specReviewAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().specAgentId).toBe('')
   })
@@ -368,6 +447,7 @@ describe('specAgentId rewrite-on-store — empty=follow-default, set=fall-throug
       agents: [agent('a1', 0), agent('a2', 1), agent('a3', 2)],
       defaultAgentId: 'a1',
       specAgentId: 'a2',
+      specReviewAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().specAgentId).toBe('a2')
   })
@@ -377,6 +457,7 @@ describe('specAgentId rewrite-on-store — empty=follow-default, set=fall-throug
       agents: [agent('a1', 0), agent('a2', 1, false), agent('a3', 2)],
       defaultAgentId: 'a1',
       specAgentId: 'a2',
+      specReviewAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().specAgentId).toBe('a3')
   })
@@ -386,6 +467,7 @@ describe('specAgentId rewrite-on-store — empty=follow-default, set=fall-throug
       agents: [agent('a1', 0, false), agent('a2', 1, false)],
       defaultAgentId: 'a1',
       specAgentId: 'a1',
+      specReviewAgentId: '',
     } as unknown as SystemSettings)
     expect(loadSettings().specAgentId).toBe(SYSTEM_AGENT_ID)
   })
@@ -465,6 +547,7 @@ describe('getSocketAutoResume normalization (AS-R18 / AVAIL-7)', () => {
       toolAgentId: '',
       intentAgentId: '',
       specAgentId: '',
+      specReviewAgentId: '',
       automationAgentId: '',
       socketAutoResume,
     } as SystemSettings)
@@ -1119,6 +1202,7 @@ describe('agent-output language tracking', () => {
       toolAgentId: '',
       intentAgentId: '',
       specAgentId: '',
+      specReviewAgentId: '',
       automationAgentId: '',
       voiceLang: 'en-US',
     } as SystemSettings)
@@ -1133,6 +1217,7 @@ describe('agent-output language tracking', () => {
       toolAgentId: '',
       intentAgentId: '',
       specAgentId: '',
+      specReviewAgentId: '',
       automationAgentId: '',
       uiLang: 'zh',
     } as unknown as SystemSettings)
@@ -1175,6 +1260,7 @@ function saveWithTimezone(timezone: unknown): void {
     toolAgentId: '',
     intentAgentId: '',
     specAgentId: '',
+    specReviewAgentId: '',
     automationAgentId: '',
     timezone,
   } as SystemSettings)
@@ -2008,6 +2094,7 @@ describe('legacy sandbox-only role keys are dropped on load and save', () => {
       toolAgentId: 'a2',
       intentAgentId: '',
       specAgentId: 'a2',
+      specReviewAgentId: '',
       automationAgentId: '',
       sandboxDefaultAgentId: 'a2',
       sandboxToolAgentId: 'a1',

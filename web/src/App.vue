@@ -129,6 +129,7 @@ const {
   refineIntent,
   writeSpec,
   approveSpec,
+  revokeSpecApproval,
   openSpecSession,
   readIntentSpec,
   resetIntentSession,
@@ -544,6 +545,7 @@ function onCodesChatWidth(px: number): void {
           @save-spec-content="saveSpecContent"
           @write-spec="writeSpec"
           @approve-spec="approveSpec"
+          @revoke-spec-approval="revokeSpecApproval"
           @open-spec-session="openSpecSession"
           @open-intent-session="selectIntentSession"
           @read-spec="readIntentSpec"

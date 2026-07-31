@@ -421,6 +421,13 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // by the same order_seq fall-through (rewrite-on-store, AC-R2/AC-R10/AC-R24).
   const wantedSpec = typeof raw?.specAgentId === 'string' ? raw.specAgentId : ''
   const specAgentId = wantedSpec === '' ? '' : resolveDefaultAgentId(agents, wantedSpec)
+  // specReviewAgentId: spec-REVIEW sessions' executor. Identical semantics to
+  // specAgentId, and deliberately a single slot: there is no sandbox-specific
+  // reviewer, because whether a review runs in the sandbox is decided by
+  // `sandboxSessionKinds` containing 'spec_review', not by picking another agent.
+  const wantedSpecReview = typeof raw?.specReviewAgentId === 'string' ? raw.specReviewAgentId : ''
+  const specReviewAgentId =
+    wantedSpecReview === '' ? '' : resolveDefaultAgentId(agents, wantedSpecReview)
   // automationAgentId: default vendor+agent pre-filled into the "new automation" form.
   // Storage-normalization is identical to specAgentId — empty string ⇒ "follow the
   // default agent" (kept empty, never auto-filled), and a *set* value pointing at a
@@ -479,6 +486,7 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
     toolAgentId,
     intentAgentId,
     specAgentId,
+    specReviewAgentId,
     automationAgentId,
     voiceLang,
     timezone,
@@ -1313,6 +1321,17 @@ export function getDevSkill(workspacePath: string): string {
 /** Whether spec-driven development is enabled for the workspace (default true). */
 export function getSddEnabled(workspacePath: string): boolean {
   return normalizeSddEnabled(loadWorkspaceSetting(workspacePath).sddEnabled)
+}
+
+/**
+ * Whether this workspace has explicitly opted in to MACHINE spec approval
+ * (default `false`). Only a literal `true` opens the path: an absent, malformed
+ * or legacy value reads as off, so upgrading never changes a workspace's approval
+ * behaviour behind the user's back. A failed config read likewise yields `false` —
+ * the fail-closed direction for a gate whose whole point is human oversight.
+ */
+export function getSpecMachineApprovalEnabled(workspacePath: string): boolean {
+  return loadWorkspaceSetting(workspacePath).specMachineApprovalEnabled === true
 }
 
 /**

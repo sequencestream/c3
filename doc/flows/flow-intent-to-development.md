@@ -21,8 +21,16 @@ flowchart TD
     SAVE -- deny --> X[nothing written]
     LEDGER -. optional .-> SPEC[write_spec — write-confined spec session]
     SPEC --> LEDGER
+    LEDGER -. SDD on · queue-driven .-> QSPEC[launch_spec — queue authors the spec]
+    QSPEC --> REVIEW[spec_review — read-only reviewer]
+    REVIEW -- changes_requested · max 3 rounds --> QSPEC
+    REVIEW -- rework budget spent --> TODO[park + human todo]
+    REVIEW -- pass --> LEDGER
     LEDGER -. SDD on .-> APPROVE[approve_spec — human checkpoint]
+    LEDGER -. SDD on · opt-in ON · pass .-> MAPPROVE[machine approval<br/>c3:machine-spec-approver]
     APPROVE --> LEDGER
+    MAPPROVE --> LEDGER
+    LEDGER -. revoke_spec_approval .-> APPROVE
     LEDGER --> LAUNCH[start_development]
     LAUNCH --> DEV[background work session<br/>standard gated loop]
     DEV --> LINK[back-link · select_session]
@@ -107,12 +115,40 @@ flowchart TD
    随每次意图列表广播下发,因此按钮无需单独获取设置(`RM-R22`、`WC-R25`)。
 2. **web-console → intent-management。** `Approve Spec` 发送 `approve_spec`。服务端
    设置 `spec_approved=true`,并记录批准用户(当前登录主体)到
-   `spec_approve_user`,然后重新广播列表 — 单人确认,本阶段无多签也无
-   撤销批准;在规格存在之前批准会被拒绝(`RM-R22`)。批准是**门控开发的
-   人工检查点**:它清除该闸门,使按钮前进到 `Start Work`,但**不**
-   自行启动开发。automation orchestrator 使用同一检查点作为一个准入闸门:
-   SDD 开启时,排队中的 `automate` 意图在 `spec_approved=true` 之前被跳过;
-   SDD 关闭时,自动化不要求规格。
+   `spec_approve_user`,然后重新广播列表 — 单人确认,无多签;在规格存在之前
+   批准会被拒绝(`RM-R22`)。批准是**门控开发的人工检查点**:它清除该闸门,
+   使按钮前进到 `Start Work`,但**不**自行启动开发。
+3. **撤销批准。** 规格标签页在已批准时提供**撤销批准**,人工批准与机器批准
+   共用同一入口。`revoke_spec_approval` 在一个事务内清除 `spec_approved` 与
+   批准身份,**并同时否决当前那条审核结论** — 否则开启机器批准的工作区会在
+   下一个 tick 把同一条结论反向覆盖回已批准。意图回到等待批准且不自动启动
+   开发;**已在运行的开发会话不被强制终止**(`RM-R33`)。
+
+## 队列自治的规格阶段(SDD 开启时)
+
+自动化队列不再把「未批准的规格」当作永久卡点。SDD 开启且 `automate` 意图尚未
+通过规格闸门时,同一个对账内核把它细分为规格阶段并逐轮推进(`RM-R35`):
+
+1. **撰写。** 没有规格 ⇒ 产生 `launch_spec`,复用 `launchSpecSession` 的新建 /
+   按 `specSessionId` 恢复语义。已有活跃规格会话时只等待,绝不重复发起。
+2. **只读审核。** 规格可读且没有针对当前内容的有效结论 ⇒ 启动一个独立的
+   `spec_review` 会话(`RM-R34`)。它读规格、仓库源码与本项目意图,**对任意
+   路径的写入一律被拒**,结论只经 `submit_spec_review` 结构化提交 — 写在回复
+   正文里的判断不算数,运行结束也不代表通过。每条结论绑定其产出时所针对的
+   **规格内容指纹**,因此规格一旦被改写,旧结论自动失效并触发重新审核。
+3. **返工。** 结论为「需修改」⇒ 返工轮次原子加一,并携审核理由原文恢复同一个
+   撰写会话。前 3 轮允许返工;第 3 轮返工后仍不通过时不再拉起撰写,park 该
+   意图并创建一次人工待办,在 `queue_decision_log` 记录原因。
+4. **通过之后。** 工作区的**机器批准开关默认关闭** — 关闭时内核**根本不产生**
+   机器批准动作,意图停在「等待人工批准」。显式开启后,通过的结论由队列写入
+   `spec_approved=true`,批准人记为保留常量 `c3:machine-spec-approver`
+   (**不冒充任何登录主体**),开发无需人工点击即可继续。落库是条件事务:
+   写入瞬间复核「未批准、结论为 pass、结论绑定当前指纹、未被人工否决」,任一
+   不成立则一无所写,由下一轮从新事实重推导。
+
+automation orchestrator 使用同一检查点作为准入闸门:SDD 开启时,排队中的
+`automate` 意图在 `spec_approved=true` 之前不会进入开发;SDD 关闭时,自动化
+不要求规格,规格阶段也完全不启动。
 
 ## 启动工作
 
@@ -211,6 +247,18 @@ flowchart TD
   目录之外 — 对项目源码的写入在路径层被拒绝,而一个非 Claude 的规格智能体
   (它无法对写入做路径限定)在启动前就会被拒绝,而不是在没有该锁的情况下
   撰写(`RM-R21`)。
+- **审核者永远没有笔。** 一个 `spec_review` 会话绝不能写**任何**路径 — 包括它正在
+  审核的那份规格。它**不复用** `spec` 会话类型(后者携带规格目录写权,复用等于
+  静默授予审核者改写被审文档的能力);写类工具在 SDK 层直接切掉,工具层网关再
+  独立拒绝一次。sandbox 只是第二道进程隔离,**不改变权限语义**(`RM-R34`)。
+- **陈旧的结论绝不被解释为通过。** 缺字段、非法枚举、未知意图,或指纹与规格现
+  内容不符的审核提交一律被拒绝且不落库;重复提交同一结论是幂等空操作,不重复
+  计数、不重复发事件(`RM-R34`)。
+- **机器批准是显式 opt-in,且可撤销。** 工作区开关默认关闭,缺省/非布尔/遗留值
+  一律读作关闭;关闭时即使结论为通过,`spec_approved` 也绝不会被自动置真 ——
+  内核根本不产生该动作。开启后批准记的是机器身份常量而非登录主体,并且始终
+  可由人撤销;撤销会否决当前结论,使下一个 tick 不能把它反向覆盖回来
+  (`RM-R33`、`RM-R35`、ADR-0032)。
 - **手动启动绝不自动完成。** 开发运行结束不会改变状态;用户
   标记 `done`/`cancelled`(`RM-R9`)。唯一的例外是入口协调(`RM-R18`)与
   automation orchestrator(`RM-A5`)。会话结束时的 Git/PR 清理(`RM-R26`)同样

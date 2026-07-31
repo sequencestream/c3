@@ -309,6 +309,7 @@ function narrowSessionKind(k: string): SessionKind {
     case 'consensus':
     case 'tool':
     case 'spec':
+    case 'spec_review':
       return k
     default:
       return 'work'

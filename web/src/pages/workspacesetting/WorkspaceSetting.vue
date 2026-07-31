@@ -102,7 +102,13 @@ const TABS: WsTab[] = ['defaultMode', 'gitSandbox', 'collab', 'skillRepos']
 const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
   defaultMode: ['defaultMode', 'devSkill'],
   gitSandbox: ['gitBranchMode', 'defaultMainBranch', 'sandbox'],
-  collab: ['maxRoundsPerStage', 'maxSpeechChars', 'consensus', 'sddEnabled'],
+  collab: [
+    'maxRoundsPerStage',
+    'maxSpeechChars',
+    'consensus',
+    'sddEnabled',
+    'specMachineApprovalEnabled',
+  ],
   skillRepos: ['skillRepos'],
 }
 function tabLabel(tab: WsTab): string {
@@ -210,6 +216,9 @@ function buildSeed(
     // Pre-fill from the saved value, else the server-probed default branch.
     defaultMainBranch: config?.defaultMainBranch ?? detected ?? '',
     sddEnabled: config?.sddEnabled ?? true,
+    // Machine spec approval is an explicit opt-in: absent reads as OFF, so an
+    // existing workspace never gains it by upgrading.
+    specMachineApprovalEnabled: config?.specMachineApprovalEnabled === true,
     // sandbox left RAW from `full` (may be undefined) — synthesized into the draft.
   }
 }
@@ -600,6 +609,7 @@ function buildTabPayload(
       payload.maxSpeechChars = src.maxSpeechChars
       payload.consensus = deepCopy(src.consensus)
       payload.sddEnabled = src.sddEnabled
+      payload.specMachineApprovalEnabled = src.specMachineApprovalEnabled
       break
     }
     case 'skillRepos': {
@@ -1069,6 +1079,20 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
           </div>
           <p v-if="draft.sddEnabled" class="project-config-hint">
             {{ t('workspaceSetting.sdd.specRoot.hint') }}
+          </p>
+          <!-- Machine approval: shown only under SDD, default OFF. Turning it on
+               lets a passing review clear the human approval checkpoint; the
+               approval stays revocable and is recorded under a machine identity. -->
+          <label v-if="draft.sddEnabled" class="project-config-toggle">
+            <input
+              v-model="draft.specMachineApprovalEnabled"
+              type="checkbox"
+              data-testid="spec-machine-approval-enabled"
+            />
+            {{ t('workspaceSetting.sdd.machineApproval.toggle.label') }}
+          </label>
+          <p v-if="draft.sddEnabled" class="project-config-hint">
+            {{ t('workspaceSetting.sdd.machineApproval.hint') }}
           </p>
         </section>
       </div>

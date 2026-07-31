@@ -219,6 +219,7 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
       toolAgentId: '',
       intentAgentId: '',
       specAgentId: '',
+      specReviewAgentId: '',
       automationAgentId: '',
       showToolSessions: true,
     })
@@ -241,6 +242,7 @@ describe('listSessionsVia — cross-vendor merge (claude + codex)', () => {
       toolAgentId: '',
       intentAgentId: '',
       specAgentId: '',
+      specReviewAgentId: '',
       automationAgentId: '',
       showToolSessions: true,
     })

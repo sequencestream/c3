@@ -59,8 +59,9 @@ export interface SessionRuntime {
   /**
    * The run's **business scenario** in the {@link SessionKind} taxonomy. A
    * `SessionRuntime` only ever drives `'work'` (ordinary dev/user session) or
-   * `'intent'`/`'spec'` (read-only intent-comm / write-confined spec session,
-   * hidden from the normal list); the other SessionKind values tag socket-less
+   * `'intent'`/`'spec'`/`'spec_review'` (read-only intent-comm / write-confined
+   * spec authoring / strictly read-only spec review, all hidden from the normal
+   * work-session list); the other SessionKind values tag socket-less
    * internal invocations that do NOT create a runtime. Business-source judgements
    * (automation trigger, security gate) read this. (Was `kind: RunKind` with
    * `'session'`; renamed and `'session' → 'work'` on 2026-06-26.)
@@ -146,6 +147,16 @@ export interface SessionRuntime {
    * read-only). Set by the `write_spec` handler after computing the layout.
    */
   specDir?: string
+  /**
+   * Only set for `sessionKind === 'spec_review'` runs: the intent under review and
+   * the spec fingerprint captured when the review was launched. Both are part of
+   * the security contract, not conveniences — they bind the review's narrow submit
+   * tool to ONE intent and ONE document version, so a review run can neither
+   * conclude about another intent nor claim to have judged content it never saw.
+   * A `spec_review` runtime launched without them throws.
+   */
+  specReviewIntentId?: string
+  specReviewFingerprint?: string
   /**
    * The research marker: set ONLY on a discussion's research session, to the owning
    * discussion's id. `sessionKind === 'discussion'` alone cannot select the research

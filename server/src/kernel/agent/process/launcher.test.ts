@@ -369,6 +369,7 @@ function pinVendorCliVersion(vendor: VendorId, version: string | undefined): voi
     toolAgentId: '',
     intentAgentId: '',
     specAgentId: '',
+    specReviewAgentId: '',
     automationAgentId: '',
     vendorCliVersions: next,
   })

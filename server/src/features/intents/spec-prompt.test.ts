@@ -48,6 +48,48 @@ describe('buildSpecAgentPrompt', () => {
     expect(prompt).toContain('Cover the implementation approach inline where it belongs')
   })
 
+  it('requires a top-down hierarchy instead of a flat pile of bullets', () => {
+    const prompt = buildSpecAgentPrompt('en')
+
+    expect(prompt).toContain('Organise the content top-down so the hierarchy is visible')
+    expect(prompt).toContain('**Frame first, decompose, then land.**')
+    expect(prompt).toContain(
+      'decompose it layer by layer along its modules, flows, or state relationships, and only then land on the concrete change points',
+    )
+    expect(prompt).toContain('grouped subsections or nested bullets')
+    expect(prompt).toContain('never flatten it into one level of loose bullets')
+  })
+
+  it('suggests locating named symbols by file path or owning module', () => {
+    const prompt = buildSpecAgentPrompt('en')
+
+    expect(prompt).toContain('**Suggested: keep key touchpoints locatable.**')
+    expect(prompt).toContain(
+      'it helps the reader to also give its file path — or at least the owning module, class, and method name',
+    )
+    expect(prompt).toContain('not a licence to enumerate every file and symbol')
+  })
+
+  it('suggests Mermaid diagrams only when the change is genuinely complex', () => {
+    const prompt = buildSpecAgentPrompt('en')
+
+    expect(prompt).toContain('**Suggested: draw it when it is genuinely complex.**')
+    expect(prompt).toContain(
+      'add a Mermaid code block (`graph`, `flowchart`, or `sequenceDiagram`)',
+    )
+    expect(prompt).toContain('complex enough that a picture pays for itself')
+  })
+
+  it('keeps locating and diagramming advisory rather than mandatory', () => {
+    const prompt = buildSpecAgentPrompt('en')
+
+    expect(prompt).toContain(
+      'Both of these are suggestions to use where they fit, not acceptance criteria',
+    )
+    expect(prompt).toContain('a simple change needs no diagram')
+    expect(prompt).toContain('may push the document past the length its tier allows')
+  })
+
   it('forbids document-level status labels because approval does not write them back', () => {
     const prompt = buildSpecAgentPrompt('en')
 

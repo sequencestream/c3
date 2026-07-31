@@ -2085,6 +2085,9 @@
     }
   },
   "workspaceSetting": {
+    "currentWorkspace": {
+      "label": "현재 워크스페이스"
+    },
     "title": {
       "label": "워크스페이스 설정"
     },

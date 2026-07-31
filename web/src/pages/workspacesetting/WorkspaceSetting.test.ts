@@ -11,6 +11,7 @@ import type {
   ModeToken,
   VendorModeCatalog,
   AgentConfig,
+  WorkspaceInfo,
 } from '@ccc/shared/protocol'
 
 /** Stub vendorModes so the form can render each vendor's catalog options. */
@@ -976,5 +977,50 @@ describe('WorkspaceSetting.vue — dirty-tab switch confirmation', () => {
     expect((w.find('[data-testid="default-mode-claude"]').element as HTMLSelectElement).value).toBe(
       'default',
     )
+  })
+})
+
+describe('WorkspaceSetting.vue — header workspace identity', () => {
+  const WS: WorkspaceInfo = {
+    id: 'ws-1',
+    name: 'c3',
+    path: '/Users/dev/workspace/github/very/long/path/c3',
+    lastAccessed: 0,
+  }
+
+  it('renders the current workspace name and absolute path next to the title', () => {
+    const w = mountWs(null, { currentWorkspaceInfo: WS })
+    const area = w.find('[data-testid="project-config-workspace"]')
+    expect(area.exists()).toBe(true)
+    expect(area.text()).toContain('c3')
+    expect(area.text()).toContain(WS.path)
+  })
+
+  it('exposes the full path via a title attribute (truncated display stays inspectable)', () => {
+    const w = mountWs(null, { currentWorkspaceInfo: WS })
+    expect(w.find('[data-testid="project-config-workspace-path"]').attributes('title')).toBe(
+      WS.path,
+    )
+  })
+
+  it('renders no identity area (and no placeholder) when the workspace cannot be resolved', () => {
+    // null = list arrived but no id match; undefined = prop not passed yet.
+    for (const info of [null, undefined]) {
+      const w = mountWs(null, { currentWorkspaceInfo: info })
+      expect(w.find('[data-testid="project-config-workspace"]').exists()).toBe(false)
+      // The title itself still renders, and nothing leaks an `undefined` literal.
+      expect(w.find('.project-config-head h2').exists()).toBe(true)
+      expect(w.find('.project-config-head').text()).not.toContain('undefined')
+    }
+  })
+
+  it('updates with no residue when the resolved workspace changes', async () => {
+    const w = mountWs(null, { currentWorkspaceInfo: WS })
+    const other: WorkspaceInfo = { id: 'ws-2', name: 'other', path: '/tmp/other', lastAccessed: 0 }
+    await w.setProps({ currentWorkspaceInfo: other })
+    const area = w.find('[data-testid="project-config-workspace"]')
+    expect(area.text()).toContain('other')
+    expect(area.text()).toContain('/tmp/other')
+    expect(area.text()).not.toContain(WS.path)
   })
 })

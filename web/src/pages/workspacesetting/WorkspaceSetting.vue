@@ -21,6 +21,7 @@ import type {
   SkillLinkStatus,
   SessionKind,
   VendorId,
+  WorkspaceInfo,
   VendorModeCatalog,
   ModeToken,
 } from '@ccc/shared/protocol'
@@ -63,6 +64,14 @@ const props = defineProps<{
    */
   sysExtraMounts?: SysExtraMount[]
   currentWorkspace: string | null
+  /**
+   * The resolved `WorkspaceInfo` of `currentWorkspace`, used ONLY to show which
+   * workspace this page is editing. The parent owns the id → info resolution
+   * (the list lives in App.vue); this page never derives or reformats a path,
+   * and never sends it back — identity stays the opaque `currentWorkspace` id.
+   * Null/absent while the list has not arrived or the id has no match.
+   */
+  currentWorkspaceInfo?: WorkspaceInfo | null
   vendorModes: Record<VendorId, VendorModeCatalog> | null
   /** All configured agents — the consensus voter picker shows enabled ones. */
   agents?: AgentConfig[]
@@ -623,7 +632,25 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 <template>
   <div v-if="open" class="project-config-page">
     <div class="project-config-head">
-      <h2>{{ t('workspaceSetting.title.label') }}</h2>
+      <div class="project-config-head-main">
+        <h2>{{ t('workspaceSetting.title.label') }}</h2>
+        <!-- Read-only identity of the workspace being edited. Absent entirely when the
+             id cannot be resolved (list not arrived / mid-switch) — no placeholder. -->
+        <span
+          v-if="currentWorkspaceInfo"
+          class="project-config-head-workspace"
+          data-testid="project-config-workspace"
+          :aria-label="t('workspaceSetting.currentWorkspace.label')"
+        >
+          <span class="project-config-head-workspace-name">{{ currentWorkspaceInfo.name }}</span>
+          <span
+            class="project-config-head-workspace-path"
+            data-testid="project-config-workspace-path"
+            :title="currentWorkspaceInfo.path"
+            >{{ currentWorkspaceInfo.path }}</span
+          >
+        </span>
+      </div>
       <button class="icon-btn" :title="t('common.action.close.tooltip')" @click="emit('close')">
         ✕
       </button>
@@ -1235,6 +1262,45 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Title + workspace identity share the row; `min-width: 0` lets the long path
+   shrink and ellipsize instead of pushing the close button off-screen. */
+.project-config-head-main {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.project-config-head-workspace {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.project-config-head-workspace-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #cdd6f4);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.project-config-head-workspace-path {
+  font-size: 12px;
+  color: var(--text-secondary, #a6adc8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.project-config-head .icon-btn {
+  flex-shrink: 0;
 }
 
 /* ---- Tab navigation ---- */
@@ -1492,6 +1558,15 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   .project-config-head {
     flex-shrink: 0;
     padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+  }
+
+  /* Narrow screens: stack the workspace identity under the title so the name and
+     path get the full width (a same-row path would ellipsize to a few chars),
+     while the close button keeps its own column and stays tappable. */
+  .project-config-head-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
   }
 
   .project-config-tabs {

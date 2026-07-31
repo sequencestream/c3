@@ -22,7 +22,7 @@ import DevStartupOverlay from './components/DevStartupOverlay/DevStartupOverlay.
 import SpecStartupOverlay from './components/SpecStartupOverlay/SpecStartupOverlay.vue'
 import AutomationSaveOverlay from './components/AutomationSaveOverlay/AutomationSaveOverlay.vue'
 import ErrorDialog from './components/ErrorDialog/ErrorDialog.vue'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useTypedI18n } from './i18n'
 import { useAppController } from './controls'
 import { CODES_CHAT_WIDTH_DEFAULT } from './controls/state'
@@ -286,6 +286,13 @@ const {
   devLaunch,
   specLaunch,
 } = useAppController()
+
+/** 当前工作区 id 解析出的 `WorkspaceInfo`,只供工作区设置页页头展示「正在改哪个
+ *  工作区」(名称 + 绝对路径)。列表未到达或 id 无匹配(切换中)时为 null,
+ *  设置页据此整块不渲染。身份仍是 id,path 只是展示数据。 */
+const currentWorkspaceInfo = computed(
+  () => workspaces.value.find((w) => w.id === currentWorkspace.value) ?? null,
+)
 
 /** 分享按钮处理:各页标题栏发 `share` 后,在此组装 `ShareTarget`(kind + 当前
  *  workspace + id + title + 已本地化的类型标签)交给 `shareLink` 拼深链复制。
@@ -778,6 +785,7 @@ function onCodesChatWidth(px: number): void {
       :resolved-spec-root="resolvedSpecRoot"
       :sys-extra-mounts="sysExtraMounts"
       :current-workspace="currentWorkspace"
+      :current-workspace-info="currentWorkspaceInfo"
       :vendor-modes="vendorModes"
       :agents="serverSettings?.agents ?? []"
       :link-statuses="skillLinkStatuses"

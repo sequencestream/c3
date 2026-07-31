@@ -2085,6 +2085,9 @@
     }
   },
   "workspaceSetting": {
+    "currentWorkspace": {
+      "label": "Текущая рабочая область"
+    },
     "title": {
       "label": "Настройки рабочей области"
     },

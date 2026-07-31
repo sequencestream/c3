@@ -2084,6 +2084,9 @@
     }
   },
   "workspaceSetting": {
+    "currentWorkspace": {
+      "label": "当前工作区"
+    },
     "title": {
       "label": "工作区设置"
     },

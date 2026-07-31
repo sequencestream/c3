@@ -55,13 +55,39 @@ import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
 import { buildContinueSpecPrompt, buildSeedSpec, buildSpecInstructPrompt } from './spec.js'
 import { computeSpecLayout } from './spec-path.js'
 import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
-import { createWorktree, fetchRemoteBase, pullCurrentBranch, readBranch } from './worktree.js'
+import {
+  createWorktree,
+  fetchRemoteBase,
+  getWorktreePath,
+  pullCurrentBranch,
+  readBranch,
+} from './worktree.js'
+import { hasPendingQuestion } from './turn-guards.js'
 import { upsertPendingRow } from '../sessions/session-metadata-store.js'
+
+/**
+ * The continuation turn a resumed work session receives. Identical to what the
+ * queue kernel sends on its own `resume` action, so a resume started by a human,
+ * by an automation tool, or by the kernel is the same turn.
+ */
+const WORK_CONTINUE_PROMPT = 'continue'
 
 // ── Types ──
 
+/**
+ * How a launch call reached its session.
+ *
+ * - `fresh`   — a brand-new session was created and its first turn fired.
+ * - `resume`  — an existing session was continued in place (same id, no new
+ *               worktree, no new session).
+ * - `attach`  — the session was already running a turn: the caller only gets the
+ *               id to hang a viewer on. NO second turn is sent — a run outlives
+ *               a turn, so starting another one would double-drive the session.
+ */
+export type SessionLaunchMode = 'fresh' | 'resume' | 'attach'
+
 export type SessionLaunchResult =
-  | { success: true; sessionId: string }
+  | { success: true; sessionId: string; mode: SessionLaunchMode }
   | { success: false; code: string; params?: Record<string, string> }
 
 export interface SessionLaunchDeps {
@@ -80,14 +106,121 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+/**
+ * The workspace-global concurrency gate (RM-A12), evaluated here rather than
+ * only inside the queue kernel's scheduling loop. Every caller that starts or
+ * continues a work turn goes through this function, so the manual
+ * `start_development` button and the automation `start_session_for_intent` tool
+ * share ONE gate instead of two — an automation can no longer open a second
+ * concurrent work session just because it entered through MCP.
+ *
+ * A DANGLING session (on disk but not running) never blocks, and the target
+ * intent's OWN running session is excluded: attaching to it is not a second
+ * concurrent turn.
+ */
+export function findBlockingWorkSession(
+  workspacePath: string,
+  exceptIntentId: string,
+): Intent | null {
+  for (const other of listIntents(workspacePath)) {
+    if (other.id === exceptIntentId) continue
+    if (other.status !== 'in_progress') continue
+    if (!other.lastWorkSessionId) continue
+    if (isRunning(other.lastWorkSessionId)) return other
+  }
+  return null
+}
+
+/**
+ * Attach to / resume the work session an `in_progress` intent already owns.
+ * Mirrors {@link launchSpecSession}'s `specSessionId` handling so the two
+ * session kinds stop behaving asymmetrically: a live intent is no longer
+ * rejected with `intent.cannotStartDev` just because its session is healthy.
+ *
+ * Returns `null` when the intent owns no usable session — the caller then falls
+ * through to the historic fresh / dangling-restart path.
+ */
+async function attachOrResumeWorkSession(
+  workspacePath: string,
+  intent: Intent,
+  deps: SessionLaunchDeps,
+  progress?: (stage: string) => void,
+): Promise<SessionLaunchResult | null> {
+  const sessionId = intent.lastWorkSessionId
+  if (intent.status !== 'in_progress' || !sessionId) return null
+  const live = getRuntime(sessionId) !== undefined
+  if (!live && !(await sessionExists(workspacePath, sessionId))) return null
+
+  // A turn is executing right now → attach only. The caller hangs a viewer on
+  // the returned id; sending a second turn would double-drive the session.
+  if (isRunning(sessionId)) {
+    return { success: true, sessionId, mode: 'attach' }
+  }
+
+  // From here on we are about to start a NEW turn, so both hard gates apply.
+  const blocking = findBlockingWorkSession(workspacePath, intent.id)
+  if (blocking) {
+    return {
+      success: false,
+      code: 'intent.concurrencyGate',
+      params: { title: blocking.title },
+    }
+  }
+  // An unanswered AskUserQuestion is a human decision point: the continuation
+  // prompt must never stand in for the user's answer (RM-A11 / C-SEC-3).
+  const rt = getRuntime(sessionId)
+  if (rt && hasPendingQuestion(rt.buffer)) {
+    return { success: false, code: 'intent.pendingQuestionUnanswered' }
+  }
+
+  // Restore the runtime if it was dropped (server restart / GC), then continue
+  // the SAME session — no new worktree, no new session, no new pending link.
+  progress?.('launching')
+  if (!rt) {
+    const isPending = sessionId.startsWith(PENDING_SESSION_PREFIX)
+    const baseline = isPending ? [] : await loadHistory(workspacePath, sessionId).catch(() => [])
+    const restored = ensureRuntime(
+      sessionId,
+      workspacePath,
+      getDefaultMode(workspacePath),
+      baseline,
+      'work',
+    )
+    if (!restored.effectiveCwd) {
+      restored.effectiveCwd =
+        getGitBranchMode(workspacePath) === 'worktree'
+          ? getWorktreePath(workspacePath, intent.id)
+          : workspacePath
+    }
+  }
+
+  try {
+    void deps.launchRun(getRuntime(sessionId)!, WORK_CONTINUE_PROMPT).catch((err: unknown) => {
+      progress?.('failed')
+      console.warn(`[c3:intents] launchWorkSession (resume) async fail: ${errMsg(err)}`)
+    })
+  } catch (err) {
+    console.warn(`[c3:intents] launchWorkSession (resume) sync fail: ${errMsg(err)}`)
+  }
+  return { success: true, sessionId, mode: 'resume' }
+}
+
 // ── Work session launcher ──
 
 /**
- * Launch (or restart) a work/development session for an intent. Validates status
- * gate (todo / dangling in_progress), SDD approval gate, dependency gate
- * (worktree mode), and git branch strategy (worktree / current-branch), then
- * creates the runtime, registers the pending→intent link, and fires the
- * launcher. Returns a structured result — never throws for expected validation
+ * Launch, resume or attach to the work/development session of an intent.
+ *
+ * Resolution order (mirrors {@link launchSpecSession}'s `specSessionId` handling,
+ * and the queue kernel's attach → resume → fresh precedence):
+ *
+ *   1. `in_progress` + a session that is running a turn → **attach**, same id.
+ *   2. `in_progress` + a session that exists but is idle → **resume**, same id.
+ *   3. `todo`, or `in_progress` whose session is gone → **fresh** (the historic
+ *      status gate, SDD approval gate, dependency gate and git branch strategy).
+ *
+ * Before any NEW turn — fresh or resumed — the workspace-global concurrency gate
+ * (RM-A12) is evaluated here, so the manual entry and the MCP entry share one
+ * gate. Returns a structured result — never throws for expected validation
  * failures.
  */
 export async function launchWorkSession(
@@ -110,6 +243,14 @@ export async function launchWorkSession(
     return { success: false, code: 'intent.notFound' }
   }
 
+  // An `in_progress` intent whose session is still usable is attached to or
+  // resumed in place — it is NOT a `cannotStartDev` rejection any more.
+  const existing = await attachOrResumeWorkSession(workspacePath, req, deps, progress)
+  if (existing) {
+    releaseClaim()
+    return existing
+  }
+
   // Status gate: allow `todo`, or `in_progress` whose work session has gone missing.
   const dangling =
     req.status === 'in_progress' &&
@@ -117,6 +258,14 @@ export async function launchWorkSession(
   if (req.status !== 'todo' && !dangling) {
     releaseClaim()
     return { success: false, code: 'intent.cannotStartDev', params: { status: req.status } }
+  }
+
+  // RM-A12 — the workspace-global concurrency gate, applied before a fresh turn
+  // for the same reason it applies before a resumed one.
+  const blocking = findBlockingWorkSession(workspacePath, req.id)
+  if (blocking) {
+    releaseClaim()
+    return { success: false, code: 'intent.concurrencyGate', params: { title: blocking.title } }
   }
 
   // SDD quality gate — server-side, forced.
@@ -236,7 +385,7 @@ export async function launchWorkSession(
     console.warn(`[c3:intents] launchWorkSession sync fail: ${errMsg(err)}`)
   }
 
-  return { success: true, sessionId: devId }
+  return { success: true, sessionId: devId, mode: 'fresh' }
 }
 
 // ── Spec session launcher ──
@@ -273,6 +422,9 @@ export async function launchSpecSession(
   return createFirstSpecSession(workspacePath, intent, deps, progress, actor)
 }
 
+/** A gate outcome that carries no session of its own: pass, or the caller's error result. */
+type SpecGateResult = { ok: true } | { ok: false; result: SessionLaunchResult }
+
 /**
  * Internal: prepare spec dependency context — dependency gate (worktree mode)
  * + pull current branch. Returns an error result on block, or `{ ok: true }`
@@ -283,7 +435,7 @@ function prepareSpecDependencyContext2(
   intent: Intent,
   broadcastIntents: (path: string) => void,
   progress?: (stage: string) => void,
-): SessionLaunchResult {
+): SpecGateResult {
   if (getGitBranchMode(workspacePath) === 'worktree') {
     const blocking = findDependencyBlockingMainline(
       intent.dependsOn,
@@ -297,9 +449,12 @@ function prepareSpecDependencyContext2(
         dependsOn: intent.dependsOn,
       })
       return {
-        success: false,
-        code: 'intent.dependencyNotMerged',
-        params: { title: blocking.title, id: blocking.id },
+        ok: false,
+        result: {
+          success: false,
+          code: 'intent.dependencyNotMerged',
+          params: { title: blocking.title, id: blocking.id },
+        },
       }
     }
   }
@@ -309,7 +464,7 @@ function prepareSpecDependencyContext2(
     console.warn(`[c3:intents] spec session pull failed; continuing: ${pull.message ?? 'unknown'}`)
   }
   progress?.('launching')
-  return { success: true, sessionId: '' }
+  return { ok: true }
 }
 
 /** Internal: create a FIRST spec session — scaffold the dated directory, write
@@ -329,7 +484,7 @@ function createFirstSpecSession(
     deps.broadcastIntents,
     progress,
   )
-  if (!depCheck.success) return depCheck
+  if (!depCheck.ok) return depCheck.result
 
   // Compute dated spec layout
   const specRoot = getSpecsBase(workspacePath)
@@ -396,7 +551,7 @@ function createFirstSpecSession(
     console.warn(`[c3:intents] launchSpecSession (first) sync fail: ${errMsg(err)}`)
   }
 
-  return { success: true, sessionId: specId }
+  return { success: true, sessionId: specId, mode: 'fresh' }
 }
 
 /** Internal: RESUME an existing spec session. The intent already has
@@ -430,7 +585,7 @@ async function resumeSpecSession(
     deps.broadcastIntents,
     progress,
   )
-  if (!depCheck.success) return depCheck
+  if (!depCheck.ok) return depCheck.result
 
   // Restore runtime if it was dropped (server restart / GC)
   if (!getRuntime(intent.specSessionId)) {
@@ -465,5 +620,5 @@ async function resumeSpecSession(
     console.warn(`[c3:intents] launchSpecSession (resume) sync fail: ${errMsg(err)}`)
   }
 
-  return { success: true, sessionId: intent.specSessionId }
+  return { success: true, sessionId: intent.specSessionId, mode: 'resume' }
 }

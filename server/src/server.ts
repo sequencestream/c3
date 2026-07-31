@@ -9,7 +9,11 @@
 import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
-import { INTENT_DISALLOWED_TOOLS, SPEC_DISALLOWED_TOOLS } from './kernel/permission/index.js'
+import {
+  INTENT_DISALLOWED_TOOLS,
+  SPEC_DISALLOWED_TOOLS,
+  waitForDecision,
+} from './kernel/permission/index.js'
 import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
 import { probeArapuca } from './kernel/sandbox/SandboxLauncher.js'
 import { enableArapucaAutoInstall } from './kernel/sandbox/arapuca-dist.js'
@@ -19,6 +23,7 @@ import { listWorkspaces, resolveWorkspaceRoot } from './state.js'
 import { sessionExists } from './sessions.js'
 import {
   reconcileLiveness,
+  emit,
   setOnStatusChange,
   isRunning,
   getRuntime,
@@ -50,6 +55,8 @@ import { runPublishEvent } from './features/events/tool-defs.js'
 import type { AutomationMcpDeps } from './features/automations/c3-tools.js'
 import { setAutomationHttpMcp } from './features/automations/dispatcher.js'
 import { createAutomationMcp, AUTOMATION_MCP_PATH } from './transport/automation-mcp/index.js'
+import { createAdvisorMcp, ADVISOR_MCP_PATH } from './transport/advisor-mcp/index.js'
+import { createAdvisorApproval } from './features/intents/advisor-approval.js'
 import {
   createIntentMcp,
   INTENT_MCP_PATH,
@@ -611,6 +618,27 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const automationMcp = createAutomationMcp(`http://127.0.0.1:${opts.port}`, automationMcpDeps)
   setAutomationHttpMcp(automationMcp)
 
+  // The QUEUE ADVISOR c3 MCP over loopback HTTP — a route of its own, bound per
+  // consultation (workspace + one intent + chain depth). Kept separate from the
+  // automation route on purpose: an ordinary automation must not be able to reach
+  // these tools. Both vendors read the same group from this one route (ADR-0011).
+  // Confirmation-required tools run through the SAME approval gate `save_intents`
+  // uses, so a human sees advisor writes where they see every other write request.
+  const advisorMcp = createAdvisorMcp(`http://127.0.0.1:${opts.port}`, {
+    broadcastIntents: broadcasts.broadcastIntents,
+    broadcastWaitUserEvents: broadcasts.broadcastWaitUserEvents,
+    launchRun: (rt, prompt, images, inject) => launchRun(rt, prompt, launchDeps, images, inject),
+    normalizeEvent,
+    publishEvent: (workspacePath, sessionId, event) =>
+      eventBus.publish('event', { workspacePath, sessionId, event }),
+    publishStatusChanged: (input) => eventBus.publish('intent:status_changed', input),
+    requestWriteApproval: createAdvisorApproval({
+      emit,
+      waitForDecision,
+      onPermissionRequest,
+    }),
+  })
+
   const ctx: KernelContext = {
     eventBus,
     normalizeEvent,
@@ -685,6 +713,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // per-execution by the dispatcher. Loopback-guarded + per-execution token inside
   // the handler. Before the SPA catch-all, same as the other MCP routes.
   app.all(AUTOMATION_MCP_PATH, (c) => automationMcp.handler(c))
+
+  // Advisor MCP loopback endpoint — the queue advisor's dedicated tool group.
+  // Bound per consultation; loopback-guarded + per-consultation token inside the
+  // handler. Before the SPA catch-all, same as the other MCP routes.
+  app.all(ADVISOR_MCP_PATH, (c) => advisorMcp.handler(c))
 
   // Static frontend (production / pkg) vs dev placeholder.
   if (opts.dev) mountDevPlaceholder(app)

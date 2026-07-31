@@ -477,6 +477,10 @@ codex driver 转译成其原生的 streamable-HTTP 服务器条目。
   **被选中**意图自身的运行会话;闸门覆盖的是挑选逻辑**不会**选中的意图所拥有的**任何**
   运行中会话(尤其是非 `automate` 的手动运行),从而防止并发的工作会话在
   同一工作树上因文件修改产生冲突。
+  **该闸门同时下沉进了共享的 `launchWorkSession`(RM-A21)**,因此它不再只在这条循环里生效:
+  手动「开始开发」与 MCP `start_session_for_intent` 在发起或恢复任何新 turn 之前也会求值同一条
+  规则,被挡时返回 `intent.concurrencyGate`。两处不是两套门禁——循环这一份决定「本轮选不选」,
+  启动器那一份决定「这次启动准不准」,规则与事实来源相同。
 - **挑选下一个**选出最佳的合格意图
   (RM-A3:`automate` ∧ status∈{todo,in_progress} ∧ 依赖已完成;按 P0→P3 再按 `createdAt` 排序)。对
   每一个,develop 步骤先按优先级挑选其**起始**动作:(1)若 `lastWorkSessionId`

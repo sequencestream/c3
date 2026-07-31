@@ -234,9 +234,12 @@ export function buildAutomationC3Tools(
         '为一条意图启动 spec 编写或开发会话。' +
         'sessionType="spec":首次创建 spec 目录与种子文件,启动受限 spec 会话;' +
         '若 intent 已有 specSessionId 则续写同一会话(不重建目录,返回原 id)。' +
-        'sessionType="work":校验状态、SDD 审批、依赖阻塞与 Git 分支策略后,' +
+        'sessionType="work":若意图已有存活的工作会话,正在跑则 attach(返回原 id,不发新 turn),' +
+        '空闲则 resume(在原 id 上续跑);否则校验状态、SDD 审批、依赖阻塞与 Git 分支策略后,' +
         '启动开发会话并注册 pending→intent 回链。' +
-        '成功返回 JSON:{"sessionId":"…","sessionType":"…"},失败返回 JSON:{"code":"…","params":{…}}。',
+        '同一工作区已有其它意图的工作会话在运行时,fresh/resume 会被全局并发闸门拒绝。' +
+        '成功返回 JSON:{"sessionId":"…","sessionType":"…","mode":"fresh|resume|attach"},' +
+        '失败返回 JSON:{"code":"…","params":{…}}。',
       inputSchema: {
         intentId: z.string().describe('要启动会话的意图 id'),
         sessionType: z.enum(['spec', 'work']).describe('会话类型:spec=编写需求文档, work=开始开发'),
@@ -254,7 +257,9 @@ export function buildAutomationC3Tools(
 
           if (result.success) {
             return {
-              content: text(JSON.stringify({ sessionId: result.sessionId, sessionType })),
+              content: text(
+                JSON.stringify({ sessionId: result.sessionId, sessionType, mode: result.mode }),
+              ),
             }
           }
           const errorPayload: Record<string, unknown> = { code: result.code }

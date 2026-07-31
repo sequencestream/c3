@@ -56,6 +56,7 @@ c3
 │   │   ├── 规格撰写与批准                        # 开发前生成 spec 并经人批准(spec 集中存 ~/.c3/specs)
 │   │   ├── 规格直接编辑                          # 未启动开发且无运行中 spec 会话时行内编辑 spec 源码,覆盖写集中 specs 文件+审批联动重置+写 spec_updated 日志
 │   │   ├── 意图开发                              # 启动可配置 dev skill,追踪 branch/commit/PR
+│   │   │   └── attach·resume·fresh 三态启动      # 按 lastWorkSessionId:运行中只挂 viewer 不发新 turn,空闲在原 id 续跑,无会话才新建;人工按钮与 MCP 工具共用同一门禁(含下沉到启动器内的 RM-A12 并发闸门)
 │   │   ├── 意图交付                              # 追踪交付态(分支、提交、PR 状态)
 │   │   ├── PR 更新复位                           # 模型发 pr:operation update/success 时把 rejected/failed/closed 意图 prStatus 复位为 reviewing
 │   │   ├── 意图依赖                              # intent_deps 依赖图(blocks/informs/soft_after),依赖门控启动
@@ -68,7 +69,12 @@ c3
 │   │   │   ├── 权限等待交回人工                  # 权限提示超队列等待窗口只 park+推 wait-user-involve 待办,运行不中止、决定不代答(C-SEC-3)
 │   │   │   ├── 启动对账与恢复                    # 启停意愿持久化;服务启动先全工作区对账,从持久事实恢复,db 不可用时不凭空恢复也不清空
 │   │   │   ├── 决策日志                          # queue_decision_log 按 tick/intent 记动作/闸门/理由/尝试退避计数/下次唤醒,不记 prompt/凭据/权限正文
-│   │   │   └── 队列页面与人工夺回                # 逐条展示阻塞原因/下次唤醒/最近决策;pause·force-skip·unpark·覆盖结论各对应一个内核动作,均不得绕过硬闸门
+│   │   │   ├── 队列页面与人工夺回                # 逐条展示阻塞原因/下次唤醒/最近决策;pause·force-skip·unpark·覆盖结论各对应一个内核动作,均不得绕过硬闸门
+│   │   │   └── 顾问 Agent 工具面                 # 决策点按需唤起的顾问专属 MCP 工具组(读 transcript/run 状态、stop_run、reset 会话、非 done 状态流转、建 PR/同步 PR、raise_user_todo)
+│   │   │       ├── propose-then-validate 双保险  # 纯函数校验器接受/拒绝结构化提案(拒绝带稳定原因码+可重试性+约束),每个写工具在副作用前于服务端再校验一次
+│   │   │       ├── 专属作用域                    # 独立注册表+独立 loopback 路由,workspace/intent 由闭包绑定;不进 AUTOMATION_C3_TOOL_NAMES,普通 automation 能力不变
+│   │   │       ├── 明确不提供                    # 不注册 approve_spec(含别名),不接受把意图标记为 done——RM-R9 自动完成例外不扩大
+│   │   │       └── 链深度闸门                    # 超上限在唤起 Agent 与任何工具副作用之前拒绝,并向 queue_decision_log 落一条稳定原因码;日志写失败不放宽限制
 │   │   └── Git/PR 收尾                           # 手动 Start Dev 结束时经 gh 建 PR、回填 commit/PR 状态
 │   │
 │   ├── discussion 多智能体讨论                   # 多个 agent(与人)围绕主题圆桌讨论,可转为意图

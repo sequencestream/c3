@@ -38,6 +38,8 @@ function makeCtx() {
   const specLaunch = ref({})
   const closeDevLaunch = vi.fn()
   const dispatchSpecLaunch = vi.fn()
+  const createPrProgress = ref<unknown>(null)
+  const dispatchCreatePr = vi.fn()
   const showToast = vi.fn((text: string) => (toast.value = text))
   const showIntentActionError = vi.fn((text: string) => (intentActionError.value = text))
   const automationSaving = ref(false)
@@ -110,8 +112,10 @@ function makeCtx() {
     createIntentPending,
     devLaunch,
     specLaunch,
+    createPrProgress,
     closeDevLaunch,
     dispatchSpecLaunch,
+    dispatchCreatePr,
     showToast,
     showIntentActionError,
     automationSaving,
@@ -161,6 +165,8 @@ function makeCtx() {
     intentActionErrorSeq,
     closeDevLaunch,
     dispatchSpecLaunch,
+    createPrProgress,
+    dispatchCreatePr,
     showToast,
     showIntentActionError,
     automationSaving,
@@ -1451,5 +1457,66 @@ describe('session_counts / session_status — 顶部条目角标计数', () => {
     } as unknown as ServerToClient)
     r.ctx.handleMessage(countsMsg(WS_A, { intent: 1, discussion: 0, automation: 0 }))
     expect(r.ownerRunningCounts.value.intent).toBe(1)
+  })
+})
+
+/**
+ * Create-PR overlay routing: stage frames advance it, the response closes it,
+ * and — because create_pr has no error code of its own — any error while it is
+ * up is its failure terminal, so a rejected run never leaves the page blocked.
+ */
+describe('create_pr progress routing', () => {
+  it('forwards a stage frame with its intent', () => {
+    const result = makeCtx()
+
+    result.ctx.handleMessage({
+      type: 'create_pr_progress',
+      intentId: 'i-1',
+      stage: 'pushing',
+    } as ServerToClient)
+
+    expect(result.dispatchCreatePr).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'stage', intentId: 'i-1', stage: 'pushing' }),
+    )
+  })
+
+  it('closes the overlay on the success response', () => {
+    const result = makeCtx()
+
+    result.ctx.handleMessage({ type: 'create_pr_response', prId: '42' } as ServerToClient)
+
+    expect(result.dispatchCreatePr).toHaveBeenCalledWith(expect.objectContaining({ kind: 'done' }))
+  })
+
+  it('closes the overlay on an intent-action error', () => {
+    const result = makeCtx()
+    result.createPrProgress.value = { intentId: 'i-1' }
+
+    result.ctx.handleMessage(error('intent.prCreateFailed'))
+
+    expect(result.dispatchCreatePr).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'failed' }),
+    )
+    // The reason still reaches the user through the existing error dialog.
+    expect(result.showIntentActionError).toHaveBeenCalledOnce()
+  })
+
+  it('closes the overlay on a non-intent error too', () => {
+    const result = makeCtx()
+    result.createPrProgress.value = { intentId: 'i-1' }
+
+    result.ctx.handleMessage(error('workspace.unknown'))
+
+    expect(result.dispatchCreatePr).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'failed' }),
+    )
+  })
+
+  it('leaves the reducer alone when no overlay is up', () => {
+    const result = makeCtx()
+
+    result.ctx.handleMessage(error('intent.prCreateFailed'))
+
+    expect(result.dispatchCreatePr).not.toHaveBeenCalled()
   })
 })

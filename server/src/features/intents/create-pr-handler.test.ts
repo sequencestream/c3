@@ -124,6 +124,13 @@ function fakeCtx(): {
   return { ctx, broadcast, publish }
 }
 
+/** The connection-directed stage frames, in the order they were pushed. */
+function stagesOf(sent: ServerToClient[]): string[] {
+  return sent
+    .filter((m) => m.type === 'create_pr_progress')
+    .map((m) => (m as { stage: string }).stage)
+}
+
 function errorsOf(sent: ServerToClient[]): string[] {
   return sent
     .filter((m) => m.type === 'error')
@@ -160,7 +167,8 @@ describe('createPrHandler — worktree gate success paths', () => {
       const worktreePath = getWorktreePath(proj, r.id)
       // Ordered: check changes → commit/push in the worktree → create the PR there.
       expect(hasDiffAgainstMain).toHaveBeenCalledWith(worktreePath)
-      expect(commitAndPush).toHaveBeenCalledWith(worktreePath, 'feat: PR me')
+      // The third argument is the progress reporter (see the staged-progress suite).
+      expect(commitAndPush).toHaveBeenCalledWith(worktreePath, 'feat: PR me', expect.any(Function))
       expect(createGhPr).toHaveBeenCalledWith(worktreePath, 'feat: PR me', 'body', 'intent/pr-me')
 
       // Response + the three PR fields written atomically on success.
@@ -290,5 +298,148 @@ describe('createPrHandler — rejection branches short-circuit without side effe
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
     expectNoSuccessSideEffects(r.id, publish)
+  })
+})
+
+/**
+ * Staged progress — the connection-directed `create_pr_progress` frames that drive
+ * the client overlay. The contract is order + reach: stages advance one-way, a
+ * gate that rejects before the diff check reports nothing, and a failure never
+ * reports a stage the run did not get to.
+ */
+describe('createPrHandler — staged progress frames', () => {
+  /** Mock a commit/push that reports its two boundaries like the real one does. */
+  function mockCommitAndPush(result: Awaited<ReturnType<typeof commitAndPush>>, upTo: 1 | 2 = 2) {
+    vi.mocked(commitAndPush).mockImplementation(async (_path, _msg, onPhase) => {
+      onPhase?.('committing')
+      if (upTo === 2) onPhase?.('pushing')
+      return result
+    })
+  }
+
+  it('pushes the four stages in execution order, all before the success response', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    mockCommitAndPush({ ok: true, committed: true })
+    vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(stagesOf(sent)).toEqual(['analyzing-changes', 'committing', 'pushing', 'creating-pr'])
+    // Every frame carries the requested intent, and the response is the terminal.
+    expect(
+      sent
+        .filter((m) => m.type === 'create_pr_progress')
+        .map((m) => (m as { intentId: string }).intentId),
+    ).toEqual([r.id, r.id, r.id, r.id])
+    expect(sent[sent.length - 1].type).toBe('create_pr_response')
+  })
+
+  it('de-duplicates a multi-repo workspace back into one one-way pass', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    // Two affected sub-repos → the real commitAndPush reports each boundary twice.
+    vi.mocked(commitAndPush).mockImplementation(async (_path, _msg, onPhase) => {
+      onPhase?.('committing')
+      onPhase?.('pushing')
+      onPhase?.('committing')
+      onPhase?.('pushing')
+      return { ok: true, committed: true }
+    })
+    vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42' })
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(stagesOf(sent)).toEqual(['analyzing-changes', 'committing', 'pushing', 'creating-pr'])
+  })
+
+  it('sends no stage when a gate ahead of the diff check rejects', async () => {
+    // Already has a PR — the idempotent guard, no Git work at all.
+    const withPr = seedQualifying()
+    setPrInfo(withPr.id, '7', 'reviewing')
+    // Not worktree mode / blank branch, each on its own intent + connection.
+    const { ctx } = fakeCtx()
+    const a = fakeConn()
+    await createPrHandler(ctx, a.conn, { type: 'create_pr', workspaceId, intentId: withPr.id })
+    expect(stagesOf(a.sent)).toEqual([])
+
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch' })
+    const [cb] = insertIntents(proj, [
+      { title: 'CB', shortEnTitle: 'cb', content: '', priority: 'P1' },
+    ])
+    setBranchName(cb.id, 'intent/cb')
+    const b = fakeConn()
+    await createPrHandler(ctx, b.conn, { type: 'create_pr', workspaceId, intentId: cb.id })
+    expect(stagesOf(b.sent)).toEqual([])
+
+    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree' })
+    const [nb] = insertIntents(proj, [
+      { title: 'NB', shortEnTitle: 'nb', content: '', priority: 'P1' },
+    ])
+    setBranchName(nb.id, '   ')
+    const c = fakeConn()
+    await createPrHandler(ctx, c.conn, { type: 'create_pr', workspaceId, intentId: nb.id })
+    expect(stagesOf(c.sent)).toEqual([])
+  })
+
+  it('stops at the analysis stage when the worktree has no changes', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(false)
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(stagesOf(sent)).toEqual(['analyzing-changes'])
+    expect(errorsOf(sent)).toEqual(['intent.prCreateNoChanges'])
+  })
+
+  it('stops at the commit stage when the commit fails', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    mockCommitAndPush(
+      { ok: false, committed: false, error: 'hook failed', failure: 'commit-hook' },
+      1,
+    )
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(stagesOf(sent)).toEqual(['analyzing-changes', 'committing'])
+    expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
+  })
+
+  it('stops at the push stage when the push fails after a local commit', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    mockCommitAndPush({ ok: false, committed: true, error: 'push rejected', failure: 'other' })
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(stagesOf(sent)).toEqual(['analyzing-changes', 'committing', 'pushing'])
+    expect(createGhPr).not.toHaveBeenCalled()
+    expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
+  })
+
+  it('reports the PR-create stage it reached even when the forge call fails', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    mockCommitAndPush({ ok: true, committed: true })
+    vi.mocked(createGhPr).mockResolvedValue({ ok: false, error: 'gh failed' })
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(stagesOf(sent)).toEqual(['analyzing-changes', 'committing', 'pushing', 'creating-pr'])
+    expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
+    expect(sent.some((m) => m.type === 'create_pr_response')).toBe(false)
   })
 })

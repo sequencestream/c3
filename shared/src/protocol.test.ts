@@ -309,12 +309,7 @@ describe('sandbox runs share the unified agent configuration', () => {
 
 describe('create_pr staged progress', () => {
   it('declares the four one-way stages in execution order', () => {
-    expect(CREATE_PR_STAGES).toEqual([
-      'analyzing-changes',
-      'committing',
-      'pushing',
-      'creating-pr',
-    ])
+    expect(CREATE_PR_STAGES).toEqual(['analyzing-changes', 'committing', 'pushing', 'creating-pr'])
   })
 
   it('carries every stage on a connection-directed frame that survives JSON round-trip', () => {

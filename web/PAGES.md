@@ -38,6 +38,7 @@ web/src/
 │   ├── ConsensusBlock/ConsensusBlock.vue           # 多 agent 共识自动裁定结果块(只读):AskUserQuestion 逐题自动作答、其他工具 allow/deny 裁定
 │   ├── DevStartupOverlay/DevStartupOverlay.vue     # 工作启动进度遮罩(App 根级,与全局 toast 同层):手动 Start Work 点击即全屏阻断,以最小停留防止快速启动闪烁,按有序步骤(拉取远程主分支/准备 worktree/启动工作会话/进入会话)展示后端 dev_launch_progress 阶段进度;纯展示(model 由控制层持有,判定在 lib/dev-launch-view.ts),就绪/失败/安全超时由控制层关闭
 │   ├── SpecStartupOverlay/SpecStartupOverlay.vue    # Spec 会话启动遮罩(App 根级):撰写/重置 Spec 点击即阻断,按有序步骤(检查依赖/拉取代码/启动会话)展示粗粒度进度及逐步骤 ✓/spinner/灰点标记;就绪、动作失败或安全超时后收敛关闭
+│   ├── CreatePrOverlay/CreatePrOverlay.vue         # 创建 PR 进度遮罩(App 根级):手动「创建 PR」点击即全屏阻断(挡住重复点击),按有序步骤(分析代码变更/提交变更/推送分支/创建 PR)展示后端 create_pr_progress 阶段进度及逐步骤 ✓/spinner/灰点标记;无取消入口,成功响应、动作错误或安全超时由控制层关闭(判定在 lib/create-pr-view.ts)
 │   ├── ExitPlanModeDisplay/ExitPlanModeDisplay.vue # ExitPlanMode 计划独立渲染块:解析输入负载中的 plan markdown + 结构化元数据(标题/步骤索引),支持 tool-use/tool-result 双态
 │   ├── MarkdownText/MarkdownText.vue               # 单条文本消息渲染器:assistant 走 Markdown+DOMPurify 双防线、user/system 纯文本转义、Shiki 代码高亮(mermaid 块除外),language 为 mermaid 的围栏块渲染为 SVG 图表(失败保留原代码块),宽表格包局部横滚容器
 │   ├── MessageInput/MessageInput.vue               # 底部输入区:斜杠命令补全、textarea 自增长、语音输入、图片附件(点击/粘贴/拖拽选图+缩略图预览+逐张删除+超阈压缩,随 submit/enqueue 以 PromptImage 上线)、动作按钮内嵌输入框(附件+语音居内部左下、发送为内部右下向下箭头图标按钮)、待发队列管理,移动端软键盘/安全区避让
@@ -151,6 +152,7 @@ web/src/
 │   ├── current-workspace.ts                         # 「当前工作区」解析:优先持久化选择,否则回落到最近访问工作区
 │   ├── datetime-formats.ts                          # 日期/数字格式化预设:为 vue-i18n 与纯展示 lib 提供单一数据源
 │   ├── dev-launch-view.ts                           # 工作启动遮罩纯状态机(历史文件名沿用 dev-launch):最小停留/安全超时常量 + stage→有序步骤映射(stepStatusesForPhase)+ reduceDevLaunch(stage/ready/dwell-complete/timeout 终态收敛),无 DOM/计时器,供 DevStartupOverlay 与控制层
+│   ├── create-pr-view.ts                             # 创建 PR 遮罩纯状态机:最小停留/安全超时常量 + stage→四步映射(createPrStepStatuses)+ reduceCreatePr(stage 单向不回退、异 intent 忽略、done/failed/dwell-complete/timeout 终态收敛),无 DOM/计时器,供 CreatePrOverlay 与控制层
 │   ├── work-session-jump.ts                         # Start Work 成功后自动跳转纯决策:shouldJumpAfterDevLaunch(仅 ready 跳)+ resolveJumpTargetSessionId(intent.lastWorkSessionId 反查)+ resolvePendingWorkSessionSelect(一次性待选会话落入列表即命中)+ ~1s 延迟常量;控制层据此切 console tab 并选中新 work session
 │   ├── discussion-view.ts                           # 讨论只读历史纯映射器:DiscussionMessage 正规化为 ChatBody,处理多说话人 icon/name/vendor;并含右栏 Tab 纯映射(discussionDetailTabs 按字段/researchSessionId 决定可见 tab 与顺序、defaultDiscussionTab(tabs, researchLive) 研究运行中短路到 researchSession、correctActiveTab 回落)
 │   ├── execution-view.ts                            # 执行 transcript 纯映射器:TranscriptItem 正规化为 ChatBody/ChatMsg,供 Session Tab 的 ChatMessages 渲染

@@ -8,6 +8,7 @@ import {
   type DiscussionPhase,
 } from '@/lib/discussion-view'
 import { emptyTaskModel, type TaskListModel } from '@/lib/task-list'
+import { type CreatePrModel } from '@/lib/create-pr-view'
 import { type DevLaunchModel } from '@/lib/dev-launch-view'
 import { type SpecLaunchModel } from '@/lib/spec-launch-view'
 import { type SessionRef } from '@/lib/tab-view'
@@ -758,6 +759,21 @@ export function createState(deps: StateDeps) {
     specLaunch.value = null
   }
 
+  // ---- Create-PR progress overlay (App-global, same shape as the dev launch) ----
+  // Tracks a manual `create_pr` run so the blocking overlay can show its four
+  // stages immediately. null = nothing in flight / overlay closed.
+  const createPrProgress = ref<CreatePrModel | null>(null)
+  const createPrTimers: {
+    dwell: ReturnType<typeof setTimeout> | null
+    safety: ReturnType<typeof setTimeout> | null
+  } = { dwell: null, safety: null }
+  function clearCreatePrTimers(): void {
+    if (createPrTimers.dwell) clearTimeout(createPrTimers.dwell)
+    if (createPrTimers.safety) clearTimeout(createPrTimers.safety)
+    createPrTimers.dwell = null
+    createPrTimers.safety = null
+  }
+
   // ---- Pure (state-only) message-append helpers ----
   function add(m: ChatBody): void {
     messages.value.push({ ...m, id: counters.nextId++ } as ChatMsg)
@@ -790,6 +806,8 @@ export function createState(deps: StateDeps) {
     specLaunchTimers,
     clearSpecLaunchTimers,
     closeSpecLaunch,
+    createPrTimers,
+    clearCreatePrTimers,
     clearPendingDeepLink,
     // refs
     messages,
@@ -921,6 +939,7 @@ export function createState(deps: StateDeps) {
     intentPrSync,
     devLaunch,
     specLaunch,
+    createPrProgress,
     // computeds
     authStatus,
     workcenterPendingCount,

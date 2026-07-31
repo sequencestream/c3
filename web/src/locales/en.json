@@ -665,6 +665,16 @@
       "failed": "Failed to start work.",
       "timeout": "Couldn't confirm work startup. Please try again."
     },
+    "createPrProgress": {
+      "title": "Creating pull request…",
+      "step": {
+        "analyzeChanges": "Analyze code changes",
+        "commit": "Commit changes",
+        "push": "Push branch",
+        "createPr": "Create pull request"
+      },
+      "timeout": "Couldn't confirm PR creation. Check the intent's PR status before retrying."
+    },
     "specLaunch": {
       "title": "Starting spec session…",
       "step": {

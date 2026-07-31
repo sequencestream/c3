@@ -122,7 +122,7 @@ export async function createPrForIntent(
 
   try {
     // Commit and push first; only create the PR when that succeeded.
-    const commit = await commitAndPush(worktreePath, title)
+    const commit = await commitAndPush(worktreePath, title, reportStage)
     if (!commit.ok) {
       return {
         success: false,
@@ -130,6 +130,7 @@ export async function createPrForIntent(
         params: { detail: commit.error ?? '提交失败' },
       }
     }
+    reportStage('creating-pr')
     const pr = await createGhPr(worktreePath, title, body, headBranch)
     if (!pr.ok || !pr.prId) {
       return {

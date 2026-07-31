@@ -1,5 +1,12 @@
 import type { IntentStatus, PromptImage } from '@ccc/shared/protocol'
 import {
+  beginCreatePr,
+  reduceCreatePr,
+  CREATE_PR_MIN_DWELL_MS,
+  CREATE_PR_SAFETY_TIMEOUT_MS,
+  type CreatePrEvent,
+} from '@/lib/create-pr-view'
+import {
   beginDevLaunch,
   reduceDevLaunch,
   DEV_LAUNCH_MIN_DWELL_MS,
@@ -63,6 +70,23 @@ export function installIntentActions(ctx: AppCtx): void {
     }
     if (tr.closedReason === 'failed') ctx.showToast(t('intent.specLaunch.failed'))
     else if (tr.closedReason === 'timeout') ctx.showToast(t('intent.specLaunch.timeout'))
+  }
+
+  // Same shape for the create-PR overlay. Success closes silently (the PR button
+  // / link updates on the intents broadcast) and a failure is already explained
+  // by the global intent-action error dialog, so only the timeout needs a hint:
+  // it releases the UI without knowing the server's outcome.
+  ctx.dispatchCreatePr = (ev: CreatePrEvent): void => {
+    const tr = reduceCreatePr(ctx.createPrProgress.value, ev)
+    ctx.createPrProgress.value = tr.model
+    if (!tr.model) ctx.clearCreatePrTimers()
+    else if (tr.model.pendingCloseReason && !ctx.createPrTimers.dwell) {
+      ctx.createPrTimers.dwell = setTimeout(
+        () => ctx.dispatchCreatePr({ kind: 'dwell-complete', now: Date.now() }),
+        Math.max(0, tr.model.visibleAt + CREATE_PR_MIN_DWELL_MS - Date.now()),
+      )
+    }
+    if (tr.closedReason === 'timeout') ctx.showToast(t('intent.createPrProgress.timeout'))
   }
 
   // Arm the post-`ready` jump: after the deliberate ~1s "已就绪" buffer, stay on the
@@ -247,6 +271,14 @@ export function installIntentActions(ctx: AppCtx): void {
 
   ctx.createPr = (intentId: string): void => {
     if (!intentsProject.value) return
+    // Arm the overlay before sending: it blocks the page (so the button cannot be
+    // clicked twice) from this instant until the response, an action error, or —
+    // if neither ever arrives — the safety timeout.
+    ctx.clearCreatePrTimers()
+    ctx.createPrProgress.value = beginCreatePr(intentId, Date.now())
+    ctx.createPrTimers.safety = setTimeout(() => {
+      ctx.dispatchCreatePr({ kind: 'timeout', now: Date.now() })
+    }, CREATE_PR_SAFETY_TIMEOUT_MS)
     send({
       type: 'create_pr',
       workspaceId: intentsProject.value,

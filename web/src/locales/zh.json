@@ -665,6 +665,16 @@
       "failed": "工作启动失败。",
       "timeout": "未能确认工作启动,请重试。"
     },
+    "createPrProgress": {
+      "title": "正在创建 PR…",
+      "step": {
+        "analyzeChanges": "分析代码变更",
+        "commit": "提交变更",
+        "push": "推送分支",
+        "createPr": "创建 PR"
+      },
+      "timeout": "未能确认 PR 创建结果,请先查看意图的 PR 状态再重试。"
+    },
     "specLaunch": {
       "title": "正在启动规范会话…",
       "step": {

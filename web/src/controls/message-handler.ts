@@ -157,6 +157,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     clearSideEffectPending,
     devLaunch,
     specLaunch,
+    createPrProgress,
     pendingDeepLink,
     deepLinkFulfilled,
     deepLinkTimers,
@@ -766,6 +767,21 @@ export function installMessageHandler(ctx: AppCtx): void {
           now: Date.now(),
         })
         break
+      case 'create_pr_progress':
+        // Advance the create-PR overlay's stage; the reducer ignores a repeat, a
+        // back-step or another intent's frame.
+        ctx.dispatchCreatePr({
+          kind: 'stage',
+          intentId: msg.intentId,
+          stage: msg.stage,
+          now: Date.now(),
+        })
+        break
+      case 'create_pr_response':
+        // Success terminal: the PR link arrives with the intents broadcast, so the
+        // overlay just closes (after its minimum dwell).
+        ctx.dispatchCreatePr({ kind: 'done', now: Date.now() })
+        break
       case 'spec_launch_progress':
         ctx.dispatchSpecLaunch({
           kind: 'stage',
@@ -1093,6 +1109,11 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'error':
+        // A create_pr run has no error code of its own — its gates report
+        // `intent.prCreate*` and `workspace.unknown`. Any error while the overlay
+        // is up is therefore its failure terminal; the reason is shown by the
+        // dialog / chat line below, never inside the overlay.
+        if (createPrProgress.value) ctx.dispatchCreatePr({ kind: 'failed', now: Date.now() })
         // Machine-readable code translated locally via the web i18n catalog (spec 003).
         // Intent action errors (start_development gates, approve/write spec, deps, …)
         // surface as a persistent global dialog so they are visible on the intents page. They used

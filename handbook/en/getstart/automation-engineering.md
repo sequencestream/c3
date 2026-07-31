@@ -76,7 +76,7 @@ In c3, automations are organized by **workspace**. Each automation belongs to ex
 
 Open **Automations** from the left navigation. The page has an automation list on the left and **Details** and **History** tabs for the selected item on the right. Click **+** to create an automation. The form has five sections:
 
-![c3 automations page](../../zh-cn/getstart/images/c3-automation-list.png)
+![c3 automations page](../../images/c3-automation-list.png)
 
 | Section                                | Configuration                                                                                                       |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
@@ -154,7 +154,7 @@ Subscriptions to `run:started` or `run:settled` also offer a **session type** mu
 
 Matching follows a fixed order: **workspace → session type (only for run events when nonempty) → event type → status → metadata**. A mismatch at any stage prevents the trigger.
 
-![c3 automation event subscription](../../zh-cn/getstart/images/c3-automation-trigger.png)
+![c3 automation event subscription](../../images/c3-automation-trigger.png)
 
 ### 4. Workflow: let another agent continue automatically
 

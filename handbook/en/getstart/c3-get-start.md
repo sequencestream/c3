@@ -16,8 +16,8 @@ Beyond permission control, c3 also brings the following capabilities into your s
 - Schedules — long-running or periodic work advances on its own
 - Native SDD support — spec-driven development as a first-class workflow
 
-![c3 agents view](../../zh-cn/getstart/images/c3-agents.png)
-![c3 sessions view](../../zh-cn/getstart/images/c3-sessions.png)
+![c3 agents view](../../images/c3-agents.png)
+![c3 sessions view](../../images/c3-sessions.png)
 
 ---
 

@@ -89,7 +89,7 @@ Open Workspace Setting, find the spec-driven development section, and check enab
 
 Once on, the primary action button of intents in that workspace becomes the SDD-aware four-state button (see the flow below), and the automation orchestrator only picks up intents whose specs are approved.
 
-![c3 SDD switch](../../zh-cn/getstart/images/c3-enable-sdd.png)
+![c3 SDD switch](../../images/c3-enable-sdd.png)
 
 #### 2. Understand the spec directory (read-only, nothing to configure)
 
@@ -102,7 +102,7 @@ Once the switch is on, the settings page shows the project's spec directory. It 
 
 Under Settings → Agents you can configure the spec agent (the agent responsible for writing specs); it follows the default agent unless set. Note: the spec-writing session is write-restricted (see below), the restriction is enforced at the tool/path layer, and if the configured agent cannot establish this boundary, startup is rejected rather than silently downgraded.
 
-![c3 spec agent](../../zh-cn/getstart/images/c3-agents.png)
+![c3 spec agent](../../images/c3-agents.png)
 
 #### 4. Optional: development skill (devSkill)
 

@@ -28,7 +28,7 @@ Consensus covers not only allow/deny tool permissions but also answering each `A
 
 In the workspace's Consensus section, consensus is controlled by three switches, narrowing layer by layer from "on or off" to "what counts as passing" to "who votes".
 
-![](../../zh-cn/getstart/images/c3-consensus.png)
+![](../../images/c3-consensus.png)
 
 ### 1. Enable multi-agent consensus
 
@@ -77,4 +77,4 @@ However you configure it, the bottom line stays the same: what can be determined
 
 ## Example
 
-![](../../zh-cn/getstart/images/c3-consensus-example.png)
+![](../../images/c3-consensus-example.png)

@@ -16,8 +16,8 @@ c3（Code Creative Center）是一个 AI 编程平台，为 Claude Code 提供�
 - 定时任务（Schedule） —— 长期运行或周期性工作自主推进
 - SDD 原生支持 —— 规范驱动开发作为一等工作流
 
-![c3 智能体界面](images/c3-agents.png)
-![c3 会话界面](images/c3-sessions.png)
+![c3 智能体界面](../../images/c3-agents.png)
+![c3 会话界面](../../images/c3-sessions.png)
 
 ---
 

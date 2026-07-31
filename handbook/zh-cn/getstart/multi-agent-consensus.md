@@ -28,7 +28,7 @@ c3 可以同时挂着多个 agent 一起干活。默认情况下，只要某个 
 
 在工作区（Workspace）的 Consensus 区块里，共识由三个开关控制，从"开不开"到"怎么算通过"再到"谁来投"，逐层收窄。
 
-![](images/c3-consensus.png)
+![](../../images/c3-consensus.png)
 
 ### 1. 启用多智能体共识投票
 
@@ -77,4 +77,4 @@ c3 可以同时挂着多个 agent 一起干活。默认情况下，只要某个 
 
 ## 示例
 
-![](images/c3-consensus-example.png)
+![](../../images/c3-consensus-example.png)

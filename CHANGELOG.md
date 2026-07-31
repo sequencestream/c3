@@ -3,6 +3,34 @@
 All notable changes to `c3` (Code Creative Center). The version source-of-truth is the git
 tag (`git describe --tags`); `package.json` is the fallback baseline.
 
+## v0.10.0
+
+### New Features
+
+- automations: deterministic scheduling kernel (zero LLM) — tick-based reconciliation, per-intent failure isolation, observable decisions; the queue agent joins as an advisor through a dedicated MCP tool group with propose-then-validate double checking
+- spec workflow: the queue auto-starts the spec authoring session, plus a read-only `spec_review` session with a rework loop and opt-in machine approval
+- spec prompt: rewritten to decompose from the overall architecture down to the change site, asking for file/module locations and Mermaid diagrams
+- discussions: research runs promoted to a formal "Research Session" tab (status bar, stop, follow-up rewrites the research result); "Process" renamed "Process Session"; conclusion-to-intent now creates a blank intent first and starts the intent session on it
+- intent: saving an intent communication session is confirmed in the conversation itself instead of a modal; PR creation shows a staged progress overlay (analyze changes / commit / push / create PR)
+- themes: extensible theme registry with a light theme, switchable from the new "Personalized Settings" page (display language moved there)
+- markdown: `MarkdownText` renders Mermaid, so architecture/flow code blocks display as diagrams
+- MCP `start_discussion` persists metadata and publishes `discussion:start` / `discussion:end` lifecycle events
+- workspace: switching a workspace lands on the intent list instead of sessions; the workspace settings page shows the current workspace name and path
+- startup: vendor CLI checks run asynchronously in the background and no longer block server start; arapuca managed install gets a 24-hour retry cooldown
+- web: browser tab favicon
+- worktree mode: the concurrency gate is scoped per branch instead of per workspace, so independent intents no longer block each other
+
+### Fixes
+
+- a host `HTTP_PROXY` without `NO_PROXY` swallowed loopback MCP calls, silently dropping every c3 tool
+- intent progress bar: the "done" node rendered with a dead accent variable and is now blue
+- machine approval re-reads the spec from disk inside the transaction before writing, closing a TOCTOU window
+- light theme: text contrast audit and fixes across pages
+
+### Docs
+
+- handbook images consolidated under `handbook/images` with references fixed; README feature list updated for SDD/worktree
+
 ## v0.9.11
 
 ### New Features

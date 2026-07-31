@@ -316,18 +316,18 @@ function logStatus(log: AutomationExecutionLog): string {
 }
 .log-status-badge.running {
   background: rgba(59, 130, 246, 0.15);
-  color: var(--c-info, #3b82f6);
+  color: var(--c-info);
 }
 .log-status-badge.success {
   background: rgba(34, 197, 94, 0.15);
-  color: var(--c-success);
+  color: var(--c-success-text);
 }
 .log-status-badge.failed {
   background: rgba(239, 68, 68, 0.12);
-  color: var(--c-error);
+  color: var(--c-error-text);
 }
 .log-status-badge.cancelled {
   background: rgba(245, 158, 11, 0.15);
-  color: var(--c-warning);
+  color: var(--c-warning-text);
 }
 </style>

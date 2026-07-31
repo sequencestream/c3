@@ -412,12 +412,12 @@ function automateToneClass(r: Intent): string {
   color: var(--c-text-disabled);
 }
 .req-automate.auto-tone-eligible {
-  color: var(--c-warning);
+  color: var(--c-warning-text);
 }
 .req-automate.auto-tone-running {
-  color: var(--c-info, #3b82f6);
+  color: var(--c-info);
 }
 .req-automate.auto-tone-done {
-  color: color-mix(in srgb, var(--c-text-muted) 75%, white);
+  color: var(--c-text-disabled);
 }
 </style>

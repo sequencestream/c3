@@ -281,7 +281,7 @@ function confirmImport(): void {
   margin: 0;
 }
 .ie-error {
-  color: var(--c-error);
+  color: var(--c-error-text);
   font-size: var(--fs-caption);
   margin: 0;
 }
@@ -321,7 +321,7 @@ function confirmImport(): void {
 }
 .ie-reason {
   flex-shrink: 0;
-  color: var(--c-warning);
+  color: var(--c-warning-text);
   font-size: var(--fs-caption);
 }
 .ie-foot {

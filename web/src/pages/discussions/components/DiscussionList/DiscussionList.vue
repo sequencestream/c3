@@ -605,7 +605,7 @@ function togglePanel(): void {
 .disc-form-error {
   margin: 0;
   font-size: var(--fs-caption);
-  color: var(--c-error, #d32f2f);
+  color: var(--c-error-text);
   flex: 1;
 }
 .disc-btn {

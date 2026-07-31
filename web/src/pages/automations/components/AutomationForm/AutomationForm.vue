@@ -1674,7 +1674,7 @@ function save(): void {
 }
 .sf-warn {
   font-size: var(--fs-caption);
-  color: var(--c-warning);
+  color: var(--c-warning-text);
   margin: var(--sp-1) 0 0;
 }
 
@@ -1805,7 +1805,7 @@ function save(): void {
   border-radius: var(--radius-sm);
 }
 .sf-cron.invalid {
-  color: var(--c-error);
+  color: var(--c-error-text);
 }
 .sf-cron-desc {
   font-size: var(--fs-caption);
@@ -1850,7 +1850,7 @@ function save(): void {
   padding: 4px 8px;
 }
 .sf-kv-del:hover {
-  color: var(--c-error);
+  color: var(--c-error-text);
   border-color: var(--c-error);
 }
 .sf-kv-add {

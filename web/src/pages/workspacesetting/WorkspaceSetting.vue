@@ -1270,8 +1270,8 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   z-index: 200;
   display: flex;
   flex-direction: column;
-  background: var(--bg-primary, #1e1e2e);
-  color: var(--text-primary, #cdd6f4);
+  background: var(--c-panel);
+  color: var(--c-text);
 }
 
 .project-config-head {
@@ -1279,7 +1279,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   align-items: center;
   justify-content: space-between;
   padding: 16px 24px;
-  border-bottom: 1px solid var(--border, #313244);
+  border-bottom: 1px solid var(--c-border);
 }
 
 .project-config-head h2 {
@@ -1309,14 +1309,14 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 .project-config-head-workspace-name {
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-primary, #cdd6f4);
+  color: var(--c-text);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .project-config-head-workspace-path {
   font-size: 12px;
-  color: var(--text-secondary, #a6adc8);
+  color: var(--c-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1338,7 +1338,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   flex-shrink: 0;
   gap: 8px;
   padding: 0 24px;
-  border-bottom: 1px solid var(--border, #313244);
+  border-bottom: 1px solid var(--c-border);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -1356,7 +1356,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 0;
-  color: var(--text-secondary, #a6adc8);
+  color: var(--c-text-muted);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -1364,15 +1364,15 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 }
 .project-config-tabs :deep(.project-config-tab:hover:not(:disabled)) {
   filter: none;
-  color: var(--text-primary, #cdd6f4);
+  color: var(--c-text);
 }
 .project-config-tabs :deep(.project-config-tab.active) {
-  color: var(--text-primary, #cdd6f4);
+  color: var(--c-text);
   border-bottom-color: var(--c-primary, #89b4fa);
 }
 /* Unsaved-changes marker on a tab. */
 .project-config-tabs :deep(.project-config-tab-dot) {
-  color: var(--c-warning, #f9e2af);
+  color: var(--c-warning-text);
   font-size: 0.6em;
   line-height: 1;
 }
@@ -1386,7 +1386,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 }
 .project-config-unsaved {
   font-size: 12px;
-  color: var(--text-secondary, #a6adc8);
+  color: var(--c-text-muted);
 }
 
 .project-config-body {
@@ -1414,7 +1414,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 .project-config-hint {
   margin: 0 0 8px;
   font-size: 12px;
-  color: var(--text-secondary, #a6adc8);
+  color: var(--c-text-muted);
   line-height: 1.5;
 }
 
@@ -1422,10 +1422,10 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   width: 100%;
   max-width: 400px;
   padding: 6px 10px;
-  border: 1px solid var(--border, #313244);
+  border: 1px solid var(--c-border);
   border-radius: 6px;
-  background: var(--bg-secondary, #181825);
-  color: var(--text-primary, #cdd6f4);
+  background: var(--c-card);
+  color: var(--c-text);
   font-size: 13px;
 }
 
@@ -1438,10 +1438,10 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   flex: 1;
   min-width: 0;
   padding: 6px 10px;
-  border: 1px solid var(--border, #313244);
+  border: 1px solid var(--c-border);
   border-radius: 6px;
-  background: var(--bg, #11111b);
-  color: var(--text-secondary, #a6adc8);
+  background: var(--c-bg);
+  color: var(--c-text-muted);
   font-size: 12px;
   font-family: var(--font-mono, ui-monospace, monospace);
   word-break: break-all;
@@ -1452,14 +1452,14 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   list-style: none;
   margin: 0 0 10px;
   padding: 8px 10px;
-  border: 1px dashed var(--border, #313244);
+  border: 1px dashed var(--c-border);
   border-radius: 6px;
-  background: var(--bg, #11111b);
+  background: var(--c-bg);
 }
 .project-config-embedded-caption {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary, #a6adc8);
+  color: var(--c-text-muted);
   margin-bottom: 6px;
 }
 .project-config-embedded-row {
@@ -1474,22 +1474,22 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   min-width: 96px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-primary, #cdd6f4);
+  color: var(--c-text);
 }
 .project-config-embedded-desc {
   flex: 1;
   min-width: 0;
   font-size: 12px;
-  color: var(--text-secondary, #a6adc8);
+  color: var(--c-text-muted);
 }
 .project-config-embedded-badge {
   flex-shrink: 0;
   padding: 1px 8px;
   border-radius: 10px;
   font-size: 11px;
-  color: var(--text-secondary, #a6adc8);
-  background: var(--bg-secondary, #181825);
-  border: 1px solid var(--border, #313244);
+  color: var(--c-text-muted);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
 }
 .project-config-embedded-lock {
   flex-shrink: 0;
@@ -1514,7 +1514,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   min-width: 100px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-secondary, #a6adc8);
+  color: var(--c-text-muted);
 }
 
 /* Inline field: label + control group used inside a row (e.g. Codex dual policy) */
@@ -1526,7 +1526,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
 }
 .inline-field-label {
   font-size: 12px;
-  color: var(--text-secondary, #a6adc8);
+  color: var(--c-text-muted);
   white-space: nowrap;
 }
 
@@ -1548,7 +1548,7 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 24px;
-  border-top: 1px solid var(--border, #313244);
+  border-top: 1px solid var(--c-border);
 }
 
 .skill-repo-status {
@@ -1559,10 +1559,10 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   font-weight: 600;
 }
 .skill-repo-status-linked {
-  color: var(--c-success, #a6e3a1);
+  color: var(--c-success-text);
 }
 .skill-repo-status-unlinked {
-  color: var(--text-secondary, #a6adc8);
+  color: var(--c-text-muted);
 }
 
 .skill-repo-install {

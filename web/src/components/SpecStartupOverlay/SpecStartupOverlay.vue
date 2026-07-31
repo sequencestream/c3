@@ -103,7 +103,7 @@ const steps = computed(() =>
   justify-content: center;
 }
 .sso-check {
-  color: var(--c-success, #2e9e44);
+  color: var(--c-success-text);
   font-size: 14px;
   line-height: 1;
 }

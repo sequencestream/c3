@@ -282,7 +282,7 @@ function onCreate(): void {
 .ns-icon-btn {
   background: none;
   border: none;
-  color: var(--c-text-dim);
+  color: var(--c-text-muted);
   cursor: pointer;
   font-size: 1rem;
 }
@@ -299,7 +299,7 @@ function onCreate(): void {
 }
 .ns-label {
   font-size: var(--fs-body-sm);
-  color: var(--c-text-dim);
+  color: var(--c-text-muted);
 }
 .ns-select {
   padding: var(--sp-2);
@@ -310,7 +310,7 @@ function onCreate(): void {
 }
 .ns-hint {
   font-size: var(--fs-body-sm);
-  color: var(--c-text-dim);
+  color: var(--c-text-muted);
 }
 .ns-missing {
   display: flex;
@@ -318,13 +318,13 @@ function onCreate(): void {
   flex-wrap: wrap;
   gap: var(--sp-2);
   font-size: var(--fs-body-sm);
-  color: var(--c-warn, #c08a00);
+  color: var(--c-warning-text);
 }
 .ns-link {
   background: none;
   border: none;
   padding: 0;
-  color: var(--c-accent, #4a8);
+  color: var(--c-primary-text);
   cursor: pointer;
   text-decoration: underline;
   font-size: inherit;
@@ -345,8 +345,8 @@ function onCreate(): void {
   cursor: pointer;
 }
 .ns-btn-primary {
-  background: var(--c-accent, #4a8);
-  border-color: var(--c-accent, #4a8);
+  background: var(--c-primary);
+  border-color: var(--c-primary);
   color: #fff;
 }
 .ns-btn-primary:disabled {

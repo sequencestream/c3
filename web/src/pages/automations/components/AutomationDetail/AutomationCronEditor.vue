@@ -297,13 +297,13 @@ function save(): void {
   cursor: pointer;
 }
 .sce-day.active {
-  background: var(--c-accent);
-  border-color: var(--c-accent);
-  color: var(--c-accent-text, #fff);
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: #fff;
 }
 .sce-warn {
   font-size: var(--fs-caption);
-  color: var(--c-warning);
+  color: var(--c-warning-text);
 }
 .sce-input {
   min-width: 0;
@@ -332,9 +332,9 @@ function save(): void {
   border-top: 1px solid var(--c-border);
 }
 .sce-button--primary {
-  border-color: var(--c-accent);
-  background: var(--c-accent);
-  color: var(--c-accent-text, #fff);
+  border-color: var(--c-primary);
+  background: var(--c-primary);
+  color: #fff;
 }
 .sce-button:disabled {
   opacity: 0.5;

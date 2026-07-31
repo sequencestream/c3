@@ -250,7 +250,7 @@ onBeforeUnmount(() => {
 }
 .file-row.active {
   background: var(--c-card);
-  color: var(--c-primary);
+  color: var(--c-primary-text);
 }
 .row-label {
   min-width: 0;
@@ -293,13 +293,13 @@ onBeforeUnmount(() => {
 }
 /* 语义色:untracked→成功 / modified→警告 / staged→强调(见 color-style-spec) */
 .git-mark--untracked {
-  color: var(--c-success);
+  color: var(--c-success-text);
 }
 .git-mark--modified {
-  color: var(--c-warning);
+  color: var(--c-warning-text);
 }
 .git-mark--staged {
-  color: var(--c-primary);
+  color: var(--c-primary-text);
 }
 /* 目录汇总圆点:紧凑、中性色,靠右,形状与文件字母标记区分 */
 .dir-change-dot {

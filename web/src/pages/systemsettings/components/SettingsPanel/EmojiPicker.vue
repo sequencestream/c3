@@ -220,7 +220,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 }
 
 .icon-trigger.is-open {
-  border-color: var(--accent, #6b8afd);
+  border-color: var(--c-primary);
 }
 
 /* 全屏遮罩 + 居中卡片:覆盖在设置页(z-index:100)之上。 */
@@ -242,9 +242,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   max-width: 100%;
   max-height: 80vh;
   padding: 8px;
-  border: 1px solid var(--border, #d0d0d0);
+  border: 1px solid var(--c-border);
   border-radius: 10px;
-  background: var(--surface, #fff);
+  background: var(--c-card);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
 }
 
@@ -274,7 +274,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   width: 100%;
   box-sizing: border-box;
   padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border, #d0d0d0);
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   font-size: 0.85rem;
 }
@@ -290,7 +290,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
 .emoji-empty {
   padding: 0.75rem 0.25rem;
-  color: var(--muted, #888);
+  color: var(--c-text-muted);
   font-size: 0.85rem;
   text-align: center;
 }
@@ -302,7 +302,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
 .emoji-group-title {
   margin: 0.3rem 0 0.2rem;
-  color: var(--muted, #888);
+  color: var(--c-text-muted);
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -331,7 +331,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
 
 .emoji-cell:hover,
 .emoji-cell:focus-visible {
-  background: var(--hover, #eef1ff);
+  background: var(--c-hover);
   outline: none;
 }
 </style>

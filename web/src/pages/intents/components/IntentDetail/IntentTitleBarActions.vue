@@ -271,10 +271,11 @@ watch(
   white-space: nowrap;
 }
 /* 主按钮两态语义色:writeSpec 维持主色蓝(生成动作),approveSpec 改用成功色
- * (审核放行)以与编写明确区分;白字保证对比度,data-action 为稳定可访问锚点。 */
+ * (审核放行)以与编写明确区分;实底取深一档的 -text 变体,白字才托得住对比度,
+ * data-action 为稳定可访问锚点。 */
 .intent-detail-actions .req-btn.primary[data-action='approveSpec'] {
-  background: var(--c-success);
-  border-color: var(--c-success);
+  background: var(--c-success-text);
+  border-color: var(--c-success-text);
   color: #fff;
 }
 @media (max-width: 640px) {

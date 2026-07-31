@@ -406,7 +406,7 @@ function selectTemplate(templateId: string): void {
   margin: 0;
   padding: var(--sp-2) var(--sp-3);
   font-size: var(--fs-caption);
-  color: var(--c-warning);
+  color: var(--c-warning-text);
   background: rgba(245, 158, 11, 0.12);
   border-bottom: 1px solid var(--c-border);
 }
@@ -575,14 +575,14 @@ function selectTemplate(templateId: string): void {
 }
 .sched-status.active {
   background: rgba(34, 197, 94, 0.15);
-  color: var(--c-success);
+  color: var(--c-success-text);
 }
 .sched-status.paused {
   background: rgba(245, 158, 11, 0.15);
-  color: var(--c-warning);
+  color: var(--c-warning-text);
 }
 .sched-status.error {
   background: rgba(239, 68, 68, 0.12);
-  color: var(--c-error);
+  color: var(--c-error-text);
 }
 </style>

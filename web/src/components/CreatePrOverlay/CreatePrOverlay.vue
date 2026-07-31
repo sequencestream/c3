@@ -132,7 +132,7 @@ const steps = computed<{ key: CreatePrStep; label: string; status: CreatePrStepS
   justify-content: center;
 }
 .cpo-check {
-  color: var(--c-success, #2e9e44);
+  color: var(--c-success-text);
   font-size: 14px;
   line-height: 1;
 }

@@ -430,11 +430,11 @@ function toggle(id: number): void {
   letter-spacing: 0.01em;
 }
 .vendor-claude {
-  color: var(--c-primary);
+  color: var(--c-primary-text);
   background: var(--c-primary-soft);
 }
 .vendor-codex {
-  color: var(--c-info, #3b82f6);
+  color: var(--c-info);
   background: rgba(59, 130, 246, 0.15);
 }
 
@@ -451,7 +451,7 @@ function toggle(id: number): void {
   border-radius: 999px;
 }
 .approval-tag.pre-approved {
-  color: var(--c-warning);
+  color: var(--c-warning-text);
   background: rgba(245, 158, 11, 0.15);
 }
 </style>

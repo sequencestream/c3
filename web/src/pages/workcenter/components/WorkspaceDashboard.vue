@@ -196,7 +196,7 @@ const isEmpty = computed(() => !props.loading && props.rows.length === 0)
   border-radius: 10px;
 }
 .dash-gate.on {
-  color: var(--c-success);
+  color: var(--c-success-text);
   background: color-mix(in srgb, var(--c-success) 14%, transparent);
 }
 .dash-gate.off {

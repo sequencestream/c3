@@ -339,16 +339,16 @@ watch(
   font-style: italic;
 }
 .code-content :deep(.shiki .t-keyword) {
-  color: var(--c-primary-2);
+  color: var(--c-primary-2-text);
 }
 .code-content :deep(.shiki .t-string) {
-  color: var(--c-success);
+  color: var(--c-success-text);
 }
 .code-content :deep(.shiki .t-function) {
-  color: var(--c-primary);
+  color: var(--c-primary-text);
 }
 .code-content :deep(.shiki .t-number) {
-  color: var(--c-warning);
+  color: var(--c-warning-text);
 }
 .code-content :deep(.shiki .t-type) {
   color: var(--c-purple-text);

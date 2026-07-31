@@ -32,6 +32,17 @@
   --c-success: #22c55e;
   --c-warning: #f59e0b;
   --c-error: #ef4444;
+  --c-info: #3b82f6;
+
+  /* 状态 / 强调色的「深一档变体」：同一个色相在深底上够亮即可读，在浅底上必须更深才
+     达到对比度门槛，一个取值托不住两种底色。用在需要自己挣得对比度的位置——浅底上的
+     前景文字，以及必须托住白字的实底；纯装饰的填充、描边、图示仍用上面的基色。
+     暗色主题下变体与基色同值，浅色主题各自下沉（见下方覆盖块）。 */
+  --c-primary-text: #6366f1;
+  --c-primary-2-text: #a855f7;
+  --c-success-text: #22c55e;
+  --c-warning-text: #f59e0b;
+  --c-error-text: #ef4444;
 
   /* 对话气泡 */
   --c-msg-ai: #27272d; /* AI 消息背景 */
@@ -114,9 +125,22 @@
   --c-code: #f4f4f7;
   --c-border: #e2e2e8;
 
+  /* 文字层级：取值按真正承载它的每一块背景定，而不是只在纯白上够用——
+     --c-input / --c-code / --c-msg-user 与悬停叠加态都比 --c-bg 暗，是更紧的约束。
+     正文与次要文字不低于 4.5:1，禁用及同档辅助文字不低于 3:1；禁用态另由透明度与
+     控件状态表达，不靠压低对比度。逐对校验见 lib/contrast.test.ts。 */
   --c-text: #18181b;
-  --c-text-muted: #6b6b75;
-  --c-text-disabled: #a1a1aa;
+  --c-text-muted: #5b5b66;
+  --c-text-disabled: #7c7c86;
+
+  /* 有色文字在浅底上整体下沉一档；对应的实底 / 描边仍用未加 -text 的基色。 */
+  --c-primary-text: #4f46e5;
+  --c-primary-2-text: #7e22ce;
+  --c-success-text: #166534;
+  --c-warning-text: #92400e;
+  --c-error-text: #b91c1c;
+  --c-info: #1d4ed8;
+  --c-purple-text: #7e22ce;
 
   --c-msg-ai: #f1f1f5;
   --c-msg-user: #e0e2f8;

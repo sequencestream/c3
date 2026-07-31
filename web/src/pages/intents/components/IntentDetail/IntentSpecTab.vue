@@ -308,11 +308,11 @@ watch(
 }
 .intent-detail-spec-review-verdict.is-pass {
   background: var(--c-success-bg, transparent);
-  color: var(--c-success, var(--c-text));
+  color: var(--c-success-text);
 }
 .intent-detail-spec-review-verdict.is-changes {
   background: var(--c-warning-bg, transparent);
-  color: var(--c-warning, var(--c-text));
+  color: var(--c-warning-text);
 }
 .intent-detail-spec-review-rounds,
 .intent-detail-spec-review-approver {

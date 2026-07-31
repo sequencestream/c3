@@ -1251,11 +1251,16 @@ export const queueControlHandler: Handler<'queue_control'> = (ctx, conn, msg) =>
 }
 
 export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
+  // Echo the client's correlation token on every frame this run emits — progress,
+  // success and failure alike — so the caller can bind them to the run it started
+  // and ignore frames belonging to an unrelated request or a superseded retry.
+  const correlate = msg.requestId ? { requestId: msg.requestId } : {}
   const proj = resolveWorkspaceRoot(msg.workspaceId)
   if (!proj) {
     conn.send({
       type: 'error',
       error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+      ...correlate,
     })
     return
   }
@@ -1268,7 +1273,8 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
     // Coarse progress for the requesting connection's overlay only. The terminals
     // stay the response / `error` frames below, so a dropped stage never changes
     // whether the PR was created.
-    onStage: (stage) => conn.send({ type: 'create_pr_progress', intentId: msg.intentId, stage }),
+    onStage: (stage) =>
+      conn.send({ type: 'create_pr_progress', intentId: msg.intentId, stage, ...correlate }),
   })
   if (!result.success) {
     conn.send({
@@ -1277,10 +1283,17 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
         code: result.code as UiErrorCode,
         ...(result.params ? { params: result.params } : {}),
       },
+      ...correlate,
     })
     return
   }
-  conn.send({ type: 'create_pr_response', prId: result.prId, prUrl: result.prUrl })
+  conn.send({
+    type: 'create_pr_response',
+    intentId: msg.intentId,
+    prId: result.prId,
+    prUrl: result.prUrl,
+    ...correlate,
+  })
 }
 
 /**

@@ -9,6 +9,12 @@ import { CREATE_PR_STAGES, type CreatePrStage } from '@ccc/shared/protocol'
  * stages the server reports. It converges on every terminal — success response,
  * action error, or safety timeout — so the user is never trapped behind it.
  *
+ * Terminals are accepted only from the run this overlay started, identified by
+ * the `requestId` the server echoes: the connection also carries errors from
+ * unrelated requests, and a run the safety timeout already released can still
+ * reply long after the user clicked again. Either would otherwise tear down an
+ * overlay that is legitimately waiting.
+ *
  * Like `dev-launch-view`, this module holds only the state machine + step
  * mapping (no DOM, no timers, no `send`): the control layer owns the effects
  * while the decisions stay unit-testable.
@@ -39,6 +45,13 @@ export type CreatePrStepStatus = 'pending' | 'active' | 'done'
 export interface CreatePrModel {
   /** The intent whose PR creation this overlay tracks. */
   intentId: string
+  /**
+   * The token sent with this run's `create_pr`, echoed back on its progress and
+   * terminal frames. Every frame is matched against it, so an unrelated error on
+   * the connection and a late terminal from a superseded run (same intent, older
+   * click) both fall through instead of closing this overlay.
+   */
+  requestId: string
   /** Current coarse phase. */
   phase: CreatePrPhase
   /** Click time (ms epoch); drives the safety-timeout window. */
@@ -58,22 +71,27 @@ export interface CreatePrTransition {
   closedReason?: CreatePrCloseReason
 }
 
-/** Events the overlay state machine folds in. */
+/**
+ * Events the overlay state machine folds in. The three server-driven ones carry
+ * the frame's `requestId` (undefined when the frame had none — e.g. an error
+ * raised by some other request); only an exact match with the model's token is
+ * accepted.
+ */
 export type CreatePrEvent =
   /** A connection-directed `create_pr_progress` stage arrived. */
-  | { kind: 'stage'; intentId: string; stage: CreatePrStage; now: number }
+  | { kind: 'stage'; intentId: string; stage: CreatePrStage; requestId?: string; now: number }
   /** `create_pr_response` arrived (success terminal). */
-  | { kind: 'done'; now: number }
-  /** An intent-action `error` arrived while creating (failure terminal). */
-  | { kind: 'failed'; now: number }
+  | { kind: 'done'; requestId?: string; now: number }
+  /** An `error` frame arrived (failure terminal when it belongs to this run). */
+  | { kind: 'failed'; requestId?: string; now: number }
   /** The minimum-dwell timer fired. */
   | { kind: 'dwell-complete'; now: number }
   /** The safety-timeout fired. */
   | { kind: 'timeout'; now: number }
 
 /** Build the initial visible model for a just-clicked PR creation. */
-export function beginCreatePr(intentId: string, now: number): CreatePrModel {
-  return { intentId, phase: 'analyzing-changes', startedAt: now, visibleAt: now }
+export function beginCreatePr(intentId: string, requestId: string, now: number): CreatePrModel {
+  return { intentId, requestId, phase: 'analyzing-changes', startedAt: now, visibleAt: now }
 }
 
 /** Whether the elapsed time has reached the safety-timeout ceiling. */
@@ -125,8 +143,9 @@ export function reduceCreatePr(model: CreatePrModel | null, ev: CreatePrEvent): 
   if (!model) return { model: null }
   switch (ev.kind) {
     case 'stage': {
-      // Progress for another intent (another tab / a stale run) is not ours.
-      if (ev.intentId !== model.intentId) return { model }
+      // Progress for another intent or another run (a retry replaced this one,
+      // or a superseded run is still reporting) is not ours.
+      if (ev.intentId !== model.intentId || ev.requestId !== model.requestId) return { model }
       // A terminal already arrived; hold its presentation until the dwell ends.
       if (model.pendingCloseReason) return { model }
       // Stages are one-way: a repeat or an out-of-order frame never rewinds the
@@ -135,9 +154,15 @@ export function reduceCreatePr(model: CreatePrModel | null, ev: CreatePrEvent): 
       if (next <= activeStepIndex(model.phase)) return { model }
       return { model: { ...model, phase: ev.stage } }
     }
+    // Both terminals must prove they belong to THIS run: an error frame from an
+    // unrelated request carries no token, and a reply from a run the user already
+    // gave up on (safety timeout, then a fresh click) carries the previous one.
+    // Neither may close the overlay that is currently up.
     case 'done':
+      if (ev.requestId !== model.requestId) return { model }
       return settleCreatePr(model, 'done', ev.now)
     case 'failed':
+      if (ev.requestId !== model.requestId) return { model }
       return settleCreatePr(model, 'failed', ev.now)
     case 'dwell-complete':
       if (model.pendingCloseReason && isCreatePrDwellComplete(ev.now - model.visibleAt)) {

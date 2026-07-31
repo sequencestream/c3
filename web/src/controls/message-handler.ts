@@ -769,18 +769,20 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       case 'create_pr_progress':
         // Advance the create-PR overlay's stage; the reducer ignores a repeat, a
-        // back-step or another intent's frame.
+        // back-step, another intent's frame or another run's token.
         ctx.dispatchCreatePr({
           kind: 'stage',
           intentId: msg.intentId,
           stage: msg.stage,
+          requestId: msg.requestId,
           now: Date.now(),
         })
         break
       case 'create_pr_response':
         // Success terminal: the PR link arrives with the intents broadcast, so the
-        // overlay just closes (after its minimum dwell).
-        ctx.dispatchCreatePr({ kind: 'done', now: Date.now() })
+        // overlay just closes (after its minimum dwell) — but only for the run it
+        // belongs to; a reply outliving its overlay is dropped by the reducer.
+        ctx.dispatchCreatePr({ kind: 'done', requestId: msg.requestId, now: Date.now() })
         break
       case 'spec_launch_progress':
         ctx.dispatchSpecLaunch({
@@ -1110,10 +1112,13 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       case 'error':
         // A create_pr run has no error code of its own — its gates report
-        // `intent.prCreate*` and `workspace.unknown`. Any error while the overlay
-        // is up is therefore its failure terminal; the reason is shown by the
-        // dialog / chat line below, never inside the overlay.
-        if (createPrProgress.value) ctx.dispatchCreatePr({ kind: 'failed', now: Date.now() })
+        // `intent.prCreate*` and `workspace.unknown` — so the failure terminal is
+        // recognised by the echoed `requestId` instead. Errors from any other
+        // request on this connection carry no token (or an older one) and leave
+        // the overlay alone, which then converges on its safety timeout. The
+        // reason is shown by the dialog / chat line below, never in the overlay.
+        if (createPrProgress.value)
+          ctx.dispatchCreatePr({ kind: 'failed', requestId: msg.requestId, now: Date.now() })
         // Machine-readable code translated locally via the web i18n catalog (spec 003).
         // Intent action errors (start_development gates, approve/write spec, deps, …)
         // surface as a persistent global dialog so they are visible on the intents page. They used

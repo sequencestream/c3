@@ -18,7 +18,7 @@ import CreatePrOverlay from './CreatePrOverlay.vue'
 const SFC_PATH = 'web/src/components/CreatePrOverlay/CreatePrOverlay.vue'
 
 function model(phase: CreatePrModel['phase']): CreatePrModel {
-  return { intentId: 'intent-1', phase, startedAt: 0, visibleAt: 0 }
+  return { intentId: 'intent-1', requestId: 'req-1', phase, startedAt: 0, visibleAt: 0 }
 }
 
 describe('CreatePrOverlay', () => {

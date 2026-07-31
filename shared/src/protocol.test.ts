@@ -330,4 +330,28 @@ describe('create_pr staged progress', () => {
     const bad: CreatePrStage = 'failed'
     expect(bad).toBe('failed')
   })
+
+  it('carries the run token on the request and on all three reply frames', () => {
+    // The correlation contract: whatever a client puts on `create_pr` can come
+    // back on progress, on success and on the failure error — that is what lets
+    // it separate its own terminals from an unrelated error or a stale retry.
+    const request: ClientToServer = {
+      type: 'create_pr',
+      workspaceId: 'ws-1',
+      intentId: 'intent-1',
+      requestId: 'req-1',
+    }
+    const replies: ServerToClient[] = [
+      { type: 'create_pr_progress', intentId: 'intent-1', stage: 'pushing', requestId: 'req-1' },
+      { type: 'create_pr_response', intentId: 'intent-1', prId: '42', requestId: 'req-1' },
+      { type: 'error', error: { code: 'intent.prCreateFailed' }, requestId: 'req-1' },
+    ]
+    expect(JSON.parse(JSON.stringify([request, ...replies]))).toEqual([request, ...replies])
+  })
+
+  it('keeps the token optional so an uncorrelated client still type-checks', () => {
+    const request: ClientToServer = { type: 'create_pr', workspaceId: 'ws-1', intentId: 'intent-1' }
+    const reply: ServerToClient = { type: 'create_pr_response', intentId: 'intent-1', prId: '42' }
+    expect([request, reply].every((m) => !('requestId' in m))).toBe(true)
+  })
 })

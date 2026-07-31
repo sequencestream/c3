@@ -174,6 +174,7 @@ describe('createPrHandler — worktree gate success paths', () => {
       // Response + the three PR fields written atomically on success.
       expect(sent).toContainEqual({
         type: 'create_pr_response',
+        intentId: r.id,
         prId: '42',
         prUrl: 'https://x/pr/42',
       })
@@ -441,5 +442,91 @@ describe('createPrHandler — staged progress frames', () => {
     expect(stagesOf(sent)).toEqual(['analyzing-changes', 'committing', 'pushing', 'creating-pr'])
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
     expect(sent.some((m) => m.type === 'create_pr_response')).toBe(false)
+  })
+})
+
+/**
+ * Run correlation — the client's `requestId` must come back on every frame this
+ * run emits. Without it a client cannot tell its own terminal from an unrelated
+ * error on the same connection, nor a retry's reply from the run it replaced.
+ */
+describe('createPrHandler — request correlation', () => {
+  /** Every frame's echoed token (undefined when the frame carries none). */
+  function tokensOf(sent: ServerToClient[]): (string | undefined)[] {
+    return sent.map((m) => (m as { requestId?: string }).requestId)
+  }
+
+  it('echoes the token on every progress frame and on the success response', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(commitAndPush).mockImplementation(async (_path, _msg, onPhase) => {
+      onPhase?.('committing')
+      onPhase?.('pushing')
+      return { ok: true, committed: true }
+    })
+    vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42' })
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      requestId: 'req-1',
+    })
+
+    expect(tokensOf(sent)).toEqual(Array(sent.length).fill('req-1'))
+    expect(sent[sent.length - 1]).toMatchObject({
+      type: 'create_pr_response',
+      intentId: r.id,
+      requestId: 'req-1',
+    })
+  })
+
+  it('echoes the token on the failure error, gate rejections included', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(false)
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      requestId: 'req-2',
+    })
+
+    expect(sent).toContainEqual({
+      type: 'error',
+      error: { code: 'intent.prCreateNoChanges' },
+      requestId: 'req-2',
+    })
+
+    // Same for the earliest gate, which rejects before any workspace resolution.
+    const unknown = fakeConn()
+    await createPrHandler(ctx, unknown.conn, {
+      type: 'create_pr',
+      workspaceId: 'no-such-workspace',
+      intentId: r.id,
+      requestId: 'req-3',
+    })
+    expect(unknown.sent).toContainEqual({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: 'no-such-workspace' } },
+      requestId: 'req-3',
+    })
+  })
+
+  it('omits the field entirely for a client that sent no token', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42' })
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(sent.every((m) => !('requestId' in m))).toBe(true)
   })
 })

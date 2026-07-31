@@ -25,8 +25,12 @@ function s(id: string, lastModified: number): SessionInfo {
   }
 }
 
-function error(code: string): ServerToClient {
-  return { type: 'error', error: { code, params: {} } } as unknown as ServerToClient
+function error(code: string, requestId?: string): ServerToClient {
+  return {
+    type: 'error',
+    error: { code, params: {} },
+    ...(requestId ? { requestId } : {}),
+  } as unknown as ServerToClient
 }
 
 function makeCtx() {
@@ -1461,61 +1465,76 @@ describe('session_counts / session_status — 顶部条目角标计数', () => {
 })
 
 /**
- * Create-PR overlay routing: stage frames advance it, the response closes it,
- * and — because create_pr has no error code of its own — any error while it is
- * up is its failure terminal, so a rejected run never leaves the page blocked.
+ * Create-PR overlay routing: every frame is forwarded with the run token the
+ * server echoed, so the reducer can tell this run's terminals from an unrelated
+ * error or a superseded run's late reply. Routing forwards, matching is the
+ * reducer's job (see create-pr-view.test.ts).
  */
 describe('create_pr progress routing', () => {
-  it('forwards a stage frame with its intent', () => {
+  it('forwards a stage frame with its intent and run token', () => {
     const result = makeCtx()
 
     result.ctx.handleMessage({
       type: 'create_pr_progress',
       intentId: 'i-1',
       stage: 'pushing',
+      requestId: 'r-1',
     } as ServerToClient)
 
     expect(result.dispatchCreatePr).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'stage', intentId: 'i-1', stage: 'pushing' }),
+      expect.objectContaining({
+        kind: 'stage',
+        intentId: 'i-1',
+        stage: 'pushing',
+        requestId: 'r-1',
+      }),
     )
   })
 
-  it('closes the overlay on the success response', () => {
+  it('forwards the success response with its run token', () => {
     const result = makeCtx()
 
-    result.ctx.handleMessage({ type: 'create_pr_response', prId: '42' } as ServerToClient)
+    result.ctx.handleMessage({
+      type: 'create_pr_response',
+      intentId: 'i-1',
+      prId: '42',
+      requestId: 'r-1',
+    } as ServerToClient)
 
-    expect(result.dispatchCreatePr).toHaveBeenCalledWith(expect.objectContaining({ kind: 'done' }))
+    expect(result.dispatchCreatePr).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'done', requestId: 'r-1' }),
+    )
   })
 
-  it('closes the overlay on an intent-action error', () => {
+  it('forwards an intent-action error with its run token', () => {
     const result = makeCtx()
     result.createPrProgress.value = { intentId: 'i-1' }
 
-    result.ctx.handleMessage(error('intent.prCreateFailed'))
+    result.ctx.handleMessage(error('intent.prCreateFailed', 'r-1'))
 
     expect(result.dispatchCreatePr).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'failed' }),
+      expect.objectContaining({ kind: 'failed', requestId: 'r-1' }),
     )
     // The reason still reaches the user through the existing error dialog.
     expect(result.showIntentActionError).toHaveBeenCalledOnce()
   })
 
-  it('closes the overlay on a non-intent error too', () => {
+  it('forwards an untagged error without a token so the reducer can drop it', () => {
     const result = makeCtx()
     result.createPrProgress.value = { intentId: 'i-1' }
 
-    result.ctx.handleMessage(error('workspace.unknown'))
+    // Some other in-flight request failed — a real code, but not this run's.
+    result.ctx.handleMessage(error('session.turnRunning'))
 
     expect(result.dispatchCreatePr).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'failed' }),
+      expect.objectContaining({ kind: 'failed', requestId: undefined }),
     )
   })
 
   it('leaves the reducer alone when no overlay is up', () => {
     const result = makeCtx()
 
-    result.ctx.handleMessage(error('intent.prCreateFailed'))
+    result.ctx.handleMessage(error('intent.prCreateFailed', 'r-1'))
 
     expect(result.dispatchCreatePr).not.toHaveBeenCalled()
   })

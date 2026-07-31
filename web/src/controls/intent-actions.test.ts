@@ -310,7 +310,12 @@ describe('createPr — progress overlay wiring', () => {
     vi.advanceTimersByTime(CREATE_PR_MIN_DWELL_MS)
   }
 
-  it('sends create_pr once and shows the overlay on the first step', () => {
+  /** The token of the run the overlay is currently tracking. */
+  function runToken(h: ReturnType<typeof makeCtx>): string | undefined {
+    return h.createPrProgress.value?.requestId
+  }
+
+  it('sends create_pr once with a run token and shows the overlay on the first step', () => {
     const h = makeCtx({ intents: [intent('i-1', 'dev-1')] })
 
     h.ctx.createPr('i-1')
@@ -320,20 +325,32 @@ describe('createPr — progress overlay wiring', () => {
       type: 'create_pr',
       workspaceId: WS,
       intentId: 'i-1',
+      requestId: expect.any(String),
     })
     expect(h.createPrProgress.value).toMatchObject({ intentId: 'i-1', phase: 'analyzing-changes' })
+    // The overlay tracks exactly the token that went out on the wire.
+    expect(runToken(h)).toBe(
+      (h.ctx.send as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.requestId,
+    )
     expect(h.createPrTimers.safety).not.toBeNull()
   })
 
   it('lights each stage the server reports and ignores another intent’s frames', () => {
     const h = makeCtx({ intents: [intent('i-1', 'dev-1')] })
     h.ctx.createPr('i-1')
+    const requestId = runToken(h)
 
     for (const stage of ['committing', 'pushing', 'creating-pr'] as const) {
-      h.ctx.dispatchCreatePr({ kind: 'stage', intentId: 'i-1', stage, now: 10 })
+      h.ctx.dispatchCreatePr({ kind: 'stage', intentId: 'i-1', stage, requestId, now: 10 })
       expect(h.createPrProgress.value?.phase).toBe(stage)
     }
-    h.ctx.dispatchCreatePr({ kind: 'stage', intentId: 'other', stage: 'committing', now: 20 })
+    h.ctx.dispatchCreatePr({
+      kind: 'stage',
+      intentId: 'other',
+      stage: 'committing',
+      requestId,
+      now: 20,
+    })
     expect(h.createPrProgress.value?.phase).toBe('creating-pr')
   })
 
@@ -341,7 +358,7 @@ describe('createPr — progress overlay wiring', () => {
     const h = makeCtx({ intents: [intent('i-1', 'dev-1')] })
     clickAndDwell(h)
 
-    h.ctx.dispatchCreatePr({ kind: 'done', now: Date.now() })
+    h.ctx.dispatchCreatePr({ kind: 'done', requestId: runToken(h), now: Date.now() })
 
     expect(h.createPrProgress.value).toBeNull()
     expect(h.clearCreatePrTimers).toHaveBeenCalled()
@@ -353,18 +370,49 @@ describe('createPr — progress overlay wiring', () => {
     const h = makeCtx({ intents: [intent('i-1', 'dev-1')] })
     clickAndDwell(h)
 
-    h.ctx.dispatchCreatePr({ kind: 'failed', now: Date.now() })
+    h.ctx.dispatchCreatePr({ kind: 'failed', requestId: runToken(h), now: Date.now() })
 
     expect(h.createPrProgress.value).toBeNull()
     expect(h.createPrTimers.safety).toBeNull()
     expect(h.showToast).not.toHaveBeenCalled()
   })
 
+  it('stays up when an unrelated request fails while creating', () => {
+    const h = makeCtx({ intents: [intent('i-1', 'dev-1')] })
+    clickAndDwell(h)
+
+    // An error frame from some other in-flight request: no run token, not ours.
+    h.ctx.dispatchCreatePr({ kind: 'failed', now: Date.now() })
+
+    expect(h.createPrProgress.value).toMatchObject({ intentId: 'i-1' })
+    expect(h.createPrTimers.safety).not.toBeNull()
+  })
+
+  it('ignores a superseded run’s late terminal after the user retried', () => {
+    const h = makeCtx({ intents: [intent('i-1', 'dev-1')] })
+    h.ctx.createPr('i-1')
+    const firstRun = runToken(h)
+
+    // Nothing came back in time: the overlay is released, the server task lives on.
+    vi.advanceTimersByTime(CREATE_PR_SAFETY_TIMEOUT_MS)
+    expect(h.createPrProgress.value).toBeNull()
+
+    // The user clicks again, and only then does the first run reply.
+    h.ctx.createPr('i-1')
+    vi.advanceTimersByTime(CREATE_PR_MIN_DWELL_MS)
+    expect(runToken(h)).not.toBe(firstRun)
+
+    h.ctx.dispatchCreatePr({ kind: 'done', requestId: firstRun, now: Date.now() })
+
+    expect(h.createPrProgress.value).toMatchObject({ intentId: 'i-1' })
+    expect(h.createPrTimers.safety).not.toBeNull()
+  })
+
   it('holds a fast terminal for the minimum dwell, then closes via its timer', () => {
     const h = makeCtx({ intents: [intent('i-1', 'dev-1')] })
     h.ctx.createPr('i-1')
 
-    h.ctx.dispatchCreatePr({ kind: 'done', now: Date.now() })
+    h.ctx.dispatchCreatePr({ kind: 'done', requestId: runToken(h), now: Date.now() })
     expect(h.createPrProgress.value).toMatchObject({ pendingCloseReason: 'done' })
 
     vi.advanceTimersByTime(CREATE_PR_MIN_DWELL_MS)
@@ -384,11 +432,14 @@ describe('createPr — progress overlay wiring', () => {
   it('starts a clean overlay for a later run', () => {
     const h = makeCtx({ intents: [intent('i-1', 'dev-1')] })
     clickAndDwell(h)
-    h.ctx.dispatchCreatePr({ kind: 'failed', now: Date.now() })
+    const firstRun = runToken(h)
+    h.ctx.dispatchCreatePr({ kind: 'failed', requestId: firstRun, now: Date.now() })
 
     h.ctx.createPr('i-2')
 
     expect(h.createPrProgress.value).toMatchObject({ intentId: 'i-2', phase: 'analyzing-changes' })
     expect(h.createPrProgress.value?.pendingCloseReason).toBeUndefined()
+    // A fresh token, so the previous run's frames cannot reach this overlay.
+    expect(runToken(h)).not.toBe(firstRun)
   })
 })

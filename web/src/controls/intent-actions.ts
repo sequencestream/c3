@@ -34,6 +34,10 @@ export function installIntentActions(ctx: AppCtx): void {
   const t = ctx.t
   const { intentsProject, selectedIntentSessionId, activeTab } = ctx
 
+  // Per-click counter behind the create-PR correlation token; combined with the
+  // click timestamp it stays unique across retries within this page's lifetime.
+  let createPrSeq = 0
+
   // Fold one event through the overlay reducer, swap in the next model, and run
   // its close side-effects (clear timers + surface a toast on failure/timeout;
   // success closes silently). Shared by the dwell/safety timers and the
@@ -271,11 +275,15 @@ export function installIntentActions(ctx: AppCtx): void {
 
   ctx.createPr = (intentId: string): void => {
     if (!intentsProject.value) return
+    // One token per click. The server echoes it on this run's progress and both
+    // terminals, which is what lets the overlay ignore an unrelated error and a
+    // late reply from a run the safety timeout already released the user from.
+    const requestId = `create-pr-${Date.now()}-${++createPrSeq}`
     // Arm the overlay before sending: it blocks the page (so the button cannot be
     // clicked twice) from this instant until the response, an action error, or —
     // if neither ever arrives — the safety timeout.
     ctx.clearCreatePrTimers()
-    ctx.createPrProgress.value = beginCreatePr(intentId, Date.now())
+    ctx.createPrProgress.value = beginCreatePr(intentId, requestId, Date.now())
     ctx.createPrTimers.safety = setTimeout(() => {
       ctx.dispatchCreatePr({ kind: 'timeout', now: Date.now() })
     }, CREATE_PR_SAFETY_TIMEOUT_MS)
@@ -283,6 +291,7 @@ export function installIntentActions(ctx: AppCtx): void {
       type: 'create_pr',
       workspaceId: intentsProject.value,
       intentId,
+      requestId,
     })
   }
 

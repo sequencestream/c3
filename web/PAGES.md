@@ -152,7 +152,7 @@ web/src/
 │   ├── current-workspace.ts                         # 「当前工作区」解析:优先持久化选择,否则回落到最近访问工作区
 │   ├── datetime-formats.ts                          # 日期/数字格式化预设:为 vue-i18n 与纯展示 lib 提供单一数据源
 │   ├── dev-launch-view.ts                           # 工作启动遮罩纯状态机(历史文件名沿用 dev-launch):最小停留/安全超时常量 + stage→有序步骤映射(stepStatusesForPhase)+ reduceDevLaunch(stage/ready/dwell-complete/timeout 终态收敛),无 DOM/计时器,供 DevStartupOverlay 与控制层
-│   ├── create-pr-view.ts                             # 创建 PR 遮罩纯状态机:最小停留/安全超时常量 + stage→四步映射(createPrStepStatuses)+ reduceCreatePr(stage 单向不回退、异 intent 忽略、done/failed/dwell-complete/timeout 终态收敛),无 DOM/计时器,供 CreatePrOverlay 与控制层
+│   ├── create-pr-view.ts                             # 创建 PR 遮罩纯状态机:最小停留/安全超时常量 + stage→四步映射(createPrStepStatuses)+ reduceCreatePr(stage 单向不回退、异 intent/异 requestId 忽略、done/failed 须匹配本次运行 token 才收敛、dwell-complete/timeout 兜底),无 DOM/计时器,供 CreatePrOverlay 与控制层
 │   ├── work-session-jump.ts                         # Start Work 成功后自动跳转纯决策:shouldJumpAfterDevLaunch(仅 ready 跳)+ resolveJumpTargetSessionId(intent.lastWorkSessionId 反查)+ resolvePendingWorkSessionSelect(一次性待选会话落入列表即命中)+ ~1s 延迟常量;控制层据此切 console tab 并选中新 work session
 │   ├── discussion-view.ts                           # 讨论只读历史纯映射器:DiscussionMessage 正规化为 ChatBody,处理多说话人 icon/name/vendor;并含右栏 Tab 纯映射(discussionDetailTabs 按字段/researchSessionId 决定可见 tab 与顺序、defaultDiscussionTab(tabs, researchLive) 研究运行中短路到 researchSession、correctActiveTab 回落)
 │   ├── execution-view.ts                            # 执行 transcript 纯映射器:TranscriptItem 正规化为 ChatBody/ChatMsg,供 Session Tab 的 ChatMessages 渲染

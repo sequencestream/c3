@@ -635,15 +635,20 @@ class QueueController {
 
   /**
    * Execute a machine approval. The kernel decided on a snapshot; this re-checks
-   * every fact transactionally at write time (`machineApproveSpec`), so a spec
-   * edited or an approval revoked in the meantime approves nothing and the next
-   * reconcile simply re-derives. A rejected write is NOT a failure — it is the
-   * guard doing its job — so it never counts against the intent.
+   * every fact transactionally at write time (`machineApproveSpec`), including a
+   * fresh read of the spec file itself — the snapshot fingerprint alone would
+   * agree with the equally old stored conclusion and approve a document edited
+   * since. So a spec edited or an approval revoked in the meantime approves
+   * nothing and the next reconcile simply re-derives. A rejected write is NOT a
+   * failure — it is the guard doing its job — so it never counts against the
+   * intent.
    */
   private machineApprove(intentId: string, fingerprint: string): void {
     const req = getIntent(intentId)
     if (!req) return
-    if (!machineApproveSpec(intentId, fingerprint, MACHINE_SPEC_APPROVER)) {
+    const readLive = (specPath: string): string | null =>
+      readSpecFingerprint(this.workspacePath, specPath)
+    if (!machineApproveSpec(intentId, fingerprint, MACHINE_SPEC_APPROVER, readLive)) {
       console.log(`[c3:queue]「${req.title}」机器批准的前置事实已变化,本轮不批准`)
       void this.request()
       return

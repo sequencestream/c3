@@ -1137,15 +1137,26 @@ export function recordSpecReview(input: {
  * Approve a spec on behalf of the MACHINE, under a transactional condition check.
  *
  * Returns `true` only when every fact still held at write time: not already
- * approved, a `pass` conclusion, that conclusion bound to `fingerprint`, and no
- * human veto standing against it. A spec edited or an approval revoked between
- * the kernel's decision and this write fails the check and approves nothing — the
- * next reconcile re-derives from the fresh facts.
+ * approved, a `pass` conclusion, that conclusion bound to `fingerprint`, the spec
+ * file's LIVE content still fingerprinting to that same value, and no human veto
+ * standing against it. A spec edited or an approval revoked between the kernel's
+ * decision and this write fails the check and approves nothing — the next
+ * reconcile re-derives from the fresh facts.
+ *
+ * The live content is re-read HERE, inside the transaction, through
+ * `readLiveFingerprint` — the store owns no filesystem knowledge, and the kernel's
+ * snapshot fingerprint is by then arbitrarily old. Checking only the stored
+ * conclusion against the snapshot would compare two values that were both captured
+ * BEFORE the edit, so they would still agree and an unreviewed document would be
+ * approved. The reader is handed the spec path off the row read in this same
+ * transaction, so it can never follow a path the ledger has since moved.
+ * An unreadable spec (`null`) fails closed: unreadable is not unchanged.
  */
 export function machineApproveSpec(
   intentId: string,
   fingerprint: string,
   approver: string,
+  readLiveFingerprint: (specPath: string) => string | null,
 ): boolean {
   const d = requireDb()
   let applied = false
@@ -1157,6 +1168,7 @@ export function machineApproveSpec(
     if (narrowSpecReviewVerdict(row.spec_review_verdict) !== 'pass') return
     if (row.spec_review_fingerprint !== fingerprint) return
     if (row.spec_review_machine_blocked === 1) return
+    if (readLiveFingerprint(row.spec_path) !== fingerprint) return
     d.run(
       'UPDATE intents SET spec_approved=1, spec_approve_user=?, updated_at=? WHERE id=?',
       approver,

@@ -226,9 +226,12 @@ describe('machineApproveSpec — a conditional write, not a trusted one', () => 
     return { id, fp }
   }
 
+  /** The production reader: the spec file as it is on disk at write time. */
+  const live = (specPath: string) => readSpecFingerprint(WS, specPath)
+
   it('approves under a matching pass, writing the machine identity', () => {
     const { id, fp } = passingIntent()
-    expect(machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER)).toBe(true)
+    expect(machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER, live)).toBe(true)
     const after = getIntent(id)!
     expect(after.specApproved).toBe(true)
     expect(after.specApproveUser).toBe(MACHINE_SPEC_APPROVER)
@@ -236,7 +239,9 @@ describe('machineApproveSpec — a conditional write, not a trusted one', () => 
 
   it('refuses on a fingerprint that no longer matches the conclusion', () => {
     const { id } = passingIntent()
-    expect(machineApproveSpec(id, 'some-other-fingerprint', MACHINE_SPEC_APPROVER)).toBe(false)
+    expect(machineApproveSpec(id, 'some-other-fingerprint', MACHINE_SPEC_APPROVER, live)).toBe(
+      false,
+    )
     expect(getIntent(id)!.specApproved).toBe(false)
   })
 
@@ -251,23 +256,51 @@ describe('machineApproveSpec — a conditional write, not a trusted one', () => 
       fingerprint: fp,
       liveFingerprint: fp,
     })
-    expect(machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER)).toBe(false)
+    expect(machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER, live)).toBe(false)
     expect(getIntent(id)!.specApproved).toBe(false)
   })
 
   it('refuses once a human has vetoed this conclusion', () => {
     const { id, fp } = passingIntent()
-    machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER)
+    machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER, live)
     revokeSpecApproval(id)
     // The very next tick would retry with the identical facts — and must fail.
-    expect(machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER)).toBe(false)
+    expect(machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER, live)).toBe(false)
     expect(getIntent(id)!.specApproved).toBe(false)
   })
 
   it('is idempotent: an already-approved spec is not re-approved', () => {
     const { id, fp } = passingIntent()
-    expect(machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER)).toBe(true)
-    expect(machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER)).toBe(false)
+    expect(machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER, live)).toBe(true)
+    expect(machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER, live)).toBe(false)
+  })
+
+  it('refuses when the spec was edited AFTER the decision and BEFORE the write', () => {
+    // The exact race: the kernel decided on a snapshot fingerprint, and the stored
+    // conclusion still carries that same (now equally stale) value — the two agree
+    // with each other while both disagree with the document on disk.
+    const { id, fp } = passingIntent()
+    writeFileSync(getIntent(id)!.specPath!, 'v2 — edited mid-tick', 'utf8')
+    expect(machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER, live)).toBe(false)
+    expect(getIntent(id)!.specApproved).toBe(false)
+    expect(getIntent(id)!.specApproveUser).toBeNull()
+  })
+
+  it('refuses when the spec becomes unreadable — unreadable is not unchanged', () => {
+    const { id, fp } = passingIntent()
+    rmSync(getIntent(id)!.specPath!)
+    expect(machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER, live)).toBe(false)
+    expect(getIntent(id)!.specApproved).toBe(false)
+  })
+
+  it('reads the live content through the path stored on the row, not a caller-held one', () => {
+    const { id, fp } = passingIntent()
+    const seen: string[] = []
+    machineApproveSpec(id, fp, MACHINE_SPEC_APPROVER, (p) => {
+      seen.push(p)
+      return live(p)
+    })
+    expect(seen).toEqual([getIntent(id)!.specPath])
   })
 })
 

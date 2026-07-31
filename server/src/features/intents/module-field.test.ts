@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
-import { gatedSave } from './save-gate.js'
+import { runCommSave } from './save-comm.js'
 import { saveSchema } from './tool-defs.js'
 import type { IntentToolResult } from './tool-defs.js'
 import {
@@ -46,25 +46,20 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-// --- save_intents plumbing: drive the SHARED confirmation gate directly ------
+// --- save_intents plumbing: drive the SHARED comm handler directly -----------
 // The c3 tools no longer have a Claude-SDK in-process wrapper; both vendors run
-// this same `gatedSave` handler over the loopback HTTP MCP route. Parse the raw
-// args through `saveSchema` (as the MCP layer does) then run the gate with an
-// auto-ALLOW decision to exercise the post-confirmation persistence path.
-async function saveIntents(
+// this same `runCommSave` handler over the loopback HTTP MCP route. Parse the raw
+// args through `saveSchema` (as the MCP layer does) then run the handler to
+// exercise the persistence path.
+function saveIntents(
   workspacePath: string,
   rawArgs: unknown,
   onSaved: (p: string) => void = () => {},
-): Promise<IntentToolResult> {
+): IntentToolResult {
   const args = z.object(saveSchema).parse(rawArgs)
-  return gatedSave(
-    {
-      emit: () => {},
-      waitForDecision: async () => ({ decision: 'allow' }),
-      broadcastIntents: onSaved,
-      onPermissionRequest: () => {},
-    },
-    { workspacePath, getRunId: () => 'run-1', signal: new AbortController().signal },
+  return runCommSave(
+    { broadcastIntents: onSaved },
+    { workspacePath, getRunId: () => 'run-1' },
     args,
   )
 }
@@ -174,7 +169,7 @@ describe('module field — save_intents end-to-end (scenarios 3 & 4)', () => {
     // Scenario 3: the agent (post-confirmation) submits modules; each saved row's
     // module must equal what was given, readable via listIntents.
     const onSaved = vi.fn()
-    const res = await saveIntents(
+    const res = saveIntents(
       proj,
       {
         intents: [
@@ -207,7 +202,7 @@ describe('module field — save_intents end-to-end (scenarios 3 & 4)', () => {
   it('persists "" for items that OMIT module, while siblings keep theirs (mixed batch)', async () => {
     // Scenario 4: a mixed batch where one item omits module must not error; the
     // omitted one falls back to '' end-to-end through the registered handler.
-    const res = await saveIntents(proj, {
+    const res = saveIntents(proj, {
       intents: [
         { title: 'WithMod', shortEnTitle: 'auto', content: '', priority: 'P0', module: '权限' },
         { title: 'NoMod', shortEnTitle: 'auto', content: '', priority: 'P1' }, // module omitted

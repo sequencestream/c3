@@ -7,9 +7,9 @@
  * This module is framing-free: it owns the zod input shapes, the description
  * strings advertised in the system prompt, and the CORE logic (search the ledger,
  * view one item, persist a confirmed batch). The MCP framing — tool registration,
- * the save confirmation gate — lives in the route + gate. `runSaveConfirmed` is the
- * POST-confirmation persist: the save path gates `save_intents` BEFORE calling it
- * (Claude via `canUseTool`, the HTTP route via `permission_request`/`waitForDecision`).
+ * the per-run binding — lives in the route + the comm-save handler.
+ * `runSaveConfirmed` is the POST-confirmation persist: the comm agent obtains the
+ * user's textual confirmation in the conversation BEFORE it calls `save_intents`.
  */
 import { resolve } from 'node:path'
 import { z } from 'zod'
@@ -133,7 +133,8 @@ export type SaveIntentPrInfoArgs = { intentId: string; prStatus: IntentPrStatus;
 // ---- Description strings (advertised in the system prompt) ----
 
 export const saveDesc =
-  '提交一批意图条目(新建或更新);落库前由用户在 c3 UI 确认。' +
+  '提交一批意图条目(新建或更新);仅在你已把本轮全部意图完整列出、且用户在对话中明确确认后才调用——' +
+  '调用即落库,没有任何确认弹框可以撤回。' +
   '每条不带 id 则新建;带 id 则原地更新该已存在意图(upsert)——' +
   'refine 已有意图时务必回填原 id 以更新原条目,避免新建重复项;' +
   'in_progress/done 的意图不可修改(整批失败),cancelled 更新后会重新激活为 todo。' +
@@ -147,8 +148,8 @@ export const findDesc =
   '返回精简列表(id、title、module、priority、status、dependsOn)。'
 
 export const saveIntentDirectlyDesc =
-  '直接落库一批“新建”意图为草稿(draft):仅供无人值守的自动化使用,不弹用户确认框、直接写库。' +
-  '人工确认门改由意图列表对 draft 的评审/激活承担,而非保存弹框。' +
+  '直接落库一批“新建”意图为草稿(draft):仅供无人值守的自动化使用,无对话方可确认,直接写库。' +
+  '人工确认门由意图列表对 draft 的评审/激活承担。' +
   '仅新建、不更新已有意图(create-only,不接受 id);落库前务必先用 find_intents 去重,' +
   '已被现有意图覆盖的不要重复创建。本批意图之间的先后关系用每条的 dependsOnIndexes(同批数组下标)声明。'
 
@@ -195,10 +196,11 @@ export function runView(workspacePath: string, args: ViewArgs): IntentToolResult
 }
 
 /**
- * Persist a CONFIRMED batch (the caller already passed the save gate). Bound to
- * `workspacePath`; `onSaved` lets the caller broadcast the refreshed list.
- * `actor` (the subject that approved the confirmation prompt) attributes the
- * `intent_logs.actor`; absent / null lets `upsertIntents` fall back to `'system'`.
+ * Persist a CONFIRMED batch (the user already confirmed it in the conversation).
+ * Bound to `workspacePath`; `onSaved` lets the caller broadcast the refreshed list.
+ * `actor` attributes the `intent_logs.actor`; absent / null lets `upsertIntents`
+ * fall back to `'system'` — which is what the comm path does, since a chat
+ * confirmation carries no separately authenticated subject.
  */
 export function runSaveConfirmed(
   workspacePath: string,
@@ -228,10 +230,10 @@ export function runSaveConfirmed(
 }
 
 /**
- * Persist a batch of NEW intents as `draft`, bypassing the save confirmation gate.
- * Used only by the unattended automation MCP profile: a automation has no browser
- * decision queue, so instead of gating the save it lands every item as a `draft`
- * and the human confirms later by reviewing/activating the draft in the intent
+ * Persist a batch of NEW intents as `draft`. Used only by the unattended
+ * automation MCP profile: an automation has no conversation partner to confirm
+ * with, so instead of an interactive confirmation it lands every item as a
+ * `draft` and the human confirms later by reviewing/activating it in the intent
  * list. Create-only — never updates an existing intent (de-dup is the caller's
  * job via `find_intents`); `onSaved` lets the caller broadcast the refreshed list.
  */

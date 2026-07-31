@@ -5,6 +5,9 @@
  * 渲染两种形态：AskUserQuestion 的逐题作答面板，以及其它工具的 allow/deny 提示。
  * 两者都可附带多 agent 共识（分歧）意见。组件不持有 WebSocket，决策通过事件上抛，
  * 由 App 统一发送并回写 m.decision。
+ *
+ * 意图保存（save_intents）不在此出现：意图沟通会话的保存由用户在对话中文字确认，
+ * 服务端不发权限帧。
  */
 import { computed, ref } from 'vue'
 import {
@@ -19,7 +22,7 @@ import { fmt, oneLine } from '../../lib/format'
 import { VENDOR_LABEL } from '../../lib/vendor'
 import { useTypedI18n } from '@/i18n'
 import type { PermissionMsg } from '../../lib/chat-types'
-import type { NormalizedToolRisk, ProposedIntent } from '@ccc/shared/protocol'
+import type { NormalizedToolRisk } from '@ccc/shared/protocol'
 
 const { t } = useTypedI18n()
 
@@ -43,39 +46,15 @@ function axisLabel(axis: Axis): string {
   }
 }
 
-// Fixed tool identifiers shown verbatim in <code> tags (do-not-translate; bound
-// via a const so `no-raw-text` doesn't flag them as hard-coded copy).
+// Fixed tool identifier shown verbatim in a <code> tag (do-not-translate; bound
+// via a const so `no-raw-text` doesn't flag it as hard-coded copy).
 const ASK_TOOL_LABEL = 'AskUserQuestion'
-const SAVE_TOOL_LABEL = 'save_intents'
 
 // `actionable` is true only for the live, still-pending permission the user can
 // answer. When false and undecided, this prompt is a history record replayed
 // from the buffer (or a superseded earlier request) and renders as a single
 // static line — no buttons, no decision verdict.
 const props = defineProps<{ m: PermissionMsg; actionable: boolean }>()
-
-/** The c3 save_intents tool's name (mirrors SAVE_INTENTS_TOOL server-side). */
-const SAVE_INTENTS_TOOL = 'mcp__c3__save_intents'
-
-/** The proposed intents carried by a save_intents permission request. */
-const proposedIntents = computed<ProposedIntent[]>(() => {
-  const reqs = (props.m.input as { intents?: unknown })?.intents
-  return Array.isArray(reqs) ? (reqs as ProposedIntent[]) : []
-})
-
-/**
- * Human-readable labels for an item's intra-batch dependencies (`dependsOnIndexes`),
- * resolving each 0-based index to the sibling's `#N「title」` in this same batch so the
- * user sees the order relationship before allowing the save. Out-of-range indexes (the
- * server rejects them) fall back to a bare `#N`.
- */
-function batchDepLabels(r: ProposedIntent): string[] {
-  const reqs = proposedIntents.value
-  return (r.dependsOnIndexes ?? []).map((j) => {
-    const sib = reqs[j]
-    return sib ? `#${j + 1}「${sib.title}」` : `#${j + 1}`
-  })
-}
 
 /**
  * Undecided but not actionable ⇒ a historical request (buffer replay) the user
@@ -88,9 +67,6 @@ const historyLine = computed<string>(() => {
   if (props.m.toolName === 'AskUserQuestion') {
     // 复数 key:传 number 形参触发分支选择,消息内 {count} 自动暴露。
     return t('permission.history.askQuestion', askQuestionsOf(props.m.input).length)
-  }
-  if (props.m.toolName === SAVE_INTENTS_TOOL) {
-    return t('permission.history.saveIntents', proposedIntents.value.length)
   }
   return t('permission.history.useTool', { toolName: props.m.toolName })
 })
@@ -284,40 +260,6 @@ function submitAsk() {
     <div v-else class="decided">
       —
       {{ m.decision === 'allow' ? t('permission.status.answered') : t('permission.status.denied') }}
-      —
-    </div>
-  </template>
-
-  <!-- save_intents: render the proposed intents as cards -->
-  <template v-else-if="m.toolName === SAVE_INTENTS_TOOL">
-    <div class="label">
-      {{ t('permission.save.label') }} <code>{{ SAVE_TOOL_LABEL }}</code>
-    </div>
-    <div class="req-confirm">
-      <div v-for="(r, i) in proposedIntents" :key="i" class="req-confirm-card">
-        <div class="req-confirm-head">
-          <span class="req-priority" :class="r.priority">{{ r.priority }}</span>
-          <span class="req-confirm-title">{{ r.title }}</span>
-        </div>
-        <div class="req-confirm-short">
-          {{ t('permission.save.shortTitle') }} <code>{{ r.shortEnTitle }}</code>
-        </div>
-        <div class="req-confirm-content">{{ r.content }}</div>
-        <div v-if="r.dependsOn && r.dependsOn.length" class="req-confirm-deps">
-          {{ t('permission.save.dependsOn') }}{{ r.dependsOn.join(', ') }}
-        </div>
-        <div v-if="batchDepLabels(r).length" class="req-confirm-deps">
-          {{ t('permission.save.dependsOnBatch') }}{{ batchDepLabels(r).join(', ') }}
-        </div>
-      </div>
-    </div>
-    <div v-if="actionable" class="actions">
-      <button class="deny" @click="respond('deny')">{{ t('common.action.cancel.label') }}</button>
-      <button @click="respond('allow')">{{ t('common.action.save.label') }}</button>
-    </div>
-    <div v-else class="decided">
-      —
-      {{ m.decision === 'allow' ? t('permission.status.saved') : t('permission.status.cancelled') }}
       —
     </div>
   </template>

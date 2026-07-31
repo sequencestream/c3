@@ -221,10 +221,10 @@ export interface RunOptions {
    * + abort signal; it mints a per-run token, stands up the private MCP server, and
    * returns the neutral {@link RemoteMcpServer} descriptors plus a `dispose` this run
    * evicts in its `finally`. runClaude translates the descriptors into the Claude SDK
-   * HTTP MCP config at the Claude boundary. The `save_intents` handler runs its OWN
-   * confirmation gate (`gatedSave`), so a vendor allow-rule that pre-approves the tool
-   * — and therefore skips `canUseTool` — still raises a human prompt. Absent ⇒ no c3
-   * MCP (a run outside the intent / spec / work profiles).
+   * HTTP MCP config at the Claude boundary. `save_intents` lands in the shared
+   * comm-save handler, which persists the batch the user already confirmed in the
+   * conversation. Absent ⇒ no c3 MCP (a run outside the intent / spec / work
+   * profiles).
    */
   bindMcp?: (binding: { workspacePath: string; getRunId: () => string; signal: AbortSignal }) => {
     servers: Record<string, RemoteMcpServer>
@@ -233,9 +233,9 @@ export interface RunOptions {
   /**
    * Permission gateway policy. `standard` (default) is the normal c3 flow
    * (consensus + human prompt). `intent` is the read-only communication
-   * agent: read tools auto-allow, `save_intents` prompts the human, and
-   * everything else is denied by default (a second line of defence behind
-   * `disallowedTools`).
+   * agent: read tools and `save_intents` auto-allow (the save's human
+   * confirmation happens in the conversation), and everything else is denied by
+   * default (a second line of defence behind `disallowedTools`).
    */
   gate?: 'standard' | 'intent' | 'discussion-research' | 'spec'
   /**
@@ -609,9 +609,9 @@ export async function runClaude(opts: RunOptions): Promise<void> {
   // deps captured there) mints a per-run token and returns neutral descriptors +
   // `dispose`; we supply the workspace + live run-id getter + abort signal at
   // query-construction time. Translate the neutral descriptors into the Claude SDK
-  // HTTP MCP config at the Claude boundary. `save_intents`'s confirmation gate lives
-  // in its handler (`gatedSave`), not `canUseTool`, so it is immune to vendor
-  // pre-approval. The token binding is evicted in this run's `finally`.
+  // HTTP MCP config at the Claude boundary. `save_intents` is confirmed by the user
+  // in the conversation, not by `canUseTool`. The token binding is evicted in this
+  // run's `finally`.
   const mcpBinding = bindMcp?.({
     workspacePath,
     getRunId: opts.sessionId ?? (() => ''),

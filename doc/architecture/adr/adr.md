@@ -29,7 +29,7 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 | [0004](0004-persist-workspace-session-registry.md)                           | c3 持久化一份工作区与会话注册表                                                                                        | accepted   |
 | [0005](0005-inherit-user-project-settings.md)                                | 继承用户与项目设置；c3 是 gateway                                                                                      | accepted   |
 | [0006](0006-decouple-runs-from-connections.md)                               | 把 agent 运行与 WebSocket 连接解耦                                                                                     | accepted   |
-| [0007](0007-read-only-intent-agent.md)                                       | 只读 intent agent；经确认后保存；跨运行时 SQLite                                                                       | accepted   |
+| [0007](0007-read-only-intent-agent.md)                                       | 只读 intent agent；经对话确认后保存；跨运行时 SQLite                                                                   | accepted   |
 | [0008](0008-streaming-input-for-agent-teams.md)                              | 面向持久化 agent 团队的流式输入 prompt                                                                                 | accepted   |
 | [0009](0009-unidirectional-boundaries.md)                                    | 单向边界：kernel → transport/features，无回边                                                                          | accepted   |
 | [0010](0010-release-and-distribution-trust.md)                               | 发布与分发信任（编排骨架）                                                                                             | accepted   |

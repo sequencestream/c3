@@ -121,11 +121,10 @@ describe('intent gate — classifyIntentTool (deny-by-default routing)', () => {
     expect(classifyIntentTool(VIEW_INTENT_TOOL)).toBe('allow')
   })
 
-  it('lets save_intents through to its handler (the handler owns the confirmation gate)', () => {
-    // The save confirmation no longer lives in `canUseTool`: it is sunk into the
-    // save handler (`gatedSave`, codex-parity), so the gate must ALLOW save through
-    // to reach it. A vendor allow-rule that bypasses `canUseTool` therefore still
-    // hits the handler's prompt — and routing 'confirm-save' here would double-prompt.
+  it('lets save_intents through to its handler (the user confirmed it in the chat)', () => {
+    // The save's human authorization is the user's textual confirmation in the
+    // conversation, so the gate must ALLOW save through to `runCommSave`; a prompt
+    // here would be a second, redundant confirmation.
     expect(classifyIntentTool(SAVE_INTENTS_TOOL)).toBe('allow')
   })
 

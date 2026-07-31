@@ -31,7 +31,7 @@ Dependencies;可能引用一个开发 Session(一个普通会话,归 session-reg
 
 ## Proposed Intent
 
-`save_intents` 调用内的单个条目;也是确认对话框所渲染的内容。没有
+`save_intents` 调用内的单个条目;也是智能体在对话中列出待确认内容的字段来源。没有
 `id` 时它尚未持久化 —— 只有在确认保存后才会成为一个 Intent(状态为 `todo`)
 (RM-R5/RM-R6)。带 `id` 时,它是对该既有意图的**更新**(upsert,RM-R20)。
 

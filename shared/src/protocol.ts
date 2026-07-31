@@ -1894,6 +1894,27 @@ export const DEV_LAUNCH_STAGES = [
 ] as const
 export type DevLaunchStage = (typeof DEV_LAUNCH_STAGES)[number]
 
+/**
+ * Coarse-grained phase of a manual `create_pr` run, carried by the
+ * connection-directed {@link create_pr_progress} event so the client can drive a
+ * PR-creation progress overlay. Like {@link DevLaunchStage} it is deliberately
+ * minimal — only the user-meaningful phases, never paths / commands / error
+ * detail. Stages advance one-way and are never re-sent for the same run; the
+ * terminals are NOT stages: success is the existing `create_pr_response`, and
+ * failure is the existing intent-action `error` frame.
+ * - `analyzing-changes` — before the worktree-vs-local-`main` diff check.
+ * - `committing` — before staging + committing in the intent worktree.
+ * - `pushing` — before pushing the branch to the remote.
+ * - `creating-pr` — before the forge PR-create call.
+ */
+export const CREATE_PR_STAGES = [
+  'analyzing-changes',
+  'committing',
+  'pushing',
+  'creating-pr',
+] as const
+export type CreatePrStage = (typeof CREATE_PR_STAGES)[number]
+
 /** Coarse startup phases for a manual spec-authoring session. */
 export const SPEC_LAUNCH_STAGES = [
   'checking-dependencies',
@@ -3540,8 +3561,15 @@ export type ClientToServer =
    * on success, or replies with `intent.prCreateFailed` on failure.
    * Rejected if the intent is not `done`, already has a `prId`,
    * or `gh` CLI is unavailable.
+   *
+   * `requestId` is an opaque client-generated token echoed back on every frame
+   * this run produces (`create_pr_progress`, `create_pr_response`, and the
+   * failure `error`). It exists so a client can tell THIS run's terminals from
+   * an unrelated error or from a previous run of the same intent that is still
+   * in flight — matching on `intentId` alone cannot separate a retry from the
+   * run it replaced. Optional: a client that does not correlate omits it.
    */
-  | { type: 'create_pr'; workspaceId: string; intentId: string }
+  | { type: 'create_pr'; workspaceId: string; intentId: string; requestId?: string }
   /**
    * One-shot sync for a done intent whose PR/MR is still marked reviewing. The
    * server queries the workspace forge and only advances stored PR status when
@@ -4061,9 +4089,30 @@ export type ServerToClient =
   | { type: 'queue_detail'; detail: QueueDetail }
   /**
    * Reply to a `create_pr` request. Carries the PR id and URL on success.
-   * On failure the server sends a generic `error` with code `intent.prCreateFailed`.
+   * On failure the server sends a generic `error` with code `intent.prCreateFailed`
+   * carrying the same `requestId`.
+   *
+   * `intentId` / `requestId` echo the originating request so a client can bind
+   * this success terminal to the run it started; a late reply from a superseded
+   * run is then discardable instead of closing the current one's overlay.
    */
-  | { type: 'create_pr_response'; prId: string; prUrl?: string }
+  | {
+      type: 'create_pr_response'
+      intentId: string
+      prId: string
+      prUrl?: string
+      requestId?: string
+    }
+  /**
+   * Connection-directed coarse progress of a manual `create_pr` run, driving the
+   * client's PR-creation progress overlay. Carries only the {@link CreatePrStage}
+   * phase + the originating `intentId` / `requestId`, never internal detail.
+   * Purely additive: the terminals stay `create_pr_response` (success) and the
+   * intent-action `error` frame (failure), so a client that ignores this frame is
+   * unaffected. Only the connection that sent `create_pr` receives it — the
+   * automation path has no requesting connection and sends nothing.
+   */
+  | { type: 'create_pr_progress'; intentId: string; stage: CreatePrStage; requestId?: string }
   /**
    * Reply to a `sync_intent_pr_status` request. `ok=false` means the request was
    * handled but could not sync, while transport/action failures may still use the
@@ -4330,8 +4379,14 @@ export type ServerToClient =
    * A requested operation failed (bad path, missing session, etc.). Carries a
    * machine-readable `{ code, params }` (see ui-codes.ts) — never translated text;
    * the web renders it through its i18n catalog. The server holds no UI copy.
+   *
+   * `requestId` echoes the originating request's token when it had one, so a
+   * client waiting on a specific run can recognise ITS failure terminal instead
+   * of treating every error on the connection as its own. Absent for the many
+   * requests that carry no token; a client must then fall back to its own
+   * timeout rather than assume the error belongs to it.
    */
-  | { type: 'error'; error: UiError }
+  | { type: 'error'; error: UiError; requestId?: string }
   /** A workspace's automation list (reply to `list_automations` or broadcast after create/update/delete). */
   | { type: 'automations'; workspaceId: string; items: Automation[] }
   /** Full automation detail with execution logs (reply to `get_automation_detail`). */

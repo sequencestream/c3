@@ -19,6 +19,7 @@ import PersonalizedSettingPage from './pages/personalizedsetting/PersonalizedSet
 import Login from './pages/login/Login.vue'
 import SkillApprovalModal from './components/SkillApprovalModal/SkillApprovalModal.vue'
 import NewSessionModal from './pages/works/components/NewSessionModal/NewSessionModal.vue'
+import CreatePrOverlay from './components/CreatePrOverlay/CreatePrOverlay.vue'
 import DevStartupOverlay from './components/DevStartupOverlay/DevStartupOverlay.vue'
 import SpecStartupOverlay from './components/SpecStartupOverlay/SpecStartupOverlay.vue'
 import AutomationSaveOverlay from './components/AutomationSaveOverlay/AutomationSaveOverlay.vue'
@@ -295,6 +296,8 @@ const {
   // ---- dev-launch startup overlay ----
   devLaunch,
   specLaunch,
+  // ---- create-PR progress overlay ----
+  createPrProgress,
 } = useAppController()
 
 /** 当前工作区 id 解析出的 `WorkspaceInfo`,只供工作区设置页页头展示「正在改哪个
@@ -847,6 +850,10 @@ function onCodesChatWidth(px: number): void {
        immediately while a manual Start-Dev launch is in flight. -->
   <DevStartupOverlay :model="devLaunch" />
   <SpecStartupOverlay :model="specLaunch" />
+
+  <!-- Create-PR progress overlay: blocks interaction while a manual 创建 PR runs
+       (commit + push + forge call), lighting its four stages. -->
+  <CreatePrOverlay :model="createPrProgress" />
 
   <!-- Automation save overlay: blocks interaction while a automation create/update is
        in flight (2-4s typical round-trip). -->

@@ -1,10 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { AUTH_PROVIDER_KINDS, IMAGE_MEDIA_TYPES, SYSTEM_AGENT_ID } from './protocol.js'
+import {
+  AUTH_PROVIDER_KINDS,
+  CREATE_PR_STAGES,
+  IMAGE_MEDIA_TYPES,
+  SYSTEM_AGENT_ID,
+} from './protocol.js'
 import type {
   AgentConfig,
   AuthConfig,
   AuthProvider,
   ClientToServer,
+  CreatePrStage,
   ServerToClient,
   SystemSettings,
 } from './protocol.js'
@@ -299,5 +305,54 @@ describe('sandbox runs share the unified agent configuration', () => {
     >
     const noConflictFrames: [ConflictFrame] extends [never] ? true : false = true
     expect(noConflictFrames).toBe(true)
+  })
+})
+
+describe('create_pr staged progress', () => {
+  it('declares the four one-way stages in execution order', () => {
+    expect(CREATE_PR_STAGES).toEqual(['analyzing-changes', 'committing', 'pushing', 'creating-pr'])
+  })
+
+  it('carries every stage on a connection-directed frame that survives JSON round-trip', () => {
+    const frames: ServerToClient[] = CREATE_PR_STAGES.map((stage) => ({
+      type: 'create_pr_progress',
+      intentId: 'intent-1',
+      stage,
+    }))
+    expect(JSON.parse(JSON.stringify(frames))).toEqual(frames)
+  })
+
+  it('rejects an off-protocol stage value', () => {
+    // Compile-time guard: `failed` / `done` are terminals of other frames, never
+    // stages here. `vue-tsc` fails this assignment if the union ever widens.
+    const offProtocol = 'failed'
+    expect(CREATE_PR_STAGES).not.toContain(offProtocol)
+    // @ts-expect-error 'failed' is not a CreatePrStage
+    const bad: CreatePrStage = 'failed'
+    expect(bad).toBe('failed')
+  })
+
+  it('carries the run token on the request and on all three reply frames', () => {
+    // The correlation contract: whatever a client puts on `create_pr` can come
+    // back on progress, on success and on the failure error — that is what lets
+    // it separate its own terminals from an unrelated error or a stale retry.
+    const request: ClientToServer = {
+      type: 'create_pr',
+      workspaceId: 'ws-1',
+      intentId: 'intent-1',
+      requestId: 'req-1',
+    }
+    const replies: ServerToClient[] = [
+      { type: 'create_pr_progress', intentId: 'intent-1', stage: 'pushing', requestId: 'req-1' },
+      { type: 'create_pr_response', intentId: 'intent-1', prId: '42', requestId: 'req-1' },
+      { type: 'error', error: { code: 'intent.prCreateFailed' }, requestId: 'req-1' },
+    ]
+    expect(JSON.parse(JSON.stringify([request, ...replies]))).toEqual([request, ...replies])
+  })
+
+  it('keeps the token optional so an uncorrelated client still type-checks', () => {
+    const request: ClientToServer = { type: 'create_pr', workspaceId: 'ws-1', intentId: 'intent-1' }
+    const reply: ServerToClient = { type: 'create_pr_response', intentId: 'intent-1', prId: '42' }
+    expect([request, reply].every((m) => !('requestId' in m))).toBe(true)
   })
 })

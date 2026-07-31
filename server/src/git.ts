@@ -322,8 +322,10 @@ async function commitAndPushRepo(
   repo: string,
   message: string,
   label: string,
+  onPhase?: CommitPhaseListener,
 ): Promise<CommitResult> {
   const prefix = label ? `子仓库 ${label}: ` : ''
+  onPhase?.('committing')
   const add = await git(repo, ['-C', repo, 'add', '-A'])
   if (add.code !== 0)
     return {
@@ -354,6 +356,7 @@ async function commitAndPushRepo(
     committed = true
   }
 
+  onPhase?.('pushing')
   const push = await pushRepo(repo)
   // "Everything up-to-date" exits 0. A real failure (rejected, auth) is a hard
   // stop. A missing upstream is NOT one: pushRepo self-heals it (see below).
@@ -367,6 +370,15 @@ async function commitAndPushRepo(
   }
   return { ok: true, committed }
 }
+
+/**
+ * Observer of {@link commitAndPush}'s two internal boundaries, so a caller can
+ * report "committing" versus "pushing" progress. Purely observational: it never
+ * changes what is committed / pushed, nor the returned result. In a multi-repo
+ * workspace it fires once per affected repo, so a consumer that needs one-way
+ * progress must de-duplicate.
+ */
+export type CommitPhaseListener = (phase: 'committing' | 'pushing') => void
 
 /** True if `repo` has local commits ahead of its configured upstream. */
 async function isAhead(repo: string): Promise<boolean> {
@@ -386,10 +398,17 @@ async function isAhead(repo: string): Promise<boolean> {
  * (the dev skill may have self-committed in a subrepo); untouched repos are left
  * alone. Any repo's push failure is a hard stop, and the error names the repo.
  * Finding no git repo at all is also an error (nothing can be committed).
+ *
+ * `onPhase` is an optional {@link CommitPhaseListener} for progress reporting; it
+ * observes the commit/push boundary without changing any of the above.
  */
-export async function commitAndPush(workspacePath: string, message: string): Promise<CommitResult> {
+export async function commitAndPush(
+  workspacePath: string,
+  message: string,
+  onPhase?: CommitPhaseListener,
+): Promise<CommitResult> {
   if (isGitRepo(workspacePath)) {
-    return commitAndPushRepo(workspacePath, message, '')
+    return commitAndPushRepo(workspacePath, message, '', onPhase)
   }
 
   const repos = discoverSubRepos(workspacePath)
@@ -419,7 +438,7 @@ export async function commitAndPush(workspacePath: string, message: string): Pro
     // leave it alone rather than pushing every repo in the workspace.
     if (!dirty && !(await isAhead(repo))) continue
 
-    const res = await commitAndPushRepo(repo, message, label)
+    const res = await commitAndPushRepo(repo, message, label, onPhase)
     // Propagate the per-repo failure kind so the orchestrator's lint self-heal
     // triggers on a sub-repo's pre-commit-hook failure too.
     if (!res.ok)

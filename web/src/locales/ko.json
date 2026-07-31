@@ -673,6 +673,16 @@
       "failed": "작업 시작에 실패했습니다.",
       "timeout": "작업 시작을 확인할 수 없습니다. 다시 시도해 주세요."
     },
+    "createPrProgress": {
+      "title": "풀 리퀘스트 생성 중…",
+      "step": {
+        "analyzeChanges": "코드 변경 분석",
+        "commit": "변경 사항 커밋",
+        "push": "브랜치 푸시",
+        "createPr": "풀 리퀘스트 생성"
+      },
+      "timeout": "PR 생성 결과를 확인하지 못했습니다. 다시 시도하기 전에 인텐트의 PR 상태를 확인하세요."
+    },
     "specLaunch": {
       "title": "사양 세션 시작 중…",
       "step": {

@@ -25,6 +25,7 @@ import type {
   QueueControlAction,
 } from '@ccc/shared/protocol'
 import type { AppState, AuthApi, DepType, TypedT } from './state'
+import type { CreatePrEvent } from '@/lib/create-pr-view'
 import type { DevLaunchEvent } from '@/lib/dev-launch-view'
 import type { SpecLaunchEvent } from '@/lib/spec-launch-view'
 import type { ShareTarget } from '@/lib/share-link'
@@ -154,6 +155,8 @@ export interface AppMethods {
   setIntentAutomate(intentId: string, automateOn: boolean): void
   updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void
   createPr(intentId: string): void
+  /** Fold one create-PR overlay event through the reducer + handle close side-effects. */
+  dispatchCreatePr(ev: CreatePrEvent): void
   syncIntentPrStatus(intentId: string): void
   startWorkflow(): void
   stopWorkflow(): void

@@ -1888,6 +1888,11 @@
       "loadFailed": "ワークスペースダッシュボードの読み込みに失敗しました。",
       "workspaceMissing": "ワークスペースは存在しません。",
       "gateSaveFailed": "自動化ゲートの保存に失敗しました。"
+    },
+    "queue": {
+      "intentRequired": "このキュー操作には意図の指定が必要です。",
+      "notParked": "その意図は park されていません。",
+      "overrideNotApplicable": "その意図には上書きできる自動判定がありません。"
     }
   },
   "statusIndicator": {
@@ -2573,6 +2578,87 @@
       "discussion": {
         "label": "ディスカッション"
       }
+    }
+  },
+  "queue": {
+    "open": {
+      "label": "キュー",
+      "tooltip": "自動化キューのページを開く:意図ごとのブロック理由、次回の起床時刻、直近の判断"
+    },
+    "back": "意図一覧へ戻る",
+    "title": "自動化キュー",
+    "refresh": "更新",
+    "empty": "自動化候補の意図はありません。意図の自動化スイッチを入れるとキューに入ります。",
+    "note": "キューは固定間隔で照合します。ここでの手動操作は必ず 1 つのカーネル動作に対応し、権限・spec 承認・依存・並行・継続予算・コミット/プッシュ成功といったハードゲートはすべて維持されます。",
+    "state": {
+      "idle": "停止中",
+      "running": "実行中",
+      "paused": "一時停止中",
+      "awaiting_gate": "並行ゲート待ち",
+      "developing": "開発中",
+      "fixing": "lint 修正中",
+      "done": "完了",
+      "error": "エラー"
+    },
+    "nextWakeup": {
+      "label": "次回の起床",
+      "nextTick": "次の tick"
+    },
+    "badge": {
+      "parked": "park 済み",
+      "skipped": "スキップ済み"
+    },
+    "field": {
+      "blocked": "ブロック理由",
+      "nextWakeup": "次回の起床",
+      "lastDecision": "直近の判断",
+      "attempts": "試行回数",
+      "attemptsValue": "失敗 {attempts} 回 / バックオフ {backoffs} 回",
+      "parkReason": "park の理由"
+    },
+    "control": {
+      "pause": "一時停止",
+      "resume": "再開",
+      "unpark": "park 解除",
+      "forceSkip": "強制スキップ",
+      "unskip": "スキップ解除",
+      "overrideContinue": "判断を上書き:続行",
+      "overrideBlock": "判断を上書き:停止"
+    },
+    "action": {
+      "launch": "起動済み",
+      "resume": "再開済み",
+      "attach": "アタッチ済み",
+      "wait": "待機中",
+      "park": "park 済み",
+      "block": "ブロック中",
+      "skip": "スキップ済み"
+    },
+    "reason": {
+      "none": "なし",
+      "selected": "今回選択",
+      "attached_running": "実行中のセッションにアタッチ",
+      "resumed": "既存セッションを再開",
+      "running": "カーネルの run が進行中",
+      "queue_idle": "キュー停止中",
+      "queue_paused": "キュー一時停止中",
+      "snapshot_unavailable": "意図スナップショットを読めません。今回は何も起動しません",
+      "blocked_concurrency_gate": "グローバル並行ゲート",
+      "blocked_dependency": "依存が未完了",
+      "blocked_dependency_pr_unmerged": "依存の PR が未マージ",
+      "blocked_spec_not_approved": "spec が未承認",
+      "blocked_backoff": "失敗後のバックオフ中",
+      "blocked_parked": "park 済み",
+      "blocked_cooldown": "カーネル run 後のクールダウン中",
+      "blocked_force_skipped": "手動で強制スキップ",
+      "launch_failed": "起動に失敗",
+      "needs_human_decision": "人間の判断が必要",
+      "permission_wait_timeout": "権限プロンプトが未応答",
+      "max_attempts_reached": "連続失敗が多すぎます",
+      "budget_exhausted": "継続予算を超過",
+      "commit_failed": "コミット/プッシュ失敗",
+      "turn_error": "開発ターンがエラー",
+      "judge_stuck": "実際には未完了と判定"
     }
   }
 }

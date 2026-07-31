@@ -2086,16 +2086,21 @@ export interface IntentLog {
 }
 
 /**
- * Lifecycle of the per-project automation orchestrator (a single background loop
- * that develops `automate` intents one by one, by priority + dependencies).
+ * Lifecycle of the per-project automation queue (the deterministic scheduling
+ * kernel that develops `automate` intents by priority + dependencies).
  * - `idle` — not running (never started, or stopped by the user).
- * - `running` — actively developing intents.
- * - `done` — finished: no more eligible intents remain.
- * - `error` — stopped abnormally (a dev run errored, blocked on a permission, a
- *   completion check failed, or commit/push failed). `error` text says why.
+ * - `running` — started; candidates exist but none is being developed right now
+ *   (backing off, parked, or held by a gate). NOT a finished queue.
+ * - `paused` — started but deliberately muted by the user; facts and per-intent
+ *   scheduling metadata are preserved and nothing is launched.
+ * - `awaiting_gate` — the workspace-global concurrency gate is shut.
+ * - `developing` / `fixing` — a queue-owned dev turn (or lint-fix turn) is live.
+ * - `done` — no pending automation candidate and no blocked chain remains.
+ * - `error` — legacy whole-queue stop reason. The kernel isolates failures per
+ *   intent instead, so it is no longer produced; kept for wire compatibility.
  */
 export type WorkflowState =
-  'idle' | 'running' | 'awaiting_gate' | 'developing' | 'fixing' | 'done' | 'error'
+  'idle' | 'running' | 'paused' | 'awaiting_gate' | 'developing' | 'fixing' | 'done' | 'error'
 
 /** A project's workflow orchestrator status, broadcast to every connection. */
 export interface WorkflowStatus {
@@ -2112,7 +2117,12 @@ export interface WorkflowStatus {
    * watching human to answer in the browser). Cleared once the turn settles.
    */
   awaitingPermission: boolean
-  /** Why the orchestrator stopped abnormally; null unless `state === 'error'`. */
+  /**
+   * The most recent park reason, as a short displayable summary; `null` when
+   * nothing is parked. Historically this was the whole-queue stop reason — the
+   * field and its wire shape are unchanged, but a failure now isolates to one
+   * intent rather than stopping the queue.
+   */
   error: string | null
   /** Intent ids completed (committed + pushed) in this run. */
   completedIds: string[]
@@ -2126,6 +2136,62 @@ export interface WorkflowStatus {
    */
   checkpointConsensus?: CheckpointConsensusOutcome | null
 }
+
+/**
+ * One automation candidate as the queue currently sees it. This is the queue
+ * page's read contract; it is deliberately NOT folded into {@link WorkflowStatus},
+ * which stays a compact list/button summary.
+ *
+ * Reason codes are structured and displayable. They never carry prompts,
+ * credentials, permission-request bodies or transcript text.
+ */
+export interface QueueIntentDetail {
+  intentId: string
+  title: string
+  status: IntentStatus
+  priority: IntentPriority
+  /** Why this intent is not being developed right now; `''` when nothing blocks it. */
+  blockedReason: string
+  /** Short human-readable elaboration of `blockedReason` (dependency title, …). */
+  blockedDetail: string
+  /** When the queue will look at this intent again; `null` = next regular tick. */
+  nextWakeupAt: number | null
+  /** The action the queue last chose for this intent (`launch`/`block`/`park`/…). */
+  lastAction: string
+  /** When that decision was recorded; `null` when the queue never decided on it. */
+  lastDecidedAt: number | null
+  /** Consecutive failed attempts since the last real progress. */
+  attemptCount: number
+  /** How many backoff waits this intent has served (audit counter). */
+  backoffCount: number
+  /** No retry before this instant; `null` when not backing off. */
+  backoffUntil: number | null
+  /** Parked: never auto-launched again until a human unparks it. */
+  parked: boolean
+  parkReason: string | null
+  parkDetail: string | null
+  /** The user force-skipped this intent for the queue's selection. */
+  forceSkipped: boolean
+}
+
+/** A workspace queue's per-intent detail projection. */
+export interface QueueDetail {
+  workspaceId: string
+  state: WorkflowState
+  /** Id of the reconcile pass this projection came from; `''` before the first. */
+  tickId: string
+  nextWakeupAt: number | null
+  items: QueueIntentDetail[]
+}
+
+/**
+ * A human taking control back from the queue. Every action maps one-to-one onto
+ * a kernel action, and none of them can bypass a hard gate: `force_skip` never
+ * marks an intent `done` nor satisfies a dependency, and `override_*` only picks
+ * among the follow-ups the kernel would already consider.
+ */
+export type QueueControlAction =
+  'pause' | 'resume' | 'force_skip' | 'unskip' | 'unpark' | 'override_continue' | 'override_block'
 
 /**
  * One intent proposed by the intent-communication agent via the
@@ -3298,10 +3364,23 @@ export type ClientToServer =
       prId?: string
       prStatus?: IntentPrStatus
     }
-  /** Start the project's automation orchestrator (develops `automate` intents). */
+  /** Start the project's automation queue (develops `automate` intents). */
   | { type: 'start_workflow'; workspaceId: string }
-  /** Stop the project's automation orchestrator (aborts the current dev run). */
+  /** Stop the project's automation queue (aborts the current dev run). */
   | { type: 'stop_workflow'; workspaceId: string }
+  /** Read the queue's per-intent detail (blocking reason, next wake-up, last decision). */
+  | { type: 'get_queue_detail'; workspaceId: string }
+  /**
+   * Take manual control of the queue. `intentId` is required for every
+   * per-intent action (`force_skip`, `unskip`, `unpark`, `override_*`) and
+   * ignored by the workspace-level ones (`pause`, `resume`).
+   */
+  | {
+      type: 'queue_control'
+      workspaceId: string
+      action: QueueControlAction
+      intentId?: string
+    }
   /**
    * Create a GitHub Pull Request for a `done` intent that has no PR yet.
    * The server runs `gh pr create`, sets `prId` and `prStatus='reviewing'`
@@ -3818,6 +3897,12 @@ export type ServerToClient =
    * the intent list's automation button reflects the live run.
    */
   | { type: 'workflow_status'; status: WorkflowStatus }
+  /**
+   * The project's queue detail projection. Pushed as a reply to
+   * `get_queue_detail` and after any kernel action or manual queue control, so
+   * the queue page always reflects the pass that actually ran.
+   */
+  | { type: 'queue_detail'; detail: QueueDetail }
   /**
    * Reply to a `create_pr` request. Carries the PR id and URL on success.
    * On failure the server sends a generic `error` with code `intent.prCreateFailed`.

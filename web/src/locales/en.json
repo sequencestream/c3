@@ -645,7 +645,9 @@
       "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
       "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
     },
-    "create": { "label": "Add intent" },
+    "create": {
+      "label": "Add intent"
+    },
     "startDev": {
       "confirmUnfinishedDeps": "This intent has unfinished dependencies. Start work anyway?"
     },
@@ -1885,6 +1887,11 @@
       "loadFailed": "Failed to load the workspace dashboard.",
       "workspaceMissing": "Workspace no longer exists.",
       "gateSaveFailed": "Failed to save the automation gate."
+    },
+    "queue": {
+      "intentRequired": "This queue action needs an intent.",
+      "notParked": "That intent is not parked.",
+      "overrideNotApplicable": "There is no automatic verdict to override for that intent."
     }
   },
   "statusIndicator": {
@@ -2570,6 +2577,87 @@
       "discussion": {
         "label": "Discussion"
       }
+    }
+  },
+  "queue": {
+    "open": {
+      "label": "Queue",
+      "tooltip": "Open the automation queue page: per-intent blocking reason, next wake-up and latest decision"
+    },
+    "back": "Back to intents",
+    "title": "Automation queue",
+    "refresh": "Refresh",
+    "empty": "No automation candidates. Turn on the automation flag on an intent to queue it.",
+    "note": "The queue reconciles on a fixed tick. Every manual action here maps to exactly one kernel action and is still checked against every hard gate — permission, spec approval, dependencies, concurrency, continuation budget and a successful commit/push.",
+    "state": {
+      "idle": "Stopped",
+      "running": "Running",
+      "paused": "Paused",
+      "awaiting_gate": "Waiting on the concurrency gate",
+      "developing": "Developing",
+      "fixing": "Fixing lint",
+      "done": "Finished",
+      "error": "Error"
+    },
+    "nextWakeup": {
+      "label": "Next wake-up",
+      "nextTick": "Next tick"
+    },
+    "badge": {
+      "parked": "Parked",
+      "skipped": "Skipped"
+    },
+    "field": {
+      "blocked": "Blocked by",
+      "nextWakeup": "Next wake-up",
+      "lastDecision": "Last decision",
+      "attempts": "Attempts",
+      "attemptsValue": "{attempts} failed / {backoffs} backoffs",
+      "parkReason": "Park reason"
+    },
+    "control": {
+      "pause": "Pause",
+      "resume": "Resume",
+      "unpark": "Unpark",
+      "forceSkip": "Force skip",
+      "unskip": "Undo skip",
+      "overrideContinue": "Override: continue",
+      "overrideBlock": "Override: stop"
+    },
+    "action": {
+      "launch": "Launched",
+      "resume": "Resumed",
+      "attach": "Attached",
+      "wait": "Waiting",
+      "park": "Parked",
+      "block": "Blocked",
+      "skip": "Skipped"
+    },
+    "reason": {
+      "none": "Nothing",
+      "selected": "Selected",
+      "attached_running": "Attached to a live session",
+      "resumed": "Resumed an existing session",
+      "running": "A kernel run is in flight",
+      "queue_idle": "Queue stopped",
+      "queue_paused": "Queue paused",
+      "snapshot_unavailable": "Intent snapshot unreadable — nothing launched this pass",
+      "blocked_concurrency_gate": "Global concurrency gate",
+      "blocked_dependency": "Dependency not finished",
+      "blocked_dependency_pr_unmerged": "Dependency PR not merged",
+      "blocked_spec_not_approved": "Spec not approved",
+      "blocked_backoff": "Backing off after a failure",
+      "blocked_parked": "Parked",
+      "blocked_cooldown": "Cooldown after a kernel run",
+      "blocked_force_skipped": "Force-skipped by you",
+      "launch_failed": "Launch failed",
+      "needs_human_decision": "Needs a human decision",
+      "permission_wait_timeout": "Permission prompt unanswered",
+      "max_attempts_reached": "Too many consecutive failures",
+      "budget_exhausted": "Continuation budget exhausted",
+      "commit_failed": "Commit/push failed",
+      "turn_error": "Dev turn errored",
+      "judge_stuck": "Judged not really finished"
     }
   }
 }

@@ -1888,6 +1888,11 @@
       "loadFailed": "워크스페이스 대시보드를 불러오지 못했습니다.",
       "workspaceMissing": "워크스페이스가 더 이상 존재하지 않습니다.",
       "gateSaveFailed": "자동화 게이트 저장에 실패했습니다."
+    },
+    "queue": {
+      "intentRequired": "이 큐 작업에는 의도 지정이 필요합니다.",
+      "notParked": "해당 의도는 park 상태가 아닙니다.",
+      "overrideNotApplicable": "해당 의도에는 덮어쓸 자동 판정이 없습니다."
     }
   },
   "statusIndicator": {
@@ -2573,6 +2578,87 @@
       "discussion": {
         "label": "토론"
       }
+    }
+  },
+  "queue": {
+    "open": {
+      "label": "큐",
+      "tooltip": "자동화 큐 페이지 열기: 의도별 차단 사유, 다음 깨우기 시각, 최근 결정"
+    },
+    "back": "의도 목록으로",
+    "title": "자동화 큐",
+    "refresh": "새로고침",
+    "empty": "자동화 후보 의도가 없습니다. 의도의 자동화 스위치를 켜면 큐에 들어갑니다.",
+    "note": "큐는 고정 주기로 대사합니다. 여기의 모든 수동 동작은 정확히 하나의 커널 동작에 대응하며, 권한·spec 승인·의존성·동시성·계속 실행 예산·커밋/푸시 성공 등 하드 게이트는 그대로 유지됩니다.",
+    "state": {
+      "idle": "중지됨",
+      "running": "실행 중",
+      "paused": "일시정지됨",
+      "awaiting_gate": "동시성 게이트 대기",
+      "developing": "개발 중",
+      "fixing": "lint 수정 중",
+      "done": "완료",
+      "error": "오류"
+    },
+    "nextWakeup": {
+      "label": "다음 깨우기",
+      "nextTick": "다음 tick"
+    },
+    "badge": {
+      "parked": "park됨",
+      "skipped": "건너뜀"
+    },
+    "field": {
+      "blocked": "차단 사유",
+      "nextWakeup": "다음 깨우기",
+      "lastDecision": "최근 결정",
+      "attempts": "시도 횟수",
+      "attemptsValue": "실패 {attempts}회 / 백오프 {backoffs}회",
+      "parkReason": "park 사유"
+    },
+    "control": {
+      "pause": "일시정지",
+      "resume": "재개",
+      "unpark": "park 해제",
+      "forceSkip": "강제 건너뛰기",
+      "unskip": "건너뛰기 취소",
+      "overrideContinue": "결정 덮어쓰기: 계속",
+      "overrideBlock": "결정 덮어쓰기: 중지"
+    },
+    "action": {
+      "launch": "시작됨",
+      "resume": "재개됨",
+      "attach": "연결됨",
+      "wait": "대기 중",
+      "park": "park됨",
+      "block": "차단됨",
+      "skip": "건너뜀"
+    },
+    "reason": {
+      "none": "없음",
+      "selected": "이번 회차 선택",
+      "attached_running": "실행 중인 세션에 연결",
+      "resumed": "기존 세션 재개",
+      "running": "커널 run 진행 중",
+      "queue_idle": "큐 중지됨",
+      "queue_paused": "큐 일시정지됨",
+      "snapshot_unavailable": "의도 스냅샷을 읽을 수 없어 이번 회차에는 아무것도 시작하지 않음",
+      "blocked_concurrency_gate": "전역 동시성 게이트",
+      "blocked_dependency": "의존성 미완료",
+      "blocked_dependency_pr_unmerged": "의존성 PR 미병합",
+      "blocked_spec_not_approved": "spec 미승인",
+      "blocked_backoff": "실패 후 백오프 중",
+      "blocked_parked": "park됨",
+      "blocked_cooldown": "커널 run 후 쿨다운 중",
+      "blocked_force_skipped": "사용자가 강제로 건너뜀",
+      "launch_failed": "시작 실패",
+      "needs_human_decision": "사람의 판단 필요",
+      "permission_wait_timeout": "권한 요청에 응답 없음",
+      "max_attempts_reached": "연속 실패가 너무 많음",
+      "budget_exhausted": "계속 실행 예산 초과",
+      "commit_failed": "커밋/푸시 실패",
+      "turn_error": "개발 턴 오류",
+      "judge_stuck": "실제로 완료되지 않았다고 판정"
     }
   }
 }

@@ -170,6 +170,13 @@ export const UI_ERROR_CODES = {
   'dashboard.workspaceMissing': { key: 'error.dashboard.workspaceMissing' },
   // Persisting the automation gate for one workspace failed.
   'dashboard.gateSaveFailed': { key: 'error.dashboard.gateSaveFailed' },
+  // automation queue (deterministic scheduling kernel)
+  // A per-intent queue control arrived without the intent it applies to.
+  'queue.intentRequired': { key: 'error.queue.intentRequired' },
+  // Unpark was asked for an intent that is not parked.
+  'queue.notParked': { key: 'error.queue.notParked' },
+  // An override was asked where there is no automatic verdict to overrule.
+  'queue.overrideNotApplicable': { key: 'error.queue.overrideNotApplicable' },
 } as const satisfies Record<string, UiErrorDef>
 
 /** Every registered UI error code. */

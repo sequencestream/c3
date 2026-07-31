@@ -25,6 +25,7 @@ import {
   reconcileLiveness,
   setOnStatusChange,
   isRunning,
+  getRuntime,
   setOnRunEnd,
   setOnEmit,
   setTaskObserver,
@@ -32,7 +33,12 @@ import {
 } from './runs.js'
 import { observeTaskWire } from './kernel/agent/task-tracker.js'
 import { getSessionAgentId, getAgentLang, setOnPendingIntentLookup } from './kernel/config/index.js'
-import { setWorkflowHooks } from './features/intents/workflow.js'
+import {
+  reconcileQueuesOnStartup,
+  setWorkflowHooks,
+  startQueueTickLoop,
+  stopQueueTickLoop,
+} from './features/intents/workflow.js'
 import { setIntentLifecycleEventBus } from './features/intents/lifecycle-events.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { buildSpecAgentPrompt } from './features/intents/spec-prompt.js'
@@ -59,6 +65,7 @@ import { renameChatSession, listChatSessions } from './features/intents/store.js
 import {
   createConsensusAutoHandler,
   createPermissionRequestHandler,
+  createQueueTodoHandler,
 } from './features/user-involve/hooks.js'
 import {
   startUpdateCheckScheduler,
@@ -557,15 +564,19 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   }
   const runDevTurn = makeRunDevTurn({ launchDeps })
   // Feature-private: NOT on the kernel context (ADR-0009 R1).
-  setWorkflowHooks({
+  const workflowHooks = {
     runDevTurn,
     broadcastIntents: broadcasts.broadcastIntents,
     emitStatus: broadcasts.broadcastWorkflow,
     sessionExists,
     isRunning,
+    sessionStatus: (id: string) => getRuntime(id)?.status ?? null,
     normalizeEvent,
     publishEvent,
-  })
+    createUserTodo: createQueueTodoHandler({ broadcaster }),
+    broadcastQueueDetail: broadcasts.broadcastQueueDetail,
+  }
+  setWorkflowHooks(workflowHooks)
   // Build the adapter lookup for AgentSessionManager (used by discussion runs).
   // claude is always present; codex joins only when its host CLI
   // was detected at boot (null-entries are skipped — missing vendors throw at
@@ -691,6 +702,19 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Start the automation scheduler after the server is ready.
   startSchedulerWiring({ broadcasts, eventBus })
 
+  // Recover every queue that was running before this process started, then arm
+  // the fixed reconcile cadence. The startup pass runs BEFORE the tick loop so
+  // recovery is derived from persisted facts once, deterministically, instead of
+  // racing a timer. Both enter the same idempotent reconcile entry point, so a
+  // duplicate pass is harmless. A failure here degrades to "the next tick will
+  // reconcile" — it never invents state and never clears any.
+  void reconcileQueuesOnStartup(workflowHooks)
+    .then((count) => {
+      if (count > 0) console.log('[c3:queue] 启动对账完成:%d 个工作区队列', count)
+    })
+    .catch((err) => console.error('[c3:queue] 启动对账失败:', err))
+  startQueueTickLoop()
+
   // Start the update-availability checker: poll the GitHub releases endpoint for
   // the latest release and broadcast the refreshed snapshot after each check.
   // Fail-soft; drives the header's "new version available" hint.
@@ -706,6 +730,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     console.log('[c3] shutting down...')
     stopUpdateCheckScheduler()
     stopSessionJanitor()
+    stopQueueTickLoop()
     await stopSchedulerWiring(30_000)
     server.close()
     shutdownLogging()

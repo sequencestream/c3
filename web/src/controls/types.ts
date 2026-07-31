@@ -21,6 +21,7 @@ import type {
   WaitUserInvolveStatus,
   WorkspaceInfo,
   WorkspaceSetting as WorkspaceSettingType,
+  QueueControlAction,
 } from '@ccc/shared/protocol'
 import type { AppState, AuthApi, DepType, TypedT } from './state'
 import type { DevLaunchEvent } from '@/lib/dev-launch-view'
@@ -153,6 +154,12 @@ export interface AppMethods {
   syncIntentPrStatus(intentId: string): void
   startWorkflow(): void
   stopWorkflow(): void
+
+  // automation queue page (deterministic scheduling kernel)
+  openQueuePage(): void
+  closeQueuePage(): void
+  refreshQueueDetail(): void
+  queueControl(action: QueueControlAction, intentId?: string): void
   selectIntentSession(sessionId: string): void
   createIntent(): void
   startIntentSession(intentId: string, text: string, images: PromptImage[]): void

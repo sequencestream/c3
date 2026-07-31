@@ -20,6 +20,7 @@ import { normalizePersonalized, readLocalPersonalized } from '@/lib/personalized
 import type { DeepLinkTarget } from '@/lib/deep-link'
 import type {
   WorkflowStatus,
+  QueueDetail,
   CodeDirEntry,
   CodeGitStatus,
   CodeSearchMode,
@@ -421,6 +422,16 @@ export function createState(deps: StateDeps) {
     intentsProject.value ? (automation.value[intentsProject.value] ?? null) : null,
   )
 
+  // Per-project queue detail (server pushes `queue_detail` after every pass and
+  // every manual control). Kept apart from `automation` on purpose: the status
+  // frame stays a compact button summary, this is the per-intent explanation.
+  const queueDetail = ref<Record<string, QueueDetail>>({})
+  const currentQueueDetail = computed<QueueDetail | null>(() =>
+    intentsProject.value ? (queueDetail.value[intentsProject.value] ?? null) : null,
+  )
+  /** Whether the intents view is showing the queue page instead of the list. */
+  const queuePageOpen = ref(false)
+
   // ---- Intent session list (middle column) ----
   const intentSessions = ref<Record<string, IntentSessionInfo[]>>({})
   const currentIntentSessions = computed<IntentSessionInfo[]>(() =>
@@ -819,6 +830,8 @@ export function createState(deps: StateDeps) {
     intentsProject,
     intents,
     automation,
+    queueDetail,
+    queuePageOpen,
     intentSessions,
     intentSessionRunStates,
     selectedIntentSessionId,
@@ -929,6 +942,7 @@ export function createState(deps: StateDeps) {
     intentsSdd,
     currentIntentsSdd,
     currentWorkflow,
+    currentQueueDetail,
     currentIntentSessions,
     currentDiscussions,
     activeDiscussionRunState,

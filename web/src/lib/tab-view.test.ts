@@ -57,23 +57,23 @@ describe('workspaceSwitchEffects', () => {
     expect(workspaceSwitchEffects('/ws', '/ws')).toEqual({
       noop: true,
       refreshSessions: false,
-      enterConsole: false,
+      enterIntents: false,
     })
   })
 
-  it('切到不同工作区 → 强制刷新 + 落 console tab', () => {
+  it('切到不同工作区 → 强制刷新 + 落意图 tab', () => {
     expect(workspaceSwitchEffects('/ws-b', '/ws-a')).toEqual({
       noop: false,
       refreshSessions: true,
-      enterConsole: true,
+      enterIntents: true,
     })
   })
 
-  it('从无当前工作区切入 → 强制刷新 + 落 console tab', () => {
+  it('从无当前工作区切入 → 强制刷新 + 落意图 tab', () => {
     expect(workspaceSwitchEffects('/ws', null)).toEqual({
       noop: false,
       refreshSessions: true,
-      enterConsole: true,
+      enterIntents: true,
     })
   })
 })

@@ -134,29 +134,29 @@ intent-chat 进入时的进行中和解过程中计算它,缓存结果,并丰富
 
 ## 用户操作(UI → wire)
 
-| 操作                   | 前置条件                                                                  | 发送                                                                                                                                                                                       |
-| ---------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Submit                 | 非空、已连接;只有 idle 或 team 状态下才会触发(WC-R2)                      | `user_prompt`;乐观地把当前查看会话标记为运行中                                                                                                                                             |
-| Enqueue                | 普通会话正在运行(composer 操作)                                           | 无——追加到当前查看会话的待发送队列(仅客户端);清空 composer                                                                                                                                 |
-| Edit queued            | 队列中的条目                                                              | 无——移除该条目,并把其文本折叠回 composer 草稿                                                                                                                                              |
-| Delete queued          | 队列中的条目                                                              | 无——从队列中移除该条目                                                                                                                                                                     |
-| Flush if ready         | should-flush(idle + 非空;每次状态应用时做边沿观察 + 水平复查)             | 合并当前查看会话的队列(以空行连接)→ 提交 → 清空它                                                                                                                                          |
-| Stop run               | 由状态栏 Stop 按钮触发;当前查看会话运行中或团队处于活跃状态时启用(WC-R14) | `stop_run`(打断一次普通回合,或结束整个团队)                                                                                                                                                |
-| Select workspace       | 路径 ≠ 当前(WC-R8)                                                        | 设置当前工作区 + 持久化;对活动的 `sessionKind` 切片**强制** `list_sessions`(绕过会话缓存——只刷新该工作区/种类切片)并请求 `get_session_counts`;然后切换到「会话」并通过会话入口决策重新绑定 |
-| Add / remove workspace | 切换器新增 / 行移除(二次确认)(WC-R8)                                      | `add_workspace` / `remove_workspace`                                                                                                                                                       |
-| Respond                | 已连接,提示可操作(⇒ 未决)(WC-R3)                                          | `permission_response`;在本地设置决定                                                                                                                                                       |
-| Set mode               | 已连接,值发生变化                                                         | 乐观模式更新 + `set_mode`(WC-R4)                                                                                                                                                           |
-| Select tab             | 顶部栏 tab 点击(WC-R18)                                                   | 无——console → 切换到「会话」(翻转 + 重新绑定会话 tab 的会话);intents → 打开 intent 聊天(无工作区时为 no-op)                                                                                |
-| Open intents           | 已连接                                                                    | `open_intent_chat`——服务端以通讯 `session_selected` + `intents` 回复                                                                                                                       |
-| Set intent filter      | intents project 已设置                                                    | 带可选状态筛选的 `list_intents`                                                                                                                                                            |
-| Refine intent          | 已连接                                                                    | `refine_intent`;启动一个新的预置通讯会话                                                                                                                                                   |
-| Start development      | 已连接                                                                    | `start_development`——后台开发技能启动,状态翻转为 in_progress                                                                                                                               |
-| Set intent status      | 已连接                                                                    | `update_intent_status`;广播重新丰富运行状态                                                                                                                                                |
-| Set intent automate    | 已连接                                                                    | `set_intent_automate`;广播重新丰富运行状态                                                                                                                                                 |
-| Start automation       | intents project 已设置                                                    | `start_automation`——启动该项目的编排器循环                                                                                                                                                 |
-| Stop automation        | intents project 已设置                                                    | `stop_automation`——中止当前编排运行                                                                                                                                                        |
-| Open workspace setting | 已选中工作区                                                              | 打开工作区设置浮层;为当前工作区发送 `load_workspace_setting`                                                                                                                               |
-| Save workspace setting | 已选中工作区                                                              | 携带项目路径与当前 Tab 覆盖后的完整配置发送 `save_workspace_setting`;浮层保持打开以接收回包并清理刚保存 Tab 的脏状态(浮层仍在工作区切换、WS 重连、用户主动关闭时关闭)                      |
+| 操作                   | 前置条件                                                                  | 发送                                                                                                                                                                                                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Submit                 | 非空、已连接;只有 idle 或 team 状态下才会触发(WC-R2)                      | `user_prompt`;乐观地把当前查看会话标记为运行中                                                                                                                                                                                                                                                                    |
+| Enqueue                | 普通会话正在运行(composer 操作)                                           | 无——追加到当前查看会话的待发送队列(仅客户端);清空 composer                                                                                                                                                                                                                                                        |
+| Edit queued            | 队列中的条目                                                              | 无——移除该条目,并把其文本折叠回 composer 草稿                                                                                                                                                                                                                                                                     |
+| Delete queued          | 队列中的条目                                                              | 无——从队列中移除该条目                                                                                                                                                                                                                                                                                            |
+| Flush if ready         | should-flush(idle + 非空;每次状态应用时做边沿观察 + 水平复查)             | 合并当前查看会话的队列(以空行连接)→ 提交 → 清空它                                                                                                                                                                                                                                                                 |
+| Stop run               | 由状态栏 Stop 按钮触发;当前查看会话运行中或团队处于活跃状态时启用(WC-R14) | `stop_run`(打断一次普通回合,或结束整个团队)                                                                                                                                                                                                                                                                       |
+| Select workspace       | 路径 ≠ 当前(WC-R8)                                                        | 设置当前工作区 + 持久化;切换到「意图」并把 intents project 指向该工作区(走意图页标准入口:工作区设置 + 意图通讯会话 + 意图会话列表);同时对活动的 `sessionKind` 切片**强制** `list_sessions`(绕过会话缓存——只刷新该工作区/种类切片)并请求 `get_session_counts`,会话重新绑定留待用户之后进入「会话」时按入口决策执行 |
+| Add / remove workspace | 切换器新增 / 行移除(二次确认)(WC-R8)                                      | `add_workspace` / `remove_workspace`                                                                                                                                                                                                                                                                              |
+| Respond                | 已连接,提示可操作(⇒ 未决)(WC-R3)                                          | `permission_response`;在本地设置决定                                                                                                                                                                                                                                                                              |
+| Set mode               | 已连接,值发生变化                                                         | 乐观模式更新 + `set_mode`(WC-R4)                                                                                                                                                                                                                                                                                  |
+| Select tab             | 顶部栏 tab 点击(WC-R18)                                                   | 无——console → 切换到「会话」(翻转 + 重新绑定会话 tab 的会话);intents → 打开 intent 聊天(无工作区时为 no-op)                                                                                                                                                                                                       |
+| Open intents           | 已连接                                                                    | `open_intent_chat`——服务端以通讯 `session_selected` + `intents` 回复                                                                                                                                                                                                                                              |
+| Set intent filter      | intents project 已设置                                                    | 带可选状态筛选的 `list_intents`                                                                                                                                                                                                                                                                                   |
+| Refine intent          | 已连接                                                                    | `refine_intent`;启动一个新的预置通讯会话                                                                                                                                                                                                                                                                          |
+| Start development      | 已连接                                                                    | `start_development`——后台开发技能启动,状态翻转为 in_progress                                                                                                                                                                                                                                                      |
+| Set intent status      | 已连接                                                                    | `update_intent_status`;广播重新丰富运行状态                                                                                                                                                                                                                                                                       |
+| Set intent automate    | 已连接                                                                    | `set_intent_automate`;广播重新丰富运行状态                                                                                                                                                                                                                                                                        |
+| Start automation       | intents project 已设置                                                    | `start_automation`——启动该项目的编排器循环                                                                                                                                                                                                                                                                        |
+| Stop automation        | intents project 已设置                                                    | `stop_automation`——中止当前编排运行                                                                                                                                                                                                                                                                               |
+| Open workspace setting | 已选中工作区                                                              | 打开工作区设置浮层;为当前工作区发送 `load_workspace_setting`                                                                                                                                                                                                                                                      |
+| Save workspace setting | 已选中工作区                                                              | 携带项目路径与当前 Tab 覆盖后的完整配置发送 `save_workspace_setting`;浮层保持打开以接收回包并清理刚保存 Tab 的脏状态(浮层仍在工作区切换、WS 重连、用户主动关闭时关闭)                                                                                                                                             |
 
 ## 权限可操作性(实时 vs. 回放)
 
@@ -344,21 +344,26 @@ reducer 是共享任务模型中唯一的真实来源(reducer、空模型、
   会话正是该指针,则清空它,使下一次进入回退。
 - **Tab 切换接线。** 顶部栏「会话」的点击走一条切换到 console 的路径(翻转 tab +
   重新绑定),不同于显式选择器使用的仅翻转路径——若在那里也重新绑定就会
-  重复选择。侧栏的**工作区切换**同样走切换到 console 的路径——切换
-  当前工作区总是把视图落到「会话」(即使从 intent/discussion tab 触发),并
-  强制刷新该工作区的会话列表,而会话重新绑定仍然沿用会话 tab 入口
-  决策(没有新的选择策略)。一个纯粹的工作区切换效果决策为其把关:同一工作区 →
-  no-op;否则刷新 + 进入 console。console 重新绑定运行纯粹的会话 tab 入口决策:
-  重新选择记住的会话,否则当前工作区的第一个会话,否则清空查看中的
-  会话(空状态——重置查看中的会话 / 消息 / 任务模型 / …,使通讯会话永远不会
-  遗留)。当已经在查看目标时会跳过发送。
+  重复选择。侧栏的**工作区切换**则走意图页入口——切换当前工作区总是把视图
+  落到目标工作区的**意图列表**(即使从 console/discussion tab 触发):用户先挑
+  工作单元,再决定进入哪个意图或会话。它同时强制刷新该工作区的会话列表,
+  而会话重新绑定仍然沿用会话 tab 入口决策(没有新的选择策略),在用户之后
+  手动进入「会话」时才发生。一个纯粹的工作区切换效果决策为其把关:同一
+  工作区 → no-op;否则刷新 + 进入意图列表。console 重新绑定运行纯粹的会话
+  tab 入口决策:重新选择记住的会话,否则当前工作区的第一个会话,否则清空
+  查看中的会话(空状态——重置查看中的会话 / 消息 / 任务模型 / …,使通讯会话
+  永远不会遗留)。当已经在查看目标时会跳过发送。工作区切换触发的会话列表
+  回包仍会更新缓存并消费一次性绑定标记,但视图停在意图页时不会自动绑定
+  会话(绑定只在 console tab 活跃时执行)。
 - **重连。** 重开路径不变:它恢复**活跃** tab 的视图(console →
   重新选择会话;intent → 重新打开 intent 聊天)。会话 tab 的会话指针是内存态的,能在
   WS 重连中存活,因此下次进入时会话 tab 能正确重新绑定。
 - **测试。** 入口决策是纯粹的、无 DOM 的 console-entry 测试(记住的被采用 / 回退
   到第一个 / 无工作区或空列表时为空 / 记住的即使不在列表中也被采用);同一
   套件覆盖工作区切换效果(同一工作区 → no-op / 不同 / 从 null → 强制
-  刷新 + 进入 console)。
+  刷新 + 进入意图列表);控制层测试则断言有效切换后当前工作区与 intents
+  project 均指向目标路径、活跃 tab 为「意图」且工作区 / 视图持久化被触发,
+  重复选择当前工作区不产生任何副作用。
 
 ## 待发送队列(普通会话)
 

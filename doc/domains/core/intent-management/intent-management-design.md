@@ -231,13 +231,21 @@
   使该 refine 对话之后可以从意图详情的
   「intent session」标签页重新打开(用该 id 调用 `open_intent_chat`)。一个绑定前出错的边界情况
   由 `run:settled`(kind=intent)安全网清理。
-- **来自讨论(`discussion_to_intent`):** 与 refine 相同的机制,但种子是一个
-  已完成讨论的 `conclusion`,而非既有意图。服务端加载该
-  讨论,除非其为 `completed` 且 `conclusion` 非空,否则拒绝;从讨论的工作区
-  解析出项目,然后运行相同的 `pending:` intent-runtime
-  流程,首条提示词携带讨论标题 + 结论(「基于以下讨论结论拆分出可验证
-  的需求条目 …, 定稿后调用 save_intents」)。由讨论视图的**转为
-  Intent** 按钮触发(RM-R7)。
+- **来自讨论(`discussion_to_intent`):** 与**增加意图**完全相同的两段式,而非一个
+  游离的种子会话。服务端加载该讨论,除非其为 `completed` 且 `conclusion` 非空,
+  否则拒绝(拒绝发生在建意图**之前**,不留任何空意图);从讨论的工作区解析出项目
+  后:① 用与 `create_intent` 同一个 `createEmptyIntent` 落一条空白 `draft` 意图
+  (标题 `new intent`、`P2`、空正文,写 `intent_created` 生命周期日志),并以
+  `create_intent_result` 回给发起连接;② 以**该意图为 owner** 走与
+  `start_intent_session` 同一段绑定序列(`pending:` intent-runtime → 绑定 intent
+  agent → 持久化会话 → 带 `ownerId` 的会话投影 → `setIntentSessionId` →
+  注册 pending→intent 链接 → `session_selected` → 刷新 intents → 启动首轮)。
+  首轮提示词由**共享构造器** `buildIntentSessionFirstPrompt` 产出:意图
+  id/状态/标题/内容前言 + 用户输入块(此处为讨论标题 + 结论)+ 原地更新护栏
+  (`save_intents` 批次必须恰好一项携带该 id,拆分出的其他项不得复用)——
+  与 `start_intent_session` 共用同一处措辞,不会分叉。会话标题仍用讨论标题
+  (仅显示用)。启动失败按同一段 unwind 回收会话但**保留意图**。由讨论视图的
+  **转为 Intent** 按钮触发(RM-R7),转换后控制台落在该意图的意图会话标签页。
 - **重置意图会话(`reset_intent_session`):** 用于意图变更后、
   refine 对话上下文腐化时的逃生舱(RM-R24)。意图详情头部的「我要修改」打开
   受控输入对话框;intent-session 标签页本身没有重置按钮。与
@@ -773,5 +781,7 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
 意图列表标题栏的「+」通过 `create_intent` 立即登记一条固定初值的空白 draft，不再提供独立的“增加意图”文字按钮或从该处新建独立意图会话。创建结果中的服务端 ID 只负责精确 UI 落点，账本状态仍以 `intents` 快照为准。结果和快照允许任意顺序到达，工作区切换、失败或目标消失时必须丢弃落点；创建落点选中新意图后默认打开“意图会话”tab。
 
 空白意图不会预建空会话。详情的“意图会话”tab 在无绑定时提供首条输入，提交 `start_intent_session` 后由服务端为该 intent 建立唯一 owner 会话、绑定 agent 并启动 refine 运行。运行上下文注入当前 ID、状态、标题和正文；owner 会话保存时必须在同一批次恰好一次更新当前 ID，其余拆分项新建且不继承来源会话。
+
+「先建空意图、再以该意图启动 owner 会话」是这条路径的形状，`discussion_to_intent` 由服务端一次性走完同样两步（见上文「来自讨论」），因此两条路径共用同一个创建原语、同一段绑定序列与同一处首轮提示词构造（含批次恰好一项携带该 ID 的护栏），措辞不会分叉。
 
 空白 draft 可沿用正文编辑与取消状态迁移。物理删除仅允许无会话、spec、工作、git 或 PR 资产的 draft，并在同一事务删除依赖边和日志。

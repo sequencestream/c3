@@ -195,9 +195,9 @@ flowchart TD
 
 ## 讨论桥接
 
-`discussion_to_intent`(discussion 领域拥有的一个 `refine_intent` 变体)以一个
-已完成讨论的 `conclusion` 而非既有意图作为种子,为沟通会话下种,
-然后汇入**不变的** `save_intents` 路径(`RM-R7`)。见
+`discussion_to_intent`(discussion 领域持有的触发器)走与「增加意图」相同的两步:
+先落一条空白 `draft` 意图,再以该意图为 owner 启动沟通会话,首轮提示词以一个
+已完成讨论的 `conclusion` 下种,然后汇入**不变的** `save_intents` 路径(`RM-R7`)。见
 [discussion → intent](flow-discussion-to-intent.md)。
 
 ## 分支与例外(反场景)

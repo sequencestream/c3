@@ -3266,14 +3266,17 @@ export type ClientToServer =
    */
   | { type: 'refine_intent'; workspaceId: string; intentId: string }
   /**
-   * Bridge a completed discussion's conclusion into the intent domain: a
-   * `refine_intent` variant whose seed is the discussion's conclusion rather
-   * than an existing intent. The server resolves the project from the
-   * discussion, restarts the comm session as a fresh one, injects a first prompt
-   * carrying the discussion title + conclusion, and replies with a
-   * `session_selected` (empty history) plus the `intents` list. Rejected if
-   * the discussion is missing, not `completed`, or has no conclusion. The agent
-   * then splits it into intents via the unchanged `save_intents` flow.
+   * Bridge a completed discussion's conclusion into the intent domain, using the
+   * same two steps as the "add intent" path. The server resolves the project from
+   * the discussion, creates ONE empty `draft` intent (as `create_intent` does) and
+   * echoes it as `create_intent_result` — so the conversion is on the ledger before
+   * the agent saves anything — then binds an intent-communication session **owned by
+   * that intent** (its `intentSessionId`), whose first prompt carries the discussion
+   * title + conclusion, replying `session_selected` (empty history) plus the refreshed
+   * `intents` list. Rejected — before any intent is created — if the discussion is
+   * missing, not `completed`, or has no conclusion; a failed launch unwinds the
+   * session but keeps the intent. The agent then splits it into intents via the
+   * unchanged `save_intents` flow (upserting onto that intent's id).
    */
   | { type: 'discussion_to_intent'; discussionId: string }
   /** Launch a background work session for a `todo` intent via the configurable development skill. */

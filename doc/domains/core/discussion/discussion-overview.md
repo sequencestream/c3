@@ -164,12 +164,12 @@ discussion/intent 数据库中。
 
 - **结论 → intent 桥接**（`discussion_to_intent`）：一个已完成讨论的
   标题栏 **Convert to Intent** 按钮会为 intent 领域播种。服务端从讨论解析出
-  工作区，将 intent 领域的沟通会话作为全新会话重启（一个
-  `refine_intent` 变体），其首条提示语携带讨论标题 + `conclusion`，
-  并回复 `session_selected` + `intents`；随后智能体通过**未变**的
-  `save_intents` 流程将其拆分为可验证的条目（见
+  工作区，然后走与「增加意图」相同的两步：先落一条空白 `draft` 意图（回复
+  `create_intent_result`），再以**该意图为 owner** 启动沟通会话，其首条提示语
+  携带讨论标题 + `conclusion`，并回复 `session_selected` + `intents`；随后智能体
+  通过**未变**的 `save_intents` 流程将其拆分为可验证的条目（见
   [intent-management RM-R7](../intent-management/intent-management-spec.md)）。若讨论
-  不是 `completed` 且带非空 `conclusion`，则会被拒绝。
+  不是 `completed` 且带非空 `conclusion`，则在创建意图之前被拒绝。
 
 ## 非范围（现状）
 

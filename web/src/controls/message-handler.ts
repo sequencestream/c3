@@ -119,6 +119,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     requestedIntentSubTab,
     createIntentPending,
     automation,
+    queueDetail,
     discussions,
     discussionRunState,
     researchState,
@@ -798,6 +799,9 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       case 'workflow_status':
         automation.value = { ...automation.value, [msg.status.workspaceId]: msg.status }
+        break
+      case 'queue_detail':
+        queueDetail.value = { ...queueDetail.value, [msg.detail.workspaceId]: msg.detail }
         break
       case 'discussions': {
         discussions.value = { ...discussions.value, [msg.workspaceId]: msg.items }

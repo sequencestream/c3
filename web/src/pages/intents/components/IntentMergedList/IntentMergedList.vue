@@ -39,6 +39,7 @@ const emit = defineEmits<{
   filter: [status: IntentStatus | null]
   'start-automation': []
   'stop-automation': []
+  'open-queue': []
   'select-intent': [intentId: string]
   'ordered-change': [ids: string[]]
   'set-automate': [intentId: string, automate: boolean]
@@ -94,6 +95,11 @@ function toggleWorkflowFromMenu(): void {
   closeMobileActionsMenu()
 }
 
+function openQueueFromMenu(): void {
+  emit('open-queue')
+  closeMobileActionsMenu()
+}
+
 // ---- 状态过滤 ----
 const FILTERS = computed<{ value: IntentStatus | null; label: string }[]>(() => [
   { value: null, label: t('intent.filter.all.label') },
@@ -146,6 +152,15 @@ function setFilterFromMenu(value: string): void {
         >
           {{ autoRunning ? t('intent.automation.stop.label') : t('intent.automation.start.label') }}
         </button>
+        <button
+          v-show="!isMobile"
+          class="req-btn"
+          data-testid="open-queue"
+          :title="t('queue.open.tooltip')"
+          @click="emit('open-queue')"
+        >
+          {{ t('queue.open.label') }}
+        </button>
         <select
           v-show="!isMobile"
           class="req-filter"
@@ -186,6 +201,15 @@ function setFilterFromMenu(value: string): void {
               {{
                 autoRunning ? t('intent.automation.stop.label') : t('intent.automation.start.label')
               }}
+            </button>
+            <button
+              type="button"
+              class="req-btn req-menu-item"
+              data-testid="open-queue-mobile"
+              :title="t('queue.open.tooltip')"
+              @click="openQueueFromMenu"
+            >
+              {{ t('queue.open.label') }}
             </button>
             <select
               class="req-filter"

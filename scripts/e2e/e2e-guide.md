@@ -51,6 +51,39 @@ Needs only the default agent (spends two short tool-less turns of real tokens).
 - `pnpm start --port 13000`
 - `node scripts/e2e/e2e-pending-flush-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
+## Automation queue (park isolation + manual control)
+
+Drives the deterministic scheduling kernel over the real wire protocol. Seeds a
+throwaway git workspace with four `automate` intents — `A`, `B`, `C` (independent)
+and `D` (depends on `B`) — starts the queue, then parks `B`.
+
+PASS asserts the properties the queue exists to guarantee:
+
+- a parked intent does **not** stop the queue (it stays live, other candidates
+  remain selectable);
+- a parked intent is **not** `done`: `D` stays `blocked_dependency` and is never
+  launched — parking isolates a failure, it never opens a path around one;
+- a blocked queue never reports `done` (a misleading success);
+- `force_skip` changes only the queue's selection: never marks `done`, never
+  satisfies a dependency;
+- `unpark` clears the park, and unparking something **not** parked is refused
+  with a visible reason (`queue.notParked`) rather than silently accepted;
+- `pause` / `resume` are honoured and preserve the candidate set.
+
+The park is induced through `queue_control override_block` — the explicit human
+ruling, which drives the same park mechanism three consecutive failures do. A
+genuine agent crash cannot be provoked for ONE intent deterministically, and
+reproducing it would cost three live dev turns plus ~90s of real backoff. The
+genuine chain (`runDevTurn` rejects → one failed attempt → exponential backoff →
+park on the third → unrelated intents still complete → downstream still blocked)
+is covered by `server/src/features/intents/workflow.test.ts` ("queue driver —
+failure isolation"), which injects a real launch rejection.
+
+Spends **no** agent tokens and needs the intent db (`c3.db`).
+
+- `pnpm start --port 13000`
+- `node scripts/e2e/e2e-queue-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
+
 ## Intent management (save flow + AskUserQuestion gate)
 
 Exercises the intent-management feature end-to-end: register a throwaway

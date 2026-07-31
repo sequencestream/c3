@@ -17,7 +17,7 @@
  */
 import type { Broadcaster } from '../../transport/index.js'
 import type { ConsensusAutoCtx, PermissionRequestCtx } from '../../kernel/permission/gateway.js'
-import { createEvent, listEvents } from './store.js'
+import { createEvent, getEventByRequestId, listEvents } from './store.js'
 import { getByC3Id } from '../works/work-session-store.js'
 
 /** Resolve a session's human-readable title from the projection (graceful: null on miss/error). */
@@ -105,5 +105,53 @@ export function createConsensusAutoHandler(): (ctx: ConsensusAutoCtx) => void {
         }`,
       )
     }
+  }
+}
+
+/**
+ * Build the queue kernel's `createUserTodo` handler.
+ *
+ * The queue raises a todo when it stops waiting on an intent that needs a real
+ * human — an unanswered `AskUserQuestion`, or a permission prompt nobody
+ * answered within the queue's wait window. The todo is INFORMATIONAL: it carries
+ * no `requestId` of a live permission gate, so answering it never decides
+ * anything on the agent's behalf (C-SEC-3). The permission prompt itself, if one
+ * is live, stays exactly where it was, waiting for a human.
+ *
+ * Deduplicated on a stable synthetic request id (`queue:<intentId>:<reason>`), so
+ * repeated passes over the same parked intent can never pile up todos.
+ */
+export function createQueueTodoHandler(deps: {
+  broadcaster: Broadcaster
+}): (input: {
+  workspacePath: string
+  intentId: string
+  sessionId: string | null
+  title: string
+  reasonCode: string
+}) => void {
+  return (input): void => {
+    const requestId = `queue:${input.intentId}:${input.reasonCode}`
+    try {
+      if (getEventByRequestId(requestId)) return
+      createEvent({
+        workspacePath: input.workspacePath,
+        sessionKind: 'work',
+        sessionId: input.sessionId,
+        title: input.title,
+        requestId,
+        toolName: null,
+        toolInput: { intentId: input.intentId, reason: input.reasonCode },
+      })
+    } catch (err) {
+      console.warn(
+        `[c3:queue] wait-user-involve 待办创建失败 (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      )
+      return
+    }
+    const items = listEvents(input.workspacePath, 'todo')
+    deps.broadcaster.toAll({ type: 'wait_user_events', items })
   }
 }

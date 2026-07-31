@@ -123,6 +123,7 @@ const emit = defineEmits<{
   'set-automate': [intentId: string, automate: boolean]
   'start-automation': []
   'stop-automation': []
+  'open-queue': []
   'new-intent': []
   'create-pr': [intentId: string]
   'sync-pr-status': [intentId: string]
@@ -331,6 +332,7 @@ defineExpose({
         @filter="(status: IntentStatus | null) => emit('filter', status)"
         @start-automation="emit('start-automation')"
         @stop-automation="emit('stop-automation')"
+        @open-queue="emit('open-queue')"
         @select-intent="handleSelectIntent"
         @ordered-change="handleOrderedChange"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"

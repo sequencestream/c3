@@ -76,7 +76,18 @@ import {
   getJudgedSession,
   setJudgedSession,
 } from './run-status.js'
-import { getWorkflowHooks, getWorkflowStatus, startWorkflow, stopWorkflow } from './workflow.js'
+import {
+  forceSkipIntent,
+  getQueueDetail,
+  getWorkflowHooks,
+  getWorkflowStatus,
+  overrideIntentDecision,
+  pauseWorkflow,
+  resumeWorkflow,
+  startWorkflow,
+  stopWorkflow,
+  unparkIntent,
+} from './workflow.js'
 import { getDiscussion } from '../discussions/store.js'
 import { closeForgePr, commitAndPush, createGhPr, hasDiffAgainstMain } from '../../git.js'
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
@@ -88,6 +99,7 @@ import {
   upsertBoundRow,
 } from '../sessions/session-metadata-store.js'
 import type { UiErrorCode } from '@ccc/shared/ui-codes.js'
+import type { ServerToClient } from '@ccc/shared/protocol'
 import type { Handler } from '../../transport/handler-registry.js'
 import { launchWorkSession } from './session-launcher.js'
 
@@ -1124,6 +1136,116 @@ export const stopWorkflowHandler: Handler<'stop_workflow'> = (ctx, conn, msg) =>
     return
   }
   ctx.broadcastWorkflow(stopWorkflow(proj))
+}
+
+/** Build the wire projection of a workspace queue's per-intent detail. */
+function queueDetailFrame(workspacePath: string, workspaceId: string): ServerToClient {
+  const detail = getQueueDetail(workspacePath)
+  const byId = new Map(listIntents(workspacePath).map((r) => [r.id, r]))
+  return {
+    type: 'queue_detail',
+    detail: {
+      workspaceId,
+      state: detail.state,
+      tickId: detail.tickId,
+      nextWakeupAt: detail.nextWakeupAt,
+      items: detail.items.map((item) => {
+        const req = byId.get(item.intentId)
+        return {
+          ...item,
+          status: req?.status ?? 'todo',
+          priority: req?.priority ?? 'P2',
+        }
+      }),
+    },
+  }
+}
+
+export const getQueueDetailHandler: Handler<'get_queue_detail'> = (_ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  conn.send(queueDetailFrame(proj, msg.workspaceId))
+}
+
+/**
+ * Manual queue control. Every action maps onto exactly one kernel action; the
+ * server validates the workspace, the intent and the transition, and refuses
+ * anything that would need a hard gate to be bypassed. A refusal is always
+ * reported — a control that silently did nothing would read as success.
+ */
+export const queueControlHandler: Handler<'queue_control'> = (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+
+  const perIntent =
+    msg.action === 'force_skip' ||
+    msg.action === 'unskip' ||
+    msg.action === 'unpark' ||
+    msg.action === 'override_continue' ||
+    msg.action === 'override_block'
+  if (perIntent) {
+    if (!msg.intentId) {
+      conn.send({ type: 'error', error: { code: 'queue.intentRequired' } })
+      return
+    }
+    const req = getIntent(msg.intentId)
+    if (!req || resolveWorkspaceRoot(req.workspaceId) !== proj) {
+      conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+      return
+    }
+  }
+
+  switch (msg.action) {
+    case 'pause':
+      ctx.broadcastWorkflow(pauseWorkflow(proj))
+      break
+    case 'resume':
+      ctx.broadcastWorkflow(resumeWorkflow(proj))
+      break
+    case 'force_skip':
+      forceSkipIntent(proj, msg.intentId!, true)
+      break
+    case 'unskip':
+      forceSkipIntent(proj, msg.intentId!, false)
+      break
+    case 'unpark':
+      if (!unparkIntent(proj, msg.intentId!)) {
+        conn.send({ type: 'error', error: { code: 'queue.notParked' } })
+        return
+      }
+      break
+    case 'override_continue':
+    case 'override_block': {
+      const decision = msg.action === 'override_continue' ? 'continue' : 'block'
+      const actor = conn.subject ?? 'user'
+      if (!overrideIntentDecision(proj, msg.intentId!, decision, actor)) {
+        conn.send({ type: 'error', error: { code: 'queue.overrideNotApplicable' } })
+        return
+      }
+      break
+    }
+  }
+  conn.send(queueDetailFrame(proj, msg.workspaceId))
 }
 
 export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {

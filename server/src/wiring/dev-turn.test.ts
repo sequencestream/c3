@@ -4,8 +4,11 @@ import { launchRun } from '../kernel/run/run-lifecycle.js'
 import { makeRunDevTurn } from './dev-turn.js'
 import { ensureRuntime } from '../runs.js'
 
+// `launchRun` is async in production, and the dev turn now attaches a `.catch` to
+// surface a failed launch as a rejected turn. The mock must return a promise or it
+// would fake a launch that can never fail.
 vi.mock('../kernel/run/run-lifecycle.js', () => ({
-  launchRun: vi.fn(),
+  launchRun: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('../kernel/config/index.js', () => ({
@@ -82,5 +85,40 @@ describe('makeRunDevTurn prompt channels', () => {
     expect(pushInput).toHaveBeenCalledTimes(1)
     expect(pushInput).toHaveBeenCalledWith('Visible prompt')
     expect(launchRun).not.toHaveBeenCalled()
+  })
+
+  // The defect this guards: `void launchRun(...)` dropped a failed launch on the
+  // floor, so the turn never settled and the queue waited for a `run:settled`
+  // that could not come. The launch must fail LOUDLY.
+  it('rejects the turn when the launch fails asynchronously', async () => {
+    vi.mocked(launchRun).mockReturnValueOnce(Promise.reject(new Error('spawn failed')))
+    const runDevTurn = makeRunDevTurn({ launchDeps: {} as LaunchRunDeps })
+
+    await expect(
+      runDevTurn({
+        workspacePath: '/workspace',
+        sessionId: 'pending:dev',
+        prompt: 'Visible prompt',
+        intentId: 'intent-1',
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow('spawn failed')
+  })
+
+  it('rejects the turn when the launch throws synchronously', async () => {
+    vi.mocked(launchRun).mockImplementationOnce(() => {
+      throw new Error('no agent on PATH')
+    })
+    const runDevTurn = makeRunDevTurn({ launchDeps: {} as LaunchRunDeps })
+
+    await expect(
+      runDevTurn({
+        workspacePath: '/workspace',
+        sessionId: 'pending:dev',
+        prompt: 'Visible prompt',
+        intentId: 'intent-1',
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow('no agent on PATH')
   })
 })

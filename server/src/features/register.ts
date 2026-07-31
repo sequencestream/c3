@@ -61,6 +61,8 @@ import {
   setIntentAutomate,
   setIntentGitInfo,
   startWorkflowHandler,
+  getQueueDetailHandler,
+  queueControlHandler,
   startDevelopment,
   stopWorkflowHandler,
   createPrHandler,
@@ -182,6 +184,8 @@ export const handlerMap: HandlerMap = {
   update_intent_deps: updateIntentDepsHandler,
   start_workflow: startWorkflowHandler,
   stop_workflow: stopWorkflowHandler,
+  get_queue_detail: getQueueDetailHandler,
+  queue_control: queueControlHandler,
   create_pr: createPrHandler,
   sync_intent_pr_status: syncIntentPrStatusHandler,
   // discussions

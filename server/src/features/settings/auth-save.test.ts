@@ -21,6 +21,7 @@ const base = {
   toolAgentId: '',
   intentAgentId: '',
   specAgentId: '',
+  specReviewAgentId: '',
   automationAgentId: '',
 } as SystemSettings
 

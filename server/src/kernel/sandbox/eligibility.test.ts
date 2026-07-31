@@ -73,4 +73,30 @@ describe('sandboxEligible', () => {
     expect(intentLaunchedWork).toBe(plainWork)
     expect(plainWork).toBe(true)
   })
+
+  it('lets sandboxSessionKinds alone decide whether a spec REVIEW is sandboxed', () => {
+    // There is no sandbox-specific reviewer agent, and no sandbox flag on the
+    // review itself: `sandboxSessionKinds` is the single dimension.
+    expect(sandboxEligible(params({ config: { enabled: true }, sessionKind: 'spec_review' }))).toBe(
+      false,
+    )
+    expect(
+      sandboxEligible(
+        params({
+          config: { enabled: true, sandboxSessionKinds: ['work', 'spec_review'] },
+          sessionKind: 'spec_review',
+        }),
+      ),
+    ).toBe(true)
+    // Allowing the AUTHOR does not implicitly allow the REVIEWER: they are
+    // distinct kinds with distinct permissions.
+    expect(
+      sandboxEligible(
+        params({
+          config: { enabled: true, sandboxSessionKinds: ['spec'] },
+          sessionKind: 'spec_review',
+        }),
+      ),
+    ).toBe(false)
+  })
 })

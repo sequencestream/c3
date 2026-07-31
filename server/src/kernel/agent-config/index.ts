@@ -101,6 +101,14 @@ export function getSpecAgentId(): string {
 }
 
 /**
+ * The configured spec-REVIEW agent id (read-only review sessions' executor). An
+ * empty string means "follow the default agent" — see {@link resolveSpecReviewAgent}.
+ */
+export function getSpecReviewAgentId(): string {
+  return loadSettings().specReviewAgentId
+}
+
+/**
  * The enabled agents only — the canonical "list of agents" every consumer pool
  * draws from (discussion participants, consensus voters, default-agent picker),
  * returned in the user-controlled global order (`order_seq` ascending — the
@@ -207,6 +215,19 @@ export function resolveIntentAgent(): AgentConfig {
  */
 export function resolveSpecAgent(): AgentConfig {
   return resolveAgent(loadSettings().specAgentId)
+}
+
+/**
+ * The agent that runs **spec-REVIEW sessions** (the read-only reviewer). Reads
+ * `specReviewAgentId` and resolves it through {@link resolveAgent}, so the
+ * fall-through is `specReviewAgentId → defaultAgentId → system → synthesized
+ * fallback`: an empty/unknown value (the "follow the default" sentinel) lands on
+ * the default agent, never locking a review out. Mirrors {@link resolveSpecAgent}
+ * exactly. There is no sandbox variant — `sandboxSessionKinds` alone decides
+ * whether a review session runs inside the sandbox.
+ */
+export function resolveSpecReviewAgent(): AgentConfig {
+  return resolveAgent(loadSettings().specReviewAgentId)
 }
 
 /**

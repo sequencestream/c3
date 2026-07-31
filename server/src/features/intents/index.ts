@@ -32,8 +32,10 @@ import {
   resolveSessionAgentSwitch,
   resolveSessionVendor,
   resolveSpecAgent,
+  resolveSpecReviewAgent,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
+import { readSpecFingerprint } from './spec-review.js'
 import { canDeleteSession } from '../../kernel/agent/adapters/capabilities.js'
 import { probeAll } from '../../kernel/agent/process/launcher.js'
 import { loadHistory, loadLastAssistantMessages, removeSession } from '../../sessions.js'
@@ -523,6 +525,82 @@ export const openSpecSession: Handler<'open_spec_session'> = async (_ctx, conn, 
   addViewer(chatId, conn.deliver)
 }
 
+/**
+ * Open an intent's spec-REVIEW session (`spec_review_session_id`) for read-only
+ * viewing. Mirrors {@link openSpecSession}, with two deliberate differences: the
+ * restored runtime is `'spec_review'` (so it can never inherit the author's
+ * directory write grant), and it carries the review binding facts — the reviewed
+ * intent plus the fingerprint the conclusion was produced against, re-derived
+ * from the stored conclusion — so a follow-up turn on a reopened review session
+ * still submits against the version it judged, never silently against a newer one.
+ */
+export const openSpecReviewSession: Handler<'open_spec_review_session'> = async (
+  _ctx,
+  conn,
+  msg,
+) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const intent = getIntent(msg.intentId)
+  if (!intent) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  const chatId = intent.specReviewSessionId
+  if (!chatId) {
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.chatSessionNotFound', params: { sessionId: '' } },
+    })
+    return
+  }
+  if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
+  if (!getRuntime(chatId)) {
+    const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
+    const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
+    const restored = ensureRuntime(chatId, proj, getDefaultMode(proj), baseline, 'spec_review')
+    restored.specReviewIntentId = intent.id
+    // Prefer the fingerprint the stored conclusion is bound to; with no
+    // conclusion yet, the spec's current content is what this session was
+    // launched against. A null here leaves the runtime unlaunchable by design —
+    // `launchRun` throws rather than binding an unbounded submit tool.
+    const fingerprint =
+      intent.specReviewFingerprint ?? readSpecFingerprint(proj, intent.specPath) ?? undefined
+    restored.specReviewFingerprint = fingerprint
+    setSessionAgent(chatId, resolveSpecReviewAgent().id)
+  }
+  const rt = getRuntime(chatId)
+  if (!rt) {
+    conn.send({ type: 'error', error: { code: 'intent.chatOpenFailed' } })
+    return
+  }
+  conn.viewing = chatId
+  touchWorkspace(proj, Date.now())
+  conn.send({
+    type: 'session_selected',
+    workspaceId: pathToId(proj)!,
+    sessionId: chatId,
+    title: intent.title,
+    mode: rt.mode,
+    history: rt.baseline,
+    status: rt.status,
+    vendor: resolveSessionVendor(chatId),
+    agentSwitch: agentSwitchFor(chatId),
+  })
+  for (const e of rt.buffer) conn.send(e)
+  addViewer(chatId, conn.deliver)
+}
+
 export const newIntentSession: Handler<'new_intent_session'> = (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
   if (!proj) {
@@ -919,6 +997,7 @@ export const deleteIntent: Handler<'delete_intent'> = async (ctx, conn, msg) => 
   const sessionIds = new Set<string>()
   if (intent.intentSessionId) sessionIds.add(intent.intentSessionId)
   if (intent.specSessionId) sessionIds.add(intent.specSessionId)
+  if (intent.specReviewSessionId) sessionIds.add(intent.specReviewSessionId)
   for (const session of listIntentWorkSessions(intent.id)) sessionIds.add(session.sessionId)
 
   for (const sessionId of sessionIds) {

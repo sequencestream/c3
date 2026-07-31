@@ -12,6 +12,7 @@ import { createNodeWebSocket } from '@hono/node-ws'
 import {
   INTENT_DISALLOWED_TOOLS,
   SPEC_DISALLOWED_TOOLS,
+  SPEC_REVIEW_DISALLOWED_TOOLS,
   waitForDecision,
 } from './kernel/permission/index.js'
 import { launchRun, type LaunchRunDeps } from './kernel/run/run-lifecycle.js'
@@ -30,6 +31,7 @@ import {
   setOnRunEnd,
   setOnEmit,
   setTaskObserver,
+  type SessionRuntime,
 } from './runs.js'
 import { observeTaskWire } from './kernel/agent/task-tracker.js'
 import { getSessionAgentId, getAgentLang, setOnPendingIntentLookup } from './kernel/config/index.js'
@@ -42,6 +44,7 @@ import {
 import { setIntentLifecycleEventBus } from './features/intents/lifecycle-events.js'
 import { buildIntentAgentPrompt } from './features/intents/prompt.js'
 import { buildSpecAgentPrompt } from './features/intents/spec-prompt.js'
+import { buildSpecReviewAgentPrompt } from './features/intents/spec-review.js'
 import { DISCUSSION_RESEARCH_PROMPT } from './features/discussions/research.js'
 import { runFind, runView } from './features/intents/tool-defs.js'
 import { runCommSave } from './features/intents/save-comm.js'
@@ -64,6 +67,7 @@ import {
 } from './transport/intent-mcp/index.js'
 import { createEventMcp, EVENT_MCP_PATH, type EventMcpTools } from './transport/event-mcp/index.js'
 import { createSpecQueryMcp, SPEC_QUERY_MCP_PATH } from './transport/spec-query-mcp/index.js'
+import { createSpecReviewMcp, SPEC_REVIEW_MCP_PATH } from './transport/spec-review-mcp/index.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
 import {
   createConsensusAutoHandler,
@@ -476,6 +480,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   }
   const eventMcp = createEventMcp(`http://127.0.0.1:${opts.port}`, eventMcpTools)
   const specQueryMcp = createSpecQueryMcp(`http://127.0.0.1:${opts.port}`)
+  const specReviewMcp = createSpecReviewMcp(`http://127.0.0.1:${opts.port}`)
 
   // ── Sandbox wiring (arapuca process-level isolation) ───────────────────────
   // Probe arapuca once at startup for the "sandbox available?" signal (log only;
@@ -528,6 +533,18 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       bindMcp: (binding) => specQueryMcp.bind(binding),
       gate: 'spec' as const,
     }),
+    // Spec-REVIEW profile (strictly read-only gate + a STRICTER disallowed-tools
+    // lock than the author's — the write tools are cut at the SDK level too, since
+    // a reviewer has no writable location for a path check to decide about).
+    // `intentId` + `fingerprint` come off the runtime and are closed over here, so
+    // the reviewer's `submit_spec_review` can only ever conclude about the one
+    // intent and the one document version this review was launched for.
+    specReviewProfile: (workspacePath, intentId, fingerprint) => ({
+      appendSystemPrompt: buildSpecReviewAgentPrompt(getAgentLang()),
+      disallowedTools: SPEC_REVIEW_DISALLOWED_TOOLS,
+      bindMcp: (binding) => specReviewMcp.bind({ ...binding, intentId, fingerprint }),
+      gate: 'spec_review' as const,
+    }),
     // Discussion-research profile (read-only gate + disallowed-tools lock + the
     // research system prompt). The first, unattended research pass applies this
     // itself; this wiring is what re-applies it to a FOLLOW-UP turn on the same
@@ -570,6 +587,11 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Feature-private: NOT on the kernel context (ADR-0009 R1).
   const workflowHooks = {
     runDevTurn,
+    // The spec-phase launcher the queue hands to `launchSpecSession` /
+    // `launchSpecReviewSession`. Identical to the WS handlers' `ctx.launchRun`,
+    // so a spec session started by the queue and one started by a human button
+    // take the exact same launch path — including the profile locks.
+    launchSpecRun: (rt: SessionRuntime, prompt: string) => launchRun(rt, prompt, launchDeps),
     broadcastIntents: broadcasts.broadcastIntents,
     emitStatus: broadcasts.broadcastWorkflow,
     sessionExists,
@@ -707,6 +729,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // Spec-query MCP loopback endpoint. The codex twin of the spec-authoring
   // in-process read-only ledger tools. It never registers save_intents.
   app.all(SPEC_QUERY_MCP_PATH, (c) => specQueryMcp.handler(c))
+  app.all(SPEC_REVIEW_MCP_PATH, (c) => specReviewMcp.handler(c))
 
   // Automation MCP loopback endpoint. The codex twin of the automation in-process
   // c3 profile (intent query/write-back, PR events, discussion tools). Bound

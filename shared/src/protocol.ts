@@ -762,6 +762,16 @@ export interface WorkspaceSetting {
    */
   sddEnabled?: boolean
   /**
+   * Explicit, persisted **opt-in** for machine spec approval (2026-07-31). When
+   * `true` AND {@link sddEnabled} is on, a `pass` review conclusion lets the queue
+   * approve the spec itself, writing {@link MACHINE_SPEC_APPROVER} as the approver.
+   * Absent / non-boolean ⇒ `false` — only an explicit `true` opens this path, so a
+   * migrated workspace never changes behaviour silently and a `pass` conclusion
+   * still stops at the human approval checkpoint. Turning it back off never
+   * revokes an already-approved spec and never affects human approval.
+   */
+  specMachineApprovalEnabled?: boolean
+  /**
    * Workspace-level master gate for automation *auto-dispatch*. When off, neither
    * the cron tick loop nor the event-trigger dispatcher fires any automation in
    * this workspace, regardless of each automation's own `active` / `paused`
@@ -1018,6 +1028,21 @@ export interface SystemSettings {
    * is left empty (never auto-filled), so "follow the default" survives a save.
    */
   specAgentId: string
+  /**
+   * Id of the agent that runs **spec-REVIEW sessions** (the read-only reviewer
+   * that judges an authored spec and submits a structured conclusion). Semantics
+   * are **identical to {@link specAgentId}**: an **empty string is "follow the
+   * default agent"** (the runtime resolves it through `resolveAgent`, falling back
+   * `specReviewAgentId → defaultAgentId → system`). A *non-empty* value that points
+   * at a removed/now-disabled agent is **rewritten** on store to the next enabled
+   * agent in `order_seq` order; an empty string is left empty (never auto-filled),
+   * so "follow the default" survives a save.
+   *
+   * There is exactly ONE slot — no sandbox-specific reviewer agent exists. Whether
+   * a review session runs inside the sandbox is decided solely by whether
+   * `sandboxSessionKinds` contains `'spec_review'`.
+   */
+  specReviewAgentId: string
   /**
    * Id of the agent used to **pre-fill the "new automation" form** (the vendor +
    * agent selected the instant the create form opens). Storage-normalization
@@ -1911,6 +1936,37 @@ export type IntentPrStatus = 'reviewing' | 'rejected' | 'failed' | 'merged' | 'c
  */
 export type DepType = 'blocks' | 'informs' | 'soft_after'
 
+/**
+ * The conclusion a read-only `spec_review` session reports through its narrow
+ * submit tool. Deliberately a closed enum submitted explicitly — a conclusion is
+ * never inferred from free text or from how the review run happened to end.
+ * - `pass`              — the spec is good enough to develop against.
+ * - `changes_requested` — the spec needs rework before development may start.
+ */
+export type SpecReviewVerdict = 'pass' | 'changes_requested'
+
+/** All {@link SpecReviewVerdict} values, for runtime validation. */
+export const SPEC_REVIEW_VERDICTS = [
+  'pass',
+  'changes_requested',
+] as const satisfies readonly SpecReviewVerdict[]
+
+/**
+ * The reserved identity written into `Intent.specApproveUser` when the queue
+ * approved a spec under the workspace's machine-approval opt-in. It is NOT a
+ * login subject and can never collide with one (the `c3:` prefix is reserved), so
+ * "who approved this" stays honest and the UI can render machine vs human
+ * approval differently.
+ */
+export const MACHINE_SPEC_APPROVER = 'c3:machine-spec-approver'
+
+/**
+ * Hard ceiling on spec rework rounds. After this many `changes_requested`
+ * conclusions the queue stops re-launching the author and escalates to a human
+ * todo instead — bounding both token spend and the risk of never converging.
+ */
+export const MAX_SPEC_REVIEW_REWORK_ROUNDS = 3
+
 /** One dependency edge in intent_deps, with type metadata. */
 export interface DependencyInfo {
   /** The id of the depended-on intent. */
@@ -1983,13 +2039,48 @@ export interface Intent {
    * Persisted so the quality-gate state survives reconnect / refresh.
    */
   specApproved: boolean
-  /** Who approved the spec (the approving user's id/handle); `null` until approved. */
+  /**
+   * Who approved the spec; `null` until approved. Either the approving user's
+   * id/handle, or the reserved {@link MACHINE_SPEC_APPROVER} constant when the
+   * queue approved it under the workspace's machine-approval opt-in. The constant
+   * never impersonates a login subject, so the UI can always tell the two apart.
+   */
   specApproveUser: string | null
   /**
    * The c3SessionId of the session that authored / refined the spec; `null` when
    * none. Distinct from `lastWorkSessionId` (the work session).
    */
   specSessionId: string | null
+  /**
+   * The c3SessionId of the read-only session that last reviewed the spec; `null`
+   * when the spec was never reviewed. Distinct from {@link specSessionId} — the
+   * author and the reviewer are separate sessions with separate permissions.
+   */
+  specReviewSessionId: string | null
+  /** The current review conclusion; `null` when no valid conclusion exists. */
+  specReviewVerdict: SpecReviewVerdict | null
+  /** The reviewer's rationale for {@link specReviewVerdict}; `null` when none. */
+  specReviewReason: string | null
+  /** When the current conclusion was produced (epoch ms); `null` when none. */
+  specReviewAt: number | null
+  /**
+   * The spec-content fingerprint the current conclusion was produced against. A
+   * conclusion is only valid while this equals the spec file's live fingerprint —
+   * editing the spec invalidates it and the flow reviews the new content.
+   */
+  specReviewFingerprint: string | null
+  /**
+   * How many rework rounds this intent's spec has been through (a
+   * `changes_requested` conclusion that sent the author back). `0` for historic
+   * rows; capped by {@link MAX_SPEC_REVIEW_REWORK_ROUNDS}.
+   */
+  specReviewReworkRounds: number
+  /**
+   * `true` when a human revoked an approval while this exact conclusion stood, so
+   * the queue must not machine-approve the SAME conclusion again on the next tick.
+   * Only a fresh valid conclusion or a human approval clears it.
+   */
+  specReviewMachineApprovalBlocked: boolean
   /**
    * The c3SessionId of the intent's refine / communication session; `null` when
    * none. Distinct from `lastWorkSessionId` (the work session) — this is the
@@ -2064,8 +2155,10 @@ export interface IntentDevSession {
 
 /**
  * Intent lifecycle-log operation kinds — the auditable moments of an intent's
- * life. `spec_unapproved` is written when a direct spec edit revokes a prior
- * approval; `spec_updated` records a direct spec-source overwrite (no diff).
+ * life. `spec_unapproved` is written when a direct spec edit or an explicit
+ * revoke takes back a prior approval; `spec_updated` records a direct spec-source
+ * overwrite (no diff); `spec_reviewed` records one read-only review conclusion
+ * (pass / changes-requested, with the reviewer's reason in the summary).
  */
 export const INTENT_LOG_OPERATIONS = [
   'intent_created',
@@ -2073,6 +2166,7 @@ export const INTENT_LOG_OPERATIONS = [
   'status_changed',
   'spec_created',
   'spec_updated',
+  'spec_reviewed',
   'spec_approved',
   'spec_unapproved',
   'pr_created',
@@ -2529,13 +2623,18 @@ export const MAX_EVENT_FILTERS = 16
  *   derivation.
  * - `spec`        — a spec-authoring session: writes confined to the intent's
  *   spec directory (path-level write gate), the project read-only elsewhere.
+ * - `spec_review` — a spec-REVIEW session: strictly read-only. It reads the spec,
+ *   the repository source and this project's intents, and reports its verdict
+ *   through one narrow submit tool. It deliberately does NOT reuse `spec`, which
+ *   would silently grant the spec directory's write permission — a reviewer never
+ *   edits the document it reviews.
  *
  * Migration (2026-06-26): split out of the old `RunKind`, whose 7 business values
  * moved here verbatim with `'session' → 'work'`. Business-source judgements (which
  * scenario may trigger a automation, which security gate applies) read `sessionKind`.
  */
 export type SessionKind =
-  'work' | 'intent' | 'discussion' | 'automation' | 'consensus' | 'tool' | 'spec'
+  'work' | 'intent' | 'discussion' | 'automation' | 'consensus' | 'tool' | 'spec' | 'spec_review'
 
 /**
  * All {@link SessionKind} values, for runtime validation and UI iteration (kept in
@@ -2550,6 +2649,7 @@ export const SESSION_KINDS = [
   'consensus',
   'tool',
   'spec',
+  'spec_review',
 ] as const satisfies readonly SessionKind[]
 
 /**
@@ -3312,9 +3412,22 @@ export type ClientToServer =
    * Approve an intent's authored spec — the human approval checkpoint that gates
    * entry into development. Sets `spec_approved=true` and records the approving
    * user (the current login subject) in `spec_approve_user`. Single-person
-   * confirmation; no multi-sign or un-approve in this phase.
+   * confirmation; no multi-sign. Revocable via `revoke_spec_approval`.
    */
   | { type: 'approve_spec'; workspaceId: string; intentId: string }
+  /**
+   * Revoke an intent's spec approval — the explicit undo for BOTH human and
+   * machine approval (2026-07-31). Clears `spec_approved` and the approver
+   * identity, appends a `spec_unapproved` audit entry and re-broadcasts, so the
+   * intent returns to "awaiting approval" and development is not started.
+   *
+   * It also marks the CURRENT review conclusion as human-vetoed, so the very next
+   * queue tick cannot machine-approve the same conclusion straight back; only a
+   * fresh valid conclusion or a human approval lifts that. Already-running
+   * development sessions are NOT force-killed — a revoke governs admission from
+   * here on, not work already in flight.
+   */
+  | { type: 'revoke_spec_approval'; workspaceId: string; intentId: string }
   /**
    * Open an intent's spec-authoring session (`spec_session_id`) for viewing in
    * the intent detail's `spec session` tab. The server resolves the stored spec
@@ -3323,6 +3436,13 @@ export type ClientToServer =
    * `open_intent_session` (the comm/refine session, a different `'intent'` runtime).
    */
   | { type: 'open_spec_session'; workspaceId: string; intentId: string }
+  /**
+   * Open an intent's spec-REVIEW session (`spec_review_session_id`) for viewing.
+   * Mirrors `open_spec_session` but restores the strictly read-only
+   * `'spec_review'` runtime — it never gets the spec author's directory write
+   * grant. Used by the detail's review tab and by WorkCenter's jump-to-source.
+   */
+  | { type: 'open_spec_review_session'; workspaceId: string; intentId: string }
   /**
    * Reset an intent's refine / communication session: start a FRESH `'intent'`
    * session seeded with the user's new input concatenated with the intent's
@@ -3671,7 +3791,10 @@ export type ServerToClient =
   | {
       type: 'session_counts'
       workspaceId: string
-      counts: Record<'work' | 'intent' | 'spec' | 'discussion' | 'automation' | 'tool', number>
+      counts: Record<
+        'work' | 'intent' | 'spec' | 'spec_review' | 'discussion' | 'automation' | 'tool',
+        number
+      >
       /**
        * Running **business item** counts of the same workspace, deduplicated by
        * owner: an intent / discussion / automation counts once as long as ANY of

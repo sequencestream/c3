@@ -84,6 +84,44 @@ Spends **no** agent tokens and needs the intent db (`c3.db`).
 - `pnpm start --port 13000`
 - `node scripts/e2e/e2e-queue-test.mjs ws://localhost:13000/ws` → expect `RESULT: PASS`.
 
+## Spec automation (author → review → opt-in machine approval → revoke)
+
+Drives the SDD spec phase the queue owns, on one throwaway SDD workspace with a
+single `automate` intent that has no spec. The queue authors the spec, reviews it
+in a separate read-only session, and the test walks the machine-approval opt-in
+through its three meaningful states on that SAME authored spec:
+
+1. **opt-in OFF** (the default every migrated workspace lands on) — the flow runs
+   author → review and then STOPS. `spec_approved` must never become true at any
+   sample, whatever the reviewer concluded; with a passing review the queue holds
+   at `spec_awaiting_approval` tick after tick.
+2. **opt-in ON** — the same passing conclusion is approved by the queue with no
+   `approve_spec` message on the wire, and the approver is the reserved machine
+   identity `c3:machine-spec-approver` (never a login subject).
+3. **revoke** — the intent returns to awaiting approval, and the next ticks do
+   NOT re-approve the same conclusion. Without the conclusion-level veto a
+   machine-approval workspace would undo the revoke within 10 seconds, so this is
+   the assertion that makes the revoke button real.
+
+Reusing one authored spec across all three phases is deliberate: it proves the
+opt-in is re-read every tick rather than latched at queue start, and it spends
+one authoring + review cycle instead of two.
+
+**Spends real agent tokens** (one spec-authoring run plus one or more review
+runs) — that is the point, since the flow under test is "does the queue actually
+drive these sessions". No DEVELOPMENT turn ever runs: an unapproved spec is never
+developed, and the queue is stopped before approval could release that gate.
+
+Exits `5` (SKIP) rather than FAIL when the environment cannot produce the
+precondition — no usable agent, or a reviewer that never returns `pass` within
+the rework budget. Phase 2 asserts the approval PATH, not the reviewer's
+judgement; the rework-cap and escalation rules are pinned deterministically in
+`server/src/kernel/queue/reconcile.test.ts` instead.
+
+- `pnpm start --port 13000`
+- `node scripts/e2e/e2e-spec-automation-test.mjs ws://localhost:13000/ws` → expect
+  `RESULT: PASS`.
+
 ## Intent management (save flow + AskUserQuestion gate)
 
 Exercises the intent-management feature end-to-end: register a throwaway

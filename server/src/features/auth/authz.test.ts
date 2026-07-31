@@ -45,6 +45,7 @@ beforeEach(() => {
     toolAgentId: '',
     intentAgentId: '',
     specAgentId: '',
+    specReviewAgentId: '',
     automationAgentId: '',
   } as SystemSettings
 })

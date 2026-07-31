@@ -44,9 +44,11 @@ function spec(overrides: Partial<GatewaySpec> = {}): GatewaySpec {
             ? 'intent'
             : base.gate === 'spec'
               ? 'spec'
-              : base.gate === 'discussion-research'
-                ? 'discussion'
-                : 'work',
+              : base.gate === 'spec_review'
+                ? 'spec_review'
+                : base.gate === 'discussion-research'
+                  ? 'discussion'
+                  : 'work',
       }
 }
 
@@ -488,5 +490,89 @@ describe('worktree isolation — config/audit key is workspacePath, advisor cwd 
     expect(onPermissionRequest).toHaveBeenCalledWith(
       expect.objectContaining({ toolName: 'AskUserQuestion', workspacePath: ROOT }),
     )
+  })
+})
+
+describe('spec_review gate — strictly read-only, deny-by-default', () => {
+  const g = () => createCanUseTool(spec({ gate: 'spec_review', cwd: '/proj' }))
+
+  it('allows reading the spec, the repository source and this project’s intents', async () => {
+    for (const [tool, input] of [
+      ['Read', { file_path: '/home/u/.c3/specs/p/2026/spec.md' }],
+      ['Read', { file_path: '/proj/src/deep/module.ts' }],
+      ['Grep', { pattern: 'x' }],
+      ['Glob', { pattern: '**/*.ts' }],
+      ['mcp__c3__find_intents', { keyword: 'login' }],
+      ['mcp__c3__view_intent', { id: 'i1' }],
+    ] as const) {
+      expect(await g()(tool, input, {} as never)).toMatchObject({ behavior: 'allow' })
+    }
+  })
+
+  it('allows the ONE narrow submit tool', async () => {
+    expect(
+      await g()('mcp__c3__submit_spec_review', { verdict: 'pass', reason: 'ok' }, {} as never),
+    ).toMatchObject({ behavior: 'allow' })
+  })
+
+  it('DENIES a write to any path — including inside the spec directory itself', async () => {
+    // This is the difference from the `spec` gate that justifies a separate kind:
+    // there is no writable location to path-check against, so the spec dir is
+    // denied exactly like anywhere else. A reviewer never edits what it reviews.
+    for (const path of [
+      '/home/u/.c3/specs/p/2026/spec.md',
+      '/proj/src/index.ts',
+      '/tmp/scratch.txt',
+      '../../etc/passwd',
+    ]) {
+      expect(await g()('Write', { file_path: path }, {} as never)).toMatchObject({
+        behavior: 'deny',
+      })
+      expect(await g()('Edit', { file_path: path }, {} as never)).toMatchObject({
+        behavior: 'deny',
+      })
+      expect(await g()('MultiEdit', { file_path: path }, {} as never)).toMatchObject({
+        behavior: 'deny',
+      })
+      expect(await g()('NotebookEdit', { notebook_path: path }, {} as never)).toMatchObject({
+        behavior: 'deny',
+      })
+    }
+  })
+
+  it('DENIES shell, sub-agents, slash commands, the ledger save and unknown tools', async () => {
+    for (const [tool, input] of [
+      ['Bash', { command: 'echo hi > /tmp/x' }],
+      ['BashOutput', {}],
+      ['KillShell', {}],
+      ['Task', { prompt: 'go write it' }],
+      ['SlashCommand', { command: '/deploy' }],
+      ['mcp__c3__save_intents', { intents: [] }],
+      ['mcp__c3__some_future_writable_tool', {}],
+      ['TotallyUnknownTool', {}],
+    ] as const) {
+      expect(await g()(tool, input, {} as never)).toMatchObject({ behavior: 'deny' })
+    }
+  })
+
+  it('never opens a human prompt: an unattended review must not stall on one', async () => {
+    const sent: ServerToClient[] = []
+    const gate = createCanUseTool(
+      spec({ gate: 'spec_review', cwd: '/proj', send: (m) => sent.push(m) }),
+    )
+    await gate(
+      'AskUserQuestion',
+      { questions: [{ question: 'q?', header: 'h', options: [], multiSelect: false }] },
+      {} as never,
+    )
+    await gate('Write', { file_path: '/proj/x' }, {} as never)
+    expect(sent.find((m) => m.type === 'permission_request')).toBeUndefined()
+  })
+
+  it('never runs consensus — a read-only gate has nothing to vote on', async () => {
+    await g()('Write', { file_path: '/proj/x' }, {} as never)
+    await g()('Bash', { command: 'ls' }, {} as never)
+    expect(vi.mocked(runConsensusVote)).not.toHaveBeenCalled()
+    expect(vi.mocked(runAskConsensus)).not.toHaveBeenCalled()
   })
 })

@@ -55,6 +55,7 @@ import {
   newIntentSession,
   openIntentSession,
   openSpecSession,
+  openSpecReviewSession,
   refineIntent,
   resetIntentSession,
   renameIntentSession,
@@ -73,6 +74,7 @@ import {
 } from './intents/index.js'
 import {
   approveSpecHandler,
+  revokeSpecApprovalHandler,
   readSpecHandler,
   resetSpecSessionHandler,
   updateSpecContentHandler,
@@ -172,7 +174,9 @@ export const handlerMap: HandlerMap = {
   start_development: startDevelopment,
   write_spec: writeSpecHandler,
   approve_spec: approveSpecHandler,
+  revoke_spec_approval: revokeSpecApprovalHandler,
   open_spec_session: openSpecSession,
+  open_spec_review_session: openSpecReviewSession,
   reset_intent_session: resetIntentSession,
   reset_spec_session: resetSpecSessionHandler,
   read_spec: readSpecHandler,

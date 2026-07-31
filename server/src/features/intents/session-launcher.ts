@@ -31,6 +31,7 @@ import {
   getDefaultAgentId,
   resolveSessionVendor,
   resolveSpecAgent,
+  resolveSpecReviewAgent,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
 import type { RunInject } from '../../kernel/run/prompt-delivery.js'
@@ -49,6 +50,8 @@ import {
   tryClaimDevLaunch,
 } from './dev-link.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
+import { clearPendingSpecReviewLink, registerPendingSpecReviewLink } from './spec-review-link.js'
+import { buildSpecReviewPrompt, buildSpecReworkPrompt, readSpecFingerprint } from './spec-review.js'
 import { buildDevPrompt } from './dev-prompt.js'
 import { findDependencyBlockingMainline } from './dependency-gate.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
@@ -390,16 +393,32 @@ export async function launchWorkSession(
 
 // ── Spec session launcher ──
 
+/** Extra steering for a spec-authoring launch. */
+export interface SpecLaunchOptions {
+  /**
+   * The reviewer's findings from a `changes_requested` conclusion. When set, the
+   * author is handed a REWORK brief (the findings verbatim) instead of a plain
+   * "continue", and an intent that has a spec but has lost its authoring session
+   * gets a fresh session bound to the EXISTING spec path rather than a scaffolded
+   * new one — a rework must never orphan the document under review.
+   */
+  reworkReason?: string
+  /** Which rework round this is, for the author's brief. */
+  reworkRound?: number
+}
+
 /**
- * Launch a spec-authoring session for an intent. Two sub-paths:
- *   1. **First-time** (no `specSessionId` yet) — scaffold the dated spec
- *      directory, seed spec.md, backfill `specPath`, and launch a new spec
- *      session with a first-time prompt.
- *   2. **Resume** (existing `specSessionId`) — validate the session is not
- *      already running, restore the runtime if it was dropped, and re-launch
- *      with a continuation prompt. Returns the existing session id.
+ * Launch a spec-authoring session for an intent. Three sub-paths:
+ *   1. **Resume** (existing `specSessionId`) — validate the session is not
+ *      already running, restore the runtime if it was dropped, and re-launch with
+ *      a continuation prompt (or the rework brief). Returns the existing id.
+ *   2. **Re-author on an existing spec** (a `specPath` but no live authoring
+ *      session, only under `reworkReason`) — a fresh session pointed at the spec
+ *      that already exists. No scaffolding, so the reviewed document survives.
+ *   3. **First-time** (neither) — scaffold the dated spec directory, seed
+ *      spec.md, backfill `specPath`, and launch with the first-time prompt.
  *
- * Both paths run the dependency gate first.
+ * Every path runs the dependency gate first.
  */
 export async function launchSpecSession(
   workspacePath: string,
@@ -407,6 +426,7 @@ export async function launchSpecSession(
   deps: SessionLaunchDeps,
   progress?: (stage: string) => void,
   actor?: string | null,
+  opts?: SpecLaunchOptions,
 ): Promise<SessionLaunchResult> {
   if (!isStoreAvailable()) return { success: false, code: 'intent.dbUnavailable' }
 
@@ -415,7 +435,14 @@ export async function launchSpecSession(
 
   // If a spec session already exists → resume it
   if (intent.specSessionId) {
-    return resumeSpecSession(workspacePath, intent, deps, progress, actor)
+    return resumeSpecSession(workspacePath, intent, deps, progress, actor, opts)
+  }
+
+  // Rework on a spec whose authoring session is gone (authored manually, or the
+  // link was lost): re-author IN PLACE. Scaffolding here would mint a second spec
+  // file and silently detach the one the reviewer just judged.
+  if (opts?.reworkReason && intent.specPath) {
+    return createSpecSessionOnExistingPath(workspacePath, intent, deps, opts, progress)
   }
 
   // First-time: scaffold and launch new session
@@ -554,9 +581,164 @@ function createFirstSpecSession(
   return { success: true, sessionId: specId, mode: 'fresh' }
 }
 
+// ── Spec review session launcher ──
+
+/**
+ * Launch a strictly read-only review session for an intent's authored spec.
+ *
+ * Unlike {@link launchSpecSession} there is no resume path. A review is a
+ * one-shot judgement of ONE document version: the fingerprint captured here binds
+ * the conclusion, so continuing an old review session against changed content
+ * would be judging two documents at once. Every review is therefore a fresh
+ * session, and the previous one stays queryable under Works.
+ *
+ * Refuses — writing nothing — when there is no spec, when the spec is unreadable
+ * (an unreadable spec is not an empty one), or when a review is already running
+ * for this intent.
+ */
+export async function launchSpecReviewSession(
+  workspacePath: string,
+  intentId: string,
+  deps: SessionLaunchDeps,
+  progress?: (stage: string) => void,
+  _actor?: string | null,
+): Promise<SessionLaunchResult> {
+  if (!isStoreAvailable()) return { success: false, code: 'intent.dbUnavailable' }
+
+  const intent = getIntent(intentId)
+  if (!intent) return { success: false, code: 'intent.notFound' }
+  if (!intent.specPath) return { success: false, code: 'intent.specNotWritten' }
+
+  // A review already in flight for this intent → do not start a second one.
+  if (intent.specReviewSessionId && isRunning(intent.specReviewSessionId)) {
+    return { success: true, sessionId: intent.specReviewSessionId, mode: 'attach' }
+  }
+
+  const fileAbs = resolveSpecFileAbs(workspacePath, intent.specPath)
+  const fingerprint = readSpecFingerprint(workspacePath, intent.specPath)
+  if (fingerprint === null) {
+    return { success: false, code: 'intent.specNotWritten' }
+  }
+
+  progress?.('launching')
+  const reviewId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  const reviewAgent = resolveSpecReviewAgent()
+  const rt = ensureRuntime(
+    reviewId,
+    workspacePath,
+    getDefaultMode(workspacePath),
+    [],
+    'spec_review',
+  )
+  // Both facts are part of the security contract — `launchRun` throws without
+  // them rather than binding an unbounded submit tool.
+  rt.specReviewIntentId = intent.id
+  rt.specReviewFingerprint = fingerprint
+  setSessionAgent(reviewId, reviewAgent.id)
+
+  try {
+    upsertPendingRow({
+      pendingId: reviewId,
+      workspacePath,
+      vendor: reviewAgent.vendor,
+      agentId: reviewAgent.id,
+      title: intent.title,
+      ownerKind: 'intent',
+      ownerId: intent.id,
+    })
+  } catch (err) {
+    console.warn(`[c3:intents] spec review session projection write failed: ${errMsg(err)}`)
+  }
+
+  registerPendingSpecReviewLink(reviewId, intent.id)
+
+  try {
+    void deps
+      .launchRun(rt, buildSpecReviewPrompt(intent, fileAbs, workspacePath))
+      .catch((err: unknown) => {
+        clearPendingSpecReviewLink(reviewId)
+        progress?.('failed')
+        console.warn(`[c3:intents] launchSpecReviewSession async fail: ${errMsg(err)}`)
+      })
+  } catch (err) {
+    clearPendingSpecReviewLink(reviewId)
+    console.warn(`[c3:intents] launchSpecReviewSession sync fail: ${errMsg(err)}`)
+  }
+
+  return { success: true, sessionId: reviewId, mode: 'fresh' }
+}
+
+/**
+ * Internal: start a FRESH authoring session on an intent's EXISTING spec file.
+ * Used only by the rework path when the original authoring session is gone —
+ * everything about it mirrors {@link createFirstSpecSession} except that it
+ * scaffolds nothing and leaves `spec_path` exactly as it was.
+ */
+function createSpecSessionOnExistingPath(
+  workspacePath: string,
+  intent: Intent,
+  deps: SessionLaunchDeps,
+  opts: SpecLaunchOptions,
+  progress?: (stage: string) => void,
+): SessionLaunchResult {
+  const depCheck = prepareSpecDependencyContext2(
+    workspacePath,
+    intent,
+    deps.broadcastIntents,
+    progress,
+  )
+  if (!depCheck.ok) return depCheck.result
+
+  const fileAbs = resolveSpecFileAbs(workspacePath, intent.specPath!)
+  const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  const specAgent = resolveSpecAgent()
+  const rt = ensureRuntime(specId, workspacePath, getDefaultMode(workspacePath), [], 'spec')
+  rt.specDir = dirname(fileAbs)
+  setSessionAgent(specId, specAgent.id)
+
+  try {
+    upsertPendingRow({
+      pendingId: specId,
+      workspacePath,
+      vendor: specAgent.vendor,
+      agentId: specAgent.id,
+      title: intent.title,
+      ownerKind: 'intent',
+      ownerId: intent.id,
+    })
+  } catch (err) {
+    console.warn(`[c3:intents] spec session projection write failed: ${errMsg(err)}`)
+  }
+
+  registerPendingSpecLink(specId, intent.id)
+
+  const prompt = buildSpecReworkPrompt(
+    intent,
+    fileAbs,
+    opts.reworkReason ?? '',
+    opts.reworkRound ?? intent.specReviewReworkRounds,
+    workspacePath,
+  )
+  try {
+    void deps.launchRun(rt, prompt).catch((err: unknown) => {
+      clearPendingSpecLink(specId)
+      progress?.('failed')
+      console.warn(
+        `[c3:intents] launchSpecSession (rework, new session) async fail: ${errMsg(err)}`,
+      )
+    })
+  } catch (err) {
+    clearPendingSpecLink(specId)
+    console.warn(`[c3:intents] launchSpecSession (rework, new session) sync fail: ${errMsg(err)}`)
+  }
+
+  return { success: true, sessionId: specId, mode: 'fresh' }
+}
+
 /** Internal: RESUME an existing spec session. The intent already has
  * `specSessionId` set. Validates the session is not running, restores the
- * runtime if dropped, then re-launches with a continuation prompt. Returns the
+ * runtime if dropped, then re-launches with a continuation prompt — or, under
+ * `opts.reworkReason`, the reviewer's findings as a rework brief. Returns the
  * existing session id (no new session created).
  */
 async function resumeSpecSession(
@@ -565,6 +747,7 @@ async function resumeSpecSession(
   deps: SessionLaunchDeps,
   progress?: (stage: string) => void,
   _actor?: string | null,
+  opts?: SpecLaunchOptions,
 ): Promise<SessionLaunchResult> {
   if (!intent.specSessionId) {
     return { success: false, code: 'intent.specNotWritten' }
@@ -606,9 +789,19 @@ async function resumeSpecSession(
     setSessionAgent(intent.specSessionId, specAgent.id)
   }
 
-  // Build continuation prompt pointing to existing specPath
+  // The turn: a plain continuation, or — after a `changes_requested` conclusion —
+  // the reviewer's findings verbatim, so the author reworks against the actual
+  // objection rather than a paraphrase of it.
   const fileAbs = resolveSpecFileAbs(workspacePath, intent.specPath)
-  const prompt = buildContinueSpecPrompt(intent, fileAbs, workspacePath)
+  const prompt = opts?.reworkReason
+    ? buildSpecReworkPrompt(
+        intent,
+        fileAbs,
+        opts.reworkReason,
+        opts.reworkRound ?? intent.specReviewReworkRounds,
+        workspacePath,
+      )
+    : buildContinueSpecPrompt(intent, fileAbs, workspacePath)
 
   // Re-launch — no new pending link needed (specSessionId is already set)
   try {

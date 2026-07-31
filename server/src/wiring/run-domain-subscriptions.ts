@@ -73,6 +73,7 @@ import {
   setPrInfo,
   setPrStatus,
   setSpecSessionId,
+  setSpecReviewSessionId,
   safeInsertIntentLog,
   updateIntentSession,
   updateStatus,
@@ -84,6 +85,10 @@ import {
   takePendingDevLink,
 } from '../features/intents/dev-link.js'
 import { clearPendingSpecLink, takePendingSpecLink } from '../features/intents/spec-link.js'
+import {
+  clearPendingSpecReviewLink,
+  takePendingSpecReviewLink,
+} from '../features/intents/spec-review-link.js'
 import { clearPendingIntentLink, takePendingIntentLink } from '../features/intents/intent-link.js'
 import { isIntentDrivenByWorkflow, notifyTurnSettled } from '../features/intents/workflow.js'
 import { runManualDevCleanup, type DevCleanupDeps } from '../features/intents/dev-cleanup.js'
@@ -288,6 +293,39 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
         })
         broadcastIntents(rt.workspacePath)
       }
+    } else if (rt.sessionKind === 'spec_review') {
+      // ── Spec-REVIEW session ──
+      // Same shape as the authoring bind, but it writes spec_review_session_id.
+      // The previous reviewer is de-owned rather than deleted: a review is
+      // one-shot per document version, so older reviews accumulate as history and
+      // stay queryable under Works — only the latest one owns the intent.
+      const intentId = takePendingSpecReviewLink(prevId)
+      if (intentId) {
+        const intent = getIntent(intentId)
+        const oldReviewSessionId = intent?.specReviewSessionId ?? null
+        if (oldReviewSessionId && oldReviewSessionId !== realId) {
+          updateRowOwner({
+            sessionId: oldReviewSessionId,
+            vendor: resolveSessionVendor(oldReviewSessionId),
+            ownerKind: null,
+            ownerId: null,
+          })
+        }
+        setSpecReviewSessionId(intentId, realId)
+        const vendor = resolveSessionVendor(realId)
+        deleteByVendorId(resolveSessionVendor(prevId), prevId)
+        upsertBoundRow({
+          sessionId: realId,
+          workspacePath: rt.workspacePath,
+          vendor,
+          agentId: getSessionAgentId(realId) ?? '',
+          title: intent?.title ?? 'New session',
+          sessionKind: 'spec_review',
+          ownerKind: 'intent',
+          ownerId: intentId,
+        })
+        broadcastIntents(rt.workspacePath)
+      }
     } else {
       // ── Normal work session ──
       setSessionMode(realId, rt.mode)
@@ -442,6 +480,15 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   eventBus.subscribe('run:settled', ({ sessionId, sessionKind }) => {
     if (sessionKind !== 'spec') return
     clearPendingSpecLink(sessionId)
+  })
+
+  // ── run:settled (sessionKind=spec_review) — review-link safety-net sweep ─────
+  // The twin of the sweep above. A review run that settles without ever binding
+  // leaves no conclusion behind either, so the queue simply re-reviews on a later
+  // pass — the swept entry only prevents an in-memory leak.
+  eventBus.subscribe('run:settled', ({ sessionId, sessionKind }) => {
+    if (sessionKind !== 'spec_review') return
+    clearPendingSpecReviewLink(sessionId)
   })
 
   // ── run:settled (sessionKind=intent) — intent-link safety-net sweep ───────────

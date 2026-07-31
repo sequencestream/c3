@@ -17,7 +17,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { PENDING_SESSION_PREFIX, type Intent } from '@ccc/shared/protocol'
+import { MACHINE_SPEC_APPROVER, PENDING_SESSION_PREFIX, type Intent } from '@ccc/shared/protocol'
 import { addViewer, ensureRuntime, isRunning, removeViewer } from '../../runs.js'
 import { pathToId, resolveWorkspaceRoot, touchWorkspace } from '../../state.js'
 import {
@@ -38,10 +38,12 @@ import type { Handler } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { launchSpecSession } from './session-launcher.js'
 import {
+  clearSpecReviewMachineBlock,
   getIntent,
   isStoreAvailable,
   listIntentLogs,
   listIntents,
+  revokeSpecApproval,
   safeInsertIntentLog,
   setSpecApproved,
 } from './store.js'
@@ -250,13 +252,69 @@ export const writeSpecHandler: Handler<'write_spec'> = async (ctx, conn, msg) =>
 }
 
 /**
+ * The ONE place a spec becomes approved — shared verbatim by the human
+ * `approve_spec` handler and the queue's machine-approval action. Only the
+ * calling identity differs: a login subject, or the reserved
+ * {@link MACHINE_SPEC_APPROVER} constant. Neither surface may re-implement the
+ * state update, or the two would drift on exactly the rules that matter (what
+ * gets logged, what event fires, what the approver field says).
+ *
+ * A human approval also lifts any machine-approval veto: once a person has
+ * approved this spec, the earlier revoke has been answered and must not keep
+ * suppressing a later machine approval of freshly reviewed content.
+ */
+export function applySpecApproval(input: {
+  workspacePath: string
+  intent: Intent
+  approver: string
+  broadcastIntents: (workspacePath: string) => void
+  publishEvent: (payload: {
+    workspacePath: string
+    sessionId: string
+    event: { type: string; metadata: Record<string, string> }
+  }) => void
+  /**
+   * Set when the caller ALREADY wrote `spec_approved` under its own conditional
+   * transaction (the queue's machine approval does, so the write and its guards
+   * are atomic). This pass then only lands the audit log, the event and the
+   * broadcast — re-writing the flag here would be harmless but would also make
+   * the transactional guard look optional, which it is not.
+   */
+  alreadyPersisted?: boolean
+}): void {
+  const machine = input.approver === MACHINE_SPEC_APPROVER
+  if (!input.alreadyPersisted) setSpecApproved(input.intent.id, true, input.approver)
+  if (!machine) clearSpecReviewMachineBlock(input.intent.id)
+  safeInsertIntentLog(
+    input.intent.id,
+    'spec_approved',
+    machine ? '机器批准 spec(审核结论为通过)' : '批准 spec',
+    input.approver,
+  )
+  input.broadcastIntents(input.workspacePath)
+  // Publish a generic event so event-triggered automations can react to spec approval.
+  input.publishEvent({
+    workspacePath: input.workspacePath,
+    sessionId: randomUUID(),
+    event: {
+      type: 'intent:spec_approve',
+      metadata: {
+        intentId: input.intent.id,
+        title: input.intent.title ?? '',
+        approver: machine ? 'machine' : 'human',
+      },
+    },
+  })
+}
+
+/**
  * `approve_spec` handler — the human approval checkpoint (the reason SDD exists):
  * development may only proceed once a person approves the authored spec. Sets
  * `spec_approved=true` and records the approving user (the current login subject)
  * in `spec_approve_user`, then broadcasts so every console reflects the approval.
  *
- * Single-person confirmation: no multi-sign and no un-approve in this phase. A
- * spec must exist first (`spec_path` non-null) — approving before authoring is
+ * Single-person confirmation: no multi-sign. Revocable via `revoke_spec_approval`.
+ * A spec must exist first (`spec_path` non-null) — approving before authoring is
  * rejected (the UI never offers it, this is the defensive server guard).
  */
 export const approveSpecHandler: Handler<'approve_spec'> = (ctx, conn, msg) => {
@@ -282,18 +340,74 @@ export const approveSpecHandler: Handler<'approve_spec'> = (ctx, conn, msg) => {
     return
   }
 
-  setSpecApproved(intent.id, true, conn.subject)
-  safeInsertIntentLog(intent.id, 'spec_approved', '批准 spec', conn.subject)
+  applySpecApproval({
+    workspacePath: proj,
+    intent,
+    approver: conn.subject ?? 'system',
+    broadcastIntents: ctx.broadcastIntents,
+    publishEvent: (payload) => ctx.eventBus.publish('event', payload),
+  })
+}
+
+/**
+ * `revoke_spec_approval` handler — the explicit undo for BOTH human and machine
+ * approval. It clears `spec_approved` and the approver identity, appends a
+ * `spec_unapproved` audit entry, and re-broadcasts, so the intent returns to
+ * "awaiting approval".
+ *
+ * The revoke ALSO vetoes the review conclusion the approval rested on (inside
+ * `revokeSpecApproval`'s transaction). Without that, a machine-approval workspace
+ * would simply re-approve the same `pass` conclusion on the next 10s tick and the
+ * revoke button would be theatre. Only a fresh valid conclusion — or a human
+ * approval — lifts the veto.
+ *
+ * Development already in flight is NOT killed: a revoke governs admission from
+ * here on. Revoking an intent that is not approved is rejected rather than
+ * silently succeeding, so a double-click cannot manufacture a second audit row.
+ */
+export const revokeSpecApprovalHandler: Handler<'revoke_spec_approval'> = (ctx, conn, msg) => {
+  const proj = resolveWorkspaceRoot(msg.workspaceId)
+  if (!proj) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { workspaceId: msg.workspaceId } },
+    })
+    return
+  }
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
+    return
+  }
+  const intent = getIntent(msg.intentId)
+  if (!intent) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return
+  }
+  if (!revokeSpecApproval(intent.id)) {
+    conn.send({ type: 'error', error: { code: 'intent.specNotApproved' } })
+    return
+  }
+  const wasMachine = intent.specApproveUser === MACHINE_SPEC_APPROVER
+  safeInsertIntentLog(
+    intent.id,
+    'spec_unapproved',
+    wasMachine ? '撤销机器批准的 spec' : '撤销 spec 批准',
+    conn.subject ?? 'system',
+  )
   ctx.broadcastIntents(proj)
-  // Publish a generic event so event-triggered automations can react to spec approval.
   ctx.eventBus.publish('event', {
     workspacePath: proj,
     sessionId: randomUUID(),
     event: {
-      type: 'intent:spec_approve',
-      metadata: { intentId: intent.id, title: intent.title ?? '' },
+      type: 'intent:spec_unapprove',
+      metadata: {
+        intentId: intent.id,
+        title: intent.title ?? '',
+        revokedApprover: wasMachine ? 'machine' : 'human',
+      },
     },
   })
+  conn.send({ type: 'intent_logs_list', intentId: intent.id, items: listIntentLogs(intent.id) })
 }
 
 /**

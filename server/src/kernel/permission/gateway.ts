@@ -4,8 +4,11 @@
  * used to live inside `runClaude`).
  *
  * `createCanUseTool(spec)` returns the `canUseTool` callback the SDK invokes for
- * every sensitive tool. Three gate policies branch off `spec.gate`:
+ * every sensitive tool. Gate policies branch off `spec.gate`:
  *  - `intent` — the read-only comm agent (read tools pass, save asks, else deny);
+ *  - `spec` — the spec author (reads pass, writes path-checked into `specDir`);
+ *  - `spec_review` — the spec reviewer: reads pass, the one narrow submit tool
+ *    passes, every write is denied outright (it owns no writable location);
  *  - `discussion-research` — the unattended read-only research agent (read tools pass, else deny);
  *  - `standard` — the normal flow (multi-agent consensus → human prompt).
  *
@@ -31,6 +34,7 @@ import {
   INTENT_READ_TOOLS,
   isInside,
   PUBLISH_EVENT_TOOL,
+  SUBMIT_SPEC_REVIEW_TOOL,
   withAnswers,
   WRITE_TOOLS,
 } from './tools.js'
@@ -78,7 +82,7 @@ export interface ConsensusAutoCtx {
 /** Everything the gateway needs from the run it guards (all caller-resolved). */
 export interface GatewaySpec {
   /** Which gate policy applies (default `standard`). */
-  gate: 'standard' | 'intent' | 'discussion-research' | 'spec'
+  gate: 'standard' | 'intent' | 'discussion-research' | 'spec' | 'spec_review'
   /**
    * Only set when `gate === 'spec'`: the absolute directory writes are confined
    * to. Write-class tools targeting a path outside it are denied; reads pass
@@ -281,6 +285,34 @@ export function createCanUseTool(spec: GatewaySpec): CanUseTool {
       }
       console.warn(`[c3] spec gate denied tool: ${toolName}`)
       return deny('Spec session is spec-only; this tool is blocked.')
+    }
+
+    // Spec-REVIEW (strictly read-only) gate. The reviewer reads the spec, the
+    // repository source and this project's intents, and reports its verdict
+    // through ONE narrow submit tool. It has NO writable location anywhere — the
+    // spec belongs to its author, so write-class tools are denied here outright
+    // rather than path-checked (contrast the `spec` gate above, which is the
+    // whole reason this is a separate kind and not a reuse of `spec`). Shell,
+    // sub-agents, slash commands, writable MCP tools and anything unrecognised
+    // fall through to the deny-by-default at the end: fail-closed by structure.
+    //
+    // Clarifying questions are off. A review run is unattended queue work, and a
+    // reviewer that could open a human prompt would turn an automated gate into a
+    // silent stall.
+    if (gate === 'spec_review') {
+      if (
+        INTENT_READ_TOOLS.has(toolName) ||
+        INTENT_QUERY_TOOLS.has(toolName) ||
+        toolName === SUBMIT_SPEC_REVIEW_TOOL
+      ) {
+        return allow(input)
+      }
+      if (WRITE_TOOLS.has(toolName)) {
+        console.warn(`[c3] spec_review gate denied write tool: ${toolName}`)
+        return deny('Spec review is read-only; it may not write any path.')
+      }
+      console.warn(`[c3] spec_review gate denied tool: ${toolName}`)
+      return deny('Spec review is read-only; this tool is blocked.')
     }
 
     // Discussion-research (read-only) gate: a one-shot research agent that

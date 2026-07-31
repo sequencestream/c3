@@ -21,6 +21,7 @@ function settings(over: Partial<SystemSettings> = {}): SystemSettings {
     toolAgentId: '',
     intentAgentId: '',
     specAgentId: '',
+    specReviewAgentId: '',
     automationAgentId: '',
     ...over,
   }

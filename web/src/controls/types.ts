@@ -113,6 +113,8 @@ export interface AppMethods {
   refineIntent(intentId: string): void
   writeSpec(intentId: string): void
   approveSpec(intentId: string): void
+  /** Revoke a spec approval (human or machine); returns the intent to awaiting-approval. */
+  revokeSpecApproval(intentId: string): void
   /** Open an intent's spec-authoring session in the detail's `spec session` tab. */
   openSpecSession(intentId: string): void
   /**

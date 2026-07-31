@@ -1869,6 +1869,27 @@ export const DEV_LAUNCH_STAGES = [
 ] as const
 export type DevLaunchStage = (typeof DEV_LAUNCH_STAGES)[number]
 
+/**
+ * Coarse-grained phase of a manual `create_pr` run, carried by the
+ * connection-directed {@link create_pr_progress} event so the client can drive a
+ * PR-creation progress overlay. Like {@link DevLaunchStage} it is deliberately
+ * minimal — only the user-meaningful phases, never paths / commands / error
+ * detail. Stages advance one-way and are never re-sent for the same run; the
+ * terminals are NOT stages: success is the existing `create_pr_response`, and
+ * failure is the existing intent-action `error` frame.
+ * - `analyzing-changes` — before the worktree-vs-local-`main` diff check.
+ * - `committing` — before staging + committing in the intent worktree.
+ * - `pushing` — before pushing the branch to the remote.
+ * - `creating-pr` — before the forge PR-create call.
+ */
+export const CREATE_PR_STAGES = [
+  'analyzing-changes',
+  'committing',
+  'pushing',
+  'creating-pr',
+] as const
+export type CreatePrStage = (typeof CREATE_PR_STAGES)[number]
+
 /** Coarse startup phases for a manual spec-authoring session. */
 export const SPEC_LAUNCH_STAGES = [
   'checking-dependencies',
@@ -3941,6 +3962,16 @@ export type ServerToClient =
    * On failure the server sends a generic `error` with code `intent.prCreateFailed`.
    */
   | { type: 'create_pr_response'; prId: string; prUrl?: string }
+  /**
+   * Connection-directed coarse progress of a manual `create_pr` run, driving the
+   * client's PR-creation progress overlay. Carries only the {@link CreatePrStage}
+   * phase + the target `intentId`, never internal detail. Purely additive: the
+   * terminals stay `create_pr_response` (success) and the intent-action `error`
+   * frame (failure), so a client that ignores this frame is unaffected. Only the
+   * connection that sent `create_pr` receives it — the automation path has no
+   * requesting connection and sends nothing.
+   */
+  | { type: 'create_pr_progress'; intentId: string; stage: CreatePrStage }
   /**
    * Reply to a `sync_intent_pr_status` request. `ok=false` means the request was
    * handled but could not sync, while transport/action failures may still use the

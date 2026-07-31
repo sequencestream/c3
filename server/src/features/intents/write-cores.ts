@@ -11,7 +11,8 @@
  * Neither function sends on a connection. Each returns a structured result the
  * caller frames as a WS `error` / response or as an MCP `{content, isError}`.
  */
-import type { Intent, IntentStatus } from '@ccc/shared/protocol'
+import type { CreatePrStage, Intent, IntentStatus } from '@ccc/shared/protocol'
+import { CREATE_PR_STAGES } from '@ccc/shared/protocol'
 import { closeForgePr, commitAndPush, createGhPr, hasDiffAgainstMain } from '../../git.js'
 import { getGitBranchMode } from '../../kernel/config/index.js'
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
@@ -46,6 +47,32 @@ export interface CreatePrDeps {
   publishEvent: (workspacePath: string, sessionId: string, event: GenericEvent) => void
   /** Lifecycle-log actor. */
   actor?: string | null
+  /**
+   * Optional coarse progress sink for a user-initiated run (the WS handler pushes
+   * it to the requesting connection). Omitted by the agent/automation surfaces,
+   * which have no connection to report to. Observational only — it never changes
+   * a gate, a Git action or the returned result.
+   */
+  onStage?: (stage: CreatePrStage) => void
+}
+
+/**
+ * Wrap `onStage` so stages are reported at most once and only ever forward.
+ * `commitAndPush` fires its commit/push boundary once per affected repo in a
+ * multi-repo workspace; the overlay contract is a single one-way pass, so the
+ * repeats and the resulting back-steps are dropped here rather than on the wire.
+ */
+function monotonicStageReporter(
+  onStage: ((stage: CreatePrStage) => void) | undefined,
+): (stage: CreatePrStage) => void {
+  let reached = -1
+  return (stage) => {
+    if (!onStage) return
+    const index = CREATE_PR_STAGES.indexOf(stage)
+    if (index <= reached) return
+    reached = index
+    onStage(stage)
+  }
 }
 
 /**
@@ -53,6 +80,10 @@ export interface CreatePrDeps {
  * PR (idempotent, no Git work at all) → worktree mode → non-empty branch →
  * the worktree actually differs from main. Only then does it commit, push, and
  * create the PR; a failed commit never creates one.
+ *
+ * `deps.onStage` observes that same order: the synchronous gates ahead of the
+ * diff check report nothing (a rejection there is only an error), and a failure
+ * never reports a stage the run did not reach.
  */
 export async function createPrForIntent(
   workspacePath: string,
@@ -78,7 +109,9 @@ export async function createPrForIntent(
   if (normalizeBranchName(req.branchName) === null) {
     return { success: false, code: 'intent.prCreateNoBranch' }
   }
+  const reportStage = monotonicStageReporter(deps.onStage)
   const worktreePath = getWorktreePath(workspacePath, intentId)
+  reportStage('analyzing-changes')
   if (!(await hasDiffAgainstMain(worktreePath))) {
     return { success: false, code: 'intent.prCreateNoChanges' }
   }

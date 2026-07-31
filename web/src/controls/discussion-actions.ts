@@ -116,7 +116,11 @@ export function installDiscussionActions(ctx: AppCtx): void {
     send({ type: 'select_session', workspaceId: discussionsProject.value, sessionId })
   }
 
-  // "Convert to Intent" in a completed discussion's title bar.
+  // "Convert to Intent" in a completed discussion's title bar. The server creates
+  // an empty draft intent and binds a comm session to it, then replies with
+  // `create_intent_result` — so switching to the intents tab (and setting its
+  // project) BEFORE sending is what lets that reply's workspace guard pass and
+  // land us on the new intent's intent-session tab, exactly as after "+ intent".
   ctx.convertDiscussionToIntent = (): void => {
     const d = activeDiscussion.value
     if (!d || d.status !== 'completed') return

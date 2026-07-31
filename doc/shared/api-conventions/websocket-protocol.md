@@ -225,7 +225,7 @@
 
 ### `discussion_to_intent`
 
-将已完成的 discussion 的结论桥接到 intent 领域（`refine_intent` 的变体）。服务器从 discussion 解析项目，重启通信会话作为全新会话，注入携带 discussion 标题和结论的首条 prompt，回复 `session_selected`（空历史记录）加 `intents` 列表。如果 discussion 未知、未 `completed` 或没有结论，则拒绝（`error`）。
+将已完成的 discussion 的结论桥接到 intent 领域，走与「增加意图」相同的两步。服务器从 discussion 解析项目，先创建一条空白 `draft` intent（同 `create_intent`：标题 `new intent`、`P2`、空正文）并回复 `create_intent_result`，再为**该 intent** 创建 owner 沟通会话（回填其 `intentSessionId`），注入携带 discussion 标题和结论的首条 prompt，回复 `session_selected`（空历史记录）加刷新后的 `intents` 列表。如果 discussion 未知、未 `completed` 或没有结论，则在创建 intent **之前**拒绝（`error`）；首条运行启动失败时回收会话并返回 `intent.startSessionFailed`，但保留该 intent。
 
 **字段：** `discussionId: string`
 

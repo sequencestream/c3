@@ -306,10 +306,14 @@ stateDiagram-v2
 `start_automation`、`stop_automation`。发出(新增):`intents`、`intent_sessions`、
 `automation_status`。
 
-`discussion_to_intent` 是一个由
-[discussion 领域](../discussion/discussion-overview.md)触发器持有的 `refine_intent` 变体:
-它以一次已完成讨论的 `conclusion`(而非一条既有意图的内容)为种子播种沟通会话,然后汇入同一个
-`save_intents` 流程(RM-R7)。保存路径不变。
+`discussion_to_intent` 由 [discussion 领域](../discussion/discussion-overview.md)的触发器持有,
+但走的是与**增加意图**完全相同的两段式:先用同一个创建原语落一条空白 `draft` 意图(标题
+`new intent`、`P2`、空正文)并以 `create_intent_result` 回给发起连接,再以该意图为 owner
+启动沟通会话(带 owner 的会话投影、`intentSessionId` 回填、pending→intent 链接),首轮提示词
+携带讨论标题 + `conclusion` 并复用与 `start_intent_session` 同一处构造的原地更新护栏,然后汇入
+同一个 `save_intents` 流程(RM-R7)。保存路径不变。讨论不是 `completed` 或 `conclusion` 为空时
+在建意图**之前**以 `discussion.notConcludable` 拒绝(不留空意图);首轮启动失败回收会话但保留
+意图,由用户手动取消/删除。
 
 `delete_intent { workspaceId, intentId }` 永久回收意图。详情标题栏仅为非 `done` 状态
 (`draft` / `todo` / `in_progress` / `cancelled`)展示 danger 二次确认入口,列表不展示入口;

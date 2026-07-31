@@ -99,8 +99,9 @@ import {
   upsertBoundRow,
 } from '../sessions/session-metadata-store.js'
 import type { UiErrorCode } from '@ccc/shared/ui-codes.js'
-import type { ServerToClient } from '@ccc/shared/protocol'
-import type { Handler } from '../../transport/handler-registry.js'
+import type { PromptImage, ServerToClient } from '@ccc/shared/protocol'
+import type { KernelContext } from '../../kernel/types.js'
+import type { Conn, Handler } from '../../transport/handler-registry.js'
 import { launchWorkSession } from './session-launcher.js'
 
 // ---- Local helpers (agent binding for intent comm sessions) ----
@@ -149,6 +150,92 @@ function syncIntentSessionProjection(input: {
     ownerKind: ownerId ? 'intent' : null,
     ownerId,
   })
+}
+
+/**
+ * Build the FIRST prompt of an intent-communication session: the target intent's
+ * id/status/title/content preamble, the caller's user-input block, and the
+ * in-place-update guard (`save_intents` must carry `id="<intentId>"` on exactly
+ * one item; split-out items must not reuse it). Pure (no I/O) and the single
+ * source of that guard wording — {@link startIntentSession} passes the user's
+ * typed text, {@link discussionToIntent} a block built from the discussion title
+ * + conclusion — so the two call sites cannot drift apart.
+ */
+export function buildIntentSessionFirstPrompt(intent: Intent, userInput: string): string {
+  return `继续完善已存在意图 ${intent.id}(当前状态:${intent.status})。这是本轮唯一允许原地更新的目标。标题:${intent.title}。当前内容:${intent.content}\n\n用户输入:\n${userInput}\n\n定稿前先查询相关意图。调用 save_intents 时批次必须恰好一项携带 id="${intent.id}"；拆分出的其他项不得使用该 id。`
+}
+
+/**
+ * Create → bind → launch an intent-communication session **owned by `intent`**:
+ * a fresh `pending:` intent runtime bound to the intent agent, persisted as a
+ * chat session, projected with this intent as owner, written onto the intent as
+ * `intentSessionId`, and registered as a pending→intent link so the resident
+ * `run:bound` subscription rewrites that id to the real session id on first
+ * bind. Replies `session_selected` (empty history) + a refreshed intent list,
+ * then launches the first run.
+ *
+ * On failure the session is unwound (link, runtime, chat row, `intent_session_id`)
+ * and `intent.startSessionFailed` reported, but the **intent is left in place**.
+ * Shared by {@link startIntentSession} and {@link discussionToIntent} so the
+ * binding sequence exists once.
+ */
+async function bindAndLaunchIntentSession(
+  ctx: KernelContext,
+  conn: Conn,
+  input: {
+    proj: string
+    intent: Intent
+    /** Session (display) title — the intent title, or the discussion's for the bridge. */
+    title: string
+    prompt: string
+    images?: PromptImage[]
+  },
+): Promise<void> {
+  const { proj, intent, title } = input
+  const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  try {
+    if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
+    const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
+    bindIntentAgent(chatId)
+    setChatSession(proj, chatId, title)
+    syncIntentSessionProjection({
+      workspacePath: proj,
+      sessionId: chatId,
+      title,
+      ownerId: intent.id,
+    })
+    setIntentSessionId(intent.id, chatId)
+    registerPendingIntentLink(chatId, intent.id)
+    conn.viewing = chatId
+    addViewer(chatId, conn.deliver)
+    conn.send({
+      type: 'session_selected',
+      workspaceId: pathToId(proj)!,
+      sessionId: chatId,
+      title,
+      mode: 'default',
+      history: [],
+      status: 'idle',
+      vendor: resolveSessionVendor(chatId),
+      agentSwitch: agentSwitchFor(chatId),
+    })
+    ctx.broadcastIntents(proj)
+    await ctx.launchRun(rt, input.prompt, input.images)
+  } catch (err) {
+    clearPendingIntentLink(chatId)
+    removeRuntime(chatId)
+    try {
+      deleteChatSession(proj, chatId)
+    } catch {
+      /* no persisted chat */
+    }
+    setIntentSessionId(intent.id, null)
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.startSessionFailed', params: { detail: String(err) } },
+    })
+    ctx.broadcastIntents(proj)
+  }
 }
 
 // ---- Handlers ----
@@ -211,51 +298,13 @@ export const startIntentSession: Handler<'start_intent_session'> = async (ctx, c
     conn.send({ type: 'error', error: { code: 'intent.sessionAlreadyBound' } })
     return
   }
-  const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  try {
-    if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
-    const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
-    bindIntentAgent(chatId)
-    setChatSession(proj, chatId, intent.title)
-    syncIntentSessionProjection({
-      workspacePath: proj,
-      sessionId: chatId,
-      title: intent.title,
-      ownerId: intent.id,
-    })
-    setIntentSessionId(intent.id, chatId)
-    registerPendingIntentLink(chatId, intent.id)
-    conn.viewing = chatId
-    addViewer(chatId, conn.deliver)
-    conn.send({
-      type: 'session_selected',
-      workspaceId: pathToId(proj)!,
-      sessionId: chatId,
-      title: intent.title,
-      mode: 'default',
-      history: [],
-      status: 'idle',
-      vendor: resolveSessionVendor(chatId),
-      agentSwitch: agentSwitchFor(chatId),
-    })
-    ctx.broadcastIntents(proj)
-    const prompt = `继续完善已存在意图 ${intent.id}(当前状态:${intent.status})。这是本轮唯一允许原地更新的目标。标题:${intent.title}。当前内容:${intent.content}\n\n用户输入:\n${msg.text}\n\n定稿前先查询相关意图。调用 save_intents 时批次必须恰好一项携带 id="${intent.id}"；拆分出的其他项不得使用该 id。`
-    await ctx.launchRun(rt, prompt, msg.images)
-  } catch (err) {
-    clearPendingIntentLink(chatId)
-    removeRuntime(chatId)
-    try {
-      deleteChatSession(proj, chatId)
-    } catch {
-      /* no persisted chat */
-    }
-    setIntentSessionId(intent.id, null)
-    conn.send({
-      type: 'error',
-      error: { code: 'intent.startSessionFailed', params: { detail: String(err) } },
-    })
-    ctx.broadcastIntents(proj)
-  }
+  await bindAndLaunchIntentSession(ctx, conn, {
+    proj,
+    intent,
+    title: intent.title,
+    prompt: buildIntentSessionFirstPrompt(intent, msg.text),
+    images: msg.images,
+  })
 }
 
 export const openIntentSession: Handler<'open_intent_session'> = async (ctx, conn, msg) => {
@@ -665,6 +714,21 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
   }
 }
 
+/**
+ * `discussion_to_intent` handler — bridge a concluded discussion into the intent
+ * ledger with the SAME two steps as the "add intent" path: first persist an empty
+ * `draft` intent ({@link createEmptyIntent}, so the conversion is visible in the
+ * list before the agent saves anything), then start an intent-communication
+ * session **owned by that intent** whose first turn carries the discussion title
+ * + conclusion ({@link bindAndLaunchIntentSession}). The created intent is echoed
+ * as `create_intent_result` so the console selects it and lands on its
+ * intent-session tab, exactly as after a manual creation.
+ *
+ * Rejections (missing / non-`completed` / conclusion-less discussion, unknown
+ * workspace, unavailable store) all happen BEFORE the intent is created, so a
+ * refused conversion leaves nothing behind. A failed launch keeps the intent
+ * (the session is unwound) — the user cancels or deletes it by hand.
+ */
 export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, conn, msg) => {
   if (!isStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
@@ -687,34 +751,29 @@ export const discussionToIntent: Handler<'discussion_to_intent'> = async (ctx, c
     })
     return
   }
-  // Seed a fresh comm session with the conclusion — a refine variant.
-  if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
-  const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
-  bindIntentAgent(chatId)
-  setChatSession(proj, chatId, discussion.title)
-  syncIntentSessionProjection({ workspacePath: proj, sessionId: chatId, title: discussion.title })
-  conn.viewing = chatId
-  addViewer(chatId, conn.deliver)
-  conn.send({
-    type: 'session_selected',
-    workspaceId: pathToId(proj)!,
-    sessionId: chatId,
+  // Step 1 — the placeholder intent, created exactly like `create_intent` does
+  // (title `new intent`, P2, draft, empty content) so both paths share one
+  // creation primitive and the ledger shows the conversion straight away.
+  let intent: Intent
+  try {
+    intent = createEmptyIntent(proj, conn.subject ?? 'system')
+  } catch (err) {
+    conn.send({
+      type: 'error',
+      error: { code: 'intent.createFailed', params: { detail: String(err) } },
+    })
+    return
+  }
+  conn.send({ type: 'create_intent_result', workspaceId: pathToId(proj)!, intent })
+  // Step 2 — bind an intent-owned comm session to it, seeded with the conclusion.
+  // The session keeps the discussion title so it stays recognizable in the list.
+  const userInput = `基于以下讨论结论拆分出可验证的需求条目。\n讨论:${discussion.title}\n结论:${discussion.conclusion}`
+  await bindAndLaunchIntentSession(ctx, conn, {
+    proj,
+    intent,
     title: discussion.title,
-    mode: 'default',
-    history: [],
-    status: 'idle',
-    vendor: resolveSessionVendor(chatId),
-    agentSwitch: agentSwitchFor(chatId),
+    prompt: buildIntentSessionFirstPrompt(intent, userInput),
   })
-  conn.send({
-    type: 'intents',
-    workspaceId: pathToId(proj)!,
-    items: listIntents(proj),
-    sddEnabled: getSddEnabled(proj),
-  })
-  const firstPrompt = `基于以下讨论结论拆分出可验证的需求条目。讨论:${discussion.title}。结论:${discussion.conclusion}。请阅读相关项目资料后,与我确认拆解/补充,定稿后调用 save_intents。`
-  await ctx.launchRun(rt, firstPrompt)
 }
 
 // ── Intent-communication-session CRUD (session-collection upgrade) ──

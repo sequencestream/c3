@@ -76,13 +76,20 @@ flowchart TD
 ## 转换为意图
 
 1. **discussion → intent-management。** 一个 `completed` 且 `conclusion` 非空的讨论会展示
-   一个 **Convert to Intent** 按钮(`discussion_to_intent`)。服务端解析项目,
-   把意图沟通会话作为一个全新会话重启(一个 `refine_intent` 变体),
-   以讨论标题 + `conclusion` 作为种子,并回复 `session_selected` + `intents`。
+   一个 **Convert to Intent** 按钮(`discussion_to_intent`)。服务端解析项目后,走与
+   「增加意图」**完全相同的两段式**:先落一条空白 `draft` 意图(与 `create_intent`
+   同一个创建原语:标题 `new intent`、`P2`、空正文),以 `create_intent_result` 回给
+   发起连接;再以**该意图为 owner** 启动意图沟通会话(会话投影带
+   `ownerKind='intent'`/`ownerId`、意图上写入 `intentSessionId`、注册 pending→intent
+   链接),首条提示词携带讨论标题 + `conclusion`,回复 `session_selected`(空历史)
+   与刷新后的 `intents`。会话标题仍用讨论标题(仅显示用)。
 2. **不变的保存路径。** 沟通智能体通过**不变的** `save_intents` 流程(`RM-R7`)
-   把结论拆分为可验证条目 — 见
+   把结论拆分为可验证条目,并在其中恰好一项上回填该意图 id 以原地更新 — 见
    [intent → development](flow-intent-to-development.md)。除非讨论是
    `completed` 且 `conclusion` 非空,否则拒绝。
+3. **前端落点。** 转换后控制台选中这条新意图并停在其**意图会话** Tab —— 与手动
+   「增加意图」后的落点一致(复用 `create_intent_result` 的既有反应)。离开页面后
+   仍可从意图详情的意图会话 Tab 重新打开这段对话。
 
 ## 分支与例外(反场景)
 
@@ -94,3 +101,12 @@ flowchart TD
   都会按厂商标注,不做跨厂商求和(Phase 1 没有成本计量)。
 - **无重启后恢复。** 一个没有存活运行的孤立 `in_progress` 讨论,在服务器重启后
   不会被恢复 — 暂停状态仅存在于运行时(讨论**范围之外**的说明)。
+- **被拒绝的转换不留痕。** 讨论缺失/非 `completed`/结论为空/工作区不可解析/
+  存储不可用,一律在 `createEmptyIntent` **之前**拒绝 —— 不产生任何空意图。
+- **启动失败保留意图。** 首轮运行启动异常时,按既有方式回收会话(清链接、移除
+  运行时、删除会话行、`intent_session_id` 置空)并报 `intent.startSessionFailed`,
+  但**保留该意图** —— 与「增加意图」路径一致。
+- **放弃不自动清理。** 用户看完会话直接离开而未 `save_intents` 时,这条空白
+  `draft` 意图保留,由用户手动取消/删除(无产物 draft,删除即物理回收)。
+- **占位标题不取自讨论。** 意图标题固定为 `new intent`,直到智能体回填 —— 换取与
+  「增加意图」零分叉的同一个创建原语;讨论出处仅体现在会话标题与首轮提示词里。

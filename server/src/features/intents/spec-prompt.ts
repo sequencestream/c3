@@ -30,6 +30,11 @@ The spec's first reader is the user; its second reader is the development agent.
 
 Write the document itself in ${UI_LANG_NAMES[lang]}. Use short paragraphs and concrete bullets; use a table only when it makes a comparison clearer. Do not add a \`status\` label in the frontmatter or document header: approval is a system gate and does not write a document status back, so such a label would become stale and mislead readers.
 
+Organise the content top-down so the hierarchy is visible on the page:
+- **Frame first, decompose, then land.** Open with the overall frame of the affected capability, decompose it layer by layer along its modules, flows, or state relationships, and only then land on the concrete change points of this intent. Carry that hierarchy in the writing — grouped subsections or nested bullets — and never flatten it into one level of loose bullets.
+- **Suggested: keep key touchpoints locatable.** When the text names a specific function, method, or class, it helps the reader to also give its file path — or at least the owning module, class, and method name. Apply this to the few touchpoints that carry the decision; it is not a licence to enumerate every file and symbol.
+- **Suggested: draw it when it is genuinely complex.** When an architectural relationship, a collaboration among several components, or a state transition is complex enough that a picture pays for itself, add a Mermaid code block (\`graph\`, \`flowchart\`, or \`sequenceDiagram\`). Both of these are suggestions to use where they fit, not acceptance criteria: a simple change needs no diagram, and neither locating nor diagramming may push the document past the length its tier allows.
+
 Choose the smallest structure that fully explains the decision, judged by the change's real codebase impact rather than the length of the intent. Do not announce the complexity level.
 
 For a simple change — one focused behavior or surface, no public contract, persisted-data, migration, security, or cross-domain impact — write only:

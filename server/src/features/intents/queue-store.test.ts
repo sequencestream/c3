@@ -7,7 +7,7 @@
  * blowing up, and the decision log answers "why is this intent not moving".
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resetDbForTests } from '../../kernel/infra/db.js'
@@ -203,9 +203,23 @@ describe('decision log', () => {
 })
 
 describe('degradation', () => {
+  // An unopenable db path, built as "<a regular file>/c3.db" so the parent is a
+  // file rather than a directory: the parent-dir mkdir then fails at once on every
+  // platform, sqlite cannot open the path, and it all stays inside our temp dir.
+  // Do NOT point this at a path under `/proc` — procfs answers mkdir with ENOENT,
+  // which Node's recursive mkdir reads as "the parent is missing", so it creates
+  // the parent and retries forever. That spins in a synchronous loop no test
+  // timeout can interrupt, hanging the whole run on Linux (but not on macOS,
+  // where /proc does not exist).
+  const unopenableDbPath = () => {
+    const notADir = join(dir, 'not-a-dir')
+    writeFileSync(notADir, '')
+    return join(notADir, 'c3.db')
+  }
+
   it('an unavailable db degrades reads to defaults instead of throwing', () => {
     resetDbForTests()
-    process.env.C3_DB_PATH = '/proc/definitely-not-writable/c3.db'
+    process.env.C3_DB_PATH = unopenableDbPath()
     resetQueueStoreForTests()
 
     expect(getQueueControl(proj)).toEqual({ state: 'idle', startedAt: null, forceSkipped: [] })
@@ -216,7 +230,7 @@ describe('degradation', () => {
 
   it('a rejected write still governs THIS process through the in-memory mirror', () => {
     resetDbForTests()
-    process.env.C3_DB_PATH = '/proc/definitely-not-writable/c3.db'
+    process.env.C3_DB_PATH = unopenableDbPath()
     resetQueueStoreForTests()
 
     // The write cannot reach disk…

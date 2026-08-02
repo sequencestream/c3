@@ -606,6 +606,66 @@ describe('WorkspaceSetting.vue — spec-driven development (SDD)', () => {
   })
 })
 
+describe('WorkspaceSetting.vue — machine spec approval opt-in', () => {
+  const BOX = '[data-testid="spec-machine-approval-enabled"]'
+
+  it('defaults the toggle to unchecked when the field is absent (opt-in)', () => {
+    const w = mountWs(cfg({ sddEnabled: true }))
+    expect((w.find(BOX).element as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('seeds the toggle checked from a persisted true', () => {
+    const w = mountWs(cfg({ sddEnabled: true, specMachineApprovalEnabled: true }))
+    expect((w.find(BOX).element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('carries an explicit true into the collab save payload after checking', async () => {
+    const w = mountWs(cfg({ sddEnabled: true }))
+    await w.find(BOX).setValue(true)
+    await w.find(SAVE.collab).trigger('click')
+    const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
+    expect(payload.specMachineApprovalEnabled).toBe(true)
+  })
+
+  it('stays checked after the server echoes the normalized true back', async () => {
+    const w = mountWs(cfg({ sddEnabled: true }))
+    await w.find(BOX).setValue(true)
+    await w.find(SAVE.collab).trigger('click')
+    // Server echo: the normalized config now carries the opt-in true.
+    await w.setProps({
+      workspaceSetting: cfg({ sddEnabled: true, specMachineApprovalEnabled: true }),
+    })
+    expect((w.find(BOX).element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('a save echo without detectedMainBranch does not reset the just-saved toggle', async () => {
+    // The load reply carries detectedMainBranch; the save reply does NOT (known
+    // asymmetry). The branch-probe prop flipping to null must not disturb the
+    // machine-approval checkbox the user just saved on.
+    const w = mountWs(cfg({ sddEnabled: true }), { detectedMainBranch: 'main' })
+    await w.find(BOX).setValue(true)
+    await w.find(SAVE.collab).trigger('click')
+    await w.setProps({
+      workspaceSetting: cfg({ sddEnabled: true, specMachineApprovalEnabled: true }),
+      detectedMainBranch: null,
+    })
+    expect((w.find(BOX).element as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('reopening the panel re-seeds the toggle from the persisted true', async () => {
+    const w = mountWs(cfg({ sddEnabled: true }))
+    await w.find(BOX).setValue(true)
+    await w.find(SAVE.collab).trigger('click')
+    await w.setProps({
+      workspaceSetting: cfg({ sddEnabled: true, specMachineApprovalEnabled: true }),
+    })
+    // Close and reopen: the whole draft is re-seeded from the server snapshot.
+    await w.setProps({ open: false })
+    await w.setProps({ open: true })
+    expect((w.find(BOX).element as HTMLInputElement).checked).toBe(true)
+  })
+})
+
 describe('WorkspaceSetting.vue — arapuca sandbox (both branch modes) + extraMounts + sessionKinds', () => {
   function mountSandbox(
     overrides?: Partial<WorkspaceSettingType>,

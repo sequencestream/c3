@@ -104,6 +104,7 @@ import {
   resolve as resolveVendorCli,
 } from './kernel/agent/process/launcher.js'
 import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
+import { createCursorAdapter, cursorSdkAvailable } from './kernel/agent/adapters/cursor/index.js'
 import { createClaudeAdapter } from './kernel/agent/adapters/claude/index.js'
 import {
   createRelay,
@@ -314,6 +315,28 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     } catch (e) {
       console.warn(`[c3] codex unavailable: ${e instanceof Error ? e.message : String(e)}`)
     }
+  }
+
+  // Cursor: driven through `@cursor/sdk`'s local runtime, which ships as a c3
+  // dependency and executes IN THIS PROCESS — there is no host CLI to probe, no
+  // version to gate and no subprocess to spawn. Availability is therefore "is the
+  // SDK resolvable"; an install whose platform-native package is missing resolves
+  // to null and the cursor agent type is simply unavailable.
+  //
+  // The API key is NOT resolved here: it is per-agent (the bound agent's config,
+  // else the ambient CURSOR_API_KEY) and reaches the driver on the run's env map,
+  // so a server with no key still exposes cursor and fails the individual run with
+  // an actionable message.
+  let cursorAdapter: VendorAdapter | null = null
+  if (cursorSdkAvailable()) {
+    try {
+      cursorAdapter = createCursorAdapter()
+      console.log('[c3] cursor ready (in-process SDK)')
+    } catch (e) {
+      console.warn(`[c3] cursor unavailable: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  } else {
+    console.warn('[c3] cursor unavailable: @cursor/sdk could not be resolved')
   }
 
   // Cross-vendor session listing (ADR-0013): the read-only union the new
@@ -564,9 +587,19 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     sessionProfile: () => ({
       bindMcp: (binding) => eventMcp.bind(binding),
     }),
-    // The neutral Codex adapter, or null when its host CLI is missing (launchRun
-    // forks to the driver path for codex sessions; 2026-06-06-007).
-    getCodexAdapter: () => codexAdapter,
+    // The neutral adapter for a driver-path vendor, or null when its host CLI is
+    // missing (launchRun forks to the driver path for every non-claude vendor).
+    getDriverAdapter: (vendor) => {
+      switch (vendor) {
+        case 'codex':
+          return codexAdapter ?? null
+        case 'cursor':
+          return cursorAdapter ?? null
+        case 'claude':
+          // Claude runs on its own SDK loop, not the driver path.
+          return null
+      }
+    },
     // Supply-chain write-guard probe (ADR-0017 D5, 2026-06-12): external skills are
     // installed explicitly from the settings panel (`install_skill`), NOT mounted
     // here. Launch only reads whether any configured skill is already installed (a

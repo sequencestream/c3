@@ -78,8 +78,18 @@ export function createRelay(
   const base = origin.replace(/\/$/, '')
   const bindings = new Map<string, RelayCandidate[]>()
 
-  const endpoint = (vendor: VendorId): string =>
-    vendor === 'codex' ? `${base}${RELAY_CODEX_PATH}` : `${base}${RELAY_ANTHROPIC_PATH}`
+  // Exhaustive on purpose: a vendor with no relay of its own must be refused
+  // rather than inheriting the Anthropic endpoint from an `else`.
+  const endpoint = (vendor: VendorId): string => {
+    switch (vendor) {
+      case 'codex':
+        return `${base}${RELAY_CODEX_PATH}`
+      case 'claude':
+        return `${base}${RELAY_ANTHROPIC_PATH}`
+      case 'cursor':
+        throw new Error('cursor does not support relay: it authenticates through its own CLI login')
+    }
+  }
 
   const candidatesFor = (c: Context, scheme: 'bearer' | 'x-api-key'): RelayCandidate[] | null => {
     const token =

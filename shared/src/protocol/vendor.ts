@@ -16,8 +16,14 @@
  */
 export type PermissionMode = 'default' | 'auto' | 'plan' | 'acceptEdits' | 'bypassPermissions'
 
-/** The known vendor ids as a runtime list (the type {@link VendorId} is the union). */
-export const VENDOR_IDS: readonly VendorId[] = ['claude', 'codex']
+/**
+ * The known vendor ids as a runtime list (the type {@link VendorId} is the union).
+ *
+ * Typed as a tuple whose members are pinned against {@link VendorId} below, so a
+ * vendor added to the union but forgotten here is a compile error rather than a
+ * silently short list (this array is what the coverage contract test walks).
+ */
+export const VENDOR_IDS = ['claude', 'codex', 'cursor'] as const satisfies readonly VendorId[]
 
 // ---- Canonical agent message model (vendor-neutral) ----
 //
@@ -31,7 +37,30 @@ export const VENDOR_IDS: readonly VendorId[] = ['claude', 'codex']
 // adapter before they ever travel on the wire.
 
 /** The agent vendors c3 can drive. New vendors extend this union (ADR-0011). */
-export type VendorId = 'claude' | 'codex'
+export type VendorId = 'claude' | 'codex' | 'cursor'
+
+/**
+ * Type guard for {@link VendorId} — the one place that decides whether an
+ * untrusted value (a persisted record, an imported file, a wire field) names a
+ * vendor c3 knows. Routing such values through here, rather than a hard-coded
+ * `=== 'claude' || === 'codex'`, is what stops a new vendor being silently
+ * dropped or mis-filed as another.
+ */
+export function isVendorId(value: unknown): value is VendorId {
+  return typeof value === 'string' && (VENDOR_IDS as readonly string[]).includes(value)
+}
+
+/**
+ * Completeness pin for {@link VENDOR_IDS}. `satisfies` alone only proves every
+ * listed id is a real vendor; this proves the converse — that every vendor in the
+ * union is listed — so the runtime list can never silently lag the type.
+ */
+type _PinVendorIdsCoverUnion =
+  Exclude<VendorId, (typeof VENDOR_IDS)[number]> extends never
+    ? true
+    : ['VENDOR_IDS is missing a VendorId', Exclude<VendorId, (typeof VENDOR_IDS)[number]>]
+const _pinVendorIdsCoverUnion: _PinVendorIdsCoverUnion = true
+void _pinVendorIdsCoverUnion
 
 /**
  * Where a session's native transcript store lives — the second frozen invariant

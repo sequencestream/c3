@@ -25,7 +25,7 @@ import type {
   VendorModeCatalog,
   ModeToken,
 } from '@ccc/shared/protocol'
-import { GIT_BRANCH_MODES, SESSION_KINDS } from '@ccc/shared/protocol'
+import { VENDOR_IDS, GIT_BRANCH_MODES, SESSION_KINDS } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useModeLabel } from '@/composables/useModeLabel'
 import { applyTabFields, deepCopy, useTabbedDraftSave } from '@/composables/useTabbedDraftSave'
@@ -36,7 +36,10 @@ const { t } = useTypedI18n()
 const modeLabel = useModeLabel()
 
 // Render order for per-vendor sections in the form.
-const VENDOR_ORDER: VendorId[] = ['claude', 'codex']
+// Display order for the vendor pickers. Derived from the shared vendor list so a
+// newly registered vendor appears here automatically instead of being silently
+// absent from the UI.
+const VENDOR_ORDER: readonly VendorId[] = VENDOR_IDS
 
 // Per-stage discussion round cap: floor enforced both here and server-side.
 const MIN_ROUNDS_PER_STAGE = 8
@@ -125,8 +128,12 @@ function freshDefaultMode(
 ): Record<VendorId, ModeToken | CodexPolicy> {
   const out: Partial<Record<VendorId, ModeToken>> = {}
   for (const v of VENDOR_ORDER) {
+    // Fallback defaults must cover every vendor the loop can reach; a vendor
+    // absent here would start a session with an undefined mode.
     out[v] = (vendorModes?.[v]?.defaultToken ??
-      { claude: 'default', codex: 'auto' }[v]) as ModeToken
+      ({ claude: 'default', codex: 'auto', cursor: 'agent' } as Record<VendorId, ModeToken>)[
+        v
+      ]) as ModeToken
   }
   return out as Record<VendorId, ModeToken>
 }
@@ -334,7 +341,7 @@ function gitSandboxCmp(
 
 // Always-non-null defaultMode ref for the template (WorkspaceSetting.defaultMode is optional).
 const draftDefaultMode = computed(
-  () => draft.value.defaultMode ?? { claude: 'default', codex: 'auto' },
+  () => draft.value.defaultMode ?? { claude: 'default', codex: 'auto', cursor: 'agent' },
 )
 
 // Codex dual-policy — the live object embedded in draft.defaultMode.codex (seeded

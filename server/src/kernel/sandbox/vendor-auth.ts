@@ -232,12 +232,17 @@ const codexProfile: SandboxAuthResolver = ({ paths, systemAuth }) => {
 // ─── Registry ────────────────────────────────────────────────────────────────
 
 /**
- * The per-vendor strategy registry. Keyed by the closed {@link VendorId} union,
- * so a new vendor id does not typecheck until it also brings a resolver — the
- * compiler, not a reviewer, is what keeps the sandbox from launching a vendor
- * whose auth nobody described.
+ * The per-vendor strategy registry — the vendors c3 sandboxes by wrapping their
+ * host CLI in arapuca.
+ *
+ * Deliberately partial over {@link VendorId}: `cursor` runs on an in-process SDK,
+ * so there is no child process for a wrapper script to narrow and no data root
+ * for it to mount. Its isolation comes from the SDK's own sandbox instead, which
+ * the driver switches on for a sandboxed run. Absence here is what states that —
+ * and {@link resolveSandboxAuthProfile} still fails closed, so a vendor that DOES
+ * spawn a CLI can never be wrapped without a described credential channel.
  */
-export const VENDOR_AUTH_PROFILES: Readonly<Record<VendorId, SandboxAuthResolver>> = {
+export const VENDOR_AUTH_PROFILES: Readonly<Partial<Record<VendorId, SandboxAuthResolver>>> = {
   claude: claudeProfile,
   codex: codexProfile,
 }
@@ -256,7 +261,7 @@ export function resolveSandboxAuthProfile(
   vendor: VendorId,
   input: SandboxAuthInput,
 ): SandboxAuthProfile {
-  const resolver = VENDOR_AUTH_PROFILES[vendor] as SandboxAuthResolver | undefined
+  const resolver = VENDOR_AUTH_PROFILES[vendor]
   if (!resolver) {
     throw new SandboxLaunchError(
       'launch-failed',

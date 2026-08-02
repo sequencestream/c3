@@ -14,7 +14,7 @@
  * The control flow is still the original nested loop (3c-2a is a verbatim move);
  * 3c-2b refactors it onto the pure `decideResume` state machine.
  */
-import type { PermissionMode, PromptImage } from '@ccc/shared/protocol'
+import type { PermissionMode, PromptImage, VendorId } from '@ccc/shared/protocol'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { runClaude } from '../agent/index.js'
 import type { VendorAdapter } from '../agent/adapters/types.js'
@@ -149,13 +149,15 @@ export interface LaunchRunDeps {
    */
   sessionProfile?: (workspacePath: string) => SessionMcpProfile
   /**
-   * The Codex {@link VendorAdapter} (built at the composition root via the no-arg
-   * factory, host-binary gated), or null/absent when Codex's host CLI is missing.
-   * `launchRun` forks to {@link runViaDriver} when the session's vendor is `codex`
-   * (2026-06-06-007), so Codex can be a primary session driver — its launch-time
-   * sandbox/approval policy is the per-tool-approval substitute (008).
+   * The {@link VendorAdapter} for a driver-path vendor (built at the composition
+   * root, host-binary gated), or null when that vendor's CLI is missing.
+   *
+   * Keyed by vendor rather than named per vendor: every vendor whose runs go
+   * through {@link runViaDriver} resolves its adapter here, so adding one is
+   * wiring a factory at the composition root instead of threading a new
+   * `get<Vendor>Adapter` callback through the launcher.
    */
-  getCodexAdapter?: () => VendorAdapter | null
+  getDriverAdapter?: (vendor: VendorId) => VendorAdapter | null
   /**
    * Read-only probe: does this run's project have ANY installed external skill
    * (a live `_c3_<id>` link in a public skill dir)? External skills are no longer
@@ -383,12 +385,15 @@ export async function launchRun(
   // they fork to the driver when their bound agent's vendor is codex (2026-06-08).
   // `system`/`claude` vendors fall through to the claude path.
   {
-    const vendor = resolveAgent(resolveSessionLaunch(runId).agentId).vendor
+    // A record with no vendor at all predates multi-vendor support, so it can
+    // only be claude. This back-compat default is for MISSING data only — a
+    // present, known vendor (`cursor`, `codex`) is never folded into it.
+    const vendor: VendorId = resolveAgent(resolveSessionLaunch(runId).agentId).vendor ?? 'claude'
     // A research session is always bound to a claude agent (the research pass is
     // claude-hardwired), so this can only be reached if that binding was lost. The
     // driver path has no `discussion-research` gate, so running there would silently
     // trade the read-only lock for the vendor's own policy — refuse instead (C-SEC).
-    if (vendor === 'codex' && isResearch) {
+    if (vendor !== 'claude' && isResearch) {
       const error =
         '[c3] research session resolved to a non-claude agent — refusing to run without the read-only research gate.'
       console.warn(error)
@@ -404,8 +409,11 @@ export async function launchRun(
       })
       return
     }
-    if (vendor === 'codex') {
-      const adapter = deps.getCodexAdapter?.()
+    // Every vendor except claude runs through the neutral driver path; claude
+    // keeps its own SDK loop below. A vendor is never allowed to reach that loop
+    // by falling off the end of this branch.
+    if (vendor !== 'claude') {
+      const adapter = deps.getDriverAdapter?.(vendor) ?? null
       if (adapter)
         return runViaDriver(
           rt,
@@ -420,8 +428,7 @@ export async function launchRun(
           resolvedSpecProfile,
           resolvedSpecReviewProfile,
         )
-      const unavailable =
-        'Codex is unavailable (host CLI `codex` missing — install it to use a Codex agent).'
+      const unavailable = `${vendor} is unavailable (its host CLI is missing or incompatible — install it to use a ${vendor} agent).`
       emit(runId, { type: 'user_text', text: prompt })
       emit(runId, { type: 'turn_end', reason: 'error', error: unavailable })
       finalizeRun(runId)

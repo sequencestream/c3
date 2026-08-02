@@ -26,6 +26,12 @@ export type VendorCliSource =
   | 'install-failed'
   | 'override-invalid'
 
+/**
+ * A vendor CLI c3 installs and versions itself from npm, under
+ * `~/.c3/vendor/<vendor>/<version>`. Every spec participates in remote version
+ * discovery, download, pinning and history cleanup — a vendor with no spec is one
+ * c3 does not launch as a host process at all (see {@link HOST_BINARIES}).
+ */
 export interface VendorBinarySpec {
   readonly vendor: VendorId
   readonly binary: string
@@ -36,7 +42,17 @@ export interface VendorBinarySpec {
   readonly installHint: string
 }
 
-export const HOST_BINARIES: Record<VendorId, VendorBinarySpec> = {
+/**
+ * The vendors c3 drives by launching a host CLI, keyed by vendor.
+ *
+ * Deliberately partial over {@link VendorId}: `cursor` runs on `@cursor/sdk`'s
+ * local runtime **inside the c3 process**, so it has no binary to find, no
+ * version to pin and nothing for the npm install/sync machinery to do. Absence
+ * from this table is what states that — the alternative, a fake spec, would put
+ * cursor into every version panel and background registry check for a CLI that is
+ * never launched.
+ */
+export const HOST_BINARIES: Partial<Record<VendorId, VendorBinarySpec>> = {
   claude: {
     vendor: 'claude',
     binary: 'claude',
@@ -57,6 +73,38 @@ export const HOST_BINARIES: Record<VendorId, VendorBinarySpec> = {
     installHint:
       'c3 installs Codex under ~/.c3/vendor/codex by default. Override with $CODEX_PATH, or keep a host `codex` on PATH as a degraded fallback.',
   },
+}
+
+/** Whether c3 launches this vendor as a host CLI it installs and versions itself. */
+export function isManagedVendor(vendor: VendorId): boolean {
+  return HOST_BINARIES[vendor] !== undefined
+}
+
+/**
+ * The compatibility statement c3 reports for a vendor — the semver range its
+ * managed CLI must satisfy. An SDK-embedded vendor has no CLI to constrain, so it
+ * reports an empty label rather than a range that would imply one exists.
+ */
+export function vendorCompatibilityLabel(vendor: VendorId): string {
+  return HOST_BINARIES[vendor]?.compatibleRange ?? ''
+}
+
+/** Every managed spec — the set the npm install/sync/cleanup paths may touch. */
+export function managedVendorSpecs(): VendorBinarySpec[] {
+  return Object.values(HOST_BINARIES)
+}
+
+/**
+ * Assert a vendor has a host CLI before entering any path that resolves, probes,
+ * installs or versions one. Reaching here with an SDK-embedded vendor is a wiring
+ * bug: it fails loudly rather than inventing a binary name.
+ */
+function requireManaged(vendor: VendorId): VendorBinarySpec {
+  const spec = HOST_BINARIES[vendor]
+  if (!spec) {
+    throw new Error(`${vendor} has no host CLI: it runs on an in-process SDK`)
+  }
+  return spec
 }
 
 export interface VendorProbe {
@@ -134,7 +182,7 @@ export function lookupCommand(
 }
 
 export function managedBinPath(vendor: VendorId, version: string, home = c3HomeDir()): string {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   return join(home, 'vendor', vendor, version, 'bin', spec.binary)
 }
 
@@ -161,7 +209,7 @@ function nowIso(deps?: VendorInstallerDeps): string {
 }
 
 function hostPath(vendor: VendorId): string | null {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   try {
     const [cmd, args] = lookupCommand(spec.binary)
     const r = spawnSync(cmd, args, { encoding: 'utf-8' })
@@ -191,14 +239,17 @@ function defaultRunVersion(path: string): string {
 
 export function parseVendorVersion(vendor: VendorId, output: string): string | null {
   const text = output.trim()
-  const patterns: Record<VendorId, RegExp[]> = {
+  // Partial over VendorId for the same reason HOST_BINARIES is: a vendor with no
+  // host CLI has no `--version` output to parse, so it gets no pattern rather than
+  // a dead one.
+  const patterns: Partial<Record<VendorId, RegExp[]>> = {
     claude: [
       /claude(?:\s+code)?\s+(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i,
       /(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\s+\(?claude(?:\s+code)?\)?/i,
     ],
     codex: [/codex(?:-cli)?\s+(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i],
   }
-  for (const pattern of patterns[vendor]) {
+  for (const pattern of patterns[vendor] ?? []) {
     const m = pattern.exec(text)
     if (m) return m[1]
   }
@@ -245,7 +296,7 @@ export function satisfiesRange(version: string, range: string): boolean {
 }
 
 function stateEntry(vendor: VendorId, patch: Partial<VendorStateEntry>): VendorStateEntry {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   return {
     vendor,
     source: 'missing',
@@ -282,7 +333,7 @@ function recordState(
 }
 
 function probeManaged(vendor: VendorId, version: string, deps?: VendorInstallerDeps): VendorProbe {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   const path = managedBinPath(vendor, version)
   const versionText = probeVersion(path, vendor, deps)
   if (!satisfiesRange(versionText, spec.compatibleRange)) {
@@ -306,7 +357,7 @@ function fallbackProbe(
   managedError?: string,
   deps?: VendorInstallerDeps,
 ): VendorProbe {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   const path = hostPath(vendor)
   if (path) {
     try {
@@ -334,7 +385,7 @@ function fallbackProbe(
 }
 
 function missingProbe(vendor: VendorId, error?: string, managedError?: string): VendorProbe {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   return {
     vendor,
     binary: spec.binary,
@@ -352,7 +403,7 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
   const cached = cache.get(vendor)
   if (cached) return cached
   const env = deps?.env ?? process.env
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   const override = env[spec.pathEnv]
   if (override) {
     try {
@@ -503,7 +554,7 @@ export function selectNpmVersion(
   platform = process.platform,
   arch = process.arch,
 ): { version: string; sourceTag: string } {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   const tags = packument['dist-tags'] ?? {}
   const candidates =
     vendor === 'codex'
@@ -574,7 +625,7 @@ export async function syncManagedVendorCli(
   vendor: VendorId,
   deps: VendorInstallerDeps = {},
 ): Promise<VendorProbe> {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   const home = c3HomeDir()
   const state = readState(home)
   // The download target is decoupled from the user's effective-version choice
@@ -797,7 +848,9 @@ export function shouldCheckRemote(vendor: VendorId, now = Date.now()): boolean {
  * a later resolve picks the new binary up.
  */
 export function refreshManagedVendorClisInBackground(deps?: VendorInstallerDeps): void {
-  for (const vendor of Object.keys(HOST_BINARIES) as VendorId[]) {
+  // Externally installed CLIs are the user's to update; there is no npm package
+  // to check, so they are skipped rather than failed against the registry.
+  for (const { vendor } of managedVendorSpecs()) {
     if (!shouldCheckRemote(vendor, deps?.now?.().getTime())) {
       console.log(`[c3] vendor check-skip: ${vendor} (checked recently)`)
       continue
@@ -855,7 +908,8 @@ export function applyVendorCliChoices(
   choices: Partial<Record<VendorId, string>>,
   deps?: VendorInstallerDeps,
 ): void {
-  for (const vendor of Object.keys(HOST_BINARIES) as VendorId[]) {
+  for (const spec of managedVendorSpecs()) {
+    const vendor = spec.vendor
     const choice = choices[vendor]?.trim() || undefined
     const entry = readState().vendors[vendor]
     if (!choice) {
@@ -866,7 +920,7 @@ export function applyVendorCliChoices(
       continue
     }
     const path = managedBinPath(vendor, choice)
-    if (existsSync(path) && satisfiesRange(choice, HOST_BINARIES[vendor].compatibleRange)) {
+    if (existsSync(path) && satisfiesRange(choice, spec.compatibleRange)) {
       recordState(vendor, { selectedVersion: choice, lastError: undefined }, deps)
     } else {
       recordState(

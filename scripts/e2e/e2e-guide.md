@@ -329,6 +329,41 @@ if it persists, reported as SKIP (auth already proven, block is environmental).
   in and replied; 1 = still 401 / no reply / structure guard failed; 5 = a
   precondition unmet or an OpenAI geo-block (SKIP).
 
+## Cursor SDK probe (vendor go/no-go gate)
+
+Standalone capability probe for `@cursor/sdk`'s local runtime — the evidence source
+for Cursor's capability ledger (see
+[`doc/domains/core/agent-session/features/agent-session-cursor.md`](../../doc/domains/core/agent-session/features/agent-session-cursor.md)).
+It asserts the two blocking gates — `Agent.resume` restoring native context, and an
+agent staying resumable after a turn killed with `Run.cancel()` — plus the native
+tool inventory, `call_id` stability across a tool's running/completed frames, the
+plan conversation mode, and the SDK local store listing agents c3 created.
+
+Needs a real `CURSOR_API_KEY` + outbound network (the SDK does NOT read the
+`cursor-agent login` keychain credential), so it is NOT CI-safe and NOT in the
+`pnpm e2e` suite. No key ⇒ SKIP (exit 5).
+
+- `node scripts/e2e/cursor-sdk-probe.mjs` → VERDICT: GO (exit 0) when both gates
+  pass; 1 = a gate failed (no-go); 5 = unauthenticated (SKIP). `--gates-only`,
+  `--json`, `--keep` (retain the temp workspace) are supported.
+
+## Cursor session test (new → run → list → native-id resume)
+
+Server-wiring E2E over the real WS protocol and the real Cursor SDK (spends two
+short turns of real quota). Creates a Cursor session (a `system`-mode Cursor agent
+carrying `CURSOR_API_KEY` is injected into settings, snapshot/restore), runs a first
+turn asserting `assistant_text` + `tool_use` + a clean `turn_end`, confirms the
+bound session appears in `list_sessions`, then re-selects it by the native agent id
+captured from `session_started` and runs a second turn to prove resume continuation.
+
+Needs a real `CURSOR_API_KEY` + outbound network, so it is NOT CI-safe and NOT in
+the `pnpm e2e` suite. Preconditions unmet → SKIP (exit 5): `@cursor/sdk`
+unresolvable, or no API key.
+
+- Start the server: `pnpm start --port 13000`
+- `node scripts/e2e/e2e-cursor-session-test.mjs ws://localhost:13000/ws` →
+  `RESULT: PASS` on success; 1 = a step failed; 5 = precondition unmet (SKIP).
+
 ## Sandbox vendor token test (real request through arapuca)
 
 Complements the token-free capability probe: uses a real agent from

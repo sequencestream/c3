@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VendorId } from '../adapters/types.js'
 import {
   HOST_BINARIES,
+  vendorCompatibilityLabel,
   applyVendorCliChoices,
   cleanManagedHistory,
   lookupCommand,
@@ -102,7 +103,7 @@ describe('vendor executable resolution', () => {
           vendor: 'codex',
           source: 'managed',
           selectedVersion: '0.142.3',
-          compatibleRange: HOST_BINARIES.codex.compatibleRange,
+          compatibleRange: vendorCompatibilityLabel('codex'),
           path,
           versionHistory: [],
         },
@@ -124,7 +125,7 @@ describe('vendor executable resolution', () => {
           vendor: 'claude',
           source: 'managed',
           selectedVersion: '9.9.9',
-          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          compatibleRange: vendorCompatibilityLabel('claude'),
           path: managedBinPath('claude', '9.9.9', dir),
           versionHistory: [],
         },
@@ -228,7 +229,7 @@ describe('syncManagedVendorCli failure recovery', () => {
           vendor: 'claude',
           source: 'managed',
           selectedVersion: '1.0.0',
-          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          compatibleRange: vendorCompatibilityLabel('claude'),
           path: old,
           versionHistory: [],
         },
@@ -261,7 +262,7 @@ describe('refreshManagedVendorClisInBackground', () => {
       vendor,
       source: 'managed',
       lastRemoteCheckAt: at,
-      compatibleRange: HOST_BINARIES[vendor].compatibleRange,
+      compatibleRange: vendorCompatibilityLabel(vendor),
       versionHistory: [],
     })
     writeManifest({
@@ -339,9 +340,14 @@ describe('refreshManagedVendorClisInBackground', () => {
 })
 
 describe('probeAll', () => {
-  it('covers every known vendor and carries each source', () => {
+  it('covers every host-CLI vendor and carries each source', () => {
     const probes = probeAll()
-    expect(probes.map((p) => p.vendor).sort()).toEqual(['claude', 'codex'])
+    // Only vendors c3 launches as a host process are probed: a vendor whose
+    // runtime is an in-process SDK has no binary to find, and reporting one as
+    // "missing" would put an install hint in front of the user for a CLI c3 never
+    // runs.
+    expect(probes.map((p) => p.vendor).sort()).toEqual(Object.keys(HOST_BINARIES).sort())
+    expect(probes.map((p) => p.vendor)).not.toContain('cursor')
     for (const p of probes) expect(p.source).toBeTruthy()
   })
 })
@@ -388,7 +394,7 @@ describe('resolveExecutable effective-version priority chain', () => {
           source: 'managed',
           selectedVersion: '1.0.0',
           latestCompatibleVersion: '1.3.0',
-          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          compatibleRange: vendorCompatibilityLabel('claude'),
           path: managedBinPath('claude', '1.0.0', dir),
           versionHistory: [
             {
@@ -425,7 +431,7 @@ describe('resolveExecutable effective-version priority chain', () => {
           source: 'managed',
           selectedVersion: '1.0.0',
           latestCompatibleVersion: '1.3.0',
-          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          compatibleRange: vendorCompatibilityLabel('claude'),
           versionHistory: [{ version: '1.3.0', status: 'installed' }],
         },
       },
@@ -451,7 +457,7 @@ describe('resolveExecutable effective-version priority chain', () => {
           vendor: 'claude',
           source: 'managed',
           latestCompatibleVersion: '1.3.0',
-          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          compatibleRange: vendorCompatibilityLabel('claude'),
           versionHistory: [{ version: '1.3.0', status: 'installed' }],
         },
       },
@@ -476,7 +482,7 @@ describe('syncManagedVendorCli download-target decoupling', () => {
           vendor: 'claude',
           source: 'managed',
           selectedVersion: '1.0.0',
-          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          compatibleRange: vendorCompatibilityLabel('claude'),
           path: managedBinPath('claude', '1.0.0', dir),
           versionHistory: [{ version: '1.0.0', status: 'installed' }],
         },
@@ -516,7 +522,7 @@ describe('applyVendorCliChoices (save_settings manifest sync)', () => {
           source: 'managed',
           latestCompatibleVersion: '1.3.0',
           lastError: 'prior error',
-          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          compatibleRange: vendorCompatibilityLabel('claude'),
           versionHistory: [{ version: '1.2.0', status: 'installed' }],
         },
       },
@@ -537,7 +543,7 @@ describe('applyVendorCliChoices (save_settings manifest sync)', () => {
           vendor: 'claude',
           source: 'managed',
           latestCompatibleVersion: '1.3.0',
-          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          compatibleRange: vendorCompatibilityLabel('claude'),
           versionHistory: [],
         },
       },
@@ -559,7 +565,7 @@ describe('applyVendorCliChoices (save_settings manifest sync)', () => {
           source: 'managed',
           selectedVersion: '1.0.0',
           latestCompatibleVersion: '1.3.0',
-          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          compatibleRange: vendorCompatibilityLabel('claude'),
           versionHistory: [],
         },
       },
@@ -580,7 +586,7 @@ describe('applyVendorCliChoices (save_settings manifest sync)', () => {
           vendor: 'claude',
           source: 'managed',
           latestCompatibleVersion: '1.3.0',
-          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          compatibleRange: vendorCompatibilityLabel('claude'),
           versionHistory: [
             { version: '1.2.0', status: 'installed' },
             { version: '1.3.0', status: 'installed' },
@@ -617,7 +623,7 @@ describe('cleanManagedHistory protects the effective choice', () => {
           vendor: 'claude',
           source: 'managed',
           selectedVersion: '1.0.0',
-          compatibleRange: HOST_BINARIES.claude.compatibleRange,
+          compatibleRange: vendorCompatibilityLabel('claude'),
           versionHistory: history,
         },
       },

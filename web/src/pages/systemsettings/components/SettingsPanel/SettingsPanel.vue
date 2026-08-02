@@ -9,7 +9,7 @@
  * 切换存在未保存修改的 Tab 时二次确认,确认后仅切换、不保存也不丢弃草稿。
  */
 import { computed, ref, toRaw, watch } from 'vue'
-import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+import { SYSTEM_AGENT_ID, hasProviderConfig } from '@ccc/shared/protocol'
 import { resolveDefaultAgentId } from '@ccc/shared'
 import type {
   AgentConfig,
@@ -373,12 +373,22 @@ watch(
 const VENDORS: VendorId[] = ['claude', 'codex']
 const CONFIG_MODES = ['system', 'custom'] as const
 
+/**
+ * Which config modes a vendor offers. Cursor is fixed at `system` — it
+ * authenticates through its own CLI login and has no relay, so `custom` (which
+ * injects a provider triple) has nothing to inject. Offering it would be a lie.
+ */
+function configModesFor(vendor: VendorId): readonly ('system' | 'custom')[] {
+  return vendor === 'cursor' ? ['system'] : CONFIG_MODES
+}
+
 // Vendor display names are product identifiers (do-not-translate, see
 // specs/style/i18n-terms.md) rendered as bound data — same exemption pattern as
 // UI_LANG_LABELS — so they don't go through `t`.
 const VENDOR_LABELS: Record<VendorId, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
+  cursor: 'Cursor',
 }
 
 // configMode is a c3 concept, so it IS localized.
@@ -413,6 +423,11 @@ function makeAgent(
       // `wireApi` — the upstream protocol the driver routes on (2026-06-12-006).
       // Default `chat` (most third parties are Chat-Completions-only ⇒ relay).
       return { ...base, vendor, config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' } }
+    case 'cursor':
+      // Cursor's SDK takes a key and a model but cannot be pointed at another
+      // provider (c3 has no relay speaking its protocol), so it is always `system`
+      // and carries no base URL.
+      return { ...base, vendor, configMode: 'system', config: { apiKey: '', model: '' } }
   }
 }
 
@@ -495,12 +510,29 @@ function onToggleEnabled(a: AgentConfig, checked: boolean): void {
   }
 }
 
-// Provider connection fields (baseUrl/apiKey) are only meaningful in `custom`
-// mode; `system` mode defers to the vendor CLI's own config. `model` is now a
-// standalone override visible in BOTH modes (2026-07-02-001) — it does NOT go
+// The base URL is only meaningful in `custom` mode, and only for vendors c3 can
+// redirect at all; `system` mode defers to the vendor CLI's own config. `model` is
+// a standalone override visible in BOTH modes (2026-07-02-001) — it does NOT go
 // through this gate.
-function showProviderFields(a: AgentConfig): boolean {
-  return a.configMode === 'custom'
+function showBaseUrl(a: AgentConfig): boolean {
+  return hasProviderConfig(a) && a.configMode === 'custom'
+}
+
+// The API key follows the base URL for redirectable vendors, but cursor needs one
+// in `system` mode too: its SDK authenticates with a key only and cannot use the
+// `cursor-agent login` credential, so hiding the field would leave the agent
+// unrunnable with nowhere to fix it.
+function showApiKey(a: AgentConfig): boolean {
+  return a.vendor === 'cursor' || a.configMode === 'custom'
+}
+
+// Narrow the union for template read/write — `baseUrl` lives only on the
+// redirectable vendors' arms.
+function baseUrlOf(a: AgentConfig): string {
+  return hasProviderConfig(a) ? a.config.baseUrl : ''
+}
+function setBaseUrl(a: AgentConfig, value: string): void {
+  if (hasProviderConfig(a)) a.config.baseUrl = value
 }
 
 // The `wireApi` selector is codex-only and custom-only (2026-06-12-006): it
@@ -926,19 +958,20 @@ function selectAdmin(username: string) {
                 :title="t('settings.agents.configMode.tooltip')"
                 data-testid="agent-configmode"
               >
-                <option v-for="m in CONFIG_MODES" :key="m" :value="m">
+                <option v-for="m in configModesFor(a.vendor)" :key="m" :value="m">
                   {{ configModeLabel(m) }}
                 </option>
               </select>
               <input
-                v-if="showProviderFields(a)"
-                v-model="a.config.baseUrl"
+                v-if="showBaseUrl(a)"
+                :value="baseUrlOf(a)"
                 class="agent-field agent-url"
                 :title="t('settings.agents.col.baseUrl.label')"
                 :placeholder="t('settings.agents.baseUrl.placeholder')"
+                @input="setBaseUrl(a, ($event.target as HTMLInputElement).value)"
               />
               <input
-                v-if="showProviderFields(a)"
+                v-if="showApiKey(a)"
                 v-model="a.config.apiKey"
                 class="agent-field agent-key"
                 type="password"

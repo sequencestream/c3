@@ -32,6 +32,7 @@ import type { UiErrorCode } from '@ccc/shared/ui-codes'
 // lightweight instances without a supervisor or registry probe.
 import { createClaudeAdapter } from '../../kernel/agent/adapters/claude/index.js'
 import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
+import { createCursorAdapter } from '../../kernel/agent/adapters/cursor/index.js'
 
 /**
  * Read a client-supplied `config.name`. Returns:
@@ -312,9 +313,13 @@ export const getAutomationToolManifest: Handler<'get_automation_tool_manifest'> 
     case 'codex':
       tools = createCodexAdapter().listTools(msg.workspaceId, mcpServers)
       break
+    case 'cursor':
+      tools = createCursorAdapter().listTools(msg.workspaceId, mcpServers)
+      break
     default:
-      // Unknown vendor — fallback to a minimal SDK set
-      tools = createClaudeAdapter().listTools(msg.workspaceId)
+      // No silent fallback to another vendor's toolset: an unknown vendor
+      // advertises no tools rather than borrowing Claude's.
+      tools = []
   }
 
   // Always append c3 MCP tools so the user can select them regardless of vendor

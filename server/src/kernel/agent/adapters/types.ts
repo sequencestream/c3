@@ -289,8 +289,19 @@ export interface DriverStartOptions {
    * resolution. The wrapper runs the vendor CLI as an arapuca-narrowed host
    * process (`arapuca run -v … -- <cli> "$@"`); the child inherits the driver's
    * spawn env, so no env-file is needed.
+   *
+   * Only vendors c3 launches as a host CLI get one. A vendor whose runtime is an
+   * in-process SDK has no child to narrow, so it reads {@link sandboxed} instead.
    */
   sandboxWrapperPath?: string
+  /**
+   * Whether this run was asked to be isolated — the vendor-neutral half of the
+   * sandbox decision, true for every sandboxed run regardless of how the vendor
+   * delivers isolation. CLI vendors realise it through {@link sandboxWrapperPath}
+   * (arapuca); an in-process SDK vendor (cursor) realises it through the SDK's own
+   * sandbox. A driver that can honour neither must not silently run unisolated.
+   */
+  sandboxed?: boolean
   /**
    * Remote (HTTP) MCP servers to attach to this run, keyed by server name
    * (2026-06-12-005). Each driver translates to its native MCP config; a driver

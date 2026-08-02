@@ -901,10 +901,13 @@ export async function validateLazy(input: {
   // Group rows by vendor so we do one native list per vendor.
   const byVendor = new Map<VendorId, RawRow[]>()
   for (const r of rows) {
-    if (r.vendor === 'codex') {
-      // Codex is explicitly skipped — its thread items are the canonical
-      // source, not the per-list re-read. A future lazy re-read for Codex
-      // can call the thread-items API; not in this cycle.
+    if (r.vendor === 'codex' || r.vendor === 'cursor') {
+      // Codex and Cursor are explicitly skipped — neither exposes a native list c3
+      // can re-validate a row against (codex thread items are the canonical source;
+      // cursor's SDK store covers only agents c3 itself created, so a row missing
+      // from it is not evidence the session is gone). Ghosting on such a list would
+      // hide live sessions. A future lazy re-read can call each vendor's own API;
+      // not in this cycle.
       skipped++
       continue
     }
@@ -1034,10 +1037,11 @@ export async function janitor(input: {
     buckets.set(key, b)
   }
   for (const b of buckets.values()) {
-    if (b.vendor === 'codex') {
-      // Codex rows are explicitly not janitored (the thread items are the
-      // canonical source; the janitor's native list wouldn't find them
-      // anyway — Codex is not enumerable per SR-R4).
+    if (b.vendor === 'codex' || b.vendor === 'cursor') {
+      // Codex and Cursor rows are explicitly not janitored — neither vendor offers
+      // a native list complete enough to prove a row is dead, so the janitor would
+      // ghost live sessions (codex is not enumerable per SR-R4; cursor's SDK store
+      // sees only what c3 created through it).
       observed += b.rowIds.length
       continue
     }

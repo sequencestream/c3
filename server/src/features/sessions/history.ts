@@ -8,10 +8,12 @@
  */
 import type { CanonicalMessage, TranscriptItem, VendorId } from '@ccc/shared/protocol'
 import { CodexSessionStore, codexStoreRoots } from '../../kernel/agent/adapters/codex/index.js'
+import { CursorSessionStore } from '../../kernel/agent/adapters/cursor/session-store.js'
 import { resolveSessionStoreScope } from '../../kernel/agent-config/index.js'
 import { loadHistory } from '../../sessions.js'
 
 const codexHistoryStore = new CodexSessionStore()
+const cursorHistoryStore = new CursorSessionStore()
 
 /** Read a session's persisted transcript from its vendor's native session store. */
 export async function loadHistoryForVendor(
@@ -19,20 +21,41 @@ export async function loadHistoryForVendor(
   workspacePath: string,
   sessionId: string,
 ): Promise<TranscriptItem[]> {
-  if (vendor === 'codex') {
-    // Read from the session's frozen store scope's CODEX_HOME first, with the
-    // other root as a fallback (ADR-0015) — so a session that ran in the sandbox
-    // is read back from the persistent sandbox home, not host `~/.codex`.
-    const storeRoots = codexStoreRoots(workspacePath, resolveSessionStoreScope(sessionId))
-    return canonicalToTranscript(
-      await codexHistoryStore.read(sessionId, { cwd: workspacePath, storeRoots }),
-    )
+  switch (vendor) {
+    case 'codex': {
+      // Read from the session's frozen store scope's CODEX_HOME first, with the
+      // other root as a fallback (ADR-0015) — so a session that ran in the sandbox
+      // is read back from the persistent sandbox home, not host `~/.codex`.
+      const storeRoots = codexStoreRoots(workspacePath, resolveSessionStoreScope(sessionId))
+      return canonicalToTranscript(
+        await codexHistoryStore.read(sessionId, { cwd: workspacePath, storeRoots }),
+      )
+    }
+    case 'cursor':
+      // Read from the SDK's own local agent store (a published API), never from
+      // the Cursor IDE's private chat database. That store holds exactly the
+      // agents c3 created through the SDK, which is why the capability ledger
+      // calls this read `partial`. A read that finds nothing yields an empty
+      // transcript — resume still replays Cursor's own context regardless.
+      try {
+        return canonicalToTranscript(
+          await cursorHistoryStore.read(sessionId, { cwd: workspacePath }),
+        )
+      } catch (err) {
+        // The SDK's store lives behind an optional native module; a host without
+        // it must not take the whole history read down with it.
+        console.warn(
+          `[c3] cursor history unavailable for ${sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+        )
+        return []
+      }
+    case 'claude':
+      // Claude transcripts are read via the SDK, which keys its projects root off
+      // the server process's CLAUDE_CONFIG_DIR. The sandbox writes claude
+      // transcripts into that same host config dir (getSandboxClaudeConfigDir), so
+      // no scope branch is needed — a sandboxed claude session is host-readable.
+      return loadHistory(workspacePath, sessionId)
   }
-  // Claude transcripts are read via the SDK, which keys its projects root off the
-  // server process's CLAUDE_CONFIG_DIR. The sandbox writes claude transcripts into
-  // that same host config dir (getSandboxClaudeConfigDir), so no scope branch is
-  // needed here — a sandboxed claude session is already host-readable.
-  return loadHistory(workspacePath, sessionId)
 }
 
 function canonicalToTranscript(messages: readonly CanonicalMessage[]): TranscriptItem[] {

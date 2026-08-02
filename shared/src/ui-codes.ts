@@ -146,6 +146,7 @@ export const UI_ERROR_CODES = {
   'automation.agentNotFound': { key: 'error.automation.agentNotFound' },
   'automation.agentDisabled': { key: 'error.automation.agentDisabled' },
   'automation.agentVendorMismatch': { key: 'error.automation.agentVendorMismatch' },
+  'automation.vendorUnsupported': { key: 'error.automation.vendorUnsupported' },
   // wait user involve
   'waitUserInvolve.dbUnavailable': { key: 'error.waitUserInvolve.dbUnavailable' },
   'waitUserInvolve.invalidStatusTransition': {

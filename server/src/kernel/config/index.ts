@@ -46,7 +46,7 @@ import type {
   UiLang,
   VendorId,
 } from '@ccc/shared/protocol'
-import { PENDING_SESSION_PREFIX, SESSION_KINDS } from '@ccc/shared/protocol'
+import { PENDING_SESSION_PREFIX, SESSION_KINDS, isVendorId } from '@ccc/shared/protocol'
 import { resolveDefaultAgentId } from '@ccc/shared'
 import type { SandboxExtraMount, SessionKind } from '@ccc/shared/protocol'
 import {
@@ -75,11 +75,12 @@ export { c3HomeDir, DEFAULT_UI_LANG, getAgentLang }
  * Per-vendor default mode tokens (2026-06-07-017). Each vendor's fallback when
  * its key is absent from the per-project {@link WorkspaceSetting.defaultMode} map.
  * These MUST match each vendor's `defaultToken` in its {@link VendorModeCatalog}
- * (claude=default, codex=auto).
+ * (claude=default, codex=auto, cursor=agent).
  */
 const DEFAULT_MODE_MAP: Record<VendorId, ModeToken> = {
   claude: 'default',
   codex: 'auto',
+  cursor: 'agent',
 }
 
 /**
@@ -1068,7 +1069,9 @@ function migrateState(raw: unknown, now: number): SessionAgentState {
       if (!v || typeof v !== 'object') continue
       const { agentId, vendor, storeScope } = v as Record<string, unknown>
       if (typeof agentId !== 'string' || !agentId) continue
-      if (vendor !== 'claude' && vendor !== 'codex') continue
+      // Accept any vendor c3 knows (guarded by the authoritative list, not a
+      // hard-coded pair, so a newer vendor's persisted fact is never dropped).
+      if (!isVendorId(vendor)) continue
       // Preserve a frozen storeScope when present; a fact written before the
       // scope existed is a host session (sandbox stores are newer), so absence
       // stays absent and reads as 'host' at the getter.

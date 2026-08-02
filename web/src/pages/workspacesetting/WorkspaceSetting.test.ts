@@ -58,6 +58,24 @@ const MOCK_VENDOR_MODES: Record<VendorId, VendorModeCatalog> = {
       },
     ],
   },
+  cursor: {
+    vendor: 'cursor',
+    defaultToken: 'agent',
+    modes: [
+      {
+        token: 'agent',
+        labelCode: 'nav.mode.agent.label',
+        actionMode: 'build',
+        toolGate: 'on-sensitive',
+      },
+      {
+        token: 'full-access',
+        labelCode: 'nav.mode.fullAccess.label',
+        actionMode: 'build',
+        toolGate: 'never-ask',
+      },
+    ],
+  },
 }
 
 /** The per-tab Save button after the Tab grouping refactor. Every tab panel is
@@ -79,7 +97,7 @@ function panelHidden(w: ReturnType<typeof mount>, testid: string): boolean {
 /** Convenience: per-vendor config with the given claude token. */
 function cfg(overrides?: Partial<WorkspaceSettingType>): WorkspaceSettingType {
   return {
-    defaultMode: { claude: 'plan', codex: 'auto' },
+    defaultMode: { claude: 'plan', codex: 'auto', cursor: 'agent' },
     devSkill: '/my-skill',
     maxRoundsPerStage: 14,
     maxSpeechChars: 400,
@@ -105,12 +123,13 @@ function mountWs(config: WorkspaceSettingType | null, extra?: Record<string, unk
 describe('WorkspaceSetting.vue — per-vendor default mode', () => {
   it('renders a mode select for each vendor in correct order', () => {
     const w = mountWs(null)
-    // 2 codex policy selects (sandbox + approval) + 1 claude
-    // + 1 git-branch-mode select = 4
+    // 2 codex policy selects (sandbox + approval) + 1 claude + 1 cursor
+    // + 1 git-branch-mode select = 5
     const selects = w.findAll('.mode-select')
-    expect(selects).toHaveLength(4)
-    // Claude still has a mode select; Codex uses dual-policy selects.
+    expect(selects).toHaveLength(5)
+    // Claude and Cursor each have a single mode select; Codex uses dual-policy selects.
     expect(w.findAll('[data-testid="default-mode-claude"]').length).toBe(1)
+    expect(w.findAll('[data-testid="default-mode-cursor"]').length).toBe(1)
     expect(w.findAll('[data-testid="default-mode-codex-sandbox"]').length).toBe(1)
     expect(w.findAll('[data-testid="default-mode-codex-approval"]').length).toBe(1)
   })
@@ -168,10 +187,10 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
 
   it('renders a row label for each config item', () => {
     const w = mountWs(null)
-    // 2 vendor row-labels + devSkill + rounds + speechChars
-    // + gitBranchMode + defaultMainBranch + default-visible SDD spec root = 8
+    // 3 vendor row-labels + devSkill + rounds + speechChars
+    // + gitBranchMode + defaultMainBranch + default-visible SDD spec root = 9
     const labels = w.findAll('.project-config-row-label')
-    expect(labels).toHaveLength(8)
+    expect(labels).toHaveLength(9)
     expect(labels[0].text()).toBeTruthy()
   })
 
@@ -184,6 +203,7 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
     expect(payload.defaultMode).toEqual({
       claude: 'plan',
       codex: { sandboxMode: 'workspace-write', approvalPolicy: 'on-request' },
+      cursor: 'agent',
     })
   })
 

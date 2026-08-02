@@ -33,6 +33,14 @@ await build({
   external: [
     // Native bindings the SDK may dlopen at runtime
     '@anthropic-ai/claude-agent-sdk',
+    // Cursor's local runtime resolves a per-platform native package
+    // (`@cursor/sdk-<platform>-<arch>`, an optionalDependency) at load time.
+    // Bundling it would freeze one platform's binary into the output, so it stays
+    // external and loads from node_modules — the same treatment the other
+    // native-backed SDKs get. The cursor adapter imports it lazily, so a host
+    // whose platform package is missing degrades to "cursor unavailable" instead
+    // of failing the process at startup.
+    '@cursor/sdk',
     // Sandbox Docker driver (ADR-0024). dockerode pulls in ssh2 → cpu-features,
     // which ships a native `.node` esbuild can't bundle. Keep it external so it
     // loads from node_modules at runtime (a direct @ccc/server dependency).

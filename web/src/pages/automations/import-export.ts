@@ -27,7 +27,7 @@ import type {
   VendorId,
 } from '@ccc/shared/protocol'
 import type { IntentLifecyclePhase, PrOperation, PrOperationResult } from '@ccc/shared'
-import { RUN_END_REASONS, SESSION_KINDS } from '@ccc/shared/protocol'
+import { RUN_END_REASONS, SESSION_KINDS, VENDOR_IDS } from '@ccc/shared/protocol'
 import { INTENT_LIFECYCLE_PHASES, PR_OPERATIONS, PR_OPERATION_RESULTS } from '@ccc/shared'
 import {
   hasRunLifecycleEventFilter,
@@ -49,7 +49,6 @@ const DEFAULT_MODE: ModeToken = 'read-only'
 // exposes the unions but not runtime arrays for these); SESSION_KINDS and the PR /
 // intent enums ARE exported and reused directly.
 const AUTOMATION_TYPES: readonly AutomationType[] = ['command', 'llm']
-const VENDOR_IDS: readonly VendorId[] = ['claude', 'codex']
 const TRIGGER_TYPES: readonly ScheduleTriggerType[] = ['cron', 'event']
 
 /** The versioned export envelope written to / read from disk. */

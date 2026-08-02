@@ -93,6 +93,22 @@ export function getSandboxClaudeConfigDir(_workspacePath: string): string {
 }
 
 /**
+ * The Cursor data root (`~/.cursor`) — the whole of it, not a transcript subdir.
+ *
+ * The SDK's local agent store lives under this root
+ * (`~/.cursor/projects/<workspace>/sdk-agent-store/…`), alongside the workspace
+ * rules and skills a run loads. There is no environment override for it, so this
+ * one path is where every Cursor session's state resides regardless of how the
+ * run was launched.
+ *
+ * Credentials are NOT here: the SDK authenticates with an API key supplied per
+ * run, so this root holds conversation state only.
+ */
+export function hostCursorHome(): string {
+  return join(os.homedir(), '.cursor')
+}
+
+/**
  * Vendor-neutral resolution of the transcript store directory for a session,
  * given its frozen {@link StoreScope} (ADR-0015). This is the single seam the
  * read/resume path consults so it never hard-codes a host path:
@@ -100,18 +116,28 @@ export function getSandboxClaudeConfigDir(_workspacePath: string): string {
  * - codex → `host` = {@link hostCodexHome}; `sandbox` = {@link relayCodexHome}.
  * - claude → both scopes resolve to {@link hostClaudeConfigDir} (the sandbox run
  *   writes there too), so claude transcripts are always host-readable.
+ * - cursor → {@link hostCursorHome} for both scopes: the SDK runs in the c3
+ *   process and writes its agent store under the host data root whether or not the
+ *   session is sandboxed, so the next turn's resume finds the agent where it was left.
  *
  * The returned path is the vendor's config-dir root (codex `CODEX_HOME`, claude
- * `CLAUDE_CONFIG_DIR`); the vendor's own subdir layout (`sessions/…`,
- * `projects/…`) is appended by the caller.
+ * `CLAUDE_CONFIG_DIR`, cursor `~/.cursor`); the vendor's own subdir layout
+ * (`sessions/…`, `projects/…`) is appended by the caller.
+ *
+ * The switch is exhaustive on purpose: a new vendor must state where its store
+ * lives rather than inheriting Claude's by falling off the end.
  */
 export function resolveVendorStoreDir(
   vendor: VendorId,
   workspacePath: string,
   scope: StoreScope,
 ): string {
-  if (vendor === 'codex') {
-    return scope === 'sandbox' ? relayCodexHome() : hostCodexHome()
+  switch (vendor) {
+    case 'codex':
+      return scope === 'sandbox' ? relayCodexHome() : hostCodexHome()
+    case 'claude':
+      return getSandboxClaudeConfigDir(workspacePath)
+    case 'cursor':
+      return hostCursorHome()
   }
-  return getSandboxClaudeConfigDir(workspacePath)
 }

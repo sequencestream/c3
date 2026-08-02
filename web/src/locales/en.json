@@ -64,6 +64,9 @@
       "auto": {
         "label": "Auto"
       },
+      "agent": {
+        "label": "Agent"
+      },
       "plan": {
         "label": "Plan"
       },
@@ -1909,7 +1912,8 @@
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the automation vendor."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor.",
+      "vendorUnsupported": "This vendor does not support automation execution."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve store unavailable (c3.db).",
@@ -2172,6 +2176,9 @@
         },
         "codex": {
           "label": "Codex"
+        },
+        "cursor": {
+          "label": "Cursor"
         }
       }
     },

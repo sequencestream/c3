@@ -204,6 +204,91 @@ const PATCH_RULE: RiskRule = {
   requireTarget: true,
 }
 
+// ---------------------------------------------------------------------------
+// Cursor native-tool rules
+// ---------------------------------------------------------------------------
+//
+// Cursor names its arguments differently from both other vendors (`path`,
+// `targetDirectory`/`globPattern`, `query`), so each rule extracts the fields the
+// CLI actually emits rather than reusing a same-shaped rule from another vendor.
+
+const CURSOR_READ_RULE: RiskRule = {
+  intent: 'read-file',
+  description: 'Read a file',
+  kind: 'file',
+  risks: { read: true, write: false, execute: false, network: false },
+  extract: (i) => single(str(i, 'path')),
+  requireTarget: true,
+}
+
+const CURSOR_LIST_RULE: RiskRule = {
+  intent: 'list-directory',
+  description: 'List a directory',
+  kind: 'path',
+  risks: { read: true, write: false, execute: false, network: false },
+  extract: (i) => single(str(i, 'path') || str(i, 'targetDirectory')),
+  requireTarget: false,
+}
+
+const CURSOR_GLOB_RULE: RiskRule = {
+  intent: 'search-code',
+  description: 'Find files by glob pattern',
+  kind: 'search',
+  risks: { read: true, write: false, execute: false, network: false },
+  extract: (i) => single(str(i, 'globPattern')),
+  requireTarget: false,
+}
+
+const CURSOR_GREP_RULE: RiskRule = {
+  intent: 'search-code',
+  description: 'Search project files by pattern',
+  kind: 'search',
+  risks: { read: true, write: false, execute: false, network: false },
+  extract: (i) => single(str(i, 'pattern')),
+  requireTarget: false,
+}
+
+const CURSOR_SEM_SEARCH_RULE: RiskRule = {
+  intent: 'search-code',
+  description: 'Search the codebase semantically',
+  kind: 'query',
+  risks: { read: true, write: false, execute: false, network: false },
+  extract: (i) => single(str(i, 'query')),
+  requireTarget: false,
+}
+
+/**
+ * Cursor's `edit` rewrites an existing file in place; its `write` creates one (or
+ * replaces it wholesale). Both mutate, and both name their target `path`, so the
+ * two share a rule while keeping distinct intents at the call site.
+ */
+const CURSOR_EDIT_RULE: RiskRule = {
+  intent: 'edit-file',
+  description: 'Create or modify a file',
+  kind: 'file',
+  risks: { read: true, write: true, execute: false, network: false },
+  extract: (i) => single(str(i, 'path')),
+  requireTarget: true,
+}
+
+const CURSOR_WRITE_RULE: RiskRule = {
+  intent: 'create-file',
+  description: 'Write a file',
+  kind: 'file',
+  risks: { read: false, write: true, execute: false, network: false },
+  extract: (i) => single(str(i, 'path')),
+  requireTarget: true,
+}
+
+const CURSOR_DELETE_RULE: RiskRule = {
+  intent: 'delete-file',
+  description: 'Delete a file',
+  kind: 'file',
+  risks: { read: false, write: true, execute: false, network: false },
+  extract: (i) => single(str(i, 'path')),
+  requireTarget: true,
+}
+
 /**
  * Per-vendor native-tool → rule table. The requesting session's vendor selects the
  * namespace; the tool name selects the rule. A name absent from the vendor's table
@@ -230,6 +315,23 @@ const RULES: Record<VendorId, Record<string, RiskRule>> = {
     exec_command: SHELL_RULE,
     local_shell: SHELL_RULE,
     apply_patch: PATCH_RULE,
+  },
+  // Cursor's stream names a tool by the discriminant of the SDK's own `ToolCall`
+  // union, so these are both the wire identity and the console-visible name. Only
+  // tools whose native argument shape is known are mapped — the rest of the union
+  // (`mcp`, `task`, `createPlan`, `updateTodos`, `readLints`, `generateImage`,
+  // `recordScreen`) stays `unknown-tool` and fails closed rather than being
+  // approximated from a same-sounding tool on another vendor.
+  cursor: {
+    shell: SHELL_RULE,
+    read: CURSOR_READ_RULE,
+    ls: CURSOR_LIST_RULE,
+    glob: CURSOR_GLOB_RULE,
+    grep: CURSOR_GREP_RULE,
+    semSearch: CURSOR_SEM_SEARCH_RULE,
+    edit: CURSOR_EDIT_RULE,
+    write: CURSOR_WRITE_RULE,
+    delete: CURSOR_DELETE_RULE,
   },
 }
 

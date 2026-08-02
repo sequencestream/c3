@@ -90,6 +90,10 @@
   | rename | full   | temporarily-unavailable | none   |
   | delete | full   | temporarily-unavailable | none   |
 
+  Cursor 适配器自报同一子台账:`list` / `read` 为 `partial`(读 `@cursor/sdk` 的 local agent
+  store,只覆盖经 SDK 创建的 agent,不回读 Cursor IDE 私有 store)、`resume` 为 `full`、
+  `rename` / `delete` 为 `none`。
+
   控制台按能力*状态*渲染 rename/delete 行按钮(none 隐藏,temporarily-unavailable 禁用,
   full/partial 启用)——一个降级函数,没有厂商分支。wire 在一个新的顶层
   session-capabilities-by-vendor 伴生字段上携带同一份矩阵(与 host 状态 / 绑定统计并列),与

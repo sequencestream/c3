@@ -623,6 +623,19 @@ async function executeLlmPrompt(
     return
   }
 
+  // Only claude and codex have an automation execution path. A vendor with no
+  // such path (cursor today) must fail loudly here — never fall through to the
+  // claude SDK and run under the wrong engine.
+  if (automation.vendor !== 'claude') {
+    clearTimeout(timeoutTimer)
+    updateLog(logId, {
+      finishedAt: Date.now(),
+      status: 'failed',
+      error: 'automation_vendor_unsupported',
+    })
+    return
+  }
+
   // Route a custom claude provider through the loopback relay (ADR-0029): the SDK
   // connects with a per-run token, the real key stays in the relay. Null ⇒ system
   // mode (own login). Released in the `finally` below.

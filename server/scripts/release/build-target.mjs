@@ -31,6 +31,19 @@ const repoRoot = resolve(serverDir, '..')
 //   P0 wave: macOS-arm64 + Linux-x64-glibc.
 //   Experimental: Windows-x64 (ships ⚠️experimental).
 // Keep in sync with KNOWN_TARGETS in scripts/release/targets.mjs.
+/**
+ * Modules that must NOT be bundled into the binary.
+ *
+ * `@cursor/sdk` resolves a per-platform native package (`@cursor/sdk-<os>-<arch>`)
+ * at load time. Bundling it would freeze the BUILD host's binary into every
+ * cross-compiled target — a macOS-arm64 native module inside a linux-x64
+ * executable. Keeping it external means the standalone binary carries no Cursor
+ * runtime at all: `cursorSdkAvailable()` answers false there and the cursor agent
+ * type is simply unavailable, which is the honest degradation. A c3 installed from
+ * npm (with node_modules) resolves it normally and has full Cursor support.
+ */
+const NATIVE_EXTERNALS = ['@cursor/sdk']
+
 export const TARGETS = {
   'macos-arm64': 'bun-darwin-arm64',
   'linux-x64': 'bun-linux-x64',
@@ -157,6 +170,7 @@ export async function buildTarget({ target, outfile, embedPath, version, commit,
     sourcemap: 'none',
     define: versionDefines(info),
     plugins: [redirectStub],
+    external: NATIVE_EXTERNALS,
   })
 
   if (!bundleResult.success) {
@@ -182,6 +196,7 @@ export async function buildTarget({ target, outfile, embedPath, version, commit,
     `--target=${bunTarget}`,
     `--outfile=${out}`,
     '--minify',
+    ...NATIVE_EXTERNALS.flatMap((name) => ['--external', name]),
   ]
   const compileRes = spawnSync(process.execPath, compileArgs, { encoding: 'utf-8' })
   if (compileRes.status !== 0) {

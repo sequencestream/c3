@@ -54,11 +54,14 @@ export function resolveAvailableAdapters(
     if (result.path) {
       available.push(factory())
     } else {
+      // Every factory in this table is a host-CLI vendor, so a spec always exists;
+      // the probe's own binary name is the fallback that keeps this total without
+      // a non-null assertion.
       const spec = HOST_BINARIES[vendor]
       missing.push({
         vendor,
-        binary: spec.binary,
-        installHint: spec.installHint,
+        binary: spec?.binary ?? result.binary,
+        installHint: spec?.installHint ?? result.installHint,
         source: result.source,
         ...(result.error ? { error: result.error } : {}),
         ...(result.managedError ? { managedError: result.managedError } : {}),

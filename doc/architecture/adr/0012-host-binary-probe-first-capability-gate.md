@@ -18,6 +18,10 @@ c3 拥有默认厂商 CLI 来源。启动器按以下固定顺序解析每个厂
 2. `~/.c3/vendor/<vendor>/<version>/bin/<binary>` 下 c3 托管的 CLI；
 3. 降级的宿主 `PATH` 回退。
 
+并非每个厂商都有宿主二进制:**cursor 完全不进入这条解析链**——它由 `@cursor/sdk` 的
+进程内 runtime 驱动(SDK 随 c3 依赖发布),没有可执行文件可解析、没有版本可钉选。因此
+`HOST_BINARIES` 对 vendor 是**部分映射**,cursor 的可用性判定退化为"该 SDK 包能否被解析"。
+
 一个无效的显式覆盖项对该厂商而言是硬性的解析失败。它不会被静默绕过，因为操作者提供的
 路径是有意为之的配置。
 
@@ -42,7 +46,7 @@ registry 的快慢无关。每个厂商各自遵守 24 小时远端检查冷却�
   在同步落盘之前，当前进程沿用刷新前的解析结果；
 - 环境变量覆盖项对开发、调试与企业锁定版本仍然有用；
 - c3 现在拥有 npm 包下载、完整性校验、原子替换、平台标签与版本兼容策略；
-- c3 不修改用户 PATH、shell 配置文件、Homebrew/npm 全局安装、或 Claude/Codex 凭据。
+- c3 不修改用户 PATH、shell 配置文件、Homebrew/npm 全局安装、或 Claude/Codex/Cursor 凭据。
 
 ## Compliance
 

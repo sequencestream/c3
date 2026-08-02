@@ -81,7 +81,9 @@ vi.mock('../agent-config/index.js', () => ({
     fx.rebinds.push(agentId)
     return { ok: true }
   }),
-  launchForAgent: vi.fn((a: AgentConfig) => ({ model: a.config.model || undefined })),
+  launchForAgent: vi.fn((a: AgentConfig) => ({
+    model: (a.vendor === 'cursor' ? '' : a.config.model) || undefined,
+  })),
   freezeSessionAgent: vi.fn(),
   bindClaudeRelay: vi.fn(() => null),
   unbindRelay: vi.fn(),

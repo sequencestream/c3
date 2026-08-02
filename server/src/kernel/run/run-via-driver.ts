@@ -33,6 +33,7 @@ import type {
 } from '../agent/adapters/types.js'
 import type { PermissionRequestCtx } from '../permission/gateway.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
+import { VENDOR_CAPABILITIES } from '../agent/adapters/capabilities.js'
 import { codexPolicyToGrid } from '../agent/adapters/codex/driver.js'
 import { resolveCodexGhTokenEnv } from '../agent/adapters/codex/gh-token.js'
 import { getSpecsBase, relayCodexHome } from '../config/workspace-path.js'
@@ -45,6 +46,7 @@ import {
 } from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
 import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
+import { VENDOR_AUTH_PROFILES } from '../sandbox/vendor-auth.js'
 import { agentErrorEvent } from './agent-events.js'
 import { modelUserTurn, type RunInject } from './prompt-delivery.js'
 import {
@@ -182,6 +184,17 @@ function errMsg(err: unknown): string {
  */
 const USER_INTERACTION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
+/**
+ * The tool gate a driver-path vendor must use when a session imposes its own grid
+ * (intent/spec). A vendor with no per-tool approval channel (codex, cursor) cannot
+ * honour `always-ask` — there is nothing to ask on — so it is forced to `never-ask`
+ * (its launch-time policy is the gate). Gating on the capability, not the vendor
+ * id, is what keeps a new no-approval vendor from deadlocking here.
+ */
+function forcedToolGate(vendor: VendorId): import('@ccc/shared/protocol').ToolGate {
+  return VENDOR_CAPABILITIES[vendor].perToolApproval ? 'always-ask' : 'never-ask'
+}
+
 /** Forced permission grid for intent comm sessions on the driver path. */
 export function intentDriverModeForVendor(vendor: VendorId): {
   actionMode: import('@ccc/shared/protocol').ActionMode
@@ -189,18 +202,18 @@ export function intentDriverModeForVendor(vendor: VendorId): {
 } {
   return {
     actionMode: 'plan',
-    toolGate: vendor === 'codex' ? 'never-ask' : 'always-ask',
+    toolGate: forcedToolGate(vendor),
   }
 }
 
-/** Forced permission grid for Codex spec-authoring sessions on the driver path. */
+/** Forced permission grid for spec-authoring sessions on the driver path. */
 export function specDriverModeForVendor(vendor: VendorId): {
   actionMode: import('@ccc/shared/protocol').ActionMode
   toolGate: import('@ccc/shared/protocol').ToolGate
 } {
   return {
     actionMode: 'build',
-    toolGate: vendor === 'codex' ? 'never-ask' : 'always-ask',
+    toolGate: forcedToolGate(vendor),
   }
 }
 
@@ -469,9 +482,25 @@ export async function runViaDriver(
     adapter.vendor === 'codex' && !rt.sandboxPaths && resolveSessionStoreScope(runId) === 'sandbox'
       ? relayCodexHome()
       : undefined
-  const driverEnvOverrides = crossModeCodexHome
-    ? { ...(ghBridgedEnv ?? {}), CODEX_HOME: crossModeCodexHome }
-    : ghBridgedEnv
+  // Cursor's SDK runs in-process and authenticates with an API key only (a
+  // `cursor-agent login` session does not apply to it), so the bound agent's own
+  // key reaches its driver through this run's env map — the one credential
+  // channel `DriverStartOptions` has. Absent ⇒ the driver falls back to the
+  // server's ambient CURSOR_API_KEY, and fails at the door when there is none.
+  const cursorKeyEnv = ((): Record<string, string> | undefined => {
+    if (adapter.vendor !== 'cursor') return undefined
+    const agent = resolveAgent(agentId)
+    const key = agent.vendor === 'cursor' ? agent.config.apiKey?.trim() : undefined
+    return key ? { CURSOR_API_KEY: key } : undefined
+  })()
+  const driverEnvOverrides =
+    crossModeCodexHome || cursorKeyEnv
+      ? {
+          ...(ghBridgedEnv ?? {}),
+          ...(crossModeCodexHome ? { CODEX_HOME: crossModeCodexHome } : {}),
+          ...(cursorKeyEnv ?? {}),
+        }
+      : ghBridgedEnv
 
   // Sandbox wrapper: when the run has a resolved arapuca allow set, wrap the
   // vendor CLI in `arapuca run -v … -- <cli> "$@"`. The adapter uses this path
@@ -483,11 +512,16 @@ export async function runViaDriver(
   // a subscription (`system`-mode) agent authenticates through the host keychain,
   // which arapuca only exposes when explicitly allowed; a custom agent keeps the
   // env-injected credential and no keychain access.
-  const sandboxWrapperPath = rt.sandboxPaths
-    ? createSandboxWrapper(rt.sandboxPaths, adapter.vendor, rt.sandboxTmpDir ?? '', {
-        allowKeychain: resolveAgent(agentId).configMode === 'system',
-      })
-    : undefined
+  //
+  // A vendor with no arapuca auth profile runs on an in-process SDK, so there is
+  // no child process to wrap: it gets the neutral `sandboxed` flag below and
+  // isolates through its own runtime instead.
+  const sandboxWrapperPath =
+    rt.sandboxPaths && VENDOR_AUTH_PROFILES[adapter.vendor]
+      ? createSandboxWrapper(rt.sandboxPaths, adapter.vendor, rt.sandboxTmpDir ?? '', {
+          allowKeychain: resolveAgent(agentId).configMode === 'system',
+        })
+      : undefined
   // Override cwd: Codex spec sessions (specs root write boundary), effectiveCwd
   // (worktree isolation — also the arapuca same-path cwd), or original workspacePath.
   const specDriverCwd =
@@ -546,6 +580,7 @@ export async function runViaDriver(
       ...(relayCandidates ? { relayCandidates } : {}),
       ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
       ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
+      ...(rt.sandboxPaths ? { sandboxed: true } : {}),
       ...(adapter.vendor === 'codex'
         ? { additionalDirectories: [getSpecsBase(workspacePath)] }
         : {}),

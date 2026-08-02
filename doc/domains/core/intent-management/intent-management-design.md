@@ -331,8 +331,8 @@ title/content/priority P0–P3/可选依赖/**推断出的 module 名**);先与�
 ## `c3` MCP 工具
 
 c3 自己的 MCP 服务器名为 `c3`,携带 `save_intents`、`find_intents` 与
-`view_intent`,对**两个厂商**都经由**同一条回环 streamable-HTTP MCP 路由**暴露
-(Claude 与 Codex 都消费它;Claude 边界把中立的远程 MCP 描述符转译成 Claude SDK 的
+`view_intent`,对**三个厂商**都经由**同一条回环 streamable-HTTP MCP 路由**暴露
+(三个厂商都消费它;Claude 边界把中立的远程 MCP 描述符转译成 Claude SDK 的
 HTTP MCP 配置 `{ type: 'http', url, alwaysLoad: true }`)。每个工具都被标记为
 **常驻于第一轮提示词**(HTTP MCP 配置的 `alwaysLoad: true`),而不是
 延迟在 harness 的工具搜索之后——因此 `save_intents` 无需智能体在保存前
@@ -363,8 +363,8 @@ getter、以及 abort signal——是按每次运行提供的(run-id getter 与 
 弹框。代价是服务端不再有独立于模型行为的第二道拦截——「未确认不得调用」由提示词约束,
 由单测与端到端观察验证。落库归因没有审批人,`intent_logs.actor` 落为 `system`。
 
-这三个工具的形状、描述与核心逻辑都存在于同一份源代码中,被两个厂商共用同一条
-回环 HTTP MCP 路由(见下文),因此二者绝不会产生分歧。
+这三个工具的形状、描述与核心逻辑都存在于同一份源代码中,被三个厂商共用同一条
+回环 HTTP MCP 路由(见下文),因此三者绝不会产生分歧。
 
 **只读查询工具(RM-R19)。** 同一个服务器还携带 `find_intents`
 (`{ keyword?, module?, status? }`,均为可选;`status` 被约束为五个
@@ -380,24 +380,24 @@ getter、以及 abort signal——是按每次运行提供的(run-id getter 与 
 
 上文的 `c3` 服务器就是这一条**本地 streamable-HTTP MCP 路由**:同样的三个工具被
 暴露在这条路由上(挂载在 c3 自己的服务器上,位于 SPA 兜底路由之前,与 codex relay
-类似),**两个厂商都消费它**——这样意图面板与厂商无关。Claude 边界把中立的远程 MCP
+类似),**三个厂商都消费它**——这样意图面板与厂商无关。Claude 边界把中立的远程 MCP
 描述符转译成 Claude SDK 的 HTTP MCP 配置(`{ type: 'http', url, alwaysLoad: true }`);
-codex driver 转译成其原生的 streamable-HTTP 服务器条目。
+codex driver 转译成其原生的 streamable-HTTP 服务器条目;cursor 边界把描述符作为 `mcpServers` 选项直接传给 `Agent.create`。
 
 - **按运行绑定 + 隔离。** intent profile 通过中立的 `bindMcp` 绑定一个按运行区分的
-  MCP 服务器(对两个厂商一致):一个不透明 token 映射到一个私有 MCP 服务器,其工具
+  MCP 服务器(对三个厂商一致):一个不透明 token 映射到一个私有 MCP 服务器,其工具
   handler 闭包捕获该次运行的项目。token 随 URL query 传递;项目绑定存在于闭包中,
   因此智能体既不能读也不能写另一个项目的账本。该绑定在运行结束时(`finally`)被驱逐。
 - **仅限回环。** intent MCP 路由自身只监听本地回环:一道纵深防御守卫拒绝非回环对端(403);
-  未知/过期的 token 返回 404(默认拒绝原则)。两个厂商的子进程环境都以回环 `NO_PROXY`
+  未知/过期的 token 返回 404(默认拒绝原则)。三个厂商的子进程环境都以回环 `NO_PROXY`
   旁路收尾,否则宿主代理会吞掉这一跳并让三个工具静默缺席(见
   [agent-session design § 远程 MCP](../agent-session/agent-session-design.md))。
-- **保存路径(两个厂商共享)。** 两个厂商通过这条回环 HTTP MCP 路由调用同一个保存
+- **保存路径(三个厂商共享)。** 三个厂商通过这条回环 HTTP MCP 路由调用同一个保存
   handler,确认语义不因厂商而分叉:用户在对话中确认后调用即落库。
   `find_intents`/`view_intent` 同样自动允许(只读)。
 - **厂商转译。** 中立的远程 MCP 描述符(type、url、可选的 bearer-token 环境变量)
   被 Claude 边界转译为 Claude SDK 的 HTTP MCP 配置,被 codex 驱动转译为其写入的
-  streamable-HTTP MCP 形式;两者指向同一条回环路由。
+  streamable-HTTP MCP 形式,cursor 边界把描述符作为 `Agent.create` 的 `mcpServers` 选项直接传入;三者指向同一条回环路由。
 
 ## 启动开发(`start_development`)
 

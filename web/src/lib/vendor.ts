@@ -10,6 +10,7 @@ import type { VendorId } from '@ccc/shared/protocol'
 export const VENDOR_LABEL: Record<VendorId, string> = {
   claude: 'Claude',
   codex: 'Codex',
+  cursor: 'Cursor',
 }
 
 /**
@@ -21,4 +22,5 @@ export const VENDOR_LABEL: Record<VendorId, string> = {
 export const VENDOR_COLOR: Record<VendorId, string> = {
   claude: '#d97757',
   codex: '#a855f7',
+  cursor: '#3b82f6',
 }

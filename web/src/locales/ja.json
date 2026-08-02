@@ -65,6 +65,9 @@
       "auto": {
         "label": "自動"
       },
+      "agent": {
+        "label": "エージェント"
+      },
       "plan": {
         "label": "プラン"
       },
@@ -1910,7 +1913,8 @@
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the automation vendor."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor.",
+      "vendorUnsupported": "このベンダーは自動化の実行をサポートしていません。"
     },
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve ストアは利用できません (c3.db)。",
@@ -2173,6 +2177,9 @@
         },
         "codex": {
           "label": "Codex"
+        },
+        "cursor": {
+          "label": "Cursor"
         }
       }
     },

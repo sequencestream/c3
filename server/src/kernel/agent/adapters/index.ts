@@ -40,6 +40,7 @@ export type {
 } from './types.js'
 
 export { createClaudeAdapter } from './claude/index.js'
+export { createCursorAdapter } from './cursor/index.js'
 export { upsertBlock, CanonicalAccumulator } from './canonical-accumulator.js'
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,7 @@ export { tokenToGrid, gridToToken, isKnownToken } from './mode-catalog.js'
 import type { VendorId, VendorModeCatalog } from './types.js'
 import { claudeModeCatalog } from './claude/modes.js'
 import { codexModeCatalog } from './codex/modes.js'
+import { cursorModeCatalog } from './cursor/modes.js'
 
 /**
  * Every vendor's {@link VendorModeCatalog}, keyed by {@link VendorId}. The
@@ -63,4 +65,5 @@ import { codexModeCatalog } from './codex/modes.js'
 export const MODE_CATALOGS: Record<VendorId, VendorModeCatalog> = {
   claude: claudeModeCatalog,
   codex: codexModeCatalog,
+  cursor: cursorModeCatalog,
 }

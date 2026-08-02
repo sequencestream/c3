@@ -64,6 +64,9 @@
       "auto": {
         "label": "自动"
       },
+      "agent": {
+        "label": "智能体"
+      },
       "plan": {
         "label": "计划"
       },
@@ -1909,7 +1912,8 @@
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the automation vendor."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor.",
+      "vendorUnsupported": "该厂商不支持自动化执行。"
     },
     "waitUserInvolve": {
       "dbUnavailable": "等待用户介入存储不可用 (c3.db)。",
@@ -2172,6 +2176,9 @@
         },
         "codex": {
           "label": "Codex"
+        },
+        "cursor": {
+          "label": "Cursor"
         }
       }
     },

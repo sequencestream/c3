@@ -20,7 +20,7 @@ sandbox 落地后出现第二维不变量的缺口:同一 vendor 的数据根在
 
 ## Decision
 
-引入**第二个冻结不变量 `storeScope: 'host' | 'sandbox'`**,并把两 vendor 的 sandbox 数据根抽象为一个
+引入**第二个冻结不变量 `storeScope: 'host' | 'sandbox'`**,并把各 vendor 的 sandbox 数据根抽象为一个
 vendor 中立解析函数。三层协同:
 
 - **存储层(内核 config,对 vendor/scope 无感知)**:`SessionAgentFact` 增可选 `storeScope`,与 `vendor`
@@ -45,6 +45,7 @@ vendor 中立解析函数。三层协同:
 
 - transcript 随冻结 scope 定位,"在哪写就在哪回",与工作区 sandbox 开关后续变化解耦。
 - 存量会话无迁移成本(缺省 host + dual-scan 兜底)。
-- claude 与 codex 采不同数据根策略(claude 复用宿主 / codex 隔离持久),但经 `resolveVendorStoreDir`
+- claude、codex 与 cursor 采不同数据根策略(claude 复用宿主 / codex 隔离持久 / cursor 的 SDK 在
+  c3 进程内运行,两 scope 均写宿主 `~/.cursor`),但经 `resolveVendorStoreDir`
   收敛为一个 vendor 中立接缝,claude 沙箱化真跑通时无需再抄一遍读取逻辑。
 - 有意接受的边界:host 冻结的 codex session 在 sandbox 内续接不强行挂宿主 home,可能起新 rollout。

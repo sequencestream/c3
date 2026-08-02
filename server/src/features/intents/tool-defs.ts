@@ -84,7 +84,8 @@ export const saveSchema = {
             '带 id 则原地更新该意图的 title/content/priority/module/dependsOn,而非新建;' +
             'refine 已有意图时必须回填原 id 以更新原条目,避免重复。' +
             '目标须可改:draft/todo 保持状态、cancelled 自动重新激活为 todo;' +
-            'in_progress/done 不可修改,会导致整批保存失败。留空则新建一条意图。',
+            'in_progress/done 不可修改,会导致整批保存失败。留空则新建一条意图。' +
+            '注意:更新使 title/content 发生实际变化时,该意图原有的 spec 批准会被自动撤销,需重新评审批准后才能进入开发。',
         ),
       intentSessionId: z
         .string()
@@ -137,7 +138,8 @@ export const saveDesc =
   '调用即落库,没有任何确认弹框可以撤回。' +
   '每条不带 id 则新建;带 id 则原地更新该已存在意图(upsert)——' +
   'refine 已有意图时务必回填原 id 以更新原条目,避免新建重复项;' +
-  'in_progress/done 的意图不可修改(整批失败),cancelled 更新后会重新激活为 todo。' +
+  'in_progress/done 的意图不可修改(整批失败),cancelled 更新后会重新激活为 todo;' +
+  '更新使已有意图的 title/content 实际改变时,其原有 spec 批准会被撤销(需重新评审批准才能开发)。' +
   '当本批意图之间存在先后/依赖关系时,用每条的 dependsOnIndexes 字段(同批数组下标)' +
   '声明它依赖本批的哪些兄弟意图,落库时会解析为真实 id,使自动化编排按依赖顺序启动。' +
   '当本轮只产出 1 条意图、且它来自与用户的沟通时,可用 intentSessionId 把它回链到本次会话(批量多条时不填)。'

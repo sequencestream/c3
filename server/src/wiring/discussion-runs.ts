@@ -364,6 +364,13 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
   // broadcasts `ended` without auto-start, surfacing the manual Start fallback.
   const startResearchRun = (discussion: Discussion): void => {
     const workspacePath = resolveWorkspaceRoot(discussion.workspaceId)!
+    // The research executor, resolved ONCE up front — organizer-first with the
+    // orchestration loop's criterion, and an explicit claude fallback (the loop
+    // is claude-hardwired). This single result drives the first turn, the
+    // session→agent freeze, and the bound-row projection below, so executor,
+    // frozen value and index row can never diverge even if the agent registry
+    // changes between launch and the vendor's session-id report.
+    const researchAgent = resolveResearchAgent(discussion)
     const abort = new AbortController()
     // Fresh runtime transcript for this run (clears any stale buffer from a prior
     // aborted run on the same discussion id).
@@ -394,9 +401,11 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
       researchSessionId = sessionId
       try {
         setDiscussionResearchSessionId(discussion.id, sessionId)
-        // Freeze the session→agent fact so a follow-up resolves the SAME claude
-        // agent (and its store scope) and can actually resume this vendor session.
-        freezeSessionAgent(sessionId, sessionId, resolveResearchAgent().id, workspacePath, 'host')
+        // Freeze the session→agent fact onto the SAME single-resolved agent that
+        // runs the first turn, so a follow-up resolves that identical claude
+        // identity (and its store scope) and can actually resume this vendor
+        // session.
+        freezeSessionAgent(sessionId, sessionId, researchAgent.id, workspacePath, 'host')
         const rt = ensureRuntime(
           sessionId,
           workspacePath,
@@ -414,8 +423,8 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
         upsertBoundRow({
           sessionId,
           workspacePath,
-          vendor: 'claude',
-          agentId: resolveResearchAgent().id,
+          vendor: researchAgent.vendor,
+          agentId: researchAgent.id,
           title: researchSessionTitle(getDiscussion(discussion.id)?.title ?? discussion.title),
           sessionKind: 'discussion',
           ownerKind: 'discussion',
@@ -440,7 +449,7 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
       finalizeRun(researchSessionId)
     }
 
-    void researchDiscussionContext(discussion, {
+    void researchDiscussionContext(discussion, researchAgent, {
       signal: abort.signal,
       onSessionId: bindResearchSession,
       onWire: (ev) => {

@@ -263,9 +263,20 @@ Web UI 的启动，以及 `continue_discussion`（对已结束讨论开启新一
 跑批还拥有一个**会话身份**：
 
 - **绑定。** 调研例程新增三个观测点 —— 上报厂商 session id、把每条**原始线材事件**外发、
-  接受一个外部 abort 信号；并且它现在解析一个 **claude 智能体**（跑批本身是 claude 硬编码
-  路径，选到别的厂商会让后续追问无法 resume）并按通用启动路径的方式接上 relay/model/env。
-  wiring 一拿到 id 就：写入 `research_session_id` → 冻结 session→agent 事实 → 以该 id
+  接受一个外部 abort 信号。**执行 agent 在 wiring 边界只解析一次**，口径与编排循环一致
+  （两者共享同一语义封装，避免缺省行为漂移）：讨论的 `organizerAgentId` 指向启用池中的
+  agent 时取该组织者，未设置 / 找不到 / 已禁用时取全局默认 agent。跑批本身是 claude 硬编码
+  路径，因此解析出的组织者再经一道硬约束映射：组织者是 claude ⇒ 它就是调研执行者
+  （id、model、relay、env 与相应会话存储身份一并随行，研究与编排共享同一执行身份）；
+  组织者为非 claude（如 codex）⇒ 进入**显式**兼容兜底 —— 取第一个启用的 claude agent，
+  无则内置系统 claude agent；绝不把非 claude 组织者传给执行路径，也不伪装成它执行了研究
+  或启动后静默切换（追问通道的调研启动画像解析到非 claude 时仍拒绝运行，与该分支相容）。
+  随后按通用启动路径的方式接上 relay/model/env。**同一次解析贯穿首轮与会话绑定**：
+  首轮跑批、`freezeSessionAgent` 冻结值与 `session_metadata` 投影行的 `agentId` 都复用该
+  结果，不存在独立的二次解析 —— agent 设置或列表排序即使在跑批与 session-id 回调之间
+  变化，执行者、冻结值、索引行三者也不会分裂。
+  wiring 一拿到 id 就：写入 `research_session_id` → 冻结 session→agent 事实（即该单次
+  解析的 agent）→ 以该 id
   `ensureRuntime`（`sessionKind='discussion'`、`runKind='internal'`、`rt.run` 指向调研的
   abort controller、状态置 `running`）并打上**调研标记** `rt.researchDiscussionId` →
   写 `session_metadata` 投影行 → 冲刷绑定前缓存的线材事件 → 推送讨论列表（让已打开的

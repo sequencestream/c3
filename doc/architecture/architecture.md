@@ -66,25 +66,25 @@ c3 是一个单一的本地进程，由一条 WebSocket 连接两部分组成：
 
 ## 模块地图
 
-| 模块                   | 职责                                                                                                                                                                                         |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CLI 入口               | 命令行入口；`start` 是默认命令（`--port` 默认为 3000；工作区通过 Web UI 管理）                                                                                                               |
-| HTTP/WS 服务器         | 升级 `/ws`、提供静态资源、追踪每个连接观看的会话、分发消息并广播状态                                                                                                                         |
-| Session-runtime 注册表 | 进程级注册表，记录每个会话的运行句柄、回放基线 + 缓冲区、观看者及状态（ADR 0006）                                                                                                            |
-| Host-CLI launcher      | vendor 无关的宿主 CLI 探测：把 vendor 解析为绝对二进制路径或 none，为每个 vendor 携带安装提示，并运行健康检查；第一道能力关卡（ADR-0012）                                                    |
-| Kernel 事件总线        | 进程内的类型化发布/订阅总线：同步、错误隔离、静态类型化的 topic→payload map；承载 run/agent/intent/pr 事件。整体运转与扩展见 [`event-mechanism.md`](event-mechanism.md)，选型决策见 ADR-0018 |
-| Session 注册表         | 持久化的工作区注册表、每会话模式、最近活跃会话                                                                                                                                               |
-| Session IO             | 列出 / 读取 / 重命名 / 删除会话，以及转录内容映射                                                                                                                                            |
-| 权限注册表             | 待审批 map，带等待/解析决策与超时处理                                                                                                                                                        |
-| 结果格式化             | 把工具结果内容摊平为展示字符串                                                                                                                                                               |
-| Intent ledger          | SQLite ledger、只读通信 agent、intent-save 工具（ADR 0007）                                                                                                                                  |
-| 静态内嵌               | 生成并内联的 web bundle                                                                                                                                                                      |
-| Wire 协议              | client→server / server→client 消息联合类型，以及工作区/会话类型；只有类型/联合类型/常量，无运行时实现                                                                                        |
-| 共享领域 helper        | `shared/src/` 下按领域拆分的双端纯函数模块（agent 引用与默认回退、图片媒体守卫、automation 清洗、事件过滤器归一化/升级、事件模型与事件目录），经 `@ccc/shared` barrel 导出                   |
-| WS client              | 浏览器 WebSocket 包装器                                                                                                                                                                      |
-| UI shell               | 拥有 WS client、入站消息处理器与所有共享状态；按 tab 分发给各 page container                                                                                                                 |
-| Pages                  | 逐页面 container（works / intents / discussions / automations / systemsettings）加上私有组件                                                                                                 |
-| 共享组件               | 跨页面组件，每个都配有同址单元测试                                                                                                                                                           |
+| 模块                   | 职责                                                                                                                                                                                                            |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI 入口               | 命令行入口；`start` 是默认命令（`--port` 默认为 3000；工作区通过 Web UI 管理）                                                                                                                                  |
+| HTTP/WS 服务器         | 升级 `/ws`、提供静态资源、追踪每个连接观看的会话、分发消息并广播状态                                                                                                                                            |
+| Session-runtime 注册表 | 进程级注册表，记录每个会话的运行句柄、回放基线 + 缓冲区、观看者及状态（ADR 0006）                                                                                                                               |
+| Host-CLI launcher      | vendor 无关的宿主 CLI 探测：把 vendor 解析为绝对二进制路径或 none，为每个 vendor 携带安装提示，并运行健康检查；第一道能力关卡（ADR-0012）                                                                       |
+| Kernel 事件总线        | 进程内的类型化发布/订阅总线：同步、错误隔离、静态类型化的 topic→payload map；承载 run/agent/intent/pr 事件。整体运转与扩展见 [`event-mechanism.md`](event-mechanism.md)，选型决策见 ADR-0018                    |
+| Session 注册表         | 持久化的工作区注册表、每会话模式、最近活跃会话                                                                                                                                                                  |
+| Session IO             | 列出 / 读取 / 重命名 / 删除会话，以及转录内容映射                                                                                                                                                               |
+| 权限注册表             | 待审批 map，带等待/解析决策与超时处理                                                                                                                                                                           |
+| 结果格式化             | 把工具结果内容摊平为展示字符串                                                                                                                                                                                  |
+| Intent ledger          | SQLite ledger、只读通信 agent、intent-save 工具（ADR 0007）                                                                                                                                                     |
+| 静态内嵌               | 生成并内联的 web bundle                                                                                                                                                                                         |
+| Wire 协议              | client→server / server→client 消息联合类型，以及工作区/会话类型；只有类型/联合类型/常量，无运行时实现。领域契约按域分区在 `shared/src/protocol/`，`shared/src/protocol.ts` 收敛为 barrel 与两个联合的唯一装配点 |
+| 共享领域 helper        | `shared/src/` 下按领域拆分的双端纯函数模块（agent 引用与默认回退、图片媒体守卫、automation 清洗、事件过滤器归一化/升级、事件模型与事件目录），经 `@ccc/shared` barrel 导出                                      |
+| WS client              | 浏览器 WebSocket 包装器                                                                                                                                                                                         |
+| UI shell               | 拥有 WS client、入站消息处理器与所有共享状态；按 tab 分发给各 page container                                                                                                                                    |
+| Pages                  | 逐页面 container（works / intents / discussions / automations / systemsettings）加上私有组件                                                                                                                    |
+| 共享组件               | 跨页面组件，每个都配有同址单元测试                                                                                                                                                                              |
 
 ## 横切约定
 

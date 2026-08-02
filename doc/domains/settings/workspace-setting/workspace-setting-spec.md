@@ -1,6 +1,6 @@
 # workspace-setting 工作区设置
 
-`workspace-setting` 域承载 `WorkspaceSetting`(见 [`shared/src/protocol.ts`](../../../../shared/src/protocol.ts))——**按工作区**独立的配置旋钮,存于 `SystemSettings.projectConfigs` 映射(键为解析后的工作区路径)。缺失或部分条目回退规范化默认值(`normalizeWorkspaceSetting`)。协议消息 `load_workspace_setting` / `save_workspace_setting` / `workspace_setting`。
+`workspace-setting` 域承载 `WorkspaceSetting`(见 [`shared/src/protocol/workspace.ts`](../../../../shared/src/protocol/workspace.ts))——**按工作区**独立的配置旋钮,存于 `SystemSettings.projectConfigs` 映射(键为解析后的工作区路径)。缺失或部分条目回退规范化默认值(`normalizeWorkspaceSetting`)。协议消息 `load_workspace_setting` / `save_workspace_setting` / `workspace_setting`。
 
 配置持久化与组级共享上下文见 [settings 组概览](../settings-overview.md)。
 

@@ -2,7 +2,7 @@
 
 c3(code creative center)全部特性功能的树状索引,每行一句话说明。按业务组/能力域组织,与 [`doc/domains/`](domains/) 一一对应。特性变更时同步本文件。
 
-- 详细行为见各域 `<domain>-spec.md`;前端页面组件见 [`web/PAGES.md`](../web/PAGES.md);wire 协议见 [`shared/src/protocol.ts`](../shared/src/protocol.ts)。
+- 详细行为见各域 `<domain>-spec.md`;前端页面组件见 [`web/PAGES.md`](../web/PAGES.md);wire 协议入口见 [`shared/src/protocol.ts`](../shared/src/protocol.ts)(barrel + 两个消息联合的装配点),领域契约按域分区在 [`shared/src/protocol/`](../shared/src/protocol/)。
 
 ```
 c3

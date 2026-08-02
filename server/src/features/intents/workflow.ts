@@ -9,176 +9,93 @@
  *   facts (ledger snapshot + run liveness + persisted scheduling metadata)
  *     → `reconcileQueue` (pure)
  *     → decisions written to `queue_decision_log`
- *     → actions executed here
+ *     → actions dispatched to the action families
  *
  * Nothing depends on a particular event arriving. Events do not carry decision
  * material; they only say "look again". A dropped `run:settled` therefore costs
  * one tick of latency instead of stalling the queue forever, and a crash or
  * restart is recovered by re-deriving state from the ledger.
  *
- * ── Failure isolation ────────────────────────────────────────────────────────
- * Every run the queue starts is awaited and its errors caught. A failure counts
- * against THAT intent only: exponential backoff first, park after three
- * consecutive failures. A parked intent is never auto-launched again, but it is
- * NOT `done` — so the dependency gate keeps its downstream blocked exactly as
- * before. Unrelated intents keep flowing.
+ * ── What lives here, and what does not ───────────────────────────────────────
+ * This file is the queue's CONTROL layer: the hooks bag, `pickNext`, the
+ * per-workspace controller and its lifecycle, the manual control surface, the
+ * tick loop and the startup reconcile — plus one exhaustive
+ * `QueueAction.kind → executor` table, the only route from a kernel action to a
+ * side effect. Its control-layer companions are `queue-ledger.ts` (facts in,
+ * decision rows out) and `queue-projection.ts` (the read models).
  *
- * ── What this module deliberately does not do ────────────────────────────────
- * It never answers a permission prompt, never marks an intent `done` outside the
- * existing judge → commit → push path, and never relaxes a hard gate. A queue
- * wait that outlives its window parks the intent and asks a human; the decision
- * itself stays with the human forever (C-SEC-3).
+ * The side effects belong to the action families, one module each:
+ * `queue-spec-actions.ts` (spec authoring, review, machine approval),
+ * `queue-dev-actions.ts` (the development loop, commit/push, PR) and
+ * `queue-outcome-actions.ts` (park, human todos, the failure ladder — where the
+ * per-intent backoff → park ladder that isolates every failure is enforced).
+ *
+ * Nothing in this driver answers a permission prompt, marks an intent `done`
+ * outside the existing judge → commit → push path, or relaxes a hard gate.
  */
 import { randomUUID } from 'node:crypto'
 import type { WorkflowStatus, Intent, RunEndReason } from '@ccc/shared/protocol'
-import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
-import { MACHINE_SPEC_APPROVER, PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import type { SessionRuntime } from '../../runs.js'
-import { MAX_CONTINUATIONS, hasPendingQuestion } from './turn-guards.js'
-import type { NormalizeResult } from '../../kernel/events/generic-event.js'
-import type {
-  QueueAction,
-  QueueDecision,
-  QueueIntentFact,
-  QueueReasonCode,
-  QueueReconcileOutput,
-  QueueRunFact,
-  QueueSpecRunFact,
-} from '../../kernel/queue/index.js'
+import type { QueueAction, QueueDecision, QueueReconcileOutput } from '../../kernel/queue/index.js'
 import {
   CoalescingRunner,
   QUEUE_COOLDOWN_MS,
-  QUEUE_MAX_ATTEMPTS,
   QUEUE_TICK_MS,
-  backoffDelayMs,
-  emptyQueueIntentMeta,
   reconcileQueue,
 } from '../../kernel/queue/index.js'
-import {
-  getIntent,
-  isStoreAvailable,
-  listIntents,
-  machineApproveSpec,
-  safeInsertIntentLog,
-  setBranchName,
-  setLastWorkSession,
-  setPrInfo,
-  updateStatus,
-} from './store.js'
-import { launchSpecReviewSession, launchSpecSession } from './session-launcher.js'
-import { readSpecFingerprint } from './spec-review.js'
-import { applySpecApproval } from './spec.js'
+import { getIntent, isStoreAvailable, listIntents } from './store.js'
 import {
   getQueueControl,
   getQueueIntentMeta,
   getQueueIntentMetaById,
   isQueueStoreAvailable,
-  latestQueueDecisionByIntent,
   listActiveQueueWorkspaces,
   putQueueIntentMeta,
-  appendQueueDecisions,
   setQueueControl,
   type QueueControlRow,
 } from './queue-store.js'
-import { registerPendingDevLink } from './dev-link.js'
-import { buildDevPrompt } from './dev-prompt.js'
-import { publishIntentLifecycle, publishIntentStatusTransition } from './lifecycle-events.js'
-import { judgeCompletion } from './judge.js'
-import { runCheckpointConsensus } from './checkpoint-consensus.js'
-import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
-import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
-import { pathToId } from '../../state.js'
 import {
-  getDevSkill,
-  getDefaultMode,
-  getDefaultMainBranch,
-  getForgeOverride,
   getGitBranchMode,
   getSddEnabled,
   getSpecMachineApprovalEnabled,
 } from '../../kernel/config/index.js'
-import { ensureRuntime, getRuntime } from '../../runs.js'
 import {
-  createWorktree,
-  getWorktreePath,
-  pullCurrentBranch,
-  readBranch,
-  worktreeExists,
-} from './worktree.js'
-import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
+  errText,
+  runQueueAction,
+  type InFlightRun,
+  type QueueActionContext,
+  type QueueActionExecutors,
+  type WorkflowHooks,
+} from './queue-action-context.js'
+import { persistNewDecisions, probeRunFacts, probeSpecRunFacts, toFact } from './queue-ledger.js'
+import {
+  buildQueueDetail,
+  idleStatus,
+  projectStatus,
+  type QueueDetailView,
+} from './queue-projection.js'
+import { executeMachineApproveSpec, runSpecPhase } from './queue-spec-actions.js'
+import { runDevelopLoop } from './queue-dev-actions.js'
+import {
+  applyHumanOverride,
+  clearPark,
+  executePark,
+  executeSyncDependencyPrs,
+  executeWaitUserInvolve,
+  recordFailure,
+} from './queue-outcome-actions.js'
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
-export interface DevTurnResult {
-  outcome: 'complete' | 'error' | 'blocked'
-  sessionId: string
-  lastMessage: string
-  detail?: string
-  pendingQuestion?: boolean
-}
-
-export interface RunDevTurnInput {
-  workspacePath: string
-  sessionId: string | null
-  /** The visible turn text echoed to the client (intent body / `continue` / fix note). */
-  prompt: string
-  /**
-   * A slash-command dev skill (e.g. `/dev `) to lead the MODEL user turn on the
-   * launch turn; never echoed (hide-session-system-instructions). Omitted on
-   * continuation / fix turns and when no devSkill is configured.
-   */
-  userTurnPrefix?: string
-  /**
-   * Internal work-session instruction for the launch turn; delivered through the
-   * vendor instruction channel and never echoed.
-   */
-  systemInstruction?: string
-  intentId: string
-  signal: AbortSignal
-  attach?: boolean
-  onSessionId?: (sessionId: string) => void
-  onAwaitingPermission?: (awaiting: boolean) => void
-}
-
-/** A deduplicated human-todo request raised by the queue. */
-export interface QueueUserTodoInput {
-  workspacePath: string
-  intentId: string
-  sessionId: string | null
-  title: string
-  reasonCode: QueueReasonCode
-}
-
-export interface WorkflowHooks {
-  runDevTurn(input: RunDevTurnInput): Promise<DevTurnResult>
-  /**
-   * Launch one turn on a spec-phase runtime (authoring or review). The queue
-   * hands this straight to the shared session launchers, so a spec session the
-   * queue starts is byte-for-byte the same launch a human button produces —
-   * including the read-only / write-confined profile locks. Injected rather than
-   * imported so this module keeps no `kernel/run` dependency (ADR-0009 R1).
-   */
-  launchSpecRun(rt: SessionRuntime, prompt: string): Promise<void>
-  broadcastIntents(workspacePath: string): void
-  emitStatus(status: WorkflowStatus): void
-  sessionExists(workspacePath: string, sessionId: string): Promise<boolean>
-  isRunning(sessionId: string): boolean
-  /** Current run status of a session (`awaiting_permission`, …); null when unknown. */
-  sessionStatus(sessionId: string): string | null
-  /** Normalize an untrusted event core through the kernel normalizer registry. */
-  normalizeEvent: (core: GenericEvent) => NormalizeResult
-  /** Publish a normalized generic event (envelope) onto the kernel event bus. */
-  publishEvent: (payload: GenericEventEnvelope) => void
-  /**
-   * Raise a wait-user-involve todo. Called at most once per park, because the
-   * park flag itself is the dedup key — a parked intent is never re-parked.
-   */
-  createUserTodo(input: QueueUserTodoInput): void
-  /** Push the refreshed queue detail projection to watching clients. */
-  broadcastQueueDetail(workspacePath: string): void
-}
+// Defined in `queue-action-context.ts` (the executors need them too) and
+// re-exported here, so every existing importer of `workflow.js` is unchanged.
+export type {
+  DevTurnResult,
+  RunDevTurnInput,
+  QueueUserTodoInput,
+  WorkflowHooks,
+} from './queue-action-context.js'
 
 // ---------------------------------------------------------------------------
 // Module-level state (the hooks bag, wired once by the composition root)
@@ -196,30 +113,8 @@ export function getWorkflowHooks(): WorkflowHooks {
 }
 
 // ---------------------------------------------------------------------------
-// Constants
+// Selection probe
 // ---------------------------------------------------------------------------
-
-/**
- * The actor recorded for spec sessions the QUEUE starts. Distinct from the
- * machine APPROVER identity: this only says "the automation started this
- * session", which carries no authority, whereas `MACHINE_SPEC_APPROVER` records
- * who cleared a human gate.
- */
-const QUEUE_ACTOR = 'automation'
-
-function idleStatus(workspacePath: string): WorkflowStatus {
-  return {
-    workspaceId: pathToId(workspacePath)!,
-    state: 'idle',
-    currentIntentId: null,
-    currentSessionId: null,
-    awaitingPermission: false,
-    error: null,
-    completedIds: [],
-    startedAt: null,
-    checkpointConsensus: null,
-  }
-}
 
 /**
  * The next intent the queue would select, by the CURRENT facts. Exported for
@@ -254,52 +149,9 @@ export function pickNext(workspacePath: string): Intent | null {
   return intents.find((r) => r.id === chosen.intentId) ?? null
 }
 
-/**
- * Project one ledger row onto the kernel's fact shape.
- *
- * `specFingerprint` is read from disk HERE rather than in the kernel, which must
- * stay pure. Reading it every pass is what makes an edited spec invalidate its
- * conclusion by itself: the kernel just compares two strings, so there is no
- * invalidation pass to forget to run. An unreadable spec yields `null`, which the
- * kernel treats as "cannot review", never as changed content.
- */
-function toFact(r: Intent, workspacePath: string, sddEnabled: boolean): QueueIntentFact {
-  return {
-    id: r.id,
-    title: r.title,
-    status: r.status,
-    priority: r.priority,
-    automate: r.automate,
-    dependsOn: r.dependsOn,
-    specApproved: r.specApproved,
-    prStatus: r.prStatus,
-    lastWorkSessionId: r.lastWorkSessionId,
-    createdAt: r.createdAt,
-    specPath: r.specPath,
-    specSessionId: r.specSessionId,
-    specReviewSessionId: r.specReviewSessionId,
-    // Only SDD workspaces run the spec phase, so a non-SDD workspace never pays
-    // the per-intent file read.
-    specFingerprint: sddEnabled ? readSpecFingerprint(workspacePath, r.specPath) : null,
-    specReviewVerdict: r.specReviewVerdict,
-    specReviewFingerprint: r.specReviewFingerprint,
-    specReviewReworkRounds: r.specReviewReworkRounds,
-    specReviewMachineApprovalBlocked: r.specReviewMachineApprovalBlocked,
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Controller
 // ---------------------------------------------------------------------------
-
-/** One kernel-owned run in flight. */
-interface InFlightRun {
-  intentId: string
-  phase: 'developing' | 'fixing'
-  sessionId: string | null
-  /** Settles when the whole develop loop for this intent is over. */
-  settled: Promise<void>
-}
 
 class QueueController {
   readonly status: WorkflowStatus
@@ -370,6 +222,17 @@ class QueueController {
     this.abort.abort()
   }
 
+  /** Await every in-flight kernel run — work AND spec phase (tests sequence on this). */
+  async settleRuns(): Promise<void> {
+    // A run that finishes may start another (the queue moves on), so drain.
+    for (let i = 0; i < 50 && (this.inFlight.size > 0 || this.specInFlight.size > 0); i++) {
+      await Promise.allSettled([
+        ...[...this.inFlight.values()].map((r) => r.settled),
+        ...this.specInFlight.values(),
+      ])
+    }
+  }
+
   // ── The single idempotent pass ────────────────────────────────────────────
 
   private async pass(): Promise<void> {
@@ -405,7 +268,7 @@ class QueueController {
       control,
       snapshotOk,
       intents: (intents ?? []).map((r) => toFact(r, this.workspacePath, sddEnabled)),
-      runs: this.buildRunFacts(intents ?? [], now),
+      runs: probeRunFacts(intents ?? [], now, this.hooks, this.awaitingSince),
       meta: getQueueIntentMeta(this.workspacePath),
       inFlight: this.inFlightIntentIds,
       gitBranchMode: getGitBranchMode(this.workspacePath),
@@ -413,275 +276,82 @@ class QueueController {
       // Read fresh every pass: turning the opt-in off must take effect on the very
       // next tick, without restarting the queue.
       machineApprovalEnabled: getSpecMachineApprovalEnabled(this.workspacePath),
-      specRuns: this.buildSpecRunFacts(intents ?? []),
+      specRuns: probeSpecRunFacts(intents ?? [], this.hooks),
       specInFlight: [...this.specInFlight.keys()],
     })
 
     this.decisions = output.decisions
     this.nextWakeupAt = output.nextWakeupAt
-    this.writeDecisions(output, now)
+    persistNewDecisions(this.workspacePath, output, now)
     this.execute(output.actions, now)
     this.project(output, control)
   }
 
-  /**
-   * Probe every work session the ledger points at. A session that is not alive
-   * releases `awaiting_gate` by construction — the kernel simply never sees it
-   * in the live set, so a dead blocking session can no longer wedge the queue.
-   */
-  private buildRunFacts(intents: readonly Intent[], now: number): QueueRunFact[] {
-    const facts: QueueRunFact[] = []
-    const seen = new Set<string>()
-    for (const r of intents) {
-      const sid = r.lastWorkSessionId
-      if (!sid || seen.has(sid)) continue
-      seen.add(sid)
-      const alive = this.hooks.isRunning(sid)
-      if (!alive) {
-        this.awaitingSince.delete(sid)
-        facts.push({ sessionId: sid, alive: false, awaitingPermissionSince: null })
-        continue
-      }
-      const waiting = this.hooks.sessionStatus(sid) === 'awaiting_permission'
-      if (!waiting) this.awaitingSince.delete(sid)
-      else if (!this.awaitingSince.has(sid)) this.awaitingSince.set(sid, now)
-      facts.push({
-        sessionId: sid,
-        alive: true,
-        awaitingPermissionSince: waiting ? (this.awaitingSince.get(sid) ?? now) : null,
-      })
-    }
-    return facts
-  }
+  // ── Action dispatch ───────────────────────────────────────────────────────
 
   /**
-   * Probe the spec-authoring and spec-review sessions the ledger points at. Kept
-   * separate from {@link buildRunFacts} on purpose: a spec session is not a work
-   * session, so it must never enter the work-liveness set — that set drives the
-   * workspace-global concurrency gate, and a spec session running there would
-   * wedge the whole development queue behind a document being written.
+   * Dispatch this pass's actions in the order the kernel produced them. Sync
+   * actions take effect immediately; the two run-starting families register
+   * their in-flight entry synchronously and then run for minutes, so a pass
+   * never waits on one.
    */
-  private buildSpecRunFacts(intents: readonly Intent[]): QueueSpecRunFact[] {
-    const facts: QueueSpecRunFact[] = []
-    const seen = new Set<string>()
-    for (const r of intents) {
-      for (const sid of [r.specSessionId, r.specReviewSessionId]) {
-        if (!sid || seen.has(sid)) continue
-        seen.add(sid)
-        facts.push({ sessionId: sid, alive: this.hooks.isRunning(sid) })
-      }
-    }
-    return facts
-  }
-
-  /**
-   * Persist decisions that actually say something new. A tick that repeats the
-   * previous verdict verbatim writes nothing, so a queue parked on one blocked
-   * intent does not grow the log by six rows a minute; anything carrying an
-   * action, or any change of action/reason/detail, is always written.
-   */
-  private writeDecisions(output: QueueReconcileOutput, now: number): void {
-    const previous = latestQueueDecisionByIntent(this.workspacePath)
-    const actionable = new Set(
-      output.actions
-        .filter((a) => 'intentId' in a)
-        .map((a) => (a as { intentId: string }).intentId),
-    )
-    const rows = output.decisions
-      .filter((d) => {
-        if (actionable.has(d.intentId)) return true
-        const prev = previous[d.intentId]
-        if (!prev) return true
-        return (
-          prev.action !== d.action ||
-          prev.blockedGate !== d.reason ||
-          prev.rejectReason !== d.detail
-        )
-      })
-      .map((d) => ({
-        tickId: output.tickId,
-        workspacePath: this.workspacePath,
-        intentId: d.intentId,
-        decidedAt: now,
-        action: d.action,
-        blockedGate: d.reason,
-        rejectReason: d.detail || null,
-        attemptCount: d.attemptCount,
-        backoffCount: d.backoffCount,
-        nextWakeupAt: d.nextWakeupAt,
-      }))
-    appendQueueDecisions(rows)
-  }
-
-  // ── Action execution ──────────────────────────────────────────────────────
-
   private execute(actions: readonly QueueAction[], now: number): void {
-    for (const action of actions) {
-      switch (action.kind) {
-        case 'park':
-          this.applyPark(action.intentId, action.reason, action.detail)
-          break
-        case 'wait_user_involve': {
-          const req = getIntent(action.intentId)
-          this.hooks.createUserTodo({
-            workspacePath: this.workspacePath,
-            intentId: action.intentId,
-            sessionId: req?.lastWorkSessionId ?? null,
-            title: `「${req?.title ?? action.intentId}」${action.detail}`,
-            reasonCode: action.reason,
-          })
-          break
-        }
-        case 'sync_dependency_prs':
-          syncUnconfirmedDependencyPrsInBackground({
-            ctx: { broadcastIntents: this.hooks.broadcastIntents },
-            workspacePath: this.workspacePath,
-            dependsOn: action.intentIds,
-            onComplete: () => void this.request(),
-          })
-          break
-        case 'launch':
-        case 'resume':
-        case 'attach':
-          this.startRun(action, now)
-          break
-        case 'launch_spec':
-        case 'launch_spec_review':
-          this.startSpecRun(action, now)
-          break
-        case 'machine_approve_spec':
-          this.machineApprove(action.intentId, action.fingerprint)
-          break
-      }
+    const ctx = this.actionContext()
+    // The table is typed exhaustively over `QueueAction['kind']`: a kernel
+    // action with no executor here is a compile error, never a silent no-op.
+    const table: QueueActionExecutors = {
+      park: (a) => executePark(ctx, a),
+      wait_user_involve: (a) => executeWaitUserInvolve(ctx, a),
+      sync_dependency_prs: (a) => executeSyncDependencyPrs(ctx, a),
+      launch: (a, at) => this.startRun(ctx, a, at),
+      resume: (a, at) => this.startRun(ctx, a, at),
+      attach: (a, at) => this.startRun(ctx, a, at),
+      launch_spec: (a, at) => this.startSpecRun(ctx, a, at),
+      launch_spec_review: (a, at) => this.startSpecRun(ctx, a, at),
+      machine_approve_spec: (a) => executeMachineApproveSpec(ctx, a),
     }
+    for (const action of actions) runQueueAction(table, action, now)
   }
 
   /**
-   * Start ONE spec-phase run (authoring or review) for an intent.
-   *
-   * Tracked in its own in-flight map, separate from work runs: the two are
-   * different lifecycles on the same intent, and sharing a map would let a spec
-   * session masquerade as a development run to the concurrency gate. The cooldown
-   * IS shared — it is a per-intent self-excitation guard, and while an intent is
-   * in its spec phase it is blocked from development anyway.
-   *
-   * A failure here counts against this intent through the SAME backoff → park
-   * ladder work runs use, so a spec that cannot be authored isolates itself
-   * instead of retrying forever at tick speed.
+   * The narrow window the executors get onto controller state. Rebuilt each pass
+   * so an executor always observes the CURRENT abort generation; nothing here
+   * hands out a second copy of scheduling state.
    */
-  private startSpecRun(
-    action: Extract<QueueAction, { kind: 'launch_spec' | 'launch_spec_review' }>,
-    now: number,
-  ): void {
-    const intentId = action.intentId
-    if (this.specInFlight.has(intentId)) return
-    const req = getIntent(intentId)
-    if (!req) return
-
-    const meta = getQueueIntentMetaById(intentId)
-    putQueueIntentMeta(this.workspacePath, {
-      ...meta,
-      intentId,
-      cooldownUntil: now + QUEUE_COOLDOWN_MS,
-      updatedAt: now,
-    })
-
-    const settled = this.runSpecPhase(action, req)
-      .catch((err) => {
-        console.error(`[c3:queue]「${req.title}」规格阶段 run 异常:`, err)
-        this.recordFailure(intentId, 'launch_failed', errText(err))
-      })
-      .finally(() => {
-        this.specInFlight.delete(intentId)
-        void this.request()
-      })
-    this.specInFlight.set(intentId, settled)
-  }
-
-  private async runSpecPhase(
-    action: Extract<QueueAction, { kind: 'launch_spec' | 'launch_spec_review' }>,
-    req: Intent,
-  ): Promise<void> {
-    const deps = {
-      launchRun: this.hooks.launchSpecRun,
-      broadcastIntents: this.hooks.broadcastIntents,
-    }
-    const result =
-      action.kind === 'launch_spec'
-        ? await launchSpecSession(this.workspacePath, req.id, deps, undefined, QUEUE_ACTOR, {
-            ...(action.rework
-              ? {
-                  reworkReason: req.specReviewReason ?? '(审核未给出理由)',
-                  reworkRound: action.reworkRound,
-                }
-              : {}),
-          })
-        : await launchSpecReviewSession(this.workspacePath, req.id, deps, undefined, QUEUE_ACTOR)
-
-    if (!result.success) {
-      // A refused launch is a failed attempt for THIS intent only: it backs off
-      // and eventually parks, exactly like a failed dev turn, so a permanently
-      // un-authorable spec can never spin the queue.
-      this.recordFailure(
-        req.id,
-        'launch_failed',
-        `${action.kind === 'launch_spec' ? 'spec 撰写' : 'spec 审核'}会话启动被拒绝(${result.code})`,
-      )
-      return
-    }
-    this.recordSuccess(req.id)
-    this.hooks.broadcastIntents(this.workspacePath)
-  }
-
-  /**
-   * Execute a machine approval. The kernel decided on a snapshot; this re-checks
-   * every fact transactionally at write time (`machineApproveSpec`), including a
-   * fresh read of the spec file itself — the snapshot fingerprint alone would
-   * agree with the equally old stored conclusion and approve a document edited
-   * since. So a spec edited or an approval revoked in the meantime approves
-   * nothing and the next reconcile simply re-derives. A rejected write is NOT a
-   * failure — it is the guard doing its job — so it never counts against the
-   * intent.
-   */
-  private machineApprove(intentId: string, fingerprint: string): void {
-    const req = getIntent(intentId)
-    if (!req) return
-    const readLive = (specPath: string): string | null =>
-      readSpecFingerprint(this.workspacePath, specPath)
-    if (!machineApproveSpec(intentId, fingerprint, MACHINE_SPEC_APPROVER, readLive)) {
-      console.log(`[c3:queue]「${req.title}」机器批准的前置事实已变化,本轮不批准`)
-      void this.request()
-      return
-    }
-    applySpecApproval({
+  private actionContext(): QueueActionContext {
+    const signal = this.abort.signal
+    return {
       workspacePath: this.workspacePath,
-      intent: req,
-      approver: MACHINE_SPEC_APPROVER,
-      broadcastIntents: this.hooks.broadcastIntents,
-      publishEvent: (payload) =>
-        this.hooks.publishEvent({
-          workspacePath: payload.workspacePath,
-          sessionId: payload.sessionId,
-          event: payload.event as GenericEvent,
-        }),
-      // The approval flag itself was already written by the transactional guard
-      // above; this pass only lands the audit log, the event and the broadcast.
-      alreadyPersisted: true,
-    })
-    console.log(`[c3:queue]「${req.title}」审核通过且机器批准已开启 → spec 自动批准`)
+      hooks: this.hooks,
+      signal,
+      isDisposed: () => this.disposed,
+      tickId: () => this.lastTickId,
+      requestPass: () => void this.request(),
+      setState: (state) => {
+        this.status.state = state
+        this.emit()
+      },
+      setCheckpointConsensus: (consensus) => {
+        this.status.checkpointConsensus = consensus
+        this.emit()
+      },
+      setAwaiting: (awaiting) => this.setAwaiting(awaiting),
+      setCurrentSessionId: (sessionId) => {
+        this.status.currentSessionId = sessionId
+      },
+      markCompleted: (intentId) => {
+        this.status.completedIds.push(intentId)
+      },
+    }
   }
 
   /**
-   * Start ONE kernel run for an intent. The cooldown is written before the run
-   * exists and the in-flight entry is registered synchronously, so a tick and a
-   * lifecycle event racing each other can never produce a second launch.
-   *
-   * The returned promise is tracked rather than awaited by the pass — a dev turn
-   * outlives a tick by minutes. It is fully awaited and error-handled INSIDE
-   * `develop`, and its completion marks the queue dirty; no path leaves an
-   * exception unobserved.
+   * Start ONE development run for an intent. The cooldown is written before the
+   * run exists and the in-flight entry is registered synchronously, so a tick and
+   * a lifecycle event racing each other can never produce a second launch.
    */
   private startRun(
+    ctx: QueueActionContext,
     action: Extract<QueueAction, { kind: 'launch' | 'resume' | 'attach' }>,
     now: number,
   ): void {
@@ -690,14 +360,7 @@ class QueueController {
     const req = getIntent(intentId)
     if (!req) return
 
-    const meta = getQueueIntentMetaById(intentId)
-    putQueueIntentMeta(this.workspacePath, {
-      ...meta,
-      intentId,
-      cooldownUntil: now + QUEUE_COOLDOWN_MS,
-      updatedAt: now,
-    })
-
+    this.writeCooldown(intentId, now)
     const record: InFlightRun = {
       intentId,
       phase: 'developing',
@@ -705,417 +368,81 @@ class QueueController {
       settled: Promise.resolve(),
     }
     this.inFlight.set(intentId, record)
+    record.settled = this.observe(ctx, runDevelopLoop(ctx, action, req, record), {
+      intentId,
+      title: req.title,
+      label: '内核 run',
+      unregister: () => this.inFlight.delete(intentId),
+    })
+  }
 
-    record.settled = this.develop(action, req, record)
+  /**
+   * Start ONE spec-phase run (authoring or review). Tracked in its own in-flight
+   * map, separate from work runs: sharing a map would let a spec session
+   * masquerade as a development run to the concurrency gate. The cooldown IS
+   * shared — it is a per-intent self-excitation guard, and an intent in its spec
+   * phase is blocked from development anyway.
+   */
+  private startSpecRun(
+    ctx: QueueActionContext,
+    action: Extract<QueueAction, { kind: 'launch_spec' | 'launch_spec_review' }>,
+    now: number,
+  ): void {
+    const intentId = action.intentId
+    if (this.specInFlight.has(intentId)) return
+    const req = getIntent(intentId)
+    if (!req) return
+
+    this.writeCooldown(intentId, now)
+    this.specInFlight.set(
+      intentId,
+      this.observe(ctx, runSpecPhase(ctx, action, req), {
+        intentId,
+        title: req.title,
+        label: '规格阶段 run',
+        unregister: () => this.specInFlight.delete(intentId),
+      }),
+    )
+  }
+
+  /**
+   * Observe a run the pass does not await — a dev turn outlives a tick by
+   * minutes. Both families go through here, so no path can leave an exception
+   * unobserved: a throw is ONE failed attempt for THAT intent (backoff, then
+   * park at the cap), and either way the queue is marked dirty once it settles.
+   */
+  private observe(
+    ctx: QueueActionContext,
+    run: Promise<void>,
+    on: { intentId: string; title: string; label: string; unregister: () => void },
+  ): Promise<void> {
+    return run
       .catch((err) => {
-        console.error(`[c3:queue]「${req.title}」内核 run 异常:`, err)
-        this.recordFailure(intentId, 'launch_failed', errText(err))
+        console.error(`[c3:queue]「${on.title}」${on.label} 异常:`, err)
+        recordFailure(ctx, on.intentId, 'launch_failed', errText(err))
       })
       .finally(() => {
-        this.inFlight.delete(intentId)
+        on.unregister()
         void this.request()
       })
   }
 
-  /** Await every in-flight kernel run — work AND spec phase (tests sequence on this). */
-  async settleRuns(): Promise<void> {
-    // A run that finishes may start another (the queue moves on), so drain.
-    for (let i = 0; i < 50 && (this.inFlight.size > 0 || this.specInFlight.size > 0); i++) {
-      await Promise.allSettled([
-        ...[...this.inFlight.values()].map((r) => r.settled),
-        ...this.specInFlight.values(),
-      ])
-    }
-  }
-
-  // ── The per-intent development loop ───────────────────────────────────────
-
-  private async develop(
-    action: Extract<QueueAction, { kind: 'launch' | 'resume' | 'attach' }>,
-    req: Intent,
-    record: InFlightRun,
-  ): Promise<void> {
-    const signal = this.abort.signal
-    let turnInput = this.buildFirstTurn(action, req, signal)
-    record.sessionId = turnInput.sessionId
-    let continuations = 0
-
-    for (;;) {
-      const result = await this.hooks.runDevTurn(turnInput)
-      if (signal.aborted || this.disposed) return
-      const sessionId = result.sessionId || turnInput.sessionId || ''
-      record.sessionId = sessionId
-      this.markInProgress(req.id, sessionId)
-
-      if (result.outcome === 'blocked') return // user stop / abort
-      if (result.outcome === 'error') {
-        this.recordFailure(req.id, 'turn_error', result.detail ?? '开发 turn 运行出错')
-        return
-      }
-
-      const fresh = getIntent(req.id) ?? req
-      const rt = getRuntime(sessionId)
-      let lastMessage = result.lastMessage
-      let pendingQuestion = result.pendingQuestion === true
-      if (rt) {
-        const texts: string[] = []
-        for (const e of rt.buffer) if (e.type === 'assistant_text') texts.push(e.text)
-        if (texts.length > 0) lastMessage = texts.join('\n')
-        pendingQuestion = pendingQuestion || hasPendingQuestion(rt.buffer)
-      }
-
-      const evidenceCwd = this.gitCwd(req.id)
-      const [diffStat, recentLog] = await Promise.all([
-        gitDiffStat(evidenceCwd),
-        gitRecentLog(evidenceCwd),
-      ])
-      if (signal.aborted || this.disposed) return
-
-      // RM-A11: a real human decision is never continued over. The checkpoint
-      // consensus may overrule it (RM-A14); otherwise the intent is parked and a
-      // human is asked — the queue itself keeps going.
-      if (pendingQuestion) {
-        const ck = await runCheckpointConsensus({
-          workspacePath: this.workspacePath,
-          intent: fresh,
-          lastMessage,
-          trigger: 'pending_question',
-          triggerReason: '存在未作答的 AskUserQuestion',
-          diffStat,
-          signal,
-        })
-        if (signal.aborted || this.disposed) return
-        if (ck?.decision === 'continue') {
-          this.status.checkpointConsensus = ck
-          this.emit()
-          continuations += 1
-          if (continuations > MAX_CONTINUATIONS) {
-            this.recordFailure(req.id, 'budget_exhausted', `超过最大续跑次数(${MAX_CONTINUATIONS})`)
-            return
-          }
-          turnInput = this.buildContinueTurn(req.id, sessionId, signal)
-          continue
-        }
-        this.parkForHuman(fresh, 'needs_human_decision', '存在未作答的提问,需要人工决策')
-        return
-      }
-
-      const verdict = await judgeCompletion({
-        req: fresh,
-        lastMessages: [lastMessage],
-        evidence: { diffStat, recentLog },
-        cwd: this.workspacePath,
-        signal,
-      })
-      if (signal.aborted || this.disposed) return
-
-      if (verdict.verdict === 'done') {
-        const committed = await this.commitWithLintHeal(fresh, sessionId, record, signal)
-        if (committed === 'aborted' || this.disposed) return
-        if (committed === 'failed') return // recordFailure already applied
-        await this.maybeCreatePr(fresh)
-        updateStatus(fresh.id, 'done')
-        publishIntentStatusTransition(this.workspacePath, fresh, fresh.status, 'done')
-        this.status.completedIds.push(fresh.id)
-        this.hooks.broadcastIntents(this.workspacePath)
-        this.recordSuccess(fresh.id)
-        console.log(`[c3:queue]「${fresh.title}」已完成 → done`)
-        return
-      }
-
-      if (verdict.verdict === 'in_progress') {
-        continuations += 1
-        if (continuations > MAX_CONTINUATIONS) {
-          this.recordFailure(
-            req.id,
-            'budget_exhausted',
-            `超过最大续跑次数(${MAX_CONTINUATIONS}),最后状态:${verdict.reason}`,
-          )
-          return
-        }
-        turnInput = this.buildContinueTurn(req.id, sessionId, signal)
-        continue
-      }
-
-      // stuck → checkpoint consensus may overrule, else this intent fails.
-      const ck = await runCheckpointConsensus({
-        workspacePath: this.workspacePath,
-        intent: fresh,
-        lastMessage,
-        trigger: 'judge_stuck',
-        triggerReason: verdict.reason,
-        diffStat,
-        signal,
-      })
-      if (signal.aborted || this.disposed) return
-      if (ck?.decision === 'continue') {
-        this.status.checkpointConsensus = ck
-        this.emit()
-        continuations += 1
-        if (continuations > MAX_CONTINUATIONS) {
-          this.recordFailure(req.id, 'budget_exhausted', `超过最大续跑次数(${MAX_CONTINUATIONS})`)
-          return
-        }
-        turnInput = this.buildContinueTurn(req.id, sessionId, signal)
-        continue
-      }
-      this.recordFailure(req.id, 'judge_stuck', `未真实完成:${verdict.reason}`)
-      return
-    }
-  }
-
-  /**
-   * Build the first turn for a launch/resume/attach. Fresh launches prepare the
-   * git working directory first; anything thrown here (diverged branch, worktree
-   * failure) propagates to `startRun`'s catch and becomes ONE failed attempt for
-   * this intent — never a stopped queue.
-   */
-  private buildFirstTurn(
-    action: Extract<QueueAction, { kind: 'launch' | 'resume' | 'attach' }>,
-    req: Intent,
-    signal: AbortSignal,
-  ): RunDevTurnInput {
-    if (action.kind === 'attach') {
-      return {
-        workspacePath: this.workspacePath,
-        sessionId: action.sessionId,
-        prompt: '',
-        intentId: req.id,
-        signal,
-        attach: true,
-        onAwaitingPermission: (a) => this.setAwaiting(a),
-      }
-    }
-    if (action.kind === 'resume') {
-      this.ensureResumeRuntime(req, action.sessionId)
-      return this.buildContinueTurn(req.id, action.sessionId, signal)
-    }
-
-    // Fresh launch — mirror the manual `startDevelopment` git strategy.
-    const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-    let effectiveCwd: string
-    if (getGitBranchMode(this.workspacePath) === 'worktree') {
-      const wt = createWorktree(
-        this.workspacePath,
-        req.id,
-        req.title,
-        getDefaultMainBranch(this.workspacePath),
-      )
-      effectiveCwd = wt.worktreePath
-      setBranchName(req.id, wt.branchName)
-    } else {
-      const pull = pullCurrentBranch(this.workspacePath)
-      if (!pull.ok) {
-        throw new Error(
-          `当前分支已与远端分叉，无法 fast-forward，请先手动同步:\n${pull.message ?? ''}`,
-        )
-      }
-      effectiveCwd = this.workspacePath
-      const branch = readBranch(this.workspacePath)
-      if (branch) setBranchName(req.id, branch)
-    }
-
-    const rt = ensureRuntime(
-      pendingId,
-      this.workspacePath,
-      getDefaultMode(this.workspacePath),
-      [],
-      'work',
-      undefined,
-      'background',
-    )
-    rt.effectiveCwd = effectiveCwd
-    registerPendingDevLink(pendingId, req.id)
-
-    const devParts = buildDevPrompt({
-      title: req.title,
-      content: req.content,
-      dependsOn: req.dependsOn,
-      devSkill: getDevSkill(this.workspacePath),
-      sddEnabled: getSddEnabled(this.workspacePath),
-      specPath: req.specPath,
-    })
-    return {
-      workspacePath: this.workspacePath,
-      sessionId: pendingId,
-      prompt: devParts.visible,
-      ...(devParts.userTurnPrefix ? { userTurnPrefix: devParts.userTurnPrefix } : {}),
-      ...(devParts.systemInstruction ? { systemInstruction: devParts.systemInstruction } : {}),
-      intentId: req.id,
-      signal,
-      onAwaitingPermission: (a) => this.setAwaiting(a),
-    }
-  }
-
-  private buildContinueTurn(
-    intentId: string,
-    sessionId: string,
-    signal: AbortSignal,
-  ): RunDevTurnInput {
-    return {
-      workspacePath: this.workspacePath,
-      sessionId,
-      prompt: 'continue',
-      intentId,
-      signal,
-      onAwaitingPermission: (a) => this.setAwaiting(a),
-    }
-  }
-
-  /**
-   * Commit & push, self-healing exactly once through a fix agent turn when a
-   * pre-commit lint hook blocked it (RM-A13). The fix turn is awaited like every
-   * other kernel run.
-   */
-  private async commitWithLintHeal(
-    req: Intent,
-    sessionId: string,
-    record: InFlightRun,
-    signal: AbortSignal,
-  ): Promise<'ok' | 'failed' | 'aborted'> {
-    const message = `feat: ${req.title}`
-    const first = await commitAndPush(this.gitCwd(req.id), message)
-    if (signal.aborted) return 'aborted'
-    if (first.ok) return 'ok'
-
-    if (first.failure !== 'commit-hook') {
-      this.recordFailure(req.id, 'commit_failed', first.error ?? '提交失败')
-      return 'failed'
-    }
-
-    console.warn(
-      `[c3:queue]「${req.title}」pre-commit lint 失败,启动修复 agent 介入一次:${first.error}`,
-    )
-    record.phase = 'fixing'
-    this.status.state = 'fixing'
-    this.emit()
-    try {
-      await this.hooks.runDevTurn({
-        workspacePath: this.workspacePath,
-        sessionId,
-        prompt: `pre-commit 钩子的 lint 检查未通过,本次提交被拦截。请修复以下 lint/格式报错,改完即可,无需自行 git commit:\n\n${first.error ?? 'pre-commit lint 失败'}`,
-        intentId: req.id,
-        signal,
-        onAwaitingPermission: (a) => this.setAwaiting(a),
-      })
-    } finally {
-      record.phase = 'developing'
-    }
-    if (signal.aborted || this.disposed) return 'aborted'
-
-    const second = await commitAndPush(this.gitCwd(req.id), message)
-    if (signal.aborted) return 'aborted'
-    if (second.ok) return 'ok'
-    this.recordFailure(
-      req.id,
-      'commit_failed',
-      `lint 自动修复后仍未通过:${second.error ?? '未知 lint 错误'}`,
-    )
-    return 'failed'
-  }
-
-  // ── Scheduling metadata transitions ───────────────────────────────────────
-
-  /**
-   * One failed attempt for ONE intent. Exponential backoff first; the third
-   * consecutive failure parks it. The queue itself never stops — other intents
-   * that do not depend on this one keep being selected, while its downstream
-   * stays blocked by the dependency gate because a parked intent is not `done`.
-   */
-  private recordFailure(intentId: string, reason: QueueReasonCode, detail: string): void {
-    const now = Date.now()
-    const prev = getQueueIntentMetaById(intentId)
-    const failureCount = prev.failureCount + 1
-    const park = failureCount >= QUEUE_MAX_ATTEMPTS
+  /** The per-intent quiet window, written BEFORE the run exists. */
+  private writeCooldown(intentId: string, now: number): void {
+    const meta = getQueueIntentMetaById(intentId)
     putQueueIntentMeta(this.workspacePath, {
-      ...prev,
+      ...meta,
       intentId,
-      failureCount,
-      backoffCount: park ? prev.backoffCount : prev.backoffCount + 1,
-      backoffUntil: park ? null : now + backoffDelayMs(failureCount),
-      parked: park,
-      parkReason: park ? reason : prev.parkReason,
-      parkDetail: park ? detail : prev.parkDetail,
+      cooldownUntil: now + QUEUE_COOLDOWN_MS,
       updatedAt: now,
     })
-    appendQueueDecisions([
-      {
-        tickId: this.lastTickId || 'run',
-        workspacePath: this.workspacePath,
-        intentId,
-        decidedAt: now,
-        action: park ? 'park' : 'block',
-        blockedGate: park ? 'max_attempts_reached' : reason,
-        rejectReason: detail,
-        attemptCount: failureCount,
-        backoffCount: park ? prev.backoffCount : prev.backoffCount + 1,
-        nextWakeupAt: park ? null : now + backoffDelayMs(failureCount),
-      },
-    ])
-    const req = getIntent(intentId)
-    if (req) publishIntentLifecycle(this.workspacePath, req, 'failed')
-    console.warn(
-      `[c3:queue]「${req?.title ?? intentId}」第 ${failureCount} 次失败(${reason}): ${detail}` +
-        (park ? ' → 已 park,队列继续处理其他意图' : ` → 退避 ${backoffDelayMs(failureCount)}ms`),
-    )
-    this.hooks.broadcastQueueDetail(this.workspacePath)
-  }
-
-  /** Real progress wipes the consecutive-failure and backoff state. */
-  private recordSuccess(intentId: string): void {
-    const prev = getQueueIntentMetaById(intentId)
-    if (prev.failureCount === 0 && prev.backoffUntil === null) return
-    putQueueIntentMeta(this.workspacePath, {
-      ...prev,
-      intentId,
-      failureCount: 0,
-      backoffUntil: null,
-      updatedAt: Date.now(),
-    })
-  }
-
-  /** Park an intent that needs a human, and raise exactly one todo for it. */
-  private parkForHuman(req: Intent, reason: QueueReasonCode, detail: string): void {
-    this.applyPark(req.id, reason, detail)
-    this.hooks.createUserTodo({
-      workspacePath: this.workspacePath,
-      intentId: req.id,
-      sessionId: req.lastWorkSessionId,
-      title: `「${req.title}」${detail}`,
-      reasonCode: reason,
-    })
-    publishIntentLifecycle(this.workspacePath, req, 'failed')
-    console.warn(`[c3:queue]「${req.title}」已 park(${reason}): ${detail}`)
-  }
-
-  private applyPark(intentId: string, reason: QueueReasonCode, detail: string): void {
-    const prev = getQueueIntentMetaById(intentId)
-    if (prev.parked) return
-    putQueueIntentMeta(this.workspacePath, {
-      ...prev,
-      intentId,
-      parked: true,
-      parkReason: reason,
-      parkDetail: detail,
-      backoffUntil: null,
-      updatedAt: Date.now(),
-    })
-    this.hooks.broadcastQueueDetail(this.workspacePath)
   }
 
   // ── Status projection ─────────────────────────────────────────────────────
 
   private project(output: QueueReconcileOutput, control: QueueControlRow): void {
     const fixing = [...this.inFlight.values()].some((r) => r.phase === 'fixing')
-    this.status.state = fixing ? 'fixing' : output.state
-    this.status.currentIntentId = output.currentIntentId
-    this.status.currentSessionId = output.currentSessionId
-    this.status.awaitingPermission = output.awaitingPermission
-    this.status.startedAt = control.startedAt
-    // The kernel isolates failures per intent, so the queue as a whole no longer
-    // carries a stop reason. The most recent park is what a user needs to see.
-    const parked = output.decisions.find((d) => d.action === 'park')
-    this.status.error = parked ? `${parked.reason}: ${parked.detail}` : null
+    projectStatus(this.status, output, control, fixing)
     this.emit()
     this.hooks.broadcastQueueDetail(this.workspacePath)
   }
@@ -1129,116 +456,6 @@ class QueueController {
     this.status.awaitingPermission = awaiting
     this.emit()
   }
-
-  // ── Small helpers ─────────────────────────────────────────────────────────
-
-  private markInProgress(intentId: string, sessionId: string): void {
-    if (!sessionId) return
-    const req = getIntent(intentId)
-    if (!req) return
-    if (req.lastWorkSessionId !== sessionId) setLastWorkSession(intentId, sessionId)
-    if (req.status !== 'in_progress') {
-      updateStatus(intentId, 'in_progress')
-      publishIntentStatusTransition(this.workspacePath, req, req.status, 'in_progress')
-    }
-    this.status.currentSessionId = sessionId
-    this.hooks.broadcastIntents(this.workspacePath)
-  }
-
-  /**
-   * The git working directory for an intent's commit/push/PR/evidence ops:
-   * the isolated worktree in `worktree` mode, else the project checkout itself.
-   */
-  private gitCwd(intentId: string): string {
-    if (getGitBranchMode(this.workspacePath) === 'worktree') {
-      return getWorktreePath(this.workspacePath, intentId)
-    }
-    return this.workspacePath
-  }
-
-  private ensureResumeRuntime(req: Intent, sessionId: string): void {
-    const worktreeMode = getGitBranchMode(this.workspacePath) === 'worktree'
-    const cwd = this.gitCwd(req.id)
-    if (worktreeMode && !worktreeExists(cwd)) return
-    const rt = ensureRuntime(
-      sessionId,
-      this.workspacePath,
-      getDefaultMode(this.workspacePath),
-      [],
-      'work',
-      undefined,
-      'background',
-    )
-    if (!rt.effectiveCwd) rt.effectiveCwd = cwd
-  }
-
-  /**
-   * Best-effort PR creation after a successful commit+push, gated by git mode:
-   * `worktree` creates the PR, `current-branch` never does.
-   */
-  private async maybeCreatePr(req: Intent): Promise<void> {
-    if (getGitBranchMode(this.workspacePath) !== 'worktree') return
-    const prResult = await this.createPrForIntent(req).catch((err) => {
-      console.warn(`[c3:queue]「${req.title}」PR 创建异常: ${errText(err)}`)
-      return null
-    })
-    if (prResult?.ok) {
-      setPrInfo(req.id, prResult.prId, 'reviewing', prResult.prUrl || null)
-      safeInsertIntentLog(req.id, 'pr_created', `创建 PR #${prResult.prId}`, 'automation')
-      console.log(`[c3:queue]「${req.title}」PR #${prResult.prId} 已创建`)
-
-      const headBranch = req.branchName ?? undefined
-      const effectiveSessionId = req.lastWorkSessionId ?? req.id
-      runServerSidePrCreate(
-        {
-          prId: prResult.prId,
-          prUrl: prResult.prUrl,
-          headBranch,
-          baseBranch: undefined,
-          intentId: req.id,
-        },
-        this.hooks.normalizeEvent,
-        (event) =>
-          this.hooks.publishEvent({
-            workspacePath: this.workspacePath,
-            sessionId: effectiveSessionId,
-            event,
-          }),
-      )
-    } else if (prResult) {
-      console.warn(`[c3:queue]「${req.title}」PR 创建失败: ${prResult.error}`)
-    }
-  }
-
-  private async createPrForIntent(
-    req: Intent,
-  ): Promise<{ ok: true; prId: string; prUrl: string } | { ok: false; error: string } | null> {
-    const headBranch = req.branchName ?? undefined
-    const bodyParts: string[] = [req.content]
-    if (req.dependsOn.length > 0) {
-      bodyParts.push('', '## 依赖需求')
-      for (const depId of req.dependsOn) {
-        const dep = getIntent(depId)
-        bodyParts.push(`- ${dep?.title ?? depId} (${dep?.status ?? 'unknown'})`)
-      }
-    }
-    const prResult = await createForgePr(
-      this.gitCwd(req.id),
-      `feat: ${req.title}`,
-      bodyParts.join('\n'),
-      headBranch,
-      undefined,
-      getForgeOverride(this.workspacePath),
-    )
-    if (prResult.ok && prResult.prId) {
-      return { ok: true as const, prId: prResult.prId, prUrl: prResult.prUrl ?? '' }
-    }
-    return { ok: false as const, error: prResult.error ?? 'Unknown error' }
-  }
-}
-
-function errText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err)
 }
 
 // ---------------------------------------------------------------------------
@@ -1328,35 +545,17 @@ export function forceSkipIntent(workspacePath: string, intentId: string, skip: b
   void controllerFor(workspacePath).request()
 }
 
-/**
- * Clear an intent's park mark so the next pass re-evaluates it from scratch.
- * The consecutive-failure counter is reset too: an unpark is an explicit human
- * "try this again", and leaving the counter at the cap would re-park the intent
- * on its very first hiccup. Every hard gate is still re-checked next pass.
- */
+/** Clear an intent's park mark so the next pass re-evaluates every gate afresh. */
 export function unparkIntent(workspacePath: string, intentId: string): boolean {
-  const prev = getQueueIntentMetaById(intentId)
-  if (!prev.parked) return false
-  putQueueIntentMeta(workspacePath, {
-    ...prev,
-    intentId,
-    parked: false,
-    parkReason: null,
-    parkDetail: null,
-    failureCount: 0,
-    backoffUntil: null,
-    updatedAt: Date.now(),
-  })
+  if (!clearPark(workspacePath, intentId)) return false
   void controllerFor(workspacePath).request()
   return true
 }
 
 /**
  * Explicit human ruling over the queue's latest automatic verdict for an intent.
- * `continue` clears the park so the intent is re-evaluated; `block` parks it.
- * Neither marks the intent `done`, and neither bypasses a permission, spec,
- * dependency, concurrency, continuation-budget or commit/push gate — the next
- * pass re-checks all of them.
+ * It only rewrites this intent's scheduling metadata — every hard gate is
+ * re-checked by the pass it then requests.
  */
 export function overrideIntentDecision(
   workspacePath: string,
@@ -1364,33 +563,8 @@ export function overrideIntentDecision(
   decision: 'continue' | 'block',
   actor: string,
 ): boolean {
-  const now = Date.now()
-  const prev = getQueueIntentMetaById(intentId)
-  if (decision === 'continue' && !prev.parked && prev.backoffUntil === null) return false
-  putQueueIntentMeta(workspacePath, {
-    ...prev,
-    intentId,
-    parked: decision === 'block',
-    parkReason: decision === 'block' ? 'needs_human_decision' : null,
-    parkDetail: decision === 'block' ? `人工裁决停止(${actor})` : null,
-    failureCount: decision === 'continue' ? 0 : prev.failureCount,
-    backoffUntil: null,
-    updatedAt: now,
-  })
-  appendQueueDecisions([
-    {
-      tickId: controllers.get(workspacePath)?.tickId || 'override',
-      workspacePath,
-      intentId,
-      decidedAt: now,
-      action: decision === 'continue' ? 'launch' : 'park',
-      blockedGate: 'needs_human_decision',
-      rejectReason: `人工覆盖结论:${decision} by ${actor}`,
-      attemptCount: prev.failureCount,
-      backoffCount: prev.backoffCount,
-      nextWakeupAt: null,
-    },
-  ])
+  const tickId = controllers.get(workspacePath)?.tickId || 'override'
+  if (!applyHumanOverride(workspacePath, intentId, decision, actor, tickId)) return false
   void controllerFor(workspacePath).request()
   return true
 }
@@ -1398,7 +572,7 @@ export function overrideIntentDecision(
 /**
  * Whether an intent's work session is currently driven by this workspace's
  * queue kernel — i.e. the kernel holds an in-flight run for it. The session-end
- * manual Git/PR cleanup uses this to skip queue-owned sessions (MSC-R1).
+ * manual Git/PR cleanup uses this to skip queue-owned sessions.
  */
 export function isIntentDrivenByWorkflow(workspacePath: string, intentId: string): boolean {
   const c = controllers.get(workspacePath)
@@ -1429,69 +603,21 @@ export function notifyTurnSettled(
   return markQueueDirty(workspacePath)
 }
 
-/** The queue's per-intent view for the queue page. */
-export interface QueueIntentView {
-  intentId: string
-  title: string
-  blockedReason: string
-  blockedDetail: string
-  nextWakeupAt: number | null
-  lastAction: string
-  lastDecidedAt: number | null
-  attemptCount: number
-  backoffCount: number
-  backoffUntil: number | null
-  parked: boolean
-  parkReason: string | null
-  parkDetail: string | null
-  forceSkipped: boolean
-}
+// ---------------------------------------------------------------------------
+// Queue detail projection
+// ---------------------------------------------------------------------------
+
+export type { QueueIntentView } from './queue-projection.js'
 
 /** Build the queue detail projection for a workspace. */
-export function getQueueDetail(workspacePath: string): {
-  state: WorkflowStatus['state']
-  tickId: string
-  nextWakeupAt: number | null
-  items: QueueIntentView[]
-} {
+export function getQueueDetail(workspacePath: string): QueueDetailView {
   const c = controllers.get(workspacePath)
-  const control = getQueueControl(workspacePath)
-  const meta = getQueueIntentMeta(workspacePath)
-  const latest = latestQueueDecisionByIntent(workspacePath)
-  const decisions = new Map((c?.lastDecisions ?? []).map((d) => [d.intentId, d]))
-  const skipped = new Set(control.forceSkipped)
-  const intents = isStoreAvailable() ? listIntents(workspacePath) : []
-
-  const items: QueueIntentView[] = intents
-    .filter((r) => r.automate && (r.status === 'todo' || r.status === 'in_progress'))
-    .map((r) => {
-      const m = meta[r.id] ?? emptyQueueIntentMeta(r.id)
-      const d = decisions.get(r.id)
-      const prev = latest[r.id]
-      return {
-        intentId: r.id,
-        title: r.title,
-        blockedReason: d?.reason ?? prev?.blockedGate ?? '',
-        blockedDetail: d?.detail ?? prev?.rejectReason ?? '',
-        nextWakeupAt: d?.nextWakeupAt ?? prev?.nextWakeupAt ?? null,
-        lastAction: d?.action ?? prev?.action ?? '',
-        lastDecidedAt: prev?.decidedAt ?? null,
-        attemptCount: m.failureCount,
-        backoffCount: m.backoffCount,
-        backoffUntil: m.backoffUntil,
-        parked: m.parked,
-        parkReason: m.parkReason,
-        parkDetail: m.parkDetail,
-        forceSkipped: skipped.has(r.id),
-      }
-    })
-
-  return {
+  return buildQueueDetail(workspacePath, {
     state: getWorkflowStatus(workspacePath).state,
     tickId: c?.tickId ?? '',
     nextWakeupAt: c?.wakeupAt ?? null,
-    items,
-  }
+    decisions: c?.lastDecisions ?? [],
+  })
 }
 
 // ---------------------------------------------------------------------------

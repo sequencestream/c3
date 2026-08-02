@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest'
-import type { Discussion } from '@ccc/shared/protocol'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+import type { AgentConfig, Discussion } from '@ccc/shared/protocol'
+import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
 import { getDiscussionType } from '@ccc/shared/discussion-types'
 import type { ResearchStreamItem } from './research.js'
 
@@ -34,6 +35,19 @@ vi.mock('../../kernel/agent/index.js', () => ({
   },
 }))
 
+// The agent registry is stubbed so `resolveResearchAgent`'s branches are testable
+// without real settings; the launch/relay helpers stay REAL — they are no-ops for
+// a system-mode agent (no relay candidates, no model override).
+vi.mock('../../kernel/agent-config/index.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../kernel/agent-config/index.js')>()
+  return {
+    ...original,
+    enabledAgents: vi.fn(() => [] as AgentConfig[]),
+    resolveAgent: vi.fn(() => original.systemAgent()),
+    resolveFirstAgentOfVendor: vi.fn(() => original.systemAgent()),
+  }
+})
+
 const {
   buildResearchPrompt,
   canAutoStartDiscussion,
@@ -41,6 +55,8 @@ const {
   researchDiscussionContext,
   resolveResearchAgent,
 } = await import('./research.js')
+const { enabledAgents, resolveAgent, resolveFirstAgentOfVendor, systemAgent } =
+  await import('../../kernel/agent-config/index.js')
 
 describe('buildResearchPrompt', () => {
   const base = {
@@ -155,12 +171,15 @@ describe('researchDiscussionContext', () => {
     updatedAt: 1,
     completedAt: null,
   }
+  // The caller's single agent resolution (the wiring boundary's job); the routine
+  // itself never re-resolves.
+  const agent = systemAgent()
 
   it('returns the agent final text as researchResult and never echoes the user context', async () => {
     runClaudeImpl = async ({ send }) => {
       send({ type: 'assistant_text', text: '  RESEARCHED FACTS  ' })
     }
-    const res = await researchDiscussionContext(disc)
+    const res = await researchDiscussionContext(disc, agent)
     expect(res).toEqual({ ok: true, researchResult: 'RESEARCHED FACTS' })
     // The user's original context must not leak into the research output.
     expect(res.researchResult).not.toContain('USER ORIGINAL CONTEXT')
@@ -170,7 +189,7 @@ describe('researchDiscussionContext', () => {
     runClaudeImpl = async () => {
       /* agent emits nothing */
     }
-    const res = await researchDiscussionContext(disc)
+    const res = await researchDiscussionContext(disc, agent)
     expect(res).toEqual({ ok: true, researchResult: '' })
   })
 
@@ -178,7 +197,7 @@ describe('researchDiscussionContext', () => {
     runClaudeImpl = async () => {
       throw new Error('boom')
     }
-    const res = await researchDiscussionContext(disc)
+    const res = await researchDiscussionContext(disc, agent)
     expect(res).toEqual({ ok: false, researchResult: '' })
   })
 
@@ -190,7 +209,7 @@ describe('researchDiscussionContext', () => {
       send({ type: 'assistant_text', text: 'FINAL FACTS' })
     }
     const items: ResearchStreamItem[] = []
-    const res = await researchDiscussionContext(disc, { onMessage: (m) => items.push(m) })
+    const res = await researchDiscussionContext(disc, agent, { onMessage: (m) => items.push(m) })
     // The last assistant turn is still the captured result.
     expect(res).toEqual({ ok: true, researchResult: 'FINAL FACTS' })
     // text + tool_use (input) + tool_result (output) all stream in order, each with its own seq.
@@ -206,7 +225,7 @@ describe('researchDiscussionContext', () => {
     runClaudeImpl = async ({ send }) => {
       send({ type: 'assistant_text', text: 'X' })
     }
-    const res = await researchDiscussionContext(disc)
+    const res = await researchDiscussionContext(disc, agent)
     expect(res).toEqual({ ok: true, researchResult: 'X' })
   })
 })
@@ -231,6 +250,7 @@ describe('researchDiscussionContext — the run is a first-class session', () =>
     updatedAt: 1,
     completedAt: null,
   }
+  const agent = systemAgent()
 
   it('reports the vendor session id so the caller can bind the run to a session', async () => {
     runClaudeImpl = async ({ send, onSessionId }) => {
@@ -238,7 +258,9 @@ describe('researchDiscussionContext — the run is a first-class session', () =>
       send({ type: 'assistant_text', text: 'FACTS' })
     }
     const seen: string[] = []
-    const res = await researchDiscussionContext(disc, { onSessionId: (id) => seen.push(id) })
+    const res = await researchDiscussionContext(disc, agent, {
+      onSessionId: (id) => seen.push(id),
+    })
     expect(seen).toEqual(['vsess-1'])
     expect(res.researchResult).toBe('FACTS')
   })
@@ -252,7 +274,7 @@ describe('researchDiscussionContext — the run is a first-class session', () =>
     }
     const wire: SendMsg[] = []
     const stream: ResearchStreamItem[] = []
-    await researchDiscussionContext(disc, {
+    await researchDiscussionContext(disc, agent, {
       onWire: (m) => wire.push(m as SendMsg),
       onMessage: (m) => stream.push(m),
     })
@@ -274,22 +296,117 @@ describe('researchDiscussionContext — the run is a first-class session', () =>
       sawSignal = signal
       abort.abort()
     }
-    await researchDiscussionContext(disc, { signal: abort.signal })
+    await researchDiscussionContext(disc, agent, { signal: abort.signal })
     expect(sawSignal).toBe(abort.signal)
     expect(sawSignal?.aborted).toBe(true)
   })
 
-  it('keeps the read-only launch profile and runs on a claude agent (so a follow-up can resume)', async () => {
+  it('keeps the read-only launch profile and runs on the resolved claude agent (so a follow-up can resume)', async () => {
     runClaudeImpl = async ({ send }) => {
       send({ type: 'assistant_text', text: 'X' })
     }
-    await researchDiscussionContext(disc)
+    // The caller's single resolution — the same value the wiring boundary freezes
+    // onto the session; the routine must launch exactly that agent.
+    const resolved = resolveResearchAgent(disc)
+    await researchDiscussionContext(disc, resolved)
     expect(lastRunClaudeOpts?.gate).toBe('discussion-research')
     expect(lastRunClaudeOpts?.appendSystemPrompt).toBe(DISCUSSION_RESEARCH_PROMPT)
     expect(lastRunClaudeOpts?.disallowedTools?.length).toBeGreaterThan(0)
     // The bound agent is what the follow-up turn resolves; it must be a claude one.
-    const agent = resolveResearchAgent()
+    expect(resolved.vendor).toBe('claude')
+    expect(lastRunClaudeOpts?.currentAgentId).toBe(resolved.id)
+  })
+})
+
+describe('resolveResearchAgent — organizer-first, with an explicit claude fallback', () => {
+  const discussionWith = (organizerAgentId: string | null): Discussion => ({
+    id: 'd1',
+    workspaceId: '/p',
+    title: 'T',
+    type: 'decision',
+    goal: 'g',
+    context: 'c',
+    researchResult: '',
+    status: 'draft',
+    agenda: [],
+    agendaIndex: 0,
+    participantAgentIds: [],
+    organizerAgentId,
+    conclusion: null,
+    metadata: {},
+    createdAt: 1,
+    updatedAt: 1,
+    completedAt: null,
+  })
+  const claude = (id: string): AgentConfig => ({ ...systemAgent(), id })
+  const codex = (id: string): AgentConfig => ({
+    ...systemAgent(),
+    id,
+    vendor: 'codex',
+    config: { baseUrl: '', apiKey: '', model: '', wireApi: 'responses' },
+  })
+
+  beforeEach(() => {
+    // Factory-fresh registry defaults; each test narrows what it exercises.
+    vi.mocked(enabledAgents).mockReturnValue([])
+    vi.mocked(resolveAgent).mockImplementation(() => systemAgent())
+    vi.mocked(resolveFirstAgentOfVendor).mockImplementation(() => systemAgent())
+  })
+
+  it('a claude organizer IS the research agent — even when it is not the first claude in the pool', () => {
+    vi.mocked(enabledAgents).mockReturnValue([claude('claude-first'), claude('claude-org')])
+    const agent = resolveResearchAgent(discussionWith('claude-org'))
+    expect(agent.id).toBe('claude-org')
     expect(agent.vendor).toBe('claude')
-    expect(lastRunClaudeOpts?.currentAgentId).toBe(agent.id)
+    // The claude fallback must not even be consulted.
+    expect(vi.mocked(resolveFirstAgentOfVendor)).not.toHaveBeenCalled()
+  })
+
+  it('no organizer ⇒ the global default agent (the orchestration loop criterion)', () => {
+    vi.mocked(enabledAgents).mockReturnValue([claude('someone-else')])
+    vi.mocked(resolveAgent).mockImplementation((id) =>
+      id === null ? claude('claude-default') : systemAgent(),
+    )
+    expect(resolveResearchAgent(discussionWith(null)).id).toBe('claude-default')
+    expect(vi.mocked(resolveFirstAgentOfVendor)).not.toHaveBeenCalled()
+  })
+
+  it('no organizer + non-claude default ⇒ the explicit fallback picks the first enabled claude', () => {
+    vi.mocked(enabledAgents).mockReturnValue([codex('codex-default'), claude('claude-first')])
+    vi.mocked(resolveAgent).mockImplementation((id) =>
+      id === null ? codex('codex-default') : systemAgent(),
+    )
+    vi.mocked(resolveFirstAgentOfVendor).mockReturnValue(claude('claude-first'))
+    expect(resolveResearchAgent(discussionWith(null)).id).toBe('claude-first')
+    expect(vi.mocked(resolveFirstAgentOfVendor)).toHaveBeenCalledWith('claude')
+  })
+
+  it('a non-claude organizer never reaches runClaude — the first enabled claude is selected', () => {
+    vi.mocked(enabledAgents).mockReturnValue([codex('codex-org'), claude('claude-first')])
+    vi.mocked(resolveFirstAgentOfVendor).mockReturnValue(claude('claude-first'))
+    const agent = resolveResearchAgent(discussionWith('codex-org'))
+    expect(agent.id).toBe('claude-first')
+    expect(agent.vendor).toBe('claude')
+    expect(vi.mocked(resolveFirstAgentOfVendor)).toHaveBeenCalledWith('claude')
+  })
+
+  it('a non-claude organizer with NO enabled claude ⇒ the built-in system claude agent', () => {
+    vi.mocked(enabledAgents).mockReturnValue([codex('codex-org')])
+    vi.mocked(resolveAgent).mockImplementation((id) =>
+      id === null ? codex('codex-default') : systemAgent(),
+    )
+    // resolveFirstAgentOfVendor('claude') itself degrades to the non-claude default.
+    vi.mocked(resolveFirstAgentOfVendor).mockReturnValue(codex('codex-default'))
+    const agent = resolveResearchAgent(discussionWith('codex-org'))
+    expect(agent.id).toBe(SYSTEM_AGENT_ID)
+    expect(agent.vendor).toBe('claude')
+  })
+
+  it('an organizer outside the enabled pool (disabled/unknown) ⇒ the global default agent', () => {
+    vi.mocked(enabledAgents).mockReturnValue([])
+    vi.mocked(resolveAgent).mockImplementation((id) =>
+      id === null ? claude('claude-default') : systemAgent(),
+    )
+    expect(resolveResearchAgent(discussionWith('ghost')).id).toBe('claude-default')
   })
 })

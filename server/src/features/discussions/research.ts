@@ -28,12 +28,14 @@ import { runClaude } from '../../kernel/agent/index.js'
 import { INTENT_DISALLOWED_TOOLS } from '../../kernel/permission/index.js'
 import {
   bindClaudeRelay,
+  enabledAgents,
   launchForAgent,
   resolveAgent,
   resolveFirstAgentOfVendor,
   unbindRelay,
 } from '../../kernel/agent-config/index.js'
 import { getAgentLangName } from '../../kernel/config/index.js'
+import { resolveDiscussionOrganizer } from './organizer.js'
 
 /**
  * This step's SessionKind: the research pass calls {@link runClaude} directly
@@ -44,17 +46,36 @@ import { getAgentLangName } from '../../kernel/config/index.js'
 const SESSION_KIND: SessionKind = 'discussion'
 
 /**
- * The agent the research pass runs on. The research loop is claude-hardwired
- * ({@link runClaude}), so it must resolve to a CLAUDE agent even when the project's
- * default agent is another vendor — the session is bound to this agent, and a
- * cross-vendor binding could never resume it on the follow-up turn.
- * `resolveFirstAgentOfVendor` falls back to the default agent when no claude agent
- * is enabled; that fallback is replaced here by the built-in system agent, which is
- * always claude with no overrides (i.e. the vendor CLI's own login).
+ * The agent the research pass runs on. Resolved ONCE at the wiring boundary
+ * (`wiring/discussion-runs.ts`) and threaded through the first turn, the
+ * session→agent freeze, and the bound-row projection, so the three can never
+ * diverge even if the agent registry changes mid-run.
+ *
+ * Organizer-first, with the SAME criterion the orchestration loop applies
+ * ({@link resolveDiscussionOrganizer}): the discussion's `organizerAgentId` when
+ * it points into the enabled pool, else the global default agent. The result is
+ * then mapped onto this claude-hardwired loop ({@link runClaude}):
+ *
+ * - a claude organizer IS the research agent — its id, model, relay, env and
+ *   store scope all ride with it, so research and orchestration share one
+ *   execution identity;
+ * - a non-claude organizer (e.g. codex) must never reach `runClaude`: an EXPLICIT
+ *   compatibility fallback selects the first enabled claude agent, else the
+ *   built-in system agent (always claude with no overrides — the vendor CLI's own
+ *   login). This is a declared constraint of the claude-only loop, not a silent
+ *   downgrade: the follow-up launch profile still rejects a non-claude resolution
+ *   rather than degrade to a writable session.
  */
-export function resolveResearchAgent(): AgentConfig {
-  const agent = resolveFirstAgentOfVendor('claude')
-  return agent.vendor === 'claude' ? agent : resolveAgent(SYSTEM_AGENT_ID)
+export function resolveResearchAgent(discussion: Discussion): AgentConfig {
+  const organizer = resolveDiscussionOrganizer(
+    discussion.organizerAgentId,
+    enabledAgents(),
+    resolveAgent(null),
+  )
+  if (organizer.vendor === 'claude') return organizer
+  // Explicit claude fallback for a non-claude organizer / default (see above).
+  const claude = resolveFirstAgentOfVendor('claude')
+  return claude.vendor === 'claude' ? claude : resolveAgent(SYSTEM_AGENT_ID)
 }
 
 /** System-prompt append that frames the unattended, read-only research run. */
@@ -165,9 +186,15 @@ export function canAutoStartDiscussion(
  * `researchResult` is `''`; `ok=false` only when the run threw, so a research miss
  * never blocks creation. The discussion's `context` is read as a clue but never
  * written back.
+ *
+ * `agent` is the caller's SINGLE {@link resolveResearchAgent} result — the same
+ * value the wiring boundary freezes onto the session and projects into the
+ * session-metadata row. This routine never re-resolves: one research run has
+ * exactly one execution identity.
  */
 export async function researchDiscussionContext(
   discussion: Discussion,
+  agent: AgentConfig,
   opts: ResearchRunOptions = {},
 ): Promise<DiscussionResearchResult> {
   console.log(
@@ -185,10 +212,10 @@ export async function researchDiscussionContext(
   )
   const abort = new AbortController()
   const signal = opts.signal ?? abort.signal
-  // Route a custom provider through the loopback relay (ADR-0029), exactly as the
-  // generic launch path does — the follow-up turns run through that path on this
-  // same agent, so the first (unattended) turn must connect the same way.
-  const agent = resolveResearchAgent()
+  // Route a custom provider through the loopback relay, exactly as the generic
+  // launch path does — the follow-up turns run through that path on this same
+  // (caller-resolved, session-frozen) agent, so the first (unattended) turn must
+  // connect the same way.
   const launch = launchForAgent(agent)
   const claudeRelay = bindClaudeRelay(launch.relayCandidates)
   const envOverrides = claudeRelay

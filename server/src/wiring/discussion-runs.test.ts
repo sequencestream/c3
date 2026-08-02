@@ -56,7 +56,7 @@ vi.mock('../features/works/work-session-store.js', () => ({
   upsertBoundRow: vi.fn(),
 }))
 
-import type { Discussion, ServerToClient } from '@ccc/shared/protocol'
+import type { AgentConfig, Discussion, ServerToClient } from '@ccc/shared/protocol'
 import type { DiscussionLifecycleEvent } from '@ccc/shared'
 import { EventBus, type EventBusEvents } from '../kernel/events/event-bus.js'
 import type { VendorAdapter } from '../kernel/agent/adapters/types.js'
@@ -75,10 +75,11 @@ import { runDiscussion } from '../features/discussions/orchestrator.js'
 import {
   canAutoStartDiscussion,
   researchDiscussionContext,
+  resolveResearchAgent,
 } from '../features/discussions/research.js'
 import { createDiscussionRuns, settleResearchSessionRun } from './discussion-runs.js'
 import { ensureRuntime, getRuntime, removeRuntime } from '../runs.js'
-import { freezeSessionAgent } from '../kernel/agent-config/index.js'
+import { freezeSessionAgent, systemAgent } from '../kernel/agent-config/index.js'
 import { upsertBoundRow } from '../features/works/work-session-store.js'
 import type { KernelContext } from '../kernel/types.js'
 import type { Conn } from '../transport/handler-registry.js'
@@ -125,6 +126,7 @@ beforeEach(() => {
   vi.mocked(runDiscussion).mockImplementation(async () => {})
   vi.mocked(canAutoStartDiscussion).mockReturnValue(false)
   vi.mocked(researchDiscussionContext).mockResolvedValue({ ok: true, researchResult: 'R' })
+  vi.mocked(resolveResearchAgent).mockReturnValue(systemAgent())
   events = []
   eventBus = new EventBus<EventBusEvents>()
   eventBus.subscribe('discussion:lifecycle', (e) => {
@@ -321,7 +323,7 @@ describe('startResearchRun — the research run is a first-class session', () =>
     wire: ServerToClient[] = [],
     result = { ok: true, researchResult: 'R' },
   ): void {
-    vi.mocked(researchDiscussionContext).mockImplementation(async (_d, opts = {}) => {
+    vi.mocked(researchDiscussionContext).mockImplementation(async (_d, _agent, opts = {}) => {
       if (sessionId) opts.onSessionId?.(sessionId)
       for (const ev of wire) opts.onWire?.(ev)
       return result
@@ -332,7 +334,7 @@ describe('startResearchRun — the research run is a first-class session', () =>
     research('vsess-1', [{ type: 'assistant_text', text: 'partial' }])
     const d = seed()
     let liveStatus: string | undefined
-    vi.mocked(researchDiscussionContext).mockImplementation(async (_d, opts = {}) => {
+    vi.mocked(researchDiscussionContext).mockImplementation(async (_d, _agent, opts = {}) => {
       opts.onSessionId?.('vsess-1')
       opts.onWire?.({ type: 'assistant_text', text: 'partial' })
       // Observed from INSIDE the run — the session must read as running while alive.
@@ -374,9 +376,48 @@ describe('startResearchRun — the research run is a first-class session', () =>
     expect(getRuntime('vsess-1')?.run).toBeNull()
   })
 
+  it('executor, frozen agent and bound row all come from the ONE up-front resolution', async () => {
+    // The resolver is consulted exactly once, up front. Even if its answer would
+    // change before the vendor reports the session id, the three session facts
+    // stay pinned to the launch-time agent — no independent second resolution.
+    const launchAgent: AgentConfig = { ...systemAgent(), id: 'claude-org' }
+    const laterAgent: AgentConfig = { ...systemAgent(), id: 'claude-other' }
+    vi.mocked(resolveResearchAgent).mockReturnValueOnce(launchAgent).mockReturnValueOnce(laterAgent)
+    let passedAgent: AgentConfig | undefined
+    vi.mocked(researchDiscussionContext).mockImplementation(async (_d, agent, opts = {}) => {
+      passedAgent = agent
+      opts.onSessionId?.('vsess-1')
+      return { ok: true, researchResult: 'R' }
+    })
+
+    runs.startResearchRun(seed())
+    await flush()
+
+    // The first turn runs on the launch-time agent…
+    expect(passedAgent?.id).toBe('claude-org')
+    // …the freeze pins that SAME agent (so a follow-up resumes on it)…
+    expect(vi.mocked(freezeSessionAgent)).toHaveBeenCalledWith(
+      'vsess-1',
+      'vsess-1',
+      'claude-org',
+      proj,
+      'host',
+    )
+    // …and the bound row projects the same execution identity.
+    expect(vi.mocked(upsertBoundRow)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'vsess-1',
+        vendor: 'claude',
+        agentId: 'claude-org',
+      }),
+    )
+    // And the resolver was never consulted again during the run.
+    expect(vi.mocked(resolveResearchAgent)).toHaveBeenCalledTimes(1)
+  })
+
   it('Stop on the research session aborts the run through the runtime', async () => {
     let aborted = false
-    vi.mocked(researchDiscussionContext).mockImplementation(async (_d, opts = {}) => {
+    vi.mocked(researchDiscussionContext).mockImplementation(async (_d, _agent, opts = {}) => {
       opts.onSessionId?.('vsess-stop')
       // The status bar's Stop aborts `rt.run.abort` — the research run must see it.
       getRuntime('vsess-stop')!.run!.abort.abort()

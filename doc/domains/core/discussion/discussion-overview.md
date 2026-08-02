@@ -43,9 +43,14 @@ discussion/intent 数据库中。
   运行 —— 若人类在调研期间已手动 Start/取消则跳过）。调研例程返回其是否
   成功以及调研结果（输出为空则结果为空 —— 绝不返回用户的上下文）；一次
   **调研失败**会让讨论保持 `draft` 状态，回退到手动 **Start**，且不会自动启动。
-- **调研运行是一个正式会话（2026-07-30）**：调研跑批不再是一次性的黑盒调用。厂商一报出
+- **调研运行是一个正式会话（2026-07-30）**：调研跑批不再是一次性的黑盒调用。**执行 agent
+  在 wiring 边界只解析一次**，口径与编排循环一致：讨论组织者（`organizerAgentId` → 启用池
+  → 全局默认 agent）；组织者是 claude ⇒ 直接作为调研执行者（研究与编排共享同一执行身份），
+  组织者为非 claude ⇒ 进入显式 claude 兼容兜底（第一个启用的 claude agent，无则系统 claude
+  agent）—— 跑批是 claude 硬编码路径，否则后续追问无法 resume；首轮跑批、冻结的
+  session→agent 事实与投影行复用同一次解析，三者绝不分裂。厂商一报出
   session id，服务端就把它持久化到讨论的 `researchSessionId`、冻结 session→agent 事实
-  （固定为 claude 智能体，否则后续追问无法 resume）、以该 id 注册一个 `SessionRuntime`
+  （即该单次解析的 agent）、以该 id 注册一个 `SessionRuntime`
   并把整条线材事件流灌进去，同时写一行
   `session_metadata(session_kind='discussion', owner_kind='discussion', owner_id=<讨论 id>)`
   投影 —— 于是 transcript 由厂商自己落盘、结束后仍可 resume、在 Sessions 页归入既有的

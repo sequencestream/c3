@@ -38,6 +38,7 @@ import {
 } from '@ccc/shared/discussion-types'
 import { askAgentOnce } from '../../agent-once.js'
 import type { AgentSessionManager } from './agent-session-manager.js'
+import { resolveDiscussionOrganizer } from './organizer.js'
 import { enabledAgents, resolveAgent } from '../../kernel/agent-config/index.js'
 import {
   getMaxRoundsPerStage,
@@ -247,11 +248,14 @@ export async function runDiscussion(
 
   const cwd = resolveWorkspaceRoot(initial.workspaceId)!
   const def = getDiscussionType(initial.type)
-  // Per-discussion organizer override: if the discussion specifies one, resolve
-  // it from the enabled pool; fall back to the global default agent.
-  const organizerCfg = initial.organizerAgentId
-    ? (deps.participants().find((a) => a.id === initial.organizerAgentId) ?? deps.organizer())
-    : deps.organizer()
+  // Per-discussion organizer override, resolved with the ONE shared criterion
+  // (the research pass applies the identical rule): `organizerAgentId` in the
+  // enabled pool, else the global default agent.
+  const organizerCfg = resolveDiscussionOrganizer(
+    initial.organizerAgentId,
+    deps.participants(),
+    deps.organizer(),
+  )
   // The participant roster is the discussion's selected subset, resolved against
   // the live enabled pool. `participantAgentIds` empty ⇒ legacy/unset, so fall back
   // to the whole roster (old behaviour = everyone). The organizer is always folded

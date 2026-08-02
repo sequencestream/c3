@@ -234,6 +234,123 @@ describe('reconcileQueue — gates', () => {
     expect(decisionFor(out, 'child')).toMatchObject({ reason: 'blocked_dependency' })
     expect(launched(out)).toBeNull()
   })
+
+  // The hard gates are an ordered ladder, not independent checks. One intent
+  // that violates several at once must be reported at the TOP gate only; as
+  // each gate is released the reason falls through to the next one, exactly in
+  // the order the assembly layer relies on.
+  it('gate precedence: park → force-skip → spec → dependency → backoff → cooldown → concurrency', () => {
+    /** X violates every gate; `relax` peels them off one layer at a time. */
+    const pass = (relax: {
+      unparked?: boolean
+      unskipped?: boolean
+      specApproved?: boolean
+      depDone?: boolean
+      backoffExpired?: boolean
+      cooldownExpired?: boolean
+    }) =>
+      reconcileQueue(
+        input({
+          sddEnabled: true,
+          control: {
+            state: 'running',
+            startedAt: NOW,
+            forceSkipped: relax.unskipped ? [] : ['X'],
+          },
+          intents: [
+            // dep carries its own approval so it never enters the spec phase and
+            // steals the single session-starting slot from X.
+            intent({
+              id: 'dep',
+              status: relax.depDone ? 'done' : 'in_progress',
+              prStatus: 'merged',
+              specApproved: true,
+            }),
+            intent({
+              id: 'X',
+              dependsOn: ['dep'],
+              specApproved: relax.specApproved ?? false,
+              createdAt: 5,
+            }),
+          ],
+          meta: {
+            X: meta('X', {
+              parked: !relax.unparked,
+              parkReason: 'judge_stuck',
+              failureCount: 2,
+              backoffUntil: relax.backoffExpired ? NOW - 1 : NOW + 60_000,
+              cooldownUntil: relax.cooldownExpired ? NOW - 1 : NOW + QUEUE_COOLDOWN_MS,
+            }),
+          },
+        }),
+      )
+
+    expect(decisionFor(pass({}), 'X')).toMatchObject({ reason: 'blocked_parked' })
+    expect(decisionFor(pass({ unparked: true }), 'X')).toMatchObject({
+      reason: 'blocked_force_skipped',
+    })
+    // The spec sub-state replaces the raw gate verdict for an unapproved spec.
+    // (The cooldown is released first: the spec phase honours the SAME
+    // self-excitation guard as development.)
+    const specStep = pass({ unparked: true, unskipped: true, cooldownExpired: true })
+    expect(decisionFor(specStep, 'X')).toMatchObject({ reason: 'spec_authoring' })
+    expect(specStep.actions).toContainEqual(
+      expect.objectContaining({ kind: 'launch_spec', intentId: 'X' }),
+    )
+    expect(
+      decisionFor(pass({ unparked: true, unskipped: true, specApproved: true }), 'X'),
+    ).toMatchObject({ reason: 'blocked_dependency' })
+    expect(
+      decisionFor(
+        pass({ unparked: true, unskipped: true, specApproved: true, depDone: true }),
+        'X',
+      ),
+    ).toMatchObject({ reason: 'blocked_backoff' })
+    expect(
+      decisionFor(
+        pass({
+          unparked: true,
+          unskipped: true,
+          specApproved: true,
+          depDone: true,
+          backoffExpired: true,
+        }),
+        'X',
+      ),
+    ).toMatchObject({ reason: 'blocked_cooldown' })
+
+    // Every gate released → X is selected…
+    const clear = pass({
+      unparked: true,
+      unskipped: true,
+      specApproved: true,
+      depDone: true,
+      backoffExpired: true,
+      cooldownExpired: true,
+    })
+    expect(launched(clear)).toBe('X')
+
+    // …unless a foreign live session holds the shared-checkout concurrency gate,
+    // which sits at the very bottom of the ladder.
+    const concurrent = reconcileQueue(
+      input({
+        sddEnabled: true,
+        intents: [
+          intent({
+            id: 'other',
+            status: 'in_progress',
+            specApproved: true,
+            lastWorkSessionId: 's-other',
+            createdAt: 1,
+          }),
+          intent({ id: 'X', specApproved: true, createdAt: 5 }),
+        ],
+        runs: [{ sessionId: 's-other', alive: true, awaitingPermissionSince: null }],
+      }),
+    )
+    expect(decisionFor(concurrent, 'X')).toMatchObject({ reason: 'blocked_concurrency_gate' })
+    expect(launched(concurrent)).toBeNull()
+  })
 })
 
 describe('reconcileQueue — failure isolation', () => {

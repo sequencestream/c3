@@ -109,7 +109,7 @@ register([
 `AgentConfig` 的 vendor 中立公共壳(`baseShellSchema`)新增可选字段:
 
 ```ts
-// shared/protocol.ts(类型)+ agent-config/schema.ts(zod)同步新增:
+// shared/src/protocol/agent-config.ts(类型)+ agent-config/schema.ts(zod)同步新增:
 group?: string // 非空 ⇒ 该 agent 归入 (group, vendor) 组;为空/缺省 ⇒ 不参与任何组
 ```
 

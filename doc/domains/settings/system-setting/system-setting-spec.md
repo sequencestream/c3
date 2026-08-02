@@ -1,6 +1,6 @@
 # system-setting 系统设置
 
-`system-setting` 域承载 `SystemSettings`(见 [`shared/src/protocol.ts`](../../../../shared/src/protocol.ts))中管理员级的**全局**配置——既非按会话、按工作区,也非按人。所有改动过管理员门(见 [auth](../../core/auth/auth-overview.md))。系统设置面板分 agent / runtime / security / general 四页;其中 agent 页属 [agent-config](../agent-config/agent-config-overview.md) 域,不在本域范围。因人而异的偏好(如界面语言)属 [personalized-setting](../personalized-setting/personalized-setting-spec.md) 域,不在本域,也不过管理员门。
+`system-setting` 域承载 `SystemSettings`(见 [`shared/src/protocol/settings.ts`](../../../../shared/src/protocol/settings.ts))中管理员级的**全局**配置——既非按会话、按工作区,也非按人。所有改动过管理员门(见 [auth](../../core/auth/auth-overview.md))。系统设置面板分 agent / runtime / security / general 四页;其中 agent 页属 [agent-config](../agent-config/agent-config-overview.md) 域,不在本域范围。因人而异的偏好(如界面语言)属 [personalized-setting](../personalized-setting/personalized-setting-spec.md) 域,不在本域,也不过管理员门。
 
 配置持久化路径、单一写入路径、`projectConfigs` 分层等**组级共享上下文**见 [settings 组概览](../settings-overview.md)。
 

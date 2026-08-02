@@ -1,6 +1,6 @@
 # personalized-setting 个人化设置
 
-`personalized-setting` 域承载 `PersonalizedSettings`(见 [`shared/src/protocol.ts`](../../../../shared/src/protocol.ts))——**因人而异**的偏好项。它是三类设置中唯一**不过管理员门**的一类:普通账户即可修改自己的偏好,改动不影响任何其他人。协议消息 `get_personalized_settings` / `save_personalized_settings` / `personalized_settings`。
+`personalized-setting` 域承载 `PersonalizedSettings`(见 [`shared/src/protocol/settings.ts`](../../../../shared/src/protocol/settings.ts))——**因人而异**的偏好项。它是三类设置中唯一**不过管理员门**的一类:普通账户即可修改自己的偏好,改动不影响任何其他人。协议消息 `get_personalized_settings` / `save_personalized_settings` / `personalized_settings`。
 
 配置持久化路径与组级共享上下文见 [settings 组概览](../settings-overview.md)。
 

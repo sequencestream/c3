@@ -36,7 +36,8 @@ do `pnpm allcheck` at the end of an edit session.
 - web: Vue 3 frontend
 - web/PAGES.md: frontend page and component tree index, keep synchronized with code when change web structure
 - shared: protocol definitions, common code
-- shared/src/protocol.ts: WebSocket protocol definition source, include all ClientToServer/ServerToClient message types, data models, vendor-neutral abstract classes
+- shared/src/protocol.ts: WebSocket protocol entry — a barrel that re-exports `shared/src/protocol/` and is the ONLY place the `ClientToServer` / `ServerToClient` unions are assembled. Keep it a barrel: add a message by defining its payload in the owning domain module, then listing one arm here.
+- shared/src/protocol/: wire contract partitioned by domain (vendor, session, code, workspace, settings, auth, agent-config, consensus, skill, intent, discussion, automation). `<domain>.ts` holds the public data models (re-exported by the barrel); `<domain>-messages.ts` holds that domain's message payload types (internal to the partition — never re-exported, or the public surface would widen). Import path stays `@ccc/shared/protocol` / `@ccc/shared`; no subpath export exists.
 - scripts/e2e/e2e-guide.md: E2E tests, make sure e2e pass if relative paths are changed.
 - doc/: doc is the source of truth, keep synchronized with code, without ask. Read spec first then code for logics. Write Chinese doc.
 - doc/AGENTS.md: document constitution

@@ -60,7 +60,7 @@ c3 内部所有「跨特性的事情发生了」都走**同一条进程内总线
 
 ## 3. Topic 目录（当前全集）
 
-唯一定义源：`EventBusEvents`（`event-bus.ts`）。payload 中的领域类型定义在 `shared/src/protocol.ts`。
+唯一定义源：`EventBusEvents`（`event-bus.ts`）。payload 中的领域类型定义在 `shared/src/protocol/` 的对应领域模块（经 `shared/src/protocol.ts` barrel 导出）。
 
 | Topic                   | Payload（要点）                                                                                                   | 发布者                                              | 主要消费者                                                                                                                                                                                                                                                                         |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -75,7 +75,7 @@ c3 内部所有「跨特性的事情发生了」都走**同一条进程内总线
 | `discussion:lifecycle`  | `{ workspacePath } & DiscussionLifecycleEvent`（`phase, discussionId, title, discussionType, metadata, reason?`） | `startDiscussionRun`（正式编排边界，research 不发） | Automation 事件触发分发（相位已迁入 `discussion:<phase>` type，`end` 的 reason 落到 status）                                                                                                                                                                                       |
 | `event`                 | `GenericEventEnvelope = { workspacePath, sessionId, event: GenericEvent }`                                        | **模型经 `publish_event` 工具** + c3 自建 PR        | 消费者按 `event.type` 判别。当前 `type='pr:operation'` 有两个独立消费者:①Automation 事件触发分发(判别 PR type 后从 `metadata.operation`+`status` 投影,按 `operation`+`result` 过滤);②intent-domain PR 状态复位(`pr:update`/success 把 rejected/failed/closed 意图复位为 reviewing) |
 
-枚举常量（`shared/src/protocol.ts`，均为 `as const` 数组派生联合）：
+枚举常量（均为 `as const` 数组派生联合）——`SessionKind` / `RunKind` 在 `shared/src/protocol/session.ts`，`RunEndReason` 在 `shared/src/protocol/automation.ts`，`PR_OPERATIONS` / `INTENT_LIFECYCLE_PHASES` / `DISCUSSION_LIFECYCLE_PHASES` 在 `shared/src/event-model.ts`：
 
 - `SessionKind = work | intent | discussion | automation | consensus | tool | spec`
   ——run 的**业务场景**分类（业务来源判断走它）。**注意 `automation` 是「触发源」不是「run 类型」**：被 automation 触发的目标用户 run 仍是 `work` kind，`automation` 只标记 scheduler 自己那个无 socket 的 run。事件触发的 Automation 因此只在 `sessionKind === 'work'` 上 fire。原 `RunKind` 的 7 个业务值于 2026-06-26 整体迁入此处（`'session' → 'work'`）。
@@ -220,7 +220,7 @@ eventBus.publish('event', GenericEventEnvelope)   // 单一 envelope，不再还
 
 ## 7. Automation 事件触发：多行通用过滤器（eventFilters[]）
 
-Automation 既能 cron 定时，也能**订阅事件被动触发**。触发条件收敛为一个面向通用事件的过滤契约 `GenericEventFilter`（`shared/src/protocol.ts`，归一化在 `shared/src/event-filter-model.ts`），不再由 topic 决定读取 reason/PR/intent 专属字段：
+Automation 既能 cron 定时，也能**订阅事件被动触发**。触发条件收敛为一个面向通用事件的过滤契约 `GenericEventFilter`（`shared/src/protocol/automation.ts`，归一化在 `shared/src/event-filter-model.ts`），不再由 topic 决定读取 reason/PR/intent 专属字段：
 
 ```ts
 GenericEventFilter = {
@@ -290,7 +290,7 @@ dispatchAndTrack(automation) ─► 发 run:started(kind=automation) → 执行�
 
 「一行 topic + 一处 publish + 按需订阅」，已有订阅者零改动：
 
-1. 在 `EventBusEvents`（`event-bus.ts`）加一行 `'<group>:<verb>': { ...payload }`；payload 里的领域类型放 `shared/src/protocol.ts`；
+1. 在 `EventBusEvents`（`event-bus.ts`）加一行 `'<group>:<verb>': { ...payload }`；payload 里的领域类型放 `shared/src/protocol/` 下对应的领域模块；
 2. 在生产侧某处 `eventBus.publish('<group>:<verb>', payload)`；
 3. 需要反应的消费者在组合根 `subscribe`（常驻订阅，匹配靠事件内 id 查 domain 状态、不匹配 no-op）。
 
@@ -331,22 +331,22 @@ dispatchAndTrack(automation) ─► 发 run:started(kind=automation) → 执行�
 
 ## 11. 关键文件索引
 
-| 关注点                                        | 文件                                                                                                                                                                                  |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 总线核 + topic map                            | `server/src/kernel/events/event-bus.ts`（`event-bus.test.ts`）                                                                                                                        |
-| 通用事件契约 + 校验                           | `shared/src/event-model.ts`（`GenericEvent`/`GenericEventEnvelope`）、`server/src/kernel/events/generic-event-validate.ts`（`validateGenericEvent`）                                  |
-| 归一化器注册表(通用发布层)                    | `server/src/kernel/events/generic-event.ts`（`generic-event.test.ts`）                                                                                                                |
-| 总线挂上下文                                  | `server/src/kernel/types.ts`（`KernelContext.eventBus`）                                                                                                                              |
-| run/agent 事件发布                            | `server/src/kernel/run/run-lifecycle.ts`、`run-via-driver.ts`、`agent-events.ts`                                                                                                      |
-| intent 事件发布                               | `server/src/features/intents/lifecycle-events.ts`                                                                                                                                     |
-| discussion 生命周期事件发布                   | `server/src/wiring/discussion-runs.ts`（`startDiscussionRun` 的 start/settle 唯一边界；metadata 由 `features/discussions/tool-defs.ts` 的 `start_discussion` 写入 store）             |
-| `publish_event` 通用工具核                    | `server/src/features/events/tool-defs.ts`（schema/描述/`runPublishEvent`）                                                                                                            |
-| PR 归一化器(6 type + 别名) + 消费侧投影       | `server/src/features/pr-events/tool-defs.ts`（`normalizePrGenericEvent`/`projectPrOperationEvent`/`runServerSidePrCreate`/`PR_EVENT_TYPES`/`PR_LEGACY_EVENT_TYPE`）                   |
-| `publish_event` 回环 HTTP MCP（Claude+Codex） | `server/src/transport/event-mcp/index.ts`；Claude 边界转译：`server/src/kernel/agent/adapters/claude/mcp.ts`（`remoteMcpToClaudeConfig`）                                             |
-| 常驻 domain 订阅（含 PR 复位）                | `server/src/wiring/run-domain-subscriptions.ts`、`features/intents/pr-update-consumer.ts`                                                                                             |
-| Automation 事件桥 + 分发/过滤                 | `server/src/wiring/scheduler-startup.ts`、`server/src/features/automations/scheduler.ts`                                                                                              |
-| 组合根（构建总线 + 注入 sink）                | `server/src/server.ts`                                                                                                                                                                |
-| 协议类型唯一定义源                            | `shared/src/protocol.ts`（topic/枚举/payload/filter/`Automation`）、`shared/src/event-catalog.ts`（`EVENT_CATALOG`）、`server/src/kernel/events/event-match.ts`（`eventTypeMatches`） |
+| 关注点                                        | 文件                                                                                                                                                                                                                                |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 总线核 + topic map                            | `server/src/kernel/events/event-bus.ts`（`event-bus.test.ts`）                                                                                                                                                                      |
+| 通用事件契约 + 校验                           | `shared/src/event-model.ts`（`GenericEvent`/`GenericEventEnvelope`）、`server/src/kernel/events/generic-event-validate.ts`（`validateGenericEvent`）                                                                                |
+| 归一化器注册表(通用发布层)                    | `server/src/kernel/events/generic-event.ts`（`generic-event.test.ts`）                                                                                                                                                              |
+| 总线挂上下文                                  | `server/src/kernel/types.ts`（`KernelContext.eventBus`）                                                                                                                                                                            |
+| run/agent 事件发布                            | `server/src/kernel/run/run-lifecycle.ts`、`run-via-driver.ts`、`agent-events.ts`                                                                                                                                                    |
+| intent 事件发布                               | `server/src/features/intents/lifecycle-events.ts`                                                                                                                                                                                   |
+| discussion 生命周期事件发布                   | `server/src/wiring/discussion-runs.ts`（`startDiscussionRun` 的 start/settle 唯一边界；metadata 由 `features/discussions/tool-defs.ts` 的 `start_discussion` 写入 store）                                                           |
+| `publish_event` 通用工具核                    | `server/src/features/events/tool-defs.ts`（schema/描述/`runPublishEvent`）                                                                                                                                                          |
+| PR 归一化器(6 type + 别名) + 消费侧投影       | `server/src/features/pr-events/tool-defs.ts`（`normalizePrGenericEvent`/`projectPrOperationEvent`/`runServerSidePrCreate`/`PR_EVENT_TYPES`/`PR_LEGACY_EVENT_TYPE`）                                                                 |
+| `publish_event` 回环 HTTP MCP（Claude+Codex） | `server/src/transport/event-mcp/index.ts`；Claude 边界转译：`server/src/kernel/agent/adapters/claude/mcp.ts`（`remoteMcpToClaudeConfig`）                                                                                           |
+| 常驻 domain 订阅（含 PR 复位）                | `server/src/wiring/run-domain-subscriptions.ts`、`features/intents/pr-update-consumer.ts`                                                                                                                                           |
+| Automation 事件桥 + 分发/过滤                 | `server/src/wiring/scheduler-startup.ts`、`server/src/features/automations/scheduler.ts`                                                                                                                                            |
+| 组合根（构建总线 + 注入 sink）                | `server/src/server.ts`                                                                                                                                                                                                              |
+| 协议类型唯一定义源                            | `shared/src/protocol/automation.ts`（枚举/payload/filter/`Automation`，经 `shared/src/protocol.ts` barrel 导出）、`shared/src/event-catalog.ts`（`EVENT_CATALOG`）、`server/src/kernel/events/event-match.ts`（`eventTypeMatches`） |
 
 ## 12. 关联文档
 

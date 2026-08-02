@@ -44,10 +44,11 @@
 ## 规格驱动开发 `sddEnabled`
 
 - **`sddEnabled`** — 本工作区规格驱动开发(SDD)总开关,缺省开。开启时,SDD 规格质量门与人工批准检查点在开发编码前生效。仅显式布尔 `false` 关闭;缺失/非布尔规范化为 `true`。
+- **`specMachineApprovalEnabled`(机器批准,显式 opt-in)** — 仅在 `sddEnabled` 开启时展示的显式授权开关,**缺省关闭**。开启后,审核结论为 `pass` 的规格由队列以机器身份(保留常量 `c3:machine-spec-approver`,不冒充任何登录 subject)自动跨过人工批准检查点;关闭时仍停留在人工批准检查点。规范化严格 opt-in:仅显式布尔 `true` 读作开启并写入该工作区的 `projectConfigs`,缺失 / `false` / 非布尔一律读作关闭且**不落该键**,故既有工作区升级后不会静默获得机器批准。**关闭开关只影响此后的机器批准判断,不撤销任何已批准的规格**(撤销须经批准领域能力的撤销路径)。行为与可撤销语义见 [ADR-0032](../../../architecture/adr/0032-machine-spec-approval-opt-in.md)。
 - **Spec 目录(只读、集中、固定)** — SDD 规范文档根目录**不是可配置项**,被**固定**为按项目隔离的集中位置 `<c3 home>/doc/<项目路径段>`(命名范式与 worktree 集中目录同源),由服务端从**归属工作区路径**确定性解析,故同一项目的所有 worktree 共享同一份规范集合。工作区配置**仅只读展示**该解析目录(随工作区设置回复下发),界面与协议均**无法修改**:任何客户端提交的规范目录入参都被忽略,不写入、不改变解析结果(「服务端为准」)。规范文档**不提交 Git**,依赖本机 `<c3 home>`。
   > 边界:不迁移、不读取、不识别历史的工作区内 `.doc` 规范文档(集中目录仅承载启用后的新规范)。
 
-`sddEnabled` 存于按工作区的 `projectConfigs` 映射,由 `normalizeWorkspaceSetting` 回填默认;不存在持久化的规范目录字段。
+`sddEnabled` 存于按工作区的 `projectConfigs` 映射,由 `normalizeWorkspaceSetting` 回填默认;不存在持久化的规范目录字段。`specMachineApprovalEnabled` 同存于该映射,由 `normalizeWorkspaceSetting` 按「仅 `true` 落键」重建:规范化返回值在开启时携带该键,保存其他工作区字段时原样保留,经「保存—落盘—重新加载」往返仍为 `true`;关闭时省略该键。
 
 ## 外部技能仓库 `skillRepos`
 

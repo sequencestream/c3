@@ -110,7 +110,7 @@ function errMsg(err: unknown): string {
 }
 
 /**
- * The concurrency gate (RM-A12), evaluated here rather than only inside the
+ * The concurrency gate, evaluated here rather than only inside the
  * queue kernel's scheduling loop. Every caller that starts or continues a work
  * turn goes through this function, so the manual `start_development` button and
  * the automation `start_session_for_intent` tool share ONE gate instead of two —
@@ -230,7 +230,7 @@ async function attachOrResumeWorkSession(
     }
   }
   // An unanswered AskUserQuestion is a human decision point: the continuation
-  // prompt must never stand in for the user's answer (RM-A11 / C-SEC-3).
+  // prompt must never stand in for the user's answer.
   const rt = getRuntime(sessionId)
   if (rt && hasPendingQuestion(rt.buffer)) {
     return { success: false, code: 'intent.pendingQuestionUnanswered' }
@@ -287,7 +287,7 @@ async function attachOrResumeWorkSession(
  *   3. `todo`, or `in_progress` whose session is gone → **fresh** (the historic
  *      status gate plus the git branch strategy).
  *
- * Before any NEW turn — fresh or resumed — the concurrency gate (RM-A12) and
+ * Before any NEW turn — fresh or resumed — the concurrency gate and
  * then {@link checkWorkAdmission} (SDD approval + dependency) are evaluated
  * here, so the manual entry and the MCP entry share one gate chain and a resume
  * is admitted on today's facts rather than on the ones that admitted the
@@ -334,8 +334,8 @@ export async function launchWorkSession(
     return { success: false, code: 'intent.cannotStartDev', params: { status: req.status } }
   }
 
-  // RM-A12 — the concurrency gate, applied before a fresh turn for the same
-  // reason it applies before a resumed one.
+  // The concurrency gate, applied before a fresh turn for the same reason it
+  // applies before a resumed one.
   const blocking = findBlockingWorkSession(workspacePath, req.id)
   if (blocking) {
     releaseClaim()

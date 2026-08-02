@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import type { ServerToClient } from '@ccc/shared/protocol'
+import type { Intent, ServerToClient } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { ensureRuntime, getRuntime, removeRuntimesForWorkspace } from '../../runs.js'
 import type { SessionRuntime } from '../../runs.js'
@@ -29,9 +29,20 @@ import {
   resetStoreForTests,
   setBranchName,
   setLastWorkSession,
+  setSpecPath,
+  setSpecSessionId,
   updateIntentDeps,
   updateStatus,
 } from './store.js'
+import { pullCurrentBranch } from './worktree.js'
+
+// The pull keeps its REAL behaviour by default (a bare temp dir has no remote,
+// so it is a no-op); the spy exists only so one test can make it fail and prove
+// the spec gate treats that as a warning rather than a refusal.
+vi.mock('./worktree.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./worktree.js')>()
+  return { ...actual, pullCurrentBranch: vi.fn(actual.pullCurrentBranch) }
+})
 import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import { resetStoreForTests as resetSessionMetadata } from '../sessions/session-metadata-store.js'
 import {
@@ -429,7 +440,50 @@ describe('launchSpecSession', () => {
     expect(deps.launchRun).toHaveBeenCalledTimes(1)
   })
 
-  it('rejects a worktree dependency that is not merged', async () => {
+  it('reports the two spec launch stages in order on the way to a fresh session', async () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Staged spec', shortEnTitle: 'staged-spec', content: '', priority: 'P1' },
+    ])
+    const stages: string[] = []
+    asSuccess(await launchSpecSession(proj, intent.id, mockDeps(), (s) => stages.push(s)))
+    expect(stages).toEqual(['pulling-code', 'launching'])
+  })
+
+  it('still launches after a failed pull — the pull is best-effort, not a gate', async () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Pull fails', shortEnTitle: 'pull-fails', content: '', priority: 'P1' },
+    ])
+    vi.mocked(pullCurrentBranch).mockReturnValueOnce({
+      ok: false,
+      skipped: false,
+      message: 'diverged',
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const deps = mockDeps()
+    const stages: string[] = []
+
+    asSuccess(await launchSpecSession(proj, intent.id, deps, (s) => stages.push(s)))
+
+    expect(stages).toEqual(['pulling-code', 'launching'])
+    expect(deps.launchRun).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
+  it('never throws for expected validation failures', async () => {
+    const r = await launchSpecSession(proj, 'nope', mockDeps())
+    expect(r.success).toBe(false)
+  })
+})
+
+/**
+ * The dependency gate must land IDENTICALLY on all three spec-launch branches —
+ * first-time creation, re-authoring on an existing spec path, and resuming an
+ * existing authoring session. They used to share a copied helper; they now share
+ * the one gate, and this is what proves it. The blocking fact is the same in
+ * every case: a DONE dependency whose feature branch has no merged PR.
+ */
+describe('launchSpecSession dependency gate (all three branches)', () => {
+  function seedBlockedTarget(): { dep: Intent; target: Intent } {
     saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', defaultMainBranch: 'main' })
     const [dep, target] = insertIntents(proj, [
       { title: 'SpecDep', shortEnTitle: 'spec-dep', content: '', priority: 'P1' },
@@ -438,12 +492,57 @@ describe('launchSpecSession', () => {
     updateIntentDeps(target.id, [{ dependsOnId: dep.id, depType: 'blocks' }])
     updateStatus(dep.id, 'done', 'test')
     setBranchName(dep.id, 'feature/spec-dep')
-    const r = asError(await launchSpecSession(proj, target.id, mockDeps()))
-    expect(r.code).toBe('intent.dependencyNotMerged')
+    return { dep, target }
+  }
+
+  /** Every branch must refuse with the same code AND the same params. */
+  function expectBlocked(r: SessionLaunchResult, dep: Intent): void {
+    const err = asError(r)
+    expect(err.code).toBe('intent.dependencyNotMerged')
+    expect(err.params).toEqual({ title: dep.title, id: dep.id })
+  }
+
+  it('blocks the first-time branch before scaffolding a spec', async () => {
+    const { dep, target } = seedBlockedTarget()
+    const deps = mockDeps()
+    const stages: string[] = []
+
+    expectBlocked(await launchSpecSession(proj, target.id, deps, (s) => stages.push(s)), dep)
+
+    // Refused before any side effect: no spec scaffolded, no run, no progress.
+    expect(getIntent(target.id)?.specPath).toBeNull()
+    expect(deps.launchRun).not.toHaveBeenCalled()
+    expect(stages).toEqual([])
   })
 
-  it('never throws for expected validation failures', async () => {
-    const r = await launchSpecSession(proj, 'nope', mockDeps())
-    expect(r.success).toBe(false)
+  it('blocks the rework-on-existing-path branch without touching the reviewed spec', async () => {
+    const { dep, target } = seedBlockedTarget()
+    const specPath = join(dir, 'existing-spec.md')
+    setSpecPath(target.id, specPath)
+    const deps = mockDeps()
+
+    expectBlocked(
+      await launchSpecSession(proj, target.id, deps, undefined, null, {
+        reworkReason: 'please clarify the boundaries',
+        reworkRound: 1,
+      }),
+      dep,
+    )
+
+    // The document under review keeps its path and gains no new session.
+    expect(getIntent(target.id)?.specPath).toBe(specPath)
+    expect(getIntent(target.id)?.specSessionId).toBeNull()
+    expect(deps.launchRun).not.toHaveBeenCalled()
+  })
+
+  it('blocks the resume branch without re-launching the existing session', async () => {
+    const { dep, target } = seedBlockedTarget()
+    setSpecPath(target.id, join(dir, 'existing-spec.md'))
+    setSpecSessionId(target.id, 'spec-session-1')
+    const deps = mockDeps()
+
+    expectBlocked(await launchSpecSession(proj, target.id, deps), dep)
+
+    expect(deps.launchRun).not.toHaveBeenCalled()
   })
 })

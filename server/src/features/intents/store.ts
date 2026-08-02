@@ -703,6 +703,19 @@ export function insertIntents(
  * `dependsOnIndexes` resolves against the FULL batch, so a new item can depend (by index)
  * on an updated sibling and vice-versa.
  *
+ * An UPDATE whose `title` or `content` actually differs from the stored row is a NEW
+ * requirement, so the approval that was granted for the OLD text stops counting: the
+ * same statement clears `spec_approved` / `spec_approve_user` and vetoes the standing
+ * review conclusion (`spec_review_machine_blocked=1`). The veto is what makes this
+ * real — the spec FILE is untouched here, so its fingerprint still matches the stored
+ * `pass`, and a machine-approval workspace would otherwise approve the rewritten intent
+ * straight back on the next tick. Only a fresh conclusion (a rewritten spec) or a human
+ * approval lifts it. Approval revocation is audited with a `spec_unapproved` entry, and
+ * an already-unapproved intent produces no such entry. Metadata-only edits (priority,
+ * module, deps, shortEnTitle, back-link, `cancelled` reactivation) leave approval alone.
+ * The comparison is exact equality against the stored values — the caller cannot declare
+ * or skip it, and no attempt is made to judge two texts "equivalent".
+ *
  * `actor` feeds the lifecycle log (`intent_created` / `intent_updated` per item);
  * callers with no user context omit it and the entries land as `'system'`.
  */
@@ -752,9 +765,14 @@ export function upsertIntents(
         const status: IntentStatus =
           prior.status === 'cancelled' ? 'todo' : (prior.status as IntentStatus)
         const module = it.module !== undefined ? it.module : prior.module
+        // The requirement text itself changed → the old approval no longer applies.
+        const requirementChanged = it.title !== prior.title || it.content !== prior.content
+        const revokeApproval = requirementChanged
+          ? ', spec_approved=0, spec_approve_user=NULL, spec_review_machine_blocked=1'
+          : ''
         d.run(
           `UPDATE intents
-             SET title=?, short_en_title=?, content=?, priority=?, module=?, status=?, intent_session_id=COALESCE(?, intent_session_id), updated_at=?, completed_at=?
+             SET title=?, short_en_title=?, content=?, priority=?, module=?, status=?, intent_session_id=COALESCE(?, intent_session_id), updated_at=?, completed_at=?${revokeApproval}
            WHERE id=?`,
           it.title,
           truncateShortEnTitle(it.shortEnTitle),
@@ -767,6 +785,17 @@ export function upsertIntents(
           null,
           ids[i],
         )
+        // Audit the revocation in the SAME transaction as the rewrite, so a crash can
+        // never leave "new content + old approval" — or a revoked approval with no
+        // trace of why. Only an approval that actually existed is logged.
+        if (requirementChanged && prior.spec_approved === 1) {
+          safeInsertIntentLog(
+            ids[i],
+            'spec_unapproved',
+            '意图标题/正文被更新后撤销 spec 批准',
+            actor ?? 'system',
+          )
+        }
         if (depsSupplied) {
           d.run('DELETE FROM intent_deps WHERE intent_id=?', ids[i])
           for (const dep of deps[i]) {

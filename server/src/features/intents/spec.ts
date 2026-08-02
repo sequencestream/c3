@@ -20,11 +20,7 @@ import { dirname } from 'node:path'
 import { MACHINE_SPEC_APPROVER, PENDING_SESSION_PREFIX, type Intent } from '@ccc/shared/protocol'
 import { addViewer, ensureRuntime, isRunning, removeViewer } from '../../runs.js'
 import { pathToId, resolveWorkspaceRoot, touchWorkspace } from '../../state.js'
-import {
-  getDefaultMainBranch,
-  getDefaultMode,
-  getGitBranchMode,
-} from '../../kernel/config/index.js'
+import { getDefaultMode } from '../../kernel/config/index.js'
 import { isInside } from '../../kernel/permission/tools.js'
 import {
   resolveSessionVendor,
@@ -42,16 +38,13 @@ import {
   getIntent,
   isStoreAvailable,
   listIntentLogs,
-  listIntents,
   revokeSpecApproval,
   safeInsertIntentLog,
   setSpecApproved,
 } from './store.js'
 import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
-import { findDependencyBlockingMainline } from './dependency-gate.js'
-import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
-import { pullCurrentBranch } from './worktree.js'
+import { prepareSpecLaunch } from './dependency-gate.js'
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -80,40 +73,36 @@ function syncSpecPendingProjection(input: {
   }
 }
 
-function prepareSpecDependencyContext(
+/**
+ * WS adapter over the shared {@link prepareSpecLaunch} gate: run the one spec
+ * launch precondition, then translate its neutral outcome into this transport's
+ * shapes — `spec_launch_progress` frames while it proceeds, an
+ * `intent.dependencyNotMerged` error when it blocks. Returns whether the caller
+ * may continue. The RULE itself lives in `dependency-gate.ts`; only the framing
+ * is here.
+ */
+function runSpecLaunchGate(
   proj: string,
   intent: Intent,
   ctx: Pick<KernelContext, 'broadcastIntents'>,
-  conn: Parameters<Handler<'write_spec'>>[1],
+  conn: Parameters<Handler<'reset_spec_session'>>[1],
 ): boolean {
-  if (getGitBranchMode(proj) === 'worktree') {
-    const blocking = findDependencyBlockingMainline(
-      intent.dependsOn,
-      listIntents(proj),
-      getDefaultMainBranch(proj),
-    )
-    if (blocking) {
-      syncUnconfirmedDependencyPrsInBackground({
-        ctx,
-        workspacePath: proj,
-        dependsOn: intent.dependsOn,
-      })
-      conn.send({
-        type: 'error',
-        error: {
-          code: 'intent.dependencyNotMerged',
-          params: { title: blocking.title, id: blocking.id },
-        },
-      })
-      return false
-    }
+  const gate = prepareSpecLaunch({
+    workspacePath: proj,
+    intent,
+    broadcastIntents: ctx.broadcastIntents,
+    progress: (stage) => conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage }),
+  })
+  if (gate.blocked) {
+    conn.send({
+      type: 'error',
+      error: {
+        code: 'intent.dependencyNotMerged',
+        params: { title: gate.dependency.title, id: gate.dependency.id },
+      },
+    })
+    return false
   }
-  conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage: 'pulling-code' })
-  const pull = pullCurrentBranch(proj)
-  if (!pull.ok) {
-    console.warn(`[c3:intents] spec session pull failed; continuing: ${pull.message ?? 'unknown'}`)
-  }
-  conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage: 'launching' })
   return true
 }
 
@@ -446,7 +435,7 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
     return
   }
   const specAgent = resolveSpecAgent()
-  if (!prepareSpecDependencyContext(proj, intent, ctx, conn)) return
+  if (!runSpecLaunchGate(proj, intent, ctx, conn)) return
 
   // The reset prompt only references the spec PATH; the agent reads the file
   // itself, so the server no longer pre-reads it. We still resolve the absolute

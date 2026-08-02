@@ -29,8 +29,10 @@ import {
   getIntent,
   insertIntents,
   resetStoreForTests,
+  setBranchName,
   setSpecPath,
   updateIntentDeps,
+  updateStatus,
 } from './store.js'
 import {
   resetSettingsCacheForTests,
@@ -259,6 +261,42 @@ describe('resetSpecSessionHandler', () => {
     const { conn, sent } = fakeConn()
 
     resetSpecSessionHandler(ctx, conn, {
+      type: 'reset_spec_session',
+      workspaceId,
+      intentId: target.id,
+      userInput: 'x',
+    })
+
+    expect(sent).toEqual([
+      {
+        type: 'error',
+        error: {
+          code: 'intent.dependencyNotMerged',
+          params: { title: dependency.title, id: dependency.id },
+        },
+      },
+    ])
+    expect(conn.viewing).toBeNull()
+    expect(launchRun).not.toHaveBeenCalled()
+  })
+
+  // The same fact the launch service refuses on: the dependency is DONE, but its
+  // feature branch carries no merged PR. Manual and unattended entries share one
+  // gate, so this reproduces the service's refusal through the WS frame adapter.
+  it('blocks a done dependency whose feature branch PR is not merged', () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', defaultMainBranch: 'main' })
+    const [dependency, target] = insertIntents(proj, [
+      { title: 'Dependency', shortEnTitle: 'dep', content: '', priority: 'P1' },
+      { title: 'Spec me', shortEnTitle: 'spec', content: '', priority: 'P1' },
+    ])
+    setSpecPath(target.id, join(proj, 'existing-spec.md'))
+    updateIntentDeps(target.id, [{ dependsOnId: dependency.id, depType: 'blocks' }])
+    updateStatus(dependency.id, 'done', 'test')
+    setBranchName(dependency.id, 'feature/dep')
+    const launchRun = vi.fn()
+    const { conn, sent } = fakeConn()
+
+    resetSpecSessionHandler({ launchRun } as unknown as KernelContext, conn, {
       type: 'reset_spec_session',
       workspaceId,
       intentId: target.id,

@@ -22,8 +22,10 @@ import {
   getIntent,
   insertIntents,
   resetStoreForTests,
+  setBranchName,
   setSpecPath,
   updateIntentDeps,
+  updateStatus,
 } from './store.js'
 import { approveSpecHandler, buildSeedSpec, readSpecHandler } from './spec.js'
 import { getSpecsBase } from './specs-root.js'
@@ -142,6 +144,40 @@ describe('writeSpecHandler dependency context', () => {
         intentId: target.id,
       },
     )
+    expect(sent).toEqual([
+      {
+        type: 'error',
+        error: {
+          code: 'intent.dependencyNotMerged',
+          params: { title: dependency.title, id: dependency.id },
+        },
+      },
+    ])
+    expect(getIntent(target.id)?.specPath).toBeNull()
+    expect(launchRun).not.toHaveBeenCalled()
+  })
+
+  // The gate's canonical blocking fact, stated the same way the launch service
+  // states it: dependency DONE, feature branch, no merged PR. The manual entry
+  // and the unattended one now run one gate, so both must refuse identically.
+  it('blocks a done dependency whose feature branch PR is not merged', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', defaultMainBranch: 'main' })
+    const [dependency, target] = insertIntents(proj, [
+      { title: 'Dependency', shortEnTitle: 'dep', content: '', priority: 'P1' },
+      { title: 'Target', shortEnTitle: 'target', content: '', priority: 'P1', dependsOn: [] },
+    ])
+    updateIntentDeps(target.id, [{ dependsOnId: dependency.id, depType: 'blocks' }])
+    updateStatus(dependency.id, 'done', 'test')
+    setBranchName(dependency.id, 'feature/dep')
+    const launchRun = vi.fn()
+    const { conn, sent } = fakeConn()
+
+    await writeSpecHandler(
+      { launchRun, broadcastIntents: vi.fn() } as unknown as KernelContext,
+      conn,
+      { type: 'write_spec', workspaceId, intentId: target.id },
+    )
+
     expect(sent).toEqual([
       {
         type: 'error',

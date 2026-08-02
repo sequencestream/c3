@@ -3,6 +3,23 @@
 All notable changes to `c3` (Code Creative Center). The version source-of-truth is the git
 tag (`git describe --tags`); `package.json` is the fallback baseline.
 
+## v0.11.0
+
+### Security
+
+- intent store: a `save_intents` upsert that actually changes an intent's title or content now revokes the previously granted spec approval — clearing the approval and vetoing the standing machine-review conclusion — so an injection can no longer silently rewrite a queued intent's content and have it auto-executed under stale approval; the revocation is audited as a `spec_unapproved` lifecycle entry in the same transaction, while metadata-only edits leave approval untouched
+- session launcher: resuming a work session is now treated as a new admission and passes the same fail-closed gates as a fresh launch (SDD spec approval, unmerged dependencies in worktree mode), closing a resume branch that bypassed both gates
+
+### Refactoring
+
+- queue driver: split the monolithic `workflow.ts` into per-action-family executors (dev / spec / outcome actions, ledger, projection, shared action context), leaving the driver with only dispatch and lifecycle; each module ships with its own test suite
+- protocol: `protocol.ts` reorganized from a 4483-line single file into a domain-partitioned barrel under `shared/src/protocol/` (201 lines) with zero change to the public export surface
+- spec launch: the dependency gate converged into a single shared implementation
+
+### Dependencies
+
+- Claude Agent SDK 0.3.218 → 0.3.220
+
 ## v0.10.0
 
 ### New Features

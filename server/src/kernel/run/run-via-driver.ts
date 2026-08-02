@@ -33,6 +33,7 @@ import type {
 } from '../agent/adapters/types.js'
 import type { PermissionRequestCtx } from '../permission/gateway.js'
 import { MODE_CATALOGS, tokenToGrid } from '../agent/adapters/index.js'
+import { VENDOR_CAPABILITIES } from '../agent/adapters/capabilities.js'
 import { codexPolicyToGrid } from '../agent/adapters/codex/driver.js'
 import { resolveCodexGhTokenEnv } from '../agent/adapters/codex/gh-token.js'
 import { getSpecsBase, relayCodexHome } from '../config/workspace-path.js'
@@ -182,6 +183,17 @@ function errMsg(err: unknown): string {
  */
 const USER_INTERACTION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
 
+/**
+ * The tool gate a driver-path vendor must use when a session imposes its own grid
+ * (intent/spec). A vendor with no per-tool approval channel (codex, cursor) cannot
+ * honour `always-ask` — there is nothing to ask on — so it is forced to `never-ask`
+ * (its launch-time policy is the gate). Gating on the capability, not the vendor
+ * id, is what keeps a new no-approval vendor from deadlocking here.
+ */
+function forcedToolGate(vendor: VendorId): import('@ccc/shared/protocol').ToolGate {
+  return VENDOR_CAPABILITIES[vendor].perToolApproval ? 'always-ask' : 'never-ask'
+}
+
 /** Forced permission grid for intent comm sessions on the driver path. */
 export function intentDriverModeForVendor(vendor: VendorId): {
   actionMode: import('@ccc/shared/protocol').ActionMode
@@ -189,18 +201,18 @@ export function intentDriverModeForVendor(vendor: VendorId): {
 } {
   return {
     actionMode: 'plan',
-    toolGate: vendor === 'codex' ? 'never-ask' : 'always-ask',
+    toolGate: forcedToolGate(vendor),
   }
 }
 
-/** Forced permission grid for Codex spec-authoring sessions on the driver path. */
+/** Forced permission grid for spec-authoring sessions on the driver path. */
 export function specDriverModeForVendor(vendor: VendorId): {
   actionMode: import('@ccc/shared/protocol').ActionMode
   toolGate: import('@ccc/shared/protocol').ToolGate
 } {
   return {
     actionMode: 'build',
-    toolGate: vendor === 'codex' ? 'never-ask' : 'always-ask',
+    toolGate: forcedToolGate(vendor),
   }
 }
 

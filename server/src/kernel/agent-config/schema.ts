@@ -70,26 +70,51 @@ const codexAgentSchema = baseShellSchema.extend({
 })
 
 /**
+ * The `cursor` vendor's config sub-object — empty by construction. Cursor's login
+ * lives in its own CLI (and the OS keychain), and c3 has no relay speaking its
+ * protocol, so there is no provider triple to persist. `.strict()` makes that an
+ * enforced fact: a stored `baseUrl`/`apiKey` is rejected rather than silently
+ * ignored, which is what keeps "cursor is system-auth only" true on disk.
+ */
+export const cursorConfigSchema = z.object({}).strict()
+
+/**
+ * The `cursor` agent arm: public shell + `vendor: 'cursor'` + empty config.
+ *
+ * The arm keeps the shared shell's `configMode` type so it stays structurally
+ * assignable to the wire union. Cursor cannot consume an injected provider, so
+ * `custom` is meaningless for it; {@link parseAgentConfig} pins the field to
+ * `'system'` on the way in, which fixes a hand-edited settings file at the disk
+ * boundary rather than letting the run fail later with a confusing auth error.
+ */
+const cursorAgentSchema = baseShellSchema.extend({
+  vendor: z.literal('cursor'),
+  config: cursorConfigSchema,
+})
+
+/**
  * Per-vendor agent-arm schema registry — the **extension point**. A new vendor
  * registers its arm here (and in {@link agentConfigSchema} below). Partial over
  * {@link VendorId} on purpose: a vendor without an entry has no config shape yet
  * and cannot be persisted as an agent (it would have no adapter to run on).
- * `claude` and `codex` have real adapters.
+ * `claude`, `codex` and `cursor` have real adapters.
  */
 export const VENDOR_AGENT_SCHEMAS = {
   claude: claudeAgentSchema,
   codex: codexAgentSchema,
+  cursor: cursorAgentSchema,
 } satisfies Partial<Record<VendorId, z.ZodTypeAny>>
 
 /**
  * The full {@link AgentConfig} schema, routed by the `vendor` discriminant:
  * `safeParse` dispatches an object to its vendor's arm and rejects an unknown
- * vendor or a config that fails that arm. claude + codex arms; new
+ * vendor or a config that fails that arm. claude + codex + cursor arms; new
  * vendors append their arm.
  */
 export const agentConfigSchema = z.discriminatedUnion('vendor', [
   claudeAgentSchema,
   codexAgentSchema,
+  cursorAgentSchema,
 ])
 
 /**
@@ -99,7 +124,15 @@ export const agentConfigSchema = z.discriminatedUnion('vendor', [
  */
 export function parseAgentConfig(raw: unknown): AgentConfig | null {
   const result = agentConfigSchema.safeParse(raw)
-  return result.success ? result.data : null
+  if (!result.success) return null
+  const agent = result.data
+  // Cursor authenticates only through its own CLI login; there is no provider to
+  // inject and no relay that speaks its protocol, so `custom` cannot be honoured.
+  // Correcting it here keeps the invariant true for every downstream reader.
+  if (agent.vendor === 'cursor' && agent.configMode !== 'system') {
+    return { ...agent, configMode: 'system' }
+  }
+  return agent
 }
 
 // ---- Type pin: the zod schema's inferred type IS the wire `AgentConfig` ----

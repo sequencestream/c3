@@ -901,10 +901,12 @@ export async function validateLazy(input: {
   // Group rows by vendor so we do one native list per vendor.
   const byVendor = new Map<VendorId, RawRow[]>()
   for (const r of rows) {
-    if (r.vendor === 'codex') {
-      // Codex is explicitly skipped — its thread items are the canonical
-      // source, not the per-list re-read. A future lazy re-read for Codex
-      // can call the thread-items API; not in this cycle.
+    if (r.vendor === 'codex' || r.vendor === 'cursor') {
+      // Codex and Cursor are explicitly skipped — their native stores are opaque
+      // to c3 (codex thread items / cursor's private chat db are the canonical
+      // source, not a per-list re-read c3 can perform), so there is nothing to
+      // re-validate against and the row must not be ghosted for a missing native
+      // list. A future lazy re-read can call each vendor's own API; not in this cycle.
       skipped++
       continue
     }
@@ -1034,10 +1036,11 @@ export async function janitor(input: {
     buckets.set(key, b)
   }
   for (const b of buckets.values()) {
-    if (b.vendor === 'codex') {
-      // Codex rows are explicitly not janitored (the thread items are the
-      // canonical source; the janitor's native list wouldn't find them
-      // anyway — Codex is not enumerable per SR-R4).
+    if (b.vendor === 'codex' || b.vendor === 'cursor') {
+      // Codex and Cursor rows are explicitly not janitored — their native stores
+      // are opaque to c3, so the janitor's native list would not find them anyway
+      // and must not ghost them (codex is not enumerable per SR-R4; cursor's chat
+      // db is deliberately unread).
       observed += b.rowIds.length
       continue
     }

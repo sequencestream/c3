@@ -226,13 +226,13 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 
 ### 9.2 transcript store 定位:冻结 storeScope + vendor 中立数据根
 
-历史 session 展示会话记录一律从 vendor native store 读(c3 不另存):`features/sessions/history.ts` `loadHistoryForVendor` → codex 走 `CodexSessionStore.read`、claude 走 `loadHistory`。所有已持久化 transcript 的读取方共用它——交互式 `select_session` 与自动化执行详情(`get_execution_transcript`,按自动化冻结的 `vendor` 分派)——两条读路径不会对"会话在哪"产生分歧。sandbox 与宿主的 vendor 数据根不同(codex `CODEX_HOME`、claude `CLAUDE_CONFIG_DIR`),故 transcript 物理落在两地之一。三层机制:
+历史 session 展示会话记录从 vendor native store 读(c3 不另存;cursor 例外——其私有 store 不被回读,无私有 transcript 可回放):`features/sessions/history.ts` `loadHistoryForVendor` → codex 走 `CodexSessionStore.read`、claude 走 `loadHistory`、cursor 返回空记录。所有已持久化 transcript 的读取方共用它——交互式 `select_session` 与自动化执行详情(`get_execution_transcript`,按自动化冻结的 `vendor` 分派)——两条读路径不会对"会话在哪"产生分歧。sandbox 与宿主的 vendor 数据根不同(codex `CODEX_HOME`、claude `CLAUDE_CONFIG_DIR`),故 transcript 物理落在两地之一。三层机制:
 
 **① 读取端两处扫(dual-scan,兜底)**:`CodexSessionStore.list/read` 不再硬编码宿主 `~/.codex`,而按 `storeRoots` 扫描多个 CODEX_HOME 根;缺省即扫**宿主 `~/.codex` + 本工作区 sandbox home 两处**(`codexStoreRoots`),命中即算——按 `session id + cwd` 精确匹配,thread id 唯一不冲突。侧栏冷枚举/回填与存量 session 天然鲁棒。
 
 **② 冻结 `storeScope: 'host' | 'sandbox'`(治本,精确定位)**:session fact 在首次 bind 时冻结 `storeScope`(类比已冻结的 `vendor`),取值由该 run 是否 sandbox(`rt.sandboxPaths`)决定,写入 `SessionAgentFact`(state.json)。读取端 `loadHistoryForVendor` 按冻结 scope 取 `codexStoreRoots(cwd, scope)`——冻结根优先、另一根兜底。续接端(`run-via-driver`):**非 sandbox run 续接一个冻结为 sandbox 的 codex session** 时,把 `CODEX_HOME` 指向 sandbox home,使宿主进程也能找到 rollout(反向——host-frozen 在 sandbox 内续接——保持 wrapper 的 sandbox home,为可接受的取舍)。
 
-**③ vendor 中立"每 vendor sandbox 数据根"**:`resolveVendorStoreDir(vendor, workspace, scope)` 收敛两 vendor 的数据根解析(`workspace-path.ts`)。codex → `host` 用 `~/.codex`、`sandbox` 用隔离的 `relayCodexHome()`;claude → 两 scope 均为宿主 `hostClaudeConfigDir()`。`ResolvedSandboxPaths` 增 `claudeConfigDir`,wrapper 按策略挂载对应根(见 §9.1)。
+**③ vendor 中立"每 vendor sandbox 数据根"**:`resolveVendorStoreDir(vendor, workspace, scope)` 收敛各 vendor 的数据根解析(`workspace-path.ts`)。codex → `host` 用 `~/.codex`、`sandbox` 用隔离的 `relayCodexHome()`;claude → 两 scope 均为宿主 `hostClaudeConfigDir()`;cursor → 以 `~/.cursor` 为数据根(无数据根覆盖变量,经 `HOME` 重定位)。`ResolvedSandboxPaths` 增 `claudeConfigDir`,wrapper 按策略挂载对应根(见 §9.1)。
 
 **为何 claude 不需要按 scope 分支读取**:claude sandbox 复用宿主 config dir(见 §9.1 claude 策略),sandbox 写入即落在 server 读取端同一处,查看零改动即成立;故 `storeScope` 的读取分支实际只对 codex 生效,但模型保持 vendor 中立。
 
@@ -278,7 +278,7 @@ worktree 模式下源工作区只读：agent 可读取基线代码，但所有�
 
 **企业代理透传（已实现）**：宿主设有标准代理变量时，wrapper 追加 `--allow-proxy-env`（见 §9）。这不改变"网络全开"模型，也不引入 `--allow-host`——它解决的是 env deny-by-default 导致的**变量不可见**：宿主本身只能经企业代理连通 provider 时，沙箱内 CLI 若看不到 `HTTPS_PROXY` 就会直接连不上，该类工作区实质无法使用 sandbox。透传是零配置的：由变量存在性触发，不做逐变量白名单，也不脱敏值。
 
-c3 MCP 接入天然成立：沙箱内 vendor agent 需要调用 c3 自身的 MCP 工具（`publish_event`、`save_intents`、spec 查询、automation 等），两个 vendor 都通过宿主回环上的 c3 HTTP MCP 端点（`http://127.0.0.1:<port>/internal/...`）访问。agent 是宿主进程，`127.0.0.1` 就是宿主本机，直接够到该端点——不需要内部网络、转发 sidecar 或 URL 改写。回环纵深防御沿用现成的 `isLoopback` + per-run 不透明 token。
+c3 MCP 接入天然成立：沙箱内 vendor agent 需要调用 c3 自身的 MCP 工具（`publish_event`、`save_intents`、spec 查询、automation 等），三个 vendor 都通过宿主回环上的 c3 HTTP MCP 端点（`http://127.0.0.1:<port>/internal/...`）访问。agent 是宿主进程，`127.0.0.1` 就是宿主本机，直接够到该端点——不需要内部网络、转发 sidecar 或 URL 改写。回环纵深防御沿用现成的 `isLoopback` + per-run 不透明 token。
 
 后续阶段（非当前范围）可按平台收窄网络：
 

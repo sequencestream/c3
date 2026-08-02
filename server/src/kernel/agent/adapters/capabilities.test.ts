@@ -7,6 +7,7 @@
  * for Claude and false for every non-Claude vendor — and it must track the ledger
  * exactly (no hard-coded vendor list that could drift from the real capability).
  */
+import { VENDOR_IDS } from '@ccc/shared/protocol'
 import { describe, it, expect } from 'vitest'
 import type { CapabilityState, SessionCapabilities, VendorId } from '@ccc/shared/protocol'
 import { VENDOR_CAPABILITIES, canDeleteSession, canFormTeam } from './capabilities.js'
@@ -26,9 +27,10 @@ describe('canFormTeam — agent-teams are Claude-locked (streamingPush)', () => 
   })
 
   it('covers every vendor that has a capability ledger', () => {
-    // The map is total over the implemented vendors, so the gate never throws on a
-    // resolvable vendor.
-    expect(Object.keys(VENDOR_CAPABILITIES).sort()).toEqual(['claude', 'codex'])
+    // Total over the authoritative vendor list, so the gate never throws on a
+    // resolvable vendor. Derived from VENDOR_IDS rather than a literal list: a new
+    // vendor without a ledger fails here instead of silently reporting no abilities.
+    expect(Object.keys(VENDOR_CAPABILITIES).sort()).toEqual([...VENDOR_IDS].sort())
   })
 })
 
@@ -58,6 +60,9 @@ const OPS = ['list', 'read', 'resume', 'rename', 'delete'] as const
 const EXPECTED: Partial<Record<VendorId, SessionCapabilities>> = {
   claude: { list: 'full', read: 'full', resume: 'full', rename: 'full', delete: 'full' },
   codex: { list: 'full', read: 'full', resume: 'full', rename: 'none', delete: 'none' },
+  // Cursor resumes through its own native store, but list/read are served from
+  // c3's mirror of what it observed — real, yet narrower than the vendor's truth.
+  cursor: { list: 'partial', read: 'partial', resume: 'full', rename: 'none', delete: 'none' },
 }
 
 describe('structured session-capability ledger', () => {

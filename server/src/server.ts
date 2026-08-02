@@ -6,6 +6,7 @@
  * helper closures have been pushed into `wiring/`; all domain logic lives in
  * `kernel/`. The `KernelContext` shape is unchanged.
  */
+import { homedir } from 'node:os'
 import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
@@ -104,6 +105,7 @@ import {
   resolve as resolveVendorCli,
 } from './kernel/agent/process/launcher.js'
 import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
+import { createCursorAdapter } from './kernel/agent/adapters/cursor/index.js'
 import { createClaudeAdapter } from './kernel/agent/adapters/claude/index.js'
 import {
   createRelay,
@@ -313,6 +315,27 @@ export async function startServer(opts: ServerOptions): Promise<void> {
       console.log('[c3] codex ready (per-run CLI)')
     } catch (e) {
       console.warn(`[c3] codex unavailable: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  // Cursor: an externally installed CLI (c3 never downloads it), so the probe is
+  // both a presence and a version-compatibility gate — an incompatible binary
+  // resolves to null and the cursor agent type is simply unavailable, rather than
+  // failing deep inside a run against an unverified stream format.
+  let cursorAdapter: VendorAdapter | null = null
+  if (resolveVendorCli('cursor')) {
+    try {
+      cursorAdapter = createCursorAdapter({
+        resolveConfig: (startOpts) => ({
+          command: startOpts.sandboxWrapperPath ?? resolveVendorCli('cursor') ?? 'cursor-agent',
+          // Cursor's data root is fixed at `$HOME/.cursor` (the sandbox mounts the
+          // host copy), so MCP injection/self-check target the host HOME.
+          home: homedir(),
+        }),
+      })
+      console.log('[c3] cursor ready (per-run CLI)')
+    } catch (e) {
+      console.warn(`[c3] cursor unavailable: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
 
@@ -564,9 +587,19 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     sessionProfile: () => ({
       bindMcp: (binding) => eventMcp.bind(binding),
     }),
-    // The neutral Codex adapter, or null when its host CLI is missing (launchRun
-    // forks to the driver path for codex sessions; 2026-06-06-007).
-    getCodexAdapter: () => codexAdapter,
+    // The neutral adapter for a driver-path vendor, or null when its host CLI is
+    // missing (launchRun forks to the driver path for every non-claude vendor).
+    getDriverAdapter: (vendor) => {
+      switch (vendor) {
+        case 'codex':
+          return codexAdapter ?? null
+        case 'cursor':
+          return cursorAdapter ?? null
+        case 'claude':
+          // Claude runs on its own SDK loop, not the driver path.
+          return null
+      }
+    },
     // Supply-chain write-guard probe (ADR-0017 D5, 2026-06-12): external skills are
     // installed explicitly from the settings panel (`install_skill`), NOT mounted
     // here. Launch only reads whether any configured skill is already installed (a

@@ -65,6 +65,9 @@
       "auto": {
         "label": "Авто"
       },
+      "agent": {
+        "label": "Агент"
+      },
       "plan": {
         "label": "План"
       },
@@ -1910,7 +1913,8 @@
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the automation vendor."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor.",
+      "vendorUnsupported": "Этот вендор не поддерживает выполнение автоматизаций."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Хранилище Wait-User-Involve недоступно (c3.db).",
@@ -2173,6 +2177,9 @@
         },
         "codex": {
           "label": "Codex"
+        },
+        "cursor": {
+          "label": "Cursor"
         }
       }
     },

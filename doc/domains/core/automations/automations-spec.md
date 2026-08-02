@@ -502,7 +502,7 @@ discussion。它们**只**注册在自动化的 c3 MCP 服务器上(永远不会
 Automation 保留其 vendor 作为稳定的工具清单、策略与适配器路由范围;
 被选中的 Agent 必须属于该 vendor。一个缺失、被禁用或 vendor 不匹配的 Agent 会使
 该次执行失败,并且永远不会回退到另一个 Agent 或 vendor。每个 vendor 都经由自己的
-adapter 路径运行。
+adapter 路径运行;cursor 例外——它没有自动化执行路径,选中 cursor vendor 的自动化在分派时硬失败,不回退到其他 vendor。
 
 ### c3 MCP 传输方式(厂商统一)
 

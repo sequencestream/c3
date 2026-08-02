@@ -12,6 +12,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import type { AgentConfig, VendorHostStatus, VendorId } from '@ccc/shared/protocol'
+import { VENDOR_IDS } from '@ccc/shared/protocol'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 import { groupAgentsOfVendor } from '@/lib/group-agents'
 import { useTypedI18n } from '@/i18n'
@@ -34,7 +35,10 @@ const emit = defineEmits<{
 }>()
 
 // Stable vendor order so the dropdown is deterministic regardless of agent order.
-const VENDOR_ORDER: VendorId[] = ['claude', 'codex']
+// Display order for the vendor pickers. Derived from the shared vendor list so a
+// newly registered vendor appears here automatically instead of being silently
+// absent from the UI.
+const VENDOR_ORDER: readonly VendorId[] = VENDOR_IDS
 
 // '' = Auto (inherit defaultAgentId); otherwise the chosen vendor.
 const vendor = ref<'' | VendorId>('')

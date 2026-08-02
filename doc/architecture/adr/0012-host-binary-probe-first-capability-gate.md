@@ -18,6 +18,9 @@ c3 拥有默认厂商 CLI 来源。启动器按以下固定顺序解析每个厂
 2. `~/.c3/vendor/<vendor>/<version>/bin/<binary>` 下 c3 托管的 CLI；
 3. 降级的宿主 `PATH` 回退。
 
+并非每个厂商都走托管安装:`cursor-agent` 是外部提供的二进制(由宿主/用户自行安装),c3 直接在
+`PATH` 上解析它(或一个沙箱 wrapper),不经 npm packument 托管安装、无 `~/.c3/vendor` 受管版本。
+
 一个无效的显式覆盖项对该厂商而言是硬性的解析失败。它不会被静默绕过，因为操作者提供的
 路径是有意为之的配置。
 
@@ -42,7 +45,7 @@ registry 的快慢无关。每个厂商各自遵守 24 小时远端检查冷却�
   在同步落盘之前，当前进程沿用刷新前的解析结果；
 - 环境变量覆盖项对开发、调试与企业锁定版本仍然有用；
 - c3 现在拥有 npm 包下载、完整性校验、原子替换、平台标签与版本兼容策略；
-- c3 不修改用户 PATH、shell 配置文件、Homebrew/npm 全局安装、或 Claude/Codex 凭据。
+- c3 不修改用户 PATH、shell 配置文件、Homebrew/npm 全局安装、或 Claude/Codex/Cursor 凭据。
 
 ## Compliance
 

@@ -373,12 +373,22 @@ watch(
 const VENDORS: VendorId[] = ['claude', 'codex']
 const CONFIG_MODES = ['system', 'custom'] as const
 
+/**
+ * Which config modes a vendor offers. Cursor is fixed at `system` — it
+ * authenticates through its own CLI login and has no relay, so `custom` (which
+ * injects a provider triple) has nothing to inject. Offering it would be a lie.
+ */
+function configModesFor(vendor: VendorId): readonly ('system' | 'custom')[] {
+  return vendor === 'cursor' ? ['system'] : CONFIG_MODES
+}
+
 // Vendor display names are product identifiers (do-not-translate, see
 // specs/style/i18n-terms.md) rendered as bound data — same exemption pattern as
 // UI_LANG_LABELS — so they don't go through `t`.
 const VENDOR_LABELS: Record<VendorId, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
+  cursor: 'Cursor',
 }
 
 // configMode is a c3 concept, so it IS localized.
@@ -413,6 +423,10 @@ function makeAgent(
       // `wireApi` — the upstream protocol the driver routes on (2026-06-12-006).
       // Default `chat` (most third parties are Chat-Completions-only ⇒ relay).
       return { ...base, vendor, config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' } }
+    case 'cursor':
+      // Cursor authenticates through its own CLI login and has no relay, so it is
+      // always `system` with an empty config — there is no provider triple to set.
+      return { ...base, vendor, configMode: 'system', config: {} }
   }
 }
 
@@ -926,7 +940,7 @@ function selectAdmin(username: string) {
                 :title="t('settings.agents.configMode.tooltip')"
                 data-testid="agent-configmode"
               >
-                <option v-for="m in CONFIG_MODES" :key="m" :value="m">
+                <option v-for="m in configModesFor(a.vendor)" :key="m" :value="m">
                   {{ configModeLabel(m) }}
                 </option>
               </select>

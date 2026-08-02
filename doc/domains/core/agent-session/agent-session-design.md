@@ -33,14 +33,14 @@ sessions)。运行的 send callback 把每个事件都路由到 runtime 的 buff
 
 ### 远程 MCP(回环 HTTP,厂商统一,2026-06-12-005)
 
-c3 自己的 MCP 工具面对**两个厂商**都走**同一条回环 streamable-HTTP MCP 路由**:一个中立的
+c3 自己的 MCP 工具面对**三个厂商**都走**同一条回环 streamable-HTTP MCP 路由**:一个中立的
 `bindMcp(binding) -> { servers, dispose }` 绑定为每次运行/每次执行铸造中立的远程 MCP
 描述符(以名称标识的 HTTP 服务器,带 URL 和可选的 bearer-token 环境变量),并交由厂商边界
 转译为各自原生的配置——codex driver 写入 codex CLI 的 `codex mcp add --url` 形式所产生的
 streamable-HTTP 服务器条目;Claude 边界的一个小转换器把同一批中立描述符翻译成 Claude SDK
-的 HTTP MCP 配置(`{ type: 'http', url, alwaysLoad: true }`)。Claude SDK 仍**具备**托管进程内
+的 HTTP MCP 配置(`{ type: 'http', url, alwaysLoad: true }`);cursor 边界把同一批描述符写入其 on-disk `mcpServers` 配置(一个外部 HTTP 服务器)。Claude SDK 仍**具备**托管进程内
 MCP 的能力(`AdapterCapabilities.inProcessMcp` 保留为一个潜在能力),但 c3 自己的工具面
-不再使用它。c3 目前的生产者是 intent comm-agent:两个厂商路径都绑定一个每次运行的回环
+不再使用它。c3 目前的生产者是 intent comm-agent:三个厂商路径都绑定一个每次运行的回环
 HTTP MCP 路由,携带三个 intent 工具(见
 [intent-management design § Intent tools over localhost HTTP MCP](../intent-management/intent-management-design.md))。
 每次绑定都在 c3 回环 origin 上铸造一个不透明 token,受回环守卫(非回环对端 403)与
@@ -49,9 +49,9 @@ Codex 是由 c3 自身极简的 `codex exec --experimental-json` 包装器启动
 `@openai/codex-sdk` 运行时包装器;该 SDK 包在 Codex adapter 内部仅作为
 事件/类型参考保留。
 
-**回环代理旁路(两个厂商)。** 每个 vendor 子进程的环境都以 `NO_PROXY` / `no_proxy`
+**回环代理旁路(三个厂商)。** 每个 vendor 子进程的环境都以 `NO_PROXY` / `no_proxy`
 追加 `127.0.0.1,localhost,::1` 收尾——claude 路径在 `buildChildEnv` 中,codex 路径在其
-driver 的 env 构造中,两者共用同一个幂等的追加函数,宿主已配置的旁路条目只增不减。
+driver 的 env 构造中(两者共用同一个幂等追加函数),cursor 路径在其 launch env 构造中做等价的幂等追加,宿主已配置的旁路条目只增不减。
 c3 提供给子进程的一切(四条 MCP 路由与 provider relay)都在 c3 自己的回环 origin 上,
 而宿主导出 `HTTP(S)_PROXY` 却未设旁路时,vendor CLI 会把这些回环请求发给代理并收到
 502/空响应。**其失败模式是静默的**:MCP 服务器连接不上,该服务器的工具就整体缺席于

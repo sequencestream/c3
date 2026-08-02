@@ -65,6 +65,9 @@
       "auto": {
         "label": "자동"
       },
+      "agent": {
+        "label": "에이전트"
+      },
       "plan": {
         "label": "계획"
       },
@@ -1910,7 +1913,8 @@
       "agentRequired": "Select an execution agent.",
       "agentNotFound": "The selected execution agent no longer exists.",
       "agentDisabled": "The selected execution agent is disabled.",
-      "agentVendorMismatch": "The selected agent does not match the automation vendor."
+      "agentVendorMismatch": "The selected agent does not match the automation vendor.",
+      "vendorUnsupported": "이 벤더는 자동화 실행을 지원하지 않습니다."
     },
     "waitUserInvolve": {
       "dbUnavailable": "Wait-User-Involve 저장소를 사용할 수 없습니다 (c3.db).",
@@ -2173,6 +2177,9 @@
         },
         "codex": {
           "label": "Codex"
+        },
+        "cursor": {
+          "label": "Cursor"
         }
       }
     },

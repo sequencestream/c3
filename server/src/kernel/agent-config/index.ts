@@ -239,6 +239,11 @@ export function resolveSpecReviewAgent(): AgentConfig {
  */
 function agentToRelayCandidate(agent: AgentConfig): RelayCandidate | null {
   if (agent.configMode !== 'custom') return null
+  // Cursor has no relay: c3 speaks neither its wire protocol nor its auth, and
+  // its config carries no provider triple. Refusing here is what stops a
+  // mis-tagged agent from being handed the Anthropic relay by the endpoint
+  // default and failing with an unrelated error.
+  if (agent.vendor === 'cursor') return null
   const { baseUrl, apiKey, model } = agent.config
   if (!baseUrl) return null
   return agent.vendor === 'codex'

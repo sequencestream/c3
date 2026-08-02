@@ -94,7 +94,7 @@ function deps(over: Partial<LaunchRunDeps> = {}): LaunchRunDeps {
     sessionProfile: vi.fn(() => ({
       bindMcp: vi.fn(),
     })) as unknown as LaunchRunDeps['sessionProfile'],
-    getCodexAdapter: () => ({}) as never,
+    getDriverAdapter: () => ({}) as never,
     ...over,
   }
 }

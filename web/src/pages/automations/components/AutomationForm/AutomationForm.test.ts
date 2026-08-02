@@ -26,6 +26,13 @@ const HOST_PRESENT: VendorHostStatus[] = [
     path: '/usr/local/bin/codex',
     installHint: '',
   },
+  {
+    vendor: 'cursor',
+    present: true,
+    binary: 'cursor-agent',
+    path: '/usr/local/bin/cursor-agent',
+    installHint: '',
+  },
 ]
 
 const READ_TOOLS: ToolManifestEntry[] = [
@@ -690,14 +697,15 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
   // ---- Vendors -------------------------------------------------------------
 
-  it('渲染 vendor 下拉选择器,两个品牌均可见', () => {
+  it('渲染 vendor 下拉选择器,三个品牌均可见', () => {
     const w = mountForm()
     const select = w.find('select.sf-select')
     expect(select.exists()).toBe(true)
     const opts = select.findAll('option')
-    expect(opts).toHaveLength(2)
+    expect(opts).toHaveLength(3)
     expect(opts[0].text()).toBe('Claude')
     expect(opts[1].text()).toBe('Codex')
+    expect(opts[2].text()).toBe('Cursor')
   })
 
   it('host 缺失的 vendor 选项 disabled, host 存在的不 disabled', () => {
@@ -707,6 +715,8 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(opts[0].attributes('disabled')).toBeUndefined()
     // codex present → enabled
     expect(opts[1].attributes('disabled')).toBeUndefined()
+    // cursor present → enabled
+    expect(opts[2].attributes('disabled')).toBeUndefined()
   })
 
   it('create payload 默认 vendor=claude,含 toolAllowlist', async () => {

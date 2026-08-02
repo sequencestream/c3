@@ -172,16 +172,33 @@ export interface CodexAgentConfig {
 }
 
 /**
+ * The `cursor` vendor's config sub-object — deliberately empty.
+ *
+ * Cursor authenticates through its own CLI login (the credential lives in the OS
+ * keychain, not in anything c3 could inject), and c3 has no relay that speaks
+ * Cursor's protocol. There is therefore no provider triple to override: a Cursor
+ * agent is always `configMode: 'system'`, and the empty shape is what makes that
+ * a type-level fact instead of a runtime convention. A `baseUrl`/`apiKey` field
+ * here would advertise a capability that does not exist.
+ */
+export type CursorAgentConfig = Record<string, never>
+
+/**
  * One agent profile under the system-config module: a vendor-agnostic public
  * shell ({@link AgentConfigBase}) plus a `vendor`-discriminated `config`
  * sub-object. A session launches the agent's vendor CLI using its agent (or the
  * default agent when unassigned), routing the `config` per its `vendor` tag.
  *
  * `claude` (ADR-0011 reference) and `codex` (read-only advisor seat, Phase 0
- * 008 NO-GO, 2026-06-06-005) have real adapters and config shapes. The runtime
+ * 008 NO-GO, 2026-06-06-005) have real adapters and config shapes; `cursor`
+ * drives its CLI with no provider override at all. The runtime
  * validation/routing lives server-side in `kernel/agent-config/schema.ts` (zod
  * stays out of this zero-runtime, SDK-free wire module — ADR-0009); a type-level
  * assertion there pins the zod schema to this union so the two cannot drift.
  */
 export type AgentConfig = AgentConfigBase &
-  ({ vendor: 'claude'; config: ClaudeAgentConfig } | { vendor: 'codex'; config: CodexAgentConfig })
+  (
+    | { vendor: 'claude'; config: ClaudeAgentConfig }
+    | { vendor: 'codex'; config: CodexAgentConfig }
+    | { vendor: 'cursor'; config: CursorAgentConfig }
+  )

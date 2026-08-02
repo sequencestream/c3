@@ -19,20 +19,29 @@ export async function loadHistoryForVendor(
   workspacePath: string,
   sessionId: string,
 ): Promise<TranscriptItem[]> {
-  if (vendor === 'codex') {
-    // Read from the session's frozen store scope's CODEX_HOME first, with the
-    // other root as a fallback (ADR-0015) — so a session that ran in the sandbox
-    // is read back from the persistent sandbox home, not host `~/.codex`.
-    const storeRoots = codexStoreRoots(workspacePath, resolveSessionStoreScope(sessionId))
-    return canonicalToTranscript(
-      await codexHistoryStore.read(sessionId, { cwd: workspacePath, storeRoots }),
-    )
+  switch (vendor) {
+    case 'codex': {
+      // Read from the session's frozen store scope's CODEX_HOME first, with the
+      // other root as a fallback (ADR-0015) — so a session that ran in the sandbox
+      // is read back from the persistent sandbox home, not host `~/.codex`.
+      const storeRoots = codexStoreRoots(workspacePath, resolveSessionStoreScope(sessionId))
+      return canonicalToTranscript(
+        await codexHistoryStore.read(sessionId, { cwd: workspacePath, storeRoots }),
+      )
+    }
+    case 'cursor':
+      // Cursor keeps its chats in a private database c3 deliberately does not
+      // read, so there is no native transcript to replay. The live stream is
+      // what the console showed, and resume replays Cursor's own context — an
+      // empty history here is the truthful answer, not a failure.
+      return []
+    case 'claude':
+      // Claude transcripts are read via the SDK, which keys its projects root off
+      // the server process's CLAUDE_CONFIG_DIR. The sandbox writes claude
+      // transcripts into that same host config dir (getSandboxClaudeConfigDir), so
+      // no scope branch is needed — a sandboxed claude session is host-readable.
+      return loadHistory(workspacePath, sessionId)
   }
-  // Claude transcripts are read via the SDK, which keys its projects root off the
-  // server process's CLAUDE_CONFIG_DIR. The sandbox writes claude transcripts into
-  // that same host config dir (getSandboxClaudeConfigDir), so no scope branch is
-  // needed here — a sandboxed claude session is already host-readable.
-  return loadHistory(workspacePath, sessionId)
 }
 
 function canonicalToTranscript(messages: readonly CanonicalMessage[]): TranscriptItem[] {

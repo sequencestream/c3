@@ -30,6 +30,7 @@
  *   and does NOT touch the kernel registry directly.
  */
 import type { Discussion, RunEndReason, VendorId } from '@ccc/shared/protocol'
+import { isVendorId } from '@ccc/shared/protocol'
 import type { DiscussionLifecyclePhase } from '@ccc/shared'
 import { resolveWorkspaceRoot } from '../state.js'
 import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
@@ -268,7 +269,9 @@ export function createDiscussionRuns(deps: DiscussionRunsDeps): DiscussionRuns {
           })
         },
         delete: ({ sessionId, vendor }) => {
-          if (vendor === 'claude' || vendor === 'codex') deleteByVendorId(vendor, sessionId)
+          // Removes c3's own projection row — vendor-agnostic, so it applies to
+          // every vendor (it never touches the vendor's native store).
+          if (isVendorId(vendor)) deleteByVendorId(vendor, sessionId)
         },
         deleteAll: (discussionId) => {
           touchByOwner('discussion', discussionId)

@@ -30,7 +30,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import type { VendorId } from '@ccc/shared/protocol'
-import { hostCodexHome } from '../config/workspace-path.js'
+import { hostCodexHome, hostCursorHome } from '../config/workspace-path.js'
 import { SandboxLaunchError } from './errors.js'
 import type { ResolvedMount, ResolvedSandboxPaths } from './types.js'
 
@@ -229,6 +229,41 @@ const codexProfile: SandboxAuthResolver = ({ paths, systemAuth }) => {
   }
 }
 
+// ─── Cursor ──────────────────────────────────────────────────────────────────
+
+/**
+ * Cursor.
+ *
+ * Two facts drive this profile, both established by the CLI probe. First, the
+ * data root is not relocatable: `cursor-agent` has no `CURSOR_HOME`-style
+ * override and always reads `$HOME/.cursor`, so the sandbox mounts the host data
+ * root rather than pointing an env var at an isolated one. Persisting that whole
+ * root is what lets the next turn's `--resume` find the chat.
+ *
+ * Second, the login does NOT live in that root — it is in the OS keychain
+ * (`cursor-access-token` / `cursor-refresh-token`). Mounting `~/.cursor` alone
+ * yields a sandbox that reports "Not logged in" no matter how complete the copy
+ * is, so the keychain grant is what actually authenticates the run.
+ *
+ * Cursor is a system-auth vendor only: c3 has no relay for it and no custom
+ * provider triple to inject, so there is no isolated-credentials variant to
+ * branch on and no API-key environment to forward.
+ */
+const cursorProfile: SandboxAuthResolver = () => {
+  const dataRoot = hostCursorHome()
+  return {
+    entryCommand: 'cursor-agent',
+    // The credential store is the keychain; without this the run cannot log in.
+    allowKeychain: true,
+    // No data-root override exists, so nothing is pinned by env — the CLI finds
+    // this same directory through HOME.
+    literalEnv: [],
+    forwardEnv: ['CURSOR_API_KEY'],
+    mounts: [{ path: dataRoot, readonly: false }],
+    preRunDirs: [dataRoot],
+  }
+}
+
 // ─── Registry ────────────────────────────────────────────────────────────────
 
 /**
@@ -240,6 +275,7 @@ const codexProfile: SandboxAuthResolver = ({ paths, systemAuth }) => {
 export const VENDOR_AUTH_PROFILES: Readonly<Record<VendorId, SandboxAuthResolver>> = {
   claude: claudeProfile,
   codex: codexProfile,
+  cursor: cursorProfile,
 }
 
 /**

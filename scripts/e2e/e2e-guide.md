@@ -329,6 +329,40 @@ if it persists, reported as SKIP (auth already proven, block is environmental).
   in and replied; 1 = still 401 / no reply / structure guard failed; 5 = a
   precondition unmet or an OpenAI geo-block (SKIP).
 
+## Cursor CLI probe (vendor go/no-go gate)
+
+Standalone capability probe for the `cursor-agent` CLI — the evidence source for
+Cursor's capability ledger (see
+[`doc/domains/core/agent-session/features/agent-session-cursor.md`](../../doc/domains/core/agent-session/features/agent-session-cursor.md)).
+It asserts the two blocking gates — resume after `SIGTERM` to the process group,
+and resume after persisting the full `~/.cursor` data root — plus version/auth
+landing, native tool inventory, stable tool `call_id`, single-turn exit, and MCP
+injection + `mcp list` self-check.
+
+Needs a real `cursor-agent` login + outbound network, so it is NOT CI-safe and NOT
+in the `pnpm e2e` suite. Unauthenticated → the two gates are reported SKIP (exit 5).
+
+- `node scripts/e2e/cursor-cli-probe.mjs` → VERDICT: GO (exit 0) when both gates
+  pass; 1 = a gate failed (no-go); 5 = unauthenticated (SKIP). `--gates-only`,
+  `--json`, `--keep` (retain the temp HOME + raw NDJSON) are supported.
+
+## Cursor session test (new → run → list → native-id resume)
+
+Server-wiring E2E over the real WS protocol and real `cursor-agent` CLI (spends
+two short turns of real tokens). Creates a Cursor session (a `system`-mode Cursor
+agent is injected into settings, snapshot/restore), runs a first turn asserting
+`assistant_text` + `tool_use` + a clean `turn_end`, confirms the bound session
+appears in `list_sessions`, then re-selects it by the native session id captured
+from `session_started` and runs a second turn to prove `--resume` continuation.
+
+Needs a real `cursor-agent` login + outbound network, so it is NOT CI-safe and NOT
+in the `pnpm e2e` suite. Preconditions unmet → SKIP (exit 5): no `cursor-agent`
+CLI, or not logged in.
+
+- Start the server: `pnpm start --port 13000`
+- `node scripts/e2e/e2e-cursor-session-test.mjs ws://localhost:13000/ws` →
+  `RESULT: PASS` on success; 1 = a step failed; 5 = precondition unmet (SKIP).
+
 ## Sandbox vendor token test (real request through arapuca)
 
 Complements the token-free capability probe: uses a real agent from

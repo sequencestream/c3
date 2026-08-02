@@ -42,7 +42,7 @@ import type {
   VendorHostStatus,
   VendorId,
 } from '@ccc/shared/protocol'
-import { SESSION_KINDS } from '@ccc/shared/protocol'
+import { VENDOR_IDS, SESSION_KINDS } from '@ccc/shared/protocol'
 import { EVENT_CATALOG, isRunLifecycleEventType } from '@ccc/shared'
 import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
 import { VENDOR_LABEL } from '@/lib/vendor'
@@ -215,7 +215,10 @@ function statusOptionsFor(row: EventFilterRowDraft): { value: string; label: str
 }
 
 // ---- Vendor ----------------------------------------------------------------
-const VENDOR_ORDER: VendorId[] = ['claude', 'codex']
+// Display order for the vendor pickers. Derived from the shared vendor list so a
+// newly registered vendor appears here automatically instead of being silently
+// absent from the UI.
+const VENDOR_ORDER: readonly VendorId[] = VENDOR_IDS
 
 const presentByVendor = computed(() => {
   const m = new Map<VendorId, boolean>()
@@ -242,6 +245,7 @@ const title = ref('')
 const claudeMode = ref<string>('default')
 const codexSandboxMode = ref<CodexSandboxMode>('workspace-write')
 const codexApprovalPolicy = ref<CodexApprovalPolicy>('on-request')
+const cursorMode = ref<string>('agent')
 const command = ref('')
 const prompt = ref('')
 // LLM + event only: append the triggering event to the prompt at execution time.
@@ -401,6 +405,10 @@ watch(
           codexApprovalPolicy.value =
             legacy === 'read-only' || legacy === 'full-access' ? 'never' : 'on-request'
         }
+      } else if (sched.vendor === 'cursor') {
+        // Cursor's mode is a single token ('agent' / 'full-access').
+        const m = typeof sched.mode === 'string' ? sched.mode : 'agent'
+        cursorMode.value = m === 'agent' || m === 'full-access' ? m : 'agent'
       } else {
         // claude
         const m = typeof sched.mode === 'string' ? sched.mode : 'default'
@@ -447,6 +455,7 @@ watch(
       type.value = 'command'
       title.value = ''
       claudeMode.value = 'default'
+      cursorMode.value = 'agent'
       codexSandboxMode.value = 'workspace-write'
       codexApprovalPolicy.value = 'on-request'
       cronExpression.value = '*/30 * * * *'
@@ -762,6 +771,7 @@ function serializeMode(): ModeToken | CodexPolicy {
       approvalPolicy: codexApprovalPolicy.value,
     }
   }
+  if (vendor.value === 'cursor') return cursorMode.value
   return claudeMode.value
 }
 
@@ -1395,6 +1405,16 @@ function save(): void {
                   </button>
                 </div>
               </template>
+
+              <!-- Cursor: single dropdown (launch-time, no per-tool approval) -->
+              <select
+                v-else-if="vendor === 'cursor'"
+                v-model="cursorMode"
+                class="sf-input sf-select"
+              >
+                <option value="agent">{{ t('nav.mode.agent.label') }}</option>
+                <option value="full-access">{{ t('nav.mode.fullAccess.label') }}</option>
+              </select>
             </div>
           </div>
         </div>

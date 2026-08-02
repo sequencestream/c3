@@ -7,6 +7,7 @@
  *    token round-trips through the neutral grid, and the lossy reverse picks the
  *    nearest token (never crossing the plan/build action boundary).
  */
+import { VENDOR_IDS } from '@ccc/shared/protocol'
 import { describe, it, expect } from 'vitest'
 import type { ActionMode, ToolGate, VendorModeCatalog } from './types.js'
 import { MODE_CATALOGS, tokenToGrid, gridToToken, isKnownToken } from './index.js'
@@ -18,7 +19,7 @@ const TOOL_GATES: ToolGate[] = ['always-ask', 'on-sensitive', 'trusted-prefix', 
 
 describe('MODE_CATALOGS contract', () => {
   it('registers exactly the current vendors', () => {
-    expect(Object.keys(MODE_CATALOGS).sort()).toEqual(['claude', 'codex'])
+    expect(Object.keys(MODE_CATALOGS).sort()).toEqual([...VENDOR_IDS].sort())
   })
 
   for (const [key, cat] of Object.entries(MODE_CATALOGS)) {

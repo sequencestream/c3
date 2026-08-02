@@ -27,8 +27,10 @@ import {
   getIntent,
   insertIntents,
   resetStoreForTests,
+  revokeSpecApproval,
   setBranchName,
   setLastWorkSession,
+  setSpecApproved,
   updateIntentDeps,
   updateStatus,
 } from './store.js'
@@ -411,6 +413,117 @@ describe('launchWorkSession — RM-A12 under worktree isolation', () => {
     const viaMcp = await launchWorkSession(proj, target.id, mockDeps())
     expect(viaManual).toEqual(viaMcp)
     expect(asError(viaManual).code).not.toBe('intent.concurrencyGate')
+  })
+})
+
+// ── launchWorkSession: a RESUME is a new admission, not a continuation ──
+//
+// A resume fires a real turn, so it must pass the SAME admission chain as a
+// fresh launch. Without that, `revoke_spec_approval` — whose contract is "it
+// governs admission from here on" — would be theatre for any intent that still
+// owns an idle session: the next `start_development` (or the unattended MCP
+// `start_session_for_intent`) would keep developing on the revoked spec.
+
+describe('launchWorkSession — resume runs the same admission gates as fresh', () => {
+  /** An `in_progress` intent bound to an idle live runtime for `sessionId`. */
+  function idleInProgress(title: string, sessionId: string): string {
+    const [intent] = insertIntents(proj, [
+      {
+        title,
+        shortEnTitle: title.toLowerCase().replace(/\s+/g, '-'),
+        content: '',
+        priority: 'P1',
+      },
+    ])
+    updateStatus(intent.id, 'in_progress', 'test')
+    setLastWorkSession(intent.id, sessionId)
+    ensureRuntime(sessionId, proj, 'default', [], 'work')
+    return intent.id
+  }
+
+  it('refuses to resume after revoke_spec_approval, and fires no turn', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    const id = idleInProgress('Revoked', 'sess-revoked')
+    setSpecApproved(id, true, 'human')
+    expect(revokeSpecApproval(id)).toBe(true)
+    expect(getIntent(id)?.specApproved).toBe(false)
+
+    const deps = mockDeps()
+    const r = asError(await launchWorkSession(proj, id, deps))
+    expect(r.code).toBe('intent.specNotApproved')
+    expect(deps.launchRun).not.toHaveBeenCalled()
+  })
+
+  it('refuses to resume an intent that was started before SDD was switched on', async () => {
+    // Development began with SDD off — the intent has no approval at all.
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: false })
+    const id = idleInProgress('Pre SDD', 'sess-pre-sdd')
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+
+    const deps = mockDeps()
+    const r = asError(await launchWorkSession(proj, id, deps))
+    expect(r.code).toBe('intent.specNotApproved')
+    expect(deps.launchRun).not.toHaveBeenCalled()
+  })
+
+  it('refuses to resume while a worktree dependency has not reached the mainline', async () => {
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'worktree',
+      defaultMainBranch: 'main',
+      sddEnabled: false,
+    })
+    const [dep] = insertIntents(proj, [
+      { title: 'Dep', shortEnTitle: 'dep', content: '', priority: 'P1' },
+    ])
+    updateStatus(dep.id, 'done', 'test')
+    setBranchName(dep.id, 'feature/dep')
+    const id = idleInProgress('Depender', 'sess-depender')
+    updateIntentDeps(id, [{ dependsOnId: dep.id, depType: 'blocks' }])
+
+    const deps = mockDeps()
+    const r = asError(await launchWorkSession(proj, id, deps))
+    expect(r.code).toBe('intent.dependencyNotMerged')
+    expect(r.params?.title).toBe('Dep')
+    expect(r.params?.id).toBe(dep.id)
+    expect(deps.launchRun).not.toHaveBeenCalled()
+  })
+
+  it('still resumes an approved intent on the SAME id with exactly one turn', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    const id = idleInProgress('Approved', 'sess-approved')
+    setSpecApproved(id, true, 'human')
+
+    const deps = mockDeps()
+    const r = asSuccess(await launchWorkSession(proj, id, deps))
+    expect(r.sessionId).toBe('sess-approved')
+    expect(r.mode).toBe('resume')
+    expect(deps.launchRun).toHaveBeenCalledTimes(1)
+  })
+
+  it('attach is untouched: a running turn still attaches after a revoke', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    const id = idleInProgress('Running revoked', 'sess-running-revoked')
+    setSpecApproved(id, true, 'human')
+    revokeSpecApproval(id)
+    markRunning('sess-running-revoked')
+
+    const deps = mockDeps()
+    const r = asSuccess(await launchWorkSession(proj, id, deps))
+    expect(r.mode).toBe('attach')
+    expect(r.sessionId).toBe('sess-running-revoked')
+    expect(deps.launchRun).not.toHaveBeenCalled()
+  })
+
+  it('the manual entry and the MCP entry are refused alike on a revoked spec', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    const id = idleInProgress('Shared gate', 'sess-shared-gate')
+    setSpecApproved(id, true, 'human')
+    revokeSpecApproval(id)
+
+    const viaManual = await launchWorkSession(proj, id, mockDeps(), () => {}, 'human')
+    const viaMcp = await launchWorkSession(proj, id, mockDeps())
+    expect(viaManual).toEqual(viaMcp)
+    expect(asError(viaManual).code).toBe('intent.specNotApproved')
   })
 })
 

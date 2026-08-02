@@ -110,7 +110,7 @@ function errMsg(err: unknown): string {
 }
 
 /**
- * The concurrency gate (RM-A12), evaluated here rather than only inside the
+ * The concurrency gate, evaluated here rather than only inside the
  * queue kernel's scheduling loop. Every caller that starts or continues a work
  * turn goes through this function, so the manual `start_development` button and
  * the automation `start_session_for_intent` tool share ONE gate instead of two —
@@ -144,6 +144,57 @@ export function findBlockingWorkSession(
 }
 
 /**
+ * The admission gates every path that is ABOUT TO START a work turn must pass —
+ * a fresh launch and a resume alike. Both call this one function so the rules
+ * exist once: a second copy is how a resume ends up developing on a spec whose
+ * approval was revoked, or on an intent whose dependency PR is still open.
+ *
+ * Fail-closed and in a fixed order:
+ *
+ *   1. SDD is on and the spec is not approved → `intent.specNotApproved`.
+ *   2. worktree mode + a dependency that has not reached the mainline →
+ *      `intent.dependencyNotMerged`, plus the best-effort background PR status
+ *      sync so a stale `pr_status` resolves itself.
+ *
+ * Returns the rejection to hand back, or `null` when the turn may proceed.
+ * Attaching a viewer to an already-running turn is NOT a new admission and does
+ * not come through here.
+ */
+function checkWorkAdmission(
+  workspacePath: string,
+  intent: Intent,
+  deps: SessionLaunchDeps,
+): SessionLaunchResult | null {
+  // SDD quality gate — server-side, forced.
+  if (getSddEnabled(workspacePath) && !intent.specApproved) {
+    return { success: false, code: 'intent.specNotApproved' }
+  }
+
+  // Dependency gate (worktree mode only)
+  if (intent.dependsOn.length > 0 && getGitBranchMode(workspacePath) === 'worktree') {
+    const unmerged = findDependencyBlockingMainline(
+      intent.dependsOn,
+      listIntents(workspacePath),
+      getDefaultMainBranch(workspacePath),
+    )
+    if (unmerged) {
+      syncUnconfirmedDependencyPrsInBackground({
+        ctx: { broadcastIntents: deps.broadcastIntents },
+        workspacePath,
+        dependsOn: intent.dependsOn,
+      })
+      return {
+        success: false,
+        code: 'intent.dependencyNotMerged',
+        params: { title: unmerged.title, id: unmerged.id },
+      }
+    }
+  }
+
+  return null
+}
+
+/**
  * Attach to / resume the work session an `in_progress` intent already owns.
  * Mirrors {@link launchSpecSession}'s `specSessionId` handling so the two
  * session kinds stop behaving asymmetrically: a live intent is no longer
@@ -169,7 +220,7 @@ async function attachOrResumeWorkSession(
     return { success: true, sessionId, mode: 'attach' }
   }
 
-  // From here on we are about to start a NEW turn, so both hard gates apply.
+  // From here on we are about to start a NEW turn, so every hard gate applies.
   const blocking = findBlockingWorkSession(workspacePath, intent.id)
   if (blocking) {
     return {
@@ -179,11 +230,17 @@ async function attachOrResumeWorkSession(
     }
   }
   // An unanswered AskUserQuestion is a human decision point: the continuation
-  // prompt must never stand in for the user's answer (RM-A11 / C-SEC-3).
+  // prompt must never stand in for the user's answer.
   const rt = getRuntime(sessionId)
   if (rt && hasPendingQuestion(rt.buffer)) {
     return { success: false, code: 'intent.pendingQuestionUnanswered' }
   }
+  // Resuming is a NEW admission, not a continuation of the old one: a spec whose
+  // approval was revoked, or a dependency still unmerged, stops this turn exactly
+  // as it stops a fresh one. Evaluated before the runtime is restored, so a
+  // rejected resume touches nothing.
+  const denied = checkWorkAdmission(workspacePath, intent, deps)
+  if (denied) return denied
 
   // Restore the runtime if it was dropped (server restart / GC), then continue
   // the SAME session — no new worktree, no new session, no new pending link.
@@ -228,13 +285,17 @@ async function attachOrResumeWorkSession(
  *   1. `in_progress` + a session that is running a turn → **attach**, same id.
  *   2. `in_progress` + a session that exists but is idle → **resume**, same id.
  *   3. `todo`, or `in_progress` whose session is gone → **fresh** (the historic
- *      status gate, SDD approval gate, dependency gate and git branch strategy).
+ *      status gate plus the git branch strategy).
  *
- * Before any NEW turn — fresh or resumed — the concurrency gate (RM-A12) is
- * evaluated here, so the manual entry and the MCP entry share one gate. Its
- * scope follows the git branch mode: shared in `current-branch`, per-intent (and
- * therefore never cross-blocking) in `worktree`. Returns a structured result —
- * never throws for expected validation failures.
+ * Before any NEW turn — fresh or resumed — the concurrency gate and
+ * then {@link checkWorkAdmission} (SDD approval + dependency) are evaluated
+ * here, so the manual entry and the MCP entry share one gate chain and a resume
+ * is admitted on today's facts rather than on the ones that admitted the
+ * original launch. The concurrency gate's scope follows the git branch mode:
+ * shared in `current-branch`, per-intent (and therefore never cross-blocking) in
+ * `worktree`. **attach** sends no turn and is therefore not a new admission: it
+ * passes none of these gates and gains no new rejection. Returns a structured
+ * result — never throws for expected validation failures.
  */
 export async function launchWorkSession(
   workspacePath: string,
@@ -273,40 +334,20 @@ export async function launchWorkSession(
     return { success: false, code: 'intent.cannotStartDev', params: { status: req.status } }
   }
 
-  // RM-A12 — the concurrency gate, applied before a fresh turn for the same
-  // reason it applies before a resumed one.
+  // The concurrency gate, applied before a fresh turn for the same reason it
+  // applies before a resumed one.
   const blocking = findBlockingWorkSession(workspacePath, req.id)
   if (blocking) {
     releaseClaim()
     return { success: false, code: 'intent.concurrencyGate', params: { title: blocking.title } }
   }
 
-  // SDD quality gate — server-side, forced.
-  if (getSddEnabled(workspacePath) && !req.specApproved) {
+  // SDD approval + dependency gates — the SAME chain a resume runs, from the one
+  // shared function, so the two entries can never drift apart.
+  const denied = checkWorkAdmission(workspacePath, req, deps)
+  if (denied) {
     releaseClaim()
-    return { success: false, code: 'intent.specNotApproved' }
-  }
-
-  // Dependency gate (worktree mode only)
-  if (req.dependsOn.length > 0 && getGitBranchMode(workspacePath) === 'worktree') {
-    const unmerged = findDependencyBlockingMainline(
-      req.dependsOn,
-      listIntents(workspacePath),
-      getDefaultMainBranch(workspacePath),
-    )
-    if (unmerged) {
-      syncUnconfirmedDependencyPrsInBackground({
-        ctx: { broadcastIntents: deps.broadcastIntents },
-        workspacePath,
-        dependsOn: req.dependsOn,
-      })
-      releaseClaim()
-      return {
-        success: false,
-        code: 'intent.dependencyNotMerged',
-        params: { title: unmerged.title, id: unmerged.id },
-      }
-    }
+    return denied
   }
 
   // ── Git branch strategy ──

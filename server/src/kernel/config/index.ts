@@ -584,6 +584,10 @@ function normalizeConsensusConfig(raw: unknown, agents: readonly AgentConfig[]):
  *   The SDD spec root is a FIXED, centralized, non-configurable location
  *   (`~/.c3/specs/<project-path-segment>`, see `features/intents/specs-root.ts`),
  *   so there is no `specPath` config field — any such input is ignored here.
+ * - `specMachineApprovalEnabled` is a strict opt-in (only an explicit boolean `true`
+ *   opens machine spec approval); it is persisted only when `true` and read as
+ *   `false` when absent, so saving other fields never drops an enabled flag and a
+ *   migrated workspace never gains automatic approval silently.
  * - `automationEnabled` defaults to `true` (only an explicit boolean `false`
  *   closes the workspace automation gate); the normalized boolean is always
  *   present so saving other fields never drops the gate.
@@ -610,6 +614,9 @@ export function normalizeWorkspaceSetting(
   const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
   const sddEnabled = normalizeSddEnabled(rec.sddEnabled)
   const automationEnabled = normalizeAutomationEnabled(rec.automationEnabled)
+  const specMachineApprovalEnabled = normalizeSpecMachineApprovalEnabled(
+    rec.specMachineApprovalEnabled,
+  )
   const forge = normalizeWorkspaceForge(rec.forge)
   return {
     forge,
@@ -624,6 +631,7 @@ export function normalizeWorkspaceSetting(
     ...(defaultMainBranch ? { defaultMainBranch } : {}),
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
+    ...(specMachineApprovalEnabled ? { specMachineApprovalEnabled } : {}),
   }
 }
 
@@ -641,6 +649,16 @@ function normalizeWorkspaceForge(raw: unknown): 'auto' | 'github' | 'gitlab' {
  */
 function normalizeSddEnabled(raw: unknown): boolean {
   return raw !== false
+}
+
+/**
+ * Normalize the machine spec-approval opt-in — only an explicit boolean `true`
+ * opens it; any other value (absent, `false`, non-boolean) reads as `false`. This
+ * keeps the feature a deliberate per-workspace opt-in so a migrated workspace
+ * never silently gains automatic approval.
+ */
+function normalizeSpecMachineApprovalEnabled(raw: unknown): boolean {
+  return raw === true
 }
 
 /**

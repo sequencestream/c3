@@ -63,3 +63,27 @@ describe('SDD normalize (via normalizeWorkspaceSetting)', () => {
     expect((result as Record<string, unknown>).specPath).toBeUndefined()
   })
 })
+
+describe('spec machine-approval normalize (via normalizeWorkspaceSetting)', () => {
+  it('reads as disabled and omits the key when absent (opt-in default OFF)', () => {
+    const result = normalizeWorkspaceSetting({})
+    expect(result.specMachineApprovalEnabled === true).toBe(false)
+    expect('specMachineApprovalEnabled' in result).toBe(false)
+  })
+
+  it('persists an explicit true so a save round-trips', () => {
+    const result = normalizeWorkspaceSetting({ specMachineApprovalEnabled: true })
+    expect(result.specMachineApprovalEnabled).toBe(true)
+    // Re-normalizing the normalized result keeps the flag — the save→reload path
+    // must not silently drop a user-enabled opt-in.
+    expect(normalizeWorkspaceSetting(result).specMachineApprovalEnabled).toBe(true)
+  })
+
+  it('treats any non-true value as disabled and omits the key', () => {
+    for (const raw of [false, 'true', 1, 0, null]) {
+      const result = normalizeWorkspaceSetting({ specMachineApprovalEnabled: raw })
+      expect(result.specMachineApprovalEnabled === true).toBe(false)
+      expect('specMachineApprovalEnabled' in result).toBe(false)
+    }
+  })
+})

@@ -53,7 +53,7 @@ import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 import { clearPendingSpecReviewLink, registerPendingSpecReviewLink } from './spec-review-link.js'
 import { buildSpecReviewPrompt, buildSpecReworkPrompt, readSpecFingerprint } from './spec-review.js'
 import { buildDevPrompt } from './dev-prompt.js'
-import { findDependencyBlockingMainline } from './dependency-gate.js'
+import { findDependencyBlockingMainline, prepareSpecLaunch } from './dependency-gate.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
 import { buildContinueSpecPrompt, buildSeedSpec, buildSpecInstructPrompt } from './spec.js'
 import { computeSpecLayout } from './spec-path.js'
@@ -500,49 +500,31 @@ export async function launchSpecSession(
   return createFirstSpecSession(workspacePath, intent, deps, progress, actor)
 }
 
-/** A gate outcome that carries no session of its own: pass, or the caller's error result. */
-type SpecGateResult = { ok: true } | { ok: false; result: SessionLaunchResult }
-
 /**
- * Internal: prepare spec dependency context — dependency gate (worktree mode)
- * + pull current branch. Returns an error result on block, or `{ ok: true }`
- * to proceed. Sync (no I/O beyond the store read for dependencies).
+ * Service adapter over the shared {@link prepareSpecLaunch} gate: run the one
+ * spec launch precondition and translate a block into THIS service's failure
+ * shape. Returns `null` when the launch may proceed. The rule lives in
+ * `dependency-gate.ts` — the manual WS entry runs the very same call behind its
+ * own frame adapter, so the two can no longer drift.
  */
-function prepareSpecDependencyContext2(
+function specLaunchGateFailure(
   workspacePath: string,
   intent: Intent,
-  broadcastIntents: (path: string) => void,
+  deps: SessionLaunchDeps,
   progress?: (stage: string) => void,
-): SpecGateResult {
-  if (getGitBranchMode(workspacePath) === 'worktree') {
-    const blocking = findDependencyBlockingMainline(
-      intent.dependsOn,
-      listIntents(workspacePath),
-      getDefaultMainBranch(workspacePath),
-    )
-    if (blocking) {
-      syncUnconfirmedDependencyPrsInBackground({
-        ctx: { broadcastIntents },
-        workspacePath,
-        dependsOn: intent.dependsOn,
-      })
-      return {
-        ok: false,
-        result: {
-          success: false,
-          code: 'intent.dependencyNotMerged',
-          params: { title: blocking.title, id: blocking.id },
-        },
-      }
-    }
+): SessionLaunchResult | null {
+  const gate = prepareSpecLaunch({
+    workspacePath,
+    intent,
+    broadcastIntents: deps.broadcastIntents,
+    progress,
+  })
+  if (!gate.blocked) return null
+  return {
+    success: false,
+    code: 'intent.dependencyNotMerged',
+    params: { title: gate.dependency.title, id: gate.dependency.id },
   }
-  progress?.('pulling-code')
-  const pull = pullCurrentBranch(workspacePath)
-  if (!pull.ok) {
-    console.warn(`[c3:intents] spec session pull failed; continuing: ${pull.message ?? 'unknown'}`)
-  }
-  progress?.('launching')
-  return { ok: true }
 }
 
 /** Internal: create a FIRST spec session — scaffold the dated directory, write
@@ -556,13 +538,8 @@ function createFirstSpecSession(
   progress?: (stage: string) => void,
   actor?: string | null,
 ): SessionLaunchResult {
-  const depCheck = prepareSpecDependencyContext2(
-    workspacePath,
-    intent,
-    deps.broadcastIntents,
-    progress,
-  )
-  if (!depCheck.ok) return depCheck.result
+  const blocked = specLaunchGateFailure(workspacePath, intent, deps, progress)
+  if (blocked) return blocked
 
   // Compute dated spec layout
   const specRoot = getSpecsBase(workspacePath)
@@ -732,13 +709,8 @@ function createSpecSessionOnExistingPath(
   opts: SpecLaunchOptions,
   progress?: (stage: string) => void,
 ): SessionLaunchResult {
-  const depCheck = prepareSpecDependencyContext2(
-    workspacePath,
-    intent,
-    deps.broadcastIntents,
-    progress,
-  )
-  if (!depCheck.ok) return depCheck.result
+  const blocked = specLaunchGateFailure(workspacePath, intent, deps, progress)
+  if (blocked) return blocked
 
   const fileAbs = resolveSpecFileAbs(workspacePath, intent.specPath!)
   const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
@@ -813,13 +785,8 @@ async function resumeSpecSession(
     return { success: false, code: 'intent.specNotWritten' }
   }
 
-  const depCheck = prepareSpecDependencyContext2(
-    workspacePath,
-    intent,
-    deps.broadcastIntents,
-    progress,
-  )
-  if (!depCheck.ok) return depCheck.result
+  const blocked = specLaunchGateFailure(workspacePath, intent, deps, progress)
+  if (blocked) return blocked
 
   // Restore runtime if it was dropped (server restart / GC)
   if (!getRuntime(intent.specSessionId)) {

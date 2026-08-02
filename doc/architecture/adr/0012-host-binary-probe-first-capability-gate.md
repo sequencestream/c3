@@ -18,8 +18,9 @@ c3 拥有默认厂商 CLI 来源。启动器按以下固定顺序解析每个厂
 2. `~/.c3/vendor/<vendor>/<version>/bin/<binary>` 下 c3 托管的 CLI；
 3. 降级的宿主 `PATH` 回退。
 
-并非每个厂商都走托管安装:`cursor-agent` 是外部提供的二进制(由宿主/用户自行安装),c3 直接在
-`PATH` 上解析它(或一个沙箱 wrapper),不经 npm packument 托管安装、无 `~/.c3/vendor` 受管版本。
+并非每个厂商都有宿主二进制:**cursor 完全不进入这条解析链**——它由 `@cursor/sdk` 的
+进程内 runtime 驱动(SDK 随 c3 依赖发布),没有可执行文件可解析、没有版本可钉选。因此
+`HOST_BINARIES` 对 vendor 是**部分映射**,cursor 的可用性判定退化为"该 SDK 包能否被解析"。
 
 一个无效的显式覆盖项对该厂商而言是硬性的解析失败。它不会被静默绕过，因为操作者提供的
 路径是有意为之的配置。

@@ -172,16 +172,32 @@ export interface CodexAgentConfig {
 }
 
 /**
- * The `cursor` vendor's config sub-object — deliberately empty.
+ * The `cursor` vendor's config sub-object — a key and a model, no base URL.
  *
- * Cursor authenticates through its own CLI login (the credential lives in the OS
- * keychain, not in anything c3 could inject), and c3 has no relay that speaks
- * Cursor's protocol. There is therefore no provider triple to override: a Cursor
- * agent is always `configMode: 'system'`, and the empty shape is what makes that
- * a type-level fact instead of a runtime convention. A `baseUrl`/`apiKey` field
- * here would advertise a capability that does not exist.
+ * The Cursor SDK authenticates with an API key only: it does not read the
+ * credential `cursor-agent login` writes to the OS keychain. So unlike the other
+ * vendors, whose `system` mode means "use the vendor CLI's own login", a Cursor
+ * agent always needs a key — from here, or from `CURSOR_API_KEY` in the server's
+ * environment when this is empty.
+ *
+ * There is deliberately no `baseUrl`: c3 has no relay that speaks Cursor's
+ * protocol, so a Cursor agent cannot be pointed at a different provider and is
+ * always `configMode: 'system'`. Its absence is what keeps that a type-level fact
+ * instead of a runtime convention.
  */
-export type CursorAgentConfig = Record<string, never>
+export interface CursorAgentConfig {
+  /**
+   * The Cursor API key. Empty ⇒ fall back to `CURSOR_API_KEY` in the server's
+   * environment; empty with no such variable ⇒ the run fails at the door.
+   *
+   * Encrypted at rest with the same scheme as {@link ClaudeAgentConfig.apiKey}
+   * (`c3secretvN:` prefix, SEC-13) — plaintext on the wire / in memory, ciphertext
+   * only on disk.
+   */
+  apiKey: string
+  /** Model alias or id (e.g. `auto`, `claude-4.5-sonnet`). Empty ⇒ Cursor's `auto`. */
+  model: string
+}
 
 /**
  * One agent profile under the system-config module: a vendor-agnostic public
@@ -191,7 +207,8 @@ export type CursorAgentConfig = Record<string, never>
  *
  * `claude` (ADR-0011 reference) and `codex` (read-only advisor seat, Phase 0
  * 008 NO-GO, 2026-06-06-005) have real adapters and config shapes; `cursor`
- * drives its CLI with no provider override at all. The runtime
+ * runs on an in-process SDK that takes a key and a model but cannot be pointed at
+ * another provider. The runtime
  * validation/routing lives server-side in `kernel/agent-config/schema.ts` (zod
  * stays out of this zero-runtime, SDK-free wire module — ADR-0009); a type-level
  * assertion there pins the zod schema to this union so the two cannot drift.
@@ -202,3 +219,22 @@ export type AgentConfig = AgentConfigBase &
     | { vendor: 'codex'; config: CodexAgentConfig }
     | { vendor: 'cursor'; config: CursorAgentConfig }
   )
+
+/**
+ * Whether an agent's config carries a provider **base URL** — the field every
+ * caller that redirects a vendor at a custom provider needs.
+ *
+ * True for the vendors c3 can point elsewhere; false for `cursor`, which has no
+ * relay speaking its protocol and so carries only a key and a model. Routing
+ * those reads through this guard, rather than a hard-coded vendor comparison, is
+ * what keeps a future provider-locked vendor from silently returning `undefined`
+ * for a field it never had.
+ */
+export function hasProviderConfig(
+  agent: AgentConfig,
+): agent is AgentConfigBase &
+  (
+    { vendor: 'claude'; config: ClaudeAgentConfig } | { vendor: 'codex'; config: CodexAgentConfig }
+  ) {
+  return agent.vendor !== 'cursor'
+}

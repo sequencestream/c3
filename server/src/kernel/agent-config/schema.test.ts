@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+import { SYSTEM_AGENT_ID, hasProviderConfig } from '@ccc/shared/protocol'
 import { agentConfigSchema, claudeConfigSchema, parseAgentConfig } from './schema.js'
 
 describe('agent-config schema — claude arm', () => {
@@ -134,7 +134,7 @@ describe('schema — system mode + model round-trip (2026-07-02-001)', () => {
       displayName: 'Sys With Model',
       config: { baseUrl: '', apiKey: '', model: 'claude-sonnet-5' },
     })
-    expect(parsed?.config.model).toBe('claude-sonnet-5')
+    expect(parsed && hasProviderConfig(parsed) && parsed.config.model).toBe('claude-sonnet-5')
     expect(parsed?.configMode).toBe('system')
   })
 

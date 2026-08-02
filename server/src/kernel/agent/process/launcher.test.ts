@@ -1,4 +1,3 @@
-import { VENDOR_IDS } from '@ccc/shared/protocol'
 import { createHash } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -6,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VendorId } from '../adapters/types.js'
 import {
+  HOST_BINARIES,
   vendorCompatibilityLabel,
   applyVendorCliChoices,
   cleanManagedHistory,
@@ -340,9 +340,14 @@ describe('refreshManagedVendorClisInBackground', () => {
 })
 
 describe('probeAll', () => {
-  it('covers every known vendor and carries each source', () => {
+  it('covers every host-CLI vendor and carries each source', () => {
     const probes = probeAll()
-    expect(probes.map((p) => p.vendor).sort()).toEqual([...VENDOR_IDS].sort())
+    // Only vendors c3 launches as a host process are probed: a vendor whose
+    // runtime is an in-process SDK has no binary to find, and reporting one as
+    // "missing" would put an install hint in front of the user for a CLI c3 never
+    // runs.
+    expect(probes.map((p) => p.vendor).sort()).toEqual(Object.keys(HOST_BINARIES).sort())
+    expect(probes.map((p) => p.vendor)).not.toContain('cursor')
     for (const p of probes) expect(p.source).toBeTruthy()
   })
 })

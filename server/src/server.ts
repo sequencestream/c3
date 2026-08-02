@@ -6,7 +6,6 @@
  * helper closures have been pushed into `wiring/`; all domain logic lives in
  * `kernel/`. The `KernelContext` shape is unchanged.
  */
-import { homedir } from 'node:os'
 import { Hono } from 'hono'
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
@@ -105,7 +104,7 @@ import {
   resolve as resolveVendorCli,
 } from './kernel/agent/process/launcher.js'
 import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
-import { createCursorAdapter } from './kernel/agent/adapters/cursor/index.js'
+import { createCursorAdapter, cursorSdkAvailable } from './kernel/agent/adapters/cursor/index.js'
 import { createClaudeAdapter } from './kernel/agent/adapters/claude/index.js'
 import {
   createRelay,
@@ -318,25 +317,26 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     }
   }
 
-  // Cursor: an externally installed CLI (c3 never downloads it), so the probe is
-  // both a presence and a version-compatibility gate — an incompatible binary
-  // resolves to null and the cursor agent type is simply unavailable, rather than
-  // failing deep inside a run against an unverified stream format.
+  // Cursor: driven through `@cursor/sdk`'s local runtime, which ships as a c3
+  // dependency and executes IN THIS PROCESS — there is no host CLI to probe, no
+  // version to gate and no subprocess to spawn. Availability is therefore "is the
+  // SDK resolvable"; an install whose platform-native package is missing resolves
+  // to null and the cursor agent type is simply unavailable.
+  //
+  // The API key is NOT resolved here: it is per-agent (the bound agent's config,
+  // else the ambient CURSOR_API_KEY) and reaches the driver on the run's env map,
+  // so a server with no key still exposes cursor and fails the individual run with
+  // an actionable message.
   let cursorAdapter: VendorAdapter | null = null
-  if (resolveVendorCli('cursor')) {
+  if (cursorSdkAvailable()) {
     try {
-      cursorAdapter = createCursorAdapter({
-        resolveConfig: (startOpts) => ({
-          command: startOpts.sandboxWrapperPath ?? resolveVendorCli('cursor') ?? 'cursor-agent',
-          // Cursor's data root is fixed at `$HOME/.cursor` (the sandbox mounts the
-          // host copy), so MCP injection/self-check target the host HOME.
-          home: homedir(),
-        }),
-      })
-      console.log('[c3] cursor ready (per-run CLI)')
+      cursorAdapter = createCursorAdapter()
+      console.log('[c3] cursor ready (in-process SDK)')
     } catch (e) {
       console.warn(`[c3] cursor unavailable: ${e instanceof Error ? e.message : String(e)}`)
     }
+  } else {
+    console.warn('[c3] cursor unavailable: @cursor/sdk could not be resolved')
   }
 
   // Cross-vendor session listing (ADR-0013): the read-only union the new

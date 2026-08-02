@@ -1,33 +1,43 @@
 /**
- * Cursor {@link AgentDriver} — one non-interactive `cursor-agent -p` run per turn.
+ * Cursor {@link AgentDriver} — one SDK agent + one `send` per turn.
  *
- * The CLI is the only runtime载体: c3 spawns it with `--output-format stream-json`,
- * reads NDJSON off stdout, and normalizes each frame through
- * {@link CursorStreamTranslator}. There is no bidirectional channel, so the whole
- * of c3's run-time control is "start it" and "stop it".
+ * c3 drives Cursor through `@cursor/sdk`'s **local** runtime, which executes
+ * inside the c3 server process: there is no `cursor-agent` child to spawn, no
+ * argv to shape and no NDJSON to parse. A turn is `Agent.create` (or
+ * `Agent.resume`) → `send` → iterate `Run.stream()` → settle on `Run.wait()`.
  *
- * **Process group.** The child is spawned `detached`, making it a group leader, so
- * `abort()` can signal the CLI *and* every tool it spawned. Killing only the direct
- * child would leave a long-running shell tool orphaned and still writing to the
- * workspace. Abort therefore signals the group and waits for the child to actually
- * exit before the run settles.
+ * **Credentials.** The SDK authenticates with an API key only; it does not read
+ * the keychain credential `cursor-agent login` writes. The key is resolved
+ * before anything else so a run without one fails at the door rather than
+ * burning a turn to return `Invalid User API Key`.
  *
- * **Session id.** `sessionId()` stays pending until the stream reports a real
- * native id (`system/init`). If the process dies or ends without one, the promise
- * **rejects**: a fabricated id would later be handed to `--resume`, which would
- * either fail confusingly or, worse, attach to someone else's chat.
+ * **Session id.** The SDK mints the agent id up front, so `sessionId()` is known
+ * the moment `start()` returns — no waiting on an init frame, and no risk of a
+ * fabricated id reaching `resume` later.
  *
- * **Resume.** A c3 session that already owns a native id passes it verbatim to
- * `--resume`. Cursor's own store is the recovery truth; c3's canonical mirror is
- * only for listing and replay, and is refreshed from the new run's frames.
+ * **Resume.** A c3 session that already owns an agent id passes it verbatim to
+ * `Agent.resume`. Cursor's own store is the recovery truth; c3's canonical
+ * mirror is only for listing and replay, and is refreshed from each run's frames.
+ *
+ * **Abort.** `Run.cancel()` is the whole-turn kill. Because the runtime is
+ * in-process, cancelling is a real cooperative stop rather than a signal to a
+ * process group — but it is still whole-turn only: the SDK exposes no mid-turn
+ * interrupt and no per-tool approval point.
+ *
+ * ADR-0009: `@cursor/sdk` types stay inside this directory — the driver consumes
+ * the SDK behind the structural {@link CursorSdk} seam and only canonical shapes
+ * leave via {@link AgentRun.messages}.
  */
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { createInterface } from 'node:readline'
 import type { AgentDriver, AgentRun, CanonicalMessage, DriverStartOptions } from '../types.js'
 import { cursorCapabilities } from './capabilities.js'
 import { CursorStreamTranslator, type CursorEvent } from './translate.js'
-import { cursorExecArgs, cursorExecEnv, type CursorLaunchConfig } from './launch.js'
-import { prepareCursorMcp } from './mcp.js'
+import {
+  CursorUnsupportedError,
+  cursorAgentOptions,
+  cursorSendOptions,
+  cursorUserMessage,
+  type CursorLaunchConfig,
+} from './launch.js'
 
 /** Async-iterable message queue with a terminal failure, mirroring the codex driver's. */
 class CanonicalQueue implements AsyncIterable<CanonicalMessage> {
@@ -80,65 +90,78 @@ class CanonicalQueue implements AsyncIterable<CanonicalMessage> {
   }
 }
 
-/** How long to wait for a signalled process group to die before escalating. */
-const SIGKILL_GRACE_MS = 5_000
+/** The terminal state of one SDK run, as the driver reads it. */
+export interface CursorRunResult {
+  status: 'finished' | 'error' | 'cancelled' | string
+  error?: { message: string }
+}
 
-/** Spawn seam, so tests can drive the driver without a real CLI. */
-export type CursorSpawn = (
-  command: string,
-  args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean },
-) => ChildProcessWithoutNullStreams
+/** The minimal structural face of an SDK run the driver consumes. */
+export interface CursorRunHandle {
+  stream(): AsyncGenerator<unknown, void>
+  wait(): Promise<CursorRunResult>
+  cancel(): Promise<void>
+}
+
+/** The minimal structural face of an SDK agent the driver consumes. */
+export interface CursorAgentHandle {
+  readonly agentId: string
+  send(
+    message: { text: string; images?: Array<{ data: string; mimeType: string }> },
+    options: unknown,
+  ): Promise<CursorRunHandle>
+  close(): void
+}
+
+/**
+ * SDK boundary. The real implementation wraps `@cursor/sdk`'s `Agent`; tests
+ * inject a fake that scripts a message stream, so the main suite needs neither an
+ * API key nor a network hop.
+ */
+export interface CursorSdk {
+  create(options: unknown): Promise<CursorAgentHandle>
+  resume(agentId: string, options: unknown): Promise<CursorAgentHandle>
+}
+
+/**
+ * The default SDK binding — imported lazily so that merely constructing the
+ * adapter (which the automation tool-manifest path does, for its static tool
+ * list) never pulls the SDK's local runtime and its platform-native package into
+ * the process.
+ */
+const defaultSdk: CursorSdk = {
+  async create(options) {
+    const { Agent } = await import('@cursor/sdk')
+    return (await Agent.create(options as Parameters<typeof Agent.create>[0])) as CursorAgentHandle
+  },
+  async resume(agentId, options) {
+    const { Agent } = await import('@cursor/sdk')
+    return (await Agent.resume(
+      agentId,
+      options as Parameters<typeof Agent.resume>[1],
+    )) as CursorAgentHandle
+  },
+}
 
 class CursorRun implements AgentRun {
   private readonly queue = new CanonicalQueue()
   private readonly translator: CursorStreamTranslator
-  private readonly child: ChildProcessWithoutNullStreams
-  /** Resolves once the child has fully exited — abort waits on this. */
-  private readonly exited: Promise<void>
   private aborted = false
-  private sawSessionId = false
-  private resolveSid!: (id: string) => void
-  private rejectSid!: (err: unknown) => void
-  private readonly sidPromise: Promise<string>
+  /** The live run, once `send` has resolved — `cancel` has nothing to target before that. */
+  private run: CursorRunHandle | null = null
 
   constructor(
     private readonly opts: DriverStartOptions,
-    config: CursorLaunchConfig,
-    spawnFn: CursorSpawn,
-    private readonly cleanup: () => void = () => undefined,
+    private readonly agent: CursorAgentHandle,
   ) {
-    this.translator = new CursorStreamTranslator(opts.resume ?? '')
-
-    this.sidPromise = new Promise<string>((resolve, reject) => {
-      this.resolveSid = resolve
-      this.rejectSid = reject
-    })
-    // A resumed run already knows its native id; there is nothing to wait for.
-    if (opts.resume) {
-      this.sawSessionId = true
-      this.resolveSid(opts.resume)
-    }
-
-    this.child = spawnFn(config.command, cursorExecArgs(opts, config), {
-      cwd: opts.cwd,
-      env: cursorExecEnv(opts, config),
-      // Group leader: abort() signals the CLI and every tool it started.
-      detached: true,
-    })
-
-    this.exited = new Promise<void>((resolve) => {
-      this.child.once('close', () => resolve())
-    })
-
-    // The external signal is the run loop's abort path.
+    this.translator = new CursorStreamTranslator(agent.agentId)
     opts.signal.addEventListener('abort', () => this.abort(), { once: true })
-
     void this.pump()
   }
 
   sessionId(): Promise<string> {
-    return this.sidPromise
+    // The SDK mints the id when the agent is created, so this never pends.
+    return Promise.resolve(this.agent.agentId)
   }
 
   messages(): AsyncIterable<CanonicalMessage> {
@@ -148,123 +171,67 @@ class CursorRun implements AgentRun {
   abort(): void {
     if (this.aborted) return
     this.aborted = true
-    this.killGroup('SIGTERM')
-    // Escalate if the group ignores the polite signal, then let the reader's
-    // close handler settle the run — abort must not leave orphans behind.
-    const escalate = setTimeout(() => this.killGroup('SIGKILL'), SIGKILL_GRACE_MS)
-    void this.exited.finally(() => clearTimeout(escalate))
+    // Cancel is best-effort: a run that already settled rejects, and a turn that
+    // never started has nothing to cancel. Either way the queue closes, so the
+    // run loop is never left waiting on a stream that will not advance.
+    void this.run?.cancel().catch(() => undefined)
+    this.queue.close()
   }
 
-  /** Signal the whole process group, falling back to the child alone. */
-  private killGroup(signal: NodeJS.Signals): void {
-    const pid = this.child.pid
-    if (pid === undefined) return
-    try {
-      // Negative pid targets the group the detached child leads.
-      process.kill(-pid, signal)
-    } catch {
-      try {
-        this.child.kill(signal)
-      } catch {
-        /* already gone */
-      }
-    }
-  }
-
-  /** Read the stream to completion and settle the run exactly once. */
+  /** Drive the turn to completion and settle the run exactly once. */
   private async pump(): Promise<void> {
-    let stderr = ''
-    this.child.stderr.setEncoding('utf8')
-    this.child.stderr.on('data', (chunk: string) => {
-      // Keep the tail only: stderr is diagnostics, not an unbounded buffer.
-      stderr = (stderr + chunk).slice(-4_000)
-    })
-
-    let spawnError: Error | null = null
-    this.child.once('error', (err: Error) => {
-      spawnError = err
-    })
-
-    let protocolError: Error | null = null
     let ended: { isError: boolean; errorMessage?: string } | undefined
-
     try {
-      // readline yields only complete lines and flushes a final unterminated one
-      // at EOF, which is exactly the NDJSON framing the CLI produces.
-      const rl = createInterface({ input: this.child.stdout, crlfDelay: Infinity })
-      for await (const line of rl) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
+      const run = await this.agent.send(cursorUserMessage(this.opts), cursorSendOptions(this.opts))
+      this.run = run
+      // An abort that landed while `send` was in flight has to be honoured now —
+      // the listener fired before there was a run to cancel.
+      if (this.aborted) {
+        await run.cancel().catch(() => undefined)
+        return
+      }
 
-        let event: CursorEvent
-        try {
-          event = JSON.parse(trimmed) as CursorEvent
-        } catch (err) {
-          // A corrupt frame means the stream can no longer be trusted: fail the
-          // turn loudly rather than silently skipping model output.
-          protocolError = new Error(`cursor: unparseable stream frame: ${trimmed.slice(0, 200)}`, {
-            cause: err,
-          })
-          break
-        }
-
-        const { messages, sessionId, ended: end } = this.translator.consume(event)
-        if (sessionId && !this.sawSessionId) {
-          this.sawSessionId = true
-          this.resolveSid(sessionId)
-        }
+      for await (const event of run.stream()) {
+        if (this.aborted) break
+        const { messages, ended: end } = this.translator.consume(event as CursorEvent)
         for (const message of messages) this.queue.push(message)
         if (end) ended = end
       }
-      rl.close()
-    } catch (err) {
-      protocolError ??= err instanceof Error ? err : new Error(String(err))
-    }
 
-    await this.exited
-    const code = this.child.exitCode
-    // The child has exited, so it no longer needs the injected MCP config;
-    // restore the user's file now, regardless of how the turn settles.
-    this.cleanup()
+      if (this.aborted) return
 
-    // An id that never arrived must reject: inventing one would corrupt resume.
-    // A run that could not identify itself is an error turn too — its message
-    // stream fails rather than quietly draining to empty.
-    if (!this.sawSessionId) {
-      const reason = spawnError
-        ? `cursor: failed to launch: ${spawnError.message}`
-        : `cursor: run ended without reporting a session id${stderr ? ` — ${stderr.trim()}` : ''}`
-      this.rejectSid(new Error(reason))
-      // An aborted run settles quietly; any other no-id exit is an error turn.
-      if (this.aborted) this.queue.close()
-      else this.queue.fail(new Error(reason))
-      return
-    }
-
-    if (this.aborted) {
-      // The run loop treats an aborted turn as terminal on its own.
+      // `wait()` is the terminal truth: the stream ending only means no more
+      // frames, not that the turn succeeded.
+      const result = await run.wait()
+      if (result.status === 'error') {
+        this.queue.fail(
+          new Error(
+            result.error?.message ?? ended?.errorMessage ?? 'cursor run failed without a reason',
+          ),
+        )
+        return
+      }
+      // A cancellation the SDK reports (rather than one c3 asked for) still ends
+      // the turn quietly — there is no failure to surface, only a shorter turn.
+      if (ended?.isError && result.status !== 'cancelled') {
+        this.queue.fail(new Error(ended.errorMessage ?? 'cursor run failed'))
+        return
+      }
       this.queue.close()
-      return
+    } catch (err) {
+      // An aborted turn settles quietly: the abort is the caller's own doing, and
+      // whatever the SDK threw on the way down is a consequence of it.
+      if (this.aborted) this.queue.close()
+      else this.queue.fail(err)
+    } finally {
+      // The agent handle owns runtime resources (the local executor, its MCP
+      // clients); the next turn resumes by id, so nothing is lost by closing it.
+      try {
+        this.agent.close()
+      } catch {
+        /* already closed */
+      }
     }
-    if (spawnError) {
-      this.queue.fail(new Error(`cursor: failed to launch: ${(spawnError as Error).message}`))
-      return
-    }
-    if (protocolError) {
-      this.queue.fail(protocolError)
-      return
-    }
-    if (ended?.isError) {
-      this.queue.fail(new Error(ended.errorMessage ?? 'cursor run failed'))
-      return
-    }
-    if (code !== 0 && code !== null) {
-      this.queue.fail(
-        new Error(`cursor exited with code ${code}${stderr ? `: ${stderr.trim()}` : ''}`),
-      )
-      return
-    }
-    this.queue.close()
   }
 }
 
@@ -274,27 +241,29 @@ export class CursorDriver implements AgentDriver {
 
   constructor(
     private readonly resolveConfig: (opts: DriverStartOptions) => CursorLaunchConfig,
-    private readonly spawnFn: CursorSpawn = (command, args, options) =>
-      spawn(command, args, options) as ChildProcessWithoutNullStreams,
+    private readonly sdk: CursorSdk = defaultSdk,
   ) {}
 
   async start(opts: DriverStartOptions): Promise<AgentRun> {
-    const config = this.resolveConfig(opts)
-    // Inject c3's MCP servers into the config the CLI reads and confirm they are
-    // visible before spending a run: a run that starts without tools it was
-    // promised must hard-fail here, not mid-turn. The disposer restores the
-    // user's config once the run settles.
-    let cleanup: () => void = () => undefined
-    if (opts.mcpServers && Object.keys(opts.mcpServers).length > 0 && config.home) {
-      const { dispose } = prepareCursorMcp(
-        config.home,
-        opts.mcpServers,
-        config.command,
-        cursorExecEnv(opts, config),
-        opts.cwd,
-      )
-      cleanup = dispose
+    // Option shaping resolves the credential, so a run with no key at all throws
+    // here — before an agent exists and before a turn is spent.
+    const options = cursorAgentOptions(opts, this.resolveConfig(opts))
+    try {
+      const agent = opts.resume
+        ? await this.sdk.resume(opts.resume, options)
+        : await this.sdk.create(options)
+      return new CursorRun(opts, agent)
+    } catch (err) {
+      // `Agent.create` validates the credential over the network before it
+      // returns, so a bad key surfaces here as a bare HTTP 401 whose message
+      // names an endpoint rather than the thing the operator has to fix.
+      const status = (err as { status?: unknown }).status
+      if (status === 401 || status === 403) {
+        throw new CursorUnsupportedError(
+          'cursor: the API key was rejected — check the key on this agent, or CURSOR_API_KEY in the server environment.',
+        )
+      }
+      throw err
     }
-    return new CursorRun(opts, config, this.spawnFn, cleanup)
   }
 }

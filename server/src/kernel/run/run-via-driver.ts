@@ -46,6 +46,7 @@ import {
 } from '../agent-config/index.js'
 import { waitForDecision } from '../permission/index.js'
 import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
+import { VENDOR_AUTH_PROFILES } from '../sandbox/vendor-auth.js'
 import { agentErrorEvent } from './agent-events.js'
 import { modelUserTurn, type RunInject } from './prompt-delivery.js'
 import {
@@ -481,9 +482,25 @@ export async function runViaDriver(
     adapter.vendor === 'codex' && !rt.sandboxPaths && resolveSessionStoreScope(runId) === 'sandbox'
       ? relayCodexHome()
       : undefined
-  const driverEnvOverrides = crossModeCodexHome
-    ? { ...(ghBridgedEnv ?? {}), CODEX_HOME: crossModeCodexHome }
-    : ghBridgedEnv
+  // Cursor's SDK runs in-process and authenticates with an API key only (a
+  // `cursor-agent login` session does not apply to it), so the bound agent's own
+  // key reaches its driver through this run's env map — the one credential
+  // channel `DriverStartOptions` has. Absent ⇒ the driver falls back to the
+  // server's ambient CURSOR_API_KEY, and fails at the door when there is none.
+  const cursorKeyEnv = ((): Record<string, string> | undefined => {
+    if (adapter.vendor !== 'cursor') return undefined
+    const agent = resolveAgent(agentId)
+    const key = agent.vendor === 'cursor' ? agent.config.apiKey?.trim() : undefined
+    return key ? { CURSOR_API_KEY: key } : undefined
+  })()
+  const driverEnvOverrides =
+    crossModeCodexHome || cursorKeyEnv
+      ? {
+          ...(ghBridgedEnv ?? {}),
+          ...(crossModeCodexHome ? { CODEX_HOME: crossModeCodexHome } : {}),
+          ...(cursorKeyEnv ?? {}),
+        }
+      : ghBridgedEnv
 
   // Sandbox wrapper: when the run has a resolved arapuca allow set, wrap the
   // vendor CLI in `arapuca run -v … -- <cli> "$@"`. The adapter uses this path
@@ -495,11 +512,16 @@ export async function runViaDriver(
   // a subscription (`system`-mode) agent authenticates through the host keychain,
   // which arapuca only exposes when explicitly allowed; a custom agent keeps the
   // env-injected credential and no keychain access.
-  const sandboxWrapperPath = rt.sandboxPaths
-    ? createSandboxWrapper(rt.sandboxPaths, adapter.vendor, rt.sandboxTmpDir ?? '', {
-        allowKeychain: resolveAgent(agentId).configMode === 'system',
-      })
-    : undefined
+  //
+  // A vendor with no arapuca auth profile runs on an in-process SDK, so there is
+  // no child process to wrap: it gets the neutral `sandboxed` flag below and
+  // isolates through its own runtime instead.
+  const sandboxWrapperPath =
+    rt.sandboxPaths && VENDOR_AUTH_PROFILES[adapter.vendor]
+      ? createSandboxWrapper(rt.sandboxPaths, adapter.vendor, rt.sandboxTmpDir ?? '', {
+          allowKeychain: resolveAgent(agentId).configMode === 'system',
+        })
+      : undefined
   // Override cwd: Codex spec sessions (specs root write boundary), effectiveCwd
   // (worktree isolation — also the arapuca same-path cwd), or original workspacePath.
   const specDriverCwd =
@@ -558,6 +580,7 @@ export async function runViaDriver(
       ...(relayCandidates ? { relayCandidates } : {}),
       ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
       ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
+      ...(rt.sandboxPaths ? { sandboxed: true } : {}),
       ...(adapter.vendor === 'codex'
         ? { additionalDirectories: [getSpecsBase(workspacePath)] }
         : {}),

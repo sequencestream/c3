@@ -226,13 +226,13 @@ vendor SDK / driver 仍以为自己在 spawn 一个普通本地 CLI；实际这�
 
 ### 9.2 transcript store 定位:冻结 storeScope + vendor 中立数据根
 
-历史 session 展示会话记录从 vendor native store 读(c3 不另存;cursor 例外——其私有 store 不被回读,无私有 transcript 可回放):`features/sessions/history.ts` `loadHistoryForVendor` → codex 走 `CodexSessionStore.read`、claude 走 `loadHistory`、cursor 返回空记录。所有已持久化 transcript 的读取方共用它——交互式 `select_session` 与自动化执行详情(`get_execution_transcript`,按自动化冻结的 `vendor` 分派)——两条读路径不会对"会话在哪"产生分歧。sandbox 与宿主的 vendor 数据根不同(codex `CODEX_HOME`、claude `CLAUDE_CONFIG_DIR`),故 transcript 物理落在两地之一。三层机制:
+历史 session 展示会话记录一律从 vendor native store 读(c3 不另存):`features/sessions/history.ts` `loadHistoryForVendor` → codex 走 `CodexSessionStore.read`、claude 走 `loadHistory`、cursor 走 `CursorSessionStore.read`(读 `@cursor/sdk` 的 local agent store,而非 Cursor IDE 私有库)。所有已持久化 transcript 的读取方共用它——交互式 `select_session` 与自动化执行详情(`get_execution_transcript`,按自动化冻结的 `vendor` 分派)——两条读路径不会对"会话在哪"产生分歧。sandbox 与宿主的 vendor 数据根不同(codex `CODEX_HOME`、claude `CLAUDE_CONFIG_DIR`),故 transcript 物理落在两地之一。三层机制:
 
 **① 读取端两处扫(dual-scan,兜底)**:`CodexSessionStore.list/read` 不再硬编码宿主 `~/.codex`,而按 `storeRoots` 扫描多个 CODEX_HOME 根;缺省即扫**宿主 `~/.codex` + 本工作区 sandbox home 两处**(`codexStoreRoots`),命中即算——按 `session id + cwd` 精确匹配,thread id 唯一不冲突。侧栏冷枚举/回填与存量 session 天然鲁棒。
 
 **② 冻结 `storeScope: 'host' | 'sandbox'`(治本,精确定位)**:session fact 在首次 bind 时冻结 `storeScope`(类比已冻结的 `vendor`),取值由该 run 是否 sandbox(`rt.sandboxPaths`)决定,写入 `SessionAgentFact`(state.json)。读取端 `loadHistoryForVendor` 按冻结 scope 取 `codexStoreRoots(cwd, scope)`——冻结根优先、另一根兜底。续接端(`run-via-driver`):**非 sandbox run 续接一个冻结为 sandbox 的 codex session** 时,把 `CODEX_HOME` 指向 sandbox home,使宿主进程也能找到 rollout(反向——host-frozen 在 sandbox 内续接——保持 wrapper 的 sandbox home,为可接受的取舍)。
 
-**③ vendor 中立"每 vendor sandbox 数据根"**:`resolveVendorStoreDir(vendor, workspace, scope)` 收敛各 vendor 的数据根解析(`workspace-path.ts`)。codex → `host` 用 `~/.codex`、`sandbox` 用隔离的 `relayCodexHome()`;claude → 两 scope 均为宿主 `hostClaudeConfigDir()`;cursor → 以 `~/.cursor` 为数据根(无数据根覆盖变量,经 `HOME` 重定位)。`ResolvedSandboxPaths` 增 `claudeConfigDir`,wrapper 按策略挂载对应根(见 §9.1)。
+**③ vendor 中立"每 vendor sandbox 数据根"**:`resolveVendorStoreDir(vendor, workspace, scope)` 收敛各 vendor 的数据根解析(`workspace-path.ts`)。codex → `host` 用 `~/.codex`、`sandbox` 用隔离的 `relayCodexHome()`;claude → 两 scope 均为宿主 `hostClaudeConfigDir()`;cursor → 两 scope 均为宿主 `~/.cursor`(SDK 在 c3 进程内运行,不随沙箱换根)。`ResolvedSandboxPaths` 增 `claudeConfigDir`,wrapper 按策略挂载对应根(见 §9.1)。
 
 **为何 claude 不需要按 scope 分支读取**:claude sandbox 复用宿主 config dir(见 §9.1 claude 策略),sandbox 写入即落在 server 读取端同一处,查看零改动即成立;故 `storeScope` 的读取分支实际只对 codex 生效,但模型保持 vendor 中立。
 

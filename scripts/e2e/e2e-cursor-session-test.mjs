@@ -1,21 +1,22 @@
 #!/usr/bin/env node
 /**
- * Cursor 会话端到端验证 — 走真实 WS 协议与真实 `cursor-agent` CLI(花费少量真实
- * 额度,两轮短对话)。复核 c3 服务端的 Cursor 接线:新建 Cursor 会话 → 第一轮产出
- * text 与 tool_use → 会话进入列表 → 以捕获的原生 session id 续聊第二轮。
+ * Cursor 会话端到端验证 — 走真实 WS 协议与真实 `@cursor/sdk` 本地运行时(花费少量
+ * 真实额度,两轮短对话)。复核 c3 服务端的 Cursor 接线:新建 Cursor 会话 → 第一轮
+ * 产出 text 与 tool_use → 会话进入列表 → 以捕获的原生 agent id 续聊第二轮。
  *
  * 覆盖的验收点:
  *   - UI(协议层)新建 Cursor 会话并完成一轮执行,展示 text 与 tool_use。
  *   - 会话出现在列表中。
  *   - 使用 Cursor 原生 session id 成功续聊第二轮。
  *
- * 前置(不满足即 SKIP,退出码 5):宿主 PATH 上有 `cursor-agent` 且已登录
- * (`cursor-agent status` 非 "Not logged in")。非 CI 安全 —— 需要真实登录与出网。
+ * 前置(不满足即 SKIP,退出码 5):环境变量 CURSOR_API_KEY 已设置,且 `@cursor/sdk`
+ * 可解析。SDK 只认 API Key —— `cursor-agent login` 的钥匙串登录态对它无效。
+ * 非 CI 安全 —— 需要真实密钥与出网。
  *
  * 用法:
  *   node scripts/e2e/e2e-cursor-session-test.mjs [ws-url]
  */
-import { spawnSync } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -30,18 +31,18 @@ function skip(reason) {
   process.exit(5)
 }
 
-// ─── 前置检查:cursor-agent 在场且已登录 ───────────────────────────────────────
-function cursorAvailable() {
-  const probe = spawnSync('sh', ['-c', 'command -v cursor-agent'], { encoding: 'utf8' })
-  return Boolean((probe.stdout ?? '').trim())
+// ─── 前置检查:SDK 可解析且有 API Key ─────────────────────────────────────────
+function sdkAvailable() {
+  try {
+    createRequire(import.meta.url).resolve('@cursor/sdk')
+    return true
+  } catch {
+    return false
+  }
 }
-function cursorLoggedIn() {
-  const r = spawnSync('cursor-agent', ['status'], { encoding: 'utf8', timeout: 60_000 })
-  const out = (r.stdout ?? '') + (r.stderr ?? '')
-  return !/not logged in/i.test(out)
-}
-if (!cursorAvailable()) skip('宿主 PATH 上没有 cursor-agent CLI')
-if (!cursorLoggedIn()) skip('cursor-agent 未登录(无法花费真实额度完成运行)')
+const API_KEY = (process.env.CURSOR_API_KEY ?? '').trim()
+if (!sdkAvailable()) skip('@cursor/sdk 无法解析(未安装或缺少本平台原生包)')
+if (!API_KEY) skip('未设置 CURSOR_API_KEY(SDK 只认 API Key,不读 cursor-agent 登录态)')
 
 // ─── 工作区 ────────────────────────────────────────────────────────────────────
 const PROJECT_DIR = mkdtempSync(join(tmpdir(), 'c3-cursor-e2e-'))
@@ -124,7 +125,8 @@ ws.addEventListener('message', (evt) => {
             configMode: 'system',
             displayName: 'Cursor E2E',
             enabled: true,
-            config: {},
+            // SDK 只认 API Key;留空则回落到服务端环境里的 CURSOR_API_KEY。
+            config: { apiKey: API_KEY, model: '' },
           })
         }
         send({ type: 'save_settings', settings: { ...msg.settings, agents } })
@@ -149,7 +151,7 @@ ws.addEventListener('message', (evt) => {
       if (phase === 'turn1' && !pendingSessionId) {
         pendingSessionId = msg.sessionId
         log(`会话已创建(${pendingSessionId}),发起第一轮`)
-        // Pin full-access so tools auto-run: `-p` has no approval channel, and an
+        // Pin full-access so tools auto-run: the SDK has no approval channel, and an
         // unlisted tool would otherwise block the turn waiting for one.
         send({ type: 'set_mode', mode: 'full-access' })
         send({ type: 'user_prompt', text: PROMPT_1 })

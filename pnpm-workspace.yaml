@@ -19,3 +19,10 @@ minimumReleaseAgeExclude:
   - '@anthropic-ai/claude-agent-sdk@0.3.158'
 onlyBuiltDependencies:
   - esbuild
+overrides:
+  # zod@3.25.0 is a broken publish: the tarball ships only `src/`, no `dist/`, so
+  # `@cursor/sdk` fails to load with a bare ERR_MODULE_NOT_FOUND on
+  # `zod/dist/esm/index.js`. The SDK's own range (`^3.25.0`) allows it, and the
+  # release-age floor pushes resolution onto that oldest entry, so the version is
+  # pinned here — scoped to the SDK, leaving the workspace's own zod 4 untouched.
+  '@cursor/sdk>zod': ^3.25.76

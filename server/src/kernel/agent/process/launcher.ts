@@ -26,80 +26,34 @@ export type VendorCliSource =
   | 'install-failed'
   | 'override-invalid'
 
-/** Fields every vendor binary carries, however it got onto the machine. */
-interface VendorBinaryBase {
+/**
+ * A vendor CLI c3 installs and versions itself from npm, under
+ * `~/.c3/vendor/<vendor>/<version>`. Every spec participates in remote version
+ * discovery, download, pinning and history cleanup — a vendor with no spec is one
+ * c3 does not launch as a host process at all (see {@link HOST_BINARIES}).
+ */
+export interface VendorBinarySpec {
   readonly vendor: VendorId
   readonly binary: string
   readonly pathEnv: string
+  readonly packageName: string
+  readonly preferredDistTag: string
+  readonly compatibleRange: string
   readonly installHint: string
 }
 
 /**
- * A CLI c3 installs and versions itself from npm, under
- * `~/.c3/vendor/<vendor>/<version>`. Only these participate in remote version
- * discovery, download, pinning and history cleanup.
- */
-export interface ManagedVendorBinarySpec extends VendorBinaryBase {
-  readonly kind: 'managed'
-  readonly packageName: string
-  readonly preferredDistTag: string
-  readonly compatibleRange: string
-}
-
-/**
- * A CLI the user installs and updates themselves; c3 only locates it and checks
- * that it is a version we know how to drive. There is no npm package to resolve,
- * so the managed install/pin/cleanup machinery must skip these entirely — the
- * only resolution chain is `$<VENDOR>_PATH` then host PATH.
+ * The vendors c3 drives by launching a host CLI, keyed by vendor.
  *
- * `isCompatibleVersion` replaces `compatibleRange` because an external CLI need
- * not use semver at all (Cursor ships calendar versions like `2026.07.23-e383d2b`,
- * which no semver range can express).
+ * Deliberately partial over {@link VendorId}: `cursor` runs on `@cursor/sdk`'s
+ * local runtime **inside the c3 process**, so it has no binary to find, no
+ * version to pin and nothing for the npm install/sync machinery to do. Absence
+ * from this table is what states that — the alternative, a fake spec, would put
+ * cursor into every version panel and background registry check for a CLI that is
+ * never launched.
  */
-export interface ExternalVendorBinarySpec extends VendorBinaryBase {
-  readonly kind: 'external'
-  /** Human-readable statement of what c3 supports, shown in diagnostics. */
-  readonly compatibilityLabel: string
-  /** Whether a probed version string is one c3 knows how to drive. */
-  isCompatibleVersion(version: string): boolean
-}
-
-export type VendorBinarySpec = ManagedVendorBinarySpec | ExternalVendorBinarySpec
-
-/**
- * The compatible-range field the probe surface reports. Managed specs carry a
- * semver range; external specs carry a prose label, since their versioning
- * scheme need not be semver.
- */
-function rangeLabel(spec: VendorBinarySpec): string {
-  return spec.kind === 'managed' ? spec.compatibleRange : spec.compatibilityLabel
-}
-
-/**
- * The earliest Cursor CLI whose `-p --output-format stream-json` event shapes and
- * `--resume` semantics c3's driver was verified against. Cursor uses calendar
- * versions (`YYYY.MM.DD-<sha>`), so compatibility is a date floor, not a range.
- */
-const CURSOR_MIN_CALVER = '2026.07.23'
-
-/** Compare the `YYYY.MM.DD` prefix of two Cursor calendar versions. */
-export function cursorVersionAtLeast(version: string, minimum: string): boolean {
-  const parse = (v: string): [number, number, number] | null => {
-    const m = /^(\d{4})\.(\d{2})\.(\d{2})/.exec(v.trim())
-    return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null
-  }
-  const got = parse(version)
-  const want = parse(minimum)
-  if (!got || !want) return false
-  for (let i = 0; i < 3; i += 1) {
-    if (got[i] !== want[i]) return got[i] > want[i]
-  }
-  return true
-}
-
-export const HOST_BINARIES: Record<VendorId, VendorBinarySpec> = {
+export const HOST_BINARIES: Partial<Record<VendorId, VendorBinarySpec>> = {
   claude: {
-    kind: 'managed',
     vendor: 'claude',
     binary: 'claude',
     pathEnv: 'CLAUDE_PATH',
@@ -110,7 +64,6 @@ export const HOST_BINARIES: Record<VendorId, VendorBinarySpec> = {
       'c3 installs Claude Code under ~/.c3/vendor/claude by default. Override with $CLAUDE_PATH, or keep a host `claude` on PATH as a degraded fallback.',
   },
   codex: {
-    kind: 'managed',
     vendor: 'codex',
     binary: 'codex',
     pathEnv: 'CODEX_PATH',
@@ -120,47 +73,36 @@ export const HOST_BINARIES: Record<VendorId, VendorBinarySpec> = {
     installHint:
       'c3 installs Codex under ~/.c3/vendor/codex by default. Override with $CODEX_PATH, or keep a host `codex` on PATH as a degraded fallback.',
   },
-  cursor: {
-    kind: 'external',
-    vendor: 'cursor',
-    binary: 'cursor-agent',
-    pathEnv: 'CURSOR_AGENT_PATH',
-    compatibilityLabel: `>=${CURSOR_MIN_CALVER}`,
-    isCompatibleVersion: (version) => cursorVersionAtLeast(version, CURSOR_MIN_CALVER),
-    installHint:
-      'c3 does not install Cursor. Install the Cursor CLI yourself (`curl https://cursor.com/install -fsS | bash`), sign in with `cursor-agent login`, then keep `cursor-agent` on PATH or point $CURSOR_AGENT_PATH at it.',
-  },
 }
 
-/** Whether c3 installs and versions this vendor's CLI itself. */
+/** Whether c3 launches this vendor as a host CLI it installs and versions itself. */
 export function isManagedVendor(vendor: VendorId): boolean {
-  return HOST_BINARIES[vendor].kind === 'managed'
+  return HOST_BINARIES[vendor] !== undefined
 }
 
 /**
- * The compatibility statement c3 reports for a vendor: a semver range for a
- * managed CLI, a prose label for an externally installed one.
+ * The compatibility statement c3 reports for a vendor — the semver range its
+ * managed CLI must satisfy. An SDK-embedded vendor has no CLI to constrain, so it
+ * reports an empty label rather than a range that would imply one exists.
  */
 export function vendorCompatibilityLabel(vendor: VendorId): string {
-  return rangeLabel(HOST_BINARIES[vendor])
+  return HOST_BINARIES[vendor]?.compatibleRange ?? ''
 }
 
-/** The managed specs only — the set the npm install/sync/cleanup paths may touch. */
-export function managedVendorSpecs(): ManagedVendorBinarySpec[] {
-  return (Object.values(HOST_BINARIES) as VendorBinarySpec[]).filter(
-    (spec): spec is ManagedVendorBinarySpec => spec.kind === 'managed',
-  )
+/** Every managed spec — the set the npm install/sync/cleanup paths may touch. */
+export function managedVendorSpecs(): VendorBinarySpec[] {
+  return Object.values(HOST_BINARIES)
 }
 
 /**
- * Assert a vendor is c3-managed before entering an npm install/version path.
- * External CLIs have no package to resolve, so reaching here with one is a wiring
- * bug: it fails loudly rather than inventing a package name.
+ * Assert a vendor has a host CLI before entering any path that resolves, probes,
+ * installs or versions one. Reaching here with an SDK-embedded vendor is a wiring
+ * bug: it fails loudly rather than inventing a binary name.
  */
-function requireManaged(vendor: VendorId): ManagedVendorBinarySpec {
+function requireManaged(vendor: VendorId): VendorBinarySpec {
   const spec = HOST_BINARIES[vendor]
-  if (spec.kind !== 'managed') {
-    throw new Error(`${vendor} is an externally installed CLI; c3 does not manage its versions`)
+  if (!spec) {
+    throw new Error(`${vendor} has no host CLI: it runs on an in-process SDK`)
   }
   return spec
 }
@@ -240,7 +182,7 @@ export function lookupCommand(
 }
 
 export function managedBinPath(vendor: VendorId, version: string, home = c3HomeDir()): string {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   return join(home, 'vendor', vendor, version, 'bin', spec.binary)
 }
 
@@ -267,7 +209,7 @@ function nowIso(deps?: VendorInstallerDeps): string {
 }
 
 function hostPath(vendor: VendorId): string | null {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   try {
     const [cmd, args] = lookupCommand(spec.binary)
     const r = spawnSync(cmd, args, { encoding: 'utf-8' })
@@ -297,16 +239,17 @@ function defaultRunVersion(path: string): string {
 
 export function parseVendorVersion(vendor: VendorId, output: string): string | null {
   const text = output.trim()
-  const patterns: Record<VendorId, RegExp[]> = {
+  // Partial over VendorId for the same reason HOST_BINARIES is: a vendor with no
+  // host CLI has no `--version` output to parse, so it gets no pattern rather than
+  // a dead one.
+  const patterns: Partial<Record<VendorId, RegExp[]>> = {
     claude: [
       /claude(?:\s+code)?\s+(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i,
       /(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\s+\(?claude(?:\s+code)?\)?/i,
     ],
     codex: [/codex(?:-cli)?\s+(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/i],
-    // Cursor prints a bare calendar version, e.g. `2026.07.23-e383d2b`.
-    cursor: [/^(\d{4}\.\d{2}\.\d{2}(?:-[0-9A-Za-z.-]+)?)$/m],
   }
-  for (const pattern of patterns[vendor]) {
+  for (const pattern of patterns[vendor] ?? []) {
     const m = pattern.exec(text)
     if (m) return m[1]
   }
@@ -353,11 +296,11 @@ export function satisfiesRange(version: string, range: string): boolean {
 }
 
 function stateEntry(vendor: VendorId, patch: Partial<VendorStateEntry>): VendorStateEntry {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   return {
     vendor,
     source: 'missing',
-    compatibleRange: rangeLabel(spec),
+    compatibleRange: spec.compatibleRange,
     versionHistory: [],
     ...patch,
   }
@@ -404,44 +347,7 @@ function probeManaged(vendor: VendorId, version: string, deps?: VendorInstallerD
     present: true,
     version: versionText,
     expectedVersion: version,
-    compatibleRange: rangeLabel(spec),
-    installHint: spec.installHint,
-  }
-}
-
-/**
- * Resolve an externally installed CLI from host PATH and verify c3 can drive it.
- * A present-but-incompatible binary is deliberately reported as NOT present: a
- * version whose stream shape we have never verified would fail deep inside a run
- * instead of at the door, where the operator can act on the install hint.
- */
-function externalProbe(
-  vendor: VendorId,
-  spec: ExternalVendorBinarySpec,
-  deps?: VendorInstallerDeps,
-): VendorProbe {
-  const path = hostPath(vendor)
-  if (!path) return missingProbe(vendor)
-  let version: string
-  try {
-    version = probeVersion(path, vendor, deps)
-  } catch (err) {
-    return missingProbe(vendor, `host PATH version probe failed: ${(err as Error).message}`)
-  }
-  if (!spec.isCompatibleVersion(version)) {
-    return missingProbe(
-      vendor,
-      `${spec.binary} ${version} is outside the supported range ${spec.compatibilityLabel}; upgrade it`,
-    )
-  }
-  return {
-    vendor,
-    binary: spec.binary,
-    path,
-    source: 'host-path-fallback',
-    present: true,
-    version,
-    compatibleRange: rangeLabel(spec),
+    compatibleRange: spec.compatibleRange,
     installHint: spec.installHint,
   }
 }
@@ -451,7 +357,7 @@ function fallbackProbe(
   managedError?: string,
   deps?: VendorInstallerDeps,
 ): VendorProbe {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   const path = hostPath(vendor)
   if (path) {
     try {
@@ -463,7 +369,7 @@ function fallbackProbe(
         source: 'host-path-fallback',
         present: true,
         version,
-        compatibleRange: rangeLabel(spec),
+        compatibleRange: spec.compatibleRange,
         installHint: spec.installHint,
         managedError,
       }
@@ -479,14 +385,14 @@ function fallbackProbe(
 }
 
 function missingProbe(vendor: VendorId, error?: string, managedError?: string): VendorProbe {
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   return {
     vendor,
     binary: spec.binary,
     path: null,
     source: managedError ? 'install-failed' : 'missing',
     present: false,
-    compatibleRange: rangeLabel(spec),
+    compatibleRange: spec.compatibleRange,
     installHint: spec.installHint,
     ...(error ? { error } : {}),
     ...(managedError ? { managedError } : {}),
@@ -497,17 +403,12 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
   const cached = cache.get(vendor)
   if (cached) return cached
   const env = deps?.env ?? process.env
-  const spec = HOST_BINARIES[vendor]
+  const spec = requireManaged(vendor)
   const override = env[spec.pathEnv]
   if (override) {
     try {
       if (!isExecutable(override)) throw new Error(`not executable: ${override}`)
       const version = probeVersion(override, vendor, deps)
-      // An external CLI pointed at explicitly still has to be a version c3 was
-      // verified against; the override chooses which binary, not whether it works.
-      if (spec.kind === 'external' && !spec.isCompatibleVersion(version)) {
-        throw new Error(`${version} is outside the supported range ${spec.compatibilityLabel}`)
-      }
       const probe: VendorProbe = {
         vendor,
         binary: spec.binary,
@@ -515,7 +416,7 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
         source: 'env-override',
         present: true,
         version,
-        compatibleRange: rangeLabel(spec),
+        compatibleRange: spec.compatibleRange,
         installHint: spec.installHint,
       }
       cache.set(vendor, probe)
@@ -532,7 +433,7 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
         path: null,
         source: 'override-invalid',
         present: false,
-        compatibleRange: rangeLabel(spec),
+        compatibleRange: spec.compatibleRange,
         installHint: spec.installHint,
         error: `${spec.pathEnv} invalid: ${(err as Error).message}`,
       }
@@ -544,26 +445,6 @@ export function resolveExecutable(vendor: VendorId, deps?: VendorInstallerDeps):
       )
       return probe
     }
-  }
-
-  // An externally installed CLI has no managed candidates to degrade through:
-  // once `$<VENDOR>_PATH` is out of the picture, host PATH is the whole chain.
-  // The version still has to be one c3 knows how to drive, and an incompatible
-  // one is reported as unusable rather than launched and hoped for.
-  if (spec.kind === 'external') {
-    const probe = externalProbe(vendor, spec, deps)
-    cache.set(vendor, probe)
-    recordState(
-      vendor,
-      {
-        source: probe.source,
-        path: probe.path ?? undefined,
-        selectedVersion: probe.version,
-        lastError: probe.error,
-      },
-      deps,
-    )
-    return probe
   }
 
   const pins = getVendorCliVersions()

@@ -8,10 +8,12 @@
  */
 import type { CanonicalMessage, TranscriptItem, VendorId } from '@ccc/shared/protocol'
 import { CodexSessionStore, codexStoreRoots } from '../../kernel/agent/adapters/codex/index.js'
+import { CursorSessionStore } from '../../kernel/agent/adapters/cursor/session-store.js'
 import { resolveSessionStoreScope } from '../../kernel/agent-config/index.js'
 import { loadHistory } from '../../sessions.js'
 
 const codexHistoryStore = new CodexSessionStore()
+const cursorHistoryStore = new CursorSessionStore()
 
 /** Read a session's persisted transcript from its vendor's native session store. */
 export async function loadHistoryForVendor(
@@ -30,11 +32,23 @@ export async function loadHistoryForVendor(
       )
     }
     case 'cursor':
-      // Cursor keeps its chats in a private database c3 deliberately does not
-      // read, so there is no native transcript to replay. The live stream is
-      // what the console showed, and resume replays Cursor's own context — an
-      // empty history here is the truthful answer, not a failure.
-      return []
+      // Read from the SDK's own local agent store (a published API), never from
+      // the Cursor IDE's private chat database. That store holds exactly the
+      // agents c3 created through the SDK, which is why the capability ledger
+      // calls this read `partial`. A read that finds nothing yields an empty
+      // transcript — resume still replays Cursor's own context regardless.
+      try {
+        return canonicalToTranscript(
+          await cursorHistoryStore.read(sessionId, { cwd: workspacePath }),
+        )
+      } catch (err) {
+        // The SDK's store lives behind an optional native module; a host without
+        // it must not take the whole history read down with it.
+        console.warn(
+          `[c3] cursor history unavailable for ${sessionId}: ${err instanceof Error ? err.message : String(err)}`,
+        )
+        return []
+      }
     case 'claude':
       // Claude transcripts are read via the SDK, which keys its projects root off
       // the server process's CLAUDE_CONFIG_DIR. The sandbox writes claude

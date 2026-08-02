@@ -258,9 +258,9 @@ const CURSOR_SEM_SEARCH_RULE: RiskRule = {
 }
 
 /**
- * Cursor has no separate create-file tool: `edit` both creates and rewrites,
- * distinguished only by whether the path already exists. It is therefore always
- * classified as a write.
+ * Cursor's `edit` rewrites an existing file in place; its `write` creates one (or
+ * replaces it wholesale). Both mutate, and both name their target `path`, so the
+ * two share a rule while keeping distinct intents at the call site.
  */
 const CURSOR_EDIT_RULE: RiskRule = {
   intent: 'edit-file',
@@ -271,21 +271,21 @@ const CURSOR_EDIT_RULE: RiskRule = {
   requireTarget: true,
 }
 
-const CURSOR_DELETE_RULE: RiskRule = {
-  intent: 'delete-file',
-  description: 'Delete a file',
+const CURSOR_WRITE_RULE: RiskRule = {
+  intent: 'create-file',
+  description: 'Write a file',
   kind: 'file',
   risks: { read: false, write: true, execute: false, network: false },
   extract: (i) => single(str(i, 'path')),
   requireTarget: true,
 }
 
-const CURSOR_WEB_SEARCH_RULE: RiskRule = {
-  intent: 'web-search',
-  description: 'Search the web',
-  kind: 'query',
-  risks: { read: true, write: false, execute: false, network: true },
-  extract: (i) => single(str(i, 'query') || str(i, 'search_term')),
+const CURSOR_DELETE_RULE: RiskRule = {
+  intent: 'delete-file',
+  description: 'Delete a file',
+  kind: 'file',
+  risks: { read: false, write: true, execute: false, network: false },
+  extract: (i) => single(str(i, 'path')),
   requireTarget: true,
 }
 
@@ -316,10 +316,12 @@ const RULES: Record<VendorId, Record<string, RiskRule>> = {
     local_shell: SHELL_RULE,
     apply_patch: PATCH_RULE,
   },
-  // Cursor's stream names a tool by its wrapper key; the adapter strips the
-  // `ToolCall` suffix before a name reaches here, so these are the console-visible
-  // names. Only tools whose native argument shape is known are mapped — anything
-  // else stays `unknown-tool` and fails closed rather than being approximated.
+  // Cursor's stream names a tool by the discriminant of the SDK's own `ToolCall`
+  // union, so these are both the wire identity and the console-visible name. Only
+  // tools whose native argument shape is known are mapped — the rest of the union
+  // (`mcp`, `task`, `createPlan`, `updateTodos`, `readLints`, `generateImage`,
+  // `recordScreen`) stays `unknown-tool` and fails closed rather than being
+  // approximated from a same-sounding tool on another vendor.
   cursor: {
     shell: SHELL_RULE,
     read: CURSOR_READ_RULE,
@@ -328,10 +330,8 @@ const RULES: Record<VendorId, Record<string, RiskRule>> = {
     grep: CURSOR_GREP_RULE,
     semSearch: CURSOR_SEM_SEARCH_RULE,
     edit: CURSOR_EDIT_RULE,
+    write: CURSOR_WRITE_RULE,
     delete: CURSOR_DELETE_RULE,
-    webFetch: WEB_FETCH_RULE,
-    fetch: WEB_FETCH_RULE,
-    webSearch: CURSOR_WEB_SEARCH_RULE,
   },
 }
 

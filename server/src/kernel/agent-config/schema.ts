@@ -70,13 +70,18 @@ const codexAgentSchema = baseShellSchema.extend({
 })
 
 /**
- * The `cursor` vendor's config sub-object — empty by construction. Cursor's login
- * lives in its own CLI (and the OS keychain), and c3 has no relay speaking its
- * protocol, so there is no provider triple to persist. `.strict()` makes that an
- * enforced fact: a stored `baseUrl`/`apiKey` is rejected rather than silently
- * ignored, which is what keeps "cursor is system-auth only" true on disk.
+ * The `cursor` vendor's config sub-object — a key and a model, no base URL. The
+ * Cursor SDK authenticates with a key only (a `cursor-agent login` session does
+ * not apply to it); an empty key defers to `CURSOR_API_KEY` in the server
+ * environment, and an empty model to Cursor's own `auto` selection.
+ *
+ * `.strict()` keeps `baseUrl` out: c3 has no relay speaking Cursor's protocol, so
+ * a stored base URL is rejected rather than silently ignored — which is what
+ * keeps "cursor cannot be pointed elsewhere" true on disk.
  */
-export const cursorConfigSchema = z.object({}).strict()
+export const cursorConfigSchema = z
+  .object({ apiKey: z.string().default(''), model: z.string().default('') })
+  .strict()
 
 /**
  * The `cursor` agent arm: public shell + `vendor: 'cursor'` + empty config.

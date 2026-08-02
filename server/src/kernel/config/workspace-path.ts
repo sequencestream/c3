@@ -95,14 +95,14 @@ export function getSandboxClaudeConfigDir(_workspacePath: string): string {
 /**
  * The Cursor data root (`~/.cursor`) — the whole of it, not a transcript subdir.
  *
- * Cursor exposes no environment override for its data root: the CLI always reads
- * `$HOME/.cursor`, so relocating the store means relocating `HOME`. Everything
- * the CLI needs to continue a chat lives under this one directory (chats,
- * project registry, CLI config, approved MCP servers), which is why the sandbox
- * persists the entire root rather than cherry-picking a transcript path.
+ * The SDK's local agent store lives under this root
+ * (`~/.cursor/projects/<workspace>/sdk-agent-store/…`), alongside the workspace
+ * rules and skills a run loads. There is no environment override for it, so this
+ * one path is where every Cursor session's state resides regardless of how the
+ * run was launched.
  *
- * Login credentials are NOT here — they live in the OS keychain — so persisting
- * this root is necessary but not sufficient for a sandboxed run to authenticate.
+ * Credentials are NOT here: the SDK authenticates with an API key supplied per
+ * run, so this root holds conversation state only.
  */
 export function hostCursorHome(): string {
   return join(os.homedir(), '.cursor')
@@ -116,12 +116,13 @@ export function hostCursorHome(): string {
  * - codex → `host` = {@link hostCodexHome}; `sandbox` = {@link relayCodexHome}.
  * - claude → both scopes resolve to {@link hostClaudeConfigDir} (the sandbox run
  *   writes there too), so claude transcripts are always host-readable.
- * - cursor → {@link hostCursorHome} for both scopes: a sandboxed run persists the
- *   same data root so the next turn's `--resume` finds the chat where it was left.
+ * - cursor → {@link hostCursorHome} for both scopes: the SDK runs in the c3
+ *   process and writes its agent store under the host data root whether or not the
+ *   session is sandboxed, so the next turn's resume finds the agent where it was left.
  *
  * The returned path is the vendor's config-dir root (codex `CODEX_HOME`, claude
  * `CLAUDE_CONFIG_DIR`, cursor `~/.cursor`); the vendor's own subdir layout
- * (`sessions/…`, `projects/…`, `chats/…`) is appended by the caller.
+ * (`sessions/…`, `projects/…`) is appended by the caller.
  *
  * The switch is exhaustive on purpose: a new vendor must state where its store
  * lives rather than inheriting Claude's by falling off the end.

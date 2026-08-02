@@ -2,41 +2,38 @@
  * The Cursor {@link VendorAdapter} — the four neutral faces (driver, approval,
  * sessions, skill) plus the tool manifest, assembled behind one factory.
  */
-import { homedir } from 'node:os'
 import type { DriverStartOptions, ToolManifestEntry, VendorAdapter } from '../types.js'
 import { cursorCapabilities } from './capabilities.js'
-import { CursorDriver, type CursorSpawn } from './driver.js'
+import { CursorDriver, type CursorSdk } from './driver.js'
 import { CursorApprovalBridge } from './approval.js'
-import { CursorSessionStore, type CursorMirror } from './session-store.js'
+import { CursorSessionStore, type CursorSessionSource } from './session-store.js'
 import { createCursorSkillLoader } from './skill.js'
-import { CURSOR_TOOL_CATEGORIES, cursorToolDisplayName, cursorToolIsWrite } from './tools.js'
+import { CURSOR_TOOL_CATEGORIES, cursorToolIsWrite } from './tools.js'
 import type { CursorLaunchConfig } from './launch.js'
 
 export { CursorDriver } from './driver.js'
 export { cursorCapabilities } from './capabilities.js'
 export { cursorModeCatalog } from './modes.js'
-export { CursorUnsupportedError } from './launch.js'
+export { CursorUnsupportedError, resolveCursorApiKey } from './launch.js'
+export { cursorSdkAvailable } from './skill.js'
 
-/** How the adapter finds the CLI and which data root a run should use. */
+/** How the adapter authenticates a run and where it reads sessions from. */
 export interface CursorAdapterOptions {
-  /** Resolve the executable + data root for a run. */
+  /** Resolve the credential for a run. */
   resolveConfig?: (opts: DriverStartOptions) => CursorLaunchConfig
-  /** c3-side canonical mirror backing session list/read. */
-  mirror?: CursorMirror
-  /** Spawn seam for tests. */
-  spawnFn?: CursorSpawn
+  /** Read seam over the SDK's local agent store, backing session list/read. */
+  sessionSource?: CursorSessionSource
+  /** SDK seam for tests. */
+  sdk?: CursorSdk
 }
 
 /**
- * Default launch resolution: run the `cursor-agent` on PATH against the host data
- * root, unless the run supplies a sandbox wrapper. Callers that manage binaries
- * or sandbox data roots pass their own resolver.
+ * Default credential resolution: the ambient `CURSOR_API_KEY`. Callers that
+ * store a per-agent key (the settings panel does) pass their own resolver;
+ * `resolveCursorApiKey` applies the same environment fallback either way.
  */
-function defaultResolveConfig(opts: DriverStartOptions): CursorLaunchConfig {
-  return {
-    command: opts.sandboxWrapperPath ?? 'cursor-agent',
-    home: homedir(),
-  }
+function defaultResolveConfig(_opts: DriverStartOptions): CursorLaunchConfig {
+  return {}
 }
 
 export function createCursorAdapter(options: CursorAdapterOptions = {}): VendorAdapter {
@@ -44,22 +41,21 @@ export function createCursorAdapter(options: CursorAdapterOptions = {}): VendorA
   return {
     vendor: 'cursor',
     capabilities: cursorCapabilities,
-    driver: new CursorDriver(resolveConfig, options.spawnFn),
+    driver: new CursorDriver(resolveConfig, options.sdk),
     approval: new CursorApprovalBridge(),
-    sessions: new CursorSessionStore(options.mirror),
+    sessions: new CursorSessionStore(options.sessionSource),
     skill: createCursorSkillLoader(),
     listTools(_workspacePath, mcpServers) {
-      // The static table is the CLI's own proven tool inventory; each entry is a
-      // tool the stream can actually emit, named as the console shows it.
-      const entries: ToolManifestEntry[] = Object.keys(CURSOR_TOOL_CATEGORIES).map(
-        (wrapperKey) => ({
-          name: cursorToolDisplayName(wrapperKey),
-          isWrite: cursorToolIsWrite(wrapperKey),
-        }),
-      )
-      // MCP tools are reachable in `-p` runs, but their individual names are only
-      // known after a live handshake, so the namespace prefix is exposed and
-      // treated as write — the conservative reading for an unenumerated tool.
+      // The static table is the SDK's own tool union; each entry is a tool the
+      // stream can actually emit, named as the console shows it.
+      const entries: ToolManifestEntry[] = Object.keys(CURSOR_TOOL_CATEGORIES).map((name) => ({
+        name,
+        isWrite: cursorToolIsWrite(name),
+      }))
+      // MCP tools reach the model through the SDK's `mcp` tool, but their
+      // individual names are only known after a live handshake, so the namespace
+      // prefix is exposed and treated as write — the conservative reading for an
+      // unenumerated tool.
       if (mcpServers) {
         for (const serverName of Object.keys(mcpServers)) {
           entries.push({ name: `mcp__${serverName}__`, isWrite: true })

@@ -16,7 +16,7 @@ c3
 │   │   ├── 运行态机                              # idle / running / awaiting-permission,每会话单飞(single-flight)
 │   │   ├── 取消中止                              # 用户命令或断连时干净中止在途 run
 │   │   ├── 历史续传                              # 每轮持久化,浏览器刷新可完整回放 transcript
-│   │   ├── 多厂商                                # 同时支持 Claude、Codex 与 Cursor 三个 vendor(Claude 经 SDK,Codex/Cursor 经各自 CLI)
+│   │   ├── 多厂商                                # 同时支持 Claude、Codex 与 Cursor 三个 vendor(均经各自官方 SDK;Cursor 的 SDK 在 c3 进程内运行)
 │   │   └── Codex GH_TOKEN 桥接                    # codex 会话启动时把宿主 gh 钥匙串令牌注入 GH_TOKEN,沙箱内 gh 可认证(已有 token 不覆盖/探测失败静默降级)
 │   │
 │   ├── permission-gateway 权限网关               # 智能体与人之间的控制点,有副作用的工具须过此门

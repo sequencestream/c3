@@ -1,23 +1,32 @@
 /**
- * CursorDriver tests. A fake `cursor-agent` shell script stands in for the real
- * CLI so the driver's actual spawn/readline/process-group path runs, without
- * spending model tokens.
+ * CursorDriver tests. A fake SDK stands in for `@cursor/sdk`'s local runtime, so
+ * the driver's real create/resume → send → stream → settle path runs without a
+ * network hop, an API key, or model tokens.
  */
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterAll, afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { CanonicalMessage, DriverStartOptions } from '../types.js'
-import { CursorDriver } from './driver.js'
-import { CursorUnsupportedError, cursorExecArgs } from './launch.js'
+import {
+  CursorDriver,
+  type CursorAgentHandle,
+  type CursorRunHandle,
+  type CursorSdk,
+} from './driver.js'
+import {
+  CursorUnsupportedError,
+  cursorAgentOptions,
+  cursorSendOptions,
+  cursorUserMessage,
+  resolveCursorApiKey,
+} from './launch.js'
 
 function startOpts(over: Partial<DriverStartOptions> = {}): DriverStartOptions {
   return {
     prompt: 'do the thing',
-    cwd: WORK,
+    cwd: '/ws',
     signal: new AbortController().signal,
     actionMode: 'build',
     toolGate: 'on-sensitive',
+    envOverrides: { CURSOR_API_KEY: 'test-key' },
     ...over,
   }
 }
@@ -28,168 +37,216 @@ async function collect(stream: AsyncIterable<CanonicalMessage>): Promise<Canonic
   return out
 }
 
-function shQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`
+/** What one scripted turn does: the frames it yields and how it settles. */
+interface FakeTurn {
+  events: unknown[]
+  result?: { status: string; error?: { message: string } }
+  /** Never-settling stream, for the abort test. */
+  hang?: boolean
 }
 
-const dirs: string[] = []
-
-// A real, long-lived workspace dir for the child's cwd — spawn fails with ENOENT
-// (blamed on the command) when cwd does not exist. Kept OUT of `dirs` so the
-// per-test cleanup never removes it mid-suite.
-const WORK = mkdtempSync(join(tmpdir(), 'c3-cursor-work-'))
-
-/**
- * Write a fake cursor-agent that prints the given lines, one per NDJSON event.
- *
- * Each line is emitted with its own single-quoted `printf`; the quotes keep the
- * JSON's braces and quotes literal. The script always ends with a newline and an
- * explicit `exit`, because a shebang script with no trailing newline is rejected
- * by the kernel with ENOEXEC.
- */
-function fakeBin(lines: string[], { recordArgs }: { recordArgs?: string } = {}): string {
-  const dir = mkdtempSync(join(tmpdir(), 'c3-cursor-cli-'))
-  dirs.push(dir)
-  const path = join(dir, 'cursor-agent')
-  const head = recordArgs ? [`printf '%s\\n' "$@" > ${shQuote(recordArgs)}`] : []
-  const body = lines.map((l) => `printf '%s\\n' ${shQuote(l)}`)
-  writeFileSync(path, ['#!/bin/sh', ...head, ...body, 'exit 0', ''].join('\n'))
-  chmodSync(path, 0o755)
-  return path
+interface FakeSdkCalls {
+  created: unknown[]
+  resumed: Array<{ agentId: string; options: unknown }>
+  sent: Array<{ message: unknown; options: unknown }>
+  cancelled: number
+  closed: number
 }
 
-const driverFor = (bin: string, recordArgs?: string) =>
-  new CursorDriver((opts) => ({
-    command: opts.sandboxWrapperPath ?? bin,
-    ...(recordArgs ? {} : {}),
-  }))
+function fakeSdk(turn: FakeTurn, agentId = 'agent-1'): { sdk: CursorSdk; calls: FakeSdkCalls } {
+  const calls: FakeSdkCalls = { created: [], resumed: [], sent: [], cancelled: 0, closed: 0 }
 
-afterEach(() => {
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
-})
+  const makeRun = (): CursorRunHandle => {
+    let cancel: () => void = () => undefined
+    const cancelled = new Promise<void>((resolve) => {
+      cancel = resolve
+    })
+    return {
+      async *stream() {
+        for (const event of turn.events) yield event
+        if (turn.hang) await cancelled
+      },
+      wait: async () => turn.result ?? { status: 'finished' },
+      cancel: async () => {
+        calls.cancelled += 1
+        cancel()
+      },
+    }
+  }
 
-afterAll(() => {
-  rmSync(WORK, { recursive: true, force: true })
-})
+  const agent: CursorAgentHandle = {
+    agentId,
+    send: async (message, options) => {
+      calls.sent.push({ message, options })
+      return makeRun()
+    },
+    close: () => {
+      calls.closed += 1
+    },
+  }
+
+  return {
+    calls,
+    sdk: {
+      create: async (options) => {
+        calls.created.push(options)
+        return agent
+      },
+      resume: async (id, options) => {
+        calls.resumed.push({ agentId: id, options })
+        return agent
+      },
+    },
+  }
+}
+
+const driverFor = (sdk: CursorSdk) => new CursorDriver(() => ({}), sdk)
 
 describe('CursorDriver', () => {
-  it('resolves the session id from system/init and streams canonical messages', async () => {
-    const bin = fakeBin([
-      '{"type":"system","subtype":"init","session_id":"sid-9","model":"Auto"}',
-      '{"type":"assistant","session_id":"sid-9","model_call_id":"m1","message":{"content":[{"text":"hello"}]}}',
-      '{"type":"result","subtype":"success","session_id":"sid-9","is_error":false}',
-    ])
-    const run = await driverFor(bin).start(startOpts())
-    expect(await run.sessionId()).toBe('sid-9')
+  it('reports the SDK-minted agent id and streams canonical messages', async () => {
+    const { sdk } = fakeSdk({
+      events: [
+        { type: 'system', subtype: 'init', agent_id: 'agent-1', run_id: 'run-1' },
+        {
+          type: 'assistant',
+          agent_id: 'agent-1',
+          run_id: 'run-1',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'hello' }] },
+        },
+        { type: 'status', agent_id: 'agent-1', run_id: 'run-1', status: 'FINISHED' },
+      ],
+    })
+    const run = await driverFor(sdk).start(startOpts())
+    expect(await run.sessionId()).toBe('agent-1')
     const msgs = await collect(run.messages())
     expect(msgs.some((m) => m.blocks.some((b) => b.type === 'text' && b.text === 'hello'))).toBe(
       true,
     )
   })
 
-  it('rejects sessionId when the process exits without reporting an id', async () => {
-    // No system/init frame; the CLI dies (auth error shape) before identifying.
-    const bin = fakeBin([])
-    const run = await driverFor(bin).start(startOpts())
-    await expect(run.sessionId()).rejects.toThrow(/session id/)
-    await expect(collect(run.messages())).rejects.toThrow()
+  it('accumulates text deltas cumulatively under one block id', async () => {
+    const delta = (text: string) => ({
+      type: 'assistant',
+      agent_id: 'agent-1',
+      run_id: 'run-1',
+      message: { role: 'assistant', content: [{ type: 'text', text }] },
+    })
+    const { sdk } = fakeSdk({ events: [delta('one '), delta('two')] })
+    const run = await driverFor(sdk).start(startOpts())
+    const texts = (await collect(run.messages()))
+      .flatMap((m) => m.blocks)
+      .filter((b) => b.type === 'text')
+    // The wire consumer diffs by suffix, so the second frame must carry the whole span.
+    expect(texts.map((b) => (b.type === 'text' ? b.text : ''))).toEqual(['one ', 'one two'])
+    expect(new Set(texts.map((b) => b.id)).size).toBe(1)
   })
 
-  it('uses the resume id immediately for a resumed run and passes --resume', async () => {
-    const argsFile = join(mkdtempSync(join(tmpdir(), 'c3-cursor-args-')), 'args.txt')
-    dirs.push(argsFile.replace(/\/args\.txt$/, ''))
-    const bin = fakeBin(
-      [
-        '{"type":"system","subtype":"init","session_id":"sid-1","model":"Auto"}',
-        '{"type":"result","subtype":"success","session_id":"sid-1","is_error":false}',
-      ],
-      { recordArgs: argsFile },
-    )
-    const run = await driverFor(bin).start(startOpts({ resume: 'sid-1' }))
-    expect(await run.sessionId()).toBe('sid-1')
+  it('resumes by agent id instead of creating a new agent', async () => {
+    const { sdk, calls } = fakeSdk({ events: [] }, 'agent-resumed')
+    const run = await driverFor(sdk).start(startOpts({ resume: 'agent-resumed' }))
+    expect(await run.sessionId()).toBe('agent-resumed')
     await collect(run.messages())
-    const argv = readFileSync(argsFile, 'utf-8').split('\n').filter(Boolean)
-    const resumeAt = argv.indexOf('--resume')
-    expect(resumeAt).toBeGreaterThanOrEqual(0)
-    expect(argv[resumeAt + 1]).toBe('sid-1')
-    expect(argv.at(-1)).toBe('do the thing') // prompt is last
+    expect(calls.created).toHaveLength(0)
+    expect(calls.resumed[0]?.agentId).toBe('agent-resumed')
   })
 
-  it('fails the turn on a corrupt stream frame rather than skipping it', async () => {
-    const bin = fakeBin([
-      '{"type":"system","subtype":"init","session_id":"sid-2"}',
-      'this is not json',
-    ])
-    const run = await driverFor(bin).start(startOpts())
-    await expect(collect(run.messages())).rejects.toThrow(/unparseable/)
+  it('fails the turn when the run settles as an error', async () => {
+    const { sdk } = fakeSdk({
+      events: [],
+      result: { status: 'error', error: { message: 'Invalid User API Key' } },
+    })
+    const run = await driverFor(sdk).start(startOpts())
+    await expect(collect(run.messages())).rejects.toThrow(/Invalid User API Key/)
   })
 
-  it('fails the turn on a non-zero exit', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'c3-cursor-fail-'))
-    dirs.push(dir)
-    const bin = join(dir, 'cursor-agent')
-    writeFileSync(
-      bin,
-      '#!/bin/sh\nprintf \'%s\\n\' \'{"type":"system","subtype":"init","session_id":"sid-3"}\'\nexit 3\n',
-    )
-    chmodSync(bin, 0o755)
-    const run = await driverFor(bin).start(startOpts())
-    await expect(collect(run.messages())).rejects.toThrow(/code 3/)
-  })
-
-  it('abort() signals the process group and the run settles without orphaning', async () => {
-    // A run that would otherwise hang: emits init, then sleeps until signalled.
-    const dir = mkdtempSync(join(tmpdir(), 'c3-cursor-abort-'))
-    dirs.push(dir)
-    const bin = join(dir, 'cursor-agent')
-    writeFileSync(
-      bin,
-      [
-        '#!/bin/sh',
-        'printf \'%s\\n\' \'{"type":"system","subtype":"init","session_id":"sid-4"}\'',
-        'sleep 60 &',
-        'wait',
-      ].join('\n'),
-    )
-    chmodSync(bin, 0o755)
-    const run = await driverFor(bin).start(startOpts())
-    expect(await run.sessionId()).toBe('sid-4')
+  it('abort() cancels the live run and settles it without failing', async () => {
+    const { sdk, calls } = fakeSdk({ events: [], hang: true })
+    const run = await driverFor(sdk).start(startOpts())
     const done = collect(run.messages())
     run.abort()
-    // Must settle (not hang) once the group is signalled.
     await expect(done).resolves.toBeInstanceOf(Array)
+    expect(calls.cancelled).toBe(1)
   })
 
-  it('refuses a plan run rather than downgrading to a writable one', async () => {
-    const bin = fakeBin([])
-    await expect(driverFor(bin).start(startOpts({ actionMode: 'plan' }))).rejects.toBeInstanceOf(
-      CursorUnsupportedError,
-    )
+  it('closes the agent handle when the turn settles', async () => {
+    const { sdk, calls } = fakeSdk({ events: [] })
+    const run = await driverFor(sdk).start(startOpts())
+    await collect(run.messages())
+    expect(calls.closed).toBe(1)
+  })
+
+  it('reports a rejected key in the operator’s terms, not as a bare HTTP 401', async () => {
+    // `Agent.create` validates the credential over the network before returning,
+    // so a bad key arrives here as an auth error naming an SDK endpoint.
+    const unauthorized = Object.assign(new Error('GET /v1/models failed'), { status: 401 })
+    const sdk: CursorSdk = {
+      create: async () => {
+        throw unauthorized
+      },
+      resume: async () => {
+        throw unauthorized
+      },
+    }
+    await expect(driverFor(sdk).start(startOpts())).rejects.toThrow(/API key was rejected/)
+  })
+
+  it('refuses to start without an API key rather than burning a turn', async () => {
+    const { sdk } = fakeSdk({ events: [] })
+    const priorKey = process.env.CURSOR_API_KEY
+    delete process.env.CURSOR_API_KEY
+    try {
+      await expect(
+        driverFor(sdk).start(startOpts({ envOverrides: undefined })),
+      ).rejects.toBeInstanceOf(CursorUnsupportedError)
+    } finally {
+      if (priorKey !== undefined) process.env.CURSOR_API_KEY = priorKey
+    }
   })
 })
 
-describe('cursorExecArgs', () => {
-  it('forces all tools when the gate is never-ask and approves injected MCP', () => {
-    const argv = cursorExecArgs(
-      startOpts({
-        toolGate: 'never-ask',
-        mcpServers: { c3: { type: 'http', url: 'http://127.0.0.1:1/mcp' } },
-      }),
-      { command: 'cursor-agent' },
+describe('cursor launch shaping', () => {
+  it('maps the never-ask gate to Auto-review off, and every other gate to on', () => {
+    expect(cursorAgentOptions(startOpts({ toolGate: 'never-ask' }), {}).local.autoReview).toBe(
+      false,
     )
-    expect(argv).toContain('--force')
-    expect(argv).toContain('--approve-mcps')
-    expect(argv).toContain('--trust')
+    expect(cursorAgentOptions(startOpts(), {}).local.autoReview).toBe(true)
   })
 
-  it('omits --force under the default sensitive gate', () => {
-    const argv = cursorExecArgs(startOpts(), { command: 'cursor-agent' })
-    expect(argv).not.toContain('--force')
+  it('maps the plan action mode to the SDK plan conversation mode', () => {
+    expect(cursorAgentOptions(startOpts({ actionMode: 'plan' }), {}).mode).toBe('plan')
+    expect(cursorSendOptions(startOpts({ actionMode: 'plan' })).mode).toBe('plan')
+    expect(cursorAgentOptions(startOpts(), {}).mode).toBe('agent')
   })
 
-  it('throws for plan action mode', () => {
-    expect(() =>
-      cursorExecArgs(startOpts({ actionMode: 'plan' }), { command: 'cursor-agent' }),
-    ).toThrow(CursorUnsupportedError)
+  it('enables the SDK sandbox for a sandboxed run', () => {
+    expect(cursorAgentOptions(startOpts({ sandboxed: true }), {}).local.sandboxOptions).toEqual({
+      enabled: true,
+    })
+    expect(cursorAgentOptions(startOpts(), {}).local.sandboxOptions).toBeUndefined()
+  })
+
+  it('carries additional directories as extra workspace roots', () => {
+    const options = cursorAgentOptions(startOpts({ additionalDirectories: ['/specs'] }), {})
+    expect(options.local.cwd).toEqual(['/ws', '/specs'])
+  })
+
+  it('translates remote MCP descriptors into http server configs', () => {
+    const options = cursorAgentOptions(
+      startOpts({ mcpServers: { c3: { type: 'http', url: 'http://127.0.0.1:1/mcp' } } }),
+      {},
+    )
+    expect(options.mcpServers?.c3).toEqual({ type: 'http', url: 'http://127.0.0.1:1/mcp' })
+  })
+
+  it('prefixes the system instruction onto the user turn (cursor has no system channel)', () => {
+    const message = cursorUserMessage(startOpts({ systemInstruction: 'be terse' }))
+    expect(message.text).toBe('be terse\n\ndo the thing')
+  })
+
+  it('prefers the configured key over the run env and the ambient variable', () => {
+    expect(resolveCursorApiKey({ apiKey: 'from-config' }, { CURSOR_API_KEY: 'from-run' })).toBe(
+      'from-config',
+    )
+    expect(resolveCursorApiKey({}, { CURSOR_API_KEY: 'from-run' })).toBe('from-run')
   })
 })

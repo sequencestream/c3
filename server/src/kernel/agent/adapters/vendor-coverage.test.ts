@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { VENDOR_IDS } from '@ccc/shared/protocol'
 import { VENDOR_CAPABILITIES } from './capabilities.js'
 import { MODE_CATALOGS } from './index.js'
-import { HOST_BINARIES } from '../process/launcher.js'
+import { HOST_BINARIES, isManagedVendor, managedVendorSpecs } from '../process/launcher.js'
 import { VENDOR_AUTH_PROFILES } from '../../sandbox/vendor-auth.js'
 import { VENDOR_AGENT_SCHEMAS, agentConfigSchema } from '../../agent-config/schema.js'
 import {
@@ -23,6 +23,13 @@ import {
 import { normalizeToolRequest } from '../../permission/risk.js'
 
 const VENDORS = [...VENDOR_IDS]
+
+/**
+ * Vendors c3 drives through an in-process SDK rather than a host CLI. They have
+ * no binary descriptor and no arapuca auth profile by design, so the coverage
+ * assertions below exempt exactly these — and nothing else.
+ */
+const SDK_EMBEDDED_VENDORS: string[] = ['cursor']
 
 describe('vendor registration coverage', () => {
   it('cursor is a registered vendor', () => {
@@ -48,15 +55,24 @@ describe('vendor registration coverage', () => {
     expect(catalog.modes.map((m) => m.token)).toContain(catalog.defaultToken)
   })
 
-  it.each(VENDORS)('%s has a binary descriptor with an install hint', (vendor) => {
+  it.each(VENDORS)('%s either has a host-CLI descriptor or runs on an in-process SDK', (vendor) => {
     const spec = HOST_BINARIES[vendor]
-    expect(spec).toBeDefined()
-    expect(spec.vendor).toBe(vendor)
-    expect(spec.installHint.length).toBeGreaterThan(0)
+    // A vendor c3 launches as a CLI must describe how to install it; one that runs
+    // in-process must be absent here rather than carry a spec for a binary that is
+    // never launched. Both are legal — silence in between is not.
+    if (spec) {
+      expect(spec.vendor).toBe(vendor)
+      expect(spec.installHint.length).toBeGreaterThan(0)
+    } else {
+      expect(SDK_EMBEDDED_VENDORS).toContain(vendor)
+    }
   })
 
-  it.each(VENDORS)('%s has a sandbox auth profile', (vendor) => {
-    expect(VENDOR_AUTH_PROFILES[vendor]).toBeTypeOf('function')
+  it.each(VENDORS)('%s has a sandbox auth profile iff it is launched as a host CLI', (vendor) => {
+    // arapuca narrows a child process; an in-process SDK has none to narrow, so it
+    // isolates through its own runtime and registers no profile here.
+    const expected = HOST_BINARIES[vendor] !== undefined
+    expect(VENDOR_AUTH_PROFILES[vendor] !== undefined).toBe(expected)
   })
 
   it.each(VENDORS)('%s has an agent-config schema arm', (vendor) => {
@@ -67,20 +83,18 @@ describe('vendor registration coverage', () => {
     const expected = [...VENDORS].sort()
     expect(Object.keys(VENDOR_CAPABILITIES).sort()).toEqual(expected)
     expect(Object.keys(MODE_CATALOGS).sort()).toEqual(expected)
-    expect(Object.keys(HOST_BINARIES).sort()).toEqual(expected)
-    expect(Object.keys(VENDOR_AUTH_PROFILES).sort()).toEqual(expected)
+    const hostCliVendors = expected.filter((v) => !SDK_EMBEDDED_VENDORS.includes(v))
+    expect(Object.keys(HOST_BINARIES).sort()).toEqual(hostCliVendors)
+    expect(Object.keys(VENDOR_AUTH_PROFILES).sort()).toEqual(hostCliVendors)
     expect(Object.keys(VENDOR_AGENT_SCHEMAS).sort()).toEqual(expected)
   })
 })
 
 describe('cursor-specific registration facts', () => {
-  it('cursor is an externally installed CLI (not npm-managed)', () => {
-    const spec = HOST_BINARIES.cursor
-    expect(spec.kind).toBe('external')
-    if (spec.kind === 'external') {
-      expect(spec.isCompatibleVersion('2026.07.23-e383d2b')).toBe(true)
-      expect(spec.isCompatibleVersion('2020.01.01')).toBe(false)
-    }
+  it('cursor runs on the in-process SDK, so it has no host CLI to install or version', () => {
+    expect(HOST_BINARIES.cursor).toBeUndefined()
+    expect(isManagedVendor('cursor')).toBe(false)
+    expect(managedVendorSpecs().map((s) => s.vendor)).not.toContain('cursor')
   })
 
   it('cursor declares no per-tool approval, in-process MCP, task store, or native user input', () => {
@@ -89,16 +103,17 @@ describe('cursor-specific registration facts', () => {
     expect(caps.inProcessMcp).toBe(false)
     expect(caps.taskStore).toBe(false)
     expect(caps.nativeUserInput).toBe(false)
-    // Resume is native and proven; list/read are only the c3 mirror.
+    // Resume is native and proven; list/read see only what ran through the SDK.
     expect(caps.sessions.resume).toBe('full')
     expect(caps.sessions.list).toBe('partial')
     expect(caps.sessions.read).toBe('partial')
   })
 
-  it('cursor offers no plan mode (refused, never silently writable)', () => {
-    const tokens = MODE_CATALOGS.cursor.modes.map((m) => m.token)
-    expect(tokens).not.toContain('plan')
-    expect(MODE_CATALOGS.cursor.modes.every((m) => m.actionMode === 'build')).toBe(true)
+  it('cursor offers a plan mode backed by the SDK plan conversation mode', () => {
+    const plan = MODE_CATALOGS.cursor.modes.find((m) => m.token === 'plan')
+    expect(plan?.actionMode).toBe('plan')
+    // Only the explicit full-access preset drops the tool gate.
+    expect(MODE_CATALOGS.cursor.modes.filter((m) => m.toolGate === 'never-ask')).toHaveLength(1)
   })
 
   it('cursor store dir is its own data root, not Claude’s', () => {
@@ -107,16 +122,17 @@ describe('cursor-specific registration facts', () => {
     expect(cursorDir).not.toBe(hostClaudeConfigDir())
   })
 
-  it('the agent-config schema accepts a system cursor agent and rejects a custom one', () => {
+  it('the agent-config schema accepts a cursor agent with an api key and rejects a provider triple', () => {
     const ok = agentConfigSchema.safeParse({
       id: 'a',
       vendor: 'cursor',
       configMode: 'system',
       displayName: 'Cursor',
-      config: {},
+      config: { apiKey: 'key_123' },
     })
     expect(ok.success).toBe(true)
-    // An empty config is the only legal shape — a provider triple is rejected.
+    // The key is the only legal field — a provider triple is rejected, because c3
+    // has no relay that could honour one.
     const bad = agentConfigSchema.safeParse({
       id: 'a',
       vendor: 'cursor',

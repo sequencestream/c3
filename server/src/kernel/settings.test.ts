@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
+import { SYSTEM_AGENT_ID, hasProviderConfig } from '@ccc/shared/protocol'
 import type { PersonalizedSettings, WorkspaceSetting, SystemSettings } from '@ccc/shared/protocol'
 import {
   AGENT_ICON_MAX_CHARS,
@@ -810,6 +810,7 @@ describe('enabled flag (AC-R10)', () => {
     const sys = saved.agents.find((a) => a.id === SYSTEM_AGENT_ID)!
     expect(sys.enabled).toBe(false)
     expect(sys.configMode).toBe('custom')
+    if (!hasProviderConfig(sys)) throw new Error('expected a provider-backed agent')
     expect(sys.config.baseUrl).toBe('https://one')
     expect(sys.config.apiKey).toBe('k')
     expect(sys.config.model).toBe('m')
@@ -1379,6 +1380,7 @@ describe('AgentConfig.icon persistence (AC-R11)', () => {
     const sys = saved.agents.find((a) => a.id === SYSTEM_AGENT_ID)!
     expect(sys.icon).toBe('🛡️')
     expect(sys.configMode).toBe('custom')
+    if (!hasProviderConfig(sys)) throw new Error('expected a provider-backed agent')
     expect(sys.config.baseUrl).toBe('https://one')
   })
 
@@ -1456,6 +1458,7 @@ describe('vendor discriminated-union migration (legacy-flat → claude)', () => 
     resetSettingsCacheForTests()
     const a1 = loadSettings().agents.find((a) => a.id === 'a1')!
     expect(a1.vendor).toBe('claude')
+    if (!hasProviderConfig(a1)) throw new Error('expected a provider-backed agent')
     expect(a1.config.baseUrl).toBe('https://one')
   })
 })

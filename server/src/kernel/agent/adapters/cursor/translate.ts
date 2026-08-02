@@ -1,53 +1,69 @@
 /**
- * Cursor stream → {@link CanonicalMessage} normalization (ADR-0011/0013).
+ * Cursor SDK stream → {@link CanonicalMessage} normalization (ADR-0011/0013).
  *
- * The CLI emits NDJSON frames of these shapes:
- *   `system/init`            — the run's `session_id`, cwd, model, permissionMode.
- *   `user`                   — the prompt c3 just sent, echoed back.
- *   `thinking/delta`         — a chunk of native reasoning; `thinking/completed`
- *                              closes the current reasoning span.
- *   `assistant`              — a whole assistant message (not a delta), optionally
- *                              tagged with the `model_call_id` it belongs to.
- *   `tool_call/started`      — a tool began; `tool_call/completed` finishes it.
- *   `result/success|error`   — the turn's terminal frame, with usage and timing.
+ * `Run.stream()` yields the SDK's own `SDKMessage` union:
+ *   `system`      — the run's identity (`agent_id` / `run_id`), model and tools.
+ *   `user`        — the prompt c3 just sent, echoed back.
+ *   `assistant`   — a **text delta**, not a whole message: the SDK builds this
+ *                   frame from its internal `text-delta` update.
+ *   `thinking`    — a reasoning delta; the span's closing frame carries empty
+ *                   text plus `thinking_duration_ms`.
+ *   `tool_call`   — a tool at `running` / `completed` / `error`, correlated by a
+ *                   stable `call_id` and carrying `args` and later `result`.
+ *   `status`      — the run's lifecycle state (`RUNNING` … `ERROR`).
+ *   `task`        — the runtime's own summarization bookkeeping.
+ *   `usage`       — per-turn token usage, emitted once at turn end.
  *
- * Two properties of the wire consumer shape everything here. First, blocks are
+ * Two properties of c3's wire consumer shape everything here. First, blocks are
  * append-with-**id-upsert**, so a block that revises an earlier one must reuse
  * its id. Second, the consumer emits only the *new suffix* of a text block, so
  * text carried under a stable id must always be **cumulative**, never a delta —
- * emitting deltas under one id would truncate the visible output. This
- * translator therefore accumulates text itself and re-emits the whole span.
+ * forwarding the SDK's deltas verbatim under one id would truncate the visible
+ * output. This translator therefore accumulates text itself and re-emits the
+ * whole span.
  *
- * Correlation rules, in the order the spec requires:
- *  - Tool frames carry a stable `call_id`, identical on `started` and `completed`,
- *    so results are back-filled onto the same `tool_use` block by that id. Frames
- *    are never paired by arrival order, which would mis-associate concurrent calls.
- *  - When a frame arrives without a usable `call_id`, a deterministic id is
- *    synthesized from the turn, the native event kind and a per-kind sequence
- *    number, and the block records that degradation in `vendorExtra`.
+ * Span boundaries, in the order the wire model requires:
+ *  - Text accumulates into one open block until something interrupts it (a tool
+ *    call, a reasoning span, the turn's end). The next delta then opens a NEW
+ *    block, so text that follows a tool call is never retro-appended in front of
+ *    it and the transcript keeps the order the model produced.
+ *  - Tool frames carry a stable `call_id`, identical on the running and the
+ *    completed frame, so results are back-filled onto the same `tool_use` block
+ *    by that id. Frames are never paired by arrival order, which would
+ *    mis-associate concurrent calls.
  *  - A completion whose `call_id` was never opened is not force-fitted onto some
  *    other tool: it opens its own block, flagged as orphaned.
  *
- * Anything the canonical model cannot express — native tool argument shapes, the
- * raw wrapper key, usage, request ids, unknown frame types — is preserved under
- * `vendorExtra` rather than dropped or flattened into a lie. `thinking` blocks
- * are produced **only** from native `thinking` frames; no heuristic ever infers
- * reasoning from message text or event names.
+ * Anything the canonical model cannot express — native tool argument shapes,
+ * usage, the runtime's summarization frames, unknown frame types — is preserved
+ * under `vendorExtra` rather than dropped or flattened into a lie. `thinking`
+ * blocks are produced **only** from native `thinking` frames; no heuristic ever
+ * infers reasoning from message text or event names.
  */
 import type { CanonicalBlock, CanonicalMessage, CanonicalToolResult } from '../types.js'
-import { cursorToolCategory, cursorToolDisplayName } from './tools.js'
+import { cursorToolCategory } from './tools.js'
 
-/** A parsed NDJSON frame. Unknown shapes are tolerated, never assumed. */
+/**
+ * A structurally-narrowed SDK message. The SDK's own union is not imported here:
+ * ADR-0009 keeps vendor SDK types out of the neutral surface, and a stream frame
+ * is untrusted input regardless of what the published types promise, so every
+ * field is read defensively and an unmodelled shape is preserved rather than
+ * assumed.
+ */
 export interface CursorEvent {
   type?: unknown
   subtype?: unknown
-  session_id?: unknown
+  agent_id?: unknown
+  run_id?: unknown
   call_id?: unknown
-  model_call_id?: unknown
+  name?: unknown
+  status?: unknown
+  args?: unknown
+  result?: unknown
   message?: unknown
   text?: unknown
-  tool_call?: unknown
-  timestamp_ms?: unknown
+  usage?: unknown
+  thinking_duration_ms?: unknown
   [key: string]: unknown
 }
 
@@ -55,7 +71,7 @@ export interface CursorEvent {
 export interface CursorTranslation {
   /** Canonical messages to publish, in order. */
   messages: CanonicalMessage[]
-  /** The native session id, present on the frame that first reports it. */
+  /** The native session (agent) id, present on frames that report it. */
   sessionId?: string
   /** Set when the frame terminates the turn. */
   ended?: { isError: boolean; errorMessage?: string }
@@ -68,7 +84,7 @@ function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
-/** Flatten Cursor's `{ role, content: [{type:'text', text}] }` message shape. */
+/** Flatten the SDK's `{ role, content: [{ type:'text', text }] }` message shape. */
 function messageText(message: unknown): string {
   if (!message || typeof message !== 'object') return ''
   const content = (message as { content?: unknown }).content
@@ -76,7 +92,9 @@ function messageText(message: unknown): string {
   if (!Array.isArray(content)) return ''
   return content
     .map((part) =>
-      part && typeof part === 'object' ? str((part as { text?: unknown }).text) : undefined,
+      part && typeof part === 'object' && (part as { type?: unknown }).type === 'text'
+        ? str((part as { text?: unknown }).text)
+        : undefined,
     )
     .filter((text): text is string => Boolean(text))
     .join('')
@@ -115,60 +133,79 @@ function flattenToText(value: unknown, depth = 0): string {
 }
 
 /**
- * Collapse a native tool result into the canonical flat display string. Cursor
- * nests results as `{ success: {...} }` or `{ error: {...} }`; the whole native
- * object is kept on the result's own `vendorExtra` while a readable rendering is
- * flattened out for display.
+ * Collapse a native tool result into the canonical flat display string. The SDK
+ * nests a result as `{ success: … }` or `{ error: … }`, and a tool that reports
+ * neither is taken at face value. The whole native object is kept on the result's
+ * own `vendorExtra` while a readable rendering is flattened out for display; the
+ * frame's `status` decides error-ness when the payload does not say.
  */
-function toolResult(raw: unknown): CanonicalToolResult | undefined {
-  if (!raw || typeof raw !== 'object') return undefined
-  const record = raw as Record<string, unknown>
-  const isError = 'error' in record
-  const payload = isError ? record.error : record.success
-  if (payload === undefined) return undefined
-  return { content: flattenToText(payload), isError, vendorExtra: { native: payload } }
+function toolResult(raw: unknown, isErrorStatus: boolean): CanonicalToolResult | undefined {
+  if (raw === undefined || raw === null) {
+    // An errored call with no payload still has to render as a failed result,
+    // otherwise the block would sit forever as if it were still running.
+    return isErrorStatus ? { content: '', isError: true } : undefined
+  }
+  if (typeof raw === 'object') {
+    const record = raw as Record<string, unknown>
+    if ('error' in record) {
+      return { content: flattenToText(record.error), isError: true, vendorExtra: { native: raw } }
+    }
+    if ('success' in record) {
+      return {
+        content: flattenToText(record.success),
+        isError: isErrorStatus,
+        vendorExtra: { native: raw },
+      }
+    }
+  }
+  return { content: flattenToText(raw), isError: isErrorStatus, vendorExtra: { native: raw } }
+}
+
+/** Run statuses that end the turn, and whether each is a failure. */
+const TERMINAL_STATUS: Readonly<Record<string, { isError: boolean; message: string }>> = {
+  FINISHED: { isError: false, message: '' },
+  ERROR: { isError: true, message: 'cursor run failed' },
+  CANCELLED: { isError: false, message: '' },
+  EXPIRED: { isError: true, message: 'cursor run expired' },
 }
 
 /**
  * Stateful normalizer for one Cursor run.
  *
- * State exists for three reasons the stream forces on us: text arrives as spans
- * that must be re-emitted cumulatively, reasoning arrives as deltas that must be
- * joined into one block, and tool results arrive in separate frames that must
- * find their originating call by id.
+ * State exists for three reasons the stream forces on us: text arrives as deltas
+ * that must be re-emitted cumulatively under one id, reasoning arrives the same
+ * way and must be joined into one block, and tool results arrive in separate
+ * frames that must find their originating call by id.
  */
 export class CursorStreamTranslator {
   private sessionId: string
-  /** Monotonic counter making every synthesized id unique within the turn. */
-  private synthesized = 0
   /** Reasoning accumulated for the open thinking span. */
   private thinking = ''
   /** Id of the open thinking span; cleared when the span completes. */
   private thinkingId: string | null = null
-  /** Assistant text accumulated per block id, so re-emits stay cumulative. */
-  private readonly assistantText = new Map<string, string>()
+  /** Text accumulated for the open assistant span. */
+  private assistant = ''
+  /** Id of the open assistant span; cleared when something interrupts it. */
+  private assistantId: string | null = null
   /** Tool calls opened so far, so a completion can find its own block. */
-  private readonly openTools = new Map<
-    string,
-    { name: string; wrapperKey: string; input: unknown }
-  >()
-  /** Assistant messages seen, giving anonymous frames a stable ordinal id. */
+  private readonly openTools = new Map<string, { name: string; input: unknown }>()
+  /** Monotonic counters giving every synthesized id a unique, deterministic name. */
   private assistantSeq = 0
-  /** Thinking spans seen, giving each its own stable id. */
   private thinkingSeq = 0
+  private synthesized = 0
 
   constructor(sessionId = '') {
     this.sessionId = sessionId
   }
 
-  /** The native session id observed so far (empty until `system/init`). */
+  /** The native session id observed so far (empty until a frame reports one). */
   get currentSessionId(): string {
     return this.sessionId
   }
 
   /** Translate one frame. Frames that carry no canonical meaning yield nothing. */
   consume(event: CursorEvent): CursorTranslation {
-    const sid = str(event.session_id)
+    const sid = str(event.agent_id)
     if (sid) this.sessionId = sid
 
     const type = str(event.type)
@@ -176,8 +213,8 @@ export class CursorStreamTranslator {
 
     switch (type) {
       case 'system':
-        // Carries the session id (already captured above) and run metadata; the
-        // metadata is not a message, so nothing is emitted for it.
+        // Carries the run's identity (already captured above) and its metadata;
+        // the metadata is not a message, so nothing is emitted for it.
         return sid ? { messages: [], sessionId: sid } : EMPTY
 
       case 'user':
@@ -194,8 +231,15 @@ export class CursorStreamTranslator {
       case 'tool_call':
         return this.onToolCall(event)
 
-      case 'result':
-        return this.onResult(event)
+      case 'status':
+        return this.onStatus(event)
+
+      case 'task':
+      case 'usage':
+      case 'request':
+        // Runtime bookkeeping with no canonical analogue. Preserved verbatim so
+        // nothing is silently lost, without inventing transcript content for it.
+        return { messages: [this.envelope('assistant', [], { vendorExtra: { native: event } })] }
 
       default:
         return this.unknown(event, 'unknown-type')
@@ -204,18 +248,22 @@ export class CursorStreamTranslator {
 
   /**
    * Native reasoning. Deltas accumulate into a single block re-emitted in full,
-   * which is what keeps the consumer's suffix-diffing correct.
+   * which is what keeps the consumer's suffix-diffing correct. The closing frame
+   * carries no text (only a duration), so it ends the span rather than extending it.
    */
   private onThinking(event: CursorEvent): CursorTranslation {
-    const subtype = str(event.subtype)
-    if (subtype === 'completed') {
+    const delta = str(event.text)
+    if (!delta) {
+      // Empty text closes the span — the SDK's `thinking-completed` shape.
       this.thinking = ''
       this.thinkingId = null
       return EMPTY
     }
 
-    const delta = str(event.text)
-    if (!delta) return EMPTY
+    // Reasoning interrupts any open prose span: the next text delta must start
+    // its own block rather than reopening one the model has moved past.
+    this.assistantId = null
+    this.assistant = ''
 
     this.thinkingId ??= `thinking-${this.thinkingSeq++}`
     this.thinking += delta
@@ -223,78 +271,66 @@ export class CursorStreamTranslator {
     return {
       messages: [
         this.envelope('assistant', [
-          {
-            type: 'thinking',
-            thinking: this.thinking,
-            id: this.thinkingId,
-          },
+          { type: 'thinking', thinking: this.thinking, id: this.thinkingId },
         ]),
       ],
     }
   }
 
   /**
-   * A whole assistant message. Cursor sends complete text (not deltas) and may
-   * repeat a `model_call_id` across frames of the same model turn, so text is
-   * accumulated per id and always re-emitted in full.
+   * An assistant text delta. Accumulated under one id and always re-emitted in
+   * full; a new span begins whenever the previous one was interrupted.
    */
   private onAssistant(event: CursorEvent): CursorTranslation {
     const text = messageText(event.message)
     if (!text) return EMPTY
 
-    // A `model_call_id` groups frames of one model turn; without it each frame is
-    // its own span, numbered deterministically rather than merged by guesswork.
-    const id = str(event.model_call_id) ?? `assistant-${this.assistantSeq++}`
-    const merged = (this.assistantText.get(id) ?? '') + text
-    this.assistantText.set(id, merged)
+    // Prose ends any open reasoning span, so a later reasoning delta opens a new
+    // block instead of appending to one the model has already left behind.
+    this.thinkingId = null
+    this.thinking = ''
+
+    if (this.assistantId === null) {
+      this.assistantId = `assistant-${this.assistantSeq++}`
+      this.assistant = ''
+    }
+    this.assistant += text
 
     return {
       messages: [
-        this.envelope('assistant', [
-          {
-            type: 'text',
-            text: merged,
-            id,
-            ...(str(event.model_call_id)
-              ? {}
-              : { vendorExtra: { idSource: 'synthesized-ordinal' } }),
-          },
-        ]),
+        this.envelope('assistant', [{ type: 'text', text: this.assistant, id: this.assistantId }]),
       ],
     }
   }
 
-  /** A tool start or completion, correlated by the stable native `call_id`. */
+  /** A tool frame, correlated by the stable native `call_id`. */
   private onToolCall(event: CursorEvent): CursorTranslation {
-    const wrapper = event.tool_call
-    if (!wrapper || typeof wrapper !== 'object')
-      return this.unknown(event, 'tool-call-without-payload')
+    // A tool call ends the open prose and reasoning spans: whatever the model
+    // says next belongs after the call, not merged into what came before it.
+    this.assistantId = null
+    this.assistant = ''
+    this.thinkingId = null
+    this.thinking = ''
 
-    // The tool's identity is the wrapper key; `hookAdditionalContexts` and the
-    // bookkeeping fields alongside it are not tools.
-    const record = wrapper as Record<string, unknown>
-    const wrapperKey = Object.keys(record).find((key) => key.endsWith('ToolCall'))
-    if (!wrapperKey) return this.unknown(event, 'tool-call-without-kind')
+    const status = str(event.status)
+    const finished = status === 'completed' || status === 'error'
 
-    const payload = (record[wrapperKey] ?? {}) as Record<string, unknown>
-    const completed = str(event.subtype) === 'completed'
-
-    // `call_id` is stable across started/completed. It may embed a newline, so it
-    // is used verbatim as a map key and never parsed or split.
-    let id = str(event.call_id) ?? str(record.toolCallId)
+    let id = str(event.call_id)
     let idSource: string | undefined
     if (!id) {
-      id = `${wrapperKey}-synth-${this.synthesized++}`
+      id = `tool-synth-${this.synthesized++}`
       idSource = 'synthesized-deterministic'
     }
 
     const prior = this.openTools.get(id)
-    const orphanCompletion = completed && !prior
-    const name = prior?.name ?? cursorToolDisplayName(wrapperKey)
-    const input = prior?.input ?? payload.args ?? {}
-    if (!prior) this.openTools.set(id, { name, wrapperKey, input })
+    const orphanCompletion = finished && !prior
+    const name = str(event.name) ?? prior?.name ?? 'unknown'
+    // The running frame carries the arguments; the completed one need not repeat
+    // them, so the opening call's input is what the block keeps.
+    const input = prior?.input ?? event.args ?? {}
+    if (!prior) this.openTools.set(id, { name, input })
 
-    const result = completed ? toolResult(payload.result) : undefined
+    const result = finished ? toolResult(event.result, status === 'error') : undefined
 
     const block: CanonicalBlock = {
       type: 'tool_use',
@@ -303,13 +339,12 @@ export class CursorStreamTranslator {
       input,
       ...(result ? { result } : {}),
       vendorExtra: {
-        wrapperKey,
-        category: cursorToolCategory(wrapperKey) ?? 'unknown',
+        category: cursorToolCategory(name) ?? 'unknown',
+        ...(status ? { status } : {}),
         ...(idSource ? { idSource } : {}),
         // A completion for a call c3 never saw opened: surfaced as its own block
         // rather than guessed onto a neighbouring tool.
         ...(orphanCompletion ? { orphanCompletion: true } : {}),
-        ...(str(event.model_call_id) ? { modelCallId: event.model_call_id } : {}),
       },
     }
 
@@ -324,13 +359,23 @@ export class CursorStreamTranslator {
     }
   }
 
-  /** The turn's terminal frame. */
-  private onResult(event: CursorEvent): CursorTranslation {
-    const isError = event.is_error === true || str(event.subtype) === 'error'
-    const errorMessage = isError
-      ? (str(event.result) ?? str(event.error) ?? 'cursor run failed')
-      : undefined
-    return { messages: [], ended: { isError, ...(errorMessage ? { errorMessage } : {}) } }
+  /**
+   * The run's lifecycle state. Only the terminal states matter to the driver;
+   * `CREATING`/`RUNNING` are progress notices with no canonical analogue.
+   */
+  private onStatus(event: CursorEvent): CursorTranslation {
+    const status = str(event.status)
+    if (!status) return EMPTY
+    const terminal = TERMINAL_STATUS[status]
+    if (!terminal) return EMPTY
+    const message = str(event.message)
+    return {
+      messages: [],
+      ended: {
+        isError: terminal.isError,
+        ...(terminal.isError ? { errorMessage: message ?? terminal.message } : {}),
+      },
+    }
   }
 
   /**

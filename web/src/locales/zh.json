@@ -890,6 +890,11 @@
           "informs": "通知",
           "softAfter": "弱顺序"
         }
+      },
+      "delete": {
+        "label": "删除依赖",
+        "title": "删除依赖?",
+        "confirm": "从该意图的依赖中移除“{title}”?"
       }
     },
     "tab": {

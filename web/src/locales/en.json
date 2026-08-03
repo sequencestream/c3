@@ -890,6 +890,11 @@
           "informs": "Informs",
           "softAfter": "Soft after"
         }
+      },
+      "delete": {
+        "label": "Delete dependency",
+        "title": "Delete dependency?",
+        "confirm": "Remove \"{title}\" from this intent's dependencies?"
       }
     },
     "tab": {

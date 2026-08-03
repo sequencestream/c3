@@ -891,6 +891,11 @@
           "informs": "通知",
           "softAfter": "ソフト順序"
         }
+      },
+      "delete": {
+        "label": "依存を削除",
+        "title": "依存を削除しますか?",
+        "confirm": "この意図の依存から「{title}」を削除しますか?"
       }
     },
     "tab": {

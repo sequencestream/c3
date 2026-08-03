@@ -5,10 +5,12 @@
  * 元信息按稳定顺序渲染:ID → 分支(+commit) → PR(链接/状态/同步) → 已创建 → 已完成 →
  * 已更新 → 依赖。正文仅 draft/todo 可直接编辑:草稿只活在组件内,保存只 emit,退出编辑态由
  * 服务端回填(updatedAt 变化)驱动;被拒(intentActionErrorSeq 自增)释放保存守卫但保留草稿;
- * 切换意图丢弃未保存草稿。依赖逐行显示完成态/类型,单条类型编辑仍整组回写。
+ * 切换意图丢弃未保存草稿。依赖逐行显示完成态/类型,单条类型编辑仍整组回写;
+ * 编辑弹窗内可删除单条依赖(ConfirmDialog 危险二次确认,确认后剔除该项并整组回写剩余集)。
  */
 import { computed, ref, watch } from 'vue'
 import type { DepType, Intent, IntentPrStatus } from '@ccc/shared/protocol'
+import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
 import { formatDate, formatDependsOn } from '../../../../lib/intent-list-view'
@@ -74,6 +76,8 @@ function syncPrStatus(): void {
 const editingIntentId = ref<string | null>(null)
 const editingDepId = ref<string | null>(null)
 const editingDeps = ref<{ dependsOnId: string; depType: DepType }[]>([])
+// 删除依赖二次确认层(渲染在编辑 overlay 子树内,盖住编辑框)。
+const confirmDeleteDepOpen = ref(false)
 
 const editingDepType = computed<DepType>({
   get: () =>
@@ -101,6 +105,7 @@ function openDepEdit(r: Intent, dependsOnId: string): void {
 }
 
 function closeDepEdit(): void {
+  confirmDeleteDepOpen.value = false
   editingIntentId.value = null
   editingDepId.value = null
   editingDeps.value = []
@@ -109,6 +114,28 @@ function closeDepEdit(): void {
 function saveDepEdit(): void {
   if (!editingIntentId.value) return
   emit('update-deps', editingIntentId.value, editingDeps.value)
+  closeDepEdit()
+}
+
+// ── Dep delete(危险操作,ConfirmDialog 二次确认) ───────────────────────────
+// 删除入口只打开确认层,不预先改 editingDeps;确认后才剔除当前依赖并经既有
+// update-deps 整组回写剩余集(单条删除 = 剩余集回写,复用全量替换协议,
+// 删唯一依赖即回写空数组),随后关闭编辑弹窗。取消/遮罩/Esc 只关确认层,
+// 编辑弹窗与未保存的类型选择原样保留。
+const deleteDepTitle = computed<string>(() =>
+  editingDepId.value ? depTitle(editingDepId.value) : '',
+)
+
+function requestDeleteDep(): void {
+  if (!editingDepId.value) return
+  confirmDeleteDepOpen.value = true
+}
+
+function confirmDeleteDep(): void {
+  if (!editingIntentId.value || !editingDepId.value) return
+  const remaining = editingDeps.value.filter((d) => d.dependsOnId !== editingDepId.value)
+  confirmDeleteDepOpen.value = false
+  emit('update-deps', editingIntentId.value, remaining)
   closeDepEdit()
 }
 
@@ -340,6 +367,14 @@ watch(
               {{ opt.label }}
             </option>
           </select>
+          <button
+            type="button"
+            class="dep-edit-delete"
+            data-testid="dep-edit-delete"
+            @click="requestDeleteDep"
+          >
+            {{ t('intent.deps.delete.label') }}
+          </button>
         </div>
       </div>
       <div class="dep-edit-footer">
@@ -351,6 +386,18 @@ watch(
         </button>
       </div>
     </div>
+    <!-- 删除确认层:渲染在 overlay 子树内,借其 z-index: 1000 的层叠上下文盖住编辑弹窗
+       (ConfirmDialog 自身 z-index: 300,平级渲染会被编辑 overlay 盖住)。 -->
+    <ConfirmDialog
+      :open="confirmDeleteDepOpen"
+      :title="t('intent.deps.delete.title')"
+      :message="t('intent.deps.delete.confirm', { title: deleteDepTitle })"
+      :confirm-label="t('common.action.delete.label')"
+      :cancel-label="t('common.action.cancel.label')"
+      danger
+      @confirm="confirmDeleteDep"
+      @cancel="confirmDeleteDepOpen = false"
+    />
   </div>
 </template>
 

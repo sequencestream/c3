@@ -3903,6 +3903,20 @@ button.deny:hover:not(:disabled) {
   font-size: 12px;
   cursor: pointer;
 }
+/* 删除依赖:危险描边按钮,与类型下拉并排(危险色对齐 ConfirmDialog 的 danger 确认钮)。 */
+.dep-edit-delete {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--c-error-text);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--c-error-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.dep-edit-delete:hover {
+  background: var(--c-hover);
+}
 .dep-edit-footer {
   display: flex;
   justify-content: flex-end;

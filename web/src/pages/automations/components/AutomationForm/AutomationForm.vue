@@ -256,13 +256,29 @@ function vendorOptionLabel(v: VendorId): string {
   return reason ? `${VENDOR_LABEL[v]} — ${reason}` : VENDOR_LABEL[v]
 }
 
+/** 这是不是正在编辑的这条既有记录已落盘的 vendor。 */
+function isPersistedVendor(v: VendorId): boolean {
+  return props.automation?.vendor === v
+}
+
 /**
  * 编辑既有自动化时,它自己的 vendor 永远保持可选 —— 记录仍可查看/编辑,
  * UI 门控不得静默改写一条既有记录的 vendor(它在服务端照旧 hard-fail)。
  */
 function vendorOptionDisabled(v: VendorId): boolean {
-  if (props.automation?.vendor === v) return false
+  if (isPersistedVendor(v)) return false
   return !vendorSelectable(v)
+}
+
+/**
+ * 保存门控用的 vendor 判定 —— 与"能不能被选中"是两条规则。
+ *
+ * 新**选**一个没有执行路径的 vendor,会写出一条分派必然 hard-fail 的快照,禁止;
+ * 而一条既有记录**原样保留**下来的 vendor 并没有新增任何这样的快照,不该连带把
+ * 名称、提示词、触发条件这些无关字段一起锁死 —— 那样这条记录就只剩删除一条出路。
+ */
+function vendorSavable(v: VendorId): boolean {
+  return vendorSupportsAutomation(v) || isPersistedVendor(v)
 }
 
 const vendor = ref<VendorId>('claude')
@@ -640,9 +656,9 @@ const canSave = computed(
     // A `command` automation runs a shell command and never reaches the
     // dispatcher's vendor gate, so its vendor does not constrain saving. An
     // `llm` one does: refusing here is what stops the form writing an execution
-    // snapshot the dispatcher is guaranteed to hard-fail.
-    (type.value === 'command' ||
-      (agentId.value.length > 0 && vendorSupportsAutomation(vendor.value))),
+    // snapshot the dispatcher is guaranteed to hard-fail — except when the vendor
+    // is the one this very record already carries, which editing merely preserves.
+    (type.value === 'command' || (agentId.value.length > 0 && vendorSavable(vendor.value))),
 )
 
 function setMaxWallClockMs(event: Event): void {
@@ -1395,7 +1411,11 @@ function save(): void {
                 class="sf-hint sf-hint--warn"
                 data-testid="automation-vendor-unsupported"
               >
-                {{ t('automation.form.vendor.unsupportedHint') }}
+                {{
+                  vendorSavable(vendor)
+                    ? t('automation.form.vendor.unsupportedKeptHint')
+                    : t('automation.form.vendor.unsupportedHint')
+                }}
               </span>
               <span
                 v-else-if="seedVendorUnsupported"

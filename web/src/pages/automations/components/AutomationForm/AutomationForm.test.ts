@@ -760,6 +760,46 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(w.find('[data-testid="automation-vendor-unsupported"]').exists()).toBe(true)
   })
 
+  it('edit:既有 cursor LLM automation 可以编辑无关字段并保存', async () => {
+    const w = mountForm({
+      agents: [CURSOR_AGENT, ...AGENTS],
+      automation: sched({
+        vendor: 'cursor',
+        agentId: 'cursor-a',
+        type: 'llm',
+        config: { prompt: '既有提示词', name: 'legacy name' },
+      }),
+    })
+    // 保留的 vendor 不受支持,但保存按钮不能因此锁死整条记录。
+    expect(w.find('[data-testid="automation-vendor-unsupported"]').exists()).toBe(true)
+    expect(w.find('.sf-btn.primary').attributes('disabled')).toBeUndefined()
+
+    await w.find('textarea').setValue('改过的提示词')
+    await w.find('.sf-btn.primary').trigger('click')
+    const input = w.emitted('update')![0][1] as Record<string, unknown>
+    // vendor 原样落盘,不被 UI 门控静默改写。
+    expect(input.vendor).toBe('cursor')
+    expect((input.config as Record<string, unknown>).prompt).toBe('改过的提示词')
+  })
+
+  it('edit:既有 cursor automation 改选到别的 vendor 后,不受支持的 vendor 不能再被选回保存', async () => {
+    const w = mountForm({
+      agents: [CURSOR_AGENT, ...AGENTS],
+      automation: sched({
+        vendor: 'claude',
+        agentId: 'claude-default',
+        type: 'llm',
+        config: { prompt: '既有提示词', name: 'legacy name' },
+      }),
+    })
+    // 这条记录落盘的是 claude,cursor 只是"另一个 vendor" → 仍然灰显且不可保存。
+    const opts = w.findAll('[data-testid="automation-vendor"] option')
+    expect(opts[2].attributes('disabled')).toBeDefined()
+    await w.find('[data-testid="automation-vendor"]').setValue('cursor')
+    await w.find('.sf-agent-select').setValue('cursor-a')
+    expect(w.find('.sf-btn.primary').attributes('disabled')).toBeDefined()
+  })
+
   it('create payload 默认 vendor=claude,含 toolAllowlist', async () => {
     const w = mountForm({
       toolManifest: { claude: ALL_TOOLS },

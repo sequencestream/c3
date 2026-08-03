@@ -182,11 +182,13 @@ CLI 行渲染。
 约束。
 
 **automation 是唯一的例外**:Cursor 没有 dispatcher 执行路径,故自动化表单把它灰显
-并标注"不支持自动化",LLM 型任务选中它时禁止保存;系统配置的 automation agent 跟随链
-若解析到 Cursor,表单不把它当作可提交的默认值,而是回落到受支持的 vendor 并要求用户
-显式改选。表单灰显与调度期 hard-fail 读的是同一份 `AUTOMATION_VENDORS` 列表,所以
+并标注"不支持自动化",LLM 型任务**新选中**它时禁止保存;系统配置的 automation agent
+跟随链若解析到 Cursor,表单不把它当作可提交的默认值,而是回落到受支持的 vendor 并要求
+用户显式改选。表单灰显与调度期 hard-fail 读的是同一份 `AUTOMATION_VENDORS` 列表,所以
 表单不可能提供一个 dispatcher 会拒绝的选择。既有的 Cursor automation 仍可查看与编辑,
-其 vendor 不被 UI 门控静默改写。
+其 vendor 不被 UI 门控静默改写 —— 该 vendor 选项对这条记录保持可选,保存门控也放行它,
+名称/提示词/触发条件等无关字段照常可改可存(表单提示分派时会直接失败);禁止保存只针对
+把一条记录**新改成**不受支持的 vendor。
 
 数据根恒为 `$HOME/.cursor`:SDK 的 local agent store 落在
 `~/.cursor/projects/<workspace>/sdk-agent-store/…`,与运行加载的工作区 rules /

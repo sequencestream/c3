@@ -1793,6 +1793,7 @@
         "label": "Vendor",
         "unsupported": "automations not supported",
         "unsupportedHint": "This vendor has no automation execution path, so the task cannot be saved. Pick a supported vendor and agent.",
+        "unsupportedKeptHint": "This record keeps a vendor with no automation execution path, so dispatching an LLM task fails outright. Every other field can still be edited and saved.",
         "seedUnsupportedHint": "The configured automation agent runs on a vendor that cannot execute automations. Pick a supported agent below."
       },
       "agent": {

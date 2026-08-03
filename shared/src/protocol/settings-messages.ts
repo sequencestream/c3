@@ -22,6 +22,7 @@ import type {
   VendorHostStatus,
   VendorId,
   VendorModeCatalog,
+  VendorRuntimeStatus,
 } from './vendor.js'
 
 /** Fetch the system configuration (reply: `settings`). */
@@ -76,6 +77,22 @@ export type ServerSettings = {
   type: 'settings'
   settings: SystemSettings
   hostStatus: VendorHostStatus[]
+  /**
+   * Every vendor's {@link VendorRuntimeStatus} — the neutral "can c3 run this
+   * vendor" signal the console gates the agent-config vendor picker and every
+   * other run entry on, with zero `if (vendor === …)`. `hostStatus` keeps
+   * meaning host-CLI presence only; a vendor backed by an in-process SDK
+   * answers here and appears in no CLI panel.
+   *
+   * The `Record<VendorId, …>` shape is the coverage guarantee (every vendor
+   * answers); each entry still names its own `vendor` so a single row can be
+   * passed around self-describingly.
+   *
+   * Absent on older servers: the console then derives claude/codex from
+   * `hostStatus` and treats an SDK-backed vendor as unavailable — never the
+   * reverse, so a stale server cannot let a user into a path that must fail.
+   */
+  vendorRuntime?: Record<VendorId, VendorRuntimeStatus>
   /** Process-level sandbox driver status; absent on older servers. */
   sandboxStatus?: SandboxHostStatus
   bindingStats: SessionBindingStats

@@ -9,7 +9,7 @@ web/src/
 │
 ├── controls/                                        # App 控制器:拆分自原 App.vue 的状态 + 消息路由 + 各域动作,经共享 ctx 对象晚绑定串联
 │   ├── index.ts                                     # useAppController():建 state、装 runtime(client/send/reconnect/t/auth)、依次 install 各域、管理 WebSocket 生命周期(onMounted 建连/心跳/可见性/onReopen 重选),返回 ctx 供 App.vue 解构
-│   ├── state.ts                                     # createState():全部 ref/computed + 纯状态辅助(statusOf/add/setQueue/showToast/sessionTitleById/clearSideEffectPending/sumSessionCounts/emptyOwnerCounts/runningSessionsFingerprint)、计数器、localStorage 键常量;HEADER_TABS 两套角标口径:「会话」tab badgeCount=六类 sessionCounts 之和,「意图/讨论/自动化」tab badgeCount=ownerRunningCounts 对应项(服务端按 owner 去重后的进行中条目数,一个条目的多个关联会话只计 1),各 tab 另带 badgeAriaLabel;导出 AppState 类型
+│   ├── state.ts                                     # createState():全部 ref/computed + 纯状态辅助(含 vendorRuntime ref 与派生 vendorAvailability——全前端唯一的「vendor 能不能跑」判定,旧服务端缺字段时回落 hostStatus)(statusOf/add/setQueue/showToast/sessionTitleById/clearSideEffectPending/sumSessionCounts/emptyOwnerCounts/runningSessionsFingerprint)、计数器、localStorage 键常量;HEADER_TABS 两套角标口径:「会话」tab badgeCount=六类 sessionCounts 之和,「意图/讨论/自动化」tab badgeCount=ownerRunningCounts 对应项(服务端按 owner 去重后的进行中条目数,一个条目的多个关联会话只计 1),各 tab 另带 badgeAriaLabel;导出 AppState 类型
 │   ├── types.ts                                     # ctx 类型契约:AppRuntime(client/send/reconnect/t/auth)+ AppMethods(全部域方法签名),AppCtx = AppState & AppRuntime & AppMethods
 │   ├── transcript.ts                               # transcriptToChat():TranscriptItem→ChatBody 纯映射(会话历史回放)
 │   ├── persistence.ts                              # 视图恢复持久化:readStoredWorkspace/persistCurrentWorkspace/persistViewMode + ready 后 maybeRestore 需求/讨论/自动化
@@ -64,7 +64,7 @@ web/src/
 │   │   ├── Works.vue                             # 会话聚合页组件始终保留,仅主导航入口受 showSessionsPage 控制;桌面左侧聚合工作/意图/spec/讨论/automation/工具六类会话(工具类另受独立 showToolSessions 门控)+右侧 ChatColumn,移动端列表↔聊天 drill-down;深链与业务内跳转仍可直接进入
 │   │   └── components/
 │   │       ├── WorkSessionList/WorkSessionList.vue  # 左栏会话列表:当前工作区按 session_kind 分 tab 的聚合会话(work/intent/spec/discussion/automation/tool 可选,tool 受系统开关门控)、行点击=查看此会话(统一上抛 select-session 在右侧展示详情,不再跳走)、非 work 行不提供改名/删除、有 owner 的行仍保留 ↗ 来源跳回按钮(jump-session-source,次要入口)、无 owner 的工具行仅展示、新增工作会话、删除/改名、服务端游标分页(加载更多/已加载完,SR-R14)、运行中计数浮标、未接入类型占位、offline 警告
-│   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),host-binary 缺失时灰显并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
+│   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),运行时不可用的 vendor(宿主 CLI 不在 PATH 或进程内 SDK 解析不到)灰显、选项文本就地标注原因并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── queue/                                       # 自动化队列页(意图页的兄弟视图,activeTab 仍为 intents,由 queuePageOpen 切换)
 │   │   └── Queue.vue                                # 逐条回答「这条意图现在为什么不动」:阻塞原因(结构化原因码本地化,未知码回退原文)、下次唤醒时间、最近一次内核决策与时间、连续失败/累计退避、park 原因;头部为返回意图/队列状态徽标/下次唤醒/暂停·恢复/刷新;每行按钮与内核动作一一对应(解除 park 仅 parked 行渲染、强制跳过↔取消跳过、覆盖:继续、覆盖:停止);纯展示不持有队列状态,点标题 emit select-intent 回意图页选中该条
@@ -105,7 +105,7 @@ web/src/
 │   │       ├── AutomationDetail/AutomationCronEditor.vue  # 「修改时间」cron 编辑弹框(由 AutomationForm 编辑态 ✎ 打开):频率(每分/每时/每日/每周)+时间;每周时展示周一到周日多选切换(至少选 1 个否则禁用保存+提示),day-of-week 1-5 压缩/逗号拼接;实时表达式预览;仅 emit save(标准 5 字段 cron)
 │   │       ├── ExecutionHistoryDialog/ExecutionHistoryDialog.vue  # 历史选择弹框:在选中 automation 完整日志上做纯前端分页(默认最近 5 笔/页,上一页/下一页),点选一笔上抛 select-execution 并关闭;移动端全屏 sheet;状态 badge/时间/耗时/退出码行渲染
 │   │       ├── ExecutionDetail/ExecutionDetail.vue  # 历史 Tab 内执行详情:「执行信息」Tab + 「Session 会话记录」Tab(llm 类型) + 「Command 日志」Tab(command 类型);Tab 栏窄屏可横向滑动;运行中执行的 transcript 随控制层轮询覆盖更新(不闪 loading)
-│   │       ├── AutomationForm/AutomationForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发、高级 cron 构造器、实时 next-run 预览;事件触发下是通用过滤——事件类型输入框(datalist 建议 run:started/run:settled/pr:operation/intent:lifecycle,接受任意字符串)+ statuses 多值行 + metadata 条件构建器(增删行+AND/OR),仅当类型为 run:started/run:settled 时额外显示必填 sessionKind 多选(无默认勾选,未选禁止保存),pr:operation 类型显示 MCP 集成说明;仅当「事件触发 + LLM Prompt」组合时显示「在提示词中嵌入触发事件」复选框(create 默认关,edit 从 config 回读,切到 cron/command 即隐藏且不提交启用值);通用 metadata 标注编辑器(增删 key/value);编辑态可改标题(清空回退自动命名),创建态自动命名;vendor 下拉(host 缺失灰显)+工具勾选面板(读写分区,读默认勾,全选/全清按钮);创建态用系统 automationAgentId 预填 vendor+agent(跟随链 automationAgentId→defaultAgentId→首个启用),编辑态保留记录自身 vendor/agentId;正文分 5 个带标题卡片区块(基本信息/触发条件/metadata/执行身份/工具权限),每个区块正文的直接配置项带 `.sf-item` 归组标识,相邻顶层配置项之间以分隔线+对称间距区隔(单项区块不显示分隔),复合项(cron 构造器、事件订阅块、工具清单、Codex 权限子控件)为各自顶层项内部结构不再套用顶层分隔;移动端全屏 sheet 且紧凑表单单列堆叠
+│   │       ├── AutomationForm/AutomationForm.vue        # 创建/编辑任务表单(弹窗):cron 或事件触发、高级 cron 构造器、实时 next-run 预览;事件触发下是通用过滤——事件类型输入框(datalist 建议 run:started/run:settled/pr:operation/intent:lifecycle,接受任意字符串)+ statuses 多值行 + metadata 条件构建器(增删行+AND/OR),仅当类型为 run:started/run:settled 时额外显示必填 sessionKind 多选(无默认勾选,未选禁止保存),pr:operation 类型显示 MCP 集成说明;仅当「事件触发 + LLM Prompt」组合时显示「在提示词中嵌入触发事件」复选框(create 默认关,edit 从 config 回读,切到 cron/command 即隐藏且不提交启用值);通用 metadata 标注编辑器(增删 key/value);编辑态可改标题(清空回退自动命名),创建态自动命名;vendor 下拉(按 vendorAvailability 运行时不可用、或按共享 AUTOMATION_VENDORS 无自动化执行路径者灰显并就地标注原因;编辑既有记录时其自身 vendor 保持可选,不静默改写)+工具勾选面板(读写分区,读默认勾,全选/全清按钮);创建态用系统 automationAgentId 预填 vendor+agent(跟随链 automationAgentId→defaultAgentId→首个启用;若解析到无自动化执行路径的 vendor 则回落到受支持 vendor、清空 agent 并提示改选),选中不支持的 vendor 时 LLM 型任务禁止保存,编辑态保留记录自身 vendor/agentId;正文分 5 个带标题卡片区块(基本信息/触发条件/metadata/执行身份/工具权限),每个区块正文的直接配置项带 `.sf-item` 归组标识,相邻顶层配置项之间以分隔线+对称间距区隔(单项区块不显示分隔),复合项(cron 构造器、事件订阅块、工具清单、Codex 权限子控件)为各自顶层项内部结构不再套用顶层分隔;移动端全屏 sheet 且紧凑表单单列堆叠
 │   │       └── AutomationForm/resolveAutomationDefaultAgent.ts  # 纯函数:输入 agents+automationAgentId+defaultAgentId,按跟随链解析出创建表单默认预选的 AgentConfig(无启用 agent 返回 undefined 交调用方系统兜底);仅表单一次性取值,不接入运行时 resolveAgent
 │   │
 │   ├── codes/                                       # 代码浏览页
@@ -128,7 +128,7 @@ web/src/
 │   └── systemsettings/                              # 系统设置页
 │       ├── SystemSettings.vue                       # 系统设置容器(弹窗):封装 SettingsPanel
 │       └── components/SettingsPanel/
-│           ├── SettingsPanel.vue                    # 系统设置面板(弹窗):Agent/Runtime/Security/General 四 Tab,共享 useTabbedDraftSave 管理字段白名单、草稿/已提交基线、脏状态、分组保存与切换确认;Agent Tab 含默认/工具/意图/规格/规格审核(specReviewAgentId,唯一槽位、无 sandbox 变体)/自动化 agent 下拉,空串一律「跟随默认」;General 包含 voiceLang/timezone/baseUrl/showToolSessions/showSessionsPage,后二者职责独立(界面语言属个人化设置页,不在此);Runtime 含 vendor CLI 生效版本、子进程代理与会话清理(sessionCleanup:开关 + 保留天数,关闭时天数输入禁用,与 sandbox 无关、不在工作区设置中)。showSessionsPage 使用无障碍 switch,非管理员只读,仅服务端确认回推改变全局导航
+│           ├── SettingsPanel.vue                    # 系统设置面板(弹窗):Agent/Runtime/Security/General 四 Tab,共享 useTabbedDraftSave 管理字段白名单、草稿/已提交基线、脏状态、分组保存与切换确认;Agent Tab 含默认/工具/意图/规格/规格审核(specReviewAgentId,唯一槽位、无 sandbox 变体)/自动化 agent 下拉,空串一律「跟随默认」;General 包含 voiceLang/timezone/baseUrl/showToolSessions/showSessionsPage,后二者职责独立(界面语言属个人化设置页,不在此);Agent Tab 的 vendor 下拉列出全部注册 vendor(Claude/Codex/Cursor),按 settings 的中立信号 vendorAvailability 门控——不可用的 vendor 选项禁用并在选项文本与列表下方 agent-vendor-notes 各标注一次原因,但已配置为该 vendor 的 agent 其选项保持可选;选中 Cursor 重建为 configMode:'system' + config {apiKey, model}(无 baseUrl,configMode 下拉只剩 system)。Runtime 含每 vendor 一行的运行时诊断(标识列为宿主 CLI 二进制名或进程内 SDK 包名,path 仅宿主 CLI 行渲染、不可用时改显原因)、vendor CLI 生效版本(仅宿主 CLI vendor 有行)、子进程代理与会话清理(sessionCleanup:开关 + 保留天数,关闭时天数输入禁用,与 sandbox 无关、不在工作区设置中)。showSessionsPage 使用无障碍 switch,非管理员只读,仅服务端确认回推改变全局导航
 │           ├── EmojiPicker.vue                      # emoji 选择器:零依赖,支持搜索、分类导航、自定义输入(最长 16 字符)
 │           └── emoji-data.ts                        # emoji 数据集:分类 emoji 列表与搜索关键词
 │
@@ -174,6 +174,7 @@ web/src/
 │   ├── task-list.ts                                 # work session 任务列表客户端入口:re-export 共享任务模型 + taskPanelView 纯展示视图
 │   ├── textarea.ts                                  # 自增长 textarea 的 DOM-free 几何计算:由 scrollHeight 与上限算高度与滚动条显隐
 │   ├── vendor.ts                                    # Vendor 品牌标签与配色常量:VENDOR_LABEL、VENDOR_COLOR
+│   ├── vendor-runtime.ts                            # 「vendor 现在能不能跑」的客户端唯一判定来源:deriveVendorAvailability(vendorRuntime, hostStatus) 覆盖全量 vendor 派生可用性(服务端信号优先;旧服务端缺字段时 CLI vendor 回落 hostStatus、其余一律判不可用,只挡不放行),vendorUnavailableReasonKey 把稳定原因码映射为 i18n key。所有门控点(agent 配置 vendor 下拉/新建会话弹窗/自动化表单)只读它,无 `if (vendor === …)`
 │   └── ws.ts                                        # WebSocket 客户端:自动重连、heartbeat+pong 检测、消息监听、状态回调;每次(重)连接按 getToken 注入握手 ?token=(ADR-0023)
 │
 └── i18n/                                            # 国际化

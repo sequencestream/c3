@@ -6,34 +6,26 @@ import type {
   AgentConfig,
   Automation,
   ToolManifestEntry,
-  VendorHostStatus,
+  VendorId,
+  VendorRuntimeStatus,
 } from '@ccc/shared/protocol'
+import { VENDOR_IDS } from '@ccc/shared/protocol'
 import { isValidCron } from '@ccc/shared/cron'
 import AutomationForm from './AutomationForm.vue'
 
-const HOST_PRESENT: VendorHostStatus[] = [
-  {
-    vendor: 'claude',
-    present: true,
-    binary: 'claude',
-    path: '/usr/local/bin/claude',
-    installHint: '',
-  },
-  {
-    vendor: 'codex',
-    present: true,
-    binary: 'codex',
-    path: '/usr/local/bin/codex',
-    installHint: '',
-  },
-  {
-    vendor: 'cursor',
-    present: true,
-    binary: 'cursor-agent',
-    path: '/usr/local/bin/cursor-agent',
-    installHint: '',
-  },
-]
+/** 全部 vendor 运行时可用(automation 能力另由 AUTOMATION_VENDORS 决定)。 */
+const RUNTIME_AVAILABLE: Record<VendorId, VendorRuntimeStatus> = Object.fromEntries(
+  VENDOR_IDS.map((vendor) => [vendor, { vendor, available: true, runtime: 'host-cli' }]),
+) as Record<VendorId, VendorRuntimeStatus>
+
+/** 一个 cursor agent —— 运行时可用,但没有 automation 执行路径。 */
+const CURSOR_AGENT: AgentConfig = {
+  id: 'cursor-a',
+  vendor: 'cursor',
+  configMode: 'system',
+  displayName: 'Cursor A',
+  config: { apiKey: '', model: '' },
+}
 
 const READ_TOOLS: ToolManifestEntry[] = [
   { name: 'Read', isWrite: false },
@@ -63,7 +55,7 @@ function mountForm(
     toolManifest: Record<string, ToolManifestEntry[] | null>
     toolManifestLoading: boolean
     toolManifestError: string | null
-    hostStatus: VendorHostStatus[]
+    vendorAvailability: Record<VendorId, VendorRuntimeStatus>
     agents: AgentConfig[]
     automationAgentId: string
     defaultAgentId: string
@@ -78,7 +70,7 @@ function mountForm(
       toolManifest: {},
       toolManifestLoading: false,
       toolManifestError: null,
-      hostStatus: HOST_PRESENT,
+      vendorAvailability: RUNTIME_AVAILABLE,
       agents: AGENTS,
       automationAgentId: '',
       defaultAgentId: '',
@@ -697,26 +689,75 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
   // ---- Vendors -------------------------------------------------------------
 
-  it('渲染 vendor 下拉选择器,三个品牌均可见', () => {
+  it('渲染 vendor 下拉选择器,三个品牌均可见;不支持自动化的 vendor 就地标注原因', () => {
     const w = mountForm()
-    const select = w.find('select.sf-select')
+    const select = w.find('[data-testid="automation-vendor"]')
     expect(select.exists()).toBe(true)
     const opts = select.findAll('option')
     expect(opts).toHaveLength(3)
     expect(opts[0].text()).toBe('Claude')
     expect(opts[1].text()).toBe('Codex')
-    expect(opts[2].text()).toBe('Cursor')
+    // cursor 没有 automation 执行路径,选项保留但注明原因(不是静默消失)。
+    expect(opts[2].text()).toContain('Cursor')
+    expect(opts[2].text()).not.toBe('Cursor')
   })
 
-  it('host 缺失的 vendor 选项 disabled, host 存在的不 disabled', () => {
+  it('运行时可用但无自动化执行路径的 vendor 选项 disabled', () => {
     const w = mountForm()
-    const opts = w.findAll('select.sf-select option')
-    // claude present → enabled
+    const opts = w.findAll('[data-testid="automation-vendor"] option')
+    // claude / codex 有执行路径且运行时可用 → 可选
     expect(opts[0].attributes('disabled')).toBeUndefined()
-    // codex present → enabled
     expect(opts[1].attributes('disabled')).toBeUndefined()
-    // cursor present → enabled
+    // cursor 运行时可用,但 dispatcher 没有它的执行路径 → 灰显
+    expect(opts[2].attributes('disabled')).toBeDefined()
+  })
+
+  it('运行时不可用的 vendor 同样 disabled(与自动化能力正交)', () => {
+    const runtime = { ...RUNTIME_AVAILABLE }
+    runtime.codex = {
+      vendor: 'codex',
+      available: false,
+      runtime: 'host-cli',
+      runtimeId: 'codex',
+      reason: 'host-cli-missing',
+    }
+    const w = mountForm({ vendorAvailability: runtime })
+    const opts = w.findAll('[data-testid="automation-vendor"] option')
+    expect(opts[1].attributes('disabled')).toBeDefined()
+  })
+
+  it('选中 cursor 时给出不支持提示,且 LLM 任务保存被禁用', async () => {
+    const w = mountForm({ agents: [...AGENTS, CURSOR_AGENT] })
+    await w.findAll('.sf-seg')[1].trigger('click') // LLM prompt
+    await w.find('[data-testid="automation-vendor"]').setValue('cursor')
+    expect(w.find('[data-testid="automation-vendor-unsupported"]').exists()).toBe(true)
+    // 即便填齐 prompt 与 agent,也不能提交出一条必然 hard-fail 的记录。
+    await w.find('.sf-agent-select').setValue('cursor-a')
+    await w.find('textarea').setValue('do something')
+    expect(w.find('.sf-btn.primary').attributes('disabled')).toBeDefined()
+  })
+
+  it('automationAgentId 跟随链解析到 cursor 时不作为可提交默认,并提示改选', () => {
+    const w = mountForm({
+      agents: [CURSOR_AGENT, ...AGENTS],
+      automationAgentId: 'cursor-a',
+    })
+    const select = w.find('[data-testid="automation-vendor"]').element as HTMLSelectElement
+    expect(select.value).toBe('claude')
+    expect(w.find('[data-testid="automation-seed-vendor-unsupported"]').exists()).toBe(true)
+  })
+
+  it('edit:既有 cursor automation 保留自身 vendor,不被 UI 门控静默改写', () => {
+    const w = mountForm({
+      agents: [CURSOR_AGENT, ...AGENTS],
+      automation: sched({ vendor: 'cursor', agentId: 'cursor-a', type: 'llm' }),
+    })
+    const select = w.find('[data-testid="automation-vendor"]').element as HTMLSelectElement
+    expect(select.value).toBe('cursor')
+    // 自身 vendor 选项保持可选(否则浏览器会把选中值挪走),但明确提示不可执行。
+    const opts = w.findAll('[data-testid="automation-vendor"] option')
     expect(opts[2].attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-testid="automation-vendor-unsupported"]').exists()).toBe(true)
   })
 
   it('create payload 默认 vendor=claude,含 toolAllowlist', async () => {

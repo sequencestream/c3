@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
 import SettingsPanel from './SettingsPanel.vue'
-import { SYSTEM_AGENT_ID } from '@ccc/shared/protocol'
-import type { SystemSettings } from '@ccc/shared/protocol'
+import { SYSTEM_AGENT_ID, VENDOR_IDS } from '@ccc/shared/protocol'
+import type { SystemSettings, VendorId, VendorRuntimeStatus } from '@ccc/shared/protocol'
 import { useAuth } from '@/composables/useAuth'
 
 const baseSettings: SystemSettings = {
@@ -1315,5 +1315,280 @@ describe('SettingsPanel.vue — dirty-tab switch confirmation (2026-07-11-001)',
     // Returning to Agent (clean General ⇒ no confirm) shows the retained draft.
     await w.find('[data-testid="settings-tab-btn-agent"]').trigger('click')
     expect(w.findAll('[data-testid="agent-card"]')).toHaveLength(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Cursor vendor in the agent config panel (2026-08-03-002)
+// ---------------------------------------------------------------------------
+
+/** 全部 vendor 可用的中立可用性表;`unavailable` 里的按其原因码判为不可用。 */
+function availability(
+  unavailable: Partial<Record<VendorId, VendorRuntimeStatus>> = {},
+): Record<VendorId, VendorRuntimeStatus> {
+  const out = {} as Record<VendorId, VendorRuntimeStatus>
+  for (const vendor of VENDOR_IDS) {
+    out[vendor] = unavailable[vendor] ?? { vendor, available: true, runtime: 'host-cli' }
+  }
+  return out
+}
+
+const CURSOR_UNAVAILABLE: VendorRuntimeStatus = {
+  vendor: 'cursor',
+  available: false,
+  runtime: 'embedded-sdk',
+  runtimeId: '@cursor/sdk',
+  reason: 'sdk-unresolved',
+}
+
+function vendorOptions(w: ReturnType<typeof mount>) {
+  return w.find('[data-testid="agent-vendor"]').findAll('option')
+}
+
+describe('SettingsPanel.vue — Cursor vendor in the agent config panel', () => {
+  it('offers every registered vendor, Cursor included', () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, vendorAvailability: availability() },
+    })
+    expect(vendorOptions(w).map((o) => o.element.value)).toEqual([...VENDOR_IDS])
+  })
+
+  it('switching an agent to cursor rebuilds the config as system + {apiKey, model}, no baseUrl', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, vendorAvailability: availability() },
+    })
+    await w.find('[data-testid="agent-vendor"]').setValue('cursor')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    const agent = saved.agents[0]
+    expect(agent.vendor).toBe('cursor')
+    expect(agent.configMode).toBe('system')
+    expect(agent.config).toEqual({ apiKey: '', model: '' })
+    expect(agent.config).not.toHaveProperty('baseUrl')
+  })
+
+  it('a cursor agent offers only the system config mode, and shows apiKey + model', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, vendorAvailability: availability() },
+    })
+    await w.find('[data-testid="agent-vendor"]').setValue('cursor')
+    const modes = w
+      .find('[data-testid="agent-configmode"]')
+      .findAll('option')
+      .map((o) => o.element.value)
+    expect(modes).toEqual(['system'])
+    expect(w.find('.agent-key').exists()).toBe(true)
+    expect(w.find('.agent-model').exists()).toBe(true)
+    // No path produces a baseUrl input for cursor.
+    expect(w.find('.agent-url').exists()).toBe(false)
+  })
+
+  it('carries a typed cursor apiKey and model into the Save payload', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: baseSettings, vendorAvailability: availability() },
+    })
+    await w.find('[data-testid="agent-vendor"]').setValue('cursor')
+    await w.find('.agent-key').setValue('key-abc')
+    await w.find('.agent-model').setValue('claude-4.5-sonnet')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents[0].config).toEqual({ apiKey: 'key-abc', model: 'claude-4.5-sonnet' })
+  })
+
+  it('disables an unavailable vendor option and states the reason next to it', () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: baseSettings,
+        vendorAvailability: availability({ cursor: CURSOR_UNAVAILABLE }),
+      },
+    })
+    const cursorOption = vendorOptions(w).find((o) => o.element.value === 'cursor')!
+    expect(cursorOption.attributes('disabled')).toBeDefined()
+    expect(cursorOption.text()).toContain('built-in SDK runtime unavailable')
+    // …and the same reason is repeated under the roster, so it is visible without
+    // opening the dropdown.
+    expect(w.find('[data-testid="agent-vendor-notes"]').text()).toContain(
+      'built-in SDK runtime unavailable',
+    )
+  })
+
+  it('refuses to switch an agent to an unavailable vendor', async () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: baseSettings,
+        vendorAvailability: availability({ cursor: CURSOR_UNAVAILABLE }),
+      },
+    })
+    await w.find('[data-testid="agent-vendor"]').setValue('cursor')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents[0].vendor).toBe('claude')
+  })
+
+  it('keeps an already-configured cursor agent selectable even when its runtime is gone', () => {
+    const withCursor: SystemSettings = {
+      ...baseSettings,
+      agents: [
+        {
+          id: 'cursor-a',
+          vendor: 'cursor',
+          configMode: 'system',
+          displayName: 'Cursor A',
+          config: { apiKey: '', model: '' },
+        },
+      ],
+      defaultAgentId: 'cursor-a',
+    }
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: withCursor,
+        vendorAvailability: availability({ cursor: CURSOR_UNAVAILABLE }),
+      },
+    })
+    const cursorOption = vendorOptions(w).find((o) => o.element.value === 'cursor')!
+    expect(cursorOption.attributes('disabled')).toBeUndefined()
+  })
+
+  it('lists a Cursor runtime diagnostics row with its SDK id, status and reason', () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: baseSettings,
+        vendorAvailability: availability({ cursor: CURSOR_UNAVAILABLE }),
+        hostStatus: [
+          {
+            vendor: 'claude',
+            present: true,
+            binary: 'claude',
+            path: '/usr/local/bin/claude',
+            installHint: '',
+          },
+        ],
+      },
+    })
+    const rows = w.findAll('[data-testid="diagnostics-row"]')
+    expect(rows).toHaveLength(VENDOR_IDS.length)
+    const cursorRow = rows.find((r) => r.attributes('data-vendor') === 'cursor')!
+    expect(cursorRow.text()).toContain('@cursor/sdk')
+    expect(cursorRow.text()).toContain('built-in SDK runtime unavailable')
+    // 进程内 SDK 没有可解析的可执行文件路径,不渲染 CLI 才有的 path 列。
+    expect(cursorRow.find('.diagnostics-path').exists()).toBe(false)
+    // 宿主 CLI 行照旧显示解析到的绝对路径。
+    const claudeRow = rows.find((r) => r.attributes('data-vendor') === 'claude')!
+    expect(claudeRow.find('.diagnostics-path').text()).toBe('/usr/local/bin/claude')
+  })
+
+  it('lists no CLI version panel row for an SDK-backed vendor', () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: baseSettings,
+        vendorAvailability: availability(),
+        hostStatus: [
+          {
+            vendor: 'claude',
+            present: true,
+            binary: 'claude',
+            path: '/usr/local/bin/claude',
+            installHint: '',
+          },
+        ],
+      },
+    })
+    expect(w.findAll('[data-testid="vendor-cli-row"]')).toHaveLength(1)
+  })
+
+  it('falls back to hostStatus and treats an SDK vendor as unavailable on an older server', () => {
+    // No `vendorAvailability` at all — the shape an old server's `settings` leaves.
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: baseSettings,
+        hostStatus: [
+          {
+            vendor: 'claude',
+            present: true,
+            binary: 'claude',
+            path: '/usr/local/bin/claude',
+            installHint: '',
+          },
+        ],
+      },
+    })
+    const rows = w.findAll('[data-testid="diagnostics-row"]')
+    const claudeRow = rows.find((r) => r.attributes('data-vendor') === 'claude')!
+    const cursorRow = rows.find((r) => r.attributes('data-vendor') === 'cursor')!
+    expect(claudeRow.text()).toContain('available')
+    expect(cursorRow.text()).toContain('unavailable')
+  })
+})
+
+describe('SettingsPanel.vue — a Cursor agent is a first-class pick in every role selector', () => {
+  const withCursor: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      {
+        id: SYSTEM_AGENT_ID,
+        vendor: 'claude',
+        configMode: 'system',
+        displayName: 'System',
+        enabled: true,
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'cursor-a',
+        vendor: 'cursor',
+        configMode: 'system',
+        displayName: 'Cursor A',
+        enabled: true,
+        group: 'squad',
+        config: { apiKey: '', model: '' },
+      },
+    ],
+  }
+
+  const ROLE_PICKERS = [
+    'default-agent-select',
+    'tool-agent-select',
+    'intent-agent-select',
+    'spec-agent-select',
+    'automation-agent-select',
+  ] as const
+
+  it('offers the cursor agent in the default and every role picker (no vendor filter)', () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: withCursor, vendorAvailability: availability() },
+    })
+    for (const testid of ROLE_PICKERS) {
+      const values = w
+        .find(`[data-testid="${testid}"]`)
+        .findAll('option')
+        .map((o) => o.element.value)
+      expect(values).toContain('cursor-a')
+    }
+  })
+
+  it('lists the cursor agent’s group as a virtual group agent (degradation chain member)', () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: withCursor, vendorAvailability: availability() },
+    })
+    const values = w
+      .find('[data-testid="default-agent-select"]')
+      .findAll('option')
+      .map((o) => o.element.value)
+    expect(values).toContain('_c3_cursor_squad')
+  })
+
+  it('carries a cursor default agent through the Agent tab Save', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: withCursor, vendorAvailability: availability() },
+    })
+    await w.find('[data-testid="default-agent-select"]').setValue('cursor-a')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.defaultAgentId).toBe('cursor-a')
   })
 })

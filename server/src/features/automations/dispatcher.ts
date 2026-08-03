@@ -27,6 +27,7 @@ import type {
   SessionKind,
   VendorId,
 } from '@ccc/shared/protocol'
+import { vendorSupportsAutomation } from '@ccc/shared/protocol'
 import type { GenericEvent } from '@ccc/shared'
 import { resolveWorkspaceRoot } from '../../state.js'
 import {
@@ -617,22 +618,24 @@ async function executeLlmPrompt(
   }
   const { model, envOverrides: launchEnv, relayCandidates } = launchForAgent(launchAgent)
 
-  if (automation.vendor === 'codex') {
-    await executeCodexLlmPrompt(automation, logId, updateLog, prompt, abortController, launchAgent)
-    clearTimeout(timeoutTimer)
-    return
-  }
-
-  // Only claude and codex have an automation execution path. A vendor with no
-  // such path (cursor today) must fail loudly here — never fall through to the
-  // claude SDK and run under the wrong engine.
-  if (automation.vendor !== 'claude') {
+  // A vendor with no execution path (cursor today) must fail loudly here — never
+  // fall through to the claude SDK and run under the wrong engine. The set is the
+  // shared `AUTOMATION_VENDORS`, the same list the console's automation form greys
+  // out from, so an offer the dispatcher would refuse cannot be made. A record that
+  // reached the store by import or a hand-edit still lands here and hard-fails.
+  if (!vendorSupportsAutomation(automation.vendor)) {
     clearTimeout(timeoutTimer)
     updateLog(logId, {
       finishedAt: Date.now(),
       status: 'failed',
       error: 'automation_vendor_unsupported',
     })
+    return
+  }
+
+  if (automation.vendor === 'codex') {
+    await executeCodexLlmPrompt(automation, logId, updateLog, prompt, abortController, launchAgent)
+    clearTimeout(timeoutTimer)
     return
   }
 

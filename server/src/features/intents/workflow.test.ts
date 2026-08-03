@@ -133,7 +133,8 @@ vi.mock('../sessions/session-metadata-store.js', () => ({
 }))
 
 vi.mock('../../kernel/agent/process/launcher.js', () => ({
-  probeAll: vi.fn(),
+  probeAll: vi.fn(() => []),
+  isManagedVendor: (vendor: string) => vendor === 'claude' || vendor === 'codex',
 }))
 
 vi.mock('../../sessions.js', () => ({

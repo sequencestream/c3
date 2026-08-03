@@ -504,6 +504,13 @@ Automation 保留其 vendor 作为稳定的工具清单、策略与适配器路�
 该次执行失败,并且永远不会回退到另一个 Agent 或 vendor。每个 vendor 都经由自己的
 adapter 路径运行;cursor 例外——它没有自动化执行路径,选中 cursor vendor 的自动化在分派时硬失败,不回退到其他 vendor。
 
+有执行路径的 vendor 集合是共享常量 `AUTOMATION_VENDORS`:分派前的 hard-fail 与
+创建/编辑表单的灰显读的是**同一份**列表,因此表单不可能提供一个分派会拒绝的选择。
+表单侧的表现:不支持的 vendor 选项禁用并标注"不支持自动化",`llm_prompt` 型任务选中
+它时禁止保存;系统配置的 `automationAgentId` 跟随链若解析到这样的 vendor,表单不把它
+当作可提交的默认值,而是回落到受支持的 vendor 并要求用户显式改选。既有记录仍可查看与
+编辑,其 vendor **不被 UI 门控静默改写**——它在分派期照旧 hard-fail。
+
 ### c3 MCP 传输方式(厂商统一)
 
 自动化的 c3 工具集(intent 查询 / PR 对账写 / `save_intent_directly` /

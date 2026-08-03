@@ -23,6 +23,12 @@
     },
     "unknown": {
       "label": "未知"
+    },
+    "vendor": {
+      "unavailable": {
+        "hostCliMissing": "本机未找到该 vendor 的 CLI",
+        "sdkUnresolved": "当前构建中内置 SDK 运行时不可用"
+      }
     }
   },
   "nav": {
@@ -475,10 +481,11 @@
       "title": {
         "label": "运行时驱动"
       },
-      "hint": "显示 Agent 厂商 CLI 与 Sandbox 驱动的运行时可用状态及解析路径。",
-      "present": "已在 PATH",
-      "missing": "未找到",
-      "sandbox": "Sandbox 驱动"
+      "hint": "各 agent vendor(宿主 CLI 或进程内 SDK)与 Sandbox 驱动的运行时可用性。",
+      "present": "可用",
+      "missing": "不可用",
+      "sandbox": "Sandbox 驱动",
+      "embeddedSdk": "进程内 SDK"
     },
     "vendorCli": {
       "title": {
@@ -1189,7 +1196,6 @@
         "groupLabel": "分组"
       },
       "missing": {
-        "suffix": "binary 不在 PATH",
         "hint": "部分 agent 的 CLI 未安装。",
         "gotoDetection": "前往检测面板"
       },
@@ -1572,7 +1578,10 @@
         "label": "新建自动化"
       },
       "vendor": {
-        "label": "品牌"
+        "label": "品牌",
+        "unsupported": "不支持自动化",
+        "unsupportedHint": "该 vendor 没有自动化执行路径,任务无法保存。请改选受支持的 vendor 与 agent。",
+        "seedUnsupportedHint": "系统配置的自动化 agent 所属 vendor 无法执行自动化,请在下方改选受支持的 agent。"
       },
       "agent": {
         "label": "Agent",

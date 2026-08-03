@@ -198,6 +198,14 @@ describe('CursorDriver', () => {
       await expect(
         driverFor(sdk).start(startOpts({ envOverrides: undefined })),
       ).rejects.toBeInstanceOf(CursorUnsupportedError)
+      // Both fixes must be named: the operator cannot tell from where the run
+      // failed which of the two key sources their deployment uses.
+      await expect(driverFor(sdk).start(startOpts({ envOverrides: undefined }))).rejects.toThrow(
+        /apiKey/,
+      )
+      await expect(driverFor(sdk).start(startOpts({ envOverrides: undefined }))).rejects.toThrow(
+        /CURSOR_API_KEY/,
+      )
     } finally {
       if (priorKey !== undefined) process.env.CURSOR_API_KEY = priorKey
     }

@@ -23,6 +23,12 @@
     },
     "unknown": {
       "label": "unknown"
+    },
+    "vendor": {
+      "unavailable": {
+        "hostCliMissing": "vendor CLI not found on this host",
+        "sdkUnresolved": "built-in SDK runtime unavailable in this build"
+      }
     }
   },
   "nav": {
@@ -475,10 +481,11 @@
       "title": {
         "label": "Runtime drivers"
       },
-      "hint": "Runtime availability and resolved paths for agent vendor CLIs and the Sandbox driver.",
-      "present": "on PATH",
-      "missing": "not found",
-      "sandbox": "Sandbox driver"
+      "hint": "Runtime availability for each agent vendor (host CLI or in-process SDK) and the Sandbox driver.",
+      "present": "available",
+      "missing": "unavailable",
+      "sandbox": "Sandbox driver",
+      "embeddedSdk": "in-process SDK"
     },
     "vendorCli": {
       "title": {
@@ -1189,7 +1196,6 @@
         "groupLabel": "Groups"
       },
       "missing": {
-        "suffix": "binary not in PATH",
         "hint": "Some agent CLIs are not installed.",
         "gotoDetection": "Open detection panel"
       },
@@ -1784,7 +1790,10 @@
         "label": "Create automation"
       },
       "vendor": {
-        "label": "Vendor"
+        "label": "Vendor",
+        "unsupported": "automations not supported",
+        "unsupportedHint": "This vendor has no automation execution path, so the task cannot be saved. Pick a supported vendor and agent.",
+        "seedUnsupportedHint": "The configured automation agent runs on a vendor that cannot execute automations. Pick a supported agent below."
       },
       "agent": {
         "label": "Agent",

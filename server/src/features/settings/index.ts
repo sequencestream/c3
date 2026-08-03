@@ -1,11 +1,14 @@
 /**
  * `settings` feature handlers — slice 1/3 (ADR-0009).
  *
- * Beyond the persisted {@link SystemSettings}, every `settings` reply carries two
+ * Beyond the persisted {@link SystemSettings}, every `settings` reply carries
  * runtime-derived companions the config object itself does not hold:
  *  - `hostStatus` — each vendor's host-CLI presence (ADR-0012), probed via the
- *    ProcessLauncher, so the console can grey out an agent whose binary is not on
- *    PATH and show the resolved absolute path of each installed binary.
+ *    ProcessLauncher, so the console can show the resolved absolute path of each
+ *    installed binary. It speaks about CLIs only — never about vendors that have none.
+ *  - `vendorRuntime` — the neutral "can c3 run this vendor" signal, answered for
+ *    EVERY vendor whatever backs it, which is what the console gates on so no
+ *    caller has to know which vendors are CLIs and which are in-process SDKs.
  *  - `bindingStats` — the session→agent binding counts (ADR-0015), so the console
  *    can show that a default-agent change is not retroactive.
  */
@@ -20,6 +23,7 @@ import type {
   SandboxHostStatus,
 } from '@ccc/shared/protocol'
 import { MODE_CATALOGS } from '../../kernel/agent/adapters/index.js'
+import { vendorRuntimeStatuses } from '../../kernel/agent/vendor-runtime.js'
 import { resolveWorkspaceRoot, pathToId } from '../../state.js'
 import {
   getSessionBindingStats,
@@ -167,6 +171,7 @@ export const getSettings: Handler<'get_settings'> = (_ctx, conn) => {
     type: 'settings',
     settings: loadSettings(),
     hostStatus: hostStatus(),
+    vendorRuntime: vendorRuntimeStatuses(),
     sandboxStatus: sandboxStatus(),
     bindingStats: getSessionBindingStats(),
     sessionCapabilities: sessionCapabilities(),
@@ -190,6 +195,7 @@ export const saveSettingsHandler: Handler<'save_settings'> = (_ctx, conn, msg) =
     type: 'settings',
     settings: saved,
     hostStatus: hostStatus(),
+    vendorRuntime: vendorRuntimeStatuses(),
     sandboxStatus: sandboxStatus(),
     bindingStats: getSessionBindingStats(),
     sessionCapabilities: sessionCapabilities(),

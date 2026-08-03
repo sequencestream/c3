@@ -426,3 +426,57 @@ describe('DiscussionList.vue — 讨论列表(纯选中,无行内抽屉)', () =>
     expect(noAgent.find('.disc-status-indicator .status-text').text()).not.toMatch(/^\./)
   })
 })
+
+describe('DiscussionList.vue — cursor agent 作为讨论参与者', () => {
+  it('cursor agent 出现在参与者名单并默认入选,可提交为 participantAgentIds', async () => {
+    const w = mountList({
+      discussions: [],
+      agents: [
+        ag('system', 'System'),
+        ag('cursor-a', 'Cursor A', {
+          vendor: 'cursor',
+          configMode: 'system',
+          config: { apiKey: '', model: '' },
+        }),
+      ],
+      defaultAgentId: 'system',
+    })
+    await w.find('.disc-new-btn').trigger('click')
+    // 参与者名单不按 vendor 过滤 —— cursor 与其他真实 agent 同列。
+    expect(w.find('[data-testid="disc-participant-cursor-a"]').exists()).toBe(true)
+
+    const options = w.findAll('.disc-modal select option')
+    await w.find('.disc-modal select').setValue((options[0].element as HTMLOptionElement).value)
+    await w.findAll('.disc-modal textarea')[0].setValue('Decide cache TTL')
+    await w.findAll('.disc-modal textarea')[1].setValue('Redis today')
+    await w.find('.disc-modal').trigger('submit')
+
+    const [payload] = (w.emitted('create') as Array<[{ participantAgentIds: string[] }]>)[0]
+    expect(payload.participantAgentIds).toContain('cursor-a')
+  })
+
+  it('cursor agent 可被指定为讨论组织者(研究会话的 Claude-only 约束在服务端)', async () => {
+    const w = mountList({
+      discussions: [],
+      agents: [
+        ag('system', 'System'),
+        ag('cursor-a', 'Cursor A', {
+          vendor: 'cursor',
+          configMode: 'system',
+          config: { apiKey: '', model: '' },
+        }),
+      ],
+      defaultAgentId: 'system',
+    })
+    await w.find('.disc-new-btn').trigger('click')
+    await w.find('[data-testid="disc-organizer-cursor-a"]').setValue(true)
+    const options = w.findAll('.disc-modal select option')
+    await w.find('.disc-modal select').setValue((options[0].element as HTMLOptionElement).value)
+    await w.findAll('.disc-modal textarea')[0].setValue('Decide cache TTL')
+    await w.findAll('.disc-modal textarea')[1].setValue('Redis today')
+    await w.find('.disc-modal').trigger('submit')
+
+    const [payload] = (w.emitted('create') as Array<[{ organizerAgentId: string }]>)[0]
+    expect(payload.organizerAgentId).toBe('cursor-a')
+  })
+})

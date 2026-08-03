@@ -21,7 +21,8 @@ import type {
   ToolManifestEntry,
   TranscriptItem,
   UpdateAutomationInput,
-  VendorHostStatus,
+  VendorId,
+  VendorRuntimeStatus,
 } from '@ccc/shared/protocol'
 
 const props = defineProps<{
@@ -50,8 +51,8 @@ const props = defineProps<{
   toolManifest: Record<string, ToolManifestEntry[] | null>
   toolManifestLoading: boolean
   toolManifestError: string | null
-  /** Per-vendor host-CLI presence (for greying absent vendors). */
-  hostStatus: VendorHostStatus[]
+  /** 每个 vendor 的运行时可用性(用于灰显跑不起来的 vendor)。 */
+  vendorAvailability: Record<VendorId, VendorRuntimeStatus>
   agents: AgentConfig[]
   /** System-configured default agent for the new-automation form (AC-R25). */
   automationAgentId: string
@@ -145,7 +146,7 @@ function onImportConfirm(inputs: CreateAutomationInput[]): void {
     :tool-manifest="toolManifest"
     :tool-manifest-loading="toolManifestLoading"
     :tool-manifest-error="toolManifestError"
-    :host-status="hostStatus"
+    :vendor-availability="vendorAvailability"
     :agents="agents"
     :automation-agent-id="automationAgentId"
     :default-agent-id="defaultAgentId"

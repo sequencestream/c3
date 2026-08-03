@@ -95,6 +95,7 @@ function makeCtx() {
   // 处理器写入 undefined 而抛错。
   const settingsOpen = ref(false)
   const hostStatus = ref<unknown>(null)
+  const vendorRuntime = ref<unknown>(null)
   const sandboxStatus = ref<unknown>(null)
   const bindingStats = ref<unknown>(null)
   const sessionCapabilities = ref<unknown>(null)
@@ -104,6 +105,7 @@ function makeCtx() {
   const ctx = {
     settingsOpen,
     hostStatus,
+    vendorRuntime,
     sandboxStatus,
     bindingStats,
     sessionCapabilities,
@@ -958,6 +960,9 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       persistViewMode: vi.fn(),
       devLaunch: ref(null),
       hostStatus: ref<import('@ccc/shared/protocol').VendorHostStatus[]>([]),
+      vendorRuntime: ref<Record<string, import('@ccc/shared/protocol').VendorRuntimeStatus> | null>(
+        null,
+      ),
       bindingStats: ref<import('@ccc/shared/protocol').SessionBindingStats | null>(null),
       sessionCapabilities: ref<Record<
         string,

@@ -37,7 +37,7 @@ import {
 } from '../../kernel/agent-config/index.js'
 import { readSpecFingerprint } from './spec-review.js'
 import { canDeleteSession } from '../../kernel/agent/adapters/capabilities.js'
-import { probeAll } from '../../kernel/agent/process/launcher.js'
+import { availableVendorSet } from '../../kernel/agent/vendor-runtime.js'
 import { loadHistory, loadLastAssistantMessages, removeSession } from '../../sessions.js'
 import {
   getChatSession,
@@ -107,17 +107,10 @@ export { buildResetIntentPrompt }
 // ---- Local helpers (agent binding for intent comm sessions) ----
 
 /** Vendors whose host CLI resolved on PATH (ADR-0012) — inline, not from sessions/ (ADR-0009). */
-function presentVendorSet(): Set<VendorId> {
-  return new Set(
-    probeAll()
-      .filter((p) => p.path !== null)
-      .map((p) => p.vendor),
-  )
-}
 
 /** The title-bar agent-switcher payload for a session, or undefined when absent. */
 function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
-  return resolveSessionAgentSwitch(sessionId, presentVendorSet()) ?? undefined
+  return resolveSessionAgentSwitch(sessionId, availableVendorSet()) ?? undefined
 }
 
 /**

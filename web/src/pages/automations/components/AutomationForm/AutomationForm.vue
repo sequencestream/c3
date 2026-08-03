@@ -39,13 +39,19 @@ import type {
   SessionKind,
   ToolManifestEntry,
   UpdateAutomationInput,
-  VendorHostStatus,
   VendorId,
+  VendorRuntimeStatus,
 } from '@ccc/shared/protocol'
-import { VENDOR_IDS, SESSION_KINDS } from '@ccc/shared/protocol'
+import {
+  AUTOMATION_VENDORS,
+  VENDOR_IDS,
+  SESSION_KINDS,
+  vendorSupportsAutomation,
+} from '@ccc/shared/protocol'
 import { EVENT_CATALOG, isRunLifecycleEventType } from '@ccc/shared'
 import { computeNextRunAt, isValidCron, describeCron } from '@ccc/shared/cron'
 import { VENDOR_LABEL } from '@/lib/vendor'
+import { vendorUnavailableReasonKey } from '@/lib/vendor-runtime'
 import { groupAgentsOfVendor } from '@/lib/group-agents'
 import { useTypedI18n } from '@/i18n'
 import BaseDropdown, { type DropdownOption } from '@/components/BaseDropdown/BaseDropdown.vue'
@@ -67,8 +73,8 @@ const props = defineProps<{
   toolManifest: Record<string, ToolManifestEntry[] | null>
   toolManifestLoading: boolean
   toolManifestError: string | null
-  /** Per-vendor host-CLI presence for greying absent vendors. */
-  hostStatus: VendorHostStatus[]
+  /** 每个 vendor 的运行时可用性,用于灰显跑不起来的 vendor。 */
+  vendorAvailability: Record<VendorId, VendorRuntimeStatus>
   /** Enabled execution profiles; filtered by the selected vendor. */
   agents?: AgentConfig[]
   /**
@@ -220,18 +226,50 @@ function statusOptionsFor(row: EventFilterRowDraft): { value: string; label: str
 // absent from the UI.
 const VENDOR_ORDER: readonly VendorId[] = VENDOR_IDS
 
-const presentByVendor = computed(() => {
-  const m = new Map<VendorId, boolean>()
-  for (const h of props.hostStatus) m.set(h.vendor, h.present)
-  return m
-})
-
+/** 该 vendor 的运行时此刻能不能跑(中立信号,不按 vendor 名分支)。 */
 function vendorPresent(v: VendorId): boolean {
-  return presentByVendor.value.get(v) !== false
+  return props.vendorAvailability[v]?.available ?? false
+}
+
+/**
+ * Whether this vendor may be chosen as an automation's executor.
+ *
+ * Two independent conditions, both required: c3 must have an execution path for
+ * the vendor at all (`AUTOMATION_VENDORS` — the same list the dispatcher
+ * hard-fails on, so the form can never offer what the dispatcher would refuse),
+ * and its runtime must actually be available on this host.
+ */
+function vendorSelectable(v: VendorId): boolean {
+  return vendorSupportsAutomation(v) && vendorPresent(v)
+}
+
+/** 选项为什么不可选(已本地化);可选时为空串。 */
+function vendorOptionReason(v: VendorId): string {
+  if (!vendorSupportsAutomation(v)) return t('automation.form.vendor.unsupported')
+  const key = vendorUnavailableReasonKey(props.vendorAvailability[v])
+  return key ? t(key) : ''
+}
+
+/** 下拉里的选项文本 —— 原因就写在选项上,不用用户去别处找。 */
+function vendorOptionLabel(v: VendorId): string {
+  const reason = vendorOptionReason(v)
+  return reason ? `${VENDOR_LABEL[v]} — ${reason}` : VENDOR_LABEL[v]
+}
+
+/**
+ * 编辑既有自动化时,它自己的 vendor 永远保持可选 —— 记录仍可查看/编辑,
+ * UI 门控不得静默改写一条既有记录的 vendor(它在服务端照旧 hard-fail)。
+ */
+function vendorOptionDisabled(v: VendorId): boolean {
+  if (props.automation?.vendor === v) return false
+  return !vendorSelectable(v)
 }
 
 const vendor = ref<VendorId>('claude')
 const agentId = ref('')
+// 创建态:系统配置的 automation agent 跟随链解析到了一个没有执行路径的 vendor,
+// 表单已改用受支持的 vendor 并清空 agent,需要提示用户显式改选。
+const seedVendorUnsupported = ref(false)
 // Tracks whether the user has manually changed vendor (to avoid re-triggering the
 // manifest load during the initial re-seed from automation props).
 const vendorInitialised = ref(false)
@@ -445,9 +483,12 @@ watch(
       metadataConditions.value =
         storedMeta?.conditions.map((c) => ({ key: c.key, value: c.value })) ?? []
       metadataCombinator.value = storedMeta?.combinator ?? 'AND'
-      // Vendor: restore from automation, then trigger manifest load.
+      // Vendor: restore from automation, then trigger manifest load. An existing
+      // record keeps its own vendor verbatim even when that vendor cannot execute
+      // — the UI gate must never silently rewrite a stored automation.
       vendor.value = sched.vendor
       agentId.value = sched.agentId ?? ''
+      seedVendorUnsupported.value = false
       vendorInitialised.value = true
       // Restore tool allowlist from the automation; empty means "all tools" (unrestricted).
       toolAllowlist.value = sched.toolAllowlist ? [...sched.toolAllowlist] : []
@@ -481,8 +522,15 @@ watch(
         props.automationAgentId ?? '',
         props.defaultAgentId ?? '',
       )
-      vendor.value = seed?.vendor ?? 'claude'
-      agentId.value = seed?.id ?? ''
+      // The follow chain answers "which agent does the system point at", not
+      // "which agent can run an automation". When it lands on a vendor with no
+      // execution path, the form must NOT carry that forward as a submittable
+      // default — it falls back to a supported vendor with no agent chosen, and
+      // says why, so the user makes the call explicitly.
+      const usableSeed = seed && vendorSupportsAutomation(seed.vendor) ? seed : undefined
+      seedVendorUnsupported.value = seed !== undefined && usableSeed === undefined
+      vendor.value = usableSeed?.vendor ?? AUTOMATION_VENDORS[0]
+      agentId.value = usableSeed?.id ?? ''
       vendorInitialised.value = true
       toolAllowlist.value = []
     }
@@ -589,7 +637,12 @@ const canSave = computed(
     taskFilled.value &&
     triggerValid.value &&
     maxWallClockMsValid.value &&
-    (type.value === 'command' || agentId.value.length > 0),
+    // A `command` automation runs a shell command and never reaches the
+    // dispatcher's vendor gate, so its vendor does not constrain saving. An
+    // `llm` one does: refusing here is what stops the form writing an execution
+    // snapshot the dispatcher is guaranteed to hard-fail.
+    (type.value === 'command' ||
+      (agentId.value.length > 0 && vendorSupportsAutomation(vendor.value))),
 )
 
 function setMaxWallClockMs(event: Event): void {
@@ -1309,9 +1362,15 @@ function save(): void {
             <!-- Vendor selector -->
             <div class="sf-field sf-vendor-agent sf-item">
               <span class="sf-label">{{ t('automation.form.vendor.label') }}</span>
-              <select v-model="vendor" class="sf-input sf-select">
-                <option v-for="v in VENDOR_ORDER" :key="v" :value="v" :disabled="!vendorPresent(v)">
-                  {{ VENDOR_LABEL[v] }}
+              <select v-model="vendor" class="sf-input sf-select" data-testid="automation-vendor">
+                <option
+                  v-for="v in VENDOR_ORDER"
+                  :key="v"
+                  :value="v"
+                  :disabled="vendorOptionDisabled(v)"
+                  :title="vendorOptionReason(v)"
+                >
+                  {{ vendorOptionLabel(v) }}
                 </option>
               </select>
               <template v-if="type === 'llm'">
@@ -1331,6 +1390,20 @@ function save(): void {
                   </optgroup>
                 </select>
               </template>
+              <span
+                v-if="!vendorSupportsAutomation(vendor)"
+                class="sf-hint sf-hint--warn"
+                data-testid="automation-vendor-unsupported"
+              >
+                {{ t('automation.form.vendor.unsupportedHint') }}
+              </span>
+              <span
+                v-else-if="seedVendorUnsupported"
+                class="sf-hint sf-hint--warn"
+                data-testid="automation-seed-vendor-unsupported"
+              >
+                {{ t('automation.form.vendor.seedUnsupportedHint') }}
+              </span>
             </div>
 
             <!-- Permission mode: controls differ by vendor -->

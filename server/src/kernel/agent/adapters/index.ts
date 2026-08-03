@@ -53,6 +53,7 @@ import type { VendorId, VendorModeCatalog } from './types.js'
 import { claudeModeCatalog } from './claude/modes.js'
 import { codexModeCatalog } from './codex/modes.js'
 import { cursorModeCatalog } from './cursor/modes.js'
+import { cursorSdkAvailable } from './cursor/skill.js'
 
 /**
  * Every vendor's {@link VendorModeCatalog}, keyed by {@link VendorId}. The
@@ -66,4 +67,33 @@ export const MODE_CATALOGS: Record<VendorId, VendorModeCatalog> = {
   claude: claudeModeCatalog,
   codex: codexModeCatalog,
   cursor: cursorModeCatalog,
+}
+
+// ---------------------------------------------------------------------------
+// Embedded-runtime availability probes
+// ---------------------------------------------------------------------------
+
+/**
+ * Availability probe for each vendor whose runtime ships **inside** c3 rather
+ * than as a host CLI — the counterpart of the launcher's `HOST_BINARIES` table.
+ *
+ * Partial over {@link VendorId} on purpose, and the two tables partition the
+ * union between them: a vendor is either resolved as a binary (probed by the
+ * ProcessLauncher) or resolved as an in-process module (probed here). That split
+ * is what lets the settings snapshot answer "is this vendor runnable" for every
+ * vendor without naming one — `if (vendor === 'cursor')` never appears.
+ *
+ * The probe registered for cursor is the SAME function `server.ts` gates adapter
+ * construction on at startup, so what the settings page reports and what the
+ * kernel can actually build can never disagree.
+ */
+export interface EmbeddedRuntimeSpec {
+  /** The package the runtime lives in — what the diagnostics row names. */
+  readonly module: string
+  /** Whether that runtime is resolvable from this process right now. */
+  readonly available: () => boolean
+}
+
+export const EMBEDDED_RUNTIME_PROBES: Partial<Record<VendorId, EmbeddedRuntimeSpec>> = {
+  cursor: { module: '@cursor/sdk', available: cursorSdkAvailable },
 }

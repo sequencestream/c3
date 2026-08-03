@@ -97,6 +97,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     serverSettings,
     personalizedSettings,
     hostStatus,
+    vendorRuntime,
     sandboxStatus,
     bindingStats,
     sessionCapabilities,
@@ -683,6 +684,8 @@ export function installMessageHandler(ctx: AppCtx): void {
           }
         }
         hostStatus.value = msg.hostStatus
+        // 旧服务端不发此字段 ⇒ null,由 state 的 vendorAvailability 走 hostStatus 回落。
+        vendorRuntime.value = msg.vendorRuntime ?? null
         sandboxStatus.value = msg.sandboxStatus ?? null
         bindingStats.value = msg.bindingStats
         sessionCapabilities.value = msg.sessionCapabilities

@@ -11,12 +11,15 @@ import type {
   SandboxHostStatus,
   SystemSettings,
   VendorHostStatus,
+  VendorId,
+  VendorRuntimeStatus,
 } from '@ccc/shared/protocol'
 
 defineProps<{
   open: boolean
   settings: SystemSettings | null
   hostStatus: VendorHostStatus[]
+  vendorAvailability: Record<VendorId, VendorRuntimeStatus>
   sandboxStatus: SandboxHostStatus | null
   bindingStats: SessionBindingStats | null
 }>()
@@ -35,6 +38,7 @@ defineEmits<{
     :open="open"
     :settings="settings"
     :host-status="hostStatus"
+    :vendor-availability="vendorAvailability"
     :sandbox-status="sandboxStatus"
     :binding-stats="bindingStats"
     @close="$emit('close')"

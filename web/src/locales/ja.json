@@ -24,6 +24,12 @@
     },
     "unknown": {
       "label": "不明"
+    },
+    "vendor": {
+      "unavailable": {
+        "hostCliMissing": "このホストにベンダー CLI が見つかりません",
+        "sdkUnresolved": "このビルドでは組み込み SDK ランタイムを利用できません"
+      }
     }
   },
   "nav": {
@@ -476,10 +482,11 @@
       "title": {
         "label": "ランタイムドライバー"
       },
-      "hint": "エージェントベンダー CLI と Sandbox ドライバーの実行時の可用性と解決済みパスを表示します。",
-      "present": "PATH にあり",
-      "missing": "見つかりません",
-      "sandbox": "Sandbox ドライバー"
+      "hint": "各エージェントベンダー(ホスト CLI またはプロセス内 SDK)と Sandbox ドライバーのランタイム可用性。",
+      "present": "利用可能",
+      "missing": "利用不可",
+      "sandbox": "Sandbox ドライバー",
+      "embeddedSdk": "プロセス内 SDK"
     },
     "vendorCli": {
       "title": {
@@ -1190,7 +1197,6 @@
         "groupLabel": "グループ"
       },
       "missing": {
-        "suffix": "バイナリが PATH にありません",
         "hint": "一部のエージェント CLI がインストールされていません。",
         "gotoDetection": "検出パネルを開く"
       },
@@ -1573,7 +1579,10 @@
         "label": "自動化を作成"
       },
       "vendor": {
-        "label": "ベンダー"
+        "label": "ベンダー",
+        "unsupported": "自動化に非対応",
+        "unsupportedHint": "このベンダーには自動化の実行経路がないため保存できません。対応するベンダーとエージェントを選択してください。",
+        "seedUnsupportedHint": "設定されている自動化エージェントのベンダーは自動化を実行できません。下で対応するエージェントを選択してください。"
       },
       "agent": {
         "label": "Agent",

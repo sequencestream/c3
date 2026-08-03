@@ -226,6 +226,59 @@ export interface VendorHostStatus {
   lastError?: string
 }
 
+/**
+ * Where a vendor's runtime physically lives — the one dimension that decides
+ * which diagnostics a status row can honestly show.
+ *  - `host-cli`     — an executable c3 resolves and spawns (claude, codex). It has
+ *                     a binary name, a path and a version to report.
+ *  - `embedded-sdk` — a runtime that ships inside c3 and executes in the server
+ *                     process (cursor via `@cursor/sdk`). It has no binary to
+ *                     find and nothing for the install/version machinery to do.
+ */
+export type VendorRuntimeKind = 'host-cli' | 'embedded-sdk'
+
+/**
+ * Why a vendor's runtime is unavailable — a **stable code**, not a message.
+ * The console localizes it into actionable guidance; an internal exception text
+ * must never become the UI contract.
+ *  - `host-cli-missing` — no runnable vendor CLI resolved from any allowed source.
+ *  - `sdk-unresolved`   — the embedded SDK could not be resolved from this
+ *                         process (not installed, or its platform-native package
+ *                         is absent — e.g. a single-file binary build).
+ */
+export type VendorUnavailableReason = 'host-cli-missing' | 'sdk-unresolved'
+
+/**
+ * One vendor's **runtime availability** — the vendor-neutral signal every config
+ * entry and run gate reads, in place of an `if (vendor === …)` branch.
+ *
+ * It exists because "can c3 run this vendor" stopped being answerable from
+ * {@link VendorHostStatus} alone: that message speaks host-CLI presence, and a
+ * vendor whose runtime is an in-process SDK has no CLI to be present. Rather
+ * than dress an SDK up as a fake binary, availability is stated once, here, in
+ * terms every vendor can answer — and `hostStatus` keeps meaning exactly what it
+ * always did.
+ *
+ * It is runtime-derived state: never persisted into `SystemSettings` or
+ * `settings.json`, and re-probed on each `settings` reply.
+ */
+export interface VendorRuntimeStatus {
+  vendor: VendorId
+  /** Whether c3 can start a run on this vendor right now. */
+  available: boolean
+  /** Which kind of runtime backs this vendor (decides the diagnostics shown). */
+  runtime: VendorRuntimeKind
+  /**
+   * What identifies the runtime in the diagnostics row — the CLI's binary name
+   * for a `host-cli` vendor, the package id for an `embedded-sdk` one. Naming it
+   * neutrally is what lets one row template serve both kinds; absent when the
+   * runtime has no meaningful identifier to show.
+   */
+  runtimeId?: string
+  /** Why it is unavailable; absent when `available` is true. */
+  reason?: VendorUnavailableReason
+}
+
 /** Runtime availability of the process-level sandbox driver. */
 export interface SandboxHostStatus {
   present: boolean

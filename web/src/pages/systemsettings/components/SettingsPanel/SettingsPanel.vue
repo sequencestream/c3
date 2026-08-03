@@ -9,7 +9,7 @@
  * 切换存在未保存修改的 Tab 时二次确认,确认后仅切换、不保存也不丢弃草稿。
  */
 import { computed, ref, toRaw, watch } from 'vue'
-import { SYSTEM_AGENT_ID, hasProviderConfig } from '@ccc/shared/protocol'
+import { SYSTEM_AGENT_ID, VENDOR_IDS, hasProviderConfig } from '@ccc/shared/protocol'
 import { resolveDefaultAgentId } from '@ccc/shared'
 import type {
   AgentConfig,
@@ -19,9 +19,11 @@ import type {
   SystemSettings,
   VendorHostStatus,
   VendorId,
+  VendorRuntimeStatus,
 } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
+import { vendorUnavailableReasonKey } from '@/lib/vendor-runtime'
 import { listGroupAgents } from '@/lib/group-agents'
 import { useAuth } from '@/composables/useAuth'
 import { deepCopy, useTabbedDraftSave } from '@/composables/useTabbedDraftSave'
@@ -55,11 +57,14 @@ const props = withDefaults(
     open: boolean
     settings: SystemSettings | null
     hostStatus?: VendorHostStatus[]
+    /** 每个 vendor 的运行时可用性(App 层由 settings 回包统一派生)。 */
+    vendorAvailability?: Partial<Record<VendorId, VendorRuntimeStatus>>
     sandboxStatus?: SandboxHostStatus | null
     bindingStats?: SessionBindingStats | null
   }>(),
   {
     hostStatus: () => [],
+    vendorAvailability: () => ({}),
     sandboxStatus: null,
     bindingStats: null,
   },
@@ -91,18 +96,44 @@ function tabLabel(tab: SettingsTab): string {
   return t(`settings.tabs.${tab}.label` as 'settings.tabs.agent.label')
 }
 
-// Host-CLI diagnostics rows, in canonical vendor order, each with its brand
-// colour/label (ADR-0012).
-const VENDOR_ORDER: VendorId[] = ['claude', 'codex']
-const diagnostics = computed(() => {
+// Canonical vendor display order — the shared list, so a newly registered vendor
+// appears in every picker/panel here instead of being silently omitted.
+const VENDOR_ORDER: readonly VendorId[] = VENDOR_IDS
+
+/** 一行运行时诊断:中立可用性 + (仅宿主 CLI 才有的)探测详情。 */
+interface DiagnosticsRow {
+  vendor: VendorId
+  status: VendorRuntimeStatus
+  /** 该 vendor 的宿主 CLI 探测结果;进程内 SDK 的 vendor 没有这一项。 */
+  host?: VendorHostStatus
+}
+
+// Runtime diagnostics rows — one per vendor, whatever backs it. Availability and
+// the reason come from the neutral signal; the CLI-only columns (resolved path,
+// install hint) render only where a host probe actually exists, so an in-process
+// SDK is never dressed up as a binary.
+const diagnostics = computed<DiagnosticsRow[]>(() => {
   const byVendor = new Map(props.hostStatus.map((h) => [h.vendor, h]))
-  return VENDOR_ORDER.map((v) => byVendor.get(v)).filter(
-    (h): h is VendorHostStatus => h !== undefined,
-  )
+  return VENDOR_ORDER.map((vendor) => {
+    const host = byVendor.get(vendor)
+    const status: VendorRuntimeStatus = props.vendorAvailability[vendor] ?? {
+      vendor,
+      available: host?.present ?? false,
+      runtime: host ? 'host-cli' : 'embedded-sdk',
+      ...(host ? { runtimeId: host.binary } : {}),
+      ...(host?.present ? {} : { reason: host ? 'host-cli-missing' : 'sdk-unresolved' }),
+    }
+    return { vendor, status, ...(host ? { host } : {}) }
+  })
 })
+function diagnosticsReason(row: DiagnosticsRow): string {
+  const key = vendorUnavailableReasonKey(row.status)
+  return key ? t(key) : ''
+}
 // Vendor CLI multi-version panel rows: each vendor's installed versions +
-// runtime/download status, in canonical vendor order. Used to render the
-// effective-version single-select and read-only sync status.
+// runtime/download status, in canonical vendor order. Only vendors c3 launches as
+// a host CLI have a `hostStatus` entry, so an SDK-backed vendor drops out here
+// without being named — it has no binary to install, pin or sync.
 const vendorCliRows = computed(() => {
   const byVendor = new Map(props.hostStatus.map((h) => [h.vendor, h]))
   return VENDOR_ORDER.map((v) => byVendor.get(v)).filter(
@@ -370,8 +401,36 @@ watch(
 // (2026-06-06-007). Vendor decides which client launches; configMode decides
 // whether the provider triple (baseUrl/apiKey/model) is applied or the vendor
 // CLI's own system config is used.
-const VENDORS: VendorId[] = ['claude', 'codex']
+const VENDORS: readonly VendorId[] = VENDOR_ORDER
 const CONFIG_MODES = ['system', 'custom'] as const
+
+/**
+ * Whether a vendor can be chosen for a new/edited agent. Gated purely on the
+ * neutral runtime signal — a vendor whose runtime is missing (no CLI on this
+ * host, or an SDK this build cannot resolve) would produce an agent that can
+ * never start, so it is offered disabled with the reason next to it rather than
+ * silently accepted. An agent already configured for such a vendor stays visible
+ * and editable; it just cannot be newly selected.
+ */
+function vendorAvailable(v: VendorId): boolean {
+  return props.vendorAvailability[v]?.available ?? false
+}
+/** 为什么某个 vendor 不能选(已本地化);可用时为空串。 */
+function vendorUnavailableReason(v: VendorId): string {
+  const key = vendorUnavailableReasonKey(props.vendorAvailability[v])
+  return key ? t(key) : ''
+}
+/** 下拉里被禁用选项的后缀说明 —— 原因就写在选项上,不用用户去别处找。 */
+function vendorOptionLabel(v: VendorId): string {
+  const reason = vendorUnavailableReason(v)
+  return reason ? `${VENDOR_LABELS[v]} — ${reason}` : VENDOR_LABELS[v]
+}
+/** 草稿里所有当前不可用的 vendor 的原因说明,列在 agent 表格下方。 */
+const unavailableVendorNotes = computed(() =>
+  VENDORS.filter((v) => !vendorAvailable(v))
+    .map((v) => ({ vendor: v, label: VENDOR_LABELS[v], reason: vendorUnavailableReason(v) }))
+    .filter((n) => n.reason !== ''),
+)
 
 /**
  * Which config modes a vendor offers. Cursor is fixed at `system` — it
@@ -452,6 +511,10 @@ function addAgent() {
 function setVendor(a: AgentConfig, vendor: VendorId) {
   const idx = draft.value.agents.indexOf(a)
   if (idx < 0 || a.vendor === vendor) return
+  // The option is rendered disabled, so this only fires for a value the browser
+  // should never have submitted — refuse it anyway rather than build an agent
+  // whose vendor has no runtime to launch.
+  if (!vendorAvailable(vendor)) return
   draft.value.agents[idx] = makeAgent(vendor, {
     id: a.id,
     configMode: a.configMode,
@@ -950,7 +1013,15 @@ function selectAdmin(username: string) {
                 data-testid="agent-vendor"
                 @change="setVendor(a, ($event.target as HTMLSelectElement).value as VendorId)"
               >
-                <option v-for="v in VENDORS" :key="v" :value="v">{{ VENDOR_LABELS[v] }}</option>
+                <option
+                  v-for="v in VENDORS"
+                  :key="v"
+                  :value="v"
+                  :disabled="!vendorAvailable(v) && a.vendor !== v"
+                  :title="vendorUnavailableReason(v)"
+                >
+                  {{ vendorOptionLabel(v) }}
+                </option>
               </select>
               <select
                 v-model="a.configMode"
@@ -1025,6 +1096,15 @@ function selectAdmin(username: string) {
           <button class="agent-add" data-testid="settings-add-agent" @click="addAgent">
             {{ t('settings.agents.add.label') }}
           </button>
+          <ul
+            v-if="unavailableVendorNotes.length > 0"
+            class="agent-vendor-notes"
+            data-testid="agent-vendor-notes"
+          >
+            <li v-for="n in unavailableVendorNotes" :key="n.vendor">
+              {{ n.label }} — {{ n.reason }}
+            </li>
+          </ul>
           <div class="agent-default-picker">
             <label class="agent-default-label" for="default-agent-select">
               {{ t('settings.agents.defaultPicker.label') }}
@@ -1200,26 +1280,44 @@ function selectAdmin(username: string) {
           <p class="settings-section-title">{{ t('settings.diagnostics.title.label') }}</p>
           <p class="settings-hint">{{ t('settings.diagnostics.hint') }}</p>
           <ul class="diagnostics-list">
-            <li v-for="h in diagnostics" :key="h.vendor" class="diagnostics-row">
+            <li
+              v-for="row in diagnostics"
+              :key="row.vendor"
+              class="diagnostics-row"
+              data-testid="diagnostics-row"
+              :data-vendor="row.vendor"
+            >
               <span
                 class="vendor-dot"
-                :style="{ backgroundColor: vendorColor(h.vendor) }"
-                :title="vendorLabel(h.vendor)"
+                :style="{ backgroundColor: vendorColor(row.vendor) }"
+                :title="vendorLabel(row.vendor)"
               ></span>
-              <span class="diagnostics-vendor">{{ vendorLabel(h.vendor) }}</span>
-              <code class="diagnostics-binary">{{ h.binary }}</code>
+              <span class="diagnostics-vendor">{{ vendorLabel(row.vendor) }}</span>
+              <code class="diagnostics-binary">{{
+                row.status.runtimeId ?? t('settings.diagnostics.embeddedSdk')
+              }}</code>
               <span
                 class="diagnostics-status"
-                :class="h.present ? 'present' : 'missing'"
-                :title="h.present ? '' : h.installHint"
+                :class="row.status.available ? 'present' : 'missing'"
+                :title="row.status.available ? '' : (row.host?.installHint ?? '')"
               >
                 {{
-                  h.present ? t('settings.diagnostics.present') : t('settings.diagnostics.missing')
+                  row.status.available
+                    ? t('settings.diagnostics.present')
+                    : t('settings.diagnostics.missing')
                 }}
               </span>
-              <code v-if="h.present && h.path" class="diagnostics-path" :title="h.path">{{
-                h.path
-              }}</code>
+              <!-- CLI-only detail: a runtime executing inside this process has no
+                   resolved binary path to show. -->
+              <code
+                v-if="row.status.available && row.host?.path"
+                class="diagnostics-path"
+                :title="row.host.path"
+                >{{ row.host.path }}</code
+              >
+              <span v-else-if="!row.status.available" class="diagnostics-reason">{{
+                diagnosticsReason(row)
+              }}</span>
             </li>
             <li v-if="sandboxStatus" class="diagnostics-row" data-testid="sandbox-diagnostics">
               <span class="vendor-dot sandbox-dot"></span>

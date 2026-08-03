@@ -3086,6 +3086,17 @@ button.deny:hover:not(:disabled) {
   background: var(--c-hover);
   border-color: var(--c-text-muted);
 }
+/* 当前不可选的 vendor 及其原因,紧跟 agent 列表 —— 用户在选不到时就地看到为什么。 */
+.agent-vendor-notes {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  color: var(--c-text-muted);
+  font-size: var(--fs-body-sm);
+}
 
 /* External skill repository rows (ADR-0016/0017). Stacked vertically like agent rows,
  * each row wraps to keep the form compact. */
@@ -3177,6 +3188,13 @@ button.deny:hover:not(:disabled) {
 }
 .diagnostics-status.missing {
   color: var(--c-warning-text);
+}
+/* 不可用原因:与 diagnostics-path 同一缩进,占满整行接在状态下方。 */
+.diagnostics-reason {
+  flex-basis: 100%;
+  margin-left: calc(6rem + var(--sp-2));
+  color: var(--c-text-muted);
+  font-size: var(--fs-body-sm);
 }
 .vendor-cli-row {
   display: flex;

@@ -61,8 +61,10 @@ export function resolveCursorApiKey(
     envOverrides?.CURSOR_API_KEY?.trim() ||
     process.env.CURSOR_API_KEY?.trim()
   if (!key) {
+    // Both places a key can come from are named, because the operator reading
+    // this has no way to know which one applies to their deployment.
     throw new CursorUnsupportedError(
-      'cursor: no API key — the Cursor SDK authenticates with an API key only (a `cursor-agent login` session does not apply). Set one on the agent, or export CURSOR_API_KEY.',
+      "cursor: no API key — the Cursor SDK authenticates with an API key only (a `cursor-agent login` session does not apply). Fill the agent's `apiKey` field in the settings panel, or set CURSOR_API_KEY in the server environment.",
     )
   }
   return key

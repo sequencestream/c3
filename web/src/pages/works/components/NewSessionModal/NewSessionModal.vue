@@ -6,14 +6,16 @@
  * 服务端首跑回落 defaultAgentId。选定某 vendor 后再从该 vendor 的 agent 里挑一个,
  * 选定的 agent 作为 pending 会话的 intent 随 create_session 上送。
  *
- * host-binary 缺失的 vendor(其 CLI 不在 PATH)在 vendor 下拉里灰显并标注原因,
- * 无法选中;底部给出「前往检测面板」入口(emit goto-settings)。
+ * 运行时不可用的 vendor(宿主 CLI 不在 PATH、或进程内 SDK 解析不到)在 vendor 下拉里
+ * 灰显并就地标注原因,无法选中;底部给出「前往检测面板」入口(emit goto-settings)。
+ * 可用性一律读 App 派生的中立信号,这里不解读 hostStatus、也不按 vendor 名分支。
  * presentational:确认/取消/跳转均上抛,实际建会话由 App 处理。
  */
 import { computed, ref, watch } from 'vue'
-import type { AgentConfig, VendorHostStatus, VendorId } from '@ccc/shared/protocol'
+import type { AgentConfig, VendorId, VendorRuntimeStatus } from '@ccc/shared/protocol'
 import { VENDOR_IDS } from '@ccc/shared/protocol'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
+import { vendorUnavailableReasonKey } from '@/lib/vendor-runtime'
 import { groupAgentsOfVendor } from '@/lib/group-agents'
 import { useTypedI18n } from '@/i18n'
 
@@ -23,14 +25,15 @@ const props = defineProps<{
   open: boolean
   agents: AgentConfig[]
   defaultAgentId: string | null
-  hostStatus: VendorHostStatus[]
+  /** 每个 vendor 的运行时可用性(App 层由 settings 回包统一派生)。 */
+  vendorAvailability: Record<VendorId, VendorRuntimeStatus>
 }>()
 
 const emit = defineEmits<{
   /** Confirm: the chosen agent id, or null for Auto (inherit the default). */
   confirm: [agentId: string | null]
   close: []
-  /** "binary not in PATH" → jump to the settings detection panel. */
+  /** 运行时不可用 → 跳到设置页的运行时检测面板。 */
   'goto-settings': []
 }>()
 
@@ -58,24 +61,22 @@ const vendorsWithAgents = computed(() =>
   VENDOR_ORDER.filter((v) => enabledAgents.value.some((a) => a.vendor === v)),
 )
 
-// vendor → host-CLI present. A vendor with no probe entry is treated as present
-// (unknown ⇒ don't falsely block); an explicit `present:false` greys it out.
-const presentByVendor = computed(() => {
-  const m = new Map<VendorId, boolean>()
-  for (const h of props.hostStatus) m.set(h.vendor, h.present)
-  return m
-})
-
+// 该 vendor 的运行时此刻能不能跑 —— 唯一判定来源是服务端给的中立信号。
 function vendorPresent(v: VendorId): boolean {
-  return presentByVendor.value.get(v) !== false
+  return props.vendorAvailability[v]?.available ?? false
 }
 
-// The vendor option's label — brand name, with a "binary not in PATH" suffix when
-// its host CLI is missing. Built here so the template carries no string literals.
+// 不可用原因(已本地化);可用时为空串。
+function vendorUnavailableReason(v: VendorId): string {
+  const key = vendorUnavailableReasonKey(props.vendorAvailability[v])
+  return key ? t(key) : ''
+}
+
+// The vendor option's label — brand name, with the reason appended when its
+// runtime is unavailable. Built here so the template carries no string literals.
 function vendorOptionLabel(v: VendorId): string {
-  return vendorPresent(v)
-    ? VENDOR_LABEL[v]
-    : `${VENDOR_LABEL[v]} — ${t('session.new.missing.suffix')}`
+  const reason = vendorUnavailableReason(v)
+  return reason ? `${VENDOR_LABEL[v]} — ${reason}` : VENDOR_LABEL[v]
 }
 
 // The agents of the currently-chosen vendor (empty when Auto).
@@ -104,7 +105,7 @@ const dotColor = computed(() =>
   effectiveVendor.value ? VENDOR_COLOR[effectiveVendor.value] : null,
 )
 
-// Vendors that have agents but whose CLI is missing — drives the bottom warning.
+// Vendors that have agents but no usable runtime — drives the bottom warning.
 const missingVendors = computed(() => vendorsWithAgents.value.filter((v) => !vendorPresent(v)))
 
 // Reset to Auto each time the modal opens.
@@ -180,7 +181,7 @@ function onCreate(): void {
               :key="v"
               :value="v"
               :disabled="!vendorPresent(v)"
-              :title="vendorPresent(v) ? VENDOR_LABEL[v] : t('session.new.missing.suffix')"
+              :title="vendorPresent(v) ? VENDOR_LABEL[v] : vendorUnavailableReason(v)"
             >
               {{ vendorOptionLabel(v) }}
             </option>

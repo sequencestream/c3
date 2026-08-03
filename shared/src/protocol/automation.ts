@@ -13,6 +13,26 @@ import type { CodexPolicy, ModeToken, VendorId } from './vendor.js'
 
 export type AutomationType = 'command' | 'llm'
 
+/**
+ * The vendors that have an automation **execution path** in the dispatcher.
+ *
+ * A structural fact about c3, not runtime state, so it does not travel on the
+ * wire: the dispatcher gates on it before launching, and the automation form
+ * greys out the same set — one list, so the form can never offer a vendor the
+ * dispatcher would refuse. A vendor absent here still shows in existing
+ * automation records (they stay viewable) but cannot be chosen as an executor.
+ */
+export const AUTOMATION_VENDORS = ['claude', 'codex'] as const satisfies readonly VendorId[]
+
+/**
+ * Whether a vendor can execute automations. Routing this through a predicate,
+ * rather than a hard-coded `=== 'claude'`, is what keeps the dispatcher's
+ * hard-fail and the form's greying provably the same rule.
+ */
+export function vendorSupportsAutomation(vendor: VendorId): boolean {
+  return (AUTOMATION_VENDORS as readonly VendorId[]).includes(vendor)
+}
+
 /** Smallest accepted automation execution wall-clock limit (one second). */
 export const MIN_AUTOMATION_MAX_WALL_CLOCK_MS = 1_000
 

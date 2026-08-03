@@ -43,7 +43,7 @@ import {
   resolveSessionVendor,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
-import { probeAll } from '../../kernel/agent/process/launcher.js'
+import { availableVendorSet } from '../../kernel/agent/vendor-runtime.js'
 import { MODE_CATALOGS, isKnownToken } from '../../kernel/agent/adapters/index.js'
 import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
 import type { SessionAgentSwitch, SessionOwnerKind, VendorId } from '@ccc/shared/protocol'
@@ -67,17 +67,10 @@ import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
 
 /** Vendors whose host CLI resolved on PATH (ADR-0012) — the switcher availability set. */
-function presentVendorSet(): Set<VendorId> {
-  return new Set(
-    probeAll()
-      .filter((p) => p.path !== null)
-      .map((p) => p.vendor),
-  )
-}
 
 /** The title-bar agent-switcher payload for a console session, or undefined (no switcher). */
 export function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
-  return resolveSessionAgentSwitch(sessionId, presentVendorSet()) ?? undefined
+  return resolveSessionAgentSwitch(sessionId, availableVendorSet()) ?? undefined
 }
 
 /** Projection-stored titles that are placeholders, not a real derived title. */

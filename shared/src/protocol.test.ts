@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import {
   AUTH_PROVIDER_KINDS,
+  AUTOMATION_VENDORS,
   CREATE_PR_STAGES,
   IMAGE_MEDIA_TYPES,
   SYSTEM_AGENT_ID,
+  VENDOR_IDS,
+  isVendorId,
+  vendorSupportsAutomation,
 } from './protocol.js'
 import type {
   AgentConfig,
@@ -189,6 +193,23 @@ describe('protocol wire format', () => {
           installHint: 'install codex',
         },
       ],
+      vendorRuntime: {
+        claude: { vendor: 'claude', available: true, runtime: 'host-cli', runtimeId: 'claude' },
+        codex: {
+          vendor: 'codex',
+          available: false,
+          runtime: 'host-cli',
+          runtimeId: 'codex',
+          reason: 'host-cli-missing',
+        },
+        // An SDK-backed vendor answers in the same terms, with no CLI fields.
+        cursor: {
+          vendor: 'cursor',
+          available: true,
+          runtime: 'embedded-sdk',
+          runtimeId: '@cursor/sdk',
+        },
+      },
       bindingStats: { bound: 3, pending: 1 },
       sessionCapabilities: {
         claude: { list: 'full', read: 'full', resume: 'full', rename: 'full', delete: 'full' },
@@ -361,5 +382,23 @@ describe('create_pr staged progress', () => {
     const request: ClientToServer = { type: 'create_pr', workspaceId: 'ws-1', intentId: 'intent-1' }
     const reply: ServerToClient = { type: 'create_pr_response', intentId: 'intent-1', prId: '42' }
     expect([request, reply].every((m) => !('requestId' in m))).toBe(true)
+  })
+})
+
+describe('AUTOMATION_VENDORS — which vendors can execute automations', () => {
+  it('lists only real vendors', () => {
+    expect(AUTOMATION_VENDORS.every(isVendorId)).toBe(true)
+  })
+
+  it('covers claude + codex and excludes the vendors with no execution path', () => {
+    expect(vendorSupportsAutomation('claude')).toBe(true)
+    expect(vendorSupportsAutomation('codex')).toBe(true)
+    // cursor runs sessions but has no automation dispatcher path — the console
+    // greys it out from this same list, so the offer and the hard-fail agree.
+    expect(vendorSupportsAutomation('cursor')).toBe(false)
+  })
+
+  it('answers for every registered vendor', () => {
+    for (const vendor of VENDOR_IDS) expect(typeof vendorSupportsAutomation(vendor)).toBe('boolean')
   })
 })

@@ -421,6 +421,52 @@ describe('resolveSessionAgentSwitch (title-bar switcher payload)', () => {
     expect(sw?.currentUnavailable).toBe(false)
   })
 
+  // The available-vendor set is neutral over how a vendor's runtime is backed
+  // (`availableVendorSet()`), so a session on an SDK-backed vendor switches
+  // agents like any other. Gating on the host-CLI probe alone would report a
+  // perfectly healthy Cursor session as "current agent unavailable".
+  it('treats an SDK-backed vendor like any other when it is in the available set', () => {
+    saveSettings({
+      agents: [
+        {
+          id: 'cur-a',
+          vendor: 'cursor',
+          configMode: 'system',
+          displayName: 'Cursor A',
+          config: { apiKey: '', model: '' },
+        },
+        {
+          id: 'cur-b',
+          vendor: 'cursor',
+          configMode: 'system',
+          displayName: 'Cursor B',
+          config: { apiKey: '', model: '' },
+        },
+        {
+          id: 'cx2',
+          vendor: 'codex',
+          configMode: 'custom',
+          displayName: 'CX2',
+          config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
+        },
+      ],
+      defaultAgentId: 'cur-a',
+    } as unknown as SystemSettings)
+    resetSettingsCacheForTests()
+    bindSessionAgent('pending:c1', 'real-c1', 'cur-a', 'cursor', 'host')
+    const sw = resolveSessionAgentSwitch('real-c1', new Set<VendorId>(['cursor', 'codex']))
+    expect(sw?.current).toEqual({ id: 'cur-a', displayName: 'Cursor A' })
+    expect(sw?.currentUnavailable).toBe(false)
+    // Same-vendor peer only — the vendor freeze still forbids a cross-vendor swap.
+    expect(sw?.candidates).toEqual([{ id: 'cur-b', displayName: 'Cursor B' }])
+  })
+
+  it('reports the SDK-backed session unavailable only when its runtime is absent', () => {
+    bindSessionAgent('pending:c2', 'real-c2', SYSTEM_AGENT_ID, 'claude', 'host')
+    const sw = resolveSessionAgentSwitch('real-c2', new Set<VendorId>(['cursor']))
+    expect(sw?.currentUnavailable).toBe(true)
+  })
+
   it('offers same-vendor group agents (`_c3_<group>`) as switch candidates (ADR-0029)', () => {
     saveSettings({
       agents: [

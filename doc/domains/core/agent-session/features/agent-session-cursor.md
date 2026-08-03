@@ -29,6 +29,16 @@ SDK 通过 optionalDependencies 解析平台原生包(`@cursor/sdk-<os>-<arch>`)
   的原生模块冻进所有交叉编译目标),故二进制中不携带 Cursor runtime,cursor
   agent 类型不可用。这是诚实的降级,而非静默失败。
 
+这个判定要被控制台看见,靠的不是"前端知道 cursor 特殊",而是 `settings` 回包里
+**覆盖全部 vendor 的中立可用性信号** `vendorRuntime`(见
+[websocket-protocol](../../../../shared/api-conventions/websocket-protocol.md#settings)):
+每个 vendor 都用同一套词汇作答 —— 能不能跑、由哪类运行时承载(`host-cli` /
+`embedded-sdk`)、不能跑的稳定原因码。Claude/Codex 的那一项仍取宿主 CLI 探测结果
+(语义与 `hostStatus` 完全一致),cursor 的那一项取 `@cursor/sdk` 能否解析,**与
+服务端启动时决定要不要构造 cursor adapter 用的是同一个探针函数**,因此设置页所报
+状态与内核实际能力不可能漂移。`hostStatus` 继续只讲宿主 CLI:cursor 不出现在其中,
+也不进入 vendor CLI 版本面板 —— 它没有二进制可装、可钉、可同步。
+
 ## 厂商接口契约
 
 - **driver**:每次 `start()` 解析凭据 → 构造 agent 选项 → `Agent.create` /
@@ -147,7 +157,38 @@ CLI 时代那套"改写数据根 `mcp.json` → `mcp list` 自检 → 运行后�
 agent 配置形状:`{ apiKey, model }`,**没有 `baseUrl`** —— c3 没有讲 Cursor 协议
 的 relay,故 Cursor agent 不能被指向其他 provider,`configMode` 恒为 `system`
 (schema 拒绝携带 baseUrl 的配置)。`apiKey` 落盘按 SEC-13 加密(与其他厂商同一
-机制,按字段名而非厂商分支处理)。
+机制,按字段名而非厂商分支处理):线上与内存里是明文(故保存后仍可继续编辑),
+写入 `settings.json` 时是带 `c3secretv1:` 前缀的密文。
+
+## 控制台配置入口与消费面
+
+系统设置的 Agent 配置面板把 Cursor 与 Claude/Codex 同列在 vendor 下拉里:选中即
+重建判别联合的 cursor 分支(`configMode: 'system'` 且不可切 `custom`,config 仅
+`{apiKey, model}`,任何路径都不产生 `baseUrl`);`apiKey` 可留空,此时运行期回落到
+服务端环境的 `CURSOR_API_KEY`,`model` 留空则沿用 Cursor 的 `auto`。
+
+可用性门控一律读上面那个中立信号,**不写 `if (vendor === 'cursor')`**:运行时不可用
+时该选项禁用、原因就地标注(下拉选项与 agent 列表下方各一份),而**已经配置好的
+cursor agent 的选项保持可选** —— 否则浏览器会把选中值挪走,等于 UI 悄悄改写了一条
+既有配置。Runtime 诊断区为每个 vendor 各出一行:标识列显示宿主 CLI 的二进制名或
+进程内 SDK 的包名(`@cursor/sdk`),路径、版本这些只有真实 CLI 才有的字段仅在宿主
+CLI 行渲染。
+
+建成之后,Cursor agent 与其他真实 agent 走同一套排序、分组与选择规则,可出现在:
+系统默认 agent 与工具/意图/规格/规格评审角色选择、降级链、工作区新会话与各类会话的
+待定绑定、新建会话弹窗、讨论参与者、共识投票者。这些消费面**不额外过滤 cursor**。
+会话首轮之后仍遵守既有 vendor 冻结规则(同 vendor 可换 agent,跨 vendor 重绑被拒);
+讨论参与者可以是 Cursor,但研究会话的组织者仍只允许 Claude —— 本变更不借此放宽编排
+约束。
+
+**automation 是唯一的例外**:Cursor 没有 dispatcher 执行路径,故自动化表单把它灰显
+并标注"不支持自动化",LLM 型任务**新选中**它时禁止保存;系统配置的 automation agent
+跟随链若解析到 Cursor,表单不把它当作可提交的默认值,而是回落到受支持的 vendor 并要求
+用户显式改选。表单灰显与调度期 hard-fail 读的是同一份 `AUTOMATION_VENDORS` 列表,所以
+表单不可能提供一个 dispatcher 会拒绝的选择。既有的 Cursor automation 仍可查看与编辑,
+其 vendor 不被 UI 门控静默改写 —— 该 vendor 选项对这条记录保持可选,保存门控也放行它,
+名称/提示词/触发条件等无关字段照常可改可存(表单提示分派时会直接失败);禁止保存只针对
+把一条记录**新改成**不受支持的 vendor。
 
 数据根恒为 `$HOME/.cursor`:SDK 的 local agent store 落在
 `~/.cursor/projects/<workspace>/sdk-agent-store/…`,与运行加载的工作区 rules /

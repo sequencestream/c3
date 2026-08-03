@@ -146,14 +146,15 @@ c3
 ├── settings — 塑造智能体循环行为的用户配置(控制面板);作用域分系统级 / 工作区级 / 个人级三类
 │   │
 │   ├── agent-config 智能体配置                   # agent 档案目录与会话用哪个 agent 的规则(系统设置·agent 页)
-│   │   ├── agent 档案                            # 持久化档案(vendor/url/key/model/name),可增删/排序/启停/复制
+│   │   ├── agent 档案                            # 持久化档案(vendor/url/key/model/name),可增删/排序/启停/复制;vendor 下拉含 Claude/Codex/Cursor 三档,Cursor 恒 system 模式且只有 {apiKey, model}(无 baseUrl)
+│   │   ├── 运行时可用性门控                      # 各 vendor 能否起一轮由 settings 的中立信号 vendorRuntime 决定(宿主 CLI 探测 / 进程内 SDK 能否解析);不可用的 vendor 选项禁用并就地标注原因,已配置的 agent 仍可查看编辑
 │   │   ├── 默认 agent                            # 未指定时使用的默认 agent(defaultAgentId)
 │   │   ├── 专用 agent 路由                       # 工具/意图/规格/规格审核/自动化会话可各指定 agent,空串「跟随默认」(tool/intent/spec/specReview/automationAgentId);审核槽位唯一,无 sandbox 变体
 │   │   ├── 沙箱模式角色                          # 未显式绑定且默认解析为 system 时改用 sandboxDefault/tool/intent/spec/automationAgentId(custom/system 皆可选);空串按 sandboxDefault→第一个启用 agent(同 vendor 优先)顺延,解析不到则保留默认 agent
 │   │   ├── 每会话绑定                            # 记住每个会话用哪个 agent
 │   │   └── 降级链                                # 某 agent 不可用时按 degradationChain 顺序回退
 │   │
-│   ├── system-setting 系统设置                   # 管理员全局配置；运行时页展示 vendor CLI 与 sandbox(arapuca)驱动状态/绝对路径
+│   ├── system-setting 系统设置                   # 管理员全局配置；运行时页为每个 vendor 出一行诊断(宿主 CLI 二进制名+绝对路径 / 进程内 SDK 包名),另展示 sandbox(arapuca)驱动状态
 │   │   ├── 显示与本地化                          # voiceLang 语音输入语言 / timezone 系统时区(驱动 cron 解释);界面语言属个人化设置
 │   │   ├── 公开访问地址                          # baseUrl 部署对外基址,用于拼分享深链
 │   │   ├── 会话页显示                            # showSessionsPage 开关,决定主导航是否在代码后显示会话页

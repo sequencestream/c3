@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import NewSessionModal from './NewSessionModal.vue'
-import type { AgentConfig, VendorHostStatus } from '@ccc/shared/protocol'
+import { VENDOR_IDS } from '@ccc/shared/protocol'
+import type { AgentConfig, VendorId, VendorRuntimeStatus } from '@ccc/shared/protocol'
 
-/** A claude + a codex agent, both enabled, for the picker roster. */
+/** A claude + a codex + a cursor agent, all enabled, for the picker roster. */
 const AGENTS: AgentConfig[] = [
   {
     id: 'claude-a',
@@ -21,7 +22,26 @@ const AGENTS: AgentConfig[] = [
     enabled: true,
     config: { baseUrl: '', apiKey: '', model: '', wireApi: 'chat' },
   },
+  {
+    id: 'cursor-a',
+    vendor: 'cursor',
+    configMode: 'system',
+    displayName: 'Cursor A',
+    enabled: true,
+    config: { apiKey: '', model: '' },
+  },
 ]
+
+/** 全部 vendor 可用的中立可用性表;`unavailable` 里列出的 vendor 判为不可用。 */
+function availability(unavailable: VendorId[] = []): Record<VendorId, VendorRuntimeStatus> {
+  const out = {} as Record<VendorId, VendorRuntimeStatus>
+  for (const vendor of VENDOR_IDS) {
+    out[vendor] = unavailable.includes(vendor)
+      ? { vendor, available: false, runtime: 'host-cli', reason: 'host-cli-missing' }
+      : { vendor, available: true, runtime: 'host-cli' }
+  }
+  return out
+}
 
 function mountModal(props: Partial<Record<string, unknown>> = {}) {
   return mount(NewSessionModal, {
@@ -29,10 +49,17 @@ function mountModal(props: Partial<Record<string, unknown>> = {}) {
       open: true,
       agents: AGENTS,
       defaultAgentId: 'claude-a',
-      hostStatus: [] as VendorHostStatus[],
+      vendorAvailability: availability(),
       ...props,
     },
   })
+}
+
+function vendorOption(w: ReturnType<typeof mountModal>, vendor: VendorId) {
+  return w
+    .find('[data-testid="new-session-vendor"]')
+    .findAll('option')
+    .find((o) => o.element.value === vendor)
 }
 
 describe('NewSessionModal.vue — 新建会话 vendor/agent 选择', () => {
@@ -57,62 +84,47 @@ describe('NewSessionModal.vue — 新建会话 vendor/agent 选择', () => {
     expect(w.emitted('confirm')).toEqual([['codex-a']])
   })
 
-  it('host-binary 缺失的 vendor 在下拉里被禁用', () => {
-    const w = mountModal({
-      hostStatus: [
-        {
-          vendor: 'codex',
-          present: false,
-          binary: 'codex',
-          path: null,
-          installHint: 'install codex',
-        },
-      ] as VendorHostStatus[],
-    })
-    const codexOption = w
-      .find('[data-testid="new-session-vendor"]')
-      .findAll('option')
-      .find((o) => o.element.value === 'codex')
-    expect(codexOption?.attributes('disabled')).toBeDefined()
+  it('cursor agent 可被选中并作为绑定 agent 建会话', async () => {
+    const w = mountModal()
+    await w.find('[data-testid="new-session-vendor"]').setValue('cursor')
+    expect(w.find('[data-testid="new-session-agent"]').exists()).toBe(true)
+    await w.find('[data-testid="new-session-create"]').trigger('click')
+    expect(w.emitted('confirm')).toEqual([['cursor-a']])
   })
 
-  it('存在缺失 binary 时给出「前往检测面板」入口 → emit goto-settings', async () => {
-    const w = mountModal({
-      hostStatus: [
-        {
-          vendor: 'codex',
-          present: false,
-          binary: 'codex',
-          path: null,
-          installHint: 'install codex',
-        },
-      ] as VendorHostStatus[],
-    })
+  it('运行时不可用的 vendor 在下拉里被禁用', () => {
+    const w = mountModal({ vendorAvailability: availability(['codex']) })
+    expect(vendorOption(w, 'codex')?.attributes('disabled')).toBeDefined()
+    expect(vendorOption(w, 'claude')?.attributes('disabled')).toBeUndefined()
+  })
+
+  it('cursor SDK 不可解析时 cursor 选项禁用并标注原因', () => {
+    const runtime = availability()
+    runtime.cursor = {
+      vendor: 'cursor',
+      available: false,
+      runtime: 'embedded-sdk',
+      runtimeId: '@cursor/sdk',
+      reason: 'sdk-unresolved',
+    }
+    const w = mountModal({ vendorAvailability: runtime })
+    const option = vendorOption(w, 'cursor')
+    expect(option?.attributes('disabled')).toBeDefined()
+    // 原因就写在选项文本上,不需要用户去别处查。
+    expect(option?.text()).toContain('—')
+    expect(option?.text()).not.toBe('Cursor')
+  })
+
+  it('存在不可用 vendor 时给出「前往检测面板」入口 → emit goto-settings', async () => {
+    const w = mountModal({ vendorAvailability: availability(['codex']) })
     const link = w.find('[data-testid="new-session-goto-settings"]')
     expect(link.exists()).toBe(true)
     await link.trigger('click')
     expect(w.emitted('goto-settings')).toBeTruthy()
   })
 
-  it('host 全部就绪时不显示缺失提示', () => {
-    const w = mountModal({
-      hostStatus: [
-        {
-          vendor: 'claude',
-          present: true,
-          binary: 'claude',
-          path: '/usr/local/bin/claude',
-          installHint: '',
-        },
-        {
-          vendor: 'codex',
-          present: true,
-          binary: 'codex',
-          path: '/usr/local/bin/codex',
-          installHint: '',
-        },
-      ] as VendorHostStatus[],
-    })
+  it('全部 vendor 就绪时不显示缺失提示', () => {
+    const w = mountModal()
     expect(w.find('[data-testid="new-session-missing"]').exists()).toBe(false)
   })
 })

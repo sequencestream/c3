@@ -199,6 +199,7 @@ const {
   automationToolManifestLoading,
   automationToolManifestError,
   hostStatus,
+  vendorAvailability,
   sandboxStatus,
   onSelectAutomation,
   openAutomationForm,
@@ -658,7 +659,7 @@ function onCodesChatWidth(px: number): void {
           :tool-manifest="automationToolManifest"
           :tool-manifest-loading="automationToolManifestLoading"
           :tool-manifest-error="automationToolManifestError"
-          :host-status="hostStatus"
+          :vendor-availability="vendorAvailability"
           :agents="serverSettings?.agents ?? []"
           :automation-agent-id="serverSettings?.automationAgentId ?? ''"
           :default-agent-id="serverSettings?.defaultAgentId ?? ''"
@@ -782,7 +783,7 @@ function onCodesChatWidth(px: number): void {
       :open="newSessionOpen"
       :agents="serverSettings?.agents ?? []"
       :default-agent-id="serverSettings?.defaultAgentId ?? null"
-      :host-status="hostStatus"
+      :vendor-availability="vendorAvailability"
       @confirm="confirmNewSession"
       @close="newSessionOpen = false"
       @goto-settings="openSettingsFromPicker"
@@ -792,6 +793,7 @@ function onCodesChatWidth(px: number): void {
       :open="settingsOpen"
       :settings="serverSettings"
       :host-status="hostStatus"
+      :vendor-availability="vendorAvailability"
       :sandbox-status="sandboxStatus"
       :binding-stats="bindingStats"
       @close="settingsOpen = false"

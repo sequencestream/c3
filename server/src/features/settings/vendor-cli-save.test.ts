@@ -61,6 +61,9 @@ vi.mock('../../kernel/agent/process/launcher.js', () => ({
     lz.applied = choices
   },
   readVendorCliStatus: (vendor: string) => (lz.status as never)[vendor as 'claude'],
+  // The vendors c3 launches as a host CLI — what splits `vendorRuntime` between
+  // the CLI probe and the embedded-runtime probes.
+  isManagedVendor: (vendor: string) => vendor === 'claude' || vendor === 'codex',
 }))
 
 import { saveSettingsHandler } from './index.js'

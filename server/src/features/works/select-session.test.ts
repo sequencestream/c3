@@ -60,7 +60,11 @@ vi.mock('../../kernel/agent-config/index.js', () => ({
   resolveSessionStoreScope: vi.fn(() => 'host'),
   setSessionAgent: vi.fn(() => ({ ok: true })),
 }))
-vi.mock('../../kernel/agent/process/launcher.js', () => ({ probeAll: vi.fn(() => []) }))
+vi.mock('../../kernel/agent/process/launcher.js', () => ({
+  probeAll: vi.fn(() => []),
+  // Consumed by the neutral vendor-runtime derivation the agent switcher reads.
+  isManagedVendor: (vendor: string) => vendor === 'claude' || vendor === 'codex',
+}))
 vi.mock('../intents/store.js', () => ({ findIntentIdBySessionId: vi.fn(() => null) }))
 vi.mock('../discussions/store.js', () => ({
   findDiscussionByResearchSessionId: vi.fn(() => null),

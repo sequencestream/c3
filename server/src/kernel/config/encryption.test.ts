@@ -139,4 +139,46 @@ describe('encryptAgentApiKeys / decryptAgentApiKeys', () => {
     decryptAgentApiKeys(raw)
     expect((raw.agents as unknown as Array<{ apiKey: string }>)[0].apiKey).toBe('sk-legacy')
   })
+
+  // A cursor agent is always `system` mode yet still carries a key — the SDK
+  // authenticates with nothing else. The disk boundary is keyed off `config.apiKey`
+  // rather than the vendor or the config mode, so this must hold with no cursor
+  // branch anywhere in the encryption layer.
+  function cursorSettings(apiKey: string): SystemSettings {
+    return {
+      agents: [
+        {
+          id: 'cur',
+          vendor: 'cursor',
+          configMode: 'system',
+          displayName: 'Cursor',
+          enabled: true,
+          icon: '',
+          config: { apiKey, model: '' },
+        },
+      ],
+      defaultAgentId: 'cur',
+      toolAgentId: '',
+      intentAgentId: '',
+      specAgentId: '',
+      automationAgentId: '',
+    } as SystemSettings
+  }
+
+  it('encrypts a cursor apiKey at rest and restores it on load', () => {
+    const input = cursorSettings('cur_live_secret')
+    const out = encryptAgentApiKeys(input)
+    expect(input.agents[0].config.apiKey).toBe('cur_live_secret') // input untouched
+    const stored = out.agents[0].config.apiKey
+    expect(stored.startsWith('c3secretv1:')).toBe(true)
+    // The plaintext must appear nowhere in what would be written to settings.json.
+    expect(JSON.stringify(out)).not.toContain('cur_live_secret')
+    decryptAgentApiKeys(out)
+    expect(out.agents[0].config.apiKey).toBe('cur_live_secret')
+  })
+
+  it('leaves an empty cursor apiKey empty (falls back to CURSOR_API_KEY at run time)', () => {
+    const out = encryptAgentApiKeys(cursorSettings(''))
+    expect(out.agents[0].config.apiKey).toBe('')
+  })
 })

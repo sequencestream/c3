@@ -382,6 +382,28 @@ describe('WorkspaceSetting.vue — consensus custom voters', () => {
         .checked,
     ).toBe(false)
   })
+
+  // Consensus voting is vendor-neutral: the voter roster is every enabled agent,
+  // never a per-vendor allowlist, so a cursor agent votes like any other.
+  it('offers a cursor agent as a custom consensus voter and saves it', async () => {
+    const cursorVoter: AgentConfig = {
+      id: 'v-cursor',
+      vendor: 'cursor',
+      configMode: 'system',
+      displayName: 'Cursor Voter',
+      enabled: true,
+      config: { apiKey: '', model: '' },
+    }
+    const w = mountWs(cfg({ consensus: { enabled: true, mode: 'custom', agentIds: [] } }), {
+      agents: [...VOTER_AGENTS, cursorVoter],
+    })
+    const box = w.find('[data-testid="project-config-consensus-agent-v-cursor"]')
+    expect(box.exists()).toBe(true)
+    await box.setValue(true)
+    await w.find(SAVE.collab).trigger('click')
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
+    expect(emitted[0][0].consensus?.agentIds).toEqual(['v-cursor'])
+  })
 })
 
 describe('WorkspaceSetting.vue — external skill repos (ADR-0016/0017)', () => {

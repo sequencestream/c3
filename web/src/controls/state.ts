@@ -17,6 +17,7 @@ import { type PendingWorkSessionSelectRequest } from '@/lib/work-session-jump'
 import type { CodeTab, CodesSearchResultView } from '@/lib/codes-view'
 import type { ChatBody, ChatMsg, RunActivity } from '@/lib/chat-types'
 import { agentNameAt } from '@/lib/agent-prefix'
+import { deriveVendorAvailability } from '@/lib/vendor-runtime'
 import { normalizePersonalized, readLocalPersonalized } from '@/lib/personalized-settings'
 import type { DeepLinkTarget } from '@/lib/deep-link'
 import type {
@@ -58,6 +59,7 @@ import type {
   TranscriptItem,
   VendorHostStatus,
   VendorId,
+  VendorRuntimeStatus,
   WaitUserInvolveEvent,
   WorkspaceInfo,
   WorkspaceDashboardRow,
@@ -599,6 +601,13 @@ export function createState(deps: StateDeps) {
   // ---- System settings (agent config) ----
   const settingsOpen = ref(false)
   const hostStatus = ref<VendorHostStatus[]>([])
+  // 服务端给出的、覆盖全部 vendor 的运行时可用性;旧服务端不发此字段,故可为 null。
+  const vendorRuntime = ref<Record<VendorId, VendorRuntimeStatus> | null>(null)
+  // 全前端唯一的「vendor 能不能跑」判定:所有门控点读它,不各自解读 hostStatus,
+  // 也不按 vendor 名分支(旧服务端的回落规则收敛在 deriveVendorAvailability 内)。
+  const vendorAvailability = computed(() =>
+    deriveVendorAvailability(vendorRuntime.value ?? undefined, hostStatus.value),
+  )
   const sandboxStatus = ref<SandboxHostStatus | null>(null)
   const bindingStats = ref<SessionBindingStats | null>(null)
   const sessionCapabilities = ref<Record<VendorId, SessionCapabilities> | null>(null)
@@ -905,6 +914,8 @@ export function createState(deps: StateDeps) {
     settingsOpen,
     serverSettings,
     hostStatus,
+    vendorRuntime,
+    vendorAvailability,
     sandboxStatus,
     bindingStats,
     sessionCapabilities,

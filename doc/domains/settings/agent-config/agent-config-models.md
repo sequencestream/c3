@@ -41,6 +41,19 @@
 | `model`   | text                    | 模型别名或 id;为空 ⇒ 不覆盖                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `wireApi` | `'responses' \| 'chat'` | 自定义厂商的线上协议——codex 自身的 wire-api 术语。ADR-0029 起**所有 custom codex 都走 relay**,`wireApi` 降为**候选级**的 relay 内部适配选择:`'chat'` ⇒ 仅支持 Chat-Completions ⇒ relay 做 Responses↔Chat **翻译**;`'responses'` ⇒ 厂商原生 Responses ⇒ relay **透传**(仅换 key、覆盖 model)。没有该字段的旧记录迁移为 `'chat'`。与 `system` 模式的 codex 无关(无 custom 上游 ⇒ codex 自身登录)。见 [relay-architecture](../../../architecture/relay-architecture.md) §9。 |
 
+### Cursor 配置子对象(`vendor === 'cursor'`)
+
+只有一个 key 和一个 model,**没有 `baseUrl`**:c3 没有讲 Cursor 协议的 relay,
+故 Cursor 智能体不能被指向别的 provider,`configMode` 恒为 `'system'`(schema 拒绝
+携带 `baseUrl` 的配置,手改 settings.json 里的 `'custom'` 在加载时被钉回 `'system'`)。
+与其他厂商的 `system` 模式不同,Cursor 的 `system` **不等于**"用厂商 CLI 自己的登录
+态"——`@cursor/sdk` 只认 API key,不读 `cursor-agent login` 写入钥匙串的凭据。
+
+| 属性     | 类型 | 说明                                                                                                                   |
+| -------- | ---- | ---------------------------------------------------------------------------------------------------------------------- |
+| `apiKey` | text | Cursor API key。为空 ⇒ 回落到服务端环境变量 `CURSOR_API_KEY`;两者皆空 ⇒ 运行在启动处即以可行动错误失败(同时点名这两处) |
+| `model`  | text | 模型别名或 id(如 `auto`、`claude-4.5-sonnet`);为空 ⇒ 沿用 Cursor 的 `auto`                                             |
+
 关系:零个或多个 Session(会话)绑定到一个 Agent;未绑定的会话使用默认智能体。
 
 ## System Agent(系统智能体)

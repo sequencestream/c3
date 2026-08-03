@@ -364,6 +364,35 @@ unresolvable, or no API key.
 - `node scripts/e2e/e2e-cursor-session-test.mjs ws://localhost:13000/ws` →
   `RESULT: PASS` on success; 1 = a step failed; 5 = precondition unmet (SKIP).
 
+## Cursor agent config test (runtime signal → config → default agent)
+
+Covers the console-facing half of Cursor support: that a Cursor agent can be
+created the way the settings panel creates one and then actually run. Asserts the
+`settings` reply's neutral `vendorRuntime` companion answers for every vendor
+(cursor as `embedded-sdk`, claude/codex as `host-cli`, cursor absent from
+`hostStatus`), that the saved Cursor agent round-trips as
+`configMode: 'system'` + `config: { apiKey, model }` with no `baseUrl` and a
+plaintext (still-editable) key, and that it can be made the **system default
+agent** and launch a session as such.
+
+In the `pnpm e2e` suite, and deliberately **without a SKIP branch** — each
+environment has its own assertion instead:
+
+- `@cursor/sdk` unresolvable → cursor must report `available: false` with reason
+  `sdk-unresolved` (explicit degradation), config assertions still run, no turn is spent;
+- SDK resolvable, no `CURSOR_API_KEY` → the run must fail at the door with a
+  message naming BOTH the agent's `apiKey` field and the `CURSOR_API_KEY`
+  environment variable;
+- SDK resolvable + key present → one short tool-less turn runs to completion on
+  the Cursor default agent (spends a small amount of real quota).
+
+It runs last in the suite because it temporarily rewrites `defaultAgentId`; the
+original settings snapshot is restored on every exit path.
+
+- Start the server: `pnpm start --port 13000`
+- `node scripts/e2e/e2e-cursor-agent-config-test.mjs ws://localhost:13000/ws` →
+  `RESULT: PASS` on success; 1 = a step failed.
+
 ## Sandbox vendor token test (real request through arapuca)
 
 Complements the token-free capability probe: uses a real agent from

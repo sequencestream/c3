@@ -30,6 +30,7 @@
  */
 import type { AgentDriver, AgentRun, CanonicalMessage, DriverStartOptions } from '../types.js'
 import { cursorCapabilities } from './capabilities.js'
+import { loadCursorSdk } from './sdk-resolve.js'
 import { CursorStreamTranslator, type CursorEvent } from './translate.js'
 import {
   CursorUnsupportedError,
@@ -124,18 +125,18 @@ export interface CursorSdk {
 }
 
 /**
- * The default SDK binding — imported lazily so that merely constructing the
- * adapter (which the automation tool-manifest path does, for its static tool
- * list) never pulls the SDK's local runtime and its platform-native package into
- * the process.
+ * The default SDK binding — loaded lazily through the shared resolution boundary,
+ * so that merely constructing the adapter (which the automation tool-manifest path
+ * does, for its static tool list) never pulls the SDK's local runtime into the
+ * process, and a run loads exactly the copy availability was gated on.
  */
 const defaultSdk: CursorSdk = {
   async create(options) {
-    const { Agent } = await import('@cursor/sdk')
+    const { Agent } = await loadCursorSdk()
     return (await Agent.create(options as Parameters<typeof Agent.create>[0])) as CursorAgentHandle
   },
   async resume(agentId, options) {
-    const { Agent } = await import('@cursor/sdk')
+    const { Agent } = await loadCursorSdk()
     return (await Agent.resume(
       agentId,
       options as Parameters<typeof Agent.resume>[1],

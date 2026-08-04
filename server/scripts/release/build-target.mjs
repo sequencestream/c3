@@ -37,10 +37,12 @@ const repoRoot = resolve(serverDir, '..')
  * `@cursor/sdk` resolves a per-platform native package (`@cursor/sdk-<os>-<arch>`)
  * at load time. Bundling it would freeze the BUILD host's binary into every
  * cross-compiled target — a macOS-arm64 native module inside a linux-x64
- * executable. Keeping it external means the standalone binary carries no Cursor
- * runtime at all: `cursorSdkAvailable()` answers false there and the cursor agent
- * type is simply unavailable, which is the honest degradation. A c3 installed from
- * npm (with node_modules) resolves it normally and has full Cursor support.
+ * executable. Keeping it external means the binary itself carries no Cursor
+ * runtime; the release supplies one per target as a sidecar tree laid beside the
+ * executable (`scripts/release/sidecar.mjs`), which the server resolves at
+ * startup. This compile step never copies it: a binary built on its own is
+ * Cursor-less until a sidecar is placed next to it, or `CURSOR_SDK_PATH` points
+ * at one.
  */
 const NATIVE_EXTERNALS = ['@cursor/sdk']
 

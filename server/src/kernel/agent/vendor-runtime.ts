@@ -47,13 +47,18 @@ export function vendorRuntimeStatuses(): Record<VendorId, VendorRuntimeStatus> {
       continue
     }
     const spec = EMBEDDED_RUNTIME_PROBES[vendor]
-    const available = spec?.available() ?? false
+    const probe = spec?.probe() ?? { available: false }
     out[vendor] = {
       vendor,
-      available,
+      available: probe.available,
       runtime: 'embedded-sdk',
       ...(spec ? { runtimeId: spec.module } : {}),
-      ...(available ? {} : { reason: 'sdk-unresolved' as const }),
+      // Provenance travels with availability: "runnable" and "which copy" come
+      // from one resolution, so the row can never name a module the run will not
+      // load.
+      ...(probe.origin ? { origin: probe.origin } : {}),
+      ...(probe.location ? { location: probe.location } : {}),
+      ...(probe.available ? {} : { reason: 'sdk-unresolved' as const }),
     }
   }
   return out

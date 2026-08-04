@@ -243,10 +243,19 @@ export type VendorRuntimeKind = 'host-cli' | 'embedded-sdk'
  * must never become the UI contract.
  *  - `host-cli-missing` — no runnable vendor CLI resolved from any allowed source.
  *  - `sdk-unresolved`   — the embedded SDK could not be resolved from this
- *                         process (not installed, or its platform-native package
- *                         is absent — e.g. a single-file binary build).
+ *                         process: neither installed as a module nor present as a
+ *                         sidecar tree beside the executable.
  */
 export type VendorUnavailableReason = 'host-cli-missing' | 'sdk-unresolved'
+
+/**
+ * Which source a resolved runtime came from — the provenance a diagnostics row
+ * shows so "available" is never just a claim.
+ *  - `installed` — ordinary module/binary resolution (an npm install of c3).
+ *  - `sidecar`   — the tree the release lays beside the executable.
+ *  - `override`  — a deployment-supplied path took priority over both.
+ */
+export type VendorRuntimeOrigin = 'installed' | 'sidecar' | 'override'
 
 /**
  * One vendor's **runtime availability** — the vendor-neutral signal every config
@@ -275,6 +284,17 @@ export interface VendorRuntimeStatus {
    * runtime has no meaningful identifier to show.
    */
   runtimeId?: string
+  /**
+   * Which source the runtime resolved from. Absent when nothing resolved, or when
+   * the vendor has no provenance worth distinguishing.
+   */
+  origin?: VendorRuntimeOrigin
+  /**
+   * Where the resolved runtime actually sits, absolute — the answer to "which copy
+   * is this". Absent when unavailable. It is diagnostics only: no gate reads it,
+   * and it never widens the stable reason codes.
+   */
+  location?: string
   /** Why it is unavailable; absent when `available` is true. */
   reason?: VendorUnavailableReason
 }

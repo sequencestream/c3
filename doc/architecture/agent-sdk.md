@@ -34,8 +34,11 @@ Cursor 的特殊之处在于**没有宿主 CLI 可探测**:`@cursor/sdk` 随 c3 
 的二进制探测链。升级即普通依赖升级;当其消息流形状或 `Agent.resume` 语义出现需
 重新验证的变更时,重跑
 [`scripts/e2e/cursor-sdk-probe.mjs`](../../scripts/e2e/cursor-sdk-probe.mjs) 更新探针结论。
-注意 SDK 会按 os/arch 解析平台原生包,故单文件二进制发布将其排除在 bundle 之外 ——
-二进制中 Cursor 不可用。
+注意 SDK 会按 os/arch 解析平台原生包,故单文件二进制发布将其排除在 bundle 之外,改由
+发布物按目标平台旁挂一棵依赖树;版本升级要同步重跑
+[`scripts/e2e/cursor-sdk-binary-sidecar-probe.mjs`](../../scripts/e2e/cursor-sdk-binary-sidecar-probe.mjs),
+因为旁挂树的可解析性依赖 SDK 的入口布局(见
+[Cursor 特性文档](../domains/core/agent-session/features/agent-session-cursor.md))。
 
 各 SDK changelog 地址：
 

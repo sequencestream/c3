@@ -17,6 +17,7 @@ c3
 │   │   ├── 取消中止                              # 用户命令或断连时干净中止在途 run
 │   │   ├── 历史续传                              # 每轮持久化,浏览器刷新可完整回放 transcript
 │   │   ├── 多厂商                                # 同时支持 Claude、Codex 与 Cursor 三个 vendor(均经各自官方 SDK;Cursor 的 SDK 在 c3 进程内运行)
+│   │   ├── Cursor 二进制旁挂                      # 单文件二进制不内含 Cursor runtime,发布物按平台附带 @cursor/sdk 旁挂树(二进制同级 node_modules,CURSOR_SDK_PATH 可覆盖);无旁挂则显式不可用,二进制形态不支持 Cursor 沙箱运行
 │   │   └── Codex GH_TOKEN 桥接                    # codex 会话启动时把宿主 gh 钥匙串令牌注入 GH_TOKEN,沙箱内 gh 可认证(已有 token 不覆盖/探测失败静默降级)
 │   │
 │   ├── permission-gateway 权限网关               # 智能体与人之间的控制点,有副作用的工具须过此门
@@ -154,7 +155,7 @@ c3
 │   │   ├── 每会话绑定                            # 记住每个会话用哪个 agent
 │   │   └── 降级链                                # 某 agent 不可用时按 degradationChain 顺序回退
 │   │
-│   ├── system-setting 系统设置                   # 管理员全局配置；运行时页为每个 vendor 出一行诊断(宿主 CLI 二进制名+绝对路径 / 进程内 SDK 包名),另展示 sandbox(arapuca)驱动状态
+│   ├── system-setting 系统设置                   # 管理员全局配置；运行时页为每个 vendor 出一行诊断(宿主 CLI 二进制名+绝对路径 / 进程内 SDK 包名+解析来源与已解析位置),另展示 sandbox(arapuca)驱动状态
 │   │   ├── 显示与本地化                          # voiceLang 语音输入语言 / timezone 系统时区(驱动 cron 解释);界面语言属个人化设置
 │   │   ├── 公开访问地址                          # baseUrl 部署对外基址,用于拼分享深链
 │   │   ├── 会话页显示                            # showSessionsPage 开关,决定主导航是否在代码后显示会话页

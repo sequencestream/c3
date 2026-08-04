@@ -1405,11 +1405,11 @@ describe('SettingsPanel.vue — Cursor vendor in the agent config panel', () => 
     })
     const cursorOption = vendorOptions(w).find((o) => o.element.value === 'cursor')!
     expect(cursorOption.attributes('disabled')).toBeDefined()
-    expect(cursorOption.text()).toContain('built-in SDK runtime unavailable')
+    expect(cursorOption.text()).toContain('built-in SDK runtime not resolvable')
     // …and the same reason is repeated under the roster, so it is visible without
     // opening the dropdown.
     expect(w.find('[data-testid="agent-vendor-notes"]').text()).toContain(
-      'built-in SDK runtime unavailable',
+      'built-in SDK runtime not resolvable',
     )
   })
 
@@ -1473,12 +1473,39 @@ describe('SettingsPanel.vue — Cursor vendor in the agent config panel', () => 
     expect(rows).toHaveLength(VENDOR_IDS.length)
     const cursorRow = rows.find((r) => r.attributes('data-vendor') === 'cursor')!
     expect(cursorRow.text()).toContain('@cursor/sdk')
-    expect(cursorRow.text()).toContain('built-in SDK runtime unavailable')
-    // 进程内 SDK 没有可解析的可执行文件路径,不渲染 CLI 才有的 path 列。
+    // 原因文案要可行动:指向旁挂安装方式与覆盖变量,而不只是"不可用"。
+    expect(cursorRow.text()).toContain('CURSOR_SDK_PATH')
+    // 解析不到时没有来源可讲,不渲染来源/位置列。
     expect(cursorRow.find('.diagnostics-path').exists()).toBe(false)
     // 宿主 CLI 行照旧显示解析到的绝对路径。
     const claudeRow = rows.find((r) => r.attributes('data-vendor') === 'claude')!
     expect(claudeRow.find('.diagnostics-path').text()).toBe('/usr/local/bin/claude')
+  })
+
+  it('shows an in-process SDK’s resolution source and the copy that will load', () => {
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: baseSettings,
+        vendorAvailability: availability({
+          cursor: {
+            vendor: 'cursor',
+            available: true,
+            runtime: 'embedded-sdk',
+            runtimeId: '@cursor/sdk',
+            origin: 'sidecar',
+            location: '/opt/c3/node_modules/@cursor/sdk/index.cjs',
+          },
+        }),
+        hostStatus: [],
+      },
+    })
+    const cursorRow = w
+      .findAll('[data-testid="diagnostics-row"]')
+      .find((r) => r.attributes('data-vendor') === 'cursor')!
+    const origin = cursorRow.get('[data-testid="diagnostics-origin"]')
+    expect(origin.text()).toContain('sidecar')
+    expect(origin.text()).toContain('/opt/c3/node_modules/@cursor/sdk/index.cjs')
   })
 
   it('lists no CLI version panel row for an SDK-backed vendor', () => {

@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest'
 import { VENDOR_IDS } from '@ccc/shared/protocol'
 import type { VendorHostStatus, VendorRuntimeStatus } from '@ccc/shared/protocol'
-import { deriveVendorAvailability, vendorUnavailableReasonKey } from './vendor-runtime'
+import {
+  deriveVendorAvailability,
+  vendorRuntimeOriginKey,
+  vendorUnavailableReasonKey,
+} from './vendor-runtime'
 
 const CLAUDE_HOST: VendorHostStatus = {
   vendor: 'claude',
@@ -102,5 +106,35 @@ describe('vendorUnavailableReasonKey', () => {
       vendorUnavailableReasonKey({ vendor: 'claude', available: true, runtime: 'host-cli' }),
     ).toBeNull()
     expect(vendorUnavailableReasonKey(undefined)).toBeNull()
+  })
+})
+
+describe('vendorRuntimeOriginKey', () => {
+  it('maps each resolution source to its own localizable key', () => {
+    const cursor = (origin: VendorRuntimeStatus['origin']): VendorRuntimeStatus => ({
+      vendor: 'cursor',
+      available: true,
+      runtime: 'embedded-sdk',
+      runtimeId: '@cursor/sdk',
+      origin,
+    })
+    expect(vendorRuntimeOriginKey(cursor('installed'))).toBe('common.vendor.origin.installed')
+    expect(vendorRuntimeOriginKey(cursor('sidecar'))).toBe('common.vendor.origin.sidecar')
+    expect(vendorRuntimeOriginKey(cursor('override'))).toBe('common.vendor.origin.override')
+  })
+
+  it('says nothing when the vendor cannot run — provenance of a missing runtime is noise', () => {
+    expect(
+      vendorRuntimeOriginKey({
+        vendor: 'cursor',
+        available: false,
+        runtime: 'embedded-sdk',
+        reason: 'sdk-unresolved',
+      }),
+    ).toBeNull()
+    expect(
+      vendorRuntimeOriginKey({ vendor: 'claude', available: true, runtime: 'host-cli' }),
+    ).toBeNull()
+    expect(vendorRuntimeOriginKey(undefined)).toBeNull()
   })
 })

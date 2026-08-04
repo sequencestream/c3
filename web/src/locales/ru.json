@@ -28,7 +28,12 @@
     "vendor": {
       "unavailable": {
         "hostCliMissing": "CLI поставщика не найден на этом хосте",
-        "sdkUnresolved": "встроенная среда выполнения SDK недоступна в этой сборке"
+        "sdkUnresolved": "встроенная среда выполнения SDK не найдена — установите сайдкар SDK рядом с исполняемым файлом или задайте CURSOR_SDK_PATH"
+      },
+      "origin": {
+        "installed": "установлено с пакетом",
+        "sidecar": "сайдкар",
+        "override": "CURSOR_SDK_PATH"
       }
     }
   },

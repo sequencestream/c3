@@ -27,7 +27,12 @@
     "vendor": {
       "unavailable": {
         "hostCliMissing": "本机未找到该 vendor 的 CLI",
-        "sdkUnresolved": "当前构建中内置 SDK 运行时不可用"
+        "sdkUnresolved": "内置 SDK 运行时解析不到 —— 请在可执行文件旁安装 SDK 旁挂目录,或设置 CURSOR_SDK_PATH"
+      },
+      "origin": {
+        "installed": "随包安装",
+        "sidecar": "旁挂目录",
+        "override": "CURSOR_SDK_PATH"
       }
     }
   },

@@ -59,11 +59,20 @@
 | Phase0   | web 构建              | 一次,与平台无关                  | 编译后的 web bundle                                                                         |
 | Phase1   | generate-static-embed | 一次                             | web bundle 的一次性快照,可嵌入二进制文件(已被 gitignore,不提交)                             |
 | Phase2   | `bun --compile` 扇出  | 每个目标一次,**并行**            | 每个目标各自 scratch 区域中的 `c3` 二进制文件(相对 Phase1 快照只读)                         |
+| Phase2.4 | cursor 旁挂           | 每个目标一次,pack 之前           | `dist/<target>/node_modules` —— 该平台的 `@cursor/sdk` 依赖树                               |
 | Phase2.5 | pack                  | 每个目标一次,Phase2 之后**串行** | 可分发的包 `c3-v{ver}-{target}{.tar.gz\|.zip}`,连同二进制文件内部的 sha256 sidecar 一起打包 |
 
 可嵌入的快照保存在**已提交源码树之外**:源码里携带一个永久性的空占位符,供日常
 bundle/dev/typecheck 路径使用,而 Bun 编译路径在构建时把该 import 重定向到 Phase1
 快照。这正是让并行多目标构建时工作区保持干净的关键。
+
+Phase2.4 是 Cursor 唯一能进入二进制形态的途径:`@cursor/sdk` 按目标解析平台原生
+包,打进 bundle 会把构建机的平台冻进所有交叉编译目标,因此它始终是 external,改由
+发布物在二进制同级附带一棵该平台的依赖树(旁挂位置与解析规则见
+[agent-session-cursor](../domains/core/agent-session/features/agent-session-cursor.md))。
+它必须排在 pack 之前:归档与其上的所有校验和覆盖的是**加入旁挂之后**的最终字节。
+某目标的树不完整、版本不符或混入了别的平台包时,该目标不产出制品 —— P0 直接失败,
+实验目标按既有 best-effort 规则整体丢弃,绝不产出一份声称支持 Cursor 的残缺归档。
 
 构建之后的质量门禁顺序在下面的**质量门禁**一节中规定。
 
@@ -258,13 +267,16 @@ GH Actions release workflow 接入(`smoke:windows-x64` 任务,`runs-on: windows-
 - **包**是 GitHub Release 发布的可分发归档文件:POSIX 上是
   `c3-v{version}-{target}.tar.gz`,Windows 上是 `c3-v{version}-{target}.zip`。
   归档内部的顶层文件是 `c3`、`c3.sha256`(平铺,没有外层目录),
-  所以 `tar -xzf … && ./c3 --version` 开箱即用。
+  所以 `tar -xzf … && ./c3 --version` 开箱即用。旁边还有 Phase2.4 放入的
+  `node_modules/` —— Cursor 的旁挂树,与 `c3` 同级是约定位置,移动二进制时需一并
+  带走(或用 `CURSOR_SDK_PATH` 另行指定)。
 
 在 target 标记中,`darwin`→`macos`,`win32`→`windows`;开头的 `v` 是固定的,
 已带 `v` 前缀的版本号不会被重复添加。
 
 `pnpm binary`(自用快捷方式)保留的是**不带版本号、不打包**的
-host-target `c3`,不产出包。
+host-target `c3`,不产出包,也**不隐含组装 Cursor 旁挂** —— 需要 Cursor 时自行把
+一棵依赖树放到二进制旁边,或用 `CURSOR_SDK_PATH` 指向已有的一棵。
 
 渠道后缀(例如 `-nightly`)仍是后续波次的占位项。
 
@@ -478,6 +490,8 @@ pnpm binary                                          # 原生单一二进制文�
 - **Manifest** —— 构建分发 manifest 与逐制品哈希。
 - **制品命名** —— 二进制文件名、包名、包扩展名,以及版本号归一化。
 - **打包** —— 内层 `c3.sha256` sidecar + `.tar.gz` / `.zip` 归档。
+- **Cursor 旁挂** —— target→平台包映射、版本必须钉死、根入口 shim 生成,以及
+  拒绝残缺 / 版本不符 / 混入他平台包的树。
 - **校验和、notes、publish** —— sha256 校验和生成(`release:checksum`)以及
   notes/publish 步骤。
 - **运行时版本** —— 二进制文件报告的版本字符串。

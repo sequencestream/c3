@@ -19,15 +19,43 @@ c3 负责规范化消息流、读取 SDK 本地存储、管理运行生命周期
 Cursor **没有宿主二进制描述符**:它既不是 Claude/Codex 那样由 c3 从 npm 托管
 安装的 CLI,也不是用户自装的外部 CLI,因此不出现在 `HOST_BINARIES` 中,也不参与
 远程版本发现、版本钉选与历史清理。可用性判定退化为一句话:**`@cursor/sdk` 能否
-被解析**(`require.resolve`,不实际加载,避免为一次探测拉起整个 local runtime 与
-平台原生包)。不可解析 ⇒ cursor agent 类型不可用,启动日志给出原因。
+被解析**(只解析包入口,不实际加载,避免为一次探测拉起整个 local runtime)。
+不可解析 ⇒ cursor agent 类型不可用,启动日志给出原因与修复方式。
 
-SDK 通过 optionalDependencies 解析平台原生包(`@cursor/sdk-<os>-<arch>`)。因此:
+### 解析边界
 
-- **npm 安装的 c3**(带 node_modules):Cursor 完整可用。
-- **单文件二进制发布**:`@cursor/sdk` 被显式排除在 bundle 之外(否则会把构建机
-  的原生模块冻进所有交叉编译目标),故二进制中不携带 Cursor runtime,cursor
-  agent 类型不可用。这是诚实的降级,而非静默失败。
+解析、门控、懒加载、版本探测**共用同一个边界**,按优先级取首个命中:
+
+1. `CURSOR_SDK_PATH` —— 部署方自选的 `node_modules` 根;
+2. 可执行文件同级的 `node_modules` —— 发布物的旁挂布局;
+3. 常规模块解析 —— npm 安装形态,语义与从前完全一致。
+
+每个候选都必须解析到**该根之内**的 `@cursor/sdk` 包入口:环境变量指向的目录里
+没有 SDK 时,不允许靠向上游 `node_modules` 走一层"侥幸成功",而是记录这次失败
+的覆盖路径并把机会让给下一个来源。门控与运行走同一次解析,是"报可用却在
+`start()` 失败"这类漂移不可能发生的原因。
+
+### 部署形态
+
+- **npm 安装的 c3**(带 node_modules):Cursor 完整可用,行为与现状一致。
+- **单文件二进制 + 旁挂**:`@cursor/sdk` 被显式排除在 bundle 之外(否则会把构建机
+  的原生包冻进所有交叉编译目标),运行时改从**旁挂依赖树**解析:发布流程按 target
+  安装该平台的 SDK 依赖树到二进制同级的 `node_modules/`。可创建 cursor agent、
+  完成首轮并按原生 agent id 续聊。
+- **单文件二进制无旁挂**:显式不可用,原因码 `sdk-unresolved`,提示指向"在可执行
+  文件旁安装旁挂目录,或设置 `CURSOR_SDK_PATH`"。新建入口受门控,既有 cursor 配置
+  仍可查看编辑,不被静默改写。
+
+旁挂树里每个包都被写入一个根 `index.cjs` 再导出真实入口:**单文件二进制的运行期
+解析器不读 `package.json`**,`main` / `exports` 一律忽略,只认包根下的
+`index.{js,cjs}`,而多数包的入口在子目录里。这个 shim 是加法,Node 仍按
+`package.json` 解析、根本看不到它,故 npm 安装形态的解析语义不受影响。
+
+平台原生包(`@cursor/sdk-<os>-<arch>`)只是一个 `bin/` 目录,SDK 靠从
+`process.argv[1]` 逐级上溯查找;二进制形态下 `argv[1]` 落在嵌入式文件系统里,永远
+走不到旁挂目录。ripgrep 有 `CURSOR_RIPGREP_PATH` 覆盖,c3 在加载 SDK 时指向旁挂里的
+那一份;沙箱助手 `cursorsandbox` **没有**覆盖点,因此**二进制形态下 Cursor 不能沙箱
+运行**——请求沙箱时由 SDK 抛出明确错误,而不是静默地不隔离。
 
 这个判定要被控制台看见,靠的不是"前端知道 cursor 特殊",而是 `settings` 回包里
 **覆盖全部 vendor 的中立可用性信号** `vendorRuntime`(见
@@ -36,8 +64,10 @@ SDK 通过 optionalDependencies 解析平台原生包(`@cursor/sdk-<os>-<arch>`)
 `embedded-sdk`)、不能跑的稳定原因码。Claude/Codex 的那一项仍取宿主 CLI 探测结果
 (语义与 `hostStatus` 完全一致),cursor 的那一项取 `@cursor/sdk` 能否解析,**与
 服务端启动时决定要不要构造 cursor adapter 用的是同一个探针函数**,因此设置页所报
-状态与内核实际能力不可能漂移。`hostStatus` 继续只讲宿主 CLI:cursor 不出现在其中,
-也不进入 vendor CLI 版本面板 —— 它没有二进制可装、可钉、可同步。
+状态与内核实际能力不可能漂移。可用时诊断行额外给出**解析来源**(随包安装 / 旁挂 /
+`CURSOR_SDK_PATH`)与**已解析位置**,回答"跑起来的是哪一份";来源不进原因码,门控
+形状不变。`hostStatus` 继续只讲宿主 CLI:cursor 不出现在其中,也不进入 vendor CLI
+版本面板 —— 它没有二进制可装、可钉、可同步。
 
 ## 厂商接口契约
 
@@ -65,9 +95,10 @@ SDK 通过 optionalDependencies 解析平台原生包(`@cursor/sdk-<os>-<arch>`)
 - `perToolApproval: false` —— 无逐工具批准信道;权限在轮次启动时一次定死。
 - `interrupt: false` —— `Run.cancel()` 确实存在且是真实的协作式停止,但它**结束
   整轮**;没有"插话后同一 run 继续"的通道,而这正是本标志的语义。
-- `inProcessMcp: false` —— 这是 **c3 侧**的事实而非 SDK 限制:SDK 提供进程内回调
-  工具(`local.customTools`,以合成 MCP server 面向模型暴露),但 c3 尚未把自己的
-  工具接到该通道;接通之日才翻转,不提前。
+- `inProcessMcp: false` —— **恒定为假,且是非目标**。SDK 确有进程内回调工具通道
+  (`local.customTools`),但 c3 的工具统一经回环 HTTP MCP 端口到达各厂商,与
+  Claude/Codex 同一条传输;为 Cursor 单独建一条进程内通道会让工具身份、鉴权与
+  审计出现第二套规则。因此这一项不等待任何探针。
 - `taskStore: false` —— SDK 没有 task API;其 `updateTodos` 是对话内记账调用,
   不是 c3 可读写的存储。
 - `nativeUserInput: false` —— headless 运行从不向人发问。
@@ -201,12 +232,15 @@ arapuca 包装的是**子进程**;Cursor 的 runtime 在 c3 进程内,没有子�
 生成 wrapper。隔离改由 SDK 自带沙箱兑现:中性的 `DriverStartOptions.sandboxed`
 (每个沙箱运行都为真,与厂商如何实现隔离无关)映射为
 `local.sandboxOptions.enabled`。这也是 `sandboxed` 这个中性字段存在的原因 ——
-CLI 厂商经 `sandboxWrapperPath` 兑现,进程内 SDK 厂商经自身 runtime 兑现。
+CLI 厂商经 `sandboxWrapperPath` 兑现,进程内 SDK 厂商经自身 runtime 兑现。该兑现
+依赖 SDK 的沙箱助手二进制,而它在单文件二进制形态下不可达(见"部署形态")。
 
 ## 探针结论
 
-准入探针脚本 `scripts/e2e/cursor-sdk-probe.mjs` 可复现地验证各项能力,其结论是
-本能力台账的唯一事实来源。两个**阻断项**:
+两个准入探针可复现地验证能力,其结论是本页台账的唯一事实来源。两者都需要真实
+`CURSOR_API_KEY` 与出网,非 CI 安全,不在 `pnpm e2e` 套件内。
+
+**能力探针 `scripts/e2e/cursor-sdk-probe.mjs`** —— 两个**阻断项**:
 
 - **G1 resume 恢复上下文**:第二轮经 `Agent.resume(agentId)` 记得第一轮建立的
   暗号。不成立则 `sessions.resume` 不能标 `full`。
@@ -214,27 +248,38 @@ CLI 厂商经 `sandboxWrapperPath` 兑现,进程内 SDK 厂商经自身 runtime 
   并正常完成下一轮。不成立则被打断的会话即告丢失。
 
 其余为信息项:原生工具名清单、工具 `call_id` 在 running/completed 间的稳定性、
-plan 对话模式被接受、SDK 本地存储能列出 c3 创建的 agent。探针需要真实
-`CURSOR_API_KEY` 与出网,非 CI 安全,不在 `pnpm e2e` 套件内。
+plan 对话模式被接受、SDK 本地存储能列出 c3 创建的 agent。
+
+**旁挂探针 `scripts/e2e/cursor-sdk-binary-sidecar-probe.mjs`** —— 编译一个真实的
+单文件二进制,跑的是 c3 自己的解析边界(不是复刻实现),逐级证明:旁挂树可按 target
+装配;无旁挂时诚实报不可用、不从别处漏进来;有旁挂时解析成功且入口落在旁挂根内;
+懒加载真正拿到 SDK 模块;平台原生包经 `CURSOR_RIPGREP_PATH` 可达;本地 agent
+store 能应答;`CURSOR_SDK_PATH` 压过旁挂,而无效覆盖被拒绝并回落。最后一格是最小
+`create`/`send` 往返,需要密钥。
+
+实测结论:机制各级在 macOS-arm64 全部通过。**外部依赖树必须带根入口 shim** ——
+这是探针发现的硬约束,不是可选优化:未 shim 的普通 npm 树在二进制里解析不到。
+无密钥时探针判 SKIP 并如实说明"活体往返未尝试",绝不因机制通过就报 GO。
 
 ## 降级与非目标
 
 已接受的展示降级:SDK 本地存储只覆盖 c3 经 SDK 创建的 agent(用户在 IDE/CLI 里
 的运行不在其中)——这只影响列表/回放展示,`resume` 始终以 Cursor 原生上下文为准,
-故差异不改变恢复来源。单文件二进制发布中 Cursor 不可用(见"运行载体与可用性判定")。
+故差异不改变恢复来源。二进制形态的两项降级见"运行载体与可用性判定":无旁挂即
+不可用;有旁挂也不能沙箱运行。发布物体积按平台增大(每个 target 一份平台包树),
+且平台覆盖受上游 `@cursor/sdk` 发布矩阵约束。
 
-非目标:不驱动 `cursor-agent` CLI;不读取或逆向 Cursor IDE 的私有 chat 库;不冒充
-Cursor 可恢复真相;不支持 custom/relay 自定义 provider、逐工具审批、Cursor IDE
-历史同步、partial streaming、完整 diff/patch、token 用量、subagent 嵌套展示、
-automation 执行。Cursor automation 无执行路径,会在调度期 hard-fail,而非借道
-Claude 引擎。
+非目标:不驱动 `cursor-agent` CLI;不把 SDK 或平台原生包打进二进制主体;不建设
+进程内 customTools 工具通道(`inProcessMcp` 恒为 false);不读取或逆向 Cursor IDE
+的私有 chat 库;不冒充 Cursor 可恢复真相;不支持 custom/relay 自定义 provider、
+逐工具审批、Cursor IDE 历史同步、partial streaming、完整 diff/patch、token 用量、
+subagent 嵌套展示、automation 执行。Cursor automation 无执行路径,会在调度期
+hard-fail,而非借道 Claude 引擎。
 
 ## 待探针解锁
 
 以下能力在相应探针证明后才开放,此前保持关闭:
 
-- **进程内工具**:把 c3 自己的工具接到 SDK 的 `local.customTools` 后,
-  `inProcessMcp` 方可翻为 true。
 - **会话 list/read 升级**:若未来 SDK 暴露覆盖 IDE/CLI 会话的读取通道,可把
   `partial` 升为 `full`(仍不读私有库)。
 - 任何新增在途控制(如真正的在途 `interrupt`)需先有探针证据,再翻台账。

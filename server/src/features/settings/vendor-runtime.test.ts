@@ -61,7 +61,13 @@ const sdk = vi.hoisted(() => ({ available: true }))
 vi.mock('../../kernel/agent/adapters/index.js', () => ({
   MODE_CATALOGS: { claude: {}, codex: {}, cursor: {} },
   EMBEDDED_RUNTIME_PROBES: {
-    cursor: { module: '@cursor/sdk', available: () => sdk.available },
+    cursor: {
+      module: '@cursor/sdk',
+      probe: () =>
+        sdk.available
+          ? { available: true, origin: 'sidecar', location: '/opt/c3/node_modules/@cursor/sdk' }
+          : { available: false },
+    },
   },
 }))
 
@@ -132,13 +138,15 @@ describe('settings — vendor runtime availability', () => {
     })
   })
 
-  it('marks cursor available when its SDK resolves', () => {
+  it('marks cursor available when its SDK resolves, and says where it resolved from', () => {
     const runtime = snapshot()
     expect(runtime.cursor).toEqual({
       vendor: 'cursor',
       available: true,
       runtime: 'embedded-sdk',
       runtimeId: '@cursor/sdk',
+      origin: 'sidecar',
+      location: '/opt/c3/node_modules/@cursor/sdk',
     })
   })
 

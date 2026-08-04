@@ -27,7 +27,12 @@
     "vendor": {
       "unavailable": {
         "hostCliMissing": "vendor CLI not found on this host",
-        "sdkUnresolved": "built-in SDK runtime unavailable in this build"
+        "sdkUnresolved": "built-in SDK runtime not resolvable — install the SDK sidecar next to the executable, or set CURSOR_SDK_PATH"
+      },
+      "origin": {
+        "installed": "installed",
+        "sidecar": "sidecar",
+        "override": "CURSOR_SDK_PATH"
       }
     }
   },

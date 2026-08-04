@@ -15,7 +15,7 @@ export { CursorDriver } from './driver.js'
 export { cursorCapabilities } from './capabilities.js'
 export { cursorModeCatalog } from './modes.js'
 export { CursorUnsupportedError, resolveCursorApiKey } from './launch.js'
-export { cursorSdkAvailable } from './skill.js'
+export { cursorSdkAvailable, resolveCursorSdk, type CursorSdkResolution } from './sdk-resolve.js'
 
 /** How the adapter authenticates a run and where it reads sessions from. */
 export interface CursorAdapterOptions {

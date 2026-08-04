@@ -23,7 +23,7 @@ import type {
 } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
-import { vendorUnavailableReasonKey } from '@/lib/vendor-runtime'
+import { vendorRuntimeOriginKey, vendorUnavailableReasonKey } from '@/lib/vendor-runtime'
 import { listGroupAgents } from '@/lib/group-agents'
 import { useAuth } from '@/composables/useAuth'
 import { deepCopy, useTabbedDraftSave } from '@/composables/useTabbedDraftSave'
@@ -128,6 +128,11 @@ const diagnostics = computed<DiagnosticsRow[]>(() => {
 })
 function diagnosticsReason(row: DiagnosticsRow): string {
   const key = vendorUnavailableReasonKey(row.status)
+  return key ? t(key) : ''
+}
+/** Provenance of a resolved runtime — installed, shipped sidecar, or an override. */
+function diagnosticsOrigin(row: DiagnosticsRow): string {
+  const key = vendorRuntimeOriginKey(row.status)
   return key ? t(key) : ''
 }
 // Vendor CLI multi-version panel rows: each vendor's installed versions +
@@ -1307,13 +1312,22 @@ function selectAdmin(username: string) {
                     : t('settings.diagnostics.missing')
                 }}
               </span>
-              <!-- CLI-only detail: a runtime executing inside this process has no
-                   resolved binary path to show. -->
+              <!-- Where the runtime came from: a host CLI shows its resolved
+                   binary path, an in-process SDK shows the source it resolved
+                   from plus the copy that will actually load. Same column, same
+                   question — "which one is this". -->
               <code
                 v-if="row.status.available && row.host?.path"
                 class="diagnostics-path"
                 :title="row.host.path"
                 >{{ row.host.path }}</code
+              >
+              <code
+                v-else-if="row.status.available && row.status.location"
+                class="diagnostics-path"
+                data-testid="diagnostics-origin"
+                :title="row.status.location"
+                >{{ diagnosticsOrigin(row) }} · {{ row.status.location }}</code
               >
               <span v-else-if="!row.status.available" class="diagnostics-reason">{{
                 diagnosticsReason(row)

@@ -104,7 +104,7 @@ import {
   resolve as resolveVendorCli,
 } from './kernel/agent/process/launcher.js'
 import { createCodexAdapter } from './kernel/agent/adapters/codex/index.js'
-import { createCursorAdapter, cursorSdkAvailable } from './kernel/agent/adapters/cursor/index.js'
+import { createCursorAdapter, resolveCursorSdk } from './kernel/agent/adapters/cursor/index.js'
 import { createClaudeAdapter } from './kernel/agent/adapters/claude/index.js'
 import {
   createRelay,
@@ -317,26 +317,36 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     }
   }
 
-  // Cursor: driven through `@cursor/sdk`'s local runtime, which ships as a c3
-  // dependency and executes IN THIS PROCESS — there is no host CLI to probe, no
-  // version to gate and no subprocess to spawn. Availability is therefore "is the
-  // SDK resolvable"; an install whose platform-native package is missing resolves
-  // to null and the cursor agent type is simply unavailable.
+  // Cursor: driven through `@cursor/sdk`'s local runtime, which executes IN THIS
+  // PROCESS — there is no host CLI to probe, no version to gate and no subprocess
+  // to spawn. Availability is therefore "is the SDK resolvable", answered by the
+  // same boundary the driver loads through: an npm install resolves it as a
+  // module, a binary deployment from the sidecar tree beside the executable, and
+  // neither means the cursor agent type is simply unavailable.
   //
   // The API key is NOT resolved here: it is per-agent (the bound agent's config,
   // else the ambient CURSOR_API_KEY) and reaches the driver on the run's env map,
   // so a server with no key still exposes cursor and fails the individual run with
   // an actionable message.
   let cursorAdapter: VendorAdapter | null = null
-  if (cursorSdkAvailable()) {
+  const cursorSdk = resolveCursorSdk()
+  if (cursorSdk.rejectedOverride) {
+    console.warn(
+      `[c3] cursor: CURSOR_SDK_PATH did not yield @cursor/sdk (${cursorSdk.rejectedOverride}) — falling back`,
+    )
+  }
+  if (cursorSdk.available) {
     try {
       cursorAdapter = createCursorAdapter()
-      console.log('[c3] cursor ready (in-process SDK)')
+      console.log(`[c3] cursor ready (in-process SDK, ${cursorSdk.origin}: ${cursorSdk.entry})`)
     } catch (e) {
       console.warn(`[c3] cursor unavailable: ${e instanceof Error ? e.message : String(e)}`)
     }
   } else {
-    console.warn('[c3] cursor unavailable: @cursor/sdk could not be resolved')
+    console.warn(
+      '[c3] cursor unavailable: @cursor/sdk could not be resolved — install the sidecar tree ' +
+        'next to the executable, or set CURSOR_SDK_PATH to a node_modules root that contains it',
+    )
   }
 
   // Cross-vendor session listing (ADR-0013): the read-only union the new

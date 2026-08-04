@@ -49,11 +49,12 @@ export { upsertBlock, CanonicalAccumulator } from './canonical-accumulator.js'
 
 export { tokenToGrid, gridToToken, isKnownToken } from './mode-catalog.js'
 
+import type { VendorRuntimeOrigin } from '@ccc/shared/protocol'
 import type { VendorId, VendorModeCatalog } from './types.js'
 import { claudeModeCatalog } from './claude/modes.js'
 import { codexModeCatalog } from './codex/modes.js'
 import { cursorModeCatalog } from './cursor/modes.js'
-import { cursorSdkAvailable } from './cursor/skill.js'
+import { CURSOR_SDK_MODULE, resolveCursorSdk } from './cursor/sdk-resolve.js'
 
 /**
  * Every vendor's {@link VendorModeCatalog}, keyed by {@link VendorId}. The
@@ -83,17 +84,37 @@ export const MODE_CATALOGS: Record<VendorId, VendorModeCatalog> = {
  * is what lets the settings snapshot answer "is this vendor runnable" for every
  * vendor without naming one — `if (vendor === 'cursor')` never appears.
  *
- * The probe registered for cursor is the SAME function `server.ts` gates adapter
- * construction on at startup, so what the settings page reports and what the
- * kernel can actually build can never disagree.
+ * The probe registered for cursor is the SAME resolution `server.ts` gates adapter
+ * construction on at startup and the driver loads through, so what the settings
+ * page reports, where the module comes from, and what the kernel can actually
+ * build can never disagree.
  */
+export interface EmbeddedRuntimeProbeResult {
+  /** Whether the runtime is resolvable from this process right now. */
+  available: boolean
+  /** Which source it resolved from; absent when nothing resolved. */
+  origin?: VendorRuntimeOrigin
+  /** Absolute location of the resolved runtime; absent when nothing resolved. */
+  location?: string
+}
+
 export interface EmbeddedRuntimeSpec {
   /** The package the runtime lives in — what the diagnostics row names. */
   readonly module: string
-  /** Whether that runtime is resolvable from this process right now. */
-  readonly available: () => boolean
+  /** Resolve the runtime, reporting availability and where it came from. */
+  readonly probe: () => EmbeddedRuntimeProbeResult
 }
 
 export const EMBEDDED_RUNTIME_PROBES: Partial<Record<VendorId, EmbeddedRuntimeSpec>> = {
-  cursor: { module: '@cursor/sdk', available: cursorSdkAvailable },
+  cursor: {
+    module: CURSOR_SDK_MODULE,
+    probe: () => {
+      const resolution = resolveCursorSdk()
+      return {
+        available: resolution.available,
+        ...(resolution.origin ? { origin: resolution.origin } : {}),
+        ...(resolution.entry ? { location: resolution.entry } : {}),
+      }
+    },
+  },
 }

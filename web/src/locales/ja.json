@@ -28,7 +28,12 @@
     "vendor": {
       "unavailable": {
         "hostCliMissing": "このホストにベンダー CLI が見つかりません",
-        "sdkUnresolved": "このビルドでは組み込み SDK ランタイムを利用できません"
+        "sdkUnresolved": "組み込み SDK ランタイムを解決できません — 実行ファイルの隣に SDK サイドカーを配置するか、CURSOR_SDK_PATH を設定してください"
+      },
+      "origin": {
+        "installed": "同梱インストール",
+        "sidecar": "サイドカー",
+        "override": "CURSOR_SDK_PATH"
       }
     }
   },

@@ -19,7 +19,13 @@ vi.mock('./process/launcher.js', () => ({
 const sdk = vi.hoisted(() => ({ available: true }))
 vi.mock('./adapters/index.js', () => ({
   EMBEDDED_RUNTIME_PROBES: {
-    cursor: { module: '@cursor/sdk', available: () => sdk.available },
+    cursor: {
+      module: '@cursor/sdk',
+      probe: () =>
+        sdk.available
+          ? { available: true, origin: 'sidecar', location: '/opt/c3/node_modules/@cursor/sdk' }
+          : { available: false },
+    },
   },
 }))
 

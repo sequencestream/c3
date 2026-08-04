@@ -10,6 +10,7 @@ import { VENDOR_IDS } from '@ccc/shared/protocol'
 import type {
   VendorHostStatus,
   VendorId,
+  VendorRuntimeOrigin,
   VendorRuntimeStatus,
   VendorUnavailableReason,
 } from '@ccc/shared/protocol'
@@ -67,4 +68,20 @@ export function vendorUnavailableReasonKey(
 ): LocaleKey | null {
   if (!status || status.available || !status.reason) return null
   return VENDOR_UNAVAILABLE_REASON_KEY[status.reason]
+}
+
+/**
+ * 解析来源码 → i18n key。与原因码同一套约定:服务端只说来源是哪一类,"从哪装的"
+ * 这句话由前端本地化。
+ */
+export const VENDOR_RUNTIME_ORIGIN_KEY = {
+  installed: 'common.vendor.origin.installed',
+  sidecar: 'common.vendor.origin.sidecar',
+  override: 'common.vendor.origin.override',
+} as const satisfies Record<VendorRuntimeOrigin, LocaleKey>
+
+/** 取解析来源的 i18n key;不可用或未给出来源时返回 null,调用方不渲染该列。 */
+export function vendorRuntimeOriginKey(status: VendorAvailability | undefined): LocaleKey | null {
+  if (!status || !status.available || !status.origin) return null
+  return VENDOR_RUNTIME_ORIGIN_KEY[status.origin]
 }

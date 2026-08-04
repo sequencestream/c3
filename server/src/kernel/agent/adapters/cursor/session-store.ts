@@ -26,6 +26,7 @@ import type {
   SessionStore,
   SessionSummary,
 } from '../types.js'
+import { loadCursorSdk } from './sdk-resolve.js'
 
 /** One agent as the SDK's local store lists it (the fields c3 consumes). */
 export interface CursorStoredAgent {
@@ -55,14 +56,14 @@ export interface CursorSessionSource {
 }
 
 /**
- * The default source — the SDK's local-runtime store. Imported lazily so that
- * merely constructing the adapter never pulls the SDK's native runtime into the
- * process, and a failure to load it degrades to an empty listing rather than
- * taking the session list down with it.
+ * The default source — the SDK's local-runtime store, loaded lazily through the
+ * shared resolution boundary so that merely constructing the adapter never pulls
+ * the SDK's native runtime into the process, and the store reads the same copy the
+ * driver runs.
  */
 const sdkSource: CursorSessionSource = {
   async list(cwd) {
-    const { Agent } = await import('@cursor/sdk')
+    const { Agent } = await loadCursorSdk()
     const result = await Agent.list({ runtime: 'local', cwd })
     return result.items.map((item) => ({
       agentId: item.agentId,
@@ -73,7 +74,7 @@ const sdkSource: CursorSessionSource = {
     }))
   },
   async messages(agentId, cwd) {
-    const { Agent } = await import('@cursor/sdk')
+    const { Agent } = await loadCursorSdk()
     return (await Agent.messages.list(agentId, { runtime: 'local', cwd })) as CursorStoredMessage[]
   },
 }

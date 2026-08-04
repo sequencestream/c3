@@ -299,6 +299,10 @@ const title = ref('')
 const claudeMode = ref<string>('default')
 const codexSandboxMode = ref<CodexSandboxMode>('workspace-write')
 const codexApprovalPolicy = ref<CodexApprovalPolicy>('on-request')
+// Cursor's selectable automation modes — its own catalog tokens, in catalog
+// order. The dispatcher reads the stored token through the same catalog, so the
+// form offers exactly what the executor can honour.
+const CURSOR_AUTOMATION_MODES: readonly string[] = ['plan', 'agent', 'full-access']
 const cursorMode = ref<string>('agent')
 const command = ref('')
 const prompt = ref('')
@@ -460,9 +464,11 @@ watch(
             legacy === 'read-only' || legacy === 'full-access' ? 'never' : 'on-request'
         }
       } else if (sched.vendor === 'cursor') {
-        // Cursor's mode is a single token ('agent' / 'full-access').
+        // Cursor's mode is a single token from its own catalog — the same three
+        // the dispatcher resolves. Anything else (a legacy McpMode string, an
+        // imported row) falls to the catalog default rather than being invented.
         const m = typeof sched.mode === 'string' ? sched.mode : 'agent'
-        cursorMode.value = m === 'agent' || m === 'full-access' ? m : 'agent'
+        cursorMode.value = CURSOR_AUTOMATION_MODES.includes(m) ? m : 'agent'
       } else {
         // claude
         const m = typeof sched.mode === 'string' ? sched.mode : 'default'
@@ -1504,7 +1510,9 @@ function save(): void {
                 v-else-if="vendor === 'cursor'"
                 v-model="cursorMode"
                 class="sf-input sf-select"
+                data-testid="automation-cursor-mode"
               >
+                <option value="plan">{{ t('nav.mode.plan.label') }}</option>
                 <option value="agent">{{ t('nav.mode.agent.label') }}</option>
                 <option value="full-access">{{ t('nav.mode.fullAccess.label') }}</option>
               </select>

@@ -212,14 +212,21 @@ CLI 行渲染。
 讨论参与者可以是 Cursor,但研究会话的组织者仍只允许 Claude —— 本变更不借此放宽编排
 约束。
 
-**automation 是唯一的例外**:Cursor 没有 dispatcher 执行路径,故自动化表单把它灰显
-并标注"不支持自动化",LLM 型任务**新选中**它时禁止保存;系统配置的 automation agent
-跟随链若解析到 Cursor,表单不把它当作可提交的默认值,而是回落到受支持的 vendor 并要求
-用户显式改选。表单灰显与调度期 hard-fail 读的是同一份 `AUTOMATION_VENDORS` 列表,所以
-表单不可能提供一个 dispatcher 会拒绝的选择。既有的 Cursor automation 仍可查看与编辑,
-其 vendor 不被 UI 门控静默改写 —— 该 vendor 选项对这条记录保持可选,保存门控也放行它,
-名称/提示词/触发条件等无关字段照常可改可存(表单提示分派时会直接失败);禁止保存只针对
-把一条记录**新改成**不受支持的 vendor。
+**automation 同样不再例外**:`AUTOMATION_VENDORS` 已含 cursor,dispatcher 有自己的
+cursor 分支,自动化表单因此按普通 vendor 处理它 —— 可新选、可绑定同 vendor 的启用 Agent、
+可保存,系统配置的 automation agent 跟随链解析到 Cursor 时直接作为默认执行身份。表单灰显
+与分派门控读的仍是同一份列表,所以表单不可能提供一个 dispatcher 会拒绝的选择;而"运行时
+此刻可不可用"是另一项独立条件:SDK 解析不到时选项仍按 `sdk-unresolved` 灰显并就地标注原因。
+
+自动化里的 Cursor 与会话里的 Cursor 是同一套语义:mode 由 `cursorModeCatalog` 解析
+(`plan` / `agent` / `full-access`,其余令牌降级到目录默认 `agent`),需要隔离时仍由中立的
+`sandboxed` 交给 SDK 自带 sandbox(自动化目前没有沙箱开关,三个 vendor 一致不置该标志),
+凭据仍是"agent 的 `apiKey` → 本轮
+`envOverrides.CURSOR_API_KEY` → 服务端环境变量",c3 的回环 HTTP MCP 经
+`driver.start({ mcpServers })` 注入(与 claude/codex 同一条路由,不额外开进程内工具通道)。
+失败在**分派期**就结清且可行动:SDK 不可解析记 `cursor_sdk_unresolved`,三处凭据皆空由
+启动前置校验以同时点名 agent 字段与 `CURSOR_API_KEY` 的错误失败,绑定 Agent 缺失/禁用/
+vendor 不匹配各记自己的原因码 —— 任何一条都不改写 automation 的 vendor,也不跨 vendor 回退。
 
 数据根恒为 `$HOME/.cursor`:SDK 的 local agent store 落在
 `~/.cursor/projects/<workspace>/sdk-agent-store/…`,与运行加载的工作区 rules /
@@ -270,11 +277,12 @@ store 能应答;`CURSOR_SDK_PATH` 压过旁挂,而无效覆盖被拒绝并回落
 且平台覆盖受上游 `@cursor/sdk` 发布矩阵约束。
 
 非目标:不驱动 `cursor-agent` CLI;不把 SDK 或平台原生包打进二进制主体;不建设
-进程内 customTools 工具通道(`inProcessMcp` 恒为 false);不读取或逆向 Cursor IDE
-的私有 chat 库;不冒充 Cursor 可恢复真相;不支持 custom/relay 自定义 provider、
-逐工具审批、Cursor IDE 历史同步、partial streaming、完整 diff/patch、token 用量、
-subagent 嵌套展示、automation 执行。Cursor automation 无执行路径,会在调度期
-hard-fail,而非借道 Claude 引擎。
+进程内 customTools 工具通道(`inProcessMcp` 恒为 false —— automation 的 c3 工具同样
+只经统一的回环 HTTP MCP 路由到达);不读取或逆向 Cursor IDE 的私有 chat 库;不冒充
+Cursor 可恢复真相;不支持 custom/relay 自定义 provider、逐工具审批、Cursor IDE 历史
+同步、partial streaming、完整 diff/patch、token 用量、subagent 嵌套展示。automation
+执行已接通(见"控制台配置入口与消费面"),但失败仍在分派期 hard-fail,而非借道
+Claude 引擎。
 
 ## 待探针解锁
 

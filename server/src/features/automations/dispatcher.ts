@@ -3,7 +3,9 @@
  *
  * Routes execution to the appropriate handler based on automation type:
  * - `command` → child_process.spawn with hard timeout + optional retry
- * - `llm` → SDK query() with wall-clock timeout + output schema validation
+ * - `llm` → the automation's own vendor executor under a wall-clock timeout:
+ *   claude drives the SDK's `query()` (plus output schema validation), codex and
+ *   cursor drive their adapter's `driver.start()` through one shared lifecycle
  *
  * Both handlers share the same update-log callback pattern: the caller
  * (scheduler) owns the `updateLog` closure that persists execution results.
@@ -42,6 +44,17 @@ import { loadSettings } from '../../kernel/config/index.js'
 import { createCodexAdapter } from '../../kernel/agent/adapters/codex/index.js'
 import { codexPolicyToGrid } from '../../kernel/agent/adapters/codex/driver.js'
 import { resolveCodexGhTokenEnv } from '../../kernel/agent/adapters/codex/gh-token.js'
+import {
+  createCursorAdapter,
+  cursorModeCatalog,
+  cursorSdkAvailable,
+} from '../../kernel/agent/adapters/cursor/index.js'
+import { tokenToGrid } from '../../kernel/agent/adapters/mode-catalog.js'
+import type {
+  AgentRun,
+  DriverStartOptions,
+  RemoteMcpServer,
+} from '../../kernel/agent/adapters/types.js'
 import { getWorkspaceMcpConfig, isAgentQuotaRecoveryConfig } from './store.js'
 import {
   freezeTools,
@@ -60,10 +73,10 @@ import { WireEmitter } from '../../kernel/run/run-via-driver.js'
 import { AutomationViewerStream, translateClaudeSdkMessage } from './viewer-stream.js'
 
 // ---------------------------------------------------------------------------
-// Automation c3 MCP route (the SINGLE loopback HTTP MCP transport both Claude and
-// Codex automations bind). Injected by the composition root at startup — the
-// dispatcher runs off the kernel run bus, so it holds the served route as a
-// module-level handle it `bind()`s per execution for either vendor.
+// Automation c3 MCP route (the SINGLE loopback HTTP MCP transport every vendor's
+// automations bind). Injected by the composition root at startup — the dispatcher
+// runs off the kernel run bus, so it holds the served route as a module-level
+// handle it `bind()`s per execution, whichever vendor is executing.
 // ---------------------------------------------------------------------------
 
 let automationHttpMcp: ServedAutomationMcp | null = null
@@ -618,10 +631,10 @@ async function executeLlmPrompt(
   }
   const { model, envOverrides: launchEnv, relayCandidates } = launchForAgent(launchAgent)
 
-  // A vendor with no execution path (cursor today) must fail loudly here — never
-  // fall through to the claude SDK and run under the wrong engine. The set is the
-  // shared `AUTOMATION_VENDORS`, the same list the console's automation form greys
-  // out from, so an offer the dispatcher would refuse cannot be made. A record that
+  // A vendor with no execution path must fail loudly here — never fall through to
+  // the claude SDK and run under the wrong engine. The set is the shared
+  // `AUTOMATION_VENDORS`, the same list the console's automation form greys out
+  // from, so an offer the dispatcher would refuse cannot be made. A record that
   // reached the store by import or a hand-edit still lands here and hard-fails.
   if (!vendorSupportsAutomation(automation.vendor)) {
     clearTimeout(timeoutTimer)
@@ -635,6 +648,12 @@ async function executeLlmPrompt(
 
   if (automation.vendor === 'codex') {
     await executeCodexLlmPrompt(automation, logId, updateLog, prompt, abortController, launchAgent)
+    clearTimeout(timeoutTimer)
+    return
+  }
+
+  if (automation.vendor === 'cursor') {
+    await executeCursorLlmPrompt(automation, logId, updateLog, prompt, abortController, launchAgent)
     clearTimeout(timeoutTimer)
     return
   }
@@ -811,56 +830,53 @@ async function executeLlmPrompt(
   }
 }
 
-async function executeCodexLlmPrompt(
+/**
+ * Bind the loopback HTTP automation MCP for ONE execution, or null.
+ *
+ * The c3 MCP route is opt-in: only an explicit `mcp__c3__*` entry in this
+ * automation's allowlist mounts it (an empty allowlist does not implicitly grant
+ * c3). Every driver vendor binds the SAME route — there is no per-vendor
+ * transport — and the caller disposes the token on every terminal path.
+ */
+function bindAutomationC3Mcp(
+  automation: Automation,
+  logId: string,
+): { servers: Record<string, RemoteMcpServer>; dispose(): void } | null {
+  if (!automationHttpMcp) return null
+  if (!hasSelectedC3McpTool(automation.toolAllowlist ?? [])) return null
+  return automationHttpMcp.bind({
+    workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
+    executionId: logId,
+    metadata: automation.metadata,
+  })
+}
+
+/**
+ * The execution lifecycle every driver-shaped vendor (codex, cursor) shares:
+ * start the run, bind its session id to the log + the automation viewer, stream
+ * canonical messages into wire events, and settle the runtime, the execution log
+ * and the per-execution MCP token on EVERY terminal path.
+ *
+ * Only what the driver is *told* differs per vendor (the mode grid, credentials,
+ * vendor-specific launch flags); what happens to the run afterwards must not, or
+ * the two vendors would drift into different observable behaviour for the same
+ * failure. The claude branch keeps its own copy — it drives the SDK's `query()`
+ * rather than an {@link AgentRun}.
+ */
+async function runAutomationViaDriver(
   automation: Automation,
   logId: string,
   updateLog: UpdateLogFn,
-  prompt: string,
   abortController: AbortController,
-  agent: AgentConfig,
+  start: () => Promise<AgentRun>,
+  c3Binding: { dispose(): void } | null,
 ): Promise<void> {
-  const policy: CodexPolicy =
-    typeof automation.mode === 'object'
-      ? automation.mode
-      : {
-          sandboxMode: automation.mode === 'read-only' ? 'read-only' : 'workspace-write',
-          approvalPolicy: 'never',
-        }
-  const { actionMode, toolGate } = codexPolicyToGrid(policy)
-  const { model, relayCandidates, envOverrides } = launchForAgent(agent)
-  // Bridge the host `gh` keyring credential into the codex sandbox as `GH_TOKEN`
-  // so PR review/comment/merge shell commands authenticate; network access stays
-  // orthogonal, governed by this automation's sandbox/toolAllowlist settings.
-  const driverEnvOverrides = await resolveCodexGhTokenEnv(envOverrides)
-  // Network access is the `network-access` pseudo-entry in the tool allowlist. It
-  // only makes sense for the `workspace-write` sandbox (a `read-only` sandbox is
-  // network-denied unconditionally), so gate on both. When unselected / read-only,
-  // the field is omitted so codex's default (network denied) stands. Claude never
-  // reaches this path — it ignores the flag entirely.
-  const networkAccess =
-    policy.sandboxMode === 'workspace-write' &&
-    hasSelectedNetworkAccess(automation.toolAllowlist ?? [])
-  // The c3 MCP route is opt-in: only an explicit c3 entry in this automation's
-  // allowlist mounts it (an empty allowlist does not implicitly grant c3). When
-  // selected, bind the loopback HTTP MCP for THIS execution and hand codex the c3
-  // descriptor; the token is disposed in `finally` on every terminal path so no
-  // execution can call the tools after it ends. The read/write authorization rules
-  // are unchanged — this only makes the tools visible to codex.
-  const selectedC3Mcp = hasSelectedC3McpTool(automation.toolAllowlist ?? [])
-  const c3Binding =
-    selectedC3Mcp && automationHttpMcp
-      ? automationHttpMcp.bind({
-          workspacePath: resolveWorkspaceRoot(automation.workspaceId)!,
-          executionId: logId,
-          metadata: automation.metadata,
-        })
-      : null
   // Bound once the driver reports the real session id; used by `finally` to settle
   // the runtime to idle. Null until bound.
   let runningSessionId: string | null = null
-  // Viewer stream + canonical→wire diff. Codex resolves its session id up-front
-  // (`await run.sessionId()`), so the pre-session-id buffer is normally empty, but
-  // the same path is used for symmetry with the claude executor.
+  // Viewer stream + canonical→wire diff. A driver vendor resolves its session id
+  // up-front (`await run.sessionId()`), so the pre-session-id buffer is normally
+  // empty, but the same path is used for symmetry with the claude executor.
   const viewer = new AutomationViewerStream((sid) =>
     registerAutomationRuntime(automation, sid, abortController),
   )
@@ -868,22 +884,7 @@ async function executeCodexLlmPrompt(
   let settleReason: 'complete' | 'error' = 'complete'
   let settleError: string | undefined
   try {
-    const run = await createCodexAdapter(
-      undefined,
-      undefined,
-      getRelay() ?? undefined,
-    ).driver.start({
-      prompt,
-      cwd: resolveWorkspaceRoot(automation.workspaceId)!,
-      signal: abortController.signal,
-      actionMode,
-      toolGate,
-      ...(model ? { model } : {}),
-      ...(relayCandidates ? { relayCandidates } : {}),
-      ...(networkAccess ? { networkAccess: true } : {}),
-      ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
-      ...(c3Binding ? { mcpServers: c3Binding.servers } : {}),
-    })
+    const run = await start()
     const sessionId = await run.sessionId()
     if (sessionId) {
       updateLog(logId, { sessionId })
@@ -926,4 +927,129 @@ async function executeCodexLlmPrompt(
     // this execution ends (idempotent; no-op when c3 was not selected).
     c3Binding?.dispose()
   }
+}
+
+async function executeCodexLlmPrompt(
+  automation: Automation,
+  logId: string,
+  updateLog: UpdateLogFn,
+  prompt: string,
+  abortController: AbortController,
+  agent: AgentConfig,
+): Promise<void> {
+  const policy: CodexPolicy =
+    typeof automation.mode === 'object'
+      ? automation.mode
+      : {
+          sandboxMode: automation.mode === 'read-only' ? 'read-only' : 'workspace-write',
+          approvalPolicy: 'never',
+        }
+  const { actionMode, toolGate } = codexPolicyToGrid(policy)
+  const { model, relayCandidates, envOverrides } = launchForAgent(agent)
+  // Bridge the host `gh` keyring credential into the codex sandbox as `GH_TOKEN`
+  // so PR review/comment/merge shell commands authenticate; network access stays
+  // orthogonal, governed by this automation's sandbox/toolAllowlist settings.
+  const driverEnvOverrides = await resolveCodexGhTokenEnv(envOverrides)
+  // Network access is the `network-access` pseudo-entry in the tool allowlist. It
+  // only makes sense for the `workspace-write` sandbox (a `read-only` sandbox is
+  // network-denied unconditionally), so gate on both. When unselected / read-only,
+  // the field is omitted so codex's default (network denied) stands. Claude never
+  // reaches this path — it ignores the flag entirely.
+  const networkAccess =
+    policy.sandboxMode === 'workspace-write' &&
+    hasSelectedNetworkAccess(automation.toolAllowlist ?? [])
+  // When c3 tools are selected, codex receives the SAME loopback HTTP descriptor
+  // the other vendors get; the read/write authorization rules are unchanged — the
+  // route only makes the tools visible.
+  const c3Binding = bindAutomationC3Mcp(automation, logId)
+  const startOptions: DriverStartOptions = {
+    prompt,
+    cwd: resolveWorkspaceRoot(automation.workspaceId)!,
+    signal: abortController.signal,
+    actionMode,
+    toolGate,
+    ...(model ? { model } : {}),
+    ...(relayCandidates ? { relayCandidates } : {}),
+    ...(networkAccess ? { networkAccess: true } : {}),
+    ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
+    ...(c3Binding ? { mcpServers: c3Binding.servers } : {}),
+  }
+  await runAutomationViaDriver(
+    automation,
+    logId,
+    updateLog,
+    abortController,
+    () =>
+      createCodexAdapter(undefined, undefined, getRelay() ?? undefined).driver.start(startOptions),
+    c3Binding,
+  )
+}
+
+/**
+ * The cursor `llm` executor.
+ *
+ * Cursor's runtime is the in-process `@cursor/sdk`, so there is no child process
+ * to spawn and no wrapper to narrow: the dispatcher hands the adapter neutral
+ * {@link DriverStartOptions} and the SDK does the rest. Two things are resolved
+ * here and nowhere else:
+ *
+ *  - **Availability.** The SDK is a deployment artifact (an npm dependency or the
+ *    binary's sidecar tree), not a host CLI, so an unresolvable copy is a
+ *    dispatch-time failure with a locatable reason — never a fall-through to
+ *    another vendor's engine.
+ *  - **Credential.** The SDK authenticates with an API key only. The bound
+ *    agent's own key travels on the run's env map (the one credential channel
+ *    `DriverStartOptions` has); empty ⇒ the driver falls back to the server's
+ *    ambient `CURSOR_API_KEY` and fails at the door when that is empty too, with
+ *    a message naming both places.
+ *
+ * The mode is read through `cursorModeCatalog`, so `plan` / `agent` /
+ * `full-access` mean exactly what they mean in a cursor session (and any other
+ * stored token degrades to the catalog default) — no borrowing of claude's or
+ * codex's reading of the same word.
+ */
+async function executeCursorLlmPrompt(
+  automation: Automation,
+  logId: string,
+  updateLog: UpdateLogFn,
+  prompt: string,
+  abortController: AbortController,
+  agent: AgentConfig,
+): Promise<void> {
+  if (!cursorSdkAvailable()) {
+    updateLog(logId, {
+      finishedAt: Date.now(),
+      status: 'failed',
+      error: 'cursor_sdk_unresolved',
+    })
+    return
+  }
+  const { actionMode, toolGate } = tokenToGrid(
+    cursorModeCatalog,
+    typeof automation.mode === 'string' ? automation.mode : cursorModeCatalog.defaultToken,
+  )
+  const { model, envOverrides } = launchForAgent(agent)
+  const apiKey = agent.vendor === 'cursor' ? agent.config.apiKey?.trim() : undefined
+  const driverEnvOverrides = apiKey
+    ? { ...(envOverrides ?? {}), CURSOR_API_KEY: apiKey }
+    : envOverrides
+  const c3Binding = bindAutomationC3Mcp(automation, logId)
+  const startOptions: DriverStartOptions = {
+    prompt,
+    cwd: resolveWorkspaceRoot(automation.workspaceId)!,
+    signal: abortController.signal,
+    actionMode,
+    toolGate,
+    ...(model ? { model } : {}),
+    ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
+    ...(c3Binding ? { mcpServers: c3Binding.servers } : {}),
+  }
+  await runAutomationViaDriver(
+    automation,
+    logId,
+    updateLog,
+    abortController,
+    () => createCursorAdapter().driver.start(startOptions),
+    c3Binding,
+  )
 }

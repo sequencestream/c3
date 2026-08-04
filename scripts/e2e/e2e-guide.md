@@ -393,6 +393,38 @@ original settings snapshot is restored on every exit path.
 - `node scripts/e2e/e2e-cursor-agent-config-test.mjs ws://localhost:13000/ws` →
   `RESULT: PASS` on success; 1 = a step failed.
 
+## Cursor automation (dispatch → run → failure branches)
+
+Covers the automation half of Cursor support: that a `vendor: 'cursor'` `llm`
+automation can be created, manually triggered, and executed by the dispatcher's
+cursor branch — the vendor the dispatcher used to hard-fail on. It seeds a
+throwaway workspace plus a Cursor agent, creates one paused cron automation
+(manual trigger only), and reads the execution log back off
+`get_automation_detail`.
+
+In the `pnpm e2e` suite and, like the agent-config test, deliberately **without a
+SKIP branch** — each environment has its own assertion for the main run:
+
+- `@cursor/sdk` unresolvable → the execution must fail with the locatable
+  `cursor_sdk_unresolved` and bind no session;
+- SDK resolvable, no `CURSOR_API_KEY` → the failure message must name BOTH the
+  agent's `apiKey` field and the environment variable;
+- SDK resolvable + key present → one short tool-less `llm_prompt` run completes
+  with `success`, a non-empty output and a replayable session id (spends a small
+  amount of real quota).
+
+Two failure branches are asserted in every environment by rewriting the agent
+list mid-test: a **disabled** bound agent → `automation_agent_disabled`, a
+**deleted** one → `automation_agent_not_found`. Afterwards the automation must
+still carry `vendor: 'cursor'` and its original `agentId` — a failed automation
+never falls back to another vendor or agent. It runs last (after the agent-config
+test) because it temporarily rewrites the agent list; the original settings
+snapshot is restored on every exit path.
+
+- Start the server: `pnpm start --port 13000`
+- `node scripts/e2e/e2e-cursor-automation-test.mjs ws://localhost:13000/ws` →
+  `RESULT: PASS` on success; 1 = a step failed.
+
 ## Sandbox vendor token test (real request through arapuca)
 
 Complements the token-free capability probe: uses a real agent from

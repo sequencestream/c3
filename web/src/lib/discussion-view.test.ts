@@ -576,6 +576,30 @@ describe('discussion-view — correctActiveTab(当前 tab 不可见时回落)', 
     // 回落时研究在跑但目标讨论无会话 → 依旧走静态链,不会指向不存在的 tab
     expect(correctActiveTab(unbound, 'researchSession', true)).toBe('conclusion')
   })
+
+  it('研究跑批中 researchSession tab 后出现:未手动选过 tab 则自动跟随过去', () => {
+    // 创建流:详情先到(尚无 researchSessionId)→ 落 process
+    const before = discussionDetailTabs(disc({}), TABS_T)
+    expect(defaultDiscussionTab(before, false)).toBe('process')
+    // 研究跑批启动并回写 session id → tab 出现,当前 process 仍可见但自动移到研究会话
+    const after = discussionDetailTabs(disc({ researchSessionId: 's-res' }), TABS_T)
+    expect(correctActiveTab(after, 'process', true, false)).toBe('researchSession')
+  })
+
+  it('用户已手动选过 tab:研究跑批中也不被拉走', () => {
+    const tabs = discussionDetailTabs(disc({ goal: 'G', researchSessionId: 's-res' }), TABS_T)
+    expect(correctActiveTab(tabs, 'details', true, true)).toBe('details')
+    expect(correctActiveTab(tabs, 'goal', true, true)).toBe('goal')
+    // 手动选中的 tab 消失时仍按默认链回落(研究在跑 → 短路到研究会话)
+    const gone = discussionDetailTabs(disc({ researchSessionId: 's-res' }), TABS_T)
+    expect(correctActiveTab(gone, 'goal', true, true)).toBe('researchSession')
+  })
+
+  it('研究结束:不产生反向跳转,原 tab 原样保留', () => {
+    const tabs = discussionDetailTabs(disc({ researchSessionId: 's-res' }), TABS_T)
+    expect(correctActiveTab(tabs, 'researchSession', false, false)).toBe('researchSession')
+    expect(correctActiveTab(tabs, 'process', false, false)).toBe('process')
+  })
 })
 
 describe('discussion-view — agendaProgressView(议程进度选择器)', () => {

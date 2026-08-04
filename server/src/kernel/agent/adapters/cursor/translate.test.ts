@@ -7,7 +7,11 @@ import { describe, it, expect } from 'vitest'
 import type { CanonicalMessage } from '../types.js'
 import { CursorStreamTranslator, type CursorEvent } from './translate.js'
 
-/** Run a frame sequence through a fresh translator, collecting emitted messages. */
+/**
+ * Run a frame sequence through a fresh translator, collecting emitted messages.
+ * The trailing `flush` mirrors what the driver does when the stream ends, so
+ * these assertions read the whole turn's output rather than a half-open span.
+ */
 function translate(events: CursorEvent[]): {
   messages: CanonicalMessage[]
   last: ReturnType<CursorStreamTranslator['consume']>
@@ -20,6 +24,7 @@ function translate(events: CursorEvent[]): {
     last = translator.consume(event)
     messages.push(...last.messages)
   }
+  messages.push(...translator.flush().messages)
   return { messages, last, translator }
 }
 
@@ -75,12 +80,28 @@ describe('user echo', () => {
 })
 
 describe('assistant text', () => {
-  it('re-emits the whole span cumulatively under one id', () => {
+  it('joins the token deltas of one span into a single block', () => {
     const { messages } = translate([text('Hello, '), text('world')])
-    expect(textBlocks(messages)).toEqual([
-      ['assistant-0', 'Hello, '],
-      ['assistant-0', 'Hello, world'],
+    expect(textBlocks(messages)).toEqual([['assistant-0', 'Hello, world']])
+  })
+
+  it('emits nothing while the span is still open, so a reply is never split', () => {
+    const translator = new CursorStreamTranslator()
+    // Every consumer downstream reads one emitted text as one whole message, so
+    // a mid-span emission would render each token as its own transcript entry.
+    expect(translator.consume(text('Hel')).messages).toHaveLength(0)
+    expect(translator.consume(text('lo')).messages).toHaveLength(0)
+    expect(textBlocks(translator.flush().messages)).toEqual([['assistant-0', 'Hello']])
+  })
+
+  it('emits the open span on the terminal status frame', () => {
+    const { messages } = translate([
+      text('done'),
+      { type: 'status', agent_id: 'agent-1', run_id: 'run-1', status: 'FINISHED' },
     ])
+    // Emitted by the status frame itself — the helper's trailing flush finds
+    // nothing left, so the block appears exactly once.
+    expect(textBlocks(messages)).toEqual([['assistant-0', 'done']])
   })
 
   it('starts a new span after a tool call, so text is never retro-appended', () => {
@@ -110,7 +131,7 @@ describe('assistant text', () => {
 })
 
 describe('thinking', () => {
-  it('joins reasoning deltas into one cumulative block', () => {
+  it('joins reasoning deltas into one block', () => {
     const think = (t: string): CursorEvent => ({
       type: 'thinking',
       agent_id: 'agent-1',
@@ -119,11 +140,7 @@ describe('thinking', () => {
     })
     const { messages } = translate([think('step '), think('two')])
     const blocks = messages.flatMap((m) => m.blocks).filter((b) => b.type === 'thinking')
-    expect(blocks.map((b) => (b.type === 'thinking' ? b.thinking : ''))).toEqual([
-      'step ',
-      'step two',
-    ])
-    expect(new Set(blocks.map((b) => b.id)).size).toBe(1)
+    expect(blocks.map((b) => (b.type === 'thinking' ? b.thinking : ''))).toEqual(['step two'])
   })
 
   it('closes the span on the empty completion frame and opens a new one after', () => {

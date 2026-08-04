@@ -124,21 +124,21 @@ describe('CursorDriver', () => {
     )
   })
 
-  it('accumulates text deltas cumulatively under one block id', async () => {
+  it('joins text deltas into one block, flushed when the stream ends', async () => {
     const delta = (text: string) => ({
       type: 'assistant',
       agent_id: 'agent-1',
       run_id: 'run-1',
       message: { role: 'assistant', content: [{ type: 'text', text }] },
     })
+    // No terminal `status` frame here: the span is still open when the stream
+    // runs out, so only the driver's own flush can deliver the reply at all.
     const { sdk } = fakeSdk({ events: [delta('one '), delta('two')] })
     const run = await driverFor(sdk).start(startOpts())
     const texts = (await collect(run.messages()))
       .flatMap((m) => m.blocks)
       .filter((b) => b.type === 'text')
-    // The wire consumer diffs by suffix, so the second frame must carry the whole span.
-    expect(texts.map((b) => (b.type === 'text' ? b.text : ''))).toEqual(['one ', 'one two'])
-    expect(new Set(texts.map((b) => b.id)).size).toBe(1)
+    expect(texts.map((b) => (b.type === 'text' ? b.text : ''))).toEqual(['one two'])
   })
 
   it('resumes by agent id instead of creating a new agent', async () => {

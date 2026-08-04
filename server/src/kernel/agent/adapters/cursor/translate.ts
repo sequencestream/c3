@@ -14,19 +14,21 @@
  *   `task`        — the runtime's own summarization bookkeeping.
  *   `usage`       — per-turn token usage, emitted once at turn end.
  *
- * Two properties of c3's wire consumer shape everything here. First, blocks are
- * append-with-**id-upsert**, so a block that revises an earlier one must reuse
- * its id. Second, the consumer emits only the *new suffix* of a text block, so
- * text carried under a stable id must always be **cumulative**, never a delta —
- * forwarding the SDK's deltas verbatim under one id would truncate the visible
- * output. This translator therefore accumulates text itself and re-emits the
- * whole span.
+ * One property of c3's transcript shapes everything here: across every vendor a
+ * single canonical text block carries a WHOLE span of prose, never a fragment of
+ * one. Claude and Codex both hand their adapters complete blocks, and every
+ * downstream consumer — the browser's chat bubbles, the automation completion
+ * judge, the discussion write-back — reads one emitted text as one message.
+ * Cursor is the only vendor whose stream is token-level, so forwarding its deltas
+ * as they arrive would shatter a single reply into dozens of transcript entries
+ * and hand those consumers a lone token where a paragraph belongs. This
+ * translator therefore accumulates a span and emits it ONCE, when the span ends.
  *
  * Span boundaries, in the order the wire model requires:
- *  - Text accumulates into one open block until something interrupts it (a tool
- *    call, a reasoning span, the turn's end). The next delta then opens a NEW
- *    block, so text that follows a tool call is never retro-appended in front of
- *    it and the transcript keeps the order the model produced.
+ *  - Text accumulates until something ends it (a tool call, a reasoning span, the
+ *    turn's end) and is emitted at that point as one block. The next delta opens
+ *    a NEW block, so text that follows a tool call is never retro-appended in
+ *    front of it and the transcript keeps the order the model produced.
  *  - Tool frames carry a stable `call_id`, identical on the running and the
  *    completed frame, so results are back-filled onto the same `tool_use` block
  *    by that id. Frames are never paired by arrival order, which would
@@ -173,17 +175,17 @@ const TERMINAL_STATUS: Readonly<Record<string, { isError: boolean; message: stri
  * Stateful normalizer for one Cursor run.
  *
  * State exists for three reasons the stream forces on us: text arrives as deltas
- * that must be re-emitted cumulatively under one id, reasoning arrives the same
- * way and must be joined into one block, and tool results arrive in separate
- * frames that must find their originating call by id.
+ * that must be joined into one block before anything sees them, reasoning arrives
+ * the same way, and tool results arrive in separate frames that must find their
+ * originating call by id.
  */
 export class CursorStreamTranslator {
   private sessionId: string
-  /** Reasoning accumulated for the open thinking span. */
+  /** Reasoning accumulated for the open thinking span, emitted when it ends. */
   private thinking = ''
   /** Id of the open thinking span; cleared when the span completes. */
   private thinkingId: string | null = null
-  /** Text accumulated for the open assistant span. */
+  /** Text accumulated for the open assistant span, emitted when it ends. */
   private assistant = ''
   /** Id of the open assistant span; cleared when something interrupts it. */
   private assistantId: string | null = null
@@ -201,6 +203,41 @@ export class CursorStreamTranslator {
   /** The native session id observed so far (empty until a frame reports one). */
   get currentSessionId(): string {
     return this.sessionId
+  }
+
+  /**
+   * Emit whatever span is still open. The driver calls this once the stream is
+   * exhausted: a turn whose last frame is prose — no closing tool call, no
+   * terminal `status` frame on the stream — would otherwise leave its final
+   * paragraph accumulated and never emitted. Idempotent: with nothing open it
+   * yields nothing.
+   */
+  flush(): CursorTranslation {
+    return { messages: [...this.closeThinking(), ...this.closeAssistant()] }
+  }
+
+  /**
+   * Emit the open prose span, if any, and close it. Called at every boundary —
+   * the next delta must open a new block rather than extend a span the model has
+   * already moved past.
+   */
+  private closeAssistant(): CanonicalMessage[] {
+    const text = this.assistant
+    const id = this.assistantId
+    this.assistant = ''
+    this.assistantId = null
+    if (!id || !text) return []
+    return [this.envelope('assistant', [{ type: 'text', text, id }])]
+  }
+
+  /** Emit the open reasoning span, if any, and close it. */
+  private closeThinking(): CanonicalMessage[] {
+    const thinking = this.thinking
+    const id = this.thinkingId
+    this.thinking = ''
+    this.thinkingId = null
+    if (!id || !thinking) return []
+    return [this.envelope('assistant', [{ type: 'thinking', thinking, id }])]
   }
 
   /** Translate one frame. Frames that carry no canonical meaning yield nothing. */
@@ -247,39 +284,28 @@ export class CursorStreamTranslator {
   }
 
   /**
-   * Native reasoning. Deltas accumulate into a single block re-emitted in full,
-   * which is what keeps the consumer's suffix-diffing correct. The closing frame
-   * carries no text (only a duration), so it ends the span rather than extending it.
+   * Native reasoning. Deltas accumulate into a single block, emitted whole when
+   * the span ends. The closing frame carries no text (only a duration), so it is
+   * what ends the span rather than extending it.
    */
   private onThinking(event: CursorEvent): CursorTranslation {
     const delta = str(event.text)
-    if (!delta) {
-      // Empty text closes the span — the SDK's `thinking-completed` shape.
-      this.thinking = ''
-      this.thinkingId = null
-      return EMPTY
-    }
+    // Empty text closes the span — the SDK's `thinking-completed` shape.
+    if (!delta) return { messages: this.closeThinking() }
 
-    // Reasoning interrupts any open prose span: the next text delta must start
-    // its own block rather than reopening one the model has moved past.
-    this.assistantId = null
-    this.assistant = ''
+    // Reasoning ends any open prose span: what the model said before it reasoned
+    // is a finished paragraph, and the next text delta starts its own block.
+    const messages = this.closeAssistant()
 
     this.thinkingId ??= `thinking-${this.thinkingSeq++}`
     this.thinking += delta
 
-    return {
-      messages: [
-        this.envelope('assistant', [
-          { type: 'thinking', thinking: this.thinking, id: this.thinkingId },
-        ]),
-      ],
-    }
+    return { messages }
   }
 
   /**
-   * An assistant text delta. Accumulated under one id and always re-emitted in
-   * full; a new span begins whenever the previous one was interrupted.
+   * An assistant text delta. Accumulated under one id and emitted once, at the
+   * boundary that ends the span; a new span begins after every such boundary.
    */
   private onAssistant(event: CursorEvent): CursorTranslation {
     const text = messageText(event.message)
@@ -287,30 +313,20 @@ export class CursorStreamTranslator {
 
     // Prose ends any open reasoning span, so a later reasoning delta opens a new
     // block instead of appending to one the model has already left behind.
-    this.thinkingId = null
-    this.thinking = ''
+    const messages = this.closeThinking()
 
-    if (this.assistantId === null) {
-      this.assistantId = `assistant-${this.assistantSeq++}`
-      this.assistant = ''
-    }
+    this.assistantId ??= `assistant-${this.assistantSeq++}`
     this.assistant += text
 
-    return {
-      messages: [
-        this.envelope('assistant', [{ type: 'text', text: this.assistant, id: this.assistantId }]),
-      ],
-    }
+    return { messages }
   }
 
   /** A tool frame, correlated by the stable native `call_id`. */
   private onToolCall(event: CursorEvent): CursorTranslation {
-    // A tool call ends the open prose and reasoning spans: whatever the model
-    // says next belongs after the call, not merged into what came before it.
-    this.assistantId = null
-    this.assistant = ''
-    this.thinkingId = null
-    this.thinking = ''
+    // A tool call ends the open prose and reasoning spans: they are emitted here,
+    // ahead of the call, so whatever the model says next lands after it rather
+    // than merged into what came before.
+    const pending = [...this.closeThinking(), ...this.closeAssistant()]
 
     const status = str(event.status)
     const finished = status === 'completed' || status === 'error'
@@ -350,6 +366,7 @@ export class CursorStreamTranslator {
 
     return {
       messages: [
+        ...pending,
         this.envelope('assistant', [block], {
           // Cursor's permission decision is made once at launch; no per-call c3
           // or human ruling exists, so every tool is recorded as pre-approved.
@@ -370,7 +387,9 @@ export class CursorStreamTranslator {
     if (!terminal) return EMPTY
     const message = str(event.message)
     return {
-      messages: [],
+      // The turn is over, so the last span is closed and emitted here — the
+      // driver's own flush then has nothing left to do.
+      messages: this.flush().messages,
       ended: {
         isError: terminal.isError,
         ...(terminal.isError ? { errorMessage: message ?? terminal.message } : {}),

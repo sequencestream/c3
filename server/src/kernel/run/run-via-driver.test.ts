@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import type { CanonicalBlock, CanonicalMessage, VendorAdapter } from '../agent/adapters/types.js'
+import { CursorStreamTranslator, type CursorEvent } from '../agent/adapters/cursor/translate.js'
 import type { EventBus, EventBusEvents } from '../events/event-bus.js'
 import {
   WireEmitter,
@@ -98,6 +99,33 @@ describe('WireEmitter', () => {
       { type: 'tool_use', toolUseId: 'c1', toolName: 'bash', input: { cmd: 'ls' } },
     ])
     expect(out[0]).not.toHaveProperty('preApproved')
+  })
+
+  it("turns Cursor's token-level stream into ONE assistant_text per reply", () => {
+    // Cursor is the only vendor whose SDK streams token deltas. Every consumer of
+    // `assistant_text` — the browser's chat bubbles, the completion judge, the
+    // discussion write-back — reads one frame as one whole message, so a reply
+    // that arrives as N deltas must still leave here as a single frame.
+    const translator = new CursorStreamTranslator('agent-1')
+    const out: ServerToClient[] = []
+    const e = new WireEmitter((m) => out.push(m))
+    const delta = (text: string): CursorEvent => ({
+      type: 'assistant',
+      agent_id: 'agent-1',
+      run_id: 'run-1',
+      message: { role: 'assistant', content: [{ type: 'text', text }] },
+    })
+    for (const event of [
+      delta('Hello'),
+      delta('. How can I help you'),
+      delta(' today?'),
+      { type: 'status', agent_id: 'agent-1', run_id: 'run-1', status: 'FINISHED' },
+    ]) {
+      for (const m of translator.consume(event).messages) e.consume(m)
+    }
+    for (const m of translator.flush().messages) e.consume(m)
+
+    expect(out).toEqual([{ type: 'assistant_text', text: 'Hello. How can I help you today?' }])
   })
 })
 

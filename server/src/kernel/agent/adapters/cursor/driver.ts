@@ -201,6 +201,12 @@ class CursorRun implements AgentRun {
 
       if (this.aborted) return
 
+      // The translator holds a text span open until something ends it. A stream
+      // that stops without a terminal `status` frame — the SDK closing it, a
+      // runtime that ends the turn silently — would otherwise drop the reply's
+      // last paragraph on the floor.
+      for (const message of this.translator.flush().messages) this.queue.push(message)
+
       // `wait()` is the terminal truth: the stream ending only means no more
       // frames, not that the turn succeeded.
       const result = await run.wait()

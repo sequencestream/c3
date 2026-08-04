@@ -18,7 +18,7 @@ const RUNTIME_AVAILABLE: Record<VendorId, VendorRuntimeStatus> = Object.fromEntr
   VENDOR_IDS.map((vendor) => [vendor, { vendor, available: true, runtime: 'host-cli' }]),
 ) as Record<VendorId, VendorRuntimeStatus>
 
-/** 一个 cursor agent —— 运行时可用,但没有 automation 执行路径。 */
+/** 一个 cursor agent —— 运行时可用,且 cursor 有 automation 执行路径。 */
 const CURSOR_AGENT: AgentConfig = {
   id: 'cursor-a',
   vendor: 'cursor',
@@ -689,7 +689,7 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
 
   // ---- Vendors -------------------------------------------------------------
 
-  it('渲染 vendor 下拉选择器,三个品牌均可见;不支持自动化的 vendor 就地标注原因', () => {
+  it('渲染 vendor 下拉选择器,三个品牌均可见;运行时可用时不额外标注原因', () => {
     const w = mountForm()
     const select = w.find('[data-testid="automation-vendor"]')
     expect(select.exists()).toBe(true)
@@ -697,22 +697,17 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(opts).toHaveLength(3)
     expect(opts[0].text()).toBe('Claude')
     expect(opts[1].text()).toBe('Codex')
-    // cursor 没有 automation 执行路径,选项保留但注明原因(不是静默消失)。
-    expect(opts[2].text()).toContain('Cursor')
-    expect(opts[2].text()).not.toBe('Cursor')
+    // cursor 有 dispatcher 执行路径,运行时可用时与其他 vendor 同等呈现。
+    expect(opts[2].text()).toBe('Cursor')
   })
 
-  it('运行时可用但无自动化执行路径的 vendor 选项 disabled', () => {
+  it('三个 vendor 都有执行路径:运行时可用时选项均不 disabled', () => {
     const w = mountForm()
     const opts = w.findAll('[data-testid="automation-vendor"] option')
-    // claude / codex 有执行路径且运行时可用 → 可选
-    expect(opts[0].attributes('disabled')).toBeUndefined()
-    expect(opts[1].attributes('disabled')).toBeUndefined()
-    // cursor 运行时可用,但 dispatcher 没有它的执行路径 → 灰显
-    expect(opts[2].attributes('disabled')).toBeDefined()
+    for (const opt of opts) expect(opt.attributes('disabled')).toBeUndefined()
   })
 
-  it('运行时不可用的 vendor 同样 disabled(与自动化能力正交)', () => {
+  it('运行时不可用的 vendor disabled(与"有没有执行路径"是两个独立条件)', () => {
     const runtime = { ...RUNTIME_AVAILABLE }
     runtime.codex = {
       vendor: 'codex',
@@ -726,78 +721,107 @@ describe('AutomationForm.vue — 创建/编辑表单', () => {
     expect(opts[1].attributes('disabled')).toBeDefined()
   })
 
-  it('选中 cursor 时给出不支持提示,且 LLM 任务保存被禁用', async () => {
+  it('cursor 运行时不可用(SDK 解析不到)时灰显并就地标注原因', () => {
+    const runtime = { ...RUNTIME_AVAILABLE }
+    runtime.cursor = {
+      vendor: 'cursor',
+      available: false,
+      runtime: 'embedded-sdk',
+      runtimeId: '@cursor/sdk',
+      reason: 'sdk-unresolved',
+    }
+    const w = mountForm({ vendorAvailability: runtime })
+    const opts = w.findAll('[data-testid="automation-vendor"] option')
+    expect(opts[2].attributes('disabled')).toBeDefined()
+    // 原因写在选项文本上,不用用户去别处找。
+    expect(opts[2].text()).not.toBe('Cursor')
+  })
+
+  it('create:cursor 可新选、可绑同 vendor 的 agent 并保存,mode 按 cursor 令牌落盘', async () => {
     const w = mountForm({ agents: [...AGENTS, CURSOR_AGENT] })
     await w.findAll('.sf-seg')[1].trigger('click') // LLM prompt
     await w.find('[data-testid="automation-vendor"]').setValue('cursor')
-    expect(w.find('[data-testid="automation-vendor-unsupported"]').exists()).toBe(true)
-    // 即便填齐 prompt 与 agent,也不能提交出一条必然 hard-fail 的记录。
+    // 不再有"无执行路径"的提示。
+    expect(w.find('[data-testid="automation-vendor-unsupported"]').exists()).toBe(false)
     await w.find('.sf-agent-select').setValue('cursor-a')
     await w.find('textarea').setValue('do something')
-    expect(w.find('.sf-btn.primary').attributes('disabled')).toBeDefined()
+    expect(w.find('.sf-btn.primary').attributes('disabled')).toBeUndefined()
+
+    await w.find('[data-testid="automation-cursor-mode"]').setValue('full-access')
+    await w.find('.sf-btn.primary').trigger('click')
+    const input = w.emitted('create')![0][0] as Record<string, unknown>
+    expect(input.vendor).toBe('cursor')
+    expect(input.agentId).toBe('cursor-a')
+    expect(input.mode).toBe('full-access')
   })
 
-  it('automationAgentId 跟随链解析到 cursor 时不作为可提交默认,并提示改选', () => {
+  it('cursor 的模式下拉给出目录里的三个令牌(plan / agent / full-access)', async () => {
+    const w = mountForm({ agents: [...AGENTS, CURSOR_AGENT] })
+    await w.find('[data-testid="automation-vendor"]').setValue('cursor')
+    const values = w
+      .findAll('[data-testid="automation-cursor-mode"] option')
+      .map((o) => o.attributes('value'))
+    expect(values).toEqual(['plan', 'agent', 'full-access'])
+  })
+
+  it('automationAgentId 跟随链解析到 cursor 时直接作为默认执行身份', async () => {
     const w = mountForm({
       agents: [CURSOR_AGENT, ...AGENTS],
       automationAgentId: 'cursor-a',
     })
     const select = w.find('[data-testid="automation-vendor"]').element as HTMLSelectElement
-    expect(select.value).toBe('claude')
-    expect(w.find('[data-testid="automation-seed-vendor-unsupported"]').exists()).toBe(true)
+    expect(select.value).toBe('cursor')
+    expect(w.find('[data-testid="automation-seed-vendor-unsupported"]').exists()).toBe(false)
+    // agent 下拉只在 LLM 型任务下渲染,预填的 cursor agent 在那里直接可用。
+    await w.findAll('.sf-seg')[1].trigger('click')
+    expect((w.find('.sf-agent-select').element as HTMLSelectElement).value).toBe('cursor-a')
   })
 
-  it('edit:既有 cursor automation 保留自身 vendor,不被 UI 门控静默改写', () => {
+  it('edit:既有 cursor automation 保留自身 vendor,且不再提示不可执行', () => {
     const w = mountForm({
       agents: [CURSOR_AGENT, ...AGENTS],
       automation: sched({ vendor: 'cursor', agentId: 'cursor-a', type: 'llm' }),
     })
     const select = w.find('[data-testid="automation-vendor"]').element as HTMLSelectElement
     expect(select.value).toBe('cursor')
-    // 自身 vendor 选项保持可选(否则浏览器会把选中值挪走),但明确提示不可执行。
     const opts = w.findAll('[data-testid="automation-vendor"] option')
     expect(opts[2].attributes('disabled')).toBeUndefined()
-    expect(w.find('[data-testid="automation-vendor-unsupported"]').exists()).toBe(true)
+    expect(w.find('[data-testid="automation-vendor-unsupported"]').exists()).toBe(false)
   })
 
-  it('edit:既有 cursor LLM automation 可以编辑无关字段并保存', async () => {
+  it('edit:既有 cursor LLM automation 可以编辑并保存,mode 原样保留', async () => {
     const w = mountForm({
       agents: [CURSOR_AGENT, ...AGENTS],
       automation: sched({
         vendor: 'cursor',
         agentId: 'cursor-a',
         type: 'llm',
+        mode: 'plan',
         config: { prompt: '既有提示词', name: 'legacy name' },
       }),
     })
-    // 保留的 vendor 不受支持,但保存按钮不能因此锁死整条记录。
-    expect(w.find('[data-testid="automation-vendor-unsupported"]').exists()).toBe(true)
     expect(w.find('.sf-btn.primary').attributes('disabled')).toBeUndefined()
+    // 记录落盘的 plan 令牌被原样回读,不被静默改写成默认值。
+    expect(
+      (w.find('[data-testid="automation-cursor-mode"]').element as HTMLSelectElement).value,
+    ).toBe('plan')
 
     await w.find('textarea').setValue('改过的提示词')
     await w.find('.sf-btn.primary').trigger('click')
     const input = w.emitted('update')![0][1] as Record<string, unknown>
-    // vendor 原样落盘,不被 UI 门控静默改写。
     expect(input.vendor).toBe('cursor')
+    expect(input.mode).toBe('plan')
     expect((input.config as Record<string, unknown>).prompt).toBe('改过的提示词')
   })
 
-  it('edit:既有 cursor automation 改选到别的 vendor 后,不受支持的 vendor 不能再被选回保存', async () => {
+  it('edit:既有 cursor automation 的遗留 McpMode 值回落到目录默认(agent)', () => {
     const w = mountForm({
       agents: [CURSOR_AGENT, ...AGENTS],
-      automation: sched({
-        vendor: 'claude',
-        agentId: 'claude-default',
-        type: 'llm',
-        config: { prompt: '既有提示词', name: 'legacy name' },
-      }),
+      automation: sched({ vendor: 'cursor', agentId: 'cursor-a', type: 'llm', mode: 'sandboxed' }),
     })
-    // 这条记录落盘的是 claude,cursor 只是"另一个 vendor" → 仍然灰显且不可保存。
-    const opts = w.findAll('[data-testid="automation-vendor"] option')
-    expect(opts[2].attributes('disabled')).toBeDefined()
-    await w.find('[data-testid="automation-vendor"]').setValue('cursor')
-    await w.find('.sf-agent-select').setValue('cursor-a')
-    expect(w.find('.sf-btn.primary').attributes('disabled')).toBeDefined()
+    expect(
+      (w.find('[data-testid="automation-cursor-mode"]').element as HTMLSelectElement).value,
+    ).toBe('agent')
   })
 
   it('create payload 默认 vendor=claude,含 toolAllowlist', async () => {

@@ -390,12 +390,12 @@ describe('AUTOMATION_VENDORS — which vendors can execute automations', () => {
     expect(AUTOMATION_VENDORS.every(isVendorId)).toBe(true)
   })
 
-  it('covers claude + codex and excludes the vendors with no execution path', () => {
+  it('covers every vendor that has a dispatcher execution path', () => {
     expect(vendorSupportsAutomation('claude')).toBe(true)
     expect(vendorSupportsAutomation('codex')).toBe(true)
-    // cursor runs sessions but has no automation dispatcher path — the console
-    // greys it out from this same list, so the offer and the hard-fail agree.
-    expect(vendorSupportsAutomation('cursor')).toBe(false)
+    // cursor's dispatcher branch runs its adapter in-process; the console offers
+    // it from this same list, so the offer and the hard-fail agree.
+    expect(vendorSupportsAutomation('cursor')).toBe(true)
   })
 
   it('answers for every registered vendor', () => {

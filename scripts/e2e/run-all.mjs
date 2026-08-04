@@ -85,12 +85,17 @@ const TESTS = [
   { name: 'ask-consensus (per-question)', file: 'e2e-ask-consensus-test.mjs' },
   { name: 'sandbox (backward compat)', file: 'e2e-sandbox-test.mjs' },
   { name: 'sandbox container (config + container path)', file: 'e2e-sandbox-container-test.mjs' },
-  // Last on purpose: it temporarily makes a Cursor agent the system default and
-  // restores the snapshot on exit, so any botched restore cannot reach the tests
-  // above. It has no SKIP branch — each environment has its own assertion.
+  // Last two on purpose: both temporarily rewrite the agent list (one makes a
+  // Cursor agent the system default, the other disables/removes one mid-run) and
+  // restore the snapshot on exit, so any botched restore cannot reach the tests
+  // above. Neither has a SKIP branch — each environment has its own assertion.
   {
     name: 'cursor agent config (runtime signal → config → default agent)',
     file: 'e2e-cursor-agent-config-test.mjs',
+  },
+  {
+    name: 'cursor automation (dispatch → run → failure branches)',
+    file: 'e2e-cursor-automation-test.mjs',
   },
 ]
 

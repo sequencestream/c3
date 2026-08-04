@@ -502,34 +502,54 @@ discussion。它们**只**注册在自动化的 c3 MCP 服务器上(永远不会
 Automation 保留其 vendor 作为稳定的工具清单、策略与适配器路由范围;
 被选中的 Agent 必须属于该 vendor。一个缺失、被禁用或 vendor 不匹配的 Agent 会使
 该次执行失败,并且永远不会回退到另一个 Agent 或 vendor。每个 vendor 都经由自己的
-adapter 路径运行;cursor 例外——它没有自动化执行路径,选中 cursor vendor 的自动化在分派时硬失败,不回退到其他 vendor。
+adapter 路径运行:claude 走 SDK 的 `query()`,codex 与 cursor 走各自 adapter 的
+`driver.start()`。分派器为三者显式分支,不做通用 registry;driver 型 vendor 之后的
+生命周期(session id 绑定、canonical→wire 投影、超时/中止、执行日志、runtime 收尾、
+MCP token 释放)是同一段代码,因此同一种失败在两个 vendor 上的可观察行为一致。
 
-有执行路径的 vendor 集合是共享常量 `AUTOMATION_VENDORS`:分派前的 hard-fail 与
-创建/编辑表单的灰显读的是**同一份**列表,因此表单不可能提供一个分派会拒绝的选择。
-表单侧的表现:不支持的 vendor 选项禁用并标注"不支持自动化",`llm_prompt` 型任务**新选中**
-它时禁止保存;系统配置的 `automationAgentId` 跟随链若解析到这样的 vendor,表单不把它
-当作可提交的默认值,而是回落到受支持的 vendor 并要求用户显式改选。
+**cursor 分支**的两件事在别处不发生:它的运行时是进程内 `@cursor/sdk`(部署工件,
+不是宿主 CLI),SDK 解析不到时在**分派期**以可定位的 `cursor_sdk_unresolved` 失败,
+绝不改跑别的引擎;它的凭据只认 API key,绑定 Agent 的 key 经本轮 `envOverrides.CURSOR_API_KEY`
+到达 driver,为空则回落到服务端环境变量,两处皆空时由 cursor 的启动前置校验以
+同时点名两处的可行动错误失败。它不生成子进程 wrapper(进程内 runtime 没有子进程可窄化),
+也不引入进程内 `customTools` 之类的旁路工具通道;隔离一旦需要,由中立的
+`DriverStartOptions.sandboxed` 交给 SDK 自带 sandbox 兑现 —— 自动化目前没有沙箱开关,
+三个 vendor 的自动化都不置该标志,所以这里与 claude/codex 一样是未沙箱运行。cursor 的
+mode 由 `cursorModeCatalog` 解析为 `actionMode × toolGate`(`plan` / `agent` /
+`full-access`,其余令牌降级到目录默认 `agent`),不借用 claude 或 codex 对同一个词的解释。
+
+有执行路径的 vendor 集合是共享常量 `AUTOMATION_VENDORS`(claude / codex / cursor):
+分派前的 hard-fail 与创建/编辑表单的灰显读的是**同一份**列表,因此表单不可能提供一个
+分派会拒绝的选择。"有没有执行路径"与 `vendorRuntime` 的"此刻运行时可用不可用"是两项
+独立条件,都要满足才可选:cursor 的 SDK 解析不到时,选项仍按运行时不可用灰显并就地
+标注原因。表单侧的表现:没有执行路径的 vendor 选项禁用并标注"不支持自动化",
+`llm_prompt` 型任务**新选中**它时禁止保存;系统配置的 `automationAgentId` 跟随链若解析到
+这样的 vendor,表单不把它当作可提交的默认值,而是回落到受支持的 vendor 并要求用户显式改选。
 
 "能不能被选中"与"能不能保存"是两条规则,`AUTOMATION_VENDORS` 只约束前者外加**新增**
 快照。既有记录(经导入或手改落库)仍可查看与编辑,其 vendor **不被 UI 门控静默改写**:
 该记录自己的 vendor 在下拉里保持可选,保存门控也放行它,因此名称、提示词、触发条件等
 无关字段照常可改可存 —— 否则这条记录除删除外别无出路。表单就此提示"分派 LLM 任务时会
 直接失败",它在分派期照旧 hard-fail。改选到别的 vendor 后再想选回一个不受支持的 vendor,
-仍受灰显与保存门控约束(只有该记录已落盘的那一个例外)。
+仍受灰显与保存门控约束(只有该记录已落盘的那一个例外)。这条规则与具体 vendor 无关:
+当前三个注册 vendor 都有执行路径,规则为将来新增的 vendor 与历史记录而存在。
 
 ### c3 MCP 传输方式(厂商统一)
 
 自动化的 c3 工具集(intent 查询 / PR 对账写 / `save_intent_directly` /
-`publish_event` / 四个 discussion 工具 / `start_session_for_intent`)在两条 vendor 路径上是**相同的**——一个
+`publish_event` / 四个 discussion 工具 / `start_session_for_intent`)在**每条** vendor 路径上都是**相同的**——一个
 无 framing 的工具列表,其处理函数绑定到该次执行的 `workspacePath` + `executionId`——并且
-**两个 vendor 都通过同一条回环流式 HTTP MCP 路由**(`/internal/automation-mcp/v1`,intent / pr-event
+**三个 vendor 都通过同一条回环流式 HTTP MCP 路由**(`/internal/automation-mcp/v1`,intent / pr-event
 路由的孪生版本)消费**相同的**工具:
 
 - **统一绑定。** 分发器为**一次**执行 `bind()` 该路由——铸造一个携带在 URL query 中的不透明的
-  按执行 token——并生成 `c3` HTTP 描述符(带有**完整**的 enabledTools 列表)。该描述符对两个厂商都是
+  按执行 token——并生成 `c3` HTTP 描述符(带有**完整**的 enabledTools 列表)。该描述符对三个厂商都是
   同一批中立的远程 MCP 描述符,只是在厂商边界被转译为各自原生的配置:Claude 边界把它翻译成 Claude SDK 的
   HTTP MCP 配置(`{ type: 'http', url, alwaysLoad: true }`);Codex 走 `driver.start({ mcpServers })`
-  写入其原生 streamable-HTTP 服务器条目(codex 会把每个启用的工具标记为 required/approved)。
+  写入其原生 streamable-HTTP 服务器条目(codex 会把每个启用的工具标记为 required/approved);
+  Cursor 同样走 `driver.start({ mcpServers })`,由其 adapter 转译为 SDK 的 `McpServerConfig`
+  HTTP 条目(`bearerTokenEnvVar` 在那里解析为 Authorization 头)——**没有**进程内工具通道、
+  没有 `customTools`、没有第二个端口。
 - **回环 + token + 释放。** 该路由自身只监听本地回环并再加一层回环保护;
   一个未知或已被驱逐的 token 返回 404,一个非回环的对端返回 403。该 token 会在**每一条**
   终止路径上(成功、driver 抛出异常、消息迭代抛出异常、超时)的 `finally` 中被销毁,因此
@@ -538,8 +558,10 @@ adapter 路径运行;cursor 例外——它没有自动化执行路径,选中 cu
 挂载在各 vendor 之间是**opt-in 且一致的**:c3 工具只在
 自动化显式选中至少一个 `mcp__c3__*` 能力时才会附加(空的允许列表不授予
 任何能力);c3 提供的服务器会刻意替换掉一个用户配置的、名为 `c3` 的工作区 MCP 服务器。
-读/写授权规则不因传输方式而改变——HTTP 路由只是让工具对**两个厂商可见**的
-接口;模式 / 允许列表 / 拒绝列表 / 权限处理器的判定仍然决定它们的实际效果。因此一个 codex 自动化现在
+读/写授权规则不因传输方式而改变——HTTP 路由只是让工具对**每个厂商可见**的
+接口;模式 / 允许列表 / 拒绝列表 / 权限处理器的判定仍然决定它们的实际效果。因此 codex 与
+cursor 的自动化与 claude 的自动化看到的是同一份 c3 MCP 服务契约,权限结论也仍由各自的
+模式与允许/拒绝列表决定。
 
 ## 领域事件(wire)
 

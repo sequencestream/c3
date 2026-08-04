@@ -22,7 +22,11 @@ export type AutomationType = 'command' | 'llm'
  * dispatcher would refuse. A vendor absent here still shows in existing
  * automation records (they stay viewable) but cannot be chosen as an executor.
  */
-export const AUTOMATION_VENDORS = ['claude', 'codex'] as const satisfies readonly VendorId[]
+export const AUTOMATION_VENDORS = [
+  'claude',
+  'codex',
+  'cursor',
+] as const satisfies readonly VendorId[]
 
 /**
  * Whether a vendor can execute automations. Routing this through a predicate,

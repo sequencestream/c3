@@ -443,6 +443,11 @@ const DEFAULT_TAB_PRIORITY: readonly DiscussionTabKind[] = [
  * the discussion lands on 「研究会话」 — that is where the run can be watched, stopped and
  * steered. It is deliberately NOT in the static chain, so once research has settled the
  * default goes back to conclusion → process → research → goal.
+ *
+ * The short-circuit only fires when the tab already exists. On the create path the
+ * discussion opens *before* its research run reports a session id, so the tab is still
+ * absent and the chain lands on `process`; {@link correctActiveTab} then follows the tab
+ * over as soon as it appears.
  */
 export function defaultDiscussionTab(
   tabs: DiscussionTab[],
@@ -457,15 +462,31 @@ export function defaultDiscussionTab(
 }
 
 /**
- * Keep the current tab if it is still visible; otherwise fall back to the default chain.
- * Used when a discussion's live fields change (a markdown tab can appear/disappear) so a
- * now-invisible selection never leaves the pane stranded on a non-existent tab.
+ * Correct the active tab after a discussion's live state changes (visible tabs and/or
+ * research liveness). Two rules, in order:
+ *
+ * 1. **Follow research** — while the research run is live, 「研究会话」 is visible and the
+ *    user has not picked a tab themselves (`userPickedTab === false`), the active tab
+ *    moves to `researchSession`, even when the current one is still visible. This is what
+ *    makes the create path land there: the discussion opens on `process` (no session id
+ *    yet) and moves over the moment the run binds its session. Research *ending* never
+ *    triggers a reverse jump — the rule simply stops applying.
+ * 2. Otherwise keep the current tab while it is still visible, and fall back to the
+ *    default chain only once it disappears (e.g. a markdown field went empty), so a
+ *    now-invisible selection never strands the pane on a non-existent tab.
+ *
+ * `userPickedTab` is passed in rather than inferred from `current`: a tab value cannot
+ * tell an explicit click apart from a default landing.
  */
 export function correctActiveTab(
   tabs: DiscussionTab[],
   current: DiscussionTabKind,
   researchLive = false,
+  userPickedTab = false,
 ): DiscussionTabKind {
+  if (!userPickedTab && researchLive && tabs.some((tb) => tb.kind === 'researchSession')) {
+    return 'researchSession'
+  }
   return tabs.some((tb) => tb.kind === current) ? current : defaultDiscussionTab(tabs, researchLive)
 }
 

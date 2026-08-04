@@ -15,7 +15,9 @@
  *    讨论流 transcript + dispatch 在途/失败状态 + composer 输入框,逻辑整体归位于此;
  *  - 详情:结构化元信息(类型/状态/创建/完成时间)。
  * 过程会话 / 详情恒存在;研究运行中默认落「研究会话」,否则按 conclusion → process →
- * research → goal 取首个可见项。
+ * research → goal 取首个可见项。新建讨论时详情先于 researchSessionId 绑定到达,「研究会话」
+ * tab 尚不存在而短暂落「过程会话」(其中正展示实时研究流),tab 一出现即自动跟随过去;
+ * 用户本讨论内亲手点过任一 tab 后不再自动跟随,切讨论复位。
  *
  * 所有数据与运行态由 App.vue 持有,经 props 注入;用户动作(打开/创建/开始/暂停/恢复/
  * 转需求/发言)经 emit 上抛。tab 选中态是页面内部展示状态,不写回 App 或协议。
@@ -173,24 +175,41 @@ const tabs = computed(() =>
   props.activeDiscussion ? discussionDetailTabs(props.activeDiscussion, t) : [],
 )
 const activeTab = ref<DiscussionTabKind>('process')
+// 本讨论内用户是否亲手点过 tab。只有 tab 按钮点击算数(默认落点、可见性回落、
+// 研究自动跟随都不算),切讨论时复位 —— 用来保证自动跟随永不把正在阅读的用户拽走。
+const tabPickedByUser = ref(false)
+function selectTab(kind: DiscussionTabKind): void {
+  tabPickedByUser.value = true
+  activeTab.value = kind
+}
 
 // Research liveness — the parent's right-pane phase is exactly「研究跑批在跑吗」.
 const researchLive = computed(() => props.phase === 'research')
 
-// On discussion switch, land on the default tab: research running ⇒ 研究会话 (watch and
-// steer the run), else conclusion → process → research → goal — a finished discussion
-// opens on its conclusion, an in-progress one on the live process.
+// On discussion switch, drop the manual-pick guard and land on the default tab: research
+// running (with the session already bound) ⇒ 研究会话 (watch and steer the run), else
+// conclusion → process → research → goal — a finished discussion opens on its conclusion,
+// an in-progress one on the live process.
 watch(
   () => props.activeDiscussion?.id,
   () => {
+    tabPickedByUser.value = false
     activeTab.value = defaultDiscussionTab(tabs.value, researchLive.value)
   },
   { immediate: true },
 )
-// On live field changes within the same discussion (a markdown tab appears/disappears),
-// keep the current tab if still visible, else fall back to the default chain.
-watch(tabs, (next) => {
-  activeTab.value = correctActiveTab(next, activeTab.value, researchLive.value)
+// On live state changes within the same discussion — visible tabs (a markdown tab or the
+// research session appears/disappears) or research liveness — re-run the correction. This
+// is what lands the create flow on 研究会话: the detail arrives before the run binds a
+// session id, so we open on `process` and follow over the moment the tab shows up (unless
+// the user has picked a tab meanwhile). Research ending never jumps back.
+watch([tabs, researchLive], ([next]) => {
+  activeTab.value = correctActiveTab(
+    next,
+    activeTab.value,
+    researchLive.value,
+    tabPickedByUser.value,
+  )
 })
 
 // ---- Research session chat column ----
@@ -316,7 +335,7 @@ function typeLabel(d: Discussion): string {
               :data-tab="tab.kind"
               :data-testid="`discussion-pane-tab-${tab.kind}`"
               :aria-pressed="tab.kind === activeTab"
-              @click="activeTab = tab.kind"
+              @click="selectTab(tab.kind)"
             >
               {{ tab.label }}
             </button>

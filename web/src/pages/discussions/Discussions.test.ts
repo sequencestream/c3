@@ -345,6 +345,57 @@ describe('Discussions.vue — 研究会话 tab', () => {
     expect(settled.find('[data-testid="discussion-stream"]').exists()).toBe(true)
   })
 
+  // 创建流的真实时序:discussion_detail(无 researchSessionId、研究未跑)→ 研究跑批
+  // running → 讨论列表广播携带 researchSessionId。
+  it('create flow: lands on process first, then follows the research-session tab once it appears', async () => {
+    const w = mountDiscussions(empty, disc({ status: 'draft' }), {
+      phase: 'discussion',
+      activeSession: null,
+    })
+    // 详情先到:研究会话 tab 还不存在 → 落过程会话(其中稍后展示实时研究流)
+    expect(w.find('[data-testid="discussion-pane-tab-researchSession"]').exists()).toBe(false)
+    expect(w.find('[data-testid="discussion-stream"]').exists()).toBe(true)
+    // 研究跑批启动:仍未绑定 session id,过程会话里展示研究流
+    await w.setProps({ phase: 'research' })
+    expect(w.find('[data-testid="research-stream"]').exists()).toBe(true)
+    // 厂商报出 session id 回写 → 研究会话 tab 出现,自动跟随过去并请求对齐活动会话
+    await w.setProps({ activeDiscussion: disc({ status: 'draft', researchSessionId: 's-res' }) })
+    expect(w.find('[data-testid="discussion-research-session"]').exists()).toBe(true)
+    expect(w.find('[data-testid="research-stream"]').exists()).toBe(false)
+    expect(w.emitted('open-research-session')).toEqual([['s-res']])
+  })
+
+  it('create flow: a tab the user picked themselves is never taken away', async () => {
+    const w = mountDiscussions(empty, disc({ status: 'draft' }), {
+      phase: 'discussion',
+      activeSession: null,
+    })
+    await w.find('[data-testid="discussion-pane-tab-details"]').trigger('click')
+    await w.setProps({ phase: 'research' })
+    await w.setProps({ activeDiscussion: disc({ status: 'draft', researchSessionId: 's-res' }) })
+    expect(w.find('[data-testid="disc-meta-type"]').exists()).toBe(true)
+    expect(w.find('[data-testid="discussion-research-session"]').exists()).toBe(false)
+    expect(w.emitted('open-research-session')).toBeFalsy()
+    // 切到另一个讨论 → 保护复位,该讨论重新获得自己的默认落点(研究在跑且已绑定 ⇒ 研究会话)
+    await w.setProps({
+      activeId: 'd2',
+      activeDiscussion: disc({ id: 'd2', status: 'draft', researchSessionId: 's-res-2' }),
+    })
+    expect(w.find('[data-testid="discussion-research-session"]').exists()).toBe(true)
+  })
+
+  it('research ending does not jump the tab back to the process tab', async () => {
+    const w = mountDiscussions(empty, withResearch({ status: 'draft' }), {
+      phase: 'research',
+      activeSession: 's-res',
+    })
+    expect(w.find('[data-testid="discussion-research-session"]').exists()).toBe(true)
+    // 研究结束、编排自动启动 → 用户留在研究会话,不被强制拽回过程会话
+    await w.setProps({ phase: 'discussion', activeDiscussion: withResearch() })
+    expect(w.find('[data-testid="discussion-research-session"]').exists()).toBe(true)
+    expect(w.find('[data-testid="discussion-stream"]').exists()).toBe(false)
+  })
+
   it('keeps the process tab reachable and unchanged alongside the new tab', async () => {
     const w = mountDiscussions(empty, withResearch(), { activeSession: 's-res' })
     await w.find('[data-testid="discussion-pane-tab-process"]').trigger('click')

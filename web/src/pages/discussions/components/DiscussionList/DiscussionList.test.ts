@@ -1,7 +1,26 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { AgentConfig, Discussion } from '@ccc/shared/protocol'
 import DiscussionList from './DiscussionList.vue'
+
+const STORAGE_KEY = 'c3.discussionListCollapsed'
+
+// happy-dom here may expose no localStorage; install a minimal in-memory stub so the
+// usePersistentToggle persistence path actually runs.
+function installLocalStorage(): void {
+  const store = new Map<string, string>()
+  const stub = {
+    getItem: (k: string) => (store.has(k) ? (store.get(k) as string) : null),
+    setItem: (k: string, v: string) => void store.set(k, String(v)),
+    removeItem: (k: string) => void store.delete(k),
+    clear: () => store.clear(),
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
+    get length() {
+      return store.size
+    },
+  }
+  ;(globalThis as { localStorage?: unknown }).localStorage = stub
+}
 
 function ag(id: string, displayName: string, over: Partial<AgentConfig> = {}): AgentConfig {
   // Base is a claude agent; `over` may widen the vendor discriminant, which the
@@ -55,6 +74,14 @@ function mountList(
 }
 
 describe('DiscussionList.vue — 讨论列表(纯选中,无行内抽屉)', () => {
+  beforeEach(() => {
+    installLocalStorage()
+  })
+
+  afterEach(() => {
+    ;(globalThis as { localStorage?: unknown }).localStorage = undefined
+  })
+
   it('渲染讨论列表,点击行主体 → emit open(id),且不再有 Open chat 按钮', async () => {
     const w = mountList({ discussions: [disc('d1', 'Alpha'), disc('d2', 'Beta')] })
     const items = w.findAll('.disc-item')
@@ -359,12 +386,22 @@ describe('DiscussionList.vue — 讨论列表(纯选中,无行内抽屉)', () =>
     await w.find('.disc-collapse-btn').trigger('click')
     expect(w.find('.disc-list').classes()).toContain('collapsed')
     expect(w.find('.disc-type').exists()).toBe(false)
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('true')
     // 收缩态下点击行主体仍可打开 chat
     await w.find('.disc-item-main').trigger('click')
     expect(w.emitted('open')).toEqual([['d1']])
     // 再次点击恢复展开态
     await w.find('.disc-collapse-btn').trigger('click')
     expect(w.find('.disc-list').classes()).not.toContain('collapsed')
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('false')
+  })
+
+  it('折叠态从 localStorage 恢复:重挂载后仍保持收缩', async () => {
+    localStorage.setItem(STORAGE_KEY, 'true')
+    const w = mountList({ discussions: [disc('d1', 'Alpha', { type: 'design' })] })
+    expect(w.find('.disc-list').classes()).toContain('collapsed')
+    expect(w.find('.disc-type').exists()).toBe(false)
+    expect(w.find('.disc-collapse-btn').attributes('aria-pressed')).toBe('true')
   })
 
   it('单一统一指示器:有 run 显 run 态,旧双指示器(disc-run/disc-status)已合并', () => {

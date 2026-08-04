@@ -13,6 +13,7 @@ import { formatDate } from '../../../../lib/intent-list-view'
 import { panelToggleLabel, rowVisibility } from '../../../../lib/discussion-view'
 import { discussionRowIndicator, TONE_ICON } from '../../../../lib/status-indicator'
 import { autoGrowHeight } from '../../../../lib/textarea'
+import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import { useTypedI18n } from '@/i18n'
 
 const { t, locale } = useTypedI18n()
@@ -185,8 +186,8 @@ function typeLabel(d: Discussion): string {
   return TYPE_LABEL.get(d.type) ?? d.type
 }
 
-// 面板折叠态:本地 UI 状态。收缩态收窄面板并隐藏行内次要元信息。
-const collapsed = ref(false)
+// 面板折叠态:持久化 UI 状态。收缩态收窄面板并隐藏行内次要元信息;跨页面切换后保持原状。
+const collapsed = usePersistentToggle('c3.discussionListCollapsed')
 const toggleLabel = computed(() => panelToggleLabel(collapsed.value))
 const rowVis = computed(() => rowVisibility(collapsed.value))
 function togglePanel(): void {

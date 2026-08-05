@@ -38,6 +38,7 @@ An **AI workbench** that centrally manages and drives the work of multiple AI co
 - **Code browsing** — read-only branches, commits, diffs and Git status in the browser, with an embedded session to ask about the code.
 - **Workcenter** — cross-workspace dashboard plus a notification inbox for answering permission prompts in one place.
 - **Optional account auth** — username/password accounts with an admin gate (off by default; loopback-only otherwise).
+- **External MCP access** — let your _own_ agents (an independent Claude Code / Codex session, a CI job) read this c3 over MCP with a long-lived API key, scoped to the workspaces you grant.
 - **Single self-contained binary** — one native executable per platform, with a`c3 upgrade` self-update from GitHub Releases.
 - **Desktop app** — a Tauri 2 shell that runs that same binary as a sidecar: install, double-click, tray-resident, optional start-at-login. No terminal, no browser.
 
@@ -109,17 +110,50 @@ shasum -a 256 -c SHA256SUMS
 ```bash
 ./c3 --port 3000 --daemon
 # open http://localhost:3000
+```
 
-./c3 --port 3000 --host 127.0.0.1   # bind loopback only (default: every interface)
+c3 listens on **`127.0.0.1` only** unless you say otherwise. To accept LAN or
+remote connections, choose the interface explicitly:
+
+```bash
+./c3 --port 3000 --host 0.0.0.0 --daemon
 ```
 
 #### OS service (`c3 install` / `c3 uninstall`)
 
 ```bash
 c3 install # registers c3 as a **per-user** OS service (no root/admin required) that runs
-c3 start # under the platform's service manager. The current `--port`/`--settings`
+c3 start # under the platform's service manager. The current `--port`/`--host`/`--settings`
 c3 uninstall # removes the current platform's registration and is idempotent. It **only**
 ```
+
+### External MCP access
+
+Point an agent c3 did not start — an independent Claude Code / Codex session, a
+CI job, a monitoring script — at this deployment over MCP:
+
+```bash
+claude mcp add --transport http c3 "http://<host>:3000/mcp/v1?token=<KEY>&workspace=/abs/path/to/workspace"
+```
+
+1. **Generate a key** in _System Settings → Security → External MCP API keys_, and
+   grant it the workspaces it may read. The plaintext key is shown **once** — copy
+   it there and then; it is stored only as a salted `scrypt` hash and can never be
+   recovered, only replaced.
+2. **Open the listener** with `--host` (above) if the client is on another machine.
+3. **Copy the ready-made URL and command** from _Workspace Settings → External MCP_,
+   which fills in the base URL, the route and that workspace's path for you.
+
+The key is the only credential on this route, and it grants **read-only** access:
+`find_intents`, `view_intent`, `find_discussions`, `view_discussion`, plus
+`publish_event`. No write tool, session launcher or review tool is exposed.
+Revoking a key in System Settings takes effect on its very next request and closes
+any MCP session it already had open.
+
+> **Security.** The key travels in the URL query string, so it can end up in proxy
+> and access logs, and plain HTTP exposes it to anyone on the network. c3 does not
+> ship or require TLS: put it behind your own HTTPS reverse proxy before exposing
+> it beyond the local machine, and avoid logging full query strings.
 
 ## Documentation
 

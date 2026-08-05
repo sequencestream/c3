@@ -40,11 +40,11 @@ c3 现有交付物只有一种形态:用户从终端运行 `./c3 --daemon`,再�
    `server/scripts/release/build-target.mjs` 这一唯一的 `bun --compile` 原语,产物按
    Tauri `externalBin` 约定改名(`binaries/c3-<rust-triple>`)后打进安装包。桌面版
    没有第二套服务端编译路径。
-2. **回环绑定通过新增的 `--host` 落到既有启动链。** `cli.ts` 的 `start` 接收可选
-   `--host`,随 `ServerOptions` 传给 `startServer`,最终成为 `@hono/node-server`
-   `serve()` 的 `hostname`。**省略即不变**:不传该参数时不产生 `hostname` 字段,
-   既有全接口绑定行为原样保留。壳固定传 `127.0.0.1` 与本次实例探得的空闲端口,
-   既不读取也不放宽设置里的 `exposure.bindAddress`。
+2. **回环绑定走既有的 `--host` 启动链。** `cli.ts` 的 `start` 接收可选 `--host`,
+   随 `ServerOptions` 传给 `startServer`,最终成为 `@hono/node-server` `serve()`
+   的 `hostname`;省略时由服务端统一取默认值 `127.0.0.1`。壳不依赖这个默认值,
+   而是**显式**传 `127.0.0.1` 与本次实例探得的空闲端口 —— 绑定地址是壳的决定,
+   不随服务端默认值漂移;壳既不读取也不放宽设置里的 `exposure.bindAddress`。
 3. **共享 c3 home。** 壳不传 `--settings`,sidecar 沿用默认解析规则(`~/.c3`,含
    `C3_DIR` 覆盖)。桌面版与 CLI 版看到同一份设置、登录态、工作区与会话。Tauri 自己
    的配置目录只存窗口偏好、开机自启状态和一份 sidecar 运行记录。

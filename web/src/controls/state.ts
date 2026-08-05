@@ -44,6 +44,7 @@ import type {
   ToolManifestEntry,
   AdapterCapability,
   SessionAgentSwitch,
+  McpApiKeyMeta,
   SessionBindingStats,
   SessionCapabilities,
   SandboxHostStatus,
@@ -620,6 +621,14 @@ export function createState(deps: StateDeps) {
   const skillSupport = ref<Record<VendorId, SkillSupportState> | null>(null)
   const vendorCapabilities = ref<Record<VendorId, Record<AdapterCapability, boolean>> | null>(null)
   const vendorModes = ref<Record<VendorId, VendorModeCatalog> | null>(null)
+  // ---- External MCP API keys (system settings, admin-gated) ----
+  // The roster is metadata only. `mcpApiKeyCreated` holds the ONE reply that ever
+  // carries a plaintext key: it lives in memory for this page view so the user can
+  // copy it, and is cleared on dismiss / panel close. Nothing writes it to storage,
+  // so a refresh loses it permanently — which is the promise the server makes.
+  const mcpApiKeys = ref<McpApiKeyMeta[]>([])
+  const mcpApiKeyCreated = ref<{ meta: McpApiKeyMeta; key: string } | null>(null)
+
   const skillApprovalRequest = ref<ApprovalRequest | null>(null)
   const skillLinkStatuses = ref<SkillLinkStatus[]>([])
   const installingSkillIds = ref<string[]>([])
@@ -933,6 +942,8 @@ export function createState(deps: StateDeps) {
     vendorAvailability,
     sandboxStatus,
     bindingStats,
+    mcpApiKeys,
+    mcpApiKeyCreated,
     sessionCapabilities,
     skillSupport,
     vendorCapabilities,

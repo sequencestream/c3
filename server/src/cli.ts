@@ -4,7 +4,6 @@ import type { Command as CommanderCommand } from 'commander'
 import { findUnknownCommand } from './cli-args.js'
 import { resolve } from 'node:path'
 import { startServer } from './server.js'
-import { normalizeHostOption } from './serve-binding.js'
 import { setSettingsPath } from './kernel/config/index.js'
 import { versionString } from './version.js'
 import { startDaemon, type DaemonStartOptions } from './daemon.js'
@@ -24,8 +23,9 @@ program
 interface LaunchOpts {
   port: string
   dev: boolean
-  settings?: string
+  /** `--host <address>`; unset ⇒ the server's loopback default. */
   host?: string
+  settings?: string
 }
 
 /**
@@ -36,8 +36,8 @@ interface LaunchOpts {
 function resolveLaunchOptions(opts: LaunchOpts): {
   port: number
   dev: boolean
-  settingsPath?: string
   host?: string
+  settingsPath?: string
 } {
   const port = Number(opts.port)
   if (!Number.isFinite(port) || port <= 0) {
@@ -48,22 +48,20 @@ function resolveLaunchOptions(opts: LaunchOpts): {
   // the SAME c3 home as this invocation (a relative path would re-resolve against
   // the child's cwd).
   const settingsPath = opts.settings ? resolve(opts.settings) : undefined
-  // An omitted (or blank) `--host` stays undefined all the way down, so the
-  // server keeps its default binding — this option only ever narrows on request.
-  const host = normalizeHostOption(opts.host)
-  return { port, dev: opts.dev, settingsPath, host }
+  // An omitted/blank host stays undefined so exactly one place decides the
+  // default (the server), instead of two that could drift apart.
+  const host = opts.host?.trim() || undefined
+  return { port, dev: opts.dev, host, settingsPath }
 }
-
-/** Help text for `--host`, shared by `start` and `install` so both describe the
- * same contract (notably: omitting it keeps the current binding). */
-const HOST_OPTION_DESC =
-  'bind address for the HTTP server, e.g. 127.0.0.1 (default: bind every interface)'
 
 program
   .command('start', { isDefault: true })
   .description('Start the local web server (default command)')
   .option('--port <number>', 'HTTP port', '3000')
-  .option('--host <address>', HOST_OPTION_DESC)
+  .option(
+    '--host <address>',
+    'interface to bind (default 127.0.0.1 — loopback only). Use 0.0.0.0 / :: / a specific address to accept LAN or remote connections; external MCP access is API-key gated',
+  )
   .option('--dev', 'development mode (do not serve static frontend)', false)
   .option('--daemon', 'run in the background (detach from the terminal) and exit', false)
   .option(
@@ -81,14 +79,14 @@ program
       process.exit(1)
     }
 
-    const { port, dev, settingsPath, host } = resolveLaunchOptions(opts)
+    const { port, dev, host, settingsPath } = resolveLaunchOptions(opts)
     // Relocate the config dir before anything reads settings (loadSettings is lazy).
     // Done AFTER resolveLaunchOptions so the daemon child gets the absolute path too.
     if (settingsPath) setSettingsPath(settingsPath)
 
     if (opts.daemon) {
       // Re-spawn a detached `start` WITHOUT --daemon (never self-fork) and exit.
-      const startOpts: DaemonStartOptions = { port, dev, settingsPath, host }
+      const startOpts: DaemonStartOptions = { port, dev, host, settingsPath }
       const outcome = startDaemon(startOpts)
       if (outcome.kind === 'already-running') {
         console.error(
@@ -110,21 +108,24 @@ program
   .command('install')
   .description('Install c3 as a per-user OS service (systemd / launchd / schtasks)')
   .option('--port <number>', 'HTTP port baked into the service unit', '3000')
-  .option('--host <address>', `${HOST_OPTION_DESC}; baked into the service unit`)
+  .option(
+    '--host <address>',
+    'interface baked into the service unit (default 127.0.0.1 — loopback only)',
+  )
   .option('--dev', 'development mode (do not serve static frontend)', false)
   .option(
     '--settings <path>',
     'path to settings.json baked into the service unit (absolute; the service reads the same ~/.c3)',
   )
   .action((opts: LaunchOpts) => {
-    const { port, dev, settingsPath, host } = resolveLaunchOptions(opts)
+    const { port, dev, host, settingsPath } = resolveLaunchOptions(opts)
     try {
       const result = installService({
         platform: process.platform,
         execPath: process.execPath,
         scriptPath: process.argv[1],
         execArgv: process.execArgv,
-        start: { port, dev, settingsPath, host },
+        start: { port, dev, host, settingsPath },
       })
       if (result.kind === 'register-failed') {
         const { command, status, stderr } = result

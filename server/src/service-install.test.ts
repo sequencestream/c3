@@ -41,6 +41,19 @@ describe('planServiceInstall — platform dispatch', () => {
     expect(plan.notes.join('\n')).toContain('loginctl enable-linger')
   })
 
+  it('bakes an explicit --host into the unit, and only when one was chosen', () => {
+    const exposed = planServiceInstall({
+      ...inputs('linux'),
+      start: { port: 4321, dev: false, host: '0.0.0.0' },
+    })
+    expect(exposed.unitContent).toContain('ExecStart=/opt/c3/c3 start --port 4321 --host 0.0.0.0')
+
+    // Without the flag the unit stays silent about the interface, so the server's
+    // loopback default applies — an upgrade never silently keeps a wide bind.
+    const defaulted = planServiceInstall(inputs('linux'))
+    expect(defaulted.unitContent).not.toContain('--host')
+  })
+
   it('generates a per-user launchd plist with ProgramArguments + load command', () => {
     const plan = planServiceInstall(inputs('darwin'))
     expect(plan.platform).toBe('darwin')

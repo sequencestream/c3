@@ -30,8 +30,9 @@ pnpm test        # vitest run
 ```bash
 pnpm build
 pnpm start
-# defaults: --port 3000 (workspaces added from Web UI)
+# defaults: --port 3000, --host 127.0.0.1 (workspaces added from Web UI)
 # open http://localhost:3000
+# to accept LAN/remote connections, choose the interface explicitly: --host 0.0.0.0
 ```
 
 `pnpm start` is just `node server/dist/cli.cjs start`.

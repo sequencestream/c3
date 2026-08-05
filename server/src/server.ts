@@ -34,7 +34,6 @@ import {
   type SessionRuntime,
 } from './runs.js'
 import { observeTaskWire } from './kernel/agent/task-tracker.js'
-import { resolveServeBinding } from './serve-binding.js'
 import { getSessionAgentId, getAgentLang, setOnPendingIntentLookup } from './kernel/config/index.js'
 import {
   reconcileQueuesOnStartup,
@@ -69,6 +68,15 @@ import {
 import { createEventMcp, EVENT_MCP_PATH, type EventMcpTools } from './transport/event-mcp/index.js'
 import { createSpecQueryMcp, SPEC_QUERY_MCP_PATH } from './transport/spec-query-mcp/index.js'
 import { createSpecReviewMcp, SPEC_REVIEW_MCP_PATH } from './transport/spec-review-mcp/index.js'
+import { createExternalMcp, EXTERNAL_MCP_PATH } from './transport/external-mcp/index.js'
+import { buildExternalMcpTools } from './features/external-mcp/tools.js'
+import { resolveRegisteredWorkspacePath } from './features/external-mcp/workspace-scope.js'
+import { setExternalMcpRevocationHook } from './features/settings/mcp-api-keys.js'
+import {
+  canonicalizeWorkspacePath,
+  touchMcpApiKey,
+  verifyMcpApiKey,
+} from './kernel/config/mcp-api-keys.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
 import {
   createConsensusAutoHandler,
@@ -137,11 +145,23 @@ export interface ServerOptions {
   port: number
   dev: boolean
   /**
-   * 监听地址。显式给出时(例如桌面壳传入的 `127.0.0.1`)作为 `serve()` 的
-   * `hostname`;省略时不传该字段,保持既有的默认全接口绑定行为。
+   * The interface to bind. Omitted ⇒ {@link DEFAULT_HOST} (loopback only).
+   *
+   * This used to be implicit: `serve()` without a hostname listens on EVERY
+   * interface, so a machine on the LAN could already reach c3 without anyone
+   * choosing that. Exposure is now an explicit decision — `0.0.0.0` / `::` / a
+   * specific interface address — which is what makes the API-key-guarded
+   * external MCP route safe to ship.
    */
   host?: string
 }
+
+/**
+ * The listen address when none is configured: loopback, so a fresh install and
+ * an upgraded one are both reachable only from the machine itself. Opening c3 to
+ * a network is a deliberate `--host` choice.
+ */
+export const DEFAULT_HOST = '127.0.0.1'
 
 /** How often the server broadcasts a full session-status snapshot. */
 const STATUS_HEARTBEAT_MS = 15_000
@@ -521,6 +541,23 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const specQueryMcp = createSpecQueryMcp(`http://127.0.0.1:${opts.port}`)
   const specReviewMcp = createSpecReviewMcp(`http://127.0.0.1:${opts.port}`)
 
+  // The PUBLIC external MCP route. Unlike every route above it takes no origin
+  // and mints no per-run token: an agent c3 did not start authenticates with a
+  // long-lived API key and names its target workspace in the URL, and the scope
+  // is rebuilt from that pair on every request. It shares the SAME event bus sink
+  // as the internal surfaces, so an externally published event is normalized and
+  // delivered exactly like an internal one — only its attribution differs.
+  const externalMcp = createExternalMcp({
+    authenticate: (token) => verifyMcpApiKey(token),
+    canonicalizeWorkspace: canonicalizeWorkspacePath,
+    resolveRegisteredWorkspace: resolveRegisteredWorkspacePath,
+    onAuthenticated: (keyId) => touchMcpApiKey(keyId, Date.now()),
+    buildTools: (scope) => buildExternalMcpTools(scope, { normalizeEvent, publishEvent }),
+  })
+  // Revoking a key must also kill the sessions it already opened, not just refuse
+  // the next handshake — the settings handler calls back into the live route.
+  setExternalMcpRevocationHook((keyId) => externalMcp.closeSessionsForKey(keyId))
+
   // ── Sandbox wiring (arapuca process-level isolation) ───────────────────────
   // Probe arapuca once at startup for the "sandbox available?" signal (log only;
   // the run-lifecycle gate only fires when a project actually enables sandbox, and
@@ -791,14 +828,26 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   // handler. Before the SPA catch-all, same as the other MCP routes.
   app.all(ADVISOR_MCP_PATH, (c) => advisorMcp.handler(c))
 
+  // PUBLIC external MCP endpoint. Deliberately NOT under `/internal`: it carries
+  // no loopback guard and no per-run token, because its callers are agents c3
+  // never launched. The API key in the query string is the sole credential, and
+  // the workspace parameter is authorized against that key on every request.
+  // Registered before the SPA catch-all, same as every other MCP route.
+  app.all(EXTERNAL_MCP_PATH, (c) => externalMcp.handler(c))
+
   // Static frontend (production / pkg) vs dev placeholder.
   if (opts.dev) mountDevPlaceholder(app)
   else mountStaticAssets(app)
 
-  const binding = resolveServeBinding(opts)
-  const server = serve({ fetch: app.fetch, ...binding }, (info) => {
-    const url = `http://${binding.hostname ?? 'localhost'}:${info.port}`
-    console.log(`[c3] server running at ${url}`)
+  // Explicit bind address (never the implicit all-interfaces default). The log
+  // states the ACTUAL listen address so "why can't the other machine reach it"
+  // is answerable from the log alone — and it prints no URL that could carry a
+  // token.
+  const host = opts.host?.trim() || DEFAULT_HOST
+  const server = serve({ fetch: app.fetch, port: opts.port, hostname: host }, (info) => {
+    console.log(`[c3] server listening on ${host}:${info.port}`)
+    if (host === DEFAULT_HOST) console.log(`[c3] open http://localhost:${info.port}`)
+    else console.log(`[c3] reachable from other hosts — external access is API-key gated`)
     if (opts.dev) console.log(`[c3] dev mode — open Vite at http://localhost:5173`)
   })
   injectWebSocket(server)

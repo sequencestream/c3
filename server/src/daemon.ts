@@ -42,14 +42,16 @@ const INTERPRETER_BASENAMES = new Set(['node', 'bun', 'tsx', 'deno'])
 export interface DaemonStartOptions {
   port: number
   dev: boolean
+  /**
+   * The interface to bind, when `--host` was given. Carried through so a
+   * background/service launch listens exactly where the foreground one would —
+   * an omitted value means the server's own loopback default, never "whatever
+   * the OS picks".
+   */
+  host?: string
   /** Absolute settings.json path when `--settings` was given (so the child reads
    * the SAME c3 home as the parent), otherwise undefined. */
   settingsPath?: string
-  /** Bind address when `--host` was given. Like the port, it is an absolute launch
-   * parameter: it must reach the daemon child / service unit verbatim, and survive
-   * a `c3 restart` — otherwise a restart would silently widen a loopback-only
-   * deployment back to every interface. Undefined = the CLI's default binding. */
-  host?: string
 }
 
 /** Outcome of {@link startDaemon}. The CLI maps this to console output + exit code. */
@@ -66,17 +68,14 @@ export interface DaemonDeps {
 
 /**
  * The argv (after the executable) for the daemon child: a plain `start` carrying
- * the SAME port/dev/settings, and pointedly NO `--daemon` (the child must run
- * the server, not fork again). `--settings` is emitted first so the child
+ * the SAME host/port/dev/settings, and pointedly NO `--daemon` (the child must
+ * run the server, not fork again). `--settings` is emitted first so the child
  * relocates its config root before anything reads it.
  */
 export function buildStartArgs(opts: DaemonStartOptions): string[] {
   const args = ['start']
   if (opts.settingsPath) args.push('--settings', opts.settingsPath)
   args.push('--port', String(opts.port))
-  // `--host` is emitted ONLY when it was explicitly given. An unconditional
-  // `--host <default>` would turn "omitted" into an explicit bind address and
-  // change the child's reachability relative to the parent invocation.
   if (opts.host) args.push('--host', opts.host)
   if (opts.dev) args.push('--dev')
   return args
@@ -160,14 +159,14 @@ export function readDaemonOptions(optionsPath: string): DaemonStartOptions | nul
   if (typeof o.dev !== 'boolean') return null
   // Gracefully ignore the legacy workspacePath field left by older runtime files.
   if (o.settingsPath !== undefined && typeof o.settingsPath !== 'string') return null
-  // `host` is additive: sidecars written before `--host` existed simply lack the
-  // field and must keep restarting exactly as before (undefined = default binding).
+  // A sidecar written before `--host` existed simply has no host: restart then
+  // relaunches on the loopback default, which is the safe direction.
   if (o.host !== undefined && typeof o.host !== 'string') return null
   return {
     port: o.port,
     dev: o.dev,
+    ...(typeof o.host === 'string' && o.host ? { host: o.host } : {}),
     settingsPath: o.settingsPath as string | undefined,
-    host: o.host as string | undefined,
   }
 }
 

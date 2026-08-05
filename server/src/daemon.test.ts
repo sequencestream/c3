@@ -34,14 +34,18 @@ describe('buildStartArgs', () => {
     expect(args).toEqual(['start', '--settings', '/abs/settings.json', '--port', '8080', '--dev'])
   })
 
-  it('threads --host through verbatim when it was explicitly given', () => {
-    const args = buildStartArgs({ port: 3000, dev: false, host: '127.0.0.1' })
-    expect(args).toEqual(['start', '--port', '3000', '--host', '127.0.0.1'])
+  it('carries an explicit --host so the child binds where the parent was told to', () => {
+    expect(buildStartArgs({ port: 3000, dev: false, host: '0.0.0.0' })).toEqual([
+      'start',
+      '--port',
+      '3000',
+      '--host',
+      '0.0.0.0',
+    ])
   })
 
-  it('omits --host entirely when no host was given (default binding preserved)', () => {
-    const args = buildStartArgs({ port: 3000, dev: false })
-    expect(args).not.toContain('--host')
+  it('omits --host entirely when none was given, leaving the loopback default to the server', () => {
+    expect(buildStartArgs({ port: 3000, dev: false })).not.toContain('--host')
   })
 })
 
@@ -136,6 +140,27 @@ describe('daemon options sidecar', () => {
     expect(readDaemonOptions(p)).toEqual(opts)
   })
 
+  it('round-trips an explicit host', () => {
+    const p = join(dir, DAEMON_OPTIONS_NAME)
+    const opts = { port: 3000, dev: false, host: '0.0.0.0' }
+    writeDaemonOptions(p, opts)
+    expect(readDaemonOptions(p)).toEqual(opts)
+  })
+
+  it('reads a pre-host sidecar as "no host" — restart then relaunches on loopback', () => {
+    const p = join(dir, DAEMON_OPTIONS_NAME)
+    writeFileSync(p, JSON.stringify({ port: 3000, dev: false }))
+    const parsed = readDaemonOptions(p)
+    expect(parsed).not.toBeNull()
+    expect(parsed!.host).toBeUndefined()
+  })
+
+  it('rejects a sidecar whose host is not a string', () => {
+    const p = join(dir, DAEMON_OPTIONS_NAME)
+    writeFileSync(p, JSON.stringify({ port: 3000, dev: false, host: 123 }))
+    expect(readDaemonOptions(p)).toBeNull()
+  })
+
   it('gracefully ignores legacy workspacePath field', () => {
     const p = join(dir, DAEMON_OPTIONS_NAME)
     const old = { workspacePath: '/old/ws', port: 3000, dev: true }
@@ -144,29 +169,6 @@ describe('daemon options sidecar', () => {
     expect(parsed).not.toBeNull()
     expect(parsed).toEqual({ port: 3000, dev: true })
     expect((parsed as unknown as Record<string, unknown>).workspacePath).toBeUndefined()
-  })
-
-  it('round-trips an explicit host so a restart re-binds the same address', () => {
-    const p = join(dir, DAEMON_OPTIONS_NAME)
-    const opts = { port: 3000, dev: false, host: '127.0.0.1' }
-    writeDaemonOptions(p, opts)
-    expect(readDaemonOptions(p)?.host).toBe('127.0.0.1')
-    // and the rebuilt launch command carries it too — that's what restart replays.
-    expect(buildStartArgs(readDaemonOptions(p)!)).toContain('--host')
-  })
-
-  it('reads a pre-host sidecar as "no host" instead of failing', () => {
-    const p = join(dir, DAEMON_OPTIONS_NAME)
-    writeFileSync(p, JSON.stringify({ port: 3000, dev: false }))
-    const parsed = readDaemonOptions(p)
-    expect(parsed).not.toBeNull()
-    expect(parsed?.host).toBeUndefined()
-  })
-
-  it('returns null when host is present but not a string', () => {
-    const p = join(dir, DAEMON_OPTIONS_NAME)
-    writeFileSync(p, JSON.stringify({ port: 3000, dev: false, host: 123 }))
-    expect(readDaemonOptions(p)).toBeNull()
   })
 
   it('returns null for a missing file', () => {

@@ -261,6 +261,18 @@ export interface AppMethods {
   setAdminPassword(payload: { username: string; password: string; currentPassword?: string }): void
   removeAccount(payload: { username: string }): void
   setAdminAccount(payload: { username: string }): void
+  /** Mint an external-MCP API key; the reply carries its plaintext exactly once. */
+  createMcpApiKey(payload: { name: string; workspaceIds: string[] }): void
+  /** Rename a key and/or replace its authorized workspace set. */
+  updateMcpApiKey(payload: { id: string; name?: string; workspaceIds?: string[] }): void
+  /** Revoke a key — effective on that key's very next request. */
+  revokeMcpApiKey(id: string): void
+  /** Drop the one-time plaintext from memory; after this it is unrecoverable. */
+  dismissMcpApiKeyReveal(): void
+  /** Close the system-settings panel, dropping any still-revealed plaintext key. */
+  closeSettings(): void
+  /** Jump from the workspace-setting page to system settings (baseUrl / API keys). */
+  openSettingsFromWorkspaceSetting(): void
   fetchPersonalizedSettings(): void
   setLocale(next: UiLang): void
   setTheme(next: UiTheme): void

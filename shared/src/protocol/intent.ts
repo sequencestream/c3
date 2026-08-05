@@ -153,6 +153,8 @@ export const MAX_SPEC_REVIEW_REWORK_ROUNDS = 3
  *   no automatic recovery is scheduled for it.
  * - `spec_awaiting_approval`       — SDD is on, the intent has a written spec, and
  *   it has not been approved yet.
+ * - `spec_rework_exhausted`        — automatic spec rework has run out of rounds
+ *   and the still-valid conclusion asks for changes: only a human moves it now.
  * - `permission_pending`           — a gated tool call is waiting on Allow/Deny.
  * - `ask_user_question_pending`    — an unanswered `AskUserQuestion` is waiting.
  */
@@ -160,6 +162,7 @@ export const ACTION_LABEL_CODES = [
   'vendor_auth_invalid',
   'vendor_quota_exhausted',
   'spec_awaiting_approval',
+  'spec_rework_exhausted',
   'permission_pending',
   'ask_user_question_pending',
 ] as const
@@ -178,8 +181,8 @@ export interface SystemSettingsAgentTarget {
 }
 
 /**
- * Open an intent's detail page on the spec document tab — the human approval
- * checkpoint for a written, still-unapproved spec.
+ * Open an intent's detail page on the spec document tab — where a human reads the
+ * review facts and either approves the spec or takes the rework over by hand.
  */
 export interface IntentSpecTarget {
   type: 'intent-spec'

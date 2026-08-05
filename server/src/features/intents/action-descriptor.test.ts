@@ -1,9 +1,11 @@
 /**
  * Tests for the composed next-step action-descriptor projection:
- * vendor > wait-user (Ask / permission) > spec awaiting approval.
+ * vendor > wait-user (Ask / permission) > spec rework exhausted > spec awaiting
+ * approval.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Intent, WaitUserInvolveEvent } from '@ccc/shared/protocol'
+import { MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
 
 const vendorDesc = vi.fn<(intent: unknown) => unknown>()
 vi.mock('./vendor-block.js', () => ({
@@ -23,6 +25,12 @@ vi.mock('../../kernel/config/index.js', () => ({
 
 vi.mock('../../state.js', () => ({
   resolveWorkspaceRoot: vi.fn((id: string) => (id === 'ws' ? '/proj' : null)),
+}))
+
+const liveFingerprint = vi.fn<(workspacePath: string, specPath: string | null) => string | null>()
+vi.mock('./spec-review.js', () => ({
+  readSpecFingerprint: (workspacePath: string, specPath: string | null) =>
+    liveFingerprint(workspacePath, specPath),
 }))
 
 const { deriveActionDescriptor } = await import('./action-descriptor.js')
@@ -95,7 +103,24 @@ beforeEach(() => {
   findTodo.mockReturnValue(null)
   sddOn.mockReset()
   sddOn.mockReturnValue(true)
+  liveFingerprint.mockReset()
+  liveFingerprint.mockReturnValue('fp1')
 })
+
+/** An intent parked exactly at the rework hand-over point: cap passed, conclusion still valid. */
+function exhaustedIntent(overrides: Partial<Intent> = {}): Intent {
+  return makeIntent({
+    id: 'i-1',
+    status: 'todo',
+    specPath: '/s.md',
+    specApproved: false,
+    specReviewVerdict: 'changes_requested',
+    specReviewReason: '缺少错误路径的验收项',
+    specReviewFingerprint: 'fp1',
+    specReviewReworkRounds: MAX_SPEC_REVIEW_REWORK_ROUNDS + 1,
+    ...overrides,
+  })
+}
 
 describe('deriveActionDescriptor — priority', () => {
   it('prefers a vendor block over wait-user and spec', () => {
@@ -182,6 +207,70 @@ describe('deriveActionDescriptor — priority', () => {
         }),
       ),
     ).toBeNull()
+  })
+
+  it('derives spec_rework_exhausted once the cap is passed and the conclusion still stands', () => {
+    expect(deriveActionDescriptor(exhaustedIntent())).toEqual({
+      labelCode: 'spec_rework_exhausted',
+      target: { type: 'intent-spec', intentId: 'i-1' },
+    })
+  })
+
+  it('still shows the plain approval prompt on the LAST allowed rework round', () => {
+    // Round CAP is reworked automatically — the hand-over is the round after it.
+    expect(
+      deriveActionDescriptor(
+        exhaustedIntent({ specReviewReworkRounds: MAX_SPEC_REVIEW_REWORK_ROUNDS }),
+      ),
+    ).toEqual({
+      labelCode: 'spec_awaiting_approval',
+      target: { type: 'intent-spec', intentId: 'i-1' },
+    })
+  })
+
+  it('does not claim exhaustion when the current conclusion passed', () => {
+    expect(deriveActionDescriptor(exhaustedIntent({ specReviewVerdict: 'pass' }))).toEqual({
+      labelCode: 'spec_awaiting_approval',
+      target: { type: 'intent-spec', intentId: 'i-1' },
+    })
+  })
+
+  it('drops the prompt once the spec is edited and the old conclusion is stale', () => {
+    liveFingerprint.mockReturnValue('fp2')
+    expect(deriveActionDescriptor(exhaustedIntent())).toEqual({
+      labelCode: 'spec_awaiting_approval',
+      target: { type: 'intent-spec', intentId: 'i-1' },
+    })
+  })
+
+  it('shows nothing while the spec is unreadable — unreadable is not unchanged', () => {
+    liveFingerprint.mockReturnValue(null)
+    expect(deriveActionDescriptor(exhaustedIntent())).toEqual({
+      labelCode: 'spec_awaiting_approval',
+      target: { type: 'intent-spec', intentId: 'i-1' },
+    })
+  })
+
+  it('drops the prompt once the intent leaves the blocked state', () => {
+    expect(deriveActionDescriptor(exhaustedIntent({ specApproved: true }))).toBeNull()
+    expect(deriveActionDescriptor(exhaustedIntent({ status: 'in_progress' }))).toBeNull()
+    sddOn.mockReturnValue(false)
+    expect(deriveActionDescriptor(exhaustedIntent())).toBeNull()
+  })
+
+  it('yields to more urgent blocks (vendor, pending Ask) while exhausted', () => {
+    vendorDesc.mockReturnValue({
+      labelCode: 'vendor_auth_invalid',
+      target: { type: 'system-settings-agent', vendor: 'claude', agentId: 'a1' },
+    })
+    expect(deriveActionDescriptor(exhaustedIntent())).toMatchObject({
+      labelCode: 'vendor_auth_invalid',
+    })
+    vendorDesc.mockReturnValue(null)
+    findTodo.mockReturnValue(makeEvent({ id: 'e-ask', toolName: 'AskUserQuestion' }))
+    expect(deriveActionDescriptor(exhaustedIntent())).toMatchObject({
+      labelCode: 'ask_user_question_pending',
+    })
   })
 
   it('looks up wait-user events by every session id plus the intent id', () => {

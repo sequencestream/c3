@@ -10,6 +10,7 @@
  * to either union fails to compile until its copy exists.
  */
 import type {
+  ActionDescriptor,
   ActionLabelCode,
   ActionTarget,
   SystemSettingsAgentTarget,
@@ -22,6 +23,7 @@ export const ACTION_MESSAGE_KEYS = {
   vendor_auth_invalid: 'intent.blocked.vendorAuthInvalid',
   vendor_quota_exhausted: 'intent.blocked.vendorQuotaExhausted',
   spec_awaiting_approval: 'intent.blocked.specAwaitingApproval',
+  spec_rework_exhausted: 'intent.blocked.specReworkExhausted',
   permission_pending: 'intent.blocked.permissionPending',
   ask_user_question_pending: 'intent.blocked.askUserQuestionPending',
 } as const satisfies Record<ActionLabelCode, LocaleKey>
@@ -33,14 +35,42 @@ export const ACTION_BUTTON_KEYS = {
   'workcenter-event': 'intent.blocked.openWorkcenterEvent.label',
 } as const satisfies Record<ActionTarget['type'], LocaleKey>
 
+/**
+ * Situations whose button says something else than its target's default. The
+ * same spec tab is "approve this spec" after a passing review and "take this
+ * over by hand" once automatic rework is done — one destination, two asks.
+ */
+const ACTION_BUTTON_OVERRIDE_KEYS: Partial<Record<ActionLabelCode, LocaleKey>> = {
+  spec_rework_exhausted: 'intent.blocked.takeOverSpec.label',
+}
+
+/**
+ * The blocked states that show the review's own words underneath the prompt, and
+ * the copy to fall back on when the reviewer left no rationale. The reason itself
+ * is never invented — an empty one says so plainly.
+ */
+const ACTION_BLOCKER_FALLBACK_KEYS: Partial<Record<ActionLabelCode, LocaleKey>> = {
+  spec_rework_exhausted: 'intent.blocked.specReworkExhaustedNoReason',
+}
+
 /** The i18n key for a descriptor's prompt text. */
 export function actionMessageKey(labelCode: ActionLabelCode): LocaleKey {
   return ACTION_MESSAGE_KEYS[labelCode]
 }
 
 /** The i18n key for a descriptor's button label. */
-export function actionButtonKey(target: ActionTarget): LocaleKey {
-  return ACTION_BUTTON_KEYS[target.type]
+export function actionButtonKey(descriptor: ActionDescriptor): LocaleKey {
+  return (
+    ACTION_BUTTON_OVERRIDE_KEYS[descriptor.labelCode] ?? ACTION_BUTTON_KEYS[descriptor.target.type]
+  )
+}
+
+/**
+ * The fallback copy key for this situation's blocker summary, or `null` when it
+ * shows no summary at all.
+ */
+export function actionBlockerFallbackKey(labelCode: ActionLabelCode): LocaleKey | null {
+  return ACTION_BLOCKER_FALLBACK_KEYS[labelCode] ?? null
 }
 
 /**

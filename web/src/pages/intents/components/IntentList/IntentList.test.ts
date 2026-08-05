@@ -362,4 +362,30 @@ describe('IntentList.vue — derived next-step banner', () => {
     expect(w.emitted('action-target')).toEqual([[BLOCKED.target]])
     expect(w.emitted('select-intent')).toBeUndefined()
   })
+
+  it('shows the review blocker and one manual take-over jump when rework is exhausted', async () => {
+    const exhausted = {
+      labelCode: 'spec_rework_exhausted' as const,
+      target: { type: 'intent-spec' as const, intentId: 'r1' },
+    }
+    const w = mountList([
+      intent({
+        id: 'r1',
+        actionDescriptor: { ...exhausted },
+        specReviewReason: '验收项未覆盖失败路径',
+        specReviewReworkRounds: 4,
+      }),
+    ])
+    const row = w.find('.req-item')
+    expect(row.find('[data-testid="action-descriptor-blocker"]').text()).toBe(
+      '验收项未覆盖失败路径',
+    )
+    const actions = row.findAll('[data-testid="action-descriptor-action"]')
+    expect(actions).toHaveLength(1)
+    expect(actions[0].text()).not.toMatch(/retry|try again|重试|再试/i)
+    await actions[0].trigger('click')
+    // Navigation only: the row is not selected and no rework is asked for.
+    expect(w.emitted('action-target')).toEqual([[exhausted.target]])
+    expect(w.emitted('select-intent')).toBeUndefined()
+  })
 })

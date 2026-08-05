@@ -405,6 +405,7 @@ function submitChat(text: string, images: PromptImage[]): void {
              它只提示与导航,不遮断详情本身的任何操作。 -->
         <ActionDescriptorBanner
           :descriptor="intent.actionDescriptor"
+          :review-reason="intent.specReviewReason"
           @navigate="(target: ActionTarget) => emit('action-target', target)"
         />
         <IntentEngineeringProgress

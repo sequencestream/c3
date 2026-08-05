@@ -1076,10 +1076,15 @@
         "label": "Open agent settings"
       },
       "specAwaitingApproval": "This intent's spec is written but not approved yet. Open the spec tab to review and approve it.",
+      "specReworkExhausted": "Automatic spec rework has ended at the round cap and the review still asks for changes. Take it over yourself — edit the spec, or continue in the spec session.",
+      "specReworkExhaustedNoReason": "The review recorded no rationale. Open the spec tab to read the review facts.",
       "permissionPending": "A tool permission is waiting for your decision. Open the pending item to Allow or Deny.",
       "askUserQuestionPending": "An AskUserQuestion is waiting for your answers. Open the pending item to reply.",
       "openSpecApproval": {
         "label": "Open spec"
+      },
+      "takeOverSpec": {
+        "label": "Take over manually"
       },
       "openWorkcenterEvent": {
         "label": "Open pending item"

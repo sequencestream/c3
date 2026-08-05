@@ -9,8 +9,13 @@ const AUTH: ActionDescriptor = {
   target: { type: 'system-settings-agent', vendor: 'claude', agentId: 'agent-1' },
 }
 
-function mountBanner(descriptor: ActionDescriptor | null) {
-  return mount(ActionDescriptorBanner, { props: { descriptor } })
+const EXHAUSTED: ActionDescriptor = {
+  labelCode: 'spec_rework_exhausted',
+  target: { type: 'intent-spec', intentId: 'i1' },
+}
+
+function mountBanner(descriptor: ActionDescriptor | null, reviewReason?: string | null) {
+  return mount(ActionDescriptorBanner, { props: { descriptor, reviewReason } })
 }
 
 describe('ActionDescriptorBanner.vue', () => {
@@ -67,6 +72,50 @@ describe('ActionDescriptorBanner.vue', () => {
       .text()
     expect(spec).not.toBe(auth)
     expect(ask).not.toBe(spec)
+  })
+
+  it('shows the review blocker and a single manual take-over action once rework is exhausted', () => {
+    const w = mountBanner(EXHAUSTED, '缺少错误路径的验收项')
+    expect(w.find('[data-testid="action-descriptor-message"]').text()).not.toBe('')
+    expect(w.find('[data-testid="action-descriptor-blocker"]').text()).toBe('缺少错误路径的验收项')
+    // Exactly one action, and it is the manual take-over — no retry / try-again
+    // path back into the loop that already failed three times.
+    const actions = w.findAll('[data-testid="action-descriptor-action"]')
+    expect(actions).toHaveLength(1)
+    const label = actions[0].text()
+    expect(label).not.toMatch(/retry|try again|重试|再试/i)
+    expect(label).not.toBe(
+      mountBanner({ ...EXHAUSTED, labelCode: 'spec_awaiting_approval' })
+        .find('[data-testid="action-descriptor-action"]')
+        .text(),
+    )
+  })
+
+  it('falls back to plain copy when the review left no rationale, inventing no criteria', () => {
+    for (const reason of [null, '   ']) {
+      const blocker = mountBanner(EXHAUSTED, reason).find(
+        '[data-testid="action-descriptor-blocker"]',
+      )
+      expect(blocker.exists()).toBe(true)
+      expect(blocker.text().length).toBeGreaterThan(0)
+    }
+  })
+
+  it('renders the blocker as text: newlines survive, markup does not become HTML', () => {
+    const w = mountBanner(EXHAUSTED, 'line one\nline two <img src=x onerror="alert(1)">')
+    const blocker = w.find('[data-testid="action-descriptor-blocker"]')
+    expect(blocker.element.querySelector('img')).toBeNull()
+    expect(blocker.element.innerHTML).not.toContain('<img')
+    expect(blocker.element.textContent).toContain('line one\nline two')
+    // Scoped styles are not applied in the test DOM; the class is what carries
+    // `white-space: pre-wrap`, so a blocker without it would collapse the newline.
+    expect(blocker.classes()).toContain('ad-blocker')
+  })
+
+  it('shows no blocker line for blocks that carry no review reason', () => {
+    expect(
+      mountBanner(AUTH, 'ignored').find('[data-testid="action-descriptor-blocker"]').exists(),
+    ).toBe(false)
   })
 
   it('maps every label code and target type to copy', () => {

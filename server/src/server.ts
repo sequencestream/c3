@@ -68,15 +68,11 @@ import {
 import { createEventMcp, EVENT_MCP_PATH, type EventMcpTools } from './transport/event-mcp/index.js'
 import { createSpecQueryMcp, SPEC_QUERY_MCP_PATH } from './transport/spec-query-mcp/index.js'
 import { createSpecReviewMcp, SPEC_REVIEW_MCP_PATH } from './transport/spec-review-mcp/index.js'
-import { createExternalMcp, EXTERNAL_MCP_PATH } from './transport/external-mcp/index.js'
-import { buildExternalMcpTools } from './features/external-mcp/tools.js'
+import { createExternalMcp, EXTERNAL_MCP_PATH_PREFIX } from './transport/external-mcp/index.js'
+import { buildExternalMcpCatalog } from './features/external-mcp/tools.js'
 import { resolveRegisteredWorkspacePath } from './features/external-mcp/workspace-scope.js'
-import { setExternalMcpRevocationHook } from './features/settings/mcp-api-keys.js'
-import {
-  canonicalizeWorkspacePath,
-  touchMcpApiKey,
-  verifyMcpApiKey,
-} from './kernel/config/mcp-api-keys.js'
+import { setExternalMcpSessionCloser } from './features/settings/mcp-api-keys.js'
+import { touchMcpApiKey, verifyMcpApiKey } from './kernel/config/mcp-api-keys.js'
 import { renameChatSession, listChatSessions } from './features/intents/store.js'
 import {
   createConsensusAutoHandler,
@@ -546,23 +542,6 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const specQueryMcp = createSpecQueryMcp(`http://127.0.0.1:${opts.port}`)
   const specReviewMcp = createSpecReviewMcp(`http://127.0.0.1:${opts.port}`)
 
-  // The PUBLIC external MCP route. Unlike every route above it takes no origin
-  // and mints no per-run token: an agent c3 did not start authenticates with a
-  // long-lived API key and names its target workspace in the URL, and the scope
-  // is rebuilt from that pair on every request. It shares the SAME event bus sink
-  // as the internal surfaces, so an externally published event is normalized and
-  // delivered exactly like an internal one — only its attribution differs.
-  const externalMcp = createExternalMcp({
-    authenticate: (token) => verifyMcpApiKey(token),
-    canonicalizeWorkspace: canonicalizeWorkspacePath,
-    resolveRegisteredWorkspace: resolveRegisteredWorkspacePath,
-    onAuthenticated: (keyId) => touchMcpApiKey(keyId, Date.now()),
-    buildTools: (scope) => buildExternalMcpTools(scope, { normalizeEvent, publishEvent }),
-  })
-  // Revoking a key must also kill the sessions it already opened, not just refuse
-  // the next handshake — the settings handler calls back into the live route.
-  setExternalMcpRevocationHook((keyId) => externalMcp.closeSessionsForKey(keyId))
-
   // ── Sandbox wiring (arapuca process-level isolation) ───────────────────────
   // Probe arapuca once at startup for the "sandbox available?" signal (log only;
   // the run-lifecycle gate only fires when a project actually enables sandbox, and
@@ -731,6 +710,35 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   const automationMcp = createAutomationMcp(`http://127.0.0.1:${opts.port}`, automationMcpDeps)
   setAutomationHttpMcp(automationMcp)
 
+  // The PUBLIC external MCP route. Unlike every route above it takes no origin
+  // and mints no per-run token: an agent c3 did not start authenticates with a
+  // long-lived API key that IS the address, and the scope — one workspace, one
+  // ticked tool set — is rebuilt from that key on every request. Wired here, after
+  // the run launcher and discussion starters exist, because a key may be granted
+  // write tools that reach both. It shares the SAME event bus sink, intent store
+  // and session launcher as the internal surfaces, so an external caller observes
+  // identical behaviour; only the attribution differs.
+  const externalMcp = createExternalMcp({
+    authenticate: (key) => verifyMcpApiKey(key),
+    resolveRegisteredWorkspace: resolveRegisteredWorkspacePath,
+    onAuthenticated: (keyId) => touchMcpApiKey(keyId, Date.now()),
+    buildCatalog: (scope) =>
+      buildExternalMcpCatalog(scope, {
+        normalizeEvent,
+        publishEvent,
+        broadcastIntents: broadcasts.broadcastIntents,
+        broadcastDiscussions: broadcasts.broadcastDiscussions,
+        broadcastDiscussionMessage: broadcasts.broadcastDiscussionMessage,
+        startDiscussionRun: discussionRuns.startDiscussionRun,
+        launchRun: (rt, prompt, images, inject) =>
+          launchRun(rt, prompt, launchDeps, images, inject),
+      }),
+  })
+  // Revoking a key — or narrowing its tool scope — must also kill the sessions it
+  // already opened, not just refuse the next handshake: the settings handler calls
+  // back into the live route.
+  setExternalMcpSessionCloser((keyId) => externalMcp.closeSessionsForKey(keyId))
+
   // The QUEUE ADVISOR c3 MCP over loopback HTTP — a route of its own, bound per
   // consultation (workspace + one intent + chain depth). Kept separate from the
   // automation route on purpose: an ordinary automation must not be able to reach
@@ -841,10 +849,14 @@ export async function startServer(opts: ServerOptions): Promise<void> {
 
   // PUBLIC external MCP endpoint. Deliberately NOT under `/internal`: it carries
   // no loopback guard and no per-run token, because its callers are agents c3
-  // never launched. The API key in the query string is the sole credential, and
-  // the workspace parameter is authorized against that key on every request.
+  // never launched. The API key in the PATH is the sole credential and the sole
+  // scope input — it decides the workspace and the tool set on every request.
+  // A wildcard, not `/mcp/:key`, so a malformed address (`/mcp`, `/mcp/`,
+  // `/mcp/<key>/extra`) is refused HERE rather than falling through to the SPA
+  // catch-all and answering an MCP client with a page of HTML.
   // Registered before the SPA catch-all, same as every other MCP route.
-  app.all(EXTERNAL_MCP_PATH, (c) => externalMcp.handler(c))
+  app.all(EXTERNAL_MCP_PATH_PREFIX, (c) => externalMcp.handler(c))
+  app.all(`${EXTERNAL_MCP_PATH_PREFIX}/*`, (c) => externalMcp.handler(c))
 
   // Static frontend (production / pkg) vs dev placeholder.
   if (opts.dev) mountDevPlaceholder(app)

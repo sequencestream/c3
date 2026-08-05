@@ -79,6 +79,67 @@ export type PersonalizedSettingsBySubject = Record<string, PersonalizedSettings>
 export type PersonalizedSettingsScope = 'account' | 'local'
 
 /**
+ * How much damage one externally-grantable tool can do. `read` never mutates the
+ * intent ledger, discussions, specs or session lifecycle; `write` does — it can
+ * persist intents, submit a review conclusion, or launch an agent. The console
+ * groups the two and gates the write group behind an explicit risk confirmation.
+ *
+ * `publish_event` counts as `read`: it delivers a fact onto the event bus with a
+ * server-derived workspace and source, and cannot itself edit state. Subscribed
+ * automations may react asynchronously — that is the tool's own documented
+ * semantics, not a widening of this grade.
+ */
+export type ExternalMcpToolAccess = 'read' | 'write'
+
+/**
+ * One entry of the server's externally-grantable capability catalog, as it
+ * reaches the console. The full catalog entry also carries a description, a zod
+ * input schema and the business handler; only the two fields an authorization UI
+ * needs cross the wire.
+ *
+ * The console renders the tool pickers from THIS list rather than from a
+ * front-end copy, so a tool the server does not offer can never be checked, and
+ * a tool the server adds needs no console release to become grantable.
+ */
+export interface ExternalMcpToolDescriptor {
+  /** The stable MCP tool name, e.g. `find_intents`. Also the authorization token. */
+  name: string
+  /** Read/write grading; decides which group the console renders it in. */
+  access: ExternalMcpToolAccess
+}
+
+/**
+ * The read-only tools every new key is granted. The server writes this set on
+ * creation regardless of what the client asked for, so a forged "default" cannot
+ * smuggle a write tool into a fresh key.
+ */
+export const EXTERNAL_MCP_READ_TOOLS = [
+  'find_intents',
+  'view_intent',
+  'find_discussions',
+  'view_discussion',
+  'publish_event',
+] as const
+
+/**
+ * The tools that really change c3 state. None is granted by default; each must be
+ * ticked by an administrator, who is shown the risk before the scope is saved.
+ */
+export const EXTERNAL_MCP_WRITE_TOOLS = [
+  'save_intents',
+  'save_intent_directly',
+  'save_intent_pr_info',
+  'submit_spec_review',
+  'start_session_for_intent',
+  'start_discussion',
+  'continue_discussion',
+] as const
+
+/** Every name that may ever appear in a key's tool scope. */
+export type ExternalMcpToolName =
+  (typeof EXTERNAL_MCP_READ_TOOLS)[number] | (typeof EXTERNAL_MCP_WRITE_TOOLS)[number]
+
+/**
  * The non-secret half of one long-lived external-MCP API key — everything the
  * console may see about a key AFTER it was created. The plaintext key exists in
  * exactly one message (the creation reply) and is never recoverable afterwards:
@@ -102,21 +163,28 @@ export interface McpApiKeyMeta {
   /** Last successful authentication (unix ms); `null` until the key is first used. */
   lastUsedAt: number | null
   /**
-   * The registered workspaces this key may address, as opaque {@link WorkspaceInfo}
-   * ids — the console addresses workspaces by id, never by path. An EMPTY set
-   * means "no workspace at all"; it is never read as a wildcard.
+   * The ONE registered workspace this key is bound to, as an opaque
+   * {@link WorkspaceInfo} id — the console addresses workspaces by id, never by
+   * path. `null` means the bound workspace is no longer registered (or its
+   * directory is gone): the key is inert, the console marks it unavailable and
+   * offers only revocation, and the host path is deliberately NOT disclosed.
    *
-   * The server stores the authorization as canonical absolute paths (that is what
-   * an incoming `/mcp/v1` request is matched against) and translates to ids for
-   * the wire, so a workspace that is re-registered under a new id keeps working.
+   * The binding is fixed at creation. There is no cross-workspace key and no
+   * wildcard; re-pointing a key means minting a new one.
    */
-  workspaceIds: string[]
+  workspaceId: string | null
   /**
-   * Authorized paths that no longer resolve to any registered workspace —
-   * surfaced so an administrator can see and prune a stale grant. They are
-   * inert: a request naming one gets `404`, never access.
+   * The tool names this key may call, a subset of the server catalog. `tools/list`
+   * on `/mcp/<api-key>` is exactly this set, and any other tool call is refused.
    */
-  staleWorkspaces: string[]
+  tools: string[]
+  /**
+   * True when the bound workspace is no longer servable: it was deregistered, or
+   * its directory is gone. The key then reaches nothing (requests answer 403) and
+   * the console marks it unavailable, offering only revocation — never the host
+   * path, and never a fallback to some other workspace.
+   */
+  unavailable: boolean
   /**
    * A short, non-secret identifying prefix for display (`c3k_<id>`). Derived
    * wholly from {@link id}; it carries no part of the secret, so showing it in a

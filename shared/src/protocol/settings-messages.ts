@@ -8,6 +8,7 @@
  */
 
 import type {
+  ExternalMcpToolDescriptor,
   McpApiKeyMeta,
   PersonalizedSettings,
   PersonalizedSettingsScope,
@@ -57,42 +58,57 @@ export type ClientSavePersonalizedSettings = {
 }
 
 /**
- * Fetch the external-MCP API key roster (reply: `mcp_api_keys`). Metadata only —
- * no plaintext key has ever been recoverable after its creation reply.
+ * Fetch ONE workspace's external-MCP API key roster (reply: `mcp_api_keys`).
+ * Metadata only — no plaintext key has ever been recoverable after its creation
+ * reply. Scoped by workspace because a key is bound to exactly one: there is no
+ * "all keys on this host" view to ask for.
  */
-export type ClientListMcpApiKeys = { type: 'list_mcp_api_keys' }
+export type ClientListMcpApiKeys = { type: 'list_mcp_api_keys'; workspaceId: string }
 
 /**
- * Mint a long-lived external-MCP API key. `workspaceIds` are the registered
- * workspaces the key may address; unknown ids are rejected rather than silently
- * dropped, so an administrator never believes they granted access they did not.
- * The reply is the ONLY message that carries the plaintext key.
+ * Mint a long-lived external-MCP API key bound to ONE registered workspace. The
+ * caller names only the workspace and a display name: the initial tool scope is
+ * server-decided (the full read-only set, no write tool), so a forged default
+ * cannot smuggle write access into a fresh key. The reply is the ONLY message
+ * that carries the plaintext key.
  */
 export type ClientCreateMcpApiKey = {
   type: 'create_mcp_api_key'
+  workspaceId: string
   name: string
-  workspaceIds: string[]
 }
 
 /**
- * Update a key's display name and/or its authorized workspace set. An omitted
- * field is left untouched; an explicitly EMPTY `workspaceIds` revokes every
- * workspace grant (it is never read as "all"). Cannot re-issue or reveal the
- * plaintext.
+ * Update a key's display name and/or its granted tool scope. An omitted field is
+ * left untouched; an explicitly EMPTY `tools` means "this key may call nothing"
+ * and is never read as "all". Every name must be in the server catalog — an
+ * unknown or duplicated name fails the WHOLE update rather than being dropped,
+ * so an administrator is never told a scope was saved that was not.
+ *
+ * The workspace binding is immutable and therefore absent here.
  */
 export type ClientUpdateMcpApiKey = {
   type: 'update_mcp_api_key'
+  /** The workspace whose roster the reply should carry; the key's own binding is unchanged. */
+  workspaceId: string
   id: string
   name?: string
-  workspaceIds?: string[]
+  tools?: string[]
 }
 
 /** Revoke (delete) a key. Takes effect on the revoked key's very next request. */
-export type ClientRevokeMcpApiKey = { type: 'revoke_mcp_api_key'; id: string }
+export type ClientRevokeMcpApiKey = {
+  type: 'revoke_mcp_api_key'
+  /** The workspace whose roster the reply should carry. */
+  workspaceId: string
+  id: string
+}
 
 /**
- * The external-MCP API key roster, in reply to any of the four key operations.
- * Always the full list, so the console never has to reconcile a delta.
+ * ONE workspace's external-MCP API key roster, in reply to any of the four key
+ * operations. Always that workspace's full list, so the console never has to
+ * reconcile a delta, and always alongside the server's capability `catalog` so
+ * the tool pickers render from server truth rather than a front-end copy.
  *
  * `created` is present ONLY in the reply to a successful `create_mcp_api_key` and
  * is the single point in the whole system where a plaintext key exists on the
@@ -101,7 +117,11 @@ export type ClientRevokeMcpApiKey = { type: 'revoke_mcp_api_key'; id: string }
  */
 export type ServerMcpApiKeys = {
   type: 'mcp_api_keys'
+  /** The workspace this roster belongs to; the console ignores a stale reply for another. */
+  workspaceId: string
   keys: McpApiKeyMeta[]
+  /** Every tool that may be granted, with its read/write grading. */
+  catalog: ExternalMcpToolDescriptor[]
   created?: { meta: McpApiKeyMeta; key: string }
 }
 

@@ -46,6 +46,7 @@ import type {
   AdapterCapability,
   SessionAgentSwitch,
   McpApiKeyMeta,
+  ExternalMcpToolDescriptor,
   SessionBindingStats,
   SessionCapabilities,
   SandboxHostStatus,
@@ -622,12 +623,15 @@ export function createState(deps: StateDeps) {
   const skillSupport = ref<Record<VendorId, SkillSupportState> | null>(null)
   const vendorCapabilities = ref<Record<VendorId, Record<AdapterCapability, boolean>> | null>(null)
   const vendorModes = ref<Record<VendorId, VendorModeCatalog> | null>(null)
-  // ---- External MCP API keys (system settings, admin-gated) ----
-  // The roster is metadata only. `mcpApiKeyCreated` holds the ONE reply that ever
-  // carries a plaintext key: it lives in memory for this page view so the user can
-  // copy it, and is cleared on dismiss / panel close. Nothing writes it to storage,
-  // so a refresh loses it permanently — which is the promise the server makes.
+  // ---- External MCP API keys (workspace settings) ----
+  // The roster is the CURRENT workspace's keys (metadata only, no plaintext).
+  // `mcpApiKeyCreated` holds the ONE reply that ever carries a plaintext key: it
+  // lives in memory for this page view so the user can copy it, and is cleared on
+  // dismiss / page close. Nothing writes it to storage, so a refresh loses it
+  // permanently — which is the promise the server makes. `mcpApiKeyCatalog` is the
+  // server's externally-grantable tool list, rendered into the scope pickers.
   const mcpApiKeys = ref<McpApiKeyMeta[]>([])
+  const mcpApiKeyCatalog = ref<ExternalMcpToolDescriptor[]>([])
   const mcpApiKeyCreated = ref<{ meta: McpApiKeyMeta; key: string } | null>(null)
 
   const skillApprovalRequest = ref<ApprovalRequest | null>(null)
@@ -969,6 +973,7 @@ export function createState(deps: StateDeps) {
     sandboxStatus,
     bindingStats,
     mcpApiKeys,
+    mcpApiKeyCatalog,
     mcpApiKeyCreated,
     sessionCapabilities,
     skillSupport,

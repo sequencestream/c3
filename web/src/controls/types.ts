@@ -282,12 +282,17 @@ export interface AppMethods {
   setAdminPassword(payload: { username: string; password: string; currentPassword?: string }): void
   removeAccount(payload: { username: string }): void
   setAdminAccount(payload: { username: string }): void
-  /** Mint an external-MCP API key; the reply carries its plaintext exactly once. */
-  createMcpApiKey(payload: { name: string; workspaceIds: string[] }): void
-  /** Rename a key and/or replace its authorized workspace set. */
-  updateMcpApiKey(payload: { id: string; name?: string; workspaceIds?: string[] }): void
+  /** Mint an external-MCP API key bound to ONE workspace; the reply carries its plaintext exactly once. */
+  createMcpApiKey(payload: { workspaceId: string; name: string }): void
+  /** Rename a key and/or replace its granted tool scope. The workspace pins which roster replies. */
+  updateMcpApiKey(payload: {
+    workspaceId: string
+    id: string
+    name?: string
+    tools?: string[]
+  }): void
   /** Revoke a key — effective on that key's very next request. */
-  revokeMcpApiKey(id: string): void
+  revokeMcpApiKey(payload: { workspaceId: string; id: string }): void
   /** Drop the one-time plaintext from memory; after this it is unrecoverable. */
   dismissMcpApiKeyReveal(): void
   /** Close the system-settings panel, dropping any still-revealed plaintext key. */

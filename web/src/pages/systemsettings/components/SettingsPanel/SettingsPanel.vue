@@ -14,7 +14,6 @@ import { resolveDefaultAgentId } from '@ccc/shared'
 import type {
   AgentConfig,
   AuthConfig,
-  McpApiKeyMeta,
   SessionBindingStats,
   SandboxHostStatus,
   SystemSettings,
@@ -31,7 +30,6 @@ import { useAuth } from '@/composables/useAuth'
 import { deepCopy, useTabbedDraftSave } from '@/composables/useTabbedDraftSave'
 import type { SystemSettingsTarget } from '@/lib/action-descriptor'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
-import McpApiKeys from './McpApiKeys.vue'
 import TabNav from '@/components/TabNav/TabNav.vue'
 import EmojiPicker from './EmojiPicker.vue'
 
@@ -65,11 +63,7 @@ const props = withDefaults(
     vendorAvailability?: Partial<Record<VendorId, VendorRuntimeStatus>>
     sandboxStatus?: SandboxHostStatus | null
     bindingStats?: SessionBindingStats | null
-    /** 外部 MCP API key 名册(仅元数据)。非管理员下服务端不回,故为空。 */
-    mcpApiKeys?: McpApiKeyMeta[]
-    /** 刚生成的 key —— 明文在整个系统里唯一一次出现的地方。 */
-    mcpApiKeyCreated?: { meta: McpApiKeyMeta; key: string } | null
-    /** 已注册工作区,供 key 授权集合选择;key 只能引用其中的条目。 */
+    /** 已注册工作区,供账号/共享等需要选择工作区的区块引用。 */
     workspaces?: WorkspaceInfo[]
     /** 一次性定位目标:落到某个 Tab 并在其中定位一行配置。消费后由父组件清空。 */
     target?: SystemSettingsTarget | null
@@ -79,8 +73,6 @@ const props = withDefaults(
     vendorAvailability: () => ({}),
     sandboxStatus: null,
     bindingStats: null,
-    mcpApiKeys: () => [],
-    mcpApiKeyCreated: null,
     workspaces: () => [],
     target: null,
   },
@@ -194,12 +186,6 @@ const emit = defineEmits<{
   'remove-account': [payload: { username: string }]
   // Designate which basic account is the single admin.
   'set-admin-account': [payload: { username: string }]
-  // External MCP API keys. Immediate-effect operations, deliberately outside the
-  // per-tab draft/save machinery — the same shape the basic-account list uses.
-  'create-mcp-api-key': [payload: { name: string; workspaceIds: string[] }]
-  'update-mcp-api-key': [payload: { id: string; name?: string; workspaceIds?: string[] }]
-  'revoke-mcp-api-key': [id: string]
-  'dismiss-mcp-api-key-reveal': []
   // The one-shot `target` was acted on (located, or resolved to its fallback);
   // the owner clears it so reopening the panel does not jump again.
   'target-consumed': []
@@ -1772,19 +1758,6 @@ function selectAdmin(username: string) {
           </label>
           <p class="settings-hint">{{ t('settings.auth.ttl.hint') }}</p>
         </section>
-
-        <!-- External MCP API keys. Immediate-effect operations: this section has no
-             draft and never contributes to the tab's unsaved state. -->
-        <McpApiKeys
-          :keys="mcpApiKeys"
-          :created="mcpApiKeyCreated"
-          :workspaces="workspaces"
-          :is-admin="isAdmin"
-          @create="(p) => emit('create-mcp-api-key', p)"
-          @update="(p) => emit('update-mcp-api-key', p)"
-          @revoke="(id) => emit('revoke-mcp-api-key', id)"
-          @dismiss-reveal="emit('dismiss-mcp-api-key-reveal')"
-        />
       </div>
 
       <!-- ============ General tab ============ -->

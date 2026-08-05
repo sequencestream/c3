@@ -3,8 +3,8 @@
  * are stubbed — persistence has its own tests in
  * `kernel/config/mcp-api-keys.test.ts` — so what is asserted here is exactly what
  * these handlers own: the administrator gate, the id ⇄ path translation, the
- * all-or-nothing grant rule, the single appearance of the plaintext, and the
- * revocation reaching live sessions.
+ * server-decided initial scope, the all-or-nothing tool-scope rule, the single
+ * appearance of the plaintext, and revocation/re-scoping reaching live sessions.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerToClient } from '@ccc/shared/protocol'
@@ -12,11 +12,19 @@ import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import type { McpApiKeyInfo } from '../../kernel/config/mcp-api-keys.js'
 
+const READ_TOOLS = [
+  'find_intents',
+  'view_intent',
+  'find_discussions',
+  'view_discussion',
+  'publish_event',
+]
+
 const h = vi.hoisted(() => ({
   admin: true,
   records: [] as McpApiKeyInfo[],
-  created: null as { name: string; workspaces: string[] } | null,
-  updatedWorkspaces: null as { id: string; workspaces: string[] } | null,
+  created: null as { name: string; workspace: string; tools: string[] } | null,
+  updatedTools: null as { id: string; tools: string[] } | null,
   renamed: null as { id: string; name: string } | null,
   revoked: [] as string[],
   closed: [] as string[],
@@ -26,6 +34,8 @@ const h = vi.hoisted(() => ({
     ['ws-alpha', '/canon/alpha'],
     ['ws-beta', '/canon/beta'],
   ]),
+  /** Registered paths whose directory has vanished (key unusable). */
+  goneDirs: new Set<string>(),
 }))
 
 vi.mock('../auth/authz.js', () => ({
@@ -37,37 +47,42 @@ vi.mock('../auth/authz.js', () => ({
 }))
 
 vi.mock('../../kernel/config/mcp-api-keys.js', () => ({
-  listMcpApiKeys: () => h.records,
-  createMcpApiKey: async (name: string, workspaces: string[]) => {
+  listMcpApiKeysForWorkspace: (workspace: string) =>
+    h.records.filter((r) => r.workspace === workspace),
+  createMcpApiKey: async (name: string, workspace: string, tools: string[]) => {
     if (h.throwOnWrite) throw new Error('disk full')
-    h.created = { name, workspaces: [...workspaces] }
+    h.created = { name, workspace, tools: [...tools] }
     const meta: McpApiKeyInfo = {
       id: 'key-new',
       name,
       createdAt: 10,
       lastUsedAt: null,
-      workspaces: [...workspaces],
+      workspace,
+      tools: [...tools],
       displayPrefix: 'c3k_key-new',
     }
     h.records = [...h.records, meta]
     return { meta, key: 'c3k_key-new_THE-PLAINTEXT' }
   },
-  updateMcpApiKeyWorkspaces: (id: string, workspaces: string[]) => {
-    const rec = h.records.find((r) => r.id === id)
+  updateMcpApiKeyInWorkspace: (
+    id: string,
+    workspace: string,
+    patch: { name?: string; tools?: string[] },
+  ) => {
+    const rec = h.records.find((r) => r.id === id && r.workspace === workspace)
     if (!rec) return null
-    h.updatedWorkspaces = { id, workspaces: [...workspaces] }
-    rec.workspaces = [...workspaces]
+    if (patch.name !== undefined) {
+      h.renamed = { id, name: patch.name }
+      rec.name = patch.name
+    }
+    if (patch.tools !== undefined) {
+      h.updatedTools = { id, tools: [...patch.tools] }
+      rec.tools = [...patch.tools]
+    }
     return rec
   },
-  renameMcpApiKey: (id: string, name: string) => {
-    const rec = h.records.find((r) => r.id === id)
-    if (!rec) return null
-    h.renamed = { id, name }
-    rec.name = name
-    return rec
-  },
-  revokeMcpApiKey: (id: string) => {
-    const idx = h.records.findIndex((r) => r.id === id)
+  revokeMcpApiKeyInWorkspace: (id: string, workspace: string) => {
+    const idx = h.records.findIndex((r) => r.id === id && r.workspace === workspace)
     if (idx < 0) return false
     h.revoked.push(id)
     h.records = h.records.filter((r) => r.id !== id)
@@ -79,13 +94,44 @@ vi.mock('../external-mcp/workspace-scope.js', () => ({
   workspaceIdToCanonicalPath: (id: string) => h.registry.get(id) ?? null,
   canonicalPathToWorkspaceId: (path: string) =>
     [...h.registry.entries()].find(([, p]) => p === path)?.[0] ?? null,
+  resolveRegisteredWorkspacePath: (path: string) =>
+    [...h.registry.values()].includes(path) && !h.goneDirs.has(path) ? path : null,
+}))
+
+vi.mock('../external-mcp/tools.js', () => ({
+  externalMcpToolDescriptors: () => [
+    { name: 'find_intents', access: 'read' },
+    { name: 'view_intent', access: 'read' },
+    { name: 'find_discussions', access: 'read' },
+    { name: 'view_discussion', access: 'read' },
+    { name: 'publish_event', access: 'read' },
+    { name: 'save_intents', access: 'write' },
+  ],
+  normalizeExternalMcpToolScope: (names: readonly string[]) => {
+    const known = new Set([
+      'find_intents',
+      'view_intent',
+      'find_discussions',
+      'view_discussion',
+      'publish_event',
+      'save_intents',
+    ])
+    const out: string[] = []
+    for (const raw of names) {
+      const name = typeof raw === 'string' ? raw.trim() : ''
+      if (!known.has(name) || out.includes(name))
+        return { ok: false as const, offender: String(raw) }
+      out.push(name)
+    }
+    return { ok: true as const, tools: out }
+  },
 }))
 
 const {
   createMcpApiKeyHandler,
   listMcpApiKeysHandler,
   revokeMcpApiKeyHandler,
-  setExternalMcpRevocationHook,
+  setExternalMcpSessionCloser,
   updateMcpApiKeyHandler,
 } = await import('./mcp-api-keys.js')
 
@@ -107,102 +153,124 @@ function seed(records: McpApiKeyInfo[]): void {
 }
 
 function key(over: Partial<McpApiKeyInfo> = {}): McpApiKeyInfo {
-  return {
+  const merged = {
     id: 'key-1',
     name: 'ci',
     createdAt: 1,
     lastUsedAt: null,
-    workspaces: ['/canon/alpha'],
+    workspace: '/canon/alpha',
+    tools: [...READ_TOOLS],
     displayPrefix: 'c3k_key-1',
     ...over,
   }
+  return { ...merged, displayPrefix: `c3k_${merged.id}` }
 }
 
 beforeEach(() => {
   h.admin = true
   h.records = []
   h.created = null
-  h.updatedWorkspaces = null
+  h.updatedTools = null
   h.renamed = null
   h.revoked = []
   h.closed = []
   h.throwOnWrite = false
-  setExternalMcpRevocationHook((id) => h.closed.push(id))
+  h.goneDirs.clear()
+  setExternalMcpSessionCloser((id) => h.closed.push(id))
 })
 
 describe('the administrator gate', () => {
-  it('refuses every operation for a non-admin, and mutates nothing', async () => {
+  it('lets a non-admin view the metadata-only roster but refuses every mutation', async () => {
     h.admin = false
     seed([key()])
 
+    // Listing is NOT admin-gated: the roster carries no secret, and hiding it from
+    // non-administrators would only make the feature look absent rather than
+    // restricted. What it returns is exactly the metadata a view is allowed to see.
     const list = makeConn()
-    listMcpApiKeysHandler(ctx, list.conn, { type: 'list_mcp_api_keys' })
+    listMcpApiKeysHandler(ctx, list.conn, { type: 'list_mcp_api_keys', workspaceId: 'ws-alpha' })
+    expect(list.sent[0]).toMatchObject({ type: 'mcp_api_keys' })
 
     const create = makeConn()
     await createMcpApiKeyHandler(ctx, create.conn, {
       type: 'create_mcp_api_key',
+      workspaceId: 'ws-alpha',
       name: 'x',
-      workspaceIds: ['ws-alpha'],
     })
 
     const update = makeConn()
     updateMcpApiKeyHandler(ctx, update.conn, {
       type: 'update_mcp_api_key',
+      workspaceId: 'ws-alpha',
       id: 'key-1',
-      workspaceIds: [],
+      tools: [],
     })
 
     const revoke = makeConn()
-    revokeMcpApiKeyHandler(ctx, revoke.conn, { type: 'revoke_mcp_api_key', id: 'key-1' })
+    revokeMcpApiKeyHandler(ctx, revoke.conn, {
+      type: 'revoke_mcp_api_key',
+      workspaceId: 'ws-alpha',
+      id: 'key-1',
+    })
 
-    for (const { sent } of [list, create, update, revoke]) {
+    for (const { sent } of [create, update, revoke]) {
       expect(sent).toEqual([{ type: 'error', error: { code: 'auth.adminOnly' } }])
     }
     expect(h.created).toBeNull()
-    expect(h.updatedWorkspaces).toBeNull()
+    expect(h.updatedTools).toBeNull()
     expect(h.revoked).toEqual([])
     expect(h.records).toHaveLength(1)
   })
 })
 
 describe('list_mcp_api_keys', () => {
-  it('translates authorized paths to workspace ids and carries no hash material', () => {
-    seed([key({ workspaces: ['/canon/alpha', '/canon/beta'] })])
+  it('is scoped to the named workspace and carries the catalog but no secrets', () => {
+    seed([
+      key({ id: 'key-a', workspace: '/canon/alpha' }),
+      key({ id: 'key-b', workspace: '/canon/beta' }),
+    ])
     const { conn, sent } = makeConn()
-    listMcpApiKeysHandler(ctx, conn, { type: 'list_mcp_api_keys' })
+    listMcpApiKeysHandler(ctx, conn, { type: 'list_mcp_api_keys', workspaceId: 'ws-alpha' })
 
+    const msg = sent[0] as Extract<ServerToClient, { type: 'mcp_api_keys' }>
+    expect(msg.workspaceId).toBe('ws-alpha')
+    expect(msg.keys.map((k) => k.id)).toEqual(['key-a'])
+    expect(msg.keys[0]).toEqual({
+      id: 'key-a',
+      name: 'ci',
+      createdAt: 1,
+      lastUsedAt: null,
+      workspaceId: 'ws-alpha',
+      unavailable: false,
+      tools: [...READ_TOOLS],
+      displayPrefix: 'c3k_key-a',
+    })
+    expect(msg.catalog.length).toBeGreaterThan(0)
+    expect(JSON.stringify(msg)).not.toContain('salt')
+    expect((msg as { created?: unknown }).created).toBeUndefined()
+  })
+
+  it('marks a key unavailable when its workspace directory is gone, without disclosing the path', () => {
+    seed([key()])
+    h.goneDirs.add('/canon/alpha')
+    const { conn, sent } = makeConn()
+    listMcpApiKeysHandler(ctx, conn, { type: 'list_mcp_api_keys', workspaceId: 'ws-alpha' })
+    const msg = sent[0] as Extract<ServerToClient, { type: 'mcp_api_keys' }>
+    expect(msg.keys[0].workspaceId).toBe('ws-alpha')
+    expect(msg.keys[0].unavailable).toBe(true)
+    // The path stays server-side.
+    expect(JSON.stringify(msg)).not.toContain('/canon/alpha')
+  })
+
+  it('rejects an unknown workspace id outright', () => {
+    const { conn, sent } = makeConn()
+    listMcpApiKeysHandler(ctx, conn, { type: 'list_mcp_api_keys', workspaceId: 'ws-forged' })
     expect(sent).toEqual([
       {
-        type: 'mcp_api_keys',
-        keys: [
-          {
-            id: 'key-1',
-            name: 'ci',
-            createdAt: 1,
-            lastUsedAt: null,
-            workspaceIds: ['ws-alpha', 'ws-beta'],
-            staleWorkspaces: [],
-            displayPrefix: 'c3k_key-1',
-          },
-        ],
+        type: 'error',
+        error: { code: 'mcpApiKey.unknownWorkspace', params: { workspaceId: 'ws-forged' } },
       },
     ])
-  })
-
-  it('surfaces a grant whose workspace c3 no longer has, without pretending it works', () => {
-    seed([key({ workspaces: ['/canon/alpha', '/canon/removed'] })])
-    const { conn, sent } = makeConn()
-    listMcpApiKeysHandler(ctx, conn, { type: 'list_mcp_api_keys' })
-    const [msg] = sent as [Extract<ServerToClient, { type: 'mcp_api_keys' }>]
-    expect(msg.keys[0].workspaceIds).toEqual(['ws-alpha'])
-    expect(msg.keys[0].staleWorkspaces).toEqual(['/canon/removed'])
-  })
-
-  it('never includes a plaintext key on a plain list', () => {
-    seed([key()])
-    const { conn, sent } = makeConn()
-    listMcpApiKeysHandler(ctx, conn, { type: 'list_mcp_api_keys' })
-    expect((sent[0] as { created?: unknown }).created).toBeUndefined()
   })
 })
 
@@ -211,49 +279,39 @@ describe('create_mcp_api_key', () => {
     const { conn, sent } = makeConn()
     await createMcpApiKeyHandler(ctx, conn, {
       type: 'create_mcp_api_key',
+      workspaceId: 'ws-alpha',
       name: 'ci bot',
-      workspaceIds: ['ws-alpha'],
     })
 
     const msg = sent[0] as Extract<ServerToClient, { type: 'mcp_api_keys' }>
     expect(msg.type).toBe('mcp_api_keys')
     expect(msg.created?.key).toBe('c3k_key-new_THE-PLAINTEXT')
-    expect(msg.created?.meta.workspaceIds).toEqual(['ws-alpha'])
+    expect(msg.created?.meta.workspaceId).toBe('ws-alpha')
     expect(msg.keys).toHaveLength(1)
 
     // A subsequent list carries no plaintext — it existed only in that one reply.
     const again = makeConn()
-    listMcpApiKeysHandler(ctx, again.conn, { type: 'list_mcp_api_keys' })
+    listMcpApiKeysHandler(ctx, again.conn, { type: 'list_mcp_api_keys', workspaceId: 'ws-alpha' })
     expect(JSON.stringify(again.sent)).not.toContain('THE-PLAINTEXT')
   })
 
-  it('stores the canonical PATHS resolved from the ids, not the ids', async () => {
+  it('binds the resolved canonical path, NOT the id, and forces the read-only scope', async () => {
     const { conn } = makeConn()
     await createMcpApiKeyHandler(ctx, conn, {
       type: 'create_mcp_api_key',
+      workspaceId: 'ws-beta',
       name: 'ci',
-      workspaceIds: ['ws-beta', 'ws-alpha'],
     })
-    expect(h.created).toEqual({ name: 'ci', workspaces: ['/canon/beta', '/canon/alpha'] })
+    // The handler decides the initial scope: full read-only set, no write tool.
+    expect(h.created).toEqual({ name: 'ci', workspace: '/canon/beta', tools: READ_TOOLS })
   })
 
-  it('refuses a key with no workspace at all', async () => {
+  it('rejects an unknown workspace id and mints nothing', async () => {
     const { conn, sent } = makeConn()
     await createMcpApiKeyHandler(ctx, conn, {
       type: 'create_mcp_api_key',
+      workspaceId: 'ws-forged',
       name: 'ci',
-      workspaceIds: [],
-    })
-    expect(sent).toEqual([{ type: 'error', error: { code: 'mcpApiKey.noWorkspace' } }])
-    expect(h.created).toBeNull()
-  })
-
-  it('rejects the whole grant when one workspace id is unknown', async () => {
-    const { conn, sent } = makeConn()
-    await createMcpApiKeyHandler(ctx, conn, {
-      type: 'create_mcp_api_key',
-      name: 'ci',
-      workspaceIds: ['ws-alpha', 'ws-forged'],
     })
     expect(sent).toEqual([
       {
@@ -261,7 +319,6 @@ describe('create_mcp_api_key', () => {
         error: { code: 'mcpApiKey.unknownWorkspace', params: { workspaceId: 'ws-forged' } },
       },
     ])
-    // Nothing partially applied — no key exists with just the valid half.
     expect(h.created).toBeNull()
   })
 
@@ -270,79 +327,153 @@ describe('create_mcp_api_key', () => {
     const { conn, sent } = makeConn()
     await createMcpApiKeyHandler(ctx, conn, {
       type: 'create_mcp_api_key',
+      workspaceId: 'ws-alpha',
       name: 'ci',
-      workspaceIds: ['ws-alpha'],
     })
     expect(sent).toEqual([{ type: 'error', error: { code: 'mcpApiKey.saveFailed' } }])
   })
 })
 
 describe('update_mcp_api_key', () => {
-  it('replaces the grant with the resolved paths', () => {
+  it('replaces the tool scope, then tears down that key’s live sessions', () => {
     seed([key()])
     const { conn, sent } = makeConn()
     updateMcpApiKeyHandler(ctx, conn, {
       type: 'update_mcp_api_key',
+      workspaceId: 'ws-alpha',
       id: 'key-1',
-      workspaceIds: ['ws-beta'],
+      tools: ['save_intents'],
     })
-    expect(h.updatedWorkspaces).toEqual({ id: 'key-1', workspaces: ['/canon/beta'] })
+    expect(h.updatedTools).toEqual({ id: 'key-1', tools: ['save_intents'] })
+    expect(h.closed).toEqual(['key-1'])
     expect((sent[0] as { type: string }).type).toBe('mcp_api_keys')
   })
 
-  it('accepts an explicitly empty grant as "reaches nothing"', () => {
+  it('accepts an explicitly empty scope as "calls nothing"', () => {
     seed([key()])
     const { conn } = makeConn()
     updateMcpApiKeyHandler(ctx, conn, {
       type: 'update_mcp_api_key',
+      workspaceId: 'ws-alpha',
       id: 'key-1',
-      workspaceIds: [],
+      tools: [],
     })
-    expect(h.updatedWorkspaces).toEqual({ id: 'key-1', workspaces: [] })
+    expect(h.updatedTools).toEqual({ id: 'key-1', tools: [] })
   })
 
-  it('renames without touching the grant', () => {
+  it('renames without touching the scope', () => {
     seed([key()])
     const { conn } = makeConn()
     updateMcpApiKeyHandler(ctx, conn, {
       type: 'update_mcp_api_key',
+      workspaceId: 'ws-alpha',
       id: 'key-1',
       name: 'release bot',
     })
     expect(h.renamed).toEqual({ id: 'key-1', name: 'release bot' })
-    expect(h.updatedWorkspaces).toBeNull()
+    expect(h.updatedTools).toBeNull()
+    expect(h.closed).toEqual([])
   })
 
   it('reports an unknown key id', () => {
     const { conn, sent } = makeConn()
     updateMcpApiKeyHandler(ctx, conn, {
       type: 'update_mcp_api_key',
+      workspaceId: 'ws-alpha',
       id: 'ghost',
-      workspaceIds: ['ws-alpha'],
+      tools: [],
     })
     expect(sent).toEqual([
       { type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: 'ghost' } } },
     ])
   })
 
-  it('rejects the whole update when a workspace id is unknown', () => {
+  it('rejects the whole update when a tool name is outside the catalog', () => {
     seed([key()])
     const { conn, sent } = makeConn()
     updateMcpApiKeyHandler(ctx, conn, {
       type: 'update_mcp_api_key',
+      workspaceId: 'ws-alpha',
       id: 'key-1',
-      workspaceIds: ['ws-forged'],
+      tools: ['save_intents', 'not_a_tool'],
+    })
+    expect(sent[0]).toMatchObject({
+      error: { code: 'mcpApiKey.unknownTool', params: { tool: 'not_a_tool' } },
+    })
+    expect(h.updatedTools).toBeNull()
+    expect(h.closed).toEqual([])
+  })
+
+  it('rejects a duplicate tool name whole', () => {
+    seed([key()])
+    const { conn, sent } = makeConn()
+    updateMcpApiKeyHandler(ctx, conn, {
+      type: 'update_mcp_api_key',
+      workspaceId: 'ws-alpha',
+      id: 'key-1',
+      tools: ['save_intents', 'save_intents'],
+    })
+    expect(sent[0]).toMatchObject({ error: { code: 'mcpApiKey.unknownTool' } })
+    expect(h.updatedTools).toBeNull()
+  })
+
+  it('rejects an unknown workspace id before touching anything', () => {
+    seed([key()])
+    const { conn, sent } = makeConn()
+    updateMcpApiKeyHandler(ctx, conn, {
+      type: 'update_mcp_api_key',
+      workspaceId: 'ws-forged',
+      id: 'key-1',
+      tools: [],
     })
     expect(sent[0]).toMatchObject({ error: { code: 'mcpApiKey.unknownWorkspace' } })
-    expect(h.updatedWorkspaces).toBeNull()
+    expect(h.updatedTools).toBeNull()
+  })
+
+  it('rejects an update when the key belongs to another workspace', () => {
+    seed([key({ id: 'key-beta', workspace: '/canon/beta' })])
+    const { conn, sent } = makeConn()
+    updateMcpApiKeyHandler(ctx, conn, {
+      type: 'update_mcp_api_key',
+      workspaceId: 'ws-alpha',
+      id: 'key-beta',
+      tools: ['save_intents'],
+    })
+    expect(sent).toEqual([
+      { type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: 'key-beta' } } },
+    ])
+    expect(h.updatedTools).toBeNull()
+    expect(h.records[0].tools).toEqual(READ_TOOLS)
+  })
+
+  it('does not partially apply a rename when tools validation fails', () => {
+    seed([key()])
+    const { conn, sent } = makeConn()
+    updateMcpApiKeyHandler(ctx, conn, {
+      type: 'update_mcp_api_key',
+      workspaceId: 'ws-alpha',
+      id: 'key-1',
+      name: 'new name',
+      tools: ['not_a_tool'],
+    })
+    expect(sent[0]).toMatchObject({
+      error: { code: 'mcpApiKey.unknownTool', params: { tool: 'not_a_tool' } },
+    })
+    expect(h.renamed).toBeNull()
+    expect(h.updatedTools).toBeNull()
+    expect(h.records[0].name).toBe('ci')
   })
 })
 
 describe('revoke_mcp_api_key', () => {
   it('deletes the record AND tears down that key’s live MCP sessions', () => {
-    seed([key(), key({ id: 'key-2' })])
+    seed([key(), key({ id: 'key-2', workspace: '/canon/alpha' })])
     const { conn, sent } = makeConn()
-    revokeMcpApiKeyHandler(ctx, conn, { type: 'revoke_mcp_api_key', id: 'key-1' })
+    revokeMcpApiKeyHandler(ctx, conn, {
+      type: 'revoke_mcp_api_key',
+      workspaceId: 'ws-alpha',
+      id: 'key-1',
+    })
 
     expect(h.revoked).toEqual(['key-1'])
     expect(h.closed).toEqual(['key-1'])
@@ -353,7 +484,11 @@ describe('revoke_mcp_api_key', () => {
   it('reports an unknown id and closes nothing', () => {
     seed([key()])
     const { conn, sent } = makeConn()
-    revokeMcpApiKeyHandler(ctx, conn, { type: 'revoke_mcp_api_key', id: 'ghost' })
+    revokeMcpApiKeyHandler(ctx, conn, {
+      type: 'revoke_mcp_api_key',
+      workspaceId: 'ws-alpha',
+      id: 'ghost',
+    })
     expect(sent).toEqual([
       { type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: 'ghost' } } },
     ])
@@ -361,11 +496,31 @@ describe('revoke_mcp_api_key', () => {
   })
 
   it('still revokes when no route is wired (unit/embedded server)', () => {
-    setExternalMcpRevocationHook(null)
+    setExternalMcpSessionCloser(null)
     seed([key()])
     const { conn, sent } = makeConn()
-    revokeMcpApiKeyHandler(ctx, conn, { type: 'revoke_mcp_api_key', id: 'key-1' })
+    revokeMcpApiKeyHandler(ctx, conn, {
+      type: 'revoke_mcp_api_key',
+      workspaceId: 'ws-alpha',
+      id: 'key-1',
+    })
     expect(h.revoked).toEqual(['key-1'])
     expect((sent[0] as { type: string }).type).toBe('mcp_api_keys')
+  })
+
+  it('rejects a revoke when the key belongs to another workspace', () => {
+    seed([key({ id: 'key-beta', workspace: '/canon/beta' })])
+    const { conn, sent } = makeConn()
+    revokeMcpApiKeyHandler(ctx, conn, {
+      type: 'revoke_mcp_api_key',
+      workspaceId: 'ws-alpha',
+      id: 'key-beta',
+    })
+    expect(sent).toEqual([
+      { type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: 'key-beta' } } },
+    ])
+    expect(h.revoked).toEqual([])
+    expect(h.records).toHaveLength(1)
+    expect(h.closed).toEqual([])
   })
 })

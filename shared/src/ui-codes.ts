@@ -193,14 +193,17 @@ export const UI_ERROR_CODES = {
   // The key id named by an update/revoke no longer exists (already revoked, or
   // deleted by another administrator since the roster was loaded).
   'mcpApiKey.unknown': { key: 'error.mcpApiKey.unknown', params: ['id'] },
-  // A grant named a workspace id c3 does not have. Rejected whole rather than
-  // partially applied, so a half-granted key never looks fully granted.
+  // A key was asked to bind a workspace id c3 does not have (or that no longer
+  // resolves). The binding is fixed at creation, so this is refused outright
+  // rather than falling back to some other workspace.
   'mcpApiKey.unknownWorkspace': {
     key: 'error.mcpApiKey.unknownWorkspace',
     params: ['workspaceId'],
   },
-  // Creating a key with no workspace at all — it could never reach anything.
-  'mcpApiKey.noWorkspace': { key: 'error.mcpApiKey.noWorkspace' },
+  // A tool scope named something outside the server's externally-grantable
+  // catalog (or repeated a name). Rejected whole rather than partially applied,
+  // so a half-saved scope never looks like the one that was submitted.
+  'mcpApiKey.unknownTool': { key: 'error.mcpApiKey.unknownTool', params: ['tool'] },
   // Persisting the key roster failed (settings.json unwritable / lock contention).
   'mcpApiKey.saveFailed': { key: 'error.mcpApiKey.saveFailed' },
 } as const satisfies Record<string, UiErrorDef>

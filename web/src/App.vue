@@ -286,6 +286,7 @@ const {
   removeAccount,
   setAdminAccount,
   mcpApiKeys,
+  mcpApiKeyCatalog,
   mcpApiKeyCreated,
   createMcpApiKey,
   updateMcpApiKey,
@@ -832,8 +833,6 @@ function onCodesChatWidth(px: number): void {
       :vendor-availability="vendorAvailability"
       :sandbox-status="sandboxStatus"
       :binding-stats="bindingStats"
-      :mcp-api-keys="mcpApiKeys"
-      :mcp-api-key-created="mcpApiKeyCreated"
       :workspaces="workspaces"
       :target="settingsTarget"
       @close="onCloseSettings"
@@ -842,10 +841,6 @@ function onCodesChatWidth(px: number): void {
       @set-password="setAdminPassword"
       @remove-account="removeAccount"
       @set-admin-account="setAdminAccount"
-      @create-mcp-api-key="createMcpApiKey"
-      @update-mcp-api-key="updateMcpApiKey"
-      @revoke-mcp-api-key="revokeMcpApiKey"
-      @dismiss-mcp-api-key-reveal="dismissMcpApiKeyReveal"
     />
 
     <PersonalizedSettingPage
@@ -873,12 +868,25 @@ function onCodesChatWidth(px: number): void {
       :park-recovery-loading="parkRecoveryLoading"
       :base-url="serverSettings?.baseUrl ?? null"
       :mcp-api-keys="mcpApiKeys"
+      :mcp-api-key-created="mcpApiKeyCreated"
+      :mcp-api-key-catalog="mcpApiKeyCatalog"
+      :is-admin="auth.isAdmin.value"
       @close="workspaceSettingOpen = false"
       @save="saveWorkspaceSetting"
       @query-link-status="querySkillLinkStatus"
       @install-skill="installSkill"
       @reload-park-recovery="loadParkRecoveryStats"
       @goto-system-settings="openSettingsFromWorkspaceSetting"
+      @create-mcp-api-key="
+        (p) => currentWorkspace && createMcpApiKey({ workspaceId: currentWorkspace, ...p })
+      "
+      @update-mcp-api-key-tools="
+        (p) => currentWorkspace && updateMcpApiKey({ workspaceId: currentWorkspace, ...p })
+      "
+      @revoke-mcp-api-key="
+        (id) => currentWorkspace && revokeMcpApiKey({ workspaceId: currentWorkspace, id })
+      "
+      @dismiss-mcp-api-key-reveal="dismissMcpApiKeyReveal"
     />
 
     <SkillApprovalModal

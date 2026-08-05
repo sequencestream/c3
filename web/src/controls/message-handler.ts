@@ -102,6 +102,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     sandboxStatus,
     bindingStats,
     mcpApiKeys,
+    mcpApiKeyCatalog,
     mcpApiKeyCreated,
     sessionCapabilities,
     vendorCapabilities,
@@ -738,7 +739,11 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'mcp_api_keys':
+        // The roster is scoped to one workspace. A reply that raced with a
+        // workspace switch must not clobber the page now showing another one.
+        if (msg.workspaceId !== currentWorkspace.value) break
         mcpApiKeys.value = msg.keys
+        mcpApiKeyCatalog.value = msg.catalog
         // `created` rides only on a successful mint. A plain roster refresh must
         // NOT clear an open reveal box — the user may still be copying the key.
         if (msg.created) mcpApiKeyCreated.value = msg.created

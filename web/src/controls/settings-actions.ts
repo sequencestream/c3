@@ -39,10 +39,6 @@ export function installSettingsActions(ctx: AppCtx): void {
   ctx.openSettings = (): void => {
     settingsOpen.value = true
     send({ type: 'get_settings' })
-    // The key roster is admin-gated server-side; asking as a non-admin would only
-    // produce an error toast, so the console does not ask at all. The panel then
-    // shows the section read-only and empty, which is the truth for that account.
-    if (ctx.auth.isAdmin.value) send({ type: 'list_mcp_api_keys' })
   }
 
   /**
@@ -129,8 +125,13 @@ export function installSettingsActions(ctx: AppCtx): void {
 
   ctx.openWorkspaceSetting = (): void => {
     workspaceSettingOpen.value = true
-    const path = currentWorkspace.value
-    if (path) send({ type: 'load_workspace_setting', workspaceId: path })
+    const id = currentWorkspace.value
+    if (id) {
+      send({ type: 'load_workspace_setting', workspaceId: id })
+      // The external-MCP key roster is scoped to ONE workspace: ask for this one.
+      // Metadata only, no plaintext, so non-administrators may see it too.
+      send({ type: 'list_mcp_api_keys', workspaceId: id })
+    }
     ctx.loadParkRecoveryStats()
   }
 
@@ -206,19 +207,24 @@ export function installSettingsActions(ctx: AppCtx): void {
   // Every operation replies with the WHOLE roster, so none of these mutates local
   // state optimistically: what the list shows is always what the server confirmed.
 
-  /** Mint a key. The reply is the only message that will ever carry its plaintext. */
-  ctx.createMcpApiKey = (payload: { name: string; workspaceIds: string[] }): void => {
+  /** Mint a key bound to one workspace. The reply is the only message that will ever carry its plaintext. */
+  ctx.createMcpApiKey = (payload: { workspaceId: string; name: string }): void => {
     send({ type: 'create_mcp_api_key', ...payload })
   }
 
-  /** Rename a key and/or replace its authorized workspace set. */
-  ctx.updateMcpApiKey = (payload: { id: string; name?: string; workspaceIds?: string[] }): void => {
+  /** Rename a key and/or replace its granted tool scope. */
+  ctx.updateMcpApiKey = (payload: {
+    workspaceId: string
+    id: string
+    name?: string
+    tools?: string[]
+  }): void => {
     send({ type: 'update_mcp_api_key', ...payload })
   }
 
   /** Revoke a key. Takes effect on that key's very next request. */
-  ctx.revokeMcpApiKey = (id: string): void => {
-    send({ type: 'revoke_mcp_api_key', id })
+  ctx.revokeMcpApiKey = (payload: { workspaceId: string; id: string }): void => {
+    send({ type: 'revoke_mcp_api_key', ...payload })
   }
 
   /**

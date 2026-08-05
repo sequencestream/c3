@@ -1090,6 +1090,27 @@
       "openWorkcenterEvent": {
         "label": "保留項目を開く"
       }
+    },
+    "gitFailure": {
+      "worktreeBranchOrPathTaken": "この意図のブランチまたは worktree ディレクトリがまだ使用中です。別の worktree がチェックアウトしているか、同名のブランチ/ディレクトリが残っています。ローカルで解放・整理してから再試行してください。",
+      "repoConflictUnresolved": "リポジトリに未解決のマージ競合があるため、Git がこの操作を拒否しました。競合を解決(または merge/rebase を中止)してから再試行してください。",
+      "filesystemDenied": "ローカルファイルシステムが書き込みを拒否しました(権限なし、読み取り専用、または空き容量不足)。ディスク容量とディレクトリ権限を確認してから再試行してください。",
+      "forgeCliUnavailable": "コードホスティングの CLI が未インストール、またはインストール済みでも未ログインです。インストールとログインを済ませてから再試行してください。",
+      "remotePermissionDenied": "権限不足によりリモートがリクエスト(プッシュまたは PR 作成)を拒否しました。リポジトリへの書き込み権限を申請するか、使用中の認証情報を修正してから再試行してください。",
+      "pushRejected": "プッシュが拒否されました。リモートブランチがローカルより先行しています。リモートブランチと同期(pull/rebase して競合を解決)してから再試行してください。",
+      "networkUnreachable": "リモートまたはプラットフォーム API に到達できません(DNS、接続、タイムアウト)。ネットワークを復旧し(プロキシ/VPN を使用している場合はそれも確認)、再試行してください。",
+      "commitHookRejected": "コミット/プッシュのフック、またはその lint チェーンが変更を拒否しました。フックが報告した内容を修正してから再試行してください。",
+      "forgeCreateRejected": "プラットフォームが変更リクエストの作成を拒否しました(検証エラー、またはこのブランチの PR が既に存在)。プラットフォーム上でブランチの状態を確認し、修正してから再試行してください。",
+      "retryStartDevelopment": {
+        "label": "作業開始を再試行"
+      },
+      "retryCreatePr": {
+        "label": "PR 作成を再試行"
+      },
+      "rawDetail": {
+        "label": "元のエラー"
+      },
+      "noDetail": "詳細は返されませんでした。"
     }
   },
   "session": {
@@ -2837,6 +2858,10 @@
     "nextWakeup": {
       "label": "次回の起床",
       "nextTick": "次の tick"
+    },
+    "countdown": {
+      "minutesSeconds": "(残り {minutes}:{seconds})",
+      "seconds": "(残り {seconds} 秒)"
     },
     "badge": {
       "parked": "park 済み",

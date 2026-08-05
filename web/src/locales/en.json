@@ -1089,6 +1089,27 @@
       "openWorkcenterEvent": {
         "label": "Open pending item"
       }
+    },
+    "gitFailure": {
+      "worktreeBranchOrPathTaken": "The branch or worktree directory for this intent is still occupied — another worktree has it checked out, or a leftover branch/directory of the same name exists. Release or clean it up locally, then try again.",
+      "repoConflictUnresolved": "The repository has unresolved merge conflicts, so Git refused this action. Finish resolving the conflicts (or abort the merge/rebase), then try again.",
+      "filesystemDenied": "The local filesystem refused the write — no permission, read-only, or out of disk space. Check the disk space and the directory permissions, then try again.",
+      "forgeCliUnavailable": "The forge CLI is not installed, or it is installed but not logged in. Install it and complete its login, then try again.",
+      "remotePermissionDenied": "The remote rejected the request for lack of rights (push or PR creation). Ask for write access to the repository — or fix the credentials in use — then try again.",
+      "pushRejected": "The push was rejected: the remote branch has moved ahead of your local one. Sync with the remote branch (pull/rebase and resolve any conflicts), then try again.",
+      "networkUnreachable": "The remote or the forge API could not be reached (DNS, connection or timeout). Restore the network — check your proxy/VPN if you use one — then try again.",
+      "commitHookRejected": "A commit/push hook or its lint-format chain rejected the change. Fix what the hook reported, then try again.",
+      "forgeCreateRejected": "The forge refused to create the change request — its validation failed, or one already exists for this branch. Check the branch on the platform, fix what it objects to, then try again.",
+      "retryStartDevelopment": {
+        "label": "Retry starting work"
+      },
+      "retryCreatePr": {
+        "label": "Retry creating the PR"
+      },
+      "rawDetail": {
+        "label": "Raw error"
+      },
+      "noDetail": "No detail was returned."
     }
   },
   "session": {
@@ -2836,6 +2857,10 @@
     "nextWakeup": {
       "label": "Next wake-up",
       "nextTick": "Next tick"
+    },
+    "countdown": {
+      "minutesSeconds": "({minutes}:{seconds} left)",
+      "seconds": "({seconds}s left)"
     },
     "badge": {
       "parked": "Parked",

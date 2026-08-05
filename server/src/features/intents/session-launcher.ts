@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import type { Intent, PromptImage } from '@ccc/shared/protocol'
+import type { GitActionFailureGuidance, Intent, PromptImage } from '@ccc/shared/protocol'
 import { ensureRuntime, getRuntime, isRunning } from '../../runs.js'
 import type { SessionRuntime } from '../../runs.js'
 import { loadHistory, sessionExists } from '../../sessions.js'
@@ -53,6 +53,7 @@ import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 import { clearPendingSpecReviewLink, registerPendingSpecReviewLink } from './spec-review-link.js'
 import { buildSpecReviewPrompt, buildSpecReworkPrompt, readSpecFingerprint } from './spec-review.js'
 import { buildDevPrompt } from './dev-prompt.js'
+import { buildGitFailureGuidance } from './git-failure.js'
 import { findDependencyBlockingMainline, prepareSpecLaunch } from './dependency-gate.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
 import { buildContinueSpecPrompt, buildSeedSpec, buildSpecInstructPrompt } from './spec.js'
@@ -91,7 +92,18 @@ export type SessionLaunchMode = 'fresh' | 'resume' | 'attach'
 
 export type SessionLaunchResult =
   | { success: true; sessionId: string; mode: SessionLaunchMode }
-  | { success: false; code: string; params?: Record<string, string> }
+  | {
+      success: false
+      code: string
+      params?: Record<string, string>
+      /**
+       * Targeted repair guidance for a failed Git action. Set only where a Git
+       * command actually failed (worktree creation) — a gate rejection keeps its
+       * own precise copy and carries none. Adapters that have no UI to show it
+       * (the MCP tool surface) simply ignore the field.
+       */
+      guidance?: GitActionFailureGuidance
+    }
 
 export interface SessionLaunchDeps {
   readonly launchRun: (
@@ -364,10 +376,18 @@ export async function launchWorkSession(
       setBranchName(req.id, wt.branchName)
     } catch (err) {
       releaseClaim()
+      // Classified from the message the failed Git command already produced — no
+      // extra Git call, and the raw text still travels as `message`.
+      const message = errMsg(err)
       return {
         success: false,
         code: 'intent.worktreeCreateFailed',
-        params: { message: errMsg(err) },
+        params: { message },
+        guidance: buildGitFailureGuidance(
+          { stage: 'worktree', text: message },
+          req.id,
+          'start-development',
+        ),
       }
     }
   } else {

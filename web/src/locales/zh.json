@@ -1089,6 +1089,27 @@
       "openWorkcenterEvent": {
         "label": "打开待处理项"
       }
+    },
+    "gitFailure": {
+      "worktreeBranchOrPathTaken": "该意图的分支或 worktree 目录仍被占用 —— 另一个 worktree 正检出该分支,或残留了同名分支/目录。请在本地解除占用或清理后重试。",
+      "repoConflictUnresolved": "仓库存在未解决的合并冲突,Git 因此拒绝了本次操作。请先完成冲突处理(或中止 merge/rebase)后重试。",
+      "filesystemDenied": "本地文件系统拒绝写入 —— 无权限、只读或磁盘空间不足。请检查磁盘空间与目录权限后重试。",
+      "forgeCliUnavailable": "代码托管平台 CLI 未安装,或已安装但未登录。请安装并完成登录后重试。",
+      "remotePermissionDenied": "远端因权限不足拒绝了请求(推送或创建 PR)。请申请该仓库的写入权限,或修正当前使用的凭据后重试。",
+      "pushRejected": "推送被拒绝:远端分支已领先于本地分支。请先同步远端分支(pull/rebase 并处理冲突)后重试。",
+      "networkUnreachable": "无法连接远端仓库或平台 API(DNS、连接或超时)。请恢复网络 —— 若使用代理/VPN 请一并检查 —— 后重试。",
+      "commitHookRejected": "提交/推送钩子或其 lint 校验链拒绝了本次改动。请按钩子给出的报错修复后重试。",
+      "forgeCreateRejected": "代码托管平台拒绝创建变更请求 —— 校验未通过,或该分支已存在对应 PR。请在平台上确认该分支的情况并修正后重试。",
+      "retryStartDevelopment": {
+        "label": "重试开始工作"
+      },
+      "retryCreatePr": {
+        "label": "重试创建 PR"
+      },
+      "rawDetail": {
+        "label": "原始错误"
+      },
+      "noDetail": "未返回详细信息。"
     }
   },
   "session": {
@@ -2836,6 +2857,10 @@
     "nextWakeup": {
       "label": "下次唤醒",
       "nextTick": "下一次 tick"
+    },
+    "countdown": {
+      "minutesSeconds": "(剩余 {minutes}:{seconds})",
+      "seconds": "(剩余 {seconds} 秒)"
     },
     "badge": {
       "parked": "已 park",

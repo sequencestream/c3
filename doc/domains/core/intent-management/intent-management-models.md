@@ -52,6 +52,40 @@ reason / 重试 / park,或任何闸门。
 - **自然消失。**更高优先级事实清除、事件决断或 spec 批准后,投影回到更低优先级或 `null`。
 - **扩展方式**是给 `target` 联合加分支,而不是给已有分支加可选字段。
 
+## Git Action Failure Guidance
+
+一次**已经发生**的 Git / 托管平台操作失败的定向修复指引:worktree 创建失败,或创建 PR 的
+提交 → 推送 → 平台创建链上的失败。与 Action Descriptor 是同一个思路(稳定码而非文案),
+但**是两套闭集**:Action Descriptor 描述一个**持续的阻塞态**并只做导航,本模型描述一次
+**已失败的动作**并提供重试。它同样是**运行时展示投影**:不落库,不新增状态,也不改变那次
+失败已经产生(或没有产生)的任何结果。
+
+它挂在 `UiError` 上,字段**可选** —— 不认识它的客户端仍按既有 `code` + `params` 展示。
+
+| 属性     | 类型                    | 说明                                                                  |
+| -------- | ----------------------- | --------------------------------------------------------------------- |
+| `reason` | GitActionFailureReason  | 稳定原因码(闭集,本地化码不是文案);无法判定时为 `unknown`              |
+| `detail` | text                    | 当次失败命令的原始错误文本;已知与未知原因**都**保留,可能为空          |
+| `retry`  | IntentActionRetryTarget | `{ type: 'intent-action', intentId, action }`,`action` 为闭集重试入口 |
+
+原因闭集:`worktree_branch_or_path_taken`(分支被其他 worktree 占用 / 同名分支或目录残留)、
+`repo_conflict_unresolved`(仓库存在未解决冲突)、`filesystem_denied`(本地无权限 / 只读 /
+空间不足)、`forge_cli_unavailable`(平台 CLI 未安装或未登录)、`remote_permission_denied`
+(远端因无推送 / 建 PR 权限拒绝)、`push_rejected`(远端分支已前进,非快进)、
+`network_unreachable`(DNS / 连接 / 超时)、`commit_hook_rejected`(提交 / 推送钩子或其
+lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支已存在 PR)、`unknown`。
+
+重试入口闭集:`start-development` / `create-pr`。
+
+边界:
+
+- **只读当次证据。**原因仅由该次失败命令的退出码、stderr/stdout 与失败阶段推导,
+  分类过程**不执行**任何额外 Git / forge 命令,也不读仓库。
+- **不猜。**证据不足一律 `unknown`,绝不归入最相似类别;`unknown` 不展示任何修复步骤。
+- **只承载重试身份。**`retry` 不含命令、URL、路径或任意回调,只有意图 id 与枚举动作。
+- **不自动执行。**指引描述的是**用户**要做的事;c3 不清理 worktree、不解冲突、不改凭据、
+  不动远端分支,也不自动重试。
+
 ## Proposed Intent
 
 `save_intents` 调用内的单个条目;也是智能体在对话中列出待确认内容的字段来源。没有

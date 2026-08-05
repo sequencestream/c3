@@ -76,12 +76,15 @@
 
 采集侧(`funnel_event` 表、写入边界、统计口径与保留)见 [intent-management](../../core/intent-management/intent-management-spec.md) 的 RM-A23。
 
-## 外部 MCP 接入(只读,不属于 `WorkspaceSetting`)
+## 外部 MCP 接入(非配置,独立即时指令)
 
-第六个 Tab「外部 MCP 接入」展示 c3 未拉起的 agent 如何通过 MCP 访问**本工作区**。域语义见 [external-mcp](../../core/external-mcp/external-mcp-spec.md);key 的生成与吊销见 [system-setting](../system-setting/system-setting-spec.md#外部-mcp-api-key-mcpapikeys)。
+第六个 Tab「外部 MCP 接入」管理 c3 未拉起的 agent 如何通过 MCP 访问**本工作区**。域语义见 [external-mcp](../../core/external-mcp/external-mcp-spec.md);key 存储与哈希见 [system-setting](../system-setting/system-setting-spec.md#外部-mcp-api-key-存储-mcpapikeys)。
 
-- **不是配置。** 地址由系统级 `baseUrl`、固定路由 `/mcp/v1` 与本工作区路径拼出;长期 key 属系统设置,不纳入工作区配置。与「本机观测」同样是空字段白名单的 Tab:永不脏、无 Save 按钮、不出现在任何保存载荷里。
-- **展示内容。** 可复制的接入 URL 与一行式 `claude mcp add` 命令,各配复制按钮;并列出已授权本工作区的 key 名称供辨认(仅元数据,服务端绝不回传旧 key 明文)。
-- **明文处理。** 常态 URL/命令以 `<KEY>` 占位。用户可临时粘贴自己保管的明文以生成可直接复制的值——该输入**只存在于当前组件的内存**,不上传、不写入浏览器存储,离开页面即清除;输入框为密码型,避免旁人读到。
-- **缺失态。** `baseUrl` 未配置时明说「未配置」并给出跳转系统设置的入口,**不猜浏览器 Host** 当作永久配置;没有覆盖本工作区的 key 时,给出前往系统设置生成的入口。
-- 页面同时提示外部 key 的能力边界(只读 + 投递事件,永不写入)与查询串/HTTPS 风险。
+- **非配置。** 本 Tab 不在 `WorkspaceSetting` 里,空字段白名单:永不脏、无 Save 按钮、不出现在任何保存载荷里。每个操作(生成/改工具范围/吊销)都是即时服务端指令,不进入页面草稿。
+- **生命周期在此。** key 在这里生成、列示、改工具范围、吊销——每把 key 只绑定本工作区。生成后的一次性揭示区同时给出明文 key、完整 `/mcp/<key>` 地址与一行式 `claude mcp add` 命令,各配复制按钮;关闭即不可恢复。列表只含元数据(名称、短前缀、创建/最后使用、工具范围、不可用态),绝不回传明文。
+- **默认只读。** 新 key 一律只授予五个只读工具(`find_intents` / `view_intent` / `find_discussions` / `view_discussion` / `publish_event`),不含任何写工具;创建时服务端忽略客户端伪造的默认值。
+- **逐 key 工具范围。** 编辑区从服务端目录渲染只读/写两组工具,前端不另存清单。写工具会真实改动 c3 状态(落库意图、提交 spec 审核、拉起会话),保存含写工具的范围前必须过一次危险确认;保存后服务端立即切断该 key 已建立的活动会话,下一次调用即按新范围。
+- **管理员门。** 生成/改范围/吊销仅管理员可操作;非管理员只读查看不含秘密的元数据(列表本身不过滤,避免功能显得「不存在」)。
+- **不可用态。** 绑定工作区目录已消失或已注销的 key 被标为不可用、只留吊销;不披露宿主路径,也不回退到其它工作区。
+- **缺失态。** `baseUrl` 未配置时明说「未配置」并给出跳转系统设置的入口(地址拼不出来,key 仍可生成),**不猜浏览器 Host** 当作永久配置。
+- 页面持续提示写工具风险与路径即凭据 / HTTPS 风险。

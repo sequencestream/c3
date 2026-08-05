@@ -2039,7 +2039,8 @@
       "unknown": "This API key no longer exists (id {id}).",
       "unknownWorkspace": "Unknown workspace ({workspaceId}) — no key was changed.",
       "noWorkspace": "Select at least one workspace for the key.",
-      "saveFailed": "Could not save the API keys."
+      "saveFailed": "Could not save the API keys.",
+      "unknownTool": "Tool \"{tool}\" is not in the externally-grantable catalog."
     }
   },
   "statusIndicator": {
@@ -2506,17 +2507,24 @@
       "title": {
         "label": "External MCP access"
       },
-      "hint": "How an agent c3 did not start reaches THIS workspace over MCP. Read-only: the address is derived from the system base URL, the fixed /mcp/v1 route and this workspace’s path — nothing here is workspace configuration.",
-      "noBaseUrl": "No public base URL is configured, so no shareable address can be built. Set it in System Settings → General.",
-      "noKey": "No API key is authorized for this workspace yet. Generate one in System Settings → Security.",
-      "grantedKeys": "Authorized keys: {keys}",
+      "hint": "How an agent c3 did not start reaches THIS workspace over MCP. Keys are created, scoped and revoked here; every key is bound to this workspace only and lives at /mcp/<key>.",
+      "security": {
+        "hint": "The key IS the address and rides the URL path, so it can reach proxy/access logs. Put c3 behind your own HTTPS reverse proxy before exposing it beyond this machine. Write tools really change c3 state — grant them only to processes you trust, and revoke the key when done."
+      },
+      "noBaseUrl": "No public base URL is configured, so a ready-to-copy address cannot be built. Set it in System Settings → General. Keys can still be minted here.",
       "goto": {
         "label": "Open System Settings"
       },
-      "paste": {
-        "label": "Paste a key to build a ready-to-use address (optional)",
-        "placeholder": "c3k_…",
-        "hint": "Kept only in this page’s memory: it is never uploaded and never stored in the browser, and it disappears when you leave. Leave it empty to copy the template with its KEY placeholder intact."
+      "empty": "No API key for this workspace yet. Mint one below — every new key starts with the read-only tools and no write tool.",
+      "reveal": {
+        "title": "API key created: {name}",
+        "onceOnly": "This plaintext key is shown exactly once. Copy it now — after closing it cannot be recovered.",
+        "dismiss": {
+          "label": "Done"
+        }
+      },
+      "key": {
+        "label": "Plaintext key"
       },
       "url": {
         "label": "MCP URL"
@@ -2524,11 +2532,53 @@
       "command": {
         "label": "One-line client setup"
       },
-      "tools": {
-        "hint": "An external key can only read intents and discussions and publish events. It can never write to the ledger or start a session."
+      "create": {
+        "open": {
+          "label": "New API key"
+        },
+        "name": {
+          "placeholder": "Display name"
+        },
+        "defaultScope": "The new key is bound to this workspace and granted the read-only tools only. Add write tools after creation, where their risk is explained.",
+        "submit": {
+          "label": "Create key"
+        }
       },
-      "security": {
-        "hint": "The key travels in the query string and can reach proxy/access logs. Put c3 behind your own HTTPS reverse proxy before exposing it beyond this machine."
+      "tools": {
+        "edit": {
+          "label": "Tools"
+        },
+        "read": {
+          "label": "Read-only tools"
+        },
+        "write": {
+          "label": "Write tools",
+          "risk": "These change c3 state: persist intents, submit spec reviews, start sessions.",
+          "confirm": {
+            "title": "Grant write access?",
+            "body": "This key will be able to really change c3 state through: {tools}. Continue?",
+            "confirm": {
+              "label": "Grant"
+            }
+          }
+        },
+        "summary": "{total} tools · {writes} write",
+        "none": "No tools — this key can call nothing."
+      },
+      "revoke": {
+        "label": "Revoke",
+        "confirm": {
+          "title": "Revoke this key?",
+          "body": "The key stops working on its very next request and any open session is closed. This cannot be undone.",
+          "confirm": {
+            "label": "Revoke"
+          }
+        }
+      },
+      "unavailable": "This key's workspace is no longer available. It can reach nothing — revoke it.",
+      "meta": "Created {created} · Last used {lastUsed}",
+      "lastUsed": {
+        "never": "never"
       }
     }
   },

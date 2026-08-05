@@ -1,92 +1,84 @@
 # external-mcp 外部 MCP 接入
 
-`external-mcp` 域是 c3 对**自己没有拉起的 agent** 开放的唯一入口:独立的 Claude Code / Codex / Cursor 会话、CI 任务、监控脚本、局域网内的其它进程,凭长期 API key 通过 Streamable HTTP MCP 读取本部署的意图台账与讨论,并投递事件。
+`external-mcp` 域是 c3 对**自己没有拉起的 agent** 开放的唯一入口:独立的 Claude Code / Codex / Cursor 会话、CI 任务、监控脚本、局域网内的其它进程,凭长期 API key 通过 Streamable HTTP MCP 访问本部署的意图台账与讨论、投递事件,并在管理员授权下写回意图、提交审核结论、拉起会话。
 
 在此之前 c3 是数据孤岛:六条 MCP 路由全部挂在 `/internal/*-mcp/v1`,每条都有 loopback guard 与一次性 per-run token,binding 来自 c3 拉起的 run 闭包(workspace + runId)。外部工具链只能靠人工搬数据进出。
 
 ## 与内部路由的关系:并列,不是放宽
 
-|            | 内部 `/internal/*-mcp/v1`(6 条)            | 外部 `/mcp/v1`                                  |
-| ---------- | ------------------------------------------ | ----------------------------------------------- |
-| 来源       | 必须回环(在 c3 自身 bind 之上的纵深防御)   | 不做 loopback 判断                              |
-| 身份       | c3 自己铸的一次性 per-run token            | 长期 API key                                    |
-| 作用域来源 | run 闭包(workspace + runId + abort signal) | **每次请求**从 `?workspace=` + key 授权集合重建 |
-| 工具       | 各路由自己的全集(含写工具)                 | 五个只读工具的显式 allowlist                    |
+|            | 内部 `/internal/*-mcp/v1`(6 条)            | 外部 `/mcp/<api-key>`                        |
+| ---------- | ------------------------------------------ | -------------------------------------------- |
+| 来源       | 必须回环(在 c3 自身 bind 之上的纵深防御)   | 不做 loopback 判断                           |
+| 身份       | c3 自己铸的一次性 per-run token            | 长期 API key,且 key **就是路径段**           |
+| 作用域来源 | run 闭包(workspace + runId + abort signal) | key 绑定的**单一工作区** + 该 key 的工具范围 |
+| 工具       | 各路由自己的全集(含写工具)                 | 该 key 勾选的子集(默认五个只读)              |
 
-本期**不改动**内部六条路由的任何语义。外部路由是新增的、独立的模块,不复用 per-run token 机制——那套语义绑定 run,而外部 agent 没有 run。
+内部六条路由的任何语义**都不受本域影响**。外部路由是独立模块,不复用 per-run token 机制——那套语义绑定 run,而外部 agent 没有 run。
 
 ## 请求与授权链
 
-固定挂载于 `/mcp/v1`,注册在 SPA catch-all 之前。接入方一行配置:
+地址即凭据:`/mcp/<api-key>`,key 从 URL 的**单个路径段**解析并做 URL 解码与格式校验。接入方一行配置:
 
 ```sh
-claude mcp add --transport http c3 "http://<host>:3000/mcp/v1?token=<KEY>&workspace=<PATH>"
+claude mcp add --transport http c3 "http://<host>:3000/mcp/<KEY>"
 ```
 
 每次请求执行同一条链,顺序是安全属性的一部分:
 
 ```mermaid
 flowchart LR
-  A[外部 MCP 请求] --> B{校验长期 Key}
-  B -->|无效| X[401]
-  B -->|有效| C[规范化 workspace 路径]
-  C -->|非绝对路径/缺失| W[400]
-  C --> D{属于 Key 授权集合}
-  D -->|否| Y[403]
-  D -->|是| E{已注册且目录仍在}
-  E -->|否| Z[404]
-  E -->|是| F[创建/复用该 MCP 会话的工具服务]
-  F --> G[调用限定工具集]
+  A[请求 /mcp/<key>] --> B{解析并校验 key}
+  B -->|缺失/格式错/未知/已吊销| X[401]
+  B -->|v1 占位| V[410 已停用]
+  B -->|有效| C[读取绑定工作区与工具范围]
+  C -->|工作区不可用| Y[403]
+  C --> D[以授权子集创建 MCP transport]
+  D --> E{调用工具}
+  E -->|已授权| F[复用业务 handler]
+  E -->|未授权或未知| Z[MCP tool error: forbidden]
 ```
 
-- **凭据先于参数**。token 缺失/格式错/未知/哈希不符/已吊销一律 401,且**正文完全相同** —— 未认证的调用方连「参数是否合法」都学不到,更无法据此探测某个 key id 是否存在过。
-- **403 先于 404**。否则状态码本身就成了枚举宿主上有哪些 workspace 的接口。
-- **路径规范化只用于判等**。`resolve` 掉 `.`/`..`、折叠尾部分隔符、存在时跟随符号链接,使同一目录的不同写法无法绕过授权集合;但交给 feature 层的是**注册表里的那个写法**——意图与讨论存储按 `resolve(workspacePath)` 分区,若把 realpath 结果传下去,软链注册的工作区会查出空结果。
-- **会话作用域一经 initialize 即钉死**在当时的 key id 与 workspace 上。同一 `mcp-session-id` 换个 token 或换个 `workspace` 参数 ⇒ 403,而不是静默改作用域。
+- **凭据先于一切。** key 缺失、格式错、未知、哈希不符、已吊销一律 401,且**正文完全相同** —— 未认证的调用方连「key 是否合法」都学不到。key 从单个路径段提取,**拒绝空段、额外路径段与任何不能规范解析为一个 key 的值**;拒绝响应与日志**不回显 key 或完整 URL**。
+- **`/mcp/v1?token=…&workspace=…` 已停用**。旧 query 入口返回明确的停用响应(410),不做兼容鉴权——两套工作区与授权来源并存正是本变更要消除的漂移。README 与域文档只给新地址。
+- **会话一经 initialize 即钉死**在当时的 key id 与工具范围上。同一 `mcp-session-id` 换 key ⇒ 403;改范围或吊销 key 时服务端关闭该 key 的全部活动 transport,故下一次调用不能沿用旧权限,客户端重连后取得新 `tools/list`。更新持久状态先于清理连接:清理个别连接失败不得恢复旧权限。
+- **HTTP 状态与协议内错误分层。** 401/403/404 用于建立/维持 transport 前的身份与作用域拒绝;**协议内越权**(已认证但调用未勾选工具)返回稳定的 MCP tool error `forbidden`,不执行 handler,也不伪装成 HTTP 成功业务结果。
 
-MCP 协议或工具参数错误沿用现有 MCP transport / tool error 语义。
+## 可外部授权工具目录
 
-## 对外工具能力
+服务端维护一份**显式的「可外部授权能力目录」**,而不是从内部 MCP 工具全集做排除。每项含稳定工具名、读/写分级、描述、参数 schema 与复用的业务 handler。新增内部工具不会自动外泄;新增可授权工具必须明确进入目录并声明分级,编译期断言把「构建出的工具名集合」钉死等于共享协议声明的读/写名表。
 
-只注册五个工具,**显式 allowlist**(而非从内部工具全集里过滤 denylist):
+分级按**真实效果**:`read` 不修改意图台账、讨论、spec 或会话生命周期;`write` 会。`publish_event` 属 `read`——它投递事实,envelope 的 workspace 与来源由 key 绑定生成,调用方不能伪造来源;订阅自动化可能因该事件异步执行,这是它本来的可观察语义。
 
-| 工具               | 作用                                              |
-| ------------------ | ------------------------------------------------- |
-| `find_intents`     | 查询已授权 workspace 的意图台账                   |
-| `view_intent`      | 按 id 查看单条意图                                |
-| `find_discussions` | 查询该 workspace 的讨论                           |
-| `view_discussion`  | 查看单条讨论及消息                                |
-| `publish_event`    | 向 event bus 投递经统一校验、脱敏与截断的通用事件 |
+| 分级  | 工具                                                                                                                                                                 |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| read  | `find_intents` `view_intent` `find_discussions` `view_discussion` `publish_event`(默认全部)                                                                          |
+| write | `save_intents` `save_intent_directly` `save_intent_pr_info` `submit_spec_review` `start_session_for_intent` `start_discussion` `continue_discussion`(默认**不勾选**) |
 
-方向很重要:新增一个内部工具**不会**因为遗漏而外泄——它必须被显式写进这份清单才可达。代码里有一处编译期断言把「构建出的工具名集合」钉死等于「声明的 allowlist」,两边不一致直接 typecheck 失败。
+**默认只读集合**是创建 key 时的服务端强制值,客户端伪造的默认值被忽略。**编辑只接受目录内工具名**:未知、重复的名称使整次更新失败,不做部分保存。**空工具范围表示该 key 什么也调不到,绝不是通配。**
 
-工具**行为**复用与内部完全相同的 `run*` 核心,所以外部调用方观察到的规则与内部调用方一致;不同的只有 binding。
+工具**行为**复用与内部完全相同的 `run*` 核心,所以外部调用方观察到的规则与内部一致;外部授权不绕过意图状态约束、spec 审核约束或会话启动失败处理。差别只有 binding 与授权源:
 
-`publish_event` 是有意保留的唯一有限副作用:它只投递事件事实,不能直接改台账状态或拉起 agent。envelope 的 workspace 取自**授权后**的作用域,`sessionId` 固定为稳定的外部来源标识 `external-mcp:<key-id>` —— 调用方可以描述事件,但无法决定它进哪个 workspace、也无法伪造来源。现有订阅自动化可能因该事件异步执行,这是它本来的可观察语义,发 key 的管理员必须知悉。投递失败以 MCP tool error 返回,不产生事件。
+- `save_intents` 交互式由会话内的用户文本确认把关;外部无人值守调用没有对话方,**管理员勾选该工具即替代确认门**——此例外只跳过确认,不放宽业务校验,其余走同一落库原子校验。
+- `submit_spec_review` 内部审核由启动时刻捕获的 spec 指纹做防过期比对;外部调用没有启动时刻,结论绑定**调用当时**的 spec 实时内容(比内部弱,因为 c3 无法知道外部进程何时开始阅读),其余规则(意图必须存在、spec 可读、重复提交不重复计数)不变。
+- `start_session_for_intent` 复用同一会话启动器,含状态校验、SDD 审批、依赖阻塞与 Git 分支策略;启动真实拉起 agent 并消耗资源。
 
-明确**不注册**:`save_intents`、`save_intent_directly`、`save_intent_pr_info`、讨论创建/继续、`start_session_for_intent`、`spec_review`,以及任何当前或未来的写工具。
+明确**不注册**:其余任何当前或未来的内部写工具、资源/提示面。
 
 ## Key 生命周期与监听地址
 
-长期 key 的存储、哈希、生成/校验/改授权/吊销,以及 `--host` 显式监听,属系统设置域:见 [system-setting](../../settings/system-setting/system-setting-spec.md#外部-mcp-api-key-mcpapikeys)。
+长期 key 的存储、哈希、生成/校验/吊销,以及 `--host` 显式监听,属系统设置域:见 [system-setting](../../settings/system-setting/system-setting-spec.md#外部-mcp-api-key-存储-mcpapikeys)。**生命周期管理在工作区设置**:见 [workspace-setting](../../settings/workspace-setting/workspace-setting-spec.md#外部-mcp-接入非配置独立即时指令)。
 
-要点回顾:明文只在生成响应里出现一次;磁盘上只有加盐 `scrypt` 哈希;吊销既让下一次请求失败,也关闭已建立的活动 transport。
+要点回顾:明文只在生成响应里出现一次;磁盘上只有加盐 `scrypt` 哈希;每把 key 绑定单一工作区;吊销既让下一次请求失败,也关闭已建立的活动 transport。
 
 ## 安全边界与本期取舍
 
 - **API key 是该路由唯一的访问凭据**。Web 登录会话、内部 per-run token 都不能替代它。
-- **key 放在查询参数**是为兼容一行式 MCP 客户端配置。代价是它更容易进入代理/访问日志——服务端日志不打印 token,也不打印任何可能带 token 的完整 MCP URL,但用户侧的反代日志需自行处理。
-- **本期不内建也不强制 HTTPS**。明文 HTTP 下同网络的人可嗅探到 key。远程暴露应通过用户自管的 TLS 反向代理,并避免记录完整查询串。这是已知并接受的风险。
-- **不提供 `/mcp.md` 发现端点**(明确放弃,后续单独排期),也不承诺其它 MCP 客户端的专用配置格式;标准 Streamable HTTP 可按 URL 接入。
-- **不提供速率限制**。管理员应把暴露范围控制在可信网络或反向代理之后。
-- 拒绝响应与成功调用**均不输出 token**。
+- **key 本身即地址、走 URL 路径**,便于按 key 分发地址、消除 `workspace` 参数,但更容易进入代理访问日志——**c3 不记录完整请求 URL**,用户侧反代日志需自行处理。
+- **写权限会真实修改 c3 状态**:`save_intents` 可持久化意图,`submit_spec_review` 可提交审核结论,`start_session_for_intent` 可拉起 agent。这是安全边界的有意放宽:key 默认只读,写接口须显式勾选,key 可吊销。创建与编辑界面必须在写工具区持续展示该风险,保存含写权限的范围前有明确确认。
+- **本期不内建也不强制 HTTPS**。明文 HTTP 下同网络的人可嗅探到 key。远程暴露应通过用户自管的 TLS 反向代理,并避免记录完整路径。这是已知并接受的风险。
+- **不提供 `/mcp.md` 发现端点**(明确放弃),也不提供跨工作区 key、通配工作区、独立调用审计流、速率限制或 per-call 写操作二次确认。**不改变 `--host` 默认回环及显式开放监听的规则。**
+- 拒绝响应与成功调用**均不输出 key**。
 
 ## 接入信息展示
 
-工作区设置页有一个只读的「外部 MCP 接入」页签,用系统级 `baseUrl` + 固定路由 + 当前工作区路径拼出可复制的 URL 与一行式命令,并列出已授权本工作区的 key 供辨认。
-
-- 常态下 URL 里是 `<KEY>` 占位符。用户可临时粘贴自己保管的明文以生成可直接复制的值:**该输入只存在于当前组件的内存中**,不上传、不写入浏览器存储,离开页面即消失。
-- `baseUrl` 未配置时明说「未配置」并给出跳转,**不猜浏览器 Host** 当作永久配置。
-- 没有覆盖本工作区的 key 时,给出前往系统设置生成的入口。
-
-该页签不拥有任何工作区配置字段:它永远不会脏,也不会出现在任何保存载荷里。
+工作区设置页的「外部 MCP 接入」页签承担 key 的生成、列示、工具范围编辑与吊销,并在一次性揭示区给出可复制的 `/mcp/<key>` 地址与一行式命令(见 workspace-setting 域文档)。明文 key 只在生成成功的那一次回包里出现,关闭揭示区后不可恢复。

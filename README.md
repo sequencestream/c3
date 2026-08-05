@@ -133,27 +133,26 @@ Point an agent c3 did not start — an independent Claude Code / Codex session, 
 CI job, a monitoring script — at this deployment over MCP:
 
 ```bash
-claude mcp add --transport http c3 "http://<host>:3000/mcp/v1?token=<KEY>&workspace=/abs/path/to/workspace"
+claude mcp add --transport http c3 "http://<host>:3000/mcp/<KEY>"
 ```
 
-1. **Generate a key** in _System Settings → Security → External MCP API keys_, and
-   grant it the workspaces it may read. The plaintext key is shown **once** — copy
-   it there and then; it is stored only as a salted `scrypt` hash and can never be
-   recovered, only replaced.
+1. **Generate a key** in _Workspace Settings → External MCP access_. It is bound to
+   that one workspace. The plaintext key is shown **once**, together with the full
+   `/mcp/<KEY>` address and a ready-made command — copy it there and then; it is
+   stored only as a salted `scrypt` hash and can never be recovered, only replaced.
 2. **Open the listener** with `--host` (above) if the client is on another machine.
-3. **Copy the ready-made URL and command** from _Workspace Settings → External MCP_,
-   which fills in the base URL, the route and that workspace's path for you.
+3. **Grant write tools explicitly if needed.** A new key can only read:
+   `find_intents`, `view_intent`, `find_discussions`, `view_discussion`, plus
+   `publish_event`. Anything that changes c3 state (`save_intents`,
+   `submit_spec_review`, `start_session_for_intent`, …) must be ticked in the key's
+   tool scope, behind a risk confirmation — it really does change c3 state.
+4. **Revoke when done.** Revoking a key in Workspace Settings takes effect on its
+   very next request and closes any MCP session it already had open.
 
-The key is the only credential on this route, and it grants **read-only** access:
-`find_intents`, `view_intent`, `find_discussions`, `view_discussion`, plus
-`publish_event`. No write tool, session launcher or review tool is exposed.
-Revoking a key in System Settings takes effect on its very next request and closes
-any MCP session it already had open.
-
-> **Security.** The key travels in the URL query string, so it can end up in proxy
-> and access logs, and plain HTTP exposes it to anyone on the network. c3 does not
-> ship or require TLS: put it behind your own HTTPS reverse proxy before exposing
-> it beyond the local machine, and avoid logging full query strings.
+> **Security.** The key IS the address and rides the URL path, so it can end up in
+> proxy and access logs, and plain HTTP exposes it to anyone on the network. c3
+> does not ship or require TLS: put it behind your own HTTPS reverse proxy before
+> exposing it beyond the local machine, and avoid logging full request paths.
 
 ## Documentation
 

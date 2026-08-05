@@ -171,27 +171,27 @@
 
 ### `list_mcp_api_keys`
 
-获取外部 MCP API key 名册。服务器回复 `mcp_api_keys`。**需要管理员权限**——名册即"谁能够到什么"的清单。只回元数据，明文在生成之后永不可恢复。
+获取**指定工作区**的外部 MCP API key 名册。服务器回复 `mcp_api_keys`。**不需要管理员权限**——名册只含元数据（名称、短前缀、时间、工具范围、不可用态），明文在生成之后永不可恢复；隐藏它只会让功能显得"不存在"而非受限。
 
-**字段：** 无
+**字段：** `workspaceId: string`
 
 ### `create_mcp_api_key`
 
-生成一把长期外部 MCP API key。`workspaceIds` 是该 key 可读取的**已注册**工作区(用不透明 id 寻址，客户端不构造路径)。空数组被拒（`mcpApiKey.noWorkspace`）——够不到任何东西的 key 只会成为日后的排查负担；任一 id 无法解析则**整笔拒绝**（`mcpApiKey.unknownWorkspace`），不做部分应用。回复 `mcp_api_keys`，其 `created` 字段是全系统唯一一次出现明文的地方。**需要管理员权限。**
+生成一把长期外部 MCP API key，**只绑定 `workspaceId` 指定的这一个**已注册工作区（用不透明 id 寻址，客户端不构造路径）。id 无法解析则**整笔拒绝**（`mcpApiKey.unknownWorkspace`）。初始工具范围由服务端强制为全部只读工具，客户端不能通过伪造默认值取得写工具。回复 `mcp_api_keys`，其 `created` 字段是全系统唯一一次出现明文的地方。**需要管理员权限。**
 
-**字段：** `name: string`, `workspaceIds: string[]`
+**字段：** `workspaceId: string`, `name: string`
 
 ### `update_mcp_api_key`
 
-改名和/或替换授权工作区集合；省略的字段不动。显式传空的 `workspaceIds` 表示"这把 key 什么也够不到"，**绝不解释为通配**。无法重新签发或读出明文。回复 `mcp_api_keys`。**需要管理员权限。**
+改名和/或替换该 key 的工具范围；省略的字段不动。显式传空的 `tools` 表示"这把 key 什么也调不到"，**绝不解释为通配**；工具名必须在服务端目录内，未知或重复的名称使**整笔更新失败**（`mcpApiKey.unknownTool`）。无法重新签发或读出明文。工具范围变更后立即关闭该 key 已建立的活动 MCP 会话，下一次调用按新范围。回复 `mcp_api_keys`。**需要管理员权限。**
 
-**字段：** `id: string`, `name?: string`, `workspaceIds?: string[]`
+**字段：** `workspaceId: string`, `id: string`, `name?: string`, `tools?: string[]`
 
 ### `revoke_mcp_api_key`
 
 吊销（删除）一把 key。下一次请求即失败，同时关闭该 key 已建立的活动 MCP 会话。回复 `mcp_api_keys`。**需要管理员权限。**
 
-**字段：** `id: string`
+**字段：** `workspaceId: string`, `id: string`
 
 ### `load_workspace_setting`
 
@@ -602,13 +602,13 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 ### `mcp_api_keys`
 
-外部 MCP API key 名册，回复上述四条 key 操作中的任意一条。**总是回整份列表**，故控制台无需对账增量。
+外部 MCP API key 名册，回复上述四条 key 操作中的任意一条，作用域为**指定工作区**（`workspaceId`）。总是回该工作区的整份列表，故控制台无需对账增量；回包同时携带服务端可外部授权工具目录 `catalog`，供工具范围选择器渲染——前端不另存工具清单。
 
-每项 `McpApiKeyMeta` 为 `{ id, name, createdAt, lastUsedAt, workspaceIds, staleWorkspaces, displayPrefix }`：`workspaceIds` 是已注册工作区的不透明 id（服务端以规范化绝对路径存授权、在此转成 id）；`staleWorkspaces` 是授权集合里已不对应任何注册工作区的路径，摆出来供管理员清理，它本身不可达（命中只会 404）；`displayPrefix` 是非秘密的 `c3k_<id>`，完全由 id 派生，展示它不泄露任何秘密。
+每项 `McpApiKeyMeta` 为 `{ id, name, createdAt, lastUsedAt, workspaceId, unavailable, tools, displayPrefix }`：`workspaceId` 是唯一绑定工作区的不透明 id，`null` 表示该工作区已注销（key 不可达）；`unavailable` 表示绑定工作区目录已消失/注销，key 够不到任何东西、控制台只留吊销；`tools` 是该 key 可调用的工具名（服务端目录的子集）；`displayPrefix` 是非秘密的 `c3k_<id>`，完全由 id 派生，展示它不泄露任何秘密。
 
 `created` **仅**出现在 `create_mcp_api_key` 成功的回复里，是明文 key 在整条链路上唯一的落点：不存储、不重发，客户端丢弃后即不可恢复。
 
-**字段：** `keys: McpApiKeyMeta[]`, `created?: { meta: McpApiKeyMeta; key: string }`
+**字段：** `workspaceId: string`, `keys: McpApiKeyMeta[]`, `catalog: { name, access }[]`, `created?: { meta: McpApiKeyMeta; key: string }`
 
 ### `personalized_settings`
 

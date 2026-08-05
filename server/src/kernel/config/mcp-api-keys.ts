@@ -1,6 +1,6 @@
 /**
- * Long-lived external-MCP API key store — the credential the public `/mcp/v1`
- * route authenticates with.
+ * Long-lived external-MCP API key store — the credential the public
+ * `/mcp/<api-key>` route authenticates with.
  *
  * The keys live under ONE top-level `settings.json` key, `mcpApiKeys`, a
  * **sibling of** `SystemSettings` rather than a field of it (the same ownership
@@ -24,6 +24,7 @@
 import { isAbsolute, resolve } from 'node:path'
 import { realpathSync } from 'node:fs'
 import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
+import { EXTERNAL_MCP_READ_TOOLS } from '@ccc/shared/protocol'
 import { readJsonFile, withFileLock, writeAtomic } from './store.js'
 import { settingsFile } from './paths.js'
 
@@ -51,17 +52,19 @@ const HASH_VERSION = 1
 
 /**
  * The server-internal view of one key: everything except the verification
- * material. It carries CANONICAL ABSOLUTE PATHS because that is what an incoming
- * `/mcp/v1` request is matched against. The wire-facing `McpApiKeyMeta` addresses
- * workspaces by opaque id instead; the settings handler translates between them.
+ * material. It carries a CANONICAL ABSOLUTE PATH because that is what an incoming
+ * `/mcp/<api-key>` request resolves against. The wire-facing `McpApiKeyMeta`
+ * addresses the workspace by opaque id instead; the settings handler translates.
  */
 export interface McpApiKeyInfo {
   id: string
   name: string
   createdAt: number
   lastUsedAt: number | null
-  /** Canonical absolute paths this key may address. Empty ⇒ nothing, never a wildcard. */
-  workspaces: string[]
+  /** The ONE canonical absolute path this key is bound to. Never empty, never a wildcard. */
+  workspace: string
+  /** The tool names this key may call. Empty ⇒ nothing, never "all". */
+  tools: string[]
   /** The public, non-secret display prefix (`c3k_<id>`). */
   displayPrefix: string
 }
@@ -72,7 +75,8 @@ interface McpApiKeyRecord {
   name: string
   createdAt: number
   lastUsedAt: number | null
-  workspaces: string[]
+  workspace: string
+  tools: string[]
   hashVersion: number
   algo: string
   params: { N: number; r: number; p: number; keylen: number }
@@ -125,6 +129,29 @@ function readFile(): McpApiKeyFileShape {
   return readJsonFile<McpApiKeyFileShape>(settingsFile()) ?? {}
 }
 
+/**
+ * Resolve the ONE workspace a record is bound to, migrating the pre-path-key
+ * `workspaces: string[]` shape on the way.
+ *
+ * A legacy key that authorized exactly one workspace maps onto the new address
+ * unambiguously, so it survives with its plaintext intact. A key that authorized
+ * several — or none that still canonicalizes — has no single `/mcp/<api-key>`
+ * meaning, and guessing one would silently narrow or widen what its holder was
+ * granted. Those records are dropped, i.e. revoked: the administrator re-creates
+ * a key per workspace and re-points the client.
+ */
+function migrateWorkspace(r: Record<string, unknown>): string | null {
+  if (typeof r.workspace === 'string') return canonicalizeWorkspacePath(r.workspace)
+  if (!Array.isArray(r.workspaces)) return null
+  const legacy = dedupe(
+    r.workspaces
+      .filter((w): w is string => typeof w === 'string')
+      .map((w) => canonicalizeWorkspacePath(w))
+      .filter((w): w is string => w !== null),
+  )
+  return legacy.length === 1 ? legacy[0] : null
+}
+
 function normalizeRecord(raw: unknown): McpApiKeyRecord | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const r = raw as Record<string, unknown>
@@ -132,23 +159,31 @@ function normalizeRecord(raw: unknown): McpApiKeyRecord | null {
   const salt = typeof r.salt === 'string' ? r.salt : ''
   const hash = typeof r.hash === 'string' ? r.hash : ''
   if (!id || !salt || !hash) return null
+  // No workspace ⇒ the key cannot be addressed at all; drop it rather than keep an
+  // inert record that would still appear in a roster. Said out loud, because from
+  // the administrator's side this is a revocation they did not ask for.
+  const workspace = migrateWorkspace(r)
+  if (!workspace) {
+    console.warn(
+      `[c3] external MCP key ${displayPrefix(id)} has no single bound workspace — revoked. ` +
+        'Create one key per workspace and re-point the client to its /mcp/<api-key> address.',
+    )
+    return null
+  }
   const p = (r.params && typeof r.params === 'object' ? r.params : {}) as Record<string, unknown>
   const num = (v: unknown, fallback: number): number =>
     typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : fallback
-  const workspaces = Array.isArray(r.workspaces)
-    ? dedupe(
-        r.workspaces
-          .filter((w): w is string => typeof w === 'string')
-          .map((w) => canonicalizeWorkspacePath(w))
-          .filter((w): w is string => w !== null),
-      )
-    : []
   return {
     id,
     name: typeof r.name === 'string' ? r.name : '',
     createdAt: num(r.createdAt, 0),
     lastUsedAt: typeof r.lastUsedAt === 'number' && r.lastUsedAt > 0 ? r.lastUsedAt : null,
-    workspaces,
+    workspace,
+    // A pre-scope record predates per-key tool authorization; it gets exactly the
+    // read-only set it effectively had, never a write tool.
+    tools: Array.isArray(r.tools)
+      ? dedupe(r.tools.filter((t): t is string => typeof t === 'string'))
+      : [...EXTERNAL_MCP_READ_TOOLS],
     hashVersion: num(r.hashVersion, 0),
     algo: typeof r.algo === 'string' ? r.algo : '',
     params: {
@@ -245,7 +280,8 @@ function toMeta(rec: McpApiKeyRecord): McpApiKeyInfo {
     name: rec.name,
     createdAt: rec.createdAt,
     lastUsedAt: rec.lastUsedAt,
-    workspaces: [...rec.workspaces],
+    workspace: rec.workspace,
+    tools: [...rec.tools],
     displayPrefix: displayPrefix(rec.id),
   }
 }
@@ -276,6 +312,17 @@ export function listMcpApiKeys(): McpApiKeyInfo[] {
   return [...load()].sort((a, b) => b.createdAt - a.createdAt).map(toMeta)
 }
 
+/**
+ * One workspace's keys, newest first. The console never asks for a host-wide
+ * roster: a key belongs to exactly one workspace, and that workspace's settings
+ * page is the only place it is administered.
+ */
+export function listMcpApiKeysForWorkspace(canonicalWorkspace: string): McpApiKeyInfo[] {
+  const wanted = canonicalizeWorkspacePath(canonicalWorkspace)
+  if (!wanted) return []
+  return listMcpApiKeys().filter((k) => k.workspace === wanted)
+}
+
 /** The result of a creation: the metadata plus the ONLY appearance of the plaintext. */
 export interface CreatedMcpApiKey {
   meta: McpApiKeyInfo
@@ -284,16 +331,23 @@ export interface CreatedMcpApiKey {
 }
 
 /**
- * Mint a key: 256 bits of CSPRNG secret behind a non-secret id, hashed with a
- * fresh per-key salt. `workspaces` is canonicalized and de-duplicated; entries
- * that are not absolute paths are dropped (the caller validates against the
- * registered workspace list before getting here).
+ * Mint a key bound to ONE workspace: 256 bits of CSPRNG secret behind a
+ * non-secret id, hashed with a fresh per-key salt. `workspace` must already be an
+ * absolute path the caller has checked against the workspace registry; a path
+ * that does not canonicalize throws rather than storing an unaddressable key.
+ *
+ * `tools` is stored as given (de-duplicated). The CALLER decides the initial
+ * scope — the settings handler forces the read-only set and ignores anything the
+ * client proposed, so a forged default cannot reach this far.
  */
 export async function createMcpApiKey(
   name: string,
-  workspaces: readonly string[],
+  workspace: string,
+  tools: readonly string[],
   now: number,
 ): Promise<CreatedMcpApiKey> {
+  const canonical = canonicalizeWorkspacePath(workspace)
+  if (!canonical) throw new Error('external MCP key needs one absolute workspace path')
   const id = randomBytes(ID_HEX_LEN / 2).toString('hex')
   const secret = randomBytes(SECRET_BYTES).toString('base64url')
   const salt = randomBytes(16)
@@ -303,9 +357,8 @@ export async function createMcpApiKey(
     name: name.trim() || displayPrefix(id),
     createdAt: now,
     lastUsedAt: null,
-    workspaces: dedupe(
-      workspaces.map((w) => canonicalizeWorkspacePath(w)).filter((w): w is string => w !== null),
-    ),
+    workspace: canonical,
+    tools: dedupe([...tools]),
     hashVersion: HASH_VERSION,
     algo: 'scrypt',
     params: { ...SCRYPT_PARAMS },
@@ -319,20 +372,20 @@ export async function createMcpApiKey(
 }
 
 /**
- * Replace a key's authorized workspace set. An empty array is accepted and means
- * "this key may reach nothing" — it is never read as a wildcard. Returns the
- * updated metadata, or `null` when the id is unknown.
+ * Replace a key's granted tool scope. An empty array is accepted and means "this
+ * key may call nothing" — it is never read as a wildcard. Names are stored
+ * verbatim (de-duplicated); catalog membership is the caller's check, because
+ * this layer must not know which features exist. Returns the updated metadata,
+ * or `null` when the id is unknown.
+ *
+ * The workspace binding is deliberately NOT updatable: an address means one
+ * workspace for the life of the key.
  */
-export function updateMcpApiKeyWorkspaces(
-  id: string,
-  workspaces: readonly string[],
-): McpApiKeyInfo | null {
+export function updateMcpApiKeyTools(id: string, tools: readonly string[]): McpApiKeyInfo | null {
   return mutate((records) => {
     const rec = records.find((r) => r.id === id)
     if (!rec) return null
-    rec.workspaces = dedupe(
-      workspaces.map((w) => canonicalizeWorkspacePath(w)).filter((w): w is string => w !== null),
-    )
+    rec.tools = dedupe([...tools])
     return toMeta(rec)
   })
 }
@@ -360,8 +413,10 @@ export function revokeMcpApiKey(id: string): boolean {
 /** A successful authentication: which key answered, and what it may reach. */
 export interface AuthenticatedMcpApiKey {
   id: string
-  /** Canonicalized absolute paths this key is allowed to address. */
-  workspaces: string[]
+  /** The canonicalized absolute path this key is bound to. */
+  workspace: string
+  /** The tool names this key may call. Empty ⇒ nothing. */
+  tools: string[]
 }
 
 /**
@@ -400,7 +455,7 @@ export async function verifyMcpApiKey(raw: string): Promise<AuthenticatedMcpApiK
     return null
   }
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null
-  return { id: rec.id, workspaces: [...rec.workspaces] }
+  return { id: rec.id, workspace: rec.workspace, tools: [...rec.tools] }
 }
 
 /**

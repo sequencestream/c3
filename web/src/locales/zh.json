@@ -2039,7 +2039,8 @@
       "unknown": "该 API key 已不存在(id {id})。",
       "unknownWorkspace": "工作区不存在({workspaceId}),未修改任何 key。",
       "noWorkspace": "请至少为该 key 选择一个工作区。",
-      "saveFailed": "API key 保存失败。"
+      "saveFailed": "API key 保存失败。",
+      "unknownTool": "工具「{tool}」不在可外部授权的目录中。"
     }
   },
   "statusIndicator": {
@@ -2506,17 +2507,24 @@
       "title": {
         "label": "外部 MCP 接入"
       },
-      "hint": "c3 没有拉起的 agent 如何通过 MCP 访问「本工作区」。只读:地址由系统级 base URL、固定路由 /mcp/v1 与本工作区路径拼出,不属于工作区配置。",
-      "noBaseUrl": "尚未配置公开访问地址,无法生成可复制的链接。请到「系统设置 → 通用」填写。",
-      "noKey": "还没有授权到本工作区的 API key。请到「系统设置 → 安全」生成一个。",
-      "grantedKeys": "已授权的 key:{keys}",
+      "hint": "c3 没有拉起的 agent 如何通过 MCP 访问「本工作区」。key 在这里创建、授权与吊销;每把 key 只绑定本工作区,地址为 /mcp/<key>。",
+      "security": {
+        "hint": "key 本身就是地址、走 URL 路径,可能进入代理/访问日志。对外暴露前请自行用 HTTPS 反向代理挡在前面。写工具会真实改动 c3 状态 —— 只授予你信任的进程,用完后吊销。"
+      },
+      "noBaseUrl": "尚未配置公开访问地址,无法生成可复制的链接。请到「系统设置 → 通用」填写。key 仍可在这里生成。",
       "goto": {
         "label": "打开系统设置"
       },
-      "paste": {
-        "label": "粘贴 key 以生成可直接使用的地址(可选)",
-        "placeholder": "c3k_…",
-        "hint": "只保存在当前页面的内存里:不上传、不写入浏览器存储,离开页面即消失。留空则复制保留 KEY 占位符的模板。"
+      "empty": "本工作区还没有 API key。在下方生成一把 —— 新 key 一律只有只读工具、不含写工具。",
+      "reveal": {
+        "title": "已创建 API key:{name}",
+        "onceOnly": "明文 key 只展示这一次。请立即复制 —— 关闭后无法找回。",
+        "dismiss": {
+          "label": "完成"
+        }
+      },
+      "key": {
+        "label": "明文 key"
       },
       "url": {
         "label": "MCP 地址"
@@ -2524,11 +2532,53 @@
       "command": {
         "label": "一行式客户端配置"
       },
-      "tools": {
-        "hint": "外部 key 只能查询意图与讨论、投递事件,永远无法写入台账或拉起会话。"
+      "create": {
+        "open": {
+          "label": "新建 API key"
+        },
+        "name": {
+          "placeholder": "显示名称"
+        },
+        "defaultScope": "新 key 绑定本工作区,默认只授予只读工具。写工具需在创建后另行勾选,勾选处会说明风险。",
+        "submit": {
+          "label": "创建 key"
+        }
       },
-      "security": {
-        "hint": "key 走查询参数,可能进入代理/访问日志。对外暴露前请自行用 HTTPS 反向代理挡在前面。"
+      "tools": {
+        "edit": {
+          "label": "工具范围"
+        },
+        "read": {
+          "label": "只读工具"
+        },
+        "write": {
+          "label": "写工具",
+          "risk": "这些会真实改动 c3 状态:落库意图、提交 spec 审核结论、拉起会话。",
+          "confirm": {
+            "title": "授予写权限?",
+            "body": "该 key 将通过以下工具真实改动 c3 状态:{tools}。继续?",
+            "confirm": {
+              "label": "授予"
+            }
+          }
+        },
+        "summary": "{total} 个工具 · {writes} 个写",
+        "none": "没有任何工具 —— 这把 key 什么也调不到。"
+      },
+      "revoke": {
+        "label": "吊销",
+        "confirm": {
+          "title": "吊销这把 key?",
+          "body": "key 在下一个请求即失效,已建立的会话会被关闭。此操作不可撤销。",
+          "confirm": {
+            "label": "吊销"
+          }
+        }
+      },
+      "unavailable": "这把 key 绑定的工作区已不可用,够不到任何东西 —— 请吊销它。",
+      "meta": "创建于 {created} · 最后使用 {lastUsed}",
+      "lastUsed": {
+        "never": "从未"
       }
     }
   },

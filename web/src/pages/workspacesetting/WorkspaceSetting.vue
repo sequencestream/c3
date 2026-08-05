@@ -25,6 +25,7 @@ import type {
   VendorModeCatalog,
   ModeToken,
   McpApiKeyMeta,
+  ExternalMcpToolDescriptor,
   ParkRecoveryStats,
 } from '@ccc/shared/protocol'
 import type { UiError } from '@ccc/shared/ui-codes'
@@ -104,11 +105,17 @@ const props = defineProps<{
    */
   baseUrl?: string | null
   /**
-   * External-MCP API key metadata, used ONLY to tell the user which key covers
-   * this workspace. Never a plaintext key, and never part of workspace config.
-   * Empty for a non-admin (the server does not answer the roster to them).
+   * THIS workspace's external-MCP API key roster (metadata only, never a
+   * plaintext key). Not workspace config: it never enters a save payload, and the
+   * external-MCP tab is field-less for exactly that reason.
    */
   mcpApiKeys?: McpApiKeyMeta[]
+  /** The one-time plaintext from a successful mint; null once dismissed. */
+  mcpApiKeyCreated?: { meta: McpApiKeyMeta; key: string } | null
+  /** The server's externally-grantable tool catalog, rendered into the scope pickers. */
+  mcpApiKeyCatalog?: ExternalMcpToolDescriptor[]
+  /** Non-admins see the roster read-only: buttons disabled, never hidden. */
+  isAdmin?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -120,8 +127,16 @@ const emit = defineEmits<{
   installSkill: [skillId: string]
   /** Retry the read-only park-recovery query after a failed one. */
   reloadParkRecovery: []
-  /** Jump to system settings (configure `baseUrl` / generate an API key). */
+  /** Jump to system settings (configure `baseUrl`). */
   gotoSystemSettings: []
+  /** Mint a key bound to this workspace; the reply carries its plaintext once. */
+  createMcpApiKey: [payload: { name: string }]
+  /** Replace one key's granted tool scope. */
+  updateMcpApiKeyTools: [payload: { id: string; tools: string[] }]
+  /** Revoke a key — effective on its very next request. */
+  revokeMcpApiKey: [id: string]
+  /** Drop the one-time plaintext from memory; after this it is unrecoverable. */
+  dismissMcpApiKeyReveal: []
 }>()
 
 // ---- Tab grouping ----------------------------------------------------------
@@ -1366,9 +1381,15 @@ const parkRecoveryRateText = computed(() => {
       >
         <ExternalMcpAccess
           :base-url="baseUrl"
-          :workspace-path="currentWorkspaceInfo?.path ?? null"
           :workspace-id="currentWorkspace"
           :mcp-api-keys="mcpApiKeys"
+          :created="mcpApiKeyCreated"
+          :catalog="mcpApiKeyCatalog"
+          :is-admin="isAdmin"
+          @create="emit('createMcpApiKey', $event)"
+          @update-tools="emit('updateMcpApiKeyTools', $event)"
+          @revoke="emit('revokeMcpApiKey', $event)"
+          @dismiss-reveal="emit('dismissMcpApiKeyReveal')"
           @goto-system-settings="emit('gotoSystemSettings')"
         />
       </div>

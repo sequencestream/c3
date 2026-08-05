@@ -12,7 +12,7 @@
  * write path.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
@@ -278,16 +278,34 @@ describe('90-day retention', () => {
 })
 
 describe('degradation', () => {
-  it('reads as no samples when the database is unavailable', () => {
+  /**
+   * Make the db genuinely unopenable. A merely missing directory is not enough —
+   * `getDb()` creates it — so the path is rooted at a regular FILE, which no
+   * platform will accept as a parent directory.
+   */
+  const breakDb = () => {
     resetDbForTests()
     resetFunnelStoreForTests()
-    process.env.C3_DB_PATH = join(dir, 'nope', 'nested', 'c3.db')
+    const blocker = join(dir, 'not-a-directory')
+    writeFileSync(blocker, 'x')
+    process.env.C3_DB_PATH = join(blocker, 'c3.db')
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    // Whatever the driver does with an impossible path, the contract is the same:
-    // never throw at the caller, never invent a measurement.
-    const f = parkRecoveryFigures(proj, NOW)
-    expect(f.rate).toBe(null)
-    expect(f.eligible).toBe(0)
+  }
+
+  it('fails the read when the database is unavailable instead of reading as no samples', () => {
+    breakDb()
+    // An unopenable database is not evidence of zero parks. Reporting it as an
+    // empty sample would let the panel show "not enough samples" for a machine
+    // that was never measured at all.
+    expect(isFunnelStoreAvailable()).toBe(false)
+    expect(() => parkRecoveryFigures(proj, NOW)).toThrow()
+  })
+
+  it('still degrades the write to a reported no-op', () => {
+    breakDb()
+    // The other side of the asymmetry: a park that really happened must not be
+    // undone because its observation could not be stored.
+    expect(() => expect(park(NOW)).toBe(false)).not.toThrow()
   })
 })
 

@@ -16,9 +16,13 @@
  * Nothing here is sent anywhere. The data lives in the local c3.db, rolls off
  * after 90 days, and is read back by exactly one read-only settings panel.
  *
- * Degradation: an unavailable db turns reads into "no samples" and writes into
- * reported no-ops. Losing an event costs observation accuracy only — it must
- * never block, roll back or alter the park/unpark it was observing.
+ * Degradation is deliberately asymmetric. A write that cannot land is a reported
+ * no-op: losing an observation costs accuracy only, and must never block, roll
+ * back or alter the park/unpark it was observing. A read that cannot run fails
+ * loudly instead, so the panel can say "statistics unavailable" — a database
+ * that would not open is not the same fact as "this workspace has no samples",
+ * and dressing one up as the other invites a decision made on evidence that was
+ * never collected.
  */
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
@@ -126,10 +130,13 @@ export function appendFunnelEvent(input: AppendFunnelEventInput): boolean {
     console.error('[c3:funnel] 拒绝非法漏斗事件:时间戳不是有限数值,已丢弃')
     return false
   }
-  const d = db()
-  if (!d) return false
   const workspaceId = resolve(input.workspacePath)
   try {
+    // Inside the try on purpose: opening the db or materializing the schema can
+    // throw too, and that must degrade to a lost observation like any other
+    // write failure — never escape into the park/unpark call that triggered it.
+    const d = db()
+    if (!d) return false
     d.run(
       `INSERT INTO funnel_event (id, workspace_id, intent_id, stage, reason_code, at)
        VALUES (?,?,?,?,?,?)`,
@@ -177,14 +184,6 @@ export interface ParkRecoveryFigures {
   rate: number | null
 }
 
-const EMPTY_FIGURES: ParkRecoveryFigures = {
-  windowMs: PARK_RECOVERY_WINDOW_MS,
-  eligible: 0,
-  recovered: 0,
-  pending: 0,
-  rate: null,
-}
-
 /**
  * Compute one workspace's park→recovery figures at `now`.
  *
@@ -195,12 +194,14 @@ const EMPTY_FIGURES: ParkRecoveryFigures = {
  * pair whose duration is negative (a clock that went backwards) or longer than
  * the window is simply not a recovery.
  *
- * Throws when the query fails, so the caller can report "statistics unavailable"
- * instead of passing an all-zero row off as a real measurement.
+ * Throws when the database is unavailable or the query fails, so the caller can
+ * report "statistics unavailable" instead of passing an all-zero row off as a
+ * real measurement. Only a table that was actually read and found empty is
+ * allowed to read as "no samples".
  */
 export function parkRecoveryFigures(workspacePath: string, now: number): ParkRecoveryFigures {
   const d = db()
-  if (!d) return { ...EMPTY_FIGURES }
+  if (!d) throw new Error('park recovery statistics unavailable: local database is not open')
   const workspaceId = resolve(workspacePath)
   pruneExpired(d, now)
   const matured = now - PARK_RECOVERY_WINDOW_MS

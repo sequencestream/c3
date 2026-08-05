@@ -7,6 +7,7 @@ const TABS: DetailTabItem[] = [
   { key: 'intent', label: 'Intent' },
   { key: 'intentSession', label: 'Intent session' },
   { key: 'specSession', label: 'Spec session' },
+  { key: 'specReviewSession', label: 'Review' },
   { key: 'workSession', label: 'Work session' },
   { key: 'changelog', label: 'Changelog' },
 ]
@@ -19,6 +20,7 @@ function mountTabs(over: Record<string, unknown> = {}) {
       workSessionStatusDot: null,
       intentSessionStatusDot: null,
       specSessionStatusDot: null,
+      specReviewSessionStatusDot: null,
       ...over,
     },
   })
@@ -31,6 +33,7 @@ describe('IntentDetailTabs.vue', () => {
       'intent',
       'intentSession',
       'specSession',
+      'specReviewSession',
       'workSession',
       'changelog',
     ])
@@ -63,6 +66,24 @@ describe('IntentDetailTabs.vue', () => {
     expect(none.find('[data-testid="intent-detail-work-session-status"]').exists()).toBe(false)
     expect(none.find('[data-testid="intent-detail-intent-session-status"]').exists()).toBe(false)
     expect(none.find('[data-testid="intent-detail-spec-session-status"]').exists()).toBe(false)
+  })
+
+  it('scopes the review dot to the review tab and keeps it independent', async () => {
+    const w = mountTabs({ specReviewSessionStatusDot: 'running' })
+    const dots = w.findAll('[data-testid="intent-detail-spec-review-session-status"]')
+    expect(dots).toHaveLength(1)
+    expect(dots[0].classes()).toContain('running')
+    expect(
+      w.find('.intent-detail-tab[data-tab="specReviewSession"]').find('.session-status').exists(),
+    ).toBe(true)
+    // 评审会话在跑不影响编写规范/意图/工作会话的状态点。
+    expect(w.find('[data-testid="intent-detail-spec-session-status"]').exists()).toBe(false)
+    expect(w.find('[data-testid="intent-detail-intent-session-status"]').exists()).toBe(false)
+    expect(w.find('[data-testid="intent-detail-work-session-status"]').exists()).toBe(false)
+
+    // 未提供状态点(idle/未知)时不渲染。
+    await w.setProps({ specReviewSessionStatusDot: null })
+    expect(w.find('[data-testid="intent-detail-spec-review-session-status"]').exists()).toBe(false)
   })
 
   it('scopes the spec session dot to the specSession tab, active or not', async () => {

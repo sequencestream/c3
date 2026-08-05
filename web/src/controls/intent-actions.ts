@@ -244,6 +244,20 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'open_spec_session', workspaceId: intentsProject.value, intentId })
   }
 
+  // Open an intent's spec-REVIEW session for read-only replay (the detail's review
+  // tab and the session page's aggregated「规范」list both route here). The server
+  // resolves the target from the intent's own `specReviewSessionId` and restores a
+  // `spec_review` runtime — the client never names the session id, so a stale or
+  // forged row cannot get a review session opened, and there is no fallback to the
+  // generic `select_session` (which would rebuild it as a writable work runtime).
+  // `workspaceId` is explicit because the session page can drive this from a
+  // workspace that is not the intents page's current one.
+  ctx.openSpecReviewSession = (intentId: string, workspaceId?: string): void => {
+    const path = workspaceId ?? intentsProject.value
+    if (!path) return
+    send({ type: 'open_spec_review_session', workspaceId: path, intentId })
+  }
+
   // Reset the intent's refine session: the server starts a fresh comm session
   // seeded with the new input + intent content, replacing intent_session_id.
   ctx.resetIntentSession = (intentId: string, userInput: string): void => {

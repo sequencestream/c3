@@ -26,6 +26,42 @@ describe('resolveSessionJumpTarget', () => {
     ).toEqual({ kind: 'intentDetail', intentId: 'intent-1', tab: 'specSession' })
   })
 
+  it('routes spec review sessions to the intent review tab, not the authoring one', () => {
+    expect(
+      resolveSessionJumpTarget({
+        sessionKind: 'spec_review',
+        ownerKind: 'intent',
+        ownerId: 'intent-1',
+      }),
+    ).toEqual({ kind: 'intentDetail', intentId: 'intent-1', tab: 'specReviewSession' })
+  })
+
+  it('rejects a spec review session with no intent owner', () => {
+    expect(
+      resolveSessionJumpTarget({
+        sessionKind: 'spec_review',
+        ownerKind: 'discussion',
+        ownerId: 'd-1',
+      }),
+    ).toBeNull()
+    expect(
+      resolveSessionJumpTarget({ sessionKind: 'spec_review', ownerKind: 'intent', ownerId: null }),
+    ).toBeNull()
+  })
+
+  it('labels a spec review source as an intent source', () => {
+    expect(
+      resolveSessionSourceAction({
+        sessionKind: 'spec_review',
+        ownerKind: 'intent',
+        ownerId: 'intent-1',
+      }),
+    ).toEqual({
+      target: { kind: 'intentDetail', intentId: 'intent-1', tab: 'specReviewSession' },
+      label: 'intent',
+    })
+  })
+
   it('routes discussion and automation owners', () => {
     expect(
       resolveSessionJumpTarget({

@@ -255,6 +255,45 @@ describe('getSessionCounts', () => {
   })
 })
 
+// 「规范」是聚合分类:spec 撰写 + spec_review 评审共用一个角标,兼容字段 spec_review
+// 保持 0,以免旧/新客户端把同一批会话在顶栏总数里算两次。
+describe('getSessionCounts — 规范聚合', () => {
+  function specRow(sessionId: string, kind: SessionKind, ownerId: string): void {
+    upsertBoundRow({
+      sessionId,
+      workspacePath: proj,
+      vendor: 'claude',
+      agentId: 'agent-spec',
+      title: sessionId,
+      sessionKind: kind,
+      ownerKind: 'intent',
+      ownerId,
+    })
+  }
+
+  it('把运行中的 spec 与 spec_review 会话计入同一个 spec 角标,idle 不计', () => {
+    specRow('spec-a', 'spec', 'intent-1')
+    specRow('spec-idle', 'spec', 'intent-2')
+    specRow('review-a', 'spec_review', 'intent-1')
+    specRow('review-b', 'spec_review', 'intent-3')
+    specRow('review-idle', 'spec_review', 'intent-4')
+
+    startRun('spec-a', proj, 'spec')
+    startRun('review-a', proj, 'spec_review')
+    startRun('review-b', proj, 'spec_review')
+
+    const { conn, sent } = fakeConn()
+    getSessionCounts({} as KernelContext, conn, { type: 'get_session_counts', workspaceId })
+
+    const counts = (sent[0] as Extract<ServerToClient, { type: 'session_counts' }>).counts
+    // 1 个 spec + 2 个 spec_review,每个会话只算一次。
+    expect(counts.spec).toBe(3)
+    // 兼容字段不形成第二个可见口径,故顶栏总数不重复计算。
+    expect(counts.spec_review).toBe(0)
+    expect(counts.work).toBe(0)
+  })
+})
+
 // 顶部「意图/讨论/自动化」角标的权威口径:按 (ownerKind, ownerId) 去重的进行中条目数。
 describe('countRunningOwners', () => {
   function ownedRow(input: {

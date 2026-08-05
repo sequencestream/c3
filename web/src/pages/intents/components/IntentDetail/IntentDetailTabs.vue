@@ -2,9 +2,9 @@
 /*
  * IntentDetailTabs.vue — 意图详情页的 Tab 导航条。
  *
- * 纯呈现:渲染可见 Tab 列表、高亮当前激活项,并在意图/规范/工作会话 Tab 标签内联运行中状态点
- * (复用全局 .session-status 视觉)。选择动作以 select 事件上抛,可见性/激活/状态点均由容器
- * (Tab 状态机 composable)决定。
+ * 纯呈现:渲染可见 Tab 列表、高亮当前激活项,并在意图/规范/评审/工作会话 Tab 标签内联运行中
+ * 状态点(复用全局 .session-status 视觉)。选择动作以 select 事件上抛,可见性/激活/状态点均由
+ * 容器(Tab 状态机 composable)决定。
  */
 import type { SessionStatus } from '@ccc/shared/protocol'
 import type { DetailTab, DetailTabItem } from './useIntentDetailTabs'
@@ -15,6 +15,7 @@ defineProps<{
   workSessionStatusDot: SessionStatus | null
   intentSessionStatusDot: SessionStatus | null
   specSessionStatusDot: SessionStatus | null
+  specReviewSessionStatusDot: SessionStatus | null
 }>()
 
 const emit = defineEmits<{ select: [tab: DetailTab] }>()
@@ -52,6 +53,13 @@ const emit = defineEmits<{ select: [tab: DetailTab] }>()
           :class="specSessionStatusDot"
           :title="specSessionStatusDot"
           data-testid="intent-detail-spec-session-status"
+        ></span>
+        <span
+          v-if="tab.key === 'specReviewSession' && specReviewSessionStatusDot"
+          class="session-status"
+          :class="specReviewSessionStatusDot"
+          :title="specReviewSessionStatusDot"
+          data-testid="intent-detail-spec-review-session-status"
         ></span>
       </button>
     </div>

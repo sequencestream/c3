@@ -3,7 +3,17 @@ import type { Intent, SessionStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 
 export type DetailTab =
-  'intent' | 'intentSession' | 'spec' | 'specSession' | 'workSession' | 'changelog'
+  | 'intent'
+  | 'intentSession'
+  | 'spec'
+  | 'specSession'
+  | 'specReviewSession'
+  | 'workSession'
+  | 'changelog'
+
+/** The sub-tabs an external one-shot request (jump-to-source / post-Start-Work) may target. */
+export type RequestedDetailSubTab =
+  'intentSession' | 'specSession' | 'specReviewSession' | 'workSession'
 
 export interface DetailTabItem {
   key: DetailTab
@@ -15,22 +25,24 @@ export interface DetailTabItem {
  * 只编排页面状态并返回声明式结果:不直接操作 DOM、不持有全局活动会话;打开会话、读取
  * spec、加载日志均通过注入回调交回现有控制层。负责:SDD / 历史 Spec 可见性、空正文默认进
  * 意图会话、切换意图复位、隐藏 Tab 回退、外部 requestedSubTab 覆盖并恰好消费一次、changelog
- * / spec 的按需加载信号、三类会话 ID 异步回填补发一次 open、活动会话对齐去重,以及「编写 Spec
- * 后待新会话创建再切」的一次性协调。
+ * / spec 的按需加载信号、四类会话 ID 异步回填补发一次 open、活动会话对齐去重、评审 Tab 的
+ * 只读呈现开关,以及「编写 Spec 后待新会话创建再切」的一次性协调。
  */
 export function useIntentDetailTabs(opts: {
   intent: () => Intent | null
   sddEnabled: () => boolean
   activeSession: () => string | null
-  requestedSubTab: () => 'intentSession' | 'specSession' | 'workSession' | null | undefined
+  requestedSubTab: () => RequestedDetailSubTab | null | undefined
   intentLogsLength: () => number
   workSessionStatus: () => SessionStatus | null | undefined
   intentSessionStatus: () => SessionStatus | null | undefined
   specSessionStatus: () => SessionStatus | null | undefined
+  specReviewSessionStatus: () => SessionStatus | null | undefined
   onReadSpec: (intentId: string, specPath: string) => void
   onListIntentLogs: (intentId: string) => void
   onOpenIntentSession: (sessionId: string) => void
   onOpenSpecSession: (intentId: string) => void
+  onOpenSpecReviewSession: (intentId: string) => void
   onOpenWorkSession: (sessionId: string) => void
   onRequestedSubTabConsumed: () => void
 }) {
@@ -43,10 +55,12 @@ export function useIntentDetailTabs(opts: {
     workSessionStatus,
     intentSessionStatus,
     specSessionStatus,
+    specReviewSessionStatus,
     onReadSpec,
     onListIntentLogs,
     onOpenIntentSession,
     onOpenSpecSession,
+    onOpenSpecReviewSession,
     onOpenWorkSession,
     onRequestedSubTabConsumed,
   } = opts
@@ -60,6 +74,7 @@ export function useIntentDetailTabs(opts: {
     { key: 'intentSession', label: t('intent.tab.intentSession.label') },
     { key: 'spec', label: t('intent.tab.spec.label') },
     { key: 'specSession', label: t('intent.tab.specSession.label') },
+    { key: 'specReviewSession', label: t('intent.tab.specReviewSession.label') },
     { key: 'workSession', label: t('intent.tab.workSession.label') },
     { key: 'changelog', label: t('intent.tab.changelog.label') },
   ]
@@ -72,11 +87,17 @@ export function useIntentDetailTabs(opts: {
     const r = intent()
     return !!(r?.specPath || r?.specSessionId)
   })
+  // 评审 tab 只是既有只读评审会话的查看入口:工作区开启 SDD 且当前意图确有
+  // specReviewSessionId 才可见。不为没有评审会话的意图显示空态入口,也不因此创建评审会话。
+  const specReviewSessionTabVisible = computed<boolean>(
+    () => sddEnabled() && !!intent()?.specReviewSessionId,
+  )
   // 工作会话 tab 仅当选中意图存在 lastWorkSessionId(最新工作会话)时可见;不做历史列表。
   const workSessionTabVisible = computed<boolean>(() => !!intent()?.lastWorkSessionId)
   const visibleTabs = computed<DetailTabItem[]>(() =>
     TABS.filter((tab) => {
       if (tab.key === 'spec' || tab.key === 'specSession') return specTabsVisible.value
+      if (tab.key === 'specReviewSession') return specReviewSessionTabVisible.value
       if (tab.key === 'workSession') return workSessionTabVisible.value
       return true
     }),
@@ -100,6 +121,12 @@ export function useIntentDetailTabs(opts: {
   // 才显示。仅供标签呈现,不参与直接编辑 spec 的门禁判定。
   const specSessionStatusDot = computed<SessionStatus | null>(() => {
     const st = specSessionStatus()
+    return st && st !== 'idle' ? st : null
+  })
+  // 评审(spec_review 会话)tab 标签的运行中状态点:与其余三类会话同构,非 idle/未知
+  // (null)才显示。只读会话同样会运行(机器评审中),状态点让用户看到评审正在进行。
+  const specReviewSessionStatusDot = computed<SessionStatus | null>(() => {
+    const st = specReviewSessionStatus()
     return st && st !== 'idle' ? st : null
   })
 
@@ -146,6 +173,14 @@ export function useIntentDetailTabs(opts: {
       activeSession() !== r.specSessionId
     ) {
       onOpenSpecSession(r.id)
+    } else if (
+      activeTab.value === 'specReviewSession' &&
+      r.specReviewSessionId &&
+      activeSession() !== r.specReviewSessionId
+    ) {
+      // 评审会话的恢复必须走服务端按意图解析的专用入口(只读 runtime + 评审绑定事实),
+      // 故传的是意图 id 而非会话 id。
+      onOpenSpecReviewSession(r.id)
     } else if (
       activeTab.value === 'workSession' &&
       r.lastWorkSessionId &&
@@ -208,6 +243,7 @@ export function useIntentDetailTabs(opts: {
         intent()?.id,
         intent()?.intentSessionId,
         intent()?.specSessionId,
+        intent()?.specReviewSessionId,
         intent()?.lastWorkSessionId,
         activeSession(),
       ] as const,
@@ -221,6 +257,7 @@ export function useIntentDetailTabs(opts: {
     if (!r) return null
     if (activeTab.value === 'intentSession') return r.intentSessionId
     if (activeTab.value === 'specSession') return r.specSessionId
+    if (activeTab.value === 'specReviewSession') return r.specReviewSessionId
     if (activeTab.value === 'workSession') return r.lastWorkSessionId
     return null
   })
@@ -235,6 +272,10 @@ export function useIntentDetailTabs(opts: {
   // 仍展示当前生效值但只读;只有工作会话 tab 的模式可切换。
   const modeLocked = computed<boolean>(() => activeTab.value !== 'workSession')
 
+  // 评审 tab 是纯回放:整条聊天列进入只读态(无输入、无待发队列、无运行控制、
+  // 无权限决策控件)。与 spec_review 的服务端权限模型一致,前端只负责不呈现这些入口。
+  const chatReadonly = computed<boolean>(() => activeTab.value === 'specReviewSession')
+
   return {
     activeTab,
     visibleTabs,
@@ -242,8 +283,10 @@ export function useIntentDetailTabs(opts: {
     workSessionStatusDot,
     intentSessionStatusDot,
     specSessionStatusDot,
+    specReviewSessionStatusDot,
     expectedSessionId,
     chatReady,
+    chatReadonly,
     firstIntentTurn,
     modeLocked,
     selectTab,

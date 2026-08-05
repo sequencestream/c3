@@ -1,10 +1,13 @@
 <script setup lang="ts">
 /*
- * IntentSessionPanel.vue — 三类会话 tab(intent / spec / work session)的内容面板。
+ * IntentSessionPanel.vue — 四类会话 tab(intent / spec / spec review / work session)的内容面板。
  *
  * 沿用「单一活动会话」模型:仅在全局活动会话与期望 ID 对齐(chatReady)后渲染 ChatColumn,
  * 避免串台;期望 ID 为空的意图会话首轮渲染首条输入框(firstIntentTurn)。打开会话本身由容器
  * (Tab 状态机)统一补发,本面板不持有活动会话,只做渲染与事件透传。
+ *
+ * 评审(spec_review)会话是只读回放:容器传入 readonly,由 ChatColumn 的整列只读门统一
+ * 移除输入、待发队列、运行控制与权限决策控件,本面板不做第二套判断。
  */
 import { ref } from 'vue'
 import type {
@@ -27,6 +30,8 @@ defineProps<{
   activeTab: DetailTab
   expectedSessionId: string | null
   chatReady: boolean
+  /** Replay-only chat column (spec review tab) — see ChatColumn's `readonly`. */
+  chatReadonly?: boolean
   firstIntentTurn: boolean
   intentTitle: string
   activeTitle: string
@@ -82,11 +87,17 @@ defineExpose({
     :data-testid="
       activeTab === 'workSession'
         ? 'intent-detail-work-session-empty'
-        : 'intent-detail-spec-session-empty'
+        : activeTab === 'specReviewSession'
+          ? 'intent-detail-spec-review-session-empty'
+          : 'intent-detail-spec-session-empty'
     "
   >
     {{
-      activeTab === 'workSession' ? t('intent.workSession.empty') : t('intent.specSession.empty')
+      activeTab === 'workSession'
+        ? t('intent.workSession.empty')
+        : activeTab === 'specReviewSession'
+          ? t('intent.specReviewSession.empty')
+          : t('intent.specSession.empty')
     }}
   </p>
   <p v-else-if="!chatReady && !firstIntentTurn" class="intent-detail-empty">
@@ -96,6 +107,7 @@ defineExpose({
     v-else
     ref="chatColumn"
     data-testid="intent-detail-chat"
+    :readonly="chatReadonly === true"
     :active-title="firstIntentTurn ? intentTitle : activeTitle"
     :vendor="vendor"
     :agent-switch="agentSwitch"

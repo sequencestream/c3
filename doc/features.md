@@ -30,6 +30,7 @@ c3
 │   ├── session-registry 会话与工作区目录         # 工作的档案柜与调度器
 │   │   ├── 工作区注册                            # 已知工作区(绝对路径→不透明 workspaceId)、默认工作区
 │   │   ├── 会话目录                              # 按 sessionKind(work/intent/spec/spec_review/discussion/automation/tool)增删列
+│   │   │   └── 规范类合并入口                    # 会话页「规范」既是显示分类也是查询口径:spec 撰写与 spec_review 评审同列同角标(每会话只计一次,兼容字段不重复计入顶栏),行保留真实 kind 与 owner
 │   │   ├── 最近访问排序                          # 维护会话列表的 MRU 顺序
 │   │   ├── 历史持久化                            # 每轮 transcript 持久化,重连即回放
 │   │   ├── 模式记忆                              # 记住每个会话上次的权限模式
@@ -57,7 +58,8 @@ c3
 │   │   ├── 正文直接编辑                          # draft/todo 意图正文行内编辑(纯文本 markdown),服务端状态门禁+写 intent_updated 日志
 │   │   ├── 规格撰写与批准                        # 开发前生成 spec 并经人批准(spec 集中存 ~/.c3/specs);批准可撤销,撤销同时否决当前审核结论;save_intents 改写既有意图标题/正文亦使其批准失效
 │   │   ├── 规格只读审核                          # 独立 spec_review 会话读 spec/源码/本项目意图,写任意路径一律拒绝;结论只经 submit_spec_review 结构化提交
-│   │   │   └── 结论绑定内容指纹                  # 结论有效⟺指纹等于 spec 现内容;spec 改写即自动失效并重审,陈旧提交一律拒绝且不得解释为通过
+│   │   │   ├── 结论绑定内容指纹                  # 结论有效⟺指纹等于 spec 现内容;spec 改写即自动失效并重审,陈旧提交一律拒绝且不得解释为通过
+│   │   │   └── 评审过程可核验                    # 意图详情「评审」tab(SDD 开启且有 specReviewSessionId 才出现)与会话页「规范」列表都经 open_spec_review_session 按意图恢复只读回放;人工续跑在服务端按 sessionKind 一律拒绝
 │   │   ├── 规格直接编辑                          # 未启动开发且无运行中 spec 会话时行内编辑 spec 源码,覆盖写集中 specs 文件+审批联动重置+写 spec_updated 日志
 │   │   ├── 意图开发                              # 启动可配置 dev skill,追踪 branch/commit/PR
 │   │   │   └── attach·resume·fresh 三态启动      # 按 lastWorkSessionId:运行中只挂 viewer 不发新 turn,空闲在原 id 续跑,无会话才新建;人工按钮与 MCP 工具共用同一门禁(含 RM-A12 并发闸门:current-branch 全局互斥,worktree 各意图独立目录可并行)

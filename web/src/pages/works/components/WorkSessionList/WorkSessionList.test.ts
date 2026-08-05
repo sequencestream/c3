@@ -76,12 +76,58 @@ describe('WorkSessionList.vue — 当前工作区会话列表', () => {
     expect(w.findAll('.session').length).toBe(0)
   })
 
-  it('渲染会话列表,点击 → emit select-session(path, id)', async () => {
+  it('渲染会话列表,点击 → emit select-session(path, row)', async () => {
     const w = mountList({ sessions: [session('s1', 'Alpha'), session('s2', 'Beta')] })
     const rows = w.findAll('.session')
     expect(rows.length).toBe(2)
     await rows[1].trigger('click')
-    expect(w.emitted('select-session')).toEqual([[WS, 's2']])
+    const emitted = w.emitted('select-session') as unknown[][]
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0][0]).toBe(WS)
+    // 上抛整行:控制层要按真实 kind / owner 决定打开路径。
+    expect((emitted[0][1] as SessionInfo).sessionId).toBe('s2')
+  })
+
+  it('「规范」列表同时呈现 spec 与 spec_review 行,并按真实 kind 上抛', async () => {
+    const rows = [
+      session('spec-1', 'Spec authoring', {
+        sessionKind: 'spec',
+        ownerKind: 'intent',
+        ownerId: 'i1',
+      }),
+      session('rev-1', 'Spec review', {
+        sessionKind: 'spec_review',
+        ownerKind: 'intent',
+        ownerId: 'i1',
+      }),
+    ]
+    const w = mountList({ sessions: rows, activeSessionKind: 'spec' })
+    expect(w.findAll('.session')).toHaveLength(2)
+
+    await w.findAll('.session')[1].trigger('click')
+    const emitted = w.emitted('select-session') as unknown[][]
+    const row = emitted[0][1] as SessionInfo
+    expect(row.sessionId).toBe('rev-1')
+    // 真实 kind 与 owner 原样保留(不被显示分类改写)。
+    expect(row.sessionKind).toBe('spec_review')
+    expect(row.ownerKind).toBe('intent')
+    expect(row.ownerId).toBe('i1')
+  })
+
+  it('评审行可溯源,但不获得改名/删除能力', () => {
+    const w = mountList({
+      sessions: [
+        session('rev-1', 'Spec review', {
+          sessionKind: 'spec_review',
+          ownerKind: 'intent',
+          ownerId: 'i1',
+        }),
+      ],
+      activeSessionKind: 'spec',
+    })
+    expect(w.find('[data-testid="session-row-jump"]').exists()).toBe(true)
+    expect(w.find('[data-testid="session-row-rename"]').exists()).toBe(false)
+    expect(w.find('[data-testid="session-row-delete"]').exists()).toBe(false)
   })
 
   it('选中项高亮 active,awaiting_permission 项加 awaiting', () => {

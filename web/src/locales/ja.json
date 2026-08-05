@@ -985,6 +985,9 @@
       "specSession": {
         "label": "仕様作成セッション"
       },
+      "specReviewSession": {
+        "label": "レビュー"
+      },
       "workSession": {
         "label": "作業セッション"
       },
@@ -1049,6 +1052,9 @@
     },
     "specSession": {
       "empty": "この意図にはまだ仕様セッションがありません。"
+    },
+    "specReviewSession": {
+      "empty": "このインテントにはまだ仕様レビューセッションがありません。"
     },
     "workSession": {
       "empty": "この意図にはまだ作業セッションがありません。"
@@ -1286,6 +1292,9 @@
       "tool": "ツール",
       "tabsLabel": "セッション分類",
       "placeholder": "この種類のセッションは第2期で接続されます。"
+    },
+    "review": {
+      "ownerUnresolved": "このレビューセッションを開けません: 所属するインテントを特定できませんでした。"
     }
   },
   "automation": {
@@ -1940,7 +1949,8 @@
       "renameFailed": "セッション名の変更に失敗しました: {detail}",
       "notSelected": "先にセッションを選択または作成してください。",
       "turnRunning": "このセッションではすでにターンが実行中です。",
-      "invalidMode": "ベンダー \"{vendor}\" の権限モード \"{mode}\" は無効です"
+      "invalidMode": "ベンダー \"{vendor}\" の権限モード \"{mode}\" は無効です",
+      "readOnly": "このセッションは読み取り専用のため、続行できません。"
     },
     "prompt": {
       "unsupportedFile": "メッセージには画像のみ添付できます(受信: \"{mediaType}\")。"

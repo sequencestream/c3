@@ -984,6 +984,9 @@
       "specSession": {
         "label": "Spec session"
       },
+      "specReviewSession": {
+        "label": "Review"
+      },
       "workSession": {
         "label": "Work session"
       },
@@ -1048,6 +1051,9 @@
     },
     "specSession": {
       "empty": "This intent has no spec session yet."
+    },
+    "specReviewSession": {
+      "empty": "This intent has no spec review session yet."
     },
     "workSession": {
       "empty": "This intent has no work session yet."
@@ -1285,6 +1291,9 @@
       "tool": "Tool",
       "tabsLabel": "Session categories",
       "placeholder": "This session type will be connected in phase two."
+    },
+    "review": {
+      "ownerUnresolved": "Cannot open this review session: its owning intent is unknown."
     }
   },
   "automation": {
@@ -1939,7 +1948,8 @@
       "renameFailed": "Failed to rename session: {detail}",
       "notSelected": "Select or create a session first.",
       "turnRunning": "A turn is already running in this session.",
-      "invalidMode": "Invalid permission mode \"{mode}\" for vendor \"{vendor}\"."
+      "invalidMode": "Invalid permission mode \"{mode}\" for vendor \"{vendor}\".",
+      "readOnly": "This session is read-only and cannot be continued."
     },
     "prompt": {
       "unsupportedFile": "Only images can be attached to a message (received \"{mediaType}\")."

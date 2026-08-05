@@ -679,6 +679,15 @@ export function createState(deps: StateDeps) {
   // `linkedIntentId` compat field); null ⇒ no source button. Refreshed/cleared on
   // every (re)select, same lifecycle as `activeVendor`.
   const activeSessionSource = ref<SessionSourceAction | null>(null)
+  // 当前活动会话的**真实** kind(来自列表投影行或 session_selected),与左栏的显示分类
+  // activeSessionKind 不同:「规范」分类同时列出 spec 与 spec_review 两种真实 kind。
+  // 只读呈现必须按真实 kind 判定,否则规范撰写会话会被一起锁死。null = 未知(按可写处理,
+  // 服务端仍有 kind 门禁兜底)。
+  const activeSessionRealKind = ref<SessionKind | null>(null)
+  // 活动会话是否只能回放:spec_review 会话由系统运行并产出结论,人不能续跑。
+  const activeSessionReadonly = computed<boolean>(
+    () => activeSessionRealKind.value === 'spec_review',
+  )
   // One-shot request to select a specific intent on the intents page (set by the
   // title-bar jump button, consumed + cleared by Intents.vue once applied).
   const requestedIntentId = ref<string | null>(null)
@@ -688,7 +697,9 @@ export function createState(deps: StateDeps) {
   // One-shot request to force IntentDetail to switch to a specific sub-tab (set by
   // the WorkCenter jump-to-source and by the post-Start-Work jump, consumed +
   // cleared by IntentDetail once applied).
-  const requestedIntentSubTab = ref<'intentSession' | 'specSession' | 'workSession' | null>(null)
+  const requestedIntentSubTab = ref<
+    'intentSession' | 'specSession' | 'specReviewSession' | 'workSession' | null
+  >(null)
   // One-shot request to force IntentMergedList to switch to a specific tab (set by
   // the WorkCenter jump-to-source when no intent matches the session id).
   const requestedMergedTab = ref<'intents' | 'sessions' | null>(null)
@@ -966,6 +977,8 @@ export function createState(deps: StateDeps) {
     activeVendor,
     activeAgentSwitch,
     activeSessionSource,
+    activeSessionRealKind,
+    activeSessionReadonly,
     requestedIntentId,
     requestedWorkSessionId,
     requestedIntentSubTab,

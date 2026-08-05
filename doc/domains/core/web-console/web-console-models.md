@@ -32,7 +32,7 @@
 | Session row    | session id、title、last-modified、mode、`sessionKind`、可选的 `ownerKind`/`ownerId`、`bound`;状态徽标来自会话状态 | `sessions` / `session_status` / `session_counts` |
 | Viewed session | 当前工作区、当前会话、当前标题、mode                                                                              | `session_selected` / `session_started`           |
 
-Sessions 页面为每个 `(workspace, sessionKind)` 维护独立的分页缓存,以及一个六类运行计数映射。Owner 字段只是展示层输入:客户端用一条纯规则解析回跳目标,并不持久化或修改所有权本身。
+Sessions 页面为每个 `(workspace, sessionKind)` 维护独立的分页缓存,以及一个六类运行计数映射(键即左栏的六个显示分类;「规范」一类同时覆盖 `spec` 与 `spec_review` 两种真实 kind,见 SR-R15)。Owner 字段只是展示层输入:客户端用一条纯规则解析回跳目标,并不持久化或修改所有权本身。行的**真实** `sessionKind` 另外决定两件事:打开路径(`spec_review` 行改走按意图解析的只读恢复入口)与聊天列是否进入只读态——两者都不看左栏当前选的是哪个分类。
 
 ## 任务列表(服务端派生,独立 wire 路径)
 

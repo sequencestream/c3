@@ -470,6 +470,8 @@ describe('sessions handler — kind-switch pendingConsoleBind', () => {
       activity,
       flags,
       requestedWorkSessionId: ref(null),
+      // 活动会话的真实 kind:合并显示分类下,占位行要据此如实声明自己的 kind。
+      activeSessionRealKind: ref<import('@ccc/shared/protocol').SessionKind | null>(null),
       pendingDeepLink: ref<import('@/lib/deep-link').DeepLinkTarget | null>(null),
       deepLinkFulfilled: ref<Set<string>>(new Set()),
       deepLinkTimers: { timeout: null as ReturnType<typeof setTimeout> | null },
@@ -778,6 +780,8 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     const activeVendor = ref<'claude' | 'codex' | null>(null)
     const activeAgentSwitch = ref<import('@ccc/shared/protocol').SessionAgentSwitch | null>(null)
     const activeSessionSource = ref<import('@/lib/session-jump').SessionSourceAction | null>(null)
+    // 活动会话的真实 kind(只读门与溯源都读它);session_selected 每次重算。
+    const activeSessionRealKind = ref<import('@ccc/shared/protocol').SessionKind | null>(null)
     const mode = ref<import('@ccc/shared/protocol').ModeToken>('default')
     const codexPolicy = ref<import('@ccc/shared/protocol').CodexPolicy | null>(null)
     const consoleSession = ref<import('@/lib/tab-view').SessionRef | null>(null)
@@ -882,6 +886,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       activeVendor,
       activeAgentSwitch,
       activeSessionSource,
+      activeSessionRealKind,
       mode,
       codexPolicy,
       consoleSession,
@@ -1025,6 +1030,7 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
     installMessageHandler(ctx)
     return {
       ctx,
+      activeSessionRealKind,
       showToast,
       ensureSessions,
       selectSession,
@@ -1177,6 +1183,43 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
 
     expect(r.pendingDeepLink.value).toBeNull()
     expect(r.deepLinkFulfilled.value.has('sess-target')).toBe(true)
+  })
+
+  it('session_selected records the session real kind for the read-only gate', () => {
+    const r = makeDeepLinkCtx()
+
+    r.ctx.handleMessage({
+      type: 'session_selected',
+      workspaceId: 'ws1',
+      sessionId: 'rev-1',
+      title: 'Review',
+      mode: 'default',
+      history: [],
+      status: 'idle',
+      vendor: 'claude',
+      sessionKind: 'spec_review',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+    } as unknown as ServerToClient)
+
+    expect(r.activeSessionRealKind.value).toBe('spec_review')
+
+    // 换成规范撰写会话 → 真实 kind 随之更新(不会残留只读)。
+    r.ctx.handleMessage({
+      type: 'session_selected',
+      workspaceId: 'ws1',
+      sessionId: 'spec-1',
+      title: 'Spec',
+      mode: 'default',
+      history: [],
+      status: 'idle',
+      vendor: 'claude',
+      sessionKind: 'spec',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+    } as unknown as ServerToClient)
+
+    expect(r.activeSessionRealKind.value).toBe('spec')
   })
 
   it('discussion_detail fulfills a discussion deep link', () => {

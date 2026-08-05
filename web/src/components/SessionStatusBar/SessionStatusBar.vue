@@ -42,6 +42,13 @@ const props = defineProps<{
    * exclusive with `reconnecting` (that's the auto path; this is the refused path).
    */
   sideEffectPending?: boolean
+  /**
+   * Hide the run controls (stop / continue) for a replay-only column (read-only
+   * session kinds): the status text and the refresh button stay — only the
+   * controls that would change the run go away. Stated as "hide" because an
+   * absent Boolean prop is `false` in Vue, so the default is "controls shown".
+   */
+  hideRunControls?: boolean
 }>()
 
 const emit = defineEmits<{ refresh: []; stop: []; continue: [] }>()
@@ -81,6 +88,9 @@ const statusText = computed(() => {
 // Refresh re-selects the session, so it only works on an open socket; the
 // auto-reconnect handles the closed case (and re-selects on reopen).
 const canRefresh = computed(() => props.hasActiveSession && props.connection === 'open')
+
+// Absent prop ⇒ controls shown (every existing call site keeps its buttons).
+const showControls = computed(() => !props.hideRunControls)
 </script>
 
 <template>
@@ -96,7 +106,7 @@ const canRefresh = computed(() => props.hasActiveSession && props.connection ===
     }}</span>
     <div class="status-actions">
       <button
-        v-if="sideEffectPending"
+        v-if="showControls && sideEffectPending"
         class="status-continue"
         :title="t('session.statusBar.continue.tooltip')"
         @click="emit('continue')"
@@ -104,6 +114,7 @@ const canRefresh = computed(() => props.hasActiveSession && props.connection ===
         {{ t('session.statusBar.continue.label') }}
       </button>
       <button
+        v-if="showControls"
         class="status-stop"
         :disabled="!canStop"
         :title="

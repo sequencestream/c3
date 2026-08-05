@@ -984,6 +984,9 @@
       "specSession": {
         "label": "编写规范会话"
       },
+      "specReviewSession": {
+        "label": "评审"
+      },
       "workSession": {
         "label": "工作会话"
       },
@@ -1048,6 +1051,9 @@
     },
     "specSession": {
       "empty": "该意图还没有编写规范会话。"
+    },
+    "specReviewSession": {
+      "empty": "该意图还没有规范评审会话。"
     },
     "workSession": {
       "empty": "该意图还没有工作会话。"
@@ -1285,6 +1291,9 @@
       "tool": "工具",
       "tabsLabel": "会话分类",
       "placeholder": "该类型会话将在二期接入。"
+    },
+    "review": {
+      "ownerUnresolved": "无法打开该评审会话:未能确定它所属的意图。"
     }
   },
   "automation": {
@@ -1939,7 +1948,8 @@
       "renameFailed": "重命名会话失败:{detail}",
       "notSelected": "请先选择或创建一个会话。",
       "turnRunning": "该会话已有一轮正在运行。",
-      "invalidMode": "vendor \"{vendor}\" 的权限模式 \"{mode}\" 不合法"
+      "invalidMode": "vendor \"{vendor}\" 的权限模式 \"{mode}\" 不合法",
+      "readOnly": "该会话为只读,不能继续对话。"
     },
     "prompt": {
       "unsupportedFile": "消息只能附带图片（收到 \"{mediaType}\"）。"

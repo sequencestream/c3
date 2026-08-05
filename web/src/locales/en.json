@@ -1205,6 +1205,10 @@
         "label": "Continue",
         "tooltip": "Continue manually after confirming no side effects"
       },
+      "retry": {
+        "label": "Retry",
+        "tooltip": "Retry: relaunch the crashed run"
+      },
       "stop": {
         "tooltip": "Stop the running turn",
         "endTeamTooltip": "End team: shut down the team lead and all teammates",

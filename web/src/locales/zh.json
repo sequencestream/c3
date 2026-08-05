@@ -1205,6 +1205,10 @@
         "label": "继续",
         "tooltip": "确认无副作用后手动续接"
       },
+      "retry": {
+        "label": "重试",
+        "tooltip": "重试:重新拉起崩溃的运行"
+      },
       "stop": {
         "tooltip": "停止正在进行的回合",
         "endTeamTooltip": "结束团队:关闭团队负责人和所有成员",

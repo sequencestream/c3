@@ -63,6 +63,7 @@ function input(over: Partial<QueueReconcileInput> = {}): QueueReconcileInput {
     gitBranchMode: 'current-branch',
     sddEnabled: false,
     machineApprovalEnabled: false,
+    automationConcurrency: 2,
     specRuns: [],
     specInFlight: [],
     ...over,
@@ -636,6 +637,141 @@ describe('reconcileQueue — concurrency gate by git branch mode', () => {
     expect(out.actions.some((a) => a.kind === 'attach')).toBe(false)
     expect(launched(out)).toBe('other')
     expect(out.awaitingPermission).toBe(true)
+  })
+
+  it('worktree: cap=2 — two intents in development block a third behind the cap', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        automationConcurrency: 2,
+        intents: [
+          intent({ id: 'A', status: 'in_progress', lastWorkSessionId: 's1', createdAt: 1 }),
+          intent({ id: 'B', status: 'in_progress', lastWorkSessionId: 's2', createdAt: 2 }),
+          intent({ id: 'C', createdAt: 3 }),
+        ],
+        runs: [
+          { sessionId: 's1', alive: true, awaitingPermissionSince: null },
+          { sessionId: 's2', alive: true, awaitingPermissionSince: null },
+        ],
+      }),
+    )
+    // A and B are observed (attached), never driven twice.
+    expect(out.actions.filter((a) => a.kind === 'attach')).toHaveLength(2)
+    expect(launched(out)).toBeNull()
+    // C is eligible but the cap is full — blocked with the ACTUAL effective cap.
+    expect(decisionFor(out, 'C')).toMatchObject({
+      action: 'wait',
+      reason: 'blocked_concurrency_gate',
+      detail: '已达并发上限 2',
+    })
+    expect(out.state).toBe('developing')
+  })
+
+  it('worktree: cap=1 serializes even though each intent owns its own directory', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        automationConcurrency: 1,
+        intents: [
+          intent({ id: 'A', status: 'in_progress', lastWorkSessionId: 's1', createdAt: 1 }),
+          intent({ id: 'B', createdAt: 2 }),
+        ],
+        runs: [{ sessionId: 's1', alive: true, awaitingPermissionSince: null }],
+      }),
+    )
+    expect(launched(out)).toBeNull()
+    expect(decisionFor(out, 'B')).toMatchObject({
+      reason: 'blocked_concurrency_gate',
+      detail: '已达并发上限 1',
+    })
+  })
+
+  it('current-branch: a config above 1 is ignored — the shared checkout stays serial', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'current-branch',
+        automationConcurrency: 5,
+        intents: [
+          intent({ id: 'A', status: 'in_progress', lastWorkSessionId: 's1', createdAt: 1 }),
+          intent({ id: 'B', createdAt: 2 }),
+        ],
+        runs: [{ sessionId: 's1', alive: true, awaitingPermissionSince: null }],
+      }),
+    )
+    expect(launched(out)).toBeNull()
+    expect(decisionFor(out, 'B')).toMatchObject({
+      reason: 'blocked_concurrency_gate',
+      detail: '全局并发闸门:「intent-A」的工作会话仍在运行',
+    })
+  })
+
+  it('worktree: the same intent in in-flight AND live facts counts once toward the cap', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        automationConcurrency: 1,
+        intents: [
+          intent({ id: 'A', status: 'in_progress', lastWorkSessionId: 's1', createdAt: 1 }),
+          intent({ id: 'B', createdAt: 2 }),
+        ],
+        inFlight: ['A'],
+        runs: [{ sessionId: 's1', alive: true, awaitingPermissionSince: null }],
+      }),
+    )
+    expect(decisionFor(out, 'A')).toMatchObject({ action: 'wait', reason: 'running' })
+    expect(launched(out)).toBeNull()
+    expect(decisionFor(out, 'B')).toMatchObject({
+      reason: 'blocked_concurrency_gate',
+      detail: '已达并发上限 1',
+    })
+  })
+
+  it('worktree: below the cap still adds exactly ONE new work action', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        automationConcurrency: 3,
+        intents: [
+          intent({ id: 'A', status: 'in_progress', lastWorkSessionId: 's1', createdAt: 1 }),
+          intent({ id: 'first', createdAt: 2 }),
+          intent({ id: 'second', createdAt: 3 }),
+        ],
+        runs: [{ sessionId: 's1', alive: true, awaitingPermissionSince: null }],
+      }),
+    )
+    expect(out.actions.filter((a) => a.kind === 'launch' || a.kind === 'resume')).toHaveLength(1)
+    expect(launched(out)).toBe('first')
+    // The runner-up waits for the next tick — parallelism grows one intent at a time.
+    expect(decisionFor(out, 'second')).toMatchObject({
+      action: 'wait',
+      reason: 'blocked_concurrency_gate',
+    })
+  })
+
+  it('worktree: lowering the cap never cancels in-flight runs — it only stops new picks', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        automationConcurrency: 1,
+        intents: [
+          intent({ id: 'A', status: 'in_progress', lastWorkSessionId: 's1', createdAt: 1 }),
+          intent({ id: 'B', status: 'in_progress', lastWorkSessionId: 's2', createdAt: 2 }),
+          intent({ id: 'C', createdAt: 3 }),
+        ],
+        runs: [
+          { sessionId: 's1', alive: true, awaitingPermissionSince: null },
+          { sessionId: 's2', alive: true, awaitingPermissionSince: null },
+        ],
+      }),
+    )
+    // Both existing runs are still observed — no park/abort action touches them.
+    expect(out.actions.filter((a) => a.kind === 'attach')).toHaveLength(2)
+    expect(out.actions.some((a) => a.kind === 'park')).toBe(false)
+    expect(launched(out)).toBeNull()
+    expect(decisionFor(out, 'C')).toMatchObject({
+      reason: 'blocked_concurrency_gate',
+      detail: '已达并发上限 1',
+    })
   })
 })
 

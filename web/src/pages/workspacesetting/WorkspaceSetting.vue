@@ -54,6 +54,11 @@ const DEFAULT_ROUNDS_PER_STAGE = 12
 const MIN_SPEECH_CHARS = 300
 const DEFAULT_SPEECH_CHARS = 300
 
+// Automation-queue concurrent-dev cap: floor + default enforced both here and
+// server-side (only meaningful under `worktree`; `current-branch` is serial).
+const MIN_AUTOMATION_CONCURRENCY = 1
+const DEFAULT_AUTOMATION_CONCURRENCY = 2
+
 const props = defineProps<{
   open: boolean
   workspaceSetting: WorkspaceSetting | null
@@ -125,12 +130,15 @@ const emit = defineEmits<{
 }>()
 
 // ---- Tab grouping ----------------------------------------------------------
-// The four workspace-setting tabs and, per tab, the exact WorkspaceSetting fields
+// The workspace-setting tabs and, per tab, the exact WorkspaceSetting fields
 // it owns. This map is the single save whitelist: saving a tab overlays ONLY these
 // fields (transformed) onto the latest committed snapshot, so a tab's Save never
 // carries another tab's unsaved draft. The `gitSandbox` tab's `sandbox` field is
 // compared/saved by its enabled state alone, independent of the git branch mode
 // (see gitSandboxCmp / saveTab).
+// `automation` reuses the SAME `automationEnabled` field the automation page and
+// the workbench dashboard toggle — any entry saves through the shared setting and
+// every other entry re-seeds from it, so there is exactly one source of truth.
 // `observability` is deliberately field-less: it renders measurements the server
 // derives, not configuration. An empty whitelist is what keeps that true — the tab
 // can never be dirty, never seeds from or writes to the draft, and never appears in
@@ -140,12 +148,19 @@ const emit = defineEmits<{
 // the workspace's own path — never workspace configuration. An empty whitelist is
 // what keeps it out of the draft, the dirty check and every save payload.
 type WsTab =
-  'defaultMode' | 'gitSandbox' | 'collab' | 'skillRepos' | 'observability' | 'externalMcp'
+  | 'defaultMode'
+  | 'gitSandbox'
+  | 'collab'
+  | 'skillRepos'
+  | 'automation'
+  | 'observability'
+  | 'externalMcp'
 const TABS: WsTab[] = [
   'defaultMode',
   'gitSandbox',
   'collab',
   'skillRepos',
+  'automation',
   'observability',
   'externalMcp',
 ]
@@ -160,6 +175,7 @@ const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
     'specMachineApprovalEnabled',
   ],
   skillRepos: ['skillRepos'],
+  automation: ['automationEnabled', 'automationConcurrency'],
   observability: [],
   externalMcp: [],
 }
@@ -275,6 +291,10 @@ function buildSeed(
     // Machine spec approval is an explicit opt-in: absent reads as OFF, so an
     // existing workspace never gains it by upgrading.
     specMachineApprovalEnabled: config?.specMachineApprovalEnabled === true,
+    // Automation gate defaults open and the dev cap defaults to 2 — mirroring the
+    // server's normalization so an absent value renders as the effective default.
+    automationEnabled: config?.automationEnabled ?? true,
+    automationConcurrency: config?.automationConcurrency ?? DEFAULT_AUTOMATION_CONCURRENCY,
     // sandbox left RAW from `full` (may be undefined) — synthesized into the draft.
   }
 }
@@ -675,6 +695,11 @@ function buildTabPayload(
     }
     case 'skillRepos': {
       payload.skillRepos = deepCopy(src.skillRepos ?? [])
+      break
+    }
+    case 'automation': {
+      payload.automationEnabled = src.automationEnabled
+      payload.automationConcurrency = src.automationConcurrency
       break
     }
   }
@@ -1278,6 +1303,55 @@ const parkRecoveryRateText = computed(() => {
         </section>
       </div>
 
+      <!-- ============ Automation tab ============
+           The queue's auto-dispatch gate (automationEnabled, shared with the
+           automation page / workbench dashboard) plus the concurrent-dev cap. The
+           cap only bounds the queue's automatic dispatch under `worktree`; spec
+           authoring/review stays serial and manual starts are never quota-gated. -->
+      <div
+        v-show="activeTab === 'automation'"
+        class="project-config-tab-panel"
+        role="tabpanel"
+        data-testid="project-config-tab-automation"
+      >
+        <section class="project-config-section">
+          <p class="project-config-section-title">
+            {{ t('workspaceSetting.automation.gate.title.label') }}
+          </p>
+          <p class="project-config-hint">{{ t('workspaceSetting.automation.gate.hint') }}</p>
+          <label class="project-config-toggle">
+            <input
+              v-model="draft.automationEnabled"
+              type="checkbox"
+              data-testid="automation-enabled"
+            />
+            {{ t('workspaceSetting.automation.gate.toggle.label') }}
+          </label>
+        </section>
+
+        <section class="project-config-section">
+          <p class="project-config-section-title">
+            {{ t('workspaceSetting.automation.concurrency.title.label') }}
+          </p>
+          <p class="project-config-hint">
+            {{ t('workspaceSetting.automation.concurrency.hint') }}
+          </p>
+          <div class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('workspaceSetting.automation.concurrency.field.label')
+            }}</span>
+            <input
+              v-model.number="draft.automationConcurrency"
+              class="project-config-field project-config-number"
+              type="number"
+              :min="MIN_AUTOMATION_CONCURRENCY"
+              step="1"
+              data-testid="automation-concurrency"
+            />
+          </div>
+        </section>
+      </div>
+
       <!-- ============ Local observation tab (read-only) ============
            Measurements, not settings: no input, no Save, no draft. The panel owns
            only a retry for a failed read. -->
@@ -1417,6 +1491,17 @@ const parkRecoveryRateText = computed(() => {
           >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
         >
         <button data-testid="project-config-save-skillRepos" @click="saveTab('skillRepos')">
+          {{ t('common.action.save.label') }}
+        </button>
+      </div>
+      <div v-show="activeTab === 'automation'" class="project-config-tab-actions">
+        <span
+          v-if="tabDirtyMap.automation"
+          class="project-config-unsaved"
+          data-testid="project-config-unsaved-automation"
+          >{{ t('workspaceSetting.tabs.unsaved.label') }}</span
+        >
+        <button data-testid="project-config-save-automation" @click="saveTab('automation')">
           {{ t('common.action.save.label') }}
         </button>
       </div>

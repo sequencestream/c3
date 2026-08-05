@@ -63,9 +63,17 @@
 - **`automationEnabled`** — 本工作区自动化**自动派发**总开关,缺省**开**。关闭时,该工作区下所有 cron 与事件触发的自动化都不会被 tick 循环 / 事件分发器自动派发(在派发前短路);单条自动化各自的 `active` / `paused` 状态不受影响,手动「立即运行」不受影响。触发语义与关闭态的 `nextRunAt` 重算/不补跑规则见 [automations](../../core/automations/automations-spec.md) 的 SCH-R28。
 - 规范化仅接受显式布尔 `false` 为关闭;缺失/非布尔/旧的非法值一律归一为 `true`,故现有工作区升级后行为不变(无需数据库迁移,值进入既有 `projectConfigs` 配置 JSON)。`normalizeWorkspaceSetting` 的返回值始终包含规范化后的布尔值,保存其他工作区设置时原样保留该字段。设置读取失败或缺失时按开启处理。
 
+## 自动化队列并发意图数 `automationConcurrency`
+
+- **`automationConcurrency`** — 自动化队列**同时进行开发工作会话**的意图数上限,缺省 **2**。它只约束自动化队列自动派发的开发会话:`worktree` 隔离模式下每条意图各占独立目录,队列可并行开发最多 N 条;`current-branch` 共享同一份检出,有效并发**恒为 1**,配置值不覆盖 RM-A12 的共享文件安全。spec 撰写/审核阶段维持串行、**不计入**该上限;人工「开始工作」与 MCP `start_session_for_intent` 不被队列配额拒绝(仍走既有安全门禁)。
+- **归一化。** 缺失/非数字/非有限数字回退 `2`;有限数字先取整,小于 1 钳制为 1;合法正整数原值保留。`normalizeWorkspaceSetting` 的返回值始终包含规范化后的数字,保存其他字段时原样保留,无需数据库迁移(存于既有 `projectConfigs` 配置 JSON)。`getAutomationConcurrency(workspacePath)` 是对账内核读取该值的统一访问器,每次 pass 重读,保存后下一 tick 即生效、无需重启队列。
+- **队列语义。** 内核按意图 ID 去重统计本轮占用:内核持有的 work run、队列已挂接观察的活跃自动化会话、本轮刚选中的开发意图;占用数达到上限即不再挑选,其余合格意图以 `blocked_concurrency_gate` 与「已达并发上限 N」阻塞。调低上限**不取消/停止/park** 已在途会话(允许暂时超额,持续阻止新派发);调高上限后按每轮一个动作逐步补足。
+- **默认 2 是有意收敛。** 早期 `worktree` 模式对并行**无上限**,意图一多会瞬间拉起大量 AI 会话;默认 2 把未配置工作区收敛为最多两个意图并行开发,高吞吐用户可显式调高。
+- **界面。** 工作区设置页第五个配置 Tab「自动化」承载 `automationEnabled` 总开关与并发数输入(min 1、步长 1);`automationEnabled` 与自动化页/工作台仪表盘共用同一字段,任一入口保存后经设置回推校准其余入口,不引入镜像字段。
+
 ## 本机观测(只读,不属于 `WorkspaceSetting`)
 
-工作区设置页的第五个 Tab「本机观测」展示 park 恢复率,用于判断本批 park 指引是否有效、后续 P1/P2 是否值得投入。
+工作区设置页的第六个 Tab「本机观测」展示 park 恢复率,用于判断本批 park 指引是否有效、后续 P1/P2 是否值得投入。
 
 - **不是配置。** 派生统计**不进** `SystemSettings` / `WorkspaceSetting`,也不进任何保存负载;该 Tab 的字段白名单为空,因此永不脏、不参与切换确认、无 Save 按钮,`buildPayload` 对它返回 `null` 使程序化保存也发不出东西。避免设置保存把观测数据回写成配置。
 - **专用只读协议。** `get_park_recovery_stats`(workspaceId)→ `park_recovery_stats`(workspaceId + `{ windowMs, eligible, recovered, pending, rate }` 或结构化 `error`)。服务端沿用既有工作区解析与访问边界,无法解析的工作区一律拒绝;响应不暴露单条事件、intent id、原因码或任意文本。回包按 `workspaceId` 对齐当前工作区,切换后到达的迟到回包被丢弃而非改标。
@@ -78,7 +86,7 @@
 
 ## 外部 MCP 接入(只读,不属于 `WorkspaceSetting`)
 
-第六个 Tab「外部 MCP 接入」展示 c3 未拉起的 agent 如何通过 MCP 访问**本工作区**。域语义见 [external-mcp](../../core/external-mcp/external-mcp-spec.md);key 的生成与吊销见 [system-setting](../system-setting/system-setting-spec.md#外部-mcp-api-key-mcpapikeys)。
+第七个 Tab「外部 MCP 接入」展示 c3 未拉起的 agent 如何通过 MCP 访问**本工作区**。域语义见 [external-mcp](../../core/external-mcp/external-mcp-spec.md);key 的生成与吊销见 [system-setting](../system-setting/system-setting-spec.md#外部-mcp-api-key-mcpapikeys)。
 
 - **不是配置。** 地址由系统级 `baseUrl`、固定路由 `/mcp/v1` 与本工作区路径拼出;长期 key 属系统设置,不纳入工作区配置。与「本机观测」同样是空字段白名单的 Tab:永不脏、无 Save 按钮、不出现在任何保存载荷里。
 - **展示内容。** 可复制的接入 URL 与一行式 `claude mcp add` 命令,各配复制按钮;并列出已授权本工作区的 key 名称供辨认(仅元数据,服务端绝不回传旧 key 明文)。

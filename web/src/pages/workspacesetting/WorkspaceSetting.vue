@@ -24,12 +24,14 @@ import type {
   WorkspaceInfo,
   VendorModeCatalog,
   ModeToken,
+  McpApiKeyMeta,
   ParkRecoveryStats,
 } from '@ccc/shared/protocol'
 import type { UiError } from '@ccc/shared/ui-codes'
 import { VENDOR_IDS, GIT_BRANCH_MODES, SESSION_KINDS } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { translateUiError } from '@/i18n/errors'
+import ExternalMcpAccess from './components/ExternalMcpAccess/ExternalMcpAccess.vue'
 import { useModeLabel } from '@/composables/useModeLabel'
 import { applyTabFields, deepCopy, useTabbedDraftSave } from '@/composables/useTabbedDraftSave'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
@@ -95,6 +97,18 @@ const props = defineProps<{
   /** Set when the counts could not be read — shown instead of a fabricated 0%. */
   parkRecoveryError?: UiError | null
   parkRecoveryLoading?: boolean
+  /**
+   * The deployment's public base URL (system setting). Read-only input to the
+   * external-MCP access info; empty/absent ⇒ "not configured", which the section
+   * says outright instead of guessing the browser's own host.
+   */
+  baseUrl?: string | null
+  /**
+   * External-MCP API key metadata, used ONLY to tell the user which key covers
+   * this workspace. Never a plaintext key, and never part of workspace config.
+   * Empty for a non-admin (the server does not answer the roster to them).
+   */
+  mcpApiKeys?: McpApiKeyMeta[]
 }>()
 
 const emit = defineEmits<{
@@ -106,6 +120,8 @@ const emit = defineEmits<{
   installSkill: [skillId: string]
   /** Retry the read-only park-recovery query after a failed one. */
   reloadParkRecovery: []
+  /** Jump to system settings (configure `baseUrl` / generate an API key). */
+  gotoSystemSettings: []
 }>()
 
 // ---- Tab grouping ----------------------------------------------------------
@@ -119,8 +135,20 @@ const emit = defineEmits<{
 // derives, not configuration. An empty whitelist is what keeps that true — the tab
 // can never be dirty, never seeds from or writes to the draft, and never appears in
 // a save payload or the leave-tab confirm.
-type WsTab = 'defaultMode' | 'gitSandbox' | 'collab' | 'skillRepos' | 'observability'
-const TABS: WsTab[] = ['defaultMode', 'gitSandbox', 'collab', 'skillRepos', 'observability']
+// `externalMcp` is field-less for the same reason `observability` is: it shows how
+// to REACH this workspace from outside, which is derived from system settings and
+// the workspace's own path — never workspace configuration. An empty whitelist is
+// what keeps it out of the draft, the dirty check and every save payload.
+type WsTab =
+  'defaultMode' | 'gitSandbox' | 'collab' | 'skillRepos' | 'observability' | 'externalMcp'
+const TABS: WsTab[] = [
+  'defaultMode',
+  'gitSandbox',
+  'collab',
+  'skillRepos',
+  'observability',
+  'externalMcp',
+]
 const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
   defaultMode: ['defaultMode', 'devSkill'],
   gitSandbox: ['gitBranchMode', 'defaultMainBranch', 'sandbox'],
@@ -133,6 +161,7 @@ const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
   ],
   skillRepos: ['skillRepos'],
   observability: [],
+  externalMcp: [],
 }
 function tabLabel(tab: WsTab): string {
   return t(`workspaceSetting.tabs.${tab}.label` as 'workspaceSetting.tabs.defaultMode.label')
@@ -1326,6 +1355,22 @@ const parkRecoveryRateText = computed(() => {
             {{ t('workspaceSetting.observability.parkRecovery.decision') }}
           </p>
         </section>
+      </div>
+
+      <!-- ============ External MCP access tab ============ -->
+      <div
+        v-show="activeTab === 'externalMcp'"
+        class="project-config-tab-panel"
+        role="tabpanel"
+        data-testid="project-config-tab-externalMcp"
+      >
+        <ExternalMcpAccess
+          :base-url="baseUrl"
+          :workspace-path="currentWorkspaceInfo?.path ?? null"
+          :workspace-id="currentWorkspace"
+          :mcp-api-keys="mcpApiKeys"
+          @goto-system-settings="emit('gotoSystemSettings')"
+        />
       </div>
     </div>
 

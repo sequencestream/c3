@@ -33,6 +33,20 @@ describe('buildStartArgs', () => {
     })
     expect(args).toEqual(['start', '--settings', '/abs/settings.json', '--port', '8080', '--dev'])
   })
+
+  it('carries an explicit --host so the child binds where the parent was told to', () => {
+    expect(buildStartArgs({ port: 3000, dev: false, host: '0.0.0.0' })).toEqual([
+      'start',
+      '--port',
+      '3000',
+      '--host',
+      '0.0.0.0',
+    ])
+  })
+
+  it('omits --host entirely when none was given, leaving the loopback default to the server', () => {
+    expect(buildStartArgs({ port: 3000, dev: false })).not.toContain('--host')
+  })
 })
 
 describe('resolveSelfCommand', () => {
@@ -124,6 +138,27 @@ describe('daemon options sidecar', () => {
     const opts = { port: 3000, dev: false }
     writeDaemonOptions(p, opts)
     expect(readDaemonOptions(p)).toEqual(opts)
+  })
+
+  it('round-trips an explicit host', () => {
+    const p = join(dir, DAEMON_OPTIONS_NAME)
+    const opts = { port: 3000, dev: false, host: '0.0.0.0' }
+    writeDaemonOptions(p, opts)
+    expect(readDaemonOptions(p)).toEqual(opts)
+  })
+
+  it('reads a pre-host sidecar as "no host" — restart then relaunches on loopback', () => {
+    const p = join(dir, DAEMON_OPTIONS_NAME)
+    writeFileSync(p, JSON.stringify({ port: 3000, dev: false }))
+    const parsed = readDaemonOptions(p)
+    expect(parsed).not.toBeNull()
+    expect(parsed!.host).toBeUndefined()
+  })
+
+  it('rejects a sidecar whose host is not a string', () => {
+    const p = join(dir, DAEMON_OPTIONS_NAME)
+    writeFileSync(p, JSON.stringify({ port: 3000, dev: false, host: 123 }))
+    expect(readDaemonOptions(p)).toBeNull()
   })
 
   it('gracefully ignores legacy workspacePath field', () => {

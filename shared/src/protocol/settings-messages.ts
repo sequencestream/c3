@@ -8,6 +8,7 @@
  */
 
 import type {
+  McpApiKeyMeta,
   PersonalizedSettings,
   PersonalizedSettingsScope,
   SystemSettings,
@@ -53,6 +54,55 @@ export type ClientGetPersonalizedSettings = {
 export type ClientSavePersonalizedSettings = {
   type: 'save_personalized_settings'
   settings: PersonalizedSettings
+}
+
+/**
+ * Fetch the external-MCP API key roster (reply: `mcp_api_keys`). Metadata only —
+ * no plaintext key has ever been recoverable after its creation reply.
+ */
+export type ClientListMcpApiKeys = { type: 'list_mcp_api_keys' }
+
+/**
+ * Mint a long-lived external-MCP API key. `workspaceIds` are the registered
+ * workspaces the key may address; unknown ids are rejected rather than silently
+ * dropped, so an administrator never believes they granted access they did not.
+ * The reply is the ONLY message that carries the plaintext key.
+ */
+export type ClientCreateMcpApiKey = {
+  type: 'create_mcp_api_key'
+  name: string
+  workspaceIds: string[]
+}
+
+/**
+ * Update a key's display name and/or its authorized workspace set. An omitted
+ * field is left untouched; an explicitly EMPTY `workspaceIds` revokes every
+ * workspace grant (it is never read as "all"). Cannot re-issue or reveal the
+ * plaintext.
+ */
+export type ClientUpdateMcpApiKey = {
+  type: 'update_mcp_api_key'
+  id: string
+  name?: string
+  workspaceIds?: string[]
+}
+
+/** Revoke (delete) a key. Takes effect on the revoked key's very next request. */
+export type ClientRevokeMcpApiKey = { type: 'revoke_mcp_api_key'; id: string }
+
+/**
+ * The external-MCP API key roster, in reply to any of the four key operations.
+ * Always the full list, so the console never has to reconcile a delta.
+ *
+ * `created` is present ONLY in the reply to a successful `create_mcp_api_key` and
+ * is the single point in the whole system where a plaintext key exists on the
+ * wire. It is not stored, not re-sent, and not recoverable after the client
+ * discards it.
+ */
+export type ServerMcpApiKeys = {
+  type: 'mcp_api_keys'
+  keys: McpApiKeyMeta[]
+  created?: { meta: McpApiKeyMeta; key: string }
 }
 
 /**

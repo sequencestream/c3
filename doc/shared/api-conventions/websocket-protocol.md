@@ -169,6 +169,30 @@
 
 **字段：** `settings: PersonalizedSettings`
 
+### `list_mcp_api_keys`
+
+获取外部 MCP API key 名册。服务器回复 `mcp_api_keys`。**需要管理员权限**——名册即"谁能够到什么"的清单。只回元数据，明文在生成之后永不可恢复。
+
+**字段：** 无
+
+### `create_mcp_api_key`
+
+生成一把长期外部 MCP API key。`workspaceIds` 是该 key 可读取的**已注册**工作区(用不透明 id 寻址，客户端不构造路径)。空数组被拒（`mcpApiKey.noWorkspace`）——够不到任何东西的 key 只会成为日后的排查负担；任一 id 无法解析则**整笔拒绝**（`mcpApiKey.unknownWorkspace`），不做部分应用。回复 `mcp_api_keys`，其 `created` 字段是全系统唯一一次出现明文的地方。**需要管理员权限。**
+
+**字段：** `name: string`, `workspaceIds: string[]`
+
+### `update_mcp_api_key`
+
+改名和/或替换授权工作区集合；省略的字段不动。显式传空的 `workspaceIds` 表示"这把 key 什么也够不到"，**绝不解释为通配**。无法重新签发或读出明文。回复 `mcp_api_keys`。**需要管理员权限。**
+
+**字段：** `id: string`, `name?: string`, `workspaceIds?: string[]`
+
+### `revoke_mcp_api_key`
+
+吊销（删除）一把 key。下一次请求即失败，同时关闭该 key 已建立的活动 MCP 会话。回复 `mcp_api_keys`。**需要管理员权限。**
+
+**字段：** `id: string`
+
 ### `load_workspace_setting`
 
 加载工作区设置。服务器回复 `workspace_setting`。
@@ -575,6 +599,16 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 - `vendorModes?: Record<VendorId, VendorModeCatalog>` — 每个供应商的模式目录（2026-06-07-012），控制台的模式选择器按供应商渲染
 
 **字段：** `settings: SystemSettings`, `hostStatus: VendorHostStatus[]`, `vendorRuntime?: Record<VendorId, VendorRuntimeStatus>`, `bindingStats: SessionBindingStats`, `sessionCapabilities: Record<VendorId, SessionCapabilities>`, `vendorCapabilities?: Record<VendorId, Record<AdapterCapability, boolean>>`, `skillSupport?: Record<VendorId, SkillSupportState>`, `vendorModes?: Record<VendorId, VendorModeCatalog>`
+
+### `mcp_api_keys`
+
+外部 MCP API key 名册，回复上述四条 key 操作中的任意一条。**总是回整份列表**，故控制台无需对账增量。
+
+每项 `McpApiKeyMeta` 为 `{ id, name, createdAt, lastUsedAt, workspaceIds, staleWorkspaces, displayPrefix }`：`workspaceIds` 是已注册工作区的不透明 id（服务端以规范化绝对路径存授权、在此转成 id）；`staleWorkspaces` 是授权集合里已不对应任何注册工作区的路径，摆出来供管理员清理，它本身不可达（命中只会 404）；`displayPrefix` 是非秘密的 `c3k_<id>`，完全由 id 派生，展示它不泄露任何秘密。
+
+`created` **仅**出现在 `create_mcp_api_key` 成功的回复里，是明文 key 在整条链路上唯一的落点：不存储、不重发，客户端丢弃后即不可恢复。
+
+**字段：** `keys: McpApiKeyMeta[]`, `created?: { meta: McpApiKeyMeta; key: string }`
 
 ### `personalized_settings`
 

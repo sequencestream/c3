@@ -58,6 +58,10 @@ export type ClientToServer =
   | SettingsMsg.ClientSaveSettings
   | SettingsMsg.ClientGetPersonalizedSettings
   | SettingsMsg.ClientSavePersonalizedSettings
+  | SettingsMsg.ClientListMcpApiKeys
+  | SettingsMsg.ClientCreateMcpApiKey
+  | SettingsMsg.ClientUpdateMcpApiKey
+  | SettingsMsg.ClientRevokeMcpApiKey
   | AuthMsg.ClientLogin
   | AuthMsg.ClientLogout
   | AuthMsg.ClientSetAdminPassword
@@ -147,6 +151,7 @@ export type ServerToClient =
   | SessionMsg.ServerCommands
   | SettingsMsg.ServerSettings
   | SettingsMsg.ServerPersonalizedSettings
+  | SettingsMsg.ServerMcpApiKeys
   | WorkspaceMsg.ServerWorkspaceSetting
   | AuthMsg.ServerLoginResult
   | AuthMsg.ServerAdminPasswordResult

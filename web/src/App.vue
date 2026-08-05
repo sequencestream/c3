@@ -268,6 +268,7 @@ const {
   openActionTarget,
   clearActionTarget,
   settingsOpen,
+  closeSettings,
   settingsTarget,
   bindingStats,
   saveSettings,
@@ -278,6 +279,13 @@ const {
   setAdminPassword,
   removeAccount,
   setAdminAccount,
+  mcpApiKeys,
+  mcpApiKeyCreated,
+  createMcpApiKey,
+  updateMcpApiKey,
+  revokeMcpApiKey,
+  dismissMcpApiKeyReveal,
+  openSettingsFromWorkspaceSetting,
   workspaceSettingOpen,
   currentWorkspaceSetting,
   detectedMainBranch,
@@ -382,8 +390,9 @@ watch(
 )
 // Closing settings also drops any one-shot locate target that was never acted on,
 // so the next open lands wherever the user left the panel — not on an old deep link.
+// `closeSettings` additionally drops any still-revealed plaintext API key.
 function onCloseSettings(): void {
-  settingsOpen.value = false
+  closeSettings()
   clearActionTarget()
 }
 
@@ -811,6 +820,9 @@ function onCodesChatWidth(px: number): void {
       :vendor-availability="vendorAvailability"
       :sandbox-status="sandboxStatus"
       :binding-stats="bindingStats"
+      :mcp-api-keys="mcpApiKeys"
+      :mcp-api-key-created="mcpApiKeyCreated"
+      :workspaces="workspaces"
       :target="settingsTarget"
       @close="onCloseSettings"
       @target-consumed="clearActionTarget"
@@ -818,6 +830,10 @@ function onCodesChatWidth(px: number): void {
       @set-password="setAdminPassword"
       @remove-account="removeAccount"
       @set-admin-account="setAdminAccount"
+      @create-mcp-api-key="createMcpApiKey"
+      @update-mcp-api-key="updateMcpApiKey"
+      @revoke-mcp-api-key="revokeMcpApiKey"
+      @dismiss-mcp-api-key-reveal="dismissMcpApiKeyReveal"
     />
 
     <PersonalizedSettingPage
@@ -843,11 +859,14 @@ function onCodesChatWidth(px: number): void {
       :park-recovery-stats="parkRecoveryStats"
       :park-recovery-error="parkRecoveryError"
       :park-recovery-loading="parkRecoveryLoading"
+      :base-url="serverSettings?.baseUrl ?? null"
+      :mcp-api-keys="mcpApiKeys"
       @close="workspaceSettingOpen = false"
       @save="saveWorkspaceSetting"
       @query-link-status="querySkillLinkStatus"
       @install-skill="installSkill"
       @reload-park-recovery="loadParkRecoveryStats"
+      @goto-system-settings="openSettingsFromWorkspaceSetting"
     />
 
     <SkillApprovalModal

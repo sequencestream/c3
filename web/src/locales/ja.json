@@ -20,6 +20,12 @@
       "close": {
         "label": "閉じる",
         "tooltip": "閉じる"
+      },
+      "copy": {
+        "label": "コピー"
+      },
+      "copied": {
+        "label": "コピーしました"
       }
     },
     "unknown": {
@@ -641,6 +647,61 @@
       },
       "hint": "The public-facing base URL for this c3 deployment, used to construct shareable links. For example, http://192.168.10.10:9000. Stored in plaintext (not sensitive).",
       "placeholder": "http://192.168.10.10:9000"
+    },
+    "mcpApiKey": {
+      "title": {
+        "label": "外部 MCP API キー"
+      },
+      "hint": "長期キーにより、c3 が起動していないエージェント(独立した Claude Code / Codex セッション、CI ジョブ、監視スクリプト)が /mcp/v1 経由で MCP としてこのデプロイを読み取れます。各キーは指定したワークスペースにのみ許可され、意図と議論の参照とイベント発行のみが可能で、書き込みは一切できません。",
+      "security": {
+        "hint": "キーは URL のクエリ文字列で送られるため、プロキシやアクセスログに残る可能性があります。平文 HTTP では同一ネットワーク上の第三者に読まれます。外部へ公開する前に HTTPS リバースプロキシを前段に置いてください。"
+      },
+      "empty": "API キーはまだありません。",
+      "meta": "作成 {created} · 最終使用 {lastUsed}",
+      "lastUsed": {
+        "never": "未使用"
+      },
+      "grant": {
+        "label": "ワークスペース: {workspaces}",
+        "none": "なし",
+        "stale": "登録済みではありません(到達不可): {paths}",
+        "edit": {
+          "label": "ワークスペースを変更"
+        },
+        "emptyWarning": "ワークスペースを選択しない場合、このキーは何にも到達できません。"
+      },
+      "create": {
+        "open": {
+          "label": "キーを生成"
+        },
+        "submit": {
+          "label": "生成"
+        },
+        "name": {
+          "placeholder": "名称(例: release-bot)"
+        },
+        "workspaces": {
+          "label": "このキーが読み取れるワークスペース"
+        },
+        "noWorkspaces": "まず c3 にワークスペースを追加してください — キーには最低 1 つ必要です。"
+      },
+      "reveal": {
+        "title": "キー「{name}」を生成しました",
+        "onceOnly": "平文が表示されるのはこの一度だけです。今すぐコピーしてください — 復元はできず、再生成のみ可能です。",
+        "dismiss": {
+          "label": "コピーしました"
+        }
+      },
+      "revoke": {
+        "label": "失効",
+        "confirm": {
+          "body": "失効は即座に有効になります: 次のリクエストは失敗し、開いている MCP セッションも閉じられます。取り消せません。",
+          "confirm": {
+            "label": "失効"
+          },
+          "title": "この API キーを失効しますか?"
+        }
+      }
     }
   },
   "personalizedSetting": {
@@ -1964,6 +2025,12 @@
       "intentRequired": "このキュー操作には意図の指定が必要です。",
       "notParked": "その意図は park されていません。",
       "overrideNotApplicable": "その意図には上書きできる自動判定がありません。"
+    },
+    "mcpApiKey": {
+      "unknown": "この API キーは存在しません (id {id})。",
+      "unknownWorkspace": "不明なワークスペース ({workspaceId}) — キーは変更されていません。",
+      "noWorkspace": "キーに少なくとも 1 つのワークスペースを選択してください。",
+      "saveFailed": "API キーを保存できませんでした。"
     }
   },
   "statusIndicator": {
@@ -2196,6 +2263,9 @@
           "confirm": "タブを切り替える",
           "stay": "とどまる"
         }
+      },
+      "externalMcp": {
+        "label": "外部 MCP"
       }
     },
     "defaultMode": {
@@ -2421,6 +2491,35 @@
         "pending": "他に {pending} 件の park が {hours} 時間の観測窓を満たしていないため、集計対象外です。",
         "scope": "このデータはこの端末にのみ保存され、90 日で削除されます。自由記述は一切含まず、外部に送信されることもありません。",
         "decision": "判断基準：復帰率 60% で前向きな兆候、70% で強い兆候とみなします。リリースから 2〜4 週間後に見直し、初期の観測値から改善がなければ、今回のガイダンスに基づく P1/P2 の後続投資をすべて中止します。"
+      }
+    },
+    "externalMcp": {
+      "title": {
+        "label": "外部 MCP アクセス"
+      },
+      "hint": "c3 が起動していないエージェントが「このワークスペース」へ MCP でアクセスする方法です。読み取り専用: アドレスはシステムのベース URL、固定ルート /mcp/v1、このワークスペースのパスから組み立てられ、ワークスペース設定ではありません。",
+      "noBaseUrl": "公開ベース URL が未設定のため、共有できるアドレスを生成できません。「システム設定 → 一般」で設定してください。",
+      "noKey": "このワークスペースを許可された API キーはまだありません。「システム設定 → セキュリティ」で生成してください。",
+      "grantedKeys": "許可済みキー: {keys}",
+      "goto": {
+        "label": "システム設定を開く"
+      },
+      "paste": {
+        "label": "そのまま使えるアドレスを作るためにキーを貼り付け(任意)",
+        "placeholder": "c3k_…",
+        "hint": "このページのメモリ上にのみ保持されます: アップロードもブラウザ保存もされず、離れると消えます。空のままなら KEY プレースホルダーを残したテンプレートをコピーします。"
+      },
+      "url": {
+        "label": "MCP URL"
+      },
+      "command": {
+        "label": "1 行のクライアント設定"
+      },
+      "tools": {
+        "hint": "外部キーは意図と議論の参照とイベント発行のみ可能です。台帳への書き込みやセッション起動はできません。"
+      },
+      "security": {
+        "hint": "キーはクエリ文字列で送られ、プロキシ/アクセスログに残る可能性があります。このマシンの外へ公開する前に HTTPS リバースプロキシを前段に置いてください。"
       }
     }
   },

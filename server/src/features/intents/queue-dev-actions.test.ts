@@ -155,7 +155,18 @@ vi.mock('./funnel-store.js', () => ({
   appendFunnelEvent: vi.fn(() => true),
 }))
 
-vi.mock('./judge.js', () => ({ judgeCompletion: vi.fn() }))
+// The judge is stubbed, but its "no verdict at all" error type is part of the
+// contract the dev loop branches on — so the stub carries a real class, not just
+// the function.
+vi.mock('./judge.js', () => ({
+  judgeCompletion: vi.fn(),
+  JudgeUnavailableError: class JudgeUnavailableError extends Error {
+    constructor(readonly detail: string) {
+      super(`judge 不可用: ${detail}`)
+      this.name = 'JudgeUnavailableError'
+    }
+  },
+}))
 vi.mock('./checkpoint-consensus.js', () => ({ runCheckpointConsensus: vi.fn() }))
 
 // ---- Imports ----
@@ -182,7 +193,7 @@ import {
 } from '../../kernel/config/index.js'
 import { createWorktree, getWorktreePath, readBranch } from './worktree.js'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
-import { judgeCompletion } from './judge.js'
+import { JudgeUnavailableError, judgeCompletion } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { ensureRuntime, getRuntime } from '../../runs.js'
 import { buildDevSpecNote, SDD_WORK_SESSION_INSTRUCT } from './dev-prompt.js'
@@ -675,5 +686,31 @@ describe('queue dev actions — branch-mode git alignment', () => {
     // question itself was still never answered by the queue.
     expect(runDevTurn.mock.calls[1][0]).toMatchObject({ prompt: 'continue', sessionId: 'real' })
     expect(hooks.createUserTodo).not.toHaveBeenCalled()
+  })
+
+  // ── An unavailable judge is a tool fault, not a verdict ─────────────────────
+
+  it('a judge that cannot run fails as judge_unavailable and never enters the stuck path', async () => {
+    const proj = '/test/judge-unavailable'
+    const intent = makeIntent({ id: 'JU', status: 'todo' })
+    vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
+    vi.mocked(listIntents).mockReturnValue([intent])
+    vi.mocked(getIntent).mockReturnValue(intent)
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+    vi.mocked(judgeCompletion).mockRejectedValue(
+      new JudgeUnavailableError("There's an issue with the selected model (deepseek-v4-flash)."),
+    )
+
+    const { hooks } = makeHooks()
+    startWorkflow(proj, hooks, 1)
+    await flush(proj)
+
+    // Backed off under its OWN reason code — the provider misconfiguration never
+    // reaches the human-decision machinery meant for a genuinely stuck intent.
+    const meta = getQueueIntentMetaById('JU')
+    expect(meta.failureCount).toBe(1)
+    expect(runCheckpointConsensus).not.toHaveBeenCalled()
+    expect(hooks.createUserTodo).not.toHaveBeenCalled()
+    expect(updateStatus).not.toHaveBeenCalledWith('JU', 'done')
   })
 })

@@ -2882,7 +2882,8 @@
       "budget_exhausted": "Continuation budget exhausted",
       "commit_failed": "Commit/push failed",
       "turn_error": "Dev turn errored",
-      "judge_stuck": "Judged not really finished"
+      "judge_stuck": "Judged not really finished",
+      "judge_unavailable": "Completion judge unavailable (tool agent config)"
     }
   }
 }

@@ -35,8 +35,10 @@ flowchart TD
     DEVT --> J{completion judge}
     J -- done --> CP[commit & push · mark done]
     J -- in_progress --> CONT[continue ≤ cap]
-    J -- stuck / 抛异常 --> FAIL[记该意图一次失败]
+    J -- stuck --> FAIL[记该意图一次失败]
+    J -- 判定不可用<br/>judge 跑不通/无法解析 --> FAILU[judge_unavailable<br/>记一次失败 · 不进人工决策通道]
     CONT --> DEVT
+    FAILU --> BO
     FAIL --> BO{连续 3 次?}
     BO -- 否 --> BACK[指数退避 · 下轮重试]
     BO -- 是 --> PARK[park · 队列继续其他意图<br/>下游仍被依赖闸门挡住]
@@ -100,7 +102,8 @@ flowchart TD
    工作会话最后一条助手消息 + 代码变更证据(跨多仓库的 `git diff`/`git log` 仅作为*佐证性*
    旁证,**不是** `done` 的先决条件),返回 `done` / `in_progress` / `stuck`,判定优先级依次
    为 **stuck → done → in_progress**。轮次结束本身绝不等同于“done”;空的证据本身也绝不单独
-   构成 `stuck` 信号。
+   构成 `stuck` 信号。评判者的 provider 连接与其它会话同规:`custom` 模式的工具 agent 经中继
+   下发真实上游,只下发模型名而不下发其 provider 会让 CLI 拿着三方模型名去打一方端点。
 2. **`done` ⇒ 提交并推送(`RM-A5`)。** 队列提交任何未提交的工作(`feat: <title>`,若工作树
    干净则跳过),并**总是**推送(感知多仓库),然后把该意图标记为 `done` 并推进。若提交被
    **pre-commit lint 钩子**拦截,会通过单次开发智能体修复轮次自愈,再重试一次(`RM-A13`);
@@ -112,10 +115,14 @@ flowchart TD
 4. **`stuck` / launch 抛异常 ⇒ 该意图失败一次(`RM-A6`)。** 指数退避(30s 起,逐次翻倍,上限
    15 分钟);**连续第 3 次进入 park**。park 的意图不再自动启动,但**不是 `done`** ——
    依赖它的下游继续被依赖闸门挡住,**既不跳过也不放行**(`RM-A17`)。
-5. **每一轮的取舍都被记录(`RM-A18`)。** `queue_decision_log` 按 tick/intent 记录选择的动作、
+5. **判定不可用 ⇒ 同样失败一次,但原因码不同(`judge_unavailable`)。** 评判者跑不通(工具
+   agent 的 provider/模型配置错误、一次性会话未启动)或回答不是一个判定对象时,这是**工具侧
+   故障,不是关于这条意图的判定**:不折叠成 `stuck`、不触发检查点共识、不进人工决策通道,
+   只按 `RM-A6` 记一次失败并退避,原因码指向工具 agent 配置。
+6. **每一轮的取舍都被记录(`RM-A18`)。** `queue_decision_log` 按 tick/intent 记录选择的动作、
    被哪个闸门挡住、拒绝理由、尝试/退避计数与下次唤醒时间;队列页面逐条展示,并提供 pause /
    force-skip / unpark / 覆盖结论等与内核动作一一对应的人工动作(`RM-A19`)。
-6. **耗尽。** 只有当快照中**不存在任何待处理的自动化候选及阻塞链**时,队列才呈现 `done`;
+7. **耗尽。** 只有当快照中**不存在任何待处理的自动化候选及阻塞链**时,队列才呈现 `done`;
    仍有退避 / park / 被闸门阻塞的候选时呈现 `running`。`stop_workflow` 会中止当前运行并无错误地
    返回 `idle`(`RM-A7`)。
 

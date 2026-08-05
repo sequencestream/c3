@@ -3,45 +3,41 @@
  * one-shot Claude, so we can't assert the model's reasoning here; instead we pin
  * the two things the code itself owns: (1) the PROMPT encodes the tightened
  * resume-judgement rules (stuck-first, no bias-to-continue, AskUserQuestion ⇒
- * stuck) so the model is steered correctly, and (2) the parser coerces the reply
- * into a safe verdict, defaulting to `stuck` (never silently `in_progress`) when
- * it can't be read.
+ * stuck) so the model is steered correctly, and (2) the parser either returns a
+ * real verdict or reports the judge as UNAVAILABLE — an unreadable reply (a
+ * provider error, an empty answer) is never coerced into `stuck`, which would
+ * blame the intent for a tool-agent misconfiguration.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Intent } from '@ccc/shared/protocol'
 
 // Capture the args handed to the one-shot Claude (prompt + the launch overrides
 // resolved from the tool agent) and control its reply.
-const askMock =
-  vi.fn<
-    (args: {
-      prompt: string
-      systemInstruction?: string
-      model?: string
-      envOverrides?: Record<string, string>
-    }) => Promise<string>
-  >()
+interface AskArgs {
+  prompt: string
+  systemInstruction?: string
+  model?: string
+  envOverrides?: Record<string, string>
+  relayCandidates?: Array<{ baseUrl: string; apiKey: string; model: string }>
+}
+const askMock = vi.fn<(args: AskArgs) => Promise<string>>()
 vi.mock('../../kernel/agent/index.js', () => ({
-  askOneShot: (a: {
-    prompt: string
-    systemInstruction?: string
-    model?: string
-    envOverrides?: Record<string, string>
-  }) => askMock(a),
+  askOneShot: (a: AskArgs) => askMock(a),
 }))
 // The completion judge is a background tool session ⇒ it resolves its launch via
 // `resolveToolSessionLaunch` (the tool agent), NOT `resolveSessionLaunch`. The mock
-// pins a recognizable model so the routing can be asserted.
+// pins a recognizable model + relay candidate so the routing can be asserted.
 const toolLaunchMock = vi.fn(() => ({
   agentId: 'tool-agent',
   model: 'tool-model',
   envOverrides: { TOOL: '1' },
+  relayCandidates: [{ baseUrl: 'https://third-party.example', apiKey: 'k', model: 'tool-model' }],
 }))
 vi.mock('../../kernel/agent-config/index.js', () => ({
   resolveToolSessionLaunch: () => toolLaunchMock(),
 }))
 
-const { judgeCompletion } = await import('./judge.js')
+const { JudgeUnavailableError, judgeCompletion } = await import('./judge.js')
 
 const req: Intent = {
   id: 'r1',
@@ -189,9 +185,20 @@ describe('judge — runs on the tool agent (toolAgentId routing, 2026-06-15-001)
     expect(args.model).toBe('tool-model')
     expect(args.envOverrides).toEqual({ TOOL: '1' })
   })
+
+  it('passes the relay candidates along with the model (a custom provider must not run on the first-party endpoint)', async () => {
+    askMock.mockResolvedValue('{"verdict":"done","reason":"ok"}')
+    await judge('done')
+    const args = askMock.mock.calls[0][0]
+    // model WITHOUT candidates = a third-party model name on the first-party
+    // endpoint ⇒ "there's an issue with the selected model".
+    expect(args.relayCandidates).toEqual([
+      { baseUrl: 'https://third-party.example', apiKey: 'k', model: 'tool-model' },
+    ])
+  })
 })
 
-describe('judge parser — safe coercion', () => {
+describe('judge parser — a verdict, or no verdict at all', () => {
   it('parses a clean verdict object', async () => {
     askMock.mockResolvedValue('{"verdict":"done","reason":"实现完成"}')
     expect(await judge('m')).toEqual({ verdict: 'done', reason: '实现完成' })
@@ -204,20 +211,36 @@ describe('judge parser — safe coercion', () => {
     expect(await judge('m')).toEqual({ verdict: 'in_progress', reason: 'checkpoint' })
   })
 
-  it('defaults to stuck (never in_progress) on an unparseable reply', async () => {
+  it('reports an unparseable reply as unavailable, NOT as a stuck verdict', async () => {
     askMock.mockResolvedValue('I think it is probably fine, continue.')
-    const v = await judge('m')
-    expect(v.verdict).toBe('stuck')
-    expect(v.reason).toContain('无法解析')
+    await expect(judge('m')).rejects.toBeInstanceOf(JudgeUnavailableError)
   })
 
-  it('defaults to stuck on an empty reply', async () => {
+  it('reports a provider/model error message as unavailable (the misconfig must not read as stuck)', async () => {
+    askMock.mockResolvedValue(
+      "There's an issue with the selected model (deepseek-v4-flash). It may not exist or you may not have access to it.",
+    )
+    await expect(judge('m')).rejects.toMatchObject({
+      name: 'JudgeUnavailableError',
+      detail: expect.stringContaining('deepseek-v4-flash'),
+    })
+  })
+
+  it('reports an empty reply as unavailable', async () => {
     askMock.mockResolvedValue('')
-    expect((await judge('m')).verdict).toBe('stuck')
+    await expect(judge('m')).rejects.toBeInstanceOf(JudgeUnavailableError)
   })
 
-  it('defaults to stuck when the verdict value is not one of the three', async () => {
+  it('reports an out-of-range verdict value as unavailable', async () => {
     askMock.mockResolvedValue('{"verdict":"maybe","reason":"unsure"}')
-    expect((await judge('m')).verdict).toBe('stuck')
+    await expect(judge('m')).rejects.toBeInstanceOf(JudgeUnavailableError)
+  })
+
+  it('wraps a one-shot that never ran (throwing askOneShot) as unavailable', async () => {
+    askMock.mockRejectedValue(new Error('spawn claude ENOENT'))
+    await expect(judge('m')).rejects.toMatchObject({
+      name: 'JudgeUnavailableError',
+      detail: expect.stringContaining('ENOENT'),
+    })
   })
 })

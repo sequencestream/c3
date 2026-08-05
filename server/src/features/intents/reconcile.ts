@@ -11,6 +11,8 @@
  *    - `done` → commit & push, update status to `done` (auto-complete — the
  *      explicit reconcile exception to RM-R9, unified for manual & automation).
  *    - `in_progress` / `stuck` → mark `dangling` (keep `in_progress` status).
+ *    - the judge could not run at all (provider misconfigured) → also `dangling`,
+ *      never a verdict: an unavailable judge says nothing about the intent.
  *
  * Pure + dependency-injected for testability: all side-effect access (runtime
  * registry, disk transcripts, AI judge, git, store) flows through the injected
@@ -131,9 +133,14 @@ export async function reconcileInProgress(
           )
         }
         // If signal was aborted, the loop breaks below; don't push results.
-      } catch {
-        // Loading transcript or judge threw → keep dangling (safe fallback).
-        console.warn(`[c3:reconcile]「${req.title}」进程已死但判 judge 失败 → dangling`)
+      } catch (err) {
+        // Loading the transcript failed, or the judge could not run at all
+        // (JudgeUnavailableError — provider/model misconfigured) → keep dangling.
+        // The intent is left exactly where it was; nothing was judged about it.
+        const detail = err instanceof Error ? err.message : String(err)
+        console.warn(
+          `[c3:reconcile]「${req.title}」进程已死但 judge 未给出判定:${detail} → dangling`,
+        )
       }
     }
 

@@ -2883,7 +2883,8 @@
       "budget_exhausted": "継続予算を超過",
       "commit_failed": "コミット/プッシュ失敗",
       "turn_error": "開発ターンがエラー",
-      "judge_stuck": "実際には未完了と判定"
+      "judge_stuck": "実際には未完了と判定",
+      "judge_unavailable": "完了判定が利用不可(ツール agent 設定)"
     }
   }
 }

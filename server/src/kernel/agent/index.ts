@@ -15,6 +15,8 @@ import { stringifyToolResult } from '../../format.js'
 import { addToolSession } from '../../sessions.js'
 import { buildChildEnv, findClaudeExecutable } from '../infra/child-env.js'
 import { isDegradableError, isSocketDisconnect } from '../agent-config/errors.js'
+import { bindClaudeRelay, unbindRelay } from '../agent-config/index.js'
+import type { RelayCandidate } from '../relay/contract.js'
 import { isSideEffectTool } from '../run/resume.js'
 import { createSandboxWrapper } from '../sandbox/SandboxLauncher.js'
 import {
@@ -329,9 +331,18 @@ const ONESHOT_DISALLOWED_TOOLS = [
 /**
  * Run a single, tool-less prompt to completion and return the assistant's text.
  * Used by the automation orchestrator's completion judge: it has no UI viewer,
- * never emits wire events, and resolves with the concatenated assistant text
- * (best-effort — returns whatever was produced if the query errors). All tools
- * are disabled so the model answers from the prompt alone.
+ * never emits wire events, and resolves with the concatenated assistant text.
+ * All tools are disabled so the model answers from the prompt alone.
+ *
+ * A `custom` provider is routed through the loopback relay exactly like every
+ * other spawn site: `relayCandidates` carries the real upstreams, bound behind a
+ * per-run token here and released in the `finally`. Passing the agent's `model`
+ * WITHOUT its candidates would hand the vendor CLI a third-party model name on
+ * the first-party endpoint — the CLI then answers "there's an issue with the
+ * selected model" instead of running the prompt.
+ *
+ * Errors are NOT swallowed: a query that dies before producing any text throws,
+ * so the caller can tell "the one-shot never ran" from "the model replied".
  */
 export async function askOneShot(opts: {
   prompt: string
@@ -340,6 +351,11 @@ export async function askOneShot(opts: {
   agentId: string
   model?: string
   envOverrides?: Record<string, string>
+  /**
+   * The resolved agent's relay candidates (`custom` mode). Absent ⇒ system mode
+   * (the vendor CLI's own login), direct.
+   */
+  relayCandidates?: RelayCandidate[]
   ownerKind?: 'intent' | 'discussion' | 'automation' | null
   ownerId?: string | null
   /**
@@ -351,6 +367,10 @@ export async function askOneShot(opts: {
   systemInstruction?: string
 }): Promise<string> {
   const claudePath = findClaudeExecutable()
+  const claudeRelay = bindClaudeRelay(opts.relayCandidates)
+  const envOverrides = claudeRelay
+    ? { ...opts.envOverrides, ...claudeRelay.envOverrides }
+    : opts.envOverrides
   const q = query({
     prompt: opts.prompt,
     options: {
@@ -364,7 +384,7 @@ export async function askOneShot(opts: {
       disallowedTools: ONESHOT_DISALLOWED_TOOLS,
       permissionMode: 'default',
       ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
-      ...(opts.envOverrides ? { env: { ...process.env, ...opts.envOverrides } } : {}),
+      ...(envOverrides ? { env: { ...process.env, ...envOverrides } } : {}),
       ...(opts.model ? { model: opts.model } : {}),
       canUseTool: async () => deny('one-shot judge is read-only'),
     },
@@ -399,8 +419,14 @@ export async function askOneShot(opts: {
         break
       }
     }
-  } catch {
-    /* return whatever text was produced before the error */
+  } catch (err) {
+    // Nothing was produced ⇒ the one-shot never actually answered (bad model,
+    // unreachable endpoint, spawn failure). Surfacing it lets the caller treat
+    // this as "no verdict available" instead of mistaking an empty string for
+    // an unreadable model reply. Partial text is still returned best-effort.
+    if (!text.trim()) throw err
+  } finally {
+    if (claudeRelay) unbindRelay(claudeRelay.token)
   }
   return text.trim()
 }

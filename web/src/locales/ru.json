@@ -2883,7 +2883,8 @@
       "budget_exhausted": "Исчерпан бюджет продолжений",
       "commit_failed": "Сбой commit/push",
       "turn_error": "Ошибка в ходе разработки",
-      "judge_stuck": "Признано незавершённым"
+      "judge_stuck": "Признано незавершённым",
+      "judge_unavailable": "Оценка завершения недоступна (настройки tool agent)"
     }
   }
 }

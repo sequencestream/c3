@@ -460,14 +460,20 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   //
   // `busy` is this pass's anti-double-drive set: an intent in it is never picked.
   // `observed` is bookkeeping — it already holds a decision row for this pass.
+  // `occupied` is the concurrent-dev count for the automation cap: in-flight
+  // kernel runs plus every AUTOMATE live session (a manual session in its own
+  // worktree is not queue-driven and does not consume a slot). Deduped with the
+  // anti-double-drive set, so the same intent in several facts counts once.
   const busy = new Set<string>()
   const observed = new Set<string>()
+  const occupied = new Set<string>()
   /** The intent this pass reports as the one the queue is currently driving. */
   let driving: QueueIntentFact | null = null
   if (!sharedCheckout) {
     for (const intent of candidates) {
       if (!inFlight.has(intent.id)) continue
       busy.add(intent.id)
+      occupied.add(intent.id)
       observed.add(intent.id)
       pushDecision(intent, 'wait', 'running', '内核 run 进行中')
       driving ??= intent
@@ -475,6 +481,7 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     for (const live of liveIntents) {
       if (busy.has(live.id)) continue
       busy.add(live.id)
+      if (live.automate) occupied.add(live.id)
       const attachable =
         live.automate && gateOf.get(live.id)?.eligible === true && !parkedThisPass.has(live.id)
       if (!attachable || !live.lastWorkSessionId) continue
@@ -490,10 +497,23 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     }
   }
 
+  // ── Automation concurrency cap (RM-A12 scope) ─────────────────────────────
+  // `current-branch` shares ONE checkout, so the effective cap is always 1 and
+  // the config is ignored — the serial branches above already enforce that.
+  // `worktree` grants each intent its own directory, so the queue may develop up
+  // to `automationConcurrency` intents at once. At/over the cap the queue stops
+  // launching and blocks every remaining eligible candidate behind
+  // `blocked_concurrency_gate`; lowering the cap never cancels in-flight runs,
+  // it only freezes new auto-dispatch until occupancy drops below it.
+  const effectiveCap = sharedCheckout ? 1 : input.automationConcurrency
+  const capReached = occupied.size >= effectiveCap
+
   // ── Gate clear → select at most one intent ────────────────────────────────
   // Still ONE new work action per pass in either mode: worktree parallelism is
-  // raised one intent per tick, not fanned out all at once.
-  const picked = eligible.find((r) => !busy.has(r.id)) ?? null
+  // raised one intent per tick, not fanned out all at once. The cap is checked
+  // before picking, so a pick can never push occupancy past it (a pick adds at
+  // most one slot).
+  const picked = capReached ? null : (eligible.find((r) => !busy.has(r.id)) ?? null)
   if (picked) {
     // `in_progress` with a session that is NOT alive: resume the existing
     // context. A dead blocking session releases `awaiting_gate` by construction —
@@ -521,7 +541,9 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
       gateOf.get(intent.id)!,
       sharedCheckout
         ? '队列串行执行,等待前序意图结束'
-        : '每轮最多发起一个新的工作动作,下一轮继续挑选',
+        : capReached
+          ? `已达并发上限 ${effectiveCap}`
+          : '每轮最多发起一个新的工作动作,下一轮继续挑选',
     )
   }
 

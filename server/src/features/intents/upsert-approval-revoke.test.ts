@@ -359,6 +359,7 @@ function reconcileFor(intentId: string, over: Partial<QueueReconcileInput> = {})
     gitBranchMode: 'current-branch',
     sddEnabled: true,
     machineApprovalEnabled: false,
+    automationConcurrency: 2,
     specRuns: [],
     specInFlight: [],
     ...over,

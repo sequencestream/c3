@@ -323,6 +323,13 @@ export interface QueueReconcileInput {
    */
   machineApprovalEnabled: boolean
   /**
+   * The workspace's automation-queue concurrent-DEV cap. Effective cap is this
+   * value under `worktree`, and hard-coded 1 under `current-branch` (shared
+   * checkout, RM-A12 file safety). Spec authoring/review is never counted, and
+   * lowering the cap never cancels in-flight runs.
+   */
+  automationConcurrency: number
+  /**
    * Liveness of the spec-authoring / spec-review sessions, probed the same way as
    * {@link runs}. An intent with a live spec-phase run is waited on, never
    * re-launched.

@@ -65,8 +65,30 @@ describe('ActionDescriptorBanner.vue', () => {
     })
       .find('[data-testid="action-descriptor-message"]')
       .text()
+    const silent = mountBanner({
+      labelCode: 'silent_timeout',
+      target: { type: 'intent-work-session', intentId: 'i1' },
+    })
+      .find('[data-testid="action-descriptor-message"]')
+      .text()
     expect(spec).not.toBe(auth)
     expect(ask).not.toBe(spec)
+    expect(silent).not.toBe(ask)
+  })
+
+  it('tells a silently stuck intent to be checked and retried by hand', () => {
+    const w = mountBanner({
+      labelCode: 'silent_timeout',
+      target: { type: 'intent-work-session', intentId: 'i1' },
+    })
+    const message = w.find('[data-testid="action-descriptor-message"]').text()
+    // The prompt must name the window, the "nothing is waiting" fact, and the two
+    // things the user can do — inspect, then retry by hand.
+    expect(message).toContain('30')
+    expect(message.toLowerCase()).toContain('retry')
+    expect(message.toLowerCase()).toContain('check')
+    // The button only offers the inspection entry: no "resume", no "restart".
+    expect(w.find('[data-testid="action-descriptor-action"]').text()).toBe('Open work session')
   })
 
   it('maps every label code and target type to copy', () => {

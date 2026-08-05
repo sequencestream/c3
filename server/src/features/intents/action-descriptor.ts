@@ -1,16 +1,21 @@
 /**
  * Intent action-descriptor projection — the send-time "next step" for a blocked
- * intent. Composes vendor-block facts, pending wait-user events, and the SDD
- * approval checkpoint into a single optional {@link ActionDescriptor}.
+ * intent. Composes vendor-block facts, pending wait-user events, the SDD approval
+ * checkpoint and unexplained silence into a single optional
+ * {@link ActionDescriptor}.
  *
  * Priority (highest first): vendor block → pending wait-user (Ask / permission)
- * → spec awaiting approval. Only one descriptor is projected; lower priorities
- * stay latent until the higher one clears. Never persists, never changes gates.
+ * → spec awaiting approval → silent timeout. Only one descriptor is projected;
+ * lower priorities stay latent until the higher one clears. Silence sits LAST on
+ * purpose — it is the least specific thing that can be said about an intent, so a
+ * concrete, actionable cause must always outrank it. Never persists, never changes
+ * gates.
  */
 import type { ActionDescriptor, Intent } from '@ccc/shared/protocol'
 import { getSddEnabled } from '../../kernel/config/index.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { findLatestTodoEventForSessionIds } from '../user-involve/store.js'
+import { deriveSilentTimeoutActionDescriptor } from './silent-timeout.js'
 import { deriveVendorActionDescriptor } from './vendor-block.js'
 
 /** Session ids that can own a wait-user event for this intent, including intent-level. */
@@ -88,6 +93,7 @@ export function deriveActionDescriptor(intent: Intent): ActionDescriptor | null 
   return (
     deriveVendorActionDescriptor(intent) ??
     deriveWaitUserActionDescriptor(intent) ??
-    deriveSpecApprovalActionDescriptor(intent)
+    deriveSpecApprovalActionDescriptor(intent) ??
+    deriveSilentTimeoutActionDescriptor(intent)
   )
 }

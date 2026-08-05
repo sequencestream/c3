@@ -1079,11 +1079,15 @@
       "specAwaitingApproval": "이 의도의 spec은 작성되었지만 아직 승인되지 않았습니다. spec 탭을 열어 검토하고 승인하세요.",
       "permissionPending": "도구 권한 요청이 결정을 기다리고 있습니다. 대기 항목을 열어 허용 또는 거부하세요.",
       "askUserQuestionPending": "AskUserQuestion 답변 대기 중입니다. 대기 항목을 열어 답변하세요.",
+      "silentTimeout": "30분 넘게 아무런 진행이 없고, 알려진 대기 사유도 없습니다. 이 의도의 작업 세션·로그·워크스페이스 상태를 확인한 뒤 문제가 없으면 수동으로 다시 시도하세요.",
       "openSpecApproval": {
         "label": "Spec 열기"
       },
       "openWorkcenterEvent": {
         "label": "대기 항목 열기"
+      },
+      "openWorkSession": {
+        "label": "작업 세션 열기"
       }
     }
   },

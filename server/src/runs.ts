@@ -517,6 +517,27 @@ export function isRunning(id: string): boolean {
 }
 
 /**
+ * When this session last showed any sign of life (an emitted wire event, or the
+ * runtime's creation), or `null` when no runtime is registered for the id.
+ *
+ * Deliberately narrow so a feature can ask "is anything still happening here"
+ * without reaching into {@link SessionRuntime}. Process-local: a restart forgets
+ * every runtime, so `null` means "unknown", never "nothing ever happened".
+ */
+export function sessionLastActivityAt(id: string): number | null {
+  return runtimes.get(id)?.lastActivityAt ?? null
+}
+
+/**
+ * True while this session is paused on a permission prompt nobody has answered.
+ * A known, human-owned wait — readers use it to avoid describing such a session
+ * as unexplained.
+ */
+export function isAwaitingPermission(id: string): boolean {
+  return runtimes.get(id)?.status === 'awaiting_permission'
+}
+
+/**
  * All known sessions' live statuses, for the handshake and broadcasts. Merges the
  * kernel `runtimes` registry with the lightweight `automationRunning` set: kernel
  * runtimes win on a shared `sessionId` (an interactive run's real status must never

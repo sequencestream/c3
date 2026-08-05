@@ -1078,11 +1078,15 @@
       "specAwaitingApproval": "This intent's spec is written but not approved yet. Open the spec tab to review and approve it.",
       "permissionPending": "A tool permission is waiting for your decision. Open the pending item to Allow or Deny.",
       "askUserQuestionPending": "An AskUserQuestion is waiting for your answers. Open the pending item to reply.",
+      "silentTimeout": "No progress for over 30 minutes, and nothing known is being waited on. Check this intent's work session, its logs and its workspace, then retry manually once it looks safe.",
       "openSpecApproval": {
         "label": "Open spec"
       },
       "openWorkcenterEvent": {
         "label": "Open pending item"
+      },
+      "openWorkSession": {
+        "label": "Open work session"
       }
     }
   },

@@ -38,18 +38,21 @@ Dependencies;可能引用一个开发 Session(一个普通会话,归 session-reg
 reason / 重试 / park,或任何闸门。
 
 优先级(高 → 低,只投影一条):vendor 凭据/额度阻塞 → 该意图关联的 `todo` wait-user 事件
-(`AskUserQuestion` 或普通权限门控) → SDD 开启且 spec 已写未批准。
+(`AskUserQuestion` 或普通权限门控) → SDD 开启且 spec 已写未批准 → 静默超时(RM-R38)。
+静默排在最后是刻意的:它是对一条意图能说的最不具体的话,任何有明确根因、可直接处理的
+原因都必须压过它。
 
-| 属性        | 类型            | 说明                                                                                       |
-| ----------- | --------------- | ------------------------------------------------------------------------------------------ |
-| `labelCode` | ActionLabelCode | 稳定原因码(本地化码,不是文案);闭集见协议                                                   |
-| `target`    | ActionTarget    | 跳转目标;以 `type` 判别的联合:`system-settings-agent` / `intent-spec` / `workcenter-event` |
+| 属性        | 类型            | 说明                                                                                                               |
+| ----------- | --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `labelCode` | ActionLabelCode | 稳定原因码(本地化码,不是文案);闭集见协议                                                                           |
+| `target`    | ActionTarget    | 跳转目标;以 `type` 判别的联合:`system-settings-agent` / `intent-spec` / `workcenter-event` / `intent-work-session` |
 
 边界:
 
 - **只承载导航。**`target` 不含 URL、命令或自由文本 payload,客户端只能跳到联合已列举的位置。
 - **不泄漏。**只传稳定码与导航所需身份,绝不携带凭据、供应商原始错误全文或响应体。
-- **自然消失。**更高优先级事实清除、事件决断或 spec 批准后,投影回到更低优先级或 `null`。
+- **自然消失。**更高优先级事实清除、事件决断、spec 批准或任何一次真实进展之后,投影回到
+  更低优先级或 `null`。
 - **扩展方式**是给 `target` 联合加分支,而不是给已有分支加可选字段。
 
 ## Proposed Intent

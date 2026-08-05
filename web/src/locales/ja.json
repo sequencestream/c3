@@ -1079,11 +1079,15 @@
       "specAwaitingApproval": "この意図の spec は作成済みですが未承認です。spec タブを開いて確認・承認してください。",
       "permissionPending": "ツール権限の承認待ちがあります。保留項目を開いて許可または拒否してください。",
       "askUserQuestionPending": "AskUserQuestion への回答待ちがあります。保留項目を開いて回答してください。",
+      "silentTimeout": "30 分以上進展がなく、既知の待機理由もありません。この意図の作業セッション・ログ・ワークスペースの状態を確認し、問題がなければ手動で再試行してください。",
       "openSpecApproval": {
         "label": "Spec を開く"
       },
       "openWorkcenterEvent": {
         "label": "保留項目を開く"
+      },
+      "openWorkSession": {
+        "label": "作業セッションを開く"
       }
     }
   },

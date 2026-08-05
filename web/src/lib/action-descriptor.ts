@@ -24,6 +24,7 @@ export const ACTION_MESSAGE_KEYS = {
   spec_awaiting_approval: 'intent.blocked.specAwaitingApproval',
   permission_pending: 'intent.blocked.permissionPending',
   ask_user_question_pending: 'intent.blocked.askUserQuestionPending',
+  silent_timeout: 'intent.blocked.silentTimeout',
 } as const satisfies Record<ActionLabelCode, LocaleKey>
 
 /** Where it goes, as the button label. */
@@ -31,6 +32,7 @@ export const ACTION_BUTTON_KEYS = {
   'system-settings-agent': 'intent.blocked.openAgentSettings.label',
   'intent-spec': 'intent.blocked.openSpecApproval.label',
   'workcenter-event': 'intent.blocked.openWorkcenterEvent.label',
+  'intent-work-session': 'intent.blocked.openWorkSession.label',
 } as const satisfies Record<ActionTarget['type'], LocaleKey>
 
 /** The i18n key for a descriptor's prompt text. */

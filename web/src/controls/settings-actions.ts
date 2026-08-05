@@ -66,6 +66,18 @@ export function installSettingsActions(ctx: AppCtx): void {
       ctx.requestedIntentSubTab.value = 'spec'
       return
     }
+    if (target.type === 'intent-work-session') {
+      // The inspection entry for a stalled intent. It only selects the intent and
+      // asks for its work-session tab — it never resumes, restarts or retries the
+      // session, and an intent without one lands on its default tab instead.
+      const workspace = currentWorkspace.value
+      if (!workspace) return
+      ctx.setViewMode('workspace')
+      ctx.openIntents(workspace)
+      ctx.requestedIntentId.value = target.intentId
+      ctx.requestedIntentSubTab.value = 'workSession'
+      return
+    }
     // workcenter-event
     ctx.setViewMode('workcenter')
     if (ctx.workcenterPage.value !== 'notifications') {

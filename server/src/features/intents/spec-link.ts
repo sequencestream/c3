@@ -49,6 +49,11 @@ export function clearPendingSpecLink(pendingId: string): string | undefined {
   return intentId
 }
 
+/** Read the intent id without consuming the entry (see `peekPendingDevLink`). */
+export function peekPendingSpecLink(pendingId: string): string | undefined {
+  return pendingSpecLink.get(pendingId)
+}
+
 /** Reset the map (test teardown only). */
 export function resetForTests(): void {
   pendingSpecLink.clear()

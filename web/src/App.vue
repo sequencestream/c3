@@ -265,7 +265,10 @@ const {
   newSessionOpen,
   confirmNewSession,
   openSettingsFromPicker,
+  openActionTarget,
+  clearActionTarget,
   settingsOpen,
+  settingsTarget,
   bindingStats,
   saveSettings,
   setLocale,
@@ -377,6 +380,13 @@ watch(
   },
   { immediate: true },
 )
+// Closing settings also drops any one-shot locate target that was never acted on,
+// so the next open lands wherever the user left the panel — not on an old deep link.
+function onCloseSettings(): void {
+  settingsOpen.value = false
+  clearActionTarget()
+}
+
 function onCodesChatWidth(px: number): void {
   const ws = codesProject.value
   if (!ws) return
@@ -546,6 +556,7 @@ function onCodesChatWidth(px: number): void {
           @set-codex-policy="setCodexPolicy"
           @requested-intent-consumed="onRequestedIntentConsumed()"
           @requested-subtab-consumed="requestedIntentSubTab = null"
+          @action-target="openActionTarget"
           @requested-intent-session-consumed="requestedIntentSessionId = null"
           @filter="setIntentFilter"
           @refine="refineIntent"
@@ -800,7 +811,9 @@ function onCodesChatWidth(px: number): void {
       :vendor-availability="vendorAvailability"
       :sandbox-status="sandboxStatus"
       :binding-stats="bindingStats"
-      @close="settingsOpen = false"
+      :target="settingsTarget"
+      @close="onCloseSettings"
+      @target-consumed="clearActionTarget"
       @save="saveSettings"
       @set-password="setAdminPassword"
       @remove-account="removeAccount"

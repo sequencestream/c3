@@ -279,7 +279,7 @@ export const listIntentsHandler: Handler<'list_intents'> = (_ctx, conn, msg) => 
   conn.send({
     type: 'intents',
     workspaceId: pathToId(proj)!,
-    items: listIntents(proj, msg.status),
+    items: enrichRunStatus(listIntents(proj, msg.status)),
     sddEnabled: getSddEnabled(proj),
   })
 }
@@ -718,7 +718,7 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   conn.send({
     type: 'intents',
     workspaceId: pathToId(proj)!,
-    items: listIntents(proj),
+    items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
   })
   // Link the pending refine session to this intent so the resident `run:bound`
@@ -789,7 +789,7 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
   conn.send({
     type: 'intents',
     workspaceId: pathToId(proj)!,
-    items: listIntents(proj),
+    items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
   })
   // Link the pending refine session to this intent so the resident `run:bound`

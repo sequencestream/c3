@@ -2960,6 +2960,21 @@ button.deny:hover:not(:disabled) {
   outline: 2px dashed var(--c-accent, var(--c-border));
   outline-offset: -2px;
 }
+/* Brief "this is the row you were sent to" flash after a deep-link jump. */
+.agent-row.located {
+  outline: 2px solid var(--c-primary);
+  outline-offset: -2px;
+}
+/* Non-blocking notice: the row a deep link named is gone, so the jump landed on
+   its vendor's configuration instead. */
+.agent-locate-missing {
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-caption);
+  color: var(--c-warning-text);
+  background: rgba(245, 158, 11, 0.12);
+  border-radius: var(--radius-sm);
+}
 .agent-row > .col-on {
   flex: 0 0 44px;
 }

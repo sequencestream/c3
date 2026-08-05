@@ -2,6 +2,7 @@ import type { createWsClient } from '@/lib/ws'
 import type { PermissionMsg } from '@/lib/chat-types'
 import type { PendingItem } from '@/lib/pending-queue'
 import type {
+  ActionTarget,
   ClientToServer,
   CodeGitStatus,
   CodeSearchHit,
@@ -78,6 +79,8 @@ export interface AppMethods {
   openNewSession(path: string): void
   confirmNewSession(agentId: string | null): void
   openSettingsFromPicker(): void
+  openActionTarget(target: ActionTarget): void
+  clearActionTarget(): void
   selectSession(path: string, sessionId: string): void
   openWorkcenterSession(input: {
     workspaceId: string

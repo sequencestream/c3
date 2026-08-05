@@ -25,9 +25,29 @@
 | `createdAt`         | timestamp                   | 创建时间                                                                                                                        |
 | `updatedAt`         | timestamp                   | 最近一次变更时间                                                                                                                |
 | `completedAt`       | timestamp \| null           | 意图进入 `done` 状态的时间;在转为 `done` 时打上时间戳,状态离开 `done` 时清空(置为 null)(RM-R6/RM-R9)                            |
+| `actionDescriptor`  | ActionDescriptor \| null    | 派生的「下一步」;无阻塞时为 `null`。发送时投影,不落库(见下)                                                                     |
 
 关系:属于一个项目(以 `workspacePath` 标识);拥有零个或多个 Intent
 Dependencies;可能引用一个开发 Session(一个普通会话,归 session-registry 所有)。
+
+## Action Descriptor
+
+一条派生的「下一步」:当意图被某个**不可自动解决**的事实挡住时,告诉用户这是什么情况、
+可以去哪里处理。它是**运行时展示投影,不是业务状态** —— 每次发送(列表 / 刷新 / 广播)从
+运行层已有的失败事实重新派生,不落库、不新增表,也不改变意图 `status`、队列的 action /
+reason / 重试 / park,或任何闸门。
+
+| 属性        | 类型            | 说明                                                                        |
+| ----------- | --------------- | --------------------------------------------------------------------------- |
+| `labelCode` | ActionLabelCode | 稳定原因码(本地化码,不是文案);本期为凭据失效与不可自动恢复的额度耗尽两种    |
+| `target`    | ActionTarget    | 跳转目标;以 `type` 判别的联合,本期唯一一支指向系统设置里的某一行 agent 配置 |
+
+边界:
+
+- **只承载导航。**`target` 不含 URL、命令或自由文本 payload,客户端只能跳到联合已列举的位置。
+- **不泄漏。**只传稳定码与失败 agent 的身份,绝不携带凭据、供应商原始错误全文或响应体。
+- **自然消失。**用户改好配置后,后续运行结果不再命中该失败事实时,投影自然回到 `null`。
+- **扩展方式**是给 `target` 联合加分支,而不是给已有分支加可选字段。
 
 ## Proposed Intent
 

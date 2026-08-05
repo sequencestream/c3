@@ -371,7 +371,8 @@
       },
       "groupPicker": {
         "label": "그룹"
-      }
+      },
+      "locateMissing": "해당 설정이 더 이상 존재하지 않습니다. 대신 이 벤더의 에이전트를 표시합니다."
     },
     "defaultMode": {
       "title": {
@@ -1001,6 +1002,13 @@
         "message": "새 입력과 현재 사양 내용을 결합하여 새 사양 세션을 시작합니다. 이전 세션은 Works에 남아 있지만 더 이상 이 의도에 연결되지 않습니다."
       },
       "placeholder": "무엇을 변경할까요? 입력은 현재 내용과 결합되어 새 세션의 시작점이 됩니다."
+    },
+    "blocked": {
+      "vendorAuthInvalid": "이 에이전트의 벤더 자격 증명이 거부되었습니다. 수정하기 전까지 작업이 계속 막힙니다.",
+      "vendorQuotaExhausted": "이 에이전트의 벤더에 남은 할당량이 없습니다. 복구하기 전까지 작업이 계속 막힙니다.",
+      "openAgentSettings": {
+        "label": "에이전트 설정 열기"
+      }
     }
   },
   "session": {

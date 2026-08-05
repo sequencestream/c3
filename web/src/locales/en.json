@@ -370,7 +370,8 @@
       },
       "groupPicker": {
         "label": "Groups"
-      }
+      },
+      "locateMissing": "That agent configuration no longer exists. Showing this vendor’s agents instead."
     },
     "defaultMode": {
       "title": {
@@ -1000,6 +1001,13 @@
         "message": "Start a fresh spec session seeded with your new input and the current spec content. The previous session stays available under Works but is no longer linked to this intent."
       },
       "placeholder": "What should change? Your input is combined with the current content to seed the new session."
+    },
+    "blocked": {
+      "vendorAuthInvalid": "This agent's vendor credentials were rejected. Work stays blocked until they are fixed.",
+      "vendorQuotaExhausted": "This agent's vendor has no usable quota left. Work stays blocked until it is restored.",
+      "openAgentSettings": {
+        "label": "Open agent settings"
+      }
     }
   },
   "session": {

@@ -57,6 +57,7 @@ function makeIntent(over: Partial<Intent> = {}): Intent {
     specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
     sessionActive: false,
+    actionDescriptor: null,
     ...over,
   }
 }

@@ -453,6 +453,33 @@ export function startRetentionCleanup(): void {
 }
 
 /**
+ * The newest `todo` wait-user event whose `session_id` is one of the given ids
+ * (an intent's work / intent / spec / review session ids, plus the intent id
+ * itself for intent-level events). Used by the action-descriptor projection to
+ * attach a deep link without scanning the whole workspace todo list. Returns
+ * `null` when the store is down or nothing matches.
+ */
+export function findLatestTodoEventForSessionIds(
+  workspacePath: string,
+  sessionIds: readonly string[],
+): WaitUserInvolveEvent | null {
+  const ids = [...new Set(sessionIds.filter((id) => !!id))]
+  if (ids.length === 0) return null
+  const d = db()
+  if (!d) return null
+  const placeholders = ids.map(() => '?').join(',')
+  const row = d.get<EventRow>(
+    `SELECT * FROM wait_user_involve_events
+       WHERE workspace_path=? AND status='todo' AND session_id IN (${placeholders})
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+    resolve(workspacePath),
+    ...ids,
+  )
+  return row ? toEvent(row) : null
+}
+
+/**
  * Cancel all 'todo' events for a given `sessionId` (e.g. when a session ends).
  */
 export function cancelBySessionId(sessionId: string): void {

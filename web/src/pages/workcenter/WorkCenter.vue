@@ -12,7 +12,7 @@
  * EventDetail,顶部工具栏返回回列表。桌面端依赖 MobileStack 的 display:contents
  * 透传,两个 pane 继续同时渲染为 sidebar/content 两栏,行为不变。
  */
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import BaseDropdown, { type DropdownOption } from '@/components/BaseDropdown/BaseDropdown.vue'
 import MobileStack from '@/components/MobileStack/MobileStack.vue'
 import EventList from './components/EventList.vue'
@@ -36,6 +36,13 @@ const props = defineProps<{
   currentWorkspace: string | null
   /** Known workspaces, forwarded to EventDetail to resolve an event's workspace name. */
   workspaces: WorkspaceInfo[]
+  /**
+   * One-shot deep-link request to select a specific event once it appears in
+   * `events`. Cleared via `requested-event-consumed` after a successful select
+   * (or silently dropped when the id never resolves — still consume so a stale
+   * request cannot stick across navigations forever).
+   */
+  requestedEventId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -45,6 +52,7 @@ const emit = defineEmits<{
   reload: [status: FilterValue]
   'load-more': [status: FilterValue, cursorTime: number, cursorExcludeId: string]
   'mark-done': [eventId: string]
+  'requested-event-consumed': []
 }>()
 
 // ---- Status filter ----
@@ -106,6 +114,23 @@ function onSelect(event: WaitUserInvolveEvent) {
   mobileActiveKey.value = 'detail'
   if (isNotificationEvent(event)) emit('mark-done', event.id)
 }
+
+// One-shot deep link: when a requested event id lands in the list, select it
+// exactly once. Consume even when the id never resolves after loading settles,
+// so a stale request cannot stick across later list refreshes.
+watch(
+  () => [props.requestedEventId, props.events, props.loading] as const,
+  ([id, events, loading]) => {
+    if (!id) return
+    const hit = events.find((e) => e.id === id)
+    if (hit) {
+      onSelect(hit)
+      emit('requested-event-consumed')
+      return
+    }
+    if (!loading) emit('requested-event-consumed')
+  },
+)
 
 // ---- Mobile drill-down state ----
 // Two panes: event list → event detail. The active pane is an explicit ref (not purely

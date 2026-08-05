@@ -19,7 +19,7 @@ vi.mock('../../runs.js', () => ({
 }))
 
 const blocked = new Map<string, ActionDescriptor>()
-vi.mock('./vendor-block.js', () => ({
+vi.mock('./action-descriptor.js', () => ({
   deriveActionDescriptor: vi.fn((r: { id: string }) => blocked.get(r.id) ?? null),
 }))
 

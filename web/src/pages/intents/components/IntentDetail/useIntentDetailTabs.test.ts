@@ -189,6 +189,16 @@ describe('useIntentDetailTabs', () => {
     expect(activeTab()).toBe('intent')
   })
 
+  it('consumes an external requestedSubTab=spec and opens the document tab', async () => {
+    const { w, calls, activeTab } = mountHost({
+      intent: intent({ id: 'i1', specPath: '.s/spec.md' }),
+      sddEnabled: true,
+    })
+    await w.setProps({ requestedSubTab: 'spec' })
+    expect(activeTab()).toBe('spec')
+    expect(calls.consumed).toBe(1)
+  })
+
   it('consumes an external requestedSubTab exactly once and ignores hidden targets', async () => {
     const { w, calls, activeTab } = mountHost({
       intent: intent({ id: 'i1', specSessionId: null, specPath: null }),

@@ -1075,6 +1075,15 @@
       "vendorQuotaExhausted": "이 에이전트의 벤더에 남은 할당량이 없습니다. 복구하기 전까지 작업이 계속 막힙니다.",
       "openAgentSettings": {
         "label": "에이전트 설정 열기"
+      },
+      "specAwaitingApproval": "이 의도의 spec은 작성되었지만 아직 승인되지 않았습니다. spec 탭을 열어 검토하고 승인하세요.",
+      "permissionPending": "도구 권한 요청이 결정을 기다리고 있습니다. 대기 항목을 열어 허용 또는 거부하세요.",
+      "askUserQuestionPending": "AskUserQuestion 답변 대기 중입니다. 대기 항목을 열어 답변하세요.",
+      "openSpecApproval": {
+        "label": "Spec 열기"
+      },
+      "openWorkcenterEvent": {
+        "label": "대기 항목 열기"
       }
     }
   },

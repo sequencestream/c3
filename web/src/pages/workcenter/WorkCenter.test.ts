@@ -751,3 +751,40 @@ describe('EventDetail.vue — attribute list', () => {
     expect(rows[2].find('.wc-attr-val').text()).toBe('sess-1')
   })
 })
+
+describe('WorkCenter.vue — requested event deep link', () => {
+  it('selects the requested event once it appears and consumes the request', async () => {
+    const target = ev({ id: 'deep-1', title: 'deep' })
+    const wrapper = mount(WorkCenter, {
+      props: {
+        events: [],
+        hasMore: false,
+        loading: true,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+        requestedEventId: 'deep-1',
+      },
+    })
+    expect(wrapper.emitted('requested-event-consumed')).toBeUndefined()
+
+    await wrapper.setProps({ events: [target], loading: false })
+    expect(wrapper.emitted('requested-event-consumed')).toHaveLength(1)
+    expect(wrapper.findComponent(EventDetail).props('event')?.id).toBe('deep-1')
+  })
+
+  it('consumes a missing request after loading settles without selecting', async () => {
+    const wrapper = mount(WorkCenter, {
+      props: {
+        events: [ev({ id: 'other' })],
+        hasMore: false,
+        loading: true,
+        currentWorkspace: '/ws',
+        workspaces: WORKSPACES,
+        requestedEventId: 'missing',
+      },
+    })
+    await wrapper.setProps({ loading: false })
+    expect(wrapper.emitted('requested-event-consumed')).toHaveLength(1)
+    expect(wrapper.findComponent(EventDetail).props('event')).toBeNull()
+  })
+})

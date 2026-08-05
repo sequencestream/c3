@@ -1,9 +1,11 @@
 import type {
+  ActionTarget,
   SystemSettings,
   UiLang,
   UiTheme,
   WorkspaceSetting as WorkspaceSettingType,
 } from '@ccc/shared/protocol'
+import { toSystemSettingsTarget } from '@/lib/action-descriptor'
 import { applyLocale, i18n, type Locale } from '@/i18n'
 import {
   hasLocalPersonalized,
@@ -20,6 +22,7 @@ export function installSettingsActions(ctx: AppCtx): void {
   const t = ctx.t
   const {
     settingsOpen,
+    settingsTarget,
     personalizedSettingOpen,
     personalizedSettings,
     workspaceSettingOpen,
@@ -36,6 +39,22 @@ export function installSettingsActions(ctx: AppCtx): void {
   ctx.openSettings = (): void => {
     settingsOpen.value = true
     send({ type: 'get_settings' })
+  }
+
+  /**
+   * The single dispatcher behind every derived `ActionDescriptor`: translate the
+   * wire target into a one-shot panel instruction and open system settings on it.
+   * Navigation only — it never enables an agent, edits credentials, saves the
+   * panel, or clears the failure the descriptor came from.
+   */
+  ctx.openActionTarget = (target: ActionTarget): void => {
+    settingsTarget.value = toSystemSettingsTarget(target)
+    ctx.openSettings()
+  }
+
+  /** The panel consumed the one-shot target (or settings closed). */
+  ctx.clearActionTarget = (): void => {
+    settingsTarget.value = null
   }
 
   // Personalized settings are already in memory (browser seed + server echo), so

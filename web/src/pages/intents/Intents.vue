@@ -18,6 +18,7 @@ import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
 import type {
+  ActionTarget,
   CodexPolicy,
   ModeToken,
   WorkflowStatus,
@@ -106,6 +107,8 @@ const emit = defineEmits<{
   // intent list events
   filter: [status: IntentStatus | null]
   refine: [intentId: string]
+  /** 派生「下一步」跳转:列表与详情共用同一条上抛路径,最终落到同一个分发器。 */
+  'action-target': [target: ActionTarget]
   'save-intent-content': [intentId: string, content: string]
   'save-spec-content': [intentId: string, content: string]
   'write-spec': [intentId: string]
@@ -338,6 +341,7 @@ defineExpose({
         @ordered-change="handleOrderedChange"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @refine="(id: string) => emit('refine', id)"
+        @action-target="(target: ActionTarget) => emit('action-target', target)"
         @new-intent="emit('new-intent')"
       />
     </template>
@@ -420,6 +424,7 @@ defineExpose({
         @respond="(m: PermissionMsg, d: 'allow' | 'deny') => emit('respond', m, d)"
         @submit-ask="(m: PermissionMsg, a: Record<string, string>) => emit('submit-ask', m, a)"
         @requested-subtab-consumed="emit('requested-subtab-consumed')"
+        @action-target="(target: ActionTarget) => emit('action-target', target)"
         @refresh="emit('refresh')"
         @edit-queued="(item: PendingItem) => emit('edit-queued', item)"
         @delete-queued="(id: number) => emit('delete-queued', id)"

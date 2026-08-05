@@ -18,7 +18,7 @@ export function __resetWriteSpecGuards(): void {
  * emits / prefill 能力保持兼容;拆出的子组件只使用页面内部契约。列表为空(无选中意图)时渲染空态。
  */
 import { computed, ref, watch } from 'vue'
-import type { DepType, Intent, IntentLog, IntentStatus } from '@ccc/shared/protocol'
+import type { ActionTarget, DepType, Intent, IntentLog, IntentStatus } from '@ccc/shared/protocol'
 import type {
   CodexPolicy,
   ModeToken,
@@ -33,6 +33,7 @@ import type { TaskListModel } from '../../../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../../../lib/chat-types'
 import { useTypedI18n } from '@/i18n'
 import ResetSessionDialog from '../../../../components/ResetSessionDialog/ResetSessionDialog.vue'
+import ActionDescriptorBanner from '../../../../components/ActionDescriptorBanner/ActionDescriptorBanner.vue'
 import { hasDependencyBlockingSpecSession, statusLabel } from '../../../../lib/intent-list-view'
 import IntentEngineeringProgress from './IntentEngineeringProgress.vue'
 import IntentTitleBarActions from './IntentTitleBarActions.vue'
@@ -155,6 +156,8 @@ const emit = defineEmits<{
   'list-commands': []
   // ── 外部子 tab 请求消耗 ──
   'requested-subtab-consumed': []
+  /** 派生「下一步」跳转:与 IntentList 汇入同一个分发器,两处跳法完全一致。 */
+  'action-target': [target: ActionTarget]
 }>()
 
 // ── 未完成依赖(非 done 的前置意图) ───────────────────────────────────────
@@ -389,6 +392,12 @@ function submitChat(text: string, images: PromptImage[]): void {
             />
           </div>
         </div>
+        <!-- 派生「下一步」:常驻在详情头部主信息区,与列表行共用同一组件与同一分发器。
+             它只提示与导航,不遮断详情本身的任何操作。 -->
+        <ActionDescriptorBanner
+          :descriptor="intent.actionDescriptor"
+          @navigate="(target: ActionTarget) => emit('action-target', target)"
+        />
         <IntentEngineeringProgress
           :intent="intent"
           :sdd-enabled="sddEnabled === true"

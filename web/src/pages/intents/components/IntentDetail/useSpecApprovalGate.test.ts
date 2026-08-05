@@ -40,6 +40,7 @@ function intent(id: string): Intent {
     specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
     sessionActive: false,
+    actionDescriptor: null,
   }
 }
 

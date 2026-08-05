@@ -1,19 +1,34 @@
 /**
  * Tests for `enrichRunStatus` — the single send-time enrich boundary shared by
  * the list / refresh / broadcast paths. Focuses on the derived `sessionActive`
- * signal (any of intent / spec / work session running) and its independence
- * from the existing `runStatus` reconcile field. `isRunning` is mocked so a
- * controllable set of session ids counts as "running".
+ * signal (any of intent / spec / work session running), the derived
+ * `actionDescriptor` projection, and their independence from the existing
+ * `runStatus` reconcile field. `isRunning` and the vendor-block fact table are
+ * mocked so a controllable set of session ids counts as "running" and a
+ * controllable set of intents counts as blocked.
  */
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Intent } from '@ccc/shared/protocol'
+import type { ActionDescriptor, Intent } from '@ccc/shared/protocol'
 
 const running = new Set<string>()
 vi.mock('../../runs.js', () => ({
   isRunning: vi.fn((id: string) => running.has(id)),
 }))
 
+const blocked = new Map<string, ActionDescriptor>()
+vi.mock('./vendor-block.js', () => ({
+  deriveActionDescriptor: vi.fn((r: { id: string }) => blocked.get(r.id) ?? null),
+}))
+
 const { enrichRunStatus, cacheRunStatus, clearRunStatus } = await import('./run-status.js')
+
+const AUTH_BLOCKED: ActionDescriptor = {
+  labelCode: 'vendor_auth_invalid',
+  target: { type: 'system-settings-agent', vendor: 'claude', agentId: 'agent-1' },
+}
 
 function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
@@ -50,6 +65,7 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
     sessionActive: false,
+    actionDescriptor: null,
     ...overrides,
   }
 }
@@ -58,8 +74,14 @@ function enrichOne(overrides: Partial<Intent> & { id: string }): Intent {
   return enrichRunStatus([makeIntent(overrides)])[0]
 }
 
-beforeEach(() => running.clear())
-afterEach(() => running.clear())
+beforeEach(() => {
+  running.clear()
+  blocked.clear()
+})
+afterEach(() => {
+  running.clear()
+  blocked.clear()
+})
 
 describe('enrichRunStatus — sessionActive derivation', () => {
   it('is true when only intentSessionId is running', () => {
@@ -148,5 +170,88 @@ describe('enrichRunStatus — runStatus independence', () => {
     })
     expect(r.runStatus).toBe('dangling')
     expect(r.sessionActive).toBe(false)
+  })
+})
+
+describe('enrichRunStatus — actionDescriptor projection', () => {
+  afterEach(() => clearRunStatus('a'))
+
+  it('is null when nothing blocks the intent', () => {
+    expect(enrichOne({ id: 'a' }).actionDescriptor).toBeNull()
+  })
+
+  it('carries the recorded block for a blocked intent', () => {
+    blocked.set('a', AUTH_BLOCKED)
+    expect(enrichOne({ id: 'a' }).actionDescriptor).toEqual(AUTH_BLOCKED)
+  })
+
+  it('is derived for every status, not just in_progress', () => {
+    blocked.set('a', AUTH_BLOCKED)
+    for (const status of ['draft', 'todo', 'in_progress', 'blocked', 'failed'] as const) {
+      expect(enrichOne({ id: 'a', status }).actionDescriptor).toEqual(AUTH_BLOCKED)
+    }
+  })
+
+  it('leaves runStatus and sessionActive untouched', () => {
+    // A blocked intent whose work session is still alive must keep BOTH signals:
+    // the descriptor is a next-step hint, never a state override.
+    blocked.set('a', AUTH_BLOCKED)
+    running.add('s-work')
+    const r = enrichOne({ id: 'a', status: 'in_progress', lastWorkSessionId: 's-work' })
+    expect(r.runStatus).toBe('running')
+    expect(r.sessionActive).toBe(true)
+    expect(r.actionDescriptor).toEqual(AUTH_BLOCKED)
+  })
+
+  it('derives per item, so a healthy sibling stays null', () => {
+    blocked.set('a', AUTH_BLOCKED)
+    const [a, b] = enrichRunStatus([makeIntent({ id: 'a' }), makeIntent({ id: 'b' })])
+    expect(a.actionDescriptor).toEqual(AUTH_BLOCKED)
+    expect(b.actionDescriptor).toBeNull()
+  })
+
+  it('re-derives on every send, so a cleared fact returns to null', () => {
+    blocked.set('a', AUTH_BLOCKED)
+    expect(enrichOne({ id: 'a' }).actionDescriptor).toEqual(AUTH_BLOCKED)
+    blocked.delete('a')
+    expect(enrichOne({ id: 'a' }).actionDescriptor).toBeNull()
+  })
+
+  it('never mutates its input (the stored projection stays null)', () => {
+    blocked.set('a', AUTH_BLOCKED)
+    const input = makeIntent({ id: 'a' })
+    enrichRunStatus([input])
+    expect(input.actionDescriptor).toBeNull()
+  })
+})
+
+/**
+ * Structural guard: every `intents` frame the server sends must go through this
+ * one enrich boundary. A send site that reached for `listIntents` directly would
+ * ship an intent with `actionDescriptor: null` (and a stale `sessionActive`), so
+ * the list, a refresh and a broadcast would disagree about whether the same
+ * intent is blocked — exactly the split this projection exists to prevent.
+ */
+describe('intents send sites', () => {
+  const HERE = path.dirname(fileURLToPath(import.meta.url))
+  const SEND_SITE_FILES = [
+    path.join(HERE, 'index.ts'),
+    path.join(HERE, '../../wiring/broadcasts.ts'),
+  ]
+
+  it('all enrich the items they send', () => {
+    const unenriched: string[] = []
+    for (const file of SEND_SITE_FILES) {
+      const lines = readFileSync(file, 'utf8').split('\n')
+      lines.forEach((line, i) => {
+        if (!/\blistIntents\(/.test(line)) return
+        // Only the lines that build a frame's `items`; other call sites read the
+        // ledger for internal logic and never reach the wire.
+        if (!/\bitems\b/.test(line)) return
+        if (/enrichRunStatus\(/.test(line)) return
+        unenriched.push(`${path.basename(file)}:${i + 1}: ${line.trim()}`)
+      })
+    }
+    expect(unenriched).toEqual([])
   })
 })

@@ -36,6 +36,11 @@ export function clearPendingSpecReviewLink(pendingId: string): string | undefine
   return intentId
 }
 
+/** Read the intent id without consuming the entry (see `peekPendingDevLink`). */
+export function peekPendingSpecReviewLink(pendingId: string): string | undefined {
+  return pendingSpecReviewLink.get(pendingId)
+}
+
 /** Reset the map (test teardown only). */
 export function resetForTests(): void {
   pendingSpecReviewLink.clear()

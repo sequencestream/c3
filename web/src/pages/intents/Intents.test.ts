@@ -42,6 +42,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
     sessionActive: false,
+    actionDescriptor: null,
     ...overrides,
     id: overrides.id,
   }

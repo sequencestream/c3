@@ -75,6 +75,7 @@ function dep(overrides: Partial<Intent> = {}): Intent {
     specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
     sessionActive: false,
+    actionDescriptor: null,
     ...overrides,
   }
 }

@@ -90,6 +90,7 @@ import {
   takePendingSpecReviewLink,
 } from '../features/intents/spec-review-link.js'
 import { clearPendingIntentLink, takePendingIntentLink } from '../features/intents/intent-link.js'
+import { clearVendorBlockForSession, noteVendorBlock } from '../features/intents/vendor-block.js'
 import { isIntentDrivenByWorkflow, notifyTurnSettled } from '../features/intents/workflow.js'
 import { runManualDevCleanup, type DevCleanupDeps } from '../features/intents/dev-cleanup.js'
 import { handlePrUpdateEvent } from '../features/intents/pr-update-consumer.js'
@@ -515,6 +516,23 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     if (!isWaitUserEventsStoreAvailable()) return
     cancelBySessionId(sessionId)
     broadcastWaitUserEvents(workspacePath)
+  })
+
+  // ── agent:error / run:settled — vendor-blocked next step ─────────────────
+  // Read-only bypass over the degradation chain: an agent failure that a retry
+  // can never clear (credentials rejected, quota gone with no scheduled recovery)
+  // is recorded against the intent that ran it, so the list and the detail can
+  // offer a jump into that agent's settings row. Nothing here changes the chain,
+  // the queue's decision, or any stored column — only the send-time projection.
+  // A successful settle for the same run drops the fact again.
+  eventBus.subscribe('agent:error', ({ sessionId, workspacePath, agentId, error }) => {
+    if (!noteVendorBlock({ sessionId, workspacePath, agentId, error })) return
+    broadcastIntents(workspacePath)
+  })
+  eventBus.subscribe('run:settled', ({ sessionId, workspacePath, reason }) => {
+    if (reason !== 'complete') return
+    if (!clearVendorBlockForSession(sessionId, workspacePath)) return
+    broadcastIntents(workspacePath)
   })
 
   // ── event (pr:update/success) — intent PR-status reset ────────────────────

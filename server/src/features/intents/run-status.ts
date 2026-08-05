@@ -10,6 +10,7 @@
  */
 import type { Intent, IntentRunStatus } from '@ccc/shared/protocol'
 import { isRunning } from '../../runs.js'
+import { deriveActionDescriptor } from './vendor-block.js'
 
 /**
  * Per-intent runStatus cache, populated by reconcileInProgress on
@@ -79,6 +80,10 @@ function deriveSessionActive(r: Intent): boolean {
  * - `sessionActive` — always recomputed from the live registry for EVERY item
  *   regardless of status (see {@link deriveSessionActive}). A transient liveness
  *   signal, never stored or cached.
+ * - `actionDescriptor` — always re-derived for EVERY item from the run layer's
+ *   recorded vendor-block facts (see {@link deriveActionDescriptor}); `null` when
+ *   nothing blocks the intent. Deriving it here — the one send boundary — is what
+ *   makes list, refresh and broadcast show the same next step.
  * - `runStatus` — only in_progress items are reconciled. Priority order:
  *   1. Work-session process still running → `running`.
  *   2. Cached from the most recent reconcile → `dangling` (or `idle` for
@@ -90,11 +95,13 @@ function deriveSessionActive(r: Intent): boolean {
 export function enrichRunStatus(items: Intent[]): Intent[] {
   return items.map((r) => {
     const sessionActive = deriveSessionActive(r)
-    if (r.status !== 'in_progress') return { ...r, sessionActive }
+    const actionDescriptor = deriveActionDescriptor(r)
+    const base = { ...r, sessionActive, actionDescriptor }
+    if (r.status !== 'in_progress') return base
     if (r.lastWorkSessionId && isRunning(r.lastWorkSessionId))
-      return { ...r, sessionActive, runStatus: 'running' as const }
+      return { ...base, runStatus: 'running' as const }
     const cached = runStatusCache.get(r.id)
-    if (cached) return { ...r, sessionActive, runStatus: cached }
-    return { ...r, sessionActive }
+    if (cached) return { ...base, runStatus: cached }
+    return base
   })
 }

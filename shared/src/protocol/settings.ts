@@ -79,6 +79,53 @@ export type PersonalizedSettingsBySubject = Record<string, PersonalizedSettings>
 export type PersonalizedSettingsScope = 'account' | 'local'
 
 /**
+ * The non-secret half of one long-lived external-MCP API key — everything the
+ * console may see about a key AFTER it was created. The plaintext key exists in
+ * exactly one message (the creation reply) and is never recoverable afterwards:
+ * only a salted `scrypt` hash reaches disk.
+ *
+ * Stored as a **sibling of** {@link SystemSettings} in `settings.json` (like
+ * `personalizedSettings`), so a whole-object system-settings save can neither
+ * read a hash out nor write one in.
+ */
+export interface McpApiKeyMeta {
+  /**
+   * Immutable, NON-SECRET key id. It is embedded in the plaintext key so the
+   * server can locate the single candidate record before doing any (expensive)
+   * hash derivation, instead of scanning every key.
+   */
+  id: string
+  /** Human-chosen display name; free text, trimmed, never used for lookup. */
+  name: string
+  /** Creation instant (unix ms). */
+  createdAt: number
+  /** Last successful authentication (unix ms); `null` until the key is first used. */
+  lastUsedAt: number | null
+  /**
+   * The registered workspaces this key may address, as opaque {@link WorkspaceInfo}
+   * ids — the console addresses workspaces by id, never by path. An EMPTY set
+   * means "no workspace at all"; it is never read as a wildcard.
+   *
+   * The server stores the authorization as canonical absolute paths (that is what
+   * an incoming `/mcp/v1` request is matched against) and translates to ids for
+   * the wire, so a workspace that is re-registered under a new id keeps working.
+   */
+  workspaceIds: string[]
+  /**
+   * Authorized paths that no longer resolve to any registered workspace —
+   * surfaced so an administrator can see and prune a stale grant. They are
+   * inert: a request naming one gets `404`, never access.
+   */
+  staleWorkspaces: string[]
+  /**
+   * A short, non-secret identifying prefix for display (`c3k_<id>`). Derived
+   * wholly from {@link id}; it carries no part of the secret, so showing it in a
+   * list leaks nothing.
+   */
+  displayPrefix: string
+}
+
+/**
  * The system configuration, persisted at `~/.c3/settings.json`. Always contains
  * the system agent; `defaultAgentId` references an existing agent's id.
  */

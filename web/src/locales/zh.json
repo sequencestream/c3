@@ -19,6 +19,12 @@
       "close": {
         "label": "关闭",
         "tooltip": "关闭"
+      },
+      "copy": {
+        "label": "复制"
+      },
+      "copied": {
+        "label": "已复制"
       }
     },
     "unknown": {
@@ -639,6 +645,61 @@
       },
       "hint": "此 c3 部署的对外基地址，用于拼接可分享的链接。例如 http://192.168.10.10:9000。明文存储（非敏感信息）。",
       "placeholder": "http://192.168.10.10:9000"
+    },
+    "mcpApiKey": {
+      "title": {
+        "label": "外部 MCP API Key"
+      },
+      "hint": "长期 key 让 c3 没有拉起的 agent(独立的 Claude Code / Codex 会话、CI 任务、监控脚本)通过 /mcp/v1 以 MCP 读取本部署。每个 key 授权到指定的工作区集合,只能查询意图与讨论、投递事件,永远无法写入。",
+      "security": {
+        "hint": "key 走 URL 查询参数,可能进入代理与访问日志;明文 HTTP 下同网络的人都能嗅探到。对外暴露前请自行用 HTTPS 反向代理挡在前面。"
+      },
+      "empty": "尚未创建任何 API key。",
+      "meta": "创建于 {created} · 最近使用 {lastUsed}",
+      "lastUsed": {
+        "never": "从未使用"
+      },
+      "grant": {
+        "label": "工作区:{workspaces}",
+        "none": "无",
+        "stale": "已不在注册表中(不可达):{paths}",
+        "edit": {
+          "label": "修改工作区"
+        },
+        "emptyWarning": "不勾选任何工作区时,该 key 什么也够不到。"
+      },
+      "create": {
+        "open": {
+          "label": "生成 key"
+        },
+        "submit": {
+          "label": "生成"
+        },
+        "name": {
+          "placeholder": "名称,例如 release-bot"
+        },
+        "workspaces": {
+          "label": "该 key 可读取的工作区"
+        },
+        "noWorkspaces": "请先向 c3 添加工作区 —— key 至少要授权一个。"
+      },
+      "reveal": {
+        "title": "已生成 key「{name}」",
+        "onceOnly": "这是明文唯一一次展示。请立刻复制 —— 之后不可恢复,只能重新生成。",
+        "dismiss": {
+          "label": "我已复制"
+        }
+      },
+      "revoke": {
+        "label": "吊销",
+        "confirm": {
+          "body": "吊销立即生效:下一次请求即失败,已建立的 MCP 会话会被关闭。此操作不可撤销。",
+          "confirm": {
+            "label": "吊销"
+          },
+          "title": "确认吊销该 API key?"
+        }
+      }
     }
   },
   "personalizedSetting": {
@@ -1955,6 +2016,12 @@
       "intentRequired": "该队列操作需要指定意图。",
       "notParked": "该意图当前未处于 park 状态。",
       "overrideNotApplicable": "该意图当前没有可覆盖的自动判定。"
+    },
+    "mcpApiKey": {
+      "unknown": "该 API key 已不存在(id {id})。",
+      "unknownWorkspace": "工作区不存在({workspaceId}),未修改任何 key。",
+      "noWorkspace": "请至少为该 key 选择一个工作区。",
+      "saveFailed": "API key 保存失败。"
     }
   },
   "statusIndicator": {
@@ -2187,6 +2254,9 @@
           "confirm": "切换 Tab",
           "stay": "留在当前"
         }
+      },
+      "externalMcp": {
+        "label": "外部 MCP 接入"
       }
     },
     "defaultMode": {
@@ -2412,6 +2482,35 @@
         "pending": "另有 {pending} 次 park 尚未满 {hours} 小时观测窗，暂不计入。",
         "scope": "数据仅保存在本机，滚动保留 90 天，不包含任何自由文本，也不会外传。",
         "decision": "决策口径：恢复率达到 60% 视为正向信号，达到 70% 视为强信号。上线后 2–4 周复查；若相对上线初期观测未见提升，则停止并作废基于本批指引规划的全部 P1/P2 后续投入。"
+      }
+    },
+    "externalMcp": {
+      "title": {
+        "label": "外部 MCP 接入"
+      },
+      "hint": "c3 没有拉起的 agent 如何通过 MCP 访问「本工作区」。只读:地址由系统级 base URL、固定路由 /mcp/v1 与本工作区路径拼出,不属于工作区配置。",
+      "noBaseUrl": "尚未配置公开访问地址,无法生成可复制的链接。请到「系统设置 → 通用」填写。",
+      "noKey": "还没有授权到本工作区的 API key。请到「系统设置 → 安全」生成一个。",
+      "grantedKeys": "已授权的 key:{keys}",
+      "goto": {
+        "label": "打开系统设置"
+      },
+      "paste": {
+        "label": "粘贴 key 以生成可直接使用的地址(可选)",
+        "placeholder": "c3k_…",
+        "hint": "只保存在当前页面的内存里:不上传、不写入浏览器存储,离开页面即消失。留空则复制保留 KEY 占位符的模板。"
+      },
+      "url": {
+        "label": "MCP 地址"
+      },
+      "command": {
+        "label": "一行式客户端配置"
+      },
+      "tools": {
+        "hint": "外部 key 只能查询意图与讨论、投递事件,永远无法写入台账或拉起会话。"
+      },
+      "security": {
+        "hint": "key 走查询参数,可能进入代理/访问日志。对外暴露前请自行用 HTTPS 反向代理挡在前面。"
       }
     }
   },

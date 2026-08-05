@@ -20,6 +20,12 @@
       "close": {
         "label": "닫기",
         "tooltip": "닫기"
+      },
+      "copy": {
+        "label": "복사"
+      },
+      "copied": {
+        "label": "복사됨"
       }
     },
     "unknown": {
@@ -640,6 +646,61 @@
       },
       "hint": "The public-facing base URL for this c3 deployment, used to construct shareable links. For example, http://192.168.10.10:9000. Stored in plaintext (not sensitive).",
       "placeholder": "http://192.168.10.10:9000"
+    },
+    "mcpApiKey": {
+      "title": {
+        "label": "외부 MCP API 키"
+      },
+      "hint": "장기 키를 사용하면 c3 가 실행하지 않은 에이전트(독립 Claude Code / Codex 세션, CI 작업, 모니터링 스크립트)가 /mcp/v1 을 통해 MCP 로 이 배포를 읽을 수 있습니다. 각 키는 지정된 워크스페이스 집합에만 허용되며, 인텐트와 논의 조회 및 이벤트 발행만 가능하고 쓰기는 할 수 없습니다.",
+      "security": {
+        "hint": "키는 URL 쿼리 문자열로 전달되므로 프록시·접근 로그에 남을 수 있습니다. 평문 HTTP 에서는 같은 네트워크의 누구나 읽을 수 있으니, 외부에 노출하기 전에 직접 HTTPS 리버스 프록시를 두세요."
+      },
+      "empty": "아직 API 키가 없습니다.",
+      "meta": "생성 {created} · 마지막 사용 {lastUsed}",
+      "lastUsed": {
+        "never": "사용 안 함"
+      },
+      "grant": {
+        "label": "워크스페이스: {workspaces}",
+        "none": "없음",
+        "stale": "더 이상 등록되어 있지 않음(도달 불가): {paths}",
+        "edit": {
+          "label": "워크스페이스 변경"
+        },
+        "emptyWarning": "워크스페이스를 선택하지 않으면 이 키는 아무것도 접근할 수 없습니다."
+      },
+      "create": {
+        "open": {
+          "label": "키 생성"
+        },
+        "submit": {
+          "label": "생성"
+        },
+        "name": {
+          "placeholder": "이름, 예: release-bot"
+        },
+        "workspaces": {
+          "label": "이 키가 읽을 수 있는 워크스페이스"
+        },
+        "noWorkspaces": "먼저 c3 에 워크스페이스를 추가하세요 — 키에는 최소 하나가 필요합니다."
+      },
+      "reveal": {
+        "title": "키 \"{name}\" 생성됨",
+        "onceOnly": "평문이 표시되는 것은 이번 한 번뿐입니다. 지금 복사하세요 — 복구할 수 없고 재발급만 가능합니다.",
+        "dismiss": {
+          "label": "복사했습니다"
+        }
+      },
+      "revoke": {
+        "label": "해지",
+        "confirm": {
+          "body": "해지는 즉시 적용됩니다: 다음 요청이 실패하고 열려 있는 MCP 세션도 닫힙니다. 되돌릴 수 없습니다.",
+          "confirm": {
+            "label": "해지"
+          },
+          "title": "이 API 키를 해지할까요?"
+        }
+      }
     }
   },
   "personalizedSetting": {
@@ -1956,6 +2017,12 @@
       "intentRequired": "이 큐 작업에는 의도 지정이 필요합니다.",
       "notParked": "해당 의도는 park 상태가 아닙니다.",
       "overrideNotApplicable": "해당 의도에는 덮어쓸 자동 판정이 없습니다."
+    },
+    "mcpApiKey": {
+      "unknown": "이 API 키가 더 이상 존재하지 않습니다 (id {id}).",
+      "unknownWorkspace": "알 수 없는 워크스페이스 ({workspaceId}) — 키가 변경되지 않았습니다.",
+      "noWorkspace": "키에 워크스페이스를 하나 이상 선택하세요.",
+      "saveFailed": "API 키를 저장하지 못했습니다."
     }
   },
   "statusIndicator": {
@@ -2188,6 +2255,9 @@
           "confirm": "탭 전환",
           "stay": "머무르기"
         }
+      },
+      "externalMcp": {
+        "label": "외부 MCP"
       }
     },
     "defaultMode": {
@@ -2413,6 +2483,35 @@
         "pending": "{hours}시간 관측 창을 아직 채우지 못한 park가 {pending}건 더 있어 집계에서 제외됩니다.",
         "scope": "이 데이터는 이 기기에만 저장되고 90일이 지나면 삭제되며, 자유 텍스트를 포함하지 않고 외부로 전송되지 않습니다.",
         "decision": "판단 기준: 복구율 60%는 긍정 신호, 70%는 강한 신호로 봅니다. 출시 2~4주 후 재검토하여 초기 관측 대비 개선이 없으면 이번 안내를 전제로 계획한 P1/P2 후속 투자를 모두 폐기합니다."
+      }
+    },
+    "externalMcp": {
+      "title": {
+        "label": "외부 MCP 접근"
+      },
+      "hint": "c3 가 실행하지 않은 에이전트가 이 워크스페이스에 MCP 로 접근하는 방법입니다. 읽기 전용: 주소는 시스템 base URL, 고정 경로 /mcp/v1, 이 워크스페이스의 경로에서 파생되며 워크스페이스 설정이 아닙니다.",
+      "noBaseUrl": "공개 base URL 이 설정되지 않아 공유 가능한 주소를 만들 수 없습니다. 「시스템 설정 → 일반」에서 설정하세요.",
+      "noKey": "이 워크스페이스에 허용된 API 키가 아직 없습니다. 「시스템 설정 → 보안」에서 생성하세요.",
+      "grantedKeys": "허용된 키: {keys}",
+      "goto": {
+        "label": "시스템 설정 열기"
+      },
+      "paste": {
+        "label": "바로 사용할 주소를 만들려면 키를 붙여넣기(선택)",
+        "placeholder": "c3k_…",
+        "hint": "이 페이지 메모리에만 보관됩니다: 업로드하거나 브라우저에 저장하지 않으며 페이지를 떠나면 사라집니다. 비워두면 KEY 자리표시자가 그대로인 템플릿을 복사합니다."
+      },
+      "url": {
+        "label": "MCP 주소"
+      },
+      "command": {
+        "label": "한 줄 클라이언트 설정"
+      },
+      "tools": {
+        "hint": "외부 키는 인텐트와 논의 조회 및 이벤트 발행만 가능합니다. 원장에 쓰거나 세션을 시작할 수 없습니다."
+      },
+      "security": {
+        "hint": "키는 쿼리 문자열로 전달되어 프록시·접근 로그에 남을 수 있습니다. 이 머신 밖으로 노출하기 전에 HTTPS 리버스 프록시를 두세요."
       }
     }
   },

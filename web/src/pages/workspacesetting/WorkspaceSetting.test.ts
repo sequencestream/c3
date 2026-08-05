@@ -841,19 +841,20 @@ describe('WorkspaceSetting.vue — arapuca sandbox (both branch modes) + extraMo
 })
 
 describe('WorkspaceSetting.vue — Tab grouping', () => {
-  it('renders exactly five tabs in order: 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 本机观测', () => {
+  it('renders exactly six tabs in order: 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 本机观测 / 外部 MCP', () => {
     const w = mountWs(cfg())
     const labels = w
       .findAll('[data-testid="project-config-tabs"] .project-config-tab span')
       .map((s) => s.text())
     const tabButtons = w.findAll('[data-testid^="project-config-tab-btn-"]')
-    expect(tabButtons).toHaveLength(5)
-    expect(labels.slice(0, 5)).toEqual([
+    expect(tabButtons).toHaveLength(6)
+    expect(labels.slice(0, 6)).toEqual([
       'Default mode',
       'Git & Sandbox',
       'Collaboration',
       'Skill repos',
       'Local observation',
+      'External MCP',
     ])
   })
 
@@ -1201,6 +1202,44 @@ describe('WorkspaceSetting.vue — local observation tab', () => {
       expect(key.toLowerCase()).not.toContain('park')
       expect(key.toLowerCase()).not.toContain('recovery')
     }
+  })
+})
+
+describe('WorkspaceSetting.vue — external MCP access tab', () => {
+  const BASE_URL = 'http://192.168.1.10:3000'
+
+  it('renders the access section under its own panel', async () => {
+    const w = mountWs(cfg(), { baseUrl: BASE_URL })
+    await w.find('[data-testid="project-config-tab-btn-externalMcp"]').trigger('click')
+    expect(panelHidden(w, 'project-config-tab-externalMcp')).toBe(false)
+    expect(w.findAll('[data-testid="workspace-external-mcp"]')).toHaveLength(1)
+  })
+
+  it('has no Save button and never goes dirty — it owns no configuration', async () => {
+    const w = mountWs(cfg(), { baseUrl: BASE_URL })
+    expect(w.find('[data-testid="project-config-save-externalMcp"]').exists()).toBe(false)
+
+    await w.find('[data-testid="project-config-tab-btn-externalMcp"]').trigger('click')
+    expect(panelHidden(w, 'project-config-tab-externalMcp')).toBe(false)
+    await w.find('[data-testid="project-config-tab-btn-collab"]').trigger('click')
+    expect(panelHidden(w, 'project-config-tab-collab')).toBe(false)
+  })
+
+  it('keeps the access info out of every save payload', async () => {
+    const w = mountWs(cfg(), { baseUrl: BASE_URL })
+    await w.find(SAVE.collab).trigger('click')
+    const payload = w.emitted('save')![0][0] as Record<string, unknown>
+    for (const key of Object.keys(payload)) {
+      expect(key.toLowerCase()).not.toContain('mcp')
+      expect(key.toLowerCase()).not.toContain('baseurl')
+    }
+  })
+
+  it('forwards the jump to system settings', async () => {
+    const w = mountWs(cfg(), { baseUrl: '' })
+    await w.find('[data-testid="project-config-tab-btn-externalMcp"]').trigger('click')
+    await w.get('[data-testid="workspace-external-mcp-no-base-url"] button').trigger('click')
+    expect(w.emitted('gotoSystemSettings')).toHaveLength(1)
   })
 })
 

@@ -30,6 +30,7 @@
 // Pure Node. CLI: node scripts/release/sidecar.mjs --target=macos-arm64 --dest=dist/macos-arm64
 import { spawnSync } from 'node:child_process'
 import {
+  cpSync,
   existsSync,
   mkdtempSync,
   readFileSync,
@@ -41,7 +42,6 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -205,6 +205,34 @@ export function verifySidecar({ root, target, version }) {
   return { version, platformPackage: expected, packages: listPackages(root).length }
 }
 
+/**
+ * Where the throwaway npm staging prefix is created: NEXT TO the destination, not
+ * in the OS temp dir.
+ *
+ * 临时目录与产物目录可能不在同一个卷上 —— Windows runner 的 `TEMP` 在 `C:`,而
+ * workspace 在 `D:`,此时把 staging 的 `node_modules` rename 进 `dist/` 会直接
+ * `EXDEV: cross-device link not permitted`。把 staging 建在目标的同级目录,rename
+ * 就永远是同卷操作。名字以 `.` 开头,不会被任何产物 glob 匹配到。
+ */
+export function stageParentDir(destDir) {
+  return dirname(resolve(destDir))
+}
+
+/**
+ * Move a directory into place, falling back to copy+delete when the rename crosses
+ * a filesystem boundary. `stageParentDir` already keeps staging on the destination's
+ * volume, so this only matters for a caller that stages elsewhere.
+ */
+export function moveTree(src, dest) {
+  try {
+    renameSync(src, dest)
+  } catch (err) {
+    if (err?.code !== 'EXDEV') throw err
+    cpSync(src, dest, { recursive: true })
+    rmSync(src, { recursive: true, force: true })
+  }
+}
+
 /** Recursive byte size of a directory — for the build log's size accounting. */
 function treeBytes(dir) {
   let total = 0
@@ -223,7 +251,8 @@ function treeBytes(dir) {
  * npm installs into a throwaway staging prefix and only the finished
  * `node_modules` moves into place, so the artifact directory never collects npm's
  * own `package.json` / lockfile, and a failed install leaves no partial tree
- * behind for `pack` to archive.
+ * behind for `pack` to archive. The prefix sits next to `destDir` (see
+ * `stageParentDir`), never in the OS temp dir, so the move stays same-volume.
  *
  * @param {object} o
  * @param {string} o.target    friendly target name
@@ -237,7 +266,7 @@ export function stageSidecar({ target, destDir, version, log = () => {} }) {
   if (!platform) throw new Error(`[sidecar] unknown target: ${target}`)
   if (!existsSync(destDir)) throw new Error(`[sidecar] dest missing: ${destDir}`)
 
-  const stage = mkdtempSync(join(tmpdir(), `c3-sidecar-${target}-`))
+  const stage = mkdtempSync(join(stageParentDir(destDir), `.c3-sidecar-${target}-`))
   const root = join(destDir, SIDECAR_DIRNAME)
   try {
     const res = spawnSync(
@@ -273,7 +302,7 @@ export function stageSidecar({ target, destDir, version, log = () => {} }) {
 
     const shims = generateEntryShims(staged)
     rmSync(root, { recursive: true, force: true })
-    renameSync(staged, root)
+    moveTree(staged, root)
 
     const summary = verifySidecar({ root, target, version: sdkVersion })
     const bytes = treeBytes(root)

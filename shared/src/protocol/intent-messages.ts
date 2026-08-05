@@ -16,12 +16,14 @@ import type {
   IntentPrStatus,
   IntentSessionInfo,
   IntentStatus,
+  ParkRecoveryStats,
   QueueControlAction,
   QueueDetail,
   SpecLaunchStage,
   WorkflowStatus,
 } from './intent.js'
 import type { PromptImage } from './session.js'
+import type { UiError } from '../ui-codes.js'
 
 /** List a project's intents (reply: `intents`), optionally filtered by status. */
 export type ClientListIntents = { type: 'list_intents'; workspaceId: string; status?: IntentStatus }
@@ -305,6 +307,17 @@ export type ClientStopWorkflow = { type: 'stop_workflow'; workspaceId: string }
 export type ClientGetQueueDetail = { type: 'get_queue_detail'; workspaceId: string }
 
 /**
+ * Read this workspace's local park→recovery observation (reply:
+ * `park_recovery_stats`). A pure read: it neither writes nor derives scheduling
+ * state, and the server answers only for a workspace this connection can already
+ * resolve — a client cannot name someone else's.
+ */
+export type ClientGetParkRecoveryStats = {
+  type: 'get_park_recovery_stats'
+  workspaceId: string
+}
+
+/**
  * Take manual control of the queue. `intentId` is required for every
  * per-intent action (`force_skip`, `unskip`, `unpark`, `override_*`) and
  * ignored by the workspace-level ones (`pause`, `resume`).
@@ -428,6 +441,23 @@ export type ServerWorkflowStatus = { type: 'workflow_status'; status: WorkflowSt
  * the queue page always reflects the pass that actually ran.
  */
 export type ServerQueueDetail = { type: 'queue_detail'; detail: QueueDetail }
+
+/**
+ * Reply to {@link ClientGetParkRecoveryStats}. `workspaceId` echoes the request so
+ * a late reply for a workspace the user has since left is discardable instead of
+ * being shown under the wrong one.
+ *
+ * On success `stats` carries the counts and `error` is absent. On failure (db
+ * unavailable / the query threw) `stats` is absent and `error` is a structured
+ * {@link UiError}: the panel then says the local statistics are unavailable and
+ * offers a retry, rather than dressing a failure up as 0% or an empty sample.
+ */
+export type ServerParkRecoveryStats = {
+  type: 'park_recovery_stats'
+  workspaceId: string
+  stats?: ParkRecoveryStats
+  error?: UiError
+}
 
 /**
  * Reply to a `create_pr` request. Carries the PR id and URL on success.

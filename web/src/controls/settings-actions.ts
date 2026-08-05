@@ -85,6 +85,22 @@ export function installSettingsActions(ctx: AppCtx): void {
     workspaceSettingOpen.value = true
     const path = currentWorkspace.value
     if (path) send({ type: 'load_workspace_setting', workspaceId: path })
+    ctx.loadParkRecoveryStats()
+  }
+
+  /**
+   * Fetch the current workspace's local park-recovery counts. A pure read that
+   * stands beside the setting load rather than inside it: the numbers are
+   * observation, not configuration, so they never enter the settings draft. Also
+   * the observation section's retry — the previous error is cleared as the new
+   * request goes out so a stale failure cannot outlive it.
+   */
+  ctx.loadParkRecoveryStats = (): void => {
+    const path = currentWorkspace.value
+    if (!path || !ctx.client) return
+    ctx.parkRecoveryError.value = null
+    ctx.parkRecoveryLoading.value = true
+    send({ type: 'get_park_recovery_stats', workspaceId: path })
   }
 
   // Persist workspace settings. The panel now saves per-tab and stays open so the

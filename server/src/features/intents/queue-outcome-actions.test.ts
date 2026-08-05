@@ -146,6 +146,14 @@ vi.mock('../../git.js', () => ({
   gitRecentLog: vi.fn(),
 }))
 
+// The park funnel is a side channel with its own store and its own tests; stub it
+// here so these suites keep mocking persistence wholesale instead of reaching the
+// real c3.db through the park transitions they exercise.
+vi.mock('./funnel-store.js', () => ({
+  MANUAL_UNPARK_REASON: 'manual_unpark',
+  appendFunnelEvent: vi.fn(() => true),
+}))
+
 vi.mock('./judge.js', () => ({ judgeCompletion: vi.fn() }))
 vi.mock('./checkpoint-consensus.js', () => ({ runCheckpointConsensus: vi.fn() }))
 

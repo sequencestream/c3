@@ -27,11 +27,16 @@
 // Phase2 never writes a shared file, so the working tree stays clean and targets
 // cannot stomp each other. CI and local share this exact script.
 //
+// 实验性目标默认「尽力而为」:编译/sidecar/pack 任一步失败就整体丢弃该目标,不阻塞
+// P0 发布。但当某个 CI job 存在的唯一目的就是构建这个目标时,丢弃只会把失败推迟到
+// 下游一个语焉不详的位置(找不到产物的 glob),所以那种 job 用 `--strict` 关掉宽容,
+// 让失败在原地、带着原因暴露出来。
+//
 // 开源版说明:构建始终为「编译(bun --compile)→ 打包(pack)→ sha256 校验和」——
 // 无代码混淆、无 harden 分层。
 //
 // Usage:
-//   node scripts/release/release-build.mjs [--targets=macos-arm64,linux-x64] [--dry-run] [--skip-web] [--skip-pack] [--skip-sidecar]
+//   node scripts/release/release-build.mjs [--targets=macos-arm64,linux-x64] [--dry-run] [--skip-web] [--skip-pack] [--skip-sidecar] [--strict]
 import { spawn, spawnSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -112,6 +117,11 @@ const versionInfo = computeVersionInfo()
 // Manifest is the multi-artifact distribution-trust record; pack is the consumer-facing
 // distribution unit. Both are always produced (pack unless --skip-pack).
 const emitPack = !args['skip-pack']
+// `--strict`: no target is best-effort. A job that builds exactly one experimental
+// target has nothing left to ship if that target drops, so it must fail loudly here
+// instead of leaving a downstream step to trip over the missing artifact.
+const strict = Boolean(args.strict)
+const tolerated = (p) => p.experimental && !strict
 const manifestPath = resolve(repoRoot, 'dist', 'manifest.json')
 
 const embedPath = resolve(repoRoot, 'dist', 'static-embed.generated.ts')
@@ -146,6 +156,9 @@ console.log(
 )
 console.log(
   `  Phase3  artifact gate (--version + headless smoke)${args['skip-smoke'] ? ' (skipped)' : ', host-runnable targets only'}`,
+)
+console.log(
+  `  experimental targets: ${strict ? 'STRICT — a failure aborts' : 'best-effort — a failure drops the target'}`,
 )
 
 if (args['dry-run']) {
@@ -197,8 +210,8 @@ const failed = results
 // Experimental targets (release 4/7) are BEST-EFFORT: a failed experimental build
 // (e.g. windows cross-compile hiccup) warns and is dropped — it MUST NOT block the
 // P0 release. Only a non-experimental failure aborts.
-const experimentalFailed = failed.filter((f) => f.experimental)
-const blockingFailed = failed.filter((f) => !f.experimental)
+const experimentalFailed = failed.filter((f) => tolerated(f))
+const blockingFailed = failed.filter((f) => !tolerated(f))
 
 for (const f of experimentalFailed)
   console.warn(
@@ -234,7 +247,7 @@ if (!args['skip-sidecar']) {
       // platform package must not reach an archive: the artifact would offer
       // Cursor and then fail at the first run. P0 aborts; an experimental target
       // is dropped whole, the same best-effort rule the compile step uses.
-      if (!p.experimental) {
+      if (!tolerated(p)) {
         console.error(`[release:build] sidecar failed for ${p.target}: ${err.message}`)
         process.exit(1)
       }
@@ -288,7 +301,7 @@ if (emitPack) {
       })
     } catch (err) {
       console.error(`[release:build] pack failed for ${p.target}: ${err.message}`)
-      if (!p.experimental) process.exit(1)
+      if (!tolerated(p)) process.exit(1)
       console.warn(
         `[release:build] ⚠️ experimental target ${p.target} pack failed — dropping (does NOT block release)`,
       )

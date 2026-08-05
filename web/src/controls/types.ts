@@ -253,6 +253,8 @@ export interface AppMethods {
   openPersonalizedSetting(): void
   openWorkspaceSetting(): void
   saveWorkspaceSetting(config: WorkspaceSettingType): void
+  /** Read-only refresh of the workspace-setting page's local observation section. */
+  loadParkRecoveryStats(): void
   querySkillLinkStatus(): void
   installSkill(skillId: string): void
   saveSettings(settings: SystemSettings): void

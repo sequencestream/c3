@@ -2,7 +2,7 @@
 
 所有表存储在单文件 SQLite 数据库 `~/.c3/c3.db` 中，通过 `node:sqlite` / `bun:sqlite` 内置驱动访问。Schema 在各 Store 模块中惰性创建 (`CREATE TABLE IF NOT EXISTS`)，迁移通过 `PRAGMA table_info` 列存在性检查做幂等演进。
 
-> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 17 张表，7 个模块。
+> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 18 张表，7 个模块。
 
 ## 基础设施
 
@@ -31,6 +31,7 @@
 | 15  | queue        | `queue_workspace_state`     | [queue/queue_workspace_state.sql](queue/queue_workspace_state.sql)                     | `server/src/features/intents/queue-store.ts`             | 自动化队列的工作区级控制状态 (启动/暂停/强制跳过)        |
 | 16  | queue        | `queue_intent_state`        | [queue/queue_intent_state.sql](queue/queue_intent_state.sql)                           | `server/src/features/intents/queue-store.ts`             | 单意图调度元数据 (失败次数/退避/park/冷却)               |
 | 17  | queue        | `queue_decision_log`        | [queue/queue_decision_log.sql](queue/queue_decision_log.sql)                           | `server/src/features/intents/queue-store.ts`             | 逐 tick/intent 的队列调度决策审计                        |
+| 18  | queue        | `funnel_event`              | [queue/funnel_event.sql](queue/funnel_event.sql)                                       | `server/src/features/intents/funnel-store.ts`            | park 状态跃迁的本机观测事件 (恢复率统计, 90 天滚动)      |
 
 ## 模块说明
 
@@ -56,9 +57,22 @@ Schema 版本: 17。v5→v6 完成了 `requirements*` → `intents*` 的就地�
 prompt、凭据、权限请求正文或 transcript；写入失败不放宽任何闸门、不制造重复 launch，由后续
 tick 继续对账。
 
-Schema 版本: 1。纯新增，不改动任何既有表。历史意图没有 `queue_intent_state` 行时按「零次失败、
+`funnel_event` 是本域唯一的**观测**表，不参与调度：它只记 park 标记的状态跃迁 (`parked` /
+`unparked`)，用来回答「意图被 park 之后人有没有捞回来」，据此判断本批 park 指引是否有效。
+六列全是 id / 封闭枚举 / 时间戳，`stage` 与 `reason_code` 在写入边界按允许集合校验，因此
+`queue_intent_state.park_detail`、意图标题、日志摘要结构上进不来——一张装不下自由文本的表
+无法被改造成遥测。采集接在 park 标记的四个写入口 (`recordFailure` 的失败爬梯、`applyPark`、
+`clearPark`、`applyHumanOverride`) 之后，且严格在状态持久化成功之后：状态没写成不产生事件，
+事件没写成也不回滚已经成功的 park/unpark。固定滚动保留 90 天，追加事件与读取统计两条路径都做
+幂等清理。意图被永久删除时 `queue_intent_state` / `queue_decision_log` 会被清理，本表不清理
+——观测的是已经发生的事实，留到滚动过期为止。数据只在本机，不外传、不导出。
+
+Schema 版本: 2。纯新增，不改动任何既有表。历史意图没有 `queue_intent_state` 行时按「零次失败、
 未 park、无退避/无冷却」解释，无需回填；决策日志从上线时刻开始记录 (详见迁移记录
-`migrate/2026/07/31/026`)。
+`migrate/2026/07/31/026`)。v1→v2 新增 `funnel_event` (`id`、`workspace_id`、`intent_id`、
+`stage`、`reason_code`、`at` 六列 + 三个索引)。不回填 `queue_decision_log`：它限量保留，无法
+可靠证明所有历史 park/unpark 的配对关系，上线前的历史一律不计入基线；旧库首次使用时建空表，
+统计从「暂无足够样本」开始 (详见迁移记录 `migrate/2026/08/05/028`)。
 
 ### discussions
 

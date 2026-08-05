@@ -216,6 +216,11 @@ export function installSessionActions(ctx: AppCtx): void {
     detectedMainBranch.value = null
     resolvedSpecRoot.value = null
     sysExtraMounts.value = []
+    // The observation counts belong to the workspace we just left; drop them so a
+    // reopen cannot show one workspace's numbers under another's name.
+    ctx.parkRecoveryStats.value = null
+    ctx.parkRecoveryError.value = null
+    ctx.parkRecoveryLoading.value = false
     // The console tab's remembered session belonged to the previous workspace —
     // drop it and clear the chat column so it can't keep showing stale content.
     // The chat column stays empty while the view sits on the intents tab; the

@@ -165,48 +165,57 @@ export interface QueueControlFact {
 // ---------------------------------------------------------------------------
 
 /**
+ * Every structured, displayable reason code, as a runtime list. The union type
+ * is derived from it so the two can never drift, and a persistence boundary that
+ * must reject an unknown value (the funnel event store) has a set to check
+ * against instead of re-typing the union as data.
+ */
+export const QUEUE_REASON_CODES = [
+  // progress
+  'selected',
+  'attached_running',
+  'resumed',
+  'running',
+  // queue-level
+  'queue_idle',
+  'queue_paused',
+  'snapshot_unavailable',
+  // gates
+  'blocked_concurrency_gate',
+  'blocked_dependency',
+  'blocked_dependency_pr_unmerged',
+  'blocked_spec_not_approved',
+  // spec phase (SDD): the sub-states `blocked_spec_not_approved` decomposes into
+  // once the queue drives authoring → review → rework itself.
+  'spec_authoring',
+  'spec_reviewing',
+  'spec_rework',
+  'spec_review_running',
+  'spec_awaiting_approval',
+  'spec_machine_approved',
+  'spec_rework_exhausted',
+  'spec_unreadable',
+  'blocked_backoff',
+  'blocked_parked',
+  'blocked_cooldown',
+  'blocked_force_skipped',
+  'blocked_chain_depth',
+  // terminal / human
+  'launch_failed',
+  'needs_human_decision',
+  'permission_wait_timeout',
+  'max_attempts_reached',
+  'budget_exhausted',
+  'commit_failed',
+  'turn_error',
+  'judge_stuck',
+] as const
+
+/**
  * Structured, displayable reason codes. Never carries prompts, credentials,
  * permission bodies or transcript text.
  */
-export type QueueReasonCode =
-  // progress
-  | 'selected'
-  | 'attached_running'
-  | 'resumed'
-  | 'running'
-  // queue-level
-  | 'queue_idle'
-  | 'queue_paused'
-  | 'snapshot_unavailable'
-  // gates
-  | 'blocked_concurrency_gate'
-  | 'blocked_dependency'
-  | 'blocked_dependency_pr_unmerged'
-  | 'blocked_spec_not_approved'
-  // spec phase (SDD): the sub-states `blocked_spec_not_approved` decomposes into
-  // once the queue drives authoring → review → rework itself.
-  | 'spec_authoring'
-  | 'spec_reviewing'
-  | 'spec_rework'
-  | 'spec_review_running'
-  | 'spec_awaiting_approval'
-  | 'spec_machine_approved'
-  | 'spec_rework_exhausted'
-  | 'spec_unreadable'
-  | 'blocked_backoff'
-  | 'blocked_parked'
-  | 'blocked_cooldown'
-  | 'blocked_force_skipped'
-  | 'blocked_chain_depth'
-  // terminal / human
-  | 'launch_failed'
-  | 'needs_human_decision'
-  | 'permission_wait_timeout'
-  | 'max_attempts_reached'
-  | 'budget_exhausted'
-  | 'commit_failed'
-  | 'turn_error'
-  | 'judge_stuck'
+export type QueueReasonCode = (typeof QUEUE_REASON_CODES)[number]
 
 /** What the kernel chose to do with one intent this pass. */
 export type QueueDecisionAction =

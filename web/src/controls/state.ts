@@ -54,6 +54,7 @@ import type {
   SessionStatus,
   SkillLinkStatus,
   SkillSupportState,
+  ParkRecoveryStats,
   SlashCommandInfo,
   SysExtraMount,
   SystemSettings,
@@ -643,6 +644,14 @@ export function createState(deps: StateDeps) {
   // Read-only: the workspace-scoped built-in sandbox allow set the server resolved
   // (project directory ro, specs root rw). Displayed next to editable extraMounts.
   const sysExtraMounts = ref<SysExtraMount[]>([])
+  // ---- Local observation (park recovery) ----
+  // Read-only counts for the workspace-setting page's observation section. Kept
+  // OUTSIDE `currentWorkspaceSetting` on purpose: it is derived measurement, not
+  // configuration, so it must never join a settings draft or a save payload.
+  // `null` stats + `null` error = never loaded / cleared on workspace switch.
+  const parkRecoveryStats = ref<ParkRecoveryStats | null>(null)
+  const parkRecoveryError = ref<UiError | null>(null)
+  const parkRecoveryLoading = ref(false)
 
   // ---- New-session agent picker (the "+" modal) ----
   const newSessionOpen = ref(false)
@@ -938,6 +947,9 @@ export function createState(deps: StateDeps) {
     detectedMainBranch,
     resolvedSpecRoot,
     sysExtraMounts,
+    parkRecoveryStats,
+    parkRecoveryError,
+    parkRecoveryLoading,
     newSessionOpen,
     newSessionWorkspace,
     activeVendor,

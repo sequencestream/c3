@@ -841,18 +841,19 @@ describe('WorkspaceSetting.vue — arapuca sandbox (both branch modes) + extraMo
 })
 
 describe('WorkspaceSetting.vue — Tab grouping', () => {
-  it('renders exactly four tabs in order: 默认模式 / Git 与沙箱 / 协作 / 技能仓库', () => {
+  it('renders exactly five tabs in order: 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 本机观测', () => {
     const w = mountWs(cfg())
     const labels = w
       .findAll('[data-testid="project-config-tabs"] .project-config-tab span')
       .map((s) => s.text())
     const tabButtons = w.findAll('[data-testid^="project-config-tab-btn-"]')
-    expect(tabButtons).toHaveLength(4)
-    expect(labels.slice(0, 4)).toEqual([
+    expect(tabButtons).toHaveLength(5)
+    expect(labels.slice(0, 5)).toEqual([
       'Default mode',
       'Git & Sandbox',
       'Collaboration',
       'Skill repos',
+      'Local observation',
     ])
   })
 
@@ -1124,5 +1125,102 @@ describe('WorkspaceSetting.vue — header workspace identity', () => {
     expect(area.text()).toContain('other')
     expect(area.text()).toContain('/tmp/other')
     expect(area.text()).not.toContain(WS.path)
+  })
+})
+
+describe('WorkspaceSetting.vue — local observation tab', () => {
+  const STATS = {
+    windowMs: 24 * 60 * 60 * 1000,
+    eligible: 8,
+    recovered: 6,
+    pending: 2,
+    rate: 0.75,
+  }
+
+  it('renders the rate alongside the sample counts', () => {
+    const w = mountWs(null, { parkRecoveryStats: STATS })
+    expect(w.find('[data-testid="park-recovery-rate"]').text()).toBe('75%')
+    // The ratio never stands alone: 6/8 is what tells the reader it is thin.
+    expect(w.find('[data-testid="park-recovery-samples"]').text()).toContain('6')
+    expect(w.find('[data-testid="park-recovery-samples"]').text()).toContain('8')
+    expect(w.find('[data-testid="park-recovery-pending"]').text()).toContain('2')
+  })
+
+  it('says there are not enough samples rather than showing 0% on an empty denominator', () => {
+    const w = mountWs(null, {
+      parkRecoveryStats: { ...STATS, eligible: 0, recovered: 0, pending: 3, rate: null },
+    })
+    const rate = w.find('[data-testid="park-recovery-rate"]')
+    expect(rate.exists()).toBe(true)
+    expect(rate.text()).not.toContain('%')
+    expect(rate.text().length).toBeGreaterThan(0)
+  })
+
+  it('reports a failed read as unavailable, with a retry and no figures', async () => {
+    const w = mountWs(null, { parkRecoveryError: { code: 'intent.parkStatsUnavailable' } })
+    expect(w.find('[data-testid="park-recovery-unavailable"]').exists()).toBe(true)
+    // A failure must never fall through to a number the user could act on.
+    expect(w.find('[data-testid="park-recovery-rate"]').exists()).toBe(false)
+
+    await w.find('[data-testid="park-recovery-retry"]').trigger('click')
+    expect(w.emitted('reloadParkRecovery')).toHaveLength(1)
+  })
+
+  it('prefers the failure state even when stale figures are still in hand', () => {
+    const w = mountWs(null, {
+      parkRecoveryStats: STATS,
+      parkRecoveryError: { code: 'intent.parkStatsUnavailable' },
+    })
+    expect(w.find('[data-testid="park-recovery-unavailable"]').exists()).toBe(true)
+    expect(w.find('[data-testid="park-recovery-rate"]').exists()).toBe(false)
+  })
+
+  it('always states the scope of the data and the decision rule', () => {
+    const w = mountWs(null, { parkRecoveryStats: STATS })
+    expect(w.find('[data-testid="park-recovery-scope"]').text().length).toBeGreaterThan(0)
+    expect(w.find('[data-testid="park-recovery-decision"]').text().length).toBeGreaterThan(0)
+  })
+
+  it('has no Save button and never goes dirty', async () => {
+    const w = mountWs(cfg(), { parkRecoveryStats: STATS })
+    expect(w.find('[data-testid="project-config-save-observability"]').exists()).toBe(false)
+
+    // Switching to it, and away again, must never raise the unsaved-changes confirm:
+    // the tab owns no field, so it cannot hold an unsaved edit.
+    await w.find('[data-testid="project-config-tab-btn-observability"]').trigger('click')
+    expect(panelHidden(w, 'project-config-tab-observability')).toBe(false)
+    await w.find('[data-testid="project-config-tab-btn-collab"]').trigger('click')
+    expect(panelHidden(w, 'project-config-tab-collab')).toBe(false)
+  })
+
+  it('keeps the observation out of every save payload', async () => {
+    const w = mountWs(cfg(), { parkRecoveryStats: STATS })
+    await w.find(SAVE.collab).trigger('click')
+    const payload = w.emitted('save')![0][0] as Record<string, unknown>
+    for (const key of Object.keys(payload)) {
+      expect(key.toLowerCase()).not.toContain('park')
+      expect(key.toLowerCase()).not.toContain('recovery')
+    }
+  })
+})
+
+describe('local observation copy', () => {
+  const locales = ['en', 'zh', 'ja', 'ko', 'ru'] as const
+
+  it('states the retention window and the decision thresholds in every locale', () => {
+    for (const loc of locales) {
+      const json = JSON.parse(
+        readFileSync(resolve(__dirname, `../../locales/${loc}.json`), 'utf8'),
+      ) as { workspaceSetting: { observability: { parkRecovery: Record<string, string> } } }
+      const copy = json.workspaceSetting.observability.parkRecovery
+      // Scope: local-only, 90-day rolling retention, no free text, never sent out.
+      expect(copy.scope, loc).toContain('90')
+      // Decision: 60% positive, 70% strong, 2–4 week review before the P1/P2 call.
+      expect(copy.decision, loc).toContain('60')
+      expect(copy.decision, loc).toContain('70')
+      // en/zh/ru use an en dash, ja a wave dash, ko a tilde — all mean "2 to 4 weeks".
+      expect(copy.decision, loc).toMatch(/2\s*[-–—~〜～]\s*4/)
+      expect(copy.decision, loc).toContain('P1/P2')
+    }
   })
 })

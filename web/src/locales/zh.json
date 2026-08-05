@@ -1918,7 +1918,8 @@
       "specAgentUnsupported": "撰写 spec 需要 Claude agent;当前配置的 spec agent 无法将写入限制在 spec 目录内。",
       "specWriteFailed": "创建 spec 文档失败: {message}。",
       "specNotWritten": "spec 尚未编写,请先编写再批准。",
-      "specNotApproved": "spec 尚未批准,请先批准再开始工作。"
+      "specNotApproved": "spec 尚未批准,请先批准再开始工作。",
+      "parkStatsUnavailable": "本机 park 恢复统计暂不可用。"
     },
     "discussion": {
       "dbUnavailable": "讨论功能不可用 (c3.db)。",
@@ -2181,6 +2182,9 @@
       "skillRepos": {
         "label": "技能仓库"
       },
+      "observability": {
+        "label": "本机观测"
+      },
       "unsaved": {
         "label": "有未保存的修改"
       },
@@ -2398,6 +2402,24 @@
       "sessionKinds": {
         "label": "进入沙箱的会话种类",
         "hint": "启用后哪些会话种类进入沙箱。默认 work;每个勾选的种类都会进入沙箱,与其 git 分支模式或来源无关。"
+      }
+    },
+    "observability": {
+      "parkRecovery": {
+        "title": {
+          "label": "park 恢复率"
+        },
+        "hint": "被 park 的意图中，在 {hours} 小时内被人工恢复的比例——用作判断本批 park 指引是否真正有效的依据。",
+        "loading": "正在读取本机统计…",
+        "unavailable": "本机统计暂不可用。",
+        "retry": {
+          "label": "重试"
+        },
+        "insufficient": "暂无足够样本",
+        "samples": "已满观测窗的 {eligible} 个样本中，有 {recovered} 个已恢复",
+        "pending": "另有 {pending} 次 park 尚未满 {hours} 小时观测窗，暂不计入。",
+        "scope": "数据仅保存在本机，滚动保留 90 天，不包含任何自由文本，也不会外传。",
+        "decision": "决策口径：恢复率达到 60% 视为正向信号，达到 70% 视为强信号。上线后 2–4 周复查；若相对上线初期观测未见提升，则停止并作废基于本批指引规划的全部 P1/P2 后续投入。"
       }
     }
   },

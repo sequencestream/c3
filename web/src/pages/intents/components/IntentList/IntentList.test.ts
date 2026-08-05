@@ -365,6 +365,19 @@ describe('IntentList.vue — derived next-step banner', () => {
     expect(w.emitted('select-intent')).toBeUndefined()
   })
 
+  it('points the blocked row at its predecessor without selecting the row', async () => {
+    // The dependency gate names the intent it is waiting for; clicking the banner
+    // jumps to that predecessor and must NOT also select the blocked row.
+    const dep = {
+      labelCode: 'dependency_blocked' as const,
+      target: { type: 'intent-detail' as const, intentId: 'pre-1' },
+    }
+    const w = mountList([intent({ id: 'r1', actionDescriptor: { ...dep } })])
+    await w.find('[data-testid="action-descriptor-action"]').trigger('click')
+    expect(w.emitted('action-target')).toEqual([[dep.target]])
+    expect(w.emitted('select-intent')).toBeUndefined()
+  })
+
   it('shows the review blocker and one manual take-over jump when rework is exhausted', async () => {
     const exhausted = {
       labelCode: 'spec_rework_exhausted' as const,

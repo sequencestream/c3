@@ -35,6 +35,7 @@ import { useTypedI18n } from '@/i18n'
 import ResetSessionDialog from '../../../../components/ResetSessionDialog/ResetSessionDialog.vue'
 import ActionDescriptorBanner from '../../../../components/ActionDescriptorBanner/ActionDescriptorBanner.vue'
 import { hasDependencyBlockingSpecSession, statusLabel } from '../../../../lib/intent-list-view'
+import { actionTargetIntent } from '../../../../lib/action-descriptor'
 import IntentEngineeringProgress from './IntentEngineeringProgress.vue'
 import IntentTitleBarActions from './IntentTitleBarActions.vue'
 import IntentDetailTabs from './IntentDetailTabs.vue'
@@ -165,11 +166,14 @@ const emit = defineEmits<{
   'action-target': [target: ActionTarget]
 }>()
 
+// 全量意图按 id 索引:未完成依赖判定与「下一步」提示条的前序解析共用同一份。
+const intentById = computed(() => new Map(props.intents.map((x) => [x.id, x])))
+
 // ── 未完成依赖(非 done 的前置意图) ───────────────────────────────────────
 const unfinishedDeps = computed<Intent[]>(() => {
   const r = props.intent
   if (!r) return []
-  const byId = new Map(props.intents.map((x) => [x.id, x]))
+  const byId = intentById.value
   return r.dependsOn
     .map((id) => byId.get(id))
     .filter((x): x is Intent => !!x && x.status !== 'done')
@@ -409,6 +413,7 @@ function submitChat(text: string, images: PromptImage[]): void {
         <ActionDescriptorBanner
           :descriptor="intent.actionDescriptor"
           :review-reason="intent.specReviewReason"
+          :target-intent="actionTargetIntent(intent.actionDescriptor, intentById)"
           @navigate="(target: ActionTarget) => emit('action-target', target)"
         />
         <IntentEngineeringProgress

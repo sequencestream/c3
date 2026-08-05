@@ -38,19 +38,26 @@ Dependencies;可能引用一个开发 Session(一个普通会话,归 session-reg
 reason / 重试 / park,或任何闸门。
 
 优先级(高 → 低,只投影一条):vendor 凭据/额度阻塞 → 该意图关联的 `todo` wait-user 事件
-(`AskUserQuestion` 或普通权限门控) → SDD 开启且 spec `specStatus === 'pending'`(已撰写未批准;
-仅播种占位的 `raw` 不算,不产生该提示)。
+(`AskUserQuestion` 或普通权限门控) → 规格返工触顶 → SDD 开启且 spec `specStatus === 'pending'`(已撰写未批准;
+仅播种占位的 `raw` 不算,不产生该提示) → 硬依赖闸门所指的前序意图。
 
-| 属性        | 类型            | 说明                                                                                       |
-| ----------- | --------------- | ------------------------------------------------------------------------------------------ |
-| `labelCode` | ActionLabelCode | 稳定原因码(本地化码,不是文案);闭集见协议                                                   |
-| `target`    | ActionTarget    | 跳转目标;以 `type` 判别的联合:`system-settings-agent` / `intent-spec` / `workcenter-event` |
+依赖阻塞指引复用依赖闸门自身的判定:取 `dependsOn` 声明顺序中第一个仍会触发硬闸门的前序
+意图为目标(worktree 下「已完成但尚未进入主线」同样视为阻塞),目标只带其 `intentId`,标题与
+状态由客户端从同一批 `intents` 读模型解析、本地化状态文案;目标不在当前视野时提示语不声称
+标题,绝不显示裸 id。依赖指引只描述 `todo` / `in_progress` 意图 —— 终态意图没有「下一步」,
+前序满足闸门后指引消失。
+
+| 属性        | 类型            | 说明                                                                                                         |
+| ----------- | --------------- | ------------------------------------------------------------------------------------------------------------ |
+| `labelCode` | ActionLabelCode | 稳定原因码(本地化码,不是文案);闭集见协议                                                                     |
+| `target`    | ActionTarget    | 跳转目标;以 `type` 判别的联合:`system-settings-agent` / `intent-spec` / `intent-detail` / `workcenter-event` |
 
 边界:
 
 - **只承载导航。**`target` 不含 URL、命令或自由文本 payload,客户端只能跳到联合已列举的位置。
 - **不泄漏。**只传稳定码与导航所需身份,绝不携带凭据、供应商原始错误全文或响应体。
 - **自然消失。**更高优先级事实清除、事件决断或 spec 批准后,投影回到更低优先级或 `null`。
+- **不改变闸门。**派生只解释现有硬闸门结论,不提供跳过/放行依赖的入口。
 - **扩展方式**是给 `target` 联合加分支,而不是给已有分支加可选字段。
 
 ## Git Action Failure Guidance

@@ -1080,11 +1080,17 @@
       "specReworkExhaustedNoReason": "本次评审未留下理由。打开 spec 页签查看审核事实。",
       "permissionPending": "有一条工具权限请求等待你的决定。打开待处理项进行允许或拒绝。",
       "askUserQuestionPending": "有一条 AskUserQuestion 等待你作答。打开待处理项回复。",
+      "dependencyBlocked": "正在等待前序意图「{title}」（{status}）——它完成前，本意图持续受阻。",
+      "dependencyBlockedDone": "正在等待前序意图「{title}」（{status}）——它尚未进入主线。",
+      "dependencyBlockedUnresolved": "正在等待一条不在当前视图里的前序意图。",
       "openSpecApproval": {
         "label": "打开 Spec"
       },
       "takeOverSpec": {
         "label": "人工接管"
+      },
+      "openPredecessorIntent": {
+        "label": "查看前序意图"
       },
       "openWorkcenterEvent": {
         "label": "打开待处理项"

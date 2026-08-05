@@ -111,6 +111,28 @@ describe('openActionTarget', () => {
     expect(send).not.toHaveBeenCalled()
   })
 
+  it('selects the predecessor intent on its default tab for intent-detail', () => {
+    // The dependency-gate banner jumps to the blocked predecessor: pure view
+    // switch — no state change, no session, no spec approval, no gate bypass.
+    const {
+      ctx,
+      viewMode,
+      openIntents,
+      requestedIntentId,
+      requestedIntentSubTab,
+      settingsOpen,
+      send,
+    } = makeCtx()
+    ctx.openActionTarget({ type: 'intent-detail', intentId: 'dep-1' })
+    expect(viewMode.value).toBe('workspace')
+    expect(openIntents).toHaveBeenCalledWith('/ws')
+    expect(requestedIntentId.value).toBe('dep-1')
+    // Default tab — the detail page's own default, not a forced sub-tab.
+    expect(requestedIntentSubTab.value).toBeNull()
+    expect(settingsOpen.value).toBe(false)
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it('opens workcenter notifications and requests the event for workcenter-event', () => {
     const {
       ctx,

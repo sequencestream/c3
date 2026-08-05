@@ -2859,6 +2859,10 @@
       "label": "Следующее пробуждение",
       "nextTick": "Следующий тик"
     },
+    "countdown": {
+      "minutesSeconds": "(осталось {minutes}:{seconds})",
+      "seconds": "(осталось {seconds} с)"
+    },
     "badge": {
       "parked": "Припаркован",
       "skipped": "Пропущен"

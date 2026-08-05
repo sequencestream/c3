@@ -2859,6 +2859,10 @@
       "label": "次回の起床",
       "nextTick": "次の tick"
     },
+    "countdown": {
+      "minutesSeconds": "(残り {minutes}:{seconds})",
+      "seconds": "(残り {seconds} 秒)"
+    },
     "badge": {
       "parked": "park 済み",
       "skipped": "スキップ済み"

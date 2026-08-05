@@ -11,7 +11,7 @@
  * - 右域:自动化按钮 + 状态过滤(移动端折叠进 overflow 菜单)+「+」增加意图
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { WorkflowStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
+import type { ActionTarget, WorkflowStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useIsMobile } from '@/composables/useBreakpoint'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
@@ -44,6 +44,7 @@ const emit = defineEmits<{
   'ordered-change': [ids: string[]]
   'set-automate': [intentId: string, automate: boolean]
   refine: [intentId: string]
+  'action-target': [target: ActionTarget]
   'new-intent': []
 }>()
 
@@ -254,6 +255,7 @@ function setFilterFromMenu(value: string): void {
         @ordered-change="(ids: string[]) => emit('ordered-change', ids)"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
         @refine="(id: string) => emit('refine', id)"
+        @action-target="(target: ActionTarget) => emit('action-target', target)"
       />
     </div>
   </section>

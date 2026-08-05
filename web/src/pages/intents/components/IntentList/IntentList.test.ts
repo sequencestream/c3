@@ -63,6 +63,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
     sessionActive: false,
+    actionDescriptor: null,
     ...overrides,
     id: overrides.id,
   }
@@ -320,5 +321,45 @@ describe('IntentList.vue — active-session pulsing dot', () => {
     ])
     expect(w.find('.req-session-active').exists()).toBe(false)
     expect(w.find('.req-run-status.dangling').exists()).toBe(true)
+  })
+})
+
+describe('IntentList.vue — derived next-step banner', () => {
+  const BLOCKED = {
+    labelCode: 'vendor_auth_invalid',
+    target: { type: 'system-settings-agent', vendor: 'claude', agentId: 'agent-1' },
+  } as const
+
+  it('renders no banner for a healthy intent', () => {
+    const w = mountList([intent({ id: 'r1' })])
+    expect(w.find('[data-testid="action-descriptor-banner"]').exists()).toBe(false)
+  })
+
+  it('shows the banner in the row itself, not behind a tooltip or an expander', () => {
+    const w = mountList([intent({ id: 'r1', actionDescriptor: { ...BLOCKED } })])
+    const row = w.find('.req-item')
+    const banner = row.find('[data-testid="action-descriptor-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.find('[data-testid="action-descriptor-message"]').text().length).toBeGreaterThan(
+      0,
+    )
+    expect(banner.find('[data-testid="action-descriptor-action"]').element.tagName).toBe('BUTTON')
+  })
+
+  it('renders the banner only on the blocked row', () => {
+    const w = mountList([
+      intent({ id: 'r1', actionDescriptor: { ...BLOCKED } }),
+      intent({ id: 'r2' }),
+    ])
+    const rows = w.findAll('.req-item')
+    expect(rows[0].find('[data-testid="action-descriptor-banner"]').exists()).toBe(true)
+    expect(rows[1].find('[data-testid="action-descriptor-banner"]').exists()).toBe(false)
+  })
+
+  it('emits the wire target on click without also selecting the row', async () => {
+    const w = mountList([intent({ id: 'r1', actionDescriptor: { ...BLOCKED } })])
+    await w.find('[data-testid="action-descriptor-action"]').trigger('click')
+    expect(w.emitted('action-target')).toEqual([[BLOCKED.target]])
+    expect(w.emitted('select-intent')).toBeUndefined()
   })
 })

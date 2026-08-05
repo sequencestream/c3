@@ -72,6 +72,16 @@ export function clearPendingDevLink(pendingId: string): string | undefined {
 }
 
 /**
+ * Read the intent id for a pending work session WITHOUT consuming the entry, so
+ * a read-only observer (e.g. the blocked-state projection, which sees an agent
+ * failure that happened before the session ever bound) can attribute the failure
+ * without stealing the bind-time link from `run:bound`.
+ */
+export function peekPendingDevLink(pendingId: string): string | undefined {
+  return pendingDevLink.get(pendingId)
+}
+
+/**
  * Reset the map (test teardown only).
  */
 export function resetForTests(): void {

@@ -55,6 +55,7 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
     sessionActive: false,
+    actionDescriptor: null,
     ...overrides,
   }
 }
@@ -562,6 +563,7 @@ describe('formatDependsOn', () => {
       completedAt: null,
       runStatus: 'idle',
       sessionActive: false,
+      actionDescriptor: null,
       ...overrides,
     }
   }

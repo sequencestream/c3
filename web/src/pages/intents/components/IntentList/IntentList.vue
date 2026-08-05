@@ -7,10 +7,11 @@
  * 详情/操作均迁至右栏 IntentDetail 组件。
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { WorkflowStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
+import type { ActionTarget, WorkflowStatus, Intent, IntentStatus } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { useIsMobile } from '@/composables/useBreakpoint'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
+import ActionDescriptorBanner from '@/components/ActionDescriptorBanner/ActionDescriptorBanner.vue'
 import {
   workflowIconState,
   compareByCompletion,
@@ -54,6 +55,8 @@ const emit = defineEmits<{
   'set-automate': [intentId: string, automate: boolean]
   /** 行内 todo 编辑入口:复用 IntentDetail 的 refine 事件流(→ refine_intent)。 */
   refine: [intentId: string]
+  /** 派生「下一步」跳转:与 IntentDetail 汇入同一个分发器,两处跳法完全一致。 */
+  'action-target': [target: ActionTarget]
 }>()
 
 // Automation orchestrator UI state derived from the pushed status.
@@ -391,6 +394,11 @@ function automateToneClass(r: Intent): string {
             </button>
           </div>
         </div>
+        <!-- 派生「下一步」:阻塞态在行内主信息区常驻可见,不藏进悬浮提示或展开区。 -->
+        <ActionDescriptorBanner
+          :descriptor="r.actionDescriptor"
+          @navigate="(target: ActionTarget) => emit('action-target', target)"
+        />
       </div>
       <div v-if="terminalPaging" class="req-terminal-paging">
         <button

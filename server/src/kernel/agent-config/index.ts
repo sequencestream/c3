@@ -433,13 +433,34 @@ export function resolveSessionLaunch(
 }
 
 /**
+ * The agent binding a session actually carries — the `{agentId, vendor}` PAIR
+ * derived from one read of its binding (a real session's frozen fact, a pending
+ * session's intent, else the default-agent fallback). The single source every
+ * display/projection consumer must derive BOTH halves from: reading the id from
+ * the current settings while reading the vendor from the session would mint a
+ * split row (`agent_id` of one agent, `vendor` of another) that no launch can
+ * honour. Group refs (`_c3_<vendor>_<group>`, ADR-0029) stay refs while the group
+ * has members, matching {@link resolveSessionLaunch}'s binding rule.
+ */
+export function resolveSessionAgentBinding(sessionId: string | null): {
+  agentId: string
+  vendor: VendorId
+} {
+  const ref = sessionId ? getSessionAgentId(sessionId) : null
+  const g = ref ? parseGroupAgentRef(ref) : null
+  const resolved = resolveAgent(ref)
+  const agentId = g && groupAgents(g.vendor, g.group).length > 0 ? ref! : resolved.id
+  return { agentId, vendor: resolved.vendor }
+}
+
+/**
  * The vendor a session will (or did) run on (ADR-0015), for display: a real
  * session resolves to its bound agent's vendor; a pending session to its intent's
  * (or, when Auto, the default agent's) vendor. Always returns a vendor — it falls
  * back through {@link resolveAgent} exactly like {@link resolveSessionLaunch}.
  */
 export function resolveSessionVendor(sessionId: string | null): VendorId {
-  return resolveAgent(sessionId ? getSessionAgentId(sessionId) : null).vendor
+  return resolveSessionAgentBinding(sessionId).vendor
 }
 
 /**

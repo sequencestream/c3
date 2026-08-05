@@ -376,7 +376,8 @@
       },
       "groupPicker": {
         "label": "分组"
-      }
+      },
+      "locateMissing": "原配置已不存在，已为你定位到该 vendor 的智能体配置。"
     },
     "defaultMode": {
       "title": {
@@ -1061,6 +1062,13 @@
         "message": "以你的新输入与当前规范内容拼接,新起一个规范会话。旧会话仍可在 Works 中查看,但不再关联到此意图。"
       },
       "placeholder": "想调整什么?你的输入会与当前内容拼接,作为新会话的起点。"
+    },
+    "blocked": {
+      "vendorAuthInvalid": "该智能体的 vendor 凭据已失效，未修复前工作将持续受阻。",
+      "vendorQuotaExhausted": "该智能体的 vendor 已无可用额度，未恢复前工作将持续受阻。",
+      "openAgentSettings": {
+        "label": "前往智能体设置"
+      }
     }
   },
   "session": {

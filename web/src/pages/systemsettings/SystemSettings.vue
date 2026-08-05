@@ -6,6 +6,7 @@
  * 状态(settingsOpen / serverSettings)仍由 App.vue 持有。
  */
 import SettingsPanel from './components/SettingsPanel/SettingsPanel.vue'
+import type { SystemSettingsTarget } from '@/lib/action-descriptor'
 import type {
   McpApiKeyMeta,
   SessionBindingStats,
@@ -27,6 +28,8 @@ defineProps<{
   mcpApiKeys: McpApiKeyMeta[]
   mcpApiKeyCreated: { meta: McpApiKeyMeta; key: string } | null
   workspaces: WorkspaceInfo[]
+  /** 一次性定位目标(派生下一步深链的落点);消费后由 App 清空。 */
+  target?: SystemSettingsTarget | null
 }>()
 
 /** 名册操作的载荷类型:抽成具名类型,模板里的转发才不必写内联对象字面量类型。 */
@@ -43,6 +46,7 @@ defineEmits<{
   'update-mcp-api-key': [payload: UpdateMcpApiKeyPayload]
   'revoke-mcp-api-key': [id: string]
   'dismiss-mcp-api-key-reveal': []
+  'target-consumed': []
 }>()
 </script>
 
@@ -57,7 +61,9 @@ defineEmits<{
     :mcp-api-keys="mcpApiKeys"
     :mcp-api-key-created="mcpApiKeyCreated"
     :workspaces="workspaces"
+    :target="target"
     @close="$emit('close')"
+    @target-consumed="$emit('target-consumed')"
     @save="(s: SystemSettings) => $emit('save', s)"
     @set-password="(p) => $emit('set-password', p)"
     @remove-account="(p) => $emit('remove-account', p)"

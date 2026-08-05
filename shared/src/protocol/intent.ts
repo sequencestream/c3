@@ -140,6 +140,56 @@ export const MACHINE_SPEC_APPROVER = 'c3:machine-spec-approver'
  */
 export const MAX_SPEC_REVIEW_REWORK_ROUNDS = 3
 
+// ---- Action descriptor (derived next-step projection) ----
+
+/**
+ * The stable reason code behind a derived {@link ActionDescriptor}. It is a
+ * localization code, not a message: the client owns the wording, the server only
+ * says which situation it is. Deliberately closed and narrow — a code is added
+ * only when a concrete blocked state needs its own next step.
+ * - `vendor_auth_invalid`     — the vendor rejected the agent's credentials
+ *   (401 / unauthorized / invalid api key or token).
+ * - `vendor_quota_exhausted`  — the vendor reports no usable quota left and no
+ *   automatic recovery is scheduled for it.
+ */
+export const ACTION_LABEL_CODES = ['vendor_auth_invalid', 'vendor_quota_exhausted'] as const
+
+export type ActionLabelCode = (typeof ACTION_LABEL_CODES)[number]
+
+/**
+ * Open the system-settings Agent tab at one specific agent row. `vendor` gives
+ * the configuration context (and is the fallback anchor when the agent row is
+ * gone), `agentId` pins the exact row that failed.
+ */
+export interface SystemSettingsAgentTarget {
+  type: 'system-settings-agent'
+  vendor: VendorId
+  agentId: string
+}
+
+/**
+ * Where a next-step action navigates to. A discriminated union on `type` so a
+ * later blocked state adds an arm instead of widening this one. Navigation only:
+ * a target never carries a URL, a command, or free-text payload, so a client can
+ * never be steered anywhere the union does not already name.
+ */
+export type ActionTarget = SystemSettingsAgentTarget
+
+/**
+ * One derived "next step" for a blocked state — the minimal pair of what to show
+ * ({@link labelCode}) and where it goes ({@link target}).
+ *
+ * A **runtime display projection**, never a business state: it is re-derived on
+ * every send from facts that already exist, is not persisted, and carries no
+ * credential, raw vendor error, or provider response body.
+ */
+export interface ActionDescriptor {
+  /** Stable localization code for the prompt + button wording. */
+  labelCode: ActionLabelCode
+  /** Where the action navigates. */
+  target: ActionTarget
+}
+
 /** One dependency edge in intent_deps, with type metadata. */
 export interface DependencyInfo {
   /** The id of the depended-on intent. */
@@ -272,6 +322,14 @@ export interface Intent {
    * never stored, never cached, never inferred from a missing field.
    */
   sessionActive: boolean
+  /**
+   * Derived, send-time next step for a blocked intent; `null` when nothing
+   * blocks it. Re-derived from the run layer's existing failure facts on every
+   * send (list / refresh / broadcast), so list and detail always agree. Never
+   * stored, and it never changes the intent's `status`, the queue's decision, or
+   * any gate — it only says what the human can do about it.
+   */
+  actionDescriptor: ActionDescriptor | null
 }
 
 /**

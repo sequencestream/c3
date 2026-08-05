@@ -44,6 +44,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     specReviewMachineApprovalBlocked: false,
     intentSessionId: null,
     sessionActive: false,
+    actionDescriptor: null,
     ...overrides,
     id: overrides.id,
   }
@@ -1679,5 +1680,40 @@ describe('IntentDetail.vue — 会话 tab 标签状态点', () => {
     expect(w.find(SPEC_DOT).exists()).toBe(true)
     // 展示用状态不参与门禁:specSessionRunning 为 false 时「我要修改」入口照常可见。
     expect(w.find('[data-testid="intent-detail-spec-edit"]').exists()).toBe(true)
+  })
+})
+
+describe('IntentDetail.vue — derived next-step banner', () => {
+  const BLOCKED = {
+    labelCode: 'vendor_auth_invalid',
+    target: { type: 'system-settings-agent', vendor: 'claude', agentId: 'agent-1' },
+  } as const
+
+  it('renders no banner for a healthy intent', () => {
+    const w = mountDetail(intent({ id: 'r1' }))
+    expect(w.find('[data-testid="action-descriptor-banner"]').exists()).toBe(false)
+  })
+
+  it('shows the banner in the resident header, visible without opening a tab', () => {
+    const w = mountDetail(intent({ id: 'r1', actionDescriptor: { ...BLOCKED } }))
+    const banner = w.find('.intent-detail-head [data-testid="action-descriptor-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.find('[data-testid="action-descriptor-message"]').text().length).toBeGreaterThan(
+      0,
+    )
+  })
+
+  it('emits the same wire target the list emits — one descriptor, one jump', async () => {
+    const w = mountDetail(intent({ id: 'r1', actionDescriptor: { ...BLOCKED } }))
+    await w.find('[data-testid="action-descriptor-action"]').trigger('click')
+    expect(w.emitted('action-target')).toEqual([[BLOCKED.target]])
+  })
+
+  it('does not block the rest of the detail: tabs and title actions stay usable', () => {
+    const w = mountDetail(intent({ id: 'r1', actionDescriptor: { ...BLOCKED } }))
+    expect(w.find('[data-testid="action-descriptor-banner"]').exists()).toBe(true)
+    // No overlay/modal: the tab strip and the title bar render alongside it.
+    expect(w.findComponent({ name: 'IntentDetailTabs' }).exists()).toBe(true)
+    expect(w.findComponent({ name: 'IntentTitleBarActions' }).exists()).toBe(true)
   })
 })

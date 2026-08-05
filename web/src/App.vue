@@ -265,8 +265,11 @@ const {
   newSessionOpen,
   confirmNewSession,
   openSettingsFromPicker,
+  openActionTarget,
+  clearActionTarget,
   settingsOpen,
   closeSettings,
+  settingsTarget,
   bindingStats,
   saveSettings,
   setLocale,
@@ -385,6 +388,14 @@ watch(
   },
   { immediate: true },
 )
+// Closing settings also drops any one-shot locate target that was never acted on,
+// so the next open lands wherever the user left the panel — not on an old deep link.
+// `closeSettings` additionally drops any still-revealed plaintext API key.
+function onCloseSettings(): void {
+  closeSettings()
+  clearActionTarget()
+}
+
 function onCodesChatWidth(px: number): void {
   const ws = codesProject.value
   if (!ws) return
@@ -554,6 +565,7 @@ function onCodesChatWidth(px: number): void {
           @set-codex-policy="setCodexPolicy"
           @requested-intent-consumed="onRequestedIntentConsumed()"
           @requested-subtab-consumed="requestedIntentSubTab = null"
+          @action-target="openActionTarget"
           @requested-intent-session-consumed="requestedIntentSessionId = null"
           @filter="setIntentFilter"
           @refine="refineIntent"
@@ -811,7 +823,9 @@ function onCodesChatWidth(px: number): void {
       :mcp-api-keys="mcpApiKeys"
       :mcp-api-key-created="mcpApiKeyCreated"
       :workspaces="workspaces"
-      @close="closeSettings"
+      :target="settingsTarget"
+      @close="onCloseSettings"
+      @target-consumed="clearActionTarget"
       @save="saveSettings"
       @set-password="setAdminPassword"
       @remove-account="removeAccount"

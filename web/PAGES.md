@@ -68,7 +68,7 @@ web/src/
 │   │       └── NewSessionModal/NewSessionModal.vue  # 新建会话弹窗:选择 vendor/agent(Auto 继承默认或指定),运行时不可用的 vendor(宿主 CLI 不在 PATH 或进程内 SDK 解析不到)灰显、选项文本就地标注原因并提示检测面板;移动端全屏 sheet(顶部关闭、内容可滚、安全区适配)
 │   │
 │   ├── queue/                                       # 自动化队列页(意图页的兄弟视图,activeTab 仍为 intents,由 queuePageOpen 切换)
-│   │   └── Queue.vue                                # 逐条回答「这条意图现在为什么不动」:阻塞原因(结构化原因码本地化,未知码回退原文)、下次唤醒时间、最近一次内核决策与时间、连续失败/累计退避、park 原因;头部为返回意图/队列状态徽标/下次唤醒/暂停·恢复/刷新;每行按钮与内核动作一一对应(解除 park 仅 parked 行渲染、强制跳过↔取消跳过、覆盖:继续、覆盖:停止);纯展示不持有队列状态,点标题 emit select-intent 回意图页选中该条
+│   │   └── Queue.vue                                # 逐条回答「这条意图现在为什么不动」:阻塞原因(结构化原因码本地化,未知码回退原文;被并发闸门挡住时紧随其后显示服务端给的「队列第 N 位」,为空则不留占位、也不沿用上一轮旧名次)、下次唤醒时间、最近一次内核决策与时间、连续失败/累计退避、park 原因;头部为返回意图/队列状态徽标/下次唤醒/暂停·恢复/刷新;每行按钮与内核动作一一对应(解除 park 仅 parked 行渲染、强制跳过↔取消跳过、覆盖:继续、覆盖:停止);纯展示不持有队列状态,点标题 emit select-intent 回意图页选中该条
 │   │
 │   ├── intents/                                     # 需求页
 │   │   ├── Intents.vue                              # 需求容器页:桌面两栏(左意图列表 + 右栏双态);右栏默认展示选中意图的 IntentDetail(首次默认选首条,聊天列 props/活动会话经其透传给两会话 tab),点任一意图行展示 IntentDetail;requestedIntentId(创建结果/标题栏溯源/work 跳转来的一次性外部选中请求)命中已加载意图时改选并 emit requested-intent-consumed 让父清空,目标未出现则保留默认选中;与 requestedIntentSubTab 同时到达时延迟透传子 tab 请求直到目标意图选中,避免旧详情提前消费;requestedIntentSessionId(独立意图 chat 会话溯源来的一次性请求)置 viewingNewIntentSession=true 翻到独立 ChatColumn(绑定活动会话)并 emit requested-intent-session-consumed 让父清空;prefill 经 defineExpose 按双态路由到 ChatColumn 或 IntentDetail;移动端 MobileStack 二级 drill-down(列表→详情/会话)

@@ -2844,6 +2844,7 @@
     },
     "field": {
       "blocked": "Причина блокировки",
+      "position": "{position}-й в очереди",
       "nextWakeup": "Следующее пробуждение",
       "lastDecision": "Последнее решение",
       "attempts": "Попытки",

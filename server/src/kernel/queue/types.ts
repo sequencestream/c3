@@ -247,6 +247,13 @@ export interface QueueDecision {
   backoffCount: number
   /** When this intent should be re-evaluated; `null` = next regular tick. */
   nextWakeupAt: number | null
+  /**
+   * 1-based place in the line among the candidates THIS pass left waiting on the
+   * concurrency gate; `null` for every other verdict. Purely derived from this
+   * pass's ordering and never persisted — the next pass recomputes it from the
+   * facts it then sees, so a position may go up as well as down.
+   */
+  queuePosition: number | null
 }
 
 /** A side effect the assembly layer performs after a pass. */

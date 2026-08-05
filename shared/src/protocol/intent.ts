@@ -548,6 +548,13 @@ export interface QueueIntentDetail {
   parkDetail: string | null
   /** The user force-skipped this intent for the queue's selection. */
   forceSkipped: boolean
+  /**
+   * Where this intent stands in line while the concurrency gate holds it back:
+   * a positive integer counting from 1, or `null` whenever the gate is not what
+   * blocks it. Derived from the latest reconcile pass and never stored, so it is
+   * a relative place — not a promise of a wait time, and not monotonic.
+   */
+  queuePosition: number | null
 }
 
 /** A workspace queue's per-intent detail projection. */

@@ -117,6 +117,15 @@ function timeLabel(at: number | null): string {
             <dd data-testid="queue-blocked">
               {{ reasonLabel(item.blockedReason) }}
               <span v-if="item.blockedDetail" class="queue-detail">— {{ item.blockedDetail }}</span>
+              <!-- 位次只在并发闸门挡住本条意图时由服务端给出;为空即不渲染,
+                   不留占位、也不沿用上一轮的旧名次。 -->
+              <span
+                v-if="item.queuePosition !== null"
+                class="queue-position"
+                data-testid="queue-position"
+              >
+                {{ t('queue.field.position', { position: item.queuePosition }) }}
+              </span>
             </dd>
           </div>
           <div class="queue-fact">
@@ -315,6 +324,14 @@ function timeLabel(at: number | null): string {
 }
 .queue-detail {
   color: var(--c-text-muted);
+}
+.queue-position {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--c-hover-strong);
+  color: var(--c-warning-text);
+  white-space: nowrap;
 }
 .queue-row-actions {
   display: flex;

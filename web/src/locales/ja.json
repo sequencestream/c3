@@ -1075,6 +1075,15 @@
       "vendorQuotaExhausted": "このエージェントのベンダーに利用可能な残量がありません。回復するまで作業は停止したままです。",
       "openAgentSettings": {
         "label": "エージェント設定を開く"
+      },
+      "specAwaitingApproval": "この意図の spec は作成済みですが未承認です。spec タブを開いて確認・承認してください。",
+      "permissionPending": "ツール権限の承認待ちがあります。保留項目を開いて許可または拒否してください。",
+      "askUserQuestionPending": "AskUserQuestion への回答待ちがあります。保留項目を開いて回答してください。",
+      "openSpecApproval": {
+        "label": "Spec を開く"
+      },
+      "openWorkcenterEvent": {
+        "label": "保留項目を開く"
       }
     }
   },

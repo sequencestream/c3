@@ -1,7 +1,3 @@
-import { describe, it, expect } from 'vitest'
-import { ACTION_LABEL_CODES } from '../protocol.js'
-import type { ActionDescriptor, ActionLabelCode, ActionTarget } from '../protocol.js'
-
 /**
  * Contract guards for the derived action descriptor.
  *
@@ -11,9 +7,19 @@ import type { ActionDescriptor, ActionLabelCode, ActionTarget } from '../protoco
  * legal. The runtime assertions pin the parts a type cannot express — that the
  * label-code list stays closed and reaches the public barrel.
  */
+import { describe, it, expect } from 'vitest'
+import { ACTION_LABEL_CODES } from '../protocol.js'
+import type { ActionDescriptor, ActionLabelCode, ActionTarget } from '../protocol.js'
+
 describe('ActionDescriptor', () => {
   it('exports the closed label-code list through the public barrel', () => {
-    expect(ACTION_LABEL_CODES).toEqual(['vendor_auth_invalid', 'vendor_quota_exhausted'])
+    expect(ACTION_LABEL_CODES).toEqual([
+      'vendor_auth_invalid',
+      'vendor_quota_exhausted',
+      'spec_awaiting_approval',
+      'permission_pending',
+      'ask_user_question_pending',
+    ])
     // The runtime list and the type must stay the same set in both directions.
     const codes: readonly ActionLabelCode[] = ACTION_LABEL_CODES
     expect(new Set(codes).size).toBe(ACTION_LABEL_CODES.length)
@@ -25,8 +31,32 @@ describe('ActionDescriptor', () => {
       target: { type: 'system-settings-agent', vendor: 'claude', agentId: 'agent-1' },
     }
     expect(descriptor.target.type).toBe('system-settings-agent')
-    expect(descriptor.target.vendor).toBe('claude')
-    expect(descriptor.target.agentId).toBe('agent-1')
+    if (descriptor.target.type === 'system-settings-agent') {
+      expect(descriptor.target.vendor).toBe('claude')
+      expect(descriptor.target.agentId).toBe('agent-1')
+    }
+  })
+
+  it('accepts a well-formed intent-spec descriptor', () => {
+    const descriptor: ActionDescriptor = {
+      labelCode: 'spec_awaiting_approval',
+      target: { type: 'intent-spec', intentId: 'intent-1' },
+    }
+    expect(descriptor.target.type).toBe('intent-spec')
+    if (descriptor.target.type === 'intent-spec') {
+      expect(descriptor.target.intentId).toBe('intent-1')
+    }
+  })
+
+  it('accepts a well-formed workcenter-event descriptor', () => {
+    const descriptor: ActionDescriptor = {
+      labelCode: 'ask_user_question_pending',
+      target: { type: 'workcenter-event', eventId: 'evt-1' },
+    }
+    expect(descriptor.target.type).toBe('workcenter-event')
+    if (descriptor.target.type === 'workcenter-event') {
+      expect(descriptor.target.eventId).toBe('evt-1')
+    }
   })
 
   it('rejects a descriptor missing labelCode', () => {
@@ -48,6 +78,18 @@ describe('ActionDescriptor', () => {
   it('rejects a target missing agentId', () => {
     // @ts-expect-error agentId is required — it is what pins the exact failing row.
     const target: ActionTarget = { type: 'system-settings-agent', vendor: 'codex' }
+    expect(target).toBeTruthy()
+  })
+
+  it('rejects an intent-spec target missing intentId', () => {
+    // @ts-expect-error intentId is required — it is what selects the intent to open.
+    const target: ActionTarget = { type: 'intent-spec' }
+    expect(target).toBeTruthy()
+  })
+
+  it('rejects a workcenter-event target missing eventId', () => {
+    // @ts-expect-error eventId is required — it is what selects the pending item.
+    const target: ActionTarget = { type: 'workcenter-event' }
     expect(target).toBeTruthy()
   })
 

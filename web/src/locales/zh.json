@@ -1074,6 +1074,15 @@
       "vendorQuotaExhausted": "该智能体的 vendor 已无可用额度，未恢复前工作将持续受阻。",
       "openAgentSettings": {
         "label": "前往智能体设置"
+      },
+      "specAwaitingApproval": "该意图的 spec 已写好但尚未批准。打开 spec 页签审阅并批准。",
+      "permissionPending": "有一条工具权限请求等待你的决定。打开待处理项进行允许或拒绝。",
+      "askUserQuestionPending": "有一条 AskUserQuestion 等待你作答。打开待处理项回复。",
+      "openSpecApproval": {
+        "label": "打开 Spec"
+      },
+      "openWorkcenterEvent": {
+        "label": "打开待处理项"
       }
     }
   },

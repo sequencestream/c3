@@ -41,7 +41,7 @@ const { registerPendingDevLink, resetForTests: resetDevLink } = await import('./
 const {
   classifyVendorBlock,
   clearVendorBlockForSession,
-  deriveActionDescriptor,
+  deriveVendorActionDescriptor,
   noteVendorBlock,
   resetForTests,
 } = await import('./vendor-block.js')
@@ -157,7 +157,7 @@ describe('noteVendorBlock — attribution and projection', () => {
         now: NOW,
       }),
     ).toBe('i-1')
-    expect(deriveActionDescriptor({ id: 'i-1' })).toEqual({
+    expect(deriveVendorActionDescriptor({ id: 'i-1' })).toEqual({
       labelCode: 'vendor_auth_invalid',
       target: { type: 'system-settings-agent', vendor: 'codex', agentId: 'agent-x' },
     })
@@ -176,7 +176,7 @@ describe('noteVendorBlock — attribution and projection', () => {
         now: NOW,
       }),
     ).toBe('i-2')
-    expect(deriveActionDescriptor({ id: 'i-2' })?.target).toEqual({
+    expect(deriveVendorActionDescriptor({ id: 'i-2' })?.target).toEqual({
       type: 'system-settings-agent',
       vendor: 'cursor',
       agentId: 'agent-y',
@@ -194,7 +194,7 @@ describe('noteVendorBlock — attribution and projection', () => {
         now: NOW,
       }),
     ).toBeNull()
-    expect(deriveActionDescriptor({ id: 'i-3' })).toBeNull()
+    expect(deriveVendorActionDescriptor({ id: 'i-3' })).toBeNull()
   })
 
   it('records nothing when the run belongs to no intent', () => {
@@ -218,7 +218,7 @@ describe('noteVendorBlock — attribution and projection', () => {
       error: '401 unauthorized: invalid api key sk-secret-123',
       now: NOW,
     })
-    const serialized = JSON.stringify(deriveActionDescriptor({ id: 'i-4' }))
+    const serialized = JSON.stringify(deriveVendorActionDescriptor({ id: 'i-4' }))
     expect(serialized).not.toContain('sk-secret-123')
     expect(serialized).not.toContain('unauthorized')
     expect(Object.keys(JSON.parse(serialized))).toEqual(['labelCode', 'target'])
@@ -242,7 +242,7 @@ describe('noteVendorBlock — attribution and projection', () => {
       error: 'insufficient_quota',
       now: NOW + 1,
     })
-    expect(deriveActionDescriptor({ id: 'i-5' })).toEqual({
+    expect(deriveVendorActionDescriptor({ id: 'i-5' })).toEqual({
       labelCode: 'vendor_quota_exhausted',
       target: { type: 'system-settings-agent', vendor: 'codex', agentId: 'agent-b' },
     })
@@ -260,7 +260,7 @@ describe('clearVendorBlockForSession', () => {
       now: NOW,
     })
     expect(clearVendorBlockForSession('s-work', 'ws')).toBe('i-6')
-    expect(deriveActionDescriptor({ id: 'i-6' })).toBeNull()
+    expect(deriveVendorActionDescriptor({ id: 'i-6' })).toBeNull()
   })
 
   it('is a no-op when the intent has no recorded block', () => {

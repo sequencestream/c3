@@ -10,7 +10,7 @@
  */
 import type { Intent, IntentRunStatus } from '@ccc/shared/protocol'
 import { isRunning } from '../../runs.js'
-import { deriveActionDescriptor } from './vendor-block.js'
+import { deriveActionDescriptor } from './action-descriptor.js'
 
 /**
  * Per-intent runStatus cache, populated by reconcileInProgress on
@@ -80,10 +80,10 @@ function deriveSessionActive(r: Intent): boolean {
  * - `sessionActive` — always recomputed from the live registry for EVERY item
  *   regardless of status (see {@link deriveSessionActive}). A transient liveness
  *   signal, never stored or cached.
- * - `actionDescriptor` — always re-derived for EVERY item from the run layer's
- *   recorded vendor-block facts (see {@link deriveActionDescriptor}); `null` when
- *   nothing blocks the intent. Deriving it here — the one send boundary — is what
- *   makes list, refresh and broadcast show the same next step.
+ * - `actionDescriptor` — always re-derived for EVERY item from blocked-state
+ *   facts (vendor / wait-user / spec approval — see {@link deriveActionDescriptor});
+ *   `null` when nothing blocks the intent. Deriving it here — the one send
+ *   boundary — is what makes list, refresh and broadcast show the same next step.
  * - `runStatus` — only in_progress items are reconciled. Priority order:
  *   1. Work-session process still running → `running`.
  *   2. Cached from the most recent reconcile → `dangling` (or `idle` for

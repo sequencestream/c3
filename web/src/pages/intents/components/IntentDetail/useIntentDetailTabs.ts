@@ -13,7 +13,7 @@ export type DetailTab =
 
 /** The sub-tabs an external one-shot request (jump-to-source / post-Start-Work) may target. */
 export type RequestedDetailSubTab =
-  'intentSession' | 'specSession' | 'specReviewSession' | 'workSession'
+  'intentSession' | 'specSession' | 'specReviewSession' | 'workSession' | 'spec'
 
 export interface DetailTabItem {
   key: DetailTab

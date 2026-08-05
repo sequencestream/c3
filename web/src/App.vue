@@ -115,6 +115,7 @@ const {
   requestedIntentId,
   requestedIntentSubTab,
   requestedIntentSessionId,
+  requestedWorkcenterEventId,
   currentIntents,
   currentIntentsSdd,
   currentWorkflow,
@@ -801,12 +802,14 @@ function onCodesChatWidth(px: number): void {
           :loading="workcenterLoading"
           :current-workspace="currentWorkspace"
           :workspaces="workspaces"
+          :requested-event-id="requestedWorkcenterEventId"
           @respond="respondWorkcenter"
           @submit-ask="submitAskWorkcenter"
           @jump-to-source="jumpToSource"
           @reload="reloadWorkcenter"
           @load-more="loadMoreWorkcenter"
           @mark-done="markDoneWorkcenter"
+          @requested-event-consumed="requestedWorkcenterEventId = null"
         />
       </div>
     </div>

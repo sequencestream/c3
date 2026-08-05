@@ -699,11 +699,16 @@ export function createState(deps: StateDeps) {
   // wait first for the intent's last work session id, then for that work row.
   const requestedWorkSessionId = ref<PendingWorkSessionSelectRequest | null>(null)
   // One-shot request to force IntentDetail to switch to a specific sub-tab (set by
-  // the WorkCenter jump-to-source and by the post-Start-Work jump, consumed +
-  // cleared by IntentDetail once applied).
+  // the WorkCenter jump-to-source, the post-Start-Work jump, and the
+  // action-descriptor `intent-spec` deep link; consumed + cleared by IntentDetail
+  // once applied). `'spec'` opens the document tab (approval checkpoint).
   const requestedIntentSubTab = ref<
-    'intentSession' | 'specSession' | 'specReviewSession' | 'workSession' | null
+    'intentSession' | 'specSession' | 'specReviewSession' | 'workSession' | 'spec' | null
   >(null)
+  // One-shot request to select a specific WorkCenter wait-user event (set by the
+  // action-descriptor `workcenter-event` deep link; consumed + cleared by
+  // WorkCenter.vue once the event is visible in the list).
+  const requestedWorkcenterEventId = ref<string | null>(null)
   // One-shot request to force IntentMergedList to switch to a specific tab (set by
   // the WorkCenter jump-to-source when no intent matches the session id).
   const requestedMergedTab = ref<'intents' | 'sessions' | null>(null)
@@ -987,6 +992,7 @@ export function createState(deps: StateDeps) {
     requestedIntentId,
     requestedWorkSessionId,
     requestedIntentSubTab,
+    requestedWorkcenterEventId,
     requestedMergedTab,
     requestedIntentSessionId,
     pendingDeepLink,

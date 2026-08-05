@@ -147,12 +147,22 @@ export const MAX_SPEC_REVIEW_REWORK_ROUNDS = 3
  * localization code, not a message: the client owns the wording, the server only
  * says which situation it is. Deliberately closed and narrow — a code is added
  * only when a concrete blocked state needs its own next step.
- * - `vendor_auth_invalid`     — the vendor rejected the agent's credentials
+ * - `vendor_auth_invalid`          — the vendor rejected the agent's credentials
  *   (401 / unauthorized / invalid api key or token).
- * - `vendor_quota_exhausted`  — the vendor reports no usable quota left and no
- *   automatic recovery is scheduled for it.
+ * - `vendor_quota_exhausted`       — the vendor reports no usable quota left and
+ *   no automatic recovery is scheduled for it.
+ * - `spec_awaiting_approval`       — SDD is on, the intent has a written spec, and
+ *   it has not been approved yet.
+ * - `permission_pending`           — a gated tool call is waiting on Allow/Deny.
+ * - `ask_user_question_pending`    — an unanswered `AskUserQuestion` is waiting.
  */
-export const ACTION_LABEL_CODES = ['vendor_auth_invalid', 'vendor_quota_exhausted'] as const
+export const ACTION_LABEL_CODES = [
+  'vendor_auth_invalid',
+  'vendor_quota_exhausted',
+  'spec_awaiting_approval',
+  'permission_pending',
+  'ask_user_question_pending',
+] as const
 
 export type ActionLabelCode = (typeof ACTION_LABEL_CODES)[number]
 
@@ -168,12 +178,30 @@ export interface SystemSettingsAgentTarget {
 }
 
 /**
+ * Open an intent's detail page on the spec document tab — the human approval
+ * checkpoint for a written, still-unapproved spec.
+ */
+export interface IntentSpecTarget {
+  type: 'intent-spec'
+  intentId: string
+}
+
+/**
+ * Open WorkCenter notifications and select one wait-user-involve event — the
+ * Allow/Deny or AskUserQuestion answer surface for that pending item.
+ */
+export interface WorkcenterEventTarget {
+  type: 'workcenter-event'
+  eventId: string
+}
+
+/**
  * Where a next-step action navigates to. A discriminated union on `type` so a
  * later blocked state adds an arm instead of widening this one. Navigation only:
  * a target never carries a URL, a command, or free-text payload, so a client can
  * never be steered anywhere the union does not already name.
  */
-export type ActionTarget = SystemSettingsAgentTarget
+export type ActionTarget = SystemSettingsAgentTarget | IntentSpecTarget | WorkcenterEventTarget
 
 /**
  * One derived "next step" for a blocked state — the minimal pair of what to show

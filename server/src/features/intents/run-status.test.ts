@@ -41,6 +41,11 @@ const AUTH_BLOCKED: ActionDescriptor = {
   target: { type: 'system-settings-agent', vendor: 'claude', agentId: 'agent-1' },
 }
 
+const SILENT: ActionDescriptor = {
+  labelCode: 'silent_timeout',
+  target: { type: 'intent-work-session', intentId: 'a' },
+}
+
 function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
     workspaceId: 'ws',
@@ -231,6 +236,19 @@ describe('enrichRunStatus — actionDescriptor projection', () => {
     expect(enrichOne({ id: 'a' }).actionDescriptor).toEqual(AUTH_BLOCKED)
     blocked.delete('a')
     expect(enrichOne({ id: 'a' }).actionDescriptor).toBeNull()
+  })
+
+  it('ships a silent_timeout descriptor through the same boundary, unchanged', () => {
+    // Every send path (list / refresh / broadcast) enriches here, so pinning the
+    // descriptor survives this hop is what makes list and detail agree about a
+    // silently stuck intent.
+    blocked.set('a', SILENT)
+    const r = enrichOne({ id: 'a', status: 'in_progress', automate: true })
+    expect(r.actionDescriptor).toEqual(SILENT)
+    // Detection only: the projection changes no business state.
+    expect(r.status).toBe('in_progress')
+    expect(r.runStatus).toBe('idle')
+    expect(r.sessionActive).toBe(false)
   })
 
   it('never mutates its input (the stored projection stays null)', () => {

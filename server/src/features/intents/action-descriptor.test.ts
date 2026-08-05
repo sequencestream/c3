@@ -1,7 +1,7 @@
 /**
  * Tests for the composed next-step action-descriptor projection:
  * vendor > wait-user (Ask / permission) > spec rework exhausted > spec awaiting
- * approval > dependency blocked.
+ * approval > dependency blocked > silent timeout.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Intent, WaitUserInvolveEvent } from '@ccc/shared/protocol'
@@ -10,6 +10,11 @@ import { MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
 const vendorDesc = vi.fn<(intent: unknown) => unknown>()
 vi.mock('./vendor-block.js', () => ({
   deriveVendorActionDescriptor: (intent: unknown) => vendorDesc(intent),
+}))
+
+const silentDesc = vi.fn<(intent: unknown) => unknown>()
+vi.mock('./silent-timeout.js', () => ({
+  deriveSilentTimeoutActionDescriptor: (intent: unknown) => silentDesc(intent),
 }))
 
 const findTodo = vi.fn<(workspacePath: string, sessionIds: readonly string[]) => unknown>()
@@ -114,9 +119,16 @@ function makeEvent(
   }
 }
 
+const SILENT = {
+  labelCode: 'silent_timeout',
+  target: { type: 'intent-work-session', intentId: 'i-1' },
+}
+
 beforeEach(() => {
   vendorDesc.mockReset()
   vendorDesc.mockReturnValue(null)
+  silentDesc.mockReset()
+  silentDesc.mockReturnValue(null)
   findTodo.mockReset()
   findTodo.mockReturnValue(null)
   sddOn.mockReset()
@@ -258,6 +270,31 @@ describe('deriveActionDescriptor — priority', () => {
         }),
       ),
     ).toBeNull()
+  })
+
+  it('lets a concrete vendor cause outrank silent timeout', () => {
+    vendorDesc.mockReturnValue({
+      labelCode: 'vendor_quota_exhausted',
+      target: { type: 'system-settings-agent', vendor: 'claude', agentId: 'a1' },
+    })
+    silentDesc.mockReturnValue(SILENT)
+    expect(derive(makeIntent({ id: 'i-1' }))?.labelCode).toBe('vendor_quota_exhausted')
+  })
+
+  it('lets a pending wait-user event and a written spec both outrank silent timeout', () => {
+    silentDesc.mockReturnValue(SILENT)
+    findTodo.mockReturnValue(makeEvent({ id: 'e-perm', toolName: 'Edit' }))
+    expect(derive(makeIntent({ id: 'i-1' }))?.labelCode).toBe('permission_pending')
+
+    findTodo.mockReturnValue(null)
+    expect(
+      derive(makeIntent({ id: 'i-1', specPath: '/s.md', specApproved: false }))?.labelCode,
+    ).toBe('spec_awaiting_approval')
+  })
+
+  it('falls through to silent timeout when nothing more specific applies', () => {
+    silentDesc.mockReturnValue(SILENT)
+    expect(derive(makeIntent({ id: 'i-1' }))).toEqual(SILENT)
   })
 
   it('does NOT derive spec_awaiting_approval for a raw spec that only has a seed path', () => {

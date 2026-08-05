@@ -83,21 +83,30 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   const noteWake = (at: number | null): void => {
     if (at !== null && at > now) wakeups.push(at)
   }
+  /**
+   * The candidates that cleared every gate this pass, in selection order. Empty
+   * until the gates have run; `finish` numbers the gate-blocked ones from it, so
+   * every exit reports positions built the one way.
+   */
+  let eligibleOrder: readonly QueueIntentFact[] = []
   const finish = (
     state: QueueProjectedState,
     actions: QueueAction[],
     decisions: QueueDecision[],
     current: { intentId: string | null; sessionId: string | null; awaitingPermission: boolean },
-  ): QueueReconcileOutput => ({
-    tickId,
-    state,
-    actions,
-    decisions,
-    nextWakeupAt: wakeups.length > 0 ? Math.min(...wakeups) : now + QUEUE_TICK_MS,
-    currentIntentId: current.intentId,
-    currentSessionId: current.sessionId,
-    awaitingPermission: current.awaitingPermission,
-  })
+  ): QueueReconcileOutput => {
+    stampQueuePositions(decisions, eligibleOrder)
+    return {
+      tickId,
+      state,
+      actions,
+      decisions,
+      nextWakeupAt: wakeups.length > 0 ? Math.min(...wakeups) : now + QUEUE_TICK_MS,
+      currentIntentId: current.intentId,
+      currentSessionId: current.sessionId,
+      awaitingPermission: current.awaitingPermission,
+    }
+  }
   const idle = { intentId: null, sessionId: null, awaitingPermission: false }
 
   // ── Queue not started: nothing is scheduled, facts are left untouched. ──
@@ -119,6 +128,7 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
           attemptCount: 0,
           backoffCount: 0,
           nextWakeupAt: null,
+          queuePosition: null,
         },
       ],
       idle,
@@ -149,6 +159,7 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
       attemptCount: m.failureCount,
       backoffCount: m.backoffCount,
       nextWakeupAt,
+      queuePosition: null,
     })
   }
 
@@ -297,6 +308,7 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
       }
     }
   }
+  eligibleOrder = eligible
 
   // ── Spec phase ────────────────────────────────────────────────────────────
   // Everything blocked purely by `blocked_spec_not_approved` is not "stuck": in
@@ -429,6 +441,8 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
         attemptCount: 0,
         backoffCount: 0,
         nextWakeupAt: null,
+        // Not a candidate at all, so it never takes a place in the line.
+        queuePosition: null,
       })
     }
     return finish(attachable ? 'developing' : 'awaiting_gate', actions, decisions, {
@@ -560,6 +574,32 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   // done — `done` means the snapshot holds no pending automation work at all.
   const stillPending = candidates.length > 0
   return finish(stillPending ? 'running' : 'done', actions, decisions, idle)
+}
+
+/**
+ * Number the candidates this pass left waiting on the concurrency gate, so the
+ * queue page can answer "how far away am I" instead of only "something else is
+ * running".
+ *
+ * The order is the SELECTION order itself — `eligible` is already sorted by
+ * priority then earliest creation — and only intents that cleared every gate yet
+ * got no work action this pass are numbered, so position 1 is always the one the
+ * next free slot goes to. Anything held by another gate, parked, force-skipped,
+ * running, or merely waiting for the serial spec slot is absent from `eligible`
+ * and keeps `null`; the numbers are therefore contiguous 1..N over exactly the
+ * intents whose only remaining obstacle is the gate.
+ */
+function stampQueuePositions(
+  decisions: QueueDecision[],
+  eligible: readonly QueueIntentFact[],
+): void {
+  const order = new Map(eligible.map((r, i) => [r.id, i]))
+  decisions
+    .filter((d) => d.reason === 'blocked_concurrency_gate' && order.has(d.intentId))
+    .sort((a, b) => order.get(a.intentId)! - order.get(b.intentId)!)
+    .forEach((d, i) => {
+      d.queuePosition = i + 1
+    })
 }
 
 /**

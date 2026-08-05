@@ -81,8 +81,10 @@ c3
 │   │   │   │   └── opt-in 机器批准               # 每工作区显式开关,默认关闭;关闭时即使结论为通过也绝不自动置真,开启时按条件事务写入并记机器身份常量
 │   │   │   ├── 并发意图数上限                    # 工作区 automationConcurrency(默认 2):worktree 下最多 N 个意图同时开发,达上限其余 eligible 以 blocked_concurrency_gate「已达并发上限 N」阻塞;current-branch 共享检出恒串行(上限恒 1,配置不生效);spec 撰写/审核不计入,人工/MCP 启动不受配额限制,调低不取消在途会话
 │   │   │   ├── 决策日志                          # queue_decision_log 按 tick/intent 记动作/闸门/理由/尝试退避计数/下次唤醒,不记 prompt/凭据/权限正文
+│   │   │   ├── 静默超时判定                      # 队列在跑却 30 分钟无进展且无任何已知等待态(park/退避/冷却/闸门/强制跳过/权限/spec 阶段)时派生 silent_timeout 提示;重复 tick 的同一结论不续期,时间缺失/未来/回拨一律不报;只读投影,不改内核、不自动重试
 │   │   │   ├── park 漏斗观测                     # funnel_event 只记 parked/unparked 跃迁(六列全是 id/封闭枚举/时间戳,写入边界拒自由文本);状态写成才记,记不成也不回滚 park/unpark
 │   │   │   ├── 队列页面与人工夺回                # 逐条展示阻塞原因/下次唤醒(退避·冷却带剩余倒计时,到点自动取新投影)/最近决策;park 行展示本地化原因(缺失有占位)与一键解除入口;pause·force-skip·unpark·覆盖结论各对应一个内核动作,均不得绕过硬闸门,被拒的控制经全局 toast 呈现(不落队列页看不到的聊天流)
+│   │   │   │   └── 并发闸门队列位次              # 只对过了全部闸门仅被并发闸门挡住的候选给 1..N 位次,顺序复用调度排序;派生不落库,下轮重算,闸门释放即清空
 │   │   │   └── 顾问 Agent 工具面                 # 决策点按需唤起的顾问专属 MCP 工具组(读 transcript/run 状态、stop_run、reset 会话、非 done 状态流转、建 PR/同步 PR、raise_user_todo)
 │   │   │       ├── propose-then-validate 双保险  # 纯函数校验器接受/拒绝结构化提案(拒绝带稳定原因码+可重试性+约束),每个写工具在副作用前于服务端再校验一次
 │   │   │       ├── 专属作用域                    # 独立注册表+独立 loopback 路由,workspace/intent 由闭包绑定;不进 AUTOMATION_C3_TOOL_NAMES,普通 automation 能力不变

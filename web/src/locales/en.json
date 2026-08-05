@@ -1080,9 +1080,13 @@
       "specReworkExhaustedNoReason": "The review recorded no rationale. Open the spec tab to read the review facts.",
       "permissionPending": "A tool permission is waiting for your decision. Open the pending item to Allow or Deny.",
       "askUserQuestionPending": "An AskUserQuestion is waiting for your answers. Open the pending item to reply.",
+
+      "silentTimeout": "No progress for over 30 minutes, and nothing known is being waited on. Check this intent's work session, its logs and its workspace, then retry manually once it looks safe.",
+
       "dependencyBlocked": "Waiting on the predecessor intent “{title}” ({status}) — work stays blocked until it is finished.",
       "dependencyBlockedDone": "Waiting on the predecessor intent “{title}” ({status}) — it is not on the main branch yet.",
       "dependencyBlockedUnresolved": "Waiting on a predecessor intent that is outside the current view.",
+
       "openSpecApproval": {
         "label": "Open spec"
       },
@@ -1094,6 +1098,9 @@
       },
       "openWorkcenterEvent": {
         "label": "Open pending item"
+      },
+      "openWorkSession": {
+        "label": "Open work session"
       }
     },
     "gitFailure": {
@@ -2897,6 +2904,7 @@
     },
     "field": {
       "blocked": "Blocked by",
+      "position": "No.{position} in queue",
       "nextWakeup": "Next wake-up",
       "lastDecision": "Last decision",
       "attempts": "Attempts",

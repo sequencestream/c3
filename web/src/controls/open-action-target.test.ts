@@ -101,6 +101,58 @@ describe('openActionTarget', () => {
     expect(settingsOpen.value).toBe(false)
   })
 
+  it('selects the intent and requests the work-session tab for intent-work-session', () => {
+    const {
+      ctx,
+      viewMode,
+      openIntents,
+      requestedIntentId,
+      requestedIntentSubTab,
+      settingsOpen,
+      send,
+    } = makeCtx()
+    ctx.openActionTarget({ type: 'intent-work-session', intentId: 'i-7' })
+    expect(viewMode.value).toBe('workspace')
+    expect(openIntents).toHaveBeenCalledWith('/ws')
+    expect(requestedIntentId.value).toBe('i-7')
+    expect(requestedIntentSubTab.value).toBe('workSession')
+    expect(settingsOpen.value).toBe(false)
+    // Navigation only: nothing is sent, so nothing is resumed, retried or reset.
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('lands the manual take-over on the same intent-spec tab, sending nothing', () => {
+    // The exhausted-rework banner reuses the intent-spec target, so taking over by
+    // hand is pure navigation: no rework, no re-review, no unpark is requested.
+    const { ctx, requestedIntentId, requestedIntentSubTab, send } = makeCtx()
+    ctx.openActionTarget({ type: 'intent-spec', intentId: 'i-exhausted' })
+    expect(requestedIntentId.value).toBe('i-exhausted')
+    expect(requestedIntentSubTab.value).toBe('spec')
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('selects the predecessor intent on its default tab for intent-detail', () => {
+    // The dependency-gate banner jumps to the blocked predecessor: pure view
+    // switch — no state change, no session, no spec approval, no gate bypass.
+    const {
+      ctx,
+      viewMode,
+      openIntents,
+      requestedIntentId,
+      requestedIntentSubTab,
+      settingsOpen,
+      send,
+    } = makeCtx()
+    ctx.openActionTarget({ type: 'intent-detail', intentId: 'dep-1' })
+    expect(viewMode.value).toBe('workspace')
+    expect(openIntents).toHaveBeenCalledWith('/ws')
+    expect(requestedIntentId.value).toBe('dep-1')
+    // Default tab — the detail page's own default, not a forced sub-tab.
+    expect(requestedIntentSubTab.value).toBeNull()
+    expect(settingsOpen.value).toBe(false)
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it('opens workcenter notifications and requests the event for workcenter-event', () => {
     const {
       ctx,

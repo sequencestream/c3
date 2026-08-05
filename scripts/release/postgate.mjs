@@ -84,6 +84,25 @@ export function verifyDist({ manifestPath, log = () => {} } = {}) {
   if (missing.length)
     throw new Error(`required ${channel} target(s) missing from manifest: ${missing.join(', ')}`)
 
+  // 3b. Desktop channel: every required target must carry EXACTLY ONE
+  //     `preferred` self-update artifact. The updater never guesses between
+  //     sibling installers — a desktop target without a unique preferred entry
+  //     is not self-updatable and must not be declared so.
+  if (channel === 'desktop') {
+    for (const t of required) {
+      const entries = manifest.artifacts.filter(
+        (a) => (a.channel ?? 'cli') === 'desktop' && a.target === t,
+      )
+      const preferred = entries.filter((a) => a.preferred === true)
+      if (preferred.length !== 1) {
+        throw new Error(
+          `desktop target ${t} must have exactly one preferred self-update artifact ` +
+            `(found ${preferred.length} of ${entries.length})`,
+        )
+      }
+    }
+  }
+
   // 2. SHA256SUMS must exist (checksumming ran) and agree with the manifest.
   const sumsPath = resolve(distDir, 'SHA256SUMS')
   if (!existsSync(sumsPath))

@@ -1095,6 +1095,9 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
       error: {
         code: result.code as UiErrorCode,
         ...(result.params ? { params: result.params } : {}),
+        // Only the worktree-create failure carries one; gate rejections keep
+        // their own precise copy and send no guidance at all.
+        ...(result.guidance ? { guidance: result.guidance } : {}),
       },
     })
   }
@@ -1393,6 +1396,10 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
       error: {
         code: result.code as UiErrorCode,
         ...(result.params ? { params: result.params } : {}),
+        // Present only for a real commit / push / forge failure — the gate
+        // rejections and the `prId` idempotency guard carry none. The requestId
+        // still correlates the failure terminal to this run's overlay.
+        ...(result.guidance ? { guidance: result.guidance } : {}),
       },
       ...correlate,
     })

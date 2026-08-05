@@ -38,19 +38,64 @@ Dependencies;可能引用一个开发 Session(一个普通会话,归 session-reg
 reason / 重试 / park,或任何闸门。
 
 优先级(高 → 低,只投影一条):vendor 凭据/额度阻塞 → 该意图关联的 `todo` wait-user 事件
-(`AskUserQuestion` 或普通权限门控) → SDD 开启且 spec 已写未批准。
+(`AskUserQuestion` 或普通权限门控) → 规格返工触顶 → SDD 开启且 spec `specStatus === 'pending'`(已撰写未批准;
+仅播种占位的 `raw` 不算,不产生该提示) → 硬依赖闸门所指的前序意图 → 静默超时(RM-R38)。
+静默排在最后是刻意的:它是对一条意图能说的最不具体的话,任何有明确根因、可直接处理的
+原因都必须压过它。
 
-| 属性        | 类型            | 说明                                                                                       |
-| ----------- | --------------- | ------------------------------------------------------------------------------------------ |
-| `labelCode` | ActionLabelCode | 稳定原因码(本地化码,不是文案);闭集见协议                                                   |
-| `target`    | ActionTarget    | 跳转目标;以 `type` 判别的联合:`system-settings-agent` / `intent-spec` / `workcenter-event` |
+依赖阻塞指引复用依赖闸门自身的判定:取 `dependsOn` 声明顺序中第一个仍会触发硬闸门的前序
+意图为目标(worktree 下「已完成但尚未进入主线」同样视为阻塞),目标只带其 `intentId`,标题与
+状态由客户端从同一批 `intents` 读模型解析、本地化状态文案;目标不在当前视野时提示语不声称
+标题,绝不显示裸 id。依赖指引只描述 `todo` / `in_progress` 意图 —— 终态意图没有「下一步」,
+前序满足闸门后指引消失。
+
+| 属性        | 类型            | 说明                                                                                                                                 |
+| ----------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `labelCode` | ActionLabelCode | 稳定原因码(本地化码,不是文案);闭集见协议                                                                                             |
+| `target`    | ActionTarget    | 跳转目标;以 `type` 判别的联合:`system-settings-agent` / `intent-spec` / `intent-detail` / `workcenter-event` / `intent-work-session` |
 
 边界:
 
 - **只承载导航。**`target` 不含 URL、命令或自由文本 payload,客户端只能跳到联合已列举的位置。
 - **不泄漏。**只传稳定码与导航所需身份,绝不携带凭据、供应商原始错误全文或响应体。
-- **自然消失。**更高优先级事实清除、事件决断或 spec 批准后,投影回到更低优先级或 `null`。
+- **自然消失。**更高优先级事实清除、事件决断、spec 批准或任何一次真实进展之后,投影回到
+  更低优先级或 `null`。
+- **不改变闸门。**派生只解释现有硬闸门结论,不提供跳过/放行依赖的入口。
 - **扩展方式**是给 `target` 联合加分支,而不是给已有分支加可选字段。
+
+## Git Action Failure Guidance
+
+一次**已经发生**的 Git / 托管平台操作失败的定向修复指引:worktree 创建失败,或创建 PR 的
+提交 → 推送 → 平台创建链上的失败。与 Action Descriptor 是同一个思路(稳定码而非文案),
+但**是两套闭集**:Action Descriptor 描述一个**持续的阻塞态**并只做导航,本模型描述一次
+**已失败的动作**并提供重试。它同样是**运行时展示投影**:不落库,不新增状态,也不改变那次
+失败已经产生(或没有产生)的任何结果。
+
+它挂在 `UiError` 上,字段**可选** —— 不认识它的客户端仍按既有 `code` + `params` 展示。
+
+| 属性     | 类型                    | 说明                                                                  |
+| -------- | ----------------------- | --------------------------------------------------------------------- |
+| `reason` | GitActionFailureReason  | 稳定原因码(闭集,本地化码不是文案);无法判定时为 `unknown`              |
+| `detail` | text                    | 当次失败命令的原始错误文本;已知与未知原因**都**保留,可能为空          |
+| `retry`  | IntentActionRetryTarget | `{ type: 'intent-action', intentId, action }`,`action` 为闭集重试入口 |
+
+原因闭集:`worktree_branch_or_path_taken`(分支被其他 worktree 占用 / 同名分支或目录残留)、
+`repo_conflict_unresolved`(仓库存在未解决冲突)、`filesystem_denied`(本地无权限 / 只读 /
+空间不足)、`forge_cli_unavailable`(平台 CLI 未安装或未登录)、`remote_permission_denied`
+(远端因无推送 / 建 PR 权限拒绝)、`push_rejected`(远端分支已前进,非快进)、
+`network_unreachable`(DNS / 连接 / 超时)、`commit_hook_rejected`(提交 / 推送钩子或其
+lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支已存在 PR)、`unknown`。
+
+重试入口闭集:`start-development` / `create-pr`。
+
+边界:
+
+- **只读当次证据。**原因仅由该次失败命令的退出码、stderr/stdout 与失败阶段推导,
+  分类过程**不执行**任何额外 Git / forge 命令,也不读仓库。
+- **不猜。**证据不足一律 `unknown`,绝不归入最相似类别;`unknown` 不展示任何修复步骤。
+- **只承载重试身份。**`retry` 不含命令、URL、路径或任意回调,只有意图 id 与枚举动作。
+- **不自动执行。**指引描述的是**用户**要做的事;c3 不清理 worktree、不解冲突、不改凭据、
+  不动远端分支,也不自动重试。
 
 ## Proposed Intent
 
@@ -111,8 +156,8 @@ reason / 重试 / park,或任何闸门。
 当 `write_spec` 或 `reset_spec_session` 的 pending 运行时绑定到真实厂商会话 id 后,
 同一个会话会以 `session_kind='spec'`、`owner_kind='intent'`、`owner_id=<intent.id>`
 投影到 `session_metadata` 中。替换当前 spec 会话会清除旧的投影 owner,使一个意图
-只暴露当前的 spec 条目作为其跳回目标。意图台账仍然是当前 spec 会话与审批状态的
-唯一真实来源(SoT);该投影是可重建的 Sessions 页面缓存。
+只暴露当前的 spec 条目作为其跳回目标。意图台账仍然是当前 spec 会话、`specStatus`(raw/pending/approved)
+与批准状态的唯一真实来源(SoT);该投影是可重建的 Sessions 页面缓存。
 
 ## Automation Status
 

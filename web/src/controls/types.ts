@@ -8,6 +8,7 @@ import type {
   CodeSearchHit,
   CodexPolicy,
   CreateAutomationInput,
+  GitActionFailureGuidance,
   IntentStatus,
   ModeToken,
   PromptImage,
@@ -171,6 +172,13 @@ export interface AppMethods {
   setIntentAutomate(intentId: string, automateOn: boolean): void
   updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void
   createPr(intentId: string): void
+  /**
+   * Re-run the intent action a Git/forge failure came from, on the user's
+   * explicit request. It re-enters the SAME entry point (`startDevelopment` /
+   * `createPr`) with its confirmations, progress overlay and server gates intact
+   * — a retry is a new attempt, never a bypass.
+   */
+  retryIntentAction(guidance: GitActionFailureGuidance): void
   /** Fold one create-PR overlay event through the reducer + handle close side-effects. */
   dispatchCreatePr(ev: CreatePrEvent): void
   syncIntentPrStatus(intentId: string): void

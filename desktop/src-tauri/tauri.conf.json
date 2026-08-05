@@ -31,6 +31,16 @@
         "resizable": true,
         "center": true,
         "visible": false
+      },
+      {
+        "label": "update",
+        "url": "update.html",
+        "title": "c3 Update",
+        "width": 560,
+        "height": 460,
+        "resizable": false,
+        "center": true,
+        "visible": false
       }
     ],
     "security": {

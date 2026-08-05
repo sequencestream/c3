@@ -1077,14 +1077,53 @@
         "label": "에이전트 설정 열기"
       },
       "specAwaitingApproval": "이 의도의 spec은 작성되었지만 아직 승인되지 않았습니다. spec 탭을 열어 검토하고 승인하세요.",
+      "specReworkExhausted": "spec 자동 재작업이 라운드 상한에서 종료되었지만 리뷰는 여전히 수정을 요구합니다. 직접 인계하세요: spec을 편집하거나 spec 세션에서 이어가세요.",
+      "specReworkExhaustedNoReason": "이번 리뷰는 사유를 남기지 않았습니다. spec 탭을 열어 심사 사실을 확인하세요.",
       "permissionPending": "도구 권한 요청이 결정을 기다리고 있습니다. 대기 항목을 열어 허용 또는 거부하세요.",
       "askUserQuestionPending": "AskUserQuestion 답변 대기 중입니다. 대기 항목을 열어 답변하세요.",
+
+      "silentTimeout": "30분 넘게 아무런 진행이 없고, 알려진 대기 사유도 없습니다. 이 의도의 작업 세션·로그·워크스페이스 상태를 확인한 뒤 문제가 없으면 수동으로 다시 시도하세요.",
+
+      "dependencyBlocked": "선행 의도 「{title}」({status})를 기다리는 중입니다. 완료되기 전까지 이 의도는 계속 막힙니다.",
+      "dependencyBlockedDone": "선행 의도 「{title}」({status})를 기다리는 중입니다. 아직 메인 브랜치에 올라가지 않았습니다.",
+      "dependencyBlockedUnresolved": "현재 보기에 없는 선행 의도를 기다리는 중입니다.",
+
       "openSpecApproval": {
         "label": "Spec 열기"
       },
+      "takeOverSpec": {
+        "label": "수동으로 인계"
+      },
+      "openPredecessorIntent": {
+        "label": "선행 의도 보기"
+      },
       "openWorkcenterEvent": {
         "label": "대기 항목 열기"
+      },
+      "openWorkSession": {
+        "label": "작업 세션 열기"
       }
+    },
+    "gitFailure": {
+      "worktreeBranchOrPathTaken": "이 인텐트의 브랜치 또는 worktree 디렉터리가 아직 사용 중입니다. 다른 worktree가 체크아웃했거나 같은 이름의 브랜치/디렉터리가 남아 있습니다. 로컬에서 해제하거나 정리한 뒤 다시 시도하세요.",
+      "repoConflictUnresolved": "저장소에 해결되지 않은 병합 충돌이 있어 Git이 이 작업을 거부했습니다. 충돌을 해결(또는 merge/rebase 중단)한 뒤 다시 시도하세요.",
+      "filesystemDenied": "로컬 파일 시스템이 쓰기를 거부했습니다(권한 없음, 읽기 전용 또는 디스크 공간 부족). 디스크 공간과 디렉터리 권한을 확인한 뒤 다시 시도하세요.",
+      "forgeCliUnavailable": "코드 호스팅 CLI가 설치되어 있지 않거나, 설치되었지만 로그인되어 있지 않습니다. 설치와 로그인을 마친 뒤 다시 시도하세요.",
+      "remotePermissionDenied": "권한이 없어 원격이 요청(푸시 또는 PR 생성)을 거부했습니다. 저장소 쓰기 권한을 요청하거나 사용 중인 자격 증명을 수정한 뒤 다시 시도하세요.",
+      "pushRejected": "푸시가 거부되었습니다. 원격 브랜치가 로컬보다 앞서 있습니다. 원격 브랜치와 동기화(pull/rebase 후 충돌 해결)한 뒤 다시 시도하세요.",
+      "networkUnreachable": "원격 저장소 또는 플랫폼 API에 연결할 수 없습니다(DNS, 연결 또는 시간 초과). 네트워크를 복구하고(프록시/VPN 사용 시 함께 확인) 다시 시도하세요.",
+      "commitHookRejected": "커밋/푸시 훅 또는 그 lint 검사 체인이 변경을 거부했습니다. 훅이 알린 내용을 수정한 뒤 다시 시도하세요.",
+      "forgeCreateRejected": "플랫폼이 변경 요청 생성을 거부했습니다(검증 실패 또는 해당 브랜치의 PR이 이미 존재). 플랫폼에서 브랜치 상태를 확인하고 수정한 뒤 다시 시도하세요.",
+      "retryStartDevelopment": {
+        "label": "작업 시작 다시 시도"
+      },
+      "retryCreatePr": {
+        "label": "PR 생성 다시 시도"
+      },
+      "rawDetail": {
+        "label": "원본 오류"
+      },
+      "noDetail": "세부 정보가 반환되지 않았습니다."
     }
   },
   "session": {
@@ -1205,6 +1244,10 @@
       "continue": {
         "label": "계속",
         "tooltip": "부작용이 없음을 확인한 후 수동으로 계속"
+      },
+      "retry": {
+        "label": "재시도",
+        "tooltip": "재시도: 중단된 실행을 다시 시작"
       },
       "stop": {
         "tooltip": "실행 중인 턴 중지",
@@ -2879,12 +2922,17 @@
       "label": "다음 깨우기",
       "nextTick": "다음 tick"
     },
+    "countdown": {
+      "minutesSeconds": "({minutes}:{seconds} 남음)",
+      "seconds": "({seconds}초 남음)"
+    },
     "badge": {
       "parked": "park됨",
       "skipped": "건너뜀"
     },
     "field": {
       "blocked": "차단 사유",
+      "position": "대기열 {position}번째",
       "nextWakeup": "다음 깨우기",
       "lastDecision": "최근 결정",
       "attempts": "시도 횟수",
@@ -2933,7 +2981,8 @@
       "budget_exhausted": "계속 실행 예산 초과",
       "commit_failed": "커밋/푸시 실패",
       "turn_error": "개발 턴 오류",
-      "judge_stuck": "실제로 완료되지 않았다고 판정"
+      "judge_stuck": "실제로 완료되지 않았다고 판정",
+      "judge_unavailable": "완료 판정 불가(도구 agent 설정)"
     }
   }
 }

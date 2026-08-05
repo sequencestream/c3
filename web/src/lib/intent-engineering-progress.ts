@@ -6,7 +6,7 @@ export type EngineeringProgressStage = 'intent' | 'spec' | 'work' | 'pr'
 export interface EngineeringProgressInput {
   status: IntentStatus
   specPath?: string | null
-  specApproved?: boolean
+  specStatus?: 'raw' | 'pending' | 'approved'
   specSessionId?: string | null
   lastWorkSessionId?: string | null
   prId?: string | null
@@ -40,7 +40,7 @@ export function deriveIntentEngineeringProgress(
     progress.push({
       stage: 'spec',
       state:
-        intent.specApproved === true && hasSpecPath
+        intent.specStatus === 'approved' && hasSpecPath
           ? 'completed'
           : hasSpecEvidence
             ? 'in_progress'

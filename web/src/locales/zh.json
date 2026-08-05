@@ -1076,14 +1076,53 @@
         "label": "前往智能体设置"
       },
       "specAwaitingApproval": "该意图的 spec 已写好但尚未批准。打开 spec 页签审阅并批准。",
+      "specReworkExhausted": "规格自动返工已到轮数上限结束，评审仍要求修改。请人工接管：直接编辑 spec，或在规格会话中继续。",
+      "specReworkExhaustedNoReason": "本次评审未留下理由。打开 spec 页签查看审核事实。",
       "permissionPending": "有一条工具权限请求等待你的决定。打开待处理项进行允许或拒绝。",
       "askUserQuestionPending": "有一条 AskUserQuestion 等待你作答。打开待处理项回复。",
+
+      "silentTimeout": "已超过 30 分钟没有任何进展，也没有任何已知的等待原因。请检查该意图的工作会话、日志与工作区状态，确认无误后手动重试。",
+
+      "dependencyBlocked": "正在等待前序意图「{title}」（{status}）——它完成前，本意图持续受阻。",
+      "dependencyBlockedDone": "正在等待前序意图「{title}」（{status}）——它尚未进入主线。",
+      "dependencyBlockedUnresolved": "正在等待一条不在当前视图里的前序意图。",
+
       "openSpecApproval": {
         "label": "打开 Spec"
       },
+      "takeOverSpec": {
+        "label": "人工接管"
+      },
+      "openPredecessorIntent": {
+        "label": "查看前序意图"
+      },
       "openWorkcenterEvent": {
         "label": "打开待处理项"
+      },
+      "openWorkSession": {
+        "label": "打开工作会话"
       }
+    },
+    "gitFailure": {
+      "worktreeBranchOrPathTaken": "该意图的分支或 worktree 目录仍被占用 —— 另一个 worktree 正检出该分支,或残留了同名分支/目录。请在本地解除占用或清理后重试。",
+      "repoConflictUnresolved": "仓库存在未解决的合并冲突,Git 因此拒绝了本次操作。请先完成冲突处理(或中止 merge/rebase)后重试。",
+      "filesystemDenied": "本地文件系统拒绝写入 —— 无权限、只读或磁盘空间不足。请检查磁盘空间与目录权限后重试。",
+      "forgeCliUnavailable": "代码托管平台 CLI 未安装,或已安装但未登录。请安装并完成登录后重试。",
+      "remotePermissionDenied": "远端因权限不足拒绝了请求(推送或创建 PR)。请申请该仓库的写入权限,或修正当前使用的凭据后重试。",
+      "pushRejected": "推送被拒绝:远端分支已领先于本地分支。请先同步远端分支(pull/rebase 并处理冲突)后重试。",
+      "networkUnreachable": "无法连接远端仓库或平台 API(DNS、连接或超时)。请恢复网络 —— 若使用代理/VPN 请一并检查 —— 后重试。",
+      "commitHookRejected": "提交/推送钩子或其 lint 校验链拒绝了本次改动。请按钩子给出的报错修复后重试。",
+      "forgeCreateRejected": "代码托管平台拒绝创建变更请求 —— 校验未通过,或该分支已存在对应 PR。请在平台上确认该分支的情况并修正后重试。",
+      "retryStartDevelopment": {
+        "label": "重试开始工作"
+      },
+      "retryCreatePr": {
+        "label": "重试创建 PR"
+      },
+      "rawDetail": {
+        "label": "原始错误"
+      },
+      "noDetail": "未返回详细信息。"
     }
   },
   "session": {
@@ -1204,6 +1243,10 @@
       "continue": {
         "label": "继续",
         "tooltip": "确认无副作用后手动续接"
+      },
+      "retry": {
+        "label": "重试",
+        "tooltip": "重试:重新拉起崩溃的运行"
       },
       "stop": {
         "tooltip": "停止正在进行的回合",
@@ -2878,12 +2921,17 @@
       "label": "下次唤醒",
       "nextTick": "下一次 tick"
     },
+    "countdown": {
+      "minutesSeconds": "(剩余 {minutes}:{seconds})",
+      "seconds": "(剩余 {seconds} 秒)"
+    },
     "badge": {
       "parked": "已 park",
       "skipped": "已跳过"
     },
     "field": {
       "blocked": "阻塞原因",
+      "position": "队列第 {position} 位",
       "nextWakeup": "下次唤醒",
       "lastDecision": "最近一次决策",
       "attempts": "尝试次数",
@@ -2932,7 +2980,8 @@
       "budget_exhausted": "超过续跑预算",
       "commit_failed": "提交/推送失败",
       "turn_error": "开发 turn 出错",
-      "judge_stuck": "判定未真实完成"
+      "judge_stuck": "判定未真实完成",
+      "judge_unavailable": "完成判定不可用(工具 agent 配置)"
     }
   }
 }

@@ -20,6 +20,10 @@
  *                    plainly spinning AND no change evidence backs it. The
  *                    orchestrator STOPS.
  *
+ * When the one-shot itself fails to run or answers something that is not a verdict
+ * object, this module throws {@link JudgeUnavailableError} rather than returning a
+ * verdict — a provider/model misconfiguration is not a statement about the intent.
+ *
  * Priority of judgement (important): identify `stuck` FIRST (any human-intervention
  * signal wins), then `done` (intent achieved per a credible report), and only
  * otherwise fall back to `in_progress`. `in_progress` is NOT a bias toward continue —
@@ -47,6 +51,22 @@ import { resolveToolSessionLaunch } from '../../kernel/agent-config/index.js'
 const SESSION_KIND: SessionKind = 'tool'
 
 export type JudgeVerdict = { verdict: 'done' | 'in_progress' | 'stuck'; reason: string }
+
+/**
+ * The judge could not produce a verdict AT ALL — the one-shot failed to run (bad
+ * model name, unreachable provider, spawn failure) or answered something that is
+ * not a verdict object. This is an INFRASTRUCTURE fault, deliberately NOT a
+ * `stuck` verdict: `stuck` means "a human is needed on this intent", and letting
+ * a provider misconfiguration masquerade as that would park healthy intents and
+ * stop the orchestrator for the wrong reason. Callers must handle it as "no
+ * verdict this time" — keep the intent where it is and surface the fault.
+ */
+export class JudgeUnavailableError extends Error {
+  constructor(readonly detail: string) {
+    super(`judge 不可用: ${detail}`)
+    this.name = 'JudgeUnavailableError'
+  }
+}
 
 export interface JudgeEvidence {
   /**
@@ -102,8 +122,14 @@ function buildPrompt(
   return { system, user }
 }
 
-/** Extract the first JSON object from text and coerce it to a verdict. */
-function parseVerdict(text: string): JudgeVerdict {
+/**
+ * Extract the first JSON object from text and coerce it to a verdict. Returns
+ * `null` when the reply carries no readable verdict — the judge's output contract
+ * is a single JSON object, so anything else means the judge did not do its job
+ * (a provider error message, a refusal, an empty reply). That is reported to the
+ * caller as {@link JudgeUnavailableError}, never as a `stuck` verdict.
+ */
+function parseVerdict(text: string): JudgeVerdict | null {
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
   if (start !== -1 && end > start) {
@@ -113,10 +139,10 @@ function parseVerdict(text: string): JudgeVerdict {
         return { verdict: obj.verdict, reason: String(obj.reason ?? '').slice(0, 300) }
       }
     } catch {
-      /* fall through to the stuck fallback */
+      /* fall through to the unavailable path */
     }
   }
-  return { verdict: 'stuck', reason: `无法解析判定结果: ${text.slice(0, 120) || '(judge 无输出)'}` }
+  return null
 }
 
 export async function judgeCompletion(input: {
@@ -130,18 +156,37 @@ export async function judgeCompletion(input: {
   // agent (falls back to the default agent when toolAgentId is unset).
   const launch = resolveToolSessionLaunch()
   const { system, user } = buildPrompt(input.req, input.lastMessages, input.evidence)
-  const text = await askOneShot({
-    prompt: user,
-    systemInstruction: system,
-    cwd: input.cwd,
-    signal: input.signal,
-    agentId: launch.agentId,
-    model: launch.model,
-    envOverrides: launch.envOverrides,
-    ownerKind: 'intent',
-    ownerId: input.req.id,
-  })
+  let text: string
+  try {
+    text = await askOneShot({
+      prompt: user,
+      systemInstruction: system,
+      cwd: input.cwd,
+      signal: input.signal,
+      agentId: launch.agentId,
+      model: launch.model,
+      envOverrides: launch.envOverrides,
+      // A custom tool agent's provider rides the relay; omitting it would launch
+      // the CLI with a third-party model name against the first-party endpoint.
+      relayCandidates: launch.relayCandidates,
+      ownerKind: 'intent',
+      ownerId: input.req.id,
+    })
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    console.warn(
+      `[c3:automation] (${SESSION_KIND}) judge「${input.req.title}」→ 判定不可用(会话未跑通): ${detail}`,
+    )
+    throw new JudgeUnavailableError(detail)
+  }
   const verdict = parseVerdict(text)
+  if (!verdict) {
+    const detail = text.slice(0, 200) || '(judge 无输出)'
+    console.warn(
+      `[c3:automation] (${SESSION_KIND}) judge「${input.req.title}」→ 判定不可用(无法解析): ${detail}`,
+    )
+    throw new JudgeUnavailableError(detail)
+  }
   console.log(
     `[c3:automation] (${SESSION_KIND}) judge「${input.req.title}」→ ${verdict.verdict}: ${verdict.reason}`,
   )

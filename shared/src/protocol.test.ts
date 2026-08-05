@@ -15,6 +15,7 @@ import type {
   AuthProvider,
   ClientToServer,
   CreatePrStage,
+  QueueIntentDetail,
   ServerToClient,
   SystemSettings,
 } from './protocol.js'
@@ -400,5 +401,53 @@ describe('AUTOMATION_VENDORS — which vendors can execute automations', () => {
 
   it('answers for every registered vendor', () => {
     for (const vendor of VENDOR_IDS) expect(typeof vendorSupportsAutomation(vendor)).toBe('boolean')
+  })
+})
+
+describe('queue_detail — queue position', () => {
+  const base: QueueIntentDetail = {
+    intentId: 'i-1',
+    title: 'intent',
+    status: 'todo',
+    priority: 'P2',
+    blockedReason: 'blocked_concurrency_gate',
+    blockedDetail: '全局并发闸门',
+    nextWakeupAt: null,
+    lastAction: 'block',
+    lastDecidedAt: null,
+    attemptCount: 0,
+    backoffCount: 0,
+    backoffUntil: null,
+    parked: false,
+    parkReason: null,
+    parkDetail: null,
+    forceSkipped: false,
+    queuePosition: 1,
+  }
+
+  it('carries a positive integer while the gate blocks, and null otherwise', () => {
+    const frame: ServerToClient = {
+      type: 'queue_detail',
+      detail: {
+        workspaceId: 'ws-1',
+        state: 'awaiting_gate',
+        tickId: 't-1',
+        nextWakeupAt: null,
+        items: [
+          base,
+          { ...base, intentId: 'i-2', queuePosition: 2 },
+          // Not blocked by the gate → no place in line, and no placeholder value.
+          {
+            ...base,
+            intentId: 'i-3',
+            blockedReason: 'blocked_dependency',
+            queuePosition: null,
+          },
+        ],
+      },
+    }
+    expect(JSON.parse(JSON.stringify(frame))).toEqual(frame)
+    const positions = frame.detail.items.map((i) => i.queuePosition)
+    expect(positions).toEqual([1, 2, null])
   })
 })

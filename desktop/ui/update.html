@@ -1,0 +1,376 @@
+<!doctype html>
+<!--
+  更新窗口 —— 桌面壳唯一的更新 UI,也是受 capability 授权的本地页面之一。
+
+  它只负责展示壳持有的更新状态快照(c3://update-state)并把用户动作翻译成
+  最小命令(check_update / confirm_update / cancel_update / install_update)。
+  版本事实、下载与校验都在 sidecar / 壳侧,本页不接触任何网络或文件系统。
+
+  状态由壳单例持有并单向推进:检查中 → 等待确认 → 下载中(进度)→ 校验中 →
+  等待安装 → 安装中(壳退出交给助手);任何失败都落在「失败,可重试」。
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>c3 Update</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #18181b;
+        --muted: #71717a;
+        --bg: #fafafa;
+        --card: #ffffff;
+        --border: #e4e4e7;
+        --accent: #6366f1;
+        --danger: #b91c1c;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #f4f4f5;
+          --muted: #a1a1aa;
+          --bg: #18181b;
+          --card: #27272a;
+          --border: #3f3f46;
+          --danger: #f87171;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          Inter,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          'PingFang SC',
+          'Hiragino Sans GB',
+          'Microsoft YaHei',
+          system-ui,
+          sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      main {
+        width: 100%;
+        padding: 26px 30px;
+        text-align: center;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 17px;
+        font-weight: 600;
+      }
+      p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .versions {
+        margin: 12px 0 2px;
+        font-size: 14px;
+        color: var(--fg);
+      }
+      .about {
+        margin: 10px 0 0;
+        font-size: 11px;
+        color: var(--muted);
+        opacity: 0.85;
+      }
+      .arrow {
+        margin: 0 8px;
+        color: var(--muted);
+      }
+      .bar {
+        margin: 16px auto 6px;
+        width: 100%;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--border);
+        overflow: hidden;
+      }
+      .bar span {
+        display: block;
+        height: 100%;
+        border-radius: 999px;
+        background: var(--accent);
+        transition: width 0.2s ease;
+      }
+      .bar.indeterminate span {
+        width: 40% !important;
+        animation: slide 1.3s ease-in-out infinite;
+      }
+      @keyframes slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(350%);
+        }
+      }
+      .detail {
+        margin-top: 14px;
+        max-height: 110px;
+        overflow: auto;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--card);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+        line-height: 1.5;
+        color: var(--muted);
+        text-align: left;
+        white-space: pre-wrap;
+        word-break: break-word;
+        user-select: text;
+        -webkit-user-select: text;
+      }
+      .actions {
+        margin-top: 18px;
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+      }
+      button {
+        font: inherit;
+        font-size: 13px;
+        padding: 7px 18px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--fg);
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button.danger {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      button:hover:not(:disabled) {
+        filter: brightness(1.06);
+      }
+      .error h1 {
+        color: var(--danger);
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="root">
+      <h1 id="title">c3 Update</h1>
+      <p id="subtitle"></p>
+      <p class="about" id="about"></p>
+      <div class="versions" id="versions" hidden></div>
+      <div class="bar" id="progress" hidden><span></span></div>
+      <p id="progress-text" hidden></p>
+      <div class="detail" id="error" hidden></div>
+      <div class="actions" id="actions"></div>
+    </main>
+
+    <script>
+      const zh = (navigator.language || 'en').toLowerCase().startsWith('zh')
+      const t = zh
+        ? {
+            title: 'c3 更新',
+            check: '检查更新',
+            recheck: '再次检查',
+            cancel: '取消下载',
+            download: '下载并安装',
+            install: '退出并安装',
+            retry: '重试',
+            close: '关闭',
+            idle: '检查是否有新版本可用。',
+            checking: '正在检查新版本…',
+            uptodate: (v) => `当前已是最新版本 ${v}。`,
+            awaiting: (cur, target) => `发现新版本 ${target}(当前 ${cur}),确认后开始下载。`,
+            downloading: (pct, cur, total) =>
+              `正在下载 ${formatBytes(cur)} / ${formatBytes(total)}(${pct}%)…`,
+            verifying: '正在校验下载内容…',
+            awaitingInstall: (target) => `下载完成,准备安装 ${target}。安装将退出应用。`,
+            installing: '正在安装,应用即将重启…',
+            failed: (msg) => `更新失败:${msg}`,
+            noArtifact: '当前平台暂无可用的桌面更新包。',
+          }
+        : {
+            title: 'c3 Update',
+            check: 'Check for Updates',
+            recheck: 'Check Again',
+            cancel: 'Cancel',
+            download: 'Download & Install',
+            install: 'Quit & Install',
+            retry: 'Retry',
+            close: 'Close',
+            idle: 'Check whether a newer version is available.',
+            checking: 'Checking for updates…',
+            uptodate: (v) => `You are up to date (${v}).`,
+            awaiting: (cur, target) =>
+              `Version ${target} is available (you are on ${cur}). Download now?`,
+            downloading: (pct, cur, total) =>
+              `Downloading ${formatBytes(cur)} of ${formatBytes(total)} (${pct}%)…`,
+            verifying: 'Verifying the download…',
+            awaitingInstall: (target) =>
+              `Download complete. Install ${target}? The app will quit to install.`,
+            installing: 'Installing — the app will relaunch…',
+            failed: (msg) => `Update failed: ${msg}`,
+            noArtifact: 'No desktop update is available for this platform yet.',
+          }
+
+      function formatBytes(n) {
+        if (!Number.isFinite(n)) return '?'
+        if (n < 1024) return `${n} B`
+        if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+        return `${(n / 1024 / 1024).toFixed(1)} MB`
+      }
+
+      const el = (id) => document.getElementById(id)
+      const PHASE = {
+        idle: 'idle',
+        checking: 'checking',
+        upToDate: 'upToDate',
+        awaitingConfirm: 'awaitingConfirm',
+        downloading: 'downloading',
+        verifying: 'verifying',
+        awaitingInstall: 'awaitingInstall',
+        installing: 'installing',
+        failed: 'failed',
+      }
+
+      function render(state) {
+        el('title').textContent = t.title
+        el('error').hidden = true
+        el('progress').hidden = true
+        el('progress-text').hidden = true
+        el('versions').hidden = true
+        // 关于:展示壳版本与内置 c3 版本;正常发布态二者一致。
+        const ver = state.shellVersion || state.currentVersion || ''
+        el('about').textContent =
+          state.shellVersion && state.shellVersion !== state.currentVersion
+            ? zh
+              ? `壳 ${state.shellVersion} · 内置 c3 ${state.currentVersion}`
+              : `Shell ${state.shellVersion} · bundled c3 ${state.currentVersion}`
+            : `c3 ${ver}`
+
+        const actions = el('actions')
+        actions.innerHTML = ''
+        const add = (label, cls, fn, disabled) => {
+          const b = document.createElement('button')
+          b.textContent = label
+          if (cls) b.className = cls
+          if (disabled) b.disabled = true
+          b.addEventListener('click', fn)
+          actions.appendChild(b)
+        }
+
+        const phase = state.phase
+        const cur = state.currentVersion || ''
+        const target = state.targetVersion || ''
+
+        switch (phase) {
+          case PHASE.idle:
+            el('subtitle').textContent = t.idle
+            add(t.check, 'primary', () => invoke('check_update'))
+            break
+          case PHASE.checking:
+            el('subtitle').textContent = t.checking
+            el('progress').hidden = false
+            el('progress').className = 'bar indeterminate'
+            break
+          case PHASE.upToDate:
+            // 已是最新;若这次检查带原因(如当前平台暂无桌面制品)则一并呈现。
+            el('subtitle').textContent = t.uptodate(cur)
+            if (state.error) {
+              el('error').hidden = false
+              el('error').textContent = state.error
+            }
+            add(t.recheck, '', () => invoke('check_update'))
+            break
+          case PHASE.awaitingConfirm:
+            el('versions').hidden = false
+            el('versions').textContent = `${cur} <span class="arrow">→</span> ${target}`
+            el('versions').innerHTML = `${cur}<span class="arrow">→</span>${target}`
+            el('subtitle').textContent = t.awaiting(cur, target)
+            add(t.cancel, '', () => invoke('cancel_update'))
+            add(t.download, 'primary', () => invoke('confirm_update'))
+            break
+          case PHASE.downloading:
+            el('subtitle').textContent = ''
+            const pct =
+              state.totalBytes > 0
+                ? Math.floor((state.downloadedBytes / state.totalBytes) * 100)
+                : 0
+            el('progress').hidden = false
+            el('progress').className = 'bar'
+            el('progress').querySelector('span').style.width = `${pct}%`
+            el('progress-text').hidden = false
+            el('progress-text').textContent = t.downloading(
+              pct,
+              state.downloadedBytes,
+              state.totalBytes,
+            )
+            add(t.cancel, '', () => invoke('cancel_update'))
+            break
+          case PHASE.verifying:
+            el('subtitle').textContent = t.verifying
+            el('progress').hidden = false
+            el('progress').className = 'bar indeterminate'
+            break
+          case PHASE.awaitingInstall:
+            el('subtitle').textContent = t.awaitingInstall(target)
+            add(t.cancel, '', () => invoke('cancel_update'))
+            add(t.install, 'primary', () => invoke('install_update'))
+            break
+          case PHASE.installing:
+            el('subtitle').textContent = t.installing
+            el('progress').hidden = false
+            el('progress').className = 'bar indeterminate'
+            break
+          case PHASE.failed:
+            el('error').hidden = false
+            el('error').textContent = state.error || t.failed('unknown error')
+            el('subtitle').textContent = t.failed('')
+            add(t.retry, 'primary', () => invoke('check_update'))
+            break
+          default:
+            el('subtitle').textContent = t.idle
+            add(t.check, 'primary', () => invoke('check_update'))
+        }
+      }
+
+      const tauri = window.__TAURI__
+      function invoke(cmd) {
+        if (tauri) return tauri.core.invoke(cmd)
+        return Promise.resolve()
+      }
+
+      if (tauri) {
+        tauri.event.listen('c3://update-state', ({ payload }) => render(payload))
+        tauri.core
+          .invoke('get_update_state')
+          .then(render)
+          .catch(() => {})
+      } else {
+        render({ phase: 'idle' })
+      }
+    </script>
+  </body>
+</html>

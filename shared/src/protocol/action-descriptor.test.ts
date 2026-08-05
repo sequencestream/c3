@@ -17,8 +17,11 @@ describe('ActionDescriptor', () => {
       'vendor_auth_invalid',
       'vendor_quota_exhausted',
       'spec_awaiting_approval',
+      'spec_rework_exhausted',
       'permission_pending',
       'ask_user_question_pending',
+      'dependency_blocked',
+      'silent_timeout',
     ])
     // The runtime list and the type must stay the same set in both directions.
     const codes: readonly ActionLabelCode[] = ACTION_LABEL_CODES
@@ -48,6 +51,17 @@ describe('ActionDescriptor', () => {
     }
   })
 
+  it('accepts a well-formed intent-detail descriptor', () => {
+    const descriptor: ActionDescriptor = {
+      labelCode: 'dependency_blocked',
+      target: { type: 'intent-detail', intentId: 'intent-2' },
+    }
+    expect(descriptor.target.type).toBe('intent-detail')
+    if (descriptor.target.type === 'intent-detail') {
+      expect(descriptor.target.intentId).toBe('intent-2')
+    }
+  })
+
   it('accepts a well-formed workcenter-event descriptor', () => {
     const descriptor: ActionDescriptor = {
       labelCode: 'ask_user_question_pending',
@@ -57,6 +71,24 @@ describe('ActionDescriptor', () => {
     if (descriptor.target.type === 'workcenter-event') {
       expect(descriptor.target.eventId).toBe('evt-1')
     }
+  })
+
+  it('accepts a well-formed intent-work-session descriptor', () => {
+    const descriptor: ActionDescriptor = {
+      labelCode: 'silent_timeout',
+      target: { type: 'intent-work-session', intentId: 'intent-1' },
+    }
+    expect(descriptor.target.type).toBe('intent-work-session')
+    if (descriptor.target.type === 'intent-work-session') {
+      expect(descriptor.target.intentId).toBe('intent-1')
+    }
+  })
+
+  it('rejects an intent-work-session target missing intentId', () => {
+    // @ts-expect-error intentId is required — it is what selects the intent whose
+    // work session the user is being sent to inspect.
+    const target: ActionTarget = { type: 'intent-work-session' }
+    expect(target).toBeTruthy()
   })
 
   it('rejects a descriptor missing labelCode', () => {
@@ -84,6 +116,12 @@ describe('ActionDescriptor', () => {
   it('rejects an intent-spec target missing intentId', () => {
     // @ts-expect-error intentId is required — it is what selects the intent to open.
     const target: ActionTarget = { type: 'intent-spec' }
+    expect(target).toBeTruthy()
+  })
+
+  it('rejects an intent-detail target missing intentId', () => {
+    // @ts-expect-error intentId is required — it is what selects the predecessor to open.
+    const target: ActionTarget = { type: 'intent-detail' }
     expect(target).toBeTruthy()
   })
 

@@ -83,8 +83,7 @@ fn probe_once(port: u16) -> bool {
     {
         return false;
     }
-    let request =
-        format!("GET / HTTP/1.1\r\nHost: {LOOPBACK}:{port}\r\nConnection: close\r\n\r\n");
+    let request = format!("GET / HTTP/1.1\r\nHost: {LOOPBACK}:{port}\r\nConnection: close\r\n\r\n");
     if stream.write_all(request.as_bytes()).is_err() {
         return false;
     }
@@ -309,7 +308,10 @@ mod tests {
         assert!(port > 0);
         // 端口已释放,应当能再次绑定。
         let again = TcpListener::bind(SocketAddrV4::new(LOOPBACK, port));
-        assert!(again.is_ok(), "picked port should be free right after picking");
+        assert!(
+            again.is_ok(),
+            "picked port should be free right after picking"
+        );
     }
 
     #[test]

@@ -51,6 +51,8 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     prUrl: null,
     prStatus: null,
     specPath: null,
+    // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
+    specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
     specApproved: false,
     specApproveUser: null,
     specSessionId: null,
@@ -360,6 +362,45 @@ describe('IntentList.vue — derived next-step banner', () => {
     const w = mountList([intent({ id: 'r1', actionDescriptor: { ...BLOCKED } })])
     await w.find('[data-testid="action-descriptor-action"]').trigger('click')
     expect(w.emitted('action-target')).toEqual([[BLOCKED.target]])
+    expect(w.emitted('select-intent')).toBeUndefined()
+  })
+
+  it('points the blocked row at its predecessor without selecting the row', async () => {
+    // The dependency gate names the intent it is waiting for; clicking the banner
+    // jumps to that predecessor and must NOT also select the blocked row.
+    const dep = {
+      labelCode: 'dependency_blocked' as const,
+      target: { type: 'intent-detail' as const, intentId: 'pre-1' },
+    }
+    const w = mountList([intent({ id: 'r1', actionDescriptor: { ...dep } })])
+    await w.find('[data-testid="action-descriptor-action"]').trigger('click')
+    expect(w.emitted('action-target')).toEqual([[dep.target]])
+    expect(w.emitted('select-intent')).toBeUndefined()
+  })
+
+  it('shows the review blocker and one manual take-over jump when rework is exhausted', async () => {
+    const exhausted = {
+      labelCode: 'spec_rework_exhausted' as const,
+      target: { type: 'intent-spec' as const, intentId: 'r1' },
+    }
+    const w = mountList([
+      intent({
+        id: 'r1',
+        actionDescriptor: { ...exhausted },
+        specReviewReason: '验收项未覆盖失败路径',
+        specReviewReworkRounds: 4,
+      }),
+    ])
+    const row = w.find('.req-item')
+    expect(row.find('[data-testid="action-descriptor-blocker"]').text()).toBe(
+      '验收项未覆盖失败路径',
+    )
+    const actions = row.findAll('[data-testid="action-descriptor-action"]')
+    expect(actions).toHaveLength(1)
+    expect(actions[0].text()).not.toMatch(/retry|try again|重试|再试/i)
+    await actions[0].trigger('click')
+    // Navigation only: the row is not selected and no rework is asked for.
+    expect(w.emitted('action-target')).toEqual([[exhausted.target]])
     expect(w.emitted('select-intent')).toBeUndefined()
   })
 })

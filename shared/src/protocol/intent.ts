@@ -125,6 +125,25 @@ export const SPEC_REVIEW_VERDICTS = [
 ] as const satisfies readonly SpecReviewVerdict[]
 
 /**
+ * The lifecycle state of an intent's spec document — the SINGLE source of truth
+ * for the spec gate and for every "awaiting approval" prompt. Never inferred by
+ * combining `specPath` with `specApproved`, and never guessed from the document's
+ * text (a real spec may legitimately contain the seed's placeholder wording).
+ * - `raw`      — no spec yet, or only the seed the server wrote before launching
+ *   the authoring agent. NOT "awaiting approval": it cannot be reviewed, cannot
+ *   be approved, and produces no approval prompt or gate.
+ * - `pending`  — the document carries real content that has diverged from the
+ *   seed and is not approved yet. The only state a review may start from, and
+ *   the only one that renders the awaiting-approval prompt / approve entry.
+ * - `approved` — the current document passed human (or opt-in machine) approval;
+ *   the SDD development gate admits it.
+ */
+export type SpecStatus = 'raw' | 'pending' | 'approved'
+
+/** All {@link SpecStatus} values, for runtime validation. */
+export const SPEC_STATUSES = ['raw', 'pending', 'approved'] as const satisfies readonly SpecStatus[]
+
+/**
  * The reserved identity written into `Intent.specApproveUser` when the queue
  * approved a spec under the workspace's machine-approval opt-in. It is NOT a
  * login subject and can never collide with one (the `c3:` prefix is reserved), so
@@ -153,15 +172,27 @@ export const MAX_SPEC_REVIEW_REWORK_ROUNDS = 3
  *   no automatic recovery is scheduled for it.
  * - `spec_awaiting_approval`       — SDD is on, the intent has a written spec, and
  *   it has not been approved yet.
+ * - `spec_rework_exhausted`        — automatic spec rework has run out of rounds
+ *   and the still-valid conclusion asks for changes: only a human moves it now.
  * - `permission_pending`           — a gated tool call is waiting on Allow/Deny.
  * - `ask_user_question_pending`    — an unanswered `AskUserQuestion` is waiting.
+ * - `dependency_blocked`           — the hard dependency gate still holds this
+ *   intent back: a predecessor it declares is not finished (or, in worktree mode,
+ *   not confirmed on the mainline) yet.
+ * - `silent_timeout`               — a running queue has shown no progress on this
+ *   intent for the server's silent window, and no known wait (park, backoff,
+ *   cooldown, gate, force-skip, human decision, spec phase, paused queue) explains
+ *   it. Detection only: nothing is retried, restarted or reset on its behalf.
  */
 export const ACTION_LABEL_CODES = [
   'vendor_auth_invalid',
   'vendor_quota_exhausted',
   'spec_awaiting_approval',
+  'spec_rework_exhausted',
   'permission_pending',
   'ask_user_question_pending',
+  'dependency_blocked',
+  'silent_timeout',
 ] as const
 
 export type ActionLabelCode = (typeof ACTION_LABEL_CODES)[number]
@@ -178,11 +209,22 @@ export interface SystemSettingsAgentTarget {
 }
 
 /**
- * Open an intent's detail page on the spec document tab — the human approval
- * checkpoint for a written, still-unapproved spec.
+ * Open an intent's detail page on the spec document tab — where a human reads the
+ * review facts and either approves the spec or takes the rework over by hand.
  */
 export interface IntentSpecTarget {
   type: 'intent-spec'
+  intentId: string
+}
+
+/**
+ * Open an intent's detail page on its default tab — the plain "go look at that
+ * one" jump. Carries the target intent's id and nothing else: the title and the
+ * status shown next to the jump are read from the same `intents` read model, so
+ * the descriptor never carries a business field that could go stale.
+ */
+export interface IntentDetailTarget {
+  type: 'intent-detail'
   intentId: string
 }
 
@@ -196,12 +238,28 @@ export interface WorkcenterEventTarget {
 }
 
 /**
+ * Open an intent's detail page on its work-session tab — the inspection entry for
+ * a stalled intent (the session's transcript, its logs, its workspace state).
+ * Inspection only: landing here starts nothing and resumes nothing, and an intent
+ * with no work session yet simply falls back to its default tab.
+ */
+export interface IntentWorkSessionTarget {
+  type: 'intent-work-session'
+  intentId: string
+}
+
+/**
  * Where a next-step action navigates to. A discriminated union on `type` so a
  * later blocked state adds an arm instead of widening this one. Navigation only:
  * a target never carries a URL, a command, or free-text payload, so a client can
  * never be steered anywhere the union does not already name.
  */
-export type ActionTarget = SystemSettingsAgentTarget | IntentSpecTarget | WorkcenterEventTarget
+export type ActionTarget =
+  | SystemSettingsAgentTarget
+  | IntentSpecTarget
+  | IntentDetailTarget
+  | WorkcenterEventTarget
+  | IntentWorkSessionTarget
 
 /**
  * One derived "next step" for a blocked state — the minimal pair of what to show
@@ -216,6 +274,93 @@ export interface ActionDescriptor {
   labelCode: ActionLabelCode
   /** Where the action navigates. */
   target: ActionTarget
+}
+
+/**
+ * The stable reason behind a FAILED Git / forge action (worktree creation, or
+ * the commit → push → forge chain of a PR creation). Same idea as
+ * {@link ActionLabelCode} — a localization code, never a sentence — but a
+ * separate closed union: this one describes a failure that already happened,
+ * while an {@link ActionDescriptor} describes a standing blocked state.
+ *
+ * Derived ONLY from the failing command's own result (exit code, stderr/stdout,
+ * which stage failed). No extra Git / forge command is run to produce it, and a
+ * text that merely resembles a category is never forced into it — that is what
+ * `unknown` is for.
+ *
+ * - `worktree_branch_or_path_taken` — the branch is checked out by another
+ *   worktree, or a same-named branch / directory is left over.
+ * - `repo_conflict_unresolved`      — the repository has unresolved merge
+ *   conflicts, so the action cannot proceed.
+ * - `filesystem_denied`             — the local filesystem refused the write:
+ *   no permission, read-only, or out of space.
+ * - `forge_cli_unavailable`         — the forge CLI is not installed, or it is
+ *   installed but not logged in.
+ * - `remote_permission_denied`      — the remote refused for lack of push /
+ *   PR-create rights (401 / 403 / authentication failed).
+ * - `push_rejected`                 — the push was rejected: the remote branch
+ *   has moved ahead (non-fast-forward).
+ * - `network_unreachable`           — DNS, connection or timeout failure while
+ *   reaching the remote / forge.
+ * - `commit_hook_rejected`          — a commit / push hook or its lint-format
+ *   chain rejected the change.
+ * - `forge_create_rejected`         — the forge itself refused to create the
+ *   change request (validation failed, or one already exists for this branch).
+ * - `unknown`                       — nothing matched. The raw error is shown
+ *   as-is; no repair steps are guessed.
+ */
+export const GIT_ACTION_FAILURE_REASONS = [
+  'worktree_branch_or_path_taken',
+  'repo_conflict_unresolved',
+  'filesystem_denied',
+  'forge_cli_unavailable',
+  'remote_permission_denied',
+  'push_rejected',
+  'network_unreachable',
+  'commit_hook_rejected',
+  'forge_create_rejected',
+  'unknown',
+] as const
+
+export type GitActionFailureReason = (typeof GIT_ACTION_FAILURE_REASONS)[number]
+
+/**
+ * The intent actions a failure guidance may offer to run again. Closed and
+ * deliberately tiny: a retry re-enters the SAME entry point the user already
+ * used, so it passes the same gates. It is never a command, a path or a URL.
+ */
+export const INTENT_RETRY_ACTIONS = ['start-development', 'create-pr'] as const
+
+export type IntentRetryAction = (typeof INTENT_RETRY_ACTIONS)[number]
+
+/**
+ * Where a failure guidance's retry goes: one intent, one enumerated action.
+ * Shaped like an {@link ActionTarget} arm (discriminated on `type`) but kept out
+ * of that union — `ActionTarget` navigates, this one re-invokes.
+ */
+export interface IntentActionRetryTarget {
+  type: 'intent-action'
+  intentId: string
+  action: IntentRetryAction
+}
+
+/**
+ * Targeted repair guidance for a failed Git / forge action, carried on the error
+ * payload. A **runtime display projection**: not persisted, not a business
+ * state, and it never changes the outcome of the action that failed.
+ *
+ * `detail` is the raw error text of the failing command, kept for BOTH known and
+ * unknown reasons — the localized guidance explains what to do, the raw text is
+ * what a user actually debugs with. It is diagnostic data, not UI copy, and is
+ * rendered as text (never as markup).
+ */
+export interface GitActionFailureGuidance {
+  /** Which stable failure category this is. */
+  reason: GitActionFailureReason
+  /** Raw error text of the failing command; may be empty when it returned none. */
+  detail: string
+  /** The original action, offered for an explicit user-driven retry. */
+  retry: IntentActionRetryTarget
 }
 
 /** One dependency edge in intent_deps, with type metadata. */
@@ -285,9 +430,20 @@ export interface Intent {
    */
   specPath: string | null
   /**
+   * The spec document's lifecycle state — the authoritative input for the spec
+   * gate, the awaiting-approval prompt and the detail's main action. Consumers
+   * read THIS, never a `specPath` + `specApproved` combination: a seeded but
+   * unwritten spec is `raw`, which is not "awaiting approval".
+   */
+  specStatus: SpecStatus
+  /**
    * Whether the intent's spec has passed the human approval checkpoint. `false`
    * by default (and for historic rows); set `true` only at explicit approval.
    * Persisted so the quality-gate state survives reconnect / refresh.
+   *
+   * Kept for compatibility and always written together with {@link specStatus}
+   * (`true` exactly when the status is `approved`). It is NOT a second admission
+   * path: where the two ever disagree, the status wins and the gate fails closed.
    */
   specApproved: boolean
   /**
@@ -545,6 +701,13 @@ export interface QueueIntentDetail {
   parkDetail: string | null
   /** The user force-skipped this intent for the queue's selection. */
   forceSkipped: boolean
+  /**
+   * Where this intent stands in line while the concurrency gate holds it back:
+   * a positive integer counting from 1, or `null` whenever the gate is not what
+   * blocks it. Derived from the latest reconcile pass and never stored, so it is
+   * a relative place — not a promise of a wait time, and not monotonic.
+   */
+  queuePosition: number | null
 }
 
 /** A workspace queue's per-intent detail projection. */

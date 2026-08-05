@@ -16,7 +16,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import type { Intent, PromptImage } from '@ccc/shared/protocol'
+import type { GitActionFailureGuidance, Intent, PromptImage } from '@ccc/shared/protocol'
 import { ensureRuntime, getRuntime, isRunning } from '../../runs.js'
 import type { SessionRuntime } from '../../runs.js'
 import { loadHistory, sessionExists } from '../../sessions.js'
@@ -51,8 +51,15 @@ import {
 } from './dev-link.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 import { clearPendingSpecReviewLink, registerPendingSpecReviewLink } from './spec-review-link.js'
-import { buildSpecReviewPrompt, buildSpecReworkPrompt, readSpecFingerprint } from './spec-review.js'
+import {
+  buildSpecReviewPrompt,
+  buildSpecReworkPrompt,
+  readSpecFingerprint,
+  specFingerprint,
+} from './spec-review.js'
+import { armSpecContentWatch } from './spec-content-watch.js'
 import { buildDevPrompt } from './dev-prompt.js'
+import { buildGitFailureGuidance } from './git-failure.js'
 import { findDependencyBlockingMainline, prepareSpecLaunch } from './dependency-gate.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
 import { buildContinueSpecPrompt, buildSeedSpec, buildSpecInstructPrompt } from './spec.js'
@@ -91,7 +98,18 @@ export type SessionLaunchMode = 'fresh' | 'resume' | 'attach'
 
 export type SessionLaunchResult =
   | { success: true; sessionId: string; mode: SessionLaunchMode }
-  | { success: false; code: string; params?: Record<string, string> }
+  | {
+      success: false
+      code: string
+      params?: Record<string, string>
+      /**
+       * Targeted repair guidance for a failed Git action. Set only where a Git
+       * command actually failed (worktree creation) — a gate rejection keeps its
+       * own precise copy and carries none. Adapters that have no UI to show it
+       * (the MCP tool surface) simply ignore the field.
+       */
+      guidance?: GitActionFailureGuidance
+    }
 
 export interface SessionLaunchDeps {
   readonly launchRun: (
@@ -165,8 +183,10 @@ function checkWorkAdmission(
   intent: Intent,
   deps: SessionLaunchDeps,
 ): SessionLaunchResult | null {
-  // SDD quality gate — server-side, forced.
-  if (getSddEnabled(workspacePath) && !intent.specApproved) {
+  // SDD quality gate — server-side, forced. The authoritative condition is the
+  // spec STATUS: the compatibility boolean is never consulted here, so it can
+  // never become a second way in when the two disagree.
+  if (getSddEnabled(workspacePath) && intent.specStatus !== 'approved') {
     return { success: false, code: 'intent.specNotApproved' }
   }
 
@@ -364,10 +384,18 @@ export async function launchWorkSession(
       setBranchName(req.id, wt.branchName)
     } catch (err) {
       releaseClaim()
+      // Classified from the message the failed Git command already produced — no
+      // extra Git call, and the raw text still travels as `message`.
+      const message = errMsg(err)
       return {
         success: false,
         code: 'intent.worktreeCreateFailed',
-        params: { message: errMsg(err) },
+        params: { message },
+        guidance: buildGitFailureGuidance(
+          { stage: 'worktree', text: message },
+          req.id,
+          'start-development',
+        ),
       }
     }
   } else {
@@ -558,15 +586,24 @@ function createFirstSpecSession(
   })
 
   // Scaffold directory + seed spec.md
+  const seed = buildSeedSpec(intent, new Date().toISOString())
   try {
     mkdirSync(layout.dirAbs, { recursive: true })
-    writeFileSync(layout.fileAbs, buildSeedSpec(intent, new Date().toISOString()), 'utf8')
+    writeFileSync(layout.fileAbs, seed, 'utf8')
   } catch (err) {
     return { success: false, code: 'intent.specWriteFailed', params: { message: errMsg(err) } }
   }
 
-  // Backfill spec_path immediately and broadcast
+  // Backfill spec_path (as `raw` — a seed is not an authored spec) and broadcast.
   setSpecPath(intent.id, layout.fileAbs)
+  // The baseline this run is measured against is the SEED itself, so an agent
+  // that writes nothing leaves the intent `raw` instead of looking authored.
+  armSpecContentWatch({
+    intentId: intent.id,
+    workspacePath,
+    specPath: layout.fileAbs,
+    fingerprint: specFingerprint(seed),
+  })
   safeInsertIntentLog(intent.id, 'spec_created', '编写 spec', actor ?? 'system')
   deps.broadcastIntents(workspacePath)
 
@@ -713,6 +750,12 @@ function createSpecSessionOnExistingPath(
   if (blocked) return blocked
 
   const fileAbs = resolveSpecFileAbs(workspacePath, intent.specPath!)
+  armSpecContentWatch({
+    intentId: intent.id,
+    workspacePath,
+    specPath: intent.specPath!,
+    fingerprint: readSpecFingerprint(workspacePath, intent.specPath!),
+  })
   const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const specAgent = resolveSpecAgent()
   const rt = ensureRuntime(specId, workspacePath, getDefaultMode(workspacePath), [], 'spec')
@@ -806,6 +849,15 @@ async function resumeSpecSession(
     const specAgent = resolveSpecAgent()
     setSessionAgent(intent.specSessionId, specAgent.id)
   }
+
+  // Baseline for this turn's content check: a resumed session that writes nothing
+  // must not promote the intent out of `raw`.
+  armSpecContentWatch({
+    intentId: intent.id,
+    workspacePath,
+    specPath: intent.specPath,
+    fingerprint: readSpecFingerprint(workspacePath, intent.specPath),
+  })
 
   // The turn: a plain continuation, or — after a `changes_requested` conclusion —
   // the reviewer's findings verbatim, so the author reworks against the actual

@@ -34,6 +34,7 @@ import type { Handler } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { launchSpecSession } from './session-launcher.js'
 import {
+  approveSpecIfPending,
   clearSpecReviewMachineBlock,
   getIntent,
   isStoreAvailable,
@@ -42,6 +43,8 @@ import {
   safeInsertIntentLog,
   setSpecApproved,
 } from './store.js'
+import { armSpecContentWatch } from './spec-content-watch.js'
+import { readSpecFingerprint } from './spec-review.js'
 import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 import { prepareSpecLaunch } from './dependency-gate.js'
@@ -251,6 +254,10 @@ export const writeSpecHandler: Handler<'write_spec'> = async (ctx, conn, msg) =>
  * A human approval also lifts any machine-approval veto: once a person has
  * approved this spec, the earlier revoke has been answered and must not keep
  * suppressing a later machine approval of freshly reviewed content.
+ *
+ * Returns `false` — logging nothing, publishing nothing — when the transactional
+ * status guard refused the write: only a `pending` spec may be approved, so a
+ * spec still being authored (`raw`) cannot be approved through either surface.
  */
 export function applySpecApproval(input: {
   workspacePath: string
@@ -270,9 +277,11 @@ export function applySpecApproval(input: {
    * the transactional guard look optional, which it is not.
    */
   alreadyPersisted?: boolean
-}): void {
+}): boolean {
   const machine = input.approver === MACHINE_SPEC_APPROVER
-  if (!input.alreadyPersisted) setSpecApproved(input.intent.id, true, input.approver)
+  if (!input.alreadyPersisted && !approveSpecIfPending(input.intent.id, input.approver)) {
+    return false
+  }
   if (!machine) clearSpecReviewMachineBlock(input.intent.id)
   safeInsertIntentLog(
     input.intent.id,
@@ -294,17 +303,21 @@ export function applySpecApproval(input: {
       },
     },
   })
+  return true
 }
 
 /**
  * `approve_spec` handler — the human approval checkpoint (the reason SDD exists):
  * development may only proceed once a person approves the authored spec. Sets
- * `spec_approved=true` and records the approving user (the current login subject)
+ * `spec_status='approved'` (with the compat `spec_approved=true` in the same
+ * transaction) and records the approving user (the current login subject)
  * in `spec_approve_user`, then broadcasts so every console reflects the approval.
  *
  * Single-person confirmation: no multi-sign. Revocable via `revoke_spec_approval`.
- * A spec must exist first (`spec_path` non-null) — approving before authoring is
- * rejected (the UI never offers it, this is the defensive server guard).
+ * Only a `pending` spec may be approved — a document that is still nothing but
+ * the server's seed (`raw`) is rejected even though it already has a `spec_path`,
+ * and so is a second approval of an already-approved one. The UI never offers
+ * either; this is the defensive server guard, enforced transactionally in the store.
  */
 export const approveSpecHandler: Handler<'approve_spec'> = (ctx, conn, msg) => {
   const proj = resolveWorkspaceRoot(msg.workspaceId)
@@ -329,13 +342,19 @@ export const approveSpecHandler: Handler<'approve_spec'> = (ctx, conn, msg) => {
     return
   }
 
-  applySpecApproval({
+  const applied = applySpecApproval({
     workspacePath: proj,
     intent,
     approver: conn.subject ?? 'system',
     broadcastIntents: ctx.broadcastIntents,
     publishEvent: (payload) => ctx.eventBus.publish('event', payload),
   })
+  // Refused by the status guard: the spec is still being authored (`raw`) or is
+  // already approved. Reported as "not written" — from the human's side that is
+  // exactly what a seeded-but-unauthored spec is.
+  if (!applied) {
+    conn.send({ type: 'error', error: { code: 'intent.specNotWritten' } })
+  }
 }
 
 /**
@@ -442,6 +461,14 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   // path: `rt.specDir` and the path handed to the prompt both depend on it. The
   // stored spec path is absolute (centralized root); resolve robustly.
   const fileAbs = resolveSpecFileAbs(proj, intent.specPath)
+  // Baseline for the content check the run's settle performs: a reset session
+  // that ends without rewriting the document changes no status.
+  armSpecContentWatch({
+    intentId: intent.id,
+    workspacePath: proj,
+    specPath: intent.specPath,
+    fingerprint: readSpecFingerprint(proj, intent.specPath),
+  })
 
   // Stop viewing whatever this connection had open, then start the fresh session.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
@@ -553,8 +580,11 @@ export const readSpecHandler: Handler<'read_spec'> = (_ctx, conn, msg) => {
  * The write is fail-closed to the centralized specs root (shared with
  * {@link readSpecHandler}). Order preserves atomic-feel: file overwrite is the
  * precondition for the approval reset + logs; a write failure leaves the intent
- * untouched. If the spec was approved, approval is revoked (`setSpecApproved(false)`,
- * clears the approver) with a `spec_unapproved` log; every success also bumps
+ * untouched. A successful write is authored content by definition, so the spec
+ * status lands on `pending` whatever it was before — a human editing a seeded
+ * (`raw`) spec has just written it. If the spec was approved, approval is revoked
+ * (`setSpecApproved(false)`, clears the approver) with a `spec_unapproved` log;
+ * every success also bumps
  * `updated_at` and appends a `spec_updated` log (no diff), then broadcasts intents
  * (the client re-reads the fresh spec via `read_spec`). A same-frame
  * `intent_logs_list` refresh keeps an already-open changelog tab current.
@@ -616,7 +646,7 @@ export const updateSpecContentHandler: Handler<'update_spec_content'> = (ctx, co
   // File written: now reconcile approval + logs (never before the write succeeds).
   // `setSpecApproved(false)` also bumps `updated_at`, giving the client a reliable
   // broadcast signal even when the spec was already unapproved.
-  const wasApproved = intent.specApproved
+  const wasApproved = intent.specStatus === 'approved'
   setSpecApproved(intent.id, false, null)
   if (wasApproved) {
     safeInsertIntentLog(intent.id, 'spec_unapproved', '直接编辑 spec 后撤销审批', conn.subject)

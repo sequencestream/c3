@@ -12,6 +12,7 @@ import { useTypedI18n } from '@/i18n'
 import { useIsMobile } from '@/composables/useBreakpoint'
 import { usePersistentToggle } from '@/composables/usePersistentToggle'
 import ActionDescriptorBanner from '@/components/ActionDescriptorBanner/ActionDescriptorBanner.vue'
+import { actionTargetIntent } from '@/lib/action-descriptor'
 import {
   workflowIconState,
   compareByCompletion,
@@ -221,6 +222,9 @@ const titleById = computed<Record<string, string>>(() => {
   return out
 })
 
+// 行内提示条要说清「在等哪条意图」:按 id 一次建索引,行内只做查表(不逐行扫全表)。
+const intentById = computed(() => new Map(props.intents.map((r) => [r.id, r])))
+
 // 面板折叠态:持久化 UI 状态。收缩态收窄面板并隐藏模块名;跨页面切换后保持原状。
 const localCollapsed = usePersistentToggle('c3.intentListCollapsed')
 const effectiveCollapsed = computed(() =>
@@ -394,9 +398,12 @@ function automateToneClass(r: Intent): string {
             </button>
           </div>
         </div>
-        <!-- 派生「下一步」:阻塞态在行内主信息区常驻可见,不藏进悬浮提示或展开区。 -->
+        <!-- 派生「下一步」:阻塞态在行内主信息区常驻可见,不藏进悬浮提示或展开区。
+             提示条在行主区之外,点它不会连带选中本行。 -->
         <ActionDescriptorBanner
           :descriptor="r.actionDescriptor"
+          :review-reason="r.specReviewReason"
+          :target-intent="actionTargetIntent(r.actionDescriptor, intentById)"
           @navigate="(target: ActionTarget) => emit('action-target', target)"
         />
       </div>

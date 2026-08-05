@@ -23,7 +23,7 @@ import CreatePrOverlay from './components/CreatePrOverlay/CreatePrOverlay.vue'
 import DevStartupOverlay from './components/DevStartupOverlay/DevStartupOverlay.vue'
 import SpecStartupOverlay from './components/SpecStartupOverlay/SpecStartupOverlay.vue'
 import AutomationSaveOverlay from './components/AutomationSaveOverlay/AutomationSaveOverlay.vue'
-import ErrorDialog from './components/ErrorDialog/ErrorDialog.vue'
+import IntentActionErrorDialog from './components/IntentActionErrorDialog/IntentActionErrorDialog.vue'
 import { computed, ref, watch } from 'vue'
 import type { SessionInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from './i18n'
@@ -121,9 +121,11 @@ const {
   currentWorkflow,
   intentActionErrorSeq,
   intentActionError,
+  intentActionErrorGuidance,
   createIntentPending,
   intentPrSync,
   closeIntentActionError,
+  retryIntentAction,
   intentSpecContent,
   intentSpecLoading,
   intentLogsById,
@@ -898,12 +900,12 @@ function onCodesChatWidth(px: number): void {
 
   <div v-if="toast" class="toast" role="status">{{ toast }}</div>
 
-  <ErrorDialog
+  <IntentActionErrorDialog
     :open="intentActionError !== null"
-    :title="t('error.intentAction.title')"
     :message="intentActionError ?? ''"
-    :close-label="t('common.action.close.label')"
+    :guidance="intentActionErrorGuidance"
     @close="closeIntentActionError"
+    @retry="retryIntentAction"
   />
 
   <!-- Dev-launch startup overlay (App-global, like the toast): blocks interaction

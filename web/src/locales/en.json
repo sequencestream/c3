@@ -1080,11 +1080,17 @@
       "specReworkExhaustedNoReason": "The review recorded no rationale. Open the spec tab to read the review facts.",
       "permissionPending": "A tool permission is waiting for your decision. Open the pending item to Allow or Deny.",
       "askUserQuestionPending": "An AskUserQuestion is waiting for your answers. Open the pending item to reply.",
+      "dependencyBlocked": "Waiting on the predecessor intent “{title}” ({status}) — work stays blocked until it is finished.",
+      "dependencyBlockedDone": "Waiting on the predecessor intent “{title}” ({status}) — it is not on the main branch yet.",
+      "dependencyBlockedUnresolved": "Waiting on a predecessor intent that is outside the current view.",
       "openSpecApproval": {
         "label": "Open spec"
       },
       "takeOverSpec": {
         "label": "Take over manually"
+      },
+      "openPredecessorIntent": {
+        "label": "View predecessor"
       },
       "openWorkcenterEvent": {
         "label": "Open pending item"

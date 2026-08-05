@@ -1081,11 +1081,17 @@
       "specReworkExhaustedNoReason": "Ревью не оставило обоснования. Откройте вкладку spec, чтобы прочитать факты проверки.",
       "permissionPending": "Запрос разрешения на инструмент ждёт вашего решения. Откройте ожидающий элемент, чтобы разрешить или отклонить.",
       "askUserQuestionPending": "AskUserQuestion ждёт ваших ответов. Откройте ожидающий элемент, чтобы ответить.",
+      "dependencyBlocked": "Ожидается предшествующее намерение «{title}» ({status}) — работа заблокирована, пока оно не завершено.",
+      "dependencyBlockedDone": "Ожидается предшествующее намерение «{title}» ({status}) — оно ещё не попало в основную ветку.",
+      "dependencyBlockedUnresolved": "Ожидается предшествующее намерение, которого нет в текущем представлении.",
       "openSpecApproval": {
         "label": "Открыть spec"
       },
       "takeOverSpec": {
         "label": "Взять на себя вручную"
+      },
+      "openPredecessorIntent": {
+        "label": "Открыть предшественника"
       },
       "openWorkcenterEvent": {
         "label": "Открыть ожидающее"

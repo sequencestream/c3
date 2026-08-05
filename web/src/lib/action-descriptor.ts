@@ -8,15 +8,22 @@
  *
  * Both maps are exhaustive by construction (`satisfies Record<…>`): adding an arm
  * to either union fails to compile until its copy exists.
+ *
+ * A target that names another intent carries its id and nothing else, so any
+ * business field shown next to the prompt (a predecessor's title and status) is
+ * resolved here from the intents the view already holds — never copied off the
+ * wire, where it could go stale.
  */
 import type {
   ActionDescriptor,
   ActionLabelCode,
   ActionTarget,
+  Intent,
   SystemSettingsAgentTarget,
   VendorId,
 } from '@ccc/shared/protocol'
 import type { LocaleKey } from '@/i18n'
+import { statusLabel } from './intent-list-view'
 
 /** What went wrong, as the prompt text shown to the user. */
 export const ACTION_MESSAGE_KEYS = {
@@ -26,12 +33,14 @@ export const ACTION_MESSAGE_KEYS = {
   spec_rework_exhausted: 'intent.blocked.specReworkExhausted',
   permission_pending: 'intent.blocked.permissionPending',
   ask_user_question_pending: 'intent.blocked.askUserQuestionPending',
+  dependency_blocked: 'intent.blocked.dependencyBlocked',
 } as const satisfies Record<ActionLabelCode, LocaleKey>
 
 /** Where it goes, as the button label. */
 export const ACTION_BUTTON_KEYS = {
   'system-settings-agent': 'intent.blocked.openAgentSettings.label',
   'intent-spec': 'intent.blocked.openSpecApproval.label',
+  'intent-detail': 'intent.blocked.openPredecessorIntent.label',
   'workcenter-event': 'intent.blocked.openWorkcenterEvent.label',
 } as const satisfies Record<ActionTarget['type'], LocaleKey>
 
@@ -53,9 +62,55 @@ const ACTION_BLOCKER_FALLBACK_KEYS: Partial<Record<ActionLabelCode, LocaleKey>> 
   spec_rework_exhausted: 'intent.blocked.specReworkExhaustedNoReason',
 }
 
-/** The i18n key for a descriptor's prompt text. */
-export function actionMessageKey(labelCode: ActionLabelCode): LocaleKey {
-  return ACTION_MESSAGE_KEYS[labelCode]
+/**
+ * The intent a descriptor points at, as far as the prompt text needs it. The
+ * server sends the id only, so this is resolved from the very same `intents` the
+ * view is rendering — the title and status shown can never be staler than the
+ * list beside them.
+ */
+export type ActionTargetIntent = Pick<Intent, 'title' | 'status'>
+
+/**
+ * The intent a descriptor's target names, looked up in what the client can
+ * currently see; `null` when the target names no intent, or when that intent is
+ * outside the current view (e.g. a status-filtered list).
+ */
+export function actionTargetIntent(
+  descriptor: ActionDescriptor | null,
+  byId: ReadonlyMap<string, ActionTargetIntent>,
+): ActionTargetIntent | null {
+  if (!descriptor || descriptor.target.type !== 'intent-detail') return null
+  return byId.get(descriptor.target.intentId) ?? null
+}
+
+/** A descriptor's prompt text as an i18n key plus the values it interpolates. */
+export interface ActionMessage {
+  key: LocaleKey
+  named?: Record<string, string>
+}
+
+/**
+ * The i18n key (and named values) for a descriptor's prompt text.
+ *
+ * Most codes are a plain key. `dependency_blocked` names a predecessor, so it
+ * interpolates that intent's title and status — and falls back to a copy that
+ * claims neither when the predecessor is out of view, rather than printing a
+ * bare id. A `done` predecessor blocks only because it is not on the mainline
+ * yet (worktree mode), so its copy says exactly that instead of asking to
+ * "finish" something already finished.
+ */
+export function actionMessage(
+  labelCode: ActionLabelCode,
+  targetIntent?: ActionTargetIntent | null,
+): ActionMessage {
+  if (labelCode === 'dependency_blocked') {
+    if (!targetIntent) return { key: 'intent.blocked.dependencyBlockedUnresolved' }
+    const named = { title: targetIntent.title, status: statusLabel(targetIntent.status) }
+    return targetIntent.status === 'done'
+      ? { key: 'intent.blocked.dependencyBlockedDone', named }
+      : { key: ACTION_MESSAGE_KEYS.dependency_blocked, named }
+  }
+  return { key: ACTION_MESSAGE_KEYS[labelCode] }
 }
 
 /** The i18n key for a descriptor's button label. */

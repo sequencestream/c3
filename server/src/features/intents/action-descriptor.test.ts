@@ -19,8 +19,12 @@ vi.mock('../user-involve/store.js', () => ({
 }))
 
 const sddOn = vi.fn<(workspacePath: string) => boolean>(() => true)
+const branchMode = vi.fn<(workspacePath: string) => 'worktree' | 'current-branch'>()
+const mainBranch = vi.fn<(workspacePath: string) => string | undefined>()
 vi.mock('../../kernel/config/index.js', () => ({
   getSddEnabled: (workspacePath: string) => sddOn(workspacePath),
+  getGitBranchMode: (workspacePath: string) => branchMode(workspacePath),
+  getDefaultMainBranch: (workspacePath: string) => mainBranch(workspacePath),
 }))
 
 vi.mock('../../state.js', () => ({
@@ -34,6 +38,18 @@ vi.mock('./spec-review.js', () => ({
 }))
 
 const { deriveActionDescriptor } = await import('./action-descriptor.js')
+
+/**
+ * The workspace ledger the dependency projection resolves `dependsOn` against.
+ * Tests that do not care about dependencies leave it empty — the projection then
+ * has nothing to resolve and stays out of the way.
+ */
+let ledger: Intent[] = []
+
+/** Call the projection with the test ledger as its workspace-intents loader. */
+function derive(intent: Intent) {
+  return deriveActionDescriptor(intent, () => ledger)
+}
 
 function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
   return {
@@ -105,6 +121,11 @@ beforeEach(() => {
   sddOn.mockReturnValue(true)
   liveFingerprint.mockReset()
   liveFingerprint.mockReturnValue('fp1')
+  branchMode.mockReset()
+  branchMode.mockReturnValue('worktree')
+  mainBranch.mockReset()
+  mainBranch.mockReturnValue('main')
+  ledger = []
 })
 
 /** An intent parked exactly at the rework hand-over point: cap passed, conclusion still valid. */
@@ -135,7 +156,7 @@ describe('deriveActionDescriptor — priority', () => {
       specApproved: false,
       lastWorkSessionId: 'sess-1',
     })
-    expect(deriveActionDescriptor(intent)).toEqual({
+    expect(derive(intent)).toEqual({
       labelCode: 'vendor_auth_invalid',
       target: { type: 'system-settings-agent', vendor: 'claude', agentId: 'a1' },
     })
@@ -150,7 +171,7 @@ describe('deriveActionDescriptor — priority', () => {
       specApproved: false,
       lastWorkSessionId: 'sess-1',
     })
-    expect(deriveActionDescriptor(intent)).toEqual({
+    expect(derive(intent)).toEqual({
       labelCode: 'ask_user_question_pending',
       target: { type: 'workcenter-event', eventId: 'e-ask' },
     })
@@ -158,7 +179,7 @@ describe('deriveActionDescriptor — priority', () => {
 
   it('maps an ordinary gated tool to permission_pending', () => {
     findTodo.mockReturnValue(makeEvent({ id: 'e-perm', toolName: 'Edit' }))
-    expect(deriveActionDescriptor(makeIntent({ id: 'i-1', lastWorkSessionId: 'sess-1' }))).toEqual({
+    expect(derive(makeIntent({ id: 'i-1', lastWorkSessionId: 'sess-1' }))).toEqual({
       labelCode: 'permission_pending',
       target: { type: 'workcenter-event', eventId: 'e-perm' },
     })
@@ -166,14 +187,12 @@ describe('deriveActionDescriptor — priority', () => {
 
   it('ignores notification-only todos without a requestId', () => {
     findTodo.mockReturnValue(makeEvent({ id: 'e-note', requestId: null, toolName: null }))
-    expect(
-      deriveActionDescriptor(makeIntent({ id: 'i-1', lastWorkSessionId: 'sess-1' })),
-    ).toBeNull()
+    expect(derive(makeIntent({ id: 'i-1', lastWorkSessionId: 'sess-1' }))).toBeNull()
   })
 
   it('derives spec_awaiting_approval when SDD is on and the spec is written but unapproved', () => {
     const intent = makeIntent({ id: 'i-1', status: 'todo', specPath: '/s.md', specApproved: false })
-    expect(deriveActionDescriptor(intent)).toEqual({
+    expect(derive(intent)).toEqual({
       labelCode: 'spec_awaiting_approval',
       target: { type: 'intent-spec', intentId: 'i-1' },
     })
@@ -181,24 +200,20 @@ describe('deriveActionDescriptor — priority', () => {
 
   it('returns null when the spec is already approved', () => {
     expect(
-      deriveActionDescriptor(
-        makeIntent({ id: 'i-1', status: 'todo', specPath: '/s.md', specApproved: true }),
-      ),
+      derive(makeIntent({ id: 'i-1', status: 'todo', specPath: '/s.md', specApproved: true })),
     ).toBeNull()
   })
 
   it('returns null when SDD is off', () => {
     sddOn.mockReturnValue(false)
     expect(
-      deriveActionDescriptor(
-        makeIntent({ id: 'i-1', status: 'todo', specPath: '/s.md', specApproved: false }),
-      ),
+      derive(makeIntent({ id: 'i-1', status: 'todo', specPath: '/s.md', specApproved: false })),
     ).toBeNull()
   })
 
   it('returns null when the intent is not todo', () => {
     expect(
-      deriveActionDescriptor(
+      derive(
         makeIntent({
           id: 'i-1',
           status: 'in_progress',
@@ -210,7 +225,7 @@ describe('deriveActionDescriptor — priority', () => {
   })
 
   it('derives spec_rework_exhausted once the cap is passed and the conclusion still stands', () => {
-    expect(deriveActionDescriptor(exhaustedIntent())).toEqual({
+    expect(derive(exhaustedIntent())).toEqual({
       labelCode: 'spec_rework_exhausted',
       target: { type: 'intent-spec', intentId: 'i-1' },
     })
@@ -219,9 +234,7 @@ describe('deriveActionDescriptor — priority', () => {
   it('still shows the plain approval prompt on the LAST allowed rework round', () => {
     // Round CAP is reworked automatically — the hand-over is the round after it.
     expect(
-      deriveActionDescriptor(
-        exhaustedIntent({ specReviewReworkRounds: MAX_SPEC_REVIEW_REWORK_ROUNDS }),
-      ),
+      derive(exhaustedIntent({ specReviewReworkRounds: MAX_SPEC_REVIEW_REWORK_ROUNDS })),
     ).toEqual({
       labelCode: 'spec_awaiting_approval',
       target: { type: 'intent-spec', intentId: 'i-1' },
@@ -229,7 +242,7 @@ describe('deriveActionDescriptor — priority', () => {
   })
 
   it('does not claim exhaustion when the current conclusion passed', () => {
-    expect(deriveActionDescriptor(exhaustedIntent({ specReviewVerdict: 'pass' }))).toEqual({
+    expect(derive(exhaustedIntent({ specReviewVerdict: 'pass' }))).toEqual({
       labelCode: 'spec_awaiting_approval',
       target: { type: 'intent-spec', intentId: 'i-1' },
     })
@@ -237,7 +250,7 @@ describe('deriveActionDescriptor — priority', () => {
 
   it('drops the prompt once the spec is edited and the old conclusion is stale', () => {
     liveFingerprint.mockReturnValue('fp2')
-    expect(deriveActionDescriptor(exhaustedIntent())).toEqual({
+    expect(derive(exhaustedIntent())).toEqual({
       labelCode: 'spec_awaiting_approval',
       target: { type: 'intent-spec', intentId: 'i-1' },
     })
@@ -245,17 +258,17 @@ describe('deriveActionDescriptor — priority', () => {
 
   it('shows nothing while the spec is unreadable — unreadable is not unchanged', () => {
     liveFingerprint.mockReturnValue(null)
-    expect(deriveActionDescriptor(exhaustedIntent())).toEqual({
+    expect(derive(exhaustedIntent())).toEqual({
       labelCode: 'spec_awaiting_approval',
       target: { type: 'intent-spec', intentId: 'i-1' },
     })
   })
 
   it('drops the prompt once the intent leaves the blocked state', () => {
-    expect(deriveActionDescriptor(exhaustedIntent({ specApproved: true }))).toBeNull()
-    expect(deriveActionDescriptor(exhaustedIntent({ status: 'in_progress' }))).toBeNull()
+    expect(derive(exhaustedIntent({ specApproved: true }))).toBeNull()
+    expect(derive(exhaustedIntent({ status: 'in_progress' }))).toBeNull()
     sddOn.mockReturnValue(false)
-    expect(deriveActionDescriptor(exhaustedIntent())).toBeNull()
+    expect(derive(exhaustedIntent())).toBeNull()
   })
 
   it('yields to more urgent blocks (vendor, pending Ask) while exhausted', () => {
@@ -263,12 +276,12 @@ describe('deriveActionDescriptor — priority', () => {
       labelCode: 'vendor_auth_invalid',
       target: { type: 'system-settings-agent', vendor: 'claude', agentId: 'a1' },
     })
-    expect(deriveActionDescriptor(exhaustedIntent())).toMatchObject({
+    expect(derive(exhaustedIntent())).toMatchObject({
       labelCode: 'vendor_auth_invalid',
     })
     vendorDesc.mockReturnValue(null)
     findTodo.mockReturnValue(makeEvent({ id: 'e-ask', toolName: 'AskUserQuestion' }))
-    expect(deriveActionDescriptor(exhaustedIntent())).toMatchObject({
+    expect(derive(exhaustedIntent())).toMatchObject({
       labelCode: 'ask_user_question_pending',
     })
   })
@@ -281,7 +294,136 @@ describe('deriveActionDescriptor — priority', () => {
       specReviewSessionId: 'rs',
       lastWorkSessionId: 'ws',
     })
-    deriveActionDescriptor(intent)
+    derive(intent)
     expect(findTodo).toHaveBeenCalledWith('/proj', ['i-1', 'is', 'ss', 'rs', 'ws'])
+  })
+})
+
+/**
+ * The dependency guidance: which predecessor the hard gate is actually waiting
+ * for. It explains the gate's own verdict — it never invents one, and it never
+ * moves the gate.
+ */
+describe('deriveActionDescriptor — dependency guidance', () => {
+  /** A predecessor that is done AND confirmed on the mainline: never blocks. */
+  function mergedDep(id: string, title: string): Intent {
+    return makeIntent({ id, title, status: 'done', prStatus: 'merged', branchName: `feat/${id}` })
+  }
+
+  it('names the first unfinished predecessor in declaration order', () => {
+    ledger = [
+      makeIntent({ id: 'dep-a', title: '打底能力', status: 'todo' }),
+      makeIntent({ id: 'dep-b', title: '后续能力', status: 'todo' }),
+    ]
+    expect(derive(makeIntent({ id: 'i-1', dependsOn: ['dep-a', 'dep-b'] }))).toEqual({
+      labelCode: 'dependency_blocked',
+      target: { type: 'intent-detail', intentId: 'dep-a' },
+    })
+  })
+
+  it('moves to the next blocking predecessor once the first one clears', () => {
+    ledger = [mergedDep('dep-a', '打底能力'), makeIntent({ id: 'dep-b', status: 'in_progress' })]
+    expect(derive(makeIntent({ id: 'i-1', dependsOn: ['dep-a', 'dep-b'] }))).toEqual({
+      labelCode: 'dependency_blocked',
+      target: { type: 'intent-detail', intentId: 'dep-b' },
+    })
+  })
+
+  it('disappears once every predecessor satisfies the gate', () => {
+    ledger = [mergedDep('dep-a', '打底能力'), mergedDep('dep-b', '后续能力')]
+    expect(derive(makeIntent({ id: 'i-1', dependsOn: ['dep-a', 'dep-b'] }))).toBeNull()
+  })
+
+  it('still guides in worktree mode when a done predecessor is not on the mainline yet', () => {
+    ledger = [
+      makeIntent({ id: 'dep-a', status: 'done', prStatus: 'reviewing', branchName: 'feat/dep-a' }),
+    ]
+    expect(derive(makeIntent({ id: 'i-1', dependsOn: ['dep-a'] }))).toEqual({
+      labelCode: 'dependency_blocked',
+      target: { type: 'intent-detail', intentId: 'dep-a' },
+    })
+  })
+
+  it('does not guide on that same item under current-branch mode — the gate does not block there', () => {
+    branchMode.mockReturnValue('current-branch')
+    ledger = [
+      makeIntent({ id: 'dep-a', status: 'done', prStatus: 'reviewing', branchName: 'feat/dep-a' }),
+    ]
+    expect(derive(makeIntent({ id: 'i-1', dependsOn: ['dep-a'] }))).toBeNull()
+  })
+
+  it('still guides on an unfinished predecessor under current-branch mode', () => {
+    branchMode.mockReturnValue('current-branch')
+    ledger = [makeIntent({ id: 'dep-a', status: 'todo' })]
+    expect(derive(makeIntent({ id: 'i-1', dependsOn: ['dep-a'] }))).toEqual({
+      labelCode: 'dependency_blocked',
+      target: { type: 'intent-detail', intentId: 'dep-a' },
+    })
+  })
+
+  it('ignores a missing reference and points at the next resolvable blocker', () => {
+    ledger = [makeIntent({ id: 'dep-b', status: 'todo' })]
+    expect(derive(makeIntent({ id: 'i-1', dependsOn: ['gone', 'dep-b'] }))).toEqual({
+      labelCode: 'dependency_blocked',
+      target: { type: 'intent-detail', intentId: 'dep-b' },
+    })
+  })
+
+  it('shows nothing when the only reference is missing — a dangling id never blocks', () => {
+    expect(derive(makeIntent({ id: 'i-1', dependsOn: ['gone'] }))).toBeNull()
+  })
+
+  it('only describes intents the gate can still hold back', () => {
+    ledger = [makeIntent({ id: 'dep-a', status: 'todo' })]
+    for (const status of ['todo', 'in_progress'] as const) {
+      expect(derive(makeIntent({ id: 'i-1', status, dependsOn: ['dep-a'] }))).toMatchObject({
+        labelCode: 'dependency_blocked',
+      })
+    }
+    for (const status of ['draft', 'done', 'cancelled', 'blocked', 'failed'] as const) {
+      expect(derive(makeIntent({ id: 'i-1', status, dependsOn: ['dep-a'] }))).toBeNull()
+    }
+  })
+
+  it('does not read the ledger for an intent that declares no dependency', () => {
+    const load = vi.fn(() => ledger)
+    expect(deriveActionDescriptor(makeIntent({ id: 'i-1' }), load)).toBeNull()
+    expect(load).not.toHaveBeenCalled()
+  })
+
+  it('yields to every higher-priority block, and surfaces once they clear', () => {
+    ledger = [makeIntent({ id: 'dep-a', status: 'todo' })]
+    const blockedIntent = () =>
+      makeIntent({ id: 'i-1', dependsOn: ['dep-a'], specPath: '/s.md', specApproved: false })
+
+    vendorDesc.mockReturnValue({
+      labelCode: 'vendor_auth_invalid',
+      target: { type: 'system-settings-agent', vendor: 'claude', agentId: 'a1' },
+    })
+    expect(derive(blockedIntent())).toMatchObject({ labelCode: 'vendor_auth_invalid' })
+
+    vendorDesc.mockReturnValue(null)
+    findTodo.mockReturnValue(makeEvent({ id: 'e-ask', toolName: 'AskUserQuestion' }))
+    expect(derive(blockedIntent())).toMatchObject({ labelCode: 'ask_user_question_pending' })
+
+    findTodo.mockReturnValue(null)
+    expect(
+      derive(
+        makeIntent({
+          ...blockedIntent(),
+          specReviewVerdict: 'changes_requested',
+          specReviewFingerprint: 'fp1',
+          specReviewReworkRounds: MAX_SPEC_REVIEW_REWORK_ROUNDS + 1,
+        }),
+      ),
+    ).toMatchObject({ labelCode: 'spec_rework_exhausted' })
+
+    // Spec still unapproved → the approval checkpoint outranks the dependency.
+    expect(derive(blockedIntent())).toMatchObject({ labelCode: 'spec_awaiting_approval' })
+
+    // Approved: the dependency guidance is what is left.
+    expect(derive(makeIntent({ ...blockedIntent(), specApproved: true }))).toMatchObject({
+      labelCode: 'dependency_blocked',
+    })
   })
 })

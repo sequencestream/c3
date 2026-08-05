@@ -1081,11 +1081,17 @@
       "specReworkExhaustedNoReason": "今回のレビューは理由を残していません。spec タブを開いて審査内容を確認してください。",
       "permissionPending": "ツール権限の承認待ちがあります。保留項目を開いて許可または拒否してください。",
       "askUserQuestionPending": "AskUserQuestion への回答待ちがあります。保留項目を開いて回答してください。",
+      "dependencyBlocked": "先行する意図「{title}」（{status}）を待っています。完了するまで、この意図は停止したままです。",
+      "dependencyBlockedDone": "先行する意図「{title}」（{status}）を待っています。まだメインラインに入っていません。",
+      "dependencyBlockedUnresolved": "現在の表示にない先行の意図を待っています。",
       "openSpecApproval": {
         "label": "Spec を開く"
       },
       "takeOverSpec": {
         "label": "手動で引き継ぐ"
+      },
+      "openPredecessorIntent": {
+        "label": "先行の意図を見る"
       },
       "openWorkcenterEvent": {
         "label": "保留項目を開く"

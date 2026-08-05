@@ -66,6 +66,17 @@ export function installSettingsActions(ctx: AppCtx): void {
       ctx.requestedIntentSubTab.value = 'spec'
       return
     }
+    if (target.type === 'intent-detail') {
+      // 只换查看对象:选中目标意图并停在它的默认页签。不改任何意图状态、不起会话、
+      // 不批准 spec,也不放行把当前意图挡住的那道依赖闸门。
+      const workspace = currentWorkspace.value
+      if (!workspace) return
+      ctx.setViewMode('workspace')
+      ctx.openIntents(workspace)
+      ctx.requestedIntentId.value = target.intentId
+      ctx.requestedIntentSubTab.value = null
+      return
+    }
     // workcenter-event
     ctx.setViewMode('workcenter')
     if (ctx.workcenterPage.value !== 'notifications') {

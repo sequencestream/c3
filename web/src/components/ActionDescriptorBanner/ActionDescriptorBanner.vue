@@ -13,6 +13,10 @@
  * 少数阻塞还要交代「卡在哪」:自动返工触顶时正文下方展示审核理由原文(换行保留、按纯
  * 文本渲染),理由为空则给兜底文案,绝不伪造验收项。按钮始终只有一个,触顶时它就是人工
  * 接管入口,组件不提供任何重试动作。
+ *
+ * 指向另一条意图的阻塞(依赖闸门)还要说清「在等谁」:正文带上目标意图的标题与状态,由
+ * 调用方从同一批意图读模型里解析后传入(targetIntent),组件不自己查列表、也不接受服务端
+ * 复制来的业务字段;解析不到时退回不声称标题的兜底文案,绝不显示裸 id。
  */
 import { computed } from 'vue'
 import type { ActionDescriptor, ActionTarget } from '@ccc/shared/protocol'
@@ -20,7 +24,8 @@ import { useTypedI18n } from '@/i18n'
 import {
   actionBlockerFallbackKey,
   actionButtonKey,
-  actionMessageKey,
+  actionMessage,
+  type ActionTargetIntent,
 } from '@/lib/action-descriptor'
 
 const { t } = useTypedI18n()
@@ -30,15 +35,19 @@ const props = defineProps<{
   descriptor: ActionDescriptor | null
   /** 当前有效审核结论的理由原文,用作卡点摘要;仅带摘要的阻塞会用到。 */
   reviewReason?: string | null
+  /** target 指向的意图(标题+状态),由调用方按 target.intentId 解析;不在当前视野时为 null。 */
+  targetIntent?: ActionTargetIntent | null
 }>()
 
 const emit = defineEmits<{
   navigate: [target: ActionTarget]
 }>()
 
-const message = computed(() =>
-  props.descriptor ? t(actionMessageKey(props.descriptor.labelCode)) : '',
-)
+const message = computed(() => {
+  if (!props.descriptor) return ''
+  const { key, named } = actionMessage(props.descriptor.labelCode, props.targetIntent)
+  return named ? t(key, named) : t(key)
+})
 const buttonLabel = computed(() => (props.descriptor ? t(actionButtonKey(props.descriptor)) : ''))
 const blocker = computed(() => {
   if (!props.descriptor) return ''

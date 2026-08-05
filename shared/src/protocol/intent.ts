@@ -157,6 +157,9 @@ export const MAX_SPEC_REVIEW_REWORK_ROUNDS = 3
  *   and the still-valid conclusion asks for changes: only a human moves it now.
  * - `permission_pending`           — a gated tool call is waiting on Allow/Deny.
  * - `ask_user_question_pending`    — an unanswered `AskUserQuestion` is waiting.
+ * - `dependency_blocked`           — the hard dependency gate still holds this
+ *   intent back: a predecessor it declares is not finished (or, in worktree mode,
+ *   not confirmed on the mainline) yet.
  */
 export const ACTION_LABEL_CODES = [
   'vendor_auth_invalid',
@@ -165,6 +168,7 @@ export const ACTION_LABEL_CODES = [
   'spec_rework_exhausted',
   'permission_pending',
   'ask_user_question_pending',
+  'dependency_blocked',
 ] as const
 
 export type ActionLabelCode = (typeof ACTION_LABEL_CODES)[number]
@@ -190,6 +194,17 @@ export interface IntentSpecTarget {
 }
 
 /**
+ * Open an intent's detail page on its default tab — the plain "go look at that
+ * one" jump. Carries the target intent's id and nothing else: the title and the
+ * status shown next to the jump are read from the same `intents` read model, so
+ * the descriptor never carries a business field that could go stale.
+ */
+export interface IntentDetailTarget {
+  type: 'intent-detail'
+  intentId: string
+}
+
+/**
  * Open WorkCenter notifications and select one wait-user-involve event — the
  * Allow/Deny or AskUserQuestion answer surface for that pending item.
  */
@@ -204,7 +219,8 @@ export interface WorkcenterEventTarget {
  * a target never carries a URL, a command, or free-text payload, so a client can
  * never be steered anywhere the union does not already name.
  */
-export type ActionTarget = SystemSettingsAgentTarget | IntentSpecTarget | WorkcenterEventTarget
+export type ActionTarget =
+  SystemSettingsAgentTarget | IntentSpecTarget | IntentDetailTarget | WorkcenterEventTarget
 
 /**
  * One derived "next step" for a blocked state — the minimal pair of what to show

@@ -753,20 +753,29 @@ export function listAll(): SessionMetadataRow[] {
  * by `last_modified` desc, with nulls (Codex bind-time) at the end. The
  * wire filter (isHiddenSession + isToolSessionRecorded) is applied
  * downstream in `listSessionsVia`; this returns the raw list.
+ *
+ * `sessionKind` accepts a list so a display category can aggregate several
+ * real kinds (the session page's「规范」entry lists spec authoring AND spec
+ * review rows). The ordering is done in SQL over the union, so an aggregated
+ * category keeps ONE global order — never two concatenated per-kind runs.
+ * Rows keep their real `session_kind`; this is a query filter, not a rewrite.
  */
 export function listForWorkspace(
   workspacePath: string,
-  sessionKind: SessionKind = 'work',
+  sessionKind: SessionKind | readonly SessionKind[] = 'work',
 ): SessionMetadataRow[] {
   const d = db()
   if (!d) return []
+  const kinds = typeof sessionKind === 'string' ? [sessionKind] : [...sessionKind]
+  if (kinds.length === 0) return []
+  const placeholders = kinds.map(() => '?').join(', ')
   return d
     .all<RawRow>(
       `SELECT * FROM session_metadata
-         WHERE workspace_path=? AND session_kind=? AND bound=1
+         WHERE workspace_path=? AND session_kind IN (${placeholders}) AND bound=1
          ORDER BY (last_modified IS NULL), last_modified DESC, state_updated_at DESC`,
       workspacePath,
-      sessionKind,
+      ...kinds,
     )
     .map(toRow)
 }

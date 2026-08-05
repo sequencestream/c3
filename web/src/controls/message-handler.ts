@@ -186,10 +186,25 @@ export function installMessageHandler(ctx: AppCtx): void {
   function ownerKindForSessionKind(
     kind: SessionPageKind,
   ): NonNullable<SessionInfo['ownerKind']> | null {
-    if (kind === 'intent' || kind === 'spec') return 'intent'
+    if (kind === 'intent' || kind === 'spec' || kind === 'spec_review') return 'intent'
     if (kind === 'discussion') return 'discussion'
     if (kind === 'automation') return 'automation'
     return null
+  }
+
+  // The kind a synthesized placeholder row should claim. The list's display
+  // category is only a fallback: it can cover more than one real kind (「规范」
+  // lists spec authoring AND spec review), and a placeholder that under-reports
+  // `spec_review` as `spec` would route a later click to the generic
+  // `select_session` — i.e. restore a read-only review session as a writable work
+  // runtime. When the pinned session IS the active one, its real kind is known.
+  function placeholderKindFor(
+    pinnedSessionId: string,
+    displayKind: SessionPageKind,
+  ): SessionPageKind {
+    if (activeSession.value !== pinnedSessionId) return displayKind
+    const real = ctx.activeSessionRealKind.value
+    return real && real !== 'consensus' ? real : displayKind
   }
 
   function appendPinnedConsoleSessionIfMissing(input: {
@@ -214,6 +229,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     if (input.sessions.some((s) => s.sessionId === pinned.sessionId)) return input.sessions
     const existing = findSessionRow(pinned.sessionId)
     if (existing) return [...input.sessions, existing]
+    const placeholderKind = placeholderKindFor(pinned.sessionId, input.sessionKind)
     return [
       ...input.sessions,
       {
@@ -228,8 +244,8 @@ export function installMessageHandler(ctx: AppCtx): void {
         vendor:
           activeSession.value === pinned.sessionId ? (activeVendor.value ?? 'claude') : 'claude',
         state: 'stale',
-        sessionKind: input.sessionKind,
-        ownerKind: ownerKindForSessionKind(input.sessionKind),
+        sessionKind: placeholderKind,
+        ownerKind: ownerKindForSessionKind(placeholderKind),
         ownerId: null,
       },
     ]
@@ -516,12 +532,18 @@ export function installMessageHandler(ctx: AppCtx): void {
         // (re)select so a plain session never inherits the previous source.
         {
           const row = findSessionRow(msg.sessionId)
+          const realKind = row?.sessionKind ?? msg.sessionKind ?? null
           activeSessionSource.value = resolveSessionSourceAction({
-            sessionKind: row?.sessionKind ?? msg.sessionKind,
+            sessionKind: realKind,
             ownerKind: row?.ownerKind ?? msg.ownerKind,
             ownerId: row?.ownerId ?? msg.ownerId,
             linkedIntentId: msg.linkedIntentId,
           })
+          // The session's own kind — NOT the list's display category (「规范」covers
+          // both spec and spec_review). The read-only chat column keys on this, so a
+          // spec authoring session stays writable while a review session next to it
+          // in the same list does not.
+          ctx.activeSessionRealKind.value = realKind
         }
         mode.value = msg.mode
         codexPolicy.value = msg.codexPolicy ?? null

@@ -48,7 +48,9 @@ function makeCtx(
   const sessionsByWorkspace = ref(opts.sessions ?? {})
   const sessionPagingByWorkspace = ref(opts.paging ?? {})
   const requestedIntentId = ref<string | null>(null)
-  const requestedIntentSubTab = ref<'intentSession' | 'specSession' | null>(null)
+  const requestedIntentSubTab = ref<'intentSession' | 'specSession' | 'specReviewSession' | null>(
+    null,
+  )
   const requestedMergedTab = ref<'list' | 'sessions' | null>(null)
   const requestedIntentSessionId = ref<string | null>(null)
   const selectedIntentSessionId = ref<string | null>(null)
@@ -60,6 +62,9 @@ function makeCtx(
   const activeSessionSource = ref<ReturnType<typeof resolveSessionSourceAction>>(null)
   const openIntents = vi.fn()
   const openSpecSession = vi.fn()
+  const openSpecReviewSession = vi.fn()
+  const showToast = vi.fn()
+  const activeSessionRealKind = ref<SessionInfo['sessionKind'] | null>(null)
   const openDiscussions = vi.fn()
   const openDiscussion = vi.fn()
   const openAutomations = vi.fn()
@@ -115,6 +120,10 @@ function makeCtx(
     selectedIntentSessionId,
     openIntents,
     openSpecSession,
+    openSpecReviewSession,
+    showToast,
+    activeSessionRealKind,
+    t: (key: string) => key,
     openDiscussions,
     openDiscussion,
     openAutomations,
@@ -153,6 +162,9 @@ function makeCtx(
     activeSessionSource,
     openIntents,
     openSpecSession,
+    openSpecReviewSession,
+    showToast,
+    activeSessionRealKind,
     requestedIntentId,
     requestedIntentSubTab,
     requestedMergedTab,
@@ -661,5 +673,117 @@ describe('jumpActiveSessionSource — title-bar source button', () => {
     expect(openIntents).not.toHaveBeenCalled()
     expect(openDiscussions).not.toHaveBeenCalled()
     expect(openAutomations).not.toHaveBeenCalled()
+  })
+})
+
+// A spec_review row is listed under the aggregated「规范」entry but must never be
+// restored through the generic `select_session` (whose cold path builds a writable
+// `work` runtime). It routes to the intent-resolved review open, or is refused.
+describe('selectSession — spec_review rows', () => {
+  function reviewRow(extra: Partial<SessionInfo> = {}): SessionInfo {
+    return {
+      ...s('rev-1', 300),
+      sessionKind: 'spec_review',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+      ...extra,
+    } as SessionInfo
+  }
+
+  it('sends open_spec_review_session with the row owner, never select_session', () => {
+    const { ctx, send, openSpecReviewSession, activeTab, consoleSession } = makeCtx({
+      sessions: { [sessionCacheKey(WS, 'spec')]: [reviewRow()] },
+      activeKind: 'spec',
+    })
+
+    ctx.selectSession(WS, 'rev-1', reviewRow())
+
+    expect(openSpecReviewSession).toHaveBeenCalledWith('intent-1', WS)
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select_session' }))
+    // 仍留在会话页并绑定右栏控制台指针。
+    expect(activeTab.value).toBe('console')
+    expect(consoleSession.value).toEqual({ workspacePath: WS, sessionId: 'rev-1' })
+  })
+
+  it('routes by the row even when the caller passes only an id (deep link / pending select)', () => {
+    const { ctx, send, openSpecReviewSession } = makeCtx({
+      sessions: { [sessionCacheKey(WS, 'spec')]: [reviewRow()] },
+      activeKind: 'spec',
+    })
+
+    ctx.selectSession(WS, 'rev-1')
+
+    expect(openSpecReviewSession).toHaveBeenCalledWith('intent-1', WS)
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select_session' }))
+  })
+
+  it.each([
+    ['missing owner id', { ownerId: null }],
+    ['non-intent owner', { ownerKind: 'discussion' as const, ownerId: 'd-1' }],
+  ])('refuses an unattributable review row (%s) without falling back', (_label, extra) => {
+    const { ctx, send, openSpecReviewSession, showToast, consoleSession } = makeCtx({
+      activeKind: 'spec',
+    })
+
+    ctx.selectSession(WS, 'rev-1', reviewRow(extra))
+
+    expect(openSpecReviewSession).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select_session' }))
+    expect(showToast).toHaveBeenCalledTimes(1)
+    // 失败不改变当前活动会话 / 控制台指针。
+    expect(consoleSession.value).toBeNull()
+  })
+
+  it('leaves a spec authoring row on the generic select path', () => {
+    const specRow = { ...s('spec-1', 300), sessionKind: 'spec' } as SessionInfo
+    const { ctx, send, openSpecReviewSession } = makeCtx({
+      sessions: { [sessionCacheKey(WS, 'spec')]: [specRow] },
+      activeKind: 'spec',
+    })
+
+    ctx.selectSession(WS, 'spec-1', specRow)
+
+    expect(openSpecReviewSession).not.toHaveBeenCalled()
+    expect(send).toHaveBeenCalledWith({
+      type: 'select_session',
+      workspaceId: WS,
+      sessionId: 'spec-1',
+    })
+  })
+})
+
+describe('jump-to-source — spec_review', () => {
+  it('routes a review row to its intent detail review tab and opens it', () => {
+    const { ctx, openIntents, openSpecReviewSession, requestedIntentId, requestedIntentSubTab } =
+      makeCtx({ intents: { [WS]: [intent('intent-1')] } })
+
+    ctx.jumpSessionSource(WS, {
+      ...s('rev-1', 300),
+      sessionKind: 'spec_review',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+    } as SessionInfo)
+
+    expect(openIntents).toHaveBeenCalledWith(WS)
+    expect(requestedIntentId.value).toBe('intent-1')
+    expect(requestedIntentSubTab.value).toBe('specReviewSession')
+    expect(openSpecReviewSession).toHaveBeenCalledWith('intent-1', WS)
+  })
+
+  it('routes the active review session title bar to the same target', () => {
+    const bag = makeCtx({ intents: { [WS]: [intent('intent-1')] } })
+    bag.activeWorkspace.value = WS
+    bag.activeSession.value = 'rev-1'
+    bag.activeSessionSource.value = resolveSessionSourceAction({
+      sessionKind: 'spec_review',
+      ownerKind: 'intent',
+      ownerId: 'intent-1',
+    })
+
+    bag.ctx.jumpActiveSessionSource()
+
+    expect(bag.requestedIntentSubTab.value).toBe('specReviewSession')
+    expect(bag.openSpecReviewSession).toHaveBeenCalledWith('intent-1', WS)
+    expect(bag.openSpecSession).not.toHaveBeenCalled()
   })
 })

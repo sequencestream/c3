@@ -58,6 +58,16 @@ import {
 /** Rollback escape hatch — default ON. Set `C3_LIST_FROM_PROJECTION=0` to roll back. */
 const USE_PROJECTION = process.env.C3_LIST_FROM_PROJECTION !== '0'
 
+/**
+ * The real session kinds a requested display category covers. Only「规范」
+ * aggregates: it lists spec authoring AND spec review sessions under one entry
+ * (there is no separate review category). Rows keep their real `sessionKind` on
+ * the wire, so selection and jump-to-source stay kind-accurate.
+ */
+export function sessionKindsForCategory(sessionKind: SessionKind): readonly SessionKind[] {
+  return sessionKind === 'spec' ? ['spec', 'spec_review'] : [sessionKind]
+}
+
 /** All known vendor tags. The rebuild tries each; absent sources no-op. */
 const KNOWN_VENDORS: readonly VendorId[] = ['claude', 'codex']
 
@@ -149,6 +159,12 @@ function accessorNativeList(accessor: SessionAccessor): NativeListFn {
  * when `C3_LIST_FROM_PROJECTION=0`. Triggers a one-shot rebuild when the
  * projection is empty (F-10) and a fire-and-forget lazy validation at
  * the end of every call (F-8).
+ *
+ * `sessionKind` is the DISPLAY category the client asked for, which may cover
+ * more than one real kind (`spec` also lists `spec_review` — see
+ * {@link sessionKindsForCategory}). Aggregation happens in the projection query
+ * so first page / load-more / refresh all see one global order; each row still
+ * reports its own real kind on the wire.
  */
 export async function listSessionsVia(
   accessor: SessionAccessor,
@@ -160,7 +176,7 @@ export async function listSessionsVia(
   }
   // Read the projection for this workspace. Pending rows are excluded
   // (the SQL filter is on `kind='real'`).
-  let rows = listForWorkspace(workspacePath, sessionKind)
+  let rows = listForWorkspace(workspacePath, sessionKindsForCategory(sessionKind))
   if (rows.length === 0 && sessionKind === 'work') {
     // Rebuild path (F-10): the projection is empty for this workspace.
     // Rebuild from the accessor + the `sessionAgents` fact map. Codex is

@@ -66,6 +66,7 @@ function mountDetail(
     workSessionStatus?: SessionStatus | null
     intentSessionStatus?: SessionStatus | null
     specSessionStatus?: SessionStatus | null
+    specReviewSessionStatus?: SessionStatus | null
     intentLogs?: IntentLog[]
   } = {},
 ) {
@@ -100,6 +101,7 @@ function mountDetail(
       workSessionStatus: opts.workSessionStatus ?? null,
       intentSessionStatus: opts.intentSessionStatus ?? null,
       specSessionStatus: opts.specSessionStatus ?? null,
+      specReviewSessionStatus: opts.specReviewSessionStatus ?? null,
       intentLogs: opts.intentLogs ?? [],
       intentLogsLoading: false,
     },
@@ -1679,5 +1681,62 @@ describe('IntentDetail.vue — 会话 tab 标签状态点', () => {
     expect(w.find(SPEC_DOT).exists()).toBe(true)
     // 展示用状态不参与门禁:specSessionRunning 为 false 时「我要修改」入口照常可见。
     expect(w.find('[data-testid="intent-detail-spec-edit"]').exists()).toBe(true)
+  })
+})
+
+describe('IntentDetail.vue — spec review tab', () => {
+  const reviewTab = '.intent-detail-tab[data-tab="specReviewSession"]'
+
+  it('renders the review tab only for an SDD workspace with a review session', () => {
+    expect(
+      mountDetail(intent({ id: 'i1' }), { sddEnabled: true })
+        .find(reviewTab)
+        .exists(),
+    ).toBe(false)
+    expect(
+      mountDetail(intent({ id: 'i2', specReviewSessionId: 'rev-1' }), { sddEnabled: false })
+        .find(reviewTab)
+        .exists(),
+    ).toBe(false)
+    expect(
+      mountDetail(intent({ id: 'i3', specReviewSessionId: 'rev-1' }), { sddEnabled: true })
+        .find(reviewTab)
+        .exists(),
+    ).toBe(true)
+  })
+
+  it('emits open-spec-review-session with the intent id and waits for alignment to render chat', async () => {
+    const w = mountDetail(intent({ id: 'i1', specReviewSessionId: 'rev-1' }), { sddEnabled: true })
+    await w.find(reviewTab).trigger('click')
+
+    expect(w.emitted('open-spec-review-session')).toEqual([['i1']])
+    // 活动会话尚未对齐 → 不渲染聊天列(不串台)。
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(false)
+
+    await w.setProps({ activeSession: 'rev-1' })
+    expect(w.find('[data-testid="intent-detail-chat"]').exists()).toBe(true)
+    // 已对齐 → 不重复发送打开请求。
+    expect(w.emitted('open-spec-review-session')).toEqual([['i1']])
+  })
+
+  it('shows the review status dot only for a non-idle review session', async () => {
+    const w = mountDetail(intent({ id: 'i1', specReviewSessionId: 'rev-1' }), {
+      sddEnabled: true,
+      specReviewSessionStatus: 'running',
+    })
+    expect(w.find('[data-testid="intent-detail-spec-review-session-status"]').exists()).toBe(true)
+
+    await w.setProps({ specReviewSessionStatus: 'idle' })
+    expect(w.find('[data-testid="intent-detail-spec-review-session-status"]').exists()).toBe(false)
+  })
+
+  it('falls back to the intent tab when the review session disappears', async () => {
+    const w = mountDetail(intent({ id: 'i1', specReviewSessionId: 'rev-1' }), { sddEnabled: true })
+    await w.find(reviewTab).trigger('click')
+    expect(w.find(`${reviewTab}.active`).exists()).toBe(true)
+
+    await w.setProps({ intent: intent({ id: 'i1', specReviewSessionId: null }) })
+    expect(w.find(reviewTab).exists()).toBe(false)
+    expect(w.find('.intent-detail-tab[data-tab="intent"].active').exists()).toBe(true)
   })
 })

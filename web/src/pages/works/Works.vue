@@ -72,6 +72,13 @@ const props = defineProps<{
   reconnecting?: boolean
   /** Auto-resume refused by the side-effect gate; awaiting a manual continue (AS-R19). */
   sideEffectPending?: boolean
+  /**
+   * The viewed session can only be replayed (its real kind is read-only, e.g. a
+   * spec review session listed under the aggregated「规范」entry). Drives
+   * ChatColumn's read-only gate — keyed on the session's REAL kind, not on the
+   * left list's display category, so a spec authoring session stays writable.
+   */
+  readonlySession?: boolean
   queue: PendingItem[]
   availableCommands: SlashCommandInfo[]
   voiceLang: string
@@ -82,7 +89,7 @@ const emit = defineEmits<{
   'refresh-sessions': []
   'select-session-kind': [kind: SessionPageKind]
   'load-more-sessions': []
-  'select-session': [path: string, sessionId: string]
+  'select-session': [path: string, session: SessionInfo]
   'jump-session-source': [path: string, session: SessionInfo]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
@@ -130,9 +137,9 @@ watch(
   },
 )
 
-function selectSession(path: string, sessionId: string): void {
+function selectSession(path: string, session: SessionInfo): void {
   mobileActiveKey.value = 'chat'
-  emit('select-session', path, sessionId)
+  emit('select-session', path, session)
 }
 
 function handleMobileBack(targetKey: string): void {
@@ -205,6 +212,7 @@ defineExpose({
         :show-share="true"
         :has-active-session="hasActiveSession"
         :show-input="showInput"
+        :readonly="readonlySession === true"
         :messages="messages"
         :actionable-permission-id="actionablePermissionId"
         :task-model="taskModel"

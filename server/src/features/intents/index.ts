@@ -589,6 +589,12 @@ export const openSpecReviewSession: Handler<'open_spec_review_session'> = async 
     status: rt.status,
     vendor: resolveSessionVendor(chatId),
     agentSwitch: agentSwitchFor(chatId),
+    // State the kind and owner explicitly: this reply can arrive without a list
+    // row to read them from (the intent detail's review tab), and the client's
+    // read-only gate plus jump-to-source both key on the session's REAL kind.
+    sessionKind: 'spec_review',
+    ownerKind: 'intent',
+    ownerId: intent.id,
   })
   for (const e of rt.buffer) conn.send(e)
   addViewer(chatId, conn.deliver)

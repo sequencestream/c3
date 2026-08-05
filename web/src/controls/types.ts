@@ -78,7 +78,13 @@ export interface AppMethods {
   openNewSession(path: string): void
   confirmNewSession(agentId: string | null): void
   openSettingsFromPicker(): void
-  selectSession(path: string, sessionId: string): void
+  /**
+   * View a session in the console. `row` is the clicked list row when the caller
+   * has one: its real `sessionKind` / owner decide the open path (a `spec_review`
+   * row is routed to `open_spec_review_session`, never to `select_session`). With
+   * no row the loaded lists are searched for one.
+   */
+  selectSession(path: string, sessionId: string, row?: SessionInfo): void
   openWorkcenterSession(input: {
     workspaceId: string
     sessionKind: string | null | undefined
@@ -118,6 +124,13 @@ export interface AppMethods {
   revokeSpecApproval(intentId: string): void
   /** Open an intent's spec-authoring session in the detail's `spec session` tab. */
   openSpecSession(intentId: string): void
+  /**
+   * Open an intent's spec-REVIEW session for read-only replay (detail review tab /
+   * aggregated「规范」list row). Resolved server-side from the intent's own
+   * `specReviewSessionId`; never falls back to `select_session`. `workspaceId`
+   * defaults to the intents page's current workspace.
+   */
+  openSpecReviewSession(intentId: string, workspaceId?: string): void
   /**
    * Fetch the intent's `spec.md` for the detail's `spec` tab. Specs live OUTSIDE
    * the workspace under the centralized root, so this sends `read_spec` (keyed by

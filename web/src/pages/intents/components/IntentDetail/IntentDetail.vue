@@ -10,7 +10,7 @@ export function __resetWriteSpecGuards(): void {
 
 <script setup lang="ts">
 /*
- * IntentDetail.vue — 需求页右栏:选中意图的详情面板容器(常驻头部 + 六 tab)。
+ * IntentDetail.vue — 需求页右栏:选中意图的详情面板容器(常驻头部 + 七 tab,评审 tab 条件可见)。
  *
  * 本组件收敛为详情页容器:装配 Tab 状态机(useIntentDetailTabs)与编写 Spec 门 / 延迟切 Tab
  * 组合逻辑(useSpecApprovalGate),编排四态主按钮与会话重置弹框,并把标题栏动作、工程进度、Tab
@@ -41,7 +41,7 @@ import IntentOverviewTab from './IntentOverviewTab.vue'
 import IntentSpecTab from './IntentSpecTab.vue'
 import IntentChangelogTab from './IntentChangelogTab.vue'
 import IntentSessionPanel from './IntentSessionPanel.vue'
-import { useIntentDetailTabs } from './useIntentDetailTabs'
+import { useIntentDetailTabs, type RequestedDetailSubTab } from './useIntentDetailTabs'
 import { useSpecApprovalGate, type MainAction } from './useSpecApprovalGate'
 
 const { t } = useTypedI18n()
@@ -99,14 +99,17 @@ const props = defineProps<{
   /** spec 会话(specSessionId)运行状态,用于编写规范 tab 标签的运行中状态点;
    * 与门禁用的 specSessionRunning 相互独立,只服务标签呈现。 */
   specSessionStatus?: SessionStatus | null
+  /** 评审会话(specReviewSessionId)运行状态,用于评审 tab 标签的运行中状态点。 */
+  specReviewSessionStatus?: SessionStatus | null
   // ── 变更日志(changelog tab)──
   /** 选中意图的生命周期变更日志(倒序);切到 changelog tab 时懒加载。 */
   intentLogs: IntentLog[]
   intentLogsLoading: boolean
   /** One-shot request from WorkCenter jump-to-source or the post-Start-Work jump:
-   * force a detail sub-tab switch (intentSession / specSession / workSession).
+   * force a detail sub-tab switch (intentSession / specSession / specReviewSession /
+   * workSession).
    * Cleared via `requested-subtab-consumed`. */
-  requestedSubTab?: 'intentSession' | 'specSession' | 'workSession' | null
+  requestedSubTab?: RequestedDetailSubTab | null
 }>()
 
 const emit = defineEmits<{
@@ -131,6 +134,8 @@ const emit = defineEmits<{
   // ── 会话/spec 打开 ──
   'open-intent-session': [sessionId: string]
   'open-spec-session': [intentId: string]
+  // 只读评审会话:同样以意图 id 上抛,由服务端按意图当前关联解析并恢复 spec_review runtime。
+  'open-spec-review-session': [intentId: string]
   'read-spec': [intentId: string, specPath: string]
   // 直接编辑 spec 源码:上抛 id + 新内容,由控制层透传为 update_spec_content。
   'save-spec-content': [intentId: string, content: string]
@@ -243,8 +248,10 @@ const {
   workSessionStatusDot,
   intentSessionStatusDot,
   specSessionStatusDot,
+  specReviewSessionStatusDot,
   expectedSessionId,
   chatReady,
+  chatReadonly,
   firstIntentTurn,
   modeLocked,
   selectTab,
@@ -258,10 +265,12 @@ const {
   workSessionStatus: () => props.workSessionStatus,
   intentSessionStatus: () => props.intentSessionStatus,
   specSessionStatus: () => props.specSessionStatus,
+  specReviewSessionStatus: () => props.specReviewSessionStatus,
   onReadSpec: (id, specPath) => emit('read-spec', id, specPath),
   onListIntentLogs: (id) => emit('list-intent-logs', id),
   onOpenIntentSession: (sessionId) => emit('open-intent-session', sessionId),
   onOpenSpecSession: (id) => emit('open-spec-session', id),
+  onOpenSpecReviewSession: (id) => emit('open-spec-review-session', id),
   onOpenWorkSession: (sessionId) => emit('open-work-session', sessionId),
   onRequestedSubTabConsumed: () => emit('requested-subtab-consumed'),
 })
@@ -403,6 +412,7 @@ function submitChat(text: string, images: PromptImage[]): void {
         :work-session-status-dot="workSessionStatusDot"
         :intent-session-status-dot="intentSessionStatusDot"
         :spec-session-status-dot="specSessionStatusDot"
+        :spec-review-session-status-dot="specReviewSessionStatusDot"
         @select="selectTab"
       />
 
@@ -445,13 +455,14 @@ function submitChat(text: string, images: PromptImage[]): void {
         :intent-logs-loading="intentLogsLoading"
       />
 
-      <!-- intent session / spec session / work session tab:复用聊天列 -->
+      <!-- intent / spec / spec review / work session tab:复用聊天列(评审为只读回放) -->
       <IntentSessionPanel
         v-else
         ref="sessionPanel"
         :active-tab="activeTab"
         :expected-session-id="expectedSessionId"
         :chat-ready="chatReady"
+        :chat-readonly="chatReadonly"
         :first-intent-turn="firstIntentTurn"
         :intent-title="intent.title"
         :active-title="activeTitle"

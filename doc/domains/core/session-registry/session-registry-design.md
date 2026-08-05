@@ -42,12 +42,19 @@
 行映射为一个会话条目(新增的 `state`、`sessionKind`、`ownerKind`、`ownerId`、
 `bound` 字段),对 work 列表应用隐藏集与已记录 tool-session 的过滤,
 并按最新优先排序。会话页面的六个标签页(work / intent / spec / discussion / automation /
-tool)以及运行计数徽章都使用同一个投影。work、intent、spec、discussion、automation
+tool)以及运行计数徽章都使用同一个投影。标签页是**显示分类**而非真实 kind 的一一映射:
+「规范」一类把 `session_kind IN ('spec', 'spec_review')` 当作同一个结果集(SR-R15),
+聚合在 SQL 层完成,所以合并后的列表只有一条全局排序,分页不会漏项或重项;
+运行计数走同一组过滤规则(评审没有独立标签页,其兼容计数字段恒为 0)。
+返回行仍带真实 `sessionKind`,评审行因此能被路由到只读恢复入口。work、intent、spec、discussion、automation
 都是活的读模型行;tool 在其域写入方接入之前仍是最后的占位符。spec 行由 intent-management 的
 spec 生命周期在绑定时写入,使用
 
 `session_kind='spec'` 与一个 intent 所有者,因此选中它们会跳回到所属 intent 的
-spec-会话标签页,而不是把它们作为普通 work 会话打开。discussion 行由
+spec-会话标签页,而不是把它们作为普通 work 会话打开。规格评审行同理写入
+`session_kind='spec_review'` 与 intent 所有者:它们在「规范」标签页里与撰写行同列,
+但选中时必须以其 owner 走 intent-management 的只读评审打开器(RM-R36),
+而不是通用会话选择 —— 后者的冷恢复会把它建成可写的 work 运行时。discussion 行由
 discussion agent-session 生命周期在创建参与者/组织者厂商会话时写入,使用
 `session_kind='discussion'`、`owner_kind='discussion'`,以及该 discussion 的 id 作为所有者;选中
 它们会跳回所属 discussion,会话列表会对它们隐藏重命名/删除操作。

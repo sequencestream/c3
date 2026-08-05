@@ -269,10 +269,44 @@ export function installSessionActions(ctx: AppCtx): void {
     ctx.openSettings()
   }
 
+  // Find a loaded session-list row by id across all workspace/kind buckets. Rows
+  // carry the trustworthy `sessionKind/ownerKind/ownerId` projection fields; ids
+  // are globally unique, so the first match is the right one.
+  function findLoadedSessionRow(sessionId: string): SessionInfo | undefined {
+    for (const list of Object.values(sessionsByWorkspace.value)) {
+      const row = list.find((s) => s.sessionId === sessionId)
+      if (row) return row
+    }
+    return undefined
+  }
+
   // A list row click means "view this session" — no business-page jump branches.
   // Every non-orphaned row enters the console tab and binds the chat column; the
   // source jump now lives on the title-bar button (see `jumpActiveSessionSource`).
-  ctx.selectSession = (path: string, sessionId: string): void => {
+  //
+  // One exception, and it is a security boundary, not a convenience: a
+  // `spec_review` row must NOT go through the generic `select_session`, whose cold
+  // restore would rebuild it as a writable `work` runtime. It is routed to
+  // `open_spec_review_session` with the row's owning intent, and the server
+  // re-validates that intent's current review session. `row` is the clicked
+  // projection row when the caller has one (the list); otherwise it is looked up
+  // among the loaded rows, so id-only entries (deep link, post-Start-Work select)
+  // get the same routing. Fail closed: an unattributable review row is refused with
+  // a toast and no fallback — the active session simply stays where it was.
+  ctx.selectSession = (path: string, sessionId: string, row?: SessionInfo): void => {
+    const projection = row ?? findLoadedSessionRow(sessionId)
+    if (projection?.sessionKind === 'spec_review') {
+      if (projection.ownerKind !== 'intent' || !projection.ownerId) {
+        ctx.showToast(ctx.t('session.review.ownerUnresolved'))
+        return
+      }
+      ctx.requestedWorkSessionId.value = null
+      ctx.enterConsole()
+      consoleSession.value = { workspacePath: path, sessionId }
+      if (sessionId === activeSession.value) return
+      ctx.openSpecReviewSession(projection.ownerId, path)
+      return
+    }
     ctx.requestedWorkSessionId.value = null
     ctx.enterConsole()
     // Pin the console tab's pointer up front.
@@ -318,6 +352,10 @@ export function installSessionActions(ctx: AppCtx): void {
       ctx.requestedIntentId.value = target.intentId
       ctx.requestedIntentSubTab.value = target.tab ?? null
       if (target.tab === 'specSession') ctx.openSpecSession(target.intentId)
+      // The review tab replays a read-only session; open it through the same
+      // intent-resolved path the tab itself uses (the detail's tab machine skips a
+      // duplicate open once the active session is already aligned).
+      if (target.tab === 'specReviewSession') ctx.openSpecReviewSession(target.intentId, path)
       return
     }
     if (target.kind === 'intentSessions') {
@@ -428,6 +466,7 @@ export function installSessionActions(ctx: AppCtx): void {
     activeVendor.value = null
     activeAgentSwitch.value = null
     activeSessionSource.value = null
+    ctx.activeSessionRealKind.value = null
     messages.value = []
     counters.nextId = 1
     availableCommands.value = []

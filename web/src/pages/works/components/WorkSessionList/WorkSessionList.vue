@@ -51,7 +51,9 @@ const emit = defineEmits<{
   'select-session-kind': [kind: SessionPageKind]
   'refresh-sessions': []
   'load-more-sessions': []
-  'select-session': [path: string, sessionId: string]
+  // 上抛整行(而非仅 id):控制层要按行的真实 sessionKind / owner 决定打开路径
+  // ——「规范」列表同时含 spec 与只读 spec_review 两种会话。
+  'select-session': [path: string, session: SessionInfo]
   'jump-session-source': [path: string, session: SessionInfo]
   'delete-session': [path: string, sessionId: string]
   'rename-session': [path: string, sessionId: string, title: string]
@@ -333,7 +335,7 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
           :title="s.state === 'orphaned' ? t('session.list.orphaned.tooltip') : undefined"
           @click="
             s.state !== 'orphaned'
-              ? emit('select-session', currentWorkspace as string, s.sessionId)
+              ? emit('select-session', currentWorkspace as string, s)
               : undefined
           "
         >
@@ -366,7 +368,7 @@ function rowAction(s: SessionInfo, op: Extract<SessionCapability, 'rename' | 'de
               class="icon-btn"
               :title="t('session.list.ghost.retry')"
               data-testid="session-row-retry"
-              @click.stop="emit('select-session', currentWorkspace as string, s.sessionId)"
+              @click.stop="emit('select-session', currentWorkspace as string, s)"
             >
               ↻
             </button>

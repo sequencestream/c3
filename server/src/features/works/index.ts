@@ -63,8 +63,19 @@ import {
   runningAutomationIdsForWorkspace,
 } from '../automations/store.js'
 import { mintC3SessionId } from '../../kernel/agent/session/accessor.js'
+import { sessionKindsForCategory } from '../../kernel/agent/session/list-sessions.js'
 import { errMsg } from '../errmsg.js'
 import type { Handler } from '../../transport/handler-registry.js'
+
+/**
+ * Session kinds no human turn may ever be appended to. `spec_review` sessions are
+ * produced and settled by the system; the UI only replays them. The ONE predicate
+ * every manual-continue entry point must consult, so a future entry cannot reopen
+ * the review session for follow-up turns by accident.
+ */
+export function isReadOnlySessionKind(kind: SessionKind): boolean {
+  return kind === 'spec_review'
+}
 
 /** Vendors whose host CLI resolved on PATH (ADR-0012) — the switcher availability set. */
 
@@ -130,6 +141,18 @@ const SESSION_PAGE_KINDS: readonly Exclude<SessionKind, 'consensus'>[] = [
 ]
 
 /**
+ * The display categories the session page actually offers. `spec_review` has no
+ * category of its own — its sessions are listed and counted under `spec`
+ * ({@link sessionKindsForCategory}) — so it is not iterated here; its wire count
+ * field stays at 0 so neither an old nor a new client can turn it into a second
+ * visible badge or double-count it in the top-bar total.
+ */
+const SESSION_PAGE_CATEGORIES: readonly Exclude<SessionKind, 'consensus' | 'spec_review'>[] =
+  SESSION_PAGE_KINDS.filter(
+    (kind): kind is Exclude<SessionKind, 'consensus' | 'spec_review'> => kind !== 'spec_review',
+  )
+
+/**
  * Running **business item** counts of a workspace, deduplicated by owner: an
  * intent / discussion / automation is counted once as long as ANY of its
  * sessions is running. Covers every session kind (including hidden tool
@@ -174,6 +197,10 @@ export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg)
     })
     return
   }
+  // `spec` is the aggregated「规范」badge: running spec authoring + spec review
+  // sessions, each real session counted once. `spec_review` is kept on the wire
+  // for shape compatibility but stays 0 — it is not a visible category, and a
+  // non-zero value would double-count those sessions in the top-bar total.
   const counts = {
     work: 0,
     intent: 0,
@@ -183,13 +210,14 @@ export const getSessionCounts: Handler<'get_session_counts'> = (_ctx, conn, msg)
     automation: 0,
     tool: 0,
   }
-  for (const kind of SESSION_PAGE_KINDS) {
+  for (const kind of SESSION_PAGE_CATEGORIES) {
     if (kind === 'tool' && !getShowToolSessions()) continue
     counts[kind] =
       kind === 'automation'
         ? countRunningAutomationSessions(abs)
-        : listForWorkspace(abs, kind).filter((row) => isRunning(row.vendorSessionId ?? row.c3Id))
-            .length
+        : listForWorkspace(abs, sessionKindsForCategory(kind)).filter((row) =>
+            isRunning(row.vendorSessionId ?? row.c3Id),
+          ).length
   }
   conn.send({
     type: 'session_counts',
@@ -505,6 +533,16 @@ export const userPrompt: Handler<'user_prompt'> = async (ctx, conn, msg) => {
   const rt = conn.viewing ? getRuntime(conn.viewing) : undefined
   if (!rt) {
     conn.send({ type: 'error', error: { code: 'session.notSelected' } })
+    return
+  }
+  // Read-only kind gate — the last line of defence behind the client's read-only
+  // chat column. A spec review session is a machine-run verdict record the user
+  // may replay, never continue: reject BEFORE any state moves (no message
+  // appended, no status change, no team push, no launch/resume). Placed ahead of
+  // every other branch so a forged prompt on a live or cold review session, from
+  // any current or future entry point, lands here.
+  if (isReadOnlySessionKind(rt.sessionKind)) {
+    conn.send({ type: 'error', error: { code: 'session.readOnly' } })
     return
   }
   // Attachment guard (2026-06-16): c3 forwards images only. Reject the whole turn

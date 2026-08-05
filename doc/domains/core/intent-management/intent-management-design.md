@@ -651,7 +651,7 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
 
 三者都先检查 store 是否可用,在 db 不可用时返回 `error`。
 
-第四个只读的打开器服务于意图详情的「spec session」标签页:
+第四、第五个只读的打开器服务于意图详情的「spec session」与「评审」标签页:
 
 - **`open_spec_session`**:解析该意图存储的 `specSessionId`;若该 `'spec'` 运行时
   已被丢弃(进程重启/GC),则从记录重建,并把写入重新限定在
@@ -663,6 +663,18 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
   统一的 Sessions 页面从不通过原始会话 id 打开一个 spec 行;它使用投影出的
   `owner_kind='intent'` / `owner_id` 组合导航到所属意图的「spec session」标签页,
   再用该意图 id 调用此打开器。
+
+- **`open_spec_review_session`**:与上一个镜像,但恢复的是 `'spec_review'` 运行时,
+  且**不**授予任何目录写权;它重新注入被审意图 id 与结论所绑定的内容指纹
+  (尚无结论时用 spec 现内容的指纹),回复的 `session_selected` 另外显式携带
+  `sessionKind='spec_review'` 与 intent owner,使详情页(无列表行可读)也能据此
+  进入只读呈现并解析溯源。它是**唯一**的评审恢复入口:详情页「评审」标签页与
+  Sessions 页面「规范」列表里的评审行都调用它,并且都只传意图 id ——
+  行携带的会话 id 只用于选择与响应对齐,不能绕过服务端按意图的解析。
+  意图不存在或该意图没有 `specReviewSessionId` 时拒绝(`error`),
+  调用方不得回退到通用的 `select_session`(其冷恢复会建成可写的 `work` 运行时)。
+  恢复只让过程可回放:任何人工续跑仍由 `user_prompt` 的 `sessionKind` 门禁挡下
+  (RM-R36)。
 
 ## 广播
 

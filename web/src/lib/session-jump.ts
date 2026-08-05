@@ -3,7 +3,11 @@ import type { SessionKind } from '@ccc/shared/protocol'
 export type SessionOwnerKind = 'intent' | 'discussion' | 'automation'
 
 export type SessionJumpTarget =
-  | { kind: 'intentDetail'; intentId: string; tab?: 'intentSession' | 'specSession' }
+  | {
+      kind: 'intentDetail'
+      intentId: string
+      tab?: 'intentSession' | 'specSession' | 'specReviewSession'
+    }
   // `intentId` is null for a standalone intent (chat) session that has no owning
   // intent: the jump still opens the intents page, just without selecting an intent.
   | { kind: 'intentSessions'; intentId: string | null }
@@ -19,6 +23,10 @@ export function resolveSessionJumpTarget(input: {
   if (input.ownerKind === 'intent') {
     if (input.sessionKind === 'spec')
       return { kind: 'intentDetail', intentId: input.ownerId, tab: 'specSession' }
+    // A review session belongs to its intent's read-only review tab, never to the
+    // spec-authoring one: they are separate sessions with separate permissions.
+    if (input.sessionKind === 'spec_review')
+      return { kind: 'intentDetail', intentId: input.ownerId, tab: 'specReviewSession' }
     if (input.sessionKind === 'intent')
       return { kind: 'intentDetail', intentId: input.ownerId, tab: 'intentSession' }
     if (input.sessionKind === 'work') return { kind: 'intentDetail', intentId: input.ownerId }
@@ -41,7 +49,7 @@ export function resolveSessionJumpTarget(input: {
 
 // The title-bar source button's i18n label family, chosen by the session's own
 // kind (a presentational decision; jump semantics still come only from
-// `resolveSessionJumpTarget`). intent/spec → "意图", discussion → "讨论",
+// `resolveSessionJumpTarget`). intent/spec/spec_review → "意图", discussion → "讨论",
 // automation → "自动化", work/tool (or unknown) → generic "溯源".
 export type SessionSourceLabel = 'intent' | 'discussion' | 'automation' | 'trace'
 
@@ -51,7 +59,7 @@ export interface SessionSourceAction {
 }
 
 function sourceLabelForKind(kind: SessionKind | string | null | undefined): SessionSourceLabel {
-  if (kind === 'spec' || kind === 'intent') return 'intent'
+  if (kind === 'spec' || kind === 'spec_review' || kind === 'intent') return 'intent'
   if (kind === 'discussion') return 'discussion'
   if (kind === 'automation') return 'automation'
   return 'trace'

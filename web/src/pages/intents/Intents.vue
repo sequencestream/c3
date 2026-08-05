@@ -13,6 +13,7 @@ import { useTypedI18n } from '@/i18n'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import IntentMergedList from './components/IntentMergedList/IntentMergedList.vue'
 import IntentDetail from './components/IntentDetail/IntentDetail.vue'
+import type { RequestedDetailSubTab } from './components/IntentDetail/useIntentDetailTabs'
 import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
 import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
@@ -92,7 +93,7 @@ const props = defineProps<{
   codexPolicy?: CodexPolicy | null
   modeOptions?: { value: ModeToken; label: string }[]
   /** One-shot sub-tab request for IntentDetail (WorkCenter jump-to-source / post-Start-Work jump). */
-  requestedIntentSubTab?: 'intentSession' | 'specSession' | 'workSession' | null
+  requestedIntentSubTab?: RequestedDetailSubTab | null
   /**
    * One-shot request to open a standalone intent (chat) session here (from the
    * session page's title-bar source button, for a chat with no owning intent).
@@ -112,6 +113,7 @@ const emit = defineEmits<{
   'approve-spec': [intentId: string]
   'revoke-spec-approval': [intentId: string]
   'open-spec-session': [intentId: string]
+  'open-spec-review-session': [intentId: string]
   'open-intent-session': [sessionId: string]
   'read-spec': [intentId: string, specPath: string]
   'list-intent-logs': [intentId: string]
@@ -222,6 +224,14 @@ const selectedIntentSessionStatus = computed<SessionStatus | null>(() => {
 // 直接编辑 spec 门禁的 selectedSpecSessionRunning 相互独立。
 const selectedSpecSessionStatus = computed<SessionStatus | null>(() => {
   const id = selectedIntent.value?.specSessionId
+  if (!id) return null
+  return props.sessionStatus?.[id] ?? null
+})
+
+// 选中意图的评审会话(specReviewSessionId)运行状态,派生给 IntentDetail 的评审 tab
+// 标签状态点。无 specReviewSessionId 或状态未知时为 null(不显示状态点)。
+const selectedSpecReviewSessionStatus = computed<SessionStatus | null>(() => {
+  const id = selectedIntent.value?.specReviewSessionId
   if (!id) return null
   return props.sessionStatus?.[id] ?? null
 })
@@ -382,6 +392,7 @@ defineExpose({
         :work-session-status="selectedWorkSessionStatus"
         :intent-session-status="selectedIntentSessionStatus"
         :spec-session-status="selectedSpecSessionStatus"
+        :spec-review-session-status="selectedSpecReviewSessionStatus"
         :intent-logs="selectedIntentLogs"
         :intent-logs-loading="intentLogsLoading"
         @refine="(id: string) => emit('refine', id)"
@@ -394,6 +405,7 @@ defineExpose({
         @approve-spec="(id: string) => emit('approve-spec', id)"
         @revoke-spec-approval="(id: string) => emit('revoke-spec-approval', id)"
         @open-spec-session="(id: string) => emit('open-spec-session', id)"
+        @open-spec-review-session="(id: string) => emit('open-spec-review-session', id)"
         @open-intent-session="(sessionId: string) => emit('open-intent-session', sessionId)"
         @read-spec="(id: string, specPath: string) => emit('read-spec', id, specPath)"
         @reset-intent-session="

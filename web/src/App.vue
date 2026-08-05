@@ -25,6 +25,7 @@ import SpecStartupOverlay from './components/SpecStartupOverlay/SpecStartupOverl
 import AutomationSaveOverlay from './components/AutomationSaveOverlay/AutomationSaveOverlay.vue'
 import ErrorDialog from './components/ErrorDialog/ErrorDialog.vue'
 import { computed, ref, watch } from 'vue'
+import type { SessionInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from './i18n'
 import { useAppController } from './controls'
 import { CODES_CHAT_WIDTH_DEFAULT } from './controls/state'
@@ -63,6 +64,7 @@ const {
   activeVendor,
   activeAgentSwitch,
   activeSessionSource,
+  activeSessionReadonly,
   sessionCapabilities,
   hasActiveSession,
   mode,
@@ -132,6 +134,7 @@ const {
   approveSpec,
   revokeSpecApproval,
   openSpecSession,
+  openSpecReviewSession,
   readIntentSpec,
   resetIntentSession,
   resetSpecSession,
@@ -450,6 +453,7 @@ function onCodesChatWidth(px: number): void {
           :current-agent-name="currentAgentName"
           :reconnecting="reconnecting"
           :side-effect-pending="sideEffectPending"
+          :readonly-session="activeSessionReadonly"
           :queue="currentQueue"
           :available-commands="availableCommands"
           :voice-lang="serverSettings?.voiceLang ?? 'zh-CN'"
@@ -457,7 +461,9 @@ function onCodesChatWidth(px: number): void {
           @refresh-sessions="() => refreshSessions(currentWorkspace)"
           @select-session-kind="selectSessionKind"
           @load-more-sessions="() => loadMoreSessions(currentWorkspace)"
-          @select-session="selectSession"
+          @select-session="
+            (path: string, session: SessionInfo) => selectSession(path, session.sessionId, session)
+          "
           @jump-session-source="jumpSessionSource"
           @delete-session="deleteSession"
           @rename-session="renameSession"
@@ -555,6 +561,7 @@ function onCodesChatWidth(px: number): void {
           @approve-spec="approveSpec"
           @revoke-spec-approval="revokeSpecApproval"
           @open-spec-session="openSpecSession"
+          @open-spec-review-session="(id: string) => openSpecReviewSession(id)"
           @open-intent-session="selectIntentSession"
           @read-spec="readIntentSpec"
           @list-intent-logs="listIntentLogs"

@@ -923,6 +923,9 @@
       "specSession": {
         "label": "사양 작성 세션"
       },
+      "specReviewSession": {
+        "label": "검토"
+      },
       "workSession": {
         "label": "작업 세션"
       },
@@ -987,6 +990,9 @@
     },
     "specSession": {
       "empty": "이 의도에는 아직 사양 세션이 없습니다."
+    },
+    "specReviewSession": {
+      "empty": "이 인텐트에는 아직 명세 검토 세션이 없습니다."
     },
     "workSession": {
       "empty": "이 의도에는 아직 작업 세션이 없습니다."
@@ -1217,6 +1223,9 @@
       "tool": "도구",
       "tabsLabel": "세션 분류",
       "placeholder": "이 세션 유형은 2단계에서 연결됩니다."
+    },
+    "review": {
+      "ownerUnresolved": "이 검토 세션을 열 수 없습니다: 소속 인텐트를 확인하지 못했습니다."
     }
   },
   "automation": {
@@ -1871,7 +1880,8 @@
       "renameFailed": "세션 이름을 변경하지 못했습니다: {detail}",
       "notSelected": "먼저 세션을 선택하거나 만드세요.",
       "turnRunning": "이 세션에서 이미 턴이 실행 중입니다.",
-      "invalidMode": "벤더 \"{vendor}\"의 권한 모드 \"{mode}\"가 유효하지 않습니다"
+      "invalidMode": "벤더 \"{vendor}\"의 권한 모드 \"{mode}\"가 유효하지 않습니다",
+      "readOnly": "이 세션은 읽기 전용이므로 이어서 진행할 수 없습니다."
     },
     "prompt": {
       "unsupportedFile": "메시지에는 이미지만 첨부할 수 있습니다 (받은 형식: \"{mediaType}\")."

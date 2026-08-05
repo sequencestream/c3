@@ -12,7 +12,9 @@ import {
   parseMcpApiKey,
   renameMcpApiKey,
   revokeMcpApiKey,
+  revokeMcpApiKeyInWorkspace,
   touchMcpApiKey,
+  updateMcpApiKeyInWorkspace,
   updateMcpApiKeyTools,
   verifyMcpApiKey,
 } from './mcp-api-keys.js'
@@ -359,6 +361,35 @@ describe('lifecycle', () => {
     expect(ids).toEqual([second.meta.id, first.meta.id]) // newest first
     expect(await verifyMcpApiKey(first.key)).not.toBeNull()
     expect(await verifyMcpApiKey(second.key)).not.toBeNull()
+  })
+
+  it('updates name and tools atomically in one workspace-scoped mutation', async () => {
+    const ws = makeWorkspace('proj')
+    const { meta } = await createMcpApiKey('ci', ws, READ_TOOLS, 1000)
+    const updated = updateMcpApiKeyInWorkspace(meta.id, ws, {
+      name: 'release bot',
+      tools: ['save_intents'],
+    })
+    expect(updated!.name).toBe('release bot')
+    expect(updated!.tools).toEqual(['save_intents'])
+    expect(listMcpApiKeys()[0].name).toBe('release bot')
+  })
+
+  it('rejects a workspace-scoped update when the key belongs elsewhere', async () => {
+    const a = makeWorkspace('a')
+    const b = makeWorkspace('b')
+    const { meta } = await createMcpApiKey('ci', b, READ_TOOLS, 1000)
+    expect(updateMcpApiKeyInWorkspace(meta.id, a, { tools: ['save_intents'] })).toBeNull()
+    expect(listMcpApiKeysForWorkspace(b)[0].tools).toEqual(READ_TOOLS)
+  })
+
+  it('rejects a workspace-scoped revoke when the key belongs elsewhere', async () => {
+    const a = makeWorkspace('a')
+    const b = makeWorkspace('b')
+    const { key, meta } = await createMcpApiKey('ci', b, READ_TOOLS, 1000)
+    expect(revokeMcpApiKeyInWorkspace(meta.id, a)).toBe(false)
+    expect(listMcpApiKeys()).toHaveLength(1)
+    expect(await verifyMcpApiKey(key)).not.toBeNull()
   })
 })
 

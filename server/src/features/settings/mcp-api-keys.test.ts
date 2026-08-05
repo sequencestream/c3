@@ -64,22 +64,25 @@ vi.mock('../../kernel/config/mcp-api-keys.js', () => ({
     h.records = [...h.records, meta]
     return { meta, key: 'c3k_key-new_THE-PLAINTEXT' }
   },
-  updateMcpApiKeyTools: (id: string, tools: string[]) => {
-    const rec = h.records.find((r) => r.id === id)
+  updateMcpApiKeyInWorkspace: (
+    id: string,
+    workspace: string,
+    patch: { name?: string; tools?: string[] },
+  ) => {
+    const rec = h.records.find((r) => r.id === id && r.workspace === workspace)
     if (!rec) return null
-    h.updatedTools = { id, tools: [...tools] }
-    rec.tools = [...tools]
+    if (patch.name !== undefined) {
+      h.renamed = { id, name: patch.name }
+      rec.name = patch.name
+    }
+    if (patch.tools !== undefined) {
+      h.updatedTools = { id, tools: [...patch.tools] }
+      rec.tools = [...patch.tools]
+    }
     return rec
   },
-  renameMcpApiKey: (id: string, name: string) => {
-    const rec = h.records.find((r) => r.id === id)
-    if (!rec) return null
-    h.renamed = { id, name }
-    rec.name = name
-    return rec
-  },
-  revokeMcpApiKey: (id: string) => {
-    const idx = h.records.findIndex((r) => r.id === id)
+  revokeMcpApiKeyInWorkspace: (id: string, workspace: string) => {
+    const idx = h.records.findIndex((r) => r.id === id && r.workspace === workspace)
     if (idx < 0) return false
     h.revoked.push(id)
     h.records = h.records.filter((r) => r.id !== id)
@@ -426,6 +429,40 @@ describe('update_mcp_api_key', () => {
     expect(sent[0]).toMatchObject({ error: { code: 'mcpApiKey.unknownWorkspace' } })
     expect(h.updatedTools).toBeNull()
   })
+
+  it('rejects an update when the key belongs to another workspace', () => {
+    seed([key({ id: 'key-beta', workspace: '/canon/beta' })])
+    const { conn, sent } = makeConn()
+    updateMcpApiKeyHandler(ctx, conn, {
+      type: 'update_mcp_api_key',
+      workspaceId: 'ws-alpha',
+      id: 'key-beta',
+      tools: ['save_intents'],
+    })
+    expect(sent).toEqual([
+      { type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: 'key-beta' } } },
+    ])
+    expect(h.updatedTools).toBeNull()
+    expect(h.records[0].tools).toEqual(READ_TOOLS)
+  })
+
+  it('does not partially apply a rename when tools validation fails', () => {
+    seed([key()])
+    const { conn, sent } = makeConn()
+    updateMcpApiKeyHandler(ctx, conn, {
+      type: 'update_mcp_api_key',
+      workspaceId: 'ws-alpha',
+      id: 'key-1',
+      name: 'new name',
+      tools: ['not_a_tool'],
+    })
+    expect(sent[0]).toMatchObject({
+      error: { code: 'mcpApiKey.unknownTool', params: { tool: 'not_a_tool' } },
+    })
+    expect(h.renamed).toBeNull()
+    expect(h.updatedTools).toBeNull()
+    expect(h.records[0].name).toBe('ci')
+  })
 })
 
 describe('revoke_mcp_api_key', () => {
@@ -469,5 +506,21 @@ describe('revoke_mcp_api_key', () => {
     })
     expect(h.revoked).toEqual(['key-1'])
     expect((sent[0] as { type: string }).type).toBe('mcp_api_keys')
+  })
+
+  it('rejects a revoke when the key belongs to another workspace', () => {
+    seed([key({ id: 'key-beta', workspace: '/canon/beta' })])
+    const { conn, sent } = makeConn()
+    revokeMcpApiKeyHandler(ctx, conn, {
+      type: 'revoke_mcp_api_key',
+      workspaceId: 'ws-alpha',
+      id: 'key-beta',
+    })
+    expect(sent).toEqual([
+      { type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: 'key-beta' } } },
+    ])
+    expect(h.revoked).toEqual([])
+    expect(h.records).toHaveLength(1)
+    expect(h.closed).toEqual([])
   })
 })

@@ -32,9 +32,8 @@ import { EXTERNAL_MCP_READ_TOOLS } from '@ccc/shared/protocol'
 import {
   createMcpApiKey,
   listMcpApiKeysForWorkspace,
-  renameMcpApiKey,
-  revokeMcpApiKey,
-  updateMcpApiKeyTools,
+  revokeMcpApiKeyInWorkspace,
+  updateMcpApiKeyInWorkspace,
   type McpApiKeyInfo,
 } from '../../kernel/config/mcp-api-keys.js'
 import {
@@ -153,10 +152,7 @@ export const updateMcpApiKeyHandler: Handler<'update_mcp_api_key'> = (_ctx, conn
   const path = resolveWorkspace(conn, msg.workspaceId)
   if (!path) return
   try {
-    if (msg.name !== undefined && renameMcpApiKey(msg.id, msg.name) === null) {
-      conn.send({ type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: msg.id } } })
-      return
-    }
+    let normalizedTools: string[] | undefined
     if (msg.tools !== undefined) {
       // All-or-nothing: an unknown or repeated name aborts before anything is
       // written, so the saved scope is always exactly the submitted one.
@@ -168,14 +164,24 @@ export const updateMcpApiKeyHandler: Handler<'update_mcp_api_key'> = (_ctx, conn
         })
         return
       }
-      if (updateMcpApiKeyTools(msg.id, normalized.tools) === null) {
+      normalizedTools = normalized.tools
+    }
+
+    const patch: { name?: string; tools?: string[] } = {}
+    if (msg.name !== undefined) patch.name = msg.name
+    if (normalizedTools !== undefined) patch.tools = normalizedTools
+
+    if (Object.keys(patch).length > 0) {
+      if (updateMcpApiKeyInWorkspace(msg.id, path, patch) === null) {
         conn.send({ type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: msg.id } } })
         return
       }
-      // Storage is authoritative from here on. Only then are live transports cut,
-      // so a teardown that fails cannot restore the previous privileges — the next
-      // request is refused either way.
-      closeExternalSessions?.(msg.id)
+      if (normalizedTools !== undefined) {
+        // Storage is authoritative from here on. Only then are live transports cut,
+        // so a teardown that fails cannot restore the previous privileges — the next
+        // request is refused either way.
+        closeExternalSessions?.(msg.id)
+      }
     }
     conn.send(roster(msg.workspaceId, path))
   } catch (err) {
@@ -188,7 +194,7 @@ export const revokeMcpApiKeyHandler: Handler<'revoke_mcp_api_key'> = (_ctx, conn
   const path = resolveWorkspace(conn, msg.workspaceId)
   if (!path) return
   try {
-    if (!revokeMcpApiKey(msg.id)) {
+    if (!revokeMcpApiKeyInWorkspace(msg.id, path)) {
       conn.send({ type: 'error', error: { code: 'mcpApiKey.unknown', params: { id: msg.id } } })
       return
     }

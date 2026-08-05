@@ -371,6 +371,20 @@ export async function createMcpApiKey(
   return { meta: toMeta(record), key: `${KEY_PREFIX}_${id}_${secret}` }
 }
 
+/** Fields that may be patched on one key in a single atomic write. */
+export interface McpApiKeyPatch {
+  name?: string
+  tools?: readonly string[]
+}
+
+function findRecordInWorkspace(
+  records: McpApiKeyRecord[],
+  id: string,
+  canonicalWorkspace: string,
+): McpApiKeyRecord | undefined {
+  return records.find((r) => r.id === id && r.workspace === canonicalWorkspace)
+}
+
 /**
  * Replace a key's granted tool scope. An empty array is accepted and means "this
  * key may call nothing" — it is never read as a wildcard. Names are stored
@@ -400,10 +414,50 @@ export function renameMcpApiKey(id: string, name: string): McpApiKeyInfo | null 
   })
 }
 
+/**
+ * Patch a key's display name and/or tool scope in ONE workspace-scoped mutation.
+ * Returns the updated metadata, or `null` when the id is unknown in that workspace.
+ * Catalog validation is the caller's job; this layer stores the patch as given.
+ */
+export function updateMcpApiKeyInWorkspace(
+  id: string,
+  workspace: string,
+  patch: McpApiKeyPatch,
+): McpApiKeyInfo | null {
+  const canonical = canonicalizeWorkspacePath(workspace)
+  if (!canonical) return null
+  return mutate((records) => {
+    const rec = findRecordInWorkspace(records, id, canonical)
+    if (!rec) return null
+    if (patch.name !== undefined) {
+      rec.name = patch.name.trim() || displayPrefix(rec.id)
+    }
+    if (patch.tools !== undefined) {
+      rec.tools = dedupe([...patch.tools])
+    }
+    return toMeta(rec)
+  })
+}
+
 /** Revoke (delete) a key. Returns true when a record was actually removed. */
 export function revokeMcpApiKey(id: string): boolean {
   return mutate((records) => {
     const idx = records.findIndex((r) => r.id === id)
+    if (idx < 0) return false
+    records.splice(idx, 1)
+    return true
+  })
+}
+
+/**
+ * Revoke (delete) a key bound to ONE workspace. Returns true when a record was
+ * actually removed; `false` when the id is unknown in that workspace.
+ */
+export function revokeMcpApiKeyInWorkspace(id: string, workspace: string): boolean {
+  const canonical = canonicalizeWorkspacePath(workspace)
+  if (!canonical) return false
+  return mutate((records) => {
+    const idx = records.findIndex((r) => r.id === id && r.workspace === canonical)
     if (idx < 0) return false
     records.splice(idx, 1)
     return true

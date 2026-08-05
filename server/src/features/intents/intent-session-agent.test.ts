@@ -50,6 +50,7 @@ import {
   resetStoreForTests as resetDiscussionStoreForTests,
   setConclusion,
 } from '../discussions/store.js'
+import { resetStoreForTests as resetUserInvolveStoreForTests } from '../user-involve/store.js'
 import {
   discussionToIntent,
   newIntentSession,
@@ -88,6 +89,9 @@ beforeEach(() => {
   resetDbForTests()
   resetStoreForTests()
   resetDiscussionStoreForTests()
+  // The action-descriptor projection reads the wait-user store, so its
+  // "schema ensured" flag must follow the recreated db too.
+  resetUserInvolveStoreForTests()
   resetSessionMetadataStoreForTests()
   resetStateCacheForTests()
   resetSettingsCacheForTests()

@@ -11,7 +11,12 @@
  * Neither function sends on a connection. Each returns a structured result the
  * caller frames as a WS `error` / response or as an MCP `{content, isError}`.
  */
-import type { CreatePrStage, Intent, IntentStatus } from '@ccc/shared/protocol'
+import type {
+  CreatePrStage,
+  GitActionFailureGuidance,
+  Intent,
+  IntentStatus,
+} from '@ccc/shared/protocol'
 import { CREATE_PR_STAGES } from '@ccc/shared/protocol'
 import { closeForgePr, commitAndPush, createGhPr, hasDiffAgainstMain } from '../../git.js'
 import { getGitBranchMode } from '../../kernel/config/index.js'
@@ -19,6 +24,8 @@ import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
 import type { GenericEvent } from '@ccc/shared'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import { normalizeBranchName } from './dependency-gate.js'
+import { buildGitFailureGuidance } from './git-failure.js'
+import type { GitFailureStage } from './git-failure.js'
 import { publishIntentStatusTransition } from './lifecycle-events.js'
 import { clearJudgedSession, clearRunStatus } from './run-status.js'
 import {
@@ -33,7 +40,19 @@ import { getWorktreePath } from './worktree.js'
 
 /** A structured outcome both surfaces can frame. */
 export type IntentWriteResult<T = Record<string, never>> =
-  ({ success: true } & T) | { success: false; code: string; params?: Record<string, string> }
+  | ({ success: true } & T)
+  | {
+      success: false
+      code: string
+      params?: Record<string, string>
+      /**
+       * Targeted repair guidance for a failed Git / forge command. Set only on
+       * the commit → push → create chain, never on a gate rejection (which keeps
+       * its own precise copy) and never on the `prId` idempotency guard (nothing
+       * ran, so there is nothing to classify or retry).
+       */
+      guidance?: GitActionFailureGuidance
+    }
 
 // ---------------------------------------------------------------------------
 // create_pr
@@ -120,23 +139,41 @@ export async function createPrForIntent(
   const title = `feat: ${req.title}`
   const body = buildPrBody(req)
 
+  // Which half of the chain is executing, so a THROWN failure is classified
+  // against the stage it actually happened in rather than a guessed one.
+  let stage: GitFailureStage = 'commit-push'
   try {
     // Commit and push first; only create the PR when that succeeded.
     const commit = await commitAndPush(worktreePath, title, reportStage)
     if (!commit.ok) {
+      const detail = commit.error ?? '提交失败'
       return {
         success: false,
         code: 'intent.prCreateFailed',
-        params: { detail: commit.error ?? '提交失败' },
+        params: { detail },
+        guidance: buildGitFailureGuidance(
+          { stage: 'commit-push', text: detail },
+          intentId,
+          'create-pr',
+        ),
       }
     }
+    stage = 'forge-create'
     reportStage('creating-pr')
     const pr = await createGhPr(worktreePath, title, body, headBranch)
     if (!pr.ok || !pr.prId) {
+      const detail = pr.error ?? '未知错误'
       return {
         success: false,
         code: 'intent.prCreateFailed',
-        params: { detail: pr.error ?? '未知错误' },
+        params: { detail },
+        guidance: buildGitFailureGuidance(
+          // `unavailable` is the CLI runner's own verdict (not installed / not
+          // logged in), so it is passed through rather than re-derived from text.
+          { stage: 'forge-create', text: detail, cliUnavailable: pr.unavailable },
+          intentId,
+          'create-pr',
+        ),
       }
     }
     setPrInfo(intentId, pr.prId, 'reviewing', pr.prUrl ?? null)
@@ -155,10 +192,12 @@ export async function createPrForIntent(
     )
     return { success: true, prId: pr.prId, prUrl: pr.prUrl ?? pr.prId }
   } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
     return {
       success: false,
       code: 'intent.prCreateFailed',
-      params: { detail: err instanceof Error ? err.message : String(err) },
+      params: { detail },
+      guidance: buildGitFailureGuidance({ stage, text: detail }, intentId, 'create-pr'),
     }
   }
 }

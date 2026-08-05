@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
-import type { Intent, ServerToClient } from '@ccc/shared/protocol'
+import type { GitActionFailureGuidance, Intent, ServerToClient } from '@ccc/shared/protocol'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { ensureRuntime, getRuntime, removeRuntimesForWorkspace } from '../../runs.js'
 import type { SessionRuntime } from '../../runs.js'
@@ -36,14 +36,20 @@ import {
   updateIntentDeps,
   updateStatus,
 } from './store.js'
-import { pullCurrentBranch } from './worktree.js'
+import { createWorktree, pullCurrentBranch } from './worktree.js'
 
-// The pull keeps its REAL behaviour by default (a bare temp dir has no remote,
-// so it is a no-op); the spy exists only so one test can make it fail and prove
-// the spec gate treats that as a warning rather than a refusal.
+// Both keep their REAL behaviour by default (a bare temp dir has no remote, and
+// `git worktree add` genuinely fails there); the spies exist so single tests can
+// make one fail with a chosen message — the pull one to prove the spec gate
+// treats that as a warning rather than a refusal, the worktree one to pin how a
+// real Git error text is classified.
 vi.mock('./worktree.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./worktree.js')>()
-  return { ...actual, pullCurrentBranch: vi.fn(actual.pullCurrentBranch) }
+  return {
+    ...actual,
+    pullCurrentBranch: vi.fn(actual.pullCurrentBranch),
+    createWorktree: vi.fn(actual.createWorktree),
+  }
 })
 import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import { resetStoreForTests as resetSessionMetadata } from '../sessions/session-metadata-store.js'
@@ -107,9 +113,15 @@ function asError(r: SessionLaunchResult): {
   success: false
   code: string
   params?: Record<string, string>
+  guidance?: GitActionFailureGuidance
 } {
   expect(r.success).toBe(false)
-  return r as { success: false; code: string; params?: Record<string, string> }
+  return r as {
+    success: false
+    code: string
+    params?: Record<string, string>
+    guidance?: GitActionFailureGuidance
+  }
 }
 
 /** Narrow a SessionLaunchResult that is expected to be a success. */
@@ -657,5 +669,110 @@ describe('launchSpecSession dependency gate (all three branches)', () => {
     expectBlocked(await launchSpecSession(proj, target.id, deps), dep)
 
     expect(deps.launchRun).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Targeted failure guidance on the worktree-create boundary. The classification
+ * reads the thrown Git message and nothing else, so the assertions here are about
+ * what travels with the failure — and about the failure itself staying exactly as
+ * final as it was: no session, no branch, no launched run.
+ */
+describe('launchWorkSession — worktree failure guidance', () => {
+  beforeEach(() => {
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'worktree',
+      defaultMainBranch: '',
+      sddEnabled: false,
+    })
+  })
+
+  function seedTodo(title: string): Intent {
+    const [intent] = insertIntents(proj, [
+      { title, shortEnTitle: title.toLowerCase(), content: '', priority: 'P1' },
+    ])
+    return intent
+  }
+
+  it('classifies an occupied branch and offers the start-development retry', async () => {
+    const intent = seedTodo('Taken')
+    const message =
+      "git worktree add 失败: fatal: 'intent-x' is already used by worktree at '/tmp/wt'"
+    vi.mocked(createWorktree).mockImplementationOnce(() => {
+      throw new Error(message)
+    })
+    const deps = mockDeps()
+
+    const r = asError(await launchWorkSession(proj, intent.id, deps))
+
+    expect(r.code).toBe('intent.worktreeCreateFailed')
+    // The raw text still travels as the historic param — the guidance is additive.
+    expect(r.params).toEqual({ message })
+    expect(r.guidance).toEqual({
+      reason: 'worktree_branch_or_path_taken',
+      detail: message,
+      retry: { type: 'intent-action', intentId: intent.id, action: 'start-development' },
+    })
+    // Nothing advanced: no work session, no branch, no run.
+    const after = getIntent(intent.id)!
+    expect(after.status).toBe('todo')
+    expect(after.lastWorkSessionId).toBeNull()
+    expect(after.branchName).toBeNull()
+    expect(deps.launchRun).not.toHaveBeenCalled()
+  })
+
+  it('classifies a filesystem refusal', async () => {
+    const intent = seedTodo('Denied')
+    const message = 'git worktree add 失败: fatal: could not create directory: Permission denied'
+    vi.mocked(createWorktree).mockImplementationOnce(() => {
+      throw new Error(message)
+    })
+
+    const r = asError(await launchWorkSession(proj, intent.id, mockDeps()))
+
+    expect(r.guidance?.reason).toBe('filesystem_denied')
+    expect(r.guidance?.detail).toBe(message)
+  })
+
+  it('keeps an unclassifiable error raw, multi-line included', async () => {
+    const intent = seedTodo('Weird')
+    const message = 'git worktree add 失败: fatal: brand new failure\nsecond line of detail'
+    vi.mocked(createWorktree).mockImplementationOnce(() => {
+      throw new Error(message)
+    })
+
+    const r = asError(await launchWorkSession(proj, intent.id, mockDeps()))
+
+    expect(r.guidance).toEqual({
+      reason: 'unknown',
+      detail: message,
+      retry: { type: 'intent-action', intentId: intent.id, action: 'start-development' },
+    })
+  })
+
+  it('classifies without running any further Git command', async () => {
+    const intent = seedTodo('NoExtra')
+    vi.mocked(pullCurrentBranch).mockClear()
+    vi.mocked(createWorktree).mockClear()
+    vi.mocked(createWorktree).mockImplementationOnce(() => {
+      throw new Error('git worktree add 失败: fatal: no space left on device')
+    })
+
+    asError(await launchWorkSession(proj, intent.id, mockDeps()))
+
+    // The worktree attempt itself is the only Git work; classification adds none.
+    expect(createWorktree).toHaveBeenCalledTimes(1)
+    expect(pullCurrentBranch).not.toHaveBeenCalled()
+  })
+
+  it('sends no guidance for the admission gates ahead of the Git stage', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', sddEnabled: true })
+    const intent = seedTodo('Unapproved')
+    setSpecPath(intent.id, join(dir, 'spec.md'))
+
+    const r = asError(await launchWorkSession(proj, intent.id, mockDeps()))
+
+    expect(r.code).toBe('intent.specNotApproved')
+    expect(r.guidance).toBeUndefined()
   })
 })

@@ -193,15 +193,16 @@ describe('createPrHandler — worktree gate success paths', () => {
   }
 })
 
-describe('createPrHandler — rejection branches short-circuit without side effects', () => {
-  function expectNoSuccessSideEffects(intentId: string, publish: ReturnType<typeof vi.fn>) {
-    const after = getIntent(intentId)!
-    expect(after.prId).toBeNull()
-    expect(after.prStatus).toBeNull()
-    expect(logsOf(intentId, 'pr_created')).toHaveLength(0)
-    expect(publish.mock.calls.filter((c) => c[0] === 'event')).toHaveLength(0)
-  }
+/** No PR field, success log or success event was written by a failed run. */
+function expectNoSuccessSideEffects(intentId: string, publish: ReturnType<typeof vi.fn>) {
+  const after = getIntent(intentId)!
+  expect(after.prId).toBeNull()
+  expect(after.prStatus).toBeNull()
+  expect(logsOf(intentId, 'pr_created')).toHaveLength(0)
+  expect(publish.mock.calls.filter((c) => c[0] === 'event')).toHaveLength(0)
+}
 
+describe('createPrHandler — rejection branches short-circuit without side effects', () => {
   it('rejects an intent that already has a PR without touching Git', async () => {
     const r = seedQualifying()
     setPrInfo(r.id, '7', 'reviewing')
@@ -528,5 +529,168 @@ describe('createPrHandler — request correlation', () => {
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
     expect(sent.every((m) => !('requestId' in m))).toBe(true)
+  })
+})
+
+/**
+ * Targeted failure guidance — the classified reason, the raw detail and the
+ * create-pr retry that ride along on the failure frame. What matters here is
+ * that guidance is DERIVED from the failure the run already had: it appears only
+ * where a Git/forge command actually ran and failed, it costs no extra Git call,
+ * and it never advances any PR field.
+ */
+describe('createPrHandler — failure guidance', () => {
+  /** The guidance on the (single) error frame, or undefined when it carries none. */
+  function guidanceOf(sent: ServerToClient[]) {
+    const err = sent.find((m) => m.type === 'error')
+    return (err as { error: { guidance?: Record<string, unknown> } } | undefined)?.error.guidance
+  }
+
+  it('classifies a push rejected by the moved-ahead remote branch', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(commitAndPush).mockResolvedValue({
+      ok: false,
+      committed: true,
+      error: 'git push 失败: ! [rejected] intent/pr-me -> intent/pr-me (non-fast-forward)',
+      failure: 'other',
+    })
+    const { ctx, publish } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
+    expect(guidanceOf(sent)).toEqual({
+      reason: 'push_rejected',
+      detail: 'git push 失败: ! [rejected] intent/pr-me -> intent/pr-me (non-fast-forward)',
+      retry: { type: 'intent-action', intentId: r.id, action: 'create-pr' },
+    })
+    // The short circuit is unchanged: a failed push never reaches the forge.
+    expect(createGhPr).not.toHaveBeenCalled()
+    expectNoSuccessSideEffects(r.id, publish)
+  })
+
+  it('classifies an unavailable forge CLI from the runner’s own verdict', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(createGhPr).mockResolvedValue({
+      ok: false,
+      unavailable: true,
+      error: 'gh CLI 未安装',
+    })
+    const { ctx, publish } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(guidanceOf(sent)).toEqual({
+      reason: 'forge_cli_unavailable',
+      detail: 'gh CLI 未安装',
+      retry: { type: 'intent-action', intentId: r.id, action: 'create-pr' },
+    })
+    expectNoSuccessSideEffects(r.id, publish)
+  })
+
+  it('keeps the raw detail and still offers a retry when nothing matches', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(createGhPr).mockResolvedValue({ ok: false, error: 'gh pr create 失败' })
+    const { ctx, publish } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(guidanceOf(sent)).toEqual({
+      reason: 'unknown',
+      detail: 'gh pr create 失败',
+      retry: { type: 'intent-action', intentId: r.id, action: 'create-pr' },
+    })
+    expectNoSuccessSideEffects(r.id, publish)
+  })
+
+  it('classifies a thrown forge failure against the stage it happened in', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(createGhPr).mockRejectedValue(new Error('HTTP 422: Validation Failed'))
+    const { ctx, publish } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(guidanceOf(sent)).toEqual({
+      reason: 'forge_create_rejected',
+      detail: 'HTTP 422: Validation Failed',
+      retry: { type: 'intent-action', intentId: r.id, action: 'create-pr' },
+    })
+    expectNoSuccessSideEffects(r.id, publish)
+  })
+
+  it('sends no guidance for the precise gate rejections', async () => {
+    // These already have exact copy of their own; a repair hint and a retry
+    // button would only invite the user to run the same rejection again.
+    const noChanges = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(false)
+    const { ctx } = fakeCtx()
+    const first = fakeConn()
+    await createPrHandler(ctx, first.conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: noChanges.id,
+    })
+    expect(errorsOf(first.sent)).toEqual(['intent.prCreateNoChanges'])
+    expect(guidanceOf(first.sent)).toBeUndefined()
+
+    // The `prId` idempotency guard ran no command at all, so it has nothing to
+    // classify either.
+    const existing = seedQualifying()
+    setPrInfo(existing.id, '7', 'reviewing')
+    const second = fakeConn()
+    await createPrHandler(ctx, second.conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: existing.id,
+    })
+    expect(errorsOf(second.sent)).toEqual(['intent.prCreateFailed'])
+    expect(guidanceOf(second.sent)).toBeUndefined()
+  })
+
+  it('rides along with the correlation token on the failure terminal', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(commitAndPush).mockResolvedValue({
+      ok: true,
+      committed: true,
+    })
+    vi.mocked(createGhPr).mockResolvedValue({
+      ok: false,
+      error: 'HTTP 403: Resource not accessible by integration',
+    })
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      requestId: 'req-9',
+    })
+
+    expect(sent).toContainEqual({
+      type: 'error',
+      error: {
+        code: 'intent.prCreateFailed',
+        params: { detail: 'HTTP 403: Resource not accessible by integration' },
+        guidance: {
+          reason: 'remote_permission_denied',
+          detail: 'HTTP 403: Resource not accessible by integration',
+          retry: { type: 'intent-action', intentId: r.id, action: 'create-pr' },
+        },
+      },
+      requestId: 'req-9',
+    })
   })
 })

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Minimum surface the local startup screen needs: core events (startup progress / failure) plus the shell's own retry and quit commands. Scoped to the `splash` window ONLY — the `main` window renders the sidecar's remote SPA and is deliberately absent from every capability, so that content has no plugin permissions at all and in particular no shell execution.",
-  "windows": ["splash"],
+  "description": "Minimum surface the two LOCAL pages need: core events (startup progress / failure, update state) plus the shell's own commands. Scoped to the `splash` and `update` windows ONLY — the `main` window renders the sidecar's remote SPA and is deliberately absent from every capability, so that content has no plugin permissions at all and in particular no shell execution. The update commands additionally re-check the calling window label at the handler, so `main` cannot trigger check/download/install even though custom commands are not ACL-gated.",
+  "windows": ["splash", "update"],
   "permissions": ["core:default"]
 }

@@ -42,12 +42,14 @@ export async function publish({ dryRun = false, noPublish = false, manifestPath:
   const { version, artifacts } = artifactsFromManifest(manifestPath)
   const { tag, notes } = buildNotes()
 
-  // Upload set = each artifact + its .sha256 sidecar + the aggregate SHA256SUMS.
+  // Upload set = each artifact + its .sha256 sidecar + the aggregate SHA256SUMS +
+  // the release manifest itself (the desktop updater resolves the `desktop`
+  // channel artifact for its platform from `manifest.json` on the Release).
   const uploads = []
   for (const a of artifacts) {
     uploads.push(a.name, `${a.name}.sha256`)
   }
-  uploads.push('SHA256SUMS')
+  uploads.push('SHA256SUMS', 'manifest.json')
 
   const dirty = (git(['status', '--porcelain']).stdout || '').trim()
 

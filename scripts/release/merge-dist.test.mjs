@@ -254,6 +254,7 @@ describe('merge-dist', () => {
           target: 'macos-arm64',
           channel: 'desktop',
           kind: 'dmg',
+          preferred: true,
           file: 'c3-desktop-v0.1.0-macos-arm64.dmg',
         },
       ],

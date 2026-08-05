@@ -88,6 +88,11 @@ import {
   stopUpdateCheckScheduler,
 } from './features/updates/update-checker.js'
 import {
+  createDesktopUpdateHttp,
+  DESKTOP_UPDATE_CHECK_PATH,
+  DESKTOP_UPDATE_DOWNLOAD_PATH,
+} from './features/updates/desktop-update-http.js'
+import {
   startSessionJanitor,
   stopSessionJanitor,
 } from './features/session-cleanup/session-janitor.js'
@@ -801,6 +806,12 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   app.post(`${RELAY_CODEX_PATH}/responses`, (c) => relay.codexHandler(c))
   app.post(`${CODEX_RELAY_LEGACY_PATH}/responses`, (c) => relay.codexHandler(c))
   app.post(`${RELAY_ANTHROPIC_PATH}/v1/messages`, (c) => relay.anthropicHandler(c))
+
+  // Desktop-update endpoints — the Tauri shell's update state machine talks to
+  // these. Loopback-guarded inside the handlers. Before the SPA catch-all.
+  const desktopUpdateHttp = createDesktopUpdateHttp()
+  app.get(DESKTOP_UPDATE_CHECK_PATH, (c) => desktopUpdateHttp.check(c))
+  app.get(DESKTOP_UPDATE_DOWNLOAD_PATH, (c) => desktopUpdateHttp.download(c))
 
   // Intent MCP loopback endpoint (2026-06-12-005). `all` covers POST (JSON-RPC
   // messages), GET (SSE stream), and DELETE (session end). Loopback-guarded +

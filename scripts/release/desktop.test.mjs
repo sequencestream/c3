@@ -8,6 +8,7 @@ import {
   desktopBundles,
   desktopPackageName,
   isDesktopHostTarget,
+  preferredKindFor,
   rustTriple,
   sidecarStageName,
   tauriBundleFlags,
@@ -93,6 +94,19 @@ describe('desktopBundles / tauriBundleFlags', () => {
 
   it('throws for a target with no bundle plan', () => {
     expect(() => desktopBundles('macos-x64')).toThrowError(/no bundle plan/)
+  })
+})
+
+describe('preferredKindFor', () => {
+  it('names exactly one self-update installer kind per desktop target', () => {
+    for (const t of DESKTOP_TARGETS) {
+      expect(preferredKindFor(t)).toBeTruthy()
+      expect(desktopBundles(t).map((b) => b.kind)).toContain(preferredKindFor(t))
+    }
+  })
+
+  it('refuses to guess for an unknown target', () => {
+    expect(preferredKindFor('freebsd-x64')).toBeNull()
   })
 })
 
@@ -227,6 +241,35 @@ describe('manifest desktop channel', () => {
       kind: 'dmg',
       file: 'c3-desktop-v0.9.6-macos-arm64.dmg',
     })
+  })
+
+  it('records the preferred marker so the updater never guesses', () => {
+    const m = buildManifest({
+      versionInfo,
+      artifacts: [
+        {
+          target: 'macos-arm64',
+          file: '/dist/c3-desktop-v0.9.6-macos-arm64.dmg',
+          kind: 'dmg',
+          channel: CHANNEL_DESKTOP,
+          preferred: true,
+          bytes: 10,
+          sha256: 'a'.repeat(64),
+        },
+        {
+          target: 'macos-arm64',
+          file: '/dist/c3-desktop-v0.9.6-macos-arm64.app.tar.gz',
+          kind: 'app',
+          channel: CHANNEL_DESKTOP,
+          bytes: 11,
+          sha256: 'b'.repeat(64),
+        },
+      ],
+    })
+    const dmg = m.artifacts.find((a) => a.kind === 'dmg')
+    const app = m.artifacts.find((a) => a.kind === 'app')
+    expect(dmg.preferred).toBe(true)
+    expect(app.preferred).toBeUndefined()
   })
 
   it('defaults an unlabelled artifact to the cli channel', () => {

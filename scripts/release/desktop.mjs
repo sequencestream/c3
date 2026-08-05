@@ -26,7 +26,6 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
-  readFileSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -48,6 +47,7 @@ import {
   desktopBundles,
   desktopPackageName,
   isDesktopHostTarget,
+  preferredKindFor,
   rustTriple,
   sidecarStageName,
   tauriBundleFlags,
@@ -367,11 +367,15 @@ async function main() {
       if (bundle.kind === 'dmg') dmgPath = found
       const sha256 = sha256File(outPath)
       const bytes = statSync(outPath).size
+      // 该目标的自更新首选安装器:manifest 里同一平台只有它带 `preferred: true`,
+      // 桌面更新器据此做唯一挑选(见 DESKTOP_PREFERRED_KIND)。
+      const preferred = bundle.kind === preferredKindFor(target)
       produced.push({
         target,
         file: outPath,
         kind: bundle.kind,
         channel: CHANNEL_DESKTOP,
+        preferred,
         bytes,
         sha256,
       })

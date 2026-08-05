@@ -45,8 +45,11 @@ const emit = defineEmits<{
 
 const message = computed(() => {
   if (!props.descriptor) return ''
-  const { key, named } = actionMessage(props.descriptor.labelCode, props.targetIntent)
-  return named ? t(key, named) : t(key)
+  const { key, named, statusKey } = actionMessage(props.descriptor.labelCode, props.targetIntent)
+  // A dependency block names a predecessor whose status arrives as an i18n key;
+  // resolve it here so the interpolated copy follows the current locale.
+  const resolved = statusKey ? { ...(named ?? {}), status: t(statusKey) } : named
+  return resolved ? t(key, resolved) : t(key)
 })
 const buttonLabel = computed(() => (props.descriptor ? t(actionButtonKey(props.descriptor)) : ''))
 const blocker = computed(() => {

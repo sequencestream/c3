@@ -19,11 +19,11 @@ import type {
   ActionLabelCode,
   ActionTarget,
   Intent,
+  IntentStatus,
   SystemSettingsAgentTarget,
   VendorId,
 } from '@ccc/shared/protocol'
 import type { LocaleKey } from '@/i18n'
-import { statusLabel } from './intent-list-view'
 
 /** What went wrong, as the prompt text shown to the user. */
 export const ACTION_MESSAGE_KEYS = {
@@ -35,6 +35,22 @@ export const ACTION_MESSAGE_KEYS = {
   ask_user_question_pending: 'intent.blocked.askUserQuestionPending',
   dependency_blocked: 'intent.blocked.dependencyBlocked',
 } as const satisfies Record<ActionLabelCode, LocaleKey>
+
+/**
+ * Status label i18n keys, shared with the list/detail filter dropdown. A
+ * predecessor's status travels as one of these keys — never an English string —
+ * so the caller localizes it with its own `t` and a non-English interface does
+ * not end up with mixed-language copy.
+ */
+const STATUS_KEYS: Record<IntentStatus, LocaleKey> = {
+  draft: 'intent.filter.draft.label',
+  todo: 'intent.filter.todo.label',
+  in_progress: 'intent.filter.inProgress.label',
+  done: 'intent.filter.done.label',
+  cancelled: 'intent.filter.cancelled.label',
+  blocked: 'intent.filter.blocked.label',
+  failed: 'intent.filter.failed.label',
+}
 
 /** Where it goes, as the button label. */
 export const ACTION_BUTTON_KEYS = {
@@ -87,6 +103,12 @@ export function actionTargetIntent(
 export interface ActionMessage {
   key: LocaleKey
   named?: Record<string, string>
+  /**
+   * i18n key for the predecessor's status, when the message interpolates it.
+   * Kept out of `named` because it is a key, not a literal: the caller resolves
+   * it through its own `t` so the copy follows the current locale.
+   */
+  statusKey?: LocaleKey
 }
 
 /**
@@ -95,9 +117,10 @@ export interface ActionMessage {
  * Most codes are a plain key. `dependency_blocked` names a predecessor, so it
  * interpolates that intent's title and status — and falls back to a copy that
  * claims neither when the predecessor is out of view, rather than printing a
- * bare id. A `done` predecessor blocks only because it is not on the mainline
- * yet (worktree mode), so its copy says exactly that instead of asking to
- * "finish" something already finished.
+ * bare id. The status is handed over as an i18n key ({@link ActionMessage.statusKey})
+ * that the caller localizes, never an English string. A `done` predecessor blocks
+ * only because it is not on the mainline yet (worktree mode), so its copy says
+ * exactly that instead of asking to "finish" something already finished.
  */
 export function actionMessage(
   labelCode: ActionLabelCode,
@@ -105,10 +128,11 @@ export function actionMessage(
 ): ActionMessage {
   if (labelCode === 'dependency_blocked') {
     if (!targetIntent) return { key: 'intent.blocked.dependencyBlockedUnresolved' }
-    const named = { title: targetIntent.title, status: statusLabel(targetIntent.status) }
+    const named = { title: targetIntent.title }
+    const statusKey = STATUS_KEYS[targetIntent.status]
     return targetIntent.status === 'done'
-      ? { key: 'intent.blocked.dependencyBlockedDone', named }
-      : { key: ACTION_MESSAGE_KEYS.dependency_blocked, named }
+      ? { key: 'intent.blocked.dependencyBlockedDone', named, statusKey }
+      : { key: ACTION_MESSAGE_KEYS.dependency_blocked, named, statusKey }
   }
   return { key: ACTION_MESSAGE_KEYS[labelCode] }
 }

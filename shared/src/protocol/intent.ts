@@ -221,6 +221,93 @@ export interface ActionDescriptor {
   target: ActionTarget
 }
 
+/**
+ * The stable reason behind a FAILED Git / forge action (worktree creation, or
+ * the commit → push → forge chain of a PR creation). Same idea as
+ * {@link ActionLabelCode} — a localization code, never a sentence — but a
+ * separate closed union: this one describes a failure that already happened,
+ * while an {@link ActionDescriptor} describes a standing blocked state.
+ *
+ * Derived ONLY from the failing command's own result (exit code, stderr/stdout,
+ * which stage failed). No extra Git / forge command is run to produce it, and a
+ * text that merely resembles a category is never forced into it — that is what
+ * `unknown` is for.
+ *
+ * - `worktree_branch_or_path_taken` — the branch is checked out by another
+ *   worktree, or a same-named branch / directory is left over.
+ * - `repo_conflict_unresolved`      — the repository has unresolved merge
+ *   conflicts, so the action cannot proceed.
+ * - `filesystem_denied`             — the local filesystem refused the write:
+ *   no permission, read-only, or out of space.
+ * - `forge_cli_unavailable`         — the forge CLI is not installed, or it is
+ *   installed but not logged in.
+ * - `remote_permission_denied`      — the remote refused for lack of push /
+ *   PR-create rights (401 / 403 / authentication failed).
+ * - `push_rejected`                 — the push was rejected: the remote branch
+ *   has moved ahead (non-fast-forward).
+ * - `network_unreachable`           — DNS, connection or timeout failure while
+ *   reaching the remote / forge.
+ * - `commit_hook_rejected`          — a commit / push hook or its lint-format
+ *   chain rejected the change.
+ * - `forge_create_rejected`         — the forge itself refused to create the
+ *   change request (validation failed, or one already exists for this branch).
+ * - `unknown`                       — nothing matched. The raw error is shown
+ *   as-is; no repair steps are guessed.
+ */
+export const GIT_ACTION_FAILURE_REASONS = [
+  'worktree_branch_or_path_taken',
+  'repo_conflict_unresolved',
+  'filesystem_denied',
+  'forge_cli_unavailable',
+  'remote_permission_denied',
+  'push_rejected',
+  'network_unreachable',
+  'commit_hook_rejected',
+  'forge_create_rejected',
+  'unknown',
+] as const
+
+export type GitActionFailureReason = (typeof GIT_ACTION_FAILURE_REASONS)[number]
+
+/**
+ * The intent actions a failure guidance may offer to run again. Closed and
+ * deliberately tiny: a retry re-enters the SAME entry point the user already
+ * used, so it passes the same gates. It is never a command, a path or a URL.
+ */
+export const INTENT_RETRY_ACTIONS = ['start-development', 'create-pr'] as const
+
+export type IntentRetryAction = (typeof INTENT_RETRY_ACTIONS)[number]
+
+/**
+ * Where a failure guidance's retry goes: one intent, one enumerated action.
+ * Shaped like an {@link ActionTarget} arm (discriminated on `type`) but kept out
+ * of that union — `ActionTarget` navigates, this one re-invokes.
+ */
+export interface IntentActionRetryTarget {
+  type: 'intent-action'
+  intentId: string
+  action: IntentRetryAction
+}
+
+/**
+ * Targeted repair guidance for a failed Git / forge action, carried on the error
+ * payload. A **runtime display projection**: not persisted, not a business
+ * state, and it never changes the outcome of the action that failed.
+ *
+ * `detail` is the raw error text of the failing command, kept for BOTH known and
+ * unknown reasons — the localized guidance explains what to do, the raw text is
+ * what a user actually debugs with. It is diagnostic data, not UI copy, and is
+ * rendered as text (never as markup).
+ */
+export interface GitActionFailureGuidance {
+  /** Which stable failure category this is. */
+  reason: GitActionFailureReason
+  /** Raw error text of the failing command; may be empty when it returned none. */
+  detail: string
+  /** The original action, offered for an explicit user-driven retry. */
+  retry: IntentActionRetryTarget
+}
+
 /** One dependency edge in intent_deps, with type metadata. */
 export interface DependencyInfo {
   /** The id of the depended-on intent. */

@@ -1,4 +1,4 @@
-import type { IntentStatus, PromptImage } from '@ccc/shared/protocol'
+import type { GitActionFailureGuidance, IntentStatus, PromptImage } from '@ccc/shared/protocol'
 import {
   beginCreatePr,
   reduceCreatePr,
@@ -320,6 +320,20 @@ export function installIntentActions(ctx: AppCtx): void {
       intentId,
       requestId,
     })
+  }
+
+  // The retry offered by a Git/forge failure dialog. It dispatches back into the
+  // ORIGINAL entry point rather than re-sending a message of its own, so the
+  // in-flight guard, the progress overlay and every server gate apply to the
+  // retry exactly as they applied to the first attempt. The closed action union
+  // is what keeps this from becoming a generic "run whatever the server said".
+  ctx.retryIntentAction = (guidance: GitActionFailureGuidance): void => {
+    const { intentId, action } = guidance.retry
+    if (action === 'start-development') {
+      ctx.startDevelopment(intentId, false)
+      return
+    }
+    ctx.createPr(intentId)
   }
 
   ctx.syncIntentPrStatus = (intentId: string): void => {

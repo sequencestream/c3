@@ -443,3 +443,66 @@ describe('createPr — progress overlay wiring', () => {
     expect(runToken(h)).not.toBe(firstRun)
   })
 })
+
+/**
+ * The retry a failure dialog offers. The point of the assertions is that a retry
+ * is a NEW attempt through the ORIGINAL entry point — same message, same token
+ * discipline, same overlay — and never a second, gate-free channel.
+ */
+describe('retryIntentAction — re-enters the original entry point', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+
+  it('re-runs start_development exactly once, overlay and all', () => {
+    const h = makeCtx({ intents: [intent('i-1', null)] })
+
+    h.ctx.retryIntentAction({
+      reason: 'worktree_branch_or_path_taken',
+      detail: "fatal: 'x' already exists",
+      retry: { type: 'intent-action', intentId: 'i-1', action: 'start-development' },
+    })
+
+    expect(h.ctx.send).toHaveBeenCalledTimes(1)
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'start_development',
+      workspaceId: WS,
+      intentId: 'i-1',
+    })
+    // The same startup overlay the button arms — a retry is not a silent re-send.
+    expect(h.ctx.devLaunch.value).toMatchObject({ intentId: 'i-1' })
+  })
+
+  it('re-runs create_pr exactly once, with a fresh run token and overlay', () => {
+    const h = makeCtx({ intents: [intent('i-2', 'dev-2')] })
+
+    h.ctx.retryIntentAction({
+      reason: 'push_rejected',
+      detail: 'git push 失败: ! [rejected]',
+      retry: { type: 'intent-action', intentId: 'i-2', action: 'create-pr' },
+    })
+
+    expect(h.ctx.send).toHaveBeenCalledTimes(1)
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'create_pr',
+      workspaceId: WS,
+      intentId: 'i-2',
+      requestId: expect.any(String),
+    })
+    expect(h.createPrProgress.value).toMatchObject({ intentId: 'i-2', phase: 'analyzing-changes' })
+  })
+
+  it('retries an unknown reason the same way — the reason steers nothing', () => {
+    const h = makeCtx({ intents: [intent('i-3', 'dev-3')] })
+
+    h.ctx.retryIntentAction({
+      reason: 'unknown',
+      detail: '',
+      retry: { type: 'intent-action', intentId: 'i-3', action: 'create-pr' },
+    })
+
+    expect(h.ctx.send).toHaveBeenCalledTimes(1)
+    expect(h.ctx.send).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'create_pr', intentId: 'i-3' }),
+    )
+  })
+})

@@ -34,7 +34,8 @@ web/src/
 │   ├── ChatColumn/ChatColumn.vue                   # 复用聊天列:五区块(标题栏/消息/输入框/状态栏/task 面板)按 showTitleBar/showMessages/showInput/showStatusBar/showTaskPanel props 可显隐;readonly=true 时整列进入只读能力门(隐藏 composer、不渲染 PendingQueue、状态栏经 hide-run-controls 去掉 stop/continue 但保留状态文字与刷新、权限消息回放但 actionable 置空故无 allow/deny/ask 控件,且 respond/submit-ask/submit/enqueue/stop/continue 在只读分支一律不上抛),供 spec_review 只读会话复用,供会话页/意图会话 tab/意图详情两会话 tab 三处复用;不持有会话状态(绑定哪个会话由控制层单一活动会话决定);show-mode 控模式下拉、always-title 控无会话时是否仍渲染标题栏;sourceLabel 透传给标题栏溯源按钮(仅会话页传,意图侧复用不传)、open-source 上抛;showShare 透传给标题栏分享按钮(仅会话页 Works 传 true)、share 上抛;title-action 具名槽转发到 SessionTitleBar 的 action 槽(Codes 内嵌会话用它渲染「+ 新建」/「↻ 重置」按钮);prefill 经 defineExpose 透传
 │   ├── ChatMessages/ChatMessages.vue               # 会话消息渲染区:扁平消息分组为文本/工具批次/独立块(用户交互工具)、仅用户停在底部时自动跟随新输出、渲染权限提示与共识结果,代码/工具输出局部横滚防窄屏撑破
 │   ├── ConfirmDialog/ConfirmDialog.vue             # 通用二次确认模态框(项目内删除/危险操作统一走此组件,不用 window.confirm):受控 open,标题/正文/按钮文案注入,danger 确认色,点遮罩/Esc/取消均 emit cancel,移动端全屏 sheet
-│   ├── ErrorDialog/ErrorDialog.vue                 # 持久错误告知弹框:受控 open,单一关闭按钮,点遮罩/Esc/关闭均 emit close,移动端全屏 sheet
+│   ├── ErrorDialog/ErrorDialog.vue                 # 持久错误告知弹框:受控 open,点遮罩/Esc/关闭均 emit close,移动端全屏 sheet;可选 detail(+detailLabel)渲染为限高可滚的等宽诊断块(纯文本、保留换行,绝不插入 HTML),可选 actionLabel 才多出一个次级动作按钮并只 emit action(组件自身不导航、不重试)
+│   ├── IntentActionErrorDialog/IntentActionErrorDialog.vue  # 意图动作失败对话框(App 根级,包装 ErrorDialog):无 guidance→原样展示已翻译错误、无详情块无按钮;已识别原因→主展示为 lib/git-failure-guidance 按 reason 映射的定向修复指引、原始错误作诊断详情附下;unknown→主展示直接是原始错误(保留换行),无文本时用稳定兜底,且不展示任何臆测步骤;有合法 guidance 才渲染「重试开始工作/重试创建 PR」,点击先 close 再 emit retry(guidance)
 │   ├── InputDialog/InputDialog.vue                 # 通用单行文本输入弹框(ConfirmDialog 风格 + 单行 input,替换 window.prompt):受控 open、标题/占位/按钮文案注入、打开聚焦并清空、输入为空时确认禁用、Enter 提交、遮罩/Esc/取消均 emit cancel、确认 emit confirm(trim 文本)、移动端全屏 sheet
 │   ├── ConsensusBlock/ConsensusBlock.vue           # 多 agent 共识自动裁定结果块(只读):AskUserQuestion 逐题自动作答、其他工具 allow/deny 裁定
 │   ├── DevStartupOverlay/DevStartupOverlay.vue     # 工作启动进度遮罩(App 根级,与全局 toast 同层):手动 Start Work 点击即全屏阻断,以最小停留防止快速启动闪烁,按有序步骤(拉取远程主分支/准备 worktree/启动工作会话/进入会话)展示后端 dev_launch_progress 阶段进度;纯展示(model 由控制层持有,判定在 lib/dev-launch-view.ts),就绪/失败/安全超时由控制层关闭
@@ -145,6 +146,7 @@ web/src/
 │
 ├── lib/                                             # 纯逻辑工具模块(无 DOM/框架依赖优先)
 │   ├── action-descriptor.ts                        # 派生「下一步」的客户端半边:labelCode → 提示文案 key、target.type → 按钮文案 key 两张穷举映射(satisfies Record,新增分支不给文案就编译不过);toSystemSettingsTarget() 只服务 system-settings-agent 臂。真正的跳转分发在 controls openActionTarget:settings / intent-spec(选中意图+spec 页签) / workcenter-event(工作台选中事件)
+│   ├── git-failure-guidance.ts                     # Git/PR 失败定向指引的客户端半边:reason → 修复指引 key(unknown 无条目、返回 null,不臆测步骤)与 retry.action → 按钮文案 key 两张穷举映射(satisfies Record,新增分支不给文案就编译不过);normalizeGuidance() 是信任边界——只接受 reason/retry.action 落在协议闭集且 intentId 非空的载荷,其余(含多余字段)一律返回 null,使不可识别的描述符退回纯错误展示、不渲染按钮
 │   ├── agent-prefix.ts                              # 客户端推断当前 session 运行的 agent 展示名:本地复刻服务端降级链;识别 `_c3_<group>` 虚拟 group agent(ADR-0029)展示组名
 │   ├── group-agents.ts                              # 客户端派生虚拟 group agent(ADR-0029):listGroupAgents/groupAgentsOfVendor 本地复刻服务端枚举(每个 (vendor,group) 一项,不同 vendor 可同名),agentRefDisplayName 把 `_c3_<vendor>_<group>` ref 原样带前缀展示;供各 agent 选择器以 `_c3_<vendor>_<组名>` 列出 group 选项
 │   ├── authToken.ts                                 # 会话 token 持久化(localStorage,guard 无 DOM 环境):get/set/clear,供 ws.ts 握手 ?token= 复用

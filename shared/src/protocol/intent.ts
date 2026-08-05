@@ -179,6 +179,10 @@ export const MAX_SPEC_REVIEW_REWORK_ROUNDS = 3
  * - `dependency_blocked`           — the hard dependency gate still holds this
  *   intent back: a predecessor it declares is not finished (or, in worktree mode,
  *   not confirmed on the mainline) yet.
+ * - `silent_timeout`               — a running queue has shown no progress on this
+ *   intent for the server's silent window, and no known wait (park, backoff,
+ *   cooldown, gate, force-skip, human decision, spec phase, paused queue) explains
+ *   it. Detection only: nothing is retried, restarted or reset on its behalf.
  */
 export const ACTION_LABEL_CODES = [
   'vendor_auth_invalid',
@@ -188,6 +192,7 @@ export const ACTION_LABEL_CODES = [
   'permission_pending',
   'ask_user_question_pending',
   'dependency_blocked',
+  'silent_timeout',
 ] as const
 
 export type ActionLabelCode = (typeof ACTION_LABEL_CODES)[number]
@@ -233,13 +238,28 @@ export interface WorkcenterEventTarget {
 }
 
 /**
+ * Open an intent's detail page on its work-session tab — the inspection entry for
+ * a stalled intent (the session's transcript, its logs, its workspace state).
+ * Inspection only: landing here starts nothing and resumes nothing, and an intent
+ * with no work session yet simply falls back to its default tab.
+ */
+export interface IntentWorkSessionTarget {
+  type: 'intent-work-session'
+  intentId: string
+}
+
+/**
  * Where a next-step action navigates to. A discriminated union on `type` so a
  * later blocked state adds an arm instead of widening this one. Navigation only:
  * a target never carries a URL, a command, or free-text payload, so a client can
  * never be steered anywhere the union does not already name.
  */
 export type ActionTarget =
-  SystemSettingsAgentTarget | IntentSpecTarget | IntentDetailTarget | WorkcenterEventTarget
+  | SystemSettingsAgentTarget
+  | IntentSpecTarget
+  | IntentDetailTarget
+  | WorkcenterEventTarget
+  | IntentWorkSessionTarget
 
 /**
  * One derived "next step" for a blocked state — the minimal pair of what to show

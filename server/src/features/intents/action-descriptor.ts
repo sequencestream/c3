@@ -1,13 +1,15 @@
 /**
  * Intent action-descriptor projection — the send-time "next step" for a blocked
  * intent. Composes vendor-block facts, pending wait-user events, the exhausted
- * spec rework, the SDD approval checkpoint and the hard dependency gate into a
- * single optional {@link ActionDescriptor}.
+ * spec rework, the SDD approval checkpoint, the hard dependency gate and
+ * unexplained silence into a single optional {@link ActionDescriptor}.
  *
  * Priority (highest first): vendor block → pending wait-user (Ask / permission)
- * → spec rework exhausted → spec awaiting approval → dependency blocked. Only
- * one descriptor is projected; lower priorities stay latent until the higher one
- * clears. Never persists, never changes gates.
+ * → spec rework exhausted → spec awaiting approval → dependency blocked → silent
+ * timeout. Only one descriptor is projected; lower priorities stay latent until
+ * the higher one clears. Silence sits LAST on purpose — it is the least specific
+ * thing that can be said about an intent, so a concrete, actionable cause must
+ * always outrank it. Never persists, never changes gates.
  */
 import type { ActionDescriptor, Intent } from '@ccc/shared/protocol'
 import { MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
@@ -15,6 +17,7 @@ import { getDefaultMainBranch, getGitBranchMode, getSddEnabled } from '../../ker
 import { resolveWorkspaceRoot } from '../../state.js'
 import { findLatestTodoEventForSessionIds } from '../user-involve/store.js'
 import { findBlockingDependency } from './dependency-gate.js'
+import { deriveSilentTimeoutActionDescriptor } from './silent-timeout.js'
 import { readSpecFingerprint } from './spec-review.js'
 import { deriveVendorActionDescriptor } from './vendor-block.js'
 
@@ -194,6 +197,7 @@ export function deriveActionDescriptor(
     deriveWaitUserActionDescriptor(intent) ??
     deriveSpecReworkExhaustedActionDescriptor(intent) ??
     deriveSpecApprovalActionDescriptor(intent) ??
-    deriveDependencyActionDescriptor(intent, loadWorkspaceIntents)
+    deriveDependencyActionDescriptor(intent, loadWorkspaceIntents) ??
+    deriveSilentTimeoutActionDescriptor(intent)
   )
 }

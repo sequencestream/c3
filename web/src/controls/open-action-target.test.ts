@@ -101,6 +101,26 @@ describe('openActionTarget', () => {
     expect(settingsOpen.value).toBe(false)
   })
 
+  it('selects the intent and requests the work-session tab for intent-work-session', () => {
+    const {
+      ctx,
+      viewMode,
+      openIntents,
+      requestedIntentId,
+      requestedIntentSubTab,
+      settingsOpen,
+      send,
+    } = makeCtx()
+    ctx.openActionTarget({ type: 'intent-work-session', intentId: 'i-7' })
+    expect(viewMode.value).toBe('workspace')
+    expect(openIntents).toHaveBeenCalledWith('/ws')
+    expect(requestedIntentId.value).toBe('i-7')
+    expect(requestedIntentSubTab.value).toBe('workSession')
+    expect(settingsOpen.value).toBe(false)
+    // Navigation only: nothing is sent, so nothing is resumed, retried or reset.
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it('lands the manual take-over on the same intent-spec tab, sending nothing', () => {
     // The exhausted-rework banner reuses the intent-spec target, so taking over by
     // hand is pure navigation: no rework, no re-review, no unpark is requested.

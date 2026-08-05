@@ -34,6 +34,7 @@ export const ACTION_MESSAGE_KEYS = {
   permission_pending: 'intent.blocked.permissionPending',
   ask_user_question_pending: 'intent.blocked.askUserQuestionPending',
   dependency_blocked: 'intent.blocked.dependencyBlocked',
+  silent_timeout: 'intent.blocked.silentTimeout',
 } as const satisfies Record<ActionLabelCode, LocaleKey>
 
 /**
@@ -58,6 +59,7 @@ export const ACTION_BUTTON_KEYS = {
   'intent-spec': 'intent.blocked.openSpecApproval.label',
   'intent-detail': 'intent.blocked.openPredecessorIntent.label',
   'workcenter-event': 'intent.blocked.openWorkcenterEvent.label',
+  'intent-work-session': 'intent.blocked.openWorkSession.label',
 } as const satisfies Record<ActionTarget['type'], LocaleKey>
 
 /**

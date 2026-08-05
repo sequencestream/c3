@@ -1,0 +1,16 @@
+{
+  "name": "@ccc/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tauri 2 desktop shell for c3 — launches the c3 single binary as a sidecar and renders its Web UI in a native WebView.",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "icon": "tauri icon src-tauri/icons/source.png"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.1"
+  }
+}

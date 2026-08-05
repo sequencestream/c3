@@ -95,6 +95,35 @@ describe('planServiceInstall — platform dispatch', () => {
     expect(plan.unitContent).toContain('--settings /abs/settings.json')
   })
 
+  it('bakes an explicit --host into the systemd unit so a restart re-binds the same address', () => {
+    const plan = planServiceInstall({
+      ...inputs('linux'),
+      start: { port: 3000, dev: false, host: '127.0.0.1' },
+    })
+    expect(plan.unitContent).toContain('--host 127.0.0.1')
+  })
+
+  it('bakes an explicit --host into the launchd plist arguments', () => {
+    const plan = planServiceInstall({
+      ...inputs('darwin'),
+      start: { port: 3000, dev: false, host: '127.0.0.1' },
+    })
+    expect(plan.unitContent).toContain('<string>--host</string>')
+    expect(plan.unitContent).toContain('<string>127.0.0.1</string>')
+  })
+
+  it('bakes an explicit --host into the schtasks /TR command', () => {
+    const plan = planServiceInstall({
+      ...inputs('win32'),
+      execPath: 'C:\\Program Files\\c3\\c3.exe',
+      home: 'C:\\Users\\alice',
+      start: { port: 3000, dev: false, host: '127.0.0.1' },
+    })
+    const [cmd] = plan.registerCommands
+    const tr = cmd.args[cmd.args.indexOf('/TR') + 1]
+    expect(tr).toContain('--host 127.0.0.1')
+  })
+
   it('prepends the script path for a dev/interpreter install', () => {
     const plan = planServiceInstall({
       ...inputs('linux'),

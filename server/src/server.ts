@@ -34,6 +34,7 @@ import {
   type SessionRuntime,
 } from './runs.js'
 import { observeTaskWire } from './kernel/agent/task-tracker.js'
+import { resolveServeBinding } from './serve-binding.js'
 import { getSessionAgentId, getAgentLang, setOnPendingIntentLookup } from './kernel/config/index.js'
 import {
   reconcileQueuesOnStartup,
@@ -135,6 +136,11 @@ import {
 export interface ServerOptions {
   port: number
   dev: boolean
+  /**
+   * 监听地址。显式给出时(例如桌面壳传入的 `127.0.0.1`)作为 `serve()` 的
+   * `hostname`;省略时不传该字段,保持既有的默认全接口绑定行为。
+   */
+  host?: string
 }
 
 /** How often the server broadcasts a full session-status snapshot. */
@@ -789,8 +795,9 @@ export async function startServer(opts: ServerOptions): Promise<void> {
   if (opts.dev) mountDevPlaceholder(app)
   else mountStaticAssets(app)
 
-  const server = serve({ fetch: app.fetch, port: opts.port }, (info) => {
-    const url = `http://localhost:${info.port}`
+  const binding = resolveServeBinding(opts)
+  const server = serve({ fetch: app.fetch, ...binding }, (info) => {
+    const url = `http://${binding.hostname ?? 'localhost'}:${info.port}`
     console.log(`[c3] server running at ${url}`)
     if (opts.dev) console.log(`[c3] dev mode — open Vite at http://localhost:5173`)
   })

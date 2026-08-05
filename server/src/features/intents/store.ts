@@ -26,12 +26,13 @@ import type {
   IntentRunStatus,
   IntentStatus,
   SpecReviewVerdict,
+  SpecStatus,
 } from '@ccc/shared/protocol'
-import { SPEC_REVIEW_VERDICTS } from '@ccc/shared/protocol'
+import { SPEC_REVIEW_VERDICTS, SPEC_STATUSES } from '@ccc/shared/protocol'
 import { pathToId } from '../../state.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 
-const SCHEMA_VERSION = 17
+const SCHEMA_VERSION = 18
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS intents (
   pr_id           TEXT,
   pr_status       TEXT,
   spec_path         TEXT,
+  spec_status       TEXT NOT NULL DEFAULT 'raw' CHECK(spec_status IN ('raw','pending','approved')),
   spec_approved     INTEGER NOT NULL DEFAULT 0,
   spec_approve_user TEXT,
   spec_session_id   TEXT,
@@ -129,11 +131,11 @@ let schemaReady = false
  * so we check `PRAGMA table_info` rather than relying on `user_version` history.
  * Works on both `node:sqlite` and `bun:sqlite` (only `exec`/`all`).
  */
-function ensureColumn(d: Db, table: string, col: string, decl: string): void {
+function ensureColumn(d: Db, table: string, col: string, decl: string): boolean {
   const cols = d.all<{ name: string }>(`PRAGMA table_info(${table})`)
-  if (!cols.some((c) => c.name === col)) {
-    d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`)
-  }
+  if (cols.some((c) => c.name === col)) return false
+  d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`)
+  return true
 }
 
 function tableExists(d: Db, name: string): boolean {
@@ -250,6 +252,28 @@ function migrateLastDevSessionToLastWorkSession(d: Db): void {
   }
 }
 
+/**
+ * v17 → v18: seed `spec_status` for rows that existed before the column did.
+ * Runs EXACTLY once — the caller only invokes it in the pass that added the
+ * column — so a later manual status change can never be overwritten by a restart.
+ *
+ * Deliberately conservative. An existing placeholder file cannot be told apart
+ * from a genuinely authored one after the fact (and the seed's wording is not
+ * evidence — a real spec may contain it), so every row that has a path but no
+ * approval keeps its historic "awaiting approval" meaning as `pending`. The
+ * `raw` fix therefore applies to specs authored from here on, not retroactively.
+ */
+function backfillSpecStatus(d: Db): void {
+  d.run(
+    `UPDATE intents
+        SET spec_status = CASE
+              WHEN spec_approved = 1 THEN 'approved'
+              WHEN spec_path IS NOT NULL THEN 'pending'
+              ELSE 'raw'
+            END`,
+  )
+}
+
 /** Return the db with the schema ensured once, or null if unavailable. */
 function db(): Db | null {
   const d = getDb()
@@ -306,6 +330,21 @@ function db(): Db | null {
     ensureColumn(d, 'intents', 'spec_review_fingerprint', 'TEXT')
     ensureColumn(d, 'intents', 'spec_review_rework_rounds', 'INTEGER NOT NULL DEFAULT 0')
     ensureColumn(d, 'intents', 'spec_review_machine_blocked', 'INTEGER NOT NULL DEFAULT 0')
+    // v17 → v18: spec_status — the tri-state that separates "not authored yet"
+    // from "awaiting approval". A pre-existing db is backfilled ONCE, at the
+    // moment the column appears, from the only facts it still has (see
+    // `backfillSpecStatus`); a fresh db creates the column via SCHEMA and needs
+    // no backfill (every row is inserted at the `raw` default).
+    if (
+      ensureColumn(
+        d,
+        'intents',
+        'spec_status',
+        "TEXT NOT NULL DEFAULT 'raw' CHECK(spec_status IN ('raw','pending','approved'))",
+      )
+    ) {
+      backfillSpecStatus(d)
+    }
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -361,6 +400,7 @@ interface Row {
   pr_url: string | null
   pr_status: string | null
   spec_path: string | null
+  spec_status: string
   spec_approved: number
   spec_approve_user: string | null
   spec_session_id: string | null
@@ -386,6 +426,17 @@ function narrowSpecReviewVerdict(v: string | null): SpecReviewVerdict | null {
   return v !== null && (SPEC_REVIEW_VERDICTS as readonly string[]).includes(v)
     ? (v as SpecReviewVerdict)
     : null
+}
+
+/**
+ * Narrow a persisted spec status. An unknown / missing value fails CLOSED to
+ * `raw`: an uninterpretable status must never admit development, start a review
+ * or offer an approval. The compatibility boolean is deliberately NOT consulted
+ * here — letting it repair the status would recreate the second admission path
+ * this column exists to remove.
+ */
+function narrowSpecStatus(v: string | null): SpecStatus {
+  return v !== null && (SPEC_STATUSES as readonly string[]).includes(v) ? (v as SpecStatus) : 'raw'
 }
 
 /** Attach `dependsOn` and `dependsOnTypes` to a set of rows in one deps query, preserving row order. */
@@ -426,6 +477,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     prUrl: r.pr_url,
     prStatus: (r.pr_status ?? null) as IntentPrStatus | null,
     specPath: r.spec_path,
+    specStatus: narrowSpecStatus(r.spec_status),
     specApproved: r.spec_approved === 1,
     specApproveUser: r.spec_approve_user,
     specSessionId: r.spec_session_id,
@@ -504,6 +556,19 @@ export function getIntent(id: string): Intent | null {
   const d = db()
   if (!d) return null
   const row = d.get<Row>('SELECT * FROM intents WHERE id=?', id)
+  return row ? hydrate(d, [row])[0] : null
+}
+
+/**
+ * The intent whose spec-AUTHORING session is `sessionId`, or `null`. The reverse
+ * of `spec_session_id`, for run-lifecycle handlers that only hold the settled
+ * session id. `spec_session_id` is single-valued per intent, so at most one row
+ * can match.
+ */
+export function getIntentBySpecSessionId(sessionId: string): Intent | null {
+  const d = db()
+  if (!d) return null
+  const row = d.get<Row>('SELECT * FROM intents WHERE spec_session_id=?', sessionId)
   return row ? hydrate(d, [row])[0] : null
 }
 
@@ -769,8 +834,13 @@ export function upsertIntents(
         const module = it.module !== undefined ? it.module : prior.module
         // The requirement text itself changed → the old approval no longer applies.
         const requirementChanged = it.title !== prior.title || it.content !== prior.content
+        // The status moves with the compatibility fields: an approved spec falls
+        // back to `pending` (its content is still authored, it just no longer
+        // has an approval), while a spec that was never approved keeps whatever
+        // state it had — a rewritten intent does not make a seed look authored.
         const revokeApproval = requirementChanged
-          ? ', spec_approved=0, spec_approve_user=NULL, spec_review_machine_blocked=1'
+          ? `, spec_approved=0, spec_approve_user=NULL, spec_review_machine_blocked=1,
+             spec_status=CASE WHEN spec_status='approved' THEN 'pending' ELSE spec_status END`
           : ''
         d.run(
           `UPDATE intents
@@ -1065,26 +1135,121 @@ export function setPrInfo(
   )
 }
 
-/** Set the written spec document path for an intent (relative to the workspace). */
+/**
+ * Seed the spec document: record its path and set the status to `raw`, in ONE
+ * statement. Called when `write_spec` scaffolds the placeholder file — the path
+ * and the "not authored yet" state are the same fact, and splitting them is
+ * exactly how a seeded intent used to read as "awaiting approval" for the moment
+ * in between.
+ */
 export function setSpecPath(id: string, specPath: string): void {
   const d = requireDb()
-  d.run('UPDATE intents SET spec_path=?, updated_at=? WHERE id=?', specPath, Date.now(), id)
+  d.run(
+    "UPDATE intents SET spec_path=?, spec_status='raw', updated_at=? WHERE id=?",
+    specPath,
+    Date.now(),
+    id,
+  )
 }
 
 /**
  * Set the spec approval checkpoint state. `approved` and `approveUser` move
  * together (like `setPrInfo`): on approval pass the approving user; on un-approval
  * pass `approved=false` and `approveUser=null` to clear the recorded approver.
+ *
+ * `spec_status` is written in the SAME statement so the two can never disagree:
+ * approving lands `approved`, un-approving lands `pending` (an un-approved
+ * document has content — a human just edited it, or an approval was taken back).
+ * Whether this transition is ALLOWED is decided by the caller's own guard
+ * ({@link approveSpecIfPending} / {@link revokeSpecApproval}), not here.
  */
 export function setSpecApproved(id: string, approved: boolean, approveUser: string | null): void {
   const d = requireDb()
   d.run(
-    'UPDATE intents SET spec_approved=?, spec_approve_user=?, updated_at=? WHERE id=?',
+    'UPDATE intents SET spec_approved=?, spec_approve_user=?, spec_status=?, updated_at=? WHERE id=?',
     approved ? 1 : 0,
     approveUser,
+    approved ? 'approved' : 'pending',
     Date.now(),
     id,
   )
+}
+
+/**
+ * What a spec-content write at a controlled boundary did to the intent's status.
+ * - `promoted`  — `raw` → `pending`: the document carries real content now.
+ * - `reopened`  — `approved` → `pending`: an approved document was rewritten, so
+ *   the approval it rested on no longer applies.
+ * - `unchanged` — already `pending` (or no such intent): nothing to move.
+ */
+export type SpecAuthoredOutcome = 'promoted' | 'reopened' | 'unchanged'
+
+/**
+ * Record that the spec document's CONTENT actually changed at a controlled write
+ * boundary (the authoring run's settle check, which compares the fingerprint it
+ * captured before the run against the one on disk after it).
+ *
+ * This is the ONLY automatic way out of `raw`, and it is content-driven rather
+ * than event-driven: launching, resuming or failing a spec run moves nothing by
+ * itself. Status, compatibility fields and `updated_at` move in one transaction,
+ * so a reader can never observe `pending` next to a stale approver.
+ *
+ * A status that is already `pending` stays put — content that later resembles the
+ * seed again does NOT demote it back to `raw`.
+ */
+export function markSpecAuthored(id: string): SpecAuthoredOutcome {
+  const d = requireDb()
+  let outcome: SpecAuthoredOutcome = 'unchanged'
+  tx(d, () => {
+    const row = d.get<Row>('SELECT * FROM intents WHERE id=?', id)
+    if (!row) return
+    const status = narrowSpecStatus(row.spec_status)
+    if (status === 'pending') return
+    if (status === 'raw') {
+      d.run(
+        "UPDATE intents SET spec_status='pending', spec_approved=0, spec_approve_user=NULL, updated_at=? WHERE id=?",
+        Date.now(),
+        id,
+      )
+      outcome = 'promoted'
+      return
+    }
+    // `approved`: the reviewed-and-approved document has been rewritten. The
+    // approval is withdrawn with it — the conclusion it rested on is bound to the
+    // old fingerprint anyway, so leaving the flag set would admit development
+    // against content nobody approved.
+    d.run(
+      "UPDATE intents SET spec_status='pending', spec_approved=0, spec_approve_user=NULL, updated_at=? WHERE id=?",
+      Date.now(),
+      id,
+    )
+    outcome = 'reopened'
+  })
+  return outcome
+}
+
+/**
+ * Approve a spec on behalf of a HUMAN, under a transactional status guard.
+ * Returns `false` — writing nothing — unless the spec is `pending`: a `raw` spec
+ * is still being authored (its file may be nothing but the server's seed), and an
+ * already-`approved` one has nothing to approve. The UI never offers either, so
+ * this is the defensive server-side half of the same rule.
+ */
+export function approveSpecIfPending(id: string, approver: string): boolean {
+  const d = requireDb()
+  let applied = false
+  tx(d, () => {
+    const row = d.get<Row>('SELECT * FROM intents WHERE id=?', id)
+    if (!row || narrowSpecStatus(row.spec_status) !== 'pending') return
+    d.run(
+      "UPDATE intents SET spec_status='approved', spec_approved=1, spec_approve_user=?, updated_at=? WHERE id=?",
+      approver,
+      Date.now(),
+      id,
+    )
+    applied = true
+  })
+  return applied
 }
 
 /**
@@ -1194,14 +1359,17 @@ export function machineApproveSpec(
   tx(d, () => {
     const row = d.get<Row>('SELECT * FROM intents WHERE id=?', intentId)
     if (!row) return
-    if (row.spec_approved === 1) return
+    // Only a `pending` spec may be approved. `raw` is still being authored and
+    // `approved` is already there — both fail the guard rather than being nudged
+    // through it by the compatibility boolean.
+    if (narrowSpecStatus(row.spec_status) !== 'pending') return
     if (row.spec_path === null) return
     if (narrowSpecReviewVerdict(row.spec_review_verdict) !== 'pass') return
     if (row.spec_review_fingerprint !== fingerprint) return
     if (row.spec_review_machine_blocked === 1) return
     if (readLiveFingerprint(row.spec_path) !== fingerprint) return
     d.run(
-      'UPDATE intents SET spec_approved=1, spec_approve_user=?, updated_at=? WHERE id=?',
+      "UPDATE intents SET spec_status='approved', spec_approved=1, spec_approve_user=?, updated_at=? WHERE id=?",
       approver,
       Date.now(),
       intentId,
@@ -1213,17 +1381,19 @@ export function machineApproveSpec(
 
 /**
  * Revoke an approval (human or machine) and veto the conclusion it rested on, so
- * the next tick cannot machine-approve the same conclusion straight back. Returns
- * `false` when the intent was not approved — nothing to revoke, nothing written.
+ * the next tick cannot machine-approve the same conclusion straight back. The
+ * spec returns to `pending` — the document still holds the content that was
+ * approved, it simply is not approved any more. Returns `false` when the intent
+ * was not approved — nothing to revoke, nothing written.
  */
 export function revokeSpecApproval(intentId: string): boolean {
   const d = requireDb()
   let revoked = false
   tx(d, () => {
     const row = d.get<Row>('SELECT * FROM intents WHERE id=?', intentId)
-    if (!row || row.spec_approved !== 1) return
+    if (!row || narrowSpecStatus(row.spec_status) !== 'approved') return
     d.run(
-      `UPDATE intents SET spec_approved=0, spec_approve_user=NULL,
+      `UPDATE intents SET spec_status='pending', spec_approved=0, spec_approve_user=NULL,
          spec_review_machine_blocked=1, updated_at=? WHERE id=?`,
       Date.now(),
       intentId,

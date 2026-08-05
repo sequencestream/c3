@@ -44,6 +44,7 @@ import {
   insertIntents,
   listIntentLogs,
   listIntents,
+  markSpecAuthored,
   resetStoreForTests,
   setBranchName,
   setPrInfo,
@@ -224,6 +225,8 @@ describe('spec instrumentation', () => {
       { title: 'Approve me', shortEnTitle: 'approve-me', content: '', priority: 'P1' },
     ])
     setSpecPath(r.id, join(dir, 'c3home', 'spec.md'))
+    // Real content landed → `pending`, the only state a human may approve.
+    markSpecAuthored(r.id)
     const { conn } = fakeConn({ subject: 'dave' })
     approveSpecHandler(fakeCtx(), conn, { type: 'approve_spec', workspaceId, intentId: r.id })
     expect(logsOf(r.id, 'spec_approved')).toMatchObject([{ summary: '批准 spec', actor: 'dave' }])

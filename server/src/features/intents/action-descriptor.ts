@@ -96,14 +96,16 @@ function deriveSpecReworkExhaustedActionDescriptor(
     | 'workspaceId'
     | 'status'
     | 'specPath'
-    | 'specApproved'
+    | 'specStatus'
     | 'specReviewVerdict'
     | 'specReviewFingerprint'
     | 'specReviewReworkRounds'
   >,
 ): ActionDescriptor | null {
   if (intent.status !== 'todo') return null
-  if (!intent.specPath || intent.specApproved) return null
+  // Only an authored-but-unapproved spec can be stuck in rework: a `raw` one is
+  // never reviewed, and an `approved` one is past the question.
+  if (!intent.specPath || intent.specStatus !== 'pending') return null
   if (intent.specReviewVerdict !== 'changes_requested') return null
   if (intent.specReviewFingerprint === null) return null
   // Rounds 1..CAP are reworked; only the conclusion after the last allowed rework
@@ -121,14 +123,20 @@ function deriveSpecReworkExhaustedActionDescriptor(
 }
 
 /**
- * Spec awaiting human approval: SDD on, todo intent, written but not approved.
- * The jump lands on the intent's spec document tab where the approve action lives.
+ * Spec awaiting human approval: SDD on, todo intent, and the spec status is
+ * `pending` — a document with real content that nobody has approved yet. The jump
+ * lands on the intent's spec document tab where the approve action lives.
+ *
+ * `pending` is the WHOLE condition. A `raw` intent has a `spec_path` from the
+ * moment `write_spec` seeds the file, so deriving this from the path plus the
+ * approval boolean used to send a human to review a document that had not been
+ * written yet.
  */
 function deriveSpecApprovalActionDescriptor(
-  intent: Pick<Intent, 'id' | 'workspaceId' | 'status' | 'specPath' | 'specApproved'>,
+  intent: Pick<Intent, 'id' | 'workspaceId' | 'status' | 'specStatus'>,
 ): ActionDescriptor | null {
   if (intent.status !== 'todo') return null
-  if (!intent.specPath || intent.specApproved) return null
+  if (intent.specStatus !== 'pending') return null
   const workspacePath = resolveWorkspaceRoot(intent.workspaceId)
   if (!workspacePath || !getSddEnabled(workspacePath)) return null
   return {

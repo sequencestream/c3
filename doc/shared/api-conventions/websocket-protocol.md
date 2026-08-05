@@ -263,7 +263,7 @@
 
 ### `write_spec`
 
-为 intent 撰写 spec 文档（质量闸输出步骤）：在**固定集中**的 spec 根目录(`<c3 home>/doc/<项目路径段>`,按项目隔离、不可配置、不入 Git)下搭建按日期分层的 spec 目录、种子 `spec.md`、立即把**绝对路径**回填到 intent 的 `specPath`,并在配置的 spec agent 上启动写入受限于 spec 目录(即便其位于项目树之外)的撰写会话;非 Claude spec agent 在启动前被拒绝（intent-management RM-R21）。
+为 intent 撰写 spec 文档（质量闸输出步骤）：在**固定集中**的 spec 根目录(`<c3 home>/doc/<项目路径段>`,按项目隔离、不可配置、不入 Git)下搭建按日期分层的 spec 目录、种子 `spec.md`、立即把**绝对路径**回填到 intent 的 `specPath` 并**同语句置 `spec_status='raw'`**(播种占位不算待批准),并在配置的 spec agent 上启动写入受限于 spec 目录(即便其位于项目树之外)的撰写会话;非 Claude spec agent 在启动前被拒绝（intent-management RM-R21）。真实内容落盘由编写运行结束时的内容指纹比对自动把 `raw` 提升为 `pending`（RM-R21）。
 
 **字段：** `workspaceId: string`, `intentId: string`
 
@@ -275,7 +275,7 @@
 
 ### `approve_spec`
 
-人工审批检查点:批准 intent 的 spec，置 `spec_approved=true` 并将批准者(当前登录 subject)记入 `spec_approve_user`，随后重新广播 `intents`。单人确认，无多签/撤销;`specPath` 为空(尚未撰写 spec)时拒绝(`error`)。批准本身不开始工作，只让四态按钮推进到 `Start Work`（intent-management RM-R22）。
+人工审批检查点:批准 intent 的 spec，置 `spec_status='approved'`(兼容字段 `spec_approved=true` 同事务双写)并将批准者(当前登录 subject)记入 `spec_approve_user`，随后重新广播 `intents`。单人确认，无多签/撤销;`specPath` 为空(尚未撰写 spec)时拒绝(`error`)，`spec_status` 为 `raw`(仅播种占位)时同样拒绝(`intent.specNotWritten`)——只有 `pending` 可被批准。批准本身不开始工作，只让四态按钮推进到 `Start Work`（intent-management RM-R22）。
 
 **字段：** `workspaceId: string`, `intentId: string`
 
@@ -802,7 +802,7 @@ Socket 断连自动 resume 遥测（AS-R18，全部可选/正常回合不出现�
 
 ### `error`
 
-请求的操作失败（路径错误、会话缺失等）。携带机器可读的 `{ code, params }`——永不为翻译文本；web 通过其 i18n 目录渲染。服务器不持有任何 UI 文案。
+请求的操作失败（路径错误、会话缺失等）。携带机器可读的 `{ code, params }`——永不为翻译文本；web 通过其 i18n 目录渲染。服务器不持有任何 UI 文案。worktree 创建与 PR 创建链的失败另带可选的 `guidance`（定向修复指引 + 受限重试目标，见下 `UiError`）。
 
 **字段：** `error: UiError`
 
@@ -1001,8 +1001,9 @@ automation 的执行日志。
 
 ## UI 错误码（`UiError`）
 
-- **`UiError`** — `{ code: UiErrorCode, params?: Record<string, string | number> }`。浏览器中显示的任何错误的无语言负载。`code` 是机器可读标识符（如 `intent.notFound`）；`params` 携带目标消息占位符的值。
+- **`UiError`** — `{ code: UiErrorCode, params?: Record<string, string | number>, guidance?: GitActionFailureGuidance }`。浏览器中显示的任何错误的无语言负载。`code` 是机器可读标识符（如 `intent.notFound`）；`params` 携带目标消息占位符的值。
 - **单一事实来源** — 错误码目录将每个 `code` 映射到一个翻译 key 加可选 params（全部英文常量），由共享契约统一声明。Web 据此把 `code` 渲染为本地化文本；**翻译仅在 web locale 目录中存在一次**——服务器永不持有它们。
+- **`GitActionFailureGuidance`** — `{ reason: GitActionFailureReason, detail: string, retry: IntentActionRetryTarget }`。**可选**的定向修复指引，只由 worktree 创建失败与 PR 创建链（提交 → 推送 → 托管平台创建）的失败设置；门禁拒绝不携带。`reason` 是闭集稳定码（`worktree_branch_or_path_taken` / `repo_conflict_unresolved` / `filesystem_denied` / `forge_cli_unavailable` / `remote_permission_denied` / `push_rejected` / `network_unreachable` / `commit_hook_rejected` / `forge_create_rejected` / `unknown`），仅由**当次失败命令自身**的退出码、stderr/stdout 与失败阶段推导,不额外执行任何 Git/forge 命令;证据不足时为 `unknown`，绝不归入最相似类别。`detail` 是原始错误文本（已知与未知原因都保留）。`retry: { type: 'intent-action', intentId, action }`，`action` 只能是 `start-development` / `create-pr` —— 不含命令、URL 或任意回调。字段可选且纯附加：不认识它的客户端仍按 `code` + `params` 渲染。
 
 ## 备注
 

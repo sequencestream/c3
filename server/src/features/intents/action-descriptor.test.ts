@@ -1,7 +1,7 @@
 /**
  * Tests for the composed next-step action-descriptor projection:
  * vendor > wait-user (Ask / permission) > spec rework exhausted > spec awaiting
- * approval.
+ * approval > dependency blocked.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Intent, WaitUserInvolveEvent } from '@ccc/shared/protocol'
@@ -70,6 +70,8 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     prUrl: null,
     prStatus: null,
     specPath: null,
+    // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
+    specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
     specApproved: false,
     specApproveUser: null,
     specSessionId: null,
@@ -204,6 +206,40 @@ describe('deriveActionDescriptor — priority', () => {
     ).toBeNull()
   })
 
+  it('derives NOTHING for a raw spec with a path — seeding is not awaiting approval', () => {
+    // write_spec seeds the document and backfills spec_path the same moment, so a
+    // path that exists must not by itself send a human to approve an un-written
+    // document. The status — not the path — decides.
+    expect(
+      derive(
+        makeIntent({
+          id: 'i-1',
+          status: 'todo',
+          specPath: '/s.md',
+          specStatus: 'raw',
+          specApproved: false,
+        }),
+      ),
+    ).toBeNull()
+  })
+
+  it('does not claim rework exhaustion for a raw spec, even with leftover review facts', () => {
+    expect(
+      derive(
+        makeIntent({
+          id: 'i-1',
+          status: 'todo',
+          specPath: '/s.md',
+          specStatus: 'raw',
+          specApproved: false,
+          specReviewVerdict: 'changes_requested',
+          specReviewFingerprint: 'fp1',
+          specReviewReworkRounds: MAX_SPEC_REVIEW_REWORK_ROUNDS + 1,
+        }),
+      ),
+    ).toBeNull()
+  })
+
   it('returns null when SDD is off', () => {
     sddOn.mockReturnValue(false)
     expect(
@@ -219,6 +255,30 @@ describe('deriveActionDescriptor — priority', () => {
           status: 'in_progress',
           specPath: '/s.md',
           specApproved: false,
+        }),
+      ),
+    ).toBeNull()
+  })
+
+  it('does NOT derive spec_awaiting_approval for a raw spec that only has a seed path', () => {
+    // write_spec backfilled the path the moment it seeded the placeholder, so a
+    // path alone must not read as "written but unapproved" — that is the exact
+    // false prompt this status exists to remove.
+    expect(
+      derive(makeIntent({ id: 'i-1', status: 'todo', specPath: '/s.md', specStatus: 'raw' })),
+    ).toBeNull()
+  })
+
+  it('does NOT claim rework exhaustion for a raw spec, even with leftover review facts', () => {
+    // A raw spec is never reviewed, so a leftover conclusion / rework counter
+    // from an earlier life of the document must not surface the hand-over prompt.
+    expect(
+      derive(
+        exhaustedIntent({
+          specStatus: 'raw',
+          specReviewVerdict: 'changes_requested',
+          specReviewFingerprint: 'fp1',
+          specReviewReworkRounds: MAX_SPEC_REVIEW_REWORK_ROUNDS + 1,
         }),
       ),
     ).toBeNull()
@@ -422,7 +482,9 @@ describe('deriveActionDescriptor — dependency guidance', () => {
     expect(derive(blockedIntent())).toMatchObject({ labelCode: 'spec_awaiting_approval' })
 
     // Approved: the dependency guidance is what is left.
-    expect(derive(makeIntent({ ...blockedIntent(), specApproved: true }))).toMatchObject({
+    expect(
+      derive(makeIntent({ ...blockedIntent(), specApproved: true, specStatus: 'approved' })),
+    ).toMatchObject({
       labelCode: 'dependency_blocked',
     })
   })

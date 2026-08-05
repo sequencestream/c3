@@ -17,6 +17,7 @@
  * type-safe `send()` payloads. See specs/shared/api-conventions/websocket-protocol.md
  * and changes/.../2026-06-04-003-server-code-params-protocol/spec.md.
  */
+import type { GitActionFailureGuidance } from './protocol/intent.js'
 
 /** One UI error code's mapping: the web i18n leaf key it renders through. */
 export interface UiErrorDef {
@@ -215,4 +216,11 @@ export type UiErrorCode = keyof typeof UI_ERROR_CODES
 export interface UiError {
   code: UiErrorCode
   params?: Record<string, string | number>
+  /**
+   * Optional targeted repair guidance for a failed Git / forge action — only
+   * ever set by the worktree-create and PR-create chains. Purely additive: a
+   * client that does not know the field still renders `code` + `params` exactly
+   * as before, and a client that cannot validate it falls back to the same.
+   */
+  guidance?: GitActionFailureGuidance
 }

@@ -16,7 +16,7 @@
 //!               `open` 启动。提交点是「新 App 落位」;之后启动失败则删新、移回备份。
 //!   * Windows —— NSIS 安装器以独立进程运行并自行管理替换(运行中的 exe 无法覆盖),
 //!               助手只负责启动安装器并等待其退出;失败不删旧应用。
-//!   * Linux   —— `dpkg -i`(deb)由包管理器完成提交/回滚,失败不删旧应用。
+//!   * Linux   —— 在当前用户可写的原 AppImage 路径同目录准备并原子替换,失败回滚。
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -214,7 +214,7 @@ pub enum InstallOutcome {
 /// 平台安装适配器统一入口。成功返回结果;失败返回描述(旧应用保持不变或已回滚)。
 fn install(record: &UpdateRecord, config_dir: &Path) -> Result<InstallOutcome, String> {
     match record.kind.as_str() {
-        // 发布约定的唯一自更新安装器(macOS=dmg、Windows=nsis、Linux=deb)。
+        // 发布约定的唯一自更新安装器(macOS=dmg、Windows=nsis、Linux=appimage)。
         // 任何未规划的 kind 都 fail-closed,不猜测。
         #[cfg(target_os = "macos")]
         "dmg" => install_macos(record, config_dir),
@@ -453,40 +453,77 @@ fn installed_exe_after_update() -> Option<PathBuf> {
 fn install_linux(record: &UpdateRecord) -> Result<InstallOutcome, String> {
     let staged = PathBuf::from(&record.staged_path);
     match record.kind.as_str() {
-        "deb" => {
-            // 提权由系统处理;用户拒绝视为可重试失败,不删旧应用。
-            let status = Command::new("dpkg")
-                .args(["-i", staged.to_str().unwrap_or("")])
-                .status()
-                .map_err(|e| format!("failed to start dpkg: {e}"))?;
-            if !status.success() {
-                return Err(format!("dpkg exited with {status:?}"));
-            }
-            Ok(InstallOutcome::Replaced)
-        }
         "appimage" => {
-            // 替换 ~/Applications 下的 AppImage(若存在)。
-            let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_string())?;
-            let dir = Path::new(&home).join("Applications");
-            let name = Path::new(&record.staged_path)
-                .file_name()
-                .ok_or_else(|| "cannot read package name".to_string())?
-                .to_string_lossy()
-                .into_owned();
-            let target = dir.join(&name);
-            if target.exists() {
-                fs::remove_file(&target).map_err(|e| format!("cannot replace AppImage: {e}"))?;
+            let target = std::env::var_os("APPIMAGE")
+                .map(PathBuf::from)
+                .ok_or_else(|| {
+                    "APPIMAGE is not set — Linux self-update requires launching the AppImage"
+                        .to_string()
+                })?;
+            replace_appimage(&staged, &target)?;
+            if let Err(e) = Command::new(&target).spawn() {
+                rollback_appimage(&target)?;
+                return Err(format!(
+                    "new AppImage could not be started; old version restored: {e}"
+                ));
             }
-            fs::copy(&staged, &target).map_err(|e| format!("cannot install AppImage: {e}"))?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(&target, fs::Permissions::from_mode(0o755));
-            }
-            let _ = Command::new(&target).spawn();
+            remove_appimage_backup(&target);
             Ok(InstallOutcome::Replaced)
         }
         other => Err(format!("no linux installer for kind '{other}'")),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn appimage_sibling(target: &Path, suffix: &str) -> Result<PathBuf, String> {
+    let name = target
+        .file_name()
+        .ok_or_else(|| "cannot read the current AppImage name".to_string())?
+        .to_string_lossy();
+    Ok(target.with_file_name(format!(".{name}.c3-update-{suffix}")))
+}
+
+#[cfg(target_os = "linux")]
+fn replace_appimage(staged: &Path, target: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    if !target.is_file() {
+        return Err(format!(
+            "current AppImage does not exist: {}",
+            target.display()
+        ));
+    }
+    let prepared = appimage_sibling(target, "new")?;
+    let backup = appimage_sibling(target, "backup")?;
+    let _ = fs::remove_file(&prepared);
+    let _ = fs::remove_file(&backup);
+
+    fs::copy(staged, &prepared)
+        .map_err(|e| format!("cannot prepare AppImage beside current installation: {e}"))?;
+    fs::set_permissions(&prepared, fs::Permissions::from_mode(0o755))
+        .map_err(|e| format!("cannot make prepared AppImage executable: {e}"))?;
+    fs::File::open(&prepared)
+        .and_then(|file| file.sync_all())
+        .map_err(|e| format!("cannot flush prepared AppImage: {e}"))?;
+    fs::hard_link(target, &backup)
+        .or_else(|_| fs::copy(target, &backup).map(|_| ()))
+        .map_err(|e| format!("cannot back up current AppImage: {e}"))?;
+    fs::rename(&prepared, target).map_err(|e| {
+        let _ = fs::remove_file(&backup);
+        format!("cannot atomically replace current AppImage: {e}")
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn rollback_appimage(target: &Path) -> Result<(), String> {
+    let backup = appimage_sibling(target, "backup")?;
+    fs::rename(&backup, target).map_err(|e| format!("cannot restore old AppImage: {e}"))
+}
+
+#[cfg(target_os = "linux")]
+fn remove_appimage_backup(target: &Path) {
+    if let Ok(backup) = appimage_sibling(target, "backup") {
+        let _ = fs::remove_file(backup);
     }
 }
 
@@ -565,6 +602,55 @@ mod tests {
         cleanup_invalid_staging(&dir);
         assert!(!sdir.join("pkg.dmg.tmp").exists());
         assert!(sdir.join("pkg.dmg.ready").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_update_replaces_the_existing_user_install_and_can_roll_back() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tmp_dir("appimage-replace");
+        let target = dir.join("c3.AppImage");
+        let staged = dir.join("download.ready");
+        fs::write(&target, b"old-version").unwrap();
+        fs::write(&staged, b"new-version").unwrap();
+
+        replace_appimage(&staged, &target).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"new-version");
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+        assert_eq!(
+            fs::read(appimage_sibling(&target, "backup").unwrap()).unwrap(),
+            b"old-version"
+        );
+
+        rollback_appimage(&target).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"old-version");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn appimage_update_fails_before_commit_when_install_directory_is_not_writable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let dir = tmp_dir("appimage-permissions");
+        let target = dir.join("c3.AppImage");
+        let staged = dir.join("download.ready");
+        fs::write(&target, b"old-version").unwrap();
+        fs::write(&staged, b"new-version").unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
+
+        assert!(replace_appimage(&staged, &target).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"old-version");
+
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
         let _ = fs::remove_dir_all(&dir);
     }
 }

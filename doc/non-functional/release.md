@@ -335,8 +335,8 @@ macOS 签名与公证也只能在 darwin host 上完成。每个 job 跑 `releas
   以 `--update-assistant` 参数拉起同一可执行文件作为独立更新助手并退出。
 - 助手等壳退出后按平台安装适配器替换**完整桌面包**:macOS 移动旧 `.app` 到备份 →
   挂载 dmg → 拷入新 `.app` → 签名/公证校验 → `open` 启动,提交点后启动失败则回滚;
-  Windows 委托 NSIS 静默安装;Linux 用 `dpkg -i` 或替换 AppImage。提权提示由系统
-  弹窗,用户拒绝视为可重试失败,不卸载旧版本。
+  Windows 委托 NSIS 静默安装;Linux 在当前 `$APPIMAGE` 所在目录准备、备份并原子
+  替换 AppImage,无需 root;目录不可写或不是从 AppImage 启动时拒绝更新并保留旧版本。
 - 下载中断、校验不一致、替换失败都保持旧版本可启动;成功启动新版本后才清理备份与
   更新记录。
 
@@ -446,7 +446,7 @@ bundle 会拿到版本 `define`,但不会被 minify。
 ```
 
 - `preferred` 标记每个目标**唯一**的自更新安装器(发布约定:macOS=dmg、
-  Windows=nsis、Linux=deb)。桌面更新器只认带该标记的条目,同平台出现多个候选而
+  Windows=nsis、Linux=appimage;deb 仅供首次安装)。桌面更新器只认带该标记的条目,同平台出现多个候选而
   无唯一标记时拒绝安装,不猜测。`release:publish` 把 `manifest.json` 随制品一并
   上传到 Release,更新器从 `releases/download/<tag>/manifest.json` 拉取。
 

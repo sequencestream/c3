@@ -90,13 +90,14 @@ export function tauriBundleFlags(target) {
  * 平台出现多个安装器候选时的**唯一**挑选依据,绝不猜测。
  *
  * 选择理由:macOS 用 dmg(免挂载、可校验公证),Windows 用 nsis(免提权的 per-user
- * 安装,msi 需要管理员),Linux 用 deb(主流发行版原生格式)。更新器只认 manifest
- * 里的 `preferred: true` 标记,这里定义的就是发布侧写入该标记的约定。
+ * 安装,msi 需要管理员),Linux 用 AppImage(当前用户可在原安装位置原子替换,无需
+ * root;deb 仍供首次安装)。更新器只认 manifest 里的 `preferred: true` 标记,这里
+ * 定义的就是发布侧写入该标记的约定。
  */
 export const DESKTOP_PREFERRED_KIND = {
   'macos-arm64': 'dmg',
   'windows-x64': 'nsis',
-  'linux-x64': 'deb',
+  'linux-x64': 'appimage',
 }
 
 /** 该目标的自更新首选安装器 kind;未知目标返回 null(由调用方拒绝,不猜测)。 */

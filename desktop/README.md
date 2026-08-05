@@ -83,7 +83,8 @@ pnpm release:desktop --require-signing   # 正式产物:未签名/未公证即�
   没有则产物未签名,发布说明必须写明 SmartScreen 提示。
 - **Linux** —— 需要 `libwebkit2gtk-4.1-dev`、`libgtk-3-dev`、
   `libayatana-appindicator3-dev`、`librsvg2-dev`、`libxdo-dev`。CI 会显式安装并用
-  `pkg-config --modversion` 校验。
+  `pkg-config --modversion` 校验。应用内更新以 AppImage 为首选制品,在当前 `$APPIMAGE`
+  所在目录准备、备份并原子替换,因此安装目录必须由当前用户可写且无需 root。
 
 ## 测试
 

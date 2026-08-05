@@ -105,6 +105,10 @@ describe('preferredKindFor', () => {
     }
   })
 
+  it('uses the non-root AppImage path for Linux self-update', () => {
+    expect(preferredKindFor('linux-x64')).toBe('appimage')
+  })
+
   it('refuses to guess for an unknown target', () => {
     expect(preferredKindFor('freebsd-x64')).toBeNull()
   })

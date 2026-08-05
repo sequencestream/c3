@@ -14,6 +14,7 @@ use tauri_plugin_autostart::ManagerExt;
 
 const ID_OPEN: &str = "open";
 const ID_AUTOSTART: &str = "autostart";
+const ID_UPDATE: &str = "update";
 const ID_QUIT: &str = "quit";
 
 /// 托盘文案。Web UI 有 zh/en 两种语言,托盘跟随系统语言做同样的二选一,免得中文
@@ -21,6 +22,7 @@ const ID_QUIT: &str = "quit";
 struct Labels {
     open: &'static str,
     autostart: &'static str,
+    update: &'static str,
     quit: &'static str,
 }
 
@@ -32,12 +34,14 @@ fn labels() -> Labels {
         Labels {
             open: "打开 c3",
             autostart: "开机自启",
+            update: "检查更新…",
             quit: "退出",
         }
     } else {
         Labels {
             open: "Open c3",
             autostart: "Start at login",
+            update: "Check for Updates…",
             quit: "Quit",
         }
     }
@@ -61,9 +65,13 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         autostart_enabled(app),
         None::<&str>,
     )?;
+    let update = MenuItem::with_id(app, ID_UPDATE, l.update, true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, ID_QUIT, l.quit, true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &autostart, &separator, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&open, &autostart, &separator, &update, &separator, &quit],
+    )?;
 
     let mut builder = TrayIconBuilder::with_id("c3")
         .tooltip("c3")
@@ -72,6 +80,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(move |app, event| match event.id().as_ref() {
             ID_OPEN => crate::focus_visible_window(app),
             ID_AUTOSTART => toggle_autostart(app, &autostart),
+            ID_UPDATE => crate::open_update_window(app),
             ID_QUIT => crate::shutdown_and_exit(app),
             _ => {}
         });

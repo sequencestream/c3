@@ -12,8 +12,12 @@
 //!   * `main`   —— 加载 sidecar 提供的远端(回环)SPA。不在任何 capability 的窗口列表
 //!     里,因此拿不到任何插件权限,更没有 shell 执行能力。
 
+// `install` 对外可见:独立更新助手由 `main`(外部 bin)以 `--update-assistant`
+// 参数直接进入 `install::update_assistant_main`。
+pub mod install;
 mod sidecar;
 mod tray;
+mod update;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -56,6 +60,26 @@ pub struct ShellState {
     record: Mutex<Option<SidecarRecord>>,
     /// 启动流程是否正在进行 —— 防止重试按钮把多个 sidecar 叠起来。
     starting: Arc<AtomicBool>,
+    /// 已就绪 sidecar 的回环 base URL。更新状态机靠它访问 sidecar 的更新 API。
+    sidecar_url: Mutex<Option<String>>,
+    /// sidecar 实测版本(`c3 --version`)。更新检查以此作为当前版本。
+    sidecar_version: Mutex<Option<String>>,
+}
+
+impl ShellState {
+    /// 已就绪 sidecar 的回环 base URL(未就绪时为 None)。
+    pub fn sidecar_url(&self) -> Option<String> {
+        self.sidecar_url.lock().ok().and_then(|g| g.clone())
+    }
+
+    /// sidecar 实测版本;未解析到为空串。
+    pub fn sidecar_version(&self) -> String {
+        self.sidecar_version
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+            .unwrap_or_default()
+    }
 }
 
 /// 发给 splash 的启动阶段。
@@ -95,8 +119,8 @@ pub fn expected_sidecar_version() -> Option<&'static str> {
     option_env!("C3_SIDECAR_VERSION")
 }
 
-/// 壳自己的状态目录(运行记录落在这里)。取不到时退回临时目录,只影响孤儿清理。
-fn shell_config_dir(app: &AppHandle) -> PathBuf {
+/// 壳自己的状态目录(运行记录与更新暂存都落在这里)。取不到时退回临时目录。
+pub(crate) fn shell_config_dir(app: &AppHandle) -> PathBuf {
     app.path()
         .app_config_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("c3-desktop"))
@@ -148,6 +172,16 @@ pub fn focus_visible_window(app: &AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+/// 托盘「检查更新」入口:显示更新窗口并立即做一次手动检查。窗口隐藏创建,
+/// 只有托盘与本地入口能把它唤出来。
+pub fn open_update_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(update::UPDATE_WINDOW) {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    update::check_update(app, true);
 }
 
 /// 停止本壳创建的 sidecar:先请求优雅退出并等待,超时后才硬杀。
@@ -227,7 +261,12 @@ pub fn start_backend(app: AppHandle) {
                 if let Some(splash) = app.get_webview_window(SPLASH_WINDOW) {
                     let _ = splash.hide();
                 }
+                // 记下 sidecar 地址,并在后台异步检查一次更新(不阻塞主窗口)。
+                if let Ok(mut u) = app.state::<ShellState>().sidecar_url.lock() {
+                    *u = Some(url.clone());
+                }
                 println!("[c3-desktop] ready at {url}");
+                update::check_update(&app, false);
             }
             Err((stage, message)) => emit_error(&app, stage, message),
         }
@@ -256,8 +295,14 @@ async fn run_startup(app: &AppHandle) -> Result<String, (&'static str, String)> 
             ),
         ));
     }
-    let actual = parse_version(&String::from_utf8_lossy(&version_out.stdout))
-        .ok_or(("sidecar", "could not parse `c3 --version` output".to_string()))?;
+    let actual = parse_version(&String::from_utf8_lossy(&version_out.stdout)).ok_or((
+        "sidecar",
+        "could not parse `c3 --version` output".to_string(),
+    ))?;
+    // 更新检查以 sidecar 实测版本为当前版本;正常发布态它与壳版本一致。
+    if let Ok(mut v) = app.state::<ShellState>().sidecar_version.lock() {
+        *v = Some(actual.clone());
+    }
     match expected_sidecar_version() {
         Some(expected) if expected != actual => {
             return Err((
@@ -397,11 +442,7 @@ fn on_sidecar_exit(app: &AppHandle) {
     if state.starting.load(Ordering::SeqCst) {
         return; // 启动流程自己会处理这次退出
     }
-    let had_record = state
-        .record
-        .lock()
-        .map(|r| r.is_some())
-        .unwrap_or(false);
+    let had_record = state.record.lock().map(|r| r.is_some()).unwrap_or(false);
     if !had_record {
         return; // 我们主动停的,不是意外
     }
@@ -438,6 +479,51 @@ fn quit_app(app: AppHandle, window: WebviewWindow) {
     shutdown_and_exit(&app);
 }
 
+// ── 更新命令 ──────────────────────────────────────────────────────────────
+// 五条命令全部显式拒绝非 `update` 窗口的调用。capability 已把权限限定在 update
+// 窗口;这层检查覆盖的是 App 自定义命令 —— 加载远端 SPA 的 `main` 窗口不该有能力
+// 触发检查、下载或安装。
+
+#[tauri::command]
+fn check_update(app: AppHandle, window: WebviewWindow) {
+    if window.label() != update::UPDATE_WINDOW {
+        return;
+    }
+    update::check_update(&app, true);
+}
+
+#[tauri::command]
+fn confirm_update(app: AppHandle, window: WebviewWindow) {
+    if window.label() != update::UPDATE_WINDOW {
+        return;
+    }
+    update::confirm_download(&app);
+}
+
+#[tauri::command]
+fn cancel_update(app: AppHandle, window: WebviewWindow) {
+    if window.label() != update::UPDATE_WINDOW {
+        return;
+    }
+    update::cancel_download(&app);
+}
+
+#[tauri::command]
+fn install_update(app: AppHandle, window: WebviewWindow) {
+    if window.label() != update::UPDATE_WINDOW {
+        return;
+    }
+    update::confirm_install(&app);
+}
+
+#[tauri::command]
+fn get_update_state(app: AppHandle, window: WebviewWindow) -> update::UpdateSnapshot {
+    if window.label() != update::UPDATE_WINDOW {
+        return update::UpdateSnapshot::default();
+    }
+    update::snapshot(&app.state::<update::UpdateState>())
+}
+
 /// 构建并运行桌面壳。
 pub fn run() {
     tauri::Builder::default()
@@ -451,7 +537,16 @@ pub fn run() {
             None,
         ))
         .manage(ShellState::default())
-        .invoke_handler(tauri::generate_handler![retry_startup, quit_app])
+        .manage(update::UpdateState::default())
+        .invoke_handler(tauri::generate_handler![
+            retry_startup,
+            quit_app,
+            check_update,
+            confirm_update,
+            cancel_update,
+            install_update,
+            get_update_state
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             // 上一轮壳异常退出可能留下 sidecar。按身份三元组校验后清理,
@@ -460,6 +555,9 @@ pub fn run() {
             if !matches!(outcome, sidecar::SweepOutcome::NoRecord) {
                 println!("[c3-desktop] orphan sweep: {outcome:?}");
             }
+            // 上一轮更新若在下载中断开,清理未完成暂存;`.ready` 包保留到本轮
+            // 检查(若没有可安装记录,校验通过的旧包会在下次更新时被覆盖)。
+            install::cleanup_invalid_staging(&shell_config_dir(&handle));
             tray::install(&handle)?;
             start_backend(handle);
             Ok(())
@@ -467,9 +565,12 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 // 关窗只隐藏:后端继续跑,托盘可随时恢复。
-                // 两个窗口都只隐藏。App 的存活由托盘决定,唯一的退出入口是托盘
+                // 三个窗口都只隐藏。App 的存活由托盘决定,唯一的退出入口是托盘
                 // 「退出」—— 否则关掉启动页就等于杀掉一个正在跑活儿的后端。
-                if window.label() == MAIN_WINDOW || window.label() == SPLASH_WINDOW {
+                if window.label() == MAIN_WINDOW
+                    || window.label() == SPLASH_WINDOW
+                    || window.label() == update::UPDATE_WINDOW
+                {
                     api.prevent_close();
                     let _ = window.hide();
                 }

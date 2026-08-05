@@ -61,6 +61,7 @@ export function sha256File(path) {
  *   binarySha256?: string,               // sha256 of the INNER binary
  *   channel?: string,                    // `cli` (default) | `desktop`
  *   kind?: string,                       // artifact type (tarball/zip/dmg/msi/…)
+ *   preferred?: boolean,                 // the ONE updater-selected installer for its platform
  *   experimental?: boolean,
  * }>} o.artifacts
  *   file = absolute path to the PACKAGE (e.g. dist/c3-v0.2.0-macos-arm64.tar.gz).
@@ -69,6 +70,9 @@ export function sha256File(path) {
  *   extra stat / hash — pack.mjs already computed them).
  *   `channel` defaults to `cli` so every pre-desktop call site keeps producing
  *   the same meaning without being touched.
+ *   `preferred` marks the single self-update installer for a platform — the
+ *   desktop updater picks it over sibling installers of the same kind family
+ *   instead of guessing between them.
  */
 export function buildManifest({ versionInfo, artifacts }) {
   return {
@@ -89,6 +93,7 @@ export function buildManifest({ versionInfo, artifacts }) {
         sha256: typeof a.sha256 === 'string' ? a.sha256 : sha256File(a.file),
         ...(a.binary ? { binary: a.binary } : {}),
         ...(a.binarySha256 ? { binarySha256: a.binarySha256 } : {}),
+        ...(a.preferred ? { preferred: true } : {}),
         ...(a.experimental ? { experimental: true } : {}),
       }
     }),

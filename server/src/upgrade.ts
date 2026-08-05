@@ -1,6 +1,11 @@
 /**
  * `c3 upgrade` — self-update the installed single binary from GitHub Releases.
  *
+ * The orchestration + binary-replace logic for the CLI distribution. All version
+ * facts, release resolution, download and checksum verification live in the shared
+ * kernel (`upgrade-core.ts`); this file adds the CLI's output, exit-code contract,
+ * runtime-form gate and the same-directory atomic replace.
+ *
  * Flow: resolve runtime form → resolve the latest release tag (GitHub Releases
  * redirect first, JSON API only as fallback) → pick this platform's
  * package → download package + `.sha256` → cross-check the PACKAGE bytes against
@@ -9,7 +14,7 @@
  * `.exe.old` placeholder swap (Windows, where a running exe cannot be overwritten
  * in place). Any failure before the final rename leaves the original binary intact.
  *
- * Hard rules (see doc/non-functional/release.md + the spec):
+ * Hard rules (see doc/non-functional/release.md):
  *   - the download is cross-checked against its published sha256 checksum when present.
  *   - only the current, locatable, writable binary (`process.execPath`) is touched.
  *   - PATH / shell profiles / package-manager locations are never modified.
@@ -22,7 +27,6 @@
  * real binary.
  */
 import { spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import {
   chmodSync,
   existsSync,
@@ -38,98 +42,33 @@ import { c3HomeDir } from './kernel/config/index.js'
 import { isInterpreter } from './daemon.js'
 import { detectRuntimeForms, type RuntimeForms } from './restart.js'
 import { VERSION } from './version.js'
+import {
+  DEFAULT_REPO,
+  UPGRADE_EXIT,
+  UpgradeError,
+  decideAction,
+  downloadBuffer,
+  normalizeVersion,
+  resolveLatestRelease,
+  sha256Hex,
+  type ReleaseAsset,
+} from './upgrade-core.js'
 
-/** Default GitHub repo serving c3 releases (overridable via `--repo` for tests/emergencies). */
-export const DEFAULT_REPO = 'sequencestream/c3'
+export { DEFAULT_REPO, UPGRADE_EXIT, UpgradeError } from './upgrade-core.js'
+export {
+  compareVersions,
+  decideAction,
+  normalizeVersion,
+  parseTagFromLocation,
+  resolveTagViaRedirect,
+  type ReleaseAsset,
+  type ResolvedRelease,
+  type UpgradeAction,
+} from './upgrade-core.js'
 
 /** The c3 binary basename inside a release package — always `c3`/`c3.exe`. */
 function binaryNameFor(target: string): string {
   return target.startsWith('windows') ? 'c3.exe' : 'c3'
-}
-
-/**
- * Exit-code contract (scripts may depend on the three classes being distinct):
- *   - `ok` (0): upgraded, or already at the latest version.
- *   - `updateAvailable` (10): `--check` found a newer release (no download/replace).
- *   - everything else: a non-zero error class, each with stderr explanation.
- */
-export const UPGRADE_EXIT = {
-  ok: 0,
-  updateAvailable: 10,
-  error: 1,
-  devRefused: 3,
-  network: 4,
-  noArtifact: 5,
-  verifyFailed: 6,
-  unpackFailed: 7,
-  replaceFailed: 8,
-} as const
-
-/** A failure carrying the precise upgrade exit code; runUpgrade maps it to stderr + code. */
-export class UpgradeError extends Error {
-  constructor(
-    message: string,
-    public readonly code: number,
-  ) {
-    super(message)
-    this.name = 'UpgradeError'
-  }
-}
-
-// ── Version comparison ──────────────────────────────────────────────────────
-
-/** Strip a single leading `v` (mirrors scripts/release/artifact-name.mjs). */
-export function normalizeVersion(version: string): string {
-  return String(version).replace(/^v/, '')
-}
-
-interface Semver {
-  nums: [number, number, number]
-  pre: string[]
-}
-
-function parseSemver(version: string): Semver | null {
-  const m = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/.exec(normalizeVersion(version).trim())
-  if (!m) return null
-  return {
-    nums: [Number(m[1]), Number(m[2]), Number(m[3])],
-    pre: m[4] ? m[4].split('.') : [],
-  }
-}
-
-/**
- * Semver-ish comparison. Returns >0 when `a` is newer, <0 when older, 0 when equal.
- * A leading `v` is normalized; a version WITH a prerelease ranks below the same core
- * WITHOUT one (`1.0.0-rc < 1.0.0`). Unparseable inputs fall back to string compare.
- */
-export function compareVersions(a: string, b: string): number {
-  const pa = parseSemver(a)
-  const pb = parseSemver(b)
-  if (!pa || !pb) {
-    const na = normalizeVersion(a)
-    const nb = normalizeVersion(b)
-    return na < nb ? -1 : na > nb ? 1 : 0
-  }
-  for (let i = 0; i < 3; i++) {
-    if (pa.nums[i] !== pb.nums[i]) return pa.nums[i] < pb.nums[i] ? -1 : 1
-  }
-  // Equal core. No-prerelease outranks a prerelease.
-  if (pa.pre.length === 0 && pb.pre.length === 0) return 0
-  if (pa.pre.length === 0) return 1
-  if (pb.pre.length === 0) return -1
-  const n = Math.min(pa.pre.length, pb.pre.length)
-  for (let i = 0; i < n; i++) {
-    const x = pa.pre[i]
-    const y = pb.pre[i]
-    if (x === y) continue
-    const xn = /^\d+$/.test(x)
-    const yn = /^\d+$/.test(y)
-    if (xn && yn) return Number(x) < Number(y) ? -1 : 1
-    if (xn) return -1 // numeric identifiers rank below alphanumeric ones
-    if (yn) return 1
-    return x < y ? -1 : 1
-  }
-  return pa.pre.length < pb.pre.length ? -1 : pa.pre.length > pb.pre.length ? 1 : 0
 }
 
 // ── Platform mapping + package naming (mirrors scripts/release; cross-tested) ──
@@ -179,48 +118,7 @@ export function isSelfUpdatable(
   return { ok: true }
 }
 
-// ── Upgrade decision ────────────────────────────────────────────────────────
-
-export type UpgradeAction = 'up-to-date' | 'update' | 'reinstall'
-
-/**
- * Decide what to do given the current and latest versions. `--force` permits a
- * SAME-version reinstall only; it is never a downgrade channel, so a latest that
- * is older than current is reported as up-to-date regardless of force.
- */
-export function decideAction(opts: {
-  current: string
-  latest: string
-  force?: boolean
-}): UpgradeAction {
-  const cmp = compareVersions(opts.latest, opts.current)
-  if (cmp > 0) return 'update'
-  if (cmp === 0) return opts.force ? 'reinstall' : 'up-to-date'
-  return 'up-to-date' // latest is older — never downgrade
-}
-
-// ── GitHub release model + asset selection ──────────────────────────────────
-
-export interface ReleaseAsset {
-  name: string
-  url: string
-}
-
-export interface LatestRelease {
-  tag: string
-  assets: ReleaseAsset[]
-}
-
-/**
- * What the orchestrator needs to proceed after latest-version resolution: the
- * release `tag`. `assets` is populated ONLY when resolution fell back to the JSON
- * API; on the primary redirect path it is absent and download URLs are derived
- * deterministically from the tag (no asset enumeration).
- */
-export interface ResolvedRelease {
-  tag: string
-  assets?: ReleaseAsset[]
-}
+// ── Asset selection ─────────────────────────────────────────────────────────
 
 export interface SelectedAssets {
   pkgName: string
@@ -248,21 +146,6 @@ export function selectAssets(assets: ReleaseAsset[], pkgName: string): SelectedA
     pkgUrl,
     sha256Url: byName.get(`${pkgName}.sha256`),
   }
-}
-
-/**
- * Extract a release tag from a GitHub Releases redirect `Location` header. GitHub
- * redirects `.../releases/latest` to `.../releases/tag/<tag>`; the target may be
- * absolute or relative, so match the `/releases/tag/<tag>` path segment anywhere
- * in the value. Returns the (URL-decoded) tag, or null when the header is missing
- * or does not name a tag — the caller treats null as "fall back to the JSON API".
- */
-export function parseTagFromLocation(location: string | null | undefined): string | null {
-  if (!location) return null
-  const m = /\/releases\/tag\/([^/?#]+)/.exec(location)
-  if (!m) return null
-  const tag = decodeURIComponent(m[1])
-  return tag.length > 0 ? tag : null
 }
 
 /**
@@ -418,128 +301,6 @@ function safeRemove(io: UpgradeIo, path: string): void {
   }
 }
 
-// ── Network ─────────────────────────────────────────────────────────────────
-
-function githubHeaders(env: NodeJS.ProcessEnv): Record<string, string> {
-  const headers: Record<string, string> = {
-    'User-Agent': 'c3-upgrade',
-    Accept: 'application/vnd.github+json',
-  }
-  const token = env.GITHUB_TOKEN || env.GH_TOKEN
-  if (token) headers.Authorization = `Bearer ${token}`
-  return headers
-}
-
-async function fetchLatestRelease(
-  repo: string,
-  fetchFn: typeof fetch,
-  env: NodeJS.ProcessEnv,
-): Promise<LatestRelease> {
-  const url = `https://api.github.com/repos/${repo}/releases/latest`
-  let res: Response
-  try {
-    res = await fetchFn(url, { headers: githubHeaders(env) })
-  } catch (e) {
-    throw new UpgradeError(
-      `cannot reach GitHub (offline / proxy-blocked?): ${(e as Error).message}`,
-      UPGRADE_EXIT.network,
-    )
-  }
-  if (!res.ok) {
-    const rateLimited = res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0'
-    const hint = rateLimited ? ' — GitHub API rate limit hit; set GITHUB_TOKEN to raise it' : ''
-    throw new UpgradeError(
-      `GitHub release query failed: HTTP ${res.status} for ${url}${hint}`,
-      UPGRADE_EXIT.network,
-    )
-  }
-  let body: unknown
-  try {
-    body = await res.json()
-  } catch (e) {
-    throw new UpgradeError(
-      `malformed GitHub release response: ${(e as Error).message}`,
-      UPGRADE_EXIT.network,
-    )
-  }
-  const obj = body as { tag_name?: unknown; assets?: unknown }
-  if (typeof obj.tag_name !== 'string') {
-    throw new UpgradeError('GitHub release response missing tag_name', UPGRADE_EXIT.network)
-  }
-  const assets: ReleaseAsset[] = Array.isArray(obj.assets)
-    ? obj.assets
-        .filter(
-          (a): a is { name: string; browser_download_url: string } =>
-            typeof a === 'object' &&
-            a !== null &&
-            typeof (a as { name?: unknown }).name === 'string' &&
-            typeof (a as { browser_download_url?: unknown }).browser_download_url === 'string',
-        )
-        .map((a) => ({ name: a.name, url: a.browser_download_url }))
-    : []
-  return { tag: obj.tag_name, assets }
-}
-
-/**
- * Primary latest-version resolver: ask `github.com/{repo}/releases/latest` with
- * `redirect: 'manual'` and read the release tag out of the `Location` header. This
- * avoids the unauthenticated `api.github.com` rate limit (60/h/IP) that shared-exit
- * users hit. Returns null on any unusable outcome (fetch error, no `Location`, or a
- * `Location` that does not name a tag) so the caller can fall back to the JSON API.
- * Shared with the background update checker, which needs the same rate-limit-free path.
- */
-export async function resolveTagViaRedirect(
-  repo: string,
-  fetchFn: typeof fetch,
-  userAgent = 'c3-upgrade',
-): Promise<string | null> {
-  const url = `https://github.com/${repo}/releases/latest`
-  let res: Response
-  try {
-    res = await fetchFn(url, { redirect: 'manual', headers: { 'User-Agent': userAgent } })
-  } catch {
-    return null
-  }
-  return parseTagFromLocation(res.headers.get('location'))
-}
-
-/**
- * Resolve the latest release. The primary path parses the tag from the GitHub
- * Releases redirect (no asset list, no token, no API rate limit); download URLs are
- * then derived deterministically by {@link buildDownloadUrls}. Only when the redirect
- * yields no usable tag do we fall back to {@link fetchLatestRelease} (JSON API), which
- * keeps the token-aware headers, asset-list selection, and the 403 rate-limit hint.
- */
-async function resolveLatestRelease(
-  repo: string,
-  fetchFn: typeof fetch,
-  env: NodeJS.ProcessEnv,
-): Promise<ResolvedRelease> {
-  const tag = await resolveTagViaRedirect(repo, fetchFn)
-  if (tag) return { tag }
-  return fetchLatestRelease(repo, fetchFn, env)
-}
-
-async function downloadBuffer(
-  url: string,
-  fetchFn: typeof fetch,
-  env: NodeJS.ProcessEnv,
-): Promise<Buffer> {
-  let res: Response
-  try {
-    res = await fetchFn(url, { headers: githubHeaders(env) })
-  } catch (e) {
-    throw new UpgradeError(
-      `download failed for ${url}: ${(e as Error).message}`,
-      UPGRADE_EXIT.network,
-    )
-  }
-  if (!res.ok) {
-    throw new UpgradeError(`download failed for ${url}: HTTP ${res.status}`, UPGRADE_EXIT.network)
-  }
-  return Buffer.from(await res.arrayBuffer())
-}
-
 // ── Restart guidance ────────────────────────────────────────────────────────
 
 /** The precise next-step line(s) to print after a successful replace, given the
@@ -664,7 +425,7 @@ export async function runUpgrade(
     // anchor.) A missing sidecar is tolerated — the transport is already
     // TLS-authenticated to github.com.
     if (sha256Line && sha256Line.trim() !== '') {
-      const actual = createHash('sha256').update(io.readFile(pkgPath)).digest('hex')
+      const actual = sha256Hex(io.readFile(pkgPath))
       const expected = sha256Line.trim().split(/\s+/)[0]?.toLowerCase()
       if (expected && expected !== actual) {
         errlog(`[c3 upgrade] sha256 mismatch (have ${actual}, expected ${expected})`)

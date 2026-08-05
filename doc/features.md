@@ -213,7 +213,8 @@ c3
     ├── sidecar 回环绑定                          # 壳固定给 sidecar 传 --host 127.0.0.1 + 本次选中的可用端口,不读也不放宽 exposure.bindAddress
     ├── 托盘常驻与开机自启                        # 关窗只隐藏、后端继续跑;托盘「打开 c3 / 开机自启 / 退出」,自启默认关且与 c3 install 系统服务互不相干
     ├── 受管子进程边界                            # 壳只管自己创建的 sidecar,按 pid+可执行文件+启动时间三元组校验后清理孤儿,绝不按端口或进程名杀外部 c3
-    └── 渠道化 manifest                           # 同一份 manifest 记录 platform/arch/channel/kind/file/sha256,file 为唯一键;CLI 渠道是发布闸门,桌面失败只丢自己
+    ├── 应用内自动更新                            # 启动后台检查+托盘/更新窗口手动检查,复用 CLI 共享升级内核(版本事实/传输/双重 sha256);下载入壳配置暂存区,用户确认后停 sidecar、由独立助手替换完整桌面包并重启,失败回滚旧版本
+    └── 渠道化 manifest                           # 同一份 manifest 记录 platform/arch/channel/kind/preferred/file/sha256,file 为唯一键;manifest 随 Release 上传;CLI 渠道是发布闸门,桌面失败只丢自己
 ```
 
 ## 维护

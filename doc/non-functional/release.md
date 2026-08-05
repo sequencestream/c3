@@ -320,6 +320,26 @@ macOS 签名与公证也只能在 darwin host 上完成。每个 job 跑 `releas
 桌面包不携带 Cursor 旁挂树(`externalBin` 只搬单个文件),桌面版的 Cursor vendor 需
 用户自行设置 `CURSOR_SDK_PATH`,或改用 CLI 版。
 
+### 应用内自动更新
+
+桌面壳启动并拉起 sidecar 后异步检查一次新版本,托盘与「更新/关于」窗口提供手动检查
+与进度展示。版本事实、传输与校验规则与 CLI 共用同一套共享内核:
+
+- 版本事实来源是公开 GitHub Release 及其 `manifest.json`(`release:publish` 随制品
+  一并上传)。更新器只认 `channel: desktop`、平台/架构匹配、且带 `preferred: true`
+  的条目;同平台出现多个候选而无可唯一首选时拒绝安装,不猜测。
+- 下载经 sidecar 的更新 API(`/api/update/check`、`/api/update/download`)执行,共享
+  内核做**双重 sha256 校验**(manifest 条目 + 同 Release 的 `<package>.sha256`),
+  字节流经回环转交壳,写入壳配置目录暂存区(`update-staging/`),不写 `~/.c3`。
+- 校验通过后用户确认安装:壳按既有生命周期停掉自己创建的 sidecar,写入更新记录,
+  以 `--update-assistant` 参数拉起同一可执行文件作为独立更新助手并退出。
+- 助手等壳退出后按平台安装适配器替换**完整桌面包**:macOS 移动旧 `.app` 到备份 →
+  挂载 dmg → 拷入新 `.app` → 签名/公证校验 → `open` 启动,提交点后启动失败则回滚;
+  Windows 委托 NSIS 静默安装;Linux 在当前 `$APPIMAGE` 所在目录准备、备份并原子
+  替换 AppImage,无需 root;目录不可写或不是从 AppImage 启动时拒绝更新并保留旧版本。
+- 下载中断、校验不一致、替换失败都保持旧版本可启动;成功启动新版本后才清理备份与
+  更新记录。
+
 ## 制品命名(release 8/7)
 
 `release:build` 有意为每个目标产出**两种**不同的输出:
@@ -416,6 +436,7 @@ bundle 会拿到版本 `define`,但不会被 minify。
       "arch": "arm64",
       "channel": "desktop",
       "kind": "dmg",
+      "preferred": true,
       "file": "c3-desktop-v0.1.0-macos-arm64.dmg",
       "bytes": 29133506,
       "sha256": "81f3…d545"
@@ -423,6 +444,11 @@ bundle 会拿到版本 `define`,但不会被 minify。
   ]
 }
 ```
+
+- `preferred` 标记每个目标**唯一**的自更新安装器(发布约定:macOS=dmg、
+  Windows=nsis、Linux=appimage;deb 仅供首次安装)。桌面更新器只认带该标记的条目,同平台出现多个候选而
+  无唯一标记时拒绝安装,不猜测。`release:publish` 把 `manifest.json` 随制品一并
+  上传到 Release,更新器从 `releases/download/<tag>/manifest.json` 拉取。
 
 - `channel` 是消费者的二选一:`cli`(单二进制包)或 `desktop`(Tauri 安装包)。
   没有该字段的历史条目按 `cli` 读。

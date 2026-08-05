@@ -68,6 +68,49 @@ describe('parseOrganizerDecision', () => {
     expect(d).toEqual({ action: 'conclude', conclusion: 'Use Redis.' })
   })
 
+  it('keeps braces inside the conclusion value intact (balanced object scan)', () => {
+    const conclusion = '采用 {"cache":"redis"} 配置，并在 {A} 与 {B} 两处生效。'
+    const d = parseOrganizerDecision(
+      JSON.stringify({ action: 'conclude', conclusion }) + '\n补充说明：见 {附录}。',
+      IDS,
+    )
+    expect(d).toEqual({ action: 'conclude', conclusion })
+  })
+
+  it('does not let trailing prose after the object widen its boundary', () => {
+    const d = parseOrganizerDecision(
+      '```json\n{"action":"advance","note":"两个方案"}\n```\n后面还有一句 } 收尾。',
+      IDS,
+    )
+    expect(d).toEqual({ action: 'advance', note: '两个方案' })
+  })
+
+  it('salvages the conclusion when the envelope fails strict JSON.parse', () => {
+    // An unescaped quote inside `note` breaks JSON.parse; the conclude keyword still
+    // matches, and only the conclusion value may surface.
+    const d = parseOrganizerDecision(
+      '{"action":"conclude","conclusion":"就用 Redis，理由见上。","note":"他说"好""}',
+      IDS,
+    )
+    expect(d).toEqual({ action: 'conclude', conclusion: '就用 Redis，理由见上。' })
+  })
+
+  it('never returns the raw control envelope when nothing can be salvaged', () => {
+    // Truncated envelope: no balanced object, and no recoverable `conclusion` literal.
+    const raw = '{"action":"conclude","summary":"这里本该是结论'
+    const d = parseOrganizerDecision(raw, IDS)
+    expect(d.action).toBe('conclude')
+    const conclusion = d.action === 'conclude' ? d.conclusion : ''
+    expect(conclusion).not.toBe(raw)
+    expect(conclusion).not.toContain('"action"')
+    expect(conclusion).toBe('')
+  })
+
+  it('does not leak the envelope when a parsed conclude carries no conclusion/note', () => {
+    const d = parseOrganizerDecision('{"action":"conclude","conclusion":"","note":""}', IDS)
+    expect(d).toEqual({ action: 'conclude', conclusion: '' })
+  })
+
   it('treats an unknown speaker id as not-speak and degrades', () => {
     const d = parseOrganizerDecision('{"action":"speak","speaker":"ghost"}', IDS)
     expect(d.action).not.toBe('speak')

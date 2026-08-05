@@ -63,17 +63,44 @@ export interface AgendaState {
 
 const EMPTY_AGENDA: AgendaState = { items: [], index: 0 }
 
+/**
+ * Slice the first *balanced* JSON object out of `text`, starting at its first `{`,
+ * or null when there is none. Braces are counted only outside string literals (with
+ * escape handling), so a `{`/`}` inside a value — a `conclusion` quoting a snippet,
+ * say — no longer shifts the object's boundary, and trailing prose after the object
+ * is left out instead of dragging the end to some later `}`.
+ */
+function sliceBalancedObject(text: string): string | null {
+  const start = text.indexOf('{')
+  if (start === -1) return null
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{') depth++
+    else if (ch === '}' && --depth === 0) return text.slice(start, i + 1)
+  }
+  return null
+}
+
 /** Extract the first JSON object from `text` (handles ```json fences), or null. */
 function extractJsonObject(text: string): Record<string, unknown> | null {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
   const candidates = [fenced?.[1], text]
   for (const c of candidates) {
     if (!c) continue
-    const start = c.indexOf('{')
-    const end = c.lastIndexOf('}')
-    if (start === -1 || end <= start) continue
+    const slice = sliceBalancedObject(c)
+    if (!slice) continue
     try {
-      const parsed = JSON.parse(c.slice(start, end + 1))
+      const parsed = JSON.parse(slice)
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         return parsed as Record<string, unknown>
       }
@@ -93,6 +120,32 @@ function cleanText(text: string): string {
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
+
+/** Does this de-fenced text look like an organizer control envelope rather than prose? */
+function looksLikeControlEnvelope(text: string): boolean {
+  return text.startsWith('{') && /"action"\s*:/.test(text)
+}
+
+/**
+ * The conclusion text to use when strict parsing did NOT yield a usable `conclusion`
+ * field. Plain prose is taken as-is (the long-standing behavior), but a control
+ * envelope must never reach the user: `{"action":"conclude","conclusion":"…"}` that
+ * `JSON.parse` rejected (an unescaped quote, a stray trailing token, …) still has its
+ * conclusion salvaged by a narrow regex over the string literal; when even that fails
+ * — field missing, empty, or its boundary unknowable — this returns `''`, the safe
+ * signal that lets the caller fall back to the last summary or the localized default.
+ */
+function salvageConclusionText(text: string): string {
+  const cleaned = cleanText(text)
+  if (!looksLikeControlEnvelope(cleaned)) return cleaned
+  const m = cleaned.match(/"conclusion"\s*:\s*"((?:\\.|[^"\\])*)"/)
+  if (!m) return ''
+  try {
+    return str(JSON.parse(`"${m[1]}"`))
+  } catch {
+    return ''
+  }
+}
 
 /**
  * Resolve a `broadcast` decision's `speakers` field into a concrete, ordered, deduped
@@ -133,6 +186,11 @@ function resolveBroadcastSpeakers(raw: unknown, validSpeakerIds: readonly string
  * a list can't be reliably extracted from free text); `focus_subtopic` moves to the
  * next subtopic (or the optional numeric `index`).
  *
+ * The `conclude` text is user-visible (it becomes `discussion.conclusion`), so the
+ * keyword path never echoes a control envelope back: a reply that still looks like
+ * `{"action":…}` after de-fencing only contributes its salvaged `conclusion` value,
+ * or an empty string when none can be recovered (see {@link salvageConclusionText}).
+ *
  * Batch action: `broadcast` (discuss only) asks several participants the same
  * sub-question at once — `speakers` is an id array or `"all"`/`"全部"`/missing for
  * everyone (see {@link resolveBroadcastSpeakers}); the engine then runs them in
@@ -148,7 +206,10 @@ export function parseOrganizerDecision(
     const action = str(json.action).toLowerCase()
     const note = str(json.note)
     if (action === 'conclude') {
-      return { action: 'conclude', conclusion: str(json.conclusion) || note || cleanText(text) }
+      return {
+        action: 'conclude',
+        conclusion: str(json.conclusion) || note || salvageConclusionText(text),
+      }
     }
     if (action === 'set_agenda') {
       const subtopics = Array.isArray(json.subtopics) ? json.subtopics.map(str).filter(Boolean) : []
@@ -179,7 +240,7 @@ export function parseOrganizerDecision(
   // Keyword fallback over the raw text.
   const lower = text.toLowerCase()
   if (/\b(conclude|conclusion)\b/.test(lower) || /结论|定论|结束讨论/.test(text)) {
-    return { action: 'conclude', conclusion: cleanText(text) }
+    return { action: 'conclude', conclusion: salvageConclusionText(text) }
   }
   // Moving on to the next subtopic — before the stage-advance keyword so the more
   // specific "next subtopic" intent wins over a bare "next".

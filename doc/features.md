@@ -204,6 +204,14 @@ c3
 │       └── 外部 MCP 接入(只读)                   # baseUrl + /mcp/v1 + 本工作区路径拼出可复制 URL 与一行式 claude mcp add 命令;列出已授权本工作区的 key 名称;不属于设置草稿,不参与保存/脏状态
 │           ├── 明文占位                          # 常态显示 <KEY> 占位;可临时粘贴明文生成可直接用的值,仅存组件内存、不上传不写浏览器存储、离开即清
 │           └── 缺失引导                          # baseUrl 未配置时明说未配置并跳系统设置(不猜浏览器 Host);无覆盖本工作区的 key 时引导去生成
+│
+└── distribution 分发形态                        # 同一次发布产出两个渠道,共享同一个 ~/.c3(设置/凭据/工作区/DB/会话)
+    ├── CLI 单二进制                              # 每平台一个原生可执行文件(c3-v{ver}-{target}.tar.gz|zip),终端启动 + 浏览器访问;c3 upgrade 自更新
+    ├── 桌面 App(Tauri 2)                        # 安装包双击即用(dmg/msi/exe/deb/AppImage),壳把同一份二进制当 sidecar 拉起,原生 WebView 渲染其自带 SPA
+    ├── sidecar 回环绑定                          # 壳固定给 sidecar 传 --host 127.0.0.1 + 本次选中的可用端口,不读也不放宽 exposure.bindAddress
+    ├── 托盘常驻与开机自启                        # 关窗只隐藏、后端继续跑;托盘「打开 c3 / 开机自启 / 退出」,自启默认关且与 c3 install 系统服务互不相干
+    ├── 受管子进程边界                            # 壳只管自己创建的 sidecar,按 pid+可执行文件+启动时间三元组校验后清理孤儿,绝不按端口或进程名杀外部 c3
+    └── 渠道化 manifest                           # 同一份 manifest 记录 platform/arch/channel/kind/file/sha256,file 为唯一键;CLI 渠道是发布闸门,桌面失败只丢自己
 ```
 
 ## 维护

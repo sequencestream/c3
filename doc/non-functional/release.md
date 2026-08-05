@@ -271,6 +271,55 @@ GH Actions release workflow 接入(`smoke:windows-x64` 任务,`runs-on: windows-
 标签(它会级联生效:manifest 条目失去 `"experimental": true`,README 失去 ⚠️,
 发布门禁继续强制 P0 完整性不变,因为无论如何 P1 集合都是空的)。
 
+## 桌面渠道(Tauri,ADR-0033)
+
+同一次发布、同一个版本、同一条校验链下有**两个渠道**,消费者二选一:
+
+| 渠道      | 产物                                            | 入口            |
+| --------- | ----------------------------------------------- | --------------- |
+| `cli`     | `c3-v{ver}-{target}.{tar.gz\|zip}`              | 终端运行 `./c3` |
+| `desktop` | `c3-desktop-v{ver}-{target}.{dmg\|msi\|deb\|…}` | 安装后双击      |
+
+桌面包里的 sidecar **就是** CLI 那个二进制:`release:desktop` 复用
+`server/scripts/release/build-target.mjs` 这唯一的 `bun --compile` 原语,没有第二套
+服务端编译路径。
+
+### 阶段顺序
+
+Phase0 web build → Phase1 generate-static-embed → Phase2 编译 sidecar →
+Phase3 按 Tauri 三元组约定暂存 + **校验 `c3 --version` 等于本次发布版本** →
+Phase4 `tauri build` → Phase5 收集 bundle + sha256 + manifest 条目。
+
+版本走两路,不可互换:**完整**版本串(`git describe`,可能是 `0.9.6-12-gabc1234`)
+进 sidecar 与运行时校验;**归一化**的三段版本只喂给安装包元数据(MSI 拒绝非
+`MAJOR.MINOR.PATCH`)。
+
+### CI 矩阵与门禁
+
+三个 `build-desktop-<target>` job 各自跑在原生 runner 上 —— Tauri 不做跨平台打包,
+macOS 签名与公证也只能在 darwin host 上完成。每个 job 跑 `release:desktop` →
+`checksum` → postgate(`C3_REQUIRED_CHANNEL=desktop`)→ upload-artifact。
+
+- **macOS** 传 `--require-signing`:`codesign --verify` 或 `stapler validate` 任一失败
+  即阻断该目标,不得以未签名包替代正式产物。
+- **Windows** 有证书时由 Tauri 打包器做 Authenticode 签名;没有则产物未签名,job 会
+  发出 warning,发布说明必须写明 SmartScreen 提示。
+- **Linux** 显式安装 `libwebkit2gtk-4.1-dev` 等系统依赖,并用 `pkg-config --modversion`
+  校验后才继续。
+
+**CLI 渠道是发布闸门**:`publish` job 要求三个 CLI job 全绿,但对桌面 job 的失败是
+容忍的 —— 一个桌面目标构建失败只会让它自己缺席这次发布,不会把 CLI 单二进制一起扣住。
+
+### 运行形态(与 CLI 的关系)
+
+桌面壳不传 `--settings`,sidecar 沿用默认的 c3 home 解析规则,因此设置、登录态、
+工作区、SQLite 与会话与 CLI 版**同源**。安装、升级、卸载桌面 App 都不触碰 `~/.c3`。
+
+桌面开机自启与 `c3 install` 的系统服务是两条互不相干的路径,不要同时启用。
+
+桌面包不携带 Cursor 旁挂树(`externalBin` 只搬单个文件),桌面版的 Cursor vendor 需
+用户自行设置 `CURSOR_SDK_PATH`,或改用 CLI 版。
+
 ## 制品命名(release 8/7)
 
 `release:build` 有意为每个目标产出**两种**不同的输出:
@@ -338,30 +387,49 @@ bundle 会拿到版本 `define`,但不会被 minify。
 校验和 + 公开 GitHub Release(HTTPS,见「分发信任」与 security.md 的「非目标:
 反反编译/混淆」)。
 
-## Manifest(release 2/7,v1.2 于 release 8/7)
+## Manifest(release 2/7,v1.3 于桌面渠道)
 
-`pnpm release:build` 会写出一份分发 manifest —— 一份可即时校验的分发信任记录
-(逐制品 sha256)。它的 `schema: c3-release-manifest/v1.2`:
+`pnpm release:build` 与 `pnpm release:desktop` 会写出同一份分发 manifest —— 一份可即时
+校验的分发信任记录(逐制品 sha256)。它的 `schema: c3-release-manifest/v1.3`:
 
 ```json
 {
-  "schema": "c3-release-manifest/v1.2",
+  "schema": "c3-release-manifest/v1.3",
   "version": "0.1.0",
   "commit": "c58a0b5",
   "buildTime": "2026-06-05T07:22:53.535Z",
   "artifacts": [
     {
       "target": "macos-arm64",
+      "platform": "macos",
+      "arch": "arm64",
+      "channel": "cli",
       "file": "c3-v0.1.0-macos-arm64.tar.gz",
       "binary": "c3",
       "binarySha256": "9b74c989…bac",
       "bytes": 25100384,
       "sha256": "ed0a…2a11"
+    },
+    {
+      "target": "macos-arm64",
+      "platform": "macos",
+      "arch": "arm64",
+      "channel": "desktop",
+      "kind": "dmg",
+      "file": "c3-desktop-v0.1.0-macos-arm64.dmg",
+      "bytes": 29133506,
+      "sha256": "81f3…d545"
     }
   ]
 }
 ```
 
+- `channel` 是消费者的二选一:`cli`(单二进制包)或 `desktop`(Tauri 安装包)。
+  没有该字段的历史条目按 `cli` 读。
+- `kind` 是具体产物类型(`tarball`/`zip`/`dmg`/`app`/`msi`/`nsis`/`deb`/`appimage`)。
+- `platform` / `arch` 把 `target` 里隐含的信息写成显式字段,消费者不必解析目标名。
+- **`target` 自 v1.3 起不再是唯一键**(同一目标会同时有 CLI 包与桌面安装包),
+  `file` 才是。`merge-dist` 与 postgate 都按 `file` 去重。
 - `file` 是**包**的名字;`bytes` / `sha256` 是包的字节数 / 哈希值。
 - `binary` 是包内二进制文件的名字(POSIX 上是 `c3`,Windows 上是 `c3.exe`)。
 - `binarySha256` 是**内层二进制文件**的十六进制哈希,与解压后对
@@ -459,6 +527,9 @@ pnpm release:build                                  # P0 矩阵,并行,+manifest
 pnpm release:build --targets=linux-x64              # 子集
 pnpm release:build --skip-pack                       # 只出二进制,不打包(调试用)
 pnpm release:build --dry-run                        # 打印计划,不执行
+pnpm release:desktop                                 # 桌面渠道:宿主平台的 Tauri 安装包(见「桌面渠道」)
+pnpm release:desktop --skip-web                      # 复用已有 web/dist,迭代壳时用
+pnpm release:desktop --require-signing               # 正式产物:未签名/未公证即失败
 pnpm release:checksum                                    # SHA256SUMS + 每产物 .sha256(读取 manifest)
 pnpm release:notes                                   # 发布说明(版本 + CHANGELOG 顶部小节)
 pnpm release:gate                                    # pregate:typecheck→lint→test→i18n:check→check-freeze
@@ -507,6 +578,9 @@ pnpm binary                                          # 原生单一二进制文�
 - **打包** —— 内层 `c3.sha256` sidecar + `.tar.gz` / `.zip` 归档。
 - **Cursor 旁挂** —— target→平台包映射、版本必须钉死、根入口 shim 生成,以及
   拒绝残缺 / 版本不符 / 混入他平台包的树。
+- **桌面渠道编排**(`pnpm release:desktop`) —— 复用同一个单目标构建原语产出 sidecar,
+  按 Tauri 三元组约定暂存、校验版本、打包/签名,并把产物以 `channel: desktop` 写进
+  同一份 manifest。
 - **校验和、notes、publish** —— sha256 校验和生成(`release:checksum`)以及
   notes/publish 步骤。
 - **运行时版本** —— 二进制文件报告的版本字符串。

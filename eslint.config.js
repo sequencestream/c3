@@ -17,6 +17,10 @@ export default tseslint.config(
       // pnpm workspace, so the root TS/Vue lint never applies to it.
       'license-server/**',
       '.claude/worktrees/**',
+      // Rust/Tauri build output. `target/` holds cargo artifacts plus JS the Tauri
+      // codegen emits (e.g. __global-api-script.js) — generated, not ours to lint.
+      'desktop/src-tauri/target/**',
+      'desktop/src-tauri/gen/**',
     ],
   },
 

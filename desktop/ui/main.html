@@ -1,0 +1,33 @@
+<!doctype html>
+<!--
+  主窗口的初始占位页。
+
+  窗口在配置里以隐藏状态创建,后端就绪后由壳 navigate 到 sidecar 提供的回环 SPA
+  URL。之所以先加载一个本地空页而不是直接建一个指向远端 URL 的窗口:窗口创建必须
+  发生在主线程,而端口要等启动流程跑完才知道 —— 先建后导航把这两件事解耦了。
+
+  本页除了一个与启动页一致的底色之外什么都不做。该窗口不在任何 capability 里,
+  所以它(以及随后加载进来的 SPA)没有任何插件权限。
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>c3</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        height: 100vh;
+        background: #fafafa;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #18181b;
+        }
+      }
+    </style>
+  </head>
+  <body></body>
+</html>

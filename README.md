@@ -40,19 +40,61 @@ An **AI workbench** that centrally manages and drives the work of multiple AI co
 - **Optional account auth** — username/password accounts with an admin gate (off by default; loopback-only otherwise).
 - **External MCP access** — let your _own_ agents (an independent Claude Code / Codex session, a CI job) read this c3 over MCP with a long-lived API key, scoped to the workspaces you grant.
 - **Single self-contained binary** — one native executable per platform, with a`c3 upgrade` self-update from GitHub Releases.
+- **Desktop app** — a Tauri 2 shell that runs that same binary as a sidecar: install, double-click, tray-resident, optional start-at-login. No terminal, no browser.
 
 See [`doc/features.md`](doc/features.md) for the full feature tree.
 
 ## Usage
 
-### Homebrew
+c3 ships in **two flavours from the same release** — pick one:
+
+|          | **Desktop app (UI)**                            | **CLI single binary**                  |
+| -------- | ----------------------------------------------- | -------------------------------------- |
+| Artifact | `c3-desktop-v{ver}-{target}.{dmg\|msi\|deb\|…}` | `c3-v{ver}-{target}.{tar.gz\|zip}`     |
+| Start it | install, then double-click                      | `./c3 --daemon`, then open a browser   |
+| Window   | native WebView, tray-resident                   | your browser                           |
+| Best for | anyone who would rather not touch a terminal    | servers, remote boxes, scripted setups |
+
+Both drive the same backend and **share the same `~/.c3`** — settings, credentials,
+workspaces, database and sessions. You can install both and switch freely; just don't
+run them at the same time against the same data directory.
+
+### Desktop app
+
+Download the installer for your platform from **GitHub Releases**:
+
+| Platform    | Artifact                                                    |
+| ----------- | ----------------------------------------------------------- |
+| macOS arm64 | `c3-desktop-v{ver}-macos-arm64.dmg` (signed + notarized)    |
+| Windows x64 | `c3-desktop-v{ver}-windows-x64.msi` or `…-windows-x64.exe`  |
+| Linux x64   | `c3-desktop-v{ver}-linux-x64.deb` or `…-linux-x64.AppImage` |
+
+Install and double-click. The app starts the c3 backend for you on a loopback-only
+port and renders the Web UI in a native window — no terminal, no browser. Closing the
+window keeps the backend running; use the tray icon to bring it back, toggle
+**Start at login**, or **Quit**.
+
+Notes:
+
+- **Windows** installers are unsigned unless a code-signing certificate was configured
+  for the release; SmartScreen will warn on first run.
+- **Linux** needs WebKitGTK (`libwebkit2gtk-4.1-0`) and GTK 3 — the `.deb` declares them.
+- Desktop **Start at login** and the CLI's `c3 install` OS service are two separate
+  entry points. Enabling both gives you two c3 instances fighting over one data
+  directory — pick one.
+- The desktop bundle does not carry the Cursor SDK tree; set `CURSOR_SDK_PATH` (or use
+  the CLI flavour) if you need the Cursor vendor.
+
+### CLI single binary
+
+#### Homebrew
 
 ```bash
 brew install sequencestream/tap/c3   # install
 brew upgrade sequencestream/tap/c3   # update to the latest release
 ```
 
-### Download
+#### Download
 
 Release binaries are published on **GitHub Releases**.
 
@@ -63,7 +105,7 @@ shasum -a 256 -c c3-v0.9.6-macos-arm64.sha256
 shasum -a 256 -c SHA256SUMS
 ```
 
-### Run
+#### Run
 
 ```bash
 ./c3 --port 3000 --daemon

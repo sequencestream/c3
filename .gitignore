@@ -22,3 +22,10 @@ tsconfig.tsbuildinfo
 
 # 每 run 沙箱 wrapper 临时目录(launchSandbox 在执行根内创建,run 结束清理)
 .c3-sb-*/
+
+# Tauri 桌面壳:构建产物、生成的 schema、以及暂存的 sidecar 二进制
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/src-tauri/binaries/*
+!desktop/src-tauri/binaries/.gitkeep
+desktop/src-tauri/tauri.release.json

@@ -2874,6 +2874,7 @@
     },
     "field": {
       "blocked": "Blocked by",
+      "position": "No.{position} in queue",
       "nextWakeup": "Next wake-up",
       "lastDecision": "Last decision",
       "attempts": "Attempts",

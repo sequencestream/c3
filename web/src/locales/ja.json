@@ -2875,6 +2875,7 @@
     },
     "field": {
       "blocked": "ブロック理由",
+      "position": "キュー {position} 番目",
       "nextWakeup": "次回の起床",
       "lastDecision": "直近の判断",
       "attempts": "試行回数",

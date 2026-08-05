@@ -2875,6 +2875,7 @@
     },
     "field": {
       "blocked": "차단 사유",
+      "position": "대기열 {position}번째",
       "nextWakeup": "다음 깨우기",
       "lastDecision": "최근 결정",
       "attempts": "시도 횟수",

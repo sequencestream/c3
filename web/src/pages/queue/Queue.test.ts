@@ -20,6 +20,12 @@ import Queue from './Queue.vue'
  * 插值出来的数字,不看文案本身。
  */
 
+/*
+ * 队列页的位次展示。位次是服务端每轮对账给出的派生值,页面只照搬:并发阻塞行显示,
+ * 其余行连占位都不留;收到新一轮推送后采用新值,不残留上一轮的名次。断言只看
+ * data-testid 与结构,不看文案。
+ */
+
 const NOW = 1_700_000_000_000
 
 /** park 套件用的行工厂:parker 行默认值(阻塞原因 park、无唤醒时刻)。 */
@@ -41,6 +47,7 @@ function row(over: Partial<QueueIntentDetail> = {}): QueueIntentDetail {
     parkReason: null,
     parkDetail: null,
     forceSkipped: false,
+    queuePosition: null,
     ...over,
   }
 }
@@ -64,6 +71,7 @@ function item(over: Partial<QueueIntentDetail> = {}): QueueIntentDetail {
     parkReason: null,
     parkDetail: null,
     forceSkipped: false,
+    queuePosition: null,
     ...over,
   }
 }
@@ -164,6 +172,66 @@ describe('Queue.vue — 一键解除 park', () => {
 
     expect(w.find('.queue-badge-parked').exists()).toBe(true)
     expect(w.find('[data-testid="queue-park-reason"]').exists()).toBe(true)
+  })
+})
+
+describe('Queue.vue — 队列位次', () => {
+  it('并发阻塞行显示位次,其他行不留占位', () => {
+    const w = mountQueue([
+      item({ intentId: 'A', blockedReason: 'blocked_concurrency_gate', queuePosition: 1 }),
+      item({ intentId: 'B', blockedReason: 'blocked_concurrency_gate', queuePosition: 2 }),
+      item({ intentId: 'C', blockedReason: 'blocked_dependency', blockedDetail: '依赖未完成' }),
+    ])
+    const shown = w.findAll('[data-testid="queue-position"]')
+    expect(shown).toHaveLength(2)
+    expect(shown[0]!.text()).toContain('1')
+    expect(shown[1]!.text()).toContain('2')
+    // 第三行仍然渲染,只是没有位次这一段。
+    expect(w.findAll('[data-testid="queue-row"]')).toHaveLength(3)
+    expect(
+      w
+        .findAll('[data-testid="queue-blocked"]')[2]!
+        .find('[data-testid="queue-position"]')
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('后续推送的位次覆盖上一轮,清空即不再显示', async () => {
+    const w = mountQueue([
+      item({ intentId: 'A', blockedReason: 'blocked_concurrency_gate', queuePosition: 3 }),
+    ])
+    expect(w.get('[data-testid="queue-position"]').text()).toContain('3')
+
+    await w.setProps({
+      detail: detail([
+        item({ intentId: 'A', blockedReason: 'blocked_concurrency_gate', queuePosition: 1 }),
+      ]),
+    })
+    const after = w.get('[data-testid="queue-position"]').text()
+    expect(after).toContain('1')
+    expect(after).not.toContain('3')
+
+    await w.setProps({
+      detail: detail([item({ intentId: 'A', blockedReason: 'selected', queuePosition: null })]),
+    })
+    expect(w.find('[data-testid="queue-position"]').exists()).toBe(false)
+  })
+
+  it('手动刷新只上抛意图,位次仍由服务端下一次推送决定', async () => {
+    const w = mountQueue([
+      item({ intentId: 'A', blockedReason: 'blocked_concurrency_gate', queuePosition: 2 }),
+    ])
+    await w.get('[data-testid="queue-refresh"]').trigger('click')
+    expect(w.emitted('refresh')).toHaveLength(1)
+    // 客户端不自行猜算:点击后页面仍是服务端上一次给的值。
+    expect(w.get('[data-testid="queue-position"]').text()).toContain('2')
+
+    await w.setProps({
+      detail: detail([
+        item({ intentId: 'A', blockedReason: 'blocked_concurrency_gate', queuePosition: 1 }),
+      ]),
+    })
+    expect(w.get('[data-testid="queue-position"]').text()).toContain('1')
   })
 })
 

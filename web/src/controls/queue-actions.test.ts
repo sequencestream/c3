@@ -35,6 +35,7 @@ function parkedItem(over: Partial<QueueIntentDetail> = {}): QueueIntentDetail {
     parkReason: 'max_attempts_reached',
     parkDetail: '连续 3 次失败',
     forceSkipped: false,
+    queuePosition: null,
     ...over,
   }
 }

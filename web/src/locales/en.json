@@ -2507,7 +2507,7 @@
       "title": {
         "label": "External MCP access"
       },
-      "hint": "How an agent c3 did not start reaches THIS workspace over MCP. Keys are created, scoped and revoked here; every key is bound to this workspace only and lives at /mcp/<key>.",
+      "hint": "How an agent c3 did not start reaches THIS workspace over MCP. Keys are created, scoped and revoked here; every key is bound to this workspace only and lives at /mcp/[key].",
       "security": {
         "hint": "The key IS the address and rides the URL path, so it can reach proxy/access logs. Put c3 behind your own HTTPS reverse proxy before exposing it beyond this machine. Write tools really change c3 state — grant them only to processes you trust, and revoke the key when done."
       },

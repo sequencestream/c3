@@ -230,6 +230,14 @@ export const MIN_SPEECH_CHARS = 300
 /** Default character budget for participant speech when unset/invalid. */
 export const DEFAULT_SPEECH_CHARS = 300
 
+/**
+ * Minimum automation-queue concurrent-dev cap. `current-branch` (shared
+ * checkout) is always serial — this floor only applies under `worktree`.
+ */
+export const MIN_AUTOMATION_CONCURRENCY = 1
+/** Default concurrent-dev cap when unset/invalid: worktree parallelism is bounded at 2. */
+export const DEFAULT_AUTOMATION_CONCURRENCY = 2
+
 /** TTL for a `pendingIntent` the janitor reaps — a pending session that never ran
  * for 7 days is presumed abandoned (ADR-0015). */
 export const PENDING_INTENT_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -594,6 +602,10 @@ function normalizeConsensusConfig(raw: unknown, agents: readonly AgentConfig[]):
  * - `automationEnabled` defaults to `true` (only an explicit boolean `false`
  *   closes the workspace automation gate); the normalized boolean is always
  *   present so saving other fields never drops the gate.
+ * - `automationConcurrency` defaults to `2`; a finite number is floored and
+ *   clamped to ≥ 1, anything else (absent, non-number, NaN/∞) falls back to 2.
+ *   It limits the queue's concurrent DEV intents under `worktree`; `current-branch`
+ *   ignores it (shared checkout is always serial).
  */
 export function normalizeWorkspaceSetting(
   raw: unknown,
@@ -617,6 +629,7 @@ export function normalizeWorkspaceSetting(
   const defaultMainBranch = normalizeDefaultMainBranch(rec.defaultMainBranch)
   const sddEnabled = normalizeSddEnabled(rec.sddEnabled)
   const automationEnabled = normalizeAutomationEnabled(rec.automationEnabled)
+  const automationConcurrency = normalizeAutomationConcurrency(rec.automationConcurrency)
   const specMachineApprovalEnabled = normalizeSpecMachineApprovalEnabled(
     rec.specMachineApprovalEnabled,
   )
@@ -631,6 +644,7 @@ export function normalizeWorkspaceSetting(
     gitBranchMode,
     sddEnabled,
     automationEnabled,
+    automationConcurrency,
     ...(defaultMainBranch ? { defaultMainBranch } : {}),
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
@@ -673,6 +687,18 @@ function normalizeSpecMachineApprovalEnabled(raw: unknown): boolean {
  */
 function normalizeAutomationEnabled(raw: unknown): boolean {
   return raw !== false
+}
+
+/**
+ * Force the queue's concurrent-dev-intent cap into shape: a finite number is
+ * floored and kept, values below 1 are clamped up to 1, and anything else
+ * (absent, non-number, NaN/∞) falls back to the default 2. The cap only applies
+ * under `worktree`; `current-branch` ignores it entirely (shared checkout).
+ */
+export function normalizeAutomationConcurrency(raw: unknown): number {
+  const n = typeof raw === 'number' ? raw : NaN
+  if (!Number.isFinite(n)) return DEFAULT_AUTOMATION_CONCURRENCY
+  return Math.max(MIN_AUTOMATION_CONCURRENCY, Math.floor(n))
 }
 
 /**
@@ -1367,6 +1393,16 @@ export function getSpecMachineApprovalEnabled(workspacePath: string): boolean {
  */
 export function getAutomationEnabled(workspacePath: string): boolean {
   return normalizeAutomationEnabled(loadWorkspaceSetting(workspacePath).automationEnabled)
+}
+
+/**
+ * The workspace's automation-queue concurrent-dev cap, normalized. Read fresh on
+ * every reconcile pass so a saved value takes effect on the next tick without
+ * restarting the queue. Only meaningful under `worktree`; `current-branch` is
+ * always serial regardless of this value.
+ */
+export function getAutomationConcurrency(workspacePath: string): number {
+  return normalizeAutomationConcurrency(loadWorkspaceSetting(workspacePath).automationConcurrency)
 }
 
 /**

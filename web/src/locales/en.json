@@ -2325,6 +2325,9 @@
           "stay": "Stay"
         }
       },
+      "automation": {
+        "label": "Automation"
+      },
       "externalMcp": {
         "label": "External MCP"
       }
@@ -2405,6 +2408,26 @@
           "label": "Allow machine approval of a passing spec review"
         },
         "hint": "Off by default. When on, a spec whose read-only review concludes “pass” is approved by c3 itself, recorded under a machine identity that never impersonates a user, and development may start without a human click. The approval stays revocable — revoking returns the spec to “awaiting approval” and prevents the same review conclusion from being re-approved. Turning this off never revokes an already-approved spec."
+      }
+    },
+    "automation": {
+      "gate": {
+        "title": {
+          "label": "Automation gate"
+        },
+        "hint": "Master switch for automatic dispatch in this workspace. When off, neither the cron tick loop nor event-triggered dispatchers start any automation; each automation's own active/paused state is left untouched and manual “run now” still works.",
+        "toggle": {
+          "label": "Enable automation auto-dispatch"
+        }
+      },
+      "concurrency": {
+        "title": {
+          "label": "Concurrent dev intents"
+        },
+        "hint": "Upper bound on how many intents the automation queue drives in development at the same time (worktree isolation only). Spec authoring and review stay serial and never count, and manual starts are not limited by this cap. Default 2; lower values clamp to 1. Lowering the cap never cancels running sessions — it only pauses new auto-dispatch until occupancy drops below it.",
+        "field": {
+          "label": "Concurrent dev intents"
+        }
       }
     },
     "consensus": {

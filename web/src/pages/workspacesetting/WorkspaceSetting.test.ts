@@ -86,6 +86,7 @@ const SAVE = {
   gitSandbox: '[data-testid="project-config-save-gitSandbox"]',
   collab: '[data-testid="project-config-save-collab"]',
   skillRepos: '[data-testid="project-config-save-skillRepos"]',
+  automation: '[data-testid="project-config-save-automation"]',
 } as const
 
 // `@vue/test-utils` `isVisible()` is unreliable for nested v-show in this env, but
@@ -187,10 +188,10 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
 
   it('renders a row label for each config item', () => {
     const w = mountWs(null)
-    // 3 vendor row-labels + devSkill + rounds + speechChars
-    // + gitBranchMode + defaultMainBranch + default-visible SDD spec root = 9
+    // 3 vendor row-labels + devSkill + rounds + speechChars + gitBranchMode
+    // + defaultMainBranch + default-visible SDD spec root + automation cap = 10
     const labels = w.findAll('.project-config-row-label')
-    expect(labels).toHaveLength(9)
+    expect(labels).toHaveLength(10)
     expect(labels[0].text()).toBeTruthy()
   })
 
@@ -841,18 +842,19 @@ describe('WorkspaceSetting.vue — arapuca sandbox (both branch modes) + extraMo
 })
 
 describe('WorkspaceSetting.vue — Tab grouping', () => {
-  it('renders exactly six tabs in order: 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 本机观测 / 外部 MCP', () => {
+  it('renders exactly seven tabs in order: 默认模式 / Git 与沙箱 / 协作 / 技能仓库 / 自动化 / 本机观测 / 外部 MCP', () => {
     const w = mountWs(cfg())
     const labels = w
       .findAll('[data-testid="project-config-tabs"] .project-config-tab span')
       .map((s) => s.text())
     const tabButtons = w.findAll('[data-testid^="project-config-tab-btn-"]')
-    expect(tabButtons).toHaveLength(6)
-    expect(labels.slice(0, 6)).toEqual([
+    expect(tabButtons).toHaveLength(7)
+    expect(labels.slice(0, 7)).toEqual([
       'Default mode',
       'Git & Sandbox',
       'Collaboration',
       'Skill repos',
+      'Automation',
       'Local observation',
       'External MCP',
     ])
@@ -1261,5 +1263,46 @@ describe('local observation copy', () => {
       expect(copy.decision, loc).toMatch(/2\s*[-–—~〜～]\s*4/)
       expect(copy.decision, loc).toContain('P1/P2')
     }
+  })
+})
+
+describe('WorkspaceSetting.vue — automation tab', () => {
+  it('renders the automation tab: gate toggle + concurrent-dev input seeded from config', () => {
+    const w = mountWs(cfg({ automationEnabled: true, automationConcurrency: 5 }))
+    const toggle = w.find('[data-testid="automation-enabled"]').element as HTMLInputElement
+    expect(toggle.checked).toBe(true)
+    const input = w.find('[data-testid="automation-concurrency"]').element as HTMLInputElement
+    expect(input.value).toBe('5')
+    expect(input.getAttribute('min')).toBe('1')
+    expect(input.getAttribute('step')).toBe('1')
+  })
+
+  it('defaults the gate to enabled and the cap to 2 when config omits them', () => {
+    const w = mountWs(cfg({ automationEnabled: undefined, automationConcurrency: undefined }))
+    const toggle = w.find('[data-testid="automation-enabled"]').element as HTMLInputElement
+    expect(toggle.checked).toBe(true)
+    const input = w.find('[data-testid="automation-concurrency"]').element as HTMLInputElement
+    expect(input.value).toBe('2')
+  })
+
+  it('seeds a closed gate from config', () => {
+    const w = mountWs(cfg({ automationEnabled: false }))
+    const toggle = w.find('[data-testid="automation-enabled"]').element as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+  })
+
+  it('emits only the automation whitelist fields on the automation tab save', async () => {
+    const w = mountWs(cfg({ automationEnabled: true, automationConcurrency: 3 }))
+    await w.find('[data-testid="automation-enabled"]').setValue(false)
+    await w.find('[data-testid="automation-concurrency"]').setValue(6)
+    await w.find(SAVE.automation).trigger('click')
+    const emitted = w.emitted('save') as [WorkspaceSettingType][]
+    expect(emitted).toBeTruthy()
+    const payload = emitted[0][0]
+    expect(payload.automationEnabled).toBe(false)
+    expect(payload.automationConcurrency).toBe(6)
+    // Non-automation fields keep their committed values untouched (no draft leakage).
+    expect(payload.maxRoundsPerStage).toBe(14)
+    expect(payload.devSkill).toBe('/my-skill')
   })
 })

@@ -79,6 +79,7 @@ c3
 │   │   │   ├── 规格阶段自治                      # 未过 spec 闸门的意图细分为:撰写→只读审核→需修改则携理由返工(硬上限 3 轮,超限 park+人工待办)→通过后等待批准
 │   │   │   │   ├── 触顶卡点与人工接管            # 返工触顶后列表/详情不再给重试,改示审核卡点原文 + 单一「人工接管」入口跳到该意图 spec 页签
 │   │   │   │   └── opt-in 机器批准               # 每工作区显式开关,默认关闭;关闭时即使结论为通过也绝不自动置真,开启时按条件事务写入并记机器身份常量
+│   │   │   ├── 并发意图数上限                    # 工作区 automationConcurrency(默认 2):worktree 下最多 N 个意图同时开发,达上限其余 eligible 以 blocked_concurrency_gate「已达并发上限 N」阻塞;current-branch 共享检出恒串行(上限恒 1,配置不生效);spec 撰写/审核不计入,人工/MCP 启动不受配额限制,调低不取消在途会话
 │   │   │   ├── 决策日志                          # queue_decision_log 按 tick/intent 记动作/闸门/理由/尝试退避计数/下次唤醒,不记 prompt/凭据/权限正文
 │   │   │   ├── 静默超时判定                      # 队列在跑却 30 分钟无进展且无任何已知等待态(park/退避/冷却/闸门/强制跳过/权限/spec 阶段)时派生 silent_timeout 提示;重复 tick 的同一结论不续期,时间缺失/未来/回拨一律不报;只读投影,不改内核、不自动重试
 │   │   │   ├── park 漏斗观测                     # funnel_event 只记 parked/unparked 跃迁(六列全是 id/封闭枚举/时间戳,写入边界拒自由文本);状态写成才记,记不成也不回滚 park/unpark
@@ -203,6 +204,8 @@ c3
 │       ├── 讨论上限                              # maxRoundsPerStage 每阶段轮次(≥8)/ maxSpeechChars 每轮发言字数(≥300)
 │       ├── 规格驱动开发开关                      # sddEnabled 总开关,关时 SDD 质量门与批准检查点失效
 │       ├── 机器批准开关                          # specMachineApprovalEnabled 显式 opt-in,默认关闭;开启后审核通过的 spec 由队列以机器身份批准,仍可人工撤销
+│       ├── 自动化闸门总开关                      # automationEnabled 自动派发总闸,缺省开;关时 cron/事件派发前短路,各自动化 active/paused 不受影响
+│       ├── 队列并发意图数                        # automationConcurrency 缺省 2:worktree 下最多 N 个意图同时开发,current-branch 恒串行不生效;达上限 blocked_concurrency_gate「已达并发上限 N」,spec 撰写/审核不计入、人工/MCP 启动不受配额限制
 │       ├── 外部技能仓库                          # skillRepos 技能源仓库,clone 到 ~/.c3/repo 并软链进各 vendor 发现目录;含显式 install_skill
 │       ├── 代码托管平台                          # forge(auto/github/gitlab)建 PR/MR 时的 forge 识别
 │       ├── 本机观测(只读)                       # park 后 24h 恢复率 + recovered/eligible/pending 样本数;不属于设置草稿,不参与保存/脏状态;查询失败显示「暂不可用」并可重试

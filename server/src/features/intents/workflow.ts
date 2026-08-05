@@ -54,6 +54,7 @@ import {
   type QueueControlRow,
 } from './queue-store.js'
 import {
+  getAutomationConcurrency,
   getGitBranchMode,
   getSddEnabled,
   getSpecMachineApprovalEnabled,
@@ -141,6 +142,10 @@ export function pickNext(workspacePath: string): Intent | null {
     // reports the world as if no spec phase were running: it reads no spec
     // liveness and never lets the machine-approval path colour the answer.
     machineApprovalEnabled: false,
+    // The probe reports an empty world (no in-flight runs, no live sessions), so
+    // the concurrency cap is never reached here; the real value is passed so the
+    // kernel contract stays honest and the preview matches a cold queue.
+    automationConcurrency: getAutomationConcurrency(workspacePath),
     specRuns: [],
     specInFlight: [],
   })
@@ -276,6 +281,9 @@ class QueueController {
       // Read fresh every pass: turning the opt-in off must take effect on the very
       // next tick, without restarting the queue.
       machineApprovalEnabled: getSpecMachineApprovalEnabled(this.workspacePath),
+      // Read fresh every pass too: a saved concurrency cap takes effect on the
+      // very next tick, without restarting the queue.
+      automationConcurrency: getAutomationConcurrency(this.workspacePath),
       specRuns: probeSpecRunFacts(intents ?? [], this.hooks),
       specInFlight: [...this.specInFlight.keys()],
     })

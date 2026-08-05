@@ -238,6 +238,21 @@ export interface WorkspaceSetting {
    * dispatching after upgrade.
    */
   automationEnabled?: boolean
+  /**
+   * Upper bound on how many intents the automation queue drives in DEVELOPMENT
+   * at once (2026-08-05). It limits automatic dispatch of dev work sessions only:
+   * spec authoring/review stays serial and is never counted, and manual
+   * "start work" / MCP starts are not quota-gated.
+   *
+   * Under `gitBranchMode` `worktree` each intent owns its own directory, so the
+   * queue may run up to this many intents concurrently; `current-branch` shares
+   * one checkout and is therefore always serial (effective cap 1, the config is
+   * ignored there). Absent / non-finite ⇒ `2`; finite values are floored and
+   * clamped to a minimum of `1` (normalized on read). Lowering the cap never
+   * cancels in-flight sessions — it only stops new auto-dispatch until
+   * occupancy drops below the cap.
+   */
+  automationConcurrency?: number
 }
 
 /** Workspace-level MCP server connections and denylist configuration. */

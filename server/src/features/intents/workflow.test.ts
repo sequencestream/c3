@@ -98,6 +98,7 @@ vi.mock('../../kernel/config/index.js', () => ({
   getGitBranchMode: vi.fn(),
   getSddEnabled: vi.fn(() => false),
   getSpecMachineApprovalEnabled: vi.fn(() => false),
+  getAutomationConcurrency: vi.fn(() => 2),
 }))
 
 vi.mock('./worktree.js', () => ({

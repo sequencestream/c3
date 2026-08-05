@@ -11,6 +11,7 @@
     "windows": [
       {
         "label": "splash",
+        "url": "index.html",
         "title": "c3",
         "width": 560,
         "height": 400,
@@ -18,6 +19,18 @@
         "center": true,
         "visible": true,
         "focus": true
+      },
+      {
+        "label": "main",
+        "url": "main.html",
+        "title": "c3",
+        "width": 1360,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "center": true,
+        "visible": false
       }
     ],
     "security": {

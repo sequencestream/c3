@@ -42,7 +42,7 @@ import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { computeVersionInfo } from './version-info.mjs'
-import { buildManifest, writeManifest } from './manifest.mjs'
+import { buildManifest, carryForwardArtifacts, writeManifest } from './manifest.mjs'
 import { binaryName } from './artifact-name.mjs'
 import { KNOWN_TARGETS, DEFAULT_TARGETS, isExperimental } from './targets.mjs'
 import { smokeBuiltArtifacts } from './smoke.mjs'
@@ -339,6 +339,18 @@ if (emitPack) {
     versionInfo,
     artifacts: manifestArtifacts,
   })
+  // Carry forward same-build entries this run did not produce — notably the desktop
+  // channel's installers when `release:desktop` ran first. Without this, whichever
+  // command runs last silently drops the other's artifacts from the manifest, and
+  // checksumming (which reads the manifest) would leave them out of SHA256SUMS.
+  manifest.artifacts = [
+    ...carryForwardArtifacts(
+      manifestPath,
+      versionInfo,
+      manifestArtifacts.map((a) => a.file),
+    ),
+    ...manifest.artifacts,
+  ]
   writeManifest(manifestPath, manifest)
   console.log(`\n[release:build] manifest → ${manifestPath}`)
   for (const a of manifest.artifacts) {

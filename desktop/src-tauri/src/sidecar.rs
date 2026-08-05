@@ -302,7 +302,6 @@ pub fn login_shell_path() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write as _;
 
     #[test]
     fn picks_a_usable_loopback_port() {

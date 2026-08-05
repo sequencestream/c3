@@ -478,8 +478,9 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("failed to build the c3 desktop shell")
         .run(|app, event| {
-            if let RunEvent::ExitRequested { .. } = event {
-                // 兜底:任何退出路径都不应留下由本壳创建的 sidecar。
+            // 兜底:任何退出路径都不应留下由本壳创建的 sidecar。托盘「退出」已经先
+            // 停过一次,重复调用是幂等的(记录被 take 走后就没有可停的东西了)。
+            if matches!(event, RunEvent::ExitRequested { .. } | RunEvent::Exit) {
                 stop_sidecar(app);
             }
         });

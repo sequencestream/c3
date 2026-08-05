@@ -11,6 +11,7 @@
     "release": "node scripts/release/release.mjs",
     "release:github": "node scripts/release/release-github.mjs",
     "release:build": "node scripts/release/release-build.mjs",
+    "release:desktop": "node scripts/release/desktop.mjs",
     "release:checksum": "node scripts/release/checksum.mjs",
     "release:notes": "node scripts/release/notes.mjs",
     "release:publish": "node scripts/release/publish.mjs",

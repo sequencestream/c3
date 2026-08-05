@@ -93,6 +93,23 @@ Pushing a `v*` tag (or running the workflow manually) publishes.
 > xattr -dr com.apple.quarantine ./c3-v0.2.0-macos-arm64
 > ```
 
+## Desktop app (Tauri 2)
+
+`desktop/` wraps that same single binary in a native shell: the app spawns `c3` as a
+Tauri **sidecar** on a loopback-only port and renders the SPA the sidecar already serves.
+No second UI build, no second server. See [`desktop/README.md`](desktop/README.md) and
+[ADR-0033](doc/architecture/adr/0033-tauri-desktop-shell-sidecar.md).
+
+```bash
+pnpm release:desktop                  # host platform: sidecar → stage → tauri build → dist/
+pnpm release:desktop --skip-web       # reuse web/dist while iterating on the shell
+cd desktop/src-tauri && cargo test    # port pick, readiness probe, orphan sweep, version parse
+```
+
+Requires a Rust toolchain. `externalBin` needs `desktop/src-tauri/binaries/c3-<triple>`
+to exist — one `pnpm release:desktop` run stages it, after which plain `cargo check` /
+`cargo test` work. Tauri does **not** cross-bundle: each platform builds on its own runner.
+
 ## End-to-end tests
 
 `pnpm e2e` runs the whole WebSocket suite: it boots one server (with a throwaway
@@ -189,6 +206,9 @@ c3/
 │   ├── src/App.vue           # ChatView + PermissionDialog
 │   ├── src/lib/ws.ts         # WS client
 │   └── vite.config.ts        # dev proxy → :3000
+├── desktop/                  # Tauri 2 shell (sidecar launcher, tray, splash) — no business logic
+│   ├── ui/index.html         # local splash: startup progress + actionable failure
+│   └── src-tauri/src/        # lib.rs (orchestration) · sidecar.rs (process) · tray.rs
 └── scripts/e2e-ws-test.mjs   # end-to-end smoke test
 ```
 

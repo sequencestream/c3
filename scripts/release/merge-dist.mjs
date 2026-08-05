@@ -65,7 +65,10 @@ export function mergeDist({ distDir, log = () => {} } = {}) {
     throw new Error(`no per-target manifest.json found under ${root} — nothing to merge`)
 
   let base = null
-  const byTarget = new Map()
+  // Keyed by artifact FILENAME, not target: since the desktop channel landed, one
+  // target legitimately carries several artifacts (the CLI package plus that
+  // platform's installers). Keying by target would silently drop all but one.
+  const byFile = new Map()
 
   for (const mp of subManifests) {
     const m = JSON.parse(readFileSync(mp, 'utf-8'))
@@ -85,9 +88,10 @@ export function mergeDist({ distDir, log = () => {} } = {}) {
     }
 
     for (const a of m.artifacts) {
-      const prev = byTarget.get(a.target)
+      const key = basename(a.file)
+      const prev = byFile.get(key)
       if (prev && prev.sha256 !== a.sha256)
-        throw new Error(`conflicting artifact for target ${a.target}: ${prev.sha256} ≠ ${a.sha256}`)
+        throw new Error(`conflicting artifact for ${key}: ${prev.sha256} ≠ ${a.sha256}`)
       // Flatten the package (and any sidecars that rode along) up into dist/.
       const pkg = resolve(subDir, basename(a.file))
       if (existsSync(pkg)) {
@@ -95,12 +99,12 @@ export function mergeDist({ distDir, log = () => {} } = {}) {
         const side = `${pkg}.sha256`
         if (existsSync(side)) flatten(side, root)
       }
-      byTarget.set(a.target, a)
-      log(`  merged ${a.target}  ${basename(a.file)}  ${a.sha256.slice(0, 12)}…`)
+      byFile.set(key, a)
+      log(`  merged ${a.target}  ${key}  ${a.sha256.slice(0, 12)}…`)
     }
   }
 
-  const artifacts = [...byTarget.values()]
+  const artifacts = [...byFile.values()]
   const merged = {
     schema: base.schema,
     version: base.version,

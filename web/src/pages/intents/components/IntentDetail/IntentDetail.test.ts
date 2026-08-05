@@ -1768,6 +1768,24 @@ describe('IntentDetail.vue — derived next-step banner', () => {
     expect(w.emitted('action-target')).toEqual([[BLOCKED.target]])
   })
 
+  it('emits intent-spec and workcenter-event targets unchanged', async () => {
+    const spec = {
+      labelCode: 'spec_awaiting_approval' as const,
+      target: { type: 'intent-spec' as const, intentId: 'r1' },
+    }
+    const w1 = mountDetail(intent({ id: 'r1', actionDescriptor: { ...spec } }))
+    await w1.find('[data-testid="action-descriptor-action"]').trigger('click')
+    expect(w1.emitted('action-target')).toEqual([[spec.target]])
+
+    const ask = {
+      labelCode: 'ask_user_question_pending' as const,
+      target: { type: 'workcenter-event' as const, eventId: 'e1' },
+    }
+    const w2 = mountDetail(intent({ id: 'r1', actionDescriptor: { ...ask } }))
+    await w2.find('[data-testid="action-descriptor-action"]').trigger('click')
+    expect(w2.emitted('action-target')).toEqual([[ask.target]])
+  })
+
   it('does not block the rest of the detail: tabs and title actions stay usable', () => {
     const w = mountDetail(intent({ id: 'r1', actionDescriptor: { ...BLOCKED } }))
     expect(w.find('[data-testid="action-descriptor-banner"]').exists()).toBe(true)

@@ -1,10 +1,11 @@
 /**
- * Vendor-blocked next step — the derived `Intent.actionDescriptor` projection.
+ * Vendor-blocked next-step facts — the highest-priority arm of
+ * `Intent.actionDescriptor`.
  *
  * A vendor that rejects our credentials, or has no usable quota left, is the one
  * failure a retry can never clear: every intent behind it piles up silently. This
- * module turns that already-collected failure fact into the minimal "what can the
- * human do about it" projection the list and the detail both render.
+ * module records that already-collected failure fact and exposes it as the
+ * settings-jump half of the composed projection (see `action-descriptor.ts`).
  *
  * It is a **read-only bypass over the existing run layer**: the only input is the
  * `agent:error` event the degradation chain already publishes, and nothing here
@@ -165,11 +166,11 @@ export function clearVendorBlock(intentId: string): void {
 }
 
 /**
- * The send-time projection: an intent's recorded vendor block as the minimal
- * display + navigation pair, or `null` when nothing blocks it. Pure — it reads
- * the fact table and builds a fresh object, never mutating either side.
+ * The vendor-only arm of the send-time next-step projection. Returns the
+ * settings jump when this intent has a recorded vendor block, else `null` so
+ * the orchestrator can try lower-priority blocked states.
  */
-export function deriveActionDescriptor(intent: Pick<Intent, 'id'>): ActionDescriptor | null {
+export function deriveVendorActionDescriptor(intent: Pick<Intent, 'id'>): ActionDescriptor | null {
   const fact = facts.get(intent.id)
   if (!fact) return null
   return {

@@ -47,13 +47,32 @@ export function installSettingsActions(ctx: AppCtx): void {
 
   /**
    * The single dispatcher behind every derived `ActionDescriptor`: translate the
-   * wire target into a one-shot panel instruction and open system settings on it.
-   * Navigation only — it never enables an agent, edits credentials, saves the
-   * panel, or clears the failure the descriptor came from.
+   * wire target into navigation. Navigation only — it never approves a spec,
+   * answers a permission/Ask prompt, enables an agent, edits credentials, or
+   * clears the fact the descriptor came from.
    */
   ctx.openActionTarget = (target: ActionTarget): void => {
-    settingsTarget.value = toSystemSettingsTarget(target)
-    ctx.openSettings()
+    if (target.type === 'system-settings-agent') {
+      settingsTarget.value = toSystemSettingsTarget(target)
+      ctx.openSettings()
+      return
+    }
+    if (target.type === 'intent-spec') {
+      const workspace = currentWorkspace.value
+      if (!workspace) return
+      ctx.setViewMode('workspace')
+      ctx.openIntents(workspace)
+      ctx.requestedIntentId.value = target.intentId
+      ctx.requestedIntentSubTab.value = 'spec'
+      return
+    }
+    // workcenter-event
+    ctx.setViewMode('workcenter')
+    if (ctx.workcenterPage.value !== 'notifications') {
+      ctx.setWorkcenterPage('notifications')
+    }
+    ctx.requestedWorkcenterEventId.value = target.eventId
+    ctx.reloadWorkcenter('todo')
   }
 
   /** The panel consumed the one-shot target (or settings closed). */

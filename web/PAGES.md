@@ -56,7 +56,7 @@ web/src/
 │
 ├── pages/                                           # 各功能页面(容器页 + 页内子组件)
 │   ├── workcenter/                                  # 工作台页(顶层 view-mode;用户通知 / 总览 页面入口已上移到 AppHeader 顶栏,用户通知在前且为默认页,App.vue 持有 workcenterPage 态并据此仅渲染对应页面,内容区不再有页内二级导航)
-│   │   ├── WorkCenter.vue                           # 「用户通知」页:左栏“用户通知消息”标题 + 状态下拉(all/todo/done/canceled/auto,默认 all)/列表 + 详情两栏,切换筛选重置 20 条分页并按最后一行时间游标加载更多,查看纯通知 todo 自动完成;移动端经 MobileStack 退化为 列表→详情 两级 drill-down(点事件行整屏切详情、顶部工具栏返回回列表,返回保留选中高亮/筛选值;mobileActiveKey 显式态,select 置 detail、back/筛选变更置 list,active-token 用事件 id)
+│   │   ├── WorkCenter.vue                           # 「用户通知」页:左栏“用户通知消息”标题 + 状态下拉(all/todo/done/canceled/auto,默认 all)/列表 + 详情两栏,切换筛选重置 20 条分页并按最后一行时间游标加载更多,查看纯通知 todo 自动完成;接受一次性 requestedEventId(action-descriptor workcenter-event 深链),事件出现在列表后选中并 emit requested-event-consumed(加载结束后仍找不到也消费,避免请求粘滞);移动端经 MobileStack 退化为 列表→详情 两级 drill-down(点事件行整屏切详情、顶部工具栏返回回列表,返回保留选中高亮/筛选值;mobileActiveKey 显式态,select 置 detail、back/筛选变更置 list,active-token 用事件 id)
 │   │   └── components/
 │   │       ├── EventList.vue                        # 事件列表:右侧状态徽标(含 auto)和 todo 标记完成、标题(经 event-title 本地化 Git/PR 收尾失败 todo)、会话类型图标、时间、选中态与加载更多
 │   │       ├── EventDetail.vue                      # 事件详情:标题(经 event-title 本地化)+属性列表(工作区名/会话类型/会话 id/意图名,后两者为空隐藏)、Allow/Deny、AskUserQuestion 全题一览作答面板(自定义回复/共识提示/只读态)、共识决策留痕(auto 记录的投票/裁决,只读)、按 sessionKind+sessionId 溯源跳转
@@ -144,7 +144,7 @@ web/src/
 │   └── useTabbedDraftSave.ts                        # 设置页「Tab 分组草稿 + 分 Tab 保存」状态机(系统设置/工作区设置共用,泛型无领域依赖):持有 draft/committed/activeTab/pendingSaveTab/pendingTabSwitch 与派生 tabDirtyMap;按 tabFields 白名单切片做深层脏比较;seedAll(首次打开整体播种)/reconcile(打开期间回推按字段归属合并——以旧 committed 判定原脏态,仅刚保存 Tab 与干净 Tab 重播种,脏 Tab 保留草稿并经 syncProtectedTab 同步即时持久化子字段);saveTab 以最新 committed 深拷贝为底交页面 buildPayload 构造完整对象→canSave 门控→emit→把 payload 该 Tab 切片乐观合入 committed(未收回推前连续保存不回退,脏标即时清除);requestTab/confirm/cancelTabSwitch 实现脏 Tab 切换二次确认(仅切换,不保存不丢弃)。页面特有语义经 reseedTab(合成草稿,如工作区 sandbox)/dirtySlice(按有效保存形态比较,如 gitSandbox)/syncProtectedTab(如系统设置的账号列表/管理员)钩子接入,不上浮为对方概念;另导出 deepCopy/deepEqual/applyTabFields
 │
 ├── lib/                                             # 纯逻辑工具模块(无 DOM/框架依赖优先)
-│   ├── action-descriptor.ts                        # 派生「下一步」的客户端半边:labelCode → 提示文案 key、target.type → 按钮文案 key 两张穷举映射(satisfies Record,新增分支不给文案就编译不过),以及唯一的 target 分发器 toSystemSettingsTarget()(wire target → 系统设置一次性定位指令 { tab, vendor, agentId });列表与详情都经它跳转,故同一 descriptor 不可能有两种跳法
+│   ├── action-descriptor.ts                        # 派生「下一步」的客户端半边:labelCode → 提示文案 key、target.type → 按钮文案 key 两张穷举映射(satisfies Record,新增分支不给文案就编译不过);toSystemSettingsTarget() 只服务 system-settings-agent 臂。真正的跳转分发在 controls openActionTarget:settings / intent-spec(选中意图+spec 页签) / workcenter-event(工作台选中事件)
 │   ├── agent-prefix.ts                              # 客户端推断当前 session 运行的 agent 展示名:本地复刻服务端降级链;识别 `_c3_<group>` 虚拟 group agent(ADR-0029)展示组名
 │   ├── group-agents.ts                              # 客户端派生虚拟 group agent(ADR-0029):listGroupAgents/groupAgentsOfVendor 本地复刻服务端枚举(每个 (vendor,group) 一项,不同 vendor 可同名),agentRefDisplayName 把 `_c3_<vendor>_<group>` ref 原样带前缀展示;供各 agent 选择器以 `_c3_<vendor>_<组名>` 列出 group 选项
 │   ├── authToken.ts                                 # 会话 token 持久化(localStorage,guard 无 DOM 环境):get/set/clear,供 ws.ts 握手 ?token= 复用

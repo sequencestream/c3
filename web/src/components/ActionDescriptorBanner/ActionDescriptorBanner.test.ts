@@ -53,6 +53,20 @@ describe('ActionDescriptorBanner.vue', () => {
       .find('[data-testid="action-descriptor-message"]')
       .text()
     expect(auth).not.toBe(quota)
+    const spec = mountBanner({
+      labelCode: 'spec_awaiting_approval',
+      target: { type: 'intent-spec', intentId: 'i1' },
+    })
+      .find('[data-testid="action-descriptor-message"]')
+      .text()
+    const ask = mountBanner({
+      labelCode: 'ask_user_question_pending',
+      target: { type: 'workcenter-event', eventId: 'e1' },
+    })
+      .find('[data-testid="action-descriptor-message"]')
+      .text()
+    expect(spec).not.toBe(auth)
+    expect(ask).not.toBe(spec)
   })
 
   it('maps every label code and target type to copy', () => {

@@ -24,9 +24,12 @@ import type {
   WorkspaceInfo,
   VendorModeCatalog,
   ModeToken,
+  ParkRecoveryStats,
 } from '@ccc/shared/protocol'
+import type { UiError } from '@ccc/shared/ui-codes'
 import { VENDOR_IDS, GIT_BRANCH_MODES, SESSION_KINDS } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
+import { translateUiError } from '@/i18n/errors'
 import { useModeLabel } from '@/composables/useModeLabel'
 import { applyTabFields, deepCopy, useTabbedDraftSave } from '@/composables/useTabbedDraftSave'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
@@ -82,6 +85,16 @@ const props = defineProps<{
   linkStatuses?: SkillLinkStatus[]
   /** Skill ids whose install is in flight — drives per-row busy/disabled state. */
   installingSkillIds?: string[]
+  /**
+   * The current workspace's local park-recovery counts. Read-only measurement,
+   * held apart from `workspaceSetting` on purpose: it is not configuration, so it
+   * must never reach a draft, a dirty check or a save payload. Null = not loaded
+   * (or cleared on workspace switch).
+   */
+  parkRecoveryStats?: ParkRecoveryStats | null
+  /** Set when the counts could not be read — shown instead of a fabricated 0%. */
+  parkRecoveryError?: UiError | null
+  parkRecoveryLoading?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -91,6 +104,8 @@ const emit = defineEmits<{
   queryLinkStatus: []
   /** Ask the parent to install/update the configured skill repo with this id. */
   installSkill: [skillId: string]
+  /** Retry the read-only park-recovery query after a failed one. */
+  reloadParkRecovery: []
 }>()
 
 // ---- Tab grouping ----------------------------------------------------------
@@ -100,8 +115,12 @@ const emit = defineEmits<{
 // carries another tab's unsaved draft. The `gitSandbox` tab's `sandbox` field is
 // compared/saved by its enabled state alone, independent of the git branch mode
 // (see gitSandboxCmp / saveTab).
-type WsTab = 'defaultMode' | 'gitSandbox' | 'collab' | 'skillRepos'
-const TABS: WsTab[] = ['defaultMode', 'gitSandbox', 'collab', 'skillRepos']
+// `observability` is deliberately field-less: it renders measurements the server
+// derives, not configuration. An empty whitelist is what keeps that true — the tab
+// can never be dirty, never seeds from or writes to the draft, and never appears in
+// a save payload or the leave-tab confirm.
+type WsTab = 'defaultMode' | 'gitSandbox' | 'collab' | 'skillRepos' | 'observability'
+const TABS: WsTab[] = ['defaultMode', 'gitSandbox', 'collab', 'skillRepos', 'observability']
 const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
   defaultMode: ['defaultMode', 'devSkill'],
   gitSandbox: ['gitBranchMode', 'defaultMainBranch', 'sandbox'],
@@ -113,6 +132,7 @@ const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
     'specMachineApprovalEnabled',
   ],
   skillRepos: ['skillRepos'],
+  observability: [],
 }
 function tabLabel(tab: WsTab): string {
   return t(`workspaceSetting.tabs.${tab}.label` as 'workspaceSetting.tabs.defaultMode.label')
@@ -590,8 +610,13 @@ function buildTabPayload(
   tab: WsTab,
   payload: WorkspaceSetting,
   src: WorkspaceSetting,
-): WorkspaceSetting {
+): WorkspaceSetting | null {
   switch (tab) {
+    // The observation tab has no Save button; returning null means that even a
+    // programmatic save would emit nothing, so measurements can never be written
+    // back as settings.
+    case 'observability':
+      return null
     case 'defaultMode': {
       // The Codex dual-policy object is already embedded in the draft's defaultMode
       // (seeded via normalizeCodex), so a deep copy carries it as-is.
@@ -644,6 +669,25 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   }
   draft.value.skillRepos = [...list.slice(0, idx), updated, ...list.slice(idx + 1)]
 }
+
+// ---- Local observation (read-only) -----------------------------------------
+// Three mutually exclusive display states, in priority order: a failed read, a
+// read still in flight, and the counts. A failure is never allowed to fall
+// through to the counts branch — showing 0% for "we could not measure" would be
+// the one wrong answer here.
+const parkRecoveryFailed = computed(() => Boolean(props.parkRecoveryError))
+const parkRecoveryErrorText = computed(() =>
+  props.parkRecoveryError ? translateUiError(props.parkRecoveryError) : '',
+)
+/** Whole-hour window label, so the copy tracks the server's window instead of guessing. */
+const parkRecoveryWindowHours = computed(() =>
+  Math.round((props.parkRecoveryStats?.windowMs ?? 24 * 60 * 60 * 1000) / 3_600_000),
+)
+/** The percentage, or null when no sample has finished its window yet. */
+const parkRecoveryRateText = computed(() => {
+  const rate = props.parkRecoveryStats?.rate
+  return rate === null || rate === undefined ? null : `${Math.round(rate * 100)}%`
+})
 </script>
 
 <template>
@@ -1204,6 +1248,85 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
           </button>
         </section>
       </div>
+
+      <!-- ============ Local observation tab (read-only) ============
+           Measurements, not settings: no input, no Save, no draft. The panel owns
+           only a retry for a failed read. -->
+      <div
+        v-show="activeTab === 'observability'"
+        class="project-config-tab-panel"
+        role="tabpanel"
+        data-testid="project-config-tab-observability"
+      >
+        <section class="project-config-section">
+          <p class="project-config-section-title">
+            {{ t('workspaceSetting.observability.parkRecovery.title.label') }}
+          </p>
+          <p class="project-config-hint">
+            {{
+              t('workspaceSetting.observability.parkRecovery.hint', {
+                hours: parkRecoveryWindowHours,
+              })
+            }}
+          </p>
+
+          <!-- A failed read says so; it never degrades into 0% or "no samples". -->
+          <div
+            v-if="parkRecoveryFailed"
+            class="observability-unavailable"
+            data-testid="park-recovery-unavailable"
+          >
+            <span>{{ t('workspaceSetting.observability.parkRecovery.unavailable') }}</span>
+            <span class="project-config-hint">{{ parkRecoveryErrorText }}</span>
+            <button
+              class="ghost"
+              data-testid="park-recovery-retry"
+              @click="emit('reloadParkRecovery')"
+            >
+              {{ t('workspaceSetting.observability.parkRecovery.retry.label') }}
+            </button>
+          </div>
+          <div
+            v-else-if="parkRecoveryLoading && !parkRecoveryStats"
+            class="project-config-hint"
+            data-testid="park-recovery-loading"
+          >
+            {{ t('workspaceSetting.observability.parkRecovery.loading') }}
+          </div>
+          <div v-else-if="parkRecoveryStats" class="observability-figures">
+            <p class="observability-rate" data-testid="park-recovery-rate">
+              <template v-if="parkRecoveryRateText">{{ parkRecoveryRateText }}</template>
+              <template v-else>{{
+                t('workspaceSetting.observability.parkRecovery.insufficient')
+              }}</template>
+            </p>
+            <!-- Sample sizes always accompany the ratio: 1/1 is 100% and means nothing. -->
+            <p class="project-config-hint" data-testid="park-recovery-samples">
+              {{
+                t('workspaceSetting.observability.parkRecovery.samples', {
+                  recovered: parkRecoveryStats.recovered,
+                  eligible: parkRecoveryStats.eligible,
+                })
+              }}
+            </p>
+            <p class="project-config-hint" data-testid="park-recovery-pending">
+              {{
+                t('workspaceSetting.observability.parkRecovery.pending', {
+                  pending: parkRecoveryStats.pending,
+                  hours: parkRecoveryWindowHours,
+                })
+              }}
+            </p>
+          </div>
+
+          <p class="project-config-hint" data-testid="park-recovery-scope">
+            {{ t('workspaceSetting.observability.parkRecovery.scope') }}
+          </p>
+          <p class="project-config-hint" data-testid="park-recovery-decision">
+            {{ t('workspaceSetting.observability.parkRecovery.decision') }}
+          </p>
+        </section>
+      </div>
     </div>
 
     <div class="project-config-foot">
@@ -1452,6 +1575,35 @@ function onRepoPaste(e: ClipboardEvent, id: string) {
   font-size: 12px;
   font-family: var(--font-mono, ui-monospace, monospace);
   word-break: break-all;
+}
+
+/* Local observation — read-only figures, no controls beyond the failure retry. */
+.observability-figures {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--c-border);
+  border-radius: 6px;
+  background: var(--c-bg);
+}
+.observability-rate {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.observability-unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px dashed var(--c-border);
+  border-radius: 6px;
+  background: var(--c-bg);
+}
+.observability-unavailable .project-config-hint {
+  margin: 0;
 }
 
 /* Built-in (embedded) allowed dirs — read-only, non-editable informational list. */

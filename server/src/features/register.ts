@@ -72,6 +72,7 @@ import {
   updateIntentDepsHandler,
   updateIntentStatus,
 } from './intents/index.js'
+import { getParkRecoveryStatsHandler } from './intents/park-recovery.js'
 import {
   approveSpecHandler,
   revokeSpecApprovalHandler,
@@ -189,6 +190,7 @@ export const handlerMap: HandlerMap = {
   start_workflow: startWorkflowHandler,
   stop_workflow: stopWorkflowHandler,
   get_queue_detail: getQueueDetailHandler,
+  get_park_recovery_stats: getParkRecoveryStatsHandler,
   queue_control: queueControlHandler,
   create_pr: createPrHandler,
   sync_intent_pr_status: syncIntentPrStatusHandler,

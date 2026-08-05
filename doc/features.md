@@ -75,6 +75,7 @@ c3
 │   │   │   ├── 规格阶段自治                      # 未过 spec 闸门的意图细分为:撰写→只读审核→需修改则携理由返工(硬上限 3 轮,超限 park+人工待办)→通过后等待批准
 │   │   │   │   └── opt-in 机器批准               # 每工作区显式开关,默认关闭;关闭时即使结论为通过也绝不自动置真,开启时按条件事务写入并记机器身份常量
 │   │   │   ├── 决策日志                          # queue_decision_log 按 tick/intent 记动作/闸门/理由/尝试退避计数/下次唤醒,不记 prompt/凭据/权限正文
+│   │   │   ├── park 漏斗观测                     # funnel_event 只记 parked/unparked 跃迁(六列全是 id/封闭枚举/时间戳,写入边界拒自由文本);状态写成才记,记不成也不回滚 park/unpark
 │   │   │   ├── 队列页面与人工夺回                # 逐条展示阻塞原因/下次唤醒/最近决策;pause·force-skip·unpark·覆盖结论各对应一个内核动作,均不得绕过硬闸门
 │   │   │   └── 顾问 Agent 工具面                 # 决策点按需唤起的顾问专属 MCP 工具组(读 transcript/run 状态、stop_run、reset 会话、非 done 状态流转、建 PR/同步 PR、raise_user_todo)
 │   │   │       ├── propose-then-validate 双保险  # 纯函数校验器接受/拒绝结构化提案(拒绝带稳定原因码+可重试性+约束),每个写工具在副作用前于服务端再校验一次
@@ -185,7 +186,10 @@ c3
 │       ├── 规格驱动开发开关                      # sddEnabled 总开关,关时 SDD 质量门与批准检查点失效
 │       ├── 机器批准开关                          # specMachineApprovalEnabled 显式 opt-in,默认关闭;开启后审核通过的 spec 由队列以机器身份批准,仍可人工撤销
 │       ├── 外部技能仓库                          # skillRepos 技能源仓库,clone 到 ~/.c3/repo 并软链进各 vendor 发现目录;含显式 install_skill
-│       └── 代码托管平台                          # forge(auto/github/gitlab)建 PR/MR 时的 forge 识别
+│       ├── 代码托管平台                          # forge(auto/github/gitlab)建 PR/MR 时的 forge 识别
+│       └── 本机观测(只读)                       # park 后 24h 恢复率 + recovered/eligible/pending 样本数;不属于设置草稿,不参与保存/脏状态;查询失败显示「暂不可用」并可重试
+│           ├── 数据边界                          # 只在本机、滚动保留 90 天、无自由文本、不外传;页面无开启遥测/导出/上传/改保留期/清空控件
+│           └── 决策口径                          # 60% 正向信号、70% 强信号;上线 2–4 周复查,无提升则作废基于本批指引的全部 P1/P2 后续投入
 ```
 
 ## 维护

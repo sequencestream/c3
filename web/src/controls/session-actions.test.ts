@@ -74,6 +74,10 @@ function makeCtx(
   const detectedMainBranch = ref<string | null>(null)
   const resolvedSpecRoot = ref<string | null>(null)
   const sysExtraMounts = ref<unknown[]>([])
+  // Read-only observation refs the workspace switch / reconnect paths clear.
+  const parkRecoveryStats = ref<import('@ccc/shared/protocol').ParkRecoveryStats | null>(null)
+  const parkRecoveryError = ref<import('@ccc/shared/ui-codes').UiError | null>(null)
+  const parkRecoveryLoading = ref(false)
   const flags = { viewModeFirstWorkcenter: true, pendingConsoleBind: false }
   const activeTitle = ref('')
   const activeVendor = ref<string | null>(null)
@@ -125,6 +129,9 @@ function makeCtx(
     detectedMainBranch,
     resolvedSpecRoot,
     sysExtraMounts,
+    parkRecoveryStats,
+    parkRecoveryError,
+    parkRecoveryLoading,
     flags,
     currentSessions: ref([]),
   } as unknown as AppCtx

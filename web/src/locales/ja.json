@@ -1911,7 +1911,8 @@
       "specAgentUnsupported": "spec の作成には Claude エージェントが必要です。設定された spec エージェントは書き込みを spec ディレクトリ内に制限できません。",
       "specWriteFailed": "spec ドキュメントの作成に失敗しました: {message}。",
       "specNotWritten": "spec がまだ作成されていません。承認する前に作成してください。",
-      "specNotApproved": "spec がまだ承認されていません。作業を開始する前に承認してください。"
+      "specNotApproved": "spec がまだ承認されていません。作業を開始する前に承認してください。",
+      "parkStatsUnavailable": "ローカルの park 復帰統計は利用できません。"
     },
     "discussion": {
       "dbUnavailable": "ディスカッション機能は利用できません(c3.db)。",
@@ -2174,6 +2175,9 @@
       "skillRepos": {
         "label": "スキルリポジトリ"
       },
+      "observability": {
+        "label": "ローカル観測"
+      },
       "unsaved": {
         "label": "未保存の変更"
       },
@@ -2391,6 +2395,24 @@
       "sessionKinds": {
         "label": "サンドボックス対象のセッション種別",
         "hint": "有効時にどのセッション種別をサンドボックスに入れるか。既定は work。選択した種別は git ブランチモードや発生元に関係なくすべてサンドボックス化されます。"
+      }
+    },
+    "observability": {
+      "parkRecovery": {
+        "title": {
+          "label": "park 復帰率"
+        },
+        "hint": "park された意図のうち、{hours} 時間以内に人手で復帰した割合です。今回の park ガイダンスが有効だったかを判断する根拠になります。",
+        "loading": "ローカル統計を読み込んでいます…",
+        "unavailable": "ローカル統計は現在利用できません。",
+        "retry": {
+          "label": "再試行"
+        },
+        "insufficient": "サンプルが不足しています",
+        "samples": "観測窓を満たした {eligible} 件のうち {recovered} 件が復帰",
+        "pending": "他に {pending} 件の park が {hours} 時間の観測窓を満たしていないため、集計対象外です。",
+        "scope": "このデータはこの端末にのみ保存され、90 日で削除されます。自由記述は一切含まず、外部に送信されることもありません。",
+        "decision": "判断基準：復帰率 60% で前向きな兆候、70% で強い兆候とみなします。リリースから 2〜4 週間後に見直し、初期の観測値から改善がなければ、今回のガイダンスに基づく P1/P2 の後続投資をすべて中止します。"
       }
     }
   },

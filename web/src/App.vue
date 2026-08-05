@@ -283,7 +283,11 @@ const {
   vendorModes,
   skillLinkStatuses,
   installingSkillIds,
+  parkRecoveryStats,
+  parkRecoveryError,
+  parkRecoveryLoading,
   saveWorkspaceSetting,
+  loadParkRecoveryStats,
   querySkillLinkStatus,
   installSkill,
   skillApprovalRequest,
@@ -823,10 +827,14 @@ function onCodesChatWidth(px: number): void {
       :agents="serverSettings?.agents ?? []"
       :link-statuses="skillLinkStatuses"
       :installing-skill-ids="installingSkillIds"
+      :park-recovery-stats="parkRecoveryStats"
+      :park-recovery-error="parkRecoveryError"
+      :park-recovery-loading="parkRecoveryLoading"
       @close="workspaceSettingOpen = false"
       @save="saveWorkspaceSetting"
       @query-link-status="querySkillLinkStatus"
       @install-skill="installSkill"
+      @reload-park-recovery="loadParkRecoveryStats"
     />
 
     <SkillApprovalModal

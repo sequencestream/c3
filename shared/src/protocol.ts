@@ -95,6 +95,7 @@ export type ClientToServer =
   | IntentMsg.ClientStartWorkflow
   | IntentMsg.ClientStopWorkflow
   | IntentMsg.ClientGetQueueDetail
+  | IntentMsg.ClientGetParkRecoveryStats
   | IntentMsg.ClientQueueControl
   | IntentMsg.ClientCreatePr
   | IntentMsg.ClientSyncIntentPrStatus
@@ -159,6 +160,7 @@ export type ServerToClient =
   | IntentMsg.ServerIntentLogsList
   | IntentMsg.ServerWorkflowStatus
   | IntentMsg.ServerQueueDetail
+  | IntentMsg.ServerParkRecoveryStats
   | IntentMsg.ServerCreatePrResponse
   | IntentMsg.ServerCreatePrProgress
   | IntentMsg.ServerSyncIntentPrStatusResponse

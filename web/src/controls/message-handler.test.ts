@@ -61,6 +61,10 @@ function makeCtx() {
   const detectedMainBranch = ref<string | null>(null)
   const resolvedSpecRoot = ref<string | null>(null)
   const sysExtraMounts = ref<import('@ccc/shared/protocol').SysExtraMount[]>([])
+  // Read-only observation refs the workspace switch / reconnect paths clear.
+  const parkRecoveryStats = ref<import('@ccc/shared/protocol').ParkRecoveryStats | null>(null)
+  const parkRecoveryError = ref<import('@ccc/shared/ui-codes').UiError | null>(null)
+  const parkRecoveryLoading = ref(false)
   const activeTab = ref<string>('console')
   const savedTab = ref<string>('console')
   const selectedAutomationId = ref<string | null>(null)
@@ -135,6 +139,9 @@ function makeCtx() {
     detectedMainBranch,
     resolvedSpecRoot,
     sysExtraMounts,
+    parkRecoveryStats,
+    parkRecoveryError,
+    parkRecoveryLoading,
     activeTab,
     savedTab,
     selectedAutomationId,
@@ -951,6 +958,9 @@ describe('deep link (URL hash routing) — ready branch consumption', () => {
       detectedMainBranch: ref(null),
       resolvedSpecRoot: ref(null),
       sysExtraMounts: ref([]),
+      parkRecoveryStats: ref(null),
+      parkRecoveryError: ref(null),
+      parkRecoveryLoading: ref(false),
       readStoredWorkspace: vi.fn(() => null),
       flushIfReady: vi.fn(),
       notifyAwaitingPermission: vi.fn(),

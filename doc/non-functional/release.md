@@ -72,7 +72,22 @@ Phase2.4 是 Cursor 唯一能进入二进制形态的途径:`@cursor/sdk` 按目
 [agent-session-cursor](../domains/core/agent-session/features/agent-session-cursor.md))。
 它必须排在 pack 之前:归档与其上的所有校验和覆盖的是**加入旁挂之后**的最终字节。
 某目标的树不完整、版本不符或混入了别的平台包时,该目标不产出制品 —— P0 直接失败,
-实验目标按既有 best-effort 规则整体丢弃,绝不产出一份声称支持 Cursor 的残缺归档。
+实验目标按既有 best-effort 规则整体丢弃(`--strict` 时同样直接失败,见下),绝不
+产出一份声称支持 Cursor 的残缺归档。
+
+npm 安装落在一个用完即弃的 staging 前缀里,只有装好的 `node_modules` 整体移动到
+`dist/<target>/` —— 制品目录因此不会沾上 npm 自己的 `package.json`/lockfile,安装
+失败也不会留下半棵树给 pack 打包。**staging 前缀必须与目标同卷**:建在系统临时目录
+时,Windows runner 的 `TEMP`(`C:`)与 workspace(`D:`)分处两个卷,移动会直接
+`EXDEV: cross-device link not permitted`。因此 staging 一律建在 `dist/` 下(名字以
+`.` 开头,不被任何制品 glob 命中)。
+
+### 实验目标的宽容与 `--strict`
+
+实验目标默认**尽力而为**:编译、旁挂、pack 任一步失败即整体丢弃该目标,不阻塞 P0
+发布。但当某个 CI job 存在的唯一目的就是构建这个目标时,丢弃只会把失败推迟到下游
+一个语焉不详的位置(找不到制品的 glob),真正的原因被埋在上一步的日志里。因此
+**单目标 job 一律传 `--strict`**,关掉宽容,让失败在原地带着原因暴露。
 
 构建之后的质量门禁顺序在下面的**质量门禁**一节中规定。
 
@@ -136,7 +151,7 @@ pregate (ubuntu-latest)
 build:linux-x64      (ubuntu-latest)     needs: [pregate, setup]
 build:macos-arm64    (macos-14)          needs: [pregate, setup]
 build:windows-x64    (windows-latest)    needs: [pregate, setup]   ⚠️experimental
-  └─ pnpm release:build --targets=<one> --skip-smoke   (env C3_RELEASE_VERSION=<version>)
+  └─ pnpm release:build --targets=<one> --skip-smoke --strict   (env C3_RELEASE_VERSION=<version>)
   └─ 在 darwin runner 上做 ad-hoc codesign(在 linux/windows 上是空操作)
   └─ actions/upload-artifact@v4 → c3-<target>(上传的是包的 sidecar,而非二进制文件本身)
 smoke:<target>       (same OS as build)  needs: [build:<target>]

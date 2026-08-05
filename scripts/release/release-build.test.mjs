@@ -58,6 +58,13 @@ describe('release-build orchestrator', () => {
     expect(stdout).toMatch(/Phase2\.4 cursor sidecar \(skipped\)/)
   })
 
+  it('experimental targets are best-effort by default, hard failures under --strict', () => {
+    // A single-target CI job has nothing to ship if its one target silently drops:
+    // the failure then resurfaces downstream as a missing artifact, hiding the cause.
+    expect(dryRun().stdout).toMatch(/experimental targets: best-effort/)
+    expect(dryRun(['--strict']).stdout).toMatch(/experimental targets: STRICT/)
+  })
+
   it('defaults to the P0 two-platform matrix', () => {
     const { stdout } = dryRun()
     expect(stdout).toContain('macos-arm64')

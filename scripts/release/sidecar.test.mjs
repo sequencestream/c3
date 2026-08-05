@@ -6,7 +6,7 @@
 // the exact-version rule, the root-entry shims a standalone binary needs, and the
 // verification that refuses a tree carrying another platform's package.
 import { describe, it, expect } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,8 +14,10 @@ import {
   SDK_PACKAGE,
   generateEntryShims,
   listPackages,
+  moveTree,
   pinnedSdkVersion,
   platformPackageFor,
+  stageParentDir,
   verifySidecar,
 } from './sidecar.mjs'
 
@@ -163,6 +165,31 @@ describe('verifySidecar', () => {
     // resolve it, and shipping that would strand Cursor at the first run.
     expect(() => verifySidecar({ root, target: 'macos-arm64', version: '1.2.3' })).toThrow(
       /no root entry/,
+    )
+    rmSync(home, { recursive: true, force: true })
+  })
+})
+
+describe('staging locality', () => {
+  it('stages next to the destination, never in the OS temp dir', () => {
+    // The Windows runner has TEMP on C: and the workspace on D:, so a temp-dir
+    // staging prefix makes the move into dist/ a cross-volume rename (EXDEV).
+    expect(stageParentDir('/build/dist/windows-x64')).toBe(resolve('/build/dist'))
+    expect(stageParentDir('dist/windows-x64')).toBe(resolve('dist'))
+    expect(stageParentDir('/build/dist/windows-x64').startsWith(tmpdir())).toBe(false)
+  })
+
+  it('moveTree relocates a tree and leaves nothing at the source', () => {
+    const home = scratch()
+    const src = join(home, 'staged')
+    mkdirSync(join(src, 'pkg'), { recursive: true })
+    writeFileSync(join(src, 'pkg', 'index.cjs'), 'module.exports = 1\n')
+
+    moveTree(src, join(home, 'node_modules'))
+
+    expect(existsSync(src)).toBe(false)
+    expect(readFileSync(join(home, 'node_modules', 'pkg', 'index.cjs'), 'utf-8')).toContain(
+      'module.exports',
     )
     rmSync(home, { recursive: true, force: true })
   })

@@ -154,7 +154,7 @@ jobs:
       - name: Build linux-x64
         run: |
           export PATH="$BUN_INSTALL/bin:$PATH"
-          pnpm release:build --targets=linux-x64 --skip-smoke
+          pnpm release:build --targets=linux-x64 --skip-smoke --strict
 
       - name: Smoke (--version + headless)
         run: |
@@ -220,7 +220,7 @@ jobs:
       - name: Build macos-arm64
         run: |
           export PATH="$BUN_INSTALL/bin:$PATH"
-          pnpm release:build --targets=macos-arm64 --skip-smoke
+          pnpm release:build --targets=macos-arm64 --skip-smoke --strict
 
       - name: Smoke (--version + headless)
         run: |
@@ -285,14 +285,21 @@ jobs:
           $env:PATH = "$env:BUN_INSTALL/bin;$env:PATH"
           pnpm install --frozen-lockfile
 
+      # `--strict`: this job exists solely to produce windows-x64, so the
+      # experimental best-effort drop must not apply — a dropped target here would
+      # surface as a missing-artifact glob three steps later instead of the real cause.
       - name: Build windows-x64
         run: |
           $env:PATH = "$env:BUN_INSTALL/bin;$env:PATH"
-          pnpm release:build --targets=windows-x64 --skip-smoke
+          pnpm release:build --targets=windows-x64 --skip-smoke --strict
 
       - name: Smoke (--version + headless)
         run: |
           $pkg = Get-ChildItem dist/c3-v*-windows-x64.zip | Select-Object -First 1
+          if (-not $pkg) {
+            Write-Error "no dist/c3-v*-windows-x64.zip — the build step produced no package. See the Build step's log."
+            exit 1
+          }
           New-Item -ItemType Directory -Force -Path dist/smoke | Out-Null
           Expand-Archive -Path $pkg.FullName -DestinationPath dist/smoke -Force
           node scripts/release/smoke.mjs --file=dist/smoke/c3.exe --timeout=20000

@@ -13,6 +13,11 @@
  *
  * Deliberately not here: any gate re-evaluation. Whether an intent may run is
  * the kernel's call; this module only records what happened afterwards.
+ *
+ * Because every park flag transition passes through here, this is also where the
+ * local park-recovery funnel is observed — strictly after the state write and
+ * strictly structured (stage + reason code, never `detail`). The observation is
+ * a side channel: it can fail freely without changing a park or an unpark.
  */
 import type { Intent } from '@ccc/shared/protocol'
 import type { QueueAction, QueueReasonCode } from '../../kernel/queue/index.js'
@@ -20,6 +25,7 @@ import { QUEUE_MAX_ATTEMPTS, backoffDelayMs } from '../../kernel/queue/index.js'
 import type { QueueActionContext } from './queue-action-context.js'
 import { getIntent } from './store.js'
 import { appendQueueDecisions, getQueueIntentMetaById, putQueueIntentMeta } from './queue-store.js'
+import { MANUAL_UNPARK_REASON, appendFunnelEvent, type FunnelStage } from './funnel-store.js'
 import { publishIntentLifecycle } from './lifecycle-events.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
 
@@ -90,7 +96,7 @@ export function recordFailure(
   const prev = getQueueIntentMetaById(intentId)
   const failureCount = prev.failureCount + 1
   const park = failureCount >= QUEUE_MAX_ATTEMPTS
-  putQueueIntentMeta(ctx.workspacePath, {
+  const persisted = putQueueIntentMeta(ctx.workspacePath, {
     ...prev,
     intentId,
     failureCount,
@@ -101,6 +107,18 @@ export function recordFailure(
     parkDetail: park ? detail : prev.parkDetail,
     updatedAt: now,
   })
+  // The failure ladder is where most parks are actually born, so this is the main
+  // source of funnel samples. Only the transition counts: a backoff is not a park,
+  // and re-parking an already-parked intent is not a new cycle.
+  if (persisted && park && !prev.parked) {
+    appendFunnelEvent({
+      workspacePath: ctx.workspacePath,
+      intentId,
+      stage: 'parked',
+      reasonCode: reason,
+      at: now,
+    })
+  }
   appendQueueDecisions([
     {
       tickId: ctx.tickId() || 'run',
@@ -164,15 +182,29 @@ export function applyPark(
 ): void {
   const prev = getQueueIntentMetaById(intentId)
   if (prev.parked) return
-  putQueueIntentMeta(ctx.workspacePath, {
+  const now = Date.now()
+  const persisted = putQueueIntentMeta(ctx.workspacePath, {
     ...prev,
     intentId,
     parked: true,
     parkReason: reason,
     parkDetail: detail,
     backoffUntil: null,
-    updatedAt: Date.now(),
+    updatedAt: now,
   })
+  // Observation is strictly downstream of the state write, in both directions: a
+  // transition that did not survive must not show up in the funnel, and a funnel
+  // row that fails to land must not undo a park that did. `detail` stays behind —
+  // only the structured reason code crosses over.
+  if (persisted) {
+    appendFunnelEvent({
+      workspacePath: ctx.workspacePath,
+      intentId,
+      stage: 'parked',
+      reasonCode: reason,
+      at: now,
+    })
+  }
   ctx.hooks.broadcastQueueDetail(ctx.workspacePath)
 }
 
@@ -196,7 +228,8 @@ export function applyPark(
 export function clearPark(workspacePath: string, intentId: string): boolean {
   const prev = getQueueIntentMetaById(intentId)
   if (!prev.parked) return false
-  putQueueIntentMeta(workspacePath, {
+  const now = Date.now()
+  const persisted = putQueueIntentMeta(workspacePath, {
     ...prev,
     intentId,
     parked: false,
@@ -204,8 +237,17 @@ export function clearPark(workspacePath: string, intentId: string): boolean {
     parkDetail: null,
     failureCount: 0,
     backoffUntil: null,
-    updatedAt: Date.now(),
+    updatedAt: now,
   })
+  if (persisted) {
+    appendFunnelEvent({
+      workspacePath,
+      intentId,
+      stage: 'unparked',
+      reasonCode: MANUAL_UNPARK_REASON,
+      at: now,
+    })
+  }
   return true
 }
 
@@ -226,16 +268,31 @@ export function applyHumanOverride(
   const now = Date.now()
   const prev = getQueueIntentMetaById(intentId)
   if (decision === 'continue' && !prev.parked && prev.backoffUntil === null) return false
-  putQueueIntentMeta(workspacePath, {
+  const nextParked = decision === 'block'
+  const persisted = putQueueIntentMeta(workspacePath, {
     ...prev,
     intentId,
-    parked: decision === 'block',
-    parkReason: decision === 'block' ? 'needs_human_decision' : null,
-    parkDetail: decision === 'block' ? `人工裁决停止(${actor})` : null,
+    parked: nextParked,
+    parkReason: nextParked ? 'needs_human_decision' : null,
+    parkDetail: nextParked ? `人工裁决停止(${actor})` : null,
     failureCount: decision === 'continue' ? 0 : prev.failureCount,
     backoffUntil: null,
     updatedAt: now,
   })
+  // A human ruling writes the park flag directly rather than going through
+  // applyPark/clearPark, so it has to observe its own transition — otherwise a
+  // ruled `block` would produce an unpark with no matching park and skew every
+  // pairing after it. A ruling that did not move the flag observes nothing.
+  if (persisted && prev.parked !== nextParked) {
+    const stage: FunnelStage = nextParked ? 'parked' : 'unparked'
+    appendFunnelEvent({
+      workspacePath,
+      intentId,
+      stage,
+      reasonCode: nextParked ? 'needs_human_decision' : MANUAL_UNPARK_REASON,
+      at: now,
+    })
+  }
   appendQueueDecisions([
     {
       tickId,

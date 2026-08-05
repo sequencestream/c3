@@ -1911,7 +1911,8 @@
       "specAgentUnsupported": "spec 작성에는 Claude 에이전트가 필요합니다. 구성된 spec 에이전트는 쓰기를 spec 디렉터리 내로 제한할 수 없습니다.",
       "specWriteFailed": "spec 문서 생성에 실패했습니다: {message}。",
       "specNotWritten": "spec이 아직 작성되지 않았습니다. 승인하기 전에 먼저 작성하세요.",
-      "specNotApproved": "spec이 아직 승인되지 않았습니다. 작업을 시작하기 전에 먼저 승인하세요."
+      "specNotApproved": "spec이 아직 승인되지 않았습니다. 작업을 시작하기 전에 먼저 승인하세요.",
+      "parkStatsUnavailable": "로컬 park 복구 통계를 사용할 수 없습니다."
     },
     "discussion": {
       "dbUnavailable": "토론 기능을 사용할 수 없습니다 (c3.db).",
@@ -2174,6 +2175,9 @@
       "skillRepos": {
         "label": "스킬 저장소"
       },
+      "observability": {
+        "label": "로컬 관측"
+      },
       "unsaved": {
         "label": "저장되지 않은 변경 사항"
       },
@@ -2391,6 +2395,24 @@
       "sessionKinds": {
         "label": "샌드박스 대상 세션 종류",
         "hint": "활성화 시 어떤 세션 종류를 샌드박스에 넣을지. 기본값은 work이며, 선택한 종류는 git 브랜치 모드나 출처와 무관하게 모두 샌드박스화됩니다."
+      }
+    },
+    "observability": {
+      "parkRecovery": {
+        "title": {
+          "label": "park 복구율"
+        },
+        "hint": "park된 인텐트 중 {hours}시간 이내에 사람이 복구한 비율입니다. 이번 park 안내가 실제로 효과가 있었는지 판단하는 근거입니다.",
+        "loading": "로컬 통계를 읽는 중…",
+        "unavailable": "로컬 통계를 사용할 수 없습니다.",
+        "retry": {
+          "label": "다시 시도"
+        },
+        "insufficient": "표본이 충분하지 않습니다",
+        "samples": "관측 창을 채운 {eligible}건 중 {recovered}건 복구",
+        "pending": "{hours}시간 관측 창을 아직 채우지 못한 park가 {pending}건 더 있어 집계에서 제외됩니다.",
+        "scope": "이 데이터는 이 기기에만 저장되고 90일이 지나면 삭제되며, 자유 텍스트를 포함하지 않고 외부로 전송되지 않습니다.",
+        "decision": "판단 기준: 복구율 60%는 긍정 신호, 70%는 강한 신호로 봅니다. 출시 2~4주 후 재검토하여 초기 관측 대비 개선이 없으면 이번 안내를 전제로 계획한 P1/P2 후속 투자를 모두 폐기합니다."
       }
     }
   },

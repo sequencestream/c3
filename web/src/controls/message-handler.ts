@@ -309,6 +309,9 @@ export function installMessageHandler(ctx: AppCtx): void {
         detectedMainBranch.value = null
         resolvedSpecRoot.value = null
         sysExtraMounts.value = []
+        ctx.parkRecoveryStats.value = null
+        ctx.parkRecoveryError.value = null
+        ctx.parkRecoveryLoading.value = false
         ctx.applyStatuses(msg.statuses)
 
         // ---- Deep-link consumption (takes priority over localStorage restore) ----
@@ -659,6 +662,15 @@ export function installMessageHandler(ctx: AppCtx): void {
           automationWorkspaceSettingId.value = msg.workspaceId
           automationEnabledSaving.value = false
           automationSettingBeforeSave.value = null
+        }
+        break
+      case 'park_recovery_stats':
+        // Adopt only a reply for the workspace still on screen: a late answer for
+        // one the user has left must be dropped, never shown under the new name.
+        if (msg.workspaceId === currentWorkspace.value) {
+          ctx.parkRecoveryLoading.value = false
+          ctx.parkRecoveryStats.value = msg.stats ?? null
+          ctx.parkRecoveryError.value = msg.error ?? null
         }
         break
       case 'settings':

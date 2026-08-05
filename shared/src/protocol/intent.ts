@@ -472,6 +472,27 @@ export interface QueueDetail {
 }
 
 /**
+ * One workspace's LOCAL park→recovery observation, derived from the machine's own
+ * park state transitions. Read-only: it is never an input to scheduling, is never
+ * sent anywhere, and carries no per-event detail — no intent id, no reason code,
+ * no text of any kind, only counts over a window.
+ *
+ * `eligible` counts the parks old enough to have finished the observation window,
+ * `recovered` the subset a human brought back inside it, and `pending` the parks
+ * still too recent to judge — surfaced so a handful of samples cannot be mistaken
+ * for a verdict. `rate` is `recovered / eligible`, or `null` when nothing has
+ * matured yet: an empty denominator means "not enough samples", never 0%.
+ */
+export interface ParkRecoveryStats {
+  /** The observation window in ms — how long a park has to be recovered within. */
+  windowMs: number
+  eligible: number
+  recovered: number
+  pending: number
+  rate: number | null
+}
+
+/**
  * A human taking control back from the queue. Every action maps one-to-one onto
  * a kernel action, and none of them can bypass a hard gate: `force_skip` never
  * marks an intent `done` nor satisfies a dependency, and `override_*` only picks

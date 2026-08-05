@@ -126,6 +126,9 @@ export const UI_ERROR_CODES = {
   'intent.specNotApproved': { key: 'error.intent.specNotApproved' },
   'intent.specEditForbidden': { key: 'error.intent.specEditForbidden', params: ['status'] },
   'intent.specSessionRunning': { key: 'error.intent.specSessionRunning' },
+  // Local park-recovery observation: a failed read is reported as unavailable,
+  // never rendered as 0% or an empty sample.
+  'intent.parkStatsUnavailable': { key: 'error.intent.parkStatsUnavailable' },
   // discussion
   'discussion.dbUnavailable': { key: 'error.discussion.dbUnavailable' },
   'discussion.notFound': { key: 'error.discussion.notFound' },

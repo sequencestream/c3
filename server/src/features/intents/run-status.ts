@@ -10,7 +10,8 @@
  */
 import type { Intent, IntentRunStatus } from '@ccc/shared/protocol'
 import { isRunning } from '../../runs.js'
-import { deriveActionDescriptor } from './action-descriptor.js'
+import { deriveActionDescriptor, type WorkspaceIntentsLoader } from './action-descriptor.js'
+import { listIntents } from './store.js'
 
 /**
  * Per-intent runStatus cache, populated by reconcileInProgress on
@@ -74,6 +75,24 @@ function deriveSessionActive(r: Intent): boolean {
 }
 
 /**
+ * A per-send ledger reader for the dependency projection: the workspace's WHOLE
+ * intent list, loaded at most once per workspace per enrich pass and only when an
+ * intent actually declares a dependency. The batch being enriched cannot serve as
+ * the ledger — `list_intents` may be status-filtered, and a predecessor filtered
+ * out of the view is still a predecessor.
+ */
+function workspaceIntentsLoader(): WorkspaceIntentsLoader {
+  const loaded = new Map<string, Intent[]>()
+  return (workspacePath) => {
+    const hit = loaded.get(workspacePath)
+    if (hit) return hit
+    const list = listIntents(workspacePath)
+    loaded.set(workspacePath, list)
+    return list
+  }
+}
+
+/**
  * Enrich a intents list at the send boundary (list / refresh / `intents`
  * broadcast) so every send path derives identical fields:
  *
@@ -81,9 +100,10 @@ function deriveSessionActive(r: Intent): boolean {
  *   regardless of status (see {@link deriveSessionActive}). A transient liveness
  *   signal, never stored or cached.
  * - `actionDescriptor` — always re-derived for EVERY item from blocked-state
- *   facts (vendor / wait-user / spec approval — see {@link deriveActionDescriptor});
- *   `null` when nothing blocks the intent. Deriving it here — the one send
- *   boundary — is what makes list, refresh and broadcast show the same next step.
+ *   facts (vendor / wait-user / spec approval / dependency gate — see
+ *   {@link deriveActionDescriptor}); `null` when nothing blocks the intent.
+ *   Deriving it here — the one send boundary — is what makes list, refresh and
+ *   broadcast show the same next step.
  * - `runStatus` — only in_progress items are reconciled. Priority order:
  *   1. Work-session process still running → `running`.
  *   2. Cached from the most recent reconcile → `dangling` (or `idle` for
@@ -93,9 +113,10 @@ function deriveSessionActive(r: Intent): boolean {
  * Pure (ADR-0009 R4): read-only over its input, never writes the cache.
  */
 export function enrichRunStatus(items: Intent[]): Intent[] {
+  const loadWorkspaceIntents = workspaceIntentsLoader()
   return items.map((r) => {
     const sessionActive = deriveSessionActive(r)
-    const actionDescriptor = deriveActionDescriptor(r)
+    const actionDescriptor = deriveActionDescriptor(r, loadWorkspaceIntents)
     const base = { ...r, sessionActive, actionDescriptor }
     if (r.status !== 'in_progress') return base
     if (r.lastWorkSessionId && isRunning(r.lastWorkSessionId))

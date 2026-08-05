@@ -10,7 +10,7 @@
  *   暂停/恢复 → 队列级控制;强制跳过/取消跳过、解除 park、覆盖结论(继续/停止)→ 单意图。
  * 客户端不预测结果:被服务端拒绝的动作走统一错误弹框,不会看起来像成功。
  */
-import { computed } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import type { QueueControlAction, QueueDetail, QueueIntentDetail } from '@ccc/shared/protocol'
 
@@ -55,6 +55,104 @@ function whenLabel(at: number | null): string {
 function timeLabel(at: number | null): string {
   return at === null ? '—' : new Date(at).toLocaleString()
 }
+
+/*
+ * 退避/冷却倒计时。这两类阻塞的解除条件只有「时间到」,等待期间界面若一动不动会被读成
+ * 卡死。服务端投影里的 nextWakeupAt 是唯一权威截止时间,这里只做两件事:按秒展示剩余,
+ * 以及到点催一次队列详情刷新——到点之后是继续跑还是换个原因挡住,仍由下一轮对账给出,
+ * 客户端不预测、不改写阻塞结论。
+ */
+const COUNTDOWN_REASONS = new Set(['blocked_backoff', 'blocked_cooldown'])
+const TICK_MS = 1000
+
+const now = ref(Date.now())
+let ticker: ReturnType<typeof setInterval> | null = null
+/** 已经催过刷新的截止时间(意图 + 截止时刻):换了截止时间即重新武装,同一个不会催第二次。 */
+const refreshedDeadlines = new Set<string>()
+
+/** 正在等时钟的行:只有退避/冷却且带截止时间的条目参与计时。 */
+const waits = computed<{ intentId: string; at: number }[]>(() => {
+  const out: { intentId: string; at: number }[] = []
+  for (const item of items.value) {
+    if (!COUNTDOWN_REASONS.has(item.blockedReason)) continue
+    if (item.nextWakeupAt === null) continue
+    out.push({ intentId: item.intentId, at: item.nextWakeupAt })
+  }
+  return out
+})
+
+/** 每条等待行当前该显示的剩余时长;已到点的行不在表内,于是倒计时自然消失。 */
+const countdowns = computed<Map<string, string>>(() => {
+  const out = new Map<string, string>()
+  for (const wait of waits.value) {
+    const left = Math.max(0, wait.at - now.value)
+    if (left > 0) out.set(wait.intentId, remainingLabel(left))
+  }
+  return out
+})
+
+/** 剩余毫秒 → 本地化文案;向上取整到秒,免得最后不足一秒时提前显示成已到点。 */
+function remainingLabel(ms: number): string {
+  const total = Math.ceil(ms / 1000)
+  const minutes = Math.floor(total / 60)
+  if (minutes > 0) {
+    const seconds = String(total % 60).padStart(2, '0')
+    return t('queue.countdown.minutesSeconds', { minutes, seconds })
+  }
+  return t('queue.countdown.seconds', { seconds: total })
+}
+
+function deadlineKey(wait: { intentId: string; at: number }): string {
+  return `${wait.intentId}@${wait.at}`
+}
+
+function stopTicker(): void {
+  if (ticker === null) return
+  clearInterval(ticker)
+  ticker = null
+}
+
+/*
+ * 单一计时器驱动所有行:只在还有未到点的等待时运行,新投影到达、条目离开退避/冷却或
+ * 页面卸载都会把它停掉,不会留下串行倒计时或卸载后的副作用。
+ */
+watch(
+  [waits, now],
+  () => {
+    const live = new Set(waits.value.map(deadlineKey))
+    for (const key of refreshedDeadlines) {
+      if (!live.has(key)) refreshedDeadlines.delete(key)
+    }
+
+    let due = false
+    let pending = false
+    for (const wait of waits.value) {
+      if (wait.at > now.value) {
+        pending = true
+        continue
+      }
+      const key = deadlineKey(wait)
+      if (refreshedDeadlines.has(key)) continue
+      refreshedDeadlines.add(key)
+      due = true
+    }
+
+    if (pending) {
+      if (ticker === null) {
+        ticker = setInterval(() => {
+          now.value = Date.now()
+        }, TICK_MS)
+      }
+    } else {
+      stopTicker()
+    }
+
+    if (due) emit('refresh')
+  },
+  { immediate: true },
+)
+
+onUnmounted(stopTicker)
 </script>
 
 <template>
@@ -130,7 +228,16 @@ function timeLabel(at: number | null): string {
           </div>
           <div class="queue-fact">
             <dt>{{ t('queue.field.nextWakeup') }}</dt>
-            <dd data-testid="queue-wakeup">{{ whenLabel(item.nextWakeupAt) }}</dd>
+            <dd data-testid="queue-wakeup">
+              {{ whenLabel(item.nextWakeupAt) }}
+              <span
+                v-if="countdowns.get(item.intentId)"
+                class="queue-countdown"
+                data-testid="queue-countdown"
+              >
+                {{ countdowns.get(item.intentId) }}
+              </span>
+            </dd>
           </div>
           <div class="queue-fact">
             <dt>{{ t('queue.field.lastDecision') }}</dt>
@@ -332,6 +439,10 @@ function timeLabel(at: number | null): string {
   background: var(--c-hover-strong);
   color: var(--c-warning-text);
   white-space: nowrap;
+}
+.queue-countdown {
+  color: var(--c-warning-text);
+  font-variant-numeric: tabular-nums;
 }
 .queue-row-actions {
   display: flex;

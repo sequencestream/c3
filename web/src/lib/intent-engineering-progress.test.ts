@@ -11,7 +11,7 @@ function derive(
     {
       status: 'todo',
       specPath: null,
-      specApproved: false,
+      specStatus: 'raw',
       specSessionId: null,
       lastWorkSessionId: null,
       prId: null,
@@ -59,9 +59,10 @@ describe('deriveIntentEngineeringProgress', () => {
   it.each([
     ['without spec evidence', {}, 'not_started'],
     ['with only a spec session', { specSessionId: 'spec-session' }, 'in_progress'],
-    ['with an unapproved spec', { specPath: 'spec.md' }, 'in_progress'],
-    ['with an approved spec', { specPath: 'spec.md', specApproved: true }, 'completed'],
-    ['with only an approval flag', { specApproved: true }, 'not_started'],
+    ['with a raw seeded spec', { specPath: 'spec.md', specStatus: 'raw' }, 'in_progress'],
+    ['with an unapproved spec', { specPath: 'spec.md', specStatus: 'pending' }, 'in_progress'],
+    ['with an approved spec', { specPath: 'spec.md', specStatus: 'approved' }, 'completed'],
+    ['with only an approval flag', { specStatus: 'approved' }, 'not_started'],
   ] as const)('derives the spec stage %s', (_name, overrides, expected) => {
     expect(derive(overrides)[1].state).toBe(expected)
   })

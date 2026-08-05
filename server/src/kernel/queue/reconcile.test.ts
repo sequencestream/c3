@@ -29,7 +29,7 @@ function intent(over: Partial<QueueIntentFact> & { id: string }): QueueIntentFac
     priority: 'P2',
     automate: true,
     dependsOn: [],
-    specApproved: false,
+    specStatus: 'raw',
     prStatus: null,
     lastWorkSessionId: null,
     createdAt: 1,
@@ -134,7 +134,7 @@ describe('reconcileQueue — selection', () => {
 describe('reconcileQueue — gates', () => {
   it('SDD on without approval never DEVELOPS, and never silently skips', () => {
     const out = reconcileQueue(
-      input({ sddEnabled: true, intents: [intent({ id: 'A', specApproved: false })] }),
+      input({ sddEnabled: true, intents: [intent({ id: 'A', specStatus: 'raw' })] }),
     )
     // The development gate is what this asserts: an unapproved spec is never
     // developed, whatever the spec phase decides to do about authoring it.
@@ -149,7 +149,7 @@ describe('reconcileQueue — gates', () => {
       input({
         sddEnabled: false,
         machineApprovalEnabled: true,
-        intents: [intent({ id: 'A', specApproved: false })],
+        intents: [intent({ id: 'A', specStatus: 'raw' })],
       }),
     )
     // Without SDD the spec gate does not apply, so A is developed directly and
@@ -264,12 +264,12 @@ describe('reconcileQueue — gates', () => {
               id: 'dep',
               status: relax.depDone ? 'done' : 'in_progress',
               prStatus: 'merged',
-              specApproved: true,
+              specStatus: 'approved',
             }),
             intent({
               id: 'X',
               dependsOn: ['dep'],
-              specApproved: relax.specApproved ?? false,
+              specStatus: relax.specApproved ? 'approved' : 'raw',
               createdAt: 5,
             }),
           ],
@@ -339,11 +339,11 @@ describe('reconcileQueue — gates', () => {
           intent({
             id: 'other',
             status: 'in_progress',
-            specApproved: true,
+            specStatus: 'approved',
             lastWorkSessionId: 's-other',
             createdAt: 1,
           }),
-          intent({ id: 'X', specApproved: true, createdAt: 5 }),
+          intent({ id: 'X', specStatus: 'approved', createdAt: 5 }),
         ],
         runs: [{ sessionId: 's-other', alive: true, awaitingPermissionSince: null }],
       }),
@@ -590,12 +590,12 @@ describe('reconcileQueue — concurrency gate by git branch mode', () => {
             id: 'live',
             status: 'in_progress',
             lastWorkSessionId: 's1',
-            specApproved: true,
+            specStatus: 'approved',
             createdAt: 1,
           }),
-          intent({ id: 'unapproved', specApproved: false, specPath: null, createdAt: 5 }),
-          intent({ id: 'backing-off', specApproved: true, createdAt: 6 }),
-          intent({ id: 'parked-one', specApproved: true, createdAt: 7 }),
+          intent({ id: 'unapproved', specStatus: 'raw', specPath: null, createdAt: 5 }),
+          intent({ id: 'backing-off', specStatus: 'approved', createdAt: 6 }),
+          intent({ id: 'parked-one', specStatus: 'approved', createdAt: 7 }),
         ],
         runs: [{ sessionId: 's1', alive: true, awaitingPermissionSince: null }],
         meta: {
@@ -708,13 +708,18 @@ describe('reconcileQueue — queue position', () => {
         control: { state: 'running', startedAt: NOW - 1000, forceSkipped: ['skipped'] },
         intents: [
           intent({ id: 'manual', automate: false, status: 'in_progress', lastWorkSessionId: 'm1' }),
-          intent({ id: 'dep', specApproved: true, createdAt: 1 }),
-          intent({ id: 'blocked-by-dep', specApproved: true, dependsOn: ['dep'], createdAt: 2 }),
+          intent({ id: 'dep', specStatus: 'approved', createdAt: 1 }),
+          intent({
+            id: 'blocked-by-dep',
+            specStatus: 'approved',
+            dependsOn: ['dep'],
+            createdAt: 2,
+          }),
           intent({ id: 'no-spec', createdAt: 3, specPath: null }),
-          intent({ id: 'backing-off', specApproved: true, createdAt: 4 }),
-          intent({ id: 'cooling', specApproved: true, createdAt: 5 }),
-          intent({ id: 'parked', specApproved: true, createdAt: 6 }),
-          intent({ id: 'skipped', specApproved: true, createdAt: 7 }),
+          intent({ id: 'backing-off', specStatus: 'approved', createdAt: 4 }),
+          intent({ id: 'cooling', specStatus: 'approved', createdAt: 5 }),
+          intent({ id: 'parked', specStatus: 'approved', createdAt: 6 }),
+          intent({ id: 'skipped', specStatus: 'approved', createdAt: 7 }),
         ],
         meta: {
           'backing-off': meta('backing-off', { backoffUntil: NOW + 60_000, failureCount: 1 }),
@@ -739,7 +744,7 @@ describe('reconcileQueue — queue position', () => {
           intent({ id: 'manual', automate: false, status: 'in_progress', lastWorkSessionId: 'm1' }),
           intent({ id: 'spec-first', createdAt: 1 }),
           intent({ id: 'spec-second', createdAt: 2 }),
-          intent({ id: 'ready', specApproved: true, createdAt: 3 }),
+          intent({ id: 'ready', specStatus: 'approved', createdAt: 3 }),
         ],
         runs: [{ sessionId: 'm1', alive: true, awaitingPermissionSince: null }],
       }),
@@ -944,19 +949,24 @@ describe('reconcileQueue — restart recovery', () => {
 // ---------------------------------------------------------------------------
 
 describe('reconcileQueue — spec phase', () => {
-  /** An SDD workspace with one unapproved automate intent. */
+  /**
+   * An SDD workspace with one automate intent whose spec is AUTHORED but not
+   * approved (`pending`) — the state the review / rework / approval steps all
+   * start from. Cases about a spec that is still being written pass
+   * `specStatus: 'raw'` explicitly.
+   */
   function sdd(over: Partial<QueueIntentFact>, rest: Partial<QueueReconcileInput> = {}) {
     return reconcileQueue(
       input({
         sddEnabled: true,
-        intents: [intent({ id: 'A', specApproved: false, ...over })],
+        intents: [intent({ id: 'A', specStatus: 'pending', ...over })],
         ...rest,
       }),
     )
   }
 
   it('authors a spec when the intent has none', () => {
-    const out = sdd({ specPath: null })
+    const out = sdd({ specStatus: 'raw', specPath: null })
     expect(out.actions).toContainEqual({
       kind: 'launch_spec',
       intentId: 'A',
@@ -967,6 +977,40 @@ describe('reconcileQueue — spec phase', () => {
     expect(decisionFor(out, 'A')).toMatchObject({ action: 'launch_spec', reason: 'spec_authoring' })
     // Authoring a spec is NOT developing it.
     expect(launched(out)).toBeNull()
+  })
+
+  it('never reviews or blocks a raw spec — even with a readable file and a leftover pass', () => {
+    // The kernel decides on the persisted STATUS first, before any fingerprint or
+    // stored conclusion. A `raw` intent may still carry review facts from an
+    // earlier life (or a machine-approval opt-in): none of them may turn the seed
+    // into a review target or an "awaiting approval" block. The only way forward
+    // is to keep authoring.
+    const out = sdd({
+      specStatus: 'raw',
+      specPath: '/s/spec.md',
+      specFingerprint: 'fp1',
+      specReviewVerdict: 'pass',
+      specReviewFingerprint: 'fp1',
+      specReviewReworkRounds: 0,
+    })
+    expect(out.actions).toContainEqual({
+      kind: 'launch_spec',
+      intentId: 'A',
+      origin: 'queue-kernel',
+      rework: false,
+      reworkRound: 0,
+    })
+    expect(out.actions.some((a) => a.kind === 'launch_spec_review')).toBe(false)
+    expect(out.actions.some((a) => a.kind === 'machine_approve_spec')).toBe(false)
+    expect(decisionFor(out, 'A')).toMatchObject({ action: 'launch_spec', reason: 'spec_authoring' })
+  })
+
+  it('does not report a raw spec as awaiting approval when machine approval is off', () => {
+    const out = sdd({ specStatus: 'raw', specPath: '/s/spec.md', specFingerprint: 'fp1' })
+    const decision = decisionFor(out, 'A')
+    expect(decision?.action).toBe('launch_spec')
+    expect(decision?.reason).toBe('spec_authoring')
+    expect(decision?.reason).not.toBe('spec_awaiting_approval')
   })
 
   it('reviews an authored spec that has no conclusion yet', () => {
@@ -1017,13 +1061,16 @@ describe('reconcileQueue — spec phase', () => {
   })
 
   it('does not start a second spec run for an intent the kernel already drives', () => {
-    const out = sdd({ specPath: null }, { specInFlight: ['A'] })
+    const out = sdd({ specStatus: 'raw', specPath: null }, { specInFlight: ['A'] })
     expect(out.actions).toHaveLength(0)
     expect(decisionFor(out, 'A')).toMatchObject({ action: 'wait', reason: 'running' })
   })
 
   it('honours the per-intent cooldown so a tick and an event cannot double-launch', () => {
-    const out = sdd({ specPath: null }, { meta: { A: meta('A', { cooldownUntil: NOW + 3_000 }) } })
+    const out = sdd(
+      { specStatus: 'raw', specPath: null },
+      { meta: { A: meta('A', { cooldownUntil: NOW + 3_000 }) } },
+    )
     expect(out.actions).toHaveLength(0)
     expect(decisionFor(out, 'A')).toMatchObject({ reason: 'blocked_cooldown' })
     expect(out.nextWakeupAt).toBe(NOW + 3_000)
@@ -1033,6 +1080,55 @@ describe('reconcileQueue — spec phase', () => {
     const out = sdd({ specPath: '/s/spec.md', specFingerprint: null })
     expect(out.actions).toHaveLength(0)
     expect(decisionFor(out, 'A')).toMatchObject({ action: 'block', reason: 'spec_unreadable' })
+  })
+
+  it('keeps a RAW spec in authoring even with a path, a fingerprint and leftover review facts', () => {
+    // write_spec seeded the document (path set, status raw). The queue must NOT
+    // review the placeholder, must NOT block it as awaiting approval, and must
+    // NOT machine-approve it — no matter that a readable file, a live fingerprint
+    // and even an old valid-looking conclusion happen to be sitting there. Only a
+    // persisted `pending` (content actually landed) opens those paths.
+    const out = sdd({
+      specStatus: 'raw',
+      specPath: '/s/spec.md',
+      specFingerprint: 'fp1',
+      specReviewVerdict: 'pass',
+      specReviewFingerprint: 'fp1',
+      specReviewReworkRounds: 0,
+    })
+    expect(out.actions.some((a) => a.kind === 'launch_spec_review')).toBe(false)
+    expect(out.actions.some((a) => a.kind === 'machine_approve_spec')).toBe(false)
+    expect(out.actions).toContainEqual({
+      kind: 'launch_spec',
+      intentId: 'A',
+      origin: 'queue-kernel',
+      rework: false,
+      reworkRound: 0,
+    })
+    expect(decisionFor(out, 'A')).toMatchObject({ action: 'launch_spec', reason: 'spec_authoring' })
+    // And it is not "awaiting approval" either — the placeholder is still being written.
+    expect(decisionFor(out, 'A')?.reason).not.toBe('spec_awaiting_approval')
+  })
+
+  it('only a PENDING spec can be reviewed — raw never reaches the conclusion check', () => {
+    // Same facts, but the document was authored (`pending`): now the review
+    // launches exactly as before the tri-state existed.
+    const out = sdd(
+      {
+        specStatus: 'pending',
+        specPath: '/s/spec.md',
+        specFingerprint: 'fp1',
+        specReviewVerdict: 'pass',
+        specReviewFingerprint: 'fp1',
+      },
+      { machineApprovalEnabled: true },
+    )
+    expect(out.actions.some((a) => a.kind === 'launch_spec_review')).toBe(false)
+    expect(out.actions).toContainEqual({
+      kind: 'machine_approve_spec',
+      intentId: 'A',
+      fingerprint: 'fp1',
+    })
   })
 
   it('reworks on changes_requested, carrying the round number', () => {
@@ -1145,12 +1241,12 @@ describe('reconcileQueue — spec phase', () => {
         sddEnabled: true,
         machineApprovalEnabled: true,
         intents: [
-          intent({ id: 'first', priority: 'P0', specApproved: false, specPath: null }),
-          intent({ id: 'second', priority: 'P1', specApproved: false, specPath: null }),
+          intent({ id: 'first', priority: 'P0', specStatus: 'raw', specPath: null }),
+          intent({ id: 'second', priority: 'P1', specStatus: 'raw', specPath: null }),
           intent({
             id: 'passer',
             priority: 'P3',
-            specApproved: false,
+            specStatus: 'pending',
             specPath: '/s/spec.md',
             specFingerprint: 'fp1',
             specReviewVerdict: 'pass',
@@ -1186,11 +1282,11 @@ describe('reconcileQueue — spec phase', () => {
           intent({
             id: 'approved',
             priority: 'P0',
-            specApproved: true,
+            specStatus: 'approved',
             status: 'in_progress',
             lastWorkSessionId: 'w1',
           }),
-          intent({ id: 'needs-spec', priority: 'P1', specApproved: false, specPath: null }),
+          intent({ id: 'needs-spec', priority: 'P1', specStatus: 'raw', specPath: null }),
         ],
         runs: [{ sessionId: 'w1', alive: false, awaitingPermissionSince: null }],
       }),
@@ -1213,12 +1309,15 @@ describe('reconcileQueue — spec phase', () => {
   })
 
   it('a parked or force-skipped intent never enters the spec phase', () => {
-    const parked = sdd({ specPath: null }, { meta: { A: meta('A', { parked: true }) } })
+    const parked = sdd(
+      { specStatus: 'raw', specPath: null },
+      { meta: { A: meta('A', { parked: true }) } },
+    )
     expect(parked.actions).toHaveLength(0)
     expect(decisionFor(parked, 'A')).toMatchObject({ reason: 'blocked_parked' })
 
     const skipped = sdd(
-      { specPath: null },
+      { specStatus: 'raw', specPath: null },
       { control: { state: 'running', startedAt: NOW - 1000, forceSkipped: ['A'] } },
     )
     expect(skipped.actions).toHaveLength(0)
@@ -1227,7 +1326,7 @@ describe('reconcileQueue — spec phase', () => {
 
   it('a paused queue starts no spec session either', () => {
     const out = sdd(
-      { specPath: null },
+      { specStatus: 'raw', specPath: null },
       { control: { state: 'paused', startedAt: NOW - 1000, forceSkipped: [] } },
     )
     expect(out.actions).toHaveLength(0)

@@ -64,8 +64,10 @@ c3
 │   │   ├── 意图开发                              # 启动可配置 dev skill,追踪 branch/commit/PR
 │   │   │   └── attach·resume·fresh 三态启动      # 按 lastWorkSessionId:运行中只挂 viewer 不发新 turn,空闲在原 id 续跑,无会话才新建;人工按钮与 MCP 工具共用同一门禁(含 RM-A12 并发闸门:current-branch 全局互斥,worktree 各意图独立目录可并行)
 │   │   ├── 意图交付                              # 追踪交付态(分支、提交、PR 状态)
+│   │   ├── 失败定向修复指引                    # worktree 创建与 PR 创建链失败按当次命令结果(退出码/stderr/失败阶段)分类为闭集原因码,错误弹框展示对应修复指引 + 原始错误诊断详情 + 「重试原动作」入口;证据不足一律 unknown、原样展示原始错误且不臆测步骤;只分类不代劳(不清 worktree/不解冲突/不改凭据/不自动重试)
 │   │   ├── PR 更新复位                           # 模型发 pr:operation update/success 时把 rejected/failed/closed 意图 prStatus 复位为 reviewing
 │   │   ├── 意图依赖                              # intent_deps 依赖图(blocks/informs/soft_after),依赖门控启动
+│   │   │   └── 阻塞态前序指引                    # 被依赖闸门挡住的意图,「下一步」提示展示第一个阻塞它的前序意图(标题+状态),按钮跳转到其详情;复用闸门判定,不提供跳过/放行
 │   │   ├── 沟通会话                              # 意图右栏 intent session 多会话(新建/选择/改名/删除)
 │   │   ├── 自动化队列                            # 勾选 automate 的意图按优先级+依赖逐条自动开发、判定完成、提交/推送(唯一自动 done 路径之一)
 │   │   │   ├── 确定性调度内核                    # 10s tick 全量对账:从意图账本+run 存活探测+少量调度元数据重推导动作;纯逻辑在 kernel/queue,不 import features/transport
@@ -79,7 +81,7 @@ c3
 │   │   │   │   └── opt-in 机器批准               # 每工作区显式开关,默认关闭;关闭时即使结论为通过也绝不自动置真,开启时按条件事务写入并记机器身份常量
 │   │   │   ├── 决策日志                          # queue_decision_log 按 tick/intent 记动作/闸门/理由/尝试退避计数/下次唤醒,不记 prompt/凭据/权限正文
 │   │   │   ├── park 漏斗观测                     # funnel_event 只记 parked/unparked 跃迁(六列全是 id/封闭枚举/时间戳,写入边界拒自由文本);状态写成才记,记不成也不回滚 park/unpark
-│   │   │   ├── 队列页面与人工夺回                # 逐条展示阻塞原因/下次唤醒/最近决策;pause·force-skip·unpark·覆盖结论各对应一个内核动作,均不得绕过硬闸门
+│   │   │   ├── 队列页面与人工夺回                # 逐条展示阻塞原因/下次唤醒(退避·冷却带剩余倒计时,到点自动取新投影)/最近决策;park 行展示本地化原因(缺失有占位)与一键解除入口;pause·force-skip·unpark·覆盖结论各对应一个内核动作,均不得绕过硬闸门,被拒的控制经全局 toast 呈现(不落队列页看不到的聊天流)
 │   │   │   │   └── 并发闸门队列位次              # 只对过了全部闸门仅被并发闸门挡住的候选给 1..N 位次,顺序复用调度排序;派生不落库,下轮重算,闸门释放即清空
 │   │   │   └── 顾问 Agent 工具面                 # 决策点按需唤起的顾问专属 MCP 工具组(读 transcript/run 状态、stop_run、reset 会话、非 done 状态流转、建 PR/同步 PR、raise_user_todo)
 │   │   │       ├── propose-then-validate 双保险  # 纯函数校验器接受/拒绝结构化提案(拒绝带稳定原因码+可重试性+约束),每个写工具在副作用前于服务端再校验一次

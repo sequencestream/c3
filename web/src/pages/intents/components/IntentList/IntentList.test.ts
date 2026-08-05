@@ -51,6 +51,8 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     prUrl: null,
     prStatus: null,
     specPath: null,
+    // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
+    specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
     specApproved: false,
     specApproveUser: null,
     specSessionId: null,
@@ -360,6 +362,19 @@ describe('IntentList.vue — derived next-step banner', () => {
     const w = mountList([intent({ id: 'r1', actionDescriptor: { ...BLOCKED } })])
     await w.find('[data-testid="action-descriptor-action"]').trigger('click')
     expect(w.emitted('action-target')).toEqual([[BLOCKED.target]])
+    expect(w.emitted('select-intent')).toBeUndefined()
+  })
+
+  it('points the blocked row at its predecessor without selecting the row', async () => {
+    // The dependency gate names the intent it is waiting for; clicking the banner
+    // jumps to that predecessor and must NOT also select the blocked row.
+    const dep = {
+      labelCode: 'dependency_blocked' as const,
+      target: { type: 'intent-detail' as const, intentId: 'pre-1' },
+    }
+    const w = mountList([intent({ id: 'r1', actionDescriptor: { ...dep } })])
+    await w.find('[data-testid="action-descriptor-action"]').trigger('click')
+    expect(w.emitted('action-target')).toEqual([[dep.target]])
     expect(w.emitted('select-intent')).toBeUndefined()
   })
 

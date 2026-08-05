@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS intents (
   pr_url              TEXT,                          -- PR 可跳转链接 (如 GitHub PR URL); 与 latest_commit_hash 语义不同 (v13→v14 新增; 历史行为 NULL)
   pr_status           TEXT,                          -- PR 状态: 'reviewing' | 'rejected' | 'failed' | 'merged' (v7→v8 新增)
   spec_path           TEXT,                          -- 已撰写的 spec 文档路径 (相对 workspace), spec 质量闸的存在性来源 (v12→v13 新增; 文档标注 VARCHAR(255), SQLite 实为 TEXT; 历史行为 NULL)
-  spec_approved       INTEGER NOT NULL DEFAULT 0,    -- spec 是否通过人工审批闸: 0=否, 1=是 (v12→v13 新增; 历史行为 0)
+  spec_status         TEXT NOT NULL DEFAULT 'raw'
+                      CHECK(spec_status IN ('raw','pending','approved')),  -- spec 文档状态, 闸门/待批准提示的唯一事实源: raw=无 spec 或仅服务端播种的 seed (不算待批准); pending=已有偏离 seed 的真实内容且未批准; approved=已批准 (v17→v18 新增; 存量按 spec_approved=1→approved / 有 spec_path 未批准→pending / 其余→raw 回填)
+  spec_approved       INTEGER NOT NULL DEFAULT 0,    -- spec 是否通过人工审批闸: 0=否, 1=是 (v12→v13 新增; 历史行为 0); 兼容字段, 与 spec_status 同事务双写 (approved ⇔ 1), 读路径以 spec_status 为准
   spec_approve_user   TEXT,                          -- spec 审批人 (用户标识); 未审批为 NULL (v12→v13 新增; 文档标注 VARCHAR(64))
   spec_session_id     TEXT,                          -- 撰写/精炼 spec 的会话 c3SessionId; 与 last_work_session_id 语义不同 (v12→v13 新增; 文档标注 VARCHAR(128))
   spec_review_session_id      TEXT,                  -- 只读审核会话 c3SessionId; 与 spec_session_id (撰写方) 分属不同权限域 (v16→v17 新增; 历史行为 NULL)

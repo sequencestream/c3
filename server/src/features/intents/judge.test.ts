@@ -57,6 +57,7 @@ const req: Intent = {
   prUrl: null,
   prStatus: null,
   specPath: null,
+  specStatus: 'raw',
   specApproved: false,
   specApproveUser: null,
   specSessionId: null,

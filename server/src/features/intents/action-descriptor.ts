@@ -1,21 +1,32 @@
 /**
  * Intent action-descriptor projection — the send-time "next step" for a blocked
  * intent. Composes vendor-block facts, pending wait-user events, the exhausted
- * spec rework and the SDD approval checkpoint into a single optional
- * {@link ActionDescriptor}.
+ * spec rework, the SDD approval checkpoint and the hard dependency gate into a
+ * single optional {@link ActionDescriptor}.
  *
  * Priority (highest first): vendor block → pending wait-user (Ask / permission)
- * → spec rework exhausted → spec awaiting approval. Only one descriptor is
- * projected; lower priorities stay latent until the higher one clears. Never
- * persists, never changes gates.
+ * → spec rework exhausted → spec awaiting approval → dependency blocked. Only
+ * one descriptor is projected; lower priorities stay latent until the higher one
+ * clears. Never persists, never changes gates.
  */
 import type { ActionDescriptor, Intent } from '@ccc/shared/protocol'
 import { MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
-import { getSddEnabled } from '../../kernel/config/index.js'
+import { getDefaultMainBranch, getGitBranchMode, getSddEnabled } from '../../kernel/config/index.js'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { findLatestTodoEventForSessionIds } from '../user-involve/store.js'
+import { findBlockingDependency } from './dependency-gate.js'
 import { readSpecFingerprint } from './spec-review.js'
 import { deriveVendorActionDescriptor } from './vendor-block.js'
+
+/**
+ * The workspace's whole intent ledger, as the dependency projection needs it to
+ * resolve `dependsOn` ids. A function rather than a list so the caller can load
+ * it once per send AND only when an intent actually declares a dependency — the
+ * projection must not assume the batch it is enriching is the complete ledger
+ * (`list_intents` may be status-filtered), or a filtered list and a broadcast
+ * would explain the same block differently.
+ */
+export type WorkspaceIntentsLoader = (workspacePath: string) => Intent[]
 
 /** Session ids that can own a wait-user event for this intent, including intent-level. */
 function sessionIdsForIntent(
@@ -85,14 +96,16 @@ function deriveSpecReworkExhaustedActionDescriptor(
     | 'workspaceId'
     | 'status'
     | 'specPath'
-    | 'specApproved'
+    | 'specStatus'
     | 'specReviewVerdict'
     | 'specReviewFingerprint'
     | 'specReviewReworkRounds'
   >,
 ): ActionDescriptor | null {
   if (intent.status !== 'todo') return null
-  if (!intent.specPath || intent.specApproved) return null
+  // Only an authored-but-unapproved spec can be stuck in rework: a `raw` one is
+  // never reviewed, and an `approved` one is past the question.
+  if (!intent.specPath || intent.specStatus !== 'pending') return null
   if (intent.specReviewVerdict !== 'changes_requested') return null
   if (intent.specReviewFingerprint === null) return null
   // Rounds 1..CAP are reworked; only the conclusion after the last allowed rework
@@ -110,14 +123,20 @@ function deriveSpecReworkExhaustedActionDescriptor(
 }
 
 /**
- * Spec awaiting human approval: SDD on, todo intent, written but not approved.
- * The jump lands on the intent's spec document tab where the approve action lives.
+ * Spec awaiting human approval: SDD on, todo intent, and the spec status is
+ * `pending` — a document with real content that nobody has approved yet. The jump
+ * lands on the intent's spec document tab where the approve action lives.
+ *
+ * `pending` is the WHOLE condition. A `raw` intent has a `spec_path` from the
+ * moment `write_spec` seeds the file, so deriving this from the path plus the
+ * approval boolean used to send a human to review a document that had not been
+ * written yet.
  */
 function deriveSpecApprovalActionDescriptor(
-  intent: Pick<Intent, 'id' | 'workspaceId' | 'status' | 'specPath' | 'specApproved'>,
+  intent: Pick<Intent, 'id' | 'workspaceId' | 'status' | 'specStatus'>,
 ): ActionDescriptor | null {
   if (intent.status !== 'todo') return null
-  if (!intent.specPath || intent.specApproved) return null
+  if (intent.specStatus !== 'pending') return null
   const workspacePath = resolveWorkspaceRoot(intent.workspaceId)
   if (!workspacePath || !getSddEnabled(workspacePath)) return null
   return {
@@ -127,15 +146,54 @@ function deriveSpecApprovalActionDescriptor(
 }
 
 /**
+ * The hard dependency gate, restated as guidance: which predecessor the intent is
+ * actually waiting for. The verdict is NOT re-invented here — it comes from
+ * {@link findBlockingDependency}, the same rule the launch gate and the queue
+ * apply, so the guidance can never point at something the gate would let through.
+ *
+ * Only an intent the gate can still hold back is described: `todo` (a launch is
+ * what the gate refuses) and `in_progress` (what the queue keeps refusing to
+ * continue). A terminal intent has no next step to give.
+ *
+ * The target carries the predecessor's id only, and is minted only when that
+ * record resolves — the title and status beside it are read from the same
+ * `intents` read model by the client, never copied into the descriptor.
+ */
+function deriveDependencyActionDescriptor(
+  intent: Pick<Intent, 'workspaceId' | 'status' | 'dependsOn'>,
+  loadWorkspaceIntents: WorkspaceIntentsLoader,
+): ActionDescriptor | null {
+  if (intent.status !== 'todo' && intent.status !== 'in_progress') return null
+  if (intent.dependsOn.length === 0) return null
+  const workspacePath = resolveWorkspaceRoot(intent.workspaceId)
+  if (!workspacePath) return null
+  const blocking = findBlockingDependency({
+    dependsOn: intent.dependsOn,
+    intents: loadWorkspaceIntents(workspacePath),
+    gitBranchMode: getGitBranchMode(workspacePath),
+    defaultMainBranch: getDefaultMainBranch(workspacePath),
+  })
+  if (!blocking) return null
+  return {
+    labelCode: 'dependency_blocked',
+    target: { type: 'intent-detail', intentId: blocking.id },
+  }
+}
+
+/**
  * The send-time projection: the highest-priority blocked next step for this
  * intent, or `null` when nothing actionable blocks it. Pure over its inputs
  * and the in-memory / store facts it reads — never mutates either side.
  */
-export function deriveActionDescriptor(intent: Intent): ActionDescriptor | null {
+export function deriveActionDescriptor(
+  intent: Intent,
+  loadWorkspaceIntents: WorkspaceIntentsLoader,
+): ActionDescriptor | null {
   return (
     deriveVendorActionDescriptor(intent) ??
     deriveWaitUserActionDescriptor(intent) ??
     deriveSpecReworkExhaustedActionDescriptor(intent) ??
-    deriveSpecApprovalActionDescriptor(intent)
+    deriveSpecApprovalActionDescriptor(intent) ??
+    deriveDependencyActionDescriptor(intent, loadWorkspaceIntents)
   )
 }

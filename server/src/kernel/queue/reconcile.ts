@@ -235,7 +235,10 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
         wakeAt: null,
       }
     }
-    if (sddEnabled && !intent.specApproved) {
+    // The spec gate reads the STATUS and nothing else: `raw` (still being
+    // authored) and `pending` (authored, unapproved) both fail it, and the
+    // spec phase below says which of the two an intent is actually in.
+    if (sddEnabled && intent.specStatus !== 'approved') {
       return {
         eligible: false,
         reason: 'blocked_spec_not_approved',
@@ -584,11 +587,16 @@ function stampQueuePositions(
  * and the self-excitation cooldown all mean "wait", never "launch again".
  *
  * The progression, once nothing is in flight:
- *   no spec               → author it
+ *   status `raw`          → author it (no spec, or only the server's seed)
  *   spec unreadable       → wait (an unreadable spec is not an empty one)
  *   no valid conclusion   → review the current content
  *   changes_requested     → rework, until the cap, then hand it to a human
  *   pass                  → await human approval, or machine-approve under opt-in
+ *
+ * The status check comes FIRST, before the file's readability, its fingerprint or
+ * any stored conclusion is looked at: `raw` means the document is still being
+ * written, so a leftover fingerprint or verdict from an earlier life must not
+ * start a review of it or report it as awaiting approval.
  *
  * "Valid conclusion" means the stored verdict was produced against the spec's
  * CURRENT fingerprint. That single comparison is what makes an edited spec
@@ -628,6 +636,34 @@ function evaluateSpecPhase(
     return block('blocked_cooldown', '刚发起过一次规格阶段 run,冷却中', ctx.meta.cooldownUntil)
   }
 
+  // `raw` — no spec at all, or only the seed the server wrote. Either way the
+  // document is still being authored: it is NEVER reviewed (there is nothing to
+  // judge) and never reported as awaiting approval. Nothing below this line is
+  // reached for a `raw` intent, so no fingerprint, no leftover conclusion and no
+  // machine-approval opt-in can pull a placeholder forward. The path back out is
+  // the authoring run itself: whether it produced content is decided at the write
+  // boundary, and only a persisted `pending` lets the reviewer start.
+  if (intent.specStatus === 'raw') {
+    return {
+      action: 'launch_spec',
+      reason: 'spec_authoring',
+      detail: intent.specPath === null ? '尚无 spec,发起撰写会话' : 'spec 仍在撰写中,继续撰写会话',
+      actions: [
+        {
+          kind: 'launch_spec',
+          intentId: intent.id,
+          origin: QUEUE_RUN_ORIGIN,
+          rework: false,
+          reworkRound: 0,
+        },
+      ],
+      needsSlot: true,
+      wakeAt: null,
+    }
+  }
+
+  // Defensive: a status that says "authored" with no document is inconsistent —
+  // fail closed and author it rather than reviewing a path that is not there.
   if (intent.specPath === null) {
     return {
       action: 'launch_spec',

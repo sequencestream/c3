@@ -19,8 +19,19 @@ vi.mock('../../runs.js', () => ({
 }))
 
 const blocked = new Map<string, ActionDescriptor>()
+/** The loader each derivation was handed, so the ledger plumbing is observable. */
+const loaders: ((workspacePath: string) => Intent[])[] = []
 vi.mock('./action-descriptor.js', () => ({
-  deriveActionDescriptor: vi.fn((r: { id: string }) => blocked.get(r.id) ?? null),
+  deriveActionDescriptor: vi.fn((r: { id: string }, load: (p: string) => Intent[]) => {
+    loaders.push(load)
+    return blocked.get(r.id) ?? null
+  }),
+}))
+
+const ledger = new Map<string, Intent[]>()
+const listIntentsMock = vi.fn((workspacePath: string) => ledger.get(workspacePath) ?? [])
+vi.mock('./store.js', () => ({
+  listIntents: (workspacePath: string) => listIntentsMock(workspacePath),
 }))
 
 const { enrichRunStatus, cacheRunStatus, clearRunStatus } = await import('./run-status.js')
@@ -53,6 +64,8 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     prUrl: null,
     prStatus: null,
     specPath: null,
+    // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
+    specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
     specApproved: false,
     specApproveUser: null,
     specSessionId: null,
@@ -77,6 +90,9 @@ function enrichOne(overrides: Partial<Intent> & { id: string }): Intent {
 beforeEach(() => {
   running.clear()
   blocked.clear()
+  loaders.length = 0
+  ledger.clear()
+  listIntentsMock.mockClear()
 })
 afterEach(() => {
   running.clear()
@@ -222,6 +238,27 @@ describe('enrichRunStatus — actionDescriptor projection', () => {
     const input = makeIntent({ id: 'a' })
     enrichRunStatus([input])
     expect(input.actionDescriptor).toBeNull()
+  })
+
+  it('hands the derivation the WHOLE workspace ledger, not the batch being enriched', () => {
+    // The batch may be status-filtered (`list_intents` with a status); a
+    // predecessor filtered out of the view is still a predecessor, so resolving
+    // dependencies against the batch would make a filtered list and a broadcast
+    // disagree about the same block.
+    const full = [makeIntent({ id: 'a' }), makeIntent({ id: 'b' })]
+    ledger.set('/proj', full)
+    enrichRunStatus([makeIntent({ id: 'a' })])
+    expect(loaders).toHaveLength(1)
+    expect(loaders[0]('/proj')).toEqual(full)
+  })
+
+  it('reads that ledger at most once per workspace per pass, and only when asked', () => {
+    ledger.set('/proj', [])
+    enrichRunStatus([makeIntent({ id: 'a' }), makeIntent({ id: 'b' })])
+    // Nothing asked for it: an intent with no dependency costs no query.
+    expect(listIntentsMock).not.toHaveBeenCalled()
+    for (const load of loaders) load('/proj')
+    expect(listIntentsMock).toHaveBeenCalledTimes(1)
   })
 })
 

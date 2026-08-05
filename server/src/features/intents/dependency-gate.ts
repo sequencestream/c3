@@ -1,4 +1,4 @@
-import type { Intent, SpecLaunchStage } from '@ccc/shared/protocol'
+import type { GitBranchMode, Intent, SpecLaunchStage } from '@ccc/shared/protocol'
 import { getDefaultMainBranch, getGitBranchMode } from '../../kernel/config/index.js'
 import { listIntents } from './store.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
@@ -36,6 +36,35 @@ export function findDependencyBlockingMainline(
       if (branch === null) return false
       return mainBranch === null || branch !== mainBranch
     })
+}
+
+/**
+ * The first dependency that still trips the HARD dependency gate for an intent,
+ * or `undefined` when none does. One rule, two readers: the launch gate that
+ * refuses to start work, and the read-model projection that explains the refusal
+ * to the user — so an explanation can never disagree with the refusal.
+ *
+ * - A dependency that is not `done` blocks in EVERY branch mode.
+ * - In `worktree` mode a `done` dependency that is not on the mainline yet blocks
+ *   as well (see {@link findDependencyBlockingMainline}).
+ *
+ * Declaration order in `dependsOn` decides which one is reported. Unresolvable
+ * ids (cross-workspace / deleted) stay non-blocking, exactly as every other
+ * entry point already treats them.
+ */
+export function findBlockingDependency(input: {
+  dependsOn: string[]
+  intents: Intent[]
+  gitBranchMode: GitBranchMode
+  defaultMainBranch: string | null | undefined
+}): Intent | undefined {
+  if (input.gitBranchMode === 'worktree') {
+    return findDependencyBlockingMainline(input.dependsOn, input.intents, input.defaultMainBranch)
+  }
+  const byId = new Map(input.intents.map((intent) => [intent.id, intent]))
+  return input.dependsOn
+    .map((id) => byId.get(id))
+    .find((dep): dep is Intent => !!dep && dep.status !== 'done')
 }
 
 /**

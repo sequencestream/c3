@@ -1183,6 +1183,24 @@ header h1 {
      跟着 --c-bg 走会在浅色主题下变成白字压白底。 */
   color: #18181b;
 }
+/* 崩溃态一键重试 —— 仅在 run 停止且末轮以错误收尾时出现的错误色描边胶囊。
+   与「继续」同一排、同一尺寸；hover 用半透明错误底，不换字色（实底错误色在
+   浅色主题下会压掉文字对比度）。 */
+.status-retry {
+  flex-shrink: 0;
+  padding: 1px var(--sp-2);
+  border: 1px solid var(--c-error);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--c-error-text);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.status-retry:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
 
 /* ---- Pending send queue (between status bar and composer) ---- */
 .pending-queue {

@@ -1076,10 +1076,15 @@
         "label": "前往智能体设置"
       },
       "specAwaitingApproval": "该意图的 spec 已写好但尚未批准。打开 spec 页签审阅并批准。",
+      "specReworkExhausted": "规格自动返工已到轮数上限结束，评审仍要求修改。请人工接管：直接编辑 spec，或在规格会话中继续。",
+      "specReworkExhaustedNoReason": "本次评审未留下理由。打开 spec 页签查看审核事实。",
       "permissionPending": "有一条工具权限请求等待你的决定。打开待处理项进行允许或拒绝。",
       "askUserQuestionPending": "有一条 AskUserQuestion 等待你作答。打开待处理项回复。",
       "openSpecApproval": {
         "label": "打开 Spec"
+      },
+      "takeOverSpec": {
+        "label": "人工接管"
       },
       "openWorkcenterEvent": {
         "label": "打开待处理项"
@@ -1225,6 +1230,10 @@
       "continue": {
         "label": "继续",
         "tooltip": "确认无副作用后手动续接"
+      },
+      "retry": {
+        "label": "重试",
+        "tooltip": "重试:重新拉起崩溃的运行"
       },
       "stop": {
         "tooltip": "停止正在进行的回合",

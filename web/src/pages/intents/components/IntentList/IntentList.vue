@@ -397,6 +397,7 @@ function automateToneClass(r: Intent): string {
         <!-- 派生「下一步」:阻塞态在行内主信息区常驻可见,不藏进悬浮提示或展开区。 -->
         <ActionDescriptorBanner
           :descriptor="r.actionDescriptor"
+          :review-reason="r.specReviewReason"
           @navigate="(target: ActionTarget) => emit('action-target', target)"
         />
       </div>

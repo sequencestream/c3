@@ -91,6 +91,22 @@ const canRefresh = computed(() => props.hasActiveSession && props.connection ===
 
 // Absent prop ⇒ controls shown (every existing call site keeps its buttons).
 const showControls = computed(() => !props.hideRunControls)
+
+// One-click retry for the crash state: the run has stopped and the last turn
+// ended in an error. It reuses the `continue` link (same manual-resume path),
+// so no new protocol message or retry state exists — only the entry point is
+// cheaper to reach. Excluded on purpose:
+//  - `reconnecting`: an auto-resume of the same run is still in flight;
+//  - `sideEffectPending`: the danger state keeps its own confirm-then-continue
+//    control, and must never be bypassed by a one-click retry;
+//  - `running`: there is nothing to retry yet.
+const showRetry = computed(
+  () =>
+    !props.running &&
+    !props.reconnecting &&
+    !props.sideEffectPending &&
+    props.activity.phase === 'error',
+)
 </script>
 
 <template>
@@ -105,6 +121,14 @@ const showControls = computed(() => !props.hideRunControls)
       t('session.statusBar.disconnected')
     }}</span>
     <div class="status-actions">
+      <button
+        v-if="showControls && showRetry"
+        class="status-retry"
+        :title="t('session.statusBar.retry.tooltip')"
+        @click="emit('continue')"
+      >
+        {{ t('session.statusBar.retry.label') }}
+      </button>
       <button
         v-if="showControls && sideEffectPending"
         class="status-continue"

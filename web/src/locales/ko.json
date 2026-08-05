@@ -1090,6 +1090,27 @@
       "openWorkcenterEvent": {
         "label": "대기 항목 열기"
       }
+    },
+    "gitFailure": {
+      "worktreeBranchOrPathTaken": "이 인텐트의 브랜치 또는 worktree 디렉터리가 아직 사용 중입니다. 다른 worktree가 체크아웃했거나 같은 이름의 브랜치/디렉터리가 남아 있습니다. 로컬에서 해제하거나 정리한 뒤 다시 시도하세요.",
+      "repoConflictUnresolved": "저장소에 해결되지 않은 병합 충돌이 있어 Git이 이 작업을 거부했습니다. 충돌을 해결(또는 merge/rebase 중단)한 뒤 다시 시도하세요.",
+      "filesystemDenied": "로컬 파일 시스템이 쓰기를 거부했습니다(권한 없음, 읽기 전용 또는 디스크 공간 부족). 디스크 공간과 디렉터리 권한을 확인한 뒤 다시 시도하세요.",
+      "forgeCliUnavailable": "코드 호스팅 CLI가 설치되어 있지 않거나, 설치되었지만 로그인되어 있지 않습니다. 설치와 로그인을 마친 뒤 다시 시도하세요.",
+      "remotePermissionDenied": "권한이 없어 원격이 요청(푸시 또는 PR 생성)을 거부했습니다. 저장소 쓰기 권한을 요청하거나 사용 중인 자격 증명을 수정한 뒤 다시 시도하세요.",
+      "pushRejected": "푸시가 거부되었습니다. 원격 브랜치가 로컬보다 앞서 있습니다. 원격 브랜치와 동기화(pull/rebase 후 충돌 해결)한 뒤 다시 시도하세요.",
+      "networkUnreachable": "원격 저장소 또는 플랫폼 API에 연결할 수 없습니다(DNS, 연결 또는 시간 초과). 네트워크를 복구하고(프록시/VPN 사용 시 함께 확인) 다시 시도하세요.",
+      "commitHookRejected": "커밋/푸시 훅 또는 그 lint 검사 체인이 변경을 거부했습니다. 훅이 알린 내용을 수정한 뒤 다시 시도하세요.",
+      "forgeCreateRejected": "플랫폼이 변경 요청 생성을 거부했습니다(검증 실패 또는 해당 브랜치의 PR이 이미 존재). 플랫폼에서 브랜치 상태를 확인하고 수정한 뒤 다시 시도하세요.",
+      "retryStartDevelopment": {
+        "label": "작업 시작 다시 시도"
+      },
+      "retryCreatePr": {
+        "label": "PR 생성 다시 시도"
+      },
+      "rawDetail": {
+        "label": "원본 오류"
+      },
+      "noDetail": "세부 정보가 반환되지 않았습니다."
     }
   },
   "session": {

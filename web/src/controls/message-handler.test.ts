@@ -5,6 +5,7 @@ import {
   SYSTEM_AGENT_ID,
   type Discussion,
   type ResearchMessage,
+  type GitActionFailureGuidance,
   type ServerToClient,
 } from '@ccc/shared/protocol'
 import type { SessionInfo } from '@ccc/shared/protocol'
@@ -25,10 +26,10 @@ function s(id: string, lastModified: number): SessionInfo {
   }
 }
 
-function error(code: string, requestId?: string): ServerToClient {
+function error(code: string, requestId?: string, guidance?: unknown): ServerToClient {
   return {
     type: 'error',
-    error: { code, params: {} },
+    error: { code, params: {}, ...(guidance === undefined ? {} : { guidance }) },
     ...(requestId ? { requestId } : {}),
   } as unknown as ServerToClient
 }
@@ -45,7 +46,13 @@ function makeCtx() {
   const createPrProgress = ref<unknown>(null)
   const dispatchCreatePr = vi.fn()
   const showToast = vi.fn((text: string) => (toast.value = text))
-  const showIntentActionError = vi.fn((text: string) => (intentActionError.value = text))
+  const intentActionErrorGuidance = ref<GitActionFailureGuidance | null>(null)
+  const showIntentActionError = vi.fn(
+    (text: string, guidance: GitActionFailureGuidance | null = null) => {
+      intentActionError.value = text
+      intentActionErrorGuidance.value = guidance
+    },
+  )
   const automationSaving = ref(false)
   const automations = ref({})
   const automationsProject = ref<string | null>(null)
@@ -118,6 +125,7 @@ function makeCtx() {
     skillSupport,
     toast,
     intentActionError,
+    intentActionErrorGuidance,
     intentActionErrorSeq,
     createIntentPending,
     devLaunch,
@@ -175,6 +183,7 @@ function makeCtx() {
     toast,
     updateStatus,
     intentActionError,
+    intentActionErrorGuidance,
     intentActionErrorSeq,
     closeDevLaunch,
     dispatchSpecLaunch,
@@ -337,6 +346,57 @@ describe('intent action errors', () => {
     expect(result.intentActionError.value).toBeNull()
     expect(result.showIntentActionError).not.toHaveBeenCalled()
     expect(result.intentActionErrorSeq.value).toBe(0)
+  })
+
+  it('carries a well-formed Git failure guidance through to the dialog state', () => {
+    const result = makeCtx()
+    const guidance = {
+      reason: 'push_rejected',
+      detail: 'git push 失败: ! [rejected]',
+      retry: { type: 'intent-action', intentId: 'i-1', action: 'create-pr' },
+    }
+
+    result.ctx.handleMessage(error('intent.prCreateFailed', undefined, guidance))
+
+    expect(result.intentActionErrorGuidance.value).toEqual(guidance)
+  })
+
+  it('drops a malformed guidance and keeps the plain error', () => {
+    // An unknown reason code, an unknown retry action or a missing intent must
+    // not become a button the user cannot judge — the dialog falls back to the
+    // translated error alone.
+    const malformed = [
+      {
+        reason: 'worktree_exploded',
+        detail: 'x',
+        retry: { type: 'intent-action', intentId: 'i-1', action: 'create-pr' },
+      },
+      {
+        reason: 'push_rejected',
+        detail: 'x',
+        retry: { type: 'intent-action', intentId: 'i-1', action: 'delete-worktree' },
+      },
+      { reason: 'push_rejected', detail: 'x', retry: { type: 'intent-spec', intentId: 'i-1' } },
+      { reason: 'push_rejected', detail: 'x' },
+      'push_rejected',
+    ]
+    for (const guidance of malformed) {
+      const result = makeCtx()
+
+      result.ctx.handleMessage(error('intent.prCreateFailed', undefined, guidance))
+
+      expect(result.intentActionErrorGuidance.value).toBeNull()
+      expect(result.intentActionError.value).not.toBeNull()
+    }
+  })
+
+  it('leaves the guidance null for a failure that carries none', () => {
+    const result = makeCtx()
+
+    result.ctx.handleMessage(error('intent.prCreateNoChanges'))
+
+    expect(result.intentActionError.value).not.toBeNull()
+    expect(result.intentActionErrorGuidance.value).toBeNull()
   })
 })
 

@@ -136,6 +136,68 @@ describe('SessionStatusBar.vue — 危险态手动 continue', () => {
 })
 
 /*
+ * 崩溃态一键重试:run 已停止(running=false)且末轮以错误收尾(activity.phase==='error')
+ * 时,状态栏直接给出重试入口(`.status-retry`),点击复用既有 `continue` 链路(App 据此
+ * 发 user_prompt 续接同一 session),不新增协议消息也不新增重试状态。断言锁结构与
+ * emit,不锁文案。
+ */
+describe('SessionStatusBar.vue — 崩溃态一键重试', () => {
+  const CRASH = {
+    running: false,
+    activity: { phase: 'error', message: 'boom' } as RunActivity,
+  }
+
+  it('崩溃态(idle + error):渲染一键重试按钮', () => {
+    const w = mountBar(CRASH)
+    expect(w.find('.status-retry').exists()).toBe(true)
+  })
+
+  it('点击一键重试:只 emit 一次 continue', async () => {
+    const w = mountBar(CRASH)
+    await w.find('.status-retry').trigger('click')
+    expect(w.emitted('continue')).toHaveLength(1)
+    // 复用 continue 链路,不额外抛 stop/refresh。
+    expect(w.emitted('stop')).toBeFalsy()
+    expect(w.emitted('refresh')).toBeFalsy()
+  })
+
+  it('运行中:不渲染一键重试', () => {
+    const w = mountBar({ ...CRASH, running: true })
+    expect(w.find('.status-retry').exists()).toBe(false)
+  })
+
+  it('非 error(就绪):不渲染一键重试', () => {
+    const w = mountBar({ running: false, activity: { phase: 'idle' } as RunActivity })
+    expect(w.find('.status-retry').exists()).toBe(false)
+  })
+
+  it('reconnecting(自动 resume 在途):不渲染一键重试', () => {
+    const w = mountBar({ ...CRASH, reconnecting: true })
+    expect(w.find('.status-retry').exists()).toBe(false)
+  })
+
+  it('无活动会话:整条状态栏不渲染,自然无一键重试', () => {
+    const w = mountBar({ ...CRASH, hasActiveSession: false })
+    expect(w.find('.status-bar').exists()).toBe(false)
+    expect(w.find('.status-retry').exists()).toBe(false)
+  })
+
+  it('只读会话(hideRunControls):不渲染一键重试,刷新按钮保留', () => {
+    const w = mountBar({ ...CRASH, hideRunControls: true })
+    expect(w.find('.status-retry').exists()).toBe(false)
+    expect(w.find('.status-refresh').exists()).toBe(true)
+  })
+
+  it('副作用未决态:仍是原危险态确认入口,不出现可绕过确认的一键重试', () => {
+    const w = mountBar({ ...CRASH, sideEffectPending: true })
+    expect(w.find('.status-retry').exists()).toBe(false)
+    expect(w.find('.status-continue').exists()).toBe(true)
+    // 危险态文案(sideEffectPending)优先于普通错误文案。
+    expect(w.find('.status-indicator').classes()).toContain('error')
+  })
+})
+
+/*
  * 统一格式 `<icon> <agent>.<status>`:有 agent 名时文案以 `<agent>.` 起头;无 agent
  * 名时不留残留点号/分隔符(复刻旧 empty-agent 不破坏状态条的行为)。断言文案前缀结构
  * (agent 是数据非 copy),不锁状态词本身。

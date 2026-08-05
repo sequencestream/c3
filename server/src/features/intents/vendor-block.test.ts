@@ -72,6 +72,8 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     prUrl: null,
     prStatus: null,
     specPath: null,
+    // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
+    specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
     specApproved: false,
     specApproveUser: null,
     specSessionId: null,

@@ -51,7 +51,13 @@ import {
 } from './dev-link.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 import { clearPendingSpecReviewLink, registerPendingSpecReviewLink } from './spec-review-link.js'
-import { buildSpecReviewPrompt, buildSpecReworkPrompt, readSpecFingerprint } from './spec-review.js'
+import {
+  buildSpecReviewPrompt,
+  buildSpecReworkPrompt,
+  readSpecFingerprint,
+  specFingerprint,
+} from './spec-review.js'
+import { armSpecContentWatch } from './spec-content-watch.js'
 import { buildDevPrompt } from './dev-prompt.js'
 import { findDependencyBlockingMainline, prepareSpecLaunch } from './dependency-gate.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
@@ -165,8 +171,10 @@ function checkWorkAdmission(
   intent: Intent,
   deps: SessionLaunchDeps,
 ): SessionLaunchResult | null {
-  // SDD quality gate — server-side, forced.
-  if (getSddEnabled(workspacePath) && !intent.specApproved) {
+  // SDD quality gate — server-side, forced. The authoritative condition is the
+  // spec STATUS: the compatibility boolean is never consulted here, so it can
+  // never become a second way in when the two disagree.
+  if (getSddEnabled(workspacePath) && intent.specStatus !== 'approved') {
     return { success: false, code: 'intent.specNotApproved' }
   }
 
@@ -558,15 +566,24 @@ function createFirstSpecSession(
   })
 
   // Scaffold directory + seed spec.md
+  const seed = buildSeedSpec(intent, new Date().toISOString())
   try {
     mkdirSync(layout.dirAbs, { recursive: true })
-    writeFileSync(layout.fileAbs, buildSeedSpec(intent, new Date().toISOString()), 'utf8')
+    writeFileSync(layout.fileAbs, seed, 'utf8')
   } catch (err) {
     return { success: false, code: 'intent.specWriteFailed', params: { message: errMsg(err) } }
   }
 
-  // Backfill spec_path immediately and broadcast
+  // Backfill spec_path (as `raw` — a seed is not an authored spec) and broadcast.
   setSpecPath(intent.id, layout.fileAbs)
+  // The baseline this run is measured against is the SEED itself, so an agent
+  // that writes nothing leaves the intent `raw` instead of looking authored.
+  armSpecContentWatch({
+    intentId: intent.id,
+    workspacePath,
+    specPath: layout.fileAbs,
+    fingerprint: specFingerprint(seed),
+  })
   safeInsertIntentLog(intent.id, 'spec_created', '编写 spec', actor ?? 'system')
   deps.broadcastIntents(workspacePath)
 
@@ -713,6 +730,12 @@ function createSpecSessionOnExistingPath(
   if (blocked) return blocked
 
   const fileAbs = resolveSpecFileAbs(workspacePath, intent.specPath!)
+  armSpecContentWatch({
+    intentId: intent.id,
+    workspacePath,
+    specPath: intent.specPath!,
+    fingerprint: readSpecFingerprint(workspacePath, intent.specPath!),
+  })
   const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const specAgent = resolveSpecAgent()
   const rt = ensureRuntime(specId, workspacePath, getDefaultMode(workspacePath), [], 'spec')
@@ -806,6 +829,15 @@ async function resumeSpecSession(
     const specAgent = resolveSpecAgent()
     setSessionAgent(intent.specSessionId, specAgent.id)
   }
+
+  // Baseline for this turn's content check: a resumed session that writes nothing
+  // must not promote the intent out of `raw`.
+  armSpecContentWatch({
+    intentId: intent.id,
+    workspacePath,
+    specPath: intent.specPath,
+    fingerprint: readSpecFingerprint(workspacePath, intent.specPath),
+  })
 
   // The turn: a plain continuation, or — after a `changes_requested` conclusion —
   // the reviewer's findings verbatim, so the author reworks against the actual

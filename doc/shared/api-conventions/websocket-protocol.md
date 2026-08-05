@@ -263,7 +263,7 @@
 
 ### `write_spec`
 
-为 intent 撰写 spec 文档（质量闸输出步骤）：在**固定集中**的 spec 根目录(`<c3 home>/doc/<项目路径段>`,按项目隔离、不可配置、不入 Git)下搭建按日期分层的 spec 目录、种子 `spec.md`、立即把**绝对路径**回填到 intent 的 `specPath`,并在配置的 spec agent 上启动写入受限于 spec 目录(即便其位于项目树之外)的撰写会话;非 Claude spec agent 在启动前被拒绝（intent-management RM-R21）。
+为 intent 撰写 spec 文档（质量闸输出步骤）：在**固定集中**的 spec 根目录(`<c3 home>/doc/<项目路径段>`,按项目隔离、不可配置、不入 Git)下搭建按日期分层的 spec 目录、种子 `spec.md`、立即把**绝对路径**回填到 intent 的 `specPath` 并**同语句置 `spec_status='raw'`**(播种占位不算待批准),并在配置的 spec agent 上启动写入受限于 spec 目录(即便其位于项目树之外)的撰写会话;非 Claude spec agent 在启动前被拒绝（intent-management RM-R21）。真实内容落盘由编写运行结束时的内容指纹比对自动把 `raw` 提升为 `pending`（RM-R21）。
 
 **字段：** `workspaceId: string`, `intentId: string`
 
@@ -275,7 +275,7 @@
 
 ### `approve_spec`
 
-人工审批检查点:批准 intent 的 spec，置 `spec_approved=true` 并将批准者(当前登录 subject)记入 `spec_approve_user`，随后重新广播 `intents`。单人确认，无多签/撤销;`specPath` 为空(尚未撰写 spec)时拒绝(`error`)。批准本身不开始工作，只让四态按钮推进到 `Start Work`（intent-management RM-R22）。
+人工审批检查点:批准 intent 的 spec，置 `spec_status='approved'`(兼容字段 `spec_approved=true` 同事务双写)并将批准者(当前登录 subject)记入 `spec_approve_user`，随后重新广播 `intents`。单人确认，无多签/撤销;`specPath` 为空(尚未撰写 spec)时拒绝(`error`)，`spec_status` 为 `raw`(仅播种占位)时同样拒绝(`intent.specNotWritten`)——只有 `pending` 可被批准。批准本身不开始工作，只让四态按钮推进到 `Start Work`（intent-management RM-R22）。
 
 **字段：** `workspaceId: string`, `intentId: string`
 

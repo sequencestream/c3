@@ -63,6 +63,7 @@ function dep(overrides: Partial<Intent> = {}): Intent {
     prUrl: null,
     prStatus: null,
     specPath: null,
+    specStatus: 'raw',
     specApproved: false,
     specApproveUser: null,
     specSessionId: null,

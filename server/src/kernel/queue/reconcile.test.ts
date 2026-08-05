@@ -912,8 +912,11 @@ describe('reconcileQueue — spec phase', () => {
       specReviewFingerprint: 'fp1',
       specReviewReworkRounds: QUEUE_MAX_SPEC_REWORK + 1,
     })
-    // No further authoring session; a park plus exactly one human todo instead.
+    // No retry of any kind — neither a fresh authoring round nor another review;
+    // a park plus exactly one human todo, and nothing else.
     expect(exhausted.actions.some((a) => a.kind === 'launch_spec')).toBe(false)
+    expect(exhausted.actions.some((a) => a.kind === 'launch_spec_review')).toBe(false)
+    expect(exhausted.actions.map((a) => a.kind).sort()).toEqual(['park', 'wait_user_involve'])
     expect(exhausted.actions).toContainEqual({
       kind: 'park',
       intentId: 'A',

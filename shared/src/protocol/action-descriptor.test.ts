@@ -17,6 +17,7 @@ describe('ActionDescriptor', () => {
       'vendor_auth_invalid',
       'vendor_quota_exhausted',
       'spec_awaiting_approval',
+      'spec_rework_exhausted',
       'permission_pending',
       'ask_user_question_pending',
     ])

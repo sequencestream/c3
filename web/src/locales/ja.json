@@ -1077,10 +1077,15 @@
         "label": "エージェント設定を開く"
       },
       "specAwaitingApproval": "この意図の spec は作成済みですが未承認です。spec タブを開いて確認・承認してください。",
+      "specReworkExhausted": "spec の自動手戻りは上限ラウンドで終了しましたが、レビューはまだ修正を求めています。手動で引き継いでください：spec を直接編集するか、spec セッションで続けます。",
+      "specReworkExhaustedNoReason": "今回のレビューは理由を残していません。spec タブを開いて審査内容を確認してください。",
       "permissionPending": "ツール権限の承認待ちがあります。保留項目を開いて許可または拒否してください。",
       "askUserQuestionPending": "AskUserQuestion への回答待ちがあります。保留項目を開いて回答してください。",
       "openSpecApproval": {
         "label": "Spec を開く"
+      },
+      "takeOverSpec": {
+        "label": "手動で引き継ぐ"
       },
       "openWorkcenterEvent": {
         "label": "保留項目を開く"

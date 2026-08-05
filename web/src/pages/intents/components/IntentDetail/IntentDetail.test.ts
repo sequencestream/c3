@@ -1786,6 +1786,36 @@ describe('IntentDetail.vue — derived next-step banner', () => {
     expect(w2.emitted('action-target')).toEqual([[ask.target]])
   })
 
+  it('shows the review blocker and one manual take-over jump when rework is exhausted', async () => {
+    const exhausted = {
+      labelCode: 'spec_rework_exhausted' as const,
+      target: { type: 'intent-spec' as const, intentId: 'r1' },
+    }
+    const w = mountDetail(
+      intent({
+        id: 'r1',
+        actionDescriptor: { ...exhausted },
+        specReviewVerdict: 'changes_requested',
+        specReviewReason: '验收项未覆盖失败路径',
+        specReviewReworkRounds: 4,
+      }),
+    )
+    const banner = w.find('.intent-detail-head [data-testid="action-descriptor-banner"]')
+    expect(banner.find('[data-testid="action-descriptor-blocker"]').text()).toBe(
+      '验收项未覆盖失败路径',
+    )
+    const actions = banner.findAll('[data-testid="action-descriptor-action"]')
+    expect(actions).toHaveLength(1)
+    expect(actions[0].text()).not.toMatch(/retry|try again|重试|再试/i)
+    await actions[0].trigger('click')
+    expect(w.emitted('action-target')).toEqual([[exhausted.target]])
+    // The jump navigates only — no rework / review / approval request goes out.
+    expect(w.emitted('approve-spec')).toBeUndefined()
+    expect(w.emitted('write-spec')).toBeUndefined()
+    expect(w.emitted('open-spec-session')).toBeUndefined()
+    expect(w.emitted('reset-spec-session')).toBeUndefined()
+  })
+
   it('does not block the rest of the detail: tabs and title actions stay usable', () => {
     const w = mountDetail(intent({ id: 'r1', actionDescriptor: { ...BLOCKED } }))
     expect(w.find('[data-testid="action-descriptor-banner"]').exists()).toBe(true)

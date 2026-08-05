@@ -1077,10 +1077,15 @@
         "label": "에이전트 설정 열기"
       },
       "specAwaitingApproval": "이 의도의 spec은 작성되었지만 아직 승인되지 않았습니다. spec 탭을 열어 검토하고 승인하세요.",
+      "specReworkExhausted": "spec 자동 재작업이 라운드 상한에서 종료되었지만 리뷰는 여전히 수정을 요구합니다. 직접 인계하세요: spec을 편집하거나 spec 세션에서 이어가세요.",
+      "specReworkExhaustedNoReason": "이번 리뷰는 사유를 남기지 않았습니다. spec 탭을 열어 심사 사실을 확인하세요.",
       "permissionPending": "도구 권한 요청이 결정을 기다리고 있습니다. 대기 항목을 열어 허용 또는 거부하세요.",
       "askUserQuestionPending": "AskUserQuestion 답변 대기 중입니다. 대기 항목을 열어 답변하세요.",
       "openSpecApproval": {
         "label": "Spec 열기"
+      },
+      "takeOverSpec": {
+        "label": "수동으로 인계"
       },
       "openWorkcenterEvent": {
         "label": "대기 항목 열기"

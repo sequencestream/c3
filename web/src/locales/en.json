@@ -2837,6 +2837,10 @@
       "label": "Next wake-up",
       "nextTick": "Next tick"
     },
+    "countdown": {
+      "minutesSeconds": "({minutes}:{seconds} left)",
+      "seconds": "({seconds}s left)"
+    },
     "badge": {
       "parked": "Parked",
       "skipped": "Skipped"

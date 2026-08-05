@@ -2838,6 +2838,10 @@
       "label": "다음 깨우기",
       "nextTick": "다음 tick"
     },
+    "countdown": {
+      "minutesSeconds": "({minutes}:{seconds} 남음)",
+      "seconds": "({seconds}초 남음)"
+    },
     "badge": {
       "parked": "park됨",
       "skipped": "건너뜀"

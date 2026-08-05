@@ -79,7 +79,7 @@ c3
 │   │   │   │   └── opt-in 机器批准               # 每工作区显式开关,默认关闭;关闭时即使结论为通过也绝不自动置真,开启时按条件事务写入并记机器身份常量
 │   │   │   ├── 决策日志                          # queue_decision_log 按 tick/intent 记动作/闸门/理由/尝试退避计数/下次唤醒,不记 prompt/凭据/权限正文
 │   │   │   ├── park 漏斗观测                     # funnel_event 只记 parked/unparked 跃迁(六列全是 id/封闭枚举/时间戳,写入边界拒自由文本);状态写成才记,记不成也不回滚 park/unpark
-│   │   │   ├── 队列页面与人工夺回                # 逐条展示阻塞原因/下次唤醒/最近决策;pause·force-skip·unpark·覆盖结论各对应一个内核动作,均不得绕过硬闸门
+│   │   │   ├── 队列页面与人工夺回                # 逐条展示阻塞原因/下次唤醒(退避·冷却带剩余倒计时,到点自动取新投影)/最近决策;pause·force-skip·unpark·覆盖结论各对应一个内核动作,均不得绕过硬闸门
 │   │   │   └── 顾问 Agent 工具面                 # 决策点按需唤起的顾问专属 MCP 工具组(读 transcript/run 状态、stop_run、reset 会话、非 done 状态流转、建 PR/同步 PR、raise_user_todo)
 │   │   │       ├── propose-then-validate 双保险  # 纯函数校验器接受/拒绝结构化提案(拒绝带稳定原因码+可重试性+约束),每个写工具在副作用前于服务端再校验一次
 │   │   │       ├── 专属作用域                    # 独立注册表+独立 loopback 路由,workspace/intent 由闭包绑定;不进 AUTOMATION_C3_TOOL_NAMES,普通 automation 能力不变

@@ -2837,6 +2837,10 @@
       "label": "下次唤醒",
       "nextTick": "下一次 tick"
     },
+    "countdown": {
+      "minutesSeconds": "(剩余 {minutes}:{seconds})",
+      "seconds": "(剩余 {seconds} 秒)"
+    },
     "badge": {
       "parked": "已 park",
       "skipped": "已跳过"

@@ -2882,7 +2882,8 @@
       "budget_exhausted": "超过续跑预算",
       "commit_failed": "提交/推送失败",
       "turn_error": "开发 turn 出错",
-      "judge_stuck": "判定未真实完成"
+      "judge_stuck": "判定未真实完成",
+      "judge_unavailable": "完成判定不可用(工具 agent 配置)"
     }
   }
 }

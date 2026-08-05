@@ -40,7 +40,7 @@ import {
 import { registerPendingDevLink } from './dev-link.js'
 import { buildDevPrompt } from './dev-prompt.js'
 import { publishIntentStatusTransition } from './lifecycle-events.js'
-import { judgeCompletion } from './judge.js'
+import { JudgeUnavailableError, judgeCompletion, type JudgeVerdict } from './judge.js'
 import { runCheckpointConsensus } from './checkpoint-consensus.js'
 import { commitAndPush, createForgePr, gitDiffStat, gitRecentLog } from '../../git.js'
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
@@ -138,13 +138,31 @@ export async function runDevelopLoop(
       return
     }
 
-    const verdict = await judgeCompletion({
-      req: fresh,
-      lastMessages: [lastMessage],
-      evidence: { diffStat, recentLog },
-      cwd: ctx.workspacePath,
-      signal,
-    })
+    // A judge that cannot run says NOTHING about the intent — it must not be read
+    // as `stuck` (that would send a healthy intent through the human-decision
+    // path). Record it as its own failure so the ladder backs off and the reason
+    // points at the tool agent's provider config, not at the work.
+    let verdict: JudgeVerdict
+    try {
+      verdict = await judgeCompletion({
+        req: fresh,
+        lastMessages: [lastMessage],
+        evidence: { diffStat, recentLog },
+        cwd: ctx.workspacePath,
+        signal,
+      })
+    } catch (err) {
+      if (signal.aborted || ctx.isDisposed()) return
+      const detail =
+        err instanceof JudgeUnavailableError ? err.detail : `完成判定执行失败:${errText(err)}`
+      recordFailure(
+        ctx,
+        req.id,
+        'judge_unavailable',
+        `完成判定不可用(检查 tool agent 配置):${detail}`,
+      )
+      return
+    }
     if (signal.aborted || ctx.isDisposed()) return
 
     if (verdict.verdict === 'done') {

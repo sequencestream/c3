@@ -154,7 +154,15 @@ vi.mock('./funnel-store.js', () => ({
   appendFunnelEvent: vi.fn(() => true),
 }))
 
-vi.mock('./judge.js', () => ({ judgeCompletion: vi.fn() }))
+vi.mock('./judge.js', () => ({
+  judgeCompletion: vi.fn(),
+  JudgeUnavailableError: class JudgeUnavailableError extends Error {
+    constructor(readonly detail: string) {
+      super(`judge 不可用: ${detail}`)
+      this.name = 'JudgeUnavailableError'
+    }
+  },
+}))
 vi.mock('./checkpoint-consensus.js', () => ({ runCheckpointConsensus: vi.fn() }))
 
 // ---- Imports ----

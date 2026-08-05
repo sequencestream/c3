@@ -209,6 +209,10 @@ export const QUEUE_REASON_CODES = [
   'commit_failed',
   'turn_error',
   'judge_stuck',
+  // The completion judge itself could not run (provider/model misconfigured, the
+  // one-shot died). Distinct from `judge_stuck`: nothing was judged about the
+  // intent, so this never reads as "a human is needed on the work".
+  'judge_unavailable',
 ] as const
 
 /**

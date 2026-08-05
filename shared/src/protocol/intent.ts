@@ -125,6 +125,25 @@ export const SPEC_REVIEW_VERDICTS = [
 ] as const satisfies readonly SpecReviewVerdict[]
 
 /**
+ * The lifecycle state of an intent's spec document — the SINGLE source of truth
+ * for the spec gate and for every "awaiting approval" prompt. Never inferred by
+ * combining `specPath` with `specApproved`, and never guessed from the document's
+ * text (a real spec may legitimately contain the seed's placeholder wording).
+ * - `raw`      — no spec yet, or only the seed the server wrote before launching
+ *   the authoring agent. NOT "awaiting approval": it cannot be reviewed, cannot
+ *   be approved, and produces no approval prompt or gate.
+ * - `pending`  — the document carries real content that has diverged from the
+ *   seed and is not approved yet. The only state a review may start from, and
+ *   the only one that renders the awaiting-approval prompt / approve entry.
+ * - `approved` — the current document passed human (or opt-in machine) approval;
+ *   the SDD development gate admits it.
+ */
+export type SpecStatus = 'raw' | 'pending' | 'approved'
+
+/** All {@link SpecStatus} values, for runtime validation. */
+export const SPEC_STATUSES = ['raw', 'pending', 'approved'] as const satisfies readonly SpecStatus[]
+
+/**
  * The reserved identity written into `Intent.specApproveUser` when the queue
  * approved a spec under the workspace's machine-approval opt-in. It is NOT a
  * login subject and can never collide with one (the `c3:` prefix is reserved), so
@@ -375,9 +394,20 @@ export interface Intent {
    */
   specPath: string | null
   /**
+   * The spec document's lifecycle state — the authoritative input for the spec
+   * gate, the awaiting-approval prompt and the detail's main action. Consumers
+   * read THIS, never a `specPath` + `specApproved` combination: a seeded but
+   * unwritten spec is `raw`, which is not "awaiting approval".
+   */
+  specStatus: SpecStatus
+  /**
    * Whether the intent's spec has passed the human approval checkpoint. `false`
    * by default (and for historic rows); set `true` only at explicit approval.
    * Persisted so the quality-gate state survives reconnect / refresh.
+   *
+   * Kept for compatibility and always written together with {@link specStatus}
+   * (`true` exactly when the status is `approved`). It is NOT a second admission
+   * path: where the two ever disagree, the status wins and the gate fails closed.
    */
   specApproved: boolean
   /**

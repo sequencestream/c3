@@ -21,6 +21,7 @@ import {
 import {
   getIntent,
   insertIntents,
+  markSpecAuthored,
   resetStoreForTests,
   setBranchName,
   setSpecPath,
@@ -258,11 +259,17 @@ describe('writeSpecHandler dependency context', () => {
 })
 
 describe('approveSpecHandler', () => {
-  it('approves: sets spec_approved=true + records the current subject, then broadcasts', () => {
+  it('approves: sets spec_approved=true + specStatus=approved, records the current subject, then broadcasts', () => {
     const [r] = insertIntents(proj, [
       { title: 'Cached endpoint', shortEnTitle: 'cache', content: '', priority: 'P1' },
     ])
+    // The realistic path to an approvable spec: write_spec seeded the document
+    // (raw), then real content landed on disk (pending). Only then may a human
+    // approve it.
     setSpecPath(r.id, '.specs/2026/06/18/2026-06-18-001-cache/spec.md')
+    expect(getIntent(r.id)?.specStatus).toBe('raw')
+    markSpecAuthored(r.id)
+    expect(getIntent(r.id)?.specStatus).toBe('pending')
 
     const broadcastIntents = vi.fn()
     const eventBus = { publish: vi.fn() }
@@ -273,9 +280,33 @@ describe('approveSpecHandler', () => {
 
     const got = getIntent(r.id)
     expect(got?.specApproved).toBe(true)
+    expect(got?.specStatus).toBe('approved')
     expect(got?.specApproveUser).toBe('bob')
     expect(broadcastIntents).toHaveBeenCalledWith(proj)
     expect(sent).toEqual([])
+  })
+
+  it('defensive: rejects approving a spec that is still being authored (raw, only the seed)', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Seeded only', shortEnTitle: 'seeded', content: '', priority: 'P1' },
+    ])
+    // write_spec seeded the document; no real content has landed yet → raw.
+    setSpecPath(r.id, '.specs/2026/06/18/2026-06-18-001-seeded/spec.md')
+    expect(getIntent(r.id)?.specStatus).toBe('raw')
+
+    const broadcastIntents = vi.fn()
+    const ctx = { broadcastIntents } as unknown as KernelContext
+    const { conn, sent } = fakeConn()
+
+    approveSpecHandler(ctx, conn, { type: 'approve_spec', workspaceId, intentId: r.id })
+
+    const got = getIntent(r.id)
+    expect(got?.specApproved).toBe(false)
+    expect(got?.specStatus).toBe('raw')
+    expect(broadcastIntents).not.toHaveBeenCalled()
+    // Same error the UI would see for "no written spec" — from the human's side
+    // a seeded-but-unauthored document is exactly that.
+    expect(sent).toEqual([{ type: 'error', error: { code: 'intent.specNotWritten' } }])
   })
 
   it('rejects approving an intent whose spec was never written (no specPath)', () => {

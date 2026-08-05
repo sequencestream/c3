@@ -138,17 +138,20 @@ export type ClientWriteSpec = { type: 'write_spec'; workspaceId: string; intentI
 
 /**
  * Approve an intent's authored spec — the human approval checkpoint that gates
- * entry into development. Sets `spec_approved=true` and records the approving
- * user (the current login subject) in `spec_approve_user`. Single-person
- * confirmation; no multi-sign. Revocable via `revoke_spec_approval`.
+ * entry into development. Only a `pending` spec may be approved (a `raw` one is
+ * still being authored). Sets `spec_status='approved'` (compat `spec_approved=true`
+ * in the same transaction) and records the approving user (the current login
+ * subject) in `spec_approve_user`. Single-person confirmation; no multi-sign.
+ * Revocable via `revoke_spec_approval`.
  */
 export type ClientApproveSpec = { type: 'approve_spec'; workspaceId: string; intentId: string }
 
 /**
  * Revoke an intent's spec approval — the explicit undo for BOTH human and
- * machine approval (2026-07-31). Clears `spec_approved` and the approver
- * identity, appends a `spec_unapproved` audit entry and re-broadcasts, so the
- * intent returns to "awaiting approval" and development is not started.
+ * machine approval (2026-07-31). Returns the spec to `pending`: clears
+ * `spec_status` / `spec_approved` and the approver identity, appends a
+ * `spec_unapproved` audit entry and re-broadcasts, so the intent returns to
+ * "awaiting approval" and development is not started.
  *
  * It also marks the CURRENT review conclusion as human-vetoed, so the very next
  * queue tick cannot machine-approve the same conclusion straight back; only a

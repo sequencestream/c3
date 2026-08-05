@@ -208,11 +208,14 @@ function startDev(): void {
 }
 
 // ── 主操作按钮四态机(只对 todo 意图渲染) ──────────────────────────────────
+// 投影只看 specStatus:raw(无 spec,或只有服务端播种的占位)一律停在「编写 Spec」——
+// 此时点它继续/恢复撰写会话,而不是把一份还没写出来的文档推给人审批;pending 才是「批准 Spec」;
+// approved 才是「开始工作」。不再用 specPath + specApproved 组合推断。
 const mainAction = computed<MainAction>(() => {
   const r = props.intent
   if (!r || !props.sddEnabled) return 'startDev'
-  if (!r.specPath) return 'writeSpec'
-  if (!r.specApproved) return 'approveSpec'
+  if (r.specStatus === 'raw') return 'writeSpec'
+  if (r.specStatus === 'pending') return 'approveSpec'
   return 'startDev'
 })
 const mainActionLabel = computed<string>(() => {

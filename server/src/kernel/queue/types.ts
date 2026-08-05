@@ -11,6 +11,7 @@ import type {
   IntentPriority,
   IntentStatus,
   SpecReviewVerdict,
+  SpecStatus,
 } from '@ccc/shared/protocol'
 import { MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
 
@@ -73,7 +74,12 @@ export interface QueueIntentFact {
   priority: IntentPriority
   automate: boolean
   dependsOn: string[]
-  specApproved: boolean
+  /**
+   * The spec document's lifecycle state — the authoritative spec-gate input.
+   * `raw` means "still being authored" (no spec, or only the server's seed): it
+   * is never reviewed and never blocks as "awaiting approval".
+   */
+  specStatus: SpecStatus
   prStatus: IntentPrStatus | null
   lastWorkSessionId: string | null
   createdAt: number

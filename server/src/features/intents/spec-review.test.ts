@@ -25,6 +25,7 @@ const {
   getIntent,
   insertIntents,
   machineApproveSpec,
+  markSpecAuthored,
   recordSpecReview,
   resetStoreForTests,
   revokeSpecApproval,
@@ -44,6 +45,9 @@ function seedIntent(specBody: string): string {
   const file = join(specsRoot, `${intent.id}.md`)
   writeFileSync(file, specBody, 'utf8')
   setSpecPath(intent.id, file)
+  // Real content is on disk now — the same write boundary the production settle
+  // check uses to promote a seeded document from `raw` to `pending`.
+  markSpecAuthored(intent.id)
   return intent.id
 }
 

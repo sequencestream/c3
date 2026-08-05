@@ -106,7 +106,7 @@ describe('IntentEngineeringProgress.vue', () => {
       intent: {
         status: 'in_progress',
         specPath: 'spec.md',
-        specApproved: true,
+        specStatus: 'approved',
         lastWorkSessionId: 'work-session',
       },
     })

@@ -63,6 +63,7 @@ import { getRuntime } from '../runs.js'
 import { pathToId, setSessionMode } from '../state.js'
 import {
   getIntent,
+  getIntentBySpecSessionId,
   getIntentSessionBySessionId,
   insertIntentSession,
   rebindChatSession,
@@ -91,7 +92,12 @@ import {
 } from '../features/intents/spec-review-link.js'
 import { clearPendingIntentLink, takePendingIntentLink } from '../features/intents/intent-link.js'
 import { clearVendorBlockForSession, noteVendorBlock } from '../features/intents/vendor-block.js'
-import { isIntentDrivenByWorkflow, notifyTurnSettled } from '../features/intents/workflow.js'
+import {
+  isIntentDrivenByWorkflow,
+  markQueueDirty,
+  notifyTurnSettled,
+} from '../features/intents/workflow.js'
+import { settleSpecContentWatch } from '../features/intents/spec-content-watch.js'
 import { runManualDevCleanup, type DevCleanupDeps } from '../features/intents/dev-cleanup.js'
 import { handlePrUpdateEvent } from '../features/intents/pr-update-consumer.js'
 import {
@@ -473,14 +479,28 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     broadcastAutomations(workspacePath)
   })
 
-  // ── run:settled (sessionKind=spec) — spec-link safety-net sweep ───────────────
-  // If a spec run settles without ever binding (an error-before-bind edge),
-  // clear its pending spec-link entry so the in-memory map never leaks. The
-  // happy path already consumed the entry via takePendingSpecLink on bind, so
-  // this is an idempotent no-op there.
-  eventBus.subscribe('run:settled', ({ sessionId, sessionKind }) => {
+  // ── run:settled (sessionKind=spec) — spec-link sweep + content settle ────────
+  // Two jobs, in this order:
+  //  1. If a spec run settles without ever binding (an error-before-bind edge),
+  //     clear its pending spec-link entry so the in-memory map never leaks. The
+  //     happy path already consumed the entry via takePendingSpecLink on bind, so
+  //     the clear is an idempotent no-op there — and its return value is what
+  //     identifies the intent when the run never bound at all.
+  //  2. Settle the spec CONTENT watch: compare the document against the
+  //     fingerprint captured before this run and, only if it actually changed,
+  //     move the ledger `raw → pending` (or `approved → pending` for a rewrite).
+  //     The persisted status is the reviewer's entry condition, so the write
+  //     lands first and the broadcast + queue wake follow it — a review can never
+  //     start against a status that is still `raw`.
+  eventBus.subscribe('run:settled', ({ sessionId, workspacePath, sessionKind }) => {
     if (sessionKind !== 'spec') return
-    clearPendingSpecLink(sessionId)
+    const unboundIntentId = clearPendingSpecLink(sessionId)
+    const intentId = unboundIntentId ?? getIntentBySpecSessionId(sessionId)?.id
+    if (!intentId) return
+    const outcome = settleSpecContentWatch(intentId)
+    if (outcome !== 'promoted' && outcome !== 'reopened') return
+    broadcastIntents(workspacePath)
+    void markQueueDirty(workspacePath)
   })
 
   // ── run:settled (sessionKind=spec_review) — review-link safety-net sweep ─────

@@ -211,7 +211,8 @@ export function workflowIconState(
   const eligible =
     intent.automate &&
     (intent.status === 'todo' || intent.status === 'in_progress') &&
-    (!opts.sddEnabled || intent.specApproved) &&
+    // SDD 下的准入条件是 spec 状态本身(approved),不看兼容布尔,与服务端闸门同源。
+    (!opts.sddEnabled || intent.specStatus === 'approved') &&
     !hasDependencyBlockingSpecSession(intent, opts.intents, opts.gitBranchMode, opts.mainBranch)
   return eligible ? 'eligible' : 'idle'
 }

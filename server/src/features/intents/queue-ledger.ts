@@ -43,7 +43,7 @@ export function toFact(r: Intent, workspacePath: string, sddEnabled: boolean): Q
     priority: r.priority,
     automate: r.automate,
     dependsOn: r.dependsOn,
-    specApproved: r.specApproved,
+    specStatus: r.specStatus,
     prStatus: r.prStatus,
     lastWorkSessionId: r.lastWorkSessionId,
     createdAt: r.createdAt,

@@ -38,7 +38,8 @@ Dependencies;可能引用一个开发 Session(一个普通会话,归 session-reg
 reason / 重试 / park,或任何闸门。
 
 优先级(高 → 低,只投影一条):vendor 凭据/额度阻塞 → 该意图关联的 `todo` wait-user 事件
-(`AskUserQuestion` 或普通权限门控) → SDD 开启且 spec 已写未批准。
+(`AskUserQuestion` 或普通权限门控) → SDD 开启且 spec `specStatus === 'pending'`(已撰写未批准;
+仅播种占位的 `raw` 不算,不产生该提示)。
 
 | 属性        | 类型            | 说明                                                                                       |
 | ----------- | --------------- | ------------------------------------------------------------------------------------------ |
@@ -145,8 +146,8 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 当 `write_spec` 或 `reset_spec_session` 的 pending 运行时绑定到真实厂商会话 id 后,
 同一个会话会以 `session_kind='spec'`、`owner_kind='intent'`、`owner_id=<intent.id>`
 投影到 `session_metadata` 中。替换当前 spec 会话会清除旧的投影 owner,使一个意图
-只暴露当前的 spec 条目作为其跳回目标。意图台账仍然是当前 spec 会话与审批状态的
-唯一真实来源(SoT);该投影是可重建的 Sessions 页面缓存。
+只暴露当前的 spec 条目作为其跳回目标。意图台账仍然是当前 spec 会话、`specStatus`(raw/pending/approved)
+与批准状态的唯一真实来源(SoT);该投影是可重建的 Sessions 页面缓存。
 
 ## Automation Status
 

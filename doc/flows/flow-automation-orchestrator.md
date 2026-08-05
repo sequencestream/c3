@@ -63,7 +63,8 @@ flowchart TD
 3. **挑选。** 符合资格的条件是:`automate` 为真,且 `status ∈ {todo, in_progress}`,且所有已知的
    `dependsOn` 都是 `done`;在 worktree 模式下,若某个 `done` 依赖的 PR/MR 尚未确认为
    `merged`,则依然会阻塞,因为其代码是否已进入主干尚不确定。当工作区启用了 SDD
-   (`sddEnabled`)时,该意图还必须通过规格审批检查点(`spec_approved=true`)。SDD 关闭时保持
+   (`sddEnabled`)时,该意图还必须通过规格审批检查点(`spec_status='approved'`——`specStatus`
+   是唯一事实源,`raw`/`pending` 一律视为未通过)。SDD 关闭时保持
    历史行为,不要求有规格。若唯一使某个意图不符合资格的原因是某个依赖的 PR/MR 状态陈旧且未
    确认,服务器会启动一次一次性的后台 PR/MR 状态同步,完成后重新对账;它不会轮询,也不会绕过
    该闸门。**SDD 未批准不再被静默跳过**,而是产出显式的 `blocked_spec_not_approved` 阻塞原因,

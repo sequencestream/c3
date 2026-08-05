@@ -81,6 +81,13 @@ export interface QueueIntentView {
   parkReason: string | null
   parkDetail: string | null
   forceSkipped: boolean
+  /**
+   * Place in the line while the concurrency gate holds this intent back; `null`
+   * otherwise. Unlike the fields above it NEVER falls back to the persisted
+   * decision log: a stale position would keep claiming a place the queue has
+   * already re-sorted.
+   */
+  queuePosition: number | null
 }
 
 export interface QueueDetailView {
@@ -133,6 +140,7 @@ export function buildQueueDetail(
         parkReason: m.parkReason,
         parkDetail: m.parkDetail,
         forceSkipped: skipped.has(r.id),
+        queuePosition: d?.queuePosition ?? null,
       }
     })
 

@@ -30,6 +30,7 @@ import type {
   CodexPolicy,
   DepType,
   Discussion,
+  GitActionFailureGuidance,
   ModeToken,
   VendorModeCatalog,
   Intent,
@@ -749,6 +750,10 @@ export function createState(deps: StateDeps) {
   const toast = ref<string | null>(null)
   // Intent action failures need an explicit acknowledgement, unlike transient toast feedback.
   const intentActionError = ref<string | null>(null)
+  // The targeted Git/forge repair guidance for the SAME failure, when the server
+  // classified one. Set and cleared together with the message above so the dialog
+  // can never show one failure's text next to another failure's retry button.
+  const intentActionErrorGuidance = ref<GitActionFailureGuidance | null>(null)
   const intentActionErrorSeq = ref(0)
   const createIntentPending = ref(false)
   const intentPrSync = ref<
@@ -760,11 +765,16 @@ export function createState(deps: StateDeps) {
     if (toastTimer) clearTimeout(toastTimer)
     toastTimer = setTimeout(() => (toast.value = null), 4000)
   }
-  function showIntentActionError(text: string): void {
+  function showIntentActionError(
+    text: string,
+    guidance: GitActionFailureGuidance | null = null,
+  ): void {
     intentActionError.value = text
+    intentActionErrorGuidance.value = guidance
   }
   function closeIntentActionError(): void {
     intentActionError.value = null
+    intentActionErrorGuidance.value = null
   }
 
   // ---- Dev-launch startup overlay (App-global, like the toast) ----
@@ -995,6 +1005,7 @@ export function createState(deps: StateDeps) {
     deepLinkTimers,
     toast,
     intentActionError,
+    intentActionErrorGuidance,
     intentActionErrorSeq,
     createIntentPending,
     intentPrSync,

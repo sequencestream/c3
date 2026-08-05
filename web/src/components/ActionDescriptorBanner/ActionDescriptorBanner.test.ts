@@ -3,14 +3,29 @@ import { mount } from '@vue/test-utils'
 import type { ActionDescriptor } from '@ccc/shared/protocol'
 import ActionDescriptorBanner from './ActionDescriptorBanner.vue'
 import { ACTION_MESSAGE_KEYS, ACTION_BUTTON_KEYS } from '@/lib/action-descriptor'
+import { i18n } from '@/i18n'
 
 const AUTH: ActionDescriptor = {
   labelCode: 'vendor_auth_invalid',
   target: { type: 'system-settings-agent', vendor: 'claude', agentId: 'agent-1' },
 }
 
-function mountBanner(descriptor: ActionDescriptor | null) {
-  return mount(ActionDescriptorBanner, { props: { descriptor } })
+const EXHAUSTED: ActionDescriptor = {
+  labelCode: 'spec_rework_exhausted',
+  target: { type: 'intent-spec', intentId: 'i1' },
+}
+
+const DEP: ActionDescriptor = {
+  labelCode: 'dependency_blocked',
+  target: { type: 'intent-detail', intentId: 'i2' },
+}
+
+function mountBanner(
+  descriptor: ActionDescriptor | null,
+  reviewReason?: string | null,
+  targetIntent?: { title: string; status: import('@ccc/shared/protocol').IntentStatus } | null,
+) {
+  return mount(ActionDescriptorBanner, { props: { descriptor, reviewReason, targetIntent } })
 }
 
 describe('ActionDescriptorBanner.vue', () => {
@@ -91,10 +106,101 @@ describe('ActionDescriptorBanner.vue', () => {
     expect(w.find('[data-testid="action-descriptor-action"]').text()).toBe('Open work session')
   })
 
+  it('shows the review blocker and a single manual take-over action once rework is exhausted', () => {
+    const w = mountBanner(EXHAUSTED, '缺少错误路径的验收项')
+    expect(w.find('[data-testid="action-descriptor-message"]').text()).not.toBe('')
+    expect(w.find('[data-testid="action-descriptor-blocker"]').text()).toBe('缺少错误路径的验收项')
+    // Exactly one action, and it is the manual take-over — no retry / try-again
+    // path back into the loop that already failed three times.
+    const actions = w.findAll('[data-testid="action-descriptor-action"]')
+    expect(actions).toHaveLength(1)
+    const label = actions[0].text()
+    expect(label).not.toMatch(/retry|try again|重试|再试/i)
+    expect(label).not.toBe(
+      mountBanner({ ...EXHAUSTED, labelCode: 'spec_awaiting_approval' })
+        .find('[data-testid="action-descriptor-action"]')
+        .text(),
+    )
+  })
+
+  it('falls back to plain copy when the review left no rationale, inventing no criteria', () => {
+    for (const reason of [null, '   ']) {
+      const blocker = mountBanner(EXHAUSTED, reason).find(
+        '[data-testid="action-descriptor-blocker"]',
+      )
+      expect(blocker.exists()).toBe(true)
+      expect(blocker.text().length).toBeGreaterThan(0)
+    }
+  })
+
+  it('renders the blocker as text: newlines survive, markup does not become HTML', () => {
+    const w = mountBanner(EXHAUSTED, 'line one\nline two <img src=x onerror="alert(1)">')
+    const blocker = w.find('[data-testid="action-descriptor-blocker"]')
+    expect(blocker.element.querySelector('img')).toBeNull()
+    expect(blocker.element.innerHTML).not.toContain('<img')
+    expect(blocker.element.textContent).toContain('line one\nline two')
+    // Scoped styles are not applied in the test DOM; the class is what carries
+    // `white-space: pre-wrap`, so a blocker without it would collapse the newline.
+    expect(blocker.classes()).toContain('ad-blocker')
+  })
+
+  it('shows no blocker line for blocks that carry no review reason', () => {
+    expect(
+      mountBanner(AUTH, 'ignored').find('[data-testid="action-descriptor-blocker"]').exists(),
+    ).toBe(false)
+  })
+
   it('maps every label code and target type to copy', () => {
     // The maps are `satisfies Record<…>`-exhaustive at compile time; this pins
     // that they are also non-empty at runtime, so no code renders a blank prompt.
     for (const key of Object.values(ACTION_MESSAGE_KEYS)) expect(key).toBeTruthy()
     for (const key of Object.values(ACTION_BUTTON_KEYS)) expect(key).toBeTruthy()
+  })
+})
+
+describe('ActionDescriptorBanner.vue — dependency blocked', () => {
+  it('names the predecessor title and status in the prompt', () => {
+    const w = mountBanner(DEP, null, { title: '打底能力', status: 'todo' })
+    const message = w.find('[data-testid="action-descriptor-message"]').text()
+    expect(message).toContain('打底能力')
+    // The status is spelled out as its readable label, never left to colour alone.
+    expect(message).toContain('To do')
+  })
+
+  it('localizes the predecessor status in a non-English locale', () => {
+    const before = i18n.global.locale.value
+    i18n.global.locale.value = 'zh'
+    try {
+      const w = mountBanner(DEP, null, { title: '打底能力', status: 'todo' })
+      const message = w.find('[data-testid="action-descriptor-message"]').text()
+      expect(message).toContain('打底能力')
+      expect(message).toContain('待办')
+      expect(message).not.toContain('To do')
+    } finally {
+      i18n.global.locale.value = before
+    }
+  })
+
+  it('offers the view-predecessor action as a real keyboard-activatable button', () => {
+    const w = mountBanner(DEP, null, { title: '打底能力', status: 'todo' })
+    const action = w.find('[data-testid="action-descriptor-action"]')
+    expect(action.element.tagName).toBe('BUTTON')
+    expect(action.attributes('type')).toBe('button')
+    expect(action.attributes('tabindex')).toBeUndefined()
+    expect(action.attributes('disabled')).toBeUndefined()
+  })
+
+  it('emits the intent-detail target on click and navigates nowhere itself', async () => {
+    const w = mountBanner(DEP, null, { title: '打底能力', status: 'todo' })
+    await w.find('[data-testid="action-descriptor-action"]').trigger('click')
+    expect(w.emitted('navigate')).toEqual([[DEP.target]])
+  })
+
+  it('falls back to a copy that claims no title when the predecessor is out of view', () => {
+    const w = mountBanner(DEP, null, null)
+    const message = w.find('[data-testid="action-descriptor-message"]').text()
+    expect(message.length).toBeGreaterThan(0)
+    // Never a bare id, never a fabricated title.
+    expect(message).not.toContain('i2')
   })
 })

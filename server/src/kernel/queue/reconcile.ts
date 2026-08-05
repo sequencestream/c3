@@ -83,21 +83,30 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   const noteWake = (at: number | null): void => {
     if (at !== null && at > now) wakeups.push(at)
   }
+  /**
+   * The candidates that cleared every gate this pass, in selection order. Empty
+   * until the gates have run; `finish` numbers the gate-blocked ones from it, so
+   * every exit reports positions built the one way.
+   */
+  let eligibleOrder: readonly QueueIntentFact[] = []
   const finish = (
     state: QueueProjectedState,
     actions: QueueAction[],
     decisions: QueueDecision[],
     current: { intentId: string | null; sessionId: string | null; awaitingPermission: boolean },
-  ): QueueReconcileOutput => ({
-    tickId,
-    state,
-    actions,
-    decisions,
-    nextWakeupAt: wakeups.length > 0 ? Math.min(...wakeups) : now + QUEUE_TICK_MS,
-    currentIntentId: current.intentId,
-    currentSessionId: current.sessionId,
-    awaitingPermission: current.awaitingPermission,
-  })
+  ): QueueReconcileOutput => {
+    stampQueuePositions(decisions, eligibleOrder)
+    return {
+      tickId,
+      state,
+      actions,
+      decisions,
+      nextWakeupAt: wakeups.length > 0 ? Math.min(...wakeups) : now + QUEUE_TICK_MS,
+      currentIntentId: current.intentId,
+      currentSessionId: current.sessionId,
+      awaitingPermission: current.awaitingPermission,
+    }
+  }
   const idle = { intentId: null, sessionId: null, awaitingPermission: false }
 
   // ── Queue not started: nothing is scheduled, facts are left untouched. ──
@@ -119,6 +128,7 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
           attemptCount: 0,
           backoffCount: 0,
           nextWakeupAt: null,
+          queuePosition: null,
         },
       ],
       idle,
@@ -149,6 +159,7 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
       attemptCount: m.failureCount,
       backoffCount: m.backoffCount,
       nextWakeupAt,
+      queuePosition: null,
     })
   }
 
@@ -224,7 +235,10 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
         wakeAt: null,
       }
     }
-    if (sddEnabled && !intent.specApproved) {
+    // The spec gate reads the STATUS and nothing else: `raw` (still being
+    // authored) and `pending` (authored, unapproved) both fail it, and the
+    // spec phase below says which of the two an intent is actually in.
+    if (sddEnabled && intent.specStatus !== 'approved') {
       return {
         eligible: false,
         reason: 'blocked_spec_not_approved',
@@ -294,6 +308,7 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
       }
     }
   }
+  eligibleOrder = eligible
 
   // ── Spec phase ────────────────────────────────────────────────────────────
   // Everything blocked purely by `blocked_spec_not_approved` is not "stuck": in
@@ -426,6 +441,8 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
         attemptCount: 0,
         backoffCount: 0,
         nextWakeupAt: null,
+        // Not a candidate at all, so it never takes a place in the line.
+        queuePosition: null,
       })
     }
     return finish(attachable ? 'developing' : 'awaiting_gate', actions, decisions, {
@@ -538,17 +555,48 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
 }
 
 /**
+ * Number the candidates this pass left waiting on the concurrency gate, so the
+ * queue page can answer "how far away am I" instead of only "something else is
+ * running".
+ *
+ * The order is the SELECTION order itself — `eligible` is already sorted by
+ * priority then earliest creation — and only intents that cleared every gate yet
+ * got no work action this pass are numbered, so position 1 is always the one the
+ * next free slot goes to. Anything held by another gate, parked, force-skipped,
+ * running, or merely waiting for the serial spec slot is absent from `eligible`
+ * and keeps `null`; the numbers are therefore contiguous 1..N over exactly the
+ * intents whose only remaining obstacle is the gate.
+ */
+function stampQueuePositions(
+  decisions: QueueDecision[],
+  eligible: readonly QueueIntentFact[],
+): void {
+  const order = new Map(eligible.map((r, i) => [r.id, i]))
+  decisions
+    .filter((d) => d.reason === 'blocked_concurrency_gate' && order.has(d.intentId))
+    .sort((a, b) => order.get(a.intentId)! - order.get(b.intentId)!)
+    .forEach((d, i) => {
+      d.queuePosition = i + 1
+    })
+}
+
+/**
  * Decide the spec phase for ONE intent that has not yet passed the spec gate.
  * Pure, and ordered so that every "something is already happening" case is
  * answered before anything is started — a live session, an in-flight kernel run
  * and the self-excitation cooldown all mean "wait", never "launch again".
  *
  * The progression, once nothing is in flight:
- *   no spec               → author it
+ *   status `raw`          → author it (no spec, or only the server's seed)
  *   spec unreadable       → wait (an unreadable spec is not an empty one)
  *   no valid conclusion   → review the current content
  *   changes_requested     → rework, until the cap, then hand it to a human
  *   pass                  → await human approval, or machine-approve under opt-in
+ *
+ * The status check comes FIRST, before the file's readability, its fingerprint or
+ * any stored conclusion is looked at: `raw` means the document is still being
+ * written, so a leftover fingerprint or verdict from an earlier life must not
+ * start a review of it or report it as awaiting approval.
  *
  * "Valid conclusion" means the stored verdict was produced against the spec's
  * CURRENT fingerprint. That single comparison is what makes an edited spec
@@ -588,6 +636,34 @@ function evaluateSpecPhase(
     return block('blocked_cooldown', '刚发起过一次规格阶段 run,冷却中', ctx.meta.cooldownUntil)
   }
 
+  // `raw` — no spec at all, or only the seed the server wrote. Either way the
+  // document is still being authored: it is NEVER reviewed (there is nothing to
+  // judge) and never reported as awaiting approval. Nothing below this line is
+  // reached for a `raw` intent, so no fingerprint, no leftover conclusion and no
+  // machine-approval opt-in can pull a placeholder forward. The path back out is
+  // the authoring run itself: whether it produced content is decided at the write
+  // boundary, and only a persisted `pending` lets the reviewer start.
+  if (intent.specStatus === 'raw') {
+    return {
+      action: 'launch_spec',
+      reason: 'spec_authoring',
+      detail: intent.specPath === null ? '尚无 spec,发起撰写会话' : 'spec 仍在撰写中,继续撰写会话',
+      actions: [
+        {
+          kind: 'launch_spec',
+          intentId: intent.id,
+          origin: QUEUE_RUN_ORIGIN,
+          rework: false,
+          reworkRound: 0,
+        },
+      ],
+      needsSlot: true,
+      wakeAt: null,
+    }
+  }
+
+  // Defensive: a status that says "authored" with no document is inconsistent —
+  // fail closed and author it rather than reviewing a path that is not there.
   if (intent.specPath === null) {
     return {
       action: 'launch_spec',

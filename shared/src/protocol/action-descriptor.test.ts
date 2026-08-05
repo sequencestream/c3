@@ -17,8 +17,10 @@ describe('ActionDescriptor', () => {
       'vendor_auth_invalid',
       'vendor_quota_exhausted',
       'spec_awaiting_approval',
+      'spec_rework_exhausted',
       'permission_pending',
       'ask_user_question_pending',
+      'dependency_blocked',
       'silent_timeout',
     ])
     // The runtime list and the type must stay the same set in both directions.
@@ -46,6 +48,17 @@ describe('ActionDescriptor', () => {
     expect(descriptor.target.type).toBe('intent-spec')
     if (descriptor.target.type === 'intent-spec') {
       expect(descriptor.target.intentId).toBe('intent-1')
+    }
+  })
+
+  it('accepts a well-formed intent-detail descriptor', () => {
+    const descriptor: ActionDescriptor = {
+      labelCode: 'dependency_blocked',
+      target: { type: 'intent-detail', intentId: 'intent-2' },
+    }
+    expect(descriptor.target.type).toBe('intent-detail')
+    if (descriptor.target.type === 'intent-detail') {
+      expect(descriptor.target.intentId).toBe('intent-2')
     }
   })
 
@@ -103,6 +116,12 @@ describe('ActionDescriptor', () => {
   it('rejects an intent-spec target missing intentId', () => {
     // @ts-expect-error intentId is required — it is what selects the intent to open.
     const target: ActionTarget = { type: 'intent-spec' }
+    expect(target).toBeTruthy()
+  })
+
+  it('rejects an intent-detail target missing intentId', () => {
+    // @ts-expect-error intentId is required — it is what selects the predecessor to open.
+    const target: ActionTarget = { type: 'intent-detail' }
     expect(target).toBeTruthy()
   })
 

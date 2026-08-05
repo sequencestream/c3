@@ -63,7 +63,8 @@ flowchart TD
 3. **挑选。** 符合资格的条件是:`automate` 为真,且 `status ∈ {todo, in_progress}`,且所有已知的
    `dependsOn` 都是 `done`;在 worktree 模式下,若某个 `done` 依赖的 PR/MR 尚未确认为
    `merged`,则依然会阻塞,因为其代码是否已进入主干尚不确定。当工作区启用了 SDD
-   (`sddEnabled`)时,该意图还必须通过规格审批检查点(`spec_approved=true`)。SDD 关闭时保持
+   (`sddEnabled`)时,该意图还必须通过规格审批检查点(`spec_status='approved'`——`specStatus`
+   是唯一事实源,`raw`/`pending` 一律视为未通过)。SDD 关闭时保持
    历史行为,不要求有规格。若唯一使某个意图不符合资格的原因是某个依赖的 PR/MR 状态陈旧且未
    确认,服务器会启动一次一次性的后台 PR/MR 状态同步,完成后重新对账;它不会轮询,也不会绕过
    该闸门。**SDD 未批准不再被静默跳过**,而是产出显式的 `blocked_spec_not_approved` 阻塞原因,
@@ -121,7 +122,8 @@ flowchart TD
    只按 `RM-A6` 记一次失败并退避,原因码指向工具 agent 配置。
 6. **每一轮的取舍都被记录(`RM-A18`)。** `queue_decision_log` 按 tick/intent 记录选择的动作、
    被哪个闸门挡住、拒绝理由、尝试/退避计数与下次唤醒时间;队列页面逐条展示,并提供 pause /
-   force-skip / unpark / 覆盖结论等与内核动作一一对应的人工动作(`RM-A19`)。
+   force-skip / unpark / 覆盖结论等与内核动作一一对应的人工动作(`RM-A19`)。同一轮还派生出
+   被并发闸门挡住者的**队列位次**(`RM-A19`),只展示不落库。
 7. **耗尽。** 只有当快照中**不存在任何待处理的自动化候选及阻塞链**时,队列才呈现 `done`;
    仍有退避 / park / 被闸门阻塞的候选时呈现 `running`。`stop_workflow` 会中止当前运行并无错误地
    返回 `idle`(`RM-A7`)。

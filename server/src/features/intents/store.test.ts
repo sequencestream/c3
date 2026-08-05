@@ -33,6 +33,11 @@ import {
   setLastWorkSession,
   setLatestCommitHash,
   setPrInfo,
+  approveSpecIfPending,
+  machineApproveSpec,
+  markSpecAuthored,
+  recordSpecReview,
+  revokeSpecApproval,
   setSpecApproved,
   setSpecPath,
   setSpecSessionId,
@@ -206,7 +211,7 @@ describe('intents CRUD', () => {
     const cols = raw.all<{ name: string }>('PRAGMA table_info(intents)')
     expect(cols.some((c) => c.name === 'last_work_session_id')).toBe(true)
     expect(cols.some((c) => c.name === 'last_dev_session_id')).toBe(false)
-    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(17)
+    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(18)
 
     resetStoreForTests()
     expect(() => listIntents(proj)).not.toThrow()
@@ -404,7 +409,7 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(17)
+    expect(version?.user_version).toBe(18)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()
@@ -474,7 +479,7 @@ describe('intents CRUD', () => {
     expect(depsCols.some((c) => c.name === 'dep_type')).toBe(true)
     expect(depsCols.some((c) => c.name === 'created_at')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(17)
+    expect(version?.user_version).toBe(18)
 
     // Idempotent: re-run must not throw.
     resetStoreForTests()
@@ -670,7 +675,7 @@ describe('intents spec + session fields (v12→v13)', () => {
     expect(cols.some((c) => c.name === 'spec_session_id')).toBe(true)
     expect(cols.some((c) => c.name === 'intent_session_id')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(17)
+    expect(version?.user_version).toBe(18)
 
     // Idempotent: re-running the schema-ensure path must not throw or lose data.
     resetStoreForTests()
@@ -1663,5 +1668,182 @@ describe('intent_sessions CRUD (work session execution records)', () => {
     insertIntentSession('intent-g3', 'sess-g3', 'claude')
     const got = getIntentSessionBySessionId('sess-g3', 'wrong-intent')
     expect(got).toBeNull()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// spec_status 三态机 — raw / pending / approved
+// ---------------------------------------------------------------------------
+
+describe('spec_status 三态机', () => {
+  it('新意图无文档为 raw', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'No spec', shortEnTitle: 'nospec', content: '', priority: 'P1' },
+    ])
+    const got = getIntent(r.id)!
+    expect(got.specStatus).toBe('raw')
+    expect(got.specPath).toBeNull()
+    expect(got.specApproved).toBe(false)
+  })
+
+  it('write_spec 播种并回填路径后仍为 raw(seed 不是已撰写内容)', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Seeded', shortEnTitle: 'seeded', content: '', priority: 'P1' },
+    ])
+    setSpecPath(r.id, '/specs/2026/08/05/x/spec.md')
+    const got = getIntent(r.id)!
+    expect(got.specPath).toBe('/specs/2026/08/05/x/spec.md')
+    expect(got.specStatus).toBe('raw')
+    expect(got.specApproved).toBe(false)
+  })
+
+  it('真实内容落盘(raw → pending):promote 且兼容字段保持未批准', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Authored', shortEnTitle: 'authored', content: '', priority: 'P1' },
+    ])
+    setSpecPath(r.id, '/specs/2026/08/05/x/spec.md')
+    const outcome = markSpecAuthored(r.id)
+    expect(outcome).toBe('promoted')
+    const got = getIntent(r.id)!
+    expect(got.specStatus).toBe('pending')
+    expect(got.specApproved).toBe(false)
+    expect(got.specApproveUser).toBeNull()
+    // 幂等:再次调用不把 pending 降回 raw,也不报错。
+    expect(markSpecAuthored(r.id)).toBe('unchanged')
+    expect(getIntent(r.id)!.specStatus).toBe('pending')
+  })
+
+  it('批准(→ approved)后撤销(→ pending),并否决既有审核结论', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Approved', shortEnTitle: 'approved', content: '', priority: 'P1' },
+    ])
+    setSpecPath(r.id, '/specs/2026/08/05/x/spec.md')
+    markSpecAuthored(r.id)
+    expect(approveSpecIfPending(r.id, 'alice')).toBe(true)
+    let got = getIntent(r.id)!
+    expect(got.specStatus).toBe('approved')
+    expect(got.specApproved).toBe(true)
+    expect(got.specApproveUser).toBe('alice')
+
+    expect(revokeSpecApproval(r.id)).toBe(true)
+    got = getIntent(r.id)!
+    expect(got.specStatus).toBe('pending')
+    expect(got.specApproved).toBe(false)
+    expect(got.specApproveUser).toBeNull()
+    expect(got.specReviewMachineApprovalBlocked).toBe(true)
+  })
+
+  it('批准后编写会话改写(approved → pending):reopened,批准人与标志一并清除', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Rewritten', shortEnTitle: 'rewritten', content: '', priority: 'P1' },
+    ])
+    setSpecPath(r.id, '/specs/2026/08/05/x/spec.md')
+    markSpecAuthored(r.id)
+    approveSpecIfPending(r.id, 'alice')
+    expect(getIntent(r.id)!.specStatus).toBe('approved')
+
+    const outcome = markSpecAuthored(r.id)
+    expect(outcome).toBe('reopened')
+    const got = getIntent(r.id)!
+    expect(got.specStatus).toBe('pending')
+    expect(got.specApproved).toBe(false)
+    expect(got.specApproveUser).toBeNull()
+  })
+
+  it('raw 即使已有 spec_path 也不可批准(人工 guard)', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Seeded only', shortEnTitle: 'seeded', content: '', priority: 'P1' },
+    ])
+    setSpecPath(r.id, '/specs/2026/08/05/x/spec.md')
+    expect(approveSpecIfPending(r.id, 'alice')).toBe(false)
+    const got = getIntent(r.id)!
+    expect(got.specStatus).toBe('raw')
+    expect(got.specApproved).toBe(false)
+  })
+
+  /** Set a `pass` conclusion bound to `fp`, as the queue would before a machine approval. */
+  function recordPass(id: string, fp: string): void {
+    recordSpecReview({
+      intentId: id,
+      sessionId: 'r1',
+      verdict: 'pass',
+      reason: 'ok',
+      fingerprint: fp,
+      liveFingerprint: fp,
+    })
+  }
+
+  it('raw 不可机器批准,即使结论与指纹齐备', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Raw machine', shortEnTitle: 'raw-machine', content: '', priority: 'P1' },
+    ])
+    setSpecPath(r.id, '/specs/2026/08/05/x/spec.md')
+    recordPass(r.id, 'fp')
+    expect(machineApproveSpec(r.id, 'fp', 'c3:machine-spec-approver', () => 'fp')).toBe(false)
+    expect(getIntent(r.id)!.specApproved).toBe(false)
+    expect(getIntent(r.id)!.specStatus).toBe('raw')
+  })
+
+  it('pending 可机器批准,写 approved + 批准身份', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Pending machine', shortEnTitle: 'pending-machine', content: '', priority: 'P1' },
+    ])
+    setSpecPath(r.id, '/specs/2026/08/05/x/spec.md')
+    markSpecAuthored(r.id)
+    recordPass(r.id, 'fp')
+    expect(machineApproveSpec(r.id, 'fp', 'c3:machine-spec-approver', () => 'fp')).toBe(true)
+    const got = getIntent(r.id)!
+    expect(got.specStatus).toBe('approved')
+    expect(got.specApproved).toBe(true)
+    expect(got.specApproveUser).toBe('c3:machine-spec-approver')
+  })
+
+  it('意图标题/正文更新撤销已批准的 spec(approved → pending),raw/pending 不受影响', () => {
+    const [approved] = insertIntents(proj, [
+      { title: 'Old title', shortEnTitle: 'old', content: 'old body', priority: 'P1' },
+    ])
+    setSpecPath(approved.id, '/s/a.md')
+    markSpecAuthored(approved.id)
+    approveSpecIfPending(approved.id, 'bob')
+    expect(getIntent(approved.id)!.specStatus).toBe('approved')
+
+    upsertIntents(proj, [
+      {
+        id: approved.id,
+        title: 'New title',
+        shortEnTitle: 'new',
+        content: 'new body',
+        priority: 'P1',
+      },
+    ])
+    const got = getIntent(approved.id)!
+    expect(got.specStatus).toBe('pending')
+    expect(got.specApproved).toBe(false)
+    expect(got.specApproveUser).toBeNull()
+
+    // 未批准的 raw spec:改写意图不改变状态(seed 不会因此像已撰写)。
+    const [raw] = insertIntents(proj, [
+      { title: 'Raw', shortEnTitle: 'raw', content: 'b', priority: 'P1' },
+    ])
+    setSpecPath(raw.id, '/s/r.md')
+    upsertIntents(proj, [
+      { id: raw.id, title: 'Raw 2', shortEnTitle: 'raw2', content: 'b2', priority: 'P1' },
+    ])
+    expect(getIntent(raw.id)!.specStatus).toBe('raw')
+  })
+
+  it('setSpecApproved(false) 行内编辑回 pending,清批准人(update_spec_content 路径)', () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Edited', shortEnTitle: 'edited', content: '', priority: 'P1' },
+    ])
+    setSpecPath(r.id, '/s/e.md')
+    markSpecAuthored(r.id)
+    approveSpecIfPending(r.id, 'carol')
+    // 人工行内编辑保存 → 写成功后才落这里。
+    setSpecApproved(r.id, false, null)
+    const got = getIntent(r.id)!
+    expect(got.specStatus).toBe('pending')
+    expect(got.specApproved).toBe(false)
+    expect(got.specApproveUser).toBeNull()
   })
 })

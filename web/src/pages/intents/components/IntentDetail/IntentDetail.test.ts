@@ -32,6 +32,8 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     prUrl: null,
     prStatus: null,
     specPath: null,
+    // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
+    specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
     specApproved: false,
     specApproveUser: null,
     specSessionId: null,
@@ -250,7 +252,7 @@ describe('IntentDetail.vue — engineering progress', () => {
         ...item,
         status: 'in_progress',
         specPath: 'spec.md',
-        specApproved: true,
+        specStatus: 'approved',
         lastWorkSessionId: 'work-session',
       },
     })
@@ -401,6 +403,19 @@ describe('IntentDetail.vue — SDD four-state main action', () => {
     expect(w.emitted('approve-spec')).toBeUndefined()
   })
 
+  it('SDD on + raw spec (only a seeded path) → Write Spec, NOT Approve Spec', async () => {
+    // write_spec 刚回填了 spec_path 但文档还只是服务端播种的占位(raw):主按钮必须
+    // 停在「编写 Spec」而非把占位推给人审批——这正是三态化要修的误判。
+    const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specStatus: 'raw' })
+    const w = mountDetail(item, { sddEnabled: true })
+    const btn = w.find('.req-btn.primary')
+    expect(btn.attributes('data-action')).toBe('writeSpec')
+    expect(btn.attributes('data-action')).not.toBe('approveSpec')
+    await btn.trigger('click')
+    expect(w.emitted('write-spec')).toEqual([['i1']])
+    expect(w.emitted('approve-spec')).toBeUndefined()
+  })
+
   it('SDD on + spec approved → Start Work, emits start-dev', async () => {
     const item = intent({ id: 'i1', specPath: '.specs/x/spec.md', specApproved: true })
     const w = mountDetail(item, { sddEnabled: true })
@@ -463,8 +478,15 @@ describe('IntentDetail.vue — spec action guidance (auto-switch + approve gate 
     await w.find('.req-btn.primary').trigger('click')
     expect(w.emitted('write-spec')).toEqual([['guide-gate']])
 
-    // specPath 回填 → mainAction 进入 approveSpec 态;头部入口仍显示,但只负责打开 spec tab。
-    await w.setProps({ intent: { ...item, specPath: '.specs/x/spec.md', specApproved: false } })
+    // specPath 回填且真实内容落盘(pending)→ mainAction 进入 approveSpec 态;头部入口仍显示,但只负责打开 spec tab。
+    await w.setProps({
+      intent: {
+        ...item,
+        specPath: '.specs/x/spec.md',
+        specStatus: 'pending',
+        specApproved: false,
+      },
+    })
     expect(w.find('.intent-detail-actions [data-action="approveSpec"]').exists()).toBe(true)
     await w.find('.intent-detail-actions [data-action="approveSpec"]').trigger('click')
     expect(w.find('[data-testid="tab-spec"]').exists()).toBe(true)
@@ -1784,6 +1806,36 @@ describe('IntentDetail.vue — derived next-step banner', () => {
     const w2 = mountDetail(intent({ id: 'r1', actionDescriptor: { ...ask } }))
     await w2.find('[data-testid="action-descriptor-action"]').trigger('click')
     expect(w2.emitted('action-target')).toEqual([[ask.target]])
+  })
+
+  it('shows the review blocker and one manual take-over jump when rework is exhausted', async () => {
+    const exhausted = {
+      labelCode: 'spec_rework_exhausted' as const,
+      target: { type: 'intent-spec' as const, intentId: 'r1' },
+    }
+    const w = mountDetail(
+      intent({
+        id: 'r1',
+        actionDescriptor: { ...exhausted },
+        specReviewVerdict: 'changes_requested',
+        specReviewReason: '验收项未覆盖失败路径',
+        specReviewReworkRounds: 4,
+      }),
+    )
+    const banner = w.find('.intent-detail-head [data-testid="action-descriptor-banner"]')
+    expect(banner.find('[data-testid="action-descriptor-blocker"]').text()).toBe(
+      '验收项未覆盖失败路径',
+    )
+    const actions = banner.findAll('[data-testid="action-descriptor-action"]')
+    expect(actions).toHaveLength(1)
+    expect(actions[0].text()).not.toMatch(/retry|try again|重试|再试/i)
+    await actions[0].trigger('click')
+    expect(w.emitted('action-target')).toEqual([[exhausted.target]])
+    // The jump navigates only — no rework / review / approval request goes out.
+    expect(w.emitted('approve-spec')).toBeUndefined()
+    expect(w.emitted('write-spec')).toBeUndefined()
+    expect(w.emitted('open-spec-session')).toBeUndefined()
+    expect(w.emitted('reset-spec-session')).toBeUndefined()
   })
 
   it('does not block the rest of the detail: tabs and title actions stay usable', () => {

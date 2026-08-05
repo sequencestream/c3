@@ -51,7 +51,9 @@ const showSpecActions = computed<boolean>(
 
 // 撤销入口:已批准即可见。人工批准与机器批准共用同一入口——撤销的是「批准」这件事,
 // 而不是某一种批准方式。撤销后意图回到「等待批准」,已在运行的开发不受影响。
-const showRevoke = computed<boolean>(() => !!props.intent.specPath && props.intent.specApproved)
+const showRevoke = computed<boolean>(
+  () => !!props.intent.specPath && props.intent.specStatus === 'approved',
+)
 
 // 批准是机器做出的吗?机器身份是保留常量,永不与登录 subject 冲突,因此可据此如实区分。
 const approvedByMachine = computed<boolean>(
@@ -165,7 +167,7 @@ watch(
     <!-- 审核事实带:结论 + 理由 + 返工轮次 + 批准身份。只在有 spec 时展示;编辑态隐藏,
          与操作区一致,避免审阅者对着旧结论改稿。 -->
     <div
-      v-if="intent.specPath && !editingSpec && (reviewVerdict || intent.specApproved)"
+      v-if="intent.specPath && !editingSpec && (reviewVerdict || intent.specStatus === 'approved')"
       class="intent-detail-spec-review"
       data-testid="intent-detail-spec-review"
     >
@@ -190,7 +192,7 @@ watch(
         }}
       </span>
       <span
-        v-if="intent.specApproved"
+        v-if="intent.specStatus === 'approved'"
         class="intent-detail-spec-review-approver"
         data-testid="intent-detail-spec-approver"
       >

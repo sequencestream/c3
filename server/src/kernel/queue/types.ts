@@ -11,6 +11,7 @@ import type {
   IntentPriority,
   IntentStatus,
   SpecReviewVerdict,
+  SpecStatus,
 } from '@ccc/shared/protocol'
 import { MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
 
@@ -73,7 +74,12 @@ export interface QueueIntentFact {
   priority: IntentPriority
   automate: boolean
   dependsOn: string[]
-  specApproved: boolean
+  /**
+   * The spec document's lifecycle state — the authoritative spec-gate input.
+   * `raw` means "still being authored" (no spec, or only the server's seed): it
+   * is never reviewed and never blocks as "awaiting approval".
+   */
+  specStatus: SpecStatus
   prStatus: IntentPrStatus | null
   lastWorkSessionId: string | null
   createdAt: number
@@ -247,6 +253,13 @@ export interface QueueDecision {
   backoffCount: number
   /** When this intent should be re-evaluated; `null` = next regular tick. */
   nextWakeupAt: number | null
+  /**
+   * 1-based place in the line among the candidates THIS pass left waiting on the
+   * concurrency gate; `null` for every other verdict. Purely derived from this
+   * pass's ordering and never persisted — the next pass recomputes it from the
+   * facts it then sees, so a position may go up as well as down.
+   */
+  queuePosition: number | null
 }
 
 /** A side effect the assembly layer performs after a pass. */

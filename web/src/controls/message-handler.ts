@@ -24,6 +24,7 @@ import { applyLocale, i18n } from '@/i18n'
 import { normalizePersonalized, writeLocalPersonalized } from '@/lib/personalized-settings'
 import { applyTheme } from '@/lib/theme'
 import { translateUiError } from '@/i18n/errors'
+import { normalizeGuidance } from '@/lib/git-failure-guidance'
 import { transcriptToChat } from './transcript'
 import type { AppCtx } from './types'
 import {
@@ -1185,7 +1186,14 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         if (msg.error.code.startsWith('intent.')) {
           intentActionErrorSeq.value += 1
-          ctx.showIntentActionError(translateUiError(msg.error))
+          // A Git/forge failure may ride along with targeted repair guidance. It
+          // is untrusted input, so it is validated here; anything malformed —
+          // unknown reason, unknown retry action, missing intent — becomes null
+          // and the dialog stays the plain translated error with no button.
+          ctx.showIntentActionError(
+            translateUiError(msg.error),
+            normalizeGuidance(msg.error.guidance),
+          )
           // A rejected intent action releases any in-flight startup overlay too.
           // Close it directly: the specific error dialog already explains the failure.
           if (devLaunch.value) ctx.closeDevLaunch()
@@ -1202,6 +1210,15 @@ export function installMessageHandler(ctx: AppCtx): void {
           }
           automationSettingBeforeSave.value = null
           automationEnabledSaving.value = false
+        }
+        // A refused queue control (unpark on a non-parked intent, an override with
+        // no verdict, a missing intent id) has to be visible where it was clicked.
+        // The queue page is its own view and never renders the chat stream, so a
+        // refusal that only landed there would read as "the button did nothing" —
+        // exactly the false success the client must never show.
+        if (msg.error.code.startsWith('queue.')) {
+          ctx.showToast(translateUiError(msg.error))
+          break
         }
         add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
         break

@@ -28,6 +28,7 @@ vi.mock('../runs.js', () => ({ getRuntime: vi.fn(() => undefined) }))
 vi.mock('../state.js', () => ({ setSessionMode: vi.fn() }))
 vi.mock('../features/intents/store.js', () => ({
   getIntent: vi.fn(),
+  getIntentBySpecSessionId: vi.fn(() => null),
   getIntentSessionBySessionId: vi.fn(() => null),
   insertIntentSession: vi.fn(),
   rebindChatSession: vi.fn(),
@@ -64,6 +65,10 @@ vi.mock('../features/intents/intent-link.js', () => ({
 vi.mock('../features/intents/workflow.js', () => ({
   notifyTurnSettled: vi.fn(),
   isIntentDrivenByWorkflow: vi.fn(() => false),
+  markQueueDirty: vi.fn(() => undefined),
+}))
+vi.mock('../features/intents/spec-content-watch.js', () => ({
+  settleSpecContentWatch: vi.fn(() => 'unchanged'),
 }))
 vi.mock('../features/intents/dev-cleanup.js', () => ({
   runManualDevCleanup: vi.fn(async () => ({ kind: 'skipped' })),
@@ -845,5 +850,52 @@ describe('resident domain subscriptions — discussion + automation', () => {
 
     await Promise.resolve()
     expect(updateIntentSession).not.toHaveBeenCalled()
+  })
+
+  // ── Spec content settle (run:settled, sessionKind=spec) ──────────────────────
+
+  it('spec settle: a promoted content change broadcasts intents and wakes the queue', async () => {
+    const watch = await import('../features/intents/spec-content-watch.js')
+    const workflow = await import('../features/intents/workflow.js')
+    vi.mocked(watch.settleSpecContentWatch).mockReturnValueOnce('promoted')
+
+    install()
+    // The run bound, so its intent is resolved from the ledger rather than a
+    // pending link.
+    const store = await import('../features/intents/store.js')
+    vi.mocked(store.getIntentBySpecSessionId).mockReturnValueOnce({ id: 'int-1' } as Intent)
+
+    eb.publish('run:settled', {
+      sessionId: 'spec-1',
+      workspacePath: '/proj',
+      reason: 'complete',
+      sessionKind: 'spec',
+      runKind: 'interactive',
+    })
+
+    // The persisted status must be visible (broadcast) and the queue re-derived
+    // (dirty mark) — the reviewer starts only on a later pass over `pending`.
+    expect(watch.settleSpecContentWatch).toHaveBeenCalledWith('int-1')
+    expect(mockBroadcastIntents).toHaveBeenCalledWith('/proj')
+    expect(workflow.markQueueDirty).toHaveBeenCalledWith('/proj')
+  })
+
+  it('spec settle: an unchanged or unwatched run broadcasts nothing and wakes nothing', async () => {
+    const watch = await import('../features/intents/spec-content-watch.js')
+    vi.mocked(watch.settleSpecContentWatch).mockReturnValueOnce('unchanged')
+    const store = await import('../features/intents/store.js')
+    vi.mocked(store.getIntentBySpecSessionId).mockReturnValueOnce({ id: 'int-1' } as Intent)
+
+    install()
+    eb.publish('run:settled', {
+      sessionId: 'spec-1',
+      workspacePath: '/proj',
+      reason: 'error',
+      sessionKind: 'spec',
+      runKind: 'interactive',
+    })
+
+    expect(watch.settleSpecContentWatch).toHaveBeenCalledWith('int-1')
+    expect(mockBroadcastIntents).not.toHaveBeenCalled()
   })
 })

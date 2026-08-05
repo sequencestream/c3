@@ -90,7 +90,7 @@ launch、重复失败计数或重复人工待办。防自激:内核发起的 run
 
 ## 明确未改变的东西(硬闸门)
 
-依赖闸门 + worktree 模式下「依赖 PR 已 merged」、SDD `specApproved` 闸门、
+依赖闸门 + worktree 模式下「依赖 PR 已 merged」、SDD 规格闸门(以 `specStatus='approved'` 为唯一事实源,`raw`/`pending` 一律未通过)、
 `AskUserQuestion` / pendingQuestion 守卫(RM-A11)、续跑预算、workspacePath 工具闭包绑定 ——
 **一律未放宽**。
 

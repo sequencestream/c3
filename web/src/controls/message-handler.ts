@@ -1211,6 +1211,15 @@ export function installMessageHandler(ctx: AppCtx): void {
           automationSettingBeforeSave.value = null
           automationEnabledSaving.value = false
         }
+        // A refused queue control (unpark on a non-parked intent, an override with
+        // no verdict, a missing intent id) has to be visible where it was clicked.
+        // The queue page is its own view and never renders the chat stream, so a
+        // refusal that only landed there would read as "the button did nothing" —
+        // exactly the false success the client must never show.
+        if (msg.error.code.startsWith('queue.')) {
+          ctx.showToast(translateUiError(msg.error))
+          break
+        }
         add({ kind: 'system', text: `— ${translateUiError(msg.error)} —` })
         break
       case 'wait_user_events':

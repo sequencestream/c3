@@ -21,6 +21,7 @@
 | [automations](automations/automations-overview.md)                      | 跨工作区的基于时间的命令与 LLM prompt 执行;执行日志记录与查看                                                  | WebSocket `/ws`(见 shared protocol) | planned       |
 | [session-cleanup](session-cleanup/session-cleanup-design.md)            | 按保留期删除各 vendor 会话存储中过期的会话记录(系统级开关,vendor 中立,每日执行)                                | 内部(无对外公开 API)                | active        |
 | [auth](auth/auth-overview.md)                                           | 认证抽象:可扩展的提供方联合类型(`basic` 优先)、会话令牌模型、login/logout/401 消息——面向网络暴露场景的可选能力 | WebSocket `/ws`(见 shared protocol) | contract-only |
+| [external-mcp](external-mcp/external-mcp-spec.md)                       | 面向 c3 未拉起的 agent 的公开 MCP 入口:长期 API key 鉴权 + 显式 workspace 参数,五个只读工具的 allowlist        | Streamable HTTP `/mcp/v1`           | active        |
 
 ## Shared context
 

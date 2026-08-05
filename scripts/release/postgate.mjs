@@ -35,6 +35,20 @@ export function requiredTargets(env = process.env) {
   return P0_TARGETS.filter((t) => sel.includes(t))
 }
 
+/**
+ * The distribution channel whose completeness is being gated: `cli` (default) or
+ * `desktop`. A desktop build job ships installers, not the CLI package, so its
+ * postgate must look for its OWN channel — otherwise the P0 completeness check
+ * reads a dist full of `.dmg`s and reports the CLI tarball missing.
+ *
+ * Artifacts written before the channel field existed are treated as `cli`, which
+ * is what they were.
+ */
+export function requiredChannel(env = process.env) {
+  const raw = (env.C3_REQUIRED_CHANNEL || '').trim()
+  return raw || 'cli'
+}
+
 /** Parse a SHA256SUMS body (`<hex>  <name>` per line) into a name→hex map. */
 export function parseSha256Sums(text) {
   const map = new Map()
@@ -59,12 +73,16 @@ export function verifyDist({ manifestPath, log = () => {} } = {}) {
   const manifest = JSON.parse(readFileSync(mp, 'utf-8'))
   const distDir = dirname(mp)
 
-  // 3. Required-target completeness (P0 ∩ selected — see requiredTargets()).
+  // 3. Required-target completeness (P0 ∩ selected — see requiredTargets()),
+  //    scoped to the channel under test.
   const required = requiredTargets()
-  const present = new Set(manifest.artifacts.map((a) => a.target))
+  const channel = requiredChannel()
+  const present = new Set(
+    manifest.artifacts.filter((a) => (a.channel ?? 'cli') === channel).map((a) => a.target),
+  )
   const missing = required.filter((t) => !present.has(t))
   if (missing.length)
-    throw new Error(`required target(s) missing from manifest: ${missing.join(', ')}`)
+    throw new Error(`required ${channel} target(s) missing from manifest: ${missing.join(', ')}`)
 
   // 2. SHA256SUMS must exist (checksumming ran) and agree with the manifest.
   const sumsPath = resolve(distDir, 'SHA256SUMS')
@@ -96,7 +114,7 @@ export function verifyDist({ manifestPath, log = () => {} } = {}) {
   }
 
   log(
-    `  ✓ required complete (${required.join(', ') || 'none'}), ${manifest.artifacts.length} artifact(s) verified.`,
+    `  ✓ required ${channel} complete (${required.join(', ') || 'none'}), ${manifest.artifacts.length} artifact(s) verified.`,
   )
   return { checked: manifest.artifacts.length }
 }

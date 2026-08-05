@@ -26,9 +26,15 @@ import {
   removeViewer,
 } from '../../runs.js'
 import { hasWorkspace, resolveWorkspaceRoot, pathToId, touchWorkspace } from '../../state.js'
-import { getDefaultMode, getGitBranchMode, getSddEnabled } from '../../kernel/config/index.js'
+import {
+  getDefaultMode,
+  getGitBranchMode,
+  getSddEnabled,
+  getSessionAgentId,
+} from '../../kernel/config/index.js'
 import {
   resolveIntentAgent,
+  resolveSessionAgentBinding,
   resolveSessionAgentSwitch,
   resolveSessionVendor,
   resolveSpecAgent,
@@ -120,11 +126,35 @@ function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
  * sessions can run on a stronger/decoupled agent than "default for new sessions".
  * Must be called after `ensureRuntime` so `resolveSessionLaunch`/agent switcher
  * find the pending intent in later lookups.
+ *
+ * Only for sessions the caller just CREATED. Restoring an existing session goes
+ * through {@link ensureIntentAgentBinding} — a session that already carries a
+ * binding must keep it.
  */
 function bindIntentAgent(sessionId: string): void {
   setSessionAgent(sessionId, resolveIntentAgent().id)
 }
 
+/**
+ * Fill in the intent-agent binding for a session that is being (re)opened, and
+ * ONLY when it has no binding yet. Reopening is a RESUME, not a re-binding: a
+ * session that already ran carries a frozen agent+vendor fact, and re-applying
+ * the current `intentAgentId` to it would either be rejected cross-vendor (leaving
+ * the projection describing an agent the session cannot run on) or silently
+ * re-target it same-vendor. Changing `intentAgentId` therefore only affects
+ * sessions created afterwards; an explicit reset is how a user moves an intent
+ * conversation onto the newly-configured agent.
+ */
+function ensureIntentAgentBinding(sessionId: string): void {
+  if (getSessionAgentId(sessionId)) return
+  bindIntentAgent(sessionId)
+}
+
+/**
+ * Project an intent comm session into `session_metadata`. Both `agent_id` and
+ * `vendor` come from ONE read of the session's own binding, so the row can never
+ * pair the currently-configured intent agent with a different frozen vendor.
+ */
 function syncIntentSessionProjection(input: {
   workspacePath: string
   sessionId: string
@@ -132,12 +162,12 @@ function syncIntentSessionProjection(input: {
   ownerId?: string | null
 }): void {
   const ownerId = input.ownerId ?? findIntentIdByAnySessionId(input.sessionId)
-  const agent = resolveIntentAgent()
+  const binding = resolveSessionAgentBinding(input.sessionId)
   upsertBoundRow({
     sessionId: input.sessionId,
     workspacePath: input.workspacePath,
-    vendor: resolveSessionVendor(input.sessionId),
-    agentId: agent.id,
+    vendor: binding.vendor,
+    agentId: binding.agentId,
     title: input.title,
     sessionKind: 'intent',
     ownerKind: ownerId ? 'intent' : null,
@@ -249,7 +279,7 @@ export const listIntentsHandler: Handler<'list_intents'> = (_ctx, conn, msg) => 
   conn.send({
     type: 'intents',
     workspaceId: pathToId(proj)!,
-    items: listIntents(proj, msg.status),
+    items: enrichRunStatus(listIntents(proj, msg.status)),
     sddEnabled: getSddEnabled(proj),
   })
 }
@@ -342,7 +372,6 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
       const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
       const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
       ensureRuntime(chatId, proj, 'default', baseline, 'intent')
-      bindIntentAgent(chatId)
     }
   } else {
     // Resume the project's persisted comm session (is_current), or open a new one.
@@ -353,15 +382,19 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
         const isPending = chatId.startsWith(PENDING_SESSION_PREFIX)
         const baseline = isPending ? [] : await loadHistory(proj, chatId).catch(() => [])
         ensureRuntime(chatId, proj, 'default', baseline, 'intent')
-        bindIntentAgent(chatId)
       }
     } else {
       chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
       ensureRuntime(chatId, proj, 'default', [], 'intent')
-      bindIntentAgent(chatId)
       setChatSession(proj, chatId)
     }
   }
+  // One binding step for all three branches, BEFORE the projection write, the
+  // `session_selected` reply and any run: a session created here (or one that
+  // never got a binding) adopts the current intent agent; a session that already
+  // carries one resumes on it. Whether the runtime had to be restored is
+  // irrelevant to the binding — an in-memory runtime is not a binding fact.
+  ensureIntentAgentBinding(chatId)
   const rt = getRuntime(chatId)
   if (!rt) {
     conn.send({ type: 'error', error: { code: 'intent.chatOpenFailed' } })
@@ -691,7 +724,7 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
   conn.send({
     type: 'intents',
     workspaceId: pathToId(proj)!,
-    items: listIntents(proj),
+    items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
   })
   // Link the pending refine session to this intent so the resident `run:bound`
@@ -762,7 +795,7 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
   conn.send({
     type: 'intents',
     workspaceId: pathToId(proj)!,
-    items: listIntents(proj),
+    items: enrichRunStatus(listIntents(proj)),
     sddEnabled: getSddEnabled(proj),
   })
   // Link the pending refine session to this intent so the resident `run:bound`

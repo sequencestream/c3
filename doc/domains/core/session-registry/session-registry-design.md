@@ -53,7 +53,7 @@ spec 生命周期在绑定时写入,使用
 `session_kind='spec'` 与一个 intent 所有者,因此选中它们会跳回到所属 intent 的
 spec-会话标签页,而不是把它们作为普通 work 会话打开。规格评审行同理写入
 `session_kind='spec_review'` 与 intent 所有者:它们在「规范」标签页里与撰写行同列,
-但选中时必须以其 owner 走 intent-management 的只读评审打开器(RM-R36),
+但选中时必须以其 owner 走 intent-management 的只读评审打开器(RM-R37),
 而不是通用会话选择 —— 后者的冷恢复会把它建成可写的 work 运行时。discussion 行由
 discussion agent-session 生命周期在创建参与者/组织者厂商会话时写入,使用
 `session_kind='discussion'`、`owner_kind='discussion'`,以及该 discussion 的 id 作为所有者;选中

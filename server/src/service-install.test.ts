@@ -41,6 +41,19 @@ describe('planServiceInstall — platform dispatch', () => {
     expect(plan.notes.join('\n')).toContain('loginctl enable-linger')
   })
 
+  it('bakes an explicit --host into the unit, and only when one was chosen', () => {
+    const exposed = planServiceInstall({
+      ...inputs('linux'),
+      start: { port: 4321, dev: false, host: '0.0.0.0' },
+    })
+    expect(exposed.unitContent).toContain('ExecStart=/opt/c3/c3 start --port 4321 --host 0.0.0.0')
+
+    // Without the flag the unit stays silent about the interface, so the server's
+    // loopback default applies — an upgrade never silently keeps a wide bind.
+    const defaulted = planServiceInstall(inputs('linux'))
+    expect(defaulted.unitContent).not.toContain('--host')
+  })
+
   it('generates a per-user launchd plist with ProgramArguments + load command', () => {
     const plan = planServiceInstall(inputs('darwin'))
     expect(plan.platform).toBe('darwin')
@@ -93,6 +106,35 @@ describe('planServiceInstall — platform dispatch', () => {
       start: { port: 3000, dev: false, settingsPath: '/abs/settings.json' },
     })
     expect(plan.unitContent).toContain('--settings /abs/settings.json')
+  })
+
+  it('bakes an explicit --host into the systemd unit so a restart re-binds the same address', () => {
+    const plan = planServiceInstall({
+      ...inputs('linux'),
+      start: { port: 3000, dev: false, host: '127.0.0.1' },
+    })
+    expect(plan.unitContent).toContain('--host 127.0.0.1')
+  })
+
+  it('bakes an explicit --host into the launchd plist arguments', () => {
+    const plan = planServiceInstall({
+      ...inputs('darwin'),
+      start: { port: 3000, dev: false, host: '127.0.0.1' },
+    })
+    expect(plan.unitContent).toContain('<string>--host</string>')
+    expect(plan.unitContent).toContain('<string>127.0.0.1</string>')
+  })
+
+  it('bakes an explicit --host into the schtasks /TR command', () => {
+    const plan = planServiceInstall({
+      ...inputs('win32'),
+      execPath: 'C:\\Program Files\\c3\\c3.exe',
+      home: 'C:\\Users\\alice',
+      start: { port: 3000, dev: false, host: '127.0.0.1' },
+    })
+    const [cmd] = plan.registerCommands
+    const tr = cmd.args[cmd.args.indexOf('/TR') + 1]
+    expect(tr).toContain('--host 127.0.0.1')
   })
 
   it('prepends the script path for a dev/interpreter install', () => {

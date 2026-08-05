@@ -2,6 +2,7 @@ packages:
   - server
   - web
   - shared
+  - desktop
 allowBuilds:
   cpu-features: true
   esbuild: true

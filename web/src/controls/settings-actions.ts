@@ -1,9 +1,11 @@
 import type {
+  ActionTarget,
   SystemSettings,
   UiLang,
   UiTheme,
   WorkspaceSetting as WorkspaceSettingType,
 } from '@ccc/shared/protocol'
+import { toSystemSettingsTarget } from '@/lib/action-descriptor'
 import { applyLocale, i18n, type Locale } from '@/i18n'
 import {
   hasLocalPersonalized,
@@ -20,6 +22,7 @@ export function installSettingsActions(ctx: AppCtx): void {
   const t = ctx.t
   const {
     settingsOpen,
+    settingsTarget,
     personalizedSettingOpen,
     personalizedSettings,
     workspaceSettingOpen,
@@ -36,6 +39,26 @@ export function installSettingsActions(ctx: AppCtx): void {
   ctx.openSettings = (): void => {
     settingsOpen.value = true
     send({ type: 'get_settings' })
+    // The key roster is admin-gated server-side; asking as a non-admin would only
+    // produce an error toast, so the console does not ask at all. The panel then
+    // shows the section read-only and empty, which is the truth for that account.
+    if (ctx.auth.isAdmin.value) send({ type: 'list_mcp_api_keys' })
+  }
+
+  /**
+   * The single dispatcher behind every derived `ActionDescriptor`: translate the
+   * wire target into a one-shot panel instruction and open system settings on it.
+   * Navigation only — it never enables an agent, edits credentials, saves the
+   * panel, or clears the failure the descriptor came from.
+   */
+  ctx.openActionTarget = (target: ActionTarget): void => {
+    settingsTarget.value = toSystemSettingsTarget(target)
+    ctx.openSettings()
+  }
+
+  /** The panel consumed the one-shot target (or settings closed). */
+  ctx.clearActionTarget = (): void => {
+    settingsTarget.value = null
   }
 
   // Personalized settings are already in memory (browser seed + server echo), so
@@ -135,6 +158,53 @@ export function installSettingsActions(ctx: AppCtx): void {
   /** Designate which basic account is the single admin (ADR-0023). */
   ctx.setAdminAccount = (payload: { username: string }): void => {
     send({ type: 'set_admin_account', ...payload })
+  }
+
+  // ---- External MCP API keys (admin-gated; see features/settings/mcp-api-keys.ts)
+  // Every operation replies with the WHOLE roster, so none of these mutates local
+  // state optimistically: what the list shows is always what the server confirmed.
+
+  /** Mint a key. The reply is the only message that will ever carry its plaintext. */
+  ctx.createMcpApiKey = (payload: { name: string; workspaceIds: string[] }): void => {
+    send({ type: 'create_mcp_api_key', ...payload })
+  }
+
+  /** Rename a key and/or replace its authorized workspace set. */
+  ctx.updateMcpApiKey = (payload: { id: string; name?: string; workspaceIds?: string[] }): void => {
+    send({ type: 'update_mcp_api_key', ...payload })
+  }
+
+  /** Revoke a key. Takes effect on that key's very next request. */
+  ctx.revokeMcpApiKey = (id: string): void => {
+    send({ type: 'revoke_mcp_api_key', id })
+  }
+
+  /**
+   * Drop the one-time plaintext from memory. Called when the user dismisses the
+   * reveal or closes the panel — after this the key is unrecoverable, which is
+   * exactly the guarantee the server makes.
+   */
+  ctx.dismissMcpApiKeyReveal = (): void => {
+    ctx.mcpApiKeyCreated.value = null
+  }
+
+  /**
+   * Close the system-settings panel. Closing also drops any still-revealed
+   * plaintext key: leaving it in memory to reappear the next time the panel opens
+   * would contradict the "shown once" promise.
+   */
+  ctx.closeSettings = (): void => {
+    settingsOpen.value = false
+    ctx.dismissMcpApiKeyReveal()
+  }
+
+  /**
+   * The workspace-setting page's "go configure this in system settings" jump.
+   * Closes the workspace page first so the two modals never stack.
+   */
+  ctx.openSettingsFromWorkspaceSetting = (): void => {
+    workspaceSettingOpen.value = false
+    ctx.openSettings()
   }
 
   /**

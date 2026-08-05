@@ -24,6 +24,7 @@ import { tmpdir } from 'node:os'
 import { resolve, dirname, join, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isHostRunnable, hostTarget } from './targets.mjs'
+import { binaryName } from './artifact-name.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = resolve(here, '..', '..')
@@ -104,6 +105,34 @@ export async function smokeArtifact(file, { timeoutMs = 15000, log = () => {} } 
 }
 
 /**
+ * Where the executable for a manifest entry lives on disk.
+ *
+ * `artifacts[].file` is the PACKAGE (`c3-v{ver}-{target}.tar.gz`), not the binary —
+ * that split landed in manifest v1.2. The thing this gate can actually boot is the
+ * binary in its per-target scratch dir, `dist/<target>/c3`, which is the same path
+ * (and the same bytes) release:build's own Phase3 gate smokes.
+ */
+export function binaryPathFor(distDir, artifact) {
+  return resolve(distDir, artifact.target, binaryName(artifact.target))
+}
+
+/**
+ * Whether a manifest entry is a CLI-channel artifact — the only kind this gate
+ * can smoke.
+ *
+ * The gate boots the artifact and probes it over HTTP, which only means anything
+ * for an executable. Desktop-channel entries are installers (`.dmg`, `.msi`,
+ * `.deb`, …); spawning one would fail on a file that is perfectly correct. Their
+ * equivalent gate is the install smoke on a real desktop, not this one.
+ *
+ * Entries written before the channel field existed are CLI packages, which is
+ * what the missing field means.
+ */
+export function cliChannel(artifact) {
+  return (artifact.channel ?? 'cli') === 'cli'
+}
+
+/**
  * Run the artifact gate across a build plan: smoke every host-runnable target,
  * skip (with a log) the cross-compiled ones. Throws on the first failure.
  * @param {object} o
@@ -147,9 +176,9 @@ if (isMain()) {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'))
     const distDir = dirname(manifestPath)
     await smokeBuiltArtifacts({
-      artifacts: manifest.artifacts.map((a) => ({
+      artifacts: manifest.artifacts.filter(cliChannel).map((a) => ({
         target: a.target,
-        path: resolve(distDir, basename(a.file)),
+        path: binaryPathFor(distDir, a),
       })),
       log: (m) => console.log(m),
     })

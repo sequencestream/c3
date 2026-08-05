@@ -188,6 +188,20 @@ export const UI_ERROR_CODES = {
   'queue.notParked': { key: 'error.queue.notParked' },
   // An override was asked where there is no automatic verdict to overrule.
   'queue.overrideNotApplicable': { key: 'error.queue.overrideNotApplicable' },
+  // external MCP API keys
+  // The key id named by an update/revoke no longer exists (already revoked, or
+  // deleted by another administrator since the roster was loaded).
+  'mcpApiKey.unknown': { key: 'error.mcpApiKey.unknown', params: ['id'] },
+  // A grant named a workspace id c3 does not have. Rejected whole rather than
+  // partially applied, so a half-granted key never looks fully granted.
+  'mcpApiKey.unknownWorkspace': {
+    key: 'error.mcpApiKey.unknownWorkspace',
+    params: ['workspaceId'],
+  },
+  // Creating a key with no workspace at all — it could never reach anything.
+  'mcpApiKey.noWorkspace': { key: 'error.mcpApiKey.noWorkspace' },
+  // Persisting the key roster failed (settings.json unwritable / lock contention).
+  'mcpApiKey.saveFailed': { key: 'error.mcpApiKey.saveFailed' },
 } as const satisfies Record<string, UiErrorDef>
 
 /** Every registered UI error code. */

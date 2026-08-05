@@ -42,7 +42,11 @@ CI workflow:`.github/workflows/release.yml`。各目标在其原生 OS runner �
 
 1. **setup** — 解析 `targets` / `version`。
 2. **pregate** — 源码闸门:`typecheck → lint → test → i18n:check → i18n:check-freeze`。红了不进编译。
-3. **build:<target>**(各跑在原生 OS)—— `build → smoke`,上传按目标分类的制品。
+3. **build-publish:<target>**(各跑在原生 OS)—— CLI 渠道:`build → smoke`,上传按目标分类的制品。
+   3b. **build-desktop:<target>**(各跑在原生 OS)—— 桌面渠道:`release:desktop → checksum → postgate(channel=desktop)`,
+   产出 `.dmg`/`.app.tar.gz`、`.msi`/`.exe`、`.deb`/`.AppImage`。macOS 走 `--require-signing`,
+   签名或公证任一失败即阻断该目标。**桌面 job 失败只丢它自己的产物,不阻断 CLI 发布**
+   (`publish` 的 `if:` 只要求三个 CLI job 全绿)。
 4. **verify-dist** — 合并各目标制品 → 生成 `SHA256SUMS` → 发布门禁(manifest ↔ SHA256SUMS ↔ 磁盘 + 必需目标完整性)。
 5. **provenance** — 对每个制品生成 SLSA L3 溯源(OIDC 无密钥)。
 6. **publish** — `gh release create`,携带每个制品 + `.sha256` sidecar + `SHA256SUMS`;**release notes 由 `--generate-notes` 基于 PR 历史自动生成**。
@@ -106,6 +110,7 @@ pnpm release:github --dry-run      # 排练每个阶段,不打 tag / 不跑 gh
 | -------------------------- | -------------------------------------------------------------------------------------------------- |
 | `pnpm release`             | **交互式本地构建**:提示版本 → 交叉编译三目标 → 生成校验和 → 汇集 `dist/release-artifacts/v<版本>/` |
 | `pnpm release:build`       | 仅构建 + 打包 + manifest(`--targets` / `--skip-web` / `--skip-pack`)                               |
+| `pnpm release:desktop`     | 桌面渠道:sidecar 编译 → 暂存 + 版本门禁 → `tauri build` → 收集 + manifest(`--require-signing`)     |
 | `pnpm release:checksum`    | 对 dist/ 产物生成校验和(出 `.sha256` / `SHA256SUMS`)                                               |
 | `pnpm release:smoke`       | 冒烟:`--version` + headless 启动                                                                   |
 | `pnpm release:verify-dist` | postgate:manifest ↔ SHA256SUMS ↔ 磁盘一致性                                                        |

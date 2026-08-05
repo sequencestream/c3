@@ -141,12 +141,21 @@ c3
 │   │   ├── arapuca 版本关联                      # c3 关联并异步自动安装经校验的 arapuca 到 ~/.c3/sandbox/arapuca(SHA-256 + 原子激活),缺失时回退宿主 PATH、不阻塞当次 run;安装尝试无论成败冷却 24 小时(跨进程持久化)
 │   │   └── 硬失败                                # arapuca 两条链皆无/平台不支持/放行路径非法即 hard-fail,绝不回落宿主裸跑
 │   │
-│   └── auth 鉴权                                 # 每条连接过身份门,每次改全局配置过管理员门
-│       ├── 登录                                  # basic 用户名/密码校验,签发 session token
-│       ├── 会话 token                            # 签发/校验 bearer token,TTL 默认 30 天
-│       ├── 连接门                                # 拒绝未认证的 WebSocket 握手(token 走握手 ?token=)
-│       ├── 管理员门                              # 仅管理员可改全局配置(agents/workspaces/settings)
-│       └── 多账号                                # 多账号目录,首个创建者为唯一管理员
+│   ├── auth 鉴权                                 # 每条连接过身份门,每次改全局配置过管理员门
+│   │   ├── 登录                                  # basic 用户名/密码校验,签发 session token
+│   │   ├── 会话 token                            # 签发/校验 bearer token,TTL 默认 30 天
+│   │   ├── 连接门                                # 拒绝未认证的 WebSocket 握手(token 走握手 ?token=)
+│   │   ├── 管理员门                              # 仅管理员可改全局配置(agents/workspaces/settings)
+│   │   └── 多账号                                # 多账号目录,首个创建者为唯一管理员
+│   │
+│   └── external-mcp 外部 MCP 接入                 # c3 未拉起的 agent(独立 Claude/Codex 会话、CI、监控脚本)凭长期 key 读本部署;与 /internal/*-mcp 并列而非放宽,后者语义不变
+│       ├── 公开路由 /mcp/v1                      # Streamable HTTP,挂在 SPA catch-all 之前;不做 loopback 判断,API key 是唯一凭据
+│       ├── 每请求重建作用域                      # 无 run 闭包:token + ?workspace= 每次请求重新解析,不依赖任何进程内 binding
+│       ├── 鉴权链                                # 凭据先于参数(401 正文统一、无法探测 key 是否存在);403 先于 404 以免枚举 workspace;非绝对路径 400
+│       ├── 路径规范化                            # 软链/尾斜杠/点段判等后再比对授权集合;交给 feature 层的仍是注册表路径(存储按 resolve 分区)
+│       ├── 会话作用域钉死                        # initialize 时绑定 key id + workspace,后续同 session 换 token/workspace 一律 403,不静默改作用域
+│       ├── 只读工具 allowlist                    # find_intents/view_intent/find_discussions/view_discussion/publish_event 五项,编译期断言钉死;写工具/会话工具/评审工具一律不注册
+│       └── 事件归属                              # publish_event 的 envelope workspace 取自授权作用域,sessionId 固定 external-mcp:<key-id>,调用方无法伪造
 │
 ├── settings — 塑造智能体循环行为的用户配置(控制面板);作用域分系统级 / 工作区级 / 个人级三类
 │   │
@@ -168,6 +177,8 @@ c3
 │   │   ├── 子进程代理                            # proxy 开关 + HTTP/HTTPS 地址,注入新会话子进程环境(不改服务端自身出网)
 │   │   ├── 会话清理                              # sessionCleanup 开关 + 保留天数(默认关、30 天),每日删除各 vendor 会话存储中超期的会话记录;vendor 中立、覆盖沙箱与宿主 home
 │   │   ├── 鉴权配置                              # auth:basic 多账号/唯一管理员、会话 token TTL、bind 地址暴露意图
+│   │   ├── 外部 MCP API Key                      # mcpApiKeys 长期 key 生成(明文只展示一次)/列出/改授权 workspace 集合/吊销;仅存加盐 scrypt 哈希,是 SystemSettings 的兄弟键故 save_settings 既不携带也无法注入;吊销同时切断已建立的 MCP 会话
+│   │   ├── 监听地址                              # --host 显式绑定接口,默认 127.0.0.1(收紧原「不传 hostname 即全网卡」的隐式行为),贯穿 CLI/daemon/OS service;日志打印实际监听地址且不含 token
 │   │   ├── socket 自动续跑                        # socketAutoResume 开关,断连后单次自动 resume(默认开)
 │   │   └── 环境诊断                              # 只读展示各 vendor host CLI/令牌探测结果
 │   │
@@ -189,9 +200,20 @@ c3
 │       ├── 机器批准开关                          # specMachineApprovalEnabled 显式 opt-in,默认关闭;开启后审核通过的 spec 由队列以机器身份批准,仍可人工撤销
 │       ├── 外部技能仓库                          # skillRepos 技能源仓库,clone 到 ~/.c3/repo 并软链进各 vendor 发现目录;含显式 install_skill
 │       ├── 代码托管平台                          # forge(auto/github/gitlab)建 PR/MR 时的 forge 识别
-│       └── 本机观测(只读)                       # park 后 24h 恢复率 + recovered/eligible/pending 样本数;不属于设置草稿,不参与保存/脏状态;查询失败显示「暂不可用」并可重试
-│           ├── 数据边界                          # 只在本机、滚动保留 90 天、无自由文本、不外传;页面无开启遥测/导出/上传/改保留期/清空控件
-│           └── 决策口径                          # 60% 正向信号、70% 强信号;上线 2–4 周复查,无提升则作废基于本批指引的全部 P1/P2 后续投入
+│       ├── 本机观测(只读)                       # park 后 24h 恢复率 + recovered/eligible/pending 样本数;不属于设置草稿,不参与保存/脏状态;查询失败显示「暂不可用」并可重试
+│       │   ├── 数据边界                          # 只在本机、滚动保留 90 天、无自由文本、不外传;页面无开启遥测/导出/上传/改保留期/清空控件
+│       │   └── 决策口径                          # 60% 正向信号、70% 强信号;上线 2–4 周复查,无提升则作废基于本批指引的全部 P1/P2 后续投入
+│       └── 外部 MCP 接入(只读)                   # baseUrl + /mcp/v1 + 本工作区路径拼出可复制 URL 与一行式 claude mcp add 命令;列出已授权本工作区的 key 名称;不属于设置草稿,不参与保存/脏状态
+│           ├── 明文占位                          # 常态显示 <KEY> 占位;可临时粘贴明文生成可直接用的值,仅存组件内存、不上传不写浏览器存储、离开即清
+│           └── 缺失引导                          # baseUrl 未配置时明说未配置并跳系统设置(不猜浏览器 Host);无覆盖本工作区的 key 时引导去生成
+│
+└── distribution 分发形态                        # 同一次发布产出两个渠道,共享同一个 ~/.c3(设置/凭据/工作区/DB/会话)
+    ├── CLI 单二进制                              # 每平台一个原生可执行文件(c3-v{ver}-{target}.tar.gz|zip),终端启动 + 浏览器访问;c3 upgrade 自更新
+    ├── 桌面 App(Tauri 2)                        # 安装包双击即用(dmg/msi/exe/deb/AppImage),壳把同一份二进制当 sidecar 拉起,原生 WebView 渲染其自带 SPA
+    ├── sidecar 回环绑定                          # 壳固定给 sidecar 传 --host 127.0.0.1 + 本次选中的可用端口,不读也不放宽 exposure.bindAddress
+    ├── 托盘常驻与开机自启                        # 关窗只隐藏、后端继续跑;托盘「打开 c3 / 开机自启 / 退出」,自启默认关且与 c3 install 系统服务互不相干
+    ├── 受管子进程边界                            # 壳只管自己创建的 sidecar,按 pid+可执行文件+启动时间三元组校验后清理孤儿,绝不按端口或进程名杀外部 c3
+    └── 渠道化 manifest                           # 同一份 manifest 记录 platform/arch/channel/kind/file/sha256,file 为唯一键;CLI 渠道是发布闸门,桌面失败只丢自己
 ```
 
 ## 维护

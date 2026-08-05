@@ -169,6 +169,30 @@
 
 **字段：** `settings: PersonalizedSettings`
 
+### `list_mcp_api_keys`
+
+获取外部 MCP API key 名册。服务器回复 `mcp_api_keys`。**需要管理员权限**——名册即"谁能够到什么"的清单。只回元数据，明文在生成之后永不可恢复。
+
+**字段：** 无
+
+### `create_mcp_api_key`
+
+生成一把长期外部 MCP API key。`workspaceIds` 是该 key 可读取的**已注册**工作区(用不透明 id 寻址，客户端不构造路径)。空数组被拒（`mcpApiKey.noWorkspace`）——够不到任何东西的 key 只会成为日后的排查负担；任一 id 无法解析则**整笔拒绝**（`mcpApiKey.unknownWorkspace`），不做部分应用。回复 `mcp_api_keys`，其 `created` 字段是全系统唯一一次出现明文的地方。**需要管理员权限。**
+
+**字段：** `name: string`, `workspaceIds: string[]`
+
+### `update_mcp_api_key`
+
+改名和/或替换授权工作区集合；省略的字段不动。显式传空的 `workspaceIds` 表示"这把 key 什么也够不到"，**绝不解释为通配**。无法重新签发或读出明文。回复 `mcp_api_keys`。**需要管理员权限。**
+
+**字段：** `id: string`, `name?: string`, `workspaceIds?: string[]`
+
+### `revoke_mcp_api_key`
+
+吊销（删除）一把 key。下一次请求即失败，同时关闭该 key 已建立的活动 MCP 会话。回复 `mcp_api_keys`。**需要管理员权限。**
+
+**字段：** `id: string`
+
 ### `load_workspace_setting`
 
 加载工作区设置。服务器回复 `workspace_setting`。
@@ -576,6 +600,16 @@ owner 去重汇总;`automation` 不使用会话状态,而是**完全**由统一�
 
 **字段：** `settings: SystemSettings`, `hostStatus: VendorHostStatus[]`, `vendorRuntime?: Record<VendorId, VendorRuntimeStatus>`, `bindingStats: SessionBindingStats`, `sessionCapabilities: Record<VendorId, SessionCapabilities>`, `vendorCapabilities?: Record<VendorId, Record<AdapterCapability, boolean>>`, `skillSupport?: Record<VendorId, SkillSupportState>`, `vendorModes?: Record<VendorId, VendorModeCatalog>`
 
+### `mcp_api_keys`
+
+外部 MCP API key 名册，回复上述四条 key 操作中的任意一条。**总是回整份列表**，故控制台无需对账增量。
+
+每项 `McpApiKeyMeta` 为 `{ id, name, createdAt, lastUsedAt, workspaceIds, staleWorkspaces, displayPrefix }`：`workspaceIds` 是已注册工作区的不透明 id（服务端以规范化绝对路径存授权、在此转成 id）；`staleWorkspaces` 是授权集合里已不对应任何注册工作区的路径，摆出来供管理员清理，它本身不可达（命中只会 404）；`displayPrefix` 是非秘密的 `c3k_<id>`，完全由 id 派生，展示它不泄露任何秘密。
+
+`created` **仅**出现在 `create_mcp_api_key` 成功的回复里，是明文 key 在整条链路上唯一的落点：不存储、不重发，客户端丢弃后即不可恢复。
+
+**字段：** `keys: McpApiKeyMeta[]`, `created?: { meta: McpApiKeyMeta; key: string }`
+
 ### `personalized_settings`
 
 本连接的标准化个人化设置，回复 `get_personalized_settings` / `save_personalized_settings`。这个回显决定控制台当前的界面语言与显示主题。`scope` 说明是哪个存储作答：`account` ⇒ 连接已验证 subject 的服务端记录；`local` ⇒ 无账户适用，浏览器自身权威，服务端未落任何账户记录。读写失败不发此帧，而是回 `personalizedSetting.loadFailed` / `personalizedSetting.saveFailed` 错误码。
@@ -918,7 +952,10 @@ automation 的执行日志。
 
 - **`IntentPriority`** — `'P0' | 'P1' | 'P2' | 'P3'`（P0 最高）。
 - **`IntentStatus`** — `'draft' | 'todo' | 'in_progress' | 'done' | 'cancelled'`。
-- **`Intent`** — `{ id, workspacePath, title, content, priority, module, status, dependsOn, lastWorkSessionId, automate, createdAt, updatedAt, completedAt, runStatus, sessionActive, intentSessionId, specSessionId }`。项目范围账本条。`module`（模块名称）是 agent 推断的所属模块，未识别时为 `''`。`runStatus: IntentRunStatus`（`'running' | 'dangling' | 'idle'`）是在列表时派生的运行状态，仅描述 `in_progress` 工作会话。`sessionActive: boolean` 是发送时派生的瞬时活跃信号：`intentSessionId`、`specSessionId`、`lastWorkSessionId` 三者任一非空且被运行注册表 `isRunning` 判活即为 `true`，覆盖三类会话、不受意图 `status` 限制，可与 `runStatus='idle'/'dangling'` 共存；每次发送从注册表重新派生，不落库不缓存。`intentSessionId` 是 refine/沟通会话，`specSessionId` 是撰写/精炼 spec 会话，`lastWorkSessionId` 是最近一次由 intent 启动的工作会话回链，三者语义不同。
+- **`Intent`** — `{ id, workspacePath, title, content, priority, module, status, dependsOn, lastWorkSessionId, automate, createdAt, updatedAt, completedAt, runStatus, sessionActive, actionDescriptor, intentSessionId, specSessionId }`。项目范围账本条。`module`（模块名称）是 agent 推断的所属模块，未识别时为 `''`。`runStatus: IntentRunStatus`（`'running' | 'dangling' | 'idle'`）是在列表时派生的运行状态，仅描述 `in_progress` 工作会话。`sessionActive: boolean` 是发送时派生的瞬时活跃信号：`intentSessionId`、`specSessionId`、`lastWorkSessionId` 三者任一非空且被运行注册表 `isRunning` 判活即为 `true`，覆盖三类会话、不受意图 `status` 限制，可与 `runStatus='idle'/'dangling'` 共存；每次发送从注册表重新派生，不落库不缓存。`intentSessionId` 是 refine/沟通会话，`specSessionId` 是撰写/精炼 spec 会话，`lastWorkSessionId` 是最近一次由 intent 启动的工作会话回链，三者语义不同。`actionDescriptor: ActionDescriptor | null` 是发送时派生的「下一步」投影(见下),无阻塞时为 `null`。
+- **`ActionLabelCode`** — `'vendor_auth_invalid' | 'vendor_quota_exhausted'`。阻塞态的稳定原因码,是**本地化码而非文案**:服务端只说是哪种情形,措辞由客户端拥有。闭集,只有确实需要独立「下一步」的阻塞态才新增一项。
+- **`ActionTarget`** — 以 `type` 判别的联合;本期唯一一项是 `{ type: 'system-settings-agent', vendor, agentId }`(`vendor` 给出配置语境,也是 agent 行已被删除时的兜底锚点;`agentId` 精确定位出错的那一行)。**只承载导航**:不含 URL、命令或自由文本 payload,因此客户端永远只能跳到该联合已经列举的位置。后续阻塞态深链靠给它加一个分支扩展,而不是把这一支撑宽。
+- **`ActionDescriptor`** — `{ labelCode: ActionLabelCode, target: ActionTarget }`。一条派生的「下一步」:展示什么 + 跳到哪里,最小必要集。**运行时展示投影,不是业务状态**——每次发送(列表 / 刷新 / 广播)从运行层已有的失败事实重新派生,不落库、不缓存,也不改变意图 `status`、队列判定或任何闸门。派生只暴露稳定原因码与失败 agent 身份,**绝不**携带凭据、供应商原始错误全文或响应体。
 - **`ProposedIntent`** — `{ id?, title, shortEnTitle, content, priority, module?, dependsOn?, dependsOnIndexes?, intentSessionId? }`。`save_intents` 调用中的一个项。`shortEnTitle` 是必填的简短英文 ASCII 标题，用作后续分支/worktree 命名的稳定来源。有 `id` 时 upsert（更新同项目已存在的 intent）；无 `id` 时插入新 `Intent`（状态 `todo`）。`intentSessionId` 是把本条意图回链到产出它的沟通会话的可选字段，**仅当本批只保存 1 条意图时才生效**（批量 >1 条时落库核心一律忽略，不写入任何行）；模型填入提示中注入的当前会话 id，保存处理器再将其归一化为 bind 后的真实会话 id（`open_intent_chat` 可解析）。`save_intent_directly`（automation 路径）的 schema 不含该字段。
 - **`AutomationState`** — `'idle' | 'running' | 'awaiting_gate' | 'developing' | 'fixing' | 'done' | 'error'`。
 - **`AutomationStatus`** — `{ workspacePath, state, currentIntentId, currentSessionId, awaitingPermission, error, completedIds, startedAt }`。每个项目的自动化编排器状态；仅内存，不持久化。

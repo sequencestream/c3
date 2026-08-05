@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import SettingsPanel from './SettingsPanel.vue'
 import { SYSTEM_AGENT_ID, VENDOR_IDS } from '@ccc/shared/protocol'
 import type { SystemSettings, VendorId, VendorRuntimeStatus } from '@ccc/shared/protocol'
@@ -1617,5 +1618,112 @@ describe('SettingsPanel.vue — a Cursor agent is a first-class pick in every ro
     await w.find(SAVE.agent).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.defaultAgentId).toBe('cursor-a')
+  })
+})
+
+describe('SettingsPanel.vue — one-shot locate target', () => {
+  // The jump crosses two reactive hops (arm the target → switch tab → locate on
+  // nextTick), so settle the queue before asserting on the located row.
+  const settle = async () => {
+    await nextTick()
+    await nextTick()
+    await nextTick()
+  }
+
+  const twoAgents: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      ...baseSettings.agents,
+      {
+        id: 'codex-1',
+        vendor: 'codex',
+        configMode: 'custom',
+        displayName: 'Codex One',
+        config: { baseUrl: '', apiKey: '', model: '', wireApi: 'responses' },
+      },
+    ],
+  }
+
+  function row(w: ReturnType<typeof mount>, agentId: string) {
+    return w.find(`[data-agent-id="${agentId}"]`)
+  }
+
+  it('lands on the Agent tab and highlights the named row', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: twoAgents } })
+    await w.find('[data-testid="settings-tab-btn-runtime"]').trigger('click')
+    expect(panelHidden(w, 'settings-tab-agent')).toBe(true)
+
+    await w.setProps({ target: { tab: 'agent', vendor: 'codex', agentId: 'codex-1' } })
+    await settle()
+
+    expect(panelHidden(w, 'settings-tab-agent')).toBe(false)
+    expect(row(w, 'codex-1').classes()).toContain('located')
+    expect(w.find('[data-testid="agent-locate-missing"]').exists()).toBe(false)
+    expect(w.emitted('target-consumed')).toHaveLength(1)
+  })
+
+  it('navigates only — it does not enable, edit or save anything', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: twoAgents } })
+    await w.setProps({ target: { tab: 'agent', vendor: 'codex', agentId: 'codex-1' } })
+    await settle()
+
+    expect(w.emitted('save')).toBeUndefined()
+    // The jump leaves every tab clean: nothing about the config was touched.
+    expect(w.find('[data-testid="settings-tab-dirty-agent"]').exists()).toBe(false)
+  })
+
+  it('falls back to the vendor’s row with a non-blocking notice when the agent is gone', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: twoAgents } })
+    await w.setProps({ target: { tab: 'agent', vendor: 'codex', agentId: 'deleted-agent' } })
+    await settle()
+
+    // Still on the Agent tab, still usable — a notice, not a dead end.
+    expect(panelHidden(w, 'settings-tab-agent')).toBe(false)
+    expect(w.find('[data-testid="agent-locate-missing"]').exists()).toBe(true)
+    expect(w.find('.agent-row.located').exists()).toBe(false)
+    expect(w.emitted('target-consumed')).toHaveLength(1)
+  })
+
+  it('waits for the unsaved-draft confirm instead of discarding the draft', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: twoAgents } })
+    await w.find('[data-testid="settings-tab-btn-general"]').trigger('click')
+    await w.find('[data-testid="settings-timezone"]').setValue('America/New_York')
+
+    await w.setProps({ target: { tab: 'agent', vendor: 'codex', agentId: 'codex-1' } })
+    await nextTick()
+
+    // Held at the confirm: the General draft is still there and still dirty.
+    expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(true)
+    expect(panelHidden(w, 'settings-tab-agent')).toBe(true)
+    expect(w.find('[data-testid="settings-tab-dirty-general"]').exists()).toBe(true)
+    expect(w.emitted('target-consumed')).toBeUndefined()
+
+    await w.find('[data-testid="confirm-accept"]').trigger('click')
+    await settle()
+
+    expect(panelHidden(w, 'settings-tab-agent')).toBe(false)
+    expect(row(w, 'codex-1').classes()).toContain('located')
+    // Confirming only switched tabs — the draft was neither saved nor discarded.
+    expect(w.emitted('save')).toBeUndefined()
+    expect(w.find('[data-testid="settings-tab-dirty-general"]').exists()).toBe(true)
+  })
+
+  it('drops the jump when the user declines to leave the dirty tab', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: twoAgents } })
+    await w.find('[data-testid="settings-tab-btn-general"]').trigger('click')
+    await w.find('[data-testid="settings-timezone"]').setValue('America/New_York')
+    await w.setProps({ target: { tab: 'agent', vendor: 'codex', agentId: 'codex-1' } })
+    await nextTick()
+
+    await w.find('[data-testid="confirm-cancel"]').trigger('click')
+    await settle()
+
+    expect(panelHidden(w, 'settings-tab-agent')).toBe(true)
+    // The target is released, so a later self-initiated tab switch does not lurch.
+    expect(w.emitted('target-consumed')).toHaveLength(1)
+    await w.find('[data-testid="settings-tab-btn-agent"]').trigger('click')
+    await w.find('[data-testid="confirm-accept"]').trigger('click')
+    await settle()
+    expect(w.find('.agent-row.located').exists()).toBe(false)
   })
 })

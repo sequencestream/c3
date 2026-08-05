@@ -8,18 +8,20 @@
  * (账号列表/管理员)总是同步,脏 Tab 的其余字段草稿受保护。保存后面板保持打开。
  * 切换存在未保存修改的 Tab 时二次确认,确认后仅切换、不保存也不丢弃草稿。
  */
-import { computed, ref, toRaw, watch } from 'vue'
+import { computed, nextTick, ref, toRaw, watch } from 'vue'
 import { SYSTEM_AGENT_ID, VENDOR_IDS, hasProviderConfig } from '@ccc/shared/protocol'
 import { resolveDefaultAgentId } from '@ccc/shared'
 import type {
   AgentConfig,
   AuthConfig,
+  McpApiKeyMeta,
   SessionBindingStats,
   SandboxHostStatus,
   SystemSettings,
   VendorHostStatus,
   VendorId,
   VendorRuntimeStatus,
+  WorkspaceInfo,
 } from '@ccc/shared/protocol'
 import { useTypedI18n } from '@/i18n'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
@@ -27,7 +29,9 @@ import { vendorRuntimeOriginKey, vendorUnavailableReasonKey } from '@/lib/vendor
 import { listGroupAgents } from '@/lib/group-agents'
 import { useAuth } from '@/composables/useAuth'
 import { deepCopy, useTabbedDraftSave } from '@/composables/useTabbedDraftSave'
+import type { SystemSettingsTarget } from '@/lib/action-descriptor'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
+import McpApiKeys from './McpApiKeys.vue'
 import TabNav from '@/components/TabNav/TabNav.vue'
 import EmojiPicker from './EmojiPicker.vue'
 
@@ -61,12 +65,24 @@ const props = withDefaults(
     vendorAvailability?: Partial<Record<VendorId, VendorRuntimeStatus>>
     sandboxStatus?: SandboxHostStatus | null
     bindingStats?: SessionBindingStats | null
+    /** 外部 MCP API key 名册(仅元数据)。非管理员下服务端不回,故为空。 */
+    mcpApiKeys?: McpApiKeyMeta[]
+    /** 刚生成的 key —— 明文在整个系统里唯一一次出现的地方。 */
+    mcpApiKeyCreated?: { meta: McpApiKeyMeta; key: string } | null
+    /** 已注册工作区,供 key 授权集合选择;key 只能引用其中的条目。 */
+    workspaces?: WorkspaceInfo[]
+    /** 一次性定位目标:落到某个 Tab 并在其中定位一行配置。消费后由父组件清空。 */
+    target?: SystemSettingsTarget | null
   }>(),
   {
     hostStatus: () => [],
     vendorAvailability: () => ({}),
     sandboxStatus: null,
     bindingStats: null,
+    mcpApiKeys: () => [],
+    mcpApiKeyCreated: null,
+    workspaces: () => [],
+    target: null,
   },
 )
 
@@ -178,6 +194,15 @@ const emit = defineEmits<{
   'remove-account': [payload: { username: string }]
   // Designate which basic account is the single admin.
   'set-admin-account': [payload: { username: string }]
+  // External MCP API keys. Immediate-effect operations, deliberately outside the
+  // per-tab draft/save machinery — the same shape the basic-account list uses.
+  'create-mcp-api-key': [payload: { name: string; workspaceIds: string[] }]
+  'update-mcp-api-key': [payload: { id: string; name?: string; workspaceIds?: string[] }]
+  'revoke-mcp-api-key': [id: string]
+  'dismiss-mcp-api-key-reveal': []
+  // The one-shot `target` was acted on (located, or resolved to its fallback);
+  // the owner clears it so reopening the panel does not jump again.
+  'target-consumed': []
 }>()
 
 // A default, empty SystemSettings — the shape both `draft` and `committed` start
@@ -400,6 +425,96 @@ watch(
     syncCleanupRef()
   },
   { immediate: true },
+)
+
+// ---- One-shot locate (a derived next-step deep link) ----------------------
+// A blocked-state banner elsewhere in the app asks the panel to land on a tab and
+// point at one row. The jump NAVIGATES ONLY: it never toggles an agent, edits a
+// credential, or saves. It also never bypasses the dirty-tab guard — `requestTab`
+// still opens the confirm dialog, and the row is located once the user confirms.
+
+// The target still waiting to be pointed at (held across the tab-switch confirm
+// and across the settings pushback that first fills `draft.agents`).
+const pendingLocate = ref<SystemSettingsTarget | null>(null)
+// The row that just got located — drives a brief highlight so the eye lands on it.
+const locatedAgentId = ref<string | null>(null)
+// True when the target's agent row no longer exists (deleted after it failed). The
+// panel still opens on its vendor's configuration; this is a non-blocking notice,
+// never a modal or a dead end.
+const locateMissing = ref(false)
+let highlightTimer: ReturnType<typeof setTimeout> | undefined
+const agentListEl = ref<HTMLElement | null>(null)
+
+function highlight(agentId: string | null): void {
+  locatedAgentId.value = agentId
+  clearTimeout(highlightTimer)
+  if (agentId === null) return
+  highlightTimer = setTimeout(() => {
+    locatedAgentId.value = null
+  }, 2000)
+}
+
+// Point at the pending target's row. Falls back to the first row of the same
+// vendor when the exact agent is gone, so the user still lands on the right
+// configuration context instead of the top of a long list.
+function locateNow(): void {
+  const target = pendingLocate.value
+  if (!target) return
+  const rows = Array.from(agentListEl.value?.querySelectorAll<HTMLElement>('[data-agent-id]') ?? [])
+  const exact = rows.find((el) => el.dataset.agentId === target.agentId)
+  const fallback = exact ?? rows.find((el) => el.dataset.agentVendor === target.vendor)
+  pendingLocate.value = null
+  locateMissing.value = !exact
+  emit('target-consumed')
+  if (!fallback) return
+  fallback.scrollIntoView({ block: 'center' })
+  fallback.querySelector<HTMLElement>('input, select, button')?.focus()
+  highlight(exact ? target.agentId : null)
+}
+
+// Arm the locate when a target arrives, then request the Agent tab. `requestTab`
+// is the dirty guard: a clean tab switches immediately, a dirty one opens the
+// confirm and the locate waits for the user's answer.
+watch(
+  () => props.target,
+  (target) => {
+    if (!target || !props.open) return
+    pendingLocate.value = target
+    locateMissing.value = false
+    requestTab(target.tab)
+  },
+  { immediate: true },
+)
+
+// Fire (or re-fire) the locate once the Agent tab is actually showing AND the
+// rows exist — the settings pushback that fills `draft.agents` often lands after
+// the target does.
+watch(
+  () => [activeTab.value, draft.value.agents.length, pendingLocate.value] as const,
+  ([tab, agentCount, target]) => {
+    if (!target || tab !== target.tab || agentCount === 0) return
+    void nextTick(locateNow)
+  },
+)
+
+// Abandoning the tab switch abandons the jump: leaving it armed would make the
+// panel lurch to the Agent tab the next time the user switches tabs themselves.
+function onCancelTabSwitch(): void {
+  cancelTabSwitch()
+  if (!pendingLocate.value) return
+  pendingLocate.value = null
+  emit('target-consumed')
+}
+
+// Closing the panel drops any leftover highlight/notice so a later open is clean.
+watch(
+  () => props.open,
+  (open) => {
+    if (open) return
+    pendingLocate.value = null
+    locateMissing.value = false
+    highlight(null)
+  },
 )
 
 // The agent-type (vendor) options and the per-agent config-source options
@@ -972,13 +1087,23 @@ function selectAdmin(username: string) {
               ><strong>{{ t('settings.agents.hint.on') }}</strong></template
             >
           </i18n-t>
-          <div class="agent-list">
+          <p
+            v-if="locateMissing"
+            class="agent-locate-missing"
+            role="status"
+            data-testid="agent-locate-missing"
+          >
+            {{ t('settings.agents.locateMissing') }}
+          </p>
+          <div ref="agentListEl" class="agent-list">
             <div
               v-for="(a, i) in draft.agents"
               :key="a.id"
               class="agent-row"
-              :class="{ 'drag-over': dragOverIndex === i }"
+              :class="{ 'drag-over': dragOverIndex === i, located: locatedAgentId === a.id }"
               data-testid="agent-card"
+              :data-agent-id="a.id"
+              :data-agent-vendor="a.vendor"
               @dragover.prevent="onAgentDragOver(i)"
               @drop.prevent="onAgentDrop(i)"
             >
@@ -1647,6 +1772,19 @@ function selectAdmin(username: string) {
           </label>
           <p class="settings-hint">{{ t('settings.auth.ttl.hint') }}</p>
         </section>
+
+        <!-- External MCP API keys. Immediate-effect operations: this section has no
+             draft and never contributes to the tab's unsaved state. -->
+        <McpApiKeys
+          :keys="mcpApiKeys"
+          :created="mcpApiKeyCreated"
+          :workspaces="workspaces"
+          :is-admin="isAdmin"
+          @create="(p) => emit('create-mcp-api-key', p)"
+          @update="(p) => emit('update-mcp-api-key', p)"
+          @revoke="(id) => emit('revoke-mcp-api-key', id)"
+          @dismiss-reveal="emit('dismiss-mcp-api-key-reveal')"
+        />
       </div>
 
       <!-- ============ General tab ============ -->
@@ -1781,7 +1919,7 @@ function selectAdmin(username: string) {
       :confirm-label="t('settings.tabs.switch.confirm.confirm')"
       :cancel-label="t('settings.tabs.switch.confirm.stay')"
       @confirm="confirmTabSwitch"
-      @cancel="cancelTabSwitch"
+      @cancel="onCancelTabSwitch"
     />
 
     <!-- Add-account modal. -->

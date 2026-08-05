@@ -23,6 +23,13 @@
 # there is no target-subset input. A `setup` job resolves only the `version` input
 # (optional, e.g. v0.1.0 → C3_RELEASE_VERSION) and the shared batch subdirectory.
 #
+# Two CHANNELS ship from the same run and the same version:
+#   - `build-publish-<target>`  — the CLI single binary (`c3-v{ver}-{target}.tar.gz|zip`)
+#   - `build-desktop-<target>`  — the Tauri desktop app (`c3-desktop-v{ver}-{target}.{dmg|…}`),
+#     which embeds THAT SAME binary as its sidecar. Consumers pick one; both carry
+#     sha256 sidecars and a `channel` field in their manifest entry.
+# The CLI channel gates the release; a red desktop job drops only its own artifact.
+#
 # Trigger: workflow_dispatch (manual release entry; runs the full chain).
 #          push tags: v* (re-build + re-publish for the pushed tag).
 #
@@ -325,15 +332,321 @@ jobs:
           retention-days: 7
 
   # ────────────────────────────────────────────────────────────────────
+  # 1b. build-desktop-<target> — the DESKTOP channel (Tauri 2 shell wrapping the
+  #     same c3 single binary as a sidecar). One job per platform on its NATIVE
+  #     runner: Tauri has no cross-platform bundling, and macOS signing +
+  #     notarization only work on a darwin host.
+  #
+  #     Each job runs `pnpm release:desktop` (web → static-embed → sidecar compile
+  #     via the SAME build-target.mjs primitive → stage → tauri build → collect),
+  #     then checksum + postgate scoped to `C3_REQUIRED_CHANNEL=desktop`.
+  #
+  #     A desktop failure blocks ONLY that desktop artifact — see the `publish`
+  #     job's `if:` guard, which requires the three CLI jobs but tolerates a red
+  #     desktop job. That mirrors the spec: a signing/bundling/checksum failure
+  #     blocks the corresponding desktop target's release, not the CLI cut.
+  # ────────────────────────────────────────────────────────────────────
+  build-desktop-macos-arm64:
+    name: 'build desktop macos-arm64 (signed + notarized)'
+    needs: [pregate, setup]
+    runs-on: macos-14
+    environment: default
+    timeout-minutes: 60
+    env:
+      BUN_INSTALL: ${{ github.workspace }}/.bun
+      C3_RELEASE_VERSION: ${{ needs.setup.outputs.version }}
+      # Developer ID signing + notarization. Injected from CI secrets only; the
+      # Tauri CLI reads these directly. `--require-signing` (below) turns a missing
+      # or invalid credential into a hard failure, so an unsigned .dmg can never
+      # take the place of the real artifact.
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust (aarch64-apple-darwin)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: cargo-macos-arm64-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: cargo-macos-arm64-
+
+      - name: Install Bun
+        run: curl -fsSL https://bun.sh/install | bash
+        shell: bash
+
+      - name: Install dependencies
+        run: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          pnpm install --frozen-lockfile
+
+      - name: Build desktop macos-arm64
+        run: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          pnpm release:desktop --targets=macos-arm64 --require-signing
+
+      - name: Checksum artifacts
+        run: node scripts/release/checksum.mjs --manifest=dist/manifest.json
+
+      - name: Verify distribution consistency
+        env:
+          C3_REQUIRED_TARGETS: macos-arm64
+          C3_REQUIRED_CHANNEL: desktop
+        run: node scripts/release/postgate.mjs --manifest=dist/manifest.json
+
+      - name: Upload desktop artifacts for the publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: c3-desktop-macos-arm64
+          path: |
+            dist/c3-desktop-v*-macos-arm64.*
+            dist/*.sha256
+            dist/SHA256SUMS*
+          if-no-files-found: error
+          retention-days: 7
+
+  build-desktop-windows-x64:
+    name: 'build desktop windows-x64'
+    needs: [pregate, setup]
+    runs-on: windows-latest
+    environment: default
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      BUN_INSTALL: ${{ github.workspace }}\.bun
+      C3_RELEASE_VERSION: ${{ needs.setup.outputs.version }}
+      # Authenticode signing when a certificate is configured. Absent credentials
+      # do NOT fail the build — the artifacts ship unsigned and the release notes
+      # must state the SmartScreen warning (see doc/non-functional/release.md).
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust (x86_64-pc-windows-msvc)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: cargo-windows-x64-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: cargo-windows-x64-
+
+      - name: Install Bun
+        run: irm bun.sh/install.ps1 | iex
+
+      - name: Install dependencies
+        run: |
+          $env:PATH = "$env:BUN_INSTALL/bin;$env:PATH"
+          pnpm install --frozen-lockfile
+
+      - name: Build desktop windows-x64
+        run: |
+          $env:PATH = "$env:BUN_INSTALL/bin;$env:PATH"
+          pnpm release:desktop --targets=windows-x64
+
+      - name: Report signing status
+        run: |
+          if ([string]::IsNullOrEmpty($env:WINDOWS_CERTIFICATE)) {
+            Write-Host "::warning::No Authenticode certificate configured — the Windows desktop installers are UNSIGNED and will show a SmartScreen warning. The release notes must say so."
+          } else {
+            Write-Host "[desktop] Authenticode certificate present — installers signed by the Tauri bundler."
+          }
+
+      - name: Checksum artifacts
+        run: node scripts/release/checksum.mjs --manifest=dist/manifest.json
+
+      - name: Verify distribution consistency
+        env:
+          C3_REQUIRED_TARGETS: windows-x64
+          C3_REQUIRED_CHANNEL: desktop
+        run: node scripts/release/postgate.mjs --manifest=dist/manifest.json
+
+      - name: Upload desktop artifacts for the publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: c3-desktop-windows-x64
+          path: |
+            dist/c3-desktop-v*-windows-x64.*
+            dist/*.sha256
+            dist/SHA256SUMS*
+          if-no-files-found: error
+          retention-days: 7
+
+  build-desktop-linux-x64:
+    name: 'build desktop linux-x64'
+    needs: [pregate, setup]
+    runs-on: ubuntu-latest
+    environment: default
+    timeout-minutes: 60
+    env:
+      BUN_INSTALL: ${{ github.workspace }}/.bun
+      C3_RELEASE_VERSION: ${{ needs.setup.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Tauri on Linux links against the system WebKitGTK; the bundler additionally
+      # needs librsvg (icons) and libxdo (tray). Installed explicitly, then VERIFIED —
+      # a missing dev package otherwise surfaces as an opaque linker error much later.
+      - name: Install WebKitGTK / Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            file \
+            patchelf
+
+      - name: Verify WebKitGTK is present
+        run: |
+          set -e
+          for pkg in webkit2gtk-4.1 gtk+-3.0 librsvg-2.0; do
+            version="$(pkg-config --modversion "$pkg")"
+            echo "[desktop] $pkg $version"
+          done
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust (x86_64-unknown-linux-gnu)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: cargo-linux-x64-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: cargo-linux-x64-
+
+      - name: Install Bun
+        run: curl -fsSL https://bun.sh/install | bash
+        shell: bash
+
+      - name: Install dependencies
+        run: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          pnpm install --frozen-lockfile
+
+      - name: Build desktop linux-x64
+        run: |
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          pnpm release:desktop --targets=linux-x64
+
+      - name: Checksum artifacts
+        run: node scripts/release/checksum.mjs --manifest=dist/manifest.json
+
+      - name: Verify distribution consistency
+        env:
+          C3_REQUIRED_TARGETS: linux-x64
+          C3_REQUIRED_CHANNEL: desktop
+        run: node scripts/release/postgate.mjs --manifest=dist/manifest.json
+
+      - name: Upload desktop artifacts for the publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: c3-desktop-linux-x64
+          path: |
+            dist/c3-desktop-v*-linux-x64.*
+            dist/*.sha256
+            dist/SHA256SUMS*
+          if-no-files-found: error
+          retention-days: 7
+
+  # ────────────────────────────────────────────────────────────────────
   # 2. publish — gather every target's checksummed artifacts and cut ONE public
   #    GitHub Release. Release notes are auto-generated from the merged-PR /
   #    commit history since the previous release (GitHub `--generate-notes`,
-  #    categorized by .github/release.yml). Runs only after all targets
-  #    succeed; needs `contents: write` to create the Release + tag.
+  #    categorized by .github/release.yml). Needs `contents: write` to create the
+  #    Release + tag.
+  #
+  #    The CLI channel is the release gate: `if:` demands all three CLI jobs be
+  #    green. Desktop jobs are in `needs` so publish WAITS for them, but a red
+  #    desktop job only removes that desktop artifact from the release — it must
+  #    not hold the CLI single binary hostage.
   # ────────────────────────────────────────────────────────────────────
   publish:
     name: 'publish (GitHub Release + auto notes)'
-    needs: [setup, build-publish-linux-x64, build-publish-macos-arm64, build-publish-windows-x64]
+    needs:
+      [
+        setup,
+        build-publish-linux-x64,
+        build-publish-macos-arm64,
+        build-publish-windows-x64,
+        build-desktop-macos-arm64,
+        build-desktop-windows-x64,
+        build-desktop-linux-x64,
+      ]
+    if: >-
+      ${{ !cancelled()
+      && needs.build-publish-linux-x64.result == 'success'
+      && needs.build-publish-macos-arm64.result == 'success'
+      && needs.build-publish-windows-x64.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the Release + tag and upload assets

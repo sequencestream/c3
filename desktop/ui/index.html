@@ -1,0 +1,248 @@
+<!doctype html>
+<!--
+  启动页 —— 桌面壳唯一的本地页面,也是唯一被 capability 授权的窗口内容。
+
+  它有两个状态:等待后端就绪,以及后端起不来时的可行动错误。绝不留白屏:即使
+  sidecar 缺失、崩溃、端口被抢或迟迟不应答,用户看到的也是一句说明加上重试/退出。
+
+  刻意不引入构建步骤:Tauri 的 `withGlobalTauri` 让本页直接用 window.__TAURI__,
+  所以这是一个自包含的静态文件,没有打包器、没有依赖。
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>c3</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #18181b;
+        --muted: #71717a;
+        --bg: #fafafa;
+        --card: #ffffff;
+        --border: #e4e4e7;
+        --accent: #6366f1;
+        --danger: #b91c1c;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #f4f4f5;
+          --muted: #a1a1aa;
+          --bg: #18181b;
+          --card: #27272a;
+          --border: #3f3f46;
+          --danger: #f87171;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          Inter,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          'PingFang SC',
+          'Hiragino Sans GB',
+          'Microsoft YaHei',
+          system-ui,
+          sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      main {
+        width: 100%;
+        padding: 28px 32px;
+        text-align: center;
+      }
+      .logo {
+        width: 56px;
+        height: 56px;
+        border-radius: 14px;
+        margin: 0 auto 18px;
+        background: linear-gradient(135deg, #6366f1, #a855f7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #f4f4f5;
+        font-weight: 700;
+        font-size: 22px;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 17px;
+        font-weight: 600;
+      }
+      p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .bar {
+        margin: 20px auto 0;
+        width: 200px;
+        height: 3px;
+        border-radius: 999px;
+        background: var(--border);
+        overflow: hidden;
+      }
+      .bar span {
+        display: block;
+        width: 40%;
+        height: 100%;
+        border-radius: 999px;
+        background: var(--accent);
+        animation: slide 1.3s ease-in-out infinite;
+      }
+      @keyframes slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(350%);
+        }
+      }
+      .detail {
+        margin-top: 14px;
+        max-height: 96px;
+        overflow: auto;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--card);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+        line-height: 1.5;
+        color: var(--muted);
+        text-align: left;
+        white-space: pre-wrap;
+        word-break: break-word;
+        user-select: text;
+        -webkit-user-select: text;
+      }
+      .actions {
+        margin-top: 18px;
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+      }
+      button {
+        font: inherit;
+        font-size: 13px;
+        padding: 7px 18px;
+        border-radius: 7px;
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--fg);
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button:hover {
+        filter: brightness(1.06);
+      }
+      .error h1 {
+        color: var(--danger);
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="root">
+      <div class="logo">c3</div>
+
+      <section id="loading">
+        <h1 id="loading-title">Starting c3…</h1>
+        <p id="loading-stage"></p>
+        <div class="bar"><span></span></div>
+      </section>
+
+      <section id="error" class="error" hidden>
+        <h1 id="error-title">c3 could not start</h1>
+        <p id="error-hint"></p>
+        <div class="detail" id="error-detail"></div>
+        <div class="actions">
+          <button class="primary" id="retry"></button>
+          <button id="quit"></button>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      // 与托盘同样的二选一:跟随系统语言,不引入完整 i18n 运行时。
+      const zh = (navigator.language || 'en').toLowerCase().startsWith('zh')
+      const t = zh
+        ? {
+            starting: '正在启动 c3…',
+            stages: {
+              version: '正在校验内置 c3 版本…',
+              starting: '正在启动本地服务…',
+            },
+            retryAttempt: (n) => `正在启动本地服务…(第 ${n} 次尝试)`,
+            errorTitle: 'c3 启动失败',
+            hint: (p) => `可重试启动,或退出应用。诊断日志:${p}`,
+            retry: '重试',
+            quit: '退出',
+          }
+        : {
+            starting: 'Starting c3…',
+            stages: {
+              version: 'Verifying the bundled c3 version…',
+              starting: 'Starting the local server…',
+            },
+            retryAttempt: (n) => `Starting the local server… (attempt ${n})`,
+            errorTitle: 'c3 could not start',
+            hint: (p) => `You can retry, or quit. Diagnostics: ${p}`,
+            retry: 'Retry',
+            quit: 'Quit',
+          }
+
+      const el = (id) => document.getElementById(id)
+      el('loading-title').textContent = t.starting
+      el('error-title').textContent = t.errorTitle
+      el('retry').textContent = t.retry
+      el('quit').textContent = t.quit
+
+      function showLoading() {
+        el('loading').hidden = false
+        el('error').hidden = true
+      }
+
+      function showError(payload) {
+        el('error-hint').textContent = t.hint(payload.logPath || '~/.c3/log/c3.log')
+        el('error-detail').textContent = `[${payload.stage}] ${payload.message}`
+        el('loading').hidden = true
+        el('error').hidden = false
+      }
+
+      const tauri = window.__TAURI__
+      if (tauri) {
+        tauri.event.listen('c3://startup-progress', ({ payload }) => {
+          showLoading()
+          el('loading-stage').textContent =
+            payload.attempt > 1 ? t.retryAttempt(payload.attempt) : t.stages[payload.stage] || ''
+        })
+        tauri.event.listen('c3://startup-error', ({ payload }) => showError(payload))
+        el('retry').addEventListener('click', () => {
+          showLoading()
+          tauri.core.invoke('retry_startup')
+        })
+        el('quit').addEventListener('click', () => tauri.core.invoke('quit_app'))
+      }
+    </script>
+  </body>
+</html>

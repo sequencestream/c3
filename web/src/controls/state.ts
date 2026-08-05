@@ -20,6 +20,7 @@ import { agentNameAt } from '@/lib/agent-prefix'
 import { deriveVendorAvailability } from '@/lib/vendor-runtime'
 import { normalizePersonalized, readLocalPersonalized } from '@/lib/personalized-settings'
 import type { DeepLinkTarget } from '@/lib/deep-link'
+import type { SystemSettingsTarget } from '@/lib/action-descriptor'
 import type {
   WorkflowStatus,
   QueueDetail,
@@ -43,6 +44,7 @@ import type {
   ToolManifestEntry,
   AdapterCapability,
   SessionAgentSwitch,
+  McpApiKeyMeta,
   SessionBindingStats,
   SessionCapabilities,
   SandboxHostStatus,
@@ -601,6 +603,10 @@ export function createState(deps: StateDeps) {
 
   // ---- System settings (agent config) ----
   const settingsOpen = ref(false)
+  // 一次性定位目标:某个派生的 ActionDescriptor 要求打开系统设置并落到具体位置。
+  // 面板消费后由 App 清空(与 automationFormTarget / requestedIntentSubTab 同一套
+  // 「一次性目标」模式),因此重开设置页不会再跳回上一次的 agent 行。
+  const settingsTarget = ref<SystemSettingsTarget | null>(null)
   const hostStatus = ref<VendorHostStatus[]>([])
   // 服务端给出的、覆盖全部 vendor 的运行时可用性;旧服务端不发此字段,故可为 null。
   const vendorRuntime = ref<Record<VendorId, VendorRuntimeStatus> | null>(null)
@@ -615,6 +621,14 @@ export function createState(deps: StateDeps) {
   const skillSupport = ref<Record<VendorId, SkillSupportState> | null>(null)
   const vendorCapabilities = ref<Record<VendorId, Record<AdapterCapability, boolean>> | null>(null)
   const vendorModes = ref<Record<VendorId, VendorModeCatalog> | null>(null)
+  // ---- External MCP API keys (system settings, admin-gated) ----
+  // The roster is metadata only. `mcpApiKeyCreated` holds the ONE reply that ever
+  // carries a plaintext key: it lives in memory for this page view so the user can
+  // copy it, and is cleared on dismiss / panel close. Nothing writes it to storage,
+  // so a refresh loses it permanently — which is the promise the server makes.
+  const mcpApiKeys = ref<McpApiKeyMeta[]>([])
+  const mcpApiKeyCreated = ref<{ meta: McpApiKeyMeta; key: string } | null>(null)
+
   const skillApprovalRequest = ref<ApprovalRequest | null>(null)
   const skillLinkStatuses = ref<SkillLinkStatus[]>([])
   const installingSkillIds = ref<string[]>([])
@@ -932,12 +946,15 @@ export function createState(deps: StateDeps) {
     codesSearchLoading,
     codesBoundSessionId,
     settingsOpen,
+    settingsTarget,
     serverSettings,
     hostStatus,
     vendorRuntime,
     vendorAvailability,
     sandboxStatus,
     bindingStats,
+    mcpApiKeys,
+    mcpApiKeyCreated,
     sessionCapabilities,
     skillSupport,
     vendorCapabilities,

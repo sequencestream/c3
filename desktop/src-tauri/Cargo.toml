@@ -1,0 +1,50 @@
+[package]
+name = "c3-desktop"
+version = "0.1.0"
+description = "c3 desktop shell — runs the c3 single binary as a sidecar and renders its Web UI in a native WebView"
+authors = ["c3 contributors"]
+license = "Apache-2.0"
+edition = "2021"
+rust-version = "1.77.2"
+
+# `staticlib`/`cdylib` keep the mobile targets buildable should they ever be added;
+# `rlib` is what `main.rs` links against on desktop.
+[lib]
+name = "c3_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `tray-icon` is what makes the shell resident after the window is closed; `image-png`
+# lets the tray reuse the bundled PNG app icon instead of carrying a second asset.
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-shell = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Process identity (exe path + start time) for the orphan-sidecar sweep. Killing by
+# pid alone would be unsafe after pid reuse; killing by name would hit an unrelated
+# c3 the user started from a terminal.
+sysinfo = "0.33"
+# Tray labels follow the system language, matching the Web UI's zh/en split.
+sys-locale = "0.3"
+
+[target.'cfg(unix)'.dependencies]
+# SIGTERM for the graceful sidecar stop. The shell asks first and only escalates
+# to a hard kill after the grace window.
+libc = "0.2"
+
+[features]
+# Default feature set; kept so `tauri build --features custom-protocol` style
+# invocations from older docs do not fail.
+default = []
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

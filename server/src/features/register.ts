@@ -26,6 +26,12 @@ import {
   getPersonalizedSettings,
   savePersonalizedSettingsHandler,
 } from './settings/personalized.js'
+import {
+  createMcpApiKeyHandler,
+  listMcpApiKeysHandler,
+  revokeMcpApiKeyHandler,
+  updateMcpApiKeyHandler,
+} from './settings/mcp-api-keys.js'
 import { permissionResponse } from './permissions/index.js'
 import { addWorkspaceHandler, removeWorkspaceHandler } from './workspaces/index.js'
 import {
@@ -134,6 +140,10 @@ export const handlerMap: HandlerMap = {
   save_settings: saveSettingsHandler,
   get_personalized_settings: getPersonalizedSettings,
   save_personalized_settings: savePersonalizedSettingsHandler,
+  list_mcp_api_keys: listMcpApiKeysHandler,
+  create_mcp_api_key: createMcpApiKeyHandler,
+  update_mcp_api_key: updateMcpApiKeyHandler,
+  revoke_mcp_api_key: revokeMcpApiKeyHandler,
   load_workspace_setting: loadWorkspaceSettingHandler,
   save_workspace_setting: saveWorkspaceSettingHandler,
   // permissions

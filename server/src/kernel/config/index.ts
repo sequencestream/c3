@@ -68,6 +68,7 @@ import {
   personalizedFileKeys,
   resetPersonalizedCache,
 } from './personalized.js'
+import { mcpApiKeyFileKeys, resetMcpApiKeyCache } from './mcp-api-keys.js'
 
 export { c3HomeDir, DEFAULT_UI_LANG, getAgentLang }
 
@@ -281,6 +282,7 @@ export function setSettingsPath(path: string): void {
   setSettingsPathOverride(path)
   settingsCache = null
   resetPersonalizedCache()
+  resetMcpApiKeyCache()
 }
 
 // ---- Settings (agent registry) ----
@@ -948,12 +950,14 @@ export function saveSettings(next: SystemSettings): SystemSettings {
     try {
       // Encrypt apiKeys for disk only; the cache keeps the plaintext `normalized`
       // so the runtime (launchForAgent env injection) always reads the real key.
-      // The personalized-settings keys are siblings of SystemSettings and never
-      // travel in a system-settings snapshot, so re-attach the disk copy — a
-      // whole-object save must not wipe another settings class.
+      // The personalized-settings and external-MCP-key collections are siblings of
+      // SystemSettings and never travel in a system-settings snapshot, so re-attach
+      // the disk copy — a whole-object save must not wipe another settings class,
+      // and (for the keys) must not be able to inject or read back hash material.
       writeAtomic(settingsFile(), {
         ...encryptAgentApiKeys(normalized),
         ...personalizedFileKeys(disk),
+        ...mcpApiKeyFileKeys(disk),
       })
       settingsCache = normalized
     } catch (err) {
@@ -1527,4 +1531,5 @@ export function resetSettingsCacheForTests(): void {
   settingsCache = null
   stateCache = null
   resetPersonalizedCache()
+  resetMcpApiKeyCache()
 }

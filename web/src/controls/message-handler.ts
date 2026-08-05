@@ -100,6 +100,8 @@ export function installMessageHandler(ctx: AppCtx): void {
     vendorRuntime,
     sandboxStatus,
     bindingStats,
+    mcpApiKeys,
+    mcpApiKeyCreated,
     sessionCapabilities,
     vendorCapabilities,
     vendorModes,
@@ -733,6 +735,12 @@ export function installMessageHandler(ctx: AppCtx): void {
           const configured = msg.settings.agents.some((agent) => agent.id !== SYSTEM_AGENT_ID)
           if (!configured) settingsOpen.value = true
         }
+        break
+      case 'mcp_api_keys':
+        mcpApiKeys.value = msg.keys
+        // `created` rides only on a successful mint. A plain roster refresh must
+        // NOT clear an open reveal box — the user may still be copying the key.
+        if (msg.created) mcpApiKeyCreated.value = msg.created
         break
       case 'personalized_settings': {
         // The echo is authoritative for this identity: an account record beats what

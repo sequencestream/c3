@@ -3,6 +3,19 @@
 All notable changes to `c3` (Code Creative Center). The version source-of-truth is the git
 tag (`git describe --tags`); `package.json` is the fallback baseline.
 
+## Unreleased
+
+### New Features
+
+- external MCP access: a public `/mcp/v1` Streamable HTTP route lets an agent c3 did not start (an independent Claude Code / Codex session, a CI job, a monitoring script) read this deployment. Authentication is a long-lived API key managed in System Settings → Security — generated once in plaintext, stored only as a per-key salted `scrypt` hash, granted an explicit set of workspaces, and revocable (which also closes any MCP session it already had open). The tool surface is an explicit allowlist of five read-only tools — `find_intents`, `view_intent`, `find_discussions`, `view_discussion`, `publish_event` — so no write tool, session launcher or review tool is ever exposed. Workspace Settings gains a read-only "External MCP" tab with a ready-to-copy URL and one-line `claude mcp add` command
+- `c3 start` / `c3 install` accept `--host <address>`, threaded through the daemon and the OS service unit
+
+### Security
+
+- **BREAKING (hardening): c3 now listens on `127.0.0.1` by default.** Previously the server was started without a hostname, which means Node listened on _every_ interface — a machine on the LAN could reach c3 without anyone having chosen that. Exposure is now an explicit `--host 0.0.0.0` / `::` / interface-address decision. **An installed background service that was relying on the implicit wide bind will become loopback-only after upgrading**; re-run `c3 install --host <address>` (or start with `c3 start --host <address>`) if you need remote access
+- the six `/internal/*-mcp/v1` routes are unchanged: still loopback-guarded, still per-run-token bound. The external route is a separate module with its own trust model, not a relaxation of theirs
+- external MCP keys travel in the URL query string (to keep one-line client configuration possible), so they can reach proxy and access logs, and plain HTTP exposes them on the network. c3 neither ships nor requires TLS this cycle — put it behind your own HTTPS reverse proxy before exposing it beyond the local machine. Server logs never print a token or a full MCP URL
+
 ## v0.11.0
 
 ### Security

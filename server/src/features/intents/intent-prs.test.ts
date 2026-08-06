@@ -8,7 +8,7 @@
  * every read point trusts that a PR exists exactly once and that a status write
  * updates rather than duplicates.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -193,6 +193,66 @@ describe('v19 → v20 backfill of the legacy PR columns', () => {
         "SELECT COUNT(*) AS n FROM schema_migrations WHERE id='intents.backfill_intent_prs.v1'",
       )?.n,
     ).toBe(1)
+  })
+
+  it('degrades duplicate PR identities per row instead of rolling back the whole pass', () => {
+    const raw = getDb()!
+    // Two intents point at the SAME real PR (#7 on owner/repo). The legacy model
+    // could not express that and merely stored the pair; the backfill must not
+    // let the second INSERT take the whole migration (and the marker) down.
+    seedLegacyIntents(raw, [
+      {
+        id: 'dup-a',
+        prId: '7',
+        prUrl: 'https://github.com/owner/repo/pull/7',
+        prStatus: 'reviewing',
+        updatedAt: 1_700_000_000_000,
+      },
+      {
+        id: 'dup-b',
+        prId: '7',
+        prUrl: 'https://github.com/owner/repo/pull/7',
+        prStatus: 'reviewing',
+        updatedAt: 1_700_000_000_000,
+      },
+      // A later, distinct PR must still land after the collision.
+      {
+        id: 'legit',
+        prId: '8',
+        prUrl: 'https://github.com/owner/repo/pull/8',
+        prStatus: 'reviewing',
+        updatedAt: 1_700_000_000_000,
+      },
+    ])
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      resetStoreForTests()
+      // The store must initialize despite the duplicate — the migration marker is
+      // what unblocks every subsequent start.
+      expect(getIntent('legit')?.prs[0].number).toBe('8')
+
+      // The identity is claimed exactly once; the colliding row is skipped.
+      expect(
+        raw.all<{ intent_id: string }>('SELECT intent_id FROM intent_prs WHERE number=?', '7'),
+      ).toHaveLength(1)
+      expect(raw.all<{ n: number }>('SELECT COUNT(*) AS n FROM intent_prs')).toEqual([{ n: 2 }])
+
+      // The skipped row warned and the marker landed, so a restart does not re-run.
+      expect(warn).toHaveBeenCalledOnce()
+      expect(
+        raw.get<{ n: number }>(
+          "SELECT COUNT(*) AS n FROM schema_migrations WHERE id='intents.backfill_intent_prs.v1'",
+        )?.n,
+      ).toBe(1)
+
+      // A second start is a no-op: still exactly one claim of #7, marker present.
+      resetStoreForTests()
+      expect(getIntent('dup-a')?.prs).toHaveLength(1)
+      expect(raw.all<{ n: number }>('SELECT COUNT(*) AS n FROM intent_prs')).toEqual([{ n: 2 }])
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('leaves the legacy columns untouched — they are the rollback script’s landing site', () => {

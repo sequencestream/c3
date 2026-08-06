@@ -364,9 +364,19 @@ function narrowPrStatus(v: string | null | undefined): IntentPrStatus {
  * migration must never run a second time (a re-run would collide with the identity
  * index, or worse, resurrect rows a later close had legitimately changed).
  *
- * The whole pass — inserts plus the marker — runs in ONE transaction, so a failure
- * rolls back the rows AND the marker together and the next start retries cleanly.
- * There is no "backfilled halfway and marked done" state to recover from.
+ * The whole pass — inserts plus the marker — runs in ONE transaction, so a
+ * non-constraint failure rolls back the rows AND the marker together and the next
+ * start retries cleanly. There is no "backfilled halfway and marked done" state
+ * to recover from.
+ *
+ * A row whose real-world identity `(forge, repo, number)` collides with one
+ * already inserted is DEGRADED per row rather than fatal: legacy data does hold
+ * two intents pointing at the same PR, and letting that duplicate take down the
+ * whole transaction would leave the marker unwritten, so every subsequent start
+ * re-runs the pass and fails again — the store never initializes. The colliding
+ * row is skipped with a warning; every other row and the marker still land. The
+ * first row to claim an identity wins (which intent that is follows the SELECT
+ * order, so the loser is "the later duplicate").
  *
  * Row selection is `pr_id` non-empty: a row with `pr_status='merged'` but no
  * `pr_id` (these exist) has no PR identity to carry over. Those rows already
@@ -395,25 +405,41 @@ function backfillIntentPrs(d: Db): void {
     for (const r of rows) {
       const { forge, repo } = parsePrIdentity(r.pr_url)
       const at = toEpochMs(r.updated_at)
-      d.run(
-        `INSERT INTO intent_prs
-           (id, intent_id, delivery_id, forge, repo, number, url, status, head_branch, base_branch, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-        randomUUID(),
-        r.id,
-        null,
-        forge,
-        repo,
-        (r.pr_id as string).trim(),
-        r.pr_url,
-        narrowPrStatus(r.pr_status),
-        r.branch_name,
-        // Every legacy PR targeted a literal `main` (ADR-0034); the column exists
-        // so future rows can say otherwise, not so this one can guess.
-        'main',
-        at,
-        at,
-      )
+      try {
+        d.run(
+          `INSERT INTO intent_prs
+             (id, intent_id, delivery_id, forge, repo, number, url, status, head_branch, base_branch, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+          randomUUID(),
+          r.id,
+          null,
+          forge,
+          repo,
+          (r.pr_id as string).trim(),
+          r.pr_url,
+          narrowPrStatus(r.pr_status),
+          r.branch_name,
+          // Every legacy PR targeted a literal `main` (ADR-0034); the column exists
+          // so future rows can say otherwise, not so this one can guess.
+          'main',
+          at,
+          at,
+        )
+      } catch (err) {
+        // A duplicate PR identity is the one expected conflict here (the legacy
+        // model could not express "same PR, two intents" and merely stored both).
+        // Skip the row and keep the migration moving; any other error is real and
+        // rolls the transaction back for the next start to retry.
+        if (err instanceof Error && /UNIQUE constraint failed/.test(err.message)) {
+          console.warn(
+            `[c3:intents] backfill skipped intent ${r.id}: PR ${
+              forge ?? 'unknown-forge'
+            }/${repo ?? 'unknown-repo'}#${(r.pr_id as string).trim()} already carried by an earlier row`,
+          )
+          continue
+        }
+        throw err
+      }
     }
     markMigration(d, BACKFILL_INTENT_PRS_MIGRATION)
   })

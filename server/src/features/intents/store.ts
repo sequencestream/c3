@@ -1291,10 +1291,14 @@ export function setReverseSpec(id: string, specPath: string): void {
 
 /**
  * Record the git baseline a manual fast-mode work turn started from. Upserted on
- * every fresh launch AND resume, keyed by the work session id; the row also
- * carries the `settled_at` / `outcome` marker the settle reads to stay
- * idempotent. `baseline` is a JSON object `{ [repoPath]: HEADcommit | null }`
- * captured from the dev directory at turn start.
+ * every fresh launch AND resume, keyed by the work session id. Because resume
+ * REUSES the session id, the upsert also re-opens the settleable window: the
+ * conflict branch resets `settled_at` / `outcome` / `spec_path` so the same
+ * session's second and later turns can each claim and settle independently. The
+ * row's `settled_at` / `outcome` markers are what the settle reads to stay
+ * idempotent WITHIN one turn. `baseline` is a JSON object
+ * `{ [repoPath]: HEADcommit | null }` captured from the dev directory at turn
+ * start.
  */
 export function upsertFastTurnBaseline(input: {
   sessionId: string
@@ -1306,7 +1310,13 @@ export function upsertFastTurnBaseline(input: {
   d.run(
     `INSERT INTO intent_fast_turns (session_id, intent_id, workspace_path, baseline, settled_at, outcome, spec_path, created_at)
      VALUES (?,?,?,?,NULL,NULL,NULL,?)
-     ON CONFLICT(session_id) DO UPDATE SET baseline=excluded.baseline`,
+     ON CONFLICT(session_id) DO UPDATE SET
+       baseline=excluded.baseline,
+       intent_id=excluded.intent_id,
+       workspace_path=excluded.workspace_path,
+       settled_at=NULL,
+       outcome=NULL,
+       spec_path=NULL`,
     input.sessionId,
     input.intentId,
     resolve(input.workspacePath),

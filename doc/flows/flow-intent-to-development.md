@@ -194,8 +194,11 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
      意图原子切回显式 `sdd`;此后 resume/continue 被原 `intent.specNotApproved`
      闸门拒绝,须补规格并获批准后才能继续。不伪造规格、不自动批准。
 4. **幂等与竞态。** 每个工作会话一条结算记录,`run:settled` 事件重放或服务重启
-   不会重复生成规格;落定以服务端当时重读的意图/设置/diff 为准,条件更新防止
-   用户同时切换模式、编辑规格或撤销批准时被陈旧结算覆盖。
+   不会重复生成规格;resume 复用同一会话 id 时,重建 baseline 会一并清除上一 turn
+   的 `settled_at`/`outcome`/`spec_path`,为每个 turn 各自开启新的可结算周期——
+   同一 session 的第二个及后续 resume turn 同样能 claim 并落定;落定以服务端当时
+   重读的意图/设置/diff 为准,条件更新防止用户同时切换模式、编辑规格或撤销批准时
+   被陈旧结算覆盖。
 
 ## 启动工作
 

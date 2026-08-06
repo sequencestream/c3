@@ -21,9 +21,12 @@
  *
  * The diff is always measured against the fixed turn-start baseline (persisted
  * at launch in `intent_fast_turns`), so committing the turn's changes during
- * settle — or a service restart — never moves the yardstick. The settlement is
- * idempotent per session: a replayed `run:settled` event or a concurrent handler
- * finds the turn already claimed and no-ops. Any unmeasurable condition
+ * settle — or a service restart — never moves the yardstick. A resume re-uses
+ * the SAME work session id, so re-recording the baseline also RE-OPENS the
+ * settleable window (clearing the previous turn's `settled_at` / `outcome` /
+ * `spec_path`): each turn settles independently, and the idempotency claim only
+ * guards ONE turn. A replayed `run:settled` event or a concurrent handler for
+ * that turn finds it already claimed and no-ops. Any unmeasurable condition
  * (baseline lost, diff unreadable, store unavailable) FAILS CLOSED to `sdd` —
  * an unmeasured diff is never classified as a small change.
  */
@@ -67,9 +70,12 @@ function devDirFor(workspacePath: string, intentId: string): string {
 /**
  * Record the git baseline a manual fast-mode work turn is about to start from,
  * keyed by the work session id. Called right before the turn is launched (fresh
- * and resume alike). The settle later diffs against this fixed baseline. Failures
- * are logged and swallowed here — the settle's fail-closed-to-`sdd` rule is what
- * a missing baseline triggers.
+ * and resume alike). The settle later diffs against this fixed baseline. A
+ * resume re-uses the same session id, so the underlying upsert also clears the
+ * previous turn's settlement markers — every turn opens its own settleable
+ * window instead of being blocked by the last one. Failures are logged and
+ * swallowed here — the settle's fail-closed-to-`sdd` rule is what a missing
+ * baseline triggers.
  */
 export async function captureFastTurnBaseline(
   workspacePath: string,

@@ -113,7 +113,7 @@ describe('fast-turn settlement record', () => {
     expect(after.specPath).toBe('/new/spec.md')
   })
 
-  it('re-upserting refreshes the baseline only', () => {
+  it('re-upserting (resume) refreshes the baseline and re-opens the settleable window', () => {
     const [intent] = insertIntents(proj, [
       { title: 'Turn', shortEnTitle: 'turn', content: '', priority: 'P1' },
     ])
@@ -123,6 +123,9 @@ describe('fast-turn settlement record', () => {
       workspacePath: proj,
       baseline: { '/abs/repo-a': 'old' },
     })
+    // Settle the first turn fully, then resume re-upserts over the same session.
+    expect(claimFastTurnSettled('s2')).toBe(true)
+    completeFastTurnSettle('s2', 'small', '/new/spec.md')
     upsertFastTurnBaseline({
       sessionId: 's2',
       intentId: intent.id,
@@ -130,6 +133,51 @@ describe('fast-turn settlement record', () => {
       baseline: { '/abs/repo-a': 'new' },
     })
 
-    expect(JSON.parse(getFastTurn('s2')!.baseline)).toEqual({ '/abs/repo-a': 'new' })
+    const rec = getFastTurn('s2')!
+    expect(JSON.parse(rec.baseline)).toEqual({ '/abs/repo-a': 'new' })
+    // The previous turn's settlement markers are cleared — this turn can claim again.
+    expect(rec.settledAt).toBeNull()
+    expect(rec.outcome).toBeNull()
+    expect(rec.specPath).toBeNull()
+  })
+
+  it('same session: first settle → resume re-baseline → second turn claims and settles again', () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Turn', shortEnTitle: 'turn', content: '', priority: 'P1' },
+    ])
+    const sessionId = 's-resume'
+
+    // Turn 1: baseline → settle (small) → complete.
+    upsertFastTurnBaseline({
+      sessionId,
+      intentId: intent.id,
+      workspacePath: proj,
+      baseline: { '/abs/repo-a': 'old' },
+    })
+    expect(claimFastTurnSettled(sessionId)).toBe(true)
+    completeFastTurnSettle(sessionId, 'small', '/new/spec.md')
+    let rec = getFastTurn(sessionId)!
+    expect(rec.settledAt).not.toBeNull()
+    expect(rec.outcome).toBe('small')
+
+    // Turn 2 (resume, same session): re-baseline opens a new settleable window.
+    upsertFastTurnBaseline({
+      sessionId,
+      intentId: intent.id,
+      workspacePath: proj,
+      baseline: { '/abs/repo-a': 'new' },
+    })
+    rec = getFastTurn(sessionId)!
+    expect(JSON.parse(rec.baseline)).toEqual({ '/abs/repo-a': 'new' })
+    expect(rec.settledAt).toBeNull()
+    expect(rec.outcome).toBeNull()
+    expect(rec.specPath).toBeNull()
+
+    // The second turn claims and settles independently of the first turn's record.
+    expect(claimFastTurnSettled(sessionId)).toBe(true)
+    expect(claimFastTurnSettled(sessionId)).toBe(false) // still idempotent within THIS turn
+    completeFastTurnSettle(sessionId, 'over')
+    rec = getFastTurn(sessionId)!
+    expect(rec.outcome).toBe('over')
   })
 })

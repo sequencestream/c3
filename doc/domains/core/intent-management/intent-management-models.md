@@ -192,7 +192,7 @@ null,写入侧截断到 128)。这次重命名有意与向后兼容的 `projectC
 产生分歧,该键保留其历史名称 —— 见 2026-06-14 的 workspace-path 迁移记录)。v18→v19
 新增可空的 `intents.spec_mode` 列(CHECK(sdd/fast),三态:NULL=继承工作区、'sdd'=显式固定
 规格先行、'fast'=显式固定规格延后;存量不回填继续派生)与 `intent_fast_turns` 结算表
-(fast 模式每 turn 反向补轨的基线 + 幂等键;详见迁移记录 `migrate/2026/08/06/030`)。表:
+(fast 模式每 turn 反向补轨的基线 + 幂等键,resume 复用同一 session 时重建 baseline 并重开可结算周期;详见迁移记录 `migrate/2026/08/06/030`)。表:
 `intents`、`intent_deps`、`intent_chats`(会话集合 + 隐藏集合在同一张表中)、
 `tool_sessions`(`session_id` PRIMARY KEY + `created_at`)—— 工具创建会话(完成判定器、
 共识顾问)的持久化集合,使 session-registry 的“显示工具会话”过滤器能在重启后存续,

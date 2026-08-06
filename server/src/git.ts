@@ -538,31 +538,48 @@ export async function hasCommittableChanges(workspacePath: string): Promise<bool
 }
 
 /**
- * Whether a single repo differs from the local `main` branch: tracked-file diffs
- * against `main`, OR commits in HEAD that `main` doesn't contain. Unlike
+ * Whether a single repo differs from `baseBranch`: tracked-file diffs against
+ * the base, OR commits in HEAD that the base doesn't contain. Unlike
  * {@link hasCommittableChanges} this never consults the upstream, so a worktree
  * branch without tracking config is still recognised as having work.
  *
- * When local `main` can't be resolved we return `true` rather than block: the
- * real error belongs to the later commit/push or the forge CLI, not to a
- * misleading "no changes" gate. Note `git diff main --stat` ignores untracked
- * files — an untracked-only tree with no commits ahead of `main` reads as false.
+ * The base ref is resolved BEFORE comparing: fetch `baseBranch` from the repo's
+ * remote (prefer `origin`, else the first configured remote — mirroring
+ * {@link commitAndPush}), and compare against the freshly-updated
+ * `<remote>/<base>` when it resolves; fall back to the local `<base>` ref when
+ * the remote ref is unavailable. A fetch failure alone is NOT "no diff" — only
+ * when neither the remote nor the local base ref can be resolved does the gate
+ * reject with a clear "target branch unresolvable" error, so a misconfigured
+ * workspace fails here (before any commit/push/forge work) instead of passing
+ * through to an error that is harder to attribute downstream.
+ *
+ * Note `git diff <base> --stat` ignores untracked files — an untracked-only
+ * tree with no commits ahead of the base reads as false.
+ *
+ * @throws {Error} when `baseBranch` resolves neither as `<remote>/<base>` (after
+ *   fetch) nor as a local ref — the caller must treat that as a hard rejection.
  */
-export async function hasDiffAgainstMain(repoPath: string): Promise<boolean> {
-  const mainExists = await git(repoPath, [
-    '-C',
-    repoPath,
-    'rev-parse',
-    '--verify',
-    '--quiet',
-    'main',
-  ])
-  if (mainExists.code !== 0 || mainExists.stdout.trim() === '') return true
+export async function hasDiffAgainstBase(repoPath: string, baseBranch: string): Promise<boolean> {
+  const remote = await resolveRemote(repoPath)
+  if (remote) await git(repoPath, ['-C', repoPath, 'fetch', remote, baseBranch])
 
-  const diff = await git(repoPath, ['-C', repoPath, 'diff', 'main', '--stat'])
+  const remoteRef = remote ? `${remote}/${baseBranch}` : null
+  const resolves = async (ref: string): Promise<boolean> => {
+    const r = await git(repoPath, ['-C', repoPath, 'rev-parse', '--verify', '--quiet', ref])
+    return r.code === 0 && r.stdout.trim() !== ''
+  }
+
+  let baseRef: string | null = null
+  if (remoteRef && (await resolves(remoteRef))) baseRef = remoteRef
+  if (!baseRef && (await resolves(baseBranch))) baseRef = baseBranch
+  if (!baseRef) {
+    throw new Error(`目标分支 ${baseBranch} 无法解析(本地与远端均无该分支)`)
+  }
+
+  const diff = await git(repoPath, ['-C', repoPath, 'diff', baseRef, '--stat'])
   if (diff.code === 0 && diff.stdout.trim() !== '') return true
 
-  const ahead = await git(repoPath, ['-C', repoPath, 'rev-list', '--count', 'main..HEAD'])
+  const ahead = await git(repoPath, ['-C', repoPath, 'rev-list', '--count', `${baseRef}..HEAD`])
   return ahead.code === 0 && ahead.stdout.trim() !== '' && ahead.stdout.trim() !== '0'
 }
 
@@ -650,14 +667,16 @@ export async function detectForge(cwd: string): Promise<ForgeProvider> {
  * authenticated, so the caller can ask the user to install / log in.
  *
  * `headBranch` is optional — when omitted `gh` uses the current branch.
- * `baseBranch` defaults to `main`.
+ * `baseBranch` is REQUIRED (no implicit default): the caller resolves the
+ * workspace's effective base (`defaultMainBranch` or explicit `main`) and passes
+ * it, so the merge target can never silently fall back to a literal `main`.
  */
 export async function createGhPr(
   cwd: string,
   title: string,
   body: string,
-  headBranch?: string,
-  baseBranch = 'main',
+  headBranch: string | undefined,
+  baseBranch: string,
 ): Promise<CreatePrResult> {
   const args = ['pr', 'create', '--title', title, '--body', body, '--base', baseBranch]
   if (headBranch) args.push('--head', headBranch)
@@ -695,14 +714,15 @@ export async function createGhPr(
 /**
  * Create a GitLab Merge Request via the `glab` CLI. The result uses the shared
  * change-request contract, including unavailable CLI/authentication failures.
- * `headBranch` is optional; `baseBranch` defaults to `main`.
+ * `headBranch` is optional; `baseBranch` is REQUIRED (no implicit default) —
+ * the caller resolves the workspace's effective base and passes it explicitly.
  */
 export async function createGlabMr(
   cwd: string,
   title: string,
   body: string,
-  headBranch?: string,
-  baseBranch = 'main',
+  headBranch: string | undefined,
+  baseBranch: string,
 ): Promise<CreatePrResult> {
   const args = [
     'mr',
@@ -742,13 +762,16 @@ export async function createGlabMr(
 /**
  * Create a pull or merge request through the selected forge. An explicit
  * provider takes precedence; otherwise the repository's origin determines it.
+ * `baseBranch` is REQUIRED (no implicit default) — the caller resolves the
+ * workspace's effective base (`defaultMainBranch` or explicit `main`) and passes
+ * it, so every entry surface shares the same resolved merge target.
  */
 export async function createForgePr(
   cwd: string,
   title: string,
   body: string,
-  headBranch?: string,
-  baseBranch?: string,
+  headBranch: string | undefined,
+  baseBranch: string,
   providerOverride?: ForgeProvider,
 ): Promise<CreatePrResult> {
   const provider = providerOverride ?? (await detectForge(cwd))

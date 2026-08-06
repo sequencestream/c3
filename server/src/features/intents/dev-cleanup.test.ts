@@ -172,7 +172,7 @@ describe('runManualDevCleanup', () => {
       expect.any(String),
       expect.any(String),
       'intent/i1-add-feature',
-      undefined,
+      'main',
       'gitlab',
     )
     expect(h.mocks.setPrInfo).toHaveBeenCalledWith(
@@ -312,7 +312,7 @@ describe('runManualDevCleanup', () => {
       operation: 'create',
       result: 'success',
       pr: { url: 'https://h/pull/42' },
-      ref: { head: 'intent/i1-add-feature' },
+      ref: { head: 'intent/i1-add-feature', base: 'main' },
       association: { intentId: 'I1' },
     })
   })

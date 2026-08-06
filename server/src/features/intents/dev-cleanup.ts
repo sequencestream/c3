@@ -61,8 +61,8 @@ export interface DevCleanupDeps {
     cwd: string,
     title: string,
     body: string,
-    headBranch?: string,
-    baseBranch?: string,
+    headBranch: string | undefined,
+    baseBranch: string,
     providerOverride?: ForgeProvider,
   ) => Promise<CreatePrResult>
   getIntent: (id: string) => Intent | null
@@ -193,15 +193,16 @@ export async function runManualDevCleanup(
     return { kind: 'success', createdPr: false }
   }
 
-  // ④ Create the forge-aware PR/MR.
+  // ④ Create the forge-aware PR/MR against the workspace's effective base.
   const { title, body } = buildPr(req, deps.getIntent)
   const headBranch = req.branchName ?? branch ?? undefined
+  const baseBranch = deps.getDefaultMainBranch(workspacePath) ?? 'main'
   const pr = await deps.createForgePr(
     cwd,
     title,
     body,
     headBranch,
-    undefined,
+    baseBranch,
     deps.getForgeOverride(workspacePath),
   )
   if (!pr.ok || !pr.prId) {
@@ -223,7 +224,7 @@ export async function runManualDevCleanup(
       prId: pr.prId,
       prUrl: pr.prUrl ?? null,
       headBranch,
-      baseBranch: undefined,
+      baseBranch,
       intentId,
     },
     deps.normalizeEvent,

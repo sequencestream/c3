@@ -30,10 +30,7 @@ vi.mock('../../kernel/agent-config/index.js', async () => {
   )
   return {
     parseQuotaResetAt: real.parseQuotaResetAt,
-    resolveAgent: vi.fn((agentId: string) => ({
-      id: agentId,
-      vendor: agentVendors.get(agentId) ?? 'claude',
-    })),
+    resolveAgentVendor: vi.fn((agentId: string) => agentVendors.get(agentId) ?? 'claude'),
   }
 })
 

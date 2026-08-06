@@ -131,6 +131,13 @@ export const UI_ERROR_CODES = {
   // Local park-recovery observation: a failed read is reported as unavailable,
   // never rendered as 0% or an empty sample.
   'intent.parkStatsUnavailable': { key: 'error.intent.parkStatsUnavailable' },
+  // agent configuration
+  // A session could not be created/bound because the agent GROUP its role points
+  // at (directly, or by following the default agent) has no usable member — every
+  // member disabled, or that group's vendor runtime is missing on this machine.
+  // Reported instead of silently running on some other agent; `group` is the
+  // `_c3_<vendor>_<group>` reference the user must fix.
+  'agent.groupUnavailable': { key: 'error.agent.groupUnavailable', params: ['group'] },
   // discussion
   'discussion.dbUnavailable': { key: 'error.discussion.dbUnavailable' },
   'discussion.notFound': { key: 'error.discussion.notFound' },

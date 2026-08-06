@@ -165,3 +165,34 @@ describe('advanceOnFailure', () => {
     expect(advanceOnFailure(null, 'a', 3, 'a')).toBe(0)
   })
 })
+
+describe('组形式的 defaultAgentId(虚拟 agent,不在 agents 里)', () => {
+  const grouped = settings({
+    agents: [
+      agent('a', 'Alpha', { group: 'default' }),
+      agent('b', 'Bravo', { group: 'default' }),
+      agent('c', 'Charlie'),
+    ],
+    defaultAgentId: '_c3_claude_default',
+    degradationChain: ['c'],
+  })
+
+  it('未锚定的会话(pending,尚无 switcher)跟随组默认,前缀显示组引用', () => {
+    // 组引用查不到实体 agent,若不单独识别就会返回空链 → 状态栏丢前缀。
+    expect(agentAttemptOrder(grouped, undefined)).toEqual(['_c3_claude_default'])
+    expect(agentNameAt(grouped, undefined, 0)).toBe('_c3_claude_default')
+    expect(resolveAgentIndex(grouped, undefined, '_c3_claude_default')).toBe(0)
+  })
+
+  it('组内成员全禁用时不再冒充默认,回到普通解析', () => {
+    const empty = settings({
+      agents: [agent('a', 'Alpha', { group: 'default', enabled: false }), agent('c', 'Charlie')],
+      defaultAgentId: '_c3_claude_default',
+    })
+    expect(agentAttemptOrder(empty, undefined)).toEqual([])
+  })
+
+  it('会话自己绑定了组时仍以该组为链头', () => {
+    expect(agentAttemptOrder(grouped, '_c3_claude_default')).toEqual(['_c3_claude_default'])
+  })
+})

@@ -27,13 +27,8 @@ import {
   getGitBranchMode,
   getSddEnabled,
 } from '../../kernel/config/index.js'
-import {
-  getDefaultAgentId,
-  resolveSessionVendor,
-  resolveSpecAgent,
-  resolveSpecReviewAgent,
-  setSessionAgent,
-} from '../../kernel/agent-config/index.js'
+import { setSessionAgent } from '../../kernel/agent-config/index.js'
+import { sessionAgentTargetForRole } from '../sessions/agent-target.js'
 import type { RunInject } from '../../kernel/run/prompt-delivery.js'
 import {
   getIntent,
@@ -370,6 +365,19 @@ export async function launchWorkSession(
     return denied
   }
 
+  // The agent a fresh work session will bind: the default role, which may be a
+  // group. Resolved BEFORE the git branch strategy runs — a refusal here must not
+  // leave a worktree behind.
+  const agentTarget = sessionAgentTargetForRole('default')
+  if (!agentTarget.ok) {
+    releaseClaim()
+    return {
+      success: false,
+      code: 'agent.groupUnavailable',
+      params: { group: agentTarget.groupRef },
+    }
+  }
+
   // ── Git branch strategy ──
   let effectiveCwd: string
   progress?.('fetching-remote-main')
@@ -418,14 +426,17 @@ export async function launchWorkSession(
   const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const devRt = ensureRuntime(devId, workspacePath, getDefaultMode(workspacePath), [], 'work')
   devRt.effectiveCwd = effectiveCwd
-  const resolvedVendor = resolveSessionVendor(devId)
+  // Both halves of the projection row come from the ONE resolution above: the
+  // routing ref (a group stays a group ref, so each run re-failovers through its
+  // members) paired with its representative member's vendor.
+  const resolvedVendor = agentTarget.target.agent.vendor
   if (resolvedVendor === 'codex') {
     try {
       upsertPendingRow({
         pendingId: devId,
         workspacePath,
         vendor: resolvedVendor,
-        agentId: getDefaultAgentId(),
+        agentId: agentTarget.target.ref,
         title: req.title,
         ownerKind: 'intent',
         ownerId: req.id,
@@ -569,6 +580,17 @@ function createFirstSpecSession(
   const blocked = specLaunchGateFailure(workspacePath, intent, deps, progress)
   if (blocked) return blocked
 
+  // The spec role's agent, resolved before the directory is scaffolded: a refusal
+  // must not leave a seeded spec file and a backfilled `spec_path` behind.
+  const specTarget = sessionAgentTargetForRole('spec')
+  if (!specTarget.ok) {
+    return {
+      success: false,
+      code: 'agent.groupUnavailable',
+      params: { group: specTarget.groupRef },
+    }
+  }
+
   // Compute dated spec layout
   const specRoot = getSpecsBase(workspacePath)
   const layout = computeSpecLayout({
@@ -609,17 +631,16 @@ function createFirstSpecSession(
 
   // Launch spec session
   const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  const specAgent = resolveSpecAgent()
   const rt = ensureRuntime(specId, workspacePath, getDefaultMode(workspacePath), [], 'spec')
   rt.specDir = layout.dirAbs
-  setSessionAgent(specId, specAgent.id)
+  setSessionAgent(specId, specTarget.target.ref)
 
   try {
     upsertPendingRow({
       pendingId: specId,
       workspacePath,
-      vendor: specAgent.vendor,
-      agentId: specAgent.id,
+      vendor: specTarget.target.agent.vendor,
+      agentId: specTarget.target.ref,
       title: intent.title,
       ownerKind: 'intent',
       ownerId: intent.id,
@@ -685,9 +706,18 @@ export async function launchSpecReviewSession(
     return { success: false, code: 'intent.specNotWritten' }
   }
 
+  // The reviewer's agent, resolved before the runtime exists.
+  const reviewTarget = sessionAgentTargetForRole('spec_review')
+  if (!reviewTarget.ok) {
+    return {
+      success: false,
+      code: 'agent.groupUnavailable',
+      params: { group: reviewTarget.groupRef },
+    }
+  }
+
   progress?.('launching')
   const reviewId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  const reviewAgent = resolveSpecReviewAgent()
   const rt = ensureRuntime(
     reviewId,
     workspacePath,
@@ -699,14 +729,14 @@ export async function launchSpecReviewSession(
   // them rather than binding an unbounded submit tool.
   rt.specReviewIntentId = intent.id
   rt.specReviewFingerprint = fingerprint
-  setSessionAgent(reviewId, reviewAgent.id)
+  setSessionAgent(reviewId, reviewTarget.target.ref)
 
   try {
     upsertPendingRow({
       pendingId: reviewId,
       workspacePath,
-      vendor: reviewAgent.vendor,
-      agentId: reviewAgent.id,
+      vendor: reviewTarget.target.agent.vendor,
+      agentId: reviewTarget.target.ref,
       title: intent.title,
       ownerKind: 'intent',
       ownerId: intent.id,
@@ -749,6 +779,15 @@ function createSpecSessionOnExistingPath(
   const blocked = specLaunchGateFailure(workspacePath, intent, deps, progress)
   if (blocked) return blocked
 
+  const specTarget = sessionAgentTargetForRole('spec')
+  if (!specTarget.ok) {
+    return {
+      success: false,
+      code: 'agent.groupUnavailable',
+      params: { group: specTarget.groupRef },
+    }
+  }
+
   const fileAbs = resolveSpecFileAbs(workspacePath, intent.specPath!)
   armSpecContentWatch({
     intentId: intent.id,
@@ -757,17 +796,16 @@ function createSpecSessionOnExistingPath(
     fingerprint: readSpecFingerprint(workspacePath, intent.specPath!),
   })
   const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
-  const specAgent = resolveSpecAgent()
   const rt = ensureRuntime(specId, workspacePath, getDefaultMode(workspacePath), [], 'spec')
   rt.specDir = dirname(fileAbs)
-  setSessionAgent(specId, specAgent.id)
+  setSessionAgent(specId, specTarget.target.ref)
 
   try {
     upsertPendingRow({
       pendingId: specId,
       workspacePath,
-      vendor: specAgent.vendor,
-      agentId: specAgent.id,
+      vendor: specTarget.target.agent.vendor,
+      agentId: specTarget.target.ref,
       title: intent.title,
       ownerKind: 'intent',
       ownerId: intent.id,
@@ -846,8 +884,11 @@ async function resumeSpecSession(
     )
     const fileAbs = resolveSpecFileAbs(workspacePath, intent.specPath)
     restored.specDir = dirname(fileAbs)
-    const specAgent = resolveSpecAgent()
-    setSessionAgent(intent.specSessionId, specAgent.id)
+    // Re-pin the spec agent on a restored runtime (a group re-pins as its ref).
+    // An unusable group leaves the existing binding alone — this is a resume, and
+    // the launch below reports the real cause if it cannot run.
+    const specTarget = sessionAgentTargetForRole('spec')
+    if (specTarget.ok) setSessionAgent(intent.specSessionId, specTarget.target.ref)
   }
 
   // Baseline for this turn's content check: a resumed session that writes nothing

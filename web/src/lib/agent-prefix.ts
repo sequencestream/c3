@@ -31,20 +31,23 @@ export function agentAttemptOrder(
   // per-member chain — the relay hides the failover — so the attempt order is just the
   // group ref itself (its display name is resolved in agentNameAt). Only when that
   // (vendor, group) still has an enabled member; otherwise fall through to the default.
-  const anchorGroup = anchorAgentId ? parseGroupAgentRef(anchorAgentId) : null
-  if (
-    anchorGroup &&
-    settings.agents.some(
-      (a) =>
-        a.enabled !== false &&
-        a.vendor === anchorGroup.vendor &&
-        (a.group?.trim() ?? '') === anchorGroup.group,
+  const hasGroupMember = (ref: string): boolean => {
+    const g = parseGroupAgentRef(ref)
+    return (
+      !!g &&
+      settings.agents.some(
+        (a) => a.enabled !== false && a.vendor === g.vendor && (a.group?.trim() ?? '') === g.group,
+      )
     )
-  ) {
-    return [anchorAgentId!]
   }
+  if (anchorAgentId && hasGroupMember(anchorAgentId)) return [anchorAgentId]
   const byId = new Map(settings.agents.map((a) => [a.id, a]))
   const headId = anchorAgentId && byId.has(anchorAgentId) ? anchorAgentId : settings.defaultAgentId
+  // An unanchored session (a pending one has no switcher payload yet) follows the
+  // default — which may itself be a GROUP. Group refs are virtual and never in
+  // `agents`, so without this the by-id lookup below would find nothing and the
+  // status bar would drop the prefix entirely.
+  if (headId && headId !== anchorAgentId && hasGroupMember(headId)) return [headId]
   const head = byId.get(headId)
   if (!head) return []
   const order: string[] = [head.id]

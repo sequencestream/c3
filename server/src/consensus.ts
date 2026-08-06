@@ -26,7 +26,11 @@ import type {
   QuestionConsensus,
   SessionKind,
 } from '@ccc/shared/protocol'
-import { resolveAgent, selectConsensusVoters } from './kernel/agent-config/index.js'
+import {
+  resolveAgent,
+  resolveAgentVendor,
+  selectConsensusVoters,
+} from './kernel/agent-config/index.js'
 import { normalizeToolRequest } from './kernel/permission/risk.js'
 import {
   getConsensusConfig,
@@ -131,7 +135,9 @@ export async function runConsensusVote(p: ConsensusParams): Promise<ConsensusOut
   // fan-out — the cross-vendor voters may not know the requesting vendor's tools.
   // A failure abstains the whole round (no advisor call, defers to the human) and
   // is recorded on the outcome; it NEVER auto-allows.
-  const vendor = resolveAgent(p.currentAgentId).vendor
+  // Vendor-only read: never fails on a session bound to a group that lost its
+  // members — a broken group must not turn every permission prompt into a throw.
+  const vendor = resolveAgentVendor(p.currentAgentId)
   const normalization = normalizeToolRequest(vendor, p.toolName, p.input)
   if (!normalization.ok) {
     console.log(

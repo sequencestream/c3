@@ -127,4 +127,21 @@ describe('NewSessionModal.vue — 新建会话 vendor/agent 选择', () => {
     const w = mountModal()
     expect(w.find('[data-testid="new-session-missing"]').exists()).toBe(false)
   })
+  it('默认 agent 是虚拟组时,Auto 提示显示组引用而不是「无默认」', () => {
+    // 组引用不在 agents 里,按 id 查必然落空 —— 这里正是回归点。
+    const grouped = AGENTS.map((a) =>
+      a.vendor === 'codex' ? { ...a, group: 'fast' } : a,
+    ) as AgentConfig[]
+    const w = mountModal({ agents: grouped, defaultAgentId: '_c3_codex_fast' })
+    const hint = w.find('[data-testid="new-session-auto-hint"]')
+    expect(hint.text()).toContain('_c3_codex_fast')
+    // 色点取组内首个 enabled 成员的 vendor(codex),而不是留空。
+    expect(w.find('.vendor-dot').exists()).toBe(true)
+  })
+
+  it('组默认里没有可用成员时回到「无默认」文案', () => {
+    const w = mountModal({ defaultAgentId: '_c3_codex_fast' })
+    const hint = w.find('[data-testid="new-session-auto-hint"]')
+    expect(hint.text()).not.toContain('_c3_codex_fast')
+  })
 })

@@ -50,6 +50,7 @@ vi.mock('./kernel/agent-config/index.js', () => ({
   selectConsensusVoters: () => roster.ids.map(agent),
   launchForAgent: () => ({}),
   resolveAgent: () => agent('decider'),
+  resolveAgentVendor: () => 'claude',
   bindClaudeRelay: () => null,
   unbindRelay: () => {},
 }))

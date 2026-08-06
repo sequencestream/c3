@@ -2044,6 +2044,9 @@
       "specNotApproved": "spec 尚未批准,请先批准再开始工作。",
       "parkStatsUnavailable": "本机 park 恢复统计暂不可用。"
     },
+    "agent": {
+      "groupUnavailable": "组 {group} 无可用成员，请检查 agent 配置。"
+    },
     "discussion": {
       "dbUnavailable": "讨论功能不可用 (c3.db)。",
       "notFound": "讨论不存在。",

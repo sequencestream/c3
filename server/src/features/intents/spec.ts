@@ -22,13 +22,10 @@ import { addViewer, ensureRuntime, isRunning, removeViewer } from '../../runs.js
 import { pathToId, resolveWorkspaceRoot, touchWorkspace } from '../../state.js'
 import { getDefaultMode } from '../../kernel/config/index.js'
 import { isInside } from '../../kernel/permission/tools.js'
-import {
-  resolveSessionVendor,
-  resolveSpecAgent,
-  setSessionAgent,
-} from '../../kernel/agent-config/index.js'
+import { resolveSessionVendor, setSessionAgent } from '../../kernel/agent-config/index.js'
+import { groupUnavailableError, sessionAgentTargetForRole } from '../sessions/agent-target.js'
 import { upsertPendingRow } from '../sessions/session-metadata-store.js'
-import type { SpecLaunchStage } from '@ccc/shared/protocol'
+import type { SpecLaunchStage, VendorId } from '@ccc/shared/protocol'
 import type { UiErrorCode } from '@ccc/shared/ui-codes.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
@@ -56,7 +53,7 @@ function errMsg(err: unknown): string {
 function syncSpecPendingProjection(input: {
   pendingId: string
   workspacePath: string
-  vendor: ReturnType<typeof resolveSpecAgent>['vendor']
+  vendor: VendorId
   agentId: string
   title: string
   intentId: string
@@ -453,7 +450,12 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
     conn.send({ type: 'error', error: { code: 'intent.specNotWritten' } })
     return
   }
-  const specAgent = resolveSpecAgent()
+  // The spec role's agent (possibly a group), resolved before anything is created.
+  const specTarget = sessionAgentTargetForRole('spec')
+  if (!specTarget.ok) {
+    conn.send({ type: 'error', error: groupUnavailableError(specTarget.groupRef) })
+    return
+  }
   if (!runSpecLaunchGate(proj, intent, ctx, conn)) return
 
   // The reset prompt only references the spec PATH; the agent reads the file
@@ -475,12 +477,12 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(specId, proj, getDefaultMode(proj), [], 'spec')
   rt.specDir = dirname(fileAbs)
-  setSessionAgent(specId, specAgent.id)
+  setSessionAgent(specId, specTarget.target.ref)
   syncSpecPendingProjection({
     pendingId: specId,
     workspacePath: proj,
-    vendor: specAgent.vendor,
-    agentId: specAgent.id,
+    vendor: specTarget.target.agent.vendor,
+    agentId: specTarget.target.ref,
     title: intent.title,
     intentId: intent.id,
   })

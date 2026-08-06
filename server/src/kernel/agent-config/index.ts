@@ -102,7 +102,7 @@ const ROLE_SETTINGS_FIELD: Record<AgentRole, keyof SystemSettings> = {
 }
 
 /**
- * A resolved agent target — the pair every binding site needs (ADR-0029):
+ * A resolved agent target — the pair every binding site needs:
  *
  *  - `ref` is the **routing identity to persist**: the group reference
  *    `_c3_<vendor>_<group>` when the target is a group (so every later run
@@ -126,9 +126,7 @@ export interface AgentTarget {
 
 /** The non-throwing form of {@link resolveAgentTarget}: the target, or the
  *  unusable group reference that stopped it. */
-export type AgentTargetResult =
-  | { ok: true; target: AgentTarget }
-  | { ok: false; groupRef: string }
+export type AgentTargetResult = { ok: true; target: AgentTarget } | { ok: false; groupRef: string }
 
 /** A concrete (non-group) agent as a degenerate one-candidate target. */
 function singleTarget(agent: AgentConfig): AgentTarget {
@@ -138,7 +136,7 @@ function singleTarget(agent: AgentConfig): AgentTarget {
 /**
  * A group reference as a target: its enabled members in `order_seq` order, the
  * first one representing the group. Throws when the group has no enabled member —
- * an empty group is a configuration error, NOT a reason to fall back (ADR-0029).
+ * an empty group is a configuration error, NOT a reason to fall back.
  */
 function groupTarget(groupRef: string, vendor: VendorId, group: string): AgentTarget {
   const members = groupAgents(vendor, group)
@@ -148,7 +146,7 @@ function groupTarget(groupRef: string, vendor: VendorId, group: string): AgentTa
 
 /**
  * **The single agent-reference resolver** every role and every session binding
- * goes through (ADR-0029). One rule set, applied in order:
+ * goes through. One rule set, applied in order:
  *
  *  1. a group reference (`_c3_<vendor>_<group>`) ⇒ that group's target;
  *  2. a known concrete agent id ⇒ that agent;
@@ -640,20 +638,26 @@ export function freezeSessionAgent(
   workspacePath: string,
   storeScope: StoreScope,
 ): void {
-  const resolved = resolveAgent(agentId)
   // Preserve a virtual group binding (`_c3_<group>`, ADR-0029): the session stays
   // bound to the group so every future run re-resolves it and re-failovers from the
   // highest-priority member. The frozen vendor is the group's locked vendor (the
   // resolved representative member's vendor). A real ref binds to the resolved id.
-  const boundId = isGroupAgentRef(agentId) ? agentId : resolved.id
+  //
+  // Freezing records what ALREADY ran, so it never fails on an unusable group: the
+  // run got here, and a group emptied mid-run must still leave the session a
+  // recoverable fact rather than an unbound orphan. The vendor then comes from the
+  // group ref itself (a group is vendor-locked).
+  const result = tryResolveAgentTarget(agentId)
+  const boundId = isGroupAgentRef(agentId) ? agentId : result.ok ? result.target.agent.id : agentId
+  const vendor = resolveAgentVendor(agentId)
   // storeScope is frozen alongside the vendor: whether this first run was
   // sandboxed decides which native data root holds the transcript for its life.
-  bindSessionAgent(pendingId, realId, boundId, resolved.vendor, storeScope)
+  bindSessionAgent(pendingId, realId, boundId, vendor, storeScope)
   onBind?.({
     pendingId,
     realId,
     workspacePath,
-    vendor: resolved.vendor,
+    vendor,
     agentId: boundId,
     storeScope,
   })
@@ -669,32 +673,43 @@ export function freezeSessionAgent(
  * lives only in the frozen vendor's native store. A null/empty agent
  * clears a pending intent.
  *
+ * A reference that resolves to an unusable GROUP is refused the same way
+ * (`{ ok: false }`, nothing written): binding is where a group configuration error
+ * must surface, so the caller reports it instead of persisting a substitute id.
+ *
  * Both branches fire the {@link onAgentSwap} composition-time hook so the
  * feature layer can mirror the swap into the projection.
  */
 export function setSessionAgent(sessionId: string, agentId: string | null): { ok: boolean } {
   if (sessionId.startsWith(PENDING_SESSION_PREFIX)) {
-    // Dual-write: the pending intent is written to BOTH state.json
-    // (legacy, for backward compat with scripts / tests) AND the
-    // projection table (new SoT). The projection callback fires only
-    // when the composition root has wired it (production); the
-    // state.json write is unconditional (tests without a db).
-    setPendingIntent(sessionId, agentId)
     if (agentId) {
-      const resolved = resolveAgent(agentId)
+      const result = tryResolveAgentTarget(agentId)
+      if (!result.ok) return { ok: false }
+      // Dual-write: the pending intent is written to BOTH state.json
+      // (legacy, for backward compat with scripts / tests) AND the
+      // projection table (new SoT). The projection callback fires only
+      // when the composition root has wired it (production); the
+      // state.json write is unconditional (tests without a db).
+      //
+      // Preserve a virtual group ref (`_c3_<group>`) so the pending session
+      // re-resolves the group each run (ADR-0029); a real ref uses the resolved id.
+      const boundId = isGroupAgentRef(agentId) ? agentId : result.target.agent.id
+      setPendingIntent(sessionId, boundId)
       onAgentSwap?.({
         scope: 'pending',
         sessionId,
-        vendor: resolved.vendor,
-        // Preserve a virtual group ref (`_c3_<group>`) so the pending session
-        // re-resolves the group each run (ADR-0029); a real ref uses the resolved id.
-        agentId: isGroupAgentRef(agentId) ? agentId : resolved.id,
+        vendor: result.target.agent.vendor,
+        agentId: boundId,
       })
+      return { ok: true }
     }
+    setPendingIntent(sessionId, agentId)
     return { ok: true }
   }
   if (agentId === null || agentId === '') return { ok: false }
-  const resolved = resolveAgent(agentId)
+  const result = tryResolveAgentTarget(agentId)
+  if (!result.ok) return { ok: false }
+  const resolved = result.target.agent
   const boundId = isGroupAgentRef(agentId) ? agentId : resolved.id
   const ok = changeSessionAgentFact(sessionId, boundId, resolved.vendor)
   if (ok) {
@@ -839,17 +854,21 @@ export function resolveSessionAgentSwitch(
   const rawId = getSessionAgentId(sessionId)
   // A group-bound session (`_c3_<vendor>_<group>`, ADR-0029) shows the GROUP as its
   // current agent (id/display = the ref itself); its representative member's vendor is
-  // the frozen vendor. A real binding shows the agent itself.
+  // the frozen vendor. A real binding shows the agent itself. Display-safe: a group
+  // that lost its last member still names itself here (with the vendor its ref
+  // encodes) — the switcher is how the user gets OUT of that state.
   const group = rawId ? parseGroupAgentRef(rawId) : null
-  const current = resolveAgent(rawId)
-  const vendor = current.vendor
-  const currentId = group ? rawId! : current.id
+  const binding = resolveSessionAgentBinding(sessionId)
+  const vendor = binding.vendor
+  const currentId = binding.agentId
   // A group shows as its prefixed ref `_c3_<vendor>_<group>`; a real agent as its name.
-  const currentName = group ? rawId! : current.displayName
+  const currentName = group
+    ? rawId!
+    : (loadSettings().agents.find((a) => a.id === currentId)?.displayName ?? currentId)
   // Candidates: the other same-vendor real agents PLUS the same-vendor virtual group
   // agents (so a session can be switched onto a group — relay failover). Group refs
   // read as `_c3_<vendor>_<group>`. The current binding (real id or group ref) is excluded.
-  const realCandidates = sameVendorEnabledAgents(vendor, group ? null : current.id)
+  const realCandidates = sameVendorEnabledAgents(vendor, group ? null : currentId)
     .filter((a) => presentVendors.has(a.vendor))
     .map((a) => ({ id: a.id, displayName: a.displayName }))
   const groupCandidates = enumerateGroupAgents()

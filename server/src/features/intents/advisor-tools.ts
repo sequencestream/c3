@@ -39,12 +39,8 @@ import type { IntentStatus } from '@ccc/shared/protocol'
 import { ensureRuntime, getRuntime, isRunning, stopRun } from '../../runs.js'
 import { loadHistory } from '../../sessions.js'
 import { getDefaultMode } from '../../kernel/config/index.js'
-import {
-  resolveIntentAgent,
-  resolveSessionVendor,
-  resolveSpecAgent,
-  setSessionAgent,
-} from '../../kernel/agent-config/index.js'
+import { resolveSessionVendor, setSessionAgent } from '../../kernel/agent-config/index.js'
+import { sessionAgentTargetForRole } from '../sessions/agent-target.js'
 import { redactSecrets } from '../pr-events/tool-defs.js'
 import { upsertBoundRow, upsertPendingRow } from '../sessions/session-metadata-store.js'
 import { createEvent, getEventByRequestId } from '../user-involve/store.js'
@@ -162,7 +158,12 @@ function ok(payload: unknown): AdvisorToolResult {
  * learned to read one reads the other, whichever belt stopped it.
  */
 function denied(
-  reason: AdvisorRejectReason | 'approval_denied' | 'db_unavailable' | 'tool_failed',
+  reason:
+    | AdvisorRejectReason
+    | 'approval_denied'
+    | 'db_unavailable'
+    | 'tool_failed'
+    | 'agent_group_unavailable',
   detail: string,
   retryable: boolean,
   constraints?: Record<string, string>,
@@ -266,17 +267,21 @@ function resetIntentSessionCore(
   userInput: string,
 ): AdvisorToolResult {
   const intent = getIntent(scope.intentId)!
+  // The intent role's agent (possibly a group), resolved before the session exists.
+  const target = sessionAgentTargetForRole('intent')
+  if (!target.ok) {
+    return denied('agent_group_unavailable', `agent 组 ${target.groupRef} 无可用成员`, false)
+  }
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, scope.workspacePath, 'default', [], 'intent')
-  const agent = resolveIntentAgent()
-  setSessionAgent(chatId, agent.id)
+  setSessionAgent(chatId, target.target.ref)
   setChatSession(scope.workspacePath, chatId, intent.title)
   try {
     upsertBoundRow({
       sessionId: chatId,
       workspacePath: scope.workspacePath,
       vendor: resolveSessionVendor(chatId),
-      agentId: agent.id,
+      agentId: target.target.ref,
       title: intent.title,
       sessionKind: 'intent',
       ownerKind: 'intent',
@@ -308,8 +313,11 @@ function resetSpecSessionCore(
   if (!intent.specPath) {
     return denied('session_required', '该意图尚未编写 spec,无法重置 spec 会话', false)
   }
+  const specTarget = sessionAgentTargetForRole('spec')
+  if (!specTarget.ok) {
+    return denied('agent_group_unavailable', `agent 组 ${specTarget.groupRef} 无可用成员`, false)
+  }
   const fileAbs = resolveSpecFileAbs(scope.workspacePath, intent.specPath)
-  const specAgent = resolveSpecAgent()
   const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(
     specId,
@@ -319,13 +327,13 @@ function resetSpecSessionCore(
     'spec',
   )
   rt.specDir = dirname(fileAbs)
-  setSessionAgent(specId, specAgent.id)
+  setSessionAgent(specId, specTarget.target.ref)
   try {
     upsertPendingRow({
       pendingId: specId,
       workspacePath: scope.workspacePath,
-      vendor: specAgent.vendor,
-      agentId: specAgent.id,
+      vendor: specTarget.target.agent.vendor,
+      agentId: specTarget.target.ref,
       title: intent.title,
       ownerKind: 'intent',
       ownerId: intent.id,

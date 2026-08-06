@@ -411,6 +411,101 @@ describe('reopening a bound intent comm session resumes its frozen binding', () 
   })
 })
 
+describe('a role pointing at a GROUP binds the group, runs its first member', () => {
+  const GROUP = '_c3_claude_default'
+
+  /** Claude A + B as the two members of the `default` group, C as an outsider. */
+  function grouped(id: string, displayName: string, order: number): AgentConfig {
+    return { ...claudeAgent(id, displayName, order), group: 'default' }
+  }
+
+  function configureGroup(over: Partial<SystemSettings> = {}): void {
+    saveSettings({
+      agents: [
+        grouped(CLAUDE_A, 'Claude A', 0),
+        grouped(CLAUDE_B, 'Claude B', 1),
+        cursorAgent(CURSOR, 2),
+      ],
+      defaultAgentId: GROUP,
+      toolAgentId: '',
+      intentAgentId: '',
+      specAgentId: '',
+      specReviewAgentId: '',
+      ...over,
+    } as SystemSettings)
+    resetSettingsCacheForTests()
+  }
+
+  it('intentAgentId = the group ⇒ every layer carries the GROUP, vendor from its first member', () => {
+    configureGroup({ intentAgentId: GROUP })
+    const h = harness()
+
+    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceId })
+
+    const sid = selected(h.sent).sessionId
+    opened.push(sid)
+    expectAllLayersAgree(h.sent, sid, GROUP, 'claude')
+    // The first executor is the group's first enabled member — the ref never
+    // flattens to it.
+    expect(resolveAgent(getSessionAgentId(sid)).id).toBe(CLAUDE_A)
+  })
+
+  it('an EMPTY intent role follows a GROUP default to the same binding', () => {
+    configureGroup({ intentAgentId: '' })
+    const h = harness()
+
+    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceId })
+
+    const sid = selected(h.sent).sessionId
+    opened.push(sid)
+    expectAllLayersAgree(h.sent, sid, GROUP, 'claude')
+  })
+
+  it('disabling the first member re-points the NEXT run at the second — binding unchanged', () => {
+    configureGroup({ intentAgentId: GROUP })
+    const h = harness()
+
+    newIntentSession(h.ctx, h.conn, { type: 'new_intent_session', workspaceId })
+    const sid = selected(h.sent).sessionId
+    opened.push(sid)
+    expect(resolveAgent(getSessionAgentId(sid)).id).toBe(CLAUDE_A)
+
+    configureGroup({
+      intentAgentId: GROUP,
+      agents: [
+        { ...grouped(CLAUDE_A, 'Claude A', 0), enabled: false },
+        grouped(CLAUDE_B, 'Claude B', 1),
+        cursorAgent(CURSOR, 2),
+      ],
+    } as Partial<SystemSettings>)
+
+    expect(getSessionAgentId(sid)).toBe(GROUP)
+    expect(resolveSessionLaunch(sid).agentId).toBe(GROUP)
+    expect(resolveAgent(getSessionAgentId(sid)).id).toBe(CLAUDE_B)
+  })
+
+  it('a spec session binds the spec group the same way', async () => {
+    configureGroup({ specAgentId: GROUP })
+    const [intent] = insertIntents(proj, [
+      { title: 'Spec me', shortEnTitle: 'spec', content: '', priority: 'P1' },
+    ])
+    setSpecPath(intent.id, join(proj, '.specs/2026/08/05/spec.md'))
+    const specId = 'real-spec-session-group'
+    setSpecSessionId(intent.id, specId)
+    const h = harness()
+
+    await openSpecSession(h.ctx, h.conn, {
+      type: 'open_spec_session',
+      workspaceId,
+      intentId: intent.id,
+    })
+    opened.push(specId)
+
+    expect(getSessionAgentId(specId)).toBe(GROUP)
+    expect(selected(h.sent).vendor).toBe('claude')
+  })
+})
+
 describe('other session kinds keep their own routing (non-goal)', () => {
   it('default / tool / spec / spec-review resolution ignores intentAgentId', () => {
     configure({ specAgentId: CLAUDE_B })

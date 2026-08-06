@@ -38,11 +38,11 @@ import {
   getShowToolSessions,
 } from '../../kernel/config/index.js'
 import {
-  resolveAgent,
   resolveSessionAgentSwitch,
   resolveSessionVendor,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
+import { groupUnavailableError, sessionAgentTargetForRef } from '../sessions/agent-target.js'
 import { availableVendorSet } from '../../kernel/agent/vendor-runtime.js'
 import { MODE_CATALOGS, isKnownToken } from '../../kernel/agent/adapters/index.js'
 import { deriveTasksFromHistory } from '../../kernel/agent/task-tracker.js'
@@ -253,6 +253,15 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
     })
     return
   }
+  // Resolve the agent BEFORE anything is created or the viewer is moved: the
+  // explicit pick, or (Auto) the default role. A group with no usable member is a
+  // configuration error the user must fix, so the creation is refused whole rather
+  // than quietly bound to some other agent.
+  const target = sessionAgentTargetForRef(msg.agentId || null)
+  if (!target.ok) {
+    conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
+    return
+  }
   // Switching views never stops a run — just stop watching the old one.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const pendingId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
@@ -263,17 +272,17 @@ export const createSession: Handler<'create_session'> = (_ctx, conn, msg) => {
   // Pending rows are intentionally excluded from `list_sessions`; the active
   // connection renders its pending session separately until bind.
   //
-  // The raw `agentId` is stored as the intent (not the resolved agent id)
-  // — the same contract as the old `setPendingIntent` — so a future
-  // `resolveSessionLaunch` re-resolves it at launch time. The vendor is
-  // resolved from the agent registry for the pending row's display.
-  const intentAgentId = msg.agentId || null
-  const resolvedAgent = resolveAgent(intentAgentId)
+  // The stored `agentId` is the target's ROUTING ref: a group reference stays a
+  // group reference (so every run re-resolves the group and re-failovers through
+  // its members), a concrete pick stores the resolved agent id. Vendor and mode
+  // come from the SAME resolution's representative member, so the row can never
+  // pair one agent's id with another's vendor.
+  const resolvedAgent = target.target.agent
   upsertPendingRow({
     pendingId,
     workspacePath: abs,
     vendor: resolvedAgent.vendor,
-    agentId: intentAgentId ?? resolvedAgent.id,
+    agentId: target.target.ref,
   })
   const defaultMode = getDefaultMode(abs, resolvedAgent.vendor)
   const codexPolicy = resolvedAgent.vendor === 'codex' ? getCodexDefaultPolicy(abs) : undefined

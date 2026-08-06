@@ -38,6 +38,7 @@ vi.mock('../features/intents/store.js', () => ({
   setLastWorkSession: vi.fn(),
   setLatestCommitHash: vi.fn(),
   setPrInfo: vi.fn(),
+  setSpecReviewSessionId: vi.fn(),
   setSpecSessionId: vi.fn(),
   updateIntentSession: vi.fn(),
   updateStatus: vi.fn(),
@@ -471,12 +472,13 @@ describe('resident domain subscriptions — discussion + automation', () => {
 
   // ── Spec-sessions: backfill spec_session_id at run:bound ───────────────
 
-  it('run:bound on a spec runtime links the real spec session id onto the intent', async () => {
+  it('run:bound on a spec runtime replaces the pre-bind pending occupancy with the real id', async () => {
     const { getRuntime } = await import('../runs.js')
     const { takePendingSpecLink } = await import('../features/intents/spec-link.js')
     const { getIntent, setSpecSessionId } = await import('../features/intents/store.js')
     const { deleteByVendorId, updateRowOwner, upsertBoundRow } =
       await import('../features/sessions/session-metadata-store.js')
+    const { resolveSessionVendor } = await import('../kernel/agent-config/index.js')
 
     vi.mocked(getRuntime).mockReturnValueOnce({
       workspacePath: '/proj',
@@ -487,24 +489,23 @@ describe('resident domain subscriptions — discussion + automation', () => {
       viewers: new Set(),
     } as unknown as SessionRuntime)
     vi.mocked(takePendingSpecLink).mockReturnValueOnce('intent-9')
-    vi.mocked(getIntent).mockReturnValueOnce({
+    vi.mocked(resolveSessionVendor).mockReturnValue('codex')
+    // The intent still holds the pre-bind pending occupancy; the bind replaces
+    // it with the real id. A `pending:` old value is that placeholder — never
+    // de-owned as a bound session (its projection row is deleted below).
+    vi.mocked(getIntent).mockReturnValue({
       id: 'intent-9',
       title: 'Spec target',
-      specSessionId: 'old-spec',
+      specSessionId: 'pending:9',
     } as Intent)
 
     install()
-    eb.publish('run:bound', { prevId: 'pending-9', realId: 'real-9', workspacePath: '/proj' })
+    eb.publish('run:bound', { prevId: 'pending:9', realId: 'real-9', workspacePath: '/proj' })
 
-    expect(takePendingSpecLink).toHaveBeenCalledWith('pending-9')
-    expect(updateRowOwner).toHaveBeenCalledWith({
-      sessionId: 'old-spec',
-      vendor: 'codex',
-      ownerKind: null,
-      ownerId: null,
-    })
+    expect(takePendingSpecLink).toHaveBeenCalledWith('pending:9')
+    expect(updateRowOwner).not.toHaveBeenCalled()
     expect(setSpecSessionId).toHaveBeenCalledWith('intent-9', 'real-9')
-    expect(deleteByVendorId).toHaveBeenCalledWith('codex', 'pending-9')
+    expect(deleteByVendorId).toHaveBeenCalledWith('codex', 'pending:9')
     expect(upsertBoundRow).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'real-9',
@@ -518,6 +519,44 @@ describe('resident domain subscriptions — discussion + automation', () => {
     expect(mockBroadcastIntents).toHaveBeenCalledWith('/proj')
   })
 
+  it('run:bound does not replace a spec_session_id a newer owner already took', async () => {
+    const { getRuntime } = await import('../runs.js')
+    const { takePendingSpecLink } = await import('../features/intents/spec-link.js')
+    const { getIntent, setSpecSessionId } = await import('../features/intents/store.js')
+    const { updateRowOwner } = await import('../features/sessions/session-metadata-store.js')
+    const { resolveSessionVendor } = await import('../kernel/agent-config/index.js')
+
+    vi.mocked(getRuntime).mockReturnValueOnce({
+      workspacePath: '/proj',
+      sessionKind: 'spec',
+      runKind: 'interactive',
+      mode: 'default',
+      buffer: [],
+      viewers: new Set(),
+    } as unknown as SessionRuntime)
+    vi.mocked(takePendingSpecLink).mockReturnValueOnce('intent-9')
+    vi.mocked(resolveSessionVendor).mockReturnValue('codex')
+    // The field no longer equals THIS run's pending id — a newer owner (a real
+    // bound session) took the slot. The late bind must not clobber it.
+    vi.mocked(getIntent).mockReturnValue({
+      id: 'intent-9',
+      title: 'Spec target',
+      specSessionId: 'real-newer',
+    } as Intent)
+
+    install()
+    eb.publish('run:bound', { prevId: 'pending:9', realId: 'real-9', workspacePath: '/proj' })
+
+    expect(setSpecSessionId).not.toHaveBeenCalled()
+    // The REAL prior owner is still de-owned as the slot moves on.
+    expect(updateRowOwner).toHaveBeenCalledWith({
+      sessionId: 'real-newer',
+      vendor: 'codex',
+      ownerKind: null,
+      ownerId: null,
+    })
+  })
+
   it('run:settled sessionKind=spec sweeps the pending spec link', async () => {
     const { clearPendingSpecLink } = await import('../features/intents/spec-link.js')
     install()
@@ -529,6 +568,52 @@ describe('resident domain subscriptions — discussion + automation', () => {
       runKind: 'interactive',
     })
     expect(clearPendingSpecLink).toHaveBeenCalledWith('spec-x')
+  })
+
+  it('run:settled sessionKind=spec releases the occupancy of a pending that never bound', async () => {
+    const { clearPendingSpecLink } = await import('../features/intents/spec-link.js')
+    const { getIntent, setSpecSessionId } = await import('../features/intents/store.js')
+    install()
+    vi.mocked(clearPendingSpecLink).mockReturnValueOnce('intent-9')
+    vi.mocked(getIntent).mockReturnValue({
+      id: 'intent-9',
+      specSessionId: 'pending:never-bound',
+    } as Intent)
+
+    eb.publish('run:settled', {
+      sessionId: 'pending:never-bound',
+      workspacePath: '/proj',
+      reason: 'error',
+      sessionKind: 'spec',
+      runKind: 'interactive',
+    })
+
+    expect(clearPendingSpecLink).toHaveBeenCalledWith('pending:never-bound')
+    // The occupancy is cleared because the field still equals the settled
+    // pending id — a launch that died before binding must free the slot.
+    expect(setSpecSessionId).toHaveBeenCalledWith('intent-9', null)
+  })
+
+  it('run:settled sessionKind=spec_review releases the review occupancy of a pending that never bound', async () => {
+    const { registerPendingSpecReviewLink } =
+      await import('../features/intents/spec-review-link.js')
+    const { getIntent, setSpecReviewSessionId } = await import('../features/intents/store.js')
+    install()
+    vi.mocked(getIntent).mockReturnValue({
+      id: 'intent-9',
+      specReviewSessionId: 'pending:never-bound-review',
+    } as Intent)
+    registerPendingSpecReviewLink('pending:never-bound-review', 'intent-9')
+
+    eb.publish('run:settled', {
+      sessionId: 'pending:never-bound-review',
+      workspacePath: '/proj',
+      reason: 'error',
+      sessionKind: 'spec_review',
+      runKind: 'interactive',
+    })
+
+    expect(setSpecReviewSessionId).toHaveBeenCalledWith('intent-9', null)
   })
 
   // ── Intent-sessions: backfill intent_session_id at run:bound (refine) ───

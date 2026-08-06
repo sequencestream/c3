@@ -284,7 +284,7 @@ class QueueController {
       // Read fresh every pass too: a saved concurrency cap takes effect on the
       // very next tick, without restarting the queue.
       automationConcurrency: getAutomationConcurrency(this.workspacePath),
-      specRuns: probeSpecRunFacts(intents ?? [], this.hooks),
+      specRuns: probeSpecRunFacts(intents ?? [], this.hooks, now),
       specInFlight: [...this.specInFlight.keys()],
     })
 

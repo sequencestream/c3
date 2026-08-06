@@ -21,6 +21,7 @@ import type {
 import type { WorkflowHooks } from './queue-action-context.js'
 import { readSpecFingerprint } from './spec-review.js'
 import { appendQueueDecisions, latestQueueDecisionByIntent } from './queue-store.js'
+import { isSpecOccupancyAlive } from './spec-occupancy.js'
 
 // ---------------------------------------------------------------------------
 // Facts in
@@ -105,10 +106,19 @@ export function probeRunFacts(
  * session, so it must never enter the work-liveness set — that set drives the
  * workspace-global concurrency gate, and a spec session running there would
  * wedge the whole development queue behind a document being written.
+ *
+ * A session counts as "alive" when its run is live OR it is a `pending:`
+ * occupancy that has not aged past the grace window. The pending case is what
+ * closes the bind gap: from the moment a spec session is launched (its pending
+ * id written into `spec_session_id` / `spec_review_session_id`) until the
+ * `run:bound` event replaces it, the queue must keep seeing the spec phase as
+ * occupied — and after a restart, for the bounded grace window, so a dead
+ * launch does not immediately start a duplicate one.
  */
 export function probeSpecRunFacts(
   intents: readonly Intent[],
   hooks: Pick<WorkflowHooks, 'isRunning'>,
+  now: number,
 ): QueueSpecRunFact[] {
   const facts: QueueSpecRunFact[] = []
   const seen = new Set<string>()
@@ -116,7 +126,7 @@ export function probeSpecRunFacts(
     for (const sid of [r.specSessionId, r.specReviewSessionId]) {
       if (!sid || seen.has(sid)) continue
       seen.add(sid)
-      facts.push({ sessionId: sid, alive: hooks.isRunning(sid) })
+      facts.push({ sessionId: sid, alive: isSpecOccupancyAlive(sid, hooks.isRunning, now) })
     }
   }
   return facts

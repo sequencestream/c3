@@ -9,7 +9,7 @@
  *  - Handler promise never rejects for expected validation failures
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
@@ -32,6 +32,7 @@ import {
   setLastWorkSession,
   setSpecApproved,
   setSpecPath,
+  setSpecReviewSessionId,
   setSpecSessionId,
   updateIntentDeps,
   updateStatus,
@@ -54,6 +55,7 @@ vi.mock('./worktree.js', async (importOriginal) => {
 import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import { resetStoreForTests as resetSessionMetadata } from '../sessions/session-metadata-store.js'
 import {
+  launchSpecReviewSession,
   launchSpecSession,
   launchWorkSession,
   type SessionLaunchMode,
@@ -92,9 +94,11 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-function mockDeps(): SessionLaunchDeps {
+function mockDeps(launchRun?: SessionLaunchDeps['launchRun']): SessionLaunchDeps {
   return {
-    launchRun: vi.fn().mockResolvedValue(undefined) as unknown as SessionLaunchDeps['launchRun'],
+    launchRun:
+      launchRun ??
+      (vi.fn().mockResolvedValue(undefined) as unknown as SessionLaunchDeps['launchRun']),
     broadcastIntents: vi.fn(),
   }
 }
@@ -638,6 +642,119 @@ describe('launchSpecSession', () => {
   it('never throws for expected validation failures', async () => {
     const r = await launchSpecSession(proj, 'nope', mockDeps())
     expect(r.success).toBe(false)
+  })
+})
+
+// ── Spec occupancy — the bind-gap fix ───────────────────────────────────────
+// The spec-phase slot is occupied from the moment a launch begins (the pending
+// id is written into spec_session_id / spec_review_session_id before any
+// scaffolding), so a concurrent launch — a second tick, a double-click, a
+// manual + queue race — attaches to the in-flight session instead of starting
+// a second one; and a launch that dies releases the slot so the queue can
+// re-launch.
+describe('launchSpecSession — bind-gap occupancy', () => {
+  it('attaches to an authoring launch already in flight instead of starting a second', async () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'In flight', shortEnTitle: 'inflight', content: '', priority: 'P1' },
+    ])
+    // Simulate a launch that claimed the slot but has not bound yet: a live
+    // pending runtime in spec_session_id.
+    const inFlight = `${PENDING_SESSION_PREFIX}inflight`
+    setSpecSessionId(intent.id, inFlight)
+    ensureRuntime(inFlight, proj, 'default', [], 'spec')
+    markRunning(inFlight)
+
+    const deps = mockDeps()
+    const r = asSuccess(await launchSpecSession(proj, intent.id, deps))
+
+    expect(r).toEqual({ success: true, sessionId: inFlight, mode: 'attach' })
+    expect(deps.launchRun).not.toHaveBeenCalled()
+    expect(getIntent(intent.id)?.specPath).toBeNull()
+  })
+
+  it('concurrent first-time launches scaffold and launch exactly once', async () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Concurrent spec', shortEnTitle: 'concurrent-spec', content: '', priority: 'P2' },
+    ])
+    const deps = mockDeps()
+
+    const [a, b] = await Promise.all([
+      launchSpecSession(proj, intent.id, deps),
+      launchSpecSession(proj, intent.id, deps),
+    ])
+
+    // Only ONE launch may own the slot; the other attaches and scaffolds nothing.
+    expect(deps.launchRun).toHaveBeenCalledTimes(1)
+    const modes = [a, b].map((r) => (r.success ? r.mode : 'error')).sort()
+    expect(modes).toEqual(['attach', 'fresh'])
+    // One spec_path backfill, one spec directory.
+    expect(getIntent(intent.id)?.specPath).toBeTruthy()
+  })
+
+  it('a rejected launchRun releases the occupancy so the same intent can re-launch', async () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Fails', shortEnTitle: 'fails', content: '', priority: 'P2' },
+    ])
+    const deps = mockDeps(
+      vi
+        .fn()
+        .mockRejectedValue(new Error('vendor boom')) as unknown as SessionLaunchDeps['launchRun'],
+    )
+
+    const r = asSuccess(await launchSpecSession(proj, intent.id, deps))
+    expect(r.mode).toBe('fresh')
+
+    // The fire-and-forget .catch releases the occupancy (the mock rejects
+    // immediately, so the release lands by the time the await resolves).
+    await vi.waitFor(() => {
+      expect(getIntent(intent.id)?.specSessionId).toBeNull()
+    })
+
+    // The same intent launches fresh again — nothing is permanently stuck.
+    const again = mockDeps()
+    const r2 = asSuccess(await launchSpecSession(proj, intent.id, again))
+    expect(r2.mode).toBe('fresh')
+    expect(again.launchRun).toHaveBeenCalledTimes(1)
+  })
+
+  it('a rejected review launch releases the review slot', async () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Review fails', shortEnTitle: 'rev-fails', content: '', priority: 'P1' },
+    ])
+    const specPath = join(dir, 'spec.md')
+    setSpecPath(intent.id, specPath)
+    writeFileSync(specPath, '# Spec to review', 'utf8')
+    const deps = mockDeps(
+      vi
+        .fn()
+        .mockRejectedValue(new Error('vendor boom')) as unknown as SessionLaunchDeps['launchRun'],
+    )
+
+    const r = asSuccess(await launchSpecReviewSession(proj, intent.id, deps))
+    expect(r.mode).toBe('fresh')
+
+    await vi.waitFor(() => {
+      expect(getIntent(intent.id)?.specReviewSessionId).toBeNull()
+    })
+  })
+})
+
+describe('launchSpecReviewSession — bind-gap occupancy', () => {
+  it('attaches to a review already in flight (live pending) instead of starting a second', async () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Reviewed', shortEnTitle: 'rev', content: '', priority: 'P1' },
+    ])
+    setSpecPath(intent.id, join(dir, 'spec.md'))
+    const inFlight = `${PENDING_SESSION_PREFIX}inflight-review`
+    setSpecReviewSessionId(intent.id, inFlight)
+    ensureRuntime(inFlight, proj, 'default', [], 'spec_review')
+    markRunning(inFlight)
+
+    const deps = mockDeps()
+    const r = await launchSpecReviewSession(proj, intent.id, deps)
+
+    expect(r).toEqual({ success: true, sessionId: inFlight, mode: 'attach' })
+    expect(deps.launchRun).not.toHaveBeenCalled()
   })
 })
 

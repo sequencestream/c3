@@ -42,11 +42,12 @@ import { getDefaultMode } from '../../kernel/config/index.js'
 import { resolveSessionVendor, setSessionAgent } from '../../kernel/agent-config/index.js'
 import { sessionAgentTargetForRole } from '../sessions/agent-target.js'
 import { redactSecrets } from '../pr-events/tool-defs.js'
-import { upsertBoundRow, upsertPendingRow } from '../sessions/session-metadata-store.js'
+import { upsertBoundRow } from '../sessions/session-metadata-store.js'
 import { createEvent, getEventByRequestId } from '../user-involve/store.js'
 import { getIntent, isStoreAvailable, setChatSession } from './store.js'
 import { registerPendingIntentLink } from './intent-link.js'
 import { registerPendingSpecLink } from './spec-link.js'
+import { claimSpecOccupancy, releaseSpecOccupancy } from './spec-occupancy.js'
 import { resolveSpecFileAbs } from './specs-root.js'
 import { buildResetSpecPrompt } from './spec.js'
 import { buildResetIntentPrompt } from './reset-prompts.js'
@@ -317,8 +318,22 @@ function resetSpecSessionCore(
   if (!specTarget.ok) {
     return denied('agent_group_unavailable', `agent 组 ${specTarget.groupRef} 无可用成员`, false)
   }
-  const fileAbs = resolveSpecFileAbs(scope.workspacePath, intent.specPath)
+  // Claim the authoring slot before creating the runtime (same occupancy the
+  // queue and the WS reset handler use). A concurrent launch already holding it
+  // is refused rather than double-started.
   const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  const claim = claimSpecOccupancy(intent.id, specId, {
+    workspacePath: scope.workspacePath,
+    vendor: specTarget.target.agent.vendor,
+    agentId: specTarget.target.ref,
+    title: intent.title,
+  })
+  if (!claim.ok) {
+    return denied('concurrency_gate', 'spec 会话正在运行,请等待其结束', false)
+  }
+  const releaseClaim = (): void => releaseSpecOccupancy(intent.id, specId)
+
+  const fileAbs = resolveSpecFileAbs(scope.workspacePath, intent.specPath)
   const rt = ensureRuntime(
     specId,
     scope.workspacePath,
@@ -328,23 +343,11 @@ function resetSpecSessionCore(
   )
   rt.specDir = dirname(fileAbs)
   setSessionAgent(specId, specTarget.target.ref)
-  try {
-    upsertPendingRow({
-      pendingId: specId,
-      workspacePath: scope.workspacePath,
-      vendor: specTarget.target.agent.vendor,
-      agentId: specTarget.target.ref,
-      title: intent.title,
-      ownerKind: 'intent',
-      ownerId: intent.id,
-    })
-  } catch (err) {
-    console.warn(`[c3:advisor] spec session projection write failed: ${errMsg(err)}`)
-  }
   registerPendingSpecLink(specId, intent.id)
   void deps
     .launchRun(rt, buildResetSpecPrompt(intent, fileAbs, userInput, scope.workspacePath))
     .catch((err: unknown) => {
+      releaseClaim()
       console.warn(`[c3:advisor] reset_spec_session launch failed: ${errMsg(err)}`)
     })
   return ok({ sessionId: specId, sessionType: 'spec' })

@@ -13,6 +13,7 @@ import {
   QUEUE_MAX_ATTEMPTS,
   QUEUE_MAX_SPEC_REWORK,
   QUEUE_PERMISSION_WAIT_MS,
+  QUEUE_TICK_MS,
   backoffDelayMs,
   emptyQueueIntentMeta,
   type QueueIntentFact,
@@ -1194,6 +1195,43 @@ describe('reconcileQueue — spec phase', () => {
       action: 'wait',
       reason: 'spec_review_running',
     })
+  })
+
+  it('keeps a raw intent occupied across ticks while its pending launch has not bound', () => {
+    // A spec-authoring session was launched (`spec_session_id` already holds the
+    // pre-bind pending id) but `run:bound` has not written the real id yet. The
+    // cooldown (5s) is shorter than the tick (10s), so the ONLY thing standing
+    // between the queue and a duplicate launch is the occupancy itself: every
+    // tick must wait, never produce a second `launch_spec`.
+    const occupied = { specStatus: 'raw', specPath: null, specSessionId: 'pending:abc' } as const
+    for (let tick = 0; tick < 3; tick++) {
+      const out = sdd(occupied, {
+        specRuns: [{ sessionId: 'pending:abc', alive: true }],
+        now: NOW + tick * QUEUE_TICK_MS,
+      })
+      expect(out.actions.some((a) => a.kind === 'launch_spec')).toBe(false)
+      expect(out.actions).toHaveLength(0)
+      expect(decisionFor(out, 'A')).toMatchObject({ action: 'wait', reason: 'spec_authoring' })
+    }
+  })
+
+  it('keeps a pending review occupied across ticks while its launch has not bound', () => {
+    // The review twin: `spec_review_session_id` holds the pre-bind pending id, so
+    // consecutive ticks wait instead of producing a second `launch_spec_review`.
+    const occupied = {
+      specPath: '/s/spec.md',
+      specFingerprint: 'fp1',
+      specReviewSessionId: 'pending:rev',
+    } as const
+    for (let tick = 0; tick < 3; tick++) {
+      const out = sdd(occupied, {
+        specRuns: [{ sessionId: 'pending:rev', alive: true }],
+        now: NOW + tick * QUEUE_TICK_MS,
+      })
+      expect(out.actions.some((a) => a.kind === 'launch_spec_review')).toBe(false)
+      expect(out.actions).toHaveLength(0)
+      expect(decisionFor(out, 'A')).toMatchObject({ action: 'wait', reason: 'spec_review_running' })
+    }
   })
 
   it('does not start a second spec run for an intent the kernel already drives', () => {

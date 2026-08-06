@@ -42,4 +42,48 @@ describe('parseQuotaResetAt', () => {
     expect(parseQuotaResetAt('session limit reached', 'Asia/Shanghai')).toBeNull()
     expect(parseQuotaResetAt('tool failed; resets 10:40pm', 'Asia/Shanghai')).toBeNull()
   })
+
+  it('parses a full-date usage-limit reset without a reset keyword', () => {
+    const now = Date.UTC(2026, 7, 1, 0, 0)
+    const resetAt = parseQuotaResetAt(
+      "You've hit your usage limit · try again at Aug 8th, 2026 11:42 AM",
+      'UTC',
+      now,
+    )
+    expect(resetAt).toBe(Date.UTC(2026, 7, 8, 11, 42))
+  })
+
+  it('treats a full-date reset literally even when the moment has already passed', () => {
+    // The date carries its own cross-midnight information, so no today/tomorrow
+    // guessing: a "now" past the stated moment still resolves to that same date.
+    const now = Date.UTC(2026, 7, 8, 12, 0)
+    const resetAt = parseQuotaResetAt(
+      "You've hit your usage limit · try again at Aug 8th, 2026 11:42 AM",
+      'UTC',
+      now,
+    )
+    expect(resetAt).toBe(Date.UTC(2026, 7, 8, 11, 42))
+  })
+
+  it('passes the usage-limit gate and yields null without a time, non-null with one', () => {
+    const now = Date.UTC(2026, 7, 1, 0, 0)
+    expect(parseQuotaResetAt("You've hit your usage limit", 'UTC', now)).toBeNull()
+    expect(
+      parseQuotaResetAt(
+        "You've hit your usage limit · try again at Aug 8th, 2026 11:42 AM",
+        'UTC',
+        now,
+      ),
+    ).not.toBeNull()
+  })
+
+  it('parses a full-date reset in a non-UTC timezone', () => {
+    const now = Date.UTC(2026, 7, 1, 0, 0)
+    const resetAt = parseQuotaResetAt(
+      "You've hit your usage limit · try again at Aug 8th, 2026 11:42 AM",
+      'Asia/Shanghai',
+      now,
+    )
+    expect(resetAt).toBe(Date.UTC(2026, 7, 8, 3, 42))
+  })
 })

@@ -41,10 +41,10 @@ const VENDOR_AUTH_RE =
 /**
  * The vendor says there is nothing left to spend. Only the exhaustion wording —
  * a bare 429 / "rate limit" / "session limit" is throttling, not exhaustion, and
- * clears on its own.
+ * clears on its own. "usage limit" is codex's subscription-cap exhaustion wording.
  */
 const VENDOR_QUOTA_RE =
-  /\bquota\b|resource[\s_-]*exhausted|insufficient[\s_-]*quota|\bexhausted\b|out\s*of\s*credits?|credit\s*balance\s*is\s*too\s*low/i
+  /\bquota\b|resource[\s_-]*exhausted|insufficient[\s_-]*quota|\bexhausted\b|out\s*of\s*credits?|credit\s*balance\s*is\s*too\s*low|\busage\s*limit\b|usage_limit|hit\s+your\s+usage\s+limit/i
 
 /** One recorded vendor-blocking failure, as the projection needs to render it. */
 export interface VendorBlockFact {

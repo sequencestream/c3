@@ -63,6 +63,9 @@ export function isDegradableError(message: string): boolean {
     return true
   // API-level exhaustion / quota
   if (/quota|exhausted|insufficient\s*quota/i.test(lower)) return true
+  // Subscription usage cap ("You've hit your usage limit" — codex reports the
+  // subscription being drained, not an API-level quota)
+  if (/usage\s*limit|usage_limit|hit\s+your\s+usage\s+limit/i.test(lower)) return true
   return false
 }
 

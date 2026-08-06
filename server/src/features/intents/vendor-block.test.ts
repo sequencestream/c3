@@ -114,6 +114,15 @@ describe('classifyVendorBlock', () => {
     )
   })
 
+  it('classifies a codex usage limit without a reset time as vendor_quota_exhausted', () => {
+    expect(classify("You've hit your usage limit")).toBe('vendor_quota_exhausted')
+  })
+
+  it('produces nothing for a usage limit whose reset time is parseable', () => {
+    // agent-quota-recovery already disables the agent and schedules the re-enable.
+    expect(classify("You've hit your usage limit · try again at Aug 8th, 2026 11:42 AM")).toBeNull()
+  })
+
   it('produces nothing for a plain rate limit', () => {
     expect(classify('429 Too Many Requests: rate limit exceeded')).toBeNull()
   })

@@ -35,22 +35,25 @@ CI workflow:`.github/workflows/release.yml`。各目标在其原生 OS runner �
 
 ### 触发方式
 
-- **手动**:Actions → Release → Run workflow,可选填 `version`(如 `v0.2.0`,留空则从 git tag 推导)与 `targets`(默认四个全选)。
+- **手动**:Actions → Release → Run workflow,可选填 `version`(如 `v0.2.0`,留空则从 git tag 推导)。目标是固定的(`linux-x64` / `macos-arm64` / `windows-x64`,每次构建全部,无 targets 输入)。
 - **打 tag**:`git push` 一个 `v*` tag,自动重建 + 重新校验 + 重新发布。
 
 ### Job 链(`needs:` 强制顺序)
 
-1. **setup** — 解析 `targets` / `version`。
+1. **setup** — 解析 `version`。
 2. **pregate** — 源码闸门:`typecheck → lint → test → i18n:check → i18n:check-freeze`。红了不进编译。
-3. **build-publish:<target>**(各跑在原生 OS)—— CLI 渠道:`build → smoke`,上传按目标分类的制品。
+3. **build-publish:<target>**(各跑在原生 OS)—— CLI 渠道:`build → smoke → checksum → postgate`,
+   上传按目标分类的制品(包 + `.sha256` + `SHA256SUMS` + 该 job 自己的 `dist/manifest.json`)。
    3b. **build-desktop:<target>**(各跑在原生 OS)—— 桌面渠道:`release:desktop → checksum → postgate(channel=desktop)`,
-   产出 `.dmg`/`.app.tar.gz`、`.msi`/`.exe`、`.deb`/`.AppImage`。macOS 走 `--require-signing`,
-   签名或公证任一失败即阻断该目标。**桌面 job 失败只丢它自己的产物,不阻断 CLI 发布**
-   (`publish` 的 `if:` 只要求三个 CLI job 全绿)。
-4. **verify-dist** — 合并各目标制品 → 生成 `SHA256SUMS` → 发布门禁(manifest ↔ SHA256SUMS ↔ 磁盘 + 必需目标完整性)。
-5. **provenance** — 对每个制品生成 SLSA L3 溯源(OIDC 无密钥)。
-6. **publish** — `gh release create`,携带每个制品 + `.sha256` sidecar + `SHA256SUMS`;**release notes 由 `--generate-notes` 基于 PR 历史自动生成**。
-   - 取消勾选的目标 = **跳过**(不报红)。
+   产出 `.dmg`/`.app.tar.gz`、`.msi`/`.exe`、`.deb`/`.AppImage`,同样上传含自身 `manifest.json`。
+   macOS 走 `--require-signing`,签名或公证任一失败即阻断该目标。**桌面 job 失败只丢它自己的产物,不阻断 CLI 发布**
+   (`publish` 的 `if:` 只要求三个 CLI job 全绿;缺席的 desktop job 在合并阶段直接不参与)。
+4. **publish** — 下载各 job 制品(**按制品名分目录**,不用 merge-multiple——同名 `manifest.json` / `SHA256SUMS` 会互相覆盖只剩最后一份)→
+   调 `scripts/release/merge-dist.mjs` 合并各 job 的 manifest 为**一份跨目标** `manifest.json` + `SHA256SUMS`
+   (要求各输入 manifest 的 `schema` / `version` / `commit` 一致,按 `file` 去重)→
+   跑 `postgate` 门禁(manifest ↔ SHA256SUMS ↔ 磁盘 + 必需 CLI 目标完整 + schema 属 `c3-release-manifest/*` + 无孤儿制品)→
+   `gh release create` / `upload`,上传集合 = 每个制品 + 其 `.sha256` sidecar + 合并后的 `SHA256SUMS` + **合并后的 `manifest.json`**;
+   **release notes 由 `--generate-notes` 基于 PR 历史自动生成**。合并或门禁失败时 publish 直接红、不调用 `gh`,绝不产出「看着正常但缺 manifest」的 Release。
 
 ### 校验 CI 产物
 
@@ -113,5 +116,5 @@ pnpm release:github --dry-run      # 排练每个阶段,不打 tag / 不跑 gh
 | `pnpm release:desktop`     | 桌面渠道:sidecar 编译 → 暂存 + 版本门禁 → `tauri build` → 收集 + manifest(`--require-signing`)     |
 | `pnpm release:checksum`    | 对 dist/ 产物生成校验和(出 `.sha256` / `SHA256SUMS`)                                               |
 | `pnpm release:smoke`       | 冒烟:`--version` + headless 启动                                                                   |
-| `pnpm release:verify-dist` | postgate:manifest ↔ SHA256SUMS ↔ 磁盘一致性                                                        |
+| `pnpm release:verify-dist` | postgate:manifest ↔ SHA256SUMS ↔ 磁盘一致性 + 必需目标 + schema + 无孤儿制品                       |
 | `pnpm release:github`      | GitHub 发布编排:gate → build → notes → 切公开 GitHub Release                                       |

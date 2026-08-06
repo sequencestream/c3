@@ -2,14 +2,16 @@
 //
 // After checksumming, prove the distribution set is internally consistent and complete
 // BEFORE anything irreversible (git tag, `gh release create`):
+//   0. manifest.schema is c3-release-manifest/*                       (client understands it)
 //   1. re-hash every artifact and match manifest.artifacts[].sha256   (no post-build drift)
 //   2. SHA256SUMS ↔ manifest agree line-for-line                       (same bytes throughout)
 //   3. every P0 target is present in the manifest                      (no half-baked release)
+//   4. no orphan business artifact in the dist root                    (nothing uploaded but unmanifested)
 //
-// Any mismatch / missing P0 throws → publish aborts, no tag, no upload.
+// Any mismatch / missing P0 / orphan throws → publish aborts, no tag, no upload.
 //
 // Pure Node. CLI: node scripts/release/postgate.mjs [--manifest=dist/manifest.json]
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { resolve, dirname, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sha256File } from './manifest.mjs'
@@ -73,6 +75,15 @@ export function verifyDist({ manifestPath, log = () => {} } = {}) {
   const manifest = JSON.parse(readFileSync(mp, 'utf-8'))
   const distDir = dirname(mp)
 
+  // 0. Schema: the desktop updater parses this exact manifest, so it must be one of
+  //    the schemas it understands (c3-release-manifest/*) — anything else is either
+  //    a stale or foreign file and must not be trusted as a release manifest.
+  if (typeof manifest.schema !== 'string' || !/^c3-release-manifest\//.test(manifest.schema)) {
+    throw new Error(
+      `manifest schema invalid: ${String(manifest.schema)} — expected c3-release-manifest/*`,
+    )
+  }
+
   // 3. Required-target completeness (P0 ∩ selected — see requiredTargets()),
   //    scoped to the channel under test.
   const required = requiredTargets()
@@ -130,6 +141,24 @@ export function verifyDist({ manifestPath, log = () => {} } = {}) {
   const manifestNames = new Set(manifest.artifacts.map((a) => a.file))
   for (const name of sums.keys()) {
     if (!manifestNames.has(name)) throw new Error(`SHA256SUMS has orphan entry: ${name}`)
+  }
+
+  // 4. No orphan business artifacts: every release package sitting in the dist root
+  //    must be described by the manifest. A stray package (e.g. one a merge step
+  //    flattened but never manifested) would be uploaded to the Release yet never
+  //    be verifiable by a consumer — fail before `gh` instead of shipping it.
+  //    Only top-level files matching the release naming pattern count; `.sha256`
+  //    sidecars ride along (the manifest describes the package, not the sidecar).
+  const packagePattern =
+    /^c3-(?:desktop-)?v.*\.(?:tar\.gz|zip|dmg|msi|exe|deb|AppImage|app\.tar\.gz)$/
+  for (const name of readdirSync(distDir)) {
+    const file = resolve(distDir, name)
+    if (statSync(file).isDirectory()) continue
+    if (name.endsWith('.sha256')) continue
+    if (!packagePattern.test(name)) continue
+    if (!manifestNames.has(name)) {
+      throw new Error(`orphan release artifact not in manifest: ${name}`)
+    }
   }
 
   log(

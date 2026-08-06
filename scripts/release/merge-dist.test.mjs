@@ -308,4 +308,230 @@ describe('merge-dist', () => {
 
     expect(() => mergeDist({ distDir: root })).toThrow(/conflicting artifact/)
   })
+
+  // ── CI publish aggregation ─────────────────────────────────────────────────
+  // The workflow's `publish` job downloads every job's subdir (3 CLI + 3 desktop),
+  // merges them, and uploads the flat merged dir. These cover the real shape of that
+  // aggregation: the merged dir IS the upload set, and a failed desktop job just
+  // doesn't contribute its target.
+
+  it('merges all six job types — the flat merged dir is the upload set incl. manifest.json', () => {
+    // Write one job subdir + the `<package>.sha256` sidecars its checksum step uploads.
+    const job = (artifactName, artifacts) => {
+      const entries = writeJobSubdir(root, { artifactName, artifacts })
+      for (const a of entries) {
+        writeFileSync(join(root, artifactName, `${a.file}.sha256`), `${a.sha256}  ${a.file}\n`)
+      }
+      return entries
+    }
+    // 3 CLI jobs.
+    job('c3-linux-x64', [
+      {
+        target: 'linux-x64',
+        platform: 'linux',
+        arch: 'x64',
+        channel: 'cli',
+        kind: 'tarball',
+        file: 'c3-v0.1.0-linux-x64.tar.gz',
+        binary: 'c3',
+      },
+    ])
+    job('c3-macos-arm64', [
+      {
+        target: 'macos-arm64',
+        platform: 'macos',
+        arch: 'arm64',
+        channel: 'cli',
+        kind: 'tarball',
+        file: 'c3-v0.1.0-macos-arm64.tar.gz',
+        binary: 'c3',
+      },
+    ])
+    job('c3-windows-x64', [
+      {
+        target: 'windows-x64',
+        platform: 'windows',
+        arch: 'x64',
+        channel: 'cli',
+        kind: 'zip',
+        file: 'c3-v0.1.0-windows-x64.zip',
+        binary: 'c3.exe',
+      },
+    ])
+    // 3 desktop jobs (one target ships several installers, per the desktop channel).
+    job('c3-desktop-macos-arm64', [
+      {
+        target: 'macos-arm64',
+        platform: 'macos',
+        arch: 'arm64',
+        channel: 'desktop',
+        kind: 'dmg',
+        preferred: true,
+        file: 'c3-desktop-v0.1.0-macos-arm64.dmg',
+      },
+      {
+        target: 'macos-arm64',
+        platform: 'macos',
+        arch: 'arm64',
+        channel: 'desktop',
+        kind: 'app',
+        file: 'c3-desktop-v0.1.0-macos-arm64.app.tar.gz',
+      },
+    ])
+    job('c3-desktop-windows-x64', [
+      {
+        target: 'windows-x64',
+        platform: 'windows',
+        arch: 'x64',
+        channel: 'desktop',
+        kind: 'nsis',
+        preferred: true,
+        file: 'c3-desktop-v0.1.0-windows-x64.exe',
+      },
+      {
+        target: 'windows-x64',
+        platform: 'windows',
+        arch: 'x64',
+        channel: 'desktop',
+        kind: 'msi',
+        file: 'c3-desktop-v0.1.0-windows-x64.msi',
+      },
+    ])
+    job('c3-desktop-linux-x64', [
+      {
+        target: 'linux-x64',
+        platform: 'linux',
+        arch: 'x64',
+        channel: 'desktop',
+        kind: 'appimage',
+        preferred: true,
+        file: 'c3-desktop-v0.1.0-linux-x64.AppImage',
+      },
+      {
+        target: 'linux-x64',
+        platform: 'linux',
+        arch: 'x64',
+        channel: 'desktop',
+        kind: 'deb',
+        file: 'c3-desktop-v0.1.0-linux-x64.deb',
+      },
+    ])
+
+    const { manifestPath, sumsPath } = mergeDist({ distDir: root })
+
+    // Merged manifest is a single cross-target record: schema / version / commit
+    // survive, all 9 artifacts (3 CLI + 6 desktop) present.
+    const merged = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+    expect(merged.schema).toBe(SCHEMA)
+    expect(merged.version).toBe(VERSION)
+    expect(merged.commit).toBe(COMMIT)
+    expect(merged.artifacts).toHaveLength(9)
+
+    // The flat merged dir IS the upload set: every package + its .sha256 sidecar +
+    // the merged SHA256SUMS + the merged manifest.json, all at the dist root.
+    for (const a of merged.artifacts) {
+      expect(existsSync(join(root, a.file))).toBe(true)
+      expect(existsSync(join(root, `${a.file}.sha256`))).toBe(true)
+      expect(readFileSync(sumsPath, 'utf-8')).toContain(`${a.sha256}  ${a.file}`)
+    }
+    expect(existsSync(join(root, 'SHA256SUMS'))).toBe(true)
+    expect(existsSync(join(root, 'manifest.json'))).toBe(true)
+
+    // And the merged set passes the publish-level postgate (default cli channel, P0).
+    expect(() => verifyDist({ manifestPath })).not.toThrow()
+  })
+
+  it('merges with a desktop target absent — three CLI targets intact, absent target not in artifacts[]', () => {
+    // All three CLI jobs + two of three desktop jobs. c3-desktop-windows-x64 is
+    // ABSENT — its job went red, so publish still cuts the CLI channel and only
+    // drops that target's artifact (mirrors the workflow's "desktop red ≠ CLI red").
+    writeTargetSubdir(root, {
+      artifactName: 'c3-linux-x64',
+      target: 'linux-x64',
+      pkgFile: 'c3-v0.1.0-linux-x64.tar.gz',
+    })
+    writeTargetSubdir(root, {
+      artifactName: 'c3-macos-arm64',
+      target: 'macos-arm64',
+      pkgFile: 'c3-v0.1.0-macos-arm64.tar.gz',
+    })
+    writeTargetSubdir(root, {
+      artifactName: 'c3-windows-x64',
+      target: 'windows-x64',
+      pkgFile: 'c3-v0.1.0-windows-x64.zip',
+    })
+    writeJobSubdir(root, {
+      artifactName: 'c3-desktop-macos-arm64',
+      artifacts: [
+        {
+          target: 'macos-arm64',
+          channel: 'desktop',
+          kind: 'dmg',
+          preferred: true,
+          file: 'c3-desktop-v0.1.0-macos-arm64.dmg',
+        },
+      ],
+    })
+    writeJobSubdir(root, {
+      artifactName: 'c3-desktop-linux-x64',
+      artifacts: [
+        {
+          target: 'linux-x64',
+          channel: 'desktop',
+          kind: 'appimage',
+          preferred: true,
+          file: 'c3-desktop-v0.1.0-linux-x64.AppImage',
+        },
+      ],
+    })
+
+    const { manifestPath } = mergeDist({ distDir: root })
+    const merged = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+
+    // The three CLI targets are complete; the absent windows desktop target is not.
+    const cliTargets = merged.artifacts
+      .filter((a) => (a.channel ?? 'cli') === 'cli')
+      .map((a) => a.target)
+      .sort()
+    expect(cliTargets).toEqual(['linux-x64', 'macos-arm64', 'windows-x64'])
+    const desktopFiles = merged.artifacts.filter((a) => a.channel === 'desktop').map((a) => a.file)
+    expect(desktopFiles).toEqual(
+      expect.not.arrayContaining([expect.stringContaining('windows-x64')]),
+    )
+
+    // Merge + postgate pass: three CLI intact, no phantom windows desktop artifact.
+    withEnv({ C3_REQUIRED_TARGETS: 'linux-x64,macos-arm64,windows-x64' }, () =>
+      expect(() => verifyDist({ manifestPath })).not.toThrow(),
+    )
+  })
+
+  it('rejects a merged dist missing a required CLI target', () => {
+    // linux-x64 CLI ships, macos-arm64 CLI is absent — the P0 completeness gate
+    // must refuse to let this reach a Release.
+    writeTargetSubdir(root, {
+      artifactName: 'c3-linux-x64',
+      target: 'linux-x64',
+      pkgFile: 'c3-v0.1.0-linux-x64.tar.gz',
+    })
+    const { manifestPath } = mergeDist({ distDir: root })
+    expect(() => verifyDist({ manifestPath })).toThrow(/required cli target\(s\) missing/)
+  })
+
+  it('postgate rejects an orphan package sitting in the merged dist root', () => {
+    writeTargetSubdir(root, {
+      artifactName: 'c3-linux-x64',
+      target: 'linux-x64',
+      pkgFile: 'c3-v0.1.0-linux-x64.tar.gz',
+    })
+    writeTargetSubdir(root, {
+      artifactName: 'c3-macos-arm64',
+      target: 'macos-arm64',
+      pkgFile: 'c3-v0.1.0-macos-arm64.tar.gz',
+    })
+    const { manifestPath } = mergeDist({ distDir: root })
+    // Plant a stray package no manifest describes: it would be uploaded to the
+    // Release yet never be verifiable by a consumer — the gate must refuse it.
+    writeFileSync(join(root, 'c3-desktop-v0.1.0-linux-x64.AppImage'), Buffer.from('stray'))
+    expect(() => verifyDist({ manifestPath })).toThrow(/orphan release artifact/)
+  })
 })

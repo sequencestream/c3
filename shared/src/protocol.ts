@@ -14,6 +14,7 @@ export * from './protocol/auth.js'
 export * from './protocol/automation.js'
 export * from './protocol/code.js'
 export * from './protocol/consensus.js'
+export * from './protocol/delivery.js'
 export * from './protocol/discussion.js'
 export * from './protocol/intent.js'
 export * from './protocol/session.js'
@@ -25,6 +26,7 @@ export * from './protocol/workspace.js'
 import type * as AuthMsg from './protocol/auth-messages.js'
 import type * as AutomationMsg from './protocol/automation-messages.js'
 import type * as CodeMsg from './protocol/code-messages.js'
+import type * as DeliveryMsg from './protocol/delivery-messages.js'
 import type * as DiscussionMsg from './protocol/discussion-messages.js'
 import type * as IntentMsg from './protocol/intent-messages.js'
 import type * as SessionMsg from './protocol/session-messages.js'
@@ -103,6 +105,12 @@ export type ClientToServer =
   | IntentMsg.ClientQueueControl
   | IntentMsg.ClientCreatePr
   | IntentMsg.ClientSyncIntentPrStatus
+  | DeliveryMsg.ClientListDeliveries
+  | DeliveryMsg.ClientCreateDelivery
+  | DeliveryMsg.ClientGetDeliveryDetail
+  | DeliveryMsg.ClientUpdateDelivery
+  | DeliveryMsg.ClientCancelDelivery
+  | DeliveryMsg.ClientTransitionDelivery
   | DiscussionMsg.ClientListDiscussions
   | DiscussionMsg.ClientCreateDiscussion
   | DiscussionMsg.ClientOpenDiscussion
@@ -169,6 +177,10 @@ export type ServerToClient =
   | IntentMsg.ServerCreatePrResponse
   | IntentMsg.ServerCreatePrProgress
   | IntentMsg.ServerSyncIntentPrStatusResponse
+  | DeliveryMsg.ServerDeliveries
+  | DeliveryMsg.ServerCreateDeliveryResult
+  | DeliveryMsg.ServerDeliveryDetail
+  | DeliveryMsg.ServerDeliveryTransitionFailed
   | DiscussionMsg.ServerDiscussions
   | DiscussionMsg.ServerDiscussionDetail
   | DiscussionMsg.ServerDiscussionMessage

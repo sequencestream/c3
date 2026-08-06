@@ -93,6 +93,16 @@ c3
 │   │   │       └── 链深度闸门                    # 超上限在唤起 Agent 与任何工具副作用之前拒绝,并向 queue_decision_log 落一条稳定原因码;日志写失败不放宽限制
 │   │   └── Git/PR 收尾                           # 手动 Start Dev 结束时经 gh 建 PR、回填 commit/PR 状态
 │   │
+│   ├── delivery 交付                             # 交付作为集成单元:一批意图共同集成并最终进入主线,回答「这批能不能合了、卡在哪」
+│   │   ├── 交付账本                              # 按工作区持久化交付(标题/描述/base_branch 快照/日期/分支名),status 六态 CHECK 闭集
+│   │   ├── 受控状态机                            # planned→integrating→verifying→verified→delivered,任意非终态可取消;回退 verifying→integrating(人工返工)/verified→verifying(系统合并冲突);统一经 canTransitionDelivery 纯函数
+│   │   ├── 守卫与缺口                            # 分支就绪→关联意图 PR 全部合入→人工确认验证→合并成功;缺口以 delivery.guard.* 结构下发给页面置灰+常驻说明+跳转
+│   │   ├── 集成就熟 N/M                          # 实时由 intent_prs.delivery_id 聚合,不持久化计数;无「已完成」态,只以 N/M 呈现
+│   │   ├── 交付 CRUD + 取消                      # 纯本地数据动作不触网;取消是生命周期终结方式,无永久删除
+│   │   ├── 一级页面                              # 顶栏「交付」tab 置于「需求」后;角标只计服务端计算的「需要用户处理」交付;详情仅概览/关联意图两 Tab
+│   │   ├── current-branch 降级                   # 该模式交付为纯聚合视图:分支/PR/合并动作不渲染并给说明文案,纯数据操作不受限
+│   │   └── pr:merge 知情告知                     # 工作区首次创建交付时一次性提示语义漂移,请检查自动化订阅
+│   │
 │   ├── discussion 多智能体讨论                   # 多个 agent(与人)围绕主题圆桌讨论,可转为意图
 │   │   ├── 讨论账本                              # 按工作区持久化讨论(主题+参与者)
 │   │   ├── 多 agent 轮流                         # 组织者引擎编排参与 agent 的轮流发言

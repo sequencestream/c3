@@ -57,3 +57,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 | [0033](0033-tauri-desktop-shell-sidecar.md)                                  | Tauri 2 桌面壳:c3 单二进制作为 sidecar + WebView 加载其自带 SPA(共享 c3 home、托盘常驻、最小 capability、只杀自己创建的子进程) | accepted   |
 | [0034](0034-intent-pr-fact-base-and-readpoints.md)                           | intents PR 拆表的事实基础:时间戳编码 / `pr_id` 语义 / 存量 base / 多 base 行为                                                 | accepted   |
 | [0035](0035-intent-pr-table-split-and-migration-markers.md)                  | PR 拆表为 `intent_prs`(硬切无双写、单一写入口、聚合态共用)+ `schema_migrations` 迁移标记表                                     | accepted   |
+| [0036](0036-delivery-as-integration-unit.md)                                 | 交付作为 Git 集成单元而非业务里程碑:本地账本 + 受控状态机 + `base_branch` 快照 + `pr:merge` 知情告知                           | proposed   |

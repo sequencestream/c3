@@ -8,6 +8,7 @@ import type {
   CodeSearchHit,
   CodexPolicy,
   CreateAutomationInput,
+  DeliveryStatus,
   GitActionFailureGuidance,
   IntentStatus,
   ModeToken,
@@ -193,6 +194,26 @@ export interface AppMethods {
   selectIntentSession(sessionId: string): void
   createIntent(): void
   startIntentSession(intentId: string, text: string, images: PromptImage[]): void
+
+  // deliveries (交付作为集成单元, ADR-0036)
+  openDeliveries(path: string): void
+  openDelivery(deliveryId: string): void
+  createDelivery(payload: {
+    title: string
+    description?: string
+    startDate?: number | null
+    endDate?: number | null
+  }): void
+  updateDelivery(payload: {
+    deliveryId: string
+    title?: string
+    description?: string
+    startDate?: number | null
+    endDate?: number | null
+  }): void
+  cancelDelivery(deliveryId: string): void
+  transitionDelivery(to: DeliveryStatus, confirmVerified?: boolean): void
+  onDeliveryMobileBack(targetKey: string): void
 
   // discussions
   openDiscussions(path: string): void

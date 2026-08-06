@@ -98,6 +98,14 @@ import {
   startDiscussion,
 } from './discussions/index.js'
 import {
+  cancelDeliveryHandler,
+  createDeliveryHandler,
+  getDeliveryDetailHandler,
+  listDeliveriesHandler,
+  transitionDeliveryHandler,
+  updateDeliveryHandler,
+} from './deliveries/index.js'
+import {
   createAutomationHandler,
   deleteAutomationHandler,
   getExecutionTranscript,
@@ -204,6 +212,13 @@ export const handlerMap: HandlerMap = {
   queue_control: queueControlHandler,
   create_pr: createPrHandler,
   sync_intent_pr_status: syncIntentPrStatusHandler,
+  // deliveries (交付 — 作为集成单元, ADR-0036)
+  list_deliveries: listDeliveriesHandler,
+  create_delivery: createDeliveryHandler,
+  get_delivery_detail: getDeliveryDetailHandler,
+  update_delivery: updateDeliveryHandler,
+  cancel_delivery: cancelDeliveryHandler,
+  transition_delivery: transitionDeliveryHandler,
   // discussions
   list_discussions: listDiscussionsHandler,
   create_discussion: createDiscussionHandler,

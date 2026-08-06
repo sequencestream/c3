@@ -89,6 +89,16 @@ web/src/
 │   │   │   │   ├── useIntentDetailTabs.ts          # Tab 状态机 composable:activeTab/可见 Tab(SDD 或历史 spec 数据决定 spec/specSession 显隐、SDD 开启且有 specReviewSessionId 决定 specReviewSession、lastWorkSessionId 决定 workSession)/空正文默认进意图会话/切意图复位/隐藏 Tab 回退 intent/外部 requestedSubTab(含 specReviewSession)覆盖并恰好消费一次(不可见目标静默忽略仍消费)/changelog·spec 懒加载信号/四类会话 ID 异步回填补发一次 open 且对齐去重(评审经 onOpenSpecReviewSession 传意图 id,由服务端按意图解析)/意图·规范·评审·工作四类会话标签状态点(非 idle/未知才显示,仅呈现不参与 spec 编辑门禁)/expectedSessionId·chatReady·chatReadonly(仅评审 tab)·firstIntentTurn·modeLocked/pendingSpecSwitch 待新会话回填自动切;只返回声明式结果,打开/读取/日志经回调交回控制层
 │   │   │   │   └── useSpecApprovalGate.ts          # 编写Spec门/延迟切Tab组合逻辑 composable:模块级 writeSpecTriggeredAt 门(重挂载/重选意图后 10 秒窗口仍存活,__resetWriteSpecGuards 供单测重置)+approveGateBlocked(approveSpec 态且距编写不足10秒隐藏 spec tab 真正批准入口)+triggerWriteSpec(武装门+约1秒后仅当意图未变切到 spec session);定时器在意图切换/卸载清理
 │   │
+│   ├── deliveries/                                 # 交付页
+│   │   ├── Deliveries.vue                          # 交付容器页:桌面两栏(左交付列表 + 右详情);数据与动作经 App.vue props/emits 注入,状态推进/缺口可达性均来自服务端 transitionPlan,本页只消费不重算;移动端 MobileStack 两级 drill-down(列表→详情,onDeliveryMobileBack 回列表)
+│   │   ├── components/
+│   │   │   ├── DeliveryList/DeliveryList.vue       # 交付列表:头部「新建交付」展开内联创建表单(标题/描述/起止日历日期,纯本地数据动作不触网);行=标题+状态徽标+集成就绪 N/M(无独立进度条/统计卡);行点击 emit open;空态文案
+│   │   │   └── DeliveryDetail/                     # 右栏交付详情(容器 + 子单元):god-component 已按职责拆分
+│   │   │       ├── DeliveryDetail.vue              # 详情容器:常驻标题栏(标题+状态徽标+取消动作(danger ConfirmDialog))+仅「概览/关联意图」两个 Tab(不设 PR/设置/分支独立 Tab);终态(已发布/已取消)说明文案;缺口跳转:关联意图→切关联意图 tab,工作区设置→上抛 open-workspace-settings
+│   │   │       ├── DeliveryStatusSelector.vue      # 状态分段选择器+常驻缺口:分段只含「当前状态+合法推进/回退目标」(非法目标不出现),可执行目标亮起可点、守卫未满足/系统专属置灰;选择器下方常驻 delivery.guard.* 缺口文案+对应跳转入口+「集成就绪 N/M」(N/M 并入说明,无独立进度条);verifying→verified 点击先弹 ConfirmDialog 显式人工确认
+│   │   │       ├── DeliveryOverviewTab.vue         # 概览 tab:顶部(current-branch 模式说明文案,动作区分支/PR/合并动作不渲染)+状态选择器+常驻缺口;下方元信息(状态/交付分支/基线分支/起止日期/交付 PR 链接(本阶段恒空)/创建/更新/描述)与内联编辑表单
+│   │   │       └── DeliveryIntentsTab.vue          # 关联意图 tab:意图关联由后续阶段提供,本阶段恒空态 + 集成就熟 N/M 聚合口径说明;无独立 PR 列表/进度条
+│   │
 │   ├── discussions/                                 # 讨论页
 │   │   ├── Discussions.vue                          # 讨论容器页:桌面两栏(左纯列表 + 右栏「常驻标题栏 + Tab 面板」);标题栏(讨论标题 + Start/Pause/Resume/Convert 动作 + 运行状态)跨 tab 不变,其下 Tab 栏切互斥内容区——目标/上下文/研究/结论(markdown 字段,空则不渲染)/研究会话(讨论已绑定 researchSessionId 时出现,data-testid=discussion-research-session,复用 ChatColumn 渲染研究会话完整 transcript+状态栏(运行态/停止)+输入框,追问 resume 该会话并改写「研究」tab)/过程会话(research 研究流或 discussion 议程+讨论流+dispatch+composer,逻辑整体归位此 tab)/详情(类型/状态/创建/完成时间);过程会话+详情恒存在,默认 tab 研究运行中(且已绑定研究会话)落 researchSession,否则按 conclusion→process→research→goal 取首个可见,切换讨论复位默认、字段实时变化经 correctActiveTab 回落;新建讨论时 discussion_detail 先于 researchSessionId 绑定到达,researchSession tab 尚不存在而短暂落 process(其中正展示实时研究流),研究跑批运行中该 tab 一出现即自动跟随过去(用户本讨论内亲手点过任一 tab 则不再跟随,切讨论复位;研究结束不产生反向跳转);研究会话沿用意图详情的「单一活动会话」对齐规则(全局活动会话 === researchSessionId 才渲染聊天列,否则上抛 open-research-session 由控制层补发 select_session),追问/停止走既有会话通道(session-submit/session-enqueue/stop/continue/respond/…);tab 态为页面内部状态不写回协议;移动端 MobileStack 两级 drill-down(列表→右栏 tab 化详情,返回回列表);透传 agents/defaultAgentId 给列表的创建弹窗;标题栏 action 槽在状态标签旁渲染纯图标「分享」按钮(🔗,data-testid=share-button),点击 emit share 由 App 拼讨论深链复制
 │   │   └── components/

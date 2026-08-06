@@ -29,6 +29,8 @@ import type {
   CodeSearchMode,
   CodexPolicy,
   DepType,
+  Delivery,
+  DeliveryTransitionPlan,
   Discussion,
   GitActionFailureGuidance,
   ModeToken,
@@ -107,7 +109,7 @@ export const CODES_CHAT_WIDTH_DEFAULT = 360
 export const CODES_CHAT_WIDTH_MIN = 240
 export const CODES_CHAT_WIDTH_MAX = 720
 
-export type TabKey = 'console' | 'intents' | 'discussion' | 'automations' | 'codes'
+export type TabKey = 'console' | 'intents' | 'deliveries' | 'discussion' | 'automations' | 'codes'
 export type SessionPageKind = Exclude<SessionKind, 'consensus'>
 
 export const SESSION_PAGE_KINDS: readonly SessionPageKind[] = [
@@ -386,6 +388,14 @@ export function createState(deps: StateDeps) {
         badgeAriaLabel: t('nav.tab.intents.ariaLabel', { count: owners.intent }),
       },
       {
+        key: 'deliveries',
+        label: t('nav.tab.delivery.label'),
+        badgeCount: deliveriesNeedsAction.value[currentWorkspace.value ?? ''] ?? 0,
+        badgeAriaLabel: t('nav.tab.delivery.ariaLabel', {
+          count: deliveriesNeedsAction.value[currentWorkspace.value ?? ''] ?? 0,
+        }),
+      },
+      {
         key: 'discussion',
         label: t('nav.tab.discussion.label'),
         badgeCount: owners.discussion,
@@ -413,6 +423,20 @@ export function createState(deps: StateDeps) {
   const activeTab = ref<TabKey>('intents')
   const intentsProject = ref<string | null>(null)
   const intents = ref<Record<string, Intent[]>>({})
+
+  // ---- Delivery view (read path) ----
+  // 交付列表 + 角标数按工作区缓存。角标数由服务端按「需要用户处理」规则计算
+  // (deliveryRequiresAction),随 `deliveries` 帧下发 —— 不是计划总数,客户端不重算。
+  const deliveriesProject = ref<string | null>(null)
+  const deliveries = ref<Record<string, Delivery[]>>({})
+  const currentDeliveries = computed<Delivery[]>(() =>
+    deliveriesProject.value ? (deliveries.value[deliveriesProject.value] ?? []) : [],
+  )
+  const deliveriesNeedsAction = ref<Record<string, number>>({})
+  const activeDeliveryId = ref<string | null>(null)
+  const activeDelivery = ref<Delivery | null>(null)
+  /** The server-computed transition plan for the open delivery (never re-derived client-side). */
+  const activeDeliveryPlan = ref<DeliveryTransitionPlan | null>(null)
 
   const currentIntents = computed<Intent[]>(() =>
     intentsProject.value ? (intents.value[intentsProject.value] ?? []) : [],
@@ -1039,6 +1063,13 @@ export function createState(deps: StateDeps) {
     currentIntentsSdd,
     currentWorkflow,
     currentQueueDetail,
+    deliveriesProject,
+    deliveries,
+    currentDeliveries,
+    deliveriesNeedsAction,
+    activeDeliveryId,
+    activeDelivery,
+    activeDeliveryPlan,
     currentIntentSessions,
     currentDiscussions,
     activeDiscussionRunState,

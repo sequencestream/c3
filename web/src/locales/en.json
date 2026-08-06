@@ -72,6 +72,10 @@
       },
       "workcenter": {
         "label": "Workcenter"
+      },
+      "delivery": {
+        "label": "Deliveries",
+        "ariaLabel": "Deliveries ({count} need attention)"
       }
     },
     "mode": {
@@ -2093,6 +2097,16 @@
       "noWorkspace": "Select at least one workspace for the key.",
       "saveFailed": "Could not save the API keys.",
       "unknownTool": "Tool \"{tool}\" is not in the externally-grantable catalog."
+    },
+    "delivery": {
+      "dbUnavailable": "Deliveries feature unavailable (c3.db).",
+      "notFound": "Delivery not found.",
+      "titleRequired": "Delivery title is required.",
+      "createFailed": "Failed to create delivery: {detail}.",
+      "updateFailed": "Failed to update delivery: {detail}.",
+      "branchConflict": "Another active delivery already uses branch \"{branch}\".",
+      "invalidStatusTransition": "Cannot move this delivery from {from} to {to}.",
+      "transitionGuardFailed": "The status change is blocked by unmet requirements."
     }
   },
   "statusIndicator": {
@@ -2270,6 +2284,165 @@
     },
     "research": {
       "toolActivity": "🔍 Researching with {tool}…"
+    }
+  },
+  "delivery": {
+    "status": {
+      "planned": {
+        "label": "Planned"
+      },
+      "integrating": {
+        "label": "Integrating"
+      },
+      "verifying": {
+        "label": "Verifying"
+      },
+      "verified": {
+        "label": "Verified"
+      },
+      "delivered": {
+        "label": "Delivered"
+      },
+      "cancelled": {
+        "label": "Cancelled"
+      },
+      "integrationReady": {
+        "label": "Integration ready {merged}/{total}"
+      }
+    },
+    "page": {
+      "title": {
+        "label": "Deliveries"
+      },
+      "empty": {
+        "label": "No deliveries yet. Create one to track a batch of intents as they integrate into mainline."
+      },
+      "tab": {
+        "overview": {
+          "label": "Overview"
+        },
+        "intents": {
+          "label": "Associated intents"
+        }
+      },
+      "meta": {
+        "title": {
+          "label": "Title"
+        },
+        "description": {
+          "label": "Description"
+        },
+        "status": {
+          "label": "Status"
+        },
+        "baseBranch": {
+          "label": "Base branch"
+        },
+        "branch": {
+          "label": "Delivery branch"
+        },
+        "startDate": {
+          "label": "Start date"
+        },
+        "endDate": {
+          "label": "End date"
+        },
+        "pr": {
+          "label": "Delivery PR"
+        },
+        "created": {
+          "label": "Created"
+        },
+        "updated": {
+          "label": "Updated"
+        }
+      },
+      "gap": {
+        "label": "Blocking gaps"
+      },
+      "currentBranchNote": {
+        "label": "Current-branch mode shows deliveries as an aggregate view — branch, PR and merge actions are not available here."
+      },
+      "terminalDelivered": {
+        "label": "This delivery was merged into {baseBranch}."
+      },
+      "terminalCancelled": {
+        "label": "This delivery was cancelled."
+      },
+      "intentsEmpty": {
+        "label": "No associated intents yet — association ships in a later phase."
+      },
+      "prMergeNotice": {
+        "label": "pr:merge may now target the delivery branch — please check your automation subscriptions."
+      }
+    },
+    "action": {
+      "create": {
+        "label": "New delivery"
+      },
+      "edit": {
+        "label": "Edit"
+      },
+      "save": {
+        "label": "Save"
+      },
+      "cancel": {
+        "label": "Cancel delivery"
+      },
+      "cancelTitle": {
+        "label": "Cancel delivery?"
+      },
+      "cancelBody": {
+        "label": "Cancel \"{title}\"? The delivery ends cancelled; its associated intents and remote resources are unchanged."
+      },
+      "confirmVerified": {
+        "label": "Confirm verification passed"
+      },
+      "advance": {
+        "label": "Advance to {status}"
+      },
+      "rework": {
+        "label": "Rework"
+      },
+      "jumpToIntents": {
+        "label": "View associated intents"
+      },
+      "jumpToSettings": {
+        "label": "Open workspace settings"
+      },
+      "form": {
+        "titleLabel": {
+          "label": "Title"
+        },
+        "titlePlaceholder": {
+          "label": "e.g. Sprint 3 release"
+        },
+        "descriptionLabel": {
+          "label": "Description"
+        },
+        "descriptionPlaceholder": {
+          "label": "What this batch of intents delivers"
+        },
+        "startDateLabel": {
+          "label": "Start date"
+        },
+        "endDateLabel": {
+          "label": "End date"
+        },
+        "submit": {
+          "label": "Create"
+        }
+      }
+    },
+    "guard": {
+      "branchNotReady": "The delivery branch is not ready.",
+      "noAssociatedIntents": "No intents are associated with this delivery.",
+      "prsNotMerged": "{merged} of {total} associated PRs are merged.",
+      "verificationNotConfirmed": "Confirm that verification passed.",
+      "mergeNotSucceeded": "Waiting for the delivery merge to succeed.",
+      "systemOnly": "This step is performed by the system.",
+      "humanOnly": "This step can only be performed by a human.",
+      "mergeConflictReasonRequired": "A merge-conflict reason is required."
     }
   },
   "skillApproval": {

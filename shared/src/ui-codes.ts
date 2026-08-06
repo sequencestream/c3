@@ -146,6 +146,24 @@ export const UI_ERROR_CODES = {
   'discussion.notConcludable': { key: 'error.discussion.notConcludable' },
   'discussion.alreadyStarted': { key: 'error.discussion.alreadyStarted' },
   'discussion.notEndedForContinue': { key: 'error.discussion.notEndedForContinue' },
+  // delivery (交付作为集成单元, ADR-0036)
+  'delivery.dbUnavailable': { key: 'error.delivery.dbUnavailable' },
+  'delivery.notFound': { key: 'error.delivery.notFound' },
+  'delivery.titleRequired': { key: 'error.delivery.titleRequired' },
+  'delivery.createFailed': { key: 'error.delivery.createFailed', params: ['detail'] },
+  'delivery.updateFailed': { key: 'error.delivery.updateFailed', params: ['detail'] },
+  // A create/update would collide with an active delivery's branch name (the
+  // `(workspace_path, branch_name)` uniqueness; terminal deliveries don't hold
+  // it). Refused whole rather than silently overwriting.
+  'delivery.branchConflict': { key: 'error.delivery.branchConflict', params: ['branch'] },
+  // State-machine rejections (edge not in the graph). Guard-failed rejections
+  // carry `delivery.guard.*` reasons on the dedicated `delivery_transition_failed`
+  // frame; these two codes drive the toast + error copy.
+  'delivery.invalidStatusTransition': {
+    key: 'error.delivery.invalidStatusTransition',
+    params: ['from', 'to'],
+  },
+  'delivery.transitionGuardFailed': { key: 'error.delivery.transitionGuardFailed' },
   // automation
   'automation.dbUnavailable': { key: 'error.automation.dbUnavailable' },
   'automation.notFound': { key: 'error.automation.notFound' },

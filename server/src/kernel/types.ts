@@ -101,6 +101,7 @@ export interface KernelContext {
   readonly broadcastStatuses: () => void
   readonly broadcastIntents: (workspacePath: string) => void
   readonly broadcastIntentSessions: (workspacePath: string) => void
+  readonly broadcastDeliveries: (workspacePath: string) => void
   readonly broadcastDiscussions: (workspacePath: string) => void
   readonly broadcastAutomations: (workspacePath: string) => void
   readonly broadcastWorkflow: (status: WorkflowStatus) => void

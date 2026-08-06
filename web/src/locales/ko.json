@@ -73,6 +73,10 @@
       },
       "codes": {
         "label": "코드"
+      },
+      "delivery": {
+        "label": "납품",
+        "ariaLabel": "납품({count}건 처리 필요)"
       }
     },
     "mode": {
@@ -2094,6 +2098,16 @@
       "noWorkspace": "키에 워크스페이스를 하나 이상 선택하세요.",
       "saveFailed": "API 키를 저장하지 못했습니다.",
       "unknownTool": "도구 \"{tool}\"(은)는 외부 부여 가능한 카탈로그에 없습니다."
+    },
+    "delivery": {
+      "dbUnavailable": "납품 기능을 사용할 수 없습니다 (c3.db).",
+      "notFound": "납품을 찾을 수 없습니다.",
+      "titleRequired": "납품 제목이 필요합니다.",
+      "createFailed": "납품 생성 실패: {detail}.",
+      "updateFailed": "납품 업데이트 실패: {detail}.",
+      "branchConflict": "다른 활성 납품이 이미 브랜치 \"{branch}\"을(를) 사용 중입니다.",
+      "invalidStatusTransition": "이 납품을 {from}에서 {to}(으)로 전환할 수 없습니다.",
+      "transitionGuardFailed": "충족되지 않은 가드 조건으로 상태 변경이 차단되었습니다."
     }
   },
   "statusIndicator": {
@@ -2271,6 +2285,165 @@
     },
     "research": {
       "toolActivity": "🔍 {tool}(으)로 조사 중…"
+    }
+  },
+  "delivery": {
+    "status": {
+      "planned": {
+        "label": "통합 대기"
+      },
+      "integrating": {
+        "label": "통합 중"
+      },
+      "verifying": {
+        "label": "검증 중"
+      },
+      "verified": {
+        "label": "검증 완료"
+      },
+      "delivered": {
+        "label": "배포됨"
+      },
+      "cancelled": {
+        "label": "취소됨"
+      },
+      "integrationReady": {
+        "label": "통합 준비 {merged}/{total}"
+      }
+    },
+    "page": {
+      "title": {
+        "label": "납품"
+      },
+      "empty": {
+        "label": "아직 납품이 없습니다. 일괄 인텐트를 메인라인으로 통합하는 단위를 추적하려면 납품을 만드세요."
+      },
+      "tab": {
+        "overview": {
+          "label": "개요"
+        },
+        "intents": {
+          "label": "연결 인텐트"
+        }
+      },
+      "meta": {
+        "title": {
+          "label": "제목"
+        },
+        "description": {
+          "label": "설명"
+        },
+        "status": {
+          "label": "상태"
+        },
+        "baseBranch": {
+          "label": "베이스 브랜치"
+        },
+        "branch": {
+          "label": "납품 브랜치"
+        },
+        "startDate": {
+          "label": "시작일"
+        },
+        "endDate": {
+          "label": "종료일"
+        },
+        "pr": {
+          "label": "납품 PR"
+        },
+        "created": {
+          "label": "생성일"
+        },
+        "updated": {
+          "label": "수정일"
+        }
+      },
+      "gap": {
+        "label": "현재 격차"
+      },
+      "currentBranchNote": {
+        "label": "현재 브랜치 모드에서는 납품이 집계 보기로만 표시됩니다 — 브랜치·PR·병합 작업은 여기서 사용할 수 없습니다."
+      },
+      "terminalDelivered": {
+        "label": "이 납품은 {baseBranch}(으)로 병합되었습니다."
+      },
+      "terminalCancelled": {
+        "label": "이 납품은 취소되었습니다."
+      },
+      "intentsEmpty": {
+        "label": "연결된 인텐트가 아직 없습니다 — 연결 기능은 이후 단계에서 제공됩니다."
+      },
+      "prMergeNotice": {
+        "label": "pr:merge가 이제 납품 브랜치를 대상으로 할 수 있습니다 — 자동화 구독을 확인하세요."
+      }
+    },
+    "action": {
+      "create": {
+        "label": "새 납품"
+      },
+      "edit": {
+        "label": "편집"
+      },
+      "save": {
+        "label": "저장"
+      },
+      "cancel": {
+        "label": "납품 취소"
+      },
+      "cancelTitle": {
+        "label": "이 납품을 취소하시겠습니까?"
+      },
+      "cancelBody": {
+        "label": "\"{title}\"을(를) 취소하시겠습니까? 납품은 취소된 종료 상태가 됩니다. 연결된 인텐트와 원격 리소스는 변경되지 않습니다."
+      },
+      "confirmVerified": {
+        "label": "검증 통과 확인"
+      },
+      "advance": {
+        "label": "{status}(으)로 진행"
+      },
+      "rework": {
+        "label": "재작업"
+      },
+      "jumpToIntents": {
+        "label": "연결 인텐트 보기"
+      },
+      "jumpToSettings": {
+        "label": "작업공간 설정 열기"
+      },
+      "form": {
+        "titleLabel": {
+          "label": "제목"
+        },
+        "titlePlaceholder": {
+          "label": "예: 스프린트 3 릴리스"
+        },
+        "descriptionLabel": {
+          "label": "설명"
+        },
+        "descriptionPlaceholder": {
+          "label": "이 인텐트 묶음이 전달하는 것"
+        },
+        "startDateLabel": {
+          "label": "시작일"
+        },
+        "endDateLabel": {
+          "label": "종료일"
+        },
+        "submit": {
+          "label": "만들기"
+        }
+      }
+    },
+    "guard": {
+      "branchNotReady": "납품 브랜치가 준비되지 않았습니다.",
+      "noAssociatedIntents": "이 납품에 연결된 인텐트가 없습니다.",
+      "prsNotMerged": "연결된 인텐트의 PR 중 {merged}/{total}이(가) 병합되었습니다.",
+      "verificationNotConfirmed": "검증이 통과했는지 확인하세요.",
+      "mergeNotSucceeded": "납품 병합 성공을 기다리고 있습니다.",
+      "systemOnly": "이 단계는 시스템이 수행합니다.",
+      "humanOnly": "이 단계는 사람만 수행할 수 있습니다.",
+      "mergeConflictReasonRequired": "병합 충돌 사유가 필요합니다."
     }
   },
   "skillApproval": {

@@ -73,6 +73,10 @@
       },
       "codes": {
         "label": "コード"
+      },
+      "delivery": {
+        "label": "納品",
+        "ariaLabel": "納品({count} 件要対応)"
       }
     },
     "mode": {
@@ -2094,6 +2098,16 @@
       "noWorkspace": "キーに少なくとも 1 つのワークスペースを選択してください。",
       "saveFailed": "API キーを保存できませんでした。",
       "unknownTool": "ツール「{tool}」は外部付与可能なカタログにありません。"
+    },
+    "delivery": {
+      "dbUnavailable": "納品機能を利用できません (c3.db)。",
+      "notFound": "納品が見つかりません。",
+      "titleRequired": "納品タイトルが必要です。",
+      "createFailed": "納品の作成に失敗しました: {detail}。",
+      "updateFailed": "納品の更新に失敗しました: {detail}。",
+      "branchConflict": "別のアクティブな納品がすでにブランチ \"{branch}\" を使用しています。",
+      "invalidStatusTransition": "この納品を {from} から {to} へ遷移できません。",
+      "transitionGuardFailed": "状態変更は未達のガード条件によりブロックされました。"
     }
   },
   "statusIndicator": {
@@ -2271,6 +2285,165 @@
     },
     "research": {
       "toolActivity": "🔍 {tool} で調査中…"
+    }
+  },
+  "delivery": {
+    "status": {
+      "planned": {
+        "label": "統合待ち"
+      },
+      "integrating": {
+        "label": "統合中"
+      },
+      "verifying": {
+        "label": "検証中"
+      },
+      "verified": {
+        "label": "検証済み"
+      },
+      "delivered": {
+        "label": "リリース済み"
+      },
+      "cancelled": {
+        "label": "キャンセル済み"
+      },
+      "integrationReady": {
+        "label": "統合準備 {merged}/{total}"
+      }
+    },
+    "page": {
+      "title": {
+        "label": "納品"
+      },
+      "empty": {
+        "label": "納品はまだありません。一連の意図をメインラインへ統合する単位を追跡するため、納品を作成してください。"
+      },
+      "tab": {
+        "overview": {
+          "label": "概要"
+        },
+        "intents": {
+          "label": "関連意図"
+        }
+      },
+      "meta": {
+        "title": {
+          "label": "タイトル"
+        },
+        "description": {
+          "label": "説明"
+        },
+        "status": {
+          "label": "状態"
+        },
+        "baseBranch": {
+          "label": "ベースブランチ"
+        },
+        "branch": {
+          "label": "納品ブランチ"
+        },
+        "startDate": {
+          "label": "開始日"
+        },
+        "endDate": {
+          "label": "終了日"
+        },
+        "pr": {
+          "label": "納品 PR"
+        },
+        "created": {
+          "label": "作成日時"
+        },
+        "updated": {
+          "label": "更新日時"
+        }
+      },
+      "gap": {
+        "label": "現在のギャップ"
+      },
+      "currentBranchNote": {
+        "label": "現在ブランチモードでは納品は集約ビューとしてのみ表示されます——ブランチ・PR・マージ操作はここでは利用できません。"
+      },
+      "terminalDelivered": {
+        "label": "この納品は {baseBranch} にマージされました。"
+      },
+      "terminalCancelled": {
+        "label": "この納品はキャンセルされました。"
+      },
+      "intentsEmpty": {
+        "label": "関連意図はまだありません——関連付けは後のフェーズで提供されます。"
+      },
+      "prMergeNotice": {
+        "label": "pr:merge が納品ブランチを対象とする可能性があります——自動化サブスクリプションを確認してください。"
+      }
+    },
+    "action": {
+      "create": {
+        "label": "新規納品"
+      },
+      "edit": {
+        "label": "編集"
+      },
+      "save": {
+        "label": "保存"
+      },
+      "cancel": {
+        "label": "納品をキャンセル"
+      },
+      "cancelTitle": {
+        "label": "この納品をキャンセルしますか?"
+      },
+      "cancelBody": {
+        "label": "\"{title}\" をキャンセルしますか?この納品はキャンセル済みの終状態になります。関連意図とリモートリソースは変更されません。"
+      },
+      "confirmVerified": {
+        "label": "検証完了を確認"
+      },
+      "advance": {
+        "label": "{status} へ進める"
+      },
+      "rework": {
+        "label": "やり直し"
+      },
+      "jumpToIntents": {
+        "label": "関連意図を表示"
+      },
+      "jumpToSettings": {
+        "label": "ワークスペース設定を開く"
+      },
+      "form": {
+        "titleLabel": {
+          "label": "タイトル"
+        },
+        "titlePlaceholder": {
+          "label": "例: スプリント 3 リリース"
+        },
+        "descriptionLabel": {
+          "label": "説明"
+        },
+        "descriptionPlaceholder": {
+          "label": "この意図群が届けるもの"
+        },
+        "startDateLabel": {
+          "label": "開始日"
+        },
+        "endDateLabel": {
+          "label": "終了日"
+        },
+        "submit": {
+          "label": "作成"
+        }
+      }
+    },
+    "guard": {
+      "branchNotReady": "納品ブランチが準備できていません。",
+      "noAssociatedIntents": "この納品には関連意図がありません。",
+      "prsNotMerged": "関連意図の PR は {merged}/{total} マージ済みです。",
+      "verificationNotConfirmed": "検証が完了したことを確認してください。",
+      "mergeNotSucceeded": "納品のマージ成功を待っています。",
+      "systemOnly": "このステップはシステムが実行します。",
+      "humanOnly": "このステップは人間のみが実行できます。",
+      "mergeConflictReasonRequired": "マージ競合の理由が必要です。"
     }
   },
   "skillApproval": {

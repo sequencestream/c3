@@ -768,6 +768,7 @@ export async function startServer(opts: ServerOptions): Promise<void> {
     broadcastStatuses: broadcasts.broadcastStatuses,
     broadcastIntents: broadcasts.broadcastIntents,
     broadcastIntentSessions: broadcasts.broadcastIntentSessions,
+    broadcastDeliveries: broadcasts.broadcastDeliveries,
     broadcastDiscussions: broadcasts.broadcastDiscussions,
     broadcastAutomations: broadcasts.broadcastAutomations,
     broadcastWorkflow: broadcasts.broadcastWorkflow,

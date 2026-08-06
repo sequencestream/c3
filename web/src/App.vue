@@ -8,6 +8,7 @@ import AppHeader from './components/AppHeader/AppHeader.vue'
 import Works from './pages/works/Works.vue'
 import Intents from './pages/intents/Intents.vue'
 import Queue from './pages/queue/Queue.vue'
+import Deliveries from './pages/deliveries/Deliveries.vue'
 import Discussions from './pages/discussions/Discussions.vue'
 import Automations from './pages/automations/Automations.vue'
 import Codes from './pages/codes/Codes.vue'
@@ -163,6 +164,19 @@ const {
   selectIntentSession,
   createIntent,
   startIntentSession,
+  // ---- deliveries ----
+  deliveriesProject,
+  currentDeliveries,
+  deliveriesNeedsAction,
+  activeDeliveryId,
+  activeDelivery,
+  activeDeliveryPlan,
+  openDelivery,
+  createDelivery,
+  updateDelivery,
+  cancelDelivery,
+  transitionDelivery,
+  onDeliveryMobileBack,
   // ---- discussions ----
   discussionsProject,
   currentDiscussions,
@@ -617,6 +631,28 @@ function onCodesChatWidth(px: number): void {
           @continue="onContinue"
           @list-commands="listCommands"
           @mobile-back="clearViewedSession"
+        />
+
+        <Deliveries
+          v-else-if="activeTab === 'deliveries' && deliveriesProject"
+          :deliveries="currentDeliveries"
+          :active-id="activeDeliveryId"
+          :active-delivery="activeDelivery"
+          :active-plan="activeDeliveryPlan"
+          :workspace-git-branch-mode="
+            currentWorkspaceSetting?.gitBranchMode ??
+            (deliveriesProject
+              ? serverSettings?.projectConfigs?.[deliveriesProject]?.gitBranchMode
+              : undefined) ??
+            'current-branch'
+          "
+          @open="openDelivery"
+          @create="createDelivery"
+          @update="updateDelivery"
+          @cancel="cancelDelivery"
+          @transition="(to, confirm) => transitionDelivery(to, confirm)"
+          @open-workspace-settings="openWorkspaceSetting"
+          @mobile-back="onDeliveryMobileBack"
         />
 
         <Discussions

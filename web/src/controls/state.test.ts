@@ -66,6 +66,7 @@ describe('createState — HEADER_TABS sessions visibility', () => {
     const s = makeState()
     expect(s.HEADER_TABS.value.map((tab) => tab.key)).toEqual([
       'intents',
+      'deliveries',
       'discussion',
       'automations',
       'codes',
@@ -75,6 +76,7 @@ describe('createState — HEADER_TABS sessions visibility', () => {
     s.serverSettings.value = { showSessionsPage: true } as never
     expect(s.HEADER_TABS.value.map((tab) => tab.key)).toEqual([
       'intents',
+      'deliveries',
       'discussion',
       'automations',
       'codes',

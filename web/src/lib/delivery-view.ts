@@ -1,0 +1,80 @@
+/**
+ * Delivery-view display rules shared by the page components.
+ *
+ * Pure — no i18n, no WS, no state. The reachability/gaps themselves are
+ * server-computed (`delivery_transition_plan`); the page only decides HOW to
+ * render a plan the server already produced, so it can never relax the rules.
+ */
+import type {
+  DeliveryGuardReason,
+  DeliveryStatus,
+  DeliveryTargetTransition,
+  DeliveryTransitionPlan,
+} from '@ccc/shared/protocol'
+import { DELIVERY_STATUSES } from '@ccc/shared/protocol'
+import type { LocaleKey } from '@/i18n'
+
+/** The six statuses in forward path order (the segmented-control layout). */
+export const DELIVERY_STATUS_ORDER: readonly DeliveryStatus[] = [...DELIVERY_STATUSES]
+
+/** Status → locale leaf key (the Chinese side is pinned by i18n-terms.md). */
+export const DELIVERY_STATUS_LABEL_KEYS: Record<DeliveryStatus, LocaleKey> = {
+  planned: 'delivery.status.planned.label',
+  integrating: 'delivery.status.integrating.label',
+  verifying: 'delivery.status.verifying.label',
+  verified: 'delivery.status.verified.label',
+  delivered: 'delivery.status.delivered.label',
+  cancelled: 'delivery.status.cancelled.label',
+}
+
+/** Whether a transition target is clickable (human-invokable AND guard passed). */
+export function deliveryTargetInvokable(target: DeliveryTargetTransition): boolean {
+  return target.humanAction && target.guard === 'satisfied'
+}
+
+/** Whether a target is the human rework edge `verifying → integrating`. */
+export function isDeliveryReworkTarget(from: DeliveryStatus, to: DeliveryStatus): boolean {
+  return from === 'verifying' && to === 'integrating'
+}
+
+/** Whether a target is the verification-confirmation edge `verifying → verified`. */
+export function isVerificationConfirmTarget(from: DeliveryStatus, to: DeliveryStatus): boolean {
+  return from === 'verifying' && to === 'verified'
+}
+
+/**
+ * The gaps a delivery's plan surfaces, in guard order (branch → integration →
+ * confirm → merge), de-duplicated by reason code. Drives the persistent gap
+ * list under the status selector; the N/M figure rides in the same block.
+ */
+export function deliveryGapReasons(plan: DeliveryTransitionPlan): DeliveryGuardReason[] {
+  const seen = new Set<string>()
+  const out: DeliveryGuardReason[] = []
+  for (const target of plan.targets) {
+    for (const reason of target.reasons) {
+      if (seen.has(reason.code)) continue
+      seen.add(reason.code)
+      out.push(reason)
+    }
+  }
+  return out
+}
+
+/** Whether a delivery sits in a terminal state (no progress targets). */
+export function isDeliveryTerminal(status: DeliveryStatus): boolean {
+  return status === 'delivered' || status === 'cancelled'
+}
+
+/**
+ * Calendar-date (YYYY-MM-DD, UTC) → epoch ms. The wire stores the user's chosen
+ * calendar date as a UTC-midnight epoch; `epochMsToCalendarDate` is its inverse.
+ */
+export function calendarDateToEpochMs(value: string): number {
+  return Date.parse(`${value}T00:00:00Z`)
+}
+
+/** Epoch ms → 'YYYY-MM-DD' (UTC); `null`/`0`/NaN → '' (no real calendar date is epoch 0). */
+export function epochMsToCalendarDate(ms: number | null | undefined): string {
+  if (ms == null || ms === 0 || !Number.isFinite(ms)) return ''
+  return new Date(ms).toISOString().slice(0, 10)
+}

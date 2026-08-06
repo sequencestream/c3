@@ -72,6 +72,10 @@
       },
       "codes": {
         "label": "代码"
+      },
+      "delivery": {
+        "label": "交付",
+        "ariaLabel": "交付({count} 项待处理)"
       }
     },
     "mode": {
@@ -2093,6 +2097,16 @@
       "noWorkspace": "请至少为该 key 选择一个工作区。",
       "saveFailed": "API key 保存失败。",
       "unknownTool": "工具「{tool}」不在可外部授权的目录中。"
+    },
+    "delivery": {
+      "dbUnavailable": "交付功能不可用 (c3.db)。",
+      "notFound": "未找到该交付。",
+      "titleRequired": "交付标题不能为空。",
+      "createFailed": "创建交付失败: {detail}。",
+      "updateFailed": "更新交付失败: {detail}。",
+      "branchConflict": "另一个活动交付已使用分支 \"{branch}\"。",
+      "invalidStatusTransition": "无法将该交付从 {from} 推进到 {to}。",
+      "transitionGuardFailed": "状态变更被未满足的守卫条件阻止。"
     }
   },
   "statusIndicator": {
@@ -2270,6 +2284,165 @@
     },
     "research": {
       "toolActivity": "🔍 正在用 {tool} 检索…"
+    }
+  },
+  "delivery": {
+    "status": {
+      "planned": {
+        "label": "待集成"
+      },
+      "integrating": {
+        "label": "集成中"
+      },
+      "verifying": {
+        "label": "验证中"
+      },
+      "verified": {
+        "label": "验证通过"
+      },
+      "delivered": {
+        "label": "已发布"
+      },
+      "cancelled": {
+        "label": "已取消"
+      },
+      "integrationReady": {
+        "label": "集成就绪 {merged}/{total}"
+      }
+    },
+    "page": {
+      "title": {
+        "label": "交付"
+      },
+      "empty": {
+        "label": "还没有交付。创建一个交付来追踪一批意图共同合入主线的进度。"
+      },
+      "tab": {
+        "overview": {
+          "label": "概览"
+        },
+        "intents": {
+          "label": "关联意图"
+        }
+      },
+      "meta": {
+        "title": {
+          "label": "标题"
+        },
+        "description": {
+          "label": "描述"
+        },
+        "status": {
+          "label": "状态"
+        },
+        "baseBranch": {
+          "label": "基线分支"
+        },
+        "branch": {
+          "label": "交付分支"
+        },
+        "startDate": {
+          "label": "开始日期"
+        },
+        "endDate": {
+          "label": "结束日期"
+        },
+        "pr": {
+          "label": "交付 PR"
+        },
+        "created": {
+          "label": "创建时间"
+        },
+        "updated": {
+          "label": "更新时间"
+        }
+      },
+      "gap": {
+        "label": "当前缺口"
+      },
+      "currentBranchNote": {
+        "label": "当前分支模式下交付仅为聚合视图——分支、PR 与合并动作在此不可用。"
+      },
+      "terminalDelivered": {
+        "label": "该交付已合入 {baseBranch}。"
+      },
+      "terminalCancelled": {
+        "label": "该交付已取消。"
+      },
+      "intentsEmpty": {
+        "label": "暂无关联意图——关联能力在后续阶段提供。"
+      },
+      "prMergeNotice": {
+        "label": "pr:merge 现在可能指向交付分支——请检查自动化订阅。"
+      }
+    },
+    "action": {
+      "create": {
+        "label": "新建交付"
+      },
+      "edit": {
+        "label": "编辑"
+      },
+      "save": {
+        "label": "保存"
+      },
+      "cancel": {
+        "label": "取消交付"
+      },
+      "cancelTitle": {
+        "label": "取消该交付?"
+      },
+      "cancelBody": {
+        "label": "取消\"{title}\"?该交付将进入已取消终态,关联意图与远端资源不受影响。"
+      },
+      "confirmVerified": {
+        "label": "确认验证通过"
+      },
+      "advance": {
+        "label": "推进到 {status}"
+      },
+      "rework": {
+        "label": "返工"
+      },
+      "jumpToIntents": {
+        "label": "查看关联意图"
+      },
+      "jumpToSettings": {
+        "label": "打开工作区设置"
+      },
+      "form": {
+        "titleLabel": {
+          "label": "标题"
+        },
+        "titlePlaceholder": {
+          "label": "例如: 迭代 3 发布"
+        },
+        "descriptionLabel": {
+          "label": "描述"
+        },
+        "descriptionPlaceholder": {
+          "label": "这一批意图交付什么"
+        },
+        "startDateLabel": {
+          "label": "开始日期"
+        },
+        "endDateLabel": {
+          "label": "结束日期"
+        },
+        "submit": {
+          "label": "创建"
+        }
+      }
+    },
+    "guard": {
+      "branchNotReady": "交付分支尚未就绪。",
+      "noAssociatedIntents": "该交付尚未关联任何意图。",
+      "prsNotMerged": "关联意图的 PR 已合入 {merged}/{total}。",
+      "verificationNotConfirmed": "请确认验证已通过。",
+      "mergeNotSucceeded": "等待交付合并成功。",
+      "systemOnly": "该步骤由系统执行。",
+      "humanOnly": "该步骤仅可由人工执行。",
+      "mergeConflictReasonRequired": "需要合并冲突原因。"
     }
   },
   "skillApproval": {

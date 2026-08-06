@@ -446,7 +446,7 @@ describe('queue dev actions — branch-mode git alignment', () => {
       expect.any(String),
       expect.any(String),
       'intent/Z',
-      undefined,
+      'main',
       undefined,
     )
     expect(setPrInfo).toHaveBeenCalledWith('Z', '77', 'reviewing', 'http://x/pull/77')
@@ -493,7 +493,7 @@ describe('queue dev actions — branch-mode git alignment', () => {
       expect.any(String),
       expect.any(String),
       'intent/GL',
-      undefined,
+      'main',
       'gitlab',
     )
     expect(setPrInfo).toHaveBeenCalledWith(

@@ -18,8 +18,12 @@ import type {
   IntentStatus,
 } from '@ccc/shared/protocol'
 import { CREATE_PR_STAGES } from '@ccc/shared/protocol'
-import { closeForgePr, commitAndPush, createGhPr, hasDiffAgainstMain } from '../../git.js'
-import { getGitBranchMode } from '../../kernel/config/index.js'
+import { closeForgePr, commitAndPush, createForgePr, hasDiffAgainstBase } from '../../git.js'
+import {
+  getDefaultMainBranch,
+  getForgeOverride,
+  getGitBranchMode,
+} from '../../kernel/config/index.js'
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
 import type { GenericEvent } from '@ccc/shared'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
@@ -97,8 +101,15 @@ function monotonicStageReporter(
 /**
  * Create a PR for one intent. Gate order is fixed and unchanged: already has a
  * PR (idempotent, no Git work at all) → worktree mode → non-empty branch →
- * the worktree actually differs from main. Only then does it commit, push, and
- * create the PR; a failed commit never creates one.
+ * the worktree actually differs from the effective base. Only then does it
+ * commit, push, and create the PR; a failed commit never creates one.
+ *
+ * The effective base is resolved ONCE from the workspace's `defaultMainBranch`
+ * (explicit `main` when unset) and threaded through the diff gate, the forge
+ * create and the `pr:create` event — no layer re-derives or defaults it. The
+ * diff gate prefers the freshly-fetched remote base; when the base resolves
+ * neither remotely nor locally it rejects with a readable detail (before any
+ * commit/push/forge work) instead of passing through.
  *
  * `deps.onStage` observes that same order: the synchronous gates ahead of the
  * diff check report nothing (a rejection there is only an error), and a failure
@@ -128,10 +139,25 @@ export async function createPrForIntent(
   if (normalizeBranchName(req.branchName) === null) {
     return { success: false, code: 'intent.prCreateNoBranch' }
   }
+
+  // The single effective base for this whole operation: the workspace's
+  // configured main branch, or an explicit `main` when unset.
+  const baseBranch = getDefaultMainBranch(workspacePath) ?? 'main'
+  const providerOverride = getForgeOverride(workspacePath)
+
   const reportStage = monotonicStageReporter(deps.onStage)
   const worktreePath = getWorktreePath(workspacePath, intentId)
   reportStage('analyzing-changes')
-  if (!(await hasDiffAgainstMain(worktreePath))) {
+  let hasDiff: boolean
+  try {
+    hasDiff = await hasDiffAgainstBase(worktreePath, baseBranch)
+  } catch (err) {
+    // Target branch unresolvable → reject with a readable detail rather than
+    // the old pass-through. Nothing has been committed, pushed or created.
+    const detail = err instanceof Error ? err.message : String(err)
+    return { success: false, code: 'intent.prCreateFailed', params: { detail } }
+  }
+  if (!hasDiff) {
     return { success: false, code: 'intent.prCreateNoChanges' }
   }
 
@@ -160,7 +186,14 @@ export async function createPrForIntent(
     }
     stage = 'forge-create'
     reportStage('creating-pr')
-    const pr = await createGhPr(worktreePath, title, body, headBranch)
+    const pr = await createForgePr(
+      worktreePath,
+      title,
+      body,
+      headBranch,
+      baseBranch,
+      providerOverride,
+    )
     if (!pr.ok || !pr.prId) {
       const detail = pr.error ?? '未知错误'
       return {
@@ -184,7 +217,7 @@ export async function createPrForIntent(
         prId: pr.prId,
         prUrl: pr.prUrl ?? null,
         headBranch,
-        baseBranch: undefined,
+        baseBranch,
         intentId,
       },
       deps.normalizeEvent,

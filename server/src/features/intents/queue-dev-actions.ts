@@ -403,7 +403,7 @@ async function maybeCreatePr(ctx: QueueActionContext, req: Intent): Promise<void
         prId: prResult.prId,
         prUrl: prResult.prUrl,
         headBranch,
-        baseBranch: undefined,
+        baseBranch: prResult.baseBranch,
         intentId: req.id,
       },
       ctx.hooks.normalizeEvent,
@@ -422,8 +422,13 @@ async function maybeCreatePr(ctx: QueueActionContext, req: Intent): Promise<void
 async function createPrForIntent(
   ctx: QueueActionContext,
   req: Intent,
-): Promise<{ ok: true; prId: string; prUrl: string } | { ok: false; error: string } | null> {
+): Promise<
+  | { ok: true; prId: string; prUrl: string; baseBranch: string }
+  | { ok: false; error: string }
+  | null
+> {
   const headBranch = req.branchName ?? undefined
+  const baseBranch = getDefaultMainBranch(ctx.workspacePath) ?? 'main'
   const bodyParts: string[] = [req.content]
   if (req.dependsOn.length > 0) {
     bodyParts.push('', '## 依赖需求')
@@ -437,11 +442,11 @@ async function createPrForIntent(
     `feat: ${req.title}`,
     bodyParts.join('\n'),
     headBranch,
-    undefined,
+    baseBranch,
     getForgeOverride(ctx.workspacePath),
   )
   if (prResult.ok && prResult.prId) {
-    return { ok: true as const, prId: prResult.prId, prUrl: prResult.prUrl ?? '' }
+    return { ok: true as const, prId: prResult.prId, prUrl: prResult.prUrl ?? '', baseBranch }
   }
   return { ok: false as const, error: prResult.error ?? 'Unknown error' }
 }

@@ -20,19 +20,20 @@ import {
   PR_EVENT_TYPES,
   PR_LEGACY_EVENT_TYPE,
   normalizePrGenericEvent,
+  projectPrOperationEvent,
 } from '../pr-events/tool-defs.js'
 
 vi.mock('../../git.js', async () => {
   const actual = await vi.importActual<typeof import('../../git.js')>('../../git.js')
   return {
     ...actual,
-    createGhPr: vi.fn(),
+    createForgePr: vi.fn(),
     commitAndPush: vi.fn(),
-    hasDiffAgainstMain: vi.fn(),
+    hasDiffAgainstBase: vi.fn(),
   }
 })
 
-import { commitAndPush, createGhPr, hasDiffAgainstMain } from '../../git.js'
+import { commitAndPush, createForgePr, hasDiffAgainstBase } from '../../git.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import {
@@ -73,9 +74,9 @@ beforeEach(() => {
   addWorkspace(dir, 1)
   workspaceId = pathToId(dir)!
   proj = resolveWorkspaceRoot(workspaceId)!
-  vi.mocked(createGhPr).mockReset()
+  vi.mocked(createForgePr).mockReset()
   vi.mocked(commitAndPush).mockReset()
-  vi.mocked(hasDiffAgainstMain).mockReset()
+  vi.mocked(hasDiffAgainstBase).mockReset()
 })
 
 afterEach(() => {
@@ -156,9 +157,9 @@ describe('createPrHandler — worktree gate success paths', () => {
   for (const status of ['todo', 'in_progress'] as const) {
     it(`commits in the intent worktree then creates a PR for a ${status} intent`, async () => {
       const r = seedQualifying(status)
-      vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+      vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
       vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
-      vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
+      vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
       const { ctx, broadcast, publish } = fakeCtx()
       const { conn, sent } = fakeConn()
 
@@ -166,10 +167,17 @@ describe('createPrHandler — worktree gate success paths', () => {
 
       const worktreePath = getWorktreePath(proj, r.id)
       // Ordered: check changes → commit/push in the worktree → create the PR there.
-      expect(hasDiffAgainstMain).toHaveBeenCalledWith(worktreePath)
+      expect(hasDiffAgainstBase).toHaveBeenCalledWith(worktreePath, 'main')
       // The third argument is the progress reporter (see the staged-progress suite).
       expect(commitAndPush).toHaveBeenCalledWith(worktreePath, 'feat: PR me', expect.any(Function))
-      expect(createGhPr).toHaveBeenCalledWith(worktreePath, 'feat: PR me', 'body', 'intent/pr-me')
+      expect(createForgePr).toHaveBeenCalledWith(
+        worktreePath,
+        'feat: PR me',
+        'body',
+        'intent/pr-me',
+        'main',
+        undefined,
+      )
 
       // Response + the three PR fields written atomically on success.
       expect(sent).toContainEqual({
@@ -191,6 +199,44 @@ describe('createPrHandler — worktree gate success paths', () => {
       expect(prEvents).toHaveLength(1)
     })
   }
+
+  it('threads the workspace defaultMainBranch into the diff gate, forge create and pr:create event', async () => {
+    const r = seedQualifying()
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'worktree',
+      defaultMainBranch: 'develop',
+      forge: 'gitlab',
+    })
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '43', prUrl: 'https://x/pr/43' })
+    const { ctx, publish } = fakeCtx()
+    const { conn } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    const worktreePath = getWorktreePath(proj, r.id)
+    // The resolved base — NOT a literal `main` — reaches every layer of the run,
+    // and the workspace forge override routes the manual path to GitLab.
+    expect(hasDiffAgainstBase).toHaveBeenCalledWith(worktreePath, 'develop')
+    expect(createForgePr).toHaveBeenCalledWith(
+      worktreePath,
+      'feat: PR me',
+      'body',
+      'intent/pr-me',
+      'develop',
+      'gitlab',
+    )
+    const prEvents = publish.mock.calls.filter((c) => c[0] === 'event')
+    expect(prEvents).toHaveLength(1)
+    const envelope = prEvents[0][1] as { event: GenericEvent }
+    expect(projectPrOperationEvent(envelope.event)).toMatchObject({
+      operation: 'create',
+      result: 'success',
+      ref: { head: 'intent/pr-me', base: 'develop' },
+      association: { intentId: r.id },
+    })
+  })
 })
 
 /** No PR field, success log or success event was written by a failed run. */
@@ -212,9 +258,9 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
-    expect(hasDiffAgainstMain).not.toHaveBeenCalled()
+    expect(hasDiffAgainstBase).not.toHaveBeenCalled()
     expect(commitAndPush).not.toHaveBeenCalled()
-    expect(createGhPr).not.toHaveBeenCalled()
+    expect(createForgePr).not.toHaveBeenCalled()
     // The pre-existing PR fields are left intact; no new create log or event.
     expect(logsOf(r.id, 'pr_created')).toHaveLength(0)
     expect(publish.mock.calls.filter((c) => c[0] === 'event')).toHaveLength(0)
@@ -232,9 +278,9 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateNotWorktree'])
-    expect(hasDiffAgainstMain).not.toHaveBeenCalled()
+    expect(hasDiffAgainstBase).not.toHaveBeenCalled()
     expect(commitAndPush).not.toHaveBeenCalled()
-    expect(createGhPr).not.toHaveBeenCalled()
+    expect(createForgePr).not.toHaveBeenCalled()
     expectNoSuccessSideEffects(r.id, publish)
   })
 
@@ -250,14 +296,14 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateNoBranch'])
-    expect(hasDiffAgainstMain).not.toHaveBeenCalled()
+    expect(hasDiffAgainstBase).not.toHaveBeenCalled()
     expect(commitAndPush).not.toHaveBeenCalled()
     expectNoSuccessSideEffects(r.id, publish)
   })
 
   it('rejects a clean worktree with prCreateNoChanges', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(false)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(false)
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -265,13 +311,39 @@ describe('createPrHandler — rejection branches short-circuit without side effe
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateNoChanges'])
     expect(commitAndPush).not.toHaveBeenCalled()
-    expect(createGhPr).not.toHaveBeenCalled()
+    expect(createForgePr).not.toHaveBeenCalled()
+    expectNoSuccessSideEffects(r.id, publish)
+  })
+
+  it('rejects with a readable detail when the base branch cannot be resolved — no pass-through', async () => {
+    const r = seedQualifying()
+    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', defaultMainBranch: 'develop' })
+    vi.mocked(hasDiffAgainstBase).mockRejectedValue(
+      new Error('目标分支 develop 无法解析(本地与远端均无该分支)'),
+    )
+    const { ctx, publish } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    // Rejected up front — the old pass-through would have let commit/push/forge run.
+    expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
+    const err = sent.find((m) => m.type === 'error') as {
+      error: { params?: Record<string, string> }
+    }
+    expect(err.error.params).toEqual({ detail: '目标分支 develop 无法解析(本地与远端均无该分支)' })
+    // A gate rejection (nothing ran) carries no repair guidance.
+    expect(
+      (sent.find((m) => m.type === 'error') as { error: { guidance?: unknown } }).error.guidance,
+    ).toBeUndefined()
+    expect(commitAndPush).not.toHaveBeenCalled()
+    expect(createForgePr).not.toHaveBeenCalled()
     expectNoSuccessSideEffects(r.id, publish)
   })
 
   it('surfaces a commit/push failure as prCreateFailed and never creates the PR', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({
       ok: false,
       committed: true,
@@ -284,15 +356,15 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
-    expect(createGhPr).not.toHaveBeenCalled()
+    expect(createForgePr).not.toHaveBeenCalled()
     expectNoSuccessSideEffects(r.id, publish)
   })
 
   it('surfaces a PR-create failure as prCreateFailed with no PR fields or event', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
-    vi.mocked(createGhPr).mockResolvedValue({ ok: false, error: 'gh failed' })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: false, error: 'gh failed' })
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -321,9 +393,9 @@ describe('createPrHandler — staged progress frames', () => {
 
   it('pushes the four stages in execution order, all before the success response', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     mockCommitAndPush({ ok: true, committed: true })
-    vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -341,7 +413,7 @@ describe('createPrHandler — staged progress frames', () => {
 
   it('de-duplicates a multi-repo workspace back into one one-way pass', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     // Two affected sub-repos → the real commitAndPush reports each boundary twice.
     vi.mocked(commitAndPush).mockImplementation(async (_path, _msg, onPhase) => {
       onPhase?.('committing')
@@ -350,7 +422,7 @@ describe('createPrHandler — staged progress frames', () => {
       onPhase?.('pushing')
       return { ok: true, committed: true }
     })
-    vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42' })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '42' })
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -390,7 +462,7 @@ describe('createPrHandler — staged progress frames', () => {
 
   it('stops at the analysis stage when the worktree has no changes', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(false)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(false)
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -402,7 +474,7 @@ describe('createPrHandler — staged progress frames', () => {
 
   it('stops at the commit stage when the commit fails', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     mockCommitAndPush(
       { ok: false, committed: false, error: 'hook failed', failure: 'commit-hook' },
       1,
@@ -418,7 +490,7 @@ describe('createPrHandler — staged progress frames', () => {
 
   it('stops at the push stage when the push fails after a local commit', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     mockCommitAndPush({ ok: false, committed: true, error: 'push rejected', failure: 'other' })
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
@@ -426,15 +498,15 @@ describe('createPrHandler — staged progress frames', () => {
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
     expect(stagesOf(sent)).toEqual(['analyzing-changes', 'committing', 'pushing'])
-    expect(createGhPr).not.toHaveBeenCalled()
+    expect(createForgePr).not.toHaveBeenCalled()
     expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
   })
 
   it('reports the PR-create stage it reached even when the forge call fails', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     mockCommitAndPush({ ok: true, committed: true })
-    vi.mocked(createGhPr).mockResolvedValue({ ok: false, error: 'gh failed' })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: false, error: 'gh failed' })
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -459,13 +531,13 @@ describe('createPrHandler — request correlation', () => {
 
   it('echoes the token on every progress frame and on the success response', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockImplementation(async (_path, _msg, onPhase) => {
       onPhase?.('committing')
       onPhase?.('pushing')
       return { ok: true, committed: true }
     })
-    vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42' })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '42' })
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -486,7 +558,7 @@ describe('createPrHandler — request correlation', () => {
 
   it('echoes the token on the failure error, gate rejections included', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(false)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(false)
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -520,9 +592,9 @@ describe('createPrHandler — request correlation', () => {
 
   it('omits the field entirely for a client that sent no token', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
-    vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42' })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '42' })
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -548,7 +620,7 @@ describe('createPrHandler — failure guidance', () => {
 
   it('classifies a push rejected by the moved-ahead remote branch', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({
       ok: false,
       committed: true,
@@ -567,15 +639,15 @@ describe('createPrHandler — failure guidance', () => {
       retry: { type: 'intent-action', intentId: r.id, action: 'create-pr' },
     })
     // The short circuit is unchanged: a failed push never reaches the forge.
-    expect(createGhPr).not.toHaveBeenCalled()
+    expect(createForgePr).not.toHaveBeenCalled()
     expectNoSuccessSideEffects(r.id, publish)
   })
 
   it('classifies an unavailable forge CLI from the runner’s own verdict', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
-    vi.mocked(createGhPr).mockResolvedValue({
+    vi.mocked(createForgePr).mockResolvedValue({
       ok: false,
       unavailable: true,
       error: 'gh CLI 未安装',
@@ -595,9 +667,9 @@ describe('createPrHandler — failure guidance', () => {
 
   it('keeps the raw detail and still offers a retry when nothing matches', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
-    vi.mocked(createGhPr).mockResolvedValue({ ok: false, error: 'gh pr create 失败' })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: false, error: 'gh pr create 失败' })
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -613,9 +685,9 @@ describe('createPrHandler — failure guidance', () => {
 
   it('classifies a thrown forge failure against the stage it happened in', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
-    vi.mocked(createGhPr).mockRejectedValue(new Error('HTTP 422: Validation Failed'))
+    vi.mocked(createForgePr).mockRejectedValue(new Error('HTTP 422: Validation Failed'))
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -633,7 +705,7 @@ describe('createPrHandler — failure guidance', () => {
     // These already have exact copy of their own; a repair hint and a retry
     // button would only invite the user to run the same rejection again.
     const noChanges = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(false)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(false)
     const { ctx } = fakeCtx()
     const first = fakeConn()
     await createPrHandler(ctx, first.conn, {
@@ -660,12 +732,12 @@ describe('createPrHandler — failure guidance', () => {
 
   it('rides along with the correlation token on the failure terminal', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({
       ok: true,
       committed: true,
     })
-    vi.mocked(createGhPr).mockResolvedValue({
+    vi.mocked(createForgePr).mockResolvedValue({
       ok: false,
       error: 'HTTP 403: Resource not accessible by integration',
     })

@@ -71,6 +71,16 @@ const proposedIntentShape = {
         '有先后关系时务必填写(被依赖项应排在依赖项之前提交)。' +
         '与 dependsOn 并用互补;下标越界/自引用/批内成环会导致整批保存失败。',
     ),
+  specMode: z
+    .enum(['sdd', 'fast'])
+    .nullish()
+    .describe(
+      '可选:每意图级 spec 模式。省略 = 不改动/新建意图按工作区继承(当前值);' +
+        '显式传 null = 清除覆盖,恢复继承工作区;' +
+        "'sdd' = 固定规格先行(先在 spec 获批后才能开发);" +
+        "'fast' = 固定规格延后(小改动可先产出 diff,落定后系统反向生成待批准规格)。" +
+        '仅在用户明确要求该意图走 fast/恢复 sdd 时才设置;普通编辑不要携带此字段。',
+    ),
 }
 
 export const saveSchema = {

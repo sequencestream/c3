@@ -57,6 +57,7 @@ import { buildDevPrompt } from './dev-prompt.js'
 import { buildGitFailureGuidance } from './git-failure.js'
 import { findDependencyBlockingMainline, prepareSpecLaunch } from './dependency-gate.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
+import { captureFastTurnBaseline } from './fast-spec.js'
 import { buildContinueSpecPrompt, buildSeedSpec, buildSpecInstructPrompt } from './spec.js'
 import { computeSpecLayout } from './spec-path.js'
 import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
@@ -181,8 +182,15 @@ function checkWorkAdmission(
   // SDD quality gate — server-side, forced. The authoritative condition is the
   // spec STATUS: the compatibility boolean is never consulted here, so it can
   // never become a second way in when the two disagree.
+  //
+  // The ONE relaxation is per-intent `fast` mode: a fast intent may start a
+  // MANUAL work turn without an approved spec — the spec is reverse-authored
+  // from the turn's diff after it settles. Everything else below stays closed,
+  // and the automation queue still requires `approved` regardless of mode.
   if (getSddEnabled(workspacePath) && intent.specStatus !== 'approved') {
-    return { success: false, code: 'intent.specNotApproved' }
+    if (intent.effectiveSpecMode !== 'fast') {
+      return { success: false, code: 'intent.specNotApproved' }
+    }
   }
 
   // Dependency gate (worktree mode only)
@@ -256,6 +264,12 @@ async function attachOrResumeWorkSession(
   // rejected resume touches nothing.
   const denied = checkWorkAdmission(workspacePath, intent, deps)
   if (denied) return denied
+
+  // A fast-mode resume is a NEW turn with a NEW baseline: capture the git HEAD
+  // it resumes from, so the settle can measure only this turn's diff against it.
+  if (getSddEnabled(workspacePath) && intent.effectiveSpecMode === 'fast') {
+    void captureFastTurnBaseline(workspacePath, sessionId, intent.id)
+  }
 
   // Restore the runtime if it was dropped (server restart / GC), then continue
   // the SAME session — no new worktree, no new session, no new pending link.
@@ -426,6 +440,11 @@ export async function launchWorkSession(
   const devId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const devRt = ensureRuntime(devId, workspacePath, getDefaultMode(workspacePath), [], 'work')
   devRt.effectiveCwd = effectiveCwd
+  // A fast-mode FRESH turn starts from this git state: capture the baseline so
+  // the settle can measure this turn's diff against it (see `fast-spec.ts`).
+  if (getSddEnabled(workspacePath) && req.effectiveSpecMode === 'fast') {
+    void captureFastTurnBaseline(workspacePath, devId, req.id)
+  }
   // Both halves of the projection row come from the ONE resolution above: the
   // routing ref (a group stays a group ref, so each run re-failovers through its
   // members) paired with its representative member's vendor.

@@ -58,6 +58,8 @@ const req: Intent = {
   prStatus: null,
   specPath: null,
   specStatus: 'raw',
+  specMode: null,
+  effectiveSpecMode: 'sdd',
   specApproved: false,
   specApproveUser: null,
   specSessionId: null,

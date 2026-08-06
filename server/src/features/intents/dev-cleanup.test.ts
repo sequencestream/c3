@@ -47,6 +47,8 @@ function makeIntent(over: Partial<Intent> = {}): Intent {
     specPath: null,
     // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
     specStatus: over.specApproved ? 'approved' : over.specPath ? 'pending' : 'raw',
+    specMode: null,
+    effectiveSpecMode: 'sdd',
     specApproved: false,
     specApproveUser: null,
     specSessionId: null,

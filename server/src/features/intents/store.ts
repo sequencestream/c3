@@ -25,14 +25,17 @@ import type {
   IntentPrStatus,
   IntentRunStatus,
   IntentStatus,
+  IntentSpecMode,
   SpecReviewVerdict,
   SpecStatus,
 } from '@ccc/shared/protocol'
 import { SPEC_REVIEW_VERDICTS, SPEC_STATUSES } from '@ccc/shared/protocol'
 import { pathToId } from '../../state.js'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
+import { getSddEnabled } from '../../kernel/config/index.js'
+import { isIntentSpecMode, resolveEffectiveSpecMode } from './spec-mode.js'
 
-const SCHEMA_VERSION = 18
+const SCHEMA_VERSION = 19
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -60,6 +63,7 @@ CREATE TABLE IF NOT EXISTS intents (
   pr_status       TEXT,
   spec_path         TEXT,
   spec_status       TEXT NOT NULL DEFAULT 'raw' CHECK(spec_status IN ('raw','pending','approved')),
+  spec_mode         TEXT CHECK(spec_mode IN ('sdd','fast')),
   spec_approved     INTEGER NOT NULL DEFAULT 0,
   spec_approve_user TEXT,
   spec_session_id   TEXT,
@@ -121,6 +125,23 @@ CREATE TABLE IF NOT EXISTS intent_logs (
   created_at      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_intent_log_intent_created ON intent_logs(intent_id, created_at DESC);
+
+-- Per-turn fast-spec settlement record: the baseline a fast-mode work turn
+-- started from, plus the idempotency marker that stops a replayed settled event
+-- (or a restart) from regenerating a reverse spec. One row per work session;
+-- settled_at/outcome are null until the settle is processed, so the record
+-- doubles as the launch→settle handshake.
+CREATE TABLE IF NOT EXISTS intent_fast_turns (
+  session_id     TEXT PRIMARY KEY,
+  intent_id      TEXT NOT NULL,
+  workspace_path TEXT NOT NULL,
+  baseline       TEXT NOT NULL,  -- JSON: repo path → HEAD commit (may be null per repo)
+  settled_at     INTEGER,        -- null until this turn's settle is processed
+  outcome        TEXT,           -- null until processed: 'no_change'|'small'|'over'|'failed'
+  spec_path      TEXT,
+  created_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_intent_fast_turn_intent ON intent_fast_turns(intent_id);
 `
 
 let schemaReady = false
@@ -345,6 +366,12 @@ function db(): Db | null {
     ) {
       backfillSpecStatus(d)
     }
+    // v18 → v19: per-intent spec-mode override (nullable three-state). Historic
+    // rows stay NULL and inherit the workspace's `sddEnabled`; a NULL passes the
+    // CHECK (SQLite treats NULL as "not violating"), so explicit `sdd`/`fast`
+    // and inheritance all coexist in one column. No backfill — old intents
+    // continue to derive their mode exactly as before.
+    ensureColumn(d, 'intents', 'spec_mode', "TEXT CHECK(spec_mode IN ('sdd','fast'))")
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -401,6 +428,7 @@ interface Row {
   pr_status: string | null
   spec_path: string | null
   spec_status: string
+  spec_mode: string | null
   spec_approved: number
   spec_approve_user: string | null
   spec_session_id: string | null
@@ -437,6 +465,16 @@ function narrowSpecReviewVerdict(v: string | null): SpecReviewVerdict | null {
  */
 function narrowSpecStatus(v: string | null): SpecStatus {
   return v !== null && (SPEC_STATUSES as readonly string[]).includes(v) ? (v as SpecStatus) : 'raw'
+}
+
+/**
+ * Narrow a persisted spec mode. An unknown / missing value reads as unset
+ * (`null` ⇒ inherit the workspace). Fail-closed direction: an uninterpretable
+ * value must never be treated as `fast` by accident — it inherits, and the
+ * workspace SDD switch decides.
+ */
+function narrowSpecMode(v: string | null): IntentSpecMode | null {
+  return v !== null && isIntentSpecMode(v) ? v : null
 }
 
 /** Attach `dependsOn` and `dependsOnTypes` to a set of rows in one deps query, preserving row order. */
@@ -478,6 +516,14 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     prStatus: (r.pr_status ?? null) as IntentPrStatus | null,
     specPath: r.spec_path,
     specStatus: narrowSpecStatus(r.spec_status),
+    specMode: narrowSpecMode(r.spec_mode),
+    // The effective mode is resolved HERE — the single read-model boundary — so
+    // the admission gate, the settle hook and every client read the SAME value
+    // instead of re-deriving it against a possibly-stale setting snapshot.
+    effectiveSpecMode: resolveEffectiveSpecMode(
+      narrowSpecMode(r.spec_mode),
+      getSddEnabled(r.workspace_path),
+    ),
     specApproved: r.spec_approved === 1,
     specApproveUser: r.spec_approve_user,
     specSessionId: r.spec_session_id,
@@ -579,6 +625,7 @@ export function deleteIntentRecords(intentId: string): void {
     d.run('DELETE FROM intent_deps WHERE intent_id=? OR depends_on_id=?', intentId, intentId)
     d.run('DELETE FROM intent_sessions WHERE intent_id=?', intentId)
     d.run('DELETE FROM intent_logs WHERE intent_id=?', intentId)
+    d.run('DELETE FROM intent_fast_turns WHERE intent_id=?', intentId)
     d.run('DELETE FROM intents WHERE id=?', intentId)
   })
 }
@@ -713,8 +760,8 @@ export function insertIntents(
       const createdAt = now + i
       d.run(
         `INSERT INTO intents
-           (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status, spec_mode)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         ids[i],
         proj,
         it.title,
@@ -731,6 +778,7 @@ export function insertIntents(
         null,
         null,
         null,
+        it.specMode ?? null,
       )
       for (const dep of deps[i]) {
         d.run(
@@ -842,9 +890,16 @@ export function upsertIntents(
           ? `, spec_approved=0, spec_approve_user=NULL, spec_review_machine_blocked=1,
              spec_status=CASE WHEN spec_status='approved' THEN 'pending' ELSE spec_status END`
           : ''
+        // Per-intent spec mode: three-state, deliberately distinct. An ABSENT
+        // value preserves the current mode (a routine intent edit must not clear
+        // or change it); an EXPLICIT `null` clears an override back to
+        // inheritance; `'sdd'`/`'fast'` pins it. The CASE distinguishes absence
+        // from explicit-null via a flag column so `NULL` alone never means both.
+        const specModeSupplied = it.specMode !== undefined
+        const specModeValue = it.specMode ?? null
         d.run(
           `UPDATE intents
-             SET title=?, short_en_title=?, content=?, priority=?, module=?, status=?, intent_session_id=COALESCE(?, intent_session_id), updated_at=?, completed_at=?${revokeApproval}
+             SET title=?, short_en_title=?, content=?, priority=?, module=?, status=?, intent_session_id=COALESCE(?, intent_session_id), updated_at=?, completed_at=?, spec_mode=CASE WHEN ?=1 THEN ? ELSE spec_mode END${revokeApproval}
            WHERE id=?`,
           it.title,
           truncateShortEnTitle(it.shortEnTitle),
@@ -855,6 +910,8 @@ export function upsertIntents(
           sessionIdParam,
           now,
           null,
+          specModeSupplied ? 1 : 0,
+          specModeValue,
           ids[i],
         )
         // Audit the revocation in the SAME transaction as the rewrite, so a crash can
@@ -885,8 +942,8 @@ export function upsertIntents(
         const createdAt = now + i
         d.run(
           `INSERT INTO intents
-             (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status, intent_session_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status, intent_session_id, spec_mode)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           ids[i],
           proj,
           it.title,
@@ -904,6 +961,7 @@ export function upsertIntents(
           null,
           null,
           sessionIdParam,
+          it.specMode ?? null,
         )
         for (const dep of deps[i]) {
           d.run(
@@ -1173,6 +1231,161 @@ export function setSpecApproved(id: string, approved: boolean, approveUser: stri
     Date.now(),
     id,
   )
+}
+
+/**
+ * Set an intent's persisted spec-mode override. `null` clears it back to
+ * inheriting the workspace; `'sdd'` / `'fast'` pins it. Switching the mode never
+ * changes `spec_status` on its own — flipping to `fast` does not revoke an
+ * approved spec, and flipping to `sdd` does not fabricate a pending one.
+ */
+export function setSpecMode(id: string, mode: IntentSpecMode | null): void {
+  const d = requireDb()
+  d.run('UPDATE intents SET spec_mode=?, updated_at=? WHERE id=?', mode, Date.now(), id)
+}
+
+/**
+ * Atomically pin a fast-mode intent back to explicit `sdd` after an
+ * over-threshold settle. The WHERE guard keeps it from clobbering a concurrent
+ * user action: it only applies while the persisted mode is still fast (unset =
+ * fast-derived, or explicit `fast`) — an intent the user already pinned to `sdd`
+ * in the meantime is left alone. Returns whether the update applied.
+ */
+export function switchFastIntentToSdd(intentId: string): boolean {
+  const d = requireDb()
+  let applied = false
+  tx(d, () => {
+    const row = d.get<{ spec_mode: string | null }>(
+      'SELECT spec_mode FROM intents WHERE id=?',
+      intentId,
+    )
+    if (!row || (row.spec_mode !== null && row.spec_mode !== 'fast')) return
+    d.run("UPDATE intents SET spec_mode='sdd', updated_at=? WHERE id=?", Date.now(), intentId)
+    applied = true
+  })
+  return applied
+}
+
+/**
+ * Record a reverse-generated spec document at a controlled boundary: write the
+ * NEW path, land the status directly on `pending` (the document carries real
+ * content — the diff-driven draft — not a seed), and clear every review /
+ * approval fact that belonged to the OLD document, so no stale conclusion or
+ * approver survives the content swap. One statement, so a reader can never see
+ * the new path next to the old approval.
+ */
+export function setReverseSpec(id: string, specPath: string): void {
+  const d = requireDb()
+  d.run(
+    `UPDATE intents SET spec_path=?, spec_status='pending', spec_approved=0, spec_approve_user=NULL,
+       spec_review_session_id=NULL, spec_review_verdict=NULL, spec_review_reason=NULL,
+       spec_review_at=NULL, spec_review_fingerprint=NULL, spec_review_rework_rounds=0,
+       spec_review_machine_blocked=0, updated_at=? WHERE id=?`,
+    specPath,
+    Date.now(),
+    id,
+  )
+}
+
+// ---- Fast-turn settlement record (baseline + idempotency) ----
+
+/**
+ * Record the git baseline a manual fast-mode work turn started from. Upserted on
+ * every fresh launch AND resume, keyed by the work session id; the row also
+ * carries the `settled_at` / `outcome` marker the settle reads to stay
+ * idempotent. `baseline` is a JSON object `{ [repoPath]: HEADcommit | null }`
+ * captured from the dev directory at turn start.
+ */
+export function upsertFastTurnBaseline(input: {
+  sessionId: string
+  intentId: string
+  workspacePath: string
+  baseline: Record<string, string | null>
+}): void {
+  const d = requireDb()
+  d.run(
+    `INSERT INTO intent_fast_turns (session_id, intent_id, workspace_path, baseline, settled_at, outcome, spec_path, created_at)
+     VALUES (?,?,?,?,NULL,NULL,NULL,?)
+     ON CONFLICT(session_id) DO UPDATE SET baseline=excluded.baseline`,
+    input.sessionId,
+    input.intentId,
+    resolve(input.workspacePath),
+    JSON.stringify(input.baseline),
+    Date.now(),
+  )
+}
+
+/** Read a fast-turn record by work session id; `null` when none was recorded. */
+export function getFastTurn(sessionId: string): {
+  intentId: string
+  workspacePath: string
+  baseline: string
+  settledAt: number | null
+  outcome: string | null
+  specPath: string | null
+} | null {
+  const d = requireDb()
+  const row = d.get<{
+    intent_id: string
+    workspace_path: string
+    baseline: string
+    settled_at: number | null
+    outcome: string | null
+    spec_path: string | null
+  }>('SELECT * FROM intent_fast_turns WHERE session_id=?', sessionId)
+  if (!row) return null
+  return {
+    intentId: row.intent_id,
+    workspacePath: row.workspace_path,
+    baseline: row.baseline,
+    settledAt: row.settled_at,
+    outcome: row.outcome,
+    specPath: row.spec_path,
+  }
+}
+
+/**
+ * Claim a fast-turn settle so a replayed `run:settled` event (or a concurrent
+ * handler) can never process the same turn twice. Conditional on `settled_at IS
+ * NULL`; returns `false` when the row is already claimed. Marking happens BEFORE
+ * the diff / spec work, so a crash mid-settle leaves the turn claimed but
+ * incomplete — the next dev turn (a fresh session) regenerates, which is the
+ * self-healing path for an interrupted settlement.
+ */
+export function claimFastTurnSettled(sessionId: string): boolean {
+  const d = requireDb()
+  let claimed = false
+  tx(d, () => {
+    const row = d.get<{ settled_at: number | null }>(
+      'SELECT settled_at FROM intent_fast_turns WHERE session_id=?',
+      sessionId,
+    )
+    if (!row || row.settled_at !== null) return
+    d.run('UPDATE intent_fast_turns SET settled_at=? WHERE session_id=?', Date.now(), sessionId)
+    claimed = true
+  })
+  return claimed
+}
+
+/** Record the outcome of a claimed fast-turn settle. */
+export function completeFastTurnSettle(
+  sessionId: string,
+  outcome: 'no_change' | 'small' | 'over' | 'failed',
+  specPath?: string | null,
+): void {
+  const d = requireDb()
+  d.run(
+    'UPDATE intent_fast_turns SET outcome=?, spec_path=COALESCE(?, spec_path) WHERE session_id=?',
+    outcome,
+    specPath ?? null,
+    sessionId,
+  )
+}
+
+/** Drop a fast-turn record (intent deletion cleanup). */
+export function deleteFastTurnsForIntent(intentId: string): void {
+  const d = requireDb()
+  d.run('DELETE FROM intent_fast_turns WHERE intent_id=?', intentId)
 }
 
 /**

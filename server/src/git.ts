@@ -157,6 +157,68 @@ export async function gitDiffStat(workspacePath: string): Promise<string> {
 }
 
 /**
+ * Per-repo HEAD commit, keyed by repo path. Multi-repo aware (mirrors
+ * {@link gitDiffStat}): the dev directory itself when it is a repo, else each
+ * sub-repo under it. A repo whose HEAD cannot be resolved is omitted. Used to
+ * capture a fast-mode turn's git baseline at launch.
+ */
+export async function gitHeadCommits(devDir: string): Promise<Record<string, string>> {
+  const repos = isGitRepo(devDir) ? [devDir] : discoverSubRepos(devDir)
+  const out: Record<string, string> = {}
+  for (const repo of repos) {
+    const res = await git(repo, ['-C', repo, 'rev-parse', 'HEAD'])
+    if (res.code === 0 && res.stdout.trim()) out[repo] = res.stdout.trim()
+  }
+  return out
+}
+
+/** One parsed `git diff --numstat` entry. */
+export interface GitNumstatEntry {
+  /** Diff path (a rename reports the target/new path once). */
+  path: string
+  additions: number
+  deletions: number
+  /** True when git reported `-` (binary) instead of a numeric count. */
+  binary: boolean
+}
+
+/**
+ * Parse a repo's `git diff --numstat` output. With `ref`, diffs the working tree
+ * (HEAD plus uncommitted tracked changes) against that commit — i.e. everything
+ * that changed since the baseline, committed or not. Without `ref`, only the
+ * uncommitted working-tree changes. Empty on error or when nothing changed.
+ */
+export async function gitNumstat(repo: string, ref?: string): Promise<GitNumstatEntry[]> {
+  const args = ref ? ['diff', '--numstat', ref] : ['diff', '--numstat']
+  const res = await git(repo, ['-C', repo, ...args])
+  if (res.code !== 0) return []
+  const out: GitNumstatEntry[] = []
+  for (const line of res.stdout.split('\n')) {
+    if (!line) continue
+    const [a, d, ...rest] = line.split('\t')
+    const path = rest.join('\t')
+    if (!path) continue
+    if (a === '-' || d === '-') {
+      out.push({ path, additions: 0, deletions: 0, binary: true })
+    } else {
+      out.push({ path, additions: Number(a) || 0, deletions: Number(d) || 0, binary: false })
+    }
+  }
+  return out
+}
+
+/** Untracked files in a repo (`git ls-files --others --exclude-standard`), sorted. */
+export async function gitUntracked(repo: string): Promise<string[]> {
+  const res = await git(repo, ['-C', repo, 'ls-files', '--others', '--exclude-standard'])
+  if (res.code !== 0) return []
+  return res.stdout
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .sort()
+}
+
+/**
  * Recent commit subjects (oneline) as completion evidence for the judge.
  * **Multi-repo aware** like {@link gitDiffStat}: a root repo reports its own log;
  * otherwise each sub-repo's recent log is summed and labelled by repo.

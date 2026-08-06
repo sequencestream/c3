@@ -229,6 +229,23 @@ export interface WorkspaceSetting {
    */
   specMachineApprovalEnabled?: boolean
   /**
+   * Upper bound on the number of distinct changed files a `fast`-mode intent may
+   * produce in one manual turn and still be treated as a small change. Strictly
+   * LESS-THAN semantics: a diff touching exactly this many files is over the
+   * threshold. Positive integer, normalized on read; invalid values fall back to
+   * the default `3`.
+   */
+  fastSpecMaxFiles?: number
+  /**
+   * Upper bound on the number of changed lines (additions + deletions) a
+   * `fast`-mode intent may produce in one manual turn and still be treated as a
+   * small change. Strictly LESS-THAN semantics: reaching this many lines is over
+   * the threshold. Positive integer, normalized on read; invalid values fall
+   * back to the default `50`. A binary changed file always counts as over the
+   * line threshold.
+   */
+  fastSpecMaxLines?: number
+  /**
    * Workspace-level master gate for automation *auto-dispatch*. When off, neither
    * the cron tick loop nor the event-trigger dispatcher fires any automation in
    * this workspace, regardless of each automation's own `active` / `paused`

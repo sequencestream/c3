@@ -238,6 +238,19 @@ export const MIN_AUTOMATION_CONCURRENCY = 1
 /** Default concurrent-dev cap when unset/invalid: worktree parallelism is bounded at 2. */
 export const DEFAULT_AUTOMATION_CONCURRENCY = 2
 
+/**
+ * Fast-spec thresholds — the upper bounds that decide whether a `fast`-mode
+ * intent's settled diff counts as a small change (which earns a reverse-authored
+ * pending spec) or over-threshold (which pins the intent back to `sdd`). Both
+ * are STRICTLY less-than: reaching the configured value is over. Values are
+ * floored and clamped up to a minimum of 1; invalid values fall back to these
+ * defaults.
+ */
+export const MIN_FAST_SPEC_MAX_FILES = 1
+export const DEFAULT_FAST_SPEC_MAX_FILES = 3
+export const MIN_FAST_SPEC_MAX_LINES = 1
+export const DEFAULT_FAST_SPEC_MAX_LINES = 50
+
 /** TTL for a `pendingIntent` the janitor reaps — a pending session that never ran
  * for 7 days is presumed abandoned (ADR-0015). */
 export const PENDING_INTENT_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -633,6 +646,8 @@ export function normalizeWorkspaceSetting(
   const specMachineApprovalEnabled = normalizeSpecMachineApprovalEnabled(
     rec.specMachineApprovalEnabled,
   )
+  const fastSpecMaxFiles = normalizeFastSpecMaxFiles(rec.fastSpecMaxFiles)
+  const fastSpecMaxLines = normalizeFastSpecMaxLines(rec.fastSpecMaxLines)
   const forge = normalizeWorkspaceForge(rec.forge)
   return {
     forge,
@@ -645,6 +660,8 @@ export function normalizeWorkspaceSetting(
     sddEnabled,
     automationEnabled,
     automationConcurrency,
+    fastSpecMaxFiles,
+    fastSpecMaxLines,
     ...(defaultMainBranch ? { defaultMainBranch } : {}),
     ...(skillRepos ? { skillRepos } : {}),
     ...(sandbox !== undefined ? { sandbox } : {}),
@@ -699,6 +716,25 @@ export function normalizeAutomationConcurrency(raw: unknown): number {
   const n = typeof raw === 'number' ? raw : NaN
   if (!Number.isFinite(n)) return DEFAULT_AUTOMATION_CONCURRENCY
   return Math.max(MIN_AUTOMATION_CONCURRENCY, Math.floor(n))
+}
+
+/**
+ * Force the fast-spec max-files threshold into shape: a finite positive number
+ * is floored and clamped up to {@link MIN_FAST_SPEC_MAX_FILES}; anything else
+ * (absent, non-number, NaN/∞, ≤ 0) falls back to
+ * {@link DEFAULT_FAST_SPEC_MAX_FILES}.
+ */
+export function normalizeFastSpecMaxFiles(raw: unknown): number {
+  const n = typeof raw === 'number' ? raw : NaN
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_FAST_SPEC_MAX_FILES
+  return Math.max(MIN_FAST_SPEC_MAX_FILES, Math.floor(n))
+}
+
+/** Twin of {@link normalizeFastSpecMaxFiles} for the max-changed-lines bound. */
+export function normalizeFastSpecMaxLines(raw: unknown): number {
+  const n = typeof raw === 'number' ? raw : NaN
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_FAST_SPEC_MAX_LINES
+  return Math.max(MIN_FAST_SPEC_MAX_LINES, Math.floor(n))
 }
 
 /**
@@ -1372,6 +1408,22 @@ export function getDevSkill(workspacePath: string): string {
 /** Whether spec-driven development is enabled for the workspace (default true). */
 export function getSddEnabled(workspacePath: string): boolean {
   return normalizeSddEnabled(loadWorkspaceSetting(workspacePath).sddEnabled)
+}
+
+/**
+ * The fast-spec max-files threshold for a workspace (normalized; default 3).
+ * Strictly less-than semantics: reaching the value is over the threshold.
+ */
+export function getFastSpecMaxFiles(workspacePath: string): number {
+  return normalizeFastSpecMaxFiles(loadWorkspaceSetting(workspacePath).fastSpecMaxFiles)
+}
+
+/**
+ * The fast-spec max-changed-lines threshold for a workspace (normalized;
+ * default 50). Strictly less-than semantics: reaching the value is over.
+ */
+export function getFastSpecMaxLines(workspacePath: string): number {
+  return normalizeFastSpecMaxLines(loadWorkspaceSetting(workspacePath).fastSpecMaxLines)
 }
 
 /**

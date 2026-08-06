@@ -144,6 +144,20 @@ export type SpecStatus = 'raw' | 'pending' | 'approved'
 export const SPEC_STATUSES = ['raw', 'pending', 'approved'] as const satisfies readonly SpecStatus[]
 
 /**
+ * Per-intent spec mode — how this intent's SDD spec lifecycle is sequenced.
+ * - `sdd`  — spec-first: the spec must be authored, reviewed and approved BEFORE
+ *   any manual development turn may start (the ordinary flow).
+ * - `fast` — spec-later: a MANUAL development turn may start without an approved
+ *   spec; when the turn settles, a diff within the workspace thresholds earns a
+ *   reverse-authored pending spec, and an over-threshold diff pins the intent
+ *   back to `sdd` so the ordinary spec gate takes over.
+ */
+export type IntentSpecMode = 'sdd' | 'fast'
+
+/** All {@link IntentSpecMode} values, for runtime validation. */
+export const INTENT_SPEC_MODES = ['sdd', 'fast'] as const satisfies readonly IntentSpecMode[]
+
+/**
  * The reserved identity written into `Intent.specApproveUser` when the queue
  * approved a spec under the workspace's machine-approval opt-in. It is NOT a
  * login subject and can never collide with one (the `c3:` prefix is reserved), so
@@ -436,6 +450,24 @@ export interface Intent {
    * unwritten spec is `raw`, which is not "awaiting approval".
    */
   specStatus: SpecStatus
+  /**
+   * Per-intent spec mode override; `null` inherits the workspace: when the
+   * workspace's `sddEnabled` is on the effective mode is `sdd`, when it is off
+   * `fast`. An explicit `sdd` / `fast` always overrides the derivation and
+   * survives workspace-switch changes. Consumers read {@link effectiveSpecMode}
+   * (the resolved value) — never this field alone.
+   */
+  specMode: IntentSpecMode | null
+  /**
+   * Derived, send-time effective spec mode — the SINGLE resolved value every
+   * consumer (admission, settle, UI) reads, computed once from the persisted
+   * {@link specMode} plus the workspace `sddEnabled`, so no layer derives a
+   * different answer. `sdd` when the workspace has SDD on and the intent does
+   * not override it; `fast` when the workspace has SDD off, or the intent
+   * explicitly says `fast`. Note: when `sddEnabled` is off there is no spec
+   * stage or gate at all, so `fast` merely matches today's spec-off behaviour.
+   */
+  effectiveSpecMode: IntentSpecMode
   /**
    * Whether the intent's spec has passed the human approval checkpoint. `false`
    * by default (and for historic rows); set `true` only at explicit approval.
@@ -801,4 +833,13 @@ export interface ProposedIntent {
    * `save_intent_directly` (automation) path never carries it.
    */
   intentSessionId?: string
+  /**
+   * Optional per-intent spec-mode override. Omit to keep / inherit the current
+   * value (`null` on a new intent ⇒ derives from the workspace `sddEnabled`);
+   * pass `null` to explicitly clear an override back to inheritance; pass
+   * `'sdd'` / `'fast'` to pin the intent to that mode regardless of the
+   * workspace switch. Absence and explicit `null` are deliberately distinct so
+   * a routine intent edit never accidentally clears or changes the mode.
+   */
+  specMode?: IntentSpecMode | null
 }

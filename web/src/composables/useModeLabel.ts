@@ -30,6 +30,8 @@ export function useModeLabel() {
         return t('nav.mode.default.label')
       case 'nav.mode.auto.label':
         return t('nav.mode.auto.label')
+      case 'nav.mode.agent.label':
+        return t('nav.mode.agent.label')
       case 'nav.mode.plan.label':
         return t('nav.mode.plan.label')
       case 'nav.mode.acceptEdits.label':

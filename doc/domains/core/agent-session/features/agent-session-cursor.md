@@ -82,8 +82,12 @@ Cursor **没有宿主二进制描述符**:它既不是 Claude/Codex 那样由 c3
   回写半信道;`onRequest` 满足契约(可注册、可注销)但永不触发。批准被降级为
   启动期一次性策略(见下)。
 - **session-store**:读 **SDK 自己的 local agent store**(`Agent.list` /
-  `Agent.messages.list`,已发布 API),**不读** Cursor IDE 的私有 chat 库 ——
-  后者没有兼容承诺,解出来的镜像会在下个版本腐化。rename/delete 不提供。
+  `Agent.messages.list` / `Agent.listRuns`,已发布 API),**不读** Cursor IDE 的私有
+  chat 库 —— 后者没有兼容承诺,解出来的镜像会在下个版本腐化。读取历史时把两条
+  SDK 表面接起来:`Agent.messages.list` 出**提示侧**(每 run 一条,SDK 当前以
+  oneof 包装 `{ turn: { case: 'agentConversationTurn', value: … } }` 存储),
+  `run.conversation()` 出**回复侧**(assistant 文本 / thinking / 工具调用),按 run
+  一一交错,回放顺序与直播流一致。rename/delete 不提供。
 - **skill**:发现目录为项目级 `<project>/.cursor/skills`;SDK 在加载 `project`
   设置层时会扫描工作区的 rules / skills / `AGENTS.md`,而 c3 的运行恒定加载该层。
   支持度随 SDK 是否可解析门控。

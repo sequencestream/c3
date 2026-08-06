@@ -94,9 +94,9 @@ web/src/
 │   │   ├── components/
 │   │   │   ├── DeliveryList/DeliveryList.vue       # 交付列表:头部「新建交付」展开内联创建表单(标题/描述/起止日历日期,纯本地数据动作不触网);行=标题+状态徽标+集成就绪 N/M(无独立进度条/统计卡);行点击 emit open;空态文案
 │   │   │   └── DeliveryDetail/                     # 右栏交付详情(容器 + 子单元):god-component 已按职责拆分
-│   │   │       ├── DeliveryDetail.vue              # 详情容器:常驻标题栏(标题+状态徽标+取消动作(danger ConfirmDialog))+仅「概览/关联意图」两个 Tab(不设 PR/设置/分支独立 Tab);终态(已发布/已取消)说明文案;缺口跳转:关联意图→切关联意图 tab,工作区设置→上抛 open-workspace-settings
+│   │   │       ├── DeliveryDetail.vue              # 详情容器:常驻标题栏(标题+状态徽标+取消动作(danger ConfirmDialog))+仅「概览/关联意图」两个 Tab(不设 PR/设置/分支独立 Tab);终态(已发布/已取消)说明文案;缺口跳转:关联意图→切关联意图 tab,分支未就绪→切概览并聚焦分支初始化区,工作区设置→上抛 open-workspace-settings
 │   │   │       ├── DeliveryStatusSelector.vue      # 状态分段选择器+常驻缺口:分段只含「当前状态+合法推进/回退目标」(非法目标不出现),可执行目标亮起可点、守卫未满足/系统专属置灰;选择器下方常驻 delivery.guard.* 缺口文案+对应跳转入口+「集成就绪 N/M」(N/M 并入说明,无独立进度条);verifying→verified 点击先弹 ConfirmDialog 显式人工确认
-│   │   │       ├── DeliveryOverviewTab.vue         # 概览 tab:顶部(current-branch 模式说明文案,动作区分支/PR/合并动作不渲染)+状态选择器+常驻缺口;下方元信息(状态/交付分支/基线分支/起止日期/交付 PR 链接(本阶段恒空)/创建/更新/描述)与内联编辑表单
+│   │   │       ├── DeliveryOverviewTab.vue         # 概览 tab:顶部(current-branch 模式说明文案,动作区分支/PR/合并动作不渲染)+状态选择器+常驻缺口;分支初始化区(worktree 模式:未就绪→create/bind 切换+分支名输入(默认 delivery/<short-id>-<slug>)+初始化按钮+进度行;就绪→分支名;终态→清理分支 danger ConfirmDialog);下方元信息(状态/交付分支/基线分支/起止日期/交付 PR 链接(本阶段恒空)/创建/更新/描述)与内联编辑表单
 │   │   │       └── DeliveryIntentsTab.vue          # 关联意图 tab:意图关联由后续阶段提供,本阶段恒空态 + 集成就熟 N/M 聚合口径说明;无独立 PR 列表/进度条
 │   │
 │   ├── discussions/                                 # 讨论页

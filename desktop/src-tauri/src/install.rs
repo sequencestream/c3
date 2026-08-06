@@ -213,6 +213,10 @@ pub enum InstallOutcome {
 
 /// 平台安装适配器统一入口。成功返回结果;失败返回描述(旧应用保持不变或已回滚)。
 fn install(record: &UpdateRecord, config_dir: &Path) -> Result<InstallOutcome, String> {
+    // Linux 适配器就地替换 AppImage,不需要暂存目录;cfg 裁掉 macOS/Windows 分支后
+    // 这个参数在 Linux 上无人使用,显式丢弃以免只在该平台出现的 unused 警告。
+    #[cfg(target_os = "linux")]
+    let _ = config_dir;
     match record.kind.as_str() {
         // 发布约定的唯一自更新安装器(macOS=dmg、Windows=nsis、Linux=appimage)。
         // 任何未规划的 kind 都 fail-closed,不猜测。

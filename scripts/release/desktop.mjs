@@ -51,10 +51,12 @@ import {
   desktopBundles,
   desktopPackageName,
   isDesktopHostTarget,
+  linuxBundleEnv,
   macSigningMode,
   preferredKindFor,
   rustTriple,
   sidecarStageName,
+  tauriBuildFlags,
   tauriBundleFlags,
   tauriConfigOverride,
 } from './desktop-artifacts.mjs'
@@ -379,6 +381,7 @@ async function main() {
           // 绝对路径:`--config` 的相对路径基准在 CLI 版本之间摇摆过,绝对路径没有歧义。
           '--config',
           releaseConfigPath,
+          ...tauriBuildFlags(target),
         ],
         `tauri build ${target}`,
         {
@@ -388,6 +391,8 @@ async function main() {
             // ad-hoc 档位下删除(而非置空)Apple 凭证变量:空的 APPLE_CERTIFICATE
             // 照样会让打包器去 `security import`,然后带着整个构建一起失败。
             ...appleEnvOverride(signingMode),
+            // linuxdeploy 的 strip 与 FUSE 自挂载都会打断 AppImage 打包。
+            ...linuxBundleEnv(target),
           },
         },
       )

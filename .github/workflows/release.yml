@@ -570,6 +570,20 @@ jobs:
             echo "[desktop] $pkg $version"
           done
 
+      # Ubuntu 24.04 起用 AppArmor 限制非特权 user namespace,而 AppImage 打包链路
+      # (linuxdeploy 及其插件)本身就是 AppImage,会被拦在启动阶段,失败时不留输出。
+      # 打包侧已用 APPIMAGE_EXTRACT_AND_RUN 绕开自挂载,这里放开限制作为第二道保险。
+      # 该 sysctl 键不存在的镜像上跳过 —— 那种镜像本就没有这条限制。
+      - name: Allow unprivileged user namespaces (AppImage tooling)
+        run: |
+          set -e
+          key=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -e "$key" ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          else
+            echo "[desktop] $key absent — no AppArmor userns restriction to relax"
+          fi
+
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:

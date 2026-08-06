@@ -86,6 +86,39 @@ export function tauriBundleFlags(target) {
 }
 
 /**
+ * Linux 上 AppImage 打包必需的环境 —— 打包器调用的 linuxdeploy 是个外部工具,
+ * 两个默认行为都会让 c3 的构建失败:
+ *
+ * - `NO_STRIP` —— linuxdeploy 默认对 AppDir 里的每个 ELF 执行 `strip`。c3 的
+ *   sidecar 是 `bun --compile` 产出的单文件二进制,可执行文件尾部附着 JS 字节码
+ *   与资源;strip 会改写节区并破坏(或直接拒绝处理)这种布局。deb 不做 strip,
+ *   所以症状是同一次构建里 deb 成功、appimage 失败。
+ * - `APPIMAGE_EXTRACT_AND_RUN` —— linuxdeploy 及其插件自身就是 AppImage,默认要
+ *   靠 FUSE 自挂载。Ubuntu 24.04 起既不预装 libfuse2,又用 AppArmor 限制了非特权
+ *   user namespace,自挂载起不来。改成解包后执行就绕开了整条挂载路径。
+ */
+export const LINUX_BUNDLE_ENV = {
+  NO_STRIP: 'true',
+  APPIMAGE_EXTRACT_AND_RUN: '1',
+}
+
+/** 该目标打包时要额外注入的环境;非 Linux 目标为空。 */
+export function linuxBundleEnv(target) {
+  return target.startsWith('linux') ? { ...LINUX_BUNDLE_ENV } : {}
+}
+
+/**
+ * `tauri build` 的附加 flag。
+ *
+ * Linux 上强制 `--verbose`:打包器把 linuxdeploy 的 stdout/stderr 捕获在内部,非
+ * verbose 模式下丢弃,失败时只剩一句 `failed to run linuxdeploy` —— 没有任何可
+ * 诊断的信息。这条链路依赖外部工具且最易失败,日志量的代价值得。
+ */
+export function tauriBuildFlags(target) {
+  return target.startsWith('linux') ? ['--verbose'] : []
+}
+
+/**
  * 每个目标在 manifest 里标记为 `preferred` 的安装器 kind —— 桌面更新器在同一个
  * 平台出现多个安装器候选时的**唯一**挑选依据,绝不猜测。
  *

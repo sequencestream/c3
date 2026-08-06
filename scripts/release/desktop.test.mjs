@@ -11,10 +11,12 @@ import {
   desktopBundles,
   desktopPackageName,
   isDesktopHostTarget,
+  linuxBundleEnv,
   macSigningMode,
   preferredKindFor,
   rustTriple,
   sidecarStageName,
+  tauriBuildFlags,
   tauriBundleFlags,
   tauriConfigOverride,
 } from './desktop-artifacts.mjs'
@@ -99,6 +101,34 @@ describe('desktopBundles / tauriBundleFlags', () => {
 
   it('throws for a target with no bundle plan', () => {
     expect(() => desktopBundles('macos-x64')).toThrowError(/no bundle plan/)
+  })
+})
+
+describe('linuxBundleEnv / tauriBuildFlags', () => {
+  // linuxdeploy 默认 strip 掉 AppDir 里的每个 ELF,而 sidecar 是 bun --compile 的
+  // 单文件二进制(尾部附着字节码),被 strip 就废了 —— deb 不 strip,所以这一条丢了
+  // 只会表现为 appimage 单独失败。
+  it('disables linuxdeploy stripping so the bun sidecar survives bundling', () => {
+    expect(linuxBundleEnv('linux-x64').NO_STRIP).toBe('true')
+  })
+
+  // linuxdeploy 及其插件自身是 AppImage,Ubuntu 24.04 上既无 libfuse2 又限制非特权
+  // user namespace,自挂载起不来。
+  it('runs the AppImage tooling without FUSE self-mounting', () => {
+    expect(linuxBundleEnv('linux-x64').APPIMAGE_EXTRACT_AND_RUN).toBe('1')
+  })
+
+  it('leaves the other platforms untouched', () => {
+    expect(linuxBundleEnv('macos-arm64')).toEqual({})
+    expect(linuxBundleEnv('windows-x64')).toEqual({})
+  })
+
+  // 打包器把 linuxdeploy 的输出捕获在内部,非 verbose 时丢弃,失败只剩一句
+  // `failed to run linuxdeploy`。
+  it('keeps linuxdeploy diagnosable by forcing verbose on Linux only', () => {
+    expect(tauriBuildFlags('linux-x64')).toEqual(['--verbose'])
+    expect(tauriBuildFlags('macos-arm64')).toEqual([])
+    expect(tauriBuildFlags('windows-x64')).toEqual([])
   })
 })
 

@@ -161,6 +161,45 @@ automation orchestrator 使用同一检查点作为准入闸门:SDD 开启时,�
 `automate` 意图在 `spec_status='approved'` 之前不会进入开发;SDD 关闭时,自动化
 不要求规格,规格阶段也完全不启动。
 
+## fast 模式:规格延后的小改动路径
+
+`specMode: 'sdd' | 'fast'` 是每意图级的规格时序开关,默认派生自工作区
+`specMode` 的实际效果仅在 `sddEnabled` 开启时成立:
+
+- `sdd`(SDD 开启时的默认)= 现行规格优先流程,闸门原样:未批准规格拒绝手动
+  启动(`intent.specNotApproved`)。
+- `fast` = **仅**绕过手动启动/恢复时的 specApproved 准入闸门;其余闸门全部
+  原样保留 —— worktree 依赖未合并、并发/续跑预算、人工决策守卫、权限与工具
+  闭包闸门一条不放松。`approve_spec` 仍是唯一人工验收检查点,只是时序从
+  「开发前」移到「diff 产出后」。
+
+1. **模式派生。** 意图持久化一个可空 `specMode`。`null` 继承工作区:
+   `sddEnabled` 开启 ⇒ `sdd`、关闭 ⇒ `fast`;显式 `sdd`/`fast` 始终覆盖派生值。
+   `sddEnabled` 关闭时本无规格闸门与规格阶段,`fast` 只是与现状一致的自然默认。
+   共享 `Intent` 读模型携带已解析的 `effectiveSpecMode`,客户端、准入层与落定
+   处理读取同一值,不再各自推导(`RM-R22`、`WC-R25` 的按钮事实源不变)。
+2. **手动准入。** `checkWorkAdmission` 是 fresh 与 resume 的共同准入点。仅当
+   `sddEnabled` 开启且有效模式为 `fast` 时,跳过 `specStatus !== 'approved'`
+   对应的 `intent.specNotApproved` 拒绝;其余闸门顺序与语义原样保持。fast 不是
+   通用绕过标志:自动化队列的资格判定不读取它 —— `spec_status==='approved'`
+   仍是无人值守开发候选的必要条件,未批准显式投影 `blocked_spec_not_approved`。
+3. **turn 落定后的反向补轨。** 仅处理 `sddEnabled` 开启、有效模式仍为 `fast`
+   的人工工作 turn(自动化 run、attach、SDD 关闭态不触发)。落定时按相对本 turn
+   启动基线的 Git diff 统计唯一变更文件数与行数(多仓合并统计,重命名按一个目标
+   文件计数,二进制按超限处理):
+   - **未超阈值**(`fileCount < 3` 且 `lines < 50`,工作区可配,严格小于)→ 从
+     意图内容与 diff 反向生成规格草稿,落既有集中式规格根目录,`spec_status →
+pending`,由用户 `approve_spec` 补齐 SDD 轨。
+   - **超阈值或无 diff 可测**(基线丢失、diff 不可读)→ 保留已产出 diff/工作产物,
+     意图原子切回显式 `sdd`;此后 resume/continue 被原 `intent.specNotApproved`
+     闸门拒绝,须补规格并获批准后才能继续。不伪造规格、不自动批准。
+4. **幂等与竞态。** 每个工作会话一条结算记录,`run:settled` 事件重放或服务重启
+   不会重复生成规格;resume 复用同一会话 id 时,重建 baseline 会一并清除上一 turn
+   的 `settled_at`/`outcome`/`spec_path`,为每个 turn 各自开启新的可结算周期——
+   同一 session 的第二个及后续 resume turn 同样能 claim 并落定;落定以服务端当时
+   重读的意图/设置/diff 为准,条件更新防止用户同时切换模式、编辑规格或撤销批准时
+   被陈旧结算覆盖。
+
 ## 启动工作
 
 1. **web-console → intent-management。** 一条 `todo` 条目的 Launch 按钮发送

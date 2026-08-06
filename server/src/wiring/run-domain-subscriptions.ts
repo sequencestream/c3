@@ -105,11 +105,13 @@ import {
   publishIntentStatusTransition,
 } from '../features/intents/lifecycle-events.js'
 import { getWorktreePath } from '../features/intents/worktree.js'
+import { settleFastTurn } from '../features/intents/fast-spec.js'
 import {
   getDefaultMainBranch,
   getForgeOverride,
   getGitBranchMode,
   getSessionAgentId,
+  getSddEnabled,
 } from '../kernel/config/index.js'
 import {
   deleteByPendingId,
@@ -422,6 +424,19 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     // manual Start-Work session, so run the session-end Git/PR cleanup for it.
     // Fire-and-forget — must not block the run:settled handler.
     if (!isIntentDrivenByWorkflow(workspacePath, matched.id)) {
+      // Manual fast-mode turn: settle the reverse-spec first. The diff is
+      // measured against the FIXED turn-start baseline, so the cleanup commit
+      // below never moves it — the two can run independently. Only SDD-on +
+      // effective-fast manual turns reach here; automation still requires an
+      // approved spec and never takes this path.
+      if (getSddEnabled(workspacePath) && matched.effectiveSpecMode === 'fast') {
+        void settleFastTurn(workspacePath, sessionId, matched.id, { broadcastIntents }).catch(
+          (err) =>
+            console.error(
+              `[c3:intents] fast-spec settle failed: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+        )
+      }
       void runManualDevCleanup(matched.id, workspacePath, cleanupDeps, sessionId)
         .then((outcome) => {
           if (outcome.kind === 'failed') {

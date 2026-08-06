@@ -60,6 +60,14 @@ const DEFAULT_SPEECH_CHARS = 300
 const MIN_AUTOMATION_CONCURRENCY = 1
 const DEFAULT_AUTOMATION_CONCURRENCY = 2
 
+// Fast-spec thresholds: upper bounds deciding whether a `fast`-mode intent's
+// settled diff counts as a small change. STRICTLY less-than (reaching the value
+// is over); defaults mirror the server's normalization.
+const MIN_FAST_SPEC_MAX_FILES = 1
+const DEFAULT_FAST_SPEC_MAX_FILES = 3
+const MIN_FAST_SPEC_MAX_LINES = 1
+const DEFAULT_FAST_SPEC_MAX_LINES = 50
+
 const props = defineProps<{
   open: boolean
   workspaceSetting: WorkspaceSetting | null
@@ -188,6 +196,8 @@ const TAB_FIELDS: Record<WsTab, (keyof WorkspaceSetting)[]> = {
     'consensus',
     'sddEnabled',
     'specMachineApprovalEnabled',
+    'fastSpecMaxFiles',
+    'fastSpecMaxLines',
   ],
   skillRepos: ['skillRepos'],
   automation: ['automationEnabled', 'automationConcurrency'],
@@ -306,6 +316,10 @@ function buildSeed(
     // Machine spec approval is an explicit opt-in: absent reads as OFF, so an
     // existing workspace never gains it by upgrading.
     specMachineApprovalEnabled: config?.specMachineApprovalEnabled === true,
+    // Fast-spec thresholds default to the server normalization (3 files / 50
+    // lines); an absent value renders as the effective default.
+    fastSpecMaxFiles: config?.fastSpecMaxFiles ?? DEFAULT_FAST_SPEC_MAX_FILES,
+    fastSpecMaxLines: config?.fastSpecMaxLines ?? DEFAULT_FAST_SPEC_MAX_LINES,
     // Automation gate defaults open and the dev cap defaults to 2 — mirroring the
     // server's normalization so an absent value renders as the effective default.
     automationEnabled: config?.automationEnabled ?? true,
@@ -706,6 +720,8 @@ function buildTabPayload(
       payload.consensus = deepCopy(src.consensus)
       payload.sddEnabled = src.sddEnabled
       payload.specMachineApprovalEnabled = src.specMachineApprovalEnabled
+      payload.fastSpecMaxFiles = src.fastSpecMaxFiles
+      payload.fastSpecMaxLines = src.fastSpecMaxLines
       break
     }
     case 'skillRepos': {
@@ -1214,6 +1230,45 @@ const parkRecoveryRateText = computed(() => {
           <p v-if="draft.sddEnabled" class="project-config-hint">
             {{ t('workspaceSetting.sdd.machineApproval.hint') }}
           </p>
+          <!-- Fast-spec thresholds: the upper bounds deciding whether a
+               `fast`-mode intent's settled diff counts as a small change.
+               Strictly less-than — a diff reaching either value is over the
+               threshold and pins the intent back to `sdd`. -->
+          <p v-if="draft.sddEnabled" class="project-config-section-subtitle">
+            {{ t('workspaceSetting.sdd.fastThreshold.title.label') }}
+          </p>
+          <div v-if="draft.sddEnabled" class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('workspaceSetting.sdd.fastThreshold.maxFiles.field.label')
+            }}</span>
+            <input
+              v-model.number="draft.fastSpecMaxFiles"
+              class="project-config-field project-config-number"
+              type="number"
+              :min="MIN_FAST_SPEC_MAX_FILES"
+              step="1"
+              data-testid="fast-spec-max-files"
+            />
+          </div>
+          <p v-if="draft.sddEnabled" class="project-config-hint">
+            {{ t('workspaceSetting.sdd.fastThreshold.maxFiles.hint') }}
+          </p>
+          <div v-if="draft.sddEnabled" class="project-config-row">
+            <span class="project-config-row-label">{{
+              t('workspaceSetting.sdd.fastThreshold.maxLines.field.label')
+            }}</span>
+            <input
+              v-model.number="draft.fastSpecMaxLines"
+              class="project-config-field project-config-number"
+              type="number"
+              :min="MIN_FAST_SPEC_MAX_LINES"
+              step="1"
+              data-testid="fast-spec-max-lines"
+            />
+          </div>
+          <p v-if="draft.sddEnabled" class="project-config-hint">
+            {{ t('workspaceSetting.sdd.fastThreshold.maxLines.hint') }}
+          </p>
         </section>
       </div>
 
@@ -1689,6 +1744,13 @@ const parkRecoveryRateText = computed(() => {
 .project-config-section-title {
   margin: 0 0 4px;
   font-size: 14px;
+  font-weight: 600;
+}
+
+/* Sub-group heading inside a section (e.g. the fast-spec thresholds under SDD). */
+.project-config-section-subtitle {
+  margin: 12px 0 4px;
+  font-size: 13px;
   font-weight: 600;
 }
 

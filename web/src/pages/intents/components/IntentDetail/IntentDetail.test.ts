@@ -34,6 +34,8 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     specPath: null,
     // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
     specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
+    specMode: null,
+    effectiveSpecMode: 'sdd',
     specApproved: false,
     specApproveUser: null,
     specSessionId: null,
@@ -484,6 +486,8 @@ describe('IntentDetail.vue — spec action guidance (auto-switch + approve gate 
         ...item,
         specPath: '.specs/x/spec.md',
         specStatus: 'pending',
+        specMode: null,
+        effectiveSpecMode: 'sdd',
         specApproved: false,
       },
     })

@@ -161,6 +161,47 @@ describe('launchWorkSession', () => {
     expect(r.code).toBe('intent.specNotApproved')
   })
 
+  it('allows a fast-mode intent to start a manual turn without an approved spec', async () => {
+    saveWorkspaceSetting(proj, { gitBranchMode: 'current-branch', sddEnabled: true })
+    const [intent] = insertIntents(proj, [
+      {
+        title: 'Fast dev',
+        shortEnTitle: 'fast-dev',
+        content: '',
+        priority: 'P1',
+        specMode: 'fast',
+      },
+    ])
+    const deps = mockDeps()
+    const r = asSuccess(await launchWorkSession(proj, intent.id, deps))
+    expect(r.sessionId).toContain(PENDING_SESSION_PREFIX)
+    expect(deps.launchRun).toHaveBeenCalledTimes(1)
+  })
+
+  it('still rejects a fast-mode intent whose worktree dependency is not merged', async () => {
+    // `fast` relaxes ONLY the spec-approval gate — every other gate stays closed.
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'worktree',
+      defaultMainBranch: 'main',
+      sddEnabled: true,
+    })
+    const [dep, target] = insertIntents(proj, [
+      { title: 'Dep', shortEnTitle: 'dep', content: '', priority: 'P1' },
+      {
+        title: 'Fast target',
+        shortEnTitle: 'fast-target',
+        content: '',
+        priority: 'P1',
+        specMode: 'fast',
+      },
+    ])
+    updateIntentDeps(target.id, [{ dependsOnId: dep.id, depType: 'blocks' }])
+    updateStatus(dep.id, 'done', 'test')
+    setBranchName(dep.id, 'feature/dep')
+    const r = asError(await launchWorkSession(proj, target.id, mockDeps()))
+    expect(r.code).toBe('intent.dependencyNotMerged')
+  })
+
   it('rejects a worktree dependency that is not merged', async () => {
     saveWorkspaceSetting(proj, {
       gitBranchMode: 'worktree',

@@ -9,23 +9,25 @@
 
 一个限定在单个项目范围内的台账条目。
 
-| 属性                | 类型                        | 说明                                                                                                                            |
-| ------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                | text (UUID)                 | 稳定标识符;被依赖关系与开发反向链接引用                                                                                         |
-| `workspacePath`     | text (path)                 | 解析后的绝对工作区路径;项目键(RM-R1, RM-R10)                                                                                    |
-| `title`             | text                        | 简短的意图标题                                                                                                                  |
-| `shortEnTitle`      | text \| null                | 简短英文 ASCII 短标题 — 派生 Git 分支名 / worktree 目录名的稳定来源；落库前截断到 128 字符；历史行为 `null`，仅在 refine 时补齐 |
-| `content`           | text                        | 完整的意图描述                                                                                                                  |
-| `priority`          | enum `P0`\|`P1`\|`P2`\|`P3` | 需求级别;P0 最高                                                                                                                |
-| `module`            | text                        | 模块名称 — 意图所属模块,由沟通智能体根据标题/内容推断;未识别或历史行数据为 `''`(RM-R14)                                         |
-| `status`            | enum                        | `draft`\|`todo`\|`in_progress`\|`done`\|`cancelled` (RM-R6, RM-R8, RM-R9)                                                       |
-| `dependsOn`         | `id[]`                      | 该条目所依赖的项目内其他意图 id(聚合;RM-R1)                                                                                     |
-| `lastWorkSessionId` | text \| null                | 最近一次由意图发起的开发运行所产生的会话 id;反向链接目标(RM-R8/13)                                                              |
-| `automate`          | boolean                     | 自动化编排器是否可以拾取该条目;由用户切换,默认 `false`(RM-A1)                                                                   |
-| `createdAt`         | timestamp                   | 创建时间                                                                                                                        |
-| `updatedAt`         | timestamp                   | 最近一次变更时间                                                                                                                |
-| `completedAt`       | timestamp \| null           | 意图进入 `done` 状态的时间;在转为 `done` 时打上时间戳,状态离开 `done` 时清空(置为 null)(RM-R6/RM-R9)                            |
-| `actionDescriptor`  | ActionDescriptor \| null    | 派生的「下一步」;无阻塞时为 `null`。发送时投影,不落库(见下)                                                                     |
+| 属性                | 类型                        | 说明                                                                                                                                                                                                |
+| ------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                | text (UUID)                 | 稳定标识符;被依赖关系与开发反向链接引用                                                                                                                                                             |
+| `workspacePath`     | text (path)                 | 解析后的绝对工作区路径;项目键(RM-R1, RM-R10)                                                                                                                                                        |
+| `title`             | text                        | 简短的意图标题                                                                                                                                                                                      |
+| `shortEnTitle`      | text \| null                | 简短英文 ASCII 短标题 — 派生 Git 分支名 / worktree 目录名的稳定来源；落库前截断到 128 字符；历史行为 `null`，仅在 refine 时补齐                                                                     |
+| `content`           | text                        | 完整的意图描述                                                                                                                                                                                      |
+| `priority`          | enum `P0`\|`P1`\|`P2`\|`P3` | 需求级别;P0 最高                                                                                                                                                                                    |
+| `module`            | text                        | 模块名称 — 意图所属模块,由沟通智能体根据标题/内容推断;未识别或历史行数据为 `''`(RM-R14)                                                                                                             |
+| `status`            | enum                        | `draft`\|`todo`\|`in_progress`\|`done`\|`cancelled` (RM-R6, RM-R8, RM-R9)                                                                                                                           |
+| `dependsOn`         | `id[]`                      | 该条目所依赖的项目内其他意图 id(聚合;RM-R1)                                                                                                                                                         |
+| `lastWorkSessionId` | text \| null                | 最近一次由意图发起的开发运行所产生的会话 id;反向链接目标(RM-R8/13)                                                                                                                                  |
+| `automate`          | boolean                     | 自动化编排器是否可以拾取该条目;由用户切换,默认 `false`(RM-A1)                                                                                                                                       |
+| `createdAt`         | timestamp                   | 创建时间                                                                                                                                                                                            |
+| `updatedAt`         | timestamp                   | 最近一次变更时间                                                                                                                                                                                    |
+| `completedAt`       | timestamp \| null           | 意图进入 `done` 状态的时间;在转为 `done` 时打上时间戳,状态离开 `done` 时清空(置为 null)(RM-R6/RM-R9)                                                                                                |
+| `specMode`          | `'sdd'`\|`'fast'`\| null    | 每意图级规格模式覆盖;`null` 继承工作区 `sddEnabled`(开启 ⇒ `sdd`,关闭 ⇒ `fast`),显式值始终覆盖派生值且不随开关变化(RM-R40)                                                                          |
+| `effectiveSpecMode` | `'sdd'`\|`'fast'`           | 发送时投影的已解析有效规格模式 —— 从持久 `specMode` + 工作区 `sddEnabled` 推导一次,客户端/准入层/落定处理读取同一值;`sddEnabled` 关闭时无规格闸门与规格阶段,`fast` 只是与现状一致的自然默认(RM-R40) |
+| `actionDescriptor`  | ActionDescriptor \| null    | 派生的「下一步」;无阻塞时为 `null`。发送时投影,不落库(见下)                                                                                                                                         |
 
 关系:属于一个项目(以 `workspacePath` 标识);拥有零个或多个 Intent
 Dependencies;可能引用一个开发 Session(一个普通会话,归 session-registry 所有)。
@@ -103,17 +105,18 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 `id` 时它尚未持久化 —— 只有在确认保存后才会成为一个 Intent(状态为 `todo`)
 (RM-R5/RM-R6)。带 `id` 时,它是对该既有意图的**更新**(upsert,RM-R20)。
 
-| 属性               | 类型                        | 说明                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------ | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`               | `id` (可选)                 | 设置时,原地更新这个**已存在**的同项目意图,而不是插入新的(upsert,RM-R20);`refine_intent` 流程会填充它,使 refine 后的意图更新其原始条目。省略则插入新意图。                                                                                                                                                                                                                                    |
-| `title`            | text                        | 提议的标题                                                                                                                                                                                                                                                                                                                                                                                   |
-| `shortEnTitle`     | text (必填)                 | 必填的简短英文 ASCII 短标题 — 派生分支/worktree 名的稳定来源；agent 应产出 ≤64 ASCII 字符，落库前截断到 128。新建与更新均要求传入                                                                                                                                                                                                                                                            |
-| `content`          | text                        | 提议的描述                                                                                                                                                                                                                                                                                                                                                                                   |
-| `priority`         | enum `P0`\|`P1`\|`P2`\|`P3` | 提议的需求级别                                                                                                                                                                                                                                                                                                                                                                               |
-| `module`           | text (可选)                 | 推断出的模块名称;省略时 —— 插入场景下落库为 `''`(RM-R14);更新场景下保留原值(RM-R20)                                                                                                                                                                                                                                                                                                          |
-| `dependsOn`        | `id[]` (可选)               | 对**已存在**的项目内意图的提议依赖(按 id);更新场景下,提供它(或 `dependsOnIndexes`)会替换依赖集合,两者都省略则保持不变(RM-R20)                                                                                                                                                                                                                                                                |
-| `dependsOnIndexes` | `number[]` (可选)           | 对同一批次内**兄弟**条目的提议依赖,按从 0 开始的数组下标;在保存时解析为该兄弟条目的 id(RM-R17)。被下标引用的兄弟条目自身也可能是一个更新目标(RM-R20)。                                                                                                                                                                                                                                       |
-| `intentSessionId`  | text (可选)                 | 反向链接到产生此意图的沟通会话,持久化到 `intent_session_id`。**仅当该批次恰好保存一个意图时才生效** —— 多条目批次会忽略它(存储层只在 `length === 1` 时才写入)。智能体用注入到其提示词中的会话 id 来填充它;保存处理器会把它归一化为已绑定的沟通会话 id,以便通过 `open_intent_chat` 解析。这弥补了 refine 的 `run:bound` 回填所无法覆盖的新建意图缺口。`save_intent_directly` 中不存在此字段。 |
+| 属性               | 类型                            | 说明                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------ | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | `id` (可选)                     | 设置时,原地更新这个**已存在**的同项目意图,而不是插入新的(upsert,RM-R20);`refine_intent` 流程会填充它,使 refine 后的意图更新其原始条目。省略则插入新意图。                                                                                                                                                                                                                                    |
+| `title`            | text                            | 提议的标题                                                                                                                                                                                                                                                                                                                                                                                   |
+| `shortEnTitle`     | text (必填)                     | 必填的简短英文 ASCII 短标题 — 派生分支/worktree 名的稳定来源；agent 应产出 ≤64 ASCII 字符，落库前截断到 128。新建与更新均要求传入                                                                                                                                                                                                                                                            |
+| `content`          | text                            | 提议的描述                                                                                                                                                                                                                                                                                                                                                                                   |
+| `priority`         | enum `P0`\|`P1`\|`P2`\|`P3`     | 提议的需求级别                                                                                                                                                                                                                                                                                                                                                                               |
+| `module`           | text (可选)                     | 推断出的模块名称;省略时 —— 插入场景下落库为 `''`(RM-R14);更新场景下保留原值(RM-R20)                                                                                                                                                                                                                                                                                                          |
+| `dependsOn`        | `id[]` (可选)                   | 对**已存在**的项目内意图的提议依赖(按 id);更新场景下,提供它(或 `dependsOnIndexes`)会替换依赖集合,两者都省略则保持不变(RM-R20)                                                                                                                                                                                                                                                                |
+| `dependsOnIndexes` | `number[]` (可选)               | 对同一批次内**兄弟**条目的提议依赖,按从 0 开始的数组下标;在保存时解析为该兄弟条目的 id(RM-R17)。被下标引用的兄弟条目自身也可能是一个更新目标(RM-R20)。                                                                                                                                                                                                                                       |
+| `intentSessionId`  | text (可选)                     | 反向链接到产生此意图的沟通会话,持久化到 `intent_session_id`。**仅当该批次恰好保存一个意图时才生效** —— 多条目批次会忽略它(存储层只在 `length === 1` 时才写入)。智能体用注入到其提示词中的会话 id 来填充它;保存处理器会把它归一化为已绑定的沟通会话 id,以便通过 `open_intent_chat` 解析。这弥补了 refine 的 `run:bound` 回填所无法覆盖的新建意图缺口。`save_intent_directly` 中不存在此字段。 |
+| `specMode`         | `'sdd'`\|`'fast'`\| null (可选) | 每意图级规格模式覆盖。省略 = 不改动(新建意图按 `null` 继承工作区);显式 `null` = 清除覆盖恢复继承;`'sdd'` / `'fast'` = 固定该模式。缺省与显式 `null` 刻意区分,使一次普通意图编辑不会意外清除或改写已有模式(RM-R40)。                                                                                                                                                                          |
 
 ## Intent Dependency
 
@@ -178,7 +181,7 @@ lint 校验链拒绝)、`forge_create_rejected`(平台校验拒绝,含该分支�
 ## 持久化存储(c3.db)
 
 位于 `~/.c3/c3.db` 的 SQLite 台账(区别于 registry 的 `state.json`)。Schema 版本通过
-`PRAGMA user_version` 管理(目前为 `12` —— v2 新增 `intents.module` 列,v3 新增可空的
+`PRAGMA user_version` 管理(目前为 `19` —— v2 新增 `intents.module` 列,v3 新增可空的
 `intents.completed_at` 列,v4 新增 `intents.automate` INTEGER NOT NULL DEFAULT 0,v6 把
 遗留的 requirement- 前缀表重命名为 intent- 前缀,v7 新增可空的 `intent_chats.title` 列,
 v8 新增 git 追踪字段,v9 新增 `intent_deps.dep_type` + `created_at`,v10 新增
@@ -186,11 +189,15 @@ v8 新增 git 追踪字段,v9 新增 `intent_deps.dep_type` + `created_at`,v10 �
 `intents` + `intent_chats` 上,并把复合索引重建为 `idx_intent_workspace_status`,v12 新增
 可空的 `intents.short_en_title` 列(派生分支/worktree 名称的稳定 ASCII 来源;历史行保持
 null,写入侧截断到 128)。这次重命名有意与向后兼容的 `projectConfigs` settings.json 键
-产生分歧,该键保留其历史名称 —— 见 2026-06-14 的 workspace-path 迁移记录)。表:`intents`、
-`intent_deps`、`intent_chats`(会话集合 + 隐藏集合在同一张表中),以及 `tool_sessions`
-(`session_id` PRIMARY KEY + `created_at`)—— 工具创建会话(完成判定器、共识顾问)的
-持久化集合,使 session-registry 的“显示工具会话”过滤器能在重启后存续。`tool_sessions`
-只是一张标记表;工具会话的来源链接存放在 `session_kind='tool'` 行的
+产生分歧,该键保留其历史名称 —— 见 2026-06-14 的 workspace-path 迁移记录)。v18→v19
+新增可空的 `intents.spec_mode` 列(CHECK(sdd/fast),三态:NULL=继承工作区、'sdd'=显式固定
+规格先行、'fast'=显式固定规格延后;存量不回填继续派生)与 `intent_fast_turns` 结算表
+(fast 模式每 turn 反向补轨的基线 + 幂等键,resume 复用同一 session 时重建 baseline 并重开可结算周期;详见迁移记录 `migrate/2026/08/06/030`)。表:
+`intents`、`intent_deps`、`intent_chats`(会话集合 + 隐藏集合在同一张表中)、
+`tool_sessions`(`session_id` PRIMARY KEY + `created_at`)—— 工具创建会话(完成判定器、
+共识顾问)的持久化集合,使 session-registry 的“显示工具会话”过滤器能在重启后存续,
+以及 `intent_sessions`、`intent_logs` 与 `intent_fast_turns`(每 turn 结算记录)。
+`tool_sessions` 只是一张标记表;工具会话的来源链接存放在 `session_kind='tool'` 行的
 `session_metadata.owner_kind` / `owner_id` 中,无 owner 的工具行仅用于展示。会话被删除时,
 其行也会被删除。跨运行时驱动适配器与迁移处理见
 [intent-management-design.md](intent-management-design.md)。

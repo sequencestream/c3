@@ -58,9 +58,16 @@ import { resetDbForTests, getDb } from '../../kernel/infra/db.js'
 import {
   isFunnelStoreAvailable,
   resetFunnelStoreForTests,
+  AUTO_UNPARK_REASON,
   MANUAL_UNPARK_REASON,
 } from './funnel-store.js'
-import { applyHumanOverride, applyPark, clearPark, recordFailure } from './queue-outcome-actions.js'
+import {
+  applyHumanOverride,
+  applyPark,
+  clearPark,
+  executeUnpark,
+  recordFailure,
+} from './queue-outcome-actions.js'
 import { QUEUE_MAX_ATTEMPTS } from '../../kernel/queue/index.js'
 import type { QueueActionContext } from './queue-action-context.js'
 
@@ -122,6 +129,49 @@ describe('recordFailure — the failure ladder', () => {
 
     expect(events()).toHaveLength(1)
     expect(events()[0]).toMatchObject({ stage: 'parked', reason_code: 'turn_error' })
+  })
+})
+
+describe('executeUnpark — the kernel auto-recovery', () => {
+  it('clears the same fields as clearPark and observes with the auto reason code', () => {
+    applyPark(ctx, 'A', 'launch_failed', 'detail')
+    executeUnpark(ctx, { kind: 'unpark', intentId: 'A' })
+
+    // Byte-for-byte the manual `clearPark` transition: five target fields reset,
+    // nothing else about the scheduling metadata rewritten.
+    expect(hoisted.metas.get('A')).toMatchObject({
+      parked: false,
+      parkReason: null,
+      parkDetail: null,
+      failureCount: 0,
+      backoffUntil: null,
+    })
+    const rows = events()
+    expect(rows.map((r) => r.stage)).toEqual(['parked', 'unparked'])
+    expect(rows[1].reason_code).toBe(AUTO_UNPARK_REASON)
+    expect(rows[1].reason_code).not.toBe(MANUAL_UNPARK_REASON)
+  })
+
+  it('observes nothing when there was no park to clear, or the durable write was refused', () => {
+    // Nothing parked → no transition, no observation.
+    executeUnpark(ctx, { kind: 'unpark', intentId: 'B' })
+    expect(events()).toEqual([])
+
+    // Parked, but the state write is refused: the transition did not survive, so
+    // it must not be observed.
+    applyPark(ctx, 'C', 'commit_failed', 'detail')
+    hoisted.putSucceeds = false
+    executeUnpark(ctx, { kind: 'unpark', intentId: 'C' })
+    expect(events().map((r) => r.stage)).toEqual(['parked'])
+  })
+
+  it('repeat execution is idempotent: no second transition, no second observation', () => {
+    applyPark(ctx, 'A', 'judge_stuck', 'detail')
+    executeUnpark(ctx, { kind: 'unpark', intentId: 'A' })
+    executeUnpark(ctx, { kind: 'unpark', intentId: 'A' })
+
+    const rows = events()
+    expect(rows.filter((r) => r.stage === 'unparked')).toHaveLength(1)
   })
 })
 

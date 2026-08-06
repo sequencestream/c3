@@ -326,7 +326,11 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
   `todo`/`in_progress`/`done` 均可),可以从详情头部或 Git/PR 元数据处刷新一次。该同步
   查询 forge CLI,只有在 forge 确认 PR/MR 已合并时才把该行写为 `merged`。
   一个已关闭的 PR/MR 可能被记录为 `closed`,失败或 CLI/认证不可用则保持
-  既有状态不变;只有确认的 `merged` 才能解除 worktree 依赖闸门。
+  既有状态不变;只有确认的 `merged` 才能解除 worktree 依赖闸门。合并确认触发
+  `requestPass` 后,对账内核在下一轮对**因失败阶梯而 park 的依赖方**执行自动恢复
+  (RM-A17):park 原因属于失败阶梯显式分类集且全部已知依赖已满足时,产出 `unpark`
+  动作清除 park 与失败阶梯元数据,该意图再从下一轮起参与全量门禁 —— 依赖链畅通后
+  不再需要人工逐个解除 park。
 
 ## 讨论桥接
 

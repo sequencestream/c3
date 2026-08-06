@@ -25,7 +25,13 @@ import { QUEUE_MAX_ATTEMPTS, backoffDelayMs } from '../../kernel/queue/index.js'
 import type { QueueActionContext } from './queue-action-context.js'
 import { getIntent } from './store.js'
 import { appendQueueDecisions, getQueueIntentMetaById, putQueueIntentMeta } from './queue-store.js'
-import { MANUAL_UNPARK_REASON, appendFunnelEvent, type FunnelStage } from './funnel-store.js'
+import {
+  AUTO_UNPARK_REASON,
+  MANUAL_UNPARK_REASON,
+  appendFunnelEvent,
+  type FunnelStage,
+  type UnparkReason,
+} from './funnel-store.js'
 import { publishIntentLifecycle } from './lifecycle-events.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
 
@@ -39,6 +45,23 @@ export function executePark(
   action: Extract<QueueAction, { kind: 'park' }>,
 ): void {
   applyPark(ctx, action.intentId, action.reason, action.detail)
+}
+
+/**
+ * The kernel asked for an AUTOMATIC unpark: a failure-ladder park whose every
+ * dependency is now satisfied. The state transition is byte-for-byte the manual
+ * `clearPark` — the two recoveries share the same full retry budget — only the
+ * funnel reason code differs, so machine recovery stays observable apart from a
+ * human unpark. The intent is NOT started here: the next pass re-runs every gate
+ * and decides where it actually goes.
+ */
+export function executeUnpark(
+  ctx: QueueActionContext,
+  action: Extract<QueueAction, { kind: 'unpark' }>,
+): void {
+  if (unparkWithReason(ctx.workspacePath, action.intentId, AUTO_UNPARK_REASON)) {
+    ctx.hooks.broadcastQueueDetail(ctx.workspacePath)
+  }
 }
 
 /**
@@ -218,14 +241,19 @@ export function applyPark(
 // one vocabulary, whoever writes it.
 
 /**
- * Clear an intent's park mark so the next pass re-evaluates it from scratch;
- * `false` when there was nothing to clear.
+ * The one parked→unparked transition, shared by the manual `clearPark` and the
+ * kernel's automatic `executeUnpark` so the two can never drift apart. Returns
+ * `false` when there was no park to clear.
  *
- * The consecutive-failure counter is reset too: an unpark is an explicit human
- * "try this again", and leaving the counter at the cap would re-park the intent
- * on its very first hiccup. Every hard gate is still re-checked next pass.
+ * The consecutive-failure counter is reset too: an unpark is an explicit "try
+ * this again", and leaving the counter at the cap would re-park the intent on
+ * its very first hiccup. Every hard gate is still re-checked next pass.
  */
-export function clearPark(workspacePath: string, intentId: string): boolean {
+function unparkWithReason(
+  workspacePath: string,
+  intentId: string,
+  reasonCode: UnparkReason,
+): boolean {
   const prev = getQueueIntentMetaById(intentId)
   if (!prev.parked) return false
   const now = Date.now()
@@ -239,16 +267,28 @@ export function clearPark(workspacePath: string, intentId: string): boolean {
     backoffUntil: null,
     updatedAt: now,
   })
+  // Observation is strictly downstream of the state write: an unpark that did
+  // not survive must not show up in the funnel, and a lost observation must not
+  // undo one. Only a REAL parked→unparked transition observes; a repeat action
+  // on an already-cleared intent observes nothing and changes nothing.
   if (persisted) {
     appendFunnelEvent({
       workspacePath,
       intentId,
       stage: 'unparked',
-      reasonCode: MANUAL_UNPARK_REASON,
+      reasonCode,
       at: now,
     })
   }
   return true
+}
+
+/**
+ * Clear an intent's park mark so the next pass re-evaluates it from scratch;
+ * `false` when there was nothing to clear.
+ */
+export function clearPark(workspacePath: string, intentId: string): boolean {
+  return unparkWithReason(workspacePath, intentId, MANUAL_UNPARK_REASON)
 }
 
 /**

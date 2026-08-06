@@ -18,6 +18,7 @@ import { join } from 'node:path'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import { deleteQueueIntentMeta, resetQueueStoreForTests } from './queue-store.js'
 import {
+  AUTO_UNPARK_REASON,
   FUNNEL_RETENTION_MS,
   MANUAL_UNPARK_REASON,
   PARK_RECOVERY_WINDOW_MS,
@@ -92,6 +93,19 @@ describe('write boundary', () => {
   it('accepts a queue reason code for parked and the fixed code for unparked', () => {
     expect(park(NOW)).toBe(true)
     expect(unpark(NOW + 1)).toBe(true)
+  })
+
+  it('accepts the automatic unpark reason code as a second closed unpark value', () => {
+    const written = appendFunnelEvent({
+      workspacePath: proj,
+      intentId: 'A',
+      stage: 'unparked',
+      reasonCode: AUTO_UNPARK_REASON,
+      at: NOW,
+    })
+    expect(written).toBe(true)
+    const row = getDb()!.get<{ reason_code: string }>('SELECT reason_code FROM funnel_event')
+    expect(row?.reason_code).toBe(AUTO_UNPARK_REASON)
   })
 
   it('refuses an unknown stage', () => {

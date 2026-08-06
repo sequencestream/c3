@@ -225,6 +225,8 @@ export const QUEUE_REASON_CODES = [
   // one-shot died). Distinct from `judge_stuck`: nothing was judged about the
   // intent, so this never reads as "a human is needed on the work".
   'judge_unavailable',
+  // recovery — the decision reason a failure-ladder park is auto-recovered with
+  'auto_unpark',
 ] as const
 
 /**
@@ -233,6 +235,25 @@ export const QUEUE_REASON_CODES = [
  */
 export type QueueReasonCode = (typeof QUEUE_REASON_CODES)[number]
 
+/**
+ * The park reasons the failure ladder can land on, kept as an explicit, closed
+ * set so "may this park auto-recover once its dependencies are satisfied?" is a
+ * membership test against ONE typed source of truth — never a prefix, substring
+ * or other string-pattern inference. Every NEW failure reason an intent can be
+ * parked under must explicitly decide whether it joins this set; the default is
+ * "not auto-recoverable" (a park means a human looked, unless we say otherwise).
+ */
+export const AUTO_RECOVERABLE_PARK_REASONS: ReadonlySet<QueueReasonCode> = new Set<QueueReasonCode>(
+  [
+    'launch_failed',
+    'budget_exhausted',
+    'commit_failed',
+    'turn_error',
+    'judge_stuck',
+    'judge_unavailable',
+  ],
+)
+
 /** What the kernel chose to do with one intent this pass. */
 export type QueueDecisionAction =
   | 'launch'
@@ -240,6 +261,7 @@ export type QueueDecisionAction =
   | 'attach'
   | 'wait'
   | 'park'
+  | 'unpark'
   | 'block'
   | 'skip'
   // Spec-phase actions. Kept distinct from `launch`/`resume` (the work-session
@@ -274,6 +296,12 @@ export type QueueAction =
   | { kind: 'resume'; intentId: string; sessionId: string; origin: string }
   | { kind: 'attach'; intentId: string; sessionId: string; origin: string }
   | { kind: 'park'; intentId: string; reason: QueueReasonCode; detail: string }
+  /**
+   * Clear a failure-ladder park because every dependency is now satisfied. The
+   * assembly layer applies the SAME transition as a manual unpark but records a
+   * distinct funnel reason, so the two recoveries stay observable separately.
+   */
+  | { kind: 'unpark'; intentId: string }
   | { kind: 'wait_user_involve'; intentId: string; reason: QueueReasonCode; detail: string }
   | { kind: 'sync_dependency_prs'; intentIds: string[] }
   /**

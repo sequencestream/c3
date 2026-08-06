@@ -34,11 +34,24 @@ export const FUNNEL_STAGES = ['parked', 'unparked'] as const
 export type FunnelStage = (typeof FUNNEL_STAGES)[number]
 
 /**
- * The single reason code an `unparked` row may carry. Leaving the queue's park
- * vocabulary out of the unpark side keeps the column an enum rather than a place
- * to smuggle a description of why a human intervened.
+ * The closed set of reason codes an `unparked` row may carry. Leaving the
+ * queue's park vocabulary out of the unpark side keeps the column an enum rather
+ * than a place to smuggle a description of why the park ended.
  */
-export const MANUAL_UNPARK_REASON = 'manual_unpark'
+export const UNPARK_REASONS = ['manual_unpark', 'auto_unpark'] as const
+export type UnparkReason = (typeof UNPARK_REASONS)[number]
+
+/**
+ * The reason code for a HUMAN unpark (the manual "解除 park" control).
+ */
+export const MANUAL_UNPARK_REASON: UnparkReason = 'manual_unpark'
+
+/**
+ * The reason code for an AUTOMATIC unpark — the kernel auto-recovering a
+ * failure-ladder park once its dependencies are satisfied. Distinct from the
+ * manual code so recovery by the machine stays observable separately.
+ */
+export const AUTO_UNPARK_REASON: UnparkReason = 'auto_unpark'
 
 /** Rolling retention: rows older than this are deleted, never archived. */
 export const FUNNEL_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
@@ -48,6 +61,7 @@ export const PARK_RECOVERY_WINDOW_MS = 24 * 60 * 60 * 1000
 
 const STAGE_SET: ReadonlySet<string> = new Set<string>(FUNNEL_STAGES)
 const PARK_REASON_SET: ReadonlySet<string> = new Set<string>(QUEUE_REASON_CODES)
+const UNPARK_REASON_SET: ReadonlySet<string> = new Set<string>(UNPARK_REASONS)
 
 // `workspace_id` holds the normalized (resolved) workspace path — the same value
 // the protocol's opaque `workspaceId` resolves to server-side. The column keeps
@@ -97,7 +111,10 @@ export interface AppendFunnelEventInput {
   workspacePath: string
   intentId: string
   stage: FunnelStage
-  /** A queue reason code for `parked`; {@link MANUAL_UNPARK_REASON} for `unparked`. */
+  /**
+   * A queue reason code for `parked`; one of the closed {@link UNPARK_REASONS}
+   * (`manual_unpark` / `auto_unpark`) for `unparked`.
+   */
   reasonCode: string
   /** When the transition was persisted (epoch ms). */
   at: number
@@ -111,7 +128,7 @@ export interface AppendFunnelEventInput {
  */
 function isAllowedReason(stage: string, reasonCode: string): boolean {
   if (stage === 'parked') return PARK_REASON_SET.has(reasonCode)
-  if (stage === 'unparked') return reasonCode === MANUAL_UNPARK_REASON
+  if (stage === 'unparked') return UNPARK_REASON_SET.has(reasonCode)
   return false
 }
 

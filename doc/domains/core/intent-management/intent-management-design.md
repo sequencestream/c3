@@ -50,10 +50,16 @@
 ## Schema(`PRAGMA user_version` 迁移)
 
 - `intents` — 账本(`id`、`workspace_path`、`title`、`content`、`priority`、`status`、
-  `module`、`last_work_session_id`、`automate`、`created_at`、`updated_at`、`completed_at`),按
-  `(workspace_path, status)` 建索引。`module` 为 `TEXT NOT NULL DEFAULT ''`;`automate` 为
-  `INTEGER NOT NULL DEFAULT 0`。
+  `module`、`last_work_session_id`、`automate`、`created_at`、`updated_at`、`completed_at`,
+  以及 spec 相关列 `spec_path`/`spec_status`/`spec_approved`/`spec_approve_user`/
+  `spec_session_id`/`spec_review_*`/`spec_mode`),按 `(workspace_path, status)` 建索引。
+  `module` 为 `TEXT NOT NULL DEFAULT ''`;`automate` 为 `INTEGER NOT NULL DEFAULT 0`;
+  `spec_mode` 可空三态(`NULL`=继承工作区 / `'sdd'` / `'fast'`,RM-R40)。
 - `intent_deps` — `(intent_id, depends_on_id)` 边。
+- `intent_fast_turns` — fast 模式每 turn 反向补轨的结算记录(`session_id` 主键、`intent_id`、
+  `workspace_path`、`baseline` JSON、`settled_at`/`outcome`/`spec_path`、`created_at` +
+  `idx_intent_fast_turn_intent`);`settled_at` 在落定处理前为 NULL,同时充当「启动 → 落定」
+  握手,防重复 settled 事件或重启重复生成规格(RM-R40)。
 - `intent_chats` — 一张表身兼**按工作区的沟通会话集合**与**隐藏集**两职:`session_id`
   (主键,可能是 `pending:` id)、`workspace_path`、
   `title`(可空,客户端回退为「New Intent」或由首个提示词推导)、
@@ -61,7 +67,7 @@
   `updated_at`。一个项目全部行的集合即为隐藏集;`is_current=1` 的那一行
   是未指定具体 `sessionId` 进入意图视图时重新加载的会话。
 
-**Schema 版本(当前:v11)。** Schema 版本为 `11`。每次升级都在旧字段重命名之后、
+**Schema 版本(当前:v19)。** Schema 版本为 `19`。每次升级都在旧字段重命名之后、
 应用 schema 之前追加一个幂等迁移:v2 `module`,v3
 `completed_at`(可空),v4 `automate`(`INTEGER NOT NULL DEFAULT 0`),v6 旧的 `requirement*`
 → `intent*` 重命名,v7 `intent_chats.title`(`TEXT`),v8 git 追踪字段,v9 `intent_deps`
@@ -72,6 +78,11 @@
 键**分道而行**,后者沿用旧名(参见 2026-06-14 的 workspace-path 迁移记录)。该重命名
 在 schema 应用之前执行(新的复合索引引用了
 重命名后的列);幂等,从不删表。与下文相同的「按列是否存在来判断」模式。
+v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、`last_work_session_id`
+改名、`intent_logs` 审计表、spec 审核事实字段、`spec_status`(完整迁移历史见
+`database/tables.md`)。**v18→v19** 新增可空的 `intents.spec_mode`(三态)与
+`intent_fast_turns` 结算表;存量 `spec_mode` 不回填,继续按工作区 `sddEnabled` 派生
+(详见迁移记录 `migrate/2026/08/06/030`)。
 
 **Schema 版本与迁移(v1 → v2)。** 新建时的 schema
 已声明 `intents.module`。对于已存在的 db(v1,无 `module` 列),open 路径

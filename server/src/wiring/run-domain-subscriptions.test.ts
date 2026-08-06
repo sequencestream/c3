@@ -81,6 +81,10 @@ vi.mock('../kernel/config/index.js', () => ({
   getDefaultMainBranch: vi.fn(() => 'main'),
   getForgeOverride: vi.fn(() => undefined),
   getSessionAgentId: vi.fn(() => 'agent-1'),
+  // SDD off by default in these tests: the fast-spec settle hook is scoped to
+  // SDD-on fast-mode manual turns and must not intercept unrelated run:settled
+  // cases. fast-spec's own behavior is covered in fast-spec.test.ts.
+  getSddEnabled: vi.fn(() => false),
 }))
 vi.mock('../features/user-involve/store.js', () => ({
   cancelBySessionId: vi.fn(),

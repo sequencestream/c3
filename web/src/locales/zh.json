@@ -1080,13 +1080,10 @@
       "specReworkExhaustedNoReason": "本次评审未留下理由。打开 spec 页签查看审核事实。",
       "permissionPending": "有一条工具权限请求等待你的决定。打开待处理项进行允许或拒绝。",
       "askUserQuestionPending": "有一条 AskUserQuestion 等待你作答。打开待处理项回复。",
-
       "silentTimeout": "已超过 30 分钟没有任何进展，也没有任何已知的等待原因。请检查该意图的工作会话、日志与工作区状态，确认无误后手动重试。",
-
       "dependencyBlocked": "正在等待前序意图「{title}」（{status}）——它完成前，本意图持续受阻。",
       "dependencyBlockedDone": "正在等待前序意图「{title}」（{status}）——它尚未进入主线。",
       "dependencyBlockedUnresolved": "正在等待一条不在当前视图里的前序意图。",
-
       "openSpecApproval": {
         "label": "打开 Spec"
       },
@@ -2412,6 +2409,23 @@
           "label": "允许审核通过后由机器批准"
         },
         "hint": "默认关闭。开启后,只读审核结论为「通过」的规范由 c3 自行批准,批准人记为不冒充任何登录用户的机器身份,开发无需人工点击即可开始。批准仍可撤销——撤销后规范回到「等待批准」,且同一条审核结论不会被再次机器批准。关闭本开关不会撤销任何已批准的规范。"
+      },
+      "fastThreshold": {
+        "title": {
+          "label": "小改动阈值（fast 模式）"
+        },
+        "maxFiles": {
+          "field": {
+            "label": "最大文件数（严格小于）"
+          },
+          "hint": "fast 模式意图单次人工 turn 落定 diff 变更的文件数上限。达到或超过该值即超限，意图自动切回 sdd，需补规格并获人工批准后才能继续。"
+        },
+        "maxLines": {
+          "field": {
+            "label": "最大变更行数（严格小于）"
+          },
+          "hint": "fast 模式意图单次人工 turn 落定 diff 的增删行数上限。二进制变更始终按超限处理。"
+        }
       }
     },
     "automation": {

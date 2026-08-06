@@ -57,6 +57,7 @@ c3
 │   │   ├── 意图精炼                              # 只读 agent 把想法拆成可验证条目
 │   │   ├── 正文直接编辑                          # draft/todo 意图正文行内编辑(纯文本 markdown),服务端状态门禁+写 intent_updated 日志
 │   │   ├── 规格撰写与批准                        # 开发前生成 spec 并经人批准(spec 集中存 ~/.c3/specs);批准可撤销,撤销同时否决当前审核结论;save_intents 改写既有意图标题/正文亦使其批准失效
+│   │   ├── 每意图 fast 规格模式                   # 意图可设 specMode='sdd'|'fast'(默认派生自工作区 sddEnabled):fast 仅绕开手动启动/恢复的 spec 准入闸门,自动化队列资格判定不变;turn 落定按相对基线 diff 与工作区阈值(默认 <3 文件/<50 行,严格小于)反向生成待批准 spec 补齐 SDD,或超限原子切回 sdd 由原闸门接管
 │   │   ├── 规格只读审核                          # 独立 spec_review 会话读 spec/源码/本项目意图,写任意路径一律拒绝;结论只经 submit_spec_review 结构化提交
 │   │   │   ├── 结论绑定内容指纹                  # 结论有效⟺指纹等于 spec 现内容;spec 改写即自动失效并重审,陈旧提交一律拒绝且不得解释为通过
 │   │   │   └── 评审过程可核验                    # 意图详情「评审」tab(SDD 开启且有 specReviewSessionId 才出现)与会话页「规范」列表都经 open_spec_review_session 按意图恢复只读回放;人工续跑在服务端按 sessionKind 一律拒绝
@@ -205,6 +206,7 @@ c3
 │       ├── 讨论上限                              # maxRoundsPerStage 每阶段轮次(≥8)/ maxSpeechChars 每轮发言字数(≥300)
 │       ├── 规格驱动开发开关                      # sddEnabled 总开关,关时 SDD 质量门与批准检查点失效
 │       ├── 机器批准开关                          # specMachineApprovalEnabled 显式 opt-in,默认关闭;开启后审核通过的 spec 由队列以机器身份批准,仍可人工撤销
+│       ├── fast 规格阈值                          # fastSpecMaxFiles/fastSpecMaxLines 小改动上限(默认 3 文件/50 行,严格小于)UI 可调;fast 意图落定 diff 达到任一值即超限,原子切回 sdd
 │       ├── 自动化闸门总开关                      # automationEnabled 自动派发总闸,缺省开;关时 cron/事件派发前短路,各自动化 active/paused 不受影响
 │       ├── 队列并发意图数                        # automationConcurrency 缺省 2:worktree 下最多 N 个意图同时开发,current-branch 恒串行不生效;达上限 blocked_concurrency_gate「已达并发上限 N」,spec 撰写/审核不计入、人工/MCP 启动不受配额限制
 │       ├── 外部技能仓库                          # skillRepos 技能源仓库,clone 到 ~/.c3/repo 并软链进各 vendor 发现目录;含显式 install_skill

@@ -189,9 +189,10 @@ describe('WorkspaceSetting.vue — per-vendor default mode', () => {
   it('renders a row label for each config item', () => {
     const w = mountWs(null)
     // 3 vendor row-labels + devSkill + rounds + speechChars + gitBranchMode
-    // + defaultMainBranch + default-visible SDD spec root + automation cap = 10
+    // + defaultMainBranch + default-visible SDD spec root + fast-spec 两个阈值
+    // + automation cap = 12
     const labels = w.findAll('.project-config-row-label')
-    expect(labels).toHaveLength(10)
+    expect(labels).toHaveLength(12)
     expect(labels[0].text()).toBeTruthy()
   })
 
@@ -706,6 +707,39 @@ describe('WorkspaceSetting.vue — machine spec approval opt-in', () => {
     await w.setProps({ open: false })
     await w.setProps({ open: true })
     expect((w.find(BOX).element as HTMLInputElement).checked).toBe(true)
+  })
+})
+
+describe('WorkspaceSetting.vue — fast-spec thresholds', () => {
+  const FILES = '[data-testid="fast-spec-max-files"]'
+  const LINES = '[data-testid="fast-spec-max-lines"]'
+
+  it('defaults to 3 files / 50 lines when the fields are absent', () => {
+    const w = mountWs(cfg({ sddEnabled: true }))
+    expect((w.find(FILES).element as HTMLInputElement).value).toBe('3')
+    expect((w.find(LINES).element as HTMLInputElement).value).toBe('50')
+  })
+
+  it('seeds from persisted values', () => {
+    const w = mountWs(cfg({ sddEnabled: true, fastSpecMaxFiles: 5, fastSpecMaxLines: 120 }))
+    expect((w.find(FILES).element as HTMLInputElement).value).toBe('5')
+    expect((w.find(LINES).element as HTMLInputElement).value).toBe('120')
+  })
+
+  it('hides the thresholds when SDD is off', () => {
+    const w = mountWs(cfg({ sddEnabled: false }))
+    expect(w.find(FILES).exists()).toBe(false)
+    expect(w.find(LINES).exists()).toBe(false)
+  })
+
+  it('carries edited thresholds into the collab save payload', async () => {
+    const w = mountWs(cfg({ sddEnabled: true }))
+    await w.find(FILES).setValue(7)
+    await w.find(LINES).setValue(200)
+    await w.find(SAVE.collab).trigger('click')
+    const payload = (w.emitted('save') as [WorkspaceSettingType][])[0][0]
+    expect(payload.fastSpecMaxFiles).toBe(7)
+    expect(payload.fastSpecMaxLines).toBe(200)
   })
 })
 

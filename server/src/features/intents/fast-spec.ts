@@ -28,7 +28,7 @@
  * an unmeasured diff is never classified as a small change.
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import type { Intent } from '@ccc/shared/protocol'
 import {
   getFastSpecMaxFiles,
@@ -127,10 +127,24 @@ function localFileStats(repo: string, relPath: string): { lines: number; binary:
 }
 
 /**
+ * Display prefix for a repo under the dev directory: its path relative to the
+ * dev dir, or `''` when the repo IS the dev dir (single-repo path). Used to keep
+ * changed-path keys and reverse-spec listing distinguishable across repos —
+ * two repos may both carry `src/index.ts`, and a bare relative path would merge
+ * them into one counted file.
+ */
+function repoPrefix(devDir: string, repo: string): string {
+  if (repo === devDir) return ''
+  return relative(devDir, repo).split(sep).join('/')
+}
+
+/**
  * Compute the turn's diff stats against its launch baseline, multi-repo aware.
- * `git diff --numstat <base>` already covers everything that changed since the
- * baseline (committed during the turn AND uncommitted), so the manual cleanup's
- * commit never moves the measurement; untracked files are added separately.
+ * With a baseline, `git diff --numstat <base>` covers EVERYTHING that changed
+ * since it — turn commits AND uncommitted tracked edits — so the manual
+ * cleanup's commit never moves the measurement; the un-ref'd form would RE-COUNT
+ * the uncommitted tracked edits on top of that (inflating `lines`), so it is
+ * used only when no baseline was recorded. Untracked files are added separately.
  */
 export async function computeTurnDiff(
   devDir: string,
@@ -142,25 +156,35 @@ export async function computeTurnDiff(
   const parts: string[] = []
 
   for (const [repo, base] of Object.entries(baseline)) {
-    const entries = base ? await gitNumstat(repo, base) : []
-    entries.push(...(await gitNumstat(repo)))
+    // One measurement, mutually exclusive by baseline availability: WITH a base
+    // `diff --numstat <base>` covers everything since the baseline (turn commits
+    // AND uncommitted tracked edits); WITHOUT one (baseline lost) the un-ref'd
+    // form measures just the uncommitted tracked edits. Both add untracked files
+    // separately — and the two diff forms are never both called, so nothing is
+    // ever double-counted.
+    const entries = base ? await gitNumstat(repo, base) : await gitNumstat(repo)
     const untracked = await gitUntracked(repo)
+    // Multi-repo keying: the same relative path may exist in several repos (e.g.
+    // two repos both carry `src/index.ts`). Dedupe on repo+path and keep a
+    // readable repo prefix so `fileCount` counts DISTINCT changed files and the
+    // reverse-spec listing stays attributable to its repo.
+    const prefix = repoPrefix(devDir, repo)
 
     const repoLines: string[] = []
     for (const e of entries) {
-      files.add(e.path)
+      files.add(prefix ? `${prefix}/${e.path}` : e.path)
       if (e.binary) hasBinary = true
       else lines += e.additions + e.deletions
       repoLines.push(`${e.binary ? '-' : e.additions}\t${e.binary ? '-' : e.deletions}\t${e.path}`)
     }
     for (const u of untracked) {
-      files.add(u)
+      files.add(prefix ? `${prefix}/${u}` : u)
       const st = localFileStats(repo, u)
       if (st.binary) hasBinary = true
       else lines += st.lines
       repoLines.push(`+\t+\t${u} (untracked)`)
     }
-    if (repoLines.length > 0) parts.push(`# ${repo}\n${repoLines.join('\n')}`)
+    if (repoLines.length > 0) parts.push(`# ${prefix || repo}\n${repoLines.join('\n')}`)
   }
 
   return {

@@ -1080,13 +1080,10 @@
       "specReworkExhaustedNoReason": "The review recorded no rationale. Open the spec tab to read the review facts.",
       "permissionPending": "A tool permission is waiting for your decision. Open the pending item to Allow or Deny.",
       "askUserQuestionPending": "An AskUserQuestion is waiting for your answers. Open the pending item to reply.",
-
       "silentTimeout": "No progress for over 30 minutes, and nothing known is being waited on. Check this intent's work session, its logs and its workspace, then retry manually once it looks safe.",
-
       "dependencyBlocked": "Waiting on the predecessor intent “{title}” ({status}) — work stays blocked until it is finished.",
       "dependencyBlockedDone": "Waiting on the predecessor intent “{title}” ({status}) — it is not on the main branch yet.",
       "dependencyBlockedUnresolved": "Waiting on a predecessor intent that is outside the current view.",
-
       "openSpecApproval": {
         "label": "Open spec"
       },
@@ -2412,6 +2409,23 @@
           "label": "Allow machine approval of a passing spec review"
         },
         "hint": "Off by default. When on, a spec whose read-only review concludes “pass” is approved by c3 itself, recorded under a machine identity that never impersonates a user, and development may start without a human click. The approval stays revocable — revoking returns the spec to “awaiting approval” and prevents the same review conclusion from being re-approved. Turning this off never revokes an already-approved spec."
+      },
+      "fastThreshold": {
+        "title": {
+          "label": "Small-change thresholds (fast mode)"
+        },
+        "maxFiles": {
+          "field": {
+            "label": "Max changed files (strictly less than)"
+          },
+          "hint": "Upper bound on distinct changed files a fast-mode intent may produce in one manual turn. A diff reaching this many files is over the threshold and pins the intent back to sdd until a spec is authored and approved."
+        },
+        "maxLines": {
+          "field": {
+            "label": "Max changed lines (strictly less than)"
+          },
+          "hint": "Upper bound on changed lines (additions + deletions) a fast-mode intent may produce in one manual turn. A binary change always counts as over."
+        }
       }
     },
     "automation": {

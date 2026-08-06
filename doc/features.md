@@ -96,10 +96,15 @@ c3
 │   ├── delivery 交付                             # 交付作为集成单元:一批意图共同集成并最终进入主线,回答「这批能不能合了、卡在哪」
 │   │   ├── 交付账本                              # 按工作区持久化交付(标题/描述/base_branch 快照/日期/分支名),status 六态 CHECK 闭集
 │   │   ├── 受控状态机                            # planned→integrating→verifying→verified→delivered,任意非终态可取消;回退 verifying→integrating(人工返工)/verified→verifying(系统合并冲突);统一经 canTransitionDelivery 纯函数
-│   │   ├── 守卫与缺口                            # 分支就绪→关联意图 PR 全部合入→人工确认验证→合并成功;缺口以 delivery.guard.* 结构下发给页面置灰+常驻说明+跳转
+│   │   ├── 守卫与缺口                            # 分支就绪→关联意图 PR 全部合入→人工确认验证→合并成功;缺口以 delivery.guard.* 结构下发给页面置灰+常驻说明+跳转;branchNotReady 跳转到本页分支初始化区
 │   │   ├── 集成就熟 N/M                          # 实时由 intent_prs.delivery_id 聚合,不持久化计数;无「已完成」态,只以 N/M 呈现
 │   │   ├── 交付 CRUD + 取消                      # 纯本地数据动作不触网;取消是生命周期终结方式,无永久删除
-│   │   ├── 一级页面                              # 顶栏「交付」tab 置于「需求」后;角标只计服务端计算的「需要用户处理」交付;详情仅概览/关联意图两 Tab
+│   │   ├── 分支初始化(create/bind)               # 创建交付与初始化分支拆两步:init_delivery_branch 显式可重试;基线先 fetch 取 origin/<base_branch> HEAD;支持绑定已有远端分支(落后仅警告)
+│   │   ├── 孤儿分支防御                          # push 成功但 DB 写失败后重试:远端同名分支起点匹配则幂等绑定,不匹配报 delivery.branchConflict 且绝不覆盖远端
+│   │   ├── 多仓拒绝                              # 根非 repo 且有子仓的工作区建交付与初始化分支均报 delivery.multiRepoUnsupported(单列分支无法表达部分仓已交付)
+│   │   ├── branch_ready 闸门                     # 分支未就绪时状态推进与面向交付的意图建 PR 被拦(可读原因);就绪后成为状态机真正可用的第一级守卫
+│   │   ├── 终态分支清理                          # delivered/cancelled 后不自动删分支;手动清理需 danger 二次确认,仅删本地引用不删远端
+│   │   ├── 一级页面                              # 顶栏「交付」tab 置于「需求」后;角标只计服务端计算的「需要用户处理」交付;详情仅概览/关联意图两 Tab,概览含分支初始化区
 │   │   ├── current-branch 降级                   # 该模式交付为纯聚合视图:分支/PR/合并动作不渲染并给说明文案,纯数据操作不受限
 │   │   └── pr:merge 知情告知                     # 工作区首次创建交付时一次性提示语义漂移,请检查自动化订阅
 │   │
@@ -205,6 +210,7 @@ c3
 │   ├── personalized-setting 个人化设置           # 按人偏好(PersonalizedSettings),独立入口页,不过管理员门,普通账户可改
 │   │   ├── 显示语言                              # uiLang 界面语言,选中即切 vue-i18n + <html lang> 并按当前身份保存
 │   │   ├── 显示样式                              # theme 配色主题,选项来自可扩展主题注册表(dark 默认 / light),选中即写根元素 data-theme 并按当前身份保存
+│   │   ├── 字体大小                              # fontScale 全局 UI 字号(70–120,拖动条),经根元素 --c-font-scale 缩放相对单位字号,选中即生效并按当前身份保存
 │   │   ├── 按身份存储                            # 已认证存服务端 personalizedSettings[subject];无身份存浏览器 localStorage,不跨设备同步
 │   │   ├── 首次登录播种                          # 账户无记录时以本浏览器合法值锁内建档一次;账户记录一旦存在即权威,不被本地值覆盖
 │   │   └── agent 输出语言                        # 顶层 agentLang 跟随最近一次上报,供无连接上下文的服务端提示词(意图/规格/标题/总结)使用

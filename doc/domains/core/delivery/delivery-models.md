@@ -15,9 +15,9 @@
 | `status`                | `DeliveryStatus`      | 六态闭集,见下                                                                                 |
 | `startDate`             | `number \| null`      | 用户选择的日历起始日期(epoch ms);空 = 未设                                                    |
 | `endDate`               | `number \| null`      | 用户选择的日历结束日期(epoch ms);空 = 未设                                                    |
-| `branchName`            | `string \| null`      | 交付分支名;本阶段恒 `null`(分支能力在后续阶段置入)                                            |
+| `branchName`            | `string \| null`      | 交付分支名;`init_delivery_branch` 成功后置入,`cleanup_delivery_branch`(终态)后清空            |
 | `baseBranch`            | `string`              | 建交付时对工作区 `defaultMainBranch` 的快照;之后改配置不回写,保证交付不被合进它从未基于的分支 |
-| `branchReady`           | `boolean`             | 交付分支是否就绪;本阶段恒 `false`(创建/编辑不触发分支探测)                                    |
+| `branchReady`           | `boolean`             | 交付分支是否就绪;初始 `false`,仅由分支初始化成功/幂等绑定置真,终态手动清理置回假              |
 | `integration`           | `DeliveryIntegration` | 实时「集成就熟 N/M」聚合,服务端每次读取时派生,不持久化                                        |
 | `createdAt`/`updatedAt` | `number`              | 创建/更新时间(epoch ms)                                                                       |
 
@@ -40,17 +40,17 @@ M/N 直接由 `intent_prs.delivery_id` 查得:一个意图对同一交付至多�
 
 ## DeliveryGuardReason
 
-一个守卫缺口原因。`code` 是 `delivery.guard.*` locale 叶子;`jumpTo` 指示页面可跳转处(`associated-intents` / `workspace-settings`),本阶段多数缺口无法人工解决,跳转入口仍前置表达。
+一个守卫缺口原因。`code` 是 `delivery.guard.*` locale 叶子;`jumpTo` 指示页面可跳转处(`associated-intents` / `workspace-settings` / `branch`),多数缺口无法人工解决,跳转入口仍前置表达。
 
-| code                                         | 含义                   | 可跳转               |
-| -------------------------------------------- | ---------------------- | -------------------- |
-| `delivery.guard.branchNotReady`              | 分支未就绪             | `workspace-settings` |
-| `delivery.guard.noAssociatedIntents`         | 未关联任何意图         | `associated-intents` |
-| `delivery.guard.prsNotMerged`(params N/M)    | 关联 PR 未全部合入     | `associated-intents` |
-| `delivery.guard.verificationNotConfirmed`    | 需人工确认验证通过     | —(就地确认)          |
-| `delivery.guard.mergeNotSucceeded`           | 等待交付合并成功       | —(系统等待)          |
-| `delivery.guard.systemOnly` / `humanOnly`    | 写角色不符             | —                    |
-| `delivery.guard.mergeConflictReasonRequired` | 系统返工需合并冲突原因 | —                    |
+| code                                         | 含义                   | 可跳转                 |
+| -------------------------------------------- | ---------------------- | ---------------------- |
+| `delivery.guard.branchNotReady`              | 分支未就绪             | `branch`(本页初始化区) |
+| `delivery.guard.noAssociatedIntents`         | 未关联任何意图         | `associated-intents`   |
+| `delivery.guard.prsNotMerged`(params N/M)    | 关联 PR 未全部合入     | `associated-intents`   |
+| `delivery.guard.verificationNotConfirmed`    | 需人工确认验证通过     | —(就地确认)            |
+| `delivery.guard.mergeNotSucceeded`           | 等待交付合并成功       | —(系统等待)            |
+| `delivery.guard.systemOnly` / `humanOnly`    | 写角色不符             | —                      |
+| `delivery.guard.mergeConflictReasonRequired` | 系统返工需合并冲突原因 | —                      |
 
 ## DeliveryTransitionPlan
 

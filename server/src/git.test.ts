@@ -9,15 +9,21 @@ import {
   closeGhPr,
   collectGitStatus,
   commitAndPush,
+  createDeliveryBranch,
   createForgePr,
   createGhPr,
   createGlabMr,
+  deleteLocalBranch,
   detectForge,
+  fetchRemoteBaseAsync,
   getForgePrStatus,
   gitDiffStat,
   gitRecentLog,
   hasDiffAgainstBase,
+  isMultiRepoWorkspace,
   parsePorcelainStatus,
+  remoteBranchHead,
+  resolveRefHead,
 } from './git.js'
 
 // These tests drive the REAL `git` CLI against throwaway repos in a temp dir, with
@@ -649,5 +655,118 @@ describe('collectGitStatus — workspace snapshot (real git)', () => {
     expect(out['good/g.ts']).toEqual({ modified: false, untracked: true, staged: false })
     // 损坏子仓库不贡献任何条目,也不抛错
     expect(Object.keys(out).some((k) => k.startsWith('broken/'))).toBe(false)
+  })
+})
+
+describe('isMultiRepoWorkspace — delivery-branch verdict', () => {
+  it('a root that is itself a repo is NOT multi-repo', () => {
+    initRepo(work, 'root', false)
+    expect(isMultiRepoWorkspace(work)).toBe(false)
+  })
+
+  it('a non-repo root with sub-repos IS multi-repo (incl. a single sub-repo)', () => {
+    const sub = join(work, 'packages', 'api')
+    initRepo(sub, 'api', false)
+    expect(isMultiRepoWorkspace(work)).toBe(true)
+  })
+
+  it('a non-repo root with NO sub-repos is not multi-repo', () => {
+    mkdirSync(join(work, 'src'), { recursive: true })
+    expect(isMultiRepoWorkspace(work)).toBe(false)
+  })
+})
+
+describe('fetchRemoteBaseAsync / resolveRefHead / remoteBranchHead', () => {
+  it('fetchRemoteBaseAsync returns origin/<base> after fetching the remote tip', async () => {
+    initRepo(work, 'root') // pushed to origin/main
+    const tip = run('git', ['-C', work, 'rev-parse', 'HEAD'], work).trim()
+    // Advance the remote so the fetch actually brings something new.
+    const clone = join(dir, 'clone')
+    run('git', ['clone', '-q', join(remotes, 'root.git'), clone], dir)
+    writeFileSync(join(clone, 'REMOTE.md'), 'remote\n')
+    run('git', ['add', '-A'], clone)
+    run('git', ['commit', '-q', '-m', 'advance'], clone)
+    run('git', ['push', '-q', 'origin', 'HEAD'], clone)
+
+    expect(await fetchRemoteBaseAsync(work, 'main')).toBe('origin/main')
+    expect(await resolveRefHead(work, 'origin/main')).not.toBe(tip)
+  })
+
+  it('fetchRemoteBaseAsync returns null with no remote', async () => {
+    initRepo(work, 'root', false)
+    expect(await fetchRemoteBaseAsync(work, 'main')).toBeNull()
+  })
+
+  it('remoteBranchHead reads the remote head; null when the branch is absent', async () => {
+    initRepo(work, 'root')
+    const head = run('git', ['-C', work, 'rev-parse', 'HEAD'], work).trim()
+    expect(await remoteBranchHead(work, 'main')).toBe(head)
+    expect(await remoteBranchHead(work, 'nope')).toBeNull()
+  })
+
+  it('resolveRefHead returns null for an unresolvable ref', async () => {
+    initRepo(work, 'root', false)
+    expect(await resolveRefHead(work, 'origin/missing')).toBeNull()
+  })
+})
+
+describe('createDeliveryBranch — create + push on the remote', () => {
+  it('creates the branch rooted at the just-fetched origin base and pushes it', async () => {
+    initRepo(work, 'root') // origin/main at current HEAD
+    const baseHead = run('git', ['-C', work, 'rev-parse', 'HEAD'], work).trim()
+
+    const res = await createDeliveryBranch(work, 'delivery/abc-sprint-3', 'main')
+    expect(res.ok).toBe(true)
+
+    // Pushed branch exists on the bare remote at the base head.
+    const remoteHash = run(
+      'git',
+      ['-C', remotes, 'ls-remote', 'root.git', 'delivery/abc-sprint-3'],
+      remotes,
+    )
+      .trim()
+      .split(/\s+/)[0]
+    expect(remoteHash).toBe(baseHead)
+    // Local branch also exists (created by `git branch`, upstream set).
+    expect(
+      run('git', ['-C', work, 'rev-parse', '--verify', 'delivery/abc-sprint-3'], work).trim(),
+    ).toBe(baseHead)
+  })
+
+  it('fails with branchConflict when the remote branch already exists', async () => {
+    initRepo(work, 'root')
+    // Someone else already pushed this branch to the remote.
+    const clone = join(dir, 'clone2')
+    run('git', ['clone', '-q', join(remotes, 'root.git'), clone], dir)
+    run('git', ['checkout', '-q', '-b', 'delivery/taken'], clone)
+    writeFileSync(join(clone, 'TAKEN.md'), 'taken\n')
+    run('git', ['add', '-A'], clone)
+    run('git', ['commit', '-q', '-m', 'taken'], clone)
+    run('git', ['push', '-q', '-u', 'origin', 'delivery/taken'], clone)
+
+    const res = await createDeliveryBranch(work, 'delivery/taken', 'main')
+    expect(res.ok).toBe(false)
+    expect(res.errorKind).toBe('branchConflict')
+  })
+
+  it('fails with a readable error when there is no remote', async () => {
+    initRepo(work, 'root', false)
+    const res = await createDeliveryBranch(work, 'delivery/x', 'main')
+    expect(res.ok).toBe(false)
+    expect(res.errorKind).toBe('other')
+  })
+})
+
+describe('deleteLocalBranch — best-effort local-ref cleanup', () => {
+  it('deletes the local branch and reports success', async () => {
+    initRepo(work, 'root', false)
+    run('git', ['branch', 'delivery/clean'], work)
+    expect(await deleteLocalBranch(work, 'delivery/clean')).toBe(true)
+    expect(() => run('git', ['rev-parse', '--verify', 'delivery/clean'], work)).toThrow()
+  })
+
+  it('reports false when the branch does not exist', async () => {
+    initRepo(work, 'root', false)
+    expect(await deleteLocalBranch(work, 'delivery/missing')).toBe(false)
   })
 })

@@ -213,6 +213,10 @@ export interface AppMethods {
   }): void
   cancelDelivery(deliveryId: string): void
   transitionDelivery(to: DeliveryStatus, confirmVerified?: boolean): void
+  /** Explicit, retryable remote-branch init for the open delivery. */
+  initDeliveryBranch(payload: { mode: 'create' | 'bind'; branchName: string }): void
+  /** Manual cleanup of a TERMINAL delivery's local branch reference. */
+  cleanupDeliveryBranch(deliveryId: string): void
   onDeliveryMobileBack(targetKey: string): void
 
   // discussions
@@ -323,6 +327,8 @@ export interface AppMethods {
   fetchPersonalizedSettings(): void
   setLocale(next: UiLang): void
   setTheme(next: UiTheme): void
+  /** Set the console UI font scale (percent, 70–120) live and persist it for the identity. */
+  setFontScale(next: number): void
   setViewMode(mode: 'workspace' | 'workcenter'): void
   approveSkillLoad(requestId: string): void
   cancelSkillLoad(requestId: string): void

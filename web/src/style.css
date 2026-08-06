@@ -2961,9 +2961,20 @@ button.deny:hover:not(:disabled) {
 .agent-group-name.is-fixed {
   color: var(--c-text-muted);
 }
+/* Vendor identity rides a colour dot, like every other vendor marker; the label
+ * itself stays on a theme token so it flips with the canvas. */
 .agent-group-vendor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
   font-size: var(--fs-caption);
   font-weight: 600;
+  color: var(--c-text-muted);
+}
+.agent-group-vendor-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
 }
 .agent-group-meta {
   flex: 1 1 auto;

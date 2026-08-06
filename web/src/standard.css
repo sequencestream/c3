@@ -67,12 +67,17 @@
     'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, 'Noto Sans SC', 'Noto Sans JP',
     'Noto Sans KR', 'Noto Sans', monospace;
 
-  --fs-title-lg: 20px;
-  --fs-title-sm: 16px;
-  --fs-body: 14px;
-  --fs-caption: 12px;
-  --fs-code: 13px;
-  --fs-badge: 11px;
+  /* 全局字号缩放基准:1 = 100%。个性化设置的 fontScale(70–120)经
+     applyFontScale 写此变量;所有字号 token 都以 calc(原始值 * var(--c-font-scale))
+     消费它,故仅相对单位/变量的 UI 随动,px 硬编码处不随。 */
+  --c-font-scale: 1;
+
+  --fs-title-lg: calc(20px * var(--c-font-scale));
+  --fs-title-sm: calc(16px * var(--c-font-scale));
+  --fs-body: calc(14px * var(--c-font-scale));
+  --fs-caption: calc(12px * var(--c-font-scale));
+  --fs-code: calc(13px * var(--c-font-scale));
+  --fs-badge: calc(11px * var(--c-font-scale));
 
   --lh-tight: 1.3;
   --lh-normal: 1.5;

@@ -106,7 +106,7 @@ describe('canTransitionDelivery — the four guard rungs, in order', () => {
     expect(v).toEqual({
       ok: false,
       code: DELIVERY_TRANSITION_GUARD_FAILED,
-      reasons: [{ code: 'delivery.guard.branchNotReady', jumpTo: 'workspace-settings' }],
+      reasons: [{ code: 'delivery.guard.branchNotReady', jumpTo: 'branch' }],
     })
   })
 
@@ -237,7 +237,7 @@ describe('computeTransitionPlan — reachability the page renders + gaps', () =>
         to: 'integrating',
         humanAction: true,
         guard: 'failed',
-        reasons: [{ code: 'delivery.guard.branchNotReady', jumpTo: 'workspace-settings' }],
+        reasons: [{ code: 'delivery.guard.branchNotReady', jumpTo: 'branch' }],
       },
     ])
   })

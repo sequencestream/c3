@@ -29,7 +29,7 @@ const PLANNED_PLAN: DeliveryTransitionPlan = {
       to: 'integrating',
       humanAction: true,
       guard: 'failed',
-      reasons: [{ code: 'delivery.guard.branchNotReady', jumpTo: 'workspace-settings' }],
+      reasons: [{ code: 'delivery.guard.branchNotReady', jumpTo: 'branch' }],
     },
   ],
 }
@@ -45,6 +45,7 @@ function mountDetail(
     props: {
       delivery: over.delivery ?? delivery(),
       plan: over.plan ?? PLANNED_PLAN,
+      branchInit: null,
       workspaceGitBranchMode: over.mode ?? 'worktree',
     },
   })
@@ -92,13 +93,71 @@ describe('DeliveryDetail', () => {
     expect(w.find('[data-testid="delivery-current-branch-note"]').exists()).toBe(false)
   })
 
-  it('jumps from the branch gap to the workspace settings', async () => {
+  it('jumps from the branch gap to the branch-init section (no workspace settings)', async () => {
     const w = mountDetail()
-    // The branchNotReady gap jump is "open workspace settings".
+    // The branchNotReady gap now jumps to the delivery's own branch-init section,
+    // not the workspace settings.
     const jumpBtns = w.findAll('.delivery-gap-jump')
     expect(jumpBtns.length).toBeGreaterThan(0)
     await jumpBtns[0].trigger('click')
-    expect(w.emitted('open-workspace-settings')).toBeTruthy()
+    await w.vm.$nextTick()
+    expect(w.emitted('open-workspace-settings')).toBeFalsy()
+    expect(w.find('[data-testid="delivery-branch-block"]').exists()).toBe(true)
+  })
+
+  it('renders the branch-init form (with the generated default name) when branch is not ready', () => {
+    const w = mountDetail()
+    expect(w.find('[data-testid="delivery-branch-block"]').exists()).toBe(true)
+    const input = w.find('[data-testid="delivery-branch-name-input"]')
+    expect(input.exists()).toBe(true)
+    expect((input.element as HTMLInputElement).value).toBe('delivery/d1-sprint-3')
+    expect(
+      w.find('[data-testid="delivery-branch-init-btn"]').attributes('disabled'),
+    ).toBeUndefined()
+  })
+
+  it('emits init-branch with mode + branch name', async () => {
+    const w = mountDetail()
+    const input = w.find('[data-testid="delivery-branch-name-input"]')
+    await input.setValue('release/2026-08')
+    await w.find('[data-testid="delivery-branch-mode-bind"]').trigger('click')
+    await w.find('[data-testid="delivery-branch-init-btn"]').trigger('click')
+    expect(w.emitted('init-branch')?.[0]).toEqual([{ mode: 'bind', branchName: 'release/2026-08' }])
+  })
+
+  it('shows the in-flight progress line while a branch-init run is active', () => {
+    const w = mountDetail()
+    // branchInit starts null → no progress line; re-mount with a live run.
+    expect(w.find('[data-testid="delivery-branch-init-progress"]').exists()).toBe(false)
+    const w2 = mount(DeliveryDetail, {
+      props: {
+        delivery: delivery(),
+        plan: PLANNED_PLAN,
+        branchInit: { deliveryId: 'd1', phase: 'pushing' },
+        workspaceGitBranchMode: 'worktree',
+      },
+    })
+    expect(w2.find('[data-testid="delivery-branch-init-progress"]').exists()).toBe(true)
+  })
+
+  it('does not render the branch-init form in current-branch mode', () => {
+    const w = mountDetail({ mode: 'current-branch' })
+    expect(w.find('[data-testid="delivery-branch-block"]').exists()).toBe(false)
+  })
+
+  it('renders the cleanup entry (with danger ConfirmDialog) only for a terminal delivery with a branch', async () => {
+    const w = mountDetail({
+      delivery: delivery({ status: 'delivered', branchName: 'delivery/abc' }),
+      plan: { targets: [] },
+    })
+    expect(w.find('[data-testid="delivery-branch-cleanup"]').exists()).toBe(true)
+    await w.find('[data-testid="delivery-branch-cleanup-btn"]').trigger('click')
+    const dialogs = w.findAllComponents(ConfirmDialog)
+    const open = dialogs.find((d) => d.props('open') === true)
+    expect(open).toBeTruthy()
+    open!.vm.$emit('confirm')
+    await w.vm.$nextTick()
+    expect(w.emitted('cleanup-branch')?.[0]).toEqual(['d1'])
   })
 
   it('emits cancel via the danger ConfirmDialog', async () => {

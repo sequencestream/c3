@@ -281,6 +281,70 @@ export function setDeliveryStatus(id: string, status: DeliveryStatus): Delivery 
   return getDelivery(id)
 }
 
+/**
+ * Whether another ACTIVE delivery (status not `delivered`/`cancelled`, and not
+ * `excludeId` — the caller's own retry) already holds `branchName` in this
+ * workspace. Backs the `delivery.branchConflict` verdict on `bind`; the unique
+ * partial index `idx_delivery_workspace_active_branch` is the DB-level backstop.
+ */
+export function activeDeliveryHoldsBranch(
+  workspacePath: string,
+  branchName: string,
+  excludeId: string,
+): boolean {
+  const d = db()
+  if (!d) return false
+  const proj = resolve(workspacePath)
+  const row = d.get<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM deliveries
+     WHERE workspace_path=? AND branch_name=? AND id<>?
+       AND status NOT IN ('delivered','cancelled')`,
+    proj,
+    branchName,
+    excludeId,
+  )
+  return (row?.c ?? 0) > 0
+}
+
+/**
+ * Record a delivery's branch as initialized — sets `branch_name` + `branch_ready`
+ * in one write. Called ONLY after the git side succeeded (a push on the create
+ * path, or a verified remote existence on the bind / orphan-idempotent paths);
+ * a push success whose DB write then fails is recovered by the next retry via
+ * the orphan-defense match. Returns null if unknown.
+ */
+export function setDeliveryBranch(id: string, branchName: string, ready: boolean): Delivery | null {
+  const d = requireDb()
+  const existing = d.get<DeliveryRow>('SELECT * FROM deliveries WHERE id=?', id)
+  if (!existing) return null
+  d.run(
+    'UPDATE deliveries SET branch_name=?, branch_ready=?, updated_at=? WHERE id=?',
+    branchName,
+    ready ? 1 : 0,
+    Date.now(),
+    id,
+  )
+  return getDelivery(id)
+}
+
+/**
+ * Clear a delivery's local branch reference (`branch_name` → NULL,
+ * `branch_ready` → 0) — the manual cleanup of a TERMINAL delivery. Never touches
+ * the remote branch; releasing the name also frees the active-branch uniqueness
+ * for a later delivery to reuse the same name. Returns null if unknown.
+ */
+export function clearDeliveryBranch(id: string): Delivery | null {
+  const d = requireDb()
+  const existing = d.get<DeliveryRow>('SELECT * FROM deliveries WHERE id=?', id)
+  if (!existing) return null
+  d.run(
+    'UPDATE deliveries SET branch_name=NULL, branch_ready=0, updated_at=? WHERE id=?',
+    Date.now(),
+    id,
+  )
+  return getDelivery(id)
+}
+
 /** Whether `status` is a delivery status the ledger accepts (wire closed-set). */
 export function isDeliveryStatus(status: string): status is DeliveryStatus {
   return (DELIVERY_STATUSES as readonly string[]).includes(status)

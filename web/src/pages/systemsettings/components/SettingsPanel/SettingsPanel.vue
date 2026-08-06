@@ -1355,12 +1355,12 @@ function selectAdmin(username: string) {
                   @change="onRenameGroup(g, $event)"
                   @keyup.enter="($event.target as HTMLInputElement).blur()"
                 />
-                <span
-                  v-if="g.vendor"
-                  class="agent-group-vendor"
-                  :style="{ color: vendorColor(g.vendor) }"
-                  >{{ VENDOR_LABELS[g.vendor] }}</span
-                >
+                <span v-if="g.vendor" class="agent-group-vendor">
+                  <i
+                    class="agent-group-vendor-dot"
+                    :style="{ backgroundColor: vendorColor(g.vendor) }"
+                  />{{ VENDOR_LABELS[g.vendor] }}
+                </span>
                 <span class="agent-group-meta">{{
                   g.isDefault
                     ? t('settings.agents.group.default.hint')

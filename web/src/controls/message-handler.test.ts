@@ -113,6 +113,12 @@ function makeCtx() {
   const vendorCapabilities = ref<unknown>(null)
   const vendorModes = ref<unknown>(null)
   const skillSupport = ref<unknown>(null)
+  // Delivery branch-init in-flight ref (cleared / advanced by the init frames).
+  const activeDeliveryBranchInit = ref<
+    import('@/lib/delivery-view').DeliveryBranchInitState | null
+  >(null)
+  const activeDelivery = ref<import('@ccc/shared/protocol').Delivery | null>(null)
+  const activeDeliveryId = ref<string | null>(null)
   const ctx = {
     settingsOpen,
     hostStatus,
@@ -123,6 +129,9 @@ function makeCtx() {
     vendorCapabilities,
     vendorModes,
     skillSupport,
+    activeDeliveryBranchInit,
+    activeDelivery,
+    activeDeliveryId,
     toast,
     intentActionError,
     intentActionErrorGuidance,
@@ -170,6 +179,9 @@ function makeCtx() {
     // The handler reads `ctx.t` at install time; a passthrough is enough here.
     t: (key: string) => key,
     add: vi.fn(),
+    // Some branches (delivery_transition_failed, delivery_branch_init_result) re-fetch
+    // the detail after adopting server truth; a recording stub suffices.
+    send: vi.fn(),
     // Post-switch Dashboard refresh hook — a no-op in these session/intent tests.
     maybeRefreshDashboard: vi.fn(),
     personalizedSettings: ref<import('@ccc/shared/protocol').PersonalizedSettings>({
@@ -206,6 +218,9 @@ function makeCtx() {
     persistViewMode,
     onSelectTab,
     switchToConsoleTab,
+    activeDeliveryBranchInit,
+    activeDelivery,
+    activeDeliveryId,
   }
 }
 
@@ -220,9 +235,14 @@ describe('personalized settings echo', () => {
     return map
   }
 
-  /** Fake root element so the theme the echo applies is observable. */
+  /** Fake root element so the theme / font scale the echo applies is observable. */
   function installDocument(): { dataset: Record<string, string>; style: Record<string, string> } {
-    const root = { dataset: {} as Record<string, string>, style: {} as Record<string, string> }
+    const style = Object.assign({} as Record<string, string>, {
+      setProperty(this: Record<string, string>, k: string, v: string): void {
+        this[k] = v
+      },
+    })
+    const root = { dataset: {} as Record<string, string>, style }
     ;(globalThis as unknown as { document: unknown }).document = { documentElement: root }
     return root
   }
@@ -242,7 +262,11 @@ describe('personalized settings echo', () => {
       scope: 'account',
     } as ServerToClient)
     expect(i18n.global.locale.value).toBe('zh')
-    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'zh', theme: 'dark' })
+    expect(r.ctx.personalizedSettings.value).toEqual({
+      uiLang: 'zh',
+      theme: 'dark',
+      fontScale: 100,
+    })
     // Mirrored so the signed-out state keeps the account's latest choice.
     expect(storage.get('c3.uiLang')).toBe('zh')
   })
@@ -259,7 +283,11 @@ describe('personalized settings echo', () => {
     expect(root.dataset.theme).toBe('light')
     expect(root.style.colorScheme).toBe('light')
     expect(storage.get('c3.theme')).toBe('light')
-    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'en', theme: 'light' })
+    expect(r.ctx.personalizedSettings.value).toEqual({
+      uiLang: 'en',
+      theme: 'light',
+      fontScale: 100,
+    })
   })
 
   it('corrects a browser cold-start theme back to the account value on reconnect', () => {
@@ -278,6 +306,58 @@ describe('personalized settings echo', () => {
     expect(storage.get('c3.theme')).toBe('dark')
   })
 
+  it('applies an account font scale, mirrors it, and puts it on screen', () => {
+    const storage = installStorage()
+    const root = installDocument()
+    const r = makeCtx()
+    r.ctx.handleMessage({
+      type: 'personalized_settings',
+      settings: { uiLang: 'en', theme: 'dark', fontScale: 115 },
+      scope: 'account',
+    } as ServerToClient)
+    expect(root.style['--c-font-scale']).toBe('1.15')
+    expect(storage.get('c3.fontScale')).toBe('115')
+    expect(r.ctx.personalizedSettings.value).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+      fontScale: 115,
+    })
+  })
+
+  it('corrects a browser cold-start scale back to the account value on reconnect', () => {
+    const storage = installStorage()
+    const root = installDocument()
+    const r = makeCtx()
+    // Cold start showed this browser's 120%; the account says 100%.
+    root.style['--c-font-scale'] = '1.2'
+    storage.set('c3.fontScale', '120')
+    r.ctx.handleMessage({
+      type: 'personalized_settings',
+      settings: { uiLang: 'en', theme: 'dark', fontScale: 100 },
+      scope: 'account',
+    } as ServerToClient)
+    expect(root.style['--c-font-scale']).toBe('1')
+    expect(storage.get('c3.fontScale')).toBe('100')
+  })
+
+  it('normalizes an out-of-range scale in the echo to 100 without touching the language', () => {
+    installStorage()
+    const root = installDocument()
+    const r = makeCtx()
+    r.ctx.handleMessage({
+      type: 'personalized_settings',
+      settings: { uiLang: 'zh', theme: 'dark', fontScale: 500 },
+      scope: 'local',
+    } as unknown as ServerToClient)
+    expect(r.ctx.personalizedSettings.value).toEqual({
+      uiLang: 'zh',
+      theme: 'dark',
+      fontScale: 100,
+    })
+    expect(root.style['--c-font-scale']).toBe('1')
+    expect(i18n.global.locale.value).toBe('zh')
+  })
+
   it('normalizes an unknown language in the echo to en', () => {
     installStorage()
     const r = makeCtx()
@@ -286,7 +366,11 @@ describe('personalized settings echo', () => {
       settings: { uiLang: 'klingon' },
       scope: 'local',
     } as unknown as ServerToClient)
-    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'en', theme: 'dark' })
+    expect(r.ctx.personalizedSettings.value).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+      fontScale: 100,
+    })
     expect(i18n.global.locale.value).toBe('en')
   })
 
@@ -299,7 +383,11 @@ describe('personalized settings echo', () => {
       settings: { uiLang: 'zh', theme: 'solarized' },
       scope: 'local',
     } as unknown as ServerToClient)
-    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'zh', theme: 'dark' })
+    expect(r.ctx.personalizedSettings.value).toEqual({
+      uiLang: 'zh',
+      theme: 'dark',
+      fontScale: 100,
+    })
     expect(root.dataset.theme).toBe('dark')
     expect(i18n.global.locale.value).toBe('zh')
   })
@@ -1677,5 +1765,106 @@ describe('create_pr progress routing', () => {
     result.ctx.handleMessage(error('intent.prCreateFailed', 'r-1'))
 
     expect(result.dispatchCreatePr).not.toHaveBeenCalled()
+  })
+})
+
+describe('delivery branch-init frames', () => {
+  it('advances the in-flight phase on progress frames', () => {
+    const result = makeCtx()
+    result.activeDeliveryBranchInit.value = { deliveryId: 'd1', phase: 'fetching' }
+
+    result.ctx.handleMessage({
+      type: 'delivery_branch_init_progress',
+      deliveryId: 'd1',
+      phase: 'pushing',
+    } as ServerToClient)
+
+    expect(result.activeDeliveryBranchInit.value).toEqual({ deliveryId: 'd1', phase: 'pushing' })
+  })
+
+  it('ignores a progress frame for a different delivery (superseded retry)', () => {
+    const result = makeCtx()
+    result.activeDeliveryBranchInit.value = { deliveryId: 'd1', phase: 'fetching' }
+
+    result.ctx.handleMessage({
+      type: 'delivery_branch_init_progress',
+      deliveryId: 'd2',
+      phase: 'binding',
+    } as ServerToClient)
+
+    expect(result.activeDeliveryBranchInit.value).toEqual({ deliveryId: 'd1', phase: 'fetching' })
+  })
+
+  it('clears the in-flight state, adopts the model and re-fetches the detail on success', () => {
+    const result = makeCtx()
+    result.activeDeliveryBranchInit.value = { deliveryId: 'd1', phase: 'pushing' }
+    result.ctx.handleMessage({
+      type: 'delivery_branch_init_result',
+      workspaceId: 'w1',
+      delivery: {
+        id: 'd1',
+        workspaceId: 'w1',
+        title: 'Sprint 3',
+        description: '',
+        status: 'planned',
+        startDate: null,
+        endDate: null,
+        branchName: 'delivery/d1-sprint-3',
+        baseBranch: 'main',
+        branchReady: true,
+        integration: { merged: 0, total: 0 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    } as ServerToClient)
+
+    expect(result.activeDeliveryBranchInit.value).toBeNull()
+    expect(result.activeDelivery.value?.branchReady).toBe(true)
+    expect(result.activeDelivery.value?.branchName).toBe('delivery/d1-sprint-3')
+  })
+
+  it('surfaces the behind-main warning as a toast', () => {
+    const result = makeCtx()
+    result.ctx.handleMessage({
+      type: 'delivery_branch_init_result',
+      workspaceId: 'w1',
+      warning: 'delivery.branchBehindMain',
+      delivery: {
+        id: 'd1',
+        workspaceId: 'w1',
+        title: 'Sprint 3',
+        description: '',
+        status: 'planned',
+        startDate: null,
+        endDate: null,
+        branchName: 'release/2026-08',
+        baseBranch: 'main',
+        branchReady: true,
+        integration: { merged: 0, total: 0 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    } as ServerToClient)
+
+    expect(result.showToast).toHaveBeenCalledWith('delivery.warning.branchBehindMain.label')
+  })
+
+  it('clears the in-flight state and toasts on an init error code', () => {
+    const result = makeCtx()
+    result.activeDeliveryBranchInit.value = { deliveryId: 'd1', phase: 'fetching' }
+
+    result.ctx.handleMessage(error('delivery.branchConflict'))
+
+    expect(result.activeDeliveryBranchInit.value).toBeNull()
+    expect(result.showToast).toHaveBeenCalled()
+  })
+
+  it('leaves the in-flight state alone for a non-init error', () => {
+    const result = makeCtx()
+    result.activeDeliveryBranchInit.value = { deliveryId: 'd1', phase: 'fetching' }
+
+    result.ctx.handleMessage(error('intent.prCreateFailed'))
+
+    expect(result.activeDeliveryBranchInit.value).toEqual({ deliveryId: 'd1', phase: 'fetching' })
   })
 })

@@ -14,12 +14,15 @@ import { join } from 'node:path'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import { upsertIntentPr, resetStoreForTests as resetIntentStoreForTests } from '../intents/store.js'
 import {
+  activeDeliveryHoldsBranch,
+  clearDeliveryBranch,
   createDelivery,
   getDelivery,
   integrationAggregate,
   isStoreAvailable,
   listDeliveries,
   resetStoreForTests,
+  setDeliveryBranch,
   setDeliveryStatus,
   updateDelivery,
 } from './store.js'
@@ -224,5 +227,56 @@ describe('integration aggregate — derived from intent_prs, never persisted', (
     upsertIntentPr({ intentId: 'i2', deliveryId: d1.id, number: '2', status: 'merged' })
     expect(integrationAggregate(d1.id)).toEqual({ total: 2, merged: 2 })
     expect(integrationAggregate(d2.id)).toEqual({ total: 1, merged: 1 })
+  })
+})
+
+describe('deliveries store — branch lifecycle writes', () => {
+  it('setDeliveryBranch records branch_name + branch_ready in one write', () => {
+    const { delivery } = seed(projA)
+    const updated = setDeliveryBranch(delivery.id, 'delivery/abc-sprint-3', true)
+    expect(updated).toMatchObject({
+      branchName: 'delivery/abc-sprint-3',
+      branchReady: true,
+      status: 'planned',
+    })
+    expect(getDelivery(delivery.id)!.branchReady).toBe(true)
+  })
+
+  it('setDeliveryBranch returns null on an unknown id', () => {
+    expect(setDeliveryBranch('missing', 'delivery/x', true)).toBeNull()
+  })
+
+  it('activeDeliveryHoldsBranch spots an active holder, ignores self and terminals', () => {
+    const a = seed(projA).delivery
+    const b = seed(projA, 'B').delivery
+    setDeliveryBranch(a.id, 'feature/x', true)
+
+    expect(activeDeliveryHoldsBranch(projA, 'feature/x', a.id)).toBe(false) // self excluded
+    expect(activeDeliveryHoldsBranch(projA, 'feature/x', b.id)).toBe(true) // other active holds it
+
+    // A terminal holder frees the slot.
+    setDeliveryStatus(a.id, 'delivered')
+    expect(activeDeliveryHoldsBranch(projA, 'feature/x', b.id)).toBe(false)
+    // Different workspace never conflicts.
+    const c = seed(projB, 'C').delivery
+    setDeliveryBranch(c.id, 'feature/x', true)
+    expect(activeDeliveryHoldsBranch(projA, 'feature/x', b.id)).toBe(false)
+  })
+
+  it('clearDeliveryBranch releases the name + readiness of a terminal delivery', () => {
+    const { delivery } = seed(projA)
+    setDeliveryBranch(delivery.id, 'delivery/old', true)
+    setDeliveryStatus(delivery.id, 'delivered')
+
+    const cleared = clearDeliveryBranch(delivery.id)
+    expect(cleared).toMatchObject({ branchName: null, branchReady: false, status: 'delivered' })
+
+    // The released name is now reusable by another ACTIVE delivery.
+    const b = seed(projA, 'B').delivery
+    expect(() => setDeliveryBranch(b.id, 'delivery/old', true)).not.toThrow()
+  })
+
+  it('clearDeliveryBranch returns null on an unknown id', () => {
+    expect(clearDeliveryBranch('missing')).toBeNull()
   })
 })

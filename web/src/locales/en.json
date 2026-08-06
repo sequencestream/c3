@@ -759,6 +759,13 @@
       "light": {
         "label": "Light"
       }
+    },
+    "fontScale": {
+      "title": {
+        "label": "Font size"
+      },
+      "hint": "The font size of the c3 web console, 70%–120% of the built-in size. Changes apply immediately without a reload. When you are signed in the choice is saved to your account; otherwise it is kept in this browser.",
+      "percentage": "{value}%"
     }
   },
   "intent": {
@@ -2137,7 +2144,11 @@
       "updateFailed": "Failed to update delivery: {detail}.",
       "branchConflict": "Another active delivery already uses branch \"{branch}\".",
       "invalidStatusTransition": "Cannot move this delivery from {from} to {to}.",
-      "transitionGuardFailed": "The status change is blocked by unmet requirements."
+      "transitionGuardFailed": "The status change is blocked by unmet requirements.",
+      "multiRepoUnsupported": "Multi-repo workspaces are not supported for deliveries.",
+      "branchNotFound": "Remote branch \"{branch}\" does not exist.",
+      "initFailed": "Branch initialization failed: {detail}.",
+      "cleanupForbidden": "Only a delivered or cancelled delivery can clean up its branch."
     }
   },
   "statusIndicator": {
@@ -2463,6 +2474,9 @@
         "submit": {
           "label": "Create"
         }
+      },
+      "jumpToBranch": {
+        "label": "Initialize delivery branch"
       }
     },
     "guard": {
@@ -2474,6 +2488,62 @@
       "systemOnly": "This step is performed by the system.",
       "humanOnly": "This step can only be performed by a human.",
       "mergeConflictReasonRequired": "A merge-conflict reason is required."
+    },
+    "branch": {
+      "init": {
+        "title": {
+          "label": "Delivery branch"
+        },
+        "create": {
+          "label": "Create"
+        },
+        "bind": {
+          "label": "Bind existing"
+        },
+        "branchLabel": {
+          "label": "Branch name"
+        },
+        "branchPlaceholder": {
+          "label": "e.g. delivery/ab12cd34-sprint-3"
+        },
+        "submit": {
+          "label": "Initialize branch"
+        },
+        "progress": {
+          "fetching": {
+            "label": "Fetching base branch…"
+          },
+          "creating": {
+            "label": "Creating branch…"
+          },
+          "pushing": {
+            "label": "Pushing branch…"
+          },
+          "binding": {
+            "label": "Binding branch…"
+          }
+        }
+      },
+      "ready": {
+        "label": "Branch ready: {branch}"
+      },
+      "cleanup": {
+        "label": "Clean up branch"
+      },
+      "cleanupTitle": {
+        "label": "Clean up branch?"
+      },
+      "cleanupBody": {
+        "label": "Delete the local reference of \"{branch}\"? The remote branch is kept."
+      },
+      "cleanupResult": {
+        "label": "Branch reference cleaned up."
+      }
+    },
+    "warning": {
+      "branchBehindMain": {
+        "label": "The bound branch is behind the baseline."
+      }
     }
   },
   "skillApproval": {

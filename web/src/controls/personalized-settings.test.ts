@@ -16,9 +16,14 @@ function installStorage(): Map<string, string> {
   return map
 }
 
-/** Same for the root element the theme runtime writes. */
+/** Same for the root element the theme runtime writes (with the font-scale API too). */
 function installDocument(): { dataset: Record<string, string>; style: Record<string, string> } {
-  const root = { dataset: {} as Record<string, string>, style: {} as Record<string, string> }
+  const style = Object.assign({} as Record<string, string>, {
+    setProperty(this: Record<string, string>, k: string, v: string): void {
+      this[k] = v
+    },
+  })
+  const root = { dataset: {} as Record<string, string>, style }
   ;(globalThis as unknown as { document: unknown }).document = { documentElement: root }
   return root
 }
@@ -199,6 +204,60 @@ describe('setTheme', () => {
   it('never sends a system-settings save (the theme is a personal preference)', () => {
     const { ctx, sent } = makeCtx()
     ctx.setTheme('light')
+    expect(sent.some((m) => m.type === 'save_settings')).toBe(false)
+  })
+})
+
+describe('setFontScale', () => {
+  it('applies the scale, records it in this browser, and saves it for the identity', () => {
+    const { ctx, sent } = makeCtx()
+    ctx.setFontScale(115)
+    expect(root.style['--c-font-scale']).toBe('1.15')
+    expect(storage.get('c3.fontScale')).toBe('115')
+    expect(ctx.personalizedSettings.value).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+      fontScale: 115,
+    })
+    // The whole record goes out, so changing the scale never drops language/theme.
+    expect(sent).toEqual([
+      {
+        type: 'save_personalized_settings',
+        settings: { uiLang: 'en', theme: 'dark', fontScale: 115 },
+      },
+    ])
+  })
+
+  it('is a no-op when the scale is already active', () => {
+    const { ctx, sent } = makeCtx()
+    ctx.setFontScale(100)
+    expect(sent).toEqual([])
+  })
+
+  it('rolls the CSS variable, the browser record and the snapshot back on no connection', () => {
+    const { ctx, sent, showToast } = makeCtx({ connected: false })
+    ctx.setFontScale(110)
+    expect(root.style['--c-font-scale']).toBe('1')
+    expect(storage.get('c3.fontScale')).toBe('100')
+    expect(ctx.personalizedSettings.value).toEqual({ uiLang: 'en', theme: 'dark' })
+    expect(sent).toEqual([])
+    expect(showToast).toHaveBeenCalledWith('error.personalizedSetting.saveFailed')
+  })
+
+  it('leaves the display language and theme alone', () => {
+    const { ctx } = makeCtx()
+    ctx.setLocale('zh')
+    ctx.setTheme('light')
+    ctx.setFontScale(85)
+    expect(i18n.global.locale.value).toBe('zh')
+    expect(root.dataset.theme).toBe('light')
+    expect(storage.get('c3.uiLang')).toBe('zh')
+    expect(storage.get('c3.theme')).toBe('light')
+  })
+
+  it('never sends a system-settings save (the scale is a personal preference)', () => {
+    const { ctx, sent } = makeCtx()
+    ctx.setFontScale(120)
     expect(sent.some((m) => m.type === 'save_settings')).toBe(false)
   })
 })

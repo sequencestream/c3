@@ -760,6 +760,13 @@
       "light": {
         "label": "ライト"
       }
+    },
+    "fontScale": {
+      "title": {
+        "label": "フォントサイズ"
+      },
+      "hint": "c3 Web コンソールのフォントサイズです。既定サイズの 70%〜120%。変更は再読み込みなしで即座に適用されます。サインイン中はアカウントに保存され、そうでない場合はこのブラウザーに保存されます。",
+      "percentage": "{value}%"
     }
   },
   "intent": {
@@ -2138,7 +2145,11 @@
       "updateFailed": "納品の更新に失敗しました: {detail}。",
       "branchConflict": "別のアクティブな納品がすでにブランチ \"{branch}\" を使用しています。",
       "invalidStatusTransition": "この納品を {from} から {to} へ遷移できません。",
-      "transitionGuardFailed": "状態変更は未達のガード条件によりブロックされました。"
+      "transitionGuardFailed": "状態変更は未達のガード条件によりブロックされました。",
+      "multiRepoUnsupported": "マルチリポジトリのワークスペースは配信をサポートしません。",
+      "branchNotFound": "リモートにブランチ \"{branch}\" が存在しません。",
+      "initFailed": "ブランチ初期化に失敗しました: {detail}。",
+      "cleanupForbidden": "配信済みまたはキャンセル済みの配信のみブランチをクリーンアップできます。"
     }
   },
   "statusIndicator": {
@@ -2464,6 +2475,9 @@
         "submit": {
           "label": "作成"
         }
+      },
+      "jumpToBranch": {
+        "label": "配信ブランチを初期化"
       }
     },
     "guard": {
@@ -2475,6 +2489,62 @@
       "systemOnly": "このステップはシステムが実行します。",
       "humanOnly": "このステップは人間のみが実行できます。",
       "mergeConflictReasonRequired": "マージ競合の理由が必要です。"
+    },
+    "branch": {
+      "init": {
+        "title": {
+          "label": "配信ブランチ"
+        },
+        "create": {
+          "label": "新規作成"
+        },
+        "bind": {
+          "label": "既存にバインド"
+        },
+        "branchLabel": {
+          "label": "ブランチ名"
+        },
+        "branchPlaceholder": {
+          "label": "例: delivery/ab12cd34-sprint-3"
+        },
+        "submit": {
+          "label": "ブランチを初期化"
+        },
+        "progress": {
+          "fetching": {
+            "label": "ベースブランチを取得中…"
+          },
+          "creating": {
+            "label": "ブランチを作成中…"
+          },
+          "pushing": {
+            "label": "ブランチをプッシュ中…"
+          },
+          "binding": {
+            "label": "ブランチをバインド中…"
+          }
+        }
+      },
+      "ready": {
+        "label": "ブランチ準備完了: {branch}"
+      },
+      "cleanup": {
+        "label": "ブランチをクリーンアップ"
+      },
+      "cleanupTitle": {
+        "label": "ブランチをクリーンアップしますか?"
+      },
+      "cleanupBody": {
+        "label": "ローカルブランチ参照 \"{branch}\" を削除しますか?リモートブランチは保持されます。"
+      },
+      "cleanupResult": {
+        "label": "ブランチ参照をクリーンアップしました。"
+      }
+    },
+    "warning": {
+      "branchBehindMain": {
+        "label": "バインドしたブランチはベースより遅れています。"
+      }
     }
   },
   "skillApproval": {

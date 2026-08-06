@@ -7,15 +7,20 @@
  * 动作,文案先行)。下方:概览元信息(状态/交付分支/基线分支/起止日期/交付 PR 链接/
  * 创建与更新时间/描述)与内联编辑表单。不设 PR、设置或分支独立 Tab。
  */
-import { ref } from 'vue'
-import { useTypedI18n } from '@/i18n'
+import { computed, ref, watch } from 'vue'
+import { useTypedI18n, type LocaleKey } from '@/i18n'
 import type { Delivery, DeliveryStatus, DeliveryTransitionPlan } from '@ccc/shared/protocol'
 import { formatDate } from '@/lib/intent-list-view'
 import {
   DELIVERY_STATUS_LABEL_KEYS,
+  defaultDeliveryBranchName,
   epochMsToCalendarDate,
   calendarDateToEpochMs,
+  isDeliveryTerminal,
+  type DeliveryBranchInitPhase,
+  type DeliveryBranchInitState,
 } from '@/lib/delivery-view'
+import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import DeliveryStatusSelector from './DeliveryStatusSelector.vue'
 
 const { t, locale } = useTypedI18n()
@@ -23,6 +28,7 @@ const { t, locale } = useTypedI18n()
 const props = defineProps<{
   delivery: Delivery
   plan: DeliveryTransitionPlan
+  branchInit: DeliveryBranchInitState | null
   workspaceGitBranchMode: 'worktree' | 'current-branch'
 }>()
 
@@ -37,8 +43,69 @@ const emit = defineEmits<{
     },
   ]
   transition: [to: DeliveryStatus, confirmVerified: boolean]
-  jump: [target: 'associated-intents' | 'workspace-settings']
+  'init-branch': [payload: { mode: 'create' | 'bind'; branchName: string }]
+  'cleanup-branch': [deliveryId: string]
+  jump: [target: 'associated-intents' | 'workspace-settings' | 'branch']
 }>()
+
+// ---- Branch init form ----
+const mode = ref<'create' | 'bind'>('create')
+const branchName = ref('')
+const branchInputRef = ref<HTMLInputElement | null>(null)
+const cleanupOpen = ref(false)
+
+/** Reset the editable branch-name default when opening a different delivery. */
+watch(
+  () => props.delivery.id,
+  () => {
+    if (!props.delivery.branchReady) {
+      branchName.value = defaultDeliveryBranchName(props.delivery.id, props.delivery.title)
+    }
+  },
+  { immediate: true },
+)
+
+const isTerminal = computed(() => isDeliveryTerminal(props.delivery.status))
+
+/** Whether a branch-init run is in flight FOR THIS delivery. */
+const inFlight = computed(
+  () => props.branchInit !== null && props.branchInit.deliveryId === props.delivery.id,
+)
+
+const BRANCH_INIT_PHASE_KEYS: Record<DeliveryBranchInitPhase, LocaleKey> = {
+  fetching: 'delivery.branch.init.progress.fetching.label',
+  creating: 'delivery.branch.init.progress.creating.label',
+  pushing: 'delivery.branch.init.progress.pushing.label',
+  binding: 'delivery.branch.init.progress.binding.label',
+}
+
+const initProgressLabel = computed(() =>
+  props.branchInit ? t(BRANCH_INIT_PHASE_KEYS[props.branchInit.phase]) : '',
+)
+
+function doInit(): void {
+  const name = branchName.value.trim()
+  if (!name || inFlight.value) return
+  emit('init-branch', { mode: mode.value, branchName: name })
+}
+
+function doCleanup(): void {
+  cleanupOpen.value = false
+  emit('cleanup-branch', props.delivery.id)
+}
+
+/** Scroll the branch section into view + focus the input (jump from the gap). */
+function focusBranchInit(): void {
+  const input = branchInputRef.value
+  if (!input) return
+  // `scrollIntoView` is absent in some test DOMs — focus alone still works.
+  if (typeof input.scrollIntoView === 'function') {
+    input.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+  input.focus()
+}
+
+defineExpose({ focusBranchInit })
 
 // ---- Inline edit form ----
 const editing = ref(false)
@@ -67,7 +134,7 @@ function saveEdit(): void {
   editing.value = false
 }
 
-function onJump(target: 'associated-intents' | 'workspace-settings'): void {
+function onJump(target: 'associated-intents' | 'workspace-settings' | 'branch'): void {
   emit('jump', target)
 }
 
@@ -95,6 +162,103 @@ function statusLabel(status: DeliveryStatus): string {
       @transition="(to, confirm) => emit('transition', to, confirm)"
       @jump="onJump"
     />
+
+    <!-- 交付分支区(仅 worktree 模式):未就绪 → 初始化表单;就绪 → 分支名;
+         终态 → 仅手动清理入口(需二次确认,只删本地引用,远端分支永不自动删)。 -->
+    <div
+      v-if="props.workspaceGitBranchMode === 'worktree'"
+      class="delivery-branch-block"
+      data-testid="delivery-branch-block"
+    >
+      <template v-if="!props.delivery.branchReady && !isTerminal">
+        <p class="delivery-branch-title">{{ t('delivery.branch.init.title.label') }}</p>
+        <div class="delivery-branch-mode" data-testid="delivery-branch-mode">
+          <button
+            type="button"
+            class="delivery-branch-mode-btn"
+            :class="{ active: mode === 'create' }"
+            :disabled="inFlight"
+            data-testid="delivery-branch-mode-create"
+            @click="mode = 'create'"
+          >
+            {{ t('delivery.branch.init.create.label') }}
+          </button>
+          <button
+            type="button"
+            class="delivery-branch-mode-btn"
+            :class="{ active: mode === 'bind' }"
+            :disabled="inFlight"
+            data-testid="delivery-branch-mode-bind"
+            @click="mode = 'bind'"
+          >
+            {{ t('delivery.branch.init.bind.label') }}
+          </button>
+        </div>
+        <label class="delivery-branch-field">
+          <span>{{ t('delivery.branch.init.branchLabel.label') }}</span>
+          <input
+            ref="branchInputRef"
+            v-model="branchName"
+            type="text"
+            :disabled="inFlight"
+            data-testid="delivery-branch-name-input"
+            :placeholder="t('delivery.branch.init.branchPlaceholder.label')"
+          />
+        </label>
+        <div class="delivery-branch-actions">
+          <button
+            type="button"
+            class="delivery-branch-init-btn"
+            :disabled="!branchName.trim() || inFlight"
+            data-testid="delivery-branch-init-btn"
+            @click="doInit"
+          >
+            {{ t('delivery.branch.init.submit.label') }}
+          </button>
+          <p
+            v-if="inFlight"
+            class="delivery-branch-progress"
+            data-testid="delivery-branch-init-progress"
+          >
+            {{ initProgressLabel }}
+          </p>
+        </div>
+      </template>
+      <p
+        v-else-if="props.delivery.branchReady"
+        class="delivery-branch-ready"
+        data-testid="delivery-branch-ready"
+      >
+        {{ t('delivery.branch.ready.label', { branch: props.delivery.branchName ?? '' }) }}
+      </p>
+      <div
+        v-else-if="isTerminal && props.delivery.branchName"
+        class="delivery-branch-cleanup"
+        data-testid="delivery-branch-cleanup"
+      >
+        <span class="delivery-branch-cleanup-name">{{ props.delivery.branchName }}</span>
+        <button
+          type="button"
+          class="delivery-branch-cleanup-btn"
+          data-testid="delivery-branch-cleanup-btn"
+          @click="cleanupOpen = true"
+        >
+          {{ t('delivery.branch.cleanup.label') }}
+        </button>
+        <ConfirmDialog
+          :open="cleanupOpen"
+          :title="t('delivery.branch.cleanupTitle.label')"
+          :message="
+            t('delivery.branch.cleanupBody.label', { branch: props.delivery.branchName ?? '' })
+          "
+          :confirm-label="t('delivery.branch.cleanup.label')"
+          :cancel-label="t('common.action.cancel.label')"
+          danger
+          @confirm="doCleanup"
+          @cancel="cleanupOpen = false"
+        />
+      </div>
+    </div>
 
     <dl class="delivery-meta" data-testid="delivery-meta">
       <div class="delivery-meta-row" data-testid="delivery-meta-status">
@@ -224,6 +388,109 @@ function statusLabel(status: DeliveryStatus): string {
   background: var(--c-card);
   border: 1px solid var(--c-border);
   border-radius: var(--radius-sm);
+}
+.delivery-branch-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+}
+.delivery-branch-title {
+  margin: 0;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  color: var(--c-text-muted);
+}
+.delivery-branch-mode {
+  display: flex;
+  gap: var(--sp-1);
+}
+.delivery-branch-mode-btn {
+  padding: var(--sp-1) var(--sp-2);
+  font: inherit;
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.delivery-branch-mode-btn.active {
+  color: var(--c-primary-text);
+  border-color: var(--c-primary);
+}
+.delivery-branch-mode-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.delivery-branch-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+.delivery-branch-field input {
+  font: inherit;
+  font-size: var(--fs-body);
+  color: var(--c-text);
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-2);
+}
+.delivery-branch-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.delivery-branch-init-btn {
+  padding: var(--sp-1) var(--sp-3);
+  font: inherit;
+  color: #fff;
+  background: var(--c-primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.delivery-branch-init-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.delivery-branch-progress {
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+.delivery-branch-ready {
+  margin: 0;
+  font-size: var(--fs-body);
+  color: var(--c-text);
+}
+.delivery-branch-cleanup {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.delivery-branch-cleanup-name {
+  font-size: var(--fs-body);
+  color: var(--c-text);
+  word-break: break-all;
+}
+.delivery-branch-cleanup-btn {
+  flex-shrink: 0;
+  padding: var(--sp-1) var(--sp-2);
+  font: inherit;
+  font-size: var(--fs-caption);
+  color: var(--c-danger-text, #c53030);
+  background: transparent;
+  border: 1px solid var(--c-danger, #e53e3e);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
 }
 .delivery-meta {
   margin: 0;

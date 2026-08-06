@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { fakeIntentPrs } from '@/lib/intent-pr-fixture'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
@@ -60,7 +61,7 @@ describe('IntentEngineeringProgress.vue', () => {
 
   it('renders the PR stage with the closed state and label in worktree mode', () => {
     const w = mountProgress(
-      { status: 'done', prId: '42', prStatus: 'closed' },
+      { status: 'done', prs: fakeIntentPrs('closed') },
       { sddEnabled: true, workspaceGitBranchMode: 'worktree' },
     )
     const s = stages(w)
@@ -74,7 +75,7 @@ describe('IntentEngineeringProgress.vue', () => {
 
   it('appends the PR stage reactively when the branch mode resolves to worktree', async () => {
     const w = mountProgress(
-      { status: 'in_progress', prId: '42', prStatus: 'reviewing' },
+      { status: 'in_progress', prs: fakeIntentPrs('reviewing') },
       { sddEnabled: true },
     )
     expect(stages(w).map((x) => x.attributes('data-stage'))).toEqual(['intent', 'spec', 'work'])
@@ -87,7 +88,7 @@ describe('IntentEngineeringProgress.vue', () => {
 
   it('keeps the PR stage hidden in current-branch mode', async () => {
     const w = mountProgress(
-      { status: 'in_progress', prId: '42', prStatus: 'reviewing' },
+      { status: 'in_progress', prs: fakeIntentPrs('reviewing') },
       { sddEnabled: true },
     )
     await w.setProps({ workspaceGitBranchMode: 'current-branch' })

@@ -72,8 +72,7 @@ import {
   setIntentSessionId,
   setLastWorkSession,
   setLatestCommitHash,
-  setPrInfo,
-  setPrStatus,
+  upsertIntentPr,
   safeInsertIntentLog,
   updateIntentSession,
   updateStatus,
@@ -211,7 +210,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     getIntent,
     setBranchName,
     setLatestCommitHash,
-    setPrInfo,
+    upsertIntentPr,
     safeInsertIntentLog,
     cancelEventsForIntent: (intentId) => {
       if (isWaitUserEventsStoreAvailable()) cancelBySessionId(intentId)
@@ -614,7 +613,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     handlePrUpdateEvent(envelope, {
       getIntent,
       pathToId,
-      setPrStatus,
+      upsertIntentPr,
       safeInsertIntentLog,
       broadcastIntents,
     })

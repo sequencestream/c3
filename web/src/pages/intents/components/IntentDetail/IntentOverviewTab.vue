@@ -61,10 +61,11 @@ const titleById = computed<Record<string, string>>(() => {
 })
 
 // ── PR 同步(元信息 PR 行) ──────────────────────────────────────────────────
-const canSyncPrStatus = computed<boolean>(() => {
-  const r = props.intent
-  return r.status === 'done' && !!r.prId && r.prStatus === 'reviewing'
-})
+// 只看"有没有处于 reviewing 的 PR 行",不再要求意图本身是 done——与服务端脱钩后的
+// 同步守卫对齐,否则会把一条服务端本可同步的 PR 的按钮灰掉。
+const canSyncPrStatus = computed<boolean>(() =>
+  props.intent.prs.some((pr) => pr.status === 'reviewing'),
+)
 const currentPrSync = computed(() => props.intentPrSync?.[props.intent.id])
 const prSyncInFlight = computed<boolean>(() => currentPrSync.value?.state === 'syncing')
 function syncPrStatus(): void {
@@ -219,24 +220,23 @@ watch(
         {{ t('intent.meta.branch.label') }} {{ intent.branchName
         }}<span v-if="intent.latestCommitHash"> · {{ intent.latestCommitHash.slice(0, 7) }}</span>
       </span>
-      <span v-if="intent.prId" class="req-meta-item">
+      <span v-if="intent.prs.length > 0" class="req-meta-item">
         {{ t('intent.meta.pr.label') }}
-        <a
-          v-if="intent.prUrl"
-          class="req-meta-pr-link"
-          :href="intent.prUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          :title="t('intent.action.pr.open.tooltip')"
-          >#{{ intent.prId }}</a
-        >
-        <template v-else>#{{ intent.prId }}</template>
-        <span
-          v-if="intent.prStatus"
-          class="req-pr-status"
-          :class="'req-pr-status--' + intent.prStatus"
-          >{{ prStatusLabel(intent.prStatus) }}</span
-        >
+        <template v-for="pr in intent.prs" :key="pr.id">
+          <a
+            v-if="pr.url"
+            class="req-meta-pr-link"
+            :href="pr.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            :title="t('intent.action.pr.open.tooltip')"
+            >#{{ pr.number }}</a
+          >
+          <template v-else>#{{ pr.number }}</template>
+          <span class="req-pr-status" :class="'req-pr-status--' + pr.status">{{
+            prStatusLabel(pr.status)
+          }}</span>
+        </template>
         <button
           v-if="canSyncPrStatus"
           type="button"

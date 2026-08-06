@@ -1,4 +1,5 @@
 import type { GitBranchMode, Intent, SpecLaunchStage } from '@ccc/shared/protocol'
+import { deriveIntentPrAggregate } from '@ccc/shared'
 import { getDefaultMainBranch, getGitBranchMode } from '../../kernel/config/index.js'
 import { listIntents } from './store.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
@@ -31,7 +32,9 @@ export function findDependencyBlockingMainline(
     .find((dep): dep is Intent => {
       if (!dep) return false
       if (dep.status !== 'done') return true
-      if (dep.prStatus === 'merged') return false
+      // The dependency's AGGREGATE PR status — `merged` only when nothing it owns
+      // is still unsettled, so a second, still-open PR keeps the gate closed.
+      if (deriveIntentPrAggregate(dep.prs) === 'merged') return false
       const branch = normalizeBranchName(dep.branchName)
       if (branch === null) return false
       return mainBranch === null || branch !== mainBranch

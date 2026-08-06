@@ -26,4 +26,4 @@
 - [intent-management-models.md](intent-management-models.md) —— Intent / Intent Dependency /
   Communication Session / Automation Status 实体
 - [intent-management-pr-readpoints.md](intent-management-pr-readpoints.md) —— PR 三字段
-  (`prId`/`prUrl`/`prStatus`)当前读写点清单
+  当前读写点清单

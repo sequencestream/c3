@@ -33,7 +33,7 @@ import {
   insertIntents,
   listIntentLogs,
   resetStoreForTests,
-  setPrInfo,
+  upsertIntentPr,
   updateStatus,
 } from './store.js'
 import { updateIntentStatus } from './index.js'
@@ -109,7 +109,14 @@ describe('updateIntentStatus — cancel closes the associated PR', () => {
       { title: 'Has PR', shortEnTitle: 'has-pr', content: '', priority: 'P1' },
     ])
     updateStatus(r.id, 'in_progress')
-    setPrInfo(r.id, '77', 'reviewing', 'https://github.com/o/r/pull/77')
+    upsertIntentPr({
+      intentId: r.id,
+      number: '77',
+      status: 'reviewing',
+      forge: 'github',
+      repo: 'o/r',
+      url: 'https://github.com/o/r/pull/77',
+    })
     vi.mocked(closeForgePr).mockResolvedValue({ ok: true })
 
     const { conn, sent } = fakeConn({ subject: 'bob' })
@@ -120,11 +127,13 @@ describe('updateIntentStatus — cancel closes the associated PR', () => {
       status: 'cancelled',
     })
 
-    expect(vi.mocked(closeForgePr)).toHaveBeenCalledWith(proj, '77')
+    expect(vi.mocked(closeForgePr)).toHaveBeenCalledWith(proj, '77', 'github')
     const after = getIntent(r.id)
     expect(after?.status).toBe('cancelled')
-    expect(after?.prStatus).toBe('closed')
-    expect(after?.prUrl).toBe('https://github.com/o/r/pull/77')
+    expect(after?.prs[0]).toMatchObject({
+      status: 'closed',
+      url: 'https://github.com/o/r/pull/77',
+    })
     // Two status_changed rows: the setup todo→in_progress and this cancel.
     expect(logsOf(r.id, 'status_changed')).toMatchObject([
       { summary: '状态变更: in_progress → cancelled', actor: 'bob' },
@@ -142,7 +151,14 @@ describe('updateIntentStatus — cancel closes the associated PR', () => {
       { title: 'PR wont close', shortEnTitle: 'pr-stuck', content: '', priority: 'P1' },
     ])
     updateStatus(r.id, 'in_progress')
-    setPrInfo(r.id, '88', 'reviewing', 'https://github.com/o/r/pull/88')
+    upsertIntentPr({
+      intentId: r.id,
+      number: '88',
+      status: 'reviewing',
+      forge: 'github',
+      repo: 'o/r',
+      url: 'https://github.com/o/r/pull/88',
+    })
     vi.mocked(closeForgePr).mockResolvedValue({ ok: false, error: 'pull request is not open' })
 
     const { conn, sent } = fakeConn()
@@ -155,14 +171,17 @@ describe('updateIntentStatus — cancel closes the associated PR', () => {
 
     const after = getIntent(r.id)
     expect(after?.status).toBe('in_progress')
-    expect(after?.prStatus).toBe('reviewing')
+    expect(after?.prs[0].status).toBe('reviewing')
     expect(logsOf(r.id, 'status_changed')).toHaveLength(1) // only the in_progress transition
     expect(logsOf(r.id, 'pr_closed')).toHaveLength(0)
     expect(broadcastIntents).not.toHaveBeenCalled()
     expect(sent).toMatchObject([
       {
         type: 'error',
-        error: { code: 'intent.prCloseFailed', params: { detail: 'pull request is not open' } },
+        error: {
+          code: 'intent.prCloseFailed',
+          params: { detail: '#88: pull request is not open' },
+        },
       },
     ])
   })
@@ -186,5 +205,91 @@ describe('updateIntentStatus — cancel closes the associated PR', () => {
     expect(logsOf(r.id, 'pr_closed')).toHaveLength(0)
     expect(broadcastIntents).toHaveBeenCalledTimes(1)
     expect(sent.some((m) => m.type === 'error')).toBe(false)
+  })
+})
+
+/**
+ * Multi-PR cancellation. `intent_prs` allows only one row per (intent, delivery),
+ * so a second PR is attached with an explicit `deliveryId` — the shape the
+ * delivery capability will produce, exercised here purely to prove the cancel path
+ * closes ALL active PRs and refuses to proceed when any close fails.
+ */
+describe('updateIntentStatus — cancel with several active PRs', () => {
+  function seedTwoPrs(intentId: string): void {
+    upsertIntentPr({
+      intentId,
+      number: '101',
+      status: 'reviewing',
+      forge: 'github',
+      repo: 'o/r',
+      url: 'https://github.com/o/r/pull/101',
+    })
+    upsertIntentPr({
+      intentId,
+      deliveryId: 'delivery-b',
+      number: '102',
+      status: 'reviewing',
+      forge: 'github',
+      repo: 'o/r',
+      url: 'https://github.com/o/r/pull/102',
+    })
+  }
+
+  it('closes every active PR before allowing the transition', async () => {
+    const [r] = insertIntents(proj, [
+      { title: 'Two PRs', shortEnTitle: 'two-prs', content: '', priority: 'P1' },
+    ])
+    updateStatus(r.id, 'in_progress')
+    seedTwoPrs(r.id)
+    vi.mocked(closeForgePr).mockResolvedValue({ ok: true })
+
+    const { conn, sent } = fakeConn()
+    const { ctx } = fakeCtx()
+    await updateIntentStatus(ctx, conn, {
+      type: 'update_intent_status',
+      intentId: r.id,
+      status: 'cancelled',
+    })
+
+    expect(vi.mocked(closeForgePr)).toHaveBeenCalledTimes(2)
+    const after = getIntent(r.id)
+    expect(after?.status).toBe('cancelled')
+    expect(after?.prs.map((pr) => pr.status)).toEqual(['closed', 'closed'])
+    expect(logsOf(r.id, 'pr_closed')).toHaveLength(2)
+    expect(sent.some((m) => m.type === 'error')).toBe(false)
+  })
+
+  it('one close failure blocks the whole cancellation and names the failing PR', async () => {
+    const [r] = insertIntents(proj, [
+      { title: 'One stuck', shortEnTitle: 'one-stuck', content: '', priority: 'P1' },
+    ])
+    updateStatus(r.id, 'in_progress')
+    seedTwoPrs(r.id)
+    vi.mocked(closeForgePr).mockImplementation(async (_cwd, prId) =>
+      prId === '102' ? { ok: false, error: 'merge in progress' } : { ok: true },
+    )
+
+    const { conn, sent } = fakeConn()
+    const { ctx, broadcastIntents } = fakeCtx()
+    await updateIntentStatus(ctx, conn, {
+      type: 'update_intent_status',
+      intentId: r.id,
+      status: 'cancelled',
+    })
+
+    const after = getIntent(r.id)
+    // Status untouched: the ledger never claims a cancellation the forge refused.
+    expect(after?.status).toBe('in_progress')
+    expect(broadcastIntents).not.toHaveBeenCalled()
+    expect(sent).toMatchObject([
+      {
+        type: 'error',
+        error: { code: 'intent.prCloseFailed', params: { detail: '#102: merge in progress' } },
+      },
+    ])
+    // The PR that DID close keeps `closed` — closing is idempotent, so a retry is
+    // not derailed by the one that already succeeded.
+    const byNumber = Object.fromEntries(after!.prs.map((pr) => [pr.number, pr.status]))
+    expect(byNumber).toEqual({ '101': 'closed', '102': 'reviewing' })
   })
 })

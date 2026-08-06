@@ -276,7 +276,7 @@ c3 **不会**创建、评审、合并、关闭或评论一个 pull request。模
 来**opt-in** 这个事件源(operation 多选落在 `metadata.operation` 的 `OR` 条件、result 落在 `statuses`);
 选中它就是显式的订阅,不选它的自动化永远不会被 PR 事件触发。这里的
 `update` 操作(已有 PR 被打回后修改重提/重开)是一个普通的可过滤操作;**独立地**,一个
-`update`/`success` 事件也会被 intent 域消费,用于把一个被拒绝/失败/关闭的 intent 的 `prStatus`
+`update`/`success` 事件也会被 intent 域消费,用于把一条被拒绝/失败/关闭的 PR 行的状态
 重置回 `reviewing`——那个消费者与自动化分发是分离的(见 intent-management 规格),因此一个没有
 自动化的工作区仍然会得到状态复位。
 

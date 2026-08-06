@@ -13,6 +13,7 @@ import type {
   IntentRunStatus,
   IntentStatus,
 } from '@ccc/shared/protocol'
+import { activeIntentPrs, deriveIntentPrAggregate } from '@ccc/shared'
 import { DATE_FORMATS, type DateStyleName } from './datetime-formats'
 
 /** 状态中文标签。状态徽标(.req-status)直接用状态值作为 CSS 类映射语义色。 */
@@ -149,7 +150,9 @@ export function hasDependencyBlockingSpecSession(
     const dep = byId.get(id)
     if (!dep) return false
     if (dep.status !== 'done') return true
-    if (dep.prStatus === 'merged') return false
+    // The dependency's AGGREGATE PR status — same rule the server's gate uses, so
+    // the explanation shown here can never contradict the refusal.
+    if (deriveIntentPrAggregate(dep.prs) === 'merged') return false
     const branch = normalizeBranchName(dep.branchName)
     return branch !== null && (main === null || branch !== main)
   })
@@ -158,7 +161,7 @@ export function hasDependencyBlockingSpecSession(
 /** 裁决行内操作可见性所需的最小字段集(便于测试轻量构造)。 */
 export type IntentActionInput = Pick<
   Intent,
-  'status' | 'lastWorkSessionId' | 'prId' | 'branchName'
+  'status' | 'lastWorkSessionId' | 'prs' | 'branchName'
 > & {
   workspaceMainBranch?: string | null
 }
@@ -168,19 +171,23 @@ export type IntentActionInput = Pick<
  * 条件沿用 IntentList 模板既有的 per-status 渲染规则:
  * - `refine`/`startDev` ← `todo`;`openSession` ← 有 `lastWorkSessionId`;
  * - `markDone`/`cancel` ← 非终止态(非 done/cancelled);
- * - `createPr` ← 有 `lastWorkSessionId`、无 `prId` 且 intent 分支存在并不是 workspace 主分支;
- * - `prLink` ← 有 `prId`;`automate` ← 恒显示。
+ * - `createPr` ← 有 `lastWorkSessionId`、无活跃 PR 且 intent 分支存在并不是 workspace 主分支;
+ * - `prLink` ← 有任意 PR 行;`automate` ← 恒显示。
  */
 export function visibleIntentActions(r: IntentActionInput): IntentRowAction[] {
   const terminal = r.status === 'done' || r.status === 'cancelled'
   const branchName = normalizeBranchName(r.branchName)
   const onMainBranch = isIntentOnWorkspaceMainBranch(r.branchName, r.workspaceMainBranch)
+  // 与服务端建 PR 守卫同源:已合并/已关闭的 PR 不再挡住新建。
+  const hasActivePr = activeIntentPrs(r.prs).length > 0
   const out: IntentRowAction[] = []
   if (r.status === 'todo') out.push('refine', 'startDev')
   if (r.lastWorkSessionId) out.push('openSession')
   if (!terminal) out.push('markDone', 'cancel')
-  if (r.lastWorkSessionId && !r.prId && branchName !== null && !onMainBranch) out.push('createPr')
-  if (r.prId) out.push('prLink')
+  if (r.lastWorkSessionId && !hasActivePr && branchName !== null && !onMainBranch) {
+    out.push('createPr')
+  }
+  if (r.prs.length > 0) out.push('prLink')
   out.push('automate')
   return out
 }

@@ -14,6 +14,7 @@
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import type { IntentPrStatus, IntentStatus } from '@ccc/shared/protocol'
+import { activeIntentPrs, pickPrimaryIntentPr } from '@ccc/shared'
 import { resolveWorkspaceRoot } from '../../state.js'
 import { publishIntentLifecycle } from './lifecycle-events.js'
 import {
@@ -21,8 +22,8 @@ import {
   getIntent,
   insertIntents,
   isStoreAvailable,
-  setPrStatus,
   updateStatus,
+  upsertIntentPr,
   upsertIntents,
 } from './store.js'
 
@@ -127,7 +128,7 @@ export const findSchema = {
 export const viewSchema = { id: z.string().describe('意图 id') }
 
 export const saveIntentPrInfoSchema = {
-  intentId: z.string().describe('要回填 PR 状态的本项目意图 id'),
+  intentId: z.string().describe('要回填 PR 状态的本项目意图 id(该意图必须已有 PR)'),
   prStatus: z.enum(['reviewing', 'rejected', 'failed', 'merged', 'closed']),
   done: z.boolean().optional().describe('仅 PR 已合并时传 true，将意图标记为 done'),
 }
@@ -167,8 +168,9 @@ export const saveIntentDirectlyDesc =
 
 export const viewDesc = '按 id 查看本项目单条意图的完整详情(只读,含 content、dependsOn 等)。'
 export const saveIntentPrInfoDesc =
-  '回填本项目一条意图的 PR 状态。仅用于 PR 对账：可写入 reviewing/rejected/failed/merged/closed；' +
-  '当 PR 已合并时传 done=true 将意图标记为 done。'
+  '回填本项目一条意图**既有** PR 的状态。仅用于 PR 对账：可写入 reviewing/rejected/failed/merged/closed；' +
+  '当 PR 已合并时传 done=true 将意图标记为 done。' +
+  '本工具只更新已存在的 PR 记录，不能创建 PR——意图尚无 PR 时调用会被拒绝，请先创建 PR。'
 
 // ---- Core logic (framing-free; bound to ONE project via `workspacePath`) ----
 
@@ -271,7 +273,20 @@ export function runSaveIntentDirectly(
   }
 }
 
-/** Persist PR reconciliation information for one workspace-bound intent. */
+/**
+ * Reconcile the status of an intent's EXISTING PR.
+ *
+ * It cannot create one. The tool only ever receives a status — no forge, no repo,
+ * no URL — so letting it insert would make it the one entry point capable of
+ * minting a PR row with no verifiable origin, which is exactly what the ledger's
+ * identity key exists to prevent. An intent with no PR is therefore rejected with
+ * an instruction to create one first.
+ *
+ * Several active PRs are rejected too: with only an intent id in hand the tool
+ * cannot say WHICH PR the caller reconciled, and picking one would be a guess.
+ * (An intent holds at most one PR today; this refuses to be the code that breaks
+ * once it can hold more.)
+ */
 export function runSaveIntentPrInfo(
   workspacePath: string,
   args: SaveIntentPrInfoArgs,
@@ -282,8 +297,36 @@ export function runSaveIntentPrInfo(
   if (!intent || resolveWorkspaceRoot(intent.workspaceId) !== resolve(workspacePath)) {
     return { content: text(`未找到 id 为 ${args.intentId} 的意图(本项目)。`), isError: true }
   }
+  if (intent.prs.length === 0) {
+    return {
+      content: text(`意图 ${intent.id} 尚无 PR,本工具只能更新既有 PR 的状态,请先创建 PR。`),
+      isError: true,
+    }
+  }
+  const active = activeIntentPrs(intent.prs)
+  if (active.length > 1) {
+    return {
+      content: text(
+        `意图 ${intent.id} 有 ${active.length} 条活跃 PR(${active
+          .map((pr) => `#${pr.number}`)
+          .join('、')}),无法确定要回填哪一条。`,
+      ),
+      isError: true,
+    }
+  }
+  // The single PR to reconcile: the live one, or — when every PR is finished — the
+  // one the intent has, so a merged/closed row can still be corrected.
+  const target = active[0] ?? pickPrimaryIntentPr(intent.prs)
+  if (!target) return { content: text(`意图 ${intent.id} 尚无 PR。`), isError: true }
   try {
-    setPrStatus(intent.id, args.prStatus)
+    upsertIntentPr({
+      intentId: intent.id,
+      deliveryId: target.deliveryId,
+      forge: target.forge,
+      repo: target.repo,
+      number: target.number,
+      status: args.prStatus,
+    })
     if (args.done === true) updateStatus(intent.id, 'done')
     onSaved(workspacePath)
     return {

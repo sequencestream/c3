@@ -65,9 +65,7 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     runStatus: 'idle',
     branchName: null,
     latestCommitHash: null,
-    prId: null,
-    prUrl: null,
-    prStatus: null,
+    prs: [],
     specPath: null,
     // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
     specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',

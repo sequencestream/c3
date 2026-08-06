@@ -32,7 +32,7 @@ import {
   setChatSession,
   setLastWorkSession,
   setLatestCommitHash,
-  setPrInfo,
+  upsertIntentPr,
   approveSpecIfPending,
   machineApproveSpec,
   markSpecAuthored,
@@ -211,7 +211,7 @@ describe('intents CRUD', () => {
     const cols = raw.all<{ name: string }>('PRAGMA table_info(intents)')
     expect(cols.some((c) => c.name === 'last_work_session_id')).toBe(true)
     expect(cols.some((c) => c.name === 'last_dev_session_id')).toBe(false)
-    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(19)
+    expect(raw.get<{ user_version: number }>('PRAGMA user_version')?.user_version).toBe(20)
 
     resetStoreForTests()
     expect(() => listIntents(proj)).not.toThrow()
@@ -409,7 +409,7 @@ describe('intents CRUD', () => {
     expect(cols.some((c) => c.name === 'completed_at')).toBe(true)
     expect(cols.some((c) => c.name === 'automate')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(19)
+    expect(version?.user_version).toBe(20)
 
     // Idempotent: a second ensure must not try to re-add the column (would throw).
     resetStoreForTests()
@@ -466,8 +466,8 @@ describe('intents CRUD', () => {
     expect(got?.title).toBe('Pre-git') // historic row survives
     expect(got?.branchName).toBeNull() // backfilled null
     expect(got?.latestCommitHash).toBeNull()
-    expect(got?.prId).toBeNull()
-    expect(got?.prStatus).toBeNull()
+    // The legacy row had no PR, so the v19→v20 backfill produced no `intent_prs` row.
+    expect(got?.prs).toEqual([])
 
     const cols = raw.all<{ name: string }>('PRAGMA table_info(intents)')
     expect(cols.some((c) => c.name === 'branch_name')).toBe(true)
@@ -479,7 +479,7 @@ describe('intents CRUD', () => {
     expect(depsCols.some((c) => c.name === 'dep_type')).toBe(true)
     expect(depsCols.some((c) => c.name === 'created_at')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(19)
+    expect(version?.user_version).toBe(20)
 
     // Idempotent: re-run must not throw.
     resetStoreForTests()
@@ -487,22 +487,20 @@ describe('intents CRUD', () => {
     expect(getIntent('old-v7')?.branchName).toBeNull()
   })
 
-  it('round-trips git fields: setBranchName, setLatestCommitHash, setPrInfo + read-back', () => {
+  it('round-trips git fields: setBranchName, setLatestCommitHash, upsertIntentPr + read-back', () => {
     const [r] = insertIntents(proj, [
       { title: 'GitFieldTest', shortEnTitle: 'auto', content: '', priority: 'P1' },
     ])
-    // New insertions default all git fields to null.
+    // New insertions default all git fields to null and own no PR.
     expect(r.branchName).toBeNull()
     expect(r.latestCommitHash).toBeNull()
-    expect(r.prId).toBeNull()
-    expect(r.prUrl).toBeNull()
-    expect(r.prStatus).toBeNull()
+    expect(r.prs).toEqual([])
 
     // Set branch name.
     setBranchName(r.id, 'feat/my-feature')
     let got = getIntent(r.id)
     expect(got?.branchName).toBe('feat/my-feature')
-    expect(got?.prId).toBeNull() // other fields still null
+    expect(got?.prs).toEqual([]) // other fields still untouched
 
     // Set commit hash.
     setLatestCommitHash(r.id, 'a1b2c3d')
@@ -510,24 +508,40 @@ describe('intents CRUD', () => {
     expect(got?.latestCommitHash).toBe('a1b2c3d')
     expect(got?.branchName).toBe('feat/my-feature') // earlier field preserved
 
-    // Set PR info, including the clickable PR URL (v13→v14 pr_url column).
-    setPrInfo(r.id, '42', 'reviewing', 'https://github.com/o/r/pull/42')
+    // Attach the PR through the single write entry point.
+    upsertIntentPr({
+      intentId: r.id,
+      number: '42',
+      status: 'reviewing',
+      forge: 'github',
+      repo: 'o/r',
+      url: 'https://github.com/o/r/pull/42',
+      headBranch: 'feat/my-feature',
+      baseBranch: 'main',
+    })
     got = getIntent(r.id)
-    expect(got?.prId).toBe('42')
-    expect(got?.prStatus).toBe('reviewing')
-    expect(got?.prUrl).toBe('https://github.com/o/r/pull/42')
+    expect(got?.prs).toHaveLength(1)
+    expect(got?.prs[0]).toMatchObject({
+      number: '42',
+      status: 'reviewing',
+      forge: 'github',
+      repo: 'o/r',
+      url: 'https://github.com/o/r/pull/42',
+      headBranch: 'feat/my-feature',
+      baseBranch: 'main',
+      deliveryId: null,
+    })
     expect(got?.branchName).toBe('feat/my-feature') // earlier fields preserved
     expect(got?.latestCommitHash).toBe('a1b2c3d')
   })
 
-  it('setPrInfo without a url leaves pr_url null (back-compat default arg)', () => {
+  it('upsertIntentPr without a url or origin leaves those columns null', () => {
     const [r] = insertIntents(proj, [
       { title: 'NoUrlPr', shortEnTitle: 'auto', content: '', priority: 'P1' },
     ])
-    setPrInfo(r.id, '7', 'reviewing')
+    upsertIntentPr({ intentId: r.id, number: '7', status: 'reviewing' })
     const got = getIntent(r.id)
-    expect(got?.prId).toBe('7')
-    expect(got?.prUrl).toBeNull()
+    expect(got?.prs[0]).toMatchObject({ number: '7', url: null, forge: null, repo: null })
   })
 })
 
@@ -675,7 +689,7 @@ describe('intents spec + session fields (v12→v13)', () => {
     expect(cols.some((c) => c.name === 'spec_session_id')).toBe(true)
     expect(cols.some((c) => c.name === 'intent_session_id')).toBe(true)
     const version = raw.get<{ user_version: number }>('PRAGMA user_version')
-    expect(version?.user_version).toBe(19)
+    expect(version?.user_version).toBe(20)
 
     // Idempotent: re-running the schema-ensure path must not throw or lose data.
     resetStoreForTests()

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { fakeIntentPrs } from '@/lib/intent-pr-fixture'
 import type { Intent } from '@ccc/shared/protocol'
 import type { CompletionOrderInput } from './intent-list-view'
 import type { IntentActionInput } from './intent-list-view'
@@ -39,9 +40,7 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     runStatus: 'idle',
     branchName: null,
     latestCommitHash: null,
-    prId: null,
-    prUrl: null,
-    prStatus: null,
+    prs: [],
     specPath: null,
     // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
     specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
@@ -67,7 +66,7 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
 describe('hasDependencyBlockingSpecSession', () => {
   it('blocks unfinished and unmerged feature dependencies only in worktree mode', () => {
     const target = { id: 'target', dependsOn: ['dep'] } as Intent
-    const dep = { id: 'dep', status: 'todo', branchName: null, prStatus: null } as Intent
+    const dep = { id: 'dep', status: 'todo', branchName: null, prs: [] } as unknown as Intent
     expect(hasDependencyBlockingSpecSession(target, [dep], 'worktree', 'main')).toBe(true)
     expect(hasDependencyBlockingSpecSession(target, [dep], 'current-branch', 'main')).toBe(false)
     expect(
@@ -81,7 +80,7 @@ describe('hasDependencyBlockingSpecSession', () => {
     expect(
       hasDependencyBlockingSpecSession(
         target,
-        [{ ...dep, status: 'done', prStatus: 'merged' }],
+        [{ ...dep, status: 'done', prs: fakeIntentPrs('merged') }],
         'worktree',
         'main',
       ),
@@ -173,7 +172,7 @@ describe('visibleIntentActions', () => {
   const make = (o: Partial<IntentActionInput>): IntentActionInput => ({
     status: 'todo',
     lastWorkSessionId: null,
-    prId: null,
+    prs: [],
     branchName: null,
     ...o,
   })
@@ -211,7 +210,7 @@ describe('visibleIntentActions', () => {
     expect(visibleIntentActions(make({ status: 'done' }))).toEqual(['automate'])
   })
 
-  it('有 work session、无 prId 且 intent 分支不等于 workspace 主分支:显示 Create PR', () => {
+  it('有 work session、无活跃 PR 且 intent 分支不等于 workspace 主分支:显示 Create PR', () => {
     expect(
       visibleIntentActions(
         make({
@@ -247,9 +246,11 @@ describe('visibleIntentActions', () => {
     expect(isIntentOnWorkspaceMainBranch(null, 'main')).toBe(false)
   })
 
-  it('done 且有 prId:prLink 而非 Create PR', () => {
+  it('done 且有 PR:prLink 而非 Create PR', () => {
     expect(
-      visibleIntentActions(make({ status: 'done', branchName: 'feature/x', prId: '42' })),
+      visibleIntentActions(
+        make({ status: 'done', branchName: 'feature/x', prs: fakeIntentPrs('merged') }),
+      ),
     ).toEqual(['prLink', 'automate'])
   })
 
@@ -257,13 +258,10 @@ describe('visibleIntentActions', () => {
     expect(visibleIntentActions(make({ status: 'cancelled' }))).toEqual(['automate'])
   })
 
-  it('prId 在非 done 态也渲染 prLink', () => {
-    expect(visibleIntentActions(make({ status: 'in_progress', prId: '7' }))).toEqual([
-      'markDone',
-      'cancel',
-      'prLink',
-      'automate',
-    ])
+  it('有 PR 行时在非 done 态也渲染 prLink', () => {
+    expect(
+      visibleIntentActions(make({ status: 'in_progress', prs: fakeIntentPrs('reviewing') })),
+    ).toEqual(['markDone', 'cancel', 'prLink', 'automate'])
   })
 
   it('automate 恒为最后一项', () => {
@@ -361,7 +359,7 @@ describe('workflowIconState', () => {
       id: 'dep',
       status: 'done',
       branchName: 'feature/dep',
-      prStatus: 'reviewing',
+      prs: fakeIntentPrs('reviewing'),
     })
     const item = makeIntent({
       id: 'child',
@@ -547,9 +545,7 @@ describe('formatDependsOn', () => {
       automate: false,
       branchName: null,
       latestCommitHash: null,
-      prId: null,
-      prUrl: null,
-      prStatus: null,
+      prs: [],
       specPath: null,
       specStatus: 'raw',
       specMode: null,

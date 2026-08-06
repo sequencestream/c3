@@ -171,6 +171,50 @@ export function checkDbDriver(): boolean {
   }
 }
 
+// ---------------------------------------------------------------------------
+// One-shot data-migration markers
+// ---------------------------------------------------------------------------
+
+/**
+ * Marker table for one-shot DATA migrations: one row = one migration that has
+ * finished. It answers what column/table existence checks cannot — "the table is
+ * there, but is its backfill done?" — and what `INSERT OR IGNORE` cannot express:
+ * "this backfill completed, never run it again".
+ *
+ * Deliberately NOT `PRAGMA user_version`: that is a single integer shared by every
+ * store, so using it as the verdict would force globally serialized numbering
+ * across independent domains. Each store keeps its own version stamp; this table
+ * is the cross-domain fact of "already applied".
+ */
+const MIGRATIONS_TABLE = `
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  id          TEXT PRIMARY KEY,
+  applied_at  INTEGER NOT NULL
+);`
+
+/**
+ * Create the marker table if missing. Callers run this before their first
+ * {@link hasMigration} check; it is idempotent and cheap.
+ */
+export function ensureMigrationsTable(d: Db): void {
+  d.exec(MIGRATIONS_TABLE)
+}
+
+/** Whether the one-shot migration `id` has already been applied. */
+export function hasMigration(d: Db, id: string): boolean {
+  ensureMigrationsTable(d)
+  return !!d.get('SELECT 1 FROM schema_migrations WHERE id=?', id)
+}
+
+/**
+ * Record `id` as applied. Call INSIDE the same transaction as the migration's
+ * data writes — a rollback must take the marker with it, so a half-finished
+ * backfill can never read as complete.
+ */
+export function markMigration(d: Db, id: string): void {
+  d.run('INSERT OR REPLACE INTO schema_migrations (id, applied_at) VALUES (?,?)', id, Date.now())
+}
+
 /** Whether the c3 database opened successfully (callers degrade if not). */
 export function isDbAvailable(): boolean {
   if (!opened) getDb()

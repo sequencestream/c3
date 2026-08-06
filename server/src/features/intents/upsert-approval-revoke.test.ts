@@ -19,6 +19,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Intent } from '@ccc/shared/protocol'
+import { deriveIntentPrAggregate } from '@ccc/shared'
 import { resetDbForTests } from '../../kernel/infra/db.js'
 import { reconcileQueue } from '../../kernel/queue/reconcile.js'
 import type { QueueIntentFact, QueueReconcileInput } from '../../kernel/queue/types.js'
@@ -330,7 +331,7 @@ function toFact(r: Intent, specFingerprint: string | null): QueueIntentFact {
     automate: r.automate,
     dependsOn: r.dependsOn,
     specStatus: r.specStatus,
-    prStatus: r.prStatus,
+    prStatus: deriveIntentPrAggregate(r.prs),
     lastWorkSessionId: r.lastWorkSessionId,
     createdAt: r.createdAt,
     specPath: r.specPath,

@@ -55,3 +55,5 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 | [0031](0031-deterministic-queue-reconcile-kernel.md)                         | 自动化队列的确定性调度内核：tick 全量对账 + 事件降级为提示 + 状态重推导（单意图失败隔离、决策可观测）                          | accepted   |
 | [0032](0032-machine-spec-approval-opt-in.md)                                 | 队列自治的规格阶段:只读 `spec_review` 会话 + 指纹绑定的结论 + opt-in 机器批准(默认关闭、带机器身份、可撤销)                    | accepted   |
 | [0033](0033-tauri-desktop-shell-sidecar.md)                                  | Tauri 2 桌面壳:c3 单二进制作为 sidecar + WebView 加载其自带 SPA(共享 c3 home、托盘常驻、最小 capability、只杀自己创建的子进程) | accepted   |
+| [0034](0034-intent-pr-fact-base-and-readpoints.md)                           | intents PR 拆表的事实基础:时间戳编码 / `pr_id` 语义 / 存量 base / 多 base 行为                                                 | accepted   |
+| [0035](0035-intent-pr-table-split-and-migration-markers.md)                  | PR 拆表为 `intent_prs`(硬切无双写、单一写入口、聚合态共用)+ `schema_migrations` 迁移标记表                                     | accepted   |

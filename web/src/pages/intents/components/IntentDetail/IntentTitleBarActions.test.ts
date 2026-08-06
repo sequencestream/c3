@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { fakeIntentPr } from '@/lib/intent-pr-fixture'
 import { mount } from '@vue/test-utils'
 import type { Intent } from '@ccc/shared/protocol'
 import IntentTitleBarActions from './IntentTitleBarActions.vue'
@@ -23,9 +24,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     runStatus: 'idle',
     branchName: null,
     latestCommitHash: null,
-    prId: null,
-    prUrl: null,
-    prStatus: null,
+    prs: [],
     specPath: null,
     // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
     specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
@@ -222,24 +221,36 @@ describe('IntentTitleBarActions.vue', () => {
     ).toBe(false)
   })
 
-  it('renders the PR link as an anchor to prUrl, else a copy button', () => {
+  it('renders the PR link as an anchor to the PR url, else a copy button', () => {
     const anchor = mountActions(
-      intent({ id: 'i1', status: 'in_progress', prId: '42', prUrl: 'https://x/pull/42' }),
+      intent({
+        id: 'i1',
+        status: 'in_progress',
+        prs: [fakeIntentPr('reviewing', { number: '42', url: 'https://x/pull/42' })],
+      }),
     )
     expect(anchor.find('a.req-btn.pr-link').attributes('href')).toBe('https://x/pull/42')
 
-    const copy = mountActions(intent({ id: 'i1', status: 'in_progress', prId: '42', prUrl: null }))
+    const copy = mountActions(
+      intent({
+        id: 'i1',
+        status: 'in_progress',
+        prs: [fakeIntentPr('reviewing', { number: '42', url: null })],
+      }),
+    )
     expect(copy.find('a.req-btn.pr-link').exists()).toBe(false)
     expect(copy.find('button.req-btn.pr-link').exists()).toBe(true)
   })
 
   it('shows sync only for done+reviewing+PR, guards double send while syncing', async () => {
-    const w = mountActions(intent({ id: 'i1', status: 'done', prId: '5', prStatus: 'reviewing' }))
+    const w = mountActions(
+      intent({ id: 'i1', status: 'done', prs: [fakeIntentPr('reviewing', { number: '5' })] }),
+    )
     await w.find('[data-action="syncPrStatus"]').trigger('click')
     expect(w.emitted('sync-pr-status')).toEqual([['i1']])
 
     const syncing = mountActions(
-      intent({ id: 'i1', status: 'done', prId: '5', prStatus: 'reviewing' }),
+      intent({ id: 'i1', status: 'done', prs: [fakeIntentPr('reviewing', { number: '5' })] }),
       {
         intentPrSync: { i1: { state: 'syncing', message: 'Syncing...' } },
       },

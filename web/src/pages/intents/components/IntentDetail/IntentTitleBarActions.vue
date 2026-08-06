@@ -3,7 +3,7 @@
  * IntentTitleBarActions.vue — 意图详情常驻头部右侧的动作区(所有 tab 恒可见)。
  *
  * 承接:状态切换(markTodo/backToDraft/markDone/cancel)、四态主按钮、修改会话入口、PR 创建/
- * 打开(有 prUrl 为跳转锚点,否则回退复制 prId)/同步、分享、自动化切换与删除入口。四态主按钮的
+ * 打开(取第一条活跃 PR;有 url 为跳转锚点,否则回退复制编号)/同步、分享、自动化切换与删除入口。四态主按钮的
  * 语义与禁用/标题由容器计算后以 props 输入;点击以 main-action 上抛交回容器编排(编写 Spec 门 /
  * 延迟切 Tab)。删除入口只在非终态 done 时渲染:done 通常已合并 PR 并沉淀完整产出,收紧界面可达
  * 路径以免误删可追溯记录(协议与服务端删除能力不变)。删除二次确认弹框及「可能存在工作产物」的
@@ -12,6 +12,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import type { Intent, IntentStatus } from '@ccc/shared/protocol'
+import { activeIntentPrs, pickPrimaryIntentPr } from '@ccc/shared'
 import { useTypedI18n } from '@/i18n'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import {
@@ -59,15 +60,20 @@ const showCreatePr = computed<boolean>(() => {
     props.workspaceGitBranchMode === 'worktree' &&
     branchName !== null &&
     !!r.lastWorkSessionId &&
-    !r.prId &&
+    // 与服务端建 PR 守卫同源:只有活跃 PR 才挡住新建。
+    activeIntentPrs(r.prs).length === 0 &&
     !isIntentOnWorkspaceMainBranch(r.branchName, props.workspaceMainBranch)
   )
 })
 
-const canSyncPrStatus = computed<boolean>(() => {
-  const r = props.intent
-  return r.status === 'done' && !!r.prId && r.prStatus === 'reviewing'
-})
+/** 主按钮跳转/复制的目标 PR:第一条活跃的,全部终态则取最早一条。 */
+const primaryPr = computed(() => pickPrimaryIntentPr(props.intent.prs))
+
+// 只看"有没有处于 reviewing 的 PR 行",不再要求意图本身是 done——与服务端脱钩后的
+// 同步守卫对齐。
+const canSyncPrStatus = computed<boolean>(() =>
+  props.intent.prs.some((pr) => pr.status === 'reviewing'),
+)
 const currentPrSync = computed(() => props.intentPrSync?.[props.intent.id])
 const prSyncInFlight = computed<boolean>(() => currentPrSync.value?.state === 'syncing')
 function syncPrStatus(): void {
@@ -179,22 +185,22 @@ watch(
       {{ t('intent.action.createPr.label') }}
     </button>
     <a
-      v-if="intent.prId && intent.prUrl"
+      v-if="primaryPr && primaryPr.url"
       class="req-btn pr-link"
-      :href="intent.prUrl"
+      :href="primaryPr.url"
       target="_blank"
       rel="noopener noreferrer"
       :title="t('intent.action.pr.open.tooltip')"
     >
-      {{ t('intent.action.pr.label', { id: intent.prId }) }}
+      {{ t('intent.action.pr.label', { id: primaryPr.number }) }}
     </a>
     <button
-      v-else-if="intent.prId"
+      v-else-if="primaryPr"
       class="req-btn pr-link"
       :title="t('intent.action.pr.tooltip')"
-      @click="copyPrId(intent.prId as string)"
+      @click="copyPrId(primaryPr.number)"
     >
-      {{ t('intent.action.pr.label', { id: intent.prId }) }}
+      {{ t('intent.action.pr.label', { id: primaryPr.number }) }}
     </button>
     <button
       v-if="canSyncPrStatus"

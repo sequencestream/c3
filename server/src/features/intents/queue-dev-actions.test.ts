@@ -21,7 +21,7 @@ vi.mock('./store.js', () => ({
   safeInsertIntentLog: vi.fn(),
   setBranchName: vi.fn(),
   setLastWorkSession: vi.fn(),
-  setPrInfo: vi.fn(),
+  upsertIntentPr: vi.fn(),
   updateStatus: vi.fn(),
 }))
 
@@ -182,7 +182,7 @@ import {
   getIntent,
   safeInsertIntentLog,
   setBranchName,
-  setPrInfo,
+  upsertIntentPr,
   updateStatus,
 } from './store.js'
 import {
@@ -220,9 +220,7 @@ const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
   runStatus: 'idle',
   branchName: null,
   latestCommitHash: null,
-  prId: null,
-  prUrl: null,
-  prStatus: null,
+  prs: [],
   specPath: null,
   // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
   specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
@@ -412,7 +410,7 @@ describe('queue dev actions — branch-mode git alignment', () => {
     expect(input.prompt).not.toContain('Approved spec for this intent')
   })
 
-  it('worktree: 端到端 develop→commit→PR 全针对 worktree 工作目录,setPrInfo reviewing', async () => {
+  it('worktree: 端到端 develop→commit→PR 全针对 worktree 工作目录,upsertIntentPr reviewing', async () => {
     const proj = '/test/wt-e2e'
     const intent = makeIntent({ id: 'Z', status: 'todo', branchName: 'intent/Z' })
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
@@ -449,7 +447,19 @@ describe('queue dev actions — branch-mode git alignment', () => {
       'main',
       undefined,
     )
-    expect(setPrInfo).toHaveBeenCalledWith('Z', '77', 'reviewing', 'http://x/pull/77')
+    expect(upsertIntentPr).toHaveBeenCalledWith({
+      intentId: 'Z',
+      number: '77',
+      status: 'reviewing',
+      // `http://x/pull/77` names no known host ⇒ GitLab by the same fallback
+      // `detectForge` uses. Its path holds no repo segment before `/pull/`, so
+      // the repo stays unknown — the next upsert fills it in.
+      forge: 'gitlab',
+      repo: null,
+      url: 'http://x/pull/77',
+      headBranch: 'intent/Z',
+      baseBranch: 'main',
+    })
     expect(updateStatus).toHaveBeenCalledWith('Z', 'done')
     // The changelog records the automated PR creation exactly once, actor `automation`.
     const prLogs = vi.mocked(safeInsertIntentLog).mock.calls.filter(([, op]) => op === 'pr_created')
@@ -496,12 +506,16 @@ describe('queue dev actions — branch-mode git alignment', () => {
       'main',
       'gitlab',
     )
-    expect(setPrInfo).toHaveBeenCalledWith(
-      'GL',
-      '19',
-      'reviewing',
-      'https://gitlab.example/group/project/-/merge_requests/19',
-    )
+    expect(upsertIntentPr).toHaveBeenCalledWith({
+      intentId: 'GL',
+      number: '19',
+      status: 'reviewing',
+      forge: 'gitlab',
+      repo: 'group/project',
+      url: 'https://gitlab.example/group/project/-/merge_requests/19',
+      headBranch: 'intent/GL',
+      baseBranch: 'main',
+    })
   })
 
   it('current-branch: 端到端 commit 用 workspacePath 且不建 worktree、不建 PR', async () => {
@@ -529,7 +543,7 @@ describe('queue dev actions — branch-mode git alignment', () => {
     expect(gitDiffStat).toHaveBeenCalledWith(proj)
     expect(commitAndPush).toHaveBeenCalledWith(proj, expect.stringContaining('feat:'))
     expect(createForgePr).not.toHaveBeenCalled()
-    expect(setPrInfo).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
     expect(updateStatus).toHaveBeenCalledWith('W', 'done')
     expect(vi.mocked(safeInsertIntentLog).mock.calls.some(([, op]) => op === 'pr_created')).toBe(
       false,
@@ -560,7 +574,7 @@ describe('queue dev actions — branch-mode git alignment', () => {
 
     await notifyTurnSettled(proj, launchedId, 'complete', 'F')
 
-    expect(setPrInfo).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
     expect(vi.mocked(safeInsertIntentLog).mock.calls.some(([, op]) => op === 'pr_created')).toBe(
       false,
     )

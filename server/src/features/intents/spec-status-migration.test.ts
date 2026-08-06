@@ -105,7 +105,7 @@ describe('intents v17 → v18 spec_status migration', () => {
     expect(after).toHaveLength(1)
     expect(after[0].notnull).toBe(1)
     expect(after[0].dflt_value).toMatch(/raw/)
-    expect(userVersion(raw)).toBe(19)
+    expect(userVersion(raw)).toBe(20)
 
     // Compatibility fields were left alone by the backfill.
     expect(getIntent('approved')?.specApproveUser).toBe('alice')
@@ -143,6 +143,6 @@ describe('intents v17 → v18 spec_status migration', () => {
     getIntent('approved') // second init — must not re-add or re-run anything destructive
     expect(getIntent('approved')?.specStatus).toBe('approved')
     expect(getIntent('bare')?.specStatus).toBe('raw')
-    expect(userVersion(raw)).toBe(19)
+    expect(userVersion(raw)).toBe(20)
   })
 })

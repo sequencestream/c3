@@ -288,16 +288,21 @@ export type ClientUpdateIntentDeps = {
 }
 
 /**
- * Set git-related info on an intent (branch name, commit hash, PR id, PR status).
- * All fields are optional — only provided fields are updated.
+ * Set git-related info on an intent (branch name, commit hash). Both fields are
+ * optional — only provided fields are updated.
+ *
+ * It deliberately carries NO PR fields. It used to accept `prId` + `prStatus`,
+ * which let a caller conjure a PR fact with no forge, no repo and no URL — the
+ * one thing `intent_prs`' identity key exists to prevent, and the mirror image of
+ * the restriction `save_intent_pr_info` now carries. Associating an existing PR
+ * with an intent, if it is ever wanted again, belongs in a purpose-built message
+ * that states the PR's origin.
  */
 export type ClientSetIntentGitInfo = {
   type: 'set_intent_git_info'
   intentId: string
   branchName?: string
   latestCommitHash?: string
-  prId?: string
-  prStatus?: IntentPrStatus
 }
 
 /** Start the project's automation queue (develops `automate` intents). */
@@ -499,6 +504,10 @@ export type ServerCreatePrProgress = {
  * Reply to a `sync_intent_pr_status` request. `ok=false` means the request was
  * handled but could not sync, while transport/action failures may still use the
  * generic `error` frame.
+ *
+ * The sync runs over EVERY `reviewing` PR the intent owns, so `prStatus` is the
+ * intent's AGGREGATE status after the pass (see `deriveIntentPrAggregate`) and
+ * `changed` means "at least one PR row moved", not "the one PR moved".
  */
 export type ServerSyncIntentPrStatusResponse = {
   type: 'sync_intent_pr_status_response'

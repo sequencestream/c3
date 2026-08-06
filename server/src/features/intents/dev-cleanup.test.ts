@@ -5,6 +5,7 @@
  * skip / failure path is exercised with mocks — no real git tree, db, or wire.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { fakeIntentPrs } from './intent-pr-fixture.js'
 import type { Intent } from '@ccc/shared/protocol'
 import { runManualDevCleanup, type DevCleanupDeps } from './dev-cleanup.js'
 import { EventNormalizerRegistry } from '../../kernel/events/generic-event.js'
@@ -41,9 +42,7 @@ function makeIntent(over: Partial<Intent> = {}): Intent {
     runStatus: 'idle',
     branchName: 'intent/i1-add-feature',
     latestCommitHash: null,
-    prId: null,
-    prUrl: null,
-    prStatus: null,
+    prs: [],
     specPath: null,
     // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
     specStatus: over.specApproved ? 'approved' : over.specPath ? 'pending' : 'raw',
@@ -77,7 +76,7 @@ interface Harness {
     getHeadCommit: ReturnType<typeof vi.fn>
     setBranchName: ReturnType<typeof vi.fn>
     setLatestCommitHash: ReturnType<typeof vi.fn>
-    setPrInfo: ReturnType<typeof vi.fn>
+    upsertIntentPr: ReturnType<typeof vi.fn>
     safeInsertIntentLog: ReturnType<typeof vi.fn>
     cancelEventsForIntent: ReturnType<typeof vi.fn>
     pushFailureEvent: ReturnType<typeof vi.fn>
@@ -105,7 +104,7 @@ function harness(
     getHeadCommit: vi.fn().mockResolvedValue('deadbeef'),
     setBranchName: vi.fn(),
     setLatestCommitHash: vi.fn(),
-    setPrInfo: vi.fn(),
+    upsertIntentPr: vi.fn(),
     safeInsertIntentLog: vi.fn(),
     cancelEventsForIntent: vi.fn(),
     pushFailureEvent: vi.fn(),
@@ -126,7 +125,7 @@ function harness(
     getIntent: () => intent,
     setBranchName: mocks.setBranchName,
     setLatestCommitHash: mocks.setLatestCommitHash,
-    setPrInfo: mocks.setPrInfo,
+    upsertIntentPr: mocks.upsertIntentPr,
     safeInsertIntentLog: mocks.safeInsertIntentLog,
     cancelEventsForIntent: mocks.cancelEventsForIntent,
     pushFailureEvent: mocks.pushFailureEvent,
@@ -148,7 +147,19 @@ describe('runManualDevCleanup', () => {
     expect(h.mocks.commitAndPush).toHaveBeenCalledWith('/abs/cwd', 'feat: Add feature')
     expect(h.mocks.setBranchName).toHaveBeenCalledWith('I1', 'intent/i1-add-feature')
     expect(h.mocks.setLatestCommitHash).toHaveBeenCalledWith('I1', 'deadbeef')
-    expect(h.mocks.setPrInfo).toHaveBeenCalledWith('I1', '42', 'reviewing', 'https://h/pull/42')
+    expect(h.mocks.upsertIntentPr).toHaveBeenCalledWith({
+      intentId: 'I1',
+      number: '42',
+      status: 'reviewing',
+      // `https://h/pull/42` names no known host ⇒ GitLab by the same fallback
+      // `detectForge` uses. Its path holds no repo segment before `/pull/`, so
+      // the repo stays unknown — the next upsert fills it in.
+      forge: 'gitlab',
+      repo: null,
+      url: 'https://h/pull/42',
+      headBranch: 'intent/i1-add-feature',
+      baseBranch: 'main',
+    })
     expect(h.mocks.pushFailureEvent).not.toHaveBeenCalled()
     // The changelog records the first PR association exactly once, actor `automation`.
     expect(h.mocks.safeInsertIntentLog.mock.calls).toEqual([
@@ -175,12 +186,16 @@ describe('runManualDevCleanup', () => {
       'main',
       'gitlab',
     )
-    expect(h.mocks.setPrInfo).toHaveBeenCalledWith(
-      'I1',
-      '19',
-      'reviewing',
-      'https://gitlab.example/group/project/-/merge_requests/19',
-    )
+    expect(h.mocks.upsertIntentPr).toHaveBeenCalledWith({
+      intentId: 'I1',
+      number: '19',
+      status: 'reviewing',
+      forge: 'gitlab',
+      repo: 'group/project',
+      url: 'https://gitlab.example/group/project/-/merge_requests/19',
+      headBranch: 'intent/i1-add-feature',
+      baseBranch: 'main',
+    })
   })
 
   // ── MSC-R3: current-branch, not on main → same cleanup ──
@@ -201,7 +216,7 @@ describe('runManualDevCleanup', () => {
     expect(out).toEqual({ kind: 'skipped' })
     expect(h.mocks.commitAndPush).not.toHaveBeenCalled()
     expect(h.mocks.createForgePr).not.toHaveBeenCalled()
-    expect(h.mocks.setPrInfo).not.toHaveBeenCalled()
+    expect(h.mocks.upsertIntentPr).not.toHaveBeenCalled()
     expect(h.mocks.pushFailureEvent).not.toHaveBeenCalled()
     expect(h.mocks.safeInsertIntentLog).not.toHaveBeenCalled()
   })
@@ -217,7 +232,7 @@ describe('runManualDevCleanup', () => {
       expect.objectContaining({ intentId: 'I1', code: 'intent.gitCleanupNoChanges' }),
     )
     expect(h.mocks.commitAndPush).not.toHaveBeenCalled()
-    expect(h.mocks.setPrInfo).not.toHaveBeenCalled()
+    expect(h.mocks.upsertIntentPr).not.toHaveBeenCalled()
   })
 
   // ── MSC-R4 ②: commit/push failure ──
@@ -234,7 +249,7 @@ describe('runManualDevCleanup', () => {
       }),
     )
     expect(h.mocks.createForgePr).not.toHaveBeenCalled()
-    expect(h.mocks.setPrInfo).not.toHaveBeenCalled()
+    expect(h.mocks.upsertIntentPr).not.toHaveBeenCalled()
     expect(h.mocks.setLatestCommitHash).not.toHaveBeenCalled()
   })
 
@@ -254,7 +269,7 @@ describe('runManualDevCleanup', () => {
     )
     // Commit + push succeeded → honest write-back of hash; PR fields stay empty.
     expect(h.mocks.setLatestCommitHash).toHaveBeenCalledWith('I1', 'deadbeef')
-    expect(h.mocks.setPrInfo).not.toHaveBeenCalled()
+    expect(h.mocks.upsertIntentPr).not.toHaveBeenCalled()
   })
 
   // ── MSC-R4 ④: PR create failure (gh present) ──
@@ -268,7 +283,7 @@ describe('runManualDevCleanup', () => {
       expect.objectContaining({ code: 'intent.gitCleanupPrFailed' }),
     )
     expect(h.mocks.setLatestCommitHash).toHaveBeenCalledWith('I1', 'deadbeef')
-    expect(h.mocks.setPrInfo).not.toHaveBeenCalled()
+    expect(h.mocks.upsertIntentPr).not.toHaveBeenCalled()
     expect(h.mocks.safeInsertIntentLog).not.toHaveBeenCalled()
   })
 
@@ -276,7 +291,7 @@ describe('runManualDevCleanup', () => {
   it('existing PR with new changes: commits/pushes and refreshes hash, does NOT re-create the PR', async () => {
     const h = harness({
       mode: 'worktree',
-      intent: makeIntent({ prId: '7', prUrl: 'https://h/pull/7', prStatus: 'reviewing' }),
+      intent: makeIntent({ prs: fakeIntentPrs('reviewing') }),
     })
     const out = await runManualDevCleanup('I1', WS, h.deps)
 
@@ -284,7 +299,7 @@ describe('runManualDevCleanup', () => {
     expect(h.mocks.commitAndPush).toHaveBeenCalled()
     expect(h.mocks.setLatestCommitHash).toHaveBeenCalledWith('I1', 'deadbeef')
     expect(h.mocks.createForgePr).not.toHaveBeenCalled()
-    expect(h.mocks.setPrInfo).not.toHaveBeenCalled()
+    expect(h.mocks.upsertIntentPr).not.toHaveBeenCalled()
     expect(h.mocks.safeInsertIntentLog).not.toHaveBeenCalled()
   })
 
@@ -321,7 +336,7 @@ describe('runManualDevCleanup', () => {
   it('does NOT publish pr:operation create event on idempotent re-cleanup (PR already exists)', async () => {
     const h = harness({
       mode: 'worktree',
-      intent: makeIntent({ prId: '7', prUrl: 'https://h/pull/7', prStatus: 'reviewing' }),
+      intent: makeIntent({ prs: fakeIntentPrs('reviewing') }),
     })
     const out = await runManualDevCleanup('I1', WS, h.deps)
 

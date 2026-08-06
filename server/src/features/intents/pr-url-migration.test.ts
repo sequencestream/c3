@@ -82,10 +82,18 @@ describe('intents v13 → v14 pr_url migration', () => {
     const got = getIntent('hist-1')
 
     expect(cols(raw, 'intents')).toContain('pr_url')
-    expect(got?.prUrl).toBeNull() // historic row defaults to null
-    expect(got?.prId).toBe('99') // pre-existing data preserved
-    expect(got?.prStatus).toBe('reviewing')
-    expect(userVersion(raw)).toBe(19)
+    // The column is added, then the v19→v20 backfill lifts the legacy trio into
+    // `intent_prs`; the row's data survives both migrations.
+    expect(got?.prs).toHaveLength(1)
+    expect(got?.prs[0]).toMatchObject({
+      number: '99',
+      status: 'reviewing',
+      url: null, // historic row had no pr_url
+      forge: null, // no URL ⇒ origin unknown
+      repo: null,
+      baseBranch: 'main',
+    })
+    expect(userVersion(raw)).toBe(20)
   })
 
   it('is idempotent — re-init does not duplicate the column or throw', () => {
@@ -98,6 +106,6 @@ describe('intents v13 → v14 pr_url migration', () => {
     expect(() => getIntent('hist-1')).not.toThrow() // second init is a no-op
 
     expect(cols(raw, 'intents').filter((c) => c === 'pr_url')).toHaveLength(1)
-    expect(userVersion(raw)).toBe(19)
+    expect(userVersion(raw)).toBe(20)
   })
 })

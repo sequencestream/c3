@@ -61,6 +61,7 @@ import {
 } from '../config/index.js'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { systemAgent } from './normalize.js'
+import { AgentGroupUnavailableError } from './errors.js'
 
 export {
   AGENT_ICON_MAX_CHARS,
@@ -69,11 +70,167 @@ export {
   normalizeIcon,
   systemAgent,
 } from './normalize.js'
-export { isDegradableError, isSocketDisconnect } from './errors.js'
+export {
+  AgentGroupUnavailableError,
+  isAgentGroupUnavailableError,
+  isDegradableError,
+  isSocketDisconnect,
+} from './errors.js'
 export { parseQuotaResetAt } from './quota-reset.js'
 
 export function getDefaultAgentId(): string {
   return loadSettings().defaultAgentId
+}
+
+/**
+ * The five agent ROLES a session can be launched for. `default` is the fallback
+ * every other role follows when its own field is the empty "follow the default"
+ * sentinel; the other four are the dedicated slots (background tool sessions,
+ * intent communication, spec authoring, spec review). One enum + one field map
+ * ({@link ROLE_SETTINGS_FIELD}) is what keeps the four dedicated roles from each
+ * re-implementing the resolution rules.
+ */
+export type AgentRole = 'default' | 'tool' | 'intent' | 'spec' | 'spec_review'
+
+/** Which `SystemSettings` field carries each role's configured reference. */
+const ROLE_SETTINGS_FIELD: Record<AgentRole, keyof SystemSettings> = {
+  default: 'defaultAgentId',
+  tool: 'toolAgentId',
+  intent: 'intentAgentId',
+  spec: 'specAgentId',
+  spec_review: 'specReviewAgentId',
+}
+
+/**
+ * A resolved agent target — the pair every binding site needs (ADR-0029):
+ *
+ *  - `ref` is the **routing identity to persist**: the group reference
+ *    `_c3_<vendor>_<group>` when the target is a group (so every later run
+ *    re-resolves the group and re-failovers through it), else the concrete agent
+ *    id (fallbacks already applied).
+ *  - `agent` is the **representative member** — the first enabled member in
+ *    `order_seq` order for a group, the agent itself otherwise. Vendor, display
+ *    info, default mode and the first launch's parameters ALL derive from it, so a
+ *    binding can never pair a group ref with another agent's vendor.
+ *  - `candidates` is the ordered launch candidate list handed to the relay.
+ *
+ * Never carries an unusable group: resolution fails loudly instead
+ * ({@link AgentGroupUnavailableError}).
+ */
+export interface AgentTarget {
+  ref: string
+  agent: AgentConfig
+  candidates: AgentConfig[]
+  isGroup: boolean
+}
+
+/** The non-throwing form of {@link resolveAgentTarget}: the target, or the
+ *  unusable group reference that stopped it. */
+export type AgentTargetResult =
+  | { ok: true; target: AgentTarget }
+  | { ok: false; groupRef: string }
+
+/** A concrete (non-group) agent as a degenerate one-candidate target. */
+function singleTarget(agent: AgentConfig): AgentTarget {
+  return { ref: agent.id, agent, candidates: [agent], isGroup: false }
+}
+
+/**
+ * A group reference as a target: its enabled members in `order_seq` order, the
+ * first one representing the group. Throws when the group has no enabled member —
+ * an empty group is a configuration error, NOT a reason to fall back (ADR-0029).
+ */
+function groupTarget(groupRef: string, vendor: VendorId, group: string): AgentTarget {
+  const members = groupAgents(vendor, group)
+  if (members.length === 0) throw new AgentGroupUnavailableError(groupRef)
+  return { ref: groupRef, agent: members[0], candidates: members, isGroup: true }
+}
+
+/**
+ * **The single agent-reference resolver** every role and every session binding
+ * goes through (ADR-0029). One rule set, applied in order:
+ *
+ *  1. a group reference (`_c3_<vendor>_<group>`) ⇒ that group's target;
+ *  2. a known concrete agent id ⇒ that agent;
+ *  3. empty (the "follow the default" sentinel) or an unknown id ⇒ follow
+ *     `defaultAgentId`, applying rules 1–2 to it — so a GROUP default resolves as a
+ *     group instead of being skipped by an id lookup that can never match a virtual
+ *     reference;
+ *  4. no usable default ⇒ the system agent, else the synthesized fallback (the
+ *     "settings empty/corrupt" safety net that keeps c3 launchable).
+ *
+ * Throws {@link AgentGroupUnavailableError} when the target — direct or reached via
+ * the default — is a group with no enabled member. That failure is deliberately NOT
+ * absorbed into rule 4: falling back would hide an actionable misconfiguration
+ * behind an agent the user never chose.
+ */
+export function resolveAgentTarget(ref: string | null): AgentTarget {
+  const settings = loadSettings()
+  const wanted = ref?.trim() ?? ''
+  if (wanted) {
+    const g = parseGroupAgentRef(wanted)
+    if (g) return groupTarget(wanted, g.vendor, g.group)
+    const byId = settings.agents.find((a) => a.id === wanted)
+    if (byId) return singleTarget(byId)
+  }
+  // Follow the default: the empty-role sentinel AND the unknown-id compat chain.
+  const fallbackId = settings.defaultAgentId?.trim() ?? ''
+  if (fallbackId) {
+    const dg = parseGroupAgentRef(fallbackId)
+    if (dg) return groupTarget(fallbackId, dg.vendor, dg.group)
+    const byDefault = settings.agents.find((a) => a.id === fallbackId)
+    if (byDefault) return singleTarget(byDefault)
+  }
+  return singleTarget(settings.agents.find((a) => a.id === SYSTEM_AGENT_ID) ?? systemAgent())
+}
+
+/**
+ * {@link resolveAgentTarget} without the throw — for the callers that must DECIDE
+ * on an unusable group (refuse a session creation with a structured error) or
+ * survive one (display/projection reads of an already-bound session).
+ */
+export function tryResolveAgentTarget(ref: string | null): AgentTargetResult {
+  try {
+    return { ok: true, target: resolveAgentTarget(ref) }
+  } catch (err) {
+    if (err instanceof AgentGroupUnavailableError) return { ok: false, groupRef: err.groupRef }
+    throw err
+  }
+}
+
+/** The configured reference for a role — `''` for the "follow the default" sentinel. */
+export function getRoleAgentId(role: AgentRole): string {
+  const raw = loadSettings()[ROLE_SETTINGS_FIELD[role]]
+  return typeof raw === 'string' ? raw : ''
+}
+
+/**
+ * A ROLE's agent target — the entry every session-creation path binds from. All
+ * five roles share {@link resolveAgentTarget}, so "role field set to a group" and
+ * "role field empty, default is a group" land on the SAME target. Throws
+ * {@link AgentGroupUnavailableError} for an unusable group.
+ */
+export function resolveRoleAgentTarget(role: AgentRole): AgentTarget {
+  return resolveAgentTarget(getRoleAgentId(role) || null)
+}
+
+/** {@link resolveRoleAgentTarget} without the throw (see {@link tryResolveAgentTarget}). */
+export function tryResolveRoleAgentTarget(role: AgentRole): AgentTargetResult {
+  return tryResolveAgentTarget(getRoleAgentId(role) || null)
+}
+
+/**
+ * The vendor behind a reference, resolved without ever throwing: the
+ * representative member's vendor, or — for an unusable group — the vendor the
+ * group reference itself encodes (a group is vendor-locked, so this is still the
+ * session's real vendor). For display/projection reads that must stay renderable
+ * while the configuration is broken.
+ */
+export function resolveAgentVendor(ref: string | null): VendorId {
+  const result = tryResolveAgentTarget(ref)
+  return result.ok
+    ? result.target.agent.vendor
+    : (parseGroupAgentRef(result.groupRef)?.vendor ?? 'claude')
 }
 
 /**
@@ -150,38 +307,31 @@ export function resolveFirstAgentOfVendor(vendor: VendorId): AgentConfig {
 }
 
 /**
- * The agent for a reference, or the default agent if it is null/unknown. A virtual
- * group reference (`_c3_<vendor>_<group>`) resolves to that group's highest-priority
- * enabled member (its representative — for vendor/model display and the single-agent
- * callers); an empty group falls through to the default (ADR-0029).
+ * The single-agent view of a reference — {@link resolveAgentTarget}'s
+ * representative member. A virtual group reference (`_c3_<vendor>_<group>`), given
+ * directly or reached by following a GROUP `defaultAgentId`, resolves to that
+ * group's highest-priority enabled member (for vendor/model display and the
+ * single-agent callers).
+ *
+ * Throws {@link AgentGroupUnavailableError} when that group has no enabled member:
+ * an empty group is a configuration error and must not degrade into the system
+ * agent. Callers that cannot fail (display, projection reads) use
+ * {@link tryResolveAgentTarget} / {@link resolveAgentVendor} instead.
  */
 export function resolveAgent(agentId: string | null): AgentConfig {
-  const settings = loadSettings()
-  const g = agentId ? parseGroupAgentRef(agentId) : null
-  if (g) {
-    const members = groupAgents(g.vendor, g.group, settings)
-    if (members.length > 0) return members[0]
-    agentId = null // empty group ⇒ fall through to the default fallback
-  }
-  const byId = agentId ? settings.agents.find((a) => a.id === agentId) : undefined
-  return (
-    byId ??
-    settings.agents.find((a) => a.id === settings.defaultAgentId) ??
-    settings.agents.find((a) => a.id === SYSTEM_AGENT_ID) ??
-    systemAgent()
-  )
+  return resolveAgentTarget(agentId).agent
 }
 
 /**
  * The agent that runs **background tool sessions** (completion judge, session
  * summary; the exception-handling session is not yet agent-driven — reserved for
- * a follow-up intent). Reads `toolAgentId` and resolves it through
- * {@link resolveAgent}, so the fall-through is `toolAgentId → defaultAgentId →
- * system → synthesized fallback`: an empty/unknown `toolAgentId` (the "follow the
- * default" sentinel) lands on the default agent, never locking a tool session out.
+ * a follow-up intent). The single-agent view of
+ * `resolveRoleAgentTarget('tool')`, so the fall-through is `toolAgentId →
+ * defaultAgentId → system → synthesized fallback` and a group on either end
+ * resolves to its representative member.
  */
 export function resolveToolAgent(): AgentConfig {
-  return resolveAgent(loadSettings().toolAgentId)
+  return resolveRoleAgentTarget('tool').agent
 }
 
 /**
@@ -195,39 +345,33 @@ export function resolveToolSessionLaunch(): { agentId: string } & LaunchOverride
 
 /**
  * The agent that runs **intent-communication sessions** (the intent analyst's
- * requirement-breakdown conversation). Reads `intentAgentId` and resolves it
- * through {@link resolveAgent}, so the fall-through is `intentAgentId →
- * defaultAgentId → system → synthesized fallback`: an empty/unknown `intentAgentId`
- * (the "follow the default" sentinel) lands on the default agent, never locking an
- * intent comm session out. Mirrors {@link resolveToolAgent} exactly.
+ * requirement-breakdown conversation). The single-agent view of
+ * `resolveRoleAgentTarget('intent')` — same rules as {@link resolveToolAgent}, so
+ * `intentAgentId → defaultAgentId → system → synthesized fallback` with a group on
+ * either end resolving to its representative member.
  */
 export function resolveIntentAgent(): AgentConfig {
-  return resolveAgent(loadSettings().intentAgentId)
+  return resolveRoleAgentTarget('intent').agent
 }
 
 /**
  * The agent that runs **spec-authoring sessions** (writing/refining the project
- * specification). Reads `specAgentId` and resolves it through {@link resolveAgent},
- * so the fall-through is `specAgentId → defaultAgentId → system → synthesized
- * fallback`: an empty/unknown `specAgentId` (the "follow the default" sentinel)
- * lands on the default agent, never locking a spec session out. Mirrors
- * {@link resolveIntentAgent} exactly.
+ * specification). The single-agent view of `resolveRoleAgentTarget('spec')`;
+ * mirrors {@link resolveIntentAgent} exactly.
  */
 export function resolveSpecAgent(): AgentConfig {
-  return resolveAgent(loadSettings().specAgentId)
+  return resolveRoleAgentTarget('spec').agent
 }
 
 /**
- * The agent that runs **spec-REVIEW sessions** (the read-only reviewer). Reads
- * `specReviewAgentId` and resolves it through {@link resolveAgent}, so the
- * fall-through is `specReviewAgentId → defaultAgentId → system → synthesized
- * fallback`: an empty/unknown value (the "follow the default" sentinel) lands on
- * the default agent, never locking a review out. Mirrors {@link resolveSpecAgent}
- * exactly. There is no sandbox variant — `sandboxSessionKinds` alone decides
- * whether a review session runs inside the sandbox.
+ * The agent that runs **spec-REVIEW sessions** (the read-only reviewer). The
+ * single-agent view of `resolveRoleAgentTarget('spec_review')`; mirrors
+ * {@link resolveSpecAgent} exactly. There is no sandbox variant —
+ * `sandboxSessionKinds` alone decides whether a review session runs inside the
+ * sandbox.
  */
 export function resolveSpecReviewAgent(): AgentConfig {
-  return resolveAgent(loadSettings().specReviewAgentId)
+  return resolveRoleAgentTarget('spec_review').agent
 }
 
 /**
@@ -393,20 +537,16 @@ export function enumerateGroupAgents(
 
 /**
  * Resolve an agent reference to its ordered candidate list (ADR-0029):
- *  - a real id             → `[that agent]` (length 1)
- *  - `_c3_<vendor>_<group>` → that `(vendor, group)`'s enabled members, priority order
- *  - unknown / empty group  → the default-agent fallback (length 1)
- * Never empty — a group that resolved to nothing falls back like {@link resolveAgent}.
- * A plain (non-group) agent is the degenerate length-1 candidate list, sharing the
- * same launch/failover path as a group.
+ *  - a real id              → `[that agent]` (length 1)
+ *  - `_c3_<vendor>_<group>`  → that `(vendor, group)`'s enabled members, priority order
+ *  - unknown / empty         → the default-agent target's candidates
+ * Never empty. A group with no enabled member throws
+ * {@link AgentGroupUnavailableError} instead of degrading to another agent — every
+ * run re-expands the group, so a group that lost its last member must fail visibly
+ * rather than run somewhere the user never configured.
  */
 export function resolveAgentCandidates(ref: string | null): AgentConfig[] {
-  const g = ref ? parseGroupAgentRef(ref) : null
-  if (g) {
-    const members = groupAgents(g.vendor, g.group)
-    return members.length > 0 ? members : [resolveAgent(null)]
-  }
-  return [resolveAgent(ref)]
+  return resolveAgentTarget(ref).candidates
 }
 
 /**
@@ -416,10 +556,8 @@ export function resolveAgentCandidates(ref: string | null): AgentConfig[] {
  * real reference binds to the resolved (fallback-applied) id.
  */
 function resolveLaunchForRef(ref: string | null): { agentId: string } & LaunchOverrides {
-  const candidates = resolveAgentCandidates(ref)
-  const g = ref ? parseGroupAgentRef(ref) : null
-  const agentId = g && groupAgents(g.vendor, g.group).length > 0 ? ref! : candidates[0].id
-  return { agentId, ...launchForCandidates(candidates) }
+  const target = resolveAgentTarget(ref)
+  return { agentId: target.ref, ...launchForCandidates(target.candidates) }
 }
 
 /**
@@ -439,18 +577,26 @@ export function resolveSessionLaunch(
  * display/projection consumer must derive BOTH halves from: reading the id from
  * the current settings while reading the vendor from the session would mint a
  * split row (`agent_id` of one agent, `vendor` of another) that no launch can
- * honour. Group refs (`_c3_<vendor>_<group>`, ADR-0029) stay refs while the group
- * has members, matching {@link resolveSessionLaunch}'s binding rule.
+ * honour. Group refs (`_c3_<vendor>_<group>`, ADR-0029) stay refs, matching
+ * {@link resolveSessionLaunch}'s binding rule.
+ *
+ * DISPLAY-SAFE by design: a session whose group lost its last enabled member keeps
+ * its own identity here (the group ref + the vendor that ref encodes) instead of
+ * throwing. The configuration error is raised where it is actionable — creating or
+ * (re)binding a session, and launching a run — not while rendering a session that
+ * already exists.
  */
 export function resolveSessionAgentBinding(sessionId: string | null): {
   agentId: string
   vendor: VendorId
 } {
   const ref = sessionId ? getSessionAgentId(sessionId) : null
-  const g = ref ? parseGroupAgentRef(ref) : null
-  const resolved = resolveAgent(ref)
-  const agentId = g && groupAgents(g.vendor, g.group).length > 0 ? ref! : resolved.id
-  return { agentId, vendor: resolved.vendor }
+  const result = tryResolveAgentTarget(ref)
+  if (result.ok) return { agentId: result.target.ref, vendor: result.target.agent.vendor }
+  return {
+    agentId: ref ?? result.groupRef,
+    vendor: parseGroupAgentRef(result.groupRef)?.vendor ?? 'claude',
+  }
 }
 
 /**

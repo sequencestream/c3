@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   AD_HOC_SIGNING_IDENTITY,
+  APPIMAGE_RPATH,
   APPLE_CREDENTIAL_ENV_KEYS,
   DESKTOP_TARGETS,
   appleEnvOverride,
@@ -13,6 +14,7 @@ import {
   isDesktopHostTarget,
   linuxBundleEnv,
   macSigningMode,
+  needsSidecarRpathPreset,
   preferredKindFor,
   rustTriple,
   sidecarStageName,
@@ -20,7 +22,12 @@ import {
   tauriBundleFlags,
   tauriConfigOverride,
 } from './desktop-artifacts.mjs'
-import { findBundleArtifact, stageSidecarBinary, verifySidecarVersion } from './desktop.mjs'
+import {
+  findBundleArtifact,
+  presetSidecarRpath,
+  stageSidecarBinary,
+  verifySidecarVersion,
+} from './desktop.mjs'
 import { buildManifest, carryForwardArtifacts, CHANNEL_DESKTOP, splitTarget } from './manifest.mjs'
 import { binaryPathFor, cliChannel } from './smoke.mjs'
 import { requiredChannel } from './postgate.mjs'
@@ -129,6 +136,32 @@ describe('linuxBundleEnv / tauriBuildFlags', () => {
     expect(tauriBuildFlags('linux-x64')).toEqual(['--verbose'])
     expect(tauriBuildFlags('macos-arm64')).toEqual([])
     expect(tauriBuildFlags('windows-x64')).toEqual([])
+  })
+})
+
+describe('presetSidecarRpath', () => {
+  // 预设的全部意义在于与 linuxdeploy 要写的值**逐字相同** —— 值一致它才会退化成
+  // 原地覆盖;差一个字符就走回重排 ELF 布局那条路,把 bun sidecar 弄成一跑就
+  // SIGSEGV 的废文件。
+  it('uses byte-for-byte the rpath linuxdeploy writes', () => {
+    expect(APPIMAGE_RPATH).toBe('$ORIGIN/../lib')
+  })
+
+  it('only applies to Linux — no other platform runs linuxdeploy', () => {
+    expect(needsSidecarRpathPreset('linux-x64')).toBe(true)
+    expect(needsSidecarRpathPreset('macos-arm64')).toBe(false)
+    expect(needsSidecarRpathPreset('windows-x64')).toBe(false)
+  })
+
+  // 非 Linux 目标必须是纯粹的空操作:patchelf 在 macOS/Windows runner 上根本不存在,
+  // 一旦这里去探测它,那两条构建线会当场失败。
+  it('is a no-op off Linux, without probing for patchelf', () => {
+    expect(presetSidecarRpath({ target: 'macos-arm64', stagedPath: '/nonexistent' })).toEqual({
+      patched: false,
+    })
+    expect(presetSidecarRpath({ target: 'windows-x64', stagedPath: '/nonexistent' })).toEqual({
+      patched: false,
+    })
   })
 })
 

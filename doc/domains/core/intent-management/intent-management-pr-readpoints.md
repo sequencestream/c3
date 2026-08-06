@@ -3,7 +3,7 @@
 > `pr_id/pr_url/pr_status`(SQLite 列,snake_case)与 `prId/prUrl/prStatus`(领域模型
 > 字段,camelCase)是同一事实的两面。本清单列出这些字段的当前读写点,供拆表迁移逐项核对;
 > 生成方式为人工 `rg` + 沿调用链复核,不覆盖第三方依赖、构建产物与 `.git`。来源事实核查
-> 与设计裁决见 [ADR-0034](../../architecture/adr/0034-intent-pr-fact-base-and-readpoints.md)。
+> 与设计裁决见 [ADR-0034](../../../architecture/adr/0034-intent-pr-fact-base-and-readpoints.md)。
 >
 > **字段语义(已证实):** `prId` = 仓库内 PR/MR **number**(GitHub 与 GitLab 一致,纯数字);
 > `prUrl` = 可跳转链接;`prStatus` = 生命周期状态,运行时取值域
@@ -130,4 +130,4 @@
 | `database/tables.md` / `doc/domains/core/intent-management/intent-management-{models,design,spec}.md`                                                                                                                                                                                     | 文档              | 领域文档中的三字段描述                                |
 
 > 数据质量观察(存量 `pr_status` 与 forge 真实状态漂移、`pr_status='merged'` 但无 `pr_id`
-> 的行等)与回填处理见 [ADR-0034](../../architecture/adr/0034-intent-pr-fact-base-and-readpoints.md)。
+> 的行等)与回填处理见 [ADR-0034](../../../architecture/adr/0034-intent-pr-fact-base-and-readpoints.md)。

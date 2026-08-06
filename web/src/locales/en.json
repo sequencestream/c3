@@ -728,6 +728,13 @@
       "light": {
         "label": "Light"
       }
+    },
+    "fontScale": {
+      "title": {
+        "label": "Font size"
+      },
+      "hint": "The font size of the c3 web console, 70%–120% of the built-in size. Changes apply immediately without a reload. When you are signed in the choice is saved to your account; otherwise it is kept in this browser.",
+      "percentage": "{value}%"
     }
   },
   "intent": {

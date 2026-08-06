@@ -208,6 +208,7 @@ c3
 │   ├── personalized-setting 个人化设置           # 按人偏好(PersonalizedSettings),独立入口页,不过管理员门,普通账户可改
 │   │   ├── 显示语言                              # uiLang 界面语言,选中即切 vue-i18n + <html lang> 并按当前身份保存
 │   │   ├── 显示样式                              # theme 配色主题,选项来自可扩展主题注册表(dark 默认 / light),选中即写根元素 data-theme 并按当前身份保存
+│   │   ├── 字体大小                              # fontScale 全局 UI 字号(70–120,拖动条),经根元素 --c-font-scale 缩放相对单位字号,选中即生效并按当前身份保存
 │   │   ├── 按身份存储                            # 已认证存服务端 personalizedSettings[subject];无身份存浏览器 localStorage,不跨设备同步
 │   │   ├── 首次登录播种                          # 账户无记录时以本浏览器合法值锁内建档一次;账户记录一旦存在即权威,不被本地值覆盖
 │   │   └── agent 输出语言                        # 顶层 agentLang 跟随最近一次上报,供无连接上下文的服务端提示词(意图/规格/标题/总结)使用

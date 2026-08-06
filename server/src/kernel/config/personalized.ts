@@ -48,6 +48,13 @@ export const UI_THEMES: readonly UiTheme[] = ['dark', 'light']
 /** The theme when a record is missing, malformed, or names an unknown theme. */
 export const DEFAULT_THEME: UiTheme = 'dark'
 
+/** Accepted font-scale range (percent of the built-in size). */
+export const FONT_SCALE_MIN = 70
+export const FONT_SCALE_MAX = 120
+
+/** The scale when a record is missing, malformed, or out of range — 100%, the built-in size. */
+export const DEFAULT_FONT_SCALE = 100
+
 /**
  * The raw settings-file shape as far as this module cares: the two keys it owns,
  * plus whatever else the file holds (preserved verbatim on write). Read untyped and
@@ -75,6 +82,10 @@ function isUiTheme(v: unknown): v is UiTheme {
   return typeof v === 'string' && UI_THEMES.includes(v as UiTheme)
 }
 
+function isFontScale(v: unknown): v is number {
+  return typeof v === 'number' && v >= FONT_SCALE_MIN && v <= FONT_SCALE_MAX
+}
+
 /**
  * Force a raw record into a valid {@link PersonalizedSettings}. Every field
  * normalizes to its own default, so a record written by an older or newer client is
@@ -86,6 +97,7 @@ export function normalizePersonalized(raw: unknown): PersonalizedSettings {
   return {
     uiLang: isUiLang(rec.uiLang) ? rec.uiLang : DEFAULT_UI_LANG,
     theme: isUiTheme(rec.theme) ? rec.theme : DEFAULT_THEME,
+    fontScale: isFontScale(rec.fontScale) ? rec.fontScale : DEFAULT_FONT_SCALE,
   }
 }
 

@@ -6,6 +6,7 @@ import type { PersonalizedSettings } from '@ccc/shared/protocol'
 import PersonalizedSetting from './PersonalizedSetting.vue'
 import { useAuth } from '@/composables/useAuth'
 import { THEMES } from '@/lib/theme'
+import { FONT_SCALE_MAX, FONT_SCALE_MIN } from '@/lib/font-scale'
 
 function mountPage(settings: PersonalizedSettings = { uiLang: 'zh' }) {
   return mount(PersonalizedSetting, { props: { open: true, settings } })
@@ -80,6 +81,56 @@ describe('PersonalizedSetting.vue — display style', () => {
     const w = mountPage()
     await w.find('[data-testid="personalized-theme"]').setValue('light')
     expect(w.emitted('set-ui-lang')).toBeUndefined()
+  })
+})
+
+describe('PersonalizedSetting.vue — font size', () => {
+  it('renders a range slider covering the accepted 70–120% range', () => {
+    const slider = mountPage().find<HTMLInputElement>('[data-testid="personalized-font-scale"]')
+    expect(slider.exists()).toBe(true)
+    expect(slider.element.type).toBe('range')
+    expect(Number(slider.attributes('min'))).toBe(FONT_SCALE_MIN)
+    expect(Number(slider.attributes('max'))).toBe(FONT_SCALE_MAX)
+    expect(Number(slider.attributes('step'))).toBe(1)
+  })
+
+  it('seeds the slider and the percentage readout from the resolved settings', () => {
+    const w = mountPage({ uiLang: 'zh', fontScale: 115 })
+    expect(w.find<HTMLInputElement>('[data-testid="personalized-font-scale"]').element.value).toBe(
+      '115',
+    )
+    expect(w.find('[data-testid="personalized-font-scale-value"]').text()).toBe('115%')
+  })
+
+  it('defaults to 100% when no scale is resolved yet', () => {
+    const w = mountPage({})
+    expect(w.find<HTMLInputElement>('[data-testid="personalized-font-scale"]').element.value).toBe(
+      '100',
+    )
+    expect(w.find('[data-testid="personalized-font-scale-value"]').text()).toBe('100%')
+  })
+
+  it('emits set-font-scale immediately on drag (no Save button exists)', async () => {
+    const w = mountPage()
+    await w.find('[data-testid="personalized-font-scale"]').setValue('120')
+    expect(w.emitted('set-font-scale')).toEqual([[120]])
+    expect(w.find('[data-testid="personalized-setting-save"]').exists()).toBe(false)
+  })
+
+  it('does not emit a theme or language change when only the scale is dragged', async () => {
+    const w = mountPage()
+    await w.find('[data-testid="personalized-font-scale"]').setValue('90')
+    expect(w.emitted('set-theme')).toBeUndefined()
+    expect(w.emitted('set-ui-lang')).toBeUndefined()
+  })
+
+  it('shows the persisted value after the page is reopened', () => {
+    // A reopened page seeds from the latest saved settings — the "persistence" here
+    // is the settings prop, so mounting with the saved value renders it back.
+    const w = mountPage({ uiLang: 'zh', theme: 'light', fontScale: 95 })
+    expect(w.find<HTMLInputElement>('[data-testid="personalized-font-scale"]').element.value).toBe(
+      '95',
+    )
   })
 })
 

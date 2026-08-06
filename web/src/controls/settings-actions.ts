@@ -13,6 +13,7 @@ import {
   writeLocalPersonalized,
 } from '@/lib/personalized-settings'
 import { applyTheme, DEFAULT_THEME } from '@/lib/theme'
+import { applyFontScale, DEFAULT_FONT_SCALE } from '@/lib/font-scale'
 import type { AppCtx } from './types'
 
 // Install system/workspace/personalized settings, skill-install, locale, and
@@ -302,6 +303,33 @@ export function installSettingsActions(ctx: AppCtx): void {
     } catch {
       applyTheme(prev)
       writeLocalPersonalized({ theme: prev })
+      personalizedSettings.value = previousSettings
+      ctx.showToast(t('error.personalizedSetting.saveFailed'))
+    }
+  }
+
+  /**
+   * Set the console UI font scale at runtime (no page reload): write the ratio onto
+   * the root element's `--c-font-scale`, record it in this browser, then persist it
+   * for the current identity — the same immediate-apply, immediate-save shape the
+   * language and theme use. The saved payload is the whole settings object, so a
+   * scale change never drops the language or theme (and vice versa).
+   * If the WS send fails, roll the CSS variable, the browser record and the
+   * in-memory snapshot all the way back and toast.
+   */
+  ctx.setFontScale = (next: number): void => {
+    const previousSettings = personalizedSettings.value
+    const prev = previousSettings.fontScale ?? DEFAULT_FONT_SCALE
+    if (next === prev) return
+    applyFontScale(next)
+    writeLocalPersonalized({ fontScale: next })
+    personalizedSettings.value = { ...previousSettings, fontScale: next }
+    try {
+      if (!ctx.client) throw new Error('no connection')
+      send({ type: 'save_personalized_settings', settings: personalizedSettings.value })
+    } catch {
+      applyFontScale(prev)
+      writeLocalPersonalized({ fontScale: prev })
       personalizedSettings.value = previousSettings
       ctx.showToast(t('error.personalizedSetting.saveFailed'))
     }

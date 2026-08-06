@@ -135,6 +135,24 @@ describe('save_personalized_settings', () => {
     ])
   })
 
+  it('passes a fontScale through with no admin gate — a plain account saves it', () => {
+    const { conn, sent } = makeConn('bob')
+    savePersonalizedSettingsHandler(ctx, conn, {
+      type: 'save_personalized_settings',
+      settings: { uiLang: 'ja', theme: 'light', fontScale: 115 },
+    })
+    expect(h.saveCalls).toEqual([
+      { subject: 'bob', settings: { uiLang: 'ja', theme: 'light', fontScale: 115 } },
+    ])
+    expect(sent).toEqual([
+      {
+        type: 'personalized_settings',
+        settings: { uiLang: 'ja', theme: 'light', fontScale: 115 },
+        scope: 'account',
+      },
+    ])
+  })
+
   it('writes under the connection subject, not one named in the frame', () => {
     const { conn } = makeConn('bob')
     savePersonalizedSettingsHandler(ctx, conn, {

@@ -58,6 +58,16 @@ export interface PersonalizedSettings {
    * Normalized on its own, so a corrupt theme never disturbs {@link uiLang}.
    */
   theme?: UiTheme
+  /**
+   * Console UI font-size scale, as a percentage of the built-in size (100 = 100%,
+   * the default). Only values in `[70, 120]` are accepted; a missing, out-of-range
+   * or non-numeric value normalizes to 100. Fractions are allowed (e.g. 87.5).
+   * Applied to the whole UI through the root element's `--c-font-scale` CSS
+   * variable, which every relative-unit (`rem`/`em`/`var`) font token scales by —
+   * a per-person display preference like {@link uiLang}/{@link theme}, never a
+   * system-wide knob.
+   */
+  fontScale?: number
 }
 
 /**

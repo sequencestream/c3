@@ -120,7 +120,9 @@ npm 安装落在一个用完即弃的 staging 前缀里,只有装好的 `node_mo
   制品存在之前就能保持绿色)。
 - **发布门禁**(`release:verify-dist`)在生成校验和之后、打 tag 之前的发布步骤内运行:
   它重新对每个制品做哈希,检查 manifest、`SHA256SUMS` 与磁盘上的字节是否逐行一致,
-  并确认**每个 P0 目标都在场**——集合不完整或已漂移都会阻断发布。
+  确认**每个 P0 目标都在场**、manifest 的 `schema` 属于 `c3-release-manifest/*`,
+  且发布目录里**没有未被 manifest 描述的孤儿制品**——集合不完整、已漂移或含孤儿制品都会阻断发布。
+  CI 在 `publish` job 里对 **merge-dist 合并后**的统一目录跑同一道门禁。
 
 ### 门禁归属:commit 级增量 vs release 全量
 
@@ -136,47 +138,47 @@ husky/lint-staged 守护的是 **commit 级增量**;release 门禁守护的是**
 
 ## CI:GH Actions 原生矩阵(release 6/7)
 
-GH Actions release workflow 在真实的 GH Actions runner 上执行五层门禁顺序,
-并用 `needs:` **物理**强制阶段顺序——上游任务一红,所有下游任务全部跳过。这正是
-解锁 macOS ad-hoc + SLSA 收益的关键(见下文「SLSA 溯源」):每个目标都构建在自己的
+GH Actions release workflow 在真实的 GH Actions runner 上执行三层门禁顺序
+(见上文「质量门禁」的 0–2),并用 `needs:` **物理**强制阶段顺序——上游任务一红,
+所有下游任务全部跳过。这正是解锁 macOS ad-hoc 收益的关键:每个目标都构建在自己的
 **原生操作系统 runner** 上(`ubuntu-latest` / `macos-14` / `windows-latest`),
 因此跨平台编译不再是问题。(字节码本来也会是仅原生才有的收益,但它已被禁用——见
 下文「字节码 — 已禁用」。)
 
 ```text
 setup (ubuntu-latest)
-  └─ 解析 version → outputs.{version,batch}(目标固定,每次构建全部)
+  └─ 解析 version → outputs.version(目标固定,每次构建全部;无 targets 输入)
 pregate (ubuntu-latest)
   └─ typecheck → lint → test → i18n:check → i18n:check-freeze
-build:linux-x64      (ubuntu-latest)     needs: [pregate, setup]
-build:macos-arm64    (macos-14)          needs: [pregate, setup]
-build:windows-x64    (windows-latest)    needs: [pregate, setup]   ⚠️experimental
+build-publish:linux-x64    (ubuntu-latest)     needs: [pregate, setup]
+build-publish:macos-arm64  (macos-14)          needs: [pregate, setup]
+build-publish:windows-x64  (windows-latest)    needs: [pregate, setup]   ⚠️experimental
   └─ pnpm release:build --targets=<one> --skip-smoke --strict   (env C3_RELEASE_VERSION=<version>)
-  └─ 在 darwin runner 上做 ad-hoc codesign(在 linux/windows 上是空操作)
-  └─ actions/upload-artifact@v4 → c3-<target>(上传的是包的 sidecar,而非二进制文件本身)
-smoke:<target>       (same OS as build)  needs: [build:<target>]
-  └─ pnpm release:smoke --file=<artifact>  (--version + 无头 HTTP 探测)
-verify-dist          (ubuntu-latest)     needs: [setup, smoke:{linux,macos-arm64,windows}-x64]
-  └─ if: !cancelled()  (被排除的目标是 SKIPPED,不是红——发布门禁才是真正的关卡)
-  └─ 下载制品(按目标分子目录,NO merge-multiple)→ 合并 → 发布门禁
-     (每个 build 任务各自产出自己的 manifest;merge-multiple 会让它们互相覆盖,
-      导致只有一个目标存活——合并步骤把各子目录折叠成一份完整的 manifest +
-      SHA256SUMS,随后发布门禁检查 manifest↔SHA256SUMS↔磁盘 + 必需目标完整性)
-provenance           (ubuntu-latest)     needs: [setup, verify-dist]   if: !cancelled() && !failure()
-  └─ 下载所有制品(merge-multiple 可以——包名各不相同,不需要 manifest)
-  └─ actions/attest-build-provenance@v2 针对每个已选目标(OIDC 无密钥;SLSA L3)
-publish              (ubuntu-latest)     needs: [setup, provenance]    if: !cancelled() && !failure()
-  └─ 下载制品(按目标分子目录)→ 合并(发布步骤读取合并后的 manifest)
-  └─ pnpm release:publish(生成 sha256 校验和 + verify-dist 复检 + 打 tag + gh release,notes 由 --generate-notes 生成)
+  └─ smoke → checksum → postgate(C3_REQUIRED_TARGETS=<target>)
+  └─ actions/upload-artifact@v4 → c3-<target>(包 + .sha256 + SHA256SUMS + 该 job 的 manifest.json)
+build-desktop:linux-x64    (ubuntu-latest)     needs: [pregate, setup]
+build-desktop:macos-arm64  (macos-14)          needs: [pregate, setup]
+build-desktop:windows-x64  (windows-latest)    needs: [pregate, setup]
+  └─ pnpm release:desktop --targets=<one>  (macOS --require-signing)
+  └─ checksum → postgate(C3_REQUIRED_CHANNEL=desktop)
+  └─ actions/upload-artifact@v4 → c3-desktop-<target>(安装包 + sidecar + manifest.json)
+publish              (ubuntu-latest)     needs: [setup, 6 个 build job]    if: !cancelled() && 三个 CLI job 全绿
+  └─ 下载制品(按制品名分子目录,NO merge-multiple——同名 manifest.json / SHA256SUMS 不会互相覆盖)
+  └─ merge-dist:把各 job 的 manifest 合并成一份跨目标 manifest.json + SHA256SUMS
+     (schema/version/commit 一致;按 file 去重;失败的 desktop job 没有子目录可合并 → 其目标缺席)
+  └─ postgate:manifest ↔ SHA256SUMS ↔ 磁盘 + 必需 CLI 目标 + schema 属 c3-release-manifest/* + 无孤儿制品
+  └─ 清理子目录 → gh release create / upload(每个制品 + .sha256 + SHA256SUMS + 合并后的 manifest.json,
+     notes 由 --generate-notes 生成)
 ```
 
 来自 `needs:` + `if:` 的阶段顺序保证:
 
-- 红色的 `pregate` 会跳过全部三个 `build:` 任务(不会在红色源码树上尝试跨平台编译)。
-- 一个**必需**目标出现红色的 `build:<target>` ⇒ 它的制品在重新聚合的制品集合中
-  缺席 ⇒ 发布门禁会因缺少必需目标而中止 `verify-dist`。
-- 红色的 `verify-dist` ⇒ `failure()` ⇒ `provenance` 和 `publish` 都跳过(不打 tag,不跑 `gh`)。
-- 红色的 `provenance` ⇒ `failure()` ⇒ `publish` 跳过。
+- 红色的 `pregate` 会跳过全部六个构建 job(不会在红色源码树上尝试跨平台编译)。
+- 一个 **CLI** job 红 ⇒ `publish` 的 `if:` 为假 ⇒ publish 跳过,不打 tag、不跑 `gh`。
+- 一个 **desktop** job 红 ⇒ publish 照常运行,只是该目标没有制品子目录可下载、不进合并 —— 缺席的
+  desktop 目标不会出现在合并后的 manifest 里,CLI 通道照常发布(「desktop 红 ≠ CLI 红」)。
+- `merge-dist` 或 `postgate` 红(混合版本/提交、哈希冲突、必需 CLI 缺失、schema 非法、孤儿制品)⇒
+  publish 在调用 `gh` 之前中止,不产残缺 Release。
 
 该 workflow 在 `workflow_dispatch`(手动发布入口)和 `push tags: 'v*'`
 (重新发布、重新校验)上运行。`workflow_dispatch` 的输入项:
@@ -189,8 +191,10 @@ publish              (ubuntu-latest)     needs: [setup, provenance]    if: !canc
   传给发布门禁 / `verify-dist`。
 
 本地 `pnpm release` 与 CI 共享**同一套 node 脚本**(`release:build`、
-`release:smoke`、`release:verify-dist`、`release:publish`)——矩阵只是一个扇出的
-载体,不是第二套实现。
+`release:desktop`、`release:smoke`、`release:checksum`、`merge-dist`、postgate)
+——矩阵只是一个扇出的载体,不是第二套实现。CI 的 `publish` job 不走本地
+`release:publish`(那是 git-tag + `gh` 的一体化路径);它直接下载、合并、门禁,
+再用 `gh release create/upload` 切 Release。
 
 ## 字节码 — 已禁用(ESM/CJS 不兼容)
 
@@ -208,22 +212,23 @@ bundle 是 **ESM**,所以 `bun --compile --bytecode` 产出的二进制文件会
 > 但这个标志实际上从未被真正注入到编译命令中——是个潜藏的空操作。等它真正
 > 被接上之后,才暴露出上面的 ESM/CJS 不兼容问题,于是被刻意禁用。
 
-## SLSA 溯源 — P1(release 6/7)
+## SLSA 溯源 — P1(设计,尚未接入 CI workflow)
 
-GH Actions release workflow 有一个 `provenance` 任务(`needs: [verify-dist]`),
-针对每个制品运行一次 `actions/attest-build-provenance@v2`,使用 runner 的
-**OIDC token**(`permissions: id-token: write`、`attestations: write`)。生成的
-`.intoto.jsonl` SLSA L3 溯源认证会连同二进制文件一起上传到 GitHub Release,
-可以用 `gh attestation verify <file>` 离线验证。
+SLSA L3 溯源是**计划中的 P1 增强**:当前 CI release workflow **没有** `provenance`
+job,也不运行 `actions/attest-build-provenance` —— 本次发布链路不生成
+`.intoto.jsonl`,`gh attestation verify <file>` 目前无对象可验证。
 
-**溯源认证有意不放进 `verify-dist` 门禁。** 它是一个并行的「供应链透明度」制品;
+设计意图:未来在 `publish` 的合并与门禁通过后加一个 `provenance` 任务,针对每个制品
+运行一次 `actions/attest-build-provenance@v2`,使用 runner 的 **OIDC token**
+(`permissions: id-token: write`、`attestations: write`),生成的 `.intoto.jsonl`
+SLSA L3 溯源认证随二进制文件一起上传到 GitHub Release。
+
+**溯源认证有意不进发布门禁。** 它是一个并行的「供应链透明度」制品;
 **sha256 校验和 + 公开 GitHub Release(HTTPS)才是信任根**(见下文「分发信任」)。
 这种分离让我们可以在不收紧信任底线、也不让 OIDC 故障成为发布阻断项的前提下加入
-溯源——即便溯源生成失败,链条仍会走完(只是跳过 attest 步骤),`release:verify-dist` 不受影响。
+溯源——即便溯源生成失败,链条仍会走完(只是跳过 attest 步骤),发布门禁不受影响。
 
-从优先级意义上说,溯源认证是 **P1**:它会被生成并随发布上线,但项目目前还不
-依赖下游验证方去消费它。未来的波次可以通过在 `verify-dist` 中要求 attestation
-存在来收紧这道门禁。
+未来的波次可以在发布门禁中要求 attestation 存在来收紧这道门禁。
 
 ## 平台波次
 
@@ -346,8 +351,9 @@ macOS 签名与公证也只能在 darwin host 上完成。每个 job 跑 `releas
 桌面壳启动并拉起 sidecar 后异步检查一次新版本,托盘与「更新/关于」窗口提供手动检查
 与进度展示。版本事实、传输与校验规则与 CLI 共用同一套共享内核:
 
-- 版本事实来源是公开 GitHub Release 及其 `manifest.json`(`release:publish` 随制品
-  一并上传)。更新器只认 `channel: desktop`、平台/架构匹配、且带 `preferred: true`
+- 版本事实来源是公开 GitHub Release 及其 `manifest.json`(CI 的 `publish` job 把
+  merge-dist 合并后的一份随制品一并上传;本地 `release:publish` 同样上传)。更新器只认
+  `channel: desktop`、平台/架构匹配、且带 `preferred: true`
   的条目;同平台出现多个候选而无可唯一首选时拒绝安装,不猜测。
 - 下载经 sidecar 的更新 API(`/api/update/check`、`/api/update/download`)执行,共享
   内核做**双重 sha256 校验**(manifest 条目 + 同 Release 的 `<package>.sha256`),
@@ -472,8 +478,9 @@ bundle 会拿到版本 `define`,但不会被 minify。
 
 - `preferred` 标记每个目标**唯一**的自更新安装器(发布约定:macOS=dmg、
   Windows=nsis、Linux=appimage;deb 仅供首次安装)。桌面更新器只认带该标记的条目,同平台出现多个候选而
-  无唯一标记时拒绝安装,不猜测。`release:publish` 把 `manifest.json` 随制品一并
-  上传到 Release,更新器从 `releases/download/<tag>/manifest.json` 拉取。
+  无唯一标记时拒绝安装,不猜测。CI 的 `publish` job 把**合并后**的 `manifest.json`
+  随制品一并上传到 Release(本地 `release:publish` 同样上传),更新器从
+  `releases/download/<tag>/manifest.json` 拉取。
 
 - `channel` 是消费者的二选一:`cli`(单二进制包)或 `desktop`(Tauri 安装包)。
   没有该字段的历史条目按 `cli` 读。
@@ -580,8 +587,9 @@ publish;`--dry-run` 预演,不打 tag/不跑 `gh`;`--no-publish` 会在本地生
 
 开源版的二进制文件从公开分发仓库 `sequencestream/c3` 的 **GitHub Release**
 发布。发布经 **CI**(GH Actions release workflow)完成:各目标在其原生 OS
-runner 上构建 → 冒烟 → 生成 sha256 校验和 → verify-dist 一致性校验 → `gh
-release create`,携带每个制品 + `.sha256` sidecar + 汇总 `SHA256SUMS`。
+runner 上构建 → 冒烟 → 生成 sha256 校验和 → 下载合并(`merge-dist`)+ 发布门禁
+(postgate)→ `gh release create`,携带每个制品 + `.sha256` sidecar + 汇总
+`SHA256SUMS` + **合并后的 `manifest.json`**。
 
 - **Release notes 自动生成。** 使用 GitHub 的 `--generate-notes`,基于自上个
   tag 以来的 PR / commit 历史自动汇总,无需手工维护签名/校验说明。
@@ -605,7 +613,7 @@ pnpm release:notes                                   # 发布说明(版本 + CHA
 pnpm release:gate                                    # pregate:typecheck→lint→test→i18n:check→check-freeze
 pnpm release:smoke -- --file=<inner-binary>        # 对内层二进制文件做无头冒烟测试(CI 中先解压 tarball)
 pnpm release:smoke -- --manifest=<manifest>        # 或:通过 manifest 挑出内层二进制文件
-pnpm release:verify-dist                              # 发布终检:manifest↔SHA256SUMS↔磁盘 + P0
+pnpm release:verify-dist                              # 发布终检:manifest↔SHA256SUMS↔磁盘 + P0 + schema + 无孤儿制品
 pnpm release:publish --dry-run                        # 预演发布:只出计划,不打 tag/不跑 gh
 pnpm release                                          # 交互式:提示版本 → 构建 linux-x64+macos-arm64+windows-x64 → 生成 sha256 校验和 → 收集到 dist/release-artifacts/
 pnpm release --version=0.8.0                           # 非交互式指定版本(没有 TTY 时需要)
@@ -655,7 +663,8 @@ pnpm binary                                          # 原生单一二进制文�
   notes/publish 步骤。
 - **运行时版本** —— 二进制文件报告的版本字符串。
 - **快照生成器** —— 产出可嵌入的 web-bundle 快照。
-- **CI release workflow** —— 矩阵式的 `pregate → 4 个 build → 4 个 smoke →
-verify-dist → provenance → publish`,由 `needs:` 强制顺序。
+- **CI release workflow** —— `pregate → 6 个 build(3 CLI + 3 desktop,各自内联
+smoke/checksum/postgate)→ publish(下载分目录 → merge-dist → postgate →
+gh release create/upload)`,由 `needs:` 强制顺序。
 - **测试** —— 覆盖 build、checksum(证明 sha256 校验和/SHA256SUMS 一致性)、
   smoke(制品门禁辅助函数 + 有条件的真实冒烟测试)等行为。

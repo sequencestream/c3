@@ -11,12 +11,20 @@
 # red pregate skips every target; within a target a failed build/smoke/checksum/verify aborts it.
 #
 # Consequences of the per-target design (intentional):
-#   - There is no cross-target unified manifest.json / SHA256SUMS: each target carries its
-#     OWN single-target sidecars. Consumers cross-check a download with its own .sha256.
+#   - Each target carries its OWN single-target manifest.json + sidecars on the build
+#     runner. The `publish` job downloads them WITHOUT merge-multiple (same-named
+#     manifest.json / SHA256SUMS would silently overwrite each other), then runs
+#     `scripts/release/merge-dist.mjs` to fold the per-target manifests into ONE
+#     cross-target manifest.json + SHA256SUMS — the desktop updater reads exactly that
+#     `releases/download/<tag>/manifest.json` to pick its platform's `channel: desktop`
+#     artifact. Consumers cross-check a download with its own .sha256.
 #
-# Distribution: the `publish` job downloads every target's artifacts and creates a public
-# GitHub Release (`gh release create`), with notes auto-generated from the merged-PR / commit
-# history since the last release (`--generate-notes`, categorized by .github/release.yml).
+# Distribution: the `publish` job downloads every target's artifacts, merges + postgates
+# the combined set (schema / version / commit consistency, manifest ↔ SHA256SUMS ↔ on-disk
+# hashes, P0 completeness, no orphan packages), then creates a public GitHub Release
+# (`gh release create`) whose asset set includes every package + its .sha256 sidecar +
+# SHA256SUMS + the merged manifest.json. Notes are auto-generated from the merged-PR /
+# commit history since the last release (`--generate-notes`, categorized by .github/release.yml).
 # Integrity is the sha256 sidecars + GitHub HTTPS (open-source builds carry no code signature).
 #
 # Targets are fixed (linux-x64, macos-arm64, windows-x64): every run builds all of them,
@@ -185,6 +193,7 @@ jobs:
           path: |
             dist/c3-v*-linux-x64.tar.gz
             dist/c3-v*-linux-x64.zip
+            dist/manifest.json
             dist/*.sha256
             dist/SHA256SUMS*
           if-no-files-found: error
@@ -251,6 +260,7 @@ jobs:
           path: |
             dist/c3-v*-macos-arm64.tar.gz
             dist/c3-v*-macos-arm64.zip
+            dist/manifest.json
             dist/*.sha256
             dist/SHA256SUMS*
           if-no-files-found: error
@@ -326,6 +336,7 @@ jobs:
           path: |
             dist/c3-v*-windows-x64.tar.gz
             dist/c3-v*-windows-x64.zip
+            dist/manifest.json
             dist/*.sha256
             dist/SHA256SUMS*
           if-no-files-found: error
@@ -437,6 +448,7 @@ jobs:
           name: c3-desktop-macos-arm64
           path: |
             dist/c3-desktop-v*-macos-arm64.*
+            dist/manifest.json
             dist/*.sha256
             dist/SHA256SUMS*
           if-no-files-found: error
@@ -526,6 +538,7 @@ jobs:
           name: c3-desktop-windows-x64
           path: |
             dist/c3-desktop-v*-windows-x64.*
+            dist/manifest.json
             dist/*.sha256
             dist/SHA256SUMS*
           if-no-files-found: error
@@ -639,14 +652,18 @@ jobs:
           name: c3-desktop-linux-x64
           path: |
             dist/c3-desktop-v*-linux-x64.*
+            dist/manifest.json
             dist/*.sha256
             dist/SHA256SUMS*
           if-no-files-found: error
           retention-days: 7
 
   # ────────────────────────────────────────────────────────────────────
-  # 2. publish — gather every target's checksummed artifacts and cut ONE public
-  #    GitHub Release. Release notes are auto-generated from the merged-PR /
+  # 2. publish — download every target's checksummed artifacts, MERGE them into one
+  #    cross-target manifest.json + SHA256SUMS (merge-dist), run the publish-level
+  #    postgate over the combined set, then cut ONE public GitHub Release whose asset
+  #    set includes every package + its .sha256 sidecar + SHA256SUMS + the merged
+  #    manifest.json. Release notes are auto-generated from the merged-PR /
   #    commit history since the previous release (GitHub `--generate-notes`,
   #    categorized by .github/release.yml). Needs `contents: write` to create the
   #    Release + tag.
@@ -654,7 +671,8 @@ jobs:
   #    The CLI channel is the release gate: `if:` demands all three CLI jobs be
   #    green. Desktop jobs are in `needs` so publish WAITS for them, but a red
   #    desktop job only removes that desktop artifact from the release — it must
-  #    not hold the CLI single binary hostage.
+  #    not hold the CLI single binary hostage. A failed desktop job's target is
+  #    absent from the merged manifest by construction.
   # ────────────────────────────────────────────────────────────────────
   publish:
     name: 'publish (GitHub Release + auto notes)'
@@ -682,12 +700,15 @@ jobs:
         with:
           fetch-depth: 0 # full history so --generate-notes can diff against the last release
 
-      - name: Download all target artifacts
+      # Downloaded WITHOUT merge-multiple: each artifact keeps its own subdir
+      # (`release-dist/<artifact-name>/…`). merge-multiple would flatten the
+      # same-named per-target `manifest.json` / `SHA256SUMS` on top of each other
+      # and only the last one would survive — the merge step below needs them all.
+      - name: Download all target artifacts (per-artifact subdirs)
         uses: actions/download-artifact@v4
         with:
           path: release-dist
           pattern: c3-*
-          merge-multiple: true
 
       - name: Resolve release tag
         id: tag
@@ -704,16 +725,50 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "[publish] release tag: $tag"
 
+      # Fold the per-target dists into ONE flat dist. merge-dist asserts every
+      # input manifest shares schema/version/commit, dedups by filename (two
+      # different hashes for the same file = abort), flattens every package +
+      # .sha256 sidecar up into release-dist/, and writes the merged manifest.json
+      # + SHA256SUMS. A failed/absent desktop job simply has no subdir to merge —
+      # only the successful targets end up in the merged manifest.
+      - name: Merge per-target dists (manifest + packages + sidecars + SHA256SUMS)
+        shell: bash
+        run: node scripts/release/merge-dist.mjs --dist=release-dist
+
+      # Publish-level postgate (release 5/7): merged manifest ↔ SHA256SUMS ↔ on-disk
+      # sha256, every P0 CLI target present, schema is c3-release-manifest/*, and no
+      # business artifact sits in release-dist without the manifest describing it.
+      # The three CLI jobs are already the hard gate (the `if:` above); the three
+      # targets are passed so the merged set is held to them. A red merge or gate
+      # aborts the job BEFORE any `gh` call — no partial release.
+      - name: Verify the merged distribution (postgate)
+        env:
+          C3_REQUIRED_TARGETS: linux-x64,macos-arm64,windows-x64
+        shell: bash
+        run: node scripts/release/postgate.mjs --manifest=release-dist/manifest.json
+
       - name: Create or update the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           tag="${{ steps.tag.outputs.tag }}"
+          # Drop the per-target subdirs: the flat merged release-dist/ IS the upload
+          # set (every package + its .sha256 sidecar + SHA256SUMS + the merged
+          # manifest.json). The subdirs were consumed by merge-dist; uploads must
+          # not include them.
+          find release-dist -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
           shopt -s nullglob
           assets=(release-dist/*)
           if [ ${#assets[@]} -eq 0 ]; then
-            echo "::error::no artifacts downloaded — nothing to publish."
+            echo "::error::no artifacts — nothing to publish."
+            exit 1
+          fi
+          # Gate: the desktop updater resolves the release via
+          # `releases/download/<tag>/manifest.json` — an upload set without it is a
+          # silent 404 for every client, so refuse to create/update such a Release.
+          if [[ " ${assets[*]} " != *" release-dist/manifest.json "* ]]; then
+            echo "::error::upload set missing release-dist/manifest.json."
             exit 1
           fi
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then

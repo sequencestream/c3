@@ -144,6 +144,31 @@ describe('agent quota recovery', () => {
     expect(automations[0].nextRunAt).toBe(result.resetAt)
   })
 
+  it('disables the agent and schedules recovery for a codex usage-limit full date', () => {
+    const now = Date.UTC(2026, 5, 15, 13, 0)
+    const result = handleAgentQuotaError({
+      agentId: quotaAgent.id,
+      workspacePath,
+      error: "You've hit your usage limit · try again at Aug 8th, 2026 11:42 AM",
+      now,
+    })
+
+    expect(result.handled).toBe(true)
+    expect(result.disabled).toBe(true)
+    // 11:42 AM Asia/Shanghai = 03:42 UTC on the same day (no DST in Shanghai).
+    expect(result.resetAt).toBe(Date.UTC(2026, 7, 8, 3, 42))
+    expect(result.automationId).toEqual(expect.any(String))
+
+    const settings = loadSettings()
+    expect(settings.agents.find((agent) => agent.id === quotaAgent.id)?.enabled).toBe(false)
+    expect(settings.defaultAgentId).toBe(SYSTEM_AGENT_ID)
+    expect(settings.toolAgentId).toBe(SYSTEM_AGENT_ID)
+
+    const automations = listAutomations(workspacePath)
+    expect(automations).toHaveLength(1)
+    expect(automations[0].nextRunAt).toBe(result.resetAt)
+  })
+
   it('does nothing when reset time cannot be parsed', () => {
     const result = handleAgentQuotaError({
       agentId: quotaAgent.id,

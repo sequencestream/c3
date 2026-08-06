@@ -2,7 +2,7 @@
 
 所有表存储在单文件 SQLite 数据库 `~/.c3/c3.db` 中，通过 `node:sqlite` / `bun:sqlite` 内置驱动访问。Schema 在各 Store 模块中惰性创建 (`CREATE TABLE IF NOT EXISTS`)，结构演进通过 `PRAGMA table_info` 列存在性检查做幂等判定；一次性**数据**迁移 (回填) 则由 `schema_migrations` 标记表判定——列在不在回答不了「回填做完没有」。
 
-> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 21 张表，8 个模块。
+> **注意**: 项目 Constitution 原声明 "no database or persistent store allowed"，但 ADR 实践中引入了 SQLite 作为本地持久化层。`~/.c3/c3.db` 是单实例本地文件，不存在网络访问风险。共 22 张表，9 个模块。
 
 ## 基础设施
 
@@ -35,6 +35,7 @@
 | 19  | queue        | `funnel_event`              | [queue/funnel_event.sql](queue/funnel_event.sql)                                       | `server/src/features/intents/funnel-store.ts`            | park 状态跃迁的本机观测事件 (恢复率统计, 90 天滚动)      |
 | 20  | intents      | `intent_prs`                | [intents/intent_prs.sql](intents/intent_prs.sql)                                       | `server/src/features/intents/store.ts`                   | 意图的 PR/MR 关系表 (一意图可多条)                       |
 | 21  | infra        | `schema_migrations`         | [infra/schema_migrations.sql](infra/schema_migrations.sql)                             | `server/src/kernel/infra/db.ts`                          | 已完成的一次性数据迁移标记 (跨域)                        |
+| 22  | deliveries   | `deliveries`                | [deliveries/deliveries.sql](deliveries/deliveries.sql)                                 | `server/src/features/deliveries/store.ts`                | 交付 (集成单元) 台账                                     |
 
 ## 模块说明
 
@@ -86,6 +87,12 @@ Schema 版本: 2。纯新增，不改动任何既有表。历史意图没有 `qu
 多 agent 结构化讨论域。`discussions` 记录讨论线程的元数据 (类型、目标、议程、参与者、结论、业务 metadata、研究会话指针)；`discussion_messages` 按 seq 序号存储发言；`discussion_agent_sessions` 记录每个讨论内 agent 与 vendor session 的绑定关系 (支持 resume)，并作为讨论 agent session 归属事实源。讨论的只读研究跑批本身也是一个正式会话，其 vendor session id 记在 `discussions.research_session_id` 上 (不进 `discussion_agent_sessions`——那张表按 agent 建键，研究不属于任何参与 agent)。会话页展示不读取本域的表，而是由生命周期同步写入 `session_metadata(session_kind='discussion', owner_kind='discussion', owner_id=<discussion.id>)` 的可重建投影 (研究会话与各 agent 会话同归此类)。
 
 Schema 版本: 7。v2→v3 新增 `discussions.participant_agent_ids` (创建时选定的参与 agent 集合; `'[]'`=未设置→编排时回退全员, organizer 恒并入)。v3→v4 把工作区主键列 `project_path` 就地改名为 `workspace_path`，复合索引 `idx_disc_project_status` → `idx_disc_workspace_status` (详见迁移记录 `migrate/2026/06/14/012`)。v4→v5 新增 `discussions.organizer_agent_id` (指定组织者 agent id; NULL=使用全局默认)。v5→v6 新增 `discussions.metadata` (JSON 对象，扁平 `string→string` 业务 metadata，默认 `'{}'`；唯一写入方是 MCP `start_discussion`，上限复用 automation metadata 卫生规则；随 `discussion:start`/`discussion:end` 生命周期事件发出；历史行回填空对象，读取端对缺失/损坏值降级为 `{}`；详见迁移记录 `migrate/2026/07/26/025`)。v6→v7 新增 `discussions.research_session_id` (nullable TEXT，研究会话的 vendor session id；研究跑批捕获到 session id 时写入，NULL/`''` 表示该讨论没有研究会话——所有历史行，以及研究在绑定前就失败的新行；无回填可能；详见迁移记录 `migrate/2026/07/30/026`)。
+
+### deliveries
+
+交付 (集成单元) 域 (ADR-0036)。`deliveries` 是「一批意图共同集成并最终进入主线」的 Git 生命周期单元台账。`status` 只接受 `planned / integrating / verifying / verified / delivered / cancelled` 六值 (数据库 CHECK 与共享协议同一闭集，见 `@ccc/shared` 的 `DeliveryStatus`)，无「已完成」态——它等于「所有关联意图的 PR 已合入交付分支」这一可推导事实，只以「集成就绪 N/M」实时聚合呈现 (由 store 直接读 `intent_prs.delivery_id` 派生，不持久化计数、不读冗余列)。`base_branch` 是建交付时对工作区 `defaultMainBranch` 的快照，之后修改配置不回写历史交付；`branch_ready` 本阶段恒为 0 (不触发分支探测)。`(workspace_path, status)` 有索引；`(workspace_path, branch_name)` 在活动状态 (非 `delivered`/`cancelled`) 下唯一，终态不占位、允许复用历史分支名，空分支名不参与冲突 (部分唯一索引 `idx_delivery_workspace_active_branch`)。状态写入唯一经 delivery 域纯函数 `canTransitionDelivery`，任何位置不得直接绕过。`intent_prs.delivery_id` 是意图→交付的关联面 (由 intents 域 031 迁移预置，本阶段恒 NULL，不写)。
+
+Schema 版本: 1。纯新增表 (v1)，无存量回填；详见迁移记录 `migrate/2026/08/06/032`。
 
 ### automations
 

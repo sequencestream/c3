@@ -27,7 +27,7 @@ key 段结构:
 
 全小写;段内多词用 `camelCase`,段间用 `.` 分隔。
 
-### 2.1 namespace(第一段,冻结九个)
+### 2.1 namespace(第一段,冻结十个)
 
 | namespace    | 用途                                 | 示例                               |
 | ------------ | ------------------------------------ | ---------------------------------- |
@@ -38,6 +38,7 @@ key 段结构:
 | `session`    | 会话                                 | `session.list.refresh.tooltip`     |
 | `automation` | 自动化                               | `automation.form.name.placeholder` |
 | `discussion` | 讨论                                 | `discussion.input.placeholder`     |
+| `delivery`   | 交付                                 | `delivery.status.planned.label`    |
 | `intent`     | 需求                                 | `intent.detail.empty`              |
 | `error`      | 错误 / 异常文案                      | `error.network.timeout`            |
 

@@ -406,6 +406,10 @@ export function installSessionActions(ctx: AppCtx): void {
       if (currentWorkspace.value) ctx.openIntents(currentWorkspace.value)
       return
     }
+    if (key === 'deliveries') {
+      if (currentWorkspace.value) ctx.openDeliveries(currentWorkspace.value)
+      return
+    }
     if (key === 'discussion') {
       if (currentWorkspace.value) ctx.openDiscussions(currentWorkspace.value)
       return

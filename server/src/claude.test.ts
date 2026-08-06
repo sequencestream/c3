@@ -118,6 +118,18 @@ describe('isDegradableError', () => {
     expect(isDegradableError('Insufficient quota')).toBe(true)
   })
 
+  it('detects "hit your usage limit"', () => {
+    expect(isDegradableError("You've hit your usage limit")).toBe(true)
+  })
+
+  it('detects "usage limit exceeded"', () => {
+    expect(isDegradableError('usage limit exceeded')).toBe(true)
+  })
+
+  it('detects "usage_limit" snake-case', () => {
+    expect(isDegradableError('usage_limit reached')).toBe(true)
+  })
+
   // -- Non-degradable errors (should return false) --
   it('returns false for empty string', () => {
     expect(isDegradableError('')).toBe(false)

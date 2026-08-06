@@ -12,6 +12,7 @@ import { installSessionActions } from './session-actions'
 import { installIntentActions } from './intent-actions'
 import { installQueueActions } from './queue-actions'
 import { installDiscussionActions } from './discussion-actions'
+import { installDeliveryActions } from './delivery-actions'
 import { installAutomationActions } from './automation-actions'
 import { installCodesActions } from './codes-actions'
 import { installChatActions } from './chat-actions'
@@ -59,6 +60,7 @@ export function useAppController(): AppCtx {
   installIntentActions(ctx)
   installQueueActions(ctx)
   installDiscussionActions(ctx)
+  installDeliveryActions(ctx)
   installAutomationActions(ctx)
   installCodesActions(ctx)
   installChatActions(ctx)
@@ -92,6 +94,11 @@ export function useAppController(): AppCtx {
           ctx.send({ type: 'load_workspace_setting', workspaceId: ctx.intentsProject.value })
           ctx.send({ type: 'open_intent_session', workspaceId: ctx.intentsProject.value })
           ctx.send({ type: 'list_intent_sessions', workspaceId: ctx.intentsProject.value })
+        } else if (ctx.activeTab.value === 'deliveries' && ctx.deliveriesProject.value) {
+          // Re-fetch the list + badge count, and re-open the viewed delivery.
+          ctx.send({ type: 'list_deliveries', workspaceId: ctx.deliveriesProject.value })
+          if (ctx.activeDeliveryId.value)
+            ctx.send({ type: 'get_delivery_detail', deliveryId: ctx.activeDeliveryId.value })
         } else if (ctx.activeTab.value === 'discussion' && ctx.discussionsProject.value) {
           // Re-fetch the list and re-open the viewed discussion (read path).
           ctx.send({ type: 'list_discussions', workspaceId: ctx.discussionsProject.value })

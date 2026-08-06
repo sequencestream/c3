@@ -356,7 +356,7 @@ describe('reconcileQueue — gates', () => {
 })
 
 describe('reconcileQueue — failure isolation', () => {
-  it('parks after the attempt cap, keeps unrelated work flowing', () => {
+  it('auto-recovers a failure-ladder park with no blocked dependency, but never launches it this pass', () => {
     const out = reconcileQueue(
       input({
         intents: [
@@ -373,7 +373,12 @@ describe('reconcileQueue — failure isolation', () => {
         },
       }),
     )
-    expect(decisionFor(out, 'broken')).toMatchObject({ reason: 'blocked_parked' })
+    // `launch_failed` is failure-ladder and `broken` has no unsatisfied dependency:
+    // the park is cleared THIS pass — but the intent is not launched, the next pass
+    // re-runs every gate and decides where it actually goes.
+    expect(decisionFor(out, 'broken')).toMatchObject({ action: 'unpark', reason: 'auto_unpark' })
+    expect(out.actions).toContainEqual({ kind: 'unpark', intentId: 'broken' })
+    expect(out.actions.some((a) => a.kind === 'launch' && a.intentId === 'broken')).toBe(false)
     // The queue does NOT stop: the unrelated intent is selected.
     expect(launched(out)).toBe('healthy')
   })
@@ -397,6 +402,132 @@ describe('reconcileQueue — failure isolation', () => {
     expect(backoffDelayMs(1)).toBe(QUEUE_BACKOFF_BASE_MS)
     expect(backoffDelayMs(2)).toBe(QUEUE_BACKOFF_BASE_MS * 2)
     expect(backoffDelayMs(99)).toBeLessThanOrEqual(15 * 60_000)
+  })
+})
+
+describe('reconcileQueue — auto-unpark of failure-ladder parks', () => {
+  it('a failure-ladder park with every dependency satisfied yields exactly one unpark', () => {
+    const out = reconcileQueue(
+      input({
+        intents: [
+          intent({ id: 'dep', status: 'done', createdAt: 1 }),
+          intent({ id: 'child', dependsOn: ['dep'], createdAt: 2 }),
+        ],
+        meta: {
+          child: meta('child', { parked: true, parkReason: 'launch_failed', parkDetail: 'x' }),
+        },
+      }),
+    )
+    // Exactly one action this pass — the unpark — and a decision row proving it.
+    expect(out.actions).toHaveLength(1)
+    expect(out.actions[0]).toEqual({ kind: 'unpark', intentId: 'child' })
+    expect(decisionFor(out, 'child')).toMatchObject({
+      intentId: 'child',
+      action: 'unpark',
+      reason: 'auto_unpark',
+    })
+    // The intent is NOT evaluated further this pass: no launch/resume/attach.
+    expect(out.actions.some((a) => a.kind === 'launch' || a.kind === 'resume')).toBe(false)
+    expect(launched(out)).toBeNull()
+  })
+
+  it('idempotent: exactly one unpark per parked intent, and nothing parks or launches them', () => {
+    const out = reconcileQueue(
+      input({
+        intents: [intent({ id: 'A', createdAt: 1 }), intent({ id: 'B', createdAt: 2 })],
+        meta: {
+          A: meta('A', { parked: true, parkReason: 'judge_stuck' }),
+          B: meta('B', { parked: true, parkReason: 'turn_error' }),
+        },
+      }),
+    )
+    expect(out.actions.filter((a) => a.kind === 'unpark')).toEqual([
+      { kind: 'unpark', intentId: 'A' },
+      { kind: 'unpark', intentId: 'B' },
+    ])
+    expect(out.actions.filter((a) => a.kind === 'park' || a.kind === 'launch')).toHaveLength(0)
+  })
+
+  it('a recoverable park with a dependency still not done stays blocked_parked', () => {
+    const out = reconcileQueue(
+      input({
+        intents: [
+          intent({ id: 'dep', status: 'in_progress', createdAt: 1 }),
+          intent({ id: 'child', dependsOn: ['dep'], createdAt: 2 }),
+        ],
+        meta: {
+          child: meta('child', { parked: true, parkReason: 'commit_failed' }),
+        },
+      }),
+    )
+    expect(out.actions.some((a) => a.kind === 'unpark')).toBe(false)
+    expect(decisionFor(out, 'child')).toMatchObject({ reason: 'blocked_parked' })
+  })
+
+  it('worktree mode also requires the dependency PR to be merged before auto-recovery', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        intents: [
+          intent({ id: 'dep', status: 'done', prStatus: 'reviewing' as const, createdAt: 1 }),
+          intent({ id: 'child', dependsOn: ['dep'], createdAt: 2 }),
+        ],
+        meta: {
+          child: meta('child', { parked: true, parkReason: 'budget_exhausted' }),
+        },
+      }),
+    )
+    expect(out.actions.some((a) => a.kind === 'unpark')).toBe(false)
+    // The park gate sits ABOVE the dependency gate, so the verdict is
+    // blocked_parked (not blocked_dependency_pr_unmerged) — and no PR sync fires.
+    expect(decisionFor(out, 'child')).toMatchObject({ reason: 'blocked_parked' })
+    expect(out.actions.some((a) => a.kind === 'sync_dependency_prs')).toBe(false)
+  })
+
+  it.each(['permission_wait_timeout', 'spec_rework_exhausted', 'needs_human_decision'] as const)(
+    'a human-owned park (%s) is never auto-recovered, even with all dependencies satisfied',
+    (reason) => {
+      const out = reconcileQueue(
+        input({
+          intents: [intent({ id: 'child', createdAt: 1 })],
+          meta: { child: meta('child', { parked: true, parkReason: reason, parkDetail: 'x' }) },
+        }),
+      )
+      expect(out.actions.some((a) => a.kind === 'unpark')).toBe(false)
+      expect(decisionFor(out, 'child')).toMatchObject({ reason: 'blocked_parked' })
+    },
+  )
+
+  it('an unknown or missing parkReason is never auto-recovered', () => {
+    const unknown = reconcileQueue(
+      input({
+        intents: [intent({ id: 'A', createdAt: 1 })],
+        meta: { A: meta('A', { parked: true, parkReason: 'max_attempts_reached' }) },
+      }),
+    )
+    expect(unknown.actions.some((a) => a.kind === 'unpark')).toBe(false)
+    expect(decisionFor(unknown, 'A')).toMatchObject({ reason: 'blocked_parked' })
+
+    // A parked intent with no recorded reason (defensive path) is not recoverable.
+    const bare = reconcileQueue(
+      input({
+        intents: [intent({ id: 'B', createdAt: 2 })],
+        meta: { B: meta('B', { parked: true, parkReason: null }) },
+      }),
+    )
+    expect(bare.actions.some((a) => a.kind === 'unpark')).toBe(false)
+    expect(decisionFor(bare, 'B')).toMatchObject({ reason: 'blocked_parked' })
+  })
+
+  it('an unparked candidate is untouched by the auto-recovery step', () => {
+    const out = reconcileQueue(
+      input({
+        intents: [intent({ id: 'A', createdAt: 1 })],
+        meta: { A: meta('A', { failureCount: 1, backoffUntil: NOW + 5_000 }) },
+      }),
+    )
+    expect(out.actions).toHaveLength(0)
+    expect(decisionFor(out, 'A')).toMatchObject({ reason: 'blocked_backoff' })
   })
 })
 
@@ -609,7 +740,9 @@ describe('reconcileQueue — concurrency gate by git branch mode', () => {
     expect(launched(out)).toBeNull()
     expect(decisionFor(out, 'unapproved')).toMatchObject({ reason: 'spec_authoring' })
     expect(decisionFor(out, 'backing-off')).toMatchObject({ reason: 'blocked_backoff' })
-    expect(decisionFor(out, 'parked-one')).toMatchObject({ reason: 'blocked_parked' })
+    // `parked-one` is a failure-ladder park with no dependency — the auto-recover
+    // step (which sits ABOVE the ordinary park gate) clears it this pass.
+    expect(decisionFor(out, 'parked-one')).toMatchObject({ action: 'unpark' })
   })
 
   it('worktree: a permission wait still parks and raises exactly one todo', () => {
@@ -1063,15 +1196,16 @@ describe('reconcileQueue — restart recovery', () => {
         inFlight: [],
       }),
     )
-    // The half-finished intent is resumed, the parked one stays parked, and the
-    // queue is running again — no invented state, no cleared state.
+    // The half-finished intent is resumed; `was-parked` is a failure-ladder park
+    // (`commit_failed`) with no dependency, so the kernel auto-recovers it from
+    // persisted facts alone — no invented state beyond the recoverable park.
     expect(out.actions).toContainEqual({
       kind: 'resume',
       intentId: 'was-running',
       sessionId: 'dead',
       origin: 'queue-kernel',
     })
-    expect(decisionFor(out, 'was-parked')).toMatchObject({ reason: 'blocked_parked' })
+    expect(decisionFor(out, 'was-parked')).toMatchObject({ action: 'unpark' })
   })
 
   it('intents with no scheduling metadata read as zero failures, unparked, no backoff', () => {

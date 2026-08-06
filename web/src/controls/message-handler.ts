@@ -132,6 +132,12 @@ export function installMessageHandler(ctx: AppCtx): void {
     researchState,
     activeDiscussion,
     activeDiscussionId,
+    deliveries,
+    deliveriesProject,
+    deliveriesNeedsAction,
+    activeDelivery,
+    activeDeliveryId,
+    activeDeliveryPlan,
     discussionMessages,
     discussionMaxSeq,
     researchMessages,
@@ -879,6 +885,46 @@ export function installMessageHandler(ctx: AppCtx): void {
         break
       case 'queue_detail':
         queueDetail.value = { ...queueDetail.value, [msg.detail.workspaceId]: msg.detail }
+        break
+      case 'deliveries':
+        deliveries.value = { ...deliveries.value, [msg.workspaceId]: msg.items }
+        deliveriesNeedsAction.value = {
+          ...deliveriesNeedsAction.value,
+          [msg.workspaceId]: msg.needsActionCount,
+        }
+        // Keep the open delivery's model in sync with the freshest list frame.
+        if (activeDeliveryId.value) {
+          const updated = msg.items.find((d) => d.id === activeDeliveryId.value)
+          if (updated) activeDelivery.value = updated
+        }
+        break
+      case 'create_delivery_result': {
+        // Open the newly-created delivery on the creating connection right away.
+        activeDeliveryId.value = msg.delivery.id
+        activeDelivery.value = msg.delivery
+        send({ type: 'get_delivery_detail', deliveryId: msg.delivery.id })
+        // One-time `pr:merge` semantic-change notice — the only defense against
+        // the drift, shown exactly on the workspace's first delivery creation.
+        if (msg.prMergeNotice) ctx.showToast(t('delivery.page.prMergeNotice.label'))
+        break
+      }
+      case 'delivery_detail':
+        activeDelivery.value = msg.delivery
+        activeDeliveryId.value = msg.delivery.id
+        activeDeliveryPlan.value = msg.transitionPlan
+        ctx.persistViewMode()
+        break
+      case 'delivery_transition_failed':
+        // Server truth wins: re-fetch the plan so the persistent gap list under
+        // the selector shows the CURRENT gaps (the client's may be stale), then
+        // surface the `delivery.error.*` copy in a toast.
+        send({ type: 'get_delivery_detail', deliveryId: msg.deliveryId })
+        ctx.showToast(
+          translateUiError({
+            code: msg.code,
+            params: { from: msg.currentStatus, to: msg.to },
+          }),
+        )
         break
       case 'discussions': {
         discussions.value = { ...discussions.value, [msg.workspaceId]: msg.items }

@@ -169,6 +169,7 @@ vi.mock('../../git.js', () => ({
 // real c3.db through the park transitions they exercise.
 vi.mock('./funnel-store.js', () => ({
   MANUAL_UNPARK_REASON: 'manual_unpark',
+  AUTO_UNPARK_REASON: 'auto_unpark',
   appendFunnelEvent: vi.fn(() => true),
 }))
 
@@ -230,7 +231,11 @@ import { ensureRuntime, getRuntime } from '../../runs.js'
 import { hasWorkspace } from '../../state.js'
 import { releaseDevLaunch, resetForTests as resetDevLinksForTests } from './dev-link.js'
 import { upsertPendingRow } from '../sessions/session-metadata-store.js'
-import { getQueueIntentMetaById, resetQueueStoreForTests } from './queue-store.js'
+import {
+  getQueueIntentMetaById,
+  putQueueIntentMeta,
+  resetQueueStoreForTests,
+} from './queue-store.js'
 
 // ---- Test-only types (mirrors the Handler shape without importing transport) ----
 
@@ -1083,5 +1088,99 @@ describe('queue driver — manual control', () => {
     // No `notifyTurnSettled` is ever delivered — the pass alone must drive it.
     await settleQueueForTests(proj)
     expect(vi.mocked(updateStatus).mock.calls).toContainEqual(['A', 'done'])
+  })
+})
+
+describe('queue driver — worktree dependency merge auto-recovery', () => {
+  const proj = '/test/queue-worktree-recovery'
+
+  function hooksBag(): WorkflowHooks {
+    return {
+      runDevTurn: vi.fn((_input: RunDevTurnInput): Promise<DevTurnResult> =>
+        Promise.resolve({ outcome: 'complete', sessionId: 'real', lastMessage: 'ok' }),
+      ),
+      launchSpecRun: vi.fn(() => Promise.resolve()),
+      broadcastIntents: vi.fn(),
+      emitStatus: vi.fn(),
+      sessionExists: vi.fn(() => Promise.resolve(false)),
+      isRunning: vi.fn(() => false),
+      sessionStatus: vi.fn(() => null),
+      normalizeEvent: (core) => workflowPrRegistry.normalize(core),
+      publishEvent: vi.fn(),
+      createUserTodo: vi.fn(),
+      broadcastQueueDetail: vi.fn(),
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetWorkflowForTests()
+    resetQueueStoreForTests()
+    vi.mocked(getGitBranchMode).mockReturnValue('worktree')
+    vi.mocked(getSddEnabled).mockReturnValue(false)
+    vi.mocked(getDefaultMainBranch).mockReturnValue('main')
+    vi.mocked(getRuntime).mockReturnValue(undefined)
+    vi.mocked(gitDiffStat).mockResolvedValue('')
+    vi.mocked(gitRecentLog).mockResolvedValue('')
+    vi.mocked(judgeCompletion).mockResolvedValue({ verdict: 'stuck', reason: 'x' })
+    vi.mocked(runCheckpointConsensus).mockResolvedValue(null)
+  })
+
+  it('auto-recovers the parked dependent once its dep PR merges, then re-runs every gate', async () => {
+    const hooks = hooksBag()
+    const dep = makeIntent({
+      id: 'A',
+      status: 'done',
+      prs: fakeIntentPrs('reviewing'),
+      automate: false,
+    })
+    const child = makeIntent({ id: 'B', dependsOn: ['A'], priority: 'P0' })
+    vi.mocked(listIntents).mockReturnValue([dep, child])
+    vi.mocked(getIntent).mockImplementation((id: string) =>
+      id === 'A' ? dep : id === 'B' ? child : null,
+    )
+    // The dependent was parked by the failure ladder while its dep PR was not yet merged.
+    putQueueIntentMeta(proj, {
+      ...getQueueIntentMetaById('B'),
+      intentId: 'B',
+      parked: true,
+      parkReason: 'launch_failed',
+      parkDetail: '依赖未就绪时连续失败',
+      failureCount: 3,
+      backoffUntil: Date.now() + 60_000,
+    })
+
+    startWorkflow(proj, hooks, 1)
+    await settleQueueForTests(proj)
+
+    // Dep PR not merged yet → the dependent stays parked and is never launched.
+    expect(getQueueIntentMetaById('B')).toMatchObject({ parked: true })
+    expect(hooks.runDevTurn).not.toHaveBeenCalled()
+    expect(getQueueDetail(proj).items.find((r) => r.intentId === 'B')?.parked).toBe(true)
+
+    // The dep PR merges; the next reconcile pass sees the refreshed fact.
+    vi.mocked(listIntents).mockReturnValue([
+      makeIntent({ id: 'A', status: 'done', prs: fakeIntentPrs('merged'), automate: false }),
+      child,
+    ])
+    await settleQueueForTests(proj)
+
+    // The kernel auto-recovered the dependent — the same five fields a manual
+    // unpark clears — and the queue page projection reflects it.
+    expect(getQueueIntentMetaById('B')).toMatchObject({
+      parked: false,
+      parkReason: null,
+      parkDetail: null,
+      failureCount: 0,
+      backoffUntil: null,
+    })
+    expect(getQueueDetail(proj).items.find((r) => r.intentId === 'B')?.parked).toBe(false)
+
+    // The next pass re-runs EVERY gate from scratch: nothing blocks B now, so it
+    // launches with the reset failure counter (a full retry budget again).
+    expect(vi.mocked(hooks.runDevTurn).mock.calls.some(([i]) => i.intentId === 'B')).toBe(true)
+
+    // Drain the run the launch started.
+    await settleQueueForTests(proj)
   })
 })

@@ -81,6 +81,7 @@ import {
   clearPark,
   executePark,
   executeSyncDependencyPrs,
+  executeUnpark,
   executeWaitUserInvolve,
   recordFailure,
 } from './queue-outcome-actions.js'
@@ -309,6 +310,7 @@ class QueueController {
     // action with no executor here is a compile error, never a silent no-op.
     const table: QueueActionExecutors = {
       park: (a) => executePark(ctx, a),
+      unpark: (a) => executeUnpark(ctx, a),
       wait_user_involve: (a) => executeWaitUserInvolve(ctx, a),
       sync_dependency_prs: (a) => executeSyncDependencyPrs(ctx, a),
       launch: (a, at) => this.startRun(ctx, a, at),

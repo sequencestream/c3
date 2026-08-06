@@ -73,6 +73,10 @@
       },
       "codes": {
         "label": "Код"
+      },
+      "delivery": {
+        "label": "Доставка",
+        "ariaLabel": "Доставка ({count} требует внимания)"
       }
     },
     "mode": {
@@ -2101,6 +2105,16 @@
       "noWorkspace": "Выберите хотя бы одно рабочее пространство для ключа.",
       "saveFailed": "Не удалось сохранить API-ключи.",
       "unknownTool": "Инструмент \"{tool}\" отсутствует в каталоге внешне разрешённых."
+    },
+    "delivery": {
+      "dbUnavailable": "Функция доставки недоступна (c3.db).",
+      "notFound": "Доставка не найдена.",
+      "titleRequired": "Требуется название доставки.",
+      "createFailed": "Не удалось создать доставку: {detail}.",
+      "updateFailed": "Не удалось обновить доставку: {detail}.",
+      "branchConflict": "Другая активная доставка уже использует ветку \"{branch}\".",
+      "invalidStatusTransition": "Не удаётся перевести эту доставку из {from} в {to}.",
+      "transitionGuardFailed": "Изменение статуса заблокировано невыполненными условиями."
     }
   },
   "statusIndicator": {
@@ -2278,6 +2292,165 @@
     },
     "research": {
       "toolActivity": "🔍 Исследование через {tool}…"
+    }
+  },
+  "delivery": {
+    "status": {
+      "planned": {
+        "label": "Ожидает интеграции"
+      },
+      "integrating": {
+        "label": "Интеграция"
+      },
+      "verifying": {
+        "label": "Проверка"
+      },
+      "verified": {
+        "label": "Проверено"
+      },
+      "delivered": {
+        "label": "Опубликовано"
+      },
+      "cancelled": {
+        "label": "Отменено"
+      },
+      "integrationReady": {
+        "label": "Готовность интеграции {merged}/{total}"
+      }
+    },
+    "page": {
+      "title": {
+        "label": "Доставка"
+      },
+      "empty": {
+        "label": "Пока нет доставок. Создайте доставку, чтобы отслеживать партию интентов при интеграции в основную линию."
+      },
+      "tab": {
+        "overview": {
+          "label": "Обзор"
+        },
+        "intents": {
+          "label": "Связанные интенты"
+        }
+      },
+      "meta": {
+        "title": {
+          "label": "Название"
+        },
+        "description": {
+          "label": "Описание"
+        },
+        "status": {
+          "label": "Статус"
+        },
+        "baseBranch": {
+          "label": "Базовая ветка"
+        },
+        "branch": {
+          "label": "Ветка доставки"
+        },
+        "startDate": {
+          "label": "Дата начала"
+        },
+        "endDate": {
+          "label": "Дата окончания"
+        },
+        "pr": {
+          "label": "PR доставки"
+        },
+        "created": {
+          "label": "Создано"
+        },
+        "updated": {
+          "label": "Обновлено"
+        }
+      },
+      "gap": {
+        "label": "Текущие препятствия"
+      },
+      "currentBranchNote": {
+        "label": "В режиме текущей ветки доставка отображается только как агрегированное представление — действия ветки, PR и слияния здесь недоступны."
+      },
+      "terminalDelivered": {
+        "label": "Эта доставка была слита в {baseBranch}."
+      },
+      "terminalCancelled": {
+        "label": "Эта доставка была отменена."
+      },
+      "intentsEmpty": {
+        "label": "Связанных интентов пока нет — связывание появится на следующем этапе."
+      },
+      "prMergeNotice": {
+        "label": "pr:merge теперь может указывать на ветку доставки — проверьте подписки автоматизации."
+      }
+    },
+    "action": {
+      "create": {
+        "label": "Новая доставка"
+      },
+      "edit": {
+        "label": "Изменить"
+      },
+      "save": {
+        "label": "Сохранить"
+      },
+      "cancel": {
+        "label": "Отменить доставку"
+      },
+      "cancelTitle": {
+        "label": "Отменить эту доставку?"
+      },
+      "cancelBody": {
+        "label": "Отменить \"{title}\"? Доставка перейдёт в отменённое конечное состояние. Связанные интенты и удалённые ресурсы не изменятся."
+      },
+      "confirmVerified": {
+        "label": "Подтвердить прохождение проверки"
+      },
+      "advance": {
+        "label": "Перейти к {status}"
+      },
+      "rework": {
+        "label": "Переделать"
+      },
+      "jumpToIntents": {
+        "label": "Показать связанные интенты"
+      },
+      "jumpToSettings": {
+        "label": "Открыть настройки рабочего пространства"
+      },
+      "form": {
+        "titleLabel": {
+          "label": "Название"
+        },
+        "titlePlaceholder": {
+          "label": "напр. выпуск спринта 3"
+        },
+        "descriptionLabel": {
+          "label": "Описание"
+        },
+        "descriptionPlaceholder": {
+          "label": "Что поставляет эта партия интентов"
+        },
+        "startDateLabel": {
+          "label": "Дата начала"
+        },
+        "endDateLabel": {
+          "label": "Дата окончания"
+        },
+        "submit": {
+          "label": "Создать"
+        }
+      }
+    },
+    "guard": {
+      "branchNotReady": "Ветка доставки ещё не готова.",
+      "noAssociatedIntents": "С этой доставкой не связано ни одного интента.",
+      "prsNotMerged": "Из {total} связанных PR слиты {merged}.",
+      "verificationNotConfirmed": "Подтвердите, что проверка пройдена.",
+      "mergeNotSucceeded": "Ожидание успешного слияния доставки.",
+      "systemOnly": "Этот шаг выполняет система.",
+      "humanOnly": "Этот шаг может выполнять только человек.",
+      "mergeConflictReasonRequired": "Требуется причина конфликта слияния."
     }
   },
   "skillApproval": {

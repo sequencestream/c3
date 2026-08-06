@@ -31,6 +31,11 @@ import {
   isStoreAvailable as isDiscussionStoreAvailable,
   listDiscussions,
 } from '../features/discussions/store.js'
+import {
+  isStoreAvailable as isDeliveryStoreAvailable,
+  listDeliveries,
+} from '../features/deliveries/store.js'
+import { countDeliveriesNeedingAction } from '../features/deliveries/state-machine.js'
 import { discussionRunSnapshot, researchRunSnapshot } from '../features/discussions/run-controls.js'
 import type { ResearchStreamItem } from '../features/discussions/research.js'
 import type { DispatchStatus } from '../features/discussions/orchestrator.js'
@@ -78,6 +83,10 @@ export interface Broadcasts {
    * the one it's viewing.
    */
   broadcastSessions: (workspacePath: string) => void
+  /**
+   * Push a workspace's refreshed delivery list + server-computed badge count.
+   */
+  broadcastDeliveries: (workspacePath: string) => void
   /** Push a project's refreshed discussion list (with run/research snapshots). */
   broadcastDiscussions: (workspacePath: string) => void
   /** Push a workspace's refreshed automation list. */
@@ -189,6 +198,23 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
         })
       })
       .catch((err) => console.error('[c3] broadcastSessions failed:', err))
+  }
+
+  // Push a workspace's refreshed delivery list + badge count. The frontend
+  // keeps a per-workspace cache and renders the one it's viewing; the badge
+  // count is the server-computed "needs user action" figure (see
+  // deliveryRequiresAction), not the plan total. No-op when the store is
+  // unavailable.
+  const broadcastDeliveries = (workspacePath: string): void => {
+    if (!isDeliveryStoreAvailable()) return
+    const proj = resolve(workspacePath)
+    const items = listDeliveries(proj)
+    broadcaster.toAll({
+      type: 'deliveries',
+      workspaceId: pathToId(proj)!,
+      items,
+      needsActionCount: countDeliveriesNeedingAction(items),
+    })
   }
 
   // Push a project's refreshed discussion list. The frontend keeps a
@@ -327,6 +353,7 @@ export function createBroadcasts(deps: BroadcastsDeps): Broadcasts {
     broadcastIntents,
     broadcastIntentSessions,
     broadcastSessions,
+    broadcastDeliveries,
     broadcastDiscussions,
     broadcastAutomations,
     broadcastWorkflow,

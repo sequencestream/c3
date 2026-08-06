@@ -19,6 +19,7 @@ const ALL_ACTIONS: QueueAction[] = [
   { kind: 'resume', intentId: 'B', sessionId: 's-1', origin: 'queue-kernel' },
   { kind: 'attach', intentId: 'C', sessionId: 's-2', origin: 'queue-kernel' },
   { kind: 'park', intentId: 'D', reason: 'permission_wait_timeout', detail: 'x' },
+  { kind: 'unpark', intentId: 'K' },
   { kind: 'wait_user_involve', intentId: 'E', reason: 'needs_human_decision', detail: 'y' },
   { kind: 'sync_dependency_prs', intentIds: ['F', 'G'] },
   { kind: 'launch_spec', intentId: 'H', origin: 'queue-kernel', rework: false, reworkRound: 0 },
@@ -39,6 +40,7 @@ describe('the dispatch table is exhaustive over every QueueAction kind', () => {
       resume: register('resume'),
       attach: register('attach'),
       park: register('park'),
+      unpark: register('unpark'),
       wait_user_involve: register('wait_user_involve'),
       sync_dependency_prs: register('sync_dependency_prs'),
       launch_spec: register('launch_spec'),
@@ -65,6 +67,7 @@ describe('the dispatch table is exhaustive over every QueueAction kind', () => {
       resume: (a) => void spy(a.kind),
       attach: (a) => void spy(a.kind),
       park: (a) => void spy(a.kind),
+      unpark: (a) => void spy(a.kind),
       wait_user_involve: (a) => void spy(a.kind),
       sync_dependency_prs: (a) => void spy(a.kind),
       launch_spec: (a) => void spy(a.kind),
@@ -72,9 +75,9 @@ describe('the dispatch table is exhaustive over every QueueAction kind', () => {
       machine_approve_spec: (a) => void spy(a.kind),
     }
     // A deliberately non-alphabetical order, as a real pass interleaves them.
-    const shuffled = [ALL_ACTIONS[8], ALL_ACTIONS[0], ALL_ACTIONS[3], ALL_ACTIONS[6]]
+    const shuffled = [ALL_ACTIONS[8], ALL_ACTIONS[0], ALL_ACTIONS[3], ALL_ACTIONS[4]]
     for (const action of shuffled) runQueueAction(table, action, 1)
-    expect(order).toEqual(['machine_approve_spec', 'launch', 'park', 'launch_spec'])
+    expect(order).toEqual(['launch_spec_review', 'launch', 'park', 'unpark'])
   })
 
   it('COMPILE TIME: a table missing one kind is a type error', () => {
@@ -84,6 +87,7 @@ describe('the dispatch table is exhaustive over every QueueAction kind', () => {
       resume: () => {},
       attach: () => {},
       park: () => {},
+      unpark: () => {},
       wait_user_involve: () => {},
       sync_dependency_prs: () => {},
       launch_spec: () => {},
@@ -98,6 +102,7 @@ describe('the dispatch table is exhaustive over every QueueAction kind', () => {
       resume: () => {},
       attach: () => {},
       park: () => {},
+      unpark: () => {},
       wait_user_involve: () => {},
       sync_dependency_prs: () => {},
       launch_spec: () => {},

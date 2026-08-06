@@ -13,11 +13,14 @@
  * through this same function, which is why a dropped event costs at most one
  * cycle of latency instead of stalling the queue.
  *
- * Gate order is fixed and never relaxed: park → force-skip → spec approval →
- * dependencies (including worktree-mode "dependency PR merged") → backoff →
- * cooldown, then the concurrency gate. A parked intent is not `done`, so its
- * downstream stays blocked by the dependency gate exactly as before — parking
- * isolates a failure, it never opens a path around one.
+ * Gate order is fixed and never relaxed: auto-recover (a failure-ladder park
+ * whose every dependency is now satisfied → one `unpark` action, evaluated again
+ * next pass) → park → force-skip → spec approval → dependencies (including
+ * worktree-mode "dependency PR merged") → backoff → cooldown, then the
+ * concurrency gate. A parked intent is not `done`, so its downstream stays
+ * blocked by the dependency gate exactly as before — parking isolates a failure,
+ * it never opens a path around one, and an auto-recovery never relaxes a gate:
+ * the unparked intent is simply re-evaluated from scratch next pass.
  *
  * The concurrency gate is the one rule whose SCOPE depends on the workspace: it
  * exists to keep two work sessions off the same files, so it is workspace-global
@@ -36,6 +39,7 @@ import type {
   QueueRunFact,
 } from './types.js'
 import {
+  AUTO_RECOVERABLE_PARK_REASONS,
   QUEUE_MAX_SPEC_REWORK,
   QUEUE_PERMISSION_WAIT_MS,
   QUEUE_RUN_ORIGIN,
@@ -216,6 +220,24 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   }
 
   // ── Per-candidate gates ───────────────────────────────────────────────────
+  /**
+   * Whether every KNOWN dependency of an intent is satisfied, using exactly the
+   * dependency-gate semantics below: a dependency must be `done`, and under
+   * `worktree` its PR must be `merged`. An unknown (cross-workspace / deleted)
+   * dependency never blocks — same as the ordinary gate. Auto-recovery of a
+   * parked intent consults ONLY this fact: a dependency still outstanding (or,
+   * under worktree, its PR not yet confirmed merged) keeps the park.
+   */
+  const depsSatisfied = (intent: QueueIntentFact): boolean => {
+    for (const depId of intent.dependsOn) {
+      const dep = byId.get(depId)
+      if (!dep) continue
+      if (dep.status !== 'done') return false
+      if (gitBranchMode === 'worktree' && dep.prStatus !== 'merged') return false
+    }
+    return true
+  }
+
   const evaluate = (intent: QueueIntentFact): GateResult => {
     const m = metaOf(intent.id)
     if (m.parked || parkedThisPass.has(intent.id)) {
@@ -293,10 +315,31 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     (a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.createdAt - b.createdAt,
   )
 
+  // ── Auto-recover failure-ladder parks whose dependencies have cleared ──────
+  // BEFORE the ordinary park gate answers `blocked_parked`: a candidate parked
+  // by the consecutive-failure ladder whose every dependency is now satisfied is
+  // a scheduling fact THIS pass acts on. It yields exactly one `unpark` action
+  // and one `action='unpark'` decision, and is not evaluated further — the next
+  // pass re-runs every gate from scratch. A dependency still outstanding keeps
+  // `blocked_parked`; a park a human owns (permission wait, spec-rework cap,
+  // human ruling) is never auto-recovered, whatever the dependencies say.
+  const autoUnparked = new Set<string>()
+  for (const intent of candidates) {
+    const m = metaOf(intent.id)
+    if (!m.parked || m.parkReason === null || !AUTO_RECOVERABLE_PARK_REASONS.has(m.parkReason)) {
+      continue
+    }
+    if (!depsSatisfied(intent)) continue
+    actions.push({ kind: 'unpark', intentId: intent.id })
+    pushDecision(intent, 'unpark', 'auto_unpark', '失败阶梯类 park 的依赖已全部满足,自动解除 park')
+    autoUnparked.add(intent.id)
+  }
+
   const eligible: QueueIntentFact[] = []
   const gateOf = new Map<string, GateResult>()
   const unmergedDepIds = new Set<string>()
   for (const intent of candidates) {
+    if (autoUnparked.has(intent.id)) continue
     const gate = evaluate(intent)
     gateOf.set(intent.id, gate)
     noteWake(gate.wakeAt)
@@ -394,7 +437,9 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   if (owned && sharedCheckout) {
     pushDecision(owned, 'wait', 'running', '内核 run 进行中')
     for (const intent of candidates) {
-      if (intent.id === owned.id || parkedThisPass.has(intent.id)) continue
+      if (intent.id === owned.id || parkedThisPass.has(intent.id) || autoUnparked.has(intent.id)) {
+        continue
+      }
       pushGateOrSpec(intent, gateOf.get(intent.id)!, '队列串行执行,等待当前意图结束')
     }
     return finish('developing', actions, decisions, {
@@ -424,7 +469,13 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
       pushDecision(blocking, 'attach', 'attached_running', '会话仍在运行,挂接观察而非重复启动')
     }
     for (const intent of candidates) {
-      if (intent.id === blocking.id || parkedThisPass.has(intent.id)) continue
+      if (
+        intent.id === blocking.id ||
+        parkedThisPass.has(intent.id) ||
+        autoUnparked.has(intent.id)
+      ) {
+        continue
+      }
       pushGateOrSpec(
         intent,
         gateOf.get(intent.id)!,
@@ -534,7 +585,7 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
 
   for (const intent of candidates) {
     if (picked && intent.id === picked.id) continue
-    if (parkedThisPass.has(intent.id)) continue
+    if (parkedThisPass.has(intent.id) || autoUnparked.has(intent.id)) continue
     if (observed.has(intent.id)) continue
     pushGateOrSpec(
       intent,

@@ -151,6 +151,7 @@ vi.mock('../../git.js', () => ({
 // real c3.db through the park transitions they exercise.
 vi.mock('./funnel-store.js', () => ({
   MANUAL_UNPARK_REASON: 'manual_unpark',
+  AUTO_UNPARK_REASON: 'auto_unpark',
   appendFunnelEvent: vi.fn(() => true),
 }))
 
@@ -310,7 +311,7 @@ describe('queue outcome actions — failure isolation', () => {
     expect(runDevTurn.mock.calls.some(([i]) => i.intentId === 'downstream')).toBe(false)
   })
 
-  it('parks on the third consecutive failure and keeps the downstream blocked', async () => {
+  it('parks on the third consecutive failure, then auto-recovers once nothing blocks it', async () => {
     const { hooks, runDevTurn } = hooksBag()
     runDevTurn.mockImplementation((input: RunDevTurnInput) => {
       if (input.intentId === 'broken') return Promise.reject(new Error('spawn failed'))
@@ -328,12 +329,18 @@ describe('queue outcome actions — failure isolation', () => {
       await settleQueueForTests(proj)
     }
 
-    const parked = getQueueIntentMetaById('broken')
-    expect(parked.failureCount).toBeGreaterThanOrEqual(3)
-    expect(parked.parked).toBe(true)
-    expect(parked.parkReason).toBe('launch_failed')
+    // The third consecutive failure DID park the intent — the decision log proves
+    // the ladder ran — but because `broken` is a failure-ladder park (`launch_failed`)
+    // with no unsatisfied dependency, the very next pass auto-recovers it with the
+    // same full retry budget a manual unpark grants.
+    const parkRows = listQueueDecisionsForIntent('broken').filter((d) => d.action === 'park')
+    expect(parkRows.length).toBeGreaterThanOrEqual(1)
+    const unparkRows = listQueueDecisionsForIntent('broken').filter((d) => d.action === 'unpark')
+    expect(unparkRows.length).toBeGreaterThanOrEqual(1)
+    const recovered = getQueueIntentMetaById('broken')
+    expect(recovered).toMatchObject({ parked: false, parkReason: null, failureCount: 0 })
 
-    // Downstream of a parked intent stays blocked; it must never be launched.
+    // Downstream of the still-not-done intent stays blocked; it must never launch.
     expect(runDevTurn.mock.calls.some(([i]) => i.intentId === 'downstream')).toBe(false)
     const detail = getQueueDetail(proj)
     expect(detail.items.find((r) => r.intentId === 'downstream')?.blockedReason).toBe(

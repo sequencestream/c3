@@ -16,7 +16,7 @@ import type { AgentConfig, VendorId, VendorRuntimeStatus } from '@ccc/shared/pro
 import { VENDOR_IDS } from '@ccc/shared/protocol'
 import { VENDOR_COLOR, VENDOR_LABEL } from '@/lib/vendor'
 import { vendorUnavailableReasonKey } from '@/lib/vendor-runtime'
-import { groupAgentsOfVendor } from '@/lib/group-agents'
+import { groupAgentsOfVendor, listGroupAgents } from '@/lib/group-agents'
 import { useTypedI18n } from '@/i18n'
 
 const { t } = useTypedI18n()
@@ -90,15 +90,31 @@ const vendorGroupAgents = computed(() =>
   vendor.value === '' ? [] : groupAgentsOfVendor(enabledAgents.value, vendor.value),
 )
 
+// 默认 agent 可能是一个虚拟组 `_c3_<vendor>_<group>`:组引用不在 agents 里,按 id 查
+// 必然落空,若不单独识别,Auto 提示会错显「无默认」。组的展示名就是引用本身,vendor /
+// 色点取组内首个 enabled 成员(与服务端代表成员口径一致)。
+const defaultGroup = computed(() =>
+  props.defaultAgentId
+    ? (listGroupAgents(enabledAgents.value).find((g) => g.id === props.defaultAgentId) ?? null)
+    : null,
+)
+
 // The default agent's display name + vendor, for the Auto hint + dot.
 const defaultAgent = computed(() =>
   props.defaultAgentId ? (props.agents.find((a) => a.id === props.defaultAgentId) ?? null) : null,
 )
 
+// Auto 提示文案里的「默认」名字:组显示为组引用,普通 agent 显示 displayName。
+const defaultAgentName = computed<string | null>(
+  () => defaultGroup.value?.id ?? defaultAgent.value?.displayName ?? null,
+)
+
 // The effective vendor whose colour the dot shows: the chosen one, or (for Auto)
-// the default agent's vendor.
+// the default agent's — or default group's — vendor.
 const effectiveVendor = computed<VendorId | null>(() =>
-  vendor.value === '' ? (defaultAgent.value?.vendor ?? null) : vendor.value,
+  vendor.value === ''
+    ? (defaultGroup.value?.vendor ?? defaultAgent.value?.vendor ?? null)
+    : vendor.value,
 )
 
 const dotColor = computed(() =>
@@ -210,8 +226,8 @@ function onCreate(): void {
           </select>
           <span v-else class="ns-hint" data-testid="new-session-auto-hint">
             {{
-              defaultAgent
-                ? t('session.new.agent.autoHint', { name: defaultAgent.displayName })
+              defaultAgentName
+                ? t('session.new.agent.autoHint', { name: defaultAgentName })
                 : t('session.new.agent.autoHintNoDefault')
             }}
           </span>

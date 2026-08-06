@@ -146,15 +146,34 @@ group?: string // 非空 ⇒ 该 agent 归入 (group, vendor) 组;为空/缺省 
 
 现有 `resolveAgent(id): AgentConfig` 返回单个 agent;新增候选解析,统一被 launch 使用:
 
+解析的唯一入口是 `resolveAgentTarget(ref)`,它同时产出**绑定身份**与**代表成员**,避免调用方从"单个 agent"反推该绑定什么:
+
 ```ts
-resolveAgentCandidates(ref: string): AgentConfig[]
-//  真实 id                → [该 agent]（长度 1）
-//  _c3_<vendor>_<group>   → 该 (vendor, group) 内 enabled agent 按 order_seq 升序（优先级）
-//  未知 / 空组             → 回退默认 agent（沿用 resolveAgent 的 default→system 兜底）
+resolveAgentTarget(ref: string | null): AgentTarget
+//  { ref, agent, candidates, isGroup }
+//  真实 id                → ref = 该 id，candidates = [该 agent]（长度 1）
+//  _c3_<vendor>_<group>   → ref = 组引用，candidates = 该 (vendor, group) 内 enabled agent 按 order_seq 升序
+//  空（角色"跟随默认"哨兵）/ 未知 id
+//                         → 跟随 defaultAgentId，对其套用上面两条规则；默认值本身是组时按组解析
+//  默认值也不可用          → 系统 agent，否则合成兜底（设置整体为空/损坏时的最后防线）
+//  组内无 enabled 成员      → 抛 AgentGroupUnavailableError（携带出错的组引用），不回退
 ```
 
-- 现有 `resolveAgent` 保留:对需要"单个代表 agent"的场景(如展示 vendor、model 占位),取候选列表首项(最高优先级)。
+- `ref` 是**要持久化的路由身份**:组保持组引用(每次 run 重新展开、重新从最高优先级 failover),具体 agent 存解析后的真实 id。
+- `agent` 是**代表成员**:vendor、展示信息、默认模式与首次启动参数全部由它派生,因此绑定不可能出现"组引用 + 另一个 agent 的 vendor"的分裂状态。
+- `resolveAgent` 保留为"单个代表 agent"视图(展示 vendor、model 占位),即 `resolveAgentTarget(ref).agent`。
+- **空组不回退**:组内无 enabled 成员是可操作的配置错误,解析抛错而非降级到默认/System。`tryResolveAgentTarget` / `tryResolveRoleAgentTarget` 是不抛版本,供两类调用方使用:会话创建路径据此**明确拒绝**(见 §7.4),展示/投影读取据此保持可渲染(`resolveAgentVendor` 从组引用自带的 vendor 段取值)。
 - `resolveSessionLaunch` / `resolveToolSessionLaunch` 等改为:解析候选列表 → 见 §10。
+
+### 7.4 角色引用与会话绑定
+
+default / tool / intent / spec / spec-review 五个角色共用 `resolveRoleAgentTarget(role)`——同一套规则,不允许各自复制或改变:
+
+- 角色字段直接配组,与"角色字段为空 + 默认值是组",解析结果完全一致(同一 `ref`、同一代表成员、同一候选序)。
+- 新建 work / 意图沟通 / 规格编写 / 规格审查会话时,pending intent 与 `session_metadata.agent_id` 保存完整组引用;`vendor` 取同一次解析的代表成员。首次运行冻结绑定时同样保留组引用与该组锁定的 vendor。
+- **组不可用 ⇒ 拒绝创建**。"不可用"包含两种:组内无 enabled 成员;组所属 vendor 的宿主运行时不存在(该 vendor 门槛只作用于组,具体 agent 维持原有可用性提示语义)。判定发生在任何副作用之前——不留 pending intent、运行时、投影行,也不切换当前视图——服务端返回结构化错误码 `agent.groupUnavailable`(携带组引用),Web 以全局 toast 呈现并释放启动遮罩。
+- **重新打开已有会话不受影响**:已冻结的会话沿用自身绑定与 vendor;组解析失败只影响创建与首次绑定,不阻断读取历史会话。
+- 只有**设置整体为空/损坏**时才合成 System 兜底;"组为空"不属于此列。
 
 ### 7.3 逻辑 model 与真实 model
 

@@ -31,7 +31,12 @@ vi.mock('../../state.js', () => ({
 }))
 
 import { createSession } from './index.js'
-import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
+import {
+  loadSettings,
+  resetSettingsCacheForTests,
+  saveSettings,
+} from '../../kernel/config/index.js'
+import { systemAgent } from '../../kernel/agent-config/index.js'
 import { getPendingIntent } from './work-session-store.js'
 
 let dir: string
@@ -45,6 +50,23 @@ beforeEach(() => {
   prevHome = process.env.HOME
   process.env.HOME = dir
   resetSettingsCacheForTests()
+  // A real registry to pick from: the pending row stores the RESOLVED agent id, so
+  // the chosen agent has to exist for the choice to be recorded as itself.
+  saveSettings({
+    ...loadSettings(),
+    agents: [
+      systemAgent(),
+      {
+        id: 'claude-b',
+        vendor: 'claude',
+        configMode: 'system',
+        displayName: 'Claude B',
+        enabled: true,
+        order_seq: 1,
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+    ],
+  })
 })
 
 afterEach(() => {

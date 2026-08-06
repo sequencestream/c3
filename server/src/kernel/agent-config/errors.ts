@@ -6,7 +6,34 @@
  * (run-lifecycle concern, consumed by `kernel/run`). Kept together because they
  * are defined against each other (a socket disconnect must NEVER also be
  * degradable — see the note on {@link isSocketDisconnect}).
+ *
+ * Also home to {@link AgentGroupUnavailableError} — the ONE structured failure the
+ * agent-resolution chain raises, so the launch/creation callers can recognize it
+ * without string matching.
  */
+
+/**
+ * A role reference (or a session binding) resolved to a virtual agent group that
+ * has no usable member — an actionable CONFIGURATION error, never a reason to
+ * silently fall back to another agent. `groupRef` is the group actually at fault
+ * (`_c3_<vendor>_<group>`): when an empty role field followed `defaultAgentId`
+ * onto a group, it names that DEFAULT group, so the message points at the setting
+ * the user must fix.
+ */
+export class AgentGroupUnavailableError extends Error {
+  readonly groupRef: string
+
+  constructor(groupRef: string) {
+    super(`agent group "${groupRef}" has no available member`)
+    this.name = 'AgentGroupUnavailableError'
+    this.groupRef = groupRef
+  }
+}
+
+/** Whether an unknown error is the group-unavailable failure (narrowing guard). */
+export function isAgentGroupUnavailableError(err: unknown): err is AgentGroupUnavailableError {
+  return err instanceof AgentGroupUnavailableError
+}
 
 /**
  * Heuristic check: does this error message describe a transient / degradable

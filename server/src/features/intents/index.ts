@@ -33,14 +33,12 @@ import {
   getSessionAgentId,
 } from '../../kernel/config/index.js'
 import {
-  resolveIntentAgent,
   resolveSessionAgentBinding,
   resolveSessionAgentSwitch,
   resolveSessionVendor,
-  resolveSpecAgent,
-  resolveSpecReviewAgent,
   setSessionAgent,
 } from '../../kernel/agent-config/index.js'
+import { groupUnavailableError, sessionAgentTargetForRole } from '../sessions/agent-target.js'
 import { readSpecFingerprint } from './spec-review.js'
 import { canDeleteSession } from '../../kernel/agent/adapters/capabilities.js'
 import { availableVendorSet } from '../../kernel/agent/vendor-runtime.js'
@@ -120,10 +118,21 @@ function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
 }
 
 /**
+ * The intent role's agent target, resolved once per creation flow BEFORE any
+ * session artefact exists. `intentAgentId` empty ⇒ follow the default agent
+ * (`intentAgentId → defaultAgentId → system`), so intent-communication sessions can
+ * run on a stronger/decoupled agent than "default for new sessions"; either end may
+ * be a virtual group, in which case the session binds the GROUP and its first
+ * enabled member represents it.
+ */
+function intentAgentTarget(): ReturnType<typeof sessionAgentTargetForRole> {
+  return sessionAgentTargetForRole('intent')
+}
+
+/**
  * Bind the **intent agent** to a newly-created intent comm session (pending id).
- * Resolves `intentAgentId` through {@link resolveIntentAgent} (empty ⇒ follow the
- * default agent: `intentAgentId → defaultAgentId → system`), so intent-communication
- * sessions can run on a stronger/decoupled agent than "default for new sessions".
+ * `ref` is the target's routing identity — a group reference stays a group
+ * reference so every run re-resolves it and re-failovers through its members.
  * Must be called after `ensureRuntime` so `resolveSessionLaunch`/agent switcher
  * find the pending intent in later lookups.
  *
@@ -131,8 +140,8 @@ function agentSwitchFor(sessionId: string): SessionAgentSwitch | undefined {
  * through {@link ensureIntentAgentBinding} — a session that already carries a
  * binding must keep it.
  */
-function bindIntentAgent(sessionId: string): void {
-  setSessionAgent(sessionId, resolveIntentAgent().id)
+function bindIntentAgent(sessionId: string, ref: string): void {
+  setSessionAgent(sessionId, ref)
 }
 
 /**
@@ -144,10 +153,18 @@ function bindIntentAgent(sessionId: string): void {
  * re-target it same-vendor. Changing `intentAgentId` therefore only affects
  * sessions created afterwards; an explicit reset is how a user moves an intent
  * conversation onto the newly-configured agent.
+ *
+ * Fails only when this session still needs a binding and the intent role points at
+ * an unusable group — the caller reports that instead of writing a substitute.
  */
-function ensureIntentAgentBinding(sessionId: string): void {
-  if (getSessionAgentId(sessionId)) return
-  bindIntentAgent(sessionId)
+function ensureIntentAgentBinding(
+  sessionId: string,
+  target: ReturnType<typeof sessionAgentTargetForRole>,
+): { ok: true } | { ok: false; groupRef: string } {
+  if (getSessionAgentId(sessionId)) return { ok: true }
+  if (!target.ok) return target
+  bindIntentAgent(sessionId, target.target.ref)
+  return { ok: true }
 }
 
 /**
@@ -215,11 +232,19 @@ async function bindAndLaunchIntentSession(
   },
 ): Promise<void> {
   const { proj, intent, title } = input
+  // Refuse before ANY artefact exists (viewer swap, runtime, chat row, link) when
+  // the intent role points at a group with no usable member — a half-built session
+  // is exactly what the unwind path below cannot fully undo.
+  const target = intentAgentTarget()
+  if (!target.ok) {
+    conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
+    return
+  }
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   try {
     if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
     const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
-    bindIntentAgent(chatId)
+    bindIntentAgent(chatId, target.target.ref)
     setChatSession(proj, chatId, title)
     syncIntentSessionProjection({
       workspacePath: proj,
@@ -350,8 +375,10 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
   }
-  // Stop viewing whatever this connection had open.
-  if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
+  // The intent role's target, resolved once up front: an OPEN that has to create
+  // (or first-bind) a session needs it, a plain resume of an already-bound session
+  // does not — so a broken group config never blocks reopening existing work.
+  const target = intentAgentTarget()
 
   // If a specific sessionId was requested, verify it exists for this project.
   // Otherwise, fall back to is_current (same as before).
@@ -384,6 +411,12 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
         ensureRuntime(chatId, proj, 'default', baseline, 'intent')
       }
     } else {
+      // A brand-new session is a creation: refuse it whole rather than create one
+      // that cannot be bound to the configured (empty) group.
+      if (!target.ok) {
+        conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
+        return
+      }
       chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
       ensureRuntime(chatId, proj, 'default', [], 'intent')
       setChatSession(proj, chatId)
@@ -394,7 +427,14 @@ export const openIntentSession: Handler<'open_intent_session'> = async (ctx, con
   // never got a binding) adopts the current intent agent; a session that already
   // carries one resumes on it. Whether the runtime had to be restored is
   // irrelevant to the binding — an in-memory runtime is not a binding fact.
-  ensureIntentAgentBinding(chatId)
+  const bound = ensureIntentAgentBinding(chatId, target)
+  if (!bound.ok) {
+    conn.send({ type: 'error', error: groupUnavailableError(bound.groupRef) })
+    return
+  }
+  // Stop viewing whatever this connection had open — after every refusal above, so
+  // a rejected open never leaves the connection watching nothing.
+  if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const rt = getRuntime(chatId)
   if (!rt) {
     conn.send({ type: 'error', error: { code: 'intent.chatOpenFailed' } })
@@ -526,8 +566,12 @@ export const openSpecSession: Handler<'open_spec_session'> = async (_ctx, conn, 
     // and re-pin the spec agent so a reopened spec session keeps its identity.
     // The stored spec path is absolute (centralized root, outside the workspace).
     if (intent.specPath) restored.specDir = dirname(resolveSpecFileAbs(proj, intent.specPath))
-    const specAgent = resolveSpecAgent()
-    setSessionAgent(chatId, specAgent.id)
+    // Re-pin the spec agent (a group re-pins as its group ref). An unusable spec
+    // group changes nothing here: reopening is a READ of an existing session, so it
+    // keeps whatever binding it already carries and the configuration error is
+    // reported where it matters — the next launch.
+    const specTarget = sessionAgentTargetForRole('spec')
+    if (specTarget.ok) setSessionAgent(chatId, specTarget.target.ref)
   }
   const rt = getRuntime(chatId)
   if (!rt) {
@@ -603,7 +647,10 @@ export const openSpecReviewSession: Handler<'open_spec_review_session'> = async 
     const fingerprint =
       intent.specReviewFingerprint ?? readSpecFingerprint(proj, intent.specPath) ?? undefined
     restored.specReviewFingerprint = fingerprint
-    setSessionAgent(chatId, resolveSpecReviewAgent().id)
+    // Same re-pin rule as the spec author's reopen: a group re-pins as its ref, and
+    // an unusable group leaves the existing binding untouched.
+    const reviewTarget = sessionAgentTargetForRole('spec_review')
+    if (reviewTarget.ok) setSessionAgent(chatId, reviewTarget.target.ref)
   }
   const rt = getRuntime(chatId)
   if (!rt) {
@@ -646,13 +693,18 @@ export const newIntentSession: Handler<'new_intent_session'> = (ctx, conn, msg) 
     conn.send({ type: 'error', error: { code: 'intent.dbUnavailable' } })
     return
   }
+  const target = intentAgentTarget()
+  if (!target.ok) {
+    conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
+    return
+  }
   // Open a brand-new comm session: setChatSession resets the prior is_current
   // row to 0 and marks this one current, so a refresh / reconnect via
   // open_intent_session resumes THIS session.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
-  bindIntentAgent(chatId)
+  bindIntentAgent(chatId, target.target.ref)
   setChatSession(proj, chatId)
   syncIntentSessionProjection({ workspacePath: proj, sessionId: chatId, title: 'New Intent' })
   conn.viewing = chatId
@@ -696,11 +748,16 @@ export const refineIntent: Handler<'refine_intent'> = async (ctx, conn, msg) => 
     conn.send({ type: 'error', error: { code: 'intent.notFound' } })
     return
   }
+  const target = intentAgentTarget()
+  if (!target.ok) {
+    conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
+    return
+  }
   // Restart the comm session as a fresh one seeded with this intent.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
-  bindIntentAgent(chatId)
+  bindIntentAgent(chatId, target.target.ref)
   setChatSession(proj, chatId, req.title)
   syncIntentSessionProjection({
     workspacePath: proj,
@@ -766,11 +823,16 @@ export const resetIntentSession: Handler<'reset_intent_session'> = async (ctx, c
     conn.send({ type: 'error', error: { code: 'intent.notFound' } })
     return
   }
+  const target = intentAgentTarget()
+  if (!target.ok) {
+    conn.send({ type: 'error', error: groupUnavailableError(target.groupRef) })
+    return
+  }
   // Restart the comm session as a fresh one seeded with this intent + new input.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
   const chatId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(chatId, proj, 'default', [], 'intent')
-  bindIntentAgent(chatId)
+  bindIntentAgent(chatId, target.target.ref)
   setChatSession(proj, chatId, req.title)
   syncIntentSessionProjection({
     workspacePath: proj,

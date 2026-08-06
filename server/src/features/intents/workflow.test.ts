@@ -124,6 +124,12 @@ vi.mock('../../kernel/agent-config/index.js', () => ({
   resolveSessionAgentSwitch: vi.fn(),
   resolveSessionVendor: vi.fn(),
   setSessionAgent: vi.fn(),
+  tryResolveAgentTarget: vi.fn(),
+  tryResolveRoleAgentTarget: vi.fn(),
+}))
+
+vi.mock('../../kernel/agent/vendor-runtime.js', () => ({
+  availableVendorSet: vi.fn(() => new Set(['claude', 'codex'])),
 }))
 
 vi.mock('../sessions/session-metadata-store.js', () => ({
@@ -210,7 +216,12 @@ import {
   getDefaultMainBranch,
   getSddEnabled,
 } from '../../kernel/config/index.js'
-import { getDefaultAgentId, resolveSessionVendor } from '../../kernel/agent-config/index.js'
+import {
+  getDefaultAgentId,
+  resolveSessionVendor,
+  tryResolveRoleAgentTarget,
+} from '../../kernel/agent-config/index.js'
+import type { AgentConfig, VendorId } from '@ccc/shared/protocol'
 import { createWorktree, fetchRemoteBase, readBranch } from './worktree.js'
 import { commitAndPush, gitDiffStat, gitRecentLog } from '../../git.js'
 import { judgeCompletion } from './judge.js'
@@ -419,6 +430,19 @@ describe('pickNext — worktree dep merge validation', () => {
 // startDevelopment — manual start path
 // =============================================================================
 
+/** A concrete (non-group) agent target — what `default` resolves to unless a test
+ *  points the role at a group. */
+function agentTarget(id: string, vendor: VendorId = 'claude') {
+  const agent = {
+    id,
+    vendor,
+    configMode: 'system',
+    displayName: id,
+    config: { baseUrl: '', apiKey: '', model: '' },
+  } as unknown as AgentConfig
+  return { ok: true as const, target: { ref: id, agent, candidates: [agent], isGroup: false } }
+}
+
 describe('startDevelopment — manual start dep merge validation', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -426,6 +450,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     vi.mocked(getSddEnabled).mockReturnValue(false)
     vi.mocked(getDefaultAgentId).mockReturnValue('default-agent')
     vi.mocked(resolveSessionVendor).mockReturnValue('claude')
+    vi.mocked(tryResolveRoleAgentTarget).mockReturnValue(agentTarget('default-agent'))
   })
 
   function makeConn() {
@@ -519,7 +544,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     vi.mocked(listIntents).mockReturnValue([req])
     vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
     vi.mocked(readBranch).mockReturnValue('main')
-    vi.mocked(resolveSessionVendor).mockReturnValue('codex')
+    vi.mocked(tryResolveRoleAgentTarget).mockReturnValue(agentTarget('default-agent', 'codex'))
 
     const { conn } = makeConn()
     const ctx = makeCtx()
@@ -532,7 +557,6 @@ describe('startDevelopment — manual start dep merge validation', () => {
 
     const pendingId = vi.mocked(ensureRuntime).mock.calls[0]?.[0]
     expect(pendingId).toMatch(/^pending:/)
-    expect(resolveSessionVendor).toHaveBeenCalledWith(pendingId)
     expect(upsertPendingRow).toHaveBeenCalledWith({
       pendingId,
       workspacePath: '/test/proj',

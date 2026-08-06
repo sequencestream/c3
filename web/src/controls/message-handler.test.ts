@@ -319,6 +319,28 @@ describe('personalized settings echo', () => {
   })
 })
 
+describe('agent configuration errors', () => {
+  it('surfaces an unusable agent group as a global toast and releases the startup overlays', () => {
+    // The refusal can come from any creation flow (new session, intent, spec,
+    // review), so it belongs to no single page's error channel — and whatever
+    // overlay was waiting for the session that will never exist must be released.
+    const result = makeCtx()
+
+    result.ctx.handleMessage({
+      type: 'error',
+      error: { code: 'agent.groupUnavailable', params: { group: '_c3_claude_default' } },
+    } as unknown as ServerToClient)
+
+    expect(result.showToast).toHaveBeenCalledOnce()
+    expect(result.toast.value).toContain('_c3_claude_default')
+    expect(result.showIntentActionError).not.toHaveBeenCalled()
+    expect(result.closeDevLaunch).toHaveBeenCalledOnce()
+    expect(result.dispatchSpecLaunch).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'failed' }),
+    )
+  })
+})
+
 describe('intent action errors', () => {
   it('uses persistent error-dialog state instead of the toast and releases in-flight UI', () => {
     const result = makeCtx()

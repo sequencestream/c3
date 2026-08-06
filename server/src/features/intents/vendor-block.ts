@@ -22,7 +22,7 @@
  */
 import type { ActionDescriptor, ActionLabelCode, Intent, VendorId } from '@ccc/shared/protocol'
 import { getTimezone } from '../../kernel/config/index.js'
-import { parseQuotaResetAt, resolveAgent } from '../../kernel/agent-config/index.js'
+import { parseQuotaResetAt, resolveAgentVendor } from '../../kernel/agent-config/index.js'
 import { peekPendingDevLink } from './dev-link.js'
 import { peekPendingIntentLink } from './intent-link.js'
 import { peekPendingSpecLink } from './spec-link.js'
@@ -136,7 +136,7 @@ export function noteVendorBlock(input: {
   // configuration context to open even if the agent row is deleted afterwards.
   facts.set(intentId, {
     reason,
-    vendor: resolveAgent(input.agentId).vendor,
+    vendor: resolveAgentVendor(input.agentId),
     agentId: input.agentId,
     sessionId: input.sessionId,
     at: input.now ?? Date.now(),

@@ -60,17 +60,24 @@ vi.mock('../config/index.js', () => ({
 
 // Import AFTER the mock is set up.
 import {
+  AgentGroupUnavailableError,
   groupAgents,
   launchForAgent,
   launchForCandidates,
   resolveAgent,
   resolveAgentCandidates,
+  resolveAgentVendor,
   resolveFirstAgentOfVendor,
   resolveIntentAgent,
+  resolveRoleAgentTarget,
   resolveSpecAgent,
   resolveSpecReviewAgent,
   resolveToolAgent,
+  resolveToolSessionLaunch,
+  tryResolveAgentTarget,
+  tryResolveRoleAgentTarget,
 } from './index.js'
+import type { AgentRole } from './index.js'
 import type { AgentConfig } from '@ccc/shared/protocol'
 
 describe('group agents + candidate resolution (ADR-0029)', () => {
@@ -138,11 +145,16 @@ describe('group agents + candidate resolution (ADR-0029)', () => {
     expect(resolveAgent('_c3_claude_fast').id).toBe('a1')
   })
 
-  it('an empty group ref falls back to the default agent (never empty)', () => {
+  it('a group with no enabled member fails loudly instead of falling back', () => {
     mockSettings.agents = originalAgents
-    const candidates = resolveAgentCandidates('_c3_claude_nonexistent')
-    expect(candidates.length).toBe(1)
-    expect(candidates[0].id).toBe('claude-pro') // the default fallback
+    expect(() => resolveAgentCandidates('_c3_claude_nonexistent')).toThrow(
+      AgentGroupUnavailableError,
+    )
+    // The failure names the group at fault so the caller can report it verbatim.
+    expect(tryResolveAgentTarget('_c3_claude_nonexistent')).toEqual({
+      ok: false,
+      groupRef: '_c3_claude_nonexistent',
+    })
   })
 
   it('a real id resolves to a length-1 candidate list', () => {
@@ -410,6 +422,123 @@ describe('resolveSpecReviewAgent — the single reviewer slot, no sandbox varian
     mockSettings.specReviewAgentId = 'codex-agent'
     expect(resolveSpecAgent().id).toBe('claude-sonnet')
     expect(resolveSpecReviewAgent().id).toBe('codex-agent')
+  })
+})
+
+describe('roles pointing at a group — bind the group, run its first enabled member', () => {
+  /** Members of the claude `default` group, deliberately given out of order. */
+  function member(id: string, order: number, group = 'default'): AgentConfig {
+    return {
+      id,
+      vendor: 'claude',
+      configMode: 'custom',
+      displayName: id,
+      order_seq: order,
+      group,
+      config: { baseUrl: `https://${id}.example/anthropic`, apiKey: `sk-${id}`, model: id },
+      enabled: true,
+    }
+  }
+
+  const GROUP = '_c3_claude_default'
+  const ROLE_FIELD: Record<
+    Exclude<AgentRole, 'default'>,
+    'toolAgentId' | 'intentAgentId' | 'specAgentId' | 'specReviewAgentId'
+  > = {
+    tool: 'toolAgentId',
+    intent: 'intentAgentId',
+    spec: 'specAgentId',
+    spec_review: 'specReviewAgentId',
+  }
+  const DEDICATED_ROLES = Object.keys(ROLE_FIELD) as Array<Exclude<AgentRole, 'default'>>
+
+  const original = { ...mockSettings, agents: mockSettings.agents }
+  beforeEach(() => {
+    mockSettings.agents = [member('m2', 1), member('m1', 0), member('m3', 2)]
+    mockSettings.defaultAgentId = GROUP
+    mockSettings.toolAgentId = ''
+    mockSettings.intentAgentId = ''
+    mockSettings.specAgentId = ''
+    mockSettings.specReviewAgentId = ''
+  })
+  afterEach(() => {
+    mockSettings.agents = original.agents
+    mockSettings.defaultAgentId = original.defaultAgentId
+    mockSettings.toolAgentId = original.toolAgentId
+    mockSettings.intentAgentId = original.intentAgentId
+    mockSettings.specAgentId = original.specAgentId
+    mockSettings.specReviewAgentId = original.specReviewAgentId
+  })
+
+  it("resolveAgent('') follows a GROUP default to its first enabled member, by order_seq", () => {
+    expect(resolveAgent('').id).toBe('m1')
+    expect(resolveAgent(null).id).toBe('m1')
+    // The binding identity stays the group, not the member.
+    expect(resolveRoleAgentTarget('default').ref).toBe(GROUP)
+    expect(resolveRoleAgentTarget('default').candidates.map((a) => a.id)).toEqual([
+      'm1',
+      'm2',
+      'm3',
+    ])
+  })
+
+  it('a re-ordered group changes which member represents it on the next resolution', () => {
+    mockSettings.agents = [member('m1', 5), member('m2', 0), member('m3', 2)]
+    expect(resolveAgent('').id).toBe('m2')
+    expect(resolveAgentCandidates('').map((a) => a.id)).toEqual(['m2', 'm3', 'm1'])
+  })
+
+  it('disabling the first member promotes the next one — same group binding', () => {
+    mockSettings.agents = [{ ...member('m1', 0), enabled: false }, member('m2', 1), member('m3', 2)]
+    expect(resolveAgent('').id).toBe('m2')
+    expect(resolveToolSessionLaunch().agentId).toBe(GROUP)
+  })
+
+  it('a GROUP default with every member disabled throws instead of returning System', () => {
+    mockSettings.agents = [
+      { ...member('m1', 0), enabled: false },
+      { ...member('m2', 1), enabled: false },
+    ]
+    expect(() => resolveAgent('')).toThrow(AgentGroupUnavailableError)
+    // The error points at the DEFAULT group — the setting the user must fix.
+    expect(tryResolveAgentTarget('')).toEqual({ ok: false, groupRef: GROUP })
+    // Vendor reads stay answerable (the ref encodes the vendor) for display paths.
+    expect(resolveAgentVendor('')).toBe('claude')
+  })
+
+  it.each(DEDICATED_ROLES)(
+    'role %s: set directly to the group and left empty under a group default resolve identically',
+    (role) => {
+      const field = ROLE_FIELD[role]
+      mockSettings[field] = ''
+      const followed = resolveRoleAgentTarget(role)
+      mockSettings[field] = GROUP
+      const direct = resolveRoleAgentTarget(role)
+      expect(direct.ref).toBe(GROUP)
+      expect(followed.ref).toBe(GROUP)
+      expect(direct.agent.id).toBe('m1')
+      expect(followed.agent.id).toBe('m1')
+      expect(direct.candidates.map((a) => a.id)).toEqual(followed.candidates.map((a) => a.id))
+    },
+  )
+
+  it.each(DEDICATED_ROLES)('role %s reports an unusable group rather than falling back', (role) => {
+    mockSettings.agents = [{ ...member('m1', 0), enabled: false }]
+    mockSettings[ROLE_FIELD[role]] = GROUP
+    expect(tryResolveRoleAgentTarget(role)).toEqual({ ok: false, groupRef: GROUP })
+  })
+
+  it('a group launch carries every member as an ordered relay candidate', () => {
+    const launch = resolveToolSessionLaunch()
+    expect(launch.agentId).toBe(GROUP)
+    expect(launch.relayCandidates?.map((c) => c.model)).toEqual(['m1', 'm2', 'm3'])
+  })
+
+  it('an empty registry still synthesizes System (the settings-corrupt safety net)', () => {
+    mockSettings.agents = []
+    mockSettings.defaultAgentId = ''
+    expect(resolveAgent('').id).toBe('system')
+    expect(resolveAgent('gone').id).toBe('system')
   })
 })
 

@@ -1189,6 +1189,18 @@ export function installMessageHandler(ctx: AppCtx): void {
         ) {
           createIntentPending.value = false
         }
+        // An agent-configuration refusal (an unusable agent group) can arrive from
+        // ANY creation flow — new session, intent conversation, spec authoring or
+        // review — so it is surfaced globally rather than in one page's error
+        // channel, and it releases whatever startup overlay was waiting on the
+        // session that will now never exist.
+        if (msg.error.code.startsWith('agent.')) {
+          if (devLaunch.value) ctx.closeDevLaunch()
+          if (specLaunch.value) ctx.dispatchSpecLaunch({ kind: 'failed', now: Date.now() })
+          createIntentPending.value = false
+          ctx.showToast(translateUiError(msg.error))
+          break
+        }
         if (msg.error.code.startsWith('intent.')) {
           intentActionErrorSeq.value += 1
           // A Git/forge failure may ride along with targeted repair guidance. It

@@ -2044,6 +2044,9 @@
       "specNotApproved": "The spec has not been approved yet; approve it before starting work.",
       "parkStatsUnavailable": "Local park-recovery statistics are unavailable."
     },
+    "agent": {
+      "groupUnavailable": "Agent group {group} has no available member. Check the agent configuration."
+    },
     "discussion": {
       "dbUnavailable": "Discussions feature unavailable (c3.db).",
       "notFound": "Discussion not found.",

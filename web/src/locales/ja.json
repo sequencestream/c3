@@ -2045,6 +2045,9 @@
       "specNotApproved": "spec がまだ承認されていません。作業を開始する前に承認してください。",
       "parkStatsUnavailable": "ローカルの park 復帰統計は利用できません。"
     },
+    "agent": {
+      "groupUnavailable": "エージェントグループ {group} に利用可能なメンバーがありません。エージェント設定を確認してください。"
+    },
     "discussion": {
       "dbUnavailable": "ディスカッション機能は利用できません(c3.db)。",
       "notFound": "ディスカッションが見つかりません。",

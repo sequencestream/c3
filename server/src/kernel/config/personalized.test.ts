@@ -45,8 +45,8 @@ function diskRaw(): Record<string, unknown> {
  * A fully normalized record: every field filled with its own default, which is what
  * every read and echo returns regardless of how sparse the stored value was.
  */
-function rec(uiLang: UiLang, theme: UiTheme = 'dark'): PersonalizedSettings {
-  return { uiLang, theme }
+function rec(uiLang: UiLang, theme: UiTheme = 'dark', fontScale = 100): PersonalizedSettings {
+  return { uiLang, theme, fontScale }
 }
 
 /** A minimal system-settings object, as the settings panel would submit it. */
@@ -92,6 +92,30 @@ describe('normalizePersonalized', () => {
   it('normalizes the two fields independently', () => {
     expect(normalizePersonalized({ uiLang: 'zh', theme: 'solarized' })).toEqual(rec('zh', 'dark'))
     expect(normalizePersonalized({ uiLang: 'klingon', theme: 'light' })).toEqual(rec('en', 'light'))
+  })
+
+  it('fills the 100% scale for a missing, non-numeric, or out-of-range value', () => {
+    expect(normalizePersonalized({})).toEqual(rec('en', 'dark', 100))
+    expect(normalizePersonalized({ fontScale: '110' })).toEqual(rec('en', 'dark', 100))
+    expect(normalizePersonalized({ fontScale: 69 })).toEqual(rec('en', 'dark', 100))
+    expect(normalizePersonalized({ fontScale: 121 })).toEqual(rec('en', 'dark', 100))
+    expect(normalizePersonalized({ fontScale: NaN })).toEqual(rec('en', 'dark', 100))
+  })
+
+  it('keeps every in-range scale, including a fraction', () => {
+    expect(normalizePersonalized({ fontScale: 70 })).toEqual(rec('en', 'dark', 70))
+    expect(normalizePersonalized({ fontScale: 87.5 })).toEqual(rec('en', 'dark', 87.5))
+    expect(normalizePersonalized({ fontScale: 100 })).toEqual(rec('en', 'dark', 100))
+    expect(normalizePersonalized({ fontScale: 120 })).toEqual(rec('en', 'dark', 120))
+  })
+
+  it('normalizes the scale independently of the language and theme', () => {
+    expect(normalizePersonalized({ uiLang: 'zh', theme: 'light', fontScale: 110 })).toEqual(
+      rec('zh', 'light', 110),
+    )
+    expect(normalizePersonalized({ uiLang: 'zh', theme: 'solarized', fontScale: 69 })).toEqual(
+      rec('zh', 'dark', 100),
+    )
   })
 })
 
@@ -282,5 +306,32 @@ describe('theme persistence', () => {
     saveSettings(baseSystemSettings({ voiceLang: 'en-US' }))
     resetSettingsCacheForTests()
     expect(loadPersonalizedFor('alice')).toEqual(rec('zh', 'light'))
+  })
+})
+
+describe('font scale persistence', () => {
+  it('stores the scale per account, independently of language and theme', () => {
+    savePersonalizedFor('alice', { uiLang: 'zh', theme: 'light', fontScale: 115 })
+    savePersonalizedFor('bob', { uiLang: 'zh', fontScale: 85 })
+    expect(loadPersonalizedFor('alice')).toEqual(rec('zh', 'light', 115))
+    expect(loadPersonalizedFor('bob')).toEqual(rec('zh', 'dark', 85))
+  })
+
+  it('rejects an out-of-range scale without losing the fields that came with it', () => {
+    savePersonalizedFor('alice', { uiLang: 'ja', theme: 'light', fontScale: 200 } as never)
+    expect(loadPersonalizedFor('alice')).toEqual(rec('ja', 'light', 100))
+  })
+
+  it('reads an account record written before the scale existed as 100%', () => {
+    writeAtomic(settingsPath(), { personalizedSettings: { alice: { uiLang: 'zh' } } })
+    resetSettingsCacheForTests()
+    expect(loadPersonalizedFor('alice')).toEqual(rec('zh', 'dark', 100))
+  })
+
+  it('seeds a brand-new account record with the browser scale', () => {
+    expect(resolvePersonalized('alice', { uiLang: 'zh', fontScale: 110 })).toEqual(
+      rec('zh', 'dark', 110),
+    )
+    expect(loadPersonalizedFor('alice')).toEqual(rec('zh', 'dark', 110))
   })
 })

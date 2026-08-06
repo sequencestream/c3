@@ -220,9 +220,14 @@ describe('personalized settings echo', () => {
     return map
   }
 
-  /** Fake root element so the theme the echo applies is observable. */
+  /** Fake root element so the theme / font scale the echo applies is observable. */
   function installDocument(): { dataset: Record<string, string>; style: Record<string, string> } {
-    const root = { dataset: {} as Record<string, string>, style: {} as Record<string, string> }
+    const style = Object.assign({} as Record<string, string>, {
+      setProperty(this: Record<string, string>, k: string, v: string): void {
+        this[k] = v
+      },
+    })
+    const root = { dataset: {} as Record<string, string>, style }
     ;(globalThis as unknown as { document: unknown }).document = { documentElement: root }
     return root
   }
@@ -242,7 +247,11 @@ describe('personalized settings echo', () => {
       scope: 'account',
     } as ServerToClient)
     expect(i18n.global.locale.value).toBe('zh')
-    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'zh', theme: 'dark' })
+    expect(r.ctx.personalizedSettings.value).toEqual({
+      uiLang: 'zh',
+      theme: 'dark',
+      fontScale: 100,
+    })
     // Mirrored so the signed-out state keeps the account's latest choice.
     expect(storage.get('c3.uiLang')).toBe('zh')
   })
@@ -259,7 +268,11 @@ describe('personalized settings echo', () => {
     expect(root.dataset.theme).toBe('light')
     expect(root.style.colorScheme).toBe('light')
     expect(storage.get('c3.theme')).toBe('light')
-    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'en', theme: 'light' })
+    expect(r.ctx.personalizedSettings.value).toEqual({
+      uiLang: 'en',
+      theme: 'light',
+      fontScale: 100,
+    })
   })
 
   it('corrects a browser cold-start theme back to the account value on reconnect', () => {
@@ -278,6 +291,58 @@ describe('personalized settings echo', () => {
     expect(storage.get('c3.theme')).toBe('dark')
   })
 
+  it('applies an account font scale, mirrors it, and puts it on screen', () => {
+    const storage = installStorage()
+    const root = installDocument()
+    const r = makeCtx()
+    r.ctx.handleMessage({
+      type: 'personalized_settings',
+      settings: { uiLang: 'en', theme: 'dark', fontScale: 115 },
+      scope: 'account',
+    } as ServerToClient)
+    expect(root.style['--c-font-scale']).toBe('1.15')
+    expect(storage.get('c3.fontScale')).toBe('115')
+    expect(r.ctx.personalizedSettings.value).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+      fontScale: 115,
+    })
+  })
+
+  it('corrects a browser cold-start scale back to the account value on reconnect', () => {
+    const storage = installStorage()
+    const root = installDocument()
+    const r = makeCtx()
+    // Cold start showed this browser's 120%; the account says 100%.
+    root.style['--c-font-scale'] = '1.2'
+    storage.set('c3.fontScale', '120')
+    r.ctx.handleMessage({
+      type: 'personalized_settings',
+      settings: { uiLang: 'en', theme: 'dark', fontScale: 100 },
+      scope: 'account',
+    } as ServerToClient)
+    expect(root.style['--c-font-scale']).toBe('1')
+    expect(storage.get('c3.fontScale')).toBe('100')
+  })
+
+  it('normalizes an out-of-range scale in the echo to 100 without touching the language', () => {
+    installStorage()
+    const root = installDocument()
+    const r = makeCtx()
+    r.ctx.handleMessage({
+      type: 'personalized_settings',
+      settings: { uiLang: 'zh', theme: 'dark', fontScale: 500 },
+      scope: 'local',
+    } as unknown as ServerToClient)
+    expect(r.ctx.personalizedSettings.value).toEqual({
+      uiLang: 'zh',
+      theme: 'dark',
+      fontScale: 100,
+    })
+    expect(root.style['--c-font-scale']).toBe('1')
+    expect(i18n.global.locale.value).toBe('zh')
+  })
+
   it('normalizes an unknown language in the echo to en', () => {
     installStorage()
     const r = makeCtx()
@@ -286,7 +351,11 @@ describe('personalized settings echo', () => {
       settings: { uiLang: 'klingon' },
       scope: 'local',
     } as unknown as ServerToClient)
-    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'en', theme: 'dark' })
+    expect(r.ctx.personalizedSettings.value).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+      fontScale: 100,
+    })
     expect(i18n.global.locale.value).toBe('en')
   })
 
@@ -299,7 +368,11 @@ describe('personalized settings echo', () => {
       settings: { uiLang: 'zh', theme: 'solarized' },
       scope: 'local',
     } as unknown as ServerToClient)
-    expect(r.ctx.personalizedSettings.value).toEqual({ uiLang: 'zh', theme: 'dark' })
+    expect(r.ctx.personalizedSettings.value).toEqual({
+      uiLang: 'zh',
+      theme: 'dark',
+      fontScale: 100,
+    })
     expect(root.dataset.theme).toBe('dark')
     expect(i18n.global.locale.value).toBe('zh')
   })

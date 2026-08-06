@@ -69,7 +69,9 @@ describe('--settings override', () => {
     setSettingsPath(file)
     savePersonalizedFor('alice', { uiLang: 'zh' })
     const raw = readJsonFile<Record<string, unknown>>(file) ?? {}
-    expect(raw.personalizedSettings).toEqual({ alice: { uiLang: 'zh', theme: 'dark' } })
+    expect(raw.personalizedSettings).toEqual({
+      alice: { uiLang: 'zh', theme: 'dark', fontScale: 100 },
+    })
     expect(raw.agentLang).toBe('zh')
     expect(existsSync(join(process.env.HOME!, '.c3', 'settings.json'))).toBe(false)
   })
@@ -94,7 +96,9 @@ describe('--settings override', () => {
 
     // And the first file is untouched by reads against the second.
     const first = readJsonFile<Record<string, unknown>>(join(dirA, 'settings.json')) ?? {}
-    expect(first.personalizedSettings).toEqual({ alice: { uiLang: 'zh', theme: 'dark' } })
+    expect(first.personalizedSettings).toEqual({
+      alice: { uiLang: 'zh', theme: 'dark', fontScale: 100 },
+    })
   })
 
   it('keeps state.json beside the override so the whole config dir moves together', () => {

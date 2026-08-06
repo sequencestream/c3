@@ -122,7 +122,7 @@ web/src/
 │   │   └── Login.vue                                # 全屏登录门(ADR-0023):账号+密码表单,提交走 WS login 消息,pending/错误码经 useAuth 回流
 │   │
 │   ├── personalizedsetting/                         # 个人化设置页
-│   │   └── PersonalizedSetting.vue                  # 个人化设置(全屏浮层),与系统设置、工作区设置三者并列:承载「因人而异」的偏好项,不经管理员门禁——不读 isAdmin、无只读提示、无 Save 按钮。每项即时生效 + 即时持久化(选中即抛 set-ui-lang / set-theme,由控制层应用并按当前身份保存),故无草稿/脏状态机,不复用 useTabbedDraftSave。当前含显示语言(uiLang,选项按 isLocaleEnabled 过滤 UI_LANGS 全表,标签为语言原生名;缺省 en)与显示样式(theme,选项由 lib/theme.ts 主题注册表生成、标签走 i18n;缺省 dark)。存储位置由身份决定(账户级 / 浏览器本地),页面本身不关心
+│   │   └── PersonalizedSetting.vue                  # 个人化设置(全屏浮层),与系统设置、工作区设置三者并列:承载「因人而异」的偏好项,不经管理员门禁——不读 isAdmin、无只读提示、无 Save 按钮。每项即时生效 + 即时持久化(选中即抛 set-ui-lang / set-theme / set-font-scale,由控制层应用并按当前身份保存),故无草稿/脏状态机,不复用 useTabbedDraftSave。当前含显示语言(uiLang,选项按 isLocaleEnabled 过滤 UI_LANGS 全表,标签为语言原生名;缺省 en)、显示样式(theme,选项由 lib/theme.ts 主题注册表生成、标签走 i18n;缺省 dark)与字体大小(fontScale,range 滑块 70–120 拖动即生效,旁显当前百分比;缺省 100)。存储位置由身份决定(账户级 / 浏览器本地),页面本身不关心
 │   │
 │   ├── workspacesetting/                         # 工作区配置页
 │   │   ├── components/ExternalMcpAccess/
@@ -149,8 +149,9 @@ web/src/
 │   ├── agent-prefix.ts                              # 客户端推断当前 session 运行的 agent 展示名:本地复刻服务端降级链;识别 `_c3_<group>` 虚拟 group agent(ADR-0029)展示组名
 │   ├── group-agents.ts                              # 客户端派生虚拟 group agent(ADR-0029):listGroupAgents/groupAgentsOfVendor 本地复刻服务端枚举(每个 (vendor,group) 一项,不同 vendor 可同名),agentRefDisplayName 把 `_c3_<vendor>_<group>` ref 原样带前缀展示;供各 agent 选择器以 `_c3_<vendor>_<组名>` 列出 group 选项
 │   ├── authToken.ts                                 # 会话 token 持久化(localStorage,guard 无 DOM 环境):get/set/clear,供 ws.ts 握手 ?token= 复用
-│   ├── personalized-settings.ts                     # 个人化设置的浏览器侧仓储:read/write/hasLocalPersonalized 按字段键读写 localStorage(显示语言沿用 `c3.uiLang`,故已有语言选择天然可用、无需迁移;主题为 `c3.theme`),normalizePersonalized 按字段独立归一(缺失/非法/存储不可用回落 en + dark),UI_LANGS 全表(与 UiLang 并集编译期对齐),applyStoredTheme 冷启动先应用本浏览器主题。纯逻辑不联网,WS 往返在 controls 层;i18n 首屏解析亦读它
+│   ├── personalized-settings.ts                     # 个人化设置的浏览器侧仓储:read/write/hasLocalPersonalized 按字段键读写 localStorage(显示语言沿用 `c3.uiLang`,故已有语言选择天然可用、无需迁移;主题为 `c3.theme`,字号为 `c3.fontScale`),normalizePersonalized 按字段独立归一(缺失/非法/存储不可用回落 en + dark + 100),UI_LANGS 全表(与 UiLang 并集编译期对齐),applyStoredTheme / applyStoredFontScale 冷启动先应用本浏览器主题与字号。纯逻辑不联网,WS 往返在 controls 层;i18n 首屏解析亦读它
 │   ├── theme.ts                                     # 主题注册表 + 运行时:THEMES 每项 { id, labelKey, colorScheme }(当前 dark/light),applyTheme 归一后写根元素 data-theme 与 color-scheme(未知值一律回落 dark,任意字符串不进 DOM)。只做 id→属性映射,配色取值全在 standard.css;新增预设主题 = 加一项 + 加一组 CSS 变量
+│   ├── font-scale.ts                                # 字号缩放注册表 + 运行时:范围 70–120(缺省 100,允许小数),isFontScale / resolveFontScale 归一,applyFontScale 以比值(值/100)写根元素 --c-font-scale;standard.css 字号 token 用 calc(原始值 * var(--c-font-scale)) 消费,故 px 硬编码处不随动
 │   ├── ask.ts                                       # AskUserQuestion 辅助:提取问题列表、共识意见、选项/自定义答案聚合
 │   ├── chat-types.ts                                # 聊天消息数据模型:ChatBody/ChatMsg/PermissionMsg/RunActivity/Block 类型(含 standalone 块)、多说话人 SpeakerView
 │   ├── codes-view.ts                                # Codes 页纯逻辑/类型:CodeTab/搜索结果视图、关闭 tab 后聚焦相邻(closeTab)、后缀→Shiki 语言推断(langFromPath)、basename、字节人类可读化、CodeViewMode(原文/预览)+ isMarkdownPath(.md 判定)

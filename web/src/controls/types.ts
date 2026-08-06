@@ -302,6 +302,8 @@ export interface AppMethods {
   fetchPersonalizedSettings(): void
   setLocale(next: UiLang): void
   setTheme(next: UiTheme): void
+  /** Set the console UI font scale (percent, 70–120) live and persist it for the identity. */
+  setFontScale(next: number): void
   setViewMode(mode: 'workspace' | 'workcenter'): void
   approveSkillLoad(requestId: string): void
   cancelSkillLoad(requestId: string): void

@@ -23,6 +23,7 @@ import { mergeSessionPage, type SessionWindow } from '@/lib/session-page'
 import { applyLocale, i18n } from '@/i18n'
 import { normalizePersonalized, writeLocalPersonalized } from '@/lib/personalized-settings'
 import { applyTheme } from '@/lib/theme'
+import { applyFontScale } from '@/lib/font-scale'
 import { translateUiError } from '@/i18n/errors'
 import { normalizeGuidance } from '@/lib/git-failure-guidance'
 import { transcriptToChat } from './transcript'
@@ -760,6 +761,9 @@ export function installMessageHandler(ctx: AppCtx): void {
         // Unconditional: cold start applied this browser's theme, so a login, logout
         // or reconnect must be able to correct it back to the account's value.
         applyTheme(next.theme)
+        // Same reasoning for the font scale: the echo is authoritative for this
+        // identity, so a reconnect corrects the cold-start browser value.
+        applyFontScale(next.fontScale)
         break
       }
       case 'skill_link_status':

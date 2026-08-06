@@ -10,12 +10,13 @@ import {
   collectGitStatus,
   commitAndPush,
   createForgePr,
+  createGhPr,
   createGlabMr,
   detectForge,
   getForgePrStatus,
   gitDiffStat,
   gitRecentLog,
-  hasDiffAgainstMain,
+  hasDiffAgainstBase,
   parsePorcelainStatus,
 } from './git.js'
 
@@ -214,42 +215,65 @@ describe('commitAndPush — repository discovery & per-repo commit', () => {
   })
 })
 
-describe('hasDiffAgainstMain — PR creation gate compares against local main', () => {
-  /** Init a repo whose default branch is renamed to `main`, no remote/upstream. */
-  function initMainRepo(path: string): void {
-    initRepo(path, 'main-repo', false)
-    run('git', ['branch', '-M', 'main'], path)
+describe('hasDiffAgainstBase — PR creation gate compares against the effective base', () => {
+  /** Init a repo whose default branch is renamed to `base`, no remote/upstream. */
+  function initBaseRepo(path: string, base: string): void {
+    initRepo(path, `${base}-repo`, false)
+    run('git', ['branch', '-M', base], path)
   }
 
-  it('branch ahead of main with no upstream configured → true', async () => {
-    initMainRepo(work)
+  it('branch ahead of base with no upstream configured → true', async () => {
+    initBaseRepo(work, 'main')
     run('git', ['checkout', '-q', '-b', 'intent/x'], work)
     writeFileSync(join(work, 'a.ts'), 'export const a = 1\n')
     run('git', ['add', '-A'], work)
     run('git', ['commit', '-q', '-m', 'feat: a'], work)
 
-    expect(await hasDiffAgainstMain(work)).toBe(true)
+    expect(await hasDiffAgainstBase(work, 'main')).toBe(true)
   })
 
-  it('uncommitted tracked edits relative to main → true', async () => {
-    initMainRepo(work)
+  it('uncommitted tracked edits relative to base → true', async () => {
+    initBaseRepo(work, 'main')
     writeFileSync(join(work, 'README.md'), 'edited\n')
 
-    expect(await hasDiffAgainstMain(work)).toBe(true)
+    expect(await hasDiffAgainstBase(work, 'main')).toBe(true)
   })
 
-  it('same commit as main with a clean tree → false', async () => {
-    initMainRepo(work)
+  it('same commit as base with a clean tree → false', async () => {
+    initBaseRepo(work, 'main')
     run('git', ['checkout', '-q', '-b', 'intent/x'], work)
 
-    expect(await hasDiffAgainstMain(work)).toBe(false)
+    expect(await hasDiffAgainstBase(work, 'main')).toBe(false)
   })
 
-  it('no local main branch → true (let the later push/CLI report the real error)', async () => {
-    initRepo(work, 'no-main', false)
-    run('git', ['branch', '-M', 'trunk'], work)
+  it('falls back to the local base ref when there is no remote', async () => {
+    initBaseRepo(work, 'develop')
+    run('git', ['checkout', '-q', '-b', 'intent/x'], work)
+    // HEAD sits on the local develop tip → no diff against the local base.
+    expect(await hasDiffAgainstBase(work, 'develop')).toBe(false)
+  })
 
-    expect(await hasDiffAgainstMain(work)).toBe(true)
+  it('compares against the freshly-fetched remote base over a behind local ref', async () => {
+    initRepo(work, 'root') // has origin
+    run('git', ['branch', '-M', 'develop'], work)
+    run('git', ['push', '-q', '-u', 'origin', 'HEAD'], work) // origin/develop = tip0
+    // Local develop advances one commit ahead of the remote.
+    writeFileSync(join(work, 'local.ts'), 'local\n')
+    run('git', ['add', '-A'], work)
+    run('git', ['commit', '-q', '-m', 'local ahead'], work) // local develop = tip1
+    // Intent branch rooted at local develop, no extra work.
+    run('git', ['checkout', '-q', '-b', 'intent/x'], work)
+    // Against LOCAL develop (== HEAD) it reads no diff — but the fetched remote
+    // base (origin/develop, behind) differs, so the gate must read a diff and
+    // prove the remote ref won over the local one.
+    expect(await hasDiffAgainstBase(work, 'develop')).toBe(true)
+  })
+
+  it('base unresolvable both remotely and locally → rejects instead of passing through', async () => {
+    initBaseRepo(work, 'trunk')
+    run('git', ['checkout', '-q', '-b', 'intent/x'], work)
+
+    await expect(hasDiffAgainstBase(work, 'main')).rejects.toThrow(/目标分支 main 无法解析/)
   })
 })
 
@@ -295,10 +319,42 @@ describe('forge detection and change-request creation', () => {
     })
   })
 
+  /** Fake CLI that records the exact argv it was called with to `<dir>/argv`. */
+  function installArgvRecordingCli(name: 'gh' | 'glab'): string {
+    const bin = join(dir, 'bin')
+    mkdirSync(bin, { recursive: true })
+    const argvFile = join(dir, `${name}-argv`)
+    const script = join(bin, name)
+    writeFileSync(script, `#!/bin/sh\nprintf '%s\\n' "$@" > '${argvFile}'\nexit 0\n`)
+    chmodSync(script, 0o755)
+    process.env.PATH = `${bin}:${originalPath ?? ''}`
+    return argvFile
+  }
+
+  it('passes the resolved base to gh via --base and the head via --head', async () => {
+    const argvFile = installArgvRecordingCli('gh')
+
+    await createGhPr(work, 'Title', 'Body', 'intent/x', 'develop')
+
+    const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
+    expect(argv[argv.indexOf('--base') + 1]).toBe('develop')
+    expect(argv[argv.indexOf('--head') + 1]).toBe('intent/x')
+  })
+
+  it('passes the resolved base to glab via --target-branch and the head via --source-branch', async () => {
+    const argvFile = installArgvRecordingCli('glab')
+
+    await createGlabMr(work, 'Title', 'Body', 'intent/x', 'develop')
+
+    const argv = readFileSync(argvFile, 'utf8').trim().split('\n')
+    expect(argv[argv.indexOf('--target-branch') + 1]).toBe('develop')
+    expect(argv[argv.indexOf('--source-branch') + 1]).toBe('intent/x')
+  })
+
   it('marks a missing glab CLI unavailable', async () => {
     process.env.PATH = join(dir, 'empty-bin')
 
-    await expect(createGlabMr(work, 'Title', 'Body')).resolves.toMatchObject({
+    await expect(createGlabMr(work, 'Title', 'Body', undefined, 'main')).resolves.toMatchObject({
       ok: false,
       unavailable: true,
       error: 'glab CLI 未安装',
@@ -313,7 +369,7 @@ describe('forge detection and change-request creation', () => {
       1,
     )
 
-    await expect(createGlabMr(work, 'Title', 'Body')).resolves.toMatchObject({
+    await expect(createGlabMr(work, 'Title', 'Body', undefined, 'main')).resolves.toMatchObject({
       ok: false,
       unavailable: true,
     })
@@ -322,7 +378,7 @@ describe('forge detection and change-request creation', () => {
   it('returns a regular error for other glab failures', async () => {
     installFakeCli('glab', '', 'merge request already exists', 1)
 
-    await expect(createGlabMr(work, 'Title', 'Body')).resolves.toEqual({
+    await expect(createGlabMr(work, 'Title', 'Body', undefined, 'main')).resolves.toEqual({
       ok: false,
       error: 'merge request already exists',
     })
@@ -333,7 +389,7 @@ describe('forge detection and change-request creation', () => {
     installFakeCli('glab', 'https://gitlab.example/owner/repo/-/merge_requests/7\n')
 
     await expect(
-      createForgePr(work, 'Title', 'Body', undefined, undefined, 'gitlab'),
+      createForgePr(work, 'Title', 'Body', undefined, 'main', 'gitlab'),
     ).resolves.toMatchObject({
       ok: true,
       prId: '7',
@@ -343,14 +399,14 @@ describe('forge detection and change-request creation', () => {
   it('dispatches from origin detection to GitHub and GitLab', async () => {
     setOrigin('https://github.com/owner/repo.git')
     installFakeCli('gh', 'https://github.com/owner/repo/pull/8\n')
-    await expect(createForgePr(work, 'Title', 'Body')).resolves.toMatchObject({
+    await expect(createForgePr(work, 'Title', 'Body', undefined, 'main')).resolves.toMatchObject({
       ok: true,
       prId: '8',
     })
 
     run('git', ['remote', 'set-url', 'origin', 'https://gitlab.internal/owner/repo.git'], work)
     installFakeCli('glab', 'https://gitlab.internal/owner/repo/-/merge_requests/9\n')
-    await expect(createForgePr(work, 'Title', 'Body')).resolves.toMatchObject({
+    await expect(createForgePr(work, 'Title', 'Body', undefined, 'main')).resolves.toMatchObject({
       ok: true,
       prId: '9',
     })

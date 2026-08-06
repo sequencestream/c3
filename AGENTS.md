@@ -15,6 +15,7 @@ c3 - code creative center - An **AI workbench** that centrally manages and drive
 ## Rules
 
 - Code comments should not contain document references or number references, like: `SR-R14`, `ADR-0002` etc.
+- No `Co-Authored-By` in commit messages.
 
 ## Commands
 

@@ -28,6 +28,9 @@
 | `specMode`          | `'sdd'`\|`'fast'`\| null    | 每意图级规格模式覆盖;`null` 继承工作区 `sddEnabled`(开启 ⇒ `sdd`,关闭 ⇒ `fast`),显式值始终覆盖派生值且不随开关变化(RM-R40)                                                                          |
 | `effectiveSpecMode` | `'sdd'`\|`'fast'`           | 发送时投影的已解析有效规格模式 —— 从持久 `specMode` + 工作区 `sddEnabled` 推导一次,客户端/准入层/落定处理读取同一值;`sddEnabled` 关闭时无规格闸门与规格阶段,`fast` 只是与现状一致的自然默认(RM-R40) |
 | `actionDescriptor`  | ActionDescriptor \| null    | 派生的「下一步」;无阻塞时为 `null`。发送时投影,不落库(见下)                                                                                                                                         |
+| `prId`              | text \| null                | PR/MR 在仓库(project)内的 number;由 gh/glab 创建输出解析,经 `setPrInfo` 原样落库                                                                                                                    |
+| `prUrl`             | text \| null                | PR/MR 可跳转链接;与 `latestCommitHash` 语义不同(链接指向变更请求,哈希指向提交)                                                                                                                      |
+| `prStatus`          | enum \| null                | PR/MR 生命周期状态 `reviewing`\|`rejected`\|`failed`\|`merged`\|`closed`;与意图自身 `status`(`draft`/`todo`/…/`done`)相互独立                                                                       |
 
 关系:属于一个项目(以 `workspacePath` 标识);拥有零个或多个 Intent
 Dependencies;可能引用一个开发 Session(一个普通会话,归 session-registry 所有)。
@@ -199,7 +202,10 @@ null,写入侧截断到 128)。这次重命名有意与向后兼容的 `projectC
 以及 `intent_sessions`、`intent_logs` 与 `intent_fast_turns`(每 turn 结算记录)。
 `tool_sessions` 只是一张标记表;工具会话的来源链接存放在 `session_kind='tool'` 行的
 `session_metadata.owner_kind` / `owner_id` 中,无 owner 的工具行仅用于展示。会话被删除时,
-其行也会被删除。跨运行时驱动适配器与迁移处理见
+其行也会被删除。`intents` 表的时间戳列(`created_at`/`updated_at`/`completed_at`)以
+`INTEGER` 存 epoch-ms,受控写入一律 `Date.now()`;PR 追踪列(`pr_id`/`pr_url`/`pr_status`)
+的语义与取值域见上方 Intent 实体表,其中 `pr_status` 运行时取值域含 `closed`
+(`database/intents/intents.sql` 的 DDL 注释未列全,以共享协议类型为准)。跨运行时驱动适配器与迁移处理见
 [intent-management-design.md](intent-management-design.md)。
 
 跨领域的 `session_metadata` 投影存在于意图台账的唯一真实来源表之外。intent 的写入操作

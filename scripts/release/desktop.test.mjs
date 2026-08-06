@@ -3,15 +3,20 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, utimesSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  AD_HOC_SIGNING_IDENTITY,
+  APPLE_CREDENTIAL_ENV_KEYS,
   DESKTOP_TARGETS,
+  appleEnvOverride,
   bundleVersion,
   desktopBundles,
   desktopPackageName,
   isDesktopHostTarget,
+  macSigningMode,
   preferredKindFor,
   rustTriple,
   sidecarStageName,
   tauriBundleFlags,
+  tauriConfigOverride,
 } from './desktop-artifacts.mjs'
 import { findBundleArtifact, stageSidecarBinary, verifySidecarVersion } from './desktop.mjs'
 import { buildManifest, carryForwardArtifacts, CHANNEL_DESKTOP, splitTarget } from './manifest.mjs'
@@ -425,5 +430,72 @@ describe('requiredChannel', () => {
 
   it('honours an explicit desktop gate', () => {
     expect(requiredChannel({ C3_REQUIRED_CHANNEL: 'desktop' })).toBe('desktop')
+  })
+})
+
+describe('macSigningMode', () => {
+  it('uses Developer ID only when both the certificate and its password are usable', () => {
+    expect(
+      macSigningMode({ APPLE_CERTIFICATE: 'base64==', APPLE_CERTIFICATE_PASSWORD: 'pw' }),
+    ).toBe('developer-id')
+  })
+
+  it('treats an EMPTY certificate as no certificate at all', () => {
+    // The regression this guards: GitHub Actions renders an unset secret as an
+    // empty string while KEEPING the env var, and the Tauri bundler only checks
+    // whether the var exists — so it ran `security import` on empty bytes and
+    // failed the whole build with SecKeychainItemImport.
+    expect(macSigningMode({ APPLE_CERTIFICATE: '', APPLE_CERTIFICATE_PASSWORD: '' })).toBe('ad-hoc')
+    expect(macSigningMode({ APPLE_CERTIFICATE: '   ', APPLE_CERTIFICATE_PASSWORD: '   ' })).toBe(
+      'ad-hoc',
+    )
+  })
+
+  it('falls back to ad-hoc when only half the credentials are present', () => {
+    expect(macSigningMode({ APPLE_CERTIFICATE: 'base64==' })).toBe('ad-hoc')
+    expect(macSigningMode({ APPLE_CERTIFICATE_PASSWORD: 'pw' })).toBe('ad-hoc')
+    expect(macSigningMode({})).toBe('ad-hoc')
+  })
+})
+
+describe('appleEnvOverride', () => {
+  it('leaves the environment untouched for a Developer ID build', () => {
+    expect(appleEnvOverride('developer-id')).toEqual({})
+  })
+
+  it('DELETES every Apple credential var for an ad-hoc build', () => {
+    const override = appleEnvOverride('ad-hoc')
+    for (const key of APPLE_CREDENTIAL_ENV_KEYS) {
+      expect(override).toHaveProperty(key)
+      // `undefined`, not `''` — an empty string still counts as "set" to Tauri,
+      // which is exactly what broke the build.
+      expect(override[key]).toBeUndefined()
+    }
+  })
+})
+
+describe('tauriConfigOverride', () => {
+  it('asks the bundler for an ad-hoc signature on macOS when there is no certificate', () => {
+    expect(
+      tauriConfigOverride({ version: '0.9.6', target: 'macos-arm64', signingMode: 'ad-hoc' }),
+    ).toEqual({
+      version: '0.9.6',
+      bundle: { macOS: { signingIdentity: AD_HOC_SIGNING_IDENTITY } },
+    })
+  })
+
+  it('never overrides the identity when real credentials are available', () => {
+    // Pinning `-` here would DOWNGRADE a Developer ID build to a self-signed one.
+    expect(
+      tauriConfigOverride({ version: '0.9.6', target: 'macos-arm64', signingMode: 'developer-id' }),
+    ).toEqual({ version: '0.9.6' })
+  })
+
+  it('carries no macOS signing knob on the other platforms', () => {
+    for (const target of ['windows-x64', 'linux-x64']) {
+      expect(tauriConfigOverride({ version: '0.9.6', target, signingMode: 'ad-hoc' })).toEqual({
+        version: '0.9.6',
+      })
+    }
   })
 })

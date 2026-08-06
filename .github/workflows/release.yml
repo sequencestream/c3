@@ -347,7 +347,7 @@ jobs:
   #     blocks the corresponding desktop target's release, not the CLI cut.
   # ────────────────────────────────────────────────────────────────────
   build-desktop-macos-arm64:
-    name: 'build desktop macos-arm64 (signed + notarized)'
+    name: 'build desktop macos-arm64 (ad-hoc, Developer ID when configured)'
     needs: [pregate, setup]
     runs-on: macos-14
     environment: default
@@ -355,10 +355,14 @@ jobs:
     env:
       BUN_INSTALL: ${{ github.workspace }}/.bun
       C3_RELEASE_VERSION: ${{ needs.setup.outputs.version }}
-      # Developer ID signing + notarization. Injected from CI secrets only; the
-      # Tauri CLI reads these directly. `--require-signing` (below) turns a missing
-      # or invalid credential into a hard failure, so an unsigned .dmg can never
-      # take the place of the real artifact.
+      # Developer ID signing + notarization, when the secrets are configured. An
+      # UNSET secret renders as an EMPTY STRING here while the env var still
+      # exists, and the Tauri bundler only checks for existence — so it used to
+      # run `security import` on empty bytes and fail the whole build. The build
+      # script (macSigningMode) rejects empty values and strips these vars before
+      # invoking Tauri, falling back to an ad-hoc signature. `--require-signing`
+      # (below) then gates against whichever tier actually applies: ad-hoc must at
+      # minimum verify; Developer ID must additionally be notarized.
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
       APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
       APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -409,6 +413,14 @@ jobs:
         run: |
           export PATH="$BUN_INSTALL/bin:$PATH"
           pnpm release:desktop --targets=macos-arm64 --require-signing
+
+      - name: Report signing status
+        run: |
+          if [ -z "${APPLE_CERTIFICATE// }" ]; then
+            echo "::warning::No Developer ID certificate configured — the macOS desktop bundles are AD-HOC signed and NOT notarized. Gatekeeper will quarantine them; the release notes must tell users to run 'xattr -dr com.apple.quarantine /Applications/c3.app'."
+          else
+            echo "[desktop] Developer ID certificate present — bundles signed by the Tauri bundler."
+          fi
 
       - name: Checksum artifacts
         run: node scripts/release/checksum.mjs --manifest=dist/manifest.json

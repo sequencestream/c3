@@ -14,9 +14,9 @@
 >   门禁顺序,macOS ad-hoc 代码签名真实运行在 darwin runner 上,通过 OIDC 无密钥方式的 SLSA 溯源 — 以及
 >   **二进制文件与包拆分(8/7)** — 二进制文件始终命名为 `c3`(Windows 上为 `c3.exe`);版本 + 平台信息只存在于包文件名中
 >   (`c3-v{version}-{target}{.tar.gz|.zip}`);manifest `v1.2` 为每个制品新增 `binary` + `binarySha256`
->   字段 — 均已上线。macOS 公证(Developer ID + notarytool)与 Windows
->   Authenticode(signtool + PFX)推迟到后续波次 — 它们需要 GitHub Secrets 中的真实
->   证书,而我们目前还没有。
+>   字段 — 均已上线。macOS Developer ID + 公证与 Windows Authenticode 的代码路径
+>   已就位,但都需要 GitHub Secrets 中的真实证书;证书缺席时 macOS 退到 ad-hoc
+>   签名,Windows 产出未签名安装器。
 >
 > **开源版说明(混淆已移除):** c3 是开源软件,已**彻底移除代码混淆
 > (`javascript-obfuscator`)以及围绕它的 harden 分层机制**。构建始终为
@@ -300,8 +300,9 @@ Phase4 `tauri build` → Phase5 收集 bundle + sha256 + manifest 条目。
 macOS 签名与公证也只能在 darwin host 上完成。每个 job 跑 `release:desktop` →
 `checksum` → postgate(`C3_REQUIRED_CHANNEL=desktop`)→ upload-artifact。
 
-- **macOS** 传 `--require-signing`:`codesign --verify` 或 `stapler validate` 任一失败
-  即阻断该目标,不得以未签名包替代正式产物。
+- **macOS** 传 `--require-signing`,**按签名档位分级**阻断:ad-hoc 档要求
+  `codesign --verify` 通过;Developer ID 档额外要求 `stapler validate` 通过。
+  不得以未签名包替代正式产物。档位与凭证判定见「分发信任」。
 - **Windows** 有证书时由 Tauri 打包器做 Authenticode 签名;没有则产物未签名,job 会
   发出 warning,发布说明必须写明 SmartScreen 提示。
 - **Linux** 显式安装 `libwebkit2gtk-4.1-dev` 等系统依赖,并用 `pkg-config --modversion`
@@ -510,10 +511,22 @@ sidecar + 汇总的 `SHA256SUMS`。所有外层 sidecar 覆盖的是包(tar/zip 
     403 且 `x-ratelimit-remaining: 0` 时日志给出限速提示)。设置了
     `C3_UPDATE_CHECK_URL`(镜像 / 私有 fork)则跳过重定向,直接查该端点。
     任何失败都保留上一次快照,下一轮重试。
-- **macOS ad-hoc** `codesign --force -s -` —— 仅在 macOS 目标 + darwin 主机 +
-  存在 `codesign` 时才生效;否则尽力而为、警告后继续。仅 ad-hoc(没有
-  Developer ID / 公证);用户需要用 `xattr -dr com.apple.quarantine` 清除
-  Gatekeeper 隔离标记。
+- **macOS 代码签名** —— 分两档,由**凭证的实际可用性**决定,CLI 与桌面两个渠道
+  共用同一套判定:
+
+  - **Developer ID**:`APPLE_CERTIFICATE` 与 `APPLE_CERTIFICATE_PASSWORD` 均非空
+    时启用,可继续公证。**空字符串一律视同没有凭证**:CI 在 secret 未配置时会把
+    变量渲染成空串却保留该变量,而 Tauri 只看变量存不存在,拿空 base64 去
+    `security import` 会让整个打包失败。因此退档时这些变量是被**删除**而非置空。
+  - **ad-hoc** `codesign --force -s -`:没有可用证书时的兜底,不涉及任何 Apple
+    账号。arm64 上未签名的 Mach-O 内核直接拒绝执行,所以 ad-hoc 是底线而非可选
+    项。产物未经公证,用户需要用 `xattr -dr com.apple.quarantine` 清除 Gatekeeper
+    隔离标记,发布说明必须写明这一点。
+
+  两个渠道的签名落点不同:**CLI 二进制**由编译原语在 sha256 之前签(仅在 macOS
+  目标 + darwin 主机 + 存在 `codesign` 时生效,否则警告后继续);**桌面包**由
+  Tauri 打包器在**封 dmg 之前**签 `.app`(经 `bundle.macOS.signingIdentity`)——
+  事后对 `bundle/macos/` 补签改不到已经生成的镜像。
 
 `pnpm release` 是**交互式本地构建+入库**流程:提示输入版本号(或接受
 `--version=X.Y.Z`),在本机跨平台编译三个发布目标——`linux-x64`、
@@ -555,7 +568,7 @@ pnpm release:build --skip-pack                       # 只出二进制,不打包
 pnpm release:build --dry-run                        # 打印计划,不执行
 pnpm release:desktop                                 # 桌面渠道:宿主平台的 Tauri 安装包(见「桌面渠道」)
 pnpm release:desktop --skip-web                      # 复用已有 web/dist,迭代壳时用
-pnpm release:desktop --require-signing               # 正式产物:未签名/未公证即失败
+pnpm release:desktop --require-signing               # 正式产物:签名未达当前档位要求即失败
 pnpm release:checksum                                    # SHA256SUMS + 每产物 .sha256(读取 manifest)
 pnpm release:notes                                   # 发布说明(版本 + CHANGELOG 顶部小节)
 pnpm release:gate                                    # pregate:typecheck→lint→test→i18n:check→check-freeze

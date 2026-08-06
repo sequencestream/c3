@@ -11,6 +11,9 @@
 //                                   并校验 `c3 --version` 与本次发布版本逐字相同 ——
 //                                   壳与 sidecar 版本不一致的包一律不许出厂。
 //   Phase4   tauri build            原生 runner 上打包/签名;Tauri 不做跨平台打包。
+//                                   macOS 签名分两档:有 Developer ID 证书就走正式
+//                                   签名,没有则由打包器做 ad-hoc 自签 —— 签名必须
+//                                   发生在 dmg 封装之前,所以交给 Tauri 而不是事后补。
 //   Phase5   collect                bundle → dist/c3-desktop-v{ver}-{target}{ext},
 //                                   计算 sha256,合并进 dist/manifest.json。
 //
@@ -43,14 +46,17 @@ import {
 import { binaryName, normalizeVersion } from './artifact-name.mjs'
 import {
   DESKTOP_TARGETS,
+  appleEnvOverride,
   bundleVersion,
   desktopBundles,
   desktopPackageName,
   isDesktopHostTarget,
+  macSigningMode,
   preferredKindFor,
   rustTriple,
   sidecarStageName,
   tauriBundleFlags,
+  tauriConfigOverride,
 } from './desktop-artifacts.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -71,14 +77,23 @@ function parseArgs(argv) {
   return o
 }
 
-/** 与 release-build.mjs 同款:Windows 上必须过 shell 才能解析 `pnpm.CMD`。 */
+/**
+ * 与 release-build.mjs 同款:Windows 上必须过 shell 才能解析 `pnpm.CMD`。
+ *
+ * `opts.env` 里值为 `undefined` 的键表示**从子进程环境中删除**该变量 —— 置空不
+ * 等于删除,Tauri 判定 Apple 凭证时只看变量存不存在(见 `macSigningMode`)。
+ */
 function run(cmd, args, label, opts = {}) {
+  const env = { ...process.env, ...(opts.env ?? {}) }
+  for (const [key, value] of Object.entries(opts.env ?? {})) {
+    if (value === undefined) delete env[key]
+  }
   return new Promise((res, rej) => {
     const p = spawn(cmd, args, {
       stdio: 'inherit',
       cwd: opts.cwd ?? repoRoot,
       shell: process.platform === 'win32',
-      env: { ...process.env, ...(opts.env ?? {}) },
+      env,
     })
     p.on('error', rej)
     p.on('exit', (code) =>
@@ -178,34 +193,54 @@ function tarGzDir(srcPath, outFile) {
 }
 
 /**
- * macOS 正式产物的签名/公证门禁。
+ * macOS 产物的签名门禁 —— **按签名档位分级**,而不是一刀切要求 Developer ID。
  *
- * `--require-signing` 打开时,未签名或未 staple 的包一律阻断 —— spec 明确要求
- * 不得以未签名 macOS 包替代正式产物。关闭时(本地构建)只打印现状。
+ * 分级的理由:开源版没有 Apple 证书也必须能出包,但「没证书」不等于「可以不签」。
+ * arm64 上未签名的二进制根本无法执行,所以 ad-hoc 是任何档位下都不可跳过的底线。
+ *
+ * - `developer-id` —— 要求 `codesign --verify` **且** `stapler validate` 通过。
+ * - `ad-hoc`       —— 只要求 `codesign --verify` 通过;`stapler` 不跑,ad-hoc 本
+ *   就没有公证票据,跑它只会产出一条注定失败的噪音。
+ *
+ * `--require-signing` 打开时(正式构建)该档位的检查项任一失败即阻断;关闭时
+ * (本地构建)只打印现状。
  */
-export function verifyMacSigning({ appPath, dmgPath, require: required, log = () => {} }) {
+export function verifyMacSigning({
+  appPath,
+  dmgPath,
+  mode = 'ad-hoc',
+  require: required,
+  log = () => {},
+}) {
   if (process.platform !== 'darwin') return { verified: false, reason: 'not a macOS host' }
   const checks = []
   const codesign = spawnSync('codesign', ['--verify', '--deep', '--strict', appPath], {
     encoding: 'utf-8',
   })
   checks.push({ name: 'codesign --verify', ok: codesign.status === 0, out: codesign.stderr })
-  const stapled = spawnSync('stapler', ['validate', dmgPath ?? appPath], { encoding: 'utf-8' })
-  checks.push({ name: 'stapler validate', ok: stapled.status === 0, out: stapled.stdout })
+  if (mode === 'developer-id') {
+    const stapled = spawnSync('stapler', ['validate', dmgPath ?? appPath], { encoding: 'utf-8' })
+    checks.push({ name: 'stapler validate', ok: stapled.status === 0, out: stapled.stdout })
+  }
 
   for (const c of checks) log(`  ${c.ok ? '✓' : '✗'} ${c.name}`)
   const failed = checks.filter((c) => !c.ok)
   if (failed.length && required) {
     throw new Error(
-      `[release:desktop] macOS release gate failed: ${failed.map((f) => f.name).join(', ')}. ` +
-        `Signing/notarization credentials must be present for a release build ` +
-        `(APPLE_CERTIFICATE, APPLE_SIGNING_IDENTITY, APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID).`,
+      `[release:desktop] macOS release gate failed (${mode}): ${failed.map((f) => f.name).join(', ')}. ` +
+        (mode === 'developer-id'
+          ? `Developer ID credentials are present, so the artifact must end up signed AND notarized ` +
+            `(APPLE_CERTIFICATE, APPLE_SIGNING_IDENTITY, APPLE_ID/APPLE_PASSWORD/APPLE_TEAM_ID).`
+          : `An ad-hoc signature is the floor for a macOS release — an unsigned arm64 bundle cannot even launch.`),
     )
   }
-  if (failed.length) {
-    log('  ⚠️ unsigned / un-notarized build — fine locally, NOT publishable')
+  if (mode === 'ad-hoc') {
+    log(
+      '  ⚠️ ad-hoc signed, NOT notarized — Gatekeeper will quarantine it; ' +
+        'the release notes must tell users to run `xattr -dr com.apple.quarantine`',
+    )
   }
-  return { verified: failed.length === 0 }
+  return { verified: failed.length === 0, mode }
 }
 
 async function main() {
@@ -243,13 +278,18 @@ async function main() {
   const distDir = resolve(repoRoot, 'dist')
   const manifestPath = join(distDir, 'manifest.json')
   const requireSigning = Boolean(args['require-signing'])
+  // 档位由凭证的**实际可用性**决定,在这里算一次并贯穿打包与门禁,免得两侧各判一遍
+  // 却判出不同结果。
+  const signingMode = macSigningMode()
 
   console.log('[release:desktop] plan:')
   console.log(
     `  version   ${versionInfo.version} (bundle ${bundleVer}, commit ${versionInfo.commit})`,
   )
   console.log(`  targets   ${requested.join(', ')}`)
-  console.log(`  signing   ${requireSigning ? 'REQUIRED (release)' : 'best-effort (local)'}`)
+  console.log(
+    `  signing   ${signingMode}${requireSigning ? ' — REQUIRED (release)' : ' — best-effort (local)'}`,
+  )
   console.log(`  manifest  ${manifestPath} (channel=${CHANNEL_DESKTOP})`)
   if (args['dry-run']) {
     console.log('[release:desktop] --dry-run: nothing executed.')
@@ -309,7 +349,19 @@ async function main() {
     // 版本覆盖写成文件而不是内联 JSON:内联 JSON 在 PowerShell 下的引号转义是
     // 跨平台脚本里最容易出错的一环。
     const releaseConfigPath = join(srcTauriDir, RELEASE_CONFIG)
-    writeFileSync(releaseConfigPath, `${JSON.stringify({ version: bundleVer }, null, 2)}\n`)
+    const configOverride = tauriConfigOverride({
+      version: bundleVer,
+      target,
+      signingMode,
+    })
+    writeFileSync(releaseConfigPath, `${JSON.stringify(configOverride, null, 2)}\n`)
+    if (target.startsWith('macos')) {
+      console.log(
+        signingMode === 'developer-id'
+          ? '  signing  Developer ID (certificate imported by the Tauri bundler)'
+          : '  signing  ad-hoc (`codesign -s -`, no Apple account involved)',
+      )
+    }
     const triple = rustTriple(target)
     try {
       await run(
@@ -333,6 +385,9 @@ async function main() {
           env: {
             // 壳把这个值编译进去,运行时用它拒绝版本不一致的 sidecar。
             C3_SIDECAR_VERSION: normalizeVersion(versionInfo.version),
+            // ad-hoc 档位下删除(而非置空)Apple 凭证变量:空的 APPLE_CERTIFICATE
+            // 照样会让打包器去 `security import`,然后带着整个构建一起失败。
+            ...appleEnvOverride(signingMode),
           },
         },
       )
@@ -385,10 +440,11 @@ async function main() {
     }
 
     if (target.startsWith('macos') && appPath) {
-      console.log('[release:desktop] macOS signing / notarization gate')
+      console.log(`[release:desktop] macOS signing gate (${signingMode})`)
       verifyMacSigning({
         appPath,
         dmgPath,
+        mode: signingMode,
         require: requireSigning,
         log: (m) => console.log(m),
       })

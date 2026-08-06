@@ -139,3 +139,73 @@ export function isDesktopHostTarget(target, platform = process.platform, arch = 
   const os = platform === 'darwin' ? 'macos' : platform === 'win32' ? 'windows' : platform
   return target === `${os}-${arch}`
 }
+
+/**
+ * ad-hoc 签名身份。`codesign -s -` 里的这个连字符是「无身份」的特殊取值:照样封装
+ * 完整性哈希(改一个字节签名即失效),但不带任何证书,因此不需要 Apple 账号。
+ *
+ * arm64 上未签名的 Mach-O 内核直接拒绝执行,所以 ad-hoc 不是可选项而是最低门槛。
+ */
+export const AD_HOC_SIGNING_IDENTITY = '-'
+
+/**
+ * macOS 签名档位 —— 由**凭证是否真的可用**决定,不由构建意图决定。
+ *
+ * 关键在于「可用」必须按非空判定,而不是按变量是否存在判定:GitHub Actions 在
+ * secret 未配置时会把 `${{ secrets.X }}` 渲染成**空字符串但保留该环境变量**,
+ * 而 Tauri 打包器只看变量存不存在,于是拿着空 base64 去 `security import`,报
+ * `SecKeychainItemImport: One or more parameters passed to a function were not valid`
+ * 后整个打包失败。空值必须在交给 Tauri 之前就被当作「没有凭证」剔除。
+ *
+ * - `developer-id` —— 证书 + 密码齐备,走 Apple 正式签名(可继续公证)。
+ * - `ad-hoc`       —— 没有可用证书,退到自签。产物能跑,但用户需要清除隔离标记。
+ */
+export function macSigningMode(env = process.env) {
+  const present = (key) => typeof env[key] === 'string' && env[key].trim() !== ''
+  return present('APPLE_CERTIFICATE') && present('APPLE_CERTIFICATE_PASSWORD')
+    ? 'developer-id'
+    : 'ad-hoc'
+}
+
+/**
+ * Tauri 打包器会读取的 Apple 凭证变量。ad-hoc 档位下这些变量必须从子进程环境里
+ * **删除**(而不是置空)—— 见 `macSigningMode` 里空字符串的那个坑。
+ */
+export const APPLE_CREDENTIAL_ENV_KEYS = [
+  'APPLE_CERTIFICATE',
+  'APPLE_CERTIFICATE_PASSWORD',
+  'APPLE_SIGNING_IDENTITY',
+  'APPLE_ID',
+  'APPLE_PASSWORD',
+  'APPLE_TEAM_ID',
+  'APPLE_API_KEY',
+  'APPLE_API_ISSUER',
+  'APPLE_API_KEY_PATH',
+]
+
+/**
+ * 交给 `tauri build` 的 Apple 相关环境覆盖。
+ *
+ * `undefined` 表示「从子进程环境里删掉这个变量」,由 `run()` 落实。ad-hoc 档位下
+ * 一并清掉公证凭证:半套凭证会让 Tauri 走进公证分支再失败,不如干净地不去。
+ */
+export function appleEnvOverride(mode) {
+  if (mode === 'developer-id') return {}
+  return Object.fromEntries(APPLE_CREDENTIAL_ENV_KEYS.map((k) => [k, undefined]))
+}
+
+/**
+ * `tauri build --config` 的覆盖内容。
+ *
+ * ad-hoc 签名走 `bundle.macOS.signingIdentity` 而不是 `APPLE_SIGNING_IDENTITY`
+ * 环境变量,也不在事后自己补签:Tauri 必须在**打 dmg 之前**签完 `.app`,否则
+ * dmg 里封的仍是未签名的那一份 —— 事后对 `bundle/macos/c3.app` 补签改不到已经
+ * 生成的镜像。让打包器自己按正确顺序签是唯一不会漏的做法。
+ */
+export function tauriConfigOverride({ version, target, signingMode }) {
+  const config = { version }
+  if (target.startsWith('macos') && signingMode === 'ad-hoc') {
+    config.bundle = { macOS: { signingIdentity: AD_HOC_SIGNING_IDENTITY } }
+  }
+  return config
+}

@@ -46,7 +46,7 @@ desktop/
 ```bash
 pnpm release:desktop                 # 宿主平台的完整发布构建(见下)
 pnpm release:desktop --skip-web      # 复用已有的 web/dist,迭代壳时快得多
-pnpm release:desktop --require-signing   # 正式产物:未签名/未公证即失败(CI 用)
+pnpm release:desktop --require-signing   # 正式产物:签名未达当前档位要求即失败(CI 用)
 ```
 
 `release:desktop` 的顺序与 CLI 渠道同构,并复用同一批原语:
@@ -76,9 +76,12 @@ pnpm release:desktop --require-signing   # 正式产物:未签名/未公证即�
 
 ### 各平台的额外依赖
 
-- **macOS** —— 正式产物需要 Developer ID 证书与公证凭据,仅从 CI secrets 注入
-  (`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、
-  `APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`)。本地构建是未签名的,能跑但不可分发。
+- **macOS** —— 签名分两档,由凭证是否可用自动决定,无需额外开关。`APPLE_CERTIFICATE`
+  与 `APPLE_CERTIFICATE_PASSWORD` 均非空(仅从 CI secrets 注入,连同
+  `APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`)时走
+  Developer ID 并可公证;否则由 Tauri 打包器做 ad-hoc 自签。本地构建走的是后者 ——
+  能装能跑,但用户需要 `xattr -dr com.apple.quarantine` 才能绕过 Gatekeeper。
+  空字符串等同于没有凭证,详见 `doc/non-functional/release.md`。
 - **Windows** —— 有 `WINDOWS_CERTIFICATE` 时由 Tauri 打包器完成 Authenticode 签名;
   没有则产物未签名,发布说明必须写明 SmartScreen 提示。
 - **Linux** —— 需要 `libwebkit2gtk-4.1-dev`、`libgtk-3-dev`、

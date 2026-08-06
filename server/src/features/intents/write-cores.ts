@@ -24,6 +24,7 @@ import {
   getForgeOverride,
   getGitBranchMode,
 } from '../../kernel/config/index.js'
+import { getDelivery } from '../deliveries/store.js'
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
 import type { GenericEvent } from '@ccc/shared'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
@@ -126,7 +127,22 @@ export async function createPrForIntent(
   const req = getIntent(intentId)
   if (!req) return { success: false, code: 'intent.notFound' }
 
-  // Idempotent guard first: an intent that already has a live PR is never
+  // Delivery branch gate (checked BEFORE the idempotent guard so the reason is
+  // the readable one): an intent whose live PR targets a delivery may only
+  // create work toward it while that delivery's branch is ready. The association
+  // surface is `intent_prs.delivery_id` — `create_pr` does not yet carry a
+  // deliveryId, so this is keyed on an existing active PR's delivery. The moment
+  // an automation or a later flow writes `delivery_id` and triggers a PR create,
+  // this gate is live; a `branch_ready === false` delivery refuses the PR.
+  const deliveryTarget = activeIntentPrs(req.prs).find((pr) => pr.deliveryId !== null)
+  if (deliveryTarget?.deliveryId) {
+    const delivery = getDelivery(deliveryTarget.deliveryId)
+    if (delivery && !delivery.branchReady) {
+      return { success: false, code: 'delivery.guard.branchNotReady' }
+    }
+  }
+
+  // Idempotent guard next: an intent that already has a live PR is never
   // re-created — no Git checks, no commit, no push. Independent of intent status.
   // A merged / closed PR does NOT block: that PR's life is over, and the intent
   // may legitimately need a new one.

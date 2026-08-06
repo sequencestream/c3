@@ -78,6 +78,39 @@ export type ClientTransitionDelivery = {
   confirmVerified?: boolean
 }
 
+/**
+ * Initialize the delivery's remote branch — the EXPLICIT, retryable Git action
+ * that gives the delivery its real integration branch. Pure Git work; the DB is
+ * written only after a push (create) or a verified remote existence (bind /
+ * orphan idempotent bind) succeeds.
+ *
+ * - `mode: 'create'` — create the branch on the remote rooted at the just-fetched
+ *   `origin/<base_branch>` HEAD. If the remote branch already exists with that
+ *   exact head, it is treated as an orphan from a previous failed write and bound
+ *   idempotently (no push); a mismatch is refused as `delivery.branchConflict`.
+ * - `mode: 'bind'` — bind an EXISTING remote branch (e.g. a company `release/*`).
+ *   The remote branch must exist; divergence from the baseline is only a warning
+ *   (`delivery.branchBehindMain`), never a rejection.
+ */
+export type ClientInitDeliveryBranch = {
+  type: 'init_delivery_branch'
+  workspaceId: string
+  deliveryId: string
+  branchName: string
+  mode: 'create' | 'bind'
+}
+
+/**
+ * Clear a TERMINAL (`delivered` / `cancelled`) delivery's local branch
+ * reference. Never touches the remote branch — deleting a remote branch is
+ * irreversible, so it is never automated. Refused on a non-terminal delivery.
+ */
+export type ClientCleanupDeliveryBranch = {
+  type: 'cleanup_delivery_branch'
+  workspaceId: string
+  deliveryId: string
+}
+
 // ---- Server → Client ----
 
 /**
@@ -134,4 +167,33 @@ export type ServerDeliveryTransitionFailed = {
   currentStatus: DeliveryStatus
   /** The status the caller tried to move to (for the `error.delivery.*` copy). */
   to: DeliveryStatus
+}
+
+/** One coarse phase boundary of a delivery branch-init run. */
+export type DeliveryBranchInitPhase = 'fetching' | 'creating' | 'pushing' | 'binding'
+
+/**
+ * Coarse progress of an `init_delivery_branch` run, pushed to the requesting
+ * connection. Phases advance `fetching → creating → pushing` on the create path
+ * (the binding paths report a single `binding`); a repeat or back-step is a
+ * client-side concern, never re-sent by the server.
+ */
+export type ServerDeliveryBranchInitProgress = {
+  type: 'delivery_branch_init_progress'
+  deliveryId: string
+  phase: DeliveryBranchInitPhase
+}
+
+/**
+ * Success terminal of an `init_delivery_branch` run. `delivery` carries the
+ * updated model (`branchName` + `branchReady`); the page re-fetches the detail
+ * for the fresh transition plan, and `deliveries` is broadcast. `warning` is set
+ * when a `bind` found the remote branch diverging from the baseline — the branch
+ * is bound regardless (spec: only warn, never reject legal release branches).
+ */
+export type ServerDeliveryBranchInitResult = {
+  type: 'delivery_branch_init_result'
+  workspaceId: string
+  delivery: Delivery
+  warning?: 'delivery.branchBehindMain'
 }

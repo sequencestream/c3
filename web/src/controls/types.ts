@@ -213,6 +213,10 @@ export interface AppMethods {
   }): void
   cancelDelivery(deliveryId: string): void
   transitionDelivery(to: DeliveryStatus, confirmVerified?: boolean): void
+  /** Explicit, retryable remote-branch init for the open delivery. */
+  initDeliveryBranch(payload: { mode: 'create' | 'bind'; branchName: string }): void
+  /** Manual cleanup of a TERMINAL delivery's local branch reference. */
+  cleanupDeliveryBranch(deliveryId: string): void
   onDeliveryMobileBack(targetKey: string): void
 
   // discussions

@@ -138,6 +138,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     activeDelivery,
     activeDeliveryId,
     activeDeliveryPlan,
+    activeDeliveryBranchInit,
     discussionMessages,
     discussionMaxSeq,
     researchMessages,
@@ -926,6 +927,27 @@ export function installMessageHandler(ctx: AppCtx): void {
           }),
         )
         break
+      case 'delivery_branch_init_progress':
+        // Advance the in-flight init phase. The action seeded it optimistically
+        // as `fetching`; a bind / orphan-idempotent path reports a single
+        // `binding`. Ignore a frame for a different delivery (superseded retry).
+        if (msg.deliveryId === activeDeliveryBranchInit.value?.deliveryId) {
+          activeDeliveryBranchInit.value = { deliveryId: msg.deliveryId, phase: msg.phase }
+        }
+        break
+      case 'delivery_branch_init_result': {
+        // Success terminal: clear the in-flight state, adopt the updated model,
+        // then re-fetch the detail for the fresh transition plan (branch ready
+        // unlocks the status gates). `deliveries` is broadcast separately.
+        activeDeliveryBranchInit.value = null
+        activeDelivery.value = msg.delivery
+        activeDeliveryId.value = msg.delivery.id
+        send({ type: 'get_delivery_detail', deliveryId: msg.delivery.id })
+        if (msg.warning === 'delivery.branchBehindMain') {
+          ctx.showToast(t('delivery.warning.branchBehindMain.label'))
+        }
+        break
+      }
       case 'discussions': {
         discussions.value = { ...discussions.value, [msg.workspaceId]: msg.items }
         // Authoritatively reconcile the live run-state for THIS list's discussions.
@@ -1212,6 +1234,21 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'error':
+        // A branch-init failure (fetch / push / orphan mismatch / bind-missing /
+        // multi-repo) clears the in-flight init state so the form re-enables, and
+        // surfaces the reason in a toast (the form lives on the deliveries page,
+        // not the chat stream the generic error line below appends to).
+        if (
+          activeDeliveryBranchInit.value &&
+          (msg.error.code === 'delivery.multiRepoUnsupported' ||
+            msg.error.code === 'delivery.branchConflict' ||
+            msg.error.code === 'delivery.branchNotFound' ||
+            msg.error.code === 'delivery.initFailed')
+        ) {
+          activeDeliveryBranchInit.value = null
+          ctx.showToast(translateUiError(msg.error))
+          break
+        }
         // A create_pr run has no error code of its own — its gates report
         // `intent.prCreate*` and `workspace.unknown` — so the failure terminal is
         // recognised by the echoed `requestId` instead. Errors from any other

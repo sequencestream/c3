@@ -36,7 +36,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   transition: [to: DeliveryStatus, confirmVerified: boolean]
-  jump: [target: 'associated-intents' | 'workspace-settings']
+  jump: [target: 'associated-intents' | 'workspace-settings' | 'branch']
 }>()
 
 // The verifying→verified confirmation gate: clicking that enabled target pops a
@@ -73,13 +73,13 @@ function confirmVerified(): void {
 // them directly via t(code, params).
 const gaps = computed(() => deliveryGapReasons(props.plan))
 
-function jumpLabel(target: 'associated-intents' | 'workspace-settings'): string {
-  return target === 'associated-intents'
-    ? t('delivery.action.jumpToIntents.label')
-    : t('delivery.action.jumpToSettings.label')
+function jumpLabel(target: 'associated-intents' | 'workspace-settings' | 'branch'): string {
+  if (target === 'associated-intents') return t('delivery.action.jumpToIntents.label')
+  if (target === 'branch') return t('delivery.action.jumpToBranch.label')
+  return t('delivery.action.jumpToSettings.label')
 }
 
-function onJump(target: 'associated-intents' | 'workspace-settings'): void {
+function onJump(target: 'associated-intents' | 'workspace-settings' | 'branch'): void {
   emit('jump', target)
 }
 </script>

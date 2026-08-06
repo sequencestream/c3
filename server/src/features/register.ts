@@ -99,8 +99,10 @@ import {
 } from './discussions/index.js'
 import {
   cancelDeliveryHandler,
+  cleanupDeliveryBranchHandler,
   createDeliveryHandler,
   getDeliveryDetailHandler,
+  initDeliveryBranchHandler,
   listDeliveriesHandler,
   transitionDeliveryHandler,
   updateDeliveryHandler,
@@ -219,6 +221,8 @@ export const handlerMap: HandlerMap = {
   update_delivery: updateDeliveryHandler,
   cancel_delivery: cancelDeliveryHandler,
   transition_delivery: transitionDeliveryHandler,
+  init_delivery_branch: initDeliveryBranchHandler,
+  cleanup_delivery_branch: cleanupDeliveryBranchHandler,
   // discussions
   list_discussions: listDiscussionsHandler,
   create_discussion: createDiscussionHandler,

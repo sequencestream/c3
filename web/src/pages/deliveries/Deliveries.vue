@@ -9,6 +9,7 @@
 import { computed } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import type { Delivery, DeliveryStatus, DeliveryTransitionPlan } from '@ccc/shared/protocol'
+import type { DeliveryBranchInitState } from '@/lib/delivery-view'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import DeliveryList from './components/DeliveryList/DeliveryList.vue'
 import DeliveryDetail from './components/DeliveryDetail/DeliveryDetail.vue'
@@ -20,6 +21,7 @@ const props = defineProps<{
   activeId: string | null
   activeDelivery: Delivery | null
   activePlan: DeliveryTransitionPlan | null
+  branchInit: DeliveryBranchInitState | null
   workspaceGitBranchMode: 'worktree' | 'current-branch'
 }>()
 
@@ -44,6 +46,8 @@ const emit = defineEmits<{
   ]
   cancel: [deliveryId: string]
   transition: [to: DeliveryStatus, confirmVerified: boolean]
+  'init-branch': [payload: { mode: 'create' | 'bind'; branchName: string }]
+  'cleanup-branch': [deliveryId: string]
   'open-workspace-settings': []
   'mobile-back': [targetKey: string]
 }>()
@@ -78,10 +82,13 @@ const mobileActiveToken = computed(() => props.activeId ?? 'deliveries')
         v-if="activeDelivery && activePlan"
         :delivery="activeDelivery"
         :plan="activePlan"
+        :branch-init="branchInit"
         :workspace-git-branch-mode="workspaceGitBranchMode"
         @update="(payload) => emit('update', payload)"
         @cancel="(id: string) => emit('cancel', id)"
         @transition="(to, confirm) => emit('transition', to, confirm)"
+        @init-branch="(payload) => emit('init-branch', payload)"
+        @cleanup-branch="(id: string) => emit('cleanup-branch', id)"
         @open-workspace-settings="emit('open-workspace-settings')"
       />
     </template>

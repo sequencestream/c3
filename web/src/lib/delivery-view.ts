@@ -78,3 +78,34 @@ export function epochMsToCalendarDate(ms: number | null | undefined): string {
   if (ms == null || ms === 0 || !Number.isFinite(ms)) return ''
   return new Date(ms).toISOString().slice(0, 10)
 }
+
+/**
+ * The default delivery branch name a user can edit before initializing:
+ * `delivery/<short-id>-<slug>` — the same slug rule as the intent branch name
+ * (`server/src/features/intents/worktree.ts` `generateBranchName`), with the
+ * `delivery/` prefix. `short-id` = first 8 hex chars of the UUID; slug = lowered,
+ * quotes stripped, non-alphanumerics → dashes, trimmed, capped at 48 chars.
+ */
+export function defaultDeliveryBranchName(deliveryId: string, title: string): string {
+  const shortId = deliveryId.replace(/-/g, '').slice(0, 8)
+  const slug = title
+    .toLowerCase()
+    .replace(/['"]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+  return `delivery/${shortId}-${slug}`
+}
+
+/** One coarse phase boundary of an `init_delivery_branch` run (wire mirror). */
+export type DeliveryBranchInitPhase = 'fetching' | 'creating' | 'pushing' | 'binding'
+
+/**
+ * The client-side in-flight state of a branch-init run: which delivery's branch
+ * is being initialized and the latest reported phase. Drives the init form's
+ * progress line + disabled button; `null` = no run in flight.
+ */
+export interface DeliveryBranchInitState {
+  deliveryId: string
+  phase: DeliveryBranchInitPhase
+}

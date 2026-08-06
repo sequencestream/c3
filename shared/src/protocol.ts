@@ -111,6 +111,8 @@ export type ClientToServer =
   | DeliveryMsg.ClientUpdateDelivery
   | DeliveryMsg.ClientCancelDelivery
   | DeliveryMsg.ClientTransitionDelivery
+  | DeliveryMsg.ClientInitDeliveryBranch
+  | DeliveryMsg.ClientCleanupDeliveryBranch
   | DiscussionMsg.ClientListDiscussions
   | DiscussionMsg.ClientCreateDiscussion
   | DiscussionMsg.ClientOpenDiscussion
@@ -181,6 +183,8 @@ export type ServerToClient =
   | DeliveryMsg.ServerCreateDeliveryResult
   | DeliveryMsg.ServerDeliveryDetail
   | DeliveryMsg.ServerDeliveryTransitionFailed
+  | DeliveryMsg.ServerDeliveryBranchInitProgress
+  | DeliveryMsg.ServerDeliveryBranchInitResult
   | DiscussionMsg.ServerDiscussions
   | DiscussionMsg.ServerDiscussionDetail
   | DiscussionMsg.ServerDiscussionMessage

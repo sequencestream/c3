@@ -68,6 +68,10 @@ function makeCtx(opts: { project?: string | null } = {}) {
     automationSaving: ref(false),
     automationEnabledSaving: ref(false),
     automationSettingBeforeSave: ref(null),
+    // Delivery refs touched by the message-handler's error branch; a no-op here.
+    activeDeliveryBranchInit: ref(null),
+    activeDelivery: ref(null),
+    activeDeliveryId: ref(null),
   } as unknown as AppCtx
   installQueueActions(ctx)
   installMessageHandler(ctx)

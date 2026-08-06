@@ -2114,7 +2114,11 @@
       "updateFailed": "Не удалось обновить доставку: {detail}.",
       "branchConflict": "Другая активная доставка уже использует ветку \"{branch}\".",
       "invalidStatusTransition": "Не удаётся перевести эту доставку из {from} в {to}.",
-      "transitionGuardFailed": "Изменение статуса заблокировано невыполненными условиями."
+      "transitionGuardFailed": "Изменение статуса заблокировано невыполненными условиями.",
+      "multiRepoUnsupported": "Мульти-репозиторные рабочие области не поддерживают поставки.",
+      "branchNotFound": "Удалённой ветки \"{branch}\" не существует.",
+      "initFailed": "Не удалось инициализировать ветку: {detail}.",
+      "cleanupForbidden": "Очистить ветку можно только у поставки со статусом delivered или cancelled."
     }
   },
   "statusIndicator": {
@@ -2440,6 +2444,9 @@
         "submit": {
           "label": "Создать"
         }
+      },
+      "jumpToBranch": {
+        "label": "Инициализировать ветку поставки"
       }
     },
     "guard": {
@@ -2451,6 +2458,62 @@
       "systemOnly": "Этот шаг выполняет система.",
       "humanOnly": "Этот шаг может выполнять только человек.",
       "mergeConflictReasonRequired": "Требуется причина конфликта слияния."
+    },
+    "branch": {
+      "init": {
+        "title": {
+          "label": "Ветка поставки"
+        },
+        "create": {
+          "label": "Создать"
+        },
+        "bind": {
+          "label": "Привязать существующую"
+        },
+        "branchLabel": {
+          "label": "Имя ветки"
+        },
+        "branchPlaceholder": {
+          "label": "напр. delivery/ab12cd34-sprint-3"
+        },
+        "submit": {
+          "label": "Инициализировать ветку"
+        },
+        "progress": {
+          "fetching": {
+            "label": "Получение базовой ветки…"
+          },
+          "creating": {
+            "label": "Создание ветки…"
+          },
+          "pushing": {
+            "label": "Отправка ветки…"
+          },
+          "binding": {
+            "label": "Привязка ветки…"
+          }
+        }
+      },
+      "ready": {
+        "label": "Ветка готова: {branch}"
+      },
+      "cleanup": {
+        "label": "Очистить ветку"
+      },
+      "cleanupTitle": {
+        "label": "Очистить ветку?"
+      },
+      "cleanupBody": {
+        "label": "Удалить локальную ссылку \"{branch}\"? Удалённая ветка сохраняется."
+      },
+      "cleanupResult": {
+        "label": "Ссылка на ветку очищена."
+      }
+    },
+    "warning": {
+      "branchBehindMain": {
+        "label": "Привязанная ветка отстаёт от базовой."
+      }
     }
   },
   "skillApproval": {

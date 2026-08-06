@@ -53,6 +53,11 @@ import {
 } from './store.js'
 import { createPrHandler } from './index.js'
 import { getWorktreePath } from './worktree.js'
+import {
+  createDelivery,
+  setDeliveryBranch,
+  resetStoreForTests as resetDeliveryStoreForTests,
+} from '../deliveries/store.js'
 import { resetStoreForTests as resetSessionMetadataStoreForTests } from '../sessions/session-metadata-store.js'
 
 let dir: string
@@ -68,6 +73,7 @@ beforeEach(() => {
   process.env.C3_DIR = join(dir, 'c3home')
   resetDbForTests()
   resetStoreForTests()
+  resetDeliveryStoreForTests()
   resetSessionMetadataStoreForTests()
   resetStateCacheForTests()
   resetSettingsCacheForTests()
@@ -778,5 +784,81 @@ describe('createPrHandler — failure guidance', () => {
       },
       requestId: 'req-9',
     })
+  })
+})
+
+describe('createPrHandler — delivery branch gate', () => {
+  it('refuses PR creation when the intent targets a delivery whose branch is not ready', async () => {
+    const r = seedQualifying()
+    const { delivery } = createDelivery({
+      workspacePath: proj,
+      title: 'Sprint 3',
+      description: '',
+      startDate: null,
+      endDate: null,
+      baseBranch: 'main',
+    })
+    // The association surface: a live PR row pointing at the delivery.
+    upsertIntentPr({ intentId: r.id, deliveryId: delivery.id, number: '9', status: 'reviewing' })
+    const { ctx, broadcast, publish } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(sent).toContainEqual({ type: 'error', error: { code: 'delivery.guard.branchNotReady' } })
+    // No git / forge work happened — the gate short-circuits before the diff check.
+    expect(hasDiffAgainstBase).not.toHaveBeenCalled()
+    expect(commitAndPush).not.toHaveBeenCalled()
+    expect(createForgePr).not.toHaveBeenCalled()
+    expect(broadcast).not.toHaveBeenCalled()
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('lets PR creation through once the delivery branch is ready (only ACTIVE delivery PRs gate)', async () => {
+    const r = seedQualifying()
+    const { delivery } = createDelivery({
+      workspacePath: proj,
+      title: 'Sprint 3',
+      description: '',
+      startDate: null,
+      endDate: null,
+      baseBranch: 'main',
+    })
+    setDeliveryBranch(delivery.id, 'delivery/x', true)
+    // A MERGED delivery PR is terminal — not an active gate trigger.
+    upsertIntentPr({ intentId: r.id, deliveryId: delivery.id, number: '9', status: 'merged' })
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(createForgePr).mockResolvedValue({
+      ok: true,
+      prId: '42',
+      prUrl: 'https://github.com/o/r/pull/42',
+    })
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    // The gate passed → the normal flow reached the diff check.
+    expect(hasDiffAgainstBase).toHaveBeenCalled()
+    expect(sent.some((m) => m.type === 'create_pr_response')).toBe(true)
+  })
+
+  it('does not gate PR creation for an intent with no delivery-targeted PR', async () => {
+    const r = seedQualifying()
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(createForgePr).mockResolvedValue({
+      ok: true,
+      prId: '42',
+      prUrl: 'https://github.com/o/r/pull/42',
+    })
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(hasDiffAgainstBase).toHaveBeenCalled()
+    expect(sent.some((m) => m.type === 'create_pr_response')).toBe(true)
   })
 })

@@ -7,11 +7,11 @@
  * Tab。状态推进/返工/取消一律上抛由控制层发 WS,服务端回包为准 —— 本组件不自行
  * 复制状态规则。取消走 danger ConfirmDialog(web 规范,不用 window.confirm)。
  */
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { useTypedI18n } from '@/i18n'
 import type { Delivery, DeliveryStatus, DeliveryTransitionPlan } from '@ccc/shared/protocol'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
-import { DELIVERY_STATUS_LABEL_KEYS } from '@/lib/delivery-view'
+import { DELIVERY_STATUS_LABEL_KEYS, type DeliveryBranchInitState } from '@/lib/delivery-view'
 import DeliveryOverviewTab from './DeliveryOverviewTab.vue'
 import DeliveryIntentsTab from './DeliveryIntentsTab.vue'
 
@@ -20,6 +20,7 @@ const { t } = useTypedI18n()
 const props = defineProps<{
   delivery: Delivery
   plan: DeliveryTransitionPlan
+  branchInit: DeliveryBranchInitState | null
   workspaceGitBranchMode: 'worktree' | 'current-branch'
 }>()
 
@@ -35,6 +36,8 @@ const emit = defineEmits<{
   ]
   cancel: [deliveryId: string]
   transition: [to: DeliveryStatus, confirmVerified: boolean]
+  'init-branch': [payload: { mode: 'create' | 'bind'; branchName: string }]
+  'cleanup-branch': [deliveryId: string]
   'open-workspace-settings': []
 }>()
 
@@ -51,10 +54,18 @@ function statusLabel(status: DeliveryStatus): string {
   return t(DELIVERY_STATUS_LABEL_KEYS[status])
 }
 
-// 缺口跳转:关联意图 → 切到关联意图 tab;工作区设置 → 上抛由 App 打开设置页。
-function onJump(target: 'associated-intents' | 'workspace-settings'): void {
+// The overview tab's branch-init section, so a `branchNotReady` gap jump can
+// focus it (scroll + focus the input).
+const overviewRef = ref<InstanceType<typeof DeliveryOverviewTab> | null>(null)
+
+// 缺口跳转:关联意图 → 切到关联意图 tab;分支未就绪 → 切到概览并聚焦分支初始化区;
+// 工作区设置 → 上抛由 App 打开设置页。
+function onJump(target: 'associated-intents' | 'workspace-settings' | 'branch'): void {
   if (target === 'associated-intents') {
     activeTab.value = TAB_INTENTS
+  } else if (target === 'branch') {
+    activeTab.value = TAB_OVERVIEW
+    void nextTick(() => overviewRef.value?.focusBranchInit?.())
   } else {
     emit('open-workspace-settings')
   }
@@ -126,11 +137,15 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
 
     <DeliveryOverviewTab
       v-if="activeTab === TAB_OVERVIEW"
+      ref="overviewRef"
       :delivery="props.delivery"
       :plan="props.plan"
+      :branch-init="props.branchInit"
       :workspace-git-branch-mode="props.workspaceGitBranchMode"
       @update="(p) => emit('update', p)"
       @transition="(to, confirm) => emit('transition', to, confirm)"
+      @init-branch="(payload) => emit('init-branch', payload)"
+      @cleanup-branch="(id: string) => emit('cleanup-branch', id)"
       @jump="onJump"
     />
     <DeliveryIntentsTab v-else :delivery="props.delivery" />

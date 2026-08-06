@@ -171,11 +171,14 @@ const {
   activeDeliveryId,
   activeDelivery,
   activeDeliveryPlan,
+  activeDeliveryBranchInit,
   openDelivery,
   createDelivery,
   updateDelivery,
   cancelDelivery,
   transitionDelivery,
+  initDeliveryBranch,
+  cleanupDeliveryBranch,
   onDeliveryMobileBack,
   // ---- discussions ----
   discussionsProject,
@@ -640,6 +643,7 @@ function onCodesChatWidth(px: number): void {
           :active-id="activeDeliveryId"
           :active-delivery="activeDelivery"
           :active-plan="activeDeliveryPlan"
+          :branch-init="activeDeliveryBranchInit"
           :workspace-git-branch-mode="
             currentWorkspaceSetting?.gitBranchMode ??
             (deliveriesProject
@@ -652,6 +656,8 @@ function onCodesChatWidth(px: number): void {
           @update="updateDelivery"
           @cancel="cancelDelivery"
           @transition="(to, confirm) => transitionDelivery(to, confirm)"
+          @init-branch="(payload) => initDeliveryBranch(payload)"
+          @cleanup-branch="cleanupDeliveryBranch"
           @open-workspace-settings="openWorkspaceSetting"
           @mobile-back="onDeliveryMobileBack"
         />

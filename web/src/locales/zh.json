@@ -2113,7 +2113,11 @@
       "updateFailed": "更新交付失败: {detail}。",
       "branchConflict": "另一个活动交付已使用分支 \"{branch}\"。",
       "invalidStatusTransition": "无法将该交付从 {from} 推进到 {to}。",
-      "transitionGuardFailed": "状态变更被未满足的守卫条件阻止。"
+      "transitionGuardFailed": "状态变更被未满足的守卫条件阻止。",
+      "multiRepoUnsupported": "多仓工作区暂不支持交付。",
+      "branchNotFound": "远端不存在分支 \"{branch}\"。",
+      "initFailed": "分支初始化失败:{detail}。",
+      "cleanupForbidden": "仅已发布或已取消的交付可清理分支。"
     }
   },
   "statusIndicator": {
@@ -2439,6 +2443,9 @@
         "submit": {
           "label": "创建"
         }
+      },
+      "jumpToBranch": {
+        "label": "初始化交付分支"
       }
     },
     "guard": {
@@ -2450,6 +2457,62 @@
       "systemOnly": "该步骤由系统执行。",
       "humanOnly": "该步骤仅可由人工执行。",
       "mergeConflictReasonRequired": "需要合并冲突原因。"
+    },
+    "branch": {
+      "init": {
+        "title": {
+          "label": "交付分支"
+        },
+        "create": {
+          "label": "新建"
+        },
+        "bind": {
+          "label": "绑定已有"
+        },
+        "branchLabel": {
+          "label": "分支名"
+        },
+        "branchPlaceholder": {
+          "label": "例如 delivery/ab12cd34-sprint-3"
+        },
+        "submit": {
+          "label": "初始化分支"
+        },
+        "progress": {
+          "fetching": {
+            "label": "正在拉取基线分支…"
+          },
+          "creating": {
+            "label": "正在创建分支…"
+          },
+          "pushing": {
+            "label": "正在推送分支…"
+          },
+          "binding": {
+            "label": "正在绑定分支…"
+          }
+        }
+      },
+      "ready": {
+        "label": "分支就绪:{branch}"
+      },
+      "cleanup": {
+        "label": "清理分支"
+      },
+      "cleanupTitle": {
+        "label": "清理分支?"
+      },
+      "cleanupBody": {
+        "label": "删除本地分支引用 \"{branch}\"?远端分支将保留。"
+      },
+      "cleanupResult": {
+        "label": "分支引用已清理。"
+      }
+    },
+    "warning": {
+      "branchBehindMain": {
+        "label": "绑定的分支落后于基线分支。"
+      }
     }
   },
   "skillApproval": {

@@ -58,8 +58,11 @@ export type DeliveryTransitionVerdict =
 
 // ---- Guard predicates (each returns the unmet reason, or null when met) ----
 
+// The gap jumps to the delivery's own branch-init section on the overview tab —
+// branch init ships with the delivery branch lifecycle, so the user can act on
+// the gap from the page itself rather than being sent to workspace settings.
 const branchNotReady = (f: DeliveryTransitionFacts): DeliveryGuardReason | null =>
-  f.branchReady ? null : { code: 'delivery.guard.branchNotReady', jumpTo: 'workspace-settings' }
+  f.branchReady ? null : { code: 'delivery.guard.branchNotReady', jumpTo: 'branch' }
 
 const integrationNotReady = (f: DeliveryTransitionFacts): DeliveryGuardReason | null => {
   const { total, merged } = f.integration

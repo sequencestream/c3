@@ -6,9 +6,10 @@
  * server-computed badge count on the list reply.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type { ServerToClient } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
@@ -17,8 +18,10 @@ import { saveWorkspaceSetting } from '../../kernel/config/index.js'
 import { addWorkspace, pathToId, resetStateCacheForTests } from '../../state.js'
 import {
   cancelDeliveryHandler,
+  cleanupDeliveryBranchHandler,
   createDeliveryHandler,
   getDeliveryDetailHandler,
+  initDeliveryBranchHandler,
   listDeliveriesHandler,
   transitionDeliveryHandler,
   updateDeliveryHandler,
@@ -151,7 +154,7 @@ describe('get_delivery_detail', () => {
         to: 'integrating',
         humanAction: true,
         guard: 'failed',
-        reasons: [{ code: 'delivery.guard.branchNotReady', jumpTo: 'workspace-settings' }],
+        reasons: [{ code: 'delivery.guard.branchNotReady', jumpTo: 'branch' }],
       },
     ])
   })
@@ -331,3 +334,359 @@ function getDbRawUpdate(id: string, status: string, branchReady: boolean): void 
     id,
   )
 }
+
+// ---------------------------------------------------------------------------
+// Branch lifecycle tests — drive the REAL git CLI against `dir` as a repo with a
+// bare origin, exercising create / bind / orphan-defense / multi-repo / cleanup.
+// ---------------------------------------------------------------------------
+
+describe('create_delivery — multi-repo gate', () => {
+  it('rejects creating a delivery in a multi-repo workspace (no transaction opened)', () => {
+    // `dir` is not a git repo; a sub-repo makes it multi-repo.
+    mkdirSync(join(dir, 'sub', '.git'), { recursive: true })
+    const h = harness()
+    createDeliveryHandler(h.ctx, h.conn, createMsg())
+    expect(listDeliveries(dir)).toEqual([])
+    expect(h.sent[0]).toMatchObject({
+      type: 'error',
+      error: { code: 'delivery.multiRepoUnsupported' },
+    })
+  })
+})
+
+describe('init_delivery_branch — create / bind / orphan / conflict', () => {
+  let bare: string
+
+  /** Make `dir` a git repo rooted at `main` with a bare origin (unique per test). */
+  function initWorkspaceRepo(): void {
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir })
+    execFileSync('git', ['config', 'user.email', 't@t.dev'], { cwd: dir })
+    execFileSync('git', ['config', 'user.name', 'tester'], { cwd: dir })
+    execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: dir })
+    writeFileSync(join(dir, 'README.md'), 'init\n')
+    execFileSync('git', ['add', '-A'], { cwd: dir })
+    execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: dir })
+    bare = join(dirname(dir), `${basename(dir)}-remote.git`)
+    execFileSync('git', ['init', '--bare', '-q', bare], { cwd: dirname(dir) })
+    execFileSync('git', ['remote', 'add', 'origin', bare], { cwd: dir })
+    execFileSync('git', ['push', '-q', '-u', 'origin', 'HEAD'], { cwd: dir })
+  }
+
+  function headOf(ref: string): string {
+    return execFileSync('git', ['rev-parse', '--verify', ref], { cwd: dir, encoding: 'utf-8' })
+      .toString()
+      .trim()
+  }
+
+  function remoteHas(branch: string): boolean {
+    return remoteHead(branch) !== null
+  }
+
+  function remoteHead(branch: string): string | null {
+    const out = execFileSync('git', ['ls-remote', '--heads', bare, branch], {
+      encoding: 'utf-8',
+    })
+      .toString()
+      .trim()
+    const line = out.split('\n').find((l) => l.endsWith(`refs/heads/${branch}`))
+    return line ? line.split(/\s+/)[0] : null
+  }
+
+  /** Advance the remote main from a throwaway clone; returns the new remote tip. */
+  function advanceRemoteMain(): string {
+    const clone = join(dirname(dir), `${basename(dir)}-clone`)
+    execFileSync('git', ['clone', '-q', bare, clone], { cwd: dirname(dir) })
+    execFileSync('git', ['config', 'user.email', 'o@t.dev'], { cwd: clone })
+    execFileSync('git', ['config', 'user.name', 'other'], { cwd: clone })
+    writeFileSync(join(clone, 'OTHER.md'), 'x\n')
+    execFileSync('git', ['add', '-A'], { cwd: clone })
+    execFileSync('git', ['commit', '-q', '-m', 'other'], { cwd: clone })
+    execFileSync('git', ['push', '-q', 'origin', 'HEAD'], { cwd: clone })
+    const tip = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: clone, encoding: 'utf-8' })
+      .toString()
+      .trim()
+    rmSync(clone, { recursive: true, force: true })
+    return tip
+  }
+
+  function seedDelivery(title = 'Sprint 3'): string {
+    const h = harness()
+    createDeliveryHandler(h.ctx, h.conn, createMsg({ title }))
+    return listDeliveries(dir)[0].id
+  }
+
+  function progressPhases(sent: ServerToClient[]): string[] {
+    return sent
+      .filter(
+        (f): f is Extract<ServerToClient, { type: 'delivery_branch_init_progress' }> =>
+          f.type === 'delivery_branch_init_progress',
+      )
+      .map((f) => f.phase)
+  }
+
+  it('creates the branch on the remote rooted at the fetched origin base and writes branch_ready', async () => {
+    initWorkspaceRepo()
+    const baseHead = headOf('origin/main')
+    const id = seedDelivery()
+    const h = harness()
+    await initDeliveryBranchHandler(h.ctx, h.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: id,
+      branchName: 'delivery/abc-sprint-3',
+      mode: 'create',
+    })
+    // Pushed branch exists on the remote AT the fetched baseline head.
+    expect(remoteHead('delivery/abc-sprint-3')).toBe(baseHead)
+    expect(getDelivery(id)).toMatchObject({
+      branchName: 'delivery/abc-sprint-3',
+      branchReady: true,
+    })
+    const result = h.sent.find(
+      (f): f is Extract<ServerToClient, { type: 'delivery_branch_init_result' }> =>
+        f.type === 'delivery_branch_init_result',
+    )
+    expect(result?.delivery.branchReady).toBe(true)
+    // Progress frames advance fetching → creating → pushing.
+    expect(progressPhases(h.sent)).toEqual(['fetching', 'creating', 'pushing'])
+    expect(h.broadcastDeliveries).toHaveBeenCalledWith(dir)
+  })
+
+  it('idempotently binds an orphan (remote branch at the baseline head) without re-push', async () => {
+    initWorkspaceRepo()
+    const id = seedDelivery()
+    const baseHead = headOf('origin/main')
+    // Simulate "push succeeded, DB write failed": remote branch exists at the
+    // exact baseline head, delivery still not ready.
+    execFileSync('git', ['push', '-q', 'origin', 'HEAD:refs/heads/delivery/orphan'], { cwd: dir })
+    expect(remoteHead('delivery/orphan')).toBe(baseHead)
+    const h = harness()
+    await initDeliveryBranchHandler(h.ctx, h.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: id,
+      branchName: 'delivery/orphan',
+      mode: 'create',
+    })
+    expect(getDelivery(id)).toMatchObject({ branchName: 'delivery/orphan', branchReady: true })
+    // Orphan match → binding only (fetching + binding), no creating/pushing.
+    expect(progressPhases(h.sent)).toEqual(['fetching', 'binding'])
+  })
+
+  it('reports delivery.branchConflict when the remote branch exists at a DIFFERENT head (never overwrites)', async () => {
+    initWorkspaceRepo()
+    const id = seedDelivery()
+    // Someone else's branch already exists at the ORIGINAL main head, then the
+    // remote main advances — so the fetched baseline no longer matches the
+    // existing branch: a conflict, never overwritten.
+    execFileSync('git', ['push', '-q', 'origin', 'main:refs/heads/delivery/conflict'], { cwd: dir })
+    const original = remoteHead('delivery/conflict')
+    advanceRemoteMain()
+    expect(remoteHead('main')).not.toBe(original)
+    const h = harness()
+    await initDeliveryBranchHandler(h.ctx, h.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: id,
+      branchName: 'delivery/conflict',
+      mode: 'create',
+    })
+    const err = h.sent.find(
+      (f): f is Extract<ServerToClient, { type: 'error' }> => f.type === 'error',
+    )
+    expect(err?.error.code).toBe('delivery.branchConflict')
+    expect(getDelivery(id)!.branchReady).toBe(false)
+  })
+
+  it('binds an existing remote branch in bind mode; divergence is only a warning', async () => {
+    initWorkspaceRepo()
+    const id = seedDelivery()
+    // `release/2026-08` at the ORIGINAL main head, then remote main advances → the
+    // bound branch lags the freshly-fetched baseline (warning, not rejection).
+    execFileSync('git', ['push', '-q', 'origin', 'main:refs/heads/release/2026-08'], { cwd: dir })
+    const original = remoteHead('release/2026-08')
+    advanceRemoteMain()
+    expect(remoteHead('main')).not.toBe(original)
+    const h = harness()
+    await initDeliveryBranchHandler(h.ctx, h.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: id,
+      branchName: 'release/2026-08',
+      mode: 'bind',
+    })
+    expect(getDelivery(id)).toMatchObject({ branchName: 'release/2026-08', branchReady: true })
+    const result = h.sent.find(
+      (f): f is Extract<ServerToClient, { type: 'delivery_branch_init_result' }> =>
+        f.type === 'delivery_branch_init_result',
+    )
+    expect(result?.warning).toBe('delivery.branchBehindMain')
+    expect(progressPhases(h.sent)).toEqual(['fetching', 'binding'])
+  })
+
+  it('refuses bind when the remote branch does not exist', async () => {
+    initWorkspaceRepo()
+    const id = seedDelivery()
+    const h = harness()
+    await initDeliveryBranchHandler(h.ctx, h.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: id,
+      branchName: 'release/nope',
+      mode: 'bind',
+    })
+    const err = h.sent.find(
+      (f): f is Extract<ServerToClient, { type: 'error' }> => f.type === 'error',
+    )
+    expect(err?.error.code).toBe('delivery.branchNotFound')
+    expect(getDelivery(id)!.branchReady).toBe(false)
+  })
+
+  it('refuses bind when another ACTIVE delivery already holds the branch', async () => {
+    initWorkspaceRepo()
+    // The shared branch must actually EXIST on the remote before either bind.
+    execFileSync('git', ['push', '-q', 'origin', 'main:refs/heads/release/x'], { cwd: dir })
+    const a = seedDelivery('A')
+    await initDeliveryBranchHandler(harness().ctx, harness().conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: a,
+      branchName: 'release/x',
+      mode: 'bind',
+    })
+    const b = seedDelivery('B')
+    const h = harness()
+    await initDeliveryBranchHandler(h.ctx, h.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: b,
+      branchName: 'release/x',
+      mode: 'bind',
+    })
+    const err = h.sent.find(
+      (f): f is Extract<ServerToClient, { type: 'error' }> => f.type === 'error',
+    )
+    expect(err?.error.code).toBe('delivery.branchConflict')
+    expect(getDelivery(b)!.branchReady).toBe(false)
+  })
+
+  it('rejects a multi-repo workspace before any git command', async () => {
+    // Seed the delivery FIRST (create also rejects multi-repo), then make the
+    // workspace multi-repo for the init gate to reject.
+    const id = seedDelivery()
+    mkdirSync(join(dir, 'sub', '.git'), { recursive: true })
+    const h = harness()
+    await initDeliveryBranchHandler(h.ctx, h.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: id,
+      branchName: 'delivery/x',
+      mode: 'create',
+    })
+    const err = h.sent.find(
+      (f): f is Extract<ServerToClient, { type: 'error' }> => f.type === 'error',
+    )
+    expect(err?.error.code).toBe('delivery.multiRepoUnsupported')
+    expect(getDelivery(id)!.branchReady).toBe(false)
+  })
+
+  it('is idempotent when already bound to the same branch (no git work)', async () => {
+    initWorkspaceRepo()
+    const id = seedDelivery()
+    await initDeliveryBranchHandler(harness().ctx, harness().conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: id,
+      branchName: 'delivery/abc-sprint-3',
+      mode: 'create',
+    })
+    const h = harness()
+    await initDeliveryBranchHandler(h.ctx, h.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: id,
+      branchName: 'delivery/abc-sprint-3',
+      mode: 'create',
+    })
+    // No progress frames — the shortcut returned the current delivery.
+    expect(progressPhases(h.sent)).toEqual([])
+    expect(h.sent[0]).toMatchObject({ type: 'delivery_branch_init_result' })
+  })
+})
+
+describe('cleanup_delivery_branch — terminal manual cleanup', () => {
+  let bare: string
+  let remoteHas: (branch: string) => boolean
+
+  function seedDelivery(title = 'Sprint 3'): string {
+    const h = harness()
+    createDeliveryHandler(h.ctx, h.conn, createMsg({ title }))
+    return listDeliveries(dir)[0].id
+  }
+
+  beforeEach(() => {
+    // `dir` as a git repo rooted at `main` with a bare origin, so branch init
+    // and the local-ref cleanup can run against real git.
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir })
+    execFileSync('git', ['config', 'user.email', 't@t.dev'], { cwd: dir })
+    execFileSync('git', ['config', 'user.name', 'tester'], { cwd: dir })
+    execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: dir })
+    writeFileSync(join(dir, 'README.md'), 'init\n')
+    execFileSync('git', ['add', '-A'], { cwd: dir })
+    execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: dir })
+    bare = join(dirname(dir), `${basename(dir)}-cleanup-remote.git`)
+    execFileSync('git', ['init', '--bare', '-q', bare], { cwd: dirname(dir) })
+    execFileSync('git', ['remote', 'add', 'origin', bare], { cwd: dir })
+    execFileSync('git', ['push', '-q', '-u', 'origin', 'HEAD'], { cwd: dir })
+    remoteHas = (branch: string) => {
+      const out = execFileSync('git', ['ls-remote', '--heads', bare, branch], {
+        encoding: 'utf-8',
+      })
+        .toString()
+        .trim()
+      return out.includes(`refs/heads/${branch}`)
+    }
+  })
+
+  it('clears the local ref of a terminal delivery and never touches the remote', async () => {
+    const id = seedDelivery()
+    await initDeliveryBranchHandler(harness().ctx, harness().conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: id,
+      branchName: 'delivery/abc-sprint-3',
+      mode: 'create',
+    })
+    expect(getDelivery(id)!.branchName).toBe('delivery/abc-sprint-3')
+    // Deliver it (terminal), then clean up.
+    getDbRawUpdate(id, 'delivered', true)
+    const h = harness()
+    await cleanupDeliveryBranchHandler(h.ctx, h.conn, {
+      type: 'cleanup_delivery_branch',
+      workspaceId,
+      deliveryId: id,
+    })
+    expect(getDelivery(id)).toMatchObject({ branchName: null, branchReady: false })
+    // Remote branch is preserved.
+    expect(remoteHas('delivery/abc-sprint-3')).toBe(true)
+    // Local branch reference was deleted.
+    expect(() =>
+      execFileSync('git', ['rev-parse', '--verify', 'delivery/abc-sprint-3'], { cwd: dir }),
+    ).toThrow()
+    // Detail re-broadcast.
+    expect(h.sent[0]).toMatchObject({ type: 'delivery_detail' })
+    expect(h.broadcastDeliveries).toHaveBeenCalledWith(dir)
+  })
+
+  it('refuses cleanup on a non-terminal delivery', async () => {
+    const id = seedDelivery()
+    const h = harness()
+    await cleanupDeliveryBranchHandler(h.ctx, h.conn, {
+      type: 'cleanup_delivery_branch',
+      workspaceId,
+      deliveryId: id,
+    })
+    expect(h.sent[0]).toMatchObject({ type: 'error', error: { code: 'delivery.cleanupForbidden' } })
+    expect(getDelivery(id)!.branchName).toBeNull()
+  })
+})

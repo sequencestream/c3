@@ -6,7 +6,14 @@ import type { AppCtx } from './types'
 // machine + guards are re-evaluated server-side on every write.
 export function installDeliveryActions(ctx: AppCtx): void {
   const send = ctx.send
-  const { deliveriesProject, activeDeliveryId, activeDelivery, activeDeliveryPlan, activeTab } = ctx
+  const {
+    deliveriesProject,
+    activeDeliveryId,
+    activeDelivery,
+    activeDeliveryPlan,
+    activeDeliveryBranchInit,
+    activeTab,
+  } = ctx
 
   // Enter the delivery view for a workspace: fetch its list + badge count and
   // reset the right pane.
@@ -83,5 +90,33 @@ export function installDeliveryActions(ctx: AppCtx): void {
       to,
       confirmVerified: confirmVerified === true,
     })
+  }
+
+  // Explicit remote-branch init for the OPEN delivery. Set the in-flight state
+  // optimistically (the button disables and the "fetching" line shows); the
+  // server's progress frames advance the phase and the result/error frames clear
+  // it. Create and bind share one form; the server's orphan-defense recovers a
+  // failed create's push on retry.
+  ctx.initDeliveryBranch = (payload: { mode: 'create' | 'bind'; branchName: string }): void => {
+    const id = activeDeliveryId.value
+    if (!id || !deliveriesProject.value) return
+    const branchName = payload.branchName.trim()
+    if (!branchName) return
+    activeDeliveryBranchInit.value = { deliveryId: id, phase: 'fetching' }
+    send({
+      type: 'init_delivery_branch',
+      workspaceId: deliveriesProject.value,
+      deliveryId: id,
+      branchName,
+      mode: payload.mode,
+    })
+  }
+
+  // Manual cleanup of a TERMINAL delivery's local branch reference. The page
+  // already passed the danger ConfirmDialog; the server refuses non-terminal
+  // deliveries anyway. Remote branches are never touched.
+  ctx.cleanupDeliveryBranch = (deliveryId: string): void => {
+    if (!deliveriesProject.value) return
+    send({ type: 'cleanup_delivery_branch', workspaceId: deliveriesProject.value, deliveryId })
   }
 }

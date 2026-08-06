@@ -99,6 +99,49 @@ export type IntentRunStatus = 'running' | 'dangling' | 'idle'
  */
 export type IntentPrStatus = 'reviewing' | 'rejected' | 'failed' | 'merged' | 'closed'
 
+/** The runtime value domain of {@link IntentPrStatus}, for narrowing untrusted input. */
+export const INTENT_PR_STATUSES: readonly IntentPrStatus[] = [
+  'reviewing',
+  'rejected',
+  'failed',
+  'merged',
+  'closed',
+]
+
+/** Hosting forge a PR/MR lives on; `null` when the row's origin is unknown. */
+export type IntentPrForge = 'github' | 'gitlab'
+
+/**
+ * One PR / Merge Request owned by an intent — a first-class entity, not three
+ * flattened columns on the intent. An intent may hold several (one per delivery
+ * target), so every consumer reads the list plus its aggregate rather than a
+ * single "the PR" field.
+ *
+ * `forge` + `repo` + `number` is the PR's real-world identity and is unique
+ * across the ledger. Both may be `null` on rows backfilled from the legacy
+ * columns whose URL was missing or unparseable ("origin unknown"); the next
+ * write through the store's single PR write entry point fills them in.
+ */
+export interface IntentPr {
+  /** UUID of this ledger row (NOT the PR number). */
+  id: string
+  intentId: string
+  /** Delivery this PR belongs to; `null` when it has no delivery binding. */
+  deliveryId: string | null
+  forge: IntentPrForge | null
+  /** Repository identifier in `owner/name` form; `null` when the origin is unknown. */
+  repo: string | null
+  /** In-repo PR / MR number (what the forge CLIs address a change request by). */
+  number: string
+  /** Clickable link; `null` when unknown. */
+  url: string | null
+  status: IntentPrStatus
+  headBranch: string | null
+  baseBranch: string | null
+  createdAt: number
+  updatedAt: number
+}
+
 /**
  * Dependency type for an intent_deps edge.
  * - `blocks` — hard dependency: the dependent intent cannot proceed until this dep is done.
@@ -431,12 +474,15 @@ export interface Intent {
   branchName: string | null
   /** Latest known commit hash on the dev branch; `null` when unknown. */
   latestCommitHash: string | null
-  /** PR / Merge Request id (e.g. GitHub PR number); `null` when no PR yet. */
-  prId: string | null
-  /** Clickable PR link (e.g. the GitHub PR URL); `null` when no PR yet. Distinct from `prId`. */
-  prUrl: string | null
-  /** PR lifecycle status; `null` when no PR yet or status is unknown. */
-  prStatus: IntentPrStatus | null
+  /**
+   * Every PR / Merge Request this intent owns, oldest first; empty when it has
+   * none. Replaces the former `prId` / `prUrl` / `prStatus` trio — an intent can
+   * hold more than one PR, and no single field can carry that. Consumers that
+   * need one status derive it with `deriveIntentPrAggregate`, and consumers that
+   * need one link pick with `pickPrimaryIntentPr`, so no two readers invent
+   * their own reduction.
+   */
+  prs: IntentPr[]
   /**
    * Path (relative to the workspace) of this intent's written spec document;
    * `null` until a spec has been authored. The source of truth for the spec

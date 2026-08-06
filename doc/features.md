@@ -66,7 +66,7 @@ c3
 │   │   │   └── attach·resume·fresh 三态启动      # 按 lastWorkSessionId:运行中只挂 viewer 不发新 turn,空闲在原 id 续跑,无会话才新建;人工按钮与 MCP 工具共用同一门禁(含 RM-A12 并发闸门:current-branch 全局互斥,worktree 各意图独立目录可并行)
 │   │   ├── 意图交付                              # 追踪交付态(分支、提交、PR 状态)
 │   │   ├── 失败定向修复指引                    # worktree 创建与 PR 创建链失败按当次命令结果(退出码/stderr/失败阶段)分类为闭集原因码,错误弹框展示对应修复指引 + 原始错误诊断详情 + 「重试原动作」入口;证据不足一律 unknown、原样展示原始错误且不臆测步骤;只分类不代劳(不清 worktree/不解冲突/不改凭据/不自动重试)
-│   │   ├── PR 更新复位                           # 模型发 pr:operation update/success 时把 rejected/failed/closed 意图 prStatus 复位为 reviewing
+│   │   ├── PR 更新复位                           # 模型发 pr:operation update/success 时把 rejected/failed/closed 的 PR 行复位为 reviewing
 │   │   ├── 意图依赖                              # intent_deps 依赖图(blocks/informs/soft_after),依赖门控启动
 │   │   │   └── 阻塞态前序指引                    # 被依赖闸门挡住的意图,「下一步」提示展示第一个阻塞它的前序意图(标题+状态),按钮跳转到其详情;复用闸门判定,不提供跳过/放行
 │   │   ├── 沟通会话                              # 意图右栏 intent session 多会话(新建/选择/改名/删除)

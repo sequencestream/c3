@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { fakeIntentPrs } from '@/lib/intent-pr-fixture'
 import type { IntentStatus } from '@ccc/shared/protocol'
 import { deriveIntentEngineeringProgress } from './intent-engineering-progress'
 
@@ -14,8 +15,7 @@ function derive(
       specStatus: 'raw',
       specSessionId: null,
       lastWorkSessionId: null,
-      prId: null,
-      prStatus: null,
+      prs: [],
       ...overrides,
     },
     sddEnabled,
@@ -70,7 +70,7 @@ describe('deriveIntentEngineeringProgress', () => {
   it.each([
     ['without work evidence', {}, 'not_started'],
     ['with a work session', { lastWorkSessionId: 'work-session' }, 'in_progress'],
-    ['with only a PR', { prId: '42' }, 'in_progress'],
+    ['with only a PR', { prs: fakeIntentPrs('reviewing') }, 'in_progress'],
     ['when blocked', { status: 'blocked' }, 'in_progress'],
     ['when failed', { status: 'failed' }, 'in_progress'],
     ['when cancelled without evidence', { status: 'cancelled' }, 'not_started'],
@@ -85,15 +85,22 @@ describe('deriveIntentEngineeringProgress', () => {
   })
 
   it.each([
-    ['without a PR id', {}, 'not_started'],
-    ['without a PR id but with stale status', { prStatus: 'merged' }, 'not_started'],
-    ['while reviewing', { prId: '42', prStatus: 'reviewing' }, 'in_progress'],
-    ['without a status', { prId: '42', prStatus: null }, 'in_progress'],
-    ['with an unknown future status', { prId: '42', prStatus: 'queued' }, 'in_progress'],
-    ['when merged', { prId: '42', prStatus: 'merged' }, 'completed'],
-    ['when rejected', { prId: '42', prStatus: 'rejected' }, 'closed'],
-    ['when failed', { prId: '42', prStatus: 'failed' }, 'closed'],
-    ['when closed', { prId: '42', prStatus: 'closed' }, 'closed'],
+    // An unknown / missing persisted status cannot reach here: the store narrows
+    // it to `reviewing` on read, so the stage only ever sees the five real ones.
+    ['without any PR', {}, 'not_started'],
+    ['with an empty PR list', { prs: [] }, 'not_started'],
+    ['while reviewing', { prs: fakeIntentPrs('reviewing') }, 'in_progress'],
+    ['when merged', { prs: fakeIntentPrs('merged') }, 'completed'],
+    ['when rejected', { prs: fakeIntentPrs('rejected') }, 'closed'],
+    ['when failed', { prs: fakeIntentPrs('failed') }, 'closed'],
+    ['when closed', { prs: fakeIntentPrs('closed') }, 'closed'],
+    // Aggregate ladder: one unsettled PR keeps the whole stage in progress.
+    [
+      'with a merged and a reviewing PR',
+      { prs: fakeIntentPrs('merged', 'reviewing') },
+      'in_progress',
+    ],
+    ['with a merged and a closed PR', { prs: fakeIntentPrs('merged', 'closed') }, 'completed'],
   ] as const)('derives the PR stage %s', (_name, overrides, expected) => {
     expect(derive(overrides as Parameters<typeof derive>[0], true, 'worktree').at(-1)?.state).toBe(
       expected,
@@ -103,17 +110,17 @@ describe('deriveIntentEngineeringProgress', () => {
   it.each([
     [
       'done work with reviewing PR',
-      { status: 'done', prId: '42', prStatus: 'reviewing' },
+      { status: 'done', prs: fakeIntentPrs('reviewing') },
       ['completed', 'in_progress'],
     ],
     [
       'unfinished work with merged PR',
-      { status: 'in_progress', prId: '42', prStatus: 'merged' },
+      { status: 'in_progress', prs: fakeIntentPrs('merged') },
       ['in_progress', 'completed'],
     ],
     [
       'done work with closed PR',
-      { status: 'done', prId: '42', prStatus: 'closed' },
+      { status: 'done', prs: fakeIntentPrs('closed') },
       ['completed', 'closed'],
     ],
   ] as const)('keeps work and PR independent: %s', (_name, overrides, expected) => {

@@ -48,7 +48,7 @@ import {
   listIntentLogs,
   resetStoreForTests,
   setBranchName,
-  setPrInfo,
+  upsertIntentPr,
   updateStatus,
 } from './store.js'
 import { createPrHandler } from './index.js'
@@ -159,7 +159,11 @@ describe('createPrHandler — worktree gate success paths', () => {
       const r = seedQualifying(status)
       vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
       vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
-      vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
+      vi.mocked(createForgePr).mockResolvedValue({
+        ok: true,
+        prId: '42',
+        prUrl: 'https://github.com/o/r/pull/42',
+      })
       const { ctx, broadcast, publish } = fakeCtx()
       const { conn, sent } = fakeConn()
 
@@ -184,12 +188,19 @@ describe('createPrHandler — worktree gate success paths', () => {
         type: 'create_pr_response',
         intentId: r.id,
         prId: '42',
-        prUrl: 'https://x/pr/42',
+        prUrl: 'https://github.com/o/r/pull/42',
       })
       const after = getIntent(r.id)!
-      expect(after.prId).toBe('42')
-      expect(after.prUrl).toBe('https://x/pr/42')
-      expect(after.prStatus).toBe('reviewing')
+      expect(after.prs).toHaveLength(1)
+      expect(after.prs[0]).toMatchObject({
+        number: '42',
+        url: 'https://github.com/o/r/pull/42',
+        status: 'reviewing',
+        // Origin + branches are persisted on create, not left for a later probe.
+        forge: 'github',
+        repo: 'o/r',
+        baseBranch: 'main',
+      })
       // Status is untouched — PR creation never flips the intent to done.
       expect(after.status).toBe(status)
 
@@ -242,8 +253,7 @@ describe('createPrHandler — worktree gate success paths', () => {
 /** No PR field, success log or success event was written by a failed run. */
 function expectNoSuccessSideEffects(intentId: string, publish: ReturnType<typeof vi.fn>) {
   const after = getIntent(intentId)!
-  expect(after.prId).toBeNull()
-  expect(after.prStatus).toBeNull()
+  expect(after.prs).toEqual([])
   expect(logsOf(intentId, 'pr_created')).toHaveLength(0)
   expect(publish.mock.calls.filter((c) => c[0] === 'event')).toHaveLength(0)
 }
@@ -251,7 +261,7 @@ function expectNoSuccessSideEffects(intentId: string, publish: ReturnType<typeof
 describe('createPrHandler — rejection branches short-circuit without side effects', () => {
   it('rejects an intent that already has a PR without touching Git', async () => {
     const r = seedQualifying()
-    setPrInfo(r.id, '7', 'reviewing')
+    upsertIntentPr({ intentId: r.id, number: '7', status: 'reviewing' })
     const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -395,7 +405,11 @@ describe('createPrHandler — staged progress frames', () => {
     const r = seedQualifying()
     vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     mockCommitAndPush({ ok: true, committed: true })
-    vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
+    vi.mocked(createForgePr).mockResolvedValue({
+      ok: true,
+      prId: '42',
+      prUrl: 'https://github.com/o/r/pull/42',
+    })
     const { ctx } = fakeCtx()
     const { conn, sent } = fakeConn()
 
@@ -434,7 +448,7 @@ describe('createPrHandler — staged progress frames', () => {
   it('sends no stage when a gate ahead of the diff check rejects', async () => {
     // Already has a PR — the idempotent guard, no Git work at all.
     const withPr = seedQualifying()
-    setPrInfo(withPr.id, '7', 'reviewing')
+    upsertIntentPr({ intentId: withPr.id, number: '7', status: 'reviewing' })
     // Not worktree mode / blank branch, each on its own intent + connection.
     const { ctx } = fakeCtx()
     const a = fakeConn()
@@ -719,7 +733,7 @@ describe('createPrHandler — failure guidance', () => {
     // The `prId` idempotency guard ran no command at all, so it has nothing to
     // classify either.
     const existing = seedQualifying()
-    setPrInfo(existing.id, '7', 'reviewing')
+    upsertIntentPr({ intentId: existing.id, number: '7', status: 'reviewing' })
     const second = fakeConn()
     await createPrHandler(ctx, second.conn, {
       type: 'create_pr',

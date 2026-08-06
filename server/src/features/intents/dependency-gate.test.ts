@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeIntentPrs } from './intent-pr-fixture.js'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -59,9 +60,7 @@ function dep(overrides: Partial<Intent> = {}): Intent {
     runStatus: 'idle',
     branchName: 'feature/dep',
     latestCommitHash: null,
-    prId: null,
-    prUrl: null,
-    prStatus: null,
+    prs: [],
     specPath: null,
     specStatus: 'raw',
     specMode: null,
@@ -90,7 +89,7 @@ describe('findDependencyBlockingMainline', () => {
       'dep',
     )
     expect(
-      findDependencyBlockingMainline(['dep'], [dep({ prStatus: 'merged' })], 'main'),
+      findDependencyBlockingMainline(['dep'], [dep({ prs: fakeIntentPrs('merged') })], 'main'),
     ).toBeUndefined()
     expect(
       findDependencyBlockingMainline(['dep'], [dep({ branchName: null })], 'main'),

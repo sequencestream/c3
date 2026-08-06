@@ -31,8 +31,8 @@ import {
   insertIntents,
   resetStoreForTests,
   setBranchName,
-  setPrInfo,
   updateStatus,
+  upsertIntentPr,
 } from './store.js'
 import { depsWithUnconfirmedPr, syncIntentPrStatus } from './pr-status-sync.js'
 
@@ -74,7 +74,12 @@ describe('syncIntentPrStatus', () => {
     ])
     updateStatus(intent.id, 'done')
     setBranchName(intent.id, 'intent/done')
-    setPrInfo(intent.id, '42', 'reviewing', 'https://example/pr/42')
+    upsertIntentPr({
+      intentId: intent.id,
+      number: '42',
+      status: 'reviewing',
+      url: 'https://example/pr/42',
+    })
     vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'merged' })
     const broadcastIntents = vi.fn()
 
@@ -84,9 +89,12 @@ describe('syncIntentPrStatus', () => {
 
     const got = getIntent(intent.id)
     expect(got?.status).toBe('done')
-    expect(got?.prId).toBe('42')
-    expect(got?.prUrl).toBe('https://example/pr/42')
-    expect(got?.prStatus).toBe('merged')
+    expect(got?.prs).toHaveLength(1)
+    expect(got?.prs[0]).toMatchObject({
+      number: '42',
+      url: 'https://example/pr/42',
+      status: 'merged',
+    })
     expect(broadcastIntents).toHaveBeenCalledWith(proj)
   })
 
@@ -95,12 +103,12 @@ describe('syncIntentPrStatus', () => {
       { title: 'Done', shortEnTitle: 'done', content: '', priority: 'P1' },
     ])
     updateStatus(intent.id, 'done')
-    setPrInfo(intent.id, '43', 'reviewing')
+    upsertIntentPr({ intentId: intent.id, number: '43', status: 'reviewing' })
     vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'closed' })
 
     await syncIntentPrStatus({ workspacePath: proj, intentId: intent.id })
 
-    expect(getIntent(intent.id)?.prStatus).toBe('closed')
+    expect(getIntent(intent.id)?.prs[0].status).toBe('closed')
   })
 
   it('does not write when the intent has no reviewing PR or the forge query fails', async () => {
@@ -110,7 +118,7 @@ describe('syncIntentPrStatus', () => {
     ])
     updateStatus(noPr.id, 'done')
     updateStatus(failed.id, 'done')
-    setPrInfo(failed.id, '44', 'reviewing')
+    upsertIntentPr({ intentId: failed.id, number: '44', status: 'reviewing' })
     vi.mocked(getForgePrStatus).mockResolvedValue({ ok: false, error: 'not found' })
 
     await expect(
@@ -118,14 +126,46 @@ describe('syncIntentPrStatus', () => {
     ).resolves.toMatchObject({ ok: false, changed: false })
     await expect(
       syncIntentPrStatus({ workspacePath: proj, intentId: failed.id }),
-    ).resolves.toMatchObject({ ok: false, changed: false, error: 'not found' })
+      // The failure names the PR it belongs to — with several rows in flight, a
+      // bare message could not say which one the forge refused.
+    ).resolves.toMatchObject({ ok: false, changed: false, error: '#44: not found' })
 
-    expect(getIntent(noPr.id)?.prStatus).toBeNull()
-    expect(getIntent(failed.id)?.prStatus).toBe('reviewing')
+    expect(getIntent(noPr.id)?.prs).toEqual([])
+    expect(getIntent(failed.id)?.prs[0].status).toBe('reviewing')
   })
+
+  // The gate is the PR row, not the intent: an intent that is still `todo` or
+  // back in `in_progress` must not lose the ability to learn its PR merged.
+  it.each(['todo', 'in_progress', 'done'] as const)(
+    'syncs a reviewing PR whatever the intent status is (%s)',
+    async (status) => {
+      const [intent] = insertIntents(proj, [
+        { title: `S-${status}`, shortEnTitle: 's', content: '', priority: 'P1' },
+      ])
+      if (status !== 'todo') updateStatus(intent.id, 'in_progress')
+      if (status === 'done') updateStatus(intent.id, 'done')
+      upsertIntentPr({ intentId: intent.id, number: '77', status: 'reviewing' })
+      vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'merged' })
+
+      await expect(
+        syncIntentPrStatus({ workspacePath: proj, intentId: intent.id }),
+      ).resolves.toMatchObject({ ok: true, changed: true, prStatus: 'merged' })
+      expect(getIntent(intent.id)?.prs[0].status).toBe('merged')
+    },
+  )
 })
 
 describe('depsWithUnconfirmedPr', () => {
+  it('selects a dependency with a reviewing PR regardless of its own status', () => {
+    const [dep] = insertIntents(proj, [
+      { title: 'Still in progress', shortEnTitle: 'wip', content: '', priority: 'P1' },
+    ])
+    updateStatus(dep.id, 'in_progress')
+    upsertIntentPr({ intentId: dep.id, number: '5', status: 'reviewing' })
+
+    expect(depsWithUnconfirmedPr([dep.id], [getIntent(dep.id)!]).map((i) => i.id)).toEqual([dep.id])
+  })
+
   it('selects done dependencies with PRs whose merge is not confirmed', () => {
     const [merged, reviewing, noPr] = insertIntents(proj, [
       { title: 'Merged', shortEnTitle: 'merged', content: '', priority: 'P1' },
@@ -135,8 +175,8 @@ describe('depsWithUnconfirmedPr', () => {
     updateStatus(merged.id, 'done')
     updateStatus(reviewing.id, 'done')
     updateStatus(noPr.id, 'done')
-    setPrInfo(merged.id, '1', 'merged')
-    setPrInfo(reviewing.id, '2', 'reviewing')
+    upsertIntentPr({ intentId: merged.id, number: '1', status: 'merged' })
+    upsertIntentPr({ intentId: reviewing.id, number: '2', status: 'reviewing' })
 
     expect(
       depsWithUnconfirmedPr(

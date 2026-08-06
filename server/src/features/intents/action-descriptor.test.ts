@@ -4,6 +4,7 @@
  * approval > dependency blocked > silent timeout.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeIntentPrs } from './intent-pr-fixture.js'
 import type { Intent, WaitUserInvolveEvent } from '@ccc/shared/protocol'
 import { MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
 
@@ -71,9 +72,7 @@ function makeIntent(overrides: Partial<Intent> & { id: string }): Intent {
     automate: false,
     branchName: null,
     latestCommitHash: null,
-    prId: null,
-    prUrl: null,
-    prStatus: null,
+    prs: [],
     specPath: null,
     // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
     specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
@@ -406,7 +405,13 @@ describe('deriveActionDescriptor — priority', () => {
 describe('deriveActionDescriptor — dependency guidance', () => {
   /** A predecessor that is done AND confirmed on the mainline: never blocks. */
   function mergedDep(id: string, title: string): Intent {
-    return makeIntent({ id, title, status: 'done', prStatus: 'merged', branchName: `feat/${id}` })
+    return makeIntent({
+      id,
+      title,
+      status: 'done',
+      prs: fakeIntentPrs('merged'),
+      branchName: `feat/${id}`,
+    })
   }
 
   it('names the first unfinished predecessor in declaration order', () => {
@@ -435,7 +440,12 @@ describe('deriveActionDescriptor — dependency guidance', () => {
 
   it('still guides in worktree mode when a done predecessor is not on the mainline yet', () => {
     ledger = [
-      makeIntent({ id: 'dep-a', status: 'done', prStatus: 'reviewing', branchName: 'feat/dep-a' }),
+      makeIntent({
+        id: 'dep-a',
+        status: 'done',
+        prs: fakeIntentPrs('reviewing'),
+        branchName: 'feat/dep-a',
+      }),
     ]
     expect(derive(makeIntent({ id: 'i-1', dependsOn: ['dep-a'] }))).toEqual({
       labelCode: 'dependency_blocked',
@@ -446,7 +456,12 @@ describe('deriveActionDescriptor — dependency guidance', () => {
   it('does not guide on that same item under current-branch mode — the gate does not block there', () => {
     branchMode.mockReturnValue('current-branch')
     ledger = [
-      makeIntent({ id: 'dep-a', status: 'done', prStatus: 'reviewing', branchName: 'feat/dep-a' }),
+      makeIntent({
+        id: 'dep-a',
+        status: 'done',
+        prs: fakeIntentPrs('reviewing'),
+        branchName: 'feat/dep-a',
+      }),
     ]
     expect(derive(makeIntent({ id: 'i-1', dependsOn: ['dep-a'] }))).toBeNull()
   })

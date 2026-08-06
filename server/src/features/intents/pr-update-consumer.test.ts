@@ -8,35 +8,36 @@
  * silently ignored.
  */
 import { describe, expect, it, vi } from 'vitest'
-import type { IntentPrStatus } from '@ccc/shared/protocol'
+import type { IntentPr, IntentPrStatus } from '@ccc/shared/protocol'
 import type {
   GenericEventEnvelope,
   PrEventAssociation,
   PrOperation,
   PrOperationResult,
 } from '@ccc/shared'
+import { fakeIntentPr } from './intent-pr-fixture.js'
 import { handlePrUpdateEvent, type PrUpdateConsumerDeps } from './pr-update-consumer.js'
 
-type FakeIntent = { id: string; workspaceId: string; prStatus: IntentPrStatus | null }
+type FakeIntent = { id: string; workspaceId: string; prs: IntentPr[] }
 
 function makeDeps(intent: FakeIntent | null): {
   deps: PrUpdateConsumerDeps
-  setPrStatus: ReturnType<typeof vi.fn>
+  upsertIntentPr: ReturnType<typeof vi.fn>
   safeInsertIntentLog: ReturnType<typeof vi.fn>
   broadcastIntents: ReturnType<typeof vi.fn>
 } {
-  const setPrStatus = vi.fn()
+  const upsertIntentPr = vi.fn()
   const safeInsertIntentLog = vi.fn()
   const broadcastIntents = vi.fn()
   const deps: PrUpdateConsumerDeps = {
     getIntent: (id) => (intent && intent.id === id ? intent : null),
     // Fake identity mapping: the workspace path IS its id for the test.
     pathToId: (path) => (path ? `id:${path}` : null),
-    setPrStatus,
+    upsertIntentPr,
     safeInsertIntentLog,
     broadcastIntents,
   }
-  return { deps, setPrStatus, safeInsertIntentLog, broadcastIntents }
+  return { deps, upsertIntentPr, safeInsertIntentLog, broadcastIntents }
 }
 
 /** Build a generic `'event'` envelope carrying a `pr:operation` core. */
@@ -67,18 +68,20 @@ const WS_ID = 'id:/proj'
 
 describe('handlePrUpdateEvent — resettable statuses', () => {
   it.each(['rejected', 'failed', 'closed'] as const)(
-    'resets prStatus=%s to reviewing, logs pr_updated, and broadcasts',
+    'resets a %s PR row to reviewing, logs pr_updated, and broadcasts',
     (from) => {
-      const { deps, setPrStatus, safeInsertIntentLog, broadcastIntents } = makeDeps({
+      const { deps, upsertIntentPr, safeInsertIntentLog, broadcastIntents } = makeDeps({
         id: 'intent-1',
         workspaceId: WS_ID,
-        prStatus: from,
+        prs: [fakeIntentPr(from, { intentId: 'intent-1', number: '1' })],
       })
 
       const changed = handlePrUpdateEvent(payload(), deps)
 
       expect(changed).toBe(true)
-      expect(setPrStatus).toHaveBeenCalledWith('intent-1', 'reviewing')
+      expect(upsertIntentPr).toHaveBeenCalledWith(
+        expect.objectContaining({ intentId: 'intent-1', number: '1', status: 'reviewing' }),
+      )
       expect(safeInsertIntentLog).toHaveBeenCalledWith(
         'intent-1',
         'pr_updated',
@@ -92,95 +95,99 @@ describe('handlePrUpdateEvent — resettable statuses', () => {
 
 describe('handlePrUpdateEvent — ignored cases', () => {
   it('does not reset a merged intent (terminal state)', () => {
-    const { deps, setPrStatus, broadcastIntents } = makeDeps({
+    const { deps, upsertIntentPr, broadcastIntents } = makeDeps({
       id: 'intent-1',
       workspaceId: WS_ID,
-      prStatus: 'merged',
+      prs: [fakeIntentPr('merged', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload(), deps)).toBe(false)
-    expect(setPrStatus).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
     expect(broadcastIntents).not.toHaveBeenCalled()
   })
 
   it('does not reset an already-reviewing intent', () => {
-    const { deps, setPrStatus } = makeDeps({
+    const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
       workspaceId: WS_ID,
-      prStatus: 'reviewing',
+      prs: [fakeIntentPr('reviewing', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload(), deps)).toBe(false)
-    expect(setPrStatus).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
   })
 
-  it('does not reset when prStatus is null', () => {
-    const { deps, setPrStatus } = makeDeps({
+  it('does not reset when the intent owns no PR', () => {
+    const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
       workspaceId: WS_ID,
-      prStatus: null,
+      prs: [],
     })
     expect(handlePrUpdateEvent(payload(), deps)).toBe(false)
-    expect(setPrStatus).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
   })
 
   it('ignores an event without an intentId', () => {
-    const { deps, setPrStatus } = makeDeps({
+    const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
       workspaceId: WS_ID,
-      prStatus: 'rejected',
+      prs: [fakeIntentPr('rejected', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload({ association: {} }), deps)).toBe(false)
-    expect(setPrStatus).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
   })
 
   it('ignores an unknown intent without throwing', () => {
-    const { deps, setPrStatus } = makeDeps(null)
+    const { deps, upsertIntentPr } = makeDeps(null)
     expect(handlePrUpdateEvent(payload(), deps)).toBe(false)
-    expect(setPrStatus).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
   })
 
   it('ignores a cross-workspace intentId (workspace mismatch)', () => {
-    const { deps, setPrStatus } = makeDeps({
+    const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
       workspaceId: 'id:/other-proj',
-      prStatus: 'rejected',
+      prs: [fakeIntentPr('rejected', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload(), deps)).toBe(false)
-    expect(setPrStatus).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
   })
 
   it('ignores a non-success result', () => {
-    const { deps, setPrStatus } = makeDeps({
+    const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
       workspaceId: WS_ID,
-      prStatus: 'rejected',
+      prs: [fakeIntentPr('rejected', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload({ result: 'failure' }), deps)).toBe(false)
-    expect(setPrStatus).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
   })
 
   it('ignores a non-update operation', () => {
-    const { deps, setPrStatus } = makeDeps({
+    const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
       workspaceId: WS_ID,
-      prStatus: 'rejected',
+      prs: [fakeIntentPr('rejected', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload({ operation: 'review' }), deps)).toBe(false)
-    expect(setPrStatus).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
   })
 
   it('ignores a non-pr:operation event type', () => {
-    const { deps, setPrStatus } = makeDeps({
+    const { deps, upsertIntentPr } = makeDeps({
       id: 'intent-1',
       workspaceId: WS_ID,
-      prStatus: 'rejected',
+      prs: [fakeIntentPr('rejected', { intentId: 'intent-1', number: '1' })],
     })
     expect(handlePrUpdateEvent(payload({ type: 'other:event' }), deps)).toBe(false)
-    expect(setPrStatus).not.toHaveBeenCalled()
+    expect(upsertIntentPr).not.toHaveBeenCalled()
   })
 
   it('swallows a store error and returns false', () => {
-    const { deps } = makeDeps({ id: 'intent-1', workspaceId: WS_ID, prStatus: 'rejected' })
-    deps.setPrStatus = () => {
+    const { deps } = makeDeps({
+      id: 'intent-1',
+      workspaceId: WS_ID,
+      prs: [fakeIntentPr('rejected', { intentId: 'intent-1', number: '1' })],
+    })
+    deps.upsertIntentPr = () => {
       throw new Error('db down')
     }
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})

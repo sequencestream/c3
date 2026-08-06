@@ -31,9 +31,9 @@ export const TEMPLATE_MAX_WALL_CLOCK_MS = 600_000
 
 export const PR_STATUS_POLLER_PROMPT = `Reconcile GitHub PR status for this workspace.
 
-Scope: only intents whose prStatus is reviewing and which carry a prUrl or prId — locate them with find_intents and inspect each with view_intent.
+Scope: only intents whose \`prs\` array contains an entry with status "reviewing" — locate them with find_intents and inspect each with view_intent. Each entry carries the PR's number and url.
 Query the real GitHub PR state with Bash + gh; leave an intent untouched while its PR is still open/reviewing.
-A merged PR: call save_intent_pr_info with prStatus "merged" and done true. A PR closed without merging: call save_intent_pr_info with prStatus "closed" and leave done unset.
+A merged PR: call save_intent_pr_info with prStatus "merged" and done true. A PR closed without merging: call save_intent_pr_info with prStatus "closed" and leave done unset. That tool only UPDATES an intent's existing PR record — it cannot create one, and it rejects an intent that has no PR.
 Only when a status actually changed, call publish_event with type "pr:operation", status "success", metadata.operation "merge" or "close", and data carrying the PR identity/state plus association.intentId.
 
 Do not reopen PRs, merge PRs, resolve conflicts, or change intents outside this reconciliation.`

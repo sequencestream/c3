@@ -80,6 +80,12 @@ export interface QueueIntentFact {
    * is never reviewed and never blocks as "awaiting approval".
    */
   specStatus: SpecStatus
+  /**
+   * The intent's AGGREGATE PR status — one value reduced from every PR it owns
+   * (`deriveIntentPrAggregate`), `null` when it owns none. The kernel gates on one
+   * status per intent; the reduction happens at the assembly boundary so the
+   * kernel stays a pure function and the UI cannot disagree with the gate.
+   */
   prStatus: IntentPrStatus | null
   lastWorkSessionId: string | null
   createdAt: number

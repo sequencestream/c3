@@ -293,7 +293,7 @@
 
 ### `sync_intent_pr_status`
 
-对已完成且 PR/MR 状态仍为 `reviewing` 的 intent 做一次手动状态同步。服务器按 workspace 的 forge 规则查询实时 PR/MR 状态：GitHub 使用 `gh pr view <id> --json state,mergedAt,url`，GitLab 使用 `glab mr view <id> --output json`。仅当 forge 明确返回 merged/closed 时更新 `prStatus`（merged 会解除 worktree 依赖闸门，closed 不会被当作 merged）；无 PR、非 `done`、非 `reviewing`、CLI 缺失/未登录、查询失败均不写入 merged。回复 `sync_intent_pr_status_response`，前端据此展示同步中、成功、不可同步或失败反馈。
+对一条 intent 的全部 `reviewing` PR/MR 行做一次手动状态同步（闸门是 PR 行本身，与 intent 自身状态无关）。服务器按 workspace 的 forge 规则逐条查询实时状态：GitHub 使用 `gh pr view <number> --json state,mergedAt,url`，GitLab 使用 `glab mr view <number> --output json`。仅当 forge 明确返回 merged/closed 时更新该行状态（聚合为 merged 会解除 worktree 依赖闸门，closed 不会被当作 merged）；无 PR 行、无 `reviewing` 行、CLI 缺失/未登录、查询失败均不写入 merged。回复 `sync_intent_pr_status_response`，其 `prStatus` 是同步后的聚合态、`changed` 表示任一行发生变化，前端据此展示同步中、成功、不可同步或失败反馈。
 
 **字段：** `workspaceId: string`, `intentId: string`
 

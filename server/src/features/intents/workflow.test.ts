@@ -10,6 +10,7 @@
  * `queue-outcome-actions.test.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeIntentPrs } from './intent-pr-fixture.js'
 import type { Intent } from '@ccc/shared/protocol'
 
 // ---- Mocks (must be before imports) ----
@@ -21,7 +22,6 @@ vi.mock('./store.js', () => ({
   safeInsertIntentLog: vi.fn(),
   setBranchName: vi.fn(),
   setLastWorkSession: vi.fn(),
-  setPrInfo: vi.fn(),
   updateStatus: vi.fn(),
 }))
 
@@ -259,9 +259,7 @@ const makeIntent = (overrides: Partial<Intent> & { id: string }): Intent => ({
   runStatus: 'idle',
   branchName: null,
   latestCommitHash: null,
-  prId: null,
-  prUrl: null,
-  prStatus: null,
+  prs: [],
   specPath: null,
   // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
   specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
@@ -301,7 +299,7 @@ describe('pickNext — worktree dep merge validation', () => {
   })
 
   it('worktree: filters out intents whose dep is done but not merged', () => {
-    const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'reviewing' })
+    const dep = makeIntent({ id: 'A', status: 'done', prs: fakeIntentPrs('reviewing') })
     const child = makeIntent({ id: 'B', dependsOn: ['A'] })
     vi.mocked(listIntents).mockReturnValue([dep, child])
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
@@ -311,7 +309,7 @@ describe('pickNext — worktree dep merge validation', () => {
   })
 
   it('worktree: allows intents whose dep is done and merged', () => {
-    const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'merged' })
+    const dep = makeIntent({ id: 'A', status: 'done', prs: fakeIntentPrs('merged') })
     const child = makeIntent({ id: 'B', dependsOn: ['A'] })
     vi.mocked(listIntents).mockReturnValue([dep, child])
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
@@ -321,7 +319,7 @@ describe('pickNext — worktree dep merge validation', () => {
   })
 
   it('current-branch: does not check prStatus (unmerged dep still passes)', () => {
-    const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'reviewing' })
+    const dep = makeIntent({ id: 'A', status: 'done', prs: fakeIntentPrs('reviewing') })
     const child = makeIntent({ id: 'B', dependsOn: ['A'] })
     vi.mocked(listIntents).mockReturnValue([dep, child])
     vi.mocked(getGitBranchMode).mockReturnValue('current-branch')
@@ -331,8 +329,8 @@ describe('pickNext — worktree dep merge validation', () => {
   })
 
   it('worktree: all deps must be merged (one unmerged blocks)', () => {
-    const depA = makeIntent({ id: 'A', status: 'done', prStatus: 'merged' })
-    const depB = makeIntent({ id: 'B', status: 'done', prStatus: 'reviewing' })
+    const depA = makeIntent({ id: 'A', status: 'done', prs: fakeIntentPrs('merged') })
+    const depB = makeIntent({ id: 'B', status: 'done', prs: fakeIntentPrs('reviewing') })
     const child = makeIntent({ id: 'C', dependsOn: ['A', 'B'] })
     vi.mocked(listIntents).mockReturnValue([depA, depB, child])
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
@@ -351,7 +349,7 @@ describe('pickNext — worktree dep merge validation', () => {
   })
 
   it('worktree: dep not done (in_progress) is filtered regardless of prStatus', () => {
-    const dep = makeIntent({ id: 'A', status: 'in_progress', prStatus: null, automate: false })
+    const dep = makeIntent({ id: 'A', status: 'in_progress', prs: [], automate: false })
     const child = makeIntent({ id: 'B', dependsOn: ['A'] })
     vi.mocked(listIntents).mockReturnValue([dep, child])
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
@@ -471,7 +469,7 @@ describe('startDevelopment — manual start dep merge validation', () => {
     const dep = makeIntent({
       id: 'A',
       status: 'done',
-      prStatus: 'reviewing',
+      prs: fakeIntentPrs('reviewing'),
       branchName: 'intent/A',
       title: 'Dep A',
     })
@@ -509,7 +507,12 @@ describe('startDevelopment — manual start dep merge validation', () => {
   })
 
   it('current-branch: does not block manual start when dep is unmerged', async () => {
-    const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'reviewing', title: 'Dep A' })
+    const dep = makeIntent({
+      id: 'A',
+      status: 'done',
+      prs: fakeIntentPrs('reviewing'),
+      title: 'Dep A',
+    })
     const req = makeIntent({ id: 'B', title: 'Child B', dependsOn: ['A'] })
     vi.mocked(hasWorkspace).mockReturnValue(true)
     vi.mocked(getIntent).mockImplementation((id: string) => {
@@ -592,7 +595,12 @@ describe('startDevelopment — manual start dep merge validation', () => {
   })
 
   it('worktree: allows manual start when dep is done and merged', async () => {
-    const dep = makeIntent({ id: 'A', status: 'done', prStatus: 'merged', title: 'Dep A' })
+    const dep = makeIntent({
+      id: 'A',
+      status: 'done',
+      prs: fakeIntentPrs('merged'),
+      title: 'Dep A',
+    })
     const req = makeIntent({ id: 'B', title: 'Child B', dependsOn: ['A'] })
     vi.mocked(hasWorkspace).mockReturnValue(true)
     vi.mocked(getIntent).mockImplementation((id: string) => {

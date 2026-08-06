@@ -34,9 +34,10 @@ import {
   safeInsertIntentLog,
   setBranchName,
   setLastWorkSession,
-  setPrInfo,
   updateStatus,
+  upsertIntentPr,
 } from './store.js'
+import { parsePrIdentity } from './pr-identity.js'
 import { registerPendingDevLink } from './dev-link.js'
 import { buildDevPrompt } from './dev-prompt.js'
 import { publishIntentStatusTransition } from './lifecycle-events.js'
@@ -392,7 +393,19 @@ async function maybeCreatePr(ctx: QueueActionContext, req: Intent): Promise<void
     return null
   })
   if (prResult?.ok) {
-    setPrInfo(req.id, prResult.prId, 'reviewing', prResult.prUrl || null)
+    // Persist the PR's identity alongside its number: `repo` lives only in the URL
+    // the forge CLI printed, and the forge is the one this create routed through.
+    const identity = parsePrIdentity(prResult.prUrl)
+    upsertIntentPr({
+      intentId: req.id,
+      number: prResult.prId,
+      status: 'reviewing',
+      forge: identity.forge ?? getForgeOverride(ctx.workspacePath) ?? null,
+      repo: identity.repo,
+      url: prResult.prUrl || null,
+      headBranch: req.branchName ?? null,
+      baseBranch: prResult.baseBranch,
+    })
     safeInsertIntentLog(req.id, 'pr_created', `创建 PR #${prResult.prId}`, 'automation')
     console.log(`[c3:queue]「${req.title}」PR #${prResult.prId} 已创建`)
 

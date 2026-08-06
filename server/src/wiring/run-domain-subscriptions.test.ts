@@ -37,7 +37,7 @@ vi.mock('../features/intents/store.js', () => ({
   setIntentSessionId: vi.fn(),
   setLastWorkSession: vi.fn(),
   setLatestCommitHash: vi.fn(),
-  setPrInfo: vi.fn(),
+  upsertIntentPr: vi.fn(),
   setSpecReviewSessionId: vi.fn(),
   setSpecSessionId: vi.fn(),
   updateIntentSession: vi.fn(),

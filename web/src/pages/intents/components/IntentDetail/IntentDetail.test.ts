@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeIntentPr } from '@/lib/intent-pr-fixture'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import type { Intent, IntentLog, SessionStatus } from '@ccc/shared/protocol'
@@ -28,9 +29,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     runStatus: 'idle',
     branchName: null,
     latestCommitHash: null,
-    prId: null,
-    prUrl: null,
-    prStatus: null,
+    prs: [],
     specPath: null,
     // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
     specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
@@ -181,10 +180,13 @@ describe('IntentDetail.vue — engineering progress', () => {
   })
 
   it('renders the PR label and closed state in worktree mode', () => {
-    const w = mountDetail(intent({ id: 'i1', status: 'done', prId: '42', prStatus: 'closed' }), {
-      sddEnabled: true,
-      workspaceGitBranchMode: 'worktree',
-    })
+    const w = mountDetail(
+      intent({ id: 'i1', status: 'done', prs: [fakeIntentPr('closed', { number: '42' })] }),
+      {
+        sddEnabled: true,
+        workspaceGitBranchMode: 'worktree',
+      },
+    )
     const stages = w.findAll('[data-testid="intent-engineering-progress"] [data-stage]')
     const pr = stages.at(-1)
 
@@ -210,7 +212,11 @@ describe('IntentDetail.vue — engineering progress', () => {
   ] as const)(
     'appends the PR stage when the branch mode resolves to worktree (%s → %s)',
     async (prStatus, expected) => {
-      const item = intent({ id: 'i1', status: 'in_progress', prId: '42', prStatus })
+      const item = intent({
+        id: 'i1',
+        status: 'in_progress',
+        prs: [fakeIntentPr(prStatus, { number: '42' })],
+      })
       const w = mountDetail(item, { sddEnabled: true })
 
       expect(
@@ -233,7 +239,11 @@ describe('IntentDetail.vue — engineering progress', () => {
   )
 
   it('keeps the PR stage hidden when the branch mode resolves to current-branch', async () => {
-    const item = intent({ id: 'i1', status: 'in_progress', prId: '42', prStatus: 'reviewing' })
+    const item = intent({
+      id: 'i1',
+      status: 'in_progress',
+      prs: [fakeIntentPr('reviewing', { number: '42' })],
+    })
     const w = mountDetail(item, { sddEnabled: true })
 
     await w.setProps({ workspaceGitBranchMode: 'current-branch' })
@@ -663,20 +673,18 @@ describe('IntentDetail.vue — actions', () => {
       status: 'in_progress',
       branchName: 'feature/work',
       lastWorkSessionId: 'dev-1',
-      prId: '9',
+      prs: [fakeIntentPr('reviewing', { number: '9' })],
     })
     const w = mountDetail(item, { workspaceGitBranchMode: 'worktree' })
 
     expect(w.find('[data-action="createPr"]').exists()).toBe(false)
   })
 
-  it('renders the PR link as a jumpable anchor to prUrl when present', () => {
+  it('renders the PR link as a jumpable anchor to the PR url when present', () => {
     const item = intent({
       id: 'intent-1',
       status: 'in_progress',
-      prId: '42',
-      prUrl: 'https://github.com/o/r/pull/42',
-      prStatus: 'reviewing',
+      prs: [fakeIntentPr('reviewing', { number: '42', url: 'https://github.com/o/r/pull/42' })],
     })
     const w = mountDetail(item)
     const link = w.find('a.req-btn.pr-link')
@@ -685,26 +693,28 @@ describe('IntentDetail.vue — actions', () => {
     expect(link.attributes('target')).toBe('_blank')
   })
 
-  it('falls back to the copy button when a PR exists without a prUrl', () => {
-    const item = intent({ id: 'intent-1', status: 'in_progress', prId: '42', prUrl: null })
+  it('falls back to the copy button when a PR exists without a url', () => {
+    const item = intent({
+      id: 'intent-1',
+      status: 'in_progress',
+      prs: [fakeIntentPr('reviewing', { number: '42', url: null })],
+    })
     const w = mountDetail(item)
     expect(w.find('a.req-btn.pr-link').exists()).toBe(false)
     expect(w.find('button.req-btn.pr-link').exists()).toBe(true)
   })
 
-  it('shows no PR link when there is no PR (empty prUrl does not break layout)', () => {
-    const item = intent({ id: 'intent-1', status: 'in_progress', prId: null, prUrl: null })
+  it('shows no PR link when there is no PR', () => {
+    const item = intent({ id: 'intent-1', status: 'in_progress', prs: [] })
     const w = mountDetail(item)
     expect(w.find('.req-btn.pr-link').exists()).toBe(false)
   })
 
-  it('links the PR number in metadata to prUrl when present', () => {
+  it('links the PR number in metadata to its url when present', () => {
     const item = intent({
       id: 'intent-1',
       status: 'done',
-      prId: '38',
-      prUrl: 'https://github.com/o/r/pull/38',
-      prStatus: 'merged',
+      prs: [fakeIntentPr('merged', { number: '38', url: 'https://github.com/o/r/pull/38' })],
     })
     const w = mountDetail(item)
     const link = w.find('.req-meta-pr-link')
@@ -718,9 +728,7 @@ describe('IntentDetail.vue — actions', () => {
     const item = intent({
       id: 'intent-1',
       status: 'done',
-      prId: '38',
-      prUrl: 'https://github.com/o/r/pull/38',
-      prStatus: 'reviewing',
+      prs: [fakeIntentPr('reviewing', { number: '38', url: 'https://github.com/o/r/pull/38' })],
     })
     const w = mountDetail(item)
 
@@ -731,19 +739,33 @@ describe('IntentDetail.vue — actions', () => {
     expect(w.emitted('sync-pr-status')).toEqual([['intent-1']])
   })
 
-  it('hides sync PR status when status is not done, PR is missing, or PR is already merged', () => {
+  // The guard is the PR row, not the intent: it mirrors the server's, which
+  // dropped its `status === 'done'` half. Keeping it here would grey out a button
+  // for a PR the server would happily sync.
+  it('shows sync PR status for a reviewing PR even when the intent is not done', () => {
     expect(
-      mountDetail(intent({ id: 'a', status: 'in_progress', prId: '1', prStatus: 'reviewing' }))
+      mountDetail(
+        intent({
+          id: 'a',
+          status: 'in_progress',
+          prs: [fakeIntentPr('reviewing', { number: '1' })],
+        }),
+      )
+        .find('[data-action="syncPrStatus"]')
+        .exists(),
+    ).toBe(true)
+  })
+
+  it('hides sync PR status when the PR is missing or already merged', () => {
+    expect(
+      mountDetail(intent({ id: 'b', status: 'done', prs: [] }))
         .find('[data-action="syncPrStatus"]')
         .exists(),
     ).toBe(false)
     expect(
-      mountDetail(intent({ id: 'b', status: 'done', prId: null, prStatus: 'reviewing' }))
-        .find('[data-action="syncPrStatus"]')
-        .exists(),
-    ).toBe(false)
-    expect(
-      mountDetail(intent({ id: 'c', status: 'done', prId: '1', prStatus: 'merged' }))
+      mountDetail(
+        intent({ id: 'c', status: 'done', prs: [fakeIntentPr('merged', { number: '1' })] }),
+      )
         .find('[data-action="syncPrStatus"]')
         .exists(),
     ).toBe(false)
@@ -753,8 +775,7 @@ describe('IntentDetail.vue — actions', () => {
     const item = intent({
       id: 'intent-1',
       status: 'done',
-      prId: '38',
-      prStatus: 'reviewing',
+      prs: [fakeIntentPr('reviewing', { number: '38' })],
     })
     const w = mountDetail(item, {
       intentPrSync: { 'intent-1': { state: 'syncing', message: 'Syncing...' } },
@@ -840,9 +861,7 @@ describe('IntentDetail.vue — meta block position and field order', () => {
       status: 'done',
       branchName: 'feature/x',
       latestCommitHash: 'abcdef1234567',
-      prId: '42',
-      prUrl: 'https://github.com/o/r/pull/42',
-      prStatus: 'reviewing',
+      prs: [fakeIntentPr('reviewing', { number: '42', url: 'https://github.com/o/r/pull/42' })],
       completedAt: 5,
       dependsOn: ['dep1'],
       dependsOnTypes: { dep1: 'blocks' },
@@ -870,7 +889,7 @@ describe('IntentDetail.vue — meta block position and field order', () => {
       id: 'only-id',
       status: 'todo',
       branchName: null,
-      prId: null,
+      prs: [],
       completedAt: null,
       dependsOn: [],
     })

@@ -197,7 +197,7 @@ status=result、metadata.operation=operation),交由通用匹配器处理,不再
 
 `pr:operation` 总线事件在 `run-domain-subscriptions.ts` 中还有**第二个、独立的**常驻消费者
 (不在本分发路径中):当 `operation=update` + `result=success` 且携带 `association.intentId` 时,
-intent 领域会把一个被拒绝/失败/关闭的 intent 的 `prStatus` 重置回 `reviewing`。它有意位于
+intent 领域会把一条被拒绝/失败/关闭的 PR 行的状态重置回 `reviewing`。它有意位于
 `dispatchEventTriggers` 之外 — 即便没有配置任何自动化、Automation 存储不可用、或该自动化被在途门
 跳过,账本状态机也必须能够恢复。两者是同一事件的独立副作用;互不阻塞。
 

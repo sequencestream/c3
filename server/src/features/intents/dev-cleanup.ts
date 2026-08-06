@@ -22,19 +22,22 @@
  * written; already-completed steps (commit+push ⇒ `latestCommitHash`) are honestly
  * recorded.
  *
- * Idempotent re-cleanup (MSC-R6): if the intent already has a PR, we commit+push
- * and refresh `latestCommitHash` but do NOT create a second PR; the existing PR
- * fields are preserved.
+ * Idempotent re-cleanup (MSC-R6): if the intent already has a live PR, we
+ * commit+push and refresh `latestCommitHash` but do NOT create a second PR; the
+ * existing PR row is preserved.
  *
  * Dependency-injected (mirrors `save-comm.ts`) so the whole flow is unit-testable
  * without a live git tree, the wire, or the db.
  */
-import type { GitBranchMode, Intent, IntentPrStatus } from '@ccc/shared/protocol'
+import type { GitBranchMode, Intent } from '@ccc/shared/protocol'
 import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
+import { activeIntentPrs } from '@ccc/shared'
 import type { UiErrorCode } from '@ccc/shared/ui-codes'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
 import type { CommitResult, CreatePrResult, ForgeProvider } from '../../git.js'
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
+import { parsePrIdentity } from './pr-identity.js'
+import type { UpsertIntentPrInput } from './store.js'
 
 /** Why a cleanup failed — each maps to a workbench todo UiError code. */
 export type CleanupFailureCode = 'noChanges' | 'commitPushFailed' | 'ghUnavailable' | 'prFailed'
@@ -68,7 +71,8 @@ export interface DevCleanupDeps {
   getIntent: (id: string) => Intent | null
   setBranchName: (id: string, branchName: string) => void
   setLatestCommitHash: (id: string, commitHash: string) => void
-  setPrInfo: (id: string, prId: string, prStatus: IntentPrStatus, prUrl: string | null) => void
+  /** The store's single PR write entry point (see `upsertIntentPr`). */
+  upsertIntentPr: (input: UpsertIntentPrInput) => void
   /** Best-effort lifecycle log write (never throws). */
   safeInsertIntentLog: (
     intentId: string,
@@ -187,8 +191,9 @@ export async function runManualDevCleanup(
   const head = await deps.getHeadCommit(cwd)
   if (head) deps.setLatestCommitHash(intentId, head)
 
-  // ③ Idempotent: an intent that already has a PR is not re-PR'd (MSC-R6).
-  if (req.prId) {
+  // ③ Idempotent: an intent that already has a live PR is not re-PR'd (MSC-R6).
+  // A merged / closed PR does not block — that PR's life is over.
+  if (activeIntentPrs(req.prs).length > 0) {
     deps.broadcastIntents(workspacePath)
     return { kind: 'success', createdPr: false }
   }
@@ -210,7 +215,19 @@ export async function runManualDevCleanup(
     return fail(pr.unavailable ? 'ghUnavailable' : 'prFailed', pr.error)
   }
 
-  deps.setPrInfo(intentId, pr.prId, 'reviewing', pr.prUrl ?? null)
+  // Persist the PR's full identity, not just its number: `repo` lives only in the
+  // URL the forge CLI printed, and the forge is the one we routed the create through.
+  const identity = parsePrIdentity(pr.prUrl)
+  deps.upsertIntentPr({
+    intentId,
+    number: pr.prId,
+    status: 'reviewing',
+    forge: identity.forge ?? deps.getForgeOverride(workspacePath) ?? null,
+    repo: identity.repo,
+    url: pr.prUrl ?? null,
+    headBranch: headBranch ?? null,
+    baseBranch,
+  })
   // Same lifecycle-log point as the manual create-PR path. A session-end cleanup
   // has no connection subject ⇒ the actor is `automation`. Only the FIRST
   // association logs: the idempotent re-cleanup above returns before this line.

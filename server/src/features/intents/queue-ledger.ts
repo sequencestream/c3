@@ -12,6 +12,7 @@
  * records verdicts.
  */
 import type { Intent } from '@ccc/shared/protocol'
+import { deriveIntentPrAggregate } from '@ccc/shared'
 import type {
   QueueIntentFact,
   QueueReconcileOutput,
@@ -45,7 +46,9 @@ export function toFact(r: Intent, workspacePath: string, sddEnabled: boolean): Q
     automate: r.automate,
     dependsOn: r.dependsOn,
     specStatus: r.specStatus,
-    prStatus: r.prStatus,
+    // The kernel gates on ONE status per intent, so the PR list is reduced HERE,
+    // at the assembly boundary, with the same rule the UI uses.
+    prStatus: deriveIntentPrAggregate(r.prs),
     lastWorkSessionId: r.lastWorkSessionId,
     createdAt: r.createdAt,
     specPath: r.specPath,

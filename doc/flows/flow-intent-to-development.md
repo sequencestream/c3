@@ -70,7 +70,7 @@ flowchart TD
    且不创建文档、不替换已选会话。当前分支模式跳过这项检查。当被阻塞的依赖
    有一个存储状态未确认已合并的 PR/MR 时,服务端会启动一次一次性的后台
    PR/MR 状态同步,并在其完成后重新广播意图;当前请求在后续检查看到
-   `prStatus = merged` 之前仍会失败。依赖检查通过后,当前工作区分支会在会话
+   PR 聚合态为 `merged` 之前仍会失败。依赖检查通过后,当前工作区分支会在会话
    开始前尽力拉取;远程缺失、拉取失败或分支分叉会给出警告但不阻止撰写规格。
    撰写与重置控件在该规则满足之前都保持禁用,并附带一条依赖未合并的说明。
 2. **web-console → intent-management。** 对于一条已保存的意图,`write_spec` 在开发之前
@@ -273,8 +273,8 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
   它会通过工作区的 forge-aware 分发器提交、推送并创建 PR/MR:显式的
   工作区 `forge` 设置为 `github` 或 `gitlab` 会覆盖仓库来源检测,而
   `auto`(或缺省值)使用检测。对 GitHub 调用 `gh`,对 GitLab 调用 `glab`,然后回写
-  `branchName`、`latestCommitHash`、`prId`、
-  `prUrl` 和 `prStatus = reviewing`;已经有 PR 的意图会被刷新(提交/推送 +
+  `branchName`、`latestCommitHash`,以及一条 `reviewing` 的 PR 行(连同来源与 head/base
+  分支);已经有活跃 PR 的意图会被刷新(提交/推送 +
   `latestCommitHash`)但**不**重新建 PR。`current-branch` 且**在** main 分支上是一次
   普通的成功跳过。项目的 orchestrator 正在主动驱动的会话属于自动化所有(`RM-A5`),
   **不**在此清理 — 手动与自动化互斥。在其自身成功提交与推送之后,
@@ -322,9 +322,9 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
   进行中守卫、进度遮罩与服务端门禁 —— 这是用户显式重试,不是自动重试。c3 自己
   **不**清理 worktree、不解决冲突、不修改凭据或远端分支;`prCreateNotWorktree`
   等精确门禁与已有 PR 的幂等守卫保持原文案且不带指引。
-- **PR/MR 状态同步(`RM-R28`)。** 一条 `prStatus = reviewing` 且关联了
-  PR/MR 的 `done` 意图,可以从详情头部或 Git/PR 元数据处刷新一次。该同步
-  查询 forge CLI,只有在 forge 确认 PR/MR 已合并时才写入 `prStatus = merged`。
+- **PR/MR 状态同步(`RM-R28`)。** 一条持有 `reviewing` PR 行的意图(自身处于
+  `todo`/`in_progress`/`done` 均可),可以从详情头部或 Git/PR 元数据处刷新一次。该同步
+  查询 forge CLI,只有在 forge 确认 PR/MR 已合并时才把该行写为 `merged`。
   一个已关闭的 PR/MR 可能被记录为 `closed`,失败或 CLI/认证不可用则保持
   既有状态不变;只有确认的 `merged` 才能解除 worktree 依赖闸门。
 
@@ -365,8 +365,8 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
 - **清理失败是显式的,绝不伪装。** 当会话结束清理理应运行却无法运行时 —
   没有可提交的变更、提交/推送失败、所选 forge CLI(`gh` 或 `glab`)不可用/
   未登录,或 PR/MR 创建失败 — 它会显式失败,并推送一条工作台等待用户介入的
-  待办事项,要求用户处理;它绝不会把 `prStatus` 设为 `reviewing`,也不会写入
-  占位的 `prId`/`prUrl`,只有真正完成的步骤才会被记录(`RM-R26`)。它不会
+  待办事项,要求用户处理;它绝不会写出一条 `reviewing` 的 PR 行,也不会写入
+  占位的编号或链接,只有真正完成的步骤才会被记录(`RM-R26`)。它不会
   自动合并、解决冲突、修复认证,也不会重试。
 - **未满足的依赖只警告,不阻塞。** 在 `dependsOn` 非 `done` 时启动会警告但仍会继续
   (`RM-R11`)。

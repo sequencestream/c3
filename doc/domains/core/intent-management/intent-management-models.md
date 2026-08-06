@@ -28,12 +28,39 @@
 | `specMode`          | `'sdd'`\|`'fast'`\| null    | 每意图级规格模式覆盖;`null` 继承工作区 `sddEnabled`(开启 ⇒ `sdd`,关闭 ⇒ `fast`),显式值始终覆盖派生值且不随开关变化(RM-R40)                                                                          |
 | `effectiveSpecMode` | `'sdd'`\|`'fast'`           | 发送时投影的已解析有效规格模式 —— 从持久 `specMode` + 工作区 `sddEnabled` 推导一次,客户端/准入层/落定处理读取同一值;`sddEnabled` 关闭时无规格闸门与规格阶段,`fast` 只是与现状一致的自然默认(RM-R40) |
 | `actionDescriptor`  | ActionDescriptor \| null    | 派生的「下一步」;无阻塞时为 `null`。发送时投影,不落库(见下)                                                                                                                                         |
-| `prId`              | text \| null                | PR/MR 在仓库(project)内的 number;由 gh/glab 创建输出解析,经 `setPrInfo` 原样落库                                                                                                                    |
-| `prUrl`             | text \| null                | PR/MR 可跳转链接;与 `latestCommitHash` 语义不同(链接指向变更请求,哈希指向提交)                                                                                                                      |
-| `prStatus`          | enum \| null                | PR/MR 生命周期状态 `reviewing`\|`rejected`\|`failed`\|`merged`\|`closed`;与意图自身 `status`(`draft`/`todo`/…/`done`)相互独立                                                                       |
+| `prs`               | `IntentPr[]`                | 该意图拥有的全部 PR/MR,按 `createdAt` 升序;无 PR 时为空数组。发送时由 `intent_prs` 批量挂载(见下)                                                                                                   |
 
 关系:属于一个项目(以 `workspacePath` 标识);拥有零个或多个 Intent
-Dependencies;可能引用一个开发 Session(一个普通会话,归 session-registry 所有)。
+Dependencies;拥有零个或多个 Intent PR;可能引用一个开发 Session(一个普通会话,归
+session-registry 所有)。
+
+## Intent PR
+
+一条 PR/MR,是一等实体而非意图上的几个字段 —— 一个意图可对不同交付各持有一条。
+持久化于 `intent_prs`,写入唯一经仓储层 `upsertIntentPr`。
+
+| 字段                        | 类型                          | 说明                                                                               |
+| --------------------------- | ----------------------------- | ---------------------------------------------------------------------------------- |
+| `id`                        | uuid                          | 台账行标识(不是 PR 编号)                                                           |
+| `intentId`                  | id                            | 所属意图                                                                           |
+| `deliveryId`                | text \| null                  | 所属交付;`null` 表示无交付归属                                                     |
+| `forge`                     | `'github'`\|`'gitlab'`\| null | 托管平台;`null` 表示来源未知                                                       |
+| `repo`                      | text \| null                  | 仓库标识(`owner/name`);`null` 表示来源未知                                         |
+| `number`                    | text                          | 仓库内 PR/MR 编号,由 gh/glab 创建输出解析                                          |
+| `url`                       | text \| null                  | 可跳转链接;与 `latestCommitHash` 语义不同(链接指向变更请求,哈希指向提交)           |
+| `status`                    | enum                          | `reviewing`\|`rejected`\|`failed`\|`merged`\|`closed`;与意图自身 `status` 相互独立 |
+| `headBranch` / `baseBranch` | text \| null                  | 源分支 / 目标分支,每行独立记录                                                     |
+| `createdAt` / `updatedAt`   | timestamp                     | 创建 / 最近更新时间                                                                |
+
+`(forge, repo, number)` 是 PR 的真实身份且全库唯一;把一条已归属某意图的 PR 写到另一个
+意图上会被拒绝。`forge`/`repo` 可空是对"来源未知"的降级承接 —— 这类行不参与唯一键,
+下一次经 `upsertIntentPr` 的写入即补齐。
+
+**聚合态**:需要"这个意图的 PR 到底怎么样了"这一个答案的读点(闸门、进度条、队列事实)
+一律用共享纯函数 `deriveIntentPrAggregate` 归约,梯子为未定结论优先于终态、有合并成果
+优先于纯关闭:无行 → `null`;有 `reviewing` → `reviewing`;否则有 `failed` → `failed`;
+否则有 `rejected` → `rejected`;否则有 `merged` → `merged`;否则(全部 `closed`)→ `closed`。
+需要"跳到哪一条 PR"的读点用 `pickPrimaryIntentPr`:第一条活跃的,全部终态则取最早一条。
 
 ## Action Descriptor
 
@@ -199,13 +226,16 @@ null,写入侧截断到 128)。这次重命名有意与向后兼容的 `projectC
 `intents`、`intent_deps`、`intent_chats`(会话集合 + 隐藏集合在同一张表中)、
 `tool_sessions`(`session_id` PRIMARY KEY + `created_at`)—— 工具创建会话(完成判定器、
 共识顾问)的持久化集合,使 session-registry 的“显示工具会话”过滤器能在重启后存续,
-以及 `intent_sessions`、`intent_logs` 与 `intent_fast_turns`(每 turn 结算记录)。
+以及 `intent_sessions`、`intent_logs`、`intent_fast_turns`(每 turn 结算记录)与
+`intent_prs`(PR/MR 关系表,见上方 Intent PR)。
 `tool_sessions` 只是一张标记表;工具会话的来源链接存放在 `session_kind='tool'` 行的
 `session_metadata.owner_kind` / `owner_id` 中,无 owner 的工具行仅用于展示。会话被删除时,
 其行也会被删除。`intents` 表的时间戳列(`created_at`/`updated_at`/`completed_at`)以
-`INTEGER` 存 epoch-ms,受控写入一律 `Date.now()`;PR 追踪列(`pr_id`/`pr_url`/`pr_status`)
-的语义与取值域见上方 Intent 实体表,其中 `pr_status` 运行时取值域含 `closed`
-(`database/intents/intents.sql` 的 DDL 注释未列全,以共享协议类型为准)。跨运行时驱动适配器与迁移处理见
+`INTEGER` 存 epoch-ms,受控写入一律 `Date.now()`。`intents` 上的 `pr_id`/`pr_url`/`pr_status`
+三列已冻结:运行时不读不写,只作为反向回填脚本 `scripts/rollback-intent-prs.mjs` 的落点保留
+(裁决见 [ADR-0035](../../../architecture/adr/0035-intent-pr-table-split-and-migration-markers.md))。
+一次性数据迁移的完成与否由跨域标记表 `schema_migrations` 判定,而非列存在性检查或
+`PRAGMA user_version`。跨运行时驱动适配器与迁移处理见
 [intent-management-design.md](intent-management-design.md)。
 
 跨领域的 `session_metadata` 投影存在于意图台账的唯一真实来源表之外。intent 的写入操作

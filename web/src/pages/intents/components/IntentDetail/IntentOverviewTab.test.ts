@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { fakeIntentPr } from '@/lib/intent-pr-fixture'
 import { mount } from '@vue/test-utils'
 import type { Intent } from '@ccc/shared/protocol'
 import IntentOverviewTab from './IntentOverviewTab.vue'
@@ -22,9 +23,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     runStatus: 'idle',
     branchName: null,
     latestCommitHash: null,
-    prId: null,
-    prUrl: null,
-    prStatus: null,
+    prs: [],
     specPath: null,
     // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
     specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
@@ -94,9 +93,7 @@ describe('IntentOverviewTab.vue', () => {
       status: 'done',
       branchName: 'feature/x',
       latestCommitHash: 'abcdef1234',
-      prId: '42',
-      prUrl: 'https://x/pull/42',
-      prStatus: 'reviewing',
+      prs: [fakeIntentPr('reviewing', { number: '42', url: 'https://x/pull/42' })],
       completedAt: 5,
       dependsOn: ['dep1'],
       dependsOnTypes: { dep1: 'blocks' },
@@ -190,7 +187,9 @@ describe('IntentOverviewTab.vue', () => {
   })
 
   it('shows the meta PR sync button for done reviewing PRs and emits sync-pr-status', async () => {
-    const w = mountTab(intent({ id: 'i1', status: 'done', prId: '5', prStatus: 'reviewing' }))
+    const w = mountTab(
+      intent({ id: 'i1', status: 'done', prs: [fakeIntentPr('reviewing', { number: '5' })] }),
+    )
     await w.find('.req-pr-sync-btn').trigger('click')
     expect(w.emitted('sync-pr-status')).toEqual([['i1']])
   })

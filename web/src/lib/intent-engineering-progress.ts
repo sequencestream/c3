@@ -1,4 +1,5 @@
-import type { IntentPrStatus, IntentStatus } from '@ccc/shared/protocol'
+import type { IntentPr, IntentStatus } from '@ccc/shared/protocol'
+import { deriveIntentPrAggregate } from '@ccc/shared'
 
 export type EngineeringProgressState = 'not_started' | 'in_progress' | 'completed' | 'closed'
 export type EngineeringProgressStage = 'intent' | 'spec' | 'work' | 'pr'
@@ -9,8 +10,8 @@ export interface EngineeringProgressInput {
   specStatus?: 'raw' | 'pending' | 'approved'
   specSessionId?: string | null
   lastWorkSessionId?: string | null
-  prId?: string | null
-  prStatus?: IntentPrStatus | null
+  /** Every PR the intent owns; the PR stage reads its aggregate, never one row. */
+  prs?: IntentPr[]
 }
 
 export interface EngineeringProgressItem {
@@ -48,7 +49,8 @@ export function deriveIntentEngineeringProgress(
     })
   }
 
-  const hasWorkEvidence = hasValue(intent.lastWorkSessionId) || hasValue(intent.prId)
+  const prs = intent.prs ?? []
+  const hasWorkEvidence = hasValue(intent.lastWorkSessionId) || prs.length > 0
   const hasActiveWorkStatus = ['in_progress', 'blocked', 'failed'].includes(intent.status)
   progress.push({
     stage: 'work',
@@ -61,10 +63,13 @@ export function deriveIntentEngineeringProgress(
   })
 
   if (workspaceGitBranchMode === 'worktree') {
+    // One aggregate for the whole stage: an intent with several PRs still shows a
+    // single PR segment, and "still under review" outranks any terminal row.
+    const aggregate = deriveIntentPrAggregate(prs)
     let state: EngineeringProgressState = 'not_started'
-    if (hasValue(intent.prId)) {
-      if (intent.prStatus === 'merged') state = 'completed'
-      else if (['rejected', 'failed', 'closed'].includes(intent.prStatus ?? '')) state = 'closed'
+    if (aggregate !== null) {
+      if (aggregate === 'merged') state = 'completed'
+      else if (['rejected', 'failed', 'closed'].includes(aggregate)) state = 'closed'
       else state = 'in_progress'
     }
     progress.push({ stage: 'pr', state })

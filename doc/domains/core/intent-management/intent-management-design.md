@@ -84,7 +84,11 @@ v12–v18 依次为 `short_en_title`、spec 质量闸/会话字段、`pr_url`、
 改名、`intent_logs` 审计表、spec 审核事实字段、`spec_status`(完整迁移历史见
 `database/tables.md`)。**v18→v19** 新增可空的 `intents.spec_mode`(三态)与
 `intent_fast_turns` 结算表;存量 `spec_mode` 不回填,继续按工作区 `sddEnabled` 派生
-(详见迁移记录 `migrate/2026/08/06/030`)。
+(详见迁移记录 `migrate/2026/08/06/030`)。**v19→v20** 把 PR 事实提升为关系表
+`intent_prs` 并从冻结的旧三列一次性回填;回填与其标记写在同一事务内,以跨域标记表
+`schema_migrations` 判定幂等——列存在性检查回答不了「表已建、回填做完没有」
+(裁决见 [ADR-0035](../../../architecture/adr/0035-intent-pr-table-split-and-migration-markers.md);
+详见迁移记录 `migrate/2026/08/06/031`)。
 
 **Schema 版本与迁移(v1 → v2)。** 新建时的 schema
 已声明 `intents.module`。对于已存在的 db(v1,无 `module` 列),open 路径
@@ -647,18 +651,20 @@ reconcile 的输入:一个意图若其**当前的死会话**已被记录过,
 意图领域对模型发布的 `pr:operation` `update`/`success` 事件的响应。它在
 `wiring/run-domain-subscriptions.ts` 中注册为一个**常驻订阅**,与运行生命周期
 订阅并列,且**独立于** `scheduler-startup.ts` 中的 Automation 事件桥接。它被特意排除在
-`dispatchEventTriggers` 之外:`prStatus` 是账本状态机的一部分,因此即便未配置任何
+`dispatchEventTriggers` 之外:PR 状态是账本状态机的一部分,因此即便未配置任何
 自动化、Automation store 不可用、或某个进行中的闸门跳过了自动化,该重置也必须触发。
 Automation 分发与该 consumer 是**同一个**总线事件的两个独立副作用;二者互不阻塞
 (`EventBus` 隔离了各 handler 的错误,该 consumer 还额外对自己的 store 访问做了 try/catch)。
 
 该 handler 会在非 `operation === 'update' && result === 'success'` 或
 `association.intentId` 不存在时短路返回。之后它会 `getIntent(intentId)`,校验
-`intent.workspaceId === pathToId(payload.workspacePath)`(阻止跨工作区的 `intentId`),并且——
-仅当 `prStatus ∈ {rejected, failed, closed}` 时——调用 `setPrStatus(id, 'reviewing')`、
-`safeInsertIntentLog(id, 'pr_updated', …, 'automation')`,以及 `broadcastIntents(workspacePath)`。`merged`
-是终态,会被跳过;`reviewing`/`null`/其他状态、一个缺失/未知/跨工作区的意图,或
-一个非 `update`/非 `success` 的事件,都是静默的空操作(发布本身已经成功,因此不会有错误)。
+`intent.workspaceId === pathToId(payload.workspacePath)`(阻止跨工作区的 `intentId`),再定位
+事件所指的 PR 行:携带 `data.pr.number` 即精确定位,不带则回退到该意图唯一的未合并行——有多条
+时无从判断是哪一条被重提,忽略并 warn,绝不批量复位。仅当该行状态 ∈ {rejected, failed, closed}
+时,调用 `upsertIntentPr(…, 'reviewing')`、`safeInsertIntentLog(id, 'pr_updated', …, 'automation')`,
+以及 `broadcastIntents(workspacePath)`。`merged` 是终态,会被跳过;其他状态、无法定位的 PR、
+一个缺失/未知/跨工作区的意图,或一个非 `update`/非 `success` 的事件,都是静默的空操作
+(发布本身已经成功,因此不会有错误)。
 一个重复的事件是幂等的:首次重置之后该状态不再可重置,因此后续
 事件都是空操作——不会重复记录日志或广播。所有 store/广播能力都是被注入的,因此该
 handler 用假实现做单元测试(无需实时 DB 或总线)。
@@ -729,11 +735,11 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
 和任何后台变更都能推送刷新后的列表。
 
 - `list_intents` / `update_intent_status` 读写 store 并回复 `intents`。
-  `update_intent_status` 是 `async` 的:取消一个拥有 `prId` 的意图会先通过
-  `closeForgePr`(`gh pr close` / `glab mr close`)关闭远程 PR/MR。关闭失败会发送
-  `intent.prCloseFailed`,并在任何状态变化**之前**返回;成功则翻转状态,
-  通过 `setPrInfo` 写入 `prStatus='closed'`(保留 `prUrl`),并追加一条 `pr_closed` 生命周期
-  日志。没有 PR 的意图保留原有的同步路径。
+  `update_intent_status` 是 `async` 的:取消一个持有活跃 PR 的意图会逐条通过
+  `closeForgePr`(`gh pr close` / `glab mr close`)关闭远程 PR/MR。任一关闭失败即发送
+  `intent.prCloseFailed`(detail 标明失败编号),并在任何状态变化**之前**返回;全部成功才翻转
+  状态。每关掉一条即经 `upsertIntentPr` 落 `closed` 并追加一条 `pr_closed` 生命周期日志——
+  关闭是幂等的,已关掉的行不会拖累重试。没有 PR 的意图保留原有的同步路径。
 - 开发回链:前端发送带 `lastWorkSessionId` 的 `select_session`;若该会话不再
   存在,既有的 `error` 路径会返回,前端会提供一个友好的
   重启/取消退出选项(RM-R13)。
@@ -806,9 +812,9 @@ Git 资源与数据库记录清理。这样意图记录不会被一个清不掉�
   状态。
 - **工程进度:** 意图详情头部按意图字段派生只读进度。意图、规范、工作依次展示,
   SDD 关闭时省略规范；仅 worktree 工作区在末尾展示 PR。工作是否完成只取决于
-  `intent.status === 'done'`,与 PR 独立。PR 无 `prId` 为未开始；有 `prId` 时,
-  `merged` 为已完成,`rejected`/`failed`/`closed` 为已关闭/失败,
-  `reviewing`、空状态及未知状态为进行中。进度条在窄屏横向滚动。
+  `intent.status === 'done'`,与 PR 独立。PR 段读**聚合态**(`deriveIntentPrAggregate`,与服务端
+  闸门同一份规则):无 PR 行为未开始;聚合 `merged` 为已完成,`rejected`/`failed`/`closed` 为
+  已关闭/失败,其余(有行且聚合 `reviewing`)为进行中。进度条在窄屏横向滚动。
   分支模式来自工作区配置的异步回复,因此意图页的**每个**入口(常规进入与刷新后的
   视图恢复)都会为所选工作区发送一次 `load_workspace_setting`;配置到达前先按无 PR
   渲染,回复把模式更新为 `worktree` 后进度在原挂载实例上重算并追加 PR 阶段,

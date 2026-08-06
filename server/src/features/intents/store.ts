@@ -19,6 +19,8 @@ import type {
   IntentDevSessionExitCode,
   IntentLog,
   IntentLogOperation,
+  IntentPr,
+  IntentPrForge,
   IntentSessionInfo,
   ProposedIntent,
   Intent,
@@ -29,13 +31,20 @@ import type {
   SpecReviewVerdict,
   SpecStatus,
 } from '@ccc/shared/protocol'
-import { SPEC_REVIEW_VERDICTS, SPEC_STATUSES } from '@ccc/shared/protocol'
+import { INTENT_PR_STATUSES, SPEC_REVIEW_VERDICTS, SPEC_STATUSES } from '@ccc/shared/protocol'
 import { pathToId } from '../../state.js'
-import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
+import {
+  getDb,
+  hasMigration,
+  isDbAvailable,
+  markMigration,
+  type Db,
+} from '../../kernel/infra/db.js'
 import { getSddEnabled } from '../../kernel/config/index.js'
+import { parsePrIdentity } from './pr-identity.js'
 import { isIntentSpecMode, resolveEffectiveSpecMode } from './spec-mode.js'
 
-const SCHEMA_VERSION = 19
+const SCHEMA_VERSION = 20
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -142,7 +151,41 @@ CREATE TABLE IF NOT EXISTS intent_fast_turns (
   created_at     INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_intent_fast_turn_intent ON intent_fast_turns(intent_id);
+
+-- One PR / Merge Request per row, replacing the intents.pr_id/pr_url/pr_status
+-- trio (frozen, never dropped — they are the rollback script's landing site).
+-- forge/repo are nullable so a backfilled row whose URL was missing or
+-- unparseable can still exist as "origin unknown"; such a row does not
+-- participate in the identity key and gets filled in by the next upsert.
+CREATE TABLE IF NOT EXISTS intent_prs (
+  id            TEXT PRIMARY KEY,
+  intent_id     TEXT NOT NULL,
+  delivery_id   TEXT,
+  forge         TEXT,
+  repo          TEXT,
+  number        TEXT NOT NULL,
+  url           TEXT,
+  status        TEXT NOT NULL,
+  head_branch   TEXT,
+  base_branch   TEXT,
+  created_at    INTEGER NOT NULL,
+  updated_at    INTEGER NOT NULL
+);
+-- One real PR, one row.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_pr_identity ON intent_prs(forge, repo, number);
+-- One PR per intent per delivery.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_pr_delivery ON intent_prs(intent_id, delivery_id);
+-- SQLite (like standard SQL) treats NULLs as distinct inside a unique index, so
+-- while delivery_id is always NULL the index above constrains NOTHING. This
+-- partial index is what actually enforces "at most one PR per intent" today.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_pr_intent_nodelivery
+  ON intent_prs(intent_id) WHERE delivery_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_intent_pr_intent ON intent_prs(intent_id);
+CREATE INDEX IF NOT EXISTS idx_intent_pr_status ON intent_prs(status);
 `
+
+/** Marker id for the one-shot legacy-columns → `intent_prs` backfill. */
+const BACKFILL_INTENT_PRS_MIGRATION = 'intents.backfill_intent_prs.v1'
 
 let schemaReady = false
 
@@ -295,6 +338,87 @@ function backfillSpecStatus(d: Db): void {
   )
 }
 
+/**
+ * Normalize a persisted timestamp to epoch-MILLIseconds. A handful of legacy rows
+ * carry 10-digit epoch-SECONDS (see ADR-0034); anything below this bound cannot be
+ * a plausible epoch-ms date and is scaled up.
+ */
+const EPOCH_MS_LOWER_BOUND = 100_000_000_000
+
+function toEpochMs(value: number | null | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return Date.now()
+  return value < EPOCH_MS_LOWER_BOUND ? value * 1000 : value
+}
+
+/** Narrow a persisted PR status; unknown/empty reads as the syncable non-terminal state. */
+function narrowPrStatus(v: string | null | undefined): IntentPrStatus {
+  return v !== null && v !== undefined && (INTENT_PR_STATUSES as readonly string[]).includes(v)
+    ? (v as IntentPrStatus)
+    : 'reviewing'
+}
+
+/**
+ * v19 → v20: lift the legacy `pr_id` / `pr_url` / `pr_status` trio into `intent_prs`,
+ * ONCE. Guarded by a `schema_migrations` marker rather than a column check: the
+ * table's existence says nothing about whether its backfill finished, and this
+ * migration must never run a second time (a re-run would collide with the identity
+ * index, or worse, resurrect rows a later close had legitimately changed).
+ *
+ * The whole pass — inserts plus the marker — runs in ONE transaction, so a failure
+ * rolls back the rows AND the marker together and the next start retries cleanly.
+ * There is no "backfilled halfway and marked done" state to recover from.
+ *
+ * Row selection is `pr_id` non-empty: a row with `pr_status='merged'` but no
+ * `pr_id` (these exist) has no PR identity to carry over. Those rows already
+ * render as "no PR" in the UI, which keys off `prId`, so dropping them changes
+ * nothing a user can see.
+ *
+ * `forge` / `repo` come from the URL (the only artefact that ever carried them);
+ * an unparseable or absent URL leaves both null — "origin unknown" — which simply
+ * opts that row out of the identity key until its next write.
+ */
+function backfillIntentPrs(d: Db): void {
+  if (hasMigration(d, BACKFILL_INTENT_PRS_MIGRATION)) return
+  const rows = d.all<{
+    id: string
+    pr_id: string | null
+    pr_url: string | null
+    pr_status: string | null
+    branch_name: string | null
+    updated_at: number | null
+  }>(
+    `SELECT id, pr_id, pr_url, pr_status, branch_name, updated_at
+       FROM intents
+      WHERE pr_id IS NOT NULL AND TRIM(pr_id) <> ''`,
+  )
+  tx(d, () => {
+    for (const r of rows) {
+      const { forge, repo } = parsePrIdentity(r.pr_url)
+      const at = toEpochMs(r.updated_at)
+      d.run(
+        `INSERT INTO intent_prs
+           (id, intent_id, delivery_id, forge, repo, number, url, status, head_branch, base_branch, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+        randomUUID(),
+        r.id,
+        null,
+        forge,
+        repo,
+        (r.pr_id as string).trim(),
+        r.pr_url,
+        narrowPrStatus(r.pr_status),
+        r.branch_name,
+        // Every legacy PR targeted a literal `main` (ADR-0034); the column exists
+        // so future rows can say otherwise, not so this one can guess.
+        'main',
+        at,
+        at,
+      )
+    }
+    markMigration(d, BACKFILL_INTENT_PRS_MIGRATION)
+  })
+}
+
 /** Return the db with the schema ensured once, or null if unavailable. */
 function db(): Db | null {
   const d = getDb()
@@ -372,6 +496,10 @@ function db(): Db | null {
     // and inheritance all coexist in one column. No backfill — old intents
     // continue to derive their mode exactly as before.
     ensureColumn(d, 'intents', 'spec_mode', "TEXT CHECK(spec_mode IN ('sdd','fast'))")
+    // v19 → v20: PR facts move out of the intents row into `intent_prs`. The
+    // legacy trio above is FROZEN, not dropped — runtime never reads or writes it
+    // again, and it stays as the rollback script's landing site.
+    backfillIntentPrs(d)
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
     schemaReady = true
   }
@@ -423,9 +551,10 @@ interface Row {
   automate: number
   branch_name: string | null
   latest_commit_hash: string | null
-  pr_id: string | null
-  pr_url: string | null
-  pr_status: string | null
+  // pr_id / pr_url / pr_status are deliberately ABSENT: the columns still exist on
+  // disk (frozen, never dropped, the rollback script's landing site) but nothing in
+  // the read model may see them. `SELECT *` still returns them; leaving them off
+  // this interface is what makes a stray read a compile error.
   spec_path: string | null
   spec_status: string
   spec_mode: string | null
@@ -477,9 +606,17 @@ function narrowSpecMode(v: string | null): IntentSpecMode | null {
   return v !== null && isIntentSpecMode(v) ? v : null
 }
 
-/** Attach `dependsOn` and `dependsOnTypes` to a set of rows in one deps query, preserving row order. */
+/**
+ * Attach `dependsOn`, `dependsOnTypes` and `prs` to a set of rows, preserving row
+ * order. Deps and PRs are each fetched in ONE batched query for the whole set —
+ * a per-intent PR query would turn every list broadcast into N round-trips.
+ */
 function hydrate(d: Db, rows: Row[]): Intent[] {
   if (rows.length === 0) return []
+  const prsById = listIntentPrsByIntentIds(
+    d,
+    rows.map((r) => r.id),
+  )
   const byId = new Map<string, string[]>()
   const typesById = new Map<string, Record<string, DepType>>()
   for (const r of rows) {
@@ -511,9 +648,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     automate: r.automate === 1,
     branchName: r.branch_name,
     latestCommitHash: r.latest_commit_hash,
-    prId: r.pr_id,
-    prUrl: r.pr_url,
-    prStatus: (r.pr_status ?? null) as IntentPrStatus | null,
+    prs: prsById.get(r.id) ?? [],
     specPath: r.spec_path,
     specStatus: narrowSpecStatus(r.spec_status),
     specMode: narrowSpecMode(r.spec_mode),
@@ -626,6 +761,7 @@ export function deleteIntentRecords(intentId: string): void {
     d.run('DELETE FROM intent_sessions WHERE intent_id=?', intentId)
     d.run('DELETE FROM intent_logs WHERE intent_id=?', intentId)
     d.run('DELETE FROM intent_fast_turns WHERE intent_id=?', intentId)
+    d.run('DELETE FROM intent_prs WHERE intent_id=?', intentId)
     d.run('DELETE FROM intents WHERE id=?', intentId)
   })
 }
@@ -760,8 +896,8 @@ export function insertIntents(
       const createdAt = now + i
       d.run(
         `INSERT INTO intents
-           (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status, spec_mode)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+           (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, spec_mode)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         ids[i],
         proj,
         it.title,
@@ -773,8 +909,6 @@ export function insertIntents(
         null,
         createdAt,
         createdAt,
-        null,
-        null,
         null,
         null,
         null,
@@ -942,8 +1076,8 @@ export function upsertIntents(
         const createdAt = now + i
         d.run(
           `INSERT INTO intents
-             (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, pr_id, pr_status, intent_session_id, spec_mode)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             (id, workspace_path, title, short_en_title, content, priority, status, module, last_work_session_id, created_at, updated_at, completed_at, branch_name, latest_commit_hash, intent_session_id, spec_mode)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           ids[i],
           proj,
           it.title,
@@ -955,8 +1089,6 @@ export function upsertIntents(
           null,
           createdAt,
           createdAt,
-          null,
-          null,
           null,
           null,
           null,
@@ -1005,10 +1137,10 @@ export function createEmptyIntent(workspacePath: string, actor?: string | null):
     d.run(
       `INSERT INTO intents
          (id, workspace_path, title, short_en_title, content, priority, status, module,
-          last_work_session_id, automate, branch_name, latest_commit_hash, pr_id, pr_status,
+          last_work_session_id, automate, branch_name, latest_commit_hash,
           spec_path, spec_approved, spec_approve_user, spec_session_id, intent_session_id,
           created_at, updated_at, completed_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       id,
       proj,
       'new intent',
@@ -1019,8 +1151,6 @@ export function createEmptyIntent(workspacePath: string, actor?: string | null):
       '',
       null,
       0,
-      null,
-      null,
       null,
       null,
       null,
@@ -1058,7 +1188,7 @@ export function deleteEmptyDraftIntent(id: string): void {
     row.last_work_session_id === null &&
     row.branch_name === null &&
     row.latest_commit_hash === null &&
-    row.pr_id === null
+    !hasIntentPrs(id)
   if (!guarded) throw new Error('intent has downstream assets')
   tx(d, () => {
     d.run('DELETE FROM intent_deps WHERE intent_id=? OR depends_on_id=?', id, id)
@@ -1132,12 +1262,6 @@ export function updateStatus(id: string, status: IntentStatus, actor?: string | 
   }
 }
 
-/** Update an intent's PR lifecycle status without changing its work status. */
-export function setPrStatus(id: string, prStatus: IntentPrStatus): void {
-  const d = requireDb()
-  d.run('UPDATE intents SET pr_status=?, updated_at=? WHERE id=?', prStatus, Date.now(), id)
-}
-
 /** Toggle a intent's automation flag (whether the orchestrator may pick it). */
 export function setAutomate(id: string, automate: boolean): void {
   const d = requireDb()
@@ -1171,26 +1295,230 @@ export function setLatestCommitHash(id: string, commitHash: string): void {
   )
 }
 
+// ---------------------------------------------------------------------------
+// intent_prs — the single PR write entry point plus its read surface
+// ---------------------------------------------------------------------------
+
+interface PrRow {
+  id: string
+  intent_id: string
+  delivery_id: string | null
+  forge: string | null
+  repo: string | null
+  number: string
+  url: string | null
+  status: string
+  head_branch: string | null
+  base_branch: string | null
+  created_at: number
+  updated_at: number
+}
+
+function toIntentPr(r: PrRow): IntentPr {
+  return {
+    id: r.id,
+    intentId: r.intent_id,
+    deliveryId: r.delivery_id,
+    forge: r.forge === 'github' || r.forge === 'gitlab' ? r.forge : null,
+    repo: r.repo,
+    number: r.number,
+    url: r.url,
+    status: narrowPrStatus(r.status),
+    headBranch: r.head_branch,
+    baseBranch: r.base_branch,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }
+}
+
+/** Stable PR ordering: oldest first, ties broken by number so it never flickers. */
+const PR_ORDER_BY = 'ORDER BY created_at ASC, number ASC'
+
+export interface UpsertIntentPrInput {
+  intentId: string
+  /** Delivery binding; omitted / null means "no delivery". */
+  deliveryId?: string | null
+  /** In-repo PR / MR number — required, it is half the PR's identity. */
+  number: string
+  status: IntentPrStatus
+  /**
+   * Fields that are only overwritten when explicitly supplied. `undefined` leaves
+   * the stored value alone (a status-only update must not blank out a known URL);
+   * an explicit `null` clears it.
+   */
+  forge?: IntentPrForge | null
+  repo?: string | null
+  url?: string | null
+  headBranch?: string | null
+  baseBranch?: string | null
+}
+
 /**
- * Set PR id, status, and clickable URL for an intent (called after PR creation).
- * `prUrl` is optional so existing callers that only know the id keep working; when
- * omitted the URL column is left null. The three move together (set on PR create).
+ * The ONE way PR facts are written. Nothing else may `UPDATE intent_prs` — a
+ * second write path is how the two unique keys below start disagreeing with
+ * reality.
+ *
+ * A transactional look-up-then-write rather than `ON CONFLICT`: the table has TWO
+ * unique keys (PR identity and intent+delivery) and a single upsert statement can
+ * only name one conflict target.
+ *
+ * 1. Match on `(forge, repo, number)`. A hit belonging to a DIFFERENT intent
+ *    throws: one real PR cannot be re-hung on another intent, and doing it
+ *    silently would be a data incident, not a convenience.
+ * 2. Otherwise match on `(intent_id, delivery_id)` — this is what carries "the
+ *    intent replaced its PR" and every status advance. The delivery comparison
+ *    MUST branch on NULL (`IS NULL` vs `= ?`): with `delivery_id` null, `=` never
+ *    matches, the lookup would fall through to an insert, and the partial unique
+ *    index would reject it. Same NULL trap as the index, seen from the other side.
+ * 3. No match ⇒ insert.
+ *
+ * Updates touch only the supplied fields and refresh `updated_at`; `created_at`
+ * never moves.
  */
-export function setPrInfo(
-  id: string,
-  prId: string,
-  prStatus: IntentPrStatus,
-  prUrl: string | null = null,
-): void {
+export function upsertIntentPr(input: UpsertIntentPrInput): IntentPr {
   const d = requireDb()
-  d.run(
-    'UPDATE intents SET pr_id=?, pr_status=?, pr_url=?, updated_at=? WHERE id=?',
-    prId,
-    prStatus,
-    prUrl,
-    Date.now(),
-    id,
+  const deliveryId = input.deliveryId ?? null
+  const number = input.number.trim()
+  if (!number) throw new Error('PR 编号不能为空')
+
+  return tx(d, () => {
+    let existing: PrRow | undefined
+    if (input.forge && input.repo) {
+      existing = d.get<PrRow>(
+        'SELECT * FROM intent_prs WHERE forge=? AND repo=? AND number=?',
+        input.forge,
+        input.repo,
+        number,
+      )
+      if (existing && existing.intent_id !== input.intentId) {
+        throw new Error(
+          `PR ${input.forge}:${input.repo}#${number} 已归属意图 ${existing.intent_id},不能改挂到 ${input.intentId}`,
+        )
+      }
+    }
+    if (!existing) {
+      existing =
+        deliveryId === null
+          ? d.get<PrRow>(
+              'SELECT * FROM intent_prs WHERE intent_id=? AND delivery_id IS NULL',
+              input.intentId,
+            )
+          : d.get<PrRow>(
+              'SELECT * FROM intent_prs WHERE intent_id=? AND delivery_id=?',
+              input.intentId,
+              deliveryId,
+            )
+    }
+
+    const now = Date.now()
+    if (existing) {
+      const next: PrRow = {
+        ...existing,
+        number,
+        status: input.status,
+        forge: input.forge !== undefined ? input.forge : existing.forge,
+        repo: input.repo !== undefined ? input.repo : existing.repo,
+        url: input.url !== undefined ? input.url : existing.url,
+        head_branch: input.headBranch !== undefined ? input.headBranch : existing.head_branch,
+        base_branch: input.baseBranch !== undefined ? input.baseBranch : existing.base_branch,
+        updated_at: now,
+      }
+      d.run(
+        `UPDATE intent_prs
+            SET forge=?, repo=?, number=?, url=?, status=?, head_branch=?, base_branch=?, updated_at=?
+          WHERE id=?`,
+        next.forge,
+        next.repo,
+        next.number,
+        next.url,
+        next.status,
+        next.head_branch,
+        next.base_branch,
+        next.updated_at,
+        next.id,
+      )
+      return toIntentPr(next)
+    }
+
+    const row: PrRow = {
+      id: randomUUID(),
+      intent_id: input.intentId,
+      delivery_id: deliveryId,
+      forge: input.forge ?? null,
+      repo: input.repo ?? null,
+      number,
+      url: input.url ?? null,
+      status: input.status,
+      head_branch: input.headBranch ?? null,
+      base_branch: input.baseBranch ?? null,
+      created_at: now,
+      updated_at: now,
+    }
+    d.run(
+      `INSERT INTO intent_prs
+         (id, intent_id, delivery_id, forge, repo, number, url, status, head_branch, base_branch, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      row.id,
+      row.intent_id,
+      row.delivery_id,
+      row.forge,
+      row.repo,
+      row.number,
+      row.url,
+      row.status,
+      row.head_branch,
+      row.base_branch,
+      row.created_at,
+      row.updated_at,
+    )
+    return toIntentPr(row)
+  })
+}
+
+/** Every PR one intent owns, oldest first. Empty when the store is unavailable. */
+export function listIntentPrs(intentId: string): IntentPr[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<PrRow>(`SELECT * FROM intent_prs WHERE intent_id=? ${PR_ORDER_BY}`, intentId)
+    .map(toIntentPr)
+}
+
+/**
+ * One intent's PRs that are still under review — the input to the status sync and
+ * to the dependency back-fill probe. Read off the PR ROWS, never off the intent's
+ * own status: a PR's lifecycle is its own.
+ */
+export function listReviewingIntentPrs(intentId: string): IntentPr[] {
+  const d = db()
+  if (!d) return []
+  return d
+    .all<PrRow>(
+      `SELECT * FROM intent_prs WHERE intent_id=? AND status='reviewing' ${PR_ORDER_BY}`,
+      intentId,
+    )
+    .map(toIntentPr)
+}
+
+/** Whether an intent owns any PR row at all (the delete guard's question). */
+export function hasIntentPrs(intentId: string): boolean {
+  const d = db()
+  if (!d) return false
+  return !!d.get('SELECT 1 FROM intent_prs WHERE intent_id=? LIMIT 1', intentId)
+}
+
+/** PRs for many intents at once, grouped by intent id — one query for a whole list. */
+function listIntentPrsByIntentIds(d: Db, intentIds: string[]): Map<string, IntentPr[]> {
+  const out = new Map<string, IntentPr[]>()
+  for (const id of intentIds) out.set(id, [])
+  if (intentIds.length === 0) return out
+  const placeholders = intentIds.map(() => '?').join(',')
+  const rows = d.all<PrRow>(
+    `SELECT * FROM intent_prs WHERE intent_id IN (${placeholders}) ${PR_ORDER_BY}`,
+    ...intentIds,
   )
+  for (const r of rows) out.get(r.intent_id)?.push(toIntentPr(r))
+  return out
 }
 
 /**
@@ -1212,7 +1540,7 @@ export function setSpecPath(id: string, specPath: string): void {
 
 /**
  * Set the spec approval checkpoint state. `approved` and `approveUser` move
- * together (like `setPrInfo`): on approval pass the approving user; on un-approval
+ * together: on approval pass the approving user; on un-approval
  * pass `approved=false` and `approveUser=null` to clear the recorded approver.
  *
  * `spec_status` is written in the SAME statement so the two can never disagree:

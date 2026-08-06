@@ -32,14 +32,16 @@ import { buildGitFailureGuidance } from './git-failure.js'
 import type { GitFailureStage } from './git-failure.js'
 import { publishIntentStatusTransition } from './lifecycle-events.js'
 import { clearJudgedSession, clearRunStatus } from './run-status.js'
+import { activeIntentPrs } from '@ccc/shared'
 import {
   canTransition,
   getIntent,
   isStoreAvailable,
   safeInsertIntentLog,
-  setPrInfo,
   updateStatus,
+  upsertIntentPr,
 } from './store.js'
+import { parsePrIdentity } from './pr-identity.js'
 import { getWorktreePath } from './worktree.js'
 
 /** A structured outcome both surfaces can frame. */
@@ -124,13 +126,16 @@ export async function createPrForIntent(
   const req = getIntent(intentId)
   if (!req) return { success: false, code: 'intent.notFound' }
 
-  // Idempotent guard first: an intent that already has a PR is never re-created —
-  // no Git checks, no commit, no push. Independent of intent status.
-  if (req.prId) {
+  // Idempotent guard first: an intent that already has a live PR is never
+  // re-created — no Git checks, no commit, no push. Independent of intent status.
+  // A merged / closed PR does NOT block: that PR's life is over, and the intent
+  // may legitimately need a new one.
+  const activePrs = activeIntentPrs(req.prs)
+  if (activePrs.length > 0) {
     return {
       success: false,
       code: 'intent.prCreateFailed',
-      params: { detail: `intent 已有 PR #${req.prId}` },
+      params: { detail: `intent 已有 PR #${activePrs[0].number}` },
     }
   }
   if (getGitBranchMode(workspacePath) !== 'worktree') {
@@ -209,7 +214,21 @@ export async function createPrForIntent(
         ),
       }
     }
-    setPrInfo(intentId, pr.prId, 'reviewing', pr.prUrl ?? null)
+    // The PR's identity: `repo` only ever existed inside the URL the forge CLI
+    // printed, and the forge is what we routed the create through. Both are
+    // persisted now — the ledger keys a PR by them, and re-probing origin later
+    // would be a second source of truth for a fact we already hold.
+    const identity = parsePrIdentity(pr.prUrl)
+    upsertIntentPr({
+      intentId,
+      number: pr.prId,
+      status: 'reviewing',
+      forge: identity.forge ?? providerOverride ?? null,
+      repo: identity.repo,
+      url: pr.prUrl ?? null,
+      headBranch: headBranch ?? null,
+      baseBranch,
+    })
     safeInsertIntentLog(intentId, 'pr_created', `创建 PR #${pr.prId}`, deps.actor)
     deps.broadcastIntents(workspacePath)
     runServerSidePrCreate(
@@ -267,9 +286,11 @@ export interface StatusChangeDeps {
 /**
  * Change an intent's status.
  *
- * Cancelling an intent that owns a PR closes the remote PR FIRST: a close
- * failure blocks the cancellation entirely, so the ledger never claims a
- * cancellation the forge did not accept.
+ * Cancelling an intent closes EVERY active PR it owns FIRST, and only proceeds
+ * when all of them closed: a single failure blocks the cancellation entirely, so
+ * the ledger never claims a cancellation the forge did not accept. PRs that DID
+ * close keep their `closed` row — closing is idempotent, so a retry is not
+ * derailed by the ones that already succeeded.
  */
 export async function applyIntentStatusChange(
   workspacePath: string,
@@ -287,23 +308,42 @@ export async function applyIntentStatusChange(
       params: { from: req.status, to: status },
     }
   }
-  if (status === 'cancelled' && req.prId) {
-    const close = await closeForgePr(workspacePath, req.prId)
+  const toClose = status === 'cancelled' ? activeIntentPrs(req.prs) : []
+  const failures: string[] = []
+  for (const pr of toClose) {
+    // The row's own forge wins; the workspace override is only a fallback for
+    // rows backfilled before the origin was persisted.
+    const close = await closeForgePr(
+      workspacePath,
+      pr.number,
+      pr.forge ?? getForgeOverride(workspacePath),
+    )
     if (!close.ok) {
-      return {
-        success: false,
-        code: 'intent.prCloseFailed',
-        params: { detail: close.error ?? '未知错误' },
-      }
+      failures.push(`#${pr.number}: ${close.error ?? '未知错误'}`)
+      continue
+    }
+    upsertIntentPr({
+      intentId,
+      deliveryId: pr.deliveryId,
+      forge: pr.forge,
+      repo: pr.repo,
+      number: pr.number,
+      status: 'closed',
+    })
+    safeInsertIntentLog(intentId, 'pr_closed', `PR #${pr.number} 已随意图取消`, deps.actor)
+  }
+  if (failures.length > 0) {
+    // Blocked, not partially applied: the status stays put and the detail names
+    // every PR the forge refused, so the operator knows exactly what to retry.
+    return {
+      success: false,
+      code: 'intent.prCloseFailed',
+      params: { detail: failures.join('; ') },
     }
   }
 
   const prevStatus = req.status
   updateStatus(intentId, status, deps.actor ?? 'system')
-  if (status === 'cancelled' && req.prId) {
-    setPrInfo(intentId, req.prId, 'closed', req.prUrl ?? null)
-    safeInsertIntentLog(intentId, 'pr_closed', `PR #${req.prId} 已随意图取消`, deps.actor)
-  }
   // Leaving in_progress drops the derived caches, so a later restart cannot show
   // a stale dangling/running label.
   if (prevStatus === 'in_progress' && status !== 'in_progress') {

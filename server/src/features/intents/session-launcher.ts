@@ -175,7 +175,7 @@ export function findBlockingWorkSession(
  *   1. SDD is on and the spec is not approved → `intent.specNotApproved`.
  *   2. worktree mode + a dependency that has not reached the mainline →
  *      `intent.dependencyNotMerged`, plus the best-effort background PR status
- *      sync so a stale `pr_status` resolves itself.
+ *      sync so a stale PR status resolves itself.
  *
  * Returns the rejection to hand back, or `null` when the turn may proceed.
  * Attaching a viewer to an already-running turn is NOT a new admission and does

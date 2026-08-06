@@ -588,47 +588,30 @@ export function buildOrganizerDeltaPrompt(input: {
 }
 
 /**
- * Build a delta participant prompt for resume-aware turns: same header, stage,
- * and guidance as the full prompt, but only the *new* messages since the
- * participant's last turn. The resume session already has the transcript
- * history in its context window.
+ * Build a delta participant prompt for resume-aware turns: only the current
+ * stage's dynamic context plus the *new* messages since the participant's last
+ * turn. Unlike the full prompt, it does NOT repeat the first-round static
+ * fields — participant identity, discussion type, goal, background — because
+ * the resumed session already holds the first-round full prompt (with those
+ * fields and the whole transcript) in its context window.
  *
  * Used when `getLastSeq` returns a non-null value. Falls back to the full
  * {@link buildParticipantPrompt} when resume is unavailable.
  */
 export function buildParticipantDeltaPrompt(input: {
-  discussion: Discussion
-  def: DiscussionTypeDef | undefined
   stage: DiscussionWorkflowStage
   /** Only messages appended since this participant's last turn. */
   newMessages: readonly DiscussionMessage[]
-  speaker: DiscussionParticipant
   organizerNote?: string
   subtopic?: string
   maxSpeechChars?: number
   langName?: string
 }): string {
-  const {
-    discussion,
-    def,
-    stage,
-    newMessages,
-    speaker,
-    organizerNote,
-    subtopic,
-    maxSpeechChars,
-    langName,
-  } = input
+  const { stage, newMessages, organizerNote, subtopic, maxSpeechChars, langName } = input
   const budget =
     typeof maxSpeechChars === 'number' && maxSpeechChars > 0 ? maxSpeechChars : MAX_SPEECH_CHARS
   const lang = langName ?? 'English'
-  const lines = [
-    `You are a participant in this discussion: "${speaker.name}".`,
-    '',
-    header(discussion, def),
-    '',
-    `Current stage: ${stage.label} — ${stage.prompt}`,
-  ]
+  const lines = [`Current stage: ${stage.label} — ${stage.prompt}`]
   if (subtopic && subtopic.trim()) {
     lines.push('', `Current subtopic: ${subtopic.trim()} — focus on this subtopic in your reply.`)
   }

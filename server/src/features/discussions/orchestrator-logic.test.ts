@@ -472,6 +472,23 @@ describe('prompt builders', () => {
     expect(p).toContain('focus on cost')
   })
 
+  it('participant prompt carries the first-round static fields and transcript', () => {
+    const p = buildParticipantPrompt({
+      discussion,
+      def,
+      stage,
+      messages: [msg(1, 'GPT', 'hi')],
+      speaker: { id: 'gpt', name: 'GPT' },
+    })
+    expect(p).toContain('You are a participant in this discussion: "GPT".')
+    expect(p).toContain('Discussion type:')
+    expect(p).toContain('Goal: Choose a caching layer')
+    // researchResult is empty → header falls back to the user context.
+    expect(p).toContain('Background: High read load.')
+    expect(p).toContain('Transcript so far:')
+    expect(p).toContain('GPT: hi')
+  })
+
   it('participant prompt carries the one-paragraph length constraint', () => {
     const p = buildParticipantPrompt({
       discussion,
@@ -577,48 +594,77 @@ describe('delta prompt builders', () => {
     expect(p).toContain('Respond in Chinese (简体中文)')
   })
 
-  it('buildParticipantDeltaPrompt includes resume context and new messages only', () => {
+  it('buildParticipantDeltaPrompt drops the first-round static fields and starts at Current stage', () => {
     const p = buildParticipantDeltaPrompt({
-      discussion,
-      def,
       stage,
       newMessages: [msg(3, 'GPT', 'new view')],
-      speaker: { id: 'gpt', name: 'GPT' },
     })
-    // Contains the resume context
-    expect(p).toContain('"GPT"')
-    expect(p).toContain('New messages since your last turn')
-    // Contains the new message, not a full transcript heading
+    // The delta prompt begins with the current stage — no participant identity,
+    // discussion type, goal, or background repeated from the first-round prompt.
+    expect(p.startsWith(`Current stage: ${stage.label} — ${stage.prompt}`)).toBe(true)
+    expect(p).not.toContain('You are a participant')
+    expect(p).not.toContain('Discussion type:')
+    expect(p).not.toContain('Goal:')
+    expect(p).not.toContain('Background:')
+    // Carries only the new-messages section, not a full transcript heading.
+    expect(p).toContain('New messages since your last turn:')
     expect(p).toContain('new view')
+    expect(p).not.toContain('Transcript so far:')
     expect(p).not.toContain('GPT: hi') // from the earlier msg(1) in test data
-    // Contains the one-paragraph length constraint
+    // Closing constraints and language instruction stay complete and in order.
+    const constraints = p.indexOf('Give your perspective on the current stage')
+    expect(constraints).toBeGreaterThan(p.indexOf('New messages since your last turn:'))
     expect(p).toContain('single paragraph')
+    expect(p).toContain(String(MAX_SPEECH_CHARS))
+    expect(p.indexOf('Respond in English')).toBeGreaterThan(constraints)
+  })
+
+  it('buildParticipantDeltaPrompt reflects the configured maxSpeechChars value', () => {
+    const p = buildParticipantDeltaPrompt({
+      stage,
+      newMessages: [],
+      maxSpeechChars: 500,
+    })
+    expect(p).toContain('500')
+    expect(p).not.toContain(String(MAX_SPEECH_CHARS))
+  })
+
+  it('buildParticipantDeltaPrompt responds in the specified language', () => {
+    const p = buildParticipantDeltaPrompt({
+      stage,
+      newMessages: [],
+      langName: 'Chinese (简体中文)',
+    })
+    expect(p).toContain('Respond in Chinese (简体中文)')
   })
 
   it('buildParticipantDeltaPrompt handles empty newMessages gracefully', () => {
     const p = buildParticipantDeltaPrompt({
-      discussion,
-      def,
       stage,
       newMessages: [],
-      speaker: { id: 'gpt', name: 'GPT' },
     })
+    expect(p).toContain('New messages since your last turn:')
     expect(p).toContain('no new messages')
     expect(p).toContain('continue based on your existing context')
   })
 
-  it('buildParticipantDeltaPrompt includes subtopic and organizer guidance', () => {
+  it('buildParticipantDeltaPrompt includes subtopic and organizer guidance in order', () => {
     const p = buildParticipantDeltaPrompt({
-      discussion,
-      def,
       stage,
       newMessages: [],
-      speaker: { id: 'gpt', name: 'GPT' },
       organizerNote: 'focus on latency',
       subtopic: 'Latency',
     })
     expect(p).toContain('Current subtopic:')
     expect(p).toContain('Latency')
     expect(p).toContain('focus on latency')
+    // Order: stage → subtopic → new messages → organizer guidance → constraints.
+    expect(p.indexOf('Current subtopic:')).toBeGreaterThan(p.indexOf('Current stage:'))
+    expect(p.indexOf('New messages since your last turn:')).toBeGreaterThan(
+      p.indexOf('Current subtopic:'),
+    )
+    expect(p.indexOf("Organizer's guidance to you:")).toBeGreaterThan(
+      p.indexOf('New messages since your last turn:'),
+    )
   })
 })

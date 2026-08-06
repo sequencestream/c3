@@ -14,6 +14,7 @@
  */
 import type { PersonalizedSettings, UiLang, UiTheme } from '@ccc/shared/protocol'
 import { applyTheme, DEFAULT_THEME, isUiTheme } from './theme'
+import { applyFontScale, DEFAULT_FONT_SCALE, isFontScale } from './font-scale'
 
 /**
  * Per-field localStorage keys. The display language keeps the key the console has
@@ -22,6 +23,7 @@ import { applyTheme, DEFAULT_THEME, isUiTheme } from './theme'
  */
 const UI_LANG_KEY = 'c3.uiLang'
 const THEME_KEY = 'c3.theme'
+const FONT_SCALE_KEY = 'c3.fontScale'
 
 /** UI display languages. Mirrors the `UiLang` union; the assertion below pins them together. */
 export const UI_LANGS = ['en', 'zh', 'ja', 'ko', 'ru'] as const
@@ -36,6 +38,7 @@ export const DEFAULT_UI_LANG: UiLang = 'en'
 export const DEFAULT_PERSONALIZED: PersonalizedSettings = {
   uiLang: DEFAULT_UI_LANG,
   theme: DEFAULT_THEME,
+  fontScale: DEFAULT_FONT_SCALE,
 }
 
 export function isUiLang(value: unknown): value is UiLang {
@@ -53,6 +56,7 @@ export function normalizePersonalized(raw: unknown): PersonalizedSettings {
   return {
     uiLang: isUiLang(rec.uiLang) ? rec.uiLang : DEFAULT_UI_LANG,
     theme: isUiTheme(rec.theme) ? rec.theme : DEFAULT_THEME,
+    fontScale: isFontScale(rec.fontScale) ? rec.fontScale : DEFAULT_FONT_SCALE,
   }
 }
 
@@ -65,9 +69,13 @@ export function readLocalPersonalized(): PersonalizedSettings {
   try {
     const lang = localStorage.getItem(UI_LANG_KEY)
     const theme = localStorage.getItem(THEME_KEY)
+    const fontScale = localStorage.getItem(FONT_SCALE_KEY)
     return {
       ...(isUiLang(lang) ? { uiLang: lang } : {}),
       ...(isUiTheme(theme) ? { theme } : {}),
+      // A stored scale is a number string (e.g. `"87.5"`); anything non-numeric
+      // or out of range is treated as nothing recorded.
+      ...(isFontScale(Number(fontScale)) ? { fontScale: Number(fontScale) } : {}),
     }
   } catch {
     // Storage disabled/unavailable — behave as "nothing recorded".
@@ -90,6 +98,8 @@ export function writeLocalPersonalized(settings: PersonalizedSettings): void {
   try {
     if (settings.uiLang !== undefined) localStorage.setItem(UI_LANG_KEY, settings.uiLang)
     if (settings.theme !== undefined) localStorage.setItem(THEME_KEY, settings.theme)
+    if (settings.fontScale !== undefined)
+      localStorage.setItem(FONT_SCALE_KEY, String(settings.fontScale))
   } catch {
     /* localStorage unavailable — non-fatal, the value still applies in-page */
   }
@@ -107,4 +117,15 @@ export function writeLocalPersonalized(settings: PersonalizedSettings): void {
  */
 export function applyStoredTheme(): UiTheme {
   return applyTheme(readLocalPersonalized().theme)
+}
+
+/**
+ * Cold start: apply the font scale this browser recorded before anything renders,
+ * so the console never flashes the built-in size and swaps to the stored one.
+ * With no record (or an unusable store) this applies 100% — the built-in look.
+ * The account's authoritative value arrives later with the server echo and
+ * corrects this if they differ.
+ */
+export function applyStoredFontScale(): number {
+  return applyFontScale(readLocalPersonalized().fontScale)
 }

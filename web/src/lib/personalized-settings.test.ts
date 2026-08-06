@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import {
+  applyStoredFontScale,
   applyStoredTheme,
   DEFAULT_PERSONALIZED,
   hasLocalPersonalized,
@@ -30,9 +31,15 @@ function installStorage(): FakeStore {
   return state
 }
 
-/** Minimal fake root element so the cold-start apply is observable in the Node env. */
+/** Minimal fake root element so the cold-start apply is observable in the Node env.
+ *  The style object carries `setProperty`, which the font-scale runtime uses. */
 function installDocument(): { dataset: Record<string, string>; style: Record<string, string> } {
-  const root = { dataset: {} as Record<string, string>, style: {} as Record<string, string> }
+  const style = Object.assign({} as Record<string, string>, {
+    setProperty(this: Record<string, string>, k: string, v: string): void {
+      this[k] = v
+    },
+  })
+  const root = { dataset: {} as Record<string, string>, style }
   ;(globalThis as unknown as { document: unknown }).document = { documentElement: root }
   return root
 }
@@ -53,30 +60,87 @@ describe('isUiLang', () => {
 
 describe('normalizePersonalized', () => {
   it('fills en for a missing, unknown, or non-object value', () => {
-    expect(normalizePersonalized(undefined)).toEqual({ uiLang: 'en', theme: 'dark' })
-    expect(normalizePersonalized({})).toEqual({ uiLang: 'en', theme: 'dark' })
-    expect(normalizePersonalized({ uiLang: 'xx' })).toEqual({ uiLang: 'en', theme: 'dark' })
-    expect(normalizePersonalized('zh')).toEqual({ uiLang: 'en', theme: 'dark' })
-    expect(normalizePersonalized(DEFAULT_PERSONALIZED)).toEqual({ uiLang: 'en', theme: 'dark' })
+    expect(normalizePersonalized(undefined)).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+      fontScale: 100,
+    })
+    expect(normalizePersonalized({})).toEqual({ uiLang: 'en', theme: 'dark', fontScale: 100 })
+    expect(normalizePersonalized({ uiLang: 'xx' })).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+      fontScale: 100,
+    })
+    expect(normalizePersonalized('zh')).toEqual({ uiLang: 'en', theme: 'dark', fontScale: 100 })
+    expect(normalizePersonalized(DEFAULT_PERSONALIZED)).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+      fontScale: 100,
+    })
   })
 
   it('keeps a known language', () => {
-    expect(normalizePersonalized({ uiLang: 'zh' })).toEqual({ uiLang: 'zh', theme: 'dark' })
+    expect(normalizePersonalized({ uiLang: 'zh' })).toEqual({
+      uiLang: 'zh',
+      theme: 'dark',
+      fontScale: 100,
+    })
   })
 
   it('keeps a known theme and defaults an unknown one to dark', () => {
-    expect(normalizePersonalized({ theme: 'light' })).toEqual({ uiLang: 'en', theme: 'light' })
-    expect(normalizePersonalized({ theme: 'solarized' })).toEqual({ uiLang: 'en', theme: 'dark' })
+    expect(normalizePersonalized({ theme: 'light' })).toEqual({
+      uiLang: 'en',
+      theme: 'light',
+      fontScale: 100,
+    })
+    expect(normalizePersonalized({ theme: 'solarized' })).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+      fontScale: 100,
+    })
   })
 
   it('normalizes each field on its own, so one corrupt value cannot cost the other', () => {
     expect(normalizePersonalized({ uiLang: 'zh', theme: 'solarized' })).toEqual({
       uiLang: 'zh',
       theme: 'dark',
+      fontScale: 100,
     })
     expect(normalizePersonalized({ uiLang: 'klingon', theme: 'light' })).toEqual({
       uiLang: 'en',
       theme: 'light',
+      fontScale: 100,
+    })
+  })
+
+  it('keeps an in-range scale and defaults an out-of-range or non-numeric one to 100', () => {
+    expect(normalizePersonalized({ fontScale: 87.5 })).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+      fontScale: 87.5,
+    })
+    expect(normalizePersonalized({ fontScale: 50 })).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+      fontScale: 100,
+    })
+    expect(normalizePersonalized({ fontScale: '110' })).toEqual({
+      uiLang: 'en',
+      theme: 'dark',
+      fontScale: 100,
+    })
+  })
+
+  it('normalizes the scale independently of the language and theme', () => {
+    expect(normalizePersonalized({ uiLang: 'zh', theme: 'light', fontScale: 110 })).toEqual({
+      uiLang: 'zh',
+      theme: 'light',
+      fontScale: 110,
+    })
+    expect(normalizePersonalized({ uiLang: 'zh', fontScale: 69 })).toEqual({
+      uiLang: 'zh',
+      theme: 'dark',
+      fontScale: 100,
     })
   })
 })
@@ -98,6 +162,25 @@ describe('browser store', () => {
     expect(readLocalPersonalized()).toEqual({ uiLang: 'ja', theme: 'light' })
   })
 
+  it('round-trips a recorded font scale independently of the other fields', () => {
+    installStorage()
+    writeLocalPersonalized({ fontScale: 115 })
+    expect(readLocalPersonalized()).toEqual({ fontScale: 115 })
+    expect(hasLocalPersonalized()).toBe(true)
+    writeLocalPersonalized({ uiLang: 'zh', theme: 'light' })
+    expect(readLocalPersonalized()).toEqual({ uiLang: 'zh', theme: 'light', fontScale: 115 })
+  })
+
+  it('reads a corrupt or out-of-range stored scale as nothing recorded', () => {
+    const state = installStorage()
+    state.map.set('c3.fontScale', '200')
+    expect(readLocalPersonalized()).toEqual({})
+    state.map.set('c3.fontScale', 'not-a-number')
+    expect(readLocalPersonalized()).toEqual({})
+    state.map.set('c3.fontScale', '87.5')
+    expect(readLocalPersonalized()).toEqual({ fontScale: 87.5 })
+  })
+
   it('reports nothing recorded before any write, so a seed cannot be invented', () => {
     installStorage()
     expect(readLocalPersonalized()).toEqual({})
@@ -105,6 +188,7 @@ describe('browser store', () => {
     expect(normalizePersonalized(readLocalPersonalized())).toEqual({
       uiLang: 'en',
       theme: 'dark',
+      fontScale: 100,
     })
   })
 
@@ -112,10 +196,12 @@ describe('browser store', () => {
     const state = installStorage()
     state.map.set('c3.uiLang', 'klingon')
     state.map.set('c3.theme', 'solarized')
+    state.map.set('c3.fontScale', '1e3')
     expect(readLocalPersonalized()).toEqual({})
     expect(normalizePersonalized(readLocalPersonalized())).toEqual({
       uiLang: 'en',
       theme: 'dark',
+      fontScale: 100,
     })
   })
 
@@ -130,10 +216,13 @@ describe('browser store', () => {
     state.failing = true
     expect(readLocalPersonalized()).toEqual({})
     expect(hasLocalPersonalized()).toBe(false)
-    expect(() => writeLocalPersonalized({ uiLang: 'zh', theme: 'light' })).not.toThrow()
+    expect(() =>
+      writeLocalPersonalized({ uiLang: 'zh', theme: 'light', fontScale: 110 }),
+    ).not.toThrow()
     expect(normalizePersonalized(readLocalPersonalized())).toEqual({
       uiLang: 'en',
       theme: 'dark',
+      fontScale: 100,
     })
   })
 
@@ -176,5 +265,32 @@ describe('applyStoredTheme (cold start)', () => {
     state.failing = true
     expect(applyStoredTheme()).toBe('dark')
     expect(root.dataset.theme).toBe('dark')
+  })
+})
+
+describe('applyStoredFontScale (cold start)', () => {
+  it('applies the scale this browser recorded as a ratio', () => {
+    const state = installStorage()
+    state.map.set('c3.fontScale', '87.5')
+    const root = installDocument()
+    expect(applyStoredFontScale()).toBe(87.5)
+    expect(root.style['--c-font-scale']).toBe('0.875')
+  })
+
+  it('applies 100% when this browser has recorded nothing', () => {
+    installStorage()
+    const root = installDocument()
+    expect(applyStoredFontScale()).toBe(100)
+    expect(root.style['--c-font-scale']).toBe('1')
+  })
+
+  it('applies 100% when the record is corrupt or storage is unusable', () => {
+    const state = installStorage()
+    state.map.set('c3.fontScale', '300')
+    const root = installDocument()
+    expect(applyStoredFontScale()).toBe(100)
+    expect(root.style['--c-font-scale']).toBe('1')
+    state.failing = true
+    expect(applyStoredFontScale()).toBe(100)
   })
 })

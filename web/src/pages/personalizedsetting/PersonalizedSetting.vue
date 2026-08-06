@@ -14,6 +14,7 @@ import type { PersonalizedSettings, UiLang, UiTheme } from '@ccc/shared/protocol
 import { useTypedI18n, isLocaleEnabled, type Locale } from '@/i18n'
 import { UI_LANGS as ALL_UI_LANGS } from '@/lib/personalized-settings'
 import { DEFAULT_THEME, THEMES } from '@/lib/theme'
+import { DEFAULT_FONT_SCALE, FONT_SCALE_MAX, FONT_SCALE_MIN } from '@/lib/font-scale'
 
 const { t } = useTypedI18n()
 
@@ -28,6 +29,8 @@ const emit = defineEmits<{
   'set-ui-lang': [lang: UiLang]
   // 即时生效的显示样式切换(同上)。
   'set-theme': [theme: UiTheme]
+  // 即时生效的字体大小调整(拖动即抛,无 Save)。
+  'set-font-scale': [scale: number]
 }>()
 
 // 可选显示语言。下放开关 = `web/src/i18n/index.ts` 的 `ENABLED_LOCALES`,由各 locale
@@ -72,6 +75,13 @@ const theme = computed<UiTheme>(() => props.settings.theme ?? DEFAULT_THEME)
 function onThemeChange(e: Event): void {
   emit('set-theme', (e.target as HTMLSelectElement).value as UiTheme)
 }
+
+// 缺省 100:与「无账户记录、无本地记录」时的内置默认一致,故拖动条永远有取值。
+const fontScale = computed<number>(() => props.settings.fontScale ?? DEFAULT_FONT_SCALE)
+
+function onFontScaleChange(e: Event): void {
+  emit('set-font-scale', Number((e.target as HTMLInputElement).value))
+}
 </script>
 
 <template>
@@ -111,6 +121,26 @@ function onThemeChange(e: Event): void {
           </option>
         </select>
       </section>
+
+      <section class="settings-section">
+        <p class="settings-section-title">{{ t('personalizedSetting.fontScale.title.label') }}</p>
+        <p class="settings-hint">{{ t('personalizedSetting.fontScale.hint') }}</p>
+        <div class="font-scale-row">
+          <input
+            type="range"
+            :min="FONT_SCALE_MIN"
+            :max="FONT_SCALE_MAX"
+            step="1"
+            :value="fontScale"
+            class="font-scale-slider"
+            data-testid="personalized-font-scale"
+            @input="onFontScaleChange"
+          />
+          <span class="font-scale-value" data-testid="personalized-font-scale-value">
+            {{ t('personalizedSetting.fontScale.percentage', { value: fontScale }) }}
+          </span>
+        </div>
+      </section>
     </div>
 
     <div class="settings-foot">
@@ -120,3 +150,23 @@ function onThemeChange(e: Event): void {
     </div>
   </div>
 </template>
+
+<style scoped>
+.font-scale-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.font-scale-slider {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--c-primary);
+}
+.font-scale-value {
+  flex: none;
+  min-width: 3.5em;
+  font-size: var(--fs-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--c-text);
+}
+</style>

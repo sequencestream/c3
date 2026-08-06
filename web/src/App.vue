@@ -294,6 +294,7 @@ const {
   saveSettings,
   setLocale,
   setTheme,
+  setFontScale,
   personalizedSettingOpen,
   personalizedSettings,
   setAdminPassword,
@@ -885,6 +886,7 @@ function onCodesChatWidth(px: number): void {
       @close="personalizedSettingOpen = false"
       @set-ui-lang="setLocale"
       @set-theme="setTheme"
+      @set-font-scale="setFontScale"
     />
 
     <WorkspaceSettingPage

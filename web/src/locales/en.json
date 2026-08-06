@@ -246,9 +246,6 @@
         },
         "icon": {
           "label": "Icon"
-        },
-        "group": {
-          "label": "Group"
         }
       },
       "toggle": {
@@ -371,12 +368,46 @@
       "copy": {
         "tooltip": "Copy agent"
       },
-      "reorder": {
-        "tooltip": "Drag to reorder"
-      },
       "group": {
-        "placeholder": "Group name (optional)",
-        "tooltip": "Group name — agents sharing a group form one failover pool."
+        "default": {
+          "label": "default",
+          "hint": "Ungrouped — each agent here runs on its own."
+        },
+        "add": {
+          "label": "+ New group"
+        },
+        "new": {
+          "name": "group"
+        },
+        "rename": {
+          "tooltip": "Rename this group"
+        },
+        "remove": {
+          "tooltip": "Dissolve this group — its agents move back to default"
+        },
+        "move": {
+          "tooltip": "Drag to move this agent between groups"
+        },
+        "moveUp": {
+          "tooltip": "Move up — earlier in the failover order"
+        },
+        "moveDown": {
+          "tooltip": "Move down — later in the failover order"
+        },
+        "empty": {
+          "hint": "Drag an agent here"
+        },
+        "failover": {
+          "hint": "Failover pool of {n} — tried top to bottom"
+        },
+        "notice": {
+          "vendorMismatch": "A group holds one agent type only — this group is {vendor}.",
+          "vendorChanged": "Changing the type moved this agent out of group “{group}” — a group holds one type only.",
+          "duplicateName": "A group named “{name}” already exists.",
+          "reservedName": "A group name cannot start with “{prefix}”.",
+          "emptyName": "A group name cannot be empty.",
+          "emptyDiscarded": "Empty group “{name}” was not saved — drag at least one agent into it."
+        }
       },
       "groupPicker": {
         "label": "Groups"

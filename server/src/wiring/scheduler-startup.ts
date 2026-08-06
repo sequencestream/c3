@@ -27,6 +27,7 @@ import { setExecutionStore, setEventBus } from '../features/automations/engine.j
 import { startScheduler, stopScheduler } from '../features/schedules/index.js'
 import { dispatchEventTriggers } from '../features/triggers/index.js'
 import { registerAgentQuotaRecovery } from '../features/agent-quota-recovery.js'
+import { registerAgentGroupFailover } from '../features/agent-group-failover.js'
 import type { Broadcasts } from './broadcasts.js'
 
 /** Start the scheduler + wire its execution store. */
@@ -36,6 +37,7 @@ export function startSchedulerWiring(deps: {
 }): void {
   const { broadcasts, eventBus } = deps
   registerAgentQuotaRecovery({ eventBus })
+  registerAgentGroupFailover({ eventBus })
   if (!isAutomationStoreAvailable()) return
 
   // Startup reconciliation MUST run before any cron/event scheduling is wired, so

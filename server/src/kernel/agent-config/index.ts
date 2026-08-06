@@ -54,10 +54,12 @@ import {
   changeSessionAgentFact,
   getProxyConfig,
   getSessionAgentId,
+  getSessionGroupCursor,
   getSessionStoreScope,
   loadSettings,
   saveSettings,
   setPendingIntent,
+  setSessionGroupCursor,
 } from '../config/index.js'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { systemAgent } from './normalize.js'
@@ -137,11 +139,29 @@ function singleTarget(agent: AgentConfig): AgentTarget {
  * A group reference as a target: its enabled members in `order_seq` order, the
  * first one representing the group. Throws when the group has no enabled member —
  * an empty group is a configuration error, NOT a reason to fall back.
+ *
+ * `cursor` (a member id) rotates the list so that member leads — the resume-time
+ * half of group failover (ADR-0029): a run that died on a degradable error moves
+ * the session's cursor on, and the next launch starts from there. The list is a
+ * RING, so every member stays reachable from any cursor; an unknown cursor (its
+ * agent was removed or left the group) simply falls back to the natural order.
  */
-function groupTarget(groupRef: string, vendor: VendorId, group: string): AgentTarget {
-  const members = groupAgents(vendor, group)
+function groupTarget(
+  groupRef: string,
+  vendor: VendorId,
+  group: string,
+  cursor?: string | null,
+): AgentTarget {
+  const members = rotateToCursor(groupAgents(vendor, group), cursor)
   if (members.length === 0) throw new AgentGroupUnavailableError(groupRef)
   return { ref: groupRef, agent: members[0], candidates: members, isGroup: true }
+}
+
+/** A group's members with `cursor`'s member rotated to the front (ring order). */
+function rotateToCursor(members: AgentConfig[], cursor?: string | null): AgentConfig[] {
+  if (!cursor) return members
+  const at = members.findIndex((a) => a.id === cursor)
+  return at <= 0 ? members : [...members.slice(at), ...members.slice(0, at)]
 }
 
 /**
@@ -162,12 +182,12 @@ function groupTarget(groupRef: string, vendor: VendorId, group: string): AgentTa
  * absorbed into rule 4: falling back would hide an actionable misconfiguration
  * behind an agent the user never chose.
  */
-export function resolveAgentTarget(ref: string | null): AgentTarget {
+export function resolveAgentTarget(ref: string | null, cursor?: string | null): AgentTarget {
   const settings = loadSettings()
   const wanted = ref?.trim() ?? ''
   if (wanted) {
     const g = parseGroupAgentRef(wanted)
-    if (g) return groupTarget(wanted, g.vendor, g.group)
+    if (g) return groupTarget(wanted, g.vendor, g.group, cursor)
     const byId = settings.agents.find((a) => a.id === wanted)
     if (byId) return singleTarget(byId)
   }
@@ -175,7 +195,7 @@ export function resolveAgentTarget(ref: string | null): AgentTarget {
   const fallbackId = settings.defaultAgentId?.trim() ?? ''
   if (fallbackId) {
     const dg = parseGroupAgentRef(fallbackId)
-    if (dg) return groupTarget(fallbackId, dg.vendor, dg.group)
+    if (dg) return groupTarget(fallbackId, dg.vendor, dg.group, cursor)
     const byDefault = settings.agents.find((a) => a.id === fallbackId)
     if (byDefault) return singleTarget(byDefault)
   }
@@ -187,9 +207,12 @@ export function resolveAgentTarget(ref: string | null): AgentTarget {
  * on an unusable group (refuse a session creation with a structured error) or
  * survive one (display/projection reads of an already-bound session).
  */
-export function tryResolveAgentTarget(ref: string | null): AgentTargetResult {
+export function tryResolveAgentTarget(
+  ref: string | null,
+  cursor?: string | null,
+): AgentTargetResult {
   try {
-    return { ok: true, target: resolveAgentTarget(ref) }
+    return { ok: true, target: resolveAgentTarget(ref, cursor) }
   } catch (err) {
     if (err instanceof AgentGroupUnavailableError) return { ok: false, groupRef: err.groupRef }
     throw err
@@ -394,29 +417,55 @@ function agentToRelayCandidate(agent: AgentConfig): RelayCandidate | null {
 }
 
 /**
+ * The LEADING SEGMENT of a candidate list — the part one launch can actually serve
+ * (ADR-0029). Whether a run goes through the relay is decided once, at spawn: the
+ * provider endpoint is baked into the subprocess env (`ANTHROPIC_BASE_URL`, codex's
+ * `model_provider`), so a single launch cannot cross between "relayed custom
+ * provider" and "the CLI's own login". The segment is therefore:
+ *
+ *  - leading member is relay-capable ⇒ it plus every relay-capable member that
+ *    directly follows (the relay fails over inside this run, before the first byte);
+ *  - leading member is not (a `system` agent, or a vendor with no provider triple)
+ *    ⇒ just that member, launched on the CLI's own login.
+ *
+ * The leading member is ALWAYS used. Collecting every relay-capable member instead
+ * would silently skip a leading `system` member and run somewhere the user did not
+ * put first — the visible order would stop matching what runs. Crossing the segment
+ * boundary is the resume path's job (the session's group cursor).
+ */
+export function launchSegment(candidates: AgentConfig[]): AgentConfig[] {
+  if (candidates.length === 0) return candidates
+  if (!agentToRelayCandidate(candidates[0])) return [candidates[0]]
+  const end = candidates.findIndex((a) => !agentToRelayCandidate(a))
+  return end < 0 ? candidates : candidates.slice(0, end)
+}
+
+/**
  * Map an ordered candidate list (one agent ⇒ length 1, a group ⇒ its members in
- * priority order) to {@link LaunchOverrides} (ADR-0029). Every `custom` member
- * becomes a relay candidate — the real key is bound behind a per-run token at the
- * spawn site, never handed to the vendor subprocess. `system`/empty members carry
- * no candidate (the CLI's own login). The CLI's fixed launch `model` is the first
- * candidate's real model (a placeholder — the relay overrides it per hit candidate);
- * with no candidate it is the first agent's standalone `model` override. Codex's
- * launch-time policy gate is derived from the session `defaultMode` in the driver
- * (2026-06-06-008), not here.
+ * priority order) to {@link LaunchOverrides} (ADR-0029). Only the list's leading
+ * segment ({@link launchSegment}) takes part in this launch; each of its `custom`
+ * members becomes a relay candidate — the real key is bound behind a per-run token
+ * at the spawn site, never handed to the vendor subprocess. A leading `system`
+ * member yields no candidate at all, so the run uses the CLI's own login. The CLI's
+ * fixed launch `model` is the first candidate's real model (a placeholder — the
+ * relay overrides it per hit candidate); with no candidate it is the leading agent's
+ * standalone `model` override. Codex's launch-time policy gate is derived from the
+ * session `defaultMode` in the driver (2026-06-06-008), not here.
  */
 export function launchForCandidates(candidates: AgentConfig[]): LaunchOverrides {
   const env: Record<string, string> = {}
   const relayCandidates: RelayCandidate[] = []
   let hasCustomClaude = false
-  for (const agent of candidates) {
+  const segment = launchSegment(candidates)
+  for (const agent of segment) {
     const cand = agentToRelayCandidate(agent)
     if (!cand) continue
     relayCandidates.push(cand)
     if (agent.vendor === 'claude') hasCustomClaude = true
   }
   // model: the CLI's fixed launch model — the first candidate's real model, else the
-  // first agent's standalone model override (read in both system and custom mode).
-  const model = relayCandidates[0]?.model || candidates[0]?.config.model || undefined
+  // leading agent's standalone model override (read in both system and custom mode).
+  const model = relayCandidates[0]?.model || segment[0]?.config.model || undefined
 
   if (hasCustomClaude) {
     // WORKAROUND (remove later): recent Claude Code introduced an "adaptive thinking"
@@ -560,12 +609,39 @@ function resolveLaunchForRef(ref: string | null): { agentId: string } & LaunchOv
 
 /**
  * Resolve how to launch a session: its bound agent (real id or `_c3_<group>`) mapped
- * to the candidate launch overrides. A group binding re-resolves + re-failovers each run.
+ * to the candidate launch overrides. A group binding re-resolves + re-failovers each
+ * run, starting from the session's group cursor — so a resume after a degradable
+ * failure picks up at the next candidate rather than re-hitting the failed one.
  */
 export function resolveSessionLaunch(
   sessionId: string | null,
 ): { agentId: string } & LaunchOverrides {
-  return resolveLaunchForRef(sessionId ? getSessionAgentId(sessionId) : null)
+  if (!sessionId) return resolveLaunchForRef(null)
+  const target = resolveAgentTarget(getSessionAgentId(sessionId), getSessionGroupCursor(sessionId))
+  return { agentId: target.ref, ...launchForCandidates(target.candidates) }
+}
+
+/**
+ * Advance a session's group failover cursor past the segment that just ran, so the
+ * next launch starts on the next candidate (ADR-0029). No-op unless the session is
+ * bound to a group that still resolves — a plain agent has nothing to advance
+ * through, and a group that lost every member is reported where it is actionable,
+ * not from an error handler. Returns the member the next launch will lead with, or
+ * null when nothing moved. Wrapping past the last member is intended: the group is
+ * a ring, so a session is never stranded on an exhausted tail.
+ */
+export function advanceGroupCursor(sessionId: string): string | null {
+  const ref = getSessionAgentId(sessionId)
+  if (!ref || !parseGroupAgentRef(ref)) return null
+  const result = tryResolveAgentTarget(ref, getSessionGroupCursor(sessionId))
+  if (!result.ok || !result.target.isGroup) return null
+  // `candidates` is already rotated to the current cursor, so the next lead is
+  // simply the member just past this run's segment.
+  const { candidates } = result.target
+  if (candidates.length < 2) return null
+  const next = candidates[launchSegment(candidates).length % candidates.length]
+  setSessionGroupCursor(sessionId, next.id)
+  return next.id
 }
 
 /**

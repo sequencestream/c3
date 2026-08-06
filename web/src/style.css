@@ -2924,7 +2924,102 @@ button.deny:hover:not(:disabled) {
 .agent-list {
   display: flex;
   flex-direction: column;
+  gap: var(--sp-3);
+}
+/* Group containers (ADR-0029): each box is one failover pool whose member rows
+ * are tried top to bottom; the `default` box is the ungrouped bucket, so it is
+ * drawn flatter (dashed, no vendor accent) to read as "not a pool". */
+.agent-group-box {
+  display: flex;
+  flex-direction: column;
   gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+}
+.agent-group-box.is-default {
+  border-style: dashed;
+}
+.agent-group-box.drag-over {
+  outline: 2px dashed var(--c-primary);
+  outline-offset: -2px;
+}
+.agent-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.agent-group-icon {
+  color: var(--c-text-muted);
+}
+.agent-group-name {
+  flex: 0 0 160px;
+  width: 160px;
+  font-weight: 600;
+}
+.agent-group-name.is-fixed {
+  color: var(--c-text-muted);
+}
+/* Vendor identity rides a colour dot, like every other vendor marker; the label
+ * itself stays on a theme token so it flips with the canvas. */
+.agent-group-vendor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  color: var(--c-text-muted);
+}
+.agent-group-vendor-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+}
+.agent-group-meta {
+  flex: 1 1 auto;
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
+/* Drop hint inside a container that has no member yet. */
+.agent-group-empty {
+  margin: 0;
+  padding: var(--sp-2);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+  text-align: center;
+  border: 1px dashed var(--c-border);
+  border-radius: var(--radius-sm);
+}
+/* Per-row in-group priority arrows — the visible order IS the failover order. */
+.agent-row > .col-rank {
+  flex: 0 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.rank-btn {
+  padding: 0;
+  line-height: 1;
+  font-size: 9px;
+}
+.rank-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.agent-list-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+/* Non-blocking reason a group edit was refused (vendor clash, duplicate name…). */
+.agent-group-notice {
+  margin: 0 0 var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-caption);
+  color: var(--c-warning-text);
+  background: rgba(245, 158, 11, 0.12);
+  border-radius: var(--radius-sm);
 }
 .agent-row {
   display: flex;
@@ -3431,6 +3526,21 @@ button.deny:hover:not(:disabled) {
   .agent-row > .icon-cell,
   .agent-row > .col-actions {
     align-self: flex-start;
+  }
+
+  /* Mobile: the group name takes the full width like every other field, and the
+   * in-group arrows sit side by side (a stacked pair is too small to tap). */
+  .agent-group-name {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+  .agent-row > .col-rank {
+    flex-direction: row;
+    align-self: flex-start;
+    gap: var(--sp-2);
+  }
+  .rank-btn {
+    font-size: var(--fs-body);
   }
 
   .auth-label {

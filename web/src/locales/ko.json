@@ -247,9 +247,6 @@
         },
         "icon": {
           "label": "아이콘"
-        },
-        "group": {
-          "label": "그룹"
         }
       },
       "toggle": {
@@ -372,12 +369,46 @@
       "copy": {
         "tooltip": "에이전트 복사"
       },
-      "reorder": {
-        "tooltip": "드래그하여 순서 변경"
-      },
       "group": {
-        "placeholder": "그룹 이름(선택)",
-        "tooltip": "그룹 이름 — 같은 그룹의 agent 는 하나의 페일오버 후보군을 이룹니다."
+        "default": {
+          "label": "default",
+          "hint": "그룹 없음 — 여기 있는 에이전트는 각각 단독으로 실행됩니다."
+        },
+        "add": {
+          "label": "+ 새 그룹"
+        },
+        "new": {
+          "name": "그룹"
+        },
+        "rename": {
+          "tooltip": "이 그룹 이름 변경"
+        },
+        "remove": {
+          "tooltip": "이 그룹 해제 — 소속 에이전트는 default로 돌아갑니다"
+        },
+        "move": {
+          "tooltip": "드래그하여 그룹 간 이동"
+        },
+        "moveUp": {
+          "tooltip": "위로 — 장애 조치 순서에서 앞으로"
+        },
+        "moveDown": {
+          "tooltip": "아래로 — 장애 조치 순서에서 뒤로"
+        },
+        "empty": {
+          "hint": "여기로 에이전트를 드래그하세요"
+        },
+        "failover": {
+          "hint": "멤버 {n}개의 장애 조치 풀 — 위에서 아래로 시도"
+        },
+        "notice": {
+          "vendorMismatch": "그룹에는 한 가지 에이전트 유형만 담을 수 있습니다 — 이 그룹은 {vendor}입니다.",
+          "vendorChanged": "유형을 변경하여 이 에이전트가 그룹 “{group}”에서 빠졌습니다 — 그룹은 한 가지 유형만 담습니다.",
+          "duplicateName": "“{name}” 이름의 그룹이 이미 있습니다.",
+          "reservedName": "그룹 이름은 “{prefix}”로 시작할 수 없습니다.",
+          "emptyName": "그룹 이름은 비워 둘 수 없습니다.",
+          "emptyDiscarded": "빈 그룹 “{name}”은 저장되지 않았습니다 — 에이전트를 하나 이상 끌어다 놓으세요."
+        }
       },
       "groupPicker": {
         "label": "그룹"

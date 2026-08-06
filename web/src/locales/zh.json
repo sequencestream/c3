@@ -246,9 +246,6 @@
         },
         "icon": {
           "label": "图标"
-        },
-        "group": {
-          "label": "分组"
         }
       },
       "toggle": {
@@ -371,12 +368,46 @@
       "copy": {
         "tooltip": "复制智能体"
       },
-      "reorder": {
-        "tooltip": "拖动以重新排序"
-      },
       "group": {
-        "placeholder": "分组名(可选)",
-        "tooltip": "分组名——同组 agent 构成一个故障转移候选集。"
+        "default": {
+          "label": "default",
+          "hint": "未分组 — 这里的 agent 各自独立运行。"
+        },
+        "add": {
+          "label": "+ 新建分组"
+        },
+        "new": {
+          "name": "分组"
+        },
+        "rename": {
+          "tooltip": "重命名该分组"
+        },
+        "remove": {
+          "tooltip": "解散该分组 — 组内 agent 回到 default"
+        },
+        "move": {
+          "tooltip": "拖动以在分组之间移动该 agent"
+        },
+        "moveUp": {
+          "tooltip": "上移 — 在故障切换顺序中更靠前"
+        },
+        "moveDown": {
+          "tooltip": "下移 — 在故障切换顺序中更靠后"
+        },
+        "empty": {
+          "hint": "把 agent 拖到这里"
+        },
+        "failover": {
+          "hint": "{n} 个成员的故障切换池 — 自上而下依次尝试"
+        },
+        "notice": {
+          "vendorMismatch": "一个分组只能容纳同一种 agent 类型 — 该分组是 {vendor}。",
+          "vendorChanged": "切换类型后该 agent 已移出分组「{group}」— 一个分组只能容纳同一种类型。",
+          "duplicateName": "已存在名为「{name}」的分组。",
+          "reservedName": "分组名不能以「{prefix}」开头。",
+          "emptyName": "分组名不能为空。",
+          "emptyDiscarded": "空分组「{name}」未保存 — 请至少拖入一个 agent。"
+        }
       },
       "groupPicker": {
         "label": "分组"

@@ -9,7 +9,12 @@
  * 切换存在未保存修改的 Tab 时二次确认,确认后仅切换、不保存也不丢弃草稿。
  */
 import { computed, nextTick, ref, toRaw, watch } from 'vue'
-import { SYSTEM_AGENT_ID, VENDOR_IDS, hasProviderConfig } from '@ccc/shared/protocol'
+import {
+  GROUP_AGENT_PREFIX,
+  SYSTEM_AGENT_ID,
+  VENDOR_IDS,
+  hasProviderConfig,
+} from '@ccc/shared/protocol'
 import { resolveDefaultAgentId } from '@ccc/shared'
 import type {
   AgentConfig,
@@ -621,13 +626,20 @@ function setVendor(a: AgentConfig, vendor: VendorId) {
   // should never have submitted — refuse it anyway rather than build an agent
   // whose vendor has no runtime to launch.
   if (!vendorAvailable(vendor)) return
+  // A group holds one vendor (ADR-0029). Retyping a member that is no longer alone
+  // in its group would split the container into two invisible pools, so it falls
+  // back to `default` instead — the change the user asked for still lands.
+  const group = groupOf(a)
+  const leavesGroup =
+    group !== DEFAULT_GROUP && draft.value.agents.some((x) => x !== a && groupOf(x) === group)
+  if (leavesGroup) notifyGroup(t('settings.agents.group.notice.vendorChanged', { group }))
   draft.value.agents[idx] = makeAgent(vendor, {
     id: a.id,
     configMode: a.configMode,
     displayName: a.displayName,
     icon: a.icon ?? '',
     enabled: a.enabled !== false,
-    group: a.group ?? '',
+    group: leavesGroup ? DEFAULT_GROUP : group,
   })
 }
 
@@ -637,9 +649,9 @@ function isEnabled(a: AgentConfig): boolean {
   return a.enabled !== false
 }
 
-// The default-agent dropdown only offers enabled agents, in the current array
-// order (= the visual order_seq order before Save stamps it).
-const defaultPickerAgents = computed<AgentConfig[]>(() => draft.value.agents.filter(isEnabled))
+// The default-agent dropdown only offers enabled agents, in the visual grouped
+// order (= the order_seq order before Save stamps it).
+const defaultPickerAgents = computed<AgentConfig[]>(() => flatAgents.value.filter(isEnabled))
 
 // Virtual group agents (`_c3_<group>`, ADR-0029) offered alongside real agents in
 // every agent picker; selecting one binds the session/role to the group (relay
@@ -649,33 +661,28 @@ const pickerGroupAgents = computed(() => listGroupAgents(draft.value.agents))
 // Toggle an agent's enabled flag. If this disables (or the inverse — never)
 // the current default, fall through to the next enabled agent and persist that
 // rewrite (mirrors the server `normalize`, AC-R2/AC-R10). Recompute against the
-// live array order so the choice tracks order_seq. The tool agent follows the
+// visual grouped order so the choice tracks order_seq. The tool agent follows the
 // same fall-through, but ONLY when it's explicitly set: an empty toolAgentId
 // ("follow the default") stays empty. The intent agent (AC-R23), spec agent
 // (AC-R24) and automation agent (AC-R25) follow the same rule as the tool agent.
 function onToggleEnabled(a: AgentConfig, checked: boolean): void {
   a.enabled = checked
-  draft.value.defaultAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.defaultAgentId)
+  const order = flatAgents.value
+  draft.value.defaultAgentId = resolveDefaultAgentId(order, draft.value.defaultAgentId)
   if (draft.value.toolAgentId) {
-    draft.value.toolAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.toolAgentId)
+    draft.value.toolAgentId = resolveDefaultAgentId(order, draft.value.toolAgentId)
   }
   if (draft.value.intentAgentId) {
-    draft.value.intentAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.intentAgentId)
+    draft.value.intentAgentId = resolveDefaultAgentId(order, draft.value.intentAgentId)
   }
   if (draft.value.specAgentId) {
-    draft.value.specAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.specAgentId)
+    draft.value.specAgentId = resolveDefaultAgentId(order, draft.value.specAgentId)
   }
   if (draft.value.specReviewAgentId) {
-    draft.value.specReviewAgentId = resolveDefaultAgentId(
-      draft.value.agents,
-      draft.value.specReviewAgentId,
-    )
+    draft.value.specReviewAgentId = resolveDefaultAgentId(order, draft.value.specReviewAgentId)
   }
   if (draft.value.automationAgentId) {
-    draft.value.automationAgentId = resolveDefaultAgentId(
-      draft.value.agents,
-      draft.value.automationAgentId,
-    )
+    draft.value.automationAgentId = resolveDefaultAgentId(order, draft.value.automationAgentId)
   }
 }
 
@@ -740,7 +747,7 @@ function removeAgent(id: string) {
       }),
     )
   }
-  draft.value.defaultAgentId = resolveDefaultAgentId(draft.value.agents, draft.value.defaultAgentId)
+  draft.value.defaultAgentId = resolveDefaultAgentId(flatAgents.value, draft.value.defaultAgentId)
 }
 
 /** Deep-copy an agent, append "-copy" to its displayName, and insert the copy
@@ -756,34 +763,254 @@ function copyAgent(a: AgentConfig) {
   draft.value.agents.splice(idx + 1, 0, cloned)
 }
 
-// ---- Drag-to-reorder the agent list (native HTML5 DnD, no library) ----------
-// The grip handle is the draggable element (so the row's text inputs stay
-// selectable as usual); the whole row is the drop target. On drop we splice the
-// dragged agent into the dropped row's slot. `order_seq` is (re)stamped from the
-// final array order at Save time (see `saveTab`), so a reorder survives the round
-// trip to the server, which then regularizes it into a dense 0..n sequence.
-const dragIndex = ref<number | null>(null)
-const dragOverIndex = ref<number | null>(null)
+// ---- Agent groups as containers (ADR-0029) ---------------------------------
+// The agent list renders as GROUP CONTAINERS instead of one flat list: an agent's
+// `group` is edited by MOVING its row, never by typing a name into it. The
+// `default` container holds every agent whose `group` is empty — those stay
+// standalone agents, so `default` is NOT a failover pool and is never enumerated
+// as a virtual group agent (`listGroupAgents` skips an empty group). Every other
+// container is one real `(vendor, group)` pool whose members are tried top to
+// bottom, so the visible order IS the failover order.
+//
+// The draft's flat `agents` array stays the single source of truth: a container
+// is a view over it (members in array order, containers ordered by their first
+// member's array index). Nothing is reordered on seed, so merely opening the panel
+// on a server list whose groups are interleaved never looks like an unsaved edit —
+// Save is what stamps the visual order into `order_seq`.
+const DEFAULT_GROUP = ''
 
-function onAgentDragStart(index: number, e: DragEvent): void {
-  dragIndex.value = index
+/** One rendered container: the default bucket, or one real failover group. */
+interface AgentGroupView {
+  /** The persisted `group` value — `''` for the default bucket. */
+  name: string
+  /** The vendor the group is locked to (its first member's); null while empty. */
+  vendor: VendorId | null
+  members: AgentConfig[]
+  isDefault: boolean
+}
+
+// Groups created here that have no member yet. A group exists on the wire only
+// through its members' `group` field, so an empty one lives in the draft alone and
+// is dropped (with a notice) at Save.
+const pendingGroups = ref<string[]>([])
+
+/** An agent's container name — a blank/absent `group` is the default bucket. */
+function groupOf(a: AgentConfig): string {
+  return a.group?.trim() ?? DEFAULT_GROUP
+}
+
+/**
+ * The containers to render, ordered by their first member's position in the draft
+ * array — including `default`, which is NOT pinned first: the built-in System agent
+ * may itself join a group, and the server pins that agent to `order_seq` 0, so the
+ * container holding it must render first or the list would jump on the next save.
+ * A memberless container (the default bucket when everything is grouped, or a
+ * freshly created group) sorts to the tail.
+ */
+const groupsView = computed<AgentGroupView[]>(() => {
+  const members = new Map<string, AgentConfig[]>([[DEFAULT_GROUP, []]])
+  for (const a of draft.value.agents) {
+    const list = members.get(groupOf(a))
+    if (list) list.push(a)
+    else members.set(groupOf(a), [a])
+  }
+  for (const name of pendingGroups.value) if (!members.has(name)) members.set(name, [])
+  const order = new Map([...members.keys()].map((name, i) => [name, i]))
+  return [...members.entries()]
+    .map(([name, list]) => ({
+      name,
+      members: list,
+      isDefault: name === DEFAULT_GROUP,
+      vendor: name === DEFAULT_GROUP ? null : (list[0]?.vendor ?? null),
+    }))
+    .sort((a, b) => {
+      const ia = a.members.length ? draft.value.agents.indexOf(a.members[0]) : Infinity
+      const ib = b.members.length ? draft.value.agents.indexOf(b.members[0]) : Infinity
+      if (ia !== ib) return ia - ib
+      // Both memberless — keep them in creation order rather than swapping around.
+      return (order.get(a.name) ?? 0) - (order.get(b.name) ?? 0)
+    })
+})
+
+/**
+ * The draft's agents in VISUAL (grouped) order. Every order-sensitive consumer
+ * reads this rather than `draft.agents`: the default-agent fall-through rule and
+ * the `order_seq` stamped at Save must both follow what the user actually sees.
+ */
+const flatAgents = computed<AgentConfig[]>(() => groupsView.value.flatMap((g) => g.members))
+
+// A transient, non-blocking reason why a group edit was refused (same role as
+// `locateMissing`: it explains, it never blocks). Cleared on a timer.
+const groupNotice = ref<string | null>(null)
+let groupNoticeTimer: ReturnType<typeof setTimeout> | undefined
+function notifyGroup(message: string): void {
+  groupNotice.value = message
+  clearTimeout(groupNoticeTimer)
+  groupNoticeTimer = setTimeout(() => {
+    groupNotice.value = null
+  }, 5000)
+}
+
+/**
+ * Whether `a` may join `group`, surfacing the reason when it may not. A group's
+ * identity is `(vendor, group)`, so a group holds ONE vendor — mixing them would
+ * silently mint two separate pools behind one visible container. Config mode is
+ * NOT gated: a `system` member is a legitimate first hop (the vendor CLI's own
+ * login), the server just launches that hop directly instead of through the relay.
+ */
+function canJoinGroup(a: AgentConfig, group: AgentGroupView): boolean {
+  if (group.isDefault || groupOf(a) === group.name) return true
+  if (group.vendor && group.vendor !== a.vendor) {
+    notifyGroup(
+      t('settings.agents.group.notice.vendorMismatch', { vendor: VENDOR_LABELS[group.vendor] }),
+    )
+    return false
+  }
+  return true
+}
+
+/**
+ * Move an agent into a container, landing before `beforeId` (else at the tail).
+ * The built-in System agent is pinned to the very front by the server's normalize,
+ * so nothing may be placed above it — a drop targeting it lands just after instead.
+ */
+function moveAgentToGroup(agentId: string, groupName: string, beforeId: string | null): void {
+  const agents = draft.value.agents
+  const from = agents.findIndex((a) => a.id === agentId)
+  const target = groupsView.value.find((g) => g.name === groupName)
+  if (from < 0 || !target || beforeId === agentId) return
+  const agent = agents[from]
+  if (!canJoinGroup(agent, target)) return
+  const previousGroup = groupOf(agent)
+
+  agents.splice(from, 1)
+  agent.group = groupName
+  const anchor = beforeId ? agents.findIndex((a) => a.id === beforeId) : -1
+  if (anchor >= 0)
+    agents.splice(agents[anchor].id === SYSTEM_AGENT_ID ? anchor + 1 : anchor, 0, agent)
+  else {
+    // Tail of the target container: right after its current last member. A
+    // memberless container has no anchor — the array position is then irrelevant,
+    // `groupsView` places the container by itself.
+    let last = -1
+    agents.forEach((a, i) => {
+      if (groupOf(a) === groupName) last = i
+    })
+    agents.splice(last + 1, 0, agent)
+  }
+
+  // Keep an emptied group visible instead of letting the container vanish under
+  // the cursor, and drop the target from the pending list now that it has a member.
+  if (previousGroup !== DEFAULT_GROUP && !agents.some((a) => groupOf(a) === previousGroup)) {
+    if (!pendingGroups.value.includes(previousGroup)) pendingGroups.value.push(previousGroup)
+  }
+  pendingGroups.value = pendingGroups.value.filter((n) => n !== groupName)
+}
+
+// The System agent is pinned to `order_seq` 0 by the server, so it stays the very
+// first row of the very first container: it never moves down, and no sibling above
+// it moves up past it.
+function canMoveUp(group: AgentGroupView, index: number): boolean {
+  if (index === 0 || group.members[index].id === SYSTEM_AGENT_ID) return false
+  return group.members[index - 1].id !== SYSTEM_AGENT_ID
+}
+function canMoveDown(group: AgentGroupView, index: number): boolean {
+  if (index >= group.members.length - 1) return false
+  return group.members[index].id !== SYSTEM_AGENT_ID
+}
+
+/** Swap an agent with its neighbour INSIDE its container — the group's failover
+ *  priority is exactly this order. */
+function moveWithinGroup(group: AgentGroupView, index: number, delta: -1 | 1): void {
+  const agent = group.members[index]
+  const neighbour = group.members[index + delta]
+  if (!agent || !neighbour) return
+  const agents = draft.value.agents
+  const i = agents.indexOf(agent)
+  const j = agents.indexOf(neighbour)
+  if (i < 0 || j < 0) return
+  agents[i] = neighbour
+  agents[j] = agent
+}
+
+/** Create an empty container the user can drag agents into. */
+function addGroup(): void {
+  const taken = new Set(groupsView.value.map((g) => g.name))
+  const base = t('settings.agents.group.new.name')
+  let n = 1
+  while (taken.has(`${base}-${n}`)) n++
+  pendingGroups.value.push(`${base}-${n}`)
+}
+
+/** Rename a container, rewriting every member's `group`. Refuses a blank, a
+ *  duplicate, or the reserved `_c3_` prefix (which collides with a group ref). */
+function renameGroup(group: AgentGroupView, raw: string): boolean {
+  const name = raw.trim()
+  if (name === group.name) return true
+  if (!name) {
+    notifyGroup(t('settings.agents.group.notice.emptyName'))
+    return false
+  }
+  if (name.startsWith(GROUP_AGENT_PREFIX)) {
+    notifyGroup(t('settings.agents.group.notice.reservedName', { prefix: GROUP_AGENT_PREFIX }))
+    return false
+  }
+  if (groupsView.value.some((g) => g.name === name)) {
+    notifyGroup(t('settings.agents.group.notice.duplicateName', { name }))
+    return false
+  }
+  for (const a of draft.value.agents) if (groupOf(a) === group.name) a.group = name
+  pendingGroups.value = pendingGroups.value.map((n) => (n === group.name ? name : n))
+  return true
+}
+
+// Renaming is committed on blur/Enter; a refused name is rolled back in the input
+// so what is displayed always matches what is stored.
+function onRenameGroup(group: AgentGroupView, e: Event): void {
+  const el = e.target as HTMLInputElement
+  if (!renameGroup(group, el.value)) el.value = group.name
+}
+
+/** Dissolve a container: every member falls back to `default` (nothing is deleted). */
+function removeGroup(group: AgentGroupView): void {
+  if (group.isDefault) return
+  for (const a of draft.value.agents) if (groupOf(a) === group.name) a.group = DEFAULT_GROUP
+  pendingGroups.value = pendingGroups.value.filter((n) => n !== group.name)
+}
+
+// ---- Drag between containers (native HTML5 DnD, no library) -----------------
+// The grip handle is the draggable element (so the row's text inputs stay
+// selectable as usual); rows and container bodies are the drop targets. `order_seq`
+// is (re)stamped from the final visual order at Save time (see `buildTabPayload`),
+// so a move survives the round trip to the server, which then regularizes it into
+// a dense 0..n sequence.
+const dragAgentId = ref<string | null>(null)
+// The highlighted drop target: `agent:<id>` for a row, `group:<name>` for a body.
+const dragOverKey = ref<string | null>(null)
+
+function onAgentDragStart(agent: AgentConfig, e: DragEvent): void {
+  dragAgentId.value = agent.id
   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
 }
-function onAgentDragOver(index: number): void {
-  dragOverIndex.value = dragIndex.value === null || dragIndex.value === index ? null : index
+function onDragOverRow(agent: AgentConfig): void {
+  dragOverKey.value = dragAgentId.value === null ? null : `agent:${agent.id}`
 }
-function onAgentDrop(index: number): void {
-  const from = dragIndex.value
-  dragIndex.value = null
-  dragOverIndex.value = null
-  if (from === null || from === index) return
-  const list = draft.value.agents
-  const [moved] = list.splice(from, 1)
-  list.splice(index, 0, moved)
+function onDragOverGroup(group: AgentGroupView): void {
+  dragOverKey.value = dragAgentId.value === null ? null : `group:${group.name}`
+}
+function onDropOnRow(group: AgentGroupView, agent: AgentConfig): void {
+  const dragged = dragAgentId.value
+  onAgentDragEnd()
+  if (dragged) moveAgentToGroup(dragged, group.name, agent.id)
+}
+function onDropOnGroup(group: AgentGroupView): void {
+  const dragged = dragAgentId.value
+  onAgentDragEnd()
+  if (dragged) moveAgentToGroup(dragged, group.name, null)
 }
 function onAgentDragEnd(): void {
-  dragIndex.value = null
-  dragOverIndex.value = null
+  dragAgentId.value = null
+  dragOverKey.value = null
 }
 
 // Build a full SystemSettings for a single tab's Save: `payload` arrives as a deep
@@ -799,13 +1026,24 @@ function buildTabPayload(
 ): SystemSettings {
   switch (tab) {
     case 'agent': {
-      // Stamp the user-controlled order onto every agent from its array position so
-      // a drag-reorder (or add / copy / remove) persists; the server regularizes it.
-      const agents = src.agents.map((a, i) => ({
+      // Stamp the user-controlled order from the VISUAL (grouped) order, so a
+      // group's member order is exactly the order the relay fails over through and
+      // the containers stay laid out as shown; the server regularizes it into a
+      // dense 0..n sequence. `group` is written back trimmed — a container name is
+      // matched by exact string on the server.
+      const order = flatAgents.value
+      const agents = order.map((a, i) => ({
         ...structuredClone(toRaw(a)),
+        group: groupOf(a),
         order_seq: i,
       }))
       payload.agents = agents
+      // A memberless container exists only in this draft — say so rather than let
+      // it disappear silently on the round trip.
+      const empty = pendingGroups.value.filter((n) => !agents.some((a) => a.group === n))
+      if (empty.length > 0) {
+        notifyGroup(t('settings.agents.group.notice.emptyDiscarded', { name: empty.join(', ') }))
+      }
       payload.defaultAgentId = src.defaultAgentId
       payload.toolAgentId = src.toolAgentId
       payload.intentAgentId = src.intentAgentId
@@ -1081,137 +1319,221 @@ function selectAdmin(username: string) {
           >
             {{ t('settings.agents.locateMissing') }}
           </p>
+          <p
+            v-if="groupNotice"
+            class="agent-group-notice"
+            role="status"
+            data-testid="agent-group-notice"
+          >
+            {{ groupNotice }}
+          </p>
           <div ref="agentListEl" class="agent-list">
-            <div
-              v-for="(a, i) in draft.agents"
-              :key="a.id"
-              class="agent-row"
-              :class="{ 'drag-over': dragOverIndex === i, located: locatedAgentId === a.id }"
-              data-testid="agent-card"
-              :data-agent-id="a.id"
-              :data-agent-vendor="a.vendor"
-              @dragover.prevent="onAgentDragOver(i)"
-              @drop.prevent="onAgentDrop(i)"
+            <section
+              v-for="g in groupsView"
+              :key="g.name || '__default__'"
+              class="agent-group-box"
+              :class="{ 'drag-over': dragOverKey === `group:${g.name}`, 'is-default': g.isDefault }"
+              data-testid="agent-group-box"
+              :data-group-name="g.name"
+              @dragover.prevent="onDragOverGroup(g)"
+              @drop.prevent="onDropOnGroup(g)"
             >
-              <span
-                class="col-drag"
-                draggable="true"
-                :title="t('settings.agents.reorder.tooltip')"
-                data-testid="agent-drag"
-                @dragstart="onAgentDragStart(i, $event)"
-                @dragend="onAgentDragEnd"
-                >⠿</span
-              >
-              <label class="col-on">
+              <header class="agent-group-head">
+                <span class="agent-group-icon" aria-hidden="true">{{
+                  g.isDefault ? '▫' : '▤'
+                }}</span>
+                <span v-if="g.isDefault" class="agent-group-name is-fixed">{{
+                  t('settings.agents.group.default.label')
+                }}</span>
                 <input
-                  class="agent-enabled-switch"
-                  type="checkbox"
-                  role="switch"
-                  :checked="isEnabled(a)"
-                  :aria-checked="isEnabled(a)"
-                  :title="t('settings.agents.toggle.tooltip')"
-                  data-testid="agent-enabled-switch"
-                  @change="onToggleEnabled(a, ($event.target as HTMLInputElement).checked)"
+                  v-else
+                  class="agent-field agent-group-name"
+                  :value="g.name"
+                  :title="t('settings.agents.group.rename.tooltip')"
+                  :aria-label="t('settings.agents.group.rename.tooltip')"
+                  data-testid="agent-group-name"
+                  @change="onRenameGroup(g, $event)"
+                  @keyup.enter="($event.target as HTMLInputElement).blur()"
                 />
-              </label>
-              <div class="icon-cell">
-                <EmojiPicker v-model="a.icon" />
-              </div>
-              <input
-                v-model="a.displayName"
-                class="agent-field agent-name"
-                :placeholder="t('settings.agents.name.placeholder')"
-              />
-              <select
-                class="agent-field agent-vendor"
-                :value="a.vendor"
-                :title="t('settings.agents.vendor.tooltip')"
-                data-testid="agent-vendor"
-                @change="setVendor(a, ($event.target as HTMLSelectElement).value as VendorId)"
-              >
-                <option
-                  v-for="v in VENDORS"
-                  :key="v"
-                  :value="v"
-                  :disabled="!vendorAvailable(v) && a.vendor !== v"
-                  :title="vendorUnavailableReason(v)"
-                >
-                  {{ vendorOptionLabel(v) }}
-                </option>
-              </select>
-              <select
-                v-model="a.configMode"
-                class="agent-field agent-configmode"
-                :title="t('settings.agents.configMode.tooltip')"
-                data-testid="agent-configmode"
-              >
-                <option v-for="m in configModesFor(a.vendor)" :key="m" :value="m">
-                  {{ configModeLabel(m) }}
-                </option>
-              </select>
-              <input
-                v-if="showBaseUrl(a)"
-                :value="baseUrlOf(a)"
-                class="agent-field agent-url"
-                :title="t('settings.agents.col.baseUrl.label')"
-                :placeholder="t('settings.agents.baseUrl.placeholder')"
-                @input="setBaseUrl(a, ($event.target as HTMLInputElement).value)"
-              />
-              <input
-                v-if="showApiKey(a)"
-                v-model="a.config.apiKey"
-                class="agent-field agent-key"
-                type="password"
-                autocomplete="off"
-                :title="t('settings.agents.col.apiKey.label')"
-                :placeholder="t('settings.agents.apiKey.placeholder')"
-              />
-              <input
-                v-model="a.config.model"
-                class="agent-field agent-model"
-                :title="t('settings.agents.col.model.label')"
-                :placeholder="t('settings.agents.model.placeholder')"
-              />
-              <select
-                v-if="showWireApi(a)"
-                class="agent-field agent-wireapi"
-                :value="wireApiOf(a)"
-                :title="t('settings.agents.wireApi.tooltip')"
-                data-testid="agent-wireapi"
-                @change="
-                  setWireApi(a, ($event.target as HTMLSelectElement).value as 'responses' | 'chat')
-                "
-              >
-                <option v-for="w in WIRE_APIS" :key="w" :value="w">{{ wireApiLabel(w) }}</option>
-              </select>
-              <input
-                v-model="a.group"
-                class="agent-field agent-group"
-                :title="t('settings.agents.group.tooltip')"
-                :placeholder="t('settings.agents.group.placeholder')"
-                data-testid="agent-group"
-              />
-              <span class="col-actions">
+                <span v-if="g.vendor" class="agent-group-vendor">
+                  <i
+                    class="agent-group-vendor-dot"
+                    :style="{ backgroundColor: vendorColor(g.vendor) }"
+                  />{{ VENDOR_LABELS[g.vendor] }}
+                </span>
+                <span class="agent-group-meta">{{
+                  g.isDefault
+                    ? t('settings.agents.group.default.hint')
+                    : t('settings.agents.group.failover.hint', { n: g.members.length })
+                }}</span>
                 <button
+                  v-if="!g.isDefault"
                   class="icon-btn"
-                  :title="t('settings.agents.copy.tooltip')"
-                  @click="copyAgent(a)"
-                >
-                  📋
-                </button>
-                <button
-                  class="icon-btn"
-                  :title="t('settings.agents.remove.tooltip')"
-                  @click="removeAgent(a.id)"
+                  :title="t('settings.agents.group.remove.tooltip')"
+                  data-testid="agent-group-remove"
+                  @click="removeGroup(g)"
                 >
                   🗑
                 </button>
-              </span>
-            </div>
+              </header>
+              <p v-if="g.members.length === 0" class="agent-group-empty">
+                {{ t('settings.agents.group.empty.hint') }}
+              </p>
+              <div
+                v-for="(a, i) in g.members"
+                :key="a.id"
+                class="agent-row"
+                :class="{
+                  'drag-over': dragOverKey === `agent:${a.id}`,
+                  located: locatedAgentId === a.id,
+                }"
+                data-testid="agent-card"
+                :data-agent-id="a.id"
+                :data-agent-vendor="a.vendor"
+                @dragover.prevent.stop="onDragOverRow(a)"
+                @drop.prevent.stop="onDropOnRow(g, a)"
+              >
+                <span
+                  class="col-drag"
+                  draggable="true"
+                  :title="t('settings.agents.group.move.tooltip')"
+                  data-testid="agent-drag"
+                  @dragstart="onAgentDragStart(a, $event)"
+                  @dragend="onAgentDragEnd"
+                  >⠿</span
+                >
+                <span class="col-rank">
+                  <button
+                    class="icon-btn rank-btn"
+                    :disabled="!canMoveUp(g, i)"
+                    :title="t('settings.agents.group.moveUp.tooltip')"
+                    data-testid="agent-move-up"
+                    @click="moveWithinGroup(g, i, -1)"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    class="icon-btn rank-btn"
+                    :disabled="!canMoveDown(g, i)"
+                    :title="t('settings.agents.group.moveDown.tooltip')"
+                    data-testid="agent-move-down"
+                    @click="moveWithinGroup(g, i, 1)"
+                  >
+                    ▼
+                  </button>
+                </span>
+                <label class="col-on">
+                  <input
+                    class="agent-enabled-switch"
+                    type="checkbox"
+                    role="switch"
+                    :checked="isEnabled(a)"
+                    :aria-checked="isEnabled(a)"
+                    :title="t('settings.agents.toggle.tooltip')"
+                    data-testid="agent-enabled-switch"
+                    @change="onToggleEnabled(a, ($event.target as HTMLInputElement).checked)"
+                  />
+                </label>
+                <div class="icon-cell">
+                  <EmojiPicker v-model="a.icon" />
+                </div>
+                <input
+                  v-model="a.displayName"
+                  class="agent-field agent-name"
+                  :placeholder="t('settings.agents.name.placeholder')"
+                />
+                <select
+                  class="agent-field agent-vendor"
+                  :value="a.vendor"
+                  :title="t('settings.agents.vendor.tooltip')"
+                  data-testid="agent-vendor"
+                  @change="setVendor(a, ($event.target as HTMLSelectElement).value as VendorId)"
+                >
+                  <option
+                    v-for="v in VENDORS"
+                    :key="v"
+                    :value="v"
+                    :disabled="!vendorAvailable(v) && a.vendor !== v"
+                    :title="vendorUnavailableReason(v)"
+                  >
+                    {{ vendorOptionLabel(v) }}
+                  </option>
+                </select>
+                <select
+                  v-model="a.configMode"
+                  class="agent-field agent-configmode"
+                  :title="t('settings.agents.configMode.tooltip')"
+                  data-testid="agent-configmode"
+                >
+                  <option v-for="m in configModesFor(a.vendor)" :key="m" :value="m">
+                    {{ configModeLabel(m) }}
+                  </option>
+                </select>
+                <input
+                  v-if="showBaseUrl(a)"
+                  :value="baseUrlOf(a)"
+                  class="agent-field agent-url"
+                  :title="t('settings.agents.col.baseUrl.label')"
+                  :placeholder="t('settings.agents.baseUrl.placeholder')"
+                  @input="setBaseUrl(a, ($event.target as HTMLInputElement).value)"
+                />
+                <input
+                  v-if="showApiKey(a)"
+                  v-model="a.config.apiKey"
+                  class="agent-field agent-key"
+                  type="password"
+                  autocomplete="off"
+                  :title="t('settings.agents.col.apiKey.label')"
+                  :placeholder="t('settings.agents.apiKey.placeholder')"
+                />
+                <input
+                  v-model="a.config.model"
+                  class="agent-field agent-model"
+                  :title="t('settings.agents.col.model.label')"
+                  :placeholder="t('settings.agents.model.placeholder')"
+                />
+                <select
+                  v-if="showWireApi(a)"
+                  class="agent-field agent-wireapi"
+                  :value="wireApiOf(a)"
+                  :title="t('settings.agents.wireApi.tooltip')"
+                  data-testid="agent-wireapi"
+                  @change="
+                    setWireApi(
+                      a,
+                      ($event.target as HTMLSelectElement).value as 'responses' | 'chat',
+                    )
+                  "
+                >
+                  <option v-for="w in WIRE_APIS" :key="w" :value="w">{{ wireApiLabel(w) }}</option>
+                </select>
+                <span class="col-actions">
+                  <button
+                    class="icon-btn"
+                    :title="t('settings.agents.copy.tooltip')"
+                    @click="copyAgent(a)"
+                  >
+                    📋
+                  </button>
+                  <button
+                    class="icon-btn"
+                    :title="t('settings.agents.remove.tooltip')"
+                    @click="removeAgent(a.id)"
+                  >
+                    🗑
+                  </button>
+                </span>
+              </div>
+            </section>
           </div>
-          <button class="agent-add" data-testid="settings-add-agent" @click="addAgent">
-            {{ t('settings.agents.add.label') }}
-          </button>
+          <div class="agent-list-actions">
+            <button class="agent-add" data-testid="settings-add-agent" @click="addAgent">
+              {{ t('settings.agents.add.label') }}
+            </button>
+            <button class="agent-add" data-testid="settings-add-group" @click="addGroup">
+              {{ t('settings.agents.group.add.label') }}
+            </button>
+          </div>
           <ul
             v-if="unavailableVendorNotes.length > 0"
             class="agent-vendor-notes"

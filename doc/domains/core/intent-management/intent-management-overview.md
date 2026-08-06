@@ -14,7 +14,8 @@
 - **exposes-api:** true —— 在 WebSocket `/ws` 上有八个客户端到服务端消息、两个服务端到
   客户端消息(`intents`、`automation_status`)。聊天收发与历史回放**复用**已有的协议事件;
   意图列表/发起/自动化相关消息是新增的。消息形状定义在共享协议中,不在本文档中重复定义。
-- **ADRs:** [0007](../../../architecture/adr/0007-read-only-intent-agent.md)
+- **ADRs:** [0007](../../../architecture/adr/0007-read-only-intent-agent.md)、
+  [0034](../../../architecture/adr/0034-intent-pr-fact-base-and-readpoints.md)
 
 ## 索引
 
@@ -24,3 +25,5 @@
   沟通运行时变体、保存工具、发起开发接线、自动化编排器(状态机 + 完成判定器 + git 辅助)
 - [intent-management-models.md](intent-management-models.md) —— Intent / Intent Dependency /
   Communication Session / Automation Status 实体
+- [intent-management-pr-readpoints.md](intent-management-pr-readpoints.md) —— PR 三字段
+  (`prId`/`prUrl`/`prStatus`)当前读写点清单

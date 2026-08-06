@@ -6,6 +6,9 @@ tmp/
 scripts/i18n/extract.candidates.json
 scripts/i18n/code-key.map.json
 
+# 多 base 建 PR 验证脚本的实验结果输出（含测试仓库 number/URL，不入库）
+verify-multi-base-pr.result.json
+
 /cli
 
 .playwright/

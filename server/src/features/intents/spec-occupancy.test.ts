@@ -38,6 +38,7 @@ import {
   setNow,
   upsertPendingRow,
 } from '../sessions/session-metadata-store.js'
+import * as sessionMetadataStore from '../sessions/session-metadata-store.js'
 import { resetSettingsCacheForTests } from '../../kernel/config/index.js'
 import {
   claimSpecOccupancy,
@@ -185,6 +186,43 @@ describe('claimSpecOccupancy — authoring slot', () => {
     expect(claim).toEqual({ ok: true, owner: null })
     expect(getIntent(intent.id)?.specSessionId).toBe(pending('new'))
   })
+
+  it('refuses the claim and leaves spec_session_id untouched when the projection write fails', () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Fragile', shortEnTitle: 'frag', content: '', priority: 'P1' },
+    ])
+    // Simulate the pending projection row being unwritable (db down / SQL error).
+    const spy = vi.spyOn(sessionMetadataStore, 'upsertPendingRow').mockImplementation(() => {
+      throw new Error('simulated projection write failure')
+    })
+    try {
+      const claim = claimSpecOccupancy(intent.id, pending('boom'), rowFor(intent.title))
+
+      // No occupancy is registered — the ledger field is NOT written, so the
+      // intent is never left with a `pending:` value that has no projection row
+      // to time its staleness from.
+      expect(claim).toEqual({ ok: false, owner: null, reason: 'projection-write-failed' })
+      expect(getIntent(intent.id)?.specSessionId).toBeNull()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('claims over a pending whose projection row is missing (recoverable, not a permanent lock)', () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Recovered', shortEnTitle: 'rec', content: '', priority: 'P1' },
+    ])
+    // A `pending:` value with NO projection row: a pre-fix claim whose
+    // projection write failed, or a crash after the bind deleted the row but
+    // before the ledger field was replaced. It must be re-claimable, never a
+    // permanent occupancy.
+    setSpecSessionId(intent.id, pending('orphan'))
+
+    const claim = claimSpecOccupancy(intent.id, pending('new'), rowFor(intent.title))
+
+    expect(claim).toEqual({ ok: true, owner: null })
+    expect(getIntent(intent.id)?.specSessionId).toBe(pending('new'))
+  })
 })
 
 describe('claimSpecReviewOccupancy — review slot', () => {
@@ -224,6 +262,23 @@ describe('claimSpecReviewOccupancy — review slot', () => {
     const claim = claimSpecReviewOccupancy(intent.id, pending('rev-two'), rowFor(intent.title))
 
     expect(claim).toEqual({ ok: false, owner: 'real-live-review' })
+  })
+
+  it('refuses the claim and leaves spec_review_session_id untouched when the projection write fails', () => {
+    const [intent] = insertIntents(proj, [
+      { title: 'Fragile', shortEnTitle: 'frag', content: '', priority: 'P1' },
+    ])
+    const spy = vi.spyOn(sessionMetadataStore, 'upsertPendingRow').mockImplementation(() => {
+      throw new Error('simulated projection write failure')
+    })
+    try {
+      const claim = claimSpecReviewOccupancy(intent.id, pending('boom'), rowFor(intent.title))
+
+      expect(claim).toEqual({ ok: false, owner: null, reason: 'projection-write-failed' })
+      expect(getIntent(intent.id)?.specReviewSessionId).toBeNull()
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
 
@@ -335,5 +390,13 @@ describe('isSpecOccupancyAlive — the fact the queue probe consumes', () => {
     setNow(() => now)
 
     expect(isSpecOccupancyAlive(id, () => false, now)).toBe(false)
+  })
+
+  it('a pending whose projection row is MISSING is NOT alive — recoverable, never permanent', () => {
+    // No projection row to age from: a claim whose projection write failed, or
+    // a crash after the bind deleted the row but before the ledger field was
+    // replaced. Treating it as permanently fresh would lock the intent into a
+    // spec phase that can never end.
+    expect(isSpecOccupancyAlive(pending('orphan'), () => false, Date.now())).toBe(false)
   })
 })

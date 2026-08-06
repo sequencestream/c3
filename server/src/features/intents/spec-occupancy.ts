@@ -21,6 +21,17 @@
  *     occupied until its pending projection row ages past a bounded grace
  *     window, then it is released so the queue can re-launch.
  *
+ * Two invariants keep the occupancy from ever becoming a permanent lock:
+ *
+ *   - a claim refuses to write the ledger field when the pending projection row
+ *     could not be written — a `pending:` value in the ledger always has a row
+ *     to time its staleness from, so a claim that cannot write the row registers
+ *     NO occupancy at all (the caller fails, the queue retries on a later tick);
+ *   - a `pending:` value whose projection row is MISSING (a pre-fix leftover, or
+ *     a crash after the bind deleted the row but before the field was replaced)
+ *     is treated as stale, not fresh — it is recoverable and re-claimable,
+ *     never a permanent occupancy.
+ *
  * Every write here is owner-safe: it reads the CURRENT value and only acts when
  * it still matches the caller's pending id, so an old run can never release a
  * new run's occupancy. All functions are synchronous (better-sqlite3), so a
@@ -51,7 +62,10 @@ export interface SpecOccupancyRow {
   title: string
 }
 
-export type SpecOccupancyClaim = { ok: true; owner: null } | { ok: false; owner: string }
+export type SpecOccupancyClaim =
+  | { ok: true; owner: null }
+  | { ok: false; owner: string }
+  | { ok: false; owner: null; reason: 'projection-write-failed' }
 
 /** True when the session-occupancy slot for an id is currently `pending:`-shaped. */
 function isPendingId(sessionId: string): boolean {
@@ -61,15 +75,20 @@ function isPendingId(sessionId: string): boolean {
 /**
  * Whether the pending projection row for `pendingId` was created recently
  * enough to still count as an active occupancy. A `pending:` value in the
- * intent ledger is written ATOMICALLY with its projection row (see the claim
- * functions below), so a row is normally always present; a missing row is
- * treated as fresh rather than stale, so a concurrent caller in the
- * just-claimed microsecond window can never mistake the new occupancy for a
- * dead one and release it.
+ * intent ledger is written together with its projection row (see the claim
+ * functions below), so a row is present on every healthy claim. A MISSING row
+ * therefore means the occupancy is broken — a claim whose projection write
+ * failed, or a crash after the bind deleted the row but before the ledger field
+ * was replaced — and treating it as permanently fresh would lock the intent
+ * into a spec phase that can never end. A missing (or anomalously bound) row is
+ * treated as NOT fresh, so the slot is recoverable and the queue can re-claim
+ * it. The just-claimed microsecond window cannot misfire here: a successful
+ * claim's row is written before the ledger field, and a running process cannot
+ * be preempted between the two synchronous writes.
  */
 function pendingIsFresh(pendingId: string, now: number): boolean {
   const row = getByC3Id(pendingId)
-  if (!row || row.bound) return true
+  if (!row || row.bound) return false
   return now - row.stateUpdatedAt < SPEC_OCCUPANCY_GRACE_MS
 }
 
@@ -136,18 +155,19 @@ function deOwnReviewSession(realId: string): void {
 }
 
 /**
- * Atomically claim the intent's spec-AUTHORING slot for `pendingId`. The claim
- * writes the pending projection row and the `spec_session_id` field together,
- * so a value that appears in the ledger always has a projection row to time its
- * staleness from. Returns `{ok:false, owner}` when the slot is already held by
- * a live run or a still-valid pending — the caller then attaches to `owner`
- * and scaffolds nothing.
+ * Write the pending projection row for an occupancy claim. Returns false when
+ * the row could not be written (db unavailable, or the statement threw) — the
+ * claim must then register NO occupancy rather than leave a ledger value with
+ * no row to time its staleness from.
  */
-export function claimSpecOccupancy(intentId: string, pendingId: string, row: SpecOccupancyRow) {
-  const current = currentSpecSessionId(intentId)
-  if (!specSlotFree(current)) return { ok: false, owner: current } as SpecOccupancyClaim
+function writePendingRow(
+  kind: 'spec' | 'spec review',
+  intentId: string,
+  pendingId: string,
+  row: SpecOccupancyRow,
+): boolean {
   try {
-    upsertPendingRow({
+    return upsertPendingRow({
       pendingId,
       workspacePath: row.workspacePath,
       vendor: row.vendor,
@@ -157,10 +177,39 @@ export function claimSpecOccupancy(intentId: string, pendingId: string, row: Spe
       ownerId: intentId,
     })
   } catch (err) {
-    console.warn(`[c3:intents] spec session projection write failed: ${errMsg(err)}`)
+    console.warn(`[c3:intents] ${kind} session projection write failed: ${errMsg(err)}`)
+    return false
+  }
+}
+
+/**
+ * Claim the intent's spec-AUTHORING slot for `pendingId`. The claim writes the
+ * pending projection row first and ONLY THEN the `spec_session_id` field, so a
+ * value that appears in the ledger always has a projection row to time its
+ * staleness from. Returns `{ok:false, owner}` when the slot is already held by
+ * a live run or a still-valid pending — the caller then attaches to `owner`
+ * and scaffolds nothing. Returns `{ok:false, owner:null, reason:
+ * 'projection-write-failed'}` when the projection row could not be written —
+ * the slot is left untouched and the caller reports a failure (the queue
+ * retries on a later tick) instead of registering a permanent occupancy.
+ */
+export function claimSpecOccupancy(
+  intentId: string,
+  pendingId: string,
+  row: SpecOccupancyRow,
+): SpecOccupancyClaim {
+  const current = currentSpecSessionId(intentId)
+  // `specSlotFree` only returns false when the slot actually holds an owner
+  // (it is free when `current === null`), so `current` is non-null here.
+  if (!specSlotFree(current)) return { ok: false, owner: current as string }
+  if (!writePendingRow('spec', intentId, pendingId, row)) {
+    console.warn(
+      `[c3:intents] claimSpecOccupancy refused: pending projection row unavailable for ${pendingId}; spec_session_id left unchanged`,
+    )
+    return { ok: false, owner: null, reason: 'projection-write-failed' }
   }
   setSpecSessionId(intentId, pendingId)
-  return { ok: true, owner: null } as SpecOccupancyClaim
+  return { ok: true, owner: null }
 }
 
 /**
@@ -174,25 +223,20 @@ export function claimSpecReviewOccupancy(
   intentId: string,
   pendingId: string,
   row: SpecOccupancyRow,
-) {
+): SpecOccupancyClaim {
   const current = currentSpecReviewSessionId(intentId)
-  if (!reviewSlotFree(current)) return { ok: false, owner: current } as SpecOccupancyClaim
+  // `reviewSlotFree` only returns false when the slot actually holds an owner
+  // (it is free when `current === null`), so `current` is non-null here.
+  if (!reviewSlotFree(current)) return { ok: false, owner: current as string }
   if (current !== null && !isPendingId(current)) deOwnReviewSession(current)
-  try {
-    upsertPendingRow({
-      pendingId,
-      workspacePath: row.workspacePath,
-      vendor: row.vendor,
-      agentId: row.agentId,
-      title: row.title,
-      ownerKind: 'intent',
-      ownerId: intentId,
-    })
-  } catch (err) {
-    console.warn(`[c3:intents] spec review session projection write failed: ${errMsg(err)}`)
+  if (!writePendingRow('spec review', intentId, pendingId, row)) {
+    console.warn(
+      `[c3:intents] claimSpecReviewOccupancy refused: pending projection row unavailable for ${pendingId}; spec_review_session_id left unchanged`,
+    )
+    return { ok: false, owner: null, reason: 'projection-write-failed' }
   }
   setSpecReviewSessionId(intentId, pendingId)
-  return { ok: true, owner: null } as SpecOccupancyClaim
+  return { ok: true, owner: null }
 }
 
 /** Release the intent's spec-AUTHORING occupancy, only when it is still `pendingId`. */

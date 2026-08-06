@@ -648,7 +648,11 @@ function createFirstSpecSession(
     title: intent.title,
   })
   if (!claim.ok) {
-    return { success: true, sessionId: claim.owner, mode: 'attach' }
+    if (claim.owner) return { success: true, sessionId: claim.owner, mode: 'attach' }
+    // The occupancy could not be registered (pending projection row unwritable):
+    // report a failure rather than attach to a null owner — the queue retries on
+    // a later tick, and the ledger was left untouched so nothing is stuck.
+    return { success: false, code: 'intent.dbUnavailable' }
   }
   const releaseClaim = (): void => releaseSpecOccupancy(intent.id, specId)
 
@@ -786,7 +790,10 @@ export async function launchSpecReviewSession(
     title: intent.title,
   })
   if (!claim.ok) {
-    return { success: true, sessionId: claim.owner, mode: 'attach' }
+    if (claim.owner) return { success: true, sessionId: claim.owner, mode: 'attach' }
+    // The occupancy could not be registered (pending projection row unwritable):
+    // report a failure — the ledger was left untouched so nothing is stuck.
+    return { success: false, code: 'intent.dbUnavailable' }
   }
   const releaseClaim = (): void => releaseSpecReviewOccupancy(intent.id, newReviewId)
 
@@ -859,7 +866,10 @@ function createSpecSessionOnExistingPath(
     title: intent.title,
   })
   if (!claim.ok) {
-    return { success: true, sessionId: claim.owner, mode: 'attach' }
+    if (claim.owner) return { success: true, sessionId: claim.owner, mode: 'attach' }
+    // The occupancy could not be registered (pending projection row unwritable):
+    // report a failure — the ledger was left untouched so nothing is stuck.
+    return { success: false, code: 'intent.dbUnavailable' }
   }
   const releaseClaim = (): void => releaseSpecOccupancy(intent.id, specId)
 

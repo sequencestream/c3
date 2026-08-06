@@ -445,7 +445,10 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
     title: intent.title,
   })
   if (!claim.ok) {
-    conn.send({ type: 'error', error: { code: 'intent.specSessionRunning' } })
+    conn.send({
+      type: 'error',
+      error: { code: claim.owner ? 'intent.specSessionRunning' : 'intent.dbUnavailable' },
+    })
     return
   }
   const releaseClaim = (): void => releaseSpecOccupancy(intent.id, specId)

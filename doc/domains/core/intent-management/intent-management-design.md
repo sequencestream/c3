@@ -518,6 +518,14 @@ codex driver 转译成其原生的 streamable-HTTP 服务器条目;cursor 边界
   或进程重启后 pending 投影行超过有界宽限期,都按「字段仍属于本次 pending id」的条件清理,
   旧 run 不释放新 run 的占用;已 bind 的真实会话 id 保留供恢复/历史定位。
 
+  占用登记受两条不变量约束,保证它永远是一个**有界**事实而非永久锁:
+  (a) **投影行先行**——ledger 里的 `pending:` 值必须有对应的 pending 投影行来计时。
+  claim 先写投影行、成功后才写 ledger 字段;投影行写入失败时**不写** ledger 字段、
+  不返回成功,调用方报失败,队列在后续 tick 重试,绝不留下没有时间戳的 `pending:` 占用;
+  (b) **缺失行可恢复**——投影行缺失的 `pending:` 值(投影写失败遗留,或 bind 已删除
+  投影行但 ledger 字段未及替换时进程重启)视为**已过期**,队列可以重新发起,而不是
+  永久判为占用把意图锁死在规格阶段。
+
 - **挑选下一个**选出最佳的合格意图
   (RM-A3:`automate` ∧ status∈{todo,in_progress} ∧ 依赖已完成;按 P0→P3 再按 `createdAt` 排序)。对
   每一个,develop 步骤先按优先级挑选其**起始**动作:(1)若 `lastWorkSessionId`

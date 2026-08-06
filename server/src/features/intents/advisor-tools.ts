@@ -329,7 +329,9 @@ function resetSpecSessionCore(
     title: intent.title,
   })
   if (!claim.ok) {
-    return denied('concurrency_gate', 'spec 会话正在运行,请等待其结束', false)
+    return claim.owner
+      ? denied('concurrency_gate', 'spec 会话正在运行,请等待其结束', false)
+      : denied('db_unavailable', 'spec 占用投影写入失败,请稍后重试', true)
   }
   const releaseClaim = (): void => releaseSpecOccupancy(intent.id, specId)
 

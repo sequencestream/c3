@@ -119,6 +119,8 @@ function makeCtx() {
   >(null)
   const activeDelivery = ref<import('@ccc/shared/protocol').Delivery | null>(null)
   const activeDeliveryId = ref<string | null>(null)
+  const activeDeliveryPlan = ref<import('@ccc/shared/protocol').DeliveryTransitionPlan | null>(null)
+  const activeDeliveryIntents = ref<import('@ccc/shared/protocol').AssociatedIntent[]>([])
   const ctx = {
     settingsOpen,
     hostStatus,
@@ -132,6 +134,8 @@ function makeCtx() {
     activeDeliveryBranchInit,
     activeDelivery,
     activeDeliveryId,
+    activeDeliveryPlan,
+    activeDeliveryIntents,
     toast,
     intentActionError,
     intentActionErrorGuidance,
@@ -221,6 +225,7 @@ function makeCtx() {
     activeDeliveryBranchInit,
     activeDelivery,
     activeDeliveryId,
+    activeDeliveryIntents,
   }
 }
 
@@ -1857,6 +1862,64 @@ describe('delivery branch-init frames', () => {
 
     expect(result.activeDeliveryBranchInit.value).toBeNull()
     expect(result.showToast).toHaveBeenCalled()
+  })
+
+  it('adopts the associated-intent list from delivery_detail', () => {
+    const result = makeCtx()
+    result.ctx.handleMessage({
+      type: 'delivery_detail',
+      delivery: {
+        id: 'd1',
+        workspaceId: 'w1',
+        title: 'Sprint 3',
+        description: '',
+        status: 'integrating',
+        startDate: null,
+        endDate: null,
+        branchName: 'delivery/d1',
+        baseBranch: 'main',
+        branchReady: true,
+        integration: { merged: 0, total: 1 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      transitionPlan: { targets: [] },
+      associatedIntents: [
+        { id: 'i1', title: 'Alpha', status: 'todo', prStatus: 'reviewing', headBranch: 'feat/x' },
+      ],
+    } as ServerToClient)
+
+    expect(result.activeDeliveryIntents.value).toEqual([
+      { id: 'i1', title: 'Alpha', status: 'todo', prStatus: 'reviewing', headBranch: 'feat/x' },
+    ])
+    expect(result.showToast).not.toHaveBeenCalled()
+  })
+
+  it('toasts the diff-bloat warning that rides along a successful link', () => {
+    const result = makeCtx()
+    result.ctx.handleMessage({
+      type: 'delivery_detail',
+      delivery: {
+        id: 'd1',
+        workspaceId: 'w1',
+        title: 'Sprint 3',
+        description: '',
+        status: 'integrating',
+        startDate: null,
+        endDate: null,
+        branchName: 'delivery/d1',
+        baseBranch: 'main',
+        branchReady: true,
+        integration: { merged: 0, total: 1 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      transitionPlan: { targets: [] },
+      associatedIntents: [],
+      linkWarning: 'delivery.diffBloat',
+    } as ServerToClient)
+
+    expect(result.showToast).toHaveBeenCalledWith('delivery.warning.diffBloat.label')
   })
 
   it('leaves the in-flight state alone for a non-init error', () => {

@@ -43,6 +43,8 @@ describe('Deliveries', () => {
         activePlan: null,
         branchInit: null,
         workspaceGitBranchMode: 'worktree',
+        associatedIntents: [],
+        intents: [],
       },
     })
     expect(w.find('[data-testid="delivery-list"]').exists()).toBe(true)
@@ -59,6 +61,8 @@ describe('Deliveries', () => {
         activePlan: PLAN,
         branchInit: null,
         workspaceGitBranchMode: 'current-branch',
+        associatedIntents: [],
+        intents: [],
       },
     })
     // current-branch note + the two detail tabs are reachable through the detail.
@@ -75,6 +79,8 @@ describe('Deliveries', () => {
         activePlan: PLAN,
         branchInit: null,
         workspaceGitBranchMode: 'worktree',
+        associatedIntents: [],
+        intents: [],
       },
     })
     // The planned→integrating target is blocked; a rework/verify fixture is not

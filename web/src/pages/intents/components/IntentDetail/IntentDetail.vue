@@ -130,6 +130,8 @@ const emit = defineEmits<{
   'sync-pr-status': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   'select-dependency': [intentId: string]
+  /** 跳到某个关联交付的详情页(交付页在另一个一级 tab,故一路上抛到 App)。 */
+  'open-delivery': [deliveryId: string]
   // 分享:上抛意图 id,由 App 组装深链复制(workspace/typeLabel 在上层)。
   share: [intentId: string]
   delete: [intentId: string]
@@ -445,6 +447,7 @@ function submitChat(text: string, images: PromptImage[]): void {
         @save-intent-content="(id: string, c: string) => emit('save-intent-content', id, c)"
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
         @select-dependency="(id: string) => emit('select-dependency', id)"
+        @open-delivery="(id: string) => emit('open-delivery', id)"
         @sync-pr-status="(id: string) => emit('sync-pr-status', id)"
       />
 

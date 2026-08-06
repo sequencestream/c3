@@ -5,21 +5,34 @@
  * `(workspace_path, branch_name)` partial-unique), CRUD (create/list/get/
  * update/status), the first-delivery `pr:merge` notice decided inside the create
  * transaction, and the real-time N/M aggregate derived from `intent_prs`
- * (`delivery_id` — the association surface the intent store already owns).
+ * (`delivery_id` — the association surface the intent store already owns), plus
+ * the `intent_deliveries` association edge: its CRUD, the
+ * `(delivery_id, intent_id)` uniqueness, the associated-intent read model (whose
+ * PR column must be scoped to THIS delivery), and the PR-row delete an unlink
+ * performs after closing the PR.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
-import { upsertIntentPr, resetStoreForTests as resetIntentStoreForTests } from '../intents/store.js'
+import {
+  insertIntents,
+  upsertIntentPr,
+  resetStoreForTests as resetIntentStoreForTests,
+} from '../intents/store.js'
 import {
   activeDeliveryHoldsBranch,
   clearDeliveryBranch,
   createDelivery,
+  deleteIntentDelivery,
+  deleteIntentPr,
   getDelivery,
+  insertIntentDelivery,
   integrationAggregate,
+  isIntentLinked,
   isStoreAvailable,
+  listAssociatedIntents,
   listDeliveries,
   resetStoreForTests,
   setDeliveryBranch,
@@ -278,5 +291,132 @@ describe('deliveries store — branch lifecycle writes', () => {
 
   it('clearDeliveryBranch returns null on an unknown id', () => {
     expect(clearDeliveryBranch('missing')).toBeNull()
+  })
+})
+
+describe('intent_deliveries — the association edge', () => {
+  /** Insert one real intent row so the associated-intent JOIN has something to find. */
+  function seedIntent(workspacePath: string, title: string): string {
+    return insertIntents(workspacePath, [
+      { title, shortEnTitle: title, content: '', priority: 'P2', module: '' },
+    ])[0].id
+  }
+
+  it('inserts, reports and deletes an edge', () => {
+    const d = seed(projA).delivery
+    const i = seedIntent(projA, 'Alpha')
+
+    expect(isIntentLinked(d.id, i)).toBe(false)
+    expect(insertIntentDelivery(d.id, i)).toBe(true)
+    expect(isIntentLinked(d.id, i)).toBe(true)
+    expect(deleteIntentDelivery(d.id, i)).toBe(true)
+    expect(isIntentLinked(d.id, i)).toBe(false)
+    // Deleting what is not there is a no-op verdict, never a throw.
+    expect(deleteIntentDelivery(d.id, i)).toBe(false)
+  })
+
+  it('refuses a duplicate (delivery, intent) pair without creating a second row', () => {
+    const d = seed(projA).delivery
+    const i = seedIntent(projA, 'Alpha')
+    expect(insertIntentDelivery(d.id, i)).toBe(true)
+    expect(insertIntentDelivery(d.id, i)).toBe(false)
+    const rows = getDb()!.all<{ c: number }>(
+      'SELECT COUNT(*) AS c FROM intent_deliveries WHERE delivery_id=? AND intent_id=?',
+      d.id,
+      i,
+    )
+    expect(rows[0].c).toBe(1)
+  })
+
+  it('lets the same intent link to two deliveries (data layer keeps the capability)', () => {
+    const d1 = seed(projA).delivery
+    const d2 = seed(projA, 'other').delivery
+    const i = seedIntent(projA, 'Alpha')
+    expect(insertIntentDelivery(d1.id, i)).toBe(true)
+    expect(insertIntentDelivery(d2.id, i)).toBe(true)
+    expect(listAssociatedIntents(d1.id).map((r) => r.id)).toEqual([i])
+    expect(listAssociatedIntents(d2.id).map((r) => r.id)).toEqual([i])
+  })
+
+  it('lists associated intents by title with NO pr when none targets this delivery', () => {
+    const d = seed(projA).delivery
+    const beta = seedIntent(projA, 'Beta')
+    const alpha = seedIntent(projA, 'Alpha')
+    insertIntentDelivery(d.id, beta)
+    insertIntentDelivery(d.id, alpha)
+
+    expect(listAssociatedIntents(d.id)).toEqual([
+      { id: alpha, title: 'Alpha', status: 'todo', prStatus: null, headBranch: null },
+      { id: beta, title: 'Beta', status: 'todo', prStatus: null, headBranch: null },
+    ])
+  })
+
+  it('scopes the PR column to THIS delivery — the same intent shows a different status per delivery', () => {
+    const d1 = seed(projA).delivery
+    const d2 = seed(projA, 'other').delivery
+    const i = seedIntent(projA, 'Alpha')
+    insertIntentDelivery(d1.id, i)
+    insertIntentDelivery(d2.id, i)
+    // Two PR rows for ONE intent, one per delivery, with different states + heads.
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d1.id,
+      forge: 'github',
+      repo: 'o/r',
+      number: '1',
+      status: 'merged',
+      headBranch: 'feat/one',
+    })
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d2.id,
+      forge: 'github',
+      repo: 'o/r',
+      number: '2',
+      status: 'reviewing',
+      headBranch: 'feat/two',
+    })
+
+    expect(listAssociatedIntents(d1.id)).toEqual([
+      { id: i, title: 'Alpha', status: 'todo', prStatus: 'merged', headBranch: 'feat/one' },
+    ])
+    expect(listAssociatedIntents(d2.id)).toEqual([
+      { id: i, title: 'Alpha', status: 'todo', prStatus: 'reviewing', headBranch: 'feat/two' },
+    ])
+  })
+
+  it("deleteIntentPr removes only this delivery's PR row, and ignores a missing one", () => {
+    const d1 = seed(projA).delivery
+    const d2 = seed(projA, 'other').delivery
+    const i = seedIntent(projA, 'Alpha')
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d1.id,
+      forge: 'github',
+      repo: 'o/r',
+      number: '1',
+      status: 'reviewing',
+    })
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d2.id,
+      forge: 'github',
+      repo: 'o/r',
+      number: '2',
+      status: 'reviewing',
+    })
+
+    deleteIntentPr(i, d1.id)
+    expect(integrationAggregate(d1.id)).toEqual({ total: 0, merged: 0 })
+    expect(integrationAggregate(d2.id)).toEqual({ total: 1, merged: 0 })
+    // A second delete has nothing to do and must not throw.
+    expect(() => deleteIntentPr(i, d1.id)).not.toThrow()
+  })
+
+  it('returns an empty list when the intent tables were never created', () => {
+    const d = seed(projA).delivery
+    // `intents` is created lazily by the intent store; a delivery-only db has none.
+    getDb()!.exec('DROP TABLE IF EXISTS intent_prs; DROP TABLE IF EXISTS intents;')
+    expect(listAssociatedIntents(d.id)).toEqual([])
   })
 })

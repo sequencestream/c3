@@ -76,6 +76,10 @@ const TESTS = [
   { name: 'smoke (permission flow)', file: 'e2e-ws-test.mjs' },
   { name: 'pending-queue flush race', file: 'e2e-pending-flush-test.mjs' },
   { name: 'intent (save flow)', file: 'e2e-intent-test.mjs' },
+  {
+    name: 'delivery ↔ intent association (link / unlink guards)',
+    file: 'e2e-delivery-link-test.mjs',
+  },
   { name: 'automation queue (park isolation + manual control)', file: 'e2e-queue-test.mjs' },
   {
     name: 'spec automation (author → review → opt-in machine approval → revoke)',
@@ -186,7 +190,12 @@ async function runE2ESuite(server) {
       break
     }
     console.log(`\n\x1b[35m================ ${t.name} ================\x1b[0m`)
-    const code = await run('node', [join(HERE, t.file), WS_URL], { cwd: ROOT })
+    // `C3_DB_PATH` reaches the tests too: the delivery-association test seeds
+    // `intent_prs` rows straight into the ledger (a real PR needs a live forge).
+    const code = await run('node', [join(HERE, t.file), WS_URL], {
+      cwd: ROOT,
+      env: { ...process.env, C3_DB_PATH: DB_PATH },
+    })
     const status = code === 0 ? 'PASS' : code === 5 ? 'SKIP' : 'FAIL'
     results.push({ ...t, status, code })
   }

@@ -133,6 +133,8 @@ const emit = defineEmits<{
   'new-intent': []
   'create-pr': [intentId: string]
   'sync-pr-status': [intentId: string]
+  /** 意图详情「关联交付」跳转:交付页是另一个一级 tab,由 App 切换。 */
+  'open-delivery': [deliveryId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   share: [intentId: string]
   delete: [intentId: string]
@@ -430,6 +432,7 @@ defineExpose({
         @share="(id: string) => emit('share', id)"
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
         @select-dependency="handleSelectDependency"
+        @open-delivery="(id: string) => emit('open-delivery', id)"
         @set-mode="(m: ModeToken) => emit('set-mode', m)"
         @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
         @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"

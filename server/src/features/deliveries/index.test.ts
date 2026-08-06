@@ -2,8 +2,14 @@
  * Feature-level tests for the delivery handlers over a real temp c3.db +
  * registered workspace: workspace-scoped create/list/detail/update, the
  * `base_branch` snapshot, the one-time `pr:merge` notice, cross-workspace
- * rejection, the status-machine write path (transition + cancel), and the
- * server-computed badge count on the list reply.
+ * rejection, the status-machine write path (transition + cancel), the
+ * server-computed badge count on the list reply, and the intent ↔ delivery
+ * association (link, diff-bloat warning, and every unlink guard).
+ *
+ * Only the two FORGE calls are mocked (`getForgePrStatus` / `closeForgePr`) —
+ * every git operation, including the diff-bloat detection, runs against real
+ * throwaway repositories, because that is the part whose logic is easy to get
+ * subtly wrong.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
@@ -16,18 +22,41 @@ import type { KernelContext } from '../../kernel/types.js'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import { saveWorkspaceSetting } from '../../kernel/config/index.js'
 import { addWorkspace, pathToId, resetStateCacheForTests } from '../../state.js'
+import { closeForgePr, getForgePrStatus } from '../../git.js'
 import {
   cancelDeliveryHandler,
   cleanupDeliveryBranchHandler,
   createDeliveryHandler,
   getDeliveryDetailHandler,
   initDeliveryBranchHandler,
+  linkIntentToDeliveryHandler,
   listDeliveriesHandler,
   transitionDeliveryHandler,
+  unlinkIntentFromDeliveryHandler,
   updateDeliveryHandler,
 } from './index.js'
-import { getDelivery, listDeliveries, resetStoreForTests } from './store.js'
-import { upsertIntentPr, resetStoreForTests as resetIntentStoreForTests } from '../intents/store.js'
+import {
+  getDelivery,
+  isIntentLinked,
+  listAssociatedIntents,
+  listDeliveries,
+  resetStoreForTests,
+} from './store.js'
+import {
+  deleteIntentRecords,
+  insertIntents,
+  listIntentPrs,
+  setLatestCommitHash,
+  upsertIntentPr,
+  resetStoreForTests as resetIntentStoreForTests,
+} from '../intents/store.js'
+
+// Only the forge round-trips are faked; every git helper stays real.
+vi.mock('../../git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../git.js')>()),
+  getForgePrStatus: vi.fn(),
+  closeForgePr: vi.fn(),
+}))
 
 let dir: string
 let workspaceId: string
@@ -58,8 +87,9 @@ function harness() {
   const sent: ServerToClient[] = []
   const conn = { send: (m: ServerToClient) => sent.push(m) } as unknown as Conn
   const broadcastDeliveries = vi.fn()
-  const ctx = { broadcastDeliveries } as unknown as KernelContext
-  return { sent, conn, ctx, broadcastDeliveries }
+  const broadcastIntents = vi.fn()
+  const ctx = { broadcastDeliveries, broadcastIntents } as unknown as KernelContext
+  return { sent, conn, ctx, broadcastDeliveries, broadcastIntents }
 }
 
 const createMsg = (overrides: Partial<{ title: string; description: string }> = {}) => ({
@@ -688,5 +718,368 @@ describe('cleanup_delivery_branch — terminal manual cleanup', () => {
     })
     expect(h.sent[0]).toMatchObject({ type: 'error', error: { code: 'delivery.cleanupForbidden' } })
     expect(getDelivery(id)!.branchName).toBeNull()
+  })
+})
+
+describe('link / unlink intent ↔ delivery', () => {
+  let bare: string
+
+  /** `dir` becomes a repo on `main` with a bare origin; returns nothing. */
+  function initWorkspaceRepo(): void {
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: dir })
+    execFileSync('git', ['config', 'user.email', 't@t.dev'], { cwd: dir })
+    execFileSync('git', ['config', 'user.name', 'tester'], { cwd: dir })
+    execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: dir })
+    writeFileSync(join(dir, 'README.md'), 'init\n')
+    execFileSync('git', ['add', '-A'], { cwd: dir })
+    execFileSync('git', ['commit', '-q', '-m', 'init'], { cwd: dir })
+    bare = join(dirname(dir), `${basename(dir)}-remote.git`)
+    execFileSync('git', ['init', '--bare', '-q', bare], { cwd: dirname(dir) })
+    execFileSync('git', ['remote', 'add', 'origin', bare], { cwd: dir })
+    execFileSync('git', ['push', '-q', '-u', 'origin', 'HEAD'], { cwd: dir })
+  }
+
+  function git(...args: string[]): string {
+    return execFileSync('git', args, { cwd: dir, encoding: 'utf-8' }).toString().trim()
+  }
+
+  function seedDelivery(title = 'Sprint 3'): string {
+    const h = harness()
+    createDeliveryHandler(h.ctx, h.conn, createMsg({ title }))
+    return listDeliveries(dir).find((d) => d.title === title)!.id
+  }
+
+  function seedIntent(title = 'Alpha'): string {
+    return insertIntents(dir, [
+      { title, shortEnTitle: title, content: '', priority: 'P2', module: '' },
+    ])[0].id
+  }
+
+  async function link(deliveryId: string, intentId: string) {
+    const h = harness()
+    await linkIntentToDeliveryHandler(h.ctx, h.conn, {
+      type: 'link_intent_to_delivery',
+      workspaceId,
+      deliveryId,
+      intentId,
+    })
+    return h
+  }
+
+  async function unlink(deliveryId: string, intentId: string) {
+    const h = harness()
+    await unlinkIntentFromDeliveryHandler(h.ctx, h.conn, {
+      type: 'unlink_intent_from_delivery',
+      workspaceId,
+      deliveryId,
+      intentId,
+    })
+    return h
+  }
+
+  const errorCode = (sent: ServerToClient[]): string | undefined =>
+    sent.find((f): f is Extract<ServerToClient, { type: 'error' }> => f.type === 'error')?.error
+      .code
+
+  const detail = (sent: ServerToClient[]) =>
+    sent.find(
+      (f): f is Extract<ServerToClient, { type: 'delivery_detail' }> =>
+        f.type === 'delivery_detail',
+    )
+
+  beforeEach(() => {
+    vi.mocked(getForgePrStatus).mockReset()
+    vi.mocked(closeForgePr).mockReset()
+  })
+
+  it('links an intent, replies with the detail + associated list, and broadcasts both sides', async () => {
+    const d = seedDelivery()
+    const i = seedIntent()
+
+    const h = await link(d, i)
+    expect(detail(h.sent)?.associatedIntents).toEqual([
+      { id: i, title: 'Alpha', status: 'todo', prStatus: null, headBranch: null },
+    ])
+    expect(detail(h.sent)?.linkWarning).toBeUndefined()
+    expect(h.broadcastDeliveries).toHaveBeenCalledWith(dir)
+    expect(h.broadcastIntents).toHaveBeenCalledWith(dir)
+    expect(isIntentLinked(d, i)).toBe(true)
+  })
+
+  it('refuses a duplicate link with intentAlreadyLinked', async () => {
+    const d = seedDelivery()
+    const i = seedIntent()
+    await link(d, i)
+    const again = await link(d, i)
+    expect(errorCode(again.sent)).toBe('delivery.intentAlreadyLinked')
+  })
+
+  it('rejects an unknown intent and an unknown delivery', async () => {
+    const d = seedDelivery()
+    const i = seedIntent()
+    expect(errorCode((await link(d, 'missing')).sent)).toBe('intent.notFound')
+    expect(errorCode((await link('missing', i)).sent)).toBe('delivery.notFound')
+  })
+
+  it('warns about diff bloat when the intent branched off mainline PAST the delivery fork point', async () => {
+    initWorkspaceRepo()
+    const d = seedDelivery()
+    // Delivery branch rooted at the CURRENT main head.
+    const hInit = harness()
+    await initDeliveryBranchHandler(hInit.ctx, hInit.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: d,
+      branchName: 'delivery/sprint-3',
+      mode: 'create',
+    })
+    expect(getDelivery(d)?.branchReady).toBe(true)
+
+    // Mainline moves on, and the intent branches off THERE — its PR into the
+    // delivery branch would drag the whole main-vs-delivery difference along.
+    git('checkout', '-q', 'main')
+    writeFileSync(join(dir, 'MAIN.md'), 'moved on\n')
+    git('add', '-A')
+    git('commit', '-q', '-m', 'main moves')
+    git('push', '-q', 'origin', 'main')
+    git('checkout', '-q', '-b', 'feat/late')
+    writeFileSync(join(dir, 'FEAT.md'), 'work\n')
+    git('add', '-A')
+    git('commit', '-q', '-m', 'feat')
+    const intentHead = git('rev-parse', 'HEAD')
+
+    const i = seedIntent()
+    setLatestCommitHash(i, intentHead)
+    const h = await link(d, i)
+    expect(detail(h.sent)?.linkWarning).toBe('delivery.diffBloat')
+    // The warning never blocks: the edge is there.
+    expect(isIntentLinked(d, i)).toBe(true)
+  })
+
+  it('does not warn when the intent branched off the delivery branch itself', async () => {
+    initWorkspaceRepo()
+    const d = seedDelivery()
+    const hInit = harness()
+    await initDeliveryBranchHandler(hInit.ctx, hInit.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: d,
+      branchName: 'delivery/sprint-3',
+      mode: 'create',
+    })
+    git('checkout', '-q', '-b', 'feat/early', 'delivery/sprint-3')
+    writeFileSync(join(dir, 'FEAT.md'), 'work\n')
+    git('add', '-A')
+    git('commit', '-q', '-m', 'feat')
+    const intentHead = git('rev-parse', 'HEAD')
+
+    const i = seedIntent()
+    setLatestCommitHash(i, intentHead)
+    expect(detail((await link(d, i)).sent)?.linkWarning).toBeUndefined()
+  })
+
+  it('unlinks an intent that has no PR toward the delivery, without touching the forge', async () => {
+    const d = seedDelivery()
+    const i = seedIntent()
+    await link(d, i)
+
+    const h = await unlink(d, i)
+    expect(errorCode(h.sent)).toBeUndefined()
+    expect(detail(h.sent)?.associatedIntents).toEqual([])
+    expect(isIntentLinked(d, i)).toBe(false)
+    expect(vi.mocked(getForgePrStatus)).not.toHaveBeenCalled()
+    expect(vi.mocked(closeForgePr)).not.toHaveBeenCalled()
+  })
+
+  it('refuses to unlink a LOCALLY merged PR, without asking the forge', async () => {
+    const d = seedDelivery()
+    const i = seedIntent()
+    await link(d, i)
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d,
+      forge: 'github',
+      repo: 'o/r',
+      number: '7',
+      status: 'merged',
+    })
+
+    const h = await unlink(d, i)
+    expect(errorCode(h.sent)).toBe('delivery.unlinkMergedPrDenied')
+    expect(isIntentLinked(d, i)).toBe(true)
+    expect(vi.mocked(getForgePrStatus)).not.toHaveBeenCalled()
+  })
+
+  it('refuses when the forge says merged even though the ledger says reviewing — and syncs the ledger', async () => {
+    const d = seedDelivery()
+    const i = seedIntent()
+    await link(d, i)
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d,
+      forge: 'github',
+      repo: 'o/r',
+      number: '7',
+      status: 'reviewing',
+    })
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'merged' })
+
+    const h = await unlink(d, i)
+    expect(errorCode(h.sent)).toBe('delivery.unlinkMergedPrDenied')
+    expect(isIntentLinked(d, i)).toBe(true)
+    expect(vi.mocked(closeForgePr)).not.toHaveBeenCalled()
+    // The ledger now agrees, so a retry is refused locally without a round trip.
+    expect(listIntentPrs(i)[0].status).toBe('merged')
+    expect(listAssociatedIntents(d)[0].prStatus).toBe('merged')
+  })
+
+  it('blocks the unlink when the forge status cannot be read at all', async () => {
+    const d = seedDelivery()
+    const i = seedIntent()
+    await link(d, i)
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d,
+      forge: 'github',
+      repo: 'o/r',
+      number: '7',
+      status: 'reviewing',
+    })
+    vi.mocked(getForgePrStatus).mockResolvedValue({
+      ok: false,
+      unavailable: true,
+      error: 'gh CLI 未安装',
+    })
+
+    const h = await unlink(d, i)
+    expect(errorCode(h.sent)).toBe('delivery.unlinkPrStatusCheckFailed')
+    expect(isIntentLinked(d, i)).toBe(true)
+    expect(vi.mocked(closeForgePr)).not.toHaveBeenCalled()
+  })
+
+  it('closes a confirmed-unmerged PR, deletes its row, drops the edge and lowers total', async () => {
+    const d = seedDelivery()
+    const i = seedIntent()
+    await link(d, i)
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d,
+      forge: 'github',
+      repo: 'o/r',
+      number: '7',
+      status: 'reviewing',
+    })
+    expect(getDelivery(d)?.integration).toEqual({ total: 1, merged: 0 })
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'reviewing' })
+    vi.mocked(closeForgePr).mockResolvedValue({ ok: true })
+
+    const h = await unlink(d, i)
+    expect(vi.mocked(closeForgePr)).toHaveBeenCalledWith(dir, '7', 'github')
+    expect(errorCode(h.sent)).toBeUndefined()
+    expect(isIntentLinked(d, i)).toBe(false)
+    expect(listIntentPrs(i)).toEqual([])
+    // The aggregate and the associated list agree — no ghost row keeps counting.
+    expect(detail(h.sent)?.delivery.integration).toEqual({ total: 0, merged: 0 })
+    expect(detail(h.sent)?.associatedIntents).toEqual([])
+    expect(h.broadcastIntents).toHaveBeenCalledWith(dir)
+  })
+
+  it('treats an already-closed PR as a successful close', async () => {
+    const d = seedDelivery()
+    const i = seedIntent()
+    await link(d, i)
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d,
+      forge: 'github',
+      repo: 'o/r',
+      number: '7',
+      status: 'reviewing',
+    })
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'closed' })
+    // `closeForgePr` absorbs the "not open" error itself; from here it is ok.
+    vi.mocked(closeForgePr).mockResolvedValue({ ok: true })
+
+    const h = await unlink(d, i)
+    expect(errorCode(h.sent)).toBeUndefined()
+    expect(isIntentLinked(d, i)).toBe(false)
+    expect(listIntentPrs(i)).toEqual([])
+  })
+
+  it('blocks the whole unlink when closing the PR fails — edge and PR row both stay', async () => {
+    const d = seedDelivery()
+    const i = seedIntent()
+    await link(d, i)
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d,
+      forge: 'github',
+      repo: 'o/r',
+      number: '7',
+      status: 'reviewing',
+    })
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'reviewing' })
+    vi.mocked(closeForgePr).mockResolvedValue({ ok: false, error: 'network down' })
+
+    const h = await unlink(d, i)
+    expect(errorCode(h.sent)).toBe('delivery.unlinkClosePrFailed')
+    expect(isIntentLinked(d, i)).toBe(true)
+    expect(listIntentPrs(i)).toHaveLength(1)
+    expect(getDelivery(d)?.integration).toEqual({ total: 1, merged: 0 })
+  })
+
+  it('only touches the PR toward THIS delivery, leaving the other delivery intact', async () => {
+    const d1 = seedDelivery('Sprint 3')
+    const d2 = seedDelivery('Sprint 4')
+    const i = seedIntent()
+    await link(d1, i)
+    await link(d2, i)
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d1,
+      forge: 'github',
+      repo: 'o/r',
+      number: '1',
+      status: 'reviewing',
+    })
+    upsertIntentPr({
+      intentId: i,
+      deliveryId: d2,
+      forge: 'github',
+      repo: 'o/r',
+      number: '2',
+      status: 'reviewing',
+    })
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'reviewing' })
+    vi.mocked(closeForgePr).mockResolvedValue({ ok: true })
+
+    await unlink(d1, i)
+    expect(vi.mocked(closeForgePr)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(closeForgePr)).toHaveBeenCalledWith(dir, '1', 'github')
+    expect(isIntentLinked(d1, i)).toBe(false)
+    expect(isIntentLinked(d2, i)).toBe(true)
+    expect(listAssociatedIntents(d2)[0].prStatus).toBe('reviewing')
+  })
+
+  it('drops the edge when the intent is permanently deleted, and keeps it when the delivery is cancelled', async () => {
+    const dDeleted = seedDelivery('Sprint 3')
+    const dCancelled = seedDelivery('Sprint 4')
+    const iDeleted = seedIntent('Alpha')
+    const iKept = seedIntent('Beta')
+    await link(dDeleted, iDeleted)
+    await link(dCancelled, iKept)
+
+    deleteIntentRecords(iDeleted)
+    expect(isIntentLinked(dDeleted, iDeleted)).toBe(false)
+
+    const h = harness()
+    cancelDeliveryHandler(h.ctx, h.conn, {
+      type: 'cancel_delivery',
+      workspaceId,
+      deliveryId: dCancelled,
+    })
+    expect(getDelivery(dCancelled)?.status).toBe('cancelled')
+    expect(isIntentLinked(dCancelled, iKept)).toBe(true)
+    expect(listAssociatedIntents(dCancelled).map((r) => r.id)).toEqual([iKept])
   })
 })

@@ -217,6 +217,12 @@ export interface AppMethods {
   initDeliveryBranch(payload: { mode: 'create' | 'bind'; branchName: string }): void
   /** Manual cleanup of a TERMINAL delivery's local branch reference. */
   cleanupDeliveryBranch(deliveryId: string): void
+  /** Link an intent to the open delivery (association edge only — no PR is re-targeted). */
+  linkIntentToDelivery(intentId: string): void
+  /** Unlink an intent from the open delivery; the server closes its unmerged PR first. */
+  unlinkIntentFromDelivery(intentId: string): void
+  /** Open a delivery's detail from the intent page's "关联交付" link (switches tab). */
+  openDeliveryFromIntent(workspacePath: string, deliveryId: string): void
   onDeliveryMobileBack(targetKey: string): void
 
   // discussions

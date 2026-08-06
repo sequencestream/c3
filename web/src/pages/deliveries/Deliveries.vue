@@ -8,7 +8,13 @@
  */
 import { computed } from 'vue'
 import { useTypedI18n } from '@/i18n'
-import type { Delivery, DeliveryStatus, DeliveryTransitionPlan } from '@ccc/shared/protocol'
+import type {
+  AssociatedIntent,
+  Delivery,
+  DeliveryStatus,
+  DeliveryTransitionPlan,
+  Intent,
+} from '@ccc/shared/protocol'
 import type { DeliveryBranchInitState } from '@/lib/delivery-view'
 import MobileStack from '../../components/MobileStack/MobileStack.vue'
 import DeliveryList from './components/DeliveryList/DeliveryList.vue'
@@ -23,6 +29,8 @@ const props = defineProps<{
   activePlan: DeliveryTransitionPlan | null
   branchInit: DeliveryBranchInitState | null
   workspaceGitBranchMode: 'worktree' | 'current-branch'
+  associatedIntents: AssociatedIntent[]
+  intents: Intent[]
 }>()
 
 const emit = defineEmits<{
@@ -48,6 +56,8 @@ const emit = defineEmits<{
   transition: [to: DeliveryStatus, confirmVerified: boolean]
   'init-branch': [payload: { mode: 'create' | 'bind'; branchName: string }]
   'cleanup-branch': [deliveryId: string]
+  'link-intent': [intentId: string]
+  'unlink-intent': [intentId: string]
   'open-workspace-settings': []
   'mobile-back': [targetKey: string]
 }>()
@@ -84,11 +94,15 @@ const mobileActiveToken = computed(() => props.activeId ?? 'deliveries')
         :plan="activePlan"
         :branch-init="branchInit"
         :workspace-git-branch-mode="workspaceGitBranchMode"
+        :associated-intents="associatedIntents"
+        :intents="intents"
         @update="(payload) => emit('update', payload)"
         @cancel="(id: string) => emit('cancel', id)"
         @transition="(to, confirm) => emit('transition', to, confirm)"
         @init-branch="(payload) => emit('init-branch', payload)"
         @cleanup-branch="(id: string) => emit('cleanup-branch', id)"
+        @link-intent="(id: string) => emit('link-intent', id)"
+        @unlink-intent="(id: string) => emit('unlink-intent', id)"
         @open-workspace-settings="emit('open-workspace-settings')"
       />
     </template>

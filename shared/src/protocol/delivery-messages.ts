@@ -8,6 +8,7 @@
  */
 
 import type {
+  AssociatedIntent,
   Delivery,
   DeliveryGuardReason,
   DeliveryStatus,
@@ -111,6 +112,46 @@ export type ClientCleanupDeliveryBranch = {
   deliveryId: string
 }
 
+/**
+ * Link an intent to a delivery — creates the association edge the integration
+ * aggregate and every delivery guard read from. Owned by the DELIVERY domain,
+ * not the intent domain: the edge's whole lifecycle (merged-unlink denial, the
+ * N/M aggregate) is delivery context, and putting it under `intent` would make
+ * the intent domain depend backwards on delivery rules.
+ *
+ * Purely additive — an existing PR without a delivery binding is NOT re-targeted
+ * here (PR re-basing is a later capability). Reply: `delivery_detail`, carrying
+ * `linkWarning: 'delivery.diffBloat'` when the intent's commits are rooted on
+ * mainline rather than on the delivery branch.
+ */
+export type ClientLinkIntentToDelivery = {
+  type: 'link_intent_to_delivery'
+  workspaceId: string
+  deliveryId: string
+  intentId: string
+}
+
+/**
+ * Unlink an intent from a delivery. Guarded, and never a pure DB delete:
+ *
+ * - A PR toward this delivery that is ALREADY MERGED can never be unlinked
+ *   (`delivery.unlinkMergedPrDenied`) — the code is already on the delivery
+ *   branch, so dropping the edge would leave "the association is gone but the
+ *   code is in", falsifying the N/M aggregate with no way back but a revert.
+ *   Checked locally AND against the forge, so a remotely-merged PR the ledger
+ *   has not caught up with is still refused.
+ * - An unmerged PR is CLOSED first; only then is the edge dropped. A close
+ *   failure blocks the whole unlink (`delivery.unlinkClosePrFailed`).
+ * - When the forge status cannot be read at all, the unlink is refused
+ *   (`delivery.unlinkPrStatusCheckFailed`) rather than guessed.
+ */
+export type ClientUnlinkIntentFromDelivery = {
+  type: 'unlink_intent_from_delivery'
+  workspaceId: string
+  deliveryId: string
+  intentId: string
+}
+
 // ---- Server → Client ----
 
 /**
@@ -143,11 +184,25 @@ export type ServerCreateDeliveryResult = {
   prMergeNotice: boolean
 }
 
-/** One delivery's detail: the model + the server-computed transition plan. */
+/**
+ * One delivery's detail: the model + the server-computed transition plan + the
+ * intents linked to it. The single reply for every delivery write that changes
+ * the detail (update / transition / cancel / branch cleanup / link / unlink).
+ */
 export type ServerDeliveryDetail = {
   type: 'delivery_detail'
   delivery: Delivery
   transitionPlan: DeliveryTransitionPlan
+  /** Intents linked to this delivery, by title; each row's PR status is toward THIS delivery. */
+  associatedIntents: AssociatedIntent[]
+  /**
+   * Set ONLY on the reply to a `link_intent_to_delivery` that detected diff
+   * bloat: the intent's commits branch off mainline past the delivery branch's
+   * fork point, so a PR toward the delivery branch would carry the whole
+   * mainline-vs-delivery difference. The link still succeeded — this is a
+   * warning the page surfaces, never a rejection.
+   */
+  linkWarning?: 'delivery.diffBloat'
 }
 
 /**
@@ -169,8 +224,12 @@ export type ServerDeliveryTransitionFailed = {
   to: DeliveryStatus
 }
 
-/** One coarse phase boundary of a delivery branch-init run. */
-export type DeliveryBranchInitPhase = 'fetching' | 'creating' | 'pushing' | 'binding'
+/**
+ * One coarse phase boundary of a delivery branch-init run. Internal to this
+ * partition (like every payload type here) — a public export would count as a
+ * message payload leaking onto the `@ccc/shared/protocol` surface.
+ */
+type DeliveryBranchInitPhase = 'fetching' | 'creating' | 'pushing' | 'binding'
 
 /**
  * Coarse progress of an `init_delivery_branch` run, pushed to the requesting

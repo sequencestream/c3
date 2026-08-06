@@ -112,6 +112,21 @@ export const INTENT_PR_STATUSES: readonly IntentPrStatus[] = [
 export type IntentPrForge = 'github' | 'gitlab'
 
 /**
+ * A delivery this intent is linked to, as the intent read-model carries it —
+ * just enough to label and link the association without the intent domain
+ * depending on the delivery model (which would close a cycle in the protocol
+ * partition: `delivery.ts` already imports this module).
+ *
+ * The association edge itself (`intent_deliveries`) is owned and written by the
+ * delivery domain; this field is a read-only projection of it, so the intent
+ * page can render "关联交付" before any PR toward that delivery exists.
+ */
+export interface IntentDeliveryRef {
+  id: string
+  title: string
+}
+
+/**
  * One PR / Merge Request owned by an intent — a first-class entity, not three
  * flattened columns on the intent. An intent may hold several (one per delivery
  * target), so every consumer reads the list plus its aggregate rather than a
@@ -483,6 +498,13 @@ export interface Intent {
    * their own reduction.
    */
   prs: IntentPr[]
+  /**
+   * Deliveries this intent is linked to (the `intent_deliveries` edges), oldest
+   * link first; empty when it belongs to no delivery. Read-only here — linking
+   * and unlinking are delivery-domain writes. The intent detail groups {@link prs}
+   * by delivery through this list, and shows a linked delivery that has no PR yet.
+   */
+  linkedDeliveries: IntentDeliveryRef[]
   /**
    * Path (relative to the workspace) of this intent's written spec document;
    * `null` until a spec has been authored. The source of truth for the spec

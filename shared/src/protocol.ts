@@ -113,6 +113,8 @@ export type ClientToServer =
   | DeliveryMsg.ClientTransitionDelivery
   | DeliveryMsg.ClientInitDeliveryBranch
   | DeliveryMsg.ClientCleanupDeliveryBranch
+  | DeliveryMsg.ClientLinkIntentToDelivery
+  | DeliveryMsg.ClientUnlinkIntentFromDelivery
   | DiscussionMsg.ClientListDiscussions
   | DiscussionMsg.ClientCreateDiscussion
   | DiscussionMsg.ClientOpenDiscussion

@@ -25,6 +25,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     branchName: null,
     latestCommitHash: null,
     prs: [],
+    linkedDeliveries: [],
     specPath: null,
     // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
     specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
@@ -266,5 +267,18 @@ describe('IntentTitleBarActions.vue', () => {
     expect(w.emitted('share')).toEqual([['i1']])
     await w.find('.req-automate').trigger('click')
     expect(w.emitted('set-automate')).toEqual([['i1', true]])
+  })
+})
+
+describe('IntentTitleBarActions.vue — delivery association adds nothing here', () => {
+  it('renders the SAME button set whether or not the intent is linked to a delivery', () => {
+    const buttonsOf = (linked: Intent['linkedDeliveries']) =>
+      mountActions(intent({ id: 'i1', status: 'in_progress', linkedDeliveries: linked }))
+        .find('[data-testid="intent-detail-actions"]')
+        .findAll('button')
+        .map((b) => b.attributes('data-testid'))
+
+    // 关联/解除只在交付详情页操作;意图详情页对此纯只读,标题栏一个按钮都不加。
+    expect(buttonsOf([{ id: 'd1', title: 'Sprint 3' }])).toEqual(buttonsOf([]))
   })
 })

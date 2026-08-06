@@ -1,5 +1,5 @@
 /**
- * `deliveries` feature handlers — slice 2/3 (ADR-0036).
+ * `deliveries` feature handlers (ADR-0036).
  *
  * Slice 1: pure local data actions (create / list / detail / update / cancel /
  * status transition) — no git, no forge, no network. Slice 2 adds the EXPLICIT,
@@ -7,25 +7,33 @@
  * cleanup (`cleanup_delivery_branch`): the delivery's real integration branch is
  * created on / bound to the remote, guarded by the multi-repo gate and the
  * orphan-defense (a push success whose DB write failed is recovered idempotently
- * on retry, and a mismatched remote branch is NEVER overwritten).
+ * on retry, and a mismatched remote branch is NEVER overwritten). Slice 3 adds
+ * the intent ↔ delivery association (`link_intent_to_delivery` /
+ * `unlink_intent_from_delivery`) — the edge every guard and the N/M aggregate
+ * ultimately read, with the merged-PR unlink denial that keeps "the association
+ * is gone but the code is already in" from ever happening.
  *
  * All status writes funnel through the delivery domain's pure
  * `canTransitionDelivery`, so the client can never relax reachability or guards;
  * the transition plan + gaps the page renders come from `computeTransitionPlan`,
  * recomputed on every read and write.
  */
-import type { DeliveryStatus } from '@ccc/shared/protocol'
+import type { Delivery, DeliveryStatus, IntentPr, ServerToClient } from '@ccc/shared/protocol'
 import {
+  closeForgePr,
   createDeliveryBranch,
   deleteLocalBranch,
+  detectDeliveryDiffBloat,
   fetchRemoteBaseAsync,
+  getForgePrStatus,
   isMultiRepoWorkspace,
   remoteBranchHead,
   resolveRefHead,
 } from '../../git.js'
-import { getDefaultMainBranch } from '../../kernel/config/index.js'
+import { getDefaultMainBranch, getForgeOverride } from '../../kernel/config/index.js'
 import { resolveWorkspaceRoot } from '../../state.js'
-import type { Handler } from '../../transport/handler-registry.js'
+import type { Conn, Handler } from '../../transport/handler-registry.js'
+import { getIntent, upsertIntentPr } from '../intents/store.js'
 import {
   canTransitionDelivery,
   computeTransitionPlan,
@@ -35,8 +43,12 @@ import {
   activeDeliveryHoldsBranch,
   clearDeliveryBranch,
   createDelivery,
+  deleteIntentDelivery,
+  deleteIntentPr,
   getDelivery,
+  insertIntentDelivery,
   isStoreAvailable,
+  listAssociatedIntents,
   listDeliveries,
   setDeliveryBranch,
   setDeliveryStatus,
@@ -46,6 +58,24 @@ import {
 
 /** Branch-init progress phases (mirrors the wire union, kept local to the partition). */
 type DeliveryBranchPhase = 'fetching' | 'creating' | 'pushing' | 'binding'
+
+/**
+ * The one `delivery_detail` frame builder. Every reply carrying a delivery's
+ * detail goes through it, so the transition plan and the associated-intent list
+ * can never be assembled from different reads.
+ */
+function detailFrame(
+  delivery: Delivery,
+  linkWarning?: 'delivery.diffBloat',
+): Extract<ServerToClient, { type: 'delivery_detail' }> {
+  return {
+    type: 'delivery_detail',
+    delivery,
+    transitionPlan: computeTransitionPlan(delivery),
+    associatedIntents: listAssociatedIntents(delivery.id),
+    ...(linkWarning ? { linkWarning } : {}),
+  }
+}
 
 export const listDeliveriesHandler: Handler<'list_deliveries'> = (ctx, conn, msg) => {
   if (!isStoreAvailable()) {
@@ -134,7 +164,7 @@ export const getDeliveryDetailHandler: Handler<'get_delivery_detail'> = (_ctx, c
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
   }
-  conn.send({ type: 'delivery_detail', delivery, transitionPlan: computeTransitionPlan(delivery) })
+  conn.send(detailFrame(delivery))
 }
 
 export const updateDeliveryHandler: Handler<'update_delivery'> = (ctx, conn, msg) => {
@@ -170,11 +200,7 @@ export const updateDeliveryHandler: Handler<'update_delivery'> = (ctx, conn, msg
       conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
       return
     }
-    conn.send({
-      type: 'delivery_detail',
-      delivery: updated,
-      transitionPlan: computeTransitionPlan(updated),
-    })
+    conn.send(detailFrame(updated))
     ctx.broadcastDeliveries(abs)
   } catch (err) {
     conn.send({
@@ -231,11 +257,7 @@ function applyTransition(
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
   }
-  conn.send({
-    type: 'delivery_detail',
-    delivery: updated,
-    transitionPlan: computeTransitionPlan(updated),
-  })
+  conn.send(detailFrame(updated))
   ctx.broadcastDeliveries(abs)
 }
 
@@ -498,10 +520,196 @@ export const cleanupDeliveryBranchHandler: Handler<'cleanup_delivery_branch'> = 
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
   }
-  conn.send({
-    type: 'delivery_detail',
-    delivery: updated,
-    transitionPlan: computeTransitionPlan(updated),
-  })
+  conn.send(detailFrame(updated))
   ctx.broadcastDeliveries(abs)
+}
+
+// ---------------------------------------------------------------------------
+// Intent ↔ delivery association
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve + validate the (workspace, delivery, intent) triple both association
+ * handlers start from. Sends the error frame itself and returns `null` so the
+ * caller can `return` immediately; the guards are identical on purpose — a link
+ * and an unlink must agree on what "these two belong together" means.
+ */
+function resolveAssociation(
+  conn: Conn,
+  workspaceId: string,
+  deliveryId: string,
+  intentId: string,
+): { abs: string; delivery: Delivery; pr: IntentPr | null } | null {
+  const abs = resolveWorkspaceRoot(workspaceId)
+  if (!abs) {
+    conn.send({ type: 'error', error: { code: 'workspace.unknown', params: { id: workspaceId } } })
+    return null
+  }
+  const delivery = getDelivery(deliveryId)
+  if (!delivery || delivery.workspaceId !== workspaceId) {
+    conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
+    return null
+  }
+  const intent = getIntent(intentId)
+  if (!intent || intent.workspaceId !== workspaceId) {
+    conn.send({ type: 'error', error: { code: 'intent.notFound' } })
+    return null
+  }
+  // The intent's PR toward THIS delivery — the only PR either handler may act on.
+  return { abs, delivery, pr: intent.prs.find((p) => p.deliveryId === deliveryId) ?? null }
+}
+
+/**
+ * Link an intent to a delivery: insert the association edge, then warn (never
+ * refuse) when the intent's commits would make the resulting PR's diff bloated.
+ *
+ * Deliberately NOT done here: re-targeting an existing delivery-less PR at this
+ * delivery. Linking establishes the edge only; moving a PR's base is a separate,
+ * later capability, and silently re-basing an open PR is not something a link
+ * click should do.
+ */
+export const linkIntentToDeliveryHandler: Handler<'link_intent_to_delivery'> = async (
+  ctx,
+  conn,
+  msg,
+) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
+    return
+  }
+  const resolved = resolveAssociation(conn, msg.workspaceId, msg.deliveryId, msg.intentId)
+  if (!resolved) return
+  const { abs, delivery } = resolved
+  const latestCommitHash = getIntent(msg.intentId)?.latestCommitHash ?? null
+
+  let inserted: boolean
+  try {
+    inserted = insertIntentDelivery(msg.deliveryId, msg.intentId)
+  } catch (err) {
+    // The unique index fired on a concurrent link — same user-visible verdict as
+    // losing the in-transaction check.
+    console.warn(`[delivery] link_intent_to_delivery 插入失败: ${String(err)}`)
+    conn.send({ type: 'error', error: { code: 'delivery.intentAlreadyLinked' } })
+    return
+  }
+  if (!inserted) {
+    conn.send({ type: 'error', error: { code: 'delivery.intentAlreadyLinked' } })
+    return
+  }
+
+  // Observational only: a git failure (no repo, missing ref, no remote) must not
+  // undo a link the ledger already accepted.
+  let bloated = false
+  if (latestCommitHash) {
+    try {
+      bloated = await detectDeliveryDiffBloat(
+        abs,
+        latestCommitHash,
+        delivery.baseBranch,
+        delivery.branchName,
+      )
+    } catch (err) {
+      console.warn(`[delivery] diff 膨胀检测跳过: ${String(err)}`)
+    }
+  }
+
+  const fresh = getDelivery(msg.deliveryId)
+  if (!fresh) {
+    conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
+    return
+  }
+  conn.send(detailFrame(fresh, bloated ? 'delivery.diffBloat' : undefined))
+  ctx.broadcastDeliveries(abs)
+  // The intent side renders `linkedDeliveries` + PRs grouped by delivery, so the
+  // same write has to reach it.
+  ctx.broadcastIntents(abs)
+}
+
+/**
+ * Unlink an intent from a delivery. The PR toward this delivery decides whether
+ * the unlink may happen at all:
+ *
+ * 1. Local `merged` → refused outright.
+ * 2. Otherwise the forge is asked for the LIVE state. A remotely-merged PR the
+ *    ledger has not caught up with is the exact black hole this guard exists for:
+ *    the code is already on the delivery branch, so dropping the edge would leave
+ *    the association gone and the code in, with only a revert to undo it. On that
+ *    verdict the local row is synced to `merged` too, so every later attempt is
+ *    refused by step 1 without another round trip.
+ * 3. A forge lookup that FAILS blocks the unlink — "cannot confirm it is not
+ *    merged" is treated as "may be merged", never as "probably fine".
+ * 4. Only a confirmed-unmerged PR is closed, and only a successful close lets the
+ *    edge and the PR row go. A close failure aborts the whole unlink.
+ */
+export const unlinkIntentFromDeliveryHandler: Handler<'unlink_intent_from_delivery'> = async (
+  ctx,
+  conn,
+  msg,
+) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
+    return
+  }
+  const resolved = resolveAssociation(conn, msg.workspaceId, msg.deliveryId, msg.intentId)
+  if (!resolved) return
+  const { abs, pr } = resolved
+
+  if (pr) {
+    if (pr.status === 'merged') {
+      conn.send({ type: 'error', error: { code: 'delivery.unlinkMergedPrDenied' } })
+      return
+    }
+    // The row's own forge wins; the workspace override only covers rows written
+    // before the origin was persisted (same rule as intent cancellation).
+    const forge = pr.forge ?? getForgeOverride(abs)
+    const live = await getForgePrStatus(abs, pr.number, forge)
+    if (!live.ok) {
+      conn.send({
+        type: 'error',
+        error: {
+          code: 'delivery.unlinkPrStatusCheckFailed',
+          params: { detail: live.error ?? '无法读取 PR 状态' },
+        },
+      })
+      return
+    }
+    if (live.status === 'merged') {
+      upsertIntentPr({
+        intentId: msg.intentId,
+        deliveryId: msg.deliveryId,
+        forge: pr.forge,
+        repo: pr.repo,
+        number: pr.number,
+        status: 'merged',
+      })
+      ctx.broadcastIntents(abs)
+      conn.send({ type: 'error', error: { code: 'delivery.unlinkMergedPrDenied' } })
+      return
+    }
+    // Confirmed not merged. An already-closed PR is absorbed as success inside
+    // `closeForgePr`, so the `closed` live state needs no special case here.
+    const close = await closeForgePr(abs, pr.number, forge)
+    if (!close.ok) {
+      conn.send({
+        type: 'error',
+        error: {
+          code: 'delivery.unlinkClosePrFailed',
+          params: { detail: close.error ?? '关闭 PR 失败' },
+        },
+      })
+      return
+    }
+    deleteIntentPr(msg.intentId, msg.deliveryId)
+  }
+
+  deleteIntentDelivery(msg.deliveryId, msg.intentId)
+
+  const fresh = getDelivery(msg.deliveryId)
+  if (!fresh) {
+    conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
+    return
+  }
+  conn.send(detailFrame(fresh))
+  ctx.broadcastDeliveries(abs)
+  ctx.broadcastIntents(abs)
 }

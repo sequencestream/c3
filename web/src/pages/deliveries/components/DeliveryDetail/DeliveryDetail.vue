@@ -9,7 +9,13 @@
  */
 import { ref, computed, nextTick } from 'vue'
 import { useTypedI18n } from '@/i18n'
-import type { Delivery, DeliveryStatus, DeliveryTransitionPlan } from '@ccc/shared/protocol'
+import type {
+  AssociatedIntent,
+  Delivery,
+  DeliveryStatus,
+  DeliveryTransitionPlan,
+  Intent,
+} from '@ccc/shared/protocol'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import { DELIVERY_STATUS_LABEL_KEYS, type DeliveryBranchInitState } from '@/lib/delivery-view'
 import DeliveryOverviewTab from './DeliveryOverviewTab.vue'
@@ -22,6 +28,10 @@ const props = defineProps<{
   plan: DeliveryTransitionPlan
   branchInit: DeliveryBranchInitState | null
   workspaceGitBranchMode: 'worktree' | 'current-branch'
+  /** Server-listed linked intents (each row's PR status is toward THIS delivery). */
+  associatedIntents: AssociatedIntent[]
+  /** This workspace's intents, for the link picker. */
+  intents: Intent[]
 }>()
 
 const emit = defineEmits<{
@@ -38,6 +48,8 @@ const emit = defineEmits<{
   transition: [to: DeliveryStatus, confirmVerified: boolean]
   'init-branch': [payload: { mode: 'create' | 'bind'; branchName: string }]
   'cleanup-branch': [deliveryId: string]
+  'link-intent': [intentId: string]
+  'unlink-intent': [intentId: string]
   'open-workspace-settings': []
 }>()
 
@@ -148,7 +160,14 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
       @cleanup-branch="(id: string) => emit('cleanup-branch', id)"
       @jump="onJump"
     />
-    <DeliveryIntentsTab v-else :delivery="props.delivery" />
+    <DeliveryIntentsTab
+      v-else
+      :delivery="props.delivery"
+      :associated-intents="props.associatedIntents"
+      :intents="props.intents"
+      @link="(id: string) => emit('link-intent', id)"
+      @unlink="(id: string) => emit('unlink-intent', id)"
+    />
 
     <ConfirmDialog
       :open="cancelOpen"

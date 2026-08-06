@@ -182,6 +182,27 @@ export const UI_ERROR_CODES = {
     params: ['from', 'to'],
   },
   'delivery.transitionGuardFailed': { key: 'error.delivery.transitionGuardFailed' },
+  // Intent ↔ delivery association.
+  // The pair is already linked (in-transaction check, unique index as backstop).
+  'delivery.intentAlreadyLinked': { key: 'error.delivery.intentAlreadyLinked' },
+  // Unlink refused because the intent's PR toward this delivery is MERGED —
+  // locally, or live on the forge. Dropping the edge would leave the code on the
+  // delivery branch with no association pointing at it; only a revert could undo
+  // that, so the unlink is never allowed.
+  'delivery.unlinkMergedPrDenied': { key: 'error.delivery.unlinkMergedPrDenied' },
+  // Unlink blocked because closing the PR failed. The edge and the PR row are
+  // both left untouched — never a half-applied unlink.
+  'delivery.unlinkClosePrFailed': {
+    key: 'error.delivery.unlinkClosePrFailed',
+    params: ['detail'],
+  },
+  // Unlink blocked because the forge's live PR state could not be read (CLI
+  // missing / not logged in / offline). Conservative by design: not being able to
+  // rule out "merged" is treated as "may be merged".
+  'delivery.unlinkPrStatusCheckFailed': {
+    key: 'error.delivery.unlinkPrStatusCheckFailed',
+    params: ['detail'],
+  },
   // automation
   'automation.dbUnavailable': { key: 'error.automation.dbUnavailable' },
   'automation.notFound': { key: 'error.automation.notFound' },

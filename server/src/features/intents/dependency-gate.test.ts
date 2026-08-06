@@ -61,6 +61,7 @@ function dep(overrides: Partial<Intent> = {}): Intent {
     branchName: 'feature/dep',
     latestCommitHash: null,
     prs: [],
+    linkedDeliveries: [],
     specPath: null,
     specStatus: 'raw',
     specMode: null,

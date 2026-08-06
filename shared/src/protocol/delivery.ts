@@ -8,6 +8,7 @@
  * 计算(`canTransitionDelivery`),客户端只消费服务端给出的 `transitionPlan`,
  * 不复制状态规则。
  */
+import type { IntentPrStatus, IntentStatus } from './intent.js'
 
 /**
  * Delivery lifecycle status (中文:待集成/集成中/验证中/验证通过/已发布/已取消).
@@ -82,6 +83,24 @@ export interface Delivery {
   integration: DeliveryIntegration
   createdAt: number
   updatedAt: number
+}
+
+/**
+ * One intent linked to a delivery, as the delivery detail renders it.
+ *
+ * `prStatus` is deliberately **this intent's PR toward THIS delivery** (the
+ * `intent_prs` row whose `delivery_id` is the delivery being viewed) — NOT the
+ * intent's global PR state. An intent can hold one PR per delivery, so a global
+ * reduction would show another delivery's status in this delivery's list.
+ */
+export interface AssociatedIntent {
+  id: string
+  title: string
+  status: IntentStatus
+  /** Status of this intent's PR toward this delivery; `null` when it has none. */
+  prStatus: IntentPrStatus | null
+  /** Head branch of that PR; `null` when there is no PR or it is unknown. */
+  headBranch: string | null
 }
 
 /**

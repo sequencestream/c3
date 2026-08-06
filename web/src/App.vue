@@ -171,7 +171,9 @@ const {
   activeDeliveryId,
   activeDelivery,
   activeDeliveryPlan,
+  activeDeliveryIntents,
   activeDeliveryBranchInit,
+  deliveryLinkIntents,
   openDelivery,
   createDelivery,
   updateDelivery,
@@ -179,6 +181,9 @@ const {
   transitionDelivery,
   initDeliveryBranch,
   cleanupDeliveryBranch,
+  linkIntentToDelivery,
+  unlinkIntentFromDelivery,
+  openDeliveryFromIntent,
   onDeliveryMobileBack,
   // ---- discussions ----
   discussionsProject,
@@ -617,6 +622,9 @@ function onCodesChatWidth(px: number): void {
           @update-deps="updateIntentDeps"
           @create-pr="createPr"
           @sync-pr-status="syncIntentPrStatus"
+          @open-delivery="
+            (id: string) => intentsProject && openDeliveryFromIntent(intentsProject, id)
+          "
           @share="shareIntent"
           @start-automation="startWorkflow"
           @stop-automation="stopWorkflow"
@@ -644,6 +652,8 @@ function onCodesChatWidth(px: number): void {
           :active-delivery="activeDelivery"
           :active-plan="activeDeliveryPlan"
           :branch-init="activeDeliveryBranchInit"
+          :associated-intents="activeDeliveryIntents"
+          :intents="deliveryLinkIntents"
           :workspace-git-branch-mode="
             currentWorkspaceSetting?.gitBranchMode ??
             (deliveriesProject
@@ -658,6 +668,8 @@ function onCodesChatWidth(px: number): void {
           @transition="(to, confirm) => transitionDelivery(to, confirm)"
           @init-branch="(payload) => initDeliveryBranch(payload)"
           @cleanup-branch="cleanupDeliveryBranch"
+          @link-intent="linkIntentToDelivery"
+          @unlink-intent="unlinkIntentFromDelivery"
           @open-workspace-settings="openWorkspaceSetting"
           @mobile-back="onDeliveryMobileBack"
         />

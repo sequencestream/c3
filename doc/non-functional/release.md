@@ -306,19 +306,27 @@ macOS 签名与公证也只能在 darwin host 上完成。每个 job 跑 `releas
 - **Windows** 有证书时由 Tauri 打包器做 Authenticode 签名;没有则产物未签名,job 会
   发出 warning,发布说明必须写明 SmartScreen 提示。
 - **Linux** 显式安装 `libwebkit2gtk-4.1-dev` 等系统依赖,并用 `pkg-config --modversion`
-  校验后才继续。AppImage 打包另有三条硬约束,缺一条就只有 appimage 失败而 deb 照常
-  成功(打包器把外部工具 linuxdeploy 的输出捕获在内部,失败时只剩一句
-  `failed to run linuxdeploy`,所以三条都写进代码而不是靠试):
-  - `NO_STRIP=true` —— linuxdeploy 默认 strip AppDir 里的每个 ELF,而 sidecar 是
-    `bun --compile` 的单文件二进制,尾部附着字节码与资源,strip 会破坏它。
+  校验后才继续。AppImage 打包另有四条硬约束,缺一条就只有 appimage 失败而 deb 照常
+  成功 —— deb 不经 linuxdeploy,这条差异本身就是判断问题出在哪一层的依据:
+  - **预设 sidecar 的 rpath**(`presetSidecarRpath()`)—— 最要命的一条。linuxdeploy
+    会用**它内置的那份 patchelf** 把 AppDir 里每个 ELF 的 rpath 设成
+    `$ORIGIN/../lib`;对 `bun --compile` 的单文件 sidecar,那次改写会重排 ELF 布局
+    并把文件彻底弄坏(此后 `ldd` 解析不了它,打包器在 gtk 插件那步 abort)。而
+    **系统 patchelf** 做同一件事完全无害。因此暂存 sidecar 时先用系统 patchelf 把
+    rpath 设成**逐字相同**的值,linuxdeploy 那次就只是原地覆盖,不再重排。值必须
+    一致,差一个字符就退回原路。改完立刻跑一次 `--version` 复验,把「patchelf 行为
+    变了」挡在构建期 —— 这一步失守的后果不是构建失败,而是产出一个装着损坏
+    sidecar、要等用户双击才暴露的 AppImage。
+  - `NO_STRIP=true` —— linuxdeploy 默认 strip AppDir 里的每个 ELF,同样会破坏 sidecar。
   - `APPIMAGE_EXTRACT_AND_RUN=1` —— linuxdeploy 及其插件自身是 AppImage,Ubuntu 24.04
     起既不预装 libfuse2,又用 AppArmor 限制非特权 user namespace,自挂载起不来。
     CI 另放开 `kernel.apparmor_restrict_unprivileged_userns` 作为第二道保险。
-  - `tauri build --verbose` —— 只在 Linux 上强制,否则 linuxdeploy 失败不留任何可
-    诊断信息。
+  - `tauri build --verbose` —— 只在 Linux 上强制。打包器把 linuxdeploy 的输出捕获在
+    内部,非 verbose 时丢弃,失败只剩一句 `failed to run linuxdeploy`,毫无可诊断信息。
 
-  前两条由 `linuxBundleEnv()` 注入、第三条由 `tauriBuildFlags()` 给出,本地
-  `pnpm release:desktop` 与 CI 共用同一份定义。
+  第 2、3 条由 `linuxBundleEnv()` 注入,第 4 条由 `tauriBuildFlags()` 给出,第 1 条在
+  Phase3 暂存 sidecar 时执行;本地 `pnpm release:desktop` 与 CI 共用同一份定义。
+  patchelf 缺席时直接失败,不跳过。
 
 **CLI 渠道是发布闸门**:`publish` job 要求三个 CLI job 全绿,但对桌面 job 的失败是
 容忍的 —— 一个桌面目标构建失败只会让它自己缺席这次发布,不会把 CLI 单二进制一起扣住。

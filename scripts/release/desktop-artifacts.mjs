@@ -108,6 +108,18 @@ export function linuxBundleEnv(target) {
 }
 
 /**
+ * linuxdeploy 给 AppDir 里每个 ELF 设置的 rpath。**必须与它逐字一致**——预设的意义
+ * 全在这个字符串相等上,差一个字符就退回它自己那条会破坏文件的路径(见
+ * `presetSidecarRpath`)。
+ */
+export const APPIMAGE_RPATH = '$ORIGIN/../lib'
+
+/** 该目标是否需要在暂存 sidecar 时预设 AppImage 的 rpath。 */
+export function needsSidecarRpathPreset(target) {
+  return target.startsWith('linux')
+}
+
+/**
  * `tauri build` 的附加 flag。
  *
  * Linux 上强制 `--verbose`:打包器把 linuxdeploy 的 stdout/stderr 捕获在内部,非

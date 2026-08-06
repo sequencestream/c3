@@ -45,6 +45,7 @@ import {
 } from './manifest.mjs'
 import { binaryName, normalizeVersion } from './artifact-name.mjs'
 import {
+  APPIMAGE_RPATH,
   DESKTOP_TARGETS,
   appleEnvOverride,
   bundleVersion,
@@ -52,6 +53,7 @@ import {
   desktopPackageName,
   isDesktopHostTarget,
   linuxBundleEnv,
+  needsSidecarRpathPreset,
   macSigningMode,
   preferredKindFor,
   rustTriple,
@@ -135,6 +137,56 @@ export function stageSidecarBinary({ target, binaryPath, destDir = stageDir, log
   copyFileSync(binaryPath, dest)
   log(`  staged  ${basename(binaryPath)} → binaries/${basename(dest)}`)
   return dest
+}
+
+/**
+ * Linux:给暂存好的 sidecar 预先打上 AppImage 的 rpath。
+ *
+ * linuxdeploy 会用**它内置的那份 patchelf** 把 AppDir 里每个 ELF 的 rpath 设成
+ * `$ORIGIN/../lib`。对 `bun --compile` 的单文件二进制,那次改写会重排 ELF 布局并把
+ * 文件彻底弄坏:之后 ldd 解析不了它(打包器在 gtk 插件那步直接 abort),就算绕过
+ * ldd,产物里的 sidecar 也已经是一跑就 SIGSEGV 的废文件 —— 那比构建失败更糟。
+ *
+ * 而**系统 patchelf** 做同一件事完全无害。所以这里先用系统 patchelf 把 rpath 设成
+ * 同一个值:linuxdeploy 那次就只是覆盖一个已存在且等长的条目,不再重排布局,文件
+ * 保持可用。这两条路径的差异是在真实 ubuntu-24.04 上逐一实测出来的,不是推断。
+ *
+ * patchelf 缺席时**直接失败**:跳过会安静地产出一个装着损坏 sidecar 的 AppImage,
+ * 而那要等到用户双击才暴露。改完立刻跑一次 `--version` 复验,把「哪天 patchelf 行为
+ * 变了」挡在构建期。
+ */
+export function presetSidecarRpath({ target, stagedPath, log = () => {} }) {
+  if (!needsSidecarRpathPreset(target)) return { patched: false }
+
+  const probe = spawnSync('patchelf', ['--version'], { encoding: 'utf-8' })
+  if (probe.error || probe.status !== 0) {
+    throw new Error(
+      `[release:desktop] ${target}: patchelf is required to stage the AppImage sidecar but is not available — ` +
+        `install it (apt-get install patchelf). Without it linuxdeploy would corrupt the sidecar silently.`,
+    )
+  }
+
+  const res = spawnSync('patchelf', ['--set-rpath', APPIMAGE_RPATH, stagedPath], {
+    encoding: 'utf-8',
+  })
+  if (res.status !== 0) {
+    throw new Error(
+      `[release:desktop] ${target}: patchelf --set-rpath failed on ${stagedPath}: ${(res.stderr || '').trim()}`,
+    )
+  }
+  log(`  rpath   ${basename(stagedPath)} → ${APPIMAGE_RPATH} (pre-set for linuxdeploy)`)
+
+  // 复验必须在宿主可执行的目标上做;三平台矩阵里 linux-x64 总是在 linux runner 上构建。
+  if (isDesktopHostTarget(target)) {
+    const check = spawnSync(stagedPath, ['--version'], { encoding: 'utf-8' })
+    if (check.status !== 0) {
+      throw new Error(
+        `[release:desktop] ${target}: the staged sidecar no longer runs after patchelf ` +
+          `(exit ${check.status}, signal ${check.signal ?? 'none'}) — refusing to bundle a broken sidecar.`,
+      )
+    }
+  }
+  return { patched: true }
 }
 
 /**
@@ -338,7 +390,8 @@ async function main() {
 
     // ── Phase3 —— 暂存 + 版本门禁 ───────────────────────────────────────────
     console.log('[release:desktop] Phase3 — stage sidecar + version gate')
-    stageSidecarBinary({ target, binaryPath, log: (m) => console.log(m) })
+    const stagedPath = stageSidecarBinary({ target, binaryPath, log: (m) => console.log(m) })
+    presetSidecarRpath({ target, stagedPath, log: (m) => console.log(m) })
     verifySidecarVersion({
       target,
       binaryPath,

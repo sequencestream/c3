@@ -469,11 +469,8 @@ export async function runDiscussion(
         const lastSeq = deps.getLastSeq?.(id, b.cfg.id) ?? null
         if (lastSeq !== null) {
           return buildParticipantDeltaPrompt({
-            discussion: discussionNow,
-            def,
             stage: stageDef,
             newMessages: snapshot.filter((m) => m.seq > lastSeq),
-            speaker: b.speaker,
             organizerNote: step.organizerNote,
             subtopic: agenda[agendaIndex],
             maxSpeechChars: speechBudget,
@@ -558,11 +555,8 @@ export async function runDiscussion(
         const prompt =
           lastSeq !== null
             ? buildParticipantDeltaPrompt({
-                discussion: store.getDiscussion(id) ?? initial,
-                def,
                 stage: stageDef,
                 newMessages: allMessages.filter((m) => m.seq > lastSeq),
-                speaker,
                 organizerNote: step.organizerNote,
                 subtopic: agenda[agendaIndex],
                 maxSpeechChars: speechBudget,

@@ -18,6 +18,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentConfig, ServerToClient, SystemSettings } from '@ccc/shared/protocol'
+import { VENDOR_IDS } from '@ccc/shared/protocol'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
@@ -68,6 +69,18 @@ import {
   setSpecSessionId,
 } from './store.js'
 import { resetForTests as resetIntentLink } from './intent-link.js'
+
+/**
+ * Agent routing is what this file pins — not whether the machine running it has a
+ * vendor runtime installed. Creating a session for a GROUP is gated on the group's
+ * vendor being runnable, so on a host without the `claude` CLI the group cases would
+ * be refused before any binding happens and fail for a reason they do not describe.
+ * Every vendor is reported runnable here so the assertions stay about routing.
+ */
+vi.mock('../../kernel/agent/vendor-runtime.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../kernel/agent/vendor-runtime.js')>()),
+  availableVendorSet: () => new Set(VENDOR_IDS),
+}))
 
 const CLAUDE_A = 'claude-a'
 const CLAUDE_B = 'claude-b'

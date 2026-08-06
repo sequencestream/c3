@@ -1640,8 +1640,11 @@ export function clearSpecReviewMachineBlock(intentId: string): void {
   )
 }
 
-/** Set the spec-REVIEW session id (c3SessionId) for an intent. */
-export function setSpecReviewSessionId(id: string, sessionId: string): void {
+/**
+ * Set the spec-REVIEW session id (c3SessionId) for an intent. `null` clears it
+ * (the spec-phase occupancy release path).
+ */
+export function setSpecReviewSessionId(id: string, sessionId: string | null): void {
   const d = requireDb()
   d.run(
     'UPDATE intents SET spec_review_session_id=?, updated_at=? WHERE id=?',
@@ -1651,8 +1654,11 @@ export function setSpecReviewSessionId(id: string, sessionId: string): void {
   )
 }
 
-/** Set the spec-authoring session id (c3SessionId) for an intent. */
-export function setSpecSessionId(id: string, sessionId: string): void {
+/**
+ * Set the spec-authoring session id (c3SessionId) for an intent. `null` clears
+ * it (the spec-phase occupancy release path).
+ */
+export function setSpecSessionId(id: string, sessionId: string | null): void {
   const d = requireDb()
   d.run('UPDATE intents SET spec_session_id=?, updated_at=? WHERE id=?', sessionId, Date.now(), id)
 }

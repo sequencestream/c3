@@ -59,6 +59,7 @@ import type { EventBus, EventBusEvents } from '../kernel/events/event-bus.js'
 import type { NormalizeResult } from '../kernel/events/generic-event.js'
 import type { IntentDevSessionExitCode } from '@ccc/shared/protocol'
 import type { GenericEvent, GenericEventEnvelope } from '@ccc/shared'
+import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import { getRuntime } from '../runs.js'
 import { pathToId, setSessionMode } from '../state.js'
 import {
@@ -73,13 +74,17 @@ import {
   setLatestCommitHash,
   setPrInfo,
   setPrStatus,
-  setSpecSessionId,
-  setSpecReviewSessionId,
   safeInsertIntentLog,
   updateIntentSession,
   updateStatus,
   listIntents,
 } from '../features/intents/store.js'
+import {
+  releaseSpecOccupancy,
+  releaseSpecReviewOccupancy,
+  replaceSpecOccupancy,
+  replaceSpecReviewOccupancy,
+} from '../features/intents/spec-occupancy.js'
 import {
   clearPendingDevLink,
   releaseDevLaunch,
@@ -274,12 +279,19 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
       // ── Spec-authoring session ──
       // Link the real spec session id back onto the originating intent so the
       // ledger's spec_session_id reflects the live session. takePendingSpecLink
-      // consumes the pending→intent entry registered by the write_spec handler.
+      // consumes the pending→intent entry registered by the launcher.
       const intentId = takePendingSpecLink(prevId)
       if (intentId) {
         const intent = getIntent(intentId)
+        // A REAL prior authoring session being replaced is de-owned (defensive;
+        // a `pending:` old value is the pre-bind occupancy placeholder, whose
+        // projection row is deleted below, not de-owned as a bound session).
         const oldSpecSessionId = intent?.specSessionId ?? null
-        if (oldSpecSessionId && oldSpecSessionId !== realId) {
+        if (
+          oldSpecSessionId &&
+          oldSpecSessionId !== realId &&
+          !oldSpecSessionId.startsWith(PENDING_SESSION_PREFIX)
+        ) {
           updateRowOwner({
             sessionId: oldSpecSessionId,
             vendor: resolveSessionVendor(oldSpecSessionId),
@@ -287,7 +299,10 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
             ownerId: null,
           })
         }
-        setSpecSessionId(intentId, realId)
+        // Conditionally replace the pre-bind pending occupancy: only if the field
+        // still equals THIS run's pending id, so a late bind can never clobber a
+        // newer owner.
+        replaceSpecOccupancy(intentId, prevId, realId)
         const vendor = resolveSessionVendor(realId)
         deleteByVendorId(resolveSessionVendor(prevId), prevId)
         upsertBoundRow({
@@ -307,12 +322,19 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
       // Same shape as the authoring bind, but it writes spec_review_session_id.
       // The previous reviewer is de-owned rather than deleted: a review is
       // one-shot per document version, so older reviews accumulate as history and
-      // stay queryable under Works — only the latest one owns the intent.
+      // stay queryable under Works — only the latest one owns the intent. (The
+      // de-owning of a finished previous review happens at CLAIM time in the
+      // launcher; a `pending:` old value here is that claim's placeholder, not a
+      // bound session to de-own.)
       const intentId = takePendingSpecReviewLink(prevId)
       if (intentId) {
         const intent = getIntent(intentId)
         const oldReviewSessionId = intent?.specReviewSessionId ?? null
-        if (oldReviewSessionId && oldReviewSessionId !== realId) {
+        if (
+          oldReviewSessionId &&
+          oldReviewSessionId !== realId &&
+          !oldReviewSessionId.startsWith(PENDING_SESSION_PREFIX)
+        ) {
           updateRowOwner({
             sessionId: oldReviewSessionId,
             vendor: resolveSessionVendor(oldReviewSessionId),
@@ -320,7 +342,7 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
             ownerId: null,
           })
         }
-        setSpecReviewSessionId(intentId, realId)
+        replaceSpecReviewOccupancy(intentId, prevId, realId)
         const vendor = resolveSessionVendor(realId)
         deleteByVendorId(resolveSessionVendor(prevId), prevId)
         upsertBoundRow({
@@ -512,6 +534,12 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
     const unboundIntentId = clearPendingSpecLink(sessionId)
     const intentId = unboundIntentId ?? getIntentBySpecSessionId(sessionId)?.id
     if (!intentId) return
+    // A spec run that settled while still pending (never bound) must release its
+    // pre-bind occupancy so the queue can re-launch on the next tick. The clear
+    // is owner-safe: it only acts when the field still holds THIS settled id.
+    if (sessionId.startsWith(PENDING_SESSION_PREFIX)) {
+      releaseSpecOccupancy(intentId, sessionId)
+    }
     const outcome = settleSpecContentWatch(intentId)
     if (outcome !== 'promoted' && outcome !== 'reopened') return
     broadcastIntents(workspacePath)
@@ -521,10 +549,14 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
   // ── run:settled (sessionKind=spec_review) — review-link safety-net sweep ─────
   // The twin of the sweep above. A review run that settles without ever binding
   // leaves no conclusion behind either, so the queue simply re-reviews on a later
-  // pass — the swept entry only prevents an in-memory leak.
+  // pass — the swept entry only prevents an in-memory leak, and the released
+  // occupancy lets a later pass start a fresh review.
   eventBus.subscribe('run:settled', ({ sessionId, sessionKind }) => {
     if (sessionKind !== 'spec_review') return
-    clearPendingSpecReviewLink(sessionId)
+    const unboundIntentId = clearPendingSpecReviewLink(sessionId)
+    if (unboundIntentId && sessionId.startsWith(PENDING_SESSION_PREFIX)) {
+      releaseSpecReviewOccupancy(unboundIntentId, sessionId)
+    }
   })
 
   // ── run:settled (sessionKind=intent) — intent-link safety-net sweep ───────────

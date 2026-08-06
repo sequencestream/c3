@@ -47,6 +47,13 @@ import {
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 import { clearPendingSpecReviewLink, registerPendingSpecReviewLink } from './spec-review-link.js'
 import {
+  claimSpecOccupancy,
+  claimSpecReviewOccupancy,
+  isSpecOccupancyAlive,
+  releaseSpecOccupancy,
+  releaseSpecReviewOccupancy,
+} from './spec-occupancy.js'
+import {
   buildSpecReviewPrompt,
   buildSpecReworkPrompt,
   readSpecFingerprint,
@@ -517,8 +524,12 @@ export interface SpecLaunchOptions {
 }
 
 /**
- * Launch a spec-authoring session for an intent. Three sub-paths:
- *   1. **Resume** (existing `specSessionId`) — validate the session is not
+ * Launch a spec-authoring session for an intent. Resolution order:
+ *   0. **In-flight pending** (`specSessionId` is a `pending:` id) — the launch
+ *      already happened but the `run:bound` write has not arrived (or the
+ *      process restarted inside the grace window). The caller attaches to it and
+ *      starts nothing; a stale pending (past grace) is released and re-created.
+ *   1. **Resume** (existing REAL `specSessionId`) — validate the session is not
  *      already running, restore the runtime if it was dropped, and re-launch with
  *      a continuation prompt (or the rework brief). Returns the existing id.
  *   2. **Re-author on an existing spec** (a `specPath` but no live authoring
@@ -527,7 +538,9 @@ export interface SpecLaunchOptions {
  *   3. **First-time** (neither) — scaffold the dated spec directory, seed
  *      spec.md, backfill `specPath`, and launch with the first-time prompt.
  *
- * Every path runs the dependency gate first.
+ * Every path that starts a NEW session claims the authoring occupancy first
+ * (conditional, owner-safe), so a concurrent launch of the same intent never
+ * scaffolds or starts a second session. Every path runs the dependency gate.
  */
 export async function launchSpecSession(
   workspacePath: string,
@@ -542,9 +555,22 @@ export async function launchSpecSession(
   const intent = getIntent(intentId)
   if (!intent) return { success: false, code: 'intent.notFound' }
 
-  // If a spec session already exists → resume it
-  if (intent.specSessionId) {
+  // A REAL (bound) authoring session exists → resume it in place.
+  if (intent.specSessionId && !intent.specSessionId.startsWith(PENDING_SESSION_PREFIX)) {
     return resumeSpecSession(workspacePath, intent, deps, progress, actor, opts)
+  }
+
+  // A `pending:` occupancy means a NEW authoring session is already being
+  // launched — bind has not arrived yet, or the process restarted inside the
+  // grace window. Never start a second one: attach to the in-flight session.
+  if (intent.specSessionId) {
+    const pendingId = intent.specSessionId
+    if (isSpecOccupancyAlive(pendingId, isRunning, Date.now())) {
+      return { success: true, sessionId: pendingId, mode: 'attach' }
+    }
+    // Stale (the launch died and the grace window expired): release it and
+    // launch fresh below.
+    releaseSpecOccupancy(intentId, pendingId)
   }
 
   // Rework on a spec whose authoring session is gone (authored manually, or the
@@ -610,6 +636,26 @@ function createFirstSpecSession(
     }
   }
 
+  // Claim the authoring slot BEFORE any scaffolding: only one concurrent launch
+  // may own it — the others attach to the winner and scaffold nothing. The
+  // pending id doubles as the occupancy marker written into `spec_session_id`,
+  // so the queue's probe and a subsequent bind both recognize this run.
+  const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  const claim = claimSpecOccupancy(intent.id, specId, {
+    workspacePath,
+    vendor: specTarget.target.agent.vendor,
+    agentId: specTarget.target.ref,
+    title: intent.title,
+  })
+  if (!claim.ok) {
+    if (claim.owner) return { success: true, sessionId: claim.owner, mode: 'attach' }
+    // The occupancy could not be registered (pending projection row unwritable):
+    // report a failure rather than attach to a null owner — the queue retries on
+    // a later tick, and the ledger was left untouched so nothing is stuck.
+    return { success: false, code: 'intent.dbUnavailable' }
+  }
+  const releaseClaim = (): void => releaseSpecOccupancy(intent.id, specId)
+
   // Compute dated spec layout
   const specRoot = getSpecsBase(workspacePath)
   const layout = computeSpecLayout({
@@ -632,6 +678,7 @@ function createFirstSpecSession(
     mkdirSync(layout.dirAbs, { recursive: true })
     writeFileSync(layout.fileAbs, seed, 'utf8')
   } catch (err) {
+    releaseClaim()
     return { success: false, code: 'intent.specWriteFailed', params: { message: errMsg(err) } }
   }
 
@@ -649,24 +696,9 @@ function createFirstSpecSession(
   deps.broadcastIntents(workspacePath)
 
   // Launch spec session
-  const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(specId, workspacePath, getDefaultMode(workspacePath), [], 'spec')
   rt.specDir = layout.dirAbs
   setSessionAgent(specId, specTarget.target.ref)
-
-  try {
-    upsertPendingRow({
-      pendingId: specId,
-      workspacePath,
-      vendor: specTarget.target.agent.vendor,
-      agentId: specTarget.target.ref,
-      title: intent.title,
-      ownerKind: 'intent',
-      ownerId: intent.id,
-    })
-  } catch (err) {
-    console.warn(`[c3:intents] spec session projection write failed: ${errMsg(err)}`)
-  }
 
   registerPendingSpecLink(specId, intent.id)
 
@@ -675,11 +707,13 @@ function createFirstSpecSession(
       .launchRun(rt, buildSpecInstructPrompt(intent, layout.fileAbs, workspacePath))
       .catch((err: unknown) => {
         clearPendingSpecLink(specId)
+        releaseClaim()
         progress?.('failed')
         console.warn(`[c3:intents] launchSpecSession (first) async fail: ${errMsg(err)}`)
       })
   } catch (err) {
     clearPendingSpecLink(specId)
+    releaseClaim()
     console.warn(`[c3:intents] launchSpecSession (first) sync fail: ${errMsg(err)}`)
   }
 
@@ -714,9 +748,19 @@ export async function launchSpecReviewSession(
   if (!intent) return { success: false, code: 'intent.notFound' }
   if (!intent.specPath) return { success: false, code: 'intent.specNotWritten' }
 
-  // A review already in flight for this intent → do not start a second one.
-  if (intent.specReviewSessionId && isRunning(intent.specReviewSessionId)) {
-    return { success: true, sessionId: intent.specReviewSessionId, mode: 'attach' }
+  const reviewId = intent.specReviewSessionId
+  // A review already running (real, or a live pending) → attach, never double.
+  if (reviewId && isRunning(reviewId)) {
+    return { success: true, sessionId: reviewId, mode: 'attach' }
+  }
+  // A `pending:` review occupancy that is still valid → the review is already
+  // in flight (bind not arrived, or restart inside the grace window).
+  if (reviewId && reviewId.startsWith(PENDING_SESSION_PREFIX)) {
+    if (isSpecOccupancyAlive(reviewId, isRunning, Date.now())) {
+      return { success: true, sessionId: reviewId, mode: 'attach' }
+    }
+    // Stale (the launch died, grace expired): release it and review fresh below.
+    releaseSpecReviewOccupancy(intentId, reviewId)
   }
 
   const fileAbs = resolveSpecFileAbs(workspacePath, intent.specPath)
@@ -735,10 +779,27 @@ export async function launchSpecReviewSession(
     }
   }
 
+  // Claim the review slot before creating the runtime: a review is one-shot per
+  // document version, so a new review replaces a finished previous one, but only
+  // ONE concurrent launch may own the slot.
+  const newReviewId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  const claim = claimSpecReviewOccupancy(intent.id, newReviewId, {
+    workspacePath,
+    vendor: reviewTarget.target.agent.vendor,
+    agentId: reviewTarget.target.ref,
+    title: intent.title,
+  })
+  if (!claim.ok) {
+    if (claim.owner) return { success: true, sessionId: claim.owner, mode: 'attach' }
+    // The occupancy could not be registered (pending projection row unwritable):
+    // report a failure — the ledger was left untouched so nothing is stuck.
+    return { success: false, code: 'intent.dbUnavailable' }
+  }
+  const releaseClaim = (): void => releaseSpecReviewOccupancy(intent.id, newReviewId)
+
   progress?.('launching')
-  const reviewId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(
-    reviewId,
+    newReviewId,
     workspacePath,
     getDefaultMode(workspacePath),
     [],
@@ -748,38 +809,26 @@ export async function launchSpecReviewSession(
   // them rather than binding an unbounded submit tool.
   rt.specReviewIntentId = intent.id
   rt.specReviewFingerprint = fingerprint
-  setSessionAgent(reviewId, reviewTarget.target.ref)
+  setSessionAgent(newReviewId, reviewTarget.target.ref)
 
-  try {
-    upsertPendingRow({
-      pendingId: reviewId,
-      workspacePath,
-      vendor: reviewTarget.target.agent.vendor,
-      agentId: reviewTarget.target.ref,
-      title: intent.title,
-      ownerKind: 'intent',
-      ownerId: intent.id,
-    })
-  } catch (err) {
-    console.warn(`[c3:intents] spec review session projection write failed: ${errMsg(err)}`)
-  }
-
-  registerPendingSpecReviewLink(reviewId, intent.id)
+  registerPendingSpecReviewLink(newReviewId, intent.id)
 
   try {
     void deps
       .launchRun(rt, buildSpecReviewPrompt(intent, fileAbs, workspacePath))
       .catch((err: unknown) => {
-        clearPendingSpecReviewLink(reviewId)
+        clearPendingSpecReviewLink(newReviewId)
+        releaseClaim()
         progress?.('failed')
         console.warn(`[c3:intents] launchSpecReviewSession async fail: ${errMsg(err)}`)
       })
   } catch (err) {
-    clearPendingSpecReviewLink(reviewId)
+    clearPendingSpecReviewLink(newReviewId)
+    releaseClaim()
     console.warn(`[c3:intents] launchSpecReviewSession sync fail: ${errMsg(err)}`)
   }
 
-  return { success: true, sessionId: reviewId, mode: 'fresh' }
+  return { success: true, sessionId: newReviewId, mode: 'fresh' }
 }
 
 /**
@@ -807,6 +856,23 @@ function createSpecSessionOnExistingPath(
     }
   }
 
+  // Claim the authoring slot before creating the runtime — a rework contends
+  // for the SAME occupancy as a first-pass launch, so only one wins.
+  const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  const claim = claimSpecOccupancy(intent.id, specId, {
+    workspacePath,
+    vendor: specTarget.target.agent.vendor,
+    agentId: specTarget.target.ref,
+    title: intent.title,
+  })
+  if (!claim.ok) {
+    if (claim.owner) return { success: true, sessionId: claim.owner, mode: 'attach' }
+    // The occupancy could not be registered (pending projection row unwritable):
+    // report a failure — the ledger was left untouched so nothing is stuck.
+    return { success: false, code: 'intent.dbUnavailable' }
+  }
+  const releaseClaim = (): void => releaseSpecOccupancy(intent.id, specId)
+
   const fileAbs = resolveSpecFileAbs(workspacePath, intent.specPath!)
   armSpecContentWatch({
     intentId: intent.id,
@@ -814,24 +880,9 @@ function createSpecSessionOnExistingPath(
     specPath: intent.specPath!,
     fingerprint: readSpecFingerprint(workspacePath, intent.specPath!),
   })
-  const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(specId, workspacePath, getDefaultMode(workspacePath), [], 'spec')
   rt.specDir = dirname(fileAbs)
   setSessionAgent(specId, specTarget.target.ref)
-
-  try {
-    upsertPendingRow({
-      pendingId: specId,
-      workspacePath,
-      vendor: specTarget.target.agent.vendor,
-      agentId: specTarget.target.ref,
-      title: intent.title,
-      ownerKind: 'intent',
-      ownerId: intent.id,
-    })
-  } catch (err) {
-    console.warn(`[c3:intents] spec session projection write failed: ${errMsg(err)}`)
-  }
 
   registerPendingSpecLink(specId, intent.id)
 
@@ -845,6 +896,7 @@ function createSpecSessionOnExistingPath(
   try {
     void deps.launchRun(rt, prompt).catch((err: unknown) => {
       clearPendingSpecLink(specId)
+      releaseClaim()
       progress?.('failed')
       console.warn(
         `[c3:intents] launchSpecSession (rework, new session) async fail: ${errMsg(err)}`,
@@ -852,6 +904,7 @@ function createSpecSessionOnExistingPath(
     })
   } catch (err) {
     clearPendingSpecLink(specId)
+    releaseClaim()
     console.warn(`[c3:intents] launchSpecSession (rework, new session) sync fail: ${errMsg(err)}`)
   }
 

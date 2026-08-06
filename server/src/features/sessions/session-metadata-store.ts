@@ -366,6 +366,12 @@ function tx<T>(d: Db, fn: () => T): T {
  *
  * Idempotent: writing the same `pendingId` a second time is a no-op (a
  * `createSession` retry hits this path).
+ *
+ * Returns whether the row was actually written: `false` when the db is
+ * unavailable (the previous silent no-op), so a caller that treats the row as
+ * the timestamp source for a `pending:` occupancy can refuse to commit the
+ * occupancy instead of registering one with no row to age from. A SQL failure
+ * still throws — existing callers wrap this in their own try/catch.
  */
 export function upsertPendingRow(input: {
   pendingId: string
@@ -375,9 +381,9 @@ export function upsertPendingRow(input: {
   title?: string
   ownerKind?: SessionOwnerKind | null
   ownerId?: string | null
-}): void {
+}): boolean {
   const d = db()
-  if (!d) return
+  if (!d) return false
   const t = now()
   d.run(
     `INSERT OR REPLACE INTO session_metadata
@@ -399,6 +405,7 @@ export function upsertPendingRow(input: {
     input.ownerId ?? null,
     0,
   )
+  return true
 }
 
 /**

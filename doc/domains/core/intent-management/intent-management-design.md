@@ -509,6 +509,23 @@ codex driver 转译成其原生的 streamable-HTTP 服务器条目;cursor 边界
   决策日志**的字段:陈旧的原因仍然为真,陈旧的名次不再为真。落库的决策日志也不含该列,
   下一轮从新事实重算。
 
+  **规格阶段占用(RM-R35)。** 一个意图的规格撰写/审核会话从**发起那一刻**起就占用其
+  `spec_session_id` / `spec_review_session_id`:launcher 在脚手架/建 runtime 之前就把
+  `pending:` 占位 id 条件写入该字段,占用判据**不依赖 `run:bound` 写回**。队列内核通过
+  `probeSpecRunFacts` 把「有效 pending 占用 + 已 bind 的活跃会话」统一投影为规格阶段运行中,
+  因此 vendor 冷启动、relay 排队或凭证握手超过一个 tick(冷却 5s < tick 10s)也不会在
+  冷却过后重复发起撰写/审核会话。占用可释放且 owner-safe:启动失败、未 bind 即 settle,
+  或进程重启后 pending 投影行超过有界宽限期,都按「字段仍属于本次 pending id」的条件清理,
+  旧 run 不释放新 run 的占用;已 bind 的真实会话 id 保留供恢复/历史定位。
+
+  占用登记受两条不变量约束,保证它永远是一个**有界**事实而非永久锁:
+  (a) **投影行先行**——ledger 里的 `pending:` 值必须有对应的 pending 投影行来计时。
+  claim 先写投影行、成功后才写 ledger 字段;投影行写入失败时**不写** ledger 字段、
+  不返回成功,调用方报失败,队列在后续 tick 重试,绝不留下没有时间戳的 `pending:` 占用;
+  (b) **缺失行可恢复**——投影行缺失的 `pending:` 值(投影写失败遗留,或 bind 已删除
+  投影行但 ledger 字段未及替换时进程重启)视为**已过期**,队列可以重新发起,而不是
+  永久判为占用把意图锁死在规格阶段。
+
 - **挑选下一个**选出最佳的合格意图
   (RM-A3:`automate` ∧ status∈{todo,in_progress} ∧ 依赖已完成;按 P0→P3 再按 `createdAt` 排序)。对
   每一个,develop 步骤先按优先级挑选其**起始**动作:(1)若 `lastWorkSessionId`

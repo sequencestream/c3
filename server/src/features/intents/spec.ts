@@ -24,8 +24,7 @@ import { getDefaultMode } from '../../kernel/config/index.js'
 import { isInside } from '../../kernel/permission/tools.js'
 import { resolveSessionVendor, setSessionAgent } from '../../kernel/agent-config/index.js'
 import { groupUnavailableError, sessionAgentTargetForRole } from '../sessions/agent-target.js'
-import { upsertPendingRow } from '../sessions/session-metadata-store.js'
-import type { SpecLaunchStage, VendorId } from '@ccc/shared/protocol'
+import type { SpecLaunchStage } from '@ccc/shared/protocol'
 import type { UiErrorCode } from '@ccc/shared/ui-codes.js'
 import type { Handler } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
@@ -45,32 +44,10 @@ import { readSpecFingerprint } from './spec-review.js'
 import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
 import { prepareSpecLaunch } from './dependency-gate.js'
+import { claimSpecOccupancy, releaseSpecOccupancy } from './spec-occupancy.js'
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
-}
-
-function syncSpecPendingProjection(input: {
-  pendingId: string
-  workspacePath: string
-  vendor: VendorId
-  agentId: string
-  title: string
-  intentId: string
-}): void {
-  try {
-    upsertPendingRow({
-      pendingId: input.pendingId,
-      workspacePath: input.workspacePath,
-      vendor: input.vendor,
-      agentId: input.agentId,
-      title: input.title,
-      ownerKind: 'intent',
-      ownerId: input.intentId,
-    })
-  } catch (err) {
-    console.warn(`[c3:intents] spec session projection write failed: ${errMsg(err)}`)
-  }
 }
 
 /**
@@ -458,6 +435,24 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
   }
   if (!runSpecLaunchGate(proj, intent, ctx, conn)) return
 
+  // Claim the authoring slot before creating the runtime: a manual reset and a
+  // queue-driven authoring contend for the SAME occupancy, so only one wins.
+  const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
+  const claim = claimSpecOccupancy(intent.id, specId, {
+    workspacePath: proj,
+    vendor: specTarget.target.agent.vendor,
+    agentId: specTarget.target.ref,
+    title: intent.title,
+  })
+  if (!claim.ok) {
+    conn.send({
+      type: 'error',
+      error: { code: claim.owner ? 'intent.specSessionRunning' : 'intent.dbUnavailable' },
+    })
+    return
+  }
+  const releaseClaim = (): void => releaseSpecOccupancy(intent.id, specId)
+
   // The reset prompt only references the spec PATH; the agent reads the file
   // itself, so the server no longer pre-reads it. We still resolve the absolute
   // path: `rt.specDir` and the path handed to the prompt both depend on it. The
@@ -474,18 +469,9 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
 
   // Stop viewing whatever this connection had open, then start the fresh session.
   if (conn.viewing) removeViewer(conn.viewing, conn.deliver)
-  const specId = `${PENDING_SESSION_PREFIX}${randomUUID()}`
   const rt = ensureRuntime(specId, proj, getDefaultMode(proj), [], 'spec')
   rt.specDir = dirname(fileAbs)
   setSessionAgent(specId, specTarget.target.ref)
-  syncSpecPendingProjection({
-    pendingId: specId,
-    workspacePath: proj,
-    vendor: specTarget.target.agent.vendor,
-    agentId: specTarget.target.ref,
-    title: intent.title,
-    intentId: intent.id,
-  })
   registerPendingSpecLink(specId, intent.id)
   conn.viewing = specId
   touchWorkspace(proj, Date.now())
@@ -505,11 +491,13 @@ export const resetSpecSessionHandler: Handler<'reset_spec_session'> = (ctx, conn
       .launchRun(rt, buildResetSpecPrompt(intent, fileAbs, msg.userInput, proj))
       .catch((err: unknown) => {
         clearPendingSpecLink(specId)
+        releaseClaim()
         conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage: 'failed' })
         console.warn(`[c3:intents] reset_spec_session launch failed before bind: ${errMsg(err)}`)
       })
   } catch (err) {
     clearPendingSpecLink(specId)
+    releaseClaim()
     throw err
   }
 }

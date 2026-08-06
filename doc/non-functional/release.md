@@ -347,7 +347,11 @@ macOS 签名与公证也只能在 darwin host 上完成。每个 job 跑 `releas
 - 校验通过后用户确认安装:壳按既有生命周期停掉自己创建的 sidecar,写入更新记录,
   以 `--update-assistant` 参数拉起同一可执行文件作为独立更新助手并退出。
 - 助手等壳退出后按平台安装适配器替换**完整桌面包**:macOS 移动旧 `.app` 到备份 →
-  挂载 dmg → 拷入新 `.app` → 签名/公证校验 → `open` 启动,提交点后启动失败则回滚;
+  挂载 dmg → 拷入新 `.app` → 签名校验 → `open` 启动,提交点后启动失败则回滚。
+  签名校验以 `codesign --verify` 为硬门禁(它封装整个 bundle 的哈希,过不了即说明
+  字节被改动);`stapler validate` 只记录不阻断 —— ad-hoc 产物本就没有公证票据,
+  且 `stapler` 属于完整版 Xcode,拿它当硬门禁会在只装 Command Line Tools 的机器上
+  无条件阻断自更新;
   Windows 委托 NSIS 静默安装;Linux 在当前 `$APPIMAGE` 所在目录准备、备份并原子
   替换 AppImage,无需 root;目录不可写或不是从 AppImage 启动时拒绝更新并保留旧版本。
 - 下载中断、校验不一致、替换失败都保持旧版本可启动;成功启动新版本后才清理备份与
@@ -539,6 +543,13 @@ sidecar + 汇总的 `SHA256SUMS`。所有外层 sidecar 覆盖的是包(tar/zip 
   目标 + darwin 主机 + 存在 `codesign` 时生效,否则警告后继续);**桌面包**由
   Tauri 打包器在**封 dmg 之前**签 `.app`(经 `bundle.macOS.signingIdentity`)——
   事后对 `bundle/macos/` 补签改不到已经生成的镜像。
+
+  桌面包额外启用 **Hardened Runtime**,因此必须携带 `src-tauri/entitlements.plist`
+  授予 `com.apple.security.cs.allow-jit`:Hardened Runtime 默认禁止一切可写可执行
+  内存,而 sidecar 是 Bun 编译的单二进制,JavaScriptCore 拿不到 JIT 就会以
+  `ReferenceError: SharedArrayBuffer is not defined` 直接退出,壳随即在
+  `c3 --version` 探测处失败。Hardened Runtime 不可为绕开此问题而关闭 —— 它是 Apple
+  公证的前置条件。该 plist 内**不得写 XML 注释**,签名时的 AMFI 解析器会拒绝。
 
 `pnpm release` 是**交互式本地构建+入库**流程:提示输入版本号(或接受
 `--version=X.Y.Z`),在本机跨平台编译三个发布目标——`linux-x64`、

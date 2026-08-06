@@ -82,6 +82,10 @@ pnpm release:desktop --require-signing   # 正式产物:签名未达当前档位
   Developer ID 并可公证;否则由 Tauri 打包器做 ad-hoc 自签。本地构建走的是后者 ——
   能装能跑,但用户需要 `xattr -dr com.apple.quarantine` 才能绕过 Gatekeeper。
   空字符串等同于没有凭证,详见 `doc/non-functional/release.md`。
+  两档都启用 Hardened Runtime,因此 `src-tauri/entitlements.plist` 是必需的 ——
+  它授予的 `allow-jit` 是 sidecar 里 Bun/JavaScriptCore 能启动的前提。改这个
+  文件时**不要加 XML 注释**,签名时的 AMFI 解析器会以 `AMFIUnserializeXML:
+syntax error` 拒绝整个构建。
 - **Windows** —— 有 `WINDOWS_CERTIFICATE` 时由 Tauri 打包器完成 Authenticode 签名;
   没有则产物未签名,发布说明必须写明 SmartScreen 提示。
 - **Linux** —— 需要 `libwebkit2gtk-4.1-dev`、`libgtk-3-dev`、

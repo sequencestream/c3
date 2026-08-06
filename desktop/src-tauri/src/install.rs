@@ -372,7 +372,15 @@ fn find_app_in(dir: &Path) -> Option<PathBuf> {
     None
 }
 
-/// 新 App 的签名/公证校验。正式发布产物必须签名且公证通过。
+/// 新 App 的签名校验 —— 替换正在使用的 App 之前的最后一道关。
+///
+/// `codesign --verify` 是**硬要求**:它封装了整个 bundle 的哈希,过不了就说明字节
+/// 被改过或签名缺失,这正是这道关要挡的东西。
+///
+/// `stapler validate` 只作参考。公证票据的缺失不等于包被篡改:发布产物在没有
+/// Developer ID 证书时是 ad-hoc 签名的,本就没有票据;而 `stapler` 属于完整版
+/// Xcode,只装了 Command Line Tools 的机器上跑它只会得到 xcode-select 的报错。
+/// 拿它当硬门禁,等于在绝大多数用户机器上无条件阻断自更新。
 #[cfg(target_os = "macos")]
 fn verify_signed_app(app: &Path) -> Result<(), String> {
     let out = Command::new("codesign")
@@ -388,13 +396,13 @@ fn verify_signed_app(app: &Path) -> Result<(), String> {
     let stapled = Command::new("stapler")
         .args(["validate", app.to_str().unwrap_or("")])
         .output();
-    if let Ok(out) = stapled {
-        if !out.status.success() {
-            return Err(format!(
-                "stapler validate failed: {}",
-                String::from_utf8_lossy(&out.stdout).trim()
-            ));
-        }
+    match stapled {
+        Ok(out) if out.status.success() => {}
+        _ => eprintln!(
+            "[c3-desktop] update assistant: no notarization ticket for {} \
+             — proceeding on the verified code signature alone",
+            app.display()
+        ),
     }
     Ok(())
 }

@@ -101,7 +101,9 @@ vi.mock('../git.js', () => ({
   getHeadCommit: vi.fn(async () => 'abc1234'),
   getCurrentBranch: vi.fn(async () => 'feature/x'),
   commitAndPush: vi.fn(async () => ({ ok: true, committed: true })),
-  createGhPr: vi.fn(async () => ({ ok: true, prId: '1', prUrl: 'http://x/pull/1' })),
+  // The module under test wires `createForgePr` (forge-routed, base required) —
+  // mock that name so the stub matches what the wiring actually imports.
+  createForgePr: vi.fn(async () => ({ ok: true, prId: '1', prUrl: 'http://x/pull/1' })),
 }))
 
 // Dynamic import so all vi.mocks are in place first.

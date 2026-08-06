@@ -58,3 +58,4 @@ References。模板见 `../../.claude/skills/project-spec/references/adr.md`。
 | [0034](0034-intent-pr-fact-base-and-readpoints.md)                           | intents PR 拆表的事实基础:时间戳编码 / `pr_id` 语义 / 存量 base / 多 base 行为                                                 | accepted   |
 | [0035](0035-intent-pr-table-split-and-migration-markers.md)                  | PR 拆表为 `intent_prs`(硬切无双写、单一写入口、聚合态共用)+ `schema_migrations` 迁移标记表                                     | accepted   |
 | [0036](0036-delivery-as-integration-unit.md)                                 | 交付作为 Git 集成单元而非业务里程碑:本地账本 + 受控状态机 + `base_branch` 快照 + `pr:merge` 知情告知                           | proposed   |
+| [0037](0037-group-launch-segment-and-session-cursor.md)                      | Group 启动段 + 会话游标:一次 run 只服务一段候选且段首必被使用,跨 system/custom 边界的 failover 发生在 resume                   | accepted   |

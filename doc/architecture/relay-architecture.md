@@ -120,6 +120,7 @@ group?: string // 非空 ⇒ 该 agent 归入 (group, vendor) 组;为空/缺省 
 - **组内优先级 = `order_seq` 升序**:沿用全局排序键,`order_seq` 越小优先级越高。
 - **只含 enabled agent**:`enabled === false` 的 agent 不进入组(与 `enabledAgents` 口径一致)。
 - 空组(该 `(vendor, group)` 下无 enabled agent)不产生虚拟 group agent。
+- **成员可混 `custom` 与 `system`**:`system` 成员用 vendor CLI 自身登录,是合法的一跳(典型用法:官方订阅额度优先,耗尽后切第三方 provider)。二者不能在同一次 run 内切换——跨越这条边界由启动段与会话游标承担(§8.4)。
 
 配置示例:
 
@@ -149,10 +150,11 @@ group?: string // 非空 ⇒ 该 agent 归入 (group, vendor) 组;为空/缺省 
 解析的唯一入口是 `resolveAgentTarget(ref)`,它同时产出**绑定身份**与**代表成员**,避免调用方从"单个 agent"反推该绑定什么:
 
 ```ts
-resolveAgentTarget(ref: string | null): AgentTarget
+resolveAgentTarget(ref: string | null, cursor?: string | null): AgentTarget
 //  { ref, agent, candidates, isGroup }
 //  真实 id                → ref = 该 id，candidates = [该 agent]（长度 1）
-//  _c3_<vendor>_<group>   → ref = 组引用，candidates = 该 (vendor, group) 内 enabled agent 按 order_seq 升序
+//  _c3_<vendor>_<group>   → ref = 组引用，candidates = 该 (vendor, group) 内 enabled agent 按 order_seq 升序，
+//                           并以 cursor 指名的成员为环形起点（§8.4；cursor 为空或已离组 ⇒ 自然顺序）
 //  空（角色"跟随默认"哨兵）/ 未知 id
 //                         → 跟随 defaultAgentId，对其套用上面两条规则；默认值本身是组时按组解析
 //  默认值也不可用          → 系统 agent，否则合成兜底（设置整体为空/损坏时的最后防线）
@@ -201,7 +203,7 @@ for i in 0..candidates.len:
 所有候选失败 ⇒ 回传该 vendor 协议的 error 事件（codex: response.failed / claude: error）
 ```
 
-- **每个请求都从优先级最高的候选重新开始**(无粘性)——符合"每次请求组内生效的优先级最高 agent"的语义。若需要"粘住上次成功候选"作为优化,列为后续可选项,不在当前范围。
+- **请求级无粘性**:每个请求都从 token 绑定候选列表的首项重新开始。跨 run 的粘性由会话游标承担(§8.4),它决定的是这次 run 绑定了哪一段候选,而非段内的尝试顺序。
 
 ### 8.2 Failover 触发条件与粒度
 
@@ -224,6 +226,23 @@ for i in 0..candidates.len:
 - failover 粒度是**单个 HTTP 请求(一个 turn 的一次上游调用)**,不是整个 session。
 - codex thread / claude session 的上下文由 CLI 侧维护并随每次请求重发,故请求级换 provider 不丢历史;但**模型能力差异**(工具支持、上下文窗口、reasoning)可能导致体验不一致——这是 group 内候选应尽量同档的运维约束,不是 relay 能消除的。
 - **跨 vendor 不 failover**:组身份含 vendor,claude 组只在 claude-compat 候选间切,codex 组只在 codex 候选间切。claude↔codex 语义不可互换。
+
+### 8.4 启动段与会话游标(跨段 failover)
+
+provider 端点在 spawn 时就写进子进程 env(`ANTHROPIC_BASE_URL`、codex 的 `model_provider`),一次 run 无法在"走 relay 的 custom 候选"与"用 CLI 自身登录的 system 成员"之间切换。因此候选列表按 relay 可达性切成**启动段**:
+
+- `launchSegment(candidates)`:首项可 relay ⇒ 取首项及其后紧邻的连续可 relay 候选;首项不可 relay(`system`、无 provider 三元组的 vendor、`baseUrl` 为空)⇒ 只取首项,该 run 用 CLI 自身登录。
+- **首项一定被使用**。若改为"收集全部 custom 候选",一个排在最前的 `system` 成员会被静默跳过,可见顺序就不再等于实际运行的 agent。
+- 段内 failover 由 relay 负责(§8.1/§8.2),段边界由**会话游标**跨越。
+
+会话游标 `SessionAgentFact.groupCursor`(state.json,类比已冻结的 `vendor`/`storeScope`,但它是可变的):
+
+- 记录**下一次启动从组内哪个成员起算**,仅在绑定为组引用时有意义。
+- `resolveSessionLaunch` 读它,把成员列表旋转成以该成员为首,再取启动段。
+- run 因**可降级错误**失败(与 `isDegradableError` 同一口径,即 `agent:error` 事件的 `degradable`)时,游标推进到刚跑完那一段之后的成员;resume 或下一次 run 即落在下一个候选上。
+- 组是**环**:推进越过末尾回绕到首项,会话不会被困在耗尽的尾部。游标指向已离组/被删除的成员时退回自然顺序。
+- 重新绑定 agent(`changeSessionAgentFact`)清空游标——它索引的是旧绑定的成员序。
+- 配额类失败另有专门通路:该成员被禁用直到重置时刻,于是它整个从组里消失,与游标机制正交。
 
 ## 9. 协议适配(按 vendor)
 
@@ -257,16 +276,16 @@ relay 的适配器是纯函数,按 vendor + 候选的上游协议选择"透传"�
 
 `launchForAgent(agent)` 从"按 vendor 注入真实连接"改为"产出候选列表 + 由 spawn 点接 relay"。**register 不在 launch 层做**——`launchForAgent`/`resolveSessionLaunch` 会被非启动场景反复调用(vendor 探测、展示),在此 register 会泄漏 token;register 落在真正 fork 子进程的三个点。
 
-- 新增 `launchForCandidates(candidates: AgentConfig[]): LaunchOverrides`(单 agent 是长度 1 的候选,`launchForAgent = launchForCandidates([agent])`)。它是**纯数据**:
-  - `relayCandidates?: RelayCandidate[]`——所有 `custom` 候选的真实上游 `{baseUrl, apiKey, model, wireApi?}`(codex 带 `wireApi`,claude 不带);`system`/空候选不产生 relay 候选(用 CLI 自身登录)。
-  - `model` = 首候选 model(CLI 固定占位;relay 转发时按命中候选覆盖)。
+- 新增 `launchForCandidates(candidates: AgentConfig[]): LaunchOverrides`(单 agent 是长度 1 的候选,`launchForAgent = launchForCandidates([agent])`)。它只服务候选列表的**启动段**(§8.4),是**纯数据**:
+  - `relayCandidates?: RelayCandidate[]`——启动段内各候选的真实上游 `{baseUrl, apiKey, model, wireApi?}`(codex 带 `wireApi`,claude 不带)。首项是 `system`/无 provider 配置时该段长度为 1 且不产生 relay 候选,run 用 CLI 自身登录。
+  - `model` = 段首候选 model(CLI 固定占位;relay 转发时按命中候选覆盖)。
   - `envOverrides` 只含**非机密** env(代理变量、claude 第三方 `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING` workaround)——**真实 key 不再进 env**。
 - **register/unregister 落在三个 spawn 点**(生命周期各自自持):
   - **codex driver**:`opts.relayCandidates` 存在 + relay 就绪 ⇒ `relay.register(candidates)` → token 作 `CODEX_API_KEY`;`base_url = relay.endpoint('codex')`;`CODEX_RELAY_PROVIDER` provider(`wire_api=responses` + `supports_websockets=false`);run 结束/abort `unregister`。
   - **claude 常驻路径**(`run-lifecycle` 每次 attempt)与**一次性 advisor**(`agent-once`)/**讨论**/**automations claude 分支**:调用 `bindClaudeRelay(candidates)` → `relay.register` → 注入 `env.ANTHROPIC_BASE_URL = relay.endpoint('claude')`、`env.ANTHROPIC_API_KEY = env.ANTHROPIC_AUTH_TOKEN = token`、`NO_PROXY += 127.0.0.1,localhost,::1`;attempt/turn 结束 `unbindRelay(token)`。
   - relay 单例经 `kernel/relay/runtime.ts` 的 `setRelay/getRelay` 在组合根注入,供 claude 路径与 advisor 读取;codex driver 仍走注入句柄(便于测试)。
 - `wireApi` 不再在 LaunchOverrides 里区分 direct/relay——**所有 codex custom 都走 relay**;`wireApi` 下沉为**候选级**属性(每候选 chat 还是 responses,决定 relay 内部翻译 vs 透传)。
-- `resolveSessionLaunch` / `resolveToolSessionLaunch` / `resolveDegradationAgent`:改为 `resolveAgentCandidates(ref)` → `launchForCandidates`;group 引用 `_c3_<group>` 保持为 session 绑定的 agentId,每次 run 重解析并从最高优先级重新 failover。
+- `resolveSessionLaunch` / `resolveToolSessionLaunch` / `resolveDegradationAgent`:改为 `resolveAgentCandidates(ref)` → `launchForCandidates`;group 引用 `_c3_<group>` 保持为 session 绑定的 agentId,每次 run 重解析。会话路径额外读入该会话的组游标(§8.4),从游标成员起算而非恒定从组首。
 
 ## 11. 沙箱接线
 

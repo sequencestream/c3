@@ -953,17 +953,28 @@ describe('SettingsPanel.vue — drag-to-reorder agents (order_seq)', () => {
     ],
   }
 
-  it('dropping a row into a new slot persists the new order + dense order_seq on Save', async () => {
+  it('dropping a row onto another slot inside the same container reorders it', async () => {
     const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
     const rows = w.findAll('[data-testid="agent-card"]')
-    // Grab the 3rd row (a2) and drop it onto the 1st slot.
+    // Grab the 3rd row (a2) and drop it onto the 2nd slot (a1).
+    await rows[2].find('[data-testid="agent-drag"]').trigger('dragstart')
+    await rows[1].trigger('dragover')
+    await rows[1].trigger('drop')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.map((a) => a.id)).toEqual([SYSTEM_AGENT_ID, 'a2', 'a1'])
+    expect(saved.agents.map((a) => a.order_seq)).toEqual([0, 1, 2])
+  })
+
+  it('a drop targeting the System agent lands after it — the server pins it to order_seq 0', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: threeAgents } })
+    const rows = w.findAll('[data-testid="agent-card"]')
     await rows[2].find('[data-testid="agent-drag"]').trigger('dragstart')
     await rows[0].trigger('dragover')
     await rows[0].trigger('drop')
     await w.find(SAVE.agent).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
-    expect(saved.agents.map((a) => a.id)).toEqual(['a2', SYSTEM_AGENT_ID, 'a1'])
-    expect(saved.agents.map((a) => a.order_seq)).toEqual([0, 1, 2])
+    expect(saved.agents.map((a) => a.id)).toEqual([SYSTEM_AGENT_ID, 'a2', 'a1'])
   })
 
   it('Save stamps order_seq from array order even without any drag', async () => {
@@ -971,6 +982,191 @@ describe('SettingsPanel.vue — drag-to-reorder agents (order_seq)', () => {
     await w.find(SAVE.agent).trigger('click')
     const saved = (w.emitted('save') as [SystemSettings][])[0][0]
     expect(saved.agents.map((a) => a.order_seq)).toEqual([0, 1, 2])
+  })
+})
+
+describe('SettingsPanel.vue — agent group containers (ADR-0029)', () => {
+  const grouped: SystemSettings = {
+    ...baseSettings,
+    agents: [
+      {
+        id: SYSTEM_AGENT_ID,
+        vendor: 'claude',
+        configMode: 'system',
+        displayName: 'System',
+        config: { baseUrl: '', apiKey: '', model: '' },
+      },
+      {
+        id: 'a1',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'One',
+        enabled: true,
+        group: 'pool',
+        config: { baseUrl: 'https://one', apiKey: 'k', model: '' },
+      },
+      {
+        id: 'a2',
+        vendor: 'claude',
+        configMode: 'custom',
+        displayName: 'Two',
+        enabled: true,
+        group: 'pool',
+        config: { baseUrl: 'https://two', apiKey: 'k', model: '' },
+      },
+      {
+        id: 'cx',
+        vendor: 'codex',
+        configMode: 'custom',
+        displayName: 'CX',
+        enabled: true,
+        config: { baseUrl: 'https://cx', apiKey: 'k', model: '', wireApi: 'chat' },
+      },
+    ],
+  }
+
+  const boxes = (w: ReturnType<typeof mount>) => w.findAll('[data-testid="agent-group-box"]')
+  const groupNames = (w: ReturnType<typeof mount>) =>
+    boxes(w).map((b) => b.attributes('data-group-name'))
+
+  it('renders one container per group plus the default bucket, ordered by first member', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
+    // The System agent is ungrouped, so `default` holds the first member overall
+    // and renders first; `pool` follows.
+    expect(groupNames(w)).toEqual(['', 'pool'])
+    const rowsOf = (box: number) =>
+      boxes(w)
+        [box].findAll('[data-testid="agent-card"]')
+        .map((r) => r.attributes('data-agent-id'))
+    expect(rowsOf(0)).toEqual([SYSTEM_AGENT_ID, 'cx'])
+    expect(rowsOf(1)).toEqual(['a1', 'a2'])
+  })
+
+  it('the in-group arrow swaps two members and Save keeps the new failover order', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
+    const pool = boxes(w)[1]
+    // a2 is second in `pool`; move it up so it becomes the first candidate.
+    await pool.findAll('[data-testid="agent-move-up"]')[1].trigger('click')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.filter((a) => a.group === 'pool').map((a) => a.id)).toEqual(['a2', 'a1'])
+    expect(saved.agents.map((a) => a.order_seq)).toEqual([0, 1, 2, 3])
+  })
+
+  it('the first member cannot move up and the last cannot move down', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
+    const pool = boxes(w)[1]
+    const ups = pool.findAll('[data-testid="agent-move-up"]')
+    const downs = pool.findAll('[data-testid="agent-move-down"]')
+    expect(ups[0].attributes('disabled')).toBeDefined()
+    expect(downs[1].attributes('disabled')).toBeDefined()
+    expect(ups[1].attributes('disabled')).toBeUndefined()
+  })
+
+  it('the System agent is pinned: it can neither move down nor be passed by a sibling', () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
+    const def = boxes(w)[0]
+    expect(def.findAll('[data-testid="agent-move-down"]')[0].attributes('disabled')).toBeDefined()
+    // `cx` sits right below it, so moving up would put it above System.
+    expect(def.findAll('[data-testid="agent-move-up"]')[1].attributes('disabled')).toBeDefined()
+  })
+
+  it('dragging a row onto another container moves it there, and Save persists the new group', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
+    const cxRow = w.find('[data-agent-id="cx"]')
+    await cxRow.find('[data-testid="agent-drag"]').trigger('dragstart')
+    // `pool` is a claude group — a codex agent is refused with a notice.
+    await boxes(w)[1].trigger('drop')
+    expect(w.find('[data-testid="agent-group-notice"]').text()).toContain('one agent type')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.find((a) => a.id === 'cx')?.group).toBe('')
+  })
+
+  it('a system-config agent may join a group — it is a legitimate first hop', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
+    await w
+      .find(`[data-agent-id="${SYSTEM_AGENT_ID}"]`)
+      .find('[data-testid="agent-drag"]')
+      .trigger('dragstart')
+    await boxes(w)[1].trigger('drop')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.find((a) => a.id === SYSTEM_AGENT_ID)?.group).toBe('pool')
+    // The container holding the System agent must render (and save) first.
+    expect(saved.agents.map((a) => a.id)).toEqual(['a1', 'a2', SYSTEM_AGENT_ID, 'cx'])
+  })
+
+  it('dragging the last member out keeps the emptied container visible', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
+    for (const id of ['a1', 'a2']) {
+      await w
+        .find(`[data-agent-id="${id}"]`)
+        .find('[data-testid="agent-drag"]')
+        .trigger('dragstart')
+      await boxes(w)[0].trigger('drop')
+    }
+    expect(groupNames(w)).toContain('pool')
+    expect(
+      boxes(w)
+        .find((b) => b.attributes('data-group-name') === 'pool')
+        ?.text(),
+    ).toContain('Drag an agent here')
+  })
+
+  it('renaming a container rewrites every member’s group', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
+    const name = boxes(w)[1].find('[data-testid="agent-group-name"]')
+    await name.setValue('backup')
+    await name.trigger('change')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.filter((a) => a.group === 'backup').map((a) => a.id)).toEqual(['a1', 'a2'])
+  })
+
+  it('a rename to the reserved group-ref prefix is refused and rolled back', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
+    const name = boxes(w)[1].find('[data-testid="agent-group-name"]')
+    await name.setValue('_c3_claude_x')
+    await name.trigger('change')
+    expect(w.find('[data-testid="agent-group-notice"]').exists()).toBe(true)
+    expect((name.element as HTMLInputElement).value).toBe('pool')
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.filter((a) => a.group === 'pool')).toHaveLength(2)
+  })
+
+  it('dissolving a container drops every member back to default without deleting them', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
+    await boxes(w)[1].find('[data-testid="agent-group-remove"]').trigger('click')
+    expect(groupNames(w)).toEqual([''])
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents).toHaveLength(4)
+    expect(saved.agents.every((a) => (a.group ?? '') === '')).toBe(true)
+  })
+
+  it('a newly created container is empty and is not saved until it has a member', async () => {
+    const w = mount(SettingsPanel, { props: { open: true, settings: grouped } })
+    await w.find('[data-testid="settings-add-group"]').trigger('click')
+    expect(groupNames(w)).toHaveLength(3)
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    expect(saved.agents.map((a) => a.group ?? '')).toEqual(['', '', 'pool', 'pool'])
+    expect(w.find('[data-testid="agent-group-notice"]').text()).toContain('not saved')
+  })
+
+  it('retyping a grouped agent’s vendor moves it out of the group instead of splitting the pool', async () => {
+    const w = mount(SettingsPanel, {
+      props: { open: true, settings: grouped, vendorAvailability: availability() },
+    })
+    await w.find('[data-agent-id="a1"]').find('[data-testid="agent-vendor"]').setValue('codex')
+    expect(w.find('[data-testid="agent-group-notice"]').exists()).toBe(true)
+    await w.find(SAVE.agent).trigger('click')
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    const a1 = saved.agents.find((a) => a.id === 'a1')
+    expect(a1?.vendor).toBe('codex')
+    expect(a1?.group).toBe('')
   })
 })
 

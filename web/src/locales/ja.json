@@ -247,9 +247,6 @@
         },
         "icon": {
           "label": "アイコン"
-        },
-        "group": {
-          "label": "グループ"
         }
       },
       "toggle": {
@@ -372,12 +369,46 @@
       "copy": {
         "tooltip": "エージェントをコピー"
       },
-      "reorder": {
-        "tooltip": "ドラッグして並べ替え"
-      },
       "group": {
-        "placeholder": "グループ名(任意)",
-        "tooltip": "グループ名——同じグループの agent は 1 つのフェイルオーバー候補集になります。"
+        "default": {
+          "label": "default",
+          "hint": "グループなし — ここの各エージェントは単独で動作します。"
+        },
+        "add": {
+          "label": "+ グループを作成"
+        },
+        "new": {
+          "name": "グループ"
+        },
+        "rename": {
+          "tooltip": "このグループの名前を変更"
+        },
+        "remove": {
+          "tooltip": "このグループを解散 — 所属エージェントは default に戻ります"
+        },
+        "move": {
+          "tooltip": "ドラッグしてグループ間で移動"
+        },
+        "moveUp": {
+          "tooltip": "上へ — フェイルオーバー順で前になります"
+        },
+        "moveDown": {
+          "tooltip": "下へ — フェイルオーバー順で後になります"
+        },
+        "empty": {
+          "hint": "ここにエージェントをドラッグ"
+        },
+        "failover": {
+          "hint": "メンバー {n} のフェイルオーバープール — 上から順に試行"
+        },
+        "notice": {
+          "vendorMismatch": "グループに入れられるエージェントの種類は 1 つだけです — このグループは {vendor} です。",
+          "vendorChanged": "種類の変更により、このエージェントはグループ「{group}」から外れました — グループの種類は 1 つだけです。",
+          "duplicateName": "「{name}」という名前のグループは既に存在します。",
+          "reservedName": "グループ名を「{prefix}」で始めることはできません。",
+          "emptyName": "グループ名は空にできません。",
+          "emptyDiscarded": "空のグループ「{name}」は保存されませんでした — エージェントを 1 つ以上ドラッグしてください。"
+        }
       },
       "groupPicker": {
         "label": "グループ"

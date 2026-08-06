@@ -272,6 +272,16 @@ interface SessionAgentFact {
    * Absent on legacy facts ⇒ treated as `'host'` (every pre-sandbox session).
    */
   storeScope?: StoreScope
+  /**
+   * Group failover cursor (ADR-0029): which member of the bound group the NEXT
+   * launch starts from, as an agent id. Only meaningful when `agentId` is a group
+   * reference — a group binding re-expands every run, and a run that died on a
+   * degradable error advances this so the resume lands on the next candidate
+   * instead of re-hitting the one that just failed. The list is treated as a ring,
+   * so every member stays reachable from any cursor. Absent (or naming a member
+   * that has since left the group) ⇒ start from the group's first member.
+   */
+  groupCursor?: string
 }
 
 /**
@@ -1225,6 +1235,27 @@ export function getSessionStoreScope(realId: string): StoreScope {
   return loadState().sessionAgents[realId]?.storeScope ?? 'host'
 }
 
+/** The group failover cursor of a real session, or null when it starts from the
+ *  group's first member (ADR-0029). */
+export function getSessionGroupCursor(realId: string): string | null {
+  return loadState().sessionAgents[realId]?.groupCursor ?? null
+}
+
+/**
+ * Move (or, with null, reset) a real session's group failover cursor. A session
+ * with no fact yet is ignored: there is nothing to resume, and the next run binds
+ * a fresh fact that starts from the group's first member anyway.
+ */
+export function setSessionGroupCursor(realId: string, memberId: string | null): void {
+  const state = loadState()
+  const fact = state.sessionAgents[realId]
+  if (!fact) return
+  if ((fact.groupCursor ?? null) === memberId) return
+  if (memberId === null) delete fact.groupCursor
+  else fact.groupCursor = memberId
+  persistState()
+}
+
 /**
  * Set (or, with a null/empty agent, clear) a pending session's intent — the
  * mutable half of the binding space. No-op-safe to call repeatedly; the
@@ -1282,7 +1313,9 @@ export function changeSessionAgentFact(realId: string, agentId: string, vendor: 
   const existing = state.sessionAgents[realId]
   if (existing && existing.vendor !== vendor) return false
   // storeScope is frozen like vendor — an agent swap never relocates the store;
-  // preserve the existing scope (absent stays absent ⇒ reads as 'host').
+  // preserve the existing scope (absent stays absent ⇒ reads as 'host'). The group
+  // cursor is deliberately NOT carried over: it indexes the members of the group
+  // that was bound, and the binding just changed.
   state.sessionAgents[realId] = {
     agentId,
     vendor: existing?.vendor ?? vendor,

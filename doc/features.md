@@ -178,10 +178,12 @@ c3
 │   │
 │   ├── agent-config 智能体配置                   # agent 档案目录与会话用哪个 agent 的规则(系统设置·agent 页)
 │   │   ├── agent 档案                            # 持久化档案(vendor/url/key/model/name),可增删/排序/启停/复制;vendor 下拉含 Claude/Codex/Cursor 三档,Cursor 恒 system 模式且只有 {apiKey, model}(无 baseUrl)
+│   │   ├── 分组容器编辑                          # agent 列表按分组容器渲染,group 为空的归入 default 容器;拖动跨容器移动、组内箭头调优先级(可见顺序即故障转移顺序),容器可重命名/解散;一个组只装一种 vendor,空容器不落盘
 │   │   ├── 运行时可用性门控                      # 各 vendor 能否起一轮由 settings 的中立信号 vendorRuntime 决定(宿主 CLI 探测 / 进程内 SDK 能否解析);不可用的 vendor 选项禁用并就地标注原因,已配置的 agent 仍可查看编辑
 │   │   ├── 默认 agent                            # 未指定时使用的默认 agent(defaultAgentId)
 │   │   ├── 专用 agent 路由                       # 工具/意图/规格/规格审核/自动化会话可各指定 agent,空串「跟随默认」(tool/intent/spec/specReview/automationAgentId);审核槽位唯一,无 sandbox 变体
-│   │   ├── 角色配组与故障转移                    # default/tool/intent/spec/specReview 可指向虚拟组 _c3_<vendor>_<group>;会话绑定保留组引用、代表成员(order_seq 首个 enabled)决定 vendor/展示,每次运行重解析并按序 failover;组无可用成员(全禁用或组 vendor 运行时缺失)时创建/绑定明确报错 agent.groupUnavailable,不回落 System
+│   │   ├── 角色配组与故障转移                    # default/tool/intent/spec/specReview 可指向虚拟组 _c3_<vendor>_<group>;会话绑定保留组引用、代表成员(order_seq 首个 enabled)决定 vendor/展示,每次运行重解析;组无可用成员(全禁用或组 vendor 运行时缺失)时创建/绑定明确报错 agent.groupUnavailable,不回落 System
+│   │   ├── 启动段与组游标                        # 组内可混 custom(经 relay)与 system(CLI 自身登录)成员,一次 run 只服务候选列表的启动段且段首一定被使用;段内由 relay 按序 failover,跨段靠会话游标——run 因可降级错误失败后游标推进,resume 落到下一个候选,组为环不困在尾部
 │   │   ├── 沙箱模式角色                          # 未显式绑定且默认解析为 system 时改用 sandboxDefault/tool/intent/spec/automationAgentId(custom/system 皆可选);空串按 sandboxDefault→第一个启用 agent(同 vendor 优先)顺延,解析不到则保留默认 agent
 │   │   ├── 每会话绑定                            # 记住每个会话用哪个 agent
 │   │   └── 降级链                                # 某 agent 不可用时按 degradationChain 顺序回退

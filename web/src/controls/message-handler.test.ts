@@ -113,6 +113,12 @@ function makeCtx() {
   const vendorCapabilities = ref<unknown>(null)
   const vendorModes = ref<unknown>(null)
   const skillSupport = ref<unknown>(null)
+  // Delivery branch-init in-flight ref (cleared / advanced by the init frames).
+  const activeDeliveryBranchInit = ref<
+    import('@/lib/delivery-view').DeliveryBranchInitState | null
+  >(null)
+  const activeDelivery = ref<import('@ccc/shared/protocol').Delivery | null>(null)
+  const activeDeliveryId = ref<string | null>(null)
   const ctx = {
     settingsOpen,
     hostStatus,
@@ -123,6 +129,9 @@ function makeCtx() {
     vendorCapabilities,
     vendorModes,
     skillSupport,
+    activeDeliveryBranchInit,
+    activeDelivery,
+    activeDeliveryId,
     toast,
     intentActionError,
     intentActionErrorGuidance,
@@ -170,6 +179,9 @@ function makeCtx() {
     // The handler reads `ctx.t` at install time; a passthrough is enough here.
     t: (key: string) => key,
     add: vi.fn(),
+    // Some branches (delivery_transition_failed, delivery_branch_init_result) re-fetch
+    // the detail after adopting server truth; a recording stub suffices.
+    send: vi.fn(),
     // Post-switch Dashboard refresh hook — a no-op in these session/intent tests.
     maybeRefreshDashboard: vi.fn(),
     personalizedSettings: ref<import('@ccc/shared/protocol').PersonalizedSettings>({
@@ -206,6 +218,9 @@ function makeCtx() {
     persistViewMode,
     onSelectTab,
     switchToConsoleTab,
+    activeDeliveryBranchInit,
+    activeDelivery,
+    activeDeliveryId,
   }
 }
 
@@ -1677,5 +1692,106 @@ describe('create_pr progress routing', () => {
     result.ctx.handleMessage(error('intent.prCreateFailed', 'r-1'))
 
     expect(result.dispatchCreatePr).not.toHaveBeenCalled()
+  })
+})
+
+describe('delivery branch-init frames', () => {
+  it('advances the in-flight phase on progress frames', () => {
+    const result = makeCtx()
+    result.activeDeliveryBranchInit.value = { deliveryId: 'd1', phase: 'fetching' }
+
+    result.ctx.handleMessage({
+      type: 'delivery_branch_init_progress',
+      deliveryId: 'd1',
+      phase: 'pushing',
+    } as ServerToClient)
+
+    expect(result.activeDeliveryBranchInit.value).toEqual({ deliveryId: 'd1', phase: 'pushing' })
+  })
+
+  it('ignores a progress frame for a different delivery (superseded retry)', () => {
+    const result = makeCtx()
+    result.activeDeliveryBranchInit.value = { deliveryId: 'd1', phase: 'fetching' }
+
+    result.ctx.handleMessage({
+      type: 'delivery_branch_init_progress',
+      deliveryId: 'd2',
+      phase: 'binding',
+    } as ServerToClient)
+
+    expect(result.activeDeliveryBranchInit.value).toEqual({ deliveryId: 'd1', phase: 'fetching' })
+  })
+
+  it('clears the in-flight state, adopts the model and re-fetches the detail on success', () => {
+    const result = makeCtx()
+    result.activeDeliveryBranchInit.value = { deliveryId: 'd1', phase: 'pushing' }
+    result.ctx.handleMessage({
+      type: 'delivery_branch_init_result',
+      workspaceId: 'w1',
+      delivery: {
+        id: 'd1',
+        workspaceId: 'w1',
+        title: 'Sprint 3',
+        description: '',
+        status: 'planned',
+        startDate: null,
+        endDate: null,
+        branchName: 'delivery/d1-sprint-3',
+        baseBranch: 'main',
+        branchReady: true,
+        integration: { merged: 0, total: 0 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    } as ServerToClient)
+
+    expect(result.activeDeliveryBranchInit.value).toBeNull()
+    expect(result.activeDelivery.value?.branchReady).toBe(true)
+    expect(result.activeDelivery.value?.branchName).toBe('delivery/d1-sprint-3')
+  })
+
+  it('surfaces the behind-main warning as a toast', () => {
+    const result = makeCtx()
+    result.ctx.handleMessage({
+      type: 'delivery_branch_init_result',
+      workspaceId: 'w1',
+      warning: 'delivery.branchBehindMain',
+      delivery: {
+        id: 'd1',
+        workspaceId: 'w1',
+        title: 'Sprint 3',
+        description: '',
+        status: 'planned',
+        startDate: null,
+        endDate: null,
+        branchName: 'release/2026-08',
+        baseBranch: 'main',
+        branchReady: true,
+        integration: { merged: 0, total: 0 },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    } as ServerToClient)
+
+    expect(result.showToast).toHaveBeenCalledWith('delivery.warning.branchBehindMain.label')
+  })
+
+  it('clears the in-flight state and toasts on an init error code', () => {
+    const result = makeCtx()
+    result.activeDeliveryBranchInit.value = { deliveryId: 'd1', phase: 'fetching' }
+
+    result.ctx.handleMessage(error('delivery.branchConflict'))
+
+    expect(result.activeDeliveryBranchInit.value).toBeNull()
+    expect(result.showToast).toHaveBeenCalled()
+  })
+
+  it('leaves the in-flight state alone for a non-init error', () => {
+    const result = makeCtx()
+    result.activeDeliveryBranchInit.value = { deliveryId: 'd1', phase: 'fetching' }
+
+    result.ctx.handleMessage(error('intent.prCreateFailed'))
+
+    expect(result.activeDeliveryBranchInit.value).toEqual({ deliveryId: 'd1', phase: 'fetching' })
   })
 })

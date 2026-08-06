@@ -2107,7 +2107,11 @@
       "updateFailed": "납품 업데이트 실패: {detail}.",
       "branchConflict": "다른 활성 납품이 이미 브랜치 \"{branch}\"을(를) 사용 중입니다.",
       "invalidStatusTransition": "이 납품을 {from}에서 {to}(으)로 전환할 수 없습니다.",
-      "transitionGuardFailed": "충족되지 않은 가드 조건으로 상태 변경이 차단되었습니다."
+      "transitionGuardFailed": "충족되지 않은 가드 조건으로 상태 변경이 차단되었습니다.",
+      "multiRepoUnsupported": "멀티 리포지토리 작업 공간은 전달을 지원하지 않습니다.",
+      "branchNotFound": "원격에 브랜치 \"{branch}\"가 없습니다.",
+      "initFailed": "브랜치 초기화 실패: {detail}.",
+      "cleanupForbidden": "전달됨 또는 취소됨 상태의 전달만 브랜치를 정리할 수 있습니다."
     }
   },
   "statusIndicator": {
@@ -2433,6 +2437,9 @@
         "submit": {
           "label": "만들기"
         }
+      },
+      "jumpToBranch": {
+        "label": "전달 브랜치 초기화"
       }
     },
     "guard": {
@@ -2444,6 +2451,62 @@
       "systemOnly": "이 단계는 시스템이 수행합니다.",
       "humanOnly": "이 단계는 사람만 수행할 수 있습니다.",
       "mergeConflictReasonRequired": "병합 충돌 사유가 필요합니다."
+    },
+    "branch": {
+      "init": {
+        "title": {
+          "label": "전달 브랜치"
+        },
+        "create": {
+          "label": "새로 만들기"
+        },
+        "bind": {
+          "label": "기존 바인딩"
+        },
+        "branchLabel": {
+          "label": "브랜치 이름"
+        },
+        "branchPlaceholder": {
+          "label": "예: delivery/ab12cd34-sprint-3"
+        },
+        "submit": {
+          "label": "브랜치 초기화"
+        },
+        "progress": {
+          "fetching": {
+            "label": "베이스 브랜치 가져오는 중…"
+          },
+          "creating": {
+            "label": "브랜치 만드는 중…"
+          },
+          "pushing": {
+            "label": "브랜치 푸시 중…"
+          },
+          "binding": {
+            "label": "브랜치 바인딩 중…"
+          }
+        }
+      },
+      "ready": {
+        "label": "브랜치 준비 완료: {branch}"
+      },
+      "cleanup": {
+        "label": "브랜치 정리"
+      },
+      "cleanupTitle": {
+        "label": "브랜치를 정리할까요?"
+      },
+      "cleanupBody": {
+        "label": "로컬 브랜치 참조 \"{branch}\"를 삭제할까요?원격 브랜치는 유지됩니다."
+      },
+      "cleanupResult": {
+        "label": "브랜치 참조를 정리했습니다."
+      }
+    },
+    "warning": {
+      "branchBehindMain": {
+        "label": "바인딩한 브랜치가 베이스보다 뒤처져 있습니다."
+      }
     }
   },
   "skillApproval": {

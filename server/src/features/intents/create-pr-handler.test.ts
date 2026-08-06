@@ -53,6 +53,7 @@ import {
 } from './store.js'
 import { createPrHandler } from './index.js'
 import { getWorktreePath } from './worktree.js'
+import { createDelivery, setDeliveryBranch } from '../deliveries/store.js'
 import { resetStoreForTests as resetSessionMetadataStoreForTests } from '../sessions/session-metadata-store.js'
 
 let dir: string

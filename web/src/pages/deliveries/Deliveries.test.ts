@@ -28,7 +28,7 @@ const PLAN: DeliveryTransitionPlan = {
       to: 'integrating',
       humanAction: true,
       guard: 'failed',
-      reasons: [{ code: 'delivery.guard.branchNotReady', jumpTo: 'workspace-settings' }],
+      reasons: [{ code: 'delivery.guard.branchNotReady', jumpTo: 'branch' }],
     },
   ],
 }
@@ -41,6 +41,7 @@ describe('Deliveries', () => {
         activeId: null,
         activeDelivery: null,
         activePlan: null,
+        branchInit: null,
         workspaceGitBranchMode: 'worktree',
       },
     })
@@ -56,6 +57,7 @@ describe('Deliveries', () => {
         activeId: 'd1',
         activeDelivery: delivery(),
         activePlan: PLAN,
+        branchInit: null,
         workspaceGitBranchMode: 'current-branch',
       },
     })
@@ -71,6 +73,7 @@ describe('Deliveries', () => {
         activeId: 'd1',
         activeDelivery: delivery(),
         activePlan: PLAN,
+        branchInit: null,
         workspaceGitBranchMode: 'worktree',
       },
     })

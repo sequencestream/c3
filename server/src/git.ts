@@ -596,6 +596,194 @@ export async function getHeadCommit(workspacePath: string): Promise<string | nul
   return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : null
 }
 
+// ---------------------------------------------------------------------------
+// Delivery branch lifecycle (ADR-0036 slice 2/3)
+//
+// A delivery must have ONE real remote branch to collect every associated
+// intent's PR. These helpers back the explicit `init_delivery_branch` action:
+// the branch is created/bound on the remote, never silently overwritten, and
+// the baseline is the JUST-FETCHED `origin/<base_branch>` HEAD — never a local
+// ref (a stale local ref would root the delivery behind the team's mainline).
+// All async (unlike `createWorktree`'s sync `execFileSync`): branch init is a
+// standalone user action, not a step that must block an automation FSM.
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a workspace is "multi-repo" for the delivery-branch purpose: the root
+ * is not itself a git repo AND sub-repos are discovered beneath it. Mirrors
+ * {@link commitAndPush}'s repo discovery so the verdict matches what would
+ * actually happen there. A root that is a repo (single-repo classic path) is
+ * NOT multi-repo even if nested repos lurk inside it (they are treated as part
+ * of the boundary repo). A single sub-repo under a non-repo root counts as
+ * multi-repo: `createDeliveryBranch` must operate on the ROOT, and a root that
+ * is not a repo cannot host the branch.
+ */
+export function isMultiRepoWorkspace(workspacePath: string): boolean {
+  return !isGitRepo(workspacePath) && discoverSubRepos(workspacePath).length > 0
+}
+
+/**
+ * Fetch `baseBranch` from the repo's remote (async) and return the ref to root a
+ * new branch at — `<remote>/<baseBranch>` when the fetch succeeded and the ref
+ * resolves, else `null` (no remote / offline / branch missing). Fetch never
+ * merges, so it cannot diverge. The async sibling of
+ * `features/intents/worktree.ts`'s synchronous `fetchRemoteBase`; branch init is
+ * a standalone user action and must not block a synchronous FSM.
+ */
+export async function fetchRemoteBaseAsync(
+  repoPath: string,
+  baseBranch: string,
+): Promise<string | null> {
+  const remote = await resolveRemote(repoPath)
+  if (!remote) return null
+  const res = await git(repoPath, ['-C', repoPath, 'fetch', remote, baseBranch])
+  if (res.code !== 0) return null
+  const verify = await git(repoPath, [
+    '-C',
+    repoPath,
+    'rev-parse',
+    '--verify',
+    '--quiet',
+    `${remote}/${baseBranch}`,
+  ])
+  return verify.code === 0 && verify.stdout.trim() ? `${remote}/${baseBranch}` : null
+}
+
+/**
+ * The HEAD commit hash of `<remote>/<branchName>` on the remote, or `null` when
+ * the branch does not exist there (or the remote/ls-remote is unavailable). Used
+ * by the orphan-defense check: compare the remote branch's head against the
+ * fetched baseline to tell "my own failed push" from "someone else's branch".
+ */
+export async function remoteBranchHead(
+  repoPath: string,
+  branchName: string,
+): Promise<string | null> {
+  const remote = await resolveRemote(repoPath)
+  if (!remote) return null
+  const res = await git(repoPath, ['-C', repoPath, 'ls-remote', '--heads', remote, branchName])
+  if (res.code !== 0) return null
+  const want = `refs/heads/${branchName}`
+  for (const line of res.stdout.split('\n')) {
+    const [hash, ref] = line.trim().split(/\s+/)
+    if (ref === want && /^[0-9a-f]+$/i.test(hash)) return hash
+  }
+  return null
+}
+
+/**
+ * The full commit hash a ref resolves to (`git rev-parse --verify`), or `null`
+ * when it does not resolve. The ref is expected to be `<remote>/<baseBranch>`
+ * (the just-fetched baseline) — the "expected start" the orphan-defense compares
+ * the remote branch head against.
+ */
+export async function resolveRefHead(repoPath: string, ref: string): Promise<string | null> {
+  const res = await git(repoPath, ['-C', repoPath, 'rev-parse', '--verify', '--quiet', ref])
+  return res.code === 0 && res.stdout.trim() ? res.stdout.trim() : null
+}
+
+/**
+ * Create a delivery branch on the remote, rooted at the just-fetched
+ * `origin/<baseBranch>` HEAD. Semantics deliberately DISTINCT from
+ * {@link createWorktree}: that helper makes an intent's isolated worktree +
+ * local branch; this one only creates and pushes the ONE remote branch a
+ * delivery integrates into — no checkout, no worktree.
+ *
+ * Internal order: `fetch remote <baseBranch>` → `git branch <branchName>
+ * <remote>/<baseBranch>` → `git push -u origin <branchName>`.
+ *
+ * A push rejected because the remote branch appeared meanwhile (race) is a
+ * branch conflict (`errorKind: 'branchConflict'`) — never force-pushed. The
+ * caller writes the DB ONLY on `ok: true`; if that write then fails, the next
+ * retry idempotently binds the orphan through the remote-head match.
+ */
+export interface CreateDeliveryBranchResult {
+  ok: boolean
+  /** Human-readable failure reason (the caller frames it with a `detail`). */
+  error?: string
+  /**
+   * Machine-readable failure class: `branchConflict` maps to the
+   * `delivery.branchConflict` UI code (remote/locally occupied — never
+   * overwritten), `other` to a generic `detail` error. Absent on success.
+   */
+  errorKind?: 'branchConflict' | 'other'
+}
+
+/** Coarse phases inside {@link createDeliveryBranch}, for progress reporting. */
+export type DeliveryBranchCreatePhase = 'creating' | 'pushing'
+
+export interface CreateDeliveryBranchOptions {
+  /** Observational progress sink; never changes what is created or pushed. */
+  onPhase?: (phase: DeliveryBranchCreatePhase) => void
+}
+
+export async function createDeliveryBranch(
+  repoPath: string,
+  branchName: string,
+  baseBranch: string,
+  options?: CreateDeliveryBranchOptions,
+): Promise<CreateDeliveryBranchResult> {
+  const remote = await resolveRemote(repoPath)
+  if (!remote) {
+    return { ok: false, error: '工作区未配置 git 远端,无法创建交付分支', errorKind: 'other' }
+  }
+  const fetch = await git(repoPath, ['-C', repoPath, 'fetch', remote, baseBranch])
+  if (fetch.code !== 0) {
+    return {
+      ok: false,
+      error: `fetch 基线 ${baseBranch} 失败: ${oneLine(fetch.stderr || fetch.stdout)}`,
+      errorKind: 'other',
+    }
+  }
+  const baseRef = `${remote}/${baseBranch}`
+  const verify = await git(repoPath, ['-C', repoPath, 'rev-parse', '--verify', '--quiet', baseRef])
+  if (verify.code !== 0 || !verify.stdout.trim()) {
+    return {
+      ok: false,
+      error: `远端基线 ${baseRef} 无法解析`,
+      errorKind: 'other',
+    }
+  }
+
+  options?.onPhase?.('creating')
+  const branch = await git(repoPath, ['-C', repoPath, 'branch', branchName, baseRef])
+  if (branch.code !== 0) {
+    const out = oneLine(branch.stderr || branch.stdout)
+    return {
+      ok: false,
+      error: `git branch 失败: ${out}`,
+      errorKind: /already exists/i.test(out) ? 'branchConflict' : 'other',
+    }
+  }
+
+  options?.onPhase?.('pushing')
+  const push = await git(repoPath, ['-C', repoPath, 'push', '-u', remote, branchName])
+  if (push.code !== 0) {
+    const out = oneLine(push.stderr || push.stdout)
+    return {
+      ok: false,
+      error: `git push 失败: ${out}`,
+      // A rejected push (non-fast-forward / fetch-first / ref exists) means the
+      // remote branch appeared between our check and the push — a conflict.
+      errorKind: /non-fast-forward|fetch first|already exists|refusing/i.test(out)
+        ? 'branchConflict'
+        : 'other',
+    }
+  }
+  return { ok: true }
+}
+
+/**
+ * Delete a LOCAL branch reference (best-effort). Delivery cleanup only ever
+ * touches the local ref — the remote branch is never deleted automatically.
+ * Returns false when the branch doesn't exist / isn't deletable; the caller
+ * treats a missing branch as "nothing to clean".
+ */
+export async function deleteLocalBranch(repoPath: string, branchName: string): Promise<boolean> {
+  const res = await git(repoPath, ['-C', repoPath, 'branch', '-D', branchName])
+  return res.code === 0
+}
+
 /** Collapse multi-line git output into a single trimmed line for the UI. */
 function oneLine(s: string): string {
   return s.replace(/\s+/g, ' ').trim().slice(0, 300)

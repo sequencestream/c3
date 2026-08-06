@@ -103,8 +103,12 @@ export interface DeliveryGuardReason {
   code: DeliveryGuardReasonCode
   /** Interpolation params for the locale leaf, if any. */
   params?: Record<string, string | number>
-  /** Where the page can take the user to resolve this gap. */
-  jumpTo?: 'associated-intents' | 'workspace-settings'
+  /**
+   * Where the page can take the user to resolve this gap: the associated-intents
+   * tab, the workspace settings, or the delivery's own branch-init section
+   * (the `branchNotReady` gap jumps there once branch init ships).
+   */
+  jumpTo?: 'associated-intents' | 'workspace-settings' | 'branch'
 }
 
 /**

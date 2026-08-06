@@ -9,6 +9,7 @@ import {
 } from '@/lib/discussion-view'
 import { emptyTaskModel, type TaskListModel } from '@/lib/task-list'
 import { type CreatePrModel } from '@/lib/create-pr-view'
+import type { DeliveryBranchInitState } from '@/lib/delivery-view'
 import { type DevLaunchModel } from '@/lib/dev-launch-view'
 import { type SpecLaunchModel } from '@/lib/spec-launch-view'
 import { type SessionRef } from '@/lib/tab-view'
@@ -437,6 +438,12 @@ export function createState(deps: StateDeps) {
   const activeDelivery = ref<Delivery | null>(null)
   /** The server-computed transition plan for the open delivery (never re-derived client-side). */
   const activeDeliveryPlan = ref<DeliveryTransitionPlan | null>(null)
+  /**
+   * In-flight branch-init state for the open delivery (phase progress). `null`
+   * = no init running. Set when the init is sent, advanced by the server's
+   * progress frames, cleared on the result frame or an init error.
+   */
+  const activeDeliveryBranchInit = ref<DeliveryBranchInitState | null>(null)
 
   const currentIntents = computed<Intent[]>(() =>
     intentsProject.value ? (intents.value[intentsProject.value] ?? []) : [],
@@ -1070,6 +1077,7 @@ export function createState(deps: StateDeps) {
     activeDeliveryId,
     activeDelivery,
     activeDeliveryPlan,
+    activeDeliveryBranchInit,
     currentIntentSessions,
     currentDiscussions,
     activeDiscussionRunState,

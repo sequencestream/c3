@@ -154,8 +154,26 @@ export const UI_ERROR_CODES = {
   'delivery.updateFailed': { key: 'error.delivery.updateFailed', params: ['detail'] },
   // A create/update would collide with an active delivery's branch name (the
   // `(workspace_path, branch_name)` uniqueness; terminal deliveries don't hold
-  // it). Refused whole rather than silently overwriting.
+  // it). Refused whole rather than silently overwriting. Also the orphan-defense
+  // verdict: retrying an init whose remote branch head does NOT match the fetched
+  // baseline is a conflict — the remote branch is never overwritten.
   'delivery.branchConflict': { key: 'error.delivery.branchConflict', params: ['branch'] },
+  // A multi-repo workspace (root not itself a repo, with sub-repos) cannot host a
+  // single delivery branch — it would fake "partially delivered". Rejected at
+  // delivery create AND at branch init, before any git command runs.
+  'delivery.multiRepoUnsupported': { key: 'error.delivery.multiRepoUnsupported' },
+  // `bind` named a remote branch that does not exist.
+  'delivery.branchNotFound': { key: 'error.delivery.branchNotFound', params: ['branch'] },
+  // Branch init / cleanup failed (fetch/push/local-delete error, or a DB write
+  // failure after the push — the retry path idempotently binds the orphan).
+  'delivery.initFailed': { key: 'error.delivery.initFailed', params: ['detail'] },
+  // Branch cleanup was requested on a non-terminal delivery; only `delivered` /
+  // `cancelled` may release their local branch reference.
+  'delivery.cleanupForbidden': { key: 'error.delivery.cleanupForbidden' },
+  // create_pr gate: the intent is associated with a delivery whose branch is not
+  // ready, so its PR must not be created yet. Renders through the guard leaf
+  // (the same copy the persistent gap list shows).
+  'delivery.guard.branchNotReady': { key: 'delivery.guard.branchNotReady' },
   // State-machine rejections (edge not in the graph). Guard-failed rejections
   // carry `delivery.guard.*` reasons on the dedicated `delivery_transition_failed`
   // frame; these two codes drive the toast + error copy.

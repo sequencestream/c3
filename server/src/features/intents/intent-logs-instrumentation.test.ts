@@ -23,14 +23,14 @@ vi.mock('../../git.js', async () => {
   const actual = await vi.importActual<typeof import('../../git.js')>('../../git.js')
   return {
     ...actual,
-    createGhPr: vi.fn(),
+    createForgePr: vi.fn(),
     getForgePrStatus: vi.fn(),
     commitAndPush: vi.fn(),
-    hasDiffAgainstMain: vi.fn(),
+    hasDiffAgainstBase: vi.fn(),
   }
 })
 
-import { commitAndPush, createGhPr, getForgePrStatus, hasDiffAgainstMain } from '../../git.js'
+import { commitAndPush, createForgePr, getForgePrStatus, hasDiffAgainstBase } from '../../git.js'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
 import { resetSettingsCacheForTests, saveWorkspaceSetting } from '../../kernel/config/index.js'
 import {
@@ -77,10 +77,10 @@ beforeEach(() => {
   addWorkspace(dir, 1)
   workspaceId = pathToId(dir)!
   proj = resolveWorkspaceRoot(workspaceId)!
-  vi.mocked(createGhPr).mockReset()
+  vi.mocked(createForgePr).mockReset()
   vi.mocked(getForgePrStatus).mockReset()
   vi.mocked(commitAndPush).mockReset()
-  vi.mocked(hasDiffAgainstMain).mockReset()
+  vi.mocked(hasDiffAgainstBase).mockReset()
 })
 
 afterEach(() => {
@@ -243,9 +243,9 @@ describe('PR instrumentation', () => {
     saveWorkspaceSetting(proj, { gitBranchMode: 'worktree' })
     updateStatus(r.id, 'in_progress')
     setBranchName(r.id, 'intent/pr-me')
-    vi.mocked(hasDiffAgainstMain).mockResolvedValue(true)
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
     vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
-    vi.mocked(createGhPr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '42', prUrl: 'https://x/pr/42' })
     const { conn } = fakeConn({ subject: 'erin' })
     await createPrHandler(fakeCtx(), conn, { type: 'create_pr', workspaceId, intentId: r.id })
     expect(logsOf(r.id, 'pr_created')).toMatchObject([{ summary: '创建 PR #42', actor: 'erin' }])

@@ -61,7 +61,7 @@ export interface DevCleanupDeps {
     cwd: string,
     title: string,
     body: string,
-    headBranch?: string,
+    headBranch: string | undefined,
     baseBranch: string,
     providerOverride?: ForgeProvider,
   ) => Promise<CreatePrResult>

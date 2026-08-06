@@ -17,6 +17,10 @@ tag (`git describe --tags`); `package.json` is the fallback baseline.
 - external MCP keys ARE the address and travel in the URL path, so they can reach proxy and access logs, and plain HTTP exposes them on the network. c3 neither ships nor requires TLS this cycle — put it behind your own HTTPS reverse proxy before exposing it beyond the local machine. Server logs never print a key or a full MCP URL. Write grants really change c3 state (persist intents, submit spec reviews, start sessions): keys default to read-only, writes are an explicit per-key grant shown behind a risk confirmation, and keys are revocable
 - the retired `/mcp/v1?token=…&workspace=…` entry point answers with an explicit discontinued response (410); only `/mcp/<api-key>` is supported
 
+### Fixes
+
+- **bug fix (workspaces with a non-`main` `defaultMainBranch`): PR/MR creation now targets the configured branch instead of a literal `main`.** The PR-creation layer previously defaulted a missing base to `main` even though worktrees branch from `defaultMainBranch` — a workspace configured to `develop` (or any non-`main` branch) would either fail to create a PR/MR or raise it against the wrong target. `createGhPr` / `createGlabMr` / `createForgePr` now require the base explicitly, every creation path (manual `create_pr`, automation queue, manual session-end cleanup) resolves the workspace's effective base once and threads it through the diff gate, the forge CLI and the `pr:create` event. The diff gate (`hasDiffAgainstBase`) fetches the base and prefers the freshly-updated remote ref, rejecting with a clear "target branch unresolvable" error when the base resolves neither remotely nor locally (previously an unresolvable local `main` passed the gate through). Manual `create_pr` also now honors the workspace forge override by routing through the same `createForgePr` dispatcher. **Impact:** a configured non-`main` workspace that had PR/MRs silently raised against `main` will see new PR/MRs target the configured branch — this is the intended defect fix, not a regression.
+
 ## v0.11.0
 
 ### Security

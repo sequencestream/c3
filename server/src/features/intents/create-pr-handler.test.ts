@@ -20,6 +20,7 @@ import {
   PR_EVENT_TYPES,
   PR_LEGACY_EVENT_TYPE,
   normalizePrGenericEvent,
+  projectPrOperationEvent,
 } from '../pr-events/tool-defs.js'
 
 vi.mock('../../git.js', async () => {
@@ -198,6 +199,44 @@ describe('createPrHandler — worktree gate success paths', () => {
       expect(prEvents).toHaveLength(1)
     })
   }
+
+  it('threads the workspace defaultMainBranch into the diff gate, forge create and pr:create event', async () => {
+    const r = seedQualifying()
+    saveWorkspaceSetting(proj, {
+      gitBranchMode: 'worktree',
+      defaultMainBranch: 'develop',
+      forge: 'gitlab',
+    })
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
+    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+    vi.mocked(createForgePr).mockResolvedValue({ ok: true, prId: '43', prUrl: 'https://x/pr/43' })
+    const { ctx, publish } = fakeCtx()
+    const { conn } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    const worktreePath = getWorktreePath(proj, r.id)
+    // The resolved base — NOT a literal `main` — reaches every layer of the run,
+    // and the workspace forge override routes the manual path to GitLab.
+    expect(hasDiffAgainstBase).toHaveBeenCalledWith(worktreePath, 'develop')
+    expect(createForgePr).toHaveBeenCalledWith(
+      worktreePath,
+      'feat: PR me',
+      'body',
+      'intent/pr-me',
+      'develop',
+      'gitlab',
+    )
+    const prEvents = publish.mock.calls.filter((c) => c[0] === 'event')
+    expect(prEvents).toHaveLength(1)
+    const envelope = prEvents[0][1] as { event: GenericEvent }
+    expect(projectPrOperationEvent(envelope.event)).toMatchObject({
+      operation: 'create',
+      result: 'success',
+      ref: { head: 'intent/pr-me', base: 'develop' },
+      association: { intentId: r.id },
+    })
+  })
 })
 
 /** No PR field, success log or success event was written by a failed run. */
@@ -271,6 +310,32 @@ describe('createPrHandler — rejection branches short-circuit without side effe
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
     expect(errorsOf(sent)).toEqual(['intent.prCreateNoChanges'])
+    expect(commitAndPush).not.toHaveBeenCalled()
+    expect(createForgePr).not.toHaveBeenCalled()
+    expectNoSuccessSideEffects(r.id, publish)
+  })
+
+  it('rejects with a readable detail when the base branch cannot be resolved — no pass-through', async () => {
+    const r = seedQualifying()
+    saveWorkspaceSetting(proj, { gitBranchMode: 'worktree', defaultMainBranch: 'develop' })
+    vi.mocked(hasDiffAgainstBase).mockRejectedValue(
+      new Error('目标分支 develop 无法解析(本地与远端均无该分支)'),
+    )
+    const { ctx, publish } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    // Rejected up front — the old pass-through would have let commit/push/forge run.
+    expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
+    const err = sent.find((m) => m.type === 'error') as {
+      error: { params?: Record<string, string> }
+    }
+    expect(err.error.params).toEqual({ detail: '目标分支 develop 无法解析(本地与远端均无该分支)' })
+    // A gate rejection (nothing ran) carries no repair guidance.
+    expect(
+      (sent.find((m) => m.type === 'error') as { error: { guidance?: unknown } }).error.guidance,
+    ).toBeUndefined()
     expect(commitAndPush).not.toHaveBeenCalled()
     expect(createForgePr).not.toHaveBeenCalled()
     expectNoSuccessSideEffects(r.id, publish)

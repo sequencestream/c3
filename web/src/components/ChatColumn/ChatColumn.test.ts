@@ -4,7 +4,9 @@ import ChatColumn from './ChatColumn.vue'
 import MessageInput from '../MessageInput/MessageInput.vue'
 import PendingQueue from '../PendingQueue/PendingQueue.vue'
 import ChatMessages from '../ChatMessages/ChatMessages.vue'
+import TaskPanel from '../TaskPanel/TaskPanel.vue'
 import SessionStatusBar from '../SessionStatusBar/SessionStatusBar.vue'
+import SessionTitleBar from '../SessionTitleBar/SessionTitleBar.vue'
 import type { ChatMsg, PermissionMsg } from '../../lib/chat-types'
 
 /*
@@ -118,5 +120,65 @@ describe('ChatColumn.vue — 只读能力门', () => {
 
     expect(w.emitted('respond')).toHaveLength(1)
     expect(w.emitted('stop')).toHaveLength(1)
+  })
+})
+
+describe('ChatColumn.vue — sessionBound 会话绑定门控', () => {
+  it('未传 sessionBound(默认 true)时渲染全部区块,既有行为不变', () => {
+    const w = mountColumn()
+    expect(w.findComponent(ChatMessages).exists()).toBe(true)
+    expect(w.findComponent(TaskPanel).exists()).toBe(true)
+    expect(w.findComponent(SessionStatusBar).exists()).toBe(true)
+    expect(w.findComponent(PendingQueue).exists()).toBe(true)
+    expect(w.findComponent(MessageInput).exists()).toBe(true)
+  })
+
+  it('sessionBound=false 时不渲染任何旧会话派生的展示状态,只保留标题与首条输入框', () => {
+    const w = mountColumn({
+      sessionBound: false,
+      // 塞入非空旧会话字段:若门控失效这些控件就会泄漏出来。
+      vendor: 'anthropic',
+      agentSwitch: {
+        current: { id: 'a', displayName: 'A' },
+        candidates: [{ id: 'b', displayName: 'B' }],
+        currentUnavailable: false,
+      },
+      showMode: true,
+      sourceLabel: 'intent',
+      showShare: true,
+    })
+    expect(w.findComponent(ChatMessages).exists()).toBe(false)
+    expect(w.findComponent(TaskPanel).exists()).toBe(false)
+    expect(w.findComponent(SessionStatusBar).exists()).toBe(false)
+    expect(w.findComponent(PendingQueue).exists()).toBe(false)
+    // 标题栏保留标题文本与 action 槽,vendor 点 / agent 切换器 / 模式下拉 / 溯源 / 分享全隐藏。
+    expect(w.findComponent(SessionTitleBar).exists()).toBe(true)
+    expect(w.find('.session-title-text').text()).toBe('Review session')
+    expect(w.find('[data-testid="session-vendor-dot"]').exists()).toBe(false)
+    expect(w.find('[data-testid="session-vendor-label"]').exists()).toBe(false)
+    expect(w.find('[data-testid="session-agent-switch"]').exists()).toBe(false)
+    expect(w.find('.right-controls').exists()).toBe(false)
+    expect(w.find('[data-testid="session-source-jump"]').exists()).toBe(false)
+    expect(w.find('[data-testid="share-button"]').exists()).toBe(false)
+    // 首条输入框保留(其 has-active-session 由调用方显式控制)。
+    expect(w.findComponent(MessageInput).exists()).toBe(true)
+  })
+
+  it('sessionBound=false 时 composer 的 submit / enqueue 仍正常上抛', async () => {
+    const w = mountColumn({ sessionBound: false })
+    const input = w.findComponent(MessageInput)
+    input.vm.$emit('submit', 'hello', [])
+    input.vm.$emit('enqueue', 'later', [])
+    await w.vm.$nextTick()
+
+    expect(w.emitted('submit')).toEqual([['hello', []]])
+    expect(w.emitted('enqueue')).toEqual([['later', []]])
+  })
+
+  it('sessionBound 与 readonly 正交:未绑定 + 只读时 composer 仍由只读门隐藏', () => {
+    const w = mountColumn({ sessionBound: false, readonly: true })
+    expect(w.findComponent(MessageInput).exists()).toBe(false)
+    expect(w.findComponent(PendingQueue).exists()).toBe(false)
+    expect(w.findComponent(SessionStatusBar).exists()).toBe(false)
   })
 })

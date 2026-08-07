@@ -273,16 +273,35 @@ watch(
 
 // External one-shot request to open a standalone intent (chat) session here (a chat
 // with no owning intent, traced from the session page's title-bar source button):
-// flip the right column to the standalone chat — it binds to the active session the
-// control layer is selecting — and signal the parent to clear the request.
+// flip the right column to the standalone chat and signal the parent to clear the
+// request. `requestedIntentSessionId` is consumed on the same tick, so the target
+// is captured into a local ref — the column only counts as session-bound once the
+// global active session has actually aligned with it (跳转窗口期间不渲染旧会话状态)。
+const capturedIntentSessionId = ref<string | null>(null)
 watch(
   () => props.requestedIntentSessionId,
   (sessionId) => {
     if (!sessionId) return
+    capturedIntentSessionId.value = sessionId
     viewingNewIntentSession.value = true
     emit('requested-intent-session-consumed')
   },
   { immediate: true },
+)
+
+// 离开独立会话聊天列(点意图行 / 外部意图选择跳走)即复位捕获,避免旧捕获残留。
+watch(viewingNewIntentSession, (v) => {
+  if (!v) capturedIntentSessionId.value = null
+})
+
+// 独立聊天列是否已绑定到目标会话:捕获 id 非空且活动会话已对齐。
+const standaloneSessionBound = computed<boolean>(
+  () =>
+    capturedIntentSessionId.value !== null && props.activeSession === capturedIntentSessionId.value,
+)
+// 未对齐窗口内标题取中性兜底文案,不显示上一会话的 activeTitle。
+const standaloneActiveTitle = computed<string>(() =>
+  standaloneSessionBound.value ? props.activeTitle : t('intent.intentSession.title.label'),
 )
 
 // ---- Mobile drill-down state ----
@@ -474,7 +493,8 @@ defineExpose({
       <ChatColumn
         v-else
         ref="composer"
-        :active-title="activeTitle || t('intent.intentSession.title.label')"
+        :active-title="standaloneActiveTitle"
+        :session-bound="standaloneSessionBound"
         :vendor="vendor ?? null"
         :agent-switch="agentSwitch ?? null"
         :show-mode="true"

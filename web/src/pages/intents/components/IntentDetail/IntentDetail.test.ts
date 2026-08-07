@@ -112,12 +112,13 @@ function mountDetail(
     },
     global: {
       // Keep the chat column inert: we test IntentDetail's tab/gate logic, not it.
-      // `showMode` / `modeDisabled` are declared so tab-driven mode locking is assertable.
+      // `showMode` / `modeDisabled` are declared so tab-driven mode locking is assertable,
+      // and `sessionBound` so the panel's session-bound gate doesn't leak as an attribute.
       stubs: {
         ChatColumn: {
-          props: ['showMode', 'modeDisabled'],
+          props: ['showMode', 'modeDisabled', 'sessionBound'],
           template:
-            '<div data-testid="intent-detail-chat" :data-show-mode="String(showMode)" :data-mode-disabled="String(modeDisabled)" />',
+            '<div data-testid="intent-detail-chat" :data-show-mode="String(showMode)" :data-mode-disabled="String(modeDisabled)" :data-session-bound="String(sessionBound)" />',
         },
       },
     },

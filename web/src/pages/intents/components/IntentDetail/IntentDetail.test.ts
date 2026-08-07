@@ -112,12 +112,13 @@ function mountDetail(
     },
     global: {
       // Keep the chat column inert: we test IntentDetail's tab/gate logic, not it.
-      // `showMode` / `modeDisabled` are declared so tab-driven mode locking is assertable.
+      // `showMode` / `modeDisabled` are declared so tab-driven mode locking is assertable,
+      // and `sessionBound` so the panel's session-bound gate doesn't leak as an attribute.
       stubs: {
         ChatColumn: {
-          props: ['showMode', 'modeDisabled'],
+          props: ['showMode', 'modeDisabled', 'sessionBound'],
           template:
-            '<div data-testid="intent-detail-chat" :data-show-mode="String(showMode)" :data-mode-disabled="String(modeDisabled)" />',
+            '<div data-testid="intent-detail-chat" :data-show-mode="String(showMode)" :data-mode-disabled="String(modeDisabled)" :data-session-bound="String(sessionBound)" />',
         },
       },
     },
@@ -1286,21 +1287,21 @@ describe('IntentDetail.vue — spec/spec-session tab visibility by SDD', () => {
     const w = mountDetail(intent({ id: 'i1', specPath: '.specs/x/spec.md', specSessionId: null }), {
       sddEnabled: false,
     })
-    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'spec', 'specSession', 'changelog'])
+    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'specSession', 'spec', 'changelog'])
   })
 
   it('SDD off but a spec session id exists → all five tabs render', () => {
     const w = mountDetail(intent({ id: 'i1', specPath: null, specSessionId: 'sess-spec' }), {
       sddEnabled: false,
     })
-    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'spec', 'specSession', 'changelog'])
+    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'specSession', 'spec', 'changelog'])
   })
 
   it('SDD on → all five tabs render regardless of spec data', () => {
     const w = mountDetail(intent({ id: 'i1', specPath: null, specSessionId: null }), {
       sddEnabled: true,
     })
-    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'spec', 'specSession', 'changelog'])
+    expect(tabKeys(w)).toEqual(['intent', 'intentSession', 'specSession', 'spec', 'changelog'])
   })
 
   it('falls back to the intent tab when the active tab becomes hidden', async () => {

@@ -88,6 +88,8 @@ class FakeDriver implements AgentDriver {
     prompt: string
     cwd: string
     resume: string | undefined
+    contextWindow?: number
+    maxOutputTokens?: number
   }> = []
 
   private readonly resolveRun: (opts: { prompt: string; cwd: string; resume?: string }) => {
@@ -115,11 +117,16 @@ class FakeDriver implements AgentDriver {
     resume?: string
     model?: string
     envOverrides?: Record<string, string>
+    relayCandidates?: unknown
+    contextWindow?: number
+    maxOutputTokens?: number
   }): Promise<AgentRun> {
     this.startCalls.push({
       prompt: opts.prompt,
       cwd: opts.cwd,
       resume: opts.resume,
+      ...(opts.contextWindow !== undefined ? { contextWindow: opts.contextWindow } : {}),
+      ...(opts.maxOutputTokens !== undefined ? { maxOutputTokens: opts.maxOutputTokens } : {}),
     })
     const result = this.resolveRun({
       prompt: opts.prompt,
@@ -613,6 +620,101 @@ describe('AgentSessionManager', () => {
       // lastSeq unchanged by resume (orchestrator owns advancement).
       const row = rows.get('disc-1::agent-b')!
       expect(row.lastSeq).toBe(2)
+    })
+  })
+
+  // ── codex capability passthrough ────────────────────────────────────────
+  describe('codex capability fields (2026-08-08-013)', () => {
+    const codexCapsAgent: AgentConfig = {
+      id: 'agent-caps',
+      vendor: 'codex',
+      configMode: 'custom',
+      displayName: 'Codex Caps',
+      enabled: true,
+      config: {
+        baseUrl: 'https://api.deepseek.com',
+        apiKey: 'sk-real',
+        model: 'deepseek-v4-flash',
+        wireApi: 'chat',
+        contextWindow: 65536,
+        maxOutputTokens: 8192,
+      },
+      icon: 'agent',
+    }
+
+    const adapterFor = (driver: FakeDriver): VendorAdapter => ({
+      vendor: 'codex',
+      capabilities: driver.capabilities,
+      driver,
+      approval: { onRequest: () => () => {} },
+      sessions: { list: async () => [], read: async () => [] },
+      skill: null!,
+      listTools: () => [],
+    })
+
+    it('threads the codex capability fields into driver.start on a fresh session', async () => {
+      const { store } = createFakeStore()
+      const driver = new FakeDriver('codex', () => ({
+        run: new FakeRun('session-caps', [msg({ vendor: 'codex', blocks: [textBlock('ok')] })]),
+        sessionId: 'session-caps',
+      }))
+      const mgr = new AgentSessionManager({
+        getAdapter: (v) =>
+          v === 'codex' ? adapterFor(driver) : (undefined as unknown as VendorAdapter),
+        store,
+      })
+      await mgr.ask('disc-caps', codexCapsAgent, 'prompt', '/cwd', new AbortController().signal)
+      expect(driver.startCalls).toHaveLength(1)
+      expect(driver.startCalls[0].contextWindow).toBe(65536)
+      expect(driver.startCalls[0].maxOutputTokens).toBe(8192)
+    })
+
+    it('threads the codex capability fields on a resume too', async () => {
+      const { store, rows } = createFakeStore()
+      rows.set('disc-caps::agent-caps', {
+        discussionId: 'disc-caps',
+        agentId: 'agent-caps',
+        sessionId: 'session-caps-existing',
+        vendor: 'codex',
+        lastSeq: 1,
+        createdAt: Date.now(),
+      })
+      const driver = new FakeDriver('codex', ({ resume }) => {
+        expect(resume).toBe('session-caps-existing')
+        return {
+          run: new FakeRun('session-caps-existing', [
+            msg({ vendor: 'codex', blocks: [textBlock('ok')] }),
+          ]),
+          sessionId: 'session-caps-existing',
+        }
+      })
+      const mgr = new AgentSessionManager({
+        getAdapter: (v) =>
+          v === 'codex' ? adapterFor(driver) : (undefined as unknown as VendorAdapter),
+        store,
+      })
+      await mgr.ask('disc-caps', codexCapsAgent, 'prompt', '/cwd', new AbortController().signal)
+      expect(driver.startCalls).toHaveLength(1)
+      expect(driver.startCalls[0].contextWindow).toBe(65536)
+      expect(driver.startCalls[0].maxOutputTokens).toBe(8192)
+    })
+
+    it('omits the capability fields when the agent has none configured', async () => {
+      const { store } = createFakeStore()
+      const driver = new FakeDriver('codex', () => ({
+        run: new FakeRun('session-plain', [msg({ vendor: 'codex', blocks: [textBlock('ok')] })]),
+        sessionId: 'session-plain',
+      }))
+      const mgr = new AgentSessionManager({
+        getAdapter: (v) =>
+          v === 'codex' ? adapterFor(driver) : (undefined as unknown as VendorAdapter),
+        store,
+      })
+      // `codexAgent` is a system-mode agent — no custom provider, no capability fields.
+      await mgr.ask('disc-plain', codexAgent, 'prompt', '/cwd', new AbortController().signal)
+      expect(driver.startCalls).toHaveLength(1)
+      expect(driver.startCalls[0].contextWindow).toBeUndefined()
+      expect(driver.startCalls[0].maxOutputTokens).toBeUndefined()
     })
   })
 

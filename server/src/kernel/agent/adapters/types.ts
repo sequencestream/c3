@@ -284,6 +284,32 @@ export interface DriverStartOptions {
    */
   relayCandidates?: RelayCandidate[]
   /**
+   * Optional model context window (tokens) (2026-08-08-013). When present on a
+   * RELAY codex run, the codex driver registers the CLI-launched model in a
+   * local model catalog (`model_catalog_json`) so codex stops falling back to
+   * default metadata for an id it does not know — eliminating the
+   * `Model metadata for <id> not found` warning and its degraded capability
+   * assembly. Absent ⇒ no catalog, current behaviour. Only the codex driver
+   * consumes it; claude/cursor ignore it.
+   */
+  contextWindow?: number
+  /**
+   * Optional max output tokens — the same catalog mechanism as
+   * {@link DriverStartOptions.contextWindow}. Consumption semantics are
+   * best-effort (codex 0.146 accepts the field; enforcement is unverified).
+   */
+  maxOutputTokens?: number
+  /**
+   * Per-run sandbox temp dir — the arapuca allow-set rw directory (created by
+   * `launchSandbox` under the execution root, removed with the run). When a
+   * sandboxed RELAY codex run generates a model catalog, the file MUST land here:
+   * the host `os.tmpdir()` is outside arapuca's allow set, so codex (the
+   * sandboxed process) could not read it at startup. Only run-via-driver passes
+   * it (discussion/automation relay codex runs are host-direct and land in
+   * `os.tmpdir()` instead).
+   */
+  sandboxTmpDir?: string
+  /**
    * Path to an arapuca sandbox-wrapper script. When set, the driver MUST use
    * this path as the vendor binary executable instead of default host binary
    * resolution. The wrapper runs the vendor CLI as an arapuca-narrowed host

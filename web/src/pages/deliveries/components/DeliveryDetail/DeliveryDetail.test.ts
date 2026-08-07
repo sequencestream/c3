@@ -318,6 +318,35 @@ describe('DeliveryDetail', () => {
       expect(w.find(`[data-testid="delivery-meta-${row}"]`).exists(), row).toBe(true)
     }
   })
+
+  it('passes a title click in the intents tab through as open-intent', async () => {
+    const w = mount(DeliveryDetail, {
+      props: {
+        delivery: delivery(),
+        plan: PLANNED_PLAN,
+        branchInit: null,
+        workspaceGitBranchMode: 'worktree',
+        mainlineAhead: null,
+        syncPhase: null,
+        deliveryPr: null,
+        deliveryPrBusy: false,
+        associatedIntents: [
+          {
+            id: 'i1',
+            title: 'Alpha',
+            status: 'todo',
+            prStatus: null,
+            headBranch: null,
+          },
+        ],
+        intents: [],
+      },
+    })
+    await w.find('[data-testid="delivery-pane-tab-intents"]').trigger('click')
+    expect(w.find('[data-testid="delivery-intents-tab"]').exists()).toBe(true)
+    await w.find('[data-testid="delivery-intent-title-i1"]').trigger('click')
+    expect(w.emitted('open-intent')?.[0]).toEqual(['i1'])
+  })
 })
 
 // ---- 编辑弹窗 ----------------------------------------------------------

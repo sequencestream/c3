@@ -73,6 +73,20 @@ export function calendarDateToEpochMs(value: string): number {
   return Date.parse(`${value}T00:00:00Z`)
 }
 
+/**
+ * The LOCAL calendar date ('YYYY-MM-DD') of `at` — the day the user is actually
+ * on. Feed it to `calendarDateToEpochMs` to get the wire value; taking the local
+ * midnight timestamp instead would encode the previous day in any positive
+ * offset (UTC+8 midnight is 16:00Z of the day before), which
+ * `epochMsToCalendarDate` would then render back as "yesterday".
+ */
+export function localCalendarDate(at: Date): string {
+  const y = at.getFullYear()
+  const m = String(at.getMonth() + 1).padStart(2, '0')
+  const d = String(at.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 /** Epoch ms → 'YYYY-MM-DD' (UTC); `null`/`0`/NaN → '' (no real calendar date is epoch 0). */
 export function epochMsToCalendarDate(ms: number | null | undefined): string {
   if (ms == null || ms === 0 || !Number.isFinite(ms)) return ''
@@ -95,6 +109,21 @@ export function defaultDeliveryBranchName(deliveryId: string, title: string): st
     .replace(/^-+|-+$/g, '')
     .slice(0, 48)
   return `delivery/${shortId}-${slug}`
+}
+
+/**
+ * What the intent page's 「当前意图独立交付」 hands upward: the intent's own facts,
+ * verbatim. The calendar day is NOT part of it — the control layer stamps it, so
+ * the encoding rule (local calendar day → UTC-midnight epoch) lives in exactly
+ * one place instead of in every emitter.
+ */
+export interface StandaloneDeliveryRequest {
+  workspaceId: string
+  intentId: string
+  /** The new delivery's title = the intent's title. */
+  title: string
+  /** The new delivery's description = the intent's content. */
+  description: string
 }
 
 /** One coarse phase boundary of an `init_delivery_branch` run (wire mirror). */

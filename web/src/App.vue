@@ -196,6 +196,12 @@ const {
   unlinkIntentFromDelivery,
   openDeliveryFromIntent,
   onDeliveryMobileBack,
+  intentLinkDeliveries,
+  pendingStandaloneDelivery,
+  loadDeliveriesForLink,
+  linkIntentDelivery,
+  unlinkIntentDelivery,
+  createStandaloneDelivery,
   // ---- discussions ----
   discussionsProject,
   currentDiscussions,
@@ -602,6 +608,8 @@ function onCodesChatWidth(px: number): void {
               : undefined) ??
             'current-branch'
           "
+          :deliveries="intentLinkDeliveries"
+          :standalone-delivery-pending="pendingStandaloneDelivery !== null"
           :automation="currentWorkflow"
           :intent-action-error-seq="intentActionErrorSeq"
           :create-intent-pending="createIntentPending"
@@ -664,6 +672,10 @@ function onCodesChatWidth(px: number): void {
           @open-delivery="
             (id: string) => intentsProject && openDeliveryFromIntent(intentsProject, id)
           "
+          @open-link-dialog="loadDeliveriesForLink"
+          @link-delivery="linkIntentDelivery"
+          @unlink-delivery="unlinkIntentDelivery"
+          @standalone-delivery="createStandaloneDelivery"
           @share="shareIntent"
           @start-automation="startWorkflow"
           @stop-automation="stopWorkflow"

@@ -1202,6 +1202,35 @@
           "label": "이 딜리버리로 시작"
         }
       }
+    },
+    "linkDelivery": {
+      "label": "딜리버리 연결",
+      "title": {
+        "label": "딜리버리 연결"
+      },
+      "pickerTitle": {
+        "label": "이 인텐트는 어느 딜리버리에 속하나요?"
+      },
+      "pickerEmpty": {
+        "label": "이 워크스페이스에는 연결할 수 있는 딜리버리가 없습니다."
+      },
+      "confirm": {
+        "label": "연결"
+      },
+      "open": {
+        "tooltip": "이 딜리버리 열기"
+      },
+      "standalone": {
+        "label": "이 인텐트 단독 딜리버리",
+        "tooltip": "현재 인텐트만을 위한 딜리버리(시작일·종료일 모두 오늘)를 만들고 바로 연결합니다."
+      },
+      "unlink": {
+        "label": "연결 해제",
+        "title": {
+          "label": "연결을 해제할까요?"
+        },
+        "confirm": "이 인텐트를 딜리버리 \"{title}\"에서 연결 해제할까요? 해당 딜리버리용 미머지 PR도 함께 닫힙니다."
+      }
     }
   },
   "session": {

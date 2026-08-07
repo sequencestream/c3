@@ -18,9 +18,11 @@ import ChatColumn from '../../components/ChatColumn/ChatColumn.vue'
 import type { PendingItem } from '../../lib/pending-queue'
 import type { TaskListModel } from '../../lib/task-list'
 import type { ChatMsg, PermissionMsg, RunActivity } from '../../lib/chat-types'
+import type { StandaloneDeliveryRequest } from '@/lib/delivery-view'
 import type {
   ActionTarget,
   CodexPolicy,
+  Delivery,
   ModeToken,
   WorkflowStatus,
   Intent,
@@ -54,6 +56,10 @@ const props = defineProps<{
   /** 当前 workspace 配置的主分支;用于隐藏主分支上的 Create PR 动作。 */
   workspaceMainBranch?: string | null
   workspaceGitBranchMode?: 'worktree' | 'current-branch'
+  /** 本工作区的交付列表,透传给详情标题栏的「关联交付」弹窗候选。 */
+  deliveries?: Delivery[]
+  /** 「当前意图独立交付」是否在飞行中(控制层 pending 槽)。 */
+  standaloneDeliveryPending?: boolean
   /** Selected intent's spec.md content (intent detail `spec` tab); null=未加载/无。 */
   intentSpecContent: string | null
   intentSpecLoading: boolean
@@ -135,6 +141,11 @@ const emit = defineEmits<{
   'sync-pr-status': [intentId: string]
   /** 意图详情「关联交付」跳转:交付页是另一个一级 tab,由 App 切换。 */
   'open-delivery': [deliveryId: string]
+  // ── 意图侧交付归属入口(与交付页入口并存,协议消息相同) ──
+  'open-link-dialog': [workspaceId: string]
+  'link-delivery': [workspaceId: string, deliveryId: string, intentId: string]
+  'unlink-delivery': [workspaceId: string, deliveryId: string, intentId: string]
+  'standalone-delivery': [payload: StandaloneDeliveryRequest]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   share: [intentId: string]
   delete: [intentId: string]
@@ -369,6 +380,8 @@ defineExpose({
         :sdd-enabled="sddEnabled"
         :workspace-main-branch="workspaceMainBranch"
         :workspace-git-branch-mode="workspaceGitBranchMode"
+        :deliveries="deliveries"
+        :standalone-delivery-pending="standaloneDeliveryPending"
         :requested-sub-tab="detailRequestedSubTab"
         :active-session="activeSession"
         :active-title="activeTitle"
@@ -433,6 +446,15 @@ defineExpose({
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
         @select-dependency="handleSelectDependency"
         @open-delivery="(id: string) => emit('open-delivery', id)"
+        @open-link-dialog="(ws: string) => emit('open-link-dialog', ws)"
+        @link-delivery="
+          (ws: string, deliveryId: string, id: string) => emit('link-delivery', ws, deliveryId, id)
+        "
+        @unlink-delivery="
+          (ws: string, deliveryId: string, id: string) =>
+            emit('unlink-delivery', ws, deliveryId, id)
+        "
+        @standalone-delivery="(p: StandaloneDeliveryRequest) => emit('standalone-delivery', p)"
         @set-mode="(m: ModeToken) => emit('set-mode', m)"
         @set-codex-policy="(p: CodexPolicy) => emit('set-codex-policy', p)"
         @set-session-agent="(agentId: string) => emit('set-session-agent', agentId)"

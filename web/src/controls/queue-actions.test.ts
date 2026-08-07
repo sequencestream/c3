@@ -75,6 +75,7 @@ function makeCtx(opts: { project?: string | null } = {}) {
     activeDeliveryPr: ref(null),
     activeDeliveryPrBusy: ref(false),
     autoSyncedDeliveryPrs: ref(new Set<string>()),
+    pendingStandaloneDelivery: ref(null),
     syncDeliveryPr: vi.fn(),
     activeDelivery: ref(null),
     activeDeliveryId: ref(null),

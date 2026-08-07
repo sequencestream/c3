@@ -27,6 +27,7 @@ import { applyFontScale } from '@/lib/font-scale'
 import { translateUiError } from '@/i18n/errors'
 import { normalizeGuidance } from '@/lib/git-failure-guidance'
 import { gateEscapeFor } from '@/lib/gate-escape'
+import { defaultDeliveryBranchName } from '@/lib/delivery-view'
 import { transcriptToChat } from './transcript'
 import type { AppCtx } from './types'
 import {
@@ -146,6 +147,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     activeDeliveryPrBusy,
     autoSyncedDeliveryPrs,
     activeDeliveryBranchInit,
+    pendingStandaloneDelivery,
     discussionMessages,
     discussionMaxSeq,
     researchMessages,
@@ -914,6 +916,24 @@ export function installMessageHandler(ctx: AppCtx): void {
         // One-time `pr:merge` semantic-change notice — the only defense against
         // the drift, shown exactly on the workspace's first delivery creation.
         if (msg.prMergeNotice) ctx.showToast(t('delivery.page.prMergeNotice.label'))
+        // 「当前意图独立交付」 continues here: this frame is the first moment the
+        // new delivery's id exists. Link first, then initialize the branch —
+        // linking before the branch exists is what keeps the diff-bloat check
+        // silent, and it is correct to be silent: a branch cut from the current
+        // mainline head necessarily has the intent's fork point as an ancestor.
+        // The pending slot is consumed here, so a delivery-page create that
+        // arrives later is never chained onto.
+        const standalone = pendingStandaloneDelivery.value
+        if (standalone) {
+          pendingStandaloneDelivery.value = null
+          ctx.linkIntentDelivery(standalone.workspaceId, msg.delivery.id, standalone.intentId)
+          ctx.initDeliveryBranchFor(
+            standalone.workspaceId,
+            msg.delivery.id,
+            defaultDeliveryBranchName(msg.delivery.id, msg.delivery.title),
+            'create',
+          )
+        }
         break
       }
       case 'delivery_detail':
@@ -1283,6 +1303,20 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         break
       case 'error':
+        // A refused `create_delivery` is the terminal of a 「当前意图独立交付」 run:
+        // nothing was created, so the chain has nothing to continue with. Release
+        // the pending slot (it is also the double-send guard) so the button is
+        // usable again, then let the error fall through to its normal toast.
+        if (
+          pendingStandaloneDelivery.value &&
+          (msg.error.code === 'delivery.createFailed' ||
+            msg.error.code === 'delivery.titleRequired' ||
+            msg.error.code === 'delivery.multiRepoUnsupported' ||
+            msg.error.code === 'delivery.dbUnavailable' ||
+            msg.error.code === 'workspace.unknown')
+        ) {
+          pendingStandaloneDelivery.value = null
+        }
         // A branch-init failure (fetch / push / orphan mismatch / bind-missing /
         // multi-repo) clears the in-flight init state so the form re-enables, and
         // surfaces the reason in a toast (the form lives on the deliveries page,

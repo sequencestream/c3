@@ -18,7 +18,15 @@ export function __resetWriteSpecGuards(): void {
  * emits / prefill 能力保持兼容;拆出的子组件只使用页面内部契约。列表为空(无选中意图)时渲染空态。
  */
 import { computed, ref, watch } from 'vue'
-import type { ActionTarget, DepType, Intent, IntentLog, IntentStatus } from '@ccc/shared/protocol'
+import type {
+  ActionTarget,
+  Delivery,
+  DepType,
+  Intent,
+  IntentLog,
+  IntentStatus,
+} from '@ccc/shared/protocol'
+import type { StandaloneDeliveryRequest } from '@/lib/delivery-view'
 import type {
   CodexPolicy,
   ModeToken,
@@ -62,6 +70,10 @@ const props = defineProps<{
   /** 当前 workspace 配置的主分支;intent 分支与其相同时不显示 Create PR。 */
   workspaceMainBranch?: string | null
   workspaceGitBranchMode?: 'worktree' | 'current-branch'
+  /** 本工作区的交付列表,作为标题栏「关联交付」弹窗的候选池。 */
+  deliveries?: Delivery[]
+  /** 「当前意图独立交付」是否在飞行中(控制层 pending 槽)。 */
+  standaloneDeliveryPending?: boolean
   // ── chat column passthrough(intent session / spec session 两 tab 共用)──
   /** 全局活动会话 id;与期望会话 id 一致时聊天列才渲染(防串台)。 */
   activeSession: string | null
@@ -132,6 +144,12 @@ const emit = defineEmits<{
   'select-dependency': [intentId: string]
   /** 跳到某个关联交付的详情页(交付页在另一个一级 tab,故一路上抛到 App)。 */
   'open-delivery': [deliveryId: string]
+  // ── 交付归属(意图侧入口;协议消息与交付页完全相同,只是 id 全部显式) ──
+  /** 打开候选弹窗:意图页不自带交付列表,由控制层补发 list_deliveries。 */
+  'open-link-dialog': [workspaceId: string]
+  'link-delivery': [workspaceId: string, deliveryId: string, intentId: string]
+  'unlink-delivery': [workspaceId: string, deliveryId: string, intentId: string]
+  'standalone-delivery': [payload: StandaloneDeliveryRequest]
   // 分享:上抛意图 id,由 App 组装深链复制(workspace/typeLabel 在上层)。
   share: [intentId: string]
   delete: [intentId: string]
@@ -395,6 +413,8 @@ function submitChat(text: string, images: PromptImage[]): void {
               :workspace-main-branch="workspaceMainBranch"
               :workspace-git-branch-mode="workspaceGitBranchMode"
               :intent-pr-sync="intentPrSync"
+              :deliveries="deliveries"
+              :standalone-delivery-pending="standaloneDeliveryPending"
               :main-action="mainAction"
               :main-action-label="mainActionLabel"
               :main-action-disabled="mainActionDisabled"
@@ -407,6 +427,19 @@ function submitChat(text: string, images: PromptImage[]): void {
               @delete="(id: string) => emit('delete', id)"
               @main-action="onMainAction"
               @modify="openResetDialog('intentSession')"
+              @open-delivery="(id: string) => emit('open-delivery', id)"
+              @open-link-dialog="(ws: string) => emit('open-link-dialog', ws)"
+              @link-delivery="
+                (ws: string, deliveryId: string, id: string) =>
+                  emit('link-delivery', ws, deliveryId, id)
+              "
+              @unlink-delivery="
+                (ws: string, deliveryId: string, id: string) =>
+                  emit('unlink-delivery', ws, deliveryId, id)
+              "
+              @standalone-delivery="
+                (p: StandaloneDeliveryRequest) => emit('standalone-delivery', p)
+              "
             />
           </div>
         </div>

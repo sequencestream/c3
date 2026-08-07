@@ -489,6 +489,23 @@ export function createState(deps: StateDeps) {
   const deliveryLinkIntents = computed<Intent[]>(() =>
     deliveriesProject.value ? (intents.value[deliveriesProject.value] ?? []) : [],
   )
+  /**
+   * The mirror image for the intent page's 「关联交付」 picker — the deliveries of
+   * the INTENTS workspace, which may differ from the delivery tab's. Fed by the
+   * same `deliveries` frame (keyed by workspace), so the picker stays fresh on
+   * broadcast without the intent page owning a second cache.
+   */
+  const intentLinkDeliveries = computed<Delivery[]>(() =>
+    intentsProject.value ? (deliveries.value[intentsProject.value] ?? []) : [],
+  )
+  /**
+   * The one-shot follow-up owed to a 「当前意图独立交付」 click: which intent the
+   * next `create_delivery_result` must be linked to (and whose branch must then
+   * be initialized). `null` = no standalone create in flight, which is also what
+   * keeps a plain delivery-page create from being chained onto — and what makes
+   * a second click a no-op while the first is still travelling.
+   */
+  const pendingStandaloneDelivery = ref<{ workspaceId: string; intentId: string } | null>(null)
 
   // Per-workspace SDD master switch, rebroadcast with every intent list. Drives
   // the SDD-aware intent action button (Write Spec / Approve Spec / Start Work)
@@ -1142,6 +1159,8 @@ export function createState(deps: StateDeps) {
     autoSyncedDeliveryPrs,
     activeDeliveryBranchInit,
     deliveryLinkIntents,
+    intentLinkDeliveries,
+    pendingStandaloneDelivery,
     currentIntentSessions,
     currentDiscussions,
     activeDiscussionRunState,

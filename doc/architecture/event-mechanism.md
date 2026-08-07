@@ -99,19 +99,38 @@ c3 内部所有「跨特性的事情发生了」都走**同一条进程内总线
 
 ### 已知事件类型
 
-| 大类 `category` | 动作 `action`                                       | 完整 type             | status 建议集                | metadata 建议键                                                 | 发布者                                        |
-| --------------- | --------------------------------------------------- | --------------------- | ---------------------------- | --------------------------------------------------------------- | --------------------------------------------- |
-| `run`           | `started`                                           | `run:started`         | —                            | `sessionKind`, `runKind`                                        | run 生命周期桥                                |
-| `run`           | `settled`                                           | `run:settled`         | `complete`/`error`/`aborted` | 同上                                                            | 同上                                          |
-| `pr`            | `create`                                            | `pr:create`           | `success`/`failure`/`error`  | `operation`(冗余), `provider`, `repo`…                          | 模型 `publish_event` + c3 自建 PR             |
-| `pr`            | `review`/`merge`/`close`/`comment`/`update`         | `pr:*`                | 同上                         | 同上                                                            | 模型 `publish_event`                          |
-| `intent`        | `created`/`dev_started`/`done`/`failed`/`cancelled` | `intent:*`            | —                            | `intentId`, `title`, `module`, `toStatus`                       | intent 生命周期桥                             |
-| `intent`        | `spec_approve`                                      | `intent:spec_approve` | —                            | `intentId`, `title`                                             | 服务端 `approveSpecHandler`                   |
-| `discussion`    | `start`                                             | `discussion:start`    | —                            | `discussionId`, `title`, `discussionType` + 调用方业务 metadata | discussion 生命周期桥（`startDiscussionRun`） |
-| `discussion`    | `end`                                               | `discussion:end`      | `complete`/`error`/`aborted` | 同上                                                            | 同上                                          |
+| 大类 `category` | 动作 `action`                                       | 完整 type                 | status 建议集                | metadata 建议键                                                 | 发布者                                         |
+| --------------- | --------------------------------------------------- | ------------------------- | ---------------------------- | --------------------------------------------------------------- | ---------------------------------------------- |
+| `run`           | `started`                                           | `run:started`             | —                            | `sessionKind`, `runKind`                                        | run 生命周期桥                                 |
+| `run`           | `settled`                                           | `run:settled`             | `complete`/`error`/`aborted` | 同上                                                            | 同上                                           |
+| `pr`            | `create`                                            | `pr:create`               | `success`/`failure`/`error`  | `operation`(冗余), `provider`, `repo`…                          | 模型 `publish_event` + c3 自建 PR              |
+| `pr`            | `review`/`merge`/`close`/`comment`/`update`         | `pr:*`                    | 同上                         | 同上                                                            | 模型 `publish_event`                           |
+| `intent`        | `created`/`dev_started`/`done`/`failed`/`cancelled` | `intent:*`                | —                            | `intentId`, `title`, `module`, `toStatus`                       | intent 生命周期桥                              |
+| `intent`        | `spec_approve`                                      | `intent:spec_approve`     | —                            | `intentId`, `title`                                             | 服务端 `approveSpecHandler`                    |
+| `discussion`    | `start`                                             | `discussion:start`        | —                            | `discussionId`, `title`, `discussionType` + 调用方业务 metadata | discussion 生命周期桥（`startDiscussionRun`）  |
+| `discussion`    | `end`                                               | `discussion:end`          | `complete`/`error`/`aborted` | 同上                                                            | 同上                                           |
+| `delivery`      | `created`                                           | `delivery:created`        | —                            | `deliveryId`, `title`, `baseBranch`                             | 交付域 `create_delivery`                       |
+| `delivery`      | `status_changed`                                    | `delivery:status_changed` | —                            | `deliveryId`, `title`, **`from`**, **`to`**（六态值）           | 交付域每一次状态写                             |
+| `delivery`      | `branch_ready`                                      | `delivery:branch_ready`   | —                            | `deliveryId`, `title`, `branch`                                 | 交付域 `init_delivery_branch`                  |
+| `delivery`      | `pr_created`                                        | `delivery:pr_created`     | —                            | `deliveryId`, `title`, `prNumber`, `prUrl`, `baseBranch`        | 交付域 `create_delivery_pr`                    |
+| `delivery`      | `delivered`                                         | `delivery:delivered`      | —                            | 上述 + `branch`, `prNumber`, `prUrl`                            | 交付域 `sync_delivery_pr`（forge 判定 merged） |
+| `delivery`      | `cancelled`                                         | `delivery:cancelled`      | —                            | `deliveryId`, `title`                                           | 交付域状态写（目标为 `cancelled`）             |
 
 `pr:operation` 是 v12 及之前的旧类型名，v13 已拆为 `pr:<op>` 按操作命名。归一化器保留
 `pr:operation` 作为过渡别名——收到该 type 的旧格式时自动改写为新 type 输出。
+
+`delivery:*` 六类都是**系统观察到的事实**，走默认归一化器（结构化脱敏 + 截断），没有专用归一化器。
+进入 `delivered` / `cancelled` 时 `status_changed` 与对应终态事件**同发且不去重**：订阅 `delivery:*`
+的拿到完整转移轨迹，只订阅终态的专门订阅者不受影响。事件在状态写提交之后发布，失败只落 warn 日志，
+不回滚状态写。
+
+**`pr:merge` 的 base 不必然是主线**：它**可能是一条交付分支**——同一个事件类型报告两个实质不同的事实
+（「改动进了某个交付」与「改动进了主线」）。`data.ref` 因此带两个**可选**字段：`baseBranch`（合并目标
+分支名）与 `baseTarget`（`mainline` / `delivery-branch`）。订阅方据此区分产出落在哪一侧；一个在每次
+merge 上触发发布的自动化尤其需要检查它。只带 `head`/`base` 的事件形态同样合法，不读这两个字段的订阅方
+无需改动；`baseTarget` 取值不在闭集内会在归一化时被丢弃，订阅方永远不会看到第三种值。服务端自建 PR 的
+路径（`runServerSidePrCreate`）按 PR 是否绑定交付自动填这两个字段。事件一经发出即被自动化消费、无法
+撤回，因此区分只能由订阅方自己检查字段完成；工作区首次创建交付时的一次性提示是唯一的前置告知手段。
 
 ### 大类通配 `:*`
 
@@ -162,7 +181,7 @@ ADR-0018 的核心修正：run 生命周期订阅从「per-launch 订阅/释放�
 
 ### 6.2 入参 Schema（Zod，单一来源 `features/events/tool-defs.ts`）
 
-入参直接对应 `GenericEvent`：`type`（必填非空，开放的 `<category>:<action>` 字符串，可自定义，如 `custom:create`；已知 type 走专用归一化器，其余走默认归一化器）；`status` / `description` / `metadata`（扁平 `string→string`）/ `data`（JSON 兼容对象）可选。工具描述在 system prompt 中说明各 type 的字段约定——PR 事件 type 填 `pr:<operation>`（create/review/merge/close/comment/update 之一）、`status` 填 result（`success`/`failure`/`error`）、`metadata.operation` 填 operation、`description` 填 errorSummary、`data` 承载 `{ pr, repo, ref, association }`（`association` 含 `intentId` + `intentTitle`，经安全归一后发布，让事件自解释）。
+入参直接对应 `GenericEvent`：`type`（必填非空，开放的 `<category>:<action>` 字符串，可自定义，如 `custom:create`；已知 type 走专用归一化器，其余走默认归一化器）；`status` / `description` / `metadata`（扁平 `string→string`）/ `data`（JSON 兼容对象）可选。工具描述在 system prompt 中说明各 type 的字段约定——PR 事件 type 填 `pr:<operation>`（create/review/merge/close/comment/update 之一）、`status` 填 result（`success`/`failure`/`error`）、`metadata.operation` 填 operation、`description` 填 errorSummary、`data` 承载 `{ pr, repo, ref, association }`（`ref` 含 `head`/`base` 加可选的 `baseBranch`/`baseTarget`，`association` 含 `intentId` + `intentTitle` + `deliveryId`，经安全归一后发布，让事件自解释）。
 
 ### 6.3 字段级安全归一化（核心安全资产，`pr:operation` 归一化器）
 

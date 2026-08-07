@@ -85,6 +85,10 @@ const TESTS = [
     file: 'e2e-delivery-pr-test.mjs',
   },
   {
+    name: 'delivery status guard (unreachable edge / blocked gap / system-only)',
+    file: 'e2e-delivery-transition-test.mjs',
+  },
+  {
     name: 'dependency gate (same-delivery / cross-delivery / no-delivery)',
     file: 'e2e-dependency-gate-test.mjs',
   },

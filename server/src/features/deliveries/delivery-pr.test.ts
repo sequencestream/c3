@@ -431,6 +431,94 @@ const syncMsg = (deliveryId: string) => ({
   deliveryId,
 })
 
+describe('delivery:* events on the PR paths', () => {
+  it('create_delivery_pr publishes delivery:pr_created with the PR and the merge target', async () => {
+    const id = await seedDelivery('verified')
+    findOpenForgePrMock.mockResolvedValue(NO_OPEN_PR)
+    createForgePrMock.mockResolvedValue({
+      ok: true,
+      prId: '77',
+      prUrl: 'https://github.com/o/r/pull/77',
+    })
+    const h = harness()
+    await createDeliveryPrHandler(h.ctx, h.conn, {
+      type: 'create_delivery_pr',
+      workspaceId,
+      deliveryId: id,
+    })
+
+    expect(h.published.map((p) => p.event.type)).toEqual(['delivery:pr_created'])
+    expect(h.published[0].event.metadata).toMatchObject({
+      deliveryId: id,
+      title: 'Sprint 3',
+      prNumber: '77',
+      prUrl: 'https://github.com/o/r/pull/77',
+      baseBranch: 'main',
+    })
+    expect(h.published[0].workspacePath).toBe(dir)
+  })
+
+  it('the forge-first adoption publishes it too — the fact is 「交付 PR 已就绪」', async () => {
+    const id = await seedDelivery('verified')
+    findOpenForgePrMock.mockResolvedValue({
+      ok: true,
+      pr: { number: '88', url: 'https://github.com/o/r/pull/88' },
+    })
+    const h = harness()
+    await createDeliveryPrHandler(h.ctx, h.conn, {
+      type: 'create_delivery_pr',
+      workspaceId,
+      deliveryId: id,
+    })
+    expect(createForgePrMock).not.toHaveBeenCalled()
+    expect(h.published.map((p) => p.event.type)).toEqual(['delivery:pr_created'])
+    expect(h.published[0].event.metadata).toMatchObject({ prNumber: '88' })
+  })
+
+  it('the conflict rollback publishes status_changed verified → verifying', async () => {
+    const id = await seedWithPr()
+    forgeFactsMock.mockResolvedValue({ ok: true, status: 'reviewing', conflict: true })
+    mergeTrialMock.mockResolvedValue({ baseSha: 'b1', headSha: 'h2', conflictFiles: ['src/a.ts'] })
+    const h = harness()
+    await syncDeliveryPrHandler(h.ctx, h.conn, syncMsg(id))
+
+    expect(h.published.map((p) => p.event.type)).toEqual(['delivery:status_changed'])
+    expect(h.published[0].event.metadata).toMatchObject({
+      deliveryId: id,
+      from: 'verified',
+      to: 'verifying',
+    })
+  })
+
+  it('a sync that moves nothing publishes nothing', async () => {
+    const id = await seedWithPr()
+    forgeFactsMock.mockResolvedValue({ ok: true, status: 'reviewing', ciFailed: true })
+    const h = harness()
+    await syncDeliveryPrHandler(h.ctx, h.conn, syncMsg(id))
+    expect(h.published).toEqual([])
+  })
+
+  it('a publish failure does not roll back the committed status write', async () => {
+    const id = await seedWithPr()
+    forgeFactsMock.mockResolvedValue({ ok: true, status: 'merged' })
+    const h = harness()
+    // The normalizer refuses every event — the delivery still lands `delivered`,
+    // the queue is still recomputed, and only a warning is logged.
+    ;(h.ctx as unknown as { normalizeEvent: () => unknown }).normalizeEvent = () => ({
+      ok: false,
+      reason: 'test refusal',
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await syncDeliveryPrHandler(h.ctx, h.conn, syncMsg(id))
+
+    expect(getDelivery(id)!.status).toBe('delivered')
+    expect(h.published).toEqual([])
+    expect(markQueueDirtyMock).toHaveBeenCalledWith(dir)
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+})
+
 describe('sync_delivery_pr — layered settlement', () => {
   it('refuses a delivery that never opened a delivery PR', async () => {
     const id = await seedDelivery('verified')
@@ -547,14 +635,23 @@ describe('sync_delivery_pr — delivered atomic write and its chained actions', 
     expect(detailOf(h.sent).delivery.status).toBe('delivered')
   })
 
-  it('publishes delivery:delivered and marks the queue dirty', async () => {
+  it('publishes the status_changed trail AND delivery:delivered, and marks the queue dirty', async () => {
     const id = await seedWithPr()
     forgeFactsMock.mockResolvedValue({ ok: true, status: 'merged' })
     const h = harness()
     await syncDeliveryPrHandler(h.ctx, h.conn, syncMsg(id))
 
-    expect(h.published).toHaveLength(1)
+    // Terminal double-publish: a `delivery:*` subscriber sees the transition, a
+    // subscriber to only the terminal fact still gets its own event.
+    expect(h.published.map((p) => p.event.type)).toEqual([
+      'delivery:status_changed',
+      'delivery:delivered',
+    ])
     expect(h.published[0].event).toMatchObject({
+      type: 'delivery:status_changed',
+      metadata: { deliveryId: id, title: 'Sprint 3', from: 'verified', to: 'delivered' },
+    })
+    expect(h.published[1].event).toMatchObject({
       type: 'delivery:delivered',
       metadata: { deliveryId: id, title: 'Sprint 3', baseBranch: 'main', branch: BRANCH },
     })

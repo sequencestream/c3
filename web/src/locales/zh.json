@@ -1456,7 +1456,7 @@
         "noAgent": "没有可用于此模板的已启用 Claude Agent。",
         "prPoller": {
           "title": "PR 状态轮询检查",
-          "description": "每 10 分钟将审核中的意图与 GitHub PR 状态对账。"
+          "description": "每 10 分钟对照 GitHub PR 状态检查审核中的意图,有变化时发布事件(只读,不写台账)。"
         },
         "archReview": {
           "title": "每周架构稳定性体检",
@@ -2020,6 +2020,9 @@
           },
           "discussion": {
             "label": "讨论"
+          },
+          "delivery": {
+            "label": "交付"
           }
         },
         "action": {
@@ -2029,6 +2032,26 @@
         },
         "row": {
           "add": "添加订阅条件"
+        },
+        "delivery": {
+          "created": {
+            "label": "交付创建"
+          },
+          "statusChanged": {
+            "label": "状态变更"
+          },
+          "branchReady": {
+            "label": "分支就绪"
+          },
+          "prCreated": {
+            "label": "交付 PR 创建"
+          },
+          "delivered": {
+            "label": "已发布"
+          },
+          "cancelled": {
+            "label": "交付取消"
+          }
         }
       },
       "metadata": {

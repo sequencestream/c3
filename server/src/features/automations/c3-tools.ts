@@ -23,19 +23,25 @@ import {
   findSchema,
   runFind,
   runSaveIntentDirectly,
-  runSaveIntentPrInfo,
   runView,
   saveIntentDirectlyDesc,
   saveIntentDirectlySchema,
-  saveIntentPrInfoDesc,
-  saveIntentPrInfoSchema,
   viewDesc,
   viewSchema,
   type FindArgs,
   type SaveIntentDirectlyArgs,
-  type SaveIntentPrInfoArgs,
   type ViewArgs,
 } from '../intents/tool-defs.js'
+import {
+  findDeliveriesDesc,
+  findDeliveriesSchema,
+  runFindDeliveries,
+  runViewDelivery,
+  viewDeliveryDesc,
+  viewDeliverySchema,
+  type FindDeliveriesArgs,
+  type ViewDeliveryArgs,
+} from '../deliveries/tool-defs.js'
 import {
   publishEventDesc,
   publishEventSchema,
@@ -145,15 +151,21 @@ export function buildAutomationC3Tools(
       inputSchema: viewSchema,
       handler: async (args) => ({ ...runView(workspacePath, args as ViewArgs) }),
     },
+    // Delivery tools are READ-ONLY by design; there is deliberately no write
+    // counterpart, since every status write funnels through the state machine.
     {
-      name: 'save_intent_pr_info',
-      description: saveIntentPrInfoDesc,
-      inputSchema: saveIntentPrInfoSchema,
+      name: 'find_deliveries',
+      description: findDeliveriesDesc,
+      inputSchema: findDeliveriesSchema,
       handler: async (args) => ({
-        ...runSaveIntentPrInfo(workspacePath, args as SaveIntentPrInfoArgs, (path) =>
-          deps?.broadcastIntents(path),
-        ),
+        ...runFindDeliveries(workspacePath, args as FindDeliveriesArgs),
       }),
+    },
+    {
+      name: 'view_delivery',
+      description: viewDeliveryDesc,
+      inputSchema: viewDeliverySchema,
+      handler: async (args) => ({ ...runViewDelivery(workspacePath, args as ViewDeliveryArgs) }),
     },
     {
       name: 'save_intent_directly',

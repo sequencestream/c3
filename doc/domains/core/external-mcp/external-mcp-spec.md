@@ -49,12 +49,22 @@ flowchart LR
 
 分级按**真实效果**:`read` 不修改意图台账、讨论、spec 或会话生命周期;`write` 会。`publish_event` 属 `read`——它投递事实,envelope 的 workspace 与来源由 key 绑定生成,调用方不能伪造来源;订阅自动化可能因该事件异步执行,这是它本来的可观察语义。
 
-| 分级  | 工具                                                                                                                                                                 |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| read  | `find_intents` `view_intent` `find_discussions` `view_discussion` `publish_event`(默认全部)                                                                          |
-| write | `save_intents` `save_intent_directly` `save_intent_pr_info` `submit_spec_review` `start_session_for_intent` `start_discussion` `continue_discussion`(默认**不勾选**) |
+| 分级  | 工具                                                                                                                                                           |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| read  | `find_intents` `view_intent` `find_discussions` `view_discussion` `publish_event`(新 key 默认勾选)、`find_deliveries` `view_delivery`(可授权,但**默认不勾选**) |
+| write | `save_intents` `save_intent_directly` `submit_spec_review` `start_session_for_intent` `start_discussion` `continue_discussion`(默认**不勾选**)                 |
 
-**默认只读集合**是创建 key 时的服务端强制值,客户端伪造的默认值被忽略。**编辑只接受目录内工具名**:未知、重复的名称使整次更新失败,不做部分保存。**空工具范围表示该 key 什么也调不到,绝不是通配。**
+**目录与默认集是两份名表,刻意解耦**:「可被管理员勾选」与「新 key 自动获得」是两个不同的问题。
+`EXTERNAL_MCP_READ_TOOLS` 只作分级来源,`EXTERNAL_MCP_DEFAULT_TOOLS` 才是创建 key 时服务端强制
+写入的初值,后者是前者的真子集。两个交付只读工具进目录而不进默认集——新 key 不应在无人决定的情况下
+获得读取一个工作区交付计划的能力。另有一条编译期断言钉死:默认集只能取读级工具,一个写工具永远不会
+因为疏漏落进新 key 的初值。交付侧**没有任何写工具**进目录:状态写必须过交付状态机与全部守卫。
+
+**PR 状态回填不在目录中**:一个意图可能同时持有多条 PR(每个交付一条),仅凭 `intentId` 无法确定
+要回填哪一条,这类工具因此无法安全外部授权。key 的 scope 里出现目录外的名字一律按目录外处理——调用
+返回稳定的 forbidden,与「越权拒绝」语义一致。
+
+**默认工具集合**是创建 key 时的服务端强制值,客户端伪造的默认值被忽略。**编辑只接受目录内工具名**:未知、重复的名称使整次更新失败,不做部分保存。**空工具范围表示该 key 什么也调不到,绝不是通配。**
 
 工具**行为**复用与内部完全相同的 `run*` 核心,所以外部调用方观察到的规则与内部一致;外部授权不绕过意图状态约束、spec 审核约束或会话启动失败处理。差别只有 binding 与授权源:
 

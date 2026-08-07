@@ -328,7 +328,14 @@ describe('runManualDevCleanup', () => {
       operation: 'create',
       result: 'success',
       pr: { url: 'https://h/pull/42' },
-      ref: { head: 'intent/i1-add-feature', base: 'main' },
+      // No delivery binding on this cleanup → the merge target is mainline, and
+      // the event says so explicitly rather than leaving the subscriber to infer it.
+      ref: {
+        head: 'intent/i1-add-feature',
+        base: 'main',
+        baseBranch: 'main',
+        baseTarget: 'mainline',
+      },
       association: { intentId: 'I1' },
     })
   })

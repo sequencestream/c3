@@ -85,6 +85,22 @@
 - 系统专属边(`verified → delivered`、`verified → verifying`)的唯一写入口是 `sync_delivery_pr`:它以 `role:'system'` 求值,通过后经 `commitDeliveryDelivered` / `commitDeliveryMergeConflict` 在单事务内落定。状态机本身不因此改动——两条边本就在 `EDGES` 表中。
 - `branchNotReady` 缺口的 `jumpTo` 为 `branch`(本页分支初始化区),不再是 `workspace-settings`;`branch_ready` 变为可写后,`branchNotReady` 守卫真正生效。
 
+## 事件接线(`delivery:*`)
+
+- 发布集中在 handler 层,**不在 store 层**:store 拿不到 `ctx`,也不该触碰总线。唯一发布入口是 `deliveries/index.ts` 的 `publishDeliveryEvent(ctx, workspacePath, action, metadata)`(`ctx.normalizeEvent` → `ctx.eventBus.publish('event', …)`,`sessionId` 为一次性 uuid);`publishDeliveryStatusChanged` 与 `publishDeliveryDelivered` 都只是它的具名封装。
+- 发布点:`createDeliveryHandler`(`created`)、`applyTransition`(`status_changed`,目标为 `cancelled` 时再发 `cancelled`)、`initDeliveryBranchHandler` 的三条 ready 路径(`branch_ready`,由局部 `announceBranchReady` 统一;已就绪的幂等短路不发——没有新事实)、`createDeliveryPrHandler`(`pr_created`,创建与 forge-first 复用同发)、`syncDeliveryPrHandler` 的冲突回退(`status_changed` verified→verifying)、`settleDeliveryDelivered`(`status_changed` + `delivered` 双发)。
+- 每一处都在状态写提交、`conn.send` 与 `broadcastDeliveries` **之后**调用;`publishDeliveryEvent` 内部把归一化失败收敛成一行 warn 日志,调用方不检查返回值——事件发布不是状态写的一部分(DR-R38)。
+- 没有专用归一化器:`delivery:*` 落在注册表的**默认**归一化器上(结构化脱敏 + 截断),与 `delivery:delivered` 既有路径完全一致。订阅侧同样零改动——事件总线的 `eventFilters[]` 多行 OR 与 `<category>:*` 大类通配本就覆盖 `delivery:*`。
+- 唯一的代码事实源是 `shared/src/event-catalog.ts` 的 `delivery` 类别(六个 action,均无 status 维度),自动化表单的级联选择器直接读它。
+
+## 交付只读 MCP 工具接线
+
+- `deliveries/tool-defs.ts` 是 framing-free 的核心(zod 形状 + 描述串 + `runFindDeliveries` / `runViewDelivery`),仿 `intents/tool-defs.ts` 的 find/view 模式,复用 store 的 `listDeliveries` / `getDelivery` / `listAssociatedIntents` / `getLatestDeliveryPr`;跨工作区读被 `resolveWorkspaceRoot(delivery.workspaceId) !== resolve(workspacePath)` 拦成友好的「未找到」。
+- 自动化面:进 `automations/mcp-freeze.ts` 的 `C3_MCP_TOOLS`(`isWrite: false`,`find_`/`view_` 前缀也会被 `classifyTool` 独立判成只读)与 `automations/c3-tools.ts` 的 `buildAutomationC3Tools`;`getAutomationToolManifest` 自动带出,表单可勾选。
+- 外部面:进 `external-mcp/tools.ts` 的目录与 `shared/src/protocol/settings.ts` 的 `EXTERNAL_MCP_READ_TOOLS`,分级 `read`;底部编译期目录钉死(built set == 名表)保持不变。
+- **「默认不勾选」的落法**:外部面把「可授权目录」与「新 key 默认集」拆成两份名表——`EXTERNAL_MCP_READ_TOOLS` 只作分级来源,`EXTERNAL_MCP_DEFAULT_TOOLS` 才是建 key 时服务端强制写入的初值,交付工具进前者不进后者;另有一条编译期断言钉死默认集只能取读级工具。自动化面靠「不进任何内置模板的默认 `toolAllowlist`」达成同一语义。
+- 不注册任何交付写工具,顾问面(`transport/advisor-mcp`)也不加交付工具。
+
 ## 角标
 
 `countDeliveriesNeedingAction` 对工作区每个交付求 `deliveryRequiresAction`(可执行人工推进/返工动作存在、存在人工可解决缺口,或存在可执行的交付 PR 动作)之和。`HUMAN_SOLVABLE_GAPS` 是空集:转移计划能报出的缺口要么在页面别处解决(分支初始化、意图关联),要么是纯系统等待。挂在系统边上的那个人工动作——建交付 PR / 解合并受阻——**无法表达为计划缺口**(计划看不见有没有 PR),因此走独立的 `mergeActionable` 入口:判定读台账,唯一实现在 `merge-attention.ts` 的 `deliveryMergeActionable`(`verified` + `worktree` + 「无 PR 或 PR 已关闭」或「PR 开放且受阻」),由列表回包与广播共用。角标随 `deliveries` 帧下发(`needsActionCount`),前端不重算。
@@ -103,7 +119,7 @@
 
 - **创建** `createDeliveryPrHandler`:`resolveDeliveryPrContext` 按固定顺序过闸(`worktree` → `verified` → 分支就绪)→ fetch 两端并解析 `base_sha`/`head_sha`(SHA 是幂等键的材料,读本地过期 ref 会把行钉在一个远端已不存在的状态上)→ `countCommitsAhead` 判有差异 → **`findOpenForgePr` 先查 forge**,命中即复用、未命中才 `createForgePr`、查询失败即中止 → `upsertDeliveryPr` + 交付日志 → 回 `delivery_detail` + 广播。
 - **同步** `syncDeliveryPrHandler`:取最新交付 PR 行(无行报 `delivery.deliveryPrNotFound`)→ `getForgeDeliveryPrFacts` 归一化 forge 事实 → 分层落定:`merged` 走 `settleDeliveryDelivered`;`open + 冲突` 先 `deliveryMergeTrial` 枚举冲突文件再经状态机写 `verified → verifying`(交付已不是 `verified` 时只刷新冲突证据,不去要一条不存在的边);`open + CI/审批` 只写 `blocked_reason`;`open` 无阻塞清空 `blocked_reason`;`closed` 只同步行状态;查询失败什么都不写。
-- **`settleDeliveryDelivered`**:`canTransitionDelivery(role:'system', mergeSucceeded:true)` → `commitDeliveryDelivered`(状态 + 日志 + PR 行同一事务)→ **提交后**发 `delivery:delivered`(经 `ctx.normalizeEvent` 走通用事件管道的默认归一化器)、`markQueueDirty` 触发跨交付闸门重算、广播 `deliveries` **与 `intents`**。已是 `delivered` 的重复同步只刷新 PR 行,不二次写日志、不重复发事件。
+- **`settleDeliveryDelivered`**:`canTransitionDelivery(role:'system', mergeSucceeded:true)` → `commitDeliveryDelivered`(状态 + 日志 + PR 行同一事务)→ **提交后**发 `delivery:status_changed`(verified→delivered)与 `delivery:delivered` 两条事件(均经 `ctx.normalizeEvent` 走通用事件管道的默认归一化器)、`markQueueDirty` 触发跨交付闸门重算、广播 `deliveries` **与 `intents`**。已是 `delivered` 的重复同步只刷新 PR 行,不二次写日志、不重复发事件。
 - **git.ts 侧**:`findOpenForgePr` 以 `gh pr list --head/--base --state open` 与 `glab mr list --source-branch/--target-branch` 归一为同一答案;`getForgeDeliveryPrFacts` 把 GitHub 的 `mergeable`/`statusCheckRollup`/`reviewDecision` 与 GitLab 的 `detailed_merge_status`/`has_conflicts`/pipeline 状态归一为 `conflict`/`ciFailed`/`approvalMissing` 三个布尔;`deliveryMergeTrial` 在**临时 detached worktree** 中试合(与 `syncDeliveryMainline` 同款),纯观测、失败即空列表。
 - **前端**:概览 tab 的合并区(`worktree` 模式,`verified` 起或已有 PR 时渲染)给出建 PR / PR 链接与状态 / 「Forge 已合并,等待确认」/「合并受阻」/ 冲突文件列表 / 「同步」。`message-handler` 在 `delivery_detail` 到达时采纳 `deliveryPr`、清 busy 标志,并按 `autoSyncedDeliveryPrs` 做**进页一次**的自动同步(该帧同时是同步自己的回包,不设这道闸就会自激)。
 

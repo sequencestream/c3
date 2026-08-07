@@ -24,7 +24,7 @@
 import { isAbsolute, resolve } from 'node:path'
 import { realpathSync } from 'node:fs'
 import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto'
-import { EXTERNAL_MCP_READ_TOOLS } from '@ccc/shared/protocol'
+import { EXTERNAL_MCP_DEFAULT_TOOLS } from '@ccc/shared/protocol'
 import { readJsonFile, withFileLock, writeAtomic } from './store.js'
 import { settingsFile } from './paths.js'
 
@@ -180,10 +180,11 @@ function normalizeRecord(raw: unknown): McpApiKeyRecord | null {
     lastUsedAt: typeof r.lastUsedAt === 'number' && r.lastUsedAt > 0 ? r.lastUsedAt : null,
     workspace,
     // A pre-scope record predates per-key tool authorization; it gets exactly the
-    // read-only set it effectively had, never a write tool.
+    // default set it effectively had, never a write tool and never a read tool
+    // that was not grantable back then.
     tools: Array.isArray(r.tools)
       ? dedupe(r.tools.filter((t): t is string => typeof t === 'string'))
-      : [...EXTERNAL_MCP_READ_TOOLS],
+      : [...EXTERNAL_MCP_DEFAULT_TOOLS],
     hashVersion: num(r.hashVersion, 0),
     algo: typeof r.algo === 'string' ? r.algo : '',
     params: {

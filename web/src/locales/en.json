@@ -1456,7 +1456,7 @@
         "noAgent": "No enabled Claude agent is available for this template.",
         "prPoller": {
           "title": "PR status polling check",
-          "description": "Reconcile reviewing intents with GitHub PR status every 10 minutes."
+          "description": "Check reviewing intents against GitHub PR status every 10 minutes and publish an event on a change (read-only; the ledger is not written)."
         },
         "archReview": {
           "title": "Weekly architecture stability review",
@@ -1920,6 +1920,9 @@
           },
           "discussion": {
             "label": "Discussion"
+          },
+          "delivery": {
+            "label": "Delivery"
           }
         },
         "action": {
@@ -1929,6 +1932,26 @@
         },
         "row": {
           "add": "Add subscription row"
+        },
+        "delivery": {
+          "created": {
+            "label": "Delivery created"
+          },
+          "statusChanged": {
+            "label": "Status changed"
+          },
+          "branchReady": {
+            "label": "Branch ready"
+          },
+          "prCreated": {
+            "label": "Delivery PR created"
+          },
+          "delivered": {
+            "label": "Delivered"
+          },
+          "cancelled": {
+            "label": "Delivery cancelled"
+          }
         }
       },
       "metadata": {

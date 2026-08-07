@@ -123,7 +123,9 @@ c3
 │   │   ├── delivered 原子写 + 连锁               # PR 变 merged 即在同事务写状态+交付日志;提交后不改写关联意图状态、触发跨交付闸门重算、发 delivery:delivered、广播;事件/重算失败不回滚
 │   │   ├── 感知窗口期                            # forge 已合并到 c3 感知之间展示「等待确认」,进页自动同步一次 + 手动同步入口;不做后台轮询
 │   │   ├── current-branch 降级                   # 该模式交付为纯聚合视图:分支/PR/合并动作不渲染并给说明文案,纯数据操作不受限
-│   │   └── pr:merge 知情告知                     # 工作区首次创建交付时一次性提示语义漂移,请检查自动化订阅
+│   │   ├── pr:merge 知情告知                     # 工作区首次创建交付时一次性提示「pr:merge 的 base 可能是交付分支」,请检查自动化订阅;pr:merge 事件的 ref 带 baseBranch(合并目标分支名)+ baseTarget(mainline / delivery-branch),订阅方据此区分产出落在交付分支还是主线(可选字段,只带 head/base 的形态同样合法)
+│   │   ├── delivery:* 事件族                     # 六类通用事件可订阅:created / status_changed(metadata 带 from、to)/ branch_ready / pr_created / delivered / cancelled;走既有 normalizeEvent→eventBus 管线无专用归一化器;进终态时 status_changed 与终态事件同发不去重;发布在状态写提交之后,失败只 warn 不回滚不阻断广播与闸门重算
+│   │   └── 交付只读 MCP 工具                     # 自动化面与外部面各暴露 find_deliveries / view_delivery(只读,两面均默认不勾选);刻意不开任何交付写工具——状态写必须过状态机与守卫,写工具会绕开全部闸门
 │   │
 │   ├── discussion 多智能体讨论                   # 多个 agent(与人)围绕主题圆桌讨论,可转为意图
 │   │   ├── 讨论账本                              # 按工作区持久化讨论(主题+参与者)
@@ -145,7 +147,7 @@ c3
 │   │   ├── 会话页 live 状态                       # llm 执行注册真 SessionRuntime,SDK 流译成 wire 事件 fan-out 给 viewer:会话页选中运行中 automation 见细粒度状态栏(思考中/正在执行<工具>/就绪)+ transcript 实时增长,结束收敛 idle,事后选中回放完整 buffer;command 类仅 running/idle 二态
 │   │   ├── 默认智能体                            # 新建 automation 默认用可配置的「automation 默认智能体」
 │   │   ├── 执行 vendor                           # claude/codex/cursor 均有 dispatcher 执行路径(共享 AUTOMATION_VENDORS,表单灰显与分派门控同一份);cursor 走进程内 SDK,mode 按 cursor 目录(plan/agent/full-access)解析,SDK 不可解析/凭据缺失/agent 无效在分派期即失败,不跨 vendor 回退
-│   │   ├── c3 MCP 工具                           # 意图(find/view/save_directly/pr)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载;claude/codex/cursor 都走同一条 loopback HTTP MCP 路由(同一批工具)
+│   │   ├── c3 MCP 工具                           # 意图(find/view/save_directly)+ 交付只读(find_deliveries/view_delivery,无写工具)+ PR 事件 + 讨论(find/view/start/continue)工具,按需挂载;claude/codex/cursor 都走同一条 loopback HTTP MCP 路由(同一批工具);列在目录里只代表可勾选,内置模板一律不默认勾交付工具
 │   │   └── network-access 网络开关               # toolAllowlist 伪条目(非工具),勾选时向 codex workspace-write 沙箱透传 networkAccess;冻结前剔除不进权限网格,claude 忽略,默认断网
 │   │
 │   ├── codes 代码浏览                            # 浏览器里只读浏览 Git 仓库 + 代码域内嵌会话
@@ -192,7 +194,8 @@ c3
 │       ├── 每请求重建作用域                      # 无 run 闭包:key 绑定的单一工作区 + 该 key 工具范围,每次请求重新解析
 │       ├── 鉴权链                                # 凭据先于一切(缺失/格式错/未知/吊销统一 401);工作区不可用 403;旧 /mcp/v1?token= 返回 410 停用
 │       ├── 会话作用域钉死                        # initialize 时绑定 key id + 工具范围,后续同 session 换 key 一律 403,不静默改作用域;改范围/吊销即断
-│       ├── 工具目录(显式 allowlist)              # 读:find_intents/view_intent/find_discussions/view_discussion/publish_event(默认全部);写:save_intents/save_intent_directly/save_intent_pr_info/submit_spec_review/start_session_for_intent/start_discussion/continue_discussion(默认不勾选)
+│       ├── 工具目录(显式 allowlist)              # 读:find_intents/view_intent/find_discussions/view_discussion/publish_event(新 key 默认勾选)+ find_deliveries/view_delivery(可授权但**默认不勾选**);写:save_intents/save_intent_directly/submit_spec_review/start_session_for_intent/start_discussion/continue_discussion(默认不勾选);目录不含按意图回填 PR 状态的工具,无法授权
+│       ├── 目录与默认集解耦                      # 「可被管理员勾选」与「新 key 自动获得」是两份名表:EXTERNAL_MCP_READ_TOOLS 是分级来源,EXTERNAL_MCP_DEFAULT_TOOLS 是建 key 时服务端强制写入的初值;编译期钉死默认集只能取读级工具
 │       ├── 越权拒绝                              # 未勾选工具不进 tools/list,绕过发现直接调用返回稳定 forbidden 且无副作用
 │       └── 事件归属                              # publish_event 的 envelope workspace 取自绑定工作区,sessionId 固定 external-mcp:<key-id>,调用方无法伪造
 │

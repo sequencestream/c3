@@ -1,0 +1,80 @@
+/**
+ * The externally-grantable catalog's SHAPE — what an administrator can ever tick,
+ * and what a fresh key starts with.
+ *
+ * These two are deliberately different questions, and this file is where the
+ * difference is pinned: the delivery read tools are grantable but NOT default, so
+ * a new key cannot silently gain the ability to read a workspace's delivery plan;
+ * and `save_intent_pr_info` is in neither, because it is deprecated and no new
+ * authorization to call it may be created.
+ */
+import { describe, expect, it } from 'vitest'
+import {
+  EXTERNAL_MCP_DEFAULT_TOOLS,
+  EXTERNAL_MCP_READ_TOOLS,
+  EXTERNAL_MCP_WRITE_TOOLS,
+} from '@ccc/shared/protocol'
+import {
+  externalMcpToolDescriptors,
+  isExternalMcpToolName,
+  normalizeExternalMcpToolScope,
+} from './tools.js'
+
+const names = (): string[] => externalMcpToolDescriptors().map((d) => d.name)
+
+describe('external MCP catalog', () => {
+  it('offers the two delivery tools, graded read', () => {
+    const descriptors = externalMcpToolDescriptors()
+    expect(descriptors).toEqual(
+      expect.arrayContaining([
+        { name: 'find_deliveries', access: 'read' },
+        { name: 'view_delivery', access: 'read' },
+      ]),
+    )
+  })
+
+  it('offers no delivery WRITE tool — a status write funnels through the state machine', () => {
+    expect(names().filter((n) => n.includes('deliver') || n.includes('delivery'))).toEqual([
+      'find_deliveries',
+      'view_delivery',
+    ])
+    expect(EXTERNAL_MCP_WRITE_TOOLS.some((n) => n.includes('deliver'))).toBe(false)
+  })
+
+  it('no longer offers the deprecated save_intent_pr_info — it cannot be granted at all', () => {
+    expect(names()).not.toContain('save_intent_pr_info')
+    expect(isExternalMcpToolName('save_intent_pr_info')).toBe(false)
+    // A scope that still names it fails as a WHOLE, so a stale authorization can
+    // never be half-applied.
+    expect(normalizeExternalMcpToolScope(['find_intents', 'save_intent_pr_info'])).toEqual({
+      ok: false,
+      offender: 'save_intent_pr_info',
+    })
+  })
+})
+
+describe('the default scope of a new key', () => {
+  it('is NARROWER than the read-graded catalog — grantable is not granted', () => {
+    const defaults = [...EXTERNAL_MCP_DEFAULT_TOOLS] as string[]
+    const reads = [...EXTERNAL_MCP_READ_TOOLS] as string[]
+    expect(defaults.every((n) => reads.includes(n))).toBe(true)
+    expect(defaults.length).toBeLessThan(reads.length)
+  })
+
+  it('does NOT include the delivery read tools', () => {
+    const defaults = [...EXTERNAL_MCP_DEFAULT_TOOLS] as string[]
+    expect(defaults).not.toContain('find_deliveries')
+    expect(defaults).not.toContain('view_delivery')
+  })
+
+  it('contains no write tool', () => {
+    const writes = [...EXTERNAL_MCP_WRITE_TOOLS] as string[]
+    for (const name of EXTERNAL_MCP_DEFAULT_TOOLS) expect(writes).not.toContain(name)
+  })
+
+  it('leaves both delivery tools grantable by an explicit tick', () => {
+    expect(
+      normalizeExternalMcpToolScope(['find_intents', 'find_deliveries', 'view_delivery']),
+    ).toMatchObject({ ok: true })
+  })
+})

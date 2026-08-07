@@ -189,6 +189,11 @@ export const createDeliveryHandler: Handler<'create_delivery'> = (ctx, conn, msg
       prMergeNotice,
     })
     ctx.broadcastDeliveries(abs)
+    publishDeliveryEvent(ctx, abs, 'created', {
+      deliveryId: delivery.id,
+      title: delivery.title,
+      baseBranch: delivery.baseBranch,
+    })
   } catch (err) {
     conn.send({
       type: 'error',
@@ -324,6 +329,9 @@ export const updateDeliveryHandler: Handler<'update_delivery'> = (ctx, conn, msg
  * The one status-write core shared by `transition_delivery` and
  * `cancel_delivery`. Re-evaluates `canTransitionDelivery` from CURRENT facts
  * (a stale client plan is refused) and re-computes the plan on success.
+ *
+ * A committed write publishes `delivery:status_changed` with the edge, plus
+ * `delivery:cancelled` when the target is the abandonment terminal.
  */
 function applyTransition(
   ctx: Parameters<Handler<'transition_delivery'>>[0],
@@ -362,6 +370,7 @@ function applyTransition(
     })
     return
   }
+  const from = delivery.status
   const updated = setDeliveryStatus(deliveryId, to)
   if (!updated) {
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
@@ -369,6 +378,15 @@ function applyTransition(
   }
   conn.send(detailFrame(updated))
   ctx.broadcastDeliveries(abs)
+  publishDeliveryStatusChanged(ctx, abs, updated, from, to)
+  // Terminal double-publish: `cancelled` is also its own stable fact, so a
+  // subscriber that only cares about abandonment need not filter `to`.
+  if (to === 'cancelled') {
+    publishDeliveryEvent(ctx, abs, 'cancelled', {
+      deliveryId: updated.id,
+      title: updated.title,
+    })
+  }
 }
 
 export const transitionDeliveryHandler: Handler<'transition_delivery'> = (ctx, conn, msg) => {
@@ -457,6 +475,16 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
   const report = (phase: DeliveryBranchPhase): void =>
     conn.send({ type: 'delivery_branch_init_progress', deliveryId: msg.deliveryId, phase })
 
+  // `branch_ready` announces the same fact on all three routes that flip
+  // `branchReady` to 1 (create / bind / idempotent orphan adoption) — what a
+  // subscriber reacts to is "the delivery branch exists now", not how it got there.
+  const announceBranchReady = (ready: Delivery): void =>
+    publishDeliveryEvent(ctx, abs, 'branch_ready', {
+      deliveryId: ready.id,
+      title: ready.title,
+      branch: ready.branchName ?? branchName,
+    })
+
   // Idempotent shortcut: already bound to this exact branch → success, no git.
   if (delivery.branchReady && delivery.branchName === branchName) {
     conn.send({ type: 'delivery_branch_init_result', workspaceId: msg.workspaceId, delivery })
@@ -525,6 +553,7 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
       ...(warning ? { warning } : {}),
     })
     ctx.broadcastDeliveries(abs)
+    announceBranchReady(updated)
     return
   }
 
@@ -545,6 +574,7 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
         delivery: updated,
       })
       ctx.broadcastDeliveries(abs)
+      announceBranchReady(updated)
       return
     }
     // 起点不匹配 → 与他人分支冲突,无论用户是否确认都不 force push。
@@ -586,6 +616,7 @@ export const initDeliveryBranchHandler: Handler<'init_delivery_branch'> = async 
     delivery: updated,
   })
   ctx.broadcastDeliveries(abs)
+  announceBranchReady(updated)
 }
 
 /**
@@ -1000,6 +1031,16 @@ export const createDeliveryPrHandler: Handler<'create_delivery_pr'> = async (ctx
   }
   conn.send(detailFrame(fresh, undefined, await readMainlineAhead(abs, fresh)))
   ctx.broadcastDeliveries(abs)
+  // Created and forge-first adopted are the SAME fact for a subscriber — 「交付 PR
+  // 已就绪」 — so the idempotent adoption publishes too. `sync_delivery_pr` does
+  // not: it reports on a PR that was already announced.
+  publishDeliveryEvent(ctx, abs, 'pr_created', {
+    deliveryId: fresh.id,
+    title: fresh.title,
+    prNumber: number,
+    ...(url ? { prUrl: url } : {}),
+    baseBranch: fresh.baseBranch,
+  })
 }
 
 /** The delivery PR's body — what the delivery is, in the reviewer's own view. */
@@ -1136,6 +1177,7 @@ export const syncDeliveryPrHandler: Handler<'sync_delivery_pr'> = async (ctx, co
       return
     }
     finish(updated)
+    publishDeliveryStatusChanged(ctx, abs, updated, delivery.status, 'verifying')
     return
   }
 
@@ -1163,7 +1205,8 @@ export const syncDeliveryPrHandler: Handler<'sync_delivery_pr'> = async (ctx, co
  *  2. the cross-delivery dependency gate is recomputed (`markQueueDirty`), because
  *     its verdict reads `delivered`: skipping it would leave every intent blocked
  *     on this delivery blocked forever;
- *  3. `delivery:delivered` goes out on the generic event pipeline;
+ *  3. `delivery:status_changed` and `delivery:delivered` both go out on the
+ *     generic event pipeline (the trail and the terminal fact);
  *  4. the delivery log line was already written inside the transaction.
  */
 async function settleDeliveryDelivered(
@@ -1216,6 +1259,8 @@ async function settleDeliveryDelivered(
   if (prUrl)
     updateDeliveryPrFacts(delivery.id, { status: 'merged', url: prUrl, blockedReason: null })
 
+  // Terminal double-publish: the transition trail AND the terminal fact.
+  publishDeliveryStatusChanged(ctx, workspacePath, updated, delivery.status, 'delivered')
   publishDeliveryDelivered(ctx, workspacePath, updated, prNumber, prUrl)
   // Fire-and-forget: the queue recomputes every tick anyway, and the manual paths
   // read live facts — the worst case of a failure here is one tick of latency.
@@ -1228,11 +1273,71 @@ async function settleDeliveryDelivered(
   ctx.broadcastIntents(workspacePath)
 }
 
+// ---------------------------------------------------------------------------
+// Delivery lifecycle events (`delivery:*`)
+//
+// Every one is a SYSTEM-OBSERVED FACT published on the generic event pipeline
+// (`ctx.normalizeEvent` → `eventBus.publish('event')`), so an automation can
+// subscribe to the delivery lifecycle the same way it subscribes to anything
+// else. Deliberately NOT `pr:*`: that category carries an automation's own PR
+// operation, and reusing it for a delivery fact would drift what its existing
+// subscribers agreed to react to.
+//
+// Publishing happens AFTER the status write has committed and never rolls it
+// back: a failure only logs a warning and does not block the broadcast or the
+// dependency-gate recompute. The fact is already true — refusing to announce it
+// cannot make it untrue.
+// ---------------------------------------------------------------------------
+
+/** The delivery lifecycle actions published as `delivery:<action>`. */
+type DeliveryEventAction =
+  'created' | 'status_changed' | 'branch_ready' | 'pr_created' | 'delivered' | 'cancelled'
+
+/** Normalize + publish one `delivery:<action>` event; a failure only warns. */
+function publishDeliveryEvent(
+  ctx: KernelContext,
+  workspacePath: string,
+  action: DeliveryEventAction,
+  metadata: Record<string, string>,
+): void {
+  const type = `delivery:${action}`
+  const res = ctx.normalizeEvent({ type, metadata })
+  if (!res.ok) {
+    console.warn(`[delivery] ${type} 事件未发布: ${res.reason}`)
+    return
+  }
+  ctx.eventBus.publish('event', {
+    workspacePath,
+    sessionId: randomUUID(),
+    event: res.event,
+  })
+}
+
 /**
- * Publish `delivery:delivered` on the generic event pipeline so an automation can
- * subscribe to it. Deliberately NOT `pr:merge`: that type carries an automation's
- * PR operation, and reusing it for a system-observed terminal fact would drift
- * what its existing subscribers agreed to react to.
+ * Publish `delivery:status_changed` for one committed status write, carrying the
+ * edge as `from` / `to`. Called on EVERY status write — the human transitions,
+ * the cancellation, the conflict rollback and the terminal `delivered` landing —
+ * so a `delivery:*` subscriber can reconstruct the whole trail.
+ */
+function publishDeliveryStatusChanged(
+  ctx: KernelContext,
+  workspacePath: string,
+  delivery: Delivery,
+  from: DeliveryStatus,
+  to: DeliveryStatus,
+): void {
+  publishDeliveryEvent(ctx, workspacePath, 'status_changed', {
+    deliveryId: delivery.id,
+    title: delivery.title,
+    from,
+    to,
+  })
+}
+
+/**
+ * Publish `delivery:delivered` — the terminal fact that the delivery PR merged
+ * and the delivery reached mainline. Published ALONGSIDE the `status_changed`
+ * for the same edge, never instead of it.
  */
 function publishDeliveryDelivered(
   ctx: KernelContext,
@@ -1241,24 +1346,12 @@ function publishDeliveryDelivered(
   prNumber: string,
   prUrl: string | null,
 ): void {
-  const res = ctx.normalizeEvent({
-    type: 'delivery:delivered',
-    metadata: {
-      deliveryId: delivery.id,
-      title: delivery.title,
-      baseBranch: delivery.baseBranch,
-      branch: delivery.branchName ?? '',
-      prNumber,
-      ...(prUrl ? { prUrl } : {}),
-    },
-  })
-  if (!res.ok) {
-    console.warn(`[delivery] delivery:delivered 事件未发布: ${res.reason}`)
-    return
-  }
-  ctx.eventBus.publish('event', {
-    workspacePath,
-    sessionId: randomUUID(),
-    event: res.event,
+  publishDeliveryEvent(ctx, workspacePath, 'delivered', {
+    deliveryId: delivery.id,
+    title: delivery.title,
+    baseBranch: delivery.baseBranch,
+    branch: delivery.branchName ?? '',
+    prNumber,
+    ...(prUrl ? { prUrl } : {}),
   })
 }

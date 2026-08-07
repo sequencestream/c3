@@ -168,9 +168,15 @@ export const saveIntentDirectlyDesc =
 
 export const viewDesc = '按 id 查看本项目单条意图的完整详情(只读,含 content、dependsOn 等)。'
 export const saveIntentPrInfoDesc =
-  '回填本项目一条意图**既有** PR 的状态。仅用于 PR 对账：可写入 reviewing/rejected/failed/merged/closed；' +
-  '当 PR 已合并时传 done=true 将意图标记为 done。' +
-  '本工具只更新已存在的 PR 记录，不能创建 PR——意图尚无 PR 时调用会被拒绝，请先创建 PR。'
+  '【已废弃,勿再使用】回填本项目一条意图**既有** PR 的状态。' +
+  '一个意图可能同时持有多条 PR(每个交付一条),仅凭 intentId 无法确定要回填哪一条,' +
+  '因此本工具已从所有 allowlist 移除、不再可授权,仅为过渡期存量调用保留。' +
+  '替代路径:用只读的 find_intents / view_intent 读取 PR 现状;' +
+  '需要把被拒/失败/关闭的 PR 复位为 reviewing 时,发布 pr:update 事件并携带 ' +
+  'association.deliveryId 或 pr.number 精确定位该 PR;终态(merged/closed)由 c3 自己' +
+  '从 forge 事实落库(「同步 PR 状态」),不再由模型回填。' +
+  '过渡期行为:可写入 reviewing/rejected/failed/merged/closed;PR 已合并时传 done=true 将意图标记为 done;' +
+  '只更新已存在的 PR 记录,意图尚无 PR 时拒绝;意图有多条活跃 PR 时**明确报错并列出各 PR 编号**,绝不猜一条。'
 
 // ---- Core logic (framing-free; bound to ONE project via `workspacePath`) ----
 
@@ -276,16 +282,28 @@ export function runSaveIntentDirectly(
 /**
  * Reconcile the status of an intent's EXISTING PR.
  *
- * It cannot create one. The tool only ever receives a status — no forge, no repo,
- * no URL — so letting it insert would make it the one entry point capable of
- * minting a PR row with no verifiable origin, which is exactly what the ledger's
- * identity key exists to prevent. An intent with no PR is therefore rejected with
- * an instruction to create one first.
+ * DEPRECATED — and removed from every allowlist (the automation tool set, the
+ * built-in templates, and the externally-grantable catalog), so no NEW
+ * authorization to call it can be created. The reason is structural: an intent
+ * may now hold several PRs (one per delivery), and this tool's only locator is
+ * the intent id, which addresses a set rather than a row. The replacements are a
+ * `pr:update` event carrying `association.deliveryId` / `pr.number` (for a reset
+ * back to `reviewing`) and c3's own forge-driven `syncIntentPrStatus` (for the
+ * terminal `merged` / `closed`).
  *
- * Several active PRs are rejected too: with only an intent id in hand the tool
- * cannot say WHICH PR the caller reconciled, and picking one would be a guess.
- * (An intent holds at most one PR today; this refuses to be the code that breaks
- * once it can hold more.)
+ * The core stays as the TRANSITIONAL implementation for whatever call path can
+ * still reach it, with the two refusals that make it safe:
+ *
+ * It cannot create a PR. The tool only ever receives a status — no forge, no
+ * repo, no URL — so letting it insert would make it the one entry point capable
+ * of minting a PR row with no verifiable origin, which is exactly what the
+ * ledger's identity key exists to prevent. An intent with no PR is therefore
+ * rejected with an instruction to create one first.
+ *
+ * Several active PRs are rejected too, by NAMING them: with only an intent id in
+ * hand the tool cannot say WHICH PR the caller reconciled, and picking one would
+ * be a guess — a guess that would corrupt a real PR's status. This refusal is
+ * pinned by a unit test so no later change can soften it back into a guess.
  */
 export function runSaveIntentPrInfo(
   workspacePath: string,

@@ -11,7 +11,9 @@
  * Being IN the catalog is not authorization. It only means an administrator MAY
  * tick it for a key. What one key can actually call is that key's own `tools`
  * scope, which the transport applies; the catalog decides what the picker can
- * ever offer.
+ * ever offer. The catalog is also decoupled from what a NEW key starts with
+ * (`EXTERNAL_MCP_DEFAULT_TOOLS`): a read-graded tool can be grantable without
+ * being granted by default — that is how the delivery read tools ship.
  *
  * Grading is by real effect, not by intent: `read` never mutates the intent
  * ledger, discussions, specs or session lifecycle. `publish_event` stays `read`
@@ -36,22 +38,28 @@ import {
   runFind,
   runSaveConfirmed,
   runSaveIntentDirectly,
-  runSaveIntentPrInfo,
   runView,
   saveDesc,
   saveIntentDirectlyDesc,
   saveIntentDirectlySchema,
-  saveIntentPrInfoDesc,
-  saveIntentPrInfoSchema,
   saveSchema,
   viewDesc,
   viewSchema,
   type FindArgs,
   type SaveArgs,
   type SaveIntentDirectlyArgs,
-  type SaveIntentPrInfoArgs,
   type ViewArgs,
 } from '../intents/tool-defs.js'
+import {
+  findDeliveriesDesc,
+  findDeliveriesSchema,
+  runFindDeliveries,
+  runViewDelivery,
+  viewDeliveryDesc,
+  viewDeliverySchema,
+  type FindDeliveriesArgs,
+  type ViewDeliveryArgs,
+} from '../deliveries/tool-defs.js'
 import {
   continueDiscussionDesc,
   continueDiscussionSchema,
@@ -92,6 +100,7 @@ import {
   type SessionLaunchResult,
 } from '../intents/session-launcher.js'
 import {
+  EXTERNAL_MCP_DEFAULT_TOOLS,
   EXTERNAL_MCP_READ_TOOLS,
   EXTERNAL_MCP_WRITE_TOOLS,
   type Discussion,
@@ -221,6 +230,21 @@ function buildToolSpecs(scope: ExternalMcpScope, deps: ExternalMcpToolDeps): Ext
       inputSchema: viewDiscussionSchema,
       handler: (args) => runViewDiscussion(scope.workspacePath, args as ViewDiscussionArgs),
     },
+    // Delivery tools are read-only and, unlike the other read entries, are NOT in
+    // the default scope of a new key: a fresh key must not silently gain the
+    // ability to read a workspace's delivery plan. There is no write counterpart.
+    {
+      name: 'find_deliveries',
+      description: findDeliveriesDesc,
+      inputSchema: findDeliveriesSchema,
+      handler: (args) => runFindDeliveries(scope.workspacePath, args as FindDeliveriesArgs),
+    },
+    {
+      name: 'view_delivery',
+      description: viewDeliveryDesc,
+      inputSchema: viewDeliverySchema,
+      handler: (args) => runViewDelivery(scope.workspacePath, args as ViewDeliveryArgs),
+    },
     {
       name: 'publish_event',
       description: publishEventDesc,
@@ -260,15 +284,6 @@ function buildToolSpecs(scope: ExternalMcpScope, deps: ExternalMcpToolDeps): Ext
       inputSchema: saveIntentDirectlySchema,
       handler: (args) =>
         runSaveIntentDirectly(scope.workspacePath, args as SaveIntentDirectlyArgs, (path) =>
-          deps.broadcastIntents(path),
-        ),
-    },
-    {
-      name: 'save_intent_pr_info',
-      description: saveIntentPrInfoDesc,
-      inputSchema: saveIntentPrInfoSchema,
-      handler: (args) =>
-        runSaveIntentPrInfo(scope.workspacePath, args as SaveIntentPrInfoArgs, (path) =>
           deps.broadcastIntents(path),
         ),
     },
@@ -479,3 +494,14 @@ type BuiltNames = ReturnType<typeof buildExternalMcpCatalog>[number]['name']
 type AssertSame<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never
 const _catalogIsExact: AssertSame<BuiltNames, ExternalMcpToolName> = true
 void _catalogIsExact
+
+// Compile-time default-scope pin: the catalog and the default set are decoupled
+// (a grantable read tool need not be granted by default), but the default set may
+// never contain a WRITE tool — that direction would hand every fresh key a
+// mutation it was never authorized for.
+type AssertExtends<A extends B, B> = [A, B] extends [B, B] ? true : never
+const _defaultsAreReadGraded: AssertExtends<
+  (typeof EXTERNAL_MCP_DEFAULT_TOOLS)[number],
+  (typeof EXTERNAL_MCP_READ_TOOLS)[number]
+> = true
+void _defaultsAreReadGraded

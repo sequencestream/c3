@@ -4,8 +4,11 @@
  *
  * 元信息按稳定顺序渲染:ID → 分支(+commit) → 关联交付 → PR(按交付分组;链接/状态/同步)
  * → 已创建 → 已完成 → 已更新 → 依赖。「关联交付」必须排在 PR 之前:交付决定 PR 提向
- * 哪条分支,先因后果读下来才成立。关联/解除只在交付详情页操作,本页纯只读展示,
- * 标题栏不因此新增任何按钮。正文仅 draft/todo 可直接编辑:草稿只活在组件内,保存只 emit,退出编辑态由
+ * 哪条分支,先因后果读下来才成立。「关联交付」行在恰好关联 1 个交付时于交付名之后给出
+ * 「解除关联」(意图侧唯一入口,标题栏不再重复):danger ConfirmDialog 二次确认,文案点明会关闭该意图
+ * 提向此交付的 PR,确认后 emit unlink-delivery 上抛;多关联只展示交付名,不给解除路径——目标不唯一
+ * 时交互层不替用户选。是否真能解除由服务端复核(merged 禁解等),本页不设门禁。
+ * 正文仅 draft/todo 可直接编辑:草稿只活在组件内,保存只 emit,退出编辑态由
  * 服务端回填(updatedAt 变化)驱动;被拒(intentActionErrorSeq 自增)释放保存守卫但保留草稿;
  * 切换意图丢弃未保存草稿。依赖逐行显示完成态/类型,单条类型编辑仍整组回写;
  * 编辑弹窗内可删除单条依赖(ConfirmDialog 危险二次确认,确认后剔除该项并整组回写剩余集)。
@@ -33,7 +36,30 @@ const emit = defineEmits<{
   'select-dependency': [intentId: string]
   'sync-pr-status': [intentId: string]
   'open-delivery': [deliveryId: string]
+  'unlink-delivery': [workspaceId: string, deliveryId: string, intentId: string]
 }>()
+
+// ── 关联交付:解除入口(自持确认框) ─────────────────────────────────────────
+// 只有恰好 1 条关联时才有唯一目标,才给解除路径。
+const linkedDelivery = computed(() =>
+  props.intent.linkedDeliveries.length === 1 ? props.intent.linkedDeliveries[0] : null,
+)
+
+const unlinkDialogOpen = ref(false)
+
+function confirmUnlink(): void {
+  const target = linkedDelivery.value
+  unlinkDialogOpen.value = false
+  if (target) emit('unlink-delivery', props.intent.workspaceId, target.id, props.intent.id)
+}
+
+// 关联条数在确认框敞开期间被别处改掉(关联/解除的广播)时收框,避免对着已不成立的前提确认。
+watch(
+  () => props.intent.linkedDeliveries.length,
+  (count) => {
+    if (count !== 1) unlinkDialogOpen.value = false
+  },
+)
 
 // ── Dep type / PR status 标签 ───────────────────────────────────────────────
 const DEP_TYPE_OPTIONS: { value: DepType; label: string }[] = [
@@ -277,6 +303,16 @@ watch(
         >
           {{ d.title }}
         </button>
+        <button
+          v-if="linkedDelivery"
+          type="button"
+          class="req-btn req-meta-unlink-btn"
+          data-action="unlinkDelivery"
+          data-testid="intent-detail-unlink-delivery"
+          @click="unlinkDialogOpen = true"
+        >
+          {{ t('intent.linkDelivery.unlink.label') }}
+        </button>
       </span>
       <span v-if="intent.prs.length > 0" class="req-meta-item" data-testid="intent-meta-pr">
         {{ t('intent.meta.pr.label') }}
@@ -462,6 +498,19 @@ watch(
       @cancel="confirmDeleteDepOpen = false"
     />
   </div>
+
+  <!-- 解除关联:服务端会先关闭该意图指向此交付的 PR(已合并则直接拒绝),文案必须
+       把这个副作用说清楚,用户才是在知情下确认。 -->
+  <ConfirmDialog
+    :open="unlinkDialogOpen"
+    :title="t('intent.linkDelivery.unlink.title.label')"
+    :message="t('intent.linkDelivery.unlink.confirm', { title: linkedDelivery?.title ?? '' })"
+    :confirm-label="t('intent.linkDelivery.unlink.label')"
+    :cancel-label="t('common.action.cancel.label')"
+    danger
+    @confirm="confirmUnlink"
+    @cancel="unlinkDialogOpen = false"
+  />
 </template>
 
 <style scoped>
@@ -475,6 +524,12 @@ watch(
   border: none;
   cursor: pointer;
   text-decoration: underline;
+}
+/* 解除关联:紧跟交付名的低频维护动作,危险色只落在文字上,不与元信息其它内容抢注意力。 */
+.req-meta-unlink-btn {
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-1);
+  color: var(--c-error-text);
 }
 /* PR 分组标签:标出下面这串 PR 提向哪个交付。 */
 .req-meta-pr-group {

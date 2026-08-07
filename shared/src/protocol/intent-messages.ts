@@ -127,6 +127,49 @@ export type ClientStartDevelopment = {
   type: 'start_development'
   workspaceId: string
   intentId: string
+  /**
+   * The DELIVERY CONTEXT this session develops against — what decides its
+   * worktree baseline and how its dependency gate reads "is that output on my
+   * base". Optional: an intent linked to zero or exactly one delivery needs
+   * none. An intent linked to SEVERAL is rejected with
+   * `intent.deliveryContextRequired` unless this says which — the server never
+   * defaults, because picking one silently would develop against a branch the
+   * user did not choose.
+   */
+  deliveryId?: string | null
+  /**
+   * One-shot override of the DEPENDENCY gate. That gate is advice ("what you
+   * depend on is probably not on your base"), not a physical constraint, so a
+   * human who has seen the risk may proceed. It skips only that gate — SDD
+   * approval, concurrency, delivery status and the worktree baseline are still
+   * evaluated — is never persisted (every later launch and resume re-evaluates
+   * the gate), and leaves an `intent_logs` audit row. The automation queue never
+   * sets it.
+   */
+  forceDependencyGate?: boolean
+}
+
+/**
+ * Repair a worktree whose BASELINE no longer contains the delivery branch it
+ * should be rooted at. c3 never does either of these by itself: a rebuild
+ * discards uncommitted work, a merge rewrites the user's branch.
+ *
+ * - `mode: 'rebuild'` — remove the worktree (and its local intent branch) so the
+ *   next launch creates a fresh one at the baseline. Refused when the worktree
+ *   holds uncommitted work (`intent.worktreeDirty`); committing or stashing is
+ *   the user's call.
+ * - `mode: 'merge'`   — merge `origin/<delivery branch>` into the worktree's
+ *   current branch, in place. A conflict is surfaced verbatim, never resolved.
+ *
+ * Reply: `intent_worktree_repair_result`.
+ */
+export type ClientRepairIntentWorktree = {
+  type: 'repair_intent_worktree'
+  workspaceId: string
+  intentId: string
+  mode: 'rebuild' | 'merge'
+  /** The delivery whose branch is the baseline; omitted = the intent's single one. */
+  deliveryId?: string | null
 }
 
 /**
@@ -417,6 +460,17 @@ export type ServerSpecLaunchProgress = {
   type: 'spec_launch_progress'
   intentId: string
   stage: SpecLaunchStage
+}
+
+/**
+ * Outcome of a `repair_intent_worktree` run. Success is reported explicitly (the
+ * repair changes nothing the regular `intents` broadcast would show), so the page
+ * can tell the user the worktree is now usable and re-offer the launch.
+ */
+export type ServerIntentWorktreeRepairResult = {
+  type: 'intent_worktree_repair_result'
+  intentId: string
+  mode: 'rebuild' | 'merge'
 }
 
 /**

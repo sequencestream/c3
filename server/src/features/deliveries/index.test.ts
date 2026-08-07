@@ -171,12 +171,14 @@ describe('list_deliveries — server-computed badge', () => {
 })
 
 describe('get_delivery_detail', () => {
-  it('returns the delivery with a server-computed transition plan', () => {
+  // Async since the detail also reports how far mainline is ahead of the delivery
+  // branch — a local ref read, never a fetch.
+  it('returns the delivery with a server-computed transition plan', async () => {
     const h0 = harness()
     createDeliveryHandler(h0.ctx, h0.conn, createMsg())
     const id = listDeliveries(dir)[0].id
     const h = harness()
-    getDeliveryDetailHandler(h.ctx, h.conn, { type: 'get_delivery_detail', deliveryId: id })
+    await getDeliveryDetailHandler(h.ctx, h.conn, { type: 'get_delivery_detail', deliveryId: id })
     const frame = h.sent[0] as Extract<ServerToClient, { type: 'delivery_detail' }>
     expect(frame.delivery.id).toBe(id)
     expect(frame.transitionPlan.targets).toEqual([

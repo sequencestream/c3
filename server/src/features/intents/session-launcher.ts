@@ -17,6 +17,7 @@ import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { PENDING_SESSION_PREFIX } from '@ccc/shared/protocol'
 import type { GitActionFailureGuidance, Intent, PromptImage } from '@ccc/shared/protocol'
+import { findWriteBlockingDelivery } from '@ccc/shared'
 import { ensureRuntime, getRuntime, isRunning } from '../../runs.js'
 import type { SessionRuntime } from '../../runs.js'
 import { loadHistory, sessionExists } from '../../sessions.js'
@@ -30,8 +31,10 @@ import {
 import { setSessionAgent } from '../../kernel/agent-config/index.js'
 import { sessionAgentTargetForRole } from '../sessions/agent-target.js'
 import type { RunInject } from '../../kernel/run/prompt-delivery.js'
+import { getDelivery } from '../deliveries/store.js'
 import {
   getIntent,
+  getIntentSessionBySessionId,
   isStoreAvailable,
   listIntents,
   safeInsertIntentLog,
@@ -62,19 +65,27 @@ import {
 import { armSpecContentWatch } from './spec-content-watch.js'
 import { buildDevPrompt } from './dev-prompt.js'
 import { buildGitFailureGuidance } from './git-failure.js'
-import { findDependencyBlockingMainline, prepareSpecLaunch } from './dependency-gate.js'
-import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
+import {
+  dependencyGateRejection,
+  evaluateIntentDependencyGate,
+  prepareSpecLaunch,
+  syncPrStatusForVerdict,
+} from './dependency-gate.js'
+import {
+  deliveryGateFacts,
+  resolveSessionDeliveryContext,
+  type DeliveryContextResult,
+} from './delivery-context.js'
+import {
+  checkExistingWorktreeBaseline,
+  resolveWorktreeBaseline,
+  type WorktreeBaseline,
+} from './worktree-baseline.js'
 import { captureFastTurnBaseline } from './fast-spec.js'
 import { buildContinueSpecPrompt, buildSeedSpec, buildSpecInstructPrompt } from './spec.js'
 import { computeSpecLayout } from './spec-path.js'
 import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
-import {
-  createWorktree,
-  fetchRemoteBase,
-  getWorktreePath,
-  pullCurrentBranch,
-  readBranch,
-} from './worktree.js'
+import { createWorktree, getWorktreePath, pullCurrentBranch, readBranch } from './worktree.js'
 import { hasPendingQuestion } from './turn-guards.js'
 import { upsertPendingRow } from '../sessions/session-metadata-store.js'
 
@@ -164,18 +175,45 @@ export function findBlockingWorkSession(
   return null
 }
 
+/** Extra steering a work launch may carry from its caller. */
+export interface WorkLaunchOptions {
+  /**
+   * The delivery this session develops against. Optional: an intent with zero or
+   * exactly one association needs none. An intent with SEVERAL is refused unless
+   * this says which — see `resolveSessionDeliveryContext`.
+   */
+  deliveryId?: string | null
+  /**
+   * One-shot FORCE RELEASE of the dependency gate. The dependency gate is advice
+   * ("the output you depend on is probably not on your base"), not a physical
+   * constraint, so a human who understands the risk may proceed. It skips ONLY
+   * that gate — SDD approval, concurrency, delivery status and the worktree
+   * baseline are all still evaluated — and it is never persisted: the next launch
+   * (and every resume) evaluates the gate again from scratch. Never set by the
+   * automation queue: an unattended path does not get to make this call.
+   */
+  forceDependencyGate?: boolean
+}
+
 /**
  * The admission gates every path that is ABOUT TO START a work turn must pass —
  * a fresh launch and a resume alike. Both call this one function so the rules
  * exist once: a second copy is how a resume ends up developing on a spec whose
- * approval was revoked, or on an intent whose dependency PR is still open.
+ * approval was revoked, or on an intent whose dependency is not on its base.
  *
  * Fail-closed and in a fixed order:
  *
  *   1. SDD is on and the spec is not approved → `intent.specNotApproved`.
- *   2. worktree mode + a dependency that has not reached the mainline →
- *      `intent.dependencyNotMerged`, plus the best-effort background PR status
- *      sync so a stale PR status resolves itself.
+ *   2. An associated delivery is closed to new writes (`verifying` / `verified`
+ *      / `delivered` / `cancelled`) → `intent.deliveryNotWritable`. Placed ahead
+ *      of the dependency gate and mirrored by the queue kernel, so automation and
+ *      the manual button cannot disagree about who may write.
+ *   3. The dependency criterion, evaluated in THIS session's delivery context →
+ *      the verdict's own rejection, plus the best-effort background PR status
+ *      sync when a stale PR row is the likely cause.
+ *
+ * `forceDependencyGate` skips step 3 only, and only after it has been evaluated
+ * — so the audit record says what was actually overridden.
  *
  * Returns the rejection to hand back, or `null` when the turn may proceed.
  * Attaching a viewer to an already-running turn is NOT a new admission and does
@@ -185,6 +223,7 @@ function checkWorkAdmission(
   workspacePath: string,
   intent: Intent,
   deps: SessionLaunchDeps,
+  gate: { deliveryId: string | null; force?: boolean; actor?: string | null },
 ): SessionLaunchResult | null {
   // SDD quality gate — server-side, forced. The authoritative condition is the
   // spec STATUS: the compatibility boolean is never consulted here, so it can
@@ -200,28 +239,98 @@ function checkWorkAdmission(
     }
   }
 
-  // Dependency gate (worktree mode only)
-  if (intent.dependsOn.length > 0 && getGitBranchMode(workspacePath) === 'worktree') {
-    const unmerged = findDependencyBlockingMainline(
-      intent.dependsOn,
-      listIntents(workspacePath),
-      getDefaultMainBranch(workspacePath),
-    )
-    if (unmerged) {
-      syncUnconfirmedDependencyPrsInBackground({
-        ctx: { broadcastIntents: deps.broadcastIntents },
-        workspacePath,
-        dependsOn: intent.dependsOn,
-      })
-      return {
-        success: false,
-        code: 'intent.dependencyNotMerged',
-        params: { title: unmerged.title, id: unmerged.id },
+  const deliveries = deliveryGateFacts(workspacePath)
+
+  // Delivery status gate: merging more code into a delivery that is being (or has
+  // been) verified would invalidate the conclusion reached about a specific tree,
+  // and a terminal delivery has nothing left to write into.
+  const closed = findWriteBlockingDelivery(
+    intent.linkedDeliveries.map((d) => d.id),
+    deliveries,
+  )
+  if (closed) {
+    return {
+      success: false,
+      code: 'intent.deliveryNotWritable',
+      params: { deliveryTitle: closed.title, deliveryId: closed.id, status: closed.status },
+    }
+  }
+
+  if (intent.dependsOn.length > 0) {
+    const verdict = evaluateIntentDependencyGate({
+      workspacePath,
+      dependsOn: intent.dependsOn,
+      sessionDeliveryId: gate.deliveryId,
+      intents: listIntents(workspacePath),
+      deliveries,
+    })
+    if (verdict.blocked) {
+      if (!gate.force) {
+        syncPrStatusForVerdict({
+          verdict,
+          workspacePath,
+          dependsOn: intent.dependsOn,
+          broadcastIntents: deps.broadcastIntents,
+        })
+        return { success: false, ...dependencyGateRejection(verdict) }
       }
+      // Forced through: record WHAT was overridden, by whom. The gate stays the
+      // authoritative fact — this log is the only trace that it was bypassed.
+      safeInsertIntentLog(
+        intent.id,
+        'dependency_gate_force_release',
+        `强制放行依赖闸门(${verdict.reason}):依赖「${verdict.dependency.title}」` +
+          (verdict.delivery ? `,交付「${verdict.delivery.title}」` : ''),
+        gate.actor ?? 'system',
+      )
     }
   }
 
   return null
+}
+
+/**
+ * Resolve (and fetch) the worktree baseline for a delivery context, then check an
+ * EXISTING worktree against it. Returns the baseline when the launch may proceed,
+ * or the rejection to hand back.
+ *
+ * The rejection carries whether a safe rebuild is currently possible, so the page
+ * can offer the right exits: a dirty worktree only gets "commit or stash first",
+ * never a destructive button. This block is NOT force-releasable — the dependency
+ * gate is advice, an out-of-date worktree is a data-safety fact.
+ */
+function prepareWorktreeBaseline(
+  workspacePath: string,
+  intent: Intent,
+  deliveryId: string | null,
+): { ok: true; baseline: WorktreeBaseline } | { ok: false; result: SessionLaunchResult } {
+  const baseline = resolveWorktreeBaseline(
+    workspacePath,
+    deliveryId ? getDelivery(deliveryId) : null,
+  )
+  const block = checkExistingWorktreeBaseline(workspacePath, intent.id, baseline)
+  if (!block) return { ok: true, baseline }
+  return {
+    ok: false,
+    result: {
+      success: false,
+      code: block.canRebuild ? 'intent.worktreeBaseMismatch' : 'intent.worktreeBaseMismatchDirty',
+      params: {
+        branch: block.branch,
+        deliveryTitle: block.delivery?.title ?? '',
+      },
+    },
+  }
+}
+
+/** {@link prepareWorktreeBaseline}, for the callers that only need the refusal. */
+function baselineRejection(
+  workspacePath: string,
+  intent: Intent,
+  deliveryId: string | null,
+): SessionLaunchResult | null {
+  const prepared = prepareWorktreeBaseline(workspacePath, intent, deliveryId)
+  return prepared.ok ? null : prepared.result
 }
 
 /**
@@ -232,12 +341,19 @@ function checkWorkAdmission(
  *
  * Returns `null` when the intent owns no usable session — the caller then falls
  * through to the historic fresh / dangling-restart path.
+ *
+ * The delivery context is NOT re-resolved here: it is read back from the session
+ * record written at fresh launch, so a resume develops against the same delivery
+ * the session was started for even if the intent's associations changed since.
+ * A session that predates the column has none, which is exactly what it ran with.
  */
 async function attachOrResumeWorkSession(
   workspacePath: string,
   intent: Intent,
   deps: SessionLaunchDeps,
   progress?: (stage: string) => void,
+  opts?: WorkLaunchOptions,
+  actor?: string | null,
 ): Promise<SessionLaunchResult | null> {
   const sessionId = intent.lastWorkSessionId
   if (intent.status !== 'in_progress' || !sessionId) return null
@@ -265,12 +381,34 @@ async function attachOrResumeWorkSession(
   if (rt && hasPendingQuestion(rt.buffer)) {
     return { success: false, code: 'intent.pendingQuestionUnanswered' }
   }
+  // The context this session was STARTED with, not one re-derived from today's
+  // associations. Falls back to the launch's own resolution only for sessions
+  // written before the column existed.
+  const recorded = getIntentSessionBySessionId(sessionId, intent.id)?.deliveryId ?? null
+  let deliveryId = recorded
+  if (deliveryId === null) {
+    const resolved = resolveSessionDeliveryContext(workspacePath, intent, opts?.deliveryId)
+    if (!resolved.ok) return { success: false, code: resolved.code }
+    deliveryId = resolved.delivery?.id ?? null
+  }
+
   // Resuming is a NEW admission, not a continuation of the old one: a spec whose
-  // approval was revoked, or a dependency still unmerged, stops this turn exactly
-  // as it stops a fresh one. Evaluated before the runtime is restored, so a
-  // rejected resume touches nothing.
-  const denied = checkWorkAdmission(workspacePath, intent, deps)
+  // approval was revoked, or a dependency no longer on this session's base, stops
+  // this turn exactly as it stops a fresh one. Evaluated before the runtime is
+  // restored, so a rejected resume touches nothing.
+  const denied = checkWorkAdmission(workspacePath, intent, deps, {
+    deliveryId,
+    force: opts?.forceDependencyGate,
+    actor,
+  })
   if (denied) return denied
+
+  // The worktree the session lives in must still be rooted on this delivery's
+  // branch. Never repaired silently — the two exits are explicit user actions.
+  if (getGitBranchMode(workspacePath) === 'worktree') {
+    const mismatch = baselineRejection(workspacePath, intent, deliveryId)
+    if (mismatch) return mismatch
+  }
 
   // A fast-mode resume is a NEW turn with a NEW baseline: capture the git HEAD
   // it resumes from, so the settle can measure only this turn's diff against it.
@@ -324,21 +462,26 @@ async function attachOrResumeWorkSession(
  *      status gate plus the git branch strategy).
  *
  * Before any NEW turn — fresh or resumed — the concurrency gate and
- * then {@link checkWorkAdmission} (SDD approval + dependency) are evaluated
- * here, so the manual entry and the MCP entry share one gate chain and a resume
- * is admitted on today's facts rather than on the ones that admitted the
- * original launch. The concurrency gate's scope follows the git branch mode:
+ * then {@link checkWorkAdmission} (SDD approval + delivery status + dependency)
+ * are evaluated here, so the manual entry and the MCP entry share one gate chain
+ * and a resume is admitted on today's facts rather than on the ones that admitted
+ * the original launch. The concurrency gate's scope follows the git branch mode:
  * shared in `current-branch`, per-intent (and therefore never cross-blocking) in
  * `worktree`. **attach** sends no turn and is therefore not a new admission: it
- * passes none of these gates and gains no new rejection. Returns a structured
- * result — never throws for expected validation failures.
+ * passes none of these gates and gains no new rejection.
+ *
+ * A FRESH launch also resolves the session's DELIVERY CONTEXT first: it decides
+ * the worktree baseline and the dependency reading, so it is settled before any
+ * gate runs and travels with the pending link so the session record can keep it.
+ * Returns a structured result — never throws for expected validation failures.
  */
 export async function launchWorkSession(
   workspacePath: string,
   intentId: string,
   deps: SessionLaunchDeps,
   progress?: (stage: string) => void,
-  _actor?: string | null,
+  actor?: string | null,
+  opts?: WorkLaunchOptions,
 ): Promise<SessionLaunchResult> {
   if (!isStoreAvailable()) return { success: false, code: 'intent.dbUnavailable' }
 
@@ -355,7 +498,7 @@ export async function launchWorkSession(
 
   // An `in_progress` intent whose session is still usable is attached to or
   // resumed in place — it is NOT a `cannotStartDev` rejection any more.
-  const existing = await attachOrResumeWorkSession(workspacePath, req, deps, progress)
+  const existing = await attachOrResumeWorkSession(workspacePath, req, deps, progress, opts, actor)
   if (existing) {
     releaseClaim()
     return existing
@@ -378,9 +521,28 @@ export async function launchWorkSession(
     return { success: false, code: 'intent.concurrencyGate', params: { title: blocking.title } }
   }
 
-  // SDD approval + dependency gates — the SAME chain a resume runs, from the one
-  // shared function, so the two entries can never drift apart.
-  const denied = checkWorkAdmission(workspacePath, req, deps)
+  // The delivery context this session will develop against — resolved BEFORE the
+  // gates, because both the dependency reading and the worktree baseline are
+  // stated in terms of it. An intent linked to several deliveries is refused here
+  // unless the caller named one: there is a real choice and only a human makes it.
+  const context: DeliveryContextResult = resolveSessionDeliveryContext(
+    workspacePath,
+    req,
+    opts?.deliveryId,
+  )
+  if (!context.ok) {
+    releaseClaim()
+    return { success: false, code: context.code }
+  }
+  const deliveryId = context.delivery?.id ?? null
+
+  // SDD approval + delivery status + dependency gates — the SAME chain a resume
+  // runs, from the one shared function, so the two entries can never drift apart.
+  const denied = checkWorkAdmission(workspacePath, req, deps, {
+    deliveryId,
+    force: opts?.forceDependencyGate,
+    actor,
+  })
   if (denied) {
     releaseClaim()
     return denied
@@ -404,11 +566,23 @@ export async function launchWorkSession(
   progress?.('fetching-remote-main')
 
   if (getGitBranchMode(workspacePath) === 'worktree') {
+    // The baseline is the delivery's branch when the session has a delivery
+    // context, else the workspace mainline. Resolving it also fetches it, and
+    // refuses when an existing worktree is rooted somewhere else — c3 never
+    // rebuilds or merges that worktree on its own.
+    const prepared = prepareWorktreeBaseline(workspacePath, req, deliveryId)
+    if (!prepared.ok) {
+      releaseClaim()
+      return prepared.result
+    }
     try {
-      const baseBranch = getDefaultMainBranch(workspacePath)
-      if (baseBranch?.trim()) fetchRemoteBase(workspacePath, baseBranch)
       progress?.('preparing-worktree')
-      const wt = createWorktree(workspacePath, req.id, req.title, baseBranch)
+      const wt = createWorktree(
+        workspacePath,
+        req.id,
+        req.title,
+        prepared.baseline.baseBranch ?? undefined,
+      )
       effectiveCwd = wt.worktreePath
       setBranchName(req.id, wt.branchName)
     } catch (err) {
@@ -482,8 +656,9 @@ export async function launchWorkSession(
     specPath: req.specPath,
   })
 
-  // Register pending→intent link and fire launcher
-  registerPendingDevLink(devId, req.id)
+  // Register pending→intent link and fire launcher. The delivery context rides
+  // along so the `run:bound` handler can persist it with the session record.
+  registerPendingDevLink(devId, req.id, deliveryId)
   progress?.('launching')
 
   try {
@@ -604,11 +779,7 @@ function specLaunchGateFailure(
     progress,
   })
   if (!gate.blocked) return null
-  return {
-    success: false,
-    code: 'intent.dependencyNotMerged',
-    params: { title: gate.dependency.title, id: gate.dependency.id },
-  }
+  return { success: false, ...dependencyGateRejection(gate.verdict) }
 }
 
 /** Internal: create a FIRST spec session — scaffold the dated directory, write

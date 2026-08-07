@@ -30,6 +30,10 @@ const props = defineProps<{
   plan: DeliveryTransitionPlan
   branchInit: DeliveryBranchInitState | null
   workspaceGitBranchMode: 'worktree' | 'current-branch'
+  /** How far mainline is ahead of the delivery branch; null = unknown / N/A. */
+  mainlineAhead: number | null
+  /** In-flight 「同步主线」 phase; null = idle. */
+  syncPhase: 'fetching' | 'merging' | 'pushing' | null
 }>()
 
 const emit = defineEmits<{
@@ -45,6 +49,7 @@ const emit = defineEmits<{
   transition: [to: DeliveryStatus, confirmVerified: boolean]
   'init-branch': [payload: { mode: 'create' | 'bind'; branchName: string }]
   'cleanup-branch': [deliveryId: string]
+  'sync-mainline': [deliveryId: string]
   jump: [target: 'associated-intents' | 'workspace-settings' | 'branch']
 }>()
 
@@ -53,6 +58,29 @@ const mode = ref<'create' | 'bind'>('create')
 const branchName = ref('')
 const branchInputRef = ref<HTMLInputElement | null>(null)
 const cleanupOpen = ref(false)
+const syncOpen = ref(false)
+
+/**
+ * 「同步主线」is offered ONLY while a delivery is `integrating` on a ready branch
+ * — that is the whole window in which merging mainline in is both meaningful and
+ * safe. From `verifying` on, changing the tree is exactly what invalidates the
+ * verification, so the action disappears rather than failing on the server.
+ */
+const canSyncMainline = computed(
+  () =>
+    props.workspaceGitBranchMode === 'worktree' &&
+    props.delivery.status === 'integrating' &&
+    props.delivery.branchReady &&
+    !!props.delivery.branchName,
+)
+
+/** Mainline holds commits this delivery branch does not — sync now, not at merge time. */
+const mainlineBehind = computed(() => (props.mainlineAhead ?? 0) > 0)
+
+function doSyncMainline(): void {
+  syncOpen.value = false
+  emit('sync-mainline', props.delivery.id)
+}
 
 /** Reset the editable branch-name default when opening a different delivery. */
 watch(
@@ -224,13 +252,48 @@ function statusLabel(status: DeliveryStatus): string {
           </p>
         </div>
       </template>
-      <p
-        v-else-if="props.delivery.branchReady"
-        class="delivery-branch-ready"
-        data-testid="delivery-branch-ready"
-      >
-        {{ t('delivery.branch.ready.label', { branch: props.delivery.branchName ?? '' }) }}
-      </p>
+      <template v-else-if="props.delivery.branchReady">
+        <p class="delivery-branch-ready" data-testid="delivery-branch-ready">
+          {{ t('delivery.branch.ready.label', { branch: props.delivery.branchName ?? '' }) }}
+        </p>
+        <div v-if="canSyncMainline" class="delivery-sync" data-testid="delivery-sync-mainline">
+          <p
+            v-if="mainlineBehind"
+            class="delivery-sync-hint"
+            data-testid="delivery-sync-mainline-hint"
+          >
+            {{ t('delivery.syncMainline.behind.label', { count: props.mainlineAhead ?? 0 }) }}
+          </p>
+          <div class="delivery-sync-actions">
+            <button
+              type="button"
+              class="delivery-sync-btn"
+              :disabled="syncPhase !== null"
+              data-testid="delivery-sync-mainline-btn"
+              @click="syncOpen = true"
+            >
+              {{ t('delivery.syncMainline.action.label') }}
+            </button>
+            <p v-if="syncPhase" class="delivery-branch-progress">
+              {{ t('delivery.syncMainline.running.label') }}
+            </p>
+          </div>
+          <ConfirmDialog
+            :open="syncOpen"
+            :title="t('delivery.syncMainline.confirm.title.label')"
+            :message="
+              t('delivery.syncMainline.confirm.body.label', {
+                base: props.delivery.baseBranch,
+                branch: props.delivery.branchName ?? '',
+              })
+            "
+            :confirm-label="t('delivery.syncMainline.action.label')"
+            :cancel-label="t('common.action.cancel.label')"
+            @confirm="doSyncMainline"
+            @cancel="syncOpen = false"
+          />
+        </div>
+      </template>
       <div
         v-else-if="isTerminal && props.delivery.branchName"
         class="delivery-branch-cleanup"
@@ -447,6 +510,48 @@ function statusLabel(status: DeliveryStatus): string {
   align-items: center;
   gap: var(--sp-2);
 }
+.delivery-sync {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.delivery-sync-hint {
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-normal);
+  color: var(--c-text-muted);
+}
+
+.delivery-sync-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.delivery-sync-btn {
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--c-border);
+  background: transparent;
+  color: var(--c-text-muted);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+
+.delivery-sync-btn:hover:not(:disabled) {
+  background: var(--c-hover);
+  color: var(--c-text);
+  filter: none;
+}
+
+.delivery-sync-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .delivery-branch-init-btn {
   padding: var(--sp-1) var(--sp-3);
   font: inherit;

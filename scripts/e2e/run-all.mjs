@@ -80,6 +80,10 @@ const TESTS = [
     name: 'delivery ↔ intent association (link / unlink guards)',
     file: 'e2e-delivery-link-test.mjs',
   },
+  {
+    name: 'dependency gate (same-delivery / cross-delivery / no-delivery)',
+    file: 'e2e-dependency-gate-test.mjs',
+  },
   { name: 'automation queue (park isolation + manual control)', file: 'e2e-queue-test.mjs' },
   {
     name: 'spec automation (author → review → opt-in machine approval → revoke)',

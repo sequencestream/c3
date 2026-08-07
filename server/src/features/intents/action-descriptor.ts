@@ -163,7 +163,7 @@ function deriveSpecApprovalActionDescriptor(
  * `intents` read model by the client, never copied into the descriptor.
  */
 function deriveDependencyActionDescriptor(
-  intent: Pick<Intent, 'workspaceId' | 'status' | 'dependsOn'>,
+  intent: Pick<Intent, 'workspaceId' | 'status' | 'dependsOn' | 'linkedDeliveries'>,
   loadWorkspaceIntents: WorkspaceIntentsLoader,
 ): ActionDescriptor | null {
   if (intent.status !== 'todo' && intent.status !== 'in_progress') return null
@@ -171,7 +171,8 @@ function deriveDependencyActionDescriptor(
   const workspacePath = resolveWorkspaceRoot(intent.workspaceId)
   if (!workspacePath) return null
   const blocking = findBlockingDependency({
-    dependsOn: intent.dependsOn,
+    intent,
+    workspacePath,
     intents: loadWorkspaceIntents(workspacePath),
     gitBranchMode: getGitBranchMode(workspacePath),
     defaultMainBranch: getDefaultMainBranch(workspacePath),

@@ -11,6 +11,7 @@ import { emptyTaskModel, type TaskListModel } from '@/lib/task-list'
 import { type CreatePrModel } from '@/lib/create-pr-view'
 import type { DeliveryBranchInitState } from '@/lib/delivery-view'
 import { type DevLaunchModel } from '@/lib/dev-launch-view'
+import type { GateEscape } from '@/lib/gate-escape'
 import { type SpecLaunchModel } from '@/lib/spec-launch-view'
 import { type SessionRef } from '@/lib/tab-view'
 import { type SessionSourceAction } from '@/lib/session-jump'
@@ -446,6 +447,14 @@ export function createState(deps: StateDeps) {
    */
   const activeDeliveryIntents = ref<AssociatedIntent[]>([])
   /**
+   * How far mainline is ahead of the open delivery's branch (server-computed,
+   * fetch-free). `null` = not applicable / undeterminable; `> 0` drives the
+   * 「主线领先」 hint and makes 「同步主线」 the obvious next action.
+   */
+  const activeDeliveryMainlineAhead = ref<number | null>(null)
+  /** In-flight 「同步主线」 phase for the open delivery; null = idle. */
+  const activeDeliverySyncPhase = ref<'fetching' | 'merging' | 'pushing' | null>(null)
+  /**
    * In-flight branch-init state for the open delivery (phase progress). `null`
    * = no init running. Set when the init is sent, advanced by the server's
    * progress frames, cleared on the result frame or an init error.
@@ -805,6 +814,13 @@ export function createState(deps: StateDeps) {
   // can never show one failure's text next to another failure's retry button.
   const intentActionErrorGuidance = ref<GitActionFailureGuidance | null>(null)
   const intentActionErrorSeq = ref(0)
+  /**
+   * The ESCAPE a refused launch left the user, when it left one (see
+   * `lib/gate-escape.ts`). Held next to — never merged into — the plain error
+   * above: the message states the fact, this states what the user may do about
+   * it, and only one dialog is shown for a given refusal.
+   */
+  const intentGateEscape = ref<{ escape: GateEscape; message: string } | null>(null)
   const createIntentPending = ref(false)
   const intentPrSync = ref<
     Record<string, { state: 'syncing' | 'success' | 'error'; message: string }>
@@ -825,6 +841,12 @@ export function createState(deps: StateDeps) {
   function closeIntentActionError(): void {
     intentActionError.value = null
     intentActionErrorGuidance.value = null
+  }
+  function showIntentGateEscape(escape: GateEscape, message: string): void {
+    intentGateEscape.value = { escape, message }
+  }
+  function closeIntentGateEscape(): void {
+    intentGateEscape.value = null
   }
 
   // ---- Dev-launch startup overlay (App-global, like the toast) ----
@@ -909,6 +931,8 @@ export function createState(deps: StateDeps) {
     showToast,
     showIntentActionError,
     closeIntentActionError,
+    showIntentGateEscape,
+    closeIntentGateEscape,
     sessionTitleById,
     devLaunchTimers,
     clearDevLaunchTimers,
@@ -1058,6 +1082,7 @@ export function createState(deps: StateDeps) {
     intentActionError,
     intentActionErrorGuidance,
     intentActionErrorSeq,
+    intentGateEscape,
     createIntentPending,
     intentPrSync,
     devLaunch,
@@ -1093,6 +1118,8 @@ export function createState(deps: StateDeps) {
     activeDelivery,
     activeDeliveryPlan,
     activeDeliveryIntents,
+    activeDeliveryMainlineAhead,
+    activeDeliverySyncPhase,
     activeDeliveryBranchInit,
     deliveryLinkIntents,
     currentIntentSessions,

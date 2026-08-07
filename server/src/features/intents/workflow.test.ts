@@ -305,7 +305,14 @@ describe('pickNext — worktree dep merge validation', () => {
   })
 
   it('worktree: filters out intents whose dep is done but not merged', () => {
-    const dep = makeIntent({ id: 'A', status: 'done', prs: fakeIntentPrs('reviewing') })
+    // The dependency sits on its OWN branch: the criterion asks whether its
+    // output is on the candidate's base, and an unmerged feature branch is not.
+    const dep = makeIntent({
+      id: 'A',
+      status: 'done',
+      prs: fakeIntentPrs('reviewing'),
+      branchName: 'intent/A',
+    })
     const child = makeIntent({ id: 'B', dependsOn: ['A'] })
     vi.mocked(listIntents).mockReturnValue([dep, child])
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
@@ -336,7 +343,12 @@ describe('pickNext — worktree dep merge validation', () => {
 
   it('worktree: all deps must be merged (one unmerged blocks)', () => {
     const depA = makeIntent({ id: 'A', status: 'done', prs: fakeIntentPrs('merged') })
-    const depB = makeIntent({ id: 'B', status: 'done', prs: fakeIntentPrs('reviewing') })
+    const depB = makeIntent({
+      id: 'B',
+      status: 'done',
+      prs: fakeIntentPrs('reviewing'),
+      branchName: 'intent/B',
+    })
     const child = makeIntent({ id: 'C', dependsOn: ['A', 'B'] })
     vi.mocked(listIntents).mockReturnValue([depA, depB, child])
     vi.mocked(getGitBranchMode).mockReturnValue('worktree')
@@ -1133,6 +1145,7 @@ describe('queue driver — worktree dependency merge auto-recovery', () => {
       id: 'A',
       status: 'done',
       prs: fakeIntentPrs('reviewing'),
+      branchName: 'intent/A',
       automate: false,
     })
     const child = makeIntent({ id: 'B', dependsOn: ['A'], priority: 'P0' })
@@ -1161,7 +1174,13 @@ describe('queue driver — worktree dependency merge auto-recovery', () => {
 
     // The dep PR merges; the next reconcile pass sees the refreshed fact.
     vi.mocked(listIntents).mockReturnValue([
-      makeIntent({ id: 'A', status: 'done', prs: fakeIntentPrs('merged'), automate: false }),
+      makeIntent({
+        id: 'A',
+        status: 'done',
+        prs: fakeIntentPrs('merged'),
+        branchName: 'intent/A',
+        automate: false,
+      }),
       child,
     ])
     await settleQueueForTests(proj)

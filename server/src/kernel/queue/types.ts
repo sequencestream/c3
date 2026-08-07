@@ -14,6 +14,7 @@ import type {
   SpecStatus,
 } from '@ccc/shared/protocol'
 import { MAX_SPEC_REVIEW_REWORK_ROUNDS } from '@ccc/shared/protocol'
+import type { DeliveryGateFact } from '@ccc/shared'
 
 // ---------------------------------------------------------------------------
 // Tunables
@@ -87,6 +88,21 @@ export interface QueueIntentFact {
    * kernel stays a pure function and the UI cannot disagree with the gate.
    */
   prStatus: IntentPrStatus | null
+  /**
+   * The intent's development branch — read only by the delivery-less branch of
+   * the dependency criterion ("its branch IS the mainline"). The queue used to
+   * lack this fact, which is precisely why it was STRICTER than the manual gate
+   * on the same facts; carrying it is what makes the two paths agree.
+   */
+  branchName: string | null
+  /** Deliveries this intent is associated with (`intent_deliveries` edges). */
+  deliveryIds: readonly string[]
+  /**
+   * This intent's PR status PER delivery, keyed by delivery id. The same-delivery
+   * dependency criterion reads THIS, not {@link prStatus}: a PR toward another
+   * delivery says nothing about whether the output is on my base.
+   */
+  prStatusByDelivery: Readonly<Record<string, IntentPrStatus | null>>
   lastWorkSessionId: string | null
   createdAt: number
   // ── Spec-phase facts (SDD workspaces only) ──
@@ -196,6 +212,18 @@ export const QUEUE_REASON_CODES = [
   'blocked_concurrency_gate',
   'blocked_dependency',
   'blocked_dependency_pr_unmerged',
+  // The dependency lives in ANOTHER delivery that has not reached mainline yet,
+  // so nothing it produced can be on this intent's base. Distinct from
+  // `blocked_dependency_pr_unmerged`: no PR status will ever clear it — only the
+  // other delivery being delivered will.
+  'blocked_dependency_delivery',
+  // An associated delivery is closed to new writes (verifying / verified /
+  // delivered / cancelled).
+  'blocked_delivery_status',
+  // The intent is linked to SEVERAL deliveries, so its delivery context (worktree
+  // baseline + dependency reading) is not determined. The queue never picks one:
+  // an unattended path does not get to make a choice a human has not made.
+  'blocked_delivery_ambiguous',
   'blocked_spec_not_approved',
   // spec phase (SDD): the sub-states `blocked_spec_not_approved` decomposes into
   // once the queue drives authoring → review → rework itself.
@@ -348,6 +376,13 @@ export interface QueueReconcileInput {
   /** Intents the kernel currently holds an in-flight run for. */
   inFlight: readonly string[]
   gitBranchMode: GitBranchMode
+  /**
+   * The workspace's effective main branch, reduced at the assembly boundary.
+   * Input to the delivery-less branch of the dependency criterion.
+   */
+  defaultMainBranch: string | null
+  /** Every delivery of the workspace, for the delivery gates and their reasons. */
+  deliveries: readonly DeliveryGateFact[]
   sddEnabled: boolean
   /**
    * The workspace's explicit machine-approval opt-in. `false` by default and for

@@ -45,7 +45,7 @@ import { getSddEnabled } from '../../kernel/config/index.js'
 import { parsePrIdentity } from './pr-identity.js'
 import { isIntentSpecMode, resolveEffectiveSpecMode } from './spec-mode.js'
 
-const SCHEMA_VERSION = 20
+const SCHEMA_VERSION = 21
 
 /** Max persisted length of `short_en_title` (doc says VARCHAR(128); SQLite is TEXT). */
 const SHORT_EN_TITLE_MAX = 128
@@ -122,6 +122,9 @@ CREATE TABLE IF NOT EXISTS intent_sessions (
   end_at        INTEGER,
   exit_code     TEXT CHECK(exit_code IN ('success','failure','cancelled')),
   agent_id      TEXT,
+  -- 本次会话的交付上下文(可空)。它决定 worktree 基线与依赖闸门口径:fresh 启动时
+  -- 解析并写入,resume/attach 复用同一值,避免恢复时重新猜测。NULL = 无交付上下文。
+  delivery_id   TEXT,
   created_at    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_intent_session_intent ON intent_sessions(intent_id);
@@ -538,6 +541,11 @@ function db(): Db | null {
     // and inheritance all coexist in one column. No backfill — old intents
     // continue to derive their mode exactly as before.
     ensureColumn(d, 'intents', 'spec_mode', "TEXT CHECK(spec_mode IN ('sdd','fast'))")
+    // v20 → v21: the work session's DELIVERY CONTEXT. Nullable, no backfill —
+    // a session started before deliveries existed had no context, and inventing
+    // one retroactively would re-point its worktree baseline and its dependency
+    // gate at a delivery it never developed against.
+    ensureColumn(d, 'intent_sessions', 'delivery_id', 'TEXT')
     // v19 → v20: PR facts move out of the intents row into `intent_prs`. The
     // legacy trio above is FROZEN, not dropped — runtime never reads or writes it
     // again, and it stays as the rollback script's landing site.
@@ -2432,6 +2440,7 @@ interface IntentSessionRow {
   end_at: number | null
   exit_code: string | null
   agent_id: string | null
+  delivery_id: string | null
   created_at: number
 }
 
@@ -2446,6 +2455,7 @@ function toIntentDevSession(r: IntentSessionRow): IntentDevSession {
     endAt: r.end_at,
     exitCode: r.exit_code as IntentDevSessionExitCode | null,
     agentId: r.agent_id,
+    deliveryId: r.delivery_id ?? null,
     createdAt: r.created_at,
   }
 }
@@ -2459,16 +2469,18 @@ export function insertIntentSession(
   sessionId: string,
   vendor: string,
   agentId?: string,
+  deliveryId?: string | null,
 ): number {
   const d = requireDb()
   const now = Date.now()
   d.run(
-    `INSERT INTO intent_sessions (intent_id, session_id, vendor, agent_id, created_at)
-     VALUES (?,?,?,?,?)`,
+    `INSERT INTO intent_sessions (intent_id, session_id, vendor, agent_id, delivery_id, created_at)
+     VALUES (?,?,?,?,?,?)`,
     intentId,
     sessionId,
     vendor,
     agentId ?? null,
+    deliveryId ?? null,
     now,
   )
   const row = d.get<{ id: number }>('SELECT last_insert_rowid() AS id')

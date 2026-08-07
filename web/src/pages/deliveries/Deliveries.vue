@@ -31,6 +31,8 @@ const props = defineProps<{
   workspaceGitBranchMode: 'worktree' | 'current-branch'
   associatedIntents: AssociatedIntent[]
   intents: Intent[]
+  mainlineAhead: number | null
+  syncPhase: 'fetching' | 'merging' | 'pushing' | null
 }>()
 
 const emit = defineEmits<{
@@ -56,6 +58,7 @@ const emit = defineEmits<{
   transition: [to: DeliveryStatus, confirmVerified: boolean]
   'init-branch': [payload: { mode: 'create' | 'bind'; branchName: string }]
   'cleanup-branch': [deliveryId: string]
+  'sync-mainline': [deliveryId: string]
   'link-intent': [intentId: string]
   'unlink-intent': [intentId: string]
   'open-workspace-settings': []
@@ -96,11 +99,14 @@ const mobileActiveToken = computed(() => props.activeId ?? 'deliveries')
         :workspace-git-branch-mode="workspaceGitBranchMode"
         :associated-intents="associatedIntents"
         :intents="intents"
+        :mainline-ahead="mainlineAhead"
+        :sync-phase="syncPhase"
         @update="(payload) => emit('update', payload)"
         @cancel="(id: string) => emit('cancel', id)"
         @transition="(to, confirm) => emit('transition', to, confirm)"
         @init-branch="(payload) => emit('init-branch', payload)"
         @cleanup-branch="(id: string) => emit('cleanup-branch', id)"
+        @sync-mainline="(id: string) => emit('sync-mainline', id)"
         @link-intent="(id: string) => emit('link-intent', id)"
         @unlink-intent="(id: string) => emit('unlink-intent', id)"
         @open-workspace-settings="emit('open-workspace-settings')"

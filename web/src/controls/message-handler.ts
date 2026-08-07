@@ -26,6 +26,7 @@ import { applyTheme } from '@/lib/theme'
 import { applyFontScale } from '@/lib/font-scale'
 import { translateUiError } from '@/i18n/errors'
 import { normalizeGuidance } from '@/lib/git-failure-guidance'
+import { gateEscapeFor } from '@/lib/gate-escape'
 import { transcriptToChat } from './transcript'
 import type { AppCtx } from './types'
 import {
@@ -139,6 +140,8 @@ export function installMessageHandler(ctx: AppCtx): void {
     activeDeliveryId,
     activeDeliveryPlan,
     activeDeliveryIntents,
+    activeDeliveryMainlineAhead,
+    activeDeliverySyncPhase,
     activeDeliveryBranchInit,
     discussionMessages,
     discussionMaxSeq,
@@ -915,6 +918,7 @@ export function installMessageHandler(ctx: AppCtx): void {
         activeDeliveryId.value = msg.delivery.id
         activeDeliveryPlan.value = msg.transitionPlan
         activeDeliveryIntents.value = msg.associatedIntents
+        activeDeliveryMainlineAhead.value = msg.mainlineAhead
         // Only a `link_intent_to_delivery` reply carries this: the link DID go
         // through, so it is a toast, not an error — the user may well have meant
         // to develop on mainline first and rebase later.
@@ -934,6 +938,22 @@ export function installMessageHandler(ctx: AppCtx): void {
             params: { from: msg.currentStatus, to: msg.to },
           }),
         )
+        break
+      case 'delivery_sync_mainline_progress':
+        if (msg.deliveryId === activeDeliveryId.value) {
+          activeDeliverySyncPhase.value = msg.phase
+        }
+        break
+      case 'delivery_sync_mainline_result':
+        activeDeliverySyncPhase.value = null
+        // `ahead: 0` is a success, not a no-op error: mainline held nothing the
+        // delivery branch did not, so there was genuinely nothing to sync.
+        ctx.showToast(
+          msg.ahead === 0
+            ? t('delivery.syncMainline.upToDate.label')
+            : t('delivery.syncMainline.done.label', { count: msg.ahead }),
+        )
+        send({ type: 'get_delivery_detail', deliveryId: msg.deliveryId })
         break
       case 'delivery_branch_init_progress':
         // Advance the in-flight init phase. The action seeded it optimistically
@@ -1246,6 +1266,19 @@ export function installMessageHandler(ctx: AppCtx): void {
         // multi-repo) clears the in-flight init state so the form re-enables, and
         // surfaces the reason in a toast (the form lives on the deliveries page,
         // not the chat stream the generic error line below appends to).
+        // A failed 「同步主线」 releases the in-flight phase so the button
+        // re-enables, and shows git's own words — conflicts included, verbatim.
+        if (
+          activeDeliverySyncPhase.value &&
+          (msg.error.code === 'delivery.syncMainlineConflict' ||
+            msg.error.code === 'delivery.syncMainlineFailed' ||
+            msg.error.code === 'delivery.syncMainlineForbidden' ||
+            msg.error.code === 'delivery.guard.branchNotReady')
+        ) {
+          activeDeliverySyncPhase.value = null
+          ctx.showToast(translateUiError(msg.error))
+          break
+        }
         if (
           activeDeliveryBranchInit.value &&
           (msg.error.code === 'delivery.multiRepoUnsupported' ||
@@ -1298,6 +1331,17 @@ export function installMessageHandler(ctx: AppCtx): void {
         }
         if (msg.error.code.startsWith('intent.')) {
           intentActionErrorSeq.value += 1
+          // A refusal that leaves the user an EXIT gets the escape dialog instead
+          // of the plain error one — never both, or the same refusal would be
+          // reported twice. The intent comes from the in-flight launch overlay:
+          // an `error` frame carries no intent id, and an exit with no target is
+          // a button that does nothing.
+          const escape = gateEscapeFor(msg.error.code, devLaunch.value?.intentId ?? null)
+          if (escape) {
+            ctx.showIntentGateEscape(escape, translateUiError(msg.error))
+            ctx.closeDevLaunch()
+            break
+          }
           // A Git/forge failure may ride along with targeted repair guidance. It
           // is untrusted input, so it is validated here; anything malformed —
           // unknown reason, unknown retry action, missing intent — becomes null

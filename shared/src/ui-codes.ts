@@ -104,9 +104,60 @@ export const UI_ERROR_CODES = {
     key: 'error.intent.pullFailed',
     params: ['message'],
   },
+  // Dependency gate, delivery-less branch: the historic "not on the mainline yet"
+  // refusal, unchanged in wording and in criterion.
   'intent.dependencyNotMerged': {
     key: 'error.intent.dependencyNotMerged',
     params: ['title', 'id'],
+  },
+  // Dependency gate, SAME delivery: the dependency's PR toward MY delivery is not
+  // merged, so its output is not on my base. `deliveryTitle` / `deliveryId` name
+  // the delivery both sides share, so the page can link to it.
+  'intent.dependencyPrUnmergedInDelivery': {
+    key: 'error.intent.dependencyPrUnmergedInDelivery',
+    params: ['title', 'id', 'deliveryTitle', 'deliveryId'],
+  },
+  // Dependency gate, CROSS delivery: the dependency lives in another delivery that
+  // has not reached mainline, so nothing it produced can reach my base yet.
+  'intent.dependencyDeliveryNotDelivered': {
+    key: 'error.intent.dependencyDeliveryNotDelivered',
+    params: ['title', 'id', 'deliveryTitle', 'deliveryId'],
+  },
+  // A work session must know which delivery it develops against (that is what
+  // decides its worktree base and its dependency gate). The intent is linked to
+  // several, so the caller must choose — never defaulted.
+  'intent.deliveryContextRequired': { key: 'error.intent.deliveryContextRequired' },
+  // The named delivery does not exist, or belongs to another workspace.
+  'intent.deliveryContextUnknown': { key: 'error.intent.deliveryContextUnknown' },
+  // The named delivery exists but the intent is not linked to it.
+  'intent.deliveryContextNotLinked': { key: 'error.intent.deliveryContextNotLinked' },
+  // Scheduling gate: an associated delivery is closed to new writes
+  // (`verifying` / `verified` / `delivered` / `cancelled`).
+  'intent.deliveryNotWritable': {
+    key: 'error.intent.deliveryNotWritable',
+    params: ['deliveryTitle', 'deliveryId', 'status'],
+  },
+  // Worktree baseline check: the existing worktree does not contain the delivery
+  // branch tip. NEVER auto-repaired — the user picks rebuild or merge. The two
+  // codes differ only in which exits are open, which is what the page must show:
+  // a clean worktree may be rebuilt, a dirty one may only be merged into (or
+  // committed / stashed first).
+  'intent.worktreeBaseMismatch': {
+    key: 'error.intent.worktreeBaseMismatch',
+    params: ['branch', 'deliveryTitle'],
+  },
+  'intent.worktreeBaseMismatchDirty': {
+    key: 'error.intent.worktreeBaseMismatchDirty',
+    params: ['branch', 'deliveryTitle'],
+  },
+  // Safe rebuild refused at execution time: the worktree holds uncommitted work.
+  // Committing or stashing is the user's call; c3 never discards it.
+  'intent.worktreeDirty': { key: 'error.intent.worktreeDirty' },
+  // A worktree baseline repair (rebuild / merge) failed; the raw git output travels
+  // as `message`.
+  'intent.worktreeRepairFailed': {
+    key: 'error.intent.worktreeRepairFailed',
+    params: ['message'],
   },
   // Manual Start-Dev session-end Git/PR cleanup failures (workbench todo copy).
   'intent.gitCleanupNoChanges': { key: 'error.intent.gitCleanupNoChanges' },
@@ -167,6 +218,18 @@ export const UI_ERROR_CODES = {
   // Branch init / cleanup failed (fetch/push/local-delete error, or a DB write
   // failure after the push — the retry path idempotently binds the orphan).
   'delivery.initFailed': { key: 'error.delivery.initFailed', params: ['detail'] },
+  // 「同步主线」was requested on a delivery that is not `integrating`. Before that
+  // there is nothing to integrate; from `verifying` on, changing the tree is
+  // exactly what would invalidate the verification.
+  'delivery.syncMainlineForbidden': { key: 'error.delivery.syncMainlineForbidden' },
+  // The mainline merge stopped on conflicts. Nothing was pushed and c3 picked no
+  // resolution — git's own output travels as `detail`.
+  'delivery.syncMainlineConflict': {
+    key: 'error.delivery.syncMainlineConflict',
+    params: ['detail'],
+  },
+  // The sync failed for any other reason (fetch / push / unresolvable refs).
+  'delivery.syncMainlineFailed': { key: 'error.delivery.syncMainlineFailed', params: ['detail'] },
   // Branch cleanup was requested on a non-terminal delivery; only `delivered` /
   // `cancelled` may release their local branch reference.
   'delivery.cleanupForbidden': { key: 'error.delivery.cleanupForbidden' },

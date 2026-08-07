@@ -69,6 +69,8 @@ c3
 │   │   ├── 手动建 PR                             # 闸门序列 worktree→有分支→目标交付可用→目标 (intent_id, delivery_id) 无活跃 PR→相对目标 base 有 diff;base 一次解析贯穿 diff 闸门/forge/PR 行/事件;人工与顾问入口共用同一解析
 │   │   ├── PR 更新复位                           # 模型发 pr:update/success 时把 rejected/failed/closed 的 PR 行复位为 reviewing;须以 association.deliveryId 或 pr.number 唯一定位,定位不到即拒并落 error 日志,绝不猜测
 │   │   ├── 意图依赖                              # intent_deps 依赖图(blocks/informs/soft_after),依赖门控启动
+│   │   │   ├── base 可达判据                     # 判据是「依赖产出在不在我的 base 上」而非「PR 合了没」:同交付看该交付的 PR 行、跨交付看依赖所属交付是否 delivered、无交付沿用旧判据;唯一一份共享纯函数,手动/队列/投影共用(ADR-0038)
+│   │   │   ├── 可解释阻塞 + 强制放行             # 阻塞文案明示「依赖在交付 X,X 未合入主线」并可跳转;依赖闸门是建议,可一次性强制放行(二次确认+风险说明+intent_logs 审计),只跳依赖一道,队列不提供
 │   │   │   └── 阻塞态前序指引                    # 被依赖闸门挡住的意图,「下一步」提示展示第一个阻塞它的前序意图(标题+状态),按钮跳转到其详情;复用闸门判定,不提供跳过/放行
 │   │   ├── 沟通会话                              # 意图右栏 intent session 多会话(新建/选择/改名/删除)
 │   │   ├── 自动化队列                            # 勾选 automate 的意图按优先级+依赖逐条自动开发、判定完成、提交/推送(唯一自动 done 路径之一)
@@ -95,6 +97,10 @@ c3
 │   │   └── Git/PR 收尾                           # 手动 Start Dev 结束时经 gh 建 PR、回填 commit/PR 状态
 │   │
 │   ├── delivery 交付                             # 交付作为集成单元:一批意图共同集成并最终进入主线,回答「这批能不能合了、卡在哪」
+│   │   ├── 写入窗口闸门                          # verifying/verified/delivered/cancelled 期间其关联意图不再产生新写入会话(验证期间合代码=验证作废),多关联取最严;手动与队列同一判据
+│   │   ├── 会话交付上下文                        # 决定 base 的是会话不是意图:启动时 0 关联→无上下文/恰好 1 个→自动带入/≥2 个→必须显式选定否则拒绝;持久化于 intent_sessions.delivery_id,resume 复用不重猜
+│   │   ├── worktree 基线 origin/<交付分支>       # 新 worktree 以交付分支为根;已存在的只检测不修:基线不符阻塞启动并给「重建(需干净)」「合入该分支」两个显式出口,从不自动重建/暗中 merge,无强制放行
+│   │   ├── 同步主线                              # integrating 期间人工触发把 origin/<base_branch> 合入交付分支(临时 detached worktree,不碰用户检出);冲突原样浮出不代解;页面显示「主线领先 N」提示;不做定时自动回灌
 │   │   ├── 交付账本                              # 按工作区持久化交付(标题/描述/base_branch 快照/日期/分支名),status 六态 CHECK 闭集
 │   │   ├── 受控状态机                            # planned→integrating→verifying→verified→delivered,任意非终态可取消;回退 verifying→integrating(人工返工)/verified→verifying(系统合并冲突);统一经 canTransitionDelivery 纯函数
 │   │   ├── 守卫与缺口                            # 分支就绪→关联意图 PR 全部合入→人工确认验证→合并成功;缺口以 delivery.guard.* 结构下发给页面置灰+常驻说明+跳转;branchNotReady 跳转到本页分支初始化区

@@ -15,12 +15,20 @@
  *
  * Gate order is fixed and never relaxed: auto-recover (a failure-ladder park
  * whose every dependency is now satisfied → one `unpark` action, evaluated again
- * next pass) → park → force-skip → spec approval → dependencies (including
- * worktree-mode "dependency PR merged") → backoff → cooldown, then the
- * concurrency gate. A parked intent is not `done`, so its downstream stays
- * blocked by the dependency gate exactly as before — parking isolates a failure,
- * it never opens a path around one, and an auto-recovery never relaxes a gate:
- * the unparked intent is simply re-evaluated from scratch next pass.
+ * next pass) → park → force-skip → spec approval → delivery status → delivery
+ * context → dependencies → backoff → cooldown, then the concurrency gate. A
+ * parked intent is not `done`, so its downstream stays blocked by the dependency
+ * gate exactly as before — parking isolates a failure, it never opens a path
+ * around one, and an auto-recovery never relaxes a gate: the unparked intent is
+ * simply re-evaluated from scratch next pass.
+ *
+ * The DEPENDENCY criterion is not stated here. It lives in `@ccc/shared`
+ * ({@link evaluateDependencyGate}) and is shared verbatim with the manual launch
+ * gate: the two used to hold different rules — the queue looked only at the
+ * aggregate PR status, the manual gate also accepted "its branch is the
+ * mainline" — and could therefore contradict each other on identical facts.
+ * Everything the criterion needs is projected onto {@link QueueIntentFact} at the
+ * assembly boundary, so this file stays a pure function.
  *
  * The concurrency gate is the one rule whose SCOPE depends on the workspace: it
  * exists to keep two work sessions off the same files, so it is workspace-global
@@ -46,6 +54,12 @@ import {
   QUEUE_TICK_MS,
   emptyQueueIntentMeta,
 } from './types.js'
+import {
+  evaluateDependencyGate,
+  findWriteBlockingDelivery,
+  type DependencyGateFact,
+  type DependencyGateVerdict,
+} from '@ccc/shared'
 
 const PRIORITY_RANK = { P0: 0, P1: 1, P2: 2, P3: 3 } as const
 
@@ -220,22 +234,56 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
   }
 
   // ── Per-candidate gates ───────────────────────────────────────────────────
+
+  /** Project one ledger fact onto the shared criterion's dependency shape. */
+  const toGateFact = (dep: QueueIntentFact): DependencyGateFact => ({
+    id: dep.id,
+    title: dep.title,
+    status: dep.status,
+    branchName: dep.branchName,
+    deliveryIds: dep.deliveryIds,
+    prStatusByDelivery: dep.prStatusByDelivery,
+    prAggregate: dep.prStatus,
+  })
+  const gateFacts = intents.map(toGateFact)
+
   /**
-   * Whether every KNOWN dependency of an intent is satisfied, using exactly the
-   * dependency-gate semantics below: a dependency must be `done`, and under
-   * `worktree` its PR must be `merged`. An unknown (cross-workspace / deleted)
-   * dependency never blocks — same as the ordinary gate. Auto-recovery of a
-   * parked intent consults ONLY this fact: a dependency still outstanding (or,
-   * under worktree, its PR not yet confirmed merged) keeps the park.
+   * The DELIVERY CONTEXT of an intent the queue would launch: its one
+   * association, or none. `undefined` means "several" — the queue refuses to
+   * choose (see `blocked_delivery_ambiguous`), so it never even evaluates the
+   * dependency criterion under a context a human has not settled.
+   */
+  const deliveryContextOf = (intent: QueueIntentFact): string | null | undefined => {
+    if (intent.deliveryIds.length === 0) return null
+    if (intent.deliveryIds.length === 1) return intent.deliveryIds[0]
+    return undefined
+  }
+
+  /** Run the ONE shared dependency criterion for this intent's context. */
+  const dependencyVerdict = (
+    intent: QueueIntentFact,
+    sessionDeliveryId: string | null,
+  ): DependencyGateVerdict =>
+    evaluateDependencyGate({
+      dependsOn: intent.dependsOn,
+      dependencies: gateFacts,
+      sessionDeliveryId,
+      deliveries: input.deliveries,
+      gitBranchMode,
+      defaultMainBranch: input.defaultMainBranch,
+    })
+
+  /**
+   * Whether every KNOWN dependency of an intent is satisfied, by exactly the
+   * criterion the gate below applies — one function, so an auto-recovery can
+   * never unpark an intent the very next gate would block again. An intent whose
+   * delivery context is ambiguous is never considered satisfied: the queue cannot
+   * evaluate it at all.
    */
   const depsSatisfied = (intent: QueueIntentFact): boolean => {
-    for (const depId of intent.dependsOn) {
-      const dep = byId.get(depId)
-      if (!dep) continue
-      if (dep.status !== 'done') return false
-      if (gitBranchMode === 'worktree' && dep.prStatus !== 'merged') return false
-    }
-    return true
+    const ctx = deliveryContextOf(intent)
+    if (ctx === undefined) return false
+    return !dependencyVerdict(intent, ctx).blocked
   }
 
   const evaluate = (intent: QueueIntentFact): GateResult => {
@@ -268,25 +316,59 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
         wakeAt: null,
       }
     }
-    for (const depId of intent.dependsOn) {
-      const dep = byId.get(depId)
-      // An unknown dependency (cross-workspace / deleted) never blocks.
-      if (!dep) continue
-      if (dep.status !== 'done') {
+    // Delivery status gate: a delivery being verified, already delivered or
+    // cancelled takes no more code. Placed ahead of the dependency gate and
+    // mirrored by the manual admission gate, so automation and the button cannot
+    // disagree about who may write.
+    const closedDelivery = findWriteBlockingDelivery(intent.deliveryIds, input.deliveries)
+    if (closedDelivery) {
+      return {
+        eligible: false,
+        reason: 'blocked_delivery_status',
+        detail: `交付「${closedDelivery.title}」为 ${closedDelivery.status},不再接受新写入`,
+        wakeAt: null,
+      }
+    }
+    // Several deliveries → no determined baseline and no determined dependency
+    // reading. The queue does not pick one: converging the associations (or
+    // starting the session by hand with an explicit choice) is a human decision.
+    const deliveryContext = deliveryContextOf(intent)
+    if (deliveryContext === undefined) {
+      return {
+        eligible: false,
+        reason: 'blocked_delivery_ambiguous',
+        detail: `关联了 ${intent.deliveryIds.length} 个交付,需人工先收敛关联或手动选定后启动`,
+        wakeAt: null,
+      }
+    }
+    const verdict = dependencyVerdict(intent, deliveryContext)
+    if (verdict.blocked) {
+      const dep = verdict.dependency
+      if (verdict.reason === 'not_done') {
+        const status = byId.get(dep.id)?.status ?? 'unknown'
         return {
           eligible: false,
           reason: 'blocked_dependency',
-          detail: `依赖「${dep.title}」尚未完成(${dep.status})`,
+          detail: `依赖「${dep.title}」尚未完成(${status})`,
           wakeAt: null,
         }
       }
-      if (gitBranchMode === 'worktree' && dep.prStatus !== 'merged') {
+      if (verdict.reason === 'delivery_not_delivered') {
         return {
           eligible: false,
-          reason: 'blocked_dependency_pr_unmerged',
-          detail: `依赖「${dep.title}」的 PR 未确认合并`,
+          reason: 'blocked_dependency_delivery',
+          detail: `依赖「${dep.title}」在交付「${verdict.delivery?.title ?? ''}」,该交付未合入主线`,
           wakeAt: null,
         }
+      }
+      return {
+        eligible: false,
+        reason: 'blocked_dependency_pr_unmerged',
+        detail:
+          verdict.reason === 'pr_unmerged'
+            ? `依赖「${dep.title}」在交付「${verdict.delivery?.title ?? ''}」中的 PR 未确认合并`
+            : `依赖「${dep.title}」的 PR 未确认合并`,
+        wakeAt: null,
       }
     }
     if (m.backoffUntil !== null && m.backoffUntil > now) {
@@ -344,10 +426,19 @@ export function reconcileQueue(input: QueueReconcileInput): QueueReconcileOutput
     gateOf.set(intent.id, gate)
     noteWake(gate.wakeAt)
     if (gate.eligible) eligible.push(intent)
+    // A stale PR row is the commonest false block, so a PR-shaped block schedules
+    // a refresh. `blocked_dependency_delivery` never does: a delivery's status is
+    // a local ledger fact, and no forge call can change it.
     if (gate.reason === 'blocked_dependency_pr_unmerged') {
+      const ctx = deliveryContextOf(intent) ?? null
       for (const depId of intent.dependsOn) {
         const dep = byId.get(depId)
-        if (dep && dep.status === 'done' && dep.prStatus !== 'merged') unmergedDepIds.add(dep.id)
+        if (!dep || dep.status !== 'done') continue
+        const prStatus =
+          ctx !== null && dep.deliveryIds.includes(ctx)
+            ? (dep.prStatusByDelivery[ctx] ?? null)
+            : dep.prStatus
+        if (prStatus !== 'merged') unmergedDepIds.add(dep.id)
       }
     }
   }

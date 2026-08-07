@@ -1085,7 +1085,8 @@
         "prCreated": "PR created",
         "prMerged": "PR merged",
         "prClosed": "PR closed",
-        "prUpdated": "PR updated"
+        "prUpdated": "PR updated",
+        "dependencyGateForceRelease": "Dependency gate force-released"
       }
     },
     "intentSession": {
@@ -1168,6 +1169,38 @@
         "label": "Raw error"
       },
       "noDetail": "No detail was returned."
+    },
+    "gateEscape": {
+      "dependency": {
+        "title": {
+          "label": "Force-release the dependency gate?"
+        },
+        "risk": {
+          "label": "The output you depend on is probably not on your base. Later merges may conflict or need rework. This applies to this launch only, skips nothing but the dependency gate, and is recorded in the changelog."
+        },
+        "confirm": {
+          "label": "Force-release and start"
+        }
+      },
+      "worktree": {
+        "title": {
+          "label": "Worktree baseline does not match"
+        },
+        "merge": {
+          "label": "Merge the branch in"
+        },
+        "rebuild": {
+          "label": "Rebuild the worktree"
+        }
+      },
+      "deliveryContext": {
+        "title": {
+          "label": "Which delivery does this session develop against?"
+        },
+        "confirm": {
+          "label": "Start with this delivery"
+        }
+      }
     }
   },
   "session": {
@@ -2082,7 +2115,17 @@
       "gitCleanupPrFailed": "Automatic PR creation failed: {detail}. Create the PR manually.",
       "worktreeCreateFailed": "Worktree creation failed: {message}.",
       "pullFailed": "The current branch has diverged from the remote and cannot fast-forward. Reconcile it manually before starting work: {message}",
+      "worktreeBaseMismatch": "The existing worktree is not based on \"{branch}\" (delivery \"{deliveryTitle}\"). c3 never rebuilds or merges it for you — rebuild it, or merge the branch in.",
+      "worktreeBaseMismatchDirty": "The existing worktree is not based on \"{branch}\" (delivery \"{deliveryTitle}\") and holds uncommitted work. Commit or stash it first, or merge the branch in.",
+      "worktreeDirty": "The worktree holds uncommitted work — commit or stash it before rebuilding. c3 never discards it for you.",
+      "worktreeRepairFailed": "Worktree repair failed: {message}",
       "dependencyNotMerged": "Dependency \"{title}\" ({id}) has not been merged to the main branch yet.",
+      "dependencyPrUnmergedInDelivery": "Dependency \"{title}\" ({id}) has an unmerged PR toward delivery \"{deliveryTitle}\" ({deliveryId}), so its output is not on your base yet.",
+      "dependencyDeliveryNotDelivered": "Dependency \"{title}\" ({id}) belongs to delivery \"{deliveryTitle}\" ({deliveryId}), which has not been merged into mainline yet.",
+      "deliveryContextRequired": "This intent is linked to several deliveries. Choose which one the session develops against before starting.",
+      "deliveryContextUnknown": "The chosen delivery does not exist in this workspace.",
+      "deliveryContextNotLinked": "The intent is not linked to the chosen delivery.",
+      "deliveryNotWritable": "Delivery \"{deliveryTitle}\" ({deliveryId}) is {status} and accepts no new work — merging more code would invalidate its verification.",
       "specAgentUnsupported": "Spec authoring requires a Claude agent; the configured spec agent cannot confine writes to the spec directory.",
       "specWriteFailed": "Failed to create the spec document: {message}.",
       "specNotWritten": "The spec has not been written yet; author it before approving.",
@@ -2161,7 +2204,10 @@
       "intentAlreadyLinked": "This intent is already linked to the delivery.",
       "unlinkMergedPrDenied": "This intent’s PR toward the delivery is already merged, so it cannot be unlinked. Revert the merge first.",
       "unlinkClosePrFailed": "Unlink blocked — could not close the PR: {detail}.",
-      "unlinkPrStatusCheckFailed": "Unlink blocked — could not read the PR status from the forge: {detail}."
+      "unlinkPrStatusCheckFailed": "Unlink blocked — could not read the PR status from the forge: {detail}.",
+      "syncMainlineForbidden": "Syncing mainline is only available while a delivery is integrating.",
+      "syncMainlineConflict": "The mainline merge hit conflicts and was aborted — nothing was pushed. Resolve them yourself: {detail}",
+      "syncMainlineFailed": "Syncing mainline failed: {detail}"
     }
   },
   "statusIndicator": {
@@ -2605,6 +2651,31 @@
       },
       "diffBloat": {
         "label": "This intent’s commits are based on mainline, so a PR toward the delivery branch will also contain the difference between mainline and the delivery branch."
+      }
+    },
+    "syncMainline": {
+      "action": {
+        "label": "Sync mainline"
+      },
+      "behind": {
+        "label": "Mainline is {count} commit(s) ahead of this delivery branch. Syncing now keeps the final merge close to a fast-forward."
+      },
+      "confirm": {
+        "title": {
+          "label": "Sync mainline into the delivery branch?"
+        },
+        "body": {
+          "label": "This merges origin/{base} into {branch} and pushes it. Conflicts are surfaced as-is and never resolved for you."
+        }
+      },
+      "done": {
+        "label": "Mainline synced ({count} commit(s) merged)."
+      },
+      "upToDate": {
+        "label": "Already up to date with mainline."
+      },
+      "running": {
+        "label": "Syncing mainline…"
       }
     }
   },
@@ -3344,6 +3415,9 @@
       "blocked_concurrency_gate": "Global concurrency gate",
       "blocked_dependency": "Dependency not finished",
       "blocked_dependency_pr_unmerged": "Dependency PR not merged",
+      "blocked_dependency_delivery": "Dependency's delivery not on mainline",
+      "blocked_delivery_status": "Delivery closed to new work",
+      "blocked_delivery_ambiguous": "Several deliveries — a human must choose",
       "blocked_spec_not_approved": "Spec not approved",
       "blocked_backoff": "Backing off after a failure",
       "blocked_parked": "Parked",

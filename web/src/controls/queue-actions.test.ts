@@ -70,6 +70,8 @@ function makeCtx(opts: { project?: string | null } = {}) {
     automationSettingBeforeSave: ref(null),
     // Delivery refs touched by the message-handler's error branch; a no-op here.
     activeDeliveryBranchInit: ref(null),
+    activeDeliverySyncPhase: ref(null),
+    activeDeliveryMainlineAhead: ref(null),
     activeDelivery: ref(null),
     activeDeliveryId: ref(null),
   } as unknown as AppCtx

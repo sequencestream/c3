@@ -20,7 +20,14 @@ import {
   updateIntentDeps,
   updateStatus,
 } from './store.js'
-import { findDependencyBlockingMainline, prepareSpecLaunch } from './dependency-gate.js'
+import {
+  evaluateIntentDependencyGate,
+  prepareSpecLaunch,
+  toDependencyGateFact,
+} from './dependency-gate.js'
+import { reconcileQueue } from '../../kernel/queue/reconcile.js'
+import { deriveIntentPrAggregate } from '@ccc/shared'
+import type { QueueIntentFact } from '../../kernel/queue/types.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
 import { pullCurrentBranch } from './worktree.js'
 
@@ -83,22 +90,131 @@ function dep(overrides: Partial<Intent> = {}): Intent {
   }
 }
 
-describe('findDependencyBlockingMainline', () => {
+/**
+ * The adapter's own responsibility: reduce ledger rows into gate facts and hand
+ * them to the shared criterion. The criterion's three states are proven in
+ * `shared/src/dependency-gate-model.test.ts`; what is checked here is that the
+ * REDUCTION is faithful — a wrong `prs` → `prAggregate` mapping would silently
+ * change every verdict.
+ */
+/** `queue-ledger.ts#toFact` 的等价投影,只保留一致性断言需要的字段。 */
+function toQueueFact(r: Intent): QueueIntentFact {
+  const gate = toDependencyGateFact(r)
+  return {
+    id: r.id,
+    title: r.title,
+    status: r.status,
+    priority: r.priority,
+    automate: r.automate,
+    dependsOn: r.dependsOn,
+    specStatus: r.specStatus,
+    prStatus: deriveIntentPrAggregate(r.prs),
+    branchName: gate.branchName,
+    deliveryIds: gate.deliveryIds,
+    prStatusByDelivery: gate.prStatusByDelivery,
+    lastWorkSessionId: null,
+    createdAt: r.createdAt,
+    specPath: null,
+    specSessionId: null,
+    specReviewSessionId: null,
+    specFingerprint: null,
+    specReviewVerdict: null,
+    specReviewFingerprint: null,
+    specReviewReworkRounds: 0,
+    specReviewMachineApprovalBlocked: false,
+  }
+}
+
+describe('evaluateIntentDependencyGate (适配层归约)', () => {
+  const gate = (dependencies: Intent[]): ReturnType<typeof evaluateIntentDependencyGate> =>
+    evaluateIntentDependencyGate({
+      workspacePath: '/nonexistent',
+      dependsOn: ['dep'],
+      sessionDeliveryId: null,
+      intents: dependencies,
+      deliveries: [],
+      gitBranchMode: 'worktree',
+      defaultMainBranch: 'main',
+    })
+
   it('covers missing, unfinished, merged, branchless, mainline, and unmerged feature dependencies', () => {
-    expect(findDependencyBlockingMainline(['missing'], [], 'main')).toBeUndefined()
-    expect(findDependencyBlockingMainline(['dep'], [dep({ status: 'todo' })], 'main')?.id).toBe(
-      'dep',
-    )
-    expect(
-      findDependencyBlockingMainline(['dep'], [dep({ prs: fakeIntentPrs('merged') })], 'main'),
-    ).toBeUndefined()
-    expect(
-      findDependencyBlockingMainline(['dep'], [dep({ branchName: null })], 'main'),
-    ).toBeUndefined()
-    expect(
-      findDependencyBlockingMainline(['dep'], [dep({ branchName: 'origin/main' })], 'main'),
-    ).toBeUndefined()
-    expect(findDependencyBlockingMainline(['dep'], [dep()], 'main')?.id).toBe('dep')
+    expect(gate([]).blocked).toBe(false)
+    expect(gate([dep({ status: 'todo' })])).toMatchObject({ blocked: true, reason: 'not_done' })
+    expect(gate([dep({ prs: fakeIntentPrs('merged') })]).blocked).toBe(false)
+    expect(gate([dep({ branchName: null })]).blocked).toBe(false)
+    expect(gate([dep({ branchName: 'origin/main' })]).blocked).toBe(false)
+    expect(gate([dep()])).toMatchObject({
+      blocked: true,
+      reason: 'not_on_mainline',
+      dependency: { id: 'dep' },
+    })
+  })
+})
+
+/**
+ * 「两条路径结论一致」不是一句承诺,而是一条可执行的断言:同一组事实分别喂给
+ * 手工路径的适配层和队列内核,两边必须给出同一个「放行 / 阻塞」。
+ *
+ * 这是本次变更的核心验收 —— 改动之前,这两条路径持有**不同的规则**(队列只看聚合
+ * PR 是否 merged,手工路径还接受「依赖分支即主线」),对同一批事实可以给出相反结论。
+ */
+describe('两条路径结论一致', () => {
+  /** 覆盖旧判据全部分支的事实集:各自应当放行还是阻塞。 */
+  const CASES: { name: string; dep: Intent; blocked: boolean }[] = [
+    { name: '依赖未完成', dep: dep({ status: 'todo' }), blocked: true },
+    { name: '聚合 PR 已合入', dep: dep({ prs: fakeIntentPrs('merged') }), blocked: false },
+    { name: '依赖分支即主线', dep: dep({ branchName: 'main' }), blocked: false },
+    { name: '依赖无分支', dep: dep({ branchName: null }), blocked: false },
+    {
+      name: '分支非主线且 PR 未合入',
+      dep: dep({ prs: fakeIntentPrs('reviewing') }),
+      blocked: true,
+    },
+  ]
+
+  it.each(CASES)('$name', ({ dep: dependency, blocked }) => {
+    const child: Intent = dep({ id: 'child', status: 'todo', dependsOn: ['dep'], branchName: null })
+
+    // 手工路径:适配层归约 → 共享判据。
+    const manual = evaluateIntentDependencyGate({
+      workspacePath: '/nonexistent',
+      dependsOn: child.dependsOn,
+      sessionDeliveryId: null,
+      intents: [dependency, child],
+      deliveries: [],
+      gitBranchMode: 'worktree',
+      defaultMainBranch: 'main',
+    })
+
+    // 队列路径:同一组事实经内核事实投影 → 同一份共享判据。
+    const queue = reconcileQueue({
+      now: 1_800_000_000_000,
+      tickId: 'consistency',
+      workspacePath: '/nonexistent',
+      control: { state: 'running', startedAt: 0, forceSkipped: [] },
+      snapshotOk: true,
+      intents: [
+        { ...toQueueFact(dependency), automate: false },
+        { ...toQueueFact(child), automate: true },
+      ],
+      runs: [],
+      meta: {},
+      inFlight: [],
+      gitBranchMode: 'worktree',
+      defaultMainBranch: 'main',
+      deliveries: [],
+      sddEnabled: false,
+      machineApprovalEnabled: false,
+      automationConcurrency: 1,
+      specRuns: [],
+      specInFlight: [],
+    })
+    const queueBlocked = queue.decisions
+      .find((d) => d.intentId === 'child')!
+      .reason.startsWith('blocked_dependency')
+
+    expect(manual.blocked).toBe(blocked)
+    expect(queueBlocked).toBe(blocked)
   })
 })
 
@@ -170,9 +286,12 @@ describe('prepareSpecLaunch', () => {
 
     const { result, stages } = run(target)
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       blocked: true,
-      dependency: { id: dependency.id, title: dependency.title },
+      verdict: {
+        reason: 'not_on_mainline',
+        dependency: { id: dependency.id, title: dependency.title },
+      },
     })
     // Fire-and-forget refresh: a stale `reviewing` row is the usual false block.
     expect(syncMock).toHaveBeenCalledTimes(1)

@@ -1,96 +1,198 @@
+/**
+ * The feature-side ADAPTER over the one dependency criterion.
+ *
+ * The rule itself lives in `@ccc/shared` ({@link evaluateDependencyGate}) because
+ * the queue kernel needs the very same one and may not import features
+ * (ADR-0009). Everything here is the boundary work that pure function refuses to
+ * do: read the ledger, reduce intents and deliveries into facts, and translate a
+ * verdict into this layer's shapes. No criterion is re-stated in this file — a
+ * second statement is exactly how the manual path and the queue path came to
+ * disagree in the first place.
+ */
 import type { GitBranchMode, Intent, SpecLaunchStage } from '@ccc/shared/protocol'
-import { deriveIntentPrAggregate } from '@ccc/shared'
+import {
+  deriveIntentPrAggregate,
+  evaluateDependencyGate,
+  gateWantsPrStatusSync,
+  normalizeGateBranchName,
+  type DependencyGateFact,
+  type DependencyGateVerdict,
+  type DeliveryGateFact,
+  type UiErrorCode,
+} from '@ccc/shared'
 import { getDefaultMainBranch, getGitBranchMode } from '../../kernel/config/index.js'
 import { listIntents } from './store.js'
+import { deliveryGateFacts, impliedDeliveryContextId } from './delivery-context.js'
 import { syncUnconfirmedDependencyPrsInBackground } from './pr-status-sync.js'
 import { pullCurrentBranch } from './worktree.js'
 
 /** Normalise local and remote git branch references before comparison. */
-export function normalizeBranchName(branch: string | null | undefined): string | null {
-  const trimmed = branch?.trim()
-  if (!trimmed) return null
-  return trimmed
-    .replace(/^refs\/heads\//, '')
-    .replace(/^refs\/remotes\//, '')
-    .replace(/^origin\//, '')
-}
+export const normalizeBranchName = normalizeGateBranchName
 
 /**
- * Return the first dependency that is not available on the workspace mainline.
- * Missing dependency records are historical/invalid references and deliberately
- * remain non-blocking, matching the existing development-start behaviour.
+ * Reduce one intent into the dependency facts the criterion reads.
+ *
+ * `prStatusByDelivery` is keyed by delivery id because the ledger holds at most
+ * one PR per `(intent, delivery)` pair: the same-delivery branch of the gate asks
+ * about MY delivery's row, and the aggregate — which mixes in PRs toward other
+ * deliveries — would answer a different question.
  */
-export function findDependencyBlockingMainline(
-  dependsOn: string[],
-  intents: Intent[],
-  defaultMainBranch: string | null | undefined,
-): Intent | undefined {
-  const byId = new Map(intents.map((intent) => [intent.id, intent]))
-  const mainBranch = normalizeBranchName(defaultMainBranch)
-  return dependsOn
-    .map((id) => byId.get(id))
-    .find((dep): dep is Intent => {
-      if (!dep) return false
-      if (dep.status !== 'done') return true
-      // The dependency's AGGREGATE PR status — `merged` only when nothing it owns
-      // is still unsettled, so a second, still-open PR keeps the gate closed.
-      if (deriveIntentPrAggregate(dep.prs) === 'merged') return false
-      const branch = normalizeBranchName(dep.branchName)
-      if (branch === null) return false
-      return mainBranch === null || branch !== mainBranch
-    })
+export function toDependencyGateFact(dep: Intent): DependencyGateFact {
+  const prStatusByDelivery: Record<string, DependencyGateFact['prAggregate']> = {}
+  for (const pr of dep.prs) {
+    if (pr.deliveryId !== null) prStatusByDelivery[pr.deliveryId] = pr.status
+  }
+  return {
+    id: dep.id,
+    title: dep.title,
+    status: dep.status,
+    branchName: dep.branchName,
+    deliveryIds: dep.linkedDeliveries.map((d) => d.id),
+    prStatusByDelivery,
+    prAggregate: deriveIntentPrAggregate(dep.prs),
+  }
+}
+
+/** What an evaluation needs beyond the ledger, so callers can pass what they hold. */
+export interface DependencyGateContext {
+  workspacePath: string
+  dependsOn: readonly string[]
+  /** The session's delivery context; `null` = none (see `delivery-context.ts`). */
+  sessionDeliveryId: string | null
+  /** Pre-loaded workspace intents, when the caller already read them. */
+  intents?: readonly Intent[]
+  /** Pre-loaded delivery snapshot, when the caller already read it. */
+  deliveries?: readonly DeliveryGateFact[]
+  gitBranchMode?: GitBranchMode
+  defaultMainBranch?: string | null
 }
 
 /**
- * The first dependency that still trips the HARD dependency gate for an intent,
- * or `undefined` when none does. One rule, two readers: the launch gate that
- * refuses to start work, and the read-model projection that explains the refusal
- * to the user — so an explanation can never disagree with the refusal.
+ * Evaluate the dependency gate for one intent in one delivery context. The ONLY
+ * feature-side entry point: every caller (launch, resume, spec launch, the
+ * read-model projection) goes through here, so an explanation can never
+ * contradict a refusal.
+ */
+export function evaluateIntentDependencyGate(ctx: DependencyGateContext): DependencyGateVerdict {
+  const { workspacePath } = ctx
+  const intents = ctx.intents ?? listIntents(workspacePath)
+  return evaluateDependencyGate({
+    dependsOn: ctx.dependsOn,
+    dependencies: intents.map(toDependencyGateFact),
+    sessionDeliveryId: ctx.sessionDeliveryId,
+    deliveries: ctx.deliveries ?? deliveryGateFacts(workspacePath),
+    gitBranchMode: ctx.gitBranchMode ?? getGitBranchMode(workspacePath),
+    defaultMainBranch: ctx.defaultMainBranch ?? getDefaultMainBranch(workspacePath),
+  })
+}
+
+/**
+ * The blocking dependency as a read-model projection would show it, or
+ * `undefined` when the gate is open. Used where only "who am I waiting for"
+ * matters (the action descriptor); anything that must EXPLAIN the wait reads the
+ * verdict itself, which carries the reason and the delivery.
  *
- * - A dependency that is not `done` blocks in EVERY branch mode.
- * - In `worktree` mode a `done` dependency that is not on the mainline yet blocks
- *   as well (see {@link findDependencyBlockingMainline}).
- *
- * Declaration order in `dependsOn` decides which one is reported. Unresolvable
- * ids (cross-workspace / deleted) stay non-blocking, exactly as every other
- * entry point already treats them.
+ * The context is the intent's IMPLIED one (see `impliedDeliveryContextId`): a
+ * projection has no session and cannot ask, so an intent with several
+ * associations is projected under the delivery-less criterion.
  */
 export function findBlockingDependency(input: {
+  intent: Pick<Intent, 'dependsOn' | 'linkedDeliveries'>
+  workspacePath: string
+  intents: readonly Intent[]
+  gitBranchMode?: GitBranchMode
+  defaultMainBranch?: string | null
+}): { id: string; title: string } | undefined {
+  const verdict = evaluateIntentDependencyGate({
+    workspacePath: input.workspacePath,
+    dependsOn: input.intent.dependsOn,
+    sessionDeliveryId: impliedDeliveryContextId(input.intent),
+    intents: input.intents,
+    gitBranchMode: input.gitBranchMode,
+    defaultMainBranch: input.defaultMainBranch,
+  })
+  return verdict.blocked ? verdict.dependency : undefined
+}
+
+/**
+ * Run the `pr_unmerged` side effect: a stale `reviewing` row is the commonest
+ * false block, so a blocked-on-PR verdict kicks off a fire-and-forget refresh.
+ * A `delivery_not_delivered` block never does — a delivery's status is a local
+ * ledger fact, and there is no forge to ask.
+ */
+export function syncPrStatusForVerdict(input: {
+  verdict: DependencyGateVerdict
+  workspacePath: string
   dependsOn: string[]
-  intents: Intent[]
-  gitBranchMode: GitBranchMode
-  defaultMainBranch: string | null | undefined
-}): Intent | undefined {
-  if (input.gitBranchMode === 'worktree') {
-    return findDependencyBlockingMainline(input.dependsOn, input.intents, input.defaultMainBranch)
+  broadcastIntents: (workspacePath: string) => void
+}): void {
+  if (!gateWantsPrStatusSync(input.verdict)) return
+  syncUnconfirmedDependencyPrsInBackground({
+    ctx: { broadcastIntents: input.broadcastIntents },
+    workspacePath: input.workspacePath,
+    dependsOn: input.dependsOn,
+  })
+}
+
+/**
+ * Translate a blocked verdict into the `{code, params}` pair every entry point
+ * hands back. Minted HERE rather than at each call site so the three states can
+ * never be explained differently by two surfaces:
+ *
+ * - `pr_unmerged`            → 「依赖在交付 X 中的 PR 未合入」
+ * - `delivery_not_delivered` → 「依赖在交付 X,该交付未合入主线」(+ jump target)
+ * - `not_done` / `not_on_mainline` → the historic `intent.dependencyNotMerged`.
+ *
+ * `deliveryId` travels as a param on the two delivery states so the page can
+ * link straight to the delivery that is holding the work back.
+ */
+export function dependencyGateRejection(
+  verdict: Extract<DependencyGateVerdict, { blocked: true }>,
+): { code: UiErrorCode; params: Record<string, string> } {
+  const base = { title: verdict.dependency.title, id: verdict.dependency.id }
+  if (verdict.delivery === null) {
+    return { code: 'intent.dependencyNotMerged', params: base }
   }
-  const byId = new Map(input.intents.map((intent) => [intent.id, intent]))
-  return input.dependsOn
-    .map((id) => byId.get(id))
-    .find((dep): dep is Intent => !!dep && dep.status !== 'done')
+  const params = {
+    ...base,
+    deliveryTitle: verdict.delivery.title,
+    deliveryId: verdict.delivery.id,
+  }
+  return {
+    code:
+      verdict.reason === 'pr_unmerged'
+        ? 'intent.dependencyPrUnmergedInDelivery'
+        : 'intent.dependencyDeliveryNotDelivered',
+    params,
+  }
 }
 
 /**
  * The outcome of the spec-launch gate, stated as a DOMAIN fact only: either the
- * launch may proceed, or one dependency is not on the mainline yet. It carries
- * no error code, no frame and no launch result — every entry point mints its own
- * `intent.dependencyNotMerged` shape, so transport never leaks back in here.
+ * launch may proceed, or the dependency criterion is closed. It carries the
+ * verdict verbatim (reason + dependency + delivery) but no error code, no frame
+ * and no launch result — every entry point mints its own rejection shape, so
+ * transport never leaks back in here.
  */
 export type SpecLaunchGateResult =
-  { blocked: false } | { blocked: true; dependency: Pick<Intent, 'id' | 'title'> }
+  { blocked: false } | { blocked: true; verdict: Extract<DependencyGateVerdict, { blocked: true }> }
 
 /**
- * The ONE spec-launch precondition: the worktree-mode dependency gate followed by
- * a best-effort pull of the current branch. Shared verbatim by the manual entry
- * (`reset_spec_session`) and by every branch of {@link launchSpecSession} (which
- * the `write_spec` handler, the automation MCP tool and the queue all reach), so
- * an unattended launch can never admit an intent the manual one would refuse.
+ * The ONE spec-launch precondition: the dependency gate followed by a
+ * best-effort pull of the current branch. Shared verbatim by the manual entry
+ * (`reset_spec_session`) and by every branch of `launchSpecSession` (which the
+ * `write_spec` handler, the automation MCP tool and the queue all reach), so an
+ * unattended launch can never admit an intent the manual one would refuse.
+ *
+ * A spec session writes only the spec directory and never roots a worktree, so
+ * it takes no explicit delivery context: it evaluates under the intent's IMPLIED
+ * one — its single association, or the delivery-less criterion when it has none
+ * or several.
  *
  * Order is part of the contract:
- *   1. Only in `worktree` mode, look for a dependency that is not on the mainline.
- *   2. Blocked → kick off a fire-and-forget PR-status refresh (a stale `reviewing`
- *      row is the most common false block) and return. Nothing is pulled and no
- *      progress is reported: the caller is about to refuse.
+ *   1. Evaluate the dependency criterion.
+ *   2. Blocked → run the verdict's PR-status side effect and return. Nothing is
+ *      pulled and no progress is reported: the caller is about to refuse.
  *   3. Otherwise report `pulling-code`, pull, then report `launching`. A failed
  *      pull is a warning, not a refusal — the session still starts.
  */
@@ -101,20 +203,19 @@ export function prepareSpecLaunch(input: {
   progress?: (stage: SpecLaunchStage) => void
 }): SpecLaunchGateResult {
   const { workspacePath, intent } = input
-  if (getGitBranchMode(workspacePath) === 'worktree') {
-    const blocking = findDependencyBlockingMainline(
-      intent.dependsOn,
-      listIntents(workspacePath),
-      getDefaultMainBranch(workspacePath),
-    )
-    if (blocking) {
-      syncUnconfirmedDependencyPrsInBackground({
-        ctx: { broadcastIntents: input.broadcastIntents },
-        workspacePath,
-        dependsOn: intent.dependsOn,
-      })
-      return { blocked: true, dependency: { id: blocking.id, title: blocking.title } }
-    }
+  const verdict = evaluateIntentDependencyGate({
+    workspacePath,
+    dependsOn: intent.dependsOn,
+    sessionDeliveryId: impliedDeliveryContextId(intent),
+  })
+  if (verdict.blocked) {
+    syncPrStatusForVerdict({
+      verdict,
+      workspacePath,
+      dependsOn: intent.dependsOn,
+      broadcastIntents: input.broadcastIntents,
+    })
+    return { blocked: true, verdict }
   }
   input.progress?.('pulling-code')
   const pull = pullCurrentBranch(workspacePath)

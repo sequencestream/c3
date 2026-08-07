@@ -36,6 +36,7 @@ web/src/
 │   ├── ConfirmDialog/ConfirmDialog.vue             # 通用二次确认模态框(项目内删除/危险操作统一走此组件,不用 window.confirm):受控 open,标题/正文/按钮文案注入,danger 确认色,点遮罩/Esc/取消均 emit cancel,移动端全屏 sheet
 │   ├── ErrorDialog/ErrorDialog.vue                 # 持久错误告知弹框:受控 open,点遮罩/Esc/关闭均 emit close,移动端全屏 sheet;可选 detail(+detailLabel)渲染为限高可滚的等宽诊断块(纯文本、保留换行,绝不插入 HTML),可选 actionLabel 才多出一个次级动作按钮并只 emit action(组件自身不导航、不重试)
 │   ├── IntentActionErrorDialog/IntentActionErrorDialog.vue  # 意图动作失败对话框(App 根级,包装 ErrorDialog):无 guidance→原样展示已翻译错误、无详情块无按钮;已识别原因→主展示为 lib/git-failure-guidance 按 reason 映射的定向修复指引、原始错误作诊断详情附下;unknown→主展示直接是原始错误(保留换行),无文本时用稳定兜底,且不展示任何臆测步骤;有合法 guidance 才渲染「重试开始工作/重试创建 PR」,点击先 close 再 emit retry(guidance)
+│   ├── GateEscapeDialog/GateEscapeDialog.vue       # 启动被闸门拦下后的「出口」弹窗(App 根级,与 IntentActionErrorDialog 二选一、绝不叠加):先摆服务端拒绝文案,再给该拒绝真正留下的出口。依赖闸门→「强制放行并启动」并**必须**同屏展示风险说明(合并冲突/返工由用户判断值不值);worktree 基线不符→「合入该分支」+(仅 worktree 干净时)「重建 worktree」,**无强制放行**,数据安全类阻塞没有逃生口;多交付关联→单选候选交付后启动,不提供默认值。本组件不发消息,只上抛 forceDependency / repairWorktree(rebuild|merge) / chooseDelivery
 │   ├── InputDialog/InputDialog.vue                 # 通用单行文本输入弹框(ConfirmDialog 风格 + 单行 input,替换 window.prompt):受控 open、标题/占位/按钮文案注入、打开聚焦并清空、输入为空时确认禁用、Enter 提交、遮罩/Esc/取消均 emit cancel、确认 emit confirm(trim 文本)、移动端全屏 sheet
 │   ├── ConsensusBlock/ConsensusBlock.vue           # 多 agent 共识自动裁定结果块(只读):AskUserQuestion 逐题自动作答、其他工具 allow/deny 裁定
 │   ├── DevStartupOverlay/DevStartupOverlay.vue     # 工作启动进度遮罩(App 根级,与全局 toast 同层):手动 Start Work 点击即全屏阻断,以最小停留防止快速启动闪烁,按有序步骤(拉取远程主分支/准备 worktree/启动工作会话/进入会话)展示后端 dev_launch_progress 阶段进度;纯展示(model 由控制层持有,判定在 lib/dev-launch-view.ts),就绪/失败/安全超时由控制层关闭
@@ -97,6 +98,7 @@ web/src/
 │   │   │       ├── DeliveryDetail.vue              # 详情容器:常驻标题栏(标题+状态徽标+取消动作(danger ConfirmDialog))+仅「概览/关联意图」两个 Tab(不设 PR/设置/分支独立 Tab);终态(已发布/已取消)说明文案;缺口跳转:关联意图→切关联意图 tab,分支未就绪→切概览并聚焦分支初始化区,工作区设置→上抛 open-workspace-settings;关联意图 tab 的 link/unlink 转发为 link-intent/unlink-intent
 │   │   │       ├── DeliveryStatusSelector.vue      # 状态分段选择器+常驻缺口:分段只含「当前状态+合法推进/回退目标」(非法目标不出现),可执行目标亮起可点、守卫未满足/系统专属置灰;选择器下方常驻 delivery.guard.* 缺口文案+对应跳转入口+「集成就绪 N/M」(N/M 并入说明,无独立进度条);verifying→verified 点击先弹 ConfirmDialog 显式人工确认
 │   │   │       ├── DeliveryOverviewTab.vue         # 概览 tab:顶部(current-branch 模式说明文案,动作区分支/PR/合并动作不渲染)+状态选择器+常驻缺口;分支初始化区(worktree 模式:未就绪→create/bind 切换+分支名输入(默认 delivery/<short-id>-<slug>)+初始化按钮+进度行;就绪→分支名;终态→清理分支 danger ConfirmDialog);下方元信息(状态/交付分支/基线分支/起止日期/交付 PR 链接(本阶段恒空)/创建/更新/描述)与内联编辑表单
+│   │   │       │   # 分支就绪且交付处于「集成中」时,分支就绪行下方出现「同步主线」区:主线领先时先显示「主线领先 N 个提交」提示,按钮点击弹 ConfirmDialog 说明「会把 origin/<base> 合入交付分支并推送,冲突原样浮出」,确认后按 fetching→merging→pushing 推进(期间按钮禁用)。只在「集成中」渲染——之前无可集成之物,验证起改动树正是让验证结论作废的事。
 │   │   │       └── DeliveryIntentsTab.vue          # 关联意图 tab:每行=意图标题/意图状态/**该意图对本交付的 PR 状态**(直接渲染服务端 associatedIntents[].prStatus,不做客户端聚合——全局 PR 聚合会把别的交付的状态显示到这里)/head 分支 + 集成就熟 N/M;解除关联收在行尾次级位置,PR 已 merged 的行渲染为禁用态+tooltip、未合并行走 danger ConfirmDialog 二次确认后 emit unlink(禁用只是提前表达,门禁在服务端);顶部「关联意图」按钮展开选择器,候选只列 linkedDeliveries 为空的意图(交互层不给一个意图关联多个交付的路径,数据层仍支持),确认 emit link;无独立 PR 列表/进度条
 │   │
 │   ├── discussions/                                 # 讨论页

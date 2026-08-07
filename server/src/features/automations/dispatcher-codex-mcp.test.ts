@@ -22,8 +22,11 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: () => (async function*
 vi.mock('../../kernel/config/index.js', () => ({
   loadSettings: () => ({ agents: [{ id: 'agent-codex', enabled: true, vendor: 'codex' }] }),
 }))
+const launchForAgentMock = vi.hoisted(() => ({
+  fn: (_agent?: unknown) => ({ model: 'test-model', envOverrides: {} }),
+}))
 vi.mock('../../kernel/agent-config/index.js', () => ({
-  launchForAgent: () => ({ model: 'test-model', envOverrides: {} }),
+  launchForAgent: (a: unknown) => launchForAgentMock.fn(a),
   setAgentEnabled: () => true,
 }))
 vi.mock('../../kernel/infra/child-env.js', () => ({
@@ -320,5 +323,56 @@ describe('codex automation MCP bridge — dispose on every terminal path', () =>
     await execute(codexAutomation({ toolAllowlist: ['mcp__c3__find_intents'] }), 'log-6', () => {})
     // No route → no crash, and no c3 descriptor handed to the driver.
     expect(startArg?.mcpServers).toBeUndefined()
+  })
+})
+
+describe('codex automation — capability passthrough (2026-08-08-013)', () => {
+  afterEach(() => {
+    launchForAgentMock.fn = () => ({ model: 'test-model', envOverrides: {} })
+  })
+
+  it('threads contextWindow/maxOutputTokens from launchForAgent into driver.start', async () => {
+    const { route } = fakeRoute()
+    setAutomationHttpMcp(route)
+    let startArg: Record<string, unknown> | undefined
+    codexStart.fn = (o) => {
+      startArg = o as Record<string, unknown>
+      return Promise.resolve(successfulRun())
+    }
+    // The agent config carries capability fields ⇒ launchForAgent yields them.
+    launchForAgentMock.fn = () => ({
+      model: 'deepseek-v4-flash',
+      envOverrides: {},
+      relayCandidates: [
+        {
+          baseUrl: 'https://api.deepseek.com',
+          apiKey: 'sk',
+          model: 'deepseek-v4-flash',
+          wireApi: 'chat',
+        },
+      ],
+      contextWindow: 65536,
+      maxOutputTokens: 8192,
+    })
+
+    await execute(codexAutomation({ toolAllowlist: ['Read'] }), 'log-caps-1', () => {})
+
+    expect(startArg?.contextWindow).toBe(65536)
+    expect(startArg?.maxOutputTokens).toBe(8192)
+  })
+
+  it('omits the capability fields when launchForAgent returns none', async () => {
+    const { route } = fakeRoute()
+    setAutomationHttpMcp(route)
+    let startArg: Record<string, unknown> | undefined
+    codexStart.fn = (o) => {
+      startArg = o as Record<string, unknown>
+      return Promise.resolve(successfulRun())
+    }
+
+    await execute(codexAutomation({ toolAllowlist: ['Read'] }), 'log-caps-2', () => {})
+
+    expect(startArg?.contextWindow).toBeUndefined()
+    expect(startArg?.maxOutputTokens).toBeUndefined()
   })
 })

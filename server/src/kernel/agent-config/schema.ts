@@ -61,6 +61,14 @@ export const codexConfigSchema = z.object({
   // pre-2026-06-12-006 third-party-via-relay behaviour — and keeps the inferred
   // OUTPUT type required, matching the wire `CodexAgentConfig`.
   wireApi: z.enum(['responses', 'chat']).default('chat'),
+  // Optional model-capability fields (2026-08-08-013): when present, the codex
+  // driver's relay branch registers the model in a local catalog so codex stops
+  // falling back to default metadata for an id it does not know. Absent ⇒ no
+  // catalog, current behaviour. Positive integers only — a bad value fails this
+  // arm, and the fail-soft normalize drops the whole agent (see the spec's
+  // numeric-boundary note).
+  contextWindow: z.number().int().positive().optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
 })
 
 /** The `codex` agent arm: public shell + `vendor: 'codex'` + codex config. */

@@ -39,6 +39,11 @@ import { codexCapabilities } from './capabilities.js'
 import { itemToCanonical } from './translate.js'
 import { CODEX_RELAY_PROVIDER, type Relay } from '../../../relay/contract.js'
 import { writeImageTempFiles, cleanupImageTempFiles, type ImageTempFiles } from './image-files.js'
+import {
+  writeModelCatalogFile,
+  cleanupModelCatalogFile,
+  type ModelCatalogFile,
+} from './model-catalog.js'
 import { resolve } from '../../process/launcher.js'
 import { withLoopbackNoProxy } from '../../../infra/no-proxy.js'
 
@@ -576,6 +581,7 @@ export class CodexDriver implements AgentDriver {
     //    the relay serves), and inject NO_PROXY so the loopback hop bypasses a user proxy.
     //  - DIRECT: no candidates (system mode) ⇒ the Codex CLI's own login/config applies.
     let relayToken: string | undefined
+    let modelCatalog: ModelCatalogFile | null = null
     let codexOptions: CodexFactoryOptions
     if (this.relay && opts.relayCandidates && opts.relayCandidates.length > 0) {
       relayToken = this.relay.register(opts.relayCandidates)
@@ -599,6 +605,35 @@ export class CodexDriver implements AgentDriver {
             },
           },
         },
+      }
+      // Custom-model catalog (2026-08-08-013): codex's bundled metadata catalog
+      // does not know third-party model ids, so a custom codex run falls back to
+      // default metadata (the `Model metadata for <id> not found` warning) unless
+      // the id is registered locally via `model_catalog_json`. When the agent
+      // configured capability fields, register the CLI-launched model (the first
+      // relay candidate's id — what codex resolves metadata for) with those
+      // capabilities; the `model_catalog_json` top-level key flattens into
+      // `--config model_catalog_json=<path>` like any other config override.
+      // SANDBOX RULE: the file must land inside the arapuca allow-set temp dir
+      // (`sandboxTmpDir`) or the sandboxed codex cannot read it at startup — when
+      // that dir is missing on a sandboxed run, drop the catalog (with a warning)
+      // rather than write outside the allow set and break the run.
+      const hasModelCaps = opts.contextWindow !== undefined || opts.maxOutputTokens !== undefined
+      if (hasModelCaps) {
+        if (opts.sandboxWrapperPath && !opts.sandboxTmpDir) {
+          console.warn(
+            '[c3] codex sandbox run: model catalog skipped (no sandboxTmpDir in the arapuca ' +
+              'allow set) — codex falls back to default metadata for this model.',
+          )
+        } else {
+          modelCatalog = writeModelCatalogFile({
+            modelId: opts.relayCandidates[0].model,
+            contextWindow: opts.contextWindow,
+            maxOutputTokens: opts.maxOutputTokens,
+            sandboxTmpDir: opts.sandboxTmpDir,
+          })
+          codexOptions.config = { ...codexOptions.config, model_catalog_json: modelCatalog.path }
+        }
       }
     } else {
       // `CodexOptions.env` REPLACES process.env (see codexExecEnv), so overrides
@@ -785,6 +820,7 @@ export class CodexDriver implements AgentDriver {
         resolveSid(sid) // never leave sessionId() hanging if the turn never started.
         if (relayToken) this.relay?.unregister(relayToken) // evict the per-run binding.
         cleanupImageTempFiles(imageFiles) // remove the per-turn image temp files.
+        cleanupModelCatalogFile(modelCatalog) // remove the per-run model catalog (host or sandbox).
       }
     }
     void pump()

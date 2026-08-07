@@ -124,6 +124,41 @@ without it the test SKIPs.
 - `pnpm build && node scripts/e2e/e2e-delivery-pr-test.mjs`
   → expect `RESULT: PASS`.
 
+## Delivery status guard (拒绝不可达迁移 / 守卫缺口)
+
+`scripts/e2e/e2e-delivery-transition-test.mjs`
+
+`canTransitionDelivery` is exhaustively unit-tested; what only the real wire can
+show is that a refusal reaches the client as a **typed** `delivery_transition_failed`
+frame carrying the gaps, the current status and the attempted target — not as a
+generic `error`, and not as a silent no-op the page would render as success. The
+page builds its segmented selector out of exactly those fields.
+
+One fresh `planned` delivery with no branch and no associations; no forge, no
+network. PASS asserts:
+
+- an **unreachable** edge (`planned → delivered`) is refused with
+  `delivery.invalidStatusTransition` and an EMPTY gap list — there is no gap to
+  close, the edge does not exist;
+- a **reachable-but-blocked** edge (`planned → integrating` with no branch) is
+  refused with `delivery.transitionGuardFailed` and the structured gap
+  `delivery.guard.branchNotReady`; the two codes stay distinct — 「不可达」 and
+  「未满足」 are different answers and the page must not conflate them;
+- both refusals echo `currentStatus` + `to`, and name the delivery;
+- the `transitionPlan` never OFFERS an unreachable target, and reports the SAME
+  gap the refusal did (one server-side source, recomputed on every read);
+- a **system-only** edge (`verified → delivered`, which the forge's merge drives)
+  is refused for a human caller with `delivery.guard.systemOnly`. Reaching
+  `verified` honestly needs a branch, associations and a forge, so this section
+  seeds the status straight into the ledger and only the refusal travels the wire;
+  it is skipped without `C3_DB_PATH`;
+- no refusal writes anything, and none degrades into a generic `error` frame.
+
+No agent tokens are spent.
+
+- `C3_DB_PATH=~/.c3/c3.db node scripts/e2e/e2e-delivery-transition-test.mjs ws://localhost:13000/ws`
+  → expect `RESULT: PASS`.
+
 ## Dependency gate (same-delivery / cross-delivery / no-delivery)
 
 `scripts/e2e/e2e-dependency-gate-test.mjs`

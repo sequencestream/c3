@@ -428,9 +428,15 @@ worktree、本地分支与不可逆性,`in_progress` 额外提示工作产物(�
   [intent-management-models.md](intent-management-models.md) 的 Intent PR)。由三条创建路径
   (手动 `create_pr`、手动会话结束清理 RM-R26、自动化队列)、状态同步能力,以及
   **`pr:operation` update 消费者(RM-R29)** 写入,全部收敛到仓储层唯一写入口 `upsertIntentPr`。
-  PR 协调能力(MCP `save_intent_pr_info`)是绑定工作区的:它只能**更新既有** PR 行的生命周期
-  状态,并对一个已合并的 PR 将关联意图标记为完成;该意图没有 PR 行、或存在多条活跃 PR 时它
-  一律拒绝 —— 它拿不到 PR 的来源,不具备凭空造出一条 PR 事实的资格。
+  PR 协调能力(MCP `save_intent_pr_info`)**已废弃**:一个意图现在可能同时持有多条 PR(每个交付
+  一条),而该工具唯一的定位符是 `intentId`,指向的是一个集合而不是一行。它已从全部允许列表移除
+  ——自动化工具集、内置模板、外部可授权目录都不再包含它,新的授权无法再产生。替代路径是只读的
+  `find_intents` / `view_intent` 读现状,加上携带 `association.deliveryId` 或 `pr.number` 的
+  `pr:update` 事件做复位(RM-R29),终态则由 c3 自己从 forge 事实落库。核心实现作为**过渡期**
+  保留,并保持它原有的两条拒绝:它只能**更新既有** PR 行的生命周期状态,并对一个已合并的 PR 将
+  关联意图标记为完成;该意图没有 PR 行时拒绝(它拿不到 PR 的来源,不具备凭空造出一条 PR 事实的
+  资格),存在多条活跃 PR 时**明确报错并列出各 PR 编号**、绝不猜一条——猜错会污染一条真实 PR 的
+  状态,比不写严重得多。这条拒绝有单测钉死,防止后续改动把它退化成猜测。
   **模型 update 事件触发的 PR 状态复位(RM-R29):** 当模型为其拥有的一条意图(同一工作区)发布
   一个携带 `association.intentId` 的 `pr:operation` `update`/`success` 事件时,消费者定位事件
   所指的 PR 行(带 `data.pr.number` 即精确定位;不带则回退到该意图唯一的未合并行,有多条则忽略

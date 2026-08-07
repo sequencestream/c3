@@ -144,8 +144,38 @@ describe('PR event integration — model tool + server-side create share the gen
       operation: 'create',
       result: 'success',
       pr: { url: 'https://h/pull/42' },
-      ref: { head: 'intent/i3-feature' },
+      // No delivery binding → the PR targets mainline, stated explicitly.
+      ref: { head: 'intent/i3-feature', baseTarget: 'mainline' },
       association: { intentId: 'I3' },
+    })
+  })
+
+  it('a delivery-bound PR create names the delivery branch as its merge target', () => {
+    const { received, normalizeEvent, publishEvent } = wire()
+    runServerSidePrCreate(
+      {
+        prId: 'pr-9',
+        prUrl: 'https://h/pull/9',
+        headBranch: 'intent/i7-feature',
+        baseBranch: 'delivery/sprint-3',
+        intentId: 'I7',
+        deliveryId: 'D1',
+      },
+      normalizeEvent,
+      (event) => publishEvent({ workspacePath: '/proj', sessionId: 'sess-7', event }),
+    )
+
+    expect(projectPrOperationEvent(received[0].event)).toEqual({
+      operation: 'create',
+      result: 'success',
+      pr: { url: 'https://h/pull/9' },
+      ref: {
+        head: 'intent/i7-feature',
+        base: 'delivery/sprint-3',
+        baseBranch: 'delivery/sprint-3',
+        baseTarget: 'delivery-branch',
+      },
+      association: { intentId: 'I7', deliveryId: 'D1' },
     })
   })
 

@@ -70,14 +70,22 @@ const READ_MCP_PREFIXES = [
  *
  * Fully-qualified names: `mcp__c3__find_intents`, `mcp__c3__view_intent`,
  * `mcp__c3__save_intents`.
+ *
+ * Being listed here only makes a tool SELECTABLE. Nothing is attached to an
+ * execution that did not tick it, and no built-in automation template ticks the
+ * delivery tools — 「默认不勾选」 in this surface means exactly that.
  */
 export const C3_MCP_TOOLS: readonly FrozenToolEntry[] = [
   { name: 'mcp__c3__find_intents', isWrite: false },
   { name: 'mcp__c3__view_intent', isWrite: false },
   { name: 'mcp__c3__save_intents', isWrite: true },
-  { name: 'mcp__c3__save_intent_pr_info', isWrite: true },
   { name: 'mcp__c3__save_intent_directly', isWrite: true },
   { name: 'mcp__c3__publish_event', isWrite: true },
+  // Delivery tools: READ-ONLY on purpose. A delivery status write funnels through
+  // the state machine and its guards, so there is no delivery write tool to select
+  // here — an automation observes deliveries, a human (or a forge fact) moves them.
+  { name: 'mcp__c3__find_deliveries', isWrite: false },
+  { name: 'mcp__c3__view_delivery', isWrite: false },
   // Discussion tools (automation LLM execution): find/view are read-only;
   // start/continue drive an orchestration run and are writes.
   { name: 'mcp__c3__find_discussions', isWrite: false },

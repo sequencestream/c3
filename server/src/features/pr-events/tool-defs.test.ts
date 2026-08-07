@@ -82,6 +82,66 @@ describe('normalizePrGenericEvent — the pr:operation registry entry (AC3)', ()
     })
   })
 
+  it('carries a pr:merge merge target through normalize → projection', () => {
+    // The base of a `pr:merge` may now be a delivery branch rather than mainline;
+    // a subscriber that fires a release must be able to tell the two apart.
+    const core = prArgsToGenericEvent({
+      operation: 'merge',
+      result: 'success',
+      pr: { number: 7 },
+      ref: {
+        head: 'delivery/sprint-3',
+        base: 'main',
+        baseBranch: 'main',
+        baseTarget: 'mainline',
+      },
+    })
+    const res = normalize(core)
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(projectPrOperationEvent(res.event)?.ref).toEqual({
+      head: 'delivery/sprint-3',
+      base: 'main',
+      baseBranch: 'main',
+      baseTarget: 'mainline',
+    })
+  })
+
+  it('carries a delivery-branch merge target the same way', () => {
+    const res = normalize(
+      prArgsToGenericEvent({
+        operation: 'merge',
+        result: 'success',
+        ref: {
+          head: 'intent/i1-feature',
+          base: 'delivery/sprint-3',
+          baseBranch: 'delivery/sprint-3',
+          baseTarget: 'delivery-branch',
+        },
+        association: { intentId: 'I1', deliveryId: 'D1' },
+      }),
+    )
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(projectPrOperationEvent(res.event)?.ref).toMatchObject({
+      baseBranch: 'delivery/sprint-3',
+      baseTarget: 'delivery-branch',
+    })
+  })
+
+  it('an old event form with only head/base stays valid and gains no invented target', () => {
+    const res = normalize(
+      prArgsToGenericEvent({
+        operation: 'merge',
+        result: 'success',
+        ref: { head: 'feat/x', base: 'main' },
+      }),
+    )
+    expect(res.ok).toBe(true)
+    if (!res.ok) return
+    expect(projectPrOperationEvent(res.event)?.ref).toEqual({ head: 'feat/x', base: 'main' })
+  })
+
   it.each([
     ['pr.title', { pr: { title: 'x ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345' } }],
     ['repo.owner', { repo: { owner: 'o glpat-ABCDEFGHIJKLMNOP1234' } }],
@@ -226,6 +286,21 @@ describe('normalizePrEvent — full event normalization', () => {
       ref: { head: 'feat/cache', base: 'main' },
       association: { intentId: 'intent-1' },
     })
+  })
+
+  it('drops a baseTarget outside the union instead of passing it through', () => {
+    // A subscriber branching on `baseTarget` must never see a third value; the
+    // rest of `ref` survives, so the event is still usable.
+    const event = normalizePrEvent({
+      operation: 'merge',
+      result: 'success',
+      ref: {
+        head: 'feat/x',
+        baseBranch: 'main',
+        baseTarget: 'somewhere-else' as 'mainline',
+      },
+    })
+    expect(event.ref).toEqual({ head: 'feat/x', baseBranch: 'main' })
   })
 
   it('publishes an error result event and carries it through', () => {

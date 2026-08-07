@@ -119,26 +119,32 @@ export interface ExternalMcpToolDescriptor {
 }
 
 /**
- * The read-only tools every new key is granted. The server writes this set on
- * creation regardless of what the client asked for, so a forged "default" cannot
- * smuggle a write tool into a fresh key.
+ * Every READ-graded tool in the externally-grantable catalog — the grading
+ * source, NOT the default scope of a new key. Being listed here means an
+ * administrator MAY tick it; what a fresh key actually gets is
+ * {@link EXTERNAL_MCP_DEFAULT_TOOLS}.
  */
 export const EXTERNAL_MCP_READ_TOOLS = [
   'find_intents',
   'view_intent',
   'find_discussions',
   'view_discussion',
+  'find_deliveries',
+  'view_delivery',
   'publish_event',
 ] as const
 
 /**
  * The tools that really change c3 state. None is granted by default; each must be
  * ticked by an administrator, who is shown the risk before the scope is saved.
+ *
+ * There is deliberately no delivery write tool: a delivery status write funnels
+ * through the state machine and its guards, and a tool that set a status directly
+ * would route around all of them.
  */
 export const EXTERNAL_MCP_WRITE_TOOLS = [
   'save_intents',
   'save_intent_directly',
-  'save_intent_pr_info',
   'submit_spec_review',
   'start_session_for_intent',
   'start_discussion',
@@ -148,6 +154,25 @@ export const EXTERNAL_MCP_WRITE_TOOLS = [
 /** Every name that may ever appear in a key's tool scope. */
 export type ExternalMcpToolName =
   (typeof EXTERNAL_MCP_READ_TOOLS)[number] | (typeof EXTERNAL_MCP_WRITE_TOOLS)[number]
+
+/**
+ * What a NEW key is granted. The server writes exactly this set on creation
+ * regardless of what the client asked for, so a forged "default" cannot smuggle
+ * an ungranted tool into a fresh key.
+ *
+ * Deliberately a SEPARATE list from {@link EXTERNAL_MCP_READ_TOOLS} rather than
+ * "every read tool": the catalog says what an administrator may authorize, this
+ * says what is authorized without anybody deciding. The delivery read tools are
+ * in the catalog but NOT here — a fresh key must not silently gain the ability to
+ * read a workspace's delivery plan.
+ */
+export const EXTERNAL_MCP_DEFAULT_TOOLS = [
+  'find_intents',
+  'view_intent',
+  'find_discussions',
+  'view_discussion',
+  'publish_event',
+] as const satisfies readonly ExternalMcpToolName[]
 
 /**
  * The non-secret half of one long-lived external-MCP API key — everything the

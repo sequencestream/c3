@@ -21,10 +21,12 @@
  * PR on the model's behalf.
  */
 import {
+  PR_BASE_TARGETS,
   PR_OPERATIONS,
   PR_OPERATION_RESULTS,
   type GenericEvent,
   type JsonObject,
+  type PrBaseTarget,
   type PrBranchRef,
   type PrEventAssociation,
   type PrOperation,
@@ -143,6 +145,14 @@ export function normalizePrEvent(args: PublishPrEventArgs): PrOperationEvent {
     const ref = {
       ...(normalizeField(args.ref.head) ? { head: normalizeField(args.ref.head)! } : {}),
       ...(normalizeField(args.ref.base) ? { base: normalizeField(args.ref.base)! } : {}),
+      ...(normalizeField(args.ref.baseBranch)
+        ? { baseBranch: normalizeField(args.ref.baseBranch)! }
+        : {}),
+      // An unknown `baseTarget` is DROPPED rather than passed through: a
+      // subscriber branching on it must never see a value outside the union.
+      ...(args.ref.baseTarget && PR_BASE_TARGETS.includes(args.ref.baseTarget)
+        ? { baseTarget: args.ref.baseTarget }
+        : {}),
     }
     if (Object.keys(ref).length) event.ref = ref
   }
@@ -232,6 +242,11 @@ function readRef(v: unknown): PrBranchRef | undefined {
   const ref: PrBranchRef = {}
   if (readStr(o.head) !== undefined) ref.head = readStr(o.head)
   if (readStr(o.base) !== undefined) ref.base = readStr(o.base)
+  if (readStr(o.baseBranch) !== undefined) ref.baseBranch = readStr(o.baseBranch)
+  const target = readStr(o.baseTarget)
+  if (target !== undefined && (PR_BASE_TARGETS as readonly string[]).includes(target)) {
+    ref.baseTarget = target as PrBaseTarget
+  }
   return Object.keys(ref).length ? ref : undefined
 }
 
@@ -425,7 +440,14 @@ export function runServerSidePrCreate(
     operation: 'create',
     result: 'success',
     pr: { url: input.prUrl ?? undefined },
-    ref: { head: input.headBranch, base: input.baseBranch },
+    ref: {
+      head: input.headBranch,
+      base: input.baseBranch,
+      baseBranch: input.baseBranch,
+      // The delivery binding IS the answer: a PR carrying an intent toward a
+      // delivery targets that delivery's branch; without one it targets mainline.
+      baseTarget: input.deliveryId ? 'delivery-branch' : 'mainline',
+    },
     association: { intentId: input.intentId, deliveryId: input.deliveryId ?? undefined },
   }
   const res = normalize(prArgsToGenericEvent(args))

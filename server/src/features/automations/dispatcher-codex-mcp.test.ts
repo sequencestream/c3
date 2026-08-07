@@ -69,7 +69,8 @@ const SID = 'codex-automation-session'
 const FULL_TOOLS = [
   'find_intents',
   'view_intent',
-  'save_intent_pr_info',
+  'find_deliveries',
+  'view_delivery',
   'save_intent_directly',
   'publish_event',
   'find_discussions',

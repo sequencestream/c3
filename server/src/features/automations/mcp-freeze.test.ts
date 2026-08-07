@@ -149,9 +149,30 @@ describe('freezeTools — c3 in-process MCP tools', () => {
     expect(frozen.readToolNames.has('mcp__c3__find_intents')).toBe(true)
     expect(frozen.readToolNames.has('mcp__c3__view_intent')).toBe(true)
     expect(frozen.writeToolNames.has('mcp__c3__save_intents')).toBe(true)
-    expect(frozen.writeToolNames.has('mcp__c3__save_intent_pr_info')).toBe(true)
     expect(frozen.writeToolNames.has('mcp__c3__save_intent_directly')).toBe(true)
     expect(frozen.writeToolNames.has('mcp__c3__publish_event')).toBe(true)
+  })
+
+  it('offers the delivery tools as READ, and no delivery write tool at all', () => {
+    const frozen = freezeTools([], [], emptyConfig)
+    expect(frozen.readToolNames.has('mcp__c3__find_deliveries')).toBe(true)
+    expect(frozen.readToolNames.has('mcp__c3__view_delivery')).toBe(true)
+    // A status write funnels through the state machine; a tool that set one
+    // directly would route around every guard, so none is registered.
+    const names = C3_MCP_TOOLS.map((t) => t.name)
+    expect(names.filter((n) => n.includes('deliver'))).toEqual([
+      'mcp__c3__find_deliveries',
+      'mcp__c3__view_delivery',
+    ])
+  })
+
+  it('no longer offers the deprecated save_intent_pr_info anywhere', () => {
+    // Removed from the allowlist surface entirely: it cannot be ticked in the
+    // form, and it can never enter a frozen set.
+    expect(C3_MCP_TOOLS.map((t) => t.name)).not.toContain('mcp__c3__save_intent_pr_info')
+    const frozen = freezeTools([], [], emptyConfig)
+    expect(frozen.writeToolNames.has('mcp__c3__save_intent_pr_info')).toBe(false)
+    expect(frozen.readToolNames.has('mcp__c3__save_intent_pr_info')).toBe(false)
   })
 
   it('includes the four discussion tools with find/view read and start/continue write', () => {

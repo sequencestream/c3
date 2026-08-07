@@ -46,12 +46,21 @@ export const EVENT_CATALOG: Readonly<Record<string, EventCatalogCategory>> = {
     ),
   },
   delivery: {
+    // The delivery lifecycle as SYSTEM-OBSERVED FACTS, which is why none of them
+    // is a `pr:*` type — that category carries an automation's own PR operation,
+    // and reusing it would drift what a subscriber to it agreed to react to.
+    // Entering a terminal status publishes BOTH `status_changed` and the terminal
+    // action (`delivered` / `cancelled`): a `delivery:*` subscriber sees the whole
+    // transition trail, and a subscriber to only the terminal fact is unaffected.
     actions: {
-      // The delivery PR was merged on the forge and the delivery reached its
-      // terminal `delivered`. A system-observed FACT, which is why it is not
-      // `pr:merge` — that type carries an automation's PR operation, and reusing
-      // it would drift what a subscriber to it is agreeing to react to.
+      created: { statuses: [] },
+      // Every status write. `metadata.from` / `metadata.to` carry the edge, both
+      // valued from the six `DELIVERY_STATUSES`.
+      status_changed: { statuses: [] },
+      branch_ready: { statuses: [] },
+      pr_created: { statuses: [] },
       delivered: { statuses: [] },
+      cancelled: { statuses: [] },
     },
   },
   discussion: {

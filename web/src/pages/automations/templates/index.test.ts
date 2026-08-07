@@ -70,10 +70,25 @@ describe('PR status poller automation template', () => {
         'Bash',
         'mcp__c3__find_intents',
         'mcp__c3__view_intent',
-        'mcp__c3__save_intent_pr_info',
         'mcp__c3__publish_event',
       ]),
     )
+  })
+
+  it('grants no PR-status write tool, and the prompt no longer asks for one', () => {
+    // `save_intent_pr_info` is deprecated and ungrantable. Dropping it from the
+    // allowlist WITHOUT rewriting the prompt would leave the automation calling a
+    // tool it does not have — a silent loss of the reconciliation it advertises.
+    // These two assertions are one fact and must move together.
+    const input = getAutomationTemplate('pr-status-poller')?.build({
+      workspaceId: '/workspace',
+      agentId: 'a1',
+    })
+    expect(input?.toolAllowlist).not.toContain('mcp__c3__save_intent_pr_info')
+    expect(PR_STATUS_POLLER_PROMPT).not.toContain('save_intent_pr_info')
+    // The replacement is explicit: observe and publish, never write the ledger.
+    expect(PR_STATUS_POLLER_PROMPT).toContain('publish_event')
+    expect(PR_STATUS_POLLER_PROMPT).toContain('never try to write the ledger')
   })
 
   it('prompt is ≤10 physical lines and retains core identifiers', () => {

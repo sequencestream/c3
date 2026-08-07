@@ -12,11 +12,18 @@
  * alias) and sensitive only to the shape that actually travels on the wire.
  * That is what makes it a valid before/after comparison for a pure partition.
  *
+ * The committed baseline lives at `shared/api-snapshot.json`. Regenerate it in a
+ * change that touches the shared protocol, and land that regeneration as its OWN
+ * commit: the surface delta is then readable on its own terms, instead of being
+ * buried in the feature diff that caused it.
+ *
  * Usage:
+ *   node scripts/protocol/api-snapshot.mjs shared/api-snapshot.json
  *   node scripts/protocol/api-snapshot.mjs <outFile> [srcRoot]
  *
- * `srcRoot` defaults to the repo; pass a pristine checkout to snapshot a
- * different revision with this same script.
+ * `srcRoot` defaults to the repo; pass a pristine checkout (e.g. a detached
+ * `git worktree`) to snapshot a different revision with this same script, which
+ * is how a before/after comparison is produced.
  */
 import ts from 'typescript'
 import { writeFileSync } from 'node:fs'

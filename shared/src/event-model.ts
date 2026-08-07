@@ -98,10 +98,36 @@ export interface PrRepo {
   name?: string
 }
 
-/** Branch context for the PR. */
+/**
+ * What kind of branch a PR's base is. Since deliveries shipped, a `pr:merge`
+ * event's base may be a DELIVERY BRANCH rather than mainline — the same event
+ * type now reports two materially different facts ("the change landed in a
+ * delivery" vs "the change landed in mainline"), and a subscriber that fires a
+ * release on every merge must be able to tell them apart.
+ * - `mainline` — the workspace's main branch.
+ * - `delivery-branch` — a delivery's integration branch.
+ */
+export const PR_BASE_TARGETS = ['mainline', 'delivery-branch'] as const
+export type PrBaseTarget = (typeof PR_BASE_TARGETS)[number]
+
+/**
+ * Branch context for the PR. `base` is the branch NAME; `baseBranch` restates it
+ * as an explicit, stable field and `baseTarget` says what kind of branch it is.
+ * Both are OPTIONAL: an older event form carrying only `head` / `base` stays
+ * valid, and no existing subscriber has to change.
+ */
 export interface PrBranchRef {
   head?: string
   base?: string
+  /**
+   * The merge target's branch name. Redundant with {@link PrBranchRef.base} by
+   * design — `base` is the branch a PR was OPENED against, and naming the merge
+   * target separately lets a publisher be explicit about where the change
+   * actually landed without redefining a field subscribers already read.
+   */
+  baseBranch?: string
+  /** What kind of branch the base is; absent when the publisher did not say. */
+  baseTarget?: PrBaseTarget
 }
 
 /** Association linking the event back to a c3 work item so a listener can correlate it. */

@@ -1457,7 +1457,7 @@
         "noAgent": "활성 Claude Agent가 없습니다.",
         "prPoller": {
           "title": "PR 상태 폴링 검사",
-          "description": "검토 중인 의도를 GitHub PR 상태와 10분마다 조정합니다."
+          "description": "10분마다 검토 중인 의도를 GitHub PR 상태와 대조하고 변화가 있으면 이벤트를 발행합니다(읽기 전용, 원장은 기록하지 않음)."
         },
         "archReview": {
           "title": "주간 아키텍처 안정성 점검",
@@ -2021,6 +2021,9 @@
           },
           "discussion": {
             "label": "토론"
+          },
+          "delivery": {
+            "label": "딜리버리"
           }
         },
         "action": {
@@ -2030,6 +2033,26 @@
         },
         "row": {
           "add": "구독 행 추가"
+        },
+        "delivery": {
+          "created": {
+            "label": "딜리버리 생성"
+          },
+          "statusChanged": {
+            "label": "상태 변경"
+          },
+          "branchReady": {
+            "label": "브랜치 준비 완료"
+          },
+          "prCreated": {
+            "label": "전달 PR 생성"
+          },
+          "delivered": {
+            "label": "배포됨"
+          },
+          "cancelled": {
+            "label": "딜리버리 취소"
+          }
         }
       },
       "metadata": {

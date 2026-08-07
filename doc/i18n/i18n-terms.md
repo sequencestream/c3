@@ -39,6 +39,12 @@
 | Merge blocked         | 合并受阻   | マージがブロック   | 병합 차단        | Слияние заблокировано           | 交付 PR 开放但 CI 失败/审批不足;**代码没问题**,文案不得暗示要重做验证                               |
 | Awaiting confirmation | 等待确认   | 確認待ち           | 확인 대기        | Ожидание подтверждения          | forge 已合并、c3 尚未感知的窗口期;配「同步」动作,不得说成「同步中」                                 |
 | Custom reply          | 自定义回复 | カスタム返信       | 사용자 지정 답변 | Пользовательский ответ          | 权限 AskUserQuestion 面板                                                                           |
+| Delivery event        | 交付事件   | デリバリーイベント | 딜리버리 이벤트  | Событие доставки                | `delivery:*` 六类通用事件的统称;单条事件按动作译,见下行                                             |
+| Status changed        | 状态变更   | ステータス変更     | 상태 변경        | Статус изменён                  | `delivery:status_changed`;携带 from/to 两个交付状态,文案须用固定六态译法                            |
+| Branch ready          | 分支就绪   | ブランチ準備完了   | 브랜치 준비 완료 | Ветка готова                    | `delivery:branch_ready`;与 branchReady 字段同义,不译作「分支创建」(绑定已有分支也算就绪)            |
+| Merge target          | 合并目标   | マージ先           | 병합 대상        | Цель слияния                    | `pr:merge` 的 `ref.baseBranch`/`baseTarget`;指这条 PR 合进了哪条分支                                |
+| Mainline              | 主线       | メインライン       | 메인라인         | Основная ветка                  | `baseTarget: 'mainline'`;工作区主分支,与「交付分支」成对区分产出落点                                |
+| Delivery branch       | 交付分支   | デリバリーブランチ | 딜리버리 브랜치  | Ветка доставки                  | `baseTarget: 'delivery-branch'`;一条交付的集成分支,不译作「发布分支」                               |
 
 ### Delivery 状态中文译法(固定,禁与意图状态词面混淆)
 

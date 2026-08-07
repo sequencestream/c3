@@ -28,7 +28,7 @@
  * authorization.
  */
 import type { McpApiKeyMeta } from '@ccc/shared/protocol'
-import { EXTERNAL_MCP_READ_TOOLS } from '@ccc/shared/protocol'
+import { EXTERNAL_MCP_DEFAULT_TOOLS } from '@ccc/shared/protocol'
 import {
   createMcpApiKey,
   listMcpApiKeysForWorkspace,
@@ -131,13 +131,14 @@ export const createMcpApiKeyHandler: Handler<'create_mcp_api_key'> = async (_ctx
   const path = resolveWorkspace(conn, msg.workspaceId)
   if (!path) return
   try {
-    // The initial scope is server-decided: the complete read-only set and not one
-    // write tool, whatever the client proposed. A write grant is only ever the
-    // result of an explicit, separately confirmed edit.
+    // The initial scope is server-decided: the default set and not one write
+    // tool, whatever the client proposed. That default is deliberately NARROWER
+    // than the read-graded catalog — a grantable read tool still has to be ticked.
+    // Any grant beyond it is only ever the result of an explicit, confirmed edit.
     const { meta, key } = await createMcpApiKey(
       msg.name,
       path,
-      [...EXTERNAL_MCP_READ_TOOLS],
+      [...EXTERNAL_MCP_DEFAULT_TOOLS],
       Date.now(),
     )
     // The one and only appearance of the plaintext. Nothing logs it.

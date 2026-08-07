@@ -17,6 +17,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import type { ServerToClient } from '@ccc/shared/protocol'
+import type { GenericEvent } from '@ccc/shared'
 import type { Conn } from '../../transport/handler-registry.js'
 import type { KernelContext } from '../../kernel/types.js'
 import { getDb, resetDbForTests } from '../../kernel/infra/db.js'
@@ -83,13 +84,36 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+interface PublishedEvent {
+  workspacePath: string
+  sessionId: string
+  event: GenericEvent
+}
+
 function harness() {
   const sent: ServerToClient[] = []
+  const published: PublishedEvent[] = []
   const conn = { send: (m: ServerToClient) => sent.push(m) } as unknown as Conn
   const broadcastDeliveries = vi.fn()
   const broadcastIntents = vi.fn()
-  const ctx = { broadcastDeliveries, broadcastIntents } as unknown as KernelContext
-  return { sent, conn, ctx, broadcastDeliveries, broadcastIntents }
+  const ctx = {
+    broadcastDeliveries,
+    broadcastIntents,
+    // Mirrors the composition root: the registry's default normalizer accepts any
+    // `<category>:<action>` type after structural redaction.
+    normalizeEvent: (core: GenericEvent) => ({ ok: true as const, event: core }),
+    eventBus: {
+      publish: (topic: string, payload: PublishedEvent) => {
+        if (topic === 'event') published.push(payload)
+      },
+    },
+  } as unknown as KernelContext
+  return { sent, conn, ctx, broadcastDeliveries, broadcastIntents, published }
+}
+
+/** The `delivery:*` types published during one harness run, in publish order. */
+function publishedTypes(published: PublishedEvent[]): string[] {
+  return published.map((p) => p.event.type)
 }
 
 const createMsg = (overrides: Partial<{ title: string; description: string }> = {}) => ({
@@ -357,6 +381,91 @@ describe('transition + cancel — the status write path', () => {
   })
 })
 
+describe('delivery:* lifecycle events', () => {
+  it('create_delivery publishes delivery:created with the base branch snapshot', () => {
+    saveWorkspaceSetting(dir, { gitBranchMode: 'worktree', defaultMainBranch: 'develop' })
+    const h = harness()
+    createDeliveryHandler(h.ctx, h.conn, createMsg())
+    const created = listDeliveries(dir)[0]
+
+    expect(publishedTypes(h.published)).toEqual(['delivery:created'])
+    expect(h.published[0]).toMatchObject({ workspacePath: dir })
+    expect(h.published[0].event.metadata).toMatchObject({
+      deliveryId: created.id,
+      title: 'Sprint 3',
+      baseBranch: 'develop',
+    })
+  })
+
+  it('a human transition publishes status_changed carrying the from/to edge', () => {
+    const h0 = harness()
+    createDeliveryHandler(h0.ctx, h0.conn, createMsg())
+    const id = listDeliveries(dir)[0].id
+    getDbRawUpdate(id, 'integrating', true)
+    upsertIntentPr({ intentId: 'i1', deliveryId: id, number: '1', status: 'merged' })
+
+    const h = harness()
+    transitionDeliveryHandler(h.ctx, h.conn, {
+      type: 'transition_delivery',
+      workspaceId,
+      deliveryId: id,
+      to: 'verifying',
+    })
+    expect(publishedTypes(h.published)).toEqual(['delivery:status_changed'])
+    expect(h.published[0].event.metadata).toMatchObject({
+      deliveryId: id,
+      title: 'Sprint 3',
+      from: 'integrating',
+      to: 'verifying',
+    })
+  })
+
+  it('cancelling double-publishes status_changed AND delivery:cancelled', () => {
+    const h0 = harness()
+    createDeliveryHandler(h0.ctx, h0.conn, createMsg())
+    const id = listDeliveries(dir)[0].id
+
+    const h = harness()
+    cancelDeliveryHandler(h.ctx, h.conn, { type: 'cancel_delivery', workspaceId, deliveryId: id })
+    expect(publishedTypes(h.published)).toEqual(['delivery:status_changed', 'delivery:cancelled'])
+    expect(h.published[0].event.metadata).toMatchObject({ from: 'planned', to: 'cancelled' })
+    expect(h.published[1].event.metadata).toMatchObject({ deliveryId: id, title: 'Sprint 3' })
+  })
+
+  it('a refused transition publishes nothing', () => {
+    const h0 = harness()
+    createDeliveryHandler(h0.ctx, h0.conn, createMsg())
+    const id = listDeliveries(dir)[0].id
+    const h = harness()
+    transitionDeliveryHandler(h.ctx, h.conn, {
+      type: 'transition_delivery',
+      workspaceId,
+      deliveryId: id,
+      to: 'delivered',
+    })
+    expect(h.published).toEqual([])
+  })
+
+  it('a publish failure never rolls back the committed status write', () => {
+    const h0 = harness()
+    createDeliveryHandler(h0.ctx, h0.conn, createMsg())
+    const id = listDeliveries(dir)[0].id
+    const h = harness()
+    ;(h.ctx as unknown as { normalizeEvent: () => unknown }).normalizeEvent = () => ({
+      ok: false,
+      reason: 'test refusal',
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    cancelDeliveryHandler(h.ctx, h.conn, { type: 'cancel_delivery', workspaceId, deliveryId: id })
+
+    expect(getDelivery(id)!.status).toBe('cancelled')
+    expect(h.published).toEqual([])
+    expect(h.broadcastDeliveries).toHaveBeenCalledWith(dir)
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+})
+
 /** Test-only: stage a delivery's branch_ready + status (facts only later phases set). */
 function getDbRawUpdate(id: string, status: string, branchReady: boolean): void {
   getDb()!.run(
@@ -482,6 +591,56 @@ describe('init_delivery_branch — create / bind / orphan / conflict', () => {
     // Progress frames advance fetching → creating → pushing.
     expect(progressPhases(h.sent)).toEqual(['fetching', 'creating', 'pushing'])
     expect(h.broadcastDeliveries).toHaveBeenCalledWith(dir)
+    expect(publishedTypes(h.published)).toEqual(['delivery:branch_ready'])
+    expect(h.published[0].event.metadata).toMatchObject({
+      deliveryId: id,
+      title: 'Sprint 3',
+      branch: 'delivery/abc-sprint-3',
+    })
+  })
+
+  it('the orphan and bind routes publish branch_ready too; a refused init publishes nothing', async () => {
+    initWorkspaceRepo()
+    const idOf = (title: string): string => listDeliveries(dir).find((d) => d.title === title)!.id
+
+    // Route — orphan adoption (the push landed, the DB write had not).
+    seedDelivery('Sprint orphan')
+    execFileSync('git', ['push', '-q', 'origin', 'HEAD:refs/heads/delivery/orphan'], { cwd: dir })
+    const h1 = harness()
+    await initDeliveryBranchHandler(h1.ctx, h1.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: idOf('Sprint orphan'),
+      branchName: 'delivery/orphan',
+      mode: 'create',
+    })
+    expect(publishedTypes(h1.published)).toEqual(['delivery:branch_ready'])
+
+    // Route — bind mode onto an existing remote branch.
+    seedDelivery('Sprint bind')
+    execFileSync('git', ['push', '-q', 'origin', 'HEAD:refs/heads/delivery/bind-me'], { cwd: dir })
+    const h2 = harness()
+    await initDeliveryBranchHandler(h2.ctx, h2.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: idOf('Sprint bind'),
+      branchName: 'delivery/bind-me',
+      mode: 'bind',
+    })
+    expect(publishedTypes(h2.published)).toEqual(['delivery:branch_ready'])
+    expect(h2.published[0].event.metadata).toMatchObject({ branch: 'delivery/bind-me' })
+
+    // Route — a bind that is REFUSED (the remote branch does not exist).
+    seedDelivery('Sprint miss')
+    const h3 = harness()
+    await initDeliveryBranchHandler(h3.ctx, h3.conn, {
+      type: 'init_delivery_branch',
+      workspaceId,
+      deliveryId: idOf('Sprint miss'),
+      branchName: 'delivery/nope',
+      mode: 'bind',
+    })
+    expect(h3.published).toEqual([])
   })
 
   it('idempotently binds an orphan (remote branch at the baseline head) without re-push', async () => {

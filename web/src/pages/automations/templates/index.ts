@@ -29,14 +29,14 @@ export interface AutomationTemplate {
 /** Wall-clock ceiling shared by every built-in template: 10 minutes per execution. */
 export const TEMPLATE_MAX_WALL_CLOCK_MS = 600_000
 
-export const PR_STATUS_POLLER_PROMPT = `Reconcile GitHub PR status for this workspace.
+export const PR_STATUS_POLLER_PROMPT = `Report GitHub PR status changes for this workspace. This automation OBSERVES and REPORTS; it never writes the intent ledger.
 
-Scope: only intents whose \`prs\` array contains an entry with status "reviewing" — locate them with find_intents and inspect each with view_intent. Each entry carries the PR's number and url.
-Query the real GitHub PR state with Bash + gh; leave an intent untouched while its PR is still open/reviewing.
-A merged PR: call save_intent_pr_info with prStatus "merged" and done true. A PR closed without merging: call save_intent_pr_info with prStatus "closed" and leave done unset. That tool only UPDATES an intent's existing PR record — it cannot create one, and it rejects an intent that has no PR.
-Only when a status actually changed, call publish_event with type "pr:operation", status "success", metadata.operation "merge" or "close", and data carrying the PR identity/state plus association.intentId.
+Scope: only intents whose \`prs\` array contains an entry with status "reviewing" — locate them with find_intents and inspect each with view_intent. Each entry carries the PR's number, url and the delivery it targets.
+Query the real GitHub PR state with Bash + gh; leave an intent alone while its PR is still open/reviewing.
+Only when the real state differs from the ledger, call publish_event once per changed PR: type "pr:merge" for a merged PR or "pr:close" for one closed without merging, status "success", and data carrying { pr, repo, ref, association } — the number/url in data.pr, the merge target in data.ref.baseBranch plus data.ref.baseTarget ("mainline" or "delivery-branch"), and BOTH association.intentId and association.deliveryId so a subscriber addresses exactly one PR row.
+There is deliberately no PR-status write tool: c3 persists the terminal status itself from the forge's own answer when 「同步 PR 状态」 runs for that intent. Publishing the event IS this automation's whole job — never try to write the ledger, and never guess which PR a change belongs to.
 
-Do not reopen PRs, merge PRs, resolve conflicts, or change intents outside this reconciliation.`
+Do not reopen PRs, merge PRs, resolve conflicts, or change intents.`
 
 const PR_STATUS_POLLER: AutomationTemplate = {
   id: 'pr-status-poller',
@@ -59,7 +59,6 @@ const PR_STATUS_POLLER: AutomationTemplate = {
       'Bash',
       'mcp__c3__find_intents',
       'mcp__c3__view_intent',
-      'mcp__c3__save_intent_pr_info',
       'mcp__c3__publish_event',
     ],
   }),

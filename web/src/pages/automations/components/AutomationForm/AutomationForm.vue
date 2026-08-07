@@ -145,6 +145,7 @@ const CATEGORY_LABELS = computed<Record<string, string>>(() => ({
   pr: t('automation.form.event.cat.pr.label'),
   intent: t('automation.form.event.cat.intent.label'),
   discussion: t('automation.form.event.cat.discussion.label'),
+  delivery: t('automation.form.event.cat.delivery.label'),
 }))
 
 // Literal i18n keys per known `<category>:<action>` (the typed `t` rejects
@@ -166,6 +167,12 @@ const ACTION_LABELS = computed<Record<string, string>>(() => ({
   'intent:spec_approve': t('automation.form.event.intent.specApprove.label'),
   'discussion:start': t('automation.form.event.discussion.start.label'),
   'discussion:end': t('automation.form.event.discussion.end.label'),
+  'delivery:created': t('automation.form.event.delivery.created.label'),
+  'delivery:status_changed': t('automation.form.event.delivery.statusChanged.label'),
+  'delivery:branch_ready': t('automation.form.event.delivery.branchReady.label'),
+  'delivery:pr_created': t('automation.form.event.delivery.prCreated.label'),
+  'delivery:delivered': t('automation.form.event.delivery.delivered.label'),
+  'delivery:cancelled': t('automation.form.event.delivery.cancelled.label'),
 }))
 
 // Status labels keyed `<category>|<status>` — the same raw value can label

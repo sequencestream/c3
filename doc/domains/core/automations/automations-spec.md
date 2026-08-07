@@ -429,8 +429,11 @@ c3 提供的 MCP 能力也作为显式的 Claude 自动化允许列表选项出�
 永远不会仅仅因为一个自动化是 LLM 任务或有一个空的允许列表就被挂载:选中至少
 一个这样的能力,是挂载工作区绑定的 c3 MCP 服务的前提条件。模板
 可以预选它们所需要的条目。暴露给自动化的 c3 能力是:
-`mcp__c3__find_intents` / `mcp__c3__view_intent`(只读)、`mcp__c3__save_intent_pr_info` 与
-`mcp__c3__publish_event`(有边界的 PR 对账)、`mcp__c3__save_intent_directly`(写),
+`mcp__c3__find_intents` / `mcp__c3__view_intent`(只读)、`mcp__c3__publish_event`
+(投递 PR 与自定义事实)、`mcp__c3__save_intent_directly`(写),
+两个 **delivery** 只读工具 `mcp__c3__find_deliveries` / `mcp__c3__view_delivery`
+(交付**没有**写工具:状态写必须过交付状态机与全部守卫,一个能直接设状态的工具会绕开它们;
+两者都不进任何内置模板的默认允许列表,即「默认不勾选」),
 四个 **discussion** 工具 `mcp__c3__find_discussions` / `mcp__c3__view_discussion`
 (只读)与 `mcp__c3__start_discussion` / `mcp__c3__continue_discussion`(写),
 以及 **session 启动**工具 `mcp__c3__start_session_for_intent`(写)——可对意图自动启动
@@ -443,6 +446,14 @@ c3 提供的 MCP 能力也作为显式的 Claude 自动化允许列表选项出�
 并且**只**注册在自动化的 c3 MCP 服务器上,永远不会注册在交互式的 intent MCP 服务器上——
 因此这条无确认写入被钉死在无人值守的自动化执行上。可更新既有 intent 的
 `mcp__c3__save_intents` 刻意**不**提供给自动化。
+
+`save_intent_pr_info` 已**废弃并移出**这份能力清单:一个意图可能同时持有多条 PR(每个交付一条),
+仅凭 `intentId` 无法确定要回填哪一条,继续留在允许列表里等于给 agent 一个把状态写到错误 PR 行上的
+机会。它不再出现在表单与冻结集中,存量自动化里对它的允许列表引用因此自然失效。替代路径:用只读的
+`find_intents` / `view_intent` 读取 PR 现状;需要把被拒/失败/关闭的 PR 复位为 `reviewing` 时,发布
+携带 `association.deliveryId` 或 `pr.number` 的 `pr:update` 事件精确定位;终态(`merged`/`closed`)
+由 c3 自己从 forge 事实落库,不再由模型回填。内置模板 `pr-status-poller` 随之改为「观察并发布事件」,
+提示词与允许列表**同步**迁移——只删允许列表不改提示词,自动化会静默失去它宣称的对账能力。
 
 ### 网络访问伪条目(`network-access`,仅 codex)
 

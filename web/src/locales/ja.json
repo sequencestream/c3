@@ -961,6 +961,12 @@
       },
       "dependsOn": {
         "label": "依存:"
+      },
+      "delivery": {
+        "label": "関連配信"
+      },
+      "noDelivery": {
+        "label": "配信なし"
       }
     },
     "prStatus": {
@@ -2149,7 +2155,11 @@
       "multiRepoUnsupported": "マルチリポジトリのワークスペースは配信をサポートしません。",
       "branchNotFound": "リモートにブランチ \"{branch}\" が存在しません。",
       "initFailed": "ブランチ初期化に失敗しました: {detail}。",
-      "cleanupForbidden": "配信済みまたはキャンセル済みの配信のみブランチをクリーンアップできます。"
+      "cleanupForbidden": "配信済みまたはキャンセル済みの配信のみブランチをクリーンアップできます。",
+      "intentAlreadyLinked": "このインテントはすでにこの配信に紐付けられています。",
+      "unlinkMergedPrDenied": "このインテントのこの配信向け PR はすでにマージ済みのため、紐付けを解除できません。取り消すにはまず revert してください。",
+      "unlinkClosePrFailed": "紐付け解除を中断しました — PR をクローズできません: {detail}。",
+      "unlinkPrStatusCheckFailed": "紐付け解除を中断しました — フォージから PR の状態を取得できません: {detail}。"
     }
   },
   "statusIndicator": {
@@ -2413,10 +2423,32 @@
         "label": "この納品はキャンセルされました。"
       },
       "intentsEmpty": {
-        "label": "関連意図はまだありません——関連付けは後のフェーズで提供されます。"
+        "label": "この配信にはまだ関連インテントがありません。"
       },
       "prMergeNotice": {
         "label": "pr:merge が納品ブランチを対象とする可能性があります——自動化サブスクリプションを確認してください。"
+      },
+      "associatedIntents": {
+        "title": {
+          "label": "関連インテント"
+        },
+        "col": {
+          "intent": {
+            "label": "インテント"
+          },
+          "status": {
+            "label": "インテントの状態"
+          },
+          "prStatus": {
+            "label": "この配信向けの PR"
+          },
+          "headBranch": {
+            "label": "head ブランチ"
+          }
+        },
+        "noPr": {
+          "label": "PR なし"
+        }
       }
     },
     "action": {
@@ -2478,6 +2510,30 @@
       },
       "jumpToBranch": {
         "label": "配信ブランチを初期化"
+      },
+      "link": {
+        "label": "インテントを紐付け",
+        "pickerTitle": {
+          "label": "この配信にインテントを紐付ける"
+        },
+        "pickerEmpty": {
+          "label": "紐付け可能なインテントがありません — すべてのインテントがいずれかの配信に属しています。"
+        },
+        "confirm": {
+          "label": "紐付け"
+        }
+      },
+      "unlink": {
+        "label": "紐付け解除",
+        "title": {
+          "label": "紐付けを解除しますか?"
+        },
+        "body": {
+          "label": "「{title}」をこの配信から紐付け解除しますか?この配信向けの未マージ PR も併せてクローズされます。"
+        },
+        "mergedDisabled": {
+          "tooltip": "この配信向けの PR はマージ済みのため、紐付けを解除できません。"
+        }
       }
     },
     "guard": {
@@ -2544,6 +2600,9 @@
     "warning": {
       "branchBehindMain": {
         "label": "バインドしたブランチはベースより遅れています。"
+      },
+      "diffBloat": {
+        "label": "このインテントのコミットはメインラインを基点としているため、配信ブランチ向けの PR にはメインラインと配信ブランチの差分も含まれます。"
       }
     }
   },

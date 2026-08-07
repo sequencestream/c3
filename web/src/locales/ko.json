@@ -961,6 +961,12 @@
       },
       "dependsOn": {
         "label": "의존:"
+      },
+      "delivery": {
+        "label": "연결된 전달"
+      },
+      "noDelivery": {
+        "label": "전달 없음"
       }
     },
     "prStatus": {
@@ -2149,7 +2155,11 @@
       "multiRepoUnsupported": "멀티 리포지토리 작업 공간은 전달을 지원하지 않습니다.",
       "branchNotFound": "원격에 브랜치 \"{branch}\"가 없습니다.",
       "initFailed": "브랜치 초기화 실패: {detail}.",
-      "cleanupForbidden": "전달됨 또는 취소됨 상태의 전달만 브랜치를 정리할 수 있습니다."
+      "cleanupForbidden": "전달됨 또는 취소됨 상태의 전달만 브랜치를 정리할 수 있습니다.",
+      "intentAlreadyLinked": "이 인텐트는 이미 해당 전달에 연결되어 있습니다.",
+      "unlinkMergedPrDenied": "이 인텐트의 해당 전달용 PR이 이미 머지되어 연결을 해제할 수 없습니다. 되돌리려면 먼저 revert 하세요.",
+      "unlinkClosePrFailed": "연결 해제가 차단되었습니다 — PR을 닫지 못했습니다: {detail}.",
+      "unlinkPrStatusCheckFailed": "연결 해제가 차단되었습니다 — 포지에서 PR 상태를 읽지 못했습니다: {detail}."
     }
   },
   "statusIndicator": {
@@ -2413,10 +2423,32 @@
         "label": "이 납품은 취소되었습니다."
       },
       "intentsEmpty": {
-        "label": "연결된 인텐트가 아직 없습니다 — 연결 기능은 이후 단계에서 제공됩니다."
+        "label": "이 전달에는 아직 연결된 인텐트가 없습니다."
       },
       "prMergeNotice": {
         "label": "pr:merge가 이제 납품 브랜치를 대상으로 할 수 있습니다 — 자동화 구독을 확인하세요."
+      },
+      "associatedIntents": {
+        "title": {
+          "label": "연결된 인텐트"
+        },
+        "col": {
+          "intent": {
+            "label": "인텐트"
+          },
+          "status": {
+            "label": "인텐트 상태"
+          },
+          "prStatus": {
+            "label": "이 전달용 PR"
+          },
+          "headBranch": {
+            "label": "head 브랜치"
+          }
+        },
+        "noPr": {
+          "label": "PR 없음"
+        }
       }
     },
     "action": {
@@ -2478,6 +2510,30 @@
       },
       "jumpToBranch": {
         "label": "전달 브랜치 초기화"
+      },
+      "link": {
+        "label": "인텐트 연결",
+        "pickerTitle": {
+          "label": "이 전달에 인텐트 연결"
+        },
+        "pickerEmpty": {
+          "label": "연결할 수 있는 인텐트가 없습니다 — 모든 인텐트가 이미 어떤 전달에 속해 있습니다."
+        },
+        "confirm": {
+          "label": "연결"
+        }
+      },
+      "unlink": {
+        "label": "연결 해제",
+        "title": {
+          "label": "연결을 해제할까요?"
+        },
+        "body": {
+          "label": "\"{title}\"을(를) 이 전달에서 연결 해제할까요? 이 전달용 미머지 PR도 함께 닫힙니다."
+        },
+        "mergedDisabled": {
+          "tooltip": "이 전달용 PR이 머지되어 연결을 해제할 수 없습니다."
+        }
       }
     },
     "guard": {
@@ -2544,6 +2600,9 @@
     "warning": {
       "branchBehindMain": {
         "label": "바인딩한 브랜치가 베이스보다 뒤처져 있습니다."
+      },
+      "diffBloat": {
+        "label": "이 인텐트의 커밋이 메인라인을 기준으로 하고 있어, 전달 브랜치로 보내는 PR에는 메인라인과 전달 브랜치의 차이도 포함됩니다."
       }
     }
   },

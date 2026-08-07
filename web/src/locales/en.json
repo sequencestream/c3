@@ -960,6 +960,12 @@
       },
       "dependsOn": {
         "label": "Depends on:"
+      },
+      "delivery": {
+        "label": "Delivery"
+      },
+      "noDelivery": {
+        "label": "No delivery"
       }
     },
     "prStatus": {
@@ -2148,7 +2154,11 @@
       "multiRepoUnsupported": "Multi-repo workspaces are not supported for deliveries.",
       "branchNotFound": "Remote branch \"{branch}\" does not exist.",
       "initFailed": "Branch initialization failed: {detail}.",
-      "cleanupForbidden": "Only a delivered or cancelled delivery can clean up its branch."
+      "cleanupForbidden": "Only a delivered or cancelled delivery can clean up its branch.",
+      "intentAlreadyLinked": "This intent is already linked to the delivery.",
+      "unlinkMergedPrDenied": "This intent’s PR toward the delivery is already merged, so it cannot be unlinked. Revert the merge first.",
+      "unlinkClosePrFailed": "Unlink blocked — could not close the PR: {detail}.",
+      "unlinkPrStatusCheckFailed": "Unlink blocked — could not read the PR status from the forge: {detail}."
     }
   },
   "statusIndicator": {
@@ -2412,10 +2422,32 @@
         "label": "This delivery was cancelled."
       },
       "intentsEmpty": {
-        "label": "No associated intents yet — association ships in a later phase."
+        "label": "No intents are linked to this delivery yet."
       },
       "prMergeNotice": {
         "label": "pr:merge may now target the delivery branch — please check your automation subscriptions."
+      },
+      "associatedIntents": {
+        "title": {
+          "label": "Linked intents"
+        },
+        "col": {
+          "intent": {
+            "label": "Intent"
+          },
+          "status": {
+            "label": "Intent status"
+          },
+          "prStatus": {
+            "label": "PR toward this delivery"
+          },
+          "headBranch": {
+            "label": "Head branch"
+          }
+        },
+        "noPr": {
+          "label": "No PR yet"
+        }
       }
     },
     "action": {
@@ -2477,6 +2509,30 @@
       },
       "jumpToBranch": {
         "label": "Initialize delivery branch"
+      },
+      "link": {
+        "label": "Link intent",
+        "pickerTitle": {
+          "label": "Link an intent to this delivery"
+        },
+        "pickerEmpty": {
+          "label": "No intent is available to link — every intent already belongs to a delivery."
+        },
+        "confirm": {
+          "label": "Link"
+        }
+      },
+      "unlink": {
+        "label": "Unlink",
+        "title": {
+          "label": "Unlink intent?"
+        },
+        "body": {
+          "label": "Unlink \"{title}\" from this delivery? Its open PR toward the delivery is closed as part of this."
+        },
+        "mergedDisabled": {
+          "tooltip": "Its PR toward this delivery is merged — unlinking is not possible."
+        }
       }
     },
     "guard": {
@@ -2543,6 +2599,9 @@
     "warning": {
       "branchBehindMain": {
         "label": "The bound branch is behind the baseline."
+      },
+      "diffBloat": {
+        "label": "This intent’s commits are based on mainline, so a PR toward the delivery branch will also contain the difference between mainline and the delivery branch."
       }
     }
   },

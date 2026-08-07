@@ -138,6 +138,7 @@ export function installMessageHandler(ctx: AppCtx): void {
     activeDelivery,
     activeDeliveryId,
     activeDeliveryPlan,
+    activeDeliveryIntents,
     activeDeliveryBranchInit,
     discussionMessages,
     discussionMaxSeq,
@@ -913,6 +914,13 @@ export function installMessageHandler(ctx: AppCtx): void {
         activeDelivery.value = msg.delivery
         activeDeliveryId.value = msg.delivery.id
         activeDeliveryPlan.value = msg.transitionPlan
+        activeDeliveryIntents.value = msg.associatedIntents
+        // Only a `link_intent_to_delivery` reply carries this: the link DID go
+        // through, so it is a toast, not an error — the user may well have meant
+        // to develop on mainline first and rebase later.
+        if (msg.linkWarning === 'delivery.diffBloat') {
+          ctx.showToast(t('delivery.warning.diffBloat.label'))
+        }
         ctx.persistViewMode()
         break
       case 'delivery_transition_failed':

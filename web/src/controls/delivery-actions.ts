@@ -11,6 +11,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
     activeDeliveryId,
     activeDelivery,
     activeDeliveryPlan,
+    activeDeliveryIntents,
     activeDeliveryBranchInit,
     activeTab,
   } = ctx
@@ -23,8 +24,14 @@ export function installDeliveryActions(ctx: AppCtx): void {
     activeDeliveryId.value = null
     activeDelivery.value = null
     activeDeliveryPlan.value = null
+    activeDeliveryIntents.value = []
     ctx.persistViewMode()
     send({ type: 'list_deliveries', workspaceId: path })
+    // The link picker chooses from this workspace's intents, which the intents
+    // tab may never have loaded (the user can land straight on deliveries). The
+    // reply is keyed by workspace, so it never disturbs the intents tab's own
+    // selection.
+    send({ type: 'list_intents', workspaceId: path })
   }
 
   // Click a delivery in the list: pull its detail (model + transition plan).
@@ -74,6 +81,7 @@ export function installDeliveryActions(ctx: AppCtx): void {
     activeDeliveryId.value = null
     activeDelivery.value = null
     activeDeliveryPlan.value = null
+    activeDeliveryIntents.value = []
     ctx.persistViewMode()
   }
 
@@ -118,5 +126,42 @@ export function installDeliveryActions(ctx: AppCtx): void {
   ctx.cleanupDeliveryBranch = (deliveryId: string): void => {
     if (!deliveriesProject.value) return
     send({ type: 'cleanup_delivery_branch', workspaceId: deliveriesProject.value, deliveryId })
+  }
+
+  // Link an intent to the OPEN delivery. The reply is the refreshed
+  // `delivery_detail` (plus a diff-bloat warning when the intent's commits are
+  // rooted on mainline); the server owns every guard, so nothing is asserted here.
+  ctx.linkIntentToDelivery = (intentId: string): void => {
+    const id = activeDeliveryId.value
+    if (!id || !deliveriesProject.value) return
+    send({
+      type: 'link_intent_to_delivery',
+      workspaceId: deliveriesProject.value,
+      deliveryId: id,
+      intentId,
+    })
+  }
+
+  // Unlink an intent from the OPEN delivery. The page already passed the danger
+  // ConfirmDialog and hides the entry for a merged PR; the server re-checks both
+  // locally and against the forge, so a stale page can never force it through.
+  ctx.unlinkIntentFromDelivery = (intentId: string): void => {
+    const id = activeDeliveryId.value
+    if (!id || !deliveriesProject.value) return
+    send({
+      type: 'unlink_intent_from_delivery',
+      workspaceId: deliveriesProject.value,
+      deliveryId: id,
+      intentId,
+    })
+  }
+
+  // Jump from an intent's "关联交付" to that delivery's detail. Goes through
+  // `openDeliveries` first so the delivery tab is loaded for the SAME workspace
+  // the intent belongs to — opening a detail without its list would leave the
+  // page half-populated after a reload.
+  ctx.openDeliveryFromIntent = (workspacePath: string, deliveryId: string): void => {
+    ctx.openDeliveries(workspacePath)
+    ctx.openDelivery(deliveryId)
   }
 }

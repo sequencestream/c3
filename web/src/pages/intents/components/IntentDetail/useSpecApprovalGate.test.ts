@@ -25,6 +25,7 @@ function intent(id: string): Intent {
     branchName: null,
     latestCommitHash: null,
     prs: [],
+    linkedDeliveries: [],
     specPath: null,
     specStatus: 'raw',
     specMode: null,

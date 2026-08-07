@@ -30,6 +30,40 @@ persists both `showSessionsPage: false` and `true`, verifies each authoritative
 `settings` echo, then restores the original snapshot. Frontend navigation tests
 pair this wire/disk e2e with desktop/mobile rendering and ordering assertions.
 
+## Delivery ↔ intent association (link / unlink guards)
+
+Drives the association over the real wire protocol in a throwaway git workspace
+(deliberately with no remote): one delivery, two intents, `intent_prs` rows seeded
+straight into the ledger through `C3_DB_PATH` — the state a real `create_pr` would
+leave behind.
+
+PASS asserts what the association exists to guarantee:
+
+- linking is visible from **both** sides — the delivery detail lists the intent and
+  the intent's own projection names the delivery;
+- the delivery list's PR column is the intent's PR **toward this delivery**;
+- an intent with no PR unlinks cleanly and its edge disappears;
+- a **merged** PR can never be unlinked (`delivery.unlinkMergedPrDenied`) and the
+  edge survives the refusal — the black hole this guard exists for;
+- an unreadable forge state **blocks** the unlink (`delivery.unlinkPrStatusCheckFailed`)
+  rather than assuming "not merged";
+- cancelling the delivery does **not** drop the association edges.
+
+Not covered here: "unmerged PR is closed, then the edge and PR row are dropped".
+That needs a forge that answers `pr view` and accepts `pr close`, which cannot be
+provoked deterministically in a sandboxed repo with no remote — and faking a CLI on
+PATH would fake exactly the boundary under test. That chain, plus the
+already-closed-is-success and close-failure-blocks branches, is covered by
+`server/src/features/deliveries/index.test.ts` ("link / unlink intent ↔ delivery"),
+which injects the forge results directly.
+
+No agent tokens are spent. Needs `C3_DB_PATH` (the suite runner passes it to every
+test); without it the test SKIPs.
+
+- `pnpm start --port 13000`
+- `C3_DB_PATH=~/.c3/c3.db node scripts/e2e/e2e-delivery-link-test.mjs ws://localhost:13000/ws`
+  → expect `RESULT: PASS`.
+
 ## Smoke test (permission flow)
 
 - `pnpm start --port 13000`

@@ -15,6 +15,7 @@ import { resolve } from 'node:path'
 import type {
   DependencyInfo,
   DepType,
+  IntentDeliveryRef,
   IntentDevSession,
   IntentDevSessionExitCode,
   IntentLog,
@@ -182,6 +183,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_pr_intent_nodelivery
   ON intent_prs(intent_id) WHERE delivery_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_intent_pr_intent ON intent_prs(intent_id);
 CREATE INDEX IF NOT EXISTS idx_intent_pr_status ON intent_prs(status);
+
+-- 意图 ↔ 交付关联边。表由 delivery 域拥有 (写入唯一经 deliveries/store.ts);这里
+-- 重复声明同一 DDL 是有意的:删除意图要在同一事务里清掉这些边,而一个从未打开过
+-- 交付页的库里 delivery store 的 schema ensure 还没跑过,DELETE 会撞 "no such
+-- table"。两处都是 IF NOT EXISTS, 先初始化的那个建表, 互不冲突。
+CREATE TABLE IF NOT EXISTS intent_deliveries (
+  id          TEXT PRIMARY KEY,
+  delivery_id TEXT NOT NULL,
+  intent_id   TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_delivery_unique
+  ON intent_deliveries(delivery_id, intent_id);
+CREATE INDEX IF NOT EXISTS idx_intent_delivery_delivery ON intent_deliveries(delivery_id);
+CREATE INDEX IF NOT EXISTS idx_intent_delivery_intent ON intent_deliveries(intent_id);
 `
 
 /** Marker id for the one-shot legacy-columns → `intent_prs` backfill. */
@@ -633,13 +649,51 @@ function narrowSpecMode(v: string | null): IntentSpecMode | null {
 }
 
 /**
- * Attach `dependsOn`, `dependsOnTypes` and `prs` to a set of rows, preserving row
- * order. Deps and PRs are each fetched in ONE batched query for the whole set —
- * a per-intent PR query would turn every list broadcast into N round-trips.
+ * The deliveries each intent is linked to, keyed by intent id, in link order.
+ *
+ * Reads the delivery domain's `deliveries` table for the titles — a read-only
+ * projection so the intent detail can render "关联交付" (writing the edge stays
+ * a delivery-domain action). `deliveries` is created lazily by the delivery
+ * store, so a workspace that never opened the delivery page degrades to "no
+ * links" instead of throwing.
+ */
+function listLinkedDeliveriesByIntentIds(
+  d: Db,
+  intentIds: string[],
+): Map<string, IntentDeliveryRef[]> {
+  const out = new Map<string, IntentDeliveryRef[]>()
+  if (intentIds.length === 0) return out
+  if (!tableExists(d, 'intent_deliveries') || !tableExists(d, 'deliveries')) return out
+  const placeholders = intentIds.map(() => '?').join(',')
+  const rows = d.all<{ intent_id: string; id: string; title: string }>(
+    `SELECT e.intent_id AS intent_id, dl.id AS id, dl.title AS title
+       FROM intent_deliveries e
+       JOIN deliveries dl ON dl.id = e.delivery_id
+      WHERE e.intent_id IN (${placeholders})
+      ORDER BY e.created_at ASC, e.rowid ASC`,
+    ...intentIds,
+  )
+  for (const r of rows) {
+    const list = out.get(r.intent_id)
+    if (list) list.push({ id: r.id, title: r.title })
+    else out.set(r.intent_id, [{ id: r.id, title: r.title }])
+  }
+  return out
+}
+
+/**
+ * Attach `dependsOn`, `dependsOnTypes`, `prs` and `linkedDeliveries` to a set of
+ * rows, preserving row order. Deps, PRs and delivery links are each fetched in
+ * ONE batched query for the whole set — a per-intent query would turn every list
+ * broadcast into N round-trips.
  */
 function hydrate(d: Db, rows: Row[]): Intent[] {
   if (rows.length === 0) return []
   const prsById = listIntentPrsByIntentIds(
+    d,
+    rows.map((r) => r.id),
+  )
+  const deliveriesById = listLinkedDeliveriesByIntentIds(
     d,
     rows.map((r) => r.id),
   )
@@ -675,6 +729,7 @@ function hydrate(d: Db, rows: Row[]): Intent[] {
     branchName: r.branch_name,
     latestCommitHash: r.latest_commit_hash,
     prs: prsById.get(r.id) ?? [],
+    linkedDeliveries: deliveriesById.get(r.id) ?? [],
     specPath: r.spec_path,
     specStatus: narrowSpecStatus(r.spec_status),
     specMode: narrowSpecMode(r.spec_mode),
@@ -788,6 +843,9 @@ export function deleteIntentRecords(intentId: string): void {
     d.run('DELETE FROM intent_logs WHERE intent_id=?', intentId)
     d.run('DELETE FROM intent_fast_turns WHERE intent_id=?', intentId)
     d.run('DELETE FROM intent_prs WHERE intent_id=?', intentId)
+    // 关联边随意图消失,但远端 PR 不动 —— 与本函数其它清理一致:清本地台账/git/会话,
+    // 从不代用户在 forge 上做不可逆的事。
+    d.run('DELETE FROM intent_deliveries WHERE intent_id=?', intentId)
     d.run('DELETE FROM intents WHERE id=?', intentId)
   })
 }

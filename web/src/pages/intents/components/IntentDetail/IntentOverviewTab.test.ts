@@ -24,6 +24,7 @@ function intent(overrides: Partial<Intent> & { id: string }): Intent {
     branchName: null,
     latestCommitHash: null,
     prs: [],
+    linkedDeliveries: [],
     specPath: null,
     // 与迁移回填同口径:已批准→approved;有 spec 路径但未批准→pending;其余→raw。
     specStatus: overrides.specApproved ? 'approved' : overrides.specPath ? 'pending' : 'raw',
@@ -299,5 +300,67 @@ describe('IntentOverviewTab.vue', () => {
     await w.setProps({ intent: backfilled, intents: [backfilled, first] })
     expect(w.find('.req-meta-dependencies').exists()).toBe(false)
     expect(w.find('.req-deps').exists()).toBe(false)
+  })
+})
+
+describe('IntentOverviewTab — 关联交付 in the meta strip', () => {
+  it('places 关联交付 AFTER branch+commit and BEFORE PR', () => {
+    const w = mountTab(
+      intent({
+        id: 'r1',
+        branchName: 'feat/x',
+        latestCommitHash: 'abcdef1234',
+        linkedDeliveries: [{ id: 'd1', title: 'Sprint 3' }],
+        prs: [fakeIntentPr('reviewing', { intentId: 'r1', deliveryId: 'd1', number: '7' })],
+      }),
+    )
+    const items = w.findAll('.req-meta > *')
+    const html = items.map((n) => n.html())
+    const branchAt = html.findIndex((h) => h.includes('feat/x'))
+    const deliveryAt = html.findIndex((h) => h.includes('data-testid="intent-meta-delivery"'))
+    const prAt = html.findIndex((h) => h.includes('data-testid="intent-meta-pr"'))
+
+    expect(branchAt).toBeGreaterThanOrEqual(0)
+    expect(deliveryAt).toBeGreaterThan(branchAt)
+    expect(prAt).toBeGreaterThan(deliveryAt)
+  })
+
+  it('renders no 关联交付 row when the intent belongs to no delivery', () => {
+    const w = mountTab(intent({ id: 'r1' }))
+    expect(w.find('[data-testid="intent-meta-delivery"]').exists()).toBe(false)
+  })
+
+  it('emits open-delivery when a linked delivery is clicked (read-only page, no new title-bar button)', async () => {
+    const w = mountTab(intent({ id: 'r1', linkedDeliveries: [{ id: 'd1', title: 'Sprint 3' }] }))
+    await w.find('[data-testid="intent-meta-delivery-d1"]').trigger('click')
+    expect(w.emitted('open-delivery')).toEqual([['d1']])
+  })
+
+  it('groups PRs by delivery, with the delivery-less ones in their own group', () => {
+    const w = mountTab(
+      intent({
+        id: 'r1',
+        linkedDeliveries: [{ id: 'd1', title: 'Sprint 3' }],
+        prs: [
+          fakeIntentPr('reviewing', { intentId: 'r1', deliveryId: 'd1', number: '7' }),
+          fakeIntentPr('merged', { intentId: 'r1', deliveryId: null, number: '8' }),
+        ],
+      }),
+    )
+    const groups = w.findAll('.req-meta-pr-group').map((n) => n.text())
+    expect(groups.length).toBe(2)
+    expect(groups[0]).toBe('Sprint 3')
+    // The second group is the delivery-less one; its copy comes from i18n.
+    expect(groups[1]).not.toBe('Sprint 3')
+  })
+
+  it('shows no group labels for a single delivery-less PR (no noise in the common case)', () => {
+    const w = mountTab(
+      intent({
+        id: 'r1',
+        prs: [fakeIntentPr('merged', { intentId: 'r1', deliveryId: null, number: '8' })],
+      }),
+    )
+    expect(w.findAll('.req-meta-pr-group').length).toBe(0)
   })
 })

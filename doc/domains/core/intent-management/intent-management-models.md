@@ -29,10 +29,16 @@
 | `effectiveSpecMode` | `'sdd'`\|`'fast'`           | 发送时投影的已解析有效规格模式 —— 从持久 `specMode` + 工作区 `sddEnabled` 推导一次,客户端/准入层/落定处理读取同一值;`sddEnabled` 关闭时无规格闸门与规格阶段,`fast` 只是与现状一致的自然默认(RM-R40) |
 | `actionDescriptor`  | ActionDescriptor \| null    | 派生的「下一步」;无阻塞时为 `null`。发送时投影,不落库(见下)                                                                                                                                         |
 | `prs`               | `IntentPr[]`                | 该意图拥有的全部 PR/MR,按 `createdAt` 升序;无 PR 时为空数组。发送时由 `intent_prs` 批量挂载(见下)                                                                                                   |
+| `linkedDeliveries`  | `{ id, title }[]`           | 该意图关联的交付,按建边顺序;无关联时为空数组。发送时由 `intent_deliveries` + `deliveries` 批量挂载,是**只读投影** —— 关联边归 delivery 域写入                                                       |
 
 关系:属于一个项目(以 `workspacePath` 标识);拥有零个或多个 Intent
-Dependencies;拥有零个或多个 Intent PR;可能引用一个开发 Session(一个普通会话,归
+Dependencies;拥有零个或多个 Intent PR;关联零个或多个 Delivery(关联边见
+[delivery-models.md](../delivery/delivery-models.md));可能引用一个开发 Session(一个普通会话,归
 session-registry 所有)。
+
+`linkedDeliveries` 与 `prs[].deliveryId` 不重复:前者是「属于哪个交付」,后者是「对某个
+交付开了哪条 PR」。意图详情把两者合并呈现 —— 元信息区先列关联交付,PR 行再按交付分组。
+已关联但尚未提 PR 的意图只有前者,这正是不能用 PR 行代表关联的原因。
 
 ## Intent PR
 
@@ -230,7 +236,11 @@ null,写入侧截断到 128)。这次重命名有意与向后兼容的 `projectC
 `intent_prs`(PR/MR 关系表,见上方 Intent PR)。
 `tool_sessions` 只是一张标记表;工具会话的来源链接存放在 `session_kind='tool'` 行的
 `session_metadata.owner_kind` / `owner_id` 中,无 owner 的工具行仅用于展示。会话被删除时,
-其行也会被删除。`intents` 表的时间戳列(`created_at`/`updated_at`/`completed_at`)以
+其行也会被删除。`intent_deliveries`(意图↔交付关联边)由 delivery 域拥有并唯一写入,
+本域的 SCHEMA 也声明同一 `CREATE TABLE IF NOT EXISTS` 并在删除意图的同一事务里清边 ——
+一个从未打开过交付页的库里 delivery store 尚未初始化,那条 DELETE 会撞 "no such table"
+并回滚整个删除事务;读侧 `hydrate` 亦只读该表与 `deliveries` 拼出 `linkedDeliveries`。
+`intents` 表的时间戳列(`created_at`/`updated_at`/`completed_at`)以
 `INTEGER` 存 epoch-ms,受控写入一律 `Date.now()`。`intents` 上的 `pr_id`/`pr_url`/`pr_status`
 三列已冻结:运行时不读不写,只作为反向回填脚本 `scripts/rollback-intent-prs.mjs` 的落点保留
 (裁决见 [ADR-0035](../../../architecture/adr/0035-intent-pr-table-split-and-migration-markers.md))。

@@ -104,7 +104,9 @@ import {
   getDeliveryDetailHandler,
   initDeliveryBranchHandler,
   listDeliveriesHandler,
+  linkIntentToDeliveryHandler,
   transitionDeliveryHandler,
+  unlinkIntentFromDeliveryHandler,
   updateDeliveryHandler,
 } from './deliveries/index.js'
 import {
@@ -223,6 +225,8 @@ export const handlerMap: HandlerMap = {
   transition_delivery: transitionDeliveryHandler,
   init_delivery_branch: initDeliveryBranchHandler,
   cleanup_delivery_branch: cleanupDeliveryBranchHandler,
+  link_intent_to_delivery: linkIntentToDeliveryHandler,
+  unlink_intent_from_delivery: unlinkIntentFromDeliveryHandler,
   // discussions
   list_discussions: listDiscussionsHandler,
   create_discussion: createDiscussionHandler,

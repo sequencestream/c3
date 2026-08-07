@@ -2,14 +2,16 @@
 /*
  * IntentOverviewTab.vue — intent tab:元信息(顶部) + 正文 markdown / 直接编辑 + 依赖明细。
  *
- * 元信息按稳定顺序渲染:ID → 分支(+commit) → PR(链接/状态/同步) → 已创建 → 已完成 →
- * 已更新 → 依赖。正文仅 draft/todo 可直接编辑:草稿只活在组件内,保存只 emit,退出编辑态由
+ * 元信息按稳定顺序渲染:ID → 分支(+commit) → 关联交付 → PR(按交付分组;链接/状态/同步)
+ * → 已创建 → 已完成 → 已更新 → 依赖。「关联交付」必须排在 PR 之前:交付决定 PR 提向
+ * 哪条分支,先因后果读下来才成立。关联/解除只在交付详情页操作,本页纯只读展示,
+ * 标题栏不因此新增任何按钮。正文仅 draft/todo 可直接编辑:草稿只活在组件内,保存只 emit,退出编辑态由
  * 服务端回填(updatedAt 变化)驱动;被拒(intentActionErrorSeq 自增)释放保存守卫但保留草稿;
  * 切换意图丢弃未保存草稿。依赖逐行显示完成态/类型,单条类型编辑仍整组回写;
  * 编辑弹窗内可删除单条依赖(ConfirmDialog 危险二次确认,确认后剔除该项并整组回写剩余集)。
  */
 import { computed, ref, watch } from 'vue'
-import type { DepType, Intent, IntentPrStatus } from '@ccc/shared/protocol'
+import type { DepType, Intent, IntentPr, IntentPrStatus } from '@ccc/shared/protocol'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import { useTypedI18n } from '@/i18n'
 import MarkdownText from '../../../../components/MarkdownText/MarkdownText.vue'
@@ -30,6 +32,7 @@ const emit = defineEmits<{
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   'select-dependency': [intentId: string]
   'sync-pr-status': [intentId: string]
+  'open-delivery': [deliveryId: string]
 }>()
 
 // ── Dep type / PR status 标签 ───────────────────────────────────────────────
@@ -52,6 +55,44 @@ const PR_STATUS_OPTIONS: { value: IntentPrStatus; label: string }[] = [
 function prStatusLabel(ps: IntentPrStatus): string {
   return PR_STATUS_OPTIONS.find((o) => o.value === ps)?.label ?? ps
 }
+
+// ── PR 按交付分组 ───────────────────────────────────────────────────────────
+// 一个意图对每个交付至多一条 PR,再加上可能存在的一条无交付归属的 PR。分组展示
+// 才能回答「这条 PR 提向哪里」——把它们平铺成一串号码,状态就失去了归属。
+interface PrGroup {
+  /** 交付 id;无交付归属的组为空串(模板 key 用)。 */
+  key: string
+  /** 交付标题;`null` = 无交付归属组。 */
+  title: string | null
+  prs: IntentPr[]
+}
+
+const prGroups = computed<PrGroup[]>(() => {
+  const titleById = new Map(props.intent.linkedDeliveries.map((d) => [d.id, d.title]))
+  const groups = new Map<string, PrGroup>()
+  for (const pr of props.intent.prs) {
+    const key = pr.deliveryId ?? ''
+    const existing = groups.get(key)
+    if (existing) {
+      existing.prs.push(pr)
+      continue
+    }
+    groups.set(key, {
+      key,
+      // 关联边被删但 PR 行仍在(理论上不会:解除关联会连 PR 行一起删)时退回 id,
+      // 也好过静默显示成「无交付归属」。
+      title: pr.deliveryId ? (titleById.get(pr.deliveryId) ?? pr.deliveryId) : null,
+      prs: [pr],
+    })
+  }
+  return [...groups.values()]
+})
+
+// 只有确实存在交付归属(或有多组)时才渲染组标签,避免最常见的「单条无交付 PR」
+// 场景平白多出一行噪音。
+const showPrGroupLabels = computed<boolean>(
+  () => prGroups.value.length > 1 || prGroups.value.some((g) => g.title !== null),
+)
 
 // ── 标题查询(依赖 id → 意图标题) ──────────────────────────────────────────
 const titleById = computed<Record<string, string>>(() => {
@@ -220,22 +261,44 @@ watch(
         {{ t('intent.meta.branch.label') }} {{ intent.branchName
         }}<span v-if="intent.latestCommitHash"> · {{ intent.latestCommitHash.slice(0, 7) }}</span>
       </span>
-      <span v-if="intent.prs.length > 0" class="req-meta-item">
+      <span
+        v-if="intent.linkedDeliveries.length > 0"
+        class="req-meta-item"
+        data-testid="intent-meta-delivery"
+      >
+        {{ t('intent.meta.delivery.label') }}
+        <button
+          v-for="d in intent.linkedDeliveries"
+          :key="d.id"
+          type="button"
+          class="req-meta-delivery-link"
+          :data-testid="`intent-meta-delivery-${d.id}`"
+          @click="emit('open-delivery', d.id)"
+        >
+          {{ d.title }}
+        </button>
+      </span>
+      <span v-if="intent.prs.length > 0" class="req-meta-item" data-testid="intent-meta-pr">
         {{ t('intent.meta.pr.label') }}
-        <template v-for="pr in intent.prs" :key="pr.id">
-          <a
-            v-if="pr.url"
-            class="req-meta-pr-link"
-            :href="pr.url"
-            target="_blank"
-            rel="noopener noreferrer"
-            :title="t('intent.action.pr.open.tooltip')"
-            >#{{ pr.number }}</a
-          >
-          <template v-else>#{{ pr.number }}</template>
-          <span class="req-pr-status" :class="'req-pr-status--' + pr.status">{{
-            prStatusLabel(pr.status)
+        <template v-for="group in prGroups" :key="group.key">
+          <span v-if="showPrGroupLabels" class="req-meta-pr-group">{{
+            group.title ?? t('intent.meta.noDelivery.label')
           }}</span>
+          <template v-for="pr in group.prs" :key="pr.id">
+            <a
+              v-if="pr.url"
+              class="req-meta-pr-link"
+              :href="pr.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              :title="t('intent.action.pr.open.tooltip')"
+              >#{{ pr.number }}</a
+            >
+            <template v-else>#{{ pr.number }}</template>
+            <span class="req-pr-status" :class="'req-pr-status--' + pr.status">{{
+              prStatusLabel(pr.status)
+            }}</span>
+          </template>
         </template>
         <button
           v-if="canSyncPrStatus"
@@ -402,6 +465,23 @@ watch(
 </template>
 
 <style scoped>
+/* 关联交付:纯文字链接样式的按钮(跳转是页内导航,不是外链,故不用 <a>)。 */
+.req-meta-delivery-link {
+  margin-left: var(--sp-1);
+  padding: 0;
+  font: inherit;
+  color: var(--c-primary-text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+/* PR 分组标签:标出下面这串 PR 提向哪个交付。 */
+.req-meta-pr-group {
+  margin-left: var(--sp-1);
+  font-size: var(--fs-caption);
+  color: var(--c-text-muted);
+}
 .intent-detail-body {
   flex: 1;
   min-height: 0;

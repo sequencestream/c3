@@ -7,6 +7,7 @@ import {
   classifyCommitFailure,
   closeForgePr,
   closeGhPr,
+  closeGlabMr,
   collectGitStatus,
   commitAndPush,
   createDeliveryBranch,
@@ -14,6 +15,7 @@ import {
   createGhPr,
   createGlabMr,
   deleteLocalBranch,
+  detectDeliveryDiffBloat,
   detectForge,
   fetchRemoteBaseAsync,
   getForgePrStatus,
@@ -462,13 +464,34 @@ describe('closeGhPr / closeForgePr — cancel-intent PR close gate', () => {
     expect(readFileSync(argvFile, 'utf8').trim().split('\n')).toEqual(['pr', 'close', '123'])
   })
 
-  it('treats an already-closed PR as a failure (blocks the cancellation)', async () => {
+  it('treats an UNRESOLVABLE PR reference as a failure (blocks the caller)', async () => {
     installFakeCli('gh', '', 'GraphQL: Could not resolve to a PullRequest', 1)
 
     await expect(closeGhPr(work, '123')).resolves.toEqual({
       ok: false,
       error: 'GraphQL: Could not resolve to a PullRequest',
     })
+  })
+
+  it('treats an ALREADY-CLOSED PR as success — the desired state already holds', async () => {
+    // Without this, an externally-closed PR would deadlock every flow that must
+    // close before it may proceed (intent cancel, delivery unlink).
+    installFakeCli('gh', '', 'Pull request #123 is not open', 1)
+
+    await expect(closeGhPr(work, '123')).resolves.toEqual({ ok: true })
+  })
+
+  it('treats an already-closed GitLab MR as success too', async () => {
+    installFakeCli('glab', '', 'cannot close a closed merge request', 1)
+
+    await expect(closeGlabMr(work, '42')).resolves.toEqual({ ok: true })
+  })
+
+  it('never absorbs a MERGED PR as "already closed"', async () => {
+    // Merged is a DIFFERENT state that callers must refuse, not swallow.
+    installFakeCli('gh', '', 'Pull request #123 is already merged and cannot be closed', 1)
+
+    await expect(closeGhPr(work, '123')).resolves.toMatchObject({ ok: false })
   })
 
   it('marks a missing gh CLI unavailable', async () => {
@@ -768,5 +791,70 @@ describe('deleteLocalBranch — best-effort local-ref cleanup', () => {
   it('reports false when the branch does not exist', async () => {
     initRepo(work, 'root', false)
     expect(await deleteLocalBranch(work, 'delivery/missing')).toBe(false)
+  })
+})
+
+describe('detectDeliveryDiffBloat — the fork-point test, not plain ancestry', () => {
+  /** A repo on `main` with one commit; returns its path. */
+  function repo(): string {
+    const r = join(dir, 'bloat')
+    mkdirSync(r, { recursive: true })
+    execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: r })
+    execFileSync('git', ['config', 'user.email', 't@t.dev'], { cwd: r })
+    execFileSync('git', ['config', 'user.name', 'tester'], { cwd: r })
+    execFileSync('git', ['config', 'commit.gpgsign', 'false'], { cwd: r })
+    writeFileSync(join(r, 'a.txt'), '1\n')
+    execFileSync('git', ['add', '-A'], { cwd: r })
+    execFileSync('git', ['commit', '-q', '-m', 'base'], { cwd: r })
+    return r
+  }
+
+  function commitOn(r: string, branch: string, file: string, from?: string): string {
+    execFileSync(
+      'git',
+      from ? ['checkout', '-q', '-b', branch, from] : ['checkout', '-q', branch],
+      {
+        cwd: r,
+      },
+    )
+    writeFileSync(join(r, file), 'x\n')
+    execFileSync('git', ['add', '-A'], { cwd: r })
+    execFileSync('git', ['commit', '-q', '-m', file], { cwd: r })
+    return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: r, encoding: 'utf-8' })
+      .toString()
+      .trim()
+  }
+
+  it('flags an intent that branched off mainline AFTER the delivery branch forked', () => {
+    const r = repo()
+    // delivery/x forks at the base, then main moves on and the intent forks there.
+    execFileSync('git', ['branch', 'delivery/x'], { cwd: r })
+    commitOn(r, 'main', 'main-moved.txt')
+    const intentHead = commitOn(r, 'feat', 'feat.txt', 'main')
+
+    return expect(detectDeliveryDiffBloat(r, intentHead, 'main', 'delivery/x')).resolves.toBe(true)
+  })
+
+  it('does not flag an intent branched off the delivery branch itself', () => {
+    const r = repo()
+    const deliveryHead = commitOn(r, 'delivery/x', 'd.txt', 'main')
+    const intentHead = commitOn(r, 'feat', 'feat.txt', 'delivery/x')
+
+    expect(deliveryHead).not.toEqual(intentHead)
+    return expect(detectDeliveryDiffBloat(r, intentHead, 'main', 'delivery/x')).resolves.toBe(false)
+  })
+
+  it('stays silent (false) with no delivery branch, an unknown ref, or a non-repo path', async () => {
+    const r = repo()
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: r, encoding: 'utf-8' })
+      .toString()
+      .trim()
+
+    await expect(detectDeliveryDiffBloat(r, head, 'main', null)).resolves.toBe(false)
+    await expect(detectDeliveryDiffBloat(r, head, 'main', 'no/such')).resolves.toBe(false)
+    await expect(detectDeliveryDiffBloat(r, 'deadbeef', 'main', 'main')).resolves.toBe(false)
+    await expect(detectDeliveryDiffBloat(join(dir, 'nope'), head, 'main', 'main')).resolves.toBe(
+      false,
+    )
   })
 })

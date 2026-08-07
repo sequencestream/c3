@@ -19,7 +19,14 @@
  */
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
-import type { Delivery, DeliveryIntegration, DeliveryStatus } from '@ccc/shared/protocol'
+import type {
+  AssociatedIntent,
+  Delivery,
+  DeliveryIntegration,
+  DeliveryStatus,
+  IntentPrStatus,
+  IntentStatus,
+} from '@ccc/shared/protocol'
 import { DELIVERY_STATUSES } from '@ccc/shared/protocol'
 import { getDb, isDbAvailable, type Db } from '../../kernel/infra/db.js'
 import { pathToId } from '../../state.js'
@@ -54,6 +61,21 @@ CREATE INDEX IF NOT EXISTS idx_delivery_workspace_status ON deliveries(workspace
 CREATE UNIQUE INDEX IF NOT EXISTS idx_delivery_workspace_active_branch
   ON deliveries(workspace_path, branch_name)
   WHERE branch_name IS NOT NULL AND status NOT IN ('delivered','cancelled');
+
+-- 意图 ↔ 交付关联边。与 intent_prs.delivery_id 职责分离: 后者记录「这个意图对某个
+-- 交付开了哪条 PR」, 本表记录「这个意图属于哪个交付」—— 关联先于 PR 存在, 且解除
+-- 关联要独立于 PR 行的生死。同一 DDL 也由意图 store 声明 (双 store 声明), 保证从未
+-- 用过交付的库删除意图时 DELETE FROM intent_deliveries 不会撞上 "no such table"。
+CREATE TABLE IF NOT EXISTS intent_deliveries (
+  id          TEXT PRIMARY KEY,
+  delivery_id TEXT NOT NULL,
+  intent_id   TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_delivery_unique
+  ON intent_deliveries(delivery_id, intent_id);
+CREATE INDEX IF NOT EXISTS idx_intent_delivery_delivery ON intent_deliveries(delivery_id);
+CREATE INDEX IF NOT EXISTS idx_intent_delivery_intent ON intent_deliveries(intent_id);
 `
 
 let schemaReady = false
@@ -343,6 +365,123 @@ export function clearDeliveryBranch(id: string): Delivery | null {
     id,
   )
   return getDelivery(id)
+}
+
+// ---------------------------------------------------------------------------
+// intent_deliveries — the intent ↔ delivery association edge
+//
+// The edge is what every delivery guard and the N/M aggregate ultimately hang
+// off. It lives here (not in the intent store) because its whole lifecycle is
+// delivery context: created by a delivery-domain link, refused for a merged PR,
+// and read back as the delivery's associated-intent list.
+// ---------------------------------------------------------------------------
+
+/** Whether `table` exists yet (the intent store creates its tables lazily). */
+function hasTable(d: Db, table: string): boolean {
+  return !!d.get("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", table)
+}
+
+/** Whether this exact (delivery, intent) edge already exists. */
+export function isIntentLinked(deliveryId: string, intentId: string): boolean {
+  const d = db()
+  if (!d) return false
+  return !!d.get(
+    'SELECT 1 FROM intent_deliveries WHERE delivery_id=? AND intent_id=? LIMIT 1',
+    deliveryId,
+    intentId,
+  )
+}
+
+/**
+ * Create the association edge. Returns false when the pair is ALREADY linked
+ * (the caller surfaces `delivery.intentAlreadyLinked`) — checked in the same
+ * transaction as the insert, so a concurrent duplicate hits the unique index
+ * `idx_intent_delivery_unique` and rolls back rather than creating a second row.
+ */
+export function insertIntentDelivery(deliveryId: string, intentId: string): boolean {
+  const d = requireDb()
+  return tx(d, () => {
+    if (isIntentLinked(deliveryId, intentId)) return false
+    d.run(
+      'INSERT INTO intent_deliveries (id, delivery_id, intent_id, created_at) VALUES (?,?,?,?)',
+      randomUUID(),
+      deliveryId,
+      intentId,
+      Date.now(),
+    )
+    return true
+  })
+}
+
+/** Drop the association edge. Returns false when there was nothing to drop. */
+export function deleteIntentDelivery(deliveryId: string, intentId: string): boolean {
+  const d = requireDb()
+  if (!isIntentLinked(deliveryId, intentId)) return false
+  d.run('DELETE FROM intent_deliveries WHERE delivery_id=? AND intent_id=?', deliveryId, intentId)
+  return true
+}
+
+/**
+ * Delete the `intent_prs` row for one intent's PR toward one delivery. Called
+ * after that PR was successfully closed on the forge during an unlink.
+ *
+ * The row is DELETED rather than kept as `closed`: a kept row would still be
+ * counted by {@link integrationAggregate} (which counts by `delivery_id`), so
+ * `total` would include the unlinked intent forever and `merged < total` would
+ * permanently block the delivery. Clearing `delivery_id` to NULL instead would
+ * collide with `idx_intent_pr_intent_nodelivery` whenever the intent already
+ * holds a delivery-less PR row. Deleting is the only option that leaves no
+ * orphan, breaks no unique index, and does not skew the aggregate.
+ */
+export function deleteIntentPr(intentId: string, deliveryId: string): void {
+  const d = requireDb()
+  if (!hasTable(d, 'intent_prs')) return
+  d.run('DELETE FROM intent_prs WHERE intent_id=? AND delivery_id=?', intentId, deliveryId)
+}
+
+/**
+ * The intents linked to a delivery, by title.
+ *
+ * `prStatus` / `headBranch` come from the `intent_prs` row whose `delivery_id`
+ * is THIS delivery — never the intent's global PR state, which would show
+ * another delivery's PR in this delivery's list.
+ *
+ * `intents` / `intent_prs` are owned by the intent store and created lazily, so
+ * a delivery read that precedes any intent operation degrades to `[]` (same
+ * precedent as {@link integrationAggregate}). `intent_deliveries` itself is in
+ * this store's own schema ensure and always exists.
+ */
+export function listAssociatedIntents(deliveryId: string): AssociatedIntent[] {
+  const d = db()
+  if (!d) return []
+  if (!hasTable(d, 'intents')) return []
+  const hasPrs = hasTable(d, 'intent_prs')
+  const rows = d.all<{
+    id: string
+    title: string
+    status: string
+    pr_status: string | null
+    head_branch: string | null
+  }>(
+    `SELECT i.id            AS id,
+            i.title         AS title,
+            i.status        AS status,
+            ${hasPrs ? 'p.status' : 'NULL'}      AS pr_status,
+            ${hasPrs ? 'p.head_branch' : 'NULL'} AS head_branch
+       FROM intent_deliveries e
+       JOIN intents i ON i.id = e.intent_id
+       ${hasPrs ? 'LEFT JOIN intent_prs p ON p.intent_id = e.intent_id AND p.delivery_id = e.delivery_id' : ''}
+      WHERE e.delivery_id = ?
+      ORDER BY i.title ASC, i.id ASC`,
+    deliveryId,
+  )
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title,
+    status: r.status as IntentStatus,
+    prStatus: (r.pr_status as IntentPrStatus | null) ?? null,
+    headBranch: r.head_branch ?? null,
+  }))
 }
 
 /** Whether `status` is a delivery status the ledger accepts (wire closed-set). */

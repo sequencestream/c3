@@ -55,6 +55,7 @@ function makeIntent(overrides: Partial<Intent> = {}): Intent {
     branchName: null,
     latestCommitHash: null,
     prs: [],
+    linkedDeliveries: [],
     specPath: null,
     specStatus: 'raw',
     specMode: null,

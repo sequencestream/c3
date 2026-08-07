@@ -717,6 +717,81 @@ export interface CreateDeliveryBranchOptions {
   onPhase?: (phase: DeliveryBranchCreatePhase) => void
 }
 
+/** The first of `refs` that `git rev-parse --verify` resolves, or `null`. */
+async function firstResolvableRef(repoPath: string, refs: string[]): Promise<string | null> {
+  for (const ref of refs) {
+    if (await resolveRefHead(repoPath, ref)) return ref
+  }
+  return null
+}
+
+/** Whether `ancestor` is an ancestor of `descendant`; `null` when undecidable. */
+async function isAncestorCommit(
+  repoPath: string,
+  ancestor: string,
+  descendant: string,
+): Promise<boolean | null> {
+  const res = await git(repoPath, [
+    '-C',
+    repoPath,
+    'merge-base',
+    '--is-ancestor',
+    ancestor,
+    descendant,
+  ])
+  if (res.code === 0) return true
+  // git documents exit 1 for "not an ancestor"; anything else (bad ref, not a
+  // repo, git missing) is "cannot tell", never a false "no".
+  return res.code === 1 ? false : null
+}
+
+/**
+ * Whether linking an intent to a delivery would produce a BLOATED PR diff: the
+ * intent's commits branch off mainline PAST the point the delivery branch forked
+ * from it, so a PR `intent head → delivery branch` would carry the whole
+ * mainline-vs-delivery-branch difference on top of the intent's own work.
+ *
+ * The test is on the intent's FORK POINT, not on plain ancestry. Say the
+ * delivery branch `d` forked from mainline at `M0` and mainline has since moved
+ * to `M5`; an intent branched at `M5` still has `M0` as an ancestor, so an
+ * ancestry test would see nothing wrong — yet its PR into `d` shows `M1..M5`
+ * plus the intent's commits. So:
+ *
+ *   fork = merge-base(mainline, intentCommit)   // where the intent left mainline
+ *   bloated ⟺ fork is NOT an ancestor of the delivery branch head
+ *
+ * Purely observational and fail-open: a missing branch, a non-repo path or any
+ * git failure returns `false` (no warning), because a warning we cannot justify
+ * is worse than no warning. Returns `false` too when there is no delivery branch
+ * yet — a branch created later starts at the CURRENT mainline head, which makes
+ * the intent's fork point an ancestor by construction.
+ */
+export async function detectDeliveryDiffBloat(
+  repoPath: string,
+  intentCommit: string,
+  baseBranch: string,
+  deliveryBranch: string | null,
+): Promise<boolean> {
+  if (!deliveryBranch) return false
+  const repo = isGitRepo(repoPath) ? repoPath : discoverSubRepos(repoPath)[0]
+  if (!repo) return false
+  const remote = await resolveRemote(repo)
+  const baseRef = await firstResolvableRef(
+    repo,
+    remote ? [`${remote}/${baseBranch}`, baseBranch] : [baseBranch],
+  )
+  const deliveryRef = await firstResolvableRef(
+    repo,
+    remote ? [deliveryBranch, `${remote}/${deliveryBranch}`] : [deliveryBranch],
+  )
+  if (!baseRef || !deliveryRef) return false
+  if (!(await resolveRefHead(repo, intentCommit))) return false
+  const forkPoint = await git(repo, ['-C', repo, 'merge-base', baseRef, intentCommit])
+  const fork = forkPoint.code === 0 ? forkPoint.stdout.trim() : ''
+  if (!fork) return false
+  return (await isAncestorCommit(repo, fork, deliveryRef)) === false
+}
+
 export async function createDeliveryBranch(
   repoPath: string,
   branchName: string,
@@ -1074,10 +1149,33 @@ export interface ClosePrResult {
 }
 
 /**
+ * Forge CLI output fragments meaning "this change request is not open any more".
+ * Closing something already closed is the state the caller wanted, so it counts
+ * as SUCCESS — otherwise an externally-closed PR would deadlock every flow that
+ * must close before it may proceed (intent cancellation, delivery unlink).
+ *
+ * Deliberately does NOT include "merged": a merged PR is a different state that
+ * callers must refuse, never absorb. Same substring-matching style as
+ * {@link GH_NOT_LOGGED_IN_MARKERS}.
+ */
+const PR_ALREADY_CLOSED_MARKERS = [
+  'not open', // gh: "Pull request #12 is not open"
+  'already closed',
+  'is closed',
+  'cannot close', // glab: "cannot close a closed merge request"
+]
+
+function isAlreadyClosedOutput(out: string): boolean {
+  const lower = out.toLowerCase()
+  if (lower.includes('merged')) return false
+  return PR_ALREADY_CLOSED_MARKERS.some((m) => lower.includes(m))
+}
+
+/**
  * Close a GitHub Pull Request via the `gh` CLI: `gh pr close <prId>`, no extra
- * flags (the PR number is enough). A non-zero exit is a failure — including a PR
- * already closed externally (`gh` returns "not open" / "Could not resolve to a
- * PullRequest"); the caller then leaves the intent untouched. `unavailable` is
+ * flags (the PR number is enough). A PR that is ALREADY closed reports success
+ * (the desired state already holds) with a warn log; every other non-zero exit
+ * is a failure and the caller leaves its own state untouched. `unavailable` is
  * set only for a missing CLI (ENOENT) or an auth failure, matching {@link createGhPr}.
  */
 export async function closeGhPr(cwd: string, prId: string): Promise<ClosePrResult> {
@@ -1087,6 +1185,10 @@ export async function closeGhPr(cwd: string, prId: string): Promise<ClosePrResul
   }
   if (code !== 0) {
     const out = oneLine(stderr || stdout)
+    if (isAlreadyClosedOutput(out)) {
+      console.warn(`[git] gh pr close #${prId}: PR 已是关闭态,视为成功 — ${out}`)
+      return { ok: true }
+    }
     const notLoggedIn = GH_NOT_LOGGED_IN_MARKERS.some((m) => out.toLowerCase().includes(m))
     return {
       ok: false,
@@ -1099,7 +1201,8 @@ export async function closeGhPr(cwd: string, prId: string): Promise<ClosePrResul
 
 /**
  * Close a GitLab Merge Request via the `glab` CLI: `glab mr close <prId>`. Shares
- * the {@link closeGhPr} contract, including the unavailable CLI/auth distinction.
+ * the {@link closeGhPr} contract, including the already-closed-is-success rule
+ * and the unavailable CLI/auth distinction.
  */
 export async function closeGlabMr(cwd: string, prId: string): Promise<ClosePrResult> {
   const { code, stdout, stderr } = await run('glab', cwd, ['mr', 'close', prId])
@@ -1108,6 +1211,10 @@ export async function closeGlabMr(cwd: string, prId: string): Promise<ClosePrRes
   }
   if (code !== 0) {
     const out = oneLine(stderr || stdout)
+    if (isAlreadyClosedOutput(out)) {
+      console.warn(`[git] glab mr close !${prId}: MR 已是关闭态,视为成功 — ${out}`)
+      return { ok: true }
+    }
     const notLoggedIn = GLAB_NOT_LOGGED_IN_MARKERS.some((m) => out.toLowerCase().includes(m))
     return {
       ok: false,

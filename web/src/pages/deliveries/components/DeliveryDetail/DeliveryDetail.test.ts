@@ -47,6 +47,8 @@ function mountDetail(
       plan: over.plan ?? PLANNED_PLAN,
       branchInit: null,
       workspaceGitBranchMode: over.mode ?? 'worktree',
+      associatedIntents: [],
+      intents: [],
     },
   })
 }
@@ -135,6 +137,8 @@ describe('DeliveryDetail', () => {
         plan: PLANNED_PLAN,
         branchInit: { deliveryId: 'd1', phase: 'pushing' },
         workspaceGitBranchMode: 'worktree',
+        associatedIntents: [],
+        intents: [],
       },
     })
     expect(w2.find('[data-testid="delivery-branch-init-progress"]').exists()).toBe(true)

@@ -30,6 +30,7 @@ import type {
   CodeSearchMode,
   CodexPolicy,
   DepType,
+  AssociatedIntent,
   Delivery,
   DeliveryTransitionPlan,
   Discussion,
@@ -439,6 +440,12 @@ export function createState(deps: StateDeps) {
   /** The server-computed transition plan for the open delivery (never re-derived client-side). */
   const activeDeliveryPlan = ref<DeliveryTransitionPlan | null>(null)
   /**
+   * Intents linked to the open delivery, as the server listed them. Each row's
+   * `prStatus` is that intent's PR toward THIS delivery — never its global PR
+   * state — so the list is server truth and is never recombined client-side.
+   */
+  const activeDeliveryIntents = ref<AssociatedIntent[]>([])
+  /**
    * In-flight branch-init state for the open delivery (phase progress). `null`
    * = no init running. Set when the init is sent, advanced by the server's
    * progress frames, cleared on the result frame or an init error.
@@ -447,6 +454,14 @@ export function createState(deps: StateDeps) {
 
   const currentIntents = computed<Intent[]>(() =>
     intentsProject.value ? (intents.value[intentsProject.value] ?? []) : [],
+  )
+  /**
+   * The delivery page's intent pool (its link picker) — keyed by the DELIVERY
+   * workspace, not the intents tab's. The two tabs can sit on different
+   * workspaces, and the picker must offer the delivery's own.
+   */
+  const deliveryLinkIntents = computed<Intent[]>(() =>
+    deliveriesProject.value ? (intents.value[deliveriesProject.value] ?? []) : [],
   )
 
   // Per-workspace SDD master switch, rebroadcast with every intent list. Drives
@@ -1077,7 +1092,9 @@ export function createState(deps: StateDeps) {
     activeDeliveryId,
     activeDelivery,
     activeDeliveryPlan,
+    activeDeliveryIntents,
     activeDeliveryBranchInit,
+    deliveryLinkIntents,
     currentIntentSessions,
     currentDiscussions,
     activeDiscussionRunState,

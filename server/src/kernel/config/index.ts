@@ -21,7 +21,6 @@
  * clean default (system agent only) so c3 still boots.
  */
 import { readFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { readJsonFile, withFileLock, writeAtomic } from './store.js'
 import {
@@ -407,10 +406,23 @@ function normalize(raw: Partial<SystemSettings> | undefined): SystemSettings {
   // (the zod default would otherwise erase that distinction).
   const entries: AgentOrderEntry[] = []
   const seenIds = new Set<string>()
+  // Fallback id for a record that carries none: the current millisecond plus a
+  // counter monotonic within this pass, matching the web console's minting rule
+  // (an id reads as its creation time and never carries placeholder words).
+  // The counter is load-bearing: the de-dupe below drops a repeated id, so two
+  // id-less records landing in the same millisecond would otherwise silently
+  // lose the second one. Skip anything already taken by an explicit id.
+  const mintedAt = Date.now()
+  let mintSeq = 0
+  const mintAgentId = (): string => {
+    let id = `${mintedAt}-${mintSeq++}`
+    while (seenIds.has(id)) id = `${mintedAt}-${mintSeq++}`
+    return id
+  }
   for (const a of incoming) {
     if (!a || typeof a !== 'object') continue
     const rec = a as Record<string, unknown>
-    const id = typeof rec.id === 'string' && rec.id ? rec.id : randomUUID()
+    const id = typeof rec.id === 'string' && rec.id ? rec.id : mintAgentId()
     if (seenIds.has(id)) continue // de-dupe
     // Migrate legacy → discriminated candidate, then validate + route by `vendor`
     // tag through the zod schema. An unknown vendor or a config that fails its arm

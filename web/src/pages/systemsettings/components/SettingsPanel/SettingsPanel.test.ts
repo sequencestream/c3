@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { mount } from '@vue/test-utils'
@@ -1921,5 +1921,69 @@ describe('SettingsPanel.vue — one-shot locate target', () => {
     await w.find('[data-testid="confirm-accept"]').trigger('click')
     await settle()
     expect(w.find('.agent-row.located').exists()).toBe(false)
+  })
+})
+
+describe('SettingsPanel.vue — agent id minting (2026-08-07-007)', () => {
+  // Only Date is faked: the panel's own timers (tab transitions, toasts) must keep
+  // running on the real clock or mounting would stall.
+  const freezeClock = (iso: string) => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(iso))
+    return Date.now()
+  }
+  afterEach(() => vi.useRealTimers())
+
+  /** The agents the draft grew on top of the seeded system row. */
+  const minted = (w: ReturnType<typeof mount>) => {
+    const saved = (w.emitted('save') as [SystemSettings][])[0][0]
+    return saved.agents.filter((a) => a.id !== SYSTEM_AGENT_ID).map((a) => a.id)
+  }
+
+  it('mints added-agent ids from the current millisecond, free of placeholder words', async () => {
+    const now = freezeClock('2026-08-07T01:02:03.456Z')
+    const w = mount(SettingsPanel, { props: { open: true, settings: baseSettings } })
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    await w.find('[data-testid="settings-add-agent"]').trigger('click')
+    await w.find(SAVE.agent).trigger('click')
+
+    const ids = minted(w)
+    expect(ids).toHaveLength(2)
+    for (const id of ids) {
+      expect(id).toMatch(new RegExp(`^${now}-\\d+$`))
+      expect(id).not.toMatch(/new|copy/i)
+    }
+    // Same millisecond, still distinct — the numeric suffix carries uniqueness.
+    expect(ids[0]).not.toBe(ids[1])
+  })
+
+  it('mints a copied agent id the same way instead of a `copy-` prefix', async () => {
+    const now = freezeClock('2026-08-07T01:02:03.456Z')
+    const w = mount(SettingsPanel, {
+      props: {
+        open: true,
+        settings: {
+          ...baseSettings,
+          agents: [
+            ...baseSettings.agents,
+            {
+              id: 'a1',
+              vendor: 'claude',
+              configMode: 'custom',
+              displayName: 'A1',
+              config: { baseUrl: 'https://a1', apiKey: 'k', model: '' },
+            },
+          ],
+        },
+      },
+    })
+    const copyBtns = w.findAll('[data-testid="agent-copy"]')
+    await copyBtns[copyBtns.length - 1].trigger('click')
+    await w.find(SAVE.agent).trigger('click')
+
+    const ids = minted(w).filter((id) => id !== 'a1')
+    expect(ids).toHaveLength(1)
+    expect(ids[0]).toMatch(new RegExp(`^${now}-\\d+$`))
+    expect(ids[0]).not.toMatch(/new|copy/i)
   })
 })

@@ -601,10 +601,22 @@ function makeAgent(
   }
 }
 
+/** Monotonic counter behind {@link mintAgentId} — see there. */
+let agentIdSeq = 0
+
+/** Mint an agent id from the current millisecond plus a monotonic counter.
+ *  The timestamp base makes an id read as its creation time; the counter keeps
+ *  two ids minted inside the same millisecond apart. Purely numeric on purpose:
+ *  an id flows into the UI, logs, session bindings and branch names, so it must
+ *  not carry placeholder words like `new`/`copy`. */
+function mintAgentId(): string {
+  return `${Date.now()}-${agentIdSeq++}`
+}
+
 function addAgent() {
   // Locally-unique id so the default-agent radio can target it before save; the
-  // server keeps it as-is (only id-less agents get a fresh uuid on normalize).
-  const id = `new-${Date.now()}-${draft.value.agents.length}`
+  // server keeps it as-is (only id-less agents get a freshly minted one on normalize).
+  const id = mintAgentId()
   draft.value.agents.push(
     makeAgent('claude', {
       id,
@@ -756,8 +768,8 @@ function copyAgent(a: AgentConfig) {
   const cloned = structuredClone(toRaw(a))
   const idx = draft.value.agents.indexOf(a)
   // Locally-unique id so the radio can target it before save; the server
-  // keeps it as-is (only id-less agents get a fresh uuid on normalize).
-  cloned.id = `copy-${Date.now()}-${idx}`
+  // keeps it as-is (only id-less agents get a freshly minted one on normalize).
+  cloned.id = mintAgentId()
   cloned.displayName = a.displayName ? `${a.displayName}-copy` : ''
   // Insert the copy right after the original.
   draft.value.agents.splice(idx + 1, 0, cloned)
@@ -1510,6 +1522,7 @@ function selectAdmin(username: string) {
                 <span class="col-actions">
                   <button
                     class="icon-btn"
+                    data-testid="agent-copy"
                     :title="t('settings.agents.copy.tooltip')"
                     @click="copyAgent(a)"
                   >

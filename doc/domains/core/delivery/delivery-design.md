@@ -1,25 +1,26 @@
 # delivery — 设计
 
-实现 [delivery-spec.md](delivery-spec.md)。该能力由 `server/src/features/deliveries/`(store + 状态机 + handlers)、`server/src/git.ts`(交付分支 git 助手)、`shared/src/protocol/delivery*.ts`(线契约)与 `web/src/pages/deliveries/`(一级页面)构成,并挂钩到 `wiring/broadcasts.ts` 的广播。
+实现 [delivery-spec.md](delivery-spec.md)。该能力由 `server/src/features/deliveries/`(store + 状态机 + handlers)、`server/src/git.ts`(交付分支与交付 PR 的 git/forge 助手)、`shared/src/protocol/delivery*.ts`(线契约)与 `web/src/pages/deliveries/`(一级页面)构成,并挂钩到 `wiring/broadcasts.ts` 的广播。
 
-**复用基线。** 复用共享 `Db`(单文件 SQLite,`PRAGMA user_version` 只是各 store 自有的信息戳)、`resolveWorkspaceRoot`/`pathToId` 工作区解析、`HandlerMap` 穷尽注册门(ADR-0009)、既有 `ConfirmDialog`/`MobileStack`/i18n 类型安全 `t`。真正全新的是:deliveries 台账表、交付状态机纯函数、`delivery_transition_failed` 结构化缺口帧、按工作区计算角标、以及交付分支生命周期(create/bind 初始化 + 孤儿防御 + 多仓拒绝 + 终态清理)。
+**复用基线。** 复用共享 `Db`(单文件 SQLite,`PRAGMA user_version` 只是各 store 自有的信息戳)、`resolveWorkspaceRoot`/`pathToId` 工作区解析、`HandlerMap` 穷尽注册门(ADR-0009)、通用事件归一化管道(ADR-0026)、既有 `ConfirmDialog`/`MobileStack`/i18n 类型安全 `t`。真正全新的是:deliveries 台账表、交付状态机纯函数、`delivery_transition_failed` 结构化缺口帧、按工作区计算角标、交付分支生命周期(create/bind 初始化 + 孤儿防御 + 多仓拒绝 + 终态清理),以及交付 PR 生命周期(先查 forge 事实的幂等 + 三类失败分层 + `delivered` 原子写)。
 
 ## 职责
 
-| 关注点            | 说明                                                                                                                                                                                                                                           |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 台账读写          | `store.ts`:`listDeliveries`/`getDelivery`/`createDelivery`/`updateDelivery`/`setDeliveryStatus`/`integrationAggregate`/`setDeliveryBranch`/`clearDeliveryBranch`/`activeDeliveryHoldsBranch`                                                   |
-| 关联边            | `store.ts`:`insertIntentDelivery`/`deleteIntentDelivery`/`isIntentLinked`/`listAssociatedIntents`/`deleteIntentPr`;handler 端 `linkIntentToDeliveryHandler` / `unlinkIntentFromDeliveryHandler`                                                |
-| 状态机            | `state-machine.ts`:`canTransitionDelivery`(唯一写状态门)/`deliveryTargets`/`computeTransitionPlan`/`deliveryRequiresAction`/`countDeliveriesNeedingAction`                                                                                     |
-| 分支生命周期      | `git.ts`:`isMultiRepoWorkspace`/`fetchRemoteBaseAsync`/`remoteBranchHead`/`resolveRefHead`/`createDeliveryBranch`/`deleteLocalBranch`;handler 端 `initDeliveryBranchHandler` 编排 fetch → 期望起点 → 远端探测 → create/bind/孤儿判定 → DB 写入 |
-| forge 交互        | `git.ts`:`getForgePrStatus`(解除前的实时状态复核)/`closeForgePr`(已关闭视为成功)/`detectDeliveryDiffBloat`(关联时的分叉点检测)                                                                                                                 |
-| 工作区隔离 + 广播 | handlers 经 `resolveWorkspaceRoot` 解析路径、校验 `delivery.workspaceId` 归属;变更后 `broadcastDeliveries` 全量重读并带角标                                                                                                                    |
-| 页面              | `web/src/pages/deliveries/`:列表 + 详情两 Tab + 分段选择器 + 常驻缺口 + 分支初始化区,只消费服务端 `transitionPlan`                                                                                                                             |
+| 关注点            | 说明                                                                                                                                                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 台账读写          | `store.ts`:`listDeliveries`/`getDelivery`/`createDelivery`/`updateDelivery`/`setDeliveryStatus`/`integrationAggregate`/`setDeliveryBranch`/`clearDeliveryBranch`/`activeDeliveryHoldsBranch`                                                                             |
+| 交付 PR + 日志    | `store.ts`:`getLatestDeliveryPr`/`upsertDeliveryPr`/`updateDeliveryPrFacts`/`insertDeliveryLog`/`listDeliveryLogs`/`commitDeliveryDelivered`/`commitDeliveryMergeConflict`;handler 端 `createDeliveryPrHandler` / `syncDeliveryPrHandler`                                |
+| 关联边            | `store.ts`:`insertIntentDelivery`/`deleteIntentDelivery`/`isIntentLinked`/`listAssociatedIntents`/`deleteIntentPr`;handler 端 `linkIntentToDeliveryHandler` / `unlinkIntentFromDeliveryHandler`                                                                          |
+| 状态机            | `state-machine.ts`:`canTransitionDelivery`(唯一写状态门)/`deliveryTargets`/`computeTransitionPlan`/`deliveryRequiresAction`/`countDeliveriesNeedingAction`                                                                                                               |
+| 分支生命周期      | `git.ts`:`isMultiRepoWorkspace`/`fetchRemoteBaseAsync`/`remoteBranchHead`/`resolveRefHead`/`createDeliveryBranch`/`deleteLocalBranch`;handler 端 `initDeliveryBranchHandler` 编排 fetch → 期望起点 → 远端探测 → create/bind/孤儿判定 → DB 写入                           |
+| forge 交互        | `git.ts`:`getForgePrStatus`(解除前的实时状态复核)/`closeForgePr`(已关闭视为成功)/`detectDeliveryDiffBloat`(关联时的分叉点检测)/`findOpenForgePr`(建交付 PR 前查开放 PR)/`getForgeDeliveryPrFacts`(状态+冲突+CI+审批,双 provider 归一)/`deliveryMergeTrial`(冲突文件枚举) |
+| 工作区隔离 + 广播 | handlers 经 `resolveWorkspaceRoot` 解析路径、校验 `delivery.workspaceId` 归属;变更后 `broadcastDeliveries` 全量重读并带角标                                                                                                                                              |
+| 页面              | `web/src/pages/deliveries/`:列表 + 详情两 Tab + 分段选择器 + 常驻缺口 + 分支初始化区,只消费服务端 `transitionPlan`                                                                                                                                                       |
 
 ## SQLite 层
 
 - 位置:`server/src/features/deliveries/store.ts`。单文件 `~/.c3/c3.db`,惰性建表,`CREATE TABLE IF NOT EXISTS` 幂等;软失败:库不可用时读返回空/null、写抛错。
-- 版本戳:`SCHEMA_VERSION=1`,写 `PRAGMA user_version=1`(仅信息性,与其它 store 互相覆盖无妨)。
+- 版本戳:`SCHEMA_VERSION=2`,写 `PRAGMA user_version=2`(仅信息性,与其它 store 互相覆盖无妨)。
 - `intent_prs` 由 intent-management 域拥有;`integrationAggregate` 直接查该表,表未建时对 `sqlite_master` 判定降级 `0/0`(boot 期意图库可能尚未初始化)。`listAssociatedIntents` 同理对 `intents`/`intent_prs` 判存在,缺失返回 `[]`。
 - `intent_deliveries` 由本域拥有并唯一写入,但 **intent store 的 SCHEMA 也声明同一 `CREATE TABLE IF NOT EXISTS`**:永久删除意图要在同一事务里 `DELETE FROM intent_deliveries`,而一个从未打开过交付页的库里本 store 的 schema ensure 尚未跑过,那条 DELETE 会撞 "no such table" 并回滚整个删除事务。两处均 `IF NOT EXISTS`,先初始化者建表。反向地,intent store 的 `hydrate` 只**读** `deliveries` 表拼出 `Intent.linkedDeliveries`(同样带表存在守卫),写仍然只在本域。
 
@@ -37,7 +38,18 @@
 - `idx_intent_delivery_unique` 唯一:`ON (delivery_id, intent_id)`——重复关联在应用层先判、索引兜底;唯一键**不是** `intent_id`,同一意图对多个交付各一条边是允许的
 - `idx_intent_delivery_delivery(delivery_id)` / `idx_intent_delivery_intent(intent_id)`——交付详情按前者查关联意图,意图列表按后者查关联交付
 
-两张表均无存量回填:交付与其关联边都是本域自有实体。
+`delivery_prs` 交付 PR 表(新库与迁移 `database/migrate/2026/08/07/035-delivery_prs.sql` 同构):
+
+- `id` PK / `delivery_id` / `forge` / `repo` / `number` / `url` / `head_branch` / `base_branch` / `base_sha` / `head_sha` / `status` CHECK(`reviewing`/`merged`/`closed`)/ `blocked_reason` CHECK(`ci_failed`/`approval`)/ `conflict_files`(JSON 数组)/ 时间戳
+- `idx_delivery_pr_identity` 唯一:`ON (forge, repo, number)`——一条真实 PR 一行
+- `idx_delivery_pr_idempotency` 唯一:`ON (delivery_id, base_sha, head_sha)`——并发重试兜底
+- `idx_delivery_pr_delivery(delivery_id, created_at DESC)`——页面只渲染最新一行
+
+`delivery_logs` 操作审计表(新库与迁移 `database/migrate/2026/08/07/036-delivery_logs.sql` 同构):
+
+- `id` PK / `delivery_id` / `operation_type` / `summary` / `actor` / `created_at` + `idx_delivery_log_delivery_created(delivery_id, created_at DESC)`
+
+四张表均无存量回填:交付、关联边、交付 PR 与交付日志都是本域自有实体。
 
 ## Store
 
@@ -70,12 +82,12 @@
 
 - `state-machine.ts` 是纯函数模块(无 DB/WS 依赖),表驱动 `EDGES` 定义六态边 + 角色 + 守卫序列;`canTransitionDelivery` 对非法边返回 `delivery.invalidStatusTransition`,对角色/原因/守卫不满足返回 `delivery.transitionGuardFailed` + 缺口列表。
 - handler 的 `applyTransition` 统一服务 `transition_delivery` 与 `cancel_delivery`:从当前事实(分支就绪、聚合)重新计算守卫,失败发 `delivery_transition_failed`(含 `currentStatus` + `to` + 缺口),成功写库并回 `delivery_detail` + 广播。
-- 系统专属边(`verified → delivered`、`verified → verifying`)在本阶段无写入口,仅契约 + 测试接缝;`canTransitionDelivery` 以 `role:'system'` 支持之。
+- 系统专属边(`verified → delivered`、`verified → verifying`)的唯一写入口是 `sync_delivery_pr`:它以 `role:'system'` 求值,通过后经 `commitDeliveryDelivered` / `commitDeliveryMergeConflict` 在单事务内落定。状态机本身不因此改动——两条边本就在 `EDGES` 表中。
 - `branchNotReady` 缺口的 `jumpTo` 为 `branch`(本页分支初始化区),不再是 `workspace-settings`;`branch_ready` 变为可写后,`branchNotReady` 守卫真正生效。
 
 ## 角标
 
-`countDeliveriesNeedingAction` 对工作区每个交付求 `deliveryRequiresAction`(可执行人工推进/返工动作存在,或存在人工可解决缺口)之和;`HUMAN_SOLVABLE_GAPS` 本阶段为空集(分支初始化/意图关联/PR 合并属后续阶段),故实际恒为 0,代码口径与状态机一致,后续接入对应动作即解锁。角标随 `deliveries` 帧下发(`needsActionCount`),前端不重算。
+`countDeliveriesNeedingAction` 对工作区每个交付求 `deliveryRequiresAction`(可执行人工推进/返工动作存在、存在人工可解决缺口,或存在可执行的交付 PR 动作)之和。`HUMAN_SOLVABLE_GAPS` 是空集:转移计划能报出的缺口要么在页面别处解决(分支初始化、意图关联),要么是纯系统等待。挂在系统边上的那个人工动作——建交付 PR / 解合并受阻——**无法表达为计划缺口**(计划看不见有没有 PR),因此走独立的 `mergeActionable` 入口:判定读台账,唯一实现在 `merge-attention.ts` 的 `deliveryMergeActionable`(`verified` + `worktree` + 「无 PR 或 PR 已关闭」或「PR 开放且受阻」),由列表回包与广播共用。角标随 `deliveries` 帧下发(`needsActionCount`),前端不重算。
 
 ## 广播
 
@@ -86,6 +98,14 @@
 `web/src/pages/deliveries/` 容器经 `App.vue` 注入 `currentDeliveries`/`activeDelivery`/`activeDeliveryPlan`/`activeDeliveryIntents`/`deliveryLinkIntents`/`activeDeliveryBranchInit`/`workspaceGitBranchMode`。页面只消费服务端 `transitionPlan` 渲染分段选择器(非法目标不出现、守卫未满足置灰)与常驻缺口(`delivery.guard.*` 文案 + 跳转 + N/M)。`current-branch` 模式显示「仅聚合视图」说明文案,动作区不渲染分支/PR/合并动作。角标 `HEADER_TABS` 取 `deliveriesNeedsAction[currentWorkspace]`。
 
 **分支初始化区**(概览 tab,`worktree` 模式):未就绪时显示 create/bind 切换 + 分支名输入框(默认 `delivery/<short-id>-<slug>`,由 `defaultDeliveryBranchName` 生成)+「初始化分支」按钮 + 进度行(`delivery_branch_init_progress` 相位文案);就绪后显示分支名;终态且持有分支时显示「清理分支」入口(danger ConfirmDialog 二次确认)。`branchNotReady` 缺口跳转 `branch` 会切到概览并聚焦该区。`message-handler` 处理 `delivery_branch_init_progress`/`delivery_branch_init_result`(成功清 in-flight + 采纳模型 + 重取详情 + 落后警告 toast),并在 init 错误码时清 in-flight + toast。
+
+## 交付 PR 接线(create_delivery_pr / sync_delivery_pr)
+
+- **创建** `createDeliveryPrHandler`:`resolveDeliveryPrContext` 按固定顺序过闸(`worktree` → `verified` → 分支就绪)→ fetch 两端并解析 `base_sha`/`head_sha`(SHA 是幂等键的材料,读本地过期 ref 会把行钉在一个远端已不存在的状态上)→ `countCommitsAhead` 判有差异 → **`findOpenForgePr` 先查 forge**,命中即复用、未命中才 `createForgePr`、查询失败即中止 → `upsertDeliveryPr` + 交付日志 → 回 `delivery_detail` + 广播。
+- **同步** `syncDeliveryPrHandler`:取最新交付 PR 行(无行报 `delivery.deliveryPrNotFound`)→ `getForgeDeliveryPrFacts` 归一化 forge 事实 → 分层落定:`merged` 走 `settleDeliveryDelivered`;`open + 冲突` 先 `deliveryMergeTrial` 枚举冲突文件再经状态机写 `verified → verifying`(交付已不是 `verified` 时只刷新冲突证据,不去要一条不存在的边);`open + CI/审批` 只写 `blocked_reason`;`open` 无阻塞清空 `blocked_reason`;`closed` 只同步行状态;查询失败什么都不写。
+- **`settleDeliveryDelivered`**:`canTransitionDelivery(role:'system', mergeSucceeded:true)` → `commitDeliveryDelivered`(状态 + 日志 + PR 行同一事务)→ **提交后**发 `delivery:delivered`(经 `ctx.normalizeEvent` 走通用事件管道的默认归一化器)、`markQueueDirty` 触发跨交付闸门重算、广播 `deliveries` **与 `intents`**。已是 `delivered` 的重复同步只刷新 PR 行,不二次写日志、不重复发事件。
+- **git.ts 侧**:`findOpenForgePr` 以 `gh pr list --head/--base --state open` 与 `glab mr list --source-branch/--target-branch` 归一为同一答案;`getForgeDeliveryPrFacts` 把 GitHub 的 `mergeable`/`statusCheckRollup`/`reviewDecision` 与 GitLab 的 `detailed_merge_status`/`has_conflicts`/pipeline 状态归一为 `conflict`/`ciFailed`/`approvalMissing` 三个布尔;`deliveryMergeTrial` 在**临时 detached worktree** 中试合(与 `syncDeliveryMainline` 同款),纯观测、失败即空列表。
+- **前端**:概览 tab 的合并区(`worktree` 模式,`verified` 起或已有 PR 时渲染)给出建 PR / PR 链接与状态 / 「Forge 已合并,等待确认」/「合并受阻」/ 冲突文件列表 / 「同步」。`message-handler` 在 `delivery_detail` 到达时采纳 `deliveryPr`、清 busy 标志,并按 `autoSyncedDeliveryPrs` 做**进页一次**的自动同步(该帧同时是同步自己的回包,不设这道闸就会自激)。
 
 ## 依赖
 

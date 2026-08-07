@@ -179,7 +179,11 @@ const {
   activeDeliveryBranchInit,
   activeDeliveryMainlineAhead,
   activeDeliverySyncPhase,
+  activeDeliveryPr,
+  activeDeliveryPrBusy,
   syncDeliveryMainline,
+  createDeliveryPr,
+  syncDeliveryPr,
   deliveryLinkIntents,
   openDelivery,
   createDelivery,
@@ -691,6 +695,8 @@ function onCodesChatWidth(px: number): void {
           :intents="deliveryLinkIntents"
           :mainline-ahead="activeDeliveryMainlineAhead"
           :sync-phase="activeDeliverySyncPhase"
+          :delivery-pr="activeDeliveryPr"
+          :delivery-pr-busy="activeDeliveryPrBusy"
           :workspace-git-branch-mode="
             currentWorkspaceSetting?.gitBranchMode ??
             (deliveriesProject
@@ -706,6 +712,8 @@ function onCodesChatWidth(px: number): void {
           @init-branch="(payload) => initDeliveryBranch(payload)"
           @cleanup-branch="cleanupDeliveryBranch"
           @sync-mainline="syncDeliveryMainline"
+          @create-delivery-pr="createDeliveryPr"
+          @sync-delivery-pr="syncDeliveryPr"
           @link-intent="linkIntentToDelivery"
           @unlink-intent="unlinkIntentFromDelivery"
           @open-workspace-settings="openWorkspaceSetting"

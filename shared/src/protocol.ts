@@ -114,6 +114,8 @@ export type ClientToServer =
   | DeliveryMsg.ClientTransitionDelivery
   | DeliveryMsg.ClientInitDeliveryBranch
   | DeliveryMsg.ClientSyncDeliveryMainline
+  | DeliveryMsg.ClientCreateDeliveryPr
+  | DeliveryMsg.ClientSyncDeliveryPr
   | DeliveryMsg.ClientCleanupDeliveryBranch
   | DeliveryMsg.ClientLinkIntentToDelivery
   | DeliveryMsg.ClientUnlinkIntentFromDelivery

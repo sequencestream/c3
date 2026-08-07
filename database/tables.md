@@ -37,6 +37,8 @@
 | 21  | infra        | `schema_migrations`         | [infra/schema_migrations.sql](infra/schema_migrations.sql)                             | `server/src/kernel/infra/db.ts`                          | 已完成的一次性数据迁移标记 (跨域)                        |
 | 22  | deliveries   | `deliveries`                | [deliveries/deliveries.sql](deliveries/deliveries.sql)                                 | `server/src/features/deliveries/store.ts`                | 交付 (集成单元) 台账                                     |
 | 23  | deliveries   | `intent_deliveries`         | [deliveries/intent_deliveries.sql](deliveries/intent_deliveries.sql)                   | `server/src/features/deliveries/store.ts`                | 意图 ↔ 交付关联边 (意图 store 亦声明建表)                |
+| 24  | deliveries   | `delivery_prs`              | [deliveries/delivery_prs.sql](deliveries/delivery_prs.sql)                             | `server/src/features/deliveries/store.ts`                | 交付 PR (交付分支 → 主线)                                |
+| 25  | deliveries   | `delivery_logs`             | [deliveries/delivery_logs.sql](deliveries/delivery_logs.sql)                           | `server/src/features/deliveries/store.ts`                | 交付生命周期变更日志 (操作审计轨迹)                      |
 
 ## 模块说明
 
@@ -93,7 +95,11 @@ Schema 版本: 7。v2→v3 新增 `discussions.participant_agent_ids` (创建时
 
 交付 (集成单元) 域 (ADR-0036)。`deliveries` 是「一批意图共同集成并最终进入主线」的 Git 生命周期单元台账。`status` 只接受 `planned / integrating / verifying / verified / delivered / cancelled` 六值 (数据库 CHECK 与共享协议同一闭集，见 `@ccc/shared` 的 `DeliveryStatus`)，无「已完成」态——它等于「所有关联意图的 PR 已合入交付分支」这一可推导事实，只以「集成就绪 N/M」实时聚合呈现 (由 store 直接读 `intent_prs.delivery_id` 派生，不持久化计数、不读冗余列)。`base_branch` 是建交付时对工作区 `defaultMainBranch` 的快照，之后修改配置不回写历史交付。`branch_name`/`branch_ready` 承载交付分支生命周期：`branch_ready` 初始为 0，仅由显式 `init_delivery_branch` 在 git 侧成功 (push 成功或远端幂等绑定) 后置 1，终态手动清理 `cleanup_delivery_branch` 置回 0 并清空 `branch_name`；多仓工作区 (根非 repo 且有子仓) 建交付与初始化均被拒，分支基线只取 `fetch` 后的 `origin/<base_branch>`。`(workspace_path, status)` 有索引；`(workspace_path, branch_name)` 在活动状态 (非 `delivered`/`cancelled`) 下唯一，终态不占位、允许复用历史分支名，空分支名不参与冲突 (部分唯一索引 `idx_delivery_workspace_active_branch`)。状态写入唯一经 delivery 域纯函数 `canTransitionDelivery`，任何位置不得直接绕过。`intent_prs.delivery_id` 是意图→交付的**PR 落点** (由 intents 域 031 迁移预置)，回答「这个意图对某个交付开了哪条 PR」；`intent_deliveries` 是独立的**关联边**，回答「这个意图属于哪个交付」。二者职责分离而非冗余：关联先于 PR 存在 (刚关联时尚未提 PR)，解除关联时 PR 行会被删除而关联边的生死要独立判定，用「有没有 PR 行」代表「有没有关联」会让「已关联但尚未提 PR」这一最常见中间态无处安放。关联边由 delivery 域唯一写入 (`link_intent_to_delivery` / `unlink_intent_from_delivery`)，但 `intents` store 的 SCHEMA **也声明同一 `CREATE TABLE IF NOT EXISTS`**——永久删除意图要在同一事务里 `DELETE FROM intent_deliveries`，而一个从未打开过交付页的库里 delivery store 的 schema ensure 尚未跑过，那条 DELETE 会撞 "no such table" 并回滚整个删除事务；两处均 `IF NOT EXISTS`，先初始化者建表。`(delivery_id, intent_id)` 唯一 (重复关联在应用层先判、索引兜底)；同一意图对多个交付各一条边是允许的，多交付关联的**数据能力保留**、第一版前端不开放入口。**已 merged 的 PR 一律禁止解除关联** (本地 `intent_prs.status` + forge 实时状态双层检查)：代码已在交付分支上，删边会造成「关联没了但代码已在」，只能靠 revert 收场；解除未合并关联时先关闭 PR、成功后**删除**该 `intent_prs` 行 (保留 `closed` 行会让 `integrationAggregate` 继续计数而永久阻塞交付状态推进，置 `delivery_id` 为 NULL 则会撞 `idx_intent_pr_intent_nodelivery`)。永久删除意图同事务清关联边、远端 PR 不动；**取消交付不删关联边** (历史可查优先于表干净)。
 
-Schema 版本: 1。纯新增表 (v1)，无存量回填；详见迁移记录 `migrate/2026/08/06/032`。
+`delivery_prs` 是**交付 PR**——「交付分支 → 主线」的变更请求 (ADR-0039)，与 `intent_prs` 分表而非共表：后者是「意图 → 交付分支」并喂「集成就绪 N/M」聚合、随解除关联删行，前者两者皆不。共表会让 `integrationAggregate` (按 `delivery_id` 计数) 把交付自己算成一个关联意图。`(forge, repo, number)` 是 PR 真实身份且全库唯一 (来源未知的行不参与，与 `intent_prs` 同口径)；`(delivery_id, base_sha, head_sha)` 是幂等键兜底——应用层重试一律先向 forge 查 (head, base) 的开放 PR，命中即复用落账，从不凭本地返回码判定;forge 对同一 (head, base) 只保留一条开放 PR (推新提交是更新同一条)，故落账按 PR 身份就地刷新 SHA，而不是每个 SHA 对插一行。`status` 只出现 `reviewing/merged/closed` 三值。三类失败在此分层：merge 冲突落 `conflict_files` 并把交付回退 `verifying` (代码要改)；CI 失败 / 审批不足落 `blocked_reason`、交付状态不动 (代码没问题，缺的是外部条件)；forge 查询失败什么都不写。旧行留作历史，页面只渲染该交付的最新一行。
+
+`delivery_logs` 是交付操作审计轨迹 (仿 `intent_logs`，只增不改)。交付进入 `delivered` 的状态写与它的日志行在同一事务内落定，因此「代码已进主线但台账无痕」不可能出现；事件发布、跨交付闸门重算与广播都发生在事务提交之后，它们失败不回滚已落定的 `delivered`。
+
+Schema 版本: 2。v1 纯新增 `deliveries` / `intent_deliveries` (详见迁移记录 `migrate/2026/08/06/032`、`033`)。v2 新增 `delivery_prs` 与 `delivery_logs` 两张纯新增表，无存量回填——交付 PR 与交付日志都是新实体，未建过 PR 的既有交付不受影响，历史交付的过往操作也没有留痕可追认 (裁决见 ADR-0039；详见迁移记录 `migrate/2026/08/07/035`、`036`)。
 
 ### automations
 

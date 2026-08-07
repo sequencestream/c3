@@ -11,6 +11,7 @@ import { useTypedI18n } from '@/i18n'
 import type {
   AssociatedIntent,
   Delivery,
+  DeliveryPr,
   DeliveryStatus,
   DeliveryTransitionPlan,
   Intent,
@@ -33,6 +34,10 @@ const props = defineProps<{
   intents: Intent[]
   mainlineAhead: number | null
   syncPhase: 'fetching' | 'merging' | 'pushing' | null
+  /** The open delivery's latest 「交付分支 → 主线」 PR; null = none opened. */
+  deliveryPr: DeliveryPr | null
+  /** Whether a delivery-PR create / sync round trip is in flight. */
+  deliveryPrBusy: boolean
 }>()
 
 const emit = defineEmits<{
@@ -59,6 +64,8 @@ const emit = defineEmits<{
   'init-branch': [payload: { mode: 'create' | 'bind'; branchName: string }]
   'cleanup-branch': [deliveryId: string]
   'sync-mainline': [deliveryId: string]
+  'create-delivery-pr': [deliveryId: string]
+  'sync-delivery-pr': [deliveryId: string]
   'link-intent': [intentId: string]
   'unlink-intent': [intentId: string]
   'open-workspace-settings': []
@@ -101,12 +108,16 @@ const mobileActiveToken = computed(() => props.activeId ?? 'deliveries')
         :intents="intents"
         :mainline-ahead="mainlineAhead"
         :sync-phase="syncPhase"
+        :delivery-pr="deliveryPr"
+        :delivery-pr-busy="deliveryPrBusy"
         @update="(payload) => emit('update', payload)"
         @cancel="(id: string) => emit('cancel', id)"
         @transition="(to, confirm) => emit('transition', to, confirm)"
         @init-branch="(payload) => emit('init-branch', payload)"
         @cleanup-branch="(id: string) => emit('cleanup-branch', id)"
         @sync-mainline="(id: string) => emit('sync-mainline', id)"
+        @create-delivery-pr="(id: string) => emit('create-delivery-pr', id)"
+        @sync-delivery-pr="(id: string) => emit('sync-delivery-pr', id)"
         @link-intent="(id: string) => emit('link-intent', id)"
         @unlink-intent="(id: string) => emit('unlink-intent', id)"
         @open-workspace-settings="emit('open-workspace-settings')"

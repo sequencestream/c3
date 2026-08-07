@@ -2208,7 +2208,13 @@
       "unlinkPrStatusCheckFailed": "紐付け解除を中断しました — フォージから PR の状態を取得できません: {detail}。",
       "syncMainlineForbidden": "メインラインの同期は、デリバリーが統合中のときのみ実行できます。",
       "syncMainlineConflict": "メインラインのマージが競合し中止しました(push なし)。競合はご自身で解消してください: {detail}",
-      "syncMainlineFailed": "メインラインの同期に失敗しました: {detail}"
+      "syncMainlineFailed": "メインラインの同期に失敗しました: {detail}",
+      "deliveryPrForbidden": "配信 PR は配信が検証済みになってから作成できます。",
+      "deliveryPrModeUnsupported": "current-branch モードには配信ブランチがないため、配信 PR を作成できません。",
+      "deliveryPrNoDiff": "配信ブランチにメインラインとの差分がないため、PR を作成する必要はありません。",
+      "deliveryPrCreateFailed": "配信 PR の作成に失敗しました: {detail}",
+      "deliveryPrNotFound": "この配信にはまだ配信 PR がありません。",
+      "deliveryPrSyncFailed": "forge から配信 PR の状態を取得できませんでした: {detail}"
     }
   },
   "statusIndicator": {
@@ -2677,6 +2683,51 @@
       },
       "running": {
         "label": "メインラインを同期中…"
+      }
+    },
+    "deliveryPr": {
+      "title": {
+        "label": "メインラインへマージ"
+      },
+      "intro": {
+        "label": "配信ブランチから {base} への PR を作成します。マージは forge 上であなたが行います — c3 が代わりにマージすることはありません。"
+      },
+      "create": {
+        "label": "配信 PR を作成"
+      },
+      "sync": {
+        "label": "同期"
+      },
+      "running": {
+        "label": "forge と通信中…"
+      },
+      "link": {
+        "label": "配信 PR #{number}"
+      },
+      "status": {
+        "reviewing": {
+          "label": "オープン"
+        },
+        "merged": {
+          "label": "マージ済み"
+        },
+        "closed": {
+          "label": "クローズ済み"
+        }
+      },
+      "awaiting": {
+        "label": "forge 上ではマージ済みです。c3 の確認待ち — 「同期」で確定します。"
+      },
+      "blocked": {
+        "ciFailed": {
+          "label": "マージがブロックされています: チェックが失敗しています。コード自体に問題はなく、CI を修正してください。"
+        },
+        "approval": {
+          "label": "マージがブロックされています: 必要な承認が不足しています。コード自体に問題はなく、レビューを依頼してください。"
+        }
+      },
+      "conflict": {
+        "label": "配信ブランチとメインラインで {count} 件のファイルが競合しています。配信は検証中に戻りました。解決してから再度検証してください。"
       }
     }
   },

@@ -975,6 +975,84 @@ function oneLine(s: string): string {
   return s.replace(/\s+/g, ' ').trim().slice(0, 300)
 }
 
+/** What a local merge trial of the delivery branch into mainline found. */
+export interface MergeTrialResult {
+  /** `origin/<baseBranch>` head at trial time; `null` when unresolvable. */
+  baseSha: string | null
+  /** `origin/<branchName>` head at trial time; `null` when unresolvable. */
+  headSha: string | null
+  /**
+   * Conflicting paths, empty when the merge applied cleanly OR the trial could
+   * not run at all. The two are deliberately not distinguished: the forge's own
+   * "unmergeable" verdict is the fact that matters, and this list is only the
+   * explanation offered on top of it.
+   */
+  conflictFiles: string[]
+}
+
+/**
+ * Find out WHICH files conflict when the delivery branch merges into mainline,
+ * by actually trying it — in a throwaway detached worktree pointed at
+ * `origin/<baseBranch>`, exactly like {@link syncDeliveryMainline}. Nothing is
+ * committed, nothing is pushed and neither the user's checkout nor any intent
+ * worktree is touched.
+ *
+ * Purely observational: the forge already decided the PR is unmergeable, and this
+ * only names the files. Every failure path (no remote, unresolvable refs, worktree
+ * setup failure) degrades to an empty list with whatever SHAs could be read.
+ */
+export async function deliveryMergeTrial(
+  repoPath: string,
+  branchName: string,
+  baseBranch: string,
+): Promise<MergeTrialResult> {
+  const empty: MergeTrialResult = { baseSha: null, headSha: null, conflictFiles: [] }
+  const remote = await resolveRemote(repoPath)
+  if (!remote) return empty
+
+  await git(repoPath, ['-C', repoPath, 'fetch', remote, baseBranch, branchName])
+  const baseRef = `${remote}/${baseBranch}`
+  const headRef = `${remote}/${branchName}`
+  const baseSha = await resolveRefHead(repoPath, baseRef)
+  const headSha = await resolveRefHead(repoPath, headRef)
+  if (!baseSha || !headSha) return { baseSha, headSha, conflictFiles: [] }
+
+  const scratch = join(tmpdir(), `c3-merge-trial-${randomUUID()}`)
+  const add = await git(repoPath, ['-C', repoPath, 'worktree', 'add', '--detach', scratch, baseRef])
+  if (add.code !== 0) return { baseSha, headSha, conflictFiles: [] }
+  try {
+    const merge = await git(scratch, [
+      '-C',
+      scratch,
+      'merge',
+      '--no-commit',
+      '--no-ff',
+      '--no-edit',
+      headRef,
+    ])
+    if (merge.code === 0) return { baseSha, headSha, conflictFiles: [] }
+    const names = await git(scratch, [
+      '-C',
+      scratch,
+      'diff',
+      '--name-only',
+      '--diff-filter=U',
+      '--relative',
+    ])
+    const conflictFiles =
+      names.code === 0
+        ? names.stdout
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean)
+        : []
+    return { baseSha, headSha, conflictFiles }
+  } finally {
+    await git(scratch, ['-C', scratch, 'merge', '--abort'])
+    await git(repoPath, ['-C', repoPath, 'worktree', 'remove', '--force', scratch])
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Forge change-request creation
 // ---------------------------------------------------------------------------
@@ -1348,4 +1426,267 @@ export async function closeForgePr(
 ): Promise<ClosePrResult> {
   const provider = providerOverride ?? (await detectForge(cwd))
   return provider === 'github' ? closeGhPr(cwd, prId) : closeGlabMr(cwd, prId)
+}
+
+// ---------------------------------------------------------------------------
+// Delivery PR facts — the 「交付分支 → 主线」 change request
+//
+// Two questions the intent-PR helpers above cannot answer, both needed before a
+// delivery may be declared `delivered`:
+//   1. "Does an OPEN PR already exist for this (head, base)?" — asked BEFORE every
+//      create, so a retry adopts the PR a lost response already made instead of
+//      opening a duplicate. A local return code is never treated as proof.
+//   2. "Why can this PR not be merged?" — and specifically, is it a CONFLICT (the
+//      code must change) or a failing check / missing approval (the code is fine,
+//      something external is)? Merging those two into one verdict is what would
+//      make a user redo a verification that was never invalidated.
+// GitHub and GitLab are normalized onto the same field set here, so no caller
+// ever branches on the provider.
+// ---------------------------------------------------------------------------
+
+/** One open change request the forge already holds for a (head, base) pair. */
+export interface OpenForgePr {
+  /** In-repo PR / MR number. */
+  number: string
+  url: string | null
+}
+
+export interface FindOpenPrResult {
+  ok: boolean
+  /** The open PR, or `null` when the forge holds none. Only meaningful when `ok`. */
+  pr?: OpenForgePr | null
+  error?: string
+  unavailable?: boolean
+}
+
+function parseJsonArray(stdout: string): Record<string, unknown>[] | null {
+  try {
+    const value: unknown = JSON.parse(stdout)
+    if (!Array.isArray(value)) return null
+    return value.filter(
+      (v): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v),
+    )
+  } catch {
+    return null
+  }
+}
+
+/** Read a PR / MR number from a forge JSON row, as the string the CLIs address it by. */
+function readPrNumber(row: Record<string, unknown>): string | null {
+  const raw = row.number ?? row.iid
+  if (typeof raw === 'number' && Number.isFinite(raw)) return String(raw)
+  if (typeof raw === 'string' && raw.trim()) return raw.trim()
+  return null
+}
+
+function readPrUrl(row: Record<string, unknown>): string | null {
+  for (const key of ['url', 'web_url', 'webUrl']) {
+    const v = row[key]
+    if (typeof v === 'string' && v) return v
+  }
+  return null
+}
+
+/**
+ * The OPEN pull/merge request the forge already holds for `headBranch → baseBranch`,
+ * or `null` when it holds none. `ok: false` means the question could not be
+ * ANSWERED (CLI missing / not logged in / offline) — which a caller must treat as
+ * "unknown", never as "none", or it would open a duplicate PR.
+ */
+export async function findOpenForgePr(
+  cwd: string,
+  headBranch: string,
+  baseBranch: string,
+  providerOverride?: ForgeProvider,
+): Promise<FindOpenPrResult> {
+  const provider = providerOverride ?? (await detectForge(cwd))
+  const [bin, args, markers] =
+    provider === 'github'
+      ? ([
+          'gh',
+          [
+            'pr',
+            'list',
+            '--head',
+            headBranch,
+            '--base',
+            baseBranch,
+            '--state',
+            'open',
+            '--json',
+            'number,url',
+            '--limit',
+            '1',
+          ],
+          GH_NOT_LOGGED_IN_MARKERS,
+        ] as const)
+      : ([
+          'glab',
+          [
+            'mr',
+            'list',
+            '--source-branch',
+            headBranch,
+            '--target-branch',
+            baseBranch,
+            '--output',
+            'json',
+          ],
+          GLAB_NOT_LOGGED_IN_MARKERS,
+        ] as const)
+
+  const { code, stdout, stderr } = await run(bin, cwd, [...args])
+  if (code === -1) return { ok: false, unavailable: true, error: `${bin} CLI 未安装` }
+  if (code !== 0) {
+    const out = oneLine(stderr || stdout)
+    const notLoggedIn = markers.some((m) => out.toLowerCase().includes(m))
+    return {
+      ok: false,
+      ...(notLoggedIn ? { unavailable: true } : {}),
+      error: out || `${bin} 查询开放 PR 失败`,
+    }
+  }
+  const rows = parseJsonArray(stdout)
+  if (!rows) return { ok: false, error: `${bin} 查询开放 PR 的输出不是有效 JSON` }
+  for (const row of rows) {
+    // `glab mr list` has no `--state open` flag equivalent to gh's; it defaults to
+    // opened, but a row that says otherwise is filtered here so both providers
+    // answer the same question.
+    const state = typeof row.state === 'string' ? row.state.toLowerCase() : ''
+    if (state && state !== 'open' && state !== 'opened') continue
+    const number = readPrNumber(row)
+    if (number) return { ok: true, pr: { number, url: readPrUrl(row) } }
+  }
+  return { ok: true, pr: null }
+}
+
+/**
+ * A delivery PR's live facts, normalized across forges. `conflict`, `ciFailed`
+ * and `approvalMissing` are only meaningful while `status === 'reviewing'`.
+ */
+export interface DeliveryPrFactsResult {
+  ok: boolean
+  status?: 'reviewing' | 'merged' | 'closed'
+  prUrl?: string | null
+  /** The forge judges the PR unmergeable against its base — the code must change. */
+  conflict?: boolean
+  /** Required checks are failing — the code is fine, CI is not. */
+  ciFailed?: boolean
+  /** Required approvals are missing — the code is fine, a human review is. */
+  approvalMissing?: boolean
+  error?: string
+  unavailable?: boolean
+}
+
+/** GitHub check conclusions/states that mean "this check failed", not "still running". */
+const GH_FAILED_CHECK_VERDICTS = new Set([
+  'FAILURE',
+  'TIMED_OUT',
+  'CANCELLED',
+  'ACTION_REQUIRED',
+  'STARTUP_FAILURE',
+  'ERROR',
+])
+
+function ghAnyCheckFailed(rollup: unknown): boolean {
+  if (!Array.isArray(rollup)) return false
+  return rollup.some((entry) => {
+    if (typeof entry !== 'object' || entry === null) return false
+    const row = entry as Record<string, unknown>
+    for (const key of ['conclusion', 'state']) {
+      const v = row[key]
+      if (typeof v === 'string' && GH_FAILED_CHECK_VERDICTS.has(v.toUpperCase())) return true
+    }
+    return false
+  })
+}
+
+function normalizeGithubDeliveryPrFacts(row: Record<string, unknown>): DeliveryPrFactsResult {
+  const base = normalizeGithubPrStatus(row)
+  const status =
+    base.status === 'merged' ? 'merged' : base.status === 'closed' ? 'closed' : 'reviewing'
+  const mergeable = typeof row.mergeable === 'string' ? row.mergeable.toUpperCase() : ''
+  const reviewDecision =
+    typeof row.reviewDecision === 'string' ? row.reviewDecision.toUpperCase() : ''
+  return {
+    ok: true,
+    status,
+    prUrl: base.prUrl ?? null,
+    conflict: mergeable === 'CONFLICTING',
+    ciFailed: ghAnyCheckFailed(row.statusCheckRollup),
+    // `REVIEW_REQUIRED` = nobody approved yet; `CHANGES_REQUESTED` = a reviewer
+    // said no. Both are "a human still has to act", which is what 「合并受阻」 means.
+    approvalMissing: reviewDecision === 'REVIEW_REQUIRED' || reviewDecision === 'CHANGES_REQUESTED',
+  }
+}
+
+function normalizeGitlabDeliveryPrFacts(row: Record<string, unknown>): DeliveryPrFactsResult {
+  const base = normalizeGitlabMrStatus(row)
+  const status =
+    base.status === 'merged' ? 'merged' : base.status === 'closed' ? 'closed' : 'reviewing'
+  const detailed =
+    typeof row.detailed_merge_status === 'string' ? row.detailed_merge_status.toLowerCase() : ''
+  const mergeStatus = typeof row.merge_status === 'string' ? row.merge_status.toLowerCase() : ''
+  const pipeline = asRecord(row.head_pipeline) ?? asRecord(row.pipeline)
+  const pipelineStatus = typeof pipeline?.status === 'string' ? pipeline.status.toLowerCase() : ''
+  return {
+    ok: true,
+    status,
+    prUrl: base.prUrl ?? null,
+    conflict:
+      row.has_conflicts === true || detailed === 'conflict' || mergeStatus === 'cannot_be_merged',
+    ciFailed: detailed === 'ci_must_pass' || pipelineStatus === 'failed',
+    approvalMissing: detailed === 'not_approved',
+  }
+}
+
+function asRecord(v: unknown): Record<string, unknown> | undefined {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : undefined
+}
+
+/**
+ * The delivery PR's live facts from the forge: merged / open / closed, plus WHY
+ * an open one cannot be merged. `ok: false` means the forge could not be reached
+ * or understood — the caller then changes nothing and offers a retry, because an
+ * unreadable forge is not evidence about the PR.
+ */
+export async function getForgeDeliveryPrFacts(
+  cwd: string,
+  prId: string,
+  providerOverride?: ForgeProvider,
+): Promise<DeliveryPrFactsResult> {
+  const provider = providerOverride ?? (await detectForge(cwd))
+  const [bin, args, markers] =
+    provider === 'github'
+      ? ([
+          'gh',
+          [
+            'pr',
+            'view',
+            prId,
+            '--json',
+            'state,mergedAt,url,mergeable,reviewDecision,statusCheckRollup',
+          ],
+          GH_NOT_LOGGED_IN_MARKERS,
+        ] as const)
+      : (['glab', ['mr', 'view', prId, '--output', 'json'], GLAB_NOT_LOGGED_IN_MARKERS] as const)
+
+  const { code, stdout, stderr } = await run(bin, cwd, [...args])
+  if (code === -1) return { ok: false, unavailable: true, error: `${bin} CLI 未安装` }
+  if (code !== 0) {
+    const out = oneLine(stderr || stdout)
+    const notLoggedIn = markers.some((m) => out.toLowerCase().includes(m))
+    return {
+      ok: false,
+      ...(notLoggedIn ? { unavailable: true } : {}),
+      error: out || `${bin} 读取 PR 状态失败`,
+    }
+  }
+  const row = parseJsonObject(stdout)
+  if (!row) return { ok: false, error: `${bin} 读取 PR 状态的输出不是有效 JSON` }
+  return provider === 'github'
+    ? normalizeGithubDeliveryPrFacts(row)
+    : normalizeGitlabDeliveryPrFacts(row)
 }

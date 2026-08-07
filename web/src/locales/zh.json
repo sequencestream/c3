@@ -2207,7 +2207,13 @@
       "unlinkPrStatusCheckFailed": "解除关联被阻塞——无法从代码托管平台读取 PR 状态:{detail}。",
       "syncMainlineForbidden": "只有处于「集成中」的交付才能同步主线。",
       "syncMainlineConflict": "合入主线时发生冲突,已中止合并且未推送。请自行处置冲突:{detail}",
-      "syncMainlineFailed": "同步主线失败:{detail}"
+      "syncMainlineFailed": "同步主线失败:{detail}",
+      "deliveryPrForbidden": "交付通过验证后才能创建交付 PR。",
+      "deliveryPrModeUnsupported": "current-branch 模式没有交付分支,无法创建交付 PR。",
+      "deliveryPrNoDiff": "交付分支相对主线没有差异,无需创建 PR。",
+      "deliveryPrCreateFailed": "创建交付 PR 失败:{detail}",
+      "deliveryPrNotFound": "该交付尚未创建交付 PR。",
+      "deliveryPrSyncFailed": "无法从 forge 读取交付 PR 状态:{detail}"
     }
   },
   "statusIndicator": {
@@ -2676,6 +2682,51 @@
       },
       "running": {
         "label": "正在同步主线…"
+      }
+    },
+    "deliveryPr": {
+      "title": {
+        "label": "合并回主线"
+      },
+      "intro": {
+        "label": "从交付分支向 {base} 提一条 PR,由你在 forge 上合并 —— c3 从不代替你合。"
+      },
+      "create": {
+        "label": "创建交付 PR"
+      },
+      "sync": {
+        "label": "同步"
+      },
+      "running": {
+        "label": "正在与 forge 通信…"
+      },
+      "link": {
+        "label": "交付 PR #{number}"
+      },
+      "status": {
+        "reviewing": {
+          "label": "开放中"
+        },
+        "merged": {
+          "label": "已合并"
+        },
+        "closed": {
+          "label": "已关闭"
+        }
+      },
+      "awaiting": {
+        "label": "Forge 已合并,等待 c3 确认。点「同步」即可落定。"
+      },
+      "blocked": {
+        "ciFailed": {
+          "label": "合并受阻:CI 检查未通过。代码本身没问题,修 CI 即可。"
+        },
+        "approval": {
+          "label": "合并受阻:审批不足。代码本身没问题,找人评审即可。"
+        }
+      },
+      "conflict": {
+        "label": "交付分支与主线有 {count} 个文件冲突。交付已回退到验证中,解决冲突后重新验证。"
       }
     }
   },

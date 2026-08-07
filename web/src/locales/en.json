@@ -2207,7 +2207,13 @@
       "unlinkPrStatusCheckFailed": "Unlink blocked — could not read the PR status from the forge: {detail}.",
       "syncMainlineForbidden": "Syncing mainline is only available while a delivery is integrating.",
       "syncMainlineConflict": "The mainline merge hit conflicts and was aborted — nothing was pushed. Resolve them yourself: {detail}",
-      "syncMainlineFailed": "Syncing mainline failed: {detail}"
+      "syncMainlineFailed": "Syncing mainline failed: {detail}",
+      "deliveryPrForbidden": "A delivery PR can only be opened once the delivery is verified.",
+      "deliveryPrModeUnsupported": "Current-branch mode has no delivery branch, so a delivery PR cannot be opened.",
+      "deliveryPrNoDiff": "The delivery branch holds nothing mainline does not — there is nothing to open a PR for.",
+      "deliveryPrCreateFailed": "Creating the delivery PR failed: {detail}",
+      "deliveryPrNotFound": "This delivery has no delivery PR yet.",
+      "deliveryPrSyncFailed": "Could not read the delivery PR from the forge: {detail}"
     }
   },
   "statusIndicator": {
@@ -2676,6 +2682,51 @@
       },
       "running": {
         "label": "Syncing mainline…"
+      }
+    },
+    "deliveryPr": {
+      "title": {
+        "label": "Merge into mainline"
+      },
+      "intro": {
+        "label": "Open a PR from the delivery branch into {base}. You merge it on the forge — c3 never merges it for you."
+      },
+      "create": {
+        "label": "Create delivery PR"
+      },
+      "sync": {
+        "label": "Sync"
+      },
+      "running": {
+        "label": "Talking to the forge…"
+      },
+      "link": {
+        "label": "Delivery PR #{number}"
+      },
+      "status": {
+        "reviewing": {
+          "label": "Open"
+        },
+        "merged": {
+          "label": "Merged"
+        },
+        "closed": {
+          "label": "Closed"
+        }
+      },
+      "awaiting": {
+        "label": "Merged on the forge — waiting for c3 to confirm. Sync to settle it."
+      },
+      "blocked": {
+        "ciFailed": {
+          "label": "Merge blocked: checks are failing. The code is fine — fix CI."
+        },
+        "approval": {
+          "label": "Merge blocked: required approvals are missing. The code is fine — get a review."
+        }
+      },
+      "conflict": {
+        "label": "The delivery branch conflicts with mainline in {count} file(s). The delivery went back to Verifying; resolve them and verify again."
       }
     }
   },

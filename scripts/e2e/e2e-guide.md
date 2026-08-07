@@ -74,6 +74,56 @@ test); without it the test SKIPs.
 - `C3_DB_PATH=~/.c3/c3.db node scripts/e2e/e2e-delivery-link-test.mjs ws://localhost:13000/ws`
   → expect `RESULT: PASS`.
 
+## Delivery PR (合并回主线)
+
+`scripts/e2e/e2e-delivery-pr-test.mjs`
+
+The one test in the suite that **starts its own server**. It needs the forge to
+answer particular things on demand — merged, conflicting, red CI, missing approval,
+unreachable — so it puts a scriptable `gh` stand-in (`fixtures/fake-forge/gh`, driven
+by a JSON state file named via `C3_E2E_FORGE_STATE`) on the PATH of a private
+instance with its own port, ledger and settings. The `[ws-url]` argument is ignored.
+
+Why not the shared server: that stub would also answer the association test's
+lookups, and that test exists precisely to prove an **unreadable** forge blocks an
+unlink. Why scripting the forge is legitimate here at all: the subject is the
+SETTLEMENT chain — gate order, "ask the forge before creating", the three failure
+layers, and the single-transaction `delivered` write. The forge is that chain's
+input; everything downstream of the answer is the real thing.
+
+PASS asserts:
+
+- `delivery_detail` always carries `deliveryPr`; gate order is fixed (not-`verified`
+  refused before the branch is looked at, and a refused create never touches the
+  forge at all); a branch holding nothing beyond mainline is refused;
+  `current-branch` refuses both actions;
+- **forge-first idempotency**: `pr list` is invoked before `pr create`, keyed on
+  (head = delivery branch, base = mainline); a retry against a forge that now
+  reports the PR adopts it — `pr create` never runs twice and the ledger keeps
+  exactly one row, which carries the REAL `origin/*` SHAs;
+- **layer 1 (transient)**: an unreachable forge is a retryable error that moves
+  nothing — not the status, not the PR row, not the log;
+- **layer 2 (blocked)**: red CI and missing approvals record `blocked_reason` and
+  leave the delivery `verified` — the code is fine, so the verification it earned
+  is not thrown away; a later unblocked sync clears it;
+- **layer 3 (conflict)**: a genuinely conflicting mainline (the test rewrites the
+  same file on `main`) rolls the delivery back to `verifying`, with the real
+  conflicting file enumerated by the local merge trial and a `merge_conflict` log line;
+- **`delivered` atomic write**: after the conflict is resolved and the delivery
+  re-verified, a merged PR settles status + PR row + exactly one `delivered` log
+  line (actor `system`, naming the PR); the associated intent's status is NOT
+  rewritten; and a repeat sync is idempotent.
+
+Not covered here: the cross-delivery dependency gate unlocking on `delivered`
+(covered by the dependency-gate test below), and the GitHub-vs-GitLab field-shape
+normalization (covered by `server/src/features/deliveries/`).
+
+No agent tokens are spent. Needs a built server (`pnpm build` → `server/dist/cli.cjs`);
+without it the test SKIPs.
+
+- `pnpm build && node scripts/e2e/e2e-delivery-pr-test.mjs`
+  → expect `RESULT: PASS`.
+
 ## Dependency gate (same-delivery / cross-delivery / no-delivery)
 
 `scripts/e2e/e2e-dependency-gate-test.mjs`

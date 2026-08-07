@@ -8,7 +8,7 @@
  * 计算(`canTransitionDelivery`),客户端只消费服务端给出的 `transitionPlan`,
  * 不复制状态规则。
  */
-import type { IntentPrStatus, IntentStatus } from './intent.js'
+import type { IntentPrForge, IntentPrStatus, IntentStatus } from './intent.js'
 
 /**
  * Delivery lifecycle status (中文:待集成/集成中/验证中/验证通过/已发布/已取消).
@@ -81,6 +81,59 @@ export interface Delivery {
   branchReady: boolean
   /** Real-time integration aggregate (N/M), computed, never persisted. */
   integration: DeliveryIntegration
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * Why a delivery PR cannot be merged even though its code is fine. Deliberately
+ * separate from a merge conflict: a conflict means the code needs changing (the
+ * delivery goes back to `verifying`), while these two mean the code is fine and
+ * an EXTERNAL condition is missing — the delivery stays `verified` and the page
+ * shows 「合并受阻」 rather than making the user redo the verification.
+ * - `ci_failed` — the forge's checks are failing.
+ * - `approval` — the required review approvals are missing.
+ */
+export type DeliveryPrBlockedReason = 'ci_failed' | 'approval'
+
+/**
+ * The PR that carries a delivery into mainline (head = the delivery branch,
+ * base = the delivery's `baseBranch` snapshot).
+ *
+ * A DIFFERENT entity from an `IntentPr`, and stored in its own table: an intent
+ * PR targets the delivery branch and feeds the 「集成就绪 N/M」 aggregate, while
+ * this one targets mainline and never counts toward it. Merging it is what makes
+ * the delivery `delivered`, and only a human does that — on the forge.
+ */
+export interface DeliveryPr {
+  /** Owning delivery. */
+  deliveryId: string
+  forge: IntentPrForge | null
+  /** Repository identifier in `owner/name` form; `null` when the origin is unknown. */
+  repo: string | null
+  /** In-repo PR / MR number (what the forge CLIs address a change request by). */
+  number: string
+  /** Clickable link; `null` when unknown. */
+  url: string | null
+  /** The delivery branch. */
+  headBranch: string
+  /** Mainline — the delivery's `baseBranch` snapshot. */
+  baseBranch: string
+  /** `origin/<baseBranch>` head at the last create / sync — half the idempotency key. */
+  baseSha: string
+  /** `origin/<headBranch>` head at the last create / sync — the other half. */
+  headSha: string
+  /** Same value domain as an intent PR's status; only these three ever occur here. */
+  status: Extract<IntentPrStatus, 'reviewing' | 'merged' | 'closed'>
+  /** Why an OPEN PR cannot be merged; `null` when nothing blocks it. */
+  blockedReason: DeliveryPrBlockedReason | null
+  /**
+   * Files the local merge trial reported as conflicting, recorded when the forge
+   * judged the PR unmergeable. Empty when the trial itself could not run — the
+   * forge's verdict is sufficient on its own, so the delivery still goes back to
+   * `verifying` with only the SHA pair to explain the state.
+   */
+  conflictFiles: string[]
   createdAt: number
   updatedAt: number
 }

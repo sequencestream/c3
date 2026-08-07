@@ -94,6 +94,34 @@ fork = merge-base(主线, 意图 commit)      # 意图从主线离开的位置
 
 检测是纯观测且**失败即静默**:交付分支尚未就绪、ref 不存在、非 git 仓库、任何 git 失败一律不报警——给不出依据的警告比不给更糟。交付分支尚未创建时同样不报警:分支将来从当时的主线 HEAD 创建,意图的分叉点届时必然是它的祖先。
 
+## DeliveryPr(交付 PR)
+
+「交付分支 → 主线」的变更请求。与 `IntentPr`(意图 → 交付分支)是**不同实体**,存于不同的表。
+
+| 属性                    | 类型                                       | 说明                                       |
+| ----------------------- | ------------------------------------------ | ------------------------------------------ |
+| `deliveryId`            | `string`                                   | 所属交付                                   |
+| `forge` / `repo`        | `IntentPrForge \| null` / `string \| null` | PR 来源;未知为空,该行不参与身份唯一键      |
+| `number`                | `string`                                   | 仓内 PR / MR 号                            |
+| `url`                   | `string \| null`                           | 可点击链接                                 |
+| `headBranch`            | `string`                                   | 交付分支                                   |
+| `baseBranch`            | `string`                                   | 主线(交付 `baseBranch` 快照)               |
+| `baseSha` / `headSha`   | `string`                                   | 最近一次建/同步时的两端 HEAD,幂等键组成    |
+| `status`                | `'reviewing' \| 'merged' \| 'closed'`      | 沿用意图 PR 口径,本实体只出现这三值        |
+| `blockedReason`         | `'ci_failed' \| 'approval' \| null`        | 开放但合并受阻的原因;无阻塞为空            |
+| `conflictFiles`         | `string[]`                                 | 本地 merge 试探得到的冲突文件;试探失败为空 |
+| `createdAt`/`updatedAt` | `number`                                   | 创建/更新时间(epoch ms)                    |
+
+**为什么与 `IntentPr` 分表。**两者粒度不同(交付→主线 vs 意图→交付分支),生命周期也不同:`intent_prs` 喂「集成就绪 N/M」聚合、随解除关联删行,交付 PR 两者皆不。共表会让按 `delivery_id` 计数的聚合把交付自己算成一个关联意图,「哪条 PR 表达交付上主线」也就没有精确答案。
+
+**幂等。**重试一律**先查 forge 事实**(按 head/base 查开放 PR),命中即复用落账,查询失败即中止——「问不出来」不等于「没有」,否则会开出重复 PR。forge 对同一 (head, base) 只保留一条开放 PR(推新提交是更新同一条),故落账按 PR 身份 `(forge, repo, number)` 就地刷新 SHA;`(deliveryId, baseSha, headSha)` 唯一索引是并发重试的兜底。
+
+**三类失败分层。**`conflictFiles` 与 `blockedReason` 分开不是冗余,而是三种不同现实的落点:冲突意味着**代码要改**(交付回退 `verifying`);CI 失败 / 审批不足意味着**代码没问题、缺的是外部条件**(交付状态不动);查询失败意味着**什么都没发生**(什么都不写)。把后两者当成冲突处理,会让用户为一次从未失效的验证白白返工。
+
+## DeliveryLog(交付操作日志)
+
+`id` / `deliveryId` / `operationType` / `summary` / `actor` / `createdAt`,只增不改不删(仿 `IntentLog`)。`delivered` 的状态写与它的日志行在同一事务内落定,因此「代码已进主线但台账无痕」不可能出现;事件发布、跨交付闸门重算与广播都在事务提交之后,它们失败不回滚已落定的 `delivered`。
+
 ## DeliveryGuardReason
 
 一个守卫缺口原因。`code` 是 `delivery.guard.*` locale 叶子;`jumpTo` 指示页面可跳转处(`associated-intents` / `workspace-settings` / `branch`),多数缺口无法人工解决,跳转入口仍前置表达。
@@ -104,7 +132,7 @@ fork = merge-base(主线, 意图 commit)      # 意图从主线离开的位置
 | `delivery.guard.noAssociatedIntents`         | 未关联任何意图         | `associated-intents`   |
 | `delivery.guard.prsNotMerged`(params N/M)    | 关联 PR 未全部合入     | `associated-intents`   |
 | `delivery.guard.verificationNotConfirmed`    | 需人工确认验证通过     | —(就地确认)            |
-| `delivery.guard.mergeNotSucceeded`           | 等待交付合并成功       | —(系统等待)            |
+| `delivery.guard.mergeNotSucceeded`           | 等待交付 PR 被合并     | —(系统等待)            |
 | `delivery.guard.systemOnly` / `humanOnly`    | 写角色不符             | —                      |
 | `delivery.guard.mergeConflictReasonRequired` | 系统返工需合并冲突原因 | —                      |
 
@@ -114,4 +142,4 @@ fork = merge-base(主线, 意图 commit)      # 意图从主线离开的位置
 
 ## 持久化存储(c3.db)
 
-`deliveries` / `intent_deliveries` 表 + 索引见 [delivery-design.md](delivery-design.md) §Schema。`base_branch` 非空快照、`status` CHECK 闭集、活动态 `(workspace_path, branch_name)` 部分唯一索引(`delivered`/`cancelled` 不占位,允许复用历史分支名)。`intent_deliveries` 承载关联边,`(delivery_id, intent_id)` 唯一、两侧各有索引;该表由交付 store 与意图 store **双声明**(意图 store 需在删除意图的同一事务里清边,而一个从未打开过交付页的库里交付 store 尚未初始化)。`intent_prs.delivery_id` 是意图对该交付的 PR 落点(由 intent-management 域 031 迁移预置),与关联边职责分离。
+`deliveries` / `intent_deliveries` / `delivery_prs` / `delivery_logs` 表 + 索引见 [delivery-design.md](delivery-design.md) §Schema。`base_branch` 非空快照、`status` CHECK 闭集、活动态 `(workspace_path, branch_name)` 部分唯一索引(`delivered`/`cancelled` 不占位,允许复用历史分支名)。`intent_deliveries` 承载关联边,`(delivery_id, intent_id)` 唯一、两侧各有索引;该表由交付 store 与意图 store **双声明**(意图 store 需在删除意图的同一事务里清边,而一个从未打开过交付页的库里交付 store 尚未初始化)。`intent_prs.delivery_id` 是意图对该交付的 PR 落点(由 intent-management 域 031 迁移预置),与关联边职责分离。

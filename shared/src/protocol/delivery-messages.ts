@@ -11,6 +11,7 @@ import type {
   AssociatedIntent,
   Delivery,
   DeliveryGuardReason,
+  DeliveryPr,
   DeliveryStatus,
   DeliveryTransitionPlan,
 } from './delivery.js'
@@ -172,6 +173,57 @@ export type ClientSyncDeliveryMainline = {
   deliveryId: string
 }
 
+/**
+ * Open the delivery PR — the「交付分支 → `base_branch`」change request a human
+ * then merges ON THE FORGE. c3 never merges it: going through a PR is what buys
+ * CI, review, protected branches and diff review for free, and what makes the
+ * action idempotent.
+ *
+ * Gates, in order: `worktree` mode → the delivery is `verified` → its branch is
+ * ready → it holds commits mainline does not (a delivery branch already merged
+ * by hand has nothing left to open a PR for).
+ *
+ * Retrying ALWAYS asks the forge first — an open PR for the same (head, base) is
+ * adopted into the ledger rather than duplicated, so "created but the response
+ * was lost" and "the ledger row is gone" both converge on the same PR. A local
+ * return code is never treated as proof.
+ *
+ * Reply: `delivery_detail` carrying the `deliveryPr` row.
+ */
+export type ClientCreateDeliveryPr = {
+  type: 'create_delivery_pr'
+  workspaceId: string
+  deliveryId: string
+}
+
+/**
+ * Pull the delivery PR's live facts from the forge and settle them, LAYERED —
+ * because "cannot merge" has three very different causes:
+ *
+ * - merged → the delivery becomes `delivered` in one atomic unit (status +
+ *   delivery log), after which the event, the cross-delivery gate recompute and
+ *   the broadcasts follow.
+ * - open + conflict → the code genuinely needs changing, so the delivery goes
+ *   back to `verifying` (system edge, reason `merge_conflict`) and the
+ *   conflicting files + SHA pair are recorded.
+ * - open + failing CI / missing approvals → the code is FINE and an external
+ *   condition is missing: the status does not move, `blockedReason` is recorded
+ *   and the page shows 「合并受阻」. Rolling the status back here would make the
+ *   user redo a verification that was never invalidated.
+ * - a lookup that fails (network / CLI) changes nothing and is retryable.
+ *
+ * Always human/page-invoked: the detail page syncs once on open and offers a
+ * manual sync. c3 does NOT poll the forge in the background.
+ *
+ * Reply: `delivery_detail`; a refused status write travels as
+ * `delivery_transition_failed`.
+ */
+export type ClientSyncDeliveryPr = {
+  type: 'sync_delivery_pr'
+  workspaceId: string
+  deliveryId: string
+}
+
 // ---- Server → Client ----
 
 /**
@@ -224,6 +276,13 @@ export type ServerDeliveryDetail = {
    * surprising, and the refs are refreshed by every branch/PR/sync action.
    */
   mainlineAhead: number | null
+  /**
+   * This delivery's most recent delivery PR (「交付分支 → 主线」), or `null` when
+   * none was ever opened. Older rows stay in the ledger as history; the page
+   * only ever renders this one. An old client that ignores the field simply
+   * renders as if no delivery PR existed.
+   */
+  deliveryPr: DeliveryPr | null
   /**
    * Set ONLY on the reply to a `link_intent_to_delivery` that detected diff
    * bloat: the intent's commits branch off mainline past the delivery branch's

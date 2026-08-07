@@ -76,6 +76,7 @@ const emit = defineEmits<{
   'sync-delivery-pr': [deliveryId: string]
   'link-intent': [intentId: string]
   'unlink-intent': [intentId: string]
+  'open-intent': [intentId: string]
   'open-workspace-settings': []
 }>()
 
@@ -281,6 +282,7 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
       :intents="props.intents"
       @link="(id: string) => emit('link-intent', id)"
       @unlink="(id: string) => emit('unlink-intent', id)"
+      @open-intent="(id: string) => emit('open-intent', id)"
     />
 
     <ConfirmDialog

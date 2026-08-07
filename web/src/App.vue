@@ -116,6 +116,7 @@ const {
   intentsProject,
   requestedIntentId,
   requestedIntentSubTab,
+  openLinkedIntent,
   requestedIntentSessionId,
   requestedWorkcenterEventId,
   currentIntents,
@@ -728,6 +729,9 @@ function onCodesChatWidth(px: number): void {
           @sync-delivery-pr="syncDeliveryPr"
           @link-intent="linkIntentToDelivery"
           @unlink-intent="unlinkIntentFromDelivery"
+          @open-intent="
+            (id: string) => deliveriesProject && openLinkedIntent(deliveriesProject, id)
+          "
           @open-workspace-settings="openWorkspaceSetting"
           @mobile-back="onDeliveryMobileBack"
         />

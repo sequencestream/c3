@@ -282,10 +282,11 @@ pending`,由用户 `approve_spec` 补齐 SDD 轨。
   覆盖会选择 GitHub/`gh` 或 GitLab/`glab`;`auto` 或缺省设置使用仓库来源
   检测。
 - **手动创建 PR 的分阶段反馈。** 详情头部的「创建 PR」按钮走与上述清理相同的
-  一条创建链路:幂等闸门(已有 PR)、`worktree` 模式、非空分支,随后在意图
-  worktree 中检查相对**有效 base 分支**的差异 —— base 取自工作区
-  `defaultMainBranch`(未配置时显式 `main`),比较前先 fetch、优先远端 ref,
-  解析不到时拒绝而非放行 —— 提交、推送,成功后才经统一的 forge 分发器
+  一条创建链路,闸门顺序为:`worktree` 模式、非空分支、目标交付可用、目标
+  `(意图, 交付)` 无活跃 PR,随后在意图 worktree 中检查相对**有效 base 分支**的
+  差异 —— base 取自目标交付的分支,未关联交付时取工作区 `defaultMainBranch`
+  (未配置时显式 `main`);比较前先 fetch、优先远端 ref,解析不到时拒绝而非放行
+  —— 提交、推送,成功后才经统一的 forge 分发器
   (尊重工作区 `forge` 覆盖)创建 PR/MR,并以同一 base 发布成功事件。因为提交、
   推送与 forge 调用可能耗时数秒,服务端在这条链路上发出
   粗粒度的、面向连接的 `create_pr_progress` 阶段:`analyzing-changes`(差异检查

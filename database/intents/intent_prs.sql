@@ -14,7 +14,7 @@
 CREATE TABLE IF NOT EXISTS intent_prs (
   id            TEXT PRIMARY KEY,   -- UUID
   intent_id     TEXT NOT NULL,      -- 所属意图 id（本库不建 FK，与既有表一致）
-  delivery_id   TEXT,               -- 归属交付；NULL = 无交付归属（当前恒为 NULL）
+  delivery_id   TEXT,               -- 归属交付（PR 的 base 即该交付分支）；NULL = 提向主线
   forge         TEXT,               -- 'github' | 'gitlab'；来源未知时为 NULL
   repo          TEXT,               -- 仓库标识 owner/name；来源未知时为 NULL
   number        TEXT NOT NULL,      -- 仓库内 PR/MR 编号（即旧 pr_id 的值）
@@ -28,10 +28,10 @@ CREATE TABLE IF NOT EXISTS intent_prs (
 
 -- 一条真实 PR 在库里只能有一行（forge/repo 为 NULL 的降级行不受约束）。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_pr_identity ON intent_prs(forge, repo, number);
--- 一个意图对同一交付只能有一条 PR。
+-- 一个意图对同一交付只能有一条 PR —— 这一对也是建 PR 的业务幂等键。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_pr_delivery ON intent_prs(intent_id, delivery_id);
--- SQLite（与标准 SQL 一致）在唯一索引中视 NULL 互不相等，delivery_id 恒为 NULL 时上面那条
--- 完全约束不到任何一行，故补部分唯一索引兜住"每意图至多一条无交付归属的 PR"。
+-- SQLite（与标准 SQL 一致）在唯一索引中视 NULL 互不相等，故上面那条约束不到提向主线的行，
+-- 补一条部分唯一索引兜住"每意图至多一条无交付归属的 PR"。
 CREATE UNIQUE INDEX IF NOT EXISTS idx_intent_pr_intent_nodelivery
   ON intent_prs(intent_id) WHERE delivery_id IS NULL;
 

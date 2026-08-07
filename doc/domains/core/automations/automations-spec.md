@@ -278,7 +278,9 @@ c3 **不会**创建、评审、合并、关闭或评论一个 pull request。模
 `update` 操作(已有 PR 被打回后修改重提/重开)是一个普通的可过滤操作;**独立地**,一个
 `update`/`success` 事件也会被 intent 域消费,用于把一条被拒绝/失败/关闭的 PR 行的状态
 重置回 `reviewing`——那个消费者与自动化分发是分离的(见 intent-management 规格),因此一个没有
-自动化的工作区仍然会得到状态复位。
+自动化的工作区仍然会得到状态复位。一个意图可持有多条 PR,故 `update` 事件必须以
+`association.deliveryId` 或 `pr.number` 唯一定位目标 PR,定位不到时消费端拒绝复位而非猜测
+(定位规则见 intent-management 的 RM-R29)。
 
 **事件契约(厂商中立):**
 
@@ -289,7 +291,7 @@ c3 **不会**创建、评审、合并、关闭或评论一个 pull request。模
 | `pr`           | 可选的 PR 身份:`number` / `id` / `url` / `title` / `state`。                                                                         |
 | `repo`         | 可选的仓库上下文:`provider`(默认 `github`,例如 `gitlab`)/ `host` / `owner` / `name`。                                                |
 | `ref`          | 可选的分支上下文:`head` / `base`。                                                                                                   |
-| `association`  | 可选的、回指某个 c3 工作项的链接:`intentId` + `intentTitle`(意图名称,自解释)。                                                       |
+| `association`  | 可选的、回指某个 c3 工作项的链接:`intentId` + `intentTitle`(意图名称,自解释)+ `deliveryId`(该 PR 面向的交付)。                       |
 | `errorSummary` | 可选,只在 `failure` 或 `error` 时有意义;在服务端安全归一化(不含秘密信息)。                                                           |
 
 **边界:**

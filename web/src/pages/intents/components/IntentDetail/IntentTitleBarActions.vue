@@ -38,7 +38,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'set-status': [intentId: string, status: IntentStatus]
   'set-automate': [intentId: string, automate: boolean]
-  'create-pr': [intentId: string]
+  'create-pr': [intentId: string, deliveryId?: string]
   'sync-pr-status': [intentId: string]
   share: [intentId: string]
   delete: [intentId: string]
@@ -50,6 +50,13 @@ const emit = defineEmits<{
 // 头部「我要修改」在无 lastWorkSessionId 时显示,交回容器打开 ResetSessionDialog。
 const canResetIntentSession = computed<boolean>(() => !props.intent.lastWorkSessionId)
 
+// 按钮将指向的交付:恰好关联一个交付时即该交付(PR 提向它的分支),未关联时为 null
+// (提向工作区主分支)。关联多个交付时目标不唯一,按 DR 裁决不开放建 PR 入口 —— 见
+// showCreatePr 的 linkedDeliveries.length <= 1。
+const createPrDeliveryId = computed<string | null>(() =>
+  props.intent.linkedDeliveries.length === 1 ? props.intent.linkedDeliveries[0].id : null,
+)
+
 const showCreatePr = computed<boolean>(() => {
   const r = props.intent
   const branchName = normalizeBranchName(r.branchName)
@@ -60,8 +67,11 @@ const showCreatePr = computed<boolean>(() => {
     props.workspaceGitBranchMode === 'worktree' &&
     branchName !== null &&
     !!r.lastWorkSessionId &&
-    // 与服务端建 PR 守卫同源:只有活跃 PR 才挡住新建。
-    activeIntentPrs(r.prs).length === 0 &&
+    // 多关联意图没有唯一目标,不渲染入口(服务端同样拒绝)。
+    r.linkedDeliveries.length <= 1 &&
+    // 与服务端幂等键 (intent_id, delivery_id) 同源:只有「按钮将指向的那个目标」
+    // 已有活跃 PR 才挡住新建;别的交付下的活跃 PR 不构成阻挡。
+    !activeIntentPrs(r.prs).some((pr) => pr.deliveryId === createPrDeliveryId.value) &&
     !isIntentOnWorkspaceMainBranch(r.branchName, props.workspaceMainBranch)
   )
 })
@@ -180,7 +190,7 @@ watch(
       v-if="showCreatePr"
       class="req-btn primary"
       data-action="createPr"
-      @click="emit('create-pr', intent.id)"
+      @click="emit('create-pr', intent.id, createPrDeliveryId ?? undefined)"
     >
       {{ t('intent.action.createPr.label') }}
     </button>

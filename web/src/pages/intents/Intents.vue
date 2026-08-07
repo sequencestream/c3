@@ -131,7 +131,7 @@ const emit = defineEmits<{
   'stop-automation': []
   'open-queue': []
   'new-intent': []
-  'create-pr': [intentId: string]
+  'create-pr': [intentId: string, deliveryId?: string]
   'sync-pr-status': [intentId: string]
   /** 意图详情「关联交付」跳转:交付页是另一个一级 tab,由 App 切换。 */
   'open-delivery': [deliveryId: string]
@@ -427,7 +427,7 @@ defineExpose({
         @set-status="(id: string, status: IntentStatus) => emit('set-status', id, status)"
         @delete="(id: string) => emit('delete', id)"
         @set-automate="(id: string, automate: boolean) => emit('set-automate', id, automate)"
-        @create-pr="(id: string) => emit('create-pr', id)"
+        @create-pr="(id: string, deliveryId?: string) => emit('create-pr', id, deliveryId)"
         @sync-pr-status="(id: string) => emit('sync-pr-status', id)"
         @share="(id: string) => emit('share', id)"
         @update-deps="(id, deps) => emit('update-deps', id, deps)"

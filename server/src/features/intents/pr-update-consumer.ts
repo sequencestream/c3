@@ -19,40 +19,73 @@
  * cross-workspace intentId, non-success or non-update operation — are silently
  * ignored (the publish itself already succeeded, so there is nothing to error on).
  *
- * WHICH PR it resets: the event's `data.pr.number` when it carries one. Without a
- * number it falls back to the intent's single non-terminal PR; if the intent has
- * several, the event cannot say which one was re-submitted, so nothing is reset
- * and a warning is logged. A batch reset would be a guess written to the ledger.
+ * WHICH PR it resets: the event's two locators — `data.association.deliveryId`
+ * (the ledger key `(intent_id, delivery_id)`) and `data.pr.number`. Either one
+ * addresses exactly one row; carrying both is allowed only when they agree.
+ * Carrying NEITHER is tolerated for backward compatibility and only while the
+ * intent owns exactly one ACTIVE PR. Anything else — an unresolvable locator,
+ * two locators pointing at different rows, no locator with several (or zero)
+ * active PRs — is REFUSED: nothing reset, nothing logged to the ledger, nothing
+ * broadcast, and an `error` line written. Resetting a guessed row would corrupt
+ * a real PR's status, which is strictly worse than not resetting at all.
+ *
+ * The refusal has nowhere else to go: `pr:update` is a broadcast event published
+ * by the model through `publish_event`, and the consumer has no requester to
+ * answer. So "reporting the error" is the error log plus the tool description
+ * that requires publishers to carry a locator.
  */
 import type { IntentPr, IntentPrStatus } from '@ccc/shared/protocol'
 import type { GenericEventEnvelope } from '@ccc/shared'
+import { activeIntentPrs } from '@ccc/shared'
 import { projectPrOperationEvent } from '../pr-events/tool-defs.js'
 
 /** PR statuses that an `update/success` event may reset back to `reviewing`. */
 const RESETTABLE_PR_STATUSES: readonly IntentPrStatus[] = ['rejected', 'failed', 'closed']
 
+/** Either the single addressed PR row, or why the event could not address one. */
+type LocateResult = { ok: true; target: IntentPr } | { ok: false; reason: string }
+
 /**
- * Which of the intent's PRs this event is about.
- *
- * An event that names a number addresses exactly that row. One that does not
- * falls back to the intent's single non-`merged` PR — unambiguous while an intent
- * owns at most one live PR — and gives up when there are several: a re-submission
- * event without a number cannot say WHICH PR was re-submitted, and resetting all
- * of them would write a guess into the ledger.
+ * Which of the intent's PRs this event is about — see the module note. Never
+ * returns a best guess: every path that cannot name exactly one row comes back
+ * with the reason instead.
  */
-function locateResetTarget(prs: IntentPr[], number: number | undefined): IntentPr | null {
+function locateResetTarget(
+  prs: IntentPr[],
+  deliveryId: string | undefined,
+  number: number | undefined,
+): LocateResult {
+  const byDelivery =
+    deliveryId !== undefined ? prs.find((pr) => pr.deliveryId === deliveryId) : undefined
+  const byNumber = number !== undefined ? prs.find((pr) => pr.number === String(number)) : undefined
+
+  if (deliveryId !== undefined && number !== undefined) {
+    if (!byDelivery) return { ok: false, reason: `没有面向交付 ${deliveryId} 的 PR 行` }
+    if (!byNumber) return { ok: false, reason: `没有编号为 #${number} 的 PR 行` }
+    if (byDelivery.id !== byNumber.id) {
+      return { ok: false, reason: `deliveryId ${deliveryId} 与 PR #${number} 指向不同的 PR 行` }
+    }
+    return { ok: true, target: byDelivery }
+  }
+  if (deliveryId !== undefined) {
+    return byDelivery
+      ? { ok: true, target: byDelivery }
+      : { ok: false, reason: `没有面向交付 ${deliveryId} 的 PR 行` }
+  }
   if (number !== undefined) {
-    return prs.find((pr) => pr.number === String(number)) ?? null
+    return byNumber
+      ? { ok: true, target: byNumber }
+      : { ok: false, reason: `没有编号为 #${number} 的 PR 行` }
   }
-  const candidates = prs.filter((pr) => pr.status !== 'merged')
-  if (candidates.length === 1) return candidates[0]
-  if (candidates.length > 1) {
-    console.warn(
-      `[c3:intents] pr:update event carries no PR number and intent ${candidates[0].intentId} ` +
-        `has ${candidates.length} unmerged PRs — cannot locate the target, ignoring`,
-    )
+  // No locator at all: the legacy event form. Tolerated only while it is
+  // unambiguous — `closed` counts as terminal here (the shared active
+  // definition), so an intent left with only closed rows is refused too.
+  const active = activeIntentPrs(prs)
+  if (active.length === 1) return { ok: true, target: active[0] }
+  return {
+    ok: false,
+    reason: `事件未携带 deliveryId 或 PR 编号,而该意图有 ${active.length} 条活跃 PR`,
   }
-  return null
 }
 
 /** Injected intent-store + broadcast capabilities, so the handler stays unit-testable. */
@@ -109,8 +142,14 @@ export function handlePrUpdateEvent(
     // Reject a cross-workspace intentId: the event's workspace must own the intent.
     if (intent.workspaceId !== deps.pathToId(envelope.workspacePath)) return false
 
-    const target = locateResetTarget(intent.prs, pr.pr?.number)
-    if (!target) return false
+    const located = locateResetTarget(intent.prs, pr.association?.deliveryId, pr.pr?.number)
+    if (!located.ok) {
+      console.error(
+        `[c3:intents] pr:update event for intent ${intentId} 无法定位目标 PR: ${located.reason} — 拒绝复位`,
+      )
+      return false
+    }
+    const target = located.target
 
     // Only rejected/failed/closed are resettable; merged is terminal, and
     // reviewing/other statuses are already correct — no log, no broadcast.

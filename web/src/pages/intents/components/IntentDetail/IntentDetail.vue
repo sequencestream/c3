@@ -126,7 +126,7 @@ const emit = defineEmits<{
   'open-work-session': [sessionId: string]
   'set-status': [intentId: string, status: IntentStatus]
   'set-automate': [intentId: string, automate: boolean]
-  'create-pr': [intentId: string]
+  'create-pr': [intentId: string, deliveryId?: string]
   'sync-pr-status': [intentId: string]
   'update-deps': [intentId: string, deps: { dependsOnId: string; depType: DepType }[]]
   'select-dependency': [intentId: string]
@@ -401,7 +401,7 @@ function submitChat(text: string, images: PromptImage[]): void {
               :main-action-title="mainActionTitle"
               @set-status="(id: string, s: IntentStatus) => emit('set-status', id, s)"
               @set-automate="(id: string, a: boolean) => emit('set-automate', id, a)"
-              @create-pr="(id: string) => emit('create-pr', id)"
+              @create-pr="(id: string, deliveryId?: string) => emit('create-pr', id, deliveryId)"
               @sync-pr-status="(id: string) => emit('sync-pr-status', id)"
               @share="(id: string) => emit('share', id)"
               @delete="(id: string) => emit('delete', id)"

@@ -300,7 +300,7 @@ export function installIntentActions(ctx: AppCtx): void {
     send({ type: 'list_intent_logs', intentId })
   }
 
-  ctx.createPr = (intentId: string): void => {
+  ctx.createPr = (intentId: string, deliveryId?: string): void => {
     if (!intentsProject.value) return
     // One token per click. The server echoes it on this run's progress and both
     // terminals, which is what lets the overlay ignore an unrelated error and a
@@ -319,6 +319,7 @@ export function installIntentActions(ctx: AppCtx): void {
       workspaceId: intentsProject.value,
       intentId,
       requestId,
+      ...(deliveryId ? { deliveryId } : {}),
     })
   }
 
@@ -333,6 +334,10 @@ export function installIntentActions(ctx: AppCtx): void {
       ctx.startDevelopment(intentId, false)
       return
     }
+    // No deliveryId on the retry: the button that failed is only ever rendered for
+    // an intent with zero or one linked delivery, and the server resolves exactly
+    // that same target from the association edges. Re-deriving it here would be a
+    // second source of truth for a fact the server already owns.
     ctx.createPr(intentId)
   }
 

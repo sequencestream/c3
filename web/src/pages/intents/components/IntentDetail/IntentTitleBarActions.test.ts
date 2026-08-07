@@ -204,7 +204,8 @@ describe('IntentTitleBarActions.vue', () => {
       { workspaceGitBranchMode: 'worktree' },
     )
     await w.find('[data-action="createPr"]').trigger('click')
-    expect(w.emitted('create-pr')).toEqual([['i1']])
+    // No linked delivery → no delivery id: the PR targets the workspace mainline.
+    expect(w.emitted('create-pr')).toEqual([['i1', undefined]])
 
     // current-branch mode / missing mode → hidden.
     expect(
@@ -216,6 +217,69 @@ describe('IntentTitleBarActions.vue', () => {
           lastWorkSessionId: 'w1',
         }),
         { workspaceGitBranchMode: 'current-branch' },
+      )
+        .find('[data-action="createPr"]')
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('carries the single linked delivery id, and keys the active-PR guard on that pair', async () => {
+    const linked = { id: 'd1', title: 'Sprint 3' }
+    const base = {
+      id: 'i1',
+      status: 'in_progress' as const,
+      branchName: 'feature/x',
+      lastWorkSessionId: 'w1',
+    }
+    const w = mountActions(intent({ ...base, linkedDeliveries: [linked] }), {
+      workspaceGitBranchMode: 'worktree',
+    })
+    await w.find('[data-action="createPr"]').trigger('click')
+    expect(w.emitted('create-pr')).toEqual([['i1', 'd1']])
+
+    // An active MAINLINE PR is a different pair — it must not hide the button.
+    expect(
+      mountActions(
+        intent({
+          ...base,
+          linkedDeliveries: [linked],
+          prs: [fakeIntentPr('reviewing', { number: '7', deliveryId: null })],
+        }),
+        { workspaceGitBranchMode: 'worktree' },
+      )
+        .find('[data-action="createPr"]')
+        .exists(),
+    ).toBe(true)
+
+    // An active PR on the SAME pair does hide it.
+    expect(
+      mountActions(
+        intent({
+          ...base,
+          linkedDeliveries: [linked],
+          prs: [fakeIntentPr('reviewing', { number: '8', deliveryId: 'd1' })],
+        }),
+        { workspaceGitBranchMode: 'worktree' },
+      )
+        .find('[data-action="createPr"]')
+        .exists(),
+    ).toBe(false)
+  })
+
+  it('hides create-pr for a multi-linked intent (no unambiguous target)', () => {
+    expect(
+      mountActions(
+        intent({
+          id: 'i1',
+          status: 'in_progress',
+          branchName: 'feature/x',
+          lastWorkSessionId: 'w1',
+          linkedDeliveries: [
+            { id: 'd1', title: 'A' },
+            { id: 'd2', title: 'B' },
+          ],
+        }),
+        { workspaceGitBranchMode: 'worktree' },
       )
         .find('[data-action="createPr"]')
         .exists(),

@@ -338,11 +338,12 @@ export type ClientQueueControl = {
 }
 
 /**
- * Create a GitHub Pull Request for a `done` intent that has no PR yet.
- * The server runs `gh pr create`, sets `prId` and `prStatus='reviewing'`
- * on success, or replies with `intent.prCreateFailed` on failure.
- * Rejected if the intent is not `done`, already has a `prId`,
- * or `gh` CLI is unavailable.
+ * Create a Pull Request / Merge Request for one intent toward one target. The
+ * server runs the forge CLI and writes a `reviewing` PR row on success, or
+ * replies with `intent.prCreateFailed` on failure. Intent status is not a gate;
+ * the run is rejected when the workspace is not in worktree mode, the intent has
+ * no branch, the named delivery is unusable, the target `(intentId, deliveryId)`
+ * already owns an active PR, or the worktree does not differ from the base.
  *
  * `requestId` is an opaque client-generated token echoed back on every frame
  * this run produces (`create_pr_progress`, `create_pr_response`, and the
@@ -356,6 +357,14 @@ export type ClientCreatePr = {
   workspaceId: string
   intentId: string
   requestId?: string
+  /**
+   * The delivery this PR targets — its branch becomes the PR's base, and the
+   * pair `(intentId, deliveryId)` is the create idempotency key. Omitted means
+   * "let the server resolve it": no linked delivery → the workspace's main
+   * branch (the pre-delivery behaviour), exactly one → that delivery, several →
+   * rejected (the server never guesses which delivery a PR belongs to).
+   */
+  deliveryId?: string
 }
 
 /**

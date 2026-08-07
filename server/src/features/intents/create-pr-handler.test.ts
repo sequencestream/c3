@@ -55,6 +55,7 @@ import { createPrHandler } from './index.js'
 import { getWorktreePath } from './worktree.js'
 import {
   createDelivery,
+  insertIntentDelivery,
   setDeliveryBranch,
   resetStoreForTests as resetDeliveryStoreForTests,
 } from '../deliveries/store.js'
@@ -787,25 +788,120 @@ describe('createPrHandler — failure guidance', () => {
   })
 })
 
-describe('createPrHandler — delivery branch gate', () => {
-  it('refuses PR creation when the intent targets a delivery whose branch is not ready', async () => {
+/** A delivery in this workspace, optionally with a ready branch, linked to `intentId`. */
+function seedDelivery(
+  intentId: string,
+  opts: { title?: string; branch?: string | null; link?: boolean } = {},
+) {
+  const { delivery } = createDelivery({
+    workspacePath: proj,
+    title: opts.title ?? 'Sprint 3',
+    description: '',
+    startDate: null,
+    endDate: null,
+    baseBranch: 'main',
+  })
+  if (opts.branch) setDeliveryBranch(delivery.id, opts.branch, true)
+  if (opts.link !== false) insertIntentDelivery(delivery.id, intentId)
+  return delivery
+}
+
+/** Mock a run whose Git/forge chain succeeds with the given PR number. */
+function mockSuccessfulChain(prId: string) {
+  vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
+  vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
+  vi.mocked(createForgePr).mockResolvedValue({
+    ok: true,
+    prId,
+    prUrl: `https://github.com/o/r/pull/${prId}`,
+  })
+}
+
+describe('createPrHandler — delivery target resolution', () => {
+  it('opens the PR against the linked delivery branch, end to end', async () => {
     const r = seedQualifying()
-    const { delivery } = createDelivery({
-      workspacePath: proj,
-      title: 'Sprint 3',
-      description: '',
-      startDate: null,
-      endDate: null,
-      baseBranch: 'main',
+    const delivery = seedDelivery(r.id, { branch: 'delivery/sprint-3' })
+    mockSuccessfulChain('42')
+    const { ctx, publish } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    const worktreePath = getWorktreePath(proj, r.id)
+    // ONE resolved base reaches every layer: diff gate, forge create, ledger row
+    // and the published event — none of them re-derives `main`.
+    expect(hasDiffAgainstBase).toHaveBeenCalledWith(worktreePath, 'delivery/sprint-3')
+    expect(createForgePr).toHaveBeenCalledWith(
+      worktreePath,
+      'feat: PR me',
+      'body',
+      'intent/pr-me',
+      'delivery/sprint-3',
+      undefined,
+    )
+    expect(sent.some((m) => m.type === 'create_pr_response')).toBe(true)
+    const after = getIntent(r.id)!
+    expect(after.prs).toMatchObject([
+      { number: '42', deliveryId: delivery.id, baseBranch: 'delivery/sprint-3' },
+    ])
+    const prEvents = publish.mock.calls.filter((c) => c[0] === 'event')
+    expect(prEvents).toHaveLength(1)
+    const envelope = prEvents[0][1] as { event: GenericEvent }
+    expect(projectPrOperationEvent(envelope.event)).toMatchObject({
+      operation: 'create',
+      result: 'success',
+      ref: { head: 'intent/pr-me', base: 'delivery/sprint-3' },
+      association: { intentId: r.id, deliveryId: delivery.id },
     })
-    // The association surface: a live PR row pointing at the delivery.
-    upsertIntentPr({ intentId: r.id, deliveryId: delivery.id, number: '9', status: 'reviewing' })
+  })
+
+  it('honours an explicit deliveryId over the single-link shortcut', async () => {
+    const r = seedQualifying()
+    const a = seedDelivery(r.id, { title: 'A', branch: 'delivery/a' })
+    const b = seedDelivery(r.id, { title: 'B', branch: 'delivery/b' })
+    mockSuccessfulChain('42')
+    const { ctx } = fakeCtx()
+    const { conn } = fakeConn()
+
+    await createPrHandler(ctx, conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      deliveryId: b.id,
+    })
+
+    expect(hasDiffAgainstBase).toHaveBeenCalledWith(getWorktreePath(proj, r.id), 'delivery/b')
+    expect(getIntent(r.id)!.prs).toMatchObject([{ deliveryId: b.id }])
+    expect(a.id).not.toBe(b.id)
+  })
+
+  it('keeps an unlinked intent on the workspace main branch', async () => {
+    const r = seedQualifying()
+    mockSuccessfulChain('42')
+    const { ctx, publish } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
+
+    expect(hasDiffAgainstBase).toHaveBeenCalledWith(getWorktreePath(proj, r.id), 'main')
+    expect(sent.some((m) => m.type === 'create_pr_response')).toBe(true)
+    expect(getIntent(r.id)!.prs).toMatchObject([{ deliveryId: null, baseBranch: 'main' }])
+    const envelope = publish.mock.calls.filter((c) => c[0] === 'event')[0][1] as {
+      event: GenericEvent
+    }
+    // No delivery → no deliveryId on the association (not an empty string).
+    expect(projectPrOperationEvent(envelope.event)!.association).toEqual({ intentId: r.id })
+  })
+
+  it('refuses a delivery whose branch is not ready', async () => {
+    const r = seedQualifying()
+    seedDelivery(r.id)
     const { ctx, broadcast, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
-    expect(sent).toContainEqual({ type: 'error', error: { code: 'delivery.guard.branchNotReady' } })
+    expect(errorsOf(sent)).toEqual(['delivery.guard.branchNotReady'])
     // No git / forge work happened — the gate short-circuits before the diff check.
     expect(hasDiffAgainstBase).not.toHaveBeenCalled()
     expect(commitAndPush).not.toHaveBeenCalled()
@@ -814,51 +910,203 @@ describe('createPrHandler — delivery branch gate', () => {
     expect(publish).not.toHaveBeenCalled()
   })
 
-  it('lets PR creation through once the delivery branch is ready (only ACTIVE delivery PRs gate)', async () => {
+  it('refuses a deliveryId that does not exist', async () => {
     const r = seedQualifying()
+    const { ctx, publish } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      deliveryId: 'no-such-delivery',
+    })
+
+    expect(errorsOf(sent)).toEqual(['delivery.prCreateDeliveryUnknown'])
+    expect(hasDiffAgainstBase).not.toHaveBeenCalled()
+    expectNoSuccessSideEffects(r.id, publish)
+  })
+
+  it('refuses a delivery owned by another workspace', async () => {
+    const r = seedQualifying()
+    const otherDir = mkdtempSync(join(tmpdir(), 'c3-create-pr-other-'))
+    addWorkspace(otherDir, 2)
     const { delivery } = createDelivery({
-      workspacePath: proj,
-      title: 'Sprint 3',
+      workspacePath: otherDir,
+      title: 'Foreign',
       description: '',
       startDate: null,
       endDate: null,
       baseBranch: 'main',
     })
-    setDeliveryBranch(delivery.id, 'delivery/x', true)
-    // A MERGED delivery PR is terminal — not an active gate trigger.
-    upsertIntentPr({ intentId: r.id, deliveryId: delivery.id, number: '9', status: 'merged' })
-    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
-    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
-    vi.mocked(createForgePr).mockResolvedValue({
-      ok: true,
-      prId: '42',
-      prUrl: 'https://github.com/o/r/pull/42',
+    setDeliveryBranch(delivery.id, 'delivery/foreign', true)
+    // Even a linked edge does not make a foreign delivery a legal target.
+    insertIntentDelivery(delivery.id, r.id)
+    const { ctx, publish } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      deliveryId: delivery.id,
     })
-    const { ctx } = fakeCtx()
+
+    expect(errorsOf(sent)).toEqual(['delivery.prCreateDeliveryUnknown'])
+    expect(hasDiffAgainstBase).not.toHaveBeenCalled()
+    expectNoSuccessSideEffects(r.id, publish)
+    rmSync(otherDir, { recursive: true, force: true })
+  })
+
+  it('refuses a delivery the intent is not linked to', async () => {
+    const r = seedQualifying()
+    const delivery = seedDelivery(r.id, { branch: 'delivery/x', link: false })
+    const { ctx, publish } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      deliveryId: delivery.id,
+    })
+
+    expect(errorsOf(sent)).toEqual(['delivery.prCreateNotLinked'])
+    expect(hasDiffAgainstBase).not.toHaveBeenCalled()
+    expectNoSuccessSideEffects(r.id, publish)
+  })
+
+  it('refuses a multi-linked intent that names no delivery', async () => {
+    const r = seedQualifying()
+    seedDelivery(r.id, { title: 'A', branch: 'delivery/a' })
+    seedDelivery(r.id, { title: 'B', branch: 'delivery/b' })
+    const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
-    // The gate passed → the normal flow reached the diff check.
+    expect(errorsOf(sent)).toEqual(['delivery.prCreateAmbiguous'])
+    expect(hasDiffAgainstBase).not.toHaveBeenCalled()
+    expectNoSuccessSideEffects(r.id, publish)
+  })
+})
+
+describe('createPrHandler — (intent, delivery) idempotency key', () => {
+  it('lets the same head produce a second PR row toward a different delivery', async () => {
+    const r = seedQualifying()
+    const a = seedDelivery(r.id, { title: 'A', branch: 'delivery/a' })
+    const b = seedDelivery(r.id, { title: 'B', branch: 'delivery/b' })
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    mockSuccessfulChain('42')
+    await createPrHandler(ctx, conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      deliveryId: a.id,
+    })
+    mockSuccessfulChain('43')
+    await createPrHandler(ctx, conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      deliveryId: b.id,
+    })
+
+    expect(sent.filter((m) => m.type === 'create_pr_response')).toHaveLength(2)
+    // Two rows, same head branch, one per delivery — the pair is the key, not the intent.
+    expect(getIntent(r.id)!.prs).toMatchObject([
+      { number: '42', deliveryId: a.id, headBranch: 'intent/pr-me', baseBranch: 'delivery/a' },
+      { number: '43', deliveryId: b.id, headBranch: 'intent/pr-me', baseBranch: 'delivery/b' },
+    ])
+  })
+
+  it('blocks a repeat of the SAME pair without touching Git', async () => {
+    const r = seedQualifying()
+    const delivery = seedDelivery(r.id, { branch: 'delivery/x' })
+    mockSuccessfulChain('42')
+    const { ctx } = fakeCtx()
+    const { conn } = fakeConn()
+    await createPrHandler(ctx, conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      deliveryId: delivery.id,
+    })
+
+    vi.mocked(hasDiffAgainstBase).mockClear()
+    vi.mocked(commitAndPush).mockClear()
+    vi.mocked(createForgePr).mockClear()
+    const { ctx: ctx2, publish } = fakeCtx()
+    const { conn: conn2, sent } = fakeConn()
+
+    await createPrHandler(ctx2, conn2, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      deliveryId: delivery.id,
+    })
+
+    expect(errorsOf(sent)).toEqual(['intent.prCreateFailed'])
+    expect(hasDiffAgainstBase).not.toHaveBeenCalled()
+    expect(commitAndPush).not.toHaveBeenCalled()
+    expect(createForgePr).not.toHaveBeenCalled()
+    expect(publish.mock.calls.filter((c) => c[0] === 'event')).toHaveLength(0)
+    expect(getIntent(r.id)!.prs).toHaveLength(1)
+  })
+
+  it('does not let another pair’s active PR block this target', async () => {
+    const r = seedQualifying()
+    const delivery = seedDelivery(r.id, { branch: 'delivery/x' })
+    // An active MAINLINE PR — a different pair, so it must not gate the delivery one.
+    upsertIntentPr({ intentId: r.id, deliveryId: null, number: '7', status: 'reviewing' })
+    mockSuccessfulChain('42')
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      deliveryId: delivery.id,
+    })
+
+    expect(sent.some((m) => m.type === 'create_pr_response')).toBe(true)
+    expect(getIntent(r.id)!.prs).toHaveLength(2)
+  })
+
+  it('does not let a MERGED PR on the same pair block a fresh create', async () => {
+    const r = seedQualifying()
+    const delivery = seedDelivery(r.id, { branch: 'delivery/x' })
+    upsertIntentPr({ intentId: r.id, deliveryId: delivery.id, number: '9', status: 'merged' })
+    mockSuccessfulChain('42')
+    const { ctx } = fakeCtx()
+    const { conn, sent } = fakeConn()
+
+    await createPrHandler(ctx, conn, {
+      type: 'create_pr',
+      workspaceId,
+      intentId: r.id,
+      deliveryId: delivery.id,
+    })
+
     expect(hasDiffAgainstBase).toHaveBeenCalled()
     expect(sent.some((m) => m.type === 'create_pr_response')).toBe(true)
   })
 
-  it('does not gate PR creation for an intent with no delivery-targeted PR', async () => {
+  it('rejects a clean worktree against the delivery base with prCreateNoChanges', async () => {
     const r = seedQualifying()
-    vi.mocked(hasDiffAgainstBase).mockResolvedValue(true)
-    vi.mocked(commitAndPush).mockResolvedValue({ ok: true, committed: true })
-    vi.mocked(createForgePr).mockResolvedValue({
-      ok: true,
-      prId: '42',
-      prUrl: 'https://github.com/o/r/pull/42',
-    })
-    const { ctx } = fakeCtx()
+    seedDelivery(r.id, { branch: 'delivery/x' })
+    vi.mocked(hasDiffAgainstBase).mockResolvedValue(false)
+    const { ctx, publish } = fakeCtx()
     const { conn, sent } = fakeConn()
 
     await createPrHandler(ctx, conn, { type: 'create_pr', workspaceId, intentId: r.id })
 
-    expect(hasDiffAgainstBase).toHaveBeenCalled()
-    expect(sent.some((m) => m.type === 'create_pr_response')).toBe(true)
+    expect(errorsOf(sent)).toEqual(['intent.prCreateNoChanges'])
+    expect(hasDiffAgainstBase).toHaveBeenCalledWith(getWorktreePath(proj, r.id), 'delivery/x')
+    expect(commitAndPush).not.toHaveBeenCalled()
+    expectNoSuccessSideEffects(r.id, publish)
   })
 })

@@ -66,7 +66,8 @@ c3
 │   │   │   └── attach·resume·fresh 三态启动      # 按 lastWorkSessionId:运行中只挂 viewer 不发新 turn,空闲在原 id 续跑,无会话才新建;人工按钮与 MCP 工具共用同一门禁(含 RM-A12 并发闸门:current-branch 全局互斥,worktree 各意图独立目录可并行)
 │   │   ├── 意图交付                              # 追踪交付态(分支、提交、PR 状态)
 │   │   ├── 失败定向修复指引                    # worktree 创建与 PR 创建链失败按当次命令结果(退出码/stderr/失败阶段)分类为闭集原因码,错误弹框展示对应修复指引 + 原始错误诊断详情 + 「重试原动作」入口;证据不足一律 unknown、原样展示原始错误且不臆测步骤;只分类不代劳(不清 worktree/不解冲突/不改凭据/不自动重试)
-│   │   ├── PR 更新复位                           # 模型发 pr:operation update/success 时把 rejected/failed/closed 的 PR 行复位为 reviewing
+│   │   ├── 手动建 PR                             # 闸门序列 worktree→有分支→目标交付可用→目标 (intent_id, delivery_id) 无活跃 PR→相对目标 base 有 diff;base 一次解析贯穿 diff 闸门/forge/PR 行/事件;人工与顾问入口共用同一解析
+│   │   ├── PR 更新复位                           # 模型发 pr:update/success 时把 rejected/failed/closed 的 PR 行复位为 reviewing;须以 association.deliveryId 或 pr.number 唯一定位,定位不到即拒并落 error 日志,绝不猜测
 │   │   ├── 意图依赖                              # intent_deps 依赖图(blocks/informs/soft_after),依赖门控启动
 │   │   │   └── 阻塞态前序指引                    # 被依赖闸门挡住的意图,「下一步」提示展示第一个阻塞它的前序意图(标题+状态),按钮跳转到其详情;复用闸门判定,不提供跳过/放行
 │   │   ├── 沟通会话                              # 意图右栏 intent session 多会话(新建/选择/改名/删除)
@@ -104,6 +105,7 @@ c3
 │   │   ├── 多仓拒绝                              # 根非 repo 且有子仓的工作区建交付与初始化分支均报 delivery.multiRepoUnsupported(单列分支无法表达部分仓已交付)
 │   │   ├── branch_ready 闸门                     # 分支未就绪时状态推进与面向交付的意图建 PR 被拦(可读原因);就绪后成为状态机真正可用的第一级守卫
 │   │   ├── 意图关联/解除                         # intent_deliveries 关联边(与 intent_prs.delivery_id 的「PR 落点」职责分离);关联只建边不改投已有 PR;两侧页面互见
+│   │   ├── PR 提向交付分支                       # 已关联交付的意图其 PR base 为交付分支,未关联仍提主线(交付是可选聚合层);目标须已关联,多关联不开放入口也不代选;PR 行按交付分组展示
 │   │   ├── merged 禁解                           # 对本交付的 PR 已合并则一律拒绝解除(本地状态 + forge 实时状态双层);forge 读不到状态同样阻塞,绝不猜「不是 merged」
 │   │   ├── 解除即关 PR                           # 确认未合并后关闭 PR(已关闭视为成功)、删该 PR 行再删边;关闭失败整个解除阻塞,边与 PR 行都不动
 │   │   ├── diff 膨胀提示                         # 关联时按分叉点判据检测「意图基于主线而非交付分支」,只提示不阻塞;检测失败静默

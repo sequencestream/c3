@@ -1428,18 +1428,26 @@ export const createPrHandler: Handler<'create_pr'> = async (ctx, conn, msg) => {
     })
     return
   }
-  const result = await createPrForIntent(proj, msg.intentId, {
-    broadcastIntents: ctx.broadcastIntents,
-    normalizeEvent: ctx.normalizeEvent,
-    publishEvent: (workspacePath, sessionId, event) =>
-      ctx.eventBus.publish('event', { workspacePath, sessionId, event }),
-    actor: conn.subject,
-    // Coarse progress for the requesting connection's overlay only. The terminals
-    // stay the response / `error` frames below, so a dropped stage never changes
-    // whether the PR was created.
-    onStage: (stage) =>
-      conn.send({ type: 'create_pr_progress', intentId: msg.intentId, stage, ...correlate }),
-  })
+  const result = await createPrForIntent(
+    proj,
+    msg.intentId,
+    {
+      broadcastIntents: ctx.broadcastIntents,
+      normalizeEvent: ctx.normalizeEvent,
+      publishEvent: (workspacePath, sessionId, event) =>
+        ctx.eventBus.publish('event', { workspacePath, sessionId, event }),
+      actor: conn.subject,
+      // Coarse progress for the requesting connection's overlay only. The terminals
+      // stay the response / `error` frames below, so a dropped stage never changes
+      // whether the PR was created.
+      onStage: (stage) =>
+        conn.send({ type: 'create_pr_progress', intentId: msg.intentId, stage, ...correlate }),
+    },
+    // Passed through verbatim: the client only ever names a delivery the intent
+    // is linked to, and the core re-checks that — the frame is a request, not a
+    // verdict.
+    msg.deliveryId,
+  )
   if (!result.success) {
     conn.send({
       type: 'error',

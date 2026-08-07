@@ -150,10 +150,12 @@ export function normalizePrEvent(args: PublishPrEventArgs): PrOperationEvent {
   if (args.association) {
     const intentId = normalizeField(args.association.intentId)
     const intentTitle = normalizeField(args.association.intentTitle)
-    if (intentId || intentTitle) {
+    const deliveryId = normalizeField(args.association.deliveryId)
+    if (intentId || intentTitle || deliveryId) {
       event.association = {}
       if (intentId) event.association.intentId = intentId
       if (intentTitle) event.association.intentTitle = intentTitle
+      if (deliveryId) event.association.deliveryId = deliveryId
     }
   }
 
@@ -240,6 +242,7 @@ function readAssociation(v: unknown): PrEventAssociation | undefined {
   const assoc: PrEventAssociation = {}
   if (readStr(o.intentId) !== undefined) assoc.intentId = readStr(o.intentId)
   if (readStr(o.intentTitle) !== undefined) assoc.intentTitle = readStr(o.intentTitle)
+  if (readStr(o.deliveryId) !== undefined) assoc.deliveryId = readStr(o.deliveryId)
   return Object.keys(assoc).length ? assoc : undefined
 }
 
@@ -396,6 +399,12 @@ export interface ServerSidePrCreateInput {
   headBranch: string | undefined
   baseBranch: string | undefined
   intentId: string
+  /**
+   * Delivery this PR belongs to; `null`/omitted for a mainline PR. Carried on the
+   * event's association so a subscriber sees the same `(intent, delivery)` key
+   * the ledger row was written under.
+   */
+  deliveryId?: string | null
 }
 
 /**
@@ -417,7 +426,7 @@ export function runServerSidePrCreate(
     result: 'success',
     pr: { url: input.prUrl ?? undefined },
     ref: { head: input.headBranch, base: input.baseBranch },
-    association: { intentId: input.intentId },
+    association: { intentId: input.intentId, deliveryId: input.deliveryId ?? undefined },
   }
   const res = normalize(prArgsToGenericEvent(args))
   if (res.ok) publish(res.event)

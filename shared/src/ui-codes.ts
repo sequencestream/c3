@@ -174,6 +174,17 @@ export const UI_ERROR_CODES = {
   // ready, so its PR must not be created yet. Renders through the guard leaf
   // (the same copy the persistent gap list shows).
   'delivery.guard.branchNotReady': { key: 'delivery.guard.branchNotReady' },
+  // create_pr target resolution. The request named a delivery that does not
+  // exist, or that belongs to another workspace — one code, because from the
+  // caller's side both mean "this workspace has no such delivery".
+  'delivery.prCreateDeliveryUnknown': { key: 'error.delivery.prCreateDeliveryUnknown' },
+  // The named delivery exists, but the intent is not linked to it. Creating the
+  // PR anyway would file a PR row under a delivery group the intent never
+  // joined, splitting `intent_prs.delivery_id` from `intent_deliveries`.
+  'delivery.prCreateNotLinked': { key: 'error.delivery.prCreateNotLinked' },
+  // No delivery was named and the intent is linked to several — which one the
+  // PR targets is the user's call, never a server guess.
+  'delivery.prCreateAmbiguous': { key: 'error.delivery.prCreateAmbiguous' },
   // State-machine rejections (edge not in the graph). Guard-failed rejections
   // carry `delivery.guard.*` reasons on the dedicated `delivery_transition_failed`
   // frame; these two codes drive the toast + error copy.

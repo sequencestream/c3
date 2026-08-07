@@ -621,7 +621,8 @@ describe('IntentDetail.vue — actions', () => {
 
       await w.find('[data-action="createPr"]').trigger('click')
 
-      expect(w.emitted('create-pr')).toEqual([['intent-1']])
+      // The delivery id rides along to the container; undefined = mainline PR.
+      expect(w.emitted('create-pr')).toEqual([['intent-1', undefined]])
     }
   })
 

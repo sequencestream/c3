@@ -328,6 +328,20 @@ describe('createPr — progress overlay wiring', () => {
       requestId: expect.any(String),
     })
     expect(h.createPrProgress.value).toMatchObject({ intentId: 'i-1', phase: 'analyzing-changes' })
+  })
+
+  it('carries the delivery id when the caller names one, and omits the key otherwise', () => {
+    const h = makeCtx({ intents: [intent('i-1', 'dev-1')] })
+
+    h.ctx.createPr('i-1', 'delivery-a')
+
+    expect(h.ctx.send).toHaveBeenCalledWith({
+      type: 'create_pr',
+      workspaceId: WS,
+      intentId: 'i-1',
+      requestId: expect.any(String),
+      deliveryId: 'delivery-a',
+    })
     // The overlay tracks exactly the token that went out on the wire.
     expect(runToken(h)).toBe(
       (h.ctx.send as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.requestId,

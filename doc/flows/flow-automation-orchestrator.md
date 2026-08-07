@@ -158,6 +158,7 @@ flowchart TD
 | `find_deliveries`          | 只读 | 按 status/keyword 检索项目交付列表(状态、基线/交付分支、就绪标志、集成就绪 N/M)。交付**没有写工具**:状态写必须过交付状态机与守卫;默认不勾选                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `view_delivery`            | 只读 | 按 id 查看单条交付完整详情(含关联意图与最新交付 PR 行);默认不勾选                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `save_intent_directly`     | 写   | 直接落库新建草稿意图(绕过人工确认,仅限自动化)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `sync_intent_pr_status`    | 写   | **触发服务端从 forge 派生 PR 终态并落库**。只接受 `intentId`,不接受任何状态值:服务端遍历该意图全部 `reviewing` 的 PR 行逐条向 forge 查询,`merged`/`closed` 终态落库并写意图日志,仍 `open` 的行不变。模型只触发,状态唯一由 forge 裁决                                                                                                                                                                                                                                                                                                              |
 | `publish_pr_event`         | 写   | 发布 PR 操作事件(触发其他自动化)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `find_discussions`         | 只读 | 检索项目讨论列表                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `view_discussion`          | 只读 | 查看单条讨论详情及消息                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -168,9 +169,11 @@ flowchart TD
 工具列表源是 `AUTOMATION_C3_TOOL_NAMES`——所有表面(Claude SDK、Codex HTTP)自动同步,
 无需维护第二份名单。
 
-**表中没有按意图回填 PR 状态的工具**:一个意图可能同时持有多条 PR(每个交付一条),仅凭 `intentId`
-无法确定要写哪一条。自动化的 PR 对账路径是只读的 `find_intents` / `view_intent` 读现状,加上携带
-`association.deliveryId` 或 `pr.number` 的 `pr:update` 事件做复位;终态由 c3 自己从 forge 事实落库。
+**PR 终态回填经 `sync_intent_pr_status` 显式触发**:工具只接受 `intentId`,不携带任何状态值——服务端
+遍历该意图全部处于 `reviewing` 的 PR 行逐条向 forge 查询真实状态,`merged` / `closed` 终态落库并写
+意图日志,forge 仍 `open` 的行保持不变。模型不直接写状态,终态唯一由 forge 裁决;`rejected` /
+`failed` / `closed → reviewing` 的复位仍由携带 `association.deliveryId` 或 `pr.number` 的
+`pr:update` 事件处理。
 
 ## 顾问 Agent 的专属工具组(propose-then-validate)
 

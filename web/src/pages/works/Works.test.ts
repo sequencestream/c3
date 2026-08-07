@@ -181,6 +181,8 @@ describe('Works.vue mobile drill-down', () => {
     const wrapper = mountWorks()
 
     await wrapper.find('[data-testid="select-session"]').trigger('click')
+    // 模拟父层对 select_session 的响应:选中即激活会话(未对齐前聊天列不渲染旧状态)。
+    await wrapper.setProps({ activeSession: 's1', hasActiveSession: true })
     await nextTick()
 
     expect(wrapper.emitted('select-session')).toEqual([[WS, 's1']])

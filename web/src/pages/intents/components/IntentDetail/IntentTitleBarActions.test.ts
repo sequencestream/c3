@@ -96,18 +96,76 @@ function mountActions(
   })
 }
 
-describe('IntentTitleBarActions.vue', () => {
-  it('renders delete last and confirms exactly once through the danger dialog', async () => {
+const MORE = '[data-testid="intent-detail-more"]'
+const MORE_MENU = '[data-testid="intent-detail-more-menu"]'
+const DELETE = '[data-testid="intent-detail-delete"]'
+const CANCEL = '[data-testid="intent-detail-cancel"]'
+
+/** 展开「…」溢出菜单 —— 「取消」「删除」都只在展开后才可触达。 */
+async function openMoreMenu(w: ReturnType<typeof mountActions>) {
+  await w.find(MORE).trigger('click')
+  return w
+}
+
+describe('IntentTitleBarActions.vue — 「…」溢出菜单', () => {
+  it('把「取消」「删除」收进菜单,标题栏表面不再直接渲染', async () => {
     const w = mountActions(intent({ id: 'i1', status: 'in_progress' }))
+    expect(w.find(DELETE).exists()).toBe(false)
+    expect(w.find(CANCEL).exists()).toBe(false)
+    // 「…」占动作区末位(原「删除」所在位置)。
     expect(
       w
         .find('[data-testid="intent-detail-actions"]')
         .findAll('button')
         .at(-1)
         ?.attributes('data-testid'),
-    ).toBe('intent-detail-delete')
+    ).toBe('intent-detail-more')
 
-    await w.find('[data-testid="intent-detail-delete"]').trigger('click')
+    await openMoreMenu(w)
+    expect(w.find(MORE_MENU).exists()).toBe(true)
+    expect(w.find(CANCEL).exists()).toBe(true)
+    expect(w.find(DELETE).exists()).toBe(true)
+  })
+
+  it('展开态 aria-expanded 为真,点击外部与 Esc 都收起', async () => {
+    const w = mountActions(intent({ id: 'i1', status: 'in_progress' }))
+    expect(w.find(MORE).attributes('aria-expanded')).toBe('false')
+
+    await openMoreMenu(w)
+    expect(w.find(MORE).attributes('aria-expanded')).toBe('true')
+
+    // 点击外部:document 上的 click 收起菜单(菜单与「…」自身的点击被 @click.stop 挡住)。
+    document.dispatchEvent(new MouseEvent('click'))
+    await w.vm.$nextTick()
+    expect(w.find(MORE_MENU).exists()).toBe(false)
+
+    await openMoreMenu(w)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await w.vm.$nextTick()
+    expect(w.find(MORE_MENU).exists()).toBe(false)
+    expect(w.find(MORE).attributes('aria-expanded')).toBe('false')
+  })
+
+  it('done 时两项都不可用,「…」整体不渲染;cancelled 时只剩「删除」', async () => {
+    const done = mountActions(intent({ id: 'i1', status: 'done' }))
+    expect(done.find(MORE).exists()).toBe(false)
+
+    const cancelled = await openMoreMenu(mountActions(intent({ id: 'i1', status: 'cancelled' })))
+    expect(cancelled.find(CANCEL).exists()).toBe(false)
+    expect(cancelled.find(DELETE).exists()).toBe(true)
+
+    for (const status of ['draft', 'todo', 'in_progress'] as const) {
+      const w = await openMoreMenu(mountActions(intent({ id: 'i1', status })))
+      expect(w.find(CANCEL).exists()).toBe(true)
+      expect(w.find(DELETE).exists()).toBe(true)
+    }
+  })
+
+  it('菜单内「删除」走既有 danger 确认,确认恰好上抛一次', async () => {
+    const w = await openMoreMenu(mountActions(intent({ id: 'i1', status: 'in_progress' })))
+    await w.find(DELETE).trigger('click')
+    // 点菜单项即收菜单,只留确认框。
+    expect(w.find(MORE_MENU).exists()).toBe(false)
     expect(w.find('[role="alertdialog"]').exists()).toBe(true)
     expect(w.find('[data-testid="confirm-accept"]').classes()).toContain('danger')
     // in_progress → 强化工作产物提示。
@@ -118,43 +176,59 @@ describe('IntentTitleBarActions.vue', () => {
     expect(w.emitted('delete')).toEqual([['i1']])
   })
 
-  it('does not emit delete on cancel and omits the artifacts hint for todo', async () => {
-    const w = mountActions(intent({ id: 'i1', status: 'todo' }))
-    await w.find('[data-testid="intent-detail-delete"]').trigger('click')
+  it('删除取消不上抛,todo 不带工作产物提示', async () => {
+    const w = await openMoreMenu(mountActions(intent({ id: 'i1', status: 'todo' })))
+    await w.find(DELETE).trigger('click')
     expect(w.find('.cd-message').text()).not.toContain('work products')
     await w.find('[data-testid="confirm-cancel"]').trigger('click')
     expect(w.emitted('delete')).toBeUndefined()
   })
 
-  it('hides delete for done and keeps it for every other status', () => {
-    expect(
-      mountActions(intent({ id: 'i1', status: 'done' }))
-        .find('[data-testid="intent-detail-delete"]')
-        .exists(),
-    ).toBe(false)
+  it('菜单内「取消」走新 danger 确认,文案点明会切成 cancelled,确认后按原事件上抛', async () => {
+    const w = await openMoreMenu(mountActions(intent({ id: 'i1', status: 'in_progress' })))
+    await w.find(CANCEL).trigger('click')
+    expect(w.emitted('set-status')).toBeUndefined()
+    expect(w.find('[data-testid="confirm-accept"]').classes()).toContain('danger')
+    expect(w.find('.cd-message').text()).toBe(
+      i18n.global.t('intent.cancel.confirm', { title: 'Start me' }),
+    )
+    expect(w.find('.cd-message').text()).toContain('cancelled')
 
-    for (const status of ['draft', 'todo', 'in_progress', 'cancelled'] as const) {
-      expect(
-        mountActions(intent({ id: 'i1', status }))
-          .find('[data-testid="intent-detail-delete"]')
-          .exists(),
-      ).toBe(true)
+    await w.find('[data-testid="confirm-accept"]').trigger('click')
+    expect(w.emitted('set-status')).toEqual([['i1', 'cancelled']])
+  })
+
+  it('取消确认的取消按钮 / 遮罩 / Esc 都不上抛', async () => {
+    const w = mountActions(intent({ id: 'i1', status: 'in_progress' }))
+    for (const dismiss of [
+      () => w.find('[data-testid="confirm-cancel"]').trigger('click'),
+      () => w.find('[data-testid="confirm-overlay"]').trigger('click'),
+      () => w.find('[data-testid="confirm-overlay"]').trigger('keydown.esc'),
+    ]) {
+      await openMoreMenu(w)
+      await w.find(CANCEL).trigger('click')
+      expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(true)
+      await dismiss()
+      expect(w.find('[data-testid="confirm-overlay"]').exists()).toBe(false)
+      expect(w.emitted('set-status')).toBeUndefined()
     }
   })
 
   it('drops the delete entry as soon as the intent turns done', async () => {
-    const w = mountActions(intent({ id: 'i1', status: 'in_progress' }))
-    expect(w.find('[data-testid="intent-detail-delete"]').exists()).toBe(true)
+    const w = await openMoreMenu(mountActions(intent({ id: 'i1', status: 'in_progress' })))
+    expect(w.find(DELETE).exists()).toBe(true)
 
     await w.setProps({ intent: intent({ id: 'i1', status: 'done' }) })
-    expect(w.find('[data-testid="intent-detail-delete"]').exists()).toBe(false)
+    // 两项都不可用 → 「…」连同菜单一起撤走。
+    expect(w.find(MORE).exists()).toBe(false)
+    expect(w.find(DELETE).exists()).toBe(false)
     expect(w.find('[role="alertdialog"]').exists()).toBe(false)
     expect(w.emitted('delete')).toBeUndefined()
   })
 
   it('closes an open confirm dialog and refuses delete when the intent turns done mid-confirm', async () => {
-    const w = mountActions(intent({ id: 'i1', status: 'in_progress' }))
-    await w.find('[data-testid="intent-detail-delete"]').trigger('click')
+    const w = await openMoreMenu(mountActions(intent({ id: 'i1', status: 'in_progress' })))
+    await w.find(DELETE).trigger('click')
     expect(w.find('[role="alertdialog"]').exists()).toBe(true)
 
     // 状态在确认框敞开时转 done:弹框应被主动收起,确认动作不得放行删除。
@@ -164,6 +238,18 @@ describe('IntentTitleBarActions.vue', () => {
     expect(w.emitted('delete')).toBeUndefined()
   })
 
+  it('取消确认敞开期间转入 cancelled 时收框且不放行', async () => {
+    const w = await openMoreMenu(mountActions(intent({ id: 'i1', status: 'in_progress' })))
+    await w.find(CANCEL).trigger('click')
+    expect(w.find('[role="alertdialog"]').exists()).toBe(true)
+
+    await w.setProps({ intent: intent({ id: 'i1', status: 'cancelled' }) })
+    expect(w.find('[role="alertdialog"]').exists()).toBe(false)
+    expect(w.emitted('set-status')).toBeUndefined()
+  })
+})
+
+describe('IntentTitleBarActions.vue', () => {
   it('emits main-action on the primary button click without deciding the action itself', async () => {
     const w = mountActions(intent({ id: 'i1', status: 'todo' }))
     await w.find('.req-btn.primary').trigger('click')
@@ -191,7 +277,7 @@ describe('IntentTitleBarActions.vue', () => {
     expect(w.emitted('modify')).toEqual([[]])
   })
 
-  it('emits status transitions from mark-todo / back-to-draft / mark-done / cancel', async () => {
+  it('emits status transitions from mark-todo / back-to-draft / mark-done', async () => {
     const draft = mountActions(intent({ id: 'i1', status: 'draft' }))
     await draft.find('[data-testid="intent-detail-mark-todo"]').trigger('click')
     expect(draft.emitted('set-status')).toEqual([['i1', 'todo']])
@@ -207,7 +293,7 @@ describe('IntentTitleBarActions.vue', () => {
     expect(running.emitted('set-status')).toEqual([['i1', 'done']])
   })
 
-  it('hides both status buttons and shows no cancel for done/cancelled', () => {
+  it('hides both status buttons and mark-done for done/cancelled', () => {
     for (const status of ['done', 'cancelled'] as const) {
       const w = mountActions(intent({ id: 'i1', status }))
       expect(w.find('[data-testid="intent-detail-mark-todo"]').exists()).toBe(false)
@@ -360,26 +446,31 @@ describe('IntentTitleBarActions.vue', () => {
 describe('IntentTitleBarActions.vue — 交付归属入口(三态)', () => {
   const SPRINT: Intent['linkedDeliveries'] = [{ id: 'd1', title: 'Sprint 3' }]
 
-  it('未关联时给出「关联交付」,点击先请控制层补拉列表再开弹窗', async () => {
+  it('未关联时给出主色强调的「关联交付」,点击先请控制层补拉列表再开弹窗', async () => {
     const w = mountActions(intent({ id: 'i1', linkedDeliveries: [] }))
-    expect(w.find('[data-testid="intent-detail-unlink-delivery"]').exists()).toBe(false)
     expect(w.find('[data-testid="intent-link-delivery-overlay"]').exists()).toBe(false)
 
-    await w.find('[data-testid="intent-detail-link-delivery"]').trigger('click')
+    const link = w.find('[data-testid="intent-detail-link-delivery"]')
+    // 决定 PR 提向哪条分支的关键入口:未关联态用主色描边强调,不与普通按钮同级。
+    expect(link.classes()).toContain('req-link-delivery-accent')
+
+    await link.trigger('click')
     // 意图页从不自带交付列表,开框必须同时请控制层补发 list_deliveries。
     expect(w.emitted('open-link-dialog')).toEqual([['/proj']])
     expect(w.find('[data-testid="intent-link-delivery-overlay"]').exists()).toBe(true)
   })
 
-  it('恰好关联一个时展示交付名(可跳转)与「解除关联」,不再给关联入口', async () => {
+  it('恰好关联一个时只展示交付名(可跳转),不给关联入口,解除入口也不在标题栏', async () => {
     const w = mountActions(intent({ id: 'i1', linkedDeliveries: SPRINT }))
     expect(w.find('[data-testid="intent-detail-link-delivery"]').exists()).toBe(false)
 
     const link = w.find('[data-testid="intent-detail-delivery-d1"]')
     expect(link.text()).toBe('Sprint 3')
+    expect(link.classes()).not.toContain('req-link-delivery-accent')
     await link.trigger('click')
     expect(w.emitted('open-delivery')).toEqual([['d1']])
-    expect(w.find('[data-testid="intent-detail-unlink-delivery"]').exists()).toBe(true)
+    // 解除关联已迁到概览元信息区的交付名之后。
+    expect(w.find('[data-testid="intent-detail-unlink-delivery"]').exists()).toBe(false)
   })
 
   it('多关联只展示,既无关联也无解除入口(与不渲染建 PR 入口同一条裁决)', () => {
@@ -473,39 +564,27 @@ describe('IntentTitleBarActions.vue — 交付归属入口(三态)', () => {
     expect(w.emitted('standalone-delivery')).toBeUndefined()
   })
 
-  it('解除关联走 danger 二次确认,文案说明会关闭该交付下的 PR', async () => {
-    const w = mountActions(intent({ id: 'i1', linkedDeliveries: SPRINT }))
-    await w.find('[data-testid="intent-detail-unlink-delivery"]').trigger('click')
-    expect(w.emitted('unlink-delivery')).toBeUndefined()
+  it('关联弹框敞开期间被别处关联掉时收框', async () => {
+    const w = mountActions(intent({ id: 'i1', linkedDeliveries: [] }))
+    await w.find('[data-testid="intent-detail-link-delivery"]').trigger('click')
+    expect(w.find('[data-testid="intent-link-delivery-overlay"]').exists()).toBe(true)
 
-    // 二次确认正文取意图侧自有文案,并把「会关闭 PR」这个副作用讲明白。
-    const message = w.find('.cd-message').text()
-    expect(message).toBe(i18n.global.t('intent.linkDelivery.unlink.confirm', { title: 'Sprint 3' }))
-    expect(message).toContain('PR')
-
-    await w.find('.cd-confirm').trigger('click')
-    expect(w.emitted('unlink-delivery')).toEqual([['/proj', 'd1', 'i1']])
-  })
-
-  it('关联在弹框敞开期间被别处改掉时收起对应弹框', async () => {
-    const w = mountActions(intent({ id: 'i1', linkedDeliveries: SPRINT }))
-    await w.find('[data-testid="intent-detail-unlink-delivery"]').trigger('click')
-    expect(w.find('.cd-message').exists()).toBe(true)
-
-    // 别的客户端解除了关联:确认框的前提已不成立,不该留着让用户对空气点确认。
-    await w.setProps({ intent: intent({ id: 'i1', linkedDeliveries: [] }) })
-    expect(w.find('.cd-message').exists()).toBe(false)
+    // 别的客户端建立了关联:候选框的前提已不成立,不该留着让用户对空气点确认。
+    await w.setProps({ intent: intent({ id: 'i1', linkedDeliveries: SPRINT }) })
+    expect(w.find('[data-testid="intent-link-delivery-overlay"]').exists()).toBe(false)
   })
 })
 
-describe('五语言解除文案', () => {
-  // 「会关闭 PR」是解除关联唯一的不可逆副作用,任何一门语言漏讲都等于让用户在
-  // 不知情下确认 —— 因此这条按 key 逐语言守住,不随译文润色而放松。
-  it('每种语言的解除确认都点明 PR 会被关闭', () => {
+describe('五语言取消文案', () => {
+  // 取消会连带关闭该意图全部活跃 PR(服务端行为),这是它唯一的不可逆副作用;
+  // 任何一门语言漏讲都等于让用户在不知情下确认 —— 按 key 逐语言守住,不随译文润色而放松。
+  it('每种语言的取消确认都带上意图标题并点明 PR 会被关闭', () => {
     for (const locale of ['en', 'zh', 'ja', 'ko', 'ru'] as const) {
-      const copy = i18n.global.t('intent.linkDelivery.unlink.confirm', { title: 'X' }, { locale })
-      expect(copy, locale).toContain('PR')
+      const copy = i18n.global.t('intent.cancel.confirm', { title: 'X' }, { locale })
       expect(copy, locale).toContain('X')
+      expect(copy, locale).toContain('PR')
+      expect(i18n.global.t('intent.cancel.title', {}, { locale }), locale).not.toBe('')
+      expect(i18n.global.t('intent.cancel.label', {}, { locale }), locale).not.toBe('')
     }
   })
 })

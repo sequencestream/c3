@@ -43,6 +43,12 @@ import {
   type ViewDeliveryArgs,
 } from '../deliveries/tool-defs.js'
 import {
+  runSyncIntentPrStatus,
+  syncIntentPrStatusDesc,
+  syncIntentPrStatusSchema,
+  type SyncIntentPrStatusArgs,
+} from '../intents/pr-status-tool-defs.js'
+import {
   publishEventDesc,
   publishEventSchema,
   runPublishEvent,
@@ -176,6 +182,20 @@ export function buildAutomationC3Tools(
           deps?.broadcastIntents(path),
         ),
       }),
+    },
+    // PR-status sync: a TRIGGER, not a status write. The tool takes only an
+    // intent id and hands it to the shared `syncIntentPrStatus` core, which
+    // queries the forge for every `reviewing` row and persists the terminal
+    // `merged` / `closed` states — the model never supplies a status value, so
+    // the ledger can only move on the forge's own verdict.
+    {
+      name: 'sync_intent_pr_status',
+      description: syncIntentPrStatusDesc,
+      inputSchema: syncIntentPrStatusSchema,
+      handler: async (args) =>
+        await runSyncIntentPrStatus(workspacePath, args as SyncIntentPrStatusArgs, (path) =>
+          deps?.broadcastIntents(path),
+        ),
     },
     {
       name: 'publish_event',

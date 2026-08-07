@@ -229,6 +229,15 @@ describe('DeliveryDetail', () => {
     expect(w.emitted('cancel')?.[0]).toEqual(['d1'])
   })
 
+  it('omits the cancel button for terminal statuses, renders it for non-terminal', () => {
+    for (const status of ['delivered', 'cancelled'] as const) {
+      const w = mountDetail({ delivery: delivery({ status }), plan: { targets: [] } })
+      expect(w.find('[data-testid="delivery-cancel-btn"]').exists(), status).toBe(false)
+    }
+    // 非终态(planned)仍渲染取消入口。
+    expect(mountDetail().find('[data-testid="delivery-cancel-btn"]').exists()).toBe(true)
+  })
+
   it('emits transition with confirmVerified=true after the verification confirmation', async () => {
     const w = mountDetail({
       delivery: delivery({
@@ -324,6 +333,17 @@ describe('DeliveryDetail — 交付编辑弹窗', () => {
     description: 'ship the batch',
     startDate: Date.parse('2026-08-01T00:00:00Z'),
     endDate: Date.parse('2026-08-31T00:00:00Z'),
+  })
+
+  it('omits the edit button for terminal statuses, renders it for non-terminal', () => {
+    for (const status of ['delivered', 'cancelled'] as const) {
+      const w = mountDetail({ delivery: delivery({ status }), plan: { targets: [] } })
+      expect(w.find('[data-testid="delivery-edit-btn"]').exists(), status).toBe(false)
+    }
+    // 非终态(planned)仍渲染编辑入口。
+    expect(
+      mountDetail({ delivery: EDITABLE }).find('[data-testid="delivery-edit-btn"]').exists(),
+    ).toBe(true)
   })
 
   async function openEditor(w: ReturnType<typeof mountDetail>) {

@@ -775,6 +775,11 @@
       "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
       "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
     },
+    "cancel": {
+      "title": "インテントを取り消しますか?",
+      "confirm": "「{title}」を取り消しますか?ステータスは「キャンセル済み」に切り替わり、このインテントの未クローズ PR も併せてクローズされます。以降、詳細のヘッダーに戻す手段はありません。",
+      "label": "インテントを取り消す"
+    },
     "create": {
       "label": "Add intent"
     },

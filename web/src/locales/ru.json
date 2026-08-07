@@ -775,6 +775,11 @@
       "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
       "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
     },
+    "cancel": {
+      "title": "Отменить интент?",
+      "confirm": "Отменить «{title}»? Его статус переключится на «отменён», а все незакрытые PR этого интента будут закрыты; вернуть его из шапки деталей будет нельзя.",
+      "label": "Отменить интент"
+    },
     "create": {
       "label": "Add intent"
     },

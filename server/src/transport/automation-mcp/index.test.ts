@@ -23,12 +23,27 @@ vi.mock('../../state.js', async (importOriginal) => ({
   pathToId: (p: string) => p,
 }))
 
+// The sync tool reaches the forge through `getForgePrStatus`; the integration test
+// pins the forge verdict without shelling out. Other git.js exports are preserved
+// (the session launcher / route may still import them).
+vi.mock('../../git.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../git.js')>()),
+  getForgePrStatus: vi.fn(),
+}))
+
 import { serve, type ServerType } from '@hono/node-server'
 import { Hono } from 'hono'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { getForgePrStatus } from '../../git.js'
 import { resetDbForTests } from '../../kernel/infra/db.js'
-import { resetStoreForTests } from '../../features/intents/store.js'
+import {
+  getIntent,
+  insertIntents,
+  listIntentLogs,
+  resetStoreForTests,
+  upsertIntentPr,
+} from '../../features/intents/store.js'
 import {
   AUTOMATION_C3_TOOL_NAMES,
   type AutomationMcpDeps,
@@ -92,6 +107,7 @@ describe('automation MCP HTTP route', () => {
     process.env.C3_DB_PATH = join(dir, 'c3.db')
     resetDbForTests()
     resetStoreForTests()
+    vi.mocked(getForgePrStatus).mockReset()
   })
 
   afterEach(() => {
@@ -142,6 +158,78 @@ describe('automation MCP HTTP route', () => {
       const find = await client.callTool({ name: 'find_intents', arguments: {} })
       expect(find.isError).toBeFalsy()
       expect(JSON.stringify(find.content)).toContain('未找到匹配的意图')
+    } finally {
+      await client.close()
+      binding.dispose()
+    }
+  })
+
+  it('sync_intent_pr_status persists the forge terminal state via the shared core', async () => {
+    // A `reviewing` row + forge verdict `merged` → the row lands `merged` and the
+    // intent log records `pr_merged`; the model supplied no status value, only the
+    // intent id (the same seam `pr-status-sync.test.ts` pins).
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'merged' })
+    const [intent] = insertIntents(proj, [
+      { title: 'Merged', shortEnTitle: 'merged', content: '', priority: 'P1' },
+    ])
+    upsertIntentPr({
+      intentId: intent.id,
+      number: '9',
+      status: 'reviewing',
+      forge: 'github',
+      repo: 'acme/demo',
+    })
+
+    const binding = automationMcp.bind({ workspacePath: proj, executionId: 'exec-1' })
+    const client = new Client({ name: 'test', version: '1.0.0' })
+    const transport = new StreamableHTTPClientTransport(routeUrl(tokenOf(binding.servers.c3.url)))
+    await client.connect(transport)
+    try {
+      const res = await client.callTool({
+        name: 'sync_intent_pr_status',
+        arguments: { intentId: intent.id },
+      })
+      expect(res.isError).toBeFalsy()
+      const payload = JSON.parse((res.content as Array<{ text: string }>)[0].text)
+      expect(payload).toMatchObject({ ok: true, changed: true, prStatus: 'merged' })
+      expect(getIntent(intent.id)?.prs[0].status).toBe('merged')
+      expect(listIntentLogs(intent.id).some((l) => l.operationType === 'pr_merged')).toBe(true)
+      expect(vi.mocked(getForgePrStatus)).toHaveBeenCalled()
+    } finally {
+      await client.close()
+      binding.dispose()
+    }
+  })
+
+  it('sync_intent_pr_status leaves the row untouched while the forge still says open', async () => {
+    // An open PR normalizes to `reviewing` (see normalizeGithubPrStatus); forge
+    // still open ⇒ no terminal state, the row must stay `reviewing`.
+    vi.mocked(getForgePrStatus).mockResolvedValue({ ok: true, status: 'reviewing' })
+    const [intent] = insertIntents(proj, [
+      { title: 'Open', shortEnTitle: 'open', content: '', priority: 'P1' },
+    ])
+    upsertIntentPr({
+      intentId: intent.id,
+      number: '10',
+      status: 'reviewing',
+      forge: 'github',
+      repo: 'acme/demo',
+    })
+
+    const binding = automationMcp.bind({ workspacePath: proj, executionId: 'exec-1' })
+    const client = new Client({ name: 'test', version: '1.0.0' })
+    const transport = new StreamableHTTPClientTransport(routeUrl(tokenOf(binding.servers.c3.url)))
+    await client.connect(transport)
+    try {
+      const res = await client.callTool({
+        name: 'sync_intent_pr_status',
+        arguments: { intentId: intent.id },
+      })
+      expect(res.isError).toBeFalsy()
+      const payload = JSON.parse((res.content as Array<{ text: string }>)[0].text)
+      expect(payload).toMatchObject({ ok: true, changed: false })
+      expect(getIntent(intent.id)?.prs[0].status).toBe('reviewing')
+      expect(listIntentLogs(intent.id).some((l) => l.operationType === 'pr_merged')).toBe(false)
     } finally {
       await client.close()
       binding.dispose()

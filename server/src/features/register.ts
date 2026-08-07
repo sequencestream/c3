@@ -78,6 +78,7 @@ import {
   updateIntentDepsHandler,
   updateIntentStatus,
 } from './intents/index.js'
+import { repairIntentWorktree } from './intents/worktree-repair.js'
 import { getParkRecoveryStatsHandler } from './intents/park-recovery.js'
 import {
   approveSpecHandler,
@@ -103,6 +104,7 @@ import {
   createDeliveryHandler,
   getDeliveryDetailHandler,
   initDeliveryBranchHandler,
+  syncDeliveryMainlineHandler,
   listDeliveriesHandler,
   linkIntentToDeliveryHandler,
   transitionDeliveryHandler,
@@ -195,6 +197,7 @@ export const handlerMap: HandlerMap = {
   delete_intent_session: deleteIntentSession,
   delete_intent: deleteIntent,
   start_development: startDevelopment,
+  repair_intent_worktree: repairIntentWorktree,
   write_spec: writeSpecHandler,
   approve_spec: approveSpecHandler,
   revoke_spec_approval: revokeSpecApprovalHandler,
@@ -224,6 +227,7 @@ export const handlerMap: HandlerMap = {
   cancel_delivery: cancelDeliveryHandler,
   transition_delivery: transitionDeliveryHandler,
   init_delivery_branch: initDeliveryBranchHandler,
+  sync_delivery_mainline: syncDeliveryMainlineHandler,
   cleanup_delivery_branch: cleanupDeliveryBranchHandler,
   link_intent_to_delivery: linkIntentToDeliveryHandler,
   unlink_intent_from_delivery: unlinkIntentFromDeliveryHandler,

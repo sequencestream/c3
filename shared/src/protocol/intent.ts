@@ -664,6 +664,13 @@ export interface IntentDevSession {
   exitCode: IntentDevSessionExitCode | null
   /** The agent id that executed this session; null when unknown. */
   agentId: string | null
+  /**
+   * The DELIVERY CONTEXT this session develops against — what decides its
+   * worktree baseline and its dependency-gate reading. Resolved once at fresh
+   * launch and reused verbatim by resume; `null` when the session has none
+   * (the intent is linked to no delivery, or it predates deliveries).
+   */
+  deliveryId: string | null
   /** Record creation timestamp (epoch ms). */
   createdAt: number
 }
@@ -688,6 +695,10 @@ export const INTENT_LOG_OPERATIONS = [
   'pr_merged',
   'pr_closed',
   'pr_updated',
+  // A human overrode the DEPENDENCY gate for one launch. The gate stays the
+  // authoritative admission fact and the override is never persisted as state —
+  // this row is the only trace that it happened, and who made the call.
+  'dependency_gate_force_release',
 ] as const
 
 export type IntentLogOperation = (typeof INTENT_LOG_OPERATIONS)[number]
@@ -695,7 +706,8 @@ export type IntentLogOperation = (typeof INTENT_LOG_OPERATIONS)[number]
 /**
  * One intent lifecycle-log entry (who did what, when). Append-only audit trail:
  * every lifecycle operation (create / update / status transition / spec authored
- * or approved / PR created or merged or closed / PR updated) appends a row; rows are never
+ * or approved / PR created or merged or closed / PR updated / dependency gate
+ * force-released) appends a row; rows are never
  * edited or deleted. Work-session start/stop is NOT logged here — that audit
  * trail lives in `intent_sessions` ({@link IntentDevSession}).
  */

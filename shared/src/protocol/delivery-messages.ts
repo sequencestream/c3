@@ -152,6 +152,26 @@ export type ClientUnlinkIntentFromDelivery = {
   intentId: string
 }
 
+/**
+ * Merge `origin/<base_branch>` into the delivery branch and push — the
+ * 「同步主线」action. Always user-invoked and always confirmed: c3 never
+ * schedules it, because a background job that silently rewrites a shared branch
+ * (and whose failures nobody reads) is precisely what the never-auto-merge
+ * stance exists to prevent.
+ *
+ * Only meaningful while a delivery is `integrating`; its purpose is to move
+ * conflict handling EARLIER, so the final `verified → delivered` merge lands
+ * close to a fast-forward. Conflicts are surfaced verbatim and never resolved.
+ *
+ * Reply: `delivery_sync_mainline_result`, preceded by
+ * `delivery_sync_mainline_progress` frames.
+ */
+export type ClientSyncDeliveryMainline = {
+  type: 'sync_delivery_mainline'
+  workspaceId: string
+  deliveryId: string
+}
+
 // ---- Server → Client ----
 
 /**
@@ -195,6 +215,15 @@ export type ServerDeliveryDetail = {
   transitionPlan: DeliveryTransitionPlan
   /** Intents linked to this delivery, by title; each row's PR status is toward THIS delivery. */
   associatedIntents: AssociatedIntent[]
+  /**
+   * How many commits `origin/<base_branch>` holds that the delivery branch does
+   * not, from the LOCAL remote-tracking refs — the page shows 「主线领先」 from
+   * it and offers 「同步主线」. `null` when it cannot be determined (no branch
+   * yet, refs unresolvable, `current-branch` mode). Read without fetching: an
+   * automatic network round trip on every detail open would be slow and
+   * surprising, and the refs are refreshed by every branch/PR/sync action.
+   */
+  mainlineAhead: number | null
   /**
    * Set ONLY on the reply to a `link_intent_to_delivery` that detected diff
    * bloat: the intent's commits branch off mainline past the delivery branch's
@@ -255,4 +284,23 @@ export type ServerDeliveryBranchInitResult = {
   workspaceId: string
   delivery: Delivery
   warning?: 'delivery.branchBehindMain'
+}
+
+/** Coarse progress of a `sync_delivery_mainline` run, to the requesting connection. */
+export type ServerDeliverySyncMainlineProgress = {
+  type: 'delivery_sync_mainline_progress'
+  deliveryId: string
+  phase: 'fetching' | 'merging' | 'pushing'
+}
+
+/**
+ * Terminal of a `sync_delivery_mainline` run. `ahead` is how many commits
+ * mainline held that the delivery branch did not BEFORE the merge — `0` means
+ * there was nothing to sync, which is a success, not a no-op error. Failures
+ * travel as a plain `error` frame; this frame is only ever sent on success.
+ */
+export type ServerDeliverySyncMainlineResult = {
+  type: 'delivery_sync_mainline_result'
+  deliveryId: string
+  ahead: number
 }

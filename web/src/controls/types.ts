@@ -148,7 +148,20 @@ export interface AppMethods {
   resetIntentSession(intentId: string, userInput: string): void
   /** Reset the intent's spec session: new input + current spec content → fresh session. */
   resetSpecSession(intentId: string, userInput: string): void
-  startDevelopment(intentId: string, hasUnfinishedDeps: boolean): void
+  startDevelopment(
+    intentId: string,
+    hasUnfinishedDeps: boolean,
+    opts?: {
+      /** Which delivery this session develops against; omit to let the server resolve it. */
+      deliveryId?: string
+      /** One-shot dependency-gate override — only ever set from the escape dialog. */
+      forceDependencyGate?: boolean
+    },
+  ): void
+  /** Execute one of the two explicit exits from a worktree baseline mismatch. */
+  repairIntentWorktree(intentId: string, mode: 'rebuild' | 'merge'): void
+  /** 「同步主线」— merge `origin/<base_branch>` into an integrating delivery's branch. */
+  syncDeliveryMainline(deliveryId: string): void
   /** Fold one dev-launch overlay event through the reducer + handle close side-effects. */
   dispatchDevLaunch(ev: DevLaunchEvent): void
   /**

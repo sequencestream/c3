@@ -20,6 +20,7 @@ import {
   type QueueIntentMeta,
   type QueueReconcileInput,
 } from './types.js'
+import type { DeliveryGateFact } from '@ccc/shared'
 
 const NOW = 1_700_000_000_000
 
@@ -32,6 +33,9 @@ function intent(over: Partial<QueueIntentFact> & { id: string }): QueueIntentFac
     dependsOn: [],
     specStatus: 'raw',
     prStatus: null,
+    branchName: null,
+    deliveryIds: [],
+    prStatusByDelivery: {},
     lastWorkSessionId: null,
     createdAt: 1,
     specPath: null,
@@ -62,6 +66,8 @@ function input(over: Partial<QueueReconcileInput> = {}): QueueReconcileInput {
     meta: {},
     inFlight: [],
     gitBranchMode: 'current-branch',
+    defaultMainBranch: 'main',
+    deliveries: [],
     sddEnabled: false,
     machineApprovalEnabled: false,
     automationConcurrency: 2,
@@ -178,9 +184,17 @@ describe('reconcileQueue — gates', () => {
   })
 
   it('worktree mode also requires the dependency PR to be merged', () => {
+    // `branchName` matters: the criterion is "is the output on my base", and a
+    // dependency sitting on its OWN feature branch with an unmerged PR is not.
+    // (A dependency whose branch IS the mainline passes — see the case below.)
     const base = {
       intents: [
-        intent({ id: 'dep', status: 'done', prStatus: 'reviewing' as const }),
+        intent({
+          id: 'dep',
+          status: 'done',
+          prStatus: 'reviewing' as const,
+          branchName: 'intent/dep',
+        }),
         intent({ id: 'child', dependsOn: ['dep'] }),
       ],
     }
@@ -355,6 +369,130 @@ describe('reconcileQueue — gates', () => {
   })
 })
 
+/**
+ * 交付维度的两道闸门 + 依赖判据三态在队列侧的表现。判据本身在
+ * `shared/src/dependency-gate-model.test.ts` 里证明;这里证明的是队列**用了同一份**
+ * 判据、把交付事实正确投影进去、并给出可读的结构化原因码。
+ */
+describe('reconcileQueue — 交付闸门与依赖三态', () => {
+  const delivery = (id: string, status: DeliveryGateFact['status'], title = id) =>
+    ({ id, title, status }) as DeliveryGateFact
+
+  it('交付处于 verifying/verified/delivered/cancelled 时其意图不再被调度', () => {
+    for (const status of ['verifying', 'verified', 'delivered', 'cancelled'] as const) {
+      const out = reconcileQueue(
+        input({
+          gitBranchMode: 'worktree',
+          deliveries: [delivery('d1', status)],
+          intents: [intent({ id: 'A', deliveryIds: ['d1'] })],
+        }),
+      )
+      expect(launched(out)).toBeNull()
+      expect(decisionFor(out, 'A')).toMatchObject({ reason: 'blocked_delivery_status' })
+    }
+  })
+
+  it('planned/integrating 与无关联意图不受该闸门影响', () => {
+    for (const status of ['planned', 'integrating'] as const) {
+      const out = reconcileQueue(
+        input({
+          gitBranchMode: 'worktree',
+          deliveries: [delivery('d1', status)],
+          intents: [intent({ id: 'A', deliveryIds: ['d1'] })],
+        }),
+      )
+      expect(launched(out)).toBe('A')
+    }
+    const none = reconcileQueue(
+      input({ gitBranchMode: 'worktree', intents: [intent({ id: 'A' })] }),
+    )
+    expect(launched(none)).toBe('A')
+  })
+
+  it('多关联候选产出 blocked_delivery_ambiguous —— 队列不代人选交付', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        deliveries: [delivery('d1', 'integrating'), delivery('d2', 'integrating')],
+        intents: [intent({ id: 'A', deliveryIds: ['d1', 'd2'] })],
+      }),
+    )
+    expect(launched(out)).toBeNull()
+    expect(decisionFor(out, 'A')).toMatchObject({ reason: 'blocked_delivery_ambiguous' })
+  })
+
+  it('同交付:依赖对该交付的 PR 已合入则放行,未合入则阻塞并请求 PR 状态刷新', () => {
+    const base = (prStatus: 'merged' | 'reviewing') =>
+      input({
+        gitBranchMode: 'worktree',
+        deliveries: [delivery('d1', 'integrating')],
+        intents: [
+          intent({
+            id: 'dep',
+            status: 'done',
+            automate: false,
+            branchName: 'intent/dep',
+            deliveryIds: ['d1'],
+            prStatusByDelivery: { d1: prStatus },
+          }),
+          intent({ id: 'child', dependsOn: ['dep'], deliveryIds: ['d1'] }),
+        ],
+      })
+    expect(launched(reconcileQueue(base('merged')))).toBe('child')
+
+    const blocked = reconcileQueue(base('reviewing'))
+    expect(launched(blocked)).toBeNull()
+    expect(decisionFor(blocked, 'child')).toMatchObject({
+      reason: 'blocked_dependency_pr_unmerged',
+    })
+    expect(blocked.actions).toContainEqual({ kind: 'sync_dependency_prs', intentIds: ['dep'] })
+  })
+
+  it('跨交付:依赖所属交付未 delivered 则阻塞,且不请求 PR 刷新(交付状态是本地账本)', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        deliveries: [delivery('d1', 'integrating'), delivery('d2', 'verifying', '交付 Y')],
+        intents: [
+          intent({
+            id: 'dep',
+            status: 'done',
+            automate: false,
+            branchName: 'intent/dep',
+            deliveryIds: ['d2'],
+            prStatusByDelivery: { d2: 'merged' },
+          }),
+          intent({ id: 'child', dependsOn: ['dep'], deliveryIds: ['d1'] }),
+        ],
+      }),
+    )
+    expect(launched(out)).toBeNull()
+    expect(decisionFor(out, 'child')).toMatchObject({ reason: 'blocked_dependency_delivery' })
+    expect(decisionFor(out, 'child')?.detail).toContain('交付 Y')
+    expect(out.actions.some((a) => a.kind === 'sync_dependency_prs')).toBe(false)
+  })
+
+  it('跨交付:依赖所属交付已 delivered 则放行', () => {
+    const out = reconcileQueue(
+      input({
+        gitBranchMode: 'worktree',
+        deliveries: [delivery('d1', 'integrating'), delivery('d2', 'delivered')],
+        intents: [
+          intent({
+            id: 'dep',
+            status: 'done',
+            automate: false,
+            branchName: 'intent/dep',
+            deliveryIds: ['d2'],
+          }),
+          intent({ id: 'child', dependsOn: ['dep'], deliveryIds: ['d1'] }),
+        ],
+      }),
+    )
+    expect(launched(out)).toBe('child')
+  })
+})
+
 describe('reconcileQueue — failure isolation', () => {
   it('auto-recovers a failure-ladder park with no blocked dependency, but never launches it this pass', () => {
     const out = reconcileQueue(
@@ -469,7 +607,13 @@ describe('reconcileQueue — auto-unpark of failure-ladder parks', () => {
       input({
         gitBranchMode: 'worktree',
         intents: [
-          intent({ id: 'dep', status: 'done', prStatus: 'reviewing' as const, createdAt: 1 }),
+          intent({
+            id: 'dep',
+            status: 'done',
+            prStatus: 'reviewing' as const,
+            branchName: 'intent/dep',
+            createdAt: 1,
+          }),
           intent({ id: 'child', dependsOn: ['dep'], createdAt: 2 }),
         ],
         meta: {

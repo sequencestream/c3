@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS intent_sessions (
   end_at        INTEGER,                            -- 结束时间 (epoch ms)
   exit_code     TEXT    CHECK(exit_code IN ('success','failure','cancelled')),  -- 退出码
   agent_id      TEXT,                               -- 执行 agent ID
+  delivery_id   TEXT,                               -- 会话的交付上下文 (可空; NULL = 无交付上下文)
   created_at    INTEGER NOT NULL                    -- 记录创建时间 (epoch ms)
 );
 CREATE INDEX IF NOT EXISTS idx_intent_session_intent ON intent_sessions(intent_id);

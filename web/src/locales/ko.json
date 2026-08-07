@@ -1086,7 +1086,8 @@
         "prCreated": "PR 생성",
         "prMerged": "PR 병합됨",
         "prClosed": "PR 종료됨",
-        "prUpdated": "PR 업데이트됨"
+        "prUpdated": "PR 업데이트됨",
+        "dependencyGateForceRelease": "의존성 게이트 강제 해제"
       }
     },
     "intentSession": {
@@ -1169,6 +1170,38 @@
         "label": "원본 오류"
       },
       "noDetail": "세부 정보가 반환되지 않았습니다."
+    },
+    "gateEscape": {
+      "dependency": {
+        "title": {
+          "label": "의존성 게이트를 강제 해제할까요?"
+        },
+        "risk": {
+          "label": "의존하는 산출물이 base에 없을 가능성이 큽니다. 이후 병합에서 충돌하거나 재작업이 필요할 수 있습니다. 이번 실행에만 적용되며 의존성 게이트만 건너뛰고 변경 로그에 기록됩니다."
+        },
+        "confirm": {
+          "label": "강제 해제 후 시작"
+        }
+      },
+      "worktree": {
+        "title": {
+          "label": "worktree 기준선이 일치하지 않습니다"
+        },
+        "merge": {
+          "label": "브랜치 병합"
+        },
+        "rebuild": {
+          "label": "worktree 재생성"
+        }
+      },
+      "deliveryContext": {
+        "title": {
+          "label": "이 세션은 어느 딜리버리를 대상으로 개발하나요?"
+        },
+        "confirm": {
+          "label": "이 딜리버리로 시작"
+        }
+      }
     }
   },
   "session": {
@@ -2083,7 +2116,17 @@
       "gitCleanupPrFailed": "PR 자동 생성에 실패했습니다: {detail}. 수동으로 PR을 생성하세요.",
       "worktreeCreateFailed": "워크트리 생성에 실패했습니다: {message}。",
       "pullFailed": "현재 브랜치가 원격과 분기되어 빨리 감기를 할 수 없습니다. 작업을 시작하기 전에 수동으로 동기화하세요: {message}",
+      "worktreeBaseMismatch": "기존 worktree가 \"{branch}\"(딜리버리 \"{deliveryTitle}\") 기준이 아닙니다. c3는 자동으로 재생성하거나 병합하지 않습니다 — 재생성하거나 해당 브랜치를 병합하세요.",
+      "worktreeBaseMismatchDirty": "기존 worktree가 \"{branch}\"(딜리버리 \"{deliveryTitle}\") 기준이 아니며 커밋되지 않은 작업이 있습니다. 먼저 커밋하거나 stash 하거나, 해당 브랜치를 병합하세요.",
+      "worktreeDirty": "worktree에 커밋되지 않은 작업이 있습니다 — 재생성 전에 커밋하거나 stash 하세요. c3는 절대 대신 버리지 않습니다.",
+      "worktreeRepairFailed": "worktree 복구에 실패했습니다: {message}",
       "dependencyNotMerged": "종속성 \"{title}\"({id})이(가) 아직 메인 브랜치에 병합되지 않았습니다.",
+      "dependencyPrUnmergedInDelivery": "의존성 \"{title}\"({id})의 딜리버리 \"{deliveryTitle}\"({deliveryId}) 대상 PR이 아직 병합되지 않아 그 산출물이 base에 없습니다.",
+      "dependencyDeliveryNotDelivered": "의존성 \"{title}\"({id})은(는) 딜리버리 \"{deliveryTitle}\"({deliveryId})에 속하며, 해당 딜리버리는 아직 메인라인에 병합되지 않았습니다.",
+      "deliveryContextRequired": "이 인텐트는 여러 딜리버리에 연결되어 있습니다. 세션을 시작하기 전에 어느 딜리버리를 대상으로 개발할지 선택하세요.",
+      "deliveryContextUnknown": "선택한 딜리버리가 이 워크스페이스에 없습니다.",
+      "deliveryContextNotLinked": "인텐트가 선택한 딜리버리에 연결되어 있지 않습니다.",
+      "deliveryNotWritable": "딜리버리 \"{deliveryTitle}\"({deliveryId})은(는) {status} 상태로 새 작업을 받지 않습니다. 코드를 더 병합하면 검증 결론이 무효화됩니다.",
       "specAgentUnsupported": "spec 작성에는 Claude 에이전트가 필요합니다. 구성된 spec 에이전트는 쓰기를 spec 디렉터리 내로 제한할 수 없습니다.",
       "specWriteFailed": "spec 문서 생성에 실패했습니다: {message}。",
       "specNotWritten": "spec이 아직 작성되지 않았습니다. 승인하기 전에 먼저 작성하세요.",
@@ -2162,7 +2205,10 @@
       "intentAlreadyLinked": "이 인텐트는 이미 해당 전달에 연결되어 있습니다.",
       "unlinkMergedPrDenied": "이 인텐트의 해당 전달용 PR이 이미 머지되어 연결을 해제할 수 없습니다. 되돌리려면 먼저 revert 하세요.",
       "unlinkClosePrFailed": "연결 해제가 차단되었습니다 — PR을 닫지 못했습니다: {detail}.",
-      "unlinkPrStatusCheckFailed": "연결 해제가 차단되었습니다 — 포지에서 PR 상태를 읽지 못했습니다: {detail}."
+      "unlinkPrStatusCheckFailed": "연결 해제가 차단되었습니다 — 포지에서 PR 상태를 읽지 못했습니다: {detail}.",
+      "syncMainlineForbidden": "메인라인 동기화는 딜리버리가 통합 중일 때만 가능합니다.",
+      "syncMainlineConflict": "메인라인 병합에서 충돌이 발생해 중단되었고 푸시되지 않았습니다. 직접 해결하세요: {detail}",
+      "syncMainlineFailed": "메인라인 동기화에 실패했습니다: {detail}"
     }
   },
   "statusIndicator": {
@@ -2606,6 +2652,31 @@
       },
       "diffBloat": {
         "label": "이 인텐트의 커밋이 메인라인을 기준으로 하고 있어, 전달 브랜치로 보내는 PR에는 메인라인과 전달 브랜치의 차이도 포함됩니다."
+      }
+    },
+    "syncMainline": {
+      "action": {
+        "label": "메인라인 동기화"
+      },
+      "behind": {
+        "label": "메인라인이 이 딜리버리 브랜치보다 {count}개 커밋 앞서 있습니다. 지금 동기화하면 최종 병합이 fast-forward에 가까워집니다."
+      },
+      "confirm": {
+        "title": {
+          "label": "메인라인을 딜리버리 브랜치에 병합할까요?"
+        },
+        "body": {
+          "label": "origin/{base}를 {branch}에 병합하고 푸시합니다. 충돌은 그대로 표시되며 c3가 대신 해결하지 않습니다."
+        }
+      },
+      "done": {
+        "label": "메인라인을 동기화했습니다({count}개 커밋 병합)."
+      },
+      "upToDate": {
+        "label": "이미 메인라인과 동기화되어 있습니다."
+      },
+      "running": {
+        "label": "메인라인 동기화 중…"
       }
     }
   },
@@ -3345,6 +3416,9 @@
       "blocked_concurrency_gate": "전역 동시성 게이트",
       "blocked_dependency": "의존성 미완료",
       "blocked_dependency_pr_unmerged": "의존성 PR 미병합",
+      "blocked_dependency_delivery": "의존성의 딜리버리가 메인라인 미병합",
+      "blocked_delivery_status": "딜리버리가 새 작업을 받지 않음",
+      "blocked_delivery_ambiguous": "여러 딜리버리 — 사람이 선택해야 함",
       "blocked_spec_not_approved": "spec 미승인",
       "blocked_backoff": "실패 후 백오프 중",
       "blocked_parked": "park됨",

@@ -447,14 +447,22 @@ describe('resident domain subscriptions — discussion + automation', () => {
       buffer: [],
       viewers: new Set(),
     } as unknown as SessionRuntime)
-    vi.mocked(takePendingDevLink).mockReturnValueOnce('intent-1')
+    vi.mocked(takePendingDevLink).mockReturnValueOnce({ intentId: 'intent-1', deliveryId: 'del-1' })
     vi.mocked(resolveSessionVendor).mockReturnValue('codex')
 
     install()
 
     eb.publish('run:bound', { prevId: 'prev-1', realId: 'real-1', workspacePath: '/proj' })
 
-    expect(insertIntentSession).toHaveBeenCalledWith('intent-1', 'real-1', 'codex')
+    // The launch's delivery context is persisted with the session record, not
+    // re-derived at bind time.
+    expect(insertIntentSession).toHaveBeenCalledWith(
+      'intent-1',
+      'real-1',
+      'codex',
+      undefined,
+      'del-1',
+    )
     expect(updateRowOwner).toHaveBeenCalledWith({
       sessionId: 'real-1',
       vendor: 'codex',

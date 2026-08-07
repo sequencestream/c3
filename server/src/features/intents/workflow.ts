@@ -55,6 +55,7 @@ import {
 } from './queue-store.js'
 import {
   getAutomationConcurrency,
+  getDefaultMainBranch,
   getGitBranchMode,
   getSddEnabled,
   getSpecMachineApprovalEnabled,
@@ -68,6 +69,7 @@ import {
   type WorkflowHooks,
 } from './queue-action-context.js'
 import { persistNewDecisions, probeRunFacts, probeSpecRunFacts, toFact } from './queue-ledger.js'
+import { deliveryGateFacts } from './delivery-context.js'
 import {
   buildQueueDetail,
   idleStatus,
@@ -138,6 +140,8 @@ export function pickNext(workspacePath: string): Intent | null {
     meta: getQueueIntentMeta(workspacePath),
     inFlight: [],
     gitBranchMode: getGitBranchMode(workspacePath),
+    defaultMainBranch: getDefaultMainBranch(workspacePath) ?? null,
+    deliveries: deliveryGateFacts(workspacePath),
     sddEnabled,
     // A probe answers "which intent would be DEVELOPED next", so it deliberately
     // reports the world as if no spec phase were running: it reads no spec
@@ -278,6 +282,8 @@ class QueueController {
       meta: getQueueIntentMeta(this.workspacePath),
       inFlight: this.inFlightIntentIds,
       gitBranchMode: getGitBranchMode(this.workspacePath),
+      defaultMainBranch: getDefaultMainBranch(this.workspacePath) ?? null,
+      deliveries: deliveryGateFacts(this.workspacePath),
       sddEnabled,
       // Read fresh every pass: turning the opt-in off must take effect on the very
       // next tick, without restarting the queue.

@@ -78,16 +78,24 @@ CREATE INDEX IF NOT EXISTS idx_intent_delivery_delivery ON intent_deliveries(del
 CREATE INDEX IF NOT EXISTS idx_intent_delivery_intent ON intent_deliveries(intent_id);
 `
 
-let schemaReady = false
+/**
+ * The connection this store last ensured its schema against — NOT a boolean.
+ * A plain "ensured once" flag survives `resetDbForTests()`, which hands out a
+ * BRAND NEW connection to a brand new file; the store would then read tables it
+ * never created there. Keying on the connection identity makes the ensure
+ * re-run exactly when the connection changes, which is also the only time it
+ * needs to.
+ */
+let schemaReadyFor: Db | null = null
 
-/** Return the db with the delivery schema ensured once, or null if unavailable. */
+/** Return the db with the delivery schema ensured, or null if unavailable. */
 function db(): Db | null {
   const d = getDb()
   if (!d) return null
-  if (!schemaReady) {
+  if (schemaReadyFor !== d) {
     d.exec(SCHEMA)
     d.exec(`PRAGMA user_version=${SCHEMA_VERSION};`)
-    schemaReady = true
+    schemaReadyFor = d
   }
   return d
 }
@@ -105,7 +113,7 @@ export function isStoreAvailable(): boolean {
 
 /** Test-only: forget the "schema ensured" flag (pair with `resetDbForTests`). */
 export function resetStoreForTests(): void {
-  schemaReady = false
+  schemaReadyFor = null
 }
 
 function tx<T>(d: Db, fn: () => T): T {

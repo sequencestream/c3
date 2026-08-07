@@ -1149,6 +1149,10 @@ export const startDevelopment: Handler<'start_development'> = async (ctx, conn, 
         stage: stage as DevLaunchStage,
       }),
     conn.subject,
+    // The delivery context and the one-shot dependency-gate override travel
+    // together: both are decisions this request makes, and neither is persisted
+    // as a standing permission.
+    { deliveryId: msg.deliveryId, forceDependencyGate: msg.forceDependencyGate },
   )
   if (!result.success) {
     conn.send({

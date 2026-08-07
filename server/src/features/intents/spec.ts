@@ -43,7 +43,7 @@ import { armSpecContentWatch } from './spec-content-watch.js'
 import { readSpecFingerprint } from './spec-review.js'
 import { getSpecsBase, resolveSpecFileAbs } from './specs-root.js'
 import { clearPendingSpecLink, registerPendingSpecLink } from './spec-link.js'
-import { prepareSpecLaunch } from './dependency-gate.js'
+import { dependencyGateRejection, prepareSpecLaunch } from './dependency-gate.js'
 import { claimSpecOccupancy, releaseSpecOccupancy } from './spec-occupancy.js'
 
 function errMsg(err: unknown): string {
@@ -53,10 +53,10 @@ function errMsg(err: unknown): string {
 /**
  * WS adapter over the shared {@link prepareSpecLaunch} gate: run the one spec
  * launch precondition, then translate its neutral outcome into this transport's
- * shapes — `spec_launch_progress` frames while it proceeds, an
- * `intent.dependencyNotMerged` error when it blocks. Returns whether the caller
- * may continue. The RULE itself lives in `dependency-gate.ts`; only the framing
- * is here.
+ * shapes — `spec_launch_progress` frames while it proceeds, and the verdict's own
+ * dependency-gate error when it blocks. Returns whether the caller may continue.
+ * The RULE and its explanation both live in `dependency-gate.ts`; only the
+ * framing is here.
  */
 function runSpecLaunchGate(
   proj: string,
@@ -71,13 +71,7 @@ function runSpecLaunchGate(
     progress: (stage) => conn.send({ type: 'spec_launch_progress', intentId: intent.id, stage }),
   })
   if (gate.blocked) {
-    conn.send({
-      type: 'error',
-      error: {
-        code: 'intent.dependencyNotMerged',
-        params: { title: gate.dependency.title, id: gate.dependency.id },
-      },
-    })
+    conn.send({ type: 'error', error: dependencyGateRejection(gate.verdict) })
     return false
   }
   return true

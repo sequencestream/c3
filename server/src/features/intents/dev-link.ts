@@ -16,7 +16,21 @@
  * Pattern: mirrors `./run-status.ts` (feature-private standalone module, no
  * KernelContext dependency, pure in-memory state that does NOT survive restart).
  */
-const pendingDevLink = new Map<string, string>()
+/**
+ * What a pending manual launch carries to its first bind: the intent it belongs
+ * to, and the DELIVERY CONTEXT resolved for that launch. The context is decided
+ * before the session exists (it picks the worktree baseline), but the row that
+ * records it is only written once the real session id arrives — so it rides
+ * along here rather than being re-derived at bind time, where the intent's
+ * associations may already have changed.
+ */
+export interface PendingDevLink {
+  intentId: string
+  /** `null` = this launch has no delivery context. */
+  deliveryId: string | null
+}
+
+const pendingDevLink = new Map<string, PendingDevLink>()
 const launchingIntentIds = new Set<string>()
 
 /**
@@ -43,8 +57,12 @@ export function releaseDevLaunch(intentId: string): void {
  * `run:bound` subscription can link it on first bind. Called by the
  * `start_development` handler just before `ctx.launchRun`.
  */
-export function registerPendingDevLink(pendingId: string, intentId: string): void {
-  pendingDevLink.set(pendingId, intentId)
+export function registerPendingDevLink(
+  pendingId: string,
+  intentId: string,
+  deliveryId: string | null = null,
+): void {
+  pendingDevLink.set(pendingId, { intentId, deliveryId })
 }
 
 /**
@@ -55,10 +73,10 @@ export function registerPendingDevLink(pendingId: string, intentId: string): voi
  * Idempotent: the second call on the same `pendingId` always returns
  * `undefined` (the entry was consumed on the first call).
  */
-export function takePendingDevLink(pendingId: string): string | undefined {
-  const intentId = pendingDevLink.get(pendingId)
-  if (intentId !== undefined) pendingDevLink.delete(pendingId)
-  return intentId
+export function takePendingDevLink(pendingId: string): PendingDevLink | undefined {
+  const link = pendingDevLink.get(pendingId)
+  if (link !== undefined) pendingDevLink.delete(pendingId)
+  return link
 }
 
 /**
@@ -66,7 +84,7 @@ export function takePendingDevLink(pendingId: string): string | undefined {
  * errors out before binding). Idempotent.
  */
 export function clearPendingDevLink(pendingId: string): string | undefined {
-  const intentId = pendingDevLink.get(pendingId)
+  const intentId = pendingDevLink.get(pendingId)?.intentId
   pendingDevLink.delete(pendingId)
   return intentId
 }
@@ -78,7 +96,7 @@ export function clearPendingDevLink(pendingId: string): string | undefined {
  * without stealing the bind-time link from `run:bound`.
  */
 export function peekPendingDevLink(pendingId: string): string | undefined {
-  return pendingDevLink.get(pendingId)
+  return pendingDevLink.get(pendingId)?.intentId
 }
 
 /**

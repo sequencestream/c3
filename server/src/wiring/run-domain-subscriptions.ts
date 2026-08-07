@@ -361,13 +361,22 @@ export function registerRunDomainSubscriptions(deps: DomainSubDeps): void {
       setSessionMode(realId, rt.mode)
 
       // Manual start_development linkage: flip owning intent to in_progress.
-      const intentId = takePendingDevLink(prevId)
+      const devLink = takePendingDevLink(prevId)
+      const intentId = devLink?.intentId
       if (intentId) {
         setLastWorkSession(intentId, realId)
         releaseDevLaunch(intentId)
         // Record the work session start in intent_sessions (fire-and-forget
-        // on the DB write — the insert is synchronous but cheap).
-        insertIntentSession(intentId, realId, resolveSessionVendor(realId))
+        // on the DB write — the insert is synchronous but cheap). The delivery
+        // context rides in from the launch: it was resolved before the session
+        // had an id, and re-deriving it here could land on a different answer.
+        insertIntentSession(
+          intentId,
+          realId,
+          resolveSessionVendor(realId),
+          undefined,
+          devLink?.deliveryId ?? null,
+        )
         updateRowOwner({
           sessionId: realId,
           vendor: resolveSessionVendor(realId),

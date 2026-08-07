@@ -25,6 +25,7 @@ import DevStartupOverlay from './components/DevStartupOverlay/DevStartupOverlay.
 import SpecStartupOverlay from './components/SpecStartupOverlay/SpecStartupOverlay.vue'
 import AutomationSaveOverlay from './components/AutomationSaveOverlay/AutomationSaveOverlay.vue'
 import IntentActionErrorDialog from './components/IntentActionErrorDialog/IntentActionErrorDialog.vue'
+import GateEscapeDialog from './components/GateEscapeDialog/GateEscapeDialog.vue'
 import { computed, ref, watch } from 'vue'
 import type { SessionInfo } from '@ccc/shared/protocol'
 import { useTypedI18n } from './i18n'
@@ -123,6 +124,9 @@ const {
   intentActionErrorSeq,
   intentActionError,
   intentActionErrorGuidance,
+  intentGateEscape,
+  closeIntentGateEscape,
+  repairIntentWorktree,
   createIntentPending,
   intentPrSync,
   closeIntentActionError,
@@ -173,6 +177,9 @@ const {
   activeDeliveryPlan,
   activeDeliveryIntents,
   activeDeliveryBranchInit,
+  activeDeliveryMainlineAhead,
+  activeDeliverySyncPhase,
+  syncDeliveryMainline,
   deliveryLinkIntents,
   openDelivery,
   createDelivery,
@@ -380,6 +387,34 @@ function shareIntent(intentId: string): void {
     typeLabel: t('share.kind.intent.label'),
   })
 }
+// ── Gate escapes ──────────────────────────────────────────────────────────
+// Each exit is one explicit user decision, executed the moment it is made and
+// never remembered: a force-release covers this launch only, and a worktree
+// repair is a one-off git action. The dialog closes first so a second refusal
+// (a different gate, or the same one still closed) shows as its own event.
+
+/** The candidate deliveries the `delivery-context` exit offers, from the ledger. */
+const gateEscapeDeliveries = computed(() => {
+  const id = intentGateEscape.value?.escape.intentId
+  if (!id) return []
+  return currentIntents.value.find((i) => i.id === id)?.linkedDeliveries ?? []
+})
+
+function onForceDependencyGate(intentId: string): void {
+  closeIntentGateEscape()
+  startDevelopment(intentId, false, { forceDependencyGate: true })
+}
+
+function onRepairWorktree(intentId: string, mode: 'rebuild' | 'merge'): void {
+  closeIntentGateEscape()
+  repairIntentWorktree(intentId, mode)
+}
+
+function onChooseDeliveryContext(intentId: string, deliveryId: string): void {
+  closeIntentGateEscape()
+  startDevelopment(intentId, false, { deliveryId })
+}
+
 function shareDiscussion(): void {
   const ws = discussionsProject.value
   const d = activeDiscussion.value
@@ -654,6 +689,8 @@ function onCodesChatWidth(px: number): void {
           :branch-init="activeDeliveryBranchInit"
           :associated-intents="activeDeliveryIntents"
           :intents="deliveryLinkIntents"
+          :mainline-ahead="activeDeliveryMainlineAhead"
+          :sync-phase="activeDeliverySyncPhase"
           :workspace-git-branch-mode="
             currentWorkspaceSetting?.gitBranchMode ??
             (deliveriesProject
@@ -668,6 +705,7 @@ function onCodesChatWidth(px: number): void {
           @transition="(to, confirm) => transitionDelivery(to, confirm)"
           @init-branch="(payload) => initDeliveryBranch(payload)"
           @cleanup-branch="cleanupDeliveryBranch"
+          @sync-mainline="syncDeliveryMainline"
           @link-intent="linkIntentToDelivery"
           @unlink-intent="unlinkIntentFromDelivery"
           @open-workspace-settings="openWorkspaceSetting"
@@ -962,6 +1000,19 @@ function onCodesChatWidth(px: number): void {
     :guidance="intentActionErrorGuidance"
     @close="closeIntentActionError"
     @retry="retryIntentAction"
+  />
+
+  <!-- The EXIT a refused launch left the user. Shown instead of the plain error
+       dialog above, never alongside it: one refusal, one dialog. Every exit is an
+       explicit choice — nothing here happens on its own. -->
+  <GateEscapeDialog
+    :escape="intentGateEscape?.escape ?? null"
+    :message="intentGateEscape?.message ?? ''"
+    :deliveries="gateEscapeDeliveries"
+    @cancel="closeIntentGateEscape"
+    @force-dependency="onForceDependencyGate"
+    @repair-worktree="onRepairWorktree"
+    @choose-delivery="onChooseDeliveryContext"
   />
 
   <!-- Dev-launch startup overlay (App-global, like the toast): blocks interaction

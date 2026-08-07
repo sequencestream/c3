@@ -1085,7 +1085,8 @@
         "prCreated": "创建 PR",
         "prMerged": "PR 已合并",
         "prClosed": "PR 已关闭",
-        "prUpdated": "PR 已更新"
+        "prUpdated": "PR 已更新",
+        "dependencyGateForceRelease": "强制放行依赖闸门"
       }
     },
     "intentSession": {
@@ -1168,6 +1169,38 @@
         "label": "原始错误"
       },
       "noDetail": "未返回详细信息。"
+    },
+    "gateEscape": {
+      "dependency": {
+        "title": {
+          "label": "强制放行依赖闸门?"
+        },
+        "risk": {
+          "label": "你依赖的产出多半不在你的 base 上,后续合并可能冲突或需返工。本次放行只对这一次启动生效,只跳过依赖闸门,并会记入变更日志。"
+        },
+        "confirm": {
+          "label": "强制放行并启动"
+        }
+      },
+      "worktree": {
+        "title": {
+          "label": "worktree 基线不符"
+        },
+        "merge": {
+          "label": "合入该分支"
+        },
+        "rebuild": {
+          "label": "重建 worktree"
+        }
+      },
+      "deliveryContext": {
+        "title": {
+          "label": "本次开发针对哪个交付?"
+        },
+        "confirm": {
+          "label": "以该交付启动"
+        }
+      }
     }
   },
   "session": {
@@ -2082,7 +2115,17 @@
       "gitCleanupPrFailed": "自动创建 PR 失败: {detail}。请手动创建 PR。",
       "worktreeCreateFailed": "工作目录创建失败: {message}。",
       "pullFailed": "当前分支已与远端分叉，无法快进合并。请先手动同步后再开始工作: {message}",
+      "worktreeBaseMismatch": "已存在的 worktree 不是基于\"{branch}\"(交付\"{deliveryTitle}\")。c3 从不自动重建或自动合并 —— 请选择重建,或把该分支合入当前工作分支。",
+      "worktreeBaseMismatchDirty": "已存在的 worktree 不是基于\"{branch}\"(交付\"{deliveryTitle}\"),且有未提交的改动。请先提交或暂存,或把该分支合入当前工作分支。",
+      "worktreeDirty": "worktree 有未提交的改动 —— 重建前请先提交或暂存。c3 绝不代你丢弃这些工作。",
+      "worktreeRepairFailed": "worktree 修复失败:{message}",
       "dependencyNotMerged": "依赖\"{title}\"({id})尚未合并到主分支。",
+      "dependencyPrUnmergedInDelivery": "依赖\"{title}\"({id})在交付\"{deliveryTitle}\"({deliveryId})中的 PR 未合入,其产出还不在你的 base 上。",
+      "dependencyDeliveryNotDelivered": "依赖\"{title}\"({id})在交付\"{deliveryTitle}\"({deliveryId}),该交付未合入主线。",
+      "deliveryContextRequired": "该意图关联了多个交付,启动会话前需先选定本次开发针对哪个交付。",
+      "deliveryContextUnknown": "所选交付不存在于当前工作区。",
+      "deliveryContextNotLinked": "该意图未关联所选交付。",
+      "deliveryNotWritable": "交付\"{deliveryTitle}\"({deliveryId})当前为 {status},不再接受新的写入 —— 继续合代码会让验证结论作废。",
       "specAgentUnsupported": "撰写 spec 需要 Claude agent;当前配置的 spec agent 无法将写入限制在 spec 目录内。",
       "specWriteFailed": "创建 spec 文档失败: {message}。",
       "specNotWritten": "spec 尚未编写,请先编写再批准。",
@@ -2161,7 +2204,10 @@
       "intentAlreadyLinked": "该意图已关联到本交付。",
       "unlinkMergedPrDenied": "该意图对本交付的 PR 已合并,无法解除关联;如需撤回请先 revert。",
       "unlinkClosePrFailed": "解除关联被阻塞——关闭 PR 失败:{detail}。",
-      "unlinkPrStatusCheckFailed": "解除关联被阻塞——无法从代码托管平台读取 PR 状态:{detail}。"
+      "unlinkPrStatusCheckFailed": "解除关联被阻塞——无法从代码托管平台读取 PR 状态:{detail}。",
+      "syncMainlineForbidden": "只有处于「集成中」的交付才能同步主线。",
+      "syncMainlineConflict": "合入主线时发生冲突,已中止合并且未推送。请自行处置冲突:{detail}",
+      "syncMainlineFailed": "同步主线失败:{detail}"
     }
   },
   "statusIndicator": {
@@ -2605,6 +2651,31 @@
       },
       "diffBloat": {
         "label": "本意图提交基于主线,提向交付分支的 PR 会包含主线与交付分支的差异。"
+      }
+    },
+    "syncMainline": {
+      "action": {
+        "label": "同步主线"
+      },
+      "behind": {
+        "label": "主线比该交付分支领先 {count} 个提交。现在同步可以让最终合并接近 fast-forward。"
+      },
+      "confirm": {
+        "title": {
+          "label": "把主线合入交付分支?"
+        },
+        "body": {
+          "label": "这会把 origin/{base} 合入 {branch} 并推送。发生冲突时原样浮出,c3 绝不代你解冲突。"
+        }
+      },
+      "done": {
+        "label": "已同步主线(合入 {count} 个提交)。"
+      },
+      "upToDate": {
+        "label": "已经与主线同步,无需合入。"
+      },
+      "running": {
+        "label": "正在同步主线…"
       }
     }
   },
@@ -3344,6 +3415,9 @@
       "blocked_concurrency_gate": "全局并发闸门",
       "blocked_dependency": "依赖未完成",
       "blocked_dependency_pr_unmerged": "依赖的 PR 未确认合并",
+      "blocked_dependency_delivery": "依赖所属交付未合入主线",
+      "blocked_delivery_status": "交付已停止接受新写入",
+      "blocked_delivery_ambiguous": "关联多个交付,需人工选定",
       "blocked_spec_not_approved": "spec 未批准",
       "blocked_backoff": "失败后退避中",
       "blocked_parked": "已 park",

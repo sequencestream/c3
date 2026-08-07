@@ -8,7 +8,9 @@
  * Every call is scoped to `cwd` via `git -C`; nothing here touches process.cwd().
  */
 import { execFile } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { existsSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import type { CodeGitStatus, IntentPrStatus } from '@ccc/shared/protocol'
 
@@ -846,6 +848,115 @@ export async function createDeliveryBranch(
     }
   }
   return { ok: true }
+}
+
+/**
+ * How many commits `aheadRef` holds that `behindRef` does not, or `null` when
+ * either ref cannot be resolved. Pure read — resolves the refs it is given and
+ * fetches nothing, so a caller that wants a FRESH answer must fetch first.
+ */
+export async function countCommitsAhead(
+  repoPath: string,
+  behindRef: string,
+  aheadRef: string,
+): Promise<number | null> {
+  for (const ref of [behindRef, aheadRef]) {
+    const verify = await git(repoPath, ['-C', repoPath, 'rev-parse', '--verify', '--quiet', ref])
+    if (verify.code !== 0 || !verify.stdout.trim()) return null
+  }
+  const res = await git(repoPath, [
+    '-C',
+    repoPath,
+    'rev-list',
+    '--count',
+    `${behindRef}..${aheadRef}`,
+  ])
+  if (res.code !== 0) return null
+  const n = Number.parseInt(res.stdout.trim(), 10)
+  return Number.isFinite(n) ? n : null
+}
+
+/** One coarse phase of a `syncDeliveryMainline` run. */
+export type SyncMainlinePhase = 'fetching' | 'merging' | 'pushing'
+
+export interface SyncMainlineResult {
+  ok: boolean
+  /** Single-line git output when `!ok`; the page shows it verbatim. */
+  error?: string
+  /** True when the merge stopped on conflicts — the user resolves them, not c3. */
+  conflict?: boolean
+  /** Commits mainline was ahead by before the merge; `null` when undeterminable. */
+  ahead?: number | null
+}
+
+/**
+ * Merge `origin/<baseBranch>` INTO the delivery branch and push the result — the
+ * "同步主线" action, always user-invoked.
+ *
+ * The point is to move conflict handling EARLIER: a delivery that tracks mainline
+ * as it goes reaches its final `verified → delivered` merge close to a
+ * fast-forward, instead of discovering weeks of drift at the worst moment. It is
+ * never scheduled: a background job that silently rewrites a shared branch — and
+ * whose failures nobody reads — is exactly what the never-auto-merge stance
+ * exists to prevent.
+ *
+ * The merge runs in a THROWAWAY detached worktree pointed at the remote delivery
+ * tip, so the user's checkout and every intent worktree stay untouched. A
+ * conflict aborts the merge and is reported verbatim; nothing is pushed, and c3
+ * never picks a resolution.
+ */
+export async function syncDeliveryMainline(
+  repoPath: string,
+  branchName: string,
+  baseBranch: string,
+  onPhase?: (p: SyncMainlinePhase) => void,
+): Promise<SyncMainlineResult> {
+  const remote = await resolveRemote(repoPath)
+  if (!remote) return { ok: false, error: '工作区未配置 git 远端,无法同步主线' }
+
+  onPhase?.('fetching')
+  const fetch = await git(repoPath, ['-C', repoPath, 'fetch', remote, baseBranch, branchName])
+  if (fetch.code !== 0) {
+    return { ok: false, error: `fetch 失败: ${oneLine(fetch.stderr || fetch.stdout)}` }
+  }
+  const baseRef = `${remote}/${baseBranch}`
+  const deliveryRef = `${remote}/${branchName}`
+  const ahead = await countCommitsAhead(repoPath, deliveryRef, baseRef)
+  if (ahead === null) return { ok: false, error: `远端引用 ${baseRef} / ${deliveryRef} 无法解析` }
+  if (ahead === 0) return { ok: true, ahead: 0 }
+
+  // A throwaway worktree keeps the user's checkout and every intent worktree
+  // untouched: the merge happens on a detached copy of the remote delivery tip.
+  const scratch = join(tmpdir(), `c3-sync-${randomUUID()}`)
+  const add = await git(repoPath, [
+    '-C',
+    repoPath,
+    'worktree',
+    'add',
+    '--detach',
+    scratch,
+    deliveryRef,
+  ])
+  if (add.code !== 0) {
+    return { ok: false, error: `准备同步工作区失败: ${oneLine(add.stderr || add.stdout)}` }
+  }
+  try {
+    onPhase?.('merging')
+    const merge = await git(scratch, ['-C', scratch, 'merge', '--no-edit', baseRef])
+    if (merge.code !== 0) {
+      const out = oneLine(merge.stderr || merge.stdout)
+      await git(scratch, ['-C', scratch, 'merge', '--abort'])
+      return { ok: false, conflict: true, error: out, ahead }
+    }
+    onPhase?.('pushing')
+    const push = await git(scratch, ['-C', scratch, 'push', remote, `HEAD:${branchName}`])
+    if (push.code !== 0) {
+      return { ok: false, error: `git push 失败: ${oneLine(push.stderr || push.stdout)}`, ahead }
+    }
+    return { ok: true, ahead }
+  } finally {
+    await git(repoPath, ['-C', repoPath, 'worktree', 'remove', '--force', scratch])
+  }
 }
 
 /**

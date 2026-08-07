@@ -289,6 +289,100 @@ export function fetchRemoteBase(workspacePath: string, baseBranch: string): stri
 }
 
 // ---------------------------------------------------------------------------
+// Baseline check + the two repair exits (delivery worktree baseline)
+//
+// A worktree's BASELINE is the commit it was rooted at. Under deliveries that is
+// `origin/<delivery branch>`, and an existing worktree may have been created off
+// something else (the mainline, or an older delivery). The rule for that case is
+// fixed and deliberately unhelpful-by-design:
+//
+//   c3 NEVER rebuilds a worktree by itself and NEVER merges into it by itself.
+//
+// Both would destroy or rewrite work the user has not pushed anywhere. So the
+// baseline is only ever DETECTED here; the two ways out (rebuild a clean
+// worktree, merge the delivery branch in) are explicit, user-triggered actions.
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the worktree has NO uncommitted change (`git status --porcelain`
+ * empty). `false` on any git failure — an unreadable status is never read as
+ * "clean", because the only thing that answer authorises is a destructive
+ * rebuild.
+ */
+export function isWorktreeClean(worktreePath: string): boolean {
+  const res = execGit(worktreePath, ['status', '--porcelain'])
+  if (res.code !== 0) return false
+  return res.stdout.trim() === ''
+}
+
+/**
+ * Whether `ref` is an ancestor of the worktree's HEAD — i.e. the worktree
+ * already contains everything that ref points at.
+ *
+ * `null` means "cannot tell": the ref does not resolve (a delivery branch that
+ * was never pushed, or was deleted), or git failed. An undecidable check NEVER
+ * blocks a launch — a false alarm here would strand a user in front of a repair
+ * dialog for a branch that does not exist.
+ *
+ * Deliberately an ancestry test rather than an upstream comparison: worktree
+ * branches are created with `--no-track` and usually have no tracking config, so
+ * there is no upstream to read.
+ */
+export function worktreeContainsRef(worktreePath: string, ref: string): boolean | null {
+  const resolved = execGit(worktreePath, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])
+  if (resolved.code !== 0 || !resolved.stdout.trim()) return null
+  const res = execGit(worktreePath, ['merge-base', '--is-ancestor', ref, 'HEAD'])
+  if (res.code === 0) return true
+  if (res.code === 1) return false
+  return null
+}
+
+/**
+ * Exit 1 — SAFE REBUILD. Removes the worktree (and its local branch) so the next
+ * launch creates a fresh one rooted at the current baseline.
+ *
+ * Refuses when the worktree holds uncommitted work: committing or stashing is
+ * the user's call, and there is no version of "we discarded it for you" that is
+ * acceptable. The cleanliness check is repeated HERE, immediately before the
+ * removal, because the launch-time check and this action are separated by a
+ * round trip through a human.
+ */
+export function rebuildIntentWorktree(
+  workspacePath: string,
+  intentId: string,
+  branchName: string | null,
+): { ok: true } | { ok: false; reason: 'dirty' | 'failed'; message?: string } {
+  const worktreePath = getWorktreePath(workspacePath, intentId)
+  if (!worktreeExists(worktreePath)) return { ok: true }
+  if (!isWorktreeClean(worktreePath)) return { ok: false, reason: 'dirty' }
+  try {
+    removeIntentGitResources(workspacePath, intentId, branchName)
+    return { ok: true }
+  } catch (err) {
+    return {
+      ok: false,
+      reason: 'failed',
+      message: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+/**
+ * Exit 2 — EXPLICIT MERGE. Merge `ref` into the worktree's current branch, in
+ * the worktree, on the user's word. A conflict is surfaced verbatim rather than
+ * resolved: c3 does not decide how someone else's code should combine with the
+ * user's.
+ */
+export function mergeRefIntoWorktree(
+  worktreePath: string,
+  ref: string,
+): { ok: true } | { ok: false; message: string } {
+  const res = execGit(worktreePath, ['merge', '--no-edit', ref])
+  if (res.code === 0) return { ok: true }
+  return { ok: false, message: (res.stderr || res.stdout).trim() || 'git merge 失败' }
+}
+
+// ---------------------------------------------------------------------------
 // Result type
 // ---------------------------------------------------------------------------
 

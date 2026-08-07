@@ -84,6 +84,7 @@ export type ClientToServer =
   | IntentMsg.ClientRefineIntent
   | IntentMsg.ClientDiscussionToIntent
   | IntentMsg.ClientStartDevelopment
+  | IntentMsg.ClientRepairIntentWorktree
   | IntentMsg.ClientWriteSpec
   | IntentMsg.ClientApproveSpec
   | IntentMsg.ClientRevokeSpecApproval
@@ -112,6 +113,7 @@ export type ClientToServer =
   | DeliveryMsg.ClientCancelDelivery
   | DeliveryMsg.ClientTransitionDelivery
   | DeliveryMsg.ClientInitDeliveryBranch
+  | DeliveryMsg.ClientSyncDeliveryMainline
   | DeliveryMsg.ClientCleanupDeliveryBranch
   | DeliveryMsg.ClientLinkIntentToDelivery
   | DeliveryMsg.ClientUnlinkIntentFromDelivery
@@ -172,6 +174,7 @@ export type ServerToClient =
   | IntentMsg.ServerIntents
   | IntentMsg.ServerCreateIntentResult
   | IntentMsg.ServerDevLaunchProgress
+  | IntentMsg.ServerIntentWorktreeRepairResult
   | IntentMsg.ServerSpecLaunchProgress
   | IntentMsg.ServerIntentSessions
   | IntentMsg.ServerIntentLogsList
@@ -187,6 +190,8 @@ export type ServerToClient =
   | DeliveryMsg.ServerDeliveryTransitionFailed
   | DeliveryMsg.ServerDeliveryBranchInitProgress
   | DeliveryMsg.ServerDeliveryBranchInitResult
+  | DeliveryMsg.ServerDeliverySyncMainlineProgress
+  | DeliveryMsg.ServerDeliverySyncMainlineResult
   | DiscussionMsg.ServerDiscussions
   | DiscussionMsg.ServerDiscussionDetail
   | DiscussionMsg.ServerDiscussionMessage

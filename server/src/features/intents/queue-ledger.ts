@@ -49,6 +49,17 @@ export function toFact(r: Intent, workspacePath: string, sddEnabled: boolean): Q
     // The kernel gates on ONE status per intent, so the PR list is reduced HERE,
     // at the assembly boundary, with the same rule the UI uses.
     prStatus: deriveIntentPrAggregate(r.prs),
+    branchName: r.branchName,
+    // The delivery dimension the shared criterion reads: which deliveries this
+    // intent belongs to, and its PR status toward each. Reduced HERE, from the
+    // same rows the delivery detail renders, so the kernel stays pure and the
+    // gate can never be told a different story than the page shows.
+    deliveryIds: r.linkedDeliveries.map((d) => d.id),
+    prStatusByDelivery: Object.fromEntries(
+      r.prs
+        .filter((pr) => pr.deliveryId !== null)
+        .map((pr) => [pr.deliveryId as string, pr.status]),
+    ),
     lastWorkSessionId: r.lastWorkSessionId,
     createdAt: r.createdAt,
     specPath: r.specPath,

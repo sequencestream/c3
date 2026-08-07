@@ -354,13 +354,21 @@ export function installIntentActions(ctx: AppCtx): void {
     })
   }
 
-  ctx.startDevelopment = (intentId: string, hasUnfinishedDeps: boolean): void => {
+  ctx.startDevelopment = (
+    intentId: string,
+    hasUnfinishedDeps: boolean,
+    opts?: { deliveryId?: string; forceDependencyGate?: boolean },
+  ): void => {
     if (!intentsProject.value) return
     void hasUnfinishedDeps
     send({
       type: 'start_development',
       workspaceId: intentsProject.value,
       intentId,
+      // Both are decisions THIS click makes. Neither is remembered: the next
+      // launch resolves its delivery context afresh and re-evaluates every gate.
+      ...(opts?.deliveryId ? { deliveryId: opts.deliveryId } : {}),
+      ...(opts?.forceDependencyGate ? { forceDependencyGate: true } : {}),
     })
     ctx.requestedWorkSessionId.value = null
     // Arm the immediately-visible startup overlay. A terminal signal arriving
@@ -371,6 +379,14 @@ export function installIntentActions(ctx: AppCtx): void {
     ctx.devLaunchTimers.safety = setTimeout(() => {
       ctx.dispatchDevLaunch({ kind: 'timeout', now: Date.now() })
     }, DEV_LAUNCH_SAFETY_TIMEOUT_MS)
+  }
+
+  // The two exits from a worktree baseline mismatch. Both are explicit user
+  // actions: c3 never rebuilds a worktree or merges into it on its own, because
+  // one discards uncommitted work and the other rewrites the user's branch.
+  ctx.repairIntentWorktree = (intentId: string, mode: 'rebuild' | 'merge'): void => {
+    if (!intentsProject.value) return
+    send({ type: 'repair_intent_worktree', workspaceId: intentsProject.value, intentId, mode })
   }
 
   ctx.setIntentStatus = (intentId: string, status: IntentStatus): void => {

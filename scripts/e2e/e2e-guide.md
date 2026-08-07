@@ -74,6 +74,41 @@ test); without it the test SKIPs.
 - `C3_DB_PATH=~/.c3/c3.db node scripts/e2e/e2e-delivery-link-test.mjs ws://localhost:13000/ws`
   → expect `RESULT: PASS`.
 
+## Dependency gate (same-delivery / cross-delivery / no-delivery)
+
+`scripts/e2e/e2e-dependency-gate-test.mjs`
+
+Drives the dependency gate's three readings through the live server. The gate asks
+「依赖的产出在不在我的 base 上」, not 「依赖的 PR 合了没有」, and the answer depends on
+the session's delivery context — so each reading must produce its OWN explanation,
+or a user cannot tell them apart.
+
+A throwaway git workspace (no remote), two deliveries and four intents; each
+dependency is `done` and sits on its own branch, so "is its output on my base" is a
+real question. PASS asserts:
+
+- SAME delivery, PR toward it unmerged → `intent.dependencyPrUnmergedInDelivery`,
+  naming the delivery both sides share;
+- CROSS delivery, the dependency's delivery not `delivered` →
+  `intent.dependencyDeliveryNotDelivered`, naming the OTHER delivery and carrying
+  its id so the page can link to it — **a PR merged into another delivery still
+  blocks**, which is the whole point of the change;
+- NO delivery on either side → the historic `intent.dependencyNotMerged`, unchanged;
+- each state opens on its OWN terms: the same-delivery PR merging, and the cross
+  delivery reaching `delivered`.
+
+The three BLOCKED states go through the real `start_development` launch gate (which
+refuses before any git or agent work). The OPEN states are asserted through the
+intent projection's `actionDescriptor`, computed from the SAME shared criterion —
+driving the launch gate to a pass would start a real session and spend tokens.
+
+No agent tokens are spent. Needs `C3_DB_PATH` (the suite runner passes it) to seed
+branch names and PR rows; without it the test SKIPs.
+
+- `pnpm start --port 13000`
+- `C3_DB_PATH=~/.c3/c3.db node scripts/e2e/e2e-dependency-gate-test.mjs ws://localhost:13000/ws`
+  → expect `PASS — dependency gate three states`.
+
 ## Smoke test (permission flow)
 
 - `pnpm start --port 13000`

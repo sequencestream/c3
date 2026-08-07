@@ -120,6 +120,15 @@ export function installDeliveryActions(ctx: AppCtx): void {
     })
   }
 
+  // 「同步主线」— always user-invoked, always confirmed by the page first. c3
+  // never schedules it: a background job that silently rewrites a shared branch,
+  // and whose failures nobody reads, is exactly what the never-auto-merge stance
+  // exists to prevent. Conflicts come back as an error frame, verbatim.
+  ctx.syncDeliveryMainline = (deliveryId: string): void => {
+    if (!deliveriesProject.value) return
+    send({ type: 'sync_delivery_mainline', workspaceId: deliveriesProject.value, deliveryId })
+  }
+
   // Manual cleanup of a TERMINAL delivery's local branch reference. The page
   // already passed the danger ConfirmDialog; the server refuses non-terminal
   // deliveries anyway. Remote branches are never touched.

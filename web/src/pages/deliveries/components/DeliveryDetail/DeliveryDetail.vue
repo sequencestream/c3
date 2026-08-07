@@ -32,6 +32,10 @@ const props = defineProps<{
   associatedIntents: AssociatedIntent[]
   /** This workspace's intents, for the link picker. */
   intents: Intent[]
+  /** How far mainline is ahead of the delivery branch; null = unknown / N/A. */
+  mainlineAhead: number | null
+  /** In-flight 「同步主线」 phase; null = idle. */
+  syncPhase: 'fetching' | 'merging' | 'pushing' | null
 }>()
 
 const emit = defineEmits<{
@@ -48,6 +52,7 @@ const emit = defineEmits<{
   transition: [to: DeliveryStatus, confirmVerified: boolean]
   'init-branch': [payload: { mode: 'create' | 'bind'; branchName: string }]
   'cleanup-branch': [deliveryId: string]
+  'sync-mainline': [deliveryId: string]
   'link-intent': [intentId: string]
   'unlink-intent': [intentId: string]
   'open-workspace-settings': []
@@ -154,10 +159,13 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
       :plan="props.plan"
       :branch-init="props.branchInit"
       :workspace-git-branch-mode="props.workspaceGitBranchMode"
+      :mainline-ahead="props.mainlineAhead"
+      :sync-phase="props.syncPhase"
       @update="(p) => emit('update', p)"
       @transition="(to, confirm) => emit('transition', to, confirm)"
       @init-branch="(payload) => emit('init-branch', payload)"
       @cleanup-branch="(id: string) => emit('cleanup-branch', id)"
+      @sync-mainline="(id: string) => emit('sync-mainline', id)"
       @jump="onJump"
     />
     <DeliveryIntentsTab

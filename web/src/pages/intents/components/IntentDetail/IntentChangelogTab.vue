@@ -30,6 +30,7 @@ const OP_LABELS: Record<IntentLogOperation, string> = {
   pr_merged: t('intent.changelog.operationType.prMerged'),
   pr_closed: t('intent.changelog.operationType.prClosed'),
   pr_updated: t('intent.changelog.operationType.prUpdated'),
+  dependency_gate_force_release: t('intent.changelog.operationType.dependencyGateForceRelease'),
 }
 
 function opLabel(op: IntentLogOperation): string {

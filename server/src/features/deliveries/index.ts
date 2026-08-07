@@ -21,6 +21,7 @@
 import type { Delivery, DeliveryStatus, IntentPr, ServerToClient } from '@ccc/shared/protocol'
 import {
   closeForgePr,
+  countCommitsAhead,
   createDeliveryBranch,
   deleteLocalBranch,
   detectDeliveryDiffBloat,
@@ -29,6 +30,7 @@ import {
   isMultiRepoWorkspace,
   remoteBranchHead,
   resolveRefHead,
+  syncDeliveryMainline,
 } from '../../git.js'
 import { getDefaultMainBranch, getForgeOverride } from '../../kernel/config/index.js'
 import { resolveWorkspaceRoot } from '../../state.js'
@@ -67,14 +69,35 @@ type DeliveryBranchPhase = 'fetching' | 'creating' | 'pushing' | 'binding'
 function detailFrame(
   delivery: Delivery,
   linkWarning?: 'delivery.diffBloat',
+  mainlineAhead: number | null = null,
 ): Extract<ServerToClient, { type: 'delivery_detail' }> {
   return {
     type: 'delivery_detail',
     delivery,
     transitionPlan: computeTransitionPlan(delivery),
     associatedIntents: listAssociatedIntents(delivery.id),
+    mainlineAhead,
     ...(linkWarning ? { linkWarning } : {}),
   }
+}
+
+/**
+ * How far `origin/<base_branch>` is ahead of the delivery branch, from the LOCAL
+ * remote-tracking refs. Deliberately fetch-free: a network round trip on every
+ * detail open would be slow and surprising, and every branch / PR / sync action
+ * already refreshes those refs. `null` whenever the question does not apply (no
+ * branch yet) or cannot be answered (refs unresolvable).
+ */
+async function readMainlineAhead(
+  workspacePath: string,
+  delivery: Delivery,
+): Promise<number | null> {
+  if (!delivery.branchName || !delivery.branchReady) return null
+  return countCommitsAhead(
+    workspacePath,
+    `origin/${delivery.branchName}`,
+    `origin/${delivery.baseBranch}`,
+  )
 }
 
 export const listDeliveriesHandler: Handler<'list_deliveries'> = (ctx, conn, msg) => {
@@ -154,7 +177,7 @@ export const createDeliveryHandler: Handler<'create_delivery'> = (ctx, conn, msg
   }
 }
 
-export const getDeliveryDetailHandler: Handler<'get_delivery_detail'> = (_ctx, conn, msg) => {
+export const getDeliveryDetailHandler: Handler<'get_delivery_detail'> = async (_ctx, conn, msg) => {
   if (!isStoreAvailable()) {
     conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
     return
@@ -164,7 +187,74 @@ export const getDeliveryDetailHandler: Handler<'get_delivery_detail'> = (_ctx, c
     conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
     return
   }
-  conn.send(detailFrame(delivery))
+  const workspacePath = resolveWorkspaceRoot(delivery.workspaceId)
+  const ahead = workspacePath ? await readMainlineAhead(workspacePath, delivery) : null
+  conn.send(detailFrame(delivery, undefined, ahead))
+}
+
+/**
+ * 「同步主线」— merge `origin/<base_branch>` into the delivery branch and push.
+ *
+ * Gate order: store → delivery exists in this workspace → the branch is ready →
+ * the delivery is still `integrating`. Only `integrating` accepts it: before that
+ * there is nothing to integrate, and from `verifying` on, changing the tree is
+ * exactly what invalidates the verification.
+ *
+ * A conflict is reported as `delivery.syncMainlineConflict` with git's own output
+ * and nothing is pushed — the user resolves it, c3 never picks a resolution.
+ */
+export const syncDeliveryMainlineHandler: Handler<'sync_delivery_mainline'> = async (
+  _ctx,
+  conn,
+  msg,
+) => {
+  if (!isStoreAvailable()) {
+    conn.send({ type: 'error', error: { code: 'delivery.dbUnavailable' } })
+    return
+  }
+  const abs = resolveWorkspaceRoot(msg.workspaceId)
+  if (!abs) {
+    conn.send({
+      type: 'error',
+      error: { code: 'workspace.unknown', params: { id: msg.workspaceId } },
+    })
+    return
+  }
+  const delivery = getDelivery(msg.deliveryId)
+  if (!delivery || delivery.workspaceId !== msg.workspaceId) {
+    conn.send({ type: 'error', error: { code: 'delivery.notFound' } })
+    return
+  }
+  if (!delivery.branchName || !delivery.branchReady) {
+    conn.send({ type: 'error', error: { code: 'delivery.guard.branchNotReady' } })
+    return
+  }
+  if (delivery.status !== 'integrating') {
+    conn.send({ type: 'error', error: { code: 'delivery.syncMainlineForbidden' } })
+    return
+  }
+
+  const result = await syncDeliveryMainline(
+    abs,
+    delivery.branchName,
+    delivery.baseBranch,
+    (phase) =>
+      conn.send({ type: 'delivery_sync_mainline_progress', deliveryId: delivery.id, phase }),
+  )
+  if (!result.ok) {
+    conn.send({
+      type: 'error',
+      error: result.conflict
+        ? { code: 'delivery.syncMainlineConflict', params: { detail: result.error ?? '' } }
+        : { code: 'delivery.syncMainlineFailed', params: { detail: result.error ?? '' } },
+    })
+    return
+  }
+  conn.send({
+    type: 'delivery_sync_mainline_result',
+    deliveryId: delivery.id,
+    ahead: result.ahead ?? 0,
+  })
 }
 
 export const updateDeliveryHandler: Handler<'update_delivery'> = (ctx, conn, msg) => {

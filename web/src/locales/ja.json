@@ -1086,7 +1086,8 @@
         "prCreated": "PR 作成",
         "prMerged": "PR マージ済み",
         "prClosed": "PR クローズ",
-        "prUpdated": "PR 更新"
+        "prUpdated": "PR 更新",
+        "dependencyGateForceRelease": "依存ゲートを強制解除"
       }
     },
     "intentSession": {
@@ -1169,6 +1170,38 @@
         "label": "元のエラー"
       },
       "noDetail": "詳細は返されませんでした。"
+    },
+    "gateEscape": {
+      "dependency": {
+        "title": {
+          "label": "依存ゲートを強制解除しますか?"
+        },
+        "risk": {
+          "label": "依存している成果はおそらくあなたの base にありません。後のマージで競合や手戻りが発生する可能性があります。今回の起動にのみ有効で、依存ゲート以外は一切スキップせず、変更履歴に記録されます。"
+        },
+        "confirm": {
+          "label": "強制解除して開始"
+        }
+      },
+      "worktree": {
+        "title": {
+          "label": "worktree のベースラインが一致しません"
+        },
+        "merge": {
+          "label": "ブランチをマージ"
+        },
+        "rebuild": {
+          "label": "worktree を再作成"
+        }
+      },
+      "deliveryContext": {
+        "title": {
+          "label": "このセッションはどのデリバリーに対して開発しますか?"
+        },
+        "confirm": {
+          "label": "このデリバリーで開始"
+        }
+      }
     }
   },
   "session": {
@@ -2083,7 +2116,17 @@
       "gitCleanupPrFailed": "PRの自動作成に失敗しました: {detail}。手動でPRを作成してください。",
       "worktreeCreateFailed": "ワークツリーの作成に失敗しました: {message}。",
       "pullFailed": "現在のブランチがリモートと分岐しており、ファストフォワードできません。作業を開始する前に手動で同期してください: {message}",
+      "worktreeBaseMismatch": "既存の worktree は「{branch}」(デリバリー「{deliveryTitle}」)を基準にしていません。c3 は自動で再作成もマージもしません — 再作成するか、そのブランチをマージしてください。",
+      "worktreeBaseMismatchDirty": "既存の worktree は「{branch}」(デリバリー「{deliveryTitle}」)を基準にしておらず、未コミットの変更があります。先にコミットまたは stash するか、そのブランチをマージしてください。",
+      "worktreeDirty": "worktree に未コミットの変更があります — 再作成の前にコミットまたは stash してください。c3 が勝手に破棄することはありません。",
+      "worktreeRepairFailed": "worktree の修復に失敗しました: {message}",
       "dependencyNotMerged": "依存関係\"{title}\"({id})がまだメインブランチにマージされていません。",
+      "dependencyPrUnmergedInDelivery": "依存関係「{title}」({id}) のデリバリー「{deliveryTitle}」({deliveryId}) 向け PR が未マージのため、その成果はまだあなたの base にありません。",
+      "dependencyDeliveryNotDelivered": "依存関係「{title}」({id}) はデリバリー「{deliveryTitle}」({deliveryId}) に属しており、そのデリバリーはまだメインラインにマージされていません。",
+      "deliveryContextRequired": "この意図は複数のデリバリーに紐づいています。セッションを開始する前に、どのデリバリーに対して開発するか選択してください。",
+      "deliveryContextUnknown": "選択したデリバリーはこのワークスペースに存在しません。",
+      "deliveryContextNotLinked": "この意図は選択したデリバリーに紐づいていません。",
+      "deliveryNotWritable": "デリバリー「{deliveryTitle}」({deliveryId}) は {status} のため新しい作業を受け付けません。これ以上コードをマージすると検証結果が無効になります。",
       "specAgentUnsupported": "spec の作成には Claude エージェントが必要です。設定された spec エージェントは書き込みを spec ディレクトリ内に制限できません。",
       "specWriteFailed": "spec ドキュメントの作成に失敗しました: {message}。",
       "specNotWritten": "spec がまだ作成されていません。承認する前に作成してください。",
@@ -2162,7 +2205,10 @@
       "intentAlreadyLinked": "このインテントはすでにこの配信に紐付けられています。",
       "unlinkMergedPrDenied": "このインテントのこの配信向け PR はすでにマージ済みのため、紐付けを解除できません。取り消すにはまず revert してください。",
       "unlinkClosePrFailed": "紐付け解除を中断しました — PR をクローズできません: {detail}。",
-      "unlinkPrStatusCheckFailed": "紐付け解除を中断しました — フォージから PR の状態を取得できません: {detail}。"
+      "unlinkPrStatusCheckFailed": "紐付け解除を中断しました — フォージから PR の状態を取得できません: {detail}。",
+      "syncMainlineForbidden": "メインラインの同期は、デリバリーが統合中のときのみ実行できます。",
+      "syncMainlineConflict": "メインラインのマージが競合し中止しました(push なし)。競合はご自身で解消してください: {detail}",
+      "syncMainlineFailed": "メインラインの同期に失敗しました: {detail}"
     }
   },
   "statusIndicator": {
@@ -2606,6 +2652,31 @@
       },
       "diffBloat": {
         "label": "このインテントのコミットはメインラインを基点としているため、配信ブランチ向けの PR にはメインラインと配信ブランチの差分も含まれます。"
+      }
+    },
+    "syncMainline": {
+      "action": {
+        "label": "メインラインを同期"
+      },
+      "behind": {
+        "label": "メインラインはこのデリバリーブランチより {count} コミット先行しています。今同期しておくと最終マージが fast-forward に近づきます。"
+      },
+      "confirm": {
+        "title": {
+          "label": "メインラインをデリバリーブランチにマージしますか?"
+        },
+        "body": {
+          "label": "origin/{base} を {branch} にマージして push します。競合はそのまま提示され、c3 が勝手に解消することはありません。"
+        }
+      },
+      "done": {
+        "label": "メインラインを同期しました({count} コミットをマージ)。"
+      },
+      "upToDate": {
+        "label": "すでにメインラインと同期しています。"
+      },
+      "running": {
+        "label": "メインラインを同期中…"
       }
     }
   },
@@ -3345,6 +3416,9 @@
       "blocked_concurrency_gate": "グローバル並行ゲート",
       "blocked_dependency": "依存が未完了",
       "blocked_dependency_pr_unmerged": "依存の PR が未マージ",
+      "blocked_dependency_delivery": "依存先のデリバリーが未マージ",
+      "blocked_delivery_status": "デリバリーが新規作業を受付停止",
+      "blocked_delivery_ambiguous": "複数のデリバリー — 人による選択が必要",
       "blocked_spec_not_approved": "spec が未承認",
       "blocked_backoff": "失敗後のバックオフ中",
       "blocked_parked": "park 済み",

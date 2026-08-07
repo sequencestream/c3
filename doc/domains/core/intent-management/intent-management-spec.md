@@ -355,8 +355,10 @@ stateDiagram-v2
 意图,由用户手动取消/删除。
 
 `delete_intent { workspaceId, intentId }` 永久回收意图。详情标题栏仅为非 `done` 状态
-(`draft` / `todo` / `in_progress` / `cancelled`)展示 danger 二次确认入口,列表不展示入口;
-`done` 通常已合并 PR 并沉淀完整工作成果,收紧界面可达路径以免误删可追溯记录——这是界面约束而非
+(`draft` / `todo` / `in_progress` / `cancelled`)提供 danger 二次确认入口,列表不展示入口;
+该入口收在标题栏末位常驻的「…」溢出菜单内(与同为危险动作的「取消」并列),表面不直接渲染——危险动作
+多一层缓冲,标题栏也只留核心动作。`done` 通常已合并 PR 并沉淀完整工作成果,收紧界面可达路径以免
+误删可追溯记录;`done` 下「取消」同样不可用,两项皆无时「…」整体不渲染。这是界面约束而非
 协议约束,直接调用 `delete_intent` 删除 `done` 意图仍属服务端既有能力。确认文案明确本地
 worktree、本地分支与不可逆性,`in_progress` 额外提示工作产物(该状态是 worktree/本地分支残留的
 主要来源)。服务端以意图快照和已注册工作区为准,停止并删除沟通、spec

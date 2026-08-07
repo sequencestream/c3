@@ -433,10 +433,6 @@ function submitChat(text: string, images: PromptImage[]): void {
                 (ws: string, deliveryId: string, id: string) =>
                   emit('link-delivery', ws, deliveryId, id)
               "
-              @unlink-delivery="
-                (ws: string, deliveryId: string, id: string) =>
-                  emit('unlink-delivery', ws, deliveryId, id)
-              "
               @standalone-delivery="
                 (p: StandaloneDeliveryRequest) => emit('standalone-delivery', p)
               "
@@ -481,6 +477,10 @@ function submitChat(text: string, images: PromptImage[]): void {
         @update-deps="(id, deps) => emit('update-deps', id, deps)"
         @select-dependency="(id: string) => emit('select-dependency', id)"
         @open-delivery="(id: string) => emit('open-delivery', id)"
+        @unlink-delivery="
+          (ws: string, deliveryId: string, id: string) =>
+            emit('unlink-delivery', ws, deliveryId, id)
+        "
         @sync-pr-status="(id: string) => emit('sync-pr-status', id)"
       />
 

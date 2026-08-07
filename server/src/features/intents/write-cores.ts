@@ -25,6 +25,7 @@ import {
   getGitBranchMode,
 } from '../../kernel/config/index.js'
 import { getDelivery } from '../deliveries/store.js'
+import { pathToId } from '../../state.js'
 import { runServerSidePrCreate } from '../pr-events/tool-defs.js'
 import type { GenericEvent } from '@ccc/shared'
 import type { NormalizeResult } from '../../kernel/events/generic-event.js'
@@ -83,6 +84,68 @@ export interface CreatePrDeps {
 }
 
 /**
+ * Where one create_pr run points: the delivery it belongs to (`null` = no
+ * delivery binding, the pre-delivery mainline behaviour) and the branch its PR
+ * is opened against. Resolved ONCE per run and threaded through the diff gate,
+ * the forge create, the ledger row and the `pr:create` event.
+ */
+type PrTargetResolution =
+  { ok: true; deliveryId: string | null; baseBranch: string } | { ok: false; code: string }
+
+/**
+ * Resolve which delivery this create targets, and the base branch that follows
+ * from it.
+ *
+ * An explicit `deliveryId` wins. Without one, the intent's association edges
+ * decide: none → the mainline (a workspace that never adopted deliveries keeps
+ * working exactly as before), exactly one → that delivery, several → refused.
+ * "Several" is the one case where a choice exists and only the user can make it;
+ * picking the first edge would silently file the PR against a delivery the user
+ * never chose. The same resolution serves the human and the advisor entry points,
+ * so an agent cannot reach a target a human could not.
+ *
+ * A named delivery must exist, belong to THIS workspace, and already be linked
+ * to the intent — the link check keeps `intent_prs.delivery_id` from pointing at
+ * a delivery `intent_deliveries` knows nothing about, which would file the PR row
+ * under a group the intent detail never renders. Only then does branch readiness
+ * apply, so an unusable id never surfaces as "branch not ready".
+ */
+function resolvePrTarget(
+  workspacePath: string,
+  intent: Intent,
+  requestedDeliveryId: string | undefined,
+): PrTargetResolution {
+  const linked = intent.linkedDeliveries
+  let deliveryId: string | null
+  if (requestedDeliveryId) {
+    deliveryId = requestedDeliveryId
+  } else if (linked.length === 0) {
+    deliveryId = null
+  } else if (linked.length === 1) {
+    deliveryId = linked[0].id
+  } else {
+    return { ok: false, code: 'delivery.prCreateAmbiguous' }
+  }
+
+  if (deliveryId === null) {
+    return { ok: true, deliveryId: null, baseBranch: getDefaultMainBranch(workspacePath) ?? 'main' }
+  }
+
+  const delivery = getDelivery(deliveryId)
+  if (!delivery || delivery.workspaceId !== pathToId(workspacePath)) {
+    return { ok: false, code: 'delivery.prCreateDeliveryUnknown' }
+  }
+  if (!linked.some((d) => d.id === deliveryId)) {
+    return { ok: false, code: 'delivery.prCreateNotLinked' }
+  }
+  const branchName = normalizeBranchName(delivery.branchName)
+  if (!delivery.branchReady || branchName === null) {
+    return { ok: false, code: 'delivery.guard.branchNotReady' }
+  }
+  return { ok: true, deliveryId, baseBranch: branchName }
+}
+
+/**
  * Wrap `onStage` so stages are reported at most once and only ever forward.
  * `commitAndPush` fires its commit/push boundary once per affected repo in a
  * multi-repo workspace; the overlay contract is a single one-way pass, so the
@@ -102,17 +165,27 @@ function monotonicStageReporter(
 }
 
 /**
- * Create a PR for one intent. Gate order is fixed and unchanged: already has a
- * PR (idempotent, no Git work at all) → worktree mode → non-empty branch →
- * the worktree actually differs from the effective base. Only then does it
- * commit, push, and create the PR; a failed commit never creates one.
+ * Create a PR for one intent, toward one delivery target. Gate order is fixed:
+ * worktree mode → non-empty branch → the target resolves (delivery exists in
+ * this workspace, is linked, and its branch is ready) → that target has no
+ * active PR yet (idempotent, no Git work at all) → the worktree actually differs
+ * from the target's base. Only then does it commit, push, and create the PR; a
+ * failed commit never creates one.
  *
- * The effective base is resolved ONCE from the workspace's `defaultMainBranch`
- * (explicit `main` when unset) and threaded through the diff gate, the forge
- * create and the `pr:create` event — no layer re-derives or defaults it. The
+ * The idempotency key is the PAIR `(intentId, deliveryId)`, matching the ledger's
+ * unique index — not "the intent has any active PR". An intent legitimately owns
+ * one PR per delivery, so the same head branch can back a second PR row toward a
+ * different delivery; only a repeat of the SAME pair is refused. `merged` /
+ * `closed` rows never block: that PR's life is over.
+ *
+ * The effective base is resolved ONCE — the delivery's branch when the run
+ * targets one, the workspace's `defaultMainBranch` (explicit `main` when unset)
+ * when it does not — and threaded through the diff gate, the forge create, the
+ * ledger row and the `pr:create` event; no layer re-derives or defaults it. The
  * diff gate prefers the freshly-fetched remote base; when the base resolves
  * neither remotely nor locally it rejects with a readable detail (before any
- * commit/push/forge work) instead of passing through.
+ * commit/push/forge work) instead of passing through — which is also what
+ * catches a delivery branch deleted after it was marked ready.
  *
  * `deps.onStage` observes that same order: the synchronous gates ahead of the
  * diff check report nothing (a rejection there is only an error), and a failure
@@ -122,38 +195,12 @@ export async function createPrForIntent(
   workspacePath: string,
   intentId: string,
   deps: CreatePrDeps,
+  requestedDeliveryId?: string,
 ): Promise<IntentWriteResult<{ prId: string; prUrl: string }>> {
   if (!isStoreAvailable()) return { success: false, code: 'intent.dbUnavailable' }
   const req = getIntent(intentId)
   if (!req) return { success: false, code: 'intent.notFound' }
 
-  // Delivery branch gate (checked BEFORE the idempotent guard so the reason is
-  // the readable one): an intent whose live PR targets a delivery may only
-  // create work toward it while that delivery's branch is ready. The association
-  // surface is `intent_prs.delivery_id` — `create_pr` does not yet carry a
-  // deliveryId, so this is keyed on an existing active PR's delivery. The moment
-  // an automation or a later flow writes `delivery_id` and triggers a PR create,
-  // this gate is live; a `branch_ready === false` delivery refuses the PR.
-  const deliveryTarget = activeIntentPrs(req.prs).find((pr) => pr.deliveryId !== null)
-  if (deliveryTarget?.deliveryId) {
-    const delivery = getDelivery(deliveryTarget.deliveryId)
-    if (delivery && !delivery.branchReady) {
-      return { success: false, code: 'delivery.guard.branchNotReady' }
-    }
-  }
-
-  // Idempotent guard next: an intent that already has a live PR is never
-  // re-created — no Git checks, no commit, no push. Independent of intent status.
-  // A merged / closed PR does NOT block: that PR's life is over, and the intent
-  // may legitimately need a new one.
-  const activePrs = activeIntentPrs(req.prs)
-  if (activePrs.length > 0) {
-    return {
-      success: false,
-      code: 'intent.prCreateFailed',
-      params: { detail: `intent 已有 PR #${activePrs[0].number}` },
-    }
-  }
   if (getGitBranchMode(workspacePath) !== 'worktree') {
     return { success: false, code: 'intent.prCreateNotWorktree' }
   }
@@ -161,9 +208,25 @@ export async function createPrForIntent(
     return { success: false, code: 'intent.prCreateNoBranch' }
   }
 
-  // The single effective base for this whole operation: the workspace's
-  // configured main branch, or an explicit `main` when unset.
-  const baseBranch = getDefaultMainBranch(workspacePath) ?? 'main'
+  // Target resolution before the idempotency guard: "which delivery" decides
+  // WHICH active PR would collide, so an unresolvable target must fail with its
+  // own readable reason rather than borrow another pair's collision.
+  const target = resolvePrTarget(workspacePath, req, requestedDeliveryId)
+  if (!target.ok) return { success: false, code: target.code }
+  const { deliveryId, baseBranch } = target
+
+  // Idempotent guard on the resolved pair: a target that already carries a live
+  // PR is never re-created — no Git checks, no commit, no push. Independent of
+  // intent status, and blind to other pairs' PRs.
+  const conflict = activeIntentPrs(req.prs).find((pr) => pr.deliveryId === deliveryId)
+  if (conflict) {
+    return {
+      success: false,
+      code: 'intent.prCreateFailed',
+      params: { detail: `intent 已有 PR #${conflict.number}` },
+    }
+  }
+
   const providerOverride = getForgeOverride(workspacePath)
 
   const reportStage = monotonicStageReporter(deps.onStage)
@@ -237,6 +300,7 @@ export async function createPrForIntent(
     const identity = parsePrIdentity(pr.prUrl)
     upsertIntentPr({
       intentId,
+      deliveryId,
       number: pr.prId,
       status: 'reviewing',
       forge: identity.forge ?? providerOverride ?? null,
@@ -254,6 +318,7 @@ export async function createPrForIntent(
         headBranch,
         baseBranch,
         intentId,
+        deliveryId,
       },
       deps.normalizeEvent,
       (event) => deps.publishEvent(workspacePath, intentId, event),

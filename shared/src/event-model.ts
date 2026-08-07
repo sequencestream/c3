@@ -109,6 +109,15 @@ export interface PrEventAssociation {
   intentId?: string
   /** Human-readable intent name for self-describing events; normalized server-side (redacted + truncated to 256). */
   intentTitle?: string
+  /**
+   * The delivery the PR belongs to, `undefined` for a PR with no delivery
+   * binding. Together with `intentId` this is the ledger key `(intent_id,
+   * delivery_id)`, so a `pr:update` event that carries it addresses exactly one
+   * PR row — an intent may own several. Optional on the wire (an older event
+   * form stays valid), but a `pr:update` publisher must carry either this or
+   * `pr.number`: without one the consumer refuses to guess.
+   */
+  deliveryId?: string
 }
 
 /**

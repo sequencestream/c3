@@ -172,7 +172,13 @@ export interface AppMethods {
   saveSpecContent(intentId: string, content: string): void
   setIntentAutomate(intentId: string, automateOn: boolean): void
   updateIntentDeps(intentId: string, deps: { dependsOnId: string; depType: DepType }[]): void
-  createPr(intentId: string): void
+  /**
+   * Create a PR for an intent. `deliveryId` names the delivery whose branch the
+   * PR targets; omitted means the workspace's main branch. The server re-resolves
+   * and re-validates it either way — the argument only carries the choice the UI
+   * could already see.
+   */
+  createPr(intentId: string, deliveryId?: string): void
   /**
    * Re-run the intent action a Git/forge failure came from, on the user's
    * explicit request. It re-enters the SAME entry point (`startDevelopment` /

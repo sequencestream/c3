@@ -69,7 +69,7 @@ flowchart LR
 | DR-R13 | 分支初始化基线只取远端:先 `fetch origin <base_branch>`,再以 `origin/<base_branch>` HEAD 作为期望起点建分支;不取本地 ref(本地过期会让交付起点落后于团队主线)                                                                                                                                      |
 | DR-R14 | 孤儿分支防御:`create` 模式下若远端已存在同名分支,比较其 HEAD 与期望起点——匹配视为上次「push 成功但 DB 写失败」的孤儿,幂等绑定(不重新 push);不匹配报 `delivery.branchConflict`,**绝不覆盖**远端分支                                                                                               |
 | DR-R15 | `bind` 模式绑定远端已有分支:远端必须已存在(否则 `delivery.branchNotFound`);该分支被其他活动交付占用时拒绝(`delivery.branchConflict`,自身重试不算占用);不校验分支是否落后主线,落后仅发 `delivery.branchBehindMain` 警告                                                                           |
-| DR-R16 | `branch_ready=false` 时,`planned → integrating`(以及 `integrating → verifying`、`verifying → verified`)被 `delivery.guard.branchNotReady` 守卫拦截;面向该交付的意图 PR 创建(其 `intent_prs` 有 `delivery_id` 的活跃 PR)在后端被拒并返回可读原因                                                  |
+| DR-R16 | `branch_ready=false` 时,`planned → integrating`(以及 `integrating → verifying`、`verifying → verified`)被 `delivery.guard.branchNotReady` 守卫拦截;面向该交付的意图 PR 创建同样被拒并返回可读原因                                                                                                |
 | DR-R17 | 交付进入 `delivered`/`cancelled` 后分支不自动删除;手动清理入口需二次确认(ConfirmDialog danger),确认后仅删除本地分支引用(若存在),不删除远端分支;清理仅限终态交付(`delivery.cleanupForbidden` 拒非终态)                                                                                            |
 | DR-R18 | 意图↔交付关联是一条独立的边,不由 PR 事实推断;一对(交付, 意图)至多一条,同一意图对多个交付各一条是允许的。关联只建立边,不改投任何已有 PR                                                                                                                                                           |
 | DR-R19 | 该意图对本交付的 PR 已 merged 时**禁止解除关联**:先看本地状态,本地非 merged 时再向 forge 查实时状态,任一为 merged 即拒(`delivery.unlinkMergedPrDenied`)并把本地状态同步为 merged。forge 状态读不到时同样拒(`delivery.unlinkPrStatusCheckFailed`)——无法确认「不是 merged」即按「可能 merged」处理 |
@@ -77,6 +77,8 @@ flowchart LR
 | DR-R21 | 关联时若意图提交基于主线而非交付分支(判据见 models 的分叉点检测),关联**仍然成功**并附带 diff 膨胀警告;检测失败一律不报警                                                                                                                                                                         |
 | DR-R22 | 永久删除意图时同事务清除其关联边,远端 PR 不动;取消交付**不删**关联边,终态交付的关联意图仍可查                                                                                                                                                                                                    |
 | DR-R23 | 交付详情关联意图列表的 PR 列是「该意图**对本交付**的 PR 状态」,不是意图的全局 PR 聚合                                                                                                                                                                                                            |
+| DR-R24 | 关联了交付的意图,其 PR 的 base 是**该交付的分支**,未关联的仍提工作区主线;建 PR 的目标解析、幂等键 `(intent_id, delivery_id)` 与全部拒绝码见 intent-management 的 RM-R32。交付是可选聚合层,不强制先建交付                                                                                         |
+| DR-R25 | 建 PR 的目标交付必须**已被该意图关联**:服务端拒绝把 PR 行落到 `intent_deliveries` 没有边的交付下,`intent_prs.delivery_id` 与关联边因此不会脱节。人工入口与顾问 MCP 入口共用同一条解析,交互层不开放多交付的建 PR 入口(数据层允许一意图多交付)                                                     |
 
 ## 用户场景
 
@@ -92,12 +94,13 @@ flowchart LR
 - **US-10(关联意图):** 用户在交付详情「关联意图」tab 点「关联意图」,从「尚未归属任何交付」的意图中选一个;关联后两侧互见——交付详情列出该意图(含它对本交付的 PR 状态与 head 分支),意图详情的元信息在「分支+commit」之后、「PR」之前显示「关联交付」。(DR-R18/DR-R23)
 - **US-11(关联提示 diff 膨胀):** 意图先在主线上开发、之后才关联交付时,关联成功并提示「本意图提交基于主线,提向交付分支的 PR 会包含主线与交付分支的差异」,用户据此决定是否 rebase。(DR-R21)
 - **US-12(解除关联):** 未合并行的行尾有「解除关联」,danger 二次确认后解除,其提向本交付的 PR 一并关闭;PR 已 merged 的行不提供该入口,强行发起也被服务端拒绝并给出原因。(DR-R19/DR-R20)
+- **US-13(PR 提向交付分支):** 已关联交付的意图点「创建 PR」,PR 的 base 是该交付的分支,PR 行落在该交付分组下并计入 N/M;交付分支未就绪时被拒并给出可读原因;意图关联多个交付时不渲染建 PR 入口。(DR-R16/DR-R24/DR-R25)
 
 ## 领域事件(线协议)
 
 - 消费:`list_deliveries` / `create_delivery` / `get_delivery_detail` / `update_delivery` / `cancel_delivery` / `transition_delivery` / `init_delivery_branch` / `cleanup_delivery_branch` / `link_intent_to_delivery` / `unlink_intent_from_delivery`
 - 发出:`deliveries`(含 `needsActionCount`)/ `create_delivery_result`(含 `prMergeNotice`)/ `delivery_detail`(含 `transitionPlan`、`associatedIntents`,以及关联时可能出现的 `linkWarning`)/ `delivery_transition_failed`(含结构化缺口)/ `delivery_branch_init_progress`(阶段)/ `delivery_branch_init_result`(含可选 `warning` 落后提示)。关联/解除不发 `delivery:intent_linked/unlinked` 事件
-- 错误码:见 `@ccc/shared` 的 `UI_ERROR_CODES.delivery.*`(含 `delivery.multiRepoUnsupported` / `delivery.branchNotFound` / `delivery.initFailed` / `delivery.cleanupForbidden` / `delivery.intentAlreadyLinked` / `delivery.unlinkMergedPrDenied` / `delivery.unlinkClosePrFailed` / `delivery.unlinkPrStatusCheckFailed`);守卫缺口走 `delivery.guard.*` locale 叶子。
+- 错误码:见 `@ccc/shared` 的 `UI_ERROR_CODES.delivery.*`(含 `delivery.multiRepoUnsupported` / `delivery.branchNotFound` / `delivery.initFailed` / `delivery.cleanupForbidden` / `delivery.intentAlreadyLinked` / `delivery.unlinkMergedPrDenied` / `delivery.unlinkClosePrFailed` / `delivery.unlinkPrStatusCheckFailed` / 建 PR 目标解析的 `delivery.prCreateDeliveryUnknown` / `delivery.prCreateNotLinked` / `delivery.prCreateAmbiguous`);守卫缺口走 `delivery.guard.*` locale 叶子。
 
 ## 数据字典
 

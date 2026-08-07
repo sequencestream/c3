@@ -33,7 +33,7 @@ pair this wire/disk e2e with desktop/mobile rendering and ordering assertions.
 ## Delivery ↔ intent association (link / unlink guards)
 
 Drives the association over the real wire protocol in a throwaway git workspace
-(deliberately with no remote): one delivery, two intents, `intent_prs` rows seeded
+(deliberately with no remote): two deliveries, two intents, `intent_prs` rows seeded
 straight into the ledger through `C3_DB_PATH` — the state a real `create_pr` would
 leave behind.
 
@@ -47,9 +47,19 @@ PASS asserts what the association exists to guarantee:
   edge survives the refusal — the black hole this guard exists for;
 - an unreadable forge state **blocks** the unlink (`delivery.unlinkPrStatusCheckFailed`)
   rather than assuming "not merged";
+- one intent holds **one PR per delivery**: linked to a second delivery and given a
+  PR toward it, its projection carries two rows under two delivery ids off the SAME
+  head branch (what the intent detail groups by delivery), and each delivery detail
+  keeps showing the PR toward itself;
 - cancelling the delivery does **not** drop the association edges.
 
-Not covered here: "unmerged PR is closed, then the edge and PR row are dropped".
+Not covered here: "the created PR's base is the delivery branch" — that needs a real
+forge to answer `pr create`. It is pinned instead by
+`server/src/features/intents/create-pr-handler.test.ts` ("delivery target
+resolution"), which asserts the one resolved base reaching the diff gate, the forge
+call, the ledger row and the published `pr:create` event.
+
+Not covered here either: "unmerged PR is closed, then the edge and PR row are dropped".
 That needs a forge that answers `pr view` and accepts `pr close`, which cannot be
 provoked deterministically in a sandboxed repo with no remote — and faking a CLI on
 PATH would fake exactly the boundary under test. That chain, plus the

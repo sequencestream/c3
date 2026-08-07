@@ -4,9 +4,9 @@
  * protocol: link, both-sides visibility, and every unlink guard that can be
  * driven deterministically without a live forge.
  *
- * Scenario — a throwaway git workspace (no remote), one delivery, two intents:
+ * Scenario — a throwaway git workspace (no remote), two deliveries, two intents:
  *
- *   Alpha — gets an `intent_prs` row toward the delivery, seeded straight into
+ *   Alpha — gets an `intent_prs` row toward each delivery, seeded straight into
  *           the ledger (the state a real `create_pr` would leave behind)
  *   Beta  — no PR at all
  *
@@ -22,8 +22,18 @@
  *     (`delivery.unlinkPrStatusCheckFailed`), not guessed. This is also the only
  *     honest thing the suite can assert about a non-merged PR: the workspace has
  *     no remote and no authenticated forge CLI, so the lookup genuinely fails.
- *  6. Cancelling the delivery does NOT drop the association edges (history stays
+ *  6. One intent holds ONE PR PER DELIVERY: linked to a second delivery and given
+ *     a PR toward it, Alpha's projection carries two rows under two delivery ids
+ *     off the SAME head branch (what the intent detail groups by delivery), and
+ *     each delivery detail keeps showing the PR toward itself, never the other's.
+ *  7. Cancelling the delivery does NOT drop the association edges (history stays
  *     queryable).
+ *
+ * "The PR's base is the delivery branch" is NOT asserted here: it needs a real
+ * forge to answer `pr create`. That fact is pinned by
+ * `server/src/features/intents/create-pr-handler.test.ts` ("delivery target
+ * resolution"), which asserts the resolved base reaching the diff gate, the forge
+ * call, the ledger row and the published event.
  *
  * WHAT THIS DOES NOT COVER — and why. The "unmerged PR is CLOSED, then the edge
  * and PR row are dropped" path needs a forge that answers `pr view` and accepts
@@ -93,6 +103,8 @@ const ws = new WebSocket(URL)
 let workspaceId = null
 let phase = 'boot'
 let deliveryId = null
+/** Every delivery created by this run, in creation order. */
+const deliveries = []
 const ids = {}
 let detail = null
 let intents = []
@@ -112,12 +124,17 @@ const check = (ok, label) => {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-/** Poll the delivery detail until `predicate` holds against the freshest frame. */
-async function waitForDetail(predicate, label) {
+/**
+ * Poll one delivery's detail until `predicate` holds against the freshest frame.
+ * `id` defaults to the first delivery; the multi-delivery section passes the
+ * second one, and the guard on `detail.delivery.id` keeps a late frame from the
+ * other delivery from satisfying the predicate.
+ */
+async function waitForDetail(predicate, label, id = deliveryId) {
   for (let i = 0; i < POLL_TRIES; i++) {
-    send({ type: 'get_delivery_detail', deliveryId })
+    send({ type: 'get_delivery_detail', deliveryId: id })
     await sleep(POLL_MS)
-    if (detail && predicate()) return true
+    if (detail?.delivery?.id === id && predicate()) return true
   }
   console.log(`[e2e] gave up waiting for: ${label}`)
   return false
@@ -134,8 +151,13 @@ async function waitForIntents(predicate, label) {
   return false
 }
 
-/** Write one `intent_prs` row straight into the ledger (what a real PR leaves). */
-function seedPrRow(intentId, number, status) {
+/**
+ * Write one `intent_prs` row straight into the ledger (what a real `create_pr`
+ * leaves behind). Keyed on `(intent_id, delivery_id)` like the real write path,
+ * with the delivery's own branch as the base — so seeding the same intent toward
+ * two deliveries produces the two rows a real double-create would.
+ */
+function seedPrRow(intentId, number, status, delivery = deliveryId) {
   const db = new DatabaseSync(DB_PATH)
   try {
     db.exec('PRAGMA busy_timeout=5000;')
@@ -147,14 +169,16 @@ function seedPrRow(intentId, number, status) {
     ).run(
       randomUUID(),
       intentId,
-      deliveryId,
+      delivery,
       'github',
       'o/r',
       number,
       `https://github.com/o/r/pull/${number}`,
       status,
+      // One head branch backs both rows — that is exactly the "same head, two
+      // deliveries" shape the pair-keyed ledger has to allow.
       'feat/alpha',
-      'delivery/e2e',
+      `delivery/${delivery.slice(0, 8)}`,
       now,
       now,
     )
@@ -164,14 +188,14 @@ function seedPrRow(intentId, number, status) {
 }
 
 /** Move a seeded PR row to another status (merged → reviewing, …). */
-function setPrRowStatus(intentId, status) {
+function setPrRowStatus(intentId, status, delivery = deliveryId) {
   const db = new DatabaseSync(DB_PATH)
   try {
     db.exec('PRAGMA busy_timeout=5000;')
     db.prepare('UPDATE intent_prs SET status=? WHERE intent_id=? AND delivery_id=?').run(
       status,
       intentId,
-      deliveryId,
+      delivery,
     )
   } finally {
     db.close()
@@ -179,13 +203,13 @@ function setPrRowStatus(intentId, status) {
 }
 
 /** Whether the ledger still holds the (delivery, intent) association edge. */
-function edgeExists(intentId) {
+function edgeExists(intentId, delivery = deliveryId) {
   const db = new DatabaseSync(DB_PATH)
   try {
     db.exec('PRAGMA busy_timeout=5000;')
     return !!db
       .prepare('SELECT 1 FROM intent_deliveries WHERE delivery_id=? AND intent_id=?')
-      .get(deliveryId, intentId)
+      .get(delivery, intentId)
   } finally {
     db.close()
   }
@@ -236,7 +260,9 @@ ws.addEventListener('message', (evt) => {
     }
 
     case 'create_delivery_result':
-      deliveryId = msg.delivery.id
+      deliveries.push(msg.delivery.id)
+      // The first delivery is the one every earlier section addresses.
+      if (!deliveryId) deliveryId = msg.delivery.id
       break
 
     case 'delivery_detail':
@@ -347,7 +373,59 @@ async function runAssertions() {
   )
   check(edgeExists(ids.Alpha) === true, 'the blocked unlink left the association edge in place')
 
-  // ---- 6. cancelling the delivery keeps the edges (history stays queryable) ----
+  // ---- 6. one intent, two deliveries, two PR rows (the pair is the key) ----
+  // Alpha already holds a `reviewing` PR toward delivery #1 (section 5 put it
+  // there). Linking it to a SECOND delivery and seeding a PR toward that one is
+  // the shape the (intent_id, delivery_id) ledger key exists to allow — and what
+  // the intent detail groups by delivery.
+  phase = 'second-delivery'
+  send({ type: 'create_delivery', workspaceId, title: 'Delivery link e2e #2' })
+  for (let i = 0; i < POLL_TRIES && deliveries.length < 2; i++) await sleep(POLL_MS)
+  const second = deliveries[1] ?? null
+  check(!!second, 'a second delivery was created')
+  if (second) {
+    send({ type: 'link_intent_to_delivery', workspaceId, deliveryId: second, intentId: ids.Alpha })
+    await waitForDetail(
+      () => (detail?.associatedIntents ?? []).some((r) => r.id === ids.Alpha),
+      'Alpha linked to the second delivery',
+      second,
+    )
+    // A different status from delivery #1's row, so "per-delivery, not global"
+    // is observable rather than merely plausible.
+    seedPrRow(ids.Alpha, '202', 'merged', second)
+
+    await waitForIntents(
+      () => (intentFor(ids.Alpha)?.prs?.length ?? 0) === 2,
+      'the intent projection carries both PR rows',
+    )
+    const prs = intentFor(ids.Alpha)?.prs ?? []
+    check(prs.length === 2, 'one intent holds a second PR row toward a second delivery')
+    check(
+      new Set(prs.map((p) => p.deliveryId)).size === 2,
+      'the two rows belong to two different deliveries (the detail renders one group each)',
+    )
+    check(
+      prs.every((p) => p.headBranch === 'feat/alpha'),
+      'the SAME head branch backs both rows — the pair, not the head, is the key',
+    )
+    check(
+      (intentFor(ids.Alpha)?.linkedDeliveries ?? []).length === 2,
+      'the intent side names both deliveries it is linked to',
+    )
+
+    await waitForDetail(() => rowFor(ids.Alpha)?.prStatus === 'merged', 'delivery #2 PR', second)
+    check(
+      rowFor(ids.Alpha)?.prStatus === 'merged',
+      'the second delivery shows the PR toward ITSELF (merged)',
+    )
+    await waitForDetail(() => rowFor(ids.Alpha)?.prStatus === 'reviewing', 'delivery #1 PR')
+    check(
+      rowFor(ids.Alpha)?.prStatus === 'reviewing',
+      'the first delivery still shows its own PR (reviewing) — never the other one',
+    )
+  }
+
+  // ---- 7. cancelling the delivery keeps the edges (history stays queryable) ----
   phase = 'cancel-delivery'
   send({ type: 'cancel_delivery', workspaceId, deliveryId })
   await waitForDetail(() => detail?.delivery?.status === 'cancelled', 'delivery cancelled')

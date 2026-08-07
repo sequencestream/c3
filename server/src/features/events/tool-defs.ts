@@ -72,8 +72,10 @@ export const publishEventSchema = {
     .describe(
       'JSON 兼容的结构化数据。pr:* 用 { pr, repo, ref, association };' +
         'pr={number,id,url,title,state}、repo={provider,host,owner,name}、' +
-        'ref={head,base}、association={intentId,intentTitle};review 场景请填 ' +
-        'pr.id + association.intentTitle(意图名称)让事件自解释。',
+        'ref={head,base}、association={intentId,intentTitle,deliveryId};review 场景请填 ' +
+        'pr.id + association.intentTitle(意图名称)让事件自解释。' +
+        'pr:update 必须携带 association.deliveryId(该 PR 面向的交付;无交付归属则填 pr.number)' +
+        '或 pr.number 之一以唯一定位 PR —— 一个意图可能有多条 PR,定位不到时消费端拒绝复位而不猜测。',
     ),
 }
 
@@ -90,6 +92,7 @@ export const publishEventDesc =
   '已知 PR 操作事件 type=pr:create / pr:review / pr:merge / pr:close / pr:comment / ' +
   'pr:update(update=已有 PR 修改后重新提交/重新打开,非新建):status 填操作结果 ' +
   'success/failure/error,data 携带 { pr, repo, ref, association },失败原因写入 description。' +
+  'pr:update 还必须携带 association.deliveryId 或 pr.number 之一唯一定位 PR,否则消费端拒绝复位。' +
   '服务端会对所有字段做安全归一化(脱敏/剥绝对路径/截断);自定义 type 同样会被安全发布,不会因未预注册而拒绝。'
 
 // ---- Core publish logic (shared handler) ----

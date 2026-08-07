@@ -103,7 +103,7 @@ c3
 │   │   ├── 同步主线                              # integrating 期间人工触发把 origin/<base_branch> 合入交付分支(临时 detached worktree,不碰用户检出);冲突原样浮出不代解;页面显示「主线领先 N」提示;不做定时自动回灌
 │   │   ├── 交付账本                              # 按工作区持久化交付(标题/描述/base_branch 快照/日期/分支名),status 六态 CHECK 闭集
 │   │   ├── 受控状态机                            # planned→integrating→verifying→verified→delivered,任意非终态可取消;回退 verifying→integrating(人工返工)/verified→verifying(系统合并冲突);统一经 canTransitionDelivery 纯函数
-│   │   ├── 守卫与缺口                            # 分支就绪→关联意图 PR 全部合入→人工确认验证→合并成功;缺口以 delivery.guard.* 结构下发给页面置灰+常驻说明+跳转;branchNotReady 跳转到本页分支初始化区
+│   │   ├── 守卫与缺口                            # 分支就绪→关联意图 PR 全部合入→人工确认验证→合并成功;缺口以 delivery.guard.* 结构下发,页面据此隐藏被挡目标并在标题栏下方呈现异常框+跳转;branchNotReady 跳转到本页分支初始化区
 │   │   ├── 集成就熟 N/M                          # 实时由 intent_prs.delivery_id 聚合,不持久化计数;无「已完成」态,只以 N/M 呈现
 │   │   ├── 交付 CRUD + 取消                      # 纯本地数据动作不触网;取消是生命周期终结方式,无永久删除
 │   │   ├── 分支初始化(create/bind)               # 创建交付与初始化分支拆两步:init_delivery_branch 显式可重试;基线先 fetch 取 origin/<base_branch> HEAD;支持绑定已有远端分支(落后仅警告)

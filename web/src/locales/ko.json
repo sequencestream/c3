@@ -2575,6 +2575,9 @@
       "edit": {
         "label": "편집"
       },
+      "editTitle": {
+        "label": "딜리버리 편집"
+      },
       "save": {
         "label": "저장"
       },

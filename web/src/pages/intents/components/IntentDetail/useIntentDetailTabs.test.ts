@@ -140,8 +140,8 @@ describe('useIntentDetailTabs', () => {
     expect(hist.visibleKeys()).toEqual([
       'intent',
       'intentSession',
-      'spec',
       'specSession',
+      'spec',
       'changelog',
     ])
 
@@ -297,7 +297,7 @@ describe('useIntentDetailTabs', () => {
     })
     expect(sddOff.visibleKeys()).not.toContain('specReviewSession')
 
-    // 两者齐备 → 显示,且排在编写规范会话之后。
+    // 两者齐备 → 显示,且排在规范之后。
     const on = mountHost({
       intent: intent({ id: 'i3', specReviewSessionId: 'rev-1' }),
       sddEnabled: true,
@@ -305,8 +305,8 @@ describe('useIntentDetailTabs', () => {
     expect(on.visibleKeys()).toEqual([
       'intent',
       'intentSession',
-      'spec',
       'specSession',
+      'spec',
       'specReviewSession',
       'changelog',
     ])

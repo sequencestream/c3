@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Delivery, DeliveryTransitionPlan } from '@ccc/shared/protocol'
+import { DELIVERY_STATUSES } from '@ccc/shared/protocol'
 import ConfirmDialog from '@/components/ConfirmDialog/ConfirmDialog.vue'
 import DeliveryDetail from './DeliveryDetail.vue'
 
@@ -73,22 +74,60 @@ describe('DeliveryDetail', () => {
     }
   })
 
-  it('renders the segmented selector with blocked targets greyed (disabled)', () => {
-    const w = mountDetail()
-    const blocked = w.find('[data-testid="delivery-seg-integrating"]')
-    expect(blocked.exists()).toBe(true)
-    expect(blocked.attributes('disabled')).toBeDefined()
-    expect(w.find('[data-testid="delivery-seg-current-planned"]').exists()).toBe(true)
+  it('renders the status badge tight against the title, one per status', () => {
+    for (const status of DELIVERY_STATUSES) {
+      const w = mountDetail({ delivery: delivery({ status }), plan: { targets: [] } })
+      const badge = w.find(`[data-testid="delivery-detail-status-${status}"]`)
+      expect(badge.exists(), status).toBe(true)
+      // 徽标携带状态名以便逐态配色,且纯展示——不是按钮、不承载动作。
+      expect(badge.classes(), status).toContain(status)
+      expect(badge.element.tagName, status).toBe('SPAN')
+    }
   })
 
-  it('shows the persistent gap list with the jump entry and N/M inline', () => {
+  it('renders the badge right after the title, with no flexing element between them', () => {
     const w = mountDetail()
-    expect(w.find('[data-testid="delivery-gaps"]').exists()).toBe(true)
+    const head = w.find('.delivery-detail-head')
+    const children = [...head.element.children].map((el) => el.className)
+    expect(children[0]).toContain('delivery-detail-title')
+    expect(children[1]).toContain('delivery-detail-status')
+    // 吃掉剩余宽度的空隙元素排在徽标之后,动作组再跟其后。
+    expect(children[2]).toContain('delivery-head-spacer')
+    expect(children[3]).toContain('delivery-head-actions')
+  })
+
+  it('renders no advance button at all when every target is guard-blocked', () => {
+    const w = mountDetail()
+    // 被挡目标不是置灰,是根本不渲染;推进区里一个目标按钮也没有。
+    expect(w.findAll('[data-testid^="delivery-advance-"]').length).toBe(0)
+    expect(w.find('[data-testid="delivery-seg-integrating"]').exists()).toBe(false)
+  })
+
+  it('shows the gap banner under the title bar, with its jump entry, and N/M in the title bar', () => {
+    const w = mountDetail()
+    const banner = w.find('[data-testid="delivery-gaps"]')
+    expect(banner.exists()).toBe(true)
+    // 缺口框在标题栏之下、Tab 条之上,不在概览 tab 内。
+    expect(w.find('[data-testid="delivery-overview"] [data-testid="delivery-gaps"]').exists()).toBe(
+      false,
+    )
+    expect(banner.attributes('role')).toBe('alert')
     expect(w.find('[data-testid="delivery-gap-delivery.guard.branchNotReady"]').exists()).toBe(true)
-    expect(w.find('[data-testid="delivery-gap-jump"]').exists()).toBe(false) // no hard-coded testid; jump is a button
-    expect(w.find('[data-testid="delivery-ready-line"]').exists()).toBe(true)
-    // N/M 并入说明,不做独立进度条。
+    expect(banner.find('.delivery-gap-jump').exists()).toBe(true)
+    // N/M 收进标题栏动作组,不做独立进度条。
+    const ready = w.find(
+      '[data-testid="delivery-head-actions"] [data-testid="delivery-ready-line"]',
+    )
+    expect(ready.exists()).toBe(true)
+    expect(ready.text()).toContain('1')
+    expect(ready.text()).toContain('2')
     expect(w.find('[data-testid="delivery-progress"]').exists()).toBe(false)
+  })
+
+  it('keeps the gap banner visible after switching to the associated-intents tab', async () => {
+    const w = mountDetail()
+    await w.find('[data-testid="delivery-pane-tab-intents"]').trigger('click')
+    expect(w.find('[data-testid="delivery-gaps"]').exists()).toBe(true)
   })
 
   it('shows the current-branch aggregate-only note when in current-branch mode', () => {
@@ -199,9 +238,11 @@ describe('DeliveryDetail', () => {
         ],
       },
     })
-    const verifiedSeg = w.find('[data-testid="delivery-seg-verified"]')
-    expect(verifiedSeg.attributes('disabled')).toBeUndefined()
-    await verifiedSeg.trigger('click')
+    // 两个可达目标都渲染成推进按钮。
+    expect(
+      w.findAll('[data-testid^="delivery-advance-"]').map((b) => b.attributes('data-testid')),
+    ).toEqual(['delivery-advance-verified', 'delivery-advance-integrating'])
+    await w.find('[data-testid="delivery-advance-verified"]').trigger('click')
     // The verifying→verified target pops the confirmation dialog before writing.
     const dialogs = w.findAllComponents(ConfirmDialog)
     const open = dialogs.find((d) => d.props('open') === true)
@@ -209,6 +250,18 @@ describe('DeliveryDetail', () => {
     open!.vm.$emit('confirm')
     await w.vm.$nextTick()
     expect(w.emitted('transition')?.[0]).toEqual(['verified', true])
+  })
+
+  it('writes nothing when the verification confirmation is dismissed', async () => {
+    const w = mountDetail({
+      delivery: delivery({ status: 'verifying', branchReady: true }),
+      plan: { targets: [{ to: 'verified', humanAction: true, guard: 'satisfied', reasons: [] }] },
+    })
+    await w.find('[data-testid="delivery-advance-verified"]').trigger('click')
+    const open = w.findAllComponents(ConfirmDialog).find((d) => d.props('open') === true)
+    open!.vm.$emit('cancel')
+    await w.vm.$nextTick()
+    expect(w.emitted('transition')).toBeFalsy()
   })
 
   it('emits rework directly (no confirmation) for verifying → integrating', async () => {
@@ -226,7 +279,9 @@ describe('DeliveryDetail', () => {
         ],
       },
     })
-    await w.find('[data-testid="delivery-seg-integrating"]').trigger('click')
+    // 被挡的 verified 目标不渲染,只剩返工按钮。
+    expect(w.find('[data-testid="delivery-advance-verified"]').exists()).toBe(false)
+    await w.find('[data-testid="delivery-advance-integrating"]').trigger('click')
     expect(w.emitted('transition')?.[0]).toEqual(['integrating', false])
   })
 
@@ -240,6 +295,107 @@ describe('DeliveryDetail', () => {
     expect(w.find('[data-testid="delivery-meta-base-branch"]').exists()).toBe(true)
     expect(w.find('[data-testid="delivery-meta-branch"]').exists()).toBe(true)
     expect(w.find('[data-testid="delivery-meta-pr"]').exists()).toBe(true)
+  })
+
+  it('keeps the overview free of any status content', () => {
+    const w = mountDetail()
+    // 分段选择器整块退役,元信息也不再有「状态」行;状态只在标题栏。
+    expect(w.find('[data-testid="delivery-selector"]').exists()).toBe(false)
+    expect(w.find('[data-testid="delivery-status-block"]').exists()).toBe(false)
+    expect(w.findAll('[data-testid^="delivery-seg-"]').length).toBe(0)
+    expect(w.find('[data-testid="delivery-meta-status"]').exists()).toBe(false)
+    // 其余元信息行仍在。
+    for (const row of ['base-branch', 'branch', 'start', 'end', 'pr', 'created', 'updated']) {
+      expect(w.find(`[data-testid="delivery-meta-${row}"]`).exists(), row).toBe(true)
+    }
+  })
+})
+
+// ---- 编辑弹窗 ----------------------------------------------------------
+
+describe('DeliveryDetail — 交付编辑弹窗', () => {
+  const EDITABLE = delivery({
+    title: 'Sprint 3',
+    description: 'ship the batch',
+    startDate: Date.parse('2026-08-01T00:00:00Z'),
+    endDate: Date.parse('2026-08-31T00:00:00Z'),
+  })
+
+  async function openEditor(w: ReturnType<typeof mountDetail>) {
+    await w.find('[data-testid="delivery-edit-btn"]').trigger('click')
+    return w
+  }
+
+  it('opens as a dialog prefilled with the delivery values (no inline form)', async () => {
+    const w = await openEditor(mountDetail({ delivery: EDITABLE }))
+    expect(w.find('[data-testid="delivery-edit-dialog"]').exists()).toBe(true)
+    expect((w.find('[data-testid="delivery-edit-title"]').element as HTMLInputElement).value).toBe(
+      'Sprint 3',
+    )
+    expect(
+      (w.find('[data-testid="delivery-edit-desc"]').element as HTMLTextAreaElement).value,
+    ).toBe('ship the batch')
+    expect((w.find('[data-testid="delivery-edit-start"]').element as HTMLInputElement).value).toBe(
+      '2026-08-01',
+    )
+    expect((w.find('[data-testid="delivery-edit-end"]').element as HTMLInputElement).value).toBe(
+      '2026-08-31',
+    )
+  })
+
+  it('does not render the editor until 「编辑」 is clicked', () => {
+    const w = mountDetail({ delivery: EDITABLE })
+    expect(w.find('[data-testid="delivery-edit-dialog"]').exists()).toBe(false)
+  })
+
+  it('disables save on an empty title and emits the full update payload otherwise', async () => {
+    const w = await openEditor(mountDetail({ delivery: EDITABLE }))
+    await w.find('[data-testid="delivery-edit-title"]').setValue('   ')
+    expect(w.find('[data-testid="delivery-edit-save"]').attributes('disabled')).toBeDefined()
+
+    await w.find('[data-testid="delivery-edit-title"]').setValue('Sprint 4')
+    await w.find('[data-testid="delivery-edit-desc"]').setValue('next batch')
+    await w.find('[data-testid="delivery-edit-start"]').setValue('2026-09-01')
+    await w.find('[data-testid="delivery-edit-end"]').setValue('')
+    await w.find('[data-testid="delivery-edit-save"]').trigger('click')
+
+    expect(w.emitted('update')?.[0]).toEqual([
+      {
+        deliveryId: 'd1',
+        title: 'Sprint 4',
+        description: 'next batch',
+        startDate: Date.parse('2026-09-01T00:00:00Z'),
+        endDate: null,
+      },
+    ])
+    expect(w.find('[data-testid="delivery-edit-dialog"]').exists()).toBe(false)
+  })
+
+  it('cancels via the cancel button, the overlay and Esc — none of which writes back', async () => {
+    for (const dismiss of [
+      (w: ReturnType<typeof mountDetail>) =>
+        w.find('[data-testid="delivery-edit-cancel"]').trigger('click'),
+      (w: ReturnType<typeof mountDetail>) =>
+        w.find('[data-testid="delivery-edit-overlay"]').trigger('click'),
+      (w: ReturnType<typeof mountDetail>) =>
+        w.find('[data-testid="delivery-edit-overlay"]').trigger('keydown.esc'),
+    ]) {
+      const w = await openEditor(mountDetail({ delivery: EDITABLE }))
+      await w.find('[data-testid="delivery-edit-title"]').setValue('draft')
+      await dismiss(w)
+      expect(w.emitted('update')).toBeFalsy()
+      expect(w.find('[data-testid="delivery-edit-dialog"]').exists()).toBe(false)
+    }
+  })
+
+  it('re-prefills from the delivery on reopen instead of keeping the last draft', async () => {
+    const w = await openEditor(mountDetail({ delivery: EDITABLE }))
+    await w.find('[data-testid="delivery-edit-title"]').setValue('draft never saved')
+    await w.find('[data-testid="delivery-edit-cancel"]').trigger('click')
+    await openEditor(w)
+    expect((w.find('[data-testid="delivery-edit-title"]').element as HTMLInputElement).value).toBe(
+      'Sprint 3',
+    )
   })
 })
 
@@ -256,6 +412,19 @@ function ruleBody(css: string, selector: string): string {
   return new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
 }
 
+const dialogSrc = readFileSync(
+  resolve(
+    process.cwd(),
+    'web/src/pages/deliveries/components/DeliveryDetail/DeliveryEditDialog.vue',
+  ),
+  'utf8',
+)
+
+/** 组件里最后一个 `@media (max-width: 767px)` 块的规则体。 */
+function mobileBlock(css: string): string {
+  return /@media \(max-width: 767px\) \{([\s\S]*?)\n\}/.exec(css)?.[1] ?? ''
+}
+
 describe('DeliveryDetail.vue — 右栏铺满样式契约', () => {
   it('详情根容器吃掉右栏剩余宽度(flex:1 + min-width:0),镜像 .intent-detail', () => {
     const root = ruleBody(detailSrc, '.delivery-detail')
@@ -263,5 +432,43 @@ describe('DeliveryDetail.vue — 右栏铺满样式契约', () => {
     expect(root).toMatch(/min-width:\s*0/)
     // 既有的高度约束保留。
     expect(root).toMatch(/min-height:\s*0/)
+  })
+})
+
+describe('DeliveryDetail.vue — 标题栏样式契约', () => {
+  it('桌面端:标题可截断但不再吃掉剩余宽度,空隙元素接手,动作组不被压扁', () => {
+    const title = ruleBody(detailSrc, '.delivery-detail-title')
+    expect(title).toMatch(/min-width:\s*0/)
+    expect(title).toMatch(/text-overflow:\s*ellipsis/)
+    // 徽标要紧贴标题——标题不能再有 flex:1。
+    expect(title).not.toMatch(/flex:\s*1/)
+    expect(ruleBody(detailSrc, '.delivery-head-spacer')).toMatch(/flex:\s*1/)
+    expect(ruleBody(detailSrc, '.delivery-head-actions')).toMatch(/flex-shrink:\s*0/)
+  })
+
+  it('移动端:标题栏换行,动作组整体挤到第二行(不隐藏、不降级任何信息)', () => {
+    const mobile = mobileBlock(detailSrc)
+    expect(ruleBody(mobile, '.delivery-detail-head')).toMatch(/flex-wrap:\s*wrap/)
+    expect(ruleBody(mobile, '.delivery-head-actions')).toMatch(/flex-basis:\s*100%/)
+    // 移动端不隐藏 N/M 或推进按钮。
+    expect(mobile).not.toMatch(/display:\s*none/)
+  })
+})
+
+describe('DeliveryEditDialog.vue — 弹窗宽度契约', () => {
+  it('桌面端默认宽度为页面宽度的二分之一,上下限只兜住极端视口', () => {
+    const modal = ruleBody(dialogSrc, '.de-modal')
+    expect(modal).toMatch(/width:\s*50vw/)
+    expect(modal).toMatch(/min-width:\s*\d/)
+    expect(modal).toMatch(/max-width:\s*\d/)
+  })
+
+  it('移动端退化为全屏 sheet,页脚按钮吸底', () => {
+    const mobile = mobileBlock(dialogSrc)
+    const modal = ruleBody(mobile, '.de-modal')
+    expect(modal).toMatch(/width:\s*100vw/)
+    expect(modal).toMatch(/max-width:\s*none/)
+    expect(modal).toMatch(/min-height:\s*100dvh/)
+    expect(ruleBody(mobile, '.de-foot')).toMatch(/margin-top:\s*auto/)
   })
 })

@@ -72,8 +72,9 @@ export function useIntentDetailTabs(opts: {
   const TABS: DetailTabItem[] = [
     { key: 'intent', label: t('intent.tab.intent.label') },
     { key: 'intentSession', label: t('intent.tab.intentSession.label') },
-    { key: 'spec', label: t('intent.tab.spec.label') },
+    // 规范会话排在规范之前:真实工作流是先在会话里撰写/打磨规范,再回看规范正文。
     { key: 'specSession', label: t('intent.tab.specSession.label') },
+    { key: 'spec', label: t('intent.tab.spec.label') },
     { key: 'specReviewSession', label: t('intent.tab.specReviewSession.label') },
     { key: 'workSession', label: t('intent.tab.workSession.label') },
     { key: 'changelog', label: t('intent.tab.changelog.label') },

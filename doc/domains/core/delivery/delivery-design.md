@@ -15,7 +15,7 @@
 | 分支生命周期      | `git.ts`:`isMultiRepoWorkspace`/`fetchRemoteBaseAsync`/`remoteBranchHead`/`resolveRefHead`/`createDeliveryBranch`/`deleteLocalBranch`;handler 端 `initDeliveryBranchHandler` 编排 fetch → 期望起点 → 远端探测 → create/bind/孤儿判定 → DB 写入                           |
 | forge 交互        | `git.ts`:`getForgePrStatus`(解除前的实时状态复核)/`closeForgePr`(已关闭视为成功)/`detectDeliveryDiffBloat`(关联时的分叉点检测)/`findOpenForgePr`(建交付 PR 前查开放 PR)/`getForgeDeliveryPrFacts`(状态+冲突+CI+审批,双 provider 归一)/`deliveryMergeTrial`(冲突文件枚举) |
 | 工作区隔离 + 广播 | handlers 经 `resolveWorkspaceRoot` 解析路径、校验 `delivery.workspaceId` 归属;变更后 `broadcastDeliveries` 全量重读并带角标                                                                                                                                              |
-| 页面              | `web/src/pages/deliveries/`:列表 + 详情两 Tab + 分段选择器 + 常驻缺口 + 分支初始化区,只消费服务端 `transitionPlan`                                                                                                                                                       |
+| 页面              | `web/src/pages/deliveries/`:列表 + 详情两 Tab + 标题栏状态区(徽标 + 可达目标推进)+ 缺口异常框 + 分支初始化区,只消费服务端 `transitionPlan`                                                                                                                               |
 
 ## SQLite 层
 
@@ -111,7 +111,7 @@
 
 ## 前端
 
-`web/src/pages/deliveries/` 容器经 `App.vue` 注入 `currentDeliveries`/`activeDelivery`/`activeDeliveryPlan`/`activeDeliveryIntents`/`deliveryLinkIntents`/`activeDeliveryBranchInit`/`workspaceGitBranchMode`。页面只消费服务端 `transitionPlan` 渲染分段选择器(非法目标不出现、守卫未满足置灰)与常驻缺口(`delivery.guard.*` 文案 + 跳转 + N/M)。`current-branch` 模式显示「仅聚合视图」说明文案,动作区不渲染分支/PR/合并动作。角标 `HEADER_TABS` 取 `deliveriesNeedsAction[currentWorkspace]`。
+`web/src/pages/deliveries/` 容器经 `App.vue` 注入 `currentDeliveries`/`activeDelivery`/`activeDeliveryPlan`/`activeDeliveryIntents`/`deliveryLinkIntents`/`activeDeliveryBranchInit`/`workspaceGitBranchMode`。页面只消费服务端 `transitionPlan`,在常驻标题栏渲染状态徽标(六态分别配色、纯展示)与推进区:推进区只渲染可达目标(非法目标与守卫未满足/系统专属的目标均不出现),「集成就绪 N/M」以小字落在同一动作组内;缺口(`delivery.guard.*` 文案 + 跳转)由标题栏下方的异常框呈现。`verifying → verified` 点击先弹 ConfirmDialog 显式人工确认。`current-branch` 模式显示「仅聚合视图」说明文案,动作区不渲染分支/PR/合并动作。角标 `HEADER_TABS` 取 `deliveriesNeedsAction[currentWorkspace]`。
 
 **分支初始化区**(概览 tab,`worktree` 模式):未就绪时显示 create/bind 切换 + 分支名输入框(默认 `delivery/<short-id>-<slug>`,由 `defaultDeliveryBranchName` 生成)+「初始化分支」按钮 + 进度行(`delivery_branch_init_progress` 相位文案);就绪后显示分支名;终态且持有分支时显示「清理分支」入口(danger ConfirmDialog 二次确认)。`branchNotReady` 缺口跳转 `branch` 会切到概览并聚焦该区。`message-handler` 处理 `delivery_branch_init_progress`/`delivery_branch_init_result`(成功清 in-flight + 采纳模型 + 重取详情 + 落后警告 toast),并在 init 错误码时清 in-flight + toast。
 

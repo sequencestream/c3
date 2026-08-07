@@ -775,6 +775,11 @@
       "confirm": "Delete \"{title}\" permanently? Its local Git worktree and local branch will also be deleted. Remote branches and pull requests will not be changed.",
       "confirmWithArtifacts": "Delete \"{title}\" permanently? Existing work products, its local Git worktree, and its local branch will also be deleted. Remote branches and pull requests will not be changed."
     },
+    "cancel": {
+      "title": "인텐트를 취소할까요?",
+      "confirm": "\"{title}\"을(를) 취소할까요? 상태가 취소됨으로 바뀌고 이 인텐트의 열린 PR도 함께 닫힙니다. 이후 상세 헤더에는 되돌릴 수 있는 입구가 없습니다.",
+      "label": "인텐트 취소"
+    },
     "create": {
       "label": "Add intent"
     },

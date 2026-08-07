@@ -3,7 +3,8 @@
  * DeliveryDetail.vue — 交付详情容器。
  *
  * 常驻标题栏是状态的唯一去处:标题 → 紧贴的状态徽标(六态分别配色、纯展示) →
- * 弹性空隙 → 动作组(集成就绪 N/M 小字 + 可达目标推进按钮 + 取消)。推进区只渲染
+ * 弹性空隙 → 动作组(集成就绪 N/M 小字 + 可达目标推进按钮 + 非终态才渲染的取消)。
+ * 推进区只渲染
  * 此刻真的能点的目标——被守卫挡住的、系统专属的目标根本不渲染;「为何推不动」由
  * 标题栏下方的缺口异常框回答。其下仅两个 Tab:概览(交付分支/合并/元信息,不含任何
  * 状态内容)与关联意图。不设 PR/设置/分支独立 Tab。
@@ -30,6 +31,7 @@ import {
   deliveryGapReasons,
   deliveryTargetInvokable,
   isDeliveryReworkTarget,
+  isDeliveryTerminal,
   isVerificationConfirmTarget,
   type DeliveryBranchInitState,
 } from '@/lib/delivery-view'
@@ -196,6 +198,7 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
           {{ targetLabel(target) }}
         </button>
         <button
+          v-if="!isDeliveryTerminal(props.delivery.status)"
           type="button"
           class="delivery-cancel-btn"
           data-testid="delivery-cancel-btn"
@@ -386,7 +389,7 @@ const terminalNote = computed<{ label: string; params?: Record<string, unknown> 
   border-color: var(--c-error);
   background: transparent;
 }
-/* 动作组:N/M + 可达目标 + 取消。桌面端跟在空隙之后不被压扁,移动端整体换到第二行。 */
+/* 动作组:N/M + 可达目标 + 非终态的取消。桌面端跟在空隙之后不被压扁,移动端整体换到第二行。 */
 .delivery-head-actions {
   flex-shrink: 0;
   display: flex;

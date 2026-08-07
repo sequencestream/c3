@@ -461,7 +461,8 @@ export async function runViaDriver(
   // claude-hardwired path applies these to the SDK; the driver path threads the
   // neutral subset the vendor's driver understands (2026-06-06-007). Codex's policy
   // gate is derived from `actionMode`/`toolGate` in its driver (2026-06-06-008).
-  const { agentId, model, envOverrides, relayCandidates } = resolveSessionLaunch(runId)
+  const { agentId, model, envOverrides, relayCandidates, contextWindow, maxOutputTokens } =
+    resolveSessionLaunch(runId)
 
   // gh stores its token in the OS keyring, which codex's sandbox can't read — so
   // `gh` inside a codex session fails auth even on an authenticated host with
@@ -578,6 +579,14 @@ export async function runViaDriver(
       toolGate,
       ...(model ? { model } : {}),
       ...(relayCandidates ? { relayCandidates } : {}),
+      // Optional model capabilities: the codex driver's relay branch registers the
+      // CLI-launched model in a local catalog (2026-08-08-013) so codex stops
+      // falling back to default metadata. `sandboxTmpDir` (the arapuca allow-set
+      // rw dir) must accompany a sandboxed run — the catalog file has to land
+      // there or the sandboxed codex cannot read it at startup.
+      ...(contextWindow !== undefined ? { contextWindow } : {}),
+      ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+      ...(rt.sandboxTmpDir ? { sandboxTmpDir: rt.sandboxTmpDir } : {}),
       ...(driverEnvOverrides ? { envOverrides: driverEnvOverrides } : {}),
       ...(sandboxWrapperPath ? { sandboxWrapperPath } : {}),
       ...(rt.sandboxPaths ? { sandboxed: true } : {}),

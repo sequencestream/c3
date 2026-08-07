@@ -131,12 +131,14 @@
 
 标题渲染为链接态按钮,点击跳到该意图详情:emit `open-intent` 经 `DeliveryDetail` → `Deliveries` → `App.vue` 上抛,`App.vue` 以**交付页当前工作区**(`deliveriesProject`)调 `openLinkedIntent`(`openIntents(path)` + 写 `requestedIntentId`),由 `Intents.vue` 在列表加载后一次性选中该意图、桌面右栏显示详情默认 tab、移动端直接落详情视图;意图已被删除 / 未出现在列表时沿用 Intents 既有的兜底选中,不白屏。热区只覆盖标题文字(行尾就是「解除关联」危险按钮,整行可点会抬高误触风险),与意图详情侧「关联交付」的 `open-delivery` 反向对称。
 
-**意图详情侧**(`IntentOverviewTab.vue`):元信息顺序 `ID → 分支+commit → 关联交付 → PR → 已创建 → …`。「关联交付」必须在 PR **之前**——交付决定 PR 提向哪条分支,先因后果读下来才成立。PR 行按交付分组(无交付归属的单列一组;只有一组且无交付归属时不渲染组标签,避免最常见场景平白多一行噪音)。该 tab 对关联**纯只读**,只负责导航:点击关联交付经 `open-delivery` 一路上抛到 `App.vue` 的 `openDeliveryFromIntent`(先 `openDeliveries` 再 `openDelivery`,否则详情会在没有列表的情况下半加载)。
+**意图详情侧**(`IntentOverviewTab.vue`):元信息顺序 `ID → 分支+commit → 关联交付 → PR → 已创建 → …`。「关联交付」必须在 PR **之前**——交付决定 PR 提向哪条分支,先因后果读下来才成立。PR 行按交付分组(无交付归属的单列一组;只有一组且无交付归属时不渲染组标签,避免最常见场景平白多一行噪音)。点击关联交付经 `open-delivery` 一路上抛到 `App.vue` 的 `openDeliveryFromIntent`(先 `openDeliveries` 再 `openDelivery`,否则详情会在没有列表的情况下半加载)。
 
-**意图详情标题栏**(`IntentTitleBarActions.vue`):意图侧的关联/解除入口,与交付页入口并存,服务端是唯一门禁。入口排在建 PR 按钮之前,按 `linkedDeliveries` 分三态:
+**意图侧的解除入口就在这一行**:恰好关联 1 条时在交付名之后渲染「解除关联」,先过 danger `ConfirmDialog`(文案点明**会关闭该意图提向此交付的 PR**),确认后 `unlink-delivery(ws, deliveryId, intentId)` 经 `IntentDetail.vue` 透传到既有链路;取消 / 遮罩 / Esc 不上抛,关联条数在确认框敞开期间变为非 1 时主动收框。多关联(>1)只展示交付名、不给解除路径——与「多关联不渲染建 PR 入口」同一条裁决。放在元信息而非标题栏,是因为解除是低频维护动作:标题栏该留给核心动作与交付导航,而「解除谁」的答案就在这一行的交付名上,入口贴着对象才不需要用户二次确认目标。是否放行仍由服务端复核(本地 + forge 双层,已合并直接拒 `delivery.unlinkMergedPrDenied`,走中央错误链路,意图侧不特判)。
 
-- **0 条** —「关联交付」按钮,打开 `IntentLinkDeliveryDialog`(候选 = 本意图工作区交付中 `status ∉ {delivered, cancelled}`)。意图页从不主动拉交付列表,故开框同时上抛让控制层补发 `list_deliveries`;候选取 `intentLinkDeliveries`(按**意图页**工作区取,与交付页的 `deliveryLinkIntents` 互为镜像)。候选按状态过滤是展示规则,服务端 `link` 本身没有终态守卫,本侧不代它加门禁。
-- **恰 1 条** — 展示交付名(点击复用 `open-delivery` 跳转)+「解除关联」。解除先过 danger `ConfirmDialog`,文案点明**会关闭该意图提向此交付的 PR**;是否放行由服务端复核(本地 + forge 双层,已合并直接拒 `delivery.unlinkMergedPrDenied`,走中央错误链路,意图侧不特判)。
+**意图详情标题栏**(`IntentTitleBarActions.vue`):意图侧的关联入口,与交付页入口并存,服务端是唯一门禁。入口排在建 PR 按钮之前,按 `linkedDeliveries` 分三态:
+
+- **0 条** —「关联交付」按钮,打开 `IntentLinkDeliveryDialog`(候选 = 本意图工作区交付中 `status ∉ {delivered, cancelled}`)。意图页从不主动拉交付列表,故开框同时上抛让控制层补发 `list_deliveries`;候选取 `intentLinkDeliveries`(按**意图页**工作区取,与交付页的 `deliveryLinkIntents` 互为镜像)。候选按状态过滤是展示规则,服务端 `link` 本身没有终态守卫,本侧不代它加门禁。该按钮用**主色描边 + 主色文字**强调:它决定 PR 提向哪条分支,与普通按钮同级会稀释引导;只到描边一级,不与实底主按钮争夺最高视觉级。
+- **恰 1 条** — 只展示交付名(点击复用 `open-delivery` 跳转)。解除入口在概览元信息的交付名之后,标题栏不重复。
 - **>1 条** — 只展示各交付名,不给关联/解除路径。与「多关联不渲染建 PR 入口」同一条裁决:目标不唯一时交互层不替用户选,数据层的多边关系不受影响。
 
 **「当前意图独立交付」**(弹窗标题栏右侧):以当前意图的标题为交付标题、正文为描述,起止日期均为**本地当天**,一键建一次专属交付并达到 `branchReady`。纯前端编排三条既有消息,没有专属协议面:

@@ -485,6 +485,7 @@ function saveEdit(payload: {
 
     <div class="delivery-overview-actions">
       <button
+        v-if="!isTerminal"
         type="button"
         class="delivery-edit-btn"
         data-testid="delivery-edit-btn"

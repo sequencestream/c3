@@ -310,6 +310,7 @@ defineExpose({
         :source-label="null"
         :always-title="true"
         :has-active-session="chatActive"
+        :session-bound="chatActive"
         :messages="chatActive ? messages : []"
         :actionable-permission-id="actionablePermissionId"
         :task-model="taskModel"
